@@ -31,21 +31,56 @@ export interface Timings {
   total: number;
 }
 
+// 一份完整的推导结果：撤销、重做时直接换回，不必重算
+interface DerivedState {
+  derived: Derived;
+  base: ClimateBase | null;
+  solve: SolveResult;
+  timings: Timings;
+}
+
+interface DoneStep {
+  // 编号（自动保存据此只写变了的那些步）
+  id: number;
+  cmd: Command;
+  undo: UndoRecord;
+  summary: string;
+  dirty: Dirty;
+  // 这一步之前的推导结果（撤销时换回）
+  state?: DerivedState;
+}
+
+interface UndoneStep {
+  cmd: Command;
+  summary: string;
+  // 这一步之后的推导结果（重做时换回）
+  state?: DerivedState;
+}
+
 export class Engine {
   world: World;
   private base: ClimateBase | null = null;
   private solve: SolveResult = { plans: [] };
   private dirty: Dirty = Dirty.Elevation;
   // 每一步记下它影响到哪一层：撤销时只需从这一层重算
-  private done: { cmd: Command; undo: UndoRecord; summary: string; dirty: Dirty }[] = [];
-  private undone: { cmd: Command; summary: string }[] = [];
+  private done: DoneStep[] = [];
+  private undone: UndoneStep[] = [];
+  // 存着推导结果的步（先存的在前）；最多 undoCache 份，每份是整个世界的推导数组（4 万格约 11 MB，10 万格约 27 MB）
+  private kept: (DoneStep | UndoneStep)[] = [];
+  undoCache: number;
+  private seq = 0;
   // 上次取走以来实际重算到的最深一层（Worker 据此决定只发名字、省份，还是整个世界）
   private recomputed: Dirty = Dirty.None;
+  // 最近一次 exec 什么都没改（比如在陆地上画陆地）：不重算、不进历史
+  lastNoop = false;
+  // 最近一次确切预览算好的副本：紧接着执行同一条命令时直接采用，不再重算（画河改道松手时）
+  private lastPreview: { key: string; copy: Engine } | null = null;
   lastTimings: Timings = { total: 0 };
 
   constructor(settings: Partial<Settings> = {}, mesh?: Mesh) {
     this.world = createWorld(settings, mesh);
     resolveTerrain(this.world);
+    this.undoCache = this.world.mesh.n > 60000 ? 2 : 3;
   }
 
   get history(): { summary: string; done: boolean }[] {
@@ -58,20 +93,61 @@ export class Engine {
     return this.undone.length > 0;
   }
 
-  // 执行命令；推导立即更新
+  // 执行命令；推导立即更新。命令什么都没改时不重算、不进历史（lastNoop）
   exec(cmd: Command): string {
-    const summary = this.applyOnly(cmd);
-    this.undone = [];
+    const adopted = this.adoptPreview(cmd);
+    if (adopted !== null) return adopted;
+    const fresh = this.dirty === Dirty.None;
+    const summary = this.applyOnly(cmd, true);
+    if (this.lastNoop) return summary;
+    this.dropUndone();
+    this.keepBefore(fresh);
     this.update();
     return summary;
   }
 
-  private applyOnly(cmd: Command): string {
+  // skipNoop：什么都没改的命令不记进历史（重放存档时照旧记，历史与文件一一对应）
+  private applyOnly(cmd: Command, skipNoop = false): string {
     const r = applyCommand(this.world, cmd, { ensureDerived: () => this.update() });
+    this.lastNoop = skipNoop && !r.changed;
+    if (this.lastNoop) return r.summary;
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
-    this.done.push({ cmd, undo: r.undo, summary: r.summary, dirty });
+    this.done.push({ id: ++this.seq, cmd, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
     return r.summary;
+  }
+
+  // ---------- 撤销缓存：最近几步的推导结果 ----------
+
+  // 当前的推导结果（不复制：换下来的对象不再被改动）
+  private current(): DerivedState {
+    return { derived: this.world.derived, base: this.base, solve: this.solve, timings: this.lastTimings };
+  }
+
+  private install(s: DerivedState) {
+    this.world.derived = s.derived;
+    this.base = s.base;
+    this.solve = s.solve;
+    this.lastTimings = s.timings;
+    this.dirty = Dirty.None;
+  }
+
+  private keep(step: DoneStep | UndoneStep, s: DerivedState) {
+    step.state = s;
+    this.kept = this.kept.filter((k) => k.state && k !== step);
+    this.kept.push(step);
+    while (this.kept.length > this.undoCache) this.kept.shift()!.state = undefined;
+  }
+
+  // 刚执行的一步：推导还是执行前的（update 还没跑），复制一份留给撤销。只给要重算推导的步留
+  private keepBefore(fresh: boolean) {
+    const h = this.done[this.done.length - 1];
+    if (fresh && h.dirty > Dirty.Names && this.undoCache > 0) this.keep(h, { ...this.current(), derived: copyDerived(this.world.derived) });
+  }
+
+  private dropUndone() {
+    for (const h of this.undone) h.state = undefined;
+    this.undone = [];
   }
 
   // 生态的种数变了：份额、适宜度数组要重新分配，至少从求解重算
@@ -80,7 +156,7 @@ export class Engine {
   }
 
   // 撤掉一步：原因退回去，推导从这一步影响到的那一层重算。推导只取决于原因，所以结果与从头重算逐值一致
-  private revertLast(): { cmd: Command; summary: string } | null {
+  private revertLast(): DoneStep | null {
     const h = this.done.pop();
     if (!h) return null;
     revert(this.world, h.undo);
@@ -88,36 +164,67 @@ export class Engine {
     return h;
   }
 
+  // 撤销：原因退回去；存着这一步之前的推导时直接换回（与重算逐值一致：推导只取决于原因），否则重算
   undo(): boolean {
+    this.lastPreview = null;
+    const fresh = this.dirty === Dirty.None;
     const h = this.revertLast();
     if (!h) return false;
-    this.undone.push({ cmd: h.cmd, summary: h.summary });
+    const step: UndoneStep = { cmd: h.cmd, summary: h.summary };
+    const before = h.state;
+    h.state = undefined;
+    if (fresh && before) {
+      const after = this.current();
+      this.install(before);
+      this.keep(step, after);
+      this.recomputed = Math.max(this.recomputed, h.dirty) as Dirty;
+    }
+    this.undone.push(step);
     this.update();
     return true;
   }
 
+  // 重做：命令重新作用于原因（推导此时与原来执行前相同，生成的名字也相同）；存着这一步之后的推导时直接换回
   redo(): boolean {
+    this.lastPreview = null;
+    const fresh = this.dirty === Dirty.None;
     const h = this.undone.pop();
     if (!h) return false;
+    const after = h.state;
+    h.state = undefined;
     this.applyOnly(h.cmd);
+    const step = this.done[this.done.length - 1];
+    if (fresh && after && step.dirty > Dirty.Names) {
+      const before = this.current();
+      this.install(after);
+      this.keep(step, before);
+      this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
+    } else this.keepBefore(fresh);
     this.update();
     return true;
   }
 
-  // 换一个：撤掉最后一步，执行新命令（“换个形状”用）。只重算一次，历史里只留新的一步
+  // 换一个：撤掉最后一步，执行新命令（“换个形状”用）。只重算一次，历史里只留新的一步。
+  // 撤掉的那一步之前的推导，就是新的一步之前的推导：留给新的一步撤销用
   replaceLast(cmd: Command): string {
+    this.lastPreview = null;
     const h = this.revertLast();
     if (!h) throw new CommandError('没有可以替换的一步');
+    const before = h.state;
+    h.state = undefined;
     let summary: string;
     try {
       summary = this.applyOnly(cmd);
     } catch (e) {
       // 新命令做不了：把原来那一步放回去
       this.applyOnly(h.cmd);
+      if (before) this.keep(this.done[this.done.length - 1], before);
       this.update();
       throw e;
     }
-    this.undone = [];
+    this.dropUndone();
+    const step = this.done[this.done.length - 1];
+    if (before && step.dirty > Dirty.Names) this.keep(step, before);
     this.update();
     return summary;
   }
@@ -201,6 +308,14 @@ export class Engine {
     return { format: 'map2-world', version: this.world.settings.globe ? 3 : 2, settings: this.world.settings, commands: this.done.map((h) => h.cmd) };
   }
 
+  // 自动保存：savedIds 是已存的步的编号。返回与它相同的前缀之后的命令（撤销、换一个只改动最后几步）
+  docTail(savedIds: number[]): DocTail {
+    let from = 0;
+    while (from < savedIds.length && from < this.done.length && savedIds[from] === this.done[from].id) from++;
+    const { commands: _, ...head } = this.toDoc();
+    return { ...head, from, commands: this.done.slice(from).map((h) => h.cmd), ids: this.done.map((h) => h.id) };
+  }
+
   static fromDoc(doc: WorldDoc, mesh?: Mesh): Engine {
     if (doc.format !== 'map2-world') throw new CommandError('不是 map2 世界文件');
     if (doc.version !== 2 && doc.version !== 3) throw new CommandError('这是旧版本的世界文件，与当前版本的地形模型不兼容');
@@ -217,18 +332,62 @@ export class Engine {
     return engine;
   }
 
-  // 预览：在世界的副本上执行命令，返回与当前结果的差异，不改变当前状态
+  // 预览：在世界的副本上执行命令，返回与当前结果的差异，不改变当前状态。副本留到下一次改动，
+  // 紧接着执行同一条命令时直接采用
   preview(cmd: Command): PreviewResult {
-    const current = this.world;
     this.update();
-    const copy = new Engine(current.settings, current.mesh);
-    copy.world = cloneWorld(current);
-    copy.base = this.base;
-    copy.dirty = Dirty.None;
+    const copy = this.clone();
     copy.applyOnly(cmd);
     copy.update();
-    return diffWorlds(current, copy.world);
+    this.lastPreview = { key: JSON.stringify(cmd), copy };
+    return diffWorlds(this.world, copy.world);
   }
+
+  // 采用预览算好的结果：只用于只改小数据的命令（画河、改道），原因数组不变，世界对象也不换
+  // （地形底图缓存按世界对象存）。返回这一步的说明；用不上时返回 null
+  private adoptPreview(cmd: Command): string | null {
+    const p = this.lastPreview;
+    this.lastPreview = null;
+    if (!p || this.dirty !== Dirty.None || p.key !== JSON.stringify(cmd)) return null;
+    const step = p.copy.done[p.copy.done.length - 1];
+    if (!step || step.undo.arrays.length || step.undo.fields.length) return null;
+    this.world.small = p.copy.world.small;
+    this.done.push({ id: ++this.seq, cmd: step.cmd, undo: step.undo, summary: step.summary, dirty: step.dirty });
+    this.dropUndone();
+    // 换下来的推导不再被改动，直接留给撤销
+    if (step.dirty > Dirty.Names && this.undoCache > 0) this.keep(this.done[this.done.length - 1], this.current());
+    this.install({ derived: p.copy.world.derived, base: p.copy.base, solve: p.copy.solve, timings: p.copy.lastTimings });
+    this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
+    this.lastNoop = false;
+    return step.summary;
+  }
+
+  // 副本：原因、推导、小数据都复制，历史照旧（撤销记录里的数组只读，自定义场的旧数组会被放回世界，另外复制）。
+  // 不经过构造函数（构造函数要为空白世界组合一遍地形）
+  clone(): Engine {
+    const e = Object.create(Engine.prototype) as Engine;
+    e.world = cloneWorld(this.world);
+    e.base = this.base;
+    e.solve = this.solve;
+    e.dirty = this.dirty;
+    e.seq = this.seq;
+    e.done = this.done.map((h) => ({ id: h.id, cmd: h.cmd, summary: h.summary, dirty: h.dirty, undo: { ...h.undo, fields: h.undo.fields.map((f) => ({ name: f.name, old: f.old && f.old.slice() })) } }));
+    e.undone = this.undone.map((h) => ({ cmd: h.cmd, summary: h.summary }));
+    e.kept = [];
+    e.undoCache = this.undoCache;
+    e.recomputed = Dirty.None;
+    e.lastNoop = false;
+    e.lastPreview = null;
+    e.lastTimings = this.lastTimings;
+    return e;
+  }
+}
+
+export interface DocTail extends Omit<WorldDoc, 'commands'> {
+  // 从第 from 条起的命令；ids 是全部步的编号
+  from: number;
+  commands: Command[];
+  ids: number[];
 }
 
 export interface PreviewResult {
@@ -277,26 +436,30 @@ function diffWorlds(a: World, b: World): PreviewResult {
   return { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: b.derived.conflicts.length, satisfied };
 }
 
+// 复制时用展开（与原对象同形），逐个赋值会让对象退化成字典模式，之后每次读写都变慢
 function cloneCauses(c: Causes, fields: Record<string, Float32Array>): Causes {
-  const out = {} as Causes;
-  for (const [k, v] of Object.entries(c)) (out as unknown as Record<string, unknown>)[k] = ArrayBuffer.isView(v) ? (v as Float32Array).slice() : v;
+  const out = { ...c };
+  for (const [k, v] of Object.entries(out)) if (ArrayBuffer.isView(v)) (out as unknown as Record<string, unknown>)[k] = (v as Float32Array).slice();
   out.fields = fields;
+  return out;
+}
+
+// 推导的副本：数组都复制；地物、冲突列表照旧共用（之后的完整重算总是换上新的）
+function copyDerived(d: Derived): Derived {
+  const out = { ...d };
+  for (const [k, v] of Object.entries(out)) if (ArrayBuffer.isView(v)) (out as unknown as Record<string, unknown>)[k] = (v as Float32Array).slice();
+  const corrF: Record<string, Float32Array> = {};
+  for (const [k, v] of Object.entries(d.corrF)) corrF[k] = v.slice();
+  out.corrF = corrF;
   return out;
 }
 
 export function cloneWorld(w: World): World {
   const c = w.causes;
-  const d = w.derived;
   const fields: Record<string, Float32Array> = {};
   for (const [k, v] of Object.entries(c.fields)) fields[k] = v.slice();
-  const corrF: Record<string, Float32Array> = {};
-  for (const [k, v] of Object.entries(d.corrF)) corrF[k] = v.slice();
-  const derived = {} as Derived;
-  for (const [k, v] of Object.entries(d)) {
-    (derived as unknown as Record<string, unknown>)[k] = ArrayBuffer.isView(v) ? (v as Float32Array).slice() : v;
-  }
-  derived.corrF = corrF;
-  derived.conflicts = structuredClone(d.conflicts);
+  const derived = copyDerived(w.derived);
+  derived.conflicts = structuredClone(w.derived.conflicts);
   return {
     settings: w.settings,
     mesh: w.mesh,

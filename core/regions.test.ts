@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Engine } from './engine';
+import { continents as sharedContinents } from './testing/fixtures';
 import { featuresCsv } from './export';
 import { guessRegionKind } from './features';
 import { findCell } from './mesh';
@@ -7,11 +8,7 @@ import { ringCells } from './select';
 
 // 第五轮：用户自己圈的地名区块、放的点状地名
 
-function continents(cells = 12000) {
-  const eng = new Engine({ cells, seed: 1, latNorth: 72, latSouth: 20 });
-  eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  return eng;
-}
+const continents = () => sharedContinents();
 
 // 以 (cx, cy) 为中心、半轴 rx × ry 的椭圆圈
 const ellipse = (cx: number, cy: number, rx: number, ry: number): [number, number][] =>

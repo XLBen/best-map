@@ -19,7 +19,7 @@ import {
   planetSettings,
   settingsAt,
 } from '../../core/presets';
-import { loadDoc, newWorld, readAutosave, thumbnails, wizardOpen, world } from '../state';
+import { autosaved, loadDoc, newWorld, readAutosave, thumbnails, wizardOpen, world } from '../state';
 import { resetTools } from './defs/tools';
 
 // 新建向导：先选一块地区还是整个星球。
@@ -121,7 +121,7 @@ export function Wizard() {
   const [thumbs, setThumbs] = useState<(Uint8ClampedArray | null)[]>(Array(COUNT).fill(null));
   const [creating, setCreating] = useState(false);
   const request = useRef(0);
-  const saved = !world.value ? readAutosave() : null;
+  const savedAt = !world.value ? autosaved.value : null;
 
   const seeds = Array.from({ length: COUNT }, (_, k) => (base + k * 7919) % 0xffffffff);
   const planet = PLANET_TYPES.find((t) => t.key === ptype)!;
@@ -175,15 +175,16 @@ export function Wizard() {
             </button>
           )}
         </div>
-        {saved && (
+        {savedAt !== null && (
           <div class="box resume">
-            <span>上次的世界自动保存在这个浏览器里（{new Date(saved.savedAt).toLocaleString()}）。</span>
+            <span>上次的世界自动保存在这个浏览器里（{new Date(savedAt).toLocaleString()}）。</span>
             <button
               class="primary"
               disabled={creating}
               onClick={async () => {
                 setCreating(true);
-                const ok = await loadDoc(saved.doc);
+                const saved = await readAutosave();
+                const ok = saved ? await loadDoc(saved.doc) : false;
                 setCreating(false);
                 if (ok) wizardOpen.value = false;
               }}

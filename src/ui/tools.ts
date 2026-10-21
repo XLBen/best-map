@@ -30,6 +30,7 @@ import type { Shape } from '../render/overlay';
 import {
   type Again,
   busy,
+  cancelPreviews,
   exec,
   focusName,
   focusSpecies,
@@ -1053,6 +1054,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (!w || !d || committing) return;
       const p = planNow(w);
       resetExact();
+      cancelPreviews();
       const fail = (text: string, error = true) => {
         drag = null;
         showToast(text, error);
@@ -1072,6 +1074,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     cancel() {
       if (!committing) drag = null;
       resetExact();
+      cancelPreviews();
     },
     preview() {
       const w = world.value;

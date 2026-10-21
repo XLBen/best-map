@@ -4,8 +4,9 @@ import type { PreviewResult, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
+import { viewOf } from '../core/sphere';
 import { type IslandKind, type TerrainPatch, defaultIslandKm, roundKm } from '../core/terrain';
-import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey } from '../core/world';
+import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import type { LightSnapshot, Request, Response, Snapshot } from './protocol';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态
@@ -154,24 +155,54 @@ export interface Reference {
 }
 export const reference = signal<Reference | null>(null);
 
-function idb<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+// IndexedDB：'kv' 存参考图、自动保存的设置与条数；'autosave' 按序号存自动保存的每一条命令
+function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open('map2', 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('kv');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
+    const open = indexedDB.open('map2', 2);
+    open.onupgradeneeded = () => {
       const db = open.result;
-      const req = run(db.transaction('kv', mode).objectStore('kv'));
-      req.onsuccess = () => {
-        resolve(req.result as T);
-        db.close();
-      };
-      req.onerror = () => {
-        reject(req.error);
-        db.close();
-      };
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      if (!db.objectStoreNames.contains('autosave')) db.createObjectStore('autosave');
     };
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => resolve(open.result);
   });
+}
+
+function idb<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+  return openDb().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const req = run(db.transaction('kv', mode).objectStore('kv'));
+        req.onsuccess = () => {
+          resolve(req.result as T);
+          db.close();
+        };
+        req.onerror = () => {
+          reject(req.error);
+          db.close();
+        };
+      }),
+  );
+}
+
+// 一个读写事务里做几件事，整个事务提交后才算成功（自动保存要么全写进去，要么都不写）
+function idbTx(run: (kv: IDBObjectStore, autosave: IDBObjectStore) => void): Promise<void> {
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(['kv', 'autosave'], 'readwrite');
+        run(tx.objectStore('kv'), tx.objectStore('autosave'));
+        tx.oncomplete = () => {
+          resolve();
+          db.close();
+        };
+        tx.onerror = tx.onabort = () => {
+          reject(tx.error);
+          db.close();
+        };
+      }),
+  );
 }
 
 type StoredReference = Omit<Reference, 'url'>;
@@ -339,6 +370,19 @@ function meshFor(s: Settings): Mesh {
   return meshCache.mesh;
 }
 
+// 新建、打开时：Worker 在算的同时，主线程先建好自己的网格（整个星球还有显示用的三角网），
+// 不必等 Worker 算完再建。先让出一帧，“正在生成”的提示先画出来
+function prebuildMesh(settings: Partial<Settings>) {
+  setTimeout(() => {
+    try {
+      const mesh = meshFor(settingsSchema.parse(settings));
+      if (mesh.kind === 'sphere') viewOf(mesh).polygons();
+    } catch {
+      // 设置无效时 Worker 会报错，这里不管
+    }
+  }, 0);
+}
+
 // 轻快照：推导数组沿用当前世界的（同一批数组对象，地图据此跳过重新着色）；省份没变时省份数组也沿用
 function lightWorld(prev: World, s: LightSnapshot): World {
   const old = prev.causes.province;
@@ -493,12 +537,16 @@ async function handle(r: Response, fresh = false): Promise<boolean> {
 export async function newWorld(settings: Partial<Settings>, commands: Command[]) {
   changeNote.value = null;
   flash.value = null;
-  return handle(await call({ kind: 'init', settings, commands }, '正在生成世界…'), true);
+  const r = call({ kind: 'init', settings, commands }, '正在生成世界…');
+  prebuildMesh(settings);
+  return handle(await r, true);
 }
 
 export async function loadDoc(doc: WorldDoc) {
   changeNote.value = null;
-  return handle(await call({ kind: 'load', doc }, '正在打开世界…'), true);
+  const r = call({ kind: 'load', doc }, '正在打开世界…');
+  prebuildMesh(doc.settings);
+  return handle(await r, true);
 }
 
 // “换一个”：给出下一条命令（比如换了 variant 的放岛），替换掉刚做的那一步
@@ -508,6 +556,10 @@ export type Again = { label: string; next: () => Command | null };
 export async function exec(cmd: Command, label = '正在计算…', again?: Again, action?: NoteAction): Promise<boolean> {
   const before = world.value;
   const r = await call({ kind: 'exec', cmd }, label);
+  if (r.ok && r.noop) {
+    showToast('没有变化');
+    return true;
+  }
   const ok = await handle(r);
   if (ok && r.ok) noteChange(r.summary ?? '完成', before, againAction(again, label), true, action);
   return ok;
@@ -577,8 +629,14 @@ export function previewTerrain(patch: TerrainPatch | null) {
 }
 
 // 命令的确切预览：在世界的副本上执行，返回会出现 / 消失的河等（画河改道时用）。
-// 同一时间只算一个；排队时来了新的，旧的直接得到 null
+// 同一时间只算一个；排队时来了新的，旧的直接得到 null。Worker 留着算好的副本，紧接着执行同一条命令时直接采用
 let cmdPending: { cmd: Command; resolve: (r: PreviewResult | null) => void } | null = null;
+
+// 不再需要的预览（松手提交了、取消了）：还在排队的直接作废，不再发给 Worker
+export function cancelPreviews() {
+  cmdPending?.resolve(null);
+  cmdPending = null;
+}
 let cmdBusy = false;
 export function previewCommand(cmd: Command): Promise<PreviewResult | null> {
   return new Promise((resolve) => {
@@ -633,30 +691,92 @@ export function download(name: string, data: Uint8Array | string | Blob, type: s
 }
 
 // ---------- 自动保存（只存在本浏览器里） ----------
+// 存在 IndexedDB：结构化克隆，不必转成 JSON，也没有 localStorage 约 5 MB 的上限（以前画多了会存不下、
+// 之后悄悄不再保存）。每次只写变了的那些命令（撤销、换一个只改动最后几步）。IndexedDB 用不了时退回 localStorage
 
 const AUTOSAVE_KEY = 'map2.autosave';
+interface AutosaveMeta extends Omit<WorldDoc, 'commands'> {
+  savedAt: number;
+  count: number;
+}
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveWarned = false;
+// 已写进 IndexedDB 的步的编号、属于哪一个世界（新建、打开后从头写）
+let savedIds: number[] = [];
+let savedEpoch = -1;
+let savedCount = -1;
 
+// 上次自动保存的时间（向导里“继续上次的世界”用）；没有时为 null
+export const autosaved = signal<number | null>(null);
+
+// 一次只写一份：前一次还没写完时，接在它后面
+let autosaving: Promise<void> = Promise.resolve();
 function scheduleAutosave() {
   if (autosaveTimer) clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(async () => {
+  autosaveTimer = setTimeout(() => (autosaving = autosaving.then(autosave)), 1500);
+}
+
+async function autosave() {
+  if (savedEpoch !== worldEpoch.value) {
+    savedIds = [];
+    savedEpoch = worldEpoch.value;
+  }
+  const epoch = savedEpoch;
+  const r = await call({ kind: 'docTail', ids: savedIds }, null);
+  if (!r.ok || !r.tail || epoch !== worldEpoch.value) return;
+  const { from, commands, ids, ...head } = r.tail;
+  const meta: AutosaveMeta = { ...head, savedAt: Date.now(), count: ids.length };
+  try {
+    if (savedCount < 0) savedCount = ((await idb<AutosaveMeta | undefined>('readonly', (s) => s.get('autosave')))?.count ?? 0) as number;
+    const stale = savedCount;
+    await idbTx((kv, store) => {
+      commands.forEach((c, k) => store.put(c, from + k));
+      if (stale > meta.count) store.delete(IDBKeyRange.bound(meta.count, stale - 1));
+      kv.put(meta, 'autosave');
+    });
+    if (epoch === worldEpoch.value) savedIds = ids;
+    savedCount = meta.count;
+    autosaved.value = meta.savedAt;
+    // 旧版存在 localStorage 里的：已经搬过来了
+    localStorage.removeItem(AUTOSAVE_KEY);
+  } catch {
+    // IndexedDB 用不了（比如隐私模式）：整份存进 localStorage
     const doc = await getDoc();
     if (!doc) return;
     try {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: Date.now(), doc }));
+      autosaved.value = Date.now();
     } catch {
       if (!autosaveWarned) showToast('世界太大，浏览器存不下自动保存；记得在“世界 → 保存世界文件”里手动保存', true);
       autosaveWarned = true;
     }
-  }, 1500);
+  }
 }
 
-export function readAutosave(): { savedAt: number; doc: WorldDoc } | null {
+// 读上次的自动保存：IndexedDB 与（旧版的）localStorage 里较新的那一份
+export async function readAutosave(): Promise<{ savedAt: number; doc: WorldDoc } | null> {
+  let best: { savedAt: number; doc: WorldDoc } | null = null;
+  try {
+    const db = await openDb();
+    const tx = db.transaction(['kv', 'autosave'], 'readonly');
+    const get = <T>(req: IDBRequest) => new Promise<T>((resolve, reject) => ((req.onsuccess = () => resolve(req.result as T)), (req.onerror = () => reject(req.error))));
+    const meta = await get<AutosaveMeta | undefined>(tx.objectStore('kv').get('autosave'));
+    if (meta && meta.count > 0) {
+      const commands = await get<Command[]>(tx.objectStore('autosave').getAll(IDBKeyRange.bound(0, meta.count - 1)));
+      const { savedAt, count, ...head } = meta;
+      if (commands.length === count) best = { savedAt, doc: { ...head, commands } };
+    }
+    db.close();
+  } catch {
+    // 读不了就看 localStorage
+  }
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
-    return raw ? (JSON.parse(raw) as { savedAt: number; doc: WorldDoc }) : null;
+    const old = raw ? (JSON.parse(raw) as { savedAt: number; doc: WorldDoc }) : null;
+    if (old && (!best || old.savedAt > best.savedAt)) best = old;
   } catch {
-    return null;
+    // 坏了就当没有
   }
+  autosaved.value = best?.savedAt ?? null;
+  return best;
 }

@@ -4,11 +4,28 @@ import { Engine } from '../core/engine';
 import { exportPackage } from '../core/export';
 import { previewTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
+import type { Mesh } from '../core/mesh';
+import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
 import type { LightSnapshot, Request, Response, Snapshot } from './protocol';
 
 // 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程
 
 let engine: Engine | null = null;
+
+// 网格缓存：当前世界的网格和向导缩略图用的小网格（同一个大小、种子再新建或打开时不必重建）
+const meshes = new Map<string, Mesh>();
+function meshFor(raw: Partial<Settings>): Mesh {
+  const s = settingsSchema.parse(raw);
+  const key = meshKey(s);
+  let m = meshes.get(key);
+  if (m) meshes.delete(key);
+  else m = buildMeshFor(s);
+  meshes.set(key, m);
+  // 大网格（连同挂在它上面的缓存有几十 MB）只留最近用的一个；缩略图的小网格最多留两个
+  if (m.n > 5000) for (const [k, v] of meshes) if (k !== key && v.n > 5000) meshes.delete(k);
+  while (meshes.size > 3) meshes.delete(meshes.keys().next().value!);
+  return m;
+}
 
 function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
   const w = e.world;
@@ -77,20 +94,24 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
     };
     switch (req.kind) {
       case 'init': {
-        engine = new Engine(req.settings);
+        engine = new Engine(req.settings, meshFor(req.settings));
         for (const cmd of req.commands ?? []) engine.exec(cmd);
         engine.update();
         withSnap('新世界');
         return;
       }
       case 'load': {
-        engine = Engine.fromDoc(req.doc);
+        engine = Engine.fromDoc(req.doc, meshFor(req.doc.settings));
         withSnap('已打开世界文件');
         return;
       }
-      case 'exec':
-        withSnap(engine!.exec(req.cmd), true);
+      case 'exec': {
+        const summary = engine!.exec(req.cmd);
+        // 什么都没改（比如在陆地上画陆地）：世界不变，不发快照
+        if (engine!.lastNoop) reply({ id, ok: true, summary, noop: true });
+        else withSnap(summary, true);
         return;
+      }
       case 'undo':
         engine!.undo();
         withSnap('撤销', true);
@@ -116,12 +137,14 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
       case 'doc':
         reply({ id, ok: true, doc: engine!.toDoc() });
         return;
+      case 'docTail':
+        reply({ id, ok: true, tail: engine!.docTail(req.ids) });
+        return;
       case 'thumbs': {
         const thumbs: Uint8ClampedArray[] = [];
-        let mesh: Engine['world']['mesh'] | undefined;
+        const mesh = meshFor({ ...req.settings, cells: 4000 });
         for (const gen of req.gens) {
           const e = new Engine({ ...req.settings, cells: 4000 }, mesh);
-          mesh = e.world.mesh;
           e.exec({ op: 'set_worldgen', params: gen, reset: true });
           thumbs.push(renderThumbnail(e.world, req.width, req.height));
         }

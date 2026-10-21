@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Engine } from './engine';
+import { continents as sharedContinents } from './testing/fixtures';
 import { findCell, graphDistance } from './mesh';
 import { brushCells, cutProvinces, provinceCells } from './select';
 import { previewLand, restoreStroke } from './terrain';
@@ -7,12 +8,7 @@ import type { World } from './world';
 
 // 第五轮：恢复原样（地形、气候的橡皮擦）、剪刀沿线切省、最小的笔刷正好一格
 
-function continents(cells = 12000) {
-  const eng = new Engine({ cells, seed: 1, latNorth: 72, latSouth: 20 });
-  eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
-  return eng;
-}
+const continents = () => sharedContinents({ provinces: true });
 
 // 一个圆形笔画：中心 t = 0，往外到 1
 function disc(w: World, center: number, radiusCells: number) {

@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "test:fast": "vitest run --exclude core/planet.test.ts --exclude core/terrain.test.ts --exclude core/sizing.test.ts --exclude core/planet-climate.test.ts",
+    "golden": "vitest run core/golden",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

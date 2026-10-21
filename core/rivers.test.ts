@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashArray } from '../tools/hash';
 import { Engine } from './engine';
+import { continents as sharedContinents } from './testing/fixtures';
 import { findCell } from './mesh';
 import { hashString } from './names';
 import { isRiverCell, lassoBandKm, lassoStroke, planRiver, traceRiver } from './select';
@@ -69,11 +70,7 @@ describe('旧存档', () => {
   });
 });
 
-function continents(cells = 12000) {
-  const eng = new Engine({ cells, seed: 1, latNorth: 72, latSouth: 20 });
-  eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  return eng;
-}
+const continents = () => sharedContinents();
 
 const isWater = (w: World, i: number) => !w.causes.land[i] || w.derived.lake[i] === 1;
 

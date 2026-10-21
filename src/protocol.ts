@@ -1,5 +1,5 @@
 import type { Command } from '../core/commands';
-import type { PreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { DocTail, PreviewResult, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { TerrainPatch, TerrainPreview } from '../core/terrain';
@@ -21,6 +21,8 @@ export type Request =
   | { kind: 'replaceLast'; cmd: Command }
   | { kind: 'export'; opts: ExportOptions }
   | { kind: 'doc' }
+  // 自动保存：只要已存的步之后变了的命令
+  | { kind: 'docTail'; ids: number[] }
   // 新建向导：用少量格子快速生成几张缩略图
   | { kind: 'thumbs'; settings: Partial<Settings>; gens: WorldgenInput[]; width: number; height: number };
 
@@ -52,11 +54,14 @@ export type Response =
       id: number;
       ok: true;
       summary?: string;
+      // 命令什么都没改：没有快照，也没有进历史
+      noop?: boolean;
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
       terrain?: TerrainPreview;
       zip?: Uint8Array;
       doc?: WorldDoc;
+      tail?: DocTail;
       thumbs?: Uint8ClampedArray[];
     }
   | { id: number; ok: false; error: string };

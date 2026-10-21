@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { lakeArea } from './elevation';
 import { endemicSpecies } from './endemic';
 import { Engine } from './engine';
+import { continents as sharedContinents } from './testing/fixtures';
 import { exportPackage } from './export';
 import { provinceSizes } from './provinces';
 import { isRiverCell, planRiver, provinceCells } from './select';
@@ -13,11 +14,7 @@ import type { World } from './world';
 // 第二轮迭代的编辑规则：省份可配置且稳定、地名不乱跳、画河与放湖所见即所得、
 // 涂生态“涂到的就是”、岛屿特有生态、导出地名表
 
-function continents(cells = 12000, latNorth = 72, latSouth = 20) {
-  const eng = new Engine({ cells, seed: 1, latNorth, latSouth });
-  eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  return eng;
-}
+const continents = (cells = 12000, latNorth = 72, latSouth = 20) => sharedContinents({ cells, latNorth, latSouth });
 
 const landCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => isVegetated(w, w.derived, i));
 const provinceSnapshot = (w: World) => {

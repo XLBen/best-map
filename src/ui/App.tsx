@@ -97,19 +97,22 @@ const SEEN_HELP = 'map2.seenHelp';
 
 export function App() {
   useEffect(() => {
-    const saved = readAutosave();
     if (location.hash === '#demo') {
       void newWorld(settingsFor('region', 'tropical', 40000), [
         { op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true },
         { op: 'generate_provinces', rules: { seed: 3 } },
       ]);
-    } else if (saved) {
-      // 回来接着做：直接打开上次的世界；打不开（比如版本变了）再弹向导
-      void loadDoc(saved.doc).then((ok) => {
-        if (ok) showToast('已打开上次的世界');
-        else wizardOpen.value = true;
+    } else {
+      void readAutosave().then((saved) => {
+        // 回来接着做：直接打开上次的世界；打不开（比如版本变了）再弹向导
+        if (!saved) wizardOpen.value = true;
+        else
+          void loadDoc(saved.doc).then((ok) => {
+            if (ok) showToast('已打开上次的世界');
+            else wizardOpen.value = true;
+          });
       });
-    } else wizardOpen.value = true;
+    }
     void loadReference();
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('mousedown', onMouseDownCapture, true);

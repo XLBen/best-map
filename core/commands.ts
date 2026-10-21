@@ -207,7 +207,8 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   }
 }
 
-export function applyCommand(world: World, raw: Command, ctx: ApplyContext): { dirty: Dirty; summary: string; undo: UndoRecord } {
+// changed：命令有没有改动原因或小数据（没改动时推导也不会变）
+export function applyCommand(world: World, raw: Command, ctx: ApplyContext): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean } {
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
@@ -235,7 +236,8 @@ export function applyCommand(world: World, raw: Command, ctx: ApplyContext): { d
   });
   const names = new Set([...Object.keys(fieldsBefore), ...Object.keys(world.causes.fields)]);
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
-  return { ...result, undo };
+  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || JSON.stringify(world.small) !== smallBefore;
+  return { ...result, undo, changed };
 }
 
 export function revert(world: World, undo: UndoRecord) {
