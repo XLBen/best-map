@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { MinHeap } from './heap';
 import { graphDistanceOwner, ringDistance } from './mesh';
 import { DEFAULT_PACK, generateName, hashString } from './names';
 import { mixSeed, mulberry32 } from './rng';
-import type { Derived, World } from './world';
+import type { Derived, ProvinceMeta, World } from './world';
 
 // 省份 = 格的聚类。自动划分用加权区域生长：跨河、跨山脊代价高，所以边界自然贴着河与山脊；不跨海岸。
 // 规则可配置：大小（小 · 中 · 大）、按地形调整大小、无人区、湖省、近海小远洋大。
@@ -150,6 +151,17 @@ function densityFactors(world: World, d: Derived, rules: ProvinceRules, cls: Uin
   return f;
 }
 
+// 两个升序的格列表合成一个升序列表
+function mergeSorted(a: number[], b: number[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) out.push(a[i] < b[j] ? a[i++] : b[j++]);
+  while (i < a.length) out.push(a[i++]);
+  while (j < b.length) out.push(b[j++]);
+  return out;
+}
+
 // 在 region 里的格上重新划分（region 外的省份不动），新省份用新编号；返回新省份的编号
 function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8Array, salt: number): number[] {
   const { mesh, causes, small } = world;
@@ -215,7 +227,13 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
     small.provinces[id] = { name: '', locked: false, land: causes.land[s] === 1, kind: KIND_OF_CLASS[cls[s]] };
     fresh.push(id);
   }
-  for (let i = 0; i < n; i++) if (region[i]) province[i] = owner[i] >= 0 ? seedToProvince.get(owner[i])! : -1;
+  // 顺便记下每个新省份的格（按编号升序），下面算边界、并入都只走这些格
+  const cellsOf = new Map<number, number[]>(fresh.map((id) => [id, []]));
+  for (let i = 0; i < n; i++) {
+    if (!region[i]) continue;
+    province[i] = owner[i] >= 0 ? seedToProvince.get(owner[i])! : -1;
+    if (province[i] >= 0) cellsOf.get(province[i])!.push(i);
+  }
 
   // 太小的新省份并入共享边界最长的同类新省份（不碰区域外的省份）
   const freshSet = new Set(fresh);
@@ -229,9 +247,9 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
     const size = sizes.get(id) ?? 0;
     const s = seedOf.get(id)!;
     if (size >= baseOf(s) * dens[s] * 0.3) continue;
+    const own = cellsOf.get(id)!;
     const border = new Map<number, number>();
-    for (let i = 0; i < n; i++) {
-      if (province[i] !== id) continue;
+    for (const i of own) {
       for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
         const p = province[mesh.adj[e]];
         if (p >= 0 && p !== id && freshSet.has(p) && small.provinces[p]?.kind === meta.kind) border.set(p, (border.get(p) ?? 0) + mesh.edgeLen[e]);
@@ -246,7 +264,9 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
       }
     }
     if (best < 0) continue;
-    for (let i = 0; i < n; i++) if (province[i] === id) province[i] = best;
+    for (const i of own) province[i] = best;
+    cellsOf.set(best, mergeSorted(cellsOf.get(best)!, own));
+    cellsOf.delete(id);
     sizes.set(best, (sizes.get(best) ?? 0) + size);
     sizes.delete(id);
     delete small.provinces[id];
@@ -322,38 +342,79 @@ export function fillUnassigned(world: World) {
   const sizes = provinceSizes(world);
   const targets = provinceTargets(world, small.provinceRules);
   const target = (land: boolean) => (land ? targets.land : targets.sea);
-  let changed = true;
+  // 一格并入相邻的同类、未锁定、不太大的省份里最小的那个；并不进去返回 false
+  const join = (i: number): boolean => {
+    const land = causes.land[i] === 1;
+    let best = -1;
+    let bestSize = Infinity;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const p = province[mesh.adj[e]];
+      if (p < 0) continue;
+      const meta = small.provinces[p];
+      if (!meta || meta.locked || meta.land !== land) continue;
+      const sz = sizes.get(p) ?? 0;
+      if (sz < target(land) * 1.5 && sz < bestSize) {
+        best = p;
+        bestSize = sz;
+      }
+    }
+    if (best < 0) return false;
+    province[i] = best;
+    sizes.set(best, bestSize + 1);
+    return true;
+  };
+  // 结果等于“按编号一遍遍整体重扫，直到不再变化”，但只看可能变化的格：省份只会变大，
+  // 一格这一遍并不进去，下一遍也并不进去，除非其间有邻格有了省份（邻接是对称的）。
+  // 格 j 有了省份时：编号比 j 大的未归属邻格这一遍还会轮到，小的留到下一遍；每一遍仍按编号从小到大
+  const queued = new Int32Array(n);
+  const heap = new MinHeap();
+  let pass = 1;
+  let later: number[] = [];
+  const wake = (j: number) => {
+    for (let e = mesh.off[j]; e < mesh.off[j + 1]; e++) {
+      const i = mesh.adj[e];
+      if (province[i] >= 0) continue;
+      if (i < j) {
+        if (queued[i] !== pass + 1) {
+          queued[i] = pass + 1;
+          later.push(i);
+        }
+      } else if (pass > 1 && queued[i] !== pass) {
+        queued[i] = pass;
+        heap.push(i, i);
+      }
+    }
+  };
+  // 第一遍逐格看
+  let changed = false;
+  for (let i = 0; i < n; i++) {
+    if (province[i] < 0 && join(i)) {
+      changed = true;
+      wake(i);
+    }
+  }
   while (changed) {
     changed = false;
-    for (let i = 0; i < n; i++) {
-      if (province[i] >= 0) continue;
-      const land = causes.land[i] === 1;
-      let best = -1;
-      let bestSize = Infinity;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        const p = province[mesh.adj[e]];
-        if (p < 0) continue;
-        const meta = small.provinces[p];
-        if (!meta || meta.locked || meta.land !== land) continue;
-        const sz = sizes.get(p) ?? 0;
-        if (sz < target(land) * 1.5 && sz < bestSize) {
-          best = p;
-          bestSize = sz;
-        }
-      }
-      if (best >= 0) {
-        province[i] = best;
-        sizes.set(best, bestSize + 1);
+    pass++;
+    for (const i of later) heap.push(i, i);
+    later = [];
+    while (heap.size) {
+      const i = heap.pop();
+      if (province[i] < 0 && join(i)) {
         changed = true;
+        wake(i);
       }
     }
   }
   // 剩余成片区域：按目标大小切成新省份
+  // 已用的名字只在第一次起名时收集一次，之后每起一个名字就加进去（与每次重新收集的结果相同）
+  let taken: Set<string> | null = null;
   for (let i = 0; i < n; i++) {
     if (province[i] >= 0) continue;
     const land = causes.land[i] === 1;
     const id = small.nextProvince++;
-    small.provinces[id] = { name: '', locked: false, land, kind: land ? 'land' : 'sea' };
+    const meta: ProvinceMeta = { name: '', locked: false, land, kind: land ? 'land' : 'sea' };
+    small.provinces[id] = meta;
     const queue = [i];
     province[i] = id;
     let count = 1;
@@ -368,8 +429,13 @@ export function fillUnassigned(world: World) {
         }
       }
     }
-    // 格都划好之后再起名，名字才能按省内地形取字
-    nameNewProvince(world, id);
+    // 格都划好之后再起名，名字才能按省内地形取字。新编号此前没有格用过，队列里正是这个省份的格；
+    // 按编号排好，取字时的累加顺序与扫全图收集时相同
+    taken ??= takenNames(world);
+    queue.sort((a, b) => a - b);
+    meta.name = provinceName(world, id, queue, meta.kind, taken);
+    // 空名字不算已用（重新收集时会被滤掉）
+    if (!meta.name) taken.delete('');
   }
 }
 
@@ -464,9 +530,14 @@ function cellsByProvince(world: World): Map<number, number[]> {
   return m;
 }
 
+// 已用的省份名
+function takenNames(world: World): Set<string> {
+  return new Set(Object.values(world.small.provinces).map((p) => p.name).filter(Boolean));
+}
+
 function nameProvinces(world: World, ids: number[]) {
   const byId = cellsByProvince(world);
-  const taken = new Set(Object.values(world.small.provinces).map((p) => p.name).filter(Boolean));
+  const taken = takenNames(world);
   for (const id of ids) {
     const meta = world.small.provinces[id];
     if (!meta || meta.name) continue;
@@ -479,8 +550,7 @@ export function nameNewProvince(world: World, id: number) {
   if (!meta || meta.name) return;
   const cells: number[] = [];
   for (let i = 0; i < world.causes.province.length; i++) if (world.causes.province[i] === id) cells.push(i);
-  const taken = new Set(Object.values(world.small.provinces).map((p) => p.name).filter(Boolean));
-  meta.name = provinceName(world, id, cells, meta.kind, taken);
+  meta.name = provinceName(world, id, cells, meta.kind, takenNames(world));
 }
 
 export interface ProvinceSummary {
