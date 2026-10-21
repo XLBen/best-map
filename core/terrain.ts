@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { type BaseComponents, type GenModel, buildModel, coneFields, sampleComponents } from './generate';
+import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, sampleComponents, withParams } from './generate';
 import { type V3, arc, fromUnit, localOffset, slerp, toUnit, wrapX } from './geo';
-import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, samplePlanetComponents } from './planet-gen';
+import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, samplePlanetComponents, withPlanetParams } from './planet-gen';
 import type { Mesh, SphereMesh } from './mesh';
 import { clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
 import type { World } from './world';
@@ -25,7 +25,7 @@ interface ConeField {
 interface SeaOrder {
   rough: number;
   eff: Float64Array;
-  order: number[];
+  order: Int32Array;
   cum: Float64Array;
   total: number;
   max: number;
@@ -33,11 +33,15 @@ interface SeaOrder {
 
 interface BaseCache {
   key: string;
+  // 不含重画的部分与网格：只有重画变了时只重算重画圈里的格
+  shapeKey: string;
+  mesh: Mesh;
   model: GenModel | PlanetModel | null;
   components: BaseComponents | null;
   // 按火山锥个数缓存几份（拖“岛多少”时来回切换不用重算）
   cones: Map<number, ConeField>;
-  sea: SeaOrder | null;
+  // 留两份，最近用的在前：拖“海岸破碎度”时世界本身（旧值）与预览（新值）交替要用
+  sea: SeaOrder[];
   landness: Float32Array;
   uplift: Float32Array;
   erod: Float32Array;
@@ -94,16 +98,36 @@ export function ensureBase(world: World): BaseCache {
   const gen = world.small.terrain.gen;
   const n = mesh.n;
   const sampleKey = gen ? JSON.stringify({ seed: gen.seed, type: gen.type, rerolls: gen.rerolls, n, w: mesh.width }) : `blank:${n}`;
+  const shapeKey = gen ? JSON.stringify({ seed: gen.seed, type: gen.type, n, w: mesh.width }) : sampleKey;
   let cache = baseCache.get(world);
   if (!cache || cache.key !== sampleKey) {
-    // 整个星球用球面版本的生成器（planet-gen.ts）
-    const model = !gen ? null : mesh.kind === 'sphere' ? buildPlanetModel(gen) : buildModel(gen, mesh.width, mesh.height);
+    const old = cache;
+    let model: GenModel | PlanetModel | null;
+    let components: BaseComponents | null;
+    let cones = new Map<number, ConeField>();
+    if (gen && old && old.model && old.components && old.shapeKey === shapeKey && old.mesh === mesh) {
+      // 只有重画变了（重画一片、撤销、重做）：模型与火山锥照用，只重算新旧两组不同的那些重画圈里的格
+      model = old.model.kind === 'planet' ? withPlanetParams(old.model, gen) : withParams(old.model, gen);
+      const was = old.model.params.rerolls;
+      const now = model.params.rerolls;
+      let p = 0;
+      while (p < was.length && p < now.length && sameReroll(was[p], now[p])) p++;
+      const re = { from: old.components, changed: [...was.slice(p), ...now.slice(p)] };
+      components = model.kind === 'planet' ? samplePlanetComponents(model, mesh as SphereMesh, re) : sampleComponents(model, mesh, re);
+      cones = old.cones;
+    } else {
+      // 整个星球用球面版本的生成器（planet-gen.ts）
+      model = !gen ? null : mesh.kind === 'sphere' ? buildPlanetModel(gen) : buildModel(gen, mesh.width, mesh.height);
+      components = !model ? null : model.kind === 'planet' ? samplePlanetComponents(model, mesh as SphereMesh) : sampleComponents(model, mesh);
+    }
     cache = {
       key: sampleKey,
+      shapeKey,
+      mesh,
       model,
-      components: !model ? null : model.kind === 'planet' ? samplePlanetComponents(model, mesh as SphereMesh) : sampleComponents(model, mesh),
-      cones: new Map(),
-      sea: null,
+      components,
+      cones,
+      sea: [],
       landness: new Float32Array(n),
       uplift: new Float32Array(n),
       erod: new Float32Array(n),
@@ -123,6 +147,9 @@ export function ensureBase(world: World): BaseCache {
   cache.erod.set(comp.erod);
   return cache;
 }
+
+// 同一次重画：逐字段比（−0 与 +0 也算不同，宁可多重算几格）
+const sameReroll = (a: Reroll, b: Reroll) => Object.is(a.x, b.x) && Object.is(a.y, b.y) && Object.is(a.radius, b.radius) && Object.is(a.variant, b.variant);
 
 function composeParams(world: World, cache: BaseCache, patch: Partial<ComposeParams>): ComposeParams {
   const gen = world.small.terrain.gen!;
@@ -147,12 +174,62 @@ function conesFor(world: World, cache: BaseCache, count: number): ConeField {
   return c;
 }
 
+// 小端机器上 Float64 的高 32 位在后一个字
+const HI = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1 ? 1 : 0;
+
+// 按值从小到大排好的下标，值相等时下标小的在前：与 Array.sort((a, b) => v[a] - v[b]) 的稳定排序逐个相同（v 里没有 NaN）。
+// 基数排序：浮点数换成可按无符号整数比的 64 位键（−0 当 +0，负数全部取反、正数翻符号位），每轮 16 位，从低到高共 4 轮
+export function sortedOrder(v: Float64Array): Int32Array {
+  const n = v.length;
+  const f = new Float64Array(n);
+  // −0 + 0 = +0，其余不变
+  for (let i = 0; i < n; i++) f[i] = v[i] + 0;
+  const u = new Uint32Array(f.buffer);
+  const hi = new Uint32Array(n);
+  const lo = new Uint32Array(n);
+  for (let i = 0; i < n; i++) {
+    const h = u[2 * i + HI];
+    const l = u[2 * i + 1 - HI];
+    if (h >>> 31) {
+      hi[i] = ~h;
+      lo[i] = ~l;
+    } else {
+      hi[i] = h | 0x80000000;
+      lo[i] = l;
+    }
+  }
+  let src = new Int32Array(n);
+  let dst = new Int32Array(n);
+  for (let i = 0; i < n; i++) src[i] = i;
+  const count = new Int32Array(65536);
+  for (let pass = 0; pass < 4; pass++) {
+    const key = pass < 2 ? lo : hi;
+    const shift = pass & 1 ? 16 : 0;
+    count.fill(0);
+    for (let i = 0; i < n; i++) count[(key[i] >>> shift) & 0xffff]++;
+    // 这 16 位全都一样：这一轮不改变顺序
+    if (n === 0 || count[(key[0] >>> shift) & 0xffff] === n) continue;
+    let sum = 0;
+    for (let d = 0; d < 65536; d++) {
+      const c = count[d];
+      count[d] = sum;
+      sum += c;
+    }
+    for (let k = 0; k < n; k++) {
+      const i = src[k];
+      dst[count[(key[i] >>> shift) & 0xffff]++] = i;
+    }
+    [src, dst] = [dst, src];
+  }
+  return src;
+}
+
 // 海平面：按面积加权的分位数，只看地壳本身（不含造山带与火山锥），所以“岛多少”“山多高”不会挪动别处的海岸
 function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough: number): number {
   const { mesh } = world;
   const n = mesh.n;
-  let s = cache.sea;
-  if (!s || s.rough !== rough) {
+  let s = cache.sea.find((e) => e.rough === rough);
+  if (!s) {
     const comp = cache.components!;
     const coast = coastNoiseField(mesh, world.small.terrain.gen!.seed);
     const eff = new Float64Array(n);
@@ -161,7 +238,7 @@ function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough
       eff[i] = comp.b0[i] + COAST_AMP * rough * coast[i];
       max = Math.max(max, eff[i]);
     }
-    const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => eff[a] - eff[b]);
+    const order = sortedOrder(eff);
     let total = 0;
     for (let i = 0; i < n; i++) total += mesh.area[i];
     // 按排好的顺序逐个累加面积（与逐格累加到目标为止的写法结果相同）
@@ -171,8 +248,10 @@ function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough
       acc += mesh.area[order[k]];
       cum[k] = acc;
     }
-    s = cache.sea = { rough, eff, order, cum, total, max };
+    s = { rough, eff, order, cum, total, max };
   }
+  // 最近用的放前面，只留两份
+  if (cache.sea[0] !== s) cache.sea = [s, ...cache.sea.filter((e) => e !== s)].slice(0, 2);
   let seaLevel: number;
   if (landFraction <= 0) seaLevel = s.max + 1;
   else {

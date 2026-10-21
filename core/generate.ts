@@ -405,33 +405,62 @@ export interface BaseComponents {
   erod: Float32Array;
 }
 
-export function sampleComponents(m: GenModel, mesh: Mesh): BaseComponents {
+// 局部重算：只重算 changed 这些重画圈里的格，其余格照抄 from。
+// 圈外的格，覆盖它的重画都在新旧两组共同的前缀里（顺序也相同），所以值逐位不变
+export interface Resample {
+  from: BaseComponents;
+  changed: Reroll[];
+}
+
+export const copyComponents = (c: BaseComponents): BaseComponents => ({
+  b0: c.b0.slice(),
+  mountB: c.mountB.slice(),
+  mountU: c.mountU.slice(),
+  hillU: c.hillU.slice(),
+  erod: c.erod.slice(),
+});
+
+// 换了重画、种子与类型不变：板块、大陆块、火山锥、噪声只取决于种子与类型（和地图大小），照用，只换参数
+export function withParams(m: GenModel, input: WorldgenInput): GenModel {
+  return { ...m, params: resolvedParams(worldgenSchema.parse(input)) };
+}
+
+export function sampleComponents(m: GenModel, mesh: Mesh, re?: Resample): BaseComponents {
   const n = mesh.n;
-  const out: BaseComponents = { b0: new Float32Array(n), mountB: new Float32Array(n), mountU: new Float32Array(n), hillU: new Float32Array(n), erod: new Float32Array(n) };
+  const out: BaseComponents = re
+    ? copyComponents(re.from)
+    : { b0: new Float32Array(n), mountB: new Float32Array(n), mountU: new Float32Array(n), hillU: new Float32Array(n), erod: new Float32Array(n) };
   const rerolls = m.params.rerolls;
   for (let i = 0; i < n; i++) {
     const x = mesh.x[i];
     const y = mesh.y[i];
-    sampleInto(m, m.noise, x, y, out, i);
-    // 重画这一片：区域内换一套噪声，边缘羽化
-    for (const r of rerolls) {
-      const d = Math.hypot(x - r.x, y - r.y);
-      if (d >= r.radius) continue;
-      let ns = m.variants.get(r.variant);
-      if (!ns) {
-        ns = noiseSet(m.params.seed, r.variant);
-        m.variants.set(r.variant, ns);
-      }
-      const tmp: BaseComponents = { b0: new Float32Array(1), mountB: new Float32Array(1), mountU: new Float32Array(1), hillU: new Float32Array(1), erod: new Float32Array(1) };
-      sampleInto(m, ns, x, y, tmp, 0);
-      const w = 1 - smoothstep(0.6, 1, d / r.radius);
-      out.b0[i] += (tmp.b0[0] - out.b0[i]) * w;
-      out.mountB[i] += (tmp.mountB[0] - out.mountB[i]) * w;
-      out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
-      out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
-    }
+    // 与 sampleCell 里同一个“在圈内”的判断
+    if (re && re.changed.every((r) => Math.hypot(x - r.x, y - r.y) >= r.radius)) continue;
+    sampleCell(m, rerolls, x, y, out, i);
   }
   return out;
+}
+
+// 一格：原来的噪声，再按顺序叠上覆盖它的各次重画
+function sampleCell(m: GenModel, rerolls: Reroll[], x: number, y: number, out: BaseComponents, i: number) {
+  sampleInto(m, m.noise, x, y, out, i);
+  // 重画这一片：区域内换一套噪声，边缘羽化
+  for (const r of rerolls) {
+    const d = Math.hypot(x - r.x, y - r.y);
+    if (d >= r.radius) continue;
+    let ns = m.variants.get(r.variant);
+    if (!ns) {
+      ns = noiseSet(m.params.seed, r.variant);
+      m.variants.set(r.variant, ns);
+    }
+    const tmp: BaseComponents = { b0: new Float32Array(1), mountB: new Float32Array(1), mountU: new Float32Array(1), hillU: new Float32Array(1), erod: new Float32Array(1) };
+    sampleInto(m, ns, x, y, tmp, 0);
+    const w = 1 - smoothstep(0.6, 1, d / r.radius);
+    out.b0[i] += (tmp.b0[0] - out.b0[i]) * w;
+    out.mountB[i] += (tmp.mountB[0] - out.mountB[i]) * w;
+    out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
+    out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
+  }
 }
 
 function sampleInto(m: GenModel, ns: NoiseSet, x: number, y: number, out: BaseComponents, i: number) {

@@ -1,4 +1,4 @@
-import { type BaseComponents, type WorldType, type Worldgen, type WorldgenInput, worldgenSchema } from './generate';
+import { type BaseComponents, type Resample, type Reroll, type WorldType, type Worldgen, type WorldgenInput, copyComponents, worldgenSchema } from './generate';
 import type { SphereMesh } from './mesh';
 import { type Noise3, clamp, fbm3, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { tangentBasis, toUnit } from './sphere';
@@ -461,37 +461,59 @@ const emptyComponents = (n: number): BaseComponents => ({
   erod: new Float32Array(n),
 });
 
-export function samplePlanetComponents(m: PlanetModel, mesh: SphereMesh): BaseComponents {
+// 换了重画、种子与类型不变：板块、大陆块、火山锥、噪声只取决于种子与类型，照用，只换参数
+export function withPlanetParams(m: PlanetModel, input: WorldgenInput): PlanetModel {
+  return { ...m, params: resolvedPlanetParams(worldgenSchema.parse(input)) };
+}
+
+type PlacedReroll = Reroll & { u: V3 };
+const placed = (rerolls: Reroll[]): PlacedReroll[] => rerolls.map((r) => ({ ...r, u: toUnit(r.x, r.y) }));
+
+// 单位球上的点到重画圈中心的距离（地图单位，即弧长 / π）
+function rerollDist(r: PlacedReroll, px: number, py: number, pz: number): number {
+  const cx = py * r.u[2] - pz * r.u[1];
+  const cy = pz * r.u[0] - px * r.u[2];
+  const cz = px * r.u[1] - py * r.u[0];
+  return Math.atan2(Math.sqrt(cx * cx + cy * cy + cz * cz), px * r.u[0] + py * r.u[1] + pz * r.u[2]) / Math.PI;
+}
+
+// re：只重算 re.changed 这些重画圈里的格，其余格照抄 re.from（见 generate.ts 的 Resample）
+export function samplePlanetComponents(m: PlanetModel, mesh: SphereMesh, re?: Resample): BaseComponents {
   const n = mesh.n;
-  const out = emptyComponents(n);
-  const rerolls = m.params.rerolls.map((r) => ({ ...r, u: toUnit(r.x, r.y) }));
+  const out = re ? copyComponents(re.from) : emptyComponents(n);
+  const rerolls = placed(m.params.rerolls);
+  const changed = re ? placed(re.changed) : [];
   const tmp = emptyComponents(1);
   for (let i = 0; i < n; i++) {
     const px = mesh.p[3 * i];
     const py = mesh.p[3 * i + 1];
     const pz = mesh.p[3 * i + 2];
-    sampleInto(m, m.noise, px * LAYOUT_R, py * LAYOUT_R, pz * LAYOUT_R, out, i);
-    // 重画这一片：球面上的圆（半径是地图单位，即弧长 / π）里换一套噪声，边缘羽化
-    for (const r of rerolls) {
-      const cx = py * r.u[2] - pz * r.u[1];
-      const cy = pz * r.u[0] - px * r.u[2];
-      const cz = px * r.u[1] - py * r.u[0];
-      const d = Math.atan2(Math.sqrt(cx * cx + cy * cy + cz * cz), px * r.u[0] + py * r.u[1] + pz * r.u[2]) / Math.PI;
-      if (d >= r.radius) continue;
-      let ns = m.variants.get(r.variant);
-      if (!ns) {
-        ns = noiseSet3(m.params.seed, r.variant);
-        m.variants.set(r.variant, ns);
-      }
-      sampleInto(m, ns, px * LAYOUT_R, py * LAYOUT_R, pz * LAYOUT_R, tmp, 0);
-      const w = 1 - smoothstep(0.6, 1, d / r.radius);
-      out.b0[i] += (tmp.b0[0] - out.b0[i]) * w;
-      out.mountB[i] += (tmp.mountB[0] - out.mountB[i]) * w;
-      out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
-      out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
-    }
+    // 与 sampleCell 里同一个“在圈内”的判断
+    if (re && changed.every((r) => rerollDist(r, px, py, pz) >= r.radius)) continue;
+    sampleCell(m, rerolls, px, py, pz, out, i, tmp);
   }
   return out;
+}
+
+// 一格：原来的噪声，再按顺序叠上覆盖它的各次重画
+function sampleCell(m: PlanetModel, rerolls: PlacedReroll[], px: number, py: number, pz: number, out: BaseComponents, i: number, tmp: BaseComponents) {
+  sampleInto(m, m.noise, px * LAYOUT_R, py * LAYOUT_R, pz * LAYOUT_R, out, i);
+  // 重画这一片：球面上的圆（半径是地图单位，即弧长 / π）里换一套噪声，边缘羽化
+  for (const r of rerolls) {
+    const d = rerollDist(r, px, py, pz);
+    if (d >= r.radius) continue;
+    let ns = m.variants.get(r.variant);
+    if (!ns) {
+      ns = noiseSet3(m.params.seed, r.variant);
+      m.variants.set(r.variant, ns);
+    }
+    sampleInto(m, ns, px * LAYOUT_R, py * LAYOUT_R, pz * LAYOUT_R, tmp, 0);
+    const w = 1 - smoothstep(0.6, 1, d / r.radius);
+    out.b0[i] += (tmp.b0[0] - out.b0[i]) * w;
+    out.mountB[i] += (tmp.mountB[0] - out.mountB[i]) * w;
+    out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
+    out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
+  }
 }
 
 function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, out: BaseComponents, i: number) {
