@@ -1,5 +1,6 @@
 // 计时：各阶段耗时
 import { Engine } from '../core/engine';
+import { coastalStroke } from './hash';
 let t = performance.now();
 const lap = (label: string) => {
   const now = performance.now();
@@ -24,14 +25,22 @@ eng.exec({ op: 'paint_relief', cells: [100, 101, 102], t: [0, 0, 0], strength: 0
 lap('paint relief');
 eng.exec({ op: 'paint', field: 'tempOffset', cells: [100, 101, 102], value: 2, mode: 'add' });
 lap('paint temp');
-// 画一笔陆地（约 300 格）、撤销
+// 画一笔真改海陆的陆地（沿海的海格附近）、撤销、重做；只改冷暖
 {
-  const m = eng.world.mesh;
-  const cells: number[] = [];
-  for (let i = 0; i < m.n && cells.length < 300; i++) if (Math.hypot(m.x[i] - m.x[5000], m.y[i] - m.y[5000]) < m.spacing * 10) cells.push(i);
+  const cells = coastalStroke(eng.world, 0.37, 8);
+  const before = eng.world.causes.land.reduce((a, b) => a + b, 0);
   lap('(pick cells)');
   eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' });
-  lap('paint land');
+  lap(`paint land (+${eng.world.causes.land.reduce((a, b) => a + b, 0) - before} land)`);
+  console.log(eng.lastTimings);
   eng.undo();
   lap('undo');
+  eng.redo();
+  lap('redo');
+  const land = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.land[i]).slice(0, 300);
+  eng.exec({ op: 'paint', field: 'tempOffset', cells: land, value: 2, mode: 'add' });
+  lap('paint temp (climate only)');
+  const doc = eng.toDoc();
+  Engine.fromDoc(doc, eng.world.mesh);
+  lap(`fromDoc replay (${doc.commands.length} commands)`);
 }
