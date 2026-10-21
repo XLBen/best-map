@@ -1,0 +1,394 @@
+import { z } from 'zod';
+import type { FeatureOverride, GeoFeature } from './features';
+import type { Worldgen } from './generate';
+import type { WordPack } from './names';
+import { type Mesh, buildMesh } from './mesh';
+import { buildSphereMesh } from './sphere';
+import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
+import { DEFAULT_SPECIES, type Species } from './species';
+
+// 世界的三类数据：
+//   原因（Causes）—— 用户通过命令编辑：陆海、抬升、岩性、气候微调、自定义场、省份归属，以及约束、河道引导等小对象
+//   推导（Derived）—— 由流水线从原因算出：高程、气候、水文、植被、冲突
+//   设置（Settings）—— 建世界时确定，决定网格；之后不可改，否则命令里的格编号失效
+
+export const settingsSchema = z.object({
+  seed: z.number().int().min(0).max(0xffffffff).default(1),
+  cells: z.number().int().min(1000).max(200000).default(40000),
+  aspect: z.number().min(0.5).max(4).default(2),
+  latNorth: z.number().min(-90).max(90).default(72),
+  latSouth: z.number().min(-90).max(90).default(-8),
+  // 整个星球（从北极到南极、东西相接）。没有这一项就是一块地区；旧文档没有这两项，解析结果不变
+  globe: z.boolean().optional(),
+  // 星球半径（km），只用于整个星球；省略时与地球相同
+  radiusKm: z.number().min(1500).max(20000).optional(),
+});
+export type Settings = z.output<typeof settingsSchema>;
+
+export const EARTH_RADIUS_KM = 6371;
+
+export const isGlobe = (s: Settings): boolean => s.globe === true;
+export const planetRadiusKm = (s: Settings): number => s.radiusKm ?? EARTH_RADIUS_KM;
+
+// 星球参数的取值范围（不带默认值）
+const planetFields = {
+  // 轴倾角（度）：决定季节强弱与雨带摆幅
+  tilt: z.number().min(0).max(60),
+  // 太阳常数相对地球的倍数
+  solar: z.number().min(0.6).max(1.4),
+  // 1 与地球同向（低纬信风为东风），-1 反向
+  rotation: z.union([z.literal(1), z.literal(-1)]),
+  // 气温直减率（°C/km）
+  lapse: z.number().min(0).max(12),
+  // 全局水汽倍数
+  humidity: z.number().min(0.1).max(4),
+  // 地图外是否视为海洋（决定从图边吹进来的风带不带水汽）
+  outsideOcean: z.boolean(),
+  // 抬升 1.0 的山带对应的典型峰高（m）
+  mountainScale: z.number().min(500).max(15000),
+  // 显示为河流的最小流量（m³/s）
+  riverThreshold: z.number().min(1).max(100000),
+  // 植被竞争的锐度 k：大 → 赢家通吃，小 → 混交过渡
+  vegSharpness: z.number().min(0.5).max(20),
+  // 建好后把地图在星球上整体南北挪了多少度（正为往北）；纬度跨度不变，所以地图的大小不变
+  latShift: z.number().min(-180).max(180),
+  // 洋流强弱（只用于整个星球）：0 没有洋流，1 与地球相当，2 更强。省略时星球按 1
+  currents: z.number().min(0).max(2),
+};
+
+export const planetSchema = z.object({
+  tilt: planetFields.tilt.default(23.4),
+  solar: planetFields.solar.default(1),
+  rotation: planetFields.rotation.default(1),
+  lapse: planetFields.lapse.default(6.5),
+  humidity: planetFields.humidity.default(1),
+  outsideOcean: planetFields.outsideOcean.default(true),
+  mountainScale: planetFields.mountainScale.default(6000),
+  riverThreshold: planetFields.riverThreshold.default(150),
+  vegSharpness: planetFields.vegSharpness.default(4),
+  latShift: planetFields.latShift.default(0),
+  // 没有默认值：旧文档里没有这一项，解析结果不变
+  currents: planetFields.currents.optional(),
+});
+export type Planet = z.output<typeof planetSchema>;
+
+// set_planet 的补丁：只含真的改了的项。不能用 planetSchema.partial()——
+// zod 4 里带默认值的项在 partial 之后照样会补上默认值，改一项就会把其他几项全部重置
+export const planetPatchSchema = z.object(planetFields).partial();
+
+// 地块类型约束：mode = constraint 时反推原因（气候修正场），override 时直接改结果（标为例外，水文不认）
+export const constraintSchema = z.object({
+  id: z.string(),
+  cells: z.array(z.number().int().min(0)).min(1),
+  species: z.string(),
+  mode: z.enum(['constraint', 'override']),
+  // 至少多少比例的格必须是该类型（省份级设定用，保留内部自然变化）
+  ratio: z.number().min(0.05).max(1).default(1),
+  // 修正场向外衰减到 0 的距离（km）
+  radius: z.number().min(50).max(5000).default(600),
+  label: z.string().default(''),
+});
+export type Constraint = z.output<typeof constraintSchema>;
+
+// 画的河：沿相邻格组成的路径强制汇流方向并加强下切，走向固定；
+// spring 表示源头有泉水，从源头起水量就够显示成河；
+// flow 是河的大小：这一段一路上加进来的水，到末端合计为“河流多少”门槛的几倍（省略为 1.2，刚好看得见）
+export const guideSchema = z.object({
+  id: z.string(),
+  cells: z.array(z.number().int().min(0)).min(2),
+  locked: z.boolean().default(false),
+  spring: z.boolean().default(false),
+  flow: z.number().min(1).max(200).optional(),
+});
+export type Guide = z.output<typeof guideSchema>;
+
+export const lakeSchema = z.object({
+  id: z.string(),
+  cell: z.number().int().min(0),
+  radius: z.number().min(10).max(2000).default(150),
+  depth: z.number().min(5).max(2000).default(120),
+  // 不受蒸发影响，始终蓄满（泉水、魔法湖）
+  perennial: z.boolean().default(true),
+});
+export type LakeSpec = z.output<typeof lakeSchema>;
+
+// 用户自己圈的地名区块（地区、平原、山地……）与点状地名（spot）。区块之间、和自动识别的地物可以重叠
+export const REGION_KINDS = ['region', 'plain', 'highland', 'forest', 'desert', 'sea', 'spot'] as const;
+export type RegionKind = (typeof REGION_KINDS)[number];
+export const regionSchema = z.object({
+  id: z.string(),
+  // 空字符串：按文字包自动起名
+  name: z.string().max(40).default(''),
+  kind: z.enum(REGION_KINDS),
+  cells: z.array(z.number().int().min(0)).min(1),
+  // 点状地名的位置（地图单位）
+  at: z.tuple([z.number(), z.number()]).optional(),
+  // 自动起名的盐（“换一个”）
+  salt: z.number().int().min(0).default(0),
+});
+export type RegionSpec = z.output<typeof regionSchema>;
+
+export interface ProvinceMeta {
+  name: string;
+  locked: boolean;
+  // 陆地省份还是海域省份；格的陆海变了就要从省份里移出
+  land: boolean;
+  // 陆地 / 无人区 / 湖 / 海域
+  kind: ProvinceKind;
+}
+
+export interface Causes {
+  // 用户对地形的编辑（增量），叠加在生成器结果上；撤销与重放都只记这些
+  landDelta: Float32Array;
+  upliftDelta: Float32Array;
+  erodDelta: Float32Array;
+  // 由生成器结果 + 增量组合出的最终值（resolveTerrain 计算，见 terrain.ts）
+  landness: Float32Array;
+  land: Uint8Array;
+  uplift: Float32Array;
+  erod: Float32Array;
+  tempOffset: Float32Array;
+  // 降水的对数修正：0 不变，ln 2 为加倍
+  moistOffset: Float32Array;
+  fields: Record<string, Float32Array>;
+  province: Int32Array;
+}
+
+export interface TerrainState {
+  // 生成参数；null 为空白海洋
+  gen: Worldgen | null;
+  // 海岸破碎度：平滑 0.35，自然 1，破碎 1.8
+  coastRoughness: number;
+}
+
+export interface SmallState {
+  terrain: TerrainState;
+  // 自定义文字包；null 用内置的中文包
+  wordPack: WordPack | null;
+  // 地理要素的手工命名与重抽：键为“类型:锚点格”
+  featureNames: Record<string, FeatureOverride>;
+  planet: Planet;
+  species: Species[];
+  constraints: Constraint[];
+  guides: Guide[];
+  lakes: LakeSpec[];
+  regions: RegionSpec[];
+  provinces: Record<number, ProvinceMeta>;
+  nextProvince: number;
+  nextId: number;
+  // 省份自动划分的规则；陆海变化后的修补也按它的目标大小
+  provinceRules: ProvinceRules;
+}
+
+export interface Conflict {
+  constraintId: string;
+  species: string;
+  // 实际满足的比例与要求的比例
+  satisfied: number;
+  required: number;
+  failing: number[];
+  // 限制因素：字段、当前典型值、需要的区间
+  reasons: { field: string; value: number; need: [number, number] }[];
+  // 在修正上限内能做到的最接近类型
+  nearest: string | null;
+  suggestions: string[];
+}
+
+export interface Derived {
+  elevation: Float32Array;
+  slope: Float32Array;
+  // 气候：北半球夏季（s）与冬季（w）
+  tS: Float32Array;
+  tW: Float32Array;
+  pS: Float32Array;
+  pW: Float32Array;
+  windSX: Float32Array;
+  windSY: Float32Array;
+  windWX: Float32Array;
+  windWY: Float32Array;
+  tMean: Float32Array;
+  tWarm: Float32Array;
+  tCold: Float32Array;
+  precip: Float32Array;
+  pet: Float32Array;
+  moisture: Float32Array;
+  seasonality: Float32Array;
+  continentality: Float32Array;
+  // 约束求解得到的修正场
+  corrT: Float32Array;
+  corrP: Float32Array;
+  // 自定义场的修正
+  corrF: Record<string, Float32Array>;
+  // 水文
+  water: Float32Array;
+  // 1 = 湖面，2 = 内流盆地中干涸的部分（干盐湖）
+  lake: Uint8Array;
+  receiver: Int32Array;
+  discharge: Float32Array;
+  drainArea: Float32Array;
+  wetness: Float32Array;
+  basin: Int32Array;
+  // 植被：n × S 的份额与适宜度
+  share: Float32Array;
+  suit: Float32Array;
+  reach: Uint8Array;
+  // 主导类型下标；-1 为水体，-2 为什么都长不了
+  dominant: Int16Array;
+  // 被硬覆盖的格
+  overridden: Uint8Array;
+  conflicts: Conflict[];
+  // 地理要素（大陆、岛、海、河、山脉……）与名字
+  features: GeoFeature[];
+  // 洋流（整个星球）：全年平均的表层海流（东、南分量，约 0–4），海面温度的偏离（°C；陆地上是海洋带来的增温）。
+  // 一块地区的世界里全为 0
+  currentX: Float32Array;
+  currentY: Float32Array;
+  sstAnom: Float32Array;
+}
+
+export interface World {
+  settings: Settings;
+  mesh: Mesh;
+  kmPerUnit: number;
+  causes: Causes;
+  small: SmallState;
+  derived: Derived;
+}
+
+// 一个地图单位合多少 km：一块地区按纬度跨度（地图高 1）；整个星球的地图高 1 是半圈经线（π·R）
+export function kmPerUnit(s: Settings): number {
+  if (s.globe) return Math.PI * planetRadiusKm(s);
+  return Math.abs(s.latNorth - s.latSouth) * 111.2;
+}
+
+export function latitudeOf(s: Settings, y: number): number {
+  return s.latNorth + (s.latSouth - s.latNorth) * y;
+}
+
+// 世界里一点的实际纬度：建世界时的纬度加上之后挪动的度数（整个星球不能挪）
+export function worldLatitude(world: World, y: number): number {
+  if (world.settings.globe) return Math.max(-90, Math.min(90, 90 - 180 * y));
+  return Math.max(-90, Math.min(90, latitudeOf(world.settings, y) + world.small.planet.latShift));
+}
+
+// 整个星球上一点的经度（−180 到 180，东经为正）；x 可以超出 [0, 2)
+export function longitudeOf(x: number): number {
+  const w = x - 2 * Math.floor(x / 2);
+  return 180 * (w - 1);
+}
+
+// 按设置建网格：整个星球是球面网格（与半径无关，三种大小共用），一块地区是平面网格
+export function buildMeshFor(s: Settings): Mesh {
+  return s.globe ? buildSphereMesh(s.cells, s.seed) : buildMesh(s.cells, s.aspect, s.seed);
+}
+
+// 网格缓存的键：同一个键的设置建出同一个网格
+export function meshKey(s: Settings): string {
+  return s.globe ? `globe:${s.cells}:${s.seed}` : `${s.cells}:${s.aspect}:${s.seed}`;
+}
+
+export function emptyCauses(n: number): Causes {
+  return {
+    landDelta: new Float32Array(n),
+    upliftDelta: new Float32Array(n),
+    erodDelta: new Float32Array(n),
+    landness: new Float32Array(n).fill(-3000),
+    land: new Uint8Array(n),
+    uplift: new Float32Array(n),
+    erod: new Float32Array(n).fill(1),
+    tempOffset: new Float32Array(n),
+    moistOffset: new Float32Array(n),
+    fields: {},
+    province: new Int32Array(n).fill(-1),
+  };
+}
+
+export function emptyDerived(n: number, speciesCount: number): Derived {
+  const f = () => new Float32Array(n);
+  return {
+    elevation: f(),
+    slope: f(),
+    tS: f(),
+    tW: f(),
+    pS: f(),
+    pW: f(),
+    windSX: f(),
+    windSY: f(),
+    windWX: f(),
+    windWY: f(),
+    tMean: f(),
+    tWarm: f(),
+    tCold: f(),
+    precip: f(),
+    pet: f(),
+    moisture: f(),
+    seasonality: f(),
+    continentality: f(),
+    corrT: f(),
+    corrP: f(),
+    corrF: {},
+    water: f(),
+    lake: new Uint8Array(n),
+    receiver: new Int32Array(n).fill(-1),
+    discharge: f(),
+    drainArea: f(),
+    wetness: f(),
+    basin: new Int32Array(n),
+    share: new Float32Array(n * speciesCount),
+    suit: new Float32Array(n * speciesCount),
+    reach: new Uint8Array(n * speciesCount),
+    dominant: new Int16Array(n).fill(-1),
+    overridden: new Uint8Array(n),
+    conflicts: [],
+    features: [],
+    currentX: f(),
+    currentY: f(),
+    sstAnom: f(),
+  };
+}
+
+export function defaultSmall(): SmallState {
+  return {
+    terrain: { gen: null, coastRoughness: 1 },
+    wordPack: null,
+    featureNames: {},
+    planet: planetSchema.parse({}),
+    species: structuredClone(DEFAULT_SPECIES),
+    constraints: [],
+    guides: [],
+    lakes: [],
+    regions: [],
+    provinces: {},
+    nextProvince: 0,
+    nextId: 1,
+    provinceRules: { ...DEFAULT_PROVINCE_RULES },
+  };
+}
+
+export function createWorld(input: Partial<Settings> = {}, mesh?: Mesh): World {
+  const settings = settingsSchema.parse(input);
+  // 整个星球的地图固定是 2:1、从北纬 90° 到南纬 90°
+  if (settings.globe && (settings.aspect !== 2 || settings.latNorth !== 90 || settings.latSouth !== -90)) {
+    throw new Error('整个星球的设置必须是宽高 2:1、纬度从 90 到 −90');
+  }
+  const m = mesh ?? buildMeshFor(settings);
+  const small = defaultSmall();
+  return {
+    settings,
+    mesh: m,
+    kmPerUnit: kmPerUnit(settings),
+    causes: emptyCauses(m.n),
+    small,
+    derived: emptyDerived(m.n, small.species.length),
+  };
+}
+
+// 每个省份一个互不相同的 RGB：乘以奇数在 2^24 上是双射
+export function provinceColor(id: number): [number, number, number] {
+  const c = Math.imul(id + 1, 0x9e3779b1) & 0xffffff;
+  return [c >> 16, (c >> 8) & 255, c & 255];
+}
+
+export function speciesIndex(small: SmallState, id: string): number {
+  return small.species.findIndex((s) => s.id === id);
+}

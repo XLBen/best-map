@@ -1,0 +1,572 @@
+import { computed, effect } from '@preact/signals';
+import {
+  Brush,
+  CloudRain,
+  Dices,
+  Droplet,
+  Droplets,
+  Eraser,
+  Flower2,
+  LassoSelect,
+  Leaf,
+  Map as MapIcon,
+  MapPinPlus,
+  Merge,
+  Mountain,
+  MountainSnow,
+  Move,
+  Paintbrush,
+  PenLine,
+  RefreshCw,
+  Scissors,
+  MousePointer2,
+  Sparkles,
+  Spline,
+  Thermometer,
+  ThermometerSun,
+  TreePalm,
+  Trash2,
+  Type,
+  Waypoints,
+} from 'lucide-preact';
+import { ISLAND_KINDS, ISLAND_KIND_INFO, islandSizeRangeKm, roundKm } from '../../../core/terrain';
+import type { World } from '../../../core/world';
+import {
+  type Category,
+  type ToolId,
+  brushRange,
+  cursorHint,
+  lakeRange,
+  measure,
+  mode,
+  options,
+  reachRange,
+  selectedProvince,
+  setOptions,
+  tool,
+  world,
+} from '../../state';
+import {
+  biomeTool,
+  chainTool,
+  climateEffect,
+  climateEraseTool,
+  climateKind,
+  climateTool,
+  endemicTool,
+  eraseTool,
+  fieldTool,
+  fmtFlow,
+  growTool,
+  islandTool,
+  lakeTool,
+  landTool,
+  provinceBrushTool,
+  provinceCutTool,
+  provinceMergeTool,
+  provinceRegenTool,
+  provinceSelectTool,
+  regionTool,
+  reliefTool,
+  renameTool,
+  restoreTool,
+  rerollTool,
+  riverSizeName,
+  riverTool,
+  snapRadiusKm,
+  spotTool,
+  unwaterTool,
+} from '../tools';
+import { BiomeChip, NamesBar, NamesExtras, NatureExtras, ProvinceBar, ProvinceColorToggle, ProvinceExtras, UnmetChip } from './extras';
+import type { CategoryDef, SliderDef, ToolDef } from './types';
+
+// ---------- 滑块 ----------
+
+const fmtKm = (v: number) => String(roundKm(v));
+
+const BRUSH: SliderDef = {
+  key: 'brushKm',
+  label: '半径',
+  range: brushRange,
+  scale: 'log',
+  snap: (v) => roundKm(v),
+  format: (v) => `${fmtKm(v)} km`,
+};
+
+const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
+
+const ISLAND: SliderDef = {
+  key: 'islandKm',
+  label: '直径',
+  range: islandSizeRangeKm,
+  scale: 'log',
+  snap: snapRadiusKm,
+  format: (v) => `${fmtKm(v * 2)} km`,
+};
+
+const LAKE: SliderDef = {
+  key: 'lakeKm',
+  label: '直径',
+  range: lakeRange,
+  scale: 'log',
+  snap: snapRadiusKm,
+  format: (v) => `${fmtKm(v * 2)} km`,
+};
+
+// 自然融入：周围多远跟着平滑过渡（“强制”时用不上，不显示）
+const REACH: SliderDef = {
+  key: 'reachKm',
+  label: '过渡',
+  range: reachRange,
+  scale: 'log',
+  snap: (v) => roundKm(v),
+  format: (v) => `${fmtKm(v)} km`,
+  enabled: () => options.value.biomeMode === 'natural',
+};
+
+const RIVER: SliderDef = {
+  key: 'riverFlow',
+  label: '大小',
+  range: () => [1.2, 80],
+  scale: 'log',
+  snap: (v) => (v < 10 ? Math.round(v * 10) / 10 : Math.round(v)),
+  format: (v, w) => `${riverSizeName(v)} ${fmtFlow(v * w.small.planet.riverThreshold)} m³/s`,
+};
+
+const percent = (v: number, base: number) => `${Math.round((v / base) * 100)}%`;
+
+// 冷暖、干湿的力度：数值写成会升降多少度、雨水多少
+const CLIMATE_AMOUNT = (group: 'temp' | 'moist'): SliderDef => ({
+  key: 'climateAmount',
+  label: '力度',
+  range: () => [0.25, 2],
+  scale: 'log',
+  snap: (v) => Math.round(v * 20) / 20,
+  format: (v) => climateEffect(climateKind(group), v).short,
+});
+
+// ---------- 底部条上常用的几项 ----------
+
+const islandKinds = { kind: 'choice' as const, key: 'islandKind' as const, options: ISLAND_KINDS.map((k) => ({ value: k, label: ISLAND_KIND_INFO[k].name, hint: ISLAND_KIND_INFO[k].hint })) };
+const biomeModes = {
+  kind: 'choice' as const,
+  key: 'biomeMode' as const,
+  options: [
+    { value: 'natural', label: '自然融入', hint: '系统调整这里的冷暖干湿，让它真的长出来，周围平滑过渡' },
+    { value: 'force', label: '强制', hint: '只改涂到的格，气候和河流不变' },
+  ],
+};
+
+const pickSpecies = (w: World, cell: number) => {
+  const s = w.derived.dominant[cell];
+  const sp = s >= 0 ? w.small.species[s] : null;
+  if (!sp) return null;
+  setOptions({ biome: sp.id });
+  return sp.name;
+};
+
+// ---------- 工具 ----------
+
+const defs: ToolDef[] = [
+  {
+    id: 'land',
+    category: 'terrain',
+    icon: Brush,
+    name: '画陆地 / 海',
+    short: '陆海',
+    how: '按住涂，或选“圈一片”圈出一块；按住 Shift 反过来',
+    size: { ...BRUSH, enabled: () => options.value.landShape === 'brush' },
+    bar: () => [
+      {
+        kind: 'choice',
+        key: 'landMode',
+        options: [
+          { value: 'land', label: '画陆地' },
+          { value: 'sea', label: '画海' },
+        ],
+      },
+      {
+        kind: 'choice',
+        key: 'landShape',
+        options: [
+          { value: 'brush', label: '画笔', hint: '按住拖动，画笔下变成陆地（海）' },
+          { value: 'lasso', label: '圈一片', hint: '按住画一个圈，松手后圈里变成陆地（海）' },
+        ],
+      },
+    ],
+    create: () => landTool(),
+  },
+  {
+    id: 'island',
+    category: 'terrain',
+    icon: TreePalm,
+    name: '放岛',
+    short: '放岛',
+    how: '点一下放岛，按住往外拖直接拖出大小',
+    size: ISLAND,
+    bar: () => [islandKinds, { kind: 'action', icon: Dices, label: '换个形状', title: '快捷键 R', run: () => setOptions({ islandVariant: options.value.islandVariant + 1 }) }],
+    reroll: () => setOptions({ islandVariant: options.value.islandVariant + 1 }),
+    create: () => islandTool(),
+  },
+  {
+    id: 'chain',
+    category: 'terrain',
+    icon: Waypoints,
+    name: '画岛链',
+    short: '岛链',
+    how: '拖一条线，沿线长出一串大小不一的岛',
+    size: ISLAND,
+    amount: {
+      key: 'chainDensity',
+      label: '疏密',
+      range: () => [0.4, 2.5],
+      scale: 'log',
+      snap: (v) => Math.round(v * 20) / 20,
+      format: (v) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)}`,
+    },
+    bar: () => [islandKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '快捷键 R', run: () => setOptions({ chainVariant: options.value.chainVariant + 1 }) }],
+    reroll: () => setOptions({ chainVariant: options.value.chainVariant + 1 }),
+    create: () => chainTool(),
+  },
+  {
+    id: 'relief',
+    category: 'terrain',
+    icon: MountainSnow,
+    name: '堆山 / 压低',
+    short: '堆山',
+    how: '按住拖动让地势升高或降低',
+    size: BRUSH,
+    amount: { key: 'reliefAmount', label: '力度', range: () => [0.15, 1.6], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => percent(v, 0.7) },
+    bar: () => [
+      {
+        kind: 'choice',
+        key: 'reliefMode',
+        options: [
+          { value: 'up', label: '堆山' },
+          { value: 'down', label: '压低' },
+        ],
+      },
+    ],
+    create: () => reliefTool(),
+  },
+  {
+    id: 'reroll',
+    category: 'terrain',
+    icon: Dices,
+    name: '重画这一片',
+    short: '重画',
+    how: '点一下，圈里的地形重新随机，圈外不变',
+    size: brushAs('半径'),
+    create: () => rerollTool(),
+  },
+  {
+    id: 'biome',
+    category: 'nature',
+    icon: Paintbrush,
+    name: '涂生态',
+    short: '涂生态',
+    how: '在陆地上涂；Alt+点吸取那里的生态',
+    size: BRUSH,
+    amount: REACH,
+    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }],
+    pick: pickSpecies,
+    create: () => biomeTool(),
+  },
+  {
+    id: 'grow',
+    category: 'nature',
+    icon: Move,
+    name: '拖动扩张',
+    short: '扩张',
+    how: '按住一片生态往外拖，拖得越远长得越多',
+    size: brushAs('起点'),
+    amount: REACH,
+    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }],
+    create: () => growTool(),
+  },
+  {
+    id: 'restore',
+    category: 'terrain',
+    icon: Eraser,
+    name: '恢复原样',
+    short: '恢复',
+    how: '按住涂：画过的陆地、海、山和放的岛都退回生成时的样子',
+    size: BRUSH,
+    create: () => restoreTool(),
+  },
+  {
+    id: 'temp',
+    category: 'climate',
+    icon: Thermometer,
+    name: '冷暖',
+    short: '冷暖',
+    how: '按住涂：让一片地方变冷或变暖（冰原、雪山、热带）；按住 Shift 反过来',
+    size: BRUSH,
+    amount: CLIMATE_AMOUNT('temp'),
+    bar: () => [
+      {
+        kind: 'choice',
+        key: 'tempMode',
+        options: [
+          { value: 'cold', label: '更冷' },
+          { value: 'warm', label: '更暖' },
+        ],
+      },
+    ],
+    create: () => climateTool('temp'),
+  },
+  {
+    id: 'moist',
+    category: 'climate',
+    icon: CloudRain,
+    name: '干湿',
+    short: '干湿',
+    how: '按住涂：让一片地方雨水变多或变少；按住 Shift 反过来',
+    size: BRUSH,
+    amount: CLIMATE_AMOUNT('moist'),
+    bar: () => [
+      {
+        kind: 'choice',
+        key: 'moistMode',
+        options: [
+          { value: 'wet', label: '更湿' },
+          { value: 'dry', label: '更干' },
+        ],
+      },
+    ],
+    create: () => climateTool('moist'),
+  },
+  {
+    id: 'unclimate',
+    category: 'climate',
+    icon: Eraser,
+    name: '擦掉冷暖干湿',
+    short: '擦掉',
+    how: '按住涂：把改过的冷暖干湿恢复原样',
+    size: BRUSH,
+    create: () => climateEraseTool(),
+  },
+  {
+    id: 'endemic',
+    category: 'nature',
+    icon: Flower2,
+    name: '岛屿特有生态',
+    short: '特有',
+    how: '点一个岛，给它一种只长在岛上的生态',
+    create: () => endemicTool(),
+  },
+  {
+    id: 'erase',
+    category: 'nature',
+    icon: Eraser,
+    name: '擦除',
+    short: '擦除',
+    how: '擦掉涂过的生态，恢复自然',
+    size: BRUSH,
+    create: () => eraseTool(),
+  },
+  {
+    id: 'field',
+    category: 'climate',
+    icon: Sparkles,
+    name: '涂自定义场',
+    short: '场',
+    how: '让“魔力”这类自定义的量变大或变小',
+    size: BRUSH,
+    amount: { key: 'fieldAmount', label: '力度', range: () => [0.05, 1], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => `±${v.toFixed(2)}` },
+    hidden: (w) => !Object.keys(w.causes.fields).length,
+    bar: (w) => [
+      { kind: 'choice', key: 'field', options: Object.keys(w.causes.fields).map((f) => ({ value: f, label: f })) },
+      {
+        kind: 'choice',
+        key: 'fieldMode',
+        options: [
+          { value: 'add', label: '增加' },
+          { value: 'sub', label: '减少' },
+        ],
+      },
+    ],
+    create: () => fieldTool(),
+  },
+  {
+    id: 'river',
+    category: 'water',
+    icon: Spline,
+    name: '画河',
+    short: '画河',
+    how: '点源头起一条河 · 拖到别的河上就汇进去 · 从河上往外拖是改道',
+    size: RIVER,
+    create: (env) => riverTool(env.zoom),
+  },
+  {
+    id: 'lake',
+    category: 'water',
+    icon: Droplet,
+    name: '放湖',
+    short: '放湖',
+    how: '点一下放湖，按住往外拖直接拖出大小',
+    size: LAKE,
+    create: () => lakeTool(),
+  },
+  {
+    id: 'unwater',
+    category: 'water',
+    icon: Trash2,
+    name: '删除河湖',
+    short: '删河湖',
+    how: '删掉画过的河或湖',
+    create: (env) => unwaterTool(env.zoom),
+  },
+  {
+    id: 'pselect',
+    category: 'provinces',
+    icon: MousePointer2,
+    name: '选省份',
+    short: '选省',
+    how: '点一个省，在下面改名、改类型',
+    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    create: () => provinceSelectTool(),
+  },
+  {
+    id: 'pbrush',
+    category: 'provinces',
+    icon: Paintbrush,
+    name: '省份画笔',
+    short: '涂省',
+    how: '把格子涂进选中的省；Alt+点吸取一个省',
+    size: BRUSH,
+    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    pick: (w, cell) => {
+      const id = w.causes.province[cell];
+      if (id < 0 || !w.small.provinces[id]) return null;
+      selectedProvince.value = id;
+      return w.small.provinces[id].name;
+    },
+    create: () => provinceBrushTool(),
+  },
+  {
+    id: 'pcut',
+    category: 'provinces',
+    icon: Scissors,
+    name: '剪刀',
+    short: '剪刀',
+    how: '画一条线把省切开',
+    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    create: () => provinceCutTool(),
+  },
+  {
+    id: 'pmerge',
+    category: 'provinces',
+    icon: Merge,
+    name: '合并',
+    short: '合并',
+    how: '先点一个省，再点要并进来的邻省',
+    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    create: () => provinceMergeTool(),
+  },
+  {
+    id: 'pregen',
+    category: 'provinces',
+    icon: RefreshCw,
+    name: '重新划分',
+    short: '重划',
+    how: '涂一片，里面的省重新自动划分',
+    size: BRUSH,
+    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }],
+    create: () => provinceRegenTool(),
+  },
+  {
+    id: 'rename',
+    category: 'names',
+    icon: PenLine,
+    name: '改名',
+    short: '改名',
+    how: '点地图上的名字',
+    bar: () => [{ kind: 'custom', render: NamesBar }],
+    create: (env) => renameTool(env.hitLabel),
+  },
+  {
+    id: 'area',
+    category: 'names',
+    icon: LassoSelect,
+    name: '圈一块起名',
+    short: '圈地名',
+    how: '按住画一个圈，圈里成为一个地区、平原、山地……',
+    bar: () => [{ kind: 'custom', render: NamesBar }],
+    create: (env) => regionTool(env.hitLabel),
+  },
+  {
+    id: 'spot',
+    category: 'names',
+    icon: MapPinPlus,
+    name: '放一个地名',
+    short: '放地名',
+    how: '点一下放一个地名，比如城镇、渡口、海角',
+    bar: () => [{ kind: 'custom', render: NamesBar }],
+    create: (env) => spotTool(env.hitLabel, env.zoom),
+  },
+];
+
+export const TOOL_DEFS = Object.fromEntries(defs.map((d) => [d.id, d])) as Record<ToolId, ToolDef>;
+
+// ---------- 类别 ----------
+
+export const CATEGORIES: CategoryDef[] = [
+  { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'reroll', 'restore'] },
+  { id: 'climate', icon: ThermometerSun, label: '气候', tools: ['temp', 'moist', 'unclimate', 'field'] },
+  { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'endemic', 'erase'], extras: NatureExtras },
+  { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'] },
+  { id: 'provinces', icon: MapIcon, label: '省份', tools: ['pselect', 'pbrush', 'pcut', 'pmerge', 'pregen'], extras: ProvinceExtras },
+  { id: 'names', icon: Type, label: '地名', tools: ['rename', 'area', 'spot'], extras: NamesExtras },
+];
+
+export const CATEGORY_DEFS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Category, CategoryDef>;
+
+// 当前工具属于哪一类
+export const category = computed<Category>(() => TOOL_DEFS[tool.value].category);
+
+// 工具列表里显示的工具：隐藏的工具正在用时照样显示
+export function toolsOf(c: Category, w: World | null): ToolId[] {
+  return CATEGORY_DEFS[c].tools.filter((id) => id === tool.value || !w || !TOOL_DEFS[id].hidden?.(w));
+}
+
+// 每一类记住上次用的工具：换回来时还是原样。底图只在“图层”里换，换工具、换类别都不动它
+const lastTool: Partial<Record<Category, ToolId>> = {};
+
+export function setTool(id: ToolId) {
+  const from = category.value;
+  if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;
+  tool.value = id;
+  cursorHint.value = null;
+  // 换工具就不再量距离
+  measure.value = null;
+}
+
+export function setCategory(c: Category) {
+  if (c === category.value) return;
+  const w = world.value;
+  const remembered = lastTool[c];
+  setTool(remembered && toolsOf(c, w).includes(remembered) ? remembered : CATEGORY_DEFS[c].tools[0]);
+}
+
+// 选一种生态来涂：现在的工具用不上生态时，换到“涂生态”
+export function paintWith(speciesId: string) {
+  setOptions({ biome: speciesId });
+  if (tool.value !== 'biome') setTool('biome');
+}
+
+// 新世界：回到地形、画陆地
+export function resetTools() {
+  for (const k of Object.keys(lastTool)) delete lastTool[k as Category];
+  tool.value = 'land';
+  mode.value = 'terrain';
+}
+
+// 涂自定义场：自定义场被删掉了就换一个，都删了就回到冷暖
+effect(() => {
+  const w = world.value;
+  if (!w || tool.value !== 'field') return;
+  const names = Object.keys(w.causes.fields);
+  if (!names.length) setTool('temp');
+  else if (!options.value.field || !w.causes.fields[options.value.field]) setOptions({ field: names[0] });
+});

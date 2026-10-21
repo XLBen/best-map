@@ -1,0 +1,67 @@
+import { describe, expect, it } from 'vitest';
+import { Engine } from './engine';
+import { endemicSpecies } from './endemic';
+
+// 撤销只从被撤掉的那一步影响到的那一层重算（改名不重算高程、气候）：
+// 每撤一步，推导都要与把剩下的命令从头重放、完整重算的结果逐值一致
+
+function fingerprint(e: Engine): string {
+  const d = e.world.derived;
+  let h = 0x811c9dc5;
+  const mix = (a: ArrayLike<number>) => {
+    for (let i = 0; i < a.length; i++) h = Math.imul(h ^ Math.round(a[i] * 1000), 0x01000193);
+  };
+  for (const a of [d.elevation, d.tMean, d.precip, d.moisture, d.discharge, d.lake, d.dominant, d.share, d.corrT, e.world.causes.province]) mix(a);
+  const names = d.features.map((f) => `${f.key}=${f.name}${f.custom ? '*' : ''}@${f.x.toFixed(6)},${f.y.toFixed(6)}`).join('|');
+  return `${(h >>> 0).toString(16)}|${d.conflicts.length}|${names}`;
+}
+
+describe('撤销从受影响的那一层重算', () => {
+  it('各种命令逐个撤销：每一步都与从头重放的结果一致', () => {
+    const eng = new Engine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
+    eng.exec({ op: 'generate_provinces', rules: { seed: 2 } });
+    const w = eng.world;
+    const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i]);
+    const patch = land.filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[land[400]], w.mesh.y[i] - w.mesh.y[land[400]]) < 0.08);
+    const island = w.derived.features.find((f) => f.type === 'island' && f.cells.length > 20) ?? w.derived.features.find((f) => f.type === 'continent')!;
+    const endemic = endemicSpecies(w, Array.from(island.cells), 'endemic-1', island.name)!;
+    const steps = [
+      // 气候（Climate）
+      { op: 'paint', field: 'tempOffset', cells: patch, value: -3, mode: 'add' },
+      // 求解（Solve）：新生态、涂一片生态
+      { op: 'add_species', species: endemic },
+      { op: 'add_constraint', constraint: { cells: patch, species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 500 } },
+      // 植被（Vegetation）
+      { op: 'set_planet', patch: { riverThreshold: 120 } },
+      // 只改名字（Names）
+      { op: 'rename_feature', key: island.key, name: '试验岛' },
+      { op: 'add_region', region: { kind: 'region', cells: patch } },
+      // 不影响推导（None）
+      { op: 'assign_province', cells: patch.slice(0, 5), province: 'new' },
+      // 地形（Elevation）
+      { op: 'paint_land', cells: patch, t: patch.map(() => 0.9), mode: 'sea' },
+    ] as const;
+    for (const s of steps) eng.exec(s as never);
+    for (let k = steps.length; k > 0; k--) {
+      eng.undo();
+      const replay = Engine.fromDoc(eng.toDoc(), w.mesh);
+      expect(fingerprint(eng), `撤销第 ${k} 步（${steps[k - 1].op}）后`).toBe(fingerprint(replay));
+    }
+    // 重做也一样
+    eng.redo();
+    eng.redo();
+    expect(fingerprint(eng)).toBe(fingerprint(Engine.fromDoc(eng.toDoc(), w.mesh)));
+  });
+
+  it('只改名字的撤销不重算地形与气候', () => {
+    const eng = new Engine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
+    const f = eng.world.derived.features.find((x) => x.type === 'continent')!;
+    eng.exec({ op: 'rename_feature', key: f.key, name: '试验洲' });
+    eng.takeRecomputed();
+    eng.undo();
+    expect(eng.takeRecomputed()).toBe(1);
+    expect(eng.world.derived.features.find((x) => x.key === f.key)!.name).not.toBe('试验洲');
+  });
+});

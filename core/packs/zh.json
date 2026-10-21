@@ -1,0 +1,1079 @@
+{
+  "id": "zh-default",
+  "name": "中文·默认",
+  "description": "按地貌类型取字的中文地名。lists 是词表，types 是每种地貌的命名模板；模板里的 {词表名} 会换成该词表里的一个字或词。byTag 里的模板在地物带有该情境标签时优先使用。",
+  "lists": {
+    "color": [
+      "青",
+      "白",
+      "赤",
+      "苍",
+      "金",
+      "玄",
+      "碧",
+      "紫",
+      "乌",
+      "银",
+      "丹",
+      "翠",
+      "黛",
+      "朱"
+    ],
+    "nature": [
+      "云",
+      "雾",
+      "风",
+      "雪",
+      "霜",
+      "月",
+      "星",
+      "日",
+      "雷",
+      "雨",
+      "烟",
+      "霞",
+      "虹",
+      "露"
+    ],
+    "plant": [
+      "松",
+      "柏",
+      "竹",
+      "梅",
+      "兰",
+      "桑",
+      "柳",
+      "桐",
+      "枫",
+      "莲",
+      "苇",
+      "杉",
+      "槐",
+      "榆"
+    ],
+    "animal": [
+      "鹤",
+      "鹿",
+      "龙",
+      "虎",
+      "鹰",
+      "雁",
+      "鲸",
+      "鹭",
+      "狐",
+      "熊",
+      "燕",
+      "鸥",
+      "麟",
+      "凤"
+    ],
+    "stone": [
+      "石",
+      "玉",
+      "岩",
+      "砂",
+      "铁",
+      "铜",
+      "晶",
+      "磐"
+    ],
+    "water": [
+      "泉",
+      "溪",
+      "川",
+      "潭",
+      "渊",
+      "浦",
+      "涧",
+      "津"
+    ],
+    "place": [
+      "石",
+      "沙",
+      "泉",
+      "溪",
+      "川",
+      "林",
+      "谷",
+      "原",
+      "岩",
+      "崖",
+      "滩",
+      "阳",
+      "阴",
+      "门"
+    ],
+    "shape": [
+      "长",
+      "圆",
+      "弯",
+      "双",
+      "孤",
+      "狭",
+      "阔",
+      "曲",
+      "尖",
+      "环"
+    ],
+    "quality": [
+      "清",
+      "平",
+      "安",
+      "宁",
+      "永",
+      "广",
+      "远",
+      "明",
+      "静",
+      "隆",
+      "福",
+      "嘉",
+      "昌",
+      "和",
+      "兴"
+    ],
+    "direction": [
+      "东",
+      "西",
+      "南",
+      "北",
+      "中"
+    ],
+    "number": [
+      "一",
+      "二",
+      "三",
+      "五",
+      "七",
+      "九",
+      "千",
+      "万"
+    ],
+    "myth": [
+      "苍龙",
+      "白鹤",
+      "金乌",
+      "玄武",
+      "朱雀",
+      "青鸾",
+      "麒麟",
+      "鲲鹏",
+      "白泽",
+      "腾蛇"
+    ],
+    "cold": [
+      "冰",
+      "霜",
+      "雪",
+      "寒",
+      "朔",
+      "凛"
+    ],
+    "hot": [
+      "炎",
+      "赤",
+      "火",
+      "暖",
+      "炽",
+      "阳"
+    ],
+    "dry": [
+      "沙",
+      "砾",
+      "旱",
+      "枯",
+      "黄",
+      "焦",
+      "荒"
+    ],
+    "wet": [
+      "雨",
+      "润",
+      "湿",
+      "涟",
+      "霖",
+      "露",
+      "雾"
+    ],
+    "high": [
+      "天",
+      "峻",
+      "苍",
+      "崇",
+      "巍",
+      "凌",
+      "云"
+    ],
+    "deep": [
+      "深",
+      "沉",
+      "幽",
+      "玄",
+      "渺"
+    ],
+    "sea": [
+      "沧",
+      "澜",
+      "涛",
+      "潮",
+      "瀚",
+      "汪",
+      "溟"
+    ],
+    "volcanic": [
+      "火",
+      "焰",
+      "熔",
+      "烬",
+      "灼",
+      "炉"
+    ],
+    "forest": [
+      "松",
+      "杉",
+      "桦",
+      "榆",
+      "楠",
+      "樟",
+      "椿"
+    ]
+  },
+  "types": {
+    "continent": {
+      "patterns": [
+        {
+          "p": "{quality}{place}洲",
+          "w": 2
+        },
+        {
+          "p": "{myth}洲",
+          "w": 2
+        },
+        {
+          "p": "{direction}{quality}洲",
+          "w": 2
+        },
+        {
+          "p": "{color}{nature}大陆",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{nature}洲"
+          }
+        ],
+        "hot": [
+          {
+            "p": "{hot}{place}洲"
+          }
+        ]
+      }
+    },
+    "island": {
+      "patterns": [
+        {
+          "p": "{color}{stone}岛",
+          "w": 3
+        },
+        {
+          "p": "{nature}{shape}屿",
+          "w": 2
+        },
+        {
+          "p": "{animal}岛",
+          "w": 2
+        },
+        {
+          "p": "{plant}{water}屿",
+          "w": 2
+        },
+        {
+          "p": "{quality}{place}岛",
+          "w": 2
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{place}岛"
+          },
+          {
+            "p": "{cold}{animal}屿"
+          }
+        ],
+        "hot": [
+          {
+            "p": "{hot}{plant}岛"
+          }
+        ],
+        "volcanic": [
+          {
+            "p": "{volcanic}{stone}岛"
+          },
+          {
+            "p": "{volcanic}山岛"
+          }
+        ],
+        "small": [
+          {
+            "p": "{shape}{stone}礁"
+          },
+          {
+            "p": "{animal}屿"
+          },
+          {
+            "p": "{color}礁"
+          }
+        ],
+        "large": [
+          {
+            "p": "{quality}{place}大岛"
+          },
+          {
+            "p": "{myth}岛"
+          }
+        ]
+      }
+    },
+    "archipelago": {
+      "patterns": [
+        {
+          "p": "{color}{nature}群岛",
+          "w": 2
+        },
+        {
+          "p": "{number}{animal}列岛",
+          "w": 2
+        },
+        {
+          "p": "{myth}群岛",
+          "w": 1
+        },
+        {
+          "p": "{nature}{sea}列岛",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{nature}群岛"
+          }
+        ],
+        "volcanic": [
+          {
+            "p": "{volcanic}{stone}列岛"
+          }
+        ]
+      }
+    },
+    "peninsula": {
+      "patterns": [
+        {
+          "p": "{animal}{shape}半岛",
+          "w": 2
+        },
+        {
+          "p": "{color}{stone}半岛",
+          "w": 2
+        },
+        {
+          "p": "{direction}{quality}半岛",
+          "w": 1
+        },
+        {
+          "p": "{myth}半岛",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{animal}半岛"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{stone}半岛"
+          }
+        ]
+      }
+    },
+    "ocean": {
+      "patterns": [
+        {
+          "p": "{sea}{quality}洋",
+          "w": 2
+        },
+        {
+          "p": "{color}{sea}洋",
+          "w": 2
+        },
+        {
+          "p": "{direction}{sea}洋",
+          "w": 1
+        },
+        {
+          "p": "{myth}洋",
+          "w": 1
+        }
+      ]
+    },
+    "sea": {
+      "patterns": [
+        {
+          "p": "{color}{nature}海",
+          "w": 2
+        },
+        {
+          "p": "{sea}{shape}海",
+          "w": 1
+        },
+        {
+          "p": "{animal}海",
+          "w": 2
+        },
+        {
+          "p": "{quality}{sea}海",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{sea}海"
+          },
+          {
+            "p": "{cold}{nature}海"
+          }
+        ],
+        "hot": [
+          {
+            "p": "{hot}{nature}海"
+          }
+        ]
+      }
+    },
+    "bay": {
+      "patterns": [
+        {
+          "p": "{animal}湾",
+          "w": 2
+        },
+        {
+          "p": "{color}{plant}湾",
+          "w": 2
+        },
+        {
+          "p": "{shape}{nature}湾",
+          "w": 1
+        },
+        {
+          "p": "{quality}{water}湾",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{animal}湾"
+          }
+        ],
+        "large": [
+          {
+            "p": "{color}{nature}海湾"
+          }
+        ]
+      }
+    },
+    "strait": {
+      "patterns": [
+        {
+          "p": "{nature}{shape}海峡",
+          "w": 2
+        },
+        {
+          "p": "{color}{animal}峡",
+          "w": 2
+        },
+        {
+          "p": "{animal}门",
+          "w": 1
+        },
+        {
+          "p": "{stone}{water}峡",
+          "w": 1
+        }
+      ]
+    },
+    "lake": {
+      "patterns": [
+        {
+          "p": "{color}{nature}湖",
+          "w": 3
+        },
+        {
+          "p": "{plant}湖",
+          "w": 2
+        },
+        {
+          "p": "{shape}{water}泊",
+          "w": 1
+        },
+        {
+          "p": "{animal}泽",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "high": [
+          {
+            "p": "天{nature}池"
+          },
+          {
+            "p": "{high}{nature}湖"
+          }
+        ],
+        "large": [
+          {
+            "p": "{color}{sea}湖"
+          },
+          {
+            "p": "{quality}{sea}湖"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{stone}湖"
+          },
+          {
+            "p": "{color}盐湖"
+          }
+        ],
+        "cold": [
+          {
+            "p": "{cold}{nature}湖"
+          }
+        ]
+      }
+    },
+    "river": {
+      "patterns": [
+        {
+          "p": "{color}{plant}河",
+          "w": 2
+        },
+        {
+          "p": "{animal}河",
+          "w": 2
+        },
+        {
+          "p": "{quality}{water}河",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "big": [
+          {
+            "p": "{color}江"
+          },
+          {
+            "p": "{quality}江"
+          },
+          {
+            "p": "{direction}{sea}江"
+          }
+        ],
+        "small": [
+          {
+            "p": "{plant}溪"
+          },
+          {
+            "p": "{nature}水"
+          },
+          {
+            "p": "{color}溪"
+          }
+        ],
+        "cold": [
+          {
+            "p": "{cold}{water}河"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{color}河"
+          }
+        ]
+      }
+    },
+    "range": {
+      "patterns": [
+        {
+          "p": "{color}{nature}山脉",
+          "w": 2
+        },
+        {
+          "p": "{animal}{shape}岭",
+          "w": 2
+        },
+        {
+          "p": "{high}{stone}山",
+          "w": 2
+        },
+        {
+          "p": "{myth}山脉",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{nature}岭"
+          },
+          {
+            "p": "{cold}{stone}山脉"
+          }
+        ],
+        "volcanic": [
+          {
+            "p": "{volcanic}{stone}山"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{color}山"
+          }
+        ]
+      }
+    },
+    "peak": {
+      "patterns": [
+        {
+          "p": "{high}{nature}峰",
+          "w": 2
+        },
+        {
+          "p": "{color}{animal}峰",
+          "w": 2
+        },
+        {
+          "p": "{myth}峰",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "volcanic": [
+          {
+            "p": "{volcanic}{stone}峰"
+          },
+          {
+            "p": "{volcanic}山"
+          }
+        ],
+        "cold": [
+          {
+            "p": "{cold}{nature}峰"
+          }
+        ]
+      }
+    },
+    "plateau": {
+      "patterns": [
+        {
+          "p": "{high}{nature}高原",
+          "w": 2
+        },
+        {
+          "p": "{color}{stone}高原",
+          "w": 2
+        },
+        {
+          "p": "{direction}{high}原",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{high}高原"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{color}高原"
+          }
+        ]
+      }
+    },
+    "plain": {
+      "patterns": [
+        {
+          "p": "{quality}{place}平原",
+          "w": 2
+        },
+        {
+          "p": "{color}{plant}原",
+          "w": 2
+        },
+        {
+          "p": "{direction}{quality}平原",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "wet": [
+          {
+            "p": "{wet}{plant}原"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{color}原"
+          }
+        ]
+      }
+    },
+    "basin": {
+      "patterns": [
+        {
+          "p": "{color}{stone}盆地",
+          "w": 2
+        },
+        {
+          "p": "{deep}{nature}盆地",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "dry": [
+          {
+            "p": "{dry}{color}盆地"
+          }
+        ]
+      }
+    },
+    "desert": {
+      "patterns": [
+        {
+          "p": "{dry}{color}沙漠",
+          "w": 2
+        },
+        {
+          "p": "{hot}{stone}荒原",
+          "w": 1
+        },
+        {
+          "p": "{color}{dry}大漠",
+          "w": 2
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{dry}戈壁"
+          },
+          {
+            "p": "{color}{cold}荒漠"
+          }
+        ]
+      }
+    },
+    "forest": {
+      "patterns": [
+        {
+          "p": "{color}{forest}林",
+          "w": 2
+        },
+        {
+          "p": "{nature}{forest}林海",
+          "w": 2
+        },
+        {
+          "p": "{animal}{plant}森林",
+          "w": 1
+        },
+        {
+          "p": "{deep}{forest}林",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "hot": [
+          {
+            "p": "{hot}{nature}雨林"
+          },
+          {
+            "p": "{color}{animal}雨林"
+          }
+        ],
+        "cold": [
+          {
+            "p": "{cold}{forest}林"
+          }
+        ]
+      }
+    },
+    "tundra": {
+      "patterns": [
+        {
+          "p": "{cold}{nature}冻原",
+          "w": 2
+        },
+        {
+          "p": "{color}{cold}荒原",
+          "w": 1
+        }
+      ]
+    },
+    "icecap": {
+      "patterns": [
+        {
+          "p": "{cold}{nature}冰原",
+          "w": 2
+        },
+        {
+          "p": "{color}{cold}冰盖",
+          "w": 1
+        }
+      ]
+    },
+    "wetland": {
+      "patterns": [
+        {
+          "p": "{wet}{plant}泽",
+          "w": 2
+        },
+        {
+          "p": "{color}{wet}沼",
+          "w": 1
+        },
+        {
+          "p": "{animal}{water}泽",
+          "w": 1
+        }
+      ]
+    },
+    "province": {
+      "patterns": [
+        {
+          "p": "{quality}{place}州",
+          "w": 3
+        },
+        {
+          "p": "{direction}{quality}郡",
+          "w": 2
+        },
+        {
+          "p": "{color}{plant}",
+          "w": 2
+        },
+        {
+          "p": "{plant}{water}",
+          "w": 2
+        },
+        {
+          "p": "{quality}{place}",
+          "w": 2
+        }
+      ],
+      "byTag": {
+        "coastal": [
+          {
+            "p": "{quality}{water}"
+          },
+          {
+            "p": "{sea}{shape}港"
+          },
+          {
+            "p": "{animal}湾"
+          }
+        ],
+        "river": [
+          {
+            "p": "{plant}川"
+          },
+          {
+            "p": "{quality}津"
+          },
+          {
+            "p": "{color}{water}"
+          }
+        ],
+        "mountain": [
+          {
+            "p": "{color}{stone}关"
+          },
+          {
+            "p": "{high}{place}"
+          },
+          {
+            "p": "{animal}岭"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{stone}"
+          },
+          {
+            "p": "{color}沙"
+          }
+        ],
+        "cold": [
+          {
+            "p": "{cold}{place}"
+          }
+        ],
+        "sea": [
+          {
+            "p": "{color}{nature}海域"
+          },
+          {
+            "p": "{sea}{shape}洋面"
+          }
+        ],
+        "waste": [
+          {
+            "p": "{color}荒原"
+          },
+          {
+            "p": "{direction}荒"
+          },
+          {
+            "p": "{nature}之野"
+          }
+        ]
+      }
+    },
+    "region": {
+      "patterns": [
+        {
+          "p": "{direction}{place}",
+          "w": 2
+        },
+        {
+          "p": "{quality}{place}",
+          "w": 2
+        },
+        {
+          "p": "{place}{direction}",
+          "w": 1
+        },
+        {
+          "p": "{color}{plant}",
+          "w": 1
+        },
+        {
+          "p": "{myth}之地",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "cold": [
+          {
+            "p": "{cold}{place}"
+          },
+          {
+            "p": "{direction}{cold}"
+          }
+        ],
+        "hot": [
+          {
+            "p": "{hot}{place}"
+          }
+        ],
+        "dry": [
+          {
+            "p": "{dry}{place}"
+          },
+          {
+            "p": "{color}{dry}"
+          }
+        ],
+        "wet": [
+          {
+            "p": "{wet}{place}"
+          }
+        ],
+        "high": [
+          {
+            "p": "{high}{place}"
+          }
+        ]
+      }
+    },
+    "spot": {
+      "patterns": [
+        {
+          "p": "{quality}{water}",
+          "w": 2
+        },
+        {
+          "p": "{plant}{place}",
+          "w": 2
+        },
+        {
+          "p": "{color}{stone}",
+          "w": 1
+        },
+        {
+          "p": "{direction}{quality}",
+          "w": 1
+        }
+      ],
+      "byTag": {
+        "coastal": [
+          {
+            "p": "{animal}角"
+          },
+          {
+            "p": "{color}{stone}角"
+          },
+          {
+            "p": "{quality}港"
+          }
+        ],
+        "river": [
+          {
+            "p": "{quality}渡"
+          },
+          {
+            "p": "{plant}{water}渡"
+          },
+          {
+            "p": "{direction}津"
+          }
+        ],
+        "mountain": [
+          {
+            "p": "{color}{stone}关"
+          },
+          {
+            "p": "{animal}岭"
+          },
+          {
+            "p": "{high}{place}"
+          }
+        ],
+        "sea": [
+          {
+            "p": "{color}{nature}礁"
+          },
+          {
+            "p": "{animal}礁"
+          },
+          {
+            "p": "{sea}{shape}滩"
+          }
+        ],
+        "cold": [
+          {
+            "p": "{cold}{place}"
+          }
+        ]
+      }
+    }
+  }
+}
