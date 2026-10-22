@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { lakeArea } from '../../core/elevation';
 import { brushCells } from '../../core/select';
+import { chainIslands, reliefStroke } from '../../core/terrain';
 import { continents } from '../../core/testing/fixtures';
 import { describeChange, exec, options, setOptions, sliderActive, toast, world } from '../state';
+import { TOOL_DEFS } from './defs/tools';
 import { type Pointer, fmtMeters, lakeTool, landTool, reliefEstimateM, reliefTool, restoreTool, strengthValues } from './tools';
 
 // 工具的手感：预览深浅跟着力度、堆山的高度估计、改完后哪些格会闪、放湖贴着海时拦下
@@ -31,13 +33,15 @@ describe('高度变化的写法', () => {
   });
 });
 
-// 堆山取画笔下升得最多的那一格，压低取笔下中心那一格，与估计比：几个位置的中位数相差不到一倍
+// 笔下升得最多、降得最多的那一格，与估计比：几个位置的中位数相差不到一倍，压低时也不会估成反方向
 describe('堆山 / 压低的高度估计与实际同一量级', () => {
   const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)];
   const cases: [number, number][] = [
     [1, 0.7],
     [4, 0.7],
+    [1, -0.7],
     [4, -0.7],
+    [8, -1.4],
   ];
   for (const [rCells, strength] of cases) {
     it(`半径 ${rCells} 格、力度 ${strength}`, () => {
@@ -46,8 +50,8 @@ describe('堆山 / 压低的高度估计与实际同一量级', () => {
       const cellKm = w0.mesh.spacing * w0.kmPerUnit;
       setOptions({ brushKm: rCells * cellKm });
       const ratios: number[] = [];
-      for (let i = 0; i < w0.mesh.n && ratios.length < 5; i += 997) {
-        if (!w0.causes.land[i] || w0.derived.elevation[i] < 50) continue;
+      for (let i = 0; i < w0.mesh.n && ratios.length < 5; i += 331) {
+        if (!w0.causes.land[i] || w0.derived.elevation[i] < 300 || w0.causes.uplift[i] < 0.03) continue;
         const eng = base.clone();
         const w = eng.world;
         // 与工具一样只涂陆地
@@ -55,21 +59,45 @@ describe('堆山 / 压低的高度估计与实际同一量级', () => {
         const keep = b.cells.map((c) => w.causes.land[c] === 1);
         const cells = b.cells.filter((_, k) => keep[k]);
         const t = b.t.filter((_, k) => keep[k]);
-        const estimate = reliefEstimateM(w, cells, i, strength);
+        const estimate = reliefEstimateM(w, cells, reliefStroke(cells, t, strength).delta, strength);
         const before = Float32Array.from(w.derived.elevation);
         eng.exec({ op: 'paint_relief', cells, t, strength });
         const after = eng.world.derived.elevation;
         let actual = 0;
-        if (strength > 0) for (const c of cells) actual = Math.max(actual, after[c] - before[c]);
-        else actual = after[i] - before[i];
+        for (const c of cells) actual = strength > 0 ? Math.max(actual, after[c] - before[c]) : Math.min(actual, after[c] - before[c]);
+        // 选的地方都有几百米高、有抬升：估计不会是“几乎不变”
+        expect(Math.abs(estimate)).toBeGreaterThan(5);
         ratios.push(actual / estimate);
       }
       expect(ratios.length).toBe(5);
       const m = median(ratios);
       expect(m).toBeGreaterThan(0.5);
       expect(m).toBeLessThan(2);
+      // 方向总是对的（压低不会估成升高），也不会差出好几倍
+      for (const r of ratios) {
+        expect(r).toBeGreaterThan(0.25);
+        expect(r).toBeLessThan(4);
+      }
     });
   }
+});
+
+describe('岛链的“疏密”写出间距', () => {
+  it('写的间距与真放出来的岛链相同（取整前差不到一成）', () => {
+    const w = continents().world;
+    const cellKm = w.mesh.spacing * w.kmPerUnit;
+    setOptions({ islandKm: 3 * cellKm });
+    const def = TOOL_DEFS.chain.amount!;
+    for (const v of [0.4, 1, 2.5]) {
+      const text = def.format(v, w);
+      expect(text).toMatch(/^(稀疏|正常|密集) \d+% · 间距约 \d+ km$/);
+      const said = Number(text.match(/间距约 (\d+) km/)![1]);
+      // 一条横贯地图的直线：沿线的岛距 = 全长 ÷ 岛数
+      const isl = chainIslands(w, { points: [[0.1 * w.mesh.width, 0.5 * w.mesh.height], [0.9 * w.mesh.width, 0.5 * w.mesh.height]], kind: 'volcanic', size: options.value.islandKm, density: v, variant: 0 });
+      const real = (0.8 * w.mesh.width * w.kmPerUnit) / isl.length;
+      expect(Math.abs(said - real) / real).toBeLessThan(0.1);
+    }
+  });
 });
 
 describe('改完后哪些格会闪', () => {

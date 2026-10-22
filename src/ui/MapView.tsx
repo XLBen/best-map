@@ -304,6 +304,8 @@ export function MapView() {
         fittedEpoch = worldEpoch.value;
         userMoved = false;
         lastPointer = null;
+        // 鼠标还在地图上：按新的网格重新算它指着哪一格（旧的格号属于旧网格）
+        refreshPointer();
       }
       if (pathsFor !== w.derived.discharge) {
         paths = buildPaths(w);
@@ -395,7 +397,10 @@ export function MapView() {
 
     const resizeObs = new ResizeObserver(() => {
       const w = world.value;
-      if (w && !userMoved) renderer.fit(w.mesh, MAP_INSETS);
+      if (w && !userMoved) {
+        renderer.fit(w.mesh, MAP_INSETS);
+        refreshPointer();
+      }
       requestDraw();
     });
     resizeObs.observe(glCanvas);
@@ -418,8 +423,9 @@ export function MapView() {
       return pointerAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey, e.altKey);
     };
 
-    // 镜头动了而鼠标没动（触控板平移、+ / − 和按钮缩放、看全图）：按鼠标在屏幕上的位置重新算它指着地图的哪里，
-    // 画笔圈、悬停的格跟着手。拖着平移时鼠标下始终是同一点，不必算
+    // 镜头动了而鼠标没动（触控板平移、+ / − 缩放、捏合、看全图、换了世界、窗口变了大小）：按鼠标在屏幕上的位置
+    // 重新算它指着地图的哪里，画笔圈、悬停的格跟着手。拖着平移时鼠标下始终是同一点，不必算。
+    // 世界的 effect 一建立就会调到这里：那时 pointer 还是空的，直接返回（用不到后面才定义的 panning、pointerAt）
     function refreshPointer() {
       if (!pointer || panning) return;
       const p = pointerAt(pointer.sx, pointer.sy, pointer.shift, pointer.alt);
@@ -511,8 +517,10 @@ export function MapView() {
       const p = pointerOf(e);
       if (panning) {
         panning = null;
-        // 平移结束：整个星球的镜头绕回第一份（画面不变）
+        // 平移结束：整个星球的镜头绕回第一份（画面不变，但鼠标下的经度差了一整圈，画笔圈要跟着换到这一份上）
         clampPlanetCamera(world.value.mesh, renderer.camera, glCanvas.clientHeight, true);
+        refreshPointer();
+        requestDraw();
         return;
       }
       if (pressed) {

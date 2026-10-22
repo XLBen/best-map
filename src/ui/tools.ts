@@ -4,7 +4,6 @@ import { endemicSpecies } from '../../core/endemic';
 import { hexToRgb } from '../../core/export';
 import { type GeoFeature, REGION_KIND_INFO, guessRegionKind } from '../../core/features';
 import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
-import { findCell } from '../../core/mesh';
 import { type CutResult, type RiverPlan, brushCells, cutProvinces, growRegion, lassoStroke, planRiver, provinceCells, ringCells, ringWinding } from '../../core/select';
 import { riverWidth } from '../../core/rivers';
 import {
@@ -141,10 +140,6 @@ class Stroke {
     }
     this.last = [x, y];
   }
-  // 最后一下落在哪里（地图单位）
-  get end(): [number, number] | null {
-    return this.last;
-  }
   get cells() {
     return [...this.t.keys()];
   }
@@ -179,7 +174,8 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   let pointer: Pointer | null = null;
   // 鼠标在不在地图上：离开后只留排队中的笔画（拖滑块时照样在最后停的地方预览）
   let inside = false;
-  let queued: { stroke: Stroke; layers: HighlightLayer[] }[] = [];
+  // 排队中的笔画：各自松手时的预览图层
+  let queued: { layers: HighlightLayer[] }[] = [];
   // 空闲悬停只显示圈，不显示涂了会怎样。只有很小的画笔（半径不到 2 格，圈里看不出会碰到哪几格）
   // 另外描出一笔会涂到的格（只描边、不填色）；格没变就沿用同一个图层，不必重新上传
   let foot: { cells: number[]; layer: HighlightLayer } | null = null;
@@ -240,7 +236,7 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       stroke = null;
       if (!w || !s || !s.t.size) return;
       // 松手时的预览留在图上，直到这一笔的结果换上
-      const q = { stroke: s, layers: cfg.layers(w, s, p.shift).layers };
+      const q = { layers: cfg.layers(w, s, p.shift).layers };
       queued.push(q);
       try {
         await cfg.commit(w, s, p.shift);
@@ -453,21 +449,26 @@ export function restoreTool(): ToolHandler {
 // 堆山 / 压低的力度最大是多少（底部条滑块的上限，预览深浅按它算）
 export const RELIEF_MAX = 1.6;
 
-// 堆山 / 压低一笔大约让地势升降多少米（提示里的“约 +900 m”）：堆山是笔下最高处升多少，压低是 cell 这一格降多少。
-// 经验估计（在几种大小、格数的地图上量过，几处的中位数差不到一倍，个别地方差得更多）：
+// 堆山 / 压低一笔大约让地势升降多少米（提示里的“约 +900 m”）：笔下升得最多、降得最多的地方变多少。
+// 经验估计（在地区、星球几种格数的地图上，画笔半径 1–25 格量过，多数与实际差在五成以内，个别差到两倍）：
 // 堆山与力度^0.9、画笔半径（格）^0.75、“最高的山”成正比，抬升量最多到 2，已经很高的地方堆不了那么多；
-// 压低最多压到接近海平面：按 cell 现在的高度、笔下平均的抬升量能减掉几成估计。cells：这一笔涂到的格
-export function reliefEstimateM(w: World, cells: number[], cell: number, strength: number): number {
+// 压低是每格按现在的高度、去掉的抬升量占原有的几成估计，取最多的那格（没有抬升的平地压不下去）；
+// 半径一两格的小画笔压不了那么多（周围的山撑着）。cells、delta：这一笔涂到的格与抬升量的变化（reliefStroke）
+export function reliefEstimateM(w: World, cells: number[], delta: number[], strength: number): number {
   const rc = Math.max(0.5, brushR(w) / w.mesh.spacing);
-  let u = 0;
-  for (const i of cells) u += w.causes.uplift[i];
-  u /= Math.max(1, cells.length);
   if (strength >= 0) {
+    let u = 0;
+    for (const i of cells) u += w.causes.uplift[i];
+    u /= Math.max(1, cells.length);
     const s = Math.max(0, Math.min(strength, 2 - u));
     return 0.2 * w.small.planet.mountainScale * Math.pow(s, 0.9) * Math.pow(rc, 0.75);
   }
-  const frac = Math.min(u, -strength) / (0.035 + u);
-  return -Math.max(0, w.derived.elevation[cell]) * frac * Math.min(1, 0.35 * Math.pow(rc, 0.55));
+  let drop = 0;
+  cells.forEach((i, k) => {
+    const u = w.causes.uplift[i];
+    drop = Math.max(drop, (Math.max(0, w.derived.elevation[i]) * Math.min(u, -delta[k])) / (0.035 + u));
+  });
+  return -drop * Math.min(1.1, 0.65 * Math.pow(rc, 0.4));
 }
 
 // 高度变化写成“约 +900 m”：一千米以上取整到百米，一百米以上取整到 50 米
@@ -480,20 +481,6 @@ export function fmtMeters(v: number): string {
 
 export function reliefTool(): ToolHandler {
   const sign = (shift: boolean) => ((options.value.reliefMode === 'up') !== shift ? 1 : -1);
-  // 估计高度变化用的格：最后一下落的那一格；不在陆地上时取这一笔离它最近的陆地格
-  const cellOf = (w: World, s: Stroke) => {
-    const cells = s.cells;
-    const [x, y] = s.end ?? [w.mesh.x[cells[0]], w.mesh.y[cells[0]]];
-    const c = findCell(w.mesh, x, y);
-    if (w.causes.land[c]) return c;
-    let best = cells[0];
-    let bd = Infinity;
-    for (const i of cells) {
-      const d = mapDist(w, w.mesh.x[i], w.mesh.y[i], x, y);
-      if (d < bd) [best, bd] = [i, d];
-    }
-    return best;
-  };
   return brushTool({
     hint: () => ({ text: null }),
     filter: (w, i) => w.causes.land[i] === 1,
@@ -504,7 +491,7 @@ export function reliefTool(): ToolHandler {
       return {
         // 深浅跟着力度：拖“力度”滑块时预览跟着变
         layers: [{ cells: r.cells, values: strengthValues(r.delta, RELIEF_MAX), color: strength > 0 ? [205, 135, 70] : [120, 150, 190], alpha: 0.7 }],
-        hint: s.t.size ? `${name} ${fmtMeters(reliefEstimateM(w, s.cells, cellOf(w, s), strength))}` : name,
+        hint: s.t.size ? `${name} ${fmtMeters(reliefEstimateM(w, r.cells, r.delta, strength))}` : name,
       };
     },
     commit: (_w, s, shift) => exec({ op: 'paint_relief', cells: s.cells, t: s.ts, strength: sign(shift) * options.value.reliefAmount }, '正在计算地形…'),
@@ -1319,6 +1306,8 @@ export function lakeTool(): ToolHandler {
       const cells = cellsNow(w);
       if (!cells.length || coastalOf(w, cells)) {
         drag = null;
+        // 拖出来的大小留着：往内陆挪一点再点，还是这么大
+        if (d.km !== null) setOptions({ lakeKm: d.km });
         showToast('离海太近，留不住水：往内陆挪一点', true);
         return;
       }

@@ -458,7 +458,8 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
   return w;
 }
 
-function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
+// 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
+export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
   const canvas = ctx.canvas;
   const cw = canvas.clientWidth;
   const chh = canvas.clientHeight;
