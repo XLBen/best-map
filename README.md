@@ -2,6 +2,8 @@
 
 给写架空世界的作者用的地图工具：几秒钟生成一片像真实世界的海陆，然后自己放岛、画陆地、涂生态、画河、划省份，名字自动起好，最后导出成游戏能用的位图与表格。气候、河流、植被按物理规则推导，你改了一处，下游、下风向会跟着变。想要水晶丛林、血河、双子大陆这样的奇幻设定，可以给生态、河流类型、星球形态写一小段脚本，打包成资源包给别人用。
 
+**一键开启**：先装 [Node.js](https://nodejs.org)（LTS 版），然后双击 Mac 上的 `启动-Mac.command`、Windows 上的 `启动-Windows.bat`。第一次会先联网装需要的组件（一两分钟），之后浏览器自动打开 http://localhost:5191 。地图已经开着时再双击只是打开浏览器。用完关掉那个黑色窗口就停止。世界自动保存在浏览器里、按地址分开，所以地址固定是 5191；重要的世界请用“世界 → 保存”另存一份文件。Mac 第一次若提示“无法打开”：右键 → 打开。
+
 ```bash
 npm install
 npm run dev        # 开发服务器，默认 http://localhost:5173（.claude/launch.json 里用 5191）
@@ -346,7 +348,7 @@ return smoothstep(1500, 2500, 海拔);
   - `shell/` 是浮在地图上的外壳：顶栏、弹出面板、底部工具条（`ContextBar.tsx`，量距离时换成量出来的数；横滑块的换算在 `sliders.ts`）、提示条、右下角“这里”、左下角的尺子、右边的抽屉、键盘；`Ask.tsx` 信任脚本吗、用安全模式打开吗的问话，`ScriptBanner.tsx` 安全模式的横幅与脚本出错的提示
   - `packs/` 是资源包的弹窗（资源库、导入、导出）、“用到这个世界”的卡片和信任的问话
   - `panels/` 是弹出面板的内容（`FormPicker.tsx`：调整里换星球形态；`rivers.tsx`：选中的河的底部条、截走前的确认、河流列表；`riverTypes.tsx`：河流类型）；`tools.ts` 是地图工具（预览与命令），`riverCourse.ts` 画河、选河、删河，`exact.ts` 停一下的确切预览，`pending.ts` 排队中的编辑，`provincePreview.ts` 鼠标停在按钮上时的省份预览；`ScriptBox.tsx` 脚本框（`script-syntax.ts` 只解析不运行的检查，`script-commit.ts` 停一下就提交、一次修改一步撤销，`script-examples.ts` 例子），`SpeciesAdvanced.tsx` 生态的“高级：图案、效果与脚本”（`species-scripts.ts` 怎样提交），`connect.ts`、`editor-hooks.ts` 把这几处接起来；`Wizard.tsx` 新建向导，`FormEditor.tsx` 星球形态编辑器（`forms.ts` 是它和换形态用的逻辑，`form-store.ts` 它开没开），`ClimateChart.tsx` 生态类型编辑器，`Inspector.tsx` “这里是什么”
-- `tools/`：`generate.ts` 批量导出，`bench.ts` 计时，`hash.ts` 各层哈希，`terrain-stats.ts` 地形统计，`preview-terrain.ts` 地形预览图，`isolated-engine.ts` 开发服务器上现打包计算 Worker（开发时也隔离）
+- `tools/`：`generate.ts` 批量导出，`bench.ts` 计时，`hash.ts` 各层哈希，`terrain-stats.ts` 地形统计，`preview-terrain.ts` 地形预览图，`isolated-engine.ts` 开发服务器上现打包计算 Worker（开发时也隔离），`launch.mjs` 一键开启（根目录的 `启动-Mac.command`、`启动-Windows.bat` 运行它）
 
 ## 已知限制
 
