@@ -593,9 +593,14 @@ export async function redo() {
   if (ok && next) noteChange(`重做了：${next.summary}`, before);
 }
 
-// “调整”面板拖滑块时的地形预览：同一时间只算一个，拖动中只保留最新的值
+// “调整”面板拖滑块时的地形预览：同一时间只算一个，拖动中只算最新的值。
+// 算好的照样先显示（后面已经有更新的值在排队也显示，但一秒最多换几次，大星球上换一次要几十毫秒）：
+// 一直拖着不停时，海岸线慢一步跟着滑块走，而不是一直不出来
 let terrainPending: TerrainPatch | null = null;
 let terrainBusy = false;
+// 正在算的、显示着的是哪个值（JSON）：松手时据此决定还要不要再算一遍（见 commitTerrain）
+let terrainFlight = '';
+let terrainShown: { key: string; t: TerrainPreview; at: number } | null = null;
 // 每次清掉预览就换一代：还在路上的旧结果不再显示
 let terrainGen = 0;
 // 要过几次预览（清掉也算）：松手执行后据此判断用户是不是又拖了（见 commitTerrain）
@@ -617,18 +622,42 @@ export function previewTerrain(patch: TerrainPatch | null) {
       terrainPending = null;
       const gen = terrainGen;
       const w = world.value;
+      const key = JSON.stringify(p);
+      terrainFlight = key;
       const r = await call({ kind: 'previewTerrain', patch: p }, null);
-      // 算的过程中松手了、世界变了，或者已经有更新的值在排队，这个结果就不要了
-      if (r.ok && r.terrain && gen === terrainGen && world.value === w && !terrainPending) adjustPreview.value = r.terrain;
+      terrainFlight = '';
+      // 算的过程中松手了（不要了）、世界变了，这个结果就不要了；后面还有更新的值、刚换过一次的，也先不换
+      const soon = terrainPending !== null && terrainShown !== null && performance.now() - terrainShown.at < 150;
+      if (r.ok && r.terrain && gen === terrainGen && world.value === w && !soon) showTerrain(key, r.terrain);
     }
     terrainBusy = false;
   })();
 }
 
+function showTerrain(key: string, t: TerrainPreview) {
+  terrainShown = { key, t, at: performance.now() };
+  adjustPreview.value = t;
+}
+
 // “调整”的地形滑块松手：执行命令，拖到的那个值的预览（将来的海岸线）留在地图上，直到结果换上
-// （applySnapshot 时清掉），算的期间不闪回旧的海岸。没有变化、出错时在这里清掉；松手后又拖了就不动（那是新的预览）
+// （applySnapshot 时清掉），算的期间不闪回旧的海岸。松手的值还没算过、也不在算（一直拖着没停就松手）：
+// 现在就算它，Worker 按顺序处理，它在执行之前算好；排队的、在算的旧值作废。
+// 没有变化、出错时在这里清掉；松手后又拖了就不动（那是新的预览）
 export async function commitTerrain(cmd: Command, label: string, patch: TerrainPatch | null): Promise<boolean> {
-  if (patch) previewTerrain(patch);
+  if (patch) {
+    const key = JSON.stringify(patch);
+    terrainPending = null;
+    if (key !== terrainFlight) {
+      const gen = ++terrainGen;
+      const w = world.value;
+      const shown = terrainShown?.key === key && adjustPreview.value === terrainShown.t;
+      if (!shown) {
+        void call({ kind: 'previewTerrain', patch }, null).then((r) => {
+          if (r.ok && r.terrain && gen === terrainGen && world.value === w) showTerrain(key, r.terrain);
+        });
+      }
+    }
+  }
   const mark = terrainAsked;
   const ok = await exec(cmd, label);
   if (terrainAsked === mark && adjustPreview.value) previewTerrain(null);

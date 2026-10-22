@@ -97,6 +97,10 @@ const staticCache = new WeakMap<Float32Array, { coast: Float32Array; grad: Float
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
 // 湖水深（m），至少 2 m
 const lakeDepth = (world: World, i: number) => Math.max(2, world.derived.water[i] - world.derived.elevation[i]);
+// 湖面的海岸值：取负、离岸至少 60 m（幽灵海岸画新湖、原来的湖用同一个规则）
+const lakeCoast = (c: number) => -Math.max(60, Math.abs(c));
+// 水面的暖度（浅水颜色用，放在颜色的 alpha 里）
+const warmth = (world: World, i: number) => Math.round(255 * Math.min(1, Math.max(0, (world.derived.tMean[i] - 14) / 12)));
 
 function staticLayers(world: World) {
   let c = staticCache.get(world.derived.elevation);
@@ -110,7 +114,7 @@ function staticLayers(world: World) {
     h[i] = causes.land[i] ? Math.max(0, d.elevation[i]) : 0;
     if (isLake(world, i)) {
       h[i] = Math.max(0, d.water[i]);
-      coast[i] = -Math.max(60, Math.abs(coast[i]));
+      coast[i] = lakeCoast(coast[i]);
       elevation[i] = -lakeDepth(world, i);
     }
   }
@@ -151,14 +155,12 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     const land = causes.land[i] === 1;
     if (!land) {
       // alpha：海水暖度，决定浅水的颜色
-      const warm = Math.round(255 * Math.min(1, Math.max(0, (d.tMean[i] - 14) / 12)));
-      put(smooth, i, terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70], warm);
+      put(smooth, i, terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70], warmth(world, i));
       continue;
     }
     if (d.lake[i] === 1) {
       // 湖面：和海一样按水深取色（alpha：水的暖度）；数据底图里用固定的湖蓝
-      const warm = Math.round(255 * Math.min(1, Math.max(0, (d.tMean[i] - 14) / 12)));
-      put(smooth, i, terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, -lakeDepth(world, i) * 2) : lakeColor, warm);
+      put(smooth, i, terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, -lakeDepth(world, i) * 2) : lakeColor, warmth(world, i));
       continue;
     }
     // alpha：地表的“沙质”程度（越干越沙），决定海边有没有沙滩
@@ -242,21 +244,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
   const group = o.borders || o.mode === 'provinces' ? provinceGroups(world, causes.province, seams) : null;
   const st = staticLayers(world);
-  // 对岸的颜色：陆地格取相邻水面格的平均色，水面格取相邻陆地格的平均色（含 alpha）。
-  // 着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
-  const other = smooth.slice();
-  for (let i = 0; i < n; i++) {
-    const wet = st.coast[i] <= 0;
-    let k = 0;
-    const sum = [0, 0, 0, 0];
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      const j = mesh.adj[e];
-      if (st.coast[j] <= 0 === wet) continue;
-      for (let c = 0; c < 4; c++) sum[c] += smooth[j * 4 + c];
-      k++;
-    }
-    if (k) for (let c = 0; c < 4; c++) other[i * 4 + c] = Math.round(sum[c] / k);
-  }
+  // 对岸的颜色（fillOther）：着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
+  const other = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) fillOther(mesh, smooth, st.coast, other, i);
   return {
     smooth,
     other,
@@ -442,11 +432,6 @@ export function terrainGhost(world: World, base: CellLayers, t: TerrainPreview):
   });
   return out;
 }
-
-// 湖面的海岸值：取负、离岸至少 60 m（与 staticLayers 相同）
-const lakeCoast = (c: number) => -Math.max(60, Math.abs(c));
-// 水面的暖度（浅水颜色用），与 cellLayers 相同
-const warmth = (world: World, i: number) => Math.round(255 * Math.min(1, Math.max(0, (world.derived.tMean[i] - 14) / 12)));
 
 export interface GhostLayers {
   smooth: Uint8Array;

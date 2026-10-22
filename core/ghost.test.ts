@@ -125,15 +125,21 @@ const CASES: Case[] = [
   },
 ];
 
-describe('coastValueAt 与 coastValues 逐位一致', () => {
+// coastValueAt 与抽出前的算式逐位相同见 shared-helpers.test.ts；这里看幽灵用的两条路：逐格的 coastPatch、整份的 coastValueAt
+describe('什么都不改时，coastPatch 与 coastValues 逐位一致', () => {
   for (const [name, make] of WORLDS) {
     it(name, () => {
       const w = make().world;
       const s = coastValues(w);
+      const all = Int32Array.from({ length: w.mesh.n }, (_, i) => i);
+      const p = coastPatch(w, all, w.causes.landness, w.causes.land);
       const noise = coastNoiseField(w.mesh, coastSeed(w));
       const amp = COAST_AMP * w.small.terrain.coastRoughness;
       let bad = 0;
-      for (let i = 0; i < w.mesh.n; i++) if (!Object.is(s[i], Math.fround(coastValueAt(w.causes.landness[i], noise[i], amp, w.causes.land[i] === 1)))) bad++;
+      for (let i = 0; i < w.mesh.n; i++) {
+        if (!Object.is(s[i], p[i])) bad++;
+        if (!Object.is(s[i], Math.fround(coastValueAt(w.causes.landness[i], noise[i], amp, w.causes.land[i] === 1)))) bad++;
+      }
       expect(bad).toBe(0);
     });
   }

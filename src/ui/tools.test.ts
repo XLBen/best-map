@@ -358,4 +358,62 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
       vi.useRealTimers();
     }
   });
+
+  // 重画后陆海、山的高低会变的一格（海岸上）
+  const rerollable = (w: ReturnType<typeof continents>['world'], from: number) => {
+    const radius = Math.max(options.value.brushKm / w.kmPerUnit, w.mesh.spacing * 1.2);
+    const changes = (c: number) => {
+      const p = previewTerrain(w, { reroll: { x: w.mesh.x[c], y: w.mesh.y[c], radius, variant: w.small.terrain.gen!.rerolls.length + 1 } });
+      return p.gained.length + p.lost.length + p.relief.cells.length;
+    };
+    return [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * from && w.causes.land[i] && coastal(w, i) && changes(i) > 0)!;
+  };
+
+  it('重画这一片：点得快时先等预览，这期间再点不算（不会同一个编号重画两次）', async () => {
+    const w = setup();
+    vi.mocked(exec).mockClear();
+    const c = rerollable(w, 0.5);
+    const t = rerollTool();
+    await Promise.all([t.click?.(at(w, c)), t.click?.(at(w, c))]);
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  it('重画这一片：点了以后算的期间，鼠标挪开、离开地图也一直画着点的那一份', async () => {
+    const w = setup();
+    vi.mocked(exec).mockClear();
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    const c = rerollable(w, 0.5);
+    const t = rerollTool();
+    t.move?.(at(w, c), false);
+    const done = t.click?.(at(w, c));
+    await vi.waitFor(() => expect(exec).toHaveBeenCalled());
+    const other = rerollable(w, 0.7);
+    t.move?.(at(w, other), false);
+    t.leave?.();
+    const pv = t.preview();
+    expect(pv.hint).toBe('正在计算…');
+    expect(pv.terrain!.coast.length).toBe(w.mesh.n);
+    expect(t.keep?.()).toBe(true);
+    finish(true);
+    await done;
+    expect(t.keep?.()).toBe(false);
+  });
+
+  it('松手后算的期间鼠标离开地图：岛、湖的预览照样留着', async () => {
+    const w = setup();
+    const sea = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 5).every((j) => !w.causes.land[j] && !w.mesh.boundary[j]))!;
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    const t = islandTool();
+    t.move?.(at(w, sea), false);
+    expect(t.keep?.()).toBe(false);
+    t.down?.(at(w, sea));
+    const done = t.up?.(at(w, sea));
+    t.leave?.();
+    expect(t.keep?.()).toBe(true);
+    finish(true);
+    await done;
+    expect(t.keep?.()).toBe(false);
+  });
 });

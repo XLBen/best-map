@@ -103,7 +103,7 @@ export interface ToolHandler {
   cancel?(): void;
   // 鼠标离开地图
   leave?(): void;
-  // 鼠标离开地图后预览还要留着（排队中的笔画：结果换上之前一直显示）
+  // 鼠标离开地图后预览还要留着（排队中的笔画、松手后还在算的那一步：结果换上之前一直显示）
   keep?(): boolean;
   preview(): Preview;
 }
@@ -386,7 +386,7 @@ export function landTool(): ToolHandler {
       brush.leave?.();
       lasso.leave?.();
     },
-    keep: () => !!brush.keep?.(),
+    keep: () => !!brush.keep?.() || !!lasso.keep?.(),
     preview: () => (active ?? chosen()).preview(),
   };
 }
@@ -451,6 +451,7 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
     cancel() {
       if (!committing) ring = null;
     },
+    keep: () => committing,
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
@@ -674,6 +675,8 @@ export function islandTool(): ToolHandler {
     cancel() {
       if (!committing) drag = null;
     },
+    // 算的期间鼠标离开地图，岛照样留着（不闪回原来的海岸）。岛链、圈一片、放湖、重画这一片也一样
+    keep: () => committing,
     preview() {
       if (committing && held) return { ...held, hint: '正在计算…' };
       const c = compute();
@@ -779,6 +782,7 @@ export function chainTool(): ToolHandler {
     cancel() {
       if (!committing) points = null;
     },
+    keep: () => committing,
     preview() {
       if (committing && held) return { ...held, hint: '正在计算…' };
       const w = world.value;
@@ -828,6 +832,9 @@ export function rerollTool(): ToolHandler {
   let exact: { key: string; t: TerrainPreview; layers: HighlightLayer[]; hint: string; empty: boolean } | null = null;
   let wantKey = '';
   let timer: ReturnType<typeof setTimeout> | null = null;
+  // 点了以后：等预览、算的期间（held：点的那一份预览）
+  let clicking = false;
+  let held: { t: TerrainPreview; layers: HighlightLayer[] } | null = null;
   // 上一次预览慢：松手后大约要等几秒（按预览与上一步执行里慢的那个估）；不慢时为 0
   const slowSec = (w: World) => {
     const ms = rerollMs.get(w.mesh) ?? 0;
@@ -867,9 +874,12 @@ export function rerollTool(): ToolHandler {
     },
     leave: stop,
     cancel: stop,
+    // 点了以后算的期间鼠标离开地图，预览照样留着
+    keep: () => clicking,
     async click(p) {
       const w = world.value;
-      if (!w || p.cell < 0 || isBusy()) return;
+      // 等预览的那一下（点得快时）还没发出命令：这期间再点不算，免得同一个编号重画两次
+      if (!w || p.cell < 0 || isBusy() || clicking) return;
       const gen = w.small.terrain.gen;
       if (!gen) {
         showToast('空白海洋没有可以重画的地形；先用“画陆地”或“放岛”', true);
@@ -879,21 +889,30 @@ export function rerollTool(): ToolHandler {
       const key = keyOf(w, r);
       // 还没预览过（点得快）：先算一遍再决定，慢的世界不等
       wantKey = key;
-      const v = exact?.key === key ? exact : slowSec(w) ? null : await request(w, r, key);
-      if (world.value !== w) return;
-      if (v?.empty) {
-        showToast('这一片重画不出变化', true);
-        return;
+      clicking = true;
+      try {
+        const v = exact?.key === key ? exact : slowSec(w) ? null : await request(w, r, key);
+        if (world.value !== w) return;
+        if (v?.empty) {
+          showToast('这一片重画不出变化', true);
+          return;
+        }
+        held = v;
+        await exec({ op: 'reroll_region', ...r }, '正在重画…');
+      } finally {
+        clicking = false;
+        held = null;
       }
-      await exec({ op: 'reroll_region', ...r }, '正在重画…');
     },
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
       const ring: Shape = { kind: 'circle', x: pointer.x, y: pointer.y, r: radius(w), dashed: true, color: 'rgba(255, 220, 120, 0.95)', width: 2, geodesic: true };
+      // 点了以后算的期间：一直画着点的那一份（鼠标挪开也不变，不闪回原来的海岸）
+      if (held) return { layers: held.layers, shapes: [ring], hint: '正在计算…', terrain: held.t };
       if (pointer.cell < 0 || !w.small.terrain.gen) return { layers: [], shapes: [ring], hint: null };
       const r = rerollAt(w, pointer);
-      want(w, r);
+      if (!clicking) want(w, r);
       if (exact?.key === keyOf(w, r)) return { layers: exact.layers, shapes: [ring], hint: exact.hint, warn: exact.empty, terrain: exact.empty ? null : exact.t };
       const sec = slowSec(w);
       return { layers: [], shapes: [ring], hint: sec ? `松手后约 ${sec} 秒出结果` : null };
@@ -1499,6 +1518,7 @@ export function lakeTool(): ToolHandler {
     cancel() {
       if (!committing) drag = null;
     },
+    keep: () => committing,
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
