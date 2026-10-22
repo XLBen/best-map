@@ -15,6 +15,22 @@
       "port": 5191
     },
     {
+      "name": "map2-dev-test",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5191",
+        "--strictPort",
+        "--host",
+        "127.0.0.1"
+      ],
+      "port": 5191,
+      "url": "http://127.0.0.1:5191"
+    },
+    {
       "name": "map2-preview",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
