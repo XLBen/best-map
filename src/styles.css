@@ -1225,3 +1225,127 @@ kbd {
   left: calc((100% - 380px) / 2);
   max-width: calc(100% - 560px);
 }
+
+/* ---------- 脚本框（生态的“长在哪里”“颜色”……）---------- */
+.script-box {
+  position: relative;
+  margin: 8px 0 10px;
+}
+.script-head {
+  margin: 0 0 3px;
+  font-size: 12.5px;
+}
+.script-edit {
+  display: flex;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.script-edit:focus-within {
+  border-color: var(--accent-line);
+}
+.script-edit.has-problem {
+  border-color: #7a3a33;
+}
+.script-gutter,
+.script-edit textarea {
+  font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.script-gutter {
+  flex: none;
+  min-width: 30px;
+  padding-left: 6px;
+  padding-right: 6px;
+  text-align: right;
+  color: #5d6673;
+  background: #171a20;
+  overflow: hidden;
+  user-select: none;
+}
+.script-gutter .bad {
+  color: #fff;
+  background: #7a2f2a;
+  border-radius: 3px;
+}
+.script-edit textarea {
+  flex: 1;
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--text);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.script-problem {
+  margin-top: 3px;
+  color: #ff9a92;
+}
+.script-note {
+  margin-top: 3px;
+}
+.script-help {
+  position: absolute;
+  z-index: 5;
+  top: 26px;
+  left: 0;
+  right: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 10px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.script-help code,
+.script-example pre {
+  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.script-var {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 1px 0;
+  font-size: 12px;
+}
+.script-var code {
+  flex: none;
+}
+.script-example pre {
+  margin: 4px 0 3px;
+  padding: 4px 6px;
+  background: #12151a;
+  border-radius: 5px;
+  white-space: pre-wrap;
+}
+.script-example {
+  margin-bottom: 6px;
+}
+/* 生态的“高级：图案、效果与脚本” */
+.species-advanced .slider-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.species-advanced .slider-row input[type='range'] {
+  flex: 1;
+}
+.species-advanced textarea.names {
+  width: 100%;
+  min-height: 64px;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 6px;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}

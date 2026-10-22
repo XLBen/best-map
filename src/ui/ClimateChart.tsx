@@ -20,6 +20,7 @@ import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
 import { adjustPreviewNote, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
 import { paintWith } from './defs/tools';
+import { SpeciesAdvanced } from './SpeciesAdvanced';
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
 // 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风。
@@ -381,6 +382,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         <summary>高级</summary>
         <AdvancedTolerances sp={sp} />
       </details>
+      <SpeciesAdvanced sp={sp} />
       <div class="row wrap">
         <button onClick={() => paintWith(sp.id)} disabled={options.value.biome === sp.id && tool.value === 'biome'}>
           {options.value.biome === sp.id && tool.value === 'biome' ? '画笔正在用它' : '用它涂'}
