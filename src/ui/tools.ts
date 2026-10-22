@@ -21,12 +21,13 @@ import {
   reliefStroke,
   restoreStroke,
   roundKm as km,
+  type TerrainPreview,
 } from '../../core/terrain';
 import { regenTargets } from '../../core/provinces';
 import { isVegetated } from '../../core/vegetation';
 import type { Species } from '../../core/species';
 import { type RegionKind, type World, provinceColor } from '../../core/world';
-import type { HighlightLayer } from '../render/colors';
+import type { GhostEdit, HighlightLayer } from '../render/colors';
 import type { Shape } from '../render/overlay';
 import {
   type Again,
@@ -41,6 +42,7 @@ import {
   onlyEditsPending,
   options,
   previewCommand,
+  previewTerrainOnce,
   redrawTick,
   selectedFeature,
   selectedProvince,
@@ -48,6 +50,7 @@ import {
   sheet,
   showToast,
   sliderActive,
+  timings,
   world,
 } from '../state';
 
@@ -77,6 +80,10 @@ export interface Preview {
   sliderHint?: boolean;
   // 省份的预览：这些格将来属于哪个省。地图照此画出将来真实的省界（同一个对象不必重新上传）
   provinces?: ProvincePreview | null;
+  // 幽灵海岸：这些格的 landness 将来加多少（lake：将来成湖的格）。地图照此画出将来真实的海岸线（同一个对象不必重算）
+  ghost?: GhostEdit | null;
+  // 整份将来的海岸（重画这一片）：与“调整”滑块的预览同一种，海岸值与结果逐位相同
+  terrain?: TerrainPreview | null;
 }
 
 export interface ProvincePreview {
@@ -96,7 +103,7 @@ export interface ToolHandler {
   cancel?(): void;
   // 鼠标离开地图
   leave?(): void;
-  // 鼠标离开地图后预览还要留着（排队中的笔画：结果换上之前一直显示）
+  // 鼠标离开地图后预览还要留着（排队中的笔画、松手后还在算的那一步：结果换上之前一直显示）
   keep?(): boolean;
   preview(): Preview;
 }
@@ -104,8 +111,6 @@ export interface ToolHandler {
 const EMPTY: Preview = { layers: [], shapes: [], hint: null };
 
 type RGB = [number, number, number];
-const LAND_RGB: RGB = [120, 205, 95];
-const SEA_RGB: RGB = [70, 150, 235];
 const WHITE: RGB = [255, 255, 255];
 
 // 画笔半径（地图单位）
@@ -132,9 +137,12 @@ const isBusy = () => {
 // 一笔：经过的格与到笔画中心线的最近归一化距离 t（0 中心，1 边缘）
 class Stroke {
   t = new Map<number, number>();
+  // 每加一段加一：预览按它缓存（笔没动就沿用同一个结果）
+  version = 0;
   private last: [number, number] | null = null;
 
   add(w: World, x: number, y: number, filter?: (i: number) => boolean) {
+    this.version++;
     const r = brushR(w);
     const last = this.last;
     const steps = last ? Math.max(1, Math.ceil(Math.hypot(x - last[0], y - last[1]) / (r * 0.4))) : 1;
@@ -168,7 +176,7 @@ interface BrushConfig {
   hint: (shift: boolean) => { text: string | null; warn?: boolean };
   // 哪些格能被这一笔涂到
   filter?: (w: World, i: number) => boolean;
-  layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean; provinces?: ProvincePreview | null };
+  layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean; provinces?: ProvincePreview | null; ghost?: GhostEdit | null };
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
   // 画笔圈画在半径的几倍处：最后一个是主圈（悬停时虚线、按住时实线），前面的是细实线。省略时只在半径处画一圈
   rings?: number[];
@@ -184,8 +192,24 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   let pointer: Pointer | null = null;
   // 鼠标在不在地图上：离开后只留排队中的笔画（拖滑块时照样在最后停的地方预览）
   let inside = false;
-  // 排队中的笔画：各自松手时的预览图层
-  let queued: { s: Stroke; layers: HighlightLayer[] }[] = [];
+  // 排队中的笔画：各自松手时的预览图层与幽灵海岸（w：幽灵是按哪个世界算的）
+  let queued: { s: Stroke; shift: boolean; layers: HighlightLayer[]; ghost: GhostEdit | null; w: World }[] = [];
+  // 幽灵海岸：排队中的笔画加上正在画的这一笔。世界换了（前面的笔画算完换上了）就按新世界重算排队的，
+  // 排在最前的那一笔的增量因此与执行时相同。几笔的增量合在一起（同一格相加），各部分没变就沿用同一个对象
+  let ghostMerged: { from: unknown[]; ghost: GhostEdit | null } = { from: [], ghost: null };
+  const ghostWith = (w: World, current: GhostEdit | null): GhostEdit | null => {
+    for (const q of queued) {
+      if (!q.ghost || q.w === w) continue;
+      q.ghost = cfg.layers(w, q.s, q.shift).ghost ?? null;
+      q.w = w;
+    }
+    const from = [...queued.map((q) => q.ghost), current];
+    if (from.length === ghostMerged.from.length && from.every((x, k) => x === ghostMerged.from[k])) return ghostMerged.ghost;
+    const list = from.filter((x): x is GhostEdit => !!x);
+    const ghost = list.length <= 1 ? (list[0] ?? null) : { cells: list.flatMap((g) => g.cells), delta: list.flatMap((g) => g.delta), lake: list.flatMap((g) => g.lake ?? []) };
+    ghostMerged = { from, ghost };
+    return ghost;
+  };
   // 省份预览（涂省）：松手后一直留到结果回来，省界不会先跳回原样再跳过去
   let lastProv: ProvincePreview | null = null;
   let held: { s: Stroke; prov: ProvincePreview }[] = [];
@@ -209,14 +233,14 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   };
   // 拖底部条上的滑块（半径、力度、过渡……）时：在鼠标最后停的地方预览涂一下会怎样，大小、深浅跟着滑块变，
   // 旁边写出这一下的变化量（如“堆山 约 +600 m”）
-  let dab: { w: World; o: ToolOptions; p: Pointer; layers: HighlightLayer[]; hint: string | null; warn?: boolean } | null = null;
+  let dab: { w: World; o: ToolOptions; p: Pointer; layers: HighlightLayer[]; hint: string | null; warn?: boolean; ghost: GhostEdit | null } | null = null;
   const dabAt = (w: World, p: Pointer) => {
     if (dab?.w !== w || dab.o !== options.value || dab.p !== p) {
       const s = new Stroke();
       if (p.cell >= 0) s.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
       // 特别大的画笔（两万格以上）不预览，免得拖滑块卡顿
       const r = s.t.size && s.t.size <= 20000 ? cfg.layers(w, s, p.shift) : null;
-      dab = { w, o: options.value, p, layers: r?.layers ?? [], hint: r?.hint ?? null, warn: r?.warn };
+      dab = { w, o: options.value, p, layers: r?.layers ?? [], hint: r?.hint ?? null, warn: r?.warn, ghost: r?.ghost ?? null };
     }
     return dab;
   };
@@ -258,7 +282,8 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       stroke = null;
       if (!w || !s || !s.t.size) return;
       // 松手时的预览留在图上，直到这一笔的结果换上
-      const q = { s, layers: cfg.layers(w, s, p.shift).layers };
+      const r = cfg.layers(w, s, p.shift);
+      const q = { s, shift: p.shift, layers: r.layers, ghost: r.ghost ?? null, w };
       queued.push(q);
       if (lastProv) held.push({ s, prov: lastProv });
       lastProv = null;
@@ -285,17 +310,26 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       const waiting = queued.flatMap((q) => q.layers);
       const inLine = queued.length ? `正在计算…（${queued.length} 笔）` : null;
       if (!stroke) {
-        if (!inside && !sliderActive.value) return waiting.length || held.length ? { layers: waiting, shapes: [], hint: null, provinces: provincesWith(null) } : EMPTY;
+        if (!inside && !sliderActive.value) {
+          return waiting.length || held.length || queued.length ? { layers: waiting, shapes: [], hint: null, provinces: provincesWith(null), ghost: ghostWith(w, null) } : EMPTY;
+        }
         const h = cfg.hint(pointer.shift);
         if (sliderActive.value && !h.warn) {
           const d = dabAt(w, pointer);
-          return { layers: [...waiting, ...d.layers], shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true, provinces: provincesWith(null) };
+          return { layers: [...waiting, ...d.layers], shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true, provinces: provincesWith(null), ghost: ghostWith(w, d.ghost) };
         }
-        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes: ringsAt(w, pointer), hint: inLine ?? h.text, warn: h.warn, provinces: provincesWith(null) };
+        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes: ringsAt(w, pointer), hint: inLine ?? h.text, warn: h.warn, provinces: provincesWith(null), ghost: ghostWith(w, null) };
       }
       const r = cfg.layers(w, stroke, pointer.shift);
       lastProv = r.provinces ?? null;
-      return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn, provinces: provincesWith(lastProv) };
+      return {
+        layers: [...waiting, ...r.layers],
+        shapes: ringsAt(w, pointer),
+        hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null),
+        warn: r.warn,
+        provinces: provincesWith(lastProv),
+        ghost: ghostWith(w, r.ghost ?? null),
+      };
     },
   };
 }
@@ -307,19 +341,18 @@ export function landTool(): ToolHandler {
     const m = options.value.landMode;
     return shift ? (m === 'land' ? 'sea' : 'land') : m;
   };
+  // 画的时候直接画出将来的海岸线（幽灵海岸），不再涂绿、涂蓝。笔没动就沿用同一个结果
+  let memo: { w: World; s: Stroke; v: number; mode: string; out: ReturnType<BrushConfig['layers']> } | null = null;
   const brush = brushTool({
     hint: () => ({ text: null }),
     layers(w, s, shift) {
       const mode = modeOf(shift);
+      if (memo?.w === w && memo.s === s && memo.v === s.version && memo.mode === mode) return memo.out;
       const r = landStroke(w, s.cells, s.ts, mode);
       const p = previewLand(w, r.cells, r.delta);
-      return {
-        layers: [
-          { cells: p.gained, color: LAND_RGB, alpha: 0.75 },
-          { cells: p.lost, color: SEA_RGB, alpha: 0.75 },
-        ],
-        hint: mode === 'land' ? `陆地 +${p.gained.length} 格` : `陆地 −${p.lost.length} 格`,
-      };
+      const out = { layers: [], ghost: { cells: r.cells, delta: r.delta }, hint: mode === 'land' ? `陆地 +${p.gained.length} 格` : `陆地 −${p.lost.length} 格` };
+      memo = { w, s, v: s.version, mode, out };
+      return out;
     },
     commit: (_w, s, shift) => exec({ op: 'paint_land', cells: s.cells, t: s.ts, mode: modeOf(shift) }),
     // 0.7 倍半径以内一定变（细实线）；海岸平均落在 0.85 倍处（主圈），再往外只是零星几格
@@ -353,26 +386,26 @@ export function landTool(): ToolHandler {
       brush.leave?.();
       lasso.leave?.();
     },
-    keep: () => !!brush.keep?.(),
+    keep: () => !!brush.keep?.() || !!lasso.keep?.(),
     preview: () => (active ?? chosen()).preview(),
   };
 }
 
 // 圈一片：按住画一个圈，松手后圈里变成陆地（或海），边上和画笔一样是自然的海岸。
-// 预览与松手后提交的是同一个圈（每移动半格记一个点），所以绿色的格就是结果
+// 预览与松手后提交的是同一个圈（每移动半格记一个点），地图上画出的将来的海岸线就是结果
 function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
   let pointer: Pointer | null = null;
   let ring: [number, number][] | null = null;
   let ringId = 0;
   let committing = false;
-  let cache: { key: string; cells: number[]; t: number[]; gained: number[]; lost: number[] } | null = null;
+  let cache: { key: string; cells: number[]; t: number[]; gained: number[]; lost: number[]; ghost: GhostEdit } | null = null;
   const compute = (w: World, pts: [number, number][], mode: 'land' | 'sea') => {
     const key = `${worldId(w)}|${ringId}|${pts.length}|${mode}`;
     if (cache?.key === key) return cache;
     const r = lassoStroke(w, pts);
     const st = landStroke(w, r.cells, r.t, mode);
     const p = previewLand(w, st.cells, st.delta);
-    cache = { key, cells: r.cells, t: r.t, gained: p.gained, lost: p.lost };
+    cache = { key, cells: r.cells, t: r.t, gained: p.gained, lost: p.lost, ghost: { cells: st.cells, delta: st.delta } };
     return cache;
   };
   return {
@@ -418,6 +451,7 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
     cancel() {
       if (!committing) ring = null;
     },
+    keep: () => committing,
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
@@ -431,35 +465,34 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
       if (aroundPole(w, ring)) return { layers: [], shapes, hint: '绕着极点了，松手不会生效', warn: true };
       const c = compute(w, ring, mode);
       return {
-        layers: [
-          { cells: c.gained, color: LAND_RGB, alpha: 0.75 },
-          { cells: c.lost, color: SEA_RGB, alpha: 0.75 },
-        ],
+        layers: [],
         shapes,
         hint: committing ? '正在计算…' : mode === 'land' ? `陆地 +${c.gained.length} 格` : `陆地 −${c.lost.length} 格`,
+        ghost: c.ghost,
       };
     },
   };
 }
 
 // 恢复原样：画到的地方，画过的陆地、海、山和放的岛都退回生成时的样子（中间全收回，边上渐变）。
-// 只涂得到改过的格；绿色会变回陆地，蓝色会变回海
+// 只涂得到改过的格（淡淡的白色）；地图上直接画出恢复后的海岸线
 export function restoreTool(): ToolHandler {
   const edited = (w: World, i: number) => w.causes.landDelta[i] !== 0 || w.causes.upliftDelta[i] !== 0 || w.causes.erodDelta[i] !== 0;
+  let memo: { w: World; s: Stroke; v: number; out: ReturnType<BrushConfig['layers']> } | null = null;
   return brushTool({
     hint: () => ({ text: null }),
     filter: edited,
     layers(w, s) {
+      if (memo?.w === w && memo.s === s && memo.v === s.version) return memo.out;
       const r = restoreStroke(w, s.cells, s.ts);
       const p = previewLand(w, r.cells, r.delta);
-      return {
-        layers: [
-          { cells: s.cells, values: s.weights(), color: WHITE, alpha: 0.35 },
-          { cells: p.gained, color: LAND_RGB, alpha: 0.75 },
-          { cells: p.lost, color: SEA_RGB, alpha: 0.75 },
-        ],
+      const out = {
+        layers: [{ cells: s.cells, values: s.weights(), color: WHITE, alpha: 0.25 }],
+        ghost: { cells: r.cells, delta: r.delta },
         hint: !s.t.size ? '这里没改过' : p.gained.length || p.lost.length ? `陆地 +${p.gained.length} / −${p.lost.length} 格` : `恢复 ${s.t.size} 格`,
       };
+      memo = { w, s, v: s.version, out };
+      return out;
     },
     async commit(_w, s) {
       if (!s.t.size) {
@@ -550,26 +583,13 @@ function islandAgain(spec: IslandSpec): Again {
   };
 }
 
-// 小礁的预览：那一格淡淡地涂上，格心画一个半格大的实心点（放出来大约就这么大）。
-// 整个星球：点是球面上真实大小的圆（高纬度的格在平铺图上横向拉长，点也跟着拉长）
-function reefPreview(w: World, fresh: number[], nearX: number, hint: string, warn: boolean): Preview {
-  const { mesh } = w;
-  const c = fresh[0];
-  if (c === undefined) return { layers: [], shapes: [], hint, warn };
-  const x = mesh.kind === 'sphere' ? unwrapNear(mesh.x[c], nearX) : mesh.x[c];
-  return {
-    layers: [{ cells: fresh, color: LAND_RGB, alpha: 0.25 }],
-    shapes: [{ kind: 'circle', x, y: mesh.y[c], r: mesh.spacing * 0.25, fill: true, geodesic: true, color: 'rgba(120, 205, 95, 0.95)', width: 1 }],
-    hint,
-    warn,
-  };
-}
-
 // 点一下：用底部滑块的大小放岛；按住往外拖：拖多远岛就多大（松手后滑块也停在这个大小）
 export function islandTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
   let committing = false;
+  // 松手时的预览：算的期间一直显示它（松手后滑块已经换到下一个形状，不能再按滑块重算）
+  let held: Preview | null = null;
   let cache: { key: string; preview: Preview; spec: IslandSpec | null; block: string | null } | null = null;
   const compute = () => {
     const w = world.value;
@@ -593,14 +613,14 @@ export function islandTool(): ToolHandler {
     const stamp = islandStamp(w, spec);
     const fresh = stamp.footprint.filter((c) => !w.causes.land[c]);
     if (!block && !fresh.length) block = '这里已经是陆地';
-    const preview: Preview = reef
-      ? reefPreview(w, fresh, pointer.x, block ?? `${name} · 约 ${diameter} km`, !!block)
-      : {
-          layers: [{ cells: stamp.footprint, color: block ? [230, 90, 70] : LAND_RGB, alpha: 0.75 }],
-          shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
-          hint: block ?? `${name} · ${diameter} km`,
-          warn: !!block,
-        };
+    // 放得下：地图上直接画出岛将来的海岸线（小礁也是，画出来约半格大）；放不下：轮廓涂红
+    const preview: Preview = {
+      layers: block ? [{ cells: stamp.footprint, color: [230, 90, 70], alpha: 0.75 }] : [],
+      shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
+      hint: block ?? (reef ? `${name} · 约 ${diameter} km` : `${name} · ${diameter} km`),
+      warn: !!block,
+      ghost: block ? null : { cells: stamp.cells, delta: stamp.landDelta },
+    };
     cache = { key, preview, spec, block };
     return cache;
   };
@@ -640,6 +660,7 @@ export function islandTool(): ToolHandler {
       }
       const spec = c.spec;
       committing = true;
+      held = c.preview;
       // 滑块停在拖出的大小；下一个岛换个形状（悬停的预览里看得到）
       setOptions({ islandVariant: spec.variant + 1, ...(d.km !== null ? { islandKm: d.km } : {}) });
       try {
@@ -647,16 +668,20 @@ export function islandTool(): ToolHandler {
         await exec({ op: 'add_island', island: spec }, '正在造岛…', spec.kind === 'reef' ? undefined : islandAgain(spec));
       } finally {
         committing = false;
+        held = null;
         drag = null;
       }
     },
     cancel() {
       if (!committing) drag = null;
     },
+    // 算的期间鼠标离开地图，岛照样留着（不闪回原来的海岸）。岛链、圈一片、放湖、重画这一片也一样
+    keep: () => committing,
     preview() {
+      if (committing && held) return { ...held, hint: '正在计算…' };
       const c = compute();
       if (!c) return EMPTY;
-      return committing ? { ...c.preview, hint: '正在计算…' } : c.preview;
+      return c.preview;
     },
   };
 }
@@ -679,6 +704,7 @@ export function chainTool(): ToolHandler {
   let points: [number, number][] | null = null;
   let lastScreen: [number, number] = [0, 0];
   let committing = false;
+  let held: Preview | null = null;
   let cache: { key: string; preview: Preview } | null = null;
   // 预览与执行用同一份参数
   const specFor = (pts: [number, number][]) => {
@@ -695,6 +721,25 @@ export function chainTool(): ToolHandler {
     // 岛链用自己的种类和大小；fine：小一号的岛最小到 0.75 格（旧存档里的岛链没有这一项，照旧）
     const size = w ? Math.max(islandSizeRangeKm(w, o.chainKind)[0], o.chainKm) : o.chainKm;
     return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant, fine: true as const };
+  };
+  // 一条岛链的预览（按世界与参数缓存）：与命令同一个规则（带 fine：太小的岛岛心那一格成陆），预览就是结果
+  const viewOf = (w: World, spec: ChainSpec): Preview => {
+    const key = `${worldId(w)}|${JSON.stringify(spec)}`;
+    if (cache?.key !== key) {
+      const islands = chainIslands(w, spec);
+      const stamp = combineStamps(w, islands, spec.fine);
+      cache = {
+        key,
+        preview: {
+          layers: [],
+          shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
+          hint: `${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}`,
+          // 地图上直接画出岛链将来的海岸线
+          ghost: { cells: stamp.cells, delta: stamp.landDelta },
+        },
+      };
+    }
+    return cache.preview;
   };
   return {
     drags: true,
@@ -722,68 +767,155 @@ export function chainTool(): ToolHandler {
       }
       committing = true;
       const chain = specFor(pts);
+      // 算的期间一直显示松手时的这一条（滑块马上换到下一种排列）
+      const w = world.value;
+      held = w ? viewOf(w, chain) : null;
       setOptions({ chainVariant: chain.variant + 1 });
       try {
         await exec({ op: 'add_island_chain', chain }, '正在造岛链…', chainAgain(chain));
       } finally {
         committing = false;
+        held = null;
         points = null;
       }
     },
     cancel() {
       if (!committing) points = null;
     },
+    keep: () => committing,
     preview() {
+      if (committing && held) return { ...held, hint: '正在计算…' };
       const w = world.value;
       if (!w || !pointer) return EMPTY;
       if (!points || points.length < 2) return EMPTY;
-      const spec = specFor(points);
-      const key = `${worldId(w)}|${JSON.stringify(spec)}`;
-      if (cache?.key !== key) {
-        const islands = chainIslands(w, spec);
-        // 与命令同一个规则（带 fine：太小的岛岛心那一格成陆），预览就是结果
-        const stamp = combineStamps(w, islands, spec.fine);
-        cache = {
-          key,
-          preview: {
-            layers: [{ cells: stamp.footprint, color: LAND_RGB, alpha: 0.75 }],
-            shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
-            hint: `${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}`,
-          },
-        };
-      }
-      return committing ? { ...cache.preview, hint: '正在计算…' } : cache.preview;
+      return viewOf(w, specFor(points));
     },
   };
 }
 
+// 山会变高（橙）、变矮（蓝灰）的格：深浅跟着抬升量的变化。“调整”滑块与重画这一片共用
+export function reliefLayers(relief: { cells: number[]; delta: number[] }): HighlightLayer[] {
+  const up: number[] = [];
+  const upV: number[] = [];
+  const down: number[] = [];
+  const downV: number[] = [];
+  relief.cells.forEach((cell, k) => {
+    const d = relief.delta[k];
+    if (d > 0) {
+      up.push(cell);
+      upV.push(Math.min(1, d / 0.6));
+    } else {
+      down.push(cell);
+      downV.push(Math.min(1, -d / 0.6));
+    }
+  });
+  return [
+    { cells: up, values: upV, color: [205, 135, 70], alpha: 0.7 },
+    { cells: down, values: downV, color: [120, 150, 190], alpha: 0.7 },
+  ];
+}
+
+// 自动预览太慢（大星球上算一次超过这么多毫秒）就不再自动预览，只说松手后大约要等几秒
+export const SLOW_PREVIEW_MS = 600;
+// 每个网格上一次重画预览算了多久
+const rerollMs = new WeakMap<object, number>();
+
+// 重画这一片：鼠标停下 150 毫秒后在 Worker 里按同一条路算一遍（只重算圈里、重新定海平面，海岸值与结果逐位相同），
+// 地图上画出将来的海岸线，山会变高、变矮的地方涂橙、涂蓝；什么都不会变时拦下点击（历史里不多一步空的）
 export function rerollTool(): ToolHandler {
   let pointer: Pointer | null = null;
   // 重画的圈至少 1.2 格：再小可能一格都不变
   const radius = (w: World) => Math.max(brushR(w), w.mesh.spacing * 1.2);
+  // 与命令同一份参数（variant 是下一次重画的编号）
+  const rerollAt = (w: World, p: Pointer) => ({ x: keepX(w, p.x), y: p.y, radius: radius(w), variant: (w.small.terrain.gen?.rerolls.length ?? 0) + 1 });
+  const keyOf = (w: World, r: ReturnType<typeof rerollAt>) => `${worldId(w)}|${r.x}|${r.y}|${r.radius}|${r.variant}`;
+  let exact: { key: string; t: TerrainPreview; layers: HighlightLayer[]; hint: string; empty: boolean } | null = null;
+  let wantKey = '';
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  // 点了以后：等预览、算的期间（held：点的那一份预览）
+  let clicking = false;
+  let held: { t: TerrainPreview; layers: HighlightLayer[] } | null = null;
+  // 上一次预览慢：松手后大约要等几秒（按预览与上一步执行里慢的那个估）；不慢时为 0
+  const slowSec = (w: World) => {
+    const ms = rerollMs.get(w.mesh) ?? 0;
+    return ms > SLOW_PREVIEW_MS ? Math.max(1, Math.round(Math.max(ms, timings.value.total) / 1000)) : 0;
+  };
+  const request = async (w: World, r: ReturnType<typeof rerollAt>, key: string) => {
+    const t = await previewTerrainOnce({ reroll: r });
+    if (!t) return null;
+    if (t.ms !== undefined) rerollMs.set(w.mesh, t.ms);
+    const empty = !t.gained.length && !t.lost.length && !t.relief.cells.length;
+    const hint = empty ? '这一片重画不出变化' : t.gained.length || t.lost.length ? `重画：陆地 +${t.gained.length} / −${t.lost.length} 格` : '重画：只变山的高低';
+    const v = { key, t, layers: reliefLayers(t.relief), hint, empty };
+    if (key === wantKey) {
+      exact = v;
+      redrawTick.value++;
+    }
+    return v;
+  };
+  const want = (w: World, r: ReturnType<typeof rerollAt>) => {
+    const key = keyOf(w, r);
+    if (key === wantKey) return;
+    wantKey = key;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (slowSec(w)) return;
+    timer = setTimeout(() => void request(w, r, key), 150);
+  };
+  const stop = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    wantKey = '';
+  };
   return {
     drags: false,
     move(p) {
       pointer = p;
     },
+    leave: stop,
+    cancel: stop,
+    // 点了以后算的期间鼠标离开地图，预览照样留着
+    keep: () => clicking,
     async click(p) {
       const w = world.value;
-      if (!w || p.cell < 0 || isBusy()) return;
+      // 等预览的那一下（点得快时）还没发出命令：这期间再点不算，免得同一个编号重画两次
+      if (!w || p.cell < 0 || isBusy() || clicking) return;
       const gen = w.small.terrain.gen;
       if (!gen) {
         showToast('空白海洋没有可以重画的地形；先用“画陆地”或“放岛”', true);
         return;
       }
-      await exec({ op: 'reroll_region', x: keepX(w, p.x), y: p.y, radius: radius(w), variant: gen.rerolls.length + 1 }, '正在重画…');
+      const r = rerollAt(w, p);
+      const key = keyOf(w, r);
+      // 还没预览过（点得快）：先算一遍再决定，慢的世界不等
+      wantKey = key;
+      clicking = true;
+      try {
+        const v = exact?.key === key ? exact : slowSec(w) ? null : await request(w, r, key);
+        if (world.value !== w) return;
+        if (v?.empty) {
+          showToast('这一片重画不出变化', true);
+          return;
+        }
+        held = v;
+        await exec({ op: 'reroll_region', ...r }, '正在重画…');
+      } finally {
+        clicking = false;
+        held = null;
+      }
     },
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
-      return {
-        layers: [],
-        shapes: [{ kind: 'circle', x: pointer.x, y: pointer.y, r: radius(w), dashed: true, color: 'rgba(255, 220, 120, 0.95)', width: 2, geodesic: true }],
-        hint: null,
-      };
+      const ring: Shape = { kind: 'circle', x: pointer.x, y: pointer.y, r: radius(w), dashed: true, color: 'rgba(255, 220, 120, 0.95)', width: 2, geodesic: true };
+      // 点了以后算的期间：一直画着点的那一份（鼠标挪开也不变，不闪回原来的海岸）
+      if (held) return { layers: held.layers, shapes: [ring], hint: '正在计算…', terrain: held.t };
+      if (pointer.cell < 0 || !w.small.terrain.gen) return { layers: [], shapes: [ring], hint: null };
+      const r = rerollAt(w, pointer);
+      if (!clicking) want(w, r);
+      if (exact?.key === keyOf(w, r)) return { layers: exact.layers, shapes: [ring], hint: exact.hint, warn: exact.empty, terrain: exact.empty ? null : exact.t };
+      const sec = slowSec(w);
+      return { layers: [], shapes: [ring], hint: sec ? `松手后约 ${sec} 秒出结果` : null };
     },
   };
 }
@@ -1316,17 +1448,21 @@ export function lakeTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
   let committing = false;
-  let cache: { key: string; cells: number[] } | null = null;
+  let cache: { key: string; cells: number[]; ghost: GhostEdit } | null = null;
   const centerOf = () => drag ?? (pointer && pointer.cell >= 0 ? pointer : null);
   const radiusNow = () => drag?.km ?? options.value.lakeKm;
-  const cellsNow = (w: World) => {
+  const lakeNow = (w: World) => {
     const c = centerOf();
-    if (!c) return [];
+    if (!c) return null;
     const key = `${worldId(w)}|${c.cell}|${radiusNow()}`;
     // 新湖都带 exact：半径就按给的算（最小只淹一格）
-    if (cache?.key !== key) cache = { key, cells: lakeArea(w, c.cell, radiusNow(), true) };
-    return cache.cells;
+    if (cache?.key !== key) {
+      const cells = lakeArea(w, c.cell, radiusNow(), true);
+      cache = { key, cells, ghost: { cells: [], delta: [], lake: cells } };
+    }
+    return cache;
   };
+  const cellsNow = (w: World) => lakeNow(w)?.cells ?? [];
   // 碰到海岸的湖会直接流进海里，留不住水
   const coastalOf = (w: World, cells: number[]) =>
     cells.some((c) => {
@@ -1382,18 +1518,22 @@ export function lakeTool(): ToolHandler {
     cancel() {
       if (!committing) drag = null;
     },
+    keep: () => committing,
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
       const c = centerOf();
       if (!c || !w.causes.land[c.cell]) return EMPTY;
-      const cells = cellsNow(w);
+      const lake = lakeNow(w);
+      const cells = lake?.cells ?? [];
       const coastal = coastalOf(w, cells);
+      // 留得住水：地图上直接画出湖面（湖岸照湖的画法）；贴着海：橙色，松手会被拦下
       return {
-        layers: [{ cells, color: coastal ? [230, 120, 70] : [70, 140, 220], alpha: 0.8 }],
+        layers: coastal ? [{ cells, color: [230, 120, 70], alpha: 0.8 }] : [],
         shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
         hint: committing ? '正在计算…' : coastal ? '离海太近，留不住水' : `湖 · ${km(radiusNow() * 2)} km`,
         warn: coastal,
+        ghost: coastal || !lake ? null : lake.ghost,
       };
     },
   };

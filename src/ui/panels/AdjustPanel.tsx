@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { World } from '../../../core/world';
-import { exec, mode, openPanel, previewTerrain, setOptions, world } from '../../state';
+import { commitTerrain, exec, mode, openPanel, previewTerrain, setOptions, world } from '../../state';
 import { ADJUSTMENTS, PLANET_TOGGLES } from '../defs/adjustments';
 import { setTool } from '../defs/tools';
 import type { AdjustmentDef } from '../defs/types';
 
-// “调整”：整个世界的参数。地形类的滑块拖动时地图上实时显示陆海变化（绿色变陆地、蓝色变海），
+// “调整”：整个世界的参数。地形类的滑块拖动时地图上实时画出将来的海岸线（与结果逐格相同），
 // 松手才执行，一次一步，可以撤销
 
 const RES = 1000;
@@ -50,12 +50,14 @@ function AdjustRow({ def, w }: { def: AdjustmentDef; w: World }) {
         }}
         onChange={(e) => {
           const nv = fromPos(def, Number((e.target as HTMLInputElement).value), range);
-          previewTerrain(null);
           if (Math.abs(nv - now) < def.step / 2) {
+            previewTerrain(null);
             setDraft(null);
             return;
           }
-          void exec(def.command(w, nv), def.busyLabel);
+          // 地形类：将来的海岸线留在地图上，直到结果换上（算的期间不闪回旧的海岸）
+          if (def.preview === 'terrain' && def.patch) void commitTerrain(def.command(w, nv), def.busyLabel, def.patch(nv));
+          else void exec(def.command(w, nv), def.busyLabel);
         }}
       />
       {def.note && <span class="muted small">{def.note(w, v)}</span>}
@@ -126,7 +128,7 @@ export function AdjustPanel() {
             ))}
         </section>
       ))}
-      <p class="muted small">拖滑块时地图上先显示陆海变化，松手才计算；你手画的陆地、放的岛都会保留。每一下都能撤销。</p>
+      <p class="muted small">拖滑块时地图上先画出将来的海岸线，松手才计算；你手画的陆地、放的岛都会保留。每一下都能撤销。</p>
       <FieldsBox w={w} />
     </>
   );

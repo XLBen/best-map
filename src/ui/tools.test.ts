@@ -1,16 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import { lakeArea } from '../../core/elevation';
 import { brushCells } from '../../core/select';
-import { chainIslands, reliefStroke } from '../../core/terrain';
+import { chainIslands, previewTerrain, reliefStroke } from '../../core/terrain';
 import { continents } from '../../core/testing/fixtures';
 import { describeChange, exec, options, setOptions, sliderActive, toast, world } from '../state';
 import { TOOL_DEFS } from './defs/tools';
-import { type Pointer, fmtMeters, lakeTool, landTool, reliefEstimateM, reliefTool, restoreTool, strengthValues } from './tools';
+import { type Pointer, fmtMeters, islandTool, lakeTool, landTool, reliefEstimateM, reliefTool, rerollTool, restoreTool, strengthValues } from './tools';
 
-// 工具的手感：预览深浅跟着力度、堆山的高度估计、改完后哪些格会闪、放湖贴着海时拦下
+// 工具的手感：预览深浅跟着力度、堆山的高度估计、改完后哪些格会闪、放湖贴着海时拦下、幽灵海岸
 
-// 命令不真的发给引擎（这里没有 worker）：只看工具发了什么
-vi.mock('../state', async (importOriginal) => ({ ...(await importOriginal<typeof import('../state')>()), exec: vi.fn(async () => true) }));
+// 命令不真的发给引擎（这里没有 worker）：只看工具发了什么。地形预览直接在主线程上算（与 Worker 里同一个函数）
+vi.mock('../state', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../state')>();
+  const { previewTerrain: run } = await import('../../core/terrain');
+  return { ...mod, exec: vi.fn(async () => true), previewTerrainOnce: vi.fn(async (patch) => run(mod.world.value!, patch)) };
+});
 
 describe('预览深浅跟着力度', () => {
   it('最淡 0.35（力度很小时也看得见涂到了哪里），到滑块最大值时为 1，升降一样', () => {
@@ -243,5 +247,173 @@ describe('画笔的圈、拖滑块时的预览、排队中的笔画', () => {
     await done;
     expect(t.keep?.()).toBe(false);
     expect(t.preview().layers).toEqual([]);
+  });
+});
+
+describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () => {
+  const at = (w: ReturnType<typeof continents>['world'], c: number): Pointer => ({ x: w.mesh.x[c], y: w.mesh.y[c], cell: c, sx: 10, sy: 20, shift: false, alt: false });
+  const near = (w: ReturnType<typeof continents>['world'], c: number, r: number) => brushCells(w, w.mesh.x[c], w.mesh.y[c], r * w.mesh.spacing * w.kmPerUnit).cells;
+  const coastal = (w: ReturnType<typeof continents>['world'], c: number) => [...w.mesh.adj.subarray(w.mesh.off[c], w.mesh.off[c + 1])].some((j) => !w.causes.land[j]);
+  const setup = () => {
+    const w = continents().world;
+    world.value = w;
+    sliderActive.value = false;
+    setOptions({ brushKm: 3 * w.mesh.spacing * w.kmPerUnit, landMode: 'land', islandKind: 'volcanic', islandKm: 2.5 * w.mesh.spacing * w.kmPerUnit });
+    return w;
+  };
+
+  it('画陆地：按住拖动时给出增量（不再涂绿、涂蓝），空闲悬停只有圈', () => {
+    const w = setup();
+    const c = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.4 && w.causes.land[i] && coastal(w, i))!;
+    const t = landTool();
+    t.move?.(at(w, c), false);
+    expect(t.preview().ghost ?? null).toBeNull();
+    t.down?.(at(w, c));
+    t.move?.(at(w, c), true);
+    const pv = t.preview();
+    expect(pv.layers).toEqual([]);
+    expect(pv.ghost!.cells.length).toBeGreaterThan(0);
+    expect(pv.hint).toMatch(/^陆地 \+\d+ 格$/);
+    // 笔没动：同一个对象（地图不必重算）
+    expect(t.preview().ghost).toBe(pv.ghost);
+    t.cancel?.();
+  });
+
+  it('放岛：放得下时悬停就是幽灵海岸，放不下时轮廓涂红', () => {
+    const w = setup();
+    const sea = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 5).every((j) => !w.causes.land[j] && !w.mesh.boundary[j]))!;
+    const t = islandTool();
+    t.move?.(at(w, sea), false);
+    const pv = t.preview();
+    expect(pv.layers).toEqual([]);
+    expect(pv.ghost!.cells.length).toBeGreaterThan(0);
+    expect(pv.warn).toBeFalsy();
+    const land = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 6).every((j) => w.causes.land[j]))!;
+    t.move?.(at(w, land), false);
+    const blocked = t.preview();
+    expect(blocked.ghost ?? null).toBeNull();
+    expect(blocked.hint).toBe('这里已经是陆地');
+  });
+
+  it('放岛松手后算的期间：一直是松手时的那个岛（滑块已经换到下一个形状也不跟着变）', async () => {
+    const w = setup();
+    const sea = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 5).every((j) => !w.causes.land[j] && !w.mesh.boundary[j]))!;
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    const t = islandTool();
+    t.move?.(at(w, sea), false);
+    const hover = t.preview().ghost;
+    t.down?.(at(w, sea));
+    const done = t.up?.(at(w, sea));
+    const pv = t.preview();
+    expect(pv.ghost).toBe(hover);
+    expect(pv.hint).toBe('正在计算…');
+    finish(true);
+    await done;
+    // 算完：悬停的是下一个形状
+    expect(t.preview().ghost).not.toBe(hover);
+  });
+
+  it('放湖：内陆给出成湖的格，贴着海时只有橙色', () => {
+    const w = setup();
+    const inland = [...Array(w.mesh.n).keys()].find((i) => i % 7 === 0 && w.causes.land[i] && !lakeArea(w, i, options.value.lakeKm, true).some((c) => coastal(w, c)))!;
+    const t = lakeTool();
+    t.move?.(at(w, inland), false);
+    const pv = t.preview();
+    expect(pv.layers).toEqual([]);
+    expect(pv.ghost!.lake).toEqual(lakeArea(w, inland, options.value.lakeKm, true));
+    const shore = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && coastal(w, i))!;
+    t.move?.(at(w, shore), false);
+    const warn = t.preview();
+    expect(warn.ghost ?? null).toBeNull();
+    expect(warn.warn).toBe(true);
+  });
+
+  it('重画这一片：停下后画出将来的海岸；什么都不会变时拦下点击', async () => {
+    const w = setup();
+    vi.mocked(exec).mockClear();
+    vi.useFakeTimers();
+    try {
+      const radius = Math.max(options.value.brushKm / w.kmPerUnit, w.mesh.spacing * 1.2);
+      const changes = (c: number) => {
+        const p = previewTerrain(w, { reroll: { x: w.mesh.x[c], y: w.mesh.y[c], radius, variant: w.small.terrain.gen!.rerolls.length + 1 } });
+        return p.gained.length + p.lost.length + p.relief.cells.length;
+      };
+      const busy = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.4 && w.causes.land[i] && coastal(w, i) && changes(i) > 0)!;
+      const t = rerollTool();
+      t.move?.(at(w, busy), false);
+      expect(t.preview().terrain ?? null).toBeNull();
+      await vi.advanceTimersByTimeAsync(200);
+      const pv = t.preview();
+      expect(pv.terrain!.coast.length).toBe(w.mesh.n);
+      expect(pv.hint).toMatch(/^重画：/);
+      // 开阔的深海里重画：陆海、山的高低都不变
+      const calm = [...Array(w.mesh.n).keys()].find((i) => i % 13 === 0 && near(w, i, 6).every((j) => !w.causes.land[j]) && changes(i) === 0)!;
+      await t.click?.(at(w, calm));
+      expect(exec).not.toHaveBeenCalled();
+      expect(toast.value?.text).toBe('这一片重画不出变化');
+      await t.click?.(at(w, busy));
+      expect(vi.mocked(exec).mock.calls[0][0]).toMatchObject({ op: 'reroll_region', x: w.mesh.x[busy], y: w.mesh.y[busy] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 重画后陆海、山的高低会变的一格（海岸上）
+  const rerollable = (w: ReturnType<typeof continents>['world'], from: number) => {
+    const radius = Math.max(options.value.brushKm / w.kmPerUnit, w.mesh.spacing * 1.2);
+    const changes = (c: number) => {
+      const p = previewTerrain(w, { reroll: { x: w.mesh.x[c], y: w.mesh.y[c], radius, variant: w.small.terrain.gen!.rerolls.length + 1 } });
+      return p.gained.length + p.lost.length + p.relief.cells.length;
+    };
+    return [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * from && w.causes.land[i] && coastal(w, i) && changes(i) > 0)!;
+  };
+
+  it('重画这一片：点得快时先等预览，这期间再点不算（不会同一个编号重画两次）', async () => {
+    const w = setup();
+    vi.mocked(exec).mockClear();
+    const c = rerollable(w, 0.5);
+    const t = rerollTool();
+    await Promise.all([t.click?.(at(w, c)), t.click?.(at(w, c))]);
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  it('重画这一片：点了以后算的期间，鼠标挪开、离开地图也一直画着点的那一份', async () => {
+    const w = setup();
+    vi.mocked(exec).mockClear();
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    const c = rerollable(w, 0.5);
+    const t = rerollTool();
+    t.move?.(at(w, c), false);
+    const done = t.click?.(at(w, c));
+    await vi.waitFor(() => expect(exec).toHaveBeenCalled());
+    const other = rerollable(w, 0.7);
+    t.move?.(at(w, other), false);
+    t.leave?.();
+    const pv = t.preview();
+    expect(pv.hint).toBe('正在计算…');
+    expect(pv.terrain!.coast.length).toBe(w.mesh.n);
+    expect(t.keep?.()).toBe(true);
+    finish(true);
+    await done;
+    expect(t.keep?.()).toBe(false);
+  });
+
+  it('松手后算的期间鼠标离开地图：岛、湖的预览照样留着', async () => {
+    const w = setup();
+    const sea = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 5).every((j) => !w.causes.land[j] && !w.mesh.boundary[j]))!;
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    const t = islandTool();
+    t.move?.(at(w, sea), false);
+    expect(t.keep?.()).toBe(false);
+    t.down?.(at(w, sea));
+    const done = t.up?.(at(w, sea));
+    t.leave?.();
+    expect(t.keep?.()).toBe(true);
+    finish(true);
+    await done;
+    expect(t.keep?.()).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, sampleP
 import { type Mesh, type SphereMesh, findCell } from './mesh';
 import { clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
 import { nearestCell } from './sphere';
+import { coastValueAt } from './subcell';
 import type { World } from './world';
 
 // 地形“原因”的组合：
@@ -332,24 +333,42 @@ function fillTinyHoles(mesh: Mesh, land: Uint8Array) {
 
 // “调整”面板拖滑块时的预览：按新的陆地多少 / 岛多少 / 山多高 / 海岸破碎度组合一遍，
 // 返回会变成陆地、变成海的格，以及抬升变化明显的格。不改动世界与缓存里的结果；
-// 松手后执行的 set_worldgen / set_coast_style 走同一个组合，所以结果与预览逐格一致
+// 松手后执行的 set_worldgen / set_coast_style 走同一个组合，所以结果与预览逐格一致。
+// “重画这一片”（patch.reroll）也走这里：与 reroll_region 同样只重算重画圈里的格、重新定海平面
 export interface TerrainPreview {
   gained: number[];
   lost: number[];
   relief: { cells: number[]; delta: number[] };
+  // 每格将来的海岸值：与执行后的 coastValues 逐位相同（幽灵海岸照此画出将来的海岸线）
+  coast: Float32Array;
+  // 将来的海岸破碎度（画海岸细节的幅度跟着它）
+  rough: number;
+  // 算这一份用了多久（毫秒，Worker 填）：太慢时工具不再自动预览
+  ms?: number;
 }
 
-export type TerrainPatch = Partial<ComposeParams>;
+export type TerrainPatch = Partial<ComposeParams> & { reroll?: Reroll };
 
 export function previewTerrain(world: World, patch: TerrainPatch): TerrainPreview {
-  const out: TerrainPreview = { gained: [], lost: [], relief: { cells: [], delta: [] } };
-  const cache = ensureBase(world);
   const { mesh, causes } = world;
   const n = mesh.n;
   const rough = patch.rough ?? world.small.terrain.coastRoughness;
+  const out: TerrainPreview = { gained: [], lost: [], relief: { cells: [], delta: [] }, coast: new Float32Array(n), rough };
+  let cache = ensureBase(world);
+  const gen = world.small.terrain.gen;
+  if (gen && cache.model && cache.components && patch.reroll) {
+    // 与 ensureBase 里重画变了时同一条路：模型换参数、只重算新的重画圈、火山锥照用、海平面重新排序。
+    // 用一份临时的缓存，世界的缓存不动
+    const r = patch.reroll;
+    const next = { ...gen, rerolls: [...gen.rerolls, { x: r.x, y: r.y, radius: r.radius, variant: r.variant }] };
+    const model = cache.model.kind === 'planet' ? withPlanetParams(cache.model, next) : withParams(cache.model, next);
+    const re = { from: cache.components, changed: [r] };
+    const components = model.kind === 'planet' ? samplePlanetComponents(model, mesh as SphereMesh, re) : sampleComponents(model, mesh, re);
+    cache = { ...cache, model, components, sea: [] };
+  }
   const L = new Float32Array(n);
   const U = new Float32Array(n);
-  if (world.small.terrain.gen && cache.components && cache.model) composeBase(world, cache, composeParams(world, cache, patch), L, U);
+  if (gen && cache.components && cache.model) composeBase(world, cache, composeParams(world, cache, patch), L, U);
   else {
     L.fill(-3000);
     U.fill(0);
@@ -358,6 +377,9 @@ export function previewTerrain(world: World, patch: TerrainPatch): TerrainPrevie
   const land = new Uint8Array(n);
   for (let i = 0; i < n; i++) land[i] = isLandValue(L[i] + causes.landDelta[i], coast[i], rough) ? 1 : 0;
   fillTinyHoles(mesh, land);
+  // 海岸值：与 resolveTerrain 写回的 landness（float32）、coastValues 同一个算式
+  const amp = COAST_AMP * rough;
+  for (let i = 0; i < n; i++) out.coast[i] = coastValueAt(Math.fround(L[i] + causes.landDelta[i]), coast[i], amp, land[i] === 1);
   for (let i = 0; i < n; i++) {
     if (land[i] && !causes.land[i]) out.gained.push(i);
     else if (!land[i] && causes.land[i]) out.lost.push(i);
@@ -456,6 +478,27 @@ export function landAfter(world: World, cells: number[], delta: number[]): Map<n
     after.set(i, land);
   }
   return after;
+}
+
+// 幽灵海岸要的补丁：landAfter 的那些格（改动的格与它们的邻格，按编号排好），改动后的 landness 与陆海。
+// landness 按 float32 存（与 resolveTerrain 写回 causes.landness 的精度相同），交给 subcell.ts 的 coastPatch 算海岸值
+export interface LandPatch {
+  cells: Int32Array;
+  landness: Float32Array;
+  land: Uint8Array;
+}
+
+export function landPatch(world: World, cells: number[], delta: number[]): LandPatch {
+  const d = new Map<number, number>();
+  cells.forEach((i, k) => d.set(i, (d.get(i) ?? 0) + delta[k]));
+  const after = [...landAfter(world, cells, delta)].sort((a, b) => a[0] - b[0]);
+  const out: LandPatch = { cells: new Int32Array(after.length), landness: new Float32Array(after.length), land: new Uint8Array(after.length) };
+  after.forEach(([i, land], k) => {
+    out.cells[k] = i;
+    out.landness[k] = world.causes.landness[i] + (d.get(i) ?? 0);
+    out.land[k] = land ? 1 : 0;
+  });
+  return out;
 }
 
 export function previewLand(world: World, cells: number[], delta: number[]): { gained: number[]; lost: number[] } {

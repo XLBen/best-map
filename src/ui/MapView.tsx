@@ -2,10 +2,11 @@ import { effect } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
+import { COAST_AMP } from '../../core/terrain';
 import type { World } from '../../core/world';
-import { type HighlightLayer, cellLayers, groupPreview, highlightColors, provinceScale } from '../render/colors';
+import { GhostBuffer, type HighlightLayer, cellLayers, editGhost, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
-import { Renderer } from '../render/renderer';
+import { type CellLayers, Renderer } from '../render/renderer';
 import {
   FLASH_MS,
   adjustPreview,
@@ -35,7 +36,7 @@ import {
 } from '../state';
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
-import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt } from './tools';
+import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt, reliefLayers } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
 
@@ -159,27 +160,10 @@ export function MapView() {
         if (f) layers.push({ cells: Array.from(f.cells), color: [255, 230, 120], alpha: 0.35 });
         key.push(selectedFeature.value);
       }
-      // “调整”面板拖滑块：绿色会变成陆地，蓝色会变成海，橙 / 蓝灰是山会变高 / 变矮
+      // “调整”面板拖滑块：将来的海岸线由幽灵海岸画出（见 applyGhost），这里只涂山会变高（橙）/ 变矮（蓝灰）的格
       const ap = adjustPreview.value;
       if (ap) {
-        if (ap.relief.cells.length) {
-          const up: number[] = [];
-          const upV: number[] = [];
-          const down: number[] = [];
-          const downV: number[] = [];
-          ap.relief.cells.forEach((cell, k) => {
-            const d = ap.relief.delta[k];
-            if (d > 0) {
-              up.push(cell);
-              upV.push(Math.min(1, d / 0.6));
-            } else {
-              down.push(cell);
-              downV.push(Math.min(1, -d / 0.6));
-            }
-          });
-          layers.push({ cells: up, values: upV, color: [205, 135, 70], alpha: 0.7 }, { cells: down, values: downV, color: [120, 150, 190], alpha: 0.7 });
-        }
-        layers.push({ cells: ap.gained, color: [120, 205, 95], alpha: 0.8 }, { cells: ap.lost, color: [70, 150, 235], alpha: 0.8 });
+        if (ap.relief.cells.length) layers.push(...reliefLayers(ap.relief));
         key.push(ap);
       }
       // 改完后变化的格：淡淡地亮一下就淡出，轮廓跟着一起淡（着色器里轮廓的浓淡随填充）
@@ -203,6 +187,23 @@ export function MapView() {
       if (key.length === groupKey.length && key.every((k, i) => k === groupKey[i])) return;
       groupKey = key;
       renderer.setGroupPreview(pv ? groupPreview(w, pv, mode.value) : null);
+    }
+
+    // 幽灵海岸：工具（连同排队中的笔画）给的 landness 增量、“调整”滑块与重画这一片给的整份海岸值 → 将来真实的海岸线。
+    // 输入变了才重算（每帧最多一次）；持久的缓冲只改到补丁格，只上传改到的行。世界换了就按新世界重算
+    let baseLayers: CellLayers | null = null;
+    let ghostBuf: GhostBuffer | null = null;
+    let ghostKey: unknown[] = [];
+    function applyGhost(w: World, pv: Preview | null) {
+      const terrain = pv ? (pv.terrain ?? adjustPreview.value) : null;
+      const edit = terrain ? null : (pv?.ghost ?? null);
+      const key = [w, baseLayers, terrain, edit];
+      if (key.length === ghostKey.length && key.every((k, i) => k === ghostKey[i])) return;
+      ghostKey = key;
+      if (!baseLayers || (!terrain && !edit && !ghostBuf)) return;
+      ghostBuf ??= new GhostBuffer(baseLayers, mode.value);
+      const patch = terrain ? terrainGhost(w, baseLayers, terrain) : edit ? editGhost(w, baseLayers, edit) : null;
+      renderer.setGhost(ghostBuf.apply(w, patch, terrain && terrain.rough !== w.small.terrain.coastRoughness ? COAST_AMP * terrain.rough : undefined));
     }
 
     // 参考图：盖在整张地图的范围上（保持比例时放在中间），跟着镜头走
@@ -280,6 +281,8 @@ export function MapView() {
         }
       }
       applyGroupPreview(w, preview.provinces ?? null);
+      // 导出图片的干净画面不带幽灵海岸（画的是现在的世界）
+      applyGhost(w, clean ? null : preview);
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = category.value === 'provinces';
@@ -400,9 +403,13 @@ export function MapView() {
       if (key.length === colorKey.length && key.every((k, i) => k === colorKey[i])) return;
       colorKey = key;
       renderer.setMesh(w.mesh);
-      renderer.setLayers(cellLayers(w, o));
+      baseLayers = cellLayers(w, o);
+      renderer.setLayers(baseLayers);
       lastHighlightKey = [];
       groupKey = [];
+      // 幽灵海岸跟着新的底子重来
+      ghostBuf = null;
+      ghostKey = [];
       requestDraw();
     });
 

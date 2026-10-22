@@ -346,6 +346,16 @@ export function coastValueAt(landness: number, noise: number, amp: number, land:
   return COAST_SQUASH * Math.tanh(signed / COAST_SQUASH);
 }
 
+// 几格将来的海岸值（幽灵海岸）：landness、land 是这几格改动后的值（见 terrain.ts 的 landPatch），
+// 与改动后 coastValues 里这几格逐格同一个算式，所以预览画出的海岸线就是结果
+export function coastPatch(world: World, cells: ArrayLike<number>, landness: ArrayLike<number>, land: ArrayLike<number>): Float32Array {
+  const noise = coastNoiseField(world.mesh, coastSeed(world));
+  const amp = COAST_AMP * world.small.terrain.coastRoughness;
+  const out = new Float32Array(cells.length);
+  for (let k = 0; k < cells.length; k++) out[k] = coastValueAt(landness[k], noise[cells[k]], amp, land[k] !== 0);
+  return out;
+}
+
 // 格以下的海岸细节幅度（m）：山地海岸更曲折，平原海岸更平滑
 export function coastDetailAmp(world: World, elevation: number): number {
   const rough = world.small.terrain.coastRoughness;

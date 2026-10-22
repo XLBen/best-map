@@ -1,6 +1,7 @@
 import type { Mesh } from '../../core/mesh';
 import type { SeamLayers } from '../../core/seams';
 import { viewOf } from '../../core/sphere';
+import type { GhostLayers } from './colors';
 
 // WebGL2 渲染：
 //   1. 编号层：Voronoi 多边形写入每个像素属于哪一格
@@ -727,6 +728,12 @@ export class Renderer {
   private flatBase: Uint8Array | null = null;
   private flatShown: Uint8Array | null = null;
   private groupVersion = 0;
+  // 幽灵海岸（colors.ts 的 GhostBuffer）：setLayers 给的底子，现在显示着幽灵的那些行，幽灵的海岸细节幅度
+  private base: CellLayers | null = null;
+  private ghostRows: number[] = [];
+  private ghostAmp: number | null = null;
+  private ghostGroup: Float32Array | null = null;
+  private ghostFlat: Uint8Array | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -938,6 +945,73 @@ export class Renderer {
     this.shade = l.shade;
     this.rock = l.rock;
     this.coastAmp = l.coastAmp;
+    this.base = l;
+    this.ghostRows = [];
+    this.ghostAmp = null;
+    this.ghostGroup = null;
+    this.ghostFlat = null;
+  }
+
+  // 幽灵海岸：几格的地形输入（颜色、对岸的颜色、高程、海岸值，与平涂、分组）换成将来的样子，着色器照此画出将来真实的海岸线；
+  // null 回到 setLayers 给的。g 的数组是持久的缓冲，g.cells 是现在与底子不同的格：只上传这些格与上一次不同的格所在的行。
+  // 省份预览（setGroupPreview）显示着的时候平涂、分组听省份预览的。setLayers 之后幽灵就没了，调用方要重新给
+  setGhost(g: GhostLayers | null) {
+    const base = this.base;
+    if (!base) return;
+    const now = new Set<number>();
+    if (g) for (const i of g.cells) now.add(Math.floor(i / TEX_W));
+    const rows = [...new Set([...this.ghostRows, ...now])].sort((a, b) => a - b);
+    const amp = g?.coastAmp ?? null;
+    if (!rows.length && amp === this.ghostAmp) return;
+    const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, flat: base.flat, group: base.group };
+    this.uploadRows(this.tex.color, src.smooth, rows, 4);
+    this.uploadRows(this.tex.other, src.other, rows, 4);
+    this.uploadRows(this.tex.elev, src.elevation, rows, 1);
+    this.uploadRows(this.tex.coast, src.coast, rows, 1);
+    // 平涂、分组：显示着的是底子或上一次的幽灵时才换
+    if (this.groupBase && src.group && (this.groupShown === this.groupBase || this.groupShown === this.ghostGroup)) {
+      this.uploadRows(this.tex.group, src.group, rows, 2);
+      this.groupShown = g ? src.group : this.groupBase;
+      this.groupVersion++;
+    }
+    if (this.flatBase && src.flat && (this.flatShown === this.flatBase || this.flatShown === this.ghostFlat)) {
+      this.uploadRows(this.tex.flat, src.flat, rows, 4);
+      this.flatShown = g ? src.flat : this.flatBase;
+      this.groupVersion++;
+    }
+    this.ghostGroup = g?.group ?? null;
+    this.ghostFlat = g?.flat ?? null;
+    this.ghostRows = [...now];
+    this.ghostAmp = amp;
+    this.layersVersion++;
+  }
+
+  // 只上传这几行（每行 TEX_W 格；连着的几行一次传）
+  private uploadRows(tex: WebGLTexture, data: Uint8Array | Float32Array, rows: number[], channels: 1 | 2 | 4) {
+    if (!rows.length) return;
+    const gl = this.gl;
+    const per = TEX_W * channels;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    for (let k = 0; k < rows.length; ) {
+      const r = rows[k];
+      let r1 = r + 1;
+      while (k + 1 < rows.length && rows[k + 1] === r1) {
+        k++;
+        r1++;
+      }
+      k++;
+      // 最后一行不满时补齐
+      let src: Uint8Array | Float32Array = data.subarray(r * per, Math.min(data.length, r1 * per));
+      if (src.length < (r1 - r) * per) {
+        const padded = data instanceof Float32Array ? new Float32Array((r1 - r) * per) : new Uint8Array((r1 - r) * per);
+        padded.set(src);
+        src = padded;
+      }
+      if (channels === 1) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RED, gl.FLOAT, src);
+      else if (channels === 2) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RG, gl.FLOAT, src);
+      else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    }
   }
 
   // 省份预览：整份分组（与平涂、切线）换成将来的样子，着色器照此画出真实的新省界；null 回到 setLayers 给的。
@@ -1092,7 +1166,9 @@ export class Renderer {
     // 放大后晕渲不必夸张那么多：一格 8 像素以内照旧，越放大越缓（一格 64 像素时约一半）
     const cellCss = mesh.spacing * cam.zoom;
     const relief = this.relief / (1 + 0.4 * Math.max(0, Math.log2(cellCss / 8)));
-    const sceneKey = `${this.layersVersion}|${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.detail}|${this.coastAmp}|${kmPerUnit}`;
+    // 幽灵海岸带着将来的海岸细节幅度（拖海岸曲折时）
+    const coastAmp = this.ghostAmp ?? this.coastAmp;
+    const sceneKey = `${this.layersVersion}|${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.detail}|${coastAmp}|${kmPerUnit}`;
     // 整个星球：屏幕上看得见的那几份副本（x 平移 2 的倍数）
     let copy0 = 0;
     let copies = 1;
@@ -1144,7 +1220,7 @@ export class Renderer {
       gl.useProgram(pt);
       gl.uniform4fv(gl.getUniformLocation(pt, 'uView'), view);
       gl.uniform1f(gl.getUniformLocation(pt, 'uSpacing'), mesh.spacing);
-      gl.uniform1f(gl.getUniformLocation(pt, 'uCoastAmp'), this.coastAmp);
+      gl.uniform1f(gl.getUniformLocation(pt, 'uCoastAmp'), coastAmp);
       gl.uniform1f(gl.getUniformLocation(pt, 'uDetail'), this.detail);
       gl.uniform1f(gl.getUniformLocation(pt, 'uPixel'), 1 / (cam.zoom * dpr));
       gl.uniform1f(gl.getUniformLocation(pt, 'uMetersPerUnit'), kmPerUnit * 1000);

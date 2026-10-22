@@ -173,9 +173,14 @@ async function handle(id: number, req: Request) {
       case 'preview':
         reply({ id, ok: true, preview: engine!.preview(req.cmd) });
         return;
-      case 'previewTerrain':
-        reply({ id, ok: true, terrain: previewTerrain(engine!.world, req.patch) });
+      case 'previewTerrain': {
+        const t0 = performance.now();
+        const terrain = previewTerrain(engine!.world, req.patch);
+        terrain.ms = performance.now() - t0;
+        // 每格的海岸值（幽灵海岸用）直接转交，不复制
+        reply({ id, ok: true, terrain }, [terrain.coast.buffer as ArrayBuffer]);
         return;
+      }
       case 'replaceLast':
         withSnap(engine!.replaceLast(req.cmd), true);
         return;
