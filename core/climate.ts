@@ -1,4 +1,3 @@
-import { MinHeap } from './heap';
 import { type Mesh, gradient } from './mesh';
 import { clamp, smoothstep } from './rng';
 import { type Derived, type World, worldLatitude } from './world';
@@ -46,27 +45,70 @@ export function meshAux(mesh: Mesh) {
   return aux;
 }
 
-// 陆地占比的平滑很耗时（几百轮扩散），陆海不变时复用上次结果
-let landFracCache: { mesh: Mesh; kmPerUnit: number; land: Uint8Array; result: Float64Array } | null = null;
+// 陆地占比的平滑很耗时（几百轮扩散），陆海不变时复用结果；每个网格留两份，撤销一笔海陆修改时直接用上一份
+const landFracCache = new WeakMap<Mesh, { kmPerUnit: number; land: Uint8Array; result: Float64Array }[]>();
 
 function landFraction(mesh: Mesh, land: Uint8Array, kmPerUnit: number): Float64Array {
-  const c = landFracCache;
-  if (c && c.mesh === mesh && c.kmPerUnit === kmPerUnit && c.land.length === land.length && c.land.every((v, i) => v === land[i])) return c.result;
+  const list = landFracCache.get(mesh) ?? [];
+  for (const c of list) if (c.kmPerUnit === kmPerUnit && c.land.length === land.length && c.land.every((v, i) => v === land[i])) return c.result;
   const n = mesh.n;
-  const landFrac = new Float64Array(n);
+  let landFrac = new Float64Array(n);
   for (let i = 0; i < n; i++) landFrac[i] = land[i];
   const iters = Math.round(((1500 / kmPerUnit / mesh.spacing) ** 2) / 2);
-  const tmp = new Float64Array(n);
+  let tmp = new Float64Array(n);
   for (let it = 0; it < Math.min(400, iters); it++) {
-    for (let i = 0; i < n; i++) {
-      let s = landFrac[i];
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) s += landFrac[mesh.adj[e]];
-      tmp[i] = s / (1 + mesh.off[i + 1] - mesh.off[i]);
-    }
-    landFrac.set(tmp);
+    smoothPass(mesh, landFrac, tmp);
+    const t = landFrac;
+    landFrac = tmp;
+    tmp = t;
   }
-  landFracCache = { mesh, kmPerUnit, land: land.slice(), result: landFrac };
+  list.unshift({ kmPerUnit, land: land.slice(), result: landFrac });
+  landFracCache.set(mesh, list.slice(0, 2));
   return landFrac;
+}
+
+// 一轮扩散：dst[i] = (src[i] + Σ 邻居) / (1 + 邻居数)。四格交错、各用一个累加器，
+// 每格仍按原来的邻接顺序从 src[i] 加起（结果逐值相同），四条浮点加法链互不等待，快不少
+function smoothPass(mesh: Mesh, src: Float64Array, dst: Float64Array) {
+  const { n, off, adj } = mesh;
+  let i = 0;
+  for (; i + 4 <= n; i += 4) {
+    const a0 = off[i];
+    const a1 = off[i + 1];
+    const a2 = off[i + 2];
+    const a3 = off[i + 3];
+    const a4 = off[i + 4];
+    const d0 = a1 - a0;
+    const d1 = a2 - a1;
+    const d2 = a3 - a2;
+    const d3 = a4 - a3;
+    let m = d0 < d1 ? d0 : d1;
+    if (d2 < m) m = d2;
+    if (d3 < m) m = d3;
+    let s0 = src[i];
+    let s1 = src[i + 1];
+    let s2 = src[i + 2];
+    let s3 = src[i + 3];
+    for (let k = 0; k < m; k++) {
+      s0 += src[adj[a0 + k]];
+      s1 += src[adj[a1 + k]];
+      s2 += src[adj[a2 + k]];
+      s3 += src[adj[a3 + k]];
+    }
+    for (let k = m; k < d0; k++) s0 += src[adj[a0 + k]];
+    for (let k = m; k < d1; k++) s1 += src[adj[a1 + k]];
+    for (let k = m; k < d2; k++) s2 += src[adj[a2 + k]];
+    for (let k = m; k < d3; k++) s3 += src[adj[a3 + k]];
+    dst[i] = s0 / (1 + a1 - a0);
+    dst[i + 1] = s1 / (1 + a2 - a1);
+    dst[i + 2] = s2 / (1 + a3 - a2);
+    dst[i + 3] = s3 / (1 + a4 - a3);
+  }
+  for (; i < n; i++) {
+    let s = src[i];
+    for (let e = off[i]; e < off[i + 1]; e++) s += src[adj[e]];
+    dst[i] = s / (1 + off[i + 1] - off[i]);
+  }
 }
 
 // 日平均日照（W/m²）
@@ -150,18 +192,16 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
   // 地形雨看的是山体整体的迎风背风，不是单格尺度的谷与脊，否则会出现逐格交替的条纹
   const hx = new Float64Array(n);
   const hy = new Float64Array(n);
-  const hPos = new Float64Array(n);
+  let hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? Math.max(0, elevation[i]) : 0;
   {
     const passes = Math.max(1, Math.round(((200 / kmPerUnit / mesh.spacing) ** 2) / 2));
-    const next = new Float64Array(n);
+    let next = new Float64Array(n);
     for (let it = 0; it < passes; it++) {
-      for (let i = 0; i < n; i++) {
-        let s = hPos[i];
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) s += hPos[mesh.adj[e]];
-        next[i] = s / (1 + mesh.off[i + 1] - mesh.off[i]);
-      }
-      hPos.set(next);
+      smoothPass(mesh, hPos, next);
+      const t = hPos;
+      hPos = next;
+      next = t;
     }
   }
   for (let i = 0; i < n; i++) {
@@ -396,43 +436,12 @@ export function buildFlow(mesh: Mesh, wx: Float32Array, wy: Float32Array): Flow 
   }
 
   // Kahn 拓扑排序：边 i→j 当 i 有风且把水汽送往下风的 j
-  const edge = (i: number, e: number) => !calm[i] && frac[e] > 0;
-  const indeg = new Int32Array(n);
-  for (let i = 0; i < n; i++) for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (edge(i, e)) indeg[mesh.adj[e]]++;
-  const order = new Int32Array(n);
-  const placed = new Uint8Array(n);
-  let head = 0;
-  let tail = 0;
-  const place = (c: number) => {
-    order[tail++] = c;
-    placed[c] = 1;
-  };
-  // 风场里有环时，放入剩余入度最小的格（打断环的代价最小）；堆里允许过期项，弹出时跳过
-  const heap = new MinHeap(n);
+  const em = new Uint8Array(mesh.adj.length);
   for (let i = 0; i < n; i++) {
-    if (indeg[i] === 0) place(i);
-    else heap.push(i, indeg[i]);
+    if (calm[i]) continue;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (frac[e] > 0) em[e] = 1;
   }
-  while (tail < n) {
-    while (head < tail) {
-      const i = order[head++];
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        if (!edge(i, e)) continue;
-        const j = mesh.adj[e];
-        if (placed[j]) continue;
-        if (--indeg[j] === 0) place(j);
-        else heap.push(j, indeg[j]);
-      }
-    }
-    if (tail >= n) break;
-    for (;;) {
-      const c = heap.pop();
-      if (!placed[c] && heap.lastKey === indeg[c]) {
-        place(c);
-        break;
-      }
-    }
-  }
+  const order = kahnOrder(mesh, em);
   // 只保留顺着拓扑序往下游的输送：风弱、风向杂乱的地方格与格会互相指向，
   // 水汽在环里来回累积会算出离谱的降水（格越小越严重）。去掉逆序的边后输送图无环，
   // 水汽顺风走一遍；流进死角的那部分视为随上升气流带走
@@ -442,6 +451,75 @@ export function buildFlow(mesh: Mesh, wx: Float32Array, wy: Float32Array): Flow 
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (frac[e] > 0 && pos[mesh.adj[e]] < pos[i]) frac[e] = 0;
   }
   return { frac, order };
+}
+
+// Kahn 拓扑排序（球面的 sphere-flow.ts 也用）：em[e] = 1 的边 i→adj[e] 参与排序。
+// 风场里有环时，放入剩余入度最小的格（打断环的代价最小）。待放的格按入度分桶、桶内先进先出，
+// 出桶顺序与按（入度，入堆先后）出堆的最小堆完全相同；桶里允许过期项，取出时跳过
+export function kahnOrder(mesh: Mesh, em: Uint8Array): Int32Array {
+  const n = mesh.n;
+  const { off, adj } = mesh;
+  const indeg = new Int32Array(n);
+  for (let i = 0; i < n; i++) for (let e = off[i]; e < off[i + 1]; e++) if (em[e]) indeg[adj[e]]++;
+  // 入度只减不增，每格进桶 k 至多一次，且只在初始入度 ≥ k 时：按这个上限给每个桶分一段
+  let maxD = 0;
+  for (let i = 0; i < n; i++) if (indeg[i] > maxD) maxD = indeg[i];
+  const cnt = new Int32Array(maxD + 1);
+  for (let i = 0; i < n; i++) cnt[indeg[i]]++;
+  const bHead = new Int32Array(maxD + 2);
+  const bTail = new Int32Array(maxD + 2);
+  let size = 0;
+  let atLeast = n - cnt[0];
+  for (let k = 1; k <= maxD; k++) {
+    bHead[k] = bTail[k] = size;
+    size += atLeast;
+    atLeast -= cnt[k];
+  }
+  const q = new Int32Array(size);
+  let minB = maxD + 1;
+  const order = new Int32Array(n);
+  const placed = new Uint8Array(n);
+  let head = 0;
+  let tail = 0;
+  for (let i = 0; i < n; i++) {
+    const d = indeg[i];
+    if (d === 0) {
+      order[tail++] = i;
+      placed[i] = 1;
+    } else {
+      q[bTail[d]++] = i;
+      if (d < minB) minB = d;
+    }
+  }
+  while (tail < n) {
+    while (head < tail) {
+      const i = order[head++];
+      for (let e = off[i]; e < off[i + 1]; e++) {
+        if (!em[e]) continue;
+        const j = adj[e];
+        if (placed[j]) continue;
+        const d = --indeg[j];
+        if (d === 0) {
+          order[tail++] = j;
+          placed[j] = 1;
+        } else {
+          q[bTail[d]++] = j;
+          if (d < minB) minB = d;
+        }
+      }
+    }
+    if (tail >= n) break;
+    for (;;) {
+      while (bHead[minB] === bTail[minB]) minB++;
+      const c = q[bHead[minB]++];
+      if (!placed[c] && indeg[c] === minB) {
+        order[tail++] = c;
+        placed[c] = 1;
+        break;
+      }
+    }
+  }
+  return order;
 }
 
 // 稳态输运：in_i = Σ_j out_j · frac(j→i) + 图外来流；out_i = step(i, in_i)。
