@@ -14,8 +14,10 @@ export const SCRIPT_EXAMPLES: Record<ScriptKind, { label: string; src: string }[
     { label: '越干越黄', src: "return mixColor(颜色, '#c8b060', 1 - smoothstep(0.3, 1.2, 湿润));" },
   ],
   match: [
-    { label: '高山上的河', src: 'return 海拔 > 1500;' },
+    { label: '高山上的河', src: '// 整条河的平均海拔在 1500 米以上\nreturn 海拔 > 1500;' },
     { label: '大河', src: '// 流量是河流门槛的 10 倍以上\nreturn 流量 > 10 * 河流门槛;' },
+    { label: '从雪山上流下来', src: '// 源头在 3000 米以上\nreturn 源头海拔 > 3000;' },
+    { label: '长河、一段一段的', src: '// 500 千米以上的长河，再用噪声挑出一部分\nreturn 河长 > 500 && fbmAt(2, 2) > 0;' },
   ],
   crust: [{ label: '两极抬高', src: '// 纬度 55° 以上慢慢抬高，最多 900 米\nconst polar = smoothstep(55, 80, Math.abs(纬度));\nreturn { height: 高度 + 900 * polar };' }],
   setup: [{ label: '再加一块大陆', src: 'addBlock({ lat: 30, lon: 60, size: 25 });' }],

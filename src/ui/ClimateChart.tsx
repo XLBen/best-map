@@ -282,7 +282,12 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
         <div class="tol">
           <select
             value={t.field}
-            onChange={(e) => save(tols.map((x, i) => (i === k ? { ...x, field: (e.target as HTMLSelectElement).value } : x)))}
+            onChange={(e) => {
+              const field = (e.target as HTMLSelectElement).value;
+              // 换成“靠近某种河”（0–1）：原来的数（比如海拔的 0–3000）在这里没有意义，换成“离河近的地方最适合”
+              const near = field.startsWith('river:') && !t.field.startsWith('river:') ? { min: 0.1, optLow: 0.5, optHigh: 1, max: 1 } : {};
+              save(tols.map((x, i) => (i === k ? { ...x, field, ...near } : x)));
+            }}
           >
             {fields.map((f) => (
               <option value={f.id}>{f.label}</option>

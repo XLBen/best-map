@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
+import type { Command } from './commands';
 import { effectsAt } from './effects';
 import { Engine, passStats } from './engine';
 import { graphDistance } from './mesh';
 import { FANTASY_BIOMES } from './packs/fantasy-biomes';
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
+import { previewWorldOf } from './preview-world';
 import type { Species } from './species';
 import { continents } from './testing/fixtures';
 
@@ -104,6 +106,34 @@ describe('对周围的影响', () => {
     // 第一遍 + 求解的一到两轮（影响的那一遍就是求解的那一轮）
     expect(passStats.passes - passes).toBeLessThanOrEqual(3);
     expect(w.derived.effP).toBeInstanceOf(Float32Array);
+  });
+
+  it('预览就是结果：有影响、有河流类型的世界上，预览世界（补上差别）与执行后的世界逐值相同；去掉影响时预览里也没有了', () => {
+    const eng = continents();
+    eng.exec({ op: 'add_species', species: dead });
+    const lava = FANTASY_RIVER_TYPES.find((t) => t.id === 'lava_river')!;
+    eng.exec({ op: 'set_river_type', type: lava });
+    const w = eng.world;
+    const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && w.derived.lake[i] !== 1);
+    const cmds: Command[] = [
+      { op: 'add_constraint', constraint: { cells: land.slice(500, 560), species: 'dead_forest', mode: 'override', ratio: 1, radius: 300 } },
+      { op: 'set_river_type', type: { ...lava, bank: { radiusKm: 300, dT: -3 } } },
+      { op: 'set_river_type', type: { ...lava, color: '#000000' } },
+      { op: 'update_species', id: 'dead_forest', patch: { effects: null } },
+      { op: 'remove_river_type', id: 'lava_river' },
+    ];
+    for (const cmd of cmds) {
+      const { patch } = eng.previewWorld(cmd);
+      const shown = previewWorldOf(w, structuredClone(patch));
+      const copy = eng.clone();
+      copy.exec(cmd);
+      expect(digestWorld(shown), cmd.op).toEqual(digestWorld(copy.world));
+    }
+    // 两种影响都去掉：没有 effT、effP
+    eng.exec(cmds[3]);
+    eng.exec(cmds[4]);
+    expect(w.derived.effT).toBeUndefined();
+    expect(w.derived.riverType).toBeUndefined();
   });
 
   it('撤销、重放与从头算逐值一致', () => {

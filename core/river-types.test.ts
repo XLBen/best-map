@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
+import { forgetScriptResults, placementSlots } from './biome-scripts';
 import { Dirty } from './commands';
 import { Engine, docVersion, passStats } from './engine';
 import { graphDistance } from './mesh';
@@ -8,7 +9,7 @@ import { type RiverType, PLAIN_RIVER, matchRunStats, riverBank, riverNet, riverT
 import { stemPath, traceRivers } from './rivers';
 import { riverStem } from './select';
 import { continents } from './testing/fixtures';
-import type { World } from './world';
+import { type World, buildMeshFor, settingsSchema } from './world';
 
 // 河流类型：每格是哪一种河（画的河带类型、每条河一次的 match、往下游传）、河岸场、只改样子不重算、起名、重放与撤销
 
@@ -174,6 +175,47 @@ describe('河岸场 river:<id>', () => {
     const P = 1;
     const f = d.placeF!;
     for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i] && d.lake[i] !== 1) expect(f[i * P]).toBeCloseTo(bank[i], 6);
+  });
+});
+
+describe('生态脚本记住的结果：河岸场变了照样对', () => {
+  it('血河换了几条、一条都没有了、又有了、撤销：每一步都与另一个网格上从头算的逐值相同', () => {
+    const eng = continents();
+    const w = eng.world;
+    const rule = (src: string) => ({ ...blood, bank: { radiusKm: 250 }, scripts: { match: { api: 1 as const, src } } });
+    eng.exec({ op: 'set_river_type', type: rule('return 流量 > 3 * 河流门槛;') });
+    eng.exec({
+      op: 'add_species',
+      species: {
+        id: 'red',
+        name: '红林',
+        color: '#aa4422',
+        competition: 3,
+        tolerances: [],
+        scripts: { placement: { api: 1, src: "if (hasRiver('blood')) return smoothstep(0.3, 0.7, river('blood'));\nreturn 0.25;" } },
+      },
+    });
+    // 另一个网格（没有这个网格上记下的结果）：每次先忘掉，再从头重放
+    const fresh = buildMeshFor(settingsSchema.parse(w.settings));
+    const same = (label: string) => {
+      forgetScriptResults(fresh);
+      expect(digestWorld(Engine.fromDoc(eng.toDoc(), fresh).world), label).toEqual(digestWorld(w));
+    };
+    const slot = placementSlots(w.small.species).slot[w.small.species.findIndex((s) => s.id === 'red')];
+    const { P } = placementSlots(w.small.species);
+    const factors = () => new Set(Array.from({ length: w.mesh.n }, (_, i) => w.derived.placeF![i * P + slot]));
+    same('有血河');
+    expect(factors().size).toBeGreaterThan(2);
+    eng.exec({ op: 'set_river_type', type: rule('return 流量 > 12 * 河流门槛;') });
+    same('血河少了');
+    eng.exec({ op: 'set_river_type', type: rule('return false;') });
+    same('没有血河');
+    // 没有血河：hasRiver 为假，每格都是 0.25
+    for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i] && w.derived.lake[i] !== 1) expect(w.derived.placeF![i * P + slot]).toBeCloseTo(0.25, 6);
+    eng.exec({ op: 'set_river_type', type: rule('return 流量 > 3 * 河流门槛;') });
+    same('又有了');
+    eng.undo();
+    same('撤销');
   });
 });
 

@@ -79,10 +79,16 @@ const WORDS: Record<string, [string, string]> = {
 
 type Factor = CellExplanation['factors'][number];
 
+// “靠近某种河”的条件（河岸场 river:<id>）：说出是哪一种河（世界里没有这种河时说“那种河”）
+function riverWords(id: string): [string, string] {
+  const name = world.value?.small.riverTypes?.find((t) => t.id === id)?.name ?? '那种河';
+  return [`离${name}太远`, `离${name}太近`];
+}
+
 // 卡住一种生态的那一项，用人话说
 export function reasonText(f: Factor): string {
   const low = f.value < f.range[1];
-  const words = WORDS[f.field] ?? (f.field.startsWith('river:') ? ['离那种河太远', '离那种河太近'] : [`${fieldLabel.get(f.field) ?? f.field}太低`, `${fieldLabel.get(f.field) ?? f.field}太高`]);
+  const words = WORDS[f.field] ?? (f.field.startsWith('river:') ? riverWords(f.field.slice(6)) : [`${fieldLabel.get(f.field) ?? f.field}太低`, `${fieldLabel.get(f.field) ?? f.field}太高`]);
   const need = low ? f.range[1] : f.range[2];
   switch (f.field) {
     case 'tMean':
@@ -131,7 +137,7 @@ export function effectText(w: World, cell: number): string | null {
   if (Math.abs(p) >= 0.01) parts.push(`雨水${p > 0 ? '多' : '少'}了 ${fmt(Math.abs(p) * 100)}%`);
   if (!parts.length) return null;
   const who = effectsAt(w, d, cell).slice(0, 2).map((e) => `「${e.name}」`);
-  return `${who.length ? `受${who.join('')}影响` : '受附近生态、河的影响'}：这里${parts.join('，')}`;
+  return `${who.length ? `受${who.join('、')}影响` : '受附近生态、河的影响'}：这里${parts.join('，')}`;
 }
 
 function LandInfo({ w, cell }: { w: World; cell: number }) {

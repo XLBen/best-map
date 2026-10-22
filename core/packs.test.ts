@@ -27,7 +27,8 @@ import { FANTASY_BIOMES } from './packs/fantasy-biomes';
 import { FANTASY_PACK } from './packs/fantasy';
 import { findScripts } from './script';
 import { DEFAULT_SPECIES, type Species, withRect } from './species';
-import { continents } from './testing/fixtures';
+import { continents, engineFor } from './testing/fixtures';
+import { riverNet } from './river-types';
 
 // 资源包：格式、检查、用到世界（一整步、撞 id 改名、一模一样的跳过）、从世界导出、内置示例包
 
@@ -367,6 +368,27 @@ describe('内置示例包', () => {
     expect(back.ok && back.legacy).toBeNull();
     // 再用到同一个世界：全是一模一样的，什么都不加
     expect(applyPackCommands(w, out).commands).toEqual([]);
+  });
+
+  it('用到 8 千格的星球（格子粗、坡度小）：四种河至少三种出现，每条河整条是同一种，不是大部分的河都带类型', () => {
+    const eng = engineFor({ cells: 8000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents' }, reset: true });
+    const w = eng.world;
+    eng.exec(applyPackCommands(w, FANTASY_PACK));
+    expect(w.derived.scriptIssues).toBeUndefined();
+    const rt = w.derived.riverType!;
+    const net = riverNet(w, w.derived);
+    const kinds = new Set<number>();
+    let typedCells = 0;
+    let riverCells = 0;
+    for (const cells of net.stems) {
+      for (const c of cells) expect(rt[c]).toBe(rt[cells[0]]);
+      if (rt[cells[0]]) kinds.add(rt[cells[0]]);
+      typedCells += rt[cells[0]] ? cells.length : 0;
+      riverCells += cells.length;
+    }
+    expect(kinds.size).toBeGreaterThanOrEqual(3);
+    expect(typedCells / riverCells).toBeLessThan(0.5);
   });
 });
 

@@ -157,6 +157,17 @@ export interface RiverStyleOverride {
 // 预览世界（地图画将来的样子）只换了内容变了的数组：流量没变、湖面或高程变了的预览也不会错用当前世界的河
 export function riverPathsKey(world: World, override: RiverStyleOverride | null): unknown[] {
   return [
+    ...riverLinesKey(world),
+    override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
+    // 河流类型（第三批）：类型的颜色、画法、粗细（按内容）
+    riverTypesSignature(world.small.riverTypes),
+  ];
+}
+
+// 河的折线（traceRivers）读的：上面那些数组、门槛、河道的内容，和每格是哪一种河（推导换了就换）。
+// 河流类型的颜色、画法、粗细不改折线：只改这几项时不重新描河（大星球上描一遍要几十毫秒），只重新分档
+function riverLinesKey(world: World): unknown[] {
+  return [
     world.mesh,
     world.derived.discharge,
     world.derived.receiver,
@@ -165,9 +176,6 @@ export function riverPathsKey(world: World, override: RiverStyleOverride | null)
     world.causes.land,
     world.small.planet.riverThreshold,
     guidesSignature(world.small.guides),
-    override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
-    // 河流类型（第三批）：类型的颜色、画法、粗细（按内容），每格是哪一种（推导换了就换）
-    riverTypesSignature(world.small.riverTypes),
     world.derived.riverType,
   ];
 }
@@ -179,12 +187,12 @@ export function riverTypesSignature(types: readonly RiverType[] | undefined): st
 
 export const samePathsKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
 
-// 地图上的河的折线（traceRivers），按 riverPathsKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
+// 地图上的河的折线（traceRivers），按 riverLinesKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
 // 按数组认会认错。留最近用过的两份：地图画预览世界（将来的河）时，点河、河的光照旧按当前世界的河算，
 // 预览世界一份份换（拖着调整面板的滑块）也不会把当前世界的那份挤掉、来回重描
 const linesMemo: { key: unknown[]; lines: RiverLine[] }[] = [];
 export function riverLines(world: World): RiverLine[] {
-  const key = riverPathsKey(world, null);
+  const key = riverLinesKey(world);
   const at = linesMemo.findIndex((m) => samePathsKey(m.key, key));
   if (at >= 0) {
     const [hit] = linesMemo.splice(at, 1);

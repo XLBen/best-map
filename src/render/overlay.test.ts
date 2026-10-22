@@ -227,4 +227,32 @@ describe('地图上的河、预览的河同一套画法', () => {
     for (const o of ops) if (o[0] === 'M') expect(o[1]).toBeGreaterThanOrEqual(0);
     for (let k = 1; k < ops.length; k++) if (ops[k][0] === 'L') expect(Math.abs(ops[k][1] - ops[k - 1][1])).toBeLessThan(0.5);
   });
+
+  it('河流类型：带类型的河段按（类型，宽度 × 类型的粗细）分档、同一档连着画，普通的河段照旧；只改颜色、画法时不重新描河', () => {
+    const eng = continents();
+    const segs = (list: { path: Path2D }[]) => list.reduce((k, b) => k + opsOf(b.path).filter((o) => o[0] === 'L').length, 0);
+    const before = segs(buildPaths(eng.world).rivers);
+    const rule = { match: { api: 1 as const, src: 'return 流量 > 3 * 河流门槛;' } };
+    const blood = { id: 'blood', name: '血河', color: '#8f1414', width: 2, scripts: rule };
+    eng.exec({ op: 'set_river_type', type: blood });
+    const w = eng.world;
+    const p = buildPaths(w);
+    expect(p.typed?.length).toBeGreaterThan(0);
+    expect(p.typed!.every((b) => b.type === 1)).toBe(true);
+    // 每一段要么在普通的档里，要么在带类型的档里（没有两岸的影响：河一点没变）
+    expect(segs(p.rivers) + segs(p.typed!)).toBe(before);
+    // 同一档里连着的几段是一笔（虚线不在每段重新开始）
+    const typedOps = p.typed!.flatMap((b) => opsOf(b.path));
+    expect(typedOps.filter((o) => o[0] === 'M').length).toBeLessThan(typedOps.filter((o) => o[0] === 'L').length / 2);
+    // 粗细：两倍粗的那几档比同样流量的普通河宽
+    const thinner = buildPaths({ ...w, small: { ...w.small, riverTypes: [{ ...blood, width: 1 }] } });
+    expect(Math.max(...p.typed!.map((b) => b.width))).toBeGreaterThan(Math.max(...thinner.typed!.map((b) => b.width)));
+    // 只改颜色、画法（轻快照，推导数组不变）：分档的键变了（重画），描好的河照用
+    const lines = riverLines(w);
+    const key = riverPathsKey(w, null);
+    eng.exec({ op: 'set_river_type', type: { ...blood, color: '#123456', style: 'dashed' } });
+    expect(eng.world.derived.riverType).toBe(w.derived.riverType);
+    expect(samePathsKey(riverPathsKey(eng.world, null), key)).toBe(false);
+    expect(riverLines(eng.world)).toBe(lines);
+  });
 });

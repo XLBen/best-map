@@ -1,8 +1,9 @@
 import { Plus, Trash2 } from 'lucide-preact';
+import { Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
 import { FANTASY_RIVER_TYPES } from '../../../core/packs/fantasy-rivers';
-import { PLAIN_RIVER, RIVER_STYLES, RIVER_STYLE_LABEL, type RiverStyle, type RiverType, majorityType, riverTypeOwner } from '../../../core/river-types';
+import { PLAIN_RIVER, RIVER_STYLES, RIVER_STYLE_LABEL, type RiverStyle, type RiverType, bankRadiusKm, majorityType, riverTypeOwner } from '../../../core/river-types';
 import { SCRIPT_API } from '../../../core/script';
 import type { World } from '../../../core/world';
 import {
@@ -66,18 +67,26 @@ export function riverTypeChoiceCommand(w: World, ref: RiverRef, choice: string |
   const want = choice === PLAIN_RIVER && !hasRules(w) ? null : choice;
   const name = riverInfo(w, ref)?.name;
   const who = name ? `「${name}」` : '这条河';
-  const what = want === null ? '按规则' : want === PLAIN_RIVER ? '普通的河' : (types.find((t) => t.id === want)?.name ?? want);
-  const label = want === null ? `${who}的类型改回按规则` : `${who}改成${what}`;
+  // 说明按点的是什么写（没有规则时点“普通的河”，命令是去掉类型，说明仍是“改成普通的河”）
+  const what = choice === PLAIN_RIVER ? '普通的河' : (types.find((t) => t.id === choice)?.name ?? choice);
+  const label = choice === null ? `${who}的类型改回按规则` : `${who}改成${what}`;
+  // 名字照旧：固定下来、自己选了类型的自然河按那条河原来的样子起名（不用类型的模板），所以现在的名字
+  // 是按规则成了某种河、用那种河的模板起的时，把它写下来（之后“恢复自动”就是那条自然河普通的名字）
+  const f = riverInfo(w, ref)?.feature;
+  const tag = f && !f.custom && f.name ? f.tags.find((t) => t.startsWith('rtype:')) : undefined;
+  const keepName = want !== null && !!tag && !!types.find((t) => t.id === tag.slice(6))?.names ? { name: f!.name } : {};
   if (ref.kind === 'guide') {
     const g = guideOf(w, ref.id);
     if (!g || (g.type ?? null) === want) return null;
-    return { op: 'update_guide', id: g.id, patch: { type: want }, label };
+    // 画的河照选的类型的模板起名；固定下来的自然河（用着那条河的地名键、没自己起名）名字照旧
+    const pinned = g.nameKey !== undefined && !g.name;
+    return { op: 'update_guide', id: g.id, patch: { type: want, ...(pinned ? keepName : {}) }, label };
   }
   if (want === null) return null;
   if (want !== PLAIN_RIVER && cur.type?.id === want) return null;
   const pin = pinCommand(w, ref.cell);
   if (!pin || pin.cmd.op !== 'add_guide') return null;
-  return { ...pin.cmd, guide: { ...pin.cmd.guide, type: want }, label };
+  return { ...pin.cmd, guide: { ...pin.cmd.guide, ...keepName, type: want }, label };
 }
 
 // ---------- 选类型的按钮与弹出的列表 ----------
@@ -138,7 +147,7 @@ export function RiverTypeMenu() {
       <div class="menu">
         <MenuRow t={null} label="普通的河" on={!types.some((t) => t.id === cur)} hint="没选类型的河按各类型的规则判断（哪些自然的河是这一种）" onPick={() => pick('')} />
         {types.map((t) => (
-          <MenuRow t={t} label={t.name} on={cur === t.id} onPick={() => pick(t.id)} />
+          <MenuRow key={t.id} t={t} label={t.name} on={cur === t.id} onPick={() => pick(t.id)} />
         ))}
       </div>
     );
@@ -165,7 +174,7 @@ export function RiverTypeMenu() {
       )}
       <MenuRow t={null} label="普通的河" on={rules ? cur.chosen === 'plain' : !cur.type} onPick={() => choose(PLAIN_RIVER)} />
       {types.map((t) => (
-        <MenuRow t={t} label={t.name} on={cur.chosen === 'type' && cur.type?.id === t.id} onPick={() => choose(t.id)} />
+        <MenuRow key={t.id} t={t} label={t.name} on={cur.chosen === 'type' && cur.type?.id === t.id} onPick={() => choose(t.id)} />
       ))}
       {sel.kind === 'natural' && <p class="muted small">给自然的河选类型会把它固定下来（走向不再随地形挪），名字照旧。</p>}
     </div>
@@ -318,8 +327,10 @@ function TypeEditor({ w, t }: { w: World; t: RiverType }) {
   const bank = t.bank;
   const dT = bank?.dT ?? 0;
   const dPpct = Math.round((Math.exp(bank?.dP ?? 0) - 1) * 100);
+  // 第一次设两岸的冷暖、干湿时，范围取现在“自动”的那么大（靠近这种河的远近不跟着变）
+  const autoRadius = (x: RiverType) => Math.max(RLO, Math.min(RHI, Math.round(bankRadiusKm(w, x) / 10) * 10));
   const setBank = (patch: Partial<NonNullable<RiverType['bank']>>, label: string) =>
-    edit(label, (x) => ({ ...x, bank: { radiusKm: x.bank?.radiusKm ?? 200, ...x.bank, ...patch } }));
+    edit(label, (x) => ({ ...x, bank: { radiusKm: x.bank?.radiusKm ?? autoRadius(x), ...x.bank, ...patch } }));
   return (
     <div class="river-type-editor">
       <div class="row">
@@ -354,9 +365,9 @@ function TypeEditor({ w, t }: { w: World; t: RiverType }) {
         <TypeSlider
           label="范围"
           value={bank?.radiusKm ?? 0}
-          pos={(v) => (v ? logPos(v, RLO, RHI) : 0)}
+          pos={(v) => logPos(v || autoRadius(t), RLO, RHI)}
           at={(p) => Math.round(logAt(p, RLO, RHI) / 10) * 10 || 10}
-          text={(v) => (v ? `${v} km` : '自动')}
+          text={(v) => (v ? `${v} km` : `自动（约 ${autoRadius(t)} km）`)}
           commit={(v) => setBank({ radiusKm: v }, `改了「${t.name}」两岸的范围`)}
         />
       </div>
@@ -456,7 +467,7 @@ export function RiverTypesSection() {
       {types.length > 0 && (
         <div class="feature-list">
           {types.map((t) => (
-            <>
+            <Fragment key={t.id}>
               <div class={`feature-row river-row ${open === t.id ? 'on' : ''}`} onClick={() => setOpen(open === t.id ? null : t.id)}>
                 <span>
                   <span class="swatch" style={{ background: riverTypeColor(t, 'realistic') }} /> {riverTypeOwner(t)}
@@ -467,7 +478,7 @@ export function RiverTypesSection() {
                 </span>
               </div>
               {open === t.id && <TypeEditor w={w} t={t} />}
-            </>
+            </Fragment>
           ))}
         </div>
       )}
@@ -476,7 +487,7 @@ export function RiverTypesSection() {
           <Plus size={14} /> 新建
         </button>
         {samples.map((x) => (
-          <button class="small" title={`加上示例里的「${x.name}」`} onClick={() => void add(structuredClone(x))}>
+          <button key={x.id} class="small" title={`加上示例里的「${x.name}」`} onClick={() => void add(structuredClone(x))}>
             <span class="swatch" style={{ background: x.color }} /> {x.name}
           </button>
         ))}

@@ -3,7 +3,7 @@ import { PLAIN_RIVER, riverNet } from '../../core/river-types';
 import { continents } from '../../core/testing/fixtures';
 import { setOptions, world } from '../state';
 import { riverTypeChoiceCommand, riverTypeOfRiver, riverTypeScriptCommand, newRiverType } from './panels/riverTypes';
-import { chosenRiverType, riverInfo } from './riverCourse';
+import { chosenRiverType, pinCommand, riverInfo } from './riverCourse';
 
 // 给河选类型：自然的河固定下来并带上类型（一步，名字照旧）；画的河改它自己的 type；新画的河用工具条上选的
 
@@ -71,5 +71,51 @@ describe('给河选类型', () => {
     expect(cmd).toEqual({ op: 'set_river_type', type: { ...t, scripts: { match: { api: 1, src: 'return 河长 > 500;' } } } });
     eng.exec(cmd);
     expect(riverTypeScriptCommand(w.small.riverTypes![0], '   ')).toEqual({ op: 'set_river_type', type: t });
+  });
+
+  it('按规则成了血河、用血河的模板起名的自然的河：换成别的类型（或普通的河）时名字照旧', () => {
+    for (const choice of ['crystal', PLAIN_RIVER]) {
+      const eng = continents();
+      eng.exec({ op: 'set_river_type', type: { ...blood, names: [{ p: '{color}血河' }], scripts: { match: rule } } });
+      eng.exec({ op: 'set_river_type', type: { id: 'crystal', name: '晶川', color: '#79e6ff', names: [{ p: '{myth}晶河' }] } });
+      const w = eng.world;
+      world.value = w;
+      const f = w.derived.features.filter((x) => x.type === 'river' && x.guide === undefined && x.tags.includes('rtype:blood')).sort((a, b) => b.importance - a.importance)[0];
+      expect(f.name.endsWith('血河')).toBe(true);
+      const old = f.name;
+      const cmd = riverTypeChoiceCommand(w, { kind: 'natural', cell: f.cells[0] }, choice)!;
+      expect(cmd.op === 'add_guide' && cmd.guide.name).toBe(old);
+      eng.exec(cmd);
+      const g = eng.world.small.guides.at(-1)!;
+      expect(g.type).toBe(choice);
+      expect(eng.world.derived.features.find((x) => x.guide === g.id)?.name, choice).toBe(old);
+    }
+    // 已经固定下来（没选类型、按规则成了血河）的自然河再选类型：名字也照旧
+    {
+      const eng = continents();
+      eng.exec({ op: 'set_river_type', type: { ...blood, names: [{ p: '{color}血河' }], scripts: { match: rule } } });
+      eng.exec({ op: 'set_river_type', type: { id: 'crystal', name: '晶川', color: '#79e6ff', names: [{ p: '{myth}晶河' }] } });
+      const w = eng.world;
+      world.value = w;
+      const f = w.derived.features.filter((x) => x.type === 'river' && x.guide === undefined && x.tags.includes('rtype:blood')).sort((a, b) => b.importance - a.importance)[0];
+      eng.exec(pinCommand(w, f.cells[0])!.cmd);
+      const g = w.small.guides.at(-1)!;
+      const pinned = w.derived.features.find((x) => x.guide === g.id)!;
+      expect(pinned.tags).toContain('rtype:blood');
+      const old = pinned.name;
+      // 主线程上每次快照是新的世界对象（按世界缓存的地物索引跟着换）：这里复制一份
+      const cmd = riverTypeChoiceCommand({ ...w }, { kind: 'guide', id: g.id }, 'crystal')!;
+      expect(cmd).toMatchObject({ op: 'update_guide', patch: { type: 'crystal', name: old } });
+      eng.exec(cmd);
+      expect(w.derived.features.find((x) => x.guide === g.id)?.name).toBe(old);
+    }
+    // 名字不是按模板起的（普通的名字）：不写名字，照那条自然河的地名键起（不算自己改过的）
+    const eng = continents();
+    eng.exec({ op: 'set_river_type', type: { ...blood, scripts: { match: rule } } });
+    const w = eng.world;
+    world.value = w;
+    const f = w.derived.features.find((x) => x.type === 'river' && x.guide === undefined && x.tags.includes('rtype:blood'))!;
+    const cmd = riverTypeChoiceCommand(w, { kind: 'natural', cell: f.cells[0] }, PLAIN_RIVER)!;
+    expect(cmd.op === 'add_guide' && cmd.guide.name).toBeUndefined();
   });
 });

@@ -38,8 +38,6 @@ export function effectSources(world: World): Source[] {
   return out;
 }
 
-export const hasEffects = (world: World) => effectSources(world).length > 0;
-
 const smooth01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
 // 每种影响在各格的强弱（0–1，源头上为 1）；这种源头一格都没有时为 null

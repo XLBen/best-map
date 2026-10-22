@@ -4,7 +4,7 @@ import type { RiverType } from '../river-types';
 // 种子用固定的 seedKey：改了 id 匹配的河也不变。
 //
 // match 脚本每条河算一次（变量是整条河的汇总：海拔、坡度、抬升、气温取平均，流量取最大，位置取源头），
-// 阈值调过：在测试用的 1.2 万格大陆上三种会自己出现的河都有，但加起来只占一小部分的河（见 core/packs.test.ts）。
+// 阈值调过：在测试用的 1.2 万格大陆、8 千格的星球上三种会自己出现的河都有，但加起来只占一小部分的河（见 core/packs.test.ts）。
 // 冥河没有脚本，只能自己画（画河时选它，或者给一条河选它）
 
 const script = (src: string) => ({ api: 1 as const, src });
@@ -60,7 +60,13 @@ export const FANTASY_RIVER_TYPES: RiverType[] = [
     bank: { radiusKm: 180, dT: 4, dP: -0.2 },
     names: [{ p: '{volcanic}火河' }, { p: '{color}熔川' }],
     scripts: {
-      match: script(['// 又陡、抬升又强的山里的河（火山带）', 'return slope > 12 && uplift > 0.7 && tMean >= 2;'].join('\n')),
+      match: script(
+        [
+          '// 抬升很强的山里（火山带）、又陡或者源头很高的河。',
+          '// 坡度随格子大小变（格子越大越平缓），所以粗的世界上也看源头的海拔',
+          'return (slope > 12 || sourceElevation > 2500) && uplift > 0.7 && tMean >= 2;',
+        ].join('\n'),
+      ),
     },
     seedKey: 'fantasy/lava_river',
   },
