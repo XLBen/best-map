@@ -1,4 +1,4 @@
-import { GLOW_GAIN, GLOW_GAIN_ATLAS, PATTERN_DETAIL, SEED_STEP } from '../../core/biome-look';
+import { GLOW_GAIN, GLOW_GAIN_ATLAS, PATTERN_DETAIL, SEED_STEP, SPARKLE, SPARKLE3 } from '../../core/biome-look';
 import type { Mesh } from '../../core/mesh';
 import type { SeamLayers } from '../../core/seams';
 import { PATTERNS } from '../../core/species';
@@ -54,6 +54,12 @@ float fbmSub(vec2 p, int oct) {
 // 数 → GLSL 的浮点字面量（整数也带小数点）
 const glsl = (v: number) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
 
+// 合成着色器里生态的花纹、发光那几段的首尾标记。这几段在个别显卡、驱动上编译不过时，去掉它们再编译一次（compileCompose）：
+// 地图照常画，只是没有花纹、发光，不会整张地图都出不来
+const FX_BEGIN = '// <fx>';
+const FX_END = '// </fx>';
+export const withoutFx = (src: string) => src.replace(/[ \t]*\/\/ <fx>[\s\S]*?\/\/ <\/fx>\n?/g, '');
+
 // 生态的花纹（第三批）：与 core/biome-look.ts 的 patternValue 相同的算式（编号是 PATTERNS 里的序号）。
 // q 以花纹单位计（一个单位 = size 格），值在 [0, 1]。整个星球把 patternAt 换成三维的（PATTERN3_GLSL）
 const PATTERN_GLSL = `
@@ -62,9 +68,9 @@ float patSparkle(vec2 q) {
   vec2 g = q * 3.0;
   ivec2 c = ivec2(floor(g));
   uint h = hashU(c);
-  if (unitH(h) >= 0.25) return 0.0;
+  if (unitH(h) >= ${glsl(SPARKLE.p)}) return 0.0;
   vec2 ctr = vec2(c) + 0.2 + 0.6 * vec2(float(h & 255u), float((h >> 8u) & 255u)) / 255.0;
-  return 1.0 - smoothstep(0.06, 0.12, length(g - ctr));
+  return 1.0 - smoothstep(${glsl(SPARKLE.r0)}, ${glsl(SPARKLE.r1)}, length(g - ctr));
 }
 float patCracks(vec2 q) {
   ivec2 i = ivec2(floor(q));
@@ -85,7 +91,7 @@ float patternValue(int kind, vec2 q) {
   if (kind == 3) return smoothstep(-0.1, 0.25, fbmSub(q, 3));
   if (kind == 4) return smoothstep(0.88, 0.97, 1.0 - abs(fbmSub(q * 0.8, 3)));
   if (kind == 5) return smoothstep(0.35, 0.45, vnoise(q * 1.7));
-  if (kind == 6) return smoothstep(0.2, 0.6, sin(6.28318531 * (q.y + 0.6 * fbmSub(q * 0.5, 2))));
+  if (kind == 6) return smoothstep(0.2, 0.6, sin(6.28318531 * fract(q.y + 0.6 * fbmSub(q * 0.5, 2))));
   return 0.0;
 }
 // 这一点的花纹：world 是地图坐标，size 是花纹大小（格），seed 是这种生态的种子
@@ -99,9 +105,9 @@ float patSparkle3(vec3 q) {
   vec3 g = q * 3.0;
   ivec3 c = ivec3(floor(g));
   uint h = hashU3(c);
-  if (unitH(h) >= 0.75) return 0.0;
+  if (unitH(h) >= ${glsl(SPARKLE3.p)}) return 0.0;
   vec3 ctr = vec3(c) + 0.2 + 0.6 * vec3(float(h & 255u), float((h >> 8u) & 255u), float(h >> 24u)) / 255.0;
-  return 1.0 - smoothstep(0.08, 0.16, length(g - ctr));
+  return 1.0 - smoothstep(${glsl(SPARKLE3.r0)}, ${glsl(SPARKLE3.r1)}, length(g - ctr));
 }
 float patCracks3(vec3 q) {
   ivec3 i = ivec3(floor(q));
@@ -125,7 +131,7 @@ float patternValue3(int kind, vec3 q) {
   if (kind == 3) return smoothstep(-0.1, 0.25, fbmSub3(q, 3));
   if (kind == 4) return smoothstep(0.88, 0.97, 1.0 - abs(fbmSub3(q * 0.8, 3)));
   if (kind == 5) return smoothstep(0.35, 0.45, vnoise3(q * 1.7));
-  if (kind == 6) return smoothstep(0.2, 0.6, sin(6.28318531 * (q.z + 0.6 * fbmSub3(q * 0.5, 2))));
+  if (kind == 6) return smoothstep(0.2, 0.6, sin(6.28318531 * fract(q.z + 0.6 * fbmSub3(q * 0.5, 2))));
   return 0.0;
 }
 // 星球：在球面位置上取（每份副本一样，东西接缝、两极都没有断口）
@@ -423,7 +429,7 @@ int seamCell(int id, vec2 uv) {
 float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
 // 平涂、斜线的不透明度；只描边的是 0
 float hlAlpha(float A) { return A > 128.5 ? (A - 128.0) / 127.0 : A < 127.5 ? A / 127.0 : 0.0; }
-${PATTERN_GLSL}
+${FX_BEGIN}${PATTERN_GLSL}${FX_END}
 void main() {
   vec4 base = texture(uSceneColor, vUv);
   vec4 hs = texture(uSceneHeight, vUv);
@@ -449,6 +455,7 @@ void main() {
     vec4 fc = cellTex(uFlat, uFlatByGroup == 1 ? idG : id);
     col = mix(col, fc.rgb, fc.a);
   }
+  ${FX_BEGIN}
   // 生态的花纹：画在晕渲之前（跟着山的明暗）。屏幕上太细时淡成平均值，远看与缩略图的颜色一致
   vec4 fx = uHasFx == 1 && land && id >= 0 ? cellTex(uFx, id) * 255.0 : vec4(0.0);
   int patSlot = int(fx.r + 0.5) - 1;
@@ -460,6 +467,7 @@ void main() {
     float v = fade > 0.0 ? mix(kd.b, patternAt(kind, world, kd.g, kd.a), fade) : kd.b;
     col = mix(col, c2.rgb, v * c2.a * fx.g / 255.0);
   }
+  ${FX_END}
   if (land) {
     // 陡坡露岩
     float steep = 1.0 - n.z;
@@ -479,9 +487,11 @@ void main() {
   } else {
     col *= mix(1.0, 0.92 + 0.08 * shade, uShade);
   }
+  ${FX_BEGIN}
   // 生态的发光：加在晕渲之后（背光的坡上照样亮）
   int glowSlot = int(fx.a + 0.5) - 1;
   if (glowSlot >= 0 && fx.b > 0.5) col += texelFetch(uFxPal, ivec2(1, glowSlot), 0).rgb * (fx.b / 255.0) * (uStyle == 1 ? ${glsl(GLOW_GAIN_ATLAS)} : ${glsl(GLOW_GAIN)});
+  ${FX_END}
 
   // 海岸线：地形层画好的抗锯齿细线
   col = mix(col, uStyle == 1 ? vec3(0.35, 0.27, 0.2) : vec3(0.18, 0.22, 0.24), base.a * (uStyle == 1 ? 0.8 : 0.4));
@@ -730,6 +740,16 @@ int idAt(vec2 uv) {`),
 // 测试用（没有 WebGL 时检查拼出来的源码）：合成着色器的平面、星球两份
 export const COMPOSE_SOURCES = { plane: FS_COMPOSE, planet: FS_COMPOSE_PLANET };
 
+// 合成程序：带花纹的编译不过时退回不带花纹的（见 withoutFx），只在控制台留一句
+function compileCompose(gl: WebGL2RenderingContext, fs: string): WebGLProgram {
+  try {
+    return compile(gl, VS_QUAD, fs);
+  } catch (e) {
+    console.warn('生态花纹的着色器编译不过，先不画花纹、发光：', e);
+    return compile(gl, VS_QUAD, withoutFx(fs));
+  }
+}
+
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const make = (type: number, src: string) => {
     const s = gl.createShader(type)!;
@@ -861,7 +881,7 @@ export class Renderer {
     this.gl = gl;
     this.progId = compile(gl, VS_CELL, FS_ID);
     this.progTerrain = compile(gl, VS_CELL, FS_TERRAIN);
-    this.progCompose = compile(gl, VS_QUAD, FS_COMPOSE);
+    this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
     this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t() };
@@ -964,7 +984,7 @@ export class Renderer {
       this.planetProgs = {
         id: compile(gl, VS_CELL_PLANET, FS_ID),
         terrain: compile(gl, VS_CELL_PLANET, FS_TERRAIN_PLANET),
-        compose: compile(gl, VS_QUAD, FS_COMPOSE_PLANET),
+        compose: compileCompose(gl, FS_COMPOSE_PLANET),
       };
     }
     const view = viewOf(mesh);

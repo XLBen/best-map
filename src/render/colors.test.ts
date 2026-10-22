@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fxPalette, fxSet } from '../../core/biome-look';
+import { SPARKLE, SPARKLE3, fxPalette, fxSet } from '../../core/biome-look';
 import type { Command } from '../../core/commands';
 import { type PreviewPatch, previewWorldOf } from '../../core/preview-world';
 import { brushCells } from '../../core/select';
@@ -7,7 +7,7 @@ import type { Species, Visual } from '../../core/species';
 import { islandStamp, landStroke, previewTerrain } from '../../core/terrain';
 import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
-import { type ColorOptions, GhostBuffer, cellLayers, editGhost, fxLayers, ghostLayers, highlightColors, provinceScale, terrainGhost } from './colors';
+import { type ColorOptions, GhostBuffer, cellLayers, colorSignature, editGhost, fxLayers, ghostLayers, highlightColors, provinceScale, terrainGhost } from './colors';
 
 // 高亮的编码（着色器按 alpha 字节解码）、省界淡出用的省份大小、幽灵海岸的图层、预览世界的着色、
 // 生态的颜色脚本（d.look）与花纹、发光（fx）
@@ -302,6 +302,19 @@ describe('生态的颜色脚本、花纹与发光', () => {
     }
   });
 
+  it('着色缓存的键：只改外观（花纹、发光、种子）时变（地图重新着色），只改名字、地名设定时不变', () => {
+    const w = continents({ cells: 2000 }).world;
+    const sig = (change: (s: Species) => Species) => colorSignature(withSpecies(w, (s) => (s.id === 'steppe' ? change(s) : s)).small);
+    const base = colorSignature(w.small);
+    expect(sig((s) => s)).toBe(base);
+    expect(sig((s) => ({ ...s, name: '大草原', feature: { label: '草原' } }))).toBe(base);
+    const spots = sig((s) => ({ ...s, visual: { pattern: 'spots' } }));
+    expect(spots).not.toBe(base);
+    expect(sig((s) => ({ ...s, visual: { pattern: 'spots', glow: 0.2 } }))).not.toBe(spots);
+    expect(sig((s) => ({ ...s, visual: { pattern: 'spots' }, seedKey: 'k' }))).not.toBe(spots);
+    expect(sig((s) => ({ ...s, color: '#123456' }))).not.toBe(base);
+  });
+
   it('拖滑块时的外观覆盖：只换花纹，与把外观写进世界后着色的一样', () => {
     const w = continents({ cells: 5000 }).world;
     const v: Visual = { pattern: 'spots', color2: '#203040', amount: 0.7, size: 1.5, glow: 0.2 };
@@ -346,5 +359,28 @@ describe('生态的颜色脚本、花纹与发光', () => {
     }
     expect(COMPOSE_SOURCES.plane).not.toContain('patternValue3');
     expect(COMPOSE_SOURCES.planet).toContain('return patternValue3(kind, sphereOf(world) * (uNoiseK / size)');
+    // 闪光的疏密、点的大小用 core 的同一组数（改一边另一边跟着变）；条纹先取小数部分再求正弦
+    expect(COMPOSE_SOURCES.plane).toContain(`unitH(h) >= ${SPARKLE.p})`);
+    expect(COMPOSE_SOURCES.plane).toContain(`smoothstep(${SPARKLE.r0}, ${SPARKLE.r1}, length(g - ctr))`);
+    expect(COMPOSE_SOURCES.planet).toContain(`unitH(h) >= ${SPARKLE3.p})`);
+    expect(COMPOSE_SOURCES.planet).toContain(`smoothstep(${SPARKLE3.r0}, ${SPARKLE3.r1}, length(g - ctr))`);
+    expect(COMPOSE_SOURCES.plane).toContain('sin(6.28318531 * fract(q.y + ');
+    expect(COMPOSE_SOURCES.planet).toContain('sin(6.28318531 * fract(q.z + ');
+  });
+
+  it('花纹那几段编译不过时的退路：去掉花纹、发光的几段，剩下的照样是完整的着色器（与没有花纹时一样）', async () => {
+    const { COMPOSE_SOURCES, withoutFx } = await import('./renderer');
+    const count = (src: string, s: string) => src.split(s).length - 1;
+    for (const [name, full] of Object.entries(COMPOSE_SOURCES)) {
+      const src = withoutFx(full);
+      expect(src.length, name).toBeLessThan(full.length - 2000);
+      expect(count(src, '{'), name).toBe(count(src, '}'));
+      expect(count(src, '('), name).toBe(count(src, ')'));
+      // 花纹、发光的代码一行不剩（只留下用不着的 uniform 声明）
+      for (const s of ['patternAt', 'patternValue', 'PAT_DETAIL', 'cellTex(uFx', 'uFxPal,', 'glowSlot', '<fx>', '</fx>']) expect(src, `${name} ${s}`).not.toContain(s);
+      // 其余照旧：晕渲、海岸线、高亮、输出
+      for (const s of ['void main() {', 'col *= mix(1.0, shade, uShade);', 'if (uHasHighlight == 1 && id >= 0) {', 'oColor = vec4(col, 1.0);']) expect(src, `${name} ${s}`).toContain(s);
+    }
+    expect(withoutFx(COMPOSE_SOURCES.planet)).toContain('vec3 Pf = sphereOf(world) * uNoiseK * 0.9;');
   });
 });

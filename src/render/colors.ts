@@ -281,6 +281,16 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   };
 }
 
+// 小数据里着色用到的部分连成一个字符串（MapView 着色缓存的键之一）：省份类型、切线、生态的颜色与外观（花纹、发光、种子）、海岸曲折。
+// 只改生态外观的一步什么都不重算（轻快照，推导数组不变），靠外观这一段重新着色；只改名字、地名设定时不变，不重新着色
+export function colorSignature(small: World['small']): string {
+  const kinds = Object.entries(small.provinces).map(([p, m]) => `${p}:${m.kind}`);
+  const seams = (small.provinceSeams ?? []).map((s) => s.id);
+  const colors = small.species.map((s) => s.color);
+  const looks = small.species.map((s) => (s.visual ? `${s.id}:${s.seedKey ?? ''}:${JSON.stringify(s.visual)}` : ''));
+  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}`;
+}
+
 // ---------- 生态的花纹与发光（第三批） ----------
 // 每格一个 RGBA 字节：R = 份额最大的有花纹的生态在调色板里的行 + 1（0 没有花纹），G = 它的份额 × 255
 // （被雪、盐壳盖住的部分不算），B = Σ 份额 × 发光强度 × 255，A = 发光颜色取的那一行 + 1（0 不发光）。

@@ -122,10 +122,11 @@ export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []
 // 着色器里花纹的编号（PATTERNS 里的序号，none 为 0）
 export const patternKind = (p: Pattern): number => PATTERNS.indexOf(p);
 
-// 闪光：三倍细的网格上四分之一的格里有一个点（点心在格的中间六成里，半径 0.12，不出格）
-const SPARKLE_P = 0.25;
-// 星球上看到的是三维小球被球面切开的截面，比平面上稀：概率放大三倍、球大一些（半径 0.16，也不出格），疏密与平面相近
-const SPARKLE_P3 = 0.75;
+// 闪光：三倍细的网格上 p 那么多的格里有一个点（点心在格的中间六成里，边缘从 r0 淡到 r1，不出格）。
+// 星球上看到的是三维小球被球面切开的截面，比平面上稀：概率放大三倍、球大一些，疏密与平面相近。
+// 着色器（renderer.ts）直接用这几个数，两边不会改了一边忘了另一边
+export const SPARKLE = { p: 0.25, r0: 0.06, r1: 0.12 };
+export const SPARKLE3 = { p: 0.75, r0: 0.08, r1: 0.16 };
 
 const unitOf = (h: number) => (h & 0xffffff) / 16777216;
 
@@ -135,11 +136,14 @@ function sparkle(x: number, y: number): number {
   const ix = Math.floor(gx);
   const iy = Math.floor(gy);
   const h = hashU(ix, iy);
-  if (unitOf(h) >= SPARKLE_P) return 0;
+  if (unitOf(h) >= SPARKLE.p) return 0;
   const cx = ix + 0.2 + (0.6 * (h & 255)) / 255;
   const cy = iy + 0.2 + (0.6 * ((h >>> 8) & 255)) / 255;
-  return 1 - smoothstep(0.06, 0.12, Math.hypot(gx - cx, gy - cy));
+  return 1 - smoothstep(SPARKLE.r0, SPARKLE.r1, Math.hypot(gx - cx, gy - cy));
 }
+
+// 条纹：t 先取小数部分再求正弦（值不变；着色器里 t 可到几千，有的显卡大角度的 sin 不准）
+const stripe = (t: number) => smoothstep(0.2, 0.6, Math.sin(2 * Math.PI * (t - Math.floor(t))));
 
 function sparkle3(x: number, y: number, z: number): number {
   const gx = x * 3;
@@ -149,11 +153,11 @@ function sparkle3(x: number, y: number, z: number): number {
   const iy = Math.floor(gy);
   const iz = Math.floor(gz);
   const h = hashU3(ix, iy, iz);
-  if (unitOf(h) >= SPARKLE_P3) return 0;
+  if (unitOf(h) >= SPARKLE3.p) return 0;
   const cx = ix + 0.2 + (0.6 * (h & 255)) / 255;
   const cy = iy + 0.2 + (0.6 * ((h >>> 8) & 255)) / 255;
   const cz = iz + 0.2 + (0.6 * (h >>> 24)) / 255;
-  return 1 - smoothstep(0.08, 0.16, Math.hypot(gx - cx, gy - cy, gz - cz));
+  return 1 - smoothstep(SPARKLE3.r0, SPARKLE3.r1, Math.hypot(gx - cx, gy - cy, gz - cz));
 }
 
 // 裂纹：每个单位格里一个随机点，到最近两点的距离差（F2 − F1）很小的地方是裂缝
@@ -216,7 +220,7 @@ export function patternValue(p: Pattern, x: number, y: number): number {
       return smoothstep(0.35, 0.45, vnoise(x * 1.7, y * 1.7));
     case 'stripes':
       // 横条纹（星球上是沿纬线的带），用低频噪声扭弯
-      return smoothstep(0.2, 0.6, Math.sin(2 * Math.PI * (y + 0.6 * fbmSub(x * 0.5, y * 0.5, 2))));
+      return stripe(y + 0.6 * fbmSub(x * 0.5, y * 0.5, 2));
     default:
       return 0;
   }
@@ -236,7 +240,7 @@ export function patternValue3(p: Pattern, x: number, y: number, z: number): numb
     case 'spots':
       return smoothstep(0.35, 0.45, vnoise3(x * 1.7, y * 1.7, z * 1.7));
     case 'stripes':
-      return smoothstep(0.2, 0.6, Math.sin(2 * Math.PI * (z + 0.6 * fbmSub3(x * 0.5, y * 0.5, z * 0.5, 2))));
+      return stripe(z + 0.6 * fbmSub3(x * 0.5, y * 0.5, z * 0.5, 2));
     default:
       return 0;
   }

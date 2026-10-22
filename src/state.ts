@@ -90,8 +90,10 @@ export const cursorHint = signal<{ x: number; y: number; text: string; warn?: bo
 export const focusSpecies = signal<string | null>(null);
 
 // 拖生态的花纹、发光滑块时：地图在主线程上立即按这份外观画（只影响画法，不改世界，不进历史）。按生态 id 记。
-// 用法：拖动时 setSpeciesVisualOverride(id, 外观)；松手提交（update_species），等 exec 返回（结果已换上）再给 null 去掉，
-// 这样中间不会闪回旧的样子。新建、打开世界时全部去掉
+// 用法：拖动时 setSpeciesVisualOverride(id, 外观)；松手提交（update_species），等 exec 返回（不论成没成，结果已换上），
+// 覆盖的还是提交的那一份（visualOverrides.value.get(id) === 它，没有又拖到别的值）时再给 null 去掉，这样中间不会闪回旧的样子。
+// 新建、打开世界时全部去掉；结果换上时，世界里已经没有这种生态的、存着的外观已经与覆盖的一样的也去掉（见 pruneVisualOverrides），
+// 编辑面板忘了去掉时地图也不会一直画着世界里没有的样子
 export const visualOverrides = signal<ReadonlyMap<string, Visual>>(new Map());
 export function setSpeciesVisualOverride(id: string, visual: Visual | null) {
   const cur = visualOverrides.value;
@@ -100,6 +102,27 @@ export function setSpeciesVisualOverride(id: string, visual: Visual | null) {
   if (visual) next.set(id, visual);
   else next.delete(id);
   visualOverrides.value = next;
+}
+
+// 两份外观逐项相同（不看键的先后：存进世界的那份经过校验，键的顺序可能与编辑面板给的不同）
+const VISUAL_KEYS = ['pattern', 'color2', 'amount', 'size', 'glow', 'glowColor'] as const;
+const visualValue = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : v);
+const sameVisual = (a: Visual | undefined, b: Visual) => !!a && VISUAL_KEYS.every((k) => visualValue(a[k]) === visualValue(b[k]));
+
+// 结果换上时去掉用不着的覆盖：那种生态已经没有了（撤销、删掉），或者世界里存着的外观就是覆盖的这一份（松手提交的结果到了）。
+// 去掉后画出来的与去掉前一样，不会闪
+function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[]) {
+  const cur = visualOverrides.value;
+  if (!cur.size) return;
+  const byId = new Map(species.map((sp) => [sp.id, sp]));
+  let next: Map<string, Visual> | null = null;
+  for (const [id, v] of cur) {
+    const sp = byId.get(id);
+    if (sp && !sameVisual(sp.visual, v)) continue;
+    next ??= new Map(cur);
+    next.delete(id);
+  }
+  if (next) visualOverrides.value = next;
 }
 
 // 顶栏按钮弹出的面板：同一时间只开一个
@@ -412,7 +435,7 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
       worldEpoch.value++;
       measure.value = null;
       if (visualOverrides.value.size) visualOverrides.value = new Map();
-    }
+    } else pruneVisualOverrides(next.small.species);
     world.value = next;
     worldState.value = s.stateId;
     // 结果换上了：调整面板预览的世界（松手前一直显示着，不闪回原样）这时才去掉
