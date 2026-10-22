@@ -1,5 +1,5 @@
 import type { Command } from '../core/commands';
-import type { DocTail, PreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { DocTail, PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { TerrainPatch, TerrainPreview } from '../core/terrain';
@@ -15,6 +15,8 @@ export type Request =
   | { kind: 'undo' }
   | { kind: 'redo' }
   | { kind: 'preview'; cmd: Command }
+  // 省份命令的轻预览：只算省份（重划、按新规则重新划分之前先看新的省界和省名）
+  | { kind: 'previewProvinces'; cmd: Command }
   // “调整”面板拖滑块时：只组合地形，返回陆海的变化
   | { kind: 'previewTerrain'; patch: TerrainPatch }
   // 换一个：撤掉最后一步并执行新命令
@@ -72,6 +74,7 @@ export type Response =
       noop?: boolean;
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
+      provinces?: ProvincesPreview;
       terrain?: TerrainPreview;
       doc?: WorldDoc;
       tail?: DocTail;

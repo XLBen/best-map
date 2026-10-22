@@ -173,6 +173,11 @@ async function handle(id: number, req: Request) {
       case 'preview':
         reply({ id, ok: true, preview: engine!.preview(req.cmd) });
         return;
+      case 'previewProvinces': {
+        const provinces = engine!.previewProvinces(req.cmd);
+        reply({ id, ok: true, provinces }, [provinces.province.buffer as ArrayBuffer]);
+        return;
+      }
       case 'previewTerrain':
         reply({ id, ok: true, terrain: previewTerrain(engine!.world, req.patch) });
         return;

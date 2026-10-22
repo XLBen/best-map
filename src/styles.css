@@ -1216,6 +1216,10 @@ kbd {
   border-color: var(--warn);
   color: #ffd29b;
 }
+/* 做得了、但要留意（合并后是一省两块、会把别的省分成几块）：只描黄边，字照常 */
+.cursor-hint.caution {
+  border-color: var(--warn);
+}
 /* 右边抽屉开着时，底部条挪到剩下的地方中间 */
 .app.with-sheet .bottombar {
   left: calc((100% - 380px) / 2);

@@ -313,25 +313,37 @@ export function provinceGroups(world: World, province: Int32Array, seams: SeamLa
   return group;
 }
 
-// 省份预览（剪刀、涂省、合并）：这些格换成将来的省（剪刀还多几条将来的切线 seams），返回整份分组、
-// （省份着色时的）平涂与切线，交给 Renderer.setGroupPreview。着色器照此画出将来真实的省界，用的是和结果相同的编码、扭曲与切线规则
+// 省份预览（剪刀、涂省、合并、重划）：这些格换成将来的省（剪刀还多几条将来的切线 seams），返回整份分组、
+// （省份着色时的）平涂与切线，交给 Renderer.setGroupPreview。着色器照此画出将来真实的省界，用的是和结果相同的编码、扭曲与切线规则。
+// 重划、重新划分时给整份将来的省份数组 province、将来全部的切线 seamList 与各省 metas（Worker 里的省份预览算好的），
+// cells、ids 再改在它上面
 export function groupPreview(
   world: World,
-  change: { cells: ArrayLike<number>; ids: ArrayLike<number>; seams?: Omit<ProvinceSeam, 'id'>[] },
+  change: {
+    cells: ArrayLike<number>;
+    ids: ArrayLike<number>;
+    seams?: Omit<ProvinceSeam, 'id'>[];
+    province?: Int32Array;
+    seamList?: readonly ProvinceSeam[] | null;
+    metas?: Record<number, { kind: ProvinceKind }>;
+  },
   mode: ViewMode,
 ): { group: Float32Array; flat: Uint8Array | null; seams: SeamLayers | null } {
-  const province = world.causes.province.slice();
+  const base = change.province ?? world.causes.province;
+  const province = base.slice();
   for (let k = 0; k < change.cells.length; k++) province[change.cells[k]] = change.ids[k];
+  const known = (p: number) => (change.metas ? change.metas[p] : undefined) ?? world.small.provinces[p];
   // 还没有的新省（剪刀切出来的几块）：类型随它切出来的那个省（与 cut_province 里按多数取的相同：一块只来自一个省）
   const born = new Map<number, ProvinceKind | undefined>();
   for (let k = 0; k < change.cells.length; k++) {
     const id = change.ids[k];
-    if (!world.small.provinces[id] && !born.has(id)) born.set(id, world.small.provinces[world.causes.province[change.cells[k]]]?.kind);
+    if (!known(id) && !born.has(id)) born.set(id, known(base[change.cells[k]])?.kind);
   }
-  const kindOf = (p: number) => world.small.provinces[p]?.kind ?? born.get(p);
+  const kindOf = (p: number) => known(p)?.kind ?? born.get(p);
   // 剪刀：与切线命令记下的一样（seamsAfterCut：原有的切线也管切出来的新省，再加这一刀的几条）
   let k = 0;
-  const list = seamsAfterCut(world.small.provinceSeams, change.seams ?? [], () => `preview-${k++}`);
+  const existing = change.seamList !== undefined ? (change.seamList ?? undefined) : world.small.provinceSeams;
+  const list = seamsAfterCut(existing, change.seams ?? [], () => `preview-${k++}`);
   const seams = seamLayers(world, province, list);
   return { group: provinceGroups(world, province, seams), flat: mode === 'provinces' ? provinceFlat(world, province, kindOf) : null, seams };
 }

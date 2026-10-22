@@ -1,6 +1,6 @@
 import { batch, signal } from '@preact/signals';
 import type { Command } from '../core/commands';
-import type { PreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
@@ -80,8 +80,8 @@ export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
 export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false });
 export const hoverCell = signal<number>(-1);
-// 地图上鼠标旁的说明（工具预览的一句话）
-export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean } | null>(null);
+// 地图上鼠标旁的说明（工具预览的一句话）。warn：做不了；caution：做得了，但要留意（比如合并后是一省两块）
+export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 export const focusSpecies = signal<string | null>(null);
 
 // 顶栏按钮弹出的面板：同一时间只开一个
@@ -290,7 +290,7 @@ function sizesFor(w: World): Partial<ToolOptions> {
 let worker: Worker | null = null;
 let nextId = 1;
 // edit：改动世界的请求（执行、撤销、重做、换一个）；画笔可以在它们后面排队
-const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean }>();
+const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean; kind: Request['kind'] }>();
 const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
 
 // 正在算的只有编辑（或不改世界的后台请求）：这时画的笔画可以排在后面，按顺序执行。
@@ -298,6 +298,13 @@ const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
 export function onlyEditsPending(): boolean {
   for (const p of pending.values()) if (!p.edit) return false;
   return true;
+}
+
+// 还没算完的编辑（执行、撤销、重做、换一个）有几步：排队时“换个形状”要等它们算完
+export function editsInFlight(): number {
+  let k = 0;
+  for (const p of pending.values()) if (EDITS.has(p.kind)) k++;
+  return k;
 }
 let meshCache: { key: string; mesh: Mesh } | null = null;
 
@@ -329,6 +336,7 @@ function call(req: Request, label: string | null): Promise<Response> {
     pending.set(id, {
       // 不带提示的请求（预览、自动保存）不改世界，不挡排队
       edit: EDITS.has(req.kind) || !label,
+      kind: req.kind,
       resolve: (r) => {
         if (label && --labelled === 0) busy.value = null;
         resolve(r);
@@ -561,6 +569,11 @@ function againAction(again: Again | undefined, label: string) {
   return {
     label: again.label,
     run: () => {
+      // 后面还有排队的编辑：现在换掉的会是排在最后的那一步，不是这一步
+      if (editsInFlight()) {
+        showToast('等排队的几步算完再换');
+        return;
+      }
       const next = again.next();
       if (next) void replaceLast(next, label, again);
     },
@@ -647,6 +660,29 @@ export function previewCommand(cmd: Command): Promise<PreviewResult | null> {
         p.resolve(r.ok && r.preview && world.value === w ? r.preview : null);
       }
       cmdBusy = false;
+    })();
+  });
+}
+
+// 省份命令的轻预览（重划、按新规则重新划分、换一种划分）：只算省份，返回执行后的省份数组、各省（含新起的名字）与切线。
+// 同一时间只算一个；排队时来了新的，旧的直接得到 null。做不成（比如涂得不够）、世界已经变了也是 null，不提示
+let provPending: { cmd: Command; resolve: (r: ProvincesPreview | null) => void } | null = null;
+let provBusy = false;
+export function previewProvinces(cmd: Command): Promise<ProvincesPreview | null> {
+  return new Promise((resolve) => {
+    provPending?.resolve(null);
+    provPending = { cmd, resolve };
+    if (provBusy) return;
+    void (async () => {
+      provBusy = true;
+      while (provPending) {
+        const p = provPending;
+        provPending = null;
+        const w = world.value;
+        const r = await call({ kind: 'previewProvinces', cmd: p.cmd }, null);
+        p.resolve(r.ok && r.provinces && world.value === w ? r.provinces : null);
+      }
+      provBusy = false;
     })();
   });
 }

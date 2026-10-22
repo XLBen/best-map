@@ -4,7 +4,7 @@ import { endemicSpecies } from '../../core/endemic';
 import { hexToRgb } from '../../core/export';
 import { type GeoFeature, REGION_KIND_INFO, guessRegionKind } from '../../core/features';
 import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
-import { type ProvinceSeam, type SeamLayers, scissors, seamLayers, seamPick } from '../../core/seams';
+import { type ProvinceSeam, scissors } from '../../core/seams';
 import { type CutResult, type RiverPlan, brushCells, growRegion, lassoStroke, planRiver, provinceCells, ringCells, ringWinding } from '../../core/select';
 import { riverWidth } from '../../core/rivers';
 import {
@@ -25,7 +25,8 @@ import {
 import { regenTargets } from '../../core/provinces';
 import { isVegetated } from '../../core/vegetation';
 import type { Species } from '../../core/species';
-import { type RegionKind, type World, provinceColor } from '../../core/world';
+import { type ProvinceMeta, type RegionKind, type World, provinceColor } from '../../core/world';
+import { type DisplayCell, displayCellAt } from '../../core/display';
 import type { HighlightLayer } from '../render/colors';
 import type { Shape } from '../render/overlay';
 import {
@@ -41,6 +42,7 @@ import {
   onlyEditsPending,
   options,
   previewCommand,
+  previewProvinces,
   redrawTick,
   selectedFeature,
   selectedProvince,
@@ -50,6 +52,7 @@ import {
   sliderActive,
   world,
 } from '../state';
+import { queueHint, queuedCount, trackEdit } from './pending';
 
 // 地图工具：每个工具在动手前或动手时给出确切的预览（高亮的格、矢量图形、一句话），
 // 松手后执行的命令与预览用同一份计算，所以结果与预览一致。
@@ -65,13 +68,18 @@ export interface Pointer {
   sy: number;
   shift: boolean;
   alt: boolean;
+  // 屏幕上这一点画的是哪一格（扭曲后的格、格以下的海岸、剪刀切线两边，与着色器相同，见 core/display.ts）。
+  // 悬停卡片、吸取、选省、合并、点地名按它取；画笔、放岛等按 cell 与坐标算
+  shown?: DisplayCell;
 }
 
 export interface Preview {
   layers: HighlightLayer[];
   shapes: Shape[];
   hint: string | null;
+  // warn：做不了（点了也不会执行）；caution：做得了，但要留意（比如合并后是一省两块）
   warn?: boolean;
+  caution?: boolean;
   // 拖底部条上的滑块时这句话也写出来（在鼠标最后停的地方，那里正预览着涂一下会怎样）；
   // 没有这一项时，拖滑块由滑块上的数说明，鼠标旁不写
   sliderHint?: boolean;
@@ -84,6 +92,11 @@ export interface ProvincePreview {
   ids: number[];
   // 剪刀：将来的切线（命令会记下的，每个切开的省一条，见 core/seams.ts 的 scissors），切开的几块之间的边界画在线上
   seams?: Omit<ProvinceSeam, 'id'>[];
+  // 整份将来的省份数组（重划、重新划分：Worker 里的省份预览算好的）。有它时 cells、ids 改在它上面，
+  // seamList 是将来全部的切线（替换现有的，不再加 seams），metas 是将来的各省（类型定颜色，名字写标签）
+  province?: Int32Array;
+  seamList?: ProvinceSeam[] | null;
+  metas?: Record<number, ProvinceMeta>;
 }
 
 export interface ToolHandler {
@@ -96,8 +109,6 @@ export interface ToolHandler {
   cancel?(): void;
   // 鼠标离开地图
   leave?(): void;
-  // 鼠标离开地图后预览还要留着（排队中的笔画：结果换上之前一直显示）
-  keep?(): boolean;
   preview(): Preview;
 }
 
@@ -128,6 +139,8 @@ const isBusy = () => {
   busyNote();
   return true;
 };
+// 正在新建、打开、导出（世界可能马上换掉）：排队的工具也要等。只是在算前面的编辑时可以排队
+const blockedByOther = () => busy.value !== null && !onlyEditsPending();
 
 // 一笔：经过的格与到笔画中心线的最近归一化距离 t（0 中心，1 边缘）
 class Stroke {
@@ -168,7 +181,7 @@ interface BrushConfig {
   hint: (shift: boolean) => { text: string | null; warn?: boolean };
   // 哪些格能被这一笔涂到
   filter?: (w: World, i: number) => boolean;
-  layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean; provinces?: ProvincePreview | null };
+  layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean; caution?: boolean; provinces?: ProvincePreview | null };
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
   // 画笔圈画在半径的几倍处：最后一个是主圈（悬停时虚线、按住时实线），前面的是细实线。省略时只在半径处画一圈
   rings?: number[];
@@ -178,26 +191,12 @@ interface BrushConfig {
 export const strengthValues = (deltas: number[], max: number) => deltas.map((d) => 0.35 + 0.65 * Math.min(1, Math.abs(d) / max));
 
 // 画笔可以排队：前面的笔画还在算时照样能画，松手后按顺序执行，各自是一步（结果与一笔一笔等着画相同）。
-// 排队中的笔画一直显示松手时的预览，直到结果换上（不先跳回原样，也不变成白色的“等待”）
+// 排队中的笔画一直显示松手时的预览（高亮与省界，见 pending.ts），直到结果换上（不先跳回原样，也不变成白色的“等待”）
 function brushTool(cfg: BrushConfig): ToolHandler {
   let stroke: Stroke | null = null;
   let pointer: Pointer | null = null;
   // 鼠标在不在地图上：离开后只留排队中的笔画（拖滑块时照样在最后停的地方预览）
   let inside = false;
-  // 排队中的笔画：各自松手时的预览图层
-  let queued: { s: Stroke; layers: HighlightLayer[] }[] = [];
-  // 省份预览（涂省）：松手后一直留到结果回来，省界不会先跳回原样再跳过去
-  let lastProv: ProvincePreview | null = null;
-  let held: { s: Stroke; prov: ProvincePreview }[] = [];
-  let heldMerged: { from: unknown[]; prov: ProvincePreview | null } = { from: [], prov: null };
-  const provincesWith = (current: ProvincePreview | null): ProvincePreview | null => {
-    const from = [...held.map((h) => h.prov), current];
-    if (from.length === heldMerged.from.length && from.every((x, k) => x === heldMerged.from[k])) return heldMerged.prov;
-    const list = from.filter((x): x is ProvincePreview => !!x);
-    const prov = list.length <= 1 ? (list[0] ?? null) : { cells: list.flatMap((x) => x.cells), ids: list.flatMap((x) => x.ids) };
-    heldMerged = { from, prov };
-    return prov;
-  };
   // 空闲悬停只显示圈，不显示涂了会怎样。只有很小的画笔（半径不到 2 格，圈里看不出会碰到哪几格）
   // 另外描出一笔会涂到的格（只描边、不填色）；格没变就沿用同一个图层，不必重新上传
   let foot: { cells: number[]; layer: HighlightLayer } | null = null;
@@ -236,7 +235,7 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       inside = true;
       if (!w || p.cell < 0 || stroke) return;
       // 正在新建、打开、导出时不能画（世界可能马上换掉）；只是在算前面的编辑时可以排队
-      if (busy.value !== null && !onlyEditsPending()) return busyNote();
+      if (blockedByOther()) return busyNote();
       const h = cfg.hint(p.shift);
       if (h.warn) {
         showToast(h.text ?? '现在不能用', true);
@@ -257,45 +256,34 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       const s = stroke;
       stroke = null;
       if (!w || !s || !s.t.size) return;
-      // 松手时的预览留在图上，直到这一笔的结果换上
-      const q = { s, layers: cfg.layers(w, s, p.shift).layers };
-      queued.push(q);
-      if (lastProv) held.push({ s, prov: lastProv });
-      lastProv = null;
-      try {
-        await cfg.commit(w, s, p.shift);
-      } finally {
-        queued = queued.filter((x) => x !== q);
-        held = held.filter((h) => h.s !== s);
-        redrawTick.value++;
-      }
+      // 松手时的预览（高亮、省界）留在图上，直到这一笔的结果换上
+      const r = cfg.layers(w, s, p.shift);
+      await trackEdit({ layers: r.layers, shapes: [], hint: null, provinces: r.provinces ?? null }, cfg.commit(w, s, p.shift));
     },
     cancel() {
       stroke = null;
-      lastProv = null;
     },
     leave() {
       inside = false;
     },
-    keep: () => queued.length > 0 || held.length > 0,
     preview() {
       const w = world.value;
-      if (!w || !pointer) return held.length ? { ...EMPTY, provinces: provincesWith(null) } : EMPTY;
-      // 排队时世界还没换上前面笔画的结果：每一笔照旧显示松手时的预览
-      const waiting = queued.flatMap((q) => q.layers);
-      const inLine = queued.length ? `正在计算…（${queued.length} 笔）` : null;
+      if (!w || !pointer) return EMPTY;
+      // 排队时（前面的编辑还没算完）：排队中的笔画由地图照旧画出松手时的预览，鼠标旁说一声
+      const inLine = queuedCount() ? `正在计算…（${queuedCount()} 步）` : null;
       if (!stroke) {
-        if (!inside && !sliderActive.value) return waiting.length || held.length ? { layers: waiting, shapes: [], hint: null, provinces: provincesWith(null) } : EMPTY;
+        if (!inside && !sliderActive.value) return EMPTY;
         const h = cfg.hint(pointer.shift);
         if (sliderActive.value && !h.warn) {
           const d = dabAt(w, pointer);
-          return { layers: [...waiting, ...d.layers], shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true, provinces: provincesWith(null) };
+          return { layers: d.layers, shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true };
         }
-        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes: ringsAt(w, pointer), hint: inLine ?? h.text, warn: h.warn, provinces: provincesWith(null) };
+        return { layers: h.warn ? [] : footprint(w, pointer), shapes: ringsAt(w, pointer), hint: h.warn ? h.text : (inLine ?? h.text), warn: h.warn };
       }
       const r = cfg.layers(w, stroke, pointer.shift);
-      lastProv = r.provinces ?? null;
-      return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn, provinces: provincesWith(lastProv) };
+      // 做不了、要留意的话比排队要紧
+      const hint = r.warn || r.caution ? (r.hint ?? null) : (queueHint() ?? r.hint ?? null);
+      return { layers: r.layers, shapes: ringsAt(w, pointer), hint, warn: r.warn, caution: r.caution, provinces: r.provinces ?? null };
     },
   };
 }
@@ -353,32 +341,37 @@ export function landTool(): ToolHandler {
       brush.leave?.();
       lasso.leave?.();
     },
-    keep: () => !!brush.keep?.(),
     preview: () => (active ?? chosen()).preview(),
   };
 }
 
 // 圈一片：按住画一个圈，松手后圈里变成陆地（或海），边上和画笔一样是自然的海岸。
-// 预览与松手后提交的是同一个圈（每移动半格记一个点），所以绿色的格就是结果
+// 预览与松手后提交的是同一个圈（每移动半格记一个点），所以绿色的格就是结果。
+// 前面的编辑还在算时也能圈（排队，松手时的预览留到结果换上）：命令只看圈住的格，与等着圈相同
 function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
   let pointer: Pointer | null = null;
   let ring: [number, number][] | null = null;
   let ringId = 0;
-  let committing = false;
-  let cache: { key: string; cells: number[]; t: number[]; gained: number[]; lost: number[] } | null = null;
+  let cache: { key: string; cells: number[]; t: number[]; gained: number[]; lost: number[]; layers: HighlightLayer[] } | null = null;
   const compute = (w: World, pts: [number, number][], mode: 'land' | 'sea') => {
     const key = `${worldId(w)}|${ringId}|${pts.length}|${mode}`;
     if (cache?.key === key) return cache;
     const r = lassoStroke(w, pts);
     const st = landStroke(w, r.cells, r.t, mode);
     const p = previewLand(w, st.cells, st.delta);
-    cache = { key, cells: r.cells, t: r.t, gained: p.gained, lost: p.lost };
+    // 图层对象跟着缓存走：同一个圈不必重新上传高亮，松手后排队时照样用它
+    const layers: HighlightLayer[] = [
+      { cells: p.gained, color: LAND_RGB, alpha: 0.75 },
+      { cells: p.lost, color: SEA_RGB, alpha: 0.75 },
+    ];
+    cache = { key, cells: r.cells, t: r.t, gained: p.gained, lost: p.lost, layers };
     return cache;
   };
   return {
     drags: true,
     down(p) {
-      if (!world.value || p.cell < 0 || isBusy() || committing) return;
+      if (!world.value || p.cell < 0) return;
+      if (blockedByOther()) return busyNote();
       ring = [[p.x, p.y]];
       ringId++;
       pointer = p;
@@ -386,14 +379,14 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
     move(p, pressed) {
       pointer = p;
       const w = world.value;
-      if (!pressed || !ring || !w || committing) return;
+      if (!pressed || !ring || !w) return;
       const [lx, ly] = ring[ring.length - 1];
       if (Math.hypot(p.x - lx, p.y - ly) >= w.mesh.spacing * 0.5) ring.push([p.x, p.y]);
     },
     async up(p) {
       const w = world.value;
       const pts = ring;
-      if (!w || !pts || committing) return;
+      if (!w || !pts) return;
       const mode = modeOf(p.shift);
       if (aroundPole(w, pts)) {
         ring = null;
@@ -407,16 +400,13 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
         showToast(!c ? '圈太小了：按住拖一圈再松手' : mode === 'land' ? '圈里已经都是陆地了' : '圈里没有陆地', true);
         return;
       }
-      committing = true;
-      try {
-        await exec({ op: 'paint_land', cells: c.cells, t: c.t, mode });
-      } finally {
-        committing = false;
-        ring = null;
-      }
+      // 松手时的样子（合上的圈与会变的格）留在图上，直到结果换上；圈马上空出来，可以接着圈下一个
+      ring = null;
+      const shapes: Shape[] = [{ kind: 'line', points: [...pts, pts[0]], color: 'rgba(255, 255, 255, 0.6)', width: 1.5 }];
+      await trackEdit({ layers: c.layers, shapes, hint: null }, exec({ op: 'paint_land', cells: c.cells, t: c.t, mode }));
     },
     cancel() {
-      if (!committing) ring = null;
+      ring = null;
     },
     preview() {
       const w = world.value;
@@ -431,12 +421,9 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
       if (aroundPole(w, ring)) return { layers: [], shapes, hint: '绕着极点了，松手不会生效', warn: true };
       const c = compute(w, ring, mode);
       return {
-        layers: [
-          { cells: c.gained, color: LAND_RGB, alpha: 0.75 },
-          { cells: c.lost, color: SEA_RGB, alpha: 0.75 },
-        ],
+        layers: c.layers,
         shapes,
-        hint: committing ? '正在计算…' : mode === 'land' ? `陆地 +${c.gained.length} 格` : `陆地 −${c.lost.length} 格`,
+        hint: queueHint() ?? (mode === 'land' ? `陆地 +${c.gained.length} 格` : `陆地 −${c.lost.length} 格`),
       };
     },
   };
@@ -565,11 +552,17 @@ function reefPreview(w: World, fresh: number[], nearX: number, hint: string, war
   };
 }
 
-// 点一下：用底部滑块的大小放岛；按住往外拖：拖多远岛就多大（松手后滑块也停在这个大小）
+// 刚松手、鼠标还停在原处（屏幕上 6 像素以内）：这一步还在算时不画下一次的悬停预览，只留排队中的那个；
+// 在原处再按一下也不算（多点了一下，不在同一个地方叠一个）
+type Settled = { sx: number; sy: number } | null;
+const movedAway = (s: Settled, p: Pointer) => !s || Math.hypot(p.sx - s.sx, p.sy - s.sy) > 6;
+
+// 点一下：用底部滑块的大小放岛；按住往外拖：拖多远岛就多大（松手后滑块也停在这个大小）。
+// 前面的编辑还在算时也能放（排队）：命令只看位置、种类、大小、形状，与等着放相同
 export function islandTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
-  let committing = false;
+  let settled: Settled = null;
   let cache: { key: string; preview: Preview; spec: IslandSpec | null; block: string | null } | null = null;
   const compute = () => {
     const w = world.value;
@@ -607,12 +600,14 @@ export function islandTool(): ToolHandler {
   return {
     drags: true,
     down(p) {
-      if (!world.value || p.cell < 0 || isBusy() || committing) return;
+      if (!world.value || p.cell < 0 || !movedAway(settled, p)) return;
+      if (blockedByOther()) return busyNote();
       pointer = p;
       drag = { x: p.x, y: p.y, cell: p.cell, sx: p.sx, sy: p.sy, km: null };
     },
     move(p, pressed) {
       pointer = p;
+      if (movedAway(settled, p)) settled = null;
       const w = world.value;
       if (!pressed || !drag || !w) return;
       // 拖出 6 像素以上才算在拖大小，手抖不算；小礁不看大小
@@ -627,36 +622,37 @@ export function islandTool(): ToolHandler {
     async up(p) {
       pointer = p;
       const d = drag;
-      if (!d || committing) return;
+      if (!d) return;
       const c = compute();
-      if (!c?.spec) {
-        drag = null;
-        return;
-      }
+      drag = null;
+      if (!c?.spec) return;
       if (c.block) {
-        drag = null;
         showToast(c.block, true);
         return;
       }
       const spec = c.spec;
-      committing = true;
       // 滑块停在拖出的大小；下一个岛换个形状（悬停的预览里看得到）
       setOptions({ islandVariant: spec.variant + 1, ...(d.km !== null ? { islandKm: d.km } : {}) });
+      const mark = { sx: p.sx, sy: p.sy };
+      settled = mark;
+      // 松手时的岛留在图上直到结果换上（拖大小的虚线不留；小礁的点就是它自己，留着）
+      const shown: Preview = { layers: c.preview.layers, shapes: spec.kind === 'reef' ? c.preview.shapes : [], hint: null };
       try {
         // 小礁只有一种样子：不用“换个形状”
-        await exec({ op: 'add_island', island: spec }, '正在造岛…', spec.kind === 'reef' ? undefined : islandAgain(spec));
+        await trackEdit(shown, exec({ op: 'add_island', island: spec }, '正在造岛…', spec.kind === 'reef' ? undefined : islandAgain(spec)));
       } finally {
-        committing = false;
-        drag = null;
+        if (settled === mark) settled = null;
       }
     },
     cancel() {
-      if (!committing) drag = null;
+      drag = null;
     },
     preview() {
+      if (settled) return { ...EMPTY, hint: '正在计算…' };
       const c = compute();
       if (!c) return EMPTY;
-      return committing ? { ...c.preview, hint: '正在计算…' } : c.preview;
+      const q = c.block ? null : queueHint();
+      return q ? { ...c.preview, hint: q } : c.preview;
     },
   };
 }
@@ -674,11 +670,11 @@ function chainAgain(chain: ChainSpec): Again {
   };
 }
 
+// 岛链：按住拖出一条线，岛沿着线排开。前面的编辑还在算时也能画（排队）
 export function chainTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let points: [number, number][] | null = null;
   let lastScreen: [number, number] = [0, 0];
-  let committing = false;
   let cache: { key: string; preview: Preview } | null = null;
   // 预览与执行用同一份参数
   const specFor = (pts: [number, number][]) => {
@@ -696,63 +692,63 @@ export function chainTool(): ToolHandler {
     const size = w ? Math.max(islandSizeRangeKm(w, o.chainKind)[0], o.chainKm) : o.chainKm;
     return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant, fine: true as const };
   };
+  const previewOf = (w: World, spec: ReturnType<typeof specFor>): Preview => {
+    const key = `${worldId(w)}|${JSON.stringify(spec)}`;
+    if (cache?.key !== key) {
+      const islands = chainIslands(w, spec);
+      // 与命令同一个规则（带 fine：太小的岛岛心那一格成陆），预览就是结果
+      const stamp = combineStamps(w, islands, spec.fine);
+      cache = {
+        key,
+        preview: {
+          layers: [{ cells: stamp.footprint, color: LAND_RGB, alpha: 0.75 }],
+          shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
+          hint: `${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}`,
+        },
+      };
+    }
+    return cache.preview;
+  };
   return {
     drags: true,
     down(p) {
-      if (isBusy() || committing) return;
+      if (blockedByOther()) return busyNote();
       points = [[p.x, p.y]];
       lastScreen = [p.sx, p.sy];
       pointer = p;
     },
     move(p, pressed) {
       pointer = p;
-      if (pressed && points && !committing && Math.hypot(p.sx - lastScreen[0], p.sy - lastScreen[1]) > 10) {
+      if (pressed && points && Math.hypot(p.sx - lastScreen[0], p.sy - lastScreen[1]) > 10) {
         points.push([p.x, p.y]);
         lastScreen = [p.sx, p.sy];
       }
     },
     async up(p) {
+      const w = world.value;
       const pts = points;
-      if (!pts || committing) return;
+      points = null;
+      if (!pts || !w) return;
       if (Math.hypot(p.sx - lastScreen[0], p.sy - lastScreen[1]) > 2) pts.push([p.x, p.y]);
       if (pts.length < 2) {
-        points = null;
         showToast('按住鼠标拖出一条线，岛会沿着线排开', true);
         return;
       }
-      committing = true;
       const chain = specFor(pts);
       setOptions({ chainVariant: chain.variant + 1 });
-      try {
-        await exec({ op: 'add_island_chain', chain }, '正在造岛链…', chainAgain(chain));
-      } finally {
-        committing = false;
-        points = null;
-      }
+      // 松手时的岛与线留在图上，直到结果换上
+      await trackEdit({ ...previewOf(w, chain), hint: null }, exec({ op: 'add_island_chain', chain }, '正在造岛链…', chainAgain(chain)));
     },
     cancel() {
-      if (!committing) points = null;
+      points = null;
     },
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
       if (!points || points.length < 2) return EMPTY;
-      const spec = specFor(points);
-      const key = `${worldId(w)}|${JSON.stringify(spec)}`;
-      if (cache?.key !== key) {
-        const islands = chainIslands(w, spec);
-        // 与命令同一个规则（带 fine：太小的岛岛心那一格成陆），预览就是结果
-        const stamp = combineStamps(w, islands, spec.fine);
-        cache = {
-          key,
-          preview: {
-            layers: [{ cells: stamp.footprint, color: LAND_RGB, alpha: 0.75 }],
-            shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
-            hint: `${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}`,
-          },
-        };
-      }
-      return committing ? { ...cache.preview, hint: '正在计算…' } : cache.preview;
+      const pv = previewOf(w, specFor(points));
+      const q = queueHint();
+      return q ? { ...pv, hint: q } : pv;
     },
   };
 }
@@ -1311,11 +1307,11 @@ export function riverTool(zoom: () => number): ToolHandler {
   };
 }
 
-// 点一下：用底部滑块的大小放湖；按住往外拖：拖多远湖就多大
+// 点一下：用底部滑块的大小放湖；按住往外拖：拖多远湖就多大。前面的编辑还在算时也能放（排队）
 export function lakeTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
-  let committing = false;
+  let settled: Settled = null;
   let cache: { key: string; cells: number[] } | null = null;
   const centerOf = () => drag ?? (pointer && pointer.cell >= 0 ? pointer : null);
   const radiusNow = () => drag?.km ?? options.value.lakeKm;
@@ -1337,7 +1333,8 @@ export function lakeTool(): ToolHandler {
     drags: true,
     down(p) {
       const w = world.value;
-      if (!w || p.cell < 0 || isBusy() || committing) return;
+      if (!w || p.cell < 0 || !movedAway(settled, p)) return;
+      if (blockedByOther()) return busyNote();
       if (!w.causes.land[p.cell]) {
         showToast('湖要放在陆地上', true);
         return;
@@ -1347,6 +1344,7 @@ export function lakeTool(): ToolHandler {
     },
     move(p, pressed) {
       pointer = p;
+      if (movedAway(settled, p)) settled = null;
       const w = world.value;
       if (!pressed || !drag || !w) return;
       if (Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
@@ -1356,10 +1354,10 @@ export function lakeTool(): ToolHandler {
         drag.km = Math.min(hi, Math.max(lo, snapRadiusKm(mapDist(w, p.x, p.y, drag.x, drag.y) * w.kmPerUnit)));
       }
     },
-    async up() {
+    async up(p) {
       const w = world.value;
       const d = drag;
-      if (!w || !d || committing) return;
+      if (!w || !d) return;
       // 碰到海岸的湖存不住水，放了也看不见：松手时就拦下，不进历史
       const cells = cellsNow(w);
       if (!cells.length || coastalOf(w, cells)) {
@@ -1370,21 +1368,25 @@ export function lakeTool(): ToolHandler {
         return;
       }
       const radius = radiusNow();
-      committing = true;
+      drag = null;
       if (d.km !== null) setOptions({ lakeKm: d.km });
+      const mark = { sx: p.sx, sy: p.sy };
+      settled = mark;
       try {
-        await exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, exact: true } }, '正在计算湖泊…');
+        // 松手时的湖留在图上，直到结果换上
+        const shown: Preview = { layers: [{ cells, color: [70, 140, 220], alpha: 0.8 }], shapes: [], hint: null };
+        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, exact: true } }, '正在计算湖泊…'));
       } finally {
-        committing = false;
-        drag = null;
+        if (settled === mark) settled = null;
       }
     },
     cancel() {
-      if (!committing) drag = null;
+      drag = null;
     },
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
+      if (settled) return { ...EMPTY, hint: '正在计算…' };
       const c = centerOf();
       if (!c || !w.causes.land[c.cell]) return EMPTY;
       const cells = cellsNow(w);
@@ -1392,7 +1394,7 @@ export function lakeTool(): ToolHandler {
       return {
         layers: [{ cells, color: coastal ? [230, 120, 70] : [70, 140, 220], alpha: 0.8 }],
         shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
-        hint: committing ? '正在计算…' : coastal ? '离海太近，留不住水' : `湖 · ${km(radiusNow() * 2)} km`,
+        hint: coastal ? '离海太近，留不住水' : (queueHint() ?? `湖 · ${km(radiusNow() * 2)} km`),
         warn: coastal,
       };
     },
@@ -1524,12 +1526,16 @@ export function measureTool(zoom: () => number): ToolHandler {
 
 const provinceName = (w: World, id: number) => w.small.provinces[id]?.name || `省份 ${id}`;
 
-// 鼠标下算哪一格（选省、合并、吸取省份用）：剪刀切线附近按地图上显示出来的那一边算（与着色器同一条规则）
-let seamsFor: { w: World; L: SeamLayers | null } | null = null;
+// 屏幕上这一点画的是哪一格（见 core/display.ts）：MapView 算好放在指针上，没有时（比如测试里）当场算
+export function shownAt(w: World, p: Pointer): DisplayCell | null {
+  if (p.cell < 0) return null;
+  return p.shown ?? displayCellAt(w, p.x, p.y, p.cell);
+}
+
+// 鼠标下算哪一格的省（选省、合并、吸取省份用）：地图上这一点画成哪个省就是哪个
+// （扭曲后的格、剪刀切线两边按显示出来的那一边，与着色器同一条规则）
 export function provinceCellAt(w: World, p: Pointer): number {
-  if (p.cell < 0 || !w.small.provinceSeams) return p.cell;
-  if (seamsFor?.w !== w) seamsFor = { w, L: seamLayers(w, w.causes.province, w.small.provinceSeams) };
-  return seamPick(seamsFor.L, w, p.x, p.y, p.cell);
+  return shownAt(w, p)?.province ?? -1;
 }
 
 export function provinceSelectTool(): ToolHandler {
@@ -1555,17 +1561,69 @@ export function provinceSelectTool(): ToolHandler {
   };
 }
 
+// 每个省的格与原来就有几块（按世界缓存：涂省时每动一下都要看被涂到的省还连不连着）
+const provinceListCache = new WeakMap<World, { cells: Map<number, number[]>; pieces: Map<number, number> }>();
+function provincesNow(w: World) {
+  let m = provinceListCache.get(w);
+  if (!m) {
+    m = { cells: new Map(), pieces: new Map() };
+    for (let i = 0; i < w.mesh.n; i++) {
+      const p = w.causes.province[i];
+      if (p < 0) continue;
+      let l = m.cells.get(p);
+      if (!l) m.cells.set(p, (l = []));
+      l.push(i);
+    }
+    provinceListCache.set(w, m);
+  }
+  return m;
+}
+
+// 一组格连成几片：只在这组格里走（相邻的算一片）
+function piecesOf(w: World, cells: number[]): number {
+  const left = new Set(cells);
+  let k = 0;
+  for (const c of cells) {
+    if (!left.delete(c)) continue;
+    k++;
+    const queue = [c];
+    for (let h = 0; h < queue.length; h++) {
+      for (let e = w.mesh.off[queue[h]]; e < w.mesh.off[queue[h] + 1]; e++) {
+        const j = w.mesh.adj[e];
+        if (left.delete(j)) queue.push(j);
+      }
+    }
+  }
+  return k;
+}
+
 export function provinceBrushTool(): ToolHandler {
   const target = () => selectedProvince.value;
-  // 涂到的格换成选中的省：地图上省界当场跟着变（按笔画、省缓存，同一个对象不必重新上传）
-  let prov: { key: string; s: Stroke; value: ProvincePreview } | null = null;
+  // 涂到的格换成选中的省：地图上省界当场跟着变（按笔画、省缓存，同一个对象不必重新上传）。
+  // 被涂掉一部分的省剩下的格比原来多断成了几块（会变成一省几块）：黄色提醒，照样能涂
+  let prov: { key: string; s: Stroke; value: ProvincePreview; split: { id: number; parts: number } | null } | null = null;
   const provincesOf = (w: World, s: Stroke, id: number) => {
     const key = `${worldId(w)}|${id}|${s.t.size}`;
     if (prov?.s !== s || prov.key !== key) {
       const cells = s.cells;
-      prov = { key, s, value: { cells, ids: cells.map(() => id) } };
+      const taken = new Set(cells);
+      const losers = new Set<number>();
+      for (const c of cells) if (w.causes.province[c] >= 0 && w.causes.province[c] !== id) losers.add(w.causes.province[c]);
+      let split: { id: number; parts: number } | null = null;
+      const now = provincesNow(w);
+      for (const p of losers) {
+        const all = now.cells.get(p) ?? [];
+        const rest = all.filter((c) => !taken.has(c));
+        const parts = rest.length ? piecesOf(w, rest) : 0;
+        if (parts < 2 || (split && parts <= split.parts)) continue;
+        // 原来就是几块的（比如一省几个岛）：多断出来才提醒
+        let before = now.pieces.get(p);
+        if (before === undefined) now.pieces.set(p, (before = piecesOf(w, all)));
+        if (parts > before) split = { id: p, parts };
+      }
+      prov = { key, s, value: { cells, ids: cells.map(() => id) }, split };
     }
-    return prov.value;
+    return prov;
   };
   return brushTool({
     hint: () => {
@@ -1583,7 +1641,13 @@ export function provinceBrushTool(): ToolHandler {
     },
     layers(w, s) {
       const id = target()!;
-      return { layers: [{ cells: s.cells, color: provinceColor(id), alpha: 0.8 }], hint: `${provinceName(w, id)} +${s.t.size} 格`, provinces: provincesOf(w, s, id) };
+      const { value, split } = provincesOf(w, s, id);
+      return {
+        layers: [{ cells: s.cells, color: provinceColor(id), alpha: 0.8 }],
+        hint: split ? `会把「${provinceName(w, split.id)}」分成 ${split.parts} 块` : `${provinceName(w, id)} +${s.t.size} 格`,
+        caution: !!split,
+        provinces: value,
+      };
     },
     async commit(_w, s) {
       const id = target();
@@ -1686,7 +1750,8 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
   };
 }
 
-// 合并：悬停在邻省上时，两省之间的省界当场消失（省份预览），点了以后一直留到结果回来
+// 合并：悬停在邻省上时，两省之间的省界当场消失（省份预览），点了以后一直留到结果回来。
+// 锁定的省标红、点了也不合并；不相邻的两省照样能合并（黄色提醒：合并后是一省两块）
 export function provinceMergeTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let cache: { key: string; view: Preview } | null = null;
@@ -1701,20 +1766,29 @@ export function provinceMergeTool(): ToolHandler {
     const meta = w.small.provinces[id];
     const other = w.small.provinces[sel];
     if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地和海域不能合并', warn: true };
-    // 合并不了的不画将来的省界（省界当场消失却并不成，就不是所见即所得）
-    if (meta.locked || other.locked) return { layers: [], shapes: [], hint: '锁定的省份不能合并', warn: true };
     const key = `${worldId(w)}|${id}|${sel}`;
     if (cache?.key !== key) {
       const cells = provinceCells(w, id);
-      cache = {
-        key,
-        view: {
-          layers: [{ cells, color: provinceColor(sel), alpha: 0.7 }],
-          shapes: [],
-          hint: `并进 ${provinceName(w, sel)}`,
-          provinces: { cells, ids: cells.map(() => sel) },
-        },
-      };
+      const locked = meta.locked ? id : other.locked ? sel : null;
+      if (locked !== null) {
+        // 合并不了的不画将来的省界（省界当场消失却并不成，就不是所见即所得）：这个省标红
+        cache = { key, view: { layers: [{ cells, color: [230, 90, 70], alpha: 0.45 }], shapes: [], hint: `「${provinceName(w, locked)}」已锁定，不能合并`, warn: true } };
+      } else {
+        const apart = !cells.some((c) => {
+          for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1]; e++) if (w.causes.province[w.mesh.adj[e]] === sel) return true;
+          return false;
+        });
+        cache = {
+          key,
+          view: {
+            layers: [{ cells, color: provinceColor(sel), alpha: 0.7 }],
+            shapes: [],
+            hint: apart ? '不相邻：合并后是一省两块' : `并进 ${provinceName(w, sel)}`,
+            caution: apart,
+            provinces: { cells, ids: cells.map(() => sel) },
+          },
+        };
+      }
     }
     return cache.view;
   };
@@ -1733,9 +1807,14 @@ export function provinceMergeTool(): ToolHandler {
         selectedProvince.value = id;
         return;
       }
-      // 留住的预览就是点下去的这一处（与命令合并的是同一个省）
+      // 留住的预览就是点下去的这一处（与命令合并的是同一个省）；合并不了的（锁定、陆海不同）点了只说一声
       pointer = p;
-      committing = view();
+      const v = view();
+      if (v.warn) {
+        showToast(v.hint ?? '这两个省不能合并', true);
+        return;
+      }
+      committing = v;
       try {
         if (await exec({ op: 'merge_province', from: id, into: sel }, '正在合并…')) selectedProvince.value = sel;
       } finally {
@@ -1748,29 +1827,52 @@ export function provinceMergeTool(): ToolHandler {
   };
 }
 
+// 重划：涂到一大半的省重新划分。笔画停下 150 毫秒后在 Worker 里算确切的结果（与执行同一个算法、同样的省名），
+// 地图上直接画出新的省界和省名；算好之前先把会重划的省涂黄
 export function provinceRegenTool(): ToolHandler {
-  let cache: { key: string; cells: number[]; count: number } | null = null;
+  let cache: { key: string; s: Stroke; cells: number[]; count: number; rough: HighlightLayer[]; framed: HighlightLayer[] } | null = null;
+  let exact: { key: string; s: Stroke; prov: ProvincePreview; fresh: number } | null = null;
+  let wanted: { key: string; s: Stroke } | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   // 会被重新划分的省份：被涂到一半以上的（与命令用同一个判断）
   const targets = (w: World, s: Stroke) => {
     const key = `${worldId(w)}|${s.t.size}|${s.cells[s.cells.length - 1]}`;
-    if (cache?.key !== key) {
+    if (cache?.s !== s || cache.key !== key) {
       const ids = new Set(regenTargets(w, s.cells));
       const cells: number[] = [];
       for (let i = 0; i < w.mesh.n; i++) if (ids.has(w.causes.province[i])) cells.push(i);
-      cache = { key, cells, count: ids.size };
+      const stroke: HighlightLayer = { cells: s.cells, color: [255, 255, 255], alpha: 0.25 };
+      // 确切的新省界画出来以后，会重划的范围只描边（不盖住新的省界）
+      cache = { key, s, cells, count: ids.size, rough: [stroke, { cells, color: [255, 220, 90], alpha: 0.6 }], framed: [stroke, { cells, color: [255, 220, 90], pattern: 'outline' }] };
     }
     return cache;
+  };
+  const want = (w: World, s: Stroke, key: string) => {
+    if (wanted?.key === key && wanted.s === s) return;
+    const mine = { key, s };
+    wanted = mine;
+    if (timer) clearTimeout(timer);
+    const cells = s.cells;
+    timer = setTimeout(() => {
+      timer = null;
+      void previewProvinces({ op: 'regenerate_provinces', cells }).then((r) => {
+        if (!r || wanted !== mine || world.value !== w) return;
+        const fresh = Object.keys(r.provinces).filter((id) => !w.small.provinces[Number(id)]).length;
+        exact = { key, s, fresh, prov: { cells: [], ids: [], province: r.province, seamList: r.seams, metas: r.provinces } };
+        redrawTick.value++;
+      });
+    }, 150);
   };
   return brushTool({
     hint: () => ({ text: null }),
     layers(w, s) {
       const t = targets(w, s);
+      if (t.count) want(w, s, t.key);
+      const x = exact?.s === s && exact.key === t.key ? exact : null;
       return {
-        layers: [
-          { cells: s.cells, color: [255, 255, 255], alpha: 0.25 },
-          { cells: t.cells, color: [255, 220, 90], alpha: 0.6 },
-        ],
-        hint: t.count ? `重划 ${t.count} 个省` : '再多涂一些',
+        layers: x ? t.framed : t.rough,
+        hint: !t.count ? '再多涂一些' : x ? `重划 ${t.count} 个省 → ${x.fresh} 个` : `重划 ${t.count} 个省`,
+        provinces: x?.prov ?? null,
       };
     },
     async commit(w, s) {
@@ -1801,9 +1903,11 @@ export function renameTool(hitLabel: (sx: number, sy: number) => string | null):
         selectedFeature.value = key;
         return;
       }
-      if (p.cell < 0) return;
+      // 屏幕上这一点画成陆地就找陆上的地名，画成海就找海上的
+      const cell = shownAt(w, p)?.here ?? -1;
+      if (cell < 0) return;
       let best: GeoFeature | null = null;
-      for (const f of w.derived.features) if (f.cells.includes(p.cell) && (!best || f.areaKm2 < best.areaKm2)) best = f;
+      for (const f of w.derived.features) if (f.cells.includes(cell) && (!best || f.areaKm2 < best.areaKm2)) best = f;
       selectedFeature.value = best?.key ?? null;
     },
     preview() {
