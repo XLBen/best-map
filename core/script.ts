@@ -1,9 +1,8 @@
 import { z } from 'zod';
-// 注意循环引用：这里在模块顶层就用到了 CommandError（class ScriptError extends CommandError）。
-// commands.ts 引用 species.ts、generate.ts，所以那两个文件以后要引用 scriptsSchema 时，
-// 不能在模块顶层直接读它（会碰上“初始化之前不能访问”）：用 z.lazy(() => scriptsSchema)，
-// 或者先把 CommandError 挪进一个不引用别的模块的小文件
-import { CommandError } from './commands';
+// 注意循环引用：这里在模块顶层就用到了 CommandError（class ScriptError extends CommandError），
+// 所以它在不引用别的模块的 errors.ts 里（commands.ts 照旧导出它）。species.ts 引用这里的 scriptsSchema，
+// 而这里经 world.ts 又引用 species.ts：species.ts 只能在 z.lazy(() => scriptsSchema) 里读它，不能在模块顶层直接读
+import { CommandError } from './errors';
 import { type Mesh, graphDistance } from './mesh';
 import { hashString } from './names';
 import {

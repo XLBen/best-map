@@ -100,6 +100,11 @@ export function reasonText(f: Factor): string {
 function whyNot(e: CellExplanation, winner: string | null): string {
   if (!e.reachable) return '它传不到这里（不能跨海，或离起源地太远）';
   const limiting = [...e.factors].sort((a, b) => a.factor - b.factor)[0];
+  // 长在哪里的脚本：比最卡的那条耐受条件还卡时先说它
+  const place = e.placement;
+  if (place !== undefined && place < 0.6 && !(limiting && limiting.factor < place)) {
+    return place === 0 ? '它的脚本条件不让它长在这里' : place < 0.005 ? '它的脚本条件在这里几乎是 0' : `它的脚本条件在这里只有 ×${fmt(place, 2)}`;
+  }
   if (limiting && limiting.factor < 0.6) return reasonText(limiting);
   return winner ? `这里也能长，但竞争不过“${winner}”` : '这里也能长，但不占上风';
 }
@@ -157,6 +162,13 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
           {winner.factors.every((f) => f.factor > 0.95) ? '这里的冷暖干湿正合适。' : '这里不算最适合它，但别的生态更不适合。'}
         </p>
       )}
+      {explain
+        .filter((e) => e.boost !== undefined && e.boost >= 1.05 && e.share >= 0.05)
+        .map((e) => (
+          <p key={e.species} class="muted small">
+            「{e.name}」在侵占这里（×{fmt(e.boost!, 1)}）
+          </p>
+        ))}
       {!sp && runnerUp && (
         <p>
           <b>为什么什么都不长：</b>最接近的“{runnerUp.name}”也{whyNot(runnerUp, null)}。

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+// 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用本文件，顶层直接读会碰上“初始化之前不能访问”
+import { scriptsSchema } from './script';
 
 // 植被 / 地块类型完全由数据定义：每种类型对任意字段给出梯形耐受曲线。
 // min = optLow 且 optHigh = max 时退化为硬区间，“A 能在 a、b 气候生存”这类离散规则就是这个特例。
@@ -38,6 +40,72 @@ export const toleranceSchema = z.object({
 });
 export type Tolerance = z.infer<typeof toleranceSchema>;
 
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
+
+// 花纹（第三批）：在 GPU 上按格画，平面、星球都有；拉远时淡成平均色
+export const PATTERNS = ['none', 'sparkle', 'cracks', 'mottle', 'veins', 'spots', 'stripes'] as const;
+export type Pattern = (typeof PATTERNS)[number];
+export const PATTERN_LABEL: Record<Pattern, string> = {
+  none: '无',
+  sparkle: '闪光',
+  cracks: '裂纹',
+  mottle: '斑驳',
+  veins: '脉络',
+  spots: '斑点',
+  stripes: '条纹',
+};
+
+// 外观：只影响画法，不影响哪里长什么（只改它不重算）
+export const visualSchema = z.object({
+  pattern: z.enum(PATTERNS),
+  // 花纹的第二种颜色；省略时用基础色调暗
+  color2: hexColor.optional(),
+  // 花纹有多明显（0–1）
+  amount: z.number().min(0).max(1).optional(),
+  // 花纹大小（以格为单位）
+  size: z.number().min(0.1).max(4).optional(),
+  glow: z.number().min(0).max(1).optional(),
+  glowColor: hexColor.optional(),
+});
+export type Visual = z.output<typeof visualSchema>;
+
+// 对周围的影响
+export const effectsSchema = z.object({
+  // 让周围变暖变冷（°C）、变湿变干（降水乘以 e^dP），随离它的距离平滑减弱到 radiusKm 为 0
+  climate: z
+    .object({
+      dT: z.number().min(-10).max(10).optional(),
+      dP: z.number().min(-1.5).max(1.5).optional(),
+      radiusKm: z.number().min(20).max(3000),
+    })
+    .optional(),
+  // 侵占：在目标生态适宜的地方竞争力更强，得分 ×(1 + strength × 目标里最高的适宜度)
+  invade: z
+    .object({
+      targets: z.array(z.string().min(1)).min(1).max(48),
+      strength: z.number().min(0).max(10),
+    })
+    .optional(),
+});
+export type Effects = z.output<typeof effectsSchema>;
+
+// 地名：类型名（“晶林”）与起名模板（模板里的 {词表} 用文字包的词表，{__species} 是类型名）
+export const featureSchema = z.object({
+  label: z.string().min(1).max(8),
+  names: z
+    .array(z.object({ p: z.string().min(1).max(40), w: z.number().positive().optional() }))
+    .min(1)
+    .max(20)
+    .optional(),
+});
+export type SpeciesFeature = z.output<typeof featureSchema>;
+
+// 第三批新加的项：旧版程序不认识，用到时世界存成第 4 版（engine.ts 的 usesExtensions）
+export const SPECIES_EXTENSION_KEYS = ['visual', 'effects', 'feature', 'scripts', 'seedKey'] as const;
+
+// 生态能有的两种脚本
+export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
+
 export const speciesSchema = z.object({
   id: z.string().regex(/^[\w-]+$/, 'id 只能包含字母、数字、下划线和连字符'),
   name: z.string().default(''),
@@ -58,6 +126,14 @@ export const speciesSchema = z.object({
       seaCost: z.number().min(1).default(30),
     })
     .optional(),
+  // ---------- 第三批：都可选、没有默认值（不写的旧数据解析结果逐字节不变） ----------
+  visual: visualSchema.optional(),
+  effects: effectsSchema.optional(),
+  feature: featureSchema.optional(),
+  // 脚本：placement 长在哪里（0–1 的系数，乘进适宜度）、color 颜色（每格的颜色，写进 derived.look）
+  scripts: z.lazy(() => scriptsSchema).optional(),
+  // 脚本里噪声、rand 的种子用它（省略时用 id）：资源包里的生态改了 id，花纹也不变
+  seedKey: z.string().min(1).max(64).optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;

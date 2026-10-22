@@ -7,6 +7,7 @@ import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
+import { SPECIES_EXTENSION_KEYS } from './species';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
@@ -526,6 +527,9 @@ function usesExtensions(cmd: Command): boolean {
   // 第八轮 1d：类型自动判断的地区
   if (cmd.op === 'add_region' && cmd.region.auto) return true;
   if (cmd.op === 'update_region' && cmd.auto !== undefined) return true;
+  // 第八轮第三批：生态的外观、效果、地名、脚本、种子（补丁里写成 null 去掉的也算：旧版程序不认识这一项）
+  if (cmd.op === 'add_species' && SPECIES_EXTENSION_KEYS.some((k) => (cmd.species as Record<string, unknown>)[k] !== undefined)) return true;
+  if (cmd.op === 'update_species' && SPECIES_EXTENSION_KEYS.some((k) => k in cmd.patch)) return true;
   return false;
 }
 

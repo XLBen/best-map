@@ -795,12 +795,16 @@ const BUILTIN_SPECIES = new Set(DEFAULT_SPECIES.map((sp) => sp.id));
 // - 内置且有大类的生态（针叶林、热带雨林、荒漠……）：沿用大类的类型和模板，热带的（jungle）带“热”，模板里有雨林；
 // - 其余（温带草原、稀树草原、地中海灌木、自定义的生态）：类型是“生态区”，
 //   模板先找文字包里的 biome.<id>，再找 biome，文字包里都没有（导入的旧文字包）时用内置包的模板和词表。
-// 类型名（地名表、底部条）就是生态的名字；模板里的 {__species} 换成它
+// 类型名（地名表、底部条）就是生态的名字；模板里的 {__species} 换成它。
+// 生态自带地名设定（第三批的 feature）时：类型名用它的 label，起名模板用它的 names（词表仍用文字包的；
+// 文字包里没有模板用到的词表时用内置包的）。地物的种类、锚点不看这些，所以只改地名设定时只要重新起名
 export function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (pack: WordPack) => { pack: WordPack; type: string } } {
   const group = speciesGroup(sp);
   const type: FeatureType = group && BUILTIN_SPECIES.has(sp.id) ? group : 'biome';
-  const label = sp.name || FEATURE_INFO[type].label;
+  const label = sp.feature?.label ?? (sp.name || FEATURE_INFO[type].label);
+  const own = sp.feature?.names;
   const naming = (pack: WordPack) => {
+    if (own) return { pack: withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, label, own), type: OWN_TYPE };
     if (type !== 'biome') return { pack: withSpecies(pack, label), type };
     for (const p of [pack, DEFAULT_PACK]) {
       const t = p.types[`biome.${sp.id}`] ? `biome.${sp.id}` : p.types.biome ? 'biome' : '';
@@ -818,6 +822,26 @@ function withSpecies(pack: WordPack, name: string): WordPack {
   if (!byName) speciesPacks.set(pack, (byName = new Map()));
   let p = byName.get(name);
   if (!p) byName.set(name, (p = { ...pack, lists: { ...pack.lists, __species: [name] } }));
+  return p;
+}
+
+// 生态自带的起名模板放在文字包里的这个类型下
+const OWN_TYPE = '__own';
+type OwnNames = NonNullable<NonNullable<Species['feature']>['names']>;
+
+// 模板用到的词表文字包里都有（{__species} 起名时才放进去）
+function hasLists(pack: WordPack, names: OwnNames): boolean {
+  return names.every((n) => [...n.p.matchAll(/\{([^{}]+)\}/g)].every((m) => m[1] === '__species' || !!pack.lists[m[1]]));
+}
+
+// 文字包加上生态的名字（__species）和它自带的模板（__own）；按文字包、名字和模板各留一份
+const ownPacks = new WeakMap<WordPack, Map<string, WordPack>>();
+function withOwnNames(pack: WordPack, name: string, names: OwnNames): WordPack {
+  let byKey = ownPacks.get(pack);
+  if (!byKey) ownPacks.set(pack, (byKey = new Map()));
+  const key = JSON.stringify([name, names]);
+  let p = byKey.get(key);
+  if (!p) byKey.set(key, (p = { ...pack, lists: { ...pack.lists, __species: [name] }, types: { ...pack.types, [OWN_TYPE]: { patterns: names } } }));
   return p;
 }
 
