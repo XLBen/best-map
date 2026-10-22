@@ -6,7 +6,7 @@ import { type GeoFeature, REGION_KIND_INFO, guessRegionKind } from '../../core/f
 import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
 import { type ProvinceSeam, type SeamLayers, scissors, seamLayers, seamPick } from '../../core/seams';
 import { type CutResult, type RiverPlan, brushCells, growRegion, lassoStroke, planRiver, provinceCells, ringCells, ringWinding } from '../../core/select';
-import { riverWidth } from '../../core/rivers';
+import { centrePoints, smoothCourse } from '../../core/rivers';
 import {
   ISLAND_KIND_INFO,
   type ChainSpec,
@@ -1192,18 +1192,32 @@ export function riverTool(zoom: () => number): ToolHandler {
     exactKey = '';
     exact = null;
   };
-  const lineWidth = (w: World, p: RiverPlan) => {
+  // 估计的流量（松手后的样子）：改道的河带着原来那条河的水；新画的河源头有泉水，选的大小沿路平均加进来（与水文相同）
+  const flowOf = (w: World, p: RiverPlan): number[] => {
     const thr = w.small.planet.riverThreshold;
-    const q = p.reroute ? w.derived.discharge[p.cells[0]] : options.value.riverFlow * thr;
-    return Math.max(2.5, riverWidth(q, thr) * Math.max(0.7, Math.min(2.2, zoom() / 1400)) + 1.5);
+    const d = w.derived;
+    if (p.reroute) return p.cells.map((c) => Math.max(d.discharge[p.cells[0]], d.discharge[c]));
+    const extra = Math.max(0, options.value.riverFlow - 1.2) * thr;
+    const body = Math.max(1, p.cells.slice(0, -1).filter((c) => w.causes.land[c]).length);
+    return p.cells.map((c, k) => d.discharge[c] + 1.2 * thr + (extra * Math.min(k + 1, body)) / body);
   };
   const shapesOf = (w: World, p: RiverPlan, estimate: boolean): Shape[] => {
     const { mesh } = w;
-    const pt = (c: number): [number, number] => [mesh.x[c], mesh.y[c]];
-    const color = p.blocked ? 'rgba(235, 80, 70, 0.95)' : p.same ? 'rgba(210, 210, 210, 0.85)' : 'rgba(40, 150, 255, 0.95)';
+    const color = p.blocked ? 'rgba(235, 80, 70, 0.95)' : p.same ? 'rgba(210, 210, 210, 0.85)' : undefined;
     const shapes: Shape[] = [];
     if (estimate && p.dried.length) shapes.push({ kind: 'cells', cells: [p.cells[0], ...p.dried], color: 'rgba(235, 80, 70, 0.95)', width: 3, dashed: true });
-    if (p.cells.length > 1) shapes.push({ kind: 'arrow', points: p.cells.map(pt), color, width: lineWidth(w, p) });
+    if (p.cells.length > 1) {
+      // 与松手后地图上的河同样画（格心加曲流再平滑，宽度按流量），上面是水模式里那条白色虚线
+      const pts = centrePoints(w, p.cells);
+      const q = flowOf(w, p);
+      const line = smoothCourse(
+        pts,
+        pts.map((_, k) => q[w.causes.land[p.cells[k]] && w.derived.lake[p.cells[k]] !== 1 ? k : Math.max(0, k - 1)]),
+        mesh.spacing,
+      );
+      shapes.push({ kind: 'river', points: line.points, flow: line.flow, color, arrow: true });
+      shapes.push({ kind: 'line', points: line.points, color: 'rgba(255, 255, 255, 0.85)', width: 1.2, dashed: true });
+    }
     if (p.end === 'river') shapes.push({ kind: 'circle', x: mesh.x[p.join], y: mesh.y[p.join], r: 7 / zoom(), color: 'rgba(255, 255, 255, 0.95)', width: 2 });
     return shapes;
   };

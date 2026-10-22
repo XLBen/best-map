@@ -4,7 +4,7 @@ import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import type { World } from '../../core/world';
 import { type HighlightLayer, cellLayers, groupPreview, highlightColors, provinceScale } from '../render/colors';
-import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
+import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
 import { Renderer } from '../render/renderer';
 import {
   FLASH_MS,
@@ -24,6 +24,7 @@ import {
   prefs,
   redrawTick,
   reference,
+  riverStyleOverride,
   season,
   selectedFeature,
   selectedProvince,
@@ -69,8 +70,9 @@ export function MapView() {
     }
     const ctx = ovCanvas.getContext('2d')!;
     let paths: OverlayPaths | null = null;
-    // 河流路径按流量数组缓存：只改了名字、省份时（轻快照沿用同一批推导数组）不必重新描河
-    let pathsFor: Float32Array | null = null;
+    // 河流路径按 riverPathsKey 缓存（流量数组、河道的内容、拖粗细时的临时样子）：只改了名字、省份时
+    // （轻快照沿用同一批推导数组）不必重新描河，改了一条画的河的粗细时会重描
+    let pathsKey: unknown[] = [];
     let provinceLabels: ProvinceLabel[] = [];
     let labelBoxes: LabelBox[] = [];
     let fittedMesh: unknown = null;
@@ -341,10 +343,6 @@ export function MapView() {
         // 鼠标还在地图上：按新的网格重新算它指着哪一格（旧的格号属于旧网格）
         refreshPointer();
       }
-      if (pathsFor !== w.derived.discharge) {
-        paths = buildPaths(w);
-        pathsFor = w.derived.discharge;
-      }
       if (provinceScaleFor !== w.causes.province) {
         renderer.provinceScale = provinceScale(w.causes.province);
         provinceScaleFor = w.causes.province;
@@ -383,6 +381,18 @@ export function MapView() {
           .filter(([p]) => w.small.provinces[p])
           .map(([p, [x, y, c]]) => ({ x: x / c, y: y / c, text: w.small.provinces[p].name || String(p), kind: w.small.provinces[p].kind }));
       }
+      requestDraw();
+    });
+
+    // 河流与河道标记的路径
+    const disposePaths = effect(() => {
+      const w = world.value;
+      const override = riverStyleOverride.value;
+      if (!w) return;
+      const key = riverPathsKey(w, override);
+      if (samePathsKey(key, pathsKey)) return;
+      pathsKey = key;
+      paths = buildPaths(w, override);
       requestDraw();
     });
 
@@ -690,6 +700,7 @@ export function MapView() {
     };
     return () => {
       disposeWorld();
+      disposePaths();
       disposeColors();
       disposeTool();
       disposeRedraw();

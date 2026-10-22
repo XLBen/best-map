@@ -347,7 +347,7 @@ export function featuresCsv(world: World, width: number, height: number): string
   return `${rows.join('\n')}\n`;
 }
 
-// 河流按平滑后的折线栅格化（与屏幕上的河一致），宽度随流量
+// 河流按平滑后的折线栅格化（与屏幕上的河一致），宽度随流量；画的河再乘它的粗细
 function drawRivers(world: World, rgb: Uint8Array, land: Uint8Array, width: number, height: number, thr: number) {
   const { mesh } = world;
   const sphere = mesh.kind === 'sphere';
@@ -366,7 +366,8 @@ function drawRivers(world: World, rgb: Uint8Array, land: Uint8Array, width: numb
       const flow = (line.flow[k] + line.flow[k + 1]) / 2;
       const level = Math.min(colors.length - 1, Math.max(0, Math.floor(Math.log10(flow / thr) * 2)));
       const col = colors[level];
-      const r = Math.max(0, (riverWidth(flow, thr) * scale - 1) / 2);
+      // 没有粗细倍数的（自然的河、旧存档）照原来的算式，逐位不变
+      const r = line.mul ? Math.max(0, (riverWidth(flow, thr) * ((line.mul[k] + line.mul[k + 1]) / 2) * scale - 1) / 2) : Math.max(0, (riverWidth(flow, thr) * scale - 1) / 2);
       const ri = Math.ceil(r);
       const r2 = r * r + 0.25;
       const x0 = line.points[k][0] * sx;

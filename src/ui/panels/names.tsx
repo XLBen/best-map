@@ -1,5 +1,6 @@
 import { Dices, Lock, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, featureLabel } from '../../../core/features';
 import { DEFAULT_PACK, type WordPack, wordPackSchema } from '../../../core/names';
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
@@ -11,7 +12,7 @@ import { Seg } from '../common';
 
 // 名字框：回车或点别处提交，Esc 放弃这次输入（不在失去焦点时提交）。
 // 刚圈好、刚放下的地名会让它获得焦点并选中文字，直接打字就是改名
-function NameInput({ fkey, value, onCommit }: { fkey: string; value: string; onCommit: (v: string) => void }) {
+export function NameInput({ fkey, value, onCommit }: { fkey: string; value: string; onCommit: (v: string) => void }) {
   const [name, setName] = useState(value);
   const cancelled = useRef(false);
   const ref = useRef<HTMLInputElement>(null);
@@ -96,11 +97,45 @@ function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
   );
 }
 
+// 画的河（有名字的河道）：名字、换一个、恢复自动 / 锁定。改的是河道本身（update_guide），撤销照常
+function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
+  const g = w.small.guides.find((x) => x.id === id);
+  if (!g) return null;
+  // 固定下来的自然河没自己换过名字时，用那条河原来的盐
+  const salt = g.salt ?? (g.nameKey ? w.small.featureNames[g.nameKey]?.salt : undefined) ?? 0;
+  const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id, patch, label }, busy);
+  return (
+    <>
+      <span class="bar-label">{featureLabel(w, f)}</span>
+      <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
+      <button class="bar-btn" onClick={() => update({ name: '', salt: salt + 1 }, '换了个名字')} title="自动换一个名字">
+        <Dices size={15} /> 换一个
+      </button>
+      {f.custom ? (
+        <button class="bar-btn" onClick={() => update({ name: '', salt }, '恢复自动命名')} title="不再固定，跟着文字包自动起名">
+          <LockOpen size={15} /> 恢复自动
+        </button>
+      ) : (
+        <button class="bar-btn" onClick={() => update({ name: f.name }, `改名为“${f.name}”`, '正在改名…')} title="之后河再变，这个名字也不会变">
+          <Lock size={15} /> 锁定
+        </button>
+      )}
+      <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
+        <ScanSearch size={15} />
+      </button>
+      <button class="bar-btn icon" onClick={() => (selectedFeature.value = null)} title="取消选择">
+        <X size={15} />
+      </button>
+    </>
+  );
+}
+
 export function NamesBar() {
   const w = world.value;
   const f = w?.derived.features.find((x) => x.key === selectedFeature.value);
   if (!w || !f) return null;
   if (f.region) return <RegionBar w={w} f={f} id={f.region} />;
+  if (f.guide) return <GuideNameBar w={w} f={f} id={f.guide} />;
   const rename = (v: string) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…');
   return (
     <>

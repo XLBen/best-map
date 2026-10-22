@@ -1,6 +1,6 @@
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
-import { circle as geoCircle } from '../../core/geo';
-import { riverWidth, traceRivers } from '../../core/rivers';
+import { circle as geoCircle, wrapX } from '../../core/geo';
+import { type RiverLine, guideShape, guidesSignature, riverWidth, traceRivers } from '../../core/rivers';
 import type { World } from '../../core/world';
 import type { Camera } from './renderer';
 import { drawCurrents, drawWind } from './wind';
@@ -14,48 +14,137 @@ export interface OverlayPaths {
   rivers: { path: Path2D; width: number }[];
   guides: Path2D;
   lockedGuides: Path2D;
+  // 在终点消失的河道的终点（水模式下画一个小圈）
+  sinks: [number, number][];
 }
 
-export function buildPaths(world: World): OverlayPaths {
+// ---------- 河的画法（地图上的河、预览的河共用，预览与结果画出来一样） ----------
+
+// 河宽随放大变宽，一直到最大缩放（一格约 64 像素）：按“相当于 4 万格地区地图的缩放”算
+export function riverScale(world: World, zoom: number): number {
+  return Math.max(0.7, Math.min(4, refZoom(world, zoom) / 1400));
+}
+
+// 一段河的宽度档（屏幕像素，未乘 riverScale）：每 1/4 像素一档。mul 是画的河的粗细倍数
+export function riverBucket(flow: number, thr: number, mul = 1): number {
+  return Math.max(0.25, Math.round(riverWidth(flow, thr) * mul * 4) / 4);
+}
+
+// 河的颜色
+export function riverStroke(style: 'realistic' | 'atlas'): string {
+  return style === 'atlas' ? 'rgba(70, 110, 150, 0.95)' : 'rgba(52, 104, 168, 0.92)';
+}
+
+// 把河的折线按宽度档加进 Path2D（每段一条子路径，圆头）。scale：再乘的粗细（拖“粗细”时）。
+// 整个星球：每段按起点挪到 [0, 2) 里那一份（展开的河可以伸出很远，平铺的副本只看 [-0.6, 2.6]）
+function addRiver(buckets: Map<number, Path2D>, line: RiverLine, thr: number, sphere: boolean, scale = 1) {
+  const { points, flow, mul } = line;
+  for (let k = 0; k + 1 < points.length; k++) {
+    const key = riverBucket((flow[k] + flow[k + 1]) / 2, thr, (mul ? (mul[k] + mul[k + 1]) / 2 : 1) * scale);
+    let p = buckets.get(key);
+    if (!p) buckets.set(key, (p = new Path2D()));
+    const shift = sphere ? 2 * Math.floor(points[k][0] / 2) : 0;
+    p.moveTo(points[k][0] - shift, points[k][1]);
+    p.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
+  }
+}
+
+const sortedBuckets = (buckets: Map<number, Path2D>) => [...buckets].sort((a, b) => a[0] - b[0]).map(([width, path]) => ({ path, width }));
+
+// 一串河线画成按宽度分档的 Path2D（预览的河用；地图上的河见 buildPaths）
+export function riverPaths(world: World, lines: RiverLine[]): { path: Path2D; width: number }[] {
+  const buckets = new Map<number, Path2D>();
+  for (const line of lines) addRiver(buckets, line, world.small.planet.riverThreshold, world.mesh.kind === 'sphere');
+  return sortedBuckets(buckets);
+}
+
+// 一条连续的折线加进 Path2D（河道的虚线标记：虚线不在每段重新开始）。整个星球：按段的起点挪到 [0, 2) 里，
+// 挪的份数变了才另起一笔
+function addPolyline(p: Path2D, pts: readonly [number, number][], sphere: boolean) {
+  let cur = Number.NaN;
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const shift = sphere ? 2 * Math.floor(pts[k][0] / 2) : 0;
+    if (shift !== cur) {
+      p.moveTo(pts[k][0] - shift, pts[k][1]);
+      cur = shift;
+    }
+    p.lineTo(pts[k + 1][0] - cur, pts[k + 1][1]);
+  }
+}
+
+// 拖一条画的河的“粗细”时先这样画（不等 worker，立即看到）；hide：先不画它（拖“大小”时用预览的样子代替）
+export interface RiverStyleOverride {
+  id: string;
+  width?: number;
+  hide?: boolean;
+}
+
+// 河的路径缓存的键：流量数组（推导换了就换）、河的门槛、河道的内容（每次快照的河道数组都是新的，按内容认）、
+// 拖粗细时的临时样子。只改了名字的轻快照不重画，改了粗细的会重画
+export function riverPathsKey(world: World, override: RiverStyleOverride | null): unknown[] {
+  return [
+    world.mesh,
+    world.derived.discharge,
+    world.small.planet.riverThreshold,
+    guidesSignature(world.small.guides),
+    override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
+    // 河流类型（第三批）：类型的定义变了也要重画，留在这一格
+    '',
+  ];
+}
+
+export const samePathsKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
+
+// 地图上的河的折线（traceRivers），按 riverPathsKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
+// 按数组认会认错
+let linesMemo: { key: unknown[]; lines: RiverLine[] } | null = null;
+export function riverLines(world: World): RiverLine[] {
+  const key = riverPathsKey(world, null);
+  if (linesMemo && samePathsKey(linesMemo.key, key)) return linesMemo.lines;
+  const lines = traceRivers(world);
+  linesMemo = { key, lines };
+  return lines;
+}
+
+export function buildPaths(world: World, override: RiverStyleOverride | null = null): OverlayPaths {
   const { mesh, small } = world;
   const thr = small.planet.riverThreshold;
+  const sphere = mesh.kind === 'sphere';
   const buckets = new Map<number, Path2D>();
-  for (const line of traceRivers(world)) {
-    for (let k = 0; k + 1 < line.points.length; k++) {
-      const w = riverWidth((line.flow[k] + line.flow[k + 1]) / 2, thr);
-      const key = Math.round(w * 4) / 4;
-      let p = buckets.get(key);
-      if (!p) buckets.set(key, (p = new Path2D()));
-      p.moveTo(line.points[k][0], line.points[k][1]);
-      p.lineTo(line.points[k + 1][0], line.points[k + 1][1]);
-    }
+  const own = override ? small.guides.find((g) => g.id === override.id) : undefined;
+  for (const line of riverLines(world)) {
+    if (!override || line.guide !== override.id) addRiver(buckets, line, thr, sphere);
+    else if (!override.hide) addRiver(buckets, line, thr, sphere, override.width !== undefined ? override.width / (own?.width ?? 1) : 1);
   }
-  const rivers = [...buckets].sort((a, b) => a[0] - b[0]).map(([width, path]) => ({ path, width }));
+  const rivers = sortedBuckets(buckets);
   const guides = new Path2D();
   const lockedGuides = new Path2D();
-  const sphere = mesh.kind === 'sphere';
+  const sinks: [number, number][] = [];
   for (const g of small.guides) {
-    const p = g.locked ? lockedGuides : guides;
-    // 整个星球：沿线展开经度，跨过接缝的线是连续的
-    let px = 0;
-    g.cells.forEach((c, k) => {
-      const x = sphere && k > 0 ? px + (mesh.x[c] - px - 2 * Math.round((mesh.x[c] - px) / 2)) : mesh.x[c];
-      px = x;
-      if (k === 0) p.moveTo(x, mesh.y[c]);
-      else p.lineTo(x, mesh.y[c]);
-    });
+    // 画出来的那条线（与河一致；整个星球上沿线展开经度，跨过接缝的线是连续的）
+    const pts = guideShape(world, g);
+    addPolyline(g.locked ? lockedGuides : guides, pts, sphere);
+    if (g.end === 'sink' && pts.length) {
+      const [x, y] = pts[pts.length - 1];
+      sinks.push([sphere ? wrapX(x) : x, y]);
+    }
   }
-  return { rivers, guides, lockedGuides };
+  return { rivers, guides, lockedGuides, sinks };
 }
 
 // 工具预览的矢量图形（地图单位）
 export interface Shape {
-  kind: 'circle' | 'line' | 'arrow' | 'cells';
+  kind: 'circle' | 'line' | 'arrow' | 'cells' | 'river';
   x?: number;
   y?: number;
   r?: number;
   points?: [number, number][];
   cells?: number[];
+  // river：与地图上的河同样画（宽度按流量分档、随缩放变宽，颜色照河的颜色，除非给了 color）。
+  // flow 是每个点的流量，mul 是每个点的粗细倍数；arrow：河口画一个小箭头（看得出往哪流）
+  flow?: number[];
+  mul?: number[];
+  arrow?: boolean;
   color?: string;
   // 线宽（屏幕像素）
   width?: number;
@@ -147,12 +236,12 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
   ctx.lineJoin = 'round';
   const rz = refZoom(world, cam.zoom);
 
+  const scale = riverScale(world, cam.zoom);
+  const river = { scale, color: riverStroke(st.style) };
   for (const k of ks) {
     setT(k);
     if (st.rivers) {
-      ctx.strokeStyle = st.style === 'atlas' ? 'rgba(70, 110, 150, 0.95)' : 'rgba(52, 104, 168, 0.92)';
-      // 河宽随放大变宽，一直到最大缩放（一格约 64 像素）
-      const scale = Math.max(0.7, Math.min(4, rz / 1400));
+      ctx.strokeStyle = river.color;
       for (const r of paths.rivers) {
         ctx.lineWidth = r.width * scale * px * dpr;
         ctx.stroke(r.path);
@@ -175,6 +264,14 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
         ctx.fill();
         ctx.stroke();
       }
+      // 在终点消失的河：终点一个空心小圈
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 1.5 * px * dpr;
+      for (const [x, y] of paths.sinks) {
+        ctx.beginPath();
+        ctx.arc(x, y, 3 * px * dpr, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
   setT(0);
@@ -188,7 +285,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
 
   for (const k of ks) {
     setT(k);
-    for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr);
+    for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river);
   }
 
   if (st.provinceLabels.length && rz > 900) {
@@ -384,8 +481,12 @@ function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUnit: num
   ctx.fillText(text, x0 + px + 6, y0 + 2.5);
 }
 
-// unit：一个屏幕像素合多少地图单位
-function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number) {
+// unit：一个屏幕像素合多少地图单位；river：地图上的河现在的宽度系数与颜色（river 图形照它画）
+function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }) {
+  if (sh.kind === 'river') {
+    drawRiverShape(ctx, world, sh, unit, river);
+    return;
+  }
   const color = sh.color ?? 'rgba(255,255,255,0.9)';
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
@@ -434,6 +535,35 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit:
     ctx.stroke();
   }
   ctx.setLineDash([]);
+}
+
+// 预览的河：与地图上的河同一套分档、宽度、颜色、圆头（见 addRiver）
+function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }) {
+  const pts = sh.points;
+  const flow = sh.flow;
+  if (!pts || !flow || pts.length < 2) return;
+  ctx.setLineDash([]);
+  ctx.strokeStyle = sh.color ?? river.color;
+  for (const r of riverPaths(world, [{ points: pts, flow, mul: sh.mul }])) {
+    ctx.lineWidth = r.width * river.scale * unit;
+    ctx.stroke(r.path);
+  }
+  if (!sh.arrow) return;
+  // 河口的小箭头：比河稍宽，顺着最后一段
+  const n = pts.length;
+  const shift = world.mesh.kind === 'sphere' ? 2 * Math.floor(pts[n - 2][0] / 2) : 0;
+  const [x1, y1] = [pts[n - 1][0] - shift, pts[n - 1][1]];
+  const [x0, y0] = [pts[n - 2][0] - shift, pts[n - 2][1]];
+  const w = riverBucket(flow[n - 1], world.small.planet.riverThreshold, sh.mul?.[n - 1] ?? 1) * river.scale;
+  const hs = Math.max(8, w * 2.4) * unit;
+  const a = Math.atan2(y1 - y0, x1 - x0);
+  ctx.fillStyle = sh.color ?? river.color;
+  ctx.beginPath();
+  ctx.moveTo(x1 + Math.cos(a) * hs * 0.5, y1 + Math.sin(a) * hs * 0.5);
+  ctx.lineTo(x1 - hs * Math.cos(a - 0.45), y1 - hs * Math.sin(a - 0.45));
+  ctx.lineTo(x1 - hs * Math.cos(a + 0.45), y1 - hs * Math.sin(a + 0.45));
+  ctx.closePath();
+  ctx.fill();
 }
 
 const LABEL_STYLE: Record<'land' | 'water' | 'relief' | 'nature', { color: string; italic: boolean; spacing: number }> = {

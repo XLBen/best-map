@@ -7,6 +7,7 @@ import type { Mesh } from '../core/mesh';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
+import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 
@@ -98,6 +99,8 @@ export const uiHidden = signal(false);
 export const sliderActive = signal(false);
 // 工具的异步预览算好了：地图重画一次
 export const redrawTick = signal(0);
+// 拖一条画的河的“粗细”时地图上先这样画（不等 worker）；null 照存下的画
+export const riverStyleOverride = signal<RiverStyleOverride | null>(null);
 // “调整”面板拖滑块时的预览（会变成陆地 / 海的格、山会变高变矮的格）
 export const adjustPreview = signal<{ gained: number[]; lost: number[]; relief: { cells: number[]; delta: number[] } } | null>(null);
 

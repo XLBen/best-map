@@ -2,11 +2,25 @@ import type { GuidePatch } from './commands';
 import { bedLevels, sinkMask, userLakeMask, waterLevel } from './elevation';
 import { arc, fromUnit, localOffset, toUnit, wrapDelta } from './geo';
 import { type Mesh, findCell, graphDistanceOwner, ringDistance } from './mesh';
-import { courseStep, decodePath, encodePath, meander, pathSamples, roundPathValue } from './rivers';
+import {
+  courseStep,
+  decodePath,
+  dedupePoints as dedupe,
+  douglasPeucker,
+  encodePath,
+  guidePoints,
+  pathSamples,
+  roundPoint as roundPt,
+  roundPathValue,
+  segProject,
+} from './rivers';
 import { isVegetated } from './vegetation';
 import { COURSE_MAX_POINTS, type Derived, type Guide, type World } from './world';
 
 // 选区与延伸：所有结果都是明确的格列表，交给命令保存，保证重放与推导状态无关
+
+// 画的河的控制点、固定自然的河时存的折线（实现在 rivers.ts，画法与路径一处一份）
+export { guidePoints, stemPath } from './rivers';
 
 // 整个星球：一串（已展开的）经度的平均值，格的经度在它附近展开后再按平面的办法判断
 function meanX(points: [number, number][]): number {
@@ -809,22 +823,6 @@ function cellDist2(mesh: Mesh, a: number, b: number): number {
   return (mesh.x[a] - mesh.x[b]) ** 2 + (mesh.y[a] - mesh.y[b]) ** 2;
 }
 
-// 点到线段的距离，以及投影点在线段上的位置 t（0–1）
-function segProject(px: number, py: number, ax: number, ay: number, bx: number, by: number): { d: number; t: number } {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const l2 = dx * dx + dy * dy;
-  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
-  return { d: Math.hypot(px - ax - t * dx, py - ay - t * dy), t };
-}
-
-const roundPt = (p: readonly [number, number]): Pt => [roundPathValue(p[0]), roundPathValue(p[1])];
-
-// 去掉相邻的重复点
-function dedupe(pts: Pt[]): Pt[] {
-  return pts.filter((p, k) => k === 0 || p[0] !== pts[k - 1][0] || p[1] !== pts[k - 1][1]);
-}
-
 // 磨圆拐角（Chaikin，保留两端）：去掉鼠标的锯齿
 function chaikinPts(pts: readonly Pt[], iterations: number): Pt[] {
   let out = pts.slice();
@@ -839,31 +837,6 @@ function chaikinPts(pts: readonly Pt[], iterations: number): Pt[] {
     out = p;
   }
   return out;
-}
-
-// Douglas–Peucker 化简：离保留下来的折线不超过 tol
-function douglasPeucker(pts: readonly Pt[], tol: number): Pt[] {
-  const n = pts.length;
-  if (n <= 2) return pts.slice();
-  const keep = new Uint8Array(n);
-  keep[0] = keep[n - 1] = 1;
-  const stack: [number, number][] = [[0, n - 1]];
-  while (stack.length) {
-    const [a, b] = stack.pop()!;
-    let best = -1;
-    let bd = tol;
-    for (let i = a + 1; i < b; i++) {
-      const d = segProject(pts[i][0], pts[i][1], pts[a][0], pts[a][1], pts[b][0], pts[b][1]).d;
-      if (d > bd) {
-        bd = d;
-        best = i;
-      }
-    }
-    if (best < 0) continue;
-    keep[best] = 1;
-    stack.push([a, best], [best, b]);
-  }
-  return pts.filter((_, i) => keep[i]);
 }
 
 // 画的线 → 存下的折线：磨圆两遍，再化简（容差取 0.03 格与一个屏幕像素中大的那个；点太多时放宽，最多 1500 个点），
@@ -1265,19 +1238,6 @@ export function mergeCourse(plan: CoursePlan, g: Guide): GuidePatch {
   return { cells: [...plan.cells.slice(0, -1), ...g.cells], path: encodePath(dedupe([...plan.path, ...tail])) };
 }
 
-// 一条画的河的控制点（courseLine 再平滑一遍就是画出来的样子）：画的折线，再接上画完之后顺地势流下去的那段
-// （格心加上与自然的河相同的曲流）；旧式的河道没有折线，整条按格心（与固定自然的河时存的一样，见 stemPath）。
-// 重画一段、接到它前面时都按它算，所以没改的地方画出来一点不动
-export function guidePoints(world: World, g: Guide): [number, number][] {
-  if (!g.path) return decodePath(stemPath(world, g.cells));
-  const pts = decodePath(g.path);
-  const last = pts[pts.length - 1];
-  const m = g.cells.indexOf(findCell(world.mesh, last[0], last[1]));
-  if (m < 0 || m >= g.cells.length - 1 || !world.causes.land[g.cells[m]]) return pts;
-  const tail = meander(centrePoints(world, g.cells.slice(m + 1), last), world.mesh.spacing).slice(1);
-  return dedupe([...pts, ...tail.map(roundPt)]);
-}
-
 // 点在折线上的投影：第几段、段上的位置、距离、从起点量起的长度
 function projectOn(pts: readonly Pt[], x: number, y: number): { seg: number; t: number; d: number; along: number; p: Pt } {
   let best = { seg: 0, t: 0, d: Infinity, along: 0, p: pts[0] };
@@ -1500,35 +1460,3 @@ export function riverStem(world: World, d: Derived, cell: number): { cells: numb
   return { cells, end: null, join: -1 };
 }
 
-// 一串格的格心（整个星球上沿河连续展开，接在 start 后面）；到了海就画到两格之间为止，与自然的河的画法相同
-function centrePoints(world: World, cells: readonly number[], start?: Pt): Pt[] {
-  const { mesh, causes } = world;
-  const sphere = mesh.kind === 'sphere';
-  const pts: Pt[] = start ? [start] : [];
-  for (const c of cells) {
-    const prev = pts.length ? pts[pts.length - 1][0] : mesh.x[c];
-    const x = sphere ? prev + wrapDelta(mesh.x[c] - prev) : mesh.x[c];
-    if (pts.length && !causes.land[c]) {
-      const [px, py] = pts[pts.length - 1];
-      pts.push([(px + x) / 2, (py + mesh.y[c]) / 2]);
-      break;
-    }
-    pts.push([x, mesh.y[c]]);
-  }
-  return pts;
-}
-
-// 固定一条自然的河时存下的折线：与画自然的河同样的点（格心，入海、入湖的画到两格之间）加上同样的曲流，
-// 再平滑一遍就是原来屏幕上的样子。点太多时化简
-export function stemPath(world: World, cells: readonly number[]): number[] {
-  const { mesh } = world;
-  const sphere = mesh.kind === 'sphere';
-  const wavy = meander(centrePoints(world, cells), mesh.spacing);
-  let out = wavy;
-  for (let tol = 0.03 * mesh.spacing; out.length > COURSE_MAX_POINTS; tol *= 1.5) out = douglasPeucker(wavy, tol);
-  if (sphere && out.length) {
-    const shift = 2 * Math.floor(out[0][0] / 2);
-    if (shift) out = out.map(([x, y]) => [x - shift, y]);
-  }
-  return encodePath(dedupe(out.map(roundPt)));
-}

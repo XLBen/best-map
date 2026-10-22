@@ -136,7 +136,9 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     const now = traceRivers(w);
     const old = traceBefore(w);
     expect(now.length).toBeGreaterThan(10);
-    expect(now).toEqual(old);
+    // 现在每条线还多记了每个点在哪一格（cells），点与流量逐位不变
+    expect(now.map(({ points, flow }) => ({ points, flow }))).toEqual(old);
+    expect(now.every((l) => l.cells?.length === l.points.length)).toBe(true);
     expect(new Uint8Array(flat(now).buffer)).toEqual(new Uint8Array(flat(old).buffer));
   });
 

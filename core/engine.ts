@@ -3,7 +3,7 @@ import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, rever
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere } from './planet-climate';
 import { carveBeds, computeElevation } from './elevation';
-import { assignNames, detectFeatures, regionFeatures } from './features';
+import { assignNames, detectFeatures, guideFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { computeVegetation, isVegetated } from './vegetation';
@@ -268,9 +268,11 @@ export class Engine {
     const w = this.world;
     const d = w.derived;
     if (this.dirty === Dirty.Names) {
-      // 只改了名字或用户的区块：自动识别的地物不变，换上新的区块再重新起名。
+      // 只改了名字、用户的区块或画的河的折线：自动识别的地物不变，换上新的区块、画的河再重新起名。
+      // （画的河有没有名字、占了哪些格变了的时候不走这里，所以哪些自然的河不单独标也不变。）
       // 地物对象可能和副本（Engine.clone、撤销缓存）共用，起名会改它们的名字，所以先各复制一份
-      d.features = [...d.features.filter((f) => !f.region).map((f) => ({ ...f })), ...regionFeatures(w, d, this.base?.terrain)];
+      const terrain = this.base?.terrain;
+      d.features = [...d.features.filter((f) => !f.region && !f.guide).map((f) => ({ ...f })), ...regionFeatures(w, d, terrain), ...guideFeatures(w, d, terrain)];
       assignNames(w, d.features);
       this.dirty = Dirty.None;
       return d;
