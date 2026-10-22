@@ -59,6 +59,19 @@ const sources: (() => unknown)[] = [() => FANTASY_BIOMES, () => FANTASY_FORMS];
 export function addTrustedSource(f: () => unknown): void {
   sources.push(f);
 }
+// 一处来源里脚本的键，按来源给的对象记下：内置的示例、资源库的列表没变时不再一段段重算 SHA-256
+// （每次打开、每次在脚本框里提交都要查；资源库大时上千段，会把 keyOf 记下的挤掉）。
+// 来源给的对象之后不能再改（资源库换了内容时给一个新的列表，见 library.ts）
+const sourceKeys = new WeakMap<object, Set<string>>();
+async function keysOf(json: unknown): Promise<Set<string>> {
+  const obj = json !== null && typeof json === 'object' ? json : null;
+  const hit = obj && sourceKeys.get(obj);
+  if (hit) return hit;
+  const out = new Set<string>();
+  for (const s of findScripts(json)) out.add(await keyOf(s.src));
+  if (obj) sourceKeys.set(obj, out);
+  return out;
+}
 async function always(): Promise<Set<string>> {
   const out = new Set<string>();
   for (const f of sources) {
@@ -68,7 +81,7 @@ async function always(): Promise<Set<string>> {
     } catch {
       continue;
     }
-    for (const s of findScripts(json)) out.add(await keyOf(s.src));
+    for (const k of await keysOf(json)) out.add(k);
   }
   return out;
 }

@@ -55,13 +55,18 @@ class FakeWorker {
   postMessage(m: { id: number; req: Request }) {
     this.sent.push(m.req);
     const out = respond(m.req);
-    queueMicrotask(() => this.onmessage?.({ data: { id: m.id, ok: true, ...out } }));
+    const send = () => this.onmessage?.({ data: { id: m.id, ok: true, ...out } });
+    // holdExec：执行的回复先压着（还在算），测试里放出来
+    if (holdExec && m.req.kind === 'exec') held.push(send);
+    else queueMicrotask(send);
   }
   terminate() {
     this.terminated = true;
   }
 }
 vi.stubGlobal('Worker', FakeWorker);
+let holdExec = false;
+const held: (() => void)[] = [];
 
 // 按请求回复：打开回快照（安全模式照请求），自动保存要命令、世界文件时回最近打开的那个
 let lastDoc: WorldDoc | null = null;
@@ -75,7 +80,7 @@ function respond(req: Request): Record<string, unknown> {
   return { summary: '完成', snapshot: snap() };
 }
 
-const { ask, confirmImport, exec, loadDoc, newWorld, resumeLast, safeMode } = await import('./state');
+const { ask, confirmImport, exec, loadDoc, newWorld, resumeLast, retryScripts, safeMode } = await import('./state');
 const { forgetTrustCache, trustScripts, untrustedScripts } = await import('./trust');
 
 // 信任列表里的键：源码的 SHA-256
@@ -199,6 +204,31 @@ describe('打开时的信任检查', () => {
     expect(sentKinds().at(-1)).toBe('load(safe)');
     expect(safeMode.value).toEqual({ reason: '上次打开时程序停止了响应' });
     expect(kv.has('loadingScripts')).toBe(false);
+  });
+
+  it('“再试一次”先等排着的改动算完再取世界（比如点按钮时脚本框刚提交、还在算的一段）', async () => {
+    const doc = docWith(species('m', 'return 0.35;'));
+    const p = loadDoc(doc);
+    await tick();
+    ask.value!.resolve('safe');
+    expect(await p).toBe(true);
+    holdExec = true;
+    const n = sentKinds().length;
+    const e = exec({ op: 'add_species', species: species('n', 'return 0.36;') });
+    await tick();
+    const r = retryScripts();
+    await tick();
+    // 执行还没回来：还没去取世界，也没重新打开
+    expect(sentKinds().slice(n)).toEqual(['exec']);
+    holdExec = false;
+    for (const send of held.splice(0)) send();
+    expect(await e).toBe(true);
+    await tick();
+    expect(sentKinds().slice(n)).toEqual(['exec', 'doc']);
+    // 世界里的脚本没信任过：照样先问
+    expect(ask.value!.title).toBe('信任这个世界里的脚本吗？');
+    ask.value!.resolve('cancel');
+    expect(await r).toBe(false);
   });
 
   it('新建时也查（向导里的星球形态带脚本）；内置的示例生态、星球形态总是信任，不问', async () => {

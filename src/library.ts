@@ -103,9 +103,13 @@ export async function removePack(key: string): Promise<void> {
 // 装进来的包（整理信任列表时不会被挤掉，装着就一直信任）。“我的资源”不算：从世界里导出的脚本可能来自
 // 没运行脚本打开的别人的世界，没信任过的以后用到世界时照样先问。
 // 第一次查信任时先把存着的资源库读进来：刚打开页面、还没开过资源包对话框时（比如读自动保存），装着的包也算
+// 给出的列表按资源库的样子记下：没装、没删时是同一个列表，trust.ts 不再重算里面每段脚本的 SHA-256
 let loaded: Promise<unknown> | null = null;
+let trustedPacks: { from: LibraryEntry[]; packs: ResourcePack[] } | null = null;
 addTrustedSource(async () => {
   loaded ??= refreshLibrary();
   await loaded;
-  return library.value.filter((e) => !e.mine).map((e) => e.pack);
+  const list = library.value;
+  if (trustedPacks?.from !== list) trustedPacks = { from: list, packs: list.filter((e) => !e.mine).map((e) => e.pack) };
+  return trustedPacks.packs;
 });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PACK } from '../core/names';
 import { type ResourcePack, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
+import { findScripts } from '../core/script';
 import { openDb } from './idb';
 import { installPack, library, refreshLibrary, removePack } from './library';
 import { forgetTrustCache, trustScripts, untrustedScripts } from './trust';
@@ -188,6 +189,35 @@ describe('信任的脚本', () => {
     expect((await untrustedScripts(mine)).length).toBe(1);
     await removePack('theirs');
     await removePack('mine2');
+  });
+
+  it('删掉资源库里的包就不再总是信任（资源库的列表变了，信任那边重算）', async () => {
+    const theirs = withScript('gone', 'return 0.33;');
+    await installPack(theirs);
+    expect(await untrustedScripts(theirs)).toEqual([]);
+    await removePack('gone');
+    expect((await untrustedScripts(theirs)).map((s) => s.src)).toEqual(['return 0.33;']);
+  });
+
+  it('文字包带不进脚本（只认词表和模板）；河流类型、星球形态里的脚本导入时照样列出来问', async () => {
+    const words = readPack(JSON.stringify({ ...DEFAULT_PACK, id: 'w', name: '带脚本的文字包', scripts: { placement: { api: 1, src: 'return 0.61;' } } }));
+    expect(words.ok && words.legacy).toBe('wordPack');
+    expect(words.ok && findScripts(words.pack)).toEqual([]);
+    const other = readPack(
+      JSON.stringify({
+        format: 'map2-pack',
+        version: 1,
+        id: 'other',
+        name: 'other',
+        riverTypes: [{ id: 'blood', scripts: { color: { api: 1, src: 'return [200, 0, 0];' } } }],
+        planetForms: [{ id: 'ring', name: '环', scripts: { crust: { api: 1, src: 'return height;' } } }],
+      }),
+    );
+    expect(other.ok).toBe(true);
+    expect((await untrustedScripts(other.ok && other.pack)).map((s) => [s.owner, s.kind, s.src])).toEqual([
+      ['blood', 'color', 'return [200, 0, 0];'],
+      ['环', 'crust', 'return height;'],
+    ]);
   });
 
   it('刚打开页面（还没开过资源包对话框）时，存着的、装进来的包也算信任', async () => {

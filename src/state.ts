@@ -1,12 +1,13 @@
 import { batch, signal } from '@preact/signals';
+import { speciesOwner } from '../core/biome-scripts';
 import type { Command } from '../core/commands';
 import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { previewWorldOf } from '../core/preview-world';
-import { type FoundScript, type ScriptIssue, findScripts } from '../core/script';
-import type { Visual } from '../core/species';
+import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from '../core/script';
+import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
@@ -824,8 +825,11 @@ export async function resumeLast(): Promise<boolean | null> {
   return loadDoc(saved.doc, safe !== null ? { safe } : {});
 }
 
-// 安全模式横幅的“再试一次”：另开一个 Worker，脚本照常运行（没信任过的照样先问）
+// 安全模式横幅的“再试一次”：另开一个 Worker，脚本照常运行（没信任过的照样先问）。
+// 先等排着的改动算完再取世界：比如脚本框里刚写的一段，点按钮时离开框就提交了，还在算；
+// 不等的话取到的世界里没有它，重新打开后这一段就丢了
 export async function retryScripts(): Promise<boolean> {
+  await whenEditsIdle();
   const doc = host?.mirror.doc() ?? (await getDoc());
   return doc ? loadDoc(doc, { keepView: true }) : false;
 }
@@ -842,25 +846,28 @@ export const dismissedIssues = signal('');
 
 // 出错的脚本的“编辑”：脚本编辑器把自己的打开方法放在 open 上（ui/connect.ts 接上：打开生态抽屉、展开“高级”、
 // 光标放进那个脚本框）；没有时打开生态抽屉、选中这种生态
-export type SpeciesScriptKind = 'placement' | 'color';
+export type SpeciesScriptKind = (typeof SPECIES_SCRIPT_KINDS)[number];
 export const scriptEditor: { open: ((species: string, kind: SpeciesScriptKind) => void) | null } = { open: null };
+const isSpeciesKind = (k: ScriptKind): k is SpeciesScriptKind => (SPECIES_SCRIPT_KINDS as readonly ScriptKind[]).includes(k);
 // 出错的是哪种生态的哪一段（生态的两种脚本；星球形态的布局、地形脚本没有编辑的地方）。先按 id，旧的说明没有 id 时按名字
-function speciesOfIssue(issue: ScriptIssue) {
-  if (issue.kind !== 'placement' && issue.kind !== 'color') return undefined;
-  return world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : (s.name || s.id) === issue.owner));
+function scriptOfIssue(issue: ScriptIssue): { id: string; kind: SpeciesScriptKind } | undefined {
+  const kind = issue.kind;
+  if (!isSpeciesKind(kind)) return undefined;
+  const sp = world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : speciesOwner(s) === issue.owner));
+  return sp && { id: sp.id, kind };
 }
 // 有没有地方可以打开它（没有时提示条上不放“编辑”）
 export function canEditScript(issue: ScriptIssue): boolean {
-  return speciesOfIssue(issue) !== undefined;
+  return scriptOfIssue(issue) !== undefined;
 }
 export function editScript(issue: ScriptIssue) {
-  const sp = speciesOfIssue(issue);
-  if (!sp) return;
+  const at = scriptOfIssue(issue);
+  if (!at) return;
   if (scriptEditor.open) {
-    scriptEditor.open(sp.id, issue.kind as SpeciesScriptKind);
+    scriptEditor.open(at.id, at.kind);
     return;
   }
-  focusSpecies.value = sp.id;
+  focusSpecies.value = at.id;
   sheet.value = 'species';
 }
 

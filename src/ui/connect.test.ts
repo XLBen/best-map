@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FANTASY_BIOMES } from '../../core/packs/fantasy-biomes';
 import type { ScriptIssue } from '../../core/script';
+import type { Command } from '../../core/commands';
+import type { Species } from '../../core/species';
 import { continents } from '../../core/testing/fixtures';
+import type { LightSnapshot, Request } from '../protocol';
 
 // 第三批几处口子接上以后（connect.ts）：
 // - 脚本框提交的脚本记进信任列表（trust.ts），同一步里被换掉的中间版本去掉，留着的是现在的、被它换掉的（出错时换回它）、
@@ -20,17 +23,42 @@ vi.mock('../idb', () => ({
   kvPut: async (k: string, v: unknown) => void kv.set(k, structuredClone(v)),
   kvDelete: async (k: string) => void kv.delete(k),
 }));
-vi.stubGlobal(
-  'Worker',
-  class {
-    postMessage() {}
-  },
-);
+// 假的 Worker：记下请求，测试里用 answerLast 回一个轻快照（把 update_species 的补丁用到那种生态上）
+class FakeWorker {
+  static last: FakeWorker | null = null;
+  onmessage: ((ev: { data: unknown }) => void) | null = null;
+  sent: { id: number; req: Request }[] = [];
+  constructor() {
+    FakeWorker.last = this;
+  }
+  postMessage(m: { id: number; req: Request }) {
+    this.sent.push(m);
+  }
+}
+vi.stubGlobal('Worker', FakeWorker);
 
 const state = await import('../state');
 const trust = await import('../trust');
 const hooks = await import('./editor-hooks');
 const { scriptCommitted } = await import('./connect');
+const { applySpeciesScript } = await import('./species-scripts');
+
+let nextState = 100;
+function answerLast(): Request {
+  const fw = FakeWorker.last!;
+  const m = fw.sent[fw.sent.length - 1];
+  const w = state.world.value!;
+  const cmd = (m.req as { cmd: Extract<Command, { op: 'update_species' }> }).cmd;
+  const species = w.small.species.map((s) => {
+    if (s.id !== cmd.id) return s;
+    const next = { ...s, ...cmd.patch } as Record<string, unknown>;
+    for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete next[k];
+    return next as Species;
+  });
+  const snap: LightSnapshot = { light: true, small: { ...w.small, species }, features: w.derived.features, province: w.causes.province.slice(), history: [], canUndo: true, canRedo: false, timings: { total: 0 }, stateId: ++nextState };
+  fw.onmessage!({ data: { id: m.id, ok: true, summary: '修改了生态', snapshot: snap } });
+  return m.req;
+}
 
 const trusted = (src: string) => trust.isTrusted(src);
 const w0 = continents({ cells: 2000 }).world;
@@ -122,5 +150,37 @@ describe('别的口子', () => {
     expect(state.focusSpecies.value).toBe(sp0.id);
     const form: ScriptIssue = { kind: 'crust', owner: '双子大陆', reason: 'runtime', text: '没有变量 x', raw: 'x is not defined', message: '「双子大陆」的地形脚本：没有变量 x' };
     expect(state.canEditScript(form)).toBe(false);
+  });
+});
+
+describe('真的走 exec / replaceLast（Worker 换成假的）', () => {
+  it('脚本框的提交只记框里写的这一段：补丁里整份带着的另一段不顺带信任；同一步里换掉的中间版本去掉', async () => {
+    // 另一段是别人的、没信任过的脚本（比如自动保存里留下的）
+    const theirs = 'return [9, 8, 7];';
+    state.world.value = { ...w0, small: { ...w0.small, species: w0.small.species.map((s, i) => (i === 0 ? { ...s, scripts: { color: { api: 1, src: theirs } } } : s)) } };
+    const commit = async (src: string, mode: 'exec' | 'replace') => {
+      const p = applySpeciesScript(sp0.id, 'placement', src, mode);
+      const req = answerLast() as { kind: string; cmd: Extract<Command, { op: 'update_species' }> };
+      expect(await p).toEqual({ ok: true });
+      return req;
+    };
+    const first = await commit('return 0.41;', 'exec');
+    expect(first.kind).toBe('exec');
+    // 命令里两段都在（scripts 是整份）
+    expect(first.cmd.patch.scripts).toEqual({ placement: { api: 1, src: 'return 0.41;' }, color: { api: 1, src: theirs } });
+    await vi.waitFor(async () => expect(await trusted('return 0.41;')).toBe(true));
+    await commit('return 0.42;', 'replace');
+    await commit('return 0.43;', 'replace');
+    await vi.waitFor(async () => expect(await trusted('return 0.41;')).toBe(false));
+    expect([await trusted('return 0.42;'), await trusted('return 0.43;')]).toEqual([true, true]);
+    expect(await trusted(theirs)).toBe(false);
+  });
+
+  it('别的命令（不是脚本框的）照旧整条记为信任', async () => {
+    const sp = w0.small.species[1];
+    const p = state.exec({ op: 'update_species', id: sp.id, patch: { scripts: { placement: { api: 1, src: 'return 0.51;' } } } });
+    answerLast();
+    expect(await p).toBe(true);
+    await vi.waitFor(async () => expect(await trusted('return 0.51;')).toBe(true));
   });
 });
