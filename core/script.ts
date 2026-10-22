@@ -32,8 +32,12 @@ import { type Derived, type World, longitudeOf, planetRadiusKm, worldLatitude } 
 //   setup     布局     —— 每个星球模型一次（加大陆块、加岛）
 //
 // 确定性：脚本看不到时间、随机数、全局对象（这些名字被同名参数遮住，Math 换成没有 random 的冻结副本），
-// 随机只能用 rand(k)：每格固定、与计算顺序无关。遮住名字只保证确定性，不是安全边界——
-// (()=>{}).constructor 仍然能拿到真正的 Function；安全靠把脚本放进隔离的 worker 里跑（见计划第三批“隔离”）。
+// 随机只能用 rand(k)：每格固定、与计算顺序无关。脚本能碰到的本模块的东西（辅助函数、它们的 prototype、
+// Math 副本、Date 等替身）都是冻结的，生成代码自己的名字（运行状态、循环函数）在脚本里被遮成 undefined，
+// 所以脚本没有地方“记住上一格”。剩下的路——在 JSON、Array.prototype、Math.sin 这些内置对象上挂东西，
+// 或者 (()=>{}).constructor 拿到真正的 Function——遮名字挡不住，由 checkPurity 查出来（正反两遍、
+// 隔一格一遍，再比较内置对象前后有没有被改）；提交脚本前必须通过它。
+// 遮住名字只保证确定性，不是安全边界；安全靠把脚本放进隔离的 worker 里跑（见计划第三批“隔离”）。
 //
 // 出错分两种：
 //   语法错误 —— 编译时抛 ScriptError（添加、修改脚本的命令当场被拒绝）；
@@ -104,36 +108,39 @@ export interface FoundScript {
 
 // 在任意 JSON（一条命令、整个世界文件、资源包）里找出全部脚本：凡是键为 scripts 的对象都算容器，
 // 一直往下找（batch 里的命令、update_species 的 patch、星球形态……）。
-// 所属对象：容器所在的对象，或者往上第一个带字符串 id 的对象（update_species 的 patch 没有 id，用命令的 id）
+// 所属对象：容器所在的对象，或者往上第一个带字符串 id 的对象（update_species 的 patch 没有 id，用命令的 id）。
+// 信任检查靠它，所以不设深度上限（套很多层 batch 也藏不住脚本）：用自己的栈，不递归，不会爆栈
 export function findScripts(json: unknown): FoundScript[] {
   const out: FoundScript[] = [];
-  const chain: Record<string, unknown>[] = [];
-  const visit = (v: unknown, path: string, depth: number) => {
-    if (depth > 200 || v === null || typeof v !== 'object' || ArrayBuffer.isView(v)) return;
+  // 深度优先、按键的顺序；idObj 是往上第一个带字符串 id 的对象
+  const stack: { v: unknown; path: string; idObj: Record<string, unknown> | undefined }[] = [{ v: json, path: '', idObj: undefined }];
+  const seen = new Set<object>();
+  while (stack.length) {
+    const { v, path, idObj: up } = stack.pop()!;
+    if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v) || seen.has(v)) continue;
+    seen.add(v);
+    const kids: { v: unknown; path: string; idObj: Record<string, unknown> | undefined }[] = [];
     if (Array.isArray(v)) {
-      v.forEach((x, k) => visit(x, `${path}[${k}]`, depth + 1));
-      return;
-    }
-    const o = v as Record<string, unknown>;
-    chain.push(o);
-    const box = o.scripts;
-    if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
-      let idObj: Record<string, unknown> | undefined;
-      for (let k = chain.length - 1; k >= 0 && !idObj; k--) if (typeof chain[k].id === 'string') idObj = chain[k];
-      const id = idObj?.id as string | undefined;
-      const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
-      for (const kind of SCRIPT_KINDS) {
-        const s = (box as Record<string, unknown>)[kind];
-        if (s === null || typeof s !== 'object') continue;
-        const src = (s as Record<string, unknown>).src;
-        if (typeof src !== 'string') continue;
-        out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
+      v.forEach((x, k) => kids.push({ v: x, path: `${path}[${k}]`, idObj: up }));
+    } else {
+      const o = v as Record<string, unknown>;
+      const idObj = typeof o.id === 'string' ? o : up;
+      const box = o.scripts;
+      if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
+        const id = idObj?.id as string | undefined;
+        const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
+        for (const kind of SCRIPT_KINDS) {
+          const s = (box as Record<string, unknown>)[kind];
+          if (s === null || typeof s !== 'object') continue;
+          const src = (s as Record<string, unknown>).src;
+          if (typeof src !== 'string') continue;
+          out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
+        }
       }
+      for (const [k, x] of Object.entries(o)) if (k !== 'scripts') kids.push({ v: x, path: path ? `${path}.${k}` : k, idObj });
     }
-    for (const [k, x] of Object.entries(o)) if (k !== 'scripts') visit(x, path ? `${path}.${k}` : k, depth + 1);
-    chain.pop();
-  };
-  visit(json, '', 0);
+    for (let k = kids.length - 1; k >= 0; k--) stack.push(kids[k]);
+  }
   return out;
 }
 
@@ -239,11 +246,107 @@ export function scriptVariablesFor(kind: ScriptKind): ScriptVariable[] {
   return VARIABLES.filter((v) => v.kinds.includes(kind));
 }
 
-// 源码里出现了这个名字（前后不是字母、数字、_、$；中文名同样适用）
+// 源码里出现了这个名字（前后不是字母、数字、_、$；中文名同样适用）。只在 codeOnly 之后的代码里找
 const NAME_RE = new Map<string, RegExp>();
 for (const name of VAR_BY_NAME.keys()) {
   const esc = name.replace(/[$]/g, '\\$');
   NAME_RE.set(name, new RegExp(`(?<![\\p{L}\\p{N}_$])${esc}(?![\\p{L}\\p{N}_$])`, 'u'));
+}
+
+// 这些词后面的 / 是正则的开头，不是除号
+const REGEX_AFTER_WORD = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
+const IDENT_CHAR = /[\p{L}\p{N}_$]/u;
+const LINE_END = /[\n\r\u2028\u2029]/;
+
+// 把注释、字符串、模板里的文字、正则的内容换成空格（换行保留、长度不变），只留下代码本身。
+// 找变量名、数括号、找中文标点都用它：注释里写一句“离河近的地方”，不会去算离河的距离，
+// 也不会因为这次没有提供“离河”而报错。模板里的 ${…} 是代码，照常保留
+export function codeOnly(src: string): string {
+  const n = src.length;
+  const out = src.split('');
+  const blank = (a: number, b: number) => {
+    for (let k = a; k < b && k < n; k++) if (!LINE_END.test(out[k])) out[k] = ' ';
+  };
+  // 每层模板表达式 ${…} 里还没配对的 {
+  const depth: number[] = [];
+  // 模板的文字部分：从 from 扫到 ` 或 ${，返回之后接着扫的位置
+  const templateText = (from: number): number => {
+    let k = from;
+    while (k < n && src[k] !== '`' && !(src[k] === '$' && src[k + 1] === '{')) k += src[k] === '\\' ? 2 : 1;
+    blank(from, k);
+    if (k < n && src[k] === '$') {
+      depth.push(0);
+      return k + 2;
+    }
+    return k + 1;
+  };
+  // 前面是值（名字、数、右括号、字符串）时 / 是除号，否则是正则
+  const regexAllowed = (at: number): boolean => {
+    let k = at - 1;
+    while (k >= 0 && /\s/.test(out[k])) k--;
+    if (k < 0) return true;
+    const c = out[k];
+    if (c === ')' || c === ']' || c === '"' || c === "'" || c === '`') return false;
+    if (!IDENT_CHAR.test(c)) return true;
+    let s = k;
+    while (s > 0 && IDENT_CHAR.test(out[s - 1])) s--;
+    return REGEX_AFTER_WORD.has(src.slice(s, k + 1));
+  };
+  let i = 0;
+  while (i < n) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      let e = i;
+      while (e < n && !LINE_END.test(src[e])) e++;
+      blank(i, e);
+      i = e;
+    } else if (c === '/' && src[i + 1] === '*') {
+      const e = src.indexOf('*/', i + 2);
+      const end = e < 0 ? n : e + 2;
+      blank(i, end);
+      i = end;
+    } else if (c === '"' || c === "'") {
+      let k = i + 1;
+      while (k < n && src[k] !== c && !LINE_END.test(src[k])) k += src[k] === '\\' ? 2 : 1;
+      blank(i + 1, k);
+      i = k + 1;
+    } else if (c === '`') {
+      i = templateText(i + 1);
+    } else if (c === '}' && depth.length && depth[depth.length - 1] === 0) {
+      depth.pop();
+      i = templateText(i + 1);
+    } else if (c === '/' && regexAllowed(i)) {
+      let k = i + 1;
+      let cls = false;
+      for (; k < n && !LINE_END.test(src[k]) && (cls || src[k] !== '/'); k++) {
+        if (src[k] === '\\') k++;
+        else if (src[k] === '[') cls = true;
+        else if (src[k] === ']') cls = false;
+      }
+      if (k < n && src[k] === '/') {
+        // 正则的内容和标志（/…/gy 的 y 不是变量 y）
+        let e = k + 1;
+        while (e < n && /[a-z]/i.test(src[e])) e++;
+        blank(i + 1, k);
+        blank(k + 1, e);
+        i = e;
+      } else i++; // 到行尾也没有结束：不是正则，当作除号
+    } else {
+      if (depth.length && c === '{') depth[depth.length - 1]++;
+      else if (depth.length && c === '}') depth[depth.length - 1]--;
+      i++;
+    }
+  }
+  return out.join('');
+}
+
+// 源码的行数（与 JS 的行号一致：\r\n、\r、\u2028、\u2029 都算换行）
+const lineCount = (src: string) => src.split(/\r\n|[\n\r\u2028\u2029]/).length;
+
+// 变量名在代码里第一次出现在第几行（这次没有提供这个变量时报行号用）
+function nameLine(src: string, name: string): number | undefined {
+  const m = NAME_RE.get(name)?.exec(codeOnly(src));
+  return m ? lineCount(src.slice(0, m.index)) : undefined;
 }
 
 // ---------- 出错 ----------
@@ -321,7 +424,9 @@ function missingVariable(name: string, kind: ScriptKind): string {
   return bestD <= (len <= 3 ? 1 : 2) ? `没有变量 ${name}（是不是 ${best}？）` : `没有变量 ${name}`;
 }
 
-// 被遮住的名字（脚本里它们都是 undefined；Date、performance 一碰就报错，Math 是没有 random 的副本）
+// 被遮住的名字。脚本里它们大多是 undefined；POISONED 里的一碰就报错（出错提示能说清为什么），
+// Math 是没有 random 的副本。后面几个（global 到 Atomics）不在计划的名单里，补上是因为它们会让结果随时间、
+// 随电脑、随垃圾回收变化：navigator.hardwareConcurrency、Intl.DateTimeFormat().format()、Temporal.Now、WeakRef……
 const SHADOW = [
   'globalThis',
   'self',
@@ -345,41 +450,51 @@ const SHADOW = [
   'require',
   'process',
   'Math',
+  'global',
+  'navigator',
+  'location',
+  'Temporal',
+  'Intl',
+  'WeakRef',
+  'FinalizationRegistry',
+  'SharedArrayBuffer',
+  'Atomics',
 ] as const;
+
+// 一碰就报错的替身，以及报错时的提示
+const POISONED: Partial<Record<(typeof SHADOW)[number], string>> = {
+  Date: '脚本里不能用时间',
+  performance: '脚本里不能用时间',
+  Temporal: '脚本里不能用时间',
+  crypto: '用 rand() 代替 crypto 的随机数',
+  Intl: '脚本里不能用 Intl（结果会随电脑的语言和时区变）',
+};
+const POISON_MESSAGE = / is not available in scripts$/;
 
 // 运行时的出错信息换成中文提示（V8、Firefox、Safari 的几种写法）
 function runtimeText(raw: string, kind: ScriptKind): string {
   if (/Math\.random is not a function/.test(raw)) return '用 rand() 代替 Math.random()';
-  if (/\b(Date|performance)\b/.test(raw)) return '脚本里不能用时间';
+  if (POISON_MESSAGE.test(raw)) return POISONED[raw.replace(POISON_MESSAGE, '') as keyof typeof POISONED] ?? raw;
   const ref = /^(\S+) is not defined$/.exec(raw) ?? /^Can't find variable: (\S+)$/.exec(raw);
   if (ref) return missingVariable(ref[1], kind);
-  const fn = /^(\S+) is not a function/.exec(raw);
+  const fn = /^(\S+) is not a (?:function|constructor)/.exec(raw);
   if (fn && (SHADOW as readonly string[]).includes(fn[1])) return `脚本里不能用 ${fn[1]}`;
   if (/Maximum call stack size exceeded|too much recursion/.test(raw)) return '函数调用太深了（是不是写了没有尽头的递归？）';
   const prop = /Cannot read properties of (undefined|null) \(reading '(.+)'\)/.exec(raw) ?? /can't access property "(.+)", .+ is (undefined|null)/.exec(raw);
   if (prop) return prop[0].startsWith('Cannot') ? `读不到「${prop[2]}」：前面的值是 ${prop[1]}` : `读不到「${prop[1]}」：前面的值是 ${prop[2]}`;
-  if (fn) return `${fn[1]} 不是函数`;
+  if (fn) return `${fn[1]} 不是${raw.includes('constructor') ? '能 new 的类型' : '函数'}`;
   return raw;
 }
 
 const CLOSE_NAME: Record<string, string> = { '(': '右括号 )', '[': '右方括号 ]', '{': '右花括号 }' };
 const OPEN_OF: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
 
-// 括号是否配对（跳过字符串、模板、注释）。V8 会用它自己包在外面的 } 补上没配对的 {，再报“不该出现 )”，
-// 所以先数括号，说清楚少了哪一个
-function bracketText(src: string): string | null {
+// 括号是否配对（只数代码里的，注释、字符串、正则里的不算）。V8 会用它自己包在外面的 } 补上没配对的 {，
+// 再报“不该出现 )”，所以先数括号，说清楚少了哪一个
+function bracketText(code: string): string | null {
   const stack: string[] = [];
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (c === '/' && src[i + 1] === '/') {
-      const e = src.indexOf('\n', i);
-      i = e < 0 ? src.length : e;
-    } else if (c === '/' && src[i + 1] === '*') {
-      const e = src.indexOf('*/', i + 2);
-      i = e < 0 ? src.length : e + 1;
-    } else if (c === '"' || c === "'" || c === '`') {
-      for (i++; i < src.length && src[i] !== c && (c === '`' || src[i] !== '\n'); i++) if (src[i] === '\\') i++;
-    } else if (c === '(' || c === '[' || c === '{') stack.push(c);
+  for (const c of code) {
+    if (c === '(' || c === '[' || c === '{') stack.push(c);
     else if (c in OPEN_OF) {
       const open = stack.pop();
       if (open === undefined) return `多了一个 ${c}`;
@@ -392,14 +507,16 @@ function bracketText(src: string): string | null {
 // 语法错误换成中文说明
 function syntaxText(raw: string, src: string): string {
   let m: RegExpExecArray | null;
-  const brackets = bracketText(src);
+  const code = codeOnly(src);
+  const brackets = bracketText(code);
   if (brackets) return brackets;
   if (/Unexpected end of input|missing \} after function body|end of script|Unexpected EOF/i.test(raw)) return '代码没写完（是不是少了右括号 ) 或右花括号 }？）';
   if (/missing \) after argument list|missing \) in parenthetical|missing \) after condition|Expected '\)'/.test(raw)) return '少了右括号 )';
   if (/Unterminated template/i.test(raw)) return '反引号 ` 没有配对';
   if (/Unterminated string|unterminated string literal/i.test(raw)) return '引号没有配对';
   if (/Invalid or unexpected token|illegal character|Invalid character/i.test(raw)) {
-    return /[（），；：“”‘’。、！？【】]/.test(src) ? '用了中文标点（，；（ ）“ ”），要换成英文标点' : '有不认识的字符（是不是引号没有配对？）';
+    // 只看代码里的：注释、字符串里写中文标点没有关系
+    return /[（），；：“”‘’。、！？【】]/.test(code) ? '用了中文标点（，；（ ）“ ”），要换成英文标点' : '有不认识的字符（是不是引号没有配对？）';
   }
   if ((m = /Identifier '(.+)' has already been declared/.exec(raw) ?? /redeclaration of (?:let|const|var|formal parameter) (.+)/.exec(raw))) return `「${m[1]}」重复声明了`;
   if ((m = /Unexpected identifier(?: '(.+)')?/.exec(raw))) return `这里不该出现${m[1] ? `「${m[1]}」` : '名字'}（是不是少了运算符、逗号或分号？）`;
@@ -626,8 +743,12 @@ const HELPERS = Object.freeze({
   rgb: (r: unknown, g?: number, b?: number): Rgb => (typeof r === 'string' ? colorOf(r) : colorOf([r, g, b])),
 });
 const HELPER_NAMES = Object.keys(HELPERS);
-// 函数本身也冻结：脚本不能在 noise.foo 上记东西（那样就和计算顺序有关了）
-for (const f of Object.values(HELPERS)) Object.freeze(f);
+// 函数本身、以及函数声明带的 prototype 对象也冻结：脚本不能在 noise.foo、rand.prototype.foo 上记东西
+// （那样就和计算顺序、和上一次运行有关了）
+for (const f of Object.values(HELPERS) as unknown as { prototype?: unknown }[]) {
+  Object.freeze(f);
+  if (f.prototype) Object.freeze(f.prototype);
+}
 
 // Math 的冻结副本，没有 random
 const SAFE_MATH = Object.freeze(
@@ -638,14 +759,16 @@ const SAFE_MATH = Object.freeze(
   ),
 );
 
-// 一碰就报错的替身（Date、performance）：读属性、调用、new 都抛出带名字的错误，出错提示据此说“不能用时间”
+// 一碰就报错的替身（Date、performance……）：读属性、调用、new 都抛出带名字的错误，出错提示据此说“不能用时间”。
+// 所有 13 种操作都拦下（handler 本身是个代理，问哪种操作都给 fail），目标也冻结：
+// 否则 Object.defineProperty(Date, 'memo', …) 会落到目标上，变成能跨运行保存的东西
 function poison(name: string): unknown {
   const fail = (): never => {
     throw new TypeError(`${name} is not available in scripts`);
   };
-  return new Proxy(function () {}, { get: fail, set: fail, apply: fail, construct: fail, has: fail, getPrototypeOf: fail });
+  return new Proxy(Object.freeze(function () {}), new Proxy({}, { get: () => fail }));
 }
-const SHADOW_VALUES: unknown[] = SHADOW.map((n) => (n === 'Math' ? SAFE_MATH : n === 'Date' || n === 'performance' ? poison(n) : undefined));
+const SHADOW_VALUES: unknown[] = SHADOW.map((n) => (n === 'Math' ? SAFE_MATH : n in POISONED ? poison(n) : undefined));
 
 // ---------- 编译 ----------
 
@@ -707,12 +830,14 @@ export function setSyntaxLocator(f: ((src: string) => number | undefined) | null
   syntaxLocator = f;
 }
 
+// 源码里用到的变量（只看代码：注释、字符串里的不算）
 function paramsOf(kind: ScriptKind, src: string): ScriptParam[] {
+  const code = codeOnly(src);
   const out: ScriptParam[] = [];
   for (const v of VARIABLES) {
     if (!v.kinds.includes(kind)) continue;
     const mode: ParamMode = v.key === 'cell' ? 'cell' : v.scalar ? 'scalar' : 'array';
-    for (const name of v.zh ? [v.key, v.zh] : [v.key]) if (NAME_RE.get(name)!.test(src)) out.push({ name, key: v.key, mode });
+    for (const name of v.zh ? [v.key, v.zh] : [v.key]) if (NAME_RE.get(name)!.test(code)) out.push({ name, key: v.key, mode });
   }
   return out;
 }
@@ -726,18 +851,24 @@ function convertSource(kind: ScriptKind): string {
         'else if (__v === true) __out[__j] = 1;\nelse if (__v === false) __out[__j] = 0;\nelse { __st.bad = __v; return __j; }\n'
       );
     case 'match':
-      return '__out[__j] = __v ? 1 : 0;\n';
+      // 真假随意（没有 return 的分支是 undefined，算不匹配），只有 NaN 算出错
+      return 'if (__v !== __v) { __st.bad = __v; return __j; }\n__out[__j] = __v ? 1 : 0;\n';
     default:
       return 'if (!__put(__v, __j)) { __st.bad = __v; return __j; }\n';
   }
 }
+
+// 生成代码自己用的名字：在用户的函数里遮成 undefined。否则脚本能拿到 __st（本模块的运行状态，
+// 顺着 __st.inputs 还能改引擎的推导数组）、在 __map2_script 上挂东西，跨格、跨运行地记住数据
+const INTERNAL = ['__h', '__st', '__map2_script', '__map2_loop'];
 
 // 生成的代码（外层是宽松模式的工厂，参数遮住全局名字；里面的函数都是严格模式）。
 // 用户源码前面的行数固定（所有声明写在同一行），所以运行时的行号只差一个按种类标定的常数。
 // 用户源码放在一个块里：用户自己声明与变量同名的 const/let 是合法的遮蔽，不会和参数冲突
 function generate(kind: ScriptKind, src: string, params: ScriptParam[]): string {
   const helpers = HELPER_NAMES.map((h) => `${h} = __h.${h}`).join(', ');
-  const head = `const ${helpers};\nfunction __map2_script(${params.map((p) => p.name).join(', ')}) { "use strict"; {\n`;
+  const hide = `const ${INTERNAL.map((n) => `${n} = void 0`).join(', ')};`;
+  const head = `const ${helpers};\nfunction __map2_script(${params.map((p) => p.name).join(', ')}) { "use strict"; ${hide} {\n`;
   let loop = 'const __map2_loop = null;';
   if (kind !== 'setup') {
     const inputs: string[] = [];
@@ -763,13 +894,15 @@ function build(kind: ScriptKind, src: string): CompiledScript {
   return { kind, src, names: params.map((p) => p.name), keys: params.map((p) => p.key), params, script, loop };
 }
 
-// 语法检查：源码单独作为一个严格模式的函数体能通过解析，才放进生成的代码（这样它不可能用多余的 } 跑出那个块）
+// 语法检查：源码单独作为一个严格模式的函数体能通过解析，才放进生成的代码（这样它不可能用多余的 } 跑出那个块）。
+// 源码从新的一行开始，与生成代码里一样（行首的 --> 是 HTML 注释，这一点与在不在行首有关）
+const checkBody = (src: string) => `"use strict";\n${src}\n`;
 function syntaxFailure(src: string): Failure | null {
   try {
-    new Function(`"use strict";${src}\n`);
+    new Function(checkBody(src));
     return null;
   } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
+    const raw = errorInfo(e).raw;
     return { raw, text: syntaxText(raw, src), line: firefoxSyntaxLine(e, src) };
   }
 }
@@ -790,7 +923,8 @@ export function compileScript(kind: ScriptKind, src: string, owner = '脚本'): 
       try {
         hit = build(kind, src);
       } catch (e) {
-        const raw = e instanceof Error ? e.message : String(e);
+        // 单独能通过、放进生成代码却不行：用了生成代码自己的名字（var __st）
+        const raw = errorInfo(e).raw;
         hit = { raw, text: syntaxText(raw, src) };
       }
     }
@@ -804,10 +938,27 @@ export function compileScript(kind: ScriptKind, src: string, owner = '脚本'): 
 
 // ---------- 行号 ----------
 
+// 脚本抛出的东西可以是任何值（throw 5、message 是会抛错的 getter、代理……）：取说明和栈时自己也绝不抛错，
+// 否则“软失败”就变成了硬失败
+function errorInfo(e: unknown): { raw: string; stack?: string } {
+  try {
+    if (e instanceof Error) {
+      const stack = e.stack;
+      return { raw: String(e.message), stack: typeof stack === 'string' ? stack : undefined };
+    }
+  } catch {
+    // 落到下面
+  }
+  try {
+    return { raw: String(e) };
+  } catch {
+    return { raw: '（脚本抛出了一个没法显示的值）' };
+  }
+}
+
 // 错误栈里第一处生成代码的位置（V8：“<anonymous>:行:列”；Firefox：“> Function:行:列”）。
 // 辅助函数里抛出的错误也会落在调用它的那一行
-function stackLine(e: unknown): number | undefined {
-  const stack = e instanceof Error ? e.stack : undefined;
+function stackLine(stack: string | undefined): number | undefined {
   if (!stack) return undefined;
   for (const l of stack.split('\n')) {
     const m = /<anonymous>:(\d+):\d+\)?\s*$/.exec(l) ?? /> (?:Function|eval):(\d+):\d+\s*$/.exec(l);
@@ -825,7 +976,7 @@ function offsetFor(kind: ScriptKind): number | null {
     try {
       build(kind, 'throw new Error("probe");').script();
     } catch (e) {
-      const l = stackLine(e);
+      const l = stackLine(errorInfo(e).stack);
       off = l === undefined ? null : l - 1;
     }
     lineOffset.set(kind, off);
@@ -833,23 +984,29 @@ function offsetFor(kind: ScriptKind): number | null {
   return off;
 }
 
-function userLine(e: unknown, kind: ScriptKind, src: string): number | undefined {
-  const l = stackLine(e);
+// 栈里的行号换成用户源码的行号；落在源码外面（生成的循环、辅助函数）就不说行号
+function userLine(stack: string | undefined, kind: ScriptKind, src: string): number | undefined {
+  const l = stackLine(stack);
   const off = l === undefined ? null : offsetFor(kind);
   if (l === undefined || off === null) return undefined;
   const line = l - off;
-  return line >= 1 && line <= src.split('\n').length ? line : undefined;
+  return line >= 1 && line <= lineCount(src) ? line : undefined;
 }
 
 // Firefox 的 SyntaxError 带 lineNumber（相对 new Function 的源码）：同样用一段第 1 行就出错的源码标定
 let syntaxOffset: number | null | undefined;
 function firefoxSyntaxLine(e: unknown, src: string): number | undefined {
-  const l = (e as { lineNumber?: unknown }).lineNumber;
+  let l: unknown;
+  try {
+    l = (e as { lineNumber?: unknown }).lineNumber;
+  } catch {
+    return undefined;
+  }
   if (typeof l !== 'number') return undefined;
   if (syntaxOffset === undefined) {
     syntaxOffset = null;
     try {
-      new Function('"use strict";)\n');
+      new Function(checkBody(')'));
     } catch (p) {
       const pl = (p as { lineNumber?: unknown }).lineNumber;
       if (typeof pl === 'number') syntaxOffset = pl - 1;
@@ -857,7 +1014,19 @@ function firefoxSyntaxLine(e: unknown, src: string): number | undefined {
   }
   if (syntaxOffset === null) return undefined;
   const line = l - syntaxOffset;
-  return line >= 1 && line <= src.split('\n').length ? line : undefined;
+  return line >= 1 && line <= lineCount(src) ? line : undefined;
+}
+
+// 运行时出错的说明（软失败用）
+function runtimeIssue(e: unknown, owner: string, kind: ScriptKind, src: string, cell?: number): ScriptIssue {
+  const { raw, stack } = errorInfo(e);
+  let line: number | undefined;
+  try {
+    line = userLine(stack, kind, src);
+  } catch {
+    line = undefined;
+  }
+  return makeIssue(owner, kind, 'runtime', runtimeText(raw, kind), raw, line, cell);
 }
 
 // ---------- 输入 ----------
@@ -893,6 +1062,8 @@ export function arrayInputs(
 }
 
 // 按内容缓存的距离场（离海岸、离河）：causes.land 是原地改的，所以不能按数组本身做键，要逐字节比较
+// （与 features.ts 的 memoized 同一个做法；按网格、按名字各留最近用过的两份）。
+// 返回的数组是缓存本身，只读
 interface DistMemo {
   key: Uint8Array[];
   value: Float64Array;
@@ -923,7 +1094,10 @@ function memoDist(mesh: Mesh, name: string, inputs: ArrayBufferView[], compute: 
   if (!byName) distMemo.set(mesh, (byName = new Map()));
   const list = byName.get(name) ?? [];
   const hit = list.find((m) => m.key.length === key.length && m.key.every((b, k) => sameBytes(b, key[k])));
-  if (hit) return hit.value;
+  if (hit) {
+    byName.set(name, [hit, ...list.filter((m) => m !== hit)]);
+    return hit.value;
+  }
   const value = compute();
   byName.set(name, [{ key: key.map((b) => b.slice()), value }, ...list].slice(0, 2));
   return value;
@@ -1011,13 +1185,15 @@ export function worldInputs(
         });
       case 'isRiver':
         return isRiver();
-      case 'riverDist':
-        return memoDist(mesh, 'river', [causes.land, d.lake, d.discharge, Float64Array.of(small.planet.riverThreshold, km)], () => {
-          const r = isRiver();
+      case 'riverDist': {
+        // 键是“哪些格是河”本身：只改了气候、流量变了一点而河没变时，不用重算
+        const r = isRiver();
+        return memoDist(mesh, 'river', [r, Float64Array.of(km)], () => {
           const seeds: number[] = [];
           for (let i = 0; i < n; i++) if (r[i]) seeds.push(i);
           return graphDistance(mesh, seeds).map((v) => v * km);
         });
+      }
       case 'x':
         return mesh.x;
       case 'y':
@@ -1055,9 +1231,10 @@ export function worldInputs(
     globe: mesh.kind === 'sphere',
     get,
     field: (name) => {
+      // 名字来自脚本：只认自己的键（field('constructor') 不能拿到 Object）
+      if (!Object.hasOwn(causes.fields, name)) return undefined;
       const arr = causes.fields[name];
-      if (!arr) return undefined;
-      const corr = d.corrF[name];
+      const corr = Object.hasOwn(d.corrF, name) ? d.corrF[name] : undefined;
       return corr ? (lazy(`field:${name}`, () => arr.map((v, i) => v + corr[i])) as Float32Array) : arr;
     },
     river: opts.river,
@@ -1124,13 +1301,17 @@ const CRUST_RANGE: Record<keyof CrustOutput, [number, number]> = {
 };
 const CRUST_KEYS = Object.keys(CRUST_RANGE) as (keyof CrustOutput)[];
 
+
+// 地形脚本的输入必须带上原来的 height、mountains、hills、rock：脚本只改其中几项时，其余照原样输出，
+// 出错时整份原样输出。少了哪一项是调用方的错（不是用户脚本的错），直接抛错，免得把 0 当成岩性写回地形
 function crustBase(inputs: ScriptInputs, cells: ArrayLike<number>): CrustOutput {
   const m = cells.length;
   const out = {} as CrustOutput;
   for (const k of CRUST_KEYS) {
-    const a = new Float64Array(m);
     const src = inputs.get(k);
-    if (src !== undefined && typeof src === 'object') for (let j = 0; j < m; j++) a[j] = (src as ArrayLike<number>)[cells[j]];
+    if (src === undefined || typeof src !== 'object') throw new Error(`地形脚本的输入里没有 ${k}（调用方要给出原来的 height、mountains、hills、rock）`);
+    const a = new Float64Array(m);
+    for (let j = 0; j < m; j++) a[j] = (src as ArrayLike<number>)[cells[j]];
     out[k] = a;
   }
   return out;
@@ -1155,35 +1336,50 @@ function absentOutput(kind: CellKind, inputs: ScriptInputs, cells: ArrayLike<num
   }
 }
 
+// 返回值的简短描述（报错用）。返回值是脚本给的，可能是会抛错的代理：这里绝不抛错
 function describe(v: unknown): string {
-  if (v === undefined) return 'undefined';
-  if (v === null) return 'null';
-  if (typeof v === 'number') return Number.isNaN(v) ? 'NaN' : String(v);
-  if (typeof v === 'string') return `文字 "${v.length > 20 ? `${v.slice(0, 20)}…` : v}"`;
-  if (typeof v === 'boolean') return String(v);
-  if (Array.isArray(v)) return `有 ${v.length} 项的数组`;
-  if (typeof v === 'function') return '函数';
-  return '对象';
+  try {
+    if (v === undefined) return 'undefined';
+    if (v === null) return 'null';
+    if (typeof v === 'number') return Number.isNaN(v) ? 'NaN' : String(v);
+    if (typeof v === 'string') return `文字 "${v.length > 20 ? `${v.slice(0, 20)}…` : v}"`;
+    if (typeof v === 'boolean') return String(v);
+    if (Array.isArray(v) || ArrayBuffer.isView(v)) return `有 ${(v as ArrayLike<unknown>).length} 项的数组`;
+    if (typeof v === 'function') return '函数';
+    return '对象';
+  } catch {
+    return '对象';
+  }
 }
 
-function hasNaN(v: unknown): boolean {
+function hasNaN(kind: CellKind, v: unknown): boolean {
   if (typeof v === 'number') return Number.isNaN(v);
-  if (Array.isArray(v)) return v.slice(0, 3).some((x) => typeof x === 'number' && Number.isNaN(x));
-  if (v && typeof v === 'object') return CRUST_KEYS.some((k) => Number.isNaN((v as Record<string, unknown>)[k]));
+  if (kind === 'color' && (Array.isArray(v) || ArrayBuffer.isView(v))) {
+    const a = v as ArrayLike<unknown>;
+    for (let t = 0; t < 3 && t < a.length; t++) if (Number.isNaN(a[t])) return true;
+    return false;
+  }
+  if (kind === 'crust' && v !== null && typeof v === 'object') return CRUST_KEYS.some((k) => Number.isNaN((v as Record<string, unknown>)[k]));
   return false;
 }
 
 // 返回值不对时的说明
 function valueText(kind: CellKind, v: unknown): string {
   if (v === undefined) return '地图上有一处没有返回值（是不是忘了写 return？）';
-  if (hasNaN(v)) return '地图上有一处算出了 NaN（不是数字）';
+  if (hasNaN(kind, v)) return '地图上有一处算出了 NaN（不是数字）';
   const want =
     kind === 'placement'
       ? '0 到 1 之间的数，或 true / false'
       : kind === 'color'
         ? "颜色 [r, g, b] 或 '#rrggbb'"
-        : '新的高度（一个数），或 {height, mountains, hills, rock}';
+        : kind === 'match'
+          ? '真或假'
+          : '新的高度（一个数），或 {height, mountains, hills, rock}';
   return `应该返回${want}，地图上有一处返回了${describe(v)}`;
+}
+
+function valueIssue(owner: string, kind: CellKind, v: unknown, cell: number): ScriptIssue {
+  return makeIssue(owner, kind, 'value', valueText(kind, v), describe(v), undefined, cell);
 }
 
 function putFor(kind: CellKind, out: CellOutputs[CellKind]): ((v: unknown, j: number) => boolean) | null {
@@ -1220,6 +1416,21 @@ function putFor(kind: CellKind, out: CellOutputs[CellKind]): ((v: unknown, j: nu
   return null;
 }
 
+// 交给脚本的整体值（颜色脚本的 color、布局脚本的参数和函数）：数据给冻结的副本，函数包一层冻结的箭头函数。
+// 脚本既改不了调用方手里的东西，也不能在上面记东西留到下一次运行
+function frozenCopy(v: unknown, depth = 0): unknown {
+  if (typeof v === 'function') {
+    const f = v as (...a: unknown[]) => unknown;
+    return Object.freeze((...a: unknown[]) => f(...a));
+  }
+  if (v === null || typeof v !== 'object') return v;
+  if (depth > 32) return undefined;
+  if (Array.isArray(v) || ArrayBuffer.isView(v)) return Object.freeze(Array.from(v as ArrayLike<unknown>, (x) => frozenCopy(x, depth + 1)));
+  const o: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v)) o[k] = frozenCopy(x, depth + 1);
+  return Object.freeze(o);
+}
+
 function begin(kind: ScriptKind, opts: { owner: string; id?: string; seedKey?: string; seed?: number }, inputs: ScriptInputs | null, seed: number) {
   if (RUN.active) throw new Error('脚本不能嵌套运行');
   RUN.active = true;
@@ -1246,8 +1457,9 @@ function end() {
   RUN.bad = undefined;
 }
 
-// 对一串格运行一段每格的脚本。出错不抛（语法错误、运行时出错、NaN、类型不对、安全模式），
-// 返回 {ok: false, issue, output}，output 为“没有这段脚本”的结果；超出范围的数被截到范围内
+// 对一串格运行一段每格的脚本。出错不抛（语法错误、运行时出错、NaN、类型不对、缺变量、安全模式），
+// 返回 {ok: false, issue, output}，output 为“没有这段脚本”的结果；超出范围的数被截到范围内。
+// 只有调用方的错（主线程上 disallowScripts 之后、地形脚本缺原来的地形、看门狗本身出错）才抛
 export function runScript<K extends CellKind>(script: { kind: K; src: string }, opts: RunOptions): CellResult<K> {
   const { kind, src } = script;
   const { inputs, cells, owner } = opts;
@@ -1265,27 +1477,30 @@ export function runScript<K extends CellKind>(script: { kind: K; src: string }, 
   for (const p of c.params) {
     if (p.mode === 'cell') continue;
     let v: unknown = inputs.get(p.key);
-    if (v === undefined) return fail(makeIssue(owner, kind, 'runtime', `这里没有变量 ${p.name}`, `missing input ${p.key}`));
+    if (v === undefined) return fail(makeIssue(owner, kind, 'runtime', `这里没有变量 ${p.name}`, `missing input ${p.key}`, nameLine(src, p.name)));
     if (p.mode === 'array' && typeof v !== 'object') v = new Float64Array(inputs.n).fill(Number(v));
-    if (p.key === 'color' && typeof v === 'object') v = Object.freeze(Array.from(v as ArrayLike<number>));
+    else if (p.mode === 'scalar') v = frozenCopy(v);
     args.push(v);
   }
   const out = (kind === 'crust' ? crustBase(inputs, cells) : absentOutput(kind, inputs, cells)) as CellOutputs[K];
   const target = kind === 'placement' ? (out as CellOutputs['placement']).factor : kind === 'match' ? (out as CellOutputs['match']).match : null;
   const put = putFor(kind, out);
   const seed = opts.seed ?? Number(inputs.get('seed') ?? 0);
-  begin(kind, opts, inputs, seed);
-  let issue: ScriptIssue | null = null;
   const h = host;
-  h.enter(owner);
+  let issue: ScriptIssue | null = null;
+  begin(kind, opts, inputs, seed);
   try {
-    const bad = c.loop!(cells, target, h, put, ...args);
-    if (bad >= 0) issue = makeIssue(owner, kind, 'value', valueText(kind, RUN.bad), describe(RUN.bad), undefined, cells[bad]);
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    issue = makeIssue(owner, kind, 'runtime', runtimeText(raw, kind), raw, userLine(e, kind, src), RUN.cell);
+    h.enter(owner);
+    try {
+      const bad = c.loop!(cells, target, h, put, ...args);
+      if (bad >= 0) issue = valueIssue(owner, kind, RUN.bad, cells[bad]);
+    } catch (e) {
+      issue = runtimeIssue(e, owner, kind, src, RUN.cell);
+    } finally {
+      h.exit();
+    }
   } finally {
-    h.exit();
+    // 无论如何都复原运行状态（否则之后每次都是“脚本不能嵌套运行”）
     end();
   }
   return issue ? fail(issue) : { ok: true, output: out };
@@ -1293,7 +1508,8 @@ export function runScript<K extends CellKind>(script: { kind: K; src: string }, 
 
 export type SetupResult = { ok: true; value: unknown } | { ok: false; issue: ScriptIssue };
 
-// 布局脚本：每个星球模型运行一次。values 给出世界的参数与 addBlock 等函数；
+// 布局脚本：每个星球模型运行一次。values 给出世界的参数与 addBlock 等函数（脚本拿到的是冻结的副本，
+// 函数包了一层；addBlock 收到的对象是脚本的，调用方要自己复制、检查）；
 // rand() 是一条独立的随机流 mulberry32(mixSeed(seed, 105, 0x3d))（每次调用取下一个数）
 export function runSetup(script: { src: string }, opts: { owner: string; id?: string; seedKey?: string; seed: number; values: Record<string, unknown> }): SetupResult {
   const kind = 'setup';
@@ -1308,51 +1524,194 @@ export function runSetup(script: { src: string }, opts: { owner: string; id?: st
   }
   const args: unknown[] = [];
   for (const p of c.params) {
-    const v = values[p.key];
-    if (v === undefined) return { ok: false, issue: makeIssue(owner, kind, 'runtime', `这里没有变量 ${p.name}`, `missing input ${p.key}`) };
-    args.push(v);
+    const v = Object.hasOwn(values, p.key) ? values[p.key] : undefined;
+    if (v === undefined) return { ok: false, issue: makeIssue(owner, kind, 'runtime', `这里没有变量 ${p.name}`, `missing input ${p.key}`, nameLine(script.src, p.name)) };
+    args.push(frozenCopy(v));
   }
+  const h = host;
   begin(kind, opts, null, opts.seed);
   RUN.stream = mulberry32(mixSeed(opts.seed, 105, 0x3d));
-  const h = host;
-  h.enter(owner);
   try {
-    return { ok: true, value: c.script(...args) };
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    return { ok: false, issue: makeIssue(owner, kind, 'runtime', runtimeText(raw, kind), raw, userLine(e, kind, script.src)) };
+    h.enter(owner);
+    try {
+      return { ok: true, value: c.script(...args) };
+    } catch (e) {
+      return { ok: false, issue: runtimeIssue(e, owner, kind, script.src) };
+    } finally {
+      h.exit();
+    }
   } finally {
-    h.exit();
     end();
   }
 }
 
+// ---------- 纯度检查 ----------
+
 export interface PurityResult {
   pure: boolean;
-  // 正反两次结果不同的第一格
+  // 几次结果不同的第一格
   cell?: number;
-  // 有一次运行失败
+  // 脚本改了的内置对象（如 "JSON.memo"）；检查结束时已经改回去了
+  changed?: string;
+  // 有一次运行失败（编辑器显示 issue.message）
   issue?: ScriptIssue;
+  // 不纯时的中文说明（编辑器的红字）
+  text?: string;
 }
 
-// 纯度检查：同一批格正着算一遍、倒着算一遍，结果逐值相同才算纯（“记住上一格”的脚本会露馅）。
-// 只对纯的脚本才能做“只重算输入变了的格”，所以提交前要检查
-export function checkPurity(run: (cells: Int32Array) => CellResult, cells: ArrayLike<number>): PurityResult {
-  const fwd = Int32Array.from(cells);
-  const rev = fwd.slice().reverse();
-  const a = run(fwd);
-  if (!a.ok) return { pure: false, issue: a.issue };
-  const b = run(rev);
-  if (!b.ok) return { pure: false, issue: b.issue };
-  const m = fwd.length;
-  if (!m) return { pure: true };
-  const x = a.output as unknown as Record<string, ArrayLike<number>>;
-  const y = b.output as unknown as Record<string, ArrayLike<number>>;
-  for (const key of Object.keys(x)) {
-    const s = x[key].length / m;
-    for (let j = 0; j < m; j++) {
-      for (let t = 0; t < s; t++) if (!Object.is(x[key][j * s + t], y[key][(m - 1 - j) * s + t])) return { pure: false, cell: fwd[j] };
+// 脚本能碰到的内置对象：全局的构造函数、命名空间，以及字面量背后的原型。
+// 遮名字挡不住 [].constructor.prototype、JSON、Math.sin 这些路，脚本在上面挂的东西会留到下一格、下一次运行
+const INTRINSIC_NAMES = [
+  'Object', 'Function', 'Array', 'Number', 'Boolean', 'String', 'Symbol', 'BigInt', 'Date', 'RegExp',
+  'Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError', 'URIError', 'AggregateError',
+  'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef', 'FinalizationRegistry', 'ArrayBuffer', 'SharedArrayBuffer', 'DataView',
+  'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float16Array',
+  'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array', 'Proxy', 'Reflect', 'JSON', 'Math', 'Intl', 'Atomics',
+  'Iterator', 'Temporal',
+];
+
+interface ObjSnap {
+  name: string;
+  proto: object | null;
+  ext: boolean;
+  props: Map<PropertyKey, PropertyDescriptor>;
+}
+interface IntrinsicSnap {
+  objs: Map<object, ObjSnap>;
+  globals: Set<PropertyKey>;
+}
+
+const isObj = (v: unknown): v is object => v !== null && (typeof v === 'object' || typeof v === 'function');
+
+// 比较、复原用的函数在载入时就取好：脚本把 Reflect.ownKeys 换掉也骗不过检查
+const { ownKeys, getOwnPropertyDescriptor: ownDesc, getPrototypeOf, setPrototypeOf, isExtensible, defineProperty, deleteProperty } = Reflect;
+const sameValue = Object.is;
+
+function intrinsicRoots(): [string, unknown][] {
+  const roots: [string, unknown][] = [];
+  for (const name of INTRINSIC_NAMES) {
+    // 只读数据属性，不触发宿主的懒加载 getter
+    const d = ownDesc(globalThis, name);
+    if (d && 'value' in d) roots.push([name, d.value]);
+  }
+  const proto = (v: unknown) => getPrototypeOf(v as object);
+  const arrayIter = proto([][Symbol.iterator]());
+  roots.push(
+    ['%TypedArray%', proto(Int8Array)],
+    ['%ArrayIteratorPrototype%', arrayIter],
+    ['%IteratorPrototype%', proto(arrayIter)],
+    ['%StringIteratorPrototype%', proto(''[Symbol.iterator]())],
+    ['%MapIteratorPrototype%', proto(new Map().entries())],
+    ['%SetIteratorPrototype%', proto(new Set().values())],
+    ['%GeneratorFunction%', proto(function* () {})],
+    ['%AsyncFunction%', proto(async () => {})],
+  );
+  return roots;
+}
+
+function takeObj(o: object, name: string): ObjSnap {
+  const props = new Map<PropertyKey, PropertyDescriptor>();
+  for (const k of ownKeys(o)) props.set(k, ownDesc(o, k)!);
+  return { name, proto: getPrototypeOf(o), ext: isExtensible(o), props };
+}
+
+// 记下内置对象（和它们上面一层的函数、对象，如 Math.sin、Array.prototype.map）自己的属性，以及全局有哪些名字
+function snapshotIntrinsics(): IntrinsicSnap {
+  const objs = new Map<object, ObjSnap>();
+  const add = (v: unknown, name: string) => {
+    if (isObj(v) && !objs.has(v)) objs.set(v, takeObj(v, name));
+  };
+  for (const [name, v] of intrinsicRoots()) {
+    add(v, name);
+    if (!isObj(v)) continue;
+    const p = ownDesc(v, 'prototype');
+    if (p && 'value' in p) add(p.value, `${name}.prototype`);
+  }
+  for (const s of [...objs.values()]) for (const [k, d] of s.props) if ('value' in d) add(d.value, `${s.name}.${String(k)}`);
+  return { objs, globals: new Set(ownKeys(globalThis)) };
+}
+
+const sameDesc = (a: PropertyDescriptor, b: PropertyDescriptor) =>
+  sameValue(a.value, b.value) && a.get === b.get && a.set === b.set && a.writable === b.writable && a.enumerable === b.enumerable && a.configurable === b.configurable;
+
+// 与快照比较：变了的尽量改回去（加的删掉、改的复原），返回第一处变化（如 "JSON.memo"），没变返回 null。
+// 全局对象只看有没有多出来的名字（宿主的懒加载属性第一次读时会从 getter 变成值，不算）
+function restoreIntrinsics(snap: IntrinsicSnap): string | null {
+  const changes: string[] = [];
+  for (const [o, s] of snap.objs) {
+    if (getPrototypeOf(o) !== s.proto) {
+      changes.push(`${s.name} 的原型`);
+      setPrototypeOf(o, s.proto);
+    }
+    for (const k of ownKeys(o)) {
+      const before = s.props.get(k);
+      if (!before) {
+        changes.push(`${s.name}.${String(k)}`);
+        deleteProperty(o, k);
+      } else if (!sameDesc(before, ownDesc(o, k)!)) {
+        changes.push(`${s.name}.${String(k)}`);
+        defineProperty(o, k, before);
+      }
+    }
+    for (const [k, before] of s.props) {
+      if (ownDesc(o, k)) continue;
+      changes.push(`${s.name}.${String(k)}`);
+      defineProperty(o, k, before);
+    }
+    if (isExtensible(o) !== s.ext) changes.push(`${s.name}（被冻结了）`);
+  }
+  for (const k of ownKeys(globalThis)) {
+    if (snap.globals.has(k)) continue;
+    changes.push(`globalThis.${String(k)}`);
+    deleteProperty(globalThis, k);
+  }
+  return changes.length ? changes[0] : null;
+}
+
+// y 的第 j 项对应 x 的第 at(j) 项（x 有 mx 项，y 有 my 项）：逐值相同返回 −1，否则返回第一处不同在 x 里的下标
+function firstDiff(x: object, mx: number, y: object, my: number, at: (j: number) => number): number {
+  const xs = x as Record<string, ArrayLike<number>>;
+  const ys = y as Record<string, ArrayLike<number>>;
+  for (const key of Object.keys(xs)) {
+    const s = mx ? xs[key].length / mx : 0;
+    for (let j = 0; j < my; j++) {
+      const i = at(j);
+      for (let t = 0; t < s; t++) if (!sameValue(xs[key][i * s + t], ys[key][j * s + t])) return i;
     }
   }
+  return -1;
+}
+
+function compareRuns(run: (cells: Int32Array) => CellResult, fwd: Int32Array): PurityResult {
+  const m = fwd.length;
+  const a = run(fwd);
+  if (!a.ok) return { pure: false, issue: a.issue };
+  // 倒着算：“记住上一格”的脚本露馅
+  const b = run(fwd.slice().reverse());
+  if (!b.ok) return { pure: false, issue: b.issue };
+  let i = firstDiff(a.output, m, b.output, m, (j) => m - 1 - j);
+  if (i < 0) {
+    // 隔一格算一格：结果不能取决于同一批里还有哪些格（只重算变了的格时，批里的格每次都不同）
+    const odd = fwd.filter((_, j) => j % 2 === 1);
+    const c = run(odd);
+    if (!c.ok) return { pure: false, issue: c.issue };
+    i = firstDiff(a.output, m, c.output, odd.length, (j) => 2 * j + 1);
+  }
+  if (i >= 0) return { pure: false, cell: fwd[i], text: '地图上有一处几次算出的结果不一样（脚本是不是记住了别的格算出的东西？）' };
   return { pure: true };
+}
+
+// 纯度检查：同一批格正着算一遍、倒着算一遍、隔一格算一遍，结果逐值相同，而且没有改动任何内置对象，才算纯。
+// 只对纯的脚本才能做“只重算输入变了的格”，而且撤销、重放、检查点恢复的结果才会逐值一致，所以提交前要检查。
+// 脚本在内置对象上挂的东西检查完会被删掉（验证用的 worker 里不留下痕迹）
+export function checkPurity(run: (cells: Int32Array) => CellResult, cells: ArrayLike<number>): PurityResult {
+  const snap = snapshotIntrinsics();
+  let res: PurityResult = { pure: true };
+  try {
+    res = compareRuns(run, Int32Array.from(cells));
+  } finally {
+    const changed = restoreIntrinsics(snap);
+    if (changed) res = { ...res, pure: false, changed, text: `脚本改了内置的 ${changed}（不能用它在格与格之间、两次运行之间传东西）` };
+  }
+  return res;
 }

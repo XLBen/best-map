@@ -53,6 +53,12 @@ function setup() {
 
 const placement = (src: string) => ({ kind: 'placement' as const, src });
 
+// 地形脚本的输入：原来的高度、山、丘陵、岩性（调用方必须给全）加上别的
+function crustIn(n: number, extra: Record<string, number[]> = {}) {
+  const fill = (v: number) => Array.from({ length: n }, () => v);
+  return arrayInputs(n, { height: fill(0), mountains: fill(0), hills: fill(0), rock: fill(1), ...extra }, { globe: true });
+}
+
 function syntaxError(src: string, owner = '水晶丛林'): ScriptError {
   try {
     compileScript('placement', src, owner);
@@ -75,6 +81,9 @@ describe('脚本的运行环境', () => {
     expect(syntaxError('// 注释里的 { 不算\nreturn clamp(elevation));').message).toContain('多了一个 )');
     expect(syntaxError('return [1, 2);').message).toContain('括号没有配对');
     expect(syntaxError('return 海拔 > 100，').message).toContain('中文标点');
+    // 注释、字符串里的中文标点、括号不算（真正的错是引号没配对）
+    expect(syntaxError('// 注释里有中文标点，还有一个 (\nreturn "abc;').message).toContain('有不认识的字符（是不是引号没有配对？）');
+    expect(syntaxError('return ")" + /[(]/.test("x") + ;').message).toMatch(/这里不该出现「;」/);
     // 行号：V8 不给，留给编辑器装的定位器（懒加载的 acorn）
     setSyntaxLocator(() => 2);
     expect(syntaxError('const a = 1;\nreturn (a + ;;').message).toMatch(/第 2 行有语法错误/);
@@ -109,6 +118,26 @@ describe('脚本的运行环境', () => {
     // 只有颜色脚本能用的变量
     const s = runScript(placement('\nreturn share;'), opts);
     expect(s.ok ? '' : s.issue.text).toBe('长在哪里脚本里没有变量 share（只有颜色脚本能用）');
+    const line = (src: string) => {
+      const r = runScript(placement(src), opts);
+      return r.ok ? undefined : r.issue.line;
+    };
+    // Windows 的换行、跨行的模板与注释都不影响行号
+    expect(line('const a = 1;\r\nconst b = a;\r\nreturn b.foo.bar;')).toBe(3);
+    expect(line('const s = `第一行\n第二行`;\n/* 注释\n还是注释 */\nreturn s.foo.bar;')).toBe(5);
+    // 第 1 行就出错，前面的参数再多也一样
+    expect(line('return tMean + elevation + 海拔 + moisture + rand() + slope.x.y;')).toBe(1);
+    // 布局脚本也有行号
+    const setupRes = runSetup({ src: '\n\nreturn blocks.foo.bar;' }, { owner: '双子大陆', seed: 1, values: { blocks: [] } });
+    expect(setupRes.ok ? undefined : setupRes.issue.line).toBe(3);
+    // 抛出的不是 Error（没有行号），甚至是一碰就出错的值：照样按没有脚本处理，不会变成硬错误
+    const five = runScript(placement('throw 5;'), opts);
+    expect(five.ok ? '' : five.issue.text).toBe('5');
+    const nasty = runScript(placement('throw { toString() { throw new Error("又错了"); } };'), opts);
+    expect(nasty.ok).toBe(false);
+    expect([...nasty.output.factor].every((v) => v === 1)).toBe(true);
+    const sneaky = runScript(placement('const e = new Error("x");\nObject.defineProperty(e, "message", { get() { throw 1; } });\nthrow e;'), opts);
+    expect(sneaky.ok).toBe(false);
   });
 
   it('Math.random、Date、performance 不可用并给出提示', () => {
@@ -129,6 +158,39 @@ describe('脚本的运行环境', () => {
     expect(text('const r = 1;\nMath.random = () => 0.5;\nreturn r;')).toMatch(/^2:/);
     // 辅助函数也是冻结的，不能在上面记东西
     expect(text('rand.last = cell;\nreturn 1;')).toMatch(/^1:/);
+    // 别的会随时间、随电脑变的东西
+    expect(text('return crypto.getRandomValues(new Uint8Array(1))[0] / 255;')).toBe('1:用 rand() 代替 crypto 的随机数');
+    expect(text('return Temporal.Now.instant().epochMilliseconds % 2;')).toBe('1:脚本里不能用时间');
+    expect(text('return new Intl.DateTimeFormat().format().length > 3;')).toBe('1:脚本里不能用 Intl（结果会随电脑的语言和时区变）');
+    expect(text('return new Worker("x") ? 1 : 0;')).toBe('1:脚本里不能用 Worker');
+    expect(text("return typeof navigator === 'undefined' && typeof WeakRef === 'undefined' && typeof global === 'undefined';")).toBe('ok');
+    // 用户自己的报错里出现 Date 这个词，不当成“用了时间”
+    expect(text('throw new Error("Date 不对");')).toBe('1:Date 不对');
+  });
+
+  it('脚本碰不到运行环境自己的东西，也没有地方记住上一格', () => {
+    const { opts, w } = setup();
+    const text = (src: string) => {
+      const r = runScript(placement(src), opts);
+      return r.ok ? 'ok' : `${r.issue.line}:${r.issue.text}`;
+    };
+    // 生成代码自己的名字（运行状态、循环函数、辅助函数表）在脚本里都是 undefined：
+    // 否则 __st.inputs.get('elevation') 能直接改引擎的推导数组，__map2_script.memo 能跨运行记东西
+    expect(text("return [__st, __h, __map2_script, __map2_loop].every((v) => typeof v === 'undefined');")).toBe('ok');
+    // 用了这些名字的 var 会和生成代码冲突：当场按语法错误拒绝
+    expect(() => compileScript('placement', 'var __st = 1;\nreturn 1;')).toThrow(ScriptError);
+    // 函数声明带的 prototype 对象也是冻结的
+    expect(text('rand.prototype.memo = cell;\nreturn 1;')).toMatch(/^1:/);
+    expect(text('field.prototype.memo = cell;\nreturn 1;')).toMatch(/^1:/);
+    // Date 等替身的所有操作都拦下（defineProperty 不会落到替身背后的对象上）
+    expect(text("Object.defineProperty(Date, 'memo', { value: cell });\nreturn 1;")).toBe('1:脚本里不能用时间');
+    expect(text("return Object.getOwnPropertyDescriptor(performance, 'now') ? 1 : 0;")).toBe('1:脚本里不能用时间');
+    // 颜色脚本的 color 是冻结的副本，调用方的数组不受影响
+    const base = [10, 20, 30];
+    const share = new Float32Array(w.mesh.n);
+    const r = runScript({ kind: 'color', src: 'color.push(1);\nreturn color;' }, { ...opts, inputs: worldInputs(w, w.derived, { extra: { share, color: base } }) });
+    expect(r.ok ? 0 : r.issue.line).toBe(1);
+    expect(base).toEqual([10, 20, 30]);
   });
 
   it('NaN 不抛错而是报告问题并按没有脚本处理', () => {
@@ -163,11 +225,19 @@ describe('脚本的运行环境', () => {
     const match = runScript({ kind: 'match', src: 'return discharge.foo.bar;' }, opts);
     expect(match.ok).toBe(false);
     expect([...match.output.match].every((v) => v === 0)).toBe(true);
+    // 河流匹配：没有 return 的分支算不匹配（常见写法），NaN 算出错
+    const partial = runScript({ kind: 'match', src: 'if (discharge > 10) return true;' }, opts);
+    expect(partial.ok).toBe(true);
+    const nanMatch = runScript({ kind: 'match', src: 'return discharge * NaN;' }, opts);
+    expect(nanMatch.ok ? '' : nanMatch.issue.text).toBe('地图上有一处算出了 NaN（不是数字）');
     const n = 4;
     const crustInputs = arrayInputs(n, { height: [100, 200, 300, 400], mountains: [0, 1, 0, 1], hills: [0, 0, 0, 0], rock: [1, 1, 1, 1] }, { globe: true });
     const crust = runScript({ kind: 'crust', src: 'return height > 250 ? NaN : height;' }, { owner: '极地大陆', seed: 1, inputs: crustInputs, cells: [0, 1, 2, 3] });
     expect(crust.ok).toBe(false);
     expect([...crust.output.height]).toEqual([100, 200, 300, 400]);
+    // 地形脚本缺了原来的地形是调用方的错：直接抛错，不会把 0 当成岩性写回去
+    const noRock = arrayInputs(1, { height: [1], mountains: [0], hills: [0] }, { globe: true });
+    expect(() => runScript({ kind: 'crust', src: 'return height;' }, { owner: '极地大陆', seed: 1, inputs: noRock, cells: [0] })).toThrow(/没有 rock/);
   });
 
   it('颜色与地形脚本的返回值', () => {
@@ -215,10 +285,10 @@ describe('脚本的运行环境', () => {
     const px = [0.6, 0, 0.8];
     const py = [0, 0.6, 0];
     const pz = [0.8, 0.8, 0.6];
-    const a = runScript({ kind: 'crust', src: 'return rand();' }, { owner: 'f', seed: 1, inputs: arrayInputs(3, { px, py, pz, height: [0, 0, 0] }, { globe: true }), cells: [0, 1, 2] });
+    const a = runScript({ kind: 'crust', src: 'return rand();' }, { owner: 'f', seed: 1, inputs: crustIn(3, { px, py, pz }), cells: [0, 1, 2] });
     const b = runScript(
       { kind: 'crust', src: 'return rand();' },
-      { owner: 'f', seed: 1, inputs: arrayInputs(3, { px: [px[2], px[0], px[1]], py: [py[2], py[0], py[1]], pz: [pz[2], pz[0], pz[1]], height: [0, 0, 0] }, { globe: true }), cells: [1, 2, 0] },
+      { owner: 'f', seed: 1, inputs: crustIn(3, { px: [px[2], px[0], px[1]], py: [py[2], py[0], py[1]], pz: [pz[2], pz[0], pz[1]] }), cells: [1, 2, 0] },
     );
     expect([...b.output.height]).toEqual([...a.output.height]);
   });
@@ -275,6 +345,21 @@ describe('脚本的运行环境', () => {
     // 每个中文名只属于一个变量
     const zhNames = VARIABLES.flatMap((v) => (v.zh ? [v.zh] : []));
     expect(new Set(zhNames).size).toBe(zhNames.length);
+    // 注释、字符串里的名字不算；模板里的 ${…} 是代码，算
+    const names = (src: string, kind: 'placement' | 'crust' = 'placement') => compileScript(kind, src).names;
+    expect(names('// 离河越近越多，海拔不管\nreturn field("coastDist") * 坡度;')).toEqual(['坡度']);
+    expect(names('/* tMean\n   年均温 */ return `${海拔}米`.length > 3;')).toEqual(['海拔']);
+    expect(names('return `a${`b${lake}`}c` ? 1 : 0;')).toEqual(['lake']);
+    // 正则里的引号不会把后面的代码当成字符串；正则的标志 y 不是变量 y
+    expect(names('return /"/.test("a") ? elevation : 0;')).toEqual(['elevation']);
+    expect(names("return /x[/]/y.test('x') ? 1 : 0;")).toEqual([]);
+    expect(names('const r = slope / 2 / 3;\nreturn r;')).toEqual(['slope']);
+    // 名字是一个整体：大陆性 不是 大陆；加大陆块 不是 大陆块
+    expect(names('return 大陆性 + 大陆;', 'crust')).toEqual(['大陆']);
+    // 只在注释里提到、这次又没有提供的变量，不会让脚本出错
+    const partial = arrayInputs(2, { elevation: [100, 900] });
+    const r = runScript(placement('// 不看离河（riverDist）\nreturn elevation > 500;'), { owner: '测试', seed: 1, inputs: partial, cells: [0, 1] });
+    expect(r.ok && [...r.output.factor]).toEqual([0, 1]);
   });
 
   it('只计算用到的变量（coastDist 未引用时不调用 graphDistance）', () => {
@@ -282,6 +367,7 @@ describe('脚本的运行环境', () => {
     const before = calls.graphDistance;
     runScript(placement('return tMean > 0;'), opts);
     runScript(placement('// coast 只出现在注释的一部分里\nreturn wetness > 10;'), opts);
+    runScript(placement('// 离海岸、离河（coastDist、riverDist）都只在注释里\nreturn wetness > "riverDist".length;'), opts);
     expect(calls.graphDistance).toBe(before);
     const near = runScript(placement('return 1 - smoothstep(0, 300, coastDist);'), opts);
     expect(calls.graphDistance).toBe(before + 1);
@@ -301,6 +387,14 @@ describe('脚本的运行环境', () => {
     runScript(placement('return riverDist < 100;'), opts);
     runScript(placement('return 离河 < 100;'), opts);
     expect(calls.graphDistance).toBe(before + 3);
+    // 离河只看哪些格是河：流量变了一点、河没变，不重算
+    const thr = w.small.planet.riverThreshold;
+    const k = opts.cells.find((c) => w.derived.discharge[c] < thr / 4)!;
+    const old = w.derived.discharge[k];
+    w.derived.discharge[k] = old * 2;
+    runScript(placement('return riverDist < 100;'), opts);
+    expect(calls.graphDistance).toBe(before + 3);
+    w.derived.discharge[k] = old;
     // 离海岸是 km：挨着海的陆地不到两格宽
     const dist = worldInputs(w).get('coastDist') as Float64Array;
     const cellKm = Math.sqrt(w.mesh.totalArea / w.mesh.n) * w.kmPerUnit;
@@ -327,6 +421,15 @@ describe('脚本的运行环境', () => {
     expect(() => compileScript('placement', bad, '甲')).toThrow(/「甲」/);
     expect(() => compileScript('placement', bad, '乙')).toThrow(/「乙」/);
     expect(scriptStats.compiles - before).toBe(2);
+    // 最近用过的 128 段：再编译 128 段别的，最早那段被挤出去，要重新编译
+    for (let k = 0; k < 128; k++) compileScript('placement', `return ${k} / 1000; // 挤掉`);
+    const mid = scriptStats.compiles;
+    compileScript('placement', src);
+    expect(scriptStats.compiles - mid).toBe(1);
+    // 种类不同的同一段源码分开缓存（变量表不同）
+    expect(compileScript('crust', 'return rock;').names).toEqual(['rock']);
+    expect(compileScript('placement', 'return rock;').names).toEqual(['rock']);
+    expect(compileScript('crust', 'return 海拔;').names).toEqual([]);
   });
 
   it('纯度检查识别“记住上一格”的脚本', () => {
@@ -334,17 +437,35 @@ describe('脚本的运行环境', () => {
     const sample = opts.cells.slice(0, 300);
     const run = (src: string) => (cells: Int32Array): CellResult => runScript(placement(src), { ...opts, cells });
     const sticky = 'const prev = JSON.__prev ?? 0;\nJSON.__prev = elevation;\nreturn prev > 300;';
-    try {
-      const r = checkPurity(run(sticky), sample);
-      expect(r.pure).toBe(false);
-      expect(r.cell).toBeDefined();
-    } finally {
-      delete (JSON as unknown as Record<string, unknown>).__prev;
-    }
+    const r = checkPurity(run(sticky), sample);
+    expect(r.pure).toBe(false);
+    expect(r.cell).toBeDefined();
+    expect(r.changed).toBe('JSON.__prev');
+    // 检查完挂上去的东西被删掉了
+    expect((JSON as unknown as Record<string, unknown>).__prev).toBeUndefined();
     expect(checkPurity(run('return smoothstep(0, 20, tMean) * rand(2);'), sample)).toEqual({ pure: true });
     const failed = checkPurity(run('return 完全没有的名字;'), sample);
     expect(failed.pure).toBe(false);
     expect(failed.issue?.text).toBe('没有变量 完全没有的名字');
+    // 只在第一格记一次、之后一直用它：正反两遍结果相同，但下一次运行（或重放）会不同——靠比较内置对象查出来
+    const once = (where: string) => `${where} ??= elevation;\nreturn ${where} > 300;`;
+    const g = globalThis as unknown as Record<string, unknown>;
+    for (const [where, name] of [
+      ['JSON.memo', 'JSON.memo'],
+      ['Math.sin.memo', 'Math.sin.memo'],
+      ['[].constructor.prototype.memo', 'Array.prototype.memo'],
+      ['(() => {}).constructor("return this")().memo', 'globalThis.memo'],
+    ]) {
+      const res = checkPurity(run(once(where)), sample);
+      expect(res.cell).toBeUndefined();
+      expect(res).toMatchObject({ pure: false, changed: name });
+      expect(res.text).toContain(name);
+    }
+    const memoOf = (o: unknown) => (o as Record<string, unknown>).memo;
+    expect([memoOf(JSON), memoOf(Math.sin), memoOf([]), g.memo]).toEqual([undefined, undefined, undefined, undefined]);
+    // 结果取决于同一批里有哪些格（只重算变了的格时会出错）：隔一格算一遍查出来
+    const bySize = (cells: Int32Array): CellResult => ({ ok: true, output: { factor: Float32Array.from(cells, () => cells.length % 7) } });
+    expect(checkPurity(bySize, sample)).toMatchObject({ pure: false, cell: sample[1] });
   });
 
   it('看门狗：每 256 格报一次平安，出错也会退出', () => {
@@ -362,6 +483,29 @@ describe('脚本的运行环境', () => {
     } finally {
       setScriptHost(null);
     }
+    // 看门狗自己出错是调用方的错，照样抛出；但运行状态复原了，之后的脚本照常运行
+    const broken: ScriptHost = {
+      enter() {
+        throw new Error('看门狗坏了');
+      },
+      tick() {},
+      exit() {},
+    };
+    setScriptHost(broken);
+    try {
+      expect(() => runScript(placement('return 1;'), opts)).toThrow('看门狗坏了');
+    } finally {
+      setScriptHost(null);
+    }
+    expect(runScript(placement('return 1;'), opts).ok).toBe(true);
+    // 脚本里（经由引擎提供的 river 钩子）再运行脚本：外面这段按出错处理，之后照常
+    const river = () => {
+      runScript(placement('return 1;'), opts);
+      return new Float32Array(opts.inputs.n);
+    };
+    const r = runScript(placement("return river('blood');"), { ...opts, inputs: { ...opts.inputs, river } });
+    expect(r.ok ? '' : r.issue.text).toBe('脚本不能嵌套运行');
+    expect(runScript(placement('return 1;'), opts).ok).toBe(true);
   });
 
   it('安全模式：脚本不运行，按没有脚本处理', () => {
@@ -389,7 +533,14 @@ describe('脚本的运行环境', () => {
     runSetup({ src }, { owner: '双子大陆', id: 'twins', seed: 9, values: { ...values, addBlock: (b: object) => again.push(b) } });
     expect(again).toEqual(blocks);
     const bad = runSetup({ src: '\naddIsland({});' }, { owner: '双子大陆', seed: 9, values });
-    expect(bad.ok ? '' : bad.issue.text).toBe('这里没有变量 addIsland');
+    expect(bad.ok ? '' : bad.issue.message).toBe('「双子大陆」的布局脚本第 2 行出错：这里没有变量 addIsland');
+    // 脚本拿到的是冻结的副本：改不了调用方的列表，也不能在函数上记东西
+    const old = [{ lat: 1, lon: 2, size: 3 }];
+    const mutate = runSetup({ src: 'blocks[0].lat = 50;\nreturn 1;' }, { owner: '双子大陆', seed: 9, values: { blocks: old } });
+    expect(mutate.ok ? 0 : mutate.issue.line).toBe(1);
+    expect(old[0].lat).toBe(1);
+    const memo = runSetup({ src: '\naddBlock.memo = 1;' }, { owner: '双子大陆', seed: 9, values });
+    expect(memo.ok ? 0 : memo.issue.line).toBe(2);
   });
 
   it('findScripts 找到 batch 里的全部脚本', () => {
@@ -429,6 +580,11 @@ describe('脚本的运行环境', () => {
     expect(findScripts({ format: 'map2-pack', biomes: [crystal] }).length).toBe(2);
     expect(findScripts(riverType).length).toBe(1);
     expect(findScripts({ op: 'add_species', species: { id: 'x' } })).toEqual([]);
+    // 套很多层 batch 也藏不住（信任检查靠它）
+    let deep: object = { op: 'add_species', species: { id: 'hidden', name: '藏起来', scripts: { placement: s('return 1;') } } };
+    for (let k = 0; k < 5000; k++) deep = { op: 'batch', commands: [deep] };
+    const hidden = findScripts(deep);
+    expect(hidden.map((f) => `${f.owner}/${f.kind}`)).toEqual(['藏起来/placement']);
   });
 
   it('容器的格式：全部可选、没有默认值', () => {
