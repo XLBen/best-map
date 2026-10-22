@@ -29,6 +29,7 @@ import type { HighlightLayer } from '../render/colors';
 import type { Shape } from '../render/overlay';
 import {
   type Again,
+  type ToolOptions,
   busy,
   cancelPreviews,
   exec,
@@ -45,6 +46,7 @@ import {
   setOptions,
   sheet,
   showToast,
+  sliderActive,
   world,
 } from '../state';
 
@@ -69,6 +71,9 @@ export interface Preview {
   shapes: Shape[];
   hint: string | null;
   warn?: boolean;
+  // 拖底部条上的滑块时这句话也写出来（在鼠标最后停的地方，那里正预览着涂一下会怎样）；
+  // 没有这一项时，拖滑块由滑块上的数说明，鼠标旁不写
+  sliderHint?: boolean;
 }
 
 export interface ToolHandler {
@@ -81,6 +86,8 @@ export interface ToolHandler {
   cancel?(): void;
   // 鼠标离开地图
   leave?(): void;
+  // 鼠标离开地图后预览还要留着（排队中的笔画：结果换上之前一直显示）
+  keep?(): boolean;
   preview(): Preview;
 }
 
@@ -153,26 +160,58 @@ interface BrushConfig {
   filter?: (w: World, i: number) => boolean;
   layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean };
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
+  // 画笔圈画在半径的几倍处：最后一个是主圈（悬停时虚线、按住时实线），前面的是细实线。省略时只在半径处画一圈
+  rings?: number[];
 }
 
+// 一笔涂多重的预览深浅：变化量占滑块最大值的比例，最淡也有 0.35（力度很小时也看得见涂到了哪里）
+export const strengthValues = (deltas: number[], max: number) => deltas.map((d) => 0.35 + 0.65 * Math.min(1, Math.abs(d) / max));
+
 // 画笔可以排队：前面的笔画还在算时照样能画，松手后按顺序执行，各自是一步（结果与一笔一笔等着画相同）。
-// 排队中的笔画在图上淡淡地标出来
+// 排队中的笔画一直显示松手时的预览，直到结果换上（不先跳回原样，也不变成白色的“等待”）
 function brushTool(cfg: BrushConfig): ToolHandler {
   let stroke: Stroke | null = null;
   let pointer: Pointer | null = null;
-  let queued: Stroke[] = [];
-  // 小画笔（不到 4 格）悬停时描出一笔会涂到的格；格没变就沿用同一个图层，不必重新上传
+  // 鼠标在不在地图上：离开后只留排队中的笔画（拖滑块时照样在最后停的地方预览）
+  let inside = false;
+  // 排队中的笔画：各自松手时的预览图层
+  let queued: { layers: HighlightLayer[] }[] = [];
+  // 空闲悬停只显示圈，不显示涂了会怎样。只有很小的画笔（半径不到 2 格，圈里看不出会碰到哪几格）
+  // 另外描出一笔会涂到的格（只描边、不填色）；格没变就沿用同一个图层，不必重新上传
   let foot: { cells: number[]; layer: HighlightLayer } | null = null;
   const footprint = (w: World, p: Pointer): HighlightLayer[] => {
-    if (options.value.brushKm / w.kmPerUnit > w.mesh.spacing * 4 || p.cell < 0) return [];
+    if (brushR(w) > w.mesh.spacing * 2 || p.cell < 0) return [];
     const cells = brushCells(w, p.x, p.y, options.value.brushKm).cells.filter((i) => !cfg.filter || cfg.filter(w, i));
-    if (!foot || foot.cells.length !== cells.length || foot.cells.some((c, k) => c !== cells[k])) foot = { cells, layer: { cells, color: WHITE, alpha: 0.18 } };
+    if (!foot || foot.cells.length !== cells.length || foot.cells.some((c, k) => c !== cells[k])) foot = { cells, layer: { cells, color: WHITE, pattern: 'outline' } };
     return [foot.layer];
+  };
+  // 拖底部条上的滑块（半径、力度、过渡……）时：在鼠标最后停的地方预览涂一下会怎样，大小、深浅跟着滑块变，
+  // 旁边写出这一下的变化量（如“堆山 约 +600 m”）
+  let dab: { w: World; o: ToolOptions; p: Pointer; layers: HighlightLayer[]; hint: string | null; warn?: boolean } | null = null;
+  const dabAt = (w: World, p: Pointer) => {
+    if (dab?.w !== w || dab.o !== options.value || dab.p !== p) {
+      const s = new Stroke();
+      if (p.cell >= 0) s.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
+      // 特别大的画笔（两万格以上）不预览，免得拖滑块卡顿
+      const r = s.t.size && s.t.size <= 20000 ? cfg.layers(w, s, p.shift) : null;
+      dab = { w, o: options.value, p, layers: r?.layers ?? [], hint: r?.hint ?? null, warn: r?.warn };
+    }
+    return dab;
+  };
+  const ringsAt = (w: World, p: Pointer): Shape[] => {
+    const r = brushR(w);
+    const ks = cfg.rings ?? [1];
+    return ks.map((k, j): Shape =>
+      j === ks.length - 1
+        ? { kind: 'circle', x: p.x, y: p.y, r: r * k, dashed: !stroke, geodesic: true }
+        : { kind: 'circle', x: p.x, y: p.y, r: r * k, color: 'rgba(255, 255, 255, 0.6)', width: 1, geodesic: true },
+    );
   };
   return {
     drags: true,
     down(p) {
       const w = world.value;
+      inside = true;
       if (!w || p.cell < 0 || stroke) return;
       // 正在新建、打开、导出时不能画（世界可能马上换掉）；只是在算前面的编辑时可以排队
       if (busy.value !== null && !onlyEditsPending()) return busyNote();
@@ -187,6 +226,7 @@ function brushTool(cfg: BrushConfig): ToolHandler {
     },
     move(p, pressed) {
       pointer = p;
+      inside = true;
       const w = world.value;
       if (pressed && stroke && w) stroke.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
     },
@@ -195,30 +235,40 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       const s = stroke;
       stroke = null;
       if (!w || !s || !s.t.size) return;
-      queued.push(s);
+      // 松手时的预览留在图上，直到这一笔的结果换上
+      const q = { layers: cfg.layers(w, s, p.shift).layers };
+      queued.push(q);
       try {
         await cfg.commit(w, s, p.shift);
       } finally {
-        queued = queued.filter((q) => q !== s);
+        queued = queued.filter((x) => x !== q);
         redrawTick.value++;
       }
     },
     cancel() {
       stroke = null;
     },
+    leave() {
+      inside = false;
+    },
+    keep: () => queued.length > 0,
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
-      const shapes: Shape[] = [{ kind: 'circle', x: pointer.x, y: pointer.y, r: brushR(w), dashed: !stroke, geodesic: true }];
-      const waiting: HighlightLayer[] = queued.map((q) => ({ cells: q.cells, color: WHITE, alpha: 0.3 }));
+      // 排队时世界还没换上前面笔画的结果：每一笔照旧显示松手时的预览
+      const waiting = queued.flatMap((q) => q.layers);
       const inLine = queued.length ? `正在计算…（${queued.length} 笔）` : null;
       if (!stroke) {
+        if (!inside && !sliderActive.value) return waiting.length ? { layers: waiting, shapes: [], hint: null } : EMPTY;
         const h = cfg.hint(pointer.shift);
-        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes, hint: inLine ?? h.text, warn: h.warn };
+        if (sliderActive.value && !h.warn) {
+          const d = dabAt(w, pointer);
+          return { layers: [...waiting, ...d.layers], shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true };
+        }
+        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes: ringsAt(w, pointer), hint: inLine ?? h.text, warn: h.warn };
       }
       const r = cfg.layers(w, stroke, pointer.shift);
-      // 排队时世界还没换上前面笔画的结果：只标出这一笔涂到的范围
-      return { layers: [...waiting, ...r.layers], shapes, hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn };
+      return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn };
     },
   };
 }
@@ -245,6 +295,8 @@ export function landTool(): ToolHandler {
       };
     },
     commit: (_w, s, shift) => exec({ op: 'paint_land', cells: s.cells, t: s.ts, mode: modeOf(shift) }),
+    // 0.7 倍半径以内一定变（细实线）；海岸平均落在 0.85 倍处（主圈），再往外只是零星几格
+    rings: [0.7, 0.85],
   });
   const lasso = lassoTool(modeOf);
   // 底部条上选的“画笔 / 圈一片”；按下时用哪个，这一笔就一直是哪个
@@ -270,6 +322,11 @@ export function landTool(): ToolHandler {
       lasso.cancel?.();
       active = null;
     },
+    leave() {
+      brush.leave?.();
+      lasso.leave?.();
+    },
+    keep: () => !!brush.keep?.(),
     preview: () => (active ?? chosen()).preview(),
   };
 }
@@ -384,7 +441,42 @@ export function restoreTool(): ToolHandler {
       }
       await exec({ op: 'restore_terrain', cells: s.cells, t: s.ts }, '正在计算地形…');
     },
+    // 0.7 倍半径以内全收回（细实线），往外到半径处渐变
+    rings: [0.7, 1],
   });
+}
+
+// 堆山 / 压低的力度最大是多少（底部条滑块的上限，预览深浅按它算）
+export const RELIEF_MAX = 1.6;
+
+// 堆山 / 压低一笔大约让地势升降多少米（提示里的“约 +900 m”）：笔下升得最多、降得最多的地方变多少。
+// 经验估计（在地区、星球几种格数的地图上，画笔半径 1–25 格量过，多数与实际差在五成以内，个别差到两倍）：
+// 堆山与力度^0.9、画笔半径（格）^0.75、“最高的山”成正比，抬升量最多到 2，已经很高的地方堆不了那么多；
+// 压低是每格按现在的高度、去掉的抬升量占原有的几成估计，取最多的那格（没有抬升的平地压不下去）；
+// 半径一两格的小画笔压不了那么多（周围的山撑着）。cells、delta：这一笔涂到的格与抬升量的变化（reliefStroke）
+export function reliefEstimateM(w: World, cells: number[], delta: number[], strength: number): number {
+  const rc = Math.max(0.5, brushR(w) / w.mesh.spacing);
+  if (strength >= 0) {
+    let u = 0;
+    for (const i of cells) u += w.causes.uplift[i];
+    u /= Math.max(1, cells.length);
+    const s = Math.max(0, Math.min(strength, 2 - u));
+    return 0.2 * w.small.planet.mountainScale * Math.pow(s, 0.9) * Math.pow(rc, 0.75);
+  }
+  let drop = 0;
+  cells.forEach((i, k) => {
+    const u = w.causes.uplift[i];
+    drop = Math.max(drop, (Math.max(0, w.derived.elevation[i]) * Math.min(u, -delta[k])) / (0.035 + u));
+  });
+  return -drop * Math.min(1.1, 0.65 * Math.pow(rc, 0.4));
+}
+
+// 高度变化写成“约 +900 m”：一千米以上取整到百米，一百米以上取整到 50 米
+export function fmtMeters(v: number): string {
+  const m = Math.abs(v);
+  if (m < 5) return '几乎不变';
+  const step = m >= 1000 ? 100 : m >= 100 ? 50 : 10;
+  return `约 ${v > 0 ? '+' : '−'}${(Math.round(m / step) * step).toLocaleString()} m`;
 }
 
 export function reliefTool(): ToolHandler {
@@ -392,11 +484,14 @@ export function reliefTool(): ToolHandler {
   return brushTool({
     hint: () => ({ text: null }),
     filter: (w, i) => w.causes.land[i] === 1,
-    layers(_w, s, shift) {
-      const r = reliefStroke(s.cells, s.ts, 1);
+    layers(w, s, shift) {
+      const strength = sign(shift) * options.value.reliefAmount;
+      const r = reliefStroke(s.cells, s.ts, strength);
+      const name = strength > 0 ? '堆山' : '压低';
       return {
-        layers: [{ cells: r.cells, values: r.delta, color: sign(shift) > 0 ? [205, 135, 70] : [120, 150, 190], alpha: 0.7 }],
-        hint: sign(shift) > 0 ? '堆山' : '压低',
+        // 深浅跟着力度：拖“力度”滑块时预览跟着变
+        layers: [{ cells: r.cells, values: strengthValues(r.delta, RELIEF_MAX), color: strength > 0 ? [205, 135, 70] : [120, 150, 190], alpha: 0.7 }],
+        hint: s.t.size ? `${name} ${fmtMeters(reliefEstimateM(w, r.cells, r.delta, strength))}` : name,
       };
     },
     commit: (_w, s, shift) => exec({ op: 'paint_relief', cells: s.cells, t: s.ts, strength: sign(shift) * options.value.reliefAmount }, '正在计算地形…'),
@@ -769,6 +864,10 @@ export const CLIMATE_INFO = {
 } as const;
 type ClimateKind = keyof typeof CLIMATE_INFO;
 
+// 冷暖干湿、自定义场的力度最大是多少（底部条滑块的上限，预览深浅按它算）
+export const CLIMATE_MAX = 2;
+export const FIELD_MAX = 1;
+
 // 力度 1：中心升降 4 °C，或雨水乘除 e^0.5（多约 65% / 少约 39%）。short 是底部条上滑块右边的数
 export function climateEffect(c: ClimateKind, amount: number): { field: 'tempOffset' | 'moistOffset'; value: number; text: string; short: string } {
   if (c === 'warm' || c === 'cold') {
@@ -792,7 +891,10 @@ export function climateTool(group: 'temp' | 'moist'): ToolHandler {
     hint: () => ({ text: null }),
     layers(_w, s, shift) {
       const c = kindOf(shift);
-      return { layers: [{ cells: s.cells, values: s.weights(), color: CLIMATE_INFO[c].color, alpha: 0.65 }], hint: `${CLIMATE_INFO[c].name} ${climateEffect(c, options.value.climateAmount).short}` };
+      const amount = options.value.climateAmount;
+      // 深浅跟着力度：拖“力度”滑块时预览跟着变
+      const values = strengthValues(s.weights().map((wt) => wt * amount), CLIMATE_MAX);
+      return { layers: [{ cells: s.cells, values, color: CLIMATE_INFO[c].color, alpha: 0.65 }], hint: `${CLIMATE_INFO[c].name} ${climateEffect(c, amount).short}` };
     },
     commit(_w, s, shift) {
       const e = climateEffect(kindOf(shift), options.value.climateAmount);
@@ -931,7 +1033,11 @@ export function fieldTool(): ToolHandler {
       return { text: null };
     },
     layers(_w, s, shift) {
-      return { layers: [{ cells: s.cells, values: s.weights(), color: sign(shift) > 0 ? [190, 120, 230] : [120, 120, 140], alpha: 0.65 }], hint: `${options.value.field} ${sign(shift) > 0 ? '变大' : '变小'}` };
+      const amount = options.value.fieldAmount;
+      // 深浅跟着力度：拖“力度”滑块时预览跟着变；提示写出中心变多少
+      const values = strengthValues(s.weights().map((wt) => wt * amount), FIELD_MAX);
+      const up = sign(shift) > 0;
+      return { layers: [{ cells: s.cells, values, color: up ? [190, 120, 230] : [120, 120, 140], alpha: 0.65 }], hint: `${options.value.field} ${up ? '变大' : '变小'}：中心 ${up ? '+' : '−'}${amount.toFixed(2)}` };
     },
     commit(_w, s, shift) {
       const amount = sign(shift) * options.value.fieldAmount;
@@ -1196,6 +1302,15 @@ export function lakeTool(): ToolHandler {
       const w = world.value;
       const d = drag;
       if (!w || !d || committing) return;
+      // 碰到海岸的湖存不住水，放了也看不见：松手时就拦下，不进历史
+      const cells = cellsNow(w);
+      if (!cells.length || coastalOf(w, cells)) {
+        drag = null;
+        // 拖出来的大小留着：往内陆挪一点再点，还是这么大
+        if (d.km !== null) setOptions({ lakeKm: d.km });
+        showToast('离海太近，留不住水：往内陆挪一点', true);
+        return;
+      }
       const radius = radiusNow();
       committing = true;
       if (d.km !== null) setOptions({ lakeKm: d.km });

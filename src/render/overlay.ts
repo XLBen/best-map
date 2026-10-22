@@ -458,23 +458,26 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
   return w;
 }
 
-function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
+// 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
+export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
   const canvas = ctx.canvas;
   const cw = canvas.clientWidth;
   const chh = canvas.clientHeight;
-  const key = `${cam.x}|${cam.y}|${cam.zoom}|${cw}|${chh}|${st.kmPerUnit}|${ks.join(',')}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}`;
+  const key = `${cam.x}|${cam.y}|${cam.zoom}|${cw}|${chh}|${st.kmPerUnit}|${ks.join(',')}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
   if (layout && layout.key === key && layout.features === st.features) return layout;
   const toScreen = (x: number, y: number): [number, number] => [(x - cam.x) * cam.zoom + cw / 2, (y - cam.y) * cam.zoom + chh / 2];
   const placed: PlacedLabel[] = [];
   const boxes: LabelBox[] = [];
-  const features = [...(st.features ?? [])].sort((a, b) => b.importance - a.importance);
+  // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
+  const mine = (f: GeoFeature) => !!f.region || f.custom || f.key === st.hoverLabel;
+  const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
   for (const f of features) {
     if (!f.name || (st.labelTypes && !st.labelTypes.has(f.type))) continue;
     // 在屏幕上有多大；山峰、用户放的点状地名没有大小（山峰放大到一定程度才标，地点总是标）
     const point = f.type === 'peak' || f.type === 'spot';
     const sizePx = f.type === 'river' ? f.span * cam.zoom : point ? 0 : (Math.sqrt(f.areaKm2) / st.kmPerUnit) * cam.zoom;
     const minPx = f.type === 'continent' || f.type === 'ocean' ? 25 : f.type === 'river' ? 90 : point ? 0 : 45;
-    if (f.type === 'peak' ? rz < 1600 : sizePx < minPx) continue;
+    if (!mine(f) && (f.type === 'peak' ? rz < 1600 : sizePx < minPx)) continue;
     // 整个星球：每份副本上都可能看得见（相隔一整圈，彼此不会挤在一起）
     const spots: [number, number][] = [];
     for (const k of ks) {

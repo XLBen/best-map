@@ -292,12 +292,12 @@ export interface HighlightLayer {
   values?: number[];
   color: RGB;
   alpha?: number;
-  // 斜线：没能做到的格
-  pattern?: 'fill' | 'hatch';
+  // hatch：斜线（没能做到的格）；outline：只描出这些格的外沿，不填色（alpha、values 用不上）
+  pattern?: 'fill' | 'hatch' | 'outline';
 }
 
 // 高亮层：选区、预览、没涂成的格、变化。后面的层盖住前面的层。
-// alpha 字节的编码：1–127 为平涂的不透明度，129–255 为斜线的不透明度（着色器按此解码）
+// alpha 字节的编码：1–127 为平涂的不透明度，128 为只描边，129–255 为斜线的不透明度（着色器按此解码）
 export function highlightColors(world: World, layers: HighlightLayer[]): Uint8Array | null {
   if (!layers.length) return null;
   const n = world.mesh.n;
@@ -305,16 +305,29 @@ export function highlightColors(world: World, layers: HighlightLayer[]): Uint8Ar
   for (const l of layers) {
     const a = l.alpha ?? 0.45;
     const hatch = l.pattern === 'hatch';
+    const outline = l.pattern === 'outline';
     l.cells.forEach((i, k) => {
       if (i < 0 || i >= n) return;
       const v = Math.max(0, Math.min(1, l.values ? l.values[k] : 1));
-      const level = Math.round(127 * a * v);
-      if (level <= 0) return;
+      const level = outline ? 0 : Math.round(127 * a * v);
+      if (level <= 0 && !outline) return;
       out[i * 4] = l.color[0];
       out[i * 4 + 1] = l.color[1];
       out[i * 4 + 2] = l.color[2];
-      out[i * 4 + 3] = hatch ? 128 + level : level;
+      out[i * 4 + 3] = outline ? 128 : hatch ? 128 + level : level;
     });
   }
   return out;
+}
+
+// 每个省大约几格宽：√（省份格数的中位数）。缩小看时省界按它淡出（大省的边界留得久，小省的先淡）；没有省份时为 1
+export function provinceScale(province: Int32Array): number {
+  const counts = new Map<number, number>();
+  for (let i = 0; i < province.length; i++) {
+    const p = province[i];
+    if (p >= 0) counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  if (!counts.size) return 1;
+  const sizes = [...counts.values()].sort((a, b) => a - b);
+  return Math.sqrt(sizes[Math.floor(sizes.length / 2)]);
 }

@@ -47,6 +47,9 @@ import {
   world,
 } from '../../state';
 import {
+  CLIMATE_MAX,
+  FIELD_MAX,
+  RELIEF_MAX,
   biomeTool,
   chainTool,
   climateEffect,
@@ -139,7 +142,7 @@ const percent = (v: number, base: number) => `${Math.round((v / base) * 100)}%`;
 const CLIMATE_AMOUNT = (group: 'temp' | 'moist'): SliderDef => ({
   key: 'climateAmount',
   label: '力度',
-  range: () => [0.25, 2],
+  range: () => [0.25, CLIMATE_MAX],
   scale: 'log',
   snap: (v) => Math.round(v * 20) / 20,
   format: (v) => climateEffect(climateKind(group), v).short,
@@ -222,7 +225,8 @@ const defs: ToolDef[] = [
       range: () => [0.4, 2.5],
       scale: 'log',
       snap: (v) => Math.round(v * 20) / 20,
-      format: (v) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)}`,
+      // 写出岛与岛之间大约隔多远（与 chainIslands 的间距同一个算法：岛的半径 × 2.6 ÷ 疏密）
+      format: (v) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * options.value.islandKm) / v)} km`,
     },
     bar: () => [islandKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '快捷键 R', run: () => setOptions({ chainVariant: options.value.chainVariant + 1 }) }],
     reroll: () => setOptions({ chainVariant: options.value.chainVariant + 1 }),
@@ -236,7 +240,7 @@ const defs: ToolDef[] = [
     short: '堆山',
     how: '按住拖动让地势升高或降低',
     size: BRUSH,
-    amount: { key: 'reliefAmount', label: '力度', range: () => [0.15, 1.6], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => percent(v, 0.7) },
+    amount: { key: 'reliefAmount', label: '力度', range: () => [0.15, RELIEF_MAX], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => percent(v, 0.7) },
     bar: () => [
       {
         kind: 'choice',
@@ -373,7 +377,7 @@ const defs: ToolDef[] = [
     short: '场',
     how: '让“魔力”这类自定义的量变大或变小',
     size: BRUSH,
-    amount: { key: 'fieldAmount', label: '力度', range: () => [0.05, 1], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => `±${v.toFixed(2)}` },
+    amount: { key: 'fieldAmount', label: '力度', range: () => [0.05, FIELD_MAX], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => `±${v.toFixed(2)}` },
     hidden: (w) => !Object.keys(w.causes.fields).length,
     bar: (w) => [
       { kind: 'choice', key: 'field', options: Object.keys(w.causes.fields).map((f) => ({ value: f, label: f })) },

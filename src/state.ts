@@ -122,6 +122,8 @@ export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 're
 export type NoteAction = { label: string; run: () => void };
 export const changeNote = signal<{ id: number; head: string; detail: string; undoable: boolean; again?: NoteAction; action?: NoteAction } | null>(null);
 export const flash = signal<{ cells: number[]; at: number } | null>(null);
+// 改完后变化的格淡淡地亮一下，这么久（毫秒）淡完
+export const FLASH_MS = 1200;
 
 // 偏好（存在本浏览器里）：滚轮 / 双指滑动是缩放还是平移
 export type WheelPref = 'auto' | 'zoom' | 'pan';
@@ -412,17 +414,23 @@ export function describeChange(a: World, b: World): { cells: number[]; detail: s
     const s = w.derived.dominant[i];
     return s >= 0 ? w.small.species[s]?.id : String(s);
   };
+  // 只换了省份的格（切开、合并、涂省）：另记，最后看情况一起闪
+  const provinceOnly: number[] = [];
   for (let i = 0; i < n; i++) {
     const la = a.causes.land[i];
     const lb = b.causes.land[i];
-    if (a.causes.province[i] !== b.causes.province[i]) province++;
+    const pc = a.causes.province[i] !== b.causes.province[i];
+    if (pc) province++;
     if (la !== lb) {
       if (lb) gained++;
       else lost++;
       cells.push(i);
       continue;
     }
-    if (!lb) continue;
+    if (!lb) {
+      if (pc) provinceOnly.push(i);
+      continue;
+    }
     let changed = false;
     if (sp(a, i) !== sp(b, i)) {
       biome++;
@@ -443,7 +451,10 @@ export function describeChange(a: World, b: World): { cells: number[]; detail: s
       changed = true;
     }
     if (changed) cells.push(i);
+    else if (pc) provinceOnly.push(i);
   }
+  // 切省、合并、涂省也闪一下；整张图重新划分（三成以上的格换了省）时不闪，免得整张图一亮
+  if (province <= n * 0.3) for (const i of provinceOnly) cells.push(i);
   // 河道的变化按连通的片数计
   let rivers = 0;
   const seen = new Uint8Array(n);
@@ -487,7 +498,7 @@ function noteChange(head: string, before: World | null, again?: NoteAction, undo
   }, 9000);
   flash.value = cells.length ? { cells, at: performance.now() } : null;
   if (flashTimer) clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => (flash.value = null), 3000);
+  flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
 }
 
 // fresh：新建或打开了一个世界（不是编辑）
