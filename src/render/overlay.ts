@@ -62,6 +62,8 @@ export interface Shape {
   dashed?: boolean;
   // 整个星球：圆是球面上真实大小的圆（画笔），投影到平铺图上（高纬度是横向拉长的椭圆）
   geodesic?: boolean;
+  // 实心的圆（小礁的预览）
+  fill?: boolean;
 }
 
 export interface OverlayState {
@@ -386,10 +388,12 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit:
     pts.forEach(([x, y], k) => (k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
     // 包住极点的圆在平铺图上是一条横贯的曲线：不闭合
     if (!pole) ctx.closePath();
+    if (sh.fill && !pole) ctx.fill();
     ctx.stroke();
   } else if (sh.kind === 'circle' && sh.x !== undefined && sh.y !== undefined && sh.r !== undefined) {
     ctx.beginPath();
     ctx.arc(sh.x, sh.y, sh.r, 0, Math.PI * 2);
+    if (sh.fill) ctx.fill();
     ctx.stroke();
   } else if ((sh.kind === 'line' || sh.kind === 'arrow') && sh.points && sh.points.length > 1) {
     ctx.beginPath();

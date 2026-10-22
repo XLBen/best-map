@@ -29,7 +29,7 @@ import {
   Type,
   Waypoints,
 } from 'lucide-preact';
-import { ISLAND_KINDS, ISLAND_KIND_INFO, islandSizeRangeKm, roundKm } from '../../../core/terrain';
+import { CHAIN_KINDS, ISLAND_KINDS, ISLAND_KIND_INFO, islandSizeRangeKm, roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import {
   type Category,
@@ -98,13 +98,26 @@ const BRUSH: SliderDef = {
 
 const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
 
+// 岛的最小值随种类（珊瑚岛大一些）；小礁只占一格，不用调大小。
+// 滑块停在别的种类的大小上时（比如从火山岛换成珊瑚岛），写出的是补到这一种最小值后的大小，与放出来的一样
 const ISLAND: SliderDef = {
   key: 'islandKm',
   label: '直径',
-  range: islandSizeRangeKm,
+  range: (w) => islandSizeRangeKm(w, options.value.islandKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v) => `${fmtKm(v * 2)} km`,
+  format: (v, w) => `${fmtKm(Math.max(islandSizeRangeKm(w, options.value.islandKind)[0], v) * 2)} km`,
+  enabled: () => options.value.islandKind !== 'reef',
+};
+
+// 岛链自己的大小：放岛时选了小礁、调了大小都不影响岛链
+const CHAIN_SIZE: SliderDef = {
+  key: 'chainKm',
+  label: '直径',
+  range: (w) => islandSizeRangeKm(w, options.value.chainKind),
+  scale: 'log',
+  snap: snapRadiusKm,
+  format: (v, w) => `${fmtKm(Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], v) * 2)} km`,
 };
 
 const LAKE: SliderDef = {
@@ -130,7 +143,7 @@ const REACH: SliderDef = {
 const RIVER: SliderDef = {
   key: 'riverFlow',
   label: '大小',
-  range: () => [1.2, 80],
+  range: () => [1, 80],
   scale: 'log',
   snap: (v) => (v < 10 ? Math.round(v * 10) / 10 : Math.round(v)),
   format: (v, w) => `${riverSizeName(v)} ${fmtFlow(v * w.small.planet.riverThreshold)} m³/s`,
@@ -151,6 +164,7 @@ const CLIMATE_AMOUNT = (group: 'temp' | 'moist'): SliderDef => ({
 // ---------- 底部条上常用的几项 ----------
 
 const islandKinds = { kind: 'choice' as const, key: 'islandKind' as const, options: ISLAND_KINDS.map((k) => ({ value: k, label: ISLAND_KIND_INFO[k].name, hint: ISLAND_KIND_INFO[k].hint })) };
+const chainKinds = { kind: 'choice' as const, key: 'chainKind' as const, options: CHAIN_KINDS.map((k) => ({ value: k, label: ISLAND_KIND_INFO[k].name, hint: ISLAND_KIND_INFO[k].hint })) };
 const biomeModes = {
   kind: 'choice' as const,
   key: 'biomeMode' as const,
@@ -207,7 +221,13 @@ const defs: ToolDef[] = [
     short: '放岛',
     how: '点一下放岛，按住往外拖直接拖出大小',
     size: ISLAND,
-    bar: () => [islandKinds, { kind: 'action', icon: Dices, label: '换个形状', title: '快捷键 R', run: () => setOptions({ islandVariant: options.value.islandVariant + 1 }) }],
+    // 小礁只有一种样子，不用“换个形状”
+    bar: () => [
+      islandKinds,
+      ...(options.value.islandKind === 'reef'
+        ? []
+        : [{ kind: 'action' as const, icon: Dices, label: '换个形状', title: '快捷键 R', run: () => setOptions({ islandVariant: options.value.islandVariant + 1 }) }]),
+    ],
     reroll: () => setOptions({ islandVariant: options.value.islandVariant + 1 }),
     create: () => islandTool(),
   },
@@ -218,7 +238,7 @@ const defs: ToolDef[] = [
     name: '画岛链',
     short: '岛链',
     how: '拖一条线，沿线长出一串大小不一的岛',
-    size: ISLAND,
+    size: CHAIN_SIZE,
     amount: {
       key: 'chainDensity',
       label: '疏密',
@@ -228,7 +248,7 @@ const defs: ToolDef[] = [
       // 写出岛与岛之间大约隔多远（与 chainIslands 的间距同一个算法：岛的半径 × 2.6 ÷ 疏密）
       format: (v) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * options.value.islandKm) / v)} km`,
     },
-    bar: () => [islandKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '快捷键 R', run: () => setOptions({ chainVariant: options.value.chainVariant + 1 }) }],
+    bar: () => [chainKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '快捷键 R', run: () => setOptions({ chainVariant: options.value.chainVariant + 1 }) }],
     reroll: () => setOptions({ chainVariant: options.value.chainVariant + 1 }),
     create: () => chainTool(),
   },

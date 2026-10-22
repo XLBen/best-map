@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, sampleComponents, withParams } from './generate';
 import { type V3, arc, fromUnit, localOffset, slerp, toUnit, wrapX } from './geo';
 import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, samplePlanetComponents, withPlanetParams } from './planet-gen';
-import type { Mesh, SphereMesh } from './mesh';
+import { type Mesh, type SphereMesh, findCell } from './mesh';
 import { clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
+import { nearestCell } from './sphere';
 import type { World } from './world';
 
 // 地形“原因”的组合：
@@ -470,13 +471,17 @@ export function previewLand(world: World, cells: number[], delta: number[]): { g
 
 // ---------- 放岛 ----------
 
-export const ISLAND_KINDS = ['volcanic', 'continental', 'low', 'atoll'] as const;
+// 岛链能用的种类；放岛另有“小礁”（只占一格，不进岛链）。新种类只往后加：种类的序号参与形状的种子
+export const CHAIN_KINDS = ['volcanic', 'continental', 'low', 'atoll'] as const;
+export const ISLAND_KINDS = [...CHAIN_KINDS, 'reef'] as const;
 export type IslandKind = (typeof ISLAND_KINDS)[number];
+export type ChainKind = (typeof CHAIN_KINDS)[number];
 export const ISLAND_KIND_INFO: Record<IslandKind, { name: string; hint: string }> = {
   volcanic: { name: '火山岛', hint: '圆形，中间有高高的火山' },
   continental: { name: '大陆岛', hint: '形状不规则，有丘陵' },
   low: { name: '低平岛', hint: '平坦低矮，多沙洲' },
   atoll: { name: '珊瑚岛', hint: '环形的低矮岛，中间是潟湖' },
+  reef: { name: '小礁', hint: '只占一格的小岛，画出来约半格大' },
 };
 export const ISLAND_SIZES = ['small', 'medium', 'large'] as const;
 
@@ -514,11 +519,16 @@ export function islandRadiusKm(world: World, size: IslandSizeSpec): number {
   return size === 'small' ? small : size === 'medium' ? small * 2.2 : small * 4.5;
 }
 
-// 可调的半径范围（km）：最小约 1.5 格，最大是地图高度的 20%
-export function islandSizeRangeKm(world: World): [number, number] {
+// 最小的岛（格）：火山岛、大陆岛、低平岛 0.75 格（放出来 1–3 格）；珊瑚岛的环要 1.5 格才看得出来
+export function islandMinCells(kind: IslandKind): number {
+  return kind === 'atoll' ? 1.5 : 0.75;
+}
+
+// 可调的半径范围（km）：最小见 islandMinCells，最大是地图高度的 20%。小礁不看大小，用火山岛的范围
+export function islandSizeRangeKm(world: World, kind: IslandKind = 'volcanic'): [number, number] {
   const cellKm = world.mesh.spacing * world.kmPerUnit;
   const mapKm = refKm(world);
-  return [cellKm * 1.5, Math.max(cellKm * 3, mapKm * 0.2)];
+  return [cellKm * islandMinCells(kind), Math.max(cellKm * 3, mapKm * 0.2)];
 }
 
 // 地图的尺度（km）：宽、格距。整个星球按半圈（πR，约 2 万 km）算，
@@ -528,22 +538,22 @@ export function mapScaleKm(world: World): { width: number; cell: number } {
   return { width, cell: world.mesh.spacing * world.kmPerUnit };
 }
 
-// 画笔半径的范围（km）：随地图尺度。最小的笔刷正好一格
+// 画笔半径的范围（km）：随地图尺度。最小的笔刷只涂鼠标下那一格（不到半格时，见 brushCells）
 export function brushRangeKm(world: World): [number, number] {
   const { width, cell } = mapScaleKm(world);
-  return [cell * 0.6, width * 0.2];
+  return [cell * 0.4, width * 0.2];
 }
 
-// 湖的半径范围（km）
+// 湖的半径范围（km）：最小半格，就是只淹一格的小湖（新湖带 exact，见 lakeRadiusUnits）
 export function lakeRangeKm(world: World): [number, number] {
   const { width, cell } = mapScaleKm(world);
-  return [Math.max(8, cell * 1.5), Math.max(cell * 4, width * 0.05)];
+  return [cell * 0.5, Math.max(cell * 4, width * 0.05)];
 }
 
-// 自然融入的过渡范围（km）
+// 自然融入的过渡范围（km）：最小一格半
 export function reachRangeKm(world: World): [number, number] {
-  const width = mapScaleKm(world).width;
-  return [Math.max(30, width * 0.015), Math.min(5000, width * 0.2)];
+  const { width, cell } = mapScaleKm(world);
+  return [Math.max(cell * 1.5, width * 0.005), Math.min(5000, width * 0.2)];
 }
 
 // 新世界里“放岛”默认的大小：与旧的“中”档看起来一样大
@@ -562,9 +572,40 @@ export interface StampResult {
 
 // 数值大小指海岸线的半径：轮廓平均落在这个距离上。岛心半径 R 与海岸线的比例按种类不同
 // （高岛的地势在 R 以外再延伸约三分之一才入海；环礁的外缘在 R 以内一点）
-const SHORE: Record<IslandKind, number> = { volcanic: 4 / 3, continental: 4 / 3, low: 4 / 3, atoll: 0.96 };
+const SHORE: Record<IslandKind, number> = { volcanic: 4 / 3, continental: 4 / 3, low: 4 / 3, atoll: 0.96, reef: 1 };
 
-export function islandStamp(world: World, spec: IslandSpec): StampResult {
+// 小礁那一格的海岸值约 +95 m（250·tanh(100/250)）。四周深海约 −250 m，海岸线落在每条边离格心约 0.28 处，
+// 屏幕和导出都画成约半格宽的小岛（实测约占这一格面积的四分之一）
+const REEF_V = 100;
+// 海岸曲折调到 0 到 2 时，后两项至少留这么多（m）：改海岸曲折时海平面会挪动十来米
+const REEF_KEEP = 30;
+
+// 岛心所在的格：整个星球按球面上最近的格（与 toUnit 同一个换算）
+function centerCell(mesh: Mesh, x: number, y: number): number {
+  return mesh.kind === 'sphere' ? nearestCell(mesh, x, y) : findCell(mesh, x, y);
+}
+
+// 小礁：只把岛心那一格抬成陆地，不看大小和形状。陆度取 max(REEF_V − a·k, REEF_KEEP − 2·COAST_AMP·k, REEF_KEEP)：
+// 第一项让现在的海岸值是 REEF_V；后两项保证海岸曲折调到 0 到 2 之间它都还在
+function reefStamp(world: World, spec: IslandSpec): StampResult {
+  const { mesh, causes } = world;
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], footprint: [] };
+  const c = centerCell(mesh, spec.x, spec.y);
+  if (causes.land[c]) return out;
+  const k = coastNoiseField(mesh, coastSeed(world))[c];
+  const a = COAST_AMP * world.small.terrain.coastRoughness;
+  const target = Math.max(REEF_V - a * k, REEF_KEEP - 2 * COAST_AMP * k, REEF_KEEP);
+  out.cells.push(c);
+  out.landDelta.push(Math.max(0, target - causes.landness[c]));
+  out.upliftDelta.push(0);
+  out.footprint = footprintOf(world, out);
+  return out;
+}
+
+// fillTiny：太小、一格陆地都放不出来时，把岛心那一格抬成陆地。只在大小不到 1.5 格（旧的最小值）时才会发生；
+// 旧存档里放不出陆地的放岛命令当时就被拒绝了、不在历史里，所以旧存档走不到这里。旧的岛链传 false
+export function islandStamp(world: World, spec: IslandSpec, fillTiny = true): StampResult {
+  if (spec.kind === 'reef') return reefStamp(world, spec);
   const { mesh, causes } = world;
   const R = (typeof spec.size === 'string' ? islandRadiusKm(world, spec.size) : spec.size / SHORE[spec.kind]) / world.kmPerUnit;
   const rough = world.small.terrain.coastRoughness;
@@ -591,7 +632,31 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   // 整个星球：在岛心的切平面里取位置（等距方位投影），高纬度、接缝上的岛形状大小都和赤道上一样
   const center: V3 | null = sphere ? toUnit(spec.x, spec.y) : null;
   const near = sphere ? Math.cos(Math.min(1, reach * elong) * Math.PI) : 0;
-  for (let i = 0; i < mesh.n; i++) {
+  // 只在岛的附近找格：从岛心那一格往外走到 reach·elong 再多两格，按编号排好，
+  // 与原来逐格扫描整张图的结果、顺序都相同（岛链里几十个小岛时不再每个都扫一遍整张图）
+  const c0 = centerCell(mesh, spec.x, spec.y);
+  const limit = reach * elong + 2 * mesh.spacing;
+  const cosLimit = Math.cos(Math.min(1, limit) * Math.PI);
+  const within = (i: number) =>
+    sphere && center
+      ? sphere.p[3 * i] * center[0] + sphere.p[3 * i + 1] * center[1] + sphere.p[3 * i + 2] * center[2] >= cosLimit
+      : Math.hypot(mesh.x[i] - spec.x, mesh.y[i] - spec.y) <= limit;
+  const nearby: number[] = [];
+  if (within(c0)) {
+    const seen = new Set<number>([c0]);
+    nearby.push(c0);
+    for (let h = 0; h < nearby.length; h++) {
+      const c = nearby[h];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (seen.has(j)) continue;
+        seen.add(j);
+        if (within(j)) nearby.push(j);
+      }
+    }
+    nearby.sort((a, b) => a - b);
+  }
+  for (const i of nearby) {
     let dx: number;
     let dy: number;
     if (sphere && center) {
@@ -631,6 +696,26 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     out.upliftDelta.push(lift);
   }
   out.footprint = footprintOf(world, out);
+  // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）。
+  // 岛心在地图外（岛链画出了地图边）时没有“岛心那一格”，不补：否则地图边上会多出一格一格的小岛
+  const cellKm = mesh.spacing * world.kmPerUnit;
+  const onMap = sphere !== null || (spec.x >= 0 && spec.x <= mesh.width && spec.y >= 0 && spec.y <= mesh.height);
+  if (fillTiny && onMap && !out.footprint.length && typeof spec.size === 'number' && spec.size < cellKm * 1.5) {
+    const coast = coastNoiseField(mesh, coastSeed(world));
+    if (!causes.land[c0] && !isLandValue(causes.landness[c0], coast[c0], rough)) {
+      const need = Math.max(0, core - causes.landness[c0]);
+      const k = out.cells.indexOf(c0);
+      if (k >= 0) out.landDelta[k] = Math.max(out.landDelta[k], need);
+      else {
+        let at = 0;
+        while (at < out.cells.length && out.cells[at] < c0) at++;
+        out.cells.splice(at, 0, c0);
+        out.landDelta.splice(at, 0, need);
+        out.upliftDelta.splice(at, 0, 0);
+      }
+      out.footprint = footprintOf(world, out);
+    }
+  }
   return out;
 }
 
@@ -644,13 +729,22 @@ function footprintOf(world: World, r: { cells: number[]; landDelta: number[] }):
 export const chainSchema = z.object({
   // 折线顶点（地图单位）
   points: z.array(z.tuple([z.number(), z.number()])).min(2),
-  kind: z.enum(ISLAND_KINDS).default('volcanic'),
+  kind: z.enum(CHAIN_KINDS).default('volcanic'),
   size: islandSizeSchema.default('medium'),
   // 0.5 稀疏，1 正常，2 密集
   density: z.number().min(0.2).max(3).default(1),
   variant: z.number().int().min(0).default(0),
+  // 第八轮起的新岛链：小一号的岛最小到 islandMinCells（0.75 格），太小时岛心那一格成陆。
+  // 旧存档里没有这一项，小岛照旧最小 1.5 格
+  fine: z.literal(true).optional(),
 });
 export type ChainSpec = z.output<typeof chainSchema>;
+
+// 岛链里小一号的岛最小多大（km）：旧岛链冻结在 1.5 格（不跟着 islandSizeRangeKm 变），带 fine 的按种类的最小值
+function chainMinKm(world: World, spec: ChainSpec): number {
+  const cellKm = world.mesh.spacing * world.kmPerUnit;
+  return cellKm * (spec.fine ? islandMinCells(spec.kind) : 1.5);
+}
 
 // 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落
 export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
@@ -669,7 +763,7 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
   const count = Math.max(1, Math.round(total / spacing));
   const rand = mulberry32(mixSeed(coastSeed(world), 555, Math.round(pts[0][0] * 1e4), Math.round(pts[0][1] * 1e4), spec.variant));
   const legacy = typeof spec.size === 'string';
-  const minKm = islandSizeRangeKm(world)[0];
+  const minKm = chainMinKm(world, spec);
   const sizes: IslandSizeSpec[] = [];
   for (let k = 0; k < count; k++) {
     const u = rand();
@@ -714,7 +808,7 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
   const count = Math.max(1, Math.round(total / spacing));
   const x0 = wrapX(spec.points[0][0]);
   const rand = mulberry32(mixSeed(coastSeed(world), 555, Math.round(x0 * 1e4), Math.round(spec.points[0][1] * 1e4), spec.variant));
-  const minKm = islandSizeRangeKm(world)[0];
+  const minKm = chainMinKm(world, spec);
   const sizes: IslandSizeSpec[] = [];
   for (let k = 0; k < count; k++) {
     const u = rand();
@@ -752,13 +846,13 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
 const bigger = (s: IslandSize): IslandSize => (s === 'small' ? 'medium' : 'large');
 const smaller = (s: IslandSize): IslandSize => (s === 'large' ? 'medium' : 'small');
 
-// 多个岛依次叠加（后一个看见前一个的结果），返回合并后的增量
-export function combineStamps(world: World, specs: IslandSpec[]): StampResult {
+// 多个岛依次叠加（后一个看见前一个的结果），返回合并后的增量。fillTiny 见 islandStamp（只有带 fine 的岛链传 true）
+export function combineStamps(world: World, specs: IslandSpec[], fillTiny = false): StampResult {
   const { causes } = world;
   const landSaved = new Map<number, number>();
   const acc = new Map<number, { land: number; lift: number }>();
   for (const spec of specs) {
-    const r = islandStamp(world, spec);
+    const r = islandStamp(world, spec, fillTiny);
     r.cells.forEach((i, k) => {
       if (!landSaved.has(i)) landSaved.set(i, causes.landness[i]);
       causes.landness[i] += r.landDelta[k];

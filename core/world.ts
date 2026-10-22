@@ -84,8 +84,8 @@ export const constraintSchema = z.object({
   mode: z.enum(['constraint', 'override']),
   // 至少多少比例的格必须是该类型（省份级设定用，保留内部自然变化）
   ratio: z.number().min(0.05).max(1).default(1),
-  // 修正场向外衰减到 0 的距离（km）
-  radius: z.number().min(50).max(5000).default(600),
+  // 修正场向外衰减到 0 的距离（km）。第八轮起最小值随地图（一格半），这里只挡住不合理的值
+  radius: z.number().min(1).max(5000).default(600),
   label: z.string().default(''),
 });
 export type Constraint = z.output<typeof constraintSchema>;
@@ -105,10 +105,12 @@ export type Guide = z.output<typeof guideSchema>;
 export const lakeSchema = z.object({
   id: z.string(),
   cell: z.number().int().min(0),
-  radius: z.number().min(10).max(2000).default(150),
+  radius: z.number().min(0.1).max(2000).default(150),
   depth: z.number().min(5).max(2000).default(120),
   // 不受蒸发影响，始终蓄满（泉水、魔法湖）
   perennial: z.boolean().default(true),
+  // 第八轮起的新湖：半径就按给的算，最小半格（只淹一格）。旧湖没有这一项，照旧至少一格半
+  exact: z.literal(true).optional(),
 });
 export type LakeSpec = z.output<typeof lakeSchema>;
 

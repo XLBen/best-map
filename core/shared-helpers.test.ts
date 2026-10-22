@@ -210,13 +210,13 @@ describe('画笔、湖、过渡的范围搬进 core 后数值不变', () => {
   it('一块地区与整个星球', () => {
     const worlds = [continents().world, createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1))];
     for (const w of worlds) {
-      // 抽出前 src/state.ts 里的写法
+      // 抽出前 src/state.ts 里的写法；最小值是第八轮 1b 改小的（画笔 0.4 格、湖半格、过渡一格半），最大值不变
       const width = w.mesh.kind === 'sphere' ? w.kmPerUnit : w.mesh.width * w.kmPerUnit;
       const cell = w.mesh.spacing * w.kmPerUnit;
       expect(mapScaleKm(w)).toEqual({ width, cell });
-      expect(brushRangeKm(w)).toEqual([cell * 0.6, width * 0.2]);
-      expect(lakeRangeKm(w)).toEqual([Math.max(8, cell * 1.5), Math.max(cell * 4, width * 0.05)]);
-      expect(reachRangeKm(w)).toEqual([Math.max(30, width * 0.015), Math.min(5000, width * 0.2)]);
+      expect(brushRangeKm(w)).toEqual([cell * 0.4, width * 0.2]);
+      expect(lakeRangeKm(w)).toEqual([cell * 0.5, Math.max(cell * 4, width * 0.05)]);
+      expect(reachRangeKm(w)).toEqual([Math.max(cell * 1.5, width * 0.005), Math.min(5000, width * 0.2)]);
     }
   });
 });
