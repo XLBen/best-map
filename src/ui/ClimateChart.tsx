@@ -18,8 +18,12 @@ import {
 import { isVegetated } from '../../core/vegetation';
 import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
-import { adjustPreviewNote, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
+import { adjustPreviewNote, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
 import { paintWith } from './defs/tools';
+import { readPack } from '../../core/packs';
+import { FANTASY_PACK } from '../../core/packs/fantasy';
+import { fileLabel, openPackApply, openPackImport } from './packs/store';
+import { SpeciesAdvanced } from './SpeciesAdvanced';
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
 // 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风。
@@ -381,6 +385,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         <summary>高级</summary>
         <AdvancedTolerances sp={sp} />
       </details>
+      <SpeciesAdvanced sp={sp} />
       <div class="row wrap">
         <button onClick={() => paintWith(sp.id)} disabled={options.value.biome === sp.id && tool.value === 'biome'}>
           {options.value.biome === sp.id && tool.value === 'biome' ? '画笔正在用它' : '用它涂'}
@@ -435,19 +440,27 @@ export function SpeciesPanel() {
     const sp = withRect(base, { t0: 5, t1: 18, m0: 0.6, m1: 1.6 });
     if (await exec({ op: 'add_species', species: sp })) focusSpecies.value = id;
   };
+  // 导入：和资源包走同一条路（只解析、检查，带脚本的先问信任）。以前导出的生态文件照旧是整套换掉；
+  // 选的是资源包（或文字包）时打开资源包的导入
   const importJson = (file: File) => {
     void file.text().then(async (text) => {
-      try {
-        const list = JSON.parse(text) as Species[];
-        if (!Array.isArray(list)) throw new Error('需要一个生态类型的数组');
-        await exec({
-          op: 'batch',
-          label: `导入 ${list.length} 种生态`,
-          commands: [...w.small.species.map((s) => ({ op: 'remove_species' as const, id: s.id })), ...list.map((s) => ({ op: 'add_species' as const, species: s }))],
-        });
-      } catch (e) {
-        showToast(`导入失败：${(e as Error).message}`, true);
+      const read = readPack(text, fileLabel(file.name));
+      if (!read.ok) {
+        showToast(`导入失败：${read.errors.slice(0, 2).join('；')}`, true);
+        return;
       }
+      if (read.legacy !== 'biomes') {
+        openPackImport(read, file.name);
+        return;
+      }
+      const list = read.pack.biomes ?? [];
+      // 带着没见过的脚本：先问（信任了才导入；安全模式下脚本不运行，不问）
+      if (!(await confirmImport(read.pack))) return;
+      await exec({
+        op: 'batch',
+        label: `导入 ${list.length} 种生态`,
+        commands: [...w.small.species.map((s) => ({ op: 'remove_species' as const, id: s.id })), ...list.map((s) => ({ op: 'add_species' as const, species: s }))],
+      });
     });
   };
   return (
@@ -465,6 +478,9 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
+        <button onClick={() => openPackApply(FANTASY_PACK, { biomes: (FANTASY_PACK.biomes ?? []).map((b) => b.id) }, 'biomes')} title="水晶丛林、死亡森林……先在地图上看看加了之后的样子">
+          添加示例生态…
+        </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>
         <label class="file-button">
           导入…

@@ -2,7 +2,9 @@ import { Dices, Lock, LockOpen, ScanSearch, Spline, Trash2, X } from 'lucide-pre
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, featureLabel } from '../../../core/features';
-import { DEFAULT_PACK, type WordPack, wordPackSchema } from '../../../core/names';
+import { DEFAULT_PACK } from '../../../core/names';
+import { readPack } from '../../../core/packs';
+import { fileLabel, openPackImport } from '../packs/store';
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
 import { download, exec, focusName, labelGroups, selectedFeature, showToast, world } from '../../state';
 import { focusOn } from '../camera';
@@ -187,15 +189,17 @@ export function NamesBar() {
 
 function WordPackBox({ w }: { w: World }) {
   const pack = w.small.wordPack ?? DEFAULT_PACK;
+  // 导入：和资源包走同一条路（只解析、检查）。文字包文件照旧直接换用；选的是资源包时打开资源包的导入
   const importPack = (file: File) => {
     void file.text().then(async (text) => {
-      try {
-        const parsed = wordPackSchema.safeParse(JSON.parse(text));
-        if (!parsed.success) throw new Error(parsed.error.issues.map((i) => `${i.path.join('.')}：${i.message}`).slice(0, 3).join('；'));
-        await exec({ op: 'set_word_pack', pack: parsed.data as WordPack }, '正在起名…');
-      } catch (e) {
-        showToast(`文字包读不了：${(e as Error).message}`, true);
+      const read = readPack(text, fileLabel(file.name));
+      if (!read.ok) {
+        showToast(`文字包读不了：${read.errors.slice(0, 3).join('；')}`, true);
+        return;
       }
+      const wp = read.legacy === 'wordPack' ? read.pack.textPacks?.[0] : undefined;
+      if (wp) await exec({ op: 'set_word_pack', pack: wp }, '正在起名…');
+      else openPackImport(read, file.name);
     });
   };
   return (

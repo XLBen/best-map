@@ -19,7 +19,7 @@ import {
   planetSettings,
   settingsAt,
 } from '../../core/presets';
-import { autosaved, loadDoc, newWorld, readAutosave, thumbnail, wizardOpen, world } from '../state';
+import { autosaved, newWorld, resumeLast, thumbnail, wizardOpen, world } from '../state';
 import { resetTools } from './defs/tools';
 
 // 新建向导：先选一块地区还是整个星球。
@@ -196,8 +196,7 @@ export function Wizard() {
               disabled={creating}
               onClick={async () => {
                 setCreating(true);
-                const saved = await readAutosave();
-                const ok = saved ? await loadDoc(saved.doc) : false;
+                const ok = await resumeLast();
                 setCreating(false);
                 if (ok) wizardOpen.value = false;
               }}

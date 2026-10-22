@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@preact/signals": "^2.11.3",
+    "acorn": "^8.18.0",
     "d3-delaunay": "^6.0.4",
     "fflate": "^0.8.3",
     "lucide-preact": "^1.61.0",

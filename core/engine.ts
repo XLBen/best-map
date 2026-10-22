@@ -7,6 +7,7 @@ import { assignNames, detectFeatures, guideFeatures, regionFeatures } from './fe
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
+import { scriptsEnabled } from './script';
 import { SPECIES_EXTENSION_KEYS } from './species';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
@@ -123,7 +124,9 @@ export class Engine {
     return this.undone.length > 0;
   }
 
-  // 执行命令；推导立即更新。命令什么都没改时不重算、不进历史（lastNoop）
+  // 执行命令；推导立即更新。命令什么都没改时不重算、不进历史（lastNoop）。
+  // 整步要么生效要么不生效：命令本身做不了（applyCommand 已经复原了原因）、或者之后的重算出错，
+  // 都回到执行前的样子（原因、推导、历史、重做记录、状态编号都与执行前相同）再把错误抛出去
   exec(cmd: Command): string {
     const adopted = this.adoptPreview(cmd);
     if (adopted !== null) {
@@ -133,11 +136,41 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const { summary } = this.applyOnly(cmd, true);
     if (this.lastNoop) return summary;
+    const stateBefore = this.stateId;
     this.stateId = ++states;
+    // 重做记录照旧先清掉（之后存撤销缓存时不必和它们抢位置），出错时把这份列表放回去（存着的推导不要了，重做时重算）
+    const undone = this.undone;
     this.dropUndone();
     this.keepBefore(fresh);
-    this.update();
+    try {
+      this.update();
+    } catch (e) {
+      // 撤掉时的重算按说不会再出错；万一出了，历史、重做记录、状态编号也照样放回去
+      try {
+        this.rollbackLast();
+      } finally {
+        this.undone = undone;
+        this.stateId = stateBefore;
+      }
+      throw e;
+    }
     return summary;
+  }
+
+  // 刚执行的最后一步在重算时出错：撤掉它（原因退回去），推导换回这一步之前的。
+  // 存着这一步之前的推导（keepBefore 复制的那份，没有被改过）就直接换上；否则从头重算——执行前的原因算过一次没出错，
+  // 引擎是确定的，所以这次也不会出错
+  private rollbackLast() {
+    const h = this.done.pop()!;
+    revert(this.world, h.undo);
+    const before = h.state;
+    h.state = undefined;
+    this.kept = this.kept.filter((k) => k !== h && k.state);
+    if (before) this.install(before);
+    else {
+      this.dirty = Dirty.Elevation;
+      this.update();
+    }
   }
 
   // skipNoop：什么都没改的命令不记进历史（重放存档时照旧记，历史与文件一一对应）。
@@ -147,8 +180,11 @@ export class Engine {
     this.lastNoop = skipNoop && !r.changed;
     if (this.lastNoop) return { summary: r.summary, changed: false };
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
-    // 新起的省名记进命令（存档、重做时照用）
-    const recorded = r.provinceNames ? { ...cmd, provinceNames: r.provinceNames } : cmd;
+    // 新起的省名记进命令（存档、重做时照用）。
+    // 安全模式（脚本不运行）下推导与正常时不同，这一步新起的省可能少几个：命令里已经记着的名字一个不丢，
+    // 不然用安全模式打开一次、自动保存之后，再正常打开时那几个省就换了名字（命令照旧保留）
+    const names = r.provinceNames && cmd.provinceNames && !scriptsEnabled() ? { ...cmd.provinceNames, ...r.provinceNames } : r.provinceNames;
+    const recorded = names ? { ...cmd, provinceNames: names } : cmd;
     this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
     return { summary: r.summary, changed: r.changed };
@@ -207,6 +243,7 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const h = this.revertLast();
     if (!h) return false;
+    const stateBefore = this.stateId;
     this.stateId = ++states;
     const step: UndoneStep = { cmd: h.cmd, summary: h.summary };
     const before = h.state;
@@ -218,20 +255,44 @@ export class Engine {
       this.recomputed = Math.max(this.recomputed, h.dirty) as Dirty;
     }
     this.undone.push(step);
-    this.update();
+    try {
+      this.update();
+    } catch (e) {
+      // 重算出错：这一步放回去（照原来的编号），推导从头重算（撤销之前的原因算过一次没出错）
+      this.undone.pop();
+      this.kept = this.kept.filter((k) => k !== step && k.state);
+      this.applyOnly(h.cmd);
+      this.done[this.done.length - 1].id = h.id;
+      this.dirty = Dirty.Elevation;
+      this.update();
+      this.stateId = stateBefore;
+      throw e;
+    }
     return true;
   }
 
-  // 重做：命令重新作用于原因（推导此时与原来执行前相同，生成的名字也相同）；存着这一步之后的推导时直接换回
+  // 重做：命令重新作用于原因（推导此时与原来执行前相同，生成的名字也相同）；存着这一步之后的推导时直接换回。
+  // 出错时（命令做不了、重算出错）回到重做之前的样子，这一步留在重做记录里
   redo(): boolean {
     this.lastPreview = null;
     const fresh = this.dirty === Dirty.None;
     const h = this.undone.pop();
     if (!h) return false;
+    const stateBefore = this.stateId;
     this.stateId = ++states;
     const after = h.state;
     h.state = undefined;
-    this.applyOnly(h.cmd);
+    const putBack = () => {
+      this.undone.push(h);
+      this.stateId = stateBefore;
+    };
+    try {
+      this.applyOnly(h.cmd);
+    } catch (e) {
+      h.state = after;
+      putBack();
+      throw e;
+    }
     const step = this.done[this.done.length - 1];
     if (fresh && after && step.dirty > Dirty.Names) {
       const before = this.current();
@@ -239,33 +300,63 @@ export class Engine {
       this.keep(step, before);
       this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
     } else this.keepBefore(fresh);
-    this.update();
+    try {
+      this.update();
+    } catch (e) {
+      try {
+        this.rollbackLast();
+      } finally {
+        putBack();
+      }
+      throw e;
+    }
     return true;
   }
 
   // 换一个：撤掉最后一步，执行新命令（“换个形状”用）。只重算一次，历史里只留新的一步。
-  // 撤掉的那一步之前的推导，就是新的一步之前的推导：留给新的一步撤销用
+  // 撤掉的那一步之前的推导，就是新的一步之前的推导：留给新的一步撤销用。
+  // 新命令做不了、或者重算出错：原来那一步放回去，世界、历史、重做记录都与换之前相同
   replaceLast(cmd: Command): string {
     this.lastPreview = null;
+    const stateBefore = this.stateId;
     const h = this.revertLast();
     if (!h) throw new CommandError('没有可以替换的一步');
     const before = h.state;
     h.state = undefined;
+    // 把原来那一步放回去（推导要重算：before 是它之前的推导，不能直接换上）
+    const restore = () => {
+      this.applyOnly(h.cmd);
+      const back = this.done[this.done.length - 1];
+      back.id = h.id;
+      if (before) this.keep(back, before);
+      this.update();
+      this.stateId = stateBefore;
+    };
     let summary: string;
     try {
       summary = this.applyOnly(cmd).summary;
     } catch (e) {
-      // 新命令做不了：把原来那一步放回去
-      this.applyOnly(h.cmd);
-      if (before) this.keep(this.done[this.done.length - 1], before);
-      this.update();
+      restore();
       throw e;
     }
     this.stateId = ++states;
+    const undone = this.undone;
     this.dropUndone();
     const step = this.done[this.done.length - 1];
     if (before && step.dirty > Dirty.Names) this.keep(step, before);
-    this.update();
+    try {
+      this.update();
+    } catch (e) {
+      // 新的一步撤掉（推导写了一半，不能留着）：原因退回去，原来那一步放回去后从头重算
+      this.done.pop();
+      revert(this.world, step.undo);
+      step.state = undefined;
+      this.kept = this.kept.filter((k) => k !== step && k.state);
+      this.dirty = Dirty.Elevation;
+      restore();
+      this.undone = undone;
+      throw e;
+    }
     return summary;
   }
 
@@ -276,8 +367,19 @@ export class Engine {
     return r;
   }
 
+  // 按标记重算推导。中途出错时推导写了一半：标记成从高程起全部重算（下一次一定整个重算，
+  // 不会把写了一半的推导当成算好的），再把错误抛出去
   update(): Derived {
     if (this.dirty === Dirty.None) return this.world.derived;
+    try {
+      return this.recompute();
+    } catch (e) {
+      this.dirty = Dirty.Elevation;
+      throw e;
+    }
+  }
+
+  private recompute(): Derived {
     this.recomputed = Math.max(this.recomputed, this.dirty) as Dirty;
     const w = this.world;
     const d = w.derived;

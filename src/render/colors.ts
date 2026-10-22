@@ -1,8 +1,9 @@
-import { blendRgb } from '../../core/biome-look';
+import { blendRgb, cellFx, fxPalette, fxSet } from '../../core/biome-look';
 import { hexToRgb } from '../../core/export';
 import { gradient } from '../../core/mesh';
 import type { ProvinceKind } from '../../core/provinces';
 import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '../../core/seams';
+import type { Visual } from '../../core/species';
 import { coastPatch, coastValues } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
 import { type World, provinceColor } from '../../core/world';
@@ -103,6 +104,13 @@ const lakeDepth = (world: World, i: number) => Math.max(2, world.derived.water[i
 const lakeCoast = (c: number) => -Math.max(60, Math.abs(c));
 // 水面的暖度（浅水颜色用，放在颜色的 alpha 里）
 const warmth = (world: World, i: number) => Math.round(255 * Math.min(1, Math.max(0, (world.derived.tMean[i] - 14) / 12)));
+// 积雪盖住多少（0–1）：按季节取最暖那一季（全年看暖季）的气温，0 °C 以下越冷越白，−6 °C 全白
+function snowAmount(world: World, season: Season, i: number): number {
+  const d = world.derived;
+  const snowT = season === 'winter' ? Math.min(d.tS[i], d.tW[i]) : season === 'summer' ? Math.max(d.tS[i], d.tW[i]) : d.tWarm[i];
+  return snowT < 0 ? Math.min(1, -snowT / 6) : 0;
+}
+const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces';
 
 function staticLayers(world: World): StaticLayers {
   const inputs = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness];
@@ -159,7 +167,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   const playaColor: RGB = [226, 218, 196];
   const seasonal = (annual: Float32Array, s: Float32Array, w: Float32Array, i: number, half = false) =>
     o.season === 'summer' ? (half ? s[i] * 2 : s[i]) : o.season === 'winter' ? (half ? w[i] * 2 : w[i]) : annual[i];
-  const terrainLike = o.mode === 'terrain' || o.mode === 'dominant' || o.mode === 'provinces';
+  const terrainLike = terrainLikeMode(o.mode);
   if (terrainLike) rock = 1;
 
   for (let i = 0; i < n; i++) {
@@ -181,14 +189,11 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       case 'terrain':
       case 'dominant':
       case 'provinces': {
-        // 植被按份额混色，积雪按季节覆盖
-        c = blendRgb(d.share, i, speciesRgb);
+        // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖
+        c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
         if (d.lake[i] === 2) c = playaColor;
-        const snowT = o.season === 'winter' ? Math.min(d.tS[i], d.tW[i]) : o.season === 'summer' ? Math.max(d.tS[i], d.tW[i]) : d.tWarm[i];
-        if (snowT < 0) {
-          const k = Math.min(1, -snowT / 6);
-          c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
-        }
+        const k = snowAmount(world, o.season, i);
+        if (k > 0) c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
         break;
       }
       case 'elevation':
@@ -258,6 +263,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   // 对岸的颜色（fillOther）：着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
   const other = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) fillOther(mesh, smooth, st.coast, other, i);
+  const fx = fxLayers(world, o);
   return {
     smooth,
     other,
@@ -270,7 +276,47 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     shade,
     rock,
     coastAmp: COAST_AMP * small.terrain.coastRoughness,
+    fx: fx?.fx ?? null,
+    fxPalette: fx?.palette ?? null,
   };
+}
+
+// 小数据里着色用到的部分连成一个字符串（MapView 着色缓存的键之一）：省份类型、切线、生态的颜色与外观（花纹、发光、种子）、海岸曲折。
+// 只改生态外观的一步什么都不重算（轻快照，推导数组不变），靠外观这一段重新着色；只改名字、地名设定时不变，不重新着色
+export function colorSignature(small: World['small']): string {
+  const kinds = Object.entries(small.provinces).map(([p, m]) => `${p}:${m.kind}`);
+  const seams = (small.provinceSeams ?? []).map((s) => s.id);
+  const colors = small.species.map((s) => s.color);
+  const looks = small.species.map((s) => (s.visual ? `${s.id}:${s.seedKey ?? ''}:${JSON.stringify(s.visual)}` : ''));
+  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}`;
+}
+
+// ---------- 生态的花纹与发光（第三批） ----------
+// 每格一个 RGBA 字节：R = 份额最大的有花纹的生态在调色板里的行 + 1（0 没有花纹），G = 它的份额 × 255
+// （被雪、盐壳盖住的部分不算），B = Σ 份额 × 发光强度 × 255，A = 发光颜色取的那一行 + 1（0 不发光）。
+// 调色板见 core/biome-look.ts 的 fxPalette。只在地形类的着色（地形、主导生态、省份）里画；
+// 没有一种生态有花纹或发光时为 null（着色器整段跳过，画面与以前逐像素相同）。
+// overrides：拖花纹、发光滑块时按 id 换上的外观（主线程上立即画，不必等引擎）
+export function fxLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'>, overrides?: ReadonlyMap<string, Visual>): { fx: Uint8Array; palette: Float32Array } | null {
+  if (!terrainLikeMode(o.mode)) return null;
+  const { mesh, causes, derived: d, small } = world;
+  const set = fxSet(small.species, mesh.kind === 'sphere', overrides);
+  if (!set) return null;
+  const n = mesh.n;
+  const S = small.species.length;
+  const fx = new Uint8Array(n * 4);
+  const cf = new Float64Array(4);
+  for (let i = 0; i < n; i++) {
+    if (!causes.land[i] || d.lake[i] === 1) continue;
+    cellFx(set, d.share, i, S, cf);
+    const cover = d.lake[i] === 2 ? 0 : 1 - snowAmount(world, o.season, i);
+    const o4 = i * 4;
+    fx[o4] = cf[0] + 1;
+    fx[o4 + 1] = cf[0] >= 0 ? Math.round(255 * Math.min(1, cf[1]) * cover) : 0;
+    fx[o4 + 2] = Math.round(255 * cf[2]);
+    fx[o4 + 3] = cf[3] + 1;
+  }
+  return { fx, palette: fxPalette(set) };
 }
 
 // 省份着色的平涂：每省一种颜色；无人区偏灰、湖省偏蓝，一眼能和普通省份分开。

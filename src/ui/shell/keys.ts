@@ -2,6 +2,7 @@ import { helpOpen, measure, openPanel, redo, selectedFeature, selectedProvince, 
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
+import { packApply, packDialog } from '../packs/store';
 
 // 键盘：一个地方统一处理，Esc 按固定顺序一层层退出
 
@@ -12,9 +13,10 @@ const typing = (t: EventTarget | null) => {
 
 export function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    // 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 → 工具自己的（不截走别的河）→ 量距离（先清空再退出）→
-    // 隐藏的界面 → 抽屉 → 选中的省份 / 地名 / 河
-    if (helpOpen.value) helpOpen.value = false;
+    // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
+    // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 隐藏的界面 → 资源包“用到这个世界”的卡片 → 抽屉 → 选中的省份 / 地名 / 河
+    if (packDialog.value) packDialog.value = null;
+    else if (helpOpen.value) helpOpen.value = false;
     else if (wizardOpen.value) {
       if (world.value) wizardOpen.value = false;
     } else if (openPanel.value) openPanel.value = null;
@@ -23,6 +25,7 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (mapApi.current?.escape()) return;
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (uiHidden.value) uiHidden.value = false;
+    else if (packApply.value) packApply.value = null;
     else if (sheet.value) sheet.value = null;
     else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value) {
       selectedProvince.value = null;
@@ -31,7 +34,7 @@ export function onKeyDown(e: KeyboardEvent) {
     }
     return;
   }
-  if (typing(e.target) || helpOpen.value || wizardOpen.value) return;
+  if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value) return;
   // 回车：交给工具（画河时确认截走别的河）
   if (e.key === 'Enter' && !openPanel.value && mapApi.current?.enter()) {
     e.preventDefault();

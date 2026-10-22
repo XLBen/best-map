@@ -4,13 +4,67 @@ import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
 import { previewTerrain, resolveTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
+import { setScriptHost, setScriptsEnabled } from '../core/script';
 import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
 import { idbGet, idbTx } from './idb';
-import type { LightSnapshot, Request, Response, Snapshot } from './protocol';
+import type { LightSnapshot, MirrorLog, Request, Response, ScriptPing, Snapshot } from './protocol';
 
 // 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程
 
 let engine: Engine | null = null;
+
+// 安全模式：脚本不运行。从第一次新建、打开起在这个 Worker 里固定不变（主线程要换模式时另开一个 Worker）：
+// 按内容记住的缓存（地形、地物、脚本的结果）不分模式，同一个 Worker 里换来换去会用上另一种模式算的结果
+let safeMode = false;
+function useSafeMode(safe: boolean | undefined) {
+  if (!safe || safeMode) return;
+  safeMode = true;
+  setScriptsEnabled(false);
+}
+
+// ---------- 脚本的看门狗：进入、还在算（最多每 250 毫秒一次）、算完时告诉主线程 ----------
+// 主线程只在脚本运行期间计时：4 秒没有消息就判定卡住，停掉这个 Worker 另开一个
+const LABEL_MAX = 60;
+let scriptLabel = '';
+let tickAt = 0;
+function ping(phase: ScriptPing['phase']) {
+  (self as DedicatedWorkerGlobalScope).postMessage({ kind: 'script', phase, label: scriptLabel } satisfies ScriptPing);
+}
+setScriptHost({
+  enter(label) {
+    scriptLabel = String(label).slice(0, LABEL_MAX);
+    tickAt = performance.now();
+    ping('enter');
+  },
+  tick() {
+    const now = performance.now();
+    if (now - tickAt < 250) return;
+    tickAt = now;
+    ping('tick');
+  },
+  exit() {
+    ping('exit');
+    scriptLabel = '';
+  },
+});
+
+// ---------- 主线程保存的命令记录 ----------
+// 每次改动世界的回复都带上上次送到主线程以来变了的命令；引擎换了一个（新建、打开）时纪元加一、从头发（from 为 0），
+// 免得新引擎从 1 起的步号碰巧对上旧的，主线程留着上一个世界的命令。
+// 纪元在换引擎的那一刻就加（换上后发快照出错、回复没送到，下一次照样从头发）；
+// 记下“已经送到”的步号要等回复真的发出去之后（发不出去时下一次连同这些一起发，主线程的记录接得上）
+let epoch = 0;
+let reported: number[] = [];
+function useEngine(e: Engine) {
+  engine = e;
+  epoch++;
+  reported = [];
+  // 检查点也按步号认：新引擎的步号从 1 起，可能与上一个世界写过的碰巧相同，那样这个世界的检查点就一直不写
+  ckKey = '';
+}
+function logOf(e: Engine): MirrorLog {
+  return { ...e.docTail(reported), epoch };
+}
 
 // 网格缓存：当前世界的网格和向导缩略图用的小网格（同一个大小、种子再新建或打开时不必重建）
 const meshes = new Map<string, Mesh>();
@@ -93,8 +147,9 @@ let ckAt = -Infinity;
 let ckTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 写检查点（星球约 34 MB）：最多每 10 秒一次，最后一次改动之后也会补写；force：页面要被隐藏、关掉时立即写
+// 安全模式下不写：检查点里的推导没有运行脚本，正常打开时不能用
 function writeCheckpoint(force = false) {
-  if (!BUILD || !engine) return;
+  if (!BUILD || !engine || safeMode) return;
   const key = engine.stepIds().join(',');
   if (key === ckKey) return;
   const wait = ckAt + 10000 - performance.now();
@@ -108,8 +163,9 @@ function writeCheckpoint(force = false) {
   void idbTx(['checkpoint'], 'readwrite', (s) => s.put({ build: BUILD, cp: engine!.toCheckpoint() }, 'current')).catch(() => (ckKey = ''));
 }
 
+// 安全模式下不用：检查点里的推导运行过脚本
 async function restore(doc: WorldDoc, mesh: Mesh): Promise<Engine | null> {
-  if (!BUILD) return null;
+  if (!BUILD || safeMode) return null;
   try {
     const saved = await idbGet<{ build: string; cp: Checkpoint }>('checkpoint', 'current');
     return saved && saved.build === BUILD ? Engine.fromCheckpoint(saved.cp, doc, mesh) : null;
@@ -121,33 +177,39 @@ async function restore(doc: WorldDoc, mesh: Mesh): Promise<Engine | null> {
 
 // 请求一个接一个处理（有的要等 IndexedDB）
 let chain: Promise<void> = Promise.resolve();
+// 一件出了错（比如后台补写检查点时重算出错）不能让后面的都不再处理
 function queue(run: () => Promise<void>) {
-  chain = chain.then(run);
+  chain = chain.then(run).catch(() => undefined);
 }
 
 self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => queue(() => handle(ev.data.id, ev.data.req));
 
 async function handle(id: number, req: Request) {
   try {
-    // light：这一步只重算了名字（或什么都没重算）时发轻快照
-    const withSnap = (summary?: string, light = false) => {
+    // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）
+    const withSnap = (summary?: string, light = false, fresh = false) => {
       const deep = engine!.takeRecomputed();
       const { snap, transfer } = light && deep <= Dirty.Names ? lightSnapshot(engine!) : snapshot(engine!);
-      reply({ id, ok: true, summary, snapshot: snap }, transfer);
+      const log = logOf(engine!);
+      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}) }, transfer);
+      reported = log.ids;
     };
     switch (req.kind) {
       case 'init': {
-        engine = new Engine(req.settings, meshFor(req.settings));
-        for (const cmd of req.commands ?? []) engine.exec(cmd);
-        engine.update();
-        withSnap('新世界');
+        useSafeMode(req.safe);
+        const e = new Engine(req.settings, meshFor(req.settings));
+        for (const cmd of req.commands ?? []) e.exec(cmd);
+        e.update();
+        useEngine(e);
+        withSnap('新世界', false, true);
         return;
       }
       case 'load': {
+        useSafeMode(req.safe);
         const mesh = meshFor(req.doc.settings);
         const restored = await restore(req.doc, mesh);
-        engine = restored ?? Engine.fromDoc(req.doc, mesh);
-        withSnap('已打开世界文件');
+        useEngine(restored ?? Engine.fromDoc(req.doc, mesh));
+        withSnap('已打开世界文件', false, true);
         if (restored) {
           ckKey = restored.stepIds().join(',');
           // 恢复的世界还没有地形底图的缓存：先发快照让地图显示出来，再在后台补上（下一次改地形就不必等）
@@ -159,7 +221,7 @@ async function handle(id: number, req: Request) {
       }
       case 'exec': {
         const summary = engine!.exec(req.cmd);
-        // 什么都没改（比如在陆地上画陆地）：世界不变，不发快照
+        // 什么都没改（比如在陆地上画陆地）：世界不变，不发快照（命令记录也没变）
         if (engine!.lastNoop) reply({ id, ok: true, summary, noop: true });
         else withSnap(summary, true);
         return;

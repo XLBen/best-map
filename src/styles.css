@@ -608,6 +608,7 @@ button svg {
 .here,
 .popover,
 .sheet,
+.pack-apply,
 .notice {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -958,21 +959,77 @@ button svg {
   margin: 0;
 }
 
-/* 顶部中间的提示条 */
-.notice {
+/* 顶部中间的提示条（安全模式、脚本出错的横幅在它上面，一起往下排） */
+.notices {
   position: absolute;
   top: 62px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 40px);
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 12;
+  pointer-events: none;
+}
+.notices > * {
+  pointer-events: auto;
+}
+.notice {
+  max-width: 100%;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 6px 5px 14px;
   background: var(--glass-strong);
   border-radius: 20px;
-  z-index: 12;
   font-size: 13px;
+}
+.notice.banner {
+  border-color: rgba(240, 160, 64, 0.45);
+}
+.notice .link-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: var(--accent);
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.notice .link-btn:hover {
+  text-decoration: underline;
+}
+
+/* 问一句的对话框（信任脚本吗、用安全模式打开吗） */
+.modal.ask {
+  width: 560px;
+}
+.ask-scripts {
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+.ask-scripts pre {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
+.ask-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 .notice.error {
   background: rgba(80, 30, 28, 0.96);
@@ -1268,4 +1325,199 @@ kbd {
 .app.with-sheet .bottombar {
   left: calc((100% - 380px) / 2);
   max-width: calc(100% - 560px);
+}
+
+/* ---------- 资源包 ---------- */
+.modal.packs {
+  width: 660px;
+}
+.modal.packs textarea {
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+}
+.pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pack-swatches {
+  display: inline-flex;
+  gap: 2px;
+  flex: none;
+  min-width: 17px;
+}
+.pack-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.chip.static {
+  display: inline-flex;
+  align-items: center;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  cursor: default;
+}
+.pack-problems {
+  border-color: #6b5a2a;
+}
+.pack-problems ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.box.trust {
+  border-color: var(--accent-line);
+}
+.box.trust p {
+  margin: 4px 0;
+}
+.script-src {
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 8px;
+  margin: 3px 0 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+/* “用到这个世界”的卡片：浮在地图左边，不挡地图 */
+.pack-apply {
+  position: absolute;
+  top: 60px;
+  left: 10px;
+  width: min(340px, calc(100% - 20px));
+  max-height: calc(100% - 150px);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  border-radius: 14px;
+  z-index: 15;
+}
+
+/* ---------- 脚本框（生态的“长在哪里”“颜色”……）---------- */
+.script-box {
+  position: relative;
+  margin: 8px 0 10px;
+}
+.script-head {
+  margin: 0 0 3px;
+  font-size: 12.5px;
+}
+.script-edit {
+  display: flex;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.script-edit:focus-within {
+  border-color: var(--accent-line);
+}
+.script-edit.has-problem {
+  border-color: #7a3a33;
+}
+.script-gutter,
+.script-edit textarea {
+  font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.script-gutter {
+  flex: none;
+  min-width: 30px;
+  padding-left: 6px;
+  padding-right: 6px;
+  text-align: right;
+  color: #5d6673;
+  background: #171a20;
+  overflow: hidden;
+  user-select: none;
+}
+.script-gutter .bad {
+  color: #fff;
+  background: #7a2f2a;
+  border-radius: 3px;
+}
+.script-edit textarea {
+  flex: 1;
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: var(--text);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.script-problem {
+  margin-top: 3px;
+  color: #ff9a92;
+}
+.script-note {
+  margin-top: 3px;
+}
+.script-help {
+  position: absolute;
+  z-index: 5;
+  top: 26px;
+  left: 0;
+  right: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 10px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.script-help code,
+.script-example pre {
+  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.script-var {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 1px 0;
+  font-size: 12px;
+}
+.script-var code {
+  flex: none;
+}
+.script-example pre {
+  margin: 4px 0 3px;
+  padding: 4px 6px;
+  background: #12151a;
+  border-radius: 5px;
+  white-space: pre-wrap;
+}
+.script-example {
+  margin-bottom: 6px;
+}
+/* 生态的“高级：图案、效果与脚本” */
+.species-advanced textarea.names {
+  width: 100%;
+  min-height: 64px;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 6px;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
 }

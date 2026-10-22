@@ -1,17 +1,23 @@
 import { batch, signal } from '@preact/signals';
+import { speciesOwner } from '../core/biome-scripts';
 import type { Command } from '../core/commands';
 import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { previewWorldOf } from '../core/preview-world';
+import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from '../core/script';
 import { isRiverCell } from '../core/select';
+import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
+import type { HighlightLayer } from './render/colors';
+import { EngineHost, type WorkerLike } from './sandbox';
+import { clearLoading, markLoading, readLoading, tidyTrusted, trustScripts, uniqueScripts, untrustedScripts } from './trust';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态
 
@@ -90,6 +96,42 @@ export const hoverProvinceCell = signal<number>(-1);
 export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 export const focusSpecies = signal<string | null>(null);
 
+// 拖生态的花纹、发光滑块时：地图在主线程上立即按这份外观画（只影响画法，不改世界，不进历史）。按生态 id 记。
+// 用法：拖动时 setSpeciesVisualOverride(id, 外观)；松手提交（update_species），等 exec 返回（不论成没成，结果已换上），
+// 覆盖的还是提交的那一份（visualOverrides.value.get(id) === 它，没有又拖到别的值）时再给 null 去掉，这样中间不会闪回旧的样子。
+// 新建、打开世界时全部去掉；结果换上时，世界里已经没有这种生态的、存着的外观已经与覆盖的一样的也去掉（见 pruneVisualOverrides），
+// 编辑面板忘了去掉时地图也不会一直画着世界里没有的样子
+export const visualOverrides = signal<ReadonlyMap<string, Visual>>(new Map());
+export function setSpeciesVisualOverride(id: string, visual: Visual | null) {
+  const cur = visualOverrides.value;
+  if (!visual && !cur.has(id)) return;
+  const next = new Map(cur);
+  if (visual) next.set(id, visual);
+  else next.delete(id);
+  visualOverrides.value = next;
+}
+
+// 两份外观逐项相同（不看键的先后：存进世界的那份经过校验，键的顺序可能与编辑面板给的不同）
+const VISUAL_KEYS = ['pattern', 'color2', 'amount', 'size', 'glow', 'glowColor'] as const;
+const visualValue = (v: unknown) => (typeof v === 'string' ? v.toLowerCase() : v);
+const sameVisual = (a: Visual | undefined, b: Visual) => !!a && VISUAL_KEYS.every((k) => visualValue(a[k]) === visualValue(b[k]));
+
+// 结果换上时去掉用不着的覆盖：那种生态已经没有了（撤销、删掉），或者世界里存着的外观就是覆盖的这一份（松手提交的结果到了）。
+// 去掉后画出来的与去掉前一样，不会闪
+function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[]) {
+  const cur = visualOverrides.value;
+  if (!cur.size) return;
+  const byId = new Map(species.map((sp) => [sp.id, sp]));
+  let next: Map<string, Visual> | null = null;
+  for (const [id, v] of cur) {
+    const sp = byId.get(id);
+    if (sp && !sameVisual(sp.visual, v)) continue;
+    next ??= new Map(cur);
+    next.delete(id);
+  }
+  if (next) visualOverrides.value = next;
+}
+
 // 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
 export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
@@ -112,8 +154,9 @@ export const adjustPreview = signal<TerrainPreview | null>(null);
 export const wizardOpen = signal(false);
 export const helpOpen = signal(false);
 // “调整”面板拖气候、河流的滑块，生态编辑器拖色块时：停下后算出的将来的世界，地图直接画它。
-// key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）
-export const adjustPreviewWorld = signal<{ key: string; base: World; world: World } | null>(null);
+// key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）；
+// layers：同时要高亮的格（资源包“用到这个世界”：会变的格描边、新生态的格淡淡涂上）
+export const adjustPreviewWorld = signal<{ key: string; base: World; world: World; layers?: HighlightLayer[] } | null>(null);
 // 正在拖的那一行下面的小字：正在算预览 / 地图上是松手后的样子 / 松手后约 N 秒出结果
 export const adjustPreviewNote = signal<{ key: string; text: string } | null>(null);
 // 当前世界的状态编号（Worker 每改一次换一个）：预览只在按这个状态算出来时才显示，过期的丢掉
@@ -323,16 +366,26 @@ function sizesFor(w: World): Partial<ToolOptions> {
 }
 
 // ---------- 与 Worker 通信 ----------
+// Worker 由 sandbox.ts 的 EngineHost 看着：脚本卡住、“停下”、Worker 崩了时停掉它，用主线程的命令记录另开一个恢复世界
 
-let worker: Worker | null = null;
+// 正在运行谁的脚本（一段脚本算了 1.5 秒以上）：顶部提示“正在运行「X」的脚本…”，带“停下”
+export const scriptRunning = signal<string | null>(null);
+// 安全模式：这个世界里的脚本没有运行。reason 是横幅括号里的原因
+export const safeMode = signal<{ reason: string } | null>(null);
+
+let host: EngineHost | null = null;
 let nextId = 1;
 // edit：改动世界的请求（执行、撤销、重做、换一个）；画笔可以在它们后面排队
-const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean; kind: Request['kind'] }>();
+const pending = new Map<number, { edit: boolean; kind: Request['kind'] }>();
 const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
+// 正在恢复世界（另开的 Worker 在打开命令记录里的世界）
+let recovering = false;
+const RECOVERING = '正在恢复世界…';
 
 // 正在算的只有编辑（或不改世界的后台请求）：这时画的笔画可以排在后面，按顺序执行。
-// busy 不为空且这里是 false：在算的是新建、打开世界，工具要等它算完
+// busy 不为空且这里是 false：在算的是新建、打开世界（或者在恢复世界），工具要等它算完
 export function onlyEditsPending(): boolean {
+  if (recovering) return false;
   for (const p of pending.values()) if (!p.edit) return false;
   return true;
 }
@@ -344,44 +397,94 @@ export function editsInFlight(): number {
   for (const p of pending.values()) if (EDITS.has(p.kind) && p.kind !== 'replaceLast') k++;
   return k;
 }
+
+// 改动世界的请求（执行、撤销、重做、换一个，还有新建、打开）都算完了：这时 world、worldState 就是引擎里的样子。
+// 脚本框要据此决定“换掉最后一步”还是“新的一步”（还有别人的改动在排队时换掉的会是别人的那一步）；
+// 正在打开别的世界时也要等：不然排在打开后面的提交会落到新世界里同名的生态上
+const WORLD_CHANGES = new Set<Request['kind']>([...EDITS, 'init', 'load']);
+export function editsIdle(): boolean {
+  for (const p of pending.values()) if (WORLD_CHANGES.has(p.kind)) return false;
+  return true;
+}
+const idleWaiters: (() => void)[] = [];
+// 等到 editsIdle()（回复到达、快照换上之后才算完）
+export function whenEditsIdle(): Promise<void> {
+  if (editsIdle()) return Promise.resolve();
+  return new Promise<void>((r) => idleWaiters.push(r));
+}
 let meshCache: { key: string; mesh: Mesh } | null = null;
 
-function ensureWorker(): Worker {
-  if (worker) return worker;
-  worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-  worker.onmessage = (ev: MessageEvent<Response>) => {
-    const p = pending.get(ev.data.id);
-    if (p) {
-      pending.delete(ev.data.id);
-      p.resolve(ev.data);
-    }
-  };
-  return worker;
+function engineHost(): EngineHost {
+  if (host) return host;
+  host = new EngineHost(() => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike, {
+    slow: (label) => (scriptRunning.value = label),
+    reset: engineReset,
+    restored: engineRestored,
+    failed: engineFailed,
+    abandoned: recovered,
+  });
+  return host;
 }
 
 // 还没回来的带提示的请求（执行、撤销、新建、打开…）有几个：busy 只看它们。
 // 后台的预览、缩略图、自动保存不改世界，还在算的时候也不挡工具
 let labelled = 0;
 
-function call(req: Request, label: string | null): Promise<Response> {
-  const w = ensureWorker();
+// safeReason：安全模式打开的原因（新建、打开时）
+function call(req: Request, label: string | null, safeReason?: string): Promise<Response> {
   const id = nextId++;
   if (label) {
     labelled++;
     busy.value = label;
   }
   return new Promise<Response>((resolve) => {
-    pending.set(id, {
-      // 不带提示的请求（预览、自动保存）不改世界，不挡排队
-      edit: EDITS.has(req.kind) || !label,
-      kind: req.kind,
-      resolve: (r) => {
-        if (label && --labelled === 0) busy.value = null;
+    // 不带提示的请求（预览、自动保存）不改世界，不挡排队
+    pending.set(id, { edit: EDITS.has(req.kind) || !label, kind: req.kind });
+    engineHost().send(
+      req,
+      (r) => {
+        pending.delete(id);
+        if (label && --labelled === 0) busy.value = recovering ? RECOVERING : null;
         resolve(r);
+        // 排在这条回复的处理（换上快照）之后再叫醒等着的
+        if (idleWaiters.length && editsIdle()) for (const w of idleWaiters.splice(0)) w();
       },
-    });
-    w.postMessage({ id, req });
+      safeReason,
+    );
   });
+}
+
+// Worker 卡住、停下、崩了，旧的已经停掉（正在等的请求都回了出错）：预览都作废，提示这一步没有做，等着恢复
+function engineReset(message: string) {
+  dropPreviews();
+  resetAutosaveIds();
+  showToast(message, true);
+  recovering = true;
+  if (labelled === 0) busy.value = RECOVERING;
+}
+
+// 恢复好了：换上快照（不算新打开：镜头不动），标上是不是安全模式
+function engineRestored(r: Extract<Response, { ok: true }>, reason: string | null) {
+  recovered();
+  resetAutosaveIds();
+  if (r.snapshot) applySnapshot(r.snapshot);
+  safeMode.value = reason !== null ? { reason } : null;
+}
+
+function engineFailed(message: string) {
+  recovered();
+  showToast(message, true);
+}
+
+// 不再等恢复（恢复好了、恢复不了、打开了别的世界）
+function recovered() {
+  recovering = false;
+  if (labelled === 0) busy.value = null;
+}
+
+// 界面上的“停下”：停掉正在跑的脚本（与卡住一样恢复，这一步不做）
+export function stopScripts() {
+  host?.stop();
 }
 
 function meshFor(s: Settings): Mesh {
@@ -423,7 +526,8 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
     if (fresh) {
       worldEpoch.value++;
       measure.value = null;
-    }
+      if (visualOverrides.value.size) visualOverrides.value = new Map();
+    } else pruneVisualOverrides(next.small.species);
     world.value = next;
     worldState.value = s.stateId;
     // 结果换上了：调整面板预览的世界（松手前一直显示着，不闪回原样）这时才去掉
@@ -552,6 +656,13 @@ export function describeChange(a: World, b: World): { cells: number[]; detail: s
 let noteId = 0;
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
 
+// 让这些格淡淡地亮一下（比如“地图上有一处出错（点这里去看）”），FLASH_MS 后去掉
+export function flashCells(cells: number[]) {
+  flash.value = cells.length ? { cells, at: performance.now() } : null;
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
+}
+
 function noteChange(head: string, before: World | null, again?: NoteAction, undoable = true, action?: NoteAction) {
   const after = world.value;
   if (!after || !before) return;
@@ -576,26 +687,221 @@ async function handle(r: Response, fresh = false): Promise<boolean> {
   return true;
 }
 
-export async function newWorld(settings: Partial<Settings>, commands: Command[]) {
+// ---------- 脚本的信任、安全模式 ----------
+
+// 要用户选一个的问题（信任脚本吗、用安全模式打开吗、查看脚本）：界面上是一个对话框（见 ui/shell/Ask.tsx）
+export interface AskChoice {
+  value: string;
+  label: string;
+  primary?: boolean;
+}
+export interface Ask {
+  title: string;
+  text?: string;
+  // 列出的脚本（谁的、哪一种、源码）
+  scripts?: FoundScript[];
+  choices: AskChoice[];
+  resolve: (value: string) => void;
+}
+export const ask = signal<Ask | null>(null);
+
+// 问一个问题，等用户点一个按钮（关掉对话框是 'cancel'）。新的问题顶掉还没回答的（那个当作取消）
+export function askUser(a: Omit<Ask, 'resolve'>): Promise<string> {
+  return new Promise((resolve) => {
+    ask.value?.resolve('cancel');
+    const me: Ask = {
+      ...a,
+      resolve: (v) => {
+        if (ask.value === me) ask.value = null;
+        resolve(v);
+      },
+    };
+    ask.value = me;
+  });
+}
+
+// 新建、打开带脚本的世界之前：有没信任过的脚本就问。信任并打开（记为信任）/ 不运行脚本打开（安全模式）/ 取消
+async function askTrust(scripts: FoundScript[], verb: '打开' | '新建'): Promise<'run' | 'safe' | 'cancel'> {
+  const list = await untrustedScripts(null, scripts);
+  if (!list.length) return 'run';
+  const v = await askUser({
+    title: '信任这个世界里的脚本吗？',
+    text: `里面有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的世界。`,
+    scripts: list,
+    choices: [
+      { value: 'run', label: `信任并${verb}`, primary: true },
+      { value: 'safe', label: `不运行脚本${verb}` },
+      { value: 'cancel', label: '取消' },
+    ],
+  });
+  if (v === 'run') await trustScripts(list);
+  return v === 'run' || v === 'safe' ? v : 'cancel';
+}
+
+// 往当前世界里导入的东西（生态 JSON……）带着没见过的脚本：先问，信任了才导入。
+// 安全模式下不问（脚本不运行），也不记为信任：之后“再试一次”时照样会问
+export async function confirmImport(json: unknown): Promise<boolean> {
+  if (safeMode.value) return true;
+  const list = await untrustedScripts(json);
+  if (!list.length) return true;
+  const v = await askUser({
+    title: '信任这些脚本吗？',
+    text: `要导入的内容里有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的。`,
+    scripts: list,
+    choices: [
+      { value: 'run', label: '信任并导入', primary: true },
+      { value: 'cancel', label: '取消' },
+    ],
+  });
+  if (v !== 'run') return false;
+  await trustScripts(list);
+  return true;
+}
+
+// 自己提交的脚本（加、改生态……）记为信任。安全模式下不记：那里的脚本可能是从没信任的世界里复制来的。
+// 每一笔都要过一遍（涂一笔的命令里有上万个格号）：findScripts 不把数放进栈，比先转成 JSON 再找快
+function trustOwn(cmd: Command) {
+  if (safeMode.value || trustedElsewhere.has(cmd)) return;
+  const found = findScripts(cmd);
+  if (found.length) void trustScripts(found);
+}
+
+// 脚本框的提交不在这里记：编辑器只报框里写的那一段（补丁里整份带着的另一段不算），
+// 同一步里被换掉的中间版本还要从信任列表里去掉（见 ui/connect.ts）。这样的命令先在这里登记
+const trustedElsewhere = new WeakSet<Command>();
+export function trustHandledElsewhere<C extends Command>(cmd: C): C {
+  trustedElsewhere.add(cmd);
+  return cmd;
+}
+
+// 打开时选了“不运行脚本”
+const SAFE_CHOSEN = '打开时选了不运行脚本';
+
+// 新建、打开完：标上是不是安全模式；正常打开时整理信任列表（当前世界的留着）
+function afterOpen(r: Response, scripts: FoundScript[]) {
+  const safe = r.ok && r.safe === true;
+  safeMode.value = safe ? { reason: engineHost().safeReason ?? SAFE_CHOSEN } : null;
+  if (!safe) void tidyTrusted(scripts);
+}
+
+export interface OpenOptions {
+  // 用安全模式打开（脚本不运行），值是原因（横幅里写）
+  safe?: string;
+  // 镜头不动（“再试一次”打开的是同一个世界）
+  keepView?: boolean;
+}
+
+// 新建、打开：带脚本时先查信任（没见过的问用户）；正常打开带脚本的世界期间记下标记（页面停止响应后下次启动时先问）。
+// 不带脚本时与以前一样立刻发给 Worker
+async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: string, opts: OpenOptions, verb: '打开' | '新建', settings: Partial<Settings>): Promise<boolean> {
+  // 新建时设置也一起查（脚本可能出现在任何地方：findScripts 找的是所有叫 scripts 的容器）
+  const scripts = uniqueScripts(findScripts(req.kind === 'init' ? [req.settings, req.commands] : req.doc));
+  // 没有脚本的世界不用安全模式（安全模式只是不运行脚本；比如在安全模式里把脚本都删了，自动保存还记着安全模式）
+  let safe = scripts.length ? (opts.safe ?? null) : null;
+  if (safe === null && scripts.length) {
+    const d = await askTrust(scripts, verb);
+    if (d === 'cancel') return false;
+    if (d === 'safe') safe = SAFE_CHOSEN;
+  }
   changeNote.value = null;
-  flash.value = null;
-  const r = call({ kind: 'init', settings, commands }, '正在生成世界…');
+  if (req.kind === 'init') flash.value = null;
+  const marked = safe === null && scripts.length > 0;
+  if (marked) await markLoading(scripts.map((s) => s.hash));
+  const r = call(safe === null ? req : { ...req, safe: true }, label, safe ?? undefined);
   prebuildMesh(settings);
-  return handle(await r, true);
+  const res = await r;
+  if (marked) void clearLoading();
+  // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
+  if (res.ok) resetAutosaveIds();
+  const ok = await handle(res, !opts.keepView);
+  if (ok) afterOpen(res, scripts);
+  return ok;
+}
+
+export async function newWorld(settings: Partial<Settings>, commands: Command[], opts: OpenOptions = {}) {
+  return open({ kind: 'init', settings, commands }, '正在生成世界…', opts, '新建', settings);
 }
 
 // 打开从没设过山挡风的旧存档时，在历史末尾补的一步（可撤销）
 const LEGACY_WIND: Command = { op: 'batch', label: '山挡风：旧存档也打开', commands: [{ op: 'set_planet', patch: { terrainWind: 1 } }] };
 
-export async function loadDoc(doc: WorldDoc) {
-  changeNote.value = null;
-  const r = call({ kind: 'load', doc }, '正在打开世界…');
-  prebuildMesh(doc.settings);
-  const ok = await handle(await r, true);
+// 打开世界：世界文件、自动保存（连同检查点）、“再试一次”都经过这里，带脚本时统一查信任
+export async function loadDoc(doc: WorldDoc, opts: OpenOptions = {}) {
+  const ok = await open({ kind: 'load', doc }, '正在打开世界…', opts, '打开', doc.settings);
   // 山挡风：重放完没有这一项，就是没有哪条命令设过它（核心里按 0，前面的每一步照原样重放）。
   // 在末尾补一步“打开”，之后照常自动保存；存档里有了这一步，下次打开就不再补
   if (ok && world.value && world.value.small.planet.terrainWind === undefined) await exec(LEGACY_WIND, '正在重算气候…');
   return ok;
+}
+
+// 继续上次的世界（启动时、向导里）：读自动保存，上次是安全模式就照样用安全模式打开。
+// 上次正常打开带脚本的世界时页面停止了响应（标记还在、是这个世界的脚本）：先问要不要用安全模式。没有自动保存时返回 null
+export async function resumeLast(): Promise<boolean | null> {
+  const saved = await readAutosave();
+  if (!saved) return null;
+  let safe = saved.safe ?? null;
+  const mark = await readLoading();
+  if (mark) {
+    await clearLoading();
+    const mine = new Set(findScripts(saved.doc).map((s) => s.hash));
+    if (safe === null && mark.hashes.some((h) => mine.has(h))) {
+      const v = await askUser({
+        title: '上次打开这个世界时程序停止了响应。用安全模式打开吗？（脚本不运行）',
+        choices: [
+          { value: 'safe', label: '用安全模式打开', primary: true },
+          { value: 'run', label: '照常打开' },
+        ],
+      });
+      if (v !== 'run') safe = '上次打开时程序停止了响应';
+    }
+  }
+  return loadDoc(saved.doc, safe !== null ? { safe } : {});
+}
+
+// 安全模式横幅的“再试一次”：另开一个 Worker，脚本照常运行（没信任过的照样先问）。
+// 先等排着的改动算完再取世界：比如脚本框里刚写的一段，点按钮时离开框就提交了，还在算；
+// 不等的话取到的世界里没有它，重新打开后这一段就丢了
+export async function retryScripts(): Promise<boolean> {
+  await whenEditsIdle();
+  const doc = host?.mirror.doc() ?? (await getDoc());
+  return doc ? loadDoc(doc, { keepView: true }) : false;
+}
+
+// “查看脚本”：现在这个世界里的脚本（生态的……）
+export async function showScripts(): Promise<void> {
+  const w = world.value;
+  const list = w ? uniqueScripts(findScripts(w.small)) : [];
+  await askUser({ title: '这个世界里的脚本', text: list.length ? undefined : '这个世界里没有脚本。', scripts: list, choices: [{ value: 'close', label: '关上', primary: true }] });
+}
+
+// 脚本出错的提示条：用户关掉的是哪一组问题（同一组不再出现，换了才出现）
+export const dismissedIssues = signal('');
+
+// 出错的脚本的“编辑”：脚本编辑器把自己的打开方法放在 open 上（ui/connect.ts 接上：打开生态抽屉、展开“高级”、
+// 光标放进那个脚本框）；没有时打开生态抽屉、选中这种生态
+export type SpeciesScriptKind = (typeof SPECIES_SCRIPT_KINDS)[number];
+export const scriptEditor: { open: ((species: string, kind: SpeciesScriptKind) => void) | null } = { open: null };
+const isSpeciesKind = (k: ScriptKind): k is SpeciesScriptKind => (SPECIES_SCRIPT_KINDS as readonly ScriptKind[]).includes(k);
+// 出错的是哪种生态的哪一段（生态的两种脚本；星球形态的布局、地形脚本没有编辑的地方）。先按 id，旧的说明没有 id 时按名字
+function scriptOfIssue(issue: ScriptIssue): { id: string; kind: SpeciesScriptKind } | undefined {
+  const kind = issue.kind;
+  if (!isSpeciesKind(kind)) return undefined;
+  const sp = world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : speciesOwner(s) === issue.owner));
+  return sp && { id: sp.id, kind };
+}
+// 有没有地方可以打开它（没有时提示条上不放“编辑”）
+export function canEditScript(issue: ScriptIssue): boolean {
+  return scriptOfIssue(issue) !== undefined;
+}
+export function editScript(issue: ScriptIssue) {
+  const at = scriptOfIssue(issue);
+  if (!at) return;
+  if (scriptEditor.open) {
+    scriptEditor.open(at.id, at.kind);
+    return;
+  }
+  focusSpecies.value = at.id;
+  sheet.value = 'species';
 }
 
 // “换一个”：给出下一条命令（比如换了 variant 的放岛），替换掉刚做的那一步
@@ -613,7 +919,10 @@ export async function exec(cmd: Command, label = '正在计算…', again?: Agai
     return true;
   }
   const ok = await handle(r);
-  if (ok && r.ok) noteChange(r.summary ?? '完成', before, againAction(again, label), true, action);
+  if (ok && r.ok) {
+    trustOwn(cmd);
+    noteChange(r.summary ?? '完成', before, againAction(again, label), true, action);
+  }
   return ok;
 }
 
@@ -638,7 +947,10 @@ export async function replaceLast(cmd: Command, label = '正在计算…', again
   const r = await call({ kind: 'replaceLast', cmd }, label);
   const before = world.value;
   const ok = await handle(r);
-  if (ok && r.ok) noteChange(r.summary ?? '完成', before, againAction(again, label));
+  if (ok && r.ok) {
+    trustOwn(cmd);
+    noteChange(r.summary ?? '完成', before, againAction(again, label));
+  }
   return ok;
 }
 
@@ -945,8 +1257,17 @@ export function previewReply(r: Response): WorldPreview | null {
   return { result: r.preview, world: previewWorldOf(base, r.world), base };
 }
 
+// 最近一次确切预览没算成时 Worker 说的原因（比如资源包里的脚本写错了），按命令记：
+// 问的是别的命令（或这条还没算就被更新的换掉了）时为 null，不拿别处的出错冒充这一条的
+let worldPreviewFailure: { key: string; error: string } | null = null;
+export function worldPreviewError(cmd: Command): string | null {
+  const f = worldPreviewFailure;
+  return f && f.key === JSON.stringify(cmd) ? f.error : null;
+}
+
 const worldPreviews = latest(async (cmd: Command) => {
   const r = await call({ kind: 'previewWorld', cmd }, null);
+  worldPreviewFailure = r.ok ? null : { key: JSON.stringify(cmd), error: r.error };
   if (r.ok && r.preview) {
     noteCost(cmd, r.preview.ms);
     lastPreviewMs = r.preview.ms;
@@ -963,6 +1284,22 @@ export function previewWorld(cmd: Command): Promise<WorldPreview | null> {
 
 export function cancelWorldPreview() {
   worldPreviews.drop();
+}
+
+// Worker 换了一个（卡住后恢复）：排着的、显示着的预览都不要了（按旧 Worker 的状态算的）
+function dropPreviews() {
+  cancelPreviews();
+  worldPreviews.drop();
+  provincePreviews.drop();
+  terrainOnce.drop();
+  terrainPending = null;
+  terrainGen++;
+  adjustPreview.value = null;
+  if (adjustTimer) clearTimeout(adjustTimer);
+  adjustTimer = null;
+  adjustKey = '';
+  adjustPreviewWorld.value = null;
+  adjustPreviewNote.value = null;
 }
 
 // ---- 调整面板、生态编辑器：拖动停下后预览将来的世界，松手执行同一条命令（直接采用） ----
@@ -1031,6 +1368,8 @@ const AUTOSAVE_KEY = 'map2.autosave';
 interface AutosaveMeta extends Omit<WorldDoc, 'commands'> {
   savedAt: number;
   count: number;
+  // 安全模式（脚本没有运行）的原因：下次打开时照样用安全模式（不运行脚本打开 → 自动保存 → 刷新，脚本也不会跑起来）
+  safe?: string;
 }
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveWarned = false;
@@ -1038,6 +1377,12 @@ let autosaveWarned = false;
 let savedIds: number[] = [];
 let savedEpoch = -1;
 let savedCount = -1;
+// Worker 换了一个（卡住后恢复）时加一：新引擎的步号从 1 起，旧的编号对不上，从头写
+let savedGen = 0;
+function resetAutosaveIds() {
+  savedIds = [];
+  savedGen++;
+}
 
 // 上次自动保存的时间（向导里“继续上次的世界”用）；没有时为 null
 export const autosaved = signal<number | null>(null);
@@ -1055,10 +1400,12 @@ async function autosave() {
     savedEpoch = worldEpoch.value;
   }
   const epoch = savedEpoch;
+  const gen = savedGen;
   const r = await call({ kind: 'docTail', ids: savedIds }, null);
-  if (!r.ok || !r.tail || epoch !== worldEpoch.value) return;
+  if (!r.ok || !r.tail || epoch !== worldEpoch.value || gen !== savedGen) return;
   const { from, commands, ids, ...head } = r.tail;
   const meta: AutosaveMeta = { ...head, savedAt: Date.now(), count: ids.length };
+  if (safeMode.value) meta.safe = safeMode.value.reason;
   try {
     if (savedCount < 0) savedCount = ((await idb<AutosaveMeta | undefined>('readonly', (s) => s.get('autosave')))?.count ?? 0) as number;
     const stale = savedCount;
@@ -1068,7 +1415,7 @@ async function autosave() {
       if (stale > meta.count) store.delete(IDBKeyRange.bound(meta.count, stale - 1));
       kv.put(meta, 'autosave');
     });
-    if (epoch === worldEpoch.value) savedIds = ids;
+    if (epoch === worldEpoch.value && gen === savedGen) savedIds = ids;
     savedCount = meta.count;
     autosaved.value = meta.savedAt;
     // 旧版存在 localStorage 里的：已经搬过来了
@@ -1078,7 +1425,7 @@ async function autosave() {
     const doc = await getDoc();
     if (!doc) return;
     try {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: Date.now(), doc }));
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: Date.now(), doc, ...(safeMode.value ? { safe: safeMode.value.reason } : {}) }));
       autosaved.value = Date.now();
     } catch {
       if (!autosaveWarned) showToast('世界太大，浏览器存不下自动保存；记得在“世界 → 保存世界文件”里手动保存', true);
@@ -1090,13 +1437,18 @@ async function autosave() {
 // 页面要被隐藏、关掉：让 Worker 立即写检查点（下次打开时直接恢复，不必重放）
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && worker && world.value) void call({ kind: 'checkpoint' }, null);
+    if (document.visibilityState === 'hidden' && host?.alive && world.value) void call({ kind: 'checkpoint' }, null);
   });
 }
 
-// 读上次的自动保存：IndexedDB 与（旧版的）localStorage 里较新的那一份
-export async function readAutosave(): Promise<{ savedAt: number; doc: WorldDoc } | null> {
-  let best: { savedAt: number; doc: WorldDoc } | null = null;
+// 读上次的自动保存：IndexedDB 与（旧版的）localStorage 里较新的那一份。safe：上次是安全模式（原因）
+export interface Autosaved {
+  savedAt: number;
+  doc: WorldDoc;
+  safe?: string;
+}
+export async function readAutosave(): Promise<Autosaved | null> {
+  let best: Autosaved | null = null;
   try {
     const db = await openDb();
     const tx = db.transaction(['kv', 'autosave'], 'readonly');
@@ -1104,8 +1456,8 @@ export async function readAutosave(): Promise<{ savedAt: number; doc: WorldDoc }
     const meta = await get<AutosaveMeta | undefined>(tx.objectStore('kv').get('autosave'));
     if (meta && meta.count > 0) {
       const commands = await get<Command[]>(tx.objectStore('autosave').getAll(IDBKeyRange.bound(0, meta.count - 1)));
-      const { savedAt, count, ...head } = meta;
-      if (commands.length === count) best = { savedAt, doc: { ...head, commands } };
+      const { savedAt, count, safe, ...head } = meta;
+      if (commands.length === count) best = { savedAt, doc: { ...head, commands }, ...(typeof safe === 'string' ? { safe } : {}) };
     }
     db.close();
   } catch {
@@ -1113,8 +1465,8 @@ export async function readAutosave(): Promise<{ savedAt: number; doc: WorldDoc }
   }
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
-    const old = raw ? (JSON.parse(raw) as { savedAt: number; doc: WorldDoc }) : null;
-    if (old && (!best || old.savedAt > best.savedAt)) best = old;
+    const old = raw ? (JSON.parse(raw) as Autosaved) : null;
+    if (old && (!best || old.savedAt > best.savedAt)) best = { savedAt: old.savedAt, doc: old.doc, ...(typeof old.safe === 'string' ? { safe: old.safe } : {}) };
   } catch {
     // 坏了就当没有
   }

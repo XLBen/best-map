@@ -110,37 +110,64 @@ export interface FoundScript {
 // 在任意 JSON（一条命令、整个世界文件、资源包）里找出全部脚本：凡是键为 scripts 的对象都算容器，
 // 一直往下找（batch 里的命令、update_species 的 patch、星球形态……）。
 // 所属对象：容器所在的对象，或者往上第一个带字符串 id 的对象（update_species 的 patch 没有 id，用命令的 id）。
-// 信任检查靠它，所以不设深度上限（套很多层 batch 也藏不住脚本）：用自己的栈，不递归，不会爆栈
+// 信任检查靠它，所以不设深度上限（套很多层 batch 也藏不住脚本）：用自己的栈，不递归，不会爆栈。
+// 每次打开世界都要过一遍整个文件（画了很多笔的世界里有几百万个数）：数、字符串不进栈，位置（path）只在找到脚本时才拼
 export function findScripts(json: unknown): FoundScript[] {
   const out: FoundScript[] = [];
-  // 深度优先、按键的顺序；idObj 是往上第一个带字符串 id 的对象
-  const stack: { v: unknown; path: string; idObj: Record<string, unknown> | undefined }[] = [{ v: json, path: '', idObj: undefined }];
+  // 栈里的一个对象或数组：up 是它所在的对象（拼位置用），key 是它在 up 里的键或下标；idObj 是往上第一个带字符串 id 的对象
+  interface Node {
+    v: object;
+    up: Node | null;
+    key: string | number;
+    idObj: Record<string, unknown> | undefined;
+  }
+  const pathOf = (n: Node): string => {
+    const chain: Node[] = [];
+    for (let x: Node | null = n; x?.up; x = x.up) chain.push(x);
+    let p = '';
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const k = chain[i].key;
+      p = typeof k === 'number' ? `${p}[${k}]` : p ? `${p}.${k}` : k;
+    }
+    return p;
+  };
+  const isBox = (x: unknown): x is object => x !== null && typeof x === 'object' && !ArrayBuffer.isView(x);
+  if (!isBox(json)) return out;
+  // 深度优先、按键的顺序
+  const stack: Node[] = [{ v: json, up: null, key: '', idObj: undefined }];
   const seen = new Set<object>();
   while (stack.length) {
-    const { v, path, idObj: up } = stack.pop()!;
-    if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v) || seen.has(v)) continue;
+    const node = stack.pop()!;
+    const v = node.v;
+    if (seen.has(v)) continue;
     seen.add(v);
-    const kids: { v: unknown; path: string; idObj: Record<string, unknown> | undefined }[] = [];
     if (Array.isArray(v)) {
-      v.forEach((x, k) => kids.push({ v: x, path: `${path}[${k}]`, idObj: up }));
-    } else {
-      const o = v as Record<string, unknown>;
-      const idObj = typeof o.id === 'string' ? o : up;
-      const box = o.scripts;
-      if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
-        const id = idObj?.id as string | undefined;
-        const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
-        for (const kind of SCRIPT_KINDS) {
-          const s = (box as Record<string, unknown>)[kind];
-          if (s === null || typeof s !== 'object') continue;
-          const src = (s as Record<string, unknown>).src;
-          if (typeof src !== 'string') continue;
-          out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
-        }
+      for (let k = v.length - 1; k >= 0; k--) {
+        const x = v[k];
+        if (isBox(x)) stack.push({ v: x, up: node, key: k, idObj: node.idObj });
       }
-      for (const [k, x] of Object.entries(o)) if (k !== 'scripts') kids.push({ v: x, path: path ? `${path}.${k}` : k, idObj });
+      continue;
     }
-    for (let k = kids.length - 1; k >= 0; k--) stack.push(kids[k]);
+    const o = v as Record<string, unknown>;
+    const idObj = typeof o.id === 'string' ? o : node.idObj;
+    const box = o.scripts;
+    if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
+      const id = idObj?.id as string | undefined;
+      const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
+      for (const kind of SCRIPT_KINDS) {
+        const s = (box as Record<string, unknown>)[kind];
+        if (s === null || typeof s !== 'object') continue;
+        const src = (s as Record<string, unknown>).src;
+        if (typeof src !== 'string') continue;
+        const path = pathOf(node);
+        out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
+      }
+    }
+    const keys = Object.keys(o);
+    for (let k = keys.length - 1; k >= 0; k--) {
+      const x = o[keys[k]];
+      if (keys[k] !== 'scripts' && isBox(x)) stack.push({ v: x, up: node, key: keys[k], idObj });
+    }
   }
   return out;
 }
@@ -356,6 +383,8 @@ function nameLine(src: string, name: string): number | undefined {
 
 export interface ScriptIssue {
   owner: string;
+  // 所属对象的 id（runScript 给出的说明里有；界面靠它找到是哪一种生态的脚本，名字可能重复）
+  id?: string;
   kind: ScriptKind;
   // syntax 语法错误；runtime 运行时出错；value 返回值不对（NaN、类型）；disabled 安全模式下没有运行
   reason: 'syntax' | 'runtime' | 'value' | 'disabled';
@@ -772,6 +801,28 @@ function poison(name: string): unknown {
   return new Proxy(Object.freeze(function () {}), new Proxy({}, { get: () => fail }));
 }
 const SHADOW_VALUES: unknown[] = SHADOW.map((n) => (n === 'Math' ? SAFE_MATH : n in POISONED ? poison(n) : undefined));
+
+// ---------- 编辑器用：只处理文字，不编译、不运行（主线程上也能用） ----------
+
+// 语法错误的中文说明。raw 是解析器的原话（编辑器用 acorn 只解析时也拿它来换成中文）
+export function syntaxErrorText(raw: string, src: string): string {
+  return syntaxText(raw, src);
+}
+
+// 脚本里用了没有的名字：“没有变量 tMeen（是不是 tMean？）”，或者“只有颜色脚本能用”
+export function unknownVariableText(name: string, kind: ScriptKind): string {
+  return missingVariable(name, kind);
+}
+
+// 脚本里不能用的名字（被遮住的全局名字，还有 Math.random）的说明；能用时为 undefined
+export function blockedNameText(name: string): string | undefined {
+  if (name === 'Math.random') return '用 rand() 代替 Math.random()';
+  if (name === 'Math' || !(SHADOW as readonly string[]).includes(name)) return undefined;
+  return POISONED[name as keyof typeof POISONED] ?? `脚本里不能用 ${name}`;
+}
+
+// 辅助函数的名字（noise、rand、field……）
+export const SCRIPT_HELPER_NAMES: readonly string[] = HELPER_NAMES;
 
 // ---------- 编译 ----------
 
@@ -1460,13 +1511,16 @@ function end() {
   RUN.bad = undefined;
 }
 
+// 出错说明带上所属对象的 id（没有 id 时照旧）
+const withId = (issue: ScriptIssue, id: string | undefined): ScriptIssue => (id === undefined || issue.id === id ? issue : { ...issue, id });
+
 // 对一串格运行一段每格的脚本。出错不抛（语法错误、运行时出错、NaN、类型不对、缺变量、安全模式），
 // 返回 {ok: false, issue, output}，output 为“没有这段脚本”的结果；超出范围的数被截到范围内。
 // 只有调用方的错（主线程上 disallowScripts 之后、地形脚本缺原来的地形、看门狗本身出错）才抛
 export function runScript<K extends CellKind>(script: { kind: K; src: string }, opts: RunOptions): CellResult<K> {
   const { kind, src } = script;
   const { inputs, cells, owner } = opts;
-  const fail = (issue: ScriptIssue): CellResult<K> => ({ ok: false, issue, output: absentOutput(kind, inputs, cells) as CellOutputs[K] });
+  const fail = (issue: ScriptIssue): CellResult<K> => ({ ok: false, issue: withId(issue, opts.id), output: absentOutput(kind, inputs, cells) as CellOutputs[K] });
   if (!enabled) return fail(makeIssue(owner, kind, 'disabled', '安全模式下脚本不运行', 'disabled'));
   let c: CompiledScript;
   try {

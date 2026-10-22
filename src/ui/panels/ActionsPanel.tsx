@@ -1,10 +1,11 @@
-import { CircleHelp, FilePlus, FolderOpen, ImageDown, PackageOpen, Save } from 'lucide-preact';
+import { Boxes, CircleHelp, FilePlus, FolderOpen, ImageDown, PackageOpen, Save } from 'lucide-preact';
 import { useState } from 'preact/hooks';
 import type { WorldDoc } from '../../../core/engine';
 import { type WheelPref, download, exportProgress, exportZip, getDoc, helpOpen, loadDoc, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
 import { snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
+import { openPackLibrary } from '../packs/store';
 
 // “世界”：新建、打开、保存；“操作”：导出、历史、上手说明、偏好
 
@@ -53,6 +54,19 @@ export function WorldMenu() {
         <span>
           <b>保存世界文件</b>
           <span class="how">所有编辑都在里面，之后可以打开继续改</span>
+        </span>
+      </button>
+      <button
+        class="menu-row"
+        onClick={() => {
+          openPanel.value = null;
+          openPackLibrary();
+        }}
+      >
+        <Boxes size={18} />
+        <span>
+          <b>资源包…</b>
+          <span class="how">装进别人做好的生态、河流类型、星球形态，或把这个世界里自己做的导出来</span>
         </span>
       </button>
       <p class="muted small">浏览器里会自动保存最近一次的世界；换电脑或想留备份时，用“保存世界文件”。</p>
