@@ -8,14 +8,15 @@ import { WORLD_TYPES, type WorldType } from './world-types';
 //   tuning  —— 地壳细节的倍数：山带宽窄、洋中脊、海沟、裂谷、丘陵。全是 1 时与今天的字面量逐位相同
 //   scripts.setup —— 布局脚本：建星球模型时运行一次，加大陆块、加岛（rand() 是一条新的随机流 105）
 //   scripts.crust —— 地形脚本：每格运行一次，改高度、山、丘陵、岩性；crustMode 'replace' 时板块边界的山带、
-//                    洋中脊、海沟都不算，地形完全由脚本决定
+//                    洋中脊、海沟都不算，地形完全由脚本决定（只在脚本真的算了时：没有地形脚本、安全模式、
+//                    脚本出错的那一遍都按没有脚本算，板块边界照算）
 // 形态写在 set_worldgen 的 params.form 里，所以世界文件自带它用到的形态，别人没有这个形态也能打开。
 // 只能用在整个星球上（一块地区的生成器是另一套）。
 //
 // 出错的处理与别的脚本相同：语法错误在 set_worldgen 里当场拒绝；运行时出错、算出 NaN 不拒绝，
 // 这段脚本这一次按“没有脚本”处理（地形脚本按遍：原来的噪声一遍、每次重画一遍，出错的那一遍按没有脚本算），
 // 问题记进 d.scriptIssues 给界面看（terrain.ts 的 planetFormIssues）。
-// 安全模式下两段脚本都不运行（也不记问题），profile、tuning、crustMode 照常生效。
+// 安全模式下两段脚本都不运行（也不记问题），profile、tuning 照常生效（crustMode 只管地形脚本，脚本不运行就没有作用）。
 //
 // 本文件只引用 errors.ts、script.ts、world-types.ts：generate.ts 的 worldgenSchema 在模块顶层就要用 planetFormSchema，
 // 这里再值引用 generate.ts（或间接引用它的文件）就成了循环
@@ -77,7 +78,7 @@ export const planetFormSchema = z.object({
   tuning: formTuningSchema.optional(),
   // 统一的脚本容器（script.ts），星球形态只用其中的布局、地形两种
   scripts: scriptsSchema.pick({ setup: true, crust: true }).optional(),
-  // 地形脚本是在原来的地形上改（modify，默认），还是完全由脚本决定（replace：不算板块边界）
+  // 地形脚本是在原来的地形上改（modify，默认），还是完全由脚本决定（replace：不算板块边界）。没有地形脚本时不起作用
   crustMode: z.enum(['modify', 'replace']).optional(),
 });
 export type PlanetForm = z.output<typeof planetFormSchema>;
@@ -109,10 +110,11 @@ export function sameForm(a: PlanetForm | undefined, b: PlanetForm | undefined): 
 }
 
 // set_worldgen 里检查形态：只能用在整个星球上；type 与 base 相同；脚本的语法（出错时抛 ScriptError，说明第几行）。
-// 安全模式下也检查语法（只是解析，不运行）。typeName：世界类型的中文名（generate.ts 的 WORLD_TYPE_INFO，本文件不能引用它）
+// 安全模式下也检查语法（只是解析，不运行）。typeName：星球类型的中文名（presets.ts 的 PLANET_TYPES、generate.ts 的 WORLD_TYPE_INFO，
+// 本文件不能引用 generate.ts）
 export function checkForm(form: PlanetForm, type: WorldType, globe: boolean, typeName: (t: WorldType) => string = (t) => t): void {
   if (!globe) throw new CommandError('星球形态只能用在整个星球上');
-  if (form.base !== type) throw new CommandError(`星球形态「${form.name}」只能用在“${typeName(form.base)}”这种世界上，这里是“${typeName(type)}”`);
+  if (form.base !== type) throw new CommandError(`星球形态「${form.name}」只能用在“${typeName(form.base)}”这种星球上，这里是“${typeName(type)}”`);
   if (form.scripts?.setup) compileScript('setup', form.scripts.setup.src, form.name);
   if (form.scripts?.crust) compileScript('crust', form.scripts.crust.src, form.name);
 }

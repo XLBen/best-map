@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { coastalStroke, digest, digestWorld } from '../tools/hash';
 import { Engine, docVersion } from './engine';
-import { type WorldType, rerollSchema, worldgenSchema } from './generate';
+import { type Reroll, type WorldType, rerollSchema, worldgenSchema } from './generate';
 import type { SphereMesh } from './mesh';
 import { POLAR_CONTINENTS, RING_SEA, FANTASY_FORMS, TWIN_CONTINENTS } from './packs/fantasy-forms';
 import { type PlanetForm, planetFormSchema } from './planet-form';
-import { ScriptError, scriptStats, setScriptsEnabled } from './script';
+import { ScriptError, scriptStats, scriptVariablesFor, setScriptsEnabled } from './script';
 import { buildSphereMesh, nearestCell } from './sphere';
 import { ensureBase, planetFormIssues, resolveTerrain } from './terrain';
 import { engineFor, meshFor } from './testing/fixtures';
@@ -24,9 +24,9 @@ const meshOf = (cells: number) => {
 };
 
 // 只算地形（不跑气候、水文）：生成器与海陆
-function planet(cells: number, seed: number, type: WorldType, form?: PlanetForm, extra: { islands?: number } = {}): World {
+function planet(cells: number, seed: number, type: WorldType, form?: PlanetForm, extra: { islands?: number } = {}, rerolls: Reroll[] = []): World {
   const w = createWorld(globe(cells), meshOf(cells));
-  w.small.terrain.gen = { seed, type, mountains: 1, rerolls: [], ...extra, ...(form ? { form } : {}) };
+  w.small.terrain.gen = { seed, type, mountains: 1, rerolls, ...extra, ...(form ? { form } : {}) };
   resolveTerrain(w);
   return w;
 }
@@ -142,7 +142,7 @@ describe('声明式的部分', () => {
     expect(terrainDigest(planet(4000, 3, 'continents', ones))).toEqual(plain);
   });
 
-  it('配方与倍数生效；crustMode replace 不算板块边界', () => {
+  it('配方与倍数生效', () => {
     const base: PlanetForm = { id: 'k', name: '试', api: 1, base: 'continents' };
     const plain = planet(4000, 3, 'continents');
     const less = planet(4000, 3, 'continents', { ...base, profile: { landFraction: 0.15 } });
@@ -151,8 +151,42 @@ describe('声明式的部分', () => {
     const wide = ensureBase(planet(4000, 3, 'continents', { ...base, tuning: { beltWidth: 2 } })).components!;
     const plainComp = ensureBase(plain).components!;
     expect(sum(wide.mountU)).toBeGreaterThan(sum(plainComp.mountU) * 1.3);
-    const flat = ensureBase(planet(4000, 3, 'continents', { ...base, crustMode: 'replace' })).components!;
+  });
+
+  it('crustMode replace：地形脚本算了才不算板块边界；没有脚本、脚本出错、安全模式都按没有脚本算', () => {
+    const base: PlanetForm = { id: 'k', name: '试', api: 1, base: 'continents' };
+    const plain = terrainDigest(planet(4000, 3, 'continents'));
+    // 脚本照原样返回：板块边界的山带都没有了
+    const flat = ensureBase(planet(4000, 3, 'continents', { ...base, crustMode: 'replace', scripts: { crust: src('return height;') } })).components!;
     expect(flat.mountU.every((v) => v === 0)).toBe(true);
+    // 没有地形脚本：replace 不起作用
+    expect(terrainDigest(planet(4000, 3, 'continents', { ...base, crustMode: 'replace' }))).toEqual(plain);
+    // 脚本出错：整遍按没有脚本算，山带照旧（与没有形态的星球逐位相同），问题记下
+    const brokenForm: PlanetForm = { ...base, crustMode: 'replace', scripts: { crust: src('return lat > 80 ? NaN : height;') } };
+    const broken = planet(4000, 3, 'continents', brokenForm);
+    expect(terrainDigest(broken)).toEqual(plain);
+    expect(planetFormIssues(broken).map((x) => x.reason)).toEqual(['value']);
+    // 出错之后重画一片（局部重算）：原来的那一遍仍按没有脚本算（圈外的山带照旧），重画的那一遍（圈里没有北纬 80° 以上的格）
+    // 脚本正常、不算板块边界；与从头算的相同
+    const reroll = { x: 0.9, y: 0.3, radius: 0.1, variant: 4 };
+    broken.small.terrain.gen = { ...broken.small.terrain.gen!, rerolls: [reroll] };
+    resolveTerrain(broken);
+    expect(terrainDigest(broken)).toEqual(terrainDigest(planet(4000, 3, 'continents', brokenForm, {}, [reroll])));
+    expect(planetFormIssues(broken).map((x) => x.reason)).toEqual(['value']);
+    const comp = ensureBase(broken).components!;
+    const ref = ensureBase(planet(4000, 3, 'continents', undefined, {}, [reroll])).components!;
+    const center = nearestCell(broken.mesh as SphereMesh, reroll.x, reroll.y, -1);
+    const far = nearestCell(broken.mesh as SphereMesh, reroll.x + 1, 1 - reroll.y, -1);
+    expect(comp.mountU[center]).toBe(0);
+    expect(comp.mountU[far]).toBe(ref.mountU[far]);
+    expect(comp.b0[far]).toBe(ref.b0[far]);
+    // 安全模式：脚本不运行，山带照旧
+    setScriptsEnabled(false);
+    try {
+      expect(terrainDigest(planet(4000, 3, 'continents', { ...base, crustMode: 'replace', scripts: { crust: src('return height;') } }))).toEqual(plain);
+    } finally {
+      setScriptsEnabled(true);
+    }
   });
 });
 
@@ -235,8 +269,18 @@ describe('地形脚本', () => {
     }
   });
 
+  it('星球的半径、轴倾角这些不给形态的脚本（改它们不重算地形）：说明哪几种脚本能用', () => {
+    expect(scriptVariablesFor('crust').map((v) => v.key)).not.toContain('tilt');
+    expect(scriptVariablesFor('setup').map((v) => v.key)).not.toContain('radiusKm');
+    expect(scriptVariablesFor('crust').map((v) => v.key)).toContain('seed');
+    const w = planet(4000, 5, 'continents', withScripts(POLAR_CONTINENTS, { crust: src('return height + tilt;') }));
+    expect(planetFormIssues(w)[0].message).toContain('地形脚本里没有变量 tilt（只有');
+    const v = planet(4000, 5, 'continents', withScripts(POLAR_CONTINENTS, { setup: src('addBlock({ lat: 0, lon: 0, size: radiusKm / 300 });') }));
+    expect(planetFormIssues(v)[0].message).toContain('布局脚本里没有变量 radiusKm（只有');
+  });
+
   // 带着这些重画从头算一遍
-  const fresh = (gen: World['small']['terrain']['gen']) => {
+  const fresh =(gen: World['small']['terrain']['gen']) => {
     const w = createWorld(globe(4000), meshOf(4000));
     w.small.terrain.gen = gen;
     resolveTerrain(w);
@@ -395,7 +439,7 @@ describe('命令', () => {
     const region = engineFor({ cells: 3000, seed: 1 });
     expect(() => region.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continents', form: TWIN_CONTINENTS }, reset: true })).toThrow('星球形态只能用在整个星球上');
     const eng = engineFor(settings);
-    expect(() => eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continent', form: TWIN_CONTINENTS }, reset: true })).toThrow('星球形态「双子大陆」只能用在“几块大陆”这种世界上，这里是“一块大陆”');
+    expect(() => eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continent', form: TWIN_CONTINENTS }, reset: true })).toThrow('星球形态「双子大陆」只能用在“像地球”这种星球上，这里是“一块超大陆”');
     let err: unknown;
     try {
       eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continents', form: withScripts(TWIN_CONTINENTS, { setup: src('const a = 1;\naddBlock({ lat: 0, lon: 0, size: 20 ) });') }) }, reset: true });
@@ -416,6 +460,7 @@ describe('命令', () => {
     expect(eng.exec({ op: 'set_worldgen', params: { ...gen, form: TWIN_CONTINENTS } })).toBe('换了星球形态：双子大陆');
     expect(eng.exec({ op: 'set_worldgen', params: { ...eng.world.small.terrain.gen!, landFraction: 0.2 } })).toBe('调整了陆地多少');
     expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25, form: RING_SEA } })).toBe('换了星球形态：环形内海；调整了陆地多少');
+    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25 } })).toBe('去掉了星球形态「环形内海」');
     expect(eng.toDoc().version).toBe(4);
     expect(docVersion({ globe: true }, [{ op: 'batch', commands: [{ op: 'set_worldgen', params: { seed: 1, type: 'continents', form: TWIN_CONTINENTS }, reset: true }] }])).toBe(4);
     expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean', islands: 0.7 }, reset: true })).toBe('新世界：海洋星球');

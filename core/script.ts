@@ -165,6 +165,8 @@ const CELL_CRUST: readonly ScriptKind[] = ['placement', 'color', 'match', 'crust
 const ALL: readonly ScriptKind[] = SCRIPT_KINDS;
 
 // 不提供省份变量：改省份的命令不触发重算，用了省份的脚本会和撤销、重放的结果不一致
+// 星球的半径、轴倾角、日照、水汽、河流门槛不给布局、地形两种脚本：星球形态的模型、地形只按种子、类型、形态缓存，
+// 改这几项不重算地形，用了它们的形态脚本会和撤销、重放的结果不一致
 export const VARIABLES: readonly ScriptVariable[] = [
   { key: 'tMean', zh: '年均温', label: '年平均气温', unit: '°C', group: '气候', kinds: CELL },
   { key: 'tWarm', zh: '最热月', label: '暖季（最热的半年）平均气温', unit: '°C', group: '气候', kinds: CELL },
@@ -199,11 +201,11 @@ export const VARIABLES: readonly ScriptVariable[] = [
   { key: 'moistEdit', zh: '干湿改动', label: '用“干湿”画笔改过的降水（对数：0 不变，0.69 加倍）', group: '改动', kinds: CELL },
   { key: 'seed', zh: '种子', label: '世界的种子', group: '世界', kinds: ALL, scalar: true },
   { key: 'globe', zh: '星球', label: '是不是整个星球（true / false）', group: '世界', kinds: ALL, scalar: true },
-  { key: 'radiusKm', zh: '半径', label: '星球半径', unit: 'km', group: '世界', kinds: ALL, scalar: true },
-  { key: 'tilt', zh: '轴倾角', label: '自转轴倾角', unit: '°', group: '世界', kinds: ALL, scalar: true },
-  { key: 'solar', zh: '日照', label: '太阳强弱（地球为 1）', group: '世界', kinds: ALL, scalar: true },
-  { key: 'humidity', zh: '水汽', label: '全局水汽（地球为 1）', group: '世界', kinds: ALL, scalar: true },
-  { key: 'riverThreshold', zh: '河流门槛', label: '算作河的最小流量', unit: 'm³/s', group: '世界', kinds: ALL, scalar: true },
+  { key: 'radiusKm', zh: '半径', label: '星球半径', unit: 'km', group: '世界', kinds: CELL, scalar: true },
+  { key: 'tilt', zh: '轴倾角', label: '自转轴倾角', unit: '°', group: '世界', kinds: CELL, scalar: true },
+  { key: 'solar', zh: '日照', label: '太阳强弱（地球为 1）', group: '世界', kinds: CELL, scalar: true },
+  { key: 'humidity', zh: '水汽', label: '全局水汽（地球为 1）', group: '世界', kinds: CELL, scalar: true },
+  { key: 'riverThreshold', zh: '河流门槛', label: '算作河的最小流量', unit: 'm³/s', group: '世界', kinds: CELL, scalar: true },
   { key: 'share', zh: '份额', label: '这一格里这种生态占的比例（0–1）', group: '颜色', kinds: ['color'] },
   { key: 'color', zh: '颜色', label: '生态本来的颜色 [r, g, b]（只读）', group: '颜色', kinds: ['color'], scalar: true },
   { key: 'height', zh: '高度', label: '这里原来的高度（海平面以上为正）', unit: 'm', group: '地形生成', kinds: ['crust'] },

@@ -68,11 +68,9 @@ interface PlanetTuning {
   trenchH: number;
   // 丘陵的强弱
   hills: number;
-  // 算不算板块边界（crustMode 'replace' 时不算：地形完全由地形脚本决定）
-  plates: boolean;
 }
 
-const DEFAULT_TUNING: PlanetTuning = Object.freeze({ wc: 0.055, wm: 0.032, reach: 0.3, ridgeH: 1700, riftH: 900, trenchH: 2600, hills: 0.12, plates: true });
+const DEFAULT_TUNING: PlanetTuning = Object.freeze({ wc: 0.055, wm: 0.032, reach: 0.3, ridgeH: 1700, riftH: 900, trenchH: 2600, hills: 0.12 });
 
 function tuningOf(form: PlanetForm | undefined): PlanetTuning {
   if (!form) return DEFAULT_TUNING;
@@ -87,7 +85,6 @@ function tuningOf(form: PlanetForm | undefined): PlanetTuning {
     riftH: DEFAULT_TUNING.riftH * (t.rift ?? 1),
     trenchH: DEFAULT_TUNING.trenchH * (t.trench ?? 1),
     hills: DEFAULT_TUNING.hills * (t.hills ?? 1),
-    plates: form.crustMode !== 'replace',
   };
 }
 
@@ -165,6 +162,9 @@ export interface PlanetModel {
   noise: NoiseSet3;
   variants: Map<number, NoiseSet3>;
   tuning: PlanetTuning;
+  // 形态的 crustMode 是 'replace'、又有地形脚本：脚本算的那几遍不算板块边界（地形完全由脚本决定）。
+  // 脚本没有运行（安全模式）或那一遍出了错，就按没有脚本算，板块边界照算
+  replace: boolean;
   // cones 最前面有几个是布局脚本加的岛：它们总是露出来，“岛多少”只增减其余的
   fixedCones: number;
   // 星球形态的布局脚本这次出的问题（没有形态时为 undefined）。普通的 JSON，只给界面看
@@ -317,6 +317,7 @@ export function buildPlanetModel(input: WorldgenInput): PlanetModel {
     noise,
     variants: new Map(),
     tuning: tuningOf(form),
+    replace: form?.crustMode === 'replace' && form.scripts?.crust !== undefined,
     fixedCones: 0,
     issues,
   };
@@ -722,7 +723,7 @@ interface CellSample {
 const S: CellSample = { B: 0, mountB: 0, mountU: 0, hillU: 0, erod: 0, c: 0 };
 
 function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, out: BaseComponents, i: number) {
-  sampleRaw(m, ns, x, y, z, S);
+  sampleRaw(m, ns, x, y, z, S, true);
   out.b0[i] = S.B;
   out.mountB[i] = S.mountB;
   out.mountU[i] = S.mountU;
@@ -733,7 +734,8 @@ function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numb
 // 造山带对地壳高度的贡献（“山多高”= 1 时）。地形脚本改了山的强弱后按同一个式子重算
 const mountBOf = (mountU: number, c: number) => 1600 * mountU * smoothstep(-0.05, 0.05, c);
 
-function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, s: CellSample) {
+// plates：算不算板块边界。只有地形脚本真的算了的那一遍（crustMode 'replace'）才不算
+function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, s: CellSample, plates: boolean) {
   const prof = m.profile;
   const t = m.tuning;
   const [qx, qy, qz] = warp(ns, x, y, z);
@@ -770,7 +772,7 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
   let trench = 0;
   let mm = 0;
   // 星球形态的 crustMode 'replace'：不算板块边界（山带、洋中脊、海沟、裂谷都没有）
-  if (t.plates) {
+  if (plates) {
     const a = nearestPlate(m, px, py, pz);
     const da = power(m.plates[a], px, py, pz);
     for (let b = 0; b < m.plates.length; b++) {
@@ -859,15 +861,12 @@ interface CrustPasses {
 }
 const crustPasses = new WeakMap<BaseComponents, CrustPasses>();
 
-// 用某一套噪声（variant 0 是原来的，其余是重画）算一批格，再整批交给地形脚本，结果写回 raw（按格编号）。
-// 脚本在任何一格出错（运行时出错、NaN、返回值不对），这一遍整遍按没有脚本算（raw 里留着原值），返回出的问题。
-// known：局部重算时这一遍上一次的结果（undefined 为新的一遍）。上一次出了错的不再运行，直接按没有脚本算；
-// 上一次正常、这次却出错（脚本不纯）时返回 'redo'，由调用方从头算
-function crustPass(m: PlanetModel, ns: NoiseSet3, variant: number, mesh: SphereMesh, cells: Int32Array, raw: RawPass, src: string, known: ScriptIssue | null | undefined): ScriptIssue | null | 'redo' {
+// 一批格用某一套噪声算出的原值，写进 raw（按格编号）。plates 见 sampleRaw
+function sampleCells(m: PlanetModel, ns: NoiseSet3, mesh: SphereMesh, cells: Int32Array, raw: RawPass, plates: boolean) {
   const p = mesh.p;
   for (let j = 0; j < cells.length; j++) {
     const i = cells[j];
-    sampleRaw(m, ns, p[3 * i] * LAYOUT_R, p[3 * i + 1] * LAYOUT_R, p[3 * i + 2] * LAYOUT_R, S);
+    sampleRaw(m, ns, p[3 * i] * LAYOUT_R, p[3 * i + 1] * LAYOUT_R, p[3 * i + 2] * LAYOUT_R, S, plates);
     raw.B[i] = S.B;
     raw.mountB[i] = S.mountB;
     raw.mountU[i] = S.mountU;
@@ -875,7 +874,19 @@ function crustPass(m: PlanetModel, ns: NoiseSet3, variant: number, mesh: SphereM
     raw.erod[i] = S.erod;
     raw.c[i] = S.c;
   }
-  if (known) return known;
+}
+
+// 用某一套噪声（variant 0 是原来的，其余是重画）算一批格，再整批交给地形脚本，结果写回 raw（按格编号）。
+// 脚本在任何一格出错（运行时出错、NaN、返回值不对），这一遍整遍按没有脚本算（raw 里是没有脚本时的原值：
+// crustMode 'replace' 时板块边界也照算），返回出的问题。
+// known：局部重算时这一遍上一次的结果（undefined 为新的一遍）。上一次出了错的不再运行，直接按没有脚本算；
+// 上一次正常、这次却出错（脚本不纯）时返回 'redo'，由调用方从头算
+function crustPass(m: PlanetModel, ns: NoiseSet3, variant: number, mesh: SphereMesh, cells: Int32Array, raw: RawPass, src: string, known: ScriptIssue | null | undefined): ScriptIssue | null | 'redo' {
+  if (known) {
+    sampleCells(m, ns, mesh, cells, raw, true);
+    return known;
+  }
+  sampleCells(m, ns, mesh, cells, raw, !m.replace);
   const form = m.params.form!;
   const pos = cellPositions(mesh);
   const inputs = arrayInputs(
@@ -886,7 +897,11 @@ function crustPass(m: PlanetModel, ns: NoiseSet3, variant: number, mesh: SphereM
   // 重画一片换一套噪声，脚本的 rand()、fbmAt() 也跟着换（种子里加上 variant）
   const seed = variant ? mixSeed(m.params.seed, variant, 0x3d) : m.params.seed;
   const r = runScript({ kind: 'crust', src }, { owner: form.name, id: form.id, seedKey: form.seedKey, seed, inputs, cells });
-  if (!r.ok) return known === null ? 'redo' : r.issue;
+  if (!r.ok) {
+    if (known === null) return 'redo';
+    if (m.replace) sampleCells(m, ns, mesh, cells, raw, true);
+    return r.issue;
+  }
   const res = r.output;
   for (let j = 0; j < cells.length; j++) {
     const i = cells[j];

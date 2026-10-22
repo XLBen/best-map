@@ -366,7 +366,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const params = worldgenSchema.parse(cmd.params);
       // 星球形态：只能用在整个星球上，type 要与形态的 base 相同；脚本有语法错误时当场拒绝
       // （运行时出错不拒绝：那一部分按没有脚本算，见 planet-gen.ts）
-      if (params.form) checkForm(params.form, params.type, world.settings.globe === true, (t) => WORLD_TYPE_INFO[t].name);
+      if (params.form) checkForm(params.form, params.type, world.settings.globe === true, (t) => PLANET_TYPES.find((p) => p.type === t)?.name ?? WORLD_TYPE_INFO[t].name);
       if (cmd.reset) {
         causes.landDelta.fill(0);
         causes.upliftDelta.fill(0);
@@ -388,7 +388,10 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         prev.mountains !== params.mountains ? '山多高' : '',
       ].filter(Boolean);
       if (!sameForm(prev.form, params.form)) {
-        return { dirty: Dirty.Elevation, summary: `换了星球形态：${name}${what.length ? `；调整了${what.join('、')}` : ''}` };
+        const more = what.length ? `；调整了${what.join('、')}` : '';
+        // 去掉形态时说去掉了哪一个（“换了星球形态：像地球”读起来像是换成了另一个形态）
+        if (!params.form && prev.form) return { dirty: Dirty.Elevation, summary: `去掉了星球形态「${prev.form.name}」${more}` };
+        return { dirty: Dirty.Elevation, summary: `换了星球形态：${name}${more}` };
       }
       return { dirty: Dirty.Elevation, summary: `调整了${what.length ? what.join('、') : '世界参数'}` };
     }
