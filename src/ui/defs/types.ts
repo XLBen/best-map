@@ -41,7 +41,8 @@ export interface ChoiceOption {
 
 // 底部选项条上的一项
 export type BarItem =
-  | { kind: 'choice'; key: ChoiceKey; options: ChoiceOption[] }
+  // label：写在选项左边的两个字（“走向”）
+  | { kind: 'choice'; key: ChoiceKey; options: ChoiceOption[]; label?: string }
   | { kind: 'action'; icon?: Icon; label: string; title?: string; run(): void }
   | { kind: 'custom'; render: ComponentType };
 

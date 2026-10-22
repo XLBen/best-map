@@ -14,7 +14,7 @@ import { nudgeSlider, sliderPos, sliderValue } from './sliders';
 function Item({ item }: { item: BarItem }) {
   if (item.kind === 'choice') {
     const cur = options.value[item.key];
-    return (
+    const seg = (
       <div class="seg">
         {item.options.map((o) => (
           <button class={cur === o.value ? 'on' : ''} title={o.hint} onClick={() => setOptions({ [item.key]: o.value })}>
@@ -23,6 +23,14 @@ function Item({ item }: { item: BarItem }) {
           </button>
         ))}
       </div>
+    );
+    return item.label ? (
+      <span class="bar-choice">
+        <span class="hs-label">{item.label}</span>
+        {seg}
+      </span>
+    ) : (
+      seg
     );
   }
   if (item.kind === 'action') {

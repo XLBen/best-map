@@ -14,6 +14,7 @@ import {
   flash,
   focusSpecies,
   hoverCell,
+  hoverRiver,
   labelGroups,
   mapStyle,
   measure,
@@ -24,10 +25,12 @@ import {
   prefs,
   redrawTick,
   reference,
+  riverPending,
   riverStyleOverride,
   season,
   selectedFeature,
   selectedProvince,
+  selectedRiver,
   showToast,
   sliderActive,
   tool,
@@ -36,6 +39,7 @@ import {
 } from '../state';
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
+import { riverGlow } from './riverCourse';
 import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
@@ -282,6 +286,8 @@ export function MapView() {
         }
       }
       applyGroupPreview(w, preview.provinces ?? null);
+      // 选中的河（画河时）、河流列表里鼠标停着的河：沿河一道淡黄的光，压在工具的图形下面
+      const glow = clean ? [] : [...(tool.value === 'river' && selectedRiver.value ? riverGlow(w, selectedRiver.value) : []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : [])];
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = category.value === 'provinces';
@@ -301,7 +307,7 @@ export function MapView() {
         markers: c === 'water' && !clean,
         season: season.value,
         style: mapStyle.value,
-        shapes: preview.shapes,
+        shapes: glow.length ? [...glow, ...preview.shapes] : preview.shapes,
         provinceLabels: c === 'provinces' ? provinceLabels : [],
         features: overlays.value.labels || c === 'names' ? w.derived.features : null,
         labelTypes: types,
@@ -433,6 +439,9 @@ export function MapView() {
       void flash.value;
       void selectedProvince.value;
       void selectedFeature.value;
+      void selectedRiver.value;
+      void hoverRiver.value;
+      void riverPending.value;
       void labelGroups.value;
       void adjustPreview.value;
       void sliderActive.value;
@@ -665,6 +674,16 @@ export function MapView() {
         panning = null;
         requestDraw();
         return true;
+      },
+      escape: () => {
+        const used = !!active().escape?.();
+        if (used) requestDraw();
+        return used;
+      },
+      enter: () => {
+        const used = !!active().enter?.();
+        if (used) requestDraw();
+        return used;
       },
     };
 

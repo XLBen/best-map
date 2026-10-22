@@ -1,4 +1,4 @@
-import { Dices, Lock, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
+import { Dices, Lock, LockOpen, ScanSearch, Spline, Trash2, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, featureLabel } from '../../../core/features';
@@ -6,13 +6,15 @@ import { DEFAULT_PACK, type WordPack, wordPackSchema } from '../../../core/names
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
 import { download, exec, focusName, labelGroups, selectedFeature, showToast, world } from '../../state';
 import { focusOn } from '../camera';
+import { selectRiver } from '../riverCourse';
 import { Seg } from '../common';
 
 // 地名：底部条上的“选中地名”编辑，工具列表下方的文字包与全部地名
 
 // 名字框：回车或点别处提交，Esc 放弃这次输入（不在失去焦点时提交）。
 // 刚圈好、刚放下的地名会让它获得焦点并选中文字，直接打字就是改名
-export function NameInput({ fkey, value, onCommit }: { fkey: string; value: string; onCommit: (v: string) => void }) {
+// placeholder：还没有名字时框里淡淡的提示
+export function NameInput({ fkey, value, onCommit, placeholder }: { fkey: string; value: string; onCommit: (v: string) => void; placeholder?: string }) {
   const [name, setName] = useState(value);
   const cancelled = useRef(false);
   const ref = useRef<HTMLInputElement>(null);
@@ -41,7 +43,17 @@ export function NameInput({ fkey, value, onCommit }: { fkey: string; value: stri
       (e.target as HTMLInputElement).blur();
     }
   };
-  return <input ref={ref} class="bar-input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={onKey} onBlur={commit} />;
+  return (
+    <input
+      ref={ref}
+      class="bar-input"
+      value={name}
+      placeholder={placeholder}
+      onInput={(e) => setName((e.target as HTMLInputElement).value)}
+      onKeyDown={onKey}
+      onBlur={commit}
+    />
+  );
 }
 
 const AREA_KINDS = REGION_KINDS.filter((k) => k !== 'spot') as Exclude<RegionKind, 'spot'>[];
@@ -120,6 +132,16 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
           <Lock size={15} /> 锁定
         </button>
       )}
+      <button
+        class="bar-btn"
+        onClick={() => {
+          selectedFeature.value = null;
+          selectRiver({ kind: 'guide', id });
+        }}
+        title="换到“画河”：改大小、粗细、终点，重画一段"
+      >
+        <Spline size={15} /> 管理这条河
+      </button>
       <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
         <ScanSearch size={15} />
       </button>

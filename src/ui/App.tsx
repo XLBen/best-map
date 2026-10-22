@@ -24,6 +24,7 @@ import { AdjustPanel } from './panels/AdjustPanel';
 import { BiomePanel } from './panels/BiomePanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { CategoryMore } from './panels/ToolLibrary';
+import { RiverMore } from './panels/rivers';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
@@ -66,6 +67,12 @@ function PanelHost({ id }: { id: PanelId }) {
       return (
         <Popover id={id} title="要涂的生态" width={360}>
           <BiomePanel />
+        </Popover>
+      );
+    case 'river':
+      return (
+        <Popover id={id} title="这条河" width={320}>
+          <RiverMore />
         </Popover>
       );
     default: {

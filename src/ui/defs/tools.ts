@@ -41,7 +41,9 @@ import {
   mode,
   options,
   reachRange,
+  riverPending,
   selectedProvince,
+  selectedRiver,
   setOptions,
   tool,
   world,
@@ -75,12 +77,23 @@ import {
   restoreTool,
   rerollTool,
   riverSizeName,
-  riverTool,
   snapRadiusKm,
   spotTool,
-  unwaterTool,
 } from '../tools';
-import { BiomeChip, NamesBar, NamesExtras, NatureExtras, ProvinceBar, ProvinceColorToggle, ProvinceExtras, UnmetChip } from './extras';
+import { riverTool, unwaterTool } from '../riverCourse';
+import {
+  BiomeChip,
+  NamesBar,
+  NamesExtras,
+  NatureExtras,
+  ProvinceBar,
+  ProvinceColorToggle,
+  ProvinceExtras,
+  RiverBar,
+  RiverExtras,
+  RiverPendingBar,
+  UnmetChip,
+} from './extras';
 import type { CategoryDef, SliderDef, ToolDef } from './types';
 
 // ---------- 滑块 ----------
@@ -171,6 +184,25 @@ const biomeModes = {
   options: [
     { value: 'natural', label: '自然融入', hint: '系统调整这里的冷暖干湿，让它真的长出来，周围平滑过渡' },
     { value: 'force', label: '强制', hint: '只改涂到的格，气候和河流不变' },
+  ],
+};
+
+// 画河：顺地势还是自定义走向；自定义走向时画到陆地上之后接着流还是消失
+const riverModes = {
+  kind: 'choice' as const,
+  key: 'riverMode' as const,
+  label: '走向',
+  options: [
+    { value: 'flow', label: '顺地势', hint: '点一下或拖一下，河顺着地势流' },
+    { value: 'course', label: '自定义走向', hint: '按住画出河道，河完全照着走' },
+  ],
+};
+const riverEnds = {
+  kind: 'choice' as const,
+  key: 'riverEnd' as const,
+  options: [
+    { value: 'flow', label: '画完接着流', hint: '终点在陆地上时，顺着地势流到海、湖或别的河' },
+    { value: 'sink', label: '画完就消失', hint: '终点在陆地上时，河在那里渗进地下' },
   ],
 };
 
@@ -418,8 +450,15 @@ const defs: ToolDef[] = [
     icon: Spline,
     name: '画河',
     short: '画河',
-    how: '点源头起一条河 · 拖到别的河上就汇进去 · 从河上往外拖是改道',
-    size: RIVER,
+    how: '顺地势：点源头起一条河 · 自定义走向：按住画出河道，河照着走 · 点一条河选中它',
+    // 选中一条河、等着确认截走时，底部条换成那条河的设置（新河的大小先收起来）
+    size: { ...RIVER, enabled: () => !selectedRiver.value && !riverPending.value },
+    bar: () =>
+      riverPending.value
+        ? [{ kind: 'custom', render: RiverPendingBar }]
+        : selectedRiver.value
+          ? [{ kind: 'custom', render: RiverBar }]
+          : [riverModes, ...(options.value.riverMode === 'course' ? [riverEnds] : [])],
     create: (env) => riverTool(env.zoom),
   },
   {
@@ -438,7 +477,7 @@ const defs: ToolDef[] = [
     icon: Trash2,
     name: '删除河湖',
     short: '删河湖',
-    how: '删掉画过的河或湖',
+    how: '删掉画过的河或湖；停一下会标出真正会变干的河段',
     create: (env) => unwaterTool(env.zoom),
   },
   {
@@ -539,7 +578,7 @@ export const CATEGORIES: CategoryDef[] = [
   { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'reroll', 'restore'] },
   { id: 'climate', icon: ThermometerSun, label: '气候', tools: ['temp', 'moist', 'unclimate', 'field'] },
   { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'endemic', 'erase'], extras: NatureExtras },
-  { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'] },
+  { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'], extras: RiverExtras },
   { id: 'provinces', icon: MapIcon, label: '省份', tools: ['pselect', 'pbrush', 'pcut', 'pmerge', 'pregen'], extras: ProvinceExtras },
   { id: 'names', icon: Type, label: '地名', tools: ['rename', 'area', 'spot'], extras: NamesExtras },
 ];
@@ -559,6 +598,11 @@ const lastTool: Partial<Record<Category, ToolId>> = {};
 
 export function setTool(id: ToolId) {
   const from = category.value;
+  // 离开画河：选中的河、等着确认的那一笔都不要了
+  if (tool.value === 'river' && id !== 'river') {
+    riverPending.value?.cancel();
+    selectedRiver.value = null;
+  }
   if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;
   tool.value = id;
   cursorHint.value = null;

@@ -36,6 +36,9 @@ export interface MapApi {
   zoomBy(f: number): void;
   // 取消正在画的一笔；返回 true 表示真的取消了什么
   cancel(): boolean;
+  // 交给当前工具的 Esc、回车（比如画河时截不截走别的河）；工具用了返回 true
+  escape(): boolean;
+  enter(): boolean;
 }
 export const mapApi: { current: MapApi | null } = { current: null };
 

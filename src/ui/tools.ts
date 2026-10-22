@@ -1,12 +1,10 @@
-import type { Command } from '../../core/commands';
 import { lakeArea } from '../../core/elevation';
 import { endemicSpecies } from '../../core/endemic';
 import { hexToRgb } from '../../core/export';
 import { type GeoFeature, REGION_KIND_INFO, guessRegionKind } from '../../core/features';
 import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
 import { type ProvinceSeam, type SeamLayers, scissors, seamLayers, seamPick } from '../../core/seams';
-import { type CutResult, type RiverPlan, brushCells, growRegion, lassoStroke, planRiver, provinceCells, ringCells, ringWinding } from '../../core/select';
-import { centrePoints, smoothCourse } from '../../core/rivers';
+import { type CutResult, brushCells, growRegion, lassoStroke, provinceCells, ringCells, ringWinding } from '../../core/select';
 import {
   ISLAND_KIND_INFO,
   type ChainSpec,
@@ -32,7 +30,6 @@ import {
   type Again,
   type ToolOptions,
   busy,
-  cancelPreviews,
   exec,
   focusName,
   focusSpecies,
@@ -40,7 +37,6 @@ import {
   measure,
   onlyEditsPending,
   options,
-  previewCommand,
   redrawTick,
   selectedFeature,
   selectedProvince,
@@ -98,6 +94,9 @@ export interface ToolHandler {
   leave?(): void;
   // 鼠标离开地图后预览还要留着（排队中的笔画：结果换上之前一直显示）
   keep?(): boolean;
+  // Esc、回车（在取消正在画的一笔之后、退出量距离之前）：工具自己要用时返回 true（比如画河时截不截走别的河）
+  escape?(): boolean;
+  enter?(): boolean;
   preview(): Preview;
 }
 
@@ -123,7 +122,7 @@ const busyNote = () => {
   busyNoted = performance.now();
   showToast('还在计算上一步，稍等一下');
 };
-const isBusy = () => {
+export const isBusy = () => {
   if (busy.value === null) return false;
   busyNote();
   return true;
@@ -528,7 +527,7 @@ export function reliefTool(): ToolHandler {
 // 世界的编号：用来判断预览缓存是否过期
 const worldIds = new WeakMap<World, number>();
 let nextWorldId = 1;
-const worldId = (w: World) => {
+export const worldId = (w: World) => {
   let id = worldIds.get(w);
   if (!id) worldIds.set(w, (id = nextWorldId++));
   return id;
@@ -1114,7 +1113,7 @@ export const fmtFlow = (q: number) => {
 };
 
 // 一组格连成几片（相邻的算一片）
-function groupCount(w: World, cells: number[]): number {
+export function groupCount(w: World, cells: number[]): number {
   const left = new Set(cells);
   let groups = 0;
   for (const c of cells) {
@@ -1130,199 +1129,6 @@ function groupCount(w: World, cells: number[]): number {
     }
   }
   return groups;
-}
-
-// 汇入的那条河叫什么（只有大河有名字）
-const riverNameAt = (w: World, cell: number) => w.derived.features.find((f) => f.type === 'river' && f.cells.includes(cell))?.name || null;
-
-// 画河：从陆地上点源头或拖出路线是一条新河，碰到别的河就汇进去；从河上往外拖是改道。
-// 改道时先按流量估算会变干的河段（红色虚线），手停下来后在世界的副本上确切地算一遍，
-// 换成确切的结果：红色是会消失的河段，蓝色是别处会多出来的
-export function riverTool(zoom: () => number): ToolHandler {
-  let pointer: Pointer | null = null;
-  let drag: { cells: number[]; sx: number; sy: number; moved: boolean } | null = null;
-  let committing = false;
-  let cache: { key: string; plan: RiverPlan } | null = null;
-  let exact: { key: string; removed: number[]; added: number[] } | null = null;
-  let exactKey = '';
-  let exactTimer: ReturnType<typeof setTimeout> | null = null;
-  const planNow = (w: World): RiverPlan | null => {
-    const pts = drag?.cells ?? (pointer && pointer.cell >= 0 ? [pointer.cell] : []);
-    if (!pts.length) return null;
-    const key = `${worldId(w)}|${pts.join(',')}`;
-    if (cache?.key !== key) cache = { key, plan: planRiver(w, w.derived, pts) };
-    return cache.plan;
-  };
-  const planKey = (w: World, p: RiverPlan) => `${worldId(w)}|${p.cells.join(',')}`;
-  // 终点怎么说：“汇入「赤江」”；写进历史时不带引号
-  const endText = (w: World, p: RiverPlan, quoted: boolean) => {
-    if (p.end === 'river') {
-      const name = riverNameAt(w, p.join);
-      return name ? (quoted ? `汇入「${name}」` : `汇入${name}`) : '汇入一条河';
-    }
-    return p.end === 'sea' ? '入海' : p.end === 'lake' ? '流进湖里' : p.end === 'edge' ? '流出地图' : '';
-  };
-  const lengthKm = (w: World, cells: number[]) => km(cells.length * w.mesh.spacing * w.kmPerUnit);
-  // 松手后执行的命令（确切预览用的也是它）。从画过的河的源头改道等于重画它：泉水和大小照旧
-  const commandFor = (w: World, p: RiverPlan): Command => {
-    const src = p.reroute ? w.small.guides.find((g) => g.spring && g.cells[0] === p.cells[0]) : undefined;
-    const guide = p.reroute
-      ? { cells: p.cells, locked: true, spring: !!src, ...(src?.flow !== undefined ? { flow: src.flow } : {}) }
-      : { cells: p.cells, locked: true, spring: true, flow: options.value.riverFlow };
-    const label = `${p.reroute ? '让河改道' : '画了一条河'}（约 ${lengthKm(w, p.cells)} km，${endText(w, p, false)}）`;
-    return { op: 'add_guide', guide, ...(p.reroute ? { reroute: true } : {}), label };
-  };
-  // 改道：路线停下来 150 毫秒后算确切的结果
-  const wantExact = (w: World, p: RiverPlan) => {
-    const key = planKey(w, p);
-    if (key === exactKey) return;
-    exactKey = key;
-    if (exactTimer) clearTimeout(exactTimer);
-    exactTimer = setTimeout(() => {
-      void previewCommand(commandFor(w, p)).then((r) => {
-        if (!r || exactKey !== key) return;
-        exact = { key, removed: r.riverRemoved, added: r.riverAdded };
-        redrawTick.value++;
-      });
-    }, 150);
-  };
-  const resetExact = () => {
-    if (exactTimer) clearTimeout(exactTimer);
-    exactTimer = null;
-    exactKey = '';
-    exact = null;
-  };
-  // 估计的流量（松手后的样子）：改道的河带着原来那条河的水；新画的河源头有泉水，选的大小沿路平均加进来（与水文相同）
-  const flowOf = (w: World, p: RiverPlan): number[] => {
-    const thr = w.small.planet.riverThreshold;
-    const d = w.derived;
-    if (p.reroute) return p.cells.map((c) => Math.max(d.discharge[p.cells[0]], d.discharge[c]));
-    const extra = Math.max(0, options.value.riverFlow - 1.2) * thr;
-    const body = Math.max(1, p.cells.slice(0, -1).filter((c) => w.causes.land[c]).length);
-    return p.cells.map((c, k) => d.discharge[c] + 1.2 * thr + (extra * Math.min(k + 1, body)) / body);
-  };
-  const shapesOf = (w: World, p: RiverPlan, estimate: boolean): Shape[] => {
-    const { mesh } = w;
-    const color = p.blocked ? 'rgba(235, 80, 70, 0.95)' : p.same ? 'rgba(210, 210, 210, 0.85)' : undefined;
-    const shapes: Shape[] = [];
-    if (estimate && p.dried.length) shapes.push({ kind: 'cells', cells: [p.cells[0], ...p.dried], color: 'rgba(235, 80, 70, 0.95)', width: 3, dashed: true });
-    if (p.cells.length > 1) {
-      // 与松手后地图上的河同样画（格心加曲流再平滑，宽度按流量），上面是水模式里那条白色虚线
-      const pts = centrePoints(w, p.cells);
-      const q = flowOf(w, p);
-      const line = smoothCourse(
-        pts,
-        pts.map((_, k) => q[w.causes.land[p.cells[k]] && w.derived.lake[p.cells[k]] !== 1 ? k : Math.max(0, k - 1)]),
-        mesh.spacing,
-      );
-      shapes.push({ kind: 'river', points: line.points, flow: line.flow, color, arrow: true });
-      shapes.push({ kind: 'line', points: line.points, color: 'rgba(255, 255, 255, 0.85)', width: 1.2, dashed: true });
-    }
-    if (p.end === 'river') shapes.push({ kind: 'circle', x: mesh.x[p.join], y: mesh.y[p.join], r: 7 / zoom(), color: 'rgba(255, 255, 255, 0.95)', width: 2 });
-    return shapes;
-  };
-  return {
-    drags: true,
-    down(p) {
-      const w = world.value;
-      if (!w || p.cell < 0 || isBusy() || committing) return;
-      if (!w.causes.land[p.cell] || w.derived.lake[p.cell] === 1) {
-        showToast('河要从陆地上开始', true);
-        return;
-      }
-      drag = { cells: [p.cell], sx: p.sx, sy: p.sy, moved: false };
-      pointer = p;
-    },
-    move(p, pressed) {
-      pointer = p;
-      if (!pressed || !drag || p.cell < 0) return;
-      // 手抖不算拖：在河上点一下不会变成改道
-      if (Math.hypot(p.sx - drag.sx, p.sy - drag.sy) > 6) drag.moved = true;
-      if (drag.moved && drag.cells[drag.cells.length - 1] !== p.cell) drag.cells.push(p.cell);
-    },
-    async up() {
-      const w = world.value;
-      const d = drag;
-      if (!w || !d || committing) return;
-      const p = planNow(w);
-      resetExact();
-      cancelPreviews();
-      const fail = (text: string, error = true) => {
-        drag = null;
-        showToast(text, error);
-      };
-      if (p?.reroute && !d.moved) return fail('这里已经有河：按住往外拖，让它从这里改道', false);
-      if (!p || p.cells.length < 2) return fail('这里画不出河');
-      if (p.blocked) return fail(p.blocked);
-      if (p.same) return fail('河本来就这么流，没有改');
-      committing = true;
-      try {
-        await exec(commandFor(w, p), p.reroute ? '正在改道…' : '正在计算河流…');
-      } finally {
-        committing = false;
-        drag = null;
-      }
-    },
-    cancel() {
-      if (!committing) drag = null;
-      resetExact();
-      cancelPreviews();
-    },
-    preview() {
-      const w = world.value;
-      if (!w || !pointer) return EMPTY;
-      const onLand = pointer.cell >= 0 && w.causes.land[pointer.cell] && w.derived.lake[pointer.cell] !== 1;
-      if (!drag && !onLand) return EMPTY;
-      const p = planNow(w);
-      if (!p) return EMPTY;
-      const len = lengthKm(w, p.cells);
-      const where = endText(w, p, true);
-      if (committing) return { layers: [], shapes: shapesOf(w, p, false), hint: '正在计算…' };
-      if (!drag?.moved && p.reroute) {
-        const { mesh } = w;
-        const c = p.cells[0];
-        return {
-          layers: [],
-          shapes: [{ kind: 'circle', x: mesh.x[c], y: mesh.y[c], r: 7 / zoom(), color: 'rgba(255, 255, 255, 0.95)', width: 2 }],
-          hint: '已有河 · 往外拖是改道',
-        };
-      }
-      if (p.blocked) return { layers: [], shapes: shapesOf(w, p, false), hint: p.blocked, warn: true };
-      if (p.same) return { layers: [], shapes: shapesOf(w, p, false), hint: '河本来就这么流', warn: true };
-      if (p.reroute) {
-        wantExact(w, p);
-        const head = `改道 → ${where} · ${len} km`;
-        const x = exact?.key === planKey(w, p) ? exact : null;
-        if (!x) {
-          const dried = p.dried.length ? ` · 旧河道约 ${km(p.dried.length * w.mesh.spacing * w.kmPerUnit)} km 变干` : '';
-          return { layers: [], shapes: shapesOf(w, p, true), hint: `${head}${dried}…` };
-        }
-        const onPath = new Set(p.cells);
-        const added = x.added.filter((c) => !onPath.has(c));
-        // 分开说：这条河原来的下游变干多少；别处跟着变的（多半是河挪了一格）有几处
-        const old = new Set<number>();
-        for (let c = w.derived.receiver[p.cells[0]]; c >= 0 && w.causes.land[c] && w.derived.lake[c] !== 1 && !old.has(c); c = w.derived.receiver[c]) old.add(c);
-        const dried = x.removed.filter((c) => old.has(c));
-        const others = groupCount(w, [...x.removed.filter((c) => !old.has(c)), ...added]);
-        return {
-          layers: [
-            { cells: x.removed, color: [235, 80, 70], alpha: 0.8 },
-            { cells: added, color: [70, 150, 235], alpha: 0.7 },
-          ],
-          shapes: shapesOf(w, p, false),
-          hint:
-            head +
-            (dried.length ? ` · 旧河道 ${km(dried.length * w.mesh.spacing * w.kmPerUnit)} km 变干` : '') +
-            (others ? ` · 另有 ${others} 处河道变` : ''),
-        };
-      }
-      return {
-        layers: [],
-        shapes: shapesOf(w, p, false),
-        hint: `→ ${where} · ${len} km`,
-      };
-    },
-  };
 }
 
 // 点一下：用底部滑块的大小放湖；按住往外拖：拖多远湖就多大
@@ -1411,74 +1217,6 @@ export function lakeTool(): ToolHandler {
       };
     },
   };
-}
-
-// 删除画过的河或湖：找离鼠标最近的（屏幕上 12 像素以内）
-export function unwaterTool(zoom: () => number): ToolHandler {
-  let pointer: Pointer | null = null;
-  const target = (w: World): { kind: 'guide' | 'lake'; id: string; cells: number[] } | null => {
-    if (!pointer) return null;
-    const { mesh } = w;
-    const tol = 12 / zoom();
-    let best: { kind: 'guide' | 'lake'; id: string; cells: number[] } | null = null;
-    let bd = tol;
-    for (const l of w.small.lakes) {
-      const dd = mapDist(w, mesh.x[l.cell], mesh.y[l.cell], pointer.x, pointer.y) - l.radius / w.kmPerUnit;
-      if (dd < bd) {
-        bd = Math.max(0, dd);
-        best = { kind: 'lake', id: l.id, cells: lakeArea(w, l.cell, l.radius, l.exact) };
-      }
-    }
-    const sphere = mesh.kind === 'sphere';
-    for (const g of w.small.guides) {
-      for (let k = 0; k + 1 < g.cells.length; k++) {
-        const a = g.cells[k];
-        const b = g.cells[k + 1];
-        // 整个星球：两端展开到指针附近再量（格距很小，局部当平面量即可）
-        const ax = sphere ? unwrapNear(mesh.x[a], pointer.x) : mesh.x[a];
-        const bx = sphere ? unwrapNear(mesh.x[b], pointer.x) : mesh.x[b];
-        const dd = segDist(pointer.x, pointer.y, ax, mesh.y[a], bx, mesh.y[b]);
-        if (dd < bd) {
-          bd = dd;
-          best = { kind: 'guide', id: g.id, cells: g.cells };
-        }
-      }
-    }
-    return best;
-  };
-  return {
-    drags: false,
-    move(p) {
-      pointer = p;
-    },
-    async click(p) {
-      pointer = p;
-      const w = world.value;
-      if (!w || isBusy()) return;
-      const t = target(w);
-      if (!t) {
-        showToast('这里没有画过的河或湖（自然形成的河删不掉，可以把地势压低或让这里变干）', true);
-        return;
-      }
-      await exec(t.kind === 'guide' ? { op: 'remove_guide', id: t.id } : { op: 'remove_lake', id: t.id }, '正在计算…');
-    },
-    preview() {
-      const w = world.value;
-      if (!w || !pointer) return EMPTY;
-      const t = target(w);
-      if (!t) return EMPTY;
-      if (t.kind === 'lake') return { layers: [{ cells: t.cells, color: [235, 80, 70], alpha: 0.7 }], shapes: [], hint: '删掉这个湖' };
-      return { layers: [], shapes: [{ kind: 'cells', cells: t.cells, color: 'rgba(235, 80, 70, 0.95)', width: 4 }], hint: '删掉这条河' };
-    },
-  };
-}
-
-function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const l2 = dx * dx + dy * dy;
-  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
-  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
 }
 
 // ---------- 量距离 ----------
