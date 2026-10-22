@@ -62,9 +62,7 @@ describe('资源包的格式', () => {
     expect(!river.ok && river.errors).toEqual(['河流类型第 1 个「无名」的 id：缺少这一项', '河流类型第 1 个「无名」的 color：缺少这一项']);
     const kept = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }] })));
     expect(kept.ok && kept.pack.riverTypes).toEqual([{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }]);
-    // 星球形态（那一支注册之前）：至少是带 id 的对象，其余原样保留
-    const form = readPack(JSON.stringify(pack({ planetForms: [{ id: 'f', name: '形态', anything: 1 }] })));
-    expect(form.ok && form.pack.planetForms).toEqual([{ id: 'f', name: '形态', anything: 1 }]);
+    // 星球形态按 planet-form.ts 的格式查（见下面“资源包里的星球形态”）
   });
 
   it('记事本存的（开头带 BOM）照样能读；长短、多少不对时说人话', () => {
@@ -443,7 +441,7 @@ describe('用了资源包之后的世界', () => {
 describe('资源包里的星球形态', () => {
   it('内置的三种形态：存成文件再读回来一样；写错时用中文说是哪一个；只列出来，不在“用到这个世界”里用', () => {
     expect(packForms(FANTASY_PACK).map((f) => f.name)).toEqual(['双子大陆', '环形内海', '极地大陆']);
-    expect(packSummary(FANTASY_PACK)).toBe('生态 5 · 星球 3');
+    expect(packSummary(FANTASY_PACK)).toBe('生态 5 · 河流 4 · 星球 3');
     const back = readPack(JSON.stringify(FANTASY_PACK));
     expect(back.ok && back.pack.planetForms).toEqual(FANTASY_FORMS);
     const bad = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, base: 'moon' } as never] })));
