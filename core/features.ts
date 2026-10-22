@@ -975,7 +975,9 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): Add
         }
       }
       if (!enclosed || owner < 0) continue;
-      (domain[owner] ??= groups[owner].cells.filter((c) => painted[c] < 0)).push(...q);
+      // 逐格加（大星球上一个洞可能有几万格，展开成参数会超出调用栈）
+      const dom = (domain[owner] ??= groups[owner].cells.filter((c) => painted[c] < 0));
+      for (const c of q) dom.push(c);
     }
   }
   // 原来的地物：每个大类按剩下的格数取最大的 10 块（没涂过时与原来完全相同）

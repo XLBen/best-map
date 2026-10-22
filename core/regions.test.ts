@@ -150,5 +150,6 @@ describe('圈的地区自动类型', () => {
     const c = findCell(w.mesh, 0.7, 0.4);
     eng.exec({ op: 'add_region', region: { kind: 'spot', cells: [c], at: [0.7, 0.4] } });
     expect(() => eng.exec({ op: 'update_region', id: w.small.regions[2].id, auto: true })).toThrow('点状地名没有类型可以自动判断');
+    expect(() => eng.exec({ op: 'add_region', region: { kind: 'spot', cells: [c], at: [0.7, 0.4], auto: true } })).toThrow('点状地名没有类型可以自动判断');
   });
 });

@@ -3,7 +3,7 @@ import { Engine } from './engine';
 import { type GeoFeature, featureLabel } from './features';
 import { findCell, graphDistance, ringDistance } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
-import { continents, engineFor } from './testing/fixtures';
+import { continents, engineFor, snapshot } from './testing/fixtures';
 
 // 人工构造的地图：一块带半岛和海湾的大陆，东边两个岛之间隔着一道窄海峡
 function handmade() {
@@ -128,6 +128,15 @@ const base = continents();
 const forests = base.world.derived.features.filter((f) => f.type === 'forest');
 const pure = forests.find((f) => Array.from(f.cells).every((c) => speciesAt(base, c) === speciesAt(base, f.anchor)))!;
 const deep = forests.find((f) => depthIn(base, f)[f.anchor] >= 1 && f.cells.length >= 150)!;
+// 6000 格的小星球（几个测试共用，每次给副本）
+const planet = () =>
+  snapshot('features:planet', () => {
+    const eng = engineFor({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
+    return eng;
+  });
+// 面状地物（河沿河标、山峰标在峰顶、群岛的岛之间本来是海、用户的区块另算）
+const areal = (f: GeoFeature) => !f.region && f.type !== 'river' && f.type !== 'peak' && f.type !== 'archipelago';
 
 describe('涂出来的生态区有自己的名字', () => {
   it('在森林里涂一片别的森林：新名字在涂的地方、旧名字留在没涂的部分、两个标签都在自己的格上', () => {
@@ -167,6 +176,33 @@ describe('涂出来的生态区有自己的名字', () => {
     // 其余的地物名字都不变（新的在第二轮起名，不抢原有地物的名字）
     const before = new Map(base.world.derived.features.map((x) => [x.key, x.name]));
     for (const x of eng.world.derived.features) if (before.has(x.key)) expect(x.name, x.key).toBe(before.get(x.key));
+  });
+
+  it('涂出来的地名第二轮才起：字很少的文字包里也不抢原有地物的名字', () => {
+    // 森林只有 12 个字可选：涂出来的森林比多数自然的森林“重要”，一起按重要度起名时会先挑走它们要的字
+    const pack: WordPack = {
+      id: 'few',
+      name: '少字',
+      lists: { a: [...'甲乙丙丁戊己庚辛壬癸子丑'], b: [...'东南西北中上下前后左右内外远近高低长短'] },
+      types: { forest: { patterns: [{ p: '{a}林' }] }, island: { patterns: [{ p: '{b}{b}岛' }] } },
+    };
+    const eng = continents();
+    const w = eng.world;
+    eng.exec({ op: 'set_word_pack', pack });
+    const before = new Map(w.derived.features.map((f) => [f.key, f.name]));
+    // 离所有五大类生态 4 格以上的空地上涂三片雨林：原有的地物一个都不变，只多出涂的这几片
+    const grouped = (c: number) => ['forest', 'jungle', 'desert', 'arctic', 'marsh'].includes(w.small.species[w.derived.dominant[c]]?.terrain ?? '');
+    const far = ringDistance(w.mesh, [...Array(w.mesh.n).keys()].filter(grouped), 4);
+    const open = [...Array(w.mesh.n).keys()].filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1 && w.derived.dominant[c] >= 0 && far[c] < 0);
+    for (const k of [0, 1, 2]) {
+      const cells = nearest(eng, open, open[Math.floor((open.length * (k + 0.5)) / 3)], 25);
+      paint(eng, cells, 'rainforest');
+    }
+    const painted = paintedFeatures(eng);
+    expect(painted.length).toBe(3);
+    expect(painted.every((f) => f.type === 'forest' && f.name.endsWith('林'))).toBe(true);
+    expect(w.derived.features.length).toBe(before.size + 3);
+    for (const f of w.derived.features) if (!f.species) expect(f.name, f.key).toBe(before.get(f.key));
   });
 
   it('同种生态往外涂：名字不变，也没有新地名（换几个位置）', () => {
@@ -273,6 +309,20 @@ describe('涂出来的生态区有自己的名字', () => {
     expect(named()[0].species).toBe('rainforest');
     expect(named()[0].custom).toBe(true);
   });
+
+  it('每个面状地物的标注都落在自己的格上（星球上跨过接缝涂一片也一样）', () => {
+    const eng = planet();
+    const w = eng.world;
+    for (const f of w.derived.features.filter(areal)) expect(labelInside(eng, f), f.key).toBe(true);
+    // 经度 ±180° 两边的陆地涂成稀树草原：涂出来的地物跨过接缝，标注仍在它自己的格上
+    const seam = [...Array(w.mesh.n).keys()].filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1 && (w.mesh.x[c] < 0.08 || w.mesh.x[c] > 1.92));
+    paint(eng, seam, 'savanna');
+    const across = paintedFeatures(eng).filter((f) => Array.from(f.cells).some((c) => w.mesh.x[c] < 0.5) && Array.from(f.cells).some((c) => w.mesh.x[c] > 1.5));
+    expect(across.length).toBeGreaterThan(0);
+    expect(across.every((f) => f.type === 'biome' && featureLabel(w, f) === '稀树草原')).toBe(true);
+    for (const f of w.derived.features.filter(areal)) expect(labelInside(eng, f), f.key).toBe(true);
+    for (const f of base.world.derived.features.filter(areal)) expect(labelInside(base, f), f.key).toBe(true);
+  });
 });
 
 // 这一轮之前的程序算出的“key=名字”（没涂过生态的世界：识别、锚点、起名都不能变，只有标注位置可以变）
@@ -280,9 +330,7 @@ describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
     expect(kv(continents())).toBe('59c04dd7');
-    const planet = engineFor({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
-    planet.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    expect(kv(planet)).toBe('9f723bb3');
+    expect(kv(planet())).toBe('9f723bb3');
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
     expect(kv(islands)).toBe('b00d2f79');

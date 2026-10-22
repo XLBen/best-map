@@ -672,6 +672,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const region = regionSchema.parse({ ...cmd.region, id: cmd.region.id ?? nextId(world, 'region') });
       if (small.regions.some((r) => r.id === region.id)) throw new CommandError(`地名 ${region.id} 已存在`);
       if (region.kind === 'spot' && region.cells.length !== 1) throw new CommandError('点状地名只占一格');
+      if (region.kind === 'spot' && region.auto) throw new CommandError('点状地名没有类型可以自动判断');
       region.name = region.name.trim();
       small.regions = [...small.regions, region];
       const what = region.kind === 'spot' ? '放了一个地名' : `圈了一块${REGION_KIND_INFO[region.kind].label}`;
