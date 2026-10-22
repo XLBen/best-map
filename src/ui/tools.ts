@@ -4,7 +4,8 @@ import { endemicSpecies } from '../../core/endemic';
 import { hexToRgb } from '../../core/export';
 import { type GeoFeature, REGION_KIND_INFO, guessRegionKind } from '../../core/features';
 import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
-import { type CutResult, type RiverPlan, brushCells, cutProvinces, growRegion, lassoStroke, planRiver, provinceCells, ringCells, ringWinding } from '../../core/select';
+import { type SeamLayers, scissors, seamLayers, seamPick } from '../../core/seams';
+import { type CutResult, type RiverPlan, brushCells, growRegion, lassoStroke, planRiver, provinceCells, ringCells, ringWinding } from '../../core/select';
 import { riverWidth } from '../../core/rivers';
 import {
   ISLAND_KIND_INFO,
@@ -76,6 +77,8 @@ export interface Preview {
 export interface ProvincePreview {
   cells: number[];
   ids: number[];
+  // 剪刀：将来的切线（命令会记下的那一段，见 core/seams.ts 的 scissors），切开的两省之间的边界画在它上面
+  seam?: [number, number][];
 }
 
 export interface ToolHandler {
@@ -1375,6 +1378,14 @@ export function measureTool(zoom: () => number): ToolHandler {
 
 const provinceName = (w: World, id: number) => w.small.provinces[id]?.name || `省份 ${id}`;
 
+// 鼠标下算哪一格（选省、合并、吸取省份用）：剪刀切线附近按地图上显示出来的那一边算（与着色器同一条规则）
+let seamsFor: { w: World; L: SeamLayers | null } | null = null;
+export function provinceCellAt(w: World, p: Pointer): number {
+  if (p.cell < 0 || !w.small.provinceSeams) return p.cell;
+  if (seamsFor?.w !== w) seamsFor = { w, L: seamLayers(w, w.causes.province, w.small.provinceSeams) };
+  return seamPick(seamsFor.L, w, p.x, p.y, p.cell);
+}
+
 export function provinceSelectTool(): ToolHandler {
   let pointer: Pointer | null = null;
   return {
@@ -1385,13 +1396,13 @@ export function provinceSelectTool(): ToolHandler {
     click(p) {
       const w = world.value;
       if (!w || p.cell < 0) return;
-      const id = w.causes.province[p.cell];
+      const id = w.causes.province[provinceCellAt(w, p)];
       selectedProvince.value = id >= 0 ? id : null;
     },
     preview() {
       const w = world.value;
       if (!w || !pointer || pointer.cell < 0) return EMPTY;
-      const id = w.causes.province[pointer.cell];
+      const id = w.causes.province[provinceCellAt(w, pointer)];
       if (id < 0) return EMPTY;
       return { layers: [], shapes: [], hint: provinceName(w, id) };
     },
@@ -1436,9 +1447,10 @@ export function provinceBrushTool(): ToolHandler {
   });
 }
 
-// 剪刀：沿画的线切开省份（线是墙，两端自动延长到省界）。切成几块就是几个省。
-// 拖动时地图上直接画出切开后真实的省界（与结果同一套编码和扭曲），新的几块用它们将来的颜色；
-// 切出几块之后原来的红线隐去，只留两端的小点和自动延长的虚线。松手后预览一直留到结果回来
+// 剪刀：沿画的线切开省份（线是墙，两端自动延长到省界）。切成几块就是几个省，切开的两省之间的边界就是画的线。
+// 拖动时地图上直接画出切开后真实的省界（与结果同一套编码、扭曲和切线规则），新的几块用它们将来的颜色；
+// 切出几块之后原来的红线隐去，只留两端的小点和自动延长的虚线。松手后预览一直留到结果回来。
+// 预览与命令用同一条线（延长、化简之后的，见 core/seams.ts 的 scissors），所以切出来的块、新省的编号都一样
 const CUT_RED = 'rgba(255, 90, 70, 0.95)';
 
 export function provinceCutTool(zoom: () => number): ToolHandler {
@@ -1446,17 +1458,17 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
   let line: [number, number][] | null = null;
   let lastScreen: [number, number] = [0, 0];
   let committing = false;
-  let cache: { key: string; cut: CutResult; view: Preview } | null = null;
+  let cache: { key: string; cut: CutResult; line: [number, number][]; view: Preview } | null = null;
   const cutNow = (w: World, pts: [number, number][]) => {
     const key = `${worldId(w)}|${pts.length}|${pts[pts.length - 1].join(',')}`;
     if (cache?.key !== key) {
-      const cut = cutProvinces(w, pts);
-      cache = { key, cut, view: viewOf(w, pts, cut) };
+      const { ext, line: sent, cut, seam } = scissors(w, pts);
+      cache = { key, cut, line: sent, view: viewOf(w, pts, ext, seam, cut) };
     }
     return cache;
   };
   // 新的几块：编号按命令里的顺序（与执行时新建省份的顺序相同），颜色就是将来的颜色
-  const viewOf = (w: World, pts: [number, number][], cut: CutResult): Preview => {
+  const viewOf = (w: World, pts: [number, number][], ext: CutResult, seam: [number, number][], cut: CutResult): Preview => {
     const layers: HighlightLayer[] = [];
     const cells: number[] = [];
     const ids: number[] = [];
@@ -1477,10 +1489,10 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
       const dot = 2.5 / zoom();
       for (const [x, y] of [pts[0], pts[pts.length - 1]]) shapes.push({ kind: 'circle', x, y, r: dot, color: CUT_RED, width: 2 });
     }
-    if (cut.before) shapes.push({ kind: 'line', points: cut.line.slice(0, cut.before + 1), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
-    if (cut.after) shapes.push({ kind: 'line', points: cut.line.slice(cut.line.length - 1 - cut.after), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
+    if (ext.before) shapes.push({ kind: 'line', points: ext.line.slice(0, ext.before + 1), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
+    if (ext.after) shapes.push({ kind: 'line', points: ext.line.slice(ext.line.length - 1 - ext.after), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
     const pieces = cut.plans.reduce((n, pl) => n + pl.parts.length, 0);
-    return { layers, shapes, hint: cut.plans.length ? `切成 ${pieces} 块` : '线还没把省分开', provinces: cells.length ? { cells, ids } : null };
+    return { layers, shapes, hint: cut.plans.length ? `切成 ${pieces} 块` : '线还没把省分开', provinces: cells.length ? { cells, ids, seam } : null };
   };
   return {
     drags: true,
@@ -1501,18 +1513,15 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
       const w = world.value;
       if (!w || !line || committing) return;
       line.push([p.x, p.y]);
-      const { cut } = cutNow(w, line);
-      const { plans } = cut;
-      if (!plans.length) {
+      const { cut, line: sent } = cutNow(w, line);
+      if (!cut.plans.length) {
         line = null;
         showToast('线没有把省份分开', true);
         return;
       }
       committing = true;
       try {
-        const names = plans.map((pl) => `“${provinceName(w, pl.id)}”`).join('、');
-        const commands = plans.flatMap((pl) => pl.parts.slice(1).map((cells) => ({ op: 'assign_province' as const, cells, province: 'new' as const })));
-        await exec({ op: 'batch', label: `切开了${names}`, commands }, '正在划分…');
+        await exec({ op: 'cut_province', line: sent }, '正在划分…');
       } finally {
         committing = false;
         line = null;
@@ -1539,7 +1548,7 @@ export function provinceMergeTool(): ToolHandler {
   const view = (): Preview => {
     const w = world.value;
     if (!w || !pointer || pointer.cell < 0) return EMPTY;
-    const id = w.causes.province[pointer.cell];
+    const id = w.causes.province[provinceCellAt(w, pointer)];
     const sel = selectedProvince.value;
     if (id < 0) return EMPTY;
     if (sel === null || sel === id || !w.small.provinces[sel]) return { layers: [], shapes: [], hint: provinceName(w, id) };
@@ -1569,7 +1578,7 @@ export function provinceMergeTool(): ToolHandler {
     async click(p) {
       const w = world.value;
       if (!w || p.cell < 0 || isBusy()) return;
-      const id = w.causes.province[p.cell];
+      const id = w.causes.province[provinceCellAt(w, p)];
       const sel = selectedProvince.value;
       if (id < 0) return;
       if (sel === null || sel === id || !w.small.provinces[sel]) {

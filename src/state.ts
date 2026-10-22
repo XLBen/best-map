@@ -658,6 +658,7 @@ export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null>
         return;
       }
       if (!r.ok) showToast(r.error, true);
+      else if (r.warnings?.length) showToast(r.warnings.join('；'), true);
       job.done(r.ok ? r.zip : null);
     };
     worker.onerror = () => {

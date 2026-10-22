@@ -34,7 +34,7 @@ import {
 } from '../state';
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
-import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
+import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
 
@@ -269,6 +269,9 @@ export function MapView() {
         lastHighlightKey = key;
       }
       applyGroupPreview(w, preview.provinces ?? null);
+      // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
+      renderer.flatByGroup = mode.value === 'provinces';
+      renderer.highlightByGroup = category.value === 'provinces';
       renderer.style = mapStyle.value;
       renderer.render(w.kmPerUnit);
       const c = category.value;
@@ -373,7 +376,8 @@ export function MapView() {
       const kinds = Object.entries(w.small.provinces)
         .map(([p, m]) => `${p}:${m.kind}`)
         .join(',');
-      const key = [w.mesh, w.derived.elevation, w.derived.dominant, w.causes.province, kinds, o.mode, o.season, o.focusSpecies, o.borders];
+      const seams = (w.small.provinceSeams ?? []).map((s) => s.id).join(',');
+      const key = [w.mesh, w.derived.elevation, w.derived.dominant, w.causes.province, kinds, seams, o.mode, o.season, o.focusSpecies, o.borders];
       if (key.length === colorKey.length && key.every((k, i) => k === colorKey[i])) return;
       colorKey = key;
       renderer.setMesh(w.mesh);
@@ -471,7 +475,9 @@ export function MapView() {
       // Alt+点：吸取（取这里的生态、这里的省份）
       const def = TOOL_DEFS[tool.value];
       if (e.altKey && def.pick && !measure.value) {
-        const got = p.cell >= 0 ? def.pick(w, p.cell) : null;
+        // 吸取省份：剪刀切线附近按显示出来的那一边算
+        const cell = def.category === 'provinces' ? provinceCellAt(w, p) : p.cell;
+        const got = cell >= 0 ? def.pick(w, cell) : null;
         showToast(got ? `吸取了“${got}”` : '这里没有可以吸取的', !got);
         requestDraw();
         return;

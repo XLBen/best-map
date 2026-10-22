@@ -464,6 +464,8 @@ export function docVersion(settings: Pick<Settings, 'globe'>, commands: readonly
 // 一条命令有没有用到旧版程序不认识的字段、命令（batch 里的逐条看）。后面加新字段、新命令时在这里加一项检测
 function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'batch') return cmd.commands.some(usesExtensions);
+  // 剪刀切线（provinceSeams）
+  if (cmd.op === 'cut_province') return true;
   return false;
 }
 

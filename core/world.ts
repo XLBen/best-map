@@ -5,6 +5,7 @@ import type { WordPack } from './names';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
+import type { ProvinceSeam } from './seams';
 import { DEFAULT_SPECIES, type Species } from './species';
 
 // 世界的三类数据：
@@ -178,6 +179,8 @@ export interface SmallState {
   nextId: number;
   // 省份自动划分的规则；陆海变化后的修补也按它的目标大小
   provinceRules: ProvinceRules;
+  // 剪刀切省时画的线（见 seams.ts）：第一次切之前没有这一项
+  provinceSeams?: ProvinceSeam[];
 }
 
 export interface Conflict {

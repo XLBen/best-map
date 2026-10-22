@@ -1,6 +1,7 @@
 import { blendRgb } from '../../core/biome-look';
 import { hexToRgb } from '../../core/export';
 import { gradient } from '../../core/mesh';
+import { type ProvinceSeam, type SeamLayers, seamLayers } from '../../core/seams';
 import { coastValues } from '../../core/subcell';
 import { COAST_AMP } from '../../core/terrain';
 import { type World, provinceColor } from '../../core/world';
@@ -236,7 +237,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     }
   } else if (o.mode === 'provinces') flat = provinceFlat(world, causes.province);
 
-  const group = o.borders || o.mode === 'provinces' ? provinceGroups(world, causes.province) : null;
+  // 省界：剪刀切过的地方按切线画（切线附近按在线的哪一边分省，见 core/seams.ts）
+  const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
+  const group = o.borders || o.mode === 'provinces' ? provinceGroups(world, causes.province, seams) : null;
   const st = staticLayers(world);
   // 对岸的颜色：陆地格取相邻水面格的平均色，水面格取相邻陆地格的平均色（含 alpha）。
   // 着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
@@ -261,6 +264,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     grad: st.grad,
     flat,
     group,
+    seams,
     shade,
     rock,
     coastAmp: COAST_AMP * small.terrain.coastRoughness,
@@ -294,25 +298,32 @@ export function provinceFlat(world: World, province: Int32Array, kindOf = (p: nu
 }
 
 // 分组（画省界）：每格两个值。第一个：陆地省份 = 编号 + 1，海域省份 = −(编号 + 1)，未划分 = 0；
-// 第二个留给切线（见 core/seams.ts），现在都是 0
-export function provinceGroups(world: World, province: Int32Array): Float32Array {
+// 第二个：切线附近这一格能不能按切线换（seams.ts 的 ok，没有切线时都是 0）
+export function provinceGroups(world: World, province: Int32Array, seams: SeamLayers | null = null): Float32Array {
   const { mesh, causes } = world;
   const group = new Float32Array(mesh.n * 2);
   for (let i = 0; i < mesh.n; i++) {
     const p = province[i];
     group[2 * i] = p < 0 ? 0 : causes.land[i] ? p + 1 : -(p + 1);
+    if (seams) group[2 * i + 1] = seams.ok[i];
   }
   return group;
 }
 
-// 省份预览（剪刀、涂省、合并）：这些格换成将来的省，返回整份分组与（省份着色时的）平涂，交给 Renderer.setGroupPreview。
-// 着色器照此画出将来真实的省界，用的是和结果相同的编码与扭曲
-export function groupPreview(world: World, change: { cells: ArrayLike<number>; ids: ArrayLike<number> }, mode: ViewMode): { group: Float32Array; flat: Uint8Array | null } {
+// 省份预览（剪刀、涂省、合并）：这些格换成将来的省（剪刀还多一条将来的切线 seam），返回整份分组、
+// （省份着色时的）平涂与切线，交给 Renderer.setGroupPreview。着色器照此画出将来真实的省界，用的是和结果相同的编码、扭曲与切线规则
+export function groupPreview(
+  world: World,
+  change: { cells: ArrayLike<number>; ids: ArrayLike<number>; seam?: [number, number][] },
+  mode: ViewMode,
+): { group: Float32Array; flat: Uint8Array | null; seams: SeamLayers | null } {
   const province = world.causes.province.slice();
   for (let k = 0; k < change.cells.length; k++) province[change.cells[k]] = change.ids[k];
   const base = world.causes.province;
   const kindOf = (p: number, i: number) => world.small.provinces[p]?.kind ?? world.small.provinces[base[i]]?.kind;
-  return { group: provinceGroups(world, province), flat: mode === 'provinces' ? provinceFlat(world, province, kindOf) : null };
+  const list: ProvinceSeam[] = [...(world.small.provinceSeams ?? []), ...(change.seam ? [{ id: 'preview', line: change.seam }] : [])];
+  const seams = seamLayers(world, province, list);
+  return { group: provinceGroups(world, province, seams), flat: mode === 'provinces' ? provinceFlat(world, province, kindOf) : null, seams };
 }
 
 export interface HighlightLayer {
