@@ -15,7 +15,7 @@ import {
   repairProvinces,
   splitCells,
 } from './provinces';
-import { SEAM_MAX_POINTS, cutSeams, dropSeams } from './seams';
+import { SEAM_MAX_POINTS, cutSeams, dropSeams, inheritSeams, seamsAfterCut } from './seams';
 import { cutProvinces } from './select';
 import { speciesSchema } from './species';
 import {
@@ -666,6 +666,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.provinces[id] = { name: '', locked: false, land: meta.land, kind: meta.kind };
       for (const i of right) causes.province[i] = id;
       nameNewProvince(world, id);
+      // 剪刀切过这个省时：切线也管分出来的这一半（没有切线的世界不变）
+      if (small.provinceSeams) small.provinceSeams = inheritSeams(small.provinceSeams, cmd.id, [id]);
       return { dirty: Dirty.None, summary: `拆分省份 ${meta.name || cmd.id}` };
     }
     case 'cut_province': {
@@ -684,7 +686,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
           count++;
         }
       }
-      small.provinceSeams = [...(small.provinceSeams ?? []), ...seams.map((sm) => ({ id: nextId(world, 'seam'), ...sm }))];
+      small.provinceSeams = seamsAfterCut(small.provinceSeams, seams, () => nextId(world, 'seam'));
       return { dirty: Dirty.None, summary: `切开了${names}（多出 ${count} 个省份）` };
     }
     case 'rename_feature': {

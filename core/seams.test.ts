@@ -214,6 +214,71 @@ describe('剪刀切线', () => {
     }
   });
 
+  it('再切一刀横过旧的线：旧线两边的新块之间照样按旧线画', () => {
+    const eng = region().clone();
+    const w0 = eng.world;
+    const { mesh } = w0;
+    const s = mesh.spacing;
+    const center = inland(w0, (i) => mesh.x[i] > 0.3 && mesh.x[i] < 1.7 && mesh.y[i] > 0.2 && mesh.y[i] < 0.8);
+    const A = bigProvince(eng, center, 7);
+    const cx = mesh.x[center];
+    const cy = mesh.y[center];
+    const W = 1024;
+    const H = 512;
+    const raster = rasterizeWorld(eng.world, W, H);
+    // 第一刀横着（直线：化简后只有两个点），第二刀竖着把两块都切开
+    const first = scissors(eng.world, [
+      [cx - 5 * s, cy + 0.2 * s],
+      [cx + 5 * s, cy - 0.3 * s],
+    ]);
+    eng.exec({ op: 'cut_province', line: first.line });
+    const B = first.seams[0].provinces[1];
+    expect(first.seams.map((sm) => sm.provinces)).toEqual([[A, B]]);
+    const second = scissors(eng.world, [
+      [cx + 0.4 * s, cy - 5 * s],
+      [cx - 0.3 * s, cy + 5 * s],
+    ]);
+    expect(second.seams.map((sm) => sm.provinces[0]).sort()).toEqual([A, B].sort());
+    eng.exec({ op: 'cut_province', line: second.line });
+    const w = eng.world;
+    // 第一条切线也管第二刀切出来的两块
+    const born = second.seams.flatMap((sm) => sm.provinces.slice(1));
+    expect(w.small.provinceSeams![0].provinces).toEqual([A, B, ...born]);
+    // 第一刀的线上（离第二刀的线远的地方）：两边各是哪一块都按线分
+    const out = exportProvinceCells(w, raster.cell, W, H).cell;
+    const line1 = w.small.provinceSeams![0].line;
+    const family = new Set([A, B, ...born]);
+    const k = W / mesh.width;
+    const band = SEAM_BAND * s;
+    let max = 0;
+    let count = 0;
+    const pid = (p: number) => w.causes.province[out[p]];
+    for (let py = 0; py < H; py++) {
+      for (let px = 0; px < W; px++) {
+        const p = py * W + px;
+        const a = pid(p);
+        if (!family.has(a)) continue;
+        for (const [q, mx, my] of [
+          [px + 1 < W ? p + 1 : -1, px + 1, py + 0.5],
+          [py + 1 < H ? p + W : -1, px + 0.5, py + 1],
+        ]) {
+          if (q < 0 || pid(q) === a || !family.has(pid(q))) continue;
+          const r = toLine(line1, mx / k, my / k);
+          if (r.fromEnd < 2 * band || r.d > 3 * band) continue;
+          if (second.seams.some((sm) => toLine(sm.line, mx / k, my / k).d < 2 * band)) continue;
+          count++;
+          max = Math.max(max, r.d * k);
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(20);
+    expect(max).toBeLessThanOrEqual(1.5);
+    // 对半分开：分出来的一半也归这些切线管
+    const id = w.small.nextProvince;
+    eng.exec({ op: 'split_province', id: B });
+    expect(w.small.provinceSeams![0].provinces).toContain(id);
+  });
+
   it('切线只在切开的那几块之间换像素：邻省的像素一个不动', () => {
     const base = region();
     const w0 = base.world;

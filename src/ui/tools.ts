@@ -1555,6 +1555,8 @@ export function provinceMergeTool(): ToolHandler {
     const meta = w.small.provinces[id];
     const other = w.small.provinces[sel];
     if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地和海域不能合并', warn: true };
+    // 合并不了的不画将来的省界（省界当场消失却并不成，就不是所见即所得）
+    if (meta.locked || other.locked) return { layers: [], shapes: [], hint: '锁定的省份不能合并', warn: true };
     const key = `${worldId(w)}|${id}|${sel}`;
     if (cache?.key !== key) {
       const cells = provinceCells(w, id);
@@ -1585,6 +1587,8 @@ export function provinceMergeTool(): ToolHandler {
         selectedProvince.value = id;
         return;
       }
+      // 留住的预览就是点下去的这一处（与命令合并的是同一个省）
+      pointer = p;
       committing = view();
       try {
         if (await exec({ op: 'merge_province', from: id, into: sel }, '正在合并…')) selectedProvince.value = sel;

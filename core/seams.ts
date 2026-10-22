@@ -4,8 +4,8 @@ import { type CutResult, cutProvinces } from './select';
 import type { World } from './world';
 
 // 切线：剪刀切省时画的线，每个切开的省一条（只留线在那个省里的一段）。切线附近（两边各 1.25 格以内）的像素
-// 按“在线的哪一边”决定属于哪个省，
-// 所以屏幕上、导出的 provinces.bmp 里切开的两省之间的边界就是画的那条线，而不是格子的边再加自然弯曲。
+// 按“在线的哪一边”决定属于哪个省，所以屏幕上、导出的 provinces.bmp 里切开的两块之间的边界就是画的那条线，
+// 而不是格子的边再加自然弯曲。
 // 着色器（src/render/renderer.ts 的 FS_SEAM 与 seamCell）与导出（applySeams）用同一条规则：
 //   1. 像素按没扭曲的位置找最近的切线段，在带内（距离 < BAND）才管。同样近时段号小的优先（GPU 上按段号依次画、
 //      深度测试 LESS）。过了切线真正的两端就不算（两端没有半圆形的帽子）；
@@ -32,13 +32,33 @@ export interface ProvinceSeam {
 // 新省的编号按命令里新建的顺序（从 nextProvince 起依次加一）；剪刀的预览与切线命令都用它，编号、切线都一样
 export function cutSeams(world: World, line: [number, number][], cut: CutResult): Omit<ProvinceSeam, 'id'>[] {
   let next = world.small.nextProvince;
-  return cut.plans.map((pl) => ({ line: seamTrim(world, line, new Set([pl.id])), provinces: [pl.id, ...pl.parts.slice(1).map(() => next++)] }));
+  const lines = seamTrim(world, line, cut.plans.map((pl) => pl.id));
+  return cut.plans.map((pl, k) => ({ line: lines[k], provinces: [pl.id, ...pl.parts.slice(1).map(() => next++)] }));
+}
+
+// 切了一刀以后的全部切线：原有的切线里记着被切的省的，也管从它切出来的新省（它们原来都是这个省的，
+// 再切一刀横过旧的线时，旧线两边的新块之间照样按旧线画）；再加上这一刀的几条。切线命令与剪刀的预览都用它
+export function seamsAfterCut(
+  existing: readonly ProvinceSeam[] | undefined,
+  added: readonly Omit<ProvinceSeam, 'id'>[],
+  newId: () => string,
+): ProvinceSeam[] {
+  let out = existing ?? [];
+  for (const sm of added) out = inheritSeams(out, sm.provinces[0], sm.provinces.slice(1));
+  return [...out, ...added.map((sm) => ({ id: newId(), ...sm }))];
+}
+
+// 省 from 分出了新省 born（剪刀、对半分开）：记着 from 的切线也管 born。不改原来的数组
+export function inheritSeams(seams: readonly ProvinceSeam[], from: number, born: readonly number[]): ProvinceSeam[] {
+  return seams.map((sm) => (born.length && sm.provinces.includes(from) ? { ...sm, provinces: [...sm.provinces, ...born] } : sm));
 }
 
 // 切线管多宽：两边各这么多格距
 export const SEAM_BAND = 1.25;
 // 每段两边各取这么远以内的格投票
 const VOTE = 1.2;
+// 段最长多少格（长的段等分，见 seamSegments）
+const SEAM_PIECE = 1;
 // 格的标记（ok）要看多远的格：带内的像素扭曲后落进的格，格中心离线不会超过这么远
 const CELL_REACH = SEAM_BAND + 1.5;
 // 化简切线的容差（格距的倍数）与最多几个点（命令的上限）
@@ -64,17 +84,23 @@ export interface SeamSegments {
   seam: Int32Array;
 }
 
-// 所有切线拆成线段（按切线、再按线上的顺序编号）。几乎为 0 的段（不到万分之一格）去掉：着色器里按单精度算方向会出错
+// 所有切线拆成线段（按切线、再按线上的顺序编号）。几乎为 0 的段（不到万分之一格）去掉：着色器里按单精度算方向会出错。
+// 长的段再等分成不超过一格的几段（方向不变，像素离线多远、在哪一边都不变）：每段两边的省是在这一小段附近投票选的，
+// 一条直线化简后只剩一段时，线上不同地方两边的省（比如后来又切了一刀，旧线两边换成了新的几块）也各按各的
 export function seamSegments(world: World, seams: readonly ProvinceSeam[]): SeamSegments {
   const sphere = world.mesh.kind === 'sphere';
   const tiny = 1e-4 * world.mesh.spacing;
+  const piece = SEAM_PIECE * world.mesh.spacing;
   const rows: number[][] = [];
   seams.forEach((s, k) => {
     const pts: [number, number][] = [];
     for (const [x, y] of s.line) {
       const prev = pts[pts.length - 1];
       const ux = sphere && prev ? prev[0] + wrapDelta(x - prev[0]) : x;
-      if (prev && Math.hypot(ux - prev[0], y - prev[1]) < tiny) continue;
+      const len = prev ? Math.hypot(ux - prev[0], y - prev[1]) : 0;
+      if (prev && len < tiny) continue;
+      const parts = Math.ceil(len / piece);
+      for (let j = 1; j < parts; j++) pts.push([prev[0] + ((ux - prev[0]) * j) / parts, prev[1] + ((y - prev[1]) * j) / parts]);
       pts.push([ux, y]);
     }
     for (let j = 0; j + 1 < pts.length; j++) {
@@ -486,17 +512,27 @@ export function exportProvinceCells(world: World, cell: Int32Array, width: numbe
   const all = world.small.provinceSeams;
   if (!all?.length) return { cell, warnings: [] };
   const { causes, small } = world;
-  const present = new Set<number>();
-  for (let p = 0; p < cell.length; p++) present.add(causes.province[cell[p]]);
+  // 哪些省有像素（按编号标记：大图有几千万个像素，不用集合）
+  let top = 0;
+  for (let i = 0; i < causes.province.length; i++) top = Math.max(top, causes.province[i]);
+  const seenIn = (pix: Int32Array) => {
+    const seen = new Uint8Array(top + 1);
+    for (let p = 0; p < pix.length; p++) {
+      const c = pix[p];
+      if (c >= 0 && causes.province[c] >= 0) seen[causes.province[c]] = 1;
+    }
+    return seen;
+  };
+  const present = seenIn(cell);
   let seams = all;
   const warnings: string[] = [];
   for (;;) {
     const L = seamLayers(world, causes.province, seams);
     const out = applySeams(world, L, cell, width, height);
     if (!L) return { cell: out, warnings };
-    const now = new Set<number>();
-    for (let p = 0; p < out.length; p++) now.add(causes.province[out[p]]);
-    const lost = [...present].filter((id) => id >= 0 && !now.has(id));
+    const now = seenIn(out);
+    const lost: number[] = [];
+    for (let id = 0; id <= top; id++) if (present[id] && !now[id]) lost.push(id);
     if (!lost.length) return { cell: out, warnings };
     const groups = new Set(lost.map((id) => (small.provinces[id]?.land ? id + 1 : -(id + 1))));
     const drop = new Set<number>();
@@ -520,14 +556,15 @@ export function scissors(
   return { ext, line, cut, seams: cutSeams(world, line, cut) };
 }
 
-// 记下的切线只留真正切开省的那一段：从线第一次进入被切的省（ids，切之前的省份）到最后一次离开。
-// 线头伸进邻省的那一点不要，邻省的边界照旧按格画。沿线每 0.1 格看一次
-export function seamTrim(world: World, line: [number, number][], ids: ReadonlySet<number>): [number, number][] {
+// 记下的切线只留真正切开省的那一段：从线第一次进入这个省（切之前的省份）到最后一次离开。
+// 线头伸进邻省、线穿过别的省的那几段不要，那里的边界照旧按格画。沿线每 0.1 格看一次，
+// ids 里的每个省各给一段（线只走一遍：一条长线切开几十个省时也不慢）
+export function seamTrim(world: World, line: [number, number][], ids: readonly number[]): [number, number][][] {
   const { mesh, causes } = world;
   const sphere = mesh.kind === 'sphere';
   const step = 0.1 * mesh.spacing;
-  let first: { k: number; p: [number, number] } | null = null;
-  let last: { k: number; p: [number, number] } | null = null;
+  const want = new Set(ids);
+  const span = new Map<number, { first: { k: number; p: [number, number] }; last: { k: number; p: [number, number] } }>();
   let hint = 0;
   for (let k = 0; k + 1 < line.length; k++) {
     const [x0, y0] = line[k];
@@ -537,18 +574,26 @@ export function seamTrim(world: World, line: [number, number][], ids: ReadonlySe
       const p: [number, number] = j === steps ? [x1, y1] : [x0 + ((x1 - x0) * j) / steps, y0 + ((y1 - y0) * j) / steps];
       if (p[1] < 0 || p[1] > mesh.height || (!sphere && (p[0] < 0 || p[0] > mesh.width))) continue;
       hint = findCell(mesh, p[0], p[1], hint);
-      if (!ids.has(causes.province[hint])) continue;
-      if (!first) first = { k, p };
-      last = { k, p };
+      const id = causes.province[hint];
+      if (!want.has(id)) continue;
+      const e = span.get(id);
+      if (e) e.last = { k, p };
+      else span.set(id, { first: { k, p }, last: { k, p } });
     }
   }
-  if (!first || !last || first === last) return line;
-  const out: [number, number][] = [first.p];
-  for (const q of [...line.slice(first.k + 1, last.k + 1), last.p]) {
-    const prev = out[out.length - 1];
-    if (q[0] !== prev[0] || q[1] !== prev[1]) out.push(q);
-  }
-  return out.length >= 2 ? out : line;
+  return ids.map((id) => {
+    const e = span.get(id);
+    if (!e) return line;
+    const { first, last } = e;
+    // 线只碰到这个省一点：留下碰到的那一段
+    if (first === last) return [line[first.k], line[first.k + 1]];
+    const out: [number, number][] = [first.p];
+    for (const q of [...line.slice(first.k + 1, last.k + 1), last.p]) {
+      const prev = out[out.length - 1];
+      if (q[0] !== prev[0] || q[1] !== prev[1]) out.push(q);
+    }
+    return out.length >= 2 ? out : [line[first.k], line[first.k + 1]];
+  });
 }
 
 // 界面上画好的线变成切线命令里的线：整个星球上把第一个点挪回 [0, 2)（整条线一起挪，线还是连着的），

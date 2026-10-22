@@ -2,7 +2,7 @@ import { blendRgb } from '../../core/biome-look';
 import { hexToRgb } from '../../core/export';
 import { gradient } from '../../core/mesh';
 import type { ProvinceKind } from '../../core/provinces';
-import { type ProvinceSeam, type SeamLayers, seamLayers } from '../../core/seams';
+import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '../../core/seams';
 import { coastValues } from '../../core/subcell';
 import { COAST_AMP } from '../../core/terrain';
 import { type World, provinceColor } from '../../core/world';
@@ -329,7 +329,9 @@ export function groupPreview(
     if (!world.small.provinces[id] && !born.has(id)) born.set(id, world.small.provinces[world.causes.province[change.cells[k]]]?.kind);
   }
   const kindOf = (p: number) => world.small.provinces[p]?.kind ?? born.get(p);
-  const list: ProvinceSeam[] = [...(world.small.provinceSeams ?? []), ...(change.seams ?? []).map((sm, k) => ({ id: `preview-${k}`, ...sm }))];
+  // 剪刀：与切线命令记下的一样（seamsAfterCut：原有的切线也管切出来的新省，再加这一刀的几条）
+  let k = 0;
+  const list = seamsAfterCut(world.small.provinceSeams, change.seams ?? [], () => `preview-${k++}`);
   const seams = seamLayers(world, province, list);
   return { group: provinceGroups(world, province, seams), flat: mode === 'provinces' ? provinceFlat(world, province, kindOf) : null, seams };
 }
