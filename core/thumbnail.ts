@@ -51,18 +51,22 @@ export function renderThumbnail(world: World, width: number, height: number): Ui
   const sphere = mesh.kind === 'sphere';
   const wrapPx = (x: number) => (sphere ? ((x % width) + width) % width : Math.min(width - 1, Math.max(0, x)));
   const at = (x: number, y: number) => E[Math.min(height - 1, Math.max(0, y)) * width + wrapPx(x)];
+  const land = r.land;
   for (let py = 0; py < height; py++) {
+    const mppX = sphere ? mpp * Math.max(0.05, Math.sin(((py + 0.5) / height) * Math.PI)) : mpp;
     for (let px = 0; px < width; px++) {
       const p = py * width + px;
-      let rgb: [number, number, number];
-      if (!r.land[p]) {
+      let cr: number;
+      let cg: number;
+      let cb: number;
+      if (!land[p]) {
         const t = Math.min(1, Math.max(0, -E[p] / 4500));
         const shallow = E[p] > -200 ? 1 - Math.max(0, -E[p]) / 200 : 0;
-        rgb = [62 - 44 * t + 18 * shallow, 116 - 80 * t + 22 * shallow, 156 - 86 * t + 14 * shallow];
+        cr = 62 - 44 * t + 18 * shallow;
+        cg = 116 - 80 * t + 22 * shallow;
+        cb = 156 - 86 * t + 14 * shallow;
       } else {
         const c = r.cell[p];
-        rgb = [cellColor[3 * c], cellColor[3 * c + 1], cellColor[3 * c + 2]];
-        const mppX = sphere ? mpp * Math.max(0.05, Math.sin(((py + 0.5) / height) * Math.PI)) : mpp;
         const dx = (Math.max(0, at(px + 1, py)) - Math.max(0, at(px - 1, py))) / (2 * mppX);
         // 图像的 y 向下，与屏幕着色器的方向一致
         const dy = (Math.max(0, at(px, py - 1)) - Math.max(0, at(px, py + 1))) / (2 * mpp);
@@ -70,16 +74,22 @@ export function renderThumbnail(world: World, width: number, height: number): Ui
         const ny = -dy * relief;
         const nl = Math.hypot(nx, ny, 1);
         const shade = Math.min(1.3, Math.max(0.45, 1 + 0.85 * ((nx * lx + ny * ly + lz) / nl - lz)));
-        rgb = [rgb[0] * shade, rgb[1] * shade, rgb[2] * shade];
+        cr = cellColor[3 * c] * shade;
+        cg = cellColor[3 * c + 1] * shade;
+        cb = cellColor[3 * c + 2] * shade;
         // 海岸线略深
         const coast = sphere
-          ? !r.land[py * width + wrapPx(px - 1)] || !r.land[py * width + wrapPx(px + 1)] || (py > 0 && !r.land[p - width]) || (py < height - 1 && !r.land[p + width])
-          : (px > 0 && !r.land[p - 1]) || (px < width - 1 && !r.land[p + 1]) || (py > 0 && !r.land[p - width]) || (py < height - 1 && !r.land[p + width]);
-        if (coast) rgb = [rgb[0] * 0.72, rgb[1] * 0.72, rgb[2] * 0.72];
+          ? !land[py * width + wrapPx(px - 1)] || !land[py * width + wrapPx(px + 1)] || (py > 0 && !land[p - width]) || (py < height - 1 && !land[p + width])
+          : (px > 0 && !land[p - 1]) || (px < width - 1 && !land[p + 1]) || (py > 0 && !land[p - width]) || (py < height - 1 && !land[p + width]);
+        if (coast) {
+          cr *= 0.72;
+          cg *= 0.72;
+          cb *= 0.72;
+        }
       }
-      out[p * 4] = rgb[0];
-      out[p * 4 + 1] = rgb[1];
-      out[p * 4 + 2] = rgb[2];
+      out[p * 4] = cr;
+      out[p * 4 + 1] = cg;
+      out[p * 4 + 2] = cb;
       out[p * 4 + 3] = 255;
     }
   }

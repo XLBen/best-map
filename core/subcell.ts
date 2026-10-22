@@ -1,5 +1,6 @@
-import { type Mesh, type SphereMesh, findCell, gradient } from './mesh';
-import { viewOf } from './sphere';
+import type { Delaunay } from 'd3-delaunay';
+import { type Mesh, type PlaneMesh, findCell, gradient } from './mesh';
+import { type SphereView, viewOf } from './sphere';
 import { COAST_AMP, coastNoiseField, coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -10,17 +11,26 @@ import type { World } from './world';
 
 // 与 GLSL 版本逐位一致的 32 位整数哈希
 export function hashU(x: number, y: number): number {
-  let a = (Math.imul(x >>> 0, 1664525) + 1013904223) >>> 0;
-  let b = (Math.imul(y >>> 0, 1664525) + 1013904223) >>> 0;
-  a = (a + Math.imul(b, 1664525)) >>> 0;
-  b = (b + Math.imul(a, 1664525)) >>> 0;
-  a = (a ^ (a >>> 16)) >>> 0;
-  b = (b ^ (b >>> 16)) >>> 0;
-  a = (a + Math.imul(b, 1664525)) >>> 0;
-  b = (b + Math.imul(a, 1664525)) >>> 0;
-  a = (a ^ (a >>> 16)) >>> 0;
-  b = (b ^ (b >>> 16)) >>> 0;
-  return (a ^ b) >>> 0;
+  return hashAB(lcg(x), lcg(y)) >>> 0;
+}
+
+// 哈希按有符号 32 位整数算（与 >>> 0 的写法逐位相同）。第一步 lcg 只与一个坐标有关，
+// 一格的几个角、同一列 / 同一行的像素可以共用
+function lcg(v: number): number {
+  return (Math.imul(v, 1664525) + 1013904223) | 0;
+}
+
+// 二维哈希的其余部分：a = lcg(x)，b = lcg(y)
+function hashAB(a: number, b: number): number {
+  a = (a + Math.imul(b, 1664525)) | 0;
+  b = (b + Math.imul(a, 1664525)) | 0;
+  a ^= a >>> 16;
+  b ^= b >>> 16;
+  a = (a + Math.imul(b, 1664525)) | 0;
+  b = (b + Math.imul(a, 1664525)) | 0;
+  a ^= a >>> 16;
+  b ^= b >>> 16;
+  return a ^ b;
 }
 
 const unit = (h: number) => (h & 0xffffff) / 16777216;
@@ -33,10 +43,14 @@ export function vnoise(x: number, y: number): number {
   const fy = y - iy;
   const u = fx * fx * (3 - 2 * fx);
   const v = fy * fy * (3 - 2 * fy);
-  const a = unit(hashU(ix, iy));
-  const b = unit(hashU(ix + 1, iy));
-  const c = unit(hashU(ix, iy + 1));
-  const d = unit(hashU(ix + 1, iy + 1));
+  const x0 = lcg(ix);
+  const x1 = lcg(ix + 1);
+  const y0 = lcg(iy);
+  const y1 = lcg(iy + 1);
+  const a = unit(hashAB(x0, y0));
+  const b = unit(hashAB(x1, y0));
+  const c = unit(hashAB(x0, y1));
+  const d = unit(hashAB(x1, y1));
   return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
 }
 
@@ -71,19 +85,69 @@ export function warpOffset(x: number, y: number, spacing: number): [number, numb
 // 每一份平铺的副本、导出的图都取同样的值：东西接缝、两极都没有断口
 
 export function hashU3(x: number, y: number, z: number): number {
-  let a = (Math.imul(x >>> 0, 1664525) + 1013904223) >>> 0;
-  let b = (Math.imul(y >>> 0, 1664525) + 1013904223) >>> 0;
-  let c = (Math.imul(z >>> 0, 1664525) + 1013904223) >>> 0;
-  for (let r = 0; r < 2; r++) {
-    a = (a + Math.imul(b, 1664525)) >>> 0;
-    b = (b + Math.imul(c, 1664525)) >>> 0;
-    c = (c + Math.imul(a, 1664525)) >>> 0;
-    a = (a ^ (a >>> 16)) >>> 0;
-    b = (b ^ (b >>> 16)) >>> 0;
-    c = (c ^ (c >>> 16)) >>> 0;
-  }
-  return (a ^ b ^ c) >>> 0;
+  const a = lcg(x);
+  const b = lcg(y);
+  const c = lcg(z);
+  return hash3R((a + Math.imul(b, 1664525)) | 0, (b + Math.imul(c, 1664525)) | 0, c) >>> 0;
 }
+
+// 三维哈希第一轮更新 a、b 之后的部分（a 只与 x、y 有关，b 只与 y、z 有关，一格的几个角共用）；c = lcg(z)
+function hash3R(a: number, b: number, c: number): number {
+  c = (c + Math.imul(a, 1664525)) | 0;
+  a ^= a >>> 16;
+  b ^= b >>> 16;
+  c ^= c >>> 16;
+  a = (a + Math.imul(b, 1664525)) | 0;
+  b = (b + Math.imul(c, 1664525)) | 0;
+  c = (c + Math.imul(a, 1664525)) | 0;
+  a ^= a >>> 16;
+  b ^= b >>> 16;
+  c ^= c >>> 16;
+  return a ^ b ^ c;
+}
+
+// 一格八个角的值写进 out[o … o+7]（顺序同 vnoise3 的 a … h）：x0 … z1 是格点坐标的 lcg，mz0 / mz1 = imul(z0 / z1, 1664525)
+function corners3(x0: number, x1: number, y0: number, y1: number, z0: number, mz0: number, z1: number, mz1: number, out: Float64Array, o: number) {
+  const my0 = Math.imul(y0, 1664525);
+  const my1 = Math.imul(y1, 1664525);
+  const a00 = (x0 + my0) | 0;
+  const a10 = (x1 + my0) | 0;
+  const a01 = (x0 + my1) | 0;
+  const a11 = (x1 + my1) | 0;
+  const b00 = (y0 + mz0) | 0;
+  const b10 = (y1 + mz0) | 0;
+  const b01 = (y0 + mz1) | 0;
+  const b11 = (y1 + mz1) | 0;
+  out[o] = unit(hash3R(a00, b00, z0));
+  out[o + 1] = unit(hash3R(a10, b00, z0));
+  out[o + 2] = unit(hash3R(a01, b10, z0));
+  out[o + 3] = unit(hash3R(a11, b10, z0));
+  out[o + 4] = unit(hash3R(a00, b01, z1));
+  out[o + 5] = unit(hash3R(a10, b01, z1));
+  out[o + 6] = unit(hash3R(a01, b11, z1));
+  out[o + 7] = unit(hash3R(a11, b11, z1));
+}
+
+// 三线性插值（与 vnoise3 的写法相同）
+function trilerp(cn: Float64Array, o: number, u: number, v: number, w: number): number {
+  const a = cn[o];
+  const b = cn[o + 1];
+  const c = cn[o + 2];
+  const d = cn[o + 3];
+  const e = cn[o + 4];
+  const f = cn[o + 5];
+  const g = cn[o + 6];
+  const h = cn[o + 7];
+  const x00 = a + (b - a) * u;
+  const x10 = c + (d - c) * u;
+  const x01 = e + (f - e) * u;
+  const x11 = g + (h - g) * u;
+  const y0 = x00 + (x10 - x00) * v;
+  const y1 = x01 + (x11 - x01) * v;
+  return (y0 + (y1 - y0) * w) * 2 - 1;
+}
+
+const corner8 = new Float64Array(8);
 
 export function vnoise3(x: number, y: number, z: number): number {
   const ix = Math.floor(x);
@@ -95,21 +159,10 @@ export function vnoise3(x: number, y: number, z: number): number {
   const u = fx * fx * (3 - 2 * fx);
   const v = fy * fy * (3 - 2 * fy);
   const w = fz * fz * (3 - 2 * fz);
-  const a = unit(hashU3(ix, iy, iz));
-  const b = unit(hashU3(ix + 1, iy, iz));
-  const c = unit(hashU3(ix, iy + 1, iz));
-  const d = unit(hashU3(ix + 1, iy + 1, iz));
-  const e = unit(hashU3(ix, iy, iz + 1));
-  const f = unit(hashU3(ix + 1, iy, iz + 1));
-  const g = unit(hashU3(ix, iy + 1, iz + 1));
-  const h = unit(hashU3(ix + 1, iy + 1, iz + 1));
-  const x00 = a + (b - a) * u;
-  const x10 = c + (d - c) * u;
-  const x01 = e + (f - e) * u;
-  const x11 = g + (h - g) * u;
-  const y0 = x00 + (x10 - x00) * v;
-  const y1 = x01 + (x11 - x01) * v;
-  return (y0 + (y1 - y0) * w) * 2 - 1;
+  const z0 = lcg(iz);
+  const z1 = lcg(iz + 1);
+  corners3(lcg(ix), lcg(ix + 1), lcg(iy), lcg(iy + 1), z0, Math.imul(z0, 1664525), z1, Math.imul(z1, 1664525), corner8, 0);
+  return trilerp(corner8, 0, u, v, w);
 }
 
 export function fbmSub3(x: number, y: number, z: number, octaves: number): number {
@@ -177,15 +230,30 @@ export function terrainDetail3(x: number, y: number, h: number, gE: number, gS: 
   const [px, py, pz] = sphereOf(x, y);
   const k = noiseK(spacing);
   if (!land) return Math.min(h + fbmSub3(px * k * 1.3, py * k * 1.3, pz * k * 1.3, 3) * 25, -2);
-  const gm = Math.hypot(gE, gS);
-  const relief = gm * spacing;
   const lon = Math.PI * (x - 1);
   const colat = Math.PI * Math.min(1, Math.max(0, y));
-  const e = [-Math.sin(lon), Math.cos(lon), 0];
-  const sv = [Math.cos(colat) * Math.cos(lon), Math.cos(colat) * Math.sin(lon), -Math.sin(colat)];
+  const bumps = fbmSub3(px * k * 1.7 + 5, py * k * 1.7 + 5, pz * k * 1.7 + 5, 4);
+  return landDetail3(px, py, pz, Math.cos(lon), Math.sin(lon), Math.sin(colat), h, gE, gS, spacing, bumps);
+}
+
+// 陆地部分：(px, py, pz) 是 sphereOf 的结果，cl / sl 是经度的余弦 / 正弦，sc 是余纬的正弦（余纬的余弦就是 pz），
+// bumps 是起伏噪声 fbmSub3(p·k·1.7 + 5, 4) 的值
+function landDetail3(px: number, py: number, pz: number, cl: number, sl: number, sc: number, h: number, gE: number, gS: number, spacing: number, bumps: number): number {
+  const k = noiseK(spacing);
+  const gm = Math.hypot(gE, gS);
+  const relief = gm * spacing;
+  // 东向 e 与南向 sv
+  const e0 = -sl;
+  const e1 = cl;
+  const e2 = 0;
+  const sv0 = pz * cl;
+  const sv1 = pz * sl;
+  const sv2 = -sc;
   const de = gm > 1e-3 ? gE / gm : 1;
   const ds = gm > 1e-3 ? gS / gm : 0;
-  const D = [de * e[0] + ds * sv[0], de * e[1] + ds * sv[1], de * e[2] + ds * sv[2]];
+  const D0 = de * e0 + ds * sv0;
+  const D1 = de * e1 + ds * sv1;
+  const D2 = de * e2 + ds * sv2;
   let nx = px * px;
   let ny = py * py;
   let nz = pz * pz;
@@ -197,74 +265,64 @@ export function terrainDetail3(x: number, y: number, h: number, gE: number, gS: 
   ny /= ns;
   nz /= ns;
   let g = 0;
-  if (nx > 0.02) g += nx * gullyPlane(py * k, pz * k, D[1], D[2]);
-  if (ny > 0.02) g += ny * gullyPlane(pz * k, px * k, D[2], D[0]);
-  if (nz > 0.02) g += nz * gullyPlane(px * k, py * k, D[0], D[1]);
+  if (nx > 0.02) g += nx * gullyPlane(py * k, pz * k, D1, D2);
+  if (ny > 0.02) g += ny * gullyPlane(pz * k, px * k, D2, D0);
+  if (nz > 0.02) g += nz * gullyPlane(px * k, py * k, D0, D1);
   const gully = (g - 0.44) * relief * 0.55;
-  const bumps = fbmSub3(px * k * 1.7 + 5, py * k * 1.7 + 5, pz * k * 1.7 + 5, 4) * (14 + 0.05 * Math.max(h, 0));
-  return Math.max(h + gully + bumps, 2);
+  return Math.max(h + gully + bumps * (14 + 0.05 * Math.max(h, 0)), 2);
 }
 
 // 整个星球：点所在的显示三角形与重心坐标（三角网见 sphere.ts 的 viewOf）。
 // 同一个三角形里对应同一格的角（极点那一行的影子点）权重合并，与着色器一致
-function locateSphere(mesh: SphereMesh, x: number, y: number, hint: number): { i: [number, number, number]; w: [number, number, number]; nearest: number } {
-  const view = viewOf(mesh);
+function locateSphere(view: SphereView, r2: Float64Array, x: number, y: number, hint: number): number {
   const xw = x - 2 * Math.floor(x / 2);
   const yc = Math.min(1, Math.max(0, y));
   const dl = view.delaunay;
-  const nearV = dl.find(xw, yc, hint >= 0 && hint < view.cellOf.length ? hint : 0);
+  const start = hint >= 0 && hint < view.cellOf.length ? hint : 0;
+  const nearV = within(dl, r2, xw, yc, start) ? start : dl.find(xw, yc, start);
   const near = view.cellOf[nearV];
-  const { triangles, halfedges, inedges } = dl;
-  const tryTri = (t: number) => {
-    const a = triangles[3 * t];
-    const b = triangles[3 * t + 1];
-    const c = triangles[3 * t + 2];
-    const ax = view.x[a];
-    const ay = view.y[a];
-    const v0x = view.x[b] - ax;
-    const v0y = view.y[b] - ay;
-    const v1x = view.x[c] - ax;
-    const v1y = view.y[c] - ay;
-    const v2x = xw - ax;
-    const v2y = yc - ay;
-    const den = v0x * v1y - v1x * v0y;
-    if (Math.abs(den) < 1e-18) return null;
-    const wb = (v2x * v1y - v1x * v2y) / den;
-    const wc = (v0x * v2y - v2x * v0y) / den;
-    const wa = 1 - wb - wc;
-    if (wa < -1e-9 || wb < -1e-9 || wc < -1e-9) return null;
-    const ca = view.cellOf[a];
-    let cb = view.cellOf[b];
-    let cc = view.cellOf[c];
-    let w: [number, number, number] = [wa, wb, wc];
-    if (cb === ca) w = [w[0] + w[1], 0, w[2]];
-    if (cc === ca) w = [w[0] + w[2], w[1], 0];
-    else if (cc === cb && cb !== ca) w = [w[0], w[1] + w[2], 0];
-    if (w[1] === 0) cb = ca;
-    if (w[2] === 0) cc = cb === ca && w[1] === 0 ? ca : cb;
-    return { i: [ca, cb, cc] as [number, number, number], w, nearest: near };
-  };
-  const around = (v: number) => {
-    const e0 = inedges[v];
-    if (e0 < 0) return null;
-    let e = e0;
-    for (let guard = 0; guard < 64; guard++) {
-      const r = tryTri(Math.floor(e / 3));
-      if (r) return r;
-      const next = e % 3 === 2 ? e - 2 : e + 1;
-      e = halfedges[next];
-      if (e < 0 || e === e0) break;
-    }
-    return null;
-  };
-  const r = around(nearV);
-  if (r) return r;
+  let found = around(dl, view.x, view.y, nearV, xw, yc, 64);
   // 退回：看最近点在 Delaunay 上的邻居
-  for (const v of dl.neighbors(nearV)) {
-    const r2 = around(v);
-    if (r2) return r2;
+  if (!found) {
+    for (const v of dl.neighbors(nearV)) {
+      if (around(dl, view.x, view.y, v, xw, yc, 64)) {
+        found = true;
+        break;
+      }
+    }
   }
-  return { i: [near, near, near], w: [1, 0, 0], nearest: near };
+  if (!found) {
+    li[0] = li[1] = li[2] = near;
+    lw[0] = 1;
+    lw[1] = lw[2] = 0;
+    return near;
+  }
+  const ca = view.cellOf[li[0]];
+  let cb = view.cellOf[li[1]];
+  let cc = view.cellOf[li[2]];
+  let w0 = lw[0];
+  let w1 = lw[1];
+  let w2 = lw[2];
+  if (cb === ca) {
+    w0 = w0 + w1;
+    w1 = 0;
+  }
+  if (cc === ca) {
+    w0 = w0 + w2;
+    w2 = 0;
+  } else if (cc === cb && cb !== ca) {
+    w1 = w1 + w2;
+    w2 = 0;
+  }
+  if (w1 === 0) cb = ca;
+  if (w2 === 0) cc = cb === ca && w1 === 0 ? ca : cb;
+  li[0] = ca;
+  li[1] = cb;
+  li[2] = cc;
+  lw[0] = w0;
+  lw[1] = w1;
+  lw[2] = w2;
+  return near;
 }
 
 // 每格的“海岸值”：> 0 为陆地，与 causes.land 保持一致（含填掉的单格海洞）。
@@ -291,52 +349,105 @@ export function coastDetailAmp(world: World, elevation: number): number {
   return COAST_AMP * rough * (0.55 + 0.9 * rugged);
 }
 
+// ---------- 点所在的三角形 ----------
+// 结果写进 li / lw（三个角与重心坐标），返回最近的格：逐像素调用时不新建对象和闭包
+const li = new Int32Array(3);
+const lw = new Float64Array(3);
+
+// 三角形 t 是否含点 (x, y)：含则把三个角（点编号）与重心坐标写进 li / lw
+function tryTri(triangles: Uint32Array, X: Float64Array, Y: Float64Array, t: number, x: number, y: number): boolean {
+  const a = triangles[3 * t];
+  const b = triangles[3 * t + 1];
+  const c = triangles[3 * t + 2];
+  const ax = X[a];
+  const ay = Y[a];
+  const v0x = X[b] - ax;
+  const v0y = Y[b] - ay;
+  const v1x = X[c] - ax;
+  const v1y = Y[c] - ay;
+  const v2x = x - ax;
+  const v2y = y - ay;
+  const den = v0x * v1y - v1x * v0y;
+  if (Math.abs(den) < 1e-18) return false;
+  // 任一个坐标为负就不含：先算出来的先判
+  const wb = (v2x * v1y - v1x * v2y) / den;
+  if (wb < -1e-9) return false;
+  const wc = (v0x * v2y - v2x * v0y) / den;
+  if (wc < -1e-9) return false;
+  const wa = 1 - wb - wc;
+  if (wa < -1e-9) return false;
+  li[0] = a;
+  li[1] = b;
+  li[2] = c;
+  lw[0] = wa;
+  lw[1] = wb;
+  lw[2] = wc;
+  return true;
+}
+
+// 绕点 v 一圈的三角形里找含点 (x, y) 的
+function around(dl: { triangles: Uint32Array; halfedges: Int32Array; inedges: Int32Array }, X: Float64Array, Y: Float64Array, v: number, x: number, y: number, guards: number): boolean {
+  const e0 = dl.inedges[v];
+  if (e0 < 0) return false;
+  let e = e0;
+  for (let guard = 0; guard < guards; guard++) {
+    if (tryTri(dl.triangles, X, Y, Math.floor(e / 3), x, y)) return true;
+    const next = e % 3 === 2 ? e - 2 : e + 1;
+    e = dl.halfedges[next];
+    if (e < 0 || e === e0) break;
+  }
+  return false;
+}
+
+// 最近点查找（Delaunay.find）的捷径：点到起点 i 的距离不到 i 与最近邻点距离的一半时，没有别的点比 i 更近，
+// find 从 i 出发第一步就停在 i，所以直接返回 i，结果与 find 完全相同。
+// r2[i] 是这个半径（略缩一点，留出舍入误差）的平方；按三角网缓存（三角网建好后不再变）
+const findRadii = new WeakMap<Delaunay<number>, Float64Array>();
+function findRadius2(dl: Delaunay<number>): Float64Array {
+  let r2 = findRadii.get(dl);
+  if (r2) return r2;
+  const P = dl.points;
+  r2 = new Float64Array(P.length / 2);
+  // 点共线时 d3 走另一套逻辑，不用捷径
+  if (!(dl as Delaunay<number> & { collinear?: Int32Array }).collinear) {
+    for (let i = 0; i < r2.length; i++) {
+      if (dl.inedges[i] === -1) continue;
+      let m = Infinity;
+      for (const j of dl.neighbors(i)) m = Math.min(m, Math.hypot(P[2 * j] - P[2 * i], P[2 * j + 1] - P[2 * i + 1]));
+      if (m < Infinity) r2[i] = (0.5 * m * (1 - 1e-7)) ** 2;
+    }
+  }
+  findRadii.set(dl, r2);
+  return r2;
+}
+
+// 点 (x, y) 离点 i 是否近到 dl.find(x, y, i) 必定返回 i
+function within(dl: Delaunay<number>, r2: Float64Array, x: number, y: number, i: number): boolean {
+  const dx = x - dl.points[2 * i];
+  const dy = y - dl.points[2 * i + 1];
+  return dx * dx + dy * dy < r2[i];
+}
+
+function locatePlane(mesh: PlaneMesh, r2: Float64Array, x: number, y: number, hint: number): number {
+  const dl = mesh.delaunay;
+  const near = within(dl, r2, x, y, hint) ? hint : dl.find(x, y, hint);
+  // 先看与最近格相邻的三角形，再看邻居的
+  if (around(dl, mesh.x, mesh.y, near, x, y, 32)) return near;
+  for (let e = mesh.off[near]; e < mesh.off[near + 1]; e++) if (around(dl, mesh.x, mesh.y, mesh.adj[e], x, y, 32)) return near;
+  li[0] = li[1] = li[2] = near;
+  lw[0] = 1;
+  lw[1] = lw[2] = 0;
+  return near;
+}
+
 // 点所在的 Delaunay 三角形与重心坐标；找不到（地图边缘外）时退回最近的格
 export function locate(mesh: Mesh, x: number, y: number, hint: number): { i: [number, number, number]; w: [number, number, number]; nearest: number } {
-  if (mesh.kind === 'sphere') return locateSphere(mesh, x, y, hint);
-  const near = mesh.delaunay.find(x, y, hint);
-  const { triangles, halfedges, inedges } = mesh.delaunay;
-  const tryTri = (t: number) => {
-    const a = triangles[3 * t];
-    const b = triangles[3 * t + 1];
-    const c = triangles[3 * t + 2];
-    const ax = mesh.x[a];
-    const ay = mesh.y[a];
-    const v0x = mesh.x[b] - ax;
-    const v0y = mesh.y[b] - ay;
-    const v1x = mesh.x[c] - ax;
-    const v1y = mesh.y[c] - ay;
-    const v2x = x - ax;
-    const v2y = y - ay;
-    const den = v0x * v1y - v1x * v0y;
-    if (Math.abs(den) < 1e-18) return null;
-    const wb = (v2x * v1y - v1x * v2y) / den;
-    const wc = (v0x * v2y - v2x * v0y) / den;
-    const wa = 1 - wb - wc;
-    if (wa < -1e-9 || wb < -1e-9 || wc < -1e-9) return null;
-    return { i: [a, b, c] as [number, number, number], w: [wa, wb, wc] as [number, number, number], nearest: near };
-  };
-  // 先看与最近格相邻的三角形，再看邻居的
-  const around = (v: number) => {
-    const e0 = inedges[v];
-    if (e0 < 0) return null;
-    let e = e0;
-    for (let guard = 0; guard < 32; guard++) {
-      const r = tryTri(Math.floor(e / 3));
-      if (r) return r;
-      const next = e % 3 === 2 ? e - 2 : e + 1;
-      e = halfedges[next];
-      if (e < 0 || e === e0) break;
-    }
-    return null;
-  };
-  const r = around(near);
-  if (r) return r;
-  for (let e = mesh.off[near]; e < mesh.off[near + 1]; e++) {
-    const r2 = around(mesh.adj[e]);
-    if (r2) return r2;
-  }
-  return { i: [near, near, near], w: [1, 0, 0], nearest: near };
+  let nearest: number;
+  if (mesh.kind === 'sphere') {
+    const view = viewOf(mesh);
+    nearest = locateSphere(view, findRadius2(view.delaunay), x, y, hint);
+  } else nearest = locatePlane(mesh, findRadius2(mesh.delaunay), x, y, hint);
+  return { i: [li[0], li[1], li[2]], w: [lw[0], lw[1], lw[2]], nearest };
 }
 
 // 一个点是陆地还是海：与着色器的判定相同
@@ -355,6 +466,11 @@ export function pointIsLand(world: World, s: Float32Array, elevation: Float32Arr
 // 着色器里的地表细节（沿坡向的冲沟 + 小起伏）的同一实现，供导出高度图使用
 export function terrainDetail(x: number, y: number, h: number, gx: number, gy: number, spacing: number, land: boolean): number {
   if (!land) return Math.min(h + fbmSub((x / spacing) * 1.3, (y / spacing) * 1.3, 3) * 25, -2);
+  return landDetail(x, y, h, gx, gy, spacing, fbmSub((x / spacing) * 1.7 + 5, (y / spacing) * 1.7 + 5, 4));
+}
+
+// 陆地部分；bumps 是起伏噪声 fbmSub((x / spacing) · 1.7 + 5, …, 4) 的值
+function landDetail(x: number, y: number, h: number, gx: number, gy: number, spacing: number, bumps: number): number {
   const gm = Math.hypot(gx, gy);
   const relief = gm * spacing;
   const dx = gm > 1e-3 ? gx / gm : 1;
@@ -372,8 +488,347 @@ export function terrainDetail(x: number, y: number, h: number, gx: number, gy: n
     fy *= 2;
   }
   const gully = (g - 0.44) * relief * 0.55;
-  const bumps = fbmSub((x / spacing) * 1.7 + 5, (y / spacing) * 1.7 + 5, 4) * (14 + 0.05 * Math.max(h, 0));
-  return Math.max(h + gully + bumps, 2);
+  return Math.max(h + gully + bumps * (14 + 0.05 * Math.max(h, 0)), 2);
+}
+
+// ---------- 栅格化逐像素用的噪声 ----------
+// 与上面 coastDetail / warpOffset / terrainDetail（及三维版本）逐位相同，只是把只与列、只与行有关的部分
+// （格点、插值系数、哈希的第一步）预先算好，逐像素不再新建数组
+
+// 平面世界的一个 fbm 通道：fbmSub(列的 x 坐标, 行的 y 坐标, octaves)。
+// 格子比像素宽的八度，先把这一行用到的格点值算成两排（下一行还在这排格点上就接着用），逐像素只查表
+class SepFbm {
+  private readonly W: number;
+  private readonly octaves: number;
+  // 按八度 × 列：插值系数、两侧格点 x 的 lcg、在格点排里的下标
+  private readonly u: Float64Array;
+  private readonly x0: Int32Array;
+  private readonly x1: Int32Array;
+  private readonly j: Int32Array;
+  // 按八度：当前行的插值系数、两侧格点 y 的 lcg、格点 y
+  private readonly v: Float64Array;
+  private readonly y0: Int32Array;
+  private readonly y1: Int32Array;
+  private readonly iy: Float64Array;
+  // 成排的八度：两排格点值（iy 与 iy + 1，各 span 个，从 ixMin 起）；其余为 null
+  private readonly rows: (Float64Array | null)[] = [];
+  private readonly ixMin: Float64Array;
+  private readonly span: Int32Array;
+
+  constructor(xs: Float64Array, octaves: number) {
+    const W = xs.length;
+    this.W = W;
+    this.octaves = octaves;
+    this.u = new Float64Array(octaves * W);
+    this.x0 = new Int32Array(octaves * W);
+    this.x1 = new Int32Array(octaves * W);
+    this.j = new Int32Array(octaves * W);
+    this.v = new Float64Array(octaves);
+    this.y0 = new Int32Array(octaves);
+    this.y1 = new Int32Array(octaves);
+    this.iy = new Float64Array(octaves).fill(NaN);
+    this.ixMin = new Float64Array(octaves);
+    this.span = new Int32Array(octaves);
+    const px = Float64Array.from(xs);
+    const ix = new Float64Array(W);
+    for (let k = 0; k < octaves; k++) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let c = 0; c < W; c++) {
+        const i = Math.floor(px[c]);
+        const fx = px[c] - i;
+        this.u[k * W + c] = fx * fx * (3 - 2 * fx);
+        this.x0[k * W + c] = lcg(i);
+        this.x1[k * W + c] = lcg(i + 1);
+        ix[c] = i;
+        lo = Math.min(lo, i);
+        hi = Math.max(hi, i);
+        px[c] = px[c] * 2.03 + 17.1;
+      }
+      // 一排格点不到列数的两倍时成排算更省
+      const span = hi - lo + 2;
+      if (W > 0 && span < 2 * W) {
+        this.rows.push(new Float64Array(2 * span));
+        this.ixMin[k] = lo;
+        this.span[k] = span;
+        for (let c = 0; c < W; c++) this.j[k * W + c] = ix[c] - lo;
+      } else this.rows.push(null);
+    }
+  }
+
+  // 换行：y 是这一行第一个八度的坐标
+  setRow(y: number) {
+    let py = y;
+    for (let k = 0; k < this.octaves; k++) {
+      const iy = Math.floor(py);
+      const fy = py - iy;
+      this.v[k] = fy * fy * (3 - 2 * fy);
+      const y0 = lcg(iy);
+      const y1 = lcg(iy + 1);
+      this.y0[k] = y0;
+      this.y1[k] = y1;
+      const row = this.rows[k];
+      if (row && iy !== this.iy[k]) {
+        const span = this.span[k];
+        const lo = this.ixMin[k];
+        // 往下挪了一排格点：原来的第二排成了第一排
+        if (iy === this.iy[k] + 1) row.copyWithin(0, span, 2 * span);
+        else for (let t = 0; t < span; t++) row[t] = unit(hashAB(lcg(lo + t), y0));
+        for (let t = 0; t < span; t++) row[span + t] = unit(hashAB(lcg(lo + t), y1));
+      }
+      this.iy[k] = iy;
+      py = py * 2.03 - 9.3;
+    }
+  }
+
+  // 第 c 列的值
+  at(c: number): number {
+    const W = this.W;
+    let s = 0;
+    let amp = 0.5;
+    for (let k = 0; k < this.octaves; k++) {
+      const q = k * W + c;
+      const u = this.u[q];
+      const v = this.v[k];
+      const row = this.rows[k];
+      let a: number;
+      let b: number;
+      let cc: number;
+      let d: number;
+      if (row) {
+        const j = this.j[q];
+        const span = this.span[k];
+        a = row[j];
+        b = row[j + 1];
+        cc = row[span + j];
+        d = row[span + j + 1];
+      } else {
+        const x0 = this.x0[q];
+        const x1 = this.x1[q];
+        const y0 = this.y0[k];
+        const y1 = this.y1[k];
+        a = unit(hashAB(x0, y0));
+        b = unit(hashAB(x1, y0));
+        cc = unit(hashAB(x0, y1));
+        d = unit(hashAB(x1, y1));
+      }
+      s += amp * ((a + (b - a) * u + (cc - a) * v + (a - b - cc + d) * u * v) * 2 - 1);
+      amp *= 0.5;
+    }
+    return s;
+  }
+}
+
+// 整个星球的一个 fbm 通道：fbmSub3(x, y, 行的 z 坐标, octaves)。z 只与行有关：各八度 z 的格点、插值系数、
+// 哈希的第一步在行首算好。格子比像素宽得多的八度记住上一格八个角的值，相邻像素落在同一格就不再哈希
+class RowFbm3 {
+  private readonly octaves: number;
+  // 各八度每单位球面长度有几个格（第一个八度是 freq）
+  private readonly freq: Float64Array;
+  private readonly w: Float64Array;
+  private readonly z0: Int32Array;
+  private readonly z1: Int32Array;
+  private readonly mz0: Int32Array;
+  private readonly mz1: Int32Array;
+  // 这一行是否记住上一格（像素间距不到格宽的 0.35），以及记住的格点 x、y 与八个角
+  private readonly keep: Uint8Array;
+  private readonly kx: Float64Array;
+  private readonly ky: Float64Array;
+  private readonly cn: Float64Array;
+
+  constructor(octaves: number, freq: number) {
+    this.octaves = octaves;
+    this.freq = new Float64Array(octaves);
+    for (let k = 0, f = freq; k < octaves; k++, f *= 2.03) this.freq[k] = f;
+    this.w = new Float64Array(octaves);
+    this.z0 = new Int32Array(octaves);
+    this.z1 = new Int32Array(octaves);
+    this.mz0 = new Int32Array(octaves);
+    this.mz1 = new Int32Array(octaves);
+    this.keep = new Uint8Array(octaves);
+    this.kx = new Float64Array(octaves);
+    this.ky = new Float64Array(octaves);
+    this.cn = new Float64Array(8 * (octaves + 1));
+  }
+
+  // 换行：z 是这一行第一个八度的坐标，step 是这一行相邻像素在单位球面上的间距
+  setRow(z: number, step: number) {
+    let pz = z;
+    for (let k = 0; k < this.octaves; k++) {
+      const iz = Math.floor(pz);
+      const fz = pz - iz;
+      this.w[k] = fz * fz * (3 - 2 * fz);
+      const z0 = lcg(iz);
+      const z1 = lcg(iz + 1);
+      this.z0[k] = z0;
+      this.z1[k] = z1;
+      this.mz0[k] = Math.imul(z0, 1664525);
+      this.mz1[k] = Math.imul(z1, 1664525);
+      this.keep[k] = step * this.freq[k] < 0.35 ? 1 : 0;
+      this.kx[k] = NaN;
+      pz = pz * 2.03 + 5.7;
+    }
+  }
+
+  at(x: number, y: number): number {
+    let s = 0;
+    let amp = 0.5;
+    let px = x;
+    let py = y;
+    for (let k = 0; k < this.octaves; k++) {
+      const ix = Math.floor(px);
+      const iy = Math.floor(py);
+      const fx = px - ix;
+      const fy = py - iy;
+      const u = fx * fx * (3 - 2 * fx);
+      const v = fy * fy * (3 - 2 * fy);
+      // 不记的八度用最后一格当临时位置
+      const keep = this.keep[k] === 1;
+      const o = keep ? 8 * k : 8 * this.octaves;
+      if (!keep || ix !== this.kx[k] || iy !== this.ky[k]) {
+        corners3(lcg(ix), lcg(ix + 1), lcg(iy), lcg(iy + 1), this.z0[k], this.mz0[k], this.z1[k], this.mz1[k], this.cn, o);
+        if (keep) {
+          this.kx[k] = ix;
+          this.ky[k] = iy;
+        }
+      }
+      s += amp * trilerp(this.cn, o, u, v, this.w[k]);
+      px = px * 2.03 + 17.1;
+      py = py * 2.03 - 9.3;
+      amp *= 0.5;
+    }
+    return s;
+  }
+}
+
+// 逐像素的噪声：海岸细节、地表细节、边界扭曲（写进 warpOut）。c 是列，行由 row(y) 切换
+interface PixelNoise {
+  row(y: number): void;
+  coast(c: number): number;
+  terrain(c: number, h: number, gx: number, gy: number, land: boolean): number;
+  warp(c: number): void;
+}
+
+const warpOut = new Float64Array(2);
+
+// 平面世界：与 coastDetail、terrainDetail、warpOffset 相同
+class PlaneNoise implements PixelNoise {
+  private readonly xs: Float64Array;
+  private readonly spacing: number;
+  private readonly f: number;
+  private readonly coastN: SepFbm;
+  private readonly warpX: SepFbm;
+  private readonly warpY: SepFbm;
+  private readonly bumps: SepFbm;
+  private readonly sea: SepFbm;
+  private y = 0;
+
+  constructor(xs: Float64Array, spacing: number) {
+    this.xs = xs;
+    this.spacing = spacing;
+    const f = WARP_FREQ / spacing;
+    this.f = f;
+    this.coastN = new SepFbm(xs.map((x) => (x / spacing) * 2.1), 4);
+    this.warpX = new SepFbm(xs.map((x) => x * f + 3.7), 3);
+    this.warpY = new SepFbm(xs.map((x) => x * f), 3);
+    this.bumps = new SepFbm(xs.map((x) => (x / spacing) * 1.7 + 5), 4);
+    this.sea = new SepFbm(xs.map((x) => (x / spacing) * 1.3), 3);
+  }
+
+  row(y: number) {
+    const spacing = this.spacing;
+    this.y = y;
+    this.coastN.setRow((y / spacing) * 2.1);
+    this.warpX.setRow(y * this.f);
+    this.warpY.setRow(y * this.f - 5.1);
+    this.bumps.setRow((y / spacing) * 1.7 + 5);
+    this.sea.setRow((y / spacing) * 1.3);
+  }
+
+  coast(c: number) {
+    return this.coastN.at(c);
+  }
+
+  terrain(c: number, h: number, gx: number, gy: number, land: boolean) {
+    if (!land) return Math.min(h + this.sea.at(c) * 25, -2);
+    return landDetail(this.xs[c], this.y, h, gx, gy, this.spacing, this.bumps.at(c));
+  }
+
+  warp(c: number) {
+    warpOut[0] = WARP_AMP * this.spacing * this.warpX.at(c);
+    warpOut[1] = WARP_AMP * this.spacing * this.warpY.at(c);
+  }
+}
+
+// 整个星球：与 coastDetail3、terrainDetail3、warpOffset3 相同。每列经度的三角函数只算一次，余纬的在行首算
+class SphereNoise implements PixelNoise {
+  private readonly spacing: number;
+  private readonly k: number;
+  private readonly kCoast: number;
+  private readonly f: number;
+  private readonly cosLon: Float64Array;
+  private readonly sinLon: Float64Array;
+  // 赤道上相邻像素的经度差（弧度）
+  private readonly dLon: number;
+  private readonly coastN: RowFbm3;
+  private readonly warpX: RowFbm3;
+  private readonly warpY: RowFbm3;
+  private readonly bumps: RowFbm3;
+  private readonly sea: RowFbm3;
+  // 当前行余纬的正弦、余弦
+  private sc = 0;
+  private cc = 0;
+
+  constructor(xs: Float64Array, spacing: number, mapWidth: number) {
+    this.spacing = spacing;
+    const k = noiseK(spacing);
+    this.k = k;
+    this.kCoast = noiseK(spacing) * 2.1;
+    this.f = WARP_FREQ * noiseK(spacing);
+    this.cosLon = xs.map((x) => Math.cos(Math.PI * (x - 1)));
+    this.sinLon = xs.map((x) => Math.sin(Math.PI * (x - 1)));
+    this.dLon = (Math.PI * mapWidth) / xs.length;
+    this.coastN = new RowFbm3(4, this.kCoast);
+    this.warpX = new RowFbm3(3, this.f);
+    this.warpY = new RowFbm3(3, this.f);
+    this.bumps = new RowFbm3(4, k * 1.7);
+    this.sea = new RowFbm3(3, k * 1.3);
+  }
+
+  row(y: number) {
+    const colat = Math.PI * Math.min(1, Math.max(0, y));
+    const sc = Math.sin(colat);
+    const cc = Math.cos(colat);
+    this.sc = sc;
+    this.cc = cc;
+    const step = sc * this.dLon;
+    this.coastN.setRow(cc * this.kCoast, step);
+    this.warpX.setRow(cc * this.f, step);
+    this.warpY.setRow(cc * this.f, step);
+    this.bumps.setRow(cc * this.k * 1.7 + 5, step);
+    this.sea.setRow(cc * this.k * 1.3, step);
+  }
+
+  coast(c: number) {
+    const k = this.kCoast;
+    return this.coastN.at(this.sc * this.cosLon[c] * k, this.sc * this.sinLon[c] * k);
+  }
+
+  terrain(c: number, h: number, gx: number, gy: number, land: boolean) {
+    const px = this.sc * this.cosLon[c];
+    const py = this.sc * this.sinLon[c];
+    const k = this.k;
+    if (!land) return Math.min(h + this.sea.at(px * k * 1.3, py * k * 1.3) * 25, -2);
+    return landDetail3(px, py, this.cc, this.cosLon[c], this.sinLon[c], this.sc, h, gx, gy, this.spacing, this.bumps.at(px * k * 1.7 + 5, py * k * 1.7 + 5));
+  }
+
+  warp(c: number) {
+    const px = this.sc * this.cosLon[c];
+    const py = this.sc * this.sinLon[c];
+    const f = this.f;
+    warpOut[0] = WARP_AMP * this.spacing * this.warpX.at(px * f + 3.7, py * f);
+    warpOut[1] = WARP_AMP * this.spacing * this.warpY.at(px * f, py * f - 5.1);
+  }
 }
 
 export interface Raster {
@@ -386,7 +841,11 @@ export interface Raster {
   cell: Int32Array;
 }
 
-export function rasterizeWorld(world: World, width: number, height: number): Raster {
+// 每隔这么多行报一次进度
+const PROGRESS_ROWS = 16;
+
+// onProgress（可选）：每隔几行报一次完成的比例（0–1），不影响结果
+export function rasterizeWorld(world: World, width: number, height: number, onProgress?: (fraction: number) => void): Raster {
   const { mesh, causes, derived } = world;
   const s = coastValues(world);
   const grad = new Float32Array(mesh.n * 2);
@@ -402,48 +861,85 @@ export function rasterizeWorld(world: World, width: number, height: number): Ras
     }
   }
   const out: Raster = { width, height, land: new Uint8Array(width * height), elevation: new Float32Array(width * height), cell: new Int32Array(width * height) };
+  const outLand = out.land;
+  const outElev = out.elevation;
+  const outCell = out.cell;
+  const elev = derived.elevation;
+  const landOf = causes.land;
   const sphere = mesh.kind === 'sphere';
+  const view = mesh.kind === 'sphere' ? viewOf(mesh) : null;
+  const dl = view ? view.delaunay : (mesh as PlaneMesh).delaunay;
+  const r2 = findRadius2(dl);
+  const xs = new Float64Array(width);
+  for (let px = 0; px < width; px++) xs[px] = ((px + 0.5) / width) * mesh.width;
+  const noise: PixelNoise = sphere ? new SphereNoise(xs, mesh.spacing, mesh.width) : new PlaneNoise(xs, mesh.spacing);
   let hint = 0;
   for (let py = 0; py < height; py++) {
     const y = ((py + 0.5) / height) * mesh.height;
+    noise.row(y);
     for (let px = 0; px < width; px++) {
-      const x = ((px + 0.5) / width) * mesh.width;
-      const loc = locate(mesh, x, y, hint);
-      hint = loc.nearest;
-      const [a, b, c] = loc.i;
-      const [wa, wb, wc] = loc.w;
+      const x = xs[px];
+      const near = view ? locateSphere(view, r2, x, y, hint) : locatePlane(mesh as PlaneMesh, r2, x, y, hint);
+      hint = near;
+      const a = li[0];
+      const b = li[1];
+      const c = li[2];
+      const wa = lw[0];
+      const wb = lw[1];
+      const wc = lw[2];
       const sv = s[a] * wa + s[b] * wb + s[c] * wc;
-      const h = derived.elevation[a] * wa + derived.elevation[b] * wb + derived.elevation[c] * wc;
+      const h = elev[a] * wa + elev[b] * wb + elev[c] * wc;
       const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
-      const detail = sphere ? coastDetail3(x, y, mesh.spacing) : coastDetail(x, y, mesh.spacing);
-      const land = sv + weight * coastDetailAmp(world, Math.max(0, h)) * detail > 0;
+      const land = sv + weight * coastDetailAmp(world, Math.max(0, h)) * noise.coast(px) > 0;
       const gx = grad[2 * a] * wa + grad[2 * b] * wb + grad[2 * c] * wc;
       const gy = grad[2 * a + 1] * wa + grad[2 * b + 1] * wb + grad[2 * c + 1] * wc;
       const p = py * width + px;
-      out.land[p] = land ? 1 : 0;
-      out.elevation[p] = sphere ? terrainDetail3(x, y, h, gx, gy, mesh.spacing, land) : terrainDetail(x, y, h, gx, gy, mesh.spacing, land);
+      outLand[p] = land ? 1 : 0;
+      outElev[p] = noise.terrain(px, h, gx, gy, land);
       // 分类：扭曲坐标下的最近格；陆海类别与像素不一致时换成最近的同类邻格
-      const [wx, wy] = sphere ? warpOffset3(x, y, mesh.spacing) : warpOffset(x, y, mesh.spacing);
-      let cell = findCell(mesh, x + wx, sphere ? Math.min(1, Math.max(0, y + wy)) : y + wy, loc.nearest);
-      if ((causes.land[cell] === 1) !== land) {
-        let best = -1;
-        let bd = Infinity;
-        const consider = (j: number) => {
-          if ((causes.land[j] === 1) !== land) return;
-          const dxj = sphere ? mesh.x[j] - x - 2 * Math.round((mesh.x[j] - x) / 2) : mesh.x[j] - x;
-          const d = dxj ** 2 + (mesh.y[j] - y) ** 2;
-          if (d < bd) {
-            bd = d;
-            best = j;
-          }
-        };
-        consider(loc.nearest);
-        for (let e = mesh.off[cell]; e < mesh.off[cell + 1]; e++) consider(mesh.adj[e]);
-        for (let e = mesh.off[loc.nearest]; e < mesh.off[loc.nearest + 1]; e++) consider(mesh.adj[e]);
-        if (best >= 0) cell = best;
-      }
-      out.cell[p] = cell;
+      noise.warp(px);
+      const qx = x + warpOut[0];
+      const qy = sphere ? Math.min(1, Math.max(0, y + warpOut[1])) : y + warpOut[1];
+      // 扭曲后的点离最近格的中心足够近时 findCell 必定返回它（整个星球：与 mesh.locate 同样绕回经度）
+      const near2 = sphere ? within(dl, r2, qx - 2 * Math.floor(qx / 2), qy, near) : within(dl, r2, qx, qy, near);
+      let cell = near2 ? near : findCell(mesh, qx, qy, near);
+      if ((landOf[cell] === 1) !== land) cell = sameKindCell(mesh, landOf, land, cell, near, x, y);
+      outCell[p] = cell;
     }
+    if (onProgress && ((py + 1) % PROGRESS_ROWS === 0 || py === height - 1)) onProgress((py + 1) / height);
   }
   return out;
+}
+
+// 在最近格、扭曲后那一格的邻格、最近格的邻格里取离像素最近的同类格；都不同类时保持原格
+function sameKindCell(mesh: Mesh, landOf: Uint8Array, land: boolean, cell: number, near: number, x: number, y: number): number {
+  let best = -1;
+  let bd = Infinity;
+  let d = sameKindDist(mesh, landOf, land, near, x, y);
+  if (d < bd) {
+    bd = d;
+    best = near;
+  }
+  for (let e = mesh.off[cell]; e < mesh.off[cell + 1]; e++) {
+    d = sameKindDist(mesh, landOf, land, mesh.adj[e], x, y);
+    if (d < bd) {
+      bd = d;
+      best = mesh.adj[e];
+    }
+  }
+  for (let e = mesh.off[near]; e < mesh.off[near + 1]; e++) {
+    d = sameKindDist(mesh, landOf, land, mesh.adj[e], x, y);
+    if (d < bd) {
+      bd = d;
+      best = mesh.adj[e];
+    }
+  }
+  return best >= 0 ? best : cell;
+}
+
+// 格 j 与像素同类时返回到像素的距离平方，不同类返回 Infinity（不参与比较）
+function sameKindDist(mesh: Mesh, landOf: Uint8Array, land: boolean, j: number, x: number, y: number): number {
+  if ((landOf[j] === 1) !== land) return Infinity;
+  const dxj = mesh.kind === 'sphere' ? mesh.x[j] - x - 2 * Math.round((mesh.x[j] - x) / 2) : mesh.x[j] - x;
+  return dxj ** 2 + (mesh.y[j] - y) ** 2;
 }
