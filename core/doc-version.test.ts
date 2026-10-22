@@ -31,6 +31,14 @@ describe('docVersion', () => {
     expect(() => Engine.fromDoc({ ...doc, version: 1 as 2 }, mesh)).toThrow('旧版本');
   });
 
+  it('画的河（第八轮）：用了新的几项、截走、改一条画的河的存成 4；旧式的画河照旧', () => {
+    expect(docVersion({ globe: false }, [{ op: 'add_guide', guide: { cells: [1, 2, 3], locked: true, spring: true, flow: 3 }, reroute: true, label: '画了一条河' }])).toBe(2);
+    expect(docVersion({ globe: false }, [{ op: 'add_guide', guide: { cells: [1, 2], carve: 'bed' } }])).toBe(4);
+    expect(docVersion({ globe: false }, [{ op: 'add_guide', guide: { cells: [1, 2], name: '' } }])).toBe(4);
+    expect(docVersion({ globe: true }, [{ op: 'add_guide', guide: { cells: [1, 2] }, capture: true }])).toBe(4);
+    expect(docVersion({ globe: false }, [{ op: 'batch', commands: [{ op: 'update_guide', id: 'river-1', patch: { width: 2 } }] }])).toBe(4);
+  });
+
   it('类型自动判断的区块（第八轮）：存成 4；只是圈地区、改类型的照旧', () => {
     expect(docVersion({ globe: false }, [{ op: 'add_region', region: { kind: 'forest', cells: [1, 2, 3], auto: true } }])).toBe(4);
     expect(docVersion({ globe: true }, [{ op: 'batch', commands: [{ op: 'update_region', id: 'r1', auto: false }] }])).toBe(4);

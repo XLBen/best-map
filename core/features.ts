@@ -1,4 +1,4 @@
-import { type Mesh, findCell } from './mesh';
+import { type Mesh, findCell, gradient } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
 import { DEFAULT_SPECIES, type Species } from './species';
 import type { Derived, RegionKind, World } from './world';
@@ -95,6 +95,8 @@ export interface GeoFeature {
   region?: string;
   // 涂出来的生态区：涂的生态的 id（自然形成的地物没有这一项）
   species?: string;
+  // 画的河（有名字的河道）：河道的 id
+  guide?: string;
 }
 
 export interface FeatureOverride {
@@ -297,8 +299,9 @@ function axisOf(m: number, X: (k: number) => number, Y: (k: number) => number): 
   return { x, y, angle, span: 4 * Math.sqrt(l1), elong: Math.sqrt(l1 / Math.max(l2, 1e-12)) };
 }
 
-// 情境标签（寒、热、干、湿、高）：按地物里陆地格的平均气候；全是水时只看冷热
-function tagsOf(world: World, d: Derived, cells: ArrayLike<number>): string[] {
+// 情境标签（寒、热、干、湿、高）：按地物里陆地格的平均气候；全是水时只看冷热。
+// 高不高按没挖河床的地形（terrain）看：画一条峡谷不会让地名换一套字
+function tagsOf(world: World, d: Derived, cells: ArrayLike<number>, terrain: ArrayLike<number> = d.elevation): string[] {
   const land = world.causes.land;
   let t = 0;
   let m = 0;
@@ -309,7 +312,7 @@ function tagsOf(world: World, d: Derived, cells: ArrayLike<number>): string[] {
     if (!land[c]) continue;
     t += d.tMean[c];
     m += Math.min(d.moisture[c], 4);
-    h += Math.max(0, d.elevation[c]);
+    h += Math.max(0, terrain[c]);
     cnt++;
   }
   if (!cnt) {
@@ -650,8 +653,8 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
   return { list: withLabels(mesh, list), dLand };
 }
 
-// 湖：只取决于湖面与高度
-function lakeInputs(world: World, d: Derived): AddInput[] {
+// 湖：只取决于湖面与高度（没挖河床的地形）
+function lakeInputs(world: World, d: Derived, terrain: ArrayLike<number>): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
   const avgCellKm2 = mapAreaOf(world) / n;
@@ -662,7 +665,7 @@ function lakeInputs(world: World, d: Derived): AddInput[] {
     const area = areaOf(world, cells);
     const tags = [area > avgCellKm2 * 30 ? 'large' : ''];
     let h = 0;
-    for (const c of cells) h += d.elevation[c];
+    for (const c of cells) h += terrain[c];
     if (h / cells.length > 2000) tags.push('high');
     put(list, 'lake', cells, 5 + Math.log10(area), tags.filter(Boolean));
   }
@@ -716,30 +719,47 @@ function riverInputs(world: World, d: Derived): AddInput[] {
   return list;
 }
 
-// 山脉与主峰；高原；平原；盆地：只取决于陆海、湖面、高度、坡度（dLand 由陆海算出）
-function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
+// 坡度（m/km），与水文里算的 d.slope 同一个算式（结果逐值相同）。按没挖河床的地形认高原、平原时用
+function slopeOf(world: World, elevation: ArrayLike<number>): Float32Array {
+  const { mesh, kmPerUnit } = world;
+  const n = mesh.n;
+  const land = world.causes.land;
+  const hPos = new Float64Array(n);
+  for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
+    const [gx, gy] = gradient(mesh, hPos, i);
+    out[i] = Math.hypot(gx, gy) / kmPerUnit;
+  }
+  return out;
+}
+
+// 山脉与主峰；高原；平原；盆地：只取决于陆海、湖面、高度、坡度（dLand 由陆海算出）。
+// 高度、坡度按没挖河床的地形（elevation、slope）：画的峡谷不会把山脉切成两段、换掉主峰，山名不变
+function reliefInputs(world: World, d: Derived, dLand: Int32Array, elevation: ArrayLike<number>, slope: ArrayLike<number>): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
   const land = world.causes.land;
   const list: AddInput[] = [];
   const mountain = new Uint8Array(n);
-  for (let i = 0; i < n; i++) mountain[i] = land[i] && d.lake[i] !== 1 && d.elevation[i] >= 1300 ? 1 : 0;
+  for (let i = 0; i < n; i++) mountain[i] = land[i] && d.lake[i] !== 1 && elevation[i] >= 1300 ? 1 : 0;
   for (const cells of components(mesh, mountain)) {
     if (cells.length < 6) continue;
     let peak = cells[0];
-    for (const c of cells) if (d.elevation[c] > d.elevation[peak]) peak = c;
-    const volcanic = cells.length < 40 && d.elevation[peak] > 1500;
+    for (const c of cells) if (elevation[c] > elevation[peak]) peak = c;
+    const volcanic = cells.length < 40 && elevation[peak] > 1500;
     put(list, 'range', cells, 6.5 + Math.log10(areaOf(world, cells)), volcanic ? ['volcanic'] : []);
-    if (d.elevation[peak] >= 2600 || (volcanic && d.elevation[peak] >= 1500)) {
-      put(list, 'peak', [peak], 5 + d.elevation[peak] / 3000, volcanic ? ['volcanic'] : [], peak, 'peak');
+    if (elevation[peak] >= 2600 || (volcanic && elevation[peak] >= 1500)) {
+      put(list, 'peak', [peak], 5 + elevation[peak] / 3000, volcanic ? ['volcanic'] : [], peak, 'peak');
     }
   }
   const plateau = new Uint8Array(n);
   const plain = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     if (!land[i] || d.lake[i] === 1) continue;
-    if (d.elevation[i] >= 1200 && d.slope[i] <= 8) plateau[i] = 1;
-    if (d.elevation[i] <= 400 && d.slope[i] <= 2.5) plain[i] = 1;
+    if (elevation[i] >= 1200 && slope[i] <= 8) plateau[i] = 1;
+    if (elevation[i] <= 400 && slope[i] <= 2.5) plain[i] = 1;
   }
   for (const cells of components(mesh, plateau)) if (cells.length >= 15) put(list, 'plateau', cells, 6 + Math.log10(areaOf(world, cells)));
   const plains = components(mesh, plain).filter((c) => c.length >= 40).sort((a, b) => b.length - a.length).slice(0, 8);
@@ -749,8 +769,8 @@ function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
   const near = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     if (!land[i]) continue;
-    let mx = d.elevation[i];
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) mx = Math.max(mx, d.elevation[mesh.adj[e]]);
+    let mx = elevation[i];
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) mx = Math.max(mx, elevation[mesh.adj[e]]);
     near[i] = mx;
   }
   for (let pass = 0; pass < 4; pass++) {
@@ -761,7 +781,7 @@ function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
     }
     near.set(next);
   }
-  for (let i = 0; i < n; i++) if (land[i] && d.elevation[i] < 900 && near[i] - d.elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
+  for (let i = 0; i < n; i++) if (land[i] && elevation[i] < 900 && near[i] - elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
   for (const cells of components(mesh, basin)) if (cells.length >= 20) put(list, 'basin', cells, 5.5 + Math.log10(areaOf(world, cells)));
   return withLabels(mesh, list);
 }
@@ -1020,12 +1040,14 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): Add
   return withLabels(mesh, list);
 }
 
-export function detectFeatures(world: World, d: Derived): GeoFeature[] {
+// terrain：没挖河床的地形（引擎里自然求解的高程）。山脉、山峰、高原、平原、盆地、湖的高低和“高”这个标签都按它认，
+// 所以画一条峡谷不会让山改名；省略时用推导的高程（没有只挖河床的河时两者逐值相同）
+export function detectFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
   const { mesh, causes, small, kmPerUnit } = world;
   const globe = mesh.kind === 'sphere';
   const out: GeoFeature[] = [];
 
-  const climateTags = (cells: Int32Array) => tagsOf(world, d, cells);
+  const climateTags = (cells: Int32Array) => tagsOf(world, d, cells, terrain);
 
   const add = (type: FeatureType, cells: Int32Array, importance: number, extraTags: string[] = [], anchor?: number) => {
     if (!cells.length) return;
@@ -1054,7 +1076,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
       let tags = a.tags;
       if (a.mark === 'islet') {
         let maxH = 0;
-        for (const c of a.cells) maxH = Math.max(maxH, d.elevation[c]);
+        for (const c of a.cells) maxH = Math.max(maxH, terrain[c]);
         if (maxH > 1400) tags = [...tags, 'volcanic'];
       }
       const before = out.length;
@@ -1084,11 +1106,13 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
 
   // 各段按它实际读的数组缓存（数值放进 Float64Array）；段的先后就是地物的先后
   const km = Float64Array.of(kmPerUnit);
-  const terrain = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
-  replay(terrain.list);
-  replay(memoized(mesh, 'lake', [d.lake, d.elevation, km], () => lakeInputs(world, d)));
+  const coast = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
+  replay(coast.list);
+  replay(memoized(mesh, 'lake', [d.lake, terrain, km], () => lakeInputs(world, d, terrain)));
   replay(memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d)));
-  replay(memoized(mesh, 'relief', [causes.land, d.lake, d.elevation, d.slope, km], () => reliefInputs(world, d, terrain.dLand)));
+  // 坡度由地形、陆海算出：没有只挖河床的河时就是水文算好的那份，有的话按地形重算（只在这一段要重算时）
+  const beds = small.guides.some((g) => g.carve === 'bed');
+  replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, beds ? slopeOf(world, terrain) : d.slope)));
   const biome = biomesOf(world, d);
   // 没涂过生态时只看大类（与原来相同）；涂过时还要看涂了什么、每格的主导生态、陆海与每种生态的样子
   const painted = paintedOf(world, d);
@@ -1098,7 +1122,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
     replay(memoized(mesh, 'nature', [biome, painted, d.dominant, causes.land, speciesKey(small.species), km], () => natureInputs(world, biome, paint)));
   }
 
-  out.push(...regionFeatures(world, d));
+  out.push(...regionFeatures(world, d, terrain));
   assignNames(world, out);
   return out;
 }
@@ -1151,8 +1175,8 @@ function innermost(mesh: Mesh, cells: ArrayLike<number>, cx: number, cy: number)
   return best;
 }
 
-// 点状地名的情境：海边、河边、山上、海上、寒冷
-function spotTags(world: World, d: Derived, c: number): string[] {
+// 点状地名的情境：海边、河边、山上、海上、寒冷（山上不山上按没挖河床的地形看）
+function spotTags(world: World, d: Derived, c: number, terrain: ArrayLike<number>): string[] {
   const { mesh, causes } = world;
   const tags: string[] = [];
   let coast = false;
@@ -1161,7 +1185,7 @@ function spotTags(world: World, d: Derived, c: number): string[] {
   else {
     if (coast) tags.push('coastal');
     if (d.lake[c] !== 1 && d.discharge[c] >= world.small.planet.riverThreshold) tags.push('river');
-    if (d.elevation[c] >= 1300) tags.push('mountain');
+    if (terrain[c] >= 1300) tags.push('mountain');
   }
   if (d.tMean[c] < 0) tags.push('cold');
   return tags;
@@ -1170,8 +1194,8 @@ function spotTags(world: World, d: Derived, c: number): string[] {
 // 用户的区块变成地物：标注在离边界最远的格，狭长的（主轴比次轴长一倍以上）沿主轴写；
 // 重要度高于所有自动识别的地物，标注时先放。
 // 类型“自动”的区块每次按圈里现在的地形重新判断（涂成沙漠就变成沙漠）；类型变了，自动起的名字也跟着换一套模板
-// （改冷暖干湿让它跨过判断的门槛时也一样），用户起的名字不变
-export function regionFeatures(world: World, d: Derived): GeoFeature[] {
+// （改冷暖干湿让它跨过判断的门槛时也一样），用户起的名字不变。terrain 同 detectFeatures
+export function regionFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
   const { mesh, kmPerUnit } = world;
   return world.small.regions.map((r) => {
     const cells = Int32Array.from(r.cells);
@@ -1197,7 +1221,7 @@ export function regionFeatures(world: World, d: Derived): GeoFeature[] {
     };
     if (r.kind === 'spot') {
       if (r.at) [f.x, f.y] = r.at;
-      f.tags = spotTags(world, d, cells[0]);
+      f.tags = spotTags(world, d, cells[0], terrain);
       return f;
     }
     const ax = axis(mesh, cells, unwrapped(mesh, cells));
@@ -1206,7 +1230,7 @@ export function regionFeatures(world: World, d: Derived): GeoFeature[] {
     f.y = mesh.y[c];
     f.span = ax.span;
     f.angle = ax.elong >= 2 ? ax.angle : 0;
-    f.tags = tagsOf(world, d, cells);
+    f.tags = tagsOf(world, d, cells, terrain);
     f.importance = 20 + Math.log10(Math.max(1, areaKm2)) / 10;
     return f;
   });
@@ -1255,8 +1279,8 @@ export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<numbe
 }
 
 // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
-// 现在是涂出来的生态区；以后新加的种类（画的河、带类型的河……）也接在这里
-const secondPass = (f: GeoFeature) => f.species !== undefined;
+// 现在是涂出来的生态区、画的河；以后新加的种类（带类型的河……）也接在这里
+const secondPass = (f: GeoFeature) => f.species !== undefined || f.guide !== undefined;
 
 // 按文字包起名；用户改过的名字优先
 export function assignNames(world: World, features: GeoFeature[]) {

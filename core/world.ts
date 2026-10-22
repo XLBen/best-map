@@ -6,7 +6,7 @@ import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
 import type { ProvinceSeam } from './seams';
-import { DEFAULT_SPECIES, type Species } from './species';
+import { DEFAULT_SPECIES, type Species, typeIdSchema } from './species';
 
 // 世界的三类数据：
 //   原因（Causes）—— 用户通过命令编辑：陆海、抬升、岩性、气候微调、自定义场、省份归属，以及约束、河道引导等小对象
@@ -95,17 +95,46 @@ export const constraintSchema = z.object({
 });
 export type Constraint = z.output<typeof constraintSchema>;
 
+// 画的河道折线（自定义走向）：化简后的控制点，x、y 交替存成整数（地图单位 × 1e5，见 rivers.ts 的 encodePath），
+// 最多 1500 个点。整个星球上 x 沿河连续展开（起点在 [0, 2) 里，之后可以超出）
+export const COURSE_MAX_POINTS = 1500;
+export const coursePathSchema = z
+  .array(z.number().int().min(-1_000_000).max(1_000_000))
+  .min(4)
+  .max(COURSE_MAX_POINTS * 2)
+  .refine((a) => a.length % 2 === 0, '折线的坐标要成对');
+
 // 画的河：沿相邻格组成的路径强制汇流方向并加强下切，走向固定；
 // spring 表示源头有泉水，从源头起水量就够显示成河；
-// flow 是河的大小：这一段一路上加进来的水，到末端合计为“河流多少”门槛的几倍（省略为 1.2，刚好看得见）
+// flow 是河的大小：这一段一路上加进来的水，到末端合计为“河流多少”门槛的几倍（省略为 1.2，刚好看得见）。
+// 第八轮起的几项都可以省略（旧存档没有，解析结果不变；只在有这一项时才有新的行为）
 export const guideSchema = z.object({
   id: z.string(),
   cells: z.array(z.number().int().min(0)).min(2),
   locked: z.boolean().default(false),
   spring: z.boolean().default(false),
   flow: z.number().min(1).max(200).optional(),
+  // 自定义走向：画出来的折线，屏幕与导出照着它画；cells 是它经过的格（再加上画完之后顺地势流下去的那段）
+  path: coursePathSchema.optional(),
+  // 有这一项（或 nameKey）的河才是有名字的地物；'' 按文字包自动起名
+  name: z.string().max(40).optional(),
+  // 固定一条没改过名的自然河：沿用那条河的地名键（“river:河口格”），名字、标注颜色都照旧
+  nameKey: z.string().regex(/^\w+:\d+$/).max(40).optional(),
+  // 自动起名的盐（“换一个”）
+  salt: z.number().int().min(0).optional(),
+  // 粗细倍数：只影响画法与导出
+  width: z.number().min(0.3).max(4).optional(),
+  // 在终点那格消失（渗进地下）：路由里那一格是出口
+  end: z.literal('sink').optional(),
+  // 只挖河床：地形照自然求解，再把河道格压成从源头往下的累计最小值（见 elevation.ts 的 bedLevels）。
+  // 省略是旧式的下切山谷（强制汇流方向、岩性更软，周围的地形跟着变）
+  carve: z.literal('bed').optional(),
+  // 河流类型（第三批）：id 的规则与生态相同
+  type: typeIdSchema.optional(),
 });
 export type Guide = z.output<typeof guideSchema>;
+// 第八轮起加的那几项：用到任何一项的文档要存成第 4 版（见 engine.ts 的 docVersion）
+export const GUIDE_EXTENSIONS = ['path', 'name', 'nameKey', 'salt', 'width', 'end', 'carve', 'type'] as const;
 
 export const lakeSchema = z.object({
   id: z.string(),

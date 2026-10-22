@@ -104,6 +104,8 @@ export function computeElevation(world: World): ElevationResult {
     areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
   }
   for (const g of small.guides) {
+    // 只挖河床的河不改地形的求解：求解之后再挖（carveBeds），周围的山不动
+    if (g.carve === 'bed') continue;
     for (let k = 0; k < g.cells.length - 1; k++) {
       const a = g.cells[k];
       const b = g.cells[k + 1];
@@ -216,4 +218,57 @@ export function lakeArea(world: World, cell: number, radiusKm: number, exact?: b
   const out: number[] = [];
   for (let i = 0; i < mesh.n; i++) if (causes.land[i] && d[i] <= rUnits) out.push(i);
   return out;
+}
+
+// ---------- 只挖河床（第八轮） ----------
+
+// 一条只挖河床的河挖完之后各格的高度（与 cells 对齐，不挖的格是原来的高度）：
+// 从源头往下取累计最小值，但不低于终点（往上游每格再高 1 cm），终点那格不动——
+//   h_k = min(E_k, max(min(E_0..E_k), E_终点 + 0.01·(终点 − k)))
+// 往高处画的河因此被压平到比终点略高，而不是挖到沿途最低处：水不会在终点前倒流、绕成圈。
+// 终点是第一格不是陆地的格（入海、流出画的范围），全是陆地时是最后一格。
+// skip：不挖的格（用户放的湖的碗），出了碗累计最小值从头算起
+export function bedLevels(land: Uint8Array, elevation: ArrayLike<number>, cells: readonly number[], skip?: Uint8Array): Float64Array {
+  const out = Float64Array.from(cells, (c) => elevation[c]);
+  let last = cells.length - 1;
+  for (let k = 0; k < cells.length; k++) {
+    if (!land[cells[k]]) {
+      last = k;
+      break;
+    }
+  }
+  const end = out[last];
+  let run = Infinity;
+  for (let k = 0; k < last; k++) {
+    if (skip?.[cells[k]]) {
+      run = Infinity;
+      continue;
+    }
+    const e = out[k];
+    run = Math.min(run, e);
+    out[k] = Math.min(e, Math.max(run, end + 0.01 * (last - k)));
+  }
+  return out;
+}
+
+// 用户放的湖淹到的格（湖的碗）
+export function userLakeMask(world: World): Uint8Array {
+  const mask = new Uint8Array(world.mesh.n);
+  for (const l of world.small.lakes) for (const c of lakeArea(world, l.cell, l.radius, l.exact)) mask[c] = 1;
+  return mask;
+}
+
+// 在自然求解的地形上挖出所有只挖河床的河（按画的先后，后画的看到的是先画的挖过的）。只往低里挖：
+// 河道以外的格一格不动，所以气候、山名照旧按没挖过的地形算（见 Engine.update）
+export function carveBeds(world: World, elevation: Float32Array) {
+  const beds = world.small.guides.filter((g) => g.carve === 'bed');
+  if (!beds.length) return;
+  const land = world.causes.land;
+  const skip = world.small.lakes.length ? userLakeMask(world) : undefined;
+  for (const g of beds) {
+    const h = bedLevels(land, elevation, g.cells, skip);
+    g.cells.forEach((c, k) => {
+      if (h[k] < elevation[c]) elevation[c] = h[k];
+    });
+  }
 }

@@ -34,10 +34,14 @@ import {
   roundKm,
 } from './terrain';
 import { REGION_KIND_INFO } from './features';
+import type { Mesh } from './mesh';
+import { cutPathAtCell } from './rivers';
 import {
   REGION_KINDS,
   constraintSchema,
   type Derived,
+  GUIDE_EXTENSIONS,
+  type Guide,
   guideSchema,
   lakeSchema,
   planetPatchSchema,
@@ -55,6 +59,27 @@ const fieldName = z.string().regex(/^[\w-]+$/, '场名只能包含字母、数�
 const paintField = z.union([z.enum(['erodDelta', 'tempOffset', 'moistOffset']), z.string().regex(/^field:[\w-]+$/)]);
 // 画笔落点：每格到画笔中心的归一化距离（0 中心，1 边缘），与 cells 对齐
 const strokeT = z.array(z.number().min(0).max(1));
+
+// 改一条画的河：只写要改的项；null 表示去掉这一项（命令要能存成 JSON，所以不用 undefined）。
+// 写错的项名直接报错，不会悄悄忽略
+const G = guideSchema.shape;
+const guidePatchSchema = z
+  .object({
+    cells: G.cells.optional(),
+    path: G.path.unwrap().nullable().optional(),
+    name: G.name.unwrap().nullable().optional(),
+    nameKey: G.nameKey.unwrap().nullable().optional(),
+    salt: G.salt.unwrap().nullable().optional(),
+    spring: z.boolean().optional(),
+    flow: G.flow.unwrap().nullable().optional(),
+    width: G.width.unwrap().nullable().optional(),
+    end: G.end.unwrap().nullable().optional(),
+    // 只能改成只挖河床（旧式的下切山谷不再新建）
+    carve: G.carve.unwrap().optional(),
+    type: G.type.unwrap().nullable().optional(),
+  })
+  .strict();
+export type GuidePatch = z.input<typeof guidePatchSchema>;
 
 const baseCommands = [
   // 世界生成参数；reset 时清空所有手工编辑（新世界），否则保留（拖滑块）
@@ -92,10 +117,20 @@ const baseCommands = [
     guide: guideSchema.omit({ id: true }).extend({ id: z.string().optional() }),
     // 改道：画过的河经过起点的，从起点处截断（起点是它的源头就整条换掉）
     reroute: z.boolean().optional(),
+    // 截走：别的画过的河经过这条河中间的，从第一次碰到的地方截断（碰到的是它的源头就整条去掉）
+    capture: z.boolean().optional(),
     // 历史与提示条上的一句话（画的时候算好，比如“汇入赤江”），重放时原样显示
     label: z.string().max(200).optional(),
   }),
   z.object({ op: z.literal('remove_guide'), id: z.string() }),
+  // 改一条画的河（名字、大小、粗细、终点、重画一段……）：在原来的位置换上改好的（重叠时后面的说了算，先后不能乱）
+  z.object({
+    op: z.literal('update_guide'),
+    id: z.string(),
+    patch: guidePatchSchema,
+    capture: z.boolean().optional(),
+    label: z.string().max(200).optional(),
+  }),
   z.object({ op: z.literal('add_lake'), lake: lakeSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
   z.object({ op: z.literal('remove_lake'), id: z.string() }),
   z.object({ op: z.literal('add_field'), name: fieldName }),
@@ -291,6 +326,67 @@ function applyTerrain(world: World): { gained: number; lost: number } {
 }
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
+
+// ---------- 画的河 ----------
+
+// 河道上前后两格必须相邻
+export function checkCourse(mesh: Mesh, cells: readonly number[]) {
+  for (let k = 0; k + 1 < cells.length; k++) {
+    const a = cells[k];
+    const b = cells[k + 1];
+    let adjacent = false;
+    for (let e = mesh.off[a]; e < mesh.off[a + 1]; e++) if (mesh.adj[e] === b) adjacent = true;
+    if (!adjacent) throw new CommandError(`河道路径第 ${k} 与第 ${k + 1} 格不相邻`);
+  }
+}
+
+// 第八轮起的河道多查两项：不经过同一格两次（水会绕成圈）；在终点消失的，终点要在陆地上
+function checkNewCourse(world: World, g: Guide, cells: boolean, end: boolean) {
+  if (cells && new Set(g.cells).size !== g.cells.length) throw new CommandError('河道不能经过同一格两次');
+  if (end && g.end === 'sink' && !world.causes.land[g.cells[g.cells.length - 1]]) throw new CommandError('在终点消失的河，终点要在陆地上');
+}
+
+// 河道截到第 k 格为止（含）：画的折线在第一次进这格的地方截断；原来在终点消失的不再消失（现在流进别的河）。
+// 只动有的项：旧存档里的河道截断后与原来的写法逐字相同
+export function truncateGuide(world: World, g: Guide, k: number): Guide {
+  const out: Guide = { ...g, cells: g.cells.slice(0, k + 1) };
+  if (g.path) {
+    const cut = cutPathAtCell(world.mesh, g.path, g.cells[k]);
+    if (cut) out.path = cut;
+  }
+  if (out.end !== undefined) delete out.end;
+  return out;
+}
+
+// 截走：别的河道经过 g 中间（不含起点与终点）的陆地格的，从第一次碰到的地方截断，汇进 g；
+// 碰到的是它的源头就整条去掉
+function captureBy(world: World, guides: Guide[], g: Guide): Guide[] {
+  const land = world.causes.land;
+  const inner = new Set(g.cells.slice(1, -1).filter((c) => land[c]));
+  return guides.flatMap((b) => {
+    if (b.id === g.id) return [b];
+    const k = b.cells.findIndex((c, i) => i < b.cells.length - 1 && inner.has(c));
+    if (k < 0) return [b];
+    return k === 0 ? [] : [truncateGuide(world, b, k)];
+  });
+}
+
+// 改了画的河之后要从哪一层重算：
+//   · 旧式下切山谷的格变了 → 高程（与原来相同：旧存档照旧从高程重算）；
+//   · 走向、只挖河床、泉水、大小、终点、类型变了，或者有没有名字变了（地物多了、少了）→ 植被（从水文起）；
+//   · 名字、盐、画的折线变了 → 只重新起名；
+//   · 只改粗细 → 不用重算
+export function guideDirty(before: readonly Guide[], after: readonly Guide[]): Dirty {
+  const sig = (list: readonly Guide[], f: (g: Guide) => unknown) => JSON.stringify(list.map(f));
+  const same = (f: (g: Guide) => unknown) => sig(before, f) === sig(after, f);
+  const valley = (g: Guide) => g.carve !== 'bed';
+  if (sig(before.filter(valley), (g) => g.cells) !== sig(after.filter(valley), (g) => g.cells)) return Dirty.Elevation;
+  if (!same((g) => [g.id, g.cells, g.carve ?? null, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined])) {
+    return Dirty.Vegetation;
+  }
+  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.salt ?? null, g.path ?? null])) return Dirty.Names;
+  return Dirty.None;
+}
 
 // 新建一个空的省份：陆海随这些格，类型随这些格原来所在省份的多数（assign_province 'new' 与剪刀共用）
 function newProvince(world: World, cells: number[]): number {
@@ -551,33 +647,57 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'add_guide': {
       checkCells(cmd.guide.cells);
-      for (let k = 0; k + 1 < cmd.guide.cells.length; k++) {
-        const a = cmd.guide.cells[k];
-        const b = cmd.guide.cells[k + 1];
-        let adjacent = false;
-        for (let e = mesh.off[a]; e < mesh.off[a + 1]; e++) if (mesh.adj[e] === b) adjacent = true;
-        if (!adjacent) throw new CommandError(`河道路径第 ${k} 与第 ${k + 1} 格不相邻`);
-      }
+      checkCourse(mesh, cmd.guide.cells);
       const g = guideSchema.parse({ ...cmd.guide, id: cmd.guide.id ?? nextId(world, cmd.guide.locked ? 'lock' : 'river') });
+      // 第八轮起的河道多查几项（旧存档里的照旧不查，照原样重放）
+      if (GUIDE_EXTENSIONS.some((k) => g[k] !== undefined)) {
+        if (small.guides.some((x) => x.id === g.id)) throw new CommandError(`河道 id "${g.id}" 已存在`);
+        checkNewCourse(world, g, true, true);
+      }
+      const before = small.guides.slice();
       if (cmd.reroute) {
         // 原来那段河道不再留着（也就不再有白色虚线标记）
         const start = g.cells[0];
         small.guides = small.guides.flatMap((old) => {
           const k = old.cells.indexOf(start);
           if (k < 0 || k === old.cells.length - 1) return [old];
-          return k === 0 ? [] : [{ ...old, cells: old.cells.slice(0, k + 1) }];
+          return k === 0 ? [] : [truncateGuide(world, old, k)];
         });
       }
+      if (cmd.capture) small.guides = captureBy(world, small.guides, g);
       small.guides.push(g);
       const km = roundKm(g.cells.length * mesh.spacing * world.kmPerUnit);
       const summary = cmd.label || (cmd.reroute ? `让河改道（约 ${km} km）` : g.spring ? `画了一条河（约 ${km} km）` : `固定了一段河道（约 ${km} km）`);
-      return { dirty: Dirty.Elevation, summary };
+      return { dirty: guideDirty(before, small.guides), summary };
     }
     case 'remove_guide': {
-      const before = small.guides.length;
+      const before = small.guides;
       small.guides = small.guides.filter((g) => g.id !== cmd.id);
-      if (small.guides.length === before) throw new CommandError(`找不到河道 "${cmd.id}"`);
-      return { dirty: Dirty.Elevation, summary: '删掉了一条画的河' };
+      if (small.guides.length === before.length) throw new CommandError(`找不到河道 "${cmd.id}"`);
+      return { dirty: guideDirty(before, small.guides), summary: '删掉了一条画的河' };
+    }
+    case 'update_guide': {
+      const idx = small.guides.findIndex((g) => g.id === cmd.id);
+      if (idx < 0) throw new CommandError(`找不到河道 "${cmd.id}"`);
+      const old = small.guides[idx];
+      const merged: Record<string, unknown> = { ...old, ...cmd.patch };
+      for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete merged[k];
+      const moved = cmd.patch.cells !== undefined && JSON.stringify(cmd.patch.cells) !== JSON.stringify(old.cells);
+      // 改了走向的旧式河道一律改成只挖河床：重画一段不会再把沿途的山削平
+      if (moved) merged.carve = 'bed';
+      const parsed = guideSchema.safeParse(merged);
+      if (!parsed.success) throw new CommandError(`update_guide 参数无效：${formatIssues(parsed.error)}`);
+      const g = parsed.data;
+      if (moved) {
+        checkCells(g.cells);
+        checkCourse(mesh, g.cells);
+      }
+      // 只查这次改到的：别处的改动（比如终点后来被画成了海）不妨碍改名字、粗细
+      checkNewCourse(world, g, moved, moved || cmd.patch.end !== undefined);
+      const before = small.guides;
+      small.guides = small.guides.map((x, k) => (k === idx ? g : x));
+      if (cmd.capture) small.guides = captureBy(world, small.guides, g);
+      return { dirty: guideDirty(before, small.guides), summary: cmd.label || (g.name ? `改了「${g.name}」` : '改了一条河') };
     }
     case 'add_lake': {
       checkCells([cmd.lake.cell]);

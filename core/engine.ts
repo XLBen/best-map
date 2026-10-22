@@ -2,13 +2,13 @@ import { type ClimateBase, computeClimate, finalizeClimate } from './climate';
 import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, revert } from './commands';
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere } from './planet-climate';
-import { computeElevation } from './elevation';
+import { carveBeds, computeElevation } from './elevation';
 import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
-import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
+import { type Causes, type Derived, GUIDE_EXTENSIONS, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
 //   高程 → 气候（基础）→ [约束求解 → 修正场] → 水文 → 植被 → 冲突检查
@@ -32,10 +32,17 @@ export interface Timings {
   total: number;
 }
 
+// 气候的基础（没有修正场时的两季温度、降水），加上地形：自然求解的高程（含湖的碗，不含只挖河床的河）。
+// 气候、山名都按它算，所以画河、改河不会改变气候和山名，也不用重算高程与气候。
+// 旧版存的检查点里没有 terrain：下次重算时从高程算起
+export interface EngineBase extends ClimateBase {
+  terrain?: Float32Array;
+}
+
 // 一份完整的推导结果：撤销、重做时直接换回，不必重算
 interface DerivedState {
   derived: Derived;
-  base: ClimateBase | null;
+  base: EngineBase | null;
   solve: SolveResult;
   timings: Timings;
 }
@@ -57,7 +64,7 @@ export interface Checkpoint {
   causes: Causes;
   small: SmallState;
   derived: Derived;
-  base: ClimateBase | null;
+  base: EngineBase | null;
   solve: SolveResult;
   done: Omit<DoneStep, 'state'>[];
   timings: Timings;
@@ -72,7 +79,7 @@ interface UndoneStep {
 
 export class Engine {
   world: World;
-  private base: ClimateBase | null = null;
+  private base: EngineBase | null = null;
   private solve: SolveResult = { plans: [] };
   private dirty: Dirty = Dirty.Elevation;
   // 每一步记下它影响到哪一层：撤销时只需从这一层重算
@@ -263,7 +270,7 @@ export class Engine {
     if (this.dirty === Dirty.Names) {
       // 只改了名字或用户的区块：自动识别的地物不变，换上新的区块再重新起名。
       // 地物对象可能和副本（Engine.clone、撤销缓存）共用，起名会改它们的名字，所以先各复制一份
-      d.features = [...d.features.filter((f) => !f.region).map((f) => ({ ...f })), ...regionFeatures(w, d)];
+      d.features = [...d.features.filter((f) => !f.region).map((f) => ({ ...f })), ...regionFeatures(w, d, this.base?.terrain)];
       assignNames(w, d.features);
       this.dirty = Dirty.None;
       return d;
@@ -276,17 +283,23 @@ export class Engine {
       timings[k] = now - t;
       t = now;
     };
-    if (this.dirty >= Dirty.Elevation) {
+    let terrain = this.base?.terrain;
+    let climate = this.dirty >= Dirty.Climate;
+    if (this.dirty >= Dirty.Elevation || !terrain) {
       // 总是从固定初值求解：推导只取决于原因，与编辑历史无关，重放与撤销都逐值一致
-      const r = computeElevation(w);
-      d.elevation.set(r.elevation);
+      terrain = computeElevation(w).elevation;
+      climate = true;
       lap('elevation');
     }
-    if (this.dirty >= Dirty.Climate || !this.base) {
-      // 整个星球用球面版本（没有地图边，风带绕星球一圈）
-      this.base = w.mesh.kind === 'sphere' ? computeClimateSphere(w, d.elevation, d) : computeClimate(w, d.elevation, d);
+    if (climate || !this.base) {
+      // 整个星球用球面版本（没有地图边，风带绕星球一圈）。按没挖河床的地形算：画河不改变气候
+      const base = w.mesh.kind === 'sphere' ? computeClimateSphere(w, terrain, d) : computeClimate(w, terrain, d);
+      this.base = { ...base, terrain };
       lap('climate');
     }
+    // 推导里的高程 = 地形再挖出只挖河床的河。每次都从地形重新挖，结果只取决于原因；没有这种河时就是地形
+    d.elevation.set(terrain);
+    carveBeds(w, d.elevation);
     if (d.share.length !== w.mesh.n * w.small.species.length) {
       const fresh = emptyDerived(w.mesh.n, w.small.species.length);
       d.share = fresh.share;
@@ -316,7 +329,8 @@ export class Engine {
     }
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
-    if (this.features) d.features = detectFeatures(w, d);
+    // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
+    if (this.features) d.features = detectFeatures(w, d, terrain);
     lap('features');
     timings.total = performance.now() - t0;
     this.lastTimings = timings;
@@ -408,7 +422,7 @@ export class Engine {
     const { changed } = copy.applyOnly(cmd);
     copy.update();
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
-    return diffWorlds(this.world, copy.world);
+    return diffWorlds(this.world, copy.world, cmd);
   }
 
   // 采用预览算好的结果：只用于只改小数据的命令（画河、改道），原因数组不变，世界对象也不换
@@ -476,6 +490,9 @@ function usesExtensions(cmd: Command): boolean {
   // 第八轮 1d：类型自动判断的地区
   if (cmd.op === 'add_region' && cmd.region.auto) return true;
   if (cmd.op === 'update_region' && cmd.auto !== undefined) return true;
+  // 第八轮第二批：画的河的新几项（自定义走向、名字、只挖河床、在终点消失……）、截走、改一条画的河
+  if (cmd.op === 'update_guide') return true;
+  if (cmd.op === 'add_guide' && (cmd.capture !== undefined || GUIDE_EXTENSIONS.some((k) => cmd.guide[k] !== undefined))) return true;
   return false;
 }
 
@@ -497,14 +514,25 @@ export interface PreviewResult {
   conflicts: number;
   // 预览后各约束的满足比例
   satisfied: { id: string; satisfied: number; required: number }[];
+  // 新出现 / 消失的湖面格
+  lakeAdded: number[];
+  lakeRemoved: number[];
+  // 挖低了至少 1 m 的格（画河挖出的峡谷），最深挖了多少米
+  carved: { cells: number[]; maxDrop: number };
+  // 画河、改河（add_guide / update_guide）：这条河执行后的样子。flow 是河道每格的流量（与 cells 对齐）；
+  // name 是它的地名（还没名字时为 ''）；followed：陆地上每一格都流向河道的下一格（完全照着画的走）
+  guide?: { id: string; flow: number[]; name: string; followed: boolean };
 }
 
-function diffWorlds(a: World, b: World): PreviewResult {
+function diffWorlds(a: World, b: World, cmd: Command): PreviewResult {
   const n = a.mesh.n;
   const thr = a.small.planet.riverThreshold;
   const changedCells: number[] = [];
   const riverAdded: number[] = [];
   const riverRemoved: number[] = [];
+  const lakeAdded: number[] = [];
+  const lakeRemoved: number[] = [];
+  const carved: PreviewResult['carved'] = { cells: [], maxDrop: 0 };
   let maxCorrT = 0;
   let maxCorrP = 0;
   for (let i = 0; i < n; i++) {
@@ -518,6 +546,15 @@ function diffWorlds(a: World, b: World): PreviewResult {
     const rb = b.causes.land[i] === 1 && b.derived.lake[i] !== 1 && b.derived.discharge[i] >= thr;
     if (rb && !ra) riverAdded.push(i);
     if (ra && !rb) riverRemoved.push(i);
+    const la = a.derived.lake[i] === 1;
+    const lb = b.derived.lake[i] === 1;
+    if (lb && !la) lakeAdded.push(i);
+    if (la && !lb) lakeRemoved.push(i);
+    const drop = a.derived.elevation[i] - b.derived.elevation[i];
+    if (drop >= 1) {
+      carved.cells.push(i);
+      carved.maxDrop = Math.max(carved.maxDrop, drop);
+    }
     maxCorrT = Math.max(maxCorrT, Math.abs(b.derived.corrT[i]));
     maxCorrP = Math.max(maxCorrP, Math.abs(b.derived.corrP[i]));
   }
@@ -529,7 +566,21 @@ function diffWorlds(a: World, b: World): PreviewResult {
     void S;
     return { id: c.id, satisfied: valid.length ? ok / valid.length : 0, required: c.ratio };
   });
-  return { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: b.derived.conflicts.length, satisfied };
+  const out: PreviewResult = { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: b.derived.conflicts.length, satisfied, lakeAdded, lakeRemoved, carved };
+  const id = cmd.op === 'update_guide' ? cmd.id : cmd.op === 'add_guide' ? (cmd.guide.id ?? b.small.guides[b.small.guides.length - 1]?.id) : undefined;
+  const g = id !== undefined ? b.small.guides.find((x) => x.id === id) : undefined;
+  if (g) {
+    const land = b.causes.land;
+    let followed = true;
+    for (let k = 0; k + 1 < g.cells.length && land[g.cells[k]]; k++) if (b.derived.receiver[g.cells[k]] !== g.cells[k + 1]) followed = false;
+    out.guide = {
+      id: g.id,
+      flow: g.cells.map((c) => b.derived.discharge[c]),
+      name: b.derived.features.find((f) => f.guide === g.id)?.name ?? '',
+      followed,
+    };
+  }
+  return out;
 }
 
 // 复制时用展开（与原对象同形），逐个赋值会让对象退化成字典模式，之后每次读写都变慢

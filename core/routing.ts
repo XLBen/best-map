@@ -14,8 +14,8 @@ export interface Routing {
   count: number;
 }
 
-export function route(mesh: Mesh, h: ArrayLike<number>, active: Uint8Array, forced?: Int32Array): Routing {
-  return new Router(mesh, active, forced).route(h);
+export function route(mesh: Mesh, h: ArrayLike<number>, active: Uint8Array, forced?: Int32Array, terminal?: Uint8Array): Routing {
+  return new Router(mesh, active, forced, terminal).route(h);
 }
 
 // 同一组活动格与强制方向下反复求路由（高程迭代用）：活动格表、出口格与缓冲区只建一次。
@@ -47,7 +47,8 @@ export class Router {
   private readonly natural: Int32Array;
   private readonly naturalEdge: Int32Array;
 
-  constructor(mesh: Mesh, active: Uint8Array, forced?: Int32Array) {
+  // terminal：另外当作出口的活动格（画的河在终点消失：水流到那里就没了，下游为 -1）。省略时与原来逐值相同
+  constructor(mesh: Mesh, active: Uint8Array, forced?: Int32Array, terminal?: Uint8Array) {
     const n = mesh.n;
     this.mesh = mesh;
     this.active = active;
@@ -60,7 +61,7 @@ export class Router {
     for (let i = 0; i < n; i++) {
       if (!active[i]) continue;
       cells[nc++] = i;
-      let out = mesh.boundary[i] === 1;
+      let out = mesh.boundary[i] === 1 || (terminal !== undefined && terminal[i] === 1);
       for (let e = mesh.off[i]; e < mesh.off[i + 1] && !out; e++) if (!active[mesh.adj[e]]) out = true;
       if (out) {
         outlet[i] = 1;
@@ -75,7 +76,8 @@ export class Router {
     if (forced) {
       for (let k = 0; k < nc; k++) {
         const i = cells[k];
-        if (forced[i] < 0) continue;
+        // 消失的那一格不再往下流（别的河道经过它也一样）
+        if (forced[i] < 0 || (terminal !== undefined && terminal[i] === 1)) continue;
         // 与按边逐个比对的结果相同：取最后一条指向它的边
         let edge = -1;
         for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (mesh.adj[e] === forced[i]) edge = e;
