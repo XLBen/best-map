@@ -357,7 +357,10 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   const hereAt = (w: World, p: Pointer): string | null => {
     if (!cfg.here || p.cell < 0) return null;
     if (hereMemo?.w !== w || hereMemo.p !== p || hereMemo.km !== options.value.brushKm) {
-      hereMemo = { w, p, km: options.value.brushKm, text: cfg.here(w, brushCells(w, p.x, p.y, options.value.brushKm).cells, p) };
+      // 很大的画笔只看鼠标下面那一格（每次移动都搜整个画笔圈太费：最大的画笔有几万格）
+      const big = brushR(w) > 60 * w.mesh.spacing;
+      const cells = big ? [p.cell] : brushCells(w, p.x, p.y, options.value.brushKm).cells;
+      hereMemo = { w, p, km: options.value.brushKm, text: cfg.here(w, cells, p) };
     }
     return hereMemo.text;
   };

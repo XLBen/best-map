@@ -237,6 +237,8 @@ export function MapView() {
       // 别的高亮之下：只描边的格一盖就没了颜色，而描边本来就画在有高亮与没有高亮的格之间，盖上以后照样在
       const edits = overlays.value.edits ? editLayers(w) : [];
       layers.push(...back.filter((l) => l.pattern === 'outline'), ...edits);
+      // 工具一直画着的其余图层（橡皮擦能擦的格的白斜线）：放在没涂成的红斜线、选中、闪烁之下，免得把它们盖掉
+      layers.push(...back.filter((l) => l.pattern !== 'outline'));
       // 按每个图层对象比较：工具沿用同一个图层时不必重新上传
       const key: unknown[] = [w, shown, c, ...edits, '|', ...back, '|', ...preview.layers];
       if (c === 'nature') {
@@ -284,7 +286,7 @@ export function MapView() {
         if (step > 0) layers.push({ cells: fl.cells, color: [255, 236, 120], alpha: step / 40 });
         key.push(fl, step);
       }
-      layers.push(...back.filter((l) => l.pattern !== 'outline'), ...preview.layers);
+      layers.push(...preview.layers);
       return { layers, key };
     }
 
