@@ -136,6 +136,26 @@ describe('自定义走向：画的线就是河', () => {
     expect(cmd.guide.cells.length).toBeGreaterThan(plan.drawn + 1);
   });
 
+  it('松手后还在算：鼠标离开地图也一直画着松手时的那条河（画河不排队，与“重画这一片”一样不闪回原样），算完才去掉', async () => {
+    const { w, t } = setup();
+    const { stroke } = quietStroke(w);
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    t.down?.(ptr(w, stroke[0]));
+    for (const p of stroke.slice(1)) t.move?.(ptr(w, p), true);
+    const up = t.up?.(ptr(w, stroke[stroke.length - 1]));
+    expect(exec).toHaveBeenCalledTimes(1);
+    t.leave?.();
+    expect(t.keep?.()).toBe(true);
+    const held = t.preview();
+    expect(held.shapes.some((s) => s.kind === 'river')).toBe(true);
+    expect(held.hint).toBe('正在计算…');
+    finish(true);
+    await up;
+    expect(t.keep?.()).toBe(false);
+    expect(t.preview().shapes).toEqual([]);
+  });
+
   it('手抖（不到 6 像素）不算画：在空地上点一下是顺地势的新河（只挖河床、自动起名），不是自定义走向', async () => {
     const { w, t } = setup();
     const { stroke } = quietStroke(w);

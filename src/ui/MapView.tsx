@@ -563,7 +563,7 @@ export function MapView() {
     });
 
     // 预览世界的河（河流多少、整体干湿……地图画将来的河）：与当前世界的河用同一个键（riverPathsKey，拖粗细时的临时样子也在里面）。
-    // 键与当前世界的相同（预览没改流量、河道，比如涂生态）时直接用当前世界的路径；不同时按键另缓存一份
+    // 键与当前世界的相同（预览没改描河读的数组、河道，比如涂生态、改名）时直接用当前世界的路径；不同时按键另缓存一份
     let shownPaths: { key: unknown[]; paths: OverlayPaths } | null = null;
     const pathsOf = (s: World): OverlayPaths => {
       const override = riverStyleOverride.value;

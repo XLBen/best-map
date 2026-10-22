@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { FeatureType, GeoFeature } from '../../core/features';
 import { previewWorldOf } from '../../core/preview-world';
-import { encodePath } from '../../core/rivers';
+import { encodePath, traceRivers } from '../../core/rivers';
 import { planCourse } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
@@ -165,6 +165,36 @@ describe('地图上的河、预览的河同一套画法', () => {
     expect(bucketsOf(buildPaths(after).rivers)).toEqual(bucketsOf(plain.rivers));
     expect(opsOf(buildPaths(after).lockedGuides)).toEqual(opsOf(plain.lockedGuides));
     expect(bucketsOf(buildPaths(after, wide).rivers)).toEqual(bucketsOf(widened.rivers));
+  });
+
+  it('预览世界只换了湖面、流向、高程或陆海（流量数组还是当前世界那个）：键不同，描出来的是它自己的河；点河用的当前世界那份不被一份份预览世界挤掉', () => {
+    const w = continents().world;
+    const live = riverPathsKey(w, null);
+    // 预览世界只带内容变了的数组（见 preview-world.ts）：只换其中一个，别的（包括流量）沿用当前世界的同一个对象
+    const d = w.derived;
+    for (const s of [
+      { ...w, derived: { ...d, receiver: d.receiver.slice() } },
+      { ...w, derived: { ...d, lake: d.lake.slice() } },
+      { ...w, derived: { ...d, elevation: d.elevation.slice() } },
+      { ...w, causes: { ...w.causes, land: w.causes.land.slice() } },
+    ]) {
+      expect(s.derived.discharge).toBe(d.discharge);
+      expect(samePathsKey(riverPathsKey(s, null), live)).toBe(false);
+    }
+    // 一条自然大河中段的一格将来成了湖：预览世界的河在那里断开，不能照用当前世界描好的河
+    const lines = riverLines(w);
+    const big = lines.filter((l) => !l.guide && l.points.length > 12).sort((a, b) => b.points.length - a.points.length)[0];
+    const lake = d.lake.slice();
+    lake[big.cells![Math.floor(big.cells!.length / 2)]] = 1;
+    const shown = { ...w, derived: { ...d, lake } };
+    expect(riverLines(shown)).toEqual(traceRivers(shown));
+    expect(riverLines(shown)).not.toEqual(lines);
+    // 拖着调整面板的滑块：预览世界一份份换，中间点河、画选中的河的光用的当前世界那份一直留着（不重描）
+    for (let k = 0; k < 3; k++) {
+      expect(riverLines(w)).toBe(lines);
+      riverLines({ ...w, derived: { ...d, discharge: d.discharge.slice() } });
+    }
+    expect(riverLines(w)).toBe(lines);
   });
 
   it('整个星球：每段河按起点挪到 [0, 2) 里（平铺的副本只看 [-0.6, 2.6]），跨接缝的河道标记照样连着画', () => {

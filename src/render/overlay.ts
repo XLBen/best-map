@@ -79,12 +79,17 @@ export interface RiverStyleOverride {
   hide?: boolean;
 }
 
-// 河的路径缓存的键：流量数组（推导换了就换）、河的门槛、河道的内容（每次快照的河道数组都是新的，按内容认）、
-// 拖粗细时的临时样子。只改了名字的轻快照不重画，改了粗细的会重画
+// 河的路径缓存的键：描河读的数组（流量、流向、湖面、高程、陆海；推导换了就换）、河的门槛、
+// 河道的内容（每次快照的河道数组都是新的，按内容认）、拖粗细时的临时样子。只改了名字的轻快照不重画，改了粗细的会重画。
+// 预览世界（地图画将来的样子）只换了内容变了的数组：流量没变、湖面或高程变了的预览也不会错用当前世界的河
 export function riverPathsKey(world: World, override: RiverStyleOverride | null): unknown[] {
   return [
     world.mesh,
     world.derived.discharge,
+    world.derived.receiver,
+    world.derived.lake,
+    world.derived.elevation,
+    world.causes.land,
     world.small.planet.riverThreshold,
     guidesSignature(world.small.guides),
     override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
@@ -96,12 +101,17 @@ export function riverPathsKey(world: World, override: RiverStyleOverride | null)
 export const samePathsKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
 
 // 地图上的河的折线（traceRivers），按 riverPathsKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
-// 按数组认会认错。留最近的两份：地图画预览世界（将来的河）时，点河、河的光照旧按当前世界的河算，不来回重描
+// 按数组认会认错。留最近用过的两份：地图画预览世界（将来的河）时，点河、河的光照旧按当前世界的河算，
+// 预览世界一份份换（拖着调整面板的滑块）也不会把当前世界的那份挤掉、来回重描
 const linesMemo: { key: unknown[]; lines: RiverLine[] }[] = [];
 export function riverLines(world: World): RiverLine[] {
   const key = riverPathsKey(world, null);
-  const hit = linesMemo.find((m) => samePathsKey(m.key, key));
-  if (hit) return hit.lines;
+  const at = linesMemo.findIndex((m) => samePathsKey(m.key, key));
+  if (at >= 0) {
+    const [hit] = linesMemo.splice(at, 1);
+    linesMemo.unshift(hit);
+    return hit.lines;
+  }
   const lines = traceRivers(world);
   linesMemo.unshift({ key, lines });
   linesMemo.length = Math.min(linesMemo.length, 2);

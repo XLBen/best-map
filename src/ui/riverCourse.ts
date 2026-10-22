@@ -1119,7 +1119,9 @@ export function riverTool(zoom: () => number): ToolHandler {
     leave() {
       pointer = null;
     },
-    keep: () => !!pending || !!riverBarPreview.value,
+    // 鼠标离开地图后预览还留着：等着确认截不截走、底部条上的预览，以及松手后还在算的那一笔
+    // （画河不排队：结果换上之前一直显示松手时的样子，不闪回原样）
+    keep: () => !!pending || !!committing || !!riverBarPreview.value,
     escape() {
       if (!riverPending.value) return false;
       riverPending.value.cancel();
