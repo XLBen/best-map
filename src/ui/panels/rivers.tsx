@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command, GuidePatch } from '../../../core/commands';
 import { findCell } from '../../../core/mesh';
 import { decodePath } from '../../../core/rivers';
-import { guideFlow, isRiverCell } from '../../../core/select';
+import { continueCourse, guideFlow, isRiverCell } from '../../../core/select';
 import { roundKm as km } from '../../../core/terrain';
 import type { Guide, World } from '../../../core/world';
-import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverPending, riverStyleOverride, selectedRiver, togglePanel, world } from '../../state';
+import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverPending, riverStyleOverride, selectedRiver, showToast, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
@@ -19,6 +19,7 @@ import {
   guideFeature,
   guideName,
   guideOf,
+  holdBarPreview,
   pinCommand,
   previewBar,
   riverInfo,
@@ -59,6 +60,13 @@ function DragSlider({ label, pos, text, title, detent, onDraft, onCommit, onCanc
     if (commit) onCommit(last.current);
     else onCancel();
   };
+  // 拖着的时候底部条收起来了（Esc 取消了选择、按数字键换了工具）：当作取消，地图上不留着拖到一半的样子
+  useEffect(
+    () => () => {
+      if (dragging.current) onCancel();
+    },
+    [],
+  );
   return (
     <div class={`hs ${drag ? 'drag' : ''}`} title={title}>
       <span class="hs-label">{label}</span>
@@ -148,7 +156,8 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
     const patch = patchFor(v);
     if (!patch) return done();
     setDraft(v);
-    // 停下来时算好的预览直接采用；排着队还没发出去的不要了
+    // 停下来时算好的预览直接采用；排着队还没发出去的不要了（还在等计时器的也不必再算）
+    holdBarPreview();
     cancelPreviews();
     try {
       await exec(cmdFor(v, patch), '正在计算河流…');
@@ -229,8 +238,10 @@ function endChoice(w: World, g: Guide): number {
   const { mesh, causes, derived: d } = w;
   const c = g.cells[m];
   if (!causes.land[c] || d.lake[c] === 1) return -1;
-  if (g.end === 'sink' || m < g.cells.length - 1) return m;
-  if (mesh.boundary[c] === 1) return -1;
+  if (g.end === 'sink') return m;
+  // 画到的地方就是终点、在地图边上：流出地图，不必消失
+  if (m === g.cells.length - 1 && mesh.boundary[c] === 1) return -1;
+  // 画到的那格（之后顺地势流下去的那段里也一样）有别的河流进来
   const prev = g.cells[m - 1];
   for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
     const j = mesh.adj[e];
@@ -335,6 +346,9 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
 export function RiverBar() {
   const w = world.value;
   const sel = selectedRiver.value;
+  // 换了选中的河、底部条收起来了（换了工具、按了数字键）：底部条上的预览不要了。
+  // 不然鼠标停在“从这里往下去掉”上时换走，回到画河时地图上还画着那个预览
+  useEffect(() => () => clearBarPreview(), [sel]);
   if (!w || !sel) return null;
   if (sel.kind === 'natural') return <NaturalRiverBar w={w} cell={sel.cell} />;
   const g = guideOf(w, sel.id);
@@ -379,7 +393,10 @@ export function RiverMore() {
   const name = guideName(w, g);
   const setEnd = (sink: boolean) => {
     if (sink === (g.end === 'sink')) return;
-    const patch: GuidePatch = sink ? { ...(m < g.cells.length - 1 ? { cells: g.cells.slice(0, m + 1) } : {}), end: 'sink' } : { end: null };
+    // 消失：只留到画到的那格；接着流：从那格起顺着地势流下去的那段也算这条河的（与画的时候选“画完接着流”一样）
+    const r = sink ? null : continueCourse(w, w.derived, g);
+    if (r && 'blocked' in r) return showToast(r.blocked, true);
+    const patch: GuidePatch = r ? r.patch : { ...(m < g.cells.length - 1 ? { cells: g.cells.slice(0, m + 1) } : {}), end: 'sink' };
     void exec({ op: 'update_guide', id: g.id, patch, label: sink ? `${quoted(name)}在画到的地方消失` : `${quoted(name)}画完接着流` }, '正在计算河流…');
   };
   return (

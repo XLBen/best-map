@@ -1089,7 +1089,11 @@ function courseFrom(world: World, d: Derived, base: { cells: number[]; path: Pt[
     let loop = false;
     for (let guard = 0; guard < mesh.n; guard++) {
       const r = d.receiver[c];
-      if (r < 0) break;
+      // 流到这里就没了（在终点消失的河的终点，比如把消失的河改回接着流）：也改走最省力的路径
+      if (r < 0) {
+        loop = !edge(c);
+        break;
+      }
       if (pos.has(r) || (up && up[r])) {
         loop = true;
         break;
@@ -1352,6 +1356,19 @@ export function spliceCourse(
   if (plan.end === 'sink') patch.end = 'sink';
   else if (g.end) patch.end = null;
   return { patch, plan };
+}
+
+// 在画到的地方消失的河改成“接着流”：从画到的那格起顺着地势流下去（与画的时候选“画完接着流”一样，
+// 流下去的那段也是这条河的格），画的折线不动。返回 update_guide 的 patch
+export function continueCourse(world: World, d: Derived, g: Guide): { patch: GuidePatch; plan: CoursePlan } | { blocked: string } {
+  if (!g.path) return { blocked: '没法从这里改' };
+  const pts = decodePath(g.path);
+  const last = pts[pts.length - 1];
+  const m = g.cells.indexOf(findCell(world.mesh, last[0], last[1], g.cells[g.cells.length - 1]));
+  if (m < 1) return { blocked: '没法从这里改' };
+  const plan = courseFrom(world, d, { cells: g.cells.slice(0, m + 1), path: pts }, [last], { endOnLand: 'flow', ignoreGuide: g.id }, false);
+  if (plan.blocked) return { blocked: plan.blocked };
+  return { patch: { cells: plan.cells, end: null }, plan };
 }
 
 // 一条河道现在流到哪里（不看画的线，只看格）

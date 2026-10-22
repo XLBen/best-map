@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import { findCell } from '../../core/mesh';
-import { type CoursePlan, endCourseAt, isRiverCell, planCourse, spliceCourse } from '../../core/select';
-import { continents } from '../../core/testing/fixtures';
+import { type CoursePlan, endCourseAt, isRiverCell, planCourse, planRiver, spliceCourse } from '../../core/select';
+import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
+import { riverLines } from '../render/overlay';
 import { exec, previewCommand, riverPending, selectedRiver, setOptions, world } from '../state';
-import { lineOf, newCourse, pinCommand, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
+import { lineOf, newCourse, pinCommand, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
 import type { Pointer } from './tools';
 
 // 画河的手势：自定义走向一笔 → 松手发的命令与预览是同一份；穿过别的河时先问一句（截走它 / 到这里汇入 / 取消，
@@ -280,6 +281,122 @@ describe('在选中的画的河上拖是重画一段', () => {
       }
     }
     expect(done).toBe(true);
+  });
+});
+
+describe('从画过的河的源头再画（没选中它时）', () => {
+  // 先画好一条河，世界换成画好之后的
+  function drawn() {
+    const { eng, t: _t } = setup();
+    void _t;
+    const w0 = eng.world;
+    const { plan, stroke } = quietStroke(w0);
+    // 中等的河：重画后大小的标签多半不变
+    setOptions({ riverFlow: 20 });
+    eng.exec(newCourse(w0, plan, stroke).cmd!);
+    const w = eng.world;
+    world.value = w;
+    const g = w.small.guides[w.small.guides.length - 1];
+    const name = w.derived.features.find((f) => f.guide === g.id)!.name;
+    return { eng, w, g, name, t: riverTool(() => zoomOf(w)) };
+  }
+  // 从这条河的源头往各个方向画 4 格，找一笔不碰别的河、画得出来的
+  function fromSource(w: World, src: number, ok: (s: Pt[]) => boolean): Pt[] {
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8;
+      const s = line(w, at(w, src), [w.mesh.x[src] + 4 * w.mesh.spacing * Math.cos(a), w.mesh.y[src] + 4 * w.mesh.spacing * Math.sin(a)]);
+      if (ok(s)) return s;
+    }
+    throw new Error('从源头画不出来');
+  }
+
+  it('自定义走向：改的是同一条河道（update_guide），自动起的名字照旧（名字随大小、地形的标签变，标签没变时一字不差）', async () => {
+    const { eng, w, g, name, t } = drawn();
+    const tags = (e: typeof eng) => e.world.derived.features.find((f) => f.guide === g.id)?.tags.join();
+    const s = fromSource(w, g.cells[0], (s) => {
+      const p = planCourse(w, w.derived, s, opts(w));
+      if (p.blocked || !p.reroute || p.crossings.length || p.cells.join() === g.cells.join()) return false;
+      const e = eng.clone();
+      e.exec(newCourse(w, p, s).cmd!);
+      return tags(e) === tags(eng);
+    });
+    vi.mocked(exec).mockClear();
+    await drag(t, w, s);
+    const cmd = lastExec();
+    expect(cmd).toEqual(newCourse(w, planCourse(w, w.derived, s, opts(w)), s).cmd);
+    expect(cmd).toMatchObject({ op: 'update_guide', id: g.id });
+    if (cmd.op !== 'update_guide') throw new Error();
+    expect(Object.keys(cmd.patch)).toEqual(expect.arrayContaining(['cells', 'path']));
+    expect(cmd.patch.name).toBeUndefined();
+    eng.exec(cmd);
+    expect(eng.world.small.guides.map((x) => x.id)).toContain(g.id);
+    expect(eng.world.derived.features.find((f) => f.guide === g.id)?.name).toBe(name);
+  });
+
+  it('顺地势：同样改这条河道，原来画的折线不要了', async () => {
+    const { w, g, t } = drawn();
+    setOptions({ riverMode: 'flow' });
+    // 工具记下的是拖过的格
+    const cellsOf = (s: Pt[]) => s.map((p) => findCell(w.mesh, p[0], p[1])).filter((c, k, a) => k === 0 || c !== a[k - 1]);
+    const s = fromSource(w, g.cells[0], (s) => {
+      const p = planRiver(w, w.derived, cellsOf(s));
+      return !p.blocked && !p.same && p.reroute && p.cells.length > 2;
+    });
+    vi.mocked(exec).mockClear();
+    await drag(t, w, s);
+    const cmd = lastExec();
+    expect(cmd).toMatchObject({ op: 'update_guide', id: g.id, patch: { cells: planRiver(w, w.derived, cellsOf(s)).cells, path: null } });
+  });
+
+  it('接到一条画的河的源头上：提示写“往上游接长”，不是“汇入”它自己', () => {
+    const { w, g, t } = drawn();
+    const src = g.cells[0];
+    const tries: Pt[][] = [];
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8;
+      tries.push(line(w, [w.mesh.x[src] + 3 * w.mesh.spacing * Math.cos(a), w.mesh.y[src] + 3 * w.mesh.spacing * Math.sin(a)], at(w, src)));
+    }
+    const s = tries.find((s) => {
+      const c = findCell(w.mesh, ...s[0]);
+      if (!w.causes.land[c] || w.derived.lake[c] === 1 || isRiverCell(w, w.derived, c)) return false;
+      const p = planCourse(w, w.derived, s, opts(w));
+      return !p.blocked && p.merge === g.id && !p.crossings.length;
+    });
+    expect(s).toBeDefined();
+    t.down?.(ptr(w, s![0]));
+    for (const p of s!.slice(1)) t.move?.(ptr(w, p), true);
+    const hint = t.preview().hint!;
+    expect(hint).toContain('往上游接长');
+    expect(hint).not.toContain('汇入');
+    t.cancel?.();
+  });
+});
+
+describe('整个星球：鼠标在平铺的另一份上', () => {
+  it('点中的是同一格（不是线段另一头的那格）', () => {
+    const eng = engineFor({ seed: 4, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
+    const w = eng.world;
+    const d = w.derived;
+    let checked = 0;
+    for (const L of riverLines(w)) {
+      if (L.guide !== undefined || !L.cells) continue;
+      for (let k = 0; k + 2 < L.points.length && checked < 20; k++) {
+        const [ax, ay] = L.points[k];
+        const [bx, by] = L.points[k + 1];
+        const a = L.cells[k];
+        if (a === L.cells[k + 1] || bx <= ax || !isRiverCell(w, d, a) || !isRiverCell(w, d, L.cells[k + 1])) continue;
+        const x = ax + (bx - ax) * 0.2;
+        const y = ay + (by - ay) * 0.2;
+        const tol = 0.2 * w.mesh.spacing;
+        const here = riverAt(w, x, y, tol);
+        if (here?.ref.kind !== 'natural' || here.ref.cell !== a) continue;
+        expect(riverAt(w, x + 2, y, tol)?.ref).toEqual(here.ref);
+        expect(riverAt(w, x - 2, y, tol)?.ref).toEqual(here.ref);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
   });
 });
 

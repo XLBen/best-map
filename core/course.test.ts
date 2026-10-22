@@ -6,7 +6,7 @@ import { lakeArea, waterLevel } from './elevation';
 import { findCell } from './mesh';
 import { route } from './routing';
 import { courseLine, courseStep, decodePath, encodePath, pathSamples, smoothCourse } from './rivers';
-import { type CoursePlan, endCourseAt, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
+import { type CoursePlan, continueCourse, endCourseAt, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
 import { continents, engineFor } from './testing/fixtures';
 import { type Guide, guideSchema, type World } from './world';
 
@@ -269,6 +269,37 @@ describe('只挖河床', () => {
     expect(digestWorld(w)).toEqual(digest);
     expect(w.derived.receiver[sink]).toBe(-1);
     expect(flowing - w.derived.discharge[below]).toBeGreaterThan(sinkQ * 0.9);
+  });
+
+  it('消失的河改回接着流：从画到的那格顺着地势流下去，流下去的那段也是这条河的格，水照着走、折线不动', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh, derived: d } = w;
+    // 一笔不碰别的河、画到陆地上就消失的河（起点不是河，终点也不在别的河上）
+    let plan: CoursePlan | null = null;
+    for (let c = 0; c < mesh.n && !plan; c += 7) {
+      if (!w.causes.land[c] || d.lake[c] === 1 || isRiverCell(w, d, c) || d.elevation[c] < 300) continue;
+      const p = planCourse(w, d, line(at(w, c), [mesh.x[c] + 4 * mesh.spacing, mesh.y[c] + 1.5 * mesh.spacing]), { endOnLand: 'sink' });
+      if (!p.blocked && p.end === 'sink' && !p.crossings.length && !p.reroute && p.cells.length >= 4) plan = p;
+    }
+    expect(plan).not.toBeNull();
+    eng.exec(courseCmd(plan!));
+    const g = w.small.guides[0];
+    expect(w.derived.receiver[g.cells[g.cells.length - 1]]).toBe(-1);
+    const r = continueCourse(w, w.derived, g);
+    if ('blocked' in r) throw new Error(r.blocked);
+    expect(r.patch.cells!.slice(0, g.cells.length)).toEqual(g.cells);
+    expect(r.patch.cells!.length).toBeGreaterThan(g.cells.length);
+    expect(new Set(r.patch.cells).size).toBe(r.patch.cells!.length);
+    expect(['sea', 'lake', 'river', 'edge']).toContain(r.plan.end);
+    eng.exec({ op: 'update_guide', id: g.id, patch: r.patch });
+    const after = w.small.guides[0];
+    expect(after.end).toBeUndefined();
+    expect(after.path).toEqual(g.path);
+    expect(followed(w, after.cells)).toBe(true);
+    // 流得出去（汇入的那条小河的上游可能被这段截走，那时就顺着它一直流到海里）
+    expect(['sea', 'lake', 'river', 'edge']).toContain(guideEnd(w, w.derived, after).kind);
+    expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
   });
 
   it('峡谷不让山改名：横穿最高的山脉之后，山脉、山峰的名字一个不变', () => {
