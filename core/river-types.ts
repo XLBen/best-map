@@ -1,10 +1,8 @@
 import { z } from 'zod';
-import { CommandError } from './errors';
-import { type Mesh, graphDistance } from './mesh';
+import { LAKE_PREFIX, lakeBank } from './lake-types';
 import { joinsRiver } from './rivers';
-// 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用别的模块，顶层直接读会碰上“初始化之前不能访问”
-import { type InputValue, type ScriptInputs, type ScriptIssue, compileScript, runScript, scriptsEnabled, scriptsSchema, worldInputs } from './script';
-import { typeIdSchema } from './type-id';
+import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
+import { PLAIN_TYPE, bankField, bankRadiusKm, checkMatchScripts, majorityOf, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
 import type { Derived, Guide, SmallState, World } from './world';
 
 // 河流类型（第三批）：血河、晶川、冥河……每种有自己的颜色、画法、两岸的影响、起名模板，
@@ -25,45 +23,18 @@ export type RiverStyle = (typeof RIVER_STYLES)[number];
 export const RIVER_STYLE_LABEL: Record<RiverStyle, string> = { solid: '实线', dashed: '虚线', double: '双线', glow: '发光' };
 
 // 选了“普通的河”的河道（type 写成这个）：不按 match 脚本变成别的类型，带类型的河也不往它里面传。
-// 所以这个 id 不能用作河流类型的 id
-export const PLAIN_RIVER = 'plain';
+// 所以这个 id 不能用作河流类型的 id（与湖的“普通的湖”是同一个，见 water-types.ts）
+export const PLAIN_RIVER = PLAIN_TYPE;
 
 // 一个世界里最多这么多种（每格的类型存成一个字节）
 export const MAX_RIVER_TYPES = 64;
 
-const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
-
+// 格式：与湖泊类型共有的几项（water-types.ts），再加粗细、画法
 export const riverTypeSchema = z.object({
-  id: typeIdSchema.refine((id) => id !== PLAIN_RIVER, `“${PLAIN_RIVER}”是留给“普通的河”的，换一个 id`),
-  name: z.string().min(1).max(12),
-  color: hexColor,
-  // 地图集风格里用的颜色（省略时同 color）
-  atlasColor: hexColor.optional(),
+  ...waterTypeShape('河流类型', '河'),
   // 粗细倍数（只影响画法）
   width: z.number().min(0.3).max(3).optional(),
   style: z.enum(RIVER_STYLES).optional(),
-  // 两岸的影响：离这种河 radiusKm 以内，越近越强（变暖变冷 dT °C、变湿变干：降水乘以 e^dP）。
-  // 两岸的远近（河岸场 river:<id>，0–1）给生态的条件、脚本用
-  bank: z
-    .object({
-      radiusKm: z.number().min(10).max(1000),
-      dT: z.number().min(-10).max(10).optional(),
-      dP: z.number().min(-1.5).max(1.5).optional(),
-    })
-    .optional(),
-  // 起名模板（{词表} 用文字包的词表，{__species} 是类型名）
-  names: z
-    .array(z.object({ p: z.string().min(1).max(40), w: z.number().positive().optional() }))
-    .min(1)
-    .max(20)
-    .optional(),
-  // 只有 match：哪些自然的河是这一种（每条河算一次，返回真假）
-  scripts: z
-    .lazy(() => scriptsSchema)
-    .refine((s) => Object.entries(s).every(([k, v]) => k === 'match' || v === undefined), '河流类型只能有“哪些河是这一种”（match）的脚本')
-    .optional(),
-  // 脚本里噪声、rand 的种子用它（省略时用 id）：资源包里的类型改了 id，匹配的河也不变
-  seedKey: z.string().min(1).max(64).optional(),
 });
 export type RiverType = z.output<typeof riverTypeSchema>;
 export type RiverTypeInput = z.input<typeof riverTypeSchema>;
@@ -71,35 +42,14 @@ export type RiverTypeInput = z.input<typeof riverTypeSchema>;
 export const riverTypesOf = (small: Pick<SmallState, 'riverTypes'>): readonly RiverType[] => small.riverTypes ?? [];
 
 // 类型显示用的名字（出错说明、看门狗提示）
-export const riverTypeOwner = (t: RiverType) => t.name || t.id;
+export const riverTypeOwner = (t: RiverType) => waterTypeOwner(t);
 
 // 添加、修改时检查脚本：只能有 match，语法要对（错了整条命令不生效，并说明第几行错了）
-export function checkRiverTypeScripts(t: RiverType): void {
-  const box = t.scripts;
-  if (!box) return;
-  for (const [kind, s] of Object.entries(box)) {
-    if (!s) continue;
-    if (kind !== 'match') throw new CommandError(`河流类型「${riverTypeOwner(t)}」只能有“哪些河是这一种”的脚本`);
-    compileScript('match', s.src, riverTypeOwner(t));
-  }
-}
+export const checkRiverTypeScripts = (t: RiverType): void => checkMatchScripts(t, '河流类型', '河');
 
-// 改一种河流类型要从哪一层重算（按真的改了哪几项，不看命令里写了什么）：
-//   · 只改颜色、地图集颜色、画法、粗细：推导什么都不变，只重画（Worker 发轻快照）；
-//   · 只改名字、起名模板：只重新起名（带脚本的类型改名除外：脚本出错的说明里有它的名字，要与重放一致）；
-//   · 别的（脚本、两岸的影响、种子）：从水文起重算
+// 改一种河流类型要从哪一层重算（见 water-types.ts 的 waterTypeDirty）：颜色、地图集颜色、画法、粗细只重画
 const LOOK_KEYS = new Set(['color', 'atlasColor', 'style', 'width']);
-const NAME_KEYS = new Set(['name', 'names']);
-export function riverTypeDirty(before: RiverType | undefined, after: RiverType | undefined): 'none' | 'names' | 'vegetation' {
-  if (!before || !after) return 'vegetation';
-  const a = before as Record<string, unknown>;
-  const b = after as Record<string, unknown>;
-  const changed = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
-  if (changed.every((k) => LOOK_KEYS.has(k))) return 'none';
-  if (changed.includes('name') && (before.scripts?.match || after.scripts?.match)) return 'vegetation';
-  if (changed.every((k) => LOOK_KEYS.has(k) || NAME_KEYS.has(k))) return 'names';
-  return 'vegetation';
-}
+export const riverTypeDirty = (before: RiverType | undefined, after: RiverType | undefined) => waterTypeDirty(before, after, LOOK_KEYS);
 
 // ---------- 每格是哪一种河 ----------
 
@@ -289,73 +239,20 @@ export function typeRivers(world: World, d: Derived, seed: number): ScriptIssue[
 
 // ---------- 两岸：河岸场 river:<id> ----------
 
-// 这种河两岸的范围（km）：给了 bank 用它，否则取 max(100 km, 两格半)
-export function bankRadiusKm(world: World, t: RiverType): number {
-  return t.bank?.radiusKm ?? Math.max(100, 2.5 * world.mesh.spacing * world.kmPerUnit);
-}
+export { bankRadiusKm };
 
-const smooth01 = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-
-// 按内容缓存（d.riverType 是原地改的，不能按数组对象做键）：键是这种河的格、范围；按网格各留最近用过的几份。
-// 返回的数组是缓存本身，只读
-interface BankMemo {
-  mask: Uint8Array;
-  radius: number;
-  value: Float32Array;
-}
-const bankMemo = new WeakMap<Mesh, BankMemo[]>();
-const MAX_BANKS = 8;
-
-function sameMask(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
-// 离第 k 种河多近：1 − smoothstep(0, R, 到这种河的格图距离)，河上为 1，R 以外为 0。
+// 离第 k 种河多近：1 − smoothstep(0, R, 到这种河的格图距离)，河上为 1，R 以外为 0（见 water-types.ts 的 bankField）。
 // 这种河一格都没有（或者没有这种类型）时为 undefined：脚本里 river() 为 0、hasRiver() 为 false
 export function riverBank(world: World, d: Derived, typeId: string): Float32Array | undefined {
   const types = riverTypesOf(world.small);
   const k = types.findIndex((t) => t.id === typeId);
-  const rt = d.riverType;
-  if (k < 0 || !rt) return undefined;
-  const { mesh } = world;
-  const n = mesh.n;
-  const mask = new Uint8Array(n);
-  const seeds: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (rt[i] === k + 1) {
-      mask[i] = 1;
-      seeds.push(i);
-    }
-  }
-  if (!seeds.length) return undefined;
-  const radius = bankRadiusKm(world, types[k]) / world.kmPerUnit;
-  const list = bankMemo.get(mesh) ?? [];
-  const hit = list.find((m) => m.radius === radius && sameMask(m.mask, mask));
-  if (hit) {
-    bankMemo.set(mesh, [hit, ...list.filter((m) => m !== hit)]);
-    return hit.value;
-  }
-  const dist = graphDistance(mesh, seeds, radius);
-  const value = new Float32Array(n);
-  for (let i = 0; i < n; i++) value[i] = dist[i] <= radius ? 1 - smooth01(dist[i] / radius) : 0;
-  bankMemo.set(mesh, [{ mask, radius, value }, ...list].slice(0, MAX_BANKS));
-  return value;
+  if (k < 0) return undefined;
+  return bankField(world, d.riverType, k + 1, bankRadiusKm(world, types[k]));
 }
 
-// 引擎给脚本的 river(typeId) / hasRiver(typeId)
-export const riverProvider = (world: World, d: Derived) => (typeId: string) => riverBank(world, d, typeId);
+// 引擎给脚本的 river(typeId) / hasRiver(typeId)；湖岸（nearLake、hasLake）借同一条路，写成 'lake:类型'（见 lake-types.ts）
+export const riverProvider = (world: World, d: Derived) => (typeId: string) =>
+  typeId.startsWith(LAKE_PREFIX) ? lakeBank(world, d, typeId.slice(LAKE_PREFIX.length)) : riverBank(world, d, typeId);
 
 // 一串格里多数是哪一种河（超过一半的格是同一种时为它的下标，否则 −1）
-export function majorityType(d: Derived, cells: ArrayLike<number>): number {
-  const rt = d.riverType;
-  if (!rt || !cells.length) return -1;
-  const count = new Map<number, number>();
-  for (let k = 0; k < cells.length; k++) {
-    const v = rt[cells[k]];
-    if (v) count.set(v, (count.get(v) ?? 0) + 1);
-  }
-  for (const [v, c] of count) if (c * 2 > cells.length) return v - 1;
-  return -1;
-}
+export const majorityType = (d: Derived, cells: ArrayLike<number>): number => majorityOf(d.riverType, cells);

@@ -22,6 +22,8 @@ import { cutProvinces } from './select';
 import { checkSpeciesScripts } from './biome-scripts';
 import { namesNaturally } from './features';
 import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema } from './river-types';
+import { MAX_LAKE_TYPES, checkLakeTypeScripts, lakeTypeDirty, lakeTypeSchema } from './lake-types';
+import { typeIdSchema } from './type-id';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
@@ -87,6 +89,18 @@ const guidePatchSchema = z
   .strict();
 export type GuidePatch = z.input<typeof guidePatchSchema>;
 
+// 改一个放的湖：只写要改的项，null 去掉这一项
+const L = lakeSchema.shape;
+const lakePatchSchema = z
+  .object({
+    name: L.name.unwrap().nullable().optional(),
+    salt: L.salt.unwrap().nullable().optional(),
+    type: L.type.unwrap().nullable().optional(),
+    radius: z.number().min(0.1).max(2000).optional(),
+  })
+  .strict();
+export type LakePatch = z.input<typeof lakePatchSchema>;
+
 const baseCommands = [
   // 世界生成参数；reset 时清空所有手工编辑（新世界），否则保留（拖滑块）
   z.object({ op: z.literal('set_worldgen'), params: worldgenSchema, reset: z.boolean().default(false) }),
@@ -139,6 +153,21 @@ const baseCommands = [
   }),
   z.object({ op: z.literal('add_lake'), lake: lakeSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
   z.object({ op: z.literal('remove_lake'), id: z.string() }),
+  // 改一个放的湖（第九轮）：名字（'' 自动起，null 去掉）、换一个名字的盐、类型（'plain' 普通的湖，null 按规则）、大小
+  z.object({
+    op: z.literal('update_lake'),
+    id: z.string(),
+    patch: lakePatchSchema,
+    label: z.string().max(200).optional(),
+  }),
+  // 给自然的湖选类型（第九轮）：cell 所在的湖是 type 这一种（null 改回按规则）；drop 是先去掉的旧选择（同一个湖里的那几格）
+  z.object({
+    op: z.literal('type_lake'),
+    cell: z.number().int().min(0),
+    type: typeIdSchema.nullable(),
+    drop: z.array(z.number().int().min(0)).max(1000).optional(),
+    label: z.string().max(200).optional(),
+  }),
   z.object({ op: z.literal('add_field'), name: fieldName }),
   z.object({ op: z.literal('remove_field'), name: fieldName }),
   // 自动划分省份：规则与当前规则合并（省略的项沿用），锁定的省份不动
@@ -177,6 +206,9 @@ const baseCommands = [
   // 河流类型（第三批）：新建或整份换掉（按 id）；删掉时画的河上选的这一种也去掉
   z.object({ op: z.literal('set_river_type'), type: riverTypeSchema }),
   z.object({ op: z.literal('remove_river_type'), id: z.string() }),
+  // 湖泊类型（第九轮）：同河流类型；删掉时放的湖、自然的湖上选的这一种也去掉
+  z.object({ op: z.literal('set_lake_type'), type: lakeTypeSchema }),
+  z.object({ op: z.literal('remove_lake_type'), id: z.string() }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用
@@ -797,6 +829,59 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.lakes = small.lakes.filter((l) => l.id !== cmd.id);
       if (small.lakes.length === before) throw new CommandError(`找不到湖 "${cmd.id}"`);
       return { dirty: Dirty.Elevation, summary: '删掉了一个湖' };
+    }
+    case 'update_lake': {
+      const idx = small.lakes.findIndex((l) => l.id === cmd.id);
+      if (idx < 0) throw new CommandError(`找不到湖 "${cmd.id}"`);
+      const old = small.lakes[idx];
+      const merged: Record<string, unknown> = { ...old, ...cmd.patch };
+      for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete merged[k];
+      const parsed = lakeSchema.safeParse(merged);
+      if (!parsed.success) throw new CommandError(`update_lake 参数无效：${formatIssues(parsed.error)}`);
+      const l = parsed.data;
+      small.lakes = small.lakes.map((x, k) => (k === idx ? l : x));
+      // 大小：重挖湖盆；类型：从水文起（岸边的影响、生态的条件会变）；名字、盐：只重新起名
+      const dirty = l.radius !== old.radius ? Dirty.Elevation : (l.type ?? null) !== (old.type ?? null) ? Dirty.Vegetation : Dirty.Names;
+      return { dirty, summary: cmd.label || (l.radius !== old.radius ? `湖的直径改成约 ${roundKm(l.radius * 2)} km` : '改了一个湖') };
+    }
+    case 'type_lake': {
+      checkCells([cmd.cell, ...(cmd.drop ?? [])]);
+      const drop = new Set([cmd.cell, ...(cmd.drop ?? [])]);
+      const list = (small.lakeTyping ?? []).filter((e) => !drop.has(e.cell));
+      if (cmd.type !== null) list.push({ cell: cmd.cell, type: cmd.type });
+      if (list.length) small.lakeTyping = list;
+      else delete small.lakeTyping;
+      return { dirty: Dirty.Vegetation, summary: cmd.label || (cmd.type === null ? '湖的类型改回按规则' : '改了湖的类型') };
+    }
+    case 'set_lake_type': {
+      const t = lakeTypeSchema.parse(cmd.type);
+      checkLakeTypeScripts(t);
+      const list = small.lakeTypes ?? [];
+      const at = list.findIndex((x) => x.id === t.id);
+      if (at < 0 && list.length >= MAX_LAKE_TYPES) throw new CommandError(`湖泊类型最多 ${MAX_LAKE_TYPES} 种`);
+      const before = at >= 0 ? list[at] : undefined;
+      small.lakeTypes = at >= 0 ? list.map((x, k) => (k === at ? t : x)) : [...list, t];
+      const level = lakeTypeDirty(before, t);
+      const dirty = level === 'none' ? Dirty.None : level === 'names' ? Dirty.Names : Dirty.Vegetation;
+      return { dirty, summary: `${before ? '修改了' : '新建了'}湖泊类型「${t.name}」` };
+    }
+    case 'remove_lake_type': {
+      const list = small.lakeTypes ?? [];
+      const gone = list.find((x) => x.id === cmd.id);
+      if (!gone) throw new CommandError(`找不到湖泊类型 "${cmd.id}"`);
+      small.lakeTypes = list.filter((x) => x.id !== cmd.id);
+      // 放的湖、自然的湖上选的这一种也去掉（撤销时一起回来）
+      small.lakes = small.lakes.map((l) => {
+        if (l.type !== cmd.id) return l;
+        const { type: _, ...rest } = l;
+        return rest as typeof l;
+      });
+      if (small.lakeTyping) {
+        const left = small.lakeTyping.filter((e) => e.type !== cmd.id);
+        if (left.length) small.lakeTyping = left;
+        else delete small.lakeTyping;
+      }
+      return { dirty: Dirty.Vegetation, summary: `删掉了湖泊类型「${gone.name}」` };
     }
     case 'add_field': {
       if (causes.fields[cmd.name]) throw new CommandError(`场 "${cmd.name}" 已存在`);

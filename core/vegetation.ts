@@ -1,6 +1,7 @@
 import { computeLook } from './biome-look';
 import { ScriptSession, placementSlots, worldSeedOf } from './biome-scripts';
 import { graphDistance } from './mesh';
+import { LAKE_PREFIX, lakeBank } from './lake-types';
 import { riverBank, riverProvider } from './river-types';
 import { planetFormIssues } from './terrain';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
@@ -17,6 +18,11 @@ export function fieldGetter(world: World, d: Derived, field: string): FieldGette
   if (field.startsWith('river:')) {
     // 河岸场（第三批）：离这种河多近，0–1。没有这种河时为 0
     const arr = riverBank(world, d, field.slice(6));
+    return arr ? (i) => arr[i] : () => 0;
+  }
+  if (field.startsWith(LAKE_PREFIX)) {
+    // 湖岸场（第九轮）：离这种湖多近，0–1。没有这种湖时为 0
+    const arr = lakeBank(world, d, field.slice(LAKE_PREFIX.length));
     return arr ? (i) => arr[i] : () => 0;
   }
   if (field.startsWith('field:')) {
@@ -139,7 +145,7 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[], sessi
   return { slot, P, placeF };
 }
 
-// extraIssues：这一遍里别处出的脚本问题（河流类型的 match 脚本，见 river-types.ts 的 typeRivers），排在星球形态的之后
+// extraIssues：这一遍里别处出的脚本问题（河流、湖泊类型的 match 脚本，见 river-types.ts 的 typeRivers、lake-types.ts 的 typeLakes），排在星球形态的之后
 export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = []) {
   const { mesh, small } = world;
   const n = mesh.n;

@@ -187,12 +187,17 @@ describe('资源包用到世界', () => {
     const cmd = applyPackCommands(w, FANTASY_PACK);
     expect(cmd.op).toBe('batch');
     expect(cmd.label).toBe('用了资源包「奇幻生态示例」');
-    // 场、河流类型、生态（生态的脚本、条件要用到河流类型）
-    expect(cmd.commands.map((c) => c.op)).toEqual(['add_field', ...FANTASY_PACK.riverTypes!.map(() => 'set_river_type'), ...FANTASY_BIOMES.map(() => 'add_species')]);
+    // 场、河流类型、湖泊类型、生态（生态的脚本、条件要用到河流、湖泊类型）
+    expect(cmd.commands.map((c) => c.op)).toEqual([
+      'add_field',
+      ...FANTASY_PACK.riverTypes!.map(() => 'set_river_type'),
+      ...FANTASY_PACK.lakeTypes!.map(() => 'set_lake_type'),
+      ...FANTASY_BIOMES.map(() => 'add_species'),
+    ]);
     expect(cmd.commands[0]).toEqual({ op: 'add_field', name: 'holy' });
     expect(docVersion({ globe: false }, [cmd])).toBe(4);
     // 只挑一种：只加它，它不用的场不加
-    const one = planPack(w, FANTASY_PACK, { biomes: ['crystal_jungle'], riverTypes: [] });
+    const one = planPack(w, FANTASY_PACK, { biomes: ['crystal_jungle'], riverTypes: [], lakeTypes: [] });
     expect(one.command.commands.map((c) => c.op)).toEqual(['add_species']);
     expect(one.fields).toEqual([]);
     // 场已经有了：不再加
@@ -237,7 +242,7 @@ describe('资源包用到世界', () => {
     eng.exec(first.command);
     const again = planPack(eng.world, FANTASY_PACK, defaultPicks(FANTASY_PACK));
     expect(again.command.commands).toEqual([]);
-    expect(again.skipped.map((s) => s.id)).toEqual([...FANTASY_BIOMES.map((b) => b.id), ...FANTASY_PACK.riverTypes!.map((t) => t.id)]);
+    expect(again.skipped.map((s) => s.id)).toEqual([...FANTASY_BIOMES.map((b) => b.id), ...FANTASY_PACK.riverTypes!.map((t) => t.id), ...FANTASY_PACK.lakeTypes!.map((t) => t.id)]);
     // 改名过的那一项也认得出来：世界里的水晶丛林换了颜色，用包时加了 crystal_jungle-2；再用一次全部跳过
     const w = fakeWorld([...structuredClone(DEFAULT_SPECIES), { ...structuredClone(FANTASY_BIOMES[0]), color: '#000000' }]);
     const p1 = planPack(w, FANTASY_PACK, defaultPicks(FANTASY_PACK));
@@ -441,7 +446,7 @@ describe('用了资源包之后的世界', () => {
 describe('资源包里的星球形态', () => {
   it('内置的三种形态：存成文件再读回来一样；写错时用中文说是哪一个；只列出来，不在“用到这个世界”里用', () => {
     expect(packForms(FANTASY_PACK).map((f) => f.name)).toEqual(['双子大陆', '环形内海', '极地大陆']);
-    expect(packSummary(FANTASY_PACK)).toBe('生态 5 · 河流 4 · 星球 3');
+    expect(packSummary(FANTASY_PACK)).toBe('生态 5 · 河流 4 · 湖泊 4 · 星球 3');
     const back = readPack(JSON.stringify(FANTASY_PACK));
     expect(back.ok && back.pack.planetForms).toEqual(FANTASY_FORMS);
     const bad = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, base: 'moon' } as never] })));

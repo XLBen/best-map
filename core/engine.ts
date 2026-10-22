@@ -8,6 +8,7 @@ import { computeEffects } from './effects';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
+import { typeLakes } from './lake-types';
 import { typeRivers } from './river-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
@@ -438,7 +439,10 @@ export class Engine {
       finalizeClimate(w, base, d, eff);
       computeHydrology(w, d.elevation, d);
       // 河流类型（第三批）：没有时什么都不做；match 脚本出的问题交给植被一起记下
-      computeVegetation(w, d, typeRivers(w, d, seed));
+      // 湖泊类型（第九轮）同样：没有时什么都不做
+      const issues = typeRivers(w, d, seed);
+      const lakeIssues = typeLakes(w, d, seed);
+      computeVegetation(w, d, lakeIssues.length ? [...issues, ...lakeIssues] : issues);
     };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);
@@ -670,6 +674,9 @@ function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'set_worldgen' && cmd.params.form !== undefined) return true;
   // 第八轮第三批：河流类型
   if (cmd.op === 'set_river_type' || cmd.op === 'remove_river_type') return true;
+  // 第九轮：湖泊类型、改一个放的湖、给自然的湖选类型、带名字或类型的新湖
+  if (cmd.op === 'set_lake_type' || cmd.op === 'remove_lake_type' || cmd.op === 'update_lake' || cmd.op === 'type_lake') return true;
+  if (cmd.op === 'add_lake' && (cmd.lake.name !== undefined || cmd.lake.salt !== undefined || cmd.lake.type !== undefined)) return true;
   return false;
 }
 

@@ -28,7 +28,7 @@ import { type Derived, type World, longitudeOf, planetRadiusKm, worldLatitude } 
 // 一段脚本是一个函数体，用户写 `return …`。五种脚本：
 //   placement 长在哪里 —— 每个陆地格一次，返回 0–1 的数或 true/false，乘进生态的适宜度
 //   color     颜色     —— 每格一次，返回 [r, g, b] 或 '#rrggbb'
-//   match     哪些河是这一种 —— 每条河一次，返回真或假
+//   match     哪些河（湖）是这一种 —— 每条河、每个湖一次，返回真或假
 //   crust     地形     —— 整个星球每格一次，返回新的高度，或者 {height?, mountains?, hills?, rock?}
 //   setup     布局     —— 每个星球模型一次（加大陆块、加岛）
 //
@@ -59,7 +59,7 @@ export type CellKind = Exclude<ScriptKind, 'setup'>;
 export const SCRIPT_KIND_LABEL: Record<ScriptKind, string> = {
   placement: '长在哪里',
   color: '颜色',
-  match: '哪些河是这一种',
+  match: '哪些河湖是这一种',
   setup: '布局',
   crust: '地形',
 };
@@ -185,6 +185,8 @@ export interface ScriptVariable {
   kinds: readonly ScriptKind[];
   // 整个世界一个值（不按格变）
   scalar?: true;
+  // match 里只有河流类型（river）或湖泊类型（lake）的才有（编辑器只列那一种的）
+  for?: 'river' | 'lake';
 }
 
 const CELL: readonly ScriptKind[] = ['placement', 'color', 'match'];
@@ -216,8 +218,14 @@ export const VARIABLES: readonly ScriptVariable[] = [
   { key: 'isRiver', zh: '是河', label: '是不是河（1 是，0 不是）', group: '水', kinds: CELL },
   { key: 'riverDist', zh: '离河', label: '离最近的河多远', unit: 'km', group: '水', kinds: CELL },
   // 只给河流类型的 match（每条河算一次）：整条河的长度、源头的海拔
-  { key: 'riverLength', zh: '河长', label: '这条河有多长（到汇入更大的河、入海或入湖为止）', unit: 'km', group: '水', kinds: ['match'] },
-  { key: 'sourceElevation', zh: '源头海拔', label: '这条河源头的海拔', unit: 'm', group: '水', kinds: ['match'] },
+  { key: 'riverLength', zh: '河长', label: '这条河有多长（到汇入更大的河、入海或入湖为止）', unit: 'km', group: '水', kinds: ['match'], for: 'river' },
+  { key: 'sourceElevation', zh: '源头海拔', label: '这条河源头的海拔', unit: 'm', group: '水', kinds: ['match'], for: 'river' },
+  // 只给湖泊类型的 match（每个湖算一次）
+  { key: 'lakeArea', zh: '湖面积', label: '这个湖有多大（连干涸的湖底）', unit: 'km²', group: '水', kinds: ['match'], for: 'lake' },
+  { key: 'inflow', zh: '入湖水量', label: '流进这个湖的水', unit: 'm³/s', group: '水', kinds: ['match'], for: 'lake' },
+  { key: 'dryLake', zh: '干湖', label: '是不是干湖（1 是：只剩干涸的湖底，0 不是）', group: '水', kinds: ['match'], for: 'lake' },
+  { key: 'placedLake', zh: '放的湖', label: '是不是放的湖（1 是，0 是自然的湖）', group: '水', kinds: ['match'], for: 'lake' },
+  { key: 'perennial', zh: '常年有水', label: '是不是不受蒸发影响、常年蓄满的湖（放的湖默认是）', group: '水', kinds: ['match'], for: 'lake' },
   { key: 'x', label: '地图上的横坐标（地图高为 1）', group: '位置', kinds: CELL },
   { key: 'y', label: '地图上的纵坐标（向南增大）', group: '位置', kinds: CELL },
   { key: 'lat', zh: '纬度', label: '纬度（北纬为正）', unit: '°', group: '位置', kinds: CELL_CRUST },
@@ -260,6 +268,8 @@ export const SCRIPT_HELPERS: readonly { name: string; usage: string; label: stri
   { name: 'field', usage: "field('名字')", label: '自定义场（或内置变量）在这一格的值' },
   { name: 'river', usage: "river('类型 id')", label: '离这种河多近（0–1，河上为 1）' },
   { name: 'hasRiver', usage: "hasRiver('类型 id')", label: '地图上有没有这种河（任何地方有一格就是 true）' },
+  { name: 'nearLake', usage: "nearLake('类型 id')", label: '离这种湖多近（0–1，湖上为 1）' },
+  { name: 'hasLake', usage: "hasLake('类型 id')", label: '地图上有没有这种湖' },
   { name: 'smoothstep', usage: 'smoothstep(a, b, v)', label: 'v 从 a 到 b 平滑地从 0 变到 1' },
   { name: 'clamp', usage: 'clamp(v, lo = 0, hi = 1)', label: '把 v 限制在 lo 到 hi 之间' },
   { name: 'mix', usage: 'mix(a, b, t)', label: '按 t（0–1）在 a、b 之间取值' },
@@ -741,6 +751,10 @@ function hasRiver(typeId: string): boolean {
   return a !== null;
 }
 
+// 离某种湖多近、地图上有没有这种湖（第九轮）：与河岸场同一条路，键是 'lake:类型'（见 river-types.ts 的 riverProvider）
+const nearLake = (typeId: string): number => river(`lake:${String(typeId)}`);
+const hasLake = (typeId: string): boolean => hasRiver(`lake:${String(typeId)}`);
+
 type Rgb = [number, number, number];
 
 // 颜色：[r, g, b]（0–255）或 '#rrggbb' / '#rgb'；不认识时为 null
@@ -779,6 +793,8 @@ const HELPERS = Object.freeze({
   field,
   river,
   hasRiver,
+  nearLake,
+  hasLake,
   smoothstep: (a: number, b: number, v: number) => (a === b ? (v < a ? 0 : 1) : smoothKernel(a, b, v)),
   clamp: (v: number, lo = 0, hi = 1) => clampRange(v, lo, hi),
   mix: (a: number, b: number, t: number) => a + (b - a) * t,

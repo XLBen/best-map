@@ -5,6 +5,7 @@ import type { WordPack } from './names';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
+import type { LakeType } from './lake-types';
 import type { RiverType } from './river-types';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
@@ -148,6 +149,11 @@ export const lakeSchema = z.object({
   perennial: z.boolean().default(true),
   // 第八轮起的新湖：半径就按给的算，最小半格（只淹一格）。旧湖没有这一项，照旧至少一格半
   exact: z.literal(true).optional(),
+  // 第九轮：名字（'' 按文字包自动起）、自动起名的盐（“换一个”）、湖泊类型（'plain' 是“普通的湖”，见 lake-types.ts）。
+  // 这个湖所在的那一片湖面都按它
+  name: z.string().max(40).optional(),
+  salt: z.number().int().min(0).optional(),
+  type: typeIdSchema.optional(),
 });
 export type LakeSpec = z.output<typeof lakeSchema>;
 
@@ -223,6 +229,10 @@ export interface SmallState {
   provinceSeams?: ProvinceSeam[];
   // 河流类型（第三批，见 river-types.ts）：第一次新建之前没有这一项（不在 defaultSmall 里）
   riverTypes?: RiverType[];
+  // 湖泊类型（第九轮，见 lake-types.ts）：第一次新建之前没有这一项
+  lakeTypes?: LakeType[];
+  // 自然的湖选的类型：这一格所在的那片湖就是这一种（这一格不再是湖时不起作用）。后面的说了算
+  lakeTyping?: { cell: number; type: string }[];
 }
 
 export interface Conflict {
@@ -299,6 +309,9 @@ export interface Derived {
   // 每格是哪一种河（0 普通的河或不是河，k + 1 是 small.riverTypes 的第 k 种），见 river-types.ts 的 typeRivers。
   // 只在世界里有河流类型时才有
   riverType?: Uint8Array;
+  // 每格是哪一种湖（0 普通的湖或不是湖，k + 1 是 small.lakeTypes 的第 k 种；湖面与干涸的湖底都算），见 lake-types.ts 的 typeLakes。
+  // 只在世界里有湖泊类型时才有
+  lakeType?: Uint8Array;
   // 生态、河对周围的影响（第一遍植被之后按它算，见 effects.ts）：每格变暖变冷多少（°C）、降水的对数修正。
   // 只在有生态带“对周围的影响”、或有河流类型带“两岸的影响”时才有
   effT?: Float32Array;
