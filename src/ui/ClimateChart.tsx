@@ -18,7 +18,7 @@ import {
 import { isVegetated } from '../../core/vegetation';
 import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
-import { adjustPreviewNote, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
+import { adjustPreviewNote, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
 import { paintWith } from './defs/tools';
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
@@ -440,6 +440,8 @@ export function SpeciesPanel() {
       try {
         const list = JSON.parse(text) as Species[];
         if (!Array.isArray(list)) throw new Error('需要一个生态类型的数组');
+        // 带着没见过的脚本：先问（信任了才导入）
+        if (!(await confirmImport(list))) return;
         await exec({
           op: 'batch',
           label: `导入 ${list.length} 种生态`,

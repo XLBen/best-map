@@ -9,9 +9,10 @@ import type { Causes, Derived, Settings, SmallState } from '../core/world';
 
 // 主线程与计算 Worker 之间的消息
 
+// safe：安全模式（脚本不运行）。一个 Worker 从第一次新建、打开起就固定是不是安全模式，换模式时主线程另开一个 Worker
 export type Request =
-  | { kind: 'init'; settings: Partial<Settings>; commands?: Command[] }
-  | { kind: 'load'; doc: WorldDoc }
+  | { kind: 'init'; settings: Partial<Settings>; commands?: Command[]; safe?: boolean }
+  | { kind: 'load'; doc: WorldDoc; safe?: boolean }
   | { kind: 'exec'; cmd: Command }
   | { kind: 'undo' }
   | { kind: 'redo' }
@@ -71,11 +72,29 @@ export interface ExportJob {
 // warnings：导出时要告诉用户的话（比如极小的省在切线附近分不到像素）
 export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array; warnings?: string[] } | { ok: false; error: string };
 
+// 主线程保存的命令记录（Worker 卡住、崩了时用它恢复世界）：执行、撤销、重做、换一个、新建、打开的回复都带上
+// 上次回复以来变了的命令（engine.docTail）。epoch：Worker 里的引擎换一个（新建、打开）就加一，那时 from 为 0
+export interface MirrorLog extends DocTail {
+  epoch: number;
+}
+
+// Worker 主动发来的消息（没有 id）：脚本开始运行、还在算（最多每 250 毫秒一次）、算完（含出错）。
+// 主线程的看门狗只在脚本运行期间计时（见 sandbox.ts）
+export interface ScriptPing {
+  kind: 'script';
+  phase: 'enter' | 'tick' | 'exit';
+  // 谁的脚本（生态名……）
+  label: string;
+}
+
 export type Response =
   | {
       id: number;
       ok: true;
       summary?: string;
+      log?: MirrorLog;
+      // 这个 Worker 是安全模式（新建、打开的回复里带）
+      safe?: boolean;
       // 命令什么都没改：没有快照，也没有进历史
       noop?: boolean;
       snapshot?: Snapshot | LightSnapshot;

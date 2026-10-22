@@ -5,11 +5,10 @@ import {
   busy,
   cursorHint,
   helpOpen,
-  loadDoc,
   loadReference,
   newWorld,
   openPanel,
-  readAutosave,
+  resumeLast,
   sheet,
   showToast,
   uiHidden,
@@ -27,9 +26,11 @@ import { CategoryMore } from './panels/ToolLibrary';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
+import { AskDialog } from './shell/Ask';
 import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
+import { ScriptBanner } from './shell/ScriptBanner';
 import { Sheet } from './shell/Sheet';
 import { TopBar } from './shell/TopBar';
 import { Wizard } from './Wizard';
@@ -104,14 +105,11 @@ export function App() {
         { op: 'generate_provinces', rules: { seed: 3 } },
       ]);
     } else {
-      void readAutosave().then((saved) => {
-        // 回来接着做：直接打开上次的世界；打不开（比如版本变了）再弹向导
-        if (!saved) wizardOpen.value = true;
-        else
-          void loadDoc(saved.doc).then((ok) => {
-            if (ok) showToast('已打开上次的世界');
-            else wizardOpen.value = true;
-          });
+      // 回来接着做：直接打开上次的世界（上次是安全模式就照样用安全模式；带没信任过的脚本时先问）；
+      // 没有、打不开（比如版本变了）、取消了再弹向导
+      void resumeLast().then((ok) => {
+        if (ok) showToast('已打开上次的世界');
+        else wizardOpen.value = true;
       });
     }
     void loadReference();
@@ -154,10 +152,14 @@ export function App() {
         </div>
       )}
       {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
-      <Notice />
+      <div class="notices">
+        <ScriptBanner />
+        <Notice />
+      </div>
       <CursorHint />
       <Wizard />
       <Help />
+      <AskDialog />
     </div>
   );
 }
