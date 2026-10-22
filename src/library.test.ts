@@ -189,4 +189,19 @@ describe('信任的脚本', () => {
     await removePack('theirs');
     await removePack('mine2');
   });
+
+  it('刚打开页面（还没开过资源包对话框）时，存着的、装进来的包也算信任', async () => {
+    await openDb();
+    const theirs = withScript('stored', 'return 0.41;');
+    const mine = withScript('stored-mine', 'return 0.42;');
+    idb.data.get('packs')!.set('stored', { key: 'stored', pack: theirs, installedAt: 1 });
+    idb.data.get('packs')!.set('stored-mine', { key: 'stored-mine', pack: mine, installedAt: 2, mine: true });
+    // 新的一页：模块重新载入，资源库还只有内置的
+    vi.resetModules();
+    const lib = await import('./library');
+    const tr = await import('./trust');
+    expect(lib.library.value.map((e) => e.key)).toEqual(['fantasy']);
+    expect(await tr.untrustedScripts(theirs)).toEqual([]);
+    expect((await tr.untrustedScripts(mine)).length).toBe(1);
+  });
 });

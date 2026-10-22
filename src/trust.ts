@@ -53,15 +53,23 @@ export function uniqueScripts(list: readonly FoundScript[]): FoundScript[] {
   });
 }
 
-// 总是信任的脚本：内置的示例生态、星球形态；资源库（另一批）在这里登记自己的：f 返回任意 JSON
-// （资源包、生态列表……），里面的脚本都算
+// 总是信任的脚本：内置的示例生态、星球形态；资源库（library.ts）在这里登记自己的：f 返回任意 JSON
+// （资源包、生态列表……，可以先等一等，比如先把存着的资源库读进来），里面的脚本都算。哪一处出错就跳过那一处
 const sources: (() => unknown)[] = [() => FANTASY_BIOMES, () => FANTASY_FORMS];
 export function addTrustedSource(f: () => unknown): void {
   sources.push(f);
 }
 async function always(): Promise<Set<string>> {
   const out = new Set<string>();
-  for (const f of sources) for (const s of findScripts(f())) out.add(await keyOf(s.src));
+  for (const f of sources) {
+    let json: unknown;
+    try {
+      json = await f();
+    } catch {
+      continue;
+    }
+    for (const s of findScripts(json)) out.add(await keyOf(s.src));
+  }
   return out;
 }
 

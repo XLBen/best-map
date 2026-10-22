@@ -101,5 +101,11 @@ export async function removePack(key: string): Promise<void> {
 // 信任的脚本只有一处：trust.ts（按源码的 SHA-256 记在 kv 的 trustedScripts）。导入资源包时用户点了“信任并安装”，
 // 包里的脚本在那里记为信任（见 PackDialog）；这里把资源库登记成总是信任的来源：内置的示例包，和导入时信任过、
 // 装进来的包（整理信任列表时不会被挤掉，装着就一直信任）。“我的资源”不算：从世界里导出的脚本可能来自
-// 没运行脚本打开的别人的世界，没信任过的以后用到世界时照样先问
-addTrustedSource(() => library.value.filter((e) => !e.mine).map((e) => e.pack));
+// 没运行脚本打开的别人的世界，没信任过的以后用到世界时照样先问。
+// 第一次查信任时先把存着的资源库读进来：刚打开页面、还没开过资源包对话框时（比如读自动保存），装着的包也算
+let loaded: Promise<unknown> | null = null;
+addTrustedSource(async () => {
+  loaded ??= refreshLibrary();
+  await loaded;
+  return library.value.filter((e) => !e.mine).map((e) => e.pack);
+});
