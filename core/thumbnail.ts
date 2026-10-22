@@ -1,24 +1,45 @@
-import { blendRgb } from './biome-look';
+import { GLOW_GAIN, blendRgb, cellFx, fxSet, meanTint } from './biome-look';
 import { hexToRgb } from './export';
 import { rasterizeWorld } from './subcell';
 import type { World } from './world';
 
 // 新建向导的缩略图：与屏幕、导出用同一套栅格化（格以下的海岸、地表细节），
-// 按格的植被份额着色、叠晕渲（CPU 栅格化，在 Worker 里跑）
+// 按格的植被份额着色（有颜色脚本时用它算好的 d.look）、叠晕渲（CPU 栅格化，在 Worker 里跑）。
+// 生态的花纹画成拉远时的平均色、发光加在晕渲之后，与屏幕上拉远看时一样（core/biome-look.ts）；没有花纹、发光时整段跳过
 export function renderThumbnail(world: World, width: number, height: number): Uint8ClampedArray {
   const { mesh, causes, derived: d, small } = world;
   const r = rasterizeWorld(world, width, height);
   const colors = small.species.map((s) => hexToRgb(s.color));
   const cellColor = new Float32Array(mesh.n * 3);
+  const S = small.species.length;
+  const look = d.look;
+  const fx = fxSet(small.species, mesh.kind === 'sphere');
+  // 每格发光加多少（0–255）
+  const glow = fx ? new Float32Array(mesh.n * 3) : null;
+  const cf = new Float64Array(4);
   for (let i = 0; i < mesh.n; i++) {
     if (!causes.land[i]) continue;
     let c: [number, number, number];
     if (d.lake[i] === 1) c = [70, 125, 175];
     else {
-      c = blendRgb(d.share, i, colors);
+      c = look && look[i * 4 + 3] ? [look[i * 4], look[i * 4 + 1], look[i * 4 + 2]] : blendRgb(d.share, i, colors);
+      let k = 0;
       if (d.tWarm[i] < 0) {
-        const k = Math.min(1, -d.tWarm[i] / 6);
+        k = Math.min(1, -d.tWarm[i] / 6);
         c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
+      }
+      if (fx && glow) {
+        // 与屏幕相同：雪、盐壳盖住的地方不画花纹
+        cellFx(fx, d.share, i, S, cf);
+        meanTint(fx, cf, d.lake[i] === 2 ? 0 : 1 - k, c);
+        if (cf[3] >= 0) {
+          const g = fx.looks[cf[3]].glowColor;
+          // 屏幕上发光的量是一个字节
+          const a = (Math.round(255 * cf[2]) / 255) * GLOW_GAIN;
+          glow[3 * i] = g[0] * a;
+          glow[3 * i + 1] = g[1] * a;
+          glow[3 * i + 2] = g[2] * a;
+        }
       }
     }
     cellColor[3 * i] = c[0];
@@ -65,6 +86,11 @@ export function renderThumbnail(world: World, width: number, height: number): Ui
         cr = cellColor[3 * c] * shade;
         cg = cellColor[3 * c + 1] * shade;
         cb = cellColor[3 * c + 2] * shade;
+        if (glow) {
+          cr += glow[3 * c];
+          cg += glow[3 * c + 1];
+          cb += glow[3 * c + 2];
+        }
         // 海岸线略深
         const coast = sphere
           ? !land[py * width + wrapPx(px - 1)] || !land[py * width + wrapPx(px + 1)] || (py > 0 && !land[p - width]) || (py < height - 1 && !land[p + width])

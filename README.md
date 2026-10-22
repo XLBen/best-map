@@ -149,12 +149,14 @@ npx tsx tools/bench.ts --globe                        # 整个星球（10 万格
 
 游戏文件包（.zip）里有：`heightmap.bmp`（8 位）与 `heightmap16.png`（16 位）、`provinces.bmp` + `definition.csv`、`provinces_summary.csv`（含省份类型）、`terrain.bmp`、`biomes.bmp`、`rivers.bmp`、`features.csv`（地名表：类型、名字、面积、在图上的像素坐标与经纬度，含自己圈的地区和放的地名）和 `world.json`。位图与屏幕用同一套格以下的海岸、自然弯曲的边界和平滑的河道，所以导出的图和屏幕上看到的一致。
 
+生态的花纹（闪光、裂纹、斑驳、脉络、斑点、条纹）、发光和颜色脚本算出的颜色画在屏幕上和当前画面的 PNG 里；新建向导的缩略图也有，花纹按拉远时的平均色画。`biomes.bmp`、`terrain.bmp` 照旧是每种生态一种颜色的分类图：游戏要知道的是“这一格是什么”，不是它画出来的样子，所以有意不画进去。
+
 ## 文件结构
 
 - `core/`：纯计算，不依赖 DOM，Node 与浏览器共用
   - `mesh.ts` 网格（平面、球面两种）；`sphere.ts` 球面网格（斐波那契撒点、球面 Delaunay、显示用的三角网、最近格）；`geo.ts` 整个星球的几何（经度绕回、球面距离、大圆、球面上的圆）；`generate.ts` 随机世界（地壳高度、板块、火山锥）；`planet-gen.ts` 整个星球的生成器（球面上的板块、大陆块、热点岛链）；`terrain.ts` 组合地形、画笔、放岛、岛链；`elevation.ts` 抬升-侵蚀稳态与湖
   - `climate.ts` 日照温度、风带季风、水汽输运；`planet-climate.ts` 整个星球的气候；`sphere-flow.ts` 球面上的输送（绕星球一圈的风带不剪断）；`ocean.ts` 简化洋流与海面温度；`hydrology.ts` 填洼汇流、湖、径流；`rivers.ts` 河流折线
-  - `species.ts` 生态类型（色块 + 条件 + 耐受曲线）；`vegetation.ts` 适宜度 / 竞争 / 扩散；`constraints.ts` 涂生态的反推与“没涂成”的原因；`endemic.ts` 岛屿特有生态
+  - `species.ts` 生态类型（色块 + 条件 + 耐受曲线）；`vegetation.ts` 适宜度 / 竞争 / 扩散；`constraints.ts` 涂生态的反推与“没涂成”的原因；`endemic.ts` 岛屿特有生态；`biome-look.ts` 生态在地图上的样子（颜色脚本、花纹与发光的算式，屏幕与缩略图共用）
   - `features.ts` 地理要素识别，用户圈的地名区块也在这里变成地名；`names.ts` + `packs/zh.json` 文字包命名
   - `provinces.ts` 省份规则、划分、局部重划、修补；`select.ts` 画笔、拖动扩张、画河的路线（汇入、改道、会变干的河段）、圈一片、剪刀沿线切省
   - `commands.ts` 命令（zod 校验、撤销记录）；`engine.ts` 流水线、历史（撤销只从那一步影响到的那一层重算）、文档

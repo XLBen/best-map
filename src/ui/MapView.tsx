@@ -5,7 +5,7 @@ import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
-import { type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, editGhost, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
+import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
 import { type CellLayers, Renderer } from '../render/renderer';
 import {
@@ -34,6 +34,7 @@ import {
   showToast,
   sliderActive,
   tool,
+  visualOverrides,
   world,
   worldEpoch,
 } from '../state';
@@ -382,6 +383,7 @@ export function MapView() {
       const ap = adjustPreviewWorld.value;
       const shown = clean ? w : (preview.world ?? (ap && ap.base === w ? ap.world : null) ?? w);
       applyColors(shown);
+      applyFx(shown, clean);
       if (clean) {
         renderer.setHighlight(null);
         lastHighlightKey = [];
@@ -477,21 +479,22 @@ export function MapView() {
     let colorKey: unknown[] = [];
     const colorCache: { key: unknown[]; layers: ReturnType<typeof cellLayers> }[] = [];
     const sameKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
-    // 小数据里着色用到的部分（省份类型、切线、生态颜色、海岸曲折）连成一个字符串：每帧都要比，按小数据对象缓存
+    // 小数据里着色用到的部分（colors.ts 的 colorSignature，含生态的外观）：每帧都要比，按小数据对象缓存
     const smallKeys = new WeakMap<World['small'], string>();
     function smallKey(w: World): string {
       let k = smallKeys.get(w.small);
       if (k === undefined) {
-        const kinds = Object.entries(w.small.provinces).map(([p, m]) => `${p}:${m.kind}`);
-        const seams = (w.small.provinceSeams ?? []).map((s) => s.id);
-        const colors = w.small.species.map((s) => s.color);
-        k = `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${w.small.terrain.coastRoughness}`;
+        k = colorSignature(w.small);
         smallKeys.set(w.small, k);
       }
       return k;
     }
+    // 这次着色的选项（拖花纹、发光滑块时按它重算花纹）与花纹覆盖的键（见 applyFx）
+    let colorOpts: ColorOptions | null = null;
+    let fxKey: unknown[] = [];
     function applyColors(w: World) {
       const o = { mode: mode.value, season: season.value, focusSpecies: focusSpecies.value, borders: overlays.value.borders && (category.value === 'provinces' || mode.value === 'provinces') };
+      colorOpts = o;
       const arrays: unknown[] = [];
       for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
       for (const v of Object.values(w.causes)) if (ArrayBuffer.isView(v)) arrays.push(v);
@@ -513,6 +516,21 @@ export function MapView() {
       // 幽灵海岸跟着新的底子重来
       ghostBuf = null;
       ghostKey = [];
+      // setLayers 换回了着色里的花纹：外观覆盖要重新给
+      fxKey = [];
+    }
+
+    // 拖花纹、发光滑块时的外观覆盖（state.ts 的 setSpeciesVisualOverride）：主线程上按覆盖的外观重算每格的花纹（几毫秒），
+    // 不等引擎。画出来的世界里没有被覆盖的生态时用着色里的那一份；导出图片的干净画面只画世界里存着的样子
+    function applyFx(w: World, clean: boolean) {
+      if (!baseLayers || !colorOpts) return;
+      const ov = visualOverrides.value;
+      const on = !clean && ov.size > 0 && w.small.species.some((sp) => ov.has(sp.id));
+      const key = [baseLayers, on ? ov : null, on ? w : null];
+      if (sameKey(key, fxKey)) return;
+      fxKey = key;
+      const f = on ? fxLayers(w, colorOpts, ov) : null;
+      renderer.setFx(on ? (f?.fx ?? null) : (baseLayers.fx ?? null), on ? (f?.palette ?? null) : (baseLayers.fxPalette ?? null));
     }
     // 着色的选项变了、调整面板的预览世界到了：重画
     const disposeColors = effect(() => {
@@ -553,6 +571,7 @@ export function MapView() {
       void measure.value;
       void reference.value;
       void redrawTick.value;
+      void visualOverrides.value;
       void pendingEdits.value;
       void barPreview.value;
       requestDraw();
