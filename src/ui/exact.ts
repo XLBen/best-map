@@ -21,6 +21,8 @@ export class Exact {
   // 停顿到了、要预览时的当前世界：同一个 key 在同一个世界上只要一次（没算成也不再要；世界换了再要）
   private asked: World | null = null;
   private shown: ExactView | null = null;
+  // 发出去还没回来的那一个（见 late）
+  private flight: { key: string; done: Promise<ExactView | null> } | null = null;
   // 清掉一次加一：清掉之前发出去的预览回来了也不要
   private gen = 0;
   // 太慢不自动预览：松手后大约几秒出结果
@@ -47,16 +49,25 @@ export class Exact {
       }
       this.running = key;
       const gen = this.gen;
-      void previewWorld(cmd).then((r) => {
+      const done = previewWorld(cmd).then((r): ExactView | null => (r ? { ...r, key } : null));
+      this.flight = { key, done };
+      void done.then((v) => {
+        if (this.flight?.done === done) this.flight = null;
         if (gen !== this.gen) return;
         if (this.running === key) this.running = '';
-        if (r) {
-          this.shown = { ...r, key };
-          this.asked = r.base;
+        if (v) {
+          this.shown = v;
+          this.asked = v.base;
         }
         redrawTick.value++;
       });
     }, exactDelay(pause));
+  }
+
+  // key 的预览已经发出去、还没回来：回来时的结果（之后 clear 了也照样给）。画笔松手时用它把这一笔的确切预览
+  // 交给排队中的那一笔：接着画下一笔、换了工具（ex 清掉了）也不丢，回来就画出将来的世界。没有在算的为 null
+  late(key: string): Promise<ExactView | null> | null {
+    return this.flight?.key === key ? this.flight.done : null;
   }
 
   // 当前世界上能显示的确切预览（可能是前一个 key 的）；世界换了就没有
@@ -82,6 +93,7 @@ export class Exact {
     this.shown = null;
     this.slow = null;
     this.running = '';
+    this.flight = null;
     this.asked = null;
   }
 

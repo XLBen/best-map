@@ -283,10 +283,12 @@ export function MapView() {
     let baseLayers: CellLayers | null = null;
     let ghostBuf: GhostBuffer | null = null;
     let ghostKey: unknown[] = [];
+    // 省份预览（setGroupPreview）显示着时分组、平涂听它的；它去掉时换回的是底子，幽灵改过的那几格的分组、平涂也没了：
+    // 所以键里带上有没有省份预览，去掉时把幽灵重新给一次（比如排队的陆地笔画还在时，鼠标从“对半分开”上移开）
     function applyGhost(w: World, pv: Preview | null) {
       const terrain = pv ? (pv.terrain ?? adjustPreview.value) : null;
       const edit = terrain ? null : (pv?.ghost ?? null);
-      const key = [w, baseLayers, terrain, edit];
+      const key = [w, baseLayers, terrain, edit, !!pv?.provinces];
       if (key.length === ghostKey.length && key.every((k, i) => k === ghostKey[i])) return;
       ghostKey = key;
       if (!baseLayers || (!terrain && !edit && !ghostBuf)) return;

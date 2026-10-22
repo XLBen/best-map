@@ -7,7 +7,7 @@ import { type IslandSpec, chainIslands, islandStamp, landStroke, previewTerrain,
 import { continents } from '../../core/testing/fixtures';
 import { scissors, seamLayers } from '../../core/seams';
 import { groupPreview, provinceFlat, provinceGroups } from '../render/colors';
-import { busy, describeChange, exec, options, previewProvinces, selectedProvince, setOptions, sliderActive, toast, world } from '../state';
+import { busy, describeChange, exec, noteCost, options, previewProvinces, previewTerrainOnce, selectedProvince, setOptions, sliderActive, toast, world } from '../state';
 import { TOOL_DEFS } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { barPreview, clearBarPreview, showProvinceCommand, showSplit } from './provincePreview';
@@ -660,15 +660,19 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     expect(pendingEdits.value).toHaveLength(1);
     const e = pendingEdits.value[0];
     expect(pendingPreview(e, w).ghost).toBe(drawn);
+    // 松手后在底部条上换成“画海”：发出的命令还是画陆地，排着的这一笔重算时也照旧按画陆地
+    setOptions({ landMode: 'sea' });
     // 前面的编辑换上了（同一处先放了一个岛）：这一笔的增量按新的世界算，与那时执行的相同
     const sent = vi.mocked(exec).mock.calls.at(-1)![0];
     if (sent.op !== 'paint_land') throw new Error('应当发出画陆地的命令');
+    expect(sent.mode).toBe('land');
     const eng = continents();
     const st = islandStamp(eng.world, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'volcanic', size: 3 * w.mesh.spacing * w.kmPerUnit, variant: 0 });
     eng.exec({ op: 'paint_land', cells: st.cells, t: st.cells.map(() => 0), mode: 'land' });
     const after = eng.world;
     const r = landStroke(after, sent.cells, sent.t, 'land');
     expect(pendingPreview(e, after).ghost).toEqual({ cells: r.cells, delta: r.delta });
+    setOptions({ landMode: 'land' });
     finish(true);
     await done;
     expect(pendingEdits.value).toEqual([]);
@@ -773,6 +777,36 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     const t = rerollTool();
     await Promise.all([t.click?.(at(w, c)), t.click?.(at(w, c))]);
     expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  it('重画这一片：上次重画（预览或执行）超过约 600 毫秒就不自动预览（与确切预览同一个成本闸门），点了不等预览直接重画', async () => {
+    const w = setup();
+    vi.mocked(exec).mockClear();
+    vi.mocked(previewTerrainOnce).mockClear();
+    const c = rerollable(w, 0.5);
+    const cost = (ms: number) => noteCost({ op: 'reroll_region', x: 0, y: 0, radius: 1, variant: 1 }, ms);
+    cost(2400);
+    vi.useFakeTimers();
+    try {
+      const t = rerollTool();
+      t.move?.(at(w, c), false);
+      expect(t.preview().hint).toBe('松手后约 2 秒出结果');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(previewTerrainOnce).not.toHaveBeenCalled();
+      await t.click?.(at(w, c));
+      expect(previewTerrainOnce).not.toHaveBeenCalled();
+      expect(vi.mocked(exec).mock.calls[0][0]).toMatchObject({ op: 'reroll_region', x: w.mesh.x[c], y: w.mesh.y[c] });
+      // 快了（比如这一次执行得快）：照常停一下就预览
+      cost(120);
+      const other = rerollable(w, 0.7);
+      t.move?.(at(w, other), false);
+      expect(t.preview().hint).toBeNull();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(previewTerrainOnce).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      cost(0);
+    }
   });
 
   it('重画这一片：点了以后算的期间，鼠标挪开、离开地图也一直画着点的那一份', async () => {

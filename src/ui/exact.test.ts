@@ -224,6 +224,51 @@ describe('排队中的笔画', () => {
     await done;
     expect(pendingEdits.value).toEqual([]);
   });
+
+  it('松手时预览还在算：马上画下一笔、再换工具（确切预览都清掉了），回来时照样交给排队中的那一笔', async () => {
+    const { w, c, d } = setup();
+    const finish: ((ok: boolean) => void)[] = [];
+    vi.mocked(exec)
+      .mockImplementationOnce(() => new Promise<boolean>((r) => finish.push(r)))
+      .mockImplementationOnce(() => new Promise<boolean>((r) => finish.push(r)));
+    let reply: () => void = () => {};
+    vi.mocked(previewWorld).mockImplementationOnce(
+      (cmd: Command) =>
+        new Promise((r) => {
+          reply = () => {
+            const { result, patch } = eng.previewWorld(cmd);
+            r({ result, world: previewWorldOf(w, structuredClone(patch)), base: w });
+          };
+        }),
+    );
+    const t = biomeTool();
+    t.down?.(at(w, c));
+    t.move?.(at(w, d), true);
+    t.preview();
+    vi.advanceTimersByTime(300);
+    await settle();
+    expect(previewWorld).toHaveBeenCalledTimes(1);
+    const first = t.up?.(at(w, d));
+    const e = pendingEdits.value[0];
+    // 预览还没回来：接着画下一笔（松手），再换工具
+    t.down?.(at(w, c));
+    const second = t.up?.(at(w, c));
+    t.cancel?.();
+    expect(pendingEdits.value).toHaveLength(2);
+    expect(pendingPreview(e, w).world ?? null).toBeNull();
+    reply();
+    await settle();
+    // 第一笔画出将来的世界；松手时整笔都算进了预览，所以只有变了的格的描边，没有另外涂的估计色
+    const v = pendingPreview(e, w);
+    expect(v.world).toBeTruthy();
+    expect(v.layers).toHaveLength(1);
+    expect(v.layers[0].pattern).toBe('outline');
+    // 第二笔没有停顿过：照旧是松手时的估计
+    expect(pendingPreview(pendingEdits.value[1], w).world ?? null).toBeNull();
+    finish.forEach((f) => f(true));
+    await Promise.all([first, second]);
+    expect(pendingEdits.value).toEqual([]);
+  });
 });
 
 describe('成本闸门', () => {

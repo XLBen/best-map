@@ -202,6 +202,9 @@ interface BrushConfig {
   // 哪些格能被这一笔涂到
   filter?: (w: World, i: number) => boolean;
   layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean; caution?: boolean; provinces?: ProvincePreview | null; ghost?: GhostEdit | null };
+  // 松手后排在队里、前面的编辑换上了新世界时，按新世界重算这一笔的幽灵海岸。在松手时调用：用到的选项（画陆地还是画海……）
+  // 按松手时的定下来，与 commit 发出的命令相同（之后在底部条上换了也不跟着变）。省略时用 layers 重算（只看笔画、不看选项的画笔）
+  ghostAt?: (s: Stroke, shift: boolean) => (w: World) => GhostEdit | null;
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
   // 画笔圈画在半径的几倍处：最后一个是主圈（悬停时虚线、按住时实线），前面的是细实线。省略时只在半径处画一圈
   rings?: number[];
@@ -300,13 +303,13 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   // 排队中的一笔现在画成什么样（地图每帧问一次，见 pending.ts）：世界换了（排在前面的编辑算完换上了）就按新世界
   // 重算它的幽灵海岸，排在最前的那一笔的增量因此与执行时相同；松手后才算好的确切预览到了，画出将来的世界、
   // 变了的格描边。输入没变就给同一个对象（地图不必重新上传）
-  const liveOf = (q: Queued, at: Preview, w0: World) => {
+  const liveOf = (q: Queued, at: Preview, w0: World, ghostAt: (w: World) => GhostEdit | null) => {
     let memo: { w: World; v: ExactView | null; out: Preview } | null = null;
     let ghost: { w: World; g: GhostEdit | null } = { w: w0, g: at.ghost ?? null };
     return (now: World): Preview => {
       const v = viewOf(q, now);
       if (memo?.w === now && memo.v === v) return memo.out;
-      if (at.ghost && ghost.w !== now) ghost = { w: now, g: cfg.layers(now, q.s, q.shift).ghost ?? null };
+      if (at.ghost && ghost.w !== now) ghost = { w: now, g: ghostAt(now) };
       let out: Preview = ghost.g === at.ghost ? at : { ...at, ghost: ghost.g };
       if (v) out = { ...out, layers: exactLayers(v, q.s, () => at.layers), world: v.world };
       memo = { w: now, v, out };
@@ -363,7 +366,8 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       // 新的一笔：上一笔松手后才算好的确切预览交给它的排队项，拖滑块时预览的那一下不要了
       handOver();
       ex.clear();
-      const kept = new Set(queued.map((q) => q.view?.key));
+      // 排队中的笔画用得到的留着：已经交过去的，和松手时还在算、回来才交过去的（见 up）
+      const kept = new Set(queued.flatMap((q) => [q.key, q.view?.key]));
       for (const k of [...covered.keys()]) if (!kept.has(k)) covered.delete(k);
       stroke = new Stroke();
       stroke.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
@@ -390,9 +394,17 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       const r = cfg.layers(w, s, p.shift);
       const q: Queued = { s, shift: p.shift, key, view: ex.view };
       const at: Preview = { layers: r.layers, shapes: [], hint: null, provinces: r.provinces ?? null, ghost: r.ghost ?? null };
+      // 松手时还在算的就是这一笔的确切预览：回来时直接交给它。接着画下一笔、换了工具（ex 清掉了）也不丢，
+      // 回来就画出将来的世界，不等到结果换上时才跳过去
+      void (key ? ex.late(key) : null)?.then((v) => {
+        if (!v) return;
+        q.view = v;
+        redrawTick.value++;
+      });
+      const ghostAt = cfg.ghostAt?.(s, p.shift) ?? ((now: World) => cfg.layers(now, s, p.shift).ghost ?? null);
       queued.push(q);
       try {
-        await trackEdit(at, cfg.commit(w, s, p.shift), liveOf(q, at, w));
+        await trackEdit(at, cfg.commit(w, s, p.shift), liveOf(q, at, w, ghostAt));
       } finally {
         queued = queued.filter((x) => x !== q);
       }
@@ -468,6 +480,14 @@ export function landTool(): ToolHandler {
       const out = { layers: [], ghost: { cells: r.cells, delta: r.delta }, hint: mode === 'land' ? `陆地 +${p.gained.length} 格` : `陆地 −${p.lost.length} 格` };
       memo = { w, s, v: s.rev, mode, out };
       return out;
+    },
+    // 排队时按新的世界重算：画陆地还是画海按松手时的（与发出的命令相同；之后在底部条上换了也不跟着变）
+    ghostAt(s, shift) {
+      const mode = modeOf(shift);
+      return (w) => {
+        const r = landStroke(w, s.cells, s.ts, mode);
+        return { cells: r.cells, delta: r.delta };
+      };
     },
     commit: (_w, s, shift) => exec({ op: 'paint_land', cells: s.cells, t: s.ts, mode: modeOf(shift) }),
     // 0.7 倍半径以内一定变（细实线）；海岸平均落在 0.85 倍处（主圈），再往外只是零星几格
