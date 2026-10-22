@@ -91,8 +91,10 @@ export interface ColorOptions {
 
 // 与视图模式无关、只取决于世界的逐格数据，按世界缓存。
 // 湖在画面上是水面：海岸值取负（有岸线、有格以下的岸线细节）、高程取负的水深（浅水边）、坡度为 0
-// 按高程数组缓存（只改了名字、省份的轻快照沿用同一个数组）
-const staticCache = new WeakMap<Float32Array, { coast: Float32Array; grad: Float32Array; elevation: Float32Array }>();
+// 按用到的数组缓存：高程、湖、水面、陆海、陆地程度（只改了名字、省份的轻快照沿用同一批数组）。
+// 预览世界只换变了的数组：整体干湿的预览高程不变、湖变了，不能只看高程，否则会画出旧的湖
+type StaticLayers = { coast: Float32Array; grad: Float32Array; elevation: Float32Array };
+const staticCache = new WeakMap<Float32Array, { inputs: ArrayBufferView[]; value: StaticLayers }[]>();
 
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
 // 湖水深（m），至少 2 m
@@ -102,9 +104,20 @@ const lakeCoast = (c: number) => -Math.max(60, Math.abs(c));
 // 水面的暖度（浅水颜色用，放在颜色的 alpha 里）
 const warmth = (world: World, i: number) => Math.round(255 * Math.min(1, Math.max(0, (world.derived.tMean[i] - 14) / 12)));
 
-function staticLayers(world: World) {
-  let c = staticCache.get(world.derived.elevation);
-  if (c) return c;
+function staticLayers(world: World): StaticLayers {
+  const inputs = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness];
+  let list = staticCache.get(world.derived.elevation);
+  if (!list) staticCache.set(world.derived.elevation, (list = []));
+  const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
+  if (hit) return hit.value;
+  const c = computeStatic(world);
+  // 同一份高程最多留两份（当前世界与预览世界）
+  list.unshift({ inputs, value: c });
+  list.length = Math.min(list.length, 2);
+  return c;
+}
+
+function computeStatic(world: World): StaticLayers {
   const { mesh, derived: d, causes } = world;
   const coast = coastValues(world);
   const elevation = d.elevation.slice();
@@ -124,9 +137,7 @@ function staticLayers(world: World) {
     grad[2 * i] = gx;
     grad[2 * i + 1] = gy;
   }
-  c = { coast, grad, elevation };
-  staticCache.set(world.derived.elevation, c);
-  return c;
+  return { coast, grad, elevation };
 }
 
 export function cellLayers(world: World, o: ColorOptions): CellLayers {

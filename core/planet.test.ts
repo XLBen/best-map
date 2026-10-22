@@ -201,4 +201,33 @@ describe('生成整个星球', () => {
     }
     expect(digestWorld(a.world)).toEqual(before);
   });
+
+  it('先预览再执行 = 直接执行（采用预览），撤销后回到原样：整体冷暖、冷暖画笔、画陆地', () => {
+    const make = () => {
+      const eng = new Engine(globe(3000), meshOf(3000));
+      eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
+      return eng;
+    };
+    const w0 = make().world;
+    const land = [...Array(w0.mesh.n).keys()].filter((i) => w0.causes.land[i]).slice(0, 120);
+    const coast = coastalStroke(w0, 0.3, 4);
+    const cmds: Command[] = [
+      { op: 'set_planet', patch: { solar: 0.92 } },
+      { op: 'paint', field: 'tempOffset', cells: land, values: land.map(() => -4), mode: 'add' },
+      { op: 'paint_land', cells: coast, t: coast.map(() => 0), mode: 'land' },
+    ];
+    for (const cmd of cmds) {
+      const a = make();
+      const b = make();
+      const before = digestWorld(a.world);
+      a.preview(cmd);
+      const previewed = (a as unknown as { lastPreview: { copy: Engine } }).lastPreview.copy.world.derived;
+      a.exec(cmd);
+      expect(a.world.derived, cmd.op).toBe(previewed);
+      b.exec(cmd);
+      expect(digestWorld(a.world), cmd.op).toEqual(digestWorld(b.world));
+      a.undo();
+      expect(digestWorld(a.world), cmd.op).toEqual(before);
+    }
+  });
 });

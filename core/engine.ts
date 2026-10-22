@@ -6,6 +6,7 @@ import { computeElevation } from './elevation';
 import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
+import { type PreviewPatch, previewPatch } from './preview-world';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
@@ -70,8 +71,13 @@ interface UndoneStep {
   state?: DerivedState;
 }
 
+// 状态编号：引擎的状态每变一次（新建、打开、执行、撤销、重做、换一个）就换一个新的，同一个 Worker 里不重复。
+// 快照、预览都带着它：主线程只显示按当前世界的状态算出来的预览，过期的丢掉
+let states = 0;
+
 export class Engine {
   world: World;
+  stateId = ++states;
   private base: ClimateBase | null = null;
   private solve: SolveResult = { plans: [] };
   private dirty: Dirty = Dirty.Elevation;
@@ -112,10 +118,14 @@ export class Engine {
   // 执行命令；推导立即更新。命令什么都没改时不重算、不进历史（lastNoop）
   exec(cmd: Command): string {
     const adopted = this.adoptPreview(cmd);
-    if (adopted !== null) return adopted;
+    if (adopted !== null) {
+      this.stateId = ++states;
+      return adopted;
+    }
     const fresh = this.dirty === Dirty.None;
     const { summary } = this.applyOnly(cmd, true);
     if (this.lastNoop) return summary;
+    this.stateId = ++states;
     this.dropUndone();
     this.keepBefore(fresh);
     this.update();
@@ -189,6 +199,7 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const h = this.revertLast();
     if (!h) return false;
+    this.stateId = ++states;
     const step: UndoneStep = { cmd: h.cmd, summary: h.summary };
     const before = h.state;
     h.state = undefined;
@@ -209,6 +220,7 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const h = this.undone.pop();
     if (!h) return false;
+    this.stateId = ++states;
     const after = h.state;
     h.state = undefined;
     this.applyOnly(h.cmd);
@@ -241,6 +253,7 @@ export class Engine {
       this.update();
       throw e;
     }
+    this.stateId = ++states;
     this.dropUndone();
     const step = this.done[this.done.length - 1];
     if (before && step.dirty > Dirty.Names) this.keep(step, before);
@@ -372,6 +385,7 @@ export class Engine {
     e.lastPreview = null;
     e.features = true;
     e.lastTimings = cp.timings;
+    e.stateId = ++states;
     while (e.done.length > p) e.revertLast();
     for (let k = p; k < doc.commands.length; k++) {
       try {
@@ -404,23 +418,40 @@ export class Engine {
   // 紧接着执行同一条命令时直接采用
   preview(cmd: Command): PreviewResult {
     this.update();
+    // 先放掉上一份副本（星球上一份约 30 MB），再复制新的
+    this.lastPreview = null;
+    const t0 = performance.now();
     const copy = this.clone();
     const { changed } = copy.applyOnly(cmd);
     copy.update();
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
-    return diffWorlds(this.world, copy.world);
+    const step = copy.done[copy.done.length - 1];
+    const ms = performance.now() - t0;
+    return { ...diffWorlds(this.world, copy.world), ...landAndFailing(this.world, copy.world), summary: step?.summary ?? '', ms, stateId: this.stateId };
   }
 
-  // 采用预览算好的结果：只用于只改小数据的命令（画河、改道），原因数组不变，世界对象也不换
-  // （地形底图缓存按世界对象存）。返回这一步的说明；用不上时返回 null。
+  // 采用预览算好的结果：紧接着执行同一条命令时直接换上副本的原因、小数据与推导，不再重算（画河、
+  // 涂生态、冷暖干湿、调整面板松手时）。原因数组抄进当前世界的数组里，世界对象不换（地形底图缓存按世界对象存，
+  // 换成副本的那一份：重画一片时副本另建过）。返回这一步的说明；用不上时返回 null。
   // 预览的命令什么都没改时不采用：照常执行，按“没有变化”处理，不进历史
   private adoptPreview(cmd: Command): string | null {
     const p = this.lastPreview;
     this.lastPreview = null;
     if (!p || !p.changed || this.dirty !== Dirty.None || p.key !== JSON.stringify(cmd)) return null;
     const step = p.copy.done[p.copy.done.length - 1];
-    if (!step || step.undo.arrays.length || step.undo.fields.length) return null;
-    this.world.small = p.copy.world.small;
+    if (!step) return null;
+    const copy = p.copy.world;
+    const live = this.world.causes as unknown as Record<string, unknown>;
+    for (const [k, v] of Object.entries(copy.causes)) {
+      if (!ArrayBuffer.isView(v)) continue;
+      // 当前世界没有这个数组（命令新建的）或长短不同：直接换上副本的（副本之后就丢了）
+      const a = live[k] as Float32Array | undefined;
+      if (a && a.length === (v as Float32Array).length) a.set(v as Float32Array);
+      else live[k] = v;
+    }
+    this.world.causes.fields = copy.causes.fields;
+    shareTerrainBase(copy, this.world);
+    this.world.small = copy.small;
     this.done.push({ id: ++this.seq, cmd: step.cmd, undo: step.undo, summary: step.summary, dirty: step.dirty });
     this.dropUndone();
     // 换下来的推导不再被改动，直接留给撤销
@@ -429,6 +460,12 @@ export class Engine {
     this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
     this.lastNoop = false;
     return step.summary;
+  }
+
+  // 预览，并带上将来的世界与当前世界的差别（只带内容变了的数组，见 preview-world.ts）：地图据此画出将来的样子
+  previewWorld(cmd: Command): { result: PreviewResult; patch: PreviewPatch } {
+    const result = this.preview(cmd);
+    return { result, patch: previewPatch(this.world, this.lastPreview!.copy.world) };
   }
 
   // 副本：原因、推导、小数据都复制，历史照旧（撤销记录里的数组只读，自定义场的旧数组会被放回世界，另外复制）。
@@ -451,6 +488,7 @@ export class Engine {
     e.lastPreview = null;
     e.features = this.features;
     e.lastTimings = this.lastTimings;
+    e.stateId = this.stateId;
     return e;
   }
 }
@@ -486,7 +524,28 @@ export interface DocTail extends Omit<WorldDoc, 'commands'> {
   ids: number[];
 }
 
-export interface PreviewResult {
+// 第八轮加的几项（在 diffWorlds 之外算）：执行后涂不成的格（与执行后的冲突一致）、变成陆地 / 变成海的格、
+// 历史里会写的话、预览算了多久（毫秒，成本闸门用）、按哪个状态算的（主线程只显示与当前世界同一状态的预览）
+export interface PreviewExtras {
+  failing: number[];
+  landGained: number[];
+  landLost: number[];
+  summary: string;
+  ms: number;
+  stateId: number;
+}
+
+// 陆海的变化与执行后没涂成的格
+function landAndFailing(a: World, b: World): Pick<PreviewExtras, 'failing' | 'landGained' | 'landLost'> {
+  const landGained: number[] = [];
+  const landLost: number[] = [];
+  const la = a.causes.land;
+  const lb = b.causes.land;
+  for (let i = 0; i < la.length; i++) if (la[i] !== lb[i]) (lb[i] ? landGained : landLost).push(i);
+  return { failing: b.derived.conflicts.flatMap((c) => c.failing), landGained, landLost };
+}
+
+export interface PreviewResult extends PreviewExtras {
   // 主导类型改变的格
   changedCells: number[];
   // 新出现 / 消失的河流格
@@ -499,7 +558,7 @@ export interface PreviewResult {
   satisfied: { id: string; satisfied: number; required: number }[];
 }
 
-function diffWorlds(a: World, b: World): PreviewResult {
+function diffWorlds(a: World, b: World): Omit<PreviewResult, keyof PreviewExtras> {
   const n = a.mesh.n;
   const thr = a.small.planet.riverThreshold;
   const changedCells: number[] = [];

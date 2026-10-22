@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { World } from '../../../core/world';
-import { commitTerrain, exec, mode, openPanel, previewTerrain, setOptions, world } from '../../state';
+import { adjustPreviewNote, commitTerrain, exec, execAdjust, mode, openPanel, previewAdjust, previewTerrain, setOptions, world } from '../../state';
 import { ADJUSTMENTS, PLANET_TOGGLES } from '../defs/adjustments';
 import { setTool } from '../defs/tools';
 import type { AdjustmentDef } from '../defs/types';
 
-// “调整”：整个世界的参数。地形类的滑块拖动时地图上实时画出将来的海岸线（与结果逐格相同），
+// “调整”：整个世界的参数。地形类的滑块拖动时地图上实时画出将来的海岸线（与结果逐格相同）；
+// 气候、河流的滑块停一下，地图上就是松手后的样子（在世界的副本上算好，松手时直接采用）。
 // 松手才执行，一次一步，可以撤销
 
 const RES = 1000;
@@ -30,6 +31,9 @@ function AdjustRow({ def, w }: { def: AdjustmentDef; w: World }) {
   const now = def.read(w);
   const v = draft ?? now;
   const range = def.rangeOf?.(w) ?? def.range;
+  // 正在拖这一行：预览算到哪一步了
+  const note = adjustPreviewNote.value;
+  const previewNote = def.preview === 'world' && draft !== null && note?.key === JSON.stringify(def.command(w, draft)) ? note.text : null;
   return (
     <label class={`adj-row ${avail ? '' : 'off'}`} title={def.hint}>
       <span class="row between">
@@ -47,20 +51,26 @@ function AdjustRow({ def, w }: { def: AdjustmentDef; w: World }) {
           const nv = fromPos(def, Number((e.target as HTMLInputElement).value), range);
           setDraft(nv);
           if (def.preview === 'terrain' && def.patch) previewTerrain(def.patch(nv));
+          // 停下 200 毫秒后预览将来的世界；拖回原来的值就不预览
+          if (def.preview === 'world') previewAdjust(Math.abs(nv - now) < def.step / 2 ? null : def.command(w, nv));
         }}
         onChange={(e) => {
           const nv = fromPos(def, Number((e.target as HTMLInputElement).value), range);
           if (Math.abs(nv - now) < def.step / 2) {
             previewTerrain(null);
             setDraft(null);
+            if (def.preview === 'world') previewAdjust(null);
             return;
           }
           // 地形类：将来的海岸线留在地图上，直到结果换上（算的期间不闪回旧的海岸）
           if (def.preview === 'terrain' && def.patch) void commitTerrain(def.command(w, nv), def.busyLabel, def.patch(nv));
+          // 预览过的值：结果直接采用，预览的世界留到结果换上
+          else if (def.preview === 'world') void execAdjust(def.command(w, nv), def.busyLabel);
           else void exec(def.command(w, nv), def.busyLabel);
         }}
       />
       {def.note && <span class="muted small">{def.note(w, v)}</span>}
+      {previewNote && <span class="muted small">{previewNote}</span>}
     </label>
   );
 }
@@ -107,6 +117,8 @@ function FieldsBox({ w }: { w: World }) {
 }
 
 export function AdjustPanel() {
+  // 面板关上：拖着的预览也不要了
+  useEffect(() => () => previewAdjust(null), []);
   const w = world.value;
   if (!w) return null;
   const groups = [...new Set(ADJUSTMENTS.map((a) => a.group))];
@@ -128,7 +140,7 @@ export function AdjustPanel() {
             ))}
         </section>
       ))}
-      <p class="muted small">拖滑块时地图上先画出将来的海岸线，松手才计算；你手画的陆地、放的岛都会保留。每一下都能撤销。</p>
+      <p class="muted small">拖地形的滑块时地图上先画出将来的海岸线；拖气候、河流的滑块停一下，地图上就是松手后的样子。松手才执行，你手画的陆地、放的岛都会保留。每一下都能撤销。</p>
       <FieldsBox w={w} />
     </>
   );

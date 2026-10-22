@@ -2,6 +2,7 @@ import type { Command } from '../core/commands';
 import type { DocTail, PreviewResult, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
+import type { PreviewPatch } from '../core/preview-world';
 import type { TerrainPatch, TerrainPreview } from '../core/terrain';
 import type { GeoFeature } from '../core/features';
 import type { Causes, Derived, Settings, SmallState } from '../core/world';
@@ -17,6 +18,8 @@ export type Request =
   | { kind: 'preview'; cmd: Command }
   // “调整”面板拖滑块时：只组合地形，返回陆海的变化
   | { kind: 'previewTerrain'; patch: TerrainPatch }
+  // 预览，连同将来的世界（与当前世界的差别）：地图画出将来的样子
+  | { kind: 'previewWorld'; cmd: Command }
   // 换一个：撤掉最后一步并执行新命令
   | { kind: 'replaceLast'; cmd: Command }
   | { kind: 'doc' }
@@ -36,6 +39,8 @@ export interface Snapshot {
   canUndo: boolean;
   canRedo: boolean;
   timings: Timings;
+  // 引擎的状态编号（预览按它判断过没过期）
+  stateId: number;
 }
 
 // 轻快照：只改了名字、省份（推导没有重算）时只发这些，推导数组沿用主线程上已有的
@@ -48,6 +53,7 @@ export interface LightSnapshot {
   canUndo: boolean;
   canRedo: boolean;
   timings: Timings;
+  stateId: number;
 }
 
 // 导出 Worker：一次导出一个世界；进度消息之后是结果
@@ -73,6 +79,8 @@ export type Response =
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
       terrain?: TerrainPreview;
+      // 预览世界：与当前世界的差别（previewWorld）
+      world?: PreviewPatch;
       doc?: WorldDoc;
       tail?: DocTail;
       thumb?: Uint8ClampedArray;
