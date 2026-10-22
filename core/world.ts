@@ -261,7 +261,7 @@ export interface Derived {
   placeF?: Float32Array;
   // 颜色脚本算出的每格植被颜色（n × 4：r、g、b，a 为 255；水上为 0），见 biome-look.ts 的 computeLook
   look?: Uint8Array;
-  // 这一次推导里出错的脚本（按没有脚本处理了）；普通的 JSON，不是类型数组
+  // 这一次推导里出错的脚本（按没有脚本处理了；星球形态的布局、地形脚本排在最前）；普通的 JSON，不是类型数组
   scriptIssues?: ScriptIssue[];
 }
 

@@ -1,6 +1,8 @@
 import { type BaseComponents, type Resample, type Reroll, type WorldType, type Worldgen, type WorldgenInput, copyComponents, worldgenSchema } from './generate';
 import type { SphereMesh } from './mesh';
+import { type PlanetForm, mergeProfile } from './planet-form';
 import { type Noise3, clamp, fbm3, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
+import { type ScriptIssue, arrayInputs, runScript, runSetup, scriptsEnabled } from './script';
 import { tangentBasis, toUnit } from './sphere';
 
 // 整个星球的世界生成：与 generate.ts 同一套“地壳高度 + 海平面”的做法，搬到球面上。
@@ -43,9 +45,50 @@ const PLANET_PROFILES: Record<WorldType, PlanetProfile> = {
   ocean: { landFraction: 0, islands: 0, plates: [10, 16], blocks: [0, 0], radius: [0.1, 0.2], rise: 1000, relief: 300, hotspots: [8, 12], seamounts: 360 },
 };
 
+// 这种星球的配方：星球形态改过的项换成形态的值（type 与 form.base 相同由 set_worldgen 保证）
+function profileOf(p: Worldgen): PlanetProfile {
+  return mergeProfile(PLANET_PROFILES[p.type], p.form?.profile);
+}
+
 export function resolvedPlanetParams(p: Worldgen): Worldgen & { landFraction: number; islands: number } {
-  const prof = PLANET_PROFILES[p.type];
+  const prof = profileOf(p);
   return { ...p, landFraction: p.landFraction ?? prof.landFraction, islands: p.islands ?? prof.islands };
+}
+
+// 地壳细节里可以由星球形态调的字面量。没有形态时就是这些值本身（同一个双精度数、同样的运算顺序），结果逐位不变
+interface PlanetTuning {
+  // 碰撞带、大陆边缘山带的宽度（布局单位，再乘宽窄起伏）
+  wc: number;
+  wm: number;
+  // 板块边界只看这么近的（山带加宽时跟着放宽，免得山带被截断）
+  reach: number;
+  // 洋中脊抬升、大陆裂谷下陷、海沟深度（m）
+  ridgeH: number;
+  riftH: number;
+  trenchH: number;
+  // 丘陵的强弱
+  hills: number;
+  // 算不算板块边界（crustMode 'replace' 时不算：地形完全由地形脚本决定）
+  plates: boolean;
+}
+
+const DEFAULT_TUNING: PlanetTuning = Object.freeze({ wc: 0.055, wm: 0.032, reach: 0.3, ridgeH: 1700, riftH: 900, trenchH: 2600, hills: 0.12, plates: true });
+
+function tuningOf(form: PlanetForm | undefined): PlanetTuning {
+  if (!form) return DEFAULT_TUNING;
+  const t = form.tuning ?? {};
+  const bw = t.beltWidth ?? 1;
+  // 倍数为 1 时乘出来的就是原来的字面量（乘 1 是精确的）
+  return {
+    wc: DEFAULT_TUNING.wc * bw,
+    wm: DEFAULT_TUNING.wm * bw,
+    reach: DEFAULT_TUNING.reach * Math.max(1, bw),
+    ridgeH: DEFAULT_TUNING.ridgeH * (t.ridge ?? 1),
+    riftH: DEFAULT_TUNING.riftH * (t.rift ?? 1),
+    trenchH: DEFAULT_TUNING.trenchH * (t.trench ?? 1),
+    hills: DEFAULT_TUNING.hills * (t.hills ?? 1),
+    plates: form.crustMode !== 'replace',
+  };
 }
 
 interface Plate {
@@ -121,6 +164,11 @@ export interface PlanetModel {
   cones: PlanetCone[];
   noise: NoiseSet3;
   variants: Map<number, NoiseSet3>;
+  tuning: PlanetTuning;
+  // cones 最前面有几个是布局脚本加的岛：它们总是露出来，“岛多少”只增减其余的
+  fixedCones: number;
+  // 星球形态的布局脚本这次出的问题（没有形态时为 undefined）。普通的 JSON，只给界面看
+  issues: ScriptIssue[] | undefined;
 }
 
 const range = (rand: () => number, [a, b]: [number, number]) => a + (b - a) * rand();
@@ -171,7 +219,8 @@ function makeBlock(c: V3, u: V3, r: number, e: number): Block {
 
 export function buildPlanetModel(input: WorldgenInput): PlanetModel {
   const params = resolvedPlanetParams(worldgenSchema.parse(input));
-  const profile = PLANET_PROFILES[params.type];
+  const form = params.form;
+  const profile = profileOf(params);
   const seed = params.seed;
   const noise = noiseSet3(seed, 0);
 
@@ -235,12 +284,17 @@ export function buildPlanetModel(input: WorldgenInput): PlanetModel {
       blocks.push(makeBlock(best, tangentAt(best, randB() * Math.PI), r, e));
     });
   }
+  // 星球形态的布局脚本：在配方的大陆块之后、半岛之前运行，可以加大陆块、加岛，或者清空原来的
+  const issues: ScriptIssue[] | undefined = form ? [] : undefined;
+  const setup = form && issues ? formSetup(form, seed, blocks, issues) : null;
+  if (setup) blocks.splice(0, blocks.length, ...setup.blocks);
   const meanR = blocks.length ? blocks.reduce((s, b) => s + b.r, 0) / blocks.length : 0.2;
   // 半岛：大陆块沿大圆向外伸出的狭长瓣
   const randL = mulberry32(mixSeed(seed, 104, 0x3d));
   const parents = blocks.slice();
   for (const b of parents) {
     if (b.r < 0.12) continue;
+    if (setup?.noLobes.has(b)) continue;
     const lobes = 1 + Math.floor(randL() * 3);
     for (let k = 0; k < lobes; k++) {
       const a = randL() * Math.PI * 2;
@@ -252,9 +306,145 @@ export function buildPlanetModel(input: WorldgenInput): PlanetModel {
     }
   }
 
-  const model: PlanetModel = { kind: 'planet', params, profile, plates, blocks, meanR, cones: [], noise, variants: new Map() };
-  model.cones = buildCones(model);
+  const model: PlanetModel = {
+    kind: 'planet',
+    params,
+    profile,
+    plates,
+    blocks,
+    meanR,
+    cones: [],
+    noise,
+    variants: new Map(),
+    tuning: tuningOf(form),
+    fixedCones: 0,
+    issues,
+  };
+  // 布局脚本加的岛排在最前（rank −1），clearIslands() 之后不要原来的火山锥
+  const natural = setup && !setup.natural ? [] : buildCones(model);
+  model.cones = setup && setup.islands.length ? [...setup.islands, ...natural] : natural;
+  model.fixedCones = setup ? setup.islands.length : 0;
   return model;
+}
+
+// ---------- 星球形态的布局脚本 ----------
+
+// 布局脚本最多加到这么多大陆块、这么多岛（防止写错的循环把模型撑得很大、每格都要算很久）
+export const MAX_FORM_BLOCKS = 120;
+export const MAX_FORM_ISLANDS = 300;
+
+interface SetupOutcome {
+  // 运行之后的大陆块（含配方原来的、脚本加的）
+  blocks: Block[];
+  // 脚本说了 lobes: false 的块：不长半岛
+  noLobes: Set<Block>;
+  islands: PlanetCone[];
+  // false：脚本调用了 clearIslands()，不要原来的火山锥
+  natural: boolean;
+}
+
+const DEG = Math.PI / 180;
+
+// 经纬度（度）→ 布局坐标
+function latLonPoint(lat: number, lon: number): V3 {
+  return scale(toUnit(lon / 180 + 1, (90 - lat) / 180), LAYOUT_R);
+}
+
+// 布局脚本里 addBlock、addIsland 收的对象的各项（英文名、中文名都能用），编辑器的“变量和例子”也用这张表
+export interface SetupField {
+  key: string;
+  zh: string;
+  label: string;
+  unit?: string;
+  // 数值的范围与省略时的值；lo 为 undefined 的是 true / false
+  lo?: number;
+  hi?: number;
+  def?: number | boolean;
+}
+export const SETUP_FIELDS: Record<'addBlock' | 'addIsland', readonly SetupField[]> = {
+  addBlock: [
+    { key: 'lat', zh: '纬度', label: '中心的纬度（北纬为正）', unit: '°', lo: -90, hi: 90 },
+    { key: 'lon', zh: '经度', label: '中心的经度（东经为正）', unit: '°', lo: -1e6, hi: 1e6 },
+    { key: 'size', zh: '大小', label: '半径（从球心看的角度；30 约是一个大洲）', unit: '°', lo: 1, hi: 90 },
+    { key: 'stretch', zh: '拉长', label: '长轴是短轴的几倍（1 是圆的）', lo: 1, hi: 5, def: 1 },
+    { key: 'angle', zh: '方向', label: '长轴的方向（0 东西向，90 南北向）', unit: '°', lo: -1e6, hi: 1e6, def: 0 },
+    { key: 'lobes', zh: '半岛', label: '长不长半岛（true / false）', def: true },
+  ],
+  addIsland: [
+    { key: 'lat', zh: '纬度', label: '纬度（北纬为正）', unit: '°', lo: -90, hi: 90 },
+    { key: 'lon', zh: '经度', label: '经度（东经为正）', unit: '°', lo: -1e6, hi: 1e6 },
+    { key: 'height', zh: '高度', label: '火山从海底起的高度（深海里要超过约 4000 才露出海面）', unit: 'm', lo: 100, hi: 7000, def: 5000 },
+    { key: 'size', zh: '大小', label: '半径（从球心看的角度）', unit: '°', lo: 0.2, hi: 10, def: 1.5 },
+  ],
+};
+
+// 脚本传进来的对象：每项只读一次，读到的值复制下来再检查；不对时抛出中文说明（整段脚本按出错处理，行号是调用的那一行）
+function specOf(fn: 'addBlock' | 'addIsland', spec: unknown): Record<string, unknown> {
+  if (spec === null || typeof spec !== 'object') throw new Error(`${fn} 要一个对象，比如 ${fn}({ lat: 30, lon: 0, size: ${fn === 'addBlock' ? 20 : 2} })`);
+  const o = spec as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const f of SETUP_FIELDS[fn]) {
+    let v = o[f.key];
+    if (v === undefined) v = o[f.zh];
+    if (v === undefined) v = f.def;
+    const name = `${fn} 的 ${f.key}（${f.zh}）`;
+    if (f.lo === undefined) {
+      if (typeof v !== 'boolean') throw new Error(`${name}要是 true 或 false`);
+    } else {
+      if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`${name}要是一个数${v === undefined ? '（没有写）' : ''}`);
+      if (v < f.lo || v > f.hi!) throw new Error(`${name}要在 ${f.lo} 到 ${f.hi} 之间（写的是 ${v}）`);
+    }
+    out[f.key] = v;
+  }
+  return out;
+}
+
+// 原来的大陆块，给脚本看的样子：中心的经纬度、半径（度）
+function blockInfo(b: Block): { lat: number; lon: number; size: number } {
+  return { lat: Math.asin(clamp(b.n[2], -1, 1)) / DEG, lon: Math.atan2(b.n[1], b.n[0]) / DEG, size: b.r / LAYOUT_R / DEG };
+}
+
+// 运行布局脚本。脚本出错（含超出上限、参数不对）时整段按没有脚本处理：返回 null，问题记进 issues。
+// 安全模式下不运行，也不记问题（与生态的脚本一样：安全模式有自己的横幅）
+function formSetup(form: PlanetForm, seed: number, blocks: Block[], issues: ScriptIssue[]): SetupOutcome | null {
+  const src = form.scripts?.setup?.src;
+  if (src === undefined || !scriptsEnabled()) return null;
+  // 先记在草稿上，脚本正常结束才用：中途出错时前面加的块也不算
+  let staged = blocks.slice();
+  const noLobes = new Set<Block>();
+  let islands: PlanetCone[] = [];
+  let natural = true;
+  const values: Record<string, unknown> = {
+    seed,
+    globe: true,
+    blocks: blocks.map(blockInfo),
+    addBlock: (spec: unknown) => {
+      const o = specOf('addBlock', spec) as { lat: number; lon: number; size: number; stretch: number; angle: number; lobes: boolean };
+      if (staged.length >= MAX_FORM_BLOCKS) throw new Error(`大陆块最多 ${MAX_FORM_BLOCKS} 块`);
+      const c = latLonPoint(o.lat, o.lon);
+      const b = makeBlock(c, tangentAt(c, o.angle * DEG), o.size * DEG * LAYOUT_R, o.stretch);
+      staged.push(b);
+      if (!o.lobes) noLobes.add(b);
+    },
+    clearBlocks: () => {
+      staged = [];
+    },
+    addIsland: (spec: unknown) => {
+      const o = specOf('addIsland', spec) as { lat: number; lon: number; height: number; size: number };
+      if (islands.length >= MAX_FORM_ISLANDS) throw new Error(`岛最多 ${MAX_FORM_ISLANDS} 个`);
+      islands.push({ c: latLonPoint(o.lat, o.lon), r: o.size * DEG * LAYOUT_R, h: o.height, rank: -1, kind: 'hotspot' });
+    },
+    clearIslands: () => {
+      islands = [];
+      natural = false;
+    },
+  };
+  const r = runSetup({ src }, { owner: form.name, id: form.id, seedKey: form.seedKey, seed, values });
+  if (!r.ok) {
+    issues.push(r.issue);
+    return null;
+  }
+  return { blocks: staged, noLobes, islands, natural };
 }
 
 // 大陆场：1 在块中心，0 在块边缘，负值在块外（加上法向分量，球的另一面不会“折回来”）
@@ -479,6 +669,9 @@ function rerollDist(r: PlacedReroll, px: number, py: number, pz: number): number
 
 // re：只重算 re.changed 这些重画圈里的格，其余格照抄 re.from（见 generate.ts 的 Resample）
 export function samplePlanetComponents(m: PlanetModel, mesh: SphereMesh, re?: Resample): BaseComponents {
+  // 星球形态的地形脚本（安全模式下不运行：结果与没有地形脚本相同，也不记问题，与生态的脚本一样）
+  const crust = m.params.form?.scripts?.crust;
+  if (crust && scriptsEnabled()) return sampleWithCrust(m, mesh, crust.src, re);
   const n = mesh.n;
   const out = re ? copyComponents(re.from) : emptyComponents(n);
   const rerolls = placed(m.params.rerolls);
@@ -516,8 +709,33 @@ function sampleCell(m: PlanetModel, rerolls: PlacedReroll[], px: number, py: num
   }
 }
 
+// 一格的生成结果（双精度，写进 Float32 数组之前）。地形脚本要用双精度的原值，所以先算到这里
+interface CellSample {
+  B: number;
+  mountB: number;
+  mountU: number;
+  hillU: number;
+  erod: number;
+  // 大陆场（地形脚本的 continent）
+  c: number;
+}
+const S: CellSample = { B: 0, mountB: 0, mountU: 0, hillU: 0, erod: 0, c: 0 };
+
 function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, out: BaseComponents, i: number) {
+  sampleRaw(m, ns, x, y, z, S);
+  out.b0[i] = S.B;
+  out.mountB[i] = S.mountB;
+  out.mountU[i] = S.mountU;
+  out.hillU[i] = S.hillU;
+  out.erod[i] = S.erod;
+}
+
+// 造山带对地壳高度的贡献（“山多高”= 1 时）。地形脚本改了山的强弱后按同一个式子重算
+const mountBOf = (mountU: number, c: number) => 1600 * mountU * smoothstep(-0.05, 0.05, c);
+
+function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, s: CellSample) {
   const prof = m.profile;
+  const t = m.tuning;
   const [qx, qy, qz] = warp(ns, x, y, z);
   let c = m.blocks.length ? blockField(m, qx, qy, qz) : -1;
   if (m.blocks.length) {
@@ -544,50 +762,226 @@ function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numb
   const widthMod = 0.65 + 0.7 * (0.5 + 0.5 * fbm3(ns.hills, px * 0.7, py * 0.7, pz * 0.7, 2.5, 2));
   const seg = smoothstep(-0.35, 0.3, fbm3(ns.seg, qx, qy, qz, 3.5, 3));
   const ridged = 1 - Math.abs(fbm3(ns.ridge, qx, qy, qz, 10, 4));
-  const wc = 0.055 * widthMod;
-  const wm = 0.032 * widthMod;
+  const wc = t.wc * widthMod;
+  const wm = t.wm * widthMod;
   const belt = (bd: number, w: number) => Math.exp(-((bd / w) ** 2)) + 0.5 * Math.exp(-(((bd - 2.4 * w) / (0.6 * w)) ** 2));
-  const a = nearestPlate(m, px, py, pz);
-  const da = power(m.plates[a], px, py, pz);
   let ridge = 0;
   let rift = 0;
   let trench = 0;
   let mm = 0;
-  for (let b = 0; b < m.plates.length; b++) {
-    if (b === a) continue;
-    const db = power(m.plates[b], px, py, pz);
-    const pa = m.plates[a];
-    const pb = m.plates[b];
-    const L = Math.sqrt((pb.c[0] - pa.c[0]) ** 2 + (pb.c[1] - pa.c[1]) ** 2 + (pb.c[2] - pa.c[2]) ** 2) || 1e-6;
-    const bd = (db - da) / (2 * L);
-    if (bd > 0.3) continue;
-    const pi = pairInfo(m, a, b, da, db, px, py, pz);
-    const conv = pi.conv;
-    if (conv < 0) {
-      const div = Math.min(1, -conv);
-      ridge = Math.max(ridge, div * Math.exp(-((bd / 0.04) ** 2)));
-      rift = Math.max(rift, div * Math.exp(-((bd / 0.025) ** 2)));
+  // 星球形态的 crustMode 'replace'：不算板块边界（山带、洋中脊、海沟、裂谷都没有）
+  if (t.plates) {
+    const a = nearestPlate(m, px, py, pz);
+    const da = power(m.plates[a], px, py, pz);
+    for (let b = 0; b < m.plates.length; b++) {
+      if (b === a) continue;
+      const db = power(m.plates[b], px, py, pz);
+      const pa = m.plates[a];
+      const pb = m.plates[b];
+      const L = Math.sqrt((pb.c[0] - pa.c[0]) ** 2 + (pb.c[1] - pa.c[1]) ** 2 + (pb.c[2] - pa.c[2]) ** 2) || 1e-6;
+      const bd = (db - da) / (2 * L);
+      if (bd > t.reach) continue;
+      const pi = pairInfo(m, a, b, da, db, px, py, pz);
+      const conv = pi.conv;
+      if (conv < 0) {
+        const div = Math.min(1, -conv);
+        ridge = Math.max(ridge, div * Math.exp(-((bd / 0.04) ** 2)));
+        rift = Math.max(rift, div * Math.exp(-((bd / 0.025) ** 2)));
+        continue;
+      }
+      const cOther = blockField(m, qx + 2 * bd * pi.n[0], qy + 2 * bd * pi.n[1], qz + 2 * bd * pi.n[2]);
+      const wb = smoothstep(-0.02, 0.1, cOther);
+      const cv = Math.min(1.3, conv);
+      const subducts = (1 - contW) * Math.max(wb, pa.density > pb.density ? 1 : 0);
+      trench = Math.max(trench, Math.min(1, cv) * Math.exp(-(((bd - 0.012) / 0.012) ** 2)) * subducts);
+      const collision = contW * wb;
+      const margin = contW * (1 - wb);
+      const shape = collision * (belt(bd, wc) + 0.45 * Math.exp(-((bd / (3 * wc)) ** 2))) + margin * belt(bd, wm);
+      mm = Math.max(mm, cv * shape);
+    }
+  }
+  B += t.ridgeH * ridge * oceanW - t.riftH * rift * contW - t.trenchH * trench * oceanW;
+  const mountU = mm * (0.3 + 0.7 * seg) * (0.55 + 0.6 * ridged);
+  s.B = B;
+  s.mountB = mountBOf(mountU, c);
+  s.mountU = mountU;
+  s.hillU = t.hills * Math.max(0, fbm3(ns.hills, qx, qy, qz, 6, 4)) * contW;
+  s.erod = clamp(1 + 0.45 * fbm3(ns.erod, x + 7.7, y - 3.1, z + 1.9, 6, 3), 0.4, 1.8);
+  s.c = c;
+}
+
+// ---------- 星球形态的地形脚本 ----------
+
+// 每格在单位球面上的位置与经纬度（地形脚本的 px、py、pz、lat、lon），按网格缓存
+type CellPositions = Record<'px' | 'py' | 'pz' | 'lat' | 'lon', Float64Array>;
+const positionCache = new WeakMap<SphereMesh, CellPositions>();
+function cellPositions(mesh: SphereMesh): CellPositions {
+  let pos = positionCache.get(mesh);
+  if (!pos) {
+    const n = mesh.n;
+    pos = { px: new Float64Array(n), py: new Float64Array(n), pz: new Float64Array(n), lat: new Float64Array(n), lon: new Float64Array(n) };
+    for (let i = 0; i < n; i++) {
+      const x = mesh.p[3 * i];
+      const y = mesh.p[3 * i + 1];
+      const z = mesh.p[3 * i + 2];
+      pos.px[i] = x;
+      pos.py[i] = y;
+      pos.pz[i] = z;
+      pos.lat[i] = Math.asin(clamp(z, -1, 1)) / DEG;
+      pos.lon[i] = Math.atan2(y, x) / DEG;
+    }
+    positionCache.set(mesh, pos);
+  }
+  return pos;
+}
+
+// 一遍（原来的噪声，或某次重画的噪声）算出的双精度分量，按格编号存
+interface RawPass {
+  B: Float64Array;
+  mountB: Float64Array;
+  mountU: Float64Array;
+  hillU: Float64Array;
+  erod: Float64Array;
+  c: Float64Array;
+}
+
+// 界面看的问题最多留几条（同一句话只留一条）
+const MAX_ISSUES = 8;
+function addIssue(issues: ScriptIssue[], issue: ScriptIssue) {
+  if (issues.length < MAX_ISSUES && !issues.some((x) => x.message === issue.message)) issues.push(issue);
+}
+
+// 地形脚本每一遍的结果：pass[0] 是原来的噪声那一遍，pass[k + 1] 是 rerolls[k] 那一遍；null 为正常，否则是这一遍出的问题。
+// 一遍的结果只取决于模型（种子、类型、形态）与这一遍自己的重画，与别的重画无关：局部重算时没变的那几遍照用
+interface CrustPasses {
+  rerolls: Reroll[];
+  pass: (ScriptIssue | null)[];
+}
+const crustPasses = new WeakMap<BaseComponents, CrustPasses>();
+
+// 用某一套噪声（variant 0 是原来的，其余是重画）算一批格，再整批交给地形脚本，结果写回 raw（按格编号）。
+// 脚本在任何一格出错（运行时出错、NaN、返回值不对），这一遍整遍按没有脚本算（raw 里留着原值），返回出的问题。
+// known：局部重算时这一遍上一次的结果（undefined 为新的一遍）。上一次出了错的不再运行，直接按没有脚本算；
+// 上一次正常、这次却出错（脚本不纯）时返回 'redo'，由调用方从头算
+function crustPass(m: PlanetModel, ns: NoiseSet3, variant: number, mesh: SphereMesh, cells: Int32Array, raw: RawPass, src: string, known: ScriptIssue | null | undefined): ScriptIssue | null | 'redo' {
+  const p = mesh.p;
+  for (let j = 0; j < cells.length; j++) {
+    const i = cells[j];
+    sampleRaw(m, ns, p[3 * i] * LAYOUT_R, p[3 * i + 1] * LAYOUT_R, p[3 * i + 2] * LAYOUT_R, S);
+    raw.B[i] = S.B;
+    raw.mountB[i] = S.mountB;
+    raw.mountU[i] = S.mountU;
+    raw.hillU[i] = S.hillU;
+    raw.erod[i] = S.erod;
+    raw.c[i] = S.c;
+  }
+  if (known) return known;
+  const form = m.params.form!;
+  const pos = cellPositions(mesh);
+  const inputs = arrayInputs(
+    mesh.n,
+    { height: raw.B, mountains: raw.mountU, hills: raw.hillU, rock: raw.erod, continent: raw.c, lat: pos.lat, lon: pos.lon, px: pos.px, py: pos.py, pz: pos.pz, seed: m.params.seed, globe: true },
+    { globe: true },
+  );
+  // 重画一片换一套噪声，脚本的 rand()、fbmAt() 也跟着换（种子里加上 variant）
+  const seed = variant ? mixSeed(m.params.seed, variant, 0x3d) : m.params.seed;
+  const r = runScript({ kind: 'crust', src }, { owner: form.name, id: form.id, seedKey: form.seedKey, seed, inputs, cells });
+  if (!r.ok) return known === null ? 'redo' : r.issue;
+  const res = r.output;
+  for (let j = 0; j < cells.length; j++) {
+    const i = cells[j];
+    raw.B[i] = res.height[j];
+    raw.mountU[i] = res.mountains[j];
+    raw.hillU[i] = res.hills[j];
+    raw.erod[i] = res.rock[j];
+    // 山的强弱没改时，与原来的值逐位相同
+    raw.mountB[i] = mountBOf(res.mountains[j], raw.c[i]);
+  }
+  return null;
+}
+
+// 有地形脚本时的采样：与 samplePlanetComponents 的逐格写法同样的结果（脚本按没有处理时逐位相同），
+// 只是先把一遍的格都算出来，整批交给脚本，再按原来的顺序叠上各次重画。重画的那一遍不叠岩性（与没有脚本时相同）。
+//
+// “一遍”是：原来的噪声对整个星球的每一格；每次重画的噪声对它圈里的每一格。出错按整遍算，所以结果只取决于
+// 世界参数本身。重画一片时局部重算：只算变了的那些圈里的格；新的重画那一遍的格全在里面，整遍都算；
+// 没变的那几遍（原来的噪声那一遍、共同前缀里的重画）照用上一次的结果——出过错的仍按没有脚本算，正常的
+// 只对这些格运行（脚本对每格单独地算，局部算的与从头算的逐值相同）。所以撤销、重做、重放、检查点恢复的结果都一致
+function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Resample): BaseComponents {
+  const prev = re ? crustPasses.get(re.from) : undefined;
+  if (re && !prev) return sampleWithCrust(m, mesh, src);
+  const n = mesh.n;
+  const p = mesh.p;
+  const out = re ? copyComponents(re.from) : emptyComponents(n);
+  const rerolls = placed(m.params.rerolls);
+  // 上一次的前几次重画与这次的相同：那几遍的结果照用
+  let keep = 0;
+  if (prev) while (keep < prev.rerolls.length && keep < rerolls.length && sameReroll(prev.rerolls[keep], rerolls[keep])) keep++;
+  const changed = re ? placed(re.changed) : [];
+  const todo: number[] = [];
+  for (let i = 0; i < n; i++) {
+    // 与 samplePlanetComponents 同一个“在圈内”的判断
+    if (re && changed.every((r) => rerollDist(r, p[3 * i], p[3 * i + 1], p[3 * i + 2]) >= r.radius)) continue;
+    todo.push(i);
+  }
+  const cells = Int32Array.from(todo);
+  const raw: RawPass = { B: new Float64Array(n), mountB: new Float64Array(n), mountU: new Float64Array(n), hillU: new Float64Array(n), erod: new Float64Array(n), c: new Float64Array(n) };
+  const pass: (ScriptIssue | null)[] = [];
+  const first = crustPass(m, m.noise, 0, mesh, cells, raw, src, prev?.pass[0]);
+  if (first === 'redo') return sampleWithCrust(m, mesh, src);
+  pass.push(first);
+  for (const i of todo) {
+    out.b0[i] = raw.B[i];
+    out.mountB[i] = raw.mountB[i];
+    out.mountU[i] = raw.mountU[i];
+    out.hillU[i] = raw.hillU[i];
+    out.erod[i] = raw.erod[i];
+  }
+  // 重画这一片：一次一次地叠（每格叠的顺序与逐格写法相同），圈边羽化
+  for (let k = 0; k < rerolls.length; k++) {
+    const r = rerolls[k];
+    const known = k < keep ? prev!.pass[k + 1] : undefined;
+    const inside: number[] = [];
+    const dist: number[] = [];
+    for (const i of todo) {
+      const d = rerollDist(r, p[3 * i], p[3 * i + 1], p[3 * i + 2]);
+      if (d >= r.radius) continue;
+      inside.push(i);
+      dist.push(d);
+    }
+    if (!inside.length) {
+      // 新的重画圈里一格也没有：从头算也是什么都不做
+      pass.push(known ?? null);
       continue;
     }
-    const cOther = blockField(m, qx + 2 * bd * pi.n[0], qy + 2 * bd * pi.n[1], qz + 2 * bd * pi.n[2]);
-    const wb = smoothstep(-0.02, 0.1, cOther);
-    const cv = Math.min(1.3, conv);
-    const subducts = (1 - contW) * Math.max(wb, pa.density > pb.density ? 1 : 0);
-    trench = Math.max(trench, Math.min(1, cv) * Math.exp(-(((bd - 0.012) / 0.012) ** 2)) * subducts);
-    const collision = contW * wb;
-    const margin = contW * (1 - wb);
-    const shape = collision * (belt(bd, wc) + 0.45 * Math.exp(-((bd / (3 * wc)) ** 2))) + margin * belt(bd, wm);
-    mm = Math.max(mm, cv * shape);
+    let ns = m.variants.get(r.variant);
+    if (!ns) {
+      ns = noiseSet3(m.params.seed, r.variant);
+      m.variants.set(r.variant, ns);
+    }
+    const got = crustPass(m, ns, r.variant, mesh, Int32Array.from(inside), raw, src, known);
+    if (got === 'redo') return sampleWithCrust(m, mesh, src);
+    pass.push(got);
+    for (let j = 0; j < inside.length; j++) {
+      const i = inside[j];
+      const w = 1 - smoothstep(0.6, 1, dist[j] / r.radius);
+      // 逐格写法里重画的值先存进 Float32 的临时数组：这里同样先取整到单精度
+      out.b0[i] += (Math.fround(raw.B[i]) - out.b0[i]) * w;
+      out.mountB[i] += (Math.fround(raw.mountB[i]) - out.mountB[i]) * w;
+      out.mountU[i] += (Math.fround(raw.mountU[i]) - out.mountU[i]) * w;
+      out.hillU[i] += (Math.fround(raw.hillU[i]) - out.hillU[i]) * w;
+    }
   }
-  B += 1700 * ridge * oceanW - 900 * rift * contW - 2600 * trench * oceanW;
-  const mountU = mm * (0.3 + 0.7 * seg) * (0.55 + 0.6 * ridged);
-  const mountB = 1600 * mountU * smoothstep(-0.05, 0.05, c);
-  out.b0[i] = B;
-  out.mountB[i] = mountB;
-  out.mountU[i] = mountU;
-  out.hillU[i] = 0.12 * Math.max(0, fbm3(ns.hills, qx, qy, qz, 6, 4)) * contW;
-  out.erod[i] = clamp(1 + 0.45 * fbm3(ns.erod, x + 7.7, y - 3.1, z + 1.9, 6, 3), 0.4, 1.8);
+  // 给界面看的问题：按遍的顺序，同一句话只留一条
+  const issues: ScriptIssue[] = [];
+  for (const x of pass) if (x) addIssue(issues, x);
+  out.issues = issues;
+  crustPasses.set(out, { rerolls: m.params.rerolls.map((r) => ({ ...r })), pass });
+  return out;
 }
+
+// 同一次重画：逐字段比（与 terrain.ts 里的相同）
+const sameReroll = (a: Reroll, b: Reroll) => Object.is(a.x, b.x) && Object.is(a.y, b.y) && Object.is(a.radius, b.radius) && Object.is(a.variant, b.variant);
 
 // 前 N 个火山锥对每格地壳高度与抬升的贡献（不扭曲坐标，保持圆形）
 export function planetConeFields(m: PlanetModel, mesh: SphereMesh, count: number): { coneB: Float32Array; coneU: Float32Array } {

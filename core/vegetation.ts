@@ -1,6 +1,7 @@
 import { computeLook } from './biome-look';
 import { ScriptSession, placementSlots, worldSeedOf } from './biome-scripts';
 import { graphDistance } from './mesh';
+import { planetFormIssues } from './terrain';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
 import { worldLatitude, type Derived, type World } from './world';
 import { type Species, trapezoid } from './species';
@@ -144,8 +145,8 @@ export function computeVegetation(world: World, d: Derived) {
   }
   const getters = new Map<string, FieldGetter>();
   for (const sp of species) for (const t of sp.tolerances) if (!getters.has(t.field)) getters.set(t.field, fieldGetter(world, d, t.field));
-  // 脚本出的问题（不挡操作：出错的脚本这一次按没有脚本处理）
-  const issues: ScriptIssue[] = [];
+  // 脚本出的问题（不挡操作：出错的脚本这一次按没有脚本处理）。星球形态的脚本的问题（地形那一步记下的）排在最前
+  const issues: ScriptIssue[] = planetFormIssues(world, d.scriptIssues);
   // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
   const run: { session?: ScriptSession } = {};
   const sessionOf = () => (run.session ??= new ScriptSession(world));

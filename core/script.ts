@@ -2,6 +2,8 @@ import { z } from 'zod';
 // 注意循环引用：这里在模块顶层就用到了 CommandError（class ScriptError extends CommandError），
 // 所以它在不引用别的模块的 errors.ts 里（commands.ts 照旧导出它）。species.ts 引用这里的 scriptsSchema，
 // 而这里经 world.ts 又引用 species.ts：species.ts 只能在 z.lazy(() => scriptsSchema) 里读它，不能在模块顶层直接读
+// commands.ts 也间接引用本文件（generate.ts → planet-form.ts、terrain.ts → planet-gen.ts）：本文件不要值引用
+// commands.ts、generate.ts、terrain.ts、planet-gen.ts，否则循环又回来了
 import { CommandError } from './errors';
 import { type Mesh, graphDistance } from './mesh';
 import { hashString } from './names';
