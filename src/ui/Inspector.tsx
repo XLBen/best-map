@@ -228,7 +228,7 @@ export function Inspector() {
   const where = named(['island', 'continent', 'peninsula'])[0];
   const water = named(['bay', 'strait', 'sea', 'ocean', 'lake'])[0];
   const range = named(['range'])[0];
-  const area = named(['plateau', 'plain', 'basin', 'desert', 'forest', 'tundra', 'icecap', 'wetland'])[0];
+  const area = named(['plateau', 'plain', 'basin', 'desert', 'forest', 'tundra', 'icecap', 'wetland', 'biome'])[0];
   const river = d.discharge[cell] >= w.small.planet.riverThreshold ? named(['river'])[0] : undefined;
   // 用户圈的地区（最小的那个）
   const region = feats.filter((f) => f.region && f.type !== 'spot').sort((a, b) => a.areaKm2 - b.areaKm2)[0];

@@ -261,8 +261,9 @@ export class Engine {
     const w = this.world;
     const d = w.derived;
     if (this.dirty === Dirty.Names) {
-      // 只改了名字或用户的区块：自动识别的地物不变，换上新的区块再重新起名
-      d.features = [...d.features.filter((f) => !f.region), ...regionFeatures(w, d)];
+      // 只改了名字或用户的区块：自动识别的地物不变，换上新的区块再重新起名。
+      // 地物对象可能和副本（Engine.clone、撤销缓存）共用，起名会改它们的名字，所以先各复制一份
+      d.features = [...d.features.filter((f) => !f.region).map((f) => ({ ...f })), ...regionFeatures(w, d)];
       assignNames(w, d.features);
       this.dirty = Dirty.None;
       return d;
@@ -464,6 +465,9 @@ export function docVersion(settings: Pick<Settings, 'globe'>, commands: readonly
 // 一条命令有没有用到旧版程序不认识的字段、命令（batch 里的逐条看）。后面加新字段、新命令时在这里加一项检测
 function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'batch') return cmd.commands.some(usesExtensions);
+  // 类型自动判断的区块
+  if (cmd.op === 'add_region' && cmd.region.auto) return true;
+  if (cmd.op === 'update_region' && cmd.auto !== undefined) return true;
   return false;
 }
 

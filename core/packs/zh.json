@@ -1,7 +1,7 @@
 {
   "id": "zh-default",
   "name": "中文·默认",
-  "description": "按地貌类型取字的中文地名。lists 是词表，types 是每种地貌的命名模板；模板里的 {词表名} 会换成该词表里的一个字或词。byTag 里的模板在地物带有该情境标签时优先使用。",
+  "description": "按地貌类型取字的中文地名。lists 是词表，types 是每种地貌的命名模板；模板里的 {词表名} 会换成该词表里的一个字或词。byTag 里的模板在地物带有该情境标签时优先使用。涂出来的生态区按 biome.生态id（没有时按 biome）起名，{__species} 会换成生态的名字。",
   "lists": {
     "color": [
       "青",
@@ -852,6 +852,62 @@
         },
         {
           "p": "{animal}{water}泽",
+          "w": 1
+        }
+      ]
+    },
+    "biome": {
+      "patterns": [
+        {
+          "p": "{color}{__species}",
+          "w": 2
+        },
+        {
+          "p": "{direction}{__species}",
+          "w": 1
+        },
+        {
+          "p": "{myth}{__species}",
+          "w": 1
+        }
+      ]
+    },
+    "biome.steppe": {
+      "patterns": [
+        {
+          "p": "{color}{plant}草原",
+          "w": 2
+        },
+        {
+          "p": "{direction}{quality}草原",
+          "w": 1
+        },
+        {
+          "p": "{nature}牧野",
+          "w": 1
+        }
+      ]
+    },
+    "biome.savanna": {
+      "patterns": [
+        {
+          "p": "{hot}{plant}草原",
+          "w": 2
+        },
+        {
+          "p": "{color}{animal}原",
+          "w": 1
+        }
+      ]
+    },
+    "biome.shrubland": {
+      "patterns": [
+        {
+          "p": "{color}{plant}灌丛",
+          "w": 2
+        },
+        {
+          "p": "{quality}{stone}坡",
           "w": 1
         }
       ]

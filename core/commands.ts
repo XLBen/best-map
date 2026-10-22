@@ -118,12 +118,13 @@ const baseCommands = [
   z.object({ op: z.literal('set_word_pack'), pack: wordPackSchema.nullable() }),
   // 用户的地名：圈一块（cells）或放一个点（kind = spot，at 为位置）；name 为空时按文字包自动起名
   z.object({ op: z.literal('add_region'), region: regionSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
-  // 改名（空字符串恢复自动）、改类型、reroll 换一个自动的名字
+  // 改名（空字符串恢复自动）、改类型（选了类型就不再自动判断）、auto 类型改成自动判断、reroll 换一个自动的名字
   z.object({
     op: z.literal('update_region'),
     id: z.string(),
     name: z.string().max(40).optional(),
     kind: z.enum(REGION_KINDS).optional(),
+    auto: z.boolean().optional(),
     reroll: z.boolean().optional(),
   }),
   z.object({ op: z.literal('remove_region'), id: z.string() }),
@@ -683,6 +684,12 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (cmd.kind !== undefined) {
         if ((cmd.kind === 'spot') !== (r.kind === 'spot')) throw new CommandError('点状地名和区块不能互换');
         next.kind = cmd.kind;
+        delete next.auto;
+      }
+      if (cmd.auto !== undefined) {
+        if (r.kind === 'spot') throw new CommandError('点状地名没有类型可以自动判断');
+        if (cmd.auto) next.auto = true;
+        else delete next.auto;
       }
       if (cmd.name !== undefined) next.name = cmd.name.trim();
       if (cmd.reroll) {
@@ -692,11 +699,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.regions = small.regions.map((x) => (x.id === r.id ? next : x));
       const summary = cmd.reroll
         ? '换了个名字'
-        : next.kind !== r.kind
-          ? `改成${REGION_KIND_INFO[next.kind].label}`
-          : next.name
-            ? `改名为“${next.name}”`
-            : '恢复自动命名';
+        : next.auto && !r.auto
+          ? '类型改成自动判断'
+          : next.kind !== r.kind || (r.auto && !next.auto)
+            ? `改成${REGION_KIND_INFO[next.kind].label}`
+            : next.name
+              ? `改名为“${next.name}”`
+              : '恢复自动命名';
       return { dirty: Dirty.Names, summary };
     }
     case 'remove_region': {

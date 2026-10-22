@@ -24,13 +24,18 @@ export type WordPack = z.output<typeof wordPackSchema>;
 
 export const DEFAULT_PACK: WordPack = wordPackSchema.parse(zhPack);
 
+// 起名时才放进去的词表：{__species} 是涂出来的生态区的生态名字（features.ts 的 speciesFeature）
+const INJECTED_LISTS = new Set(['__species']);
+
 // 检查模板里引用的词表都存在，返回问题列表（导入时提示用户）
 export function packProblems(pack: WordPack): string[] {
   const problems: string[] = [];
   for (const [type, t] of Object.entries(pack.types)) {
     const all = [...t.patterns, ...Object.values(t.byTag ?? {}).flat()];
     for (const p of all) {
-      for (const m of p.p.matchAll(/\{([^{}]+)\}/g)) if (!pack.lists[m[1]]) problems.push(`“${type}”的模板“${p.p}”用到了不存在的词表 {${m[1]}}`);
+      for (const m of p.p.matchAll(/\{([^{}]+)\}/g)) {
+        if (!pack.lists[m[1]] && !INJECTED_LISTS.has(m[1])) problems.push(`“${type}”的模板“${p.p}”用到了不存在的词表 {${m[1]}}`);
+      }
     }
   }
   return problems;

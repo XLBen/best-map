@@ -1,11 +1,12 @@
-import { type Mesh } from './mesh';
+import { type Mesh, findCell } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
+import { DEFAULT_SPECIES, type Species } from './species';
 import type { Derived, RegionKind, World } from './world';
 
 // 地理要素识别：在格图上找出大陆、岛、群岛、半岛、海、洋、湾、海峡、湖、大河、山脉、主峰、
-// 高原、平原、盆地、沙漠、森林、冻原、冰原、沼泽，按文字包起名。
+// 高原、平原、盆地、沙漠、森林、冻原、冰原、沼泽、涂出来的生态区，按文字包起名。
 // 是推导层：每次地形或气候变化后重算。名字由“类型 + 锚点格（要素内部离边界最远的格）+ 种子”确定，
-// 小改动不会让名字乱跳；用户改过的名字按“同类型、包含原锚点”匹配到重算后的要素上。
+// 小改动不会让名字乱跳；用户改过的名字先按“同类型、同锚点”、再按“同类型、包含原锚点”匹配到重算后的要素上。
 
 export const FEATURE_TYPES = [
   'continent',
@@ -28,6 +29,8 @@ export const FEATURE_TYPES = [
   'tundra',
   'icecap',
   'wetland',
+  // 涂出来的草原、稀树草原、灌丛、自定义生态（类型名就是生态的名字）
+  'biome',
   // 用户圈的地区、放的点状地名
   'region',
   'spot',
@@ -55,6 +58,7 @@ export const FEATURE_INFO: Record<FeatureType, { label: string; group: 'land' | 
   tundra: { label: '冻原', group: 'nature' },
   icecap: { label: '冰原', group: 'nature' },
   wetland: { label: '沼泽', group: 'nature' },
+  biome: { label: '生态区', group: 'nature' },
   region: { label: '地区', group: 'land' },
   spot: { label: '地点', group: 'land' },
 };
@@ -89,6 +93,8 @@ export interface GeoFeature {
   line?: [number, number][];
   // 用户圈的区块、放的地名：对应的区块 id
   region?: string;
+  // 涂出来的生态区：涂的生态的 id（自然形成的地物没有这一项）
+  species?: string;
 }
 
 export interface FeatureOverride {
@@ -163,6 +169,23 @@ function stableAnchor(cells: ArrayLike<number>): number {
     if (p > bp || (p === bp && cells[k] < best)) {
       bp = p;
       best = cells[k];
+    }
+  }
+  return best;
+}
+
+// 同上，但跳过已被同类地物用作锚点的格（used），优先级可以加盐（salt：涂出来的生态区按生态加盐，
+// 同一片格涂成别的生态时锚点也换掉）。都被用过时返回 -1
+function freeAnchor(cells: ArrayLike<number>, used: Set<number>, salt = 0): number {
+  let best = -1;
+  let bp = 0;
+  for (let k = 0; k < cells.length; k++) {
+    const c = cells[k];
+    if (used.has(c)) continue;
+    const p = priority(c ^ salt);
+    if (best < 0 || p > bp || (p === bp && c < best)) {
+      bp = p;
+      best = c;
     }
   }
   return best;
@@ -317,6 +340,10 @@ interface AddInput {
   anchor?: number;
   // river：沿河标注；peak：标在峰顶；islet：小岛，最高处超过 1400 m 时加“火山”（随高度变，add 时再看）
   mark?: 'river' | 'peak' | 'islet';
+  // 标注放在这一格（质心落在地物外面时才有，见 withLabels）
+  labelCell?: number;
+  // 涂出来的生态区：涂的生态的下标
+  species?: number;
 }
 
 // 各段的输入只取决于少数几个推导数组（陆海、高度、湖、坡度、河道、生态）：这些数组逐字节没变时直接用上次
@@ -350,7 +377,8 @@ function memoized<T>(mesh: Mesh, name: string, inputs: ArrayBufferView[], comput
   let byName = memo.get(mesh);
   if (!byName) memo.set(mesh, (byName = new Map()));
   const list = byName.get(name) ?? [];
-  const hit = list.find((m) => m.key.every((b, k) => sameBytes(b, key[k])));
+  // 同一段的键可能长短不一（生态区：没涂过时只看大类）
+  const hit = list.find((m) => m.key.length === key.length && m.key.every((b, k) => sameBytes(b, key[k])));
   if (hit) {
     featureMemo.hits++;
     byName.set(name, [hit, ...list.filter((m) => m !== hit)]);
@@ -364,6 +392,19 @@ function memoized<T>(mesh: Mesh, name: string, inputs: ArrayBufferView[], comput
 // 记下一次 add 的输入
 function put(list: AddInput[], type: FeatureType, cells: number[], importance: number, tags: string[] = [], anchor?: number, mark?: AddInput['mark']) {
   list.push({ type, cells: Int32Array.from(cells), importance, tags, anchor, mark });
+}
+
+// 标注放在地物自己的格上：质心所在的格不属于地物（弯月形的海、中间被涂成别的生态的森林）时，改放在离边界最远的格；
+// 质心在地物里的照旧标在质心。在各段的缓存里算好（只在输入变了时算），不是每次编辑都算。
+// 群岛（岛与岛之间本来就是海）、河（沿河标注）、山峰（标在峰顶）不算
+function withLabels(mesh: Mesh, list: AddInput[]): AddInput[] {
+  for (const a of list) {
+    if (a.mark === 'river' || a.mark === 'peak' || a.type === 'archipelago') continue;
+    const ax = axis(mesh, a.cells, unwrapped(mesh, a.cells));
+    const c = findCell(mesh, mesh.kind === 'sphere' ? wrapX(ax.x) : ax.x, ax.y);
+    if (!a.cells.includes(c)) a.labelCell = innermost(mesh, a.cells, ax.x, ax.y);
+  }
+  return list;
 }
 
 // 面积（km²），逐格相加
@@ -606,7 +647,7 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
       });
     }
   }
-  return { list, dLand };
+  return { list: withLabels(mesh, list), dLand };
 }
 
 // 湖：只取决于湖面与高度
@@ -625,7 +666,7 @@ function lakeInputs(world: World, d: Derived): AddInput[] {
     if (h / cells.length > 2000) tags.push('high');
     put(list, 'lake', cells, 5 + Math.log10(area), tags.filter(Boolean));
   }
-  return list;
+  return withLabels(mesh, list);
 }
 
 // 大河：从河口沿流量最大的支流上溯。只取决于陆海、流向、流量、湖面与河的门槛
@@ -722,49 +763,259 @@ function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
   }
   for (let i = 0; i < n; i++) if (land[i] && d.elevation[i] < 900 && near[i] - d.elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
   for (const cells of components(mesh, basin)) if (cells.length >= 20) put(list, 'basin', cells, 5.5 + Math.log10(areaOf(world, cells)));
-  return list;
+  return withLabels(mesh, list);
 }
 
 const BIOMES = ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const;
+type BiomeGroup = (typeof BIOMES)[number];
+
+// 一种生态属于哪一大类：冰盖是冰原，其余按导出用的地形类别；草原、稀树草原、灌丛等都不是（''）
+function speciesGroup(sp: Species): BiomeGroup | '' {
+  if (sp.id === 'ice') return 'icecap';
+  if (sp.terrain === 'desert') return 'desert';
+  if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
+  if (sp.terrain === 'arctic') return 'tundra';
+  if (sp.terrain === 'marsh') return 'wetland';
+  return '';
+}
 
 // 每格属于哪一大类（BIOMES 里的下标 + 1，0 为都不是）
 function biomesOf(world: World, d: Derived): Uint8Array {
   const n = world.mesh.n;
   const land = world.causes.land;
-  const S = world.small.species;
-  const group = (s: number) => {
-    if (s < 0) return '';
-    const sp = S[s];
-    if (sp.id === 'ice') return 'icecap';
-    if (sp.terrain === 'desert') return 'desert';
-    if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
-    if (sp.terrain === 'arctic') return 'tundra';
-    if (sp.terrain === 'marsh') return 'wetland';
-    return '';
-  };
-  const kindOf = S.map((_, s) => (BIOMES as readonly string[]).indexOf(group(s)) + 1);
+  const kindOf = world.small.species.map((sp) => (BIOMES as readonly string[]).indexOf(speciesGroup(sp)) + 1);
   const biome = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (land[i] && d.dominant[i] >= 0) biome[i] = kindOf[d.dominant[i]];
   return biome;
 }
 
-// 大片生态区：只取决于每格的大类
-function natureInputs(world: World, biome: Uint8Array): AddInput[] {
+const BUILTIN_SPECIES = new Set(DEFAULT_SPECIES.map((sp) => sp.id));
+
+// 涂出来的一片生态按哪种地物识别、叫什么、怎么起名，只在这里定（生态以后自带地名设定时也接在这里）：
+// - 内置且有大类的生态（针叶林、热带雨林、荒漠……）：沿用大类的类型和模板，热带的（jungle）带“热”，模板里有雨林；
+// - 其余（温带草原、稀树草原、地中海灌木、自定义的生态）：类型是“生态区”，
+//   模板先找文字包里的 biome.<id>，再找 biome，文字包里都没有（导入的旧文字包）时用内置包的模板和词表。
+// 类型名（地名表、底部条）就是生态的名字；模板里的 {__species} 换成它
+export function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (pack: WordPack) => { pack: WordPack; type: string } } {
+  const group = speciesGroup(sp);
+  const type: FeatureType = group && BUILTIN_SPECIES.has(sp.id) ? group : 'biome';
+  const label = sp.name || FEATURE_INFO[type].label;
+  const naming = (pack: WordPack) => {
+    if (type !== 'biome') return { pack: withSpecies(pack, label), type };
+    for (const p of [pack, DEFAULT_PACK]) {
+      const t = p.types[`biome.${sp.id}`] ? `biome.${sp.id}` : p.types.biome ? 'biome' : '';
+      if (t) return { pack: withSpecies(p, label), type: t };
+    }
+    return { pack: withSpecies(DEFAULT_PACK, label), type: 'biome' };
+  };
+  return { type, label, tags: sp.terrain === 'jungle' ? ['hot'] : [], naming };
+}
+
+// 文字包加上只有一项的词表 __species（生态的名字）；按文字包、名字各留一份
+const speciesPacks = new WeakMap<WordPack, Map<string, WordPack>>();
+function withSpecies(pack: WordPack, name: string): WordPack {
+  let byName = speciesPacks.get(pack);
+  if (!byName) speciesPacks.set(pack, (byName = new Map()));
+  let p = byName.get(name);
+  if (!p) byName.set(name, (p = { ...pack, lists: { ...pack.lists, __species: [name] } }));
+  return p;
+}
+
+// 生态区这一段的缓存键里每种生态的样子（speciesFeature 给出的类型、标签，以及 id：锚点按 id 加盐）
+function speciesKey(species: Species[]): Int32Array {
+  const out = new Int32Array(species.length * 3);
+  species.forEach((sp, s) => {
+    const f = speciesFeature(sp);
+    out[s * 3] = FEATURE_TYPES.indexOf(f.type);
+    out[s * 3 + 1] = f.tags.length;
+    out[s * 3 + 2] = hashString(sp.id);
+  });
+  return out;
+}
+
+// 涂上去、并且涂成了的格：每格是涂的生态的下标（后涂的盖住先涂的），没涂或没涂成为 -1。一格都没有时为 null
+function paintedOf(world: World, d: Derived): Int16Array | null {
+  const n = world.mesh.n;
+  const land = world.causes.land;
+  const species = world.small.species;
+  let out: Int16Array | null = null;
+  for (const c of world.small.constraints) {
+    const s = species.findIndex((sp) => sp.id === c.species);
+    if (s < 0) continue;
+    for (const i of c.cells) {
+      if (i >= n || !land[i] || d.dominant[i] !== s) continue;
+      if (!out) out = new Int16Array(n).fill(-1);
+      out[i] = s;
+    }
+  }
+  return out;
+}
+
+// 涂过的世界里，生态区还要看的几样（都在缓存的键里）
+interface Paint {
+  // 每格涂的生态（paintedOf）
+  painted: Int16Array;
+  // 每格的主导生态、陆海
+  dominant: Int16Array;
+  land: Uint8Array;
+}
+
+// 大片生态区：只取决于每格的大类。涂过生态时：
+// - 每个大类的连通块 G 里，没涂的格最多的那种生态是“周围自然的生态”（没涂的格太少时不认）；
+// - 涂的生态与它不同的格（不在任何大类里的也算）按生态连成块，8 格以上的成为自己的地物（涂出来的生态区），
+//   锚点按生态加盐、名字种子里带上生态，第二轮起名（不抢原有地物的名字）；
+// - G 去掉这些块剩下的仍是原来的地物，锚点只在“没涂的格 + 被 G 包住的涂抹洞”里取：
+//   在森林中间涂别的生态、在森林里补涂同一种，锚点都不动；往外涂出去的部分不算，森林往外长名字也不变。
+//   涂抹连着森林外面、又盖住了原来锚点的（在森林边上涂一片），没涂的部分换一个锚点、换名字；
+//   改气候（温度画笔、自然融入的影响范围）让锚点那一格不再是森林时也一样（用户起的名字只要原锚点还在这片地物里就留得住）
+function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
   const list: AddInput[] = [];
+  // 各大类的连通块；gOf：每格属于第几块
+  const groups: { k: number; cells: number[] }[] = [];
+  const gOf = new Int32Array(n).fill(-1);
   for (let k = 0; k < BIOMES.length; k++) {
-    const g = BIOMES[k];
     const mask = new Uint8Array(n);
     for (let i = 0; i < n; i++) mask[i] = biome[i] === k + 1 ? 1 : 0;
-    const min = g === 'wetland' ? 12 : 30;
-    const comps = components(mesh, mask)
-      .filter((c) => c.length >= min)
-      .sort((a, b) => b.length - a.length)
-      .slice(0, 10);
-    for (const cells of comps) put(list, g, cells, 5 + Math.log10(areaOf(world, cells)));
+    for (const cells of components(mesh, mask)) {
+      for (const c of cells) gOf[c] = groups.length;
+      groups.push({ k, cells });
+    }
   }
-  return list;
+  const painted = paint?.painted;
+  // 涂出来的生态区（下标 → 格）与它们占的格；每块的锚点取值范围（没涂过的块就是它自己）
+  const regions: { s: number; cells: number[] }[] = [];
+  const kept = new Uint8Array(n);
+  const domain: (number[] | null)[] = groups.map(() => null);
+  if (paint && painted) {
+    const S = world.small.species.length;
+    // 周围自然的生态：没涂的格里最多的那种（并列取下标小的）；没涂的格不到 max(8, 1/4) 时不认（-1），
+    // 免得一两格自然长出的同种生态让涂的块在“生态区”和“原来的地物”之间来回跳
+    const nat = new Int32Array(groups.length).fill(-1);
+    const count = new Int32Array(Math.max(1, S));
+    groups.forEach((g, gi) => {
+      count.fill(0);
+      let unpainted = 0;
+      for (const c of g.cells) {
+        if (painted[c] >= 0) continue;
+        unpainted++;
+        if (paint.dominant[c] >= 0) count[paint.dominant[c]]++;
+      }
+      if (unpainted === g.cells.length || unpainted < Math.max(8, g.cells.length * 0.25)) return;
+      let best = -1;
+      for (let s = 0; s < S; s++) if (count[s] > (best < 0 ? 0 : count[best])) best = s;
+      nat[gi] = best;
+    });
+    // 外来的格：涂的生态与周围自然的不同
+    const foreign = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (painted[i] >= 0 && (gOf[i] < 0 || nat[gOf[i]] !== painted[i])) foreign[i] = 1;
+    // 同一种生态连成的块：8 格以上，每种取最大的 10 块
+    const seen = new Uint8Array(n);
+    const bySpecies = new Map<number, number[][]>();
+    for (let i = 0; i < n; i++) {
+      if (!foreign[i] || seen[i]) continue;
+      const s = painted[i];
+      const q = [i];
+      seen[i] = 1;
+      for (let h = 0; h < q.length; h++) {
+        const c = q[h];
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (foreign[j] && !seen[j] && painted[j] === s) {
+            seen[j] = 1;
+            q.push(j);
+          }
+        }
+      }
+      const l = bySpecies.get(s) ?? [];
+      l.push(q);
+      bySpecies.set(s, l);
+    }
+    for (const s of [...bySpecies.keys()].sort((a, b) => a - b)) {
+      const comps = bySpecies
+        .get(s)!
+        .filter((c) => c.length >= 8)
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 10);
+      for (const cells of comps) {
+        regions.push({ s, cells });
+        for (const c of cells) kept[c] = 1;
+      }
+    }
+    // 锚点的取值范围：没涂的格，加上被它包住的涂抹洞（涂过的格连成的块，挨着的没涂的陆地全属于这一块；
+    // 湖不算外面，海、地图边算外面）。往外涂出去的块挨着别的陆地，不算
+    groups.forEach((g, gi) => {
+      if (g.cells.some((c) => painted[c] >= 0)) domain[gi] = g.cells.filter((c) => painted[c] < 0);
+    });
+    const seenP = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (painted[i] < 0 || seenP[i]) continue;
+      const q = [i];
+      seenP[i] = 1;
+      let owner = -1;
+      let enclosed = true;
+      for (let h = 0; h < q.length; h++) {
+        const c = q[h];
+        if (mesh.boundary[c]) enclosed = false;
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (painted[j] >= 0) {
+            if (!seenP[j]) {
+              seenP[j] = 1;
+              q.push(j);
+            }
+            continue;
+          }
+          // 湖（陆上主导生态为 -1 的只有湖；什么都长不了的格是 -2，算外面）
+          if (paint.land[j] && paint.dominant[j] === -1) continue;
+          const gj = gOf[j];
+          if (gj < 0 || (owner >= 0 && owner !== gj)) enclosed = false;
+          else owner = gj;
+        }
+      }
+      if (!enclosed || owner < 0) continue;
+      (domain[owner] ??= groups[owner].cells.filter((c) => painted[c] < 0)).push(...q);
+    }
+  }
+  // 原来的地物：每个大类按剩下的格数取最大的 10 块（没涂过时与原来完全相同）
+  const usedBy = new Map<FeatureType, Set<number>>();
+  const usedOf = (t: FeatureType) => {
+    let u = usedBy.get(t);
+    if (!u) usedBy.set(t, (u = new Set()));
+    return u;
+  };
+  for (let k = 0; k < BIOMES.length; k++) {
+    const g = BIOMES[k];
+    const min = g === 'wetland' ? 12 : 30;
+    const rests: { gi: number; cells: number[] }[] = [];
+    groups.forEach((G, gi) => {
+      if (G.k !== k) return;
+      const cells = regions.length ? G.cells.filter((c) => !kept[c]) : G.cells;
+      if (cells.length >= min) rests.push({ gi, cells });
+    });
+    rests.sort((a, b) => b.cells.length - a.cells.length);
+    const used = usedOf(g);
+    for (const { gi, cells } of rests.slice(0, 10)) {
+      const dom = domain[gi];
+      let anchor = stableAnchor(dom?.length ? dom : cells);
+      if (used.has(anchor)) anchor = freeAnchor(cells, used);
+      if (anchor < 0) continue;
+      used.add(anchor);
+      put(list, g, cells, 5 + Math.log10(areaOf(world, cells)), [], anchor);
+    }
+  }
+  // 涂出来的生态区：重要度比同样大的自然地物高一点（刚涂的标注优先放上）
+  for (const { s, cells } of regions) {
+    const sp = world.small.species[s];
+    const info = speciesFeature(sp);
+    const used = usedOf(info.type);
+    const anchor = freeAnchor(cells, used, hashString(sp.id));
+    if (anchor < 0) continue;
+    used.add(anchor);
+    list.push({ type: info.type, cells: Int32Array.from(cells), importance: 6 + Math.log10(areaOf(world, cells)), tags: info.tags, anchor, species: s });
+  }
+  return withLabels(mesh, list);
 }
 
 export function detectFeatures(world: World, d: Derived): GeoFeature[] {
@@ -808,6 +1059,11 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
       add(a.type, a.cells, a.importance, tags, a.anchor);
       if (out.length === before) continue;
       const f = out[before];
+      if (a.species !== undefined) f.species = small.species[a.species].id;
+      if (a.labelCell !== undefined) {
+        f.x = mesh.x[a.labelCell];
+        f.y = mesh.y[a.labelCell];
+      }
       if (a.mark === 'peak') {
         f.x = mesh.x[a.cells[0]];
         f.y = mesh.y[a.cells[0]];
@@ -832,7 +1088,13 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
   replay(memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d)));
   replay(memoized(mesh, 'relief', [causes.land, d.lake, d.elevation, d.slope, km], () => reliefInputs(world, d, terrain.dLand)));
   const biome = biomesOf(world, d);
-  replay(memoized(mesh, 'nature', [biome, km], () => natureInputs(world, biome)));
+  // 没涂过生态时只看大类（与原来相同）；涂过时还要看涂了什么、每格的主导生态、陆海与每种生态的样子
+  const painted = paintedOf(world, d);
+  if (!painted) replay(memoized(mesh, 'nature', [biome, km], () => natureInputs(world, biome, null)));
+  else {
+    const paint = { painted, dominant: d.dominant, land: causes.land };
+    replay(memoized(mesh, 'nature', [biome, painted, d.dominant, causes.land, speciesKey(small.species), km], () => natureInputs(world, biome, paint)));
+  }
 
   out.push(...regionFeatures(world, d));
   assignNames(world, out);
@@ -842,16 +1104,21 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
 // ---------- 用户圈的区块 ----------
 
 // 区块里离边界（含地图边）最远的格：标注放在这里，弯月形的区块字也不会落到外面。并列时取离质心近的
+// （再并列取编号小的，所以结果与遍历的先后无关）。临时数组按网格各留一份，用完把用过的格清回去
+const innerScratch = new WeakMap<Mesh, { inside: Uint8Array; dist: Int32Array }>();
 function innermost(mesh: Mesh, cells: ArrayLike<number>, cx: number, cy: number): number {
-  const inside = new Set<number>();
-  for (let k = 0; k < cells.length; k++) inside.add(cells[k]);
-  const dist = new Map<number, number>();
+  let scratch = innerScratch.get(mesh);
+  if (!scratch) innerScratch.set(mesh, (scratch = { inside: new Uint8Array(mesh.n), dist: new Int32Array(mesh.n).fill(-1) }));
+  const { inside, dist } = scratch;
+  for (let k = 0; k < cells.length; k++) inside[cells[k]] = 1;
   const q: number[] = [];
-  for (const c of inside) {
+  for (let k = 0; k < cells.length; k++) {
+    const c = cells[k];
+    if (dist[c] >= 0) continue;
     let edge = mesh.boundary[c] === 1;
-    for (let e = mesh.off[c]; e < mesh.off[c + 1] && !edge; e++) if (!inside.has(mesh.adj[e])) edge = true;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1] && !edge; e++) if (!inside[mesh.adj[e]]) edge = true;
     if (edge) {
-      dist.set(c, 0);
+      dist[c] = 0;
       q.push(c);
     }
   }
@@ -859,8 +1126,8 @@ function innermost(mesh: Mesh, cells: ArrayLike<number>, cx: number, cy: number)
     const c = q[h];
     for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
       const j = mesh.adj[e];
-      if (inside.has(j) && !dist.has(j)) {
-        dist.set(j, dist.get(c)! + 1);
+      if (inside[j] && dist[j] < 0) {
+        dist[j] = dist[c] + 1;
         q.push(j);
       }
     }
@@ -868,7 +1135,8 @@ function innermost(mesh: Mesh, cells: ArrayLike<number>, cx: number, cy: number)
   let best = cells[0];
   let bd = -1;
   let br = Infinity;
-  for (const [c, dd] of dist) {
+  for (const c of q) {
+    const dd = dist[c];
     const r = (mesh.kind === 'sphere' ? wrapDelta(mesh.x[c] - cx) : mesh.x[c] - cx) ** 2 + (mesh.y[c] - cy) ** 2;
     if (dd > bd || (dd === bd && (r < br || (r === br && c < best)))) {
       best = c;
@@ -876,6 +1144,8 @@ function innermost(mesh: Mesh, cells: ArrayLike<number>, cx: number, cy: number)
       br = r;
     }
   }
+  for (const c of q) dist[c] = -1;
+  for (let k = 0; k < cells.length; k++) inside[cells[k]] = 0;
   return best;
 }
 
@@ -896,14 +1166,17 @@ function spotTags(world: World, d: Derived, c: number): string[] {
 }
 
 // 用户的区块变成地物：标注在离边界最远的格，狭长的（主轴比次轴长一倍以上）沿主轴写；
-// 重要度高于所有自动识别的地物，标注时先放
+// 重要度高于所有自动识别的地物，标注时先放。
+// 类型“自动”的区块每次按圈里现在的地形重新判断（涂成沙漠就变成沙漠）；类型变了，自动起的名字也跟着换一套模板
+// （改冷暖干湿让它跨过判断的门槛时也一样），用户起的名字不变
 export function regionFeatures(world: World, d: Derived): GeoFeature[] {
   const { mesh, kmPerUnit } = world;
   return world.small.regions.map((r) => {
     const cells = Int32Array.from(r.cells);
     let areaKm2 = 0;
     for (const c of cells) areaKm2 += mesh.area[c] * kmPerUnit * kmPerUnit;
-    const type = REGION_KIND_INFO[r.kind].type;
+    const kind = r.auto && r.kind !== 'spot' ? guessRegionKind(world, d, cells) : r.kind;
+    const type = REGION_KIND_INFO[kind].type;
     const f: GeoFeature = {
       key: `region:${r.id}`,
       type,
@@ -937,10 +1210,15 @@ export function regionFeatures(world: World, d: Derived): GeoFeature[] {
   });
 }
 
-// 地名的类型名：用户的区块按它自己的类型（山地、地点……），其余按地物类型
+// 区块的地物类型 → 区块类型（自动判断的区块只记了地物类型）
+const REGION_KIND_OF_TYPE = new Map((Object.keys(REGION_KIND_INFO) as RegionKind[]).map((k) => [REGION_KIND_INFO[k].type, k]));
+
+// 地名的类型名：用户的区块按它（自动判断后）的类型（山地、地点……），涂出来的生态区是生态的名字，其余按地物类型
 export function featureLabel(world: World, f: GeoFeature): string {
-  const r = f.region ? world.small.regions.find((x) => x.id === f.region) : undefined;
-  return r ? REGION_KIND_INFO[r.kind].label : FEATURE_INFO[f.type].label;
+  const kind = f.region ? REGION_KIND_OF_TYPE.get(f.type) : undefined;
+  if (kind) return REGION_KIND_INFO[kind].label;
+  const sp = f.species ? world.small.species.find((x) => x.id === f.species) : undefined;
+  return sp ? speciesFeature(sp).label : FEATURE_INFO[f.type].label;
 }
 
 // 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 沙漠 / 森林，或大多是低平地 → 平原；否则是地区
@@ -974,22 +1252,40 @@ export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<numbe
   return 'region';
 }
 
+// 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
+// 现在是涂出来的生态区；以后新加的种类（画的河、带类型的河……）也接在这里
+const secondPass = (f: GeoFeature) => f.species !== undefined;
+
 // 按文字包起名；用户改过的名字优先
 export function assignNames(world: World, features: GeoFeature[]) {
   const pack: WordPack = world.small.wordPack ?? DEFAULT_PACK;
   const overrides = world.small.featureNames;
-  const byType = new Map<string, [number, FeatureOverride][]>();
+  const byType = new Map<string, [number, FeatureOverride, string][]>();
   for (const [key, ov] of Object.entries(overrides)) {
     const [type, a] = key.split(':');
     const list = byType.get(type) ?? [];
-    list.push([Number(a), ov]);
+    list.push([Number(a), ov, key]);
     byType.set(type, list);
   }
   const taken = new Set<string>();
   const seed = world.small.terrain.gen?.seed ?? world.settings.seed;
   const regions = new Map(world.small.regions.map((r) => [r.id, r]));
-  // 重要的先起名，同名时让给重要的
-  const order = [...features].sort((a, b) => b.importance - a.importance || a.key.localeCompare(b.key));
+  const species = new Map(world.small.species.map((sp) => [sp.id, sp]));
+  // 重要的先起名，同名时让给重要的；新种类的放在第二轮
+  const byImportance = (a: GeoFeature, b: GeoFeature) => b.importance - a.importance || a.key.localeCompare(b.key);
+  const order = [...features.filter((f) => !secondPass(f)).sort(byImportance), ...features.filter(secondPass).sort(byImportance)];
+  // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
+  // （森林被涂出一块别的生态时，名字留在锚点还在的那一边，不会两边都叫这个名字）
+  const ovOf = new Map<GeoFeature, FeatureOverride>();
+  const used = new Set<string>();
+  const match = (f: GeoFeature, ok: (a: number) => boolean) => {
+    const hit = byType.get(f.type)?.find(([a, , key]) => !used.has(key) && ok(a));
+    if (!hit) return;
+    ovOf.set(f, hit[1]);
+    used.add(hit[2]);
+  };
+  for (const f of order) if (!f.region) match(f, (a) => a === f.anchor);
+  for (const f of order) if (!f.region && !ovOf.has(f)) match(f, (a) => f.cells.includes(a));
   for (const f of order) {
     const r = f.region ? regions.get(f.region) : undefined;
     if (r) {
@@ -1000,16 +1296,7 @@ export function assignNames(world: World, features: GeoFeature[]) {
       f.name = r.name || generateName(pack, type, f.tags, hashString(`${seed}:${f.key}:${r.salt}`), taken);
       continue;
     }
-    let ov: FeatureOverride | undefined;
-    const cand = byType.get(f.type);
-    if (cand) {
-      for (const [a, o] of cand) {
-        if (a === f.anchor || f.cells.includes(a)) {
-          ov = o;
-          break;
-        }
-      }
-    }
+    const ov = ovOf.get(f);
     if (ov?.name) {
       f.name = ov.name;
       f.custom = true;
@@ -1017,6 +1304,11 @@ export function assignNames(world: World, features: GeoFeature[]) {
       continue;
     }
     f.custom = false;
-    f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${ov?.salt ?? 0}`), taken);
+    const sp = f.species !== undefined ? species.get(f.species) : undefined;
+    if (sp) {
+      // 涂出来的生态区：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
+      const how = speciesFeature(sp).naming(pack);
+      f.name = generateName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${ov?.salt ?? 0}`), taken);
+    } else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${ov?.salt ?? 0}`), taken);
   }
 }

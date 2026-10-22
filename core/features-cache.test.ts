@@ -48,6 +48,22 @@ describe('地物识别的缓存与从头识别逐值一致', () => {
       // 生态约束
       eng.exec({ op: 'add_constraint', constraint: { cells: land().slice(300, 380), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 500 } });
       check(eng);
+      // 涂出来的生态区：硬覆盖一片荒漠、擦掉其中一段、新加一种生态再涂上、涂过之后再改气候
+      const l0 = land();
+      eng.exec({ op: 'add_constraint', constraint: { cells: l0.slice(400, 520), species: 'desert', mode: 'override', ratio: 1, radius: 300 } });
+      check(eng);
+      eng.exec({ op: 'erase_constraints', cells: l0.slice(440, 470) });
+      check(eng);
+      const never = { field: 'tMean', min: 90, optLow: 95, optHigh: 98, max: 99 };
+      eng.exec({ op: 'add_species', species: { id: 'crystal', name: '水晶丛林', terrain: 'plains', tolerances: [never] } });
+      check(eng);
+      eng.exec({ op: 'add_constraint', constraint: { cells: l0.slice(600, 680), species: 'crystal', mode: 'override', ratio: 1, radius: 300 } });
+      check(eng);
+      expect(w.derived.features.some((f) => f.species === 'crystal')).toBe(true);
+      eng.exec({ op: 'paint', field: 'tempOffset', cells: l0.slice(0, 300), value: 3, mode: 'add' });
+      check(eng);
+      eng.exec({ op: 'update_species', id: 'crystal', patch: { name: '水晶林' } });
+      check(eng);
       // 改海陆（先预览：预览用的副本与引擎共用网格，也共用缓存）
       let cells = coastalStroke(w, 0.4, 5);
       const cmd = { op: 'paint_land' as const, cells, t: cells.map(() => 0), mode: 'land' as const };
