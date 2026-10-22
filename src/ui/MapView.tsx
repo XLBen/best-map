@@ -5,7 +5,7 @@ import { findCell } from '../../core/mesh';
 import type { World } from '../../core/world';
 import { type HighlightLayer, cellLayers, groupPreview, highlightColors, provinceScale } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
-import { type CellLayers, Renderer } from '../render/renderer';
+import { Renderer } from '../render/renderer';
 import {
   FLASH_MS,
   adjustPreview,
@@ -397,20 +397,28 @@ export function MapView() {
     // 着色用到的数组都没变（只改了名字的轻快照；预览世界里没变的数组沿用当前世界的同一个对象）就不重新着色、不重画地形。
     // 最近的两份着色留着：预览出现、消失时来回切换不必重算
     let colorKey: unknown[] = [];
-    const colorCache: { key: unknown[]; layers: CellLayers }[] = [];
+    const colorCache: { key: unknown[]; layers: ReturnType<typeof cellLayers> }[] = [];
     const sameKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
+    // 小数据里着色用到的部分（省份类型、切线、生态颜色、海岸曲折）连成一个字符串：每帧都要比，按小数据对象缓存
+    const smallKeys = new WeakMap<World['small'], string>();
+    function smallKey(w: World): string {
+      let k = smallKeys.get(w.small);
+      if (k === undefined) {
+        const kinds = Object.entries(w.small.provinces).map(([p, m]) => `${p}:${m.kind}`);
+        const seams = (w.small.provinceSeams ?? []).map((s) => s.id);
+        const colors = w.small.species.map((s) => s.color);
+        k = `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${w.small.terrain.coastRoughness}`;
+        smallKeys.set(w.small, k);
+      }
+      return k;
+    }
     function applyColors(w: World) {
       const o = { mode: mode.value, season: season.value, focusSpecies: focusSpecies.value, borders: overlays.value.borders && (category.value === 'provinces' || mode.value === 'provinces') };
-      const kinds = Object.entries(w.small.provinces)
-        .map(([p, m]) => `${p}:${m.kind}`)
-        .join(',');
-      const seams = (w.small.provinceSeams ?? []).map((s) => s.id).join(',');
       const arrays: unknown[] = [];
       for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
       for (const v of Object.values(w.causes)) if (ArrayBuffer.isView(v)) arrays.push(v);
       arrays.push(...Object.values(w.derived.corrF), ...Object.values(w.causes.fields));
-      const colors = w.small.species.map((s) => s.color).join(',');
-      const key = [w.mesh, ...arrays, colors, kinds, seams, o.mode, o.season, o.focusSpecies, o.borders];
+      const key = [w.mesh, ...arrays, smallKey(w), o.mode, o.season, o.focusSpecies, o.borders];
       if (sameKey(key, colorKey)) return;
       colorKey = key;
       let hit = colorCache.find((x) => sameKey(x.key, key));

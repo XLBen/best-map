@@ -80,6 +80,38 @@ describe('涂生态、冷暖：确切预览', () => {
     expect(JSON.stringify(vi.mocked(exec).mock.calls[0][0])).toBe(JSON.stringify(previewed));
   });
 
+  it('前面的笔画还在算时停一下：预览回来时世界已换成前一笔的结果，照样对得上，不再算第二遍；世界再换（撤销）才重算', async () => {
+    const { w, c } = setup();
+    const t = biomeTool();
+    t.down?.(at(w, c));
+    t.preview();
+    // Worker 先算完排在前面的笔画（快照先到，世界换了），再算这个预览：base 是新的世界
+    vi.mocked(previewWorld).mockImplementationOnce(async (cmd: Command) => {
+      world.value = { ...w };
+      const base = world.value;
+      const { result, patch } = eng.previewWorld(cmd);
+      return { result, world: previewWorldOf(base, structuredClone(patch)), base };
+    });
+    vi.advanceTimersByTime(300);
+    await settle();
+    const pv = t.preview();
+    expect(pv.world).toBeTruthy();
+    expect(pv.hint).toMatch(/^温带阔叶林 · \d+ 格会变/);
+    vi.advanceTimersByTime(1000);
+    await settle();
+    t.preview();
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(previewWorld).toHaveBeenCalledTimes(1);
+    // 撤销（世界又换了一个）：这一笔按新的世界重算
+    world.value = { ...w };
+    expect(t.preview().world ?? null).toBeNull();
+    vi.advanceTimersByTime(300);
+    await settle();
+    expect(previewWorld).toHaveBeenCalledTimes(2);
+    expect(t.preview().world).toBeTruthy();
+  });
+
   it('冷暖画笔的提示：更冷 −4 °C · 几格生态会变', async () => {
     const { w, c } = setup();
     const t = climateTool('temp');

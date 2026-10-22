@@ -1,4 +1,5 @@
 import type { Command } from '../../core/commands';
+import type { World } from '../../core/world';
 import { type WorldPreview, cancelWorldPreview, exactDelay, previewWorld, redrawTick, slowPreview, world } from '../state';
 
 // 确切预览：手停下来一会儿后，在世界的副本上执行松手时会执行的同一条命令，地图上画出将来的样子
@@ -17,22 +18,27 @@ export class Exact {
   private wanted = '';
   // 发出去了还没回来的 key
   private running = '';
+  // 停顿到了、要预览时的当前世界：同一个 key 在同一个世界上只要一次（没算成也不再要；世界换了再要）
+  private asked: World | null = null;
   private shown: ExactView | null = null;
   // 清掉一次加一：清掉之前发出去的预览回来了也不要
   private gen = 0;
   // 太慢不自动预览：松手后大约几秒出结果
   slow: number | null = null;
 
-  // 要 key 的确切预览：停顿 pause 毫秒（上次预览算得久时等得更久）后算 build() 给的命令。key 没变时不重新计时
+  // 要 key 的确切预览：停顿 pause 毫秒（上次预览算得久时等得更久）后算 build() 给的命令。key 没变时不重新计时。
+  // key 不必带上世界：预览按 Worker 里最新的状态算（排在前面的编辑之后），回来时当前世界就是它的 base
   want(key: string, build: () => Command | null, pause = 250) {
-    if (key === this.wanted) return;
+    if (key === this.wanted && (this.timer || this.running === key || this.asked === world.value)) return;
     this.wanted = key;
     this.stopTimer();
-    // 已经算好了（比如松开滑块又拖回同一处）
+    // 已经算好了（比如松开滑块又拖回同一处；前面排队的笔画算完后才回来的预览也对得上）
     if (this.view?.key === key) return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      const cmd = this.wanted === key ? build() : null;
+      if (this.wanted !== key) return;
+      this.asked = world.value;
+      const cmd = build();
       if (!cmd) return;
       this.slow = slowPreview(cmd);
       if (this.slow !== null) {
@@ -44,7 +50,10 @@ export class Exact {
       void previewWorld(cmd).then((r) => {
         if (gen !== this.gen) return;
         if (this.running === key) this.running = '';
-        if (r) this.shown = { ...r, key };
+        if (r) {
+          this.shown = { ...r, key };
+          this.asked = r.base;
+        }
         redrawTick.value++;
       });
     }, exactDelay(pause));
@@ -53,12 +62,10 @@ export class Exact {
   // 当前世界上能显示的确切预览（可能是前一个 key 的）；世界换了就没有
   get view(): ExactView | null {
     const v = this.shown;
-    return v && v.base === world.value ? v : null;
-  }
-
-  // 正在算，或者停顿后马上要算（提示里加“…”）
-  get computing(): boolean {
-    return !!this.timer || !!this.running;
+    if (!v || v.base === world.value) return v;
+    // 过期的不会再对得上（世界只往前换）：放掉它和它的旧世界（星球上几十 MB），不留到下一笔
+    this.shown = null;
+    return null;
   }
 
   // 不再要新的（松手了、松开了滑块）：已经显示的留着，直到世界换掉；自己要的还没发出去的作废
@@ -75,6 +82,7 @@ export class Exact {
     this.shown = null;
     this.slow = null;
     this.running = '';
+    this.asked = null;
   }
 
   private stopTimer() {

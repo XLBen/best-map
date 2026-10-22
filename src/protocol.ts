@@ -1,5 +1,5 @@
 import type { Command } from '../core/commands';
-import type { DocTail, PreviewResult, ProvincePreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { DocTail, PreviewResult, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { PreviewPatch } from '../core/preview-world';
@@ -15,12 +15,11 @@ export type Request =
   | { kind: 'exec'; cmd: Command }
   | { kind: 'undo' }
   | { kind: 'redo' }
-  // world：连同将来的世界（与当前世界的差别）一起回来，地图画出将来的样子
-  | { kind: 'preview'; cmd: Command; world?: boolean }
-  // 省份命令的轻预览：只回将来的省份数组与各省
-  | { kind: 'previewProvinces'; cmd: Command }
+  | { kind: 'preview'; cmd: Command }
   // “调整”面板拖滑块时：只组合地形，返回陆海的变化
   | { kind: 'previewTerrain'; patch: TerrainPatch }
+  // 预览，连同将来的世界（与当前世界的差别）：地图画出将来的样子
+  | { kind: 'previewWorld'; cmd: Command }
   // 换一个：撤掉最后一步并执行新命令
   | { kind: 'replaceLast'; cmd: Command }
   | { kind: 'doc' }
@@ -79,10 +78,9 @@ export type Response =
       noop?: boolean;
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
-      // 预览世界：与当前世界的差别（请求带 world 时）
-      world?: PreviewPatch;
-      provinces?: ProvincePreviewResult;
       terrain?: TerrainPreview;
+      // 预览世界：与当前世界的差别（previewWorld）
+      world?: PreviewPatch;
       doc?: WorldDoc;
       tail?: DocTail;
       thumb?: Uint8ClampedArray;

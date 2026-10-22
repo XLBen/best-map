@@ -1,6 +1,6 @@
 import { batch, signal } from '@preact/signals';
 import type { Command } from '../core/commands';
-import type { PreviewResult, ProvincePreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { PreviewResult, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
@@ -101,6 +101,9 @@ export const sliderActive = signal(false);
 export const redrawTick = signal(0);
 // “调整”面板拖滑块时的预览（会变成陆地 / 海的格、山会变高变矮的格）
 export const adjustPreview = signal<{ gained: number[]; lost: number[]; relief: { cells: number[]; delta: number[] } } | null>(null);
+
+export const wizardOpen = signal(false);
+export const helpOpen = signal(false);
 // “调整”面板拖气候、河流的滑块，生态编辑器拖色块时：停下后算出的将来的世界，地图直接画它。
 // key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）
 export const adjustPreviewWorld = signal<{ key: string; base: World; world: World } | null>(null);
@@ -108,9 +111,6 @@ export const adjustPreviewWorld = signal<{ key: string; base: World; world: Worl
 export const adjustPreviewNote = signal<{ key: string; text: string } | null>(null);
 // 当前世界的状态编号（Worker 每改一次换一个）：预览只在按这个状态算出来时才显示，过期的丢掉
 export const worldState = signal(0);
-
-export const wizardOpen = signal(false);
-export const helpOpen = signal(false);
 // 底部条伸到左下角时，比例尺和尺子按钮要往上抬多少（CSS 像素；MapView 每次重画时按底部条的位置算）
 export const cornerLift = signal(0);
 // 量距离：已经点的点（地图单位）；null 表示没在量
@@ -667,178 +667,6 @@ export function previewCommand(cmd: Command): Promise<PreviewResult | null> {
   });
 }
 
-// ---------- 确切预览：将来的世界 ----------
-
-// 同一时间只算一个；排队时来了新的，旧的直接得到 null（拖动中只算最新的那个，不中途取消正在算的）
-function latest<A, R>(run: (a: A) => Promise<R | null>) {
-  let waiting: { a: A; resolve: (r: R | null) => void } | null = null;
-  let running = false;
-  return {
-    ask: (a: A) =>
-      new Promise<R | null>((resolve) => {
-        waiting?.resolve(null);
-        waiting = { a, resolve };
-        if (running) return;
-        void (async () => {
-          running = true;
-          while (waiting) {
-            const p = waiting;
-            waiting = null;
-            p.resolve(await run(p.a));
-          }
-          running = false;
-        })();
-      }),
-    // 还没发出去的作废（松手提交了、换了工具）
-    drop: () => {
-      waiting?.resolve(null);
-      waiting = null;
-    },
-  };
-}
-
-// ---- 成本闸门 ----
-// 每类命令最近一次预览（或执行）算了多久（毫秒）。超过约 600 毫秒的那类不再自动预览（拖动中停顿时）：
-// Worker 一次只做一件事，松手时的执行要排在还没算完的预览后面；改为说一句“松手后约 N 秒出结果”
-const COST_LIMIT = 600;
-const costs = new Map<string, number>();
-// 最近一次确切预览算了多久：停顿多久才预览按它放长（慢的世界上少算几次）
-let lastPreviewMs = 0;
-
-// 哪一类命令（代价相近的算一类）
-export function costKey(cmd: Command): string {
-  if (cmd.op === 'set_planet') return `set_planet:${Object.keys(cmd.patch).sort().join(',')}`;
-  if (cmd.op === 'paint') return `paint:${cmd.field.startsWith('field:') ? 'field' : cmd.field}`;
-  if (cmd.op === 'batch') return `batch:${cmd.commands.map(costKey).join('+')}`;
-  return cmd.op;
-}
-
-export function noteCost(cmd: Command, ms: number) {
-  costs.set(costKey(cmd), ms);
-}
-
-// 要从气候重算起的整体参数（没算过这一类时，按最近一次从气候算起用了多久估计）
-const CLIMATE_KEYS = ['tilt', 'solar', 'lapse', 'humidity', 'latShift', 'currents', 'terrainWind', 'mountainScale', 'rotation', 'outsideOcean'];
-let climateMs: number | null = null;
-function noteTimings(t: Timings) {
-  if (t.climate !== undefined) climateMs = t.total - (t.elevation ?? 0);
-}
-
-// 这条命令自动预览太慢：返回大约几秒（“松手后约 N 秒出结果”）；不慢、或者还不知道时为 null
-export function slowPreview(cmd: Command): number | null {
-  let ms = costs.get(costKey(cmd));
-  if (ms === undefined && cmd.op === 'set_planet' && Object.keys(cmd.patch).some((k) => CLIMATE_KEYS.includes(k))) ms = climateMs ?? undefined;
-  return ms !== undefined && ms > COST_LIMIT ? Math.max(1, Math.round(ms / 1000)) : null;
-}
-
-// 停顿多久再预览（毫秒）：至少 base，上次预览算得久就等得久一点（上次的一半），最多 600
-export function exactDelay(base: number): number {
-  return Math.min(600, Math.max(base, 0.5 * lastPreviewMs));
-}
-
-// 确切预览的结果：将来的世界。base：按哪个世界算的（世界换了就不再显示）
-export interface WorldPreview {
-  result: PreviewResult;
-  world: World;
-  base: World;
-}
-
-// Worker 回来的预览：按当前世界的状态算的才用（排在前面的编辑之后算的也算数：那时它的结果已经换上了），
-// 过期的丢掉；在当前世界上补上差别，得到将来的世界
-export function previewReply(r: Response): WorldPreview | null {
-  const base = world.value;
-  if (!r.ok || !r.preview || !r.world || !base || r.preview.stateId !== worldState.value) return null;
-  return { result: r.preview, world: previewWorldOf(base, r.world), base };
-}
-
-const worldPreviews = latest(async (cmd: Command) => {
-  const r = await call({ kind: 'preview', cmd, world: true }, null);
-  if (r.ok && r.preview) {
-    noteCost(cmd, r.preview.ms);
-    lastPreviewMs = r.preview.ms;
-  }
-  // 预览算不成（比如涂的格都不能长东西）不提示：松手执行时才说
-  return previewReply(r);
-});
-
-// 命令的确切预览，连同将来的世界（previewCommand 不变，画河改道照旧用它）。Worker 留着算好的副本：
-// 紧接着执行同一条命令时直接采用，松手后立刻出结果，颜色不跳
-export function previewWorld(cmd: Command): Promise<WorldPreview | null> {
-  return worldPreviews.ask(cmd);
-}
-
-export function cancelWorldPreview() {
-  worldPreviews.drop();
-}
-
-const provincePreviews = latest(async (cmd: Command) => {
-  const r = await call({ kind: 'previewProvinces', cmd }, null);
-  const base = world.value;
-  if (!r.ok || !r.provinces || !base || r.provinces.stateId !== worldState.value) return null;
-  return { result: r.provinces, base };
-});
-
-// 省份命令的轻预览：将来的省份数组、各省的名字与切线（只复制省份，不复制整个世界）
-export function previewProvinces(cmd: Command): Promise<{ result: ProvincePreviewResult; base: World } | null> {
-  return provincePreviews.ask(cmd);
-}
-
-// ---- 调整面板、生态编辑器：拖动停下后预览将来的世界，松手执行同一条命令（直接采用） ----
-let adjustTimer: ReturnType<typeof setTimeout> | null = null;
-// 正在预览（或要预览）的命令（JSON）
-let adjustKey = '';
-// 松手后正在执行的命令（JSON）：它的预览世界留到结果换上，关面板也不去掉
-let settling = '';
-
-// cmd 为 null：不再预览（关了面板、拖回原来的值）
-export function previewAdjust(cmd: Command | null, pause = 200) {
-  if (adjustTimer) clearTimeout(adjustTimer);
-  adjustTimer = null;
-  if (!cmd) {
-    adjustKey = '';
-    worldPreviews.drop();
-    if (adjustPreviewWorld.value?.key !== settling) adjustPreviewWorld.value = null;
-    adjustPreviewNote.value = null;
-    return;
-  }
-  const key = JSON.stringify(cmd);
-  if (key === adjustKey) return;
-  adjustKey = key;
-  const slow = slowPreview(cmd);
-  if (slow !== null) {
-    adjustPreviewNote.value = { key, text: `松手后约 ${slow} 秒出结果` };
-    return;
-  }
-  adjustPreviewNote.value = { key, text: '正在算预览…' };
-  adjustTimer = setTimeout(() => {
-    adjustTimer = null;
-    void previewWorld(cmd).then((r) => {
-      if (!r || adjustKey !== key) return;
-      adjustPreviewWorld.value = { key, base: r.base, world: r.world };
-      adjustPreviewNote.value = { key, text: '地图上是松手后的样子' };
-    });
-  }, exactDelay(pause));
-}
-
-// 松手：执行 cmd。预览的就是它时，预览的世界一直留到结果换上（不先闪回原样），Worker 直接采用预览算好的结果；
-// 不是它就先去掉。没有变化、执行失败时（世界没换）也去掉
-export async function execAdjust(cmd: Command, label?: string): Promise<boolean> {
-  if (adjustTimer) clearTimeout(adjustTimer);
-  adjustTimer = null;
-  const key = JSON.stringify(cmd);
-  adjustKey = '';
-  worldPreviews.drop();
-  adjustPreviewNote.value = null;
-  if (adjustPreviewWorld.value?.key !== key) adjustPreviewWorld.value = null;
-  settling = key;
-  try {
-    return await exec(cmd, label);
-  } finally {
-    if (settling === key) settling = '';
-    if (adjustPreviewWorld.value?.key === key) adjustPreviewWorld.value = null;
-  }
-}
-
 // 导出：在单独的 Worker 里用主线程上的这一份世界生成（期间照样能看、能改地图），进度显示在顶部，可以取消
 export const exportProgress = signal<number | null>(null);
 let exporting: { worker: Worker; done: (zip: Uint8Array | null) => void } | null = null;
@@ -908,6 +736,169 @@ export function download(name: string, data: Uint8Array | string | Blob, type: s
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- 确切预览：将来的世界 ----------
+
+// 同一时间只算一个；排队时来了新的，旧的直接得到 null（拖动中只算最新的那个，不中途取消正在算的）
+function latest<A, R>(run: (a: A) => Promise<R | null>) {
+  let waiting: { a: A; resolve: (r: R | null) => void } | null = null;
+  let running = false;
+  return {
+    ask: (a: A) =>
+      new Promise<R | null>((resolve) => {
+        waiting?.resolve(null);
+        waiting = { a, resolve };
+        if (running) return;
+        void (async () => {
+          running = true;
+          while (waiting) {
+            const p = waiting;
+            waiting = null;
+            // 出了错也当没有结果，不卡住后面的预览
+            p.resolve(await run(p.a).catch(() => null));
+          }
+          running = false;
+        })();
+      }),
+    // 还没发出去的作废（松手提交了、换了工具）
+    drop: () => {
+      waiting?.resolve(null);
+      waiting = null;
+    },
+  };
+}
+
+// ---- 成本闸门 ----
+// 每类命令最近一次预览（或执行）算了多久（毫秒）。超过约 600 毫秒的那类不再自动预览（拖动中停顿时）：
+// Worker 一次只做一件事，松手时的执行要排在还没算完的预览后面；改为说一句“松手后约 N 秒出结果”
+const COST_LIMIT = 600;
+const costs = new Map<string, number>();
+// 最近一次确切预览算了多久：停顿多久才预览按它放长（慢的世界上少算几次）
+let lastPreviewMs = 0;
+
+// 哪一类命令（代价相近的算一类）
+export function costKey(cmd: Command): string {
+  if (cmd.op === 'set_planet') return `set_planet:${Object.keys(cmd.patch).sort().join(',')}`;
+  if (cmd.op === 'paint') return `paint:${cmd.field.startsWith('field:') ? 'field' : cmd.field}`;
+  if (cmd.op === 'batch') return `batch:${cmd.commands.map(costKey).join('+')}`;
+  return cmd.op;
+}
+
+export function noteCost(cmd: Command, ms: number) {
+  costs.set(costKey(cmd), ms);
+}
+
+// 要从气候重算起的整体参数（没算过这一类时，按最近一次从气候算起用了多久估计）
+const CLIMATE_KEYS = ['tilt', 'solar', 'lapse', 'humidity', 'latShift', 'currents', 'terrainWind', 'mountainScale', 'rotation', 'outsideOcean'];
+let climateMs: number | null = null;
+function noteTimings(t: Timings) {
+  if (t.climate !== undefined) climateMs = t.total - (t.elevation ?? 0);
+}
+
+// 这条命令自动预览太慢：返回大约几秒（“松手后约 N 秒出结果”）；不慢、或者还不知道时为 null
+export function slowPreview(cmd: Command): number | null {
+  let ms = costs.get(costKey(cmd));
+  if (ms === undefined && cmd.op === 'set_planet' && Object.keys(cmd.patch).some((k) => CLIMATE_KEYS.includes(k))) ms = climateMs ?? undefined;
+  return ms !== undefined && ms > COST_LIMIT ? Math.max(1, Math.round(ms / 1000)) : null;
+}
+
+// 停顿多久再预览（毫秒）：至少 base，上次预览算得久就等得久一点（上次的一半），最多 600
+export function exactDelay(base: number): number {
+  return Math.min(600, Math.max(base, 0.5 * lastPreviewMs));
+}
+
+// 确切预览的结果：将来的世界。base：按哪个世界算的（世界换了就不再显示）
+export interface WorldPreview {
+  result: PreviewResult;
+  world: World;
+  base: World;
+}
+
+// Worker 回来的预览：按当前世界的状态算的才用（排在前面的编辑之后算的也算数：那时它的结果已经换上了），
+// 过期的丢掉；在当前世界上补上差别，得到将来的世界
+export function previewReply(r: Response): WorldPreview | null {
+  const base = world.value;
+  if (!r.ok || !r.preview || !r.world || !base || r.preview.stateId !== worldState.value) return null;
+  return { result: r.preview, world: previewWorldOf(base, r.world), base };
+}
+
+const worldPreviews = latest(async (cmd: Command) => {
+  const r = await call({ kind: 'previewWorld', cmd }, null);
+  if (r.ok && r.preview) {
+    noteCost(cmd, r.preview.ms);
+    lastPreviewMs = r.preview.ms;
+  }
+  // 预览算不成（比如涂的格都不能长东西）不提示：松手执行时才说
+  return previewReply(r);
+});
+
+// 命令的确切预览，连同将来的世界（previewCommand 不变，画河改道照旧用它）。Worker 留着算好的副本：
+// 紧接着执行同一条命令时直接采用，松手后立刻出结果，颜色不跳
+export function previewWorld(cmd: Command): Promise<WorldPreview | null> {
+  return worldPreviews.ask(cmd);
+}
+
+export function cancelWorldPreview() {
+  worldPreviews.drop();
+}
+
+// ---- 调整面板、生态编辑器：拖动停下后预览将来的世界，松手执行同一条命令（直接采用） ----
+let adjustTimer: ReturnType<typeof setTimeout> | null = null;
+// 正在预览（或要预览）的命令（JSON）
+let adjustKey = '';
+// 松手后正在执行的命令（JSON）：它的预览世界留到结果换上，关面板也不去掉
+let settling = '';
+
+// cmd 为 null：不再预览（关了面板、拖回原来的值）
+export function previewAdjust(cmd: Command | null, pause = 200) {
+  if (adjustTimer) clearTimeout(adjustTimer);
+  adjustTimer = null;
+  if (!cmd) {
+    adjustKey = '';
+    worldPreviews.drop();
+    if (adjustPreviewWorld.value?.key !== settling) adjustPreviewWorld.value = null;
+    adjustPreviewNote.value = null;
+    return;
+  }
+  const key = JSON.stringify(cmd);
+  if (key === adjustKey) return;
+  adjustKey = key;
+  const slow = slowPreview(cmd);
+  if (slow !== null) {
+    // 不会再有新的预览换上：别的值的预览世界不能留在图上冒充这个值的
+    if (adjustPreviewWorld.value?.key !== settling) adjustPreviewWorld.value = null;
+    adjustPreviewNote.value = { key, text: `松手后约 ${slow} 秒出结果` };
+    return;
+  }
+  adjustPreviewNote.value = { key, text: '正在算预览…' };
+  adjustTimer = setTimeout(() => {
+    adjustTimer = null;
+    void previewWorld(cmd).then((r) => {
+      if (!r || adjustKey !== key) return;
+      adjustPreviewWorld.value = { key, base: r.base, world: r.world };
+      adjustPreviewNote.value = { key, text: '地图上是松手后的样子' };
+    });
+  }, exactDelay(pause));
+}
+
+// 松手：执行 cmd。预览的就是它时，预览的世界一直留到结果换上（不先闪回原样），Worker 直接采用预览算好的结果；
+// 不是它就先去掉。没有变化、执行失败时（世界没换）也去掉
+export async function execAdjust(cmd: Command, label?: string): Promise<boolean> {
+  if (adjustTimer) clearTimeout(adjustTimer);
+  adjustTimer = null;
+  const key = JSON.stringify(cmd);
+  adjustKey = '';
+  worldPreviews.drop();
+  adjustPreviewNote.value = null;
+  if (adjustPreviewWorld.value?.key !== key) adjustPreviewWorld.value = null;
+  settling = key;
+  try {
+    return await exec(cmd, label);
+  } finally {
+    if (settling === key) settling = '';
+    if (adjustPreviewWorld.value?.key === key) adjustPreviewWorld.value = null;
+  }
 }
 
 // ---------- 自动保存（只存在本浏览器里） ----------

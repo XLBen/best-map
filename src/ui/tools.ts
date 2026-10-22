@@ -236,14 +236,16 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   const ex = new Exact();
   // 每个确切预览算的时候这一笔已经涂到了哪些格：之后新涂的格另外淡淡地涂上估计的颜色
   const covered = new Map<string, Set<number>>();
-  const keyOf = (w: World, s: Stroke, shift: boolean) => `${worldId(w)}|${s.id}|${s.rev}|${shift}|${optionsId()}`;
-  const wantExact = (w: World, s: Stroke, shift: boolean, pause?: number) => {
-    const key = keyOf(w, s, shift);
+  // 不带世界：这一笔的格松手前不再变，命令也就不变；排在前面的笔画算完、世界换了，按新世界算的预览照样是它的结果
+  const keyOf = (s: Stroke, shift: boolean) => `${s.id}|${s.rev}|${shift}|${optionsId()}`;
+  const wantExact = (s: Stroke, shift: boolean, pause?: number) => {
+    const key = keyOf(s, shift);
     ex.want(
       key,
       () => {
-        // 停顿期间又涂了几格（还没来得及重画）、世界换了：等下一次
-        if (world.value !== w || keyOf(w, s, shift) !== key || !s.t.size) return null;
+        // 停顿期间又涂了几格（还没来得及重画）：等下一次
+        const w = world.value;
+        if (!w || keyOf(s, shift) !== key || !s.t.size) return null;
         const cmd = cfg.exact!(w, s, shift);
         if (cmd) covered.set(key, new Set(s.t.keys()));
         return cmd;
@@ -351,7 +353,7 @@ function brushTool(cfg: BrushConfig): ToolHandler {
         return;
       }
       // 不再算新的确切预览（已经发出去的照算：它就是这一笔的结果，执行时直接采用）
-      const key = cfg.exact ? keyOf(w, s, p.shift) : '';
+      const key = cfg.exact ? keyOf(s, p.shift) : '';
       ex.stop();
       // 松手时的预览留在图上，直到这一笔的结果换上
       const q = { s, layers: cfg.layers(w, s, p.shift).layers, key, view: ex.view };
@@ -396,7 +398,7 @@ function brushTool(cfg: BrushConfig): ToolHandler {
           const d = dabAt(w, pointer);
           // 拖滑块：在这里确切地涂一下会怎样（只在拖滑块时；空闲悬停只有圈）
           if (cfg.exact && d.s.t.size && d.s.t.size <= 20000 && !queued.length) {
-            const key = wantExact(w, d.s, pointer.shift, 200);
+            const key = wantExact(d.s, pointer.shift, 200);
             const v = ex.view?.key === key ? ex.view : null;
             if (v) return { layers: exactLayers(v, d.s, () => d.layers), shapes: ringsAt(w, pointer), hint: '在这里涂会这样', sliderHint: true, world: v.world };
           }
@@ -409,14 +411,15 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       const head = queued.length ? `排队中：前面还有 ${queued.length} 笔` : null;
       if (cfg.exact) {
         // 按住停顿 250 毫秒：确切预览；接着画时一直显示上一个，直到新的换上（不跳回原样）
-        const key = wantExact(w, stroke, pointer.shift);
+        const key = wantExact(stroke, pointer.shift);
         const v = ex.view;
+        // 太慢不再自动预览：说松手后大约几秒（留着的上一个确切预览不会再被换掉，不写“…”）
+        const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '';
         if (v) {
           const s = stroke;
-          const hint = v.key === key && cfg.exactHint ? cfg.exactHint(w, s, pointer.shift, v.result) : `${r.hint ?? ''}…`;
+          const hint = v.key === key && cfg.exactHint ? cfg.exactHint(w, s, pointer.shift, v.result) : `${r.hint ?? ''}${slow || '…'}`;
           return { layers: [...waiting, ...exactLayers(v, s, () => r.layers)], shapes: ringsAt(w, pointer), hint: head ?? hint, warn: r.warn, provinces: provincesWith(lastProv), world: v.world };
         }
-        const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '';
         return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: head ?? `${r.hint ?? ''}${slow}`, warn: r.warn, provinces: provincesWith(lastProv), world: future };
       }
       return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: head ?? r.hint ?? null, warn: r.warn, provinces: provincesWith(lastProv), world: future };
@@ -1059,6 +1062,7 @@ export function growTool(): ToolHandler {
         });
       }
       const v = ex.view;
+      const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '';
       if (v && sp) {
         // 确切预览：地图画出将来的世界，变了的格描边；之后多拖出来的格淡淡地涂上
         const cov = covered.get(v.key);
@@ -1067,11 +1071,10 @@ export function growTool(): ToolHandler {
         return {
           layers: [{ cells: v.result.changedCells, color: WHITE, pattern: 'outline' }, ...(added.length ? [{ cells: added, color: hexToRgb(sp.color), alpha: 0.35 }] : [])],
           shapes,
-          hint: committing ? '正在计算…' : v.key === key ? `${sp.name} +${grown.length} 格 · ${changed} 格会变${failing ? ` · ${failing} 格没涂成` : ''}` : `${sp.name} +${grown.length} 格…`,
+          hint: committing ? '正在计算…' : v.key === key ? `${sp.name} +${grown.length} 格 · ${changed} 格会变${failing ? ` · ${failing} 格没涂成` : ''}` : `${sp.name} +${grown.length} 格${slow || '…'}`,
           world: v.world,
         };
       }
-      const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '';
       return {
         layers: [
           { cells: start.region, color: WHITE, alpha: 0.3 },

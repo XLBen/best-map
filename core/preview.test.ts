@@ -4,7 +4,7 @@ import type { Command } from './commands';
 import type { Engine } from './engine';
 import { buildModel, sampleComponents } from './generate';
 import { previewWorldOf } from './preview-world';
-import { continents, engineFor } from './testing/fixtures';
+import { engineFor } from './testing/fixtures';
 
 // 预览：副本与原世界共用生成器的结果（地形命令的预览不重新采样整个生成器），
 // 副本上执行与新世界上执行逐值相同；什么都没改的命令不因“采用预览”进历史
@@ -112,7 +112,7 @@ describe('采用预览', () => {
   });
 });
 
-// ---------- 第八轮：预览世界、采用、状态编号、省份的轻预览 ----------
+// ---------- 第八轮：预览世界、采用、状态编号 ----------
 
 // 一个世界里几条有代表性的命令：改陆海、自然融入地涂生态、冷暖、整体冷暖、河流多少、重画一片
 function edits(eng: Engine): Record<string, Command> {
@@ -173,6 +173,37 @@ describe('预览世界', () => {
       expect(digestWorld(a.world)).toEqual(digestWorld(b.world));
     });
   }
+
+  // 采用换上的是副本的推导、气候底、求解结果和地形底图：之后接着改、撤销，与两条都直接执行逐值相同
+  it('采用之后接着改 = 两条都直接执行；撤销两步回到原样', () => {
+    const w0 = make().world;
+    const land = [...Array(w0.mesh.n).keys()].filter((i) => w0.causes.land[i] && w0.derived.lake[i] !== 1);
+    const coast = coastalStroke(w0, 0.7, 4);
+    const next: Command[] = [
+      { op: 'add_constraint', constraint: { cells: land.slice(300, 360), species: 'desert', mode: 'constraint', ratio: 1, radius: 400 } },
+      { op: 'paint_land', cells: coast, t: coast.map(() => 0), mode: 'land' },
+      { op: 'set_planet', patch: { humidity: 1.4 } },
+    ];
+    for (const name of ['paint_land', 'add_constraint', 'temp', 'reroll_region']) {
+      for (const then of next) {
+        const a = make();
+        const b = make();
+        const cmd = edits(a)[name];
+        const before = digestWorld(a.world);
+        a.preview(cmd);
+        const previewed = copyOf(a)!.world.derived;
+        a.exec(cmd);
+        expect(a.world.derived, name).toBe(previewed);
+        a.exec(then);
+        b.exec(cmd);
+        b.exec(then);
+        expect(digestWorld(a.world), `${name} → ${then.op}`).toEqual(digestWorld(b.world));
+        a.undo();
+        a.undo();
+        expect(digestWorld(a.world), `${name} → ${then.op}`).toEqual(before);
+      }
+    }
+  });
 
   it('没有变化的命令不因采用预览进历史：在陆地上画陆地', () => {
     const a = make();
@@ -252,60 +283,5 @@ describe('预览世界', () => {
     expect(make().stateId).not.toBe(a.stateId);
     // 副本的编号与原来的相同（预览按它比较）
     expect(a.clone().stateId).toBe(a.stateId);
-  });
-});
-
-describe('省份的轻预览', () => {
-  // 最大的陆地省
-  const firstLand = (eng: Engine) => {
-    const w = eng.world;
-    const count = new Map<number, number>();
-    for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i] && w.causes.province[i] >= 0) count.set(w.causes.province[i], (count.get(w.causes.province[i]) ?? 0) + 1);
-    const p = [...count].sort((a, b) => b[1] - a[1])[0][0];
-    return { p, cells: [...Array(w.mesh.n).keys()].filter((i) => w.causes.province[i] === p) };
-  };
-  const cases: Record<string, (eng: Engine) => Command> = {
-    regenerate: (eng) => ({ op: 'regenerate_provinces', cells: firstLand(eng).cells }),
-    split: (eng) => ({ op: 'split_province', id: firstLand(eng).p }),
-    merge: (eng) => {
-      const w = eng.world;
-      const { p, cells } = firstLand(eng);
-      let q = -1;
-      for (const c of cells) {
-        for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1] && q < 0; e++) {
-          const o = w.causes.province[w.mesh.adj[e]];
-          if (o >= 0 && o !== p && w.causes.land[w.mesh.adj[e]]) q = o;
-        }
-      }
-      return { op: 'merge_province', from: q, into: p };
-    },
-    cut: (eng) => {
-      const w = eng.world;
-      const { cells } = firstLand(eng);
-      const cx = cells.reduce((s, c) => s + w.mesh.x[c], 0) / cells.length;
-      const ys = cells.map((c) => w.mesh.y[c]);
-      return { op: 'cut_province', line: [[cx, Math.min(...ys) - 0.05], [cx, Math.max(...ys) + 0.05]] };
-    },
-    rules: () => ({ op: 'generate_provinces', rules: { seed: 9 } }),
-  };
-  for (const [name, build] of Object.entries(cases)) {
-    it(`${name}：预览 = 执行后的省份与省名，当前世界不变`, () => {
-      const a = continents({ cells: 5000, provinces: true });
-      const b = continents({ cells: 5000, provinces: true });
-      const cmd = build(a);
-      const before = digestWorld(a.world);
-      const p = a.previewProvinces(cmd);
-      expect(digestWorld(a.world)).toEqual(before);
-      b.exec(cmd);
-      expect(Array.from(p.province)).toEqual(Array.from(b.world.causes.province));
-      expect(p.provinces).toEqual(b.world.small.provinces);
-      expect(p.provinceSeams).toEqual(b.world.small.provinceSeams ?? null);
-      expect(p.summary).toBe(b.history[b.history.length - 1].summary);
-    });
-  }
-
-  it('不只改省份的命令不能这样预览', () => {
-    const a = continents({ cells: 5000, provinces: true });
-    expect(() => a.previewProvinces({ op: 'set_planet', patch: { solar: 0.9 } })).toThrow();
   });
 });
