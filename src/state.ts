@@ -5,7 +5,7 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { viewOf } from '../core/sphere';
-import { type ChainKind, type IslandKind, type TerrainPatch, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
+import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
@@ -98,8 +98,8 @@ export const uiHidden = signal(false);
 export const sliderActive = signal(false);
 // 工具的异步预览算好了：地图重画一次
 export const redrawTick = signal(0);
-// “调整”面板拖滑块时的预览（会变成陆地 / 海的格、山会变高变矮的格）
-export const adjustPreview = signal<{ gained: number[]; lost: number[]; relief: { cells: number[]; delta: number[] } } | null>(null);
+// “调整”面板拖滑块时的预览（会变成陆地 / 海的格、山会变高变矮的格、每格将来的海岸值：地图上画出将来的海岸线）
+export const adjustPreview = signal<TerrainPreview | null>(null);
 
 export const wizardOpen = signal(false);
 export const helpOpen = signal(false);
@@ -598,7 +598,10 @@ let terrainPending: TerrainPatch | null = null;
 let terrainBusy = false;
 // 每次清掉预览就换一代：还在路上的旧结果不再显示
 let terrainGen = 0;
+// 要过几次预览（清掉也算）：松手执行后据此判断用户是不是又拖了（见 commitTerrain）
+let terrainAsked = 0;
 export function previewTerrain(patch: TerrainPatch | null) {
+  terrainAsked++;
   if (!patch) {
     terrainPending = null;
     terrainGen++;
@@ -620,6 +623,39 @@ export function previewTerrain(patch: TerrainPatch | null) {
     }
     terrainBusy = false;
   })();
+}
+
+// “调整”的地形滑块松手：执行命令，拖到的那个值的预览（将来的海岸线）留在地图上，直到结果换上
+// （applySnapshot 时清掉），算的期间不闪回旧的海岸。没有变化、出错时在这里清掉；松手后又拖了就不动（那是新的预览）
+export async function commitTerrain(cmd: Command, label: string, patch: TerrainPatch | null): Promise<boolean> {
+  if (patch) previewTerrain(patch);
+  const mark = terrainAsked;
+  const ok = await exec(cmd, label);
+  if (terrainAsked === mark && adjustPreview.value) previewTerrain(null);
+  return ok;
+}
+
+// 一次性的地形预览（重画这一片悬停时）：同一时间只算一个，排队时来了新的，旧的直接得到 null；
+// 算的过程中世界换了也得到 null。结果里的 ms 是 Worker 算它用了多久（工具据此决定要不要自动预览）
+let terrainOnce: { patch: TerrainPatch; resolve: (r: TerrainPreview | null) => void } | null = null;
+let terrainOnceBusy = false;
+export function previewTerrainOnce(patch: TerrainPatch): Promise<TerrainPreview | null> {
+  return new Promise((resolve) => {
+    terrainOnce?.resolve(null);
+    terrainOnce = { patch, resolve };
+    if (terrainOnceBusy) return;
+    void (async () => {
+      terrainOnceBusy = true;
+      while (terrainOnce) {
+        const p = terrainOnce;
+        terrainOnce = null;
+        const w = world.value;
+        const r = await call({ kind: 'previewTerrain', patch: p.patch }, null);
+        p.resolve(r.ok && r.terrain && world.value === w ? r.terrain : null);
+      }
+      terrainOnceBusy = false;
+    })();
+  });
 }
 
 // 命令的确切预览：在世界的副本上执行，返回会出现 / 消失的河等（画河改道时用）。

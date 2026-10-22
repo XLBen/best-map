@@ -279,7 +279,7 @@ const defs: ToolDef[] = [
     icon: Dices,
     name: '重画这一片',
     short: '重画',
-    how: '点一下，圈里的地形重新随机，圈外不变',
+    how: '停一下先看重画后的样子；点一下，圈里的地形重新随机，圈外不变',
     size: brushAs('半径'),
     create: () => rerollTool(),
   },
