@@ -535,7 +535,7 @@ export interface CellLayers {
   grad: Float32Array;
   // 分类平涂（alpha = 覆盖度），null 不画
   flat: Uint8Array | null;
-  // 分组编号（省份），画分组边界；null 不画
+  // 分组（省份），画分组边界；每格两个值（分组编号、切线用的标记，见 colors.ts 的 provinceGroups）；null 不画
   group: Float32Array | null;
   shade: number;
   rock: number;
@@ -582,6 +582,12 @@ export class Renderer {
   private highlightVersion = 0;
   private sceneKey = '';
   private composeKey = '';
+  // 分组、平涂：setLayers 给的底子与现在显示的（省份预览覆盖时不同）。换预览时只上传变了的行
+  private groupBase: Float32Array | null = null;
+  private groupShown: Float32Array | null = null;
+  private flatBase: Uint8Array | null = null;
+  private flatShown: Uint8Array | null = null;
+  private groupVersion = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -757,10 +763,61 @@ export class Renderer {
     this.hasFlat = !!l.flat;
     if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
-    if (l.group) this.upload(this.tex.group, l.group, n, 1);
+    if (l.group) this.upload(this.tex.group, l.group, n, 2);
+    this.groupBase = this.groupShown = l.group;
+    this.flatBase = this.flatShown = l.flat;
     this.shade = l.shade;
     this.rock = l.rock;
     this.coastAmp = l.coastAmp;
+  }
+
+  // 省份预览：整份分组（与平涂）换成将来的样子，着色器照此画出真实的新省界；null 回到 setLayers 给的。
+  // 没有画分组边界时不管。setLayers 之后预览就没了，调用方要重新给
+  setGroupPreview(p: { group: Float32Array; flat: Uint8Array | null } | null) {
+    if (!this.groupBase || !this.groupShown) return;
+    const group = p ? p.group : this.groupBase;
+    const flat = p && p.flat && this.flatBase ? p.flat : this.flatBase;
+    if (group === this.groupShown && flat === this.flatShown) return;
+    this.uploadChanged(this.tex.group, this.groupShown, group, 2);
+    this.groupShown = group;
+    if (flat && this.flatShown && flat !== this.flatShown) {
+      this.uploadChanged(this.tex.flat, this.flatShown, flat, 4);
+      this.flatShown = flat;
+    }
+    this.groupVersion++;
+  }
+
+  // 只上传与现在显示的不同的那些行（每行 TEX_W 格）：涂省、剪刀每动一下只改一小片
+  private uploadChanged(tex: WebGLTexture, before: Float32Array | Uint8Array, after: Float32Array | Uint8Array, channels: 2 | 4) {
+    const gl = this.gl;
+    const n = this.mesh?.n ?? 0;
+    const rows = Math.ceil(n / TEX_W);
+    const per = TEX_W * channels;
+    const differs = (r: number) => {
+      const end = Math.min(n * channels, (r + 1) * per);
+      for (let k = r * per; k < end; k++) if (before[k] !== after[k]) return true;
+      return false;
+    };
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    for (let r = 0; r < rows; ) {
+      if (!differs(r)) {
+        r++;
+        continue;
+      }
+      let r1 = r + 1;
+      while (r1 < rows && differs(r1)) r1++;
+      // 最后一行不满时补齐
+      let src: Float32Array | Uint8Array = after.subarray(r * per, Math.min(after.length, r1 * per));
+      if (src.length < (r1 - r) * per) {
+        const padded = after instanceof Float32Array ? new Float32Array((r1 - r) * per) : new Uint8Array((r1 - r) * per);
+        padded.set(src);
+        src = padded;
+      }
+      if (channels === 2) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RG, gl.FLOAT, src);
+      else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      r = r1;
+    }
   }
 
   setHighlight(h: Uint8Array | null) {
@@ -836,7 +893,7 @@ export class Renderer {
     }
     const pp = this.planet ? this.planetProgs : null;
     const noiseK = 1 / (Math.PI * mesh.spacing);
-    const composeKey = `${sceneKey}|${this.highlightVersion}|${this.style}|${relief}`;
+    const composeKey = `${sceneKey}|${this.highlightVersion}|${this.groupVersion}|${this.style}|${relief}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);

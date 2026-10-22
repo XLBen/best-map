@@ -1,4 +1,4 @@
-import { Lock, LockOpen, Palette, ScanSearch, SplitSquareHorizontal, X } from 'lucide-preact';
+import { Ban, Lock, LockOpen, Palette, ScanSearch, SplitSquareHorizontal, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
@@ -42,7 +42,8 @@ export function ProvinceBar() {
   if (!w || id === null || !meta) return null;
   const cells = provinceCells(w, id);
   const area = Math.round((cells.length * mapKm(w).cell ** 2) / 100) * 100;
-  const kinds = PROVINCE_KINDS.filter((k) => (k === 'sea') !== meta.land);
+  // 湖省：一半以上的格已经不是湖了（湖被删掉、干了），可以改回陆地
+  const lakeGone = meta.kind === 'lake' && cells.filter((i) => w.derived.lake[i] === 1).length * 2 < cells.length;
   const rename = () => {
     if (cancelled.current) {
       cancelled.current = false;
@@ -67,8 +68,25 @@ export function ProvinceBar() {
       <span class="bar-label" title={`${cells.length} 格`}>
         约 {area.toLocaleString()} km²
       </span>
-      {kinds.length > 1 && (
-        <Seg<ProvinceKind> value={meta.kind} options={kinds.map((k) => [k, PROVINCE_KIND_INFO[k].name])} onChange={(k) => void exec({ op: 'set_province', id, kind: k }, '正在修改…')} />
+      {/* 类型：陆地省份只有“无人区”一个开关；湖省只由自动划分产生，这里只标出来 */}
+      {meta.land && meta.kind !== 'lake' && (
+        <button
+          class={`bar-btn ${meta.kind === 'wasteland' ? 'on' : ''}`}
+          onClick={() => void exec({ op: 'set_province', id, kind: meta.kind === 'wasteland' ? 'land' : 'wasteland' }, '正在修改…')}
+          title="没人住的地方（冰原、深漠、高山）。导出到游戏时算作不可进入的荒地；地图上画灰色斜线。不改地形和生态"
+        >
+          <Ban size={15} /> 无人区
+        </button>
+      )}
+      {meta.kind === 'lake' && (
+        <span class="bar-chip" title="这个省是一大片湖（自动划分时大湖单独成省），导出时算作湖">
+          {lakeGone ? '湖省 · 这里已没有湖' : '湖省'}
+        </span>
+      )}
+      {lakeGone && (
+        <button class="bar-btn" onClick={() => void exec({ op: 'set_province', id, kind: 'land' }, '正在修改…')}>
+          改回陆地
+        </button>
       )}
       <button
         class={`bar-btn ${meta.locked ? 'on' : ''}`}
@@ -127,6 +145,7 @@ function RulesBox({ w }: { w: World }) {
         <button onClick={() => void exec({ op: 'generate_provinces', rules: { ...draft, seed: rules.seed + 1 } }, '正在划分省份…')}>换一种划分</button>
       </div>
       <p class="muted small">同样的规则划出来的结果是固定的；想要别的分法点“换一种划分”。锁定的省份不会变，撤销可以回到原来的划分。</p>
+      <p class="muted small">图例：灰色斜线 = 无人区；蓝色字 = 湖省</p>
     </section>
   );
 }

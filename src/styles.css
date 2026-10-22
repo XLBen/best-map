@@ -851,6 +851,15 @@ button svg {
   font-size: 11.5px;
   margin-left: 2px;
 }
+/* 底部条上只读的标记（比如“湖省”） */
+.bar-chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  white-space: nowrap;
+  color: #9cc3ea;
+}
 
 /* 左下角：量距离（比例尺画在地图画布上，就在它右边；底部条伸到左下角时一起抬到它上面，见 MapView 的 cornerLift） */
 .ruler-btn {

@@ -127,6 +127,53 @@ describe('剪刀', () => {
     expect(cut.plans.find((p) => p.id === id)?.parts.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('剪刀：从邻省外一格画到另一边邻省外一格，只切开中间的省', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh } = w;
+    const s = mesh.spacing;
+    const prov = (x: number, y: number) => (x < 0 || y < 0 || x > mesh.width || y > mesh.height ? -1 : w.causes.province[findCell(mesh, x, y)]);
+    // 陆地省从大到小，过形心沿几个方向各画一条：两端都在省界外一格（邻省里）
+    const ids = Object.keys(w.small.provinces)
+      .map(Number)
+      .filter((id) => w.small.provinces[id].land)
+      .map((id) => ({ id, cells: provinceCells(w, id) }))
+      .filter((p) => p.cells.length >= 12)
+      .sort((a, b) => b.cells.length - a.cells.length);
+    let tested = 0;
+    for (const { id, cells } of ids) {
+      if (tested >= 24) break;
+      const cx = cells.reduce((t, c) => t + mesh.x[c], 0) / cells.length;
+      const cy = cells.reduce((t, c) => t + mesh.y[c], 0) / cells.length;
+      if (prov(cx, cy) !== id) continue;
+      for (const angle of [0.3, 1.4, 2.5]) {
+        const dx = Math.cos(angle);
+        const dy = Math.sin(angle);
+        // 从形心往一个方向走到出省，再往外一格
+        const exit = (sign: number): [number, number] | null => {
+          for (let t = 0; t < 60 * s; t += 0.1 * s) {
+            const x = cx + sign * dx * t;
+            const y = cy + sign * dy * t;
+            if (prov(x, y) !== id) return [x + sign * dx * s, y + sign * dy * s];
+          }
+          return null;
+        };
+        const a = exit(-1);
+        const b = exit(1);
+        if (!a || !b || prov(a[0], a[1]) < 0 || prov(b[0], b[1]) < 0) continue;
+        const line: [number, number][] = [a, b];
+        // 只用不延长时正好切开这个省的线（线本身在邻省里那一格切不开邻省）
+        const plain = cutProvinces(w, line, { extend: false });
+        if (plain.plans.map((p) => p.id).join() !== String(id)) continue;
+        const cut = cutProvinces(w, line);
+        expect(cut.before + cut.after).toBe(0);
+        expect(cut.plans.map((p) => p.id)).toEqual([id]);
+        tested++;
+      }
+    }
+    expect(tested).toBeGreaterThanOrEqual(20);
+  });
+
   it('一条线来回切两次：切成三块，执行后多出两个省，可以撤销', () => {
     const eng = continents();
     const w = eng.world;

@@ -69,6 +69,13 @@ export interface Preview {
   shapes: Shape[];
   hint: string | null;
   warn?: boolean;
+  // 省份的预览：这些格将来属于哪个省。地图照此画出将来真实的省界（同一个对象不必重新上传）
+  provinces?: ProvincePreview | null;
+}
+
+export interface ProvincePreview {
+  cells: number[];
+  ids: number[];
 }
 
 export interface ToolHandler {
@@ -151,7 +158,7 @@ interface BrushConfig {
   hint: (shift: boolean) => { text: string | null; warn?: boolean };
   // 哪些格能被这一笔涂到
   filter?: (w: World, i: number) => boolean;
-  layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean };
+  layers: (w: World, s: Stroke, shift: boolean) => { layers: HighlightLayer[]; hint?: string; warn?: boolean; provinces?: ProvincePreview | null };
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
 }
 
@@ -161,6 +168,18 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   let stroke: Stroke | null = null;
   let pointer: Pointer | null = null;
   let queued: Stroke[] = [];
+  // 省份预览（涂省）：松手后一直留到结果回来，省界不会先跳回原样再跳过去
+  let lastProv: ProvincePreview | null = null;
+  let held: { s: Stroke; prov: ProvincePreview }[] = [];
+  let heldMerged: { from: unknown[]; prov: ProvincePreview | null } = { from: [], prov: null };
+  const provincesWith = (current: ProvincePreview | null): ProvincePreview | null => {
+    const from = [...held.map((h) => h.prov), current];
+    if (from.length === heldMerged.from.length && from.every((x, k) => x === heldMerged.from[k])) return heldMerged.prov;
+    const list = from.filter((x): x is ProvincePreview => !!x);
+    const prov = list.length <= 1 ? (list[0] ?? null) : { cells: list.flatMap((x) => x.cells), ids: list.flatMap((x) => x.ids) };
+    heldMerged = { from, prov };
+    return prov;
+  };
   // 小画笔（不到 4 格）悬停时描出一笔会涂到的格；格没变就沿用同一个图层，不必重新上传
   let foot: { cells: number[]; layer: HighlightLayer } | null = null;
   const footprint = (w: World, p: Pointer): HighlightLayer[] => {
@@ -196,29 +215,34 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       stroke = null;
       if (!w || !s || !s.t.size) return;
       queued.push(s);
+      if (lastProv) held.push({ s, prov: lastProv });
+      lastProv = null;
       try {
         await cfg.commit(w, s, p.shift);
       } finally {
         queued = queued.filter((q) => q !== s);
+        held = held.filter((h) => h.s !== s);
         redrawTick.value++;
       }
     },
     cancel() {
       stroke = null;
+      lastProv = null;
     },
     preview() {
       const w = world.value;
-      if (!w || !pointer) return EMPTY;
+      if (!w || !pointer) return held.length ? { ...EMPTY, provinces: provincesWith(null) } : EMPTY;
       const shapes: Shape[] = [{ kind: 'circle', x: pointer.x, y: pointer.y, r: brushR(w), dashed: !stroke, geodesic: true }];
       const waiting: HighlightLayer[] = queued.map((q) => ({ cells: q.cells, color: WHITE, alpha: 0.3 }));
       const inLine = queued.length ? `正在计算…（${queued.length} 笔）` : null;
       if (!stroke) {
         const h = cfg.hint(pointer.shift);
-        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes, hint: inLine ?? h.text, warn: h.warn };
+        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes, hint: inLine ?? h.text, warn: h.warn, provinces: provincesWith(null) };
       }
       const r = cfg.layers(w, stroke, pointer.shift);
+      lastProv = r.provinces ?? null;
       // 排队时世界还没换上前面笔画的结果：只标出这一笔涂到的范围
-      return { layers: [...waiting, ...r.layers], shapes, hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn };
+      return { layers: [...waiting, ...r.layers], shapes, hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn, provinces: provincesWith(lastProv) };
     },
   };
 }
@@ -1376,6 +1400,16 @@ export function provinceSelectTool(): ToolHandler {
 
 export function provinceBrushTool(): ToolHandler {
   const target = () => selectedProvince.value;
+  // 涂到的格换成选中的省：地图上省界当场跟着变（按笔画、省缓存，同一个对象不必重新上传）
+  let prov: { key: string; s: Stroke; value: ProvincePreview } | null = null;
+  const provincesOf = (w: World, s: Stroke, id: number) => {
+    const key = `${worldId(w)}|${id}|${s.t.size}`;
+    if (prov?.s !== s || prov.key !== key) {
+      const cells = s.cells;
+      prov = { key, s, value: { cells, ids: cells.map(() => id) } };
+    }
+    return prov.value;
+  };
   return brushTool({
     hint: () => {
       const w = world.value;
@@ -1392,7 +1426,7 @@ export function provinceBrushTool(): ToolHandler {
     },
     layers(w, s) {
       const id = target()!;
-      return { layers: [{ cells: s.cells, color: provinceColor(id), alpha: 0.8 }], hint: `${provinceName(w, id)} +${s.t.size} 格` };
+      return { layers: [{ cells: s.cells, color: provinceColor(id), alpha: 0.8 }], hint: `${provinceName(w, id)} +${s.t.size} 格`, provinces: provincesOf(w, s, id) };
     },
     async commit(_w, s) {
       const id = target();
@@ -1402,26 +1436,51 @@ export function provinceBrushTool(): ToolHandler {
   });
 }
 
-// 剪刀：沿画的线切开省份（线是墙，两端自动延长到省界）。切成几块就是几个省，
-// 预览里每块新省一种颜色，延长出来的线画成虚线
-const PIECE_COLORS: RGB[] = [
-  [255, 214, 90],
-  [110, 210, 235],
-  [240, 130, 200],
-  [150, 225, 120],
-  [245, 160, 90],
-];
+// 剪刀：沿画的线切开省份（线是墙，两端自动延长到省界）。切成几块就是几个省。
+// 拖动时地图上直接画出切开后真实的省界（与结果同一套编码和扭曲），新的几块用它们将来的颜色；
+// 切出几块之后原来的红线隐去，只留两端的小点和自动延长的虚线。松手后预览一直留到结果回来
+const CUT_RED = 'rgba(255, 90, 70, 0.95)';
 
-export function provinceCutTool(): ToolHandler {
+export function provinceCutTool(zoom: () => number): ToolHandler {
   let pointer: Pointer | null = null;
   let line: [number, number][] | null = null;
   let lastScreen: [number, number] = [0, 0];
   let committing = false;
-  let cache: { key: string; cut: CutResult } | null = null;
+  let cache: { key: string; cut: CutResult; view: Preview } | null = null;
   const cutNow = (w: World, pts: [number, number][]) => {
     const key = `${worldId(w)}|${pts.length}|${pts[pts.length - 1].join(',')}`;
-    if (cache?.key !== key) cache = { key, cut: cutProvinces(w, pts) };
-    return cache.cut;
+    if (cache?.key !== key) {
+      const cut = cutProvinces(w, pts);
+      cache = { key, cut, view: viewOf(w, pts, cut) };
+    }
+    return cache;
+  };
+  // 新的几块：编号按命令里的顺序（与执行时新建省份的顺序相同），颜色就是将来的颜色
+  const viewOf = (w: World, pts: [number, number][], cut: CutResult): Preview => {
+    const layers: HighlightLayer[] = [];
+    const cells: number[] = [];
+    const ids: number[] = [];
+    let id = w.small.nextProvince;
+    for (const pl of cut.plans) {
+      for (const part of pl.parts.slice(1)) {
+        layers.push({ cells: part, color: provinceColor(id), alpha: 0.45 });
+        for (const c of part) {
+          cells.push(c);
+          ids.push(id);
+        }
+        id++;
+      }
+    }
+    const shapes: Shape[] = [];
+    if (!cut.plans.length) shapes.push({ kind: 'line', points: pts, color: CUT_RED, width: 2.5 });
+    else {
+      const dot = 2.5 / zoom();
+      for (const [x, y] of [pts[0], pts[pts.length - 1]]) shapes.push({ kind: 'circle', x, y, r: dot, color: CUT_RED, width: 2 });
+    }
+    if (cut.before) shapes.push({ kind: 'line', points: cut.line.slice(0, cut.before + 1), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
+    if (cut.after) shapes.push({ kind: 'line', points: cut.line.slice(cut.line.length - 1 - cut.after), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
+    const pieces = cut.plans.reduce((n, pl) => n + pl.parts.length, 0);
+    return { layers, shapes, hint: cut.plans.length ? `切成 ${pieces} 块` : '线还没把省分开', provinces: cells.length ? { cells, ids } : null };
   };
   return {
     drags: true,
@@ -1433,7 +1492,7 @@ export function provinceCutTool(): ToolHandler {
     },
     move(p, pressed) {
       pointer = p;
-      if (pressed && line && Math.hypot(p.sx - lastScreen[0], p.sy - lastScreen[1]) > 6) {
+      if (pressed && line && !committing && Math.hypot(p.sx - lastScreen[0], p.sy - lastScreen[1]) > 6) {
         line.push([p.x, p.y]);
         lastScreen = [p.sx, p.sy];
       }
@@ -1442,7 +1501,8 @@ export function provinceCutTool(): ToolHandler {
       const w = world.value;
       if (!w || !line || committing) return;
       line.push([p.x, p.y]);
-      const { plans } = cutNow(w, line);
+      const { cut } = cutNow(w, line);
+      const { plans } = cut;
       if (!plans.length) {
         line = null;
         showToast('线没有把省份分开', true);
@@ -1462,25 +1522,45 @@ export function provinceCutTool(): ToolHandler {
       if (!committing) line = null;
     },
     preview() {
+      // 松手后（正在计算）：停在松手时的样子。新世界先到时也不重新算（线在新世界里已经切不开什么了）
+      if (committing && cache) return { ...cache.view, hint: '正在计算…' };
       const w = world.value;
-      if (!w || !pointer) return EMPTY;
-      if (!line || line.length < 2) return EMPTY;
-      const pts: [number, number][] = [...line, [pointer.x, pointer.y]];
-      const cut = cutNow(w, pts);
-      const layers: HighlightLayer[] = [];
-      let k = 0;
-      for (const pl of cut.plans) for (const cells of pl.parts.slice(1)) layers.push({ cells, color: PIECE_COLORS[k++ % PIECE_COLORS.length], alpha: 0.55 });
-      const shapes: Shape[] = [{ kind: 'line', points: pts, color: 'rgba(255, 90, 70, 0.95)', width: 2.5 }];
-      if (cut.before) shapes.push({ kind: 'line', points: cut.line.slice(0, cut.before + 1), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
-      if (cut.after) shapes.push({ kind: 'line', points: cut.line.slice(cut.line.length - 1 - cut.after), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
-      const pieces = cut.plans.reduce((n, pl) => n + pl.parts.length, 0);
-      return { layers, shapes, hint: committing ? '正在计算…' : cut.plans.length ? `切成 ${pieces} 块` : '线还没把省分开' };
+      if (!w || !pointer || !line || line.length < 2) return EMPTY;
+      return cutNow(w, [...line, [pointer.x, pointer.y]]).view;
     },
   };
 }
 
+// 合并：悬停在邻省上时，两省之间的省界当场消失（省份预览），点了以后一直留到结果回来
 export function provinceMergeTool(): ToolHandler {
   let pointer: Pointer | null = null;
+  let cache: { key: string; view: Preview } | null = null;
+  let committing: Preview | null = null;
+  const view = (): Preview => {
+    const w = world.value;
+    if (!w || !pointer || pointer.cell < 0) return EMPTY;
+    const id = w.causes.province[pointer.cell];
+    const sel = selectedProvince.value;
+    if (id < 0) return EMPTY;
+    if (sel === null || sel === id || !w.small.provinces[sel]) return { layers: [], shapes: [], hint: provinceName(w, id) };
+    const meta = w.small.provinces[id];
+    const other = w.small.provinces[sel];
+    if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地和海域不能合并', warn: true };
+    const key = `${worldId(w)}|${id}|${sel}`;
+    if (cache?.key !== key) {
+      const cells = provinceCells(w, id);
+      cache = {
+        key,
+        view: {
+          layers: [{ cells, color: provinceColor(sel), alpha: 0.7 }],
+          shapes: [],
+          hint: `并进 ${provinceName(w, sel)}`,
+          provinces: { cells, ids: cells.map(() => sel) },
+        },
+      };
+    }
+    return cache.view;
+  };
   return {
     drags: false,
     move(p) {
@@ -1496,23 +1576,15 @@ export function provinceMergeTool(): ToolHandler {
         selectedProvince.value = id;
         return;
       }
-      if (await exec({ op: 'merge_province', from: id, into: sel }, '正在合并…')) selectedProvince.value = sel;
+      committing = view();
+      try {
+        if (await exec({ op: 'merge_province', from: id, into: sel }, '正在合并…')) selectedProvince.value = sel;
+      } finally {
+        committing = null;
+      }
     },
     preview() {
-      const w = world.value;
-      if (!w || !pointer || pointer.cell < 0) return EMPTY;
-      const id = w.causes.province[pointer.cell];
-      const sel = selectedProvince.value;
-      if (id < 0) return EMPTY;
-      if (sel === null || sel === id || !w.small.provinces[sel]) return { layers: [], shapes: [], hint: provinceName(w, id) };
-      const meta = w.small.provinces[id];
-      const other = w.small.provinces[sel];
-      if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地和海域不能合并', warn: true };
-      return {
-        layers: [{ cells: provinceCells(w, id), color: provinceColor(sel), alpha: 0.7 }],
-        shapes: [],
-        hint: `并进 ${provinceName(w, sel)}`,
-      };
+      return committing ?? view();
     },
   };
 }

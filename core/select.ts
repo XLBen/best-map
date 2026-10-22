@@ -496,7 +496,10 @@ export function ringWinding(points: [number, number][]): number {
 // 剪刀：画的折线是一道墙。省内相邻两格的连线和折线相交，这条连接就断开，再求连通块，
 // 所以线经过的格不会被“吃掉”，切口就在线所在的位置（精度半格）。
 // 线的两端没出省界时，沿着两端的方向延长到省界外。切成几块就是几个省：最大的一块留原来的省，
-// 其余每块各成一个新省；只有一格的碎块并回最大的那块。锁定的省份不切
+// 其余每块各成一个新省；只有一格的碎块并回最大的那块。锁定的省份不切。
+// 只有线在这一端所在的省里走了足够长（至少两格，并且至少是线长的四分之一）才延长这一端：
+// 从邻省外一格画起时，这一端只在邻省里走了一格，不延长，邻省不会被切开。
+// extend: false 时不延长（切线命令收到的是界面上已经延长、化简好的线）
 export interface CutResult {
   // 实际用来切的线（含两端的延长）；before / after：两端各延长了几个点
   line: [number, number][];
@@ -506,7 +509,7 @@ export interface CutResult {
   plans: { id: number; parts: number[][] }[];
 }
 
-export function cutProvinces(world: World, raw: [number, number][]): CutResult {
+export function cutProvinces(world: World, raw: [number, number][], opts: { extend?: boolean } = {}): CutResult {
   const { mesh, causes, small } = world;
   const out: CutResult = { line: raw, before: 0, after: 0, plans: [] };
   if (raw.length < 2) return out;
@@ -514,10 +517,35 @@ export function cutProvinces(world: World, raw: [number, number][]): CutResult {
   const sphere = mesh.kind === 'sphere';
   // 整个星球东西相接：只看南北
   const inside = (x: number, y: number) => (sphere ? y >= 0 && y <= 1 : x >= 0 && y >= 0 && x <= mesh.width && y <= mesh.height);
+  let rawLength = 0;
+  for (let k = 0; k + 1 < raw.length; k++) rawLength += Math.hypot(raw[k + 1][0] - raw[k][0], raw[k + 1][1] - raw[k][1]);
+  // 从一端沿线往回走（每步 0.3 格），一直在省 id 里的那一段有多长
+  const runFromEnd = (fromEnd: boolean, id: number) => {
+    const step = mesh.spacing * 0.3;
+    let run = 0;
+    let hint = 0;
+    for (let k = 0; k + 1 < raw.length; k++) {
+      const [x0, y0] = fromEnd ? raw[raw.length - 1 - k] : raw[k];
+      const [x1, y1] = fromEnd ? raw[raw.length - 2 - k] : raw[k + 1];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const steps = Math.max(1, Math.ceil(len / step));
+      for (let j = 1; j <= steps; j++) {
+        const x = x0 + ((x1 - x0) * j) / steps;
+        const y = y0 + ((y1 - y0) * j) / steps;
+        if (!inside(x, y)) return run;
+        hint = findCell(mesh, x, y, hint);
+        if (causes.province[hint] !== id) return run;
+        run += len / steps;
+      }
+    }
+    return run;
+  };
   // 两端延长：沿端点附近一段的方向一步半格往外走，直到出了端点所在的省
-  const extend = (end: [number, number], from: [number, number]): [number, number][] => {
+  const extend = (end: [number, number], from: [number, number], fromEnd: boolean): [number, number][] => {
+    if (opts.extend === false) return [];
     const id = causes.province[findCell(mesh, end[0], end[1])];
     if (!cuttable(id)) return [];
+    if (runFromEnd(fromEnd, id) < Math.max(2 * mesh.spacing, 0.25 * rawLength)) return [];
     const dx = end[0] - from[0];
     const dy = end[1] - from[1];
     const len = Math.hypot(dx, dy);
@@ -541,8 +569,8 @@ export function cutProvinces(world: World, raw: [number, number][]): CutResult {
     }
     return fromEnd ? pts[0] : pts[pts.length - 1];
   };
-  const head = extend(raw[0], back(raw, false)).reverse();
-  const tail = extend(raw[raw.length - 1], back(raw, true));
+  const head = extend(raw[0], back(raw, false), false).reverse();
+  const tail = extend(raw[raw.length - 1], back(raw, true), true);
   const line: [number, number][] = [...head, ...raw, ...tail];
   out.line = line;
   out.before = head.length;

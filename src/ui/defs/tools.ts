@@ -452,7 +452,7 @@ const defs: ToolDef[] = [
     short: '剪刀',
     how: '画一条线把省切开',
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
-    create: () => provinceCutTool(),
+    create: (env) => provinceCutTool(env.zoom),
   },
   {
     id: 'pmerge',
