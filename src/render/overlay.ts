@@ -388,6 +388,7 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit:
     pts.forEach(([x, y], k) => (k === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
     // 包住极点的圆在平铺图上是一条横贯的曲线：不闭合
     if (!pole) ctx.closePath();
+    if (sh.fill && !pole) ctx.fill();
     ctx.stroke();
   } else if (sh.kind === 'circle' && sh.x !== undefined && sh.y !== undefined && sh.r !== undefined) {
     ctx.beginPath();

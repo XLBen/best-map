@@ -428,7 +428,8 @@ function islandAgain(spec: IslandSpec): Again {
   };
 }
 
-// 小礁的预览：那一格淡淡地涂上，格心画一个半格大的实心点（放出来大约就这么大）
+// 小礁的预览：那一格淡淡地涂上，格心画一个半格大的实心点（放出来大约就这么大）。
+// 整个星球：点是球面上真实大小的圆（高纬度的格在平铺图上横向拉长，点也跟着拉长）
 function reefPreview(w: World, fresh: number[], nearX: number, hint: string, warn: boolean): Preview {
   const { mesh } = w;
   const c = fresh[0];
@@ -436,7 +437,7 @@ function reefPreview(w: World, fresh: number[], nearX: number, hint: string, war
   const x = mesh.kind === 'sphere' ? unwrapNear(mesh.x[c], nearX) : mesh.x[c];
   return {
     layers: [{ cells: fresh, color: LAND_RGB, alpha: 0.25 }],
-    shapes: [{ kind: 'circle', x, y: mesh.y[c], r: mesh.spacing * 0.25, fill: true, color: 'rgba(120, 205, 95, 0.95)', width: 1 }],
+    shapes: [{ kind: 'circle', x, y: mesh.y[c], r: mesh.spacing * 0.25, fill: true, geodesic: true, color: 'rgba(120, 205, 95, 0.95)', width: 1 }],
     hint,
     warn,
   };

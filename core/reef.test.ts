@@ -117,9 +117,10 @@ describe('小礁', () => {
       expect(gained).toEqual([...at].sort((a, b) => a - b));
       // 画出来的大小：每个都看得见、都不到一格（格以下的海岸细节让它们有大有小），平均约四分之一格（宽约半格）
       const fr = at.map((c) => renderedFraction(eng, c));
+      // （实测单个约 0.15–0.47：宽约三分之一到四分之三格）
       for (const f of fr) {
-        expect(f).toBeGreaterThan(0);
-        expect(f).toBeLessThan(1);
+        expect(f).toBeGreaterThan(0.1);
+        expect(f).toBeLessThan(0.6);
       }
       const mean = fr.reduce((a, b) => a + b, 0) / fr.length;
       expect(mean).toBeGreaterThanOrEqual(0.15);
@@ -134,6 +135,13 @@ describe('小礁', () => {
         expect(
           at.filter((c) => !e.world.causes.land[c]),
           `海岸曲折 ${rough}`,
+        ).toEqual([]);
+        // 画出来也还在：屏幕、导出用的同一个判断里，格心那一点是陆地
+        // （海岸噪声最偏的几个在两头会缩成很小的点，这里只要求看得见）
+        const s = coastValues(e.world);
+        expect(
+          at.filter((c) => !pointIsLand(e.world, s, e.world.derived.elevation, e.world.mesh.x[c], e.world.mesh.y[c], c).land),
+          `海岸曲折 ${rough}（画出来）`,
         ).toEqual([]);
       }
     });

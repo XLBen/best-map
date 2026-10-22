@@ -300,6 +300,10 @@ describe('第八轮：更小的岛、湖、画笔', () => {
       }
     }
     expect(filled).toBeGreaterThan(0);
+    // 岛心在地图外（岛链画出了地图边）：没有岛心那一格，不补
+    for (const [x, y] of [[-cellKm / w.kmPerUnit, 0.5], [1, 1 + (3 * cellKm) / w.kmPerUnit]]) {
+      expect(islandStamp(w, { x, y, kind: 'volcanic', size: cellKm * 0.4, variant: 0 }).footprint).toEqual([]);
+    }
     // 岛链：带 fine 的才补（命令里的大小比滑块的最小值还小时）
     const chain = { points: [[0.2, 0.3], [1.8, 0.7]] as [number, number][], kind: 'volcanic' as const, size: cellKm * 0.4, density: 1, variant: 0 };
     const islands = chainIslands(w, { ...chain, fine: true });

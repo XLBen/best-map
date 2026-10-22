@@ -696,9 +696,11 @@ export function islandStamp(world: World, spec: IslandSpec, fillTiny = true): St
     out.upliftDelta.push(lift);
   }
   out.footprint = footprintOf(world, out);
-  // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）
+  // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）。
+  // 岛心在地图外（岛链画出了地图边）时没有“岛心那一格”，不补：否则地图边上会多出一格一格的小岛
   const cellKm = mesh.spacing * world.kmPerUnit;
-  if (fillTiny && !out.footprint.length && typeof spec.size === 'number' && spec.size < cellKm * 1.5) {
+  const onMap = sphere !== null || (spec.x >= 0 && spec.x <= mesh.width && spec.y >= 0 && spec.y <= mesh.height);
+  if (fillTiny && onMap && !out.footprint.length && typeof spec.size === 'number' && spec.size < cellKm * 1.5) {
     const coast = coastNoiseField(mesh, coastSeed(world));
     if (!causes.land[c0] && !isLandValue(causes.landness[c0], coast[c0], rough)) {
       const need = Math.max(0, core - causes.landness[c0]);

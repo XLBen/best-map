@@ -95,14 +95,15 @@ const BRUSH: SliderDef = {
 
 const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
 
-// 岛的最小值随种类（珊瑚岛大一些）；小礁只占一格，不用调大小
+// 岛的最小值随种类（珊瑚岛大一些）；小礁只占一格，不用调大小。
+// 滑块停在别的种类的大小上时（比如从火山岛换成珊瑚岛），写出的是补到这一种最小值后的大小，与放出来的一样
 const ISLAND: SliderDef = {
   key: 'islandKm',
   label: '直径',
   range: (w) => islandSizeRangeKm(w, options.value.islandKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v) => `${fmtKm(v * 2)} km`,
+  format: (v, w) => `${fmtKm(Math.max(islandSizeRangeKm(w, options.value.islandKind)[0], v) * 2)} km`,
   enabled: () => options.value.islandKind !== 'reef',
 };
 
@@ -113,7 +114,7 @@ const CHAIN_SIZE: SliderDef = {
   range: (w) => islandSizeRangeKm(w, options.value.chainKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v) => `${fmtKm(v * 2)} km`,
+  format: (v, w) => `${fmtKm(Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], v) * 2)} km`,
 };
 
 const LAKE: SliderDef = {
