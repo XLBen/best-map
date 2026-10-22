@@ -685,6 +685,48 @@ describe('固定自然的河', () => {
   });
 });
 
+describe('重算出错时整步不生效（第三批）', () => {
+  // 下一次重算整个算完（地形、气候的底子都换成了新的）之后才出错，只出错一次：底子也要回到执行前的
+  const breakAfterNextUpdate = (e: Engine) => {
+    const self = e as unknown as { recompute?: () => unknown };
+    const recompute = (Engine.prototype as unknown as { recompute: () => unknown }).recompute;
+    self.recompute = function (this: Engine) {
+      delete self.recompute;
+      recompute.call(this);
+      throw new Error('重算出了意外');
+    };
+  };
+  const state = (e: Engine) => ({ digest: digestWorld(e.world), history: e.history, stateId: e.stateId });
+
+  for (const cache of [true, false]) {
+    it(`有只挖河床的河时（${cache ? '存着推导' : '没存推导'}）：改地形、改河出错都回到执行前；之后改河、改气候按的还是没挖河床的地形，与重放一致`, () => {
+      const eng = continents();
+      if (!cache) eng.undoCache = 0;
+      const w = eng.world;
+      const { stroke, peak } = acrossRange(w);
+      const plan = planCourse(w, w.derived, stroke, { endOnLand: 'flow' });
+      eng.exec(courseCmd(plan));
+      const id = w.small.guides[w.small.guides.length - 1].id;
+      const mesh = w.mesh;
+      const around = [...Array(mesh.n).keys()].filter((i) => Math.hypot(mesh.x[i] - mesh.x[peak], mesh.y[i] - mesh.y[peak]) < 4 * mesh.spacing);
+      // 改地形（从高程重算：地形底子换成新的之后出错）
+      let before = state(eng);
+      breakAfterNextUpdate(eng);
+      expect(() => eng.exec({ op: 'paint_relief', cells: around, t: around.map(() => 0), strength: -1.5 })).toThrow('重算出了意外');
+      expect(state(eng)).toEqual(before);
+      // 改河（只从水文重算，读存着的地形底子）
+      before = state(eng);
+      breakAfterNextUpdate(eng);
+      expect(() => eng.exec({ op: 'update_guide', id, patch: { flow: 9 } })).toThrow('重算出了意外');
+      expect(state(eng)).toEqual(before);
+      eng.exec({ op: 'update_guide', id, patch: { flow: 9 } });
+      expect(followed(w, plan.cells)).toBe(true);
+      eng.exec({ op: 'set_planet', patch: { humidity: 1.2 } });
+      expect(digestWorld(eng.world)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), mesh).world));
+    });
+  }
+});
+
 describe('预览', () => {
   it('预览就是结果：每格流量、消失的河、挖低的格与执行后相同；松手直接采用，与重放一致', () => {
     const eng = continents();
