@@ -127,6 +127,18 @@ npx tsx tools/bench.ts --globe                        # 整个星球（10 万格
 - 导入时会检查模板里用到的词表是否都存在；可以用它做英文或某种架空语言的包。
 - 名字由“文字包 + 类型 + 锚点格 + 世界种子”确定，换文字包后所有自动名字一起换，你改过的名字不变。
 
+## 资源包
+
+资源包（`*.map2pack.json`）把几种生态、河流类型、星球形态和文字包放在一个文件里，在“世界 → 资源包…”里管理：
+
+- **资源库**：装好的资源包都在这里。内置的“奇幻生态示例”总在、默认信任；“我的资源”是从自己的世界里导出、存进来的。删掉资源库里的包不影响用过它的世界。
+- **导入**：只解析、检查，不运行任何脚本；列出内容（带色块）和要留意的问题（重复的 id、指向不存在的生态、场、河流类型或词表的引用）。包里有脚本时先问“信任这个资源包吗？”，可以展开看每一段脚本。不认识的部分直接报错，不悄悄丢掉。
+- **用到这个世界**：左边一张卡片，勾选要用的项，地图上先画出用了之后的样子（会变的格描边，新生态的格淡淡涂上，写出“会有 1,234 格变成新生态”），点“用上”是一整步，可以撤销。世界里已有一模一样的跳过；同 id 不同内容的改名为 `id-2`，包里对它的引用一起改，花纹的种子不变。生态抽屉里的“添加示例生态…”也走这张卡片。
+- **导出**：从当前世界勾选自己做的生态（内置的原样不用导出，岛上特有的不带）、文字包，存成文件或存进资源库。
+- 以前导出的生态文件、文字包照旧能导入（走同一条检查、信任的路）。
+
+格式：`{format: "map2-pack", version: 1, id, name, author?, description?, fields?, biomes?, riverTypes?, planetForms?, textPacks?}`。
+
 ## 速度（第七轮的优化）
 
 第七轮没有加功能，只让程序更快、更稳。结果全部逐值不变：`core/golden-full.test.ts` 对一组较长的操作后整个世界（每一个数组、地物、省份）按字节记下哈希，地区与星球各一组；每一项提速还有自己的“新旧算法逐位相同”测试。
@@ -156,14 +168,16 @@ npx tsx tools/bench.ts --globe                        # 整个星球（10 万格
   - `climate.ts` 日照温度、风带季风、水汽输运；`planet-climate.ts` 整个星球的气候；`sphere-flow.ts` 球面上的输送（绕星球一圈的风带不剪断）；`ocean.ts` 简化洋流与海面温度；`hydrology.ts` 填洼汇流、湖、径流；`rivers.ts` 河流折线
   - `species.ts` 生态类型（色块 + 条件 + 耐受曲线）；`vegetation.ts` 适宜度 / 竞争 / 扩散；`constraints.ts` 涂生态的反推与“没涂成”的原因；`endemic.ts` 岛屿特有生态
   - `features.ts` 地理要素识别，用户圈的地名区块也在这里变成地名；`names.ts` + `packs/zh.json` 文字包命名
+  - `packs.ts` 资源包的格式、检查、用到世界（一整步）、从世界导出；`packs/fantasy.ts` 内置示例包（生态在 `packs/fantasy-biomes.ts`）
   - `provinces.ts` 省份规则、划分、局部重划、修补；`select.ts` 画笔、拖动扩张、画河的路线（汇入、改道、会变干的河段）、圈一片、剪刀沿线切省
   - `commands.ts` 命令（zod 校验、撤销记录）；`engine.ts` 流水线、历史（撤销只从那一步影响到的那一层重算）、文档
   - `subcell.ts` 格以下的细节（屏幕与导出共用）；`export.ts` 导出；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、星球上的纬度带
   - `testing/fixtures.ts` 测试共用的世界模板（建一次，每个测试拿一份副本）
   - 测试：`*.test.ts`，其中 `golden-full.test.ts`（整个世界按字节逐值不变）、`undo-cache.test.ts`（撤销缓存与重算一致）、`checkpoint.test.ts`（检查点恢复与重放一致）、`replay-names.test.ts`（重放后省名不变），以及各项提速的新旧对照（`rng-kernel`、`mesh-build`、`reroll-incremental`、`flow-order`、`provinces-naming`、`features-cache`、`climate-cache`、`routing-identity`、`raster-identity`、`solver-identity`）是第七轮加的；`erase-cut.test.ts`（恢复原样、剪刀、最小笔刷、星球位置）、`regions.test.ts`（圈地名、放地名）、`undo.test.ts`（撤销与从头重放逐值一致）是第五轮加的；`golden.test.ts`（一块地区的结果逐值不变）、`sphere.test.ts`、`planet.test.ts`、`planet-climate.test.ts`、`ocean.test.ts`、`geo.test.ts` 是第六轮（整个星球）加的
-- `src/`：界面。`worker.ts` 在 Web Worker 里跑引擎（只改了名字、省份时只把这些发回主线程；写、读检查点）；`export-worker.ts` 导出用的单独 Worker；`idb.ts` IndexedDB（自动保存、检查点、参考图）；`render/` 是 WebGL 渲染（`renderer.ts`）、着色（`colors.ts`）、矢量叠加（`overlay.ts`）与风向流线（`wind.ts`）；`ui/` 里：
+- `src/`：界面。`worker.ts` 在 Web Worker 里跑引擎（只改了名字、省份时只把这些发回主线程；写、读检查点）；`export-worker.ts` 导出用的单独 Worker；`idb.ts` IndexedDB（自动保存、检查点、参考图、资源库）；`library.ts` 资源库与信任过的脚本；`render/` 是 WebGL 渲染（`renderer.ts`）、着色（`colors.ts`）、矢量叠加（`overlay.ts`）与风向流线（`wind.ts`）；`ui/` 里：
   - `defs/` 是注册表：`tools.ts`（每个工具的图标、名字、底部条上的滑块与选项、吸取、换个形状）、`adjustments.ts`（“调整”里的滑块）、`layers.ts`（“图层”里的底图与开关）。加一个工具、参数或底图只要加一条声明，顶栏、底部工具条、面板都由它们生成
   - `shell/` 是浮在地图上的外壳：顶栏、弹出面板、底部工具条（`ContextBar.tsx`，量距离时换成量出来的数；横滑块的换算在 `sliders.ts`）、提示条、右下角“这里”、左下角的尺子、右边的抽屉、键盘
+  - `packs/` 是资源包的弹窗（资源库、导入、导出）、“用到这个世界”的卡片和信任的问话
   - `panels/` 是弹出面板的内容；`tools.ts` 是地图工具（预览与命令）；`Wizard.tsx` 新建向导，`ClimateChart.tsx` 生态类型编辑器，`Inspector.tsx` “这里是什么”
 - `tools/`：`generate.ts` 批量导出，`bench.ts` 计时，`hash.ts` 各层哈希，`terrain-stats.ts` 地形统计，`preview-terrain.ts` 地形预览图
 

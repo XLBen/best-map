@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 // commands.ts 在模块顶层读 speciesSchema、script.ts 在模块顶层继承 CommandError（在 errors.ts 里）。
 // 不管先引用哪一个模块都不能碰上“初始化之前不能访问”：每个模块都在清空的模块表里先引用一次
 
-const MODULES = ['species', 'script', 'commands', 'errors', 'world', 'engine', 'vegetation', 'constraints', 'features', 'biome-look', 'biome-scripts', 'packs/fantasy-biomes', 'names', 'provinces', 'select', 'seams'];
+const MODULES = ['species', 'script', 'commands', 'errors', 'world', 'engine', 'vegetation', 'constraints', 'features', 'biome-look', 'biome-scripts', 'packs/fantasy-biomes', 'packs/fantasy', 'packs', 'names', 'provinces', 'select', 'seams'];
 
 describe('引用的先后', () => {
   for (const m of MODULES) {

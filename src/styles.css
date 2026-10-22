@@ -608,6 +608,7 @@ button svg {
 .here,
 .popover,
 .sheet,
+.pack-apply,
 .notice {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -1224,4 +1225,83 @@ kbd {
 .app.with-sheet .bottombar {
   left: calc((100% - 380px) / 2);
   max-width: calc(100% - 560px);
+}
+
+/* ---------- 资源包 ---------- */
+.modal.packs {
+  width: 660px;
+}
+.modal.packs textarea {
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+}
+.pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pack-swatches {
+  display: inline-flex;
+  gap: 2px;
+  flex: none;
+  min-width: 17px;
+}
+.pack-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.chip.static {
+  display: inline-flex;
+  align-items: center;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  cursor: default;
+}
+.pack-problems {
+  border-color: #6b5a2a;
+}
+.pack-problems ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.box.trust {
+  border-color: var(--accent-line);
+}
+.box.trust p {
+  margin: 4px 0;
+}
+.script-src {
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 8px;
+  margin: 3px 0 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+/* “用到这个世界”的卡片：浮在地图左边，不挡地图 */
+.pack-apply {
+  position: absolute;
+  top: 60px;
+  left: 10px;
+  width: min(340px, calc(100% - 20px));
+  max-height: calc(100% - 150px);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  border-radius: 14px;
+  z-index: 15;
 }

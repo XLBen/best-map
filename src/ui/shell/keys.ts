@@ -2,6 +2,7 @@ import { helpOpen, measure, openPanel, redo, selectedFeature, selectedProvince, 
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
+import { packApply, packDialog, trustAsk } from '../packs/store';
 
 // 键盘：一个地方统一处理，Esc 按固定顺序一层层退出
 
@@ -12,8 +13,11 @@ const typing = (t: EventTarget | null) => {
 
 export function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    // 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 → 量距离（先清空再退出）→ 隐藏的界面 → 抽屉 → 选中的省份 / 地名
-    if (helpOpen.value) helpOpen.value = false;
+    // 信任的问话 → 资源包弹窗 → 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 → 量距离（先清空再退出）→ 隐藏的界面
+    // → 资源包“用到这个世界”的卡片 → 抽屉 → 选中的省份 / 地名
+    if (trustAsk.value) trustAsk.value.resolve(false);
+    else if (packDialog.value) packDialog.value = null;
+    else if (helpOpen.value) helpOpen.value = false;
     else if (wizardOpen.value) {
       if (world.value) wizardOpen.value = false;
     } else if (openPanel.value) openPanel.value = null;
@@ -21,6 +25,7 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (mapApi.current?.cancel()) return;
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (uiHidden.value) uiHidden.value = false;
+    else if (packApply.value) packApply.value = null;
     else if (sheet.value) sheet.value = null;
     else if (selectedProvince.value !== null || selectedFeature.value) {
       selectedProvince.value = null;
@@ -28,7 +33,7 @@ export function onKeyDown(e: KeyboardEvent) {
     }
     return;
   }
-  if (typing(e.target) || helpOpen.value || wizardOpen.value) return;
+  if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || trustAsk.value) return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();

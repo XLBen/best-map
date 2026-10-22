@@ -10,6 +10,7 @@ import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
+import type { HighlightLayer } from './render/colors';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态
 
@@ -108,8 +109,9 @@ export const adjustPreview = signal<TerrainPreview | null>(null);
 export const wizardOpen = signal(false);
 export const helpOpen = signal(false);
 // “调整”面板拖气候、河流的滑块，生态编辑器拖色块时：停下后算出的将来的世界，地图直接画它。
-// key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）
-export const adjustPreviewWorld = signal<{ key: string; base: World; world: World } | null>(null);
+// key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）；
+// layers：同时要高亮的格（资源包“用到这个世界”：会变的格描边、新生态的格淡淡涂上）
+export const adjustPreviewWorld = signal<{ key: string; base: World; world: World; layers?: HighlightLayer[] } | null>(null);
 // 正在拖的那一行下面的小字：正在算预览 / 地图上是松手后的样子 / 松手后约 N 秒出结果
 export const adjustPreviewNote = signal<{ key: string; text: string } | null>(null);
 // 当前世界的状态编号（Worker 每改一次换一个）：预览只在按这个状态算出来时才显示，过期的丢掉
@@ -912,8 +914,15 @@ export function previewReply(r: Response): WorldPreview | null {
   return { result: r.preview, world: previewWorldOf(base, r.world), base };
 }
 
+// 最近一次确切预览没算成时 Worker 说的原因（比如资源包里的脚本写错了）；算成了为 null
+let worldPreviewFailure: string | null = null;
+export function worldPreviewError(): string | null {
+  return worldPreviewFailure;
+}
+
 const worldPreviews = latest(async (cmd: Command) => {
   const r = await call({ kind: 'previewWorld', cmd }, null);
+  worldPreviewFailure = r.ok ? null : r.error;
   if (r.ok && r.preview) {
     noteCost(cmd, r.preview.ms);
     lastPreviewMs = r.preview.ms;
