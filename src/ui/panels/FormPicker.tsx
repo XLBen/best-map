@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
 import type { Worldgen } from '../../../core/generate';
-import { sameItem } from '../../../core/packs';
 import { type PlanetForm, hasFormScripts } from '../../../core/planet-form';
 import type { World } from '../../../core/world';
 import { library, refreshLibrary } from '../../library';
 import type { HighlightLayer } from '../../render/colors';
-import { adjustPreviewWorld, cancelWorldPreview, exactDelay, execAdjust, previewWorld, trustFormScripts, worldPreviewError } from '../../state';
-import { type FormChoice, currentFormName, formChoices, genWithForm, planetTypeName } from '../forms';
+import { adjustPreviewWorld, cancelWorldPreview, exactDelay, execAdjust, previewWorld, safeMode, trustFormScripts, worldPreviewError } from '../../state';
+import { type FormChoice, currentFormName, formChoices, formKey, formSource, genWithForm, keptByWorld, planetNameOf, planetTypeName } from '../forms';
 
 // “调整”的“地形”里（只在整个星球上）：星球形态：双子大陆 [换…]。
 // 点“换…”列出内置的示例和资源库里的形态（还有“不用形态”）；选一个，地图上先画出换了之后的样子
 // （在 Worker 里的世界副本上执行同一条命令：多出的陆地淡淡涂上，会变成海的画斜线），点“换成它”时直接采用算好的结果。
-// 你画过的陆地、放的岛照样叠在新的地形上，调过的滑块照旧；一步，可以撤销
+// 你画过的陆地、放的岛照样叠在新的地形上（叠上去的，不保证每一格都还是陆地），调过的陆地多少、岛多少照旧；一步，可以撤销
 
 const GAINED: HighlightLayer['color'] = [255, 226, 120];
 const LOST: HighlightLayer['color'] = [255, 255, 255];
@@ -26,11 +25,12 @@ export function formCommand(gen: Worldgen, form: PlanetForm | null): Command {
 // 预览之后说的一句：会多出、少掉多少格陆地
 export function landNote(gained: number, lost: number): string {
   if (!gained && !lost) return '陆地看不出变化';
-  const parts = [gained ? `多出 ${fmt(gained)} 格陆地` : '', lost ? `少掉 ${fmt(lost)} 格` : ''].filter(Boolean);
+  const parts = [gained ? `多出 ${fmt(gained)} 格陆地` : '', lost ? `少掉 ${fmt(lost)} 格${gained ? '' : '陆地'}` : ''].filter(Boolean);
   return `会${parts.join('、')}（地图上淡黄的是多出的，斜线是会变成海的）`;
 }
 
 type Pick = { key: string; form: PlanetForm | null };
+const CALC = '正在算换了之后的样子…';
 type Note = { key: string; text: string; warn?: boolean; ready?: boolean };
 
 function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => void }) {
@@ -39,7 +39,9 @@ function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => v
   const [pick, setPick] = useState<Pick | null>(null);
   const [note, setNote] = useState<Note | null>(null);
   const [applying, setApplying] = useState(false);
-  const isNow = (form: PlanetForm | null) => (form ? !!gen.form && sameItem(gen.form, form) : !gen.form);
+  // 再点一次同一张卡片：上一次的预览没算出来（被别的预览顶掉了）时重新算
+  const [again, setAgain] = useState(0);
+  const isNow = (form: PlanetForm | null) => (form ? !!gen.form && formKey(gen.form) === formKey(form) : !gen.form);
   // 选的就是现在用的（比如刚换好、结果已经换上）：不算预览
   const cmd = pick && !isNow(pick.form) ? formCommand(gen, pick.form) : null;
   const key = cmd ? JSON.stringify(cmd) : '';
@@ -54,7 +56,10 @@ function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => v
   // 选一个：有没见过的脚本先问（预览就会运行它）
   const choose = async (c: FormChoice | null) => {
     if (c && !(await trustFormScripts(c.form, true))) return;
-    setPick(c ? { key: c.key, form: c.form } : { key: '', form: null });
+    const k = c ? c.key : '';
+    // 再点一次同一张：预览没算出来（不是正在算、也不是算好了）时重新算
+    if (pick?.key === k && note?.key === key && !note.ready && note.text !== CALC) setAgain((x) => x + 1);
+    setPick(c ? { key: k, form: c.form } : { key: '', form: null });
   };
 
   // 地图上的确切预览：选好停一下再算；世界变了（撤销、别的编辑）重新算
@@ -64,14 +69,14 @@ function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => v
       dropMine();
       return;
     }
-    setNote({ key, text: '正在算换了之后的样子…' });
+    setNote({ key, text: CALC });
     let live = true;
     const t = setTimeout(() => {
       void previewWorld(cmd).then((r) => {
         if (!live) return;
         if (!r) {
           const why = worldPreviewError(cmd);
-          setNote({ key, text: why ? `用不上：${why}` : '预览没算出来，可以再选一次', warn: !!why });
+          setNote({ key, text: why ? `用不上：${why}` : '预览没算出来，再点一下它重新算', warn: !!why });
           return;
         }
         const layers: HighlightLayer[] = [
@@ -87,7 +92,7 @@ function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => v
       live = false;
       clearTimeout(t);
     };
-  }, [key, w]);
+  }, [key, w, again]);
 
   // 关上：去掉地图上的预览（“换成它”之后由执行的结果换掉，不先闪回原样）
   useEffect(
@@ -113,8 +118,9 @@ function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => v
   };
 
   const shown = note && note.key === key ? note : null;
-  // 调过“陆地多少”时照调过的（形态里的陆地多少不起作用）
-  const keptLand = pick?.form?.profile?.landFraction !== undefined && gen.landFraction !== undefined;
+  // 世界里定下的陆地多少、岛多少照旧（形态里写的这两项不起作用）；安全模式下形态里的脚本不运行
+  const kept = keptByWorld(gen);
+  const noScripts = !!safeMode.value && !!pick?.form && hasFormScripts(pick.form);
   const row = (k: string, label: string, how: string, form: PlanetForm | null, c: FormChoice | null) => (
     <button key={k} class={`card ${pick && pick.key === k ? 'on' : ''}`} disabled={isNow(form) || applying} onClick={() => void choose(c)}>
       <b>
@@ -128,11 +134,12 @@ function Picker({ w, gen, onClose }: { w: World; gen: Worldgen; onClose: () => v
   return (
     <div class="form-picker">
       <div class="cards">
-        {choices.map((c) => row(c.key, c.form.name, c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`, c.form, c))}
-        {gen.form && row('', '不用形态', `回到“${planetTypeName(gen.type)}”`, null, null)}
+        {choices.map((c) => row(c.key, c.form.name, [c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`, formSource(c)].filter(Boolean).join(' · '), c.form, c))}
+        {gen.form && row('', '不用形态', `回到“${planetNameOf(genWithForm(gen, null))}”`, null, null)}
       </div>
       {shown && <p class={`small ${shown.warn ? 'warn' : ''}`}>{shown.text}</p>}
-      {shown?.ready && <p class="muted small">你画过的陆地、放的岛照样叠在新的地形上{keptLand ? `；陆地多少照你调过的 ${Math.round(gen.landFraction! * 100)}%` : ''}。</p>}
+      {shown?.ready && <p class="muted small">你画过的陆地、放的岛照样叠在新的地形上{kept ? `；${kept}` : ''}。</p>}
+      {shown?.ready && noScripts && <p class="muted small">现在是安全模式：形态里的脚本没有运行，地图上是不带脚本的样子。</p>}
       <div class="row between">
         <span class="muted small">换形态是一步，可以撤销</span>
         <span class="row">

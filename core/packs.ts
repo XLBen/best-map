@@ -277,6 +277,9 @@ export function sameItem(a: unknown, b: unknown): boolean {
   return stableJson(a) === stableJson(b);
 }
 
+// sameItem 比较用的键：要和许多项比的时候每项只算一次（向导、调整里列出的星球形态去重）
+export const itemKey = (v: unknown): string => stableJson(v);
+
 // 包里（或一条命令里、任意 JSON 里）的全部脚本：信任检查、“查看脚本”用
 export function packScripts(json: unknown): FoundScript[] {
   return findScripts(json);

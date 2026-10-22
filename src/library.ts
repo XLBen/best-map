@@ -134,3 +134,13 @@ export async function saveForm(form: PlanetForm): Promise<SaveForm> {
   const { entry, ok } = await installPack(r.pack, { mine: true });
   return { ok: true, entry, stored: ok };
 }
+
+// 从世界导出、存进资源库里已有的同名包（导出的名字默认就是“我的资源”）时，整包换掉会把形态编辑器存在里面的
+// 星球形态弄丢（导出只带世界在用的那一个）：这些留着，接在后面。同一个 id 的用导出的。超过上限的不留（存了整个包会读不回来）
+export function keepSavedForms(pack: ResourcePack, old: LibraryEntry | undefined): ResourcePack {
+  if (!old?.mine || old.builtin) return pack;
+  const have = new Set((pack.planetForms ?? []).map((f) => f.id));
+  const kept = (old.pack.planetForms ?? []).filter((f) => !have.has(f.id));
+  if (!kept.length) return pack;
+  return { ...pack, planetForms: [...(pack.planetForms ?? []), ...kept].slice(0, PACK_MAX.planetForms) };
+}

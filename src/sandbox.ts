@@ -228,8 +228,9 @@ interface Pending {
 }
 
 // 不是 Worker 回的、是这里替它回的 {ok:false}（停掉 Worker、换了世界时还没回复的请求）用的编号。
-// Worker 的回复编号从 1 起，伪造的 0 号回复找不到在等的请求，不会被当成这种
-const CANCELLED = 0;
+// Worker 的回复编号从 1 起，伪造的 0 号回复找不到在等的请求，不会被当成这种。
+// 界面据此分辨“没算完就被停下了”（星球形态编辑器的缩略图：卡住的脚本不再自动重算）
+export const CANCELLED = 0;
 
 const opens = (req: Request) => req.kind === 'init' || req.kind === 'load';
 

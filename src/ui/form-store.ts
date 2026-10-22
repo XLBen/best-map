@@ -11,6 +11,8 @@ export interface FormEditorState {
   initial: PlanetForm;
   // 改的是哪一个（自己做一个时为 null）：没改过时用的就是它本身
   original: PlanetForm | null;
+  // 它在列表里的键（没改过就点“存进资源库”时选上它，不再存一份一模一样的）
+  originalKey: string | null;
   // 改的是“我的资源”里的：存进去替换原来的（不另起 id）
   mine: boolean;
   // 列表里别的形态（另起 id、名字时避开）
@@ -19,7 +21,7 @@ export interface FormEditorState {
   settings: Partial<Settings>;
   radiusKm: number;
   seed: number;
-  // 存进资源库了（key：它在列表里的键）
+  // 存进资源库了（key：它在列表里的键；没改过时是原来那一个的键）
   onSaved(form: PlanetForm, key: string): void;
   // 用它新建：做成了返回 true
   onCreate(form: PlanetForm, seed: number): Promise<boolean>;

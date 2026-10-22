@@ -18,7 +18,7 @@ import {
 import { FANTASY_PACK } from '../../../core/packs/fantasy';
 import { PATTERN_LABEL } from '../../../core/species';
 import type { FoundScript } from '../../../core/script';
-import { type LibraryEntry, inLibrary, installPack, library, removePack } from '../../library';
+import { type LibraryEntry, inLibrary, installPack, keepSavedForms, library, removePack } from '../../library';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
 import { download, showToast, world } from '../../state';
@@ -351,10 +351,13 @@ function ExportView() {
   );
   // 资源库里已经有同名（同一个 id）的：存进去会替换它
   const replaces = inLibrary(preview);
+  // 替换的是自己的包时，形态编辑器存在里面的星球形态留着（见 keepSavedForms）
+  const stored = keepSavedForms(preview, replaces);
+  const keptForms = (stored.planetForms?.length ?? 0) - (preview.planetForms?.length ?? 0);
   const save = async () => {
     // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
     // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
-    const r = await installPack(preview, { mine: true });
+    const r = await installPack(stored, { mine: true });
     showToast(r.ok ? `「${preview.name}」存进资源库了` : '浏览器不让存：只在这一次打开的页面里');
     openPackLibrary();
   };
@@ -393,7 +396,11 @@ function ExportView() {
       )}
       {!biomes.length && !rivers.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
       {endemic > 0 && <p class="muted small">岛上特有的生态只属于这个世界，不带。</p>}
-      {replaces && <p class="muted small">资源库里已经有「{replaces.pack.name}」：存进资源库会替换它（换个名字就另存一份）。</p>}
+      {replaces && (
+        <p class="muted small">
+          资源库里已经有「{replaces.pack.name}」：存进资源库会替换它（换个名字就另存一份）。{keptForms > 0 && `里面存的 ${keptForms} 个星球形态照样留着。`}
+        </p>
+      )}
       <div class="row between">
         <span />
         <span class="row">

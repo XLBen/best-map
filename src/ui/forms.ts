@@ -1,10 +1,10 @@
 import type { Command } from '../../core/commands';
 import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../core/generate';
-import { packForms, sameItem } from '../../core/packs';
+import { itemKey, packForms, packIdFor, sameItem } from '../../core/packs';
 import { LAYOUT_R, planetProfile } from '../../core/planet-gen';
 import { type PlanetForm, hasFormScripts, planetFormSchema } from '../../core/planet-form';
 import { PLANET_TYPES } from '../../core/presets';
-import type { LibraryEntry } from '../library';
+import { type LibraryEntry, MY_PACK_NAME } from '../library';
 
 // 星球形态的界面要用的几样（不碰界面和 Worker，测试里直接用）：
 // 向导、调整面板里列出的形态（内置的示例 + 资源库里装的）、形态编辑器的滑块、改脚本、存之前定 id
@@ -18,25 +18,54 @@ export interface FormChoice {
   // 来自哪个包（“奇幻生态示例”“我的资源”……）
   pack: string;
   builtin: boolean;
-  // 在“我的资源”里（自己做的）
+  // 在“我的资源”这个包里（形态编辑器存进去的）：编辑它改的就是它本身。
+  // 别的自己导出的包里的不算：编辑那些是一份副本，存进“我的资源”，原来的包不变
   mine: boolean;
 }
 
-// 资源库里全部的星球形态：内置的在前，之后按资源库的顺序（我的资源、导入的）。一模一样的只列一次（先出现的那个）
+// 资源库里全部的星球形态：内置的在前，之后按资源库的顺序（我的资源、导入的）。一模一样的只列一次（先出现的那个）。
+// 向导、调整面板每次重画都要：按资源库的列表（读一遍资源库换一个新的）记下结果，带长脚本的形态也不每次重新比
+const choicesMemo = new WeakMap<readonly LibraryEntry[], FormChoice[]>();
+// 每个形态对象的比较键只算一次（键的顺序不算，见 core/packs.ts 的 sameItem）
+const keyMemo = new WeakMap<object, string>();
+export function formKey(form: PlanetForm): string {
+  let k = keyMemo.get(form);
+  if (k === undefined) keyMemo.set(form, (k = itemKey(form)));
+  return k;
+}
 export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
+  const hit = choicesMemo.get(entries);
+  if (hit) return hit;
   const out: FormChoice[] = [];
+  const seen = new Set<string>();
+  const myKey = packIdFor(MY_PACK_NAME);
   for (const e of entries) {
     for (const form of packForms(e.pack)) {
-      if (out.some((c) => sameItem(c.form, form))) continue;
-      out.push({ key: `${e.key}:${form.id}`, form, pack: e.pack.name, builtin: e.builtin, mine: e.mine });
+      const k = formKey(form);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ key: `${e.key}:${form.id}`, form, pack: e.pack.name, builtin: e.builtin, mine: e.mine && e.key === myKey });
     }
   }
+  choicesMemo.set(entries, out);
   return out;
+}
+
+// 卡片上写的来处：内置的不写；“我的资源”里的写“我的资源”，别的写“来自「包名」”
+export function formSource(c: FormChoice): string {
+  return c.builtin ? '' : c.mine ? MY_PACK_NAME : `来自「${c.pack}」`;
 }
 
 // 一种星球的叫法：与向导里的卡片相同（像地球、一块超大陆……）；向导里没有的（内海）用生成器的名字
 export function planetTypeName(type: WorldType): string {
   return PLANET_TYPES.find((p) => p.type === type && p.islands === undefined)?.name ?? WORLD_TYPE_INFO[type].name;
+}
+
+// 世界的生成参数是哪种星球：与 planetTypeName 相同，只是海洋星球、空白星球是同一种生成器，按岛多少分
+// （向导里的海洋星球是“空白海洋 + 岛 0.7”）
+export function planetNameOf(gen: Pick<Worldgen, 'type' | 'islands'>): string {
+  if (gen.type === 'ocean' && (gen.islands ?? 0) > 0) return PLANET_TYPES.find((p) => p.key === 'ocean_islands')!.name;
+  return planetTypeName(gen.type);
 }
 
 // 形态编辑器“从哪种星球改起”的六种
@@ -80,7 +109,16 @@ export function newWorldCommands(gen: WorldgenInput, name: string, seed: number)
 
 // 世界现在的星球形态的叫法：“双子大陆”，没有形态时“不用（像地球）”
 export function currentFormName(gen: Worldgen): string {
-  return gen.form ? gen.form.name : `不用（${planetTypeName(gen.type)}）`;
+  return gen.form ? gen.form.name : `不用（${planetNameOf(gen)}）`;
+}
+
+// 换形态时照旧用世界里的、不用形态自己的几项（genWithForm 保留的）：调过（或建世界时定下）的陆地多少、岛多少。
+// 换形态的列表里说一句，免得以为形态里写的陆地多少没起作用是出了错
+export function keptByWorld(gen: Worldgen): string {
+  const parts: string[] = [];
+  if (gen.landFraction !== undefined) parts.push(`陆地多少照现在的 ${Math.round(gen.landFraction * 100)}%`);
+  if (gen.islands !== undefined) parts.push('岛多少照现在的');
+  return parts.join('，');
 }
 
 export const formHasScripts = hasFormScripts;
@@ -160,6 +198,13 @@ export const FORM_KNOBS: FormKnob[] = [
     format: (v) => `${v < 0.8 ? '窄' : v > 1.3 ? '宽' : '适中'}（×${v.toFixed(2)}）`,
   },
 ];
+
+// 滑块旁边的数说的是什么：大陆块数、大小只管配方里的块，布局脚本加的块按脚本里写的
+// （双子大陆的“大陆块数”是“没有”，两块大陆都是脚本加的），有布局脚本时说一声
+export function knobText(k: FormKnob, form: PlanetForm, radiusKm: number): string {
+  const text = k.format(k.read(form), radiusKm);
+  return form.scripts?.setup && (k.id === 'blocks' || k.id === 'radius') ? `${text}（布局脚本加的不算）` : text;
+}
 
 export type FormScriptKind = 'setup' | 'crust';
 

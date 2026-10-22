@@ -4,7 +4,7 @@ import { type ResourcePack, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
-import { MY_PACK_NAME, installPack, library, refreshLibrary, removePack, saveForm } from './library';
+import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm } from './library';
 import { PACK_MAX } from '../core/packs';
 import { TWIN_CONTINENTS } from '../core/packs/fantasy-forms';
 import type { PlanetForm } from '../core/planet-form';
@@ -192,6 +192,35 @@ describe('自己做的星球形态存进资源库', () => {
     // 替换已有的照样可以
     expect((await saveForm(form('my_3', '改过的'))).ok).toBe(true);
     expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.length).toBe(PACK_MAX.planetForms);
+  });
+
+  it('从世界导出存进“我的资源”（替换它）时，形态编辑器存在里面的星球形态留着；同一个 id 用导出的；别人的包、新的名字不管', async () => {
+    await saveForm(form('my_a', '千岛'));
+    await saveForm(form('my_b', '万岛'));
+    // 导出的包：世界里的生态和世界在用的形态（与存着的 my_b 同 id、改过）
+    const exported = userPack(MY_PACK_NAME, { biomes: withScript('y', 'return 1;').biomes, planetForms: [form('my_b', '万岛新') as never] });
+    const old = inLibrary(exported);
+    expect(old?.mine).toBe(true);
+    const stored = keepSavedForms(exported, old);
+    expect(stored.planetForms!.map((f) => [f.id, f.name])).toEqual([
+      ['my_b', '万岛新'],
+      ['my_a', '千岛'],
+    ]);
+    expect(stored.biomes).toBe(exported.biomes);
+    await installPack(stored, { mine: true });
+    expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
+    // 没有形态的导出也一样留着
+    const plain = userPack(MY_PACK_NAME, { biomes: withScript('z', 'return 1;').biomes });
+    expect(keepSavedForms(plain, inLibrary(plain)).planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
+    // 替换的不是自己的包、没有要替换的：原样
+    await installPack(userPack('别人的', { planetForms: [form('x_1') as never] }));
+    const theirs = userPack('别人的', { name: '别人的' });
+    expect(keepSavedForms(theirs, inLibrary(theirs))).toBe(theirs);
+    const fresh = userPack('新的');
+    expect(keepSavedForms(fresh, inLibrary(fresh))).toBe(fresh);
+    // 加起来超过上限的不留（存了整个包会读不回来）
+    const many = { ...old!, pack: { ...old!.pack, planetForms: Array.from({ length: PACK_MAX.planetForms }, (_, k) => form(`my_${k}`) as never) } };
+    expect(keepSavedForms(exported, many).planetForms!.length).toBe(PACK_MAX.planetForms);
   });
 });
 

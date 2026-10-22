@@ -16,7 +16,7 @@ import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 import type { HighlightLayer } from './render/colors';
-import { EngineHost, type WorkerLike } from './sandbox';
+import { CANCELLED, EngineHost, type WorkerLike } from './sandbox';
 import { clearLoading, markLoading, readLoading, tidyTrusted, trustScripts, uniqueScripts, untrustedScripts } from './trust';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态
@@ -1175,15 +1175,16 @@ export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput,
 }
 
 // 星球形态编辑器的实时缩略图：不弹提示条，出错（脚本的语法错误、形态写得不对）时把原因给回来；
-// 脚本运行时出的错（这一次按没有脚本算）在 issues 里
+// 脚本运行时出的错（这一次按没有脚本算）在 issues 里。stopped：没算完就被停下了（脚本卡住、点了“停下”、
+// 计算程序停止了响应）：Worker 已经换了一个，世界从命令记录里恢复
 export async function formThumbnail(
   settings: Partial<Settings>,
   gen: WorldgenInput,
   width: number,
   height: number,
-): Promise<{ thumb: Uint8ClampedArray; issues: ScriptIssue[] } | { error: string }> {
+): Promise<{ thumb: Uint8ClampedArray; issues: ScriptIssue[] } | { error: string; stopped?: boolean }> {
   const r = await call({ kind: 'thumb', settings, gen, width, height }, null);
-  if (!r.ok) return { error: r.error };
+  if (!r.ok) return { error: r.error, ...(r.id === CANCELLED ? { stopped: true } : {}) };
   return r.thumb ? { thumb: r.thumb, issues: r.issues ?? [] } : { error: '缩略图没算出来' };
 }
 

@@ -5,7 +5,7 @@ import { saveForm } from '../library';
 import { formThumbnail, showToast } from '../state';
 import { trustScripts } from '../trust';
 import { type FormEditorState, closeFormEditor, formEditor } from './form-store';
-import { FORM_BASES, FORM_KNOBS, type FormScriptKind, finalForm, formGen, formProblem, planetTypeName, withCrustMode, withScript } from './forms';
+import { FORM_BASES, FORM_KNOBS, type FormScriptKind, finalForm, formGen, formProblem, knobText, planetTypeName, withCrustMode, withScript } from './forms';
 import { ScriptBox } from './ScriptBox';
 import { type ScriptProblem, normScript, problemLine, problemOfIssue } from './script-commit';
 import { checkScript } from './script-syntax';
@@ -32,6 +32,11 @@ const looks = (f: PlanetForm) => {
   return rest;
 };
 const keyOf = (form: PlanetForm, seed: number) => JSON.stringify([looks(form), seed]);
+// 两段脚本（卡住被停下的是哪一份）
+const scriptsOf = (form: PlanetForm) => JSON.stringify(form.scripts ?? null);
+// 缩略图没算完就被停下了（脚本卡住、点了“停下”）：Worker 换了一个、世界从命令记录里恢复过。
+// 同样的脚本再算还会这样（每次都要恢复一遍世界），改了脚本才再算
+const HUNG = '脚本算得太久，被停下了：改一改脚本再看';
 // 算缩略图时名字空着也照样算（名字不影响样子；空的名字在按钮那里拦下）
 const named = (f: PlanetForm): PlanetForm => (f.name ? f : { ...f, name: '未命名' });
 const KIND_LABEL: Record<FormScriptKind, string> = { setup: '布局', crust: '地形' };
@@ -63,6 +68,9 @@ function Editor({ st }: { st: FormEditorState }) {
   shotRef.current = shot;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // 被停下的那一份脚本（scriptsOf）：脚本不改就不再算缩略图，按钮也不能点
+  const [hung, setHung] = useState<string | null>(null);
+  const stuck = hung !== null && hung === scriptsOf(form);
   // 两个脚本框里现在写的（还没检查、提交的也算）：点按钮时用它
   const drafts = useRef<Partial<Record<FormScriptKind, string>>>({});
   const key = keyOf(form, seed);
@@ -72,18 +80,21 @@ function Editor({ st }: { st: FormEditorState }) {
 
   // 实时缩略图：形态、种子停 0.5 秒没变再算；算的期间又变了就不要这一张
   useEffect(() => {
-    if (shapeProblem) return;
+    if (shapeProblem || stuck) return;
     let live = true;
+    const scripts = scriptsOf(form);
     const t = setTimeout(() => {
       void formThumbnail(st.settings, formGen(seed, named(form)), W, H).then((r) => {
-        if (live) setShot('error' in r ? { key, issues: [], error: r.error } : { key, thumb: r.thumb, issues: r.issues });
+        // 被停下了：算的期间改过也记下（是这一份脚本卡住的）
+        if ('error' in r && r.stopped) setHung(scripts);
+        if (live) setShot('error' in r ? { key, issues: [], error: r.stopped ? HUNG : r.error } : { key, thumb: r.thumb, issues: r.issues });
       });
     }, PAUSE_MS);
     return () => {
       live = false;
       clearTimeout(t);
     };
-  }, [key, shapeProblem]);
+  }, [key, shapeProblem, stuck]);
 
   const current = shot?.key === key ? shot : null;
   // 画着的是上一张（还在算新的）时保留它，淡一点
@@ -126,6 +137,13 @@ function Editor({ st }: { st: FormEditorState }) {
     try {
       const f = await final();
       if (!f) return;
+      // 没改过：它本来就在资源库里，不再存一份一模一样的（列表里一模一样的只列一次，存了也看不到），选上它
+      if (st.original && f === st.original && st.originalKey) {
+        showToast(`没有改动：「${f.name}」本来就在资源库里`);
+        closeFormEditor();
+        st.onSaved(f, st.originalKey);
+        return;
+      }
       // 自己写的（或打开编辑器时信任过的）脚本记为信任：用它新建、以后从资源库里选时不再问
       await trustScripts(findScripts(f));
       const r = await saveForm(f);
@@ -153,7 +171,7 @@ function Editor({ st }: { st: FormEditorState }) {
     }
   };
 
-  const broken = !!problem || !!current?.error;
+  const broken = !!problem || !!current?.error || stuck;
   const crust = form.scripts?.crust?.src ?? '';
   return (
     <div class="modal-backdrop">
@@ -195,7 +213,7 @@ function Editor({ st }: { st: FormEditorState }) {
                 <label class="adj-row" title={k.hint}>
                   <span class="row between">
                     <span>{k.label}</span>
-                    <span class="muted">{k.format(v, st.radiusKm)}</span>
+                    <span class="muted">{knobText(k, form, st.radiusKm)}</span>
                   </span>
                   <input type="range" min={k.range[0]} max={k.range[1]} step={k.step} value={v} onInput={(e) => setForm(k.write(formRef.current, Number((e.target as HTMLInputElement).value)))} />
                 </label>
@@ -238,10 +256,12 @@ function Editor({ st }: { st: FormEditorState }) {
             <Canvas data={shown?.thumb} stale={!current} />
             {shapeProblem ? (
               <p class="script-problem small">{shapeProblem}</p>
+            ) : stuck ? (
+              <p class="script-problem small">{HUNG}</p>
             ) : current?.error ? (
               <p class="script-problem small">{current.error}</p>
             ) : firstIssue ? (
-              <p class="script-problem small">{firstIssue.message}（这一处按没有脚本算）</p>
+              <p class="script-problem small">{firstIssue.message}（缩略图里按没有这段脚本算）</p>
             ) : disabled ? (
               <p class="muted small">安全模式下脚本没有运行，缩略图里没有脚本的效果。</p>
             ) : (

@@ -8,15 +8,19 @@ import { FANTASY_FORMS, POLAR_CONTINENTS, RING_SEA, TWIN_CONTINENTS } from '../.
 import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
 import { planetProfile } from '../../core/planet-gen';
 import { engineFor } from '../../core/testing/fixtures';
-import type { LibraryEntry } from '../library';
+import { type LibraryEntry, MY_PACK_NAME } from '../library';
 import {
   FORM_KNOBS,
   blankForm,
   currentFormName,
   finalForm,
   formChoices,
+  formSource,
   genWithForm,
+  keptByWorld,
+  knobText,
   newWorldCommands,
+  planetNameOf,
   planetTypeName,
   withCrustMode,
   withScript,
@@ -46,6 +50,21 @@ describe('列出来的形态', () => {
     ]);
     expect(list[0].form).toBe(TWIN_CONTINENTS);
     expect(formChoices([BUILTIN]).map((c) => c.form)).toEqual([...FANTASY_FORMS]);
+    expect(list.map(formSource)).toEqual(['', '', '', '我的资源', '来自「x」']);
+  });
+
+  it('只有“我的资源”这个包里的算自己的（编辑它改的是它本身）；别的自己导出的包里的编辑时是副本', () => {
+    const mine = entry(MY_PACK_NAME, pack(MY_PACK_NAME, [mineForm]), { mine: true });
+    const exported = entry('我的星球', pack('我的星球', [{ ...mineForm, id: 'my_2', name: '万岛' }]), { mine: true, installedAt: 2 });
+    const list = formChoices([BUILTIN, mine, exported]);
+    expect(list.slice(3).map((c) => [c.key, c.mine, formSource(c)])).toEqual([
+      [`${MY_PACK_NAME}:my_1`, true, '我的资源'],
+      ['我的星球:my_2', false, '来自「我的星球」'],
+    ]);
+    // 没改过就“存进资源库”：用的就是原来那一个（同一个对象），不再存一份——一模一样的在列表里只列一次，存了也看不到
+    const builtin = list[0];
+    expect(finalForm(structuredClone(builtin.form), builtin.form, builtin.mine, list.map((c) => c.form))).toBe(builtin.form);
+    expect(formChoices([BUILTIN, entry(MY_PACK_NAME, pack(MY_PACK_NAME, [structuredClone(TWIN_CONTINENTS)]), { mine: true })]).map((c) => c.key)).toEqual(formChoices([BUILTIN]).map((c) => c.key));
   });
 
   it('叫法：星球的类型与向导的卡片相同；向导里没有的“内海”用生成器的名字', () => {
@@ -54,6 +73,11 @@ describe('列出来的形态', () => {
     expect(planetTypeName('inland_sea')).toBe('内海');
     expect(currentFormName({ seed: 1, type: 'continents', mountains: 1, rerolls: [] })).toBe('不用（像地球）');
     expect(currentFormName({ seed: 1, type: 'continents', mountains: 1, rerolls: [], form: TWIN_CONTINENTS })).toBe('双子大陆');
+    // 海洋星球与空白星球是同一种生成器，按岛多少分（向导里的海洋星球是岛 0.7）
+    expect(currentFormName({ seed: 1, type: 'ocean', mountains: 1, rerolls: [], islands: 0.7 })).toBe('不用（海洋星球）');
+    expect(currentFormName({ seed: 1, type: 'ocean', mountains: 1, rerolls: [] })).toBe('不用（空白星球）');
+    expect(planetNameOf({ type: 'ocean', islands: 0 })).toBe('空白星球');
+    expect(planetNameOf({ type: 'archipelago', islands: 0.9 })).toBe('群岛星球');
   });
 });
 
@@ -97,6 +121,11 @@ describe('形态编辑器', () => {
     // 一对数按原来的比例整体缩放（6–9 块 → 调到 10：8–12 块）
     expect(FORM_KNOBS.find((k) => k.id === 'blocks')!.write(blankForm('continents'), 10).profile!.blocks).toEqual([8, 12]);
     expect(FORM_KNOBS.find((k) => k.id === 'radius')!.format(0.24, 6371)).toBe('每块约 4,800 公里宽');
+    // 有布局脚本时，大陆块数、大小说明只管配方里的块（双子大陆的两块都是脚本加的）
+    const blocks = FORM_KNOBS.find((k) => k.id === 'blocks')!;
+    expect(knobText(blocks, TWIN_CONTINENTS, 6371)).toBe('没有（布局脚本加的不算）');
+    expect(knobText(blocks, RING_SEA, 6371)).toBe('约 11 块');
+    expect(knobText(FORM_KNOBS.find((k) => k.id === 'landFraction')!, TWIN_CONTINENTS, 6371)).toBe('18%');
   });
 
   it('脚本：空的去掉，两段都没有时去掉整个 scripts；完全由脚本决定才写 crustMode', () => {
@@ -174,5 +203,23 @@ describe('调整里换形态', () => {
     expect(landNote(0, 0)).toBe('陆地看不出变化');
     expect(landNote(1234, 0)).toBe('会多出 1,234 格陆地（地图上淡黄的是多出的，斜线是会变成海的）');
     expect(landNote(12, 5)).toBe('会多出 12 格陆地、少掉 5 格（地图上淡黄的是多出的，斜线是会变成海的）');
+    expect(landNote(0, 5)).toBe('会少掉 5 格陆地（地图上淡黄的是多出的，斜线是会变成海的）');
+    // 照旧用世界里的陆地多少、岛多少（形态里写的这两项不起作用）：说一声
+    expect(keptByWorld(gen)).toBe('岛多少照现在的');
+    expect(keptByWorld({ ...gen, landFraction: 0.3 })).toBe('陆地多少照现在的 30%，岛多少照现在的');
+    expect(keptByWorld({ seed: 2, type: 'continents', mountains: 1, rerolls: [] })).toBe('');
+  });
+
+  it('换成形态时照旧的岛多少确实照旧（形态里写的不起作用）：说的话与执行后一致', () => {
+    const eng = engineFor(globe);
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean', islands: 0.7 }, reset: true });
+    const gen = eng.world.small.terrain.gen!;
+    expect(currentFormName(gen)).toBe('不用（海洋星球）');
+    eng.exec(formCommand(gen, { ...TWIN_CONTINENTS, profile: { ...TWIN_CONTINENTS.profile, islands: 0.1 } }));
+    const after = eng.world.small.terrain.gen!;
+    expect(after.islands).toBe(0.7);
+    expect(keptByWorld(after)).toBe('岛多少照现在的');
+    // 去掉形态：回到的是“像地球”（type 跟着形态换过了），不是原来的海洋星球
+    expect(planetNameOf(genWithForm(after, null))).toBe('像地球');
   });
 });

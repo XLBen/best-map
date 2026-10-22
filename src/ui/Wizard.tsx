@@ -21,11 +21,11 @@ import {
   settingsAt,
 } from '../../core/presets';
 import { library, refreshLibrary } from '../library';
-import { autosaved, newWorld, resumeLast, thumbnail, trustFormScripts, wizardOpen, world } from '../state';
+import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts, wizardOpen, world } from '../state';
 import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
-import { type FormChoice, blankForm, formChoices, formGen, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
+import { type FormChoice, blankForm, formChoices, formGen, formSource, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
@@ -205,6 +205,7 @@ export function Wizard() {
     openFormEditor({
       initial,
       original: c?.form ?? null,
+      originalKey: c?.key ?? null,
       mine: c?.mine ?? false,
       others: choices.map((x) => x.form),
       settings: planetSettings(psize, 4000),
@@ -301,7 +302,7 @@ export function Wizard() {
                       {hasFormScripts(c.form) && <span class="tag">脚本</span>}
                     </b>
                     <span class="how">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
-                    {!c.builtin && <span class="how">{c.mine ? '我的资源' : `来自「${c.pack}」`}</span>}
+                    {!c.builtin && <span class="how">{formSource(c)}</span>}
                   </button>
                   <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改一改它：名字、几个滑块、脚本">
                     编辑…
@@ -313,6 +314,7 @@ export function Wizard() {
                 <span class="how">从一种星球改起，调几项，也可以写脚本</span>
               </button>
             </div>
+            {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="muted small">现在是安全模式：缩略图里没有脚本的效果，建好的新世界里脚本照常运行。</p>}
             <h4>2. 多大</h4>
             <div class="cards three">
               {(Object.keys(PLANET_SIZES) as PlanetSize[]).map((s) => (
