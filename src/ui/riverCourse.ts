@@ -563,7 +563,7 @@ function courseRiver(w: World, line: GuideLine, g: Guide, flow: readonly number[
 
 // 确切的预览：停下来一会儿（delay 毫秒）后在 worker 里执行这条命令，算好后换上。同一个世界上同一条命令只算一次
 // （命令里没有世界：撤销了别的一步之后同一条命令要重新算，旧的结果不再用）
-export class Exact {
+export class RiverExact {
   private wanted = '';
   // 要的这一条是照哪个世界算的
   private at: World | null = null;
@@ -691,36 +691,36 @@ function riverEndText(w: World, c: Course): string {
 
 // ---------- 底部条上改一条河时的预览（拖大小、悬停“从这里往下去掉”） ----------
 
-export interface BarPreview {
+export interface RiverBarPreview {
   key: string;
   cmd: Command;
   // 改完后的河道；估计的每格流量
   after: Guide;
   estimate: number[];
 }
-export const barPreview = signal<BarPreview | null>(null);
-const barExact = new Exact();
+export const riverBarPreview = signal<RiverBarPreview | null>(null);
+const barExact = new RiverExact();
 
 // 先画估计的样子，停 delay 毫秒后换成确切的
-export function previewBar(cmd: Command, after: Guide, estimate: number[], delay = 150) {
+export function previewRiverBar(cmd: Command, after: Guide, estimate: number[], delay = 150) {
   const key = JSON.stringify(cmd);
-  if (barPreview.value?.key !== key) {
-    barPreview.value = { key, cmd, after, estimate };
+  if (riverBarPreview.value?.key !== key) {
+    riverBarPreview.value = { key, cmd, after, estimate };
     redrawTick.value++;
   }
-  // 同一条命令也再要一次：世界变了（别的一步算完了）时要重新算，没变时 Exact 自己不重复算
+  // 同一条命令也再要一次：世界变了（别的一步算完了）时要重新算，没变时 RiverExact 自己不重复算
   barExact.want(key, cmd, delay);
 }
 
-export function clearBarPreview() {
-  if (!barPreview.value) return;
-  barPreview.value = null;
+export function clearRiverBarPreview() {
+  if (!riverBarPreview.value) return;
+  riverBarPreview.value = null;
   barExact.reset();
   redrawTick.value++;
 }
 
 // 松手执行了：还没发出去的确切预览不必再算（预览照旧画着，直到结果换上）
-export const holdBarPreview = () => barExact.hold();
+export const holdRiverBarPreview = () => barExact.hold();
 
 // 拖“大小”时估计的每格流量：原来加进来的水换成新的
 export function flowEstimate(w: World, g: Guide, spring: boolean, flow: number | undefined): number[] {
@@ -772,7 +772,7 @@ export async function execAndSelect(cmd: Command, label: string): Promise<boolea
   return ok;
 }
 
-function barPreviewShapes(w: World, b: BarPreview, zoom: number): Preview {
+function barPreviewShapes(w: World, b: RiverBarPreview, zoom: number): Preview {
   const x = barExact.get(b.key);
   const line = tempLine(w, b.after);
   const flow = x?.guide && x.guide.flow.length === b.after.cells.length ? x.guide.flow : b.estimate;
@@ -810,7 +810,7 @@ export function riverTool(zoom: () => number): ToolHandler {
   let committing: Course | RiverPlan | null = null;
   let flowCache: { key: string; plan: RiverPlan } | null = null;
   let courseCache: { key: string; course: Course; line: GuideLine | null } | null = null;
-  const exact = new Exact();
+  const exact = new RiverExact();
   // 穿过了别的河、等着确认的那一笔；view：地图上显示截走的样子还是汇入的样子
   let pending: { course: Course; join: Course | null; view: 'capture' | 'join' } | null = null;
 
@@ -1119,7 +1119,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     leave() {
       pointer = null;
     },
-    keep: () => !!pending || !!barPreview.value,
+    keep: () => !!pending || !!riverBarPreview.value,
     escape() {
       if (!riverPending.value) return false;
       riverPending.value.cancel();
@@ -1146,7 +1146,7 @@ export function riverTool(zoom: () => number): ToolHandler {
         }
         return { layers: [], shapes: flowShapes(w, committing, false), hint: '正在计算…' };
       }
-      const bar = barPreview.value;
+      const bar = riverBarPreview.value;
       if (bar && !press) return barPreviewShapes(w, bar, zoom());
       if (!pointer) return EMPTY;
       const pr = press;
@@ -1178,7 +1178,7 @@ export function riverTool(zoom: () => number): ToolHandler {
 // 停在同一条河上 300 毫秒后，确切地算出删掉后真正不再是河的格（红色）
 export function unwaterTool(zoom: () => number): ToolHandler {
   let pointer: Pointer | null = null;
-  const exact = new Exact();
+  const exact = new RiverExact();
   const target = (w: World): { kind: 'guide' | 'lake'; id: string; cells: number[] } | null => {
     if (!pointer) return null;
     const { mesh } = w;

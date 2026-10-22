@@ -13,15 +13,15 @@ import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
   applyPatch,
-  clearBarPreview,
+  clearRiverBarPreview,
   execAndSelect,
   flowEstimate,
   guideFeature,
   guideName,
   guideOf,
-  holdBarPreview,
+  holdRiverBarPreview,
   pinCommand,
-  previewBar,
+  previewRiverBar,
   riverInfo,
   selectRiver,
 } from '../riverCourse';
@@ -140,15 +140,15 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
     if (!patch) {
       // 拖回了原来的大小：照原样画
       riverStyleOverride.value = null;
-      clearBarPreview();
+      clearRiverBarPreview();
       return;
     }
     riverStyleOverride.value = { id: g.id, hide: true };
-    previewBar(cmdFor(v, patch), applyPatch(g, patch), flowEstimate(w, g, v !== null, v === null ? undefined : (patch.flow ?? undefined)));
+    previewRiverBar(cmdFor(v, patch), applyPatch(g, patch), flowEstimate(w, g, v !== null, v === null ? undefined : (patch.flow ?? undefined)));
   };
   const done = () => {
     riverStyleOverride.value = null;
-    clearBarPreview();
+    clearRiverBarPreview();
     setDraft(undefined);
   };
   const commit = async (p: number) => {
@@ -157,7 +157,7 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
     if (!patch) return done();
     setDraft(v);
     // 停下来时算好的预览直接采用；排着队还没发出去的不要了（还在等计时器的也不必再算）
-    holdBarPreview();
+    holdRiverBarPreview();
     cancelPreviews();
     try {
       await exec(cmdFor(v, patch), '正在计算河流…');
@@ -322,11 +322,11 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
       <button
         class="bar-btn"
         disabled={!cut}
-        onMouseEnter={() => cut && previewBar(cut.cmd, cut.after, cut.estimate, 0)}
-        onMouseLeave={clearBarPreview}
+        onMouseEnter={() => cut && previewRiverBar(cut.cmd, cut.after, cut.estimate, 0)}
+        onMouseLeave={clearRiverBarPreview}
         onClick={() => {
           if (!cut) return;
-          clearBarPreview();
+          clearRiverBarPreview();
           void execAndSelect(cut.cmd, '正在计算河流…');
         }}
         title={cut ? '这里往下的河没了（水在这里渗进地下），上游照旧；红色是会变干的河段' : '这里是源头'}
@@ -348,7 +348,7 @@ export function RiverBar() {
   const sel = selectedRiver.value;
   // 换了选中的河、底部条收起来了（换了工具、按了数字键）：底部条上的预览不要了。
   // 不然鼠标停在“从这里往下去掉”上时换走，回到画河时地图上还画着那个预览
-  useEffect(() => () => clearBarPreview(), [sel]);
+  useEffect(() => () => clearRiverBarPreview(), [sel]);
   if (!w || !sel) return null;
   if (sel.kind === 'natural') return <NaturalRiverBar w={w} cell={sel.cell} />;
   const g = guideOf(w, sel.id);

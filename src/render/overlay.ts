@@ -96,13 +96,15 @@ export function riverPathsKey(world: World, override: RiverStyleOverride | null)
 export const samePathsKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
 
 // 地图上的河的折线（traceRivers），按 riverPathsKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
-// 按数组认会认错
-let linesMemo: { key: unknown[]; lines: RiverLine[] } | null = null;
+// 按数组认会认错。留最近的两份：地图画预览世界（将来的河）时，点河、河的光照旧按当前世界的河算，不来回重描
+const linesMemo: { key: unknown[]; lines: RiverLine[] }[] = [];
 export function riverLines(world: World): RiverLine[] {
   const key = riverPathsKey(world, null);
-  if (linesMemo && samePathsKey(linesMemo.key, key)) return linesMemo.lines;
+  const hit = linesMemo.find((m) => samePathsKey(m.key, key));
+  if (hit) return hit.lines;
   const lines = traceRivers(world);
-  linesMemo = { key, lines };
+  linesMemo.unshift({ key, lines });
+  linesMemo.length = Math.min(linesMemo.length, 2);
   return lines;
 }
 

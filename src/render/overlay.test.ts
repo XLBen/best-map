@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { Command } from '../../core/commands';
 import type { FeatureType, GeoFeature } from '../../core/features';
+import { previewWorldOf } from '../../core/preview-world';
 import { encodePath } from '../../core/rivers';
 import { planCourse } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
@@ -123,6 +125,46 @@ describe('地图上的河、预览的河同一套画法', () => {
     expect(samePathsKey(riverPathsKey(light({ name: '赤江' }), null), key)).toBe(true);
     expect(samePathsKey(riverPathsKey(light({ width: 2 }), null), key)).toBe(false);
     expect(samePathsKey(riverPathsKey(w, { id, width: 2 }), key)).toBe(false);
+  });
+
+  it('预览世界（地图画将来的样子）的河与当前世界同一个键：没改河时直接用当前世界的路径；画河的预览世界画出来的河与执行后逐段相同，拖粗细照样画', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh } = w;
+    // 只改名字：预览世界沿用当前世界的流量数组，键相同（地图不重描河）
+    const named = w.derived.features.find((f) => f.type === 'river' && /^\w+:\d+$/.test(f.key))!;
+    const renamed = previewWorldOf(w, structuredClone(eng.previewWorld({ op: 'rename_feature', key: named.key, name: '赤江' }).patch));
+    expect(samePathsKey(riverPathsKey(renamed, null), riverPathsKey(w, null))).toBe(true);
+    // 画一条自定义走向的河：预览带着两边加的项（画的河、挖出的河床；说明、状态编号、陆海变化）
+    let cmd: Command | null = null;
+    for (let i = 0; i < mesh.n && !cmd; i++) {
+      if (!w.causes.land[i] || w.derived.continentality[i] <= 0.5 || i % 7 !== 0) continue;
+      const plan = planCourse(w, w.derived, [[mesh.x[i], mesh.y[i]], [mesh.x[i] + 12 * mesh.spacing, mesh.y[i] + 2 * mesh.spacing]], { endOnLand: 'flow' });
+      if (plan.blocked || plan.drawn < 5 || plan.crossings.length || plan.reroute) continue;
+      cmd = { op: 'add_guide', guide: { id: 'river-a', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 4, carve: 'bed', name: '' } };
+    }
+    expect(cmd).not.toBeNull();
+    const liveKey = riverPathsKey(w, null);
+    const { result, patch } = eng.previewWorld(cmd!);
+    expect(result.guide?.id).toBe('river-a');
+    expect(result.guide!.followed).toBe(true);
+    expect(result.carved.cells.length).toBeGreaterThanOrEqual(0);
+    expect(result.summary).not.toBe('');
+    expect(result.stateId).toBe(eng.stateId);
+    expect(result.landGained).toEqual([]);
+    const shown = previewWorldOf(w, structuredClone(patch));
+    expect(samePathsKey(riverPathsKey(shown, null), liveKey)).toBe(false);
+    const wide = { id: 'river-a', width: 2.5 };
+    const plain = buildPaths(shown);
+    const widened = buildPaths(shown, wide);
+    expect(plain.rivers.some((b) => opsOf(b.path).length)).toBe(true);
+    expect(bucketsOf(widened.rivers)).not.toEqual(bucketsOf(plain.rivers));
+    // 松手执行（采用预览）之后的河与预览世界画的逐段相同
+    eng.exec(cmd!);
+    const after = eng.world;
+    expect(bucketsOf(buildPaths(after).rivers)).toEqual(bucketsOf(plain.rivers));
+    expect(opsOf(buildPaths(after).lockedGuides)).toEqual(opsOf(plain.lockedGuides));
+    expect(bucketsOf(buildPaths(after, wide).rivers)).toEqual(bucketsOf(widened.rivers));
   });
 
   it('整个星球：每段河按起点挪到 [0, 2) 里（平铺的副本只看 [-0.6, 2.6]），跨接缝的河道标记照样连着画', () => {
