@@ -49,18 +49,21 @@ setScriptHost({
 });
 
 // ---------- 主线程保存的命令记录 ----------
-// 每次改动世界的回复都带上上次回复以来变了的命令；引擎换了一个（新建、打开）时纪元加一、从头发（from 为 0），
-// 免得新引擎从 1 起的步号碰巧对上旧的，主线程留着上一个世界的命令
+// 每次改动世界的回复都带上上次送到主线程以来变了的命令；引擎换了一个（新建、打开）时纪元加一、从头发（from 为 0），
+// 免得新引擎从 1 起的步号碰巧对上旧的，主线程留着上一个世界的命令。
+// 纪元在换引擎的那一刻就加（换上后发快照出错、回复没送到，下一次照样从头发）；
+// 记下“已经送到”的步号要等回复真的发出去之后（发不出去时下一次连同这些一起发，主线程的记录接得上）
 let epoch = 0;
 let reported: number[] = [];
-function logOf(e: Engine, fresh = false): MirrorLog {
-  if (fresh) {
-    epoch++;
-    reported = [];
-  }
-  const tail = e.docTail(reported);
-  reported = tail.ids;
-  return { ...tail, epoch };
+function useEngine(e: Engine) {
+  engine = e;
+  epoch++;
+  reported = [];
+  // 检查点也按步号认：新引擎的步号从 1 起，可能与上一个世界写过的碰巧相同，那样这个世界的检查点就一直不写
+  ckKey = '';
+}
+function logOf(e: Engine): MirrorLog {
+  return { ...e.docTail(reported), epoch };
 }
 
 // 网格缓存：当前世界的网格和向导缩略图用的小网格（同一个大小、种子再新建或打开时不必重建）
@@ -183,12 +186,13 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => queue(() =>
 
 async function handle(id: number, req: Request) {
   try {
-    // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（命令记录从头发，带上是不是安全模式）
+    // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）
     const withSnap = (summary?: string, light = false, fresh = false) => {
       const deep = engine!.takeRecomputed();
       const { snap, transfer } = light && deep <= Dirty.Names ? lightSnapshot(engine!) : snapshot(engine!);
-      const log = logOf(engine!, fresh);
+      const log = logOf(engine!);
       reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}) }, transfer);
+      reported = log.ids;
     };
     switch (req.kind) {
       case 'init': {
@@ -196,7 +200,7 @@ async function handle(id: number, req: Request) {
         const e = new Engine(req.settings, meshFor(req.settings));
         for (const cmd of req.commands ?? []) e.exec(cmd);
         e.update();
-        engine = e;
+        useEngine(e);
         withSnap('新世界', false, true);
         return;
       }
@@ -204,7 +208,7 @@ async function handle(id: number, req: Request) {
         useSafeMode(req.safe);
         const mesh = meshFor(req.doc.settings);
         const restored = await restore(req.doc, mesh);
-        engine = restored ?? Engine.fromDoc(req.doc, mesh);
+        useEngine(restored ?? Engine.fromDoc(req.doc, mesh));
         withSnap('已打开世界文件', false, true);
         if (restored) {
           ckKey = restored.stepIds().join(',');

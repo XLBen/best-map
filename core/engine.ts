@@ -7,6 +7,7 @@ import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
+import { scriptsEnabled } from './script';
 import { SPECIES_EXTENSION_KEYS } from './species';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
@@ -137,9 +138,13 @@ export class Engine {
     try {
       this.update();
     } catch (e) {
-      this.rollbackLast();
-      this.undone = undone;
-      this.stateId = stateBefore;
+      // 撤掉时的重算按说不会再出错；万一出了，历史、重做记录、状态编号也照样放回去
+      try {
+        this.rollbackLast();
+      } finally {
+        this.undone = undone;
+        this.stateId = stateBefore;
+      }
       throw e;
     }
     return summary;
@@ -168,8 +173,11 @@ export class Engine {
     this.lastNoop = skipNoop && !r.changed;
     if (this.lastNoop) return { summary: r.summary, changed: false };
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
-    // 新起的省名记进命令（存档、重做时照用）
-    const recorded = r.provinceNames ? { ...cmd, provinceNames: r.provinceNames } : cmd;
+    // 新起的省名记进命令（存档、重做时照用）。
+    // 安全模式（脚本不运行）下推导与正常时不同，这一步新起的省可能少几个：命令里已经记着的名字一个不丢，
+    // 不然用安全模式打开一次、自动保存之后，再正常打开时那几个省就换了名字（命令照旧保留）
+    const names = r.provinceNames && cmd.provinceNames && !scriptsEnabled() ? { ...cmd.provinceNames, ...r.provinceNames } : r.provinceNames;
+    const recorded = names ? { ...cmd, provinceNames: names } : cmd;
     this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
     return { summary: r.summary, changed: r.changed };
@@ -288,8 +296,11 @@ export class Engine {
     try {
       this.update();
     } catch (e) {
-      this.rollbackLast();
-      putBack();
+      try {
+        this.rollbackLast();
+      } finally {
+        putBack();
+      }
       throw e;
     }
     return true;

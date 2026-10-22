@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../core/commands';
 import type { WorldDoc } from '../core/engine';
-import { scriptHash } from '../core/script';
+import { FANTASY_BIOMES } from '../core/packs/fantasy-biomes';
+import { FANTASY_FORMS } from '../core/packs/fantasy-forms';
+import { type FoundScript, findScripts, scriptHash } from '../core/script';
 import { type Species, withRect } from '../core/species';
 import { engineFor } from '../core/testing/fixtures';
 import type { Request, Snapshot } from './protocol';
@@ -73,8 +75,14 @@ function respond(req: Request): Record<string, unknown> {
   return { summary: '完成', snapshot: snap() };
 }
 
-const { ask, confirmImport, exec, loadDoc, resumeLast, safeMode } = await import('./state');
-const { forgetTrustCache } = await import('./trust');
+const { ask, confirmImport, exec, loadDoc, newWorld, resumeLast, safeMode } = await import('./state');
+const { forgetTrustCache, trustScripts, untrustedScripts } = await import('./trust');
+
+// 信任列表里的键：源码的 SHA-256
+const sha = async (src: string) => {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(src)));
+  return 'sha256:' + Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('');
+};
 
 const script = (src: string) => ({ api: 1 as const, src });
 const species = (id: string, src: string): Species =>
@@ -131,7 +139,7 @@ describe('打开时的信任检查', () => {
     expect(safeMode.value).toBeNull();
     // 记进了浏览器（重新读一遍也在）：不再问
     forgetTrustCache();
-    expect((kv.get('trustedScripts') as { hash: string }[]).map((e) => e.hash)).toContain(scriptHash('return 0.25;'));
+    expect((kv.get('trustedScripts') as { hash: string }[]).map((e) => e.hash)).toContain(await sha('return 0.25;'));
     p = loadDoc(doc);
     await tick();
     expect(ask.value).toBeNull();
@@ -143,7 +151,9 @@ describe('打开时的信任检查', () => {
   it('自己提交的脚本记为信任；导入的（生态 JSON）要先问', async () => {
     const mine = species('e', 'return 0.75;');
     expect(await exec({ op: 'add_species', species: mine })).toBe(true);
-    await tick();
+    // 记为信任是在后台写的（算 SHA-256、写浏览器）
+    const key = await sha('return 0.75;');
+    await vi.waitFor(() => expect((kv.get('trustedScripts') as { hash: string }[]).map((e) => e.hash)).toContain(key), { timeout: 3000, interval: 10 });
     const p = loadDoc(docWith(mine));
     await tick();
     expect(ask.value).toBeNull();
@@ -189,5 +199,40 @@ describe('打开时的信任检查', () => {
     expect(sentKinds().at(-1)).toBe('load(safe)');
     expect(safeMode.value).toEqual({ reason: '上次打开时程序停止了响应' });
     expect(kv.has('loadingScripts')).toBe(false);
+  });
+
+  it('新建时也查（向导里的星球形态带脚本）；内置的示例生态、星球形态总是信任，不问', async () => {
+    expect(await untrustedScripts(FANTASY_BIOMES)).toEqual([]);
+    expect(await untrustedScripts(FANTASY_FORMS)).toEqual([]);
+    const own = species('k', 'return 0.45;');
+    const p = newWorld(eng.world.settings, [{ op: 'set_worldgen', params: { seed: 5, type: 'continents', form: FANTASY_FORMS[0] }, reset: true }, { op: 'add_species', species: own }]);
+    await tick();
+    // 只问没见过的那一段（内置形态的布局脚本不列）
+    expect(ask.value!.scripts!.map((s) => s.src)).toEqual(['return 0.45;']);
+    expect(ask.value!.choices.map((c) => c.label)).toEqual(['信任并新建', '不运行脚本新建', '取消']);
+    ask.value!.resolve('cancel');
+    expect(await p).toBe(false);
+  });
+});
+
+describe('短哈希骗不过信任', () => {
+  // findScripts 的 16 位短哈希不是密码学哈希，能专门凑出相同的。这里直接造两段短哈希相同、源码不同的脚本
+  const fake = (src: string, hash: string): FoundScript => ({ owner: '冒充的', kind: 'placement', src, hash, path: 'species.scripts.placement' });
+
+  it('与内置示例短哈希相同的脚本照样要问；同一个短哈希下的两段都列出来，信任一段不等于信任另一段', async () => {
+    const builtin = findScripts(FANTASY_BIOMES)[0];
+    expect(await untrustedScripts(null, [fake(builtin.src, builtin.hash)])).toEqual([]);
+    const evil = fake('return 1; // 其实是别的', builtin.hash);
+    expect(await untrustedScripts(null, [evil])).toEqual([evil]);
+    const a = fake('return 0.11;', '0123456789abcdef');
+    const b = fake('return 0.12;', '0123456789abcdef');
+    expect(await untrustedScripts(null, [a, b])).toEqual([a, b]);
+    await trustScripts([a]);
+    expect(await untrustedScripts(null, [a, b])).toEqual([b]);
+    // 记下的是 SHA-256，不是短哈希
+    const keys = (kv.get('trustedScripts') as { hash: string }[]).map((e) => e.hash);
+    expect(keys).toContain(await sha('return 0.11;'));
+    expect(keys).not.toContain('0123456789abcdef');
+    expect(scriptHash('return 0.11;')).not.toBe(await sha('return 0.11;'));
   });
 });

@@ -5,7 +5,8 @@ import type { Command } from './commands';
 import { Engine, type WorldDoc } from './engine';
 import { graphDistance } from './mesh';
 import { fantasyBiomeCommands } from './packs/fantasy-biomes';
-import { ScriptError, findScripts, setScriptsEnabled } from './script';
+import { POLAR_CONTINENTS } from './packs/fantasy-forms';
+import { ScriptError, findScripts, setScriptHost, setScriptsEnabled } from './script';
 import { type Species, withRect } from './species';
 import { engineFor, snapshot } from './testing/fixtures';
 import { isVegetated } from './vegetation';
@@ -58,7 +59,10 @@ const breakNextUpdate = (e: Engine) => {
   };
 };
 
-afterEach(() => setScriptsEnabled(true));
+afterEach(() => {
+  setScriptsEnabled(true);
+  setScriptHost(null);
+});
 
 describe('脚本出错的命令整体不生效', () => {
   it('语法错误：添加、修改（在一整步里）都当场拒绝，说明第几行；世界、历史、重做记录、状态编号都不变', () => {
@@ -259,5 +263,34 @@ describe('安全模式', () => {
     setScriptsEnabled(true);
     const again = replay(eng, doc);
     expect(digestWorld(again.world)).toEqual(normal);
+  });
+
+  it('安全模式下一段脚本都不运行（看门狗收不到“进入脚本”）：生态的、星球形态的都不跑；命令连同记下的省名照原样保留', () => {
+    const entered: string[] = [];
+    setScriptHost({ enter: (label) => entered.push(label), tick() {}, exit() {} });
+    const planet = (cells: number) => ({ cells, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    const build = () => {
+      const e = engineFor(planet(4000));
+      e.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents', form: POLAR_CONTINENTS }, reset: true });
+      e.exec(fantasyBiomeCommands({ fields: Object.keys(e.world.causes.fields), species: e.world.small.species.map((s) => s.id) }));
+      return e;
+    };
+    const normal = build();
+    expect(new Set(entered)).toEqual(new Set([POLAR_CONTINENTS.name, ...normal.world.small.species.filter((s) => s.scripts).map((s) => s.name)]));
+    entered.length = 0;
+    setScriptsEnabled(false);
+    // 新建、重放、编辑、撤销都不跑
+    build();
+    const doc = normal.toDoc();
+    const safe = Engine.fromDoc(doc, normal.world.mesh);
+    safe.exec({ op: 'set_planet', patch: { humidity: 1.2 } });
+    safe.undo();
+    expect(entered).toEqual([]);
+    // 没有地形脚本，新起的省比正常时少：命令里记着的省名也一个不丢（用安全模式打开、自动保存，再正常打开时名字不变）
+    expect(Object.keys(safe.world.small.provinces).length).toBeLessThan(Object.keys(normal.world.small.provinces).length);
+    expect(safe.toDoc()).toEqual(doc);
+    expect(safe.world.derived.placeF).toBeUndefined();
+    setScriptsEnabled(true);
+    expect(digestWorld(replay(normal, safe.toDoc()).world)).toEqual(digestWorld(normal.world));
   });
 });

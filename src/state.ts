@@ -12,7 +12,7 @@ import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSc
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 import { EngineHost, type WorkerLike } from './sandbox';
-import { clearLoading, markLoading, readLoading, tidyTrusted, trustScripts, untrustedScripts } from './trust';
+import { clearLoading, markLoading, readLoading, tidyTrusted, trustScripts, uniqueScripts, untrustedScripts } from './trust';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态
 
@@ -340,6 +340,7 @@ function engineHost(): EngineHost {
     reset: engineReset,
     restored: engineRestored,
     failed: engineFailed,
+    abandoned: recovered,
   });
   return host;
 }
@@ -381,17 +382,21 @@ function engineReset(message: string) {
 
 // 恢复好了：换上快照（不算新打开：镜头不动），标上是不是安全模式
 function engineRestored(r: Extract<Response, { ok: true }>, reason: string | null) {
-  recovering = false;
-  if (labelled === 0) busy.value = null;
+  recovered();
   resetAutosaveIds();
   if (r.snapshot) applySnapshot(r.snapshot);
   safeMode.value = reason !== null ? { reason } : null;
 }
 
 function engineFailed(message: string) {
+  recovered();
+  showToast(message, true);
+}
+
+// 不再等恢复（恢复好了、恢复不了、打开了别的世界）
+function recovered() {
   recovering = false;
   if (labelled === 0) busy.value = null;
-  showToast(message, true);
 }
 
 // 界面上的“停下”：停掉正在跑的脚本（与卡住一样恢复，这一步不做）
@@ -624,16 +629,6 @@ export function askUser(a: Omit<Ask, 'resolve'>): Promise<string> {
   });
 }
 
-// 同一段脚本只列一次
-function uniqueScripts(list: FoundScript[]): FoundScript[] {
-  const seen = new Set<string>();
-  return list.filter((s) => {
-    if (seen.has(s.hash)) return false;
-    seen.add(s.hash);
-    return true;
-  });
-}
-
 // 新建、打开带脚本的世界之前：有没信任过的脚本就问。信任并打开（记为信任）/ 不运行脚本打开（安全模式）/ 取消
 async function askTrust(scripts: FoundScript[], verb: '打开' | '新建'): Promise<'run' | 'safe' | 'cancel'> {
   const list = await untrustedScripts(null, scripts);
@@ -648,7 +643,7 @@ async function askTrust(scripts: FoundScript[], verb: '打开' | '新建'): Prom
       { value: 'cancel', label: '取消' },
     ],
   });
-  if (v === 'run') await trustScripts(list.map((s) => s.hash));
+  if (v === 'run') await trustScripts(list);
   return v === 'run' || v === 'safe' ? v : 'cancel';
 }
 
@@ -668,15 +663,16 @@ export async function confirmImport(json: unknown): Promise<boolean> {
     ],
   });
   if (v !== 'run') return false;
-  await trustScripts(list.map((s) => s.hash));
+  await trustScripts(list);
   return true;
 }
 
-// 自己提交的脚本（加、改生态……）记为信任。安全模式下不记：那里的脚本可能是从没信任的世界里复制来的
+// 自己提交的脚本（加、改生态……）记为信任。安全模式下不记：那里的脚本可能是从没信任的世界里复制来的。
+// 每一笔都要过一遍（涂一笔的命令里有上万个格号）：findScripts 不把数放进栈，比先转成 JSON 再找快
 function trustOwn(cmd: Command) {
-  if (safeMode.value || !JSON.stringify(cmd).includes('"scripts"')) return;
+  if (safeMode.value) return;
   const found = findScripts(cmd);
-  if (found.length) void trustScripts(found.map((s) => s.hash));
+  if (found.length) void trustScripts(found);
 }
 
 // 打开时选了“不运行脚本”
@@ -686,7 +682,7 @@ const SAFE_CHOSEN = '打开时选了不运行脚本';
 function afterOpen(r: Response, scripts: FoundScript[]) {
   const safe = r.ok && r.safe === true;
   safeMode.value = safe ? { reason: engineHost().safeReason ?? SAFE_CHOSEN } : null;
-  if (!safe) void tidyTrusted(scripts.map((s) => s.hash));
+  if (!safe) void tidyTrusted(scripts);
 }
 
 export interface OpenOptions {
@@ -699,8 +695,10 @@ export interface OpenOptions {
 // 新建、打开：带脚本时先查信任（没见过的问用户）；正常打开带脚本的世界期间记下标记（页面停止响应后下次启动时先问）。
 // 不带脚本时与以前一样立刻发给 Worker
 async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: string, opts: OpenOptions, verb: '打开' | '新建', settings: Partial<Settings>): Promise<boolean> {
-  const scripts = uniqueScripts(findScripts(req.kind === 'init' ? req.commands : req.doc));
-  let safe = opts.safe ?? null;
+  // 新建时设置也一起查（脚本可能出现在任何地方：findScripts 找的是所有叫 scripts 的容器）
+  const scripts = uniqueScripts(findScripts(req.kind === 'init' ? [req.settings, req.commands] : req.doc));
+  // 没有脚本的世界不用安全模式（安全模式只是不运行脚本；比如在安全模式里把脚本都删了，自动保存还记着安全模式）
+  let safe = scripts.length ? (opts.safe ?? null) : null;
   if (safe === null && scripts.length) {
     const d = await askTrust(scripts, verb);
     if (d === 'cancel') return false;
@@ -779,12 +777,19 @@ export const dismissedIssues = signal('');
 
 // 出错的脚本的“编辑”：脚本编辑器（另一批）把自己的打开方法放在 open 上；没有时打开生态抽屉、选中这种生态
 export const scriptEditor: { open: ((issue: ScriptIssue) => void) | null } = { open: null };
+// 出错的是哪种生态（生态的两种脚本；星球形态的布局、地形脚本没有）
+const speciesOfIssue = (issue: ScriptIssue) =>
+  issue.kind === 'placement' || issue.kind === 'color' ? world.value?.small.species.find((s) => (s.name || s.id) === issue.owner) : undefined;
+// 有没有地方可以打开它（没有时提示条上不放“编辑”）
+export function canEditScript(issue: ScriptIssue): boolean {
+  return scriptEditor.open !== null || speciesOfIssue(issue) !== undefined;
+}
 export function editScript(issue: ScriptIssue) {
   if (scriptEditor.open) {
     scriptEditor.open(issue);
     return;
   }
-  const sp = world.value?.small.species.find((s) => (s.name || s.id) === issue.owner);
+  const sp = speciesOfIssue(issue);
   if (!sp) return;
   focusSpecies.value = sp.id;
   sheet.value = 'species';

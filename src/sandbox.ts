@@ -10,6 +10,8 @@ import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
 // - 恢复：卡住、停下、Worker 崩了时停掉它，正在等的请求都回 {ok:false}（这一步没有做），
 //   另开一个 Worker，用命令记录（加检查点）打开同一个世界；这也卡住、出错就用安全模式（脚本不运行）打开。
 //   正在新建、打开的世界卡住了：直接用安全模式打开它（再正常打开一次还会卡住）；
+//   刚恢复的世界还没做成过一步就在后台又出了事：也用安全模式（不然会一直恢复、卡住、再恢复）；
+//   还没有世界（向导的缩略图）时不恢复；恢复到一半打开了别的世界，恢复作废（不当成打不开）；
 // - Worker 发来的消息先检查：只认识的几种，字符串截短；命令记录要接得上已有的
 // 不碰 DOM、不碰信号：时钟、Worker 都可以换成假的（见 sandbox.test.ts）
 
@@ -195,18 +197,19 @@ export interface HostEvents {
   reset?(message: string): void;
   // 恢复好了：打开的回复（带快照）。safeReason：安全模式打开的原因，正常打开时为 null
   restored?(r: Ok, safeReason: string | null): void;
-  // 恢复不了（安全模式打开也出错）
+  // 恢复不了（安全模式打开也出错），或者还没有世界、没有在等的请求时出了事（只说一句）
   failed?(message: string): void;
+  // 恢复到一半不恢复了：打开了别的世界（换模式另开了 Worker），或者恢复用的 Worker 也出了事、另行处理
+  abandoned?(): void;
 }
 
 type Why = 'hang' | 'stopped' | 'crash';
 
-// 给用户的话：这一步没做
-export function stoppedText(why: Why, label: string | null): string {
+// 给用户的话。world：有世界要恢复（恢复后重做记录就没了）；step：有在等的请求（这一步没做）
+export function stoppedText(why: Why, label: string | null, world = true, step = true): string {
   const who = label ? `「${label}」的脚本` : '脚本';
-  if (why === 'hang') return `${who}卡住了（4 秒没有算完），已经停下，这一步没有做。重做记录清空了`;
-  if (why === 'stopped') return `已经停下${who}，这一步没有做。重做记录清空了`;
-  return '计算程序停止了响应，这一步没有做。重做记录清空了';
+  const head = why === 'hang' ? `${who}卡住了（4 秒没有算完），已经停下` : why === 'stopped' ? `已经停下${who}` : '计算程序停止了响应';
+  return `${head}${step ? '，这一步没有做' : ''}${world ? '。重做记录清空了' : ''}`;
 }
 
 // 安全模式的原因（横幅里括号中的话）
@@ -223,6 +226,10 @@ interface Pending {
   // 恢复时自己发的打开（出错由 restore 处理）
   internal?: boolean;
 }
+
+// 不是 Worker 回的、是这里替它回的 {ok:false}（停掉 Worker、换了世界时还没回复的请求）用的编号。
+// Worker 的回复编号从 1 起，伪造的 0 号回复找不到在等的请求，不会被当成这种
+const CANCELLED = 0;
 
 const opens = (req: Request) => req.kind === 'init' || req.kind === 'load';
 
@@ -243,6 +250,9 @@ export class EngineHost {
   // 命令记录里的世界是用哪种模式打开的（恢复时照样）
   private mirrorSafe = false;
   private mirrorReason: string | null = null;
+  // 当前 Worker 是恢复时开的，而且还没有哪个界面的请求在它里面算成过。它在后台（没有在等的请求时）又卡住、崩了：
+  // 多半是打开这个世界本身的问题，再正常恢复会一直循环下去，改用安全模式
+  private quiet = false;
 
   constructor(
     private readonly spawnWorker: () => WorkerLike,
@@ -306,6 +316,7 @@ export class EngineHost {
     this.safe = safe;
     this.safeReason = safe ? reason : null;
     this.loaded = false;
+    this.quiet = false;
     return w;
   }
 
@@ -332,6 +343,7 @@ export class EngineHost {
     this.watchdog.disarm();
     if (r.ok) {
       if (opens(p.req)) this.loaded = true;
+      if (!p.internal) this.quiet = false;
       if (r.log && this.mirror.apply(gen, r.log) && opens(p.req)) {
         this.mirrorSafe = this.safe;
         this.mirrorReason = this.safeReason;
@@ -365,17 +377,19 @@ export class EngineHost {
     const waiting = [...this.pending.values()];
     this.pending.clear();
     this.kill();
-    for (const p of waiting) p.done({ id: 0, ok: false, error });
+    for (const p of waiting) p.done({ id: CANCELLED, ok: false, error });
   }
 
   private recover(why: Why, label: string | null) {
-    const message = stoppedText(why, label);
-    const reason = safeReasonText(why, label);
+    const doc = this.mirror.doc();
     const waiting = [...this.pending.values()];
     this.pending.clear();
+    const message = stoppedText(why, label, doc !== null, waiting.length > 0);
+    const reason = safeReasonText(why, label);
     const wasSafe = this.safe;
+    const quiet = this.quiet;
     this.kill();
-    const fail = (p: Pending) => p.done({ id: 0, ok: false, error: message });
+    const fail = (p: Pending) => p.done({ id: CANCELLED, ok: false, error: message });
     const head = waiting[0];
     if (head && (head.req.kind === 'init' || head.req.kind === 'load') && !wasSafe) {
       // 正在新建、打开（或者正在恢复）的世界卡住了：用安全模式打开它，回复照旧交给原来的请求
@@ -385,10 +399,9 @@ export class EngineHost {
       return;
     }
     for (const p of waiting) fail(p);
-    const doc = this.mirror.doc();
     if (!doc) {
-      // 还没有世界（比如向导的缩略图）：下次用到时再开 Worker
-      this.events.reset?.(message);
+      // 还没有世界（比如向导的缩略图）：没有要恢复的，下次用到时再开 Worker。在等的请求已经带着这句话回去了
+      if (!waiting.length) this.events.failed?.(message);
       return;
     }
     if (wasSafe) {
@@ -397,7 +410,9 @@ export class EngineHost {
       return;
     }
     this.events.reset?.(message);
-    this.restore(doc, false, null);
+    // 刚恢复的世界什么都没做就在后台又出了事：再正常恢复还会这样，用安全模式
+    if (!waiting.length && quiet) this.restore(doc, true, reason);
+    else this.restore(doc, false, null);
   }
 
   // 用命令记录另开一个 Worker 打开同一个世界（Worker 会先试检查点）；正常打开出错就用安全模式再开一次。
@@ -405,6 +420,8 @@ export class EngineHost {
   private restore(doc: WorldDoc, safe: boolean, reason: string | null) {
     const done = (r: Response) => {
       if (r.ok) this.events.restored?.(r, r.safe ? this.safeReason : null);
+      // 这里替 Worker 回的：换了世界、或者恢复用的 Worker 也出了事（recover 另行处理），不是打不开
+      else if (r.id === CANCELLED) this.events.abandoned?.();
       else if (!this.safe) {
         // 排在后面的请求是发给这个（打不开世界的）Worker 的：作废
         this.drop(r.error);
@@ -413,6 +430,7 @@ export class EngineHost {
       } else this.events.failed?.(`世界没能恢复：${r.error}`);
     };
     this.spawn(safe, reason);
+    this.quiet = true;
     this.post(safe ? { kind: 'load', doc, safe: true } : { kind: 'load', doc }, done, true);
   }
 }

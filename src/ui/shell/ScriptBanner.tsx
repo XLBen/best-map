@@ -1,6 +1,6 @@
 import { X } from 'lucide-preact';
 import type { ScriptIssue } from '../../../core/script';
-import { dismissedIssues, editScript, flashCells, retryScripts, safeMode, showScripts, world } from '../../state';
+import { canEditScript, dismissedIssues, editScript, flashCells, retryScripts, safeMode, showScripts, world } from '../../state';
 import { focusOn } from '../camera';
 
 // 顶部的横幅（不挡操作，提示条上面）：
@@ -25,7 +25,7 @@ export function ScriptBanner() {
         <span class="notice-text" title={`安全模式：这个世界里的脚本没有运行（${safe.reason}）。`}>
           安全模式：这个世界里的脚本没有运行（{safe.reason}）。
         </span>
-        <button class="pill-btn" onClick={() => void retryScripts()} title="另开一个计算程序，脚本照常运行">
+        <button class="pill-btn" onClick={() => void retryScripts()} title="重新打开这个世界，让脚本照常运行">
           再试一次
         </button>
         <button class="pill-btn" onClick={() => void showScripts()}>
@@ -61,9 +61,11 @@ export function ScriptBanner() {
           地图上有一处出错（点这里去看）
         </button>
       )}
-      <button class="pill-btn" onClick={() => editScript(first)}>
-        编辑
-      </button>
+      {canEditScript(first) && (
+        <button class="pill-btn" onClick={() => editScript(first)}>
+          编辑
+        </button>
+      )}
       <button class="pill-btn icon" onClick={() => (dismissedIssues.value = key)} title="关上">
         <X size={14} />
       </button>

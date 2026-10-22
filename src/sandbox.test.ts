@@ -79,7 +79,7 @@ const docOf = (commands: Command[]): WorldDoc => ({ format: 'map2-world', versio
 function setup() {
   FakeWorker.all = [];
   const clock = new FakeClock();
-  const events = { slow: vi.fn(), reset: vi.fn(), restored: vi.fn(), failed: vi.fn() };
+  const events = { slow: vi.fn(), reset: vi.fn(), restored: vi.fn(), failed: vi.fn(), abandoned: vi.fn() };
   const host = new EngineHost(() => new FakeWorker(), events, clock);
   const results: Response[] = [];
   const send = (req: Request) => host.send(req, (r) => results.push(r));
@@ -365,5 +365,86 @@ describe('卡住了：恢复', () => {
     t.send({ kind: 'load', doc: docOf([cmd(9)]) });
     w2.emit({ id: w2.last().id, ok: false, error: '坏了' });
     expect(FakeWorker.all).toHaveLength(3);
+  });
+
+  it('恢复到一半打开了别的世界（换了模式）：恢复作废，不另开安全模式的 Worker，新世界照要的模式打开', () => {
+    const t = opened();
+    t.send({ kind: 'exec', cmd: cmd(1.5) });
+    t.worker(0).enter('水晶丛林');
+    t.clock.advance(5000);
+    expect(t.worker(1).sent.map((m) => m.req.kind)).toEqual(['load']);
+    // 正常模式恢复还没打开好，用户用“不运行脚本打开”打开了另一个世界
+    const other = docOf([cmd(8)]);
+    t.send({ kind: 'load', doc: other, safe: true });
+    expect(t.worker(1).terminated).toBe(true);
+    expect(t.events.abandoned).toHaveBeenCalledTimes(1);
+    expect(t.events.failed).not.toHaveBeenCalled();
+    expect(FakeWorker.all).toHaveLength(3);
+    expect(t.worker(2).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: other, safe: true }]);
+    t.worker(2).replyLast({ log: log(1, 0, [cmd(8)], [1]), safe: true });
+    expect(t.results.at(-1)).toMatchObject({ ok: true, safe: true });
+    expect(t.events.restored).not.toHaveBeenCalled();
+
+    // 反过来：安全模式的恢复还没好，用户正常打开别的世界
+    const u = opened();
+    u.send({ kind: 'exec', cmd: cmd(1.5) });
+    u.worker(0).enter('死亡森林');
+    u.clock.advance(5000);
+    u.worker(1).enter('死亡森林');
+    u.clock.advance(5000);
+    expect(u.worker(2).sent[0].req).toMatchObject({ kind: 'load', safe: true });
+    u.send({ kind: 'load', doc: other });
+    expect(u.events.abandoned).toHaveBeenCalledTimes(1);
+    expect(u.events.failed).not.toHaveBeenCalled();
+    expect(u.worker(3).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: other }]);
+    expect(u.host.safe).toBe(false);
+  });
+
+  it('还没有世界时卡住（向导的缩略图）：不恢复、不说“重做记录清空了”；没有在等的请求时说一句', () => {
+    const t = setup();
+    t.send({ kind: 'thumb', settings: {}, gen: { seed: 1, type: 'continents' }, width: 8, height: 4 });
+    t.worker(0).enter('双子大陆');
+    t.clock.advance(5000);
+    expect(t.results).toEqual([{ id: 0, ok: false, error: '「双子大陆」的脚本卡住了（4 秒没有算完），已经停下，这一步没有做' }]);
+    expect(t.events.reset).not.toHaveBeenCalled();
+    expect(t.events.failed).not.toHaveBeenCalled();
+    expect(FakeWorker.all).toHaveLength(1);
+    // 下一张缩略图另开 Worker；它在后台卡住（没有在等的请求）
+    t.send({ kind: 'thumb', settings: {}, gen: { seed: 2, type: 'continents' }, width: 8, height: 4 });
+    t.worker(1).replyLast({});
+    t.worker(1).enter('双子大陆');
+    t.clock.advance(5000);
+    expect(t.events.failed).toHaveBeenCalledWith('「双子大陆」的脚本卡住了（4 秒没有算完），已经停下');
+    expect(t.events.reset).not.toHaveBeenCalled();
+  });
+
+  it('刚恢复的世界在后台又卡住（没有在等的请求）：改用安全模式，不会一直循环；在它里面算成过一步后照常恢复', () => {
+    const t = opened();
+    t.send({ kind: 'exec', cmd: cmd(1.5) });
+    t.worker(0).enter('神圣之地');
+    t.clock.advance(5000);
+    const w1 = t.worker(1);
+    w1.replyLast({ log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: false });
+    expect(t.events.restored.mock.calls[0][1]).toBeNull();
+    // 打开回复之后，Worker 在后台补算时卡住
+    w1.enter('神圣之地');
+    t.clock.advance(5000);
+    expect(t.events.reset).toHaveBeenLastCalledWith('「神圣之地」的脚本卡住了（4 秒没有算完），已经停下。重做记录清空了');
+    const w2 = t.worker(2);
+    expect(w2.sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(1.1), cmd(1.2)]), safe: true }]);
+    w2.replyLast({ log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: true });
+    expect(t.events.restored.mock.calls[1][1]).toBe('「神圣之地」的脚本卡住了');
+
+    // 恢复后用户的一步算成了：之后再卡住照常（正常模式）恢复
+    const u = opened();
+    u.send({ kind: 'exec', cmd: cmd(1.5) });
+    u.worker(0).enter('神圣之地');
+    u.clock.advance(5000);
+    u.worker(1).replyLast({ log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: false });
+    u.send({ kind: 'exec', cmd: cmd(1.6) });
+    u.worker(1).replyLast({ summary: '改了', log: log(1, 2, [cmd(1.6)], [1, 2, 3]) });
+    u.worker(1).enter('神圣之地');
+    u.clock.advance(5000);
+    expect(u.worker(2).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(1.1), cmd(1.2), cmd(1.6)]) }]);
   });
 });
