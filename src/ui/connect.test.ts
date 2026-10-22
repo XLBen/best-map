@@ -10,7 +10,7 @@ import type { LightSnapshot, Request } from '../protocol';
 // - 脚本框提交的脚本记进信任列表（trust.ts），同一步里被换掉的中间版本去掉，留着的是现在的、被它换掉的（出错时换回它）、
 //   历史里的、世界上还用着的；本来就信任的从不去掉；安全模式下不记；
 // - 拖滑块时地图上临时换掉外观；
-// - 出错提示的“编辑”打开那个脚本框，星球形态的脚本没有“编辑”。
+// - 出错提示的“编辑”打开那个脚本框（河流类型的规则打开“水系 ⋯”里那种河），星球形态的脚本没有“编辑”。
 // 没有浏览器：IndexedDB 的 kv 换成内存里的表，Worker 不会用到（不发请求）
 
 const kv = new Map<string, unknown>();
@@ -150,6 +150,33 @@ describe('别的口子', () => {
     expect(state.focusSpecies.value).toBe(sp0.id);
     const form: ScriptIssue = { kind: 'crust', owner: '双子大陆', reason: 'runtime', text: '没有变量 x', raw: 'x is not defined', message: '「双子大陆」的地形脚本：没有变量 x' };
     expect(state.canEditScript(form)).toBe(false);
+  });
+
+  it('出错提示的“编辑”：河流类型的规则打开“水系 ⋯”里那种河；类型删掉了就没有“编辑”', () => {
+    state.world.value = { ...w0, small: { ...w0.small, riverTypes: [{ id: 'blood', name: '血河', color: '#8f1414', scripts: { match: { api: 1, src: 'return o.x;' } } }] } };
+    const issue: ScriptIssue = { kind: 'match', owner: '血河', id: 'blood', reason: 'runtime', text: '没有变量 o', raw: 'o is not defined', message: '「血河」的脚本：没有变量 o' };
+    expect(state.canEditScript(issue)).toBe(true);
+    const tool = state.tool.value;
+    state.editScript(issue);
+    expect(state.tool.value).toBe('river');
+    expect(state.riverTypeEditorRequest.value).toBe('blood');
+    expect(state.openPanel.value).toBe('cat:water');
+    expect(state.canEditScript({ ...issue, id: 'gone' })).toBe(false);
+    state.riverTypeEditorRequest.value = null;
+    state.openPanel.value = null;
+    state.tool.value = tool;
+  });
+
+  it('世界上还用着的不去掉：在用的星球形态里的脚本也算', async () => {
+    // 星球形态的地形脚本与框里写过的一段相同（没信任过：框提交时才记为信任）
+    const crust = 'return height + 1;';
+    const gen = { seed: 1, type: 'continents', form: { id: 'f', name: '形态', api: 1, base: 'continents', scripts: { crust: { api: 1, src: crust } } } };
+    state.world.value = { ...w0, small: { ...w0.small, terrain: { ...w0.small.terrain, gen } } } as typeof w0;
+    await commit(crust, '', 'exec');
+    await commit('return 0.2;', crust, 'replace');
+    await commit('return 0.3;', 'return 0.2;', 'replace');
+    await commit('return 0.4;', 'return 0.3;', 'replace');
+    expect(await Promise.all([crust, 'return 0.2;', 'return 0.3;', 'return 0.4;'].map(trusted))).toEqual([true, false, true, true]);
   });
 });
 

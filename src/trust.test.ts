@@ -3,6 +3,7 @@ import type { Command } from '../core/commands';
 import type { WorldDoc } from '../core/engine';
 import { FANTASY_BIOMES } from '../core/packs/fantasy-biomes';
 import { FANTASY_FORMS } from '../core/packs/fantasy-forms';
+import { FANTASY_RIVER_TYPES } from '../core/packs/fantasy-rivers';
 import { type FoundScript, findScripts, scriptHash } from '../core/script';
 import { type Species, withRect } from '../core/species';
 import { engineFor } from '../core/testing/fixtures';
@@ -82,6 +83,9 @@ function respond(req: Request): Record<string, unknown> {
 
 const { ask, confirmImport, exec, loadDoc, newWorld, resumeLast, retryScripts, safeMode, trustFormScripts } = await import('./state');
 const { forgetTrustCache, trustScripts, untrustedScripts } = await import('./trust');
+// 内置示例（生态、河流类型、星球形态）的 SHA-256 先算好：第一次查信任时要一段段算十几段，整套测试一起跑、机器很忙时
+// 下面 tick() 等的那几轮不够，问话还没出来（各测试只等自己那一两段）
+await untrustedScripts(FANTASY_BIOMES);
 
 // 信任列表里的键：源码的 SHA-256
 const sha = async (src: string) => {
@@ -248,9 +252,12 @@ describe('打开时的信任检查', () => {
     expect(await r).toBe(false);
   });
 
-  it('新建时也查（向导里的星球形态带脚本）；内置的示例生态、星球形态总是信任，不问', async () => {
+  it('新建时也查（向导里的星球形态带脚本）；内置的示例生态、河流类型、星球形态总是信任，不问', async () => {
     expect(await untrustedScripts(FANTASY_BIOMES)).toEqual([]);
     expect(await untrustedScripts(FANTASY_FORMS)).toEqual([]);
+    // 河流类型“新建”里的示例（不经过资源库也算）
+    expect(findScripts(FANTASY_RIVER_TYPES).length).toBe(3);
+    expect(await untrustedScripts(FANTASY_RIVER_TYPES)).toEqual([]);
     const own = species('k', 'return 0.45;');
     const p = newWorld(eng.world.settings, [{ op: 'set_worldgen', params: { seed: 5, type: 'continents', form: FANTASY_FORMS[0] }, reset: true }, { op: 'add_species', species: own }]);
     await tick();
