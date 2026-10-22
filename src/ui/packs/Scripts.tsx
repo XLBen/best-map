@@ -5,7 +5,7 @@ import { scriptsIsolated } from '../../state';
 
 // 脚本是不是在隔离的环境里跑（state.ts 的 scriptsIsolated：计算 Worker 从 data: 地址开、自查三项全部通过）。没隔离时老实说
 export function isolationNote(): string {
-  return scriptsIsolated.value ? '脚本在隔离的环境里运行，读不到你保存的其他世界，也不能联网。' : '当前环境不能把脚本隔离运行：脚本能读到这个浏览器里保存的世界。';
+  return scriptsIsolated.value ? '脚本在隔离的环境里运行，读不到你保存的其他世界，也不能联网。' : '当前环境不能把脚本隔离运行：脚本能读到这个浏览器里保存的世界，也能联网。';
 }
 
 // 只读的源码，按所属（生态、河流类型……）和种类标出来

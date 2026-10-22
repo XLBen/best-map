@@ -2,12 +2,14 @@ import type { Checkpoint, WorldDoc } from '../core/engine';
 import { collectBuffers } from './transfer';
 
 // 检查点的存取（隔离那一步）：计算 Worker 在隔离的环境里打不开 IndexedDB，检查点改由一个与页面同源、
-// 只做存储、从不运行脚本的 Worker（storage-worker.ts）读写。
-//   写：计算 Worker → 主线程（核对步号，见 sandbox.ts）→ 存储 Worker，数组一路转移，主线程不复制；
-//   读：打开世界时主线程开一条 MessageChannel，一头交给存储 Worker、一头随“打开”交给计算 Worker；
-//       存储 Worker 只把对得上这个世界的检查点从这条通道发过去（否则发 null），检查点不经过主线程。
+// 只做存储、从不运行脚本的 Worker（storage-worker.ts）读写。检查点（星球约 34 MB，连同几千步的命令）都不经过主线程：
+//   新建、打开世界（不是安全模式）时，主线程开一条 MessageChannel，一头交给存储 Worker（open）、一头随新建、打开交给计算 Worker；
+//   读：打开时存储 Worker 只把对得上这个世界的检查点从这条通道发过去（否则发 null）；
+//   写：计算 Worker 把写好的检查点从这条通道直接发给存储 Worker（发的时候复制一次，在计算 Worker 里），另给主线程发一条纪元和步号的通知；
+//       主线程核对步号与命令记录一模一样（见 sandbox.ts），再告诉存储 Worker 可以写（commit）。存储 Worker 收到的那一份
+//       纪元、步号与主线程说的相同才写下（两条消息走不同的路，谁先到都行）。
 // “对得上”：版本号相同、设置相同、检查点里的每一步都是这个世界开头的那几步（多出来的步可能是别的世界的，不发）。
-// 这样运行脚本的计算 Worker 拿不到你保存的其他世界
+// 这样运行脚本的计算 Worker 拿不到你保存的其他世界；主线程也不必为几十 MB 的检查点停顿
 
 export interface SavedCheckpoint {
   build: string;
@@ -16,14 +18,37 @@ export interface SavedCheckpoint {
 
 // 主线程发给存储 Worker 的
 export type StorageRequest =
-  | { kind: 'put'; build: string; cp: Checkpoint }
-  // port：交给计算 Worker 的那条通道的这一头（只发一条 {cp}，发完就关）
-  | { kind: 'take'; build: string; doc: WorldDoc; port: MessagePort };
+  // 一条新的通道（新建、打开时各一条，之前的作废）：token 是主线程给的编号；doc：打开的世界（新建时为 null，不发检查点）
+  | { kind: 'open'; token: number; build: string; doc: WorldDoc | null; port: MessagePort }
+  // 主线程核对过：这条通道上纪元、步号与命令记录一模一样的那一份可以写下
+  | { kind: 'commit'; token: number; epoch: number; ids: number[] };
 
-// 存储 Worker 经通道发给计算 Worker 的
+// 存储 Worker 经通道发给计算 Worker 的（只在打开时发一条）
 export interface TakeReply {
   cp: Checkpoint | null;
 }
+
+// 计算 Worker 经通道发给存储 Worker 的：写好的检查点和写的时候引擎的纪元
+export interface CheckpointPut {
+  epoch: number;
+  cp: Checkpoint;
+}
+
+// 检查点里每一步的编号；样子不对时为 null
+export function checkpointIds(cp: unknown): number[] | null {
+  if (cp === null || typeof cp !== 'object') return null;
+  const done = (cp as { done?: unknown }).done;
+  if (!Array.isArray(done)) return null;
+  const ids: number[] = [];
+  for (const h of done) {
+    const id = h !== null && typeof h === 'object' ? (h as { id?: unknown }).id : undefined;
+    if (typeof id !== 'number' || !Number.isSafeInteger(id)) return null;
+    ids.push(id);
+  }
+  return ids;
+}
+
+const sameIds = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, k) => x === b[k]);
 
 // 存着的检查点能不能交给打开 doc 的计算 Worker
 export function checkpointFits(saved: unknown, build: string, doc: WorldDoc): saved is SavedCheckpoint {
@@ -41,6 +66,8 @@ export function checkpointFits(saved: unknown, build: string, doc: WorldDoc): sa
   return true;
 }
 
+// ---------- 主线程这边 ----------
+
 // 存储 Worker 用到的部分（真的 Worker 或测试里的假的）
 export interface StorageWorkerLike {
   onerror: ((ev: unknown) => void) | null;
@@ -52,10 +79,12 @@ export interface ChannelLike {
   port2: MessagePort;
 }
 
-// 主线程这边：第一次用到时才开存储 Worker；它出了事（开不起来）就不再用，检查点照旧重放
+// 第一次用到时才开存储 Worker；它出了事（开不起来）就不再用，计算 Worker 照旧重放、不写检查点。
+// 只给一个 EngineHost 用：存储 Worker 只认最新的一条通道
 export class CheckpointStore {
   private worker: StorageWorkerLike | null = null;
   private broken = false;
+  private token = 0;
 
   constructor(
     private readonly spawn: () => StorageWorkerLike,
@@ -79,27 +108,128 @@ export class CheckpointStore {
     return this.worker;
   }
 
-  // 写：数组转移过去（调用方之后不再用 cp）
-  put(build: string, cp: Checkpoint): void {
-    const w = this.get();
-    if (!w) return;
-    try {
-      w.postMessage({ kind: 'put', build, cp }, collectBuffers(cp));
-    } catch {
-      // 发不过去（数据不能克隆）：这一次不写
-    }
-  }
-
-  // 读：返回交给计算 Worker 的通道的一头；存储 Worker 用不了时为 null（计算 Worker 照旧重放）
-  take(build: string, doc: WorldDoc): MessagePort | null {
+  // 新建（doc 为 null）、打开时：开一条新的通道，返回交给计算 Worker 的那一头和编号；存储 Worker 用不了时为 null
+  open(build: string, doc: WorldDoc | null): { port: MessagePort; token: number } | null {
     const w = this.get();
     if (!w) return null;
     try {
       const ch = this.channel();
-      w.postMessage({ kind: 'take', build, doc, port: ch.port1 }, [ch.port1]);
-      return ch.port2;
+      const token = ++this.token;
+      w.postMessage({ kind: 'open', token, build, doc, port: ch.port1 }, [ch.port1]);
+      return { port: ch.port2, token };
     } catch {
       return null;
     }
+  }
+
+  // 主线程核对过的那一份：让存储 Worker 写下（只有编号、纪元和步号，检查点本身不经过这里）
+  commit(token: number, epoch: number, ids: number[]): void {
+    const w = this.get();
+    if (!w) return;
+    try {
+      w.postMessage({ kind: 'commit', token, epoch, ids }, []);
+    } catch {
+      // 发不过去：这一次不写
+    }
+  }
+}
+
+// ---------- 存储 Worker 这边 ----------
+
+export interface KeeperDb {
+  get(): Promise<unknown>;
+  put(saved: SavedCheckpoint): Promise<void>;
+}
+
+interface Writer {
+  token: number;
+  build: string;
+  port: MessagePort;
+  // 计算 Worker 发来、还没写的那一份
+  pending: { epoch: number; ids: number[]; cp: Checkpoint } | null;
+  // 主线程说可以写的纪元、步号（检查点还没到时先记着）
+  approved: { epoch: number; ids: number[] } | null;
+}
+
+// 存储 Worker 里的逻辑（storage-worker.ts 接上真的 IndexedDB；测试里换成假的）。只认最新的一条通道：
+// 新的通道来了，旧的不再收，它上面还没写的作废（换了世界或者换了 Worker）；旧的打开时要发的那一条照样发完再关
+// （计算 Worker 可能正等着它，不然要白等 5 秒）
+export class CheckpointKeeper {
+  private writer: Writer | null = null;
+  // 一件一件做：写完再读，读到的是刚写的
+  private chain: Promise<void> = Promise.resolve();
+
+  constructor(private readonly db: KeeperDb) {}
+
+  private queue(run: () => Promise<void>) {
+    this.chain = this.chain.then(run).catch(() => undefined);
+  }
+
+  // 等排着的都做完（测试用）
+  idle(): Promise<void> {
+    return this.chain;
+  }
+
+  handle(data: unknown): void {
+    if (data === null || typeof data !== 'object') return;
+    const m = data as StorageRequest;
+    if (m.kind === 'open' && Number.isSafeInteger(m.token) && typeof m.build === 'string' && m.build && m.port) this.open(m);
+    else if (m.kind === 'commit') this.commit(m);
+  }
+
+  private open(m: Extract<StorageRequest, { kind: 'open' }>) {
+    const old = this.writer;
+    if (old) {
+      old.port.onmessage = null;
+      this.queue(async () => old.port.close());
+    }
+    const w: Writer = { token: m.token, build: m.build, port: m.port, pending: null, approved: null };
+    this.writer = w;
+    w.port.onmessage = (ev: MessageEvent) => this.received(w, ev.data);
+    const doc = m.doc;
+    if (doc) this.queue(() => this.take(w, doc));
+  }
+
+  // 打开时：对得上这个世界的检查点（否则 null）从通道发给计算 Worker，数组转移
+  private async take(w: Writer, doc: WorldDoc) {
+    let cp: Checkpoint | null = null;
+    try {
+      const saved = await this.db.get();
+      if (checkpointFits(saved, w.build, doc)) cp = saved.cp;
+    } catch {
+      // 读不了：照旧重放
+    }
+    try {
+      w.port.postMessage({ cp } satisfies TakeReply, cp ? collectBuffers(cp) : []);
+    } catch {
+      w.port.postMessage({ cp: null } satisfies TakeReply);
+    }
+  }
+
+  private received(w: Writer, data: unknown) {
+    if (this.writer !== w || data === null || typeof data !== 'object') return;
+    const { epoch, cp } = data as Partial<CheckpointPut>;
+    const ids = checkpointIds(cp);
+    if (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || !ids) return;
+    w.pending = { epoch, ids, cp: cp as Checkpoint };
+    this.tryWrite(w);
+  }
+
+  private commit(m: Extract<StorageRequest, { kind: 'commit' }>) {
+    const w = this.writer;
+    if (!w || m.token !== w.token || !Number.isSafeInteger(m.epoch) || !Array.isArray(m.ids) || !m.ids.every((x) => Number.isSafeInteger(x))) return;
+    w.approved = { epoch: m.epoch, ids: m.ids.slice() };
+    this.tryWrite(w);
+  }
+
+  // 收到的那一份与主线程说的纪元、步号相同才写（同一个纪元里步号相同就是同一个状态：改过的步都换了新编号）
+  private tryWrite(w: Writer) {
+    const p = w.pending;
+    const a = w.approved;
+    if (!p || !a || p.epoch !== a.epoch || !sameIds(p.ids, a.ids)) return;
+    w.pending = null;
+    w.approved = null;
+    const saved: SavedCheckpoint = { build: w.build, cp: p.cp };
+    this.queue(() => this.db.put(saved));
   }
 }

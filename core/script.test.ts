@@ -622,7 +622,7 @@ describe('脚本的运行环境', () => {
     expect(best).toBeLessThan(40);
   });
 
-  it('动态 import() 编译时就拒绝，说出第几行；注释、字符串里的，属性 obj.import 不算', () => {
+  it('动态 import() 编译时就拒绝，说出第几行；注释、字符串里的，属性 obj.import、私有方法 #import 不算', () => {
     const e = syntaxError('const a = 1;\nreturn import("https://example.com/x.js");');
     expect(e.issue.reason).toBe('syntax');
     expect(e.line).toBe(2);
@@ -637,6 +637,7 @@ describe('脚本的运行环境', () => {
     ok('const s = "import(x)";\nreturn s.length > 0 ? 1 : 0;');
     ok('const o = { import: (x) => x };\nreturn o?.import(1) + o. import(0);');
     ok('const myimport = (x) => x;\nreturn myimport(1);');
+    ok('class A { #import(x) { return x; } run() { return this.#import(1); } }\nreturn new A().run();');
   });
 
   // 放在最后：之后本文件里不能再编译脚本

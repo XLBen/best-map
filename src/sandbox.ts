@@ -1,5 +1,5 @@
 import type { Command } from '../core/commands';
-import type { Checkpoint, WorldDoc } from '../core/engine';
+import type { WorldDoc } from '../core/engine';
 import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
 
 // 计算 Worker 的看护（第三批）：用户写的脚本只在 Worker 里跑，可能卡死、把 Worker 弄崩。主线程这边：
@@ -13,10 +13,11 @@ import type { MirrorLog, Request, Response, ScriptPing } from './protocol';
 //   刚恢复的世界还没做成过一步就在后台又出了事：也用安全模式（不然会一直恢复、卡住、再恢复）；
 //   还没有世界（向导的缩略图）时不恢复；恢复到一半打开了别的世界，恢复作废（不当成打不开）；
 // - Worker 发来的消息先检查：只认识的几种，字符串截短；命令记录要接得上已有的；
-// - 检查点（隔离那一步）：计算 Worker 写好的检查点只在版本号对、步号与命令记录一模一样时才转交存储 Worker；
-//   打开世界（不是安全模式）时向存储 Worker 要一个端口交给计算 Worker，检查点从那里直接过去，不经过主线程；
-// - 运行过脚本的 Worker 不再用来打开别的世界（新建、打开时另开一个）：脚本可能在 Worker 里留下了钩子，
-//   不能让它看到接着打开的、你保存的其他世界
+// - 检查点（隔离那一步）：新建、打开世界（不是安全模式）时向存储 Worker 要一条通道交给计算 Worker，
+//   检查点从那里来回（打开时读、之后写），不经过主线程；计算 Worker 说写好了一个检查点时，步号与命令记录一模一样
+//   才让存储 Worker 写下；
+// - 一个计算 Worker 只装一个世界：新建、打开时，装过世界（或者运行过脚本）的 Worker 换一个新的。
+//   脚本可能在 Worker 里留下钩子，也可能从缓存里翻出之前打开过的世界：都不能让它看到你保存的其他世界
 // 不碰 DOM、不碰信号：时钟、Worker 都可以换成假的（见 sandbox.test.ts）
 
 // ---------- 时钟 ----------
@@ -114,39 +115,21 @@ export class Watchdog {
 const LABEL_MAX = 60;
 const ERROR_MAX = 2000;
 
-const BUILD_MAX = 4096;
-
 export type WorkerMessage =
   | { type: 'reply'; reply: Response }
   | { type: 'script'; ping: ScriptPing }
-  // ids：检查点里每一步的编号（与命令记录比）
-  | { type: 'checkpoint'; build: string; epoch: number; ids: number[]; cp: Checkpoint };
+  // 写好了一个检查点（已经发给存储 Worker）：写的时候的纪元、每一步的编号（与命令记录比）
+  | { type: 'checkpoint'; epoch: number; ids: number[] };
 
-// 检查点里每一步的编号；样子不对时为 null
-function checkpointIds(cp: unknown): number[] | null {
-  if (cp === null || typeof cp !== 'object') return null;
-  const done = (cp as { done?: unknown }).done;
-  if (!Array.isArray(done)) return null;
-  const ids: number[] = [];
-  for (const h of done) {
-    const id = h !== null && typeof h === 'object' ? (h as { id?: unknown }).id : undefined;
-    if (typeof id !== 'number' || !Number.isSafeInteger(id)) return null;
-    ids.push(id);
-  }
-  return ids;
-}
-
-// 只认三种：带 id 的回复、脚本的进入 / 平安 / 算完、检查点。别的（包括脚本自己伪造的怪消息）一律不要。
+// 只认三种：带 id 的回复、脚本的进入 / 平安 / 算完、写好检查点的通知。别的（包括脚本自己伪造的怪消息）一律不要。
 // 招呼（hello）由开 Worker 的那一层（engine-spawn.ts）收，到不了这里
 export function readWorkerMessage(data: unknown): WorkerMessage | null {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return null;
   const m = data as Record<string, unknown>;
-  if (m.kind === 'checkpointData') {
-    if (typeof m.build !== 'string' || !m.build || m.build.length > BUILD_MAX) return null;
+  if (m.kind === 'checkpointReady') {
     if (typeof m.epoch !== 'number' || !Number.isSafeInteger(m.epoch)) return null;
-    const ids = checkpointIds(m.cp);
-    if (!ids) return null;
-    return { type: 'checkpoint', build: m.build, epoch: m.epoch, ids, cp: m.cp as Checkpoint };
+    if (!Array.isArray(m.ids) || !m.ids.every((x) => typeof x === 'number' && Number.isSafeInteger(x))) return null;
+    return { type: 'checkpoint', epoch: m.epoch, ids: (m.ids as number[]).slice() };
   }
   if (m.kind === 'script') {
     if (m.phase !== 'enter' && m.phase !== 'tick' && m.phase !== 'exit') return null;
@@ -240,16 +223,16 @@ export interface HostEvents {
   failed?(message: string): void;
   // 恢复到一半不恢复了：打开了别的世界（换模式另开了 Worker），或者恢复用的 Worker 也出了事、另行处理
   abandoned?(): void;
-  // 计算 Worker 写好的检查点，已经核对过（版本号对、步号与命令记录一模一样、不是安全模式）：交给存储 Worker
-  checkpoint?(build: string, cp: Checkpoint): void;
 }
 
 export interface HostOptions {
   // 这个程序的版本（检查点按它认）：随新建、打开告诉计算 Worker；没有时（开发时）不写也不读检查点
   build?: string | null;
-  // 打开世界（不是安全模式）时：向存储 Worker 要对得上这个世界的检查点，返回交给计算 Worker 的端口
-  // （检查点从存储 Worker 经它直接过去，不经过主线程）；要不到时为 null
-  checkpointPort?(build: string, doc: WorldDoc): Transferable | null;
+  // 新建（doc 为 null）、打开世界（不是安全模式）时：向存储 Worker 要一条通道，返回交给计算 Worker 的那一头和通道的编号。
+  // 打开时对得上这个世界的检查点从这里过来，写好的检查点从这里直接过去，都不经过主线程。要不到时为 null（不读不写）
+  storeChannel?(build: string, doc: WorldDoc | null): { port: Transferable; token: number } | null;
+  // 计算 Worker 说写好了一个检查点，纪元、步号与命令记录一模一样（不是安全模式）：让存储 Worker 写下这条通道上的那一份
+  commit?(token: number, epoch: number, ids: number[]): void;
 }
 
 type Why = 'hang' | 'stopped' | 'crash';
@@ -302,8 +285,12 @@ export class EngineHost {
   // 当前 Worker 是恢复时开的，而且还没有哪个界面的请求在它里面算成过。它在后台（没有在等的请求时）又卡住、崩了：
   // 多半是打开这个世界本身的问题，再正常恢复会一直循环下去，改用安全模式
   private quiet = false;
-  // 当前 Worker 里运行过脚本（收到过“进入脚本”）：新建、打开别的世界时另开一个
+  // 当前 Worker 里运行过脚本（收到过“进入脚本”）：再新建、打开时另开一个
   private ranScripts = false;
+  // 当前 Worker 里新建、打开过世界：再新建、打开时另开一个（一个 Worker 只装一个世界）
+  private held = false;
+  // 最近一次新建、打开时交给当前 Worker 的存储通道的编号（没有时为 null：不写检查点）
+  private storeToken: number | null = null;
 
   constructor(
     private readonly spawnWorker: () => WorkerLike,
@@ -337,14 +324,15 @@ export class EngineHost {
     return w !== null && this.worker === w;
   }
 
-  // 发一个请求，回复（或停掉 Worker 时的 {ok:false}）交给 done。新建、打开要的模式（safe）与当前 Worker 不同时另开一个；
+  // 发一个请求，回复（或停掉 Worker 时的 {ok:false}）交给 done。新建、打开时：当前 Worker 装过世界、跑过脚本，
+  // 或者要的模式（safe）与它不同，另开一个；
   // safeReason：安全模式打开的原因（界面的横幅里写）
   send(req: Request, done: (r: Response) => void, safeReason?: string): void {
     if (req.kind === 'init' || req.kind === 'load') {
       const safe = req.safe === true;
-      if (this.worker && (this.safe !== safe || this.ranScripts)) this.drop('这一步没有做（换了一个世界）');
+      if (this.worker && (this.safe !== safe || this.ranScripts || this.held)) this.drop('这一步没有做（换了一个世界）');
       if (!this.worker) this.spawn(safe, null);
-      // 同样是安全模式时不另开 Worker，原因换成这一次的
+      // 安全模式的原因记这一次的
       if (safe) this.safeReason = safeReason ?? null;
     } else if (req.kind !== 'thumb' && !this.loaded && ![...this.pending.values()].some((p) => opens(p.req))) {
       // 没有装着世界的 Worker（停掉后没有自动重开：安全模式下也出了事），也没有正在打开的：
@@ -380,13 +368,16 @@ export class EngineHost {
     this.loaded = false;
     this.quiet = false;
     this.ranScripts = false;
+    this.held = false;
+    this.storeToken = null;
     return w;
   }
 
   private post(req: Request, done: (r: Response) => void, internal = false) {
     const id = this.nextId++;
-    // 留着的是原来的请求（恢复时可能要改成安全模式再发一次）；版本号、检查点的端口只加在发出去的这一份上
+    // 留着的是原来的请求（恢复时可能要改成安全模式再发一次）；版本号、存储的端口只加在发出去的这一份上
     this.pending.set(id, { req, done, internal });
+    if (opens(req)) this.held = true;
     const { msg, transfer } = this.wire(req);
     this.worker!.postMessage({ id, req: msg }, transfer);
   }
@@ -394,10 +385,10 @@ export class EngineHost {
   private wire(req: Request): { msg: Request; transfer: Transferable[] } {
     const build = this.opts.build;
     if (!build || (req.kind !== 'init' && req.kind !== 'load')) return { msg: req, transfer: [] };
-    if (req.kind === 'load' && req.safe !== true) {
-      const port = this.opts.checkpointPort?.(build, req.doc) ?? null;
-      if (port) return { msg: { ...req, build, checkpoint: port as MessagePort }, transfer: [port] };
-    }
+    // 每次新建、打开都换一条通道（之前的作废）；安全模式下没有（不读不写检查点）
+    const ch = req.safe === true ? null : (this.opts.storeChannel?.(build, req.kind === 'load' ? req.doc : null) ?? null);
+    this.storeToken = ch?.token ?? null;
+    if (ch) return { msg: { ...req, build, store: ch.port as MessagePort }, transfer: [ch.port] };
     return { msg: { ...req, build }, transfer: [] };
   }
 
@@ -413,8 +404,8 @@ export class EngineHost {
     }
     if (m.type === 'checkpoint') {
       // 消息按顺序到：写检查点之前的回复（带着命令记录）都已经收到，步号此刻应当与命令记录一模一样
-      const build = this.opts.build;
-      if (build && m.build === build && !this.safe && this.mirror.matches(gen, m.epoch, m.ids)) this.events.checkpoint?.(build, m.cp);
+      const token = this.storeToken;
+      if (token !== null && !this.safe && this.mirror.matches(gen, m.epoch, m.ids)) this.opts.commit?.(token, m.epoch, m.ids);
       return;
     }
     const r = m.reply;

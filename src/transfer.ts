@@ -1,7 +1,7 @@
-// 检查点（星球约 34 MB）在 Worker 之间、经过主线程转交时用：找出里面全部的 ArrayBuffer 作为转移列表，
-// postMessage 时把数据“搬过去”而不是复制一份（主线程上不复制这几十 MB）。
-// 计算 Worker、主线程、存储 Worker 都用它；值可能来自运行过脚本的 Worker：不递归（用自己的栈），
-// 看过的对象不再看，数组里的数不进栈；对象太多（limit）时放弃，返回空列表（照常复制，只是慢一点）
+// 检查点（星球约 34 MB）从存储 Worker 发给计算 Worker 时用：找出里面全部的 ArrayBuffer 作为转移列表，
+// postMessage 时把数据“搬过去”而不是再复制一份（刚从 IndexedDB 读出来的，存储 Worker 自己不再用）。
+// 值可能来自运行过脚本的 Worker（它写的检查点）：不递归（用自己的栈），看过的对象不再看，数组里的数不进栈；
+// 对象太多（limit）时放弃，返回空列表（照常复制，只是慢一点）
 
 export function collectBuffers(root: unknown, limit = 2_000_000): ArrayBuffer[] {
   const out = new Set<ArrayBuffer>();
@@ -36,11 +36,4 @@ export function collectBuffers(root: unknown, limit = 2_000_000): ArrayBuffer[] 
     }
   }
   return [...out];
-}
-
-// 在 Worker 里：复制一份（结构化克隆，与以前存进 IndexedDB 时一样在 Worker 里复制），连同转移列表。
-// 原来的数组还在引擎里用着，不能直接转移
-export function cloneForTransfer<T>(value: T): { value: T; transfer: ArrayBuffer[] } {
-  const copy = structuredClone(value);
-  return { value: copy, transfer: collectBuffers(copy) };
 }

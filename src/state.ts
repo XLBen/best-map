@@ -13,7 +13,7 @@ import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
 import { BUILD, engineCode, engineUrl } from './engine-source';
-import { EngineWorker, type RawWorker } from './engine-spawn';
+import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 import type { HighlightLayer } from './render/colors';
@@ -404,7 +404,7 @@ function isolationResult(on: boolean) {
 }
 
 // 开计算 Worker：页面里先试隔离的（data: 地址），不行再用普通的；测试里（没有页面）直接用普通的
-const spawnMemory: { dataFailed?: boolean } = {};
+const spawnMemory: SpawnMemory = {};
 function spawnEngine(): WorkerLike {
   const create = (url: string, opts: WorkerOptions) => new Worker(url, opts) as unknown as RawWorker;
   if (typeof document === 'undefined') return create(engineUrl, { type: 'module' });
@@ -440,10 +440,13 @@ function engineHost(): EngineHost {
       restored: engineRestored,
       failed: engineFailed,
       abandoned: recovered,
-      checkpoint: (build, cp) => checkpointStore()?.put(build, cp),
     },
     undefined,
-    { build: BUILD, checkpointPort: (build, doc) => checkpointStore()?.take(build, doc) ?? null },
+    {
+      build: BUILD,
+      storeChannel: (build, doc) => checkpointStore()?.open(build, doc) ?? null,
+      commit: (token, epoch, ids) => checkpointStore()?.commit(token, epoch, ids),
+    },
   );
   return host;
 }

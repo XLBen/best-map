@@ -274,14 +274,15 @@ describe('卡住了：恢复', () => {
   it('打开的世界卡住了：直接用安全模式打开它，回复照旧交给打开的请求', () => {
     const t = opened();
     const doc = docOf([cmd(5)]);
+    // 一个 Worker 只装一个世界：打开别的世界时另开
     t.send({ kind: 'load', doc });
     t.send({ kind: 'docTail', ids: [] });
-    t.worker(0).enter('神圣之地');
+    t.worker(1).enter('神圣之地');
     t.clock.advance(5000);
     // 后面排着的作废；打开的请求还没有回复
     expect(t.results).toMatchObject([{ ok: false }]);
     expect(t.events.reset).not.toHaveBeenCalled();
-    const w1 = t.worker(1);
+    const w1 = t.worker(2);
     expect(w1.sent.map((m) => m.req)).toEqual([{ kind: 'load', doc, safe: true }]);
     w1.replyLast({ summary: '已打开世界文件', log: log(1, 0, [cmd(5)], [1]), safe: true });
     expect(t.results[1]).toMatchObject({ ok: true, safe: true });
@@ -325,12 +326,14 @@ describe('卡住了：恢复', () => {
     expect(t.results).toMatchObject([{ ok: false }]);
     expect(t.worker(1).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(3)]), safe: true }]);
     t.worker(1).replyLast({ log: log(1, 0, [cmd(3)], [1]), safe: true });
-    // 同样是安全模式：不换
-    t.send({ kind: 'load', doc: docOf([cmd(4)]), safe: true });
-    expect(FakeWorker.all).toHaveLength(2);
+    // 同样是安全模式：也另开（一个 Worker 只装一个世界），原因换成这一次的
+    t.host.send({ kind: 'load', doc: docOf([cmd(4)]), safe: true }, () => undefined, '打开时选了不运行脚本');
+    expect(FakeWorker.all).toHaveLength(3);
+    expect(t.host.safe).toBe(true);
+    expect(t.host.safeReason).toBe('打开时选了不运行脚本');
     // 再试一次（正常打开）：另开
     t.send({ kind: 'load', doc: docOf([cmd(4)]) });
-    expect(FakeWorker.all).toHaveLength(3);
+    expect(FakeWorker.all).toHaveLength(4);
     expect(t.host.safe).toBe(false);
   });
 
@@ -364,10 +367,13 @@ describe('卡住了：恢复', () => {
     w2.replyLast({ log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: false });
     expect(t.events.restored).toHaveBeenCalledTimes(1);
     expect(t.events.restored.mock.calls[0][1]).toBeNull();
-    // 同一个 Worker 里打开失败：世界还在它里面，不必重开
+    // 再打开别的世界（另开的 Worker）失败：原来的世界照样打开回来
     t.send({ kind: 'load', doc: docOf([cmd(9)]) });
-    w2.emit({ id: w2.last().id, ok: false, error: '坏了' });
-    expect(FakeWorker.all).toHaveLength(3);
+    expect(w2.terminated).toBe(true);
+    const w3 = t.worker(3);
+    w3.emit({ id: w3.last().id, ok: false, error: '坏了' });
+    expect(t.results.at(-1)).toMatchObject({ ok: false, error: '坏了' });
+    expect(t.worker(4).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(1.1), cmd(1.2)]) }]);
   });
 
   it('恢复到一半打开了别的世界（换了模式）：恢复作废，不另开安全模式的 Worker，新世界照要的模式打开', () => {
@@ -453,130 +459,159 @@ describe('卡住了：恢复', () => {
 });
 
 describe('检查点（隔离）', () => {
-  // 打包好的程序：有版本号；向存储 Worker 要的端口（假的）按顺序编号
+  // 打包好的程序：有版本号；向存储 Worker 要的通道（假的）按顺序编号；commit 记下来
   function withBuild() {
     const ports: { port: number }[] = [];
-    const takes: [string, WorldDoc][] = [];
+    const opened: [string, WorldDoc | null][] = [];
+    const commits: [number, number, number[]][] = [];
     const opts: HostOptions = {
       build: 'b1',
-      checkpointPort: (build, doc) => {
-        takes.push([build, doc]);
+      storeChannel: (build, doc) => {
+        opened.push([build, doc]);
         const p = { port: ports.length };
         ports.push(p);
-        return p as unknown as Transferable;
+        return { port: p as unknown as Transferable, token: 100 + ports.length - 1 };
       },
+      commit: (token, epoch, ids) => void commits.push([token, epoch, ids]),
     };
-    return { opts, ports, takes };
+    return { opts, ports, opened, commits };
   }
-  const cpOf = (ids: number[]) => ({ done: ids.map((id) => ({ id, cmd: cmd(id) })) });
+  const ready = (epoch: number, ids: number[]) => ({ kind: 'checkpointReady', epoch, ids });
 
-  it('检查点消息：版本号、纪元、每一步的编号都要像样', () => {
-    const cp = cpOf([1, 2]);
-    expect(readWorkerMessage({ kind: 'checkpointData', build: 'b1', epoch: 1, cp })).toEqual({ type: 'checkpoint', build: 'b1', epoch: 1, ids: [1, 2], cp });
-    expect(readWorkerMessage({ kind: 'checkpointData', build: '', epoch: 1, cp })).toBeNull();
-    expect(readWorkerMessage({ kind: 'checkpointData', build: 'x'.repeat(5000), epoch: 1, cp })).toBeNull();
-    expect(readWorkerMessage({ kind: 'checkpointData', build: 'b1', epoch: 1.5, cp })).toBeNull();
-    expect(readWorkerMessage({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: { done: [{ id: '1' }] } })).toBeNull();
-    expect(readWorkerMessage({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: { done: [null] } })).toBeNull();
-    expect(readWorkerMessage({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: null })).toBeNull();
+  it('写好检查点的通知：纪元、每一步的编号都要像样（只有编号，检查点本身不经过主线程）', () => {
+    expect(readWorkerMessage(ready(1, [1, 2]))).toEqual({ type: 'checkpoint', epoch: 1, ids: [1, 2] });
+    expect(readWorkerMessage(ready(1, []))).toEqual({ type: 'checkpoint', epoch: 1, ids: [] });
+    expect(readWorkerMessage(ready(1.5, [1]))).toBeNull();
+    expect(readWorkerMessage(ready(1, ['1' as unknown as number]))).toBeNull();
+    expect(readWorkerMessage(ready(1, [1.5]))).toBeNull();
+    expect(readWorkerMessage({ kind: 'checkpointReady', epoch: 1, ids: 'x' })).toBeNull();
+    // 以前的样子（连同检查点发给主线程）不认
+    expect(readWorkerMessage({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: { done: [{ id: 1 }] } })).toBeNull();
   });
 
-  it('打开世界时带上版本号和收检查点的端口（端口转移）；新建只带版本号；留着的请求里没有端口，恢复时另要一个', () => {
+  it('新建、打开时带上版本号和存储的端口（端口转移，每次一条新的）；留着的请求里没有端口，恢复时另要一个；安全模式不要', () => {
     const b = withBuild();
     const t = setup(b.opts);
     const doc = docOf([cmd(1.1)]);
     t.send({ kind: 'load', doc });
-    expect(b.takes).toEqual([['b1', doc]]);
-    expect(t.worker(0).sent[0].req).toEqual({ kind: 'load', doc, build: 'b1', checkpoint: b.ports[0] });
+    expect(b.opened).toEqual([['b1', doc]]);
+    expect(t.worker(0).sent[0].req).toEqual({ kind: 'load', doc, build: 'b1', store: b.ports[0] });
     expect(t.worker(0).transfers[0]).toEqual([b.ports[0]]);
     t.worker(0).replyLast({ log: log(1, 0, [cmd(1.1)], [1]), safe: false });
     t.send({ kind: 'init', settings: {} });
-    expect(t.worker(0).last().req).toEqual({ kind: 'init', settings: {}, build: 'b1' });
-    expect(t.worker(0).transfers[1]).toEqual([]);
-    t.worker(0).replyLast({ log: log(2, 0, [cmd(2.1)], [1]), safe: false });
+    expect(b.opened[1]).toEqual(['b1', null]);
+    expect(t.worker(1).last().req).toEqual({ kind: 'init', settings: {}, build: 'b1', store: b.ports[1] });
+    expect(t.worker(1).transfers[0]).toEqual([b.ports[1]]);
+    t.worker(1).replyLast({ log: log(1, 0, [cmd(2.1)], [1]), safe: false });
     // 别的请求不带
     t.send({ kind: 'exec', cmd: cmd(2.2) });
-    expect(t.worker(0).last().req).toEqual({ kind: 'exec', cmd: cmd(2.2) });
-    // 卡住了：恢复时的打开另要一个端口；它也卡住，用安全模式打开时不要检查点
-    t.worker(0).enter('水晶丛林');
-    t.clock.advance(5000);
-    expect(t.worker(1).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(2.1)]), build: 'b1', checkpoint: b.ports[1] });
-    t.clock.advance(1000);
+    expect(t.worker(1).last().req).toEqual({ kind: 'exec', cmd: cmd(2.2) });
+    expect(t.worker(1).transfers[1]).toEqual([]);
+    // 卡住了：恢复时的打开另要一个端口；它也卡住，用安全模式打开时不要
     t.worker(1).enter('水晶丛林');
     t.clock.advance(5000);
-    expect(t.worker(2).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(2.1)]), safe: true, build: 'b1' });
-    expect(b.ports).toHaveLength(2);
+    expect(t.worker(2).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(2.1)]), build: 'b1', store: b.ports[2] });
+    t.clock.advance(1000);
+    t.worker(2).enter('水晶丛林');
+    t.clock.advance(5000);
+    expect(t.worker(3).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(2.1)]), safe: true, build: 'b1' });
+    expect(b.ports).toHaveLength(3);
   });
 
-  it('写好的检查点：版本号对、步号与命令记录一模一样才转交存储 Worker', () => {
-    const t = opened(withBuild().opts);
-    const cp = cpOf([1, 2]);
-    t.worker(0).emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp });
-    expect(t.events.checkpoint).toHaveBeenCalledTimes(1);
-    expect(t.events.checkpoint).toHaveBeenCalledWith('b1', cp);
-    // 步号对不上（旧的、多了、少了、换了一步）、纪元不同、版本号不同：不要
-    for (const ids of [[1], [1, 2, 3], [1, 3], []]) t.worker(0).emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: cpOf(ids) });
-    t.worker(0).emit({ kind: 'checkpointData', build: 'b1', epoch: 2, cp });
-    t.worker(0).emit({ kind: 'checkpointData', build: 'b0', epoch: 1, cp });
-    expect(t.events.checkpoint).toHaveBeenCalledTimes(1);
+  it('写好的检查点：步号与命令记录一模一样，才让存储 Worker 写下当前通道上的那一份', () => {
+    const b = withBuild();
+    const t = opened(b.opts);
+    t.worker(0).emit(ready(1, [1, 2]));
+    expect(b.commits).toEqual([[100, 1, [1, 2]]]);
+    // 步号对不上（旧的、多了、少了、换了一步）、纪元不同：不要
+    for (const ids of [[1], [1, 2, 3], [1, 3], []]) t.worker(0).emit(ready(1, ids));
+    t.worker(0).emit(ready(2, [1, 2]));
+    expect(b.commits).toHaveLength(1);
     // 不打扰在等的请求
     t.send({ kind: 'exec', cmd: cmd(1.3) });
-    t.worker(0).emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp });
+    t.worker(0).emit(ready(1, [1, 2]));
     t.worker(0).replyLast({ summary: '改了', log: log(1, 2, [cmd(1.3)], [1, 2, 3]) });
     expect(t.results).toMatchObject([{ ok: true, summary: '改了' }]);
-    t.worker(0).emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: cpOf([1, 2, 3]) });
-    expect(t.events.checkpoint).toHaveBeenCalledTimes(3);
+    t.worker(0).emit(ready(1, [1, 2, 3]));
+    expect(b.commits).toEqual([
+      [100, 1, [1, 2]],
+      [100, 1, [1, 2]],
+      [100, 1, [1, 2, 3]],
+    ]);
+    // 又打开了一个世界（另开的 Worker）：之后的按新通道的编号；旧 Worker 的不要
+    t.send({ kind: 'load', doc: docOf([cmd(3.1)]) });
+    t.worker(1).replyLast({ log: log(1, 0, [cmd(3.1)], [1]), safe: false });
+    t.worker(0).emit(ready(1, [1, 2, 3]));
+    t.worker(1).emit(ready(1, [1]));
+    expect(b.commits.at(-1)).toEqual([101, 1, [1]]);
+    expect(b.commits).toHaveLength(4);
   });
 
-  it('停掉的旧 Worker、安全模式的 Worker 发来的检查点不要；没有版本号（开发时）也不要', () => {
-    const t = opened(withBuild().opts);
+  it('停掉的旧 Worker、安全模式的 Worker 的通知不要；要不到通道（存储 Worker 用不了）、没有版本号（开发时）也不要', () => {
+    const b = withBuild();
+    const t = opened(b.opts);
     t.worker(0).enter('死亡森林');
     t.clock.advance(5000);
     const old = t.worker(0);
     t.worker(1).replyLast({ log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: false });
-    old.emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: cpOf([1, 2]) });
-    expect(t.events.checkpoint).not.toHaveBeenCalled();
+    old.emit(ready(1, [1, 2]));
+    expect(b.commits).toEqual([]);
     // 安全模式
     t.send({ kind: 'load', doc: docOf([cmd(5)]), safe: true });
     t.worker(2).replyLast({ log: log(1, 0, [cmd(5)], [1]), safe: true });
-    t.worker(2).emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: cpOf([1]) });
-    expect(t.events.checkpoint).not.toHaveBeenCalled();
-    // 开发时：不带版本号和端口，也不转交
-    const u = opened();
+    t.worker(2).emit(ready(1, [1]));
+    expect(b.commits).toEqual([]);
+    // 要不到通道
+    const commits: unknown[] = [];
+    const v = opened({ build: 'b1', storeChannel: () => null, commit: (...a) => void commits.push(a) });
+    expect(v.worker(0).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(1.1)]), build: 'b1' });
+    v.worker(0).emit(ready(1, [1, 2]));
+    expect(commits).toEqual([]);
+    // 开发时：不带版本号和端口，也不写
+    const u = opened({ storeChannel: () => ({ port: {} as Transferable, token: 1 }), commit: (...a) => void commits.push(a) });
     expect(u.worker(0).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(1.1)]) });
-    u.worker(0).emit({ kind: 'checkpointData', build: 'b1', epoch: 1, cp: cpOf([1, 2]) });
-    expect(u.events.checkpoint).not.toHaveBeenCalled();
+    u.worker(0).emit(ready(1, [1, 2]));
+    expect(commits).toEqual([]);
   });
 });
 
-describe('运行过脚本的 Worker', () => {
-  it('不再用来打开别的世界：新建、打开时另开一个；没跑过脚本时照旧用同一个', () => {
+describe('一个 Worker 只装一个世界', () => {
+  it('一个 Worker 只装一个世界：新建、打开别的世界时另开一个；同一个世界里接着改不换', () => {
     const t = opened();
-    t.send({ kind: 'load', doc: docOf([cmd(2.1)]) });
-    expect(FakeWorker.all).toHaveLength(1);
-    t.worker(0).replyLast({ log: log(2, 0, [cmd(2.1)], [1]), safe: false });
-    t.send({ kind: 'exec', cmd: cmd(2.2) });
+    t.send({ kind: 'exec', cmd: cmd(1.3) });
     t.worker(0).enter('水晶丛林');
     t.worker(0).emit({ kind: 'script', phase: 'exit', label: '水晶丛林' });
-    t.worker(0).replyLast({ summary: '改了', log: log(2, 1, [cmd(2.2)], [1, 2]) });
+    t.worker(0).replyLast({ summary: '改了', log: log(1, 2, [cmd(1.3)], [1, 2, 3]) });
     // 在同一个世界里接着改：不换
-    t.send({ kind: 'exec', cmd: cmd(2.3) });
+    t.send({ kind: 'exec', cmd: cmd(1.4) });
     expect(FakeWorker.all).toHaveLength(1);
-    t.worker(0).replyLast({ summary: '改了', log: log(2, 2, [cmd(2.3)], [1, 2, 3]) });
-    // 打开别的世界：另开
-    t.send({ kind: 'load', doc: docOf([cmd(3.1)]) });
+    t.worker(0).replyLast({ summary: '改了', log: log(1, 3, [cmd(1.4)], [1, 2, 3, 4]) });
+    // 打开别的世界（没有脚本也一样）：另开，旧的停掉
+    t.send({ kind: 'load', doc: docOf([cmd(2.1)]) });
     expect(t.worker(0).terminated).toBe(true);
-    expect(t.worker(1).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(3.1)]) }]);
-    t.worker(1).replyLast({ log: log(1, 0, [cmd(3.1)], [1]), safe: false });
-    expect(t.host.mirror.doc()!.commands).toEqual([cmd(3.1)]);
-    // 缩略图里跑过脚本（星球形态）：新建时同样另开
-    t.send({ kind: 'thumb', settings: {}, gen: { seed: 2, type: 'continents' }, width: 8, height: 4 });
-    t.worker(1).enter('双子大陆');
-    t.worker(1).emit({ kind: 'script', phase: 'exit', label: '双子大陆' });
-    t.worker(1).replyLast({});
+    expect(t.worker(1).sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(2.1)]) }]);
+    t.worker(1).replyLast({ log: log(1, 0, [cmd(2.1)], [1]), safe: false });
+    expect(t.host.mirror.doc()!.commands).toEqual([cmd(2.1)]);
     t.send({ kind: 'init', settings: {} });
     expect(t.worker(1).terminated).toBe(true);
     expect(t.worker(2).sent.map((m) => m.req.kind)).toEqual(['init']);
+  });
+
+  it('没装过世界的 Worker（只算过缩略图）接着用；缩略图里跑过脚本的不用', () => {
+    const t = setup();
+    t.send({ kind: 'thumb', settings: {}, gen: { seed: 2, type: 'continents' }, width: 8, height: 4 });
+    t.worker(0).replyLast({});
+    t.send({ kind: 'init', settings: {} });
+    expect(FakeWorker.all).toHaveLength(1);
+    t.worker(0).replyLast({ log: log(1, 0, [cmd(2.1)], [1]), safe: false });
+    const u = setup();
+    u.send({ kind: 'thumb', settings: {}, gen: { seed: 2, type: 'continents' }, width: 8, height: 4 });
+    u.worker(0).enter('双子大陆');
+    u.worker(0).emit({ kind: 'script', phase: 'exit', label: '双子大陆' });
+    u.worker(0).replyLast({});
+    u.send({ kind: 'init', settings: {} });
+    expect(u.worker(0).terminated).toBe(true);
+    expect(u.worker(1).sent.map((m) => m.req.kind)).toEqual(['init']);
   });
 
   it('warm：还没有 Worker 时先开一个（不是安全模式），打开世界时接着用它', () => {

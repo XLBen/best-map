@@ -48,11 +48,14 @@ describe('打包的结果', () => {
     const engine = asset(/^assets\/worker-[\w-]+\.js$/);
     expect(moduleLinks(engine)).toEqual([]);
     expect(engineDataUrl(engine)!.length).toBeLessThan(DATA_URL_MAX);
-    // 里面没有 IndexedDB 的读写（只有自查时试开一个库）
+    // 里面没有 IndexedDB 的读写（只有自查时试开一个库）。压缩后的字符串可能用反引号
     expect(engine).toContain('map2-isolation-probe');
-    expect(engine).not.toMatch(/['"]checkpoint['"],\s*['"]readwrite['"]/);
+    expect(engine).not.toMatch(/[`'"]readwrite[`'"]/);
+    expect(engine).not.toMatch(/[`'"]map2[`'"]/);
     const storage = asset(/^assets\/storage-worker-[\w-]+\.js$/);
     expect(moduleLinks(storage)).toEqual([]);
+    // 对照：存储 Worker 里确实有（检查本身管用）
+    expect(storage).toMatch(/[`'"]readwrite[`'"]/);
     // 存储 Worker 里没有编译脚本的代码
     expect(storage).not.toContain('new Function');
     const html = asset(/^index\.html$/);

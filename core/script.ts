@@ -962,8 +962,8 @@ function syntaxFailure(src: string): Failure | null {
 }
 
 // 动态的 import()：脚本不能加载别的代码。隔离的 Worker 和页面的 CSP 也会挡住它，这里在编译时就拒绝（多一道防线），
-// 并说清楚是第几行。只看代码（注释、字符串里写的不算）；obj.import(…) 是属性，不算；...import(…) 照样算
-const IMPORT_CALL = /(?<![\p{ID_Continue}$‌‍])(?<!(?<!\.)\.\s*)import\s*\(/u;
+// 并说清楚是第几行。只看代码（注释、字符串里写的不算）；obj.import(…) 是属性、#import(…) 是私有方法，不算；...import(…) 照样算
+const IMPORT_CALL = /(?<![\p{ID_Continue}$#‌‍])(?<!(?<!\.)\.\s*)import\s*\(/u;
 function importFailure(src: string): Failure | null {
   const m = IMPORT_CALL.exec(codeOnly(src));
   return m ? { raw: 'import()', text: '脚本里不能用 import', line: lineCount(src.slice(0, m.index)) } : null;

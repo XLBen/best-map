@@ -7,7 +7,7 @@ import type { FoundScript } from '../../../core/script';
 import type { World } from '../../../core/world';
 import { trustScripts, untrustedScripts } from '../../trust';
 import type { HighlightLayer } from '../../render/colors';
-import { adjustPreviewWorld, cancelWorldPreview, exactDelay, execAdjust, previewWorld, world, worldPreviewError } from '../../state';
+import { adjustPreviewWorld, cancelWorldPreview, exactDelay, execAdjust, knowIsolation, previewWorld, world, worldPreviewError } from '../../state';
 import { TrustBlock } from './Scripts';
 import { type ApplyState, packApply } from './store';
 
@@ -31,7 +31,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
   useEffect(() => {
     setPicks(st.picks);
     let live = true;
-    void untrustedScripts(pack).then((list) => live && setChecked({ pack, list }));
+    // 问要不要信任之前先知道脚本能不能隔离运行（问话里怎么说）
+    void Promise.all([untrustedScripts(pack), knowIsolation()]).then(([list]) => live && setChecked({ pack, list }));
     return () => {
       live = false;
     };

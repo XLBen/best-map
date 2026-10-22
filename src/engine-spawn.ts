@@ -6,12 +6,16 @@ import type { WorkerLike } from './sandbox';
 //   - data: 的 Worker 报错（浏览器不支持）、5 秒内没有打招呼 → 停掉它，换普通的。
 // 计算 Worker 自查完（isolation-probe.ts）先打招呼（hello），这里等到招呼才把请求发过去；
 // 只有 data: 的 Worker 的第一条招呼算数（之后的、普通 Worker 的都不算：可能是脚本伪造的），退回普通 Worker 时就是“没隔离”。
+// 这个页面里已经隔离运行过（信任的问话说过“隔离”）：之后开的不再悄悄退回普通的（脚本在那里能读存档、能联网），
+// 多等一会儿，还不行就当作崩了，交给 EngineHost 处理（恢复、安全模式）。
 // 对 EngineHost 来说它就是一个 Worker：发的请求先排着，换了 Worker 也照样送到
 
 // data: 地址最长多少（字符）。Chrome 收的地址最长 2 MB，留些余地
 export const DATA_URL_MAX = 1_800_000;
 // 等 data: 的 Worker 打招呼最多多久（毫秒）
 export const HELLO_MS = 5000;
+// 这个页面里已经隔离运行过时多等一会儿（一时忙不过来，不是不支持）
+export const HELLO_AGAIN_MS = 20000;
 
 const PREFIX = 'data:text/javascript;base64,';
 
@@ -51,9 +55,15 @@ export interface SpawnDeps {
   // 计时（测试换成假的）
   setTimer?(f: () => void, ms: number): unknown;
   clearTimer?(h: unknown): void;
-  // 同一个页面里开过的 Worker 共用的记忆：data: 的 Worker 报过错、超过时没打招呼，之后直接开普通的
-  // （不支持的浏览器里不必每次恢复、每开一个世界都白等 5 秒）
-  memory?: { dataFailed?: boolean };
+  // 同一个页面里开过的 Worker 共用的记忆：
+  //   dataFailed：data: 的 Worker 报过错、超过时没打招呼，之后直接开普通的（不支持的浏览器里不必每次恢复、每开一个世界都白等 5 秒）；
+  //   isolatedOnce：有过隔离的 Worker，之后不再退回普通的
+  memory?: SpawnMemory;
+}
+
+export interface SpawnMemory {
+  dataFailed?: boolean;
+  isolatedOnce?: boolean;
 }
 
 // 同一段代码只做一次 data: 地址（每次恢复都要另开 Worker）
@@ -101,8 +111,10 @@ export class EngineWorker implements WorkerLike {
       url = null;
     }
     if (this.dead) return;
-    if (url === null || this.deps.memory?.dataFailed) {
-      this.plain();
+    const memory = this.deps.memory;
+    // 不行过一次就直接开普通的；但隔离运行过的页面照样试 data: 的（两个 Worker 同时开、一个超时一个成功时也是这样）
+    if (url === null || (memory?.dataFailed && !memory.isolatedOnce)) {
+      this.fallback();
       return;
     }
     let w: RawWorker;
@@ -121,6 +133,11 @@ export class EngineWorker implements WorkerLike {
         this.stopTimer();
         this.ready = true;
         this.mode = 'data';
+        // data: 的 Worker 开得起来：之后照样试它
+        if (memory) {
+          memory.dataFailed = false;
+          if (hello.isolated) memory.isolatedOnce = true;
+        }
         this.deps.isolated(hello.isolated);
         this.flush();
         return;
@@ -132,19 +149,34 @@ export class EngineWorker implements WorkerLike {
       if (this.ready) this.onerror?.(ev);
       else this.giveUp();
     };
-    this.timer = (this.deps.setTimer ?? ((f, ms) => setTimeout(f, ms)))(() => {
-      this.timer = null;
-      if (!this.ready) this.giveUp();
-    }, HELLO_MS);
+    this.timer = (this.deps.setTimer ?? ((f, ms) => setTimeout(f, ms)))(
+      () => {
+        this.timer = null;
+        if (!this.ready) this.giveUp();
+      },
+      memory?.isolatedOnce ? HELLO_AGAIN_MS : HELLO_MS,
+    );
   }
 
-  // data: 的 Worker 不行：停掉，换普通的
+  // data: 的 Worker 不行：停掉，换普通的（这个页面里隔离运行过时不换，见 fallback）
   private giveUp() {
     if (this.dead || this.ready) return;
-    if (this.deps.memory) this.deps.memory.dataFailed = true;
+    const memory = this.deps.memory;
+    if (memory && !memory.isolatedOnce) memory.dataFailed = true;
     this.stopTimer();
     this.drop();
-    this.plain();
+    this.fallback();
+  }
+
+  // 隔离不了：换普通的；这个页面里已经隔离运行过，就不悄悄换成没隔离的，当作崩了（EngineHost 恢复，再不行用安全模式）
+  private fallback() {
+    if (!this.deps.memory?.isolatedOnce) {
+      this.plain();
+      return;
+    }
+    this.dead = true;
+    this.queue.length = 0;
+    queueMicrotask(() => this.onerror?.(new Error('计算程序没有开起来')));
   }
 
   private plain() {

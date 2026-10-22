@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Command } from '../core/commands';
 import type { Checkpoint, WorldDoc } from '../core/engine';
-import type { CheckpointData, MirrorLog, Request, Response, Snapshot } from './protocol';
+import type { CheckpointPut } from './checkpoint-store';
+import type { CheckpointReady, MirrorLog, Request, Response, Snapshot } from './protocol';
 
-// 计算 Worker 本身（隔离那一步的约定）：先自查、打招呼，之后才处理请求；版本号由主线程给，没有就不写检查点；
-// 检查点发给主线程（带纪元，步号与回复里的命令记录一样，数组转移）；打开时从主线程给的端口收检查点，
-// 对得上就直接恢复（与重放逐值一致），收到 null、安全模式时照旧重放。这里没有真的 Worker：全局的 self 是假的
+// 计算 Worker 本身（隔离那一步的约定）：先自查、打招呼，之后才处理请求；版本号、存储的端口由主线程给，没有就不写检查点；
+// 写好的检查点从存储的端口直接发出去（带纪元；发的时候复制一份，引擎的数组照常用），另给主线程一条纪元和步号（与回复里的命令记录一样）的通知；
+// 打开时从存储的端口收第一条，对得上就直接恢复（与重放逐值一致），收到 null、安全模式时照旧重放。
+// 这里没有真的 Worker：全局的 self 是假的，存储 Worker 那一头是真的 MessageChannel 的另一头
 
 const posted: { msg: unknown; transfer?: Transferable[] }[] = [];
 const scope: { origin: string; onmessage: ((ev: { data: unknown }) => void) | null; postMessage(msg: unknown, transfer?: Transferable[]): void } = {
@@ -31,7 +33,25 @@ async function send(req: Request): Promise<Extract<Response, { ok: true }>> {
   }
   throw new Error('等不到回复');
 }
-const checkpoints = () => posted.map((p) => p.msg as CheckpointData).filter((m) => m.kind === 'checkpointData');
+const notices = () => posted.map((p) => p.msg as CheckpointReady).filter((m) => m.kind === 'checkpointReady');
+
+// 存储 Worker 那一头：收到的检查点；计算 Worker 这一头发的时候的转移列表
+function storeEnd() {
+  const ch = new MessageChannel();
+  const got: CheckpointPut[] = [];
+  const transfers: Transferable[][] = [];
+  ch.port1.onmessage = (ev) => got.push(ev.data as CheckpointPut);
+  const send = ch.port2.postMessage.bind(ch.port2) as (m: unknown, t?: Transferable[]) => void;
+  ch.port2.postMessage = ((m: unknown, t?: Transferable[]) => {
+    transfers.push(t ?? []);
+    send(m, t);
+  }) as typeof ch.port2.postMessage;
+  return { ch, got, transfers, port: ch.port2, close: () => (ch.port1.close(), ch.port2.close()) };
+}
+const until = async (ok: () => boolean) => {
+  for (let k = 0; k < 500 && !ok(); k++) await new Promise((r) => setTimeout(r, 2));
+  expect(ok()).toBe(true);
+};
 
 const settings = { cells: 1500, seed: 4 };
 const commands: Command[] = [
@@ -46,7 +66,7 @@ const commands: Command[] = [
 ];
 
 describe('计算 Worker 的约定', () => {
-  let written: CheckpointData | null = null;
+  let written: CheckpointPut | null = null;
   let doc: WorldDoc | null = null;
   let replayed: Snapshot | null = null;
 
@@ -54,39 +74,50 @@ describe('计算 Worker 的约定', () => {
     const r = await send({ kind: 'init', settings, commands });
     expect(posted[0].msg).toEqual({ kind: 'hello', isolated: false });
     expect(posted.findIndex((p) => p.msg === r)).toBeGreaterThan(0);
-    // 没有版本号（开发时）：不写检查点
+    // 没有版本号、端口（开发时）：不写检查点
     await send({ kind: 'checkpoint' });
-    expect(checkpoints()).toEqual([]);
+    expect(notices()).toEqual([]);
   });
 
-  it('有版本号：检查点发给主线程，带纪元，步号与回复里的命令记录一样，数组是转移的', async () => {
-    const r = await send({ kind: 'init', settings, commands, build: 'b1' });
+  it('有版本号和端口：检查点从端口直接发给存储 Worker（带纪元，引擎的数组不转移），主线程只收到纪元和步号，步号与命令记录一样', async () => {
+    const st = storeEnd();
+    const r = await send({ kind: 'init', settings, commands, build: 'b1', store: st.port });
     const log = r.log as MirrorLog;
     await send({ kind: 'checkpoint' });
-    const cps = checkpoints();
-    expect(cps).toHaveLength(1);
-    const cp = cps[0];
-    expect(cp.build).toBe('b1');
-    expect(cp.epoch).toBe(log.epoch);
-    expect(cp.cp.done.map((h) => h.id)).toEqual(log.ids);
-    const transfer = posted.find((p) => p.msg === cp)!.transfer!;
-    expect(transfer.length).toBeGreaterThan(5);
-    expect(transfer.every((b) => b instanceof ArrayBuffer)).toBe(true);
-    expect(transfer).toContain(cp.cp.causes.land.buffer);
+    await until(() => st.got.length === 1);
+    const put = st.got[0];
+    expect(put.epoch).toBe(log.epoch);
+    expect(put.cp.done.map((h) => h.id)).toEqual(log.ids);
+    expect(put.cp.causes.land).toBeInstanceOf(Uint8Array);
+    // 发的时候复制一份（只复制一次），引擎里的数组不转移：之后照常用
+    expect(st.transfers[0]).toEqual([]);
+    // 主线程那边：只有编号，没有检查点，也没有转移的数组
+    expect(notices()).toEqual([{ kind: 'checkpointReady', epoch: log.epoch, ids: log.ids }]);
+    const notice = posted.find((p) => (p.msg as CheckpointReady).kind === 'checkpointReady')!;
+    expect(notice.transfer ?? []).toEqual([]);
     // 没变就不再写
     await send({ kind: 'checkpoint' });
-    expect(checkpoints()).toHaveLength(1);
-    written = cp;
+    await new Promise((r) => setTimeout(r, 10));
+    expect(st.got).toHaveLength(1);
+    expect(notices()).toHaveLength(1);
+    written = put;
     doc = (await send({ kind: 'doc' })).doc!;
     replayed = r.snapshot as Snapshot;
+    // 新建、打开换了端口：旧的关掉
+    const next = storeEnd();
+    await send({ kind: 'init', settings, commands, build: 'b1', store: next.port });
+    await send({ kind: 'checkpoint' });
+    await until(() => next.got.length === 1);
+    expect(st.got).toHaveLength(1);
+    st.close();
+    next.close();
   });
 
-  it('打开时从端口收检查点：对得上就直接恢复，与重放逐值一致', async () => {
-    const ch = new MessageChannel();
+  it('打开时从端口收检查点：对得上就直接恢复，与重放逐值一致；之后的检查点从同一个端口发', async () => {
+    const st = storeEnd();
     // 存储 Worker 那一头：发一条检查点（结构化克隆一份，就像从 IndexedDB 读出来的）
-    ch.port1.postMessage({ cp: structuredClone(written!.cp) });
-    const r = await send({ kind: 'load', doc: doc!, build: 'b1', checkpoint: ch.port2 });
-    ch.port1.close();
+    st.ch.port1.postMessage({ cp: structuredClone(written!.cp) });
+    const r = await send({ kind: 'load', doc: doc!, build: 'b1', store: st.port });
     const snap = r.snapshot as Snapshot;
     expect(snap.history.map((h) => h.summary)).toEqual(replayed!.history.map((h) => h.summary));
     const views = Object.entries(replayed!.derived).filter(([, v]) => ArrayBuffer.isView(v));
@@ -95,27 +126,37 @@ describe('计算 Worker 的约定', () => {
       expect(Array.from(snap.derived[k as keyof Snapshot['derived']] as ArrayLike<number>), k).toEqual(Array.from(v as ArrayLike<number>));
     }
     // 恢复出来的就是检查点里的那一步：页面要隐藏时不必再写
-    const before = checkpoints().length;
+    const before = notices().length;
     await send({ kind: 'checkpoint' });
-    expect(checkpoints()).toHaveLength(before);
+    expect(notices()).toHaveLength(before);
+    // 改一步：从同一个端口写
+    await send({ kind: 'exec', cmd: { op: 'set_planet', patch: { humidity: 1.2 } } });
+    await send({ kind: 'checkpoint' });
+    await until(() => st.got.length === 1);
+    expect(st.got[0].cp.done).toHaveLength(commands.length + 1);
+    expect(notices()).toHaveLength(before + 1);
+    st.close();
   });
 
   it('收到 null、安全模式：照旧重放（安全模式下也不写检查点）', async () => {
-    const ch = new MessageChannel();
-    ch.port1.postMessage({ cp: null });
-    const before = checkpoints().length;
-    await send({ kind: 'load', doc: doc!, build: 'b1', checkpoint: ch.port2 });
-    ch.port1.close();
+    const st = storeEnd();
+    st.ch.port1.postMessage({ cp: null });
+    const before = notices().length;
+    await send({ kind: 'load', doc: doc!, build: 'b1', store: st.port });
     // 重放出来的新引擎：要隐藏时写一次
     await send({ kind: 'checkpoint' });
-    expect(checkpoints()).toHaveLength(before + 1);
+    await until(() => st.got.length === 1);
+    expect(notices()).toHaveLength(before + 1);
+    st.close();
     // 安全模式：端口里有检查点也不用（检查点里的推导运行过脚本），也不写
-    const safe = new MessageChannel();
-    safe.port1.postMessage({ cp: structuredClone(written!.cp) as Checkpoint });
-    const r = await send({ kind: 'load', doc: doc!, build: 'b1', safe: true, checkpoint: safe.port2 });
-    safe.port1.close();
+    const safe = storeEnd();
+    safe.ch.port1.postMessage({ cp: structuredClone(written!.cp) as Checkpoint });
+    const r = await send({ kind: 'load', doc: doc!, build: 'b1', safe: true, store: safe.port });
     expect(r.safe).toBe(true);
     await send({ kind: 'checkpoint' });
-    expect(checkpoints()).toHaveLength(before + 1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(safe.got).toHaveLength(0);
+    expect(notices()).toHaveLength(before + 1);
+    safe.close();
   });
 });
