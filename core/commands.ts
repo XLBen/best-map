@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { WORLD_TYPE_INFO, worldgenSchema } from './generate';
+import { WORLD_TYPE_INFO, type Worldgen, worldgenSchema } from './generate';
+import { checkForm, sameForm } from './planet-form';
+import { PLANET_TYPES } from './presets';
 import { packProblems, wordPackSchema } from './names';
 import {
   PROVINCE_KINDS,
@@ -280,6 +282,18 @@ export function revert(world: World, undo: UndoRecord) {
 }
 
 // 重新组合地形；陆海变了就修补省份。返回新增与消失的陆地格数
+// 历史里“新世界：X”的 X：星球形态的名字；整个星球用向导里星球类型的名字（“像地球”，而不是地区的“几块大陆”）；
+// 一块地区用世界类型的名字。只是说明文字，不进世界状态
+function worldgenName(params: Worldgen, globe: boolean): string {
+  if (params.form) return params.form.name;
+  if (globe) {
+    // 海洋星球与空白星球同是 ocean：有没有露出海面的火山岛
+    const t = PLANET_TYPES.find((p) => p.type === params.type && (p.type !== 'ocean' || (p.islands !== undefined) === (params.islands !== undefined && params.islands > 0)));
+    if (t) return t.name;
+  }
+  return WORLD_TYPE_INFO[params.type].name;
+}
+
 function applyTerrain(world: World): { gained: number; lost: number } {
   const before = world.causes.land.slice();
   resolveTerrain(world);
@@ -350,6 +364,9 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'set_worldgen': {
       const params = worldgenSchema.parse(cmd.params);
+      // 星球形态：只能用在整个星球上，type 要与形态的 base 相同；脚本有语法错误时当场拒绝
+      // （运行时出错不拒绝：那一部分按没有脚本算，见 planet-gen.ts）
+      if (params.form) checkForm(params.form, params.type, world.settings.globe === true, (t) => PLANET_TYPES.find((p) => p.type === t)?.name ?? WORLD_TYPE_INFO[t].name);
       if (cmd.reset) {
         causes.landDelta.fill(0);
         causes.upliftDelta.fill(0);
@@ -363,12 +380,19 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const prev = small.terrain.gen;
       small.terrain.gen = params;
       applyTerrain(world);
-      if (cmd.reset || !prev) return { dirty: Dirty.Elevation, summary: `新世界：${WORLD_TYPE_INFO[params.type].name}` };
+      const name = worldgenName(params, world.settings.globe === true);
+      if (cmd.reset || !prev) return { dirty: Dirty.Elevation, summary: `新世界：${name}` };
       const what = [
         prev.landFraction !== params.landFraction ? '陆地多少' : '',
         prev.islands !== params.islands ? '岛多少' : '',
         prev.mountains !== params.mountains ? '山多高' : '',
       ].filter(Boolean);
+      if (!sameForm(prev.form, params.form)) {
+        const more = what.length ? `；调整了${what.join('、')}` : '';
+        // 去掉形态时说去掉了哪一个（“换了星球形态：像地球”读起来像是换成了另一个形态）
+        if (!params.form && prev.form) return { dirty: Dirty.Elevation, summary: `去掉了星球形态「${prev.form.name}」${more}` };
+        return { dirty: Dirty.Elevation, summary: `换了星球形态：${name}${more}` };
+      }
       return { dirty: Dirty.Elevation, summary: `调整了${what.length ? what.join('、') : '世界参数'}` };
     }
     case 'set_coast_style': {

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { Mesh } from './mesh';
+import { planetFormSchema } from './planet-form';
 import { type Noise2, clamp, fbm, gradientNoise, mixSeed, mulberry32, smoothstep } from './rng';
+import type { ScriptIssue } from './script';
+import { WORLD_TYPES, type WorldType } from './world-types';
 
 // 随机世界：先造“地壳高度”，再定海平面。
 //   大陆块（不规则、带域扭曲与分形起伏）→ 大陆架、陆坡、深海
@@ -10,8 +13,8 @@ import { type Noise2, clamp, fbm, gradientNoise, mixSeed, mulberry32, smoothstep
 //   · 所有随机都按地图上的位置取，结果与格数无关（4000 格的缩略图与 4 万格的成品格局一致）
 //   · 陆地比例只决定海平面（陆地多少单调嵌套）；“岛多少”只增减排好序的火山锥；“山多高”只缩放造山带
 
-export const WORLD_TYPES = ['archipelago', 'continent', 'continents', 'fragmented', 'inland_sea', 'ocean'] as const;
-export type WorldType = (typeof WORLD_TYPES)[number];
+// 定义在 world-types.ts（星球形态的 schema 也要用，见那里的说明）；这里照旧导出
+export { WORLD_TYPES, type WorldType };
 
 export const WORLD_TYPE_INFO: Record<WorldType, { name: string; hint: string }> = {
   archipelago: { name: '群岛之海', hint: '大片海洋里散布着大大小小的岛，有火山岛链' },
@@ -39,6 +42,8 @@ export const worldgenSchema = z.object({
   islands: z.number().min(0).max(1).optional(),
   mountains: z.number().min(0).max(2).default(1),
   rerolls: z.array(rerollSchema).default([]),
+  // 星球形态（第八轮第三批，只用于整个星球）：从 type 这种星球改起的参数与脚本。没有时解析结果与以前逐字节相同
+  form: planetFormSchema.optional(),
 });
 export type Worldgen = z.output<typeof worldgenSchema>;
 export type WorldgenInput = z.input<typeof worldgenSchema>;
@@ -403,6 +408,8 @@ export interface BaseComponents {
   mountU: Float32Array;
   hillU: Float32Array;
   erod: Float32Array;
+  // 星球形态的地形脚本这次出的问题（出错的那一遍按没有脚本算，见 planet-gen.ts）。普通的 JSON，只给界面看；没有地形脚本时不存在
+  issues?: ScriptIssue[];
 }
 
 // 局部重算：只重算 changed 这些重画圈里的格，其余格照抄 from。
