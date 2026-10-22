@@ -622,6 +622,23 @@ describe('脚本的运行环境', () => {
     expect(best).toBeLessThan(40);
   });
 
+  it('动态 import() 编译时就拒绝，说出第几行；注释、字符串里的，属性 obj.import 不算', () => {
+    const e = syntaxError('const a = 1;\nreturn import("https://example.com/x.js");');
+    expect(e.issue.reason).toBe('syntax');
+    expect(e.line).toBe(2);
+    expect(e.message).toBe('「水晶丛林」的长在哪里脚本第 2 行有语法错误：脚本里不能用 import');
+    // 换行、注释夹在中间，展开运算符后面，模板里的 ${…}
+    expect(syntaxError('return import\n  /* 注释 */ ("x");').line).toBe(1);
+    expect(syntaxError('const a = [...import("x")];\nreturn 1;').line).toBe(1);
+    expect(syntaxError('const s = `${import("x")}`;\nreturn 1;').line).toBe(1);
+    // 不是动态 import
+    const ok = (src: string) => expect(() => compileScript('placement', src)).not.toThrow();
+    ok('// import("x") 写在注释里\nreturn 1;');
+    ok('const s = "import(x)";\nreturn s.length > 0 ? 1 : 0;');
+    ok('const o = { import: (x) => x };\nreturn o?.import(1) + o. import(0);');
+    ok('const myimport = (x) => x;\nreturn myimport(1);');
+  });
+
   // 放在最后：之后本文件里不能再编译脚本
   it('disallowScripts 后编译抛错', () => {
     disallowScripts();
