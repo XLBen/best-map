@@ -1,6 +1,6 @@
-import { type ClimateBase, climateFields } from './climate';
+import { type ClimateBase, petHalf } from './climate';
 import { graphDistance } from './mesh';
-import { BUILTIN_FIELDS, trapezoid } from './species';
+import { BUILTIN_FIELDS, type Tolerance, trapezoid } from './species';
 import { fieldGetter, isVegetated } from './vegetation';
 import type { Conflict, Constraint, Derived, World } from './world';
 
@@ -24,6 +24,10 @@ const CANDIDATES: [number, number][] = (() => {
   }
   return list.sort((a, b) => a[2] - b[2]).map(([t, l]) => [t, l]);
 })();
+// 每个候选的 dT 序号（dT + MAX_DT）与 exp(dl)，与试算时现算的值相同
+const NT = 2 * MAX_DT + 1;
+const CAND_T = Int32Array.from(CANDIDATES, ([t]) => t + MAX_DT);
+const CAND_E = Float64Array.from(CANDIDATES, ([, l]) => Math.exp(l));
 
 const CLIMATE_KEYS = ['tMean', 'tWarm', 'tCold', 'precip', 'seasonality', 'moisture'] as const;
 
@@ -44,6 +48,9 @@ export interface SolveResult {
   plans: Plan[];
 }
 
+// 曲线端点都是不太大的有限数时，梯形值总在 [0, 1]、不会是 NaN（输入为 NaN 时是 1）
+const tame = (x: number) => Math.abs(x) <= 1e15;
+
 export function solveConstraints(world: World, base: ClimateBase, d: Derived): SolveResult {
   const { mesh, small, causes } = world;
   const n = mesh.n;
@@ -56,45 +63,47 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
   // 所有类型用到的字段：气候类每次试算重新计算，其余每格取一次
   const fieldIds = [...new Set(species.flatMap((sp) => sp.tolerances.map((t) => t.field)))];
   const fieldIndex = new Map(fieldIds.map((f, k) => [f, k]));
-  const climateSlot = CLIMATE_KEYS.map((k) => fieldIndex.get(k) ?? -1);
   const staticGetters = fieldIds.map((f) => ((CLIMATE_KEYS as readonly string[]).includes(f) || f.startsWith('field:') ? null : fieldGetter(world, d, f)));
-  const tolIdx = species.map((sp) => sp.tolerances.map((t) => fieldIndex.get(t.field)!));
+  const customNames = fieldIds.map((f) => (f.startsWith('field:') ? f.slice(6) : null));
   const vals = new Float64Array(fieldIds.length);
   const scores = new Float64Array(S);
 
-  const evalScores = (i: number, dT: number, dl: number, dF: Record<string, number>) => {
-    const f = climateFields(base.tS[i] + dT, base.tW[i] + dT, base.pS[i] * Math.exp(dl), base.pW[i] * Math.exp(dl));
-    CLIMATE_KEYS.forEach((k, idx) => {
-      if (climateSlot[idx] >= 0) vals[climateSlot[idx]] = f[k];
-    });
-    for (let k = 0; k < fieldIds.length; k++) {
-      const id = fieldIds[k];
-      if (id.startsWith('field:')) {
-        const name = id.slice(6);
-        vals[k] = (causes.fields[name]?.[i] ?? 0) + (dF[name] ?? 0);
-      }
+  // 所有耐受曲线排成一列：类型 s 的是 tolStart[s]..tolStart[s+1]；tolClim 为气候字段序号（-1：每格不变的字段）
+  const tols: Tolerance[] = species.flatMap((sp) => sp.tolerances);
+  const tolStart = new Int32Array(S + 1);
+  for (let s = 0; s < S; s++) tolStart[s + 1] = tolStart[s] + species[s].tolerances.length;
+  const tolClim = Int32Array.from(tols, (t) => (CLIMATE_KEYS as readonly string[]).indexOf(t.field));
+  const tolVal = Int32Array.from(tols, (t) => fieldIndex.get(t.field)!);
+  // tame 的类型：各曲线值在 [0, 1]，有一条为 0（或竞争力、可达为 0）则得分恒为 0
+  const tameSp = species.map((sp) => Number.isFinite(sp.competition) && sp.tolerances.every((t) => tame(t.min) && tame(t.optLow) && tame(t.optHigh) && tame(t.max)));
+
+  // 每格：不随试算变的曲线值先算好（恰为 1 的乘上不改变结果，略去），prog 是各类型要乘的曲线
+  const fac = new Float64Array(tols.length);
+  const prog = new Int32Array(tols.length);
+  const progStart = new Int32Array(S + 1);
+  // 得分可能不为 0 的类型（按序号）
+  const live = new Int32Array(S);
+  let nLive = 0;
+  let ri = 0;
+  // 本次试算的气候字段（与 climateFields 同一算式：只随 dT 变的部分每格按 dT 存一份）
+  const cv = new Float64Array(CLIMATE_KEYS.length);
+  const tMeanT = new Float64Array(NT);
+  const tWarmT = new Float64Array(NT);
+  const tColdT = new Float64Array(NT);
+  const petT = new Float64Array(NT);
+  const warmT = new Uint8Array(NT);
+  // 目标类型只随温度变的曲线在这个 dT 下有一条为 0（目标得分必为 0）
+  const zeroT = new Uint8Array(NT);
+  const stampT = new Int32Array(NT);
+  let stamp = 0;
+
+  const scoreOf = (s: number) => {
+    let v = 1;
+    for (let q = progStart[s]; q < progStart[s + 1] && v > 0; q++) {
+      const j = prog[q];
+      v *= tolClim[j] >= 0 ? trapezoid(tols[j], cv[tolClim[j]]) : fac[j];
     }
-    for (let s = 0; s < S; s++) {
-      let v = 1;
-      const tols = species[s].tolerances;
-      for (let t = 0; t < tols.length && v > 0; t++) v *= trapezoid(tols[t], vals[tolIdx[s][t]]);
-      scores[s] = v * species[s].competition * d.reach[i * S + s];
-    }
-  };
-  const dominates = (target: number) => {
-    const st = scores[target];
-    if (st <= 0) return false;
-    for (let s = 0; s < S; s++) if (s !== target && scores[s] * 1.02 >= st) return false;
-    return true;
-  };
-  const argmax = () => {
-    let b = -1;
-    let bs = 0;
-    for (let s = 0; s < S; s++) if (scores[s] > bs) {
-      bs = scores[s];
-      b = s;
-    }
-    return b;
+    return v * species[s].competition * d.reach[ri + s];
   };
 
   const plans: Plan[] = [];
@@ -132,18 +141,117 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
         plan.dF[name][idx] = delta;
         fCost += delta * delta;
       }
-      let bestTargetScore = -1;
-      for (const [dT, dl] of CANDIDATES) {
-        evalScores(i, dT, dl, dF);
-        if (dominates(target)) {
-          plan.cost[idx] = (dT / 5) ** 2 + (dl / 0.5) ** 2 + fCost;
-          plan.dT[idx] = dT;
-          plan.dl[idx] = dl;
-          return;
+      // 自定义场的值试算中不变
+      for (let k = 0; k < fieldIds.length; k++) {
+        const name = customNames[k];
+        if (name !== null) vals[k] = (causes.fields[name]?.[i] ?? 0) + (dF[name] ?? 0);
+      }
+      ri = i * S;
+      let q = 0;
+      nLive = 0;
+      let targetDead = false;
+      for (let s = 0; s < S; s++) {
+        progStart[s] = q;
+        let zero = d.reach[ri + s] === 0 || species[s].competition === 0;
+        for (let j = tolStart[s]; j < tolStart[s + 1]; j++) {
+          if (tolClim[j] < 0) {
+            const f = trapezoid(tols[j], vals[tolVal[j]]);
+            if (f === 1) continue;
+            if (f === 0) zero = true;
+            fac[j] = f;
+          }
+          prog[q++] = j;
         }
-        if (scores[target] > bestTargetScore) {
-          bestTargetScore = scores[target];
-          plan.nearest[idx] = argmax();
+        if (!(zero && tameSp[s])) live[nLive++] = s;
+        else if (s === target) targetDead = true;
+      }
+      progStart[S] = q;
+
+      const tS0 = base.tS[i];
+      const tW0 = base.tW[i];
+      const pS0 = base.pS[i];
+      const pW0 = base.pW[i];
+      stamp++;
+      let bestTargetScore = -1;
+      // 上一次挡住目标的类型（先试它；挡没挡住与试的顺序无关）
+      let block = -1;
+      for (let k = 0; k < CANDIDATES.length; k++) {
+        const ti = CAND_T[k];
+        if (stampT[ti] !== stamp) {
+          const tS = tS0 + (ti - MAX_DT);
+          const tW = tW0 + (ti - MAX_DT);
+          const summerWarm = tS >= tW;
+          tMeanT[ti] = (tS + tW) / 2;
+          tWarmT[ti] = summerWarm ? tS : tW;
+          tColdT[ti] = summerWarm ? tW : tS;
+          petT[ti] = Math.max(petHalf(tS) + petHalf(tW), 120);
+          warmT[ti] = summerWarm ? 1 : 0;
+          let z = 0;
+          if (tameSp[target]) {
+            for (let j = tolStart[target]; j < tolStart[target + 1]; j++) {
+              const kc = tolClim[j];
+              if (kc >= 0 && kc <= 2 && trapezoid(tols[j], kc === 0 ? tMeanT[ti] : kc === 1 ? tWarmT[ti] : tColdT[ti]) === 0) z = 1;
+            }
+          }
+          zeroT[ti] = z;
+          stampT[ti] = stamp;
+        }
+        // 目标得分必为 0：不会主导；第一个候选之后也不会比已有的更接近
+        if (bestTargetScore >= 0 && (targetDead || zeroT[ti])) {
+          if (targetDead) break;
+          continue;
+        }
+        const e = CAND_E[k];
+        const pS = pS0 * e;
+        const pW = pW0 * e;
+        const pWarm = warmT[ti] ? pS : pW;
+        const pCold = warmT[ti] ? pW : pS;
+        const precip = pS + pW;
+        cv[0] = tMeanT[ti];
+        cv[1] = tWarmT[ti];
+        cv[2] = tColdT[ti];
+        cv[3] = precip;
+        cv[4] = (pWarm - pCold) / (pWarm + pCold + 1);
+        cv[5] = precip / petT[ti];
+        const st = scoreOf(target);
+        // 目标比已有的更接近时要全部得分（找此时的主导类型）
+        const all = st > bestTargetScore;
+        if (all) for (let a = 0; a < nLive; a++) scores[live[a]] = live[a] === target ? st : scoreOf(live[a]);
+        if (!(st <= 0)) {
+          // 主导：其他类型都不到目标的 1/1.02（得分恒为 0 的类型挡不住）
+          let blocked = false;
+          if (block >= 0 && (all ? scores[block] : scoreOf(block)) * 1.02 >= st) blocked = true;
+          else {
+            for (let a = 0; a < nLive; a++) {
+              const s = live[a];
+              if (s === target || s === block) continue;
+              if ((all ? scores[s] : scoreOf(s)) * 1.02 >= st) {
+                blocked = true;
+                block = s;
+                break;
+              }
+            }
+          }
+          if (!blocked) {
+            const [dT, dl] = CANDIDATES[k];
+            plan.cost[idx] = (dT / 5) ** 2 + (dl / 0.5) ** 2 + fCost;
+            plan.dT[idx] = dT;
+            plan.dl[idx] = dl;
+            return;
+          }
+        }
+        if (all) {
+          bestTargetScore = st;
+          let b = -1;
+          let bs = 0;
+          for (let a = 0; a < nLive; a++) {
+            const s = live[a];
+            if (scores[s] > bs) {
+              bs = scores[s];
+              b = s;
+            }
+          }
+          plan.nearest[idx] = b;
         }
       }
     });
@@ -162,8 +270,8 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
     { key: 'T', target: d.corrT, value: (p, k) => p.dT[k] },
     { key: 'P', target: d.corrP, value: (p, k) => p.dl[k] },
   ];
-  const customNames = new Set(plans.flatMap((p) => Object.keys(p.dF)));
-  for (const name of customNames) {
+  const customFields = new Set(plans.flatMap((p) => Object.keys(p.dF)));
+  for (const name of customFields) {
     d.corrF[name] = new Float32Array(n);
     channels.push({ key: `F:${name}`, target: d.corrF[name], value: (p, k) => p.dF[name]?.[k] ?? 0 });
   }
@@ -178,41 +286,105 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
     const dist = graphDistance(mesh, anchorCells, limit);
     for (let i = 0; i < n; i++) if (dist[i] < limit) inRegion[i] = 1;
   }
+  for (const p of plans) for (const k of p.anchors) fixed[p.cells[k]] = 1;
+  // 各通道的锚点值；全为 0 的通道修正恒为 0，不用解。第 n 格恒为 0（代表区域外的邻居）
+  const solving: { target: Float32Array; field: Float64Array }[] = [];
   for (const ch of channels) {
-    const field = new Float64Array(n);
-    fixed.fill(0);
+    const field = new Float64Array(n + 1);
     for (const p of plans) {
       for (const k of p.anchors) {
         const i = p.cells[k];
         field[i] = ch.value(p, k);
-        fixed[i] = 1;
       }
     }
     let any = false;
     for (let i = 0; i < n; i++) if (fixed[i] && field[i] !== 0) any = true;
-    if (!any) continue;
-    const region: number[] = [];
-    for (let i = 0; i < n; i++) if (inRegion[i] && !fixed[i]) region.push(i);
-    for (let it = 0; it < 3000; it++) {
-      let change = 0;
-      for (const i of region) {
-        let s = 0;
-        let w = 0;
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-          const j = mesh.adj[e];
-          const wt = mesh.edgeLen[e] / mesh.dist[e];
-          // 区域外的邻居视为 0（Dirichlet 边界）
-          s += wt * (inRegion[j] ? field[j] : 0);
-          w += wt;
-        }
-        const v = s / w;
-        change = Math.max(change, Math.abs(v - field[i]));
-        field[i] = v;
-      }
-      if (change < 1e-4) break;
-    }
-    for (let i = 0; i < n; i++) ch.target[i] = field[i];
+    if (any) solving.push({ target: ch.target, field });
   }
+  if (!solving.length) return { plans };
+
+  // 求解区（区域内、非锚点）的邻接表：只留区域内的邻居。区域外的邻居视为 0（Dirichlet 边界），
+  // 它那一项 wt·0 = 0 加上不改变和，略去（wt 不是有限数时照算，指向第 n 格）。权重和按原顺序先加好
+  const list: number[] = [];
+  for (let i = 0; i < n; i++) if (inRegion[i] && !fixed[i]) list.push(i);
+  const region = Int32Array.from(list);
+  const R = region.length;
+  const rOff = new Int32Array(R + 1);
+  let edges = 0;
+  for (const i of region) edges += mesh.off[i + 1] - mesh.off[i];
+  const rAdj = new Int32Array(edges);
+  const rWt = new Float64Array(edges);
+  const rSum = new Float64Array(R);
+  let q = 0;
+  for (let r = 0; r < R; r++) {
+    const i = region[r];
+    let w = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      const wt = mesh.edgeLen[e] / mesh.dist[e];
+      w += wt;
+      if (inRegion[j] || !Number.isFinite(wt)) {
+        rAdj[q] = inRegion[j] ? j : n;
+        rWt[q] = wt;
+        q++;
+      }
+    }
+    rSum[r] = w;
+    rOff[r + 1] = q;
+  }
+  // 一遍 Gauss-Seidel，返回最大变化
+  const sweep = (f: Float64Array) => {
+    let change = 0;
+    for (let r = 0; r < R; r++) {
+      const i = region[r];
+      let s = 0;
+      for (let e = rOff[r]; e < rOff[r + 1]; e++) s += rWt[e] * f[rAdj[e]];
+      const v = s / rSum[r];
+      change = Math.max(change, Math.abs(v - f[i]));
+      f[i] = v;
+    }
+    return change;
+  };
+  // 两个通道同一遍扫：互不影响，各自的算式、更新顺序与单独扫时相同（两条加法链交错着算）
+  const change2 = new Float64Array(2);
+  const sweep2 = (f: Float64Array, g: Float64Array) => {
+    let cf = 0;
+    let cg = 0;
+    for (let r = 0; r < R; r++) {
+      const i = region[r];
+      let sf = 0;
+      let sg = 0;
+      for (let e = rOff[r]; e < rOff[r + 1]; e++) {
+        const j = rAdj[e];
+        sf += rWt[e] * f[j];
+        sg += rWt[e] * g[j];
+      }
+      const vf = sf / rSum[r];
+      const vg = sg / rSum[r];
+      cf = Math.max(cf, Math.abs(vf - f[i]));
+      cg = Math.max(cg, Math.abs(vg - g[i]));
+      f[i] = vf;
+      g[i] = vg;
+    }
+    change2[0] = cf;
+    change2[1] = cg;
+  };
+  // 每个通道最多 3000 遍，某一遍最大变化 < 1e-4 即停（与逐个通道解时的遍数相同）
+  for (let a = 0; a < solving.length; a += 2) {
+    const f = solving[a].field;
+    const g = a + 1 < solving.length ? solving[a + 1].field : null;
+    let doneF = false;
+    let doneG = g === null;
+    for (let it = 0; it < 3000 && !(doneF && doneG); it++) {
+      if (!doneF && !doneG) {
+        sweep2(f, g!);
+        doneF = change2[0] < 1e-4;
+        doneG = change2[1] < 1e-4;
+      } else if (!doneF) doneF = sweep(f) < 1e-4;
+      else doneG = sweep(g!) < 1e-4;
+    }
+  }
+  for (const { target, field } of solving) for (let i = 0; i < n; i++) target[i] = field[i];
   return { plans };
 }
 
@@ -292,9 +464,12 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     suggestions.push('也可以改用硬覆盖（标为例外，水文不认它）');
     // 最接近的可行类型：失败格上最常见的“修正上限内能达到的主导类型”
     const plan = solve.plans.find((p) => p.constraint.id === c.id);
+    // 格在计划里的序号（同一格出现多次时取第一次，与 indexOf 相同）
+    const pos = new Map<number, number>();
+    if (plan) for (let k = plan.cells.length - 1; k >= 0; k--) pos.set(plan.cells[k], k);
     const counts = new Map<number, number>();
     for (const i of failing) {
-      const k = plan ? plan.cells.indexOf(i) : -1;
+      const k = pos.get(i) ?? -1;
       const s = k >= 0 && plan!.nearest[k] >= 0 ? plan!.nearest[k] : d.dominant[i];
       if (s >= 0) counts.set(s, (counts.get(s) ?? 0) + 1);
     }
