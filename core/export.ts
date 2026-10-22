@@ -73,12 +73,12 @@ export function encodeBmp24(rgb: Uint8Array, width: number, height: number): Uin
   dv.setUint16(28, 24, true);
   dv.setUint32(34, rowSize * height, true);
   for (let y = 0; y < height; y++) {
-    const row = 54 + (height - 1 - y) * rowSize;
-    for (let x = 0; x < width; x++) {
-      const s = (y * width + x) * 3;
-      buf[row + x * 3] = rgb[s + 2];
-      buf[row + x * 3 + 1] = rgb[s + 1];
-      buf[row + x * 3 + 2] = rgb[s];
+    let o = 54 + (height - 1 - y) * rowSize;
+    const end = (y + 1) * width * 3;
+    for (let s = y * width * 3; s < end; s += 3, o += 3) {
+      buf[o] = rgb[s + 2];
+      buf[o + 1] = rgb[s + 1];
+      buf[o + 2] = rgb[s];
     }
   }
   return buf;
@@ -165,11 +165,12 @@ export function encodePng16Gray(values: Uint16Array, width: number, height: numb
   return png;
 }
 
-export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions): { zip: Uint8Array; files: string[] } {
+// onProgress（可选）：报告完成的比例（0–1），栅格化约占前 70%，最后的压缩打包是一步（报不了中间进度）；不影响结果
+export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions, onProgress?: (fraction: number) => void): { zip: Uint8Array; files: string[] } {
   const { width, height } = opts;
-  const { derived, small, causes } = world;
+  const { mesh, derived, small, causes } = world;
   // 与屏幕相同的判定：格以下的海岸细节、自然弯曲的省份边界、地表细节
-  const raster = rasterizeWorld(world, width, height);
+  const raster = rasterizeWorld(world, width, height, onProgress && ((f) => onProgress(0.7 * f)));
   const cellOf = raster.cell;
   const elev = raster.elevation;
   const files: Record<string, Uint8Array> = {};
@@ -186,18 +187,18 @@ export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions):
   }
   files['heightmap.bmp'] = encodeBmp8Gray(gray, width, height);
   files['heightmap16.png'] = encodePng16Gray(g16, width, height);
+  onProgress?.(0.75);
 
-  // 省份
+  // 省份：每格的颜色先算好（无省份为黑），逐像素只抄三个字节
   const provinces = summarizeProvinces(world, derived);
   const ids = [...provinces.keys()].sort((a, b) => a - b);
-  const rgb = new Uint8Array(n * 3);
-  for (let p = 0; p < n; p++) {
-    const pid = causes.province[cellOf[p]];
-    const [r, g, b] = pid >= 0 ? provinceColor(pid) : [0, 0, 0];
-    rgb[p * 3] = r;
-    rgb[p * 3 + 1] = g;
-    rgb[p * 3 + 2] = b;
+  const provRgb = new Uint8Array(mesh.n * 3);
+  for (let i = 0; i < mesh.n; i++) {
+    const pid = causes.province[i];
+    if (pid >= 0) provRgb.set(provinceColor(pid), i * 3);
   }
+  const rgb = new Uint8Array(n * 3);
+  copyCellRgb(rgb, provRgb, cellOf);
   files['provinces.bmp'] = encodeBmp24(rgb, width, height);
   const def = ['province;red;green;blue;name;x'];
   const csv = ['id,name,land,kind,terrain,species,cells,mean_elevation_m'];
@@ -214,37 +215,66 @@ export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions):
   // 地名：类型、名字、面积、中心（导出图片上的像素坐标与经纬度）
   files['features.csv'] = strToU8(featuresCsv(world, width, height));
 
-  // 地形：逐像素按格的主导类型（山地按海拔另判），湖与海单列
+  // 地形：逐像素按格的主导类型（山地按海拔另判），湖与海单列。
+  // 每格主导类型的地形颜色与植被颜色先算好；固定颜色依次是海、湖、山地、丘陵（地形）与海、湖（植被）
+  const kindRgb = new Uint8Array(mesh.n * 3);
+  const vegRgb = new Uint8Array(mesh.n * 3);
+  for (let i = 0; i < mesh.n; i++) {
+    const s = derived.dominant[i];
+    const sp = s >= 0 ? small.species[s] : null;
+    kindRgb.set(terrainColor(sp?.terrain ?? 'desert'), i * 3);
+    vegRgb.set(sp ? hexToRgb(sp.color) : [200, 200, 200], i * 3);
+  }
+  const fixed = new Uint8Array(18);
+  ['ocean', 'lake', 'mountains', 'hills'].forEach((t, k) => fixed.set(terrainColor(t), k * 3));
+  fixed.set([30, 60, 110, 60, 110, 170], 12);
   const terrainRgb = new Uint8Array(n * 3);
   const biomeRgb = new Uint8Array(n * 3);
   for (let p = 0; p < n; p++) {
     const c = cellOf[p];
-    let t: string;
-    let bc: [number, number, number];
+    let tc: Uint8Array = fixed;
+    let to: number;
+    let bc: Uint8Array = fixed;
+    let bo: number;
     if (!raster.land[p]) {
-      t = 'ocean';
-      bc = [30, 60, 110];
+      to = 0;
+      bo = 12;
     } else if (derived.lake[c] === 1) {
-      t = 'lake';
-      bc = [60, 110, 170];
+      to = 3;
+      bo = 15;
     } else {
-      const s = derived.dominant[c];
-      const sp = s >= 0 ? small.species[s] : null;
-      t = elev[p] > 2400 ? 'mountains' : elev[p] > 1100 && derived.slope[c] > 10 ? 'hills' : sp?.terrain ?? 'desert';
-      bc = sp ? hexToRgb(sp.color) : [200, 200, 200];
+      if (elev[p] > 2400) to = 6;
+      else if (elev[p] > 1100 && derived.slope[c] > 10) to = 9;
+      else {
+        tc = kindRgb;
+        to = c * 3;
+      }
+      bc = vegRgb;
+      bo = c * 3;
     }
-    terrainRgb.set(terrainColor(t), p * 3);
-    biomeRgb.set(bc, p * 3);
+    const q = p * 3;
+    terrainRgb[q] = tc[to];
+    terrainRgb[q + 1] = tc[to + 1];
+    terrainRgb[q + 2] = tc[to + 2];
+    biomeRgb[q] = bc[bo];
+    biomeRgb[q + 1] = bc[bo + 1];
+    biomeRgb[q + 2] = bc[bo + 2];
   }
   files['terrain.bmp'] = encodeBmp24(terrainRgb, width, height);
   files['biomes.bmp'] = encodeBmp24(biomeRgb, width, height);
+  onProgress?.(0.78);
 
   // 河流：白色陆地、粉色海洋，河流按流量分级着蓝色（EU4 rivers.bmp 的配色习惯，需转成其索引调色板）
   const riverRgb = new Uint8Array(n * 3);
   const thr = small.planet.riverThreshold;
-  for (let p = 0; p < n; p++) riverRgb.set(raster.land[p] ? [255, 255, 255] : [255, 0, 128], p * 3);
+  for (let p = 0; p < n; p++) {
+    riverRgb[p * 3] = 255;
+    riverRgb[p * 3 + 1] = raster.land[p] ? 255 : 0;
+    riverRgb[p * 3 + 2] = raster.land[p] ? 255 : 128;
+  }
   drawRivers(world, riverRgb, raster.land, width, height, thr);
   files['rivers.bmp'] = encodeBmp24(riverRgb, width, height);
+  onProgress?.(0.8);
 
   files['world.json'] = strToU8(JSON.stringify(doc));
   files['README.txt'] = strToU8(
@@ -263,7 +293,19 @@ export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions):
       'world.json：完整的世界文件（设置 + 命令记录），可在编辑器中重新打开',
     ].join('\n'),
   );
-  return { zip: zipSync(files, { level: 6 }), files: Object.keys(files) };
+  const zip = zipSync(files, { level: 6 });
+  onProgress?.(1);
+  return { zip, files: Object.keys(files) };
+}
+
+// 逐像素按格抄颜色：out[p] = cellRgb[cellOf[p]]（各三个字节）
+function copyCellRgb(out: Uint8Array, cellRgb: Uint8Array, cellOf: Int32Array) {
+  for (let p = 0; p < cellOf.length; p++) {
+    const c = cellOf[p] * 3;
+    out[p * 3] = cellRgb[c];
+    out[p * 3 + 1] = cellRgb[c + 1];
+    out[p * 3 + 2] = cellRgb[c + 2];
+  }
 }
 
 // 地名表：重要的在前；CSV 字段里的逗号与引号按 RFC 4180 转义
@@ -313,7 +355,10 @@ function drawRivers(world: World, rgb: Uint8Array, land: Uint8Array, width: numb
     for (let k = 0; k + 1 < line.points.length; k++) {
       const flow = (line.flow[k] + line.flow[k + 1]) / 2;
       const level = Math.min(colors.length - 1, Math.max(0, Math.floor(Math.log10(flow / thr) * 2)));
+      const col = colors[level];
       const r = Math.max(0, (riverWidth(flow, thr) * scale - 1) / 2);
+      const ri = Math.ceil(r);
+      const r2 = r * r + 0.25;
       const x0 = line.points[k][0] * sx;
       const y0 = line.points[k][1] * sy;
       const x1 = line.points[k + 1][0] * sx;
@@ -321,20 +366,21 @@ function drawRivers(world: World, rgb: Uint8Array, land: Uint8Array, width: numb
       const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2) + 1;
       for (let st = 0; st <= steps; st++) {
         const t = st / steps;
-        const cx = x0 + (x1 - x0) * t;
-        const cy = y0 + (y1 - y0) * t;
-        const ri = Math.ceil(r);
+        const fx = Math.floor(x0 + (x1 - x0) * t);
+        const fy = Math.floor(y0 + (y1 - y0) * t);
         for (let oy = -ri; oy <= ri; oy++) {
           for (let ox = -ri; ox <= ri; ox++) {
-            if (ox * ox + oy * oy > r * r + 0.25) continue;
-            let px = Math.floor(cx) + ox;
-            const py = Math.floor(cy) + oy;
+            if (ox * ox + oy * oy > r2) continue;
+            let px = fx + ox;
+            const py = fy + oy;
             // 整个星球：河的折线跨过接缝时 x 会超出图宽，绕回另一边
             if (sphere) px = ((px % width) + width) % width;
             if (px < 0 || py < 0 || px >= width || py >= height) continue;
             const p = py * width + px;
             if (!land[p]) continue;
-            rgb.set(colors[level], p * 3);
+            rgb[p * 3] = col[0];
+            rgb[p * 3 + 1] = col[1];
+            rgb[p * 3 + 2] = col[2];
           }
         }
       }
