@@ -648,11 +648,13 @@ export function cutProvinces(world: World, raw: [number, number][]): CutResult {
 
 // 画笔：圆形范围内的格、到中心的归一化距离 t（0 中心，1 边缘）与平滑衰减的权重
 // 只在画笔附近往外找（不分配整张图大小的数组），格按编号排列。
-// 画笔不到一格半时，鼠标下的那一格 t = 0：最小的笔刷正好涂一格，而且一定涂得到
+// 画笔不到一格半时，鼠标下的那一格 t = 0：最小的笔刷正好涂一格，而且一定涂得到；
+// 不到半格时只涂鼠标下那一格
 export function brushCells(world: World, cx: number, cy: number, radiusKm: number): { cells: number[]; t: number[]; weights: number[] } {
   const { mesh, kmPerUnit } = world;
   const r = radiusKm / kmPerUnit;
   const center = findCell(mesh, cx, cy);
+  if (r < mesh.spacing * 0.5) return { cells: [center], t: [0], weights: [1] };
   const reach = r + mesh.spacing;
   // 整个星球：到画笔中心的球面距离（地图单位），所以画笔在高纬度、接缝上也是真实大小的圆
   const c0 = mesh.kind === 'sphere' ? toUnit(cx, cy) : null;

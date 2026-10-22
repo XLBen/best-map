@@ -5,7 +5,7 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { viewOf } from '../core/sphere';
-import { type IslandKind, type TerrainPatch, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
+import { type ChainKind, type IslandKind, type TerrainPatch, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
@@ -214,6 +214,9 @@ export interface ToolOptions {
   // 岛的海岸线半径（km）
   islandKm: number;
   islandVariant: number;
+  // 岛链有自己的种类和大小（没有小礁），放岛时选小礁不影响岛链
+  chainKind: ChainKind;
+  chainKm: number;
   chainDensity: number;
   chainVariant: number;
   biome: string | null;
@@ -243,6 +246,8 @@ export const options = signal<ToolOptions>({
   islandKind: 'volcanic',
   islandKm: 100,
   islandVariant: 0,
+  chainKind: 'volcanic',
+  chainKm: 100,
   chainDensity: 1,
   chainVariant: 0,
   biome: null,
@@ -272,6 +277,7 @@ function sizesFor(w: World): Partial<ToolOptions> {
   return {
     brushKm: roundKm(clampTo(width * 0.035, brushRangeKm(w))),
     islandKm: roundKm(defaultIslandKm(w) * 2) / 2,
+    chainKm: roundKm(defaultIslandKm(w) * 2) / 2,
     lakeKm: roundKm(clampTo(Math.max(cell * 1.6, width * 0.006) * 2, lakeRangeKm(w)) * 2) / 2,
     reachKm: roundKm(clampTo(width * 0.04, reachRangeKm(w))),
   };

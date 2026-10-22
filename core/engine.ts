@@ -464,6 +464,10 @@ export function docVersion(settings: Pick<Settings, 'globe'>, commands: readonly
 // 一条命令有没有用到旧版程序不认识的字段、命令（batch 里的逐条看）。后面加新字段、新命令时在这里加一项检测
 function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'batch') return cmd.commands.some(usesExtensions);
+  // 第八轮 1b：小礁、只淹一格的湖、带 fine 的岛链
+  if (cmd.op === 'add_island' && cmd.island.kind === 'reef') return true;
+  if (cmd.op === 'add_lake' && cmd.lake.exact) return true;
+  if (cmd.op === 'add_island_chain' && cmd.chain.fine) return true;
   return false;
 }
 

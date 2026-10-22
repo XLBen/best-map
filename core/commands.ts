@@ -379,12 +379,14 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.upliftDelta[i] += r.upliftDelta[k];
       });
       applyTerrain(world);
-      return { dirty: Dirty.Elevation, summary: `放了一个${ISLAND_KIND_INFO[spec.kind].name}（直径约 ${roundKm(islandRadiusKm(world, spec.size) * 2)} km）` };
+      // 小礁不看大小：画出来约半格大
+      const diameter = spec.kind === 'reef' ? world.mesh.spacing * world.kmPerUnit * 0.5 : islandRadiusKm(world, spec.size) * 2;
+      return { dirty: Dirty.Elevation, summary: `放了一个${ISLAND_KIND_INFO[spec.kind].name}（直径约 ${roundKm(diameter)} km）` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);
       const islands = chainIslands(world, spec);
-      const r = combineStamps(world, islands);
+      const r = combineStamps(world, islands, spec.fine === true);
       r.cells.forEach((i, k) => {
         causes.landDelta[i] += r.landDelta[k];
         causes.upliftDelta[i] += r.upliftDelta[k];

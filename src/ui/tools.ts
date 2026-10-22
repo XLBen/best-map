@@ -428,6 +428,20 @@ function islandAgain(spec: IslandSpec): Again {
   };
 }
 
+// 小礁的预览：那一格淡淡地涂上，格心画一个半格大的实心点（放出来大约就这么大）
+function reefPreview(w: World, fresh: number[], nearX: number, hint: string, warn: boolean): Preview {
+  const { mesh } = w;
+  const c = fresh[0];
+  if (c === undefined) return { layers: [], shapes: [], hint, warn };
+  const x = mesh.kind === 'sphere' ? unwrapNear(mesh.x[c], nearX) : mesh.x[c];
+  return {
+    layers: [{ cells: fresh, color: LAND_RGB, alpha: 0.25 }],
+    shapes: [{ kind: 'circle', x, y: mesh.y[c], r: mesh.spacing * 0.25, fill: true, color: 'rgba(120, 205, 95, 0.95)', width: 1 }],
+    hint,
+    warn,
+  };
+}
+
 // 点一下：用底部滑块的大小放岛；按住往外拖：拖多远岛就多大（松手后滑块也停在这个大小）
 export function islandTool(): ToolHandler {
   let pointer: Pointer | null = null;
@@ -440,11 +454,15 @@ export function islandTool(): ToolHandler {
     const center = drag ?? (pointer.cell >= 0 ? pointer : null);
     if (!center) return null;
     const o = options.value;
-    const spec: IslandSpec = { x: keepX(w, center.x), y: center.y, kind: o.islandKind, size: drag?.km ?? o.islandKm, variant: o.islandVariant };
+    // 滑块停在别的种类的大小上（比如从火山岛换成珊瑚岛）时，补到这一种的最小值
+    const size = Math.max(islandSizeRangeKm(w, o.islandKind)[0], drag?.km ?? o.islandKm);
+    const spec: IslandSpec = { x: keepX(w, center.x), y: center.y, kind: o.islandKind, size, variant: o.islandVariant };
     const key = `${worldId(w)}|${spec.x.toFixed(5)},${spec.y.toFixed(5)}|${spec.kind}|${spec.size}|${spec.variant}`;
     if (cache?.key === key) return cache;
     const name = ISLAND_KIND_INFO[spec.kind].name;
-    const diameter = km(islandRadiusKm(w, spec.size) * 2);
+    const reef = spec.kind === 'reef';
+    // 小礁不看大小：画出来约半格大
+    const diameter = km(reef ? w.mesh.spacing * w.kmPerUnit * 0.5 : islandRadiusKm(w, spec.size) * 2);
     let block: string | null = null;
     if (spec.kind === 'atoll' && !w.causes.land[center.cell] && w.derived.tMean[center.cell] < 20) {
       block = `海水太凉（${Math.round(w.derived.tMean[center.cell])} °C），珊瑚岛要 20 °C 以上`;
@@ -452,12 +470,14 @@ export function islandTool(): ToolHandler {
     const stamp = islandStamp(w, spec);
     const fresh = stamp.footprint.filter((c) => !w.causes.land[c]);
     if (!block && !fresh.length) block = '这里已经是陆地';
-    const preview: Preview = {
-      layers: [{ cells: stamp.footprint, color: block ? [230, 90, 70] : LAND_RGB, alpha: 0.75 }],
-      shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
-      hint: block ?? `${name} · ${diameter} km`,
-      warn: !!block,
-    };
+    const preview: Preview = reef
+      ? reefPreview(w, fresh, pointer.x, block ?? `${name} · 约 ${diameter} km`, !!block)
+      : {
+          layers: [{ cells: stamp.footprint, color: block ? [230, 90, 70] : LAND_RGB, alpha: 0.75 }],
+          shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
+          hint: block ?? `${name} · ${diameter} km`,
+          warn: !!block,
+        };
     cache = { key, preview, spec, block };
     return cache;
   };
@@ -472,11 +492,13 @@ export function islandTool(): ToolHandler {
       pointer = p;
       const w = world.value;
       if (!pressed || !drag || !w) return;
-      // 拖出 6 像素以上才算在拖大小，手抖不算
-      if (Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
+      // 拖出 6 像素以上才算在拖大小，手抖不算；小礁不看大小
+      const kind = options.value.islandKind;
+      if (kind === 'reef' || Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
       else {
-        const [lo, hi] = islandSizeRangeKm(w);
-        drag.km = snapRadiusKm(Math.min(hi, Math.max(lo, mapDist(w, p.x, p.y, drag.x, drag.y) * w.kmPerUnit)));
+        // 先取整再限制在范围里：取整后不会比最小值还小
+        const [lo, hi] = islandSizeRangeKm(w, kind);
+        drag.km = Math.min(hi, Math.max(lo, snapRadiusKm(mapDist(w, p.x, p.y, drag.x, drag.y) * w.kmPerUnit)));
       }
     },
     async up(p) {
@@ -498,7 +520,8 @@ export function islandTool(): ToolHandler {
       // 滑块停在拖出的大小；下一个岛换个形状（悬停的预览里看得到）
       setOptions({ islandVariant: spec.variant + 1, ...(d.km !== null ? { islandKm: d.km } : {}) });
       try {
-        await exec({ op: 'add_island', island: spec }, '正在造岛…', islandAgain(spec));
+        // 小礁只有一种样子：不用“换个形状”
+        await exec({ op: 'add_island', island: spec }, '正在造岛…', spec.kind === 'reef' ? undefined : islandAgain(spec));
       } finally {
         committing = false;
         drag = null;
@@ -546,7 +569,9 @@ export function chainTool(): ToolHandler {
       use = [];
       for (let k = 0; k < 40; k++) use.push(all[Math.round((k * (all.length - 1)) / 39)]);
     }
-    return { points: use, kind: o.islandKind, size: o.islandKm, density: o.chainDensity, variant: o.chainVariant };
+    // 岛链用自己的种类和大小；fine：小一号的岛最小到 0.75 格（旧存档里的岛链没有这一项，照旧）
+    const size = w ? Math.max(islandSizeRangeKm(w, o.chainKind)[0], o.chainKm) : o.chainKm;
+    return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant, fine: true as const };
   };
   return {
     drags: true,
@@ -593,7 +618,8 @@ export function chainTool(): ToolHandler {
       const key = `${worldId(w)}|${JSON.stringify(spec)}`;
       if (cache?.key !== key) {
         const islands = chainIslands(w, spec);
-        const stamp = combineStamps(w, islands);
+        // 与命令同一个规则（带 fine：太小的岛岛心那一格成陆），预览就是结果
+        const stamp = combineStamps(w, islands, spec.fine);
         cache = {
           key,
           preview: {
@@ -610,6 +636,8 @@ export function chainTool(): ToolHandler {
 
 export function rerollTool(): ToolHandler {
   let pointer: Pointer | null = null;
+  // 重画的圈至少 1.2 格：再小可能一格都不变
+  const radius = (w: World) => Math.max(brushR(w), w.mesh.spacing * 1.2);
   return {
     drags: false,
     move(p) {
@@ -623,14 +651,14 @@ export function rerollTool(): ToolHandler {
         showToast('空白海洋没有可以重画的地形；先用“画陆地”或“放岛”', true);
         return;
       }
-      await exec({ op: 'reroll_region', x: keepX(w, p.x), y: p.y, radius: brushR(w), variant: gen.rerolls.length + 1 }, '正在重画…');
+      await exec({ op: 'reroll_region', x: keepX(w, p.x), y: p.y, radius: radius(w), variant: gen.rerolls.length + 1 }, '正在重画…');
     },
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
       return {
         layers: [],
-        shapes: [{ kind: 'circle', x: pointer.x, y: pointer.y, r: brushR(w), dashed: true, color: 'rgba(255, 220, 120, 0.95)', width: 2, geodesic: true }],
+        shapes: [{ kind: 'circle', x: pointer.x, y: pointer.y, r: radius(w), dashed: true, color: 'rgba(255, 220, 120, 0.95)', width: 2, geodesic: true }],
         hint: null,
       };
     },
@@ -1161,7 +1189,8 @@ export function lakeTool(): ToolHandler {
     const c = centerOf();
     if (!c) return [];
     const key = `${worldId(w)}|${c.cell}|${radiusNow()}`;
-    if (cache?.key !== key) cache = { key, cells: lakeArea(w, c.cell, radiusNow()) };
+    // 新湖都带 exact：半径就按给的算（最小只淹一格）
+    if (cache?.key !== key) cache = { key, cells: lakeArea(w, c.cell, radiusNow(), true) };
     return cache.cells;
   };
   // 碰到海岸的湖会直接流进海里，留不住水
@@ -1188,8 +1217,9 @@ export function lakeTool(): ToolHandler {
       if (!pressed || !drag || !w) return;
       if (Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
       else {
+        // 先取整再限制在范围里：取整后不会比最小值还小
         const [lo, hi] = lakeRange(w);
-        drag.km = snapRadiusKm(Math.min(hi, Math.max(lo, mapDist(w, p.x, p.y, drag.x, drag.y) * w.kmPerUnit)));
+        drag.km = Math.min(hi, Math.max(lo, snapRadiusKm(mapDist(w, p.x, p.y, drag.x, drag.y) * w.kmPerUnit)));
       }
     },
     async up() {
@@ -1200,7 +1230,7 @@ export function lakeTool(): ToolHandler {
       committing = true;
       if (d.km !== null) setOptions({ lakeKm: d.km });
       try {
-        await exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true } }, '正在计算湖泊…');
+        await exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, exact: true } }, '正在计算湖泊…');
       } finally {
         committing = false;
         drag = null;
@@ -1239,7 +1269,7 @@ export function unwaterTool(zoom: () => number): ToolHandler {
       const dd = mapDist(w, mesh.x[l.cell], mesh.y[l.cell], pointer.x, pointer.y) - l.radius / w.kmPerUnit;
       if (dd < bd) {
         bd = Math.max(0, dd);
-        best = { kind: 'lake', id: l.id, cells: lakeArea(w, l.cell, l.radius) };
+        best = { kind: 'lake', id: l.id, cells: lakeArea(w, l.cell, l.radius, l.exact) };
       }
     }
     const sphere = mesh.kind === 'sphere';

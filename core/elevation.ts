@@ -179,7 +179,7 @@ export function computeElevation(world: World): ElevationResult {
   for (const lake of small.lakes) {
     const c = lake.cell;
     if (!land[c]) continue;
-    const rUnits = lakeRadiusUnits(world, lake.radius);
+    const rUnits = lakeRadiusUnits(world, lake.radius, lake.exact);
     const d = graphDistance(mesh, [c], rUnits);
     const inside = (i: number) => land[i] && d[i] <= rUnits;
     let rim = Infinity;
@@ -201,16 +201,17 @@ export function computeElevation(world: World): ElevationResult {
   return { elevation, coastKm };
 }
 
-// 湖的半径（地图单位）：至少一格半，保证小湖也是一片水面
-export function lakeRadiusUnits(world: World, radiusKm: number): number {
-  return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * 1.5);
+// 湖的半径（地图单位）：旧湖至少一格半，保证小湖也是一片水面；
+// 第八轮起的新湖（exact）至少半格：半径不到一格时只淹放湖的那一格
+export function lakeRadiusUnits(world: World, radiusKm: number, exact?: boolean): number {
+  return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * (exact ? 0.5 : 1.5));
 }
 
 // 放湖后会被淹的格（预览用）：与挖洼地用同一个范围，所以预览就是结果
-export function lakeArea(world: World, cell: number, radiusKm: number): number[] {
+export function lakeArea(world: World, cell: number, radiusKm: number, exact?: boolean): number[] {
   const { mesh, causes } = world;
   if (!causes.land[cell]) return [];
-  const rUnits = lakeRadiusUnits(world, radiusKm);
+  const rUnits = lakeRadiusUnits(world, radiusKm, exact);
   const d = graphDistance(mesh, [cell], rUnits);
   const out: number[] = [];
   for (let i = 0; i < mesh.n; i++) if (causes.land[i] && d[i] <= rUnits) out.push(i);
