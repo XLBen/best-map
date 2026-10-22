@@ -7,7 +7,8 @@ import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
-import { DEFAULT_SPECIES, type Species, typeIdSchema } from './species';
+import { DEFAULT_SPECIES, type Species } from './species';
+import { typeIdSchema } from './type-id';
 
 // 世界的三类数据：
 //   原因（Causes）—— 用户通过命令编辑：陆海、抬升、岩性、气候微调、自定义场、省份归属，以及约束、河道引导等小对象

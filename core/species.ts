@@ -1,6 +1,9 @@
 import { z } from 'zod';
 // 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用本文件，顶层直接读会碰上“初始化之前不能访问”
 import { scriptsSchema } from './script';
+import { typeIdSchema } from './type-id';
+
+export { typeIdSchema };
 
 // 植被 / 地块类型完全由数据定义：每种类型对任意字段给出梯形耐受曲线。
 // min = optLow 且 optHigh = max 时退化为硬区间，“A 能在 a、b 气候生存”这类离散规则就是这个特例。
@@ -105,9 +108,6 @@ export const SPECIES_EXTENSION_KEYS = ['visual', 'effects', 'feature', 'scripts'
 
 // 生态能有的两种脚本
 export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
-
-// 生态、河流类型等的 id：两处用同一条规则（资源包里的各种类型互相引用时不会有的能用、有的不能用）
-export const typeIdSchema = z.string().regex(/^[\w-]+$/, 'id 只能包含字母、数字、下划线和连字符');
 
 export const speciesSchema = z.object({
   id: typeIdSchema,
