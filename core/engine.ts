@@ -621,6 +621,8 @@ function usesExtensions(cmd: Command): boolean {
   // 第八轮第三批：生态的外观、效果、地名、脚本、种子（补丁里写成 null 去掉的也算：旧版程序不认识这一项）
   if (cmd.op === 'add_species' && SPECIES_EXTENSION_KEYS.some((k) => (cmd.species as Record<string, unknown>)[k] !== undefined)) return true;
   if (cmd.op === 'update_species' && SPECIES_EXTENSION_KEYS.some((k) => k in cmd.patch)) return true;
+  // 第八轮第三批：星球形态
+  if (cmd.op === 'set_worldgen' && cmd.params.form !== undefined) return true;
   return false;
 }
 

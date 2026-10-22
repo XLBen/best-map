@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 // 循环引用：species.ts 引用 script.ts 的 scriptsSchema，script.ts 经 world.ts 又引用 species.ts，
 // commands.ts 在模块顶层读 speciesSchema、script.ts 在模块顶层继承 CommandError（在 errors.ts 里）。
+// 星球形态又多了 commands.ts → generate.ts → planet-form.ts → script.ts、terrain.ts → planet-gen.ts → script.ts，
+// generate.ts 在模块顶层就要用 planetFormSchema（世界类型在不引用别的模块的 world-types.ts 里）。
 // 不管先引用哪一个模块都不能碰上“初始化之前不能访问”：每个模块都在清空的模块表里先引用一次
 
-const MODULES = ['species', 'script', 'commands', 'errors', 'world', 'engine', 'vegetation', 'constraints', 'features', 'biome-look', 'biome-scripts', 'packs/fantasy-biomes', 'names', 'provinces', 'select', 'seams'];
+const MODULES = ['species', 'script', 'commands', 'errors', 'world', 'engine', 'vegetation', 'constraints', 'features', 'biome-look', 'biome-scripts', 'packs/fantasy-biomes', 'names', 'provinces', 'select', 'seams', 'planet-form', 'generate', 'planet-gen', 'terrain', 'world-types', 'packs/fantasy-forms'];
 
 describe('引用的先后', () => {
   for (const m of MODULES) {
@@ -20,6 +22,11 @@ describe('引用的先后', () => {
       expect(Object.keys(species.speciesSchema.parse({ id: 'b' }))).toEqual(['id', 'name', 'color', 'terrain', 'competition', 'tolerances']);
       const err = new script.ScriptError({ owner: 'x', kind: 'placement', reason: 'syntax', text: 't', raw: 'r', message: 'm' });
       expect(err).toBeInstanceOf(commands.CommandError);
+      // 星球形态：worldgenSchema 顶层用到的 planetFormSchema、世界类型都已经初始化
+      const generate = await import('./generate');
+      const forms = await import('./packs/fantasy-forms');
+      expect(generate.WORLD_TYPES).toContain('inland_sea');
+      expect(generate.worldgenSchema.parse({ seed: 1, type: 'continents', form: forms.TWIN_CONTINENTS }).form?.name).toBe('双子大陆');
     });
   }
 });

@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, sampleComponents, withParams } from './generate';
 import { type V3, arc, fromUnit, localOffset, slerp, toUnit, wrapX } from './geo';
 import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, samplePlanetComponents, withPlanetParams } from './planet-gen';
+import { formDigest } from './planet-form';
+import type { ScriptIssue } from './script';
 import { type Mesh, type SphereMesh, findCell } from './mesh';
 import { clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
 import { nearestCell } from './sphere';
@@ -94,13 +96,24 @@ export function coastNoiseField(mesh: Mesh, seed: number): Float32Array {
   return f;
 }
 
+// 生成器结果的缓存键：sampleKey 变了要重新采样（只有重画变了时局部重算），shapeKey 变了要重建模型。
+// 星球形态只在有的时候才加进键里：没有形态的世界，键与以前逐字节相同
+function baseKeys(world: World): { sampleKey: string; shapeKey: string } {
+  const { mesh } = world;
+  const gen = world.small.terrain.gen;
+  const n = mesh.n;
+  const form = gen?.form ? { form: formDigest(gen.form) } : {};
+  const sampleKey = gen ? JSON.stringify({ seed: gen.seed, type: gen.type, rerolls: gen.rerolls, n, w: mesh.width, ...form }) : `blank:${n}`;
+  const shapeKey = gen ? JSON.stringify({ seed: gen.seed, type: gen.type, n, w: mesh.width, ...form }) : sampleKey;
+  return { sampleKey, shapeKey };
+}
+
 // 生成器的结果：按参数缓存。陆地比例、岛多少、山多高变化时只重新组合，不重新采样
 export function ensureBase(world: World): BaseCache {
   const { mesh } = world;
   const gen = world.small.terrain.gen;
   const n = mesh.n;
-  const sampleKey = gen ? JSON.stringify({ seed: gen.seed, type: gen.type, rerolls: gen.rerolls, n, w: mesh.width }) : `blank:${n}`;
-  const shapeKey = gen ? JSON.stringify({ seed: gen.seed, type: gen.type, n, w: mesh.width }) : sampleKey;
+  const { sampleKey, shapeKey } = baseKeys(world);
   let cache = baseCache.get(world);
   if (!cache || cache.key !== sampleKey) {
     const old = cache;
@@ -148,6 +161,19 @@ export function ensureBase(world: World): BaseCache {
   cache.seaLevel = composeBase(world, cache, composeParams(world, cache, {}), cache.landness, cache.uplift);
   cache.erod.set(comp.erod);
   return cache;
+}
+
+// 星球形态的脚本这次出的问题（布局脚本、地形脚本；出错的那一部分已按没有脚本算）。没有形态、没有问题时为空。
+// 普通的 JSON；植被那一步把它们放在 d.scriptIssues 的最前面，与生态的脚本的问题一起给界面看。
+// 只读缓存，不重新采样。缓存不是按现在的参数算的（刚从检查点恢复、地形还没重新组合过）时，地形也就
+// 没变过：照用 prev（上一次推导的 d.scriptIssues）里布局、地形两种脚本的问题
+export function planetFormIssues(world: World, prev?: readonly ScriptIssue[]): ScriptIssue[] {
+  if (!world.small.terrain.gen?.form) return [];
+  const cache = baseCache.get(world);
+  if (!cache || cache.key !== baseKeys(world).sampleKey) return (prev ?? []).filter((x) => x.kind === 'setup' || x.kind === 'crust');
+  const model = cache.model;
+  if (!model || model.kind !== 'planet') return [];
+  return [...(model.issues ?? []), ...(cache.components?.issues ?? [])];
 }
 
 // 世界的副本（预览、测试的模板）共用原世界的生成器结果，不必重新采样整个生成器。
@@ -286,7 +312,10 @@ function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough
 // 按参数组合基础的 landness 与抬升（写进 outL / outU，返回海平面）。生成世界与“调整”的预览共用
 function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Float32Array, outU: Float32Array): number {
   const comp = cache.components!;
-  const coneCount = Math.round(p.islands * cache.model!.cones.length);
+  const model = cache.model!;
+  // 星球形态的布局脚本加的岛排在最前，总是露出来；“岛多少”只增减其余的火山锥（没有形态时 fixed 为 0，与以前相同）
+  const fixed = model.kind === 'planet' ? model.fixedCones : 0;
+  const coneCount = fixed + Math.round(p.islands * (model.cones.length - fixed));
   const { coneB, coneU } = conesFor(world, cache, coneCount);
   const seaLevel = seaLevelFor(world, cache, p.landFraction, p.rough);
   const mountains = p.mountains;
