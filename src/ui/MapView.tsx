@@ -75,6 +75,8 @@ export function MapView() {
     let fittedMesh: unknown = null;
     let fittedEpoch = -1;
     let frame = 0;
+    // 改完后的闪烁每 1/20 不透明度才变一次：到那时再画，不必每一帧都画一遍
+    let flashTimer: ReturnType<typeof setTimeout> | null = null;
     let pointer: Pointer | null = null;
     // 鼠标最后停在地图上的位置：拖左侧滑块时在这里显示预览
     let lastPointer: Pointer | null = null;
@@ -269,7 +271,12 @@ export function MapView() {
       const hint = pointer && preview.hint && !sliderActive.value ? { x: pointer.sx, y: pointer.sy, text: preview.hint, warn: preview.warn } : null;
       const cur = cursorHint.value;
       if (hint?.text !== cur?.text || hint?.x !== cur?.x || hint?.y !== cur?.y || hint?.warn !== cur?.warn) cursorHint.value = hint;
-      if (flash.value) requestDraw();
+      if (flash.value && !flashTimer) {
+        flashTimer = setTimeout(() => {
+          flashTimer = null;
+          requestDraw();
+        }, 140);
+      }
     }
 
     // 世界变化：网格、矢量路径、省份标签

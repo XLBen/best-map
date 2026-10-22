@@ -1,7 +1,7 @@
 import { CircleHelp, FilePlus, FolderOpen, ImageDown, PackageOpen, Save } from 'lucide-preact';
 import { useState } from 'preact/hooks';
 import type { WorldDoc } from '../../../core/engine';
-import { type WheelPref, download, exportZip, getDoc, helpOpen, loadDoc, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
+import { type WheelPref, download, exportProgress, exportZip, getDoc, helpOpen, loadDoc, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
 import { snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
@@ -81,6 +81,7 @@ export function ActionsPanel() {
         <div class="row">
           <button
             class="primary"
+            disabled={exportProgress.value !== null}
             onClick={async () => {
               const zip = await exportZip({ width, height: Math.round(width / w.settings.aspect), seaLevelGray: 95, maxElevation: 6000 });
               if (zip) download('world-export.zip', zip, 'application/zip');

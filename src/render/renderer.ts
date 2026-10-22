@@ -108,12 +108,15 @@ uniform float uMetersPerUnit;
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oHeight;
 ${NOISE_GLSL}
-// 分形噪声：屏幕上不到两像素的那几层淡掉（全图时不闪）。pxPerUnit：p 的一个单位合多少像素
+// 分形噪声：屏幕上不到两像素的那几层淡掉（全图时不闪）。pxPerUnit：p 的一个单位合多少像素。
+// 淡到正好为 0 之后的各层都是 0（波长只会越来越短），不必再算
 float fbmFade(vec2 p, int oct, float pxPerUnit) {
   float s = 0.0; float amp = 0.5; float wl = pxPerUnit;
   for (int k = 0; k < 6; k++) {
     if (k >= oct) break;
-    s += amp * vnoise(p) * smoothstep(1.5, 4.0, wl);
+    float fade = smoothstep(1.5, 4.0, wl);
+    if (fade == 0.0) break;
+    s += amp * vnoise(p) * fade;
     p = p * 2.03 + vec2(17.1, -9.3);
     amp *= 0.5;
     wl /= 2.03;
@@ -127,6 +130,7 @@ float landDetailAt(vec2 world, vec2 dir, float relief, float h, float cellPx) {
   float gully = 0.0; float a = 0.5; vec2 f = vec2(4.0, 1.1);
   for (int k = 0; k < 3; k++) {
     float fade = smoothstep(3.0, 9.0, cellPx / f.x);
+    if (fade == 0.0) break;
     float n = vnoise(q * f + vec2(float(k) * 7.3, 1.7));
     gully += a * (1.0 - sqrt(n * n + 0.04) - 0.47) * fade;
     a *= 0.5; f *= 2.0;
@@ -148,20 +152,20 @@ void main() {
   float gm = length(vGrad);
   float relief = gm * uSpacing;
   vec2 dir = gm > 1e-3 ? vGrad / gm : vec2(1.0, 0.0);
-  float landDetail = landDetailAt(vWorld, dir, relief, h, cellPx);
-  // 细节的坡度：在右边、下边各一个像素处再算一次细节，差分出来（屏幕导数按 2×2 像素一组算，
-  // 细碎的噪声会变成一道道像素级的细线，放大后山上像一片刮痕）。
-  // 细节不像整座山那样夸张晕渲（乘 0.6）
-  float dx = landDetailAt(vWorld + vec2(uPixel, 0.0), dir, relief, h, cellPx) - landDetail;
-  float dy = landDetailAt(vWorld + vec2(0.0, uPixel), dir, relief, h, cellPx) - landDetail;
-  vec2 dDetail = vec2(dx, dy) / (uPixel * uMetersPerUnit) * 0.6;
   // 海岸线：陆海交界处约 1.2 像素宽、抗锯齿
   float coastLine = 1.0 - smoothstep(0.6, 1.8, abs(s) / max(fwidth(s), 1e-6));
-  float seaDetail = uDetail * fbmFade(vWorld / uSpacing * 1.3, 3, cellPx / 1.3) * 25.0;
   vec3 col;
   float hh;
   vec2 slope = vec2(0.0);
+  // 陆上的细节只在陆地上算、海底的细节只在海上算
   if (land) {
+    float landDetail = landDetailAt(vWorld, dir, relief, h, cellPx);
+    // 细节的坡度：在右边、下边各一个像素处再算一次细节，差分出来（屏幕导数按 2×2 像素一组算，
+    // 细碎的噪声会变成一道道像素级的细线，放大后山上像一片刮痕）。
+    // 细节不像整座山那样夸张晕渲（乘 0.6）
+    float dx = landDetailAt(vWorld + vec2(uPixel, 0.0), dir, relief, h, cellPx) - landDetail;
+    float dy = landDetailAt(vWorld + vec2(0.0, uPixel), dir, relief, h, cellPx) - landDetail;
+    vec2 dDetail = vec2(dx, dy) / (uPixel * uMetersPerUnit) * 0.6;
     col = vLandCol.rgb;
     hh = max(h + landDetail, 2.0);
     // 坡度（地图坐标，米 / 米）：大尺度用插值后的格坡度（光滑），加上细节的差分
@@ -172,6 +176,7 @@ void main() {
     // 地表纹理的轻微明暗变化
     col *= 1.0 + 0.05 * fbmFade(vWorld / uSpacing * 3.3 - 2.0, 3, cellPx / 3.3);
   } else {
+    float seaDetail = uDetail * fbmFade(vWorld / uSpacing * 1.3, 3, cellPx / 1.3) * 25.0;
     col = vSeaCol.rgb;
     hh = min(h + seaDetail, -2.0);
     // 浅水：暖海偏青绿（alpha = 海水暖度），冷海偏灰绿
@@ -390,7 +395,9 @@ float fbmFade3(vec3 p, int oct, float pxPerUnit) {
   float s = 0.0; float amp = 0.5; float wl = pxPerUnit;
   for (int k = 0; k < 6; k++) {
     if (k >= oct) break;
-    s += amp * vnoise3(p) * smoothstep(1.5, 4.0, wl);
+    float fade = smoothstep(1.5, 4.0, wl);
+    if (fade == 0.0) break;
+    s += amp * vnoise3(p) * fade;
     p = p * 2.03 + vec3(17.1, -9.3, 5.7);
     amp *= 0.5;
     wl /= 2.03;
@@ -405,6 +412,7 @@ float gullyPlane(vec2 q, vec2 d, float cellPx) {
   float gully = 0.0; float a = 0.5; vec2 f = vec2(4.0, 1.1);
   for (int k = 0; k < 3; k++) {
     float fade = smoothstep(3.0, 9.0, cellPx / f.x);
+    if (fade == 0.0) break;
     float n = vnoise(r * f + vec2(float(k) * 7.3, 1.7));
     gully += a * (1.0 - sqrt(n * n + 0.04) - 0.47) * fade;
     a *= 0.5; f *= 2.0;
@@ -444,18 +452,17 @@ void main() {
   vec3 S = vec3(cos(colat) * cos(lon), cos(colat) * sin(lon), -sin(colat));
   vec2 g2 = gm > 1e-3 ? vGrad / gm : vec2(1.0, 0.0);
   vec3 D = g2.x * E + g2.y * S;
-  float landDetail = landDetailAt3(P, D, relief, h, cellPx);
-  // 细节坡度：右边、下边各一个像素处的差分，除以那一个像素在地面上的长度（东西方向乘 cos 纬度）
-  float cosLat = max(sin(colat), 0.05);
-  float dx = landDetailAt3(sphereOf(vWorld + vec2(uPixel, 0.0)), D, relief, h, cellPx) - landDetail;
-  float dy = landDetailAt3(sphereOf(vWorld + vec2(0.0, uPixel)), D, relief, h, cellPx) - landDetail;
-  vec2 dDetail = vec2(dx / cosLat, dy) / (uPixel * uMetersPerUnit) * 0.6;
   float coastLine = 1.0 - smoothstep(0.6, 1.8, abs(s) / max(fwidth(s), 1e-6));
-  float seaDetail = uDetail * fbmFade3(P * uNoiseK * 1.3, 3, cellPx / 1.3) * 25.0;
   vec3 col;
   float hh;
   vec2 slope = vec2(0.0);
   if (land) {
+    float landDetail = landDetailAt3(P, D, relief, h, cellPx);
+    // 细节坡度：右边、下边各一个像素处的差分，除以那一个像素在地面上的长度（东西方向乘 cos 纬度）
+    float cosLat = max(sin(colat), 0.05);
+    float dx = landDetailAt3(sphereOf(vWorld + vec2(uPixel, 0.0)), D, relief, h, cellPx) - landDetail;
+    float dy = landDetailAt3(sphereOf(vWorld + vec2(0.0, uPixel)), D, relief, h, cellPx) - landDetail;
+    vec2 dDetail = vec2(dx / cosLat, dy) / (uPixel * uMetersPerUnit) * 0.6;
     col = vLandCol.rgb;
     hh = max(h + landDetail, 2.0);
     slope = vGrad / uMetersPerUnit + dDetail;
@@ -463,6 +470,7 @@ void main() {
     col = mix(col, vec3(0.86, 0.80, 0.62), beach * 0.75);
     col *= 1.0 + 0.05 * fbmFade3(P * uNoiseK * 3.3 - 2.0, 3, cellPx / 3.3);
   } else {
+    float seaDetail = uDetail * fbmFade3(P * uNoiseK * 1.3, 3, cellPx / 1.3) * 25.0;
     col = vSeaCol.rgb;
     hh = min(h + seaDetail, -2.0);
     float depth = -hh;

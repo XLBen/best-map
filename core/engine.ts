@@ -8,7 +8,7 @@ import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain } from './terrain';
-import { type Causes, type Derived, type Settings, type World, createWorld, emptyDerived, settingsSchema } from './world';
+import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
 //   高程 → 气候（基础）→ [约束求解 → 修正场] → 水文 → 植被 → 冲突检查
@@ -50,6 +50,18 @@ interface DoneStep {
   state?: DerivedState;
 }
 
+// 检查点：引擎的完整状态（原因、推导、历史）。存进浏览器后，打开时直接恢复，不必重放所有命令
+export interface Checkpoint {
+  settings: Settings;
+  causes: Causes;
+  small: SmallState;
+  derived: Derived;
+  base: ClimateBase | null;
+  solve: SolveResult;
+  done: Omit<DoneStep, 'state'>[];
+  timings: Timings;
+}
+
 interface UndoneStep {
   cmd: Command;
   summary: string;
@@ -73,6 +85,8 @@ export class Engine {
   private recomputed: Dirty = Dirty.None;
   // 最近一次 exec 什么都没改（比如在陆地上画陆地）：不重算、不进历史
   lastNoop = false;
+  // 识别地物（起名）。向导的缩略图用不着，关掉省时间
+  features = true;
   // 最近一次确切预览算好的副本：紧接着执行同一条命令时直接采用，不再重算（画河改道松手时）
   private lastPreview: { key: string; copy: Engine } | null = null;
   lastTimings: Timings = { total: 0 };
@@ -296,7 +310,7 @@ export class Engine {
     }
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
-    d.features = detectFeatures(w, d);
+    if (this.features) d.features = detectFeatures(w, d);
     lap('features');
     timings.total = performance.now() - t0;
     this.lastTimings = timings;
@@ -308,12 +322,59 @@ export class Engine {
     return { format: 'map2-world', version: this.world.settings.globe ? 3 : 2, settings: this.world.settings, commands: this.done.map((h) => h.cmd) };
   }
 
+  stepIds(): number[] {
+    return this.done.map((h) => h.id);
+  }
+
   // 自动保存：savedIds 是已存的步的编号。返回与它相同的前缀之后的命令（撤销、换一个只改动最后几步）
   docTail(savedIds: number[]): DocTail {
     let from = 0;
     while (from < savedIds.length && from < this.done.length && savedIds[from] === this.done[from].id) from++;
     const { commands: _, ...head } = this.toDoc();
     return { ...head, from, commands: this.done.slice(from).map((h) => h.cmd), ids: this.done.map((h) => h.id) };
+  }
+
+  // 检查点（引用当前的数组，调用方要立即复制，比如存进 IndexedDB 时的结构化克隆）。重做的步不存：与重放一致
+  toCheckpoint(): Checkpoint {
+    this.update();
+    const w = this.world;
+    return { settings: w.settings, causes: w.causes, small: w.small, derived: w.derived, base: this.base, solve: this.solve, done: this.done.map(({ state: _, ...h }) => h), timings: this.lastTimings };
+  }
+
+  // 从检查点恢复，再对齐到存档的命令：共同的前缀之后，检查点多出来的步撤掉，存档多出来的命令执行。
+  // 与从头重放逐值一致（撤销、执行都与重放逐值一致）。设置不同或没有共同的前缀时返回 null（改用重放）
+  static fromCheckpoint(cp: Checkpoint, doc: WorldDoc, mesh: Mesh): Engine | null {
+    const settings = settingsSchema.parse(doc.settings);
+    if (JSON.stringify(settings) !== JSON.stringify(cp.settings)) return null;
+    let p = 0;
+    while (p < cp.done.length && p < doc.commands.length && JSON.stringify(cp.done[p].cmd) === JSON.stringify(doc.commands[p])) p++;
+    if (p === 0) return null;
+    // 不经过构造函数（它要为空白世界组合一遍地形）
+    const e = Object.create(Engine.prototype) as Engine;
+    e.world = { settings, mesh, kmPerUnit: kmPerUnit(settings), causes: cp.causes, small: cp.small, derived: cp.derived };
+    e.base = cp.base;
+    e.solve = cp.solve;
+    e.dirty = Dirty.None;
+    e.done = cp.done.map((h) => ({ ...h }));
+    e.undone = [];
+    e.kept = [];
+    e.undoCache = mesh.n > 60000 ? 2 : 3;
+    e.seq = Math.max(0, ...cp.done.map((h) => h.id));
+    e.recomputed = Dirty.Elevation;
+    e.lastNoop = false;
+    e.lastPreview = null;
+    e.features = true;
+    e.lastTimings = cp.timings;
+    while (e.done.length > p) e.revertLast();
+    for (let k = p; k < doc.commands.length; k++) {
+      try {
+        e.applyOnly(doc.commands[k]);
+      } catch (err) {
+        throw new CommandError(`第 ${k + 1} 条命令失败：${(err as Error).message}`);
+      }
+    }
+    e.update();
+    return e;
   }
 
   static fromDoc(doc: WorldDoc, mesh?: Mesh): Engine {
@@ -378,6 +439,7 @@ export class Engine {
     e.recomputed = Dirty.None;
     e.lastNoop = false;
     e.lastPreview = null;
+    e.features = this.features;
     e.lastTimings = this.lastTimings;
     return e;
   }

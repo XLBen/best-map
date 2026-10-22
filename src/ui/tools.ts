@@ -36,6 +36,7 @@ import {
   focusSpecies,
   lakeRange,
   measure,
+  onlyEditsPending,
   options,
   previewCommand,
   redrawTick,
@@ -98,7 +99,18 @@ const mapDist = (w: World, ax: number, ay: number, bx: number, by: number) => (w
 const keepX = (w: World, x: number) => (w.mesh.kind === 'sphere' ? wrapX(x) : x);
 // 整个星球：圈绕着极点（在平铺图上圈不住任何地方）
 const aroundPole = (w: World, ring: [number, number][]) => w.mesh.kind === 'sphere' && ringWinding(ring) !== 0;
-const isBusy = () => busy.value !== null;
+// 正在计算时按下：说一声，不默默地忽略
+let busyNoted = 0;
+const busyNote = () => {
+  if (performance.now() - busyNoted < 2000) return;
+  busyNoted = performance.now();
+  showToast('还在计算上一步，稍等一下');
+};
+const isBusy = () => {
+  if (busy.value === null) return false;
+  busyNote();
+  return true;
+};
 
 // 一笔：经过的格与到笔画中心线的最近归一化距离 t（0 中心，1 边缘）
 class Stroke {
@@ -143,10 +155,12 @@ interface BrushConfig {
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
 }
 
+// 画笔可以排队：前面的笔画还在算时照样能画，松手后按顺序执行，各自是一步（结果与一笔一笔等着画相同）。
+// 排队中的笔画在图上淡淡地标出来
 function brushTool(cfg: BrushConfig): ToolHandler {
   let stroke: Stroke | null = null;
   let pointer: Pointer | null = null;
-  let committing = false;
+  let queued: Stroke[] = [];
   // 小画笔（不到 4 格）悬停时描出一笔会涂到的格；格没变就沿用同一个图层，不必重新上传
   let foot: { cells: number[]; layer: HighlightLayer } | null = null;
   const footprint = (w: World, p: Pointer): HighlightLayer[] => {
@@ -159,7 +173,9 @@ function brushTool(cfg: BrushConfig): ToolHandler {
     drags: true,
     down(p) {
       const w = world.value;
-      if (!w || p.cell < 0 || isBusy() || committing) return;
+      if (!w || p.cell < 0 || stroke) return;
+      // 正在新建、打开、导出时不能画（世界可能马上换掉）；只是在算前面的编辑时可以排队
+      if (busy.value !== null && !onlyEditsPending()) return busyNote();
       const h = cfg.hint(p.shift);
       if (h.warn) {
         showToast(h.text ?? '现在不能用', true);
@@ -172,37 +188,37 @@ function brushTool(cfg: BrushConfig): ToolHandler {
     move(p, pressed) {
       pointer = p;
       const w = world.value;
-      if (pressed && stroke && w && !committing) stroke.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
+      if (pressed && stroke && w) stroke.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
     },
     async up(p) {
       const w = world.value;
       const s = stroke;
-      if (!w || !s || committing) return;
-      if (!s.t.size) {
-        stroke = null;
-        return;
-      }
-      committing = true;
+      stroke = null;
+      if (!w || !s || !s.t.size) return;
+      queued.push(s);
       try {
         await cfg.commit(w, s, p.shift);
       } finally {
-        committing = false;
-        stroke = null;
+        queued = queued.filter((q) => q !== s);
+        redrawTick.value++;
       }
     },
     cancel() {
-      if (!committing) stroke = null;
+      stroke = null;
     },
     preview() {
       const w = world.value;
       if (!w || !pointer) return EMPTY;
       const shapes: Shape[] = [{ kind: 'circle', x: pointer.x, y: pointer.y, r: brushR(w), dashed: !stroke, geodesic: true }];
+      const waiting: HighlightLayer[] = queued.map((q) => ({ cells: q.cells, color: WHITE, alpha: 0.3 }));
+      const inLine = queued.length ? `正在计算…（${queued.length} 笔）` : null;
       if (!stroke) {
         const h = cfg.hint(pointer.shift);
-        return { layers: h.warn ? [] : footprint(w, pointer), shapes, hint: h.text, warn: h.warn };
+        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes, hint: inLine ?? h.text, warn: h.warn };
       }
       const r = cfg.layers(w, stroke, pointer.shift);
-      return { layers: r.layers, shapes, hint: committing ? '正在计算…' : (r.hint ?? null), warn: r.warn };
+      // 排队时世界还没换上前面笔画的结果：只标出这一笔涂到的范围
+      return { layers: [...waiting, ...r.layers], shapes, hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn };
     },
   };
 }

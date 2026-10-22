@@ -1,5 +1,5 @@
 import { Dices, Pencil, Undo2, X } from 'lucide-preact';
-import { busy, canUndo, changeNote, toast, undo, world } from '../../state';
+import { busy, canUndo, cancelExport, changeNote, exportProgress, toast, undo, world } from '../../state';
 
 // 顶部中间的提示条：出错 > 正在计算 > 一般提示 > 改完后的一句话（带撤销、“换一个”）。
 // 只写改了什么；“28 格地势变了……”这类细节放在鼠标悬停的提示里
@@ -14,6 +14,18 @@ export function Notice() {
       <div class="notice">
         <span class="spinner" />
         {b}
+      </div>
+    );
+  }
+  const ex = exportProgress.value;
+  if (ex !== null && world.value) {
+    return (
+      <div class="notice">
+        <span class="spinner" />
+        正在导出… {Math.round(ex * 100)}%
+        <button class="pill-btn" onClick={cancelExport}>
+          取消
+        </button>
       </div>
     );
   }

@@ -19,7 +19,7 @@ import {
   planetSettings,
   settingsAt,
 } from '../../core/presets';
-import { autosaved, loadDoc, newWorld, readAutosave, thumbnails, wizardOpen, world } from '../state';
+import { autosaved, loadDoc, newWorld, readAutosave, thumbnail, wizardOpen, world } from '../state';
 import { resetTools } from './defs/tools';
 
 // 新建向导：先选一块地区还是整个星球。
@@ -132,9 +132,13 @@ export function Wizard() {
     if (!wizardOpen.value) return;
     const id = ++request.current;
     setThumbs(Array(COUNT).fill(null));
+    // 一张一张要：画好一张显示一张；选项又变了就不再要这一组剩下的
     const timer = setTimeout(async () => {
-      const out = await thumbnails(settingsOf(4000), seeds.map(genOf), THUMB_W, THUMB_H);
-      if (out && request.current === id) setThumbs(out);
+      for (let k = 0; k < COUNT && request.current === id; k++) {
+        const t = await thumbnail(settingsOf(4000), genOf(seeds[k]), THUMB_W, THUMB_H);
+        if (!t || request.current !== id) return;
+        setThumbs((prev) => prev.map((p, j) => (j === k ? t : p)));
+      }
     }, 120);
     return () => clearTimeout(timer);
   }, [kind, ptype, psize, type, size, center, base, wizardOpen.value]);

@@ -177,6 +177,7 @@ describe('球面网格', () => {
     const t2 = performance.now();
     console.log(`10 万格球面网格 ${Math.round(t1 - t0)} ms，显示三角网 ${Math.round(t2 - t1)} ms`);
     expect(big.n).toBe(100000);
-    expect(t1 - t0).toBeLessThan(3000);
+    // 只防大的退步（单独跑约 0.4 秒；和别的测试一起跑、机器忙时会慢好几倍）
+    expect(t1 - t0).toBeLessThan(10000);
   });
 });

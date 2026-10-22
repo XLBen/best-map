@@ -7,7 +7,8 @@ import type { Mesh } from '../core/mesh';
 import { viewOf } from '../core/sphere';
 import { type IslandKind, type TerrainPatch, defaultIslandKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
-import type { LightSnapshot, Request, Response, Snapshot } from './protocol';
+import { idbTx, openDb } from './idb';
+import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态
 
@@ -155,20 +156,6 @@ export interface Reference {
 }
 export const reference = signal<Reference | null>(null);
 
-// IndexedDB：'kv' 存参考图、自动保存的设置与条数；'autosave' 按序号存自动保存的每一条命令
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open('map2', 2);
-    open.onupgradeneeded = () => {
-      const db = open.result;
-      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
-      if (!db.objectStoreNames.contains('autosave')) db.createObjectStore('autosave');
-    };
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => resolve(open.result);
-  });
-}
-
 function idb<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
   return openDb().then(
     (db) =>
@@ -186,24 +173,6 @@ function idb<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBReq
   );
 }
 
-// 一个读写事务里做几件事，整个事务提交后才算成功（自动保存要么全写进去，要么都不写）
-function idbTx(run: (kv: IDBObjectStore, autosave: IDBObjectStore) => void): Promise<void> {
-  return openDb().then(
-    (db) =>
-      new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(['kv', 'autosave'], 'readwrite');
-        run(tx.objectStore('kv'), tx.objectStore('autosave'));
-        tx.oncomplete = () => {
-          resolve();
-          db.close();
-        };
-        tx.onerror = tx.onabort = () => {
-          reject(tx.error);
-          db.close();
-        };
-      }),
-  );
-}
 
 type StoredReference = Omit<Reference, 'url'>;
 
@@ -333,7 +302,15 @@ function sizesFor(w: World): Partial<ToolOptions> {
 
 let worker: Worker | null = null;
 let nextId = 1;
-const pending = new Map<number, { resolve: (r: Response) => void }>();
+// edit：改动世界的请求（执行、撤销、重做、换一个）；画笔可以在它们后面排队
+const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean }>();
+const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
+
+// 正在算的只有编辑（或不改世界的后台请求）：这时画的笔画可以排在后面，按顺序执行
+export function onlyEditsPending(): boolean {
+  for (const p of pending.values()) if (!p.edit) return false;
+  return true;
+}
 let meshCache: { key: string; mesh: Mesh } | null = null;
 
 function ensureWorker(): Worker {
@@ -355,6 +332,8 @@ function call(req: Request, label: string | null): Promise<Response> {
   if (label) busy.value = label;
   return new Promise<Response>((resolve) => {
     pending.set(id, {
+      // 不带提示的请求（预览、自动保存）不改世界，不挡排队
+      edit: EDITS.has(req.kind) || !label,
       resolve: (r) => {
         if (pending.size === 0) busy.value = null;
         resolve(r);
@@ -554,8 +533,9 @@ export type Again = { label: string; next: () => Command | null };
 
 // 执行一条编辑命令；成功后显示“改了什么”、撤销，以及能换一个时的“换一个”、额外的按钮
 export async function exec(cmd: Command, label = '正在计算…', again?: Again, action?: NoteAction): Promise<boolean> {
-  const before = world.value;
   const r = await call({ kind: 'exec', cmd }, label);
+  // 改动前的世界：排在前面的笔画已经算完、换上了，所以在回复到达时取
+  const before = world.value;
   if (r.ok && r.noop) {
     showToast('没有变化');
     return true;
@@ -578,24 +558,27 @@ function againAction(again: Again | undefined, label: string) {
 
 // 撤掉刚做的一步，换成新的命令（只重算一次，历史里只留一步）
 export async function replaceLast(cmd: Command, label = '正在计算…', again?: Again): Promise<boolean> {
-  const before = world.value;
   const r = await call({ kind: 'replaceLast', cmd }, label);
+  const before = world.value;
   const ok = await handle(r);
   if (ok && r.ok) noteChange(r.summary ?? '完成', before, againAction(again, label));
   return ok;
 }
 
+// 改动前的世界、历史都在回复到达时取：排在前面的笔画那时已经换上了
 export async function undo() {
+  const r = await call({ kind: 'undo' }, '撤销…');
   const before = world.value;
   const last = history.value.filter((h) => h.done).pop();
-  const ok = await handle(await call({ kind: 'undo' }, '撤销…'));
+  const ok = await handle(r);
   if (ok && last) noteChange(`撤销了：${last.summary}`, before, undefined, false);
 }
 
 export async function redo() {
+  const r = await call({ kind: 'redo' }, '重做…');
   const before = world.value;
   const next = history.value.find((h) => !h.done);
-  const ok = await handle(await call({ kind: 'redo' }, '重做…'));
+  const ok = await handle(r);
   if (ok && next) noteChange(`重做了：${next.summary}`, before);
 }
 
@@ -657,13 +640,50 @@ export function previewCommand(cmd: Command): Promise<PreviewResult | null> {
   });
 }
 
+// 导出：在单独的 Worker 里用主线程上的这一份世界生成（期间照样能看、能改地图），进度显示在顶部，可以取消
+export const exportProgress = signal<number | null>(null);
+let exporting: { worker: Worker; done: (zip: Uint8Array | null) => void } | null = null;
+
 export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null> {
-  const r = await call({ kind: 'export', opts }, '正在导出…');
-  if (!r.ok) {
-    showToast(r.error, true);
-    return null;
-  }
-  return r.zip ?? null;
+  const w = world.value;
+  const doc = await getDoc();
+  if (!w || !doc) return null;
+  cancelExport();
+  const worker = new Worker(new URL('./export-worker.ts', import.meta.url), { type: 'module' });
+  exportProgress.value = 0;
+  return new Promise((resolve) => {
+    const job = {
+      worker,
+      done: (zip: Uint8Array | null) => {
+        worker.terminate();
+        if (exporting === job) {
+          exporting = null;
+          exportProgress.value = null;
+        }
+        resolve(zip);
+      },
+    };
+    exporting = job;
+    worker.onmessage = (ev: MessageEvent<ExportReply>) => {
+      const r = ev.data;
+      if ('progress' in r) {
+        if (exporting === job) exportProgress.value = r.progress;
+        return;
+      }
+      if (!r.ok) showToast(r.error, true);
+      job.done(r.ok ? r.zip : null);
+    };
+    worker.onerror = () => {
+      showToast('导出失败', true);
+      job.done(null);
+    };
+    const msg: ExportJob = { settings: w.settings, causes: w.causes, small: w.small, derived: w.derived, doc, opts };
+    worker.postMessage(msg);
+  });
+}
+
+export function cancelExport() {
+  exporting?.done(null);
 }
 
 export async function getDoc(): Promise<WorldDoc | null> {
@@ -671,13 +691,13 @@ export async function getDoc(): Promise<WorldDoc | null> {
   return r.ok ? (r.doc ?? null) : null;
 }
 
-export async function thumbnails(settings: Partial<Settings>, gens: WorldgenInput[], width: number, height: number): Promise<Uint8ClampedArray[] | null> {
-  const r = await call({ kind: 'thumbs', settings, gens, width, height }, null);
+export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput, width: number, height: number): Promise<Uint8ClampedArray | null> {
+  const r = await call({ kind: 'thumb', settings, gen, width, height }, null);
   if (!r.ok) {
     showToast(r.error, true);
     return null;
   }
-  return r.thumbs ?? null;
+  return r.thumb ?? null;
 }
 
 export function download(name: string, data: Uint8Array | string | Blob, type: string) {
@@ -729,7 +749,8 @@ async function autosave() {
   try {
     if (savedCount < 0) savedCount = ((await idb<AutosaveMeta | undefined>('readonly', (s) => s.get('autosave')))?.count ?? 0) as number;
     const stale = savedCount;
-    await idbTx((kv, store) => {
+    // 一个事务：要么全写进去，要么都不写
+    await idbTx(['kv', 'autosave'], 'readwrite', (kv, store) => {
       commands.forEach((c, k) => store.put(c, from + k));
       if (stale > meta.count) store.delete(IDBKeyRange.bound(meta.count, stale - 1));
       kv.put(meta, 'autosave');
@@ -751,6 +772,13 @@ async function autosave() {
       autosaveWarned = true;
     }
   }
+}
+
+// 页面要被隐藏、关掉：让 Worker 立即写检查点（下次打开时直接恢复，不必重放）
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && worker && world.value) void call({ kind: 'checkpoint' }, null);
+  });
 }
 
 // 读上次的自动保存：IndexedDB 与（旧版的）localStorage 里较新的那一份

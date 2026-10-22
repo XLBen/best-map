@@ -445,6 +445,19 @@ interface PlacedLabel {
 }
 let layout: { key: string; features: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[] } | null = null;
 
+// 每个字的宽度按字体缓存：平移、缩放的每一帧不必再量（字体加载完成后清空重量）
+const glyphs = new Map<string, number>();
+if (typeof document !== 'undefined') document.fonts?.addEventListener?.('loadingdone', () => glyphs.clear());
+function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): number {
+  const key = `${font}|${c}`;
+  let w = glyphs.get(key);
+  if (w === undefined) {
+    w = ctx.measureText(c).width;
+    glyphs.set(key, w);
+  }
+  return w;
+}
+
 function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
   const canvas = ctx.canvas;
   const cw = canvas.clientWidth;
@@ -481,7 +494,7 @@ function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayStat
     const chars = [...text];
     const wide = f.type === 'range' || f.type === 'continent' || f.type === 'ocean' || f.type === 'region';
     const spacing = (f.type === 'region' ? 0.3 : style.spacing) * fontPx * (wide ? 2 : 1);
-    const widths = chars.map((c) => ctx.measureText(c).width);
+    const widths = chars.map((c) => glyphWidth(ctx, font, c));
     const total = widths.reduce((a, b) => a + b, 0) + spacing * (chars.length - 1);
     // 地点：圆点落在放的位置上，字在右边
     const shift = f.type === 'spot' ? total / 2 - widths[0] / 2 : 0;

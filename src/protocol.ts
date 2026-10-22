@@ -19,12 +19,13 @@ export type Request =
   | { kind: 'previewTerrain'; patch: TerrainPatch }
   // 换一个：撤掉最后一步并执行新命令
   | { kind: 'replaceLast'; cmd: Command }
-  | { kind: 'export'; opts: ExportOptions }
   | { kind: 'doc' }
   // 自动保存：只要已存的步之后变了的命令
   | { kind: 'docTail'; ids: number[] }
-  // 新建向导：用少量格子快速生成几张缩略图
-  | { kind: 'thumbs'; settings: Partial<Settings>; gens: WorldgenInput[]; width: number; height: number };
+  // 页面要被隐藏、关掉：立即写检查点
+  | { kind: 'checkpoint' }
+  // 新建向导：用少量格子快速生成一张缩略图（一张一张要，画好一张显示一张）
+  | { kind: 'thumb'; settings: Partial<Settings>; gen: WorldgenInput; width: number; height: number };
 
 export interface Snapshot {
   settings: Settings;
@@ -49,6 +50,18 @@ export interface LightSnapshot {
   timings: Timings;
 }
 
+// 导出 Worker：一次导出一个世界；进度消息之后是结果
+export interface ExportJob {
+  settings: Settings;
+  causes: Causes;
+  small: SmallState;
+  derived: Derived;
+  doc: WorldDoc;
+  opts: ExportOptions;
+}
+
+export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array } | { ok: false; error: string };
+
 export type Response =
   | {
       id: number;
@@ -59,9 +72,8 @@ export type Response =
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
       terrain?: TerrainPreview;
-      zip?: Uint8Array;
       doc?: WorldDoc;
       tail?: DocTail;
-      thumbs?: Uint8ClampedArray[];
+      thumb?: Uint8ClampedArray;
     }
   | { id: number; ok: false; error: string };

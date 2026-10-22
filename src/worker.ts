@@ -1,11 +1,11 @@
 /// <reference lib="webworker" />
 import { Dirty } from '../core/commands';
-import { Engine } from '../core/engine';
-import { exportPackage } from '../core/export';
-import { previewTerrain } from '../core/terrain';
+import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
+import { previewTerrain, resolveTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
 import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
+import { idbGet, idbTx } from './idb';
 import type { LightSnapshot, Request, Response, Snapshot } from './protocol';
 
 // 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程
@@ -83,8 +83,49 @@ function reply(msg: Response, transfer: Transferable[] = []) {
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
 }
 
-self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
-  const { id, req } = ev.data;
+// ---------- 检查点：存进 IndexedDB，打开上次的世界时直接恢复 ----------
+// 只在打包好的程序里用：Worker 文件名带内容哈希，代码一变就不会用上旧的检查点（开发时文件名不变，不用）
+const BUILD = import.meta.env.DEV ? null : import.meta.url;
+let ckKey = '';
+let ckAt = -Infinity;
+let ckTimer: ReturnType<typeof setTimeout> | null = null;
+
+// 写检查点（星球约 34 MB）：最多每 10 秒一次，最后一次改动之后也会补写；force：页面要被隐藏、关掉时立即写
+function writeCheckpoint(force = false) {
+  if (!BUILD || !engine) return;
+  const key = engine.stepIds().join(',');
+  if (key === ckKey) return;
+  const wait = ckAt + 10000 - performance.now();
+  if (!force && wait > 0) {
+    if (!ckTimer) ckTimer = setTimeout(() => ((ckTimer = null), queue(async () => writeCheckpoint(true))), wait);
+    return;
+  }
+  ckKey = key;
+  ckAt = performance.now();
+  // put 时就复制了数据（结构化克隆），之后的改动不影响；写盘在后台进行
+  void idbTx(['checkpoint'], 'readwrite', (s) => s.put({ build: BUILD, cp: engine!.toCheckpoint() }, 'current')).catch(() => (ckKey = ''));
+}
+
+async function restore(doc: WorldDoc, mesh: Mesh): Promise<Engine | null> {
+  if (!BUILD) return null;
+  try {
+    const saved = await idbGet<{ build: string; cp: Checkpoint }>('checkpoint', 'current');
+    return saved && saved.build === BUILD ? Engine.fromCheckpoint(saved.cp, doc, mesh) : null;
+  } catch {
+    // 读不了或对不上：照旧重放
+    return null;
+  }
+}
+
+// 请求一个接一个处理（有的要等 IndexedDB）
+let chain: Promise<void> = Promise.resolve();
+function queue(run: () => Promise<void>) {
+  chain = chain.then(run);
+}
+
+self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => queue(() => handle(ev.data.id, ev.data.req));
+
+async function handle(id: number, req: Request) {
   try {
     // light：这一步只重算了名字（或什么都没重算）时发轻快照
     const withSnap = (summary?: string, light = false) => {
@@ -101,8 +142,17 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
         return;
       }
       case 'load': {
-        engine = Engine.fromDoc(req.doc, meshFor(req.doc.settings));
+        const mesh = meshFor(req.doc.settings);
+        const restored = await restore(req.doc, mesh);
+        engine = restored ?? Engine.fromDoc(req.doc, mesh);
         withSnap('已打开世界文件');
+        if (restored) {
+          ckKey = restored.stepIds().join(',');
+          // 恢复的世界还没有地形底图的缓存：先发快照让地图显示出来，再在后台补上（下一次改地形就不必等）
+          queue(async () => {
+            if (engine === restored) resolveTerrain(restored.world);
+          });
+        }
         return;
       }
       case 'exec': {
@@ -129,30 +179,28 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
       case 'replaceLast':
         withSnap(engine!.replaceLast(req.cmd), true);
         return;
-      case 'export': {
-        const r = exportPackage(engine!.world, engine!.toDoc(), req.opts);
-        reply({ id, ok: true, zip: r.zip }, [r.zip.buffer as ArrayBuffer]);
-        return;
-      }
       case 'doc':
         reply({ id, ok: true, doc: engine!.toDoc() });
         return;
       case 'docTail':
         reply({ id, ok: true, tail: engine!.docTail(req.ids) });
+        writeCheckpoint();
         return;
-      case 'thumbs': {
-        const thumbs: Uint8ClampedArray[] = [];
-        const mesh = meshFor({ ...req.settings, cells: 4000 });
-        for (const gen of req.gens) {
-          const e = new Engine({ ...req.settings, cells: 4000 }, mesh);
-          e.exec({ op: 'set_worldgen', params: gen, reset: true });
-          thumbs.push(renderThumbnail(e.world, req.width, req.height));
-        }
-        reply({ id, ok: true, thumbs }, thumbs.map((t) => t.buffer as ArrayBuffer));
+      case 'checkpoint':
+        writeCheckpoint(true);
+        reply({ id, ok: true });
+        return;
+      case 'thumb': {
+        const settings = { ...req.settings, cells: 4000 };
+        const e = new Engine(settings, meshFor(settings));
+        e.features = false;
+        e.exec({ op: 'set_worldgen', params: req.gen, reset: true });
+        const thumb = renderThumbnail(e.world, req.width, req.height);
+        reply({ id, ok: true, thumb }, [thumb.buffer as ArrayBuffer]);
         return;
       }
     }
   } catch (e) {
     reply({ id, ok: false, error: (e as Error).message });
   }
-};
+}
