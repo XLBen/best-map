@@ -24,7 +24,8 @@ import { renderThumbnail } from './thumbnail';
 
 // 导出的栅格化（subcell.ts）、导出文件（export.ts）、缩略图（thumbnail.ts）提速后结果逐位不变。
 // 下面记下的摘要由提速前的代码（提交 c6f1444 的这三个文件）跑同一个 digests() 得到；
-// 以后有意改变导出结果时才更新（RECORD_RASTER=1 时打印当前的摘要）
+// 以后有意改变导出结果时才更新（RECORD_RASTER=1 时打印当前的摘要）。
+// world.json 的四个值更新过一次：命令里记下了新起的省名（provinceNames），图片与表格不变
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -120,7 +121,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 provinces_summary.csv': '4e986108b66ea36a',
   'planet 256x128 rivers.bmp': '1654ded21249d798',
   'planet 256x128 terrain.bmp': 'e85bfd5bec2f5971',
-  'planet 256x128 world.json': 'e821cfc1ee7d631f',
+  'planet 256x128 world.json': '19d828c6dfd36c94',
   'planet 300x150 README.txt': '9999351b18cd444b',
   'planet 300x150 biomes.bmp': '29d67a76ba7bd1ea',
   'planet 300x150 cell': 'c307af33a65dcc05',
@@ -135,7 +136,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 provinces_summary.csv': '4e986108b66ea36a',
   'planet 300x150 rivers.bmp': 'b83b1eeb595910cd',
   'planet 300x150 terrain.bmp': 'fe0793175b61c5d5',
-  'planet 300x150 world.json': 'e821cfc1ee7d631f',
+  'planet 300x150 world.json': '19d828c6dfd36c94',
   'planet functions': '046cd1a5329b69d3',
   'planet thumbnail': '258f99ea81b53e5e',
   'region 256x128 README.txt': '68c576214df85e4d',
@@ -152,7 +153,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 provinces_summary.csv': '03e2084ff1e2ea8d',
   'region 256x128 rivers.bmp': '389c007c65a4eae0',
   'region 256x128 terrain.bmp': '34f14d9d36462e45',
-  'region 256x128 world.json': '498ccb7812774792',
+  'region 256x128 world.json': '630ca9a7091fdc8b',
   'region 300x150 README.txt': 'da840c3202eef74c',
   'region 300x150 biomes.bmp': '21aede5ba561ed9f',
   'region 300x150 cell': '910cd177ab45aad3',
@@ -167,7 +168,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 provinces_summary.csv': '03e2084ff1e2ea8d',
   'region 300x150 rivers.bmp': '5d29b993c3ad1fdb',
   'region 300x150 terrain.bmp': '3aa4561697db356a',
-  'region 300x150 world.json': '498ccb7812774792',
+  'region 300x150 world.json': '630ca9a7091fdc8b',
   'region functions': 'f1d277296d3fa77f',
   'region thumbnail': '3a40a55f5f5415b3',
 };

@@ -85,7 +85,7 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
   const live = new Int32Array(S);
   let nLive = 0;
   let ri = 0;
-  // 本次试算的气候字段（与 climateFields 同一算式：只随 dT 变的部分每格按 dT 存一份）
+  // 本次试算的气候字段（与 core/climate.ts 的 summarize 同一算式，改那里时这里也要改：只随 dT 变的部分每格按 dT 存一份）
   const cv = new Float64Array(CLIMATE_KEYS.length);
   const tMeanT = new Float64Array(NT);
   const tWarmT = new Float64Array(NT);

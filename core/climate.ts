@@ -593,6 +593,7 @@ export function finalizeClimate(world: World, base: ClimateBase, out: Derived) {
   }
 }
 
+// 约束求解的试算（core/constraints.ts）写了同一套算式，改这里时那里也要改
 export function summarize(out: Derived, i: number, tS: number, tW: number, pS: number, pW: number) {
   out.tMean[i] = (tS + tW) / 2;
   const summerWarm = tS >= tW;
@@ -605,23 +606,6 @@ export function summarize(out: Derived, i: number, tS: number, tW: number, pS: n
   out.pet[i] = petHalf(tS) + petHalf(tW);
   // 蒸散分母设下限：极寒处 PET 趋近 0，湿润指数会变得没有意义的大
   out.moisture[i] = out.precip[i] / Math.max(out.pet[i], 120);
-}
-
-// 由一组季节值算出与 summarize 相同的字段，供约束求解试算
-export function climateFields(tS: number, tW: number, pS: number, pW: number) {
-  const summerWarm = tS >= tW;
-  const pWarm = summerWarm ? pS : pW;
-  const pCold = summerWarm ? pW : pS;
-  const precip = pS + pW;
-  const pet = Math.max(petHalf(tS) + petHalf(tW), 120);
-  return {
-    tMean: (tS + tW) / 2,
-    tWarm: summerWarm ? tS : tW,
-    tCold: summerWarm ? tW : tS,
-    precip,
-    seasonality: (pWarm - pCold) / (pWarm + pCold + 1),
-    moisture: precip / pet,
-  };
 }
 
 export interface Flow {
