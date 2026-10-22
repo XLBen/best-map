@@ -12,22 +12,10 @@ export class MinHeap {
     this.order = new Float64Array(capacity);
   }
 
-  private less(a: number, b: number): boolean {
-    const ka = this.keys[a];
-    const kb = this.keys[b];
-    return ka < kb || (ka === kb && this.order[a] < this.order[b]);
-  }
-
-  private swap(a: number, b: number) {
-    const i = this.items[a];
-    this.items[a] = this.items[b];
-    this.items[b] = i;
-    const k = this.keys[a];
-    this.keys[a] = this.keys[b];
-    this.keys[b] = k;
-    const o = this.order[a];
-    this.order[a] = this.order[b];
-    this.order[b] = o;
+  // 清空后重新使用（缓冲区留着）
+  clear() {
+    this.size = 0;
+    this.counter = 0;
   }
 
   push(item: number, key: number) {
@@ -41,38 +29,63 @@ export class MinHeap {
       this.keys = grow(this.keys) as Float64Array;
       this.order = grow(this.order) as Float64Array;
     }
+    const items = this.items;
+    const keys = this.keys;
+    const order = this.order;
+    // 上浮（空位法，与逐层交换的结果相同）。新元素的入堆序号最大，优先级相同时不会排到父节点前面
     let i = this.size++;
-    this.items[i] = item;
-    this.keys[i] = key;
-    this.order[i] = this.counter++;
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (!this.less(i, p)) break;
-      this.swap(i, p);
+      if (!(key < keys[p])) break;
+      items[i] = items[p];
+      keys[i] = keys[p];
+      order[i] = order[p];
       i = p;
     }
+    items[i] = item;
+    keys[i] = key;
+    order[i] = this.counter++;
   }
 
   // 返回堆顶元素；调用前需保证 size > 0
   pop(): number {
-    const top = this.items[0];
-    this.lastKey = this.keys[0];
-    this.size--;
-    if (this.size > 0) {
-      this.items[0] = this.items[this.size];
-      this.keys[0] = this.keys[this.size];
-      this.order[0] = this.order[this.size];
+    const items = this.items;
+    const keys = this.keys;
+    const order = this.order;
+    const top = items[0];
+    this.lastKey = keys[0];
+    const size = --this.size;
+    if (size > 0) {
+      // 末尾元素从堆顶下沉（空位法）：每层换上更小的子节点（优先级小的在前，相同时先入堆的在前）
+      const item = items[size];
+      const key = keys[size];
+      const ord = order[size];
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
         const r = l + 1;
         let m = i;
-        if (l < this.size && this.less(l, m)) m = l;
-        if (r < this.size && this.less(r, m)) m = r;
+        let km = key;
+        let om = ord;
+        if (l < size && (keys[l] < km || (keys[l] === km && order[l] < om))) {
+          m = l;
+          km = keys[l];
+          om = order[l];
+        }
+        if (r < size && (keys[r] < km || (keys[r] === km && order[r] < om))) {
+          m = r;
+          km = keys[r];
+          om = order[r];
+        }
         if (m === i) break;
-        this.swap(i, m);
+        items[i] = items[m];
+        keys[i] = km;
+        order[i] = om;
         i = m;
       }
+      items[i] = item;
+      keys[i] = key;
+      order[i] = ord;
     }
     return top;
   }
