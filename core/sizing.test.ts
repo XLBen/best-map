@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { hashArray } from '../tools/hash';
 import { Engine } from './engine';
+import { hashString } from './names';
 import { buildMesh } from './mesh';
-import { ISLAND_KINDS, defaultIslandKm, islandSizeRangeKm, islandStamp, previewTerrain, resolveTerrain } from './terrain';
+import { buildSphereMesh } from './sphere';
+import { ISLAND_KINDS, chainIslands, combineStamps, defaultIslandKm, islandSizeRangeKm, islandStamp, previewTerrain, resolveTerrain } from './terrain';
 import { createWorld } from './world';
 
 // 第三轮：岛的大小连续可调（旧存档照旧逐值重放）；“调整”面板拖滑块时的预览就是松手后的结果
@@ -127,6 +129,74 @@ describe('岛的大小', () => {
     other.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'volcanic', size: r, variant: 1 } });
     expect(hashArray(eng.world.causes.land)).toBe(hashArray(other.world.causes.land));
     expect(hashArray(eng.world.derived.elevation)).toBe(hashArray(other.world.derived.elevation));
+  });
+});
+
+describe('放岛只在岛的附近找格', () => {
+  it('结果与原来的全图扫描逐值相同（地图边上、接缝、高纬度）', () => {
+    // 哈希来自第八轮改动前（全图扫描）的代码
+    const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
+    planet.small.terrain.gen = { seed: 1, type: 'archipelago', mountains: 1, rerolls: [] };
+    resolveTerrain(planet);
+    const land = createWorld({ cells: mesh.n, seed: 1 }, mesh);
+    land.small.terrain.gen = { seed: 2, type: 'archipelago', mountains: 1, rerolls: [] };
+    resolveTerrain(land);
+    const got: Record<string, string> = {};
+    for (const [name, w, spots] of [
+      ['海洋', ocean(1.8), [[0.5, 0.5], [0.004, 0.3], [1.996, 0.97], [1.2, 0.01]]],
+      ['群岛', land, [[0.7, 0.4], [1.5, 0.6], [0.01, 0.99]]],
+      ['星球', planet, [[1.0, 0.45], [1.9995, 0.45], [0.6, 0.04], [0.3, 0.97]]],
+    ] as const) {
+      const cellKm = w.mesh.spacing * w.kmPerUnit;
+      const parts: string[] = [];
+      for (const kind of ['volcanic', 'continental', 'low', 'atoll'] as const) {
+        for (const size of ['small', 'medium', 'large', 1.5, 2, 5, 14] as const) {
+          spots.forEach(([x, y], k) => {
+            const s = islandStamp(w, { x, y, kind, size: typeof size === 'number' ? cellKm * size : size, variant: k });
+            parts.push([hashArray(s.cells), hashArray(s.landDelta), hashArray(s.upliftDelta), hashArray(s.footprint)].join(','));
+          });
+        }
+      }
+      got[name] = `${hashString(parts.join('|')).toString(16)} ${parts.length}`;
+    }
+    expect(got).toEqual({ 星球: 'a78536e2 112', 海洋: '1d1e0513 112', 群岛: 'be9362d4 84' });
+  });
+});
+
+describe('岛链的下限冻结', () => {
+  it('旧存档里的数值岛链（不带 fine）照旧逐值重放', () => {
+    // 哈希来自第八轮改动前的代码：底数 0.99 × 1.5 格（旧的拖动取整后会略小于下限）、1.6 格、3 格；一块地区与整个星球
+    const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
+    planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
+    resolveTerrain(planet);
+    const got: Record<string, string> = {};
+    for (const [name, w, pts] of [
+      ['地区', ocean(), [[0.3, 0.3], [1.0, 0.5], [1.7, 0.4]]],
+      ['星球', planet, [[0.2, 0.4], [0.9, 0.55], [1.6, 0.5]]],
+    ] as const) {
+      const cellKm = w.mesh.spacing * w.kmPerUnit;
+      for (const [label, mult] of [['0.99×1.5', 0.99 * 1.5], ['1.6', 1.6], ['3', 3]] as const) {
+        for (const kind of ['volcanic', 'continental'] as const) {
+          const islands = chainIslands(w, { points: pts.map(([x, y]) => [x, y] as [number, number]), kind, size: cellKm * mult, density: 1, variant: 1 });
+          const r = combineStamps(w, islands);
+          got[`${name}|${label}|${kind}`] = [hashArray(islands.map((s) => s.size as number)), hashArray(r.cells), hashArray(r.landDelta), hashArray(r.upliftDelta), r.footprint.length].join(' ');
+        }
+      }
+    }
+    expect(got).toEqual({
+      '地区|0.99×1.5|continental': 'c547f079 a00bb7ed f60daeb4 39703c78 592',
+      '地区|0.99×1.5|volcanic': 'c547f079 e411e905 9dfbd236 2eeb0014 599',
+      '地区|1.6|continental': '6124aac0 39e90c65 fec2fee5 e3a7a09 629',
+      '地区|1.6|volcanic': '6124aac0 8c72b29d e380fd19 cc11eb7f 636',
+      '地区|3|continental': '2d639ef5 23dd75e5 20e36a14 6b332680 727',
+      '地区|3|volcanic': '2d639ef5 bfa84f75 601185d9 c1a74d25 733',
+      '星球|0.99×1.5|continental': 'ce94c8c7 bc2784d5 345f303d 5f023c75 177',
+      '星球|0.99×1.5|volcanic': 'ce94c8c7 9f6e9ebd 8b56c13c 321fec54 181',
+      '星球|1.6|continental': 'ff394bb2 23305d25 945a332a f1478350 190',
+      '星球|1.6|volcanic': 'ff394bb2 1a347c75 a89fa989 28e748e9 195',
+      '星球|3|continental': '5a89615 6351b4bd 17824cfe 1639f772 261',
+      '星球|3|volcanic': '5a89615 c9b86b25 8e2f67b3 ada37b6e 242',
+    });
   });
 });
 
