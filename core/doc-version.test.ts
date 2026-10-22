@@ -30,4 +30,10 @@ describe('docVersion', () => {
     expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
     expect(() => Engine.fromDoc({ ...doc, version: 1 as 2 }, mesh)).toThrow('旧版本');
   });
+
+  it('类型自动判断的区块（第八轮）：存成 4；只是圈地区、改类型的照旧', () => {
+    expect(docVersion({ globe: false }, [{ op: 'add_region', region: { kind: 'forest', cells: [1, 2, 3], auto: true } }])).toBe(4);
+    expect(docVersion({ globe: true }, [{ op: 'batch', commands: [{ op: 'update_region', id: 'r1', auto: false }] }])).toBe(4);
+    expect(docVersion({ globe: false }, [{ op: 'add_region', region: { kind: 'forest', cells: [1, 2, 3] } }, { op: 'update_region', id: 'r1', kind: 'plain' }])).toBe(2);
+  });
 });

@@ -25,7 +25,8 @@ import { renderThumbnail } from './thumbnail';
 // 导出的栅格化（subcell.ts）、导出文件（export.ts）、缩略图（thumbnail.ts）提速后结果逐位不变。
 // 下面记下的摘要由提速前的代码（提交 c6f1444 的这三个文件）跑同一个 digests() 得到；
 // 以后有意改变导出结果时才更新（RECORD_RASTER=1 时打印当前的摘要）。
-// world.json 的四个值更新过一次：命令里记下了新起的省名（provinceNames），图片与表格不变
+// world.json 的四个值更新过一次：命令里记下了新起的省名（provinceNames），图片与表格不变。
+// features.csv 的四个值在第八轮更新过一次：质心落在地物外面的标注改放到地物自己的格上（只有标注的坐标列变了，名字不变）
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -112,7 +113,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 cell': 'c8f4981190b1b715',
   'planet 256x128 definition.csv': '426283cc688c8c0e',
   'planet 256x128 elevation': 'e17ca7291863980f',
-  'planet 256x128 features.csv': '7ddea1046b071b34',
+  'planet 256x128 features.csv': '7f8074a5202a6f19',
   'planet 256x128 files': 'heightmap.bmp,heightmap16.png,provinces.bmp,definition.csv,provinces_summary.csv,features.csv,terrain.bmp,biomes.bmp,rivers.bmp,world.json,README.txt',
   'planet 256x128 heightmap.bmp': '64c7b8214853c5a7',
   'planet 256x128 heightmap16.png': '7416766d80e580bb',
@@ -127,7 +128,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 cell': 'c307af33a65dcc05',
   'planet 300x150 definition.csv': '426283cc688c8c0e',
   'planet 300x150 elevation': '096acb98a187eac6',
-  'planet 300x150 features.csv': '2164c06153bb7d2f',
+  'planet 300x150 features.csv': '0ffdb8552b29a8d7',
   'planet 300x150 files': 'heightmap.bmp,heightmap16.png,provinces.bmp,definition.csv,provinces_summary.csv,features.csv,terrain.bmp,biomes.bmp,rivers.bmp,world.json,README.txt',
   'planet 300x150 heightmap.bmp': 'b5dfed13e82316bb',
   'planet 300x150 heightmap16.png': '00744c60357f1206',
@@ -144,7 +145,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 cell': '01fd2ba8503e7702',
   'region 256x128 definition.csv': '2dcc4b0cb6555cc8',
   'region 256x128 elevation': '92dd6b0813e5eaa2',
-  'region 256x128 features.csv': 'e85b194cd1b0e5ae',
+  'region 256x128 features.csv': '24174a44d04d18cc',
   'region 256x128 files': 'heightmap.bmp,heightmap16.png,provinces.bmp,definition.csv,provinces_summary.csv,features.csv,terrain.bmp,biomes.bmp,rivers.bmp,world.json,README.txt',
   'region 256x128 heightmap.bmp': 'c063f3fd8bed92c3',
   'region 256x128 heightmap16.png': '0de4aea8090ea5ea',
@@ -159,7 +160,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 cell': '910cd177ab45aad3',
   'region 300x150 definition.csv': '2dcc4b0cb6555cc8',
   'region 300x150 elevation': 'd227b0cf8e4bff91',
-  'region 300x150 features.csv': 'd681e3dbbc52a0bd',
+  'region 300x150 features.csv': '04b7c431498194cf',
   'region 300x150 files': 'heightmap.bmp,heightmap16.png,provinces.bmp,definition.csv,provinces_summary.csv,features.csv,terrain.bmp,biomes.bmp,rivers.bmp,world.json,README.txt',
   'region 300x150 heightmap.bmp': '2c8d65c04b85aae2',
   'region 300x150 heightmap16.png': '048a709f9337694d',

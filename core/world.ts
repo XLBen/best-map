@@ -132,6 +132,8 @@ export const regionSchema = z.object({
   at: z.tuple([z.number(), z.number()]).optional(),
   // 自动起名的盐（“换一个”）
   salt: z.number().int().min(0).default(0),
+  // 类型按圈里现在的地形自动判断（kind 只是圈的时候判断的结果）；没有这一项为固定的类型
+  auto: z.literal(true).optional(),
 });
 export type RegionSpec = z.output<typeof regionSchema>;
 

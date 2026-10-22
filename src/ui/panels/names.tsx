@@ -44,18 +44,28 @@ function NameInput({ fkey, value, onCommit }: { fkey: string; value: string; onC
 }
 
 const AREA_KINDS = REGION_KINDS.filter((k) => k !== 'spot') as Exclude<RegionKind, 'spot'>[];
+type AreaChoice = Exclude<RegionKind, 'spot'> | 'auto';
+const KIND_CHOICES = AREA_KINDS.map((k): [AreaChoice, string] => [k, REGION_KIND_INFO[k].label]);
 
-// 用户圈的区块、放的地名：类型、名字、换一个、恢复自动、删除
+// 用户圈的区块、放的地名：类型（自动或固定）、名字、换一个、恢复自动、删除
 function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
   const r = w.small.regions.find((x) => x.id === id);
   if (!r) return null;
-  const update = (patch: { name?: string; kind?: RegionKind; reroll?: boolean }) => void exec({ op: 'update_region', id, ...patch }, '正在起名…');
+  const update = (patch: { name?: string; kind?: RegionKind; auto?: boolean; reroll?: boolean }) => void exec({ op: 'update_region', id, ...patch }, '正在起名…');
   return (
     <>
       {r.kind === 'spot' ? (
         <span class="bar-label">地点</span>
       ) : (
-        <Seg<Exclude<RegionKind, 'spot'>> value={r.kind} options={AREA_KINDS.map((k) => [k, REGION_KIND_INFO[k].label])} onChange={(k) => update({ kind: k })} />
+        // “自动”时写出现在判断成了什么；点已经选着的那一项不算一步
+        <Seg<AreaChoice>
+          value={r.auto ? 'auto' : r.kind}
+          options={[['auto', r.auto ? `自动（${featureLabel(w, f)}）` : '自动'], ...KIND_CHOICES]}
+          titles={{ auto: '按圈里的地形自动判断（涂了沙漠就变成沙漠）' }}
+          onChange={(k) => {
+            if (k !== (r.auto ? 'auto' : r.kind)) update(k === 'auto' ? { auto: true } : { kind: k });
+          }}
+        />
       )}
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v })} />
       <button class="bar-btn" onClick={() => update({ reroll: true })} title="按文字包换一个名字">
@@ -94,7 +104,7 @@ export function NamesBar() {
   const rename = (v: string) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…');
   return (
     <>
-      <span class="bar-label">{FEATURE_INFO[f.type].label}</span>
+      <span class="bar-label">{featureLabel(w, f)}</span>
       <NameInput fkey={f.key} value={f.name} onCommit={rename} />
       <button class="bar-btn" onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')} title="自动换一个名字">
         <Dices size={15} /> 换一个
