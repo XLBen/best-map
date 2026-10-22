@@ -216,6 +216,8 @@ uniform int uHasFlat;
 uniform int uHasGroup;
 uniform int uHasHighlight;
 uniform float uCellPx;
+// 每个省大约几格宽（√ 省份格数的中位数）：省界按省的大小淡出
+uniform float uProvScale;
 out vec4 oColor;
 ${NOISE_GLSL}
 int idAt(vec2 uv) {
@@ -227,12 +229,10 @@ vec4 cellTex(sampler2D tex, int id) {
 }
 // 分组值：陆地省份 = 编号 + 1（> 0），海域省份 = −(编号 + 1)（< 0），未划分 = 0，地图外 = −1e9
 float groupOf(int id) { return id < 0 ? -1e9 : cellTex(uGroup, id).r; }
-// 高亮的不透明度（解码见 colors.ts 的 highlightColors）
-float hlAlpha(int id) {
-  if (id < 0) return 0.0;
-  float A = cellTex(uHighlight, id).a * 255.0;
-  return (A > 127.5 ? A - 128.0 : A) / 127.0;
-}
+// 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors）：0 没有，1–127 平涂，128 只描边，129–255 斜线
+float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
+// 平涂、斜线的不透明度；只描边的是 0
+float hlAlpha(float A) { return A > 128.5 ? (A - 128.0) / 127.0 : A < 127.5 ? A / 127.0 : 0.0; }
 void main() {
   vec4 base = texture(uSceneColor, vUv);
   vec4 hs = texture(uSceneHeight, vUv);
@@ -287,26 +287,34 @@ void main() {
     // 陆海之间的边界已经由海岸线画出，这里只画同类之间的
     bool bx = gx > -1e8 && gx != g0 && (gx > 0.0) == (g0 > 0.0);
     bool by = gy > -1e8 && gy != g0 && (gy > 0.0) == (g0 > 0.0);
-    // 缩小到省份只有几像素宽时淡出，否则全图视角下边界会密成一张网
-    float fade = smoothstep(2.5, 7.0, uCellPx);
+    // 缩小到省份只有十几像素宽时淡出（看省有多大，不看格有多大），否则全图视角下边界会密成一张网；
+    // 格比一个像素还小时也淡出（扭曲后取到的格在像素之间乱跳，边界碎成噪点）
+    float fade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);
     if (bx || by) col = mix(col, uStyle == 1 ? vec3(0.45, 0.2, 0.15) : vec3(0.12, 0.1, 0.08), (g0 > 0.0 ? 0.55 : 0.15) * fade);
   }
 
   // 高亮与轮廓
   if (uHasHighlight == 1 && id >= 0) {
     vec4 hc = cellTex(uHighlight, id);
-    bool hatch = hc.a * 255.0 > 127.5;
-    float a0 = hlAlpha(id);
-    if (hatch) {
+    float A0 = hc.a * 255.0;
+    float a0 = hlAlpha(A0);
+    if (A0 > 128.5) {
       // 斜线：按屏幕像素画，缩放时线宽不变
       float stripe = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / 10.0));
       col = mix(col, hc.rgb, a0 * stripe);
     } else {
       col = mix(col, hc.rgb, a0);
     }
-    float ax = hlAlpha(idAt(uvW + vec2(uTexel.x * 1.5, 0.0)));
-    float ay = hlAlpha(idAt(uvW + vec2(0.0, uTexel.y * 1.5)));
-    if ((a0 > 0.05) != (ax > 0.05) || (a0 > 0.05) != (ay > 0.05)) col = mix(col, vec3(1.0), 0.9);
+    // 轮廓画在有高亮（不论多淡）与没有高亮的格之间。浓淡跟着两边较浓的一侧：0.18 以上照旧，
+    // 更淡的（闪烁淡出时、渐变的边缘）跟着一起淡，不会在中途忽然断掉；只描边的格固定 0.75
+    float Ax = hlByte(idAt(uvW + vec2(uTexel.x * 1.5, 0.0)));
+    float Ay = hlByte(idAt(uvW + vec2(0.0, uTexel.y * 1.5)));
+    bool on0 = A0 > 0.5;
+    if (on0 != (Ax > 0.5) || on0 != (Ay > 0.5)) {
+      bool lineOnly = abs(A0 - 128.0) < 0.5 || abs(Ax - 128.0) < 0.5 || abs(Ay - 128.0) < 0.5;
+      float oa = max(a0, max(hlAlpha(Ax), hlAlpha(Ay)));
+      col = mix(col, vec3(1.0), lineOnly ? 0.75 : 0.9 * min(1.0, oa / 0.18));
+    }
   }
   if (id < 0) col = vec3(0.08, 0.1, 0.14);
   oColor = vec4(col, 1.0);
@@ -577,6 +585,8 @@ export class Renderer {
   camera: Camera = { x: 1, y: 0.5, zoom: 500 };
   // 晕渲的夸张倍数（全图时）：真实的山坡很缓，不夸张就看不出起伏
   relief = 24;
+  // 每个省大约几格宽（√ 省份格数的中位数，MapView 在省份变了时算）：缩小时省界按它淡出
+  provinceScale = 1;
   // 场景（编号层、地形层）与合成画面的版本：没变就不重画
   private layersVersion = 0;
   private highlightVersion = 0;
@@ -836,7 +846,7 @@ export class Renderer {
     }
     const pp = this.planet ? this.planetProgs : null;
     const noiseK = 1 / (Math.PI * mesh.spacing);
-    const composeKey = `${sceneKey}|${this.highlightVersion}|${this.style}|${relief}`;
+    const composeKey = `${sceneKey}|${this.highlightVersion}|${this.style}|${relief}|${this.provinceScale}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -907,6 +917,7 @@ export class Renderer {
     gl.uniform1f(gl.getUniformLocation(pc, 'uSpacing'), mesh.spacing);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRelief'), relief);
     gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), mesh.spacing * cam.zoom * dpr);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uProvScale'), this.provinceScale);
     gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
     gl.uniform1i(gl.getUniformLocation(pc, 'uStyle'), this.style === 'atlas' ? 1 : 0);

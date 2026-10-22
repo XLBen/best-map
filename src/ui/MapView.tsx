@@ -3,10 +3,11 @@ import { useEffect, useRef } from 'preact/hooks';
 import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import type { World } from '../../core/world';
-import { type HighlightLayer, cellLayers, highlightColors } from '../render/colors';
+import { type HighlightLayer, cellLayers, highlightColors, provinceScale } from '../render/colors';
 import { type LabelBox, type OverlayPaths, buildPaths, drawOverlay } from '../render/overlay';
 import { Renderer } from '../render/renderer';
 import {
+  FLASH_MS,
   adjustPreview,
   cornerLift,
   cursorHint,
@@ -75,8 +76,10 @@ export function MapView() {
     let fittedMesh: unknown = null;
     let fittedEpoch = -1;
     let frame = 0;
-    // 改完后的闪烁每 1/20 不透明度才变一次：到那时再画，不必每一帧都画一遍
+    // 改完后的闪烁每 1/40 不透明度才变一次：到那时再画，不必每一帧都画一遍
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
+    // 省界淡出用的省份大小：按省份数组缓存（只改了名字时不必重数）
+    let provinceScaleFor: Int32Array | null = null;
     let pointer: Pointer | null = null;
     // 鼠标最后停在地图上的位置：拖左侧滑块时在这里显示预览
     let lastPointer: Pointer | null = null;
@@ -95,7 +98,7 @@ export function MapView() {
 
     const requestDraw = () => {
       if (frame) return;
-      frame = requestAnimationFrame(draw);
+      frame = requestAnimationFrame(() => draw());
     };
 
     const fit = () => {
@@ -109,6 +112,7 @@ export function MapView() {
         clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, true);
       }
       userMoved = false;
+      refreshPointer();
       requestDraw();
     };
 
@@ -157,13 +161,14 @@ export function MapView() {
         layers.push({ cells: ap.gained, color: [120, 205, 95], alpha: 0.8 }, { cells: ap.lost, color: [70, 150, 235], alpha: 0.8 });
         key.push(ap);
       }
+      // 改完后变化的格：淡淡地亮一下就淡出，轮廓跟着一起淡（着色器里轮廓的浓淡随填充）
       const fl = flash.value;
       if (fl) {
-        const t = (performance.now() - fl.at) / 3000;
-        const a = Math.max(0, 0.55 * (1 - t));
+        const t = (performance.now() - fl.at) / FLASH_MS;
+        const a = Math.max(0, 0.18 * (1 - t));
         // 每帧只在不透明度变化明显时更新
-        const step = Math.round(a * 20);
-        if (step > 0) layers.push({ cells: fl.cells, color: [255, 236, 120], alpha: step / 20 });
+        const step = Math.round(a * 40);
+        if (step > 0) layers.push({ cells: fl.cells, color: [255, 236, 120], alpha: step / 40 });
         key.push(fl, step);
       }
       layers.push(...preview.layers);
@@ -217,7 +222,8 @@ export function MapView() {
       img.style.cssText = `display:block;left:${x}px;top:${y}px;width:${W}px;height:${H}px;opacity:${r.opacity}`;
     }
 
-    function draw() {
+    // clean：导出图片用的干净画面——不带高亮、闪烁、工具的图形和预览、鼠标旁的话（画完由调用者再按原样重画一次）
+    function draw(clean = false) {
       frame = 0;
       const w = world.value;
       if (!w || !paths) return;
@@ -230,13 +236,18 @@ export function MapView() {
         lastPointer = { x, y, sx, sy, cell: findCell(w.mesh, x, y), shift: false, alt: false };
         handler.move?.(lastPointer, false);
       }
-      // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）
-      const showPreview = !!pointer || pressed || sliderActive.value || !!measure.value;
+      // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）；排队中的笔画鼠标离开后也留着
+      const showPreview = !clean && (!!pointer || pressed || sliderActive.value || !!measure.value || !!active().keep?.());
       const preview: Preview = showPreview ? active().preview() : { layers: [], shapes: [], hint: null };
-      const { layers, key } = highlightLayers(w, preview);
-      if (key.length !== lastHighlightKey.length || key.some((k, i) => k !== lastHighlightKey[i])) {
-        renderer.setHighlight(highlightColors(w, layers));
-        lastHighlightKey = key;
+      if (clean) {
+        renderer.setHighlight(null);
+        lastHighlightKey = [];
+      } else {
+        const { layers, key } = highlightLayers(w, preview);
+        if (key.length !== lastHighlightKey.length || key.some((k, i) => k !== lastHighlightKey[i])) {
+          renderer.setHighlight(highlightColors(w, layers));
+          lastHighlightKey = key;
+        }
       }
       renderer.style = mapStyle.value;
       renderer.render(w.kmPerUnit);
@@ -251,7 +262,7 @@ export function MapView() {
       labelBoxes = drawOverlay(ctx, w, paths, renderer.camera, {
         rivers: overlays.value.rivers,
         wind: overlays.value.wind,
-        markers: c === 'water',
+        markers: c === 'water' && !clean,
         season: season.value,
         style: mapStyle.value,
         shapes: preview.shapes,
@@ -259,7 +270,7 @@ export function MapView() {
         features: overlays.value.labels || c === 'names' ? w.derived.features : null,
         labelTypes: types,
         kmPerUnit: w.kmPerUnit,
-        hoverLabel: c === 'names' ? (hoverLabel ?? selectedFeature.value) : null,
+        hoverLabel: c === 'names' && !clean ? (hoverLabel ?? selectedFeature.value) : null,
         scaleBar: overlays.value.scale,
         cornerLift: lift,
         latitude: overlays.value.latitude
@@ -267,15 +278,17 @@ export function MapView() {
           : null,
         currents: overlays.value.currents,
       });
-      // 鼠标旁的一句话（拖滑块时由滑块旁的气泡说明，这里不显示）
-      const hint = pointer && preview.hint && !sliderActive.value ? { x: pointer.sx, y: pointer.sy, text: preview.hint, warn: preview.warn } : null;
+      if (clean) return;
+      // 鼠标旁的一句话（拖滑块时一般由滑块上的数说明，这里不显示；画笔在鼠标最后停的地方预览涂一下时，写在那里）
+      const at = sliderActive.value ? (preview.sliderHint ? lastPointer : null) : pointer;
+      const hint = at && preview.hint ? { x: at.sx, y: at.sy, text: preview.hint, warn: preview.warn } : null;
       const cur = cursorHint.value;
       if (hint?.text !== cur?.text || hint?.x !== cur?.x || hint?.y !== cur?.y || hint?.warn !== cur?.warn) cursorHint.value = hint;
       if (flash.value && !flashTimer) {
         flashTimer = setTimeout(() => {
           flashTimer = null;
           requestDraw();
-        }, 140);
+        }, 100);
       }
     }
 
@@ -295,6 +308,10 @@ export function MapView() {
       if (pathsFor !== w.derived.discharge) {
         paths = buildPaths(w);
         pathsFor = w.derived.discharge;
+      }
+      if (provinceScaleFor !== w.causes.province) {
+        renderer.provinceScale = provinceScale(w.causes.province);
+        provinceScaleFor = w.causes.province;
       }
       if (w.mesh.kind === 'sphere') {
         // 整个星球：经度取圆周平均，跨过经度 180° 的省份名字也落在省份上
@@ -388,16 +405,29 @@ export function MapView() {
     let clickStart: { sx: number; sy: number } | null = null;
     let spaceDown = false;
 
-    const pointerOf = (e: PointerEvent | MouseEvent): Pointer => {
-      const r = ovCanvas.getBoundingClientRect();
-      const sx = e.clientX - r.left;
-      const sy = e.clientY - r.top;
+    // 屏幕上的一点（CSS 像素，相对画布）在地图上的哪里
+    const pointerAt = (sx: number, sy: number, shift: boolean, alt: boolean): Pointer => {
       const [x, y] = renderer.screenToWorld(sx, sy);
       const w = world.value;
       // 整个星球东西相接：只看南北
       const inside = !!w && (w.mesh.kind === 'sphere' ? y >= 0 && y <= 1 : x >= 0 && y >= 0 && x <= w.mesh.width && y <= w.mesh.height);
-      return { x, y, sx, sy, cell: inside ? findCell(w!.mesh, x, y) : -1, shift: e.shiftKey, alt: e.altKey };
+      return { x, y, sx, sy, cell: inside ? findCell(w!.mesh, x, y) : -1, shift, alt };
     };
+    const pointerOf = (e: PointerEvent | MouseEvent): Pointer => {
+      const r = ovCanvas.getBoundingClientRect();
+      return pointerAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey, e.altKey);
+    };
+
+    // 镜头动了而鼠标没动（触控板平移、+ / − 和按钮缩放、看全图）：按鼠标在屏幕上的位置重新算它指着地图的哪里，
+    // 画笔圈、悬停的格跟着手。拖着平移时鼠标下始终是同一点，不必算
+    function refreshPointer() {
+      if (!pointer || panning) return;
+      const p = pointerAt(pointer.sx, pointer.sy, pointer.shift, pointer.alt);
+      pointer = p;
+      lastPointer = p;
+      if (hoverCell.value !== p.cell) hoverCell.value = p.cell;
+      active().move?.(p, pressed);
+    }
 
     const startPan = (sx: number, sy: number) => {
       panning = { x: sx, y: sy, cx: renderer.camera.x, cy: renderer.camera.y };
@@ -414,6 +444,7 @@ export function MapView() {
       c.x += wx - nx;
       c.y += wy - ny;
       if (w) clampPlanetCamera(w.mesh, c, glCanvas.clientHeight, !pressed && !panning);
+      refreshPointer();
       requestDraw();
     };
 
@@ -527,6 +558,7 @@ export function MapView() {
         const w = world.value;
         if (w) clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, !pressed);
         userMoved = true;
+        refreshPointer();
         requestDraw();
       } else zoomAt(sx, sy, Math.exp(-e.deltaY * 0.0015));
     };
@@ -589,19 +621,22 @@ export function MapView() {
     ovCanvas.addEventListener('pointerleave', onLeave);
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
-    // 给调试、截图与“导出图片”用
+    // 给调试、截图与“导出图片”用。clean（默认）：只有地图本身，不带高亮、闪烁、工具的图形和预览；
+    // 调试时 snapshot(false) 截下屏幕上看到的样子（带预览）
     (window as unknown as { __map2?: unknown }).__map2 = {
       renderer,
       requestDraw,
       world: () => world.value,
-      snapshot: () => {
-        draw();
+      snapshot: (clean = true) => {
+        draw(clean);
         const out = document.createElement('canvas');
         out.width = glCanvas.width;
         out.height = glCanvas.height;
         const o = out.getContext('2d')!;
         o.drawImage(glCanvas, 0, 0);
         o.drawImage(ovCanvas, 0, 0, out.width, out.height);
+        // 截完按原样重画（高亮在下一帧重新上传）
+        if (clean) requestDraw();
         return out;
       },
     };
@@ -627,8 +662,8 @@ export function MapView() {
   );
 }
 
-// 导出当前视图为 PNG（与屏幕上看到的一致）
+// 导出当前视图为 PNG（与屏幕上看到的地图一致，不带高亮、工具的预览）
 export function snapshotCanvas(): HTMLCanvasElement | null {
-  const hook = (window as unknown as { __map2?: { snapshot: () => HTMLCanvasElement } }).__map2;
-  return hook ? hook.snapshot() : null;
+  const hook = (window as unknown as { __map2?: { snapshot: (clean?: boolean) => HTMLCanvasElement } }).__map2;
+  return hook ? hook.snapshot(true) : null;
 }
