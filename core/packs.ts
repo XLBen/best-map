@@ -2,6 +2,7 @@ import { z } from 'zod';
 import zhCN from 'zod/v4/locales/zh-CN.js';
 import type { Command } from './commands';
 import { DEFAULT_PACK, type WordPack, packProblems as wordPackProblems, wordPackSchema } from './names';
+import { type RiverType, type RiverTypeInput, riverTypeSchema, riverTypesOf } from './river-types';
 import { type FoundScript, VARIABLES, codeOnly, findScripts } from './script';
 import { DEFAULT_SPECIES, type Species, speciesSchema } from './species';
 import type { World } from './world';
@@ -16,7 +17,7 @@ import type { World } from './world';
 // 世界自带它用到的全部内容（都在命令里），别人没有这个包也能打开。
 //
 // 河流类型、星球形态由另外两支做：这里先按“带 id 的对象”收下（原样保留），各自的校验、用到世界的命令、
-// 从世界导出、改名，由那两支在 registerPackSection 里填上（见 PACK_SECTIONS）。
+// 从世界导出、改名，由那两支在 registerPackSection 里填上（见 PACK_SECTIONS；河流类型在本文件最后注册）。
 
 export const PACK_FORMAT = 'map2-pack';
 export const PACK_VERSION = 1;
@@ -72,7 +73,7 @@ const plainItem = z.looseObject({
   color: hexColor.optional(),
 }) as unknown as z.ZodType<PackItem>;
 
-// TODO(河流类型那一支)：registerPackSection('riverTypes', {schema, inWorld, command: set_river_type, withId, fromWorld, rewrite})
+// 河流类型的校验、命令等在本文件最后注册（registerPackSection('riverTypes', …)）。
 // TODO(星球形态那一支)：registerPackSection('planetForms', {schema, fromWorld, ...})；星球形态不在这里用到世界（调整 → 星球形态）
 export const PACK_SECTIONS: Record<PackSectionKey, PackSection> = {
   riverTypes: { label: '河流', schema: plainItem, checked: true, note: '这一版还不能用河流类型' },
@@ -279,20 +280,21 @@ export function packScripts(json: unknown): FoundScript[] {
   return findScripts(json);
 }
 
-// ---------- 脚本里的引用：field('x')、river('x') ----------
+// ---------- 脚本里的引用：field('x')、river('x')、hasRiver('x') ----------
 
 const VAR_NAMES = new Set(VARIABLES.flatMap((v) => (v.zh ? [v.key, v.zh] : [v.key])));
-const CALL_RE = /(?<![\p{L}\p{N}_$.])(field|river)\s*\(/gu;
+const CALL_RE = /(?<![\p{L}\p{N}_$.])(field|river|hasRiver)\s*\(/gu;
 
 interface Ref {
-  fn: 'field' | 'river';
+  // river、hasRiver 都是引用河流类型
+  fn: 'field' | 'river' | 'hasRiver';
   name: string;
   // 名字在源码里的位置（不含引号）
   start: number;
   end: number;
 }
 
-// 源码里 field('x')、river('x') 的字面量参数（只看代码，注释里的不算；参数不是字面量的找不到，不报）
+// 源码里 field('x')、river('x')、hasRiver('x') 的字面量参数（只看代码，注释里的不算；参数不是字面量的找不到，不报）
 export function scriptRefs(src: string): Ref[] {
   const code = codeOnly(src);
   const out: Ref[] = [];
@@ -310,10 +312,10 @@ export function scriptRefs(src: string): Ref[] {
   return out;
 }
 
-// 一种生态写到的自定义场的名字：耐受条件里的 field:x，脚本里的 field('x')（内置变量的名字不算）。可能有不合规的名字
-function fieldRefs(sp: Species): string[] {
+// 一种生态（或河流类型）写到的自定义场的名字：耐受条件里的 field:x，脚本里的 field('x')（内置变量的名字不算）。可能有不合规的名字
+function fieldRefs(sp: Pick<Species, 'scripts'> & { tolerances?: Species['tolerances'] }): string[] {
   const out = new Set<string>();
-  for (const t of sp.tolerances) if (t.field.startsWith('field:')) out.add(t.field.slice(6));
+  for (const t of sp.tolerances ?? []) if (t.field.startsWith('field:')) out.add(t.field.slice(6));
   for (const s of Object.values(sp.scripts ?? {})) {
     if (!s) continue;
     for (const r of scriptRefs(s.src)) if (r.fn === 'field' && !VAR_NAMES.has(r.name)) out.add(r.name);
@@ -326,10 +328,11 @@ export function biomeFields(sp: Species): string[] {
   return fieldRefs(sp).filter((f) => ITEM_ID.test(f));
 }
 
-// 一种生态的脚本里用到的河流类型
+// 一种生态的脚本、耐受条件（river:x，“靠近某种河”）里用到的河流类型
 export function biomeRivers(sp: Species): string[] {
   const out = new Set<string>();
-  for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (r.fn === 'river') out.add(r.name);
+  for (const t of sp.tolerances) if (t.field.startsWith('river:')) out.add(t.field.slice(6));
+  for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (r.fn !== 'field') out.add(r.name);
   return [...out];
 }
 
@@ -339,20 +342,23 @@ export interface Renames {
   riverTypes: ReadonlyMap<string, string>;
 }
 
-// 把源码里 river('旧') 换成 river('新')（只换代码里的字面量）
+// 把源码里 river('旧')、hasRiver('旧') 换成新的（只换代码里的字面量）
 export function rewriteRiverRefs(src: string, rivers: ReadonlyMap<string, string>): string {
   if (!rivers.size) return src;
   let out = src;
   for (const r of scriptRefs(src).reverse()) {
-    const to = r.fn === 'river' ? rivers.get(r.name) : undefined;
+    const to = r.fn !== 'field' ? rivers.get(r.name) : undefined;
     if (to !== undefined && to !== r.name) out = out.slice(0, r.start) + to + out.slice(r.end);
   }
   return out;
 }
 
-// 生态里的引用跟着改名：侵占的目标、脚本里的 river('x')
+// 生态里的引用跟着改名：侵占的目标、脚本里的 river('x')、耐受条件里的 river:x
 function rewriteBiome(sp: Species, renames: Renames): Species {
   let out = sp;
+  if (sp.tolerances.some((t) => t.field.startsWith('river:') && (renames.riverTypes.get(t.field.slice(6)) ?? t.field.slice(6)) !== t.field.slice(6))) {
+    out = { ...out, tolerances: sp.tolerances.map((t) => (t.field.startsWith('river:') ? { ...t, field: `river:${renames.riverTypes.get(t.field.slice(6)) ?? t.field.slice(6)}` } : t)) };
+  }
   const inv = sp.effects?.invade;
   if (inv && inv.targets.some((t) => (renames.biomes.get(t) ?? t) !== t)) {
     out = { ...out, effects: { ...out.effects, invade: { ...inv, targets: inv.targets.map((t) => renames.biomes.get(t) ?? t) } } };
@@ -407,6 +413,17 @@ export function packProblems(pack: ResourcePack): string[] {
       for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
     }
     if (b.dispersal) problems.push(`${who}只在起源地附近长：起源地的格编号只对做它的那个世界有效`);
+  }
+  for (const x of pack.riverTypes ?? []) {
+    const t = x as RiverType;
+    const who = `河流类型「${t.name || t.id}」`;
+    for (const f of fieldRefs(t)) {
+      if (!ITEM_ID.test(f)) problems.push(`${who}用到了自定义场「${f}」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场`);
+      else if (!fields.has(f)) problems.push(`${who}用到了自定义场 ${f}，资源包里没有写这个场（用的时候会新加一个空的）`);
+    }
+    for (const n of t.names ?? []) {
+      for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
+    }
   }
   for (const t of pack.textPacks ?? []) problems.push(...wordPackProblems(t).map((p) => `文字包「${t.name}」：${p}`));
   return problems;
@@ -535,10 +552,11 @@ export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks)
     }
   }
 
-  // 新加的生态用到、世界里还没有的自定义场
+  // 新加的生态、河流类型用到、世界里还没有的自定义场
   const have = new Set(Object.keys(world.causes.fields));
   const fields: string[] = [];
-  for (const sp of species) for (const f of biomeFields(sp)) if (!have.has(f) && !fields.includes(f)) fields.push(f);
+  const typeFields = riverCmds.flatMap((c) => (c.op === 'set_river_type' ? fieldRefs(c.type as RiverType).filter((f) => ITEM_ID.test(f)) : []));
+  for (const f of [...species.flatMap(biomeFields), ...typeFields]) if (!have.has(f) && !fields.includes(f)) fields.push(f);
 
   const wanted = picks.textPack ? (pack.textPacks ?? []).find((t) => t.id === picks.textPack) : undefined;
   const textPack = wanted && !sameItem(wanted, world.small.wordPack) ? wanted : null;
@@ -621,3 +639,24 @@ export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMet
   if (picks.wordPack && wp) pack.textPacks = [structuredClone(wp)];
   return pack;
 }
+
+// ---------- 河流类型（第三批，见 river-types.ts） ----------
+
+// 撞 id 改名时：种子用原来的（匹配的河不变），名字带上编号（“血河 2”，最多 12 个字）
+function riverTypeWithId(item: PackItem, id: string, from: string): PackItem {
+  if (id === from) return item;
+  const t = item as unknown as RiverType;
+  const k = id.startsWith(`${from}-`) ? id.slice(from.length + 1) : '';
+  const name = t.name && k ? `${t.name.slice(0, Math.max(1, 11 - k.length))} ${k}` : t.name;
+  return { ...item, id, name, seedKey: t.seedKey ?? from };
+}
+
+registerPackSection('riverTypes', {
+  schema: riverTypeSchema as unknown as z.ZodType<PackItem>,
+  checked: true,
+  inWorld: (w) => riverTypesOf(w.small) as unknown as PackItem[],
+  command: (item) => ({ op: 'set_river_type', type: item as unknown as RiverTypeInput }),
+  withId: riverTypeWithId,
+  // 世界里的河流类型都是用户加的（没有内置的），全部能导出
+  fromWorld: (w) => riverTypesOf(w.small).map((t) => structuredClone(t)) as unknown as PackItem[],
+});

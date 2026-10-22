@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals';
+import type { ScriptKind } from '../../core/script';
 import type { Visual } from '../../core/species';
 import { flashCells, focusSpecies, sheet, world } from '../state';
 import { focusOn } from './camera';
@@ -28,8 +29,8 @@ export function previewVisual(speciesId: string, visual: Visual | null): boolean
 // 只报框里写的这一段：同一条命令里整份带着的另一段脚本、出错后换回的旧写法都不报
 // （“不运行脚本打开”别人的世界、改了其中一段时，另一段别人的脚本不能顺带被信任）。src 为 '' 表示去掉了这段。
 // before：提交之前世界上的这一段；mode：新的一步（exec）还是换掉最后一步（replace）。信任列表据此去掉
-// 同一步里被换掉的中间版本（见 trust.ts 的 trustDraft）
-export type CommittedScript = { species: string; kind: SpeciesScriptKind; src: string; before: string; mode: 'exec' | 'replace' };
+// 同一步里被换掉的中间版本（见 trust.ts 的 trustDraft）。species 是框所属的东西：生态的 id，河流类型写成 river:<id>
+export type CommittedScript = { species: string; kind: ScriptKind; src: string; before: string; mode: 'exec' | 'replace' };
 export type ScriptCommitted = (s: CommittedScript) => void;
 let committedHook: ScriptCommitted | null = null;
 

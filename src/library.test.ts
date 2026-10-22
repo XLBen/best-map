@@ -209,13 +209,13 @@ describe('信任的脚本', () => {
         version: 1,
         id: 'other',
         name: 'other',
-        riverTypes: [{ id: 'blood', scripts: { color: { api: 1, src: 'return [200, 0, 0];' } } }],
+        riverTypes: [{ id: 'blood', name: '血河', color: '#8f1414', scripts: { match: { api: 1, src: 'return 流量 > 1000;' } } }],
         planetForms: [{ id: 'ring', name: '环', scripts: { crust: { api: 1, src: 'return height;' } } }],
       }),
     );
     expect(other.ok).toBe(true);
     expect((await untrustedScripts(other.ok && other.pack)).map((s) => [s.owner, s.kind, s.src])).toEqual([
-      ['blood', 'color', 'return [200, 0, 0];'],
+      ['血河', 'match', 'return 流量 > 1000;'],
       ['环', 'crust', 'return height;'],
     ]);
   });

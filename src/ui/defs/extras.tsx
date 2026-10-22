@@ -5,6 +5,7 @@ import { UnmetPanel } from '../panels';
 // 注册表里引用的几个小部件：底部条上的当前生态、“没涂成”的提醒，工具列表下方的设置
 export { NamesBar, NamesExtras } from '../panels/names';
 export { RiverBar, RiverExtras, RiverPendingBar } from '../panels/rivers';
+export { NewRiverTypePick } from '../panels/riverTypes';
 export { ProvinceBar, ProvinceColorToggle, ProvinceExtras } from '../provincePanel';
 
 // 当前要涂的生态：点开是色板（与顶栏“生态”是同一个面板）

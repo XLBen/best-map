@@ -10,10 +10,10 @@ import { type CommittedScript, openScriptEditor, registerScriptCommitted, regist
 
 registerVisualOverride(setSpeciesVisualOverride);
 
-// 世界上（各种生态里）还用着这一段
+// 世界上（各种生态、河流类型里）还用着这一段
 function usedInWorld(src: string): boolean {
   const w = world.value;
-  return !!w && findScripts(w.small.species).some((s) => s.src === src);
+  return !!w && findScripts([w.small.species, w.small.riverTypes ?? []]).some((s) => s.src === src);
 }
 
 let draftEpoch = -1;

@@ -18,6 +18,9 @@ export interface RiverLine {
   mul?: number[];
   // 画的河（有折线的河道）：河道的 id
   guide?: string;
+  // 每个点是哪一种河（与 derived.riverType 相同：0 普通，k + 1 是第 k 种河流类型）。只在世界里有河流类型时才有；
+  // 画到别的河上的最后一点算这条河自己的类型（带类型的支流画到汇合处为止都是它的样子）
+  type?: number[];
 }
 
 // 支流从这一点接着画（画的河流到了别的河都不经过的地方：从它的线上接出去）
@@ -51,10 +54,15 @@ export function traceRivers(world: World): RiverLine[] {
   const xAt = (c: number, ref: number) => (sphere ? ref + (mesh.x[c] - ref - 2 * Math.round((mesh.x[c] - ref) / 2)) : mesh.x[c]);
   // 画的河先定下来（沿途的格算画过了）；没有画的河时什么都不做，自然的河逐位照旧
   const course = small.guides.some((g) => g.path) ? courseIndex(world, isRiver, visited) : null;
+  // 河流类型（第三批）：每个点带上是哪一种河。没有河流类型时不带（点、流量照旧逐位不变）
+  const rt = d.riverType;
   const walk = (s: number, lead?: Lead) => {
     const pts: [number, number][] = [];
     const flow: number[] = [];
     const cells: number[] = [];
+    const tags: number[] | undefined = rt ? [] : undefined;
+    // 画到别的河上的那一点：算这条河自己的类型（前一点的）
+    const own = () => (tags && tags.length ? tags[tags.length - 1] : 0);
     let c = s;
     let cx = mesh.x[s];
     // 前面接着画的线已经流过这一格：只画到这一格（与支流画到画过的格一样），不然画的河在这里断开
@@ -63,11 +71,13 @@ export function traceRivers(world: World): RiverLine[] {
       pts.push(lead.p);
       flow.push(lead.flow);
       cells.push(lead.from);
+      tags?.push(rt![lead.from]);
       cx = lead.p[0];
       if (reached) {
         pts.push([xAt(s, cx), mesh.y[s]]);
         flow.push(d.discharge[s]);
         cells.push(s);
+        tags?.push(own());
       }
     }
     for (let guard = 0; guard < n && !reached; guard++) {
@@ -75,6 +85,7 @@ export function traceRivers(world: World): RiverLine[] {
       pts.push([cx, mesh.y[c]]);
       flow.push(d.discharge[c]);
       cells.push(c);
+      tags?.push(rt![c]);
       visited[c] = 1;
       const r = d.receiver[c];
       if (r < 0) break;
@@ -83,6 +94,7 @@ export function traceRivers(world: World): RiverLine[] {
         pts.push([(cx + xAt(r, cx)) / 2, (mesh.y[c] + mesh.y[r]) / 2]);
         flow.push(d.discharge[c]);
         cells.push(c);
+        tags?.push(rt![c]);
         break;
       }
       if (!isRiver(r)) break;
@@ -91,12 +103,13 @@ export function traceRivers(world: World): RiverLine[] {
         pts.push(course?.snap(r, cx, mesh.y[c]) ?? [xAt(r, cx), mesh.y[r]]);
         flow.push(d.discharge[r]);
         cells.push(r);
+        tags?.push(own());
         break;
       }
       c = r;
     }
     if (pts.length < 2) return;
-    const line = smoothCourse(pts, flow, mesh.spacing, cells);
+    const line = smoothCourse(pts, flow, mesh.spacing, cells, tags);
     lines.push(line);
     course?.own(line);
   };
@@ -107,6 +120,7 @@ export function traceRivers(world: World): RiverLine[] {
   }
   if (!course) return lines;
   course.finish();
+  if (rt) course.tag(rt);
   // 画的河画在自然的河之后
   return [...lines, ...course.lines];
 }
@@ -240,6 +254,15 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     own(line: RiverLine) {
       line.cells!.forEach((c, k) => take(line, k, c));
     },
+    // 河流类型：每个点按它的格；汇入别的河的那一格（那条河的）按这条河自己的
+    tag(rt: Uint8Array) {
+      for (const line of lines) {
+        const L = joinCell.get(line);
+        const t: number[] = [];
+        for (const c of line.cells!) t.push(c === L && t.length ? t[t.length - 1] : rt[c]);
+        line.type = t;
+      }
+    },
     // 画的河汇入别的河：在汇合的那格里离那条河的线最近的点截住，画到那条线上
     finish() {
       for (const { line, cell } of joins) {
@@ -288,9 +311,10 @@ export function snapOnto(
 // 河道的样子：中间点加轻微的曲流，再做三遍 Chaikin 平滑。pts 是沿河的点（格心、入海口），
 // flow 是每个点的流量，spacing 是格距；cells（可省略）是每个点所在的格，平滑后每个点取离它最近的原来那点的格。
 // 自然的河、画的河、预览都用它，画出来的样子才一致。不改动传进来的数组
-export function smoothCourse(pts: readonly [number, number][], flow: number[], spacing: number, cells?: number[]): RiverLine {
+// tags（可省略）：每个点是哪一种河，平滑后与 cells 一样取原来那点的（见 RiverLine.type）
+export function smoothCourse(pts: readonly [number, number][], flow: number[], spacing: number, cells?: number[], tags?: number[]): RiverLine {
   // 三遍平滑：放大到最大（一格约 64 像素）时也看不出折角
-  return chaikin({ points: meander(pts, spacing), flow, cells }, 3);
+  return chaikin({ points: meander(pts, spacing), flow, cells, ...(tags ? { type: tags } : {}) }, 3);
 }
 
 // 画的河（有 path）的样子：存下的折线不再加曲流，只做同样的三遍平滑。固定自然的河时存的是加过曲流的点
@@ -315,27 +339,33 @@ export function meander(pts: readonly [number, number][], spacing: number): [num
 }
 
 function chaikin(line: RiverLine, iterations: number): RiverLine {
-  let { points, flow, cells } = line;
+  let { points, flow, cells, type } = line;
   for (let it = 0; it < iterations; it++) {
     if (points.length < 3) break;
     const p: [number, number][] = [points[0]];
     const f: number[] = [flow[0]];
     const t: number[] | undefined = cells ? [cells[0]] : undefined;
+    const g: number[] | undefined = type ? [type[0]] : undefined;
     for (let k = 0; k + 1 < points.length; k++) {
       const [ax, ay] = points[k];
       const [bx, by] = points[k + 1];
       p.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]);
       f.push(flow[k] * 0.75 + flow[k + 1] * 0.25, flow[k] * 0.25 + flow[k + 1] * 0.75);
       t?.push(cells![k], cells![k + 1]);
+      g?.push(type![k], type![k + 1]);
     }
     p.push(points[points.length - 1]);
     f.push(flow[flow.length - 1]);
     t?.push(cells![cells!.length - 1]);
+    g?.push(type![type!.length - 1]);
     points = p;
     flow = f;
     cells = t;
+    type = g;
   }
-  return cells ? { points, flow, cells } : { points, flow };
+  const out: RiverLine = cells ? { points, flow, cells } : { points, flow };
+  if (type) out.type = type;
+  return out;
 }
 
 // 河宽（屏幕像素，未乘缩放系数）

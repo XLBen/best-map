@@ -133,7 +133,8 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 }
 
 // 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
-export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | `cat:${Category}`;
+// rivertype：给新画的河、选中的河选是哪一种河（第三批的河流类型）
+export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | 'rivertype' | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
@@ -311,6 +312,8 @@ export interface ToolOptions {
   riverMode: 'flow' | 'course';
   // 自定义走向画到的终点还在陆地上时：顺着地势接着流，还是在那里消失
   riverEnd: 'flow' | 'sink';
+  // 新画的河是哪一种（河流类型的 id；'' 为普通的河：按各类型的规则判断）
+  riverType: string;
   // 正在涂的自定义场
   field: string | null;
   fieldMode: 'add' | 'sub';
@@ -340,6 +343,7 @@ export const options = signal<ToolOptions>({
   riverFlow: 4,
   riverMode: 'flow',
   riverEnd: 'flow',
+  riverType: '',
   field: null,
   fieldMode: 'add',
   fieldAmount: 0.25,
@@ -889,11 +893,21 @@ function scriptOfIssue(issue: ScriptIssue): { id: string; kind: SpeciesScriptKin
   const sp = world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : speciesOwner(s) === issue.owner));
   return sp && { id: sp.id, kind };
 }
+// 河流类型的 match 脚本（第三批）：出错时“编辑”打开“水系 ⋯”里这种河的编辑（见 ui/panels/riverTypes.tsx）
+export const riverTypeEditorRequest = signal<string | null>(null);
+const riverTypeOfIssue = (issue: ScriptIssue) => (issue.kind === 'match' && issue.id !== undefined ? world.value?.small.riverTypes?.find((t) => t.id === issue.id) : undefined);
 // 有没有地方可以打开它（没有时提示条上不放“编辑”）
 export function canEditScript(issue: ScriptIssue): boolean {
-  return scriptOfIssue(issue) !== undefined;
+  return scriptOfIssue(issue) !== undefined || riverTypeOfIssue(issue) !== undefined;
 }
 export function editScript(issue: ScriptIssue) {
+  const rt = riverTypeOfIssue(issue);
+  if (rt) {
+    tool.value = 'river';
+    riverTypeEditorRequest.value = rt.id;
+    openPanel.value = 'cat:water';
+    return;
+  }
   const at = scriptOfIssue(issue);
   if (!at) return;
   if (scriptEditor.open) {

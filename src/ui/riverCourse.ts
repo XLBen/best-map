@@ -380,6 +380,15 @@ function springProfile(w: World, cells: readonly number[], spring: boolean, flow
   return cells.map((_, k) => 1.2 * thr + (extra * Math.min(k + 1, body)) / body);
 }
 
+// 新画的河选的河流类型（画河工具条上选的；那种类型已经删掉了时为普通的河）
+export function chosenRiverType(w: World): { type: string } | Record<string, never> {
+  const id = options.value.riverType;
+  return id && w.small.riverTypes?.some((t) => t.id === id) ? { type: id } : {};
+}
+
+// 一条河道画出来按哪一种河流类型（预览照这种河画）
+export const riverTypeOfGuide = (w: World, g: Pick<Guide, 'type'> | null | undefined) => (g?.type ? w.small.riverTypes?.find((t) => t.id === g.type) : undefined);
+
 // 一笔画出来的河：规划、松手后执行的命令（确切预览用的也是它）、执行后这条河的样子与估计的流量
 export interface Course {
   kind: 'new' | 'splice' | 'merge';
@@ -443,6 +452,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
     carve: 'bed' as const,
     ...(plan.reroute ? inheritedName(w, plan.cells[0]) : { name: '' }),
     ...(plan.end === 'sink' ? { end: 'sink' as const } : {}),
+    ...chosenRiverType(w),
   };
   const cmd: Command = {
     op: 'add_guide',
@@ -658,7 +668,7 @@ function courseShapes(w: World, c: Course, x: PreviewResult | null, zoom: number
   }
   const flow = x?.guide && x.guide.flow.length === c.after.cells.length ? x.guide.flow : c.estimate;
   const r = courseRiver(w, line, c.after, flow);
-  if (r.points.length > 1) shapes.push({ kind: 'river', points: r.points, flow: r.flow, mul: r.mul, arrow: c.after.end !== 'sink' });
+  if (r.points.length > 1) shapes.push({ kind: 'river', points: r.points, flow: r.flow, mul: r.mul, arrow: c.after.end !== 'sink', riverType: riverTypeOfGuide(w, c.after) });
   shapes.push(...lineShapes(w, line.points, { color: WHITE_LINE, width: 1.2, dashed: true }));
   if (plan?.cut) shapes.push(...lineShapes(w, plan.cut, { color: 'rgba(205, 205, 205, 0.85)', width: 2, dashed: true }));
   const tail = line.points[line.points.length - 1];
@@ -778,7 +788,7 @@ function barPreviewShapes(w: World, b: RiverBarPreview, zoom: number): Preview {
   const flow = x?.guide && x.guide.flow.length === b.after.cells.length ? x.guide.flow : b.estimate;
   const r = courseRiver(w, line, b.after, flow);
   const shapes: Shape[] = [];
-  if (r.points.length > 1) shapes.push({ kind: 'river', points: r.points, flow: r.flow, mul: r.mul });
+  if (r.points.length > 1) shapes.push({ kind: 'river', points: r.points, flow: r.flow, mul: r.mul, riverType: riverTypeOfGuide(w, b.after) });
   if (b.after.end === 'sink' && r.points.length) {
     const [tx, ty] = r.points[r.points.length - 1];
     shapes.push(ringAt(w, tx, ty, 4 / zoom, 1.5));
@@ -834,8 +844,8 @@ export function riverTool(zoom: () => number): ToolHandler {
       return { op: 'update_guide', id: src.id, patch, label: `重画了${quoted(guideName(w, src), '一条画的河')}（约 ${flowLen(w, p)} km${where}）` };
     }
     const guide = p.reroute
-      ? { cells: p.cells, locked: true, spring: false, carve: 'bed' as const, ...inheritedName(w, p.cells[0]) }
-      : { cells: p.cells, locked: true, spring: true, flow: options.value.riverFlow, carve: 'bed' as const, name: '' };
+      ? { cells: p.cells, locked: true, spring: false, carve: 'bed' as const, ...inheritedName(w, p.cells[0]), ...chosenRiverType(w) }
+      : { cells: p.cells, locked: true, spring: true, flow: options.value.riverFlow, carve: 'bed' as const, name: '', ...chosenRiverType(w) };
     const label = `${p.reroute ? '让河改道' : '画了一条河'}（约 ${flowLen(w, p)} km${where}）`;
     return { op: 'add_guide', guide, ...(p.reroute ? { reroute: true } : {}), label };
   };
@@ -859,7 +869,10 @@ export function riverTool(zoom: () => number): ToolHandler {
         pts.map((_, k) => q[!water(w, p.cells[k]) ? k : Math.max(0, k - 1)]),
         mesh.spacing,
       );
-      shapes.push({ kind: 'river', points: line.points, flow: line.flow, color, arrow: true });
+      // 改道的是一条画的河：照它的类型画；新河照工具条上选的
+      const src = p.reroute ? sourceGuide(w, p.cells[0]) : undefined;
+      const rtype = src ? riverTypeOfGuide(w, src) : riverTypeOfGuide(w, chosenRiverType(w) as { type?: string });
+      shapes.push({ kind: 'river', points: line.points, flow: line.flow, color, arrow: true, riverType: rtype });
       shapes.push(...lineShapes(w, line.points, { color: WHITE_LINE, width: 1.2, dashed: true }));
     }
     if (p.end === 'river') shapes.push(ringAt(w, mesh.x[p.join], mesh.y[p.join], 7 / zoom(), 2));

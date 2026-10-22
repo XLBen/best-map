@@ -91,6 +91,7 @@ import {
   ProvinceExtras,
   RiverBar,
   RiverExtras,
+  NewRiverTypePick,
   RiverPendingBar,
   UnmetChip,
 } from './extras';
@@ -458,7 +459,7 @@ const defs: ToolDef[] = [
         ? [{ kind: 'custom', render: RiverPendingBar }]
         : selectedRiver.value
           ? [{ kind: 'custom', render: RiverBar }]
-          : [riverModes, ...(options.value.riverMode === 'course' ? [riverEnds] : [])],
+          : [riverModes, ...(options.value.riverMode === 'course' ? [riverEnds] : []), { kind: 'custom', render: NewRiverTypePick }],
     create: (env) => riverTool(env.zoom),
   },
   {

@@ -267,7 +267,12 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
 function AdvancedTolerances({ sp }: { sp: Species }) {
   const w = world.value!;
   const tols = advancedTolerances(sp);
-  const fields = [...BUILTIN_FIELDS, ...Object.keys(w.causes.fields).map((f) => ({ id: `field:${f}`, label: `自定义：${f}`, unit: '' }))];
+  // 河流类型的河岸场（第三批）：离这种河多近，0–1
+  const fields = [
+    ...BUILTIN_FIELDS,
+    ...Object.keys(w.causes.fields).map((f) => ({ id: `field:${f}`, label: `自定义：${f}`, unit: '' })),
+    ...(w.small.riverTypes ?? []).map((t) => ({ id: `river:${t.id}`, label: `靠近${t.name}（0–1）`, unit: '' })),
+  ];
   const others = sp.tolerances.filter((t) => !tols.includes(t));
   const save = (next: Tolerance[]) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: [...others, ...next] } }, '正在计算生态…');
   return (

@@ -54,11 +54,14 @@ describe('资源包的格式', () => {
     expect(!v2.ok && v2.errors[0]).toBe('这个资源包是第 2 版的格式，这里只认第 1 版');
     const color = readPack(JSON.stringify(pack({ biomes: [{ ...biome('a'), name: '红林', color: 'red' }] })));
     expect(!color.ok && color.errors).toEqual(['生态第 1 个「红林」的 color：颜色需为 #rrggbb']);
-    // 河流类型、星球形态（那两支注册之前）：至少是带 id 的对象，其余原样保留
+    // 河流类型按它的格式查（缺 id、缺颜色都说出来）
     const river = readPack(JSON.stringify(pack({ riverTypes: [{ name: '无名' } as never] })));
-    expect(!river.ok && river.errors).toEqual(['河流类型第 1 个「无名」的 id：缺少这一项']);
-    const kept = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'styx', name: '冥河', style: 'dashed' }] })));
-    expect(kept.ok && kept.pack.riverTypes).toEqual([{ id: 'styx', name: '冥河', style: 'dashed' }]);
+    expect(!river.ok && river.errors).toEqual(['河流类型第 1 个「无名」的 id：缺少这一项', '河流类型第 1 个「无名」的 color：缺少这一项']);
+    const kept = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }] })));
+    expect(kept.ok && kept.pack.riverTypes).toEqual([{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }]);
+    // 星球形态（那一支注册之前）：至少是带 id 的对象，其余原样保留
+    const form = readPack(JSON.stringify(pack({ planetForms: [{ id: 'f', name: '形态', anything: 1 }] })));
+    expect(form.ok && form.pack.planetForms).toEqual([{ id: 'f', name: '形态', anything: 1 }]);
   });
 
   it('记事本存的（开头带 BOM）照样能读；长短、多少不对时说人话', () => {
@@ -146,10 +149,15 @@ describe('资源包的检查（不运行脚本）', () => {
     expect(readPack(JSON.stringify(out)).ok).toBe(true);
   });
 
-  it('内置示例包：除了还没有的河流类型，没有别的问题', () => {
-    const problems = packProblems(FANTASY_PACK);
-    if (FANTASY_PACK.riverTypes?.length) expect(problems).toEqual([]);
-    else expect(problems.every((x) => x.includes('河流类型'))).toBe(true);
+  it('内置示例包：没有问题（四种河都在包里，起名模板用的词表都有）', () => {
+    expect(FANTASY_PACK.riverTypes?.map((t) => t.name)).toEqual(['血河', '晶川', '冥河', '熔岩河']);
+    expect(packProblems(FANTASY_PACK)).toEqual([]);
+    // 河流类型的模板用到了不存在的词表、不合规的场名：提醒
+    const bad = pack({ riverTypes: [{ id: 'r', name: '红河', color: '#aa0000', names: [{ p: '{nope}河' }], scripts: { match: { api: 1, src: "return field('圣地') > 0;" } } }] });
+    expect(packProblems(bad)).toEqual([
+      '河流类型「红河」用到了自定义场「圣地」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场',
+      '河流类型「红河」的起名模板“{nope}河”用到了不存在的词表 {nope}',
+    ]);
   });
 
   it('找出包里全部的脚本（信任检查用）', () => {
@@ -178,11 +186,12 @@ describe('资源包用到世界', () => {
     const cmd = applyPackCommands(w, FANTASY_PACK);
     expect(cmd.op).toBe('batch');
     expect(cmd.label).toBe('用了资源包「奇幻生态示例」');
-    expect(cmd.commands.map((c) => c.op)).toEqual(['add_field', ...FANTASY_BIOMES.map(() => 'add_species')]);
+    // 场、河流类型、生态（生态的脚本、条件要用到河流类型）
+    expect(cmd.commands.map((c) => c.op)).toEqual(['add_field', ...FANTASY_PACK.riverTypes!.map(() => 'set_river_type'), ...FANTASY_BIOMES.map(() => 'add_species')]);
     expect(cmd.commands[0]).toEqual({ op: 'add_field', name: 'holy' });
     expect(docVersion({ globe: false }, [cmd])).toBe(4);
     // 只挑一种：只加它，它不用的场不加
-    const one = planPack(w, FANTASY_PACK, { biomes: ['crystal_jungle'] });
+    const one = planPack(w, FANTASY_PACK, { biomes: ['crystal_jungle'], riverTypes: [] });
     expect(one.command.commands.map((c) => c.op)).toEqual(['add_species']);
     expect(one.fields).toEqual([]);
     // 场已经有了：不再加
@@ -227,7 +236,7 @@ describe('资源包用到世界', () => {
     eng.exec(first.command);
     const again = planPack(eng.world, FANTASY_PACK, defaultPicks(FANTASY_PACK));
     expect(again.command.commands).toEqual([]);
-    expect(again.skipped.map((s) => s.id)).toEqual(FANTASY_BIOMES.map((b) => b.id));
+    expect(again.skipped.map((s) => s.id)).toEqual([...FANTASY_BIOMES.map((b) => b.id), ...FANTASY_PACK.riverTypes!.map((t) => t.id)]);
     // 改名过的那一项也认得出来：世界里的水晶丛林换了颜色，用包时加了 crystal_jungle-2；再用一次全部跳过
     const w = fakeWorld([...structuredClone(DEFAULT_SPECIES), { ...structuredClone(FANTASY_BIOMES[0]), color: '#000000' }]);
     const p1 = planPack(w, FANTASY_PACK, defaultPicks(FANTASY_PACK));
@@ -237,10 +246,21 @@ describe('资源包用到世界', () => {
     expect(p2.skipped.find((s) => s.from === 'crystal_jungle')?.id).toBe('crystal_jungle-2');
   });
 
-  it('河流类型（那一支注册之后）：撞 id 改名，生态脚本里的 river() 跟着改', () => {
-    // 还没注册：河流类型只列出来，不进命令
+  it('河流类型：先加河流类型、再加生态；撞 id 改名，生态脚本里的 river()、hasRiver() 跟着改', () => {
+    // 注册好的：用到世界时是 set_river_type（在生态之前，生态的脚本、条件要用它）
     const p = pack({ biomes: [FANTASY_BIOMES[4]], riverTypes: [{ id: 'blood_river', name: '血河', color: '#8f1414' }] });
-    expect(planPack(fakeWorld(), p, { biomes: ['bloody_land'], riverTypes: ['blood_river'] }).command.commands.map((c) => c.op)).toEqual(['add_species']);
+    expect(PACK_SECTIONS.riverTypes.note).toBeUndefined();
+    expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.map((c) => c.op)).toEqual(['set_river_type', 'add_species']);
+    // 世界里有一种不一样的 blood_river：改叫 blood_river-2，名字带编号，种子用原来的 id
+    const w = fakeWorld();
+    (w.small as { riverTypes?: unknown }).riverTypes = [{ id: 'blood_river', name: '别的血河', color: '#000000' }];
+    const renamed = planPack(w, p, defaultPicks(p));
+    const set = renamed.command.commands[0];
+    expect(set.op === 'set_river_type' && set.type).toEqual({ id: 'blood_river-2', name: '血河 2', color: '#8f1414', seedKey: 'blood_river' });
+    const sp0 = renamed.command.commands.find((c) => c.op === 'add_species');
+    const src0 = sp0?.op === 'add_species' ? (sp0.species as Species).scripts!.placement!.src : '';
+    expect(src0).toContain("hasRiver('blood_river-2')");
+    expect(src0).toContain("river('blood_river-2')");
     registerPackSection('riverTypes', {
       inWorld: () => [{ id: 'blood_river', name: '别的血河', color: '#000000' }],
       command: (item) => ({ op: 'batch', label: `河流类型 ${item.id}`, commands: [] }),
@@ -252,6 +272,30 @@ describe('资源包用到世界', () => {
     const src = sp?.op === 'add_species' ? (sp.species as Species).scripts!.placement!.src : '';
     expect(src).toContain("river('blood_river-2')");
     expect(src).not.toContain("river('blood_river')");
+  });
+});
+
+describe('河流类型的资源包', () => {
+  it('从世界导出、读回来一模一样；用到另一个世界是同样的几种，再用一次什么都不加', () => {
+    const eng = continents();
+    const crystal = FANTASY_PACK.riverTypes![1];
+    eng.exec({ op: 'set_river_type', type: { id: 'red', name: '红河', color: '#aa0000', style: 'double', bank: { radiusKm: 120, dT: 1 }, names: [{ p: '{color}红河' }] } as never });
+    eng.exec({ op: 'set_river_type', type: crystal as never });
+    const out = packFromWorld(eng.world, { biomes: [] }, { name: '我的河' });
+    expect(out.riverTypes?.map((t) => t.id)).toEqual(['red', 'crystal_river']);
+    expect(packFromWorld(eng.world, { biomes: [], riverTypes: ['red'] }, { name: 'x' }).riverTypes?.map((t) => t.id)).toEqual(['red']);
+    const back = readPack(JSON.stringify(out));
+    expect(back.ok && back.pack).toEqual(out);
+    expect(findScripts(out).map((x) => x.path)).toEqual(['riverTypes[1].scripts.match']);
+    const other = continents({ latNorth: 25, latSouth: -25 });
+    other.exec(applyPackCommands(other.world, out));
+    expect(other.world.small.riverTypes).toEqual(eng.world.small.riverTypes);
+    expect(other.history.at(-1)!.summary).toBe('用了资源包「我的河」');
+    expect(applyPackCommands(other.world, out).commands).toEqual([]);
+    // 写错的河流类型：读的时候用中文说出在哪里
+    const bad = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'x', name: '', color: 'red' }] })));
+    expect(bad.ok).toBe(false);
+    expect(!bad.ok && bad.errors.join('；')).toContain('河流类型第 1 个「x」');
   });
 });
 
@@ -299,8 +343,24 @@ describe('内置示例包', () => {
       expect(count / land, sp.name).toBeLessThanOrEqual(0.08);
     }
     // 导出：五种示例生态与它们用到的场；导出的文件再读进来一模一样
+    // 四种河至少三种出现（冥河只能自己画），但不是大部分的河都带类型
+    const rt = w.derived.riverType!;
+    const kinds = new Set<number>();
+    let typedCells = 0;
+    let riverCells = 0;
+    for (let i = 0; i < w.mesh.n; i++) {
+      if (rt[i]) {
+        kinds.add(rt[i]);
+        typedCells++;
+      }
+      if (w.causes.land[i] && w.derived.lake[i] !== 1 && w.derived.discharge[i] >= w.small.planet.riverThreshold) riverCells++;
+    }
+    expect(kinds.size).toBeGreaterThanOrEqual(3);
+    expect(typedCells / riverCells).toBeLessThan(0.5);
+    expect(w.derived.features.some((f) => f.tags.includes('rtype:blood_river') && f.name.match(/血河|血川/))).toBe(true);
     const out = packFromWorld(w, {}, { name: '奇幻生态示例', author: 'map_2' });
     expect(out.biomes).toEqual(FANTASY_BIOMES);
+    expect(out.riverTypes).toEqual(FANTASY_PACK.riverTypes);
     expect(out.fields).toEqual(['holy']);
     const back = readPack(JSON.stringify(out, null, 2));
     expect(back.ok && back.pack).toEqual(out);

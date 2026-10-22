@@ -5,6 +5,7 @@ import type { WordPack } from './names';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
+import type { RiverType } from './river-types';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
 import { DEFAULT_SPECIES, type Species } from './species';
@@ -220,6 +221,8 @@ export interface SmallState {
   provinceRules: ProvinceRules;
   // 剪刀切省时画的线（见 seams.ts）：第一次切之前没有这一项
   provinceSeams?: ProvinceSeam[];
+  // 河流类型（第三批，见 river-types.ts）：第一次新建之前没有这一项（不在 defaultSmall 里）
+  riverTypes?: RiverType[];
 }
 
 export interface Conflict {
@@ -293,6 +296,13 @@ export interface Derived {
   look?: Uint8Array;
   // 这一次推导里出错的脚本（按没有脚本处理了；星球形态的布局、地形脚本排在最前）；普通的 JSON，不是类型数组
   scriptIssues?: ScriptIssue[];
+  // 每格是哪一种河（0 普通的河或不是河，k + 1 是 small.riverTypes 的第 k 种），见 river-types.ts 的 typeRivers。
+  // 只在世界里有河流类型时才有
+  riverType?: Uint8Array;
+  // 生态、河对周围的影响（第一遍植被之后按它算，见 effects.ts）：每格变暖变冷多少（°C）、降水的对数修正。
+  // 只在有生态带“对周围的影响”、或有河流类型带“两岸的影响”时才有
+  effT?: Float32Array;
+  effP?: Float32Array;
 }
 
 export interface World {

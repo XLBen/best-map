@@ -132,10 +132,10 @@ export const FANTASY_BIOMES: Species[] = [
       scripts: {
         placement: script(
           [
-            '// 长在血河两岸。还没有血河时（河流类型以后才有，river 为 0），长在离河近、又碰上斑块的地方',
+            '// 长在血河两岸。地图上还没有血河时，长在离河近、又碰上斑块的地方',
+            "if (hasRiver('blood_river')) return smoothstep(0.2, 0.6, river('blood_river'));",
             'const cellKm = Math.sqrt(areaKm2);',
-            'const near = (1 - smoothstep(0.5 * cellKm, 2.5 * cellKm, riverDist)) * smoothstep(0.15, 0.35, fbmAt(2, 2, 13));',
-            "return clamp(Math.max(smoothstep(0.2, 0.6, river('blood_river')), near), 0, 1);",
+            'return (1 - smoothstep(0.5 * cellKm, 2.5 * cellKm, riverDist)) * smoothstep(0.15, 0.35, fbmAt(2, 2, 13));',
           ].join('\n'),
         ),
       },

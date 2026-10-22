@@ -1521,3 +1521,33 @@ kbd {
   font: inherit;
   resize: vertical;
 }
+
+/* 河流类型（第三批）：“是哪一种河”的列表里选中的那一行；“水系 ⋯”里展开的编辑 */
+.menu-row.on {
+  background: var(--accent-bg);
+  border-color: var(--accent-line);
+}
+.river-type-editor {
+  padding: 6px 4px 10px 12px;
+  border-left: 2px solid var(--line);
+  margin: 2px 0 8px 6px;
+}
+.river-type-editor .row {
+  margin: 6px 0;
+  gap: 8px;
+  align-items: center;
+}
+.river-type-editor h5 {
+  margin: 10px 0 2px;
+}
+.river-type-editor textarea.names-box {
+  width: 100%;
+  min-height: 52px;
+  background: #12151a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 6px;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
