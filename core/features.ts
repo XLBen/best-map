@@ -1404,14 +1404,26 @@ export function assignNames(world: World, features: GeoFeature[]) {
   // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
   // 现在是涂出来的生态区、画的河（固定下来的自然河除外）；以后新加的种类（带类型的河……）也接在这里
   const secondPass = (f: GeoFeature) => f.species !== undefined || (f.guide !== undefined && !inherits(guides.get(f.guide)));
-  // 重要的先起名，同名时让给重要的；新种类的放在第二轮
+  // 重要的先起名，同名时让给重要的；新种类的放在第二轮。第二轮里画的河按画的先后起名（排在涂出来的生态区之后）：
+  // 自动起的河名只有几百个，常常撞名，按重要度排的话新画了一条大河、或者河的水量变了，先画的河就会换名
   const byImportance = (a: GeoFeature, b: GeoFeature) => b.importance - a.importance || a.key.localeCompare(b.key);
-  const order = [...features.filter((f) => !secondPass(f)).sort(byImportance), ...features.filter(secondPass).sort(byImportance)];
+  const drawnAt = new Map(world.small.guides.map((g, k) => [g.id, k]));
+  const second = features.filter(secondPass);
+  const order = [
+    ...features.filter((f) => !secondPass(f)).sort(byImportance),
+    ...second.filter((f) => f.guide === undefined).sort(byImportance),
+    ...second.filter((f) => f.guide !== undefined).sort((a, b) => drawnAt.get(a.guide!)! - drawnAt.get(b.guide!)!),
+  ];
   // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
   // （森林被涂出一块别的生态时，名字留在锚点还在的那一边，不会两边都叫这个名字）
   const ovOf = new Map<GeoFeature, FeatureOverride>();
-  // 固定下来的自然河用着的那条改名（不再落到别的地物上）
-  const used = new Set<string>(world.small.guides.filter((g) => g.nameKey !== undefined).map((g) => g.nameKey!));
+  // 固定下来的自然河用着的那条改名（不再落到别的地物上）。河道整条成了水、没有地物时不占，
+  // 那条自然的河还在的话照旧用它
+  const used = new Set<string>();
+  for (const f of features) {
+    const key = f.guide !== undefined ? guides.get(f.guide)?.nameKey : undefined;
+    if (key !== undefined) used.add(key);
+  }
   const match = (f: GeoFeature, ok: (a: number) => boolean) => {
     const hit = byType.get(f.type)?.find(([a, , key]) => !used.has(key) && ok(a));
     if (!hit) return;

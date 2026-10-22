@@ -57,13 +57,20 @@ export function traceRivers(world: World): RiverLine[] {
     const cells: number[] = [];
     let c = s;
     let cx = mesh.x[s];
+    // 前面接着画的线已经流过这一格：只画到这一格（与支流画到画过的格一样），不然画的河在这里断开
+    const reached = lead !== undefined && visited[s] === 1;
     if (lead) {
       pts.push(lead.p);
       flow.push(lead.flow);
       cells.push(lead.from);
       cx = lead.p[0];
+      if (reached) {
+        pts.push([xAt(s, cx), mesh.y[s]]);
+        flow.push(d.discharge[s]);
+        cells.push(s);
+      }
     }
-    for (let guard = 0; guard < n; guard++) {
+    for (let guard = 0; guard < n && !reached; guard++) {
       cx = xAt(c, cx);
       pts.push([cx, mesh.y[c]]);
       flow.push(d.discharge[c]);
@@ -93,7 +100,7 @@ export function traceRivers(world: World): RiverLine[] {
     lines.push(line);
     course?.own(line);
   };
-  if (course) for (const lead of course.leads) if (!visited[lead.cell]) walk(lead.cell, lead);
+  if (course) for (const lead of course.leads) walk(lead.cell, lead);
   for (const s of sources) {
     if (visited[s]) continue;
     walk(s);
@@ -131,6 +138,8 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   });
   const lines: RiverLine[] = [];
   const joins: { line: RiverLine; cell: number }[] = [];
+  // 汇入别的河的画的河（每一段）汇入的那一格
+  const joinCell = new Map<RiverLine, number>();
   guides.forEach((g, gi) => {
     const { points, cellIdx } = guideLine(world, g);
     const cells = g.cells;
@@ -149,8 +158,9 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
       let q = -1;
       let tag = c;
       if (water(c)) {
-        // 河口：画进海、湖的那一点，流量按上一格
-        if (i > 0 && isRiver(cells[i - 1])) {
+        // 河口：画进海、湖的第一点（离岸不到半格，与自然的河画到两格之间差不多），流量按上一格。
+        // 后来海、湖淹到了河道上时，不会一直画进水里
+        if (i > 0 && isRiver(cells[i - 1]) && cellIdx[k - 1] !== i) {
           tag = cells[i - 1];
           q = d.discharge[tag];
         }
@@ -184,6 +194,7 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
         take(r, k, c);
       });
       lines.push(r);
+      if (join) joinCell.set(r, L);
     }
     // 平滑后的线擦过去、一个点也没落进的格（画的线擦过一个角时补上的格）：算在下一个点那里
     for (let i = 0, k = 0; i < last; i++) {
@@ -197,19 +208,16 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     if (join && tail && tail.cells![tail.cells!.length - 1] === L) joins.push({ line: tail, cell: L });
   });
 
-  // 画的河流到了别的河都不经过的地方（终点在陆地上、或者有一段没按画的走）：从它的线上接着往下画
+  // 画的河的水流到了画的河都不经过的格（比它流进的那条自然的河大、终点那格算它的，或者有一段没按画的走）：
+  // 从它的线上接着往下画。那一格还有别的支流流进来也接着画（那条支流画到这里为止），不然线会断开一格；
+  // 汇入别的河的那一格不接（画到那条河的线上，见 finish）
   const leads: Lead[] = [];
   const led = new Set<number>();
   for (const line of lines) {
     line.cells!.forEach((c, k) => {
       if (owner[c] !== line || to[c] !== k) return;
       const r = d.receiver[c];
-      if (r < 0 || !isRiver(r) || visited[r] || led.has(r)) return;
-      // 有别的（还没画的）河流进来：那条河会画过这里
-      for (let e = mesh.off[r]; e < mesh.off[r + 1]; e++) {
-        const j = mesh.adj[e];
-        if (d.receiver[j] === r && isRiver(j) && !visited[j]) return;
-      }
+      if (r < 0 || !isRiver(r) || visited[r] || led.has(r) || joinCell.get(line) === r) return;
       led.add(r);
       leads.push({ cell: r, p: [line.points[k][0], line.points[k][1]], flow: d.discharge[c], from: c });
     });
@@ -488,7 +496,7 @@ export function guidePoints(world: World, g: Guide): [number, number][] {
 }
 
 export interface GuideLine {
-  // 画出来的样子（courseLine(guidePoints)），再每隔半格加密（形状不变）
+  // 画出来的样子（guideShape：控制点 guidePoints 再平滑），再每隔半格加密（形状不变）
   points: [number, number][];
   // 每个点落在河道的第几格（g.cells 的下标，沿河不减；平滑后擦过别的格时留在上一格）
   cellIdx: number[];
@@ -527,8 +535,26 @@ export function guideLine(world: World, g: Guide): GuideLine {
 
 // 一条河道画出来的线（不加密、不找格；河道的白色虚线标记用）
 export function guideShape(world: World, g: Guide): [number, number][] {
-  const pts = guidePoints(world, g);
+  const pts = splitLong(guidePoints(world, g), world.mesh.spacing);
   return courseLine(pts, pts.map(() => 0)).points;
+}
+
+// 平滑之前把长于两格的直段等分到不长于一格：拐角只在一格上下磨圆（与自然的河一样）。
+// 不然两条长直边夹着的拐角会被平滑切掉好几格，画出来的河离画的线、离水真正流过的格都很远。
+// 固定自然的河时存的点本来就相隔一格左右，不受影响（整个星球两极附近拉长的格除外，那里只是稍圆一点）
+function splitLong(pts: readonly [number, number][], spacing: number): [number, number][] {
+  const out: [number, number][] = pts.length ? [pts[0]] : [];
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const [ax, ay] = pts[k];
+    const [bx, by] = pts[k + 1];
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len > 2 * spacing) {
+      const steps = Math.ceil(len / spacing);
+      for (let j = 1; j < steps; j++) out.push([ax + ((bx - ax) * j) / steps, ay + ((by - ay) * j) / steps]);
+    }
+    out.push(pts[k + 1]);
+  }
+  return out;
 }
 
 // 河道的内容签名：画河的路径缓存按它认（每次快照的河道数组都是新的，按对象认会每次重画）。

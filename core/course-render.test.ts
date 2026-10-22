@@ -5,6 +5,7 @@ import { type Command, Dirty, truncateGuide } from './commands';
 import { Engine } from './engine';
 import { exportPackage } from './export';
 import { findCell } from './mesh';
+import { DEFAULT_PACK, generateName, hashString } from './names';
 import { type RiverLine, decodePath, encodePath, guideBody, guideLine, snapOnto, traceRivers } from './rivers';
 import { type CoursePlan, isRiverCell, planCourse, riverStem, stemPath } from './select';
 import { continents, engineFor } from './testing/fixtures';
@@ -116,6 +117,72 @@ describe('画的线就是河', () => {
     expect(near(lines, last.points[last.points.length - 1], last)).toBeLessThan(1e-9);
   });
 
+  it('拐直角：两条长直边夹着的拐角照画的走（离画的线不到半格），沿途的格都由画的河画', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh } = w;
+    const s = mesh.spacing;
+    // 缩得很小时画的（一个屏幕像素合 0.15 格）：化简后只剩拐角一个点
+    let plan: CoursePlan | null = null;
+    for (let i = 0; i < mesh.n && !plan; i += 37) {
+      if (!w.causes.land[i] || isRiverCell(w, w.derived, i)) continue;
+      const [x, y] = at(w, i);
+      const p = planCourse(w, w.derived, [...line([x, y], [x + 12 * s, y], 60), ...line([x + 12 * s, y], [x + 12 * s, y + 12 * s], 60).slice(1)], { endOnLand: 'sink', px: 0.15 * s });
+      if (!p.blocked && p.path.length === 3 && !p.crossings.length && !p.reroute && p.end === 'sink') plan = p;
+    }
+    expect(plan).not.toBeNull();
+    eng.exec(courseCmd(plan!, { id: 'river-a' }));
+    const g = w.small.guides[0];
+    const gl = guideLine(w, g);
+    for (const p of decodePath(g.path!)) expect(snapOnto(gl.points, p[0], p[1])!.d).toBeLessThan(0.3 * s);
+    expect(gl.cellIdx[gl.cellIdx.length - 1]).toBe(g.cells.length - 1);
+    const body = new Set(guideBody(w, w.derived, g));
+    for (const l of traceRivers(w)) {
+      if (l.guide) continue;
+      const walked = l.cells!.filter((c, k, a) => k === 0 || c !== a[k - 1]);
+      expect(walked.slice(1, -1).some((c) => body.has(c))).toBe(false);
+    }
+  });
+
+  it('画的河比它流进的那条小河大：从它的线上接着往下画，下游那格还有别的支流流进来也不断开', () => {
+    const base = continents();
+    const w0 = base.world;
+    const { mesh } = w0;
+    const d0 = w0.derived;
+    const isR = (i: number) => isRiverCell(w0, d0, i);
+    // 流进的那格 L 往下一格 r 还有别的支流
+    const donors = (r: number) => {
+      let k = 0;
+      for (let e = mesh.off[r]; e < mesh.off[r + 1]; e++) if (d0.receiver[mesh.adj[e]] === r && isR(mesh.adj[e])) k++;
+      return k;
+    };
+    let plan: CoursePlan | null = null;
+    for (let L = 0; L < mesh.n && !plan; L++) {
+      const r = d0.receiver[L];
+      if (!isR(L) || r < 0 || !isR(r) || donors(r) < 2) continue;
+      for (let i = 0; i < mesh.n && !plan; i++) {
+        if (!w0.causes.land[i] || d0.lake[i] === 1 || isR(i)) continue;
+        const dist = Math.hypot(mesh.x[i] - mesh.x[L], mesh.y[i] - mesh.y[L]) / mesh.spacing;
+        if (dist < 4 || dist > 6) continue;
+        const p = planCourse(w0, d0, line(at(w0, i), at(w0, L)), { endOnLand: 'flow' });
+        if (!p.blocked && p.end === 'river' && p.join === L && !p.crossings.length && !p.reroute) plan = p;
+      }
+    }
+    expect(plan).not.toBeNull();
+    base.exec(courseCmd(plan!, { id: 'river-a', flow: 200 }));
+    const w = base.world;
+    const L = plan!.join;
+    const lines = traceRivers(w);
+    const runs = courseOf(lines, 'river-a');
+    const tail = runs[runs.length - 1];
+    // 终点那格算画的河的（它比流进来的都大），往下由从它的线上接出去的那条画，两条线连着
+    expect(tail.cells![tail.cells!.length - 1]).toBe(L);
+    const end = tail.points[tail.points.length - 1];
+    const next = lines.find((l) => !l.guide && l.points[0][0] === end[0] && l.points[0][1] === end[1]);
+    expect(next).toBeDefined();
+    expect(next!.cells).toContain(w.derived.receiver[L]);
+  });
+
   it('在终点消失：最后一格收细；粗细加倍，导出的 rivers.bmp 里河更宽', () => {
     const eng = continents();
     const w = eng.world;
@@ -221,6 +288,56 @@ describe('画的河的名字', () => {
     const now = w.derived.features.map((x) => `${x.key}=${x.name}|${x.custom}`);
     expect(now.filter((x, k) => x !== was[k])).toEqual(['guide:river-a=赤江|true']);
     // 只重新起名的结果与从头识别（重放）的逐值相同
+    expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
+  });
+
+  it('新画的河、河的水量变了，先画的河不换名（自动起的河名常常撞名，第二轮里画的河按画的先后起名）', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh } = w;
+    // 在陆地深处往东南画一条，不穿过别的河
+    const draw = (id: string, flow: number, skip: number) => {
+      for (let i = skip; i < mesh.n; i += 53) {
+        if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
+        const plan = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 12 * mesh.spacing, mesh.y[i] + 3 * mesh.spacing]), { endOnLand: 'flow' });
+        if (plan.blocked || plan.crossings.length || plan.reroute || plan.end === 'river') continue;
+        eng.exec(courseCmd(plan, { id, flow }));
+        return;
+      }
+      throw new Error('画不出河');
+    };
+    const feature = (id: string) => w.derived.features.find((f) => f.guide === id)!;
+    // 两条中等的河（大小的标签不变：自动起的名字随标签变）
+    draw('river-a', 10, 0);
+    draw('river-b', 25, 7);
+    const fa = feature('river-a');
+    const fb = feature('river-b');
+    expect(fb.importance).toBeGreaterThan(fa.importance);
+    // 找一对盐：两条河自动起的第一个名字相同（后画的那条更重要）
+    const seed = w.small.terrain.gen?.seed ?? w.settings.seed;
+    const first = (f: typeof fa, salt: number) => generateName(DEFAULT_PACK, 'river', f.tags, hashString(`${seed}:${f.key}:${salt}`));
+    const bNames = new Map<string, number>();
+    for (let s = 0; s < 300; s++) if (!bNames.has(first(fb, s))) bNames.set(first(fb, s), s);
+    // 不是别的（先起名的）地物已经用了的名字
+    const taken = new Set(w.derived.features.filter((f) => !f.guide).map((f) => f.name));
+    let sa = 0;
+    while (sa < 3000 && (!bNames.has(first(fa, sa)) || taken.has(first(fa, sa)))) sa++;
+    expect(sa).toBeLessThan(3000);
+    const x = first(fa, sa);
+    eng.exec({ op: 'update_guide', id: 'river-a', patch: { name: '', salt: sa } });
+    eng.exec({ op: 'update_guide', id: 'river-b', patch: { name: '', salt: bNames.get(x)! } });
+    // 撞名时先画的河留着这个名字，后画的换一个
+    expect(feature('river-a').name).toBe(x);
+    const y = feature('river-b').name;
+    expect(y).not.toBe(x);
+    // 两条河的水量对调（谁更重要也对调了），名字都不变
+    eng.exec({ op: 'update_guide', id: 'river-b', patch: { flow: 10 } });
+    eng.exec({ op: 'update_guide', id: 'river-a', patch: { flow: 25 } });
+    expect(feature('river-a').importance).toBeGreaterThan(feature('river-b').importance);
+    expect(feature('river-a').tags).toEqual(fa.tags);
+    expect(feature('river-b').tags).toEqual(fb.tags);
+    expect(feature('river-a').name).toBe(x);
+    expect(feature('river-b').name).toBe(y);
     expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
   });
 
