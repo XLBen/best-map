@@ -194,7 +194,14 @@ async function handle(id: number, req: Request) {
         const settings = { ...req.settings, cells: 4000 };
         const e = new Engine(settings, meshFor(settings));
         e.features = false;
-        e.exec({ op: 'set_worldgen', params: req.gen, reset: true });
+        // 与向导建出的世界一样打开山挡风（生态颜色跟着拐过的风算），同一步里只算一遍
+        e.exec({
+          op: 'batch',
+          commands: [
+            { op: 'set_worldgen', params: req.gen, reset: true },
+            { op: 'set_planet', patch: { terrainWind: 1 } },
+          ],
+        });
         const thumb = renderThumbnail(e.world, req.width, req.height);
         reply({ id, ok: true, thumb }, [thumb.buffer as ArrayBuffer]);
         return;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { coastalStroke, digestWorld } from '../tools/hash';
 import { Engine } from './engine';
 import type { SphereMesh } from './mesh';
 import { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './planet-climate';
@@ -95,6 +96,45 @@ describe('整个星球的气候', () => {
     }
   });
 
+  it('山挡风打开：先偏转再乘极地衰减，两极照样几乎无风；拐过的风建的输运图照样规整', () => {
+    const run = (terrainWind: number | null) => {
+      const eng = new Engine(globe(20000));
+      if (terrainWind !== null) eng.exec({ op: 'set_planet', patch: { terrainWind } });
+      eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
+      return eng.world;
+    };
+    const off = run(null);
+    const on = run(1);
+    const mesh = on.mesh as SphereMesh;
+    const d = on.derived;
+    let polar = 0;
+    let touched = 0;
+    for (let i = 0; i < mesh.n; i++) {
+      if (Math.abs(latOf(mesh.y[i])) <= 89) continue;
+      polar++;
+      if (d.windSX[i] !== off.derived.windSX[i] || d.windWX[i] !== off.derived.windWX[i]) touched++;
+      expect(Math.hypot(d.windSX[i], d.windSY[i])).toBeLessThan(0.05);
+      expect(Math.hypot(d.windWX[i], d.windWY[i])).toBeLessThan(0.05);
+    }
+    // 不是空跑：离极点 1° 以内有格，而且风被山挡风改过
+    expect(polar).toBeGreaterThan(0);
+    expect(touched).toBeGreaterThan(0);
+    const { rev, seam } = sphereAux(mesh);
+    for (const [wx, wy] of [
+      [d.windSX, d.windSY],
+      [d.windWX, d.windWY],
+    ]) {
+      const flow = buildFlowSphere(mesh, wx, wy, { lag: 'seam' });
+      const calm = (c: number) => Math.hypot(wx[c], wy[c]) <= 1e-6;
+      for (let i = 0; i < mesh.n; i++) {
+        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+          if (flow.frac[e] > 0 && flow.frac[rev[e]] > 0) expect(calm(i) || calm(mesh.adj[e])).toBe(true);
+          if (flow.lagged[e]) expect(seam[e]).toBe(1);
+        }
+      }
+    }
+  });
+
   it('扫描遍数加到三倍，结果几乎不变（已经收敛）', () => {
     const run = () => {
       const eng = new Engine(globe(12000));
@@ -118,5 +158,56 @@ describe('整个星球的气候', () => {
     }
     expect(maxP).toBeLessThan(0.02);
     expect(maxC).toBeLessThan(0.01);
+  });
+});
+
+// 山挡风为 0（旧存档里没有这一项时也按 0）：与加山挡风之前的算法逐值相同（一块地区的在 terrain-wind.test.ts）
+describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
+  it('与 golden-full 同一组加长的操作（含洋流强弱、撤销与重做）', () => {
+    // 加山挡风之前记下的 core/golden-full.json（planet）里风、洋流、气候往后的几项
+    const FROZEN: Record<string, string> = {
+      'derived.windSX': '7f20aaf7ba887e51',
+      'derived.windSY': '953a8cfe334432a5',
+      'derived.windWX': 'a5a3a8b6a6099966',
+      'derived.windWY': 'a6c525ec270bdd63',
+      'derived.continentality': '8d7378377565d571',
+      'derived.currentX': 'daf9f25265bc4c7a',
+      'derived.currentY': 'e231f3f0ce14af61',
+      'derived.sstAnom': '15c504aef4e5d9a4',
+      'derived.tS': '27b7cd6bbfd11180',
+      'derived.tW': '1752dc613d57c5b9',
+      'derived.pS': '3e531f913985639a',
+      'derived.pW': '1125d9c714cb4fa4',
+      'derived.precip': '57bc9946fc17ee72',
+      'derived.moisture': '79ba6632442d947e',
+      'derived.corrT': '680cda049b5b311f',
+      'derived.corrP': 'b707062b22d3bfbf',
+      'derived.discharge': 'd93f0c082bae792f',
+      'derived.dominant': '8d05968b26841f7c',
+      'causes.province': '2da35ff8d22a84c0',
+    };
+    const eng = new Engine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
+    const w = eng.world;
+    eng.exec({ op: 'set_planet', patch: { terrainWind: 0 } });
+    eng.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
+    eng.exec({ op: 'generate_provinces', rules: { seed: 7 } });
+    eng.exec({ op: 'reroll_region', x: 1.99, y: 0.45, radius: 0.08, variant: 1 });
+    let cells = coastalStroke(w, 0.37, 6);
+    eng.exec({ op: 'paint_land', cells, t: cells.map((_, k) => (k % 7) / 7), mode: 'land' });
+    cells = coastalStroke(w, 0.71, 5);
+    eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' });
+    eng.exec({ op: 'set_coast_style', roughness: 1.4 });
+    const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && w.derived.lake[i] !== 1);
+    eng.exec({ op: 'paint', field: 'tempOffset', cells: land.slice(100, 400), value: 2, mode: 'add' });
+    eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(500, 650), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });
+    eng.exec({ op: 'set_worldgen', params: { ...w.small.terrain.gen!, landFraction: 0.33 } });
+    eng.exec({ op: 'add_island', island: { x: 1.9995, y: 0.3, kind: 'volcanic', size: 400, variant: 2 } });
+    eng.exec({ op: 'set_planet', patch: { currents: 1.5 } });
+    eng.undo();
+    eng.undo();
+    eng.redo();
+    expect(w.small.planet.terrainWind).toBe(0);
+    const all = digestWorld(w);
+    expect(Object.fromEntries(Object.keys(FROZEN).map((k) => [k, all[k]]))).toEqual(FROZEN);
   });
 });

@@ -468,6 +468,8 @@ function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'add_island' && cmd.island.kind === 'reef') return true;
   if (cmd.op === 'add_lake' && cmd.lake.exact) return true;
   if (cmd.op === 'add_island_chain' && cmd.chain.fine) return true;
+  // 第八轮 1e：山挡风
+  if (cmd.op === 'set_planet' && cmd.patch.terrainWind !== undefined) return true;
   return false;
 }
 

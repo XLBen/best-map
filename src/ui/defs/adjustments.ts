@@ -115,6 +115,11 @@ export const ADJUSTMENTS: AdjustmentDef[] = [
     hidden: (w: World) => !w.settings.globe,
     read: (w: World) => w.small.planet.currents ?? 1,
   },
+  {
+    ...planet('terrainWind', '山挡风', '高山让风拐弯：迎风坡的风顺着山走，背风坡风小雨少。0 是风直接翻过山', [0, 2], 0.05, (v) => (v === 0 ? '不挡（风直接翻山）' : `${v < 0.7 ? '偏弱' : v > 1.3 ? '偏强' : '和地球差不多'}（×${v.toFixed(2)}）`)),
+    // 旧存档里没有这一项：风直接翻过山
+    read: (w: World) => w.small.planet.terrainWind ?? 0,
+  },
   planet('vegSharpness', '生态边界', '小：几种生态混交过渡；大：泾渭分明', [0.5, 12], 0.5, (v) => (v < 3 ? `柔和（${v}）` : v < 7 ? `适中（${v}）` : `分明（${v}）`)),
 ];
 

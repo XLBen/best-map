@@ -81,6 +81,8 @@ describe('用缓存与从头算逐值相同（各类修改、撤销与重做）'
         cmd('南北挪动', { op: 'set_planet', patch: { latShift: 6 } });
         cmd('图外不是海', { op: 'set_planet', patch: { outsideOcean: false } });
       }
+      // 之后的改海陆、堆山都带着山挡风算（星球上洋流的缓存键里没有风：洋流必须照旧用背景风）
+      cmd('山挡风', { op: 'set_planet', patch: { terrainWind: 0.5 } });
       const cells = coastalStroke(a.world, 0.4, 4);
       cmd('画陆地', { op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' });
       const land2 = landCells(a.world);
@@ -159,6 +161,7 @@ describe('气候地形部分的缓存：键完整', () => {
     check('自转', false, planet({ rotation: -1 }));
     check('图外是不是海', false, planet({ outsideOcean: false }));
     check('南北挪动（各格纬度）', false, planet({ latShift: 4 }));
+    check('山挡风', false, planet({ terrainWind: 0.5 }));
     check('建世界时的纬度（各格纬度）', false, () => {
       const old = w.settings;
       w.settings = { ...old, latNorth: old.latNorth + 3 };
@@ -192,6 +195,7 @@ describe('气候地形部分的缓存：键完整', () => {
     check('日照（经海温影响陆地）', false, planet({ solar: 1.1 }));
     check('洋流强弱', false, planet({ currents: 0.5 }));
     check('没有洋流', false, planet({ currents: 0 }));
+    check('山挡风', false, planet({ terrainWind: 0.5 }));
     check('比例尺', false, () => {
       const old = w.kmPerUnit;
       w.kmPerUnit = old * 1.1;

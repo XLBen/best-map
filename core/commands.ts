@@ -441,7 +441,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       // riverThreshold 也影响水文（画的河源头的泉水）和要素识别（哪些算河），至少要重算到植被
       const dirty = keys.includes('mountainScale')
         ? Dirty.Elevation
-        : keys.some((k) => ['tilt', 'solar', 'rotation', 'lapse', 'humidity', 'outsideOcean', 'latShift', 'currents'].includes(k))
+        : keys.some((k) => ['tilt', 'solar', 'rotation', 'lapse', 'humidity', 'outsideOcean', 'latShift', 'currents', 'terrainWind'].includes(k))
           ? Dirty.Climate
           : keys.includes('vegSharpness')
             ? Dirty.Solve
@@ -460,6 +460,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         outsideOcean: '地图外面是不是海',
         latShift: '地图在星球上的位置',
         currents: '洋流强弱',
+        terrainWind: '山挡风',
       };
       return { dirty, summary: `调整了${keys.map((k) => names[k] ?? k).join('、')}` };
     }
