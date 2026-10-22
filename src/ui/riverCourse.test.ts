@@ -5,7 +5,7 @@ import { type CoursePlan, endCourseAt, isRiverCell, planCourse, planRiver, splic
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { riverLines } from '../render/overlay';
-import { exec, previewCommand, riverPending, selectedRiver, setOptions, world } from '../state';
+import { busy, exec, previewCommand, riverPending, selectedRiver, setOptions, toast, world } from '../state';
 import { lineOf, newCourse, pinCommand, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
 import type { Pointer } from './tools';
 
@@ -154,6 +154,21 @@ describe('自定义走向：画的线就是河', () => {
     await up;
     expect(t.keep?.()).toBe(false);
     expect(t.preview().shapes).toEqual([]);
+  });
+
+  it('前面的编辑还在算（排着队）：画河要按算好的世界来，不开始画、不执行，提示“还在计算上一步”；算完照常', async () => {
+    const { w, t } = setup();
+    const { stroke } = quietStroke(w);
+    busy.value = '正在计算…';
+    try {
+      await drag(t, w, stroke);
+      expect(exec).not.toHaveBeenCalled();
+      expect(toast.value?.text).toBe('还在计算上一步，稍等一下');
+    } finally {
+      busy.value = null;
+    }
+    await drag(t, w, stroke);
+    expect(exec).toHaveBeenCalledTimes(1);
   });
 
   it('手抖（不到 6 像素）不算画：在空地上点一下是顺地势的新河（只挖河床、自动起名），不是自定义走向', async () => {
