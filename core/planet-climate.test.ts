@@ -96,6 +96,45 @@ describe('整个星球的气候', () => {
     }
   });
 
+  it('山挡风打开：先偏转再乘极地衰减，两极照样几乎无风；拐过的风建的输运图照样规整', () => {
+    const run = (terrainWind: number | null) => {
+      const eng = new Engine(globe(20000));
+      if (terrainWind !== null) eng.exec({ op: 'set_planet', patch: { terrainWind } });
+      eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
+      return eng.world;
+    };
+    const off = run(null);
+    const on = run(1);
+    const mesh = on.mesh as SphereMesh;
+    const d = on.derived;
+    let polar = 0;
+    let touched = 0;
+    for (let i = 0; i < mesh.n; i++) {
+      if (Math.abs(latOf(mesh.y[i])) <= 89) continue;
+      polar++;
+      if (d.windSX[i] !== off.derived.windSX[i] || d.windWX[i] !== off.derived.windWX[i]) touched++;
+      expect(Math.hypot(d.windSX[i], d.windSY[i])).toBeLessThan(0.05);
+      expect(Math.hypot(d.windWX[i], d.windWY[i])).toBeLessThan(0.05);
+    }
+    // 不是空跑：离极点 1° 以内有格，而且风被山挡风改过
+    expect(polar).toBeGreaterThan(0);
+    expect(touched).toBeGreaterThan(0);
+    const { rev, seam } = sphereAux(mesh);
+    for (const [wx, wy] of [
+      [d.windSX, d.windSY],
+      [d.windWX, d.windWY],
+    ]) {
+      const flow = buildFlowSphere(mesh, wx, wy, { lag: 'seam' });
+      const calm = (c: number) => Math.hypot(wx[c], wy[c]) <= 1e-6;
+      for (let i = 0; i < mesh.n; i++) {
+        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+          if (flow.frac[e] > 0 && flow.frac[rev[e]] > 0) expect(calm(i) || calm(mesh.adj[e])).toBe(true);
+          if (flow.lagged[e]) expect(seam[e]).toBe(1);
+        }
+      }
+    }
+  });
+
   it('扫描遍数加到三倍，结果几乎不变（已经收敛）', () => {
     const run = () => {
       const eng = new Engine(globe(12000));

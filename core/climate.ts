@@ -235,11 +235,16 @@ function sameBytes(a: ArrayBufferView, b: ArrayBufferView): boolean {
 // 两季的风（东、南分量）
 type SeasonWinds = readonly [readonly [ArrayLike<number>, ArrayLike<number>], readonly [ArrayLike<number>, ArrayLike<number>]];
 
+// 山挡风的变化量平滑几遍：约 150 km（迎风的气流在山前就开始拐）；格很密时封顶 48 遍
+export function windDeflectPasses(spacingKm: number): number {
+  return Math.min(48, Math.max(1, Math.round((150 / spacingKm) ** 2 / 2)));
+}
+
 // 按局地 Froude 数（风速 / (浮力频率 × 山高)，风 1 = 10 m/s、N = 0.01/s）判断山挡不挡得住风：
 //   · 挡住的翻山分量去掉（至少留 5%，不会变成静风）；背风坡只去掉一半
 //   · 迎风坡被挡住的气流顺着山走：北半球向左拐、南半球向右拐（障碍急流），自转反向时反过来
 //   · 迎风、背风处风变小，顺山走的急流保持风速
-// 只平滑变化量 Δ（固定遍数，最多 48 遍）：离山远的地方 Δ 正好是 0，风与没有这一步逐位相同。
+// 只平滑变化量 Δ（固定遍数 passes，见 windDeflectPasses）：离山远的地方 Δ 正好是 0，风与没有这一步逐位相同。
 // hPos：平滑到约 200 km 的陆地高程（m），hx、hy：它的梯度（m/km，东、南分量）；winds：两季的背景风。
 // strength 为 0 时调用方整段跳过（与旧算法逐值相同）。返回两季平滑后的 Δ（东、南分量）
 export function deflectWind(
@@ -250,7 +255,7 @@ export function deflectWind(
   hy: Float64Array,
   strength: number,
   rotation: number,
-  spacingKm: number,
+  passes: number,
   winds: SeasonWinds,
 ): [Float64Array, Float64Array][] {
   const n = mesh.n;
@@ -298,19 +303,23 @@ export function deflectWind(
     [new Float64Array(n), new Float64Array(n)],
   ];
   if (!seeds.length) return out;
-  // 平滑到约 150 km（迎风的气流在山前就开始拐）；格很密时封顶 48 遍。
-  // 与 smoothPass 同样的一轮扩散，只算离有变化的格 passes 步以内的格：更远的格在这几遍里一直是 0
-  const passes = Math.min(48, Math.max(1, Math.round((150 / spacingKm) ** 2 / 2)));
+  // 与 smoothPass 同样的一轮扩散，只算离有变化的格 passes 步以内的格：更远的格在这几遍里一直是 0。
+  // 同理第 it 遍里离得比 it + 1 步远的格也还是 0：按步数排好，每遍只算到 it + 1 步（结果与全算逐位相同；
+  // 1500 km 宽、格很密的图上要算满 48 遍，省约四分之一）
   const reach = ringDistance(mesh, seeds, passes);
-  let m = 0;
-  for (let i = 0; i < n; i++) if (reach[i] >= 0) m++;
-  const active = new Int32Array(m);
-  m = 0;
-  for (let i = 0; i < n; i++) if (reach[i] >= 0) active[m++] = i;
+  // within[r]：离有变化的格不超过 r 步的格数；active 按步数排（同一步数里按下标）
+  const within = new Int32Array(passes + 1);
+  for (let i = 0; i < n; i++) if (reach[i] >= 0) within[reach[i]]++;
+  for (let r = 1; r <= passes; r++) within[r] += within[r - 1];
+  const active = new Int32Array(within[passes]);
+  const slot = new Int32Array(passes + 1);
+  for (let r = 1; r <= passes; r++) slot[r] = within[r - 1];
+  for (let i = 0; i < n; i++) if (reach[i] >= 0) active[slot[reach[i]]++] = i;
   const { off, adj } = mesh;
   let next = new Float64Array(4 * n);
-  // 格很密的小比例尺地图上几乎整张图都在里面、要算满 48 遍：按下标走类型数组，比 for…of 快约三成
+  // 按下标走类型数组，比 for…of 快约三成
   for (let it = 0; it < passes; it++) {
+    const m = within[Math.min(passes, it + 1)];
     for (let k = 0; k < m; k++) {
       const i = active[k];
       const b = 4 * i;
@@ -473,7 +482,7 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   });
   // 山挡风：为 0 时整段跳过（与没有这一步逐值相同）。图边来流、背风、大陆度、输运都跟着拐过的风走
   if (terrainWind > 0) {
-    const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, mesh.spacing * kmPerUnit, [winds[0], winds[1]]);
+    const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, windDeflectPasses(mesh.spacing * kmPerUnit), [winds[0], winds[1]]);
     winds.forEach(([wx, wy], si) => {
       const [du, dv] = delta[si];
       for (let i = 0; i < n; i++) {

@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { digest, digestWorld, hashArray } from '../tools/hash';
+import { deflectWind, smoothPass, windDeflectPasses } from './climate';
 import type { Command } from './commands';
 import { Engine, docVersion } from './engine';
+import { gradient } from './mesh';
 import { engineFor, meshFor } from './testing/fixtures';
-import type { World } from './world';
+import { type World, worldLatitude } from './world';
 
 // 山挡风：高山让风拐弯。为 0（旧存档里没有这一项时也按 0）与原来的算法逐值相同；
 // 打开后迎风坡的风顺着山走、离山远的地方风逐位不变；星球上先偏转再乘极地衰减，洋流照旧用背景风。
-// 整个星球为 0 时的逐值对照（加长的操作，较慢）在 planet-climate.test.ts
+// 整个星球为 0 时的逐值对照（加长的操作，较慢）、打开后两极照样几乎无风（要 2 万格才有离极点 1° 以内的格）
+// 在 planet-climate.test.ts
 
 const windOff: Command = { op: 'set_planet', patch: { terrainWind: 0 } };
 
@@ -34,7 +37,6 @@ describe('山挡风为 0 时与旧算法逐值相同', () => {
       province: hashArray(w.causes.province),
     }).toEqual(FROZEN);
   });
-
 });
 
 // 与 pipeline.test 里“垂直于西风的山脉”同一个世界：北纬 30°–60°，x = 0.8 处南北走向的高山
@@ -87,6 +89,48 @@ describe('山挡风打开', () => {
     for (const k of ['elevation', 'slope'] as const) expect(digest(on.derived[k]), k).toBe(digest(off.derived[k]));
     expect(digest(on.causes.land)).toBe(digest(off.causes.land));
   });
+
+  it('只平滑变化量：与整张图逐遍扩散逐位相同（只算山附近的格不丢东西，远处正好是 0）', () => {
+    // 与 planeTerrain 里同样的平滑高程与梯度
+    const { kmPerUnit } = off;
+    const n = mesh.n;
+    const lat = Float64Array.from({ length: n }, (_, i) => worldLatitude(off, mesh.y[i]));
+    let hPos = Float64Array.from({ length: n }, (_, i) => (off.causes.land[i] ? Math.max(0, off.derived.elevation[i]) : 0));
+    let tmp = new Float64Array(n);
+    for (let it = Math.max(1, Math.round((200 / kmPerUnit / mesh.spacing) ** 2 / 2)); it > 0; it--) {
+      smoothPass(mesh, hPos, tmp);
+      [hPos, tmp] = [tmp, hPos];
+    }
+    const hx = new Float64Array(n);
+    const hy = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const [gx, gy] = gradient(mesh, hPos, i);
+      hx[i] = gx / kmPerUnit;
+      hy[i] = gy / kmPerUnit;
+    }
+    const d = off.derived;
+    const delta = (passes: number) => deflectWind(mesh, lat, hPos, hx, hy, 1, 1, passes, [[d.windSX, d.windSY], [d.windWX, d.windWY]]);
+    // 不平滑（0 遍）就是逐格的变化量；之后每一遍都用 smoothPass 在整张图上扩散，作为参照
+    const want = delta(0).map((pair) => pair.map((a) => a.slice()));
+    for (let p = 1; p <= 6; p++) {
+      const got = delta(p);
+      let zero = 0;
+      for (let s = 0; s < 2; s++) {
+        for (let c = 0; c < 2; c++) {
+          const next = new Float64Array(n);
+          smoothPass(mesh, want[s][c], next);
+          want[s][c] = next;
+          expect(digest(got[s][c]), `${p} 遍`).toBe(digest(next));
+          for (let i = 0; i < n; i++) if (got[s][c][i] === 0) zero++;
+        }
+      }
+      // 确实有变化，离山远的格也确实一点没动
+      expect(zero).toBeGreaterThan(n);
+      expect(zero).toBeLessThan(4 * n - 200);
+    }
+    // 平滑约 150 km：格稀时至少 1 遍，1500 km 宽的群岛图（约 5.8 km 一格）封顶 48 遍
+    expect([windDeflectPasses(300), windDeflectPasses(68.8), windDeflectPasses(5.8)]).toEqual([1, 2, 48]);
+  });
 });
 
 describe('整个星球打开山挡风', () => {
@@ -100,17 +144,12 @@ describe('整个星球打开山挡风', () => {
   const off = run(null);
   const on = run(1);
 
-  it('风确实拐了；极点仍然几乎无风', () => {
+  it('风确实拐了', () => {
     const { mesh } = on;
     const d = on.derived;
     let changed = 0;
     for (let i = 0; i < mesh.n; i++) if (d.windSX[i] !== off.derived.windSX[i] || d.windSY[i] !== off.derived.windSY[i]) changed++;
     expect(changed).toBeGreaterThan(mesh.n * 0.02);
-    for (let i = 0; i < mesh.n; i++) {
-      if (Math.abs(90 - 180 * mesh.y[i]) <= 89) continue;
-      expect(Math.hypot(d.windSX[i], d.windSY[i])).toBeLessThan(0.05);
-      expect(Math.hypot(d.windWX[i], d.windWY[i])).toBeLessThan(0.05);
-    }
   });
 
   it('洋流照旧用背景风：洋流、海上的海温偏离逐位不变，陆上的气候跟着新的风变', () => {

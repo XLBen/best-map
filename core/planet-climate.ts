@@ -1,4 +1,4 @@
-import { type ClimateBase, ContentMemo, deflectWind, insolationTable, radiativeTemp, saturation, smoothPass } from './climate';
+import { type ClimateBase, ContentMemo, deflectWind, insolationTable, radiativeTemp, saturation, smoothPass, windDeflectPasses } from './climate';
 import { type SphereMesh, gradient, ringDistance } from './mesh';
 import { computeOcean } from './ocean';
 import { PLANET_SWEEPS, type SphereFlow, buildFlowSphere } from './sphere-flow';
@@ -257,7 +257,7 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
       background[0][i] = (out.windSX[i] + out.windWX[i]) / 2;
       background[1][i] = (out.windSY[i] + out.windWY[i]) / 2;
     }
-    const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, mesh.spacing * kmPerUnit, [raw[0], raw[1]]);
+    const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, windDeflectPasses(mesh.spacing * kmPerUnit), [raw[0], raw[1]]);
     raw.forEach(([u, v], si) => {
       const [wx, wy] = winds[si];
       const [du, dv] = delta[si];
