@@ -1,13 +1,27 @@
-import { Dices, Pencil, Undo2, X } from 'lucide-preact';
-import { busy, canUndo, cancelExport, changeNote, exportProgress, toast, undo, world } from '../../state';
+import { Dices, Pencil, Square, Undo2, X } from 'lucide-preact';
+import { busy, canUndo, cancelExport, changeNote, exportProgress, scriptRunning, stopScripts, toast, undo, world } from '../../state';
 
-// 顶部中间的提示条：出错 > 正在计算 > 一般提示 > 改完后的一句话（带撤销、“换一个”）。
+// 顶部中间的提示条：脚本算了很久（带“停下”）> 出错 > 正在计算 > 一般提示 > 改完后的一句话（带撤销、“换一个”）。
+// “停下”排在出错前面：一段一直报平安的慢脚本看门狗不会停，“停下”是唯一的办法，不能被前一步的出错提示（6 秒）挡住。
 // 只写改了什么；“28 格地势变了……”这类细节放在鼠标悬停的提示里
 
 export function Notice() {
   const t = toast.value;
   const b = busy.value;
   const n = changeNote.value;
+  const running = scriptRunning.value;
+  // 一段脚本算了 1.5 秒以上：可以停下（这一步不做，世界用之前的样子恢复）
+  if (running !== null) {
+    return (
+      <div class="notice">
+        <span class="spinner" />
+        {running ? `正在运行「${running}」的脚本…` : '正在运行脚本…'}
+        <button class="pill-btn" onClick={stopScripts} title="停掉这段脚本，这一步不做">
+          <Square size={12} /> 停下
+        </button>
+      </div>
+    );
+  }
   if (t?.error) return <div class="notice error">{t.text}</div>;
   if (b && world.value) {
     return (

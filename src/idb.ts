@@ -32,6 +32,19 @@ export function idbTx(stores: string[], mode: IDBTransactionMode, run: (...s: ID
   );
 }
 
+// kv 表里的一项（信任的脚本、打开带脚本的世界时的标记……）。读不了、写不了时抛错，调用方自己决定怎么退
+export function kvGet<T>(key: string): Promise<T | undefined> {
+  return idbGet<T>('kv', key);
+}
+
+export function kvPut(key: string, value: unknown): Promise<void> {
+  return idbTx(['kv'], 'readwrite', (s) => s.put(value, key));
+}
+
+export function kvDelete(key: string): Promise<void> {
+  return idbTx(['kv'], 'readwrite', (s) => s.delete(key));
+}
+
 export function idbGet<T>(store: string, key: IDBValidKey): Promise<T | undefined> {
   return openDb().then(
     (db) =>

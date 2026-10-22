@@ -110,37 +110,64 @@ export interface FoundScript {
 // 在任意 JSON（一条命令、整个世界文件、资源包）里找出全部脚本：凡是键为 scripts 的对象都算容器，
 // 一直往下找（batch 里的命令、update_species 的 patch、星球形态……）。
 // 所属对象：容器所在的对象，或者往上第一个带字符串 id 的对象（update_species 的 patch 没有 id，用命令的 id）。
-// 信任检查靠它，所以不设深度上限（套很多层 batch 也藏不住脚本）：用自己的栈，不递归，不会爆栈
+// 信任检查靠它，所以不设深度上限（套很多层 batch 也藏不住脚本）：用自己的栈，不递归，不会爆栈。
+// 每次打开世界都要过一遍整个文件（画了很多笔的世界里有几百万个数）：数、字符串不进栈，位置（path）只在找到脚本时才拼
 export function findScripts(json: unknown): FoundScript[] {
   const out: FoundScript[] = [];
-  // 深度优先、按键的顺序；idObj 是往上第一个带字符串 id 的对象
-  const stack: { v: unknown; path: string; idObj: Record<string, unknown> | undefined }[] = [{ v: json, path: '', idObj: undefined }];
+  // 栈里的一个对象或数组：up 是它所在的对象（拼位置用），key 是它在 up 里的键或下标；idObj 是往上第一个带字符串 id 的对象
+  interface Node {
+    v: object;
+    up: Node | null;
+    key: string | number;
+    idObj: Record<string, unknown> | undefined;
+  }
+  const pathOf = (n: Node): string => {
+    const chain: Node[] = [];
+    for (let x: Node | null = n; x?.up; x = x.up) chain.push(x);
+    let p = '';
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const k = chain[i].key;
+      p = typeof k === 'number' ? `${p}[${k}]` : p ? `${p}.${k}` : k;
+    }
+    return p;
+  };
+  const isBox = (x: unknown): x is object => x !== null && typeof x === 'object' && !ArrayBuffer.isView(x);
+  if (!isBox(json)) return out;
+  // 深度优先、按键的顺序
+  const stack: Node[] = [{ v: json, up: null, key: '', idObj: undefined }];
   const seen = new Set<object>();
   while (stack.length) {
-    const { v, path, idObj: up } = stack.pop()!;
-    if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v) || seen.has(v)) continue;
+    const node = stack.pop()!;
+    const v = node.v;
+    if (seen.has(v)) continue;
     seen.add(v);
-    const kids: { v: unknown; path: string; idObj: Record<string, unknown> | undefined }[] = [];
     if (Array.isArray(v)) {
-      v.forEach((x, k) => kids.push({ v: x, path: `${path}[${k}]`, idObj: up }));
-    } else {
-      const o = v as Record<string, unknown>;
-      const idObj = typeof o.id === 'string' ? o : up;
-      const box = o.scripts;
-      if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
-        const id = idObj?.id as string | undefined;
-        const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
-        for (const kind of SCRIPT_KINDS) {
-          const s = (box as Record<string, unknown>)[kind];
-          if (s === null || typeof s !== 'object') continue;
-          const src = (s as Record<string, unknown>).src;
-          if (typeof src !== 'string') continue;
-          out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
-        }
+      for (let k = v.length - 1; k >= 0; k--) {
+        const x = v[k];
+        if (isBox(x)) stack.push({ v: x, up: node, key: k, idObj: node.idObj });
       }
-      for (const [k, x] of Object.entries(o)) if (k !== 'scripts') kids.push({ v: x, path: path ? `${path}.${k}` : k, idObj });
+      continue;
     }
-    for (let k = kids.length - 1; k >= 0; k--) stack.push(kids[k]);
+    const o = v as Record<string, unknown>;
+    const idObj = typeof o.id === 'string' ? o : node.idObj;
+    const box = o.scripts;
+    if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
+      const id = idObj?.id as string | undefined;
+      const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
+      for (const kind of SCRIPT_KINDS) {
+        const s = (box as Record<string, unknown>)[kind];
+        if (s === null || typeof s !== 'object') continue;
+        const src = (s as Record<string, unknown>).src;
+        if (typeof src !== 'string') continue;
+        const path = pathOf(node);
+        out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
+      }
+    }
+    const keys = Object.keys(o);
+    for (let k = keys.length - 1; k >= 0; k--) {
+      const x = o[keys[k]];
+      if (keys[k] !== 'scripts' && isBox(x)) stack.push({ v: x, up: node, key: keys[k], idObj });
+    }
   }
   return out;
 }

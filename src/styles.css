@@ -914,21 +914,77 @@ button svg {
   margin: 0;
 }
 
-/* 顶部中间的提示条 */
-.notice {
+/* 顶部中间的提示条（安全模式、脚本出错的横幅在它上面，一起往下排） */
+.notices {
   position: absolute;
   top: 62px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 40px);
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 12;
+  pointer-events: none;
+}
+.notices > * {
+  pointer-events: auto;
+}
+.notice {
+  max-width: 100%;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 6px 5px 14px;
   background: var(--glass-strong);
   border-radius: 20px;
-  z-index: 12;
   font-size: 13px;
+}
+.notice.banner {
+  border-color: rgba(240, 160, 64, 0.45);
+}
+.notice .link-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: var(--accent);
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.notice .link-btn:hover {
+  text-decoration: underline;
+}
+
+/* 问一句的对话框（信任脚本吗、用安全模式打开吗） */
+.modal.ask {
+  width: 560px;
+}
+.ask-scripts {
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+.ask-scripts pre {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
+.ask-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 .notice.error {
   background: rgba(80, 30, 28, 0.96);
