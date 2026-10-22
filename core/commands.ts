@@ -129,9 +129,8 @@ const baseCommands = [
   z.object({ op: z.literal('remove_region'), id: z.string() }),
 ] as const;
 
-export type Command =
-  | z.input<(typeof baseCommands)[number]>
-  | { op: 'batch'; label?: string; commands: Command[] };
+// provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用
+export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & { provinceNames?: Record<string, string> };
 
 const single = z.discriminatedUnion('op', baseCommands);
 export const commandSchema: z.ZodType<Command> = z.lazy(() =>
@@ -207,8 +206,15 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   }
 }
 
-// changed：命令有没有改动原因或小数据（没改动时推导也不会变）
-export function applyCommand(world: World, raw: Command, ctx: ApplyContext): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean } {
+// changed：命令有没有改动原因或小数据（没改动时推导也不会变）。
+// provinceNames：这一步新起的省名。起名要看推导（河、山、冷暖），重放时推导还没算到这一步，起出来的名字可能
+// 与当时不同，所以记进命令；命令里记着的就照用（旧存档没有记，照旧重放）
+export function applyCommand(
+  world: World,
+  input: Command,
+  ctx: ApplyContext,
+): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean; provinceNames: Record<string, string> | null } {
+  const { provinceNames: stored, ...raw } = input;
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
@@ -216,9 +222,16 @@ export function applyCommand(world: World, raw: Command, ctx: ApplyContext): { d
   const before = keys.map((k) => Float64Array.from(getArray(world, k)!));
   const smallBefore = JSON.stringify(world.small);
   const fieldsBefore = { ...world.causes.fields };
+  const idsBefore = new Set(Object.keys(world.small.provinces));
   let result: { dirty: Dirty; summary: string };
   try {
     result = run(world, cmd, ctx);
+    if (stored) {
+      for (const [id, name] of Object.entries(stored)) {
+        const p = world.small.provinces[Number(id)];
+        if (p && !idsBefore.has(id)) p.name = name;
+      }
+    }
   } catch (e) {
     // 失败时恢复，保证命令要么完整生效要么不生效
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
@@ -237,7 +250,9 @@ export function applyCommand(world: World, raw: Command, ctx: ApplyContext): { d
   const names = new Set([...Object.keys(fieldsBefore), ...Object.keys(world.causes.fields)]);
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
   const changed = undo.arrays.length > 0 || undo.fields.length > 0 || JSON.stringify(world.small) !== smallBefore;
-  return { ...result, undo, changed };
+  const provinceNames: Record<string, string> = {};
+  for (const [id, p] of Object.entries(world.small.provinces)) if (!idsBefore.has(id)) provinceNames[id] = p.name;
+  return { ...result, undo, changed, provinceNames: Object.keys(provinceNames).length ? provinceNames : null };
 }
 
 export function revert(world: World, undo: UndoRecord) {

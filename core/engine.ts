@@ -126,7 +126,9 @@ export class Engine {
     this.lastNoop = skipNoop && !r.changed;
     if (this.lastNoop) return r.summary;
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
-    this.done.push({ id: ++this.seq, cmd, undo: r.undo, summary: r.summary, dirty });
+    // 新起的省名记进命令（存档、重做时照用）
+    const recorded = r.provinceNames ? { ...cmd, provinceNames: r.provinceNames } : cmd;
+    this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
     return r.summary;
   }
