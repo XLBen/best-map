@@ -1330,14 +1330,6 @@ kbd {
   margin-bottom: 6px;
 }
 /* 生态的“高级：图案、效果与脚本” */
-.species-advanced .slider-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.species-advanced .slider-row input[type='range'] {
-  flex: 1;
-}
 .species-advanced textarea.names {
   width: 100%;
   min-height: 64px;

@@ -3,12 +3,15 @@ import type { ScriptIssue } from '../../core/script';
 // 脚本框的“停一下就用上”：打字停 600 毫秒、检查通过后，真的提交到世界上（地图上看到的就是结果）。
 // 一次编辑（从点进框里到离开）只算一步撤销：第一次提交是新的一步（exec），之后用“换掉”（replaceLast），
 // 但只在引擎的最后一步还是这次编辑做的那一步时（期间没有别的改动、撤销）。
+// 提交之前先等别处的改动（排着的笔画、撤销……）都算完：不然“换掉最后一步”换的会是别人的那一步，
+// 另一个框刚提交的脚本也还没回到 world 里。
 // 出错时地图保留上一次没出错的结果：
 //   - 提交前就查出来的（语法、用了没有的变量）：不提交；
 //   - 引擎拒绝了这一步：世界本来就没变；
-//   - 在地图上算的时候才出的错（运行时出错、算出 NaN……，引擎按“没有这段脚本”处理）：换回上一次没出错的写法。
+//   - 在地图上算的时候才出的错（运行时出错、算出 NaN……，引擎按“没有这段脚本”处理）：换回上一次没出错的写法，
+//     并记下这段写法：世界没变时离开框不再拿它重算一遍。
 // 这里只有逻辑，不碰界面和 Worker：检查、提交、读状态都由调用方给（测试里换成假的）。
-// 以后有了临时 worker 里的验证（用真实的数组先跑一遍），接在 check 里就行
+// 以后有了临时 worker 里的验证（用真实的数组先跑一遍、卡住了就停下），接在 check 里就行
 
 // 框下面那一行要说的问题
 export interface ScriptProblem {
@@ -18,9 +21,13 @@ export interface ScriptProblem {
   // 出错的格：“地图上有一处…（点这里去看）”
   cell?: number;
   // syntax、name：提交前就查出来的，地图没动；engine：引擎拒绝了这一步；
-  // runtime、value：在地图上算的时候出的错；disabled：安全模式下脚本没有运行（不算错）
-  reason: 'syntax' | 'name' | 'engine' | 'runtime' | 'value' | 'disabled';
+  // runtime、value：在地图上算的时候出的错；disabled：安全模式下脚本没有运行（不算错）；
+  // wait：有循环的脚本，打字停下时先不用，离开框时才用（不算错，见 script-syntax.ts）
+  reason: 'syntax' | 'name' | 'engine' | 'runtime' | 'value' | 'disabled' | 'wait';
 }
+
+// 不算错、只是说明（灰字）
+export const isNote = (p: ScriptProblem | null): boolean => !!p && (p.reason === 'disabled' || p.reason === 'wait');
 
 // 引擎记下的出错（d.scriptIssues 里的一项）换成框下面的问题。语法错误在这里出现只可能是编辑器没查出来、引擎查出来的
 export function problemOfIssue(i: ScriptIssue): ScriptProblem {
@@ -44,14 +51,18 @@ export interface Timers {
 }
 
 export interface ScriptEditDeps {
-  // 提交前的检查：没问题返回 null
-  check(src: string): Promise<ScriptProblem | null>;
-  // 提交（src 为空表示去掉这段脚本）。exec：新的一步；replace：换掉最后一步
-  apply(src: string, mode: ApplyMode): Promise<ApplyResult>;
-  // 引擎现在的状态编号（每次执行、撤销、重做、换掉都会变）
-  stateId(): number;
+  // 提交前的检查：没问题返回 null。final：要离开了（离开框、关上），检查通过就提交；否则是打字停了一下
+  check(src: string, final: boolean): Promise<ScriptProblem | null>;
+  // 提交（src 为空表示去掉这段脚本）。exec：新的一步；replace：换掉最后一步。
+  // revert：出错后换回上一次没出错的写法（不是用户这次写的）
+  apply(src: string, mode: ApplyMode, revert?: boolean): Promise<ApplyResult>;
+  // 引擎现在的状态编号（每次执行、撤销、重做、换掉都会变；换了世界也要变）
+  stateId(): number | string;
   // 世界上这段脚本现在出的错（软失败）；没有为 null
   issue(): ScriptProblem | null;
+  // 别处的改动都算完了没有；等它们算完。没给时当作总是算完了
+  idle?(): boolean;
+  settle?(): Promise<void>;
   // 显示的东西变了
   onChange?(): void;
   delay?: number;
@@ -84,14 +95,18 @@ export class ScriptEdit {
   // 最近一段在地图上算的时候没出错的：出错时退回它
   private good: string;
   // 这次编辑做出的那一步之后的状态编号；引擎还在这个状态，说明最后一步还是它，再提交就换掉它
-  private mine: number | null = null;
+  private mine: number | string | null = null;
   // 第几次编辑：离开再点进来是新的一次（新的一步撤销）。还在算的上一次的结果不算到这一次头上
   private session = 0;
   private problem: ScriptProblem | null;
   private stale = false;
+  // 最近一段在地图上算出错、已经换回去的写法，和那时的状态：世界没变时不再拿它重算（大星球上一来一回要两次重算）
+  private failed: { src: string; state: number | string; problem: ScriptProblem } | null = null;
   private timer: unknown = null;
   private running: Promise<void> | null = null;
   private again = false;
+  // 下一次检查是离开框时的（有循环的脚本这时才提交）
+  private final = false;
   private readonly timers: Timers;
 
   constructor(
@@ -132,18 +147,20 @@ export class ScriptEdit {
     this.deps.onChange?.();
   }
 
-  // 不等了，立即检查、提交
+  // 不等了（离开框、关上），立即检查、提交
   flush(): Promise<void> {
     if (this.timer !== null) {
       this.timers.clear(this.timer);
       this.timer = null;
     }
+    this.final = true;
     return this.run();
   }
 
-  // 世界上的这段脚本、它的出错变了（撤销、重做、别处的改动、重算之后）。正在提交时不管（结果由提交自己记）
+  // 世界上的这段脚本、它的出错变了（撤销、重做、别处的改动、重算之后）。正在提交时不管（结果由提交自己记；
+  // 提交完调用方要再同步一次：期间的撤销这时才看得到）。框里有没用上的改动时留着它
   sync(worldSrc: string, worldProblem: ScriptProblem | null): void {
-    if (this.running || this.timer !== null) return;
+    if (this.running) return;
     const src = normScript(worldSrc);
     const edited = normScript(this.draft) !== this.committed;
     if (src !== this.committed) {
@@ -170,7 +187,9 @@ export class ScriptEdit {
     try {
       do {
         this.again = false;
-        await this.step();
+        const final = this.final;
+        this.final = false;
+        await this.step(final);
       } while (this.again);
     } finally {
       this.running = null;
@@ -179,7 +198,7 @@ export class ScriptEdit {
     }
   }
 
-  private async step(): Promise<void> {
+  private async step(final: boolean): Promise<void> {
     const { deps } = this;
     const session = this.session;
     const src = normScript(this.draft);
@@ -189,9 +208,16 @@ export class ScriptEdit {
       this.stale = false;
       return;
     }
+    const f = this.failed;
+    if (f && f.src === src && f.state === deps.stateId()) {
+      // 刚在地图上出过错、换回去了，世界也没变：再算一遍还是一样
+      this.problem = f.problem;
+      this.stale = true;
+      return;
+    }
     let p: ScriptProblem | null;
     try {
-      p = await deps.check(src);
+      p = await deps.check(src, final);
     } catch {
       // 检查本身出了问题（以后的验证 worker 起不来之类）：不提交，地图保留原来的
       p = { text: '现在检查不了这段脚本，等一下再试', reason: 'engine' };
@@ -203,7 +229,11 @@ export class ScriptEdit {
       this.stale = true;
       return;
     }
-    const mode: ApplyMode = this.mine !== null && deps.stateId() === this.mine ? 'replace' : 'exec';
+    // 等别处的改动算完：之后 world、状态编号就是引擎里的样子
+    if (deps.settle) await deps.settle();
+    if (normScript(this.draft) !== src) return;
+    const idle = () => deps.idle?.() ?? true;
+    const mode: ApplyMode = this.mine !== null && deps.stateId() === this.mine && idle() ? 'replace' : 'exec';
     const before = deps.stateId();
     const r = await deps.apply(src, mode);
     if (!r.ok) {
@@ -219,6 +249,7 @@ export class ScriptEdit {
     else if (after !== before) this.mine = after;
     else if (mode === 'exec') this.mine = null;
     this.committed = src;
+    this.failed = null;
     const issue = deps.issue();
     if (!issue || issue.reason === 'disabled') {
       this.problem = issue;
@@ -226,15 +257,17 @@ export class ScriptEdit {
       this.stale = false;
       return;
     }
-    // 在地图上算的时候出了错：说明问题，地图换回上一次没出错的写法（还是同一步）
+    // 在地图上算的时候出了错：说明问题，地图换回上一次没出错的写法（还是同一步）。
+    // 期间别处又有了改动（最后一步不再是这一步）时不换：地图上按“没有这段脚本”显示，框下面照样说明
     this.problem = issue;
     this.stale = false;
-    if (this.good !== src && this.mine !== null && deps.stateId() === this.mine) {
-      const back = await deps.apply(this.good, 'replace');
+    if (this.good !== src && this.mine !== null && deps.stateId() === this.mine && idle()) {
+      const back = await deps.apply(this.good, 'replace', true);
       if (back.ok) {
         this.committed = this.good;
         this.mine = this.session === session ? deps.stateId() : null;
         this.stale = true;
+        this.failed = { src, state: deps.stateId(), problem: issue };
       }
     }
   }

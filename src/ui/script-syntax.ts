@@ -1,5 +1,6 @@
 import type { Program } from 'acorn';
 import {
+  MAX_SCRIPT_CHARS,
   SCRIPT_HELPER_NAMES,
   type ScriptKind,
   blockedNameText,
@@ -13,15 +14,16 @@ import {
 // 脚本编辑器在主线程上的检查：用懒加载的 acorn 只解析（不编译、不运行用户的代码），
 // 给出语法错误在第几行、用了没有的变量（“没有变量 tMeen（是不是 tMean？）”）。
 // V8 的 new Function 报语法错误时不带行号，所以行号靠这里；装上 acorn 后也挂到 setSyntaxLocator 上。
-// acorn 加载不了（离线、文件丢了）时不查：写错的脚本照样会被引擎拒绝，只是说不出第几行
+// acorn 加载不了（离线、文件丢了）时不查：写错的脚本照样会被引擎拒绝，只是说不出第几行。
+// 还有一条不算错的说明：有循环的脚本打字停下时先不用，离开框时才用（LOOP_NOTE）
 
 export interface SyntaxProblem {
   // 用户源码里的第几行（从 1 起）；不知道时没有
   line?: number;
   // 中文说明，编辑器的红字：`第 ${line} 行：${text}`
   text: string;
-  // syntax 写法不对；name 用了没有的或不能用的名字
-  reason: 'syntax' | 'name';
+  // syntax 写法不对；name 用了没有的或不能用的名字；wait 有循环，离开框时才用（不算错）
+  reason: 'syntax' | 'name' | 'wait';
 }
 
 type Acorn = typeof import('acorn');
@@ -34,7 +36,7 @@ export function loadAcorn(): Promise<Acorn | null> {
   if (acorn) return Promise.resolve(acorn);
   loading ??= import('acorn').then(
     (m) => {
-      useAcorn(m);
+      installAcorn(m);
       return m;
     },
     () => {
@@ -47,7 +49,7 @@ export function loadAcorn(): Promise<Acorn | null> {
 }
 
 // 装上 acorn：之后语法错误的行号都靠它（测试直接用它）
-export function useAcorn(m: Acorn): void {
+export function installAcorn(m: Acorn): void {
   acorn = m;
   setSyntaxLocator((src) => syntaxProblem(src)?.line);
 }
@@ -221,7 +223,28 @@ const BUILTINS = new Set([
   'Uint8ClampedArray',
   'Uint16Array',
   'Uint32Array',
+  'BigInt64Array',
+  'BigUint64Array',
+  'Float16Array',
+  'AggregateError',
+  'EvalError',
+  'URIError',
+  'Iterator',
+  'encodeURI',
+  'decodeURI',
+  'escape',
+  'unescape',
+  'structuredClone',
+  'atob',
+  'btoa',
+  'TextEncoder',
+  'TextDecoder',
 ]);
+
+// 引擎没有遮住、在编辑器里也不让用的名字：console 每格打印一次，大星球上一次就是十万行
+const EDITOR_BLOCKED: Record<string, string> = {
+  console: '脚本里不能用 console',
+};
 
 type AstNode = { type: string; loc?: { start: { line: number } } | null } & Record<string, unknown>;
 const isNode = (v: unknown): v is AstNode => v !== null && typeof v === 'object' && typeof (v as AstNode).type === 'string';
@@ -300,6 +323,9 @@ export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly s
       case 'CatchClause':
         bind(node.param, declared);
         break;
+      case 'ImportExpression':
+        uses.push({ name: 'import', at: node.start as number, line: node.loc?.start.line });
+        break;
       case 'MemberExpression': {
         const o = node.object as AstNode;
         const p = node.property as AstNode;
@@ -336,9 +362,10 @@ export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly s
       if (declared.has('field') || fields!.includes(u.name) || perCell.has(u.name)) continue;
       return { line: u.line, text: `没有自定义场「${u.name}」（先在“调整”里新建）`, reason: 'name' };
     }
+    if (u.name === 'import') return { line: u.line, text: '脚本里不能用 import', reason: 'name' };
     // 自己声明了的名字随便用（自己声明的 Math 上的 random 也是自己的）
     if (declared.has(u.name === 'Math.random' ? 'Math' : u.name)) continue;
-    const blocked = blockedNameText(u.name);
+    const blocked = blockedNameText(u.name) ?? EDITOR_BLOCKED[u.name];
     if (blocked) return { line: u.line, text: blocked, reason: 'name' };
     if (u.name === 'Math.random' || known.has(u.name)) continue;
     return { line: u.line, text: unknownVariableText(u.name, kind), reason: 'name' };
@@ -346,14 +373,36 @@ export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly s
   return null;
 }
 
-// 编辑器提交前的检查：写法、名字。没问题、或 acorn 加载不了时为 null
-export function checkNow(kind: ScriptKind, src: string, fields?: readonly string[]): SyntaxProblem | null {
-  if (!acorn) return null;
-  const r = parse(acorn, src);
-  return 'error' in r ? errorProblem(r.error, src) : namesProblem(r.ast, kind, fields);
+// ---------- 循环 ----------
+// 引擎那边还没有“卡住了就停下”（看门狗、临时 worker 里的验证都在后面）。写到一半的循环（比如删掉了 i++ 正要重写）
+// 也能通过检查，停一下就提交的话 Worker 会一直算下去。所以有 while、do、for(;;) 的脚本打字停下时先不用，
+// 离开框时才用。for…of、for…in 走的是现成的数组、对象，不算
+const LOOPS = new Set(['WhileStatement', 'DoWhileStatement', 'ForStatement']);
+
+export function hasLoop(node: unknown): boolean {
+  if (!isNode(node)) return false;
+  if (LOOPS.has(node.type)) return true;
+  for (const [k, v] of Object.entries(node)) {
+    if (k === 'loc') continue;
+    if (Array.isArray(v) ? v.some(hasLoop) : hasLoop(v)) return true;
+  }
+  return false;
 }
 
-export async function checkScript(kind: ScriptKind, src: string, fields?: readonly string[]): Promise<SyntaxProblem | null> {
+export const LOOP_NOTE = '这段有循环，点到框外面时才用到地图上';
+
+// 编辑器提交前的检查：长度、写法、名字；pause（打字停下时，不是离开框时）还看有没有循环。
+// 没问题、或 acorn 加载不了时为 null（长度照样查）
+export function checkNow(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean } = {}): SyntaxProblem | null {
+  if (src.length > MAX_SCRIPT_CHARS) return { text: `脚本太长了（最多 ${MAX_SCRIPT_CHARS} 个字符）`, reason: 'syntax' };
+  // acorn 加载不了：只按字面找循环（宁可多等一次，也不提交写到一半的循环）
+  if (!acorn) return opts.pause && /\b(?:while|for|do)\b/.test(codeOnly(src)) ? { text: LOOP_NOTE, reason: 'wait' } : null;
+  const r = parse(acorn, src);
+  if ('error' in r) return errorProblem(r.error, src);
+  return namesProblem(r.ast, kind, fields) ?? (opts.pause && hasLoop(r.ast) ? { text: LOOP_NOTE, reason: 'wait' } : null);
+}
+
+export async function checkScript(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean } = {}): Promise<SyntaxProblem | null> {
   await loadAcorn();
-  return checkNow(kind, src, fields);
+  return checkNow(kind, src, fields, opts);
 }

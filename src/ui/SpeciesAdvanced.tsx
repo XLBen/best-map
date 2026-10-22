@@ -1,20 +1,21 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { SCRIPT_KIND_LABEL } from '../../core/script';
-import { PATTERNS, PATTERN_LABEL, type Pattern, SPECIES_SCRIPT_KINDS, type Species, type Visual } from '../../core/species';
-import { exec, world } from '../state';
+import { type Effects, PATTERNS, PATTERN_LABEL, type Pattern, SPECIES_SCRIPT_KINDS, type Species, type SpeciesFeature, type Visual } from '../../core/species';
+import { world, worldEpoch } from '../state';
 import { ScriptBox } from './ScriptBox';
 import { previewVisual, scriptEditorRequest, showCell } from './editor-hooks';
-import { type SpeciesScriptKind, applySpeciesScript, speciesIssue } from './species-scripts';
+import { type SpeciesScriptKind, applySpeciesScript, queueSpeciesEdit, settleSpeciesEdits, speciesEditsSettled, speciesIssue } from './species-scripts';
 
 // 生态抽屉里收起来的“高级：图案、效果与脚本”（第三批）：花纹与发光、对周围的影响、侵占、地名、两个脚本框。
 // 滑块松手才提交（一步撤销）；拖花纹、发光滑块时地图上立即换上（画面那边装上了 previewVisual 时）；
-// 脚本停一下就用到地图上（见 ScriptBox）
+// 脚本停一下就用到地图上（见 ScriptBox）。
+// 每次提交都排进队里、按那时世界上最新的这种生态做出补丁（见 species-scripts.ts）：大星球上连着改几处时不会互相冲掉；
+// 只改动这次动了的那一项，资源包里超出滑块范围的值（比如降水 −78%）不会因为改了别的而被改掉
 
 // “对周围的影响”接进气候以后改成 true（那时去掉“先记下”的说明）
 export const CLIMATE_EFFECTS_LIVE = false;
 
 type Patch = Record<string, unknown>;
-const update = (sp: Species, patch: Patch, label: string) => exec({ op: 'update_species', id: sp.id, patch }, label);
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 const hexRgb = (hex: string) => {
@@ -30,8 +31,34 @@ const lighter = (hex: string) => rgbHex(hexRgb(hex).map((x) => x + (255 - x) * 0
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const signed = (x: number, unit: string) => (x === 0 ? '不变' : `${x > 0 ? '+' : '−'}${Math.abs(x)}${unit}`);
 
-// 滑块：拖动时 onLive，松手时 onDone
-function Slider(p: { label: string; min: number; max: number; step: number; value: number; text: string; onLive?: (v: number) => void; onDone: (v: number) => void }) {
+// 松手、点了以后到提交算完之前先显示的值。同一处连着改几次时，最后一次算完才去掉；换了生态就去掉
+function useLocal<T>(spId: string): [T | null, (v: T | null) => void, (job: Promise<unknown>, after?: () => void) => void, () => boolean] {
+  const [local, setLocal] = useState<T | null>(null);
+  const jobs = useRef(0);
+  useEffect(() => setLocal(null), [spId]);
+  const track = (job: Promise<unknown>, after?: () => void) => {
+    jobs.current++;
+    void job.finally(() => {
+      if (--jobs.current > 0) return;
+      setLocal(null);
+      after?.();
+    });
+  };
+  return [local, setLocal, track, () => jobs.current > 0];
+}
+
+// 滑块：拖动时 onLive，松手时 onDone（值没变时没有 onDone，只有 onEnd）
+function Slider(p: {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  text: string;
+  onLive?: (v: number) => void;
+  onDone: (v: number) => void;
+  onEnd?: () => void;
+}) {
   return (
     <label>
       <span class="row between">
@@ -46,6 +73,9 @@ function Slider(p: { label: string; min: number; max: number; step: number; valu
         value={p.value}
         onInput={(e) => p.onLive?.(Number((e.target as HTMLInputElement).value))}
         onChange={(e) => p.onDone(Number((e.target as HTMLInputElement).value))}
+        // 松手的 change 在 pointerup 之后才到：等它一下
+        onPointerUp={() => p.onEnd && setTimeout(p.onEnd, 0)}
+        onPointerCancel={() => p.onEnd && setTimeout(p.onEnd, 0)}
       />
     </label>
   );
@@ -59,29 +89,42 @@ export function cleanVisual(v: Visual): Visual | null {
   return out;
 }
 
+// 外观改一项：在这种生态现在的外观上改（不是界面上可能还没更新的那份）
+export function visualPatch(cur: Species, change: Partial<Visual>): Patch | null {
+  const c = cleanVisual({ ...(cur.visual ?? { pattern: 'none' }), ...change });
+  return same(c, cur.visual) ? null : { visual: c };
+}
+
 function LookSection({ sp }: { sp: Species }) {
-  // 拖动中的外观（松手提交后去掉）
-  const [drag, setDrag] = useState<Visual | null>(null);
-  useEffect(() => setDrag(null), [sp.id, JSON.stringify(sp.visual ?? null)]);
-  const v: Visual = drag ?? sp.visual ?? { pattern: 'none' };
-  const live = (next: Visual) => {
-    setDrag(next);
+  // 拖动中、提交还没算完时的外观
+  const [local, setLocal, track, saving] = useLocal<Visual>(sp.id);
+  const v: Visual = local ?? sp.visual ?? { pattern: 'none' };
+  const live = (change: Partial<Visual>) => {
+    const next = { ...v, ...change };
+    setLocal(next);
     previewVisual(sp.id, cleanVisual(next) ?? { pattern: 'none' });
   };
-  const save = async (next: Visual) => {
-    setDrag(next);
-    const c = cleanVisual(next);
-    if (!same(c, sp.visual)) await update(sp, { visual: c }, '正在换外观…');
+  const save = (change: Partial<Visual>) => {
+    setLocal({ ...v, ...change });
+    const id = sp.id;
     // 真的数据到了：去掉临时的外观
+    track(
+      queueSpeciesEdit(id, '正在换外观…', (cur) => visualPatch(cur, change)),
+      () => previewVisual(id, null),
+    );
+  };
+  // 拖了又拖回原处（没有 change）：去掉临时的外观，免得它一直盖着世界上真的外观（比如之后的撤销）
+  const end = () => {
+    if (saving()) return;
+    setLocal(null);
     previewVisual(sp.id, null);
-    setDrag(null);
   };
   const glow = v.glow ?? 0;
   return (
     <>
       <h5>图案</h5>
       <div class="row wrap">
-        <select value={v.pattern} onChange={(e) => void save({ ...v, pattern: (e.target as HTMLSelectElement).value as Pattern })}>
+        <select value={v.pattern} onChange={(e) => save({ pattern: (e.target as HTMLSelectElement).value as Pattern })}>
           {PATTERNS.map((p) => (
             <option value={p}>{PATTERN_LABEL[p]}</option>
           ))}
@@ -92,27 +135,27 @@ function LookSection({ sp }: { sp: Species }) {
             <input
               type="color"
               value={v.color2 ?? darker(sp.color)}
-              onInput={(e) => live({ ...v, color2: (e.target as HTMLInputElement).value })}
-              onChange={(e) => void save({ ...v, color2: (e.target as HTMLInputElement).value })}
+              onInput={(e) => live({ color2: (e.target as HTMLInputElement).value })}
+              onChange={(e) => save({ color2: (e.target as HTMLInputElement).value })}
             />
           </label>
         )}
       </div>
       {v.pattern !== 'none' && (
         <>
-          <Slider label="明显程度" min={0} max={1} step={0.05} value={v.amount ?? 0.6} text={pct(v.amount ?? 0.6)} onLive={(x) => live({ ...v, amount: x })} onDone={(x) => void save({ ...v, amount: x })} />
-          <Slider label="大小" min={0.1} max={4} step={0.05} value={v.size ?? 0.5} text={`${(v.size ?? 0.5).toFixed(2)} 格`} onLive={(x) => live({ ...v, size: x })} onDone={(x) => void save({ ...v, size: x })} />
+          <Slider label="明显程度" min={0} max={1} step={0.05} value={v.amount ?? 0.6} text={pct(v.amount ?? 0.6)} onLive={(x) => live({ amount: x })} onDone={(x) => save({ amount: x })} onEnd={end} />
+          <Slider label="大小" min={0.1} max={4} step={0.05} value={v.size ?? 0.5} text={`${(v.size ?? 0.5).toFixed(2)} 格`} onLive={(x) => live({ size: x })} onDone={(x) => save({ size: x })} onEnd={end} />
         </>
       )}
-      <Slider label="发光" min={0} max={1} step={0.05} value={glow} text={glow > 0 ? pct(glow) : '不发光'} onLive={(x) => live({ ...v, glow: x })} onDone={(x) => void save({ ...v, glow: x })} />
+      <Slider label="发光" min={0} max={1} step={0.05} value={glow} text={glow > 0 ? pct(glow) : '不发光'} onLive={(x) => live({ glow: x })} onDone={(x) => save({ glow: x })} onEnd={end} />
       {glow > 0 && (
         <label class="inline">
           发光的颜色
           <input
             type="color"
             value={v.glowColor ?? lighter(sp.color)}
-            onInput={(e) => live({ ...v, glowColor: (e.target as HTMLInputElement).value })}
-            onChange={(e) => void save({ ...v, glowColor: (e.target as HTMLInputElement).value })}
+            onInput={(e) => live({ glowColor: (e.target as HTMLInputElement).value })}
+            onChange={(e) => save({ glowColor: (e.target as HTMLInputElement).value })}
           />
         </label>
       )}
@@ -120,56 +163,94 @@ function LookSection({ sp }: { sp: Species }) {
   );
 }
 
-// 对周围的影响：变暖变冷（°C）、变湿变干（降水乘以 e^dP，界面上按百分比）、范围
+// 对周围的影响里改一项（dP 是降水乘以 e^dP 的那个数）；没改的项照原样留着（资源包里的值可能超出滑块的范围）
+export type ClimateChange = { dT?: number; dP?: number; radiusKm?: number };
+export const DEFAULT_RADIUS_KM = 300;
+
+export function withClimate(effects: Effects | undefined, change: ClimateChange): Effects | null {
+  const old = effects?.climate;
+  const dT = change.dT ?? old?.dT ?? 0;
+  const dP = change.dP ?? old?.dP ?? 0;
+  const radiusKm = change.radiusKm ?? old?.radiusKm ?? DEFAULT_RADIUS_KM;
+  const climate = dT || dP ? { ...(dT ? { dT } : {}), ...(dP ? { dP } : {}), radiusKm } : undefined;
+  const { climate: _, ...rest } = effects ?? {};
+  const out: Effects = { ...rest, ...(climate ? { climate } : {}) };
+  return Object.keys(out).length ? out : null;
+}
+
+// 降水的百分比（滑块）与 dP 互换
+export const percentOfDp = (dP: number) => Math.round((Math.exp(dP) - 1) * 100);
+export const dpOfPercent = (p: number) => Math.max(-1.5, Math.min(1.5, Math.round(Math.log(1 + p / 100) * 1e4) / 1e4));
+
+const effectsPatch = (cur: Species, next: Effects | null): Patch | null => (same(next, cur.effects) ? null : { effects: next });
+
 function ClimateSection({ sp }: { sp: Species }) {
   const c = sp.effects?.climate;
-  const [drag, setDrag] = useState<{ dT: number; pct: number; r: number } | null>(null);
-  useEffect(() => setDrag(null), [sp.id, JSON.stringify(c ?? null)]);
-  const cur = drag ?? { dT: c?.dT ?? 0, pct: Math.round((Math.exp(c?.dP ?? 0) - 1) * 100), r: c?.radiusKm ?? 300 };
-  const save = async (next: typeof cur) => {
-    setDrag(next);
-    const climate =
-      next.dT || next.pct
-        ? { ...(next.dT ? { dT: next.dT } : {}), ...(next.pct ? { dP: Math.round(Math.log(1 + next.pct / 100) * 1e4) / 1e4 } : {}), radiusKm: next.r }
-        : undefined;
-    const effects = { ...(climate ? { climate } : {}), ...(sp.effects?.invade ? { invade: sp.effects.invade } : {}) };
-    const value = Object.keys(effects).length ? effects : null;
-    if (!same(value, sp.effects)) await update(sp, { effects: value }, '正在计算生态…');
-    setDrag(null);
+  const [local, setLocal, track, saving] = useLocal<ClimateChange>(sp.id);
+  // 拖了又拖回原处（没有 change）：不再显示拖动中的值，免得之后撤销时还停在这里
+  const end = () => !saving() && setLocal(null);
+  const dT = local?.dT ?? c?.dT ?? 0;
+  const dP = local?.dP ?? c?.dP ?? 0;
+  const r = local?.radiusKm ?? c?.radiusKm ?? DEFAULT_RADIUS_KM;
+  const p = percentOfDp(dP);
+  const live = (change: ClimateChange) => setLocal({ ...local, ...change });
+  const save = (change: ClimateChange) => {
+    live(change);
+    track(queueSpeciesEdit(sp.id, '正在计算生态…', (cur) => effectsPatch(cur, withClimate(cur.effects, change))));
   };
   return (
     <>
       <h5>对周围的影响</h5>
-      <Slider label="变暖变冷" min={-5} max={5} step={0.5} value={cur.dT} text={signed(cur.dT, ' °C')} onLive={(x) => setDrag({ ...cur, dT: x })} onDone={(x) => void save({ ...cur, dT: x })} />
-      <Slider label="变湿变干" min={-50} max={100} step={5} value={cur.pct} text={cur.pct === 0 ? '不变' : `降水 ${signed(cur.pct, '%')}`} onLive={(x) => setDrag({ ...cur, pct: x })} onDone={(x) => void save({ ...cur, pct: x })} />
-      {(cur.dT !== 0 || cur.pct !== 0) && (
-        <Slider label="范围" min={50} max={1500} step={10} value={cur.r} text={`${cur.r} 千米`} onLive={(x) => setDrag({ ...cur, r: x })} onDone={(x) => void save({ ...cur, r: x })} />
+      <Slider label="变暖变冷" min={-5} max={5} step={0.5} value={dT} text={signed(dT, ' °C')} onLive={(x) => live({ dT: x })} onDone={(x) => save({ dT: x })} onEnd={end} />
+      <Slider
+        label="变湿变干"
+        min={-50}
+        max={100}
+        step={5}
+        value={p}
+        text={p === 0 ? '不变' : `降水 ${signed(p, '%')}`}
+        onLive={(x) => live({ dP: dpOfPercent(x) })}
+        onDone={(x) => save({ dP: dpOfPercent(x) })}
+        onEnd={end}
+      />
+      {(dT !== 0 || dP !== 0) && (
+        <Slider label="范围" min={50} max={1500} step={10} value={r} text={`${r} 千米`} onLive={(x) => live({ radiusKm: x })} onDone={(x) => save({ radiusKm: x })} onEnd={end} />
       )}
       <p class="muted small">离它越远影响越小，到范围的边上就没有了。{CLIMATE_EFFECTS_LIVE ? '' : '这一项先记下，现在还不改地图上的冷暖干湿。'}</p>
     </>
   );
 }
 
+export const DEFAULT_INVADE_STRENGTH = 1.5;
+
+// 点了一种：有就去掉，没有就加上（按生态列表的顺序排，已经不在了的目标照旧留在后面）
+export function toggleTarget(targets: readonly string[], id: string, order: readonly string[]): string[] {
+  if (targets.includes(id)) return targets.filter((t) => t !== id);
+  return [...order.filter((o) => o === id || targets.includes(o)), ...targets.filter((t) => !order.includes(t))];
+}
+
+// 侵占里改一项：toggle 点了哪一种，strength 强度
+export function withInvade(effects: Effects | undefined, change: { toggle?: string; strength?: number }, order: readonly string[]): Effects | null {
+  const inv = effects?.invade;
+  const targets = change.toggle !== undefined ? toggleTarget(inv?.targets ?? [], change.toggle, order) : (inv?.targets ?? []);
+  const strength = change.strength ?? inv?.strength ?? DEFAULT_INVADE_STRENGTH;
+  const invade = targets.length ? { targets: targets.slice(0, 48), strength } : undefined;
+  const { invade: _, ...rest } = effects ?? {};
+  const out: Effects = { ...rest, ...(invade ? { invade } : {}) };
+  return Object.keys(out).length ? out : null;
+}
+
 // 侵占：在目标生态适宜的地方竞争力更强
 function InvadeSection({ sp }: { sp: Species }) {
   const all = world.value!.small.species;
-  const inv = sp.effects?.invade;
-  const targets = inv?.targets ?? [];
-  const [drag, setDrag] = useState<number | null>(null);
-  useEffect(() => setDrag(null), [sp.id, inv?.strength]);
-  const strength = drag ?? inv?.strength ?? 1.5;
-  const save = async (nextTargets: string[], nextStrength: number) => {
-    const invade = nextTargets.length ? { targets: nextTargets, strength: nextStrength } : undefined;
-    const effects = { ...(sp.effects?.climate ? { climate: sp.effects.climate } : {}), ...(invade ? { invade } : {}) };
-    const value = Object.keys(effects).length ? effects : null;
-    if (!same(value, sp.effects)) await update(sp, { effects: value }, '正在计算生态…');
-    setDrag(null);
-  };
-  const toggle = (id: string) => {
-    const on = targets.includes(id);
-    // 按生态列表的顺序；已经不在了的目标照旧留着
-    const next = on ? targets.filter((t) => t !== id) : [...all.filter((o) => o.id === id || targets.includes(o.id)).map((o) => o.id), ...targets.filter((t) => !all.some((o) => o.id === t))];
-    void save(next.slice(0, 48), strength);
+  const order = all.map((o) => o.id);
+  const [local, setLocal, track, saving] = useLocal<{ targets: string[]; strength: number }>(sp.id);
+  const targets = local?.targets ?? sp.effects?.invade?.targets ?? [];
+  const strength = local?.strength ?? sp.effects?.invade?.strength ?? DEFAULT_INVADE_STRENGTH;
+  const save = (change: { toggle?: string; strength?: number }) => {
+    // 先在界面上显示出来（大星球上算一步要一会儿，连着点几个也都看得到）
+    setLocal({ targets: change.toggle !== undefined ? toggleTarget(targets, change.toggle, order) : targets, strength: change.strength ?? strength });
+    track(queueSpeciesEdit(sp.id, '正在计算生态…', (cur) => effectsPatch(cur, withInvade(cur.effects, change, world.value?.small.species.map((o) => o.id) ?? order))));
   };
   const others = all.filter((o) => o.id !== sp.id);
   return (
@@ -178,22 +259,60 @@ function InvadeSection({ sp }: { sp: Species }) {
       <p class="muted small">在选中的这些生态适宜的地方，它更容易占上风。</p>
       <div class="palette">
         {others.map((o) => (
-          <button class={`chip ${targets.includes(o.id) ? 'on' : ''}`} onClick={() => toggle(o.id)}>
+          <button class={`chip ${targets.includes(o.id) ? 'on' : ''}`} onClick={() => save({ toggle: o.id })}>
             <span class="swatch" style={{ background: o.color }} />
             {o.name || o.id}
           </button>
         ))}
       </div>
       {targets.length > 0 && (
-        <Slider label="强度" min={0} max={5} step={0.1} value={strength} text={strength.toFixed(1)} onLive={setDrag} onDone={(x) => void save(targets, x)} />
+        <Slider
+          label="强度"
+          min={0}
+          max={5}
+          step={0.1}
+          value={strength}
+          text={strength.toFixed(1)}
+          onLive={(x) => setLocal({ targets, strength: x })}
+          onDone={(x) => save({ strength: x })}
+          onEnd={() => !saving() && setLocal(null)}
+        />
       )}
     </>
   );
 }
 
+// 与 schema 一样按 UTF-16 的长度算（z.string().max）
 const MAX_LABEL = 8;
 const MAX_TEMPLATE = 40;
 const MAX_TEMPLATES = 20;
+
+// 截到不超过 max 个 UTF-16 单位，不截断一个字
+function clip(s: string, max: number): string {
+  let out = '';
+  for (const ch of s) {
+    if (out.length + ch.length > max) break;
+    out += ch;
+  }
+  return out;
+}
+
+// 地名的输入有什么问题（与 featureSchema 的限制一致）；没有为 null
+export function namesProblem(label: string, lines: readonly string[]): string | null {
+  if (label.trim().length > MAX_LABEL) return `类型名最多 ${MAX_LABEL} 个字`;
+  const long = lines.findIndex((s) => s.length > MAX_TEMPLATE);
+  if (long >= 0) return `第 ${long + 1} 个模板太长了（最多 ${MAX_TEMPLATE} 个字）`;
+  if (lines.length > MAX_TEMPLATES) return `模板最多 ${MAX_TEMPLATES} 个`;
+  return null;
+}
+
+// 地名：输入的类型名、模板换成 feature（只写了模板、没写类型名时类型名用生态的名字；没改的模板保留原来的权重）
+export function featureOf(cur: Species, label: string, lines: readonly string[]): SpeciesFeature | null {
+  const lab = label.trim() || (lines.length ? clip(cur.name || cur.id, MAX_LABEL) : '');
+  if (!lab) return null;
+  const old = new Map((cur.feature?.names ?? []).map((n) => [n.p, n.w]));
+  return { label: lab, ...(lines.length ? { names: lines.map((p) => (old.get(p) !== undefined ? { p, w: old.get(p) } : { p })) } : {}) };
+}
 
 // 地名：类型名（“晶林”）与起名模板（每行一个）
 function NamesSection({ sp }: { sp: Species }) {
@@ -208,23 +327,14 @@ function NamesSection({ sp }: { sp: Species }) {
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean);
-  const long = lines.findIndex((s) => Array.from(s).length > MAX_TEMPLATE);
-  const problem =
-    Array.from(label.trim()).length > MAX_LABEL
-      ? `类型名最多 ${MAX_LABEL} 个字`
-      : long >= 0
-        ? `第 ${long + 1} 个模板太长了（最多 ${MAX_TEMPLATE} 个字）`
-        : lines.length > MAX_TEMPLATES
-          ? `模板最多 ${MAX_TEMPLATES} 个`
-          : null;
+  const problem = namesProblem(label, lines);
   const save = () => {
     if (problem) return;
-    // 只写了模板、没写类型名：类型名用生态的名字
-    const lab = label.trim() || (lines.length ? Array.from(sp.name || sp.id).slice(0, MAX_LABEL).join('') : '');
-    // 没改的模板保留原来的权重
-    const old = new Map((f?.names ?? []).map((n) => [n.p, n.w]));
-    const next = lab ? { label: lab, ...(lines.length ? { names: lines.map((p) => (old.get(p) !== undefined ? { p, w: old.get(p) } : { p })) } : {}) } : null;
-    if (!same(next, f)) void update(sp, { feature: next }, '正在起名…');
+    // 回车之后又离开框：第二次排到时世界上已经是这个样子，不再提交
+    void queueSpeciesEdit(sp.id, '正在起名…', (cur) => {
+      const next = featureOf(cur, label, lines);
+      return same(next, cur.feature) ? null : { feature: next };
+    });
   };
   return (
     <>
@@ -237,7 +347,7 @@ function NamesSection({ sp }: { sp: Species }) {
         <input
           class="wide-input"
           value={label}
-          placeholder={Array.from(sp.name || '').slice(0, MAX_LABEL).join('')}
+          placeholder={clip(sp.name || '', MAX_LABEL)}
           onInput={(e) => setLabel((e.target as HTMLInputElement).value)}
           onBlur={save}
           onKeyDown={(e) => e.key === 'Enter' && save()}
@@ -275,13 +385,16 @@ function ScriptsSection({ sp }: { sp: Species }) {
       <p class="muted small">用一小段 JavaScript 更自由地决定它长在哪里、是什么颜色。停一下就用到地图上；一次修改只算一步撤销。</p>
       {SPECIES_SCRIPT_KINDS.map((kind) => (
         <ScriptBox
-          key={`${sp.id}:${kind}`}
+          // 换了世界、换了生态都是新的框（还没提交的不会落到别的世界、别的生态上）
+          key={`${worldEpoch.value}:${sp.id}:${kind}`}
           kind={kind}
           label={SCRIPT_KIND_LABEL[kind]}
           hint={SCRIPT_HINT[kind]}
           value={sp.scripts?.[kind]?.src ?? ''}
           issue={() => speciesIssue(sp.id, kind)}
-          apply={(src, mode) => applySpeciesScript(sp.id, kind, src, mode)}
+          apply={(src, mode, revert) => applySpeciesScript(sp.id, kind, src, mode, revert)}
+          idle={speciesEditsSettled}
+          settle={settleSpeciesEdits}
           fields={fields}
           onShowCell={showCell}
           focusSignal={focus?.kind === kind ? focus.n : 0}
