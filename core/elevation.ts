@@ -1,7 +1,7 @@
 import { type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
-import { accumulate, route } from './routing';
+import { Router, accumulate } from './routing';
 import type { World } from './world';
 
 // 高程 = 抬升与河流下切的稳态（stream power law，n = 1）：
@@ -15,7 +15,7 @@ const ITERATIONS = 12;
 
 export interface ElevationResult {
   elevation: Float32Array;
-  // 每格到最近海岸的距离（km），陆上与海上各自计算
+  // 陆格到最近海岸的距离（km）。只用到陆上的，所以只沿陆格算；海格与到不了海的陆格为 1e5
   coastKm: Float64Array;
 }
 
@@ -75,9 +75,10 @@ export function computeElevation(world: World): ElevationResult {
   const sphere = mesh.kind === 'sphere' ? mesh : null;
   const { fu, fk, fs } = noiseFactors(mesh, world.settings.seed);
 
-  // 海岸距离
+  // 海岸距离：从挨海的陆格出发只走陆格（陆上的距离与海上互不影响，海上的用不到）
   const coastCells: number[] = [];
   for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       if (land[mesh.adj[e]] !== land[i]) {
         coastCells.push(i);
@@ -120,20 +121,27 @@ export function computeElevation(world: World): ElevationResult {
   }
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
-  const active = land;
+  // 活动格与强制方向各轮相同：路由的出口、缓冲区只建一次
+  const router = new Router(mesh, land, forced);
   const A = new Float64Array(n);
+  // A^m 很费时：汇水面积与上一轮完全相同的格（源头格每轮都是）沿用上一轮的值
+  const lastA = new Float64Array(n).fill(-1);
+  const powA = new Float64Array(n);
   for (let it = 0; it < ITERATIONS; it++) {
-    const r = route(mesh, h, active, forced);
+    const r = router.route(h);
     accumulate(r, areaKm, A);
     for (let k = 0; k < r.count; k++) {
       const i = r.order[k];
       const j = r.receiver[i];
       const baseH = j >= 0 && land[j] ? h[j] : 0;
-      let L = kmPerUnit * mesh.spacing;
-      if (j >= 0) {
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (mesh.adj[e] === j) L = mesh.dist[e] * kmPerUnit;
+      // 到下游的距离；没有下游或下游不是邻格时取格距
+      const e = r.edge[i];
+      const L = e >= 0 ? mesh.dist[e] * kmPerUnit : kmPerUnit * mesh.spacing;
+      if (A[i] !== lastA[i]) {
+        lastA[i] = A[i];
+        powA[i] = Math.pow(A[i] + areaReg, M);
       }
-      h[i] = baseH + (u[i] * L) / (K[i] * Math.pow(A[i] + areaReg, M));
+      h[i] = baseH + (u[i] * L) / (K[i] * powA[i]);
     }
   }
 
