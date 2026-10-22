@@ -117,6 +117,68 @@ export async function trustScripts(scripts: Iterable<{ src: string }>): Promise<
   if (any) await save();
 }
 
+// 这一段已经信任了（记着的，或总是信任的）
+export async function isTrusted(src: string): Promise<boolean> {
+  const k = await keyOf(src);
+  return (await load()).has(k) || (await always()).has(k);
+}
+
+// 从信任列表里去掉（总是信任的照样信任）
+export async function forgetScripts(scripts: Iterable<{ src: string }>): Promise<void> {
+  const t = await load();
+  let any = false;
+  for (const s of scripts) any = t.delete(await keyOf(s.src)) || any;
+  if (any) await save();
+}
+
+// ---------- 脚本框里自己写的脚本 ----------
+// 打字停一下就提交一次（一次修改的第一次是新的一步，之后换掉这一步）：提交的这一段记为信任。
+// 同一步里被换掉的中间版本，是这里新记的（之前没信任过）就从列表里去掉，不让打字把信任列表越积越多。
+// 留着的：现在的这一段；被它换掉的那一段（在地图上出错时编辑器换回它）；已经留在历史里的
+// （新的一步之前的那一段，撤销会回到它）；世界上别处还用着的（inUse）
+
+export interface DraftCommit {
+  // 哪个框：世界的纪元号、生态、哪一种（换了世界由调用方 forgetDrafts）
+  slot: string;
+  // 提交的这一段（'' 是去掉了）
+  src: string;
+  // 提交之前世界上这一段
+  before: string;
+  // exec：新的一步（before 留在历史里）；replace：换掉最后一步（before 不在世界上了）
+  mode: 'exec' | 'replace';
+  inUse?: (src: string) => boolean;
+}
+
+// 框 → 这里新记为信任、之后还可能去掉的几段
+const drafts = new Map<string, Set<string>>();
+let draftTail: Promise<void> = Promise.resolve();
+
+// 一段一段按提交的先后做（前一次的信任写完再做下一次）
+export function trustDraft(c: DraftCommit): Promise<void> {
+  const job = draftTail.then(() => draft(c));
+  draftTail = job.catch(() => {});
+  return job;
+}
+
+async function draft({ slot, src, before, mode, inUse }: DraftCommit) {
+  const set = drafts.get(slot) ?? new Set<string>();
+  if (mode === 'exec') set.delete(before);
+  const drop = [...set].filter((x) => x !== src && x !== before && !inUse?.(x));
+  for (const x of drop) set.delete(x);
+  if (src && !(await isTrusted(src))) {
+    await trustScripts([{ src }]);
+    set.add(src);
+  }
+  if (drop.length) await forgetScripts(drop.map((x) => ({ src: x })));
+  if (set.size) drafts.set(slot, set);
+  else drafts.delete(slot);
+}
+
+// 换了世界：上一个世界里的草稿都不再去掉（留着的由整理信任列表时按时间挤掉）
+export function forgetDrafts(): void {
+  drafts.clear();
+}
+
 // 整理：current（当前世界里的脚本）都留着、刷新时间；别的只留最近的 100 个
 export async function tidyTrusted(current: Iterable<{ src: string }>): Promise<void> {
   const t = await load();

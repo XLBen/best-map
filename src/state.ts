@@ -727,9 +727,17 @@ export async function confirmImport(json: unknown): Promise<boolean> {
 // 自己提交的脚本（加、改生态……）记为信任。安全模式下不记：那里的脚本可能是从没信任的世界里复制来的。
 // 每一笔都要过一遍（涂一笔的命令里有上万个格号）：findScripts 不把数放进栈，比先转成 JSON 再找快
 function trustOwn(cmd: Command) {
-  if (safeMode.value) return;
+  if (safeMode.value || trustedElsewhere.has(cmd)) return;
   const found = findScripts(cmd);
   if (found.length) void trustScripts(found);
+}
+
+// 脚本框的提交不在这里记：编辑器只报框里写的那一段（补丁里整份带着的另一段不算），
+// 同一步里被换掉的中间版本还要从信任列表里去掉（见 ui/connect.ts）。这样的命令先在这里登记
+const trustedElsewhere = new WeakSet<Command>();
+export function trustHandledElsewhere<C extends Command>(cmd: C): C {
+  trustedElsewhere.add(cmd);
+  return cmd;
 }
 
 // 打开时选了“不运行脚本”
@@ -832,22 +840,26 @@ export async function showScripts(): Promise<void> {
 // 脚本出错的提示条：用户关掉的是哪一组问题（同一组不再出现，换了才出现）
 export const dismissedIssues = signal('');
 
-// 出错的脚本的“编辑”：脚本编辑器（另一批）把自己的打开方法放在 open 上；没有时打开生态抽屉、选中这种生态
-export const scriptEditor: { open: ((issue: ScriptIssue) => void) | null } = { open: null };
-// 出错的是哪种生态（生态的两种脚本；星球形态的布局、地形脚本没有）
-const speciesOfIssue = (issue: ScriptIssue) =>
-  issue.kind === 'placement' || issue.kind === 'color' ? world.value?.small.species.find((s) => (s.name || s.id) === issue.owner) : undefined;
+// 出错的脚本的“编辑”：脚本编辑器把自己的打开方法放在 open 上（ui/connect.ts 接上：打开生态抽屉、展开“高级”、
+// 光标放进那个脚本框）；没有时打开生态抽屉、选中这种生态
+export type SpeciesScriptKind = 'placement' | 'color';
+export const scriptEditor: { open: ((species: string, kind: SpeciesScriptKind) => void) | null } = { open: null };
+// 出错的是哪种生态的哪一段（生态的两种脚本；星球形态的布局、地形脚本没有编辑的地方）。先按 id，旧的说明没有 id 时按名字
+function speciesOfIssue(issue: ScriptIssue) {
+  if (issue.kind !== 'placement' && issue.kind !== 'color') return undefined;
+  return world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : (s.name || s.id) === issue.owner));
+}
 // 有没有地方可以打开它（没有时提示条上不放“编辑”）
 export function canEditScript(issue: ScriptIssue): boolean {
-  return scriptEditor.open !== null || speciesOfIssue(issue) !== undefined;
+  return speciesOfIssue(issue) !== undefined;
 }
 export function editScript(issue: ScriptIssue) {
-  if (scriptEditor.open) {
-    scriptEditor.open(issue);
-    return;
-  }
   const sp = speciesOfIssue(issue);
   if (!sp) return;
+  if (scriptEditor.open) {
+    scriptEditor.open(sp.id, issue.kind as SpeciesScriptKind);
+    return;
+  }
   focusSpecies.value = sp.id;
   sheet.value = 'species';
 }

@@ -99,18 +99,24 @@ function LookSection({ sp }: { sp: Species }) {
   // 拖动中、提交还没算完时的外观
   const [local, setLocal, track, saving] = useLocal<Visual>(sp.id);
   const v: Visual = local ?? sp.visual ?? { pattern: 'none' };
+  // 拖动了几次：提交算完时又在拖别的滑块了，就不去掉临时的外观（不然正拖着的那个值会闪回去）
+  const drags = useRef(0);
   const live = (change: Partial<Visual>) => {
     const next = { ...v, ...change };
+    drags.current++;
     setLocal(next);
     previewVisual(sp.id, cleanVisual(next) ?? { pattern: 'none' });
   };
   const save = (change: Partial<Visual>) => {
     setLocal({ ...v, ...change });
     const id = sp.id;
-    // 真的数据到了：去掉临时的外观
+    const at = drags.current;
+    // 真的数据到了：去掉临时的外观（结果与临时的一样时，换上快照时画面那边已经去掉了，见 state.ts 的 pruneVisualOverrides）
     track(
       queueSpeciesEdit(id, '正在换外观…', (cur) => visualPatch(cur, change)),
-      () => previewVisual(id, null),
+      () => {
+        if (drags.current === at) previewVisual(id, null);
+      },
     );
   };
   // 拖了又拖回原处（没有 change）：去掉临时的外观，免得它一直盖着世界上真的外观（比如之后的撤销）

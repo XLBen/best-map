@@ -2,7 +2,7 @@ import { speciesOwner } from '../../core/biome-scripts';
 import type { Command } from '../../core/commands';
 import { SCRIPT_API } from '../../core/script';
 import { SPECIES_SCRIPT_KINDS, type Species } from '../../core/species';
-import { editsIdle, exec, replaceLast, toast, whenEditsIdle, world, worldEpoch } from '../state';
+import { editsIdle, exec, replaceLast, toast, trustHandledElsewhere, whenEditsIdle, world, worldEpoch } from '../state';
 import { noteScriptCommitted } from './editor-hooks';
 import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from './script-commit';
 
@@ -71,11 +71,13 @@ const LABEL = '正在计算生态…';
 export async function applySpeciesScript(id: string, kind: SpeciesScriptKind, src: string, mode: ApplyMode, revert = false): Promise<ApplyResult> {
   const sp = world.value?.small.species.find((s) => s.id === id);
   if (!sp) return { ok: false, error: '这种生态已经不在了' };
-  const cmd = speciesScriptCommand(sp, kind, src);
+  // 信任不按整条命令记（state.ts 的 trustOwn 不管它），只记下面报的这一段
+  const cmd = trustHandledElsewhere(speciesScriptCommand(sp, kind, src));
+  const before = sp.scripts?.[kind]?.src ?? '';
   const ok = mode === 'exec' ? await exec(cmd, LABEL) : await replaceLast(cmd, LABEL);
   if (ok) {
     // 只报这次写的这一段：补丁里整份带着的另一段不是在这里写的（比如“不运行脚本打开”的别人的脚本），不能顺带信任
-    if (!revert) noteScriptCommitted({ species: id, kind, src: normScript(src) });
+    if (!revert) noteScriptCommitted({ species: id, kind, src: normScript(src), before, mode });
     return { ok: true };
   }
   // 引擎拒绝了（出错的说明已经显示在顶上，这里也写在框下面）

@@ -1,11 +1,12 @@
 import { X } from 'lucide-preact';
 import type { ScriptIssue } from '../../../core/script';
-import { canEditScript, dismissedIssues, editScript, flashCells, retryScripts, safeMode, showScripts, world } from '../../state';
-import { focusOn } from '../camera';
+import { canEditScript, dismissedIssues, editScript, retryScripts, safeMode, showScripts, world } from '../../state';
+import { showCell } from '../editor-hooks';
 
 // 顶部的横幅（不挡操作，提示条上面）：
 // - 安全模式：这个世界里的脚本没有运行（原因），可以“再试一次”（另开一个 Worker，脚本照常运行）、“查看脚本”；
-// - 脚本出错：出错的脚本这一次按没有脚本处理，说明第几行，“地图上有一处…（点这里去看）”把镜头移过去，“编辑”打开它
+// - 脚本出错（生态的脚本、星球形态的布局与地形脚本，都在 d.scriptIssues 里）：出错的脚本这一次按没有脚本处理，说明第几行，
+//   “地图上有一处…（点这里去看）”把镜头移过去，“编辑”打开生态抽屉里的那个脚本框（星球形态的脚本没有）
 
 // 一句话：「X」的脚本出错了，暂时按没有脚本处理（第 3 行：…）
 export function issueText(issue: ScriptIssue): string {
@@ -48,16 +49,8 @@ export function ScriptBanner() {
         {more}
       </span>
       {cell !== undefined && cell >= 0 && cell < w.mesh.n && (
-        <button
-          class="link-btn"
-          onClick={() => {
-            // 镜头移过去，这一格连同周围一圈亮一下
-            const around = [cell];
-            for (let e = w.mesh.off[cell]; e < w.mesh.off[cell + 1]; e++) around.push(w.mesh.adj[e]);
-            focusOn([cell]);
-            flashCells(around);
-          }}
-        >
+        // 镜头移过去，这一格连同周围一圈亮一下
+        <button class="link-btn" onClick={() => showCell(cell)}>
           地图上有一处出错（点这里去看）
         </button>
       )}

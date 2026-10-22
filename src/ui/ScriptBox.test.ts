@@ -594,7 +594,7 @@ describe('生态的脚本框接到真的 exec / replaceLast 上', () => {
     const q = applySpeciesScript(id, 'placement', '', 'replace', true);
     answerLast();
     expect(await q).toEqual({ ok: true });
-    expect(seen).toEqual([{ species: id, kind: 'placement', src: 'return 0.25;' }]);
+    expect(seen).toEqual([{ species: id, kind: 'placement', src: 'return 0.25;', before: '', mode: 'exec' }]);
   });
 
   it('换了世界：还没提交的不落到新世界上', async () => {
