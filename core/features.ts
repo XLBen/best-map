@@ -308,40 +308,87 @@ function tagsOf(world: World, d: Derived, cells: ArrayLike<number>): string[] {
 
 // ---------- 识别 ----------
 
-export function detectFeatures(world: World, d: Derived): GeoFeature[] {
-  const { mesh, causes, small, kmPerUnit } = world;
+// 一次 add 的输入。各段先把输入记下来，再逐个 add（标签按当前的气候算，名字每次重起）
+interface AddInput {
+  type: FeatureType;
+  cells: Int32Array;
+  importance: number;
+  tags: string[];
+  anchor?: number;
+  // river：沿河标注；peak：标在峰顶；islet：小岛，最高处超过 1400 m 时加“火山”（随高度变，add 时再看）
+  mark?: 'river' | 'peak' | 'islet';
+}
+
+// 各段的输入只取决于少数几个推导数组（陆海、高度、湖、坡度、河道、生态）：这些数组逐字节没变时直接用上次
+// 记下的（只改气候时省掉大半）。按网格、按段各留两份（预览用的副本不会把正在用的挤掉）；
+// 记下的是新建的数组（格子存成 Int32Array，不占 JS 堆），只读，不与推导数组共用（推导数组之后会被就地改写）
+const memo = new WeakMap<Mesh, Map<string, { key: Uint8Array[]; value: unknown }[]>>();
+// 测试用：on = false 时不读也不写缓存，每次从头算；hits：命中的段数
+export const featureMemo = { on: true, hits: 0 };
+
+const bytesOf = (a: ArrayBufferView) => new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+
+// 逐字节相同（-0 与 0、不同的 NaN 都算不同）；对齐时 4 个字节一比
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let k = 0;
+  if (a.byteOffset % 4 === 0 && b.byteOffset % 4 === 0) {
+    const m = a.length >> 2;
+    const x = new Int32Array(a.buffer, a.byteOffset, m);
+    const y = new Int32Array(b.buffer, b.byteOffset, m);
+    for (let i = 0; i < m; i++) if (x[i] !== y[i]) return false;
+    k = m * 4;
+  }
+  for (; k < a.length; k++) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+// 输入（类型数组；数值放进 Float64Array）与记下的某一份逐字节相同时用它的结果，否则算一遍再记下
+function memoized<T>(mesh: Mesh, name: string, inputs: ArrayBufferView[], compute: () => T): T {
+  if (!featureMemo.on) return compute();
+  const key = inputs.map(bytesOf);
+  let byName = memo.get(mesh);
+  if (!byName) memo.set(mesh, (byName = new Map()));
+  const list = byName.get(name) ?? [];
+  const hit = list.find((m) => m.key.every((b, k) => sameBytes(b, key[k])));
+  if (hit) {
+    featureMemo.hits++;
+    byName.set(name, [hit, ...list.filter((m) => m !== hit)]);
+    return hit.value as T;
+  }
+  const value = compute();
+  byName.set(name, [{ key: key.map((b) => b.slice()), value }, ...list].slice(0, 2));
+  return value;
+}
+
+// 记下一次 add 的输入
+function put(list: AddInput[], type: FeatureType, cells: number[], importance: number, tags: string[] = [], anchor?: number, mark?: AddInput['mark']) {
+  list.push({ type, cells: Int32Array.from(cells), importance, tags, anchor, mark });
+}
+
+// 面积（km²），逐格相加
+function areaOf(world: World, cells: ArrayLike<number>): number {
+  const { mesh, kmPerUnit } = world;
+  let s = 0;
+  for (let k = 0; k < cells.length; k++) s += mesh.area[cells[k]] * kmPerUnit * kmPerUnit;
+  return s;
+}
+
+// 整张图的面积（km²）：整个星球的面积是 4πR²（宽 × 高不是）
+function mapAreaOf(world: World): number {
+  const { mesh, kmPerUnit } = world;
+  return mesh.kind === 'sphere' ? mesh.totalArea * kmPerUnit * kmPerUnit : mesh.width * mesh.height * kmPerUnit * kmPerUnit;
+}
+
+// 陆块、群岛、半岛、海峡、海湾、海与洋：只取决于陆海。dLand：陆地格离海岸的步数（盆地也用）
+function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
+  const { mesh, kmPerUnit } = world;
   const n = mesh.n;
-  const land = causes.land;
-  const cellKm2 = (i: number) => mesh.area[i] * kmPerUnit * kmPerUnit;
-  const areaOf = (cells: number[]) => cells.reduce((s, c) => s + cellKm2(c), 0);
+  const land = world.causes.land;
   const globe = mesh.kind === 'sphere';
-  // 整个星球的面积是 4πR²（宽 × 高不是）
-  const mapKm2 = globe ? mesh.totalArea * kmPerUnit * kmPerUnit : mesh.width * mesh.height * kmPerUnit * kmPerUnit;
+  const mapKm2 = mapAreaOf(world);
   const avgCellKm2 = mapKm2 / n;
-  const out: GeoFeature[] = [];
-
-  const climateTags = (cells: number[]) => tagsOf(world, d, cells);
-
-  const add = (type: FeatureType, cells: number[], importance: number, extraTags: string[] = [], anchor?: number) => {
-    if (!cells.length) return;
-    const a = anchor ?? stableAnchor(cells);
-    const ax = axis(mesh, cells, unwrapped(mesh, cells));
-    out.push({
-      key: `${type}:${a}`,
-      type,
-      anchor: a,
-      cells: Int32Array.from(cells),
-      areaKm2: areaOf(cells),
-      x: ax.x,
-      y: ax.y,
-      angle: ax.angle,
-      span: ax.span,
-      tags: [...new Set([...climateTags(cells), ...extraTags])],
-      importance,
-      name: '',
-      custom: false,
-    });
-  };
+  const list: AddInput[] = [];
 
   // 陆块
   const landMask = new Uint8Array(n);
@@ -355,15 +402,12 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
   const continentKm2 = globe ? Math.max(1.5e6, mapKm2 * 0.0125) : Math.max(1.5e6, mapKm2 * 0.06);
   const islandIdx: number[] = [];
   masses.forEach((cells, k) => {
-    const area = areaOf(cells);
-    if (area >= continentKm2) add('continent', cells, 10 + Math.log10(area));
+    const area = areaOf(world, cells);
+    if (area >= continentKm2) put(list, 'continent', cells, 10 + Math.log10(area));
     else if (cells.length >= 2) {
       islandIdx.push(k);
-      let maxH = 0;
-      for (const c of cells) maxH = Math.max(maxH, d.elevation[c]);
       const tags = [area > avgCellKm2 * 400 ? 'large' : area < avgCellKm2 * 6 ? 'small' : ''];
-      if (maxH > 1400 && cells.length < 120) tags.push('volcanic');
-      add('island', cells, 4 + Math.log10(area), tags.filter(Boolean));
+      put(list, 'island', cells, 4 + Math.log10(area), tags.filter(Boolean), undefined, cells.length < 120 ? 'islet' : undefined);
     }
   });
 
@@ -410,7 +454,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
       if (g.length < 4) continue;
       const cells = g.flatMap((k) => masses[k]);
       const biggest = g.reduce((a, b) => (masses[a].length >= masses[b].length ? a : b));
-      add('archipelago', cells, 7 + Math.log10(areaOf(cells)), [], stableAnchor(masses[biggest]));
+      put(list, 'archipelago', cells, 7 + Math.log10(areaOf(world, cells)), [], stableAnchor(masses[biggest]));
     }
   }
 
@@ -444,7 +488,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
         for (const c of cells) for (let e = mesh.off[c]; e < mesh.off[c + 1] && !attached; e++) if (opened[mesh.adj[e]] >= 0) attached = true;
         if (!attached) continue;
         for (const c of cells) taken[c] = 1;
-        add('peninsula', cells, 5 + Math.log10(areaOf(cells)));
+        put(list, 'peninsula', cells, 5 + Math.log10(areaOf(world, cells)));
       }
     }
   }
@@ -463,7 +507,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
       for (const c of cells) for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) if (land[mesh.adj[e]]) shores.add(massOf[mesh.adj[e]]);
       if (shores.size < 2) continue;
       for (const c of cells) straitMask[c] = 1;
-      add('strait', cells, 5.5);
+      put(list, 'strait', cells, 5.5);
     }
   }
 
@@ -480,7 +524,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
       for (const cells of components(mesh, bay)) {
         if (cells.length < Math.max(5, r * 2)) continue;
         for (const c of cells) taken[c] = 1;
-        add('bay', cells, 5.5 + Math.log10(areaOf(cells)), cells.length > 60 ? ['large'] : []);
+        put(list, 'bay', cells, 5.5 + Math.log10(areaOf(world, cells)), cells.length > 60 ? ['large'] : []);
       }
     }
   }
@@ -491,34 +535,61 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
     for (let i = 0; i < n; i++) if (!land[i]) seaCells.push(i);
     if (seaCells.length) {
       let seaKm2 = 0;
-      for (const c of seaCells) seaKm2 += cellKm2(c);
+      for (const c of seaCells) seaKm2 += mesh.area[c] * kmPerUnit * kmPerUnit;
       // 整个星球按面积比例分区（星球大小不影响分法）
       const k = globe ? Math.max(3, Math.min(18, Math.round((seaKm2 / mapKm2) * 22))) : Math.max(1, Math.min(12, Math.round(seaCells.length / 2600)));
       const spacing = Math.max(4, Math.round(Math.sqrt(seaCells.length / k) * 0.8));
-      const order = [...seaCells].sort((a, b) => dSea[b] - dSea[a] || a - b);
+      // 候选种子按离岸从远到近、同距离按编号排（计数排序）；离岸不到 1 步的不当种子
+      let maxD = 0;
+      for (const c of seaCells) maxD = Math.max(maxD, dSea[c]);
+      const at = new Int32Array(maxD + 1);
+      for (const c of seaCells) if (dSea[c] >= 1) at[maxD - dSea[c] + 1]++;
+      for (let b = 1; b <= maxD; b++) at[b] += at[b - 1];
+      const order = new Int32Array(at[maxD]);
+      for (const c of seaCells) if (dSea[c] >= 1) order[at[maxD - dSea[c]]++] = c;
+      // 每个种子 spacing 步海路以内的格不再当种子：只走到 spacing 步，走过的格按种子的序号标记（不必每次清空）
       const blocked = new Uint8Array(n);
+      const stamp = new Int32Array(n);
+      const dist = new Int32Array(n);
+      const q = new Int32Array(n);
       const seeds: number[] = [];
       for (const c of order) {
         if (seeds.length >= Math.ceil(k * 1.5)) break;
-        if (blocked[c] || dSea[c] < 1) continue;
+        if (blocked[c]) continue;
         seeds.push(c);
-        const near = steps(mesh, [c], seaMask, spacing);
-        for (let i = 0; i < n; i++) if (near[i] >= 0) blocked[i] = 1;
+        const s = seeds.length;
+        stamp[c] = s;
+        dist[c] = 0;
+        blocked[c] = 1;
+        q[0] = c;
+        for (let h = 0, t = 1; h < t; h++) {
+          const x = q[h];
+          if (dist[x] >= spacing) continue;
+          for (let e = mesh.off[x]; e < mesh.off[x + 1]; e++) {
+            const j = mesh.adj[e];
+            if (seaMask[j] && stamp[j] !== s) {
+              stamp[j] = s;
+              dist[j] = dist[x] + 1;
+              blocked[j] = 1;
+              q[t++] = j;
+            }
+          }
+        }
       }
       // 多源 BFS 分区
       const owner = new Int32Array(n).fill(-1);
-      const q: number[] = [];
+      const queue: number[] = [];
       seeds.forEach((s, idx) => {
         owner[s] = idx;
-        q.push(s);
+        queue.push(s);
       });
-      for (let h = 0; h < q.length; h++) {
-        const c = q[h];
+      for (let h = 0; h < queue.length; h++) {
+        const c = queue[h];
         for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
           const j = mesh.adj[e];
           if (!land[j] && owner[j] < 0) {
             owner[j] = owner[c];
-            q.push(j);
+            queue.push(j);
           }
         }
       }
@@ -530,139 +601,238 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
         let meanD = 0;
         for (const c of cells) meanD += Math.max(0, dSea[c]);
         meanD /= cells.length;
-        const ocean = globe ? areaOf(cells) > mapKm2 * 0.035 && meanD > 6 : cells.length > totalSea * 0.18 && meanD > 6;
-        add(ocean ? 'ocean' : 'sea', cells, (ocean ? 9.5 : 7.5) + Math.log10(areaOf(cells)));
+        const ocean = globe ? areaOf(world, cells) > mapKm2 * 0.035 && meanD > 6 : cells.length > totalSea * 0.18 && meanD > 6;
+        put(list, ocean ? 'ocean' : 'sea', cells, (ocean ? 9.5 : 7.5) + Math.log10(areaOf(world, cells)));
       });
     }
   }
+  return { list, dLand };
+}
 
-  // 湖
-  {
-    const lakeMask = new Uint8Array(n);
-    for (let i = 0; i < n; i++) lakeMask[i] = d.lake[i] === 1 ? 1 : 0;
-    for (const cells of components(mesh, lakeMask)) {
-      const area = areaOf(cells);
-      const tags = [area > avgCellKm2 * 30 ? 'large' : ''];
-      let h = 0;
-      for (const c of cells) h += d.elevation[c];
-      if (h / cells.length > 2000) tags.push('high');
-      add('lake', cells, 5 + Math.log10(area), tags.filter(Boolean));
+// 湖：只取决于湖面与高度
+function lakeInputs(world: World, d: Derived): AddInput[] {
+  const { mesh } = world;
+  const n = mesh.n;
+  const avgCellKm2 = mapAreaOf(world) / n;
+  const list: AddInput[] = [];
+  const lakeMask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) lakeMask[i] = d.lake[i] === 1 ? 1 : 0;
+  for (const cells of components(mesh, lakeMask)) {
+    const area = areaOf(world, cells);
+    const tags = [area > avgCellKm2 * 30 ? 'large' : ''];
+    let h = 0;
+    for (const c of cells) h += d.elevation[c];
+    if (h / cells.length > 2000) tags.push('high');
+    put(list, 'lake', cells, 5 + Math.log10(area), tags.filter(Boolean));
+  }
+  return list;
+}
+
+// 大河：从河口沿流量最大的支流上溯。只取决于陆海、流向、流量、湖面与河的门槛
+function riverInputs(world: World, d: Derived): AddInput[] {
+  const n = world.mesh.n;
+  const land = world.causes.land;
+  const thr = world.small.planet.riverThreshold;
+  const list: AddInput[] = [];
+  // 每格的上游（CSR：donors[donorAt[c] .. donorAt[c + 1])），同一格的上游按编号从小到大
+  const donorAt = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    const r = d.receiver[i];
+    if (land[i] && r >= 0 && land[r]) donorAt[r + 1]++;
+  }
+  for (let i = 0; i < n; i++) donorAt[i + 1] += donorAt[i];
+  const donors = new Int32Array(donorAt[n]);
+  const fill = donorAt.slice(0, n);
+  for (let i = 0; i < n; i++) {
+    const r = d.receiver[i];
+    if (land[i] && r >= 0 && land[r]) donors[fill[r]++] = i;
+  }
+  const mouths: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || d.lake[i] === 1 || d.discharge[i] < thr * 3) continue;
+    const r = d.receiver[i];
+    if (r < 0 || !land[r] || d.lake[r] === 1) mouths.push(i);
+  }
+  mouths.sort((a, b) => d.discharge[b] - d.discharge[a]);
+  for (const m of mouths.slice(0, 40)) {
+    const stem: number[] = [m];
+    let c = m;
+    for (let guard = 0; guard < n; guard++) {
+      let best = -1;
+      for (let e = donorAt[c]; e < donorAt[c + 1]; e++) {
+        const j = donors[e];
+        if (d.lake[j] !== 1 && d.discharge[j] >= thr && (best < 0 || d.discharge[j] > d.discharge[best])) best = j;
+      }
+      if (best < 0) break;
+      stem.push(best);
+      c = best;
+    }
+    if (stem.length < 6) continue;
+    const q = d.discharge[m];
+    const size = q > thr * 40 ? 'big' : q > thr * 6 ? '' : 'small';
+    put(list, 'river', stem, 6 + Math.log10(q), size ? [size] : [], m, 'river');
+  }
+  return list;
+}
+
+// 山脉与主峰；高原；平原；盆地：只取决于陆海、湖面、高度、坡度（dLand 由陆海算出）
+function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
+  const { mesh } = world;
+  const n = mesh.n;
+  const land = world.causes.land;
+  const list: AddInput[] = [];
+  const mountain = new Uint8Array(n);
+  for (let i = 0; i < n; i++) mountain[i] = land[i] && d.lake[i] !== 1 && d.elevation[i] >= 1300 ? 1 : 0;
+  for (const cells of components(mesh, mountain)) {
+    if (cells.length < 6) continue;
+    let peak = cells[0];
+    for (const c of cells) if (d.elevation[c] > d.elevation[peak]) peak = c;
+    const volcanic = cells.length < 40 && d.elevation[peak] > 1500;
+    put(list, 'range', cells, 6.5 + Math.log10(areaOf(world, cells)), volcanic ? ['volcanic'] : []);
+    if (d.elevation[peak] >= 2600 || (volcanic && d.elevation[peak] >= 1500)) {
+      put(list, 'peak', [peak], 5 + d.elevation[peak] / 3000, volcanic ? ['volcanic'] : [], peak, 'peak');
     }
   }
-
-  // 大河：从河口沿流量最大的支流上溯
-  {
-    const thr = small.planet.riverThreshold;
-    const donors: number[][] = Array.from({ length: n }, () => []);
-    for (let i = 0; i < n; i++) {
-      const r = d.receiver[i];
-      if (land[i] && r >= 0 && land[r]) donors[r].push(i);
-    }
-    const mouths: number[] = [];
-    for (let i = 0; i < n; i++) {
-      if (!land[i] || d.lake[i] === 1 || d.discharge[i] < thr * 3) continue;
-      const r = d.receiver[i];
-      if (r < 0 || !land[r] || d.lake[r] === 1) mouths.push(i);
-    }
-    mouths.sort((a, b) => d.discharge[b] - d.discharge[a]);
-    for (const m of mouths.slice(0, 40)) {
-      const stem: number[] = [m];
-      let c = m;
-      for (let guard = 0; guard < n; guard++) {
-        let best = -1;
-        for (const j of donors[c]) if (d.lake[j] !== 1 && d.discharge[j] >= thr && (best < 0 || d.discharge[j] > d.discharge[best])) best = j;
-        if (best < 0) break;
-        stem.push(best);
-        c = best;
-      }
-      if (stem.length < 6) continue;
-      const q = d.discharge[m];
-      const size = q > thr * 40 ? 'big' : q > thr * 6 ? '' : 'small';
-      const before = out.length;
-      add('river', stem, 6 + Math.log10(q), size ? [size] : [], m);
-      // 标注沿河中段
-      const f = out[before];
-      const line = stem.map((s) => [mesh.x[s], mesh.y[s]] as [number, number]).reverse();
-      // 整个星球：沿河展开经度，跨过接缝的河也是连续的一条线
-      if (globe) for (let k = 1; k < line.length; k++) line[k][0] = line[k - 1][0] + wrapDelta(line[k][0] - line[k - 1][0]);
-      f.line = line;
-      const mid = Math.floor(line.length / 2);
-      f.x = globe ? wrapX(line[mid][0]) : line[mid][0];
-      f.y = line[mid][1];
-    }
+  const plateau = new Uint8Array(n);
+  const plain = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || d.lake[i] === 1) continue;
+    if (d.elevation[i] >= 1200 && d.slope[i] <= 8) plateau[i] = 1;
+    if (d.elevation[i] <= 400 && d.slope[i] <= 2.5) plain[i] = 1;
   }
-
-  // 山脉与主峰；高原；平原；盆地
-  {
-    const mountain = new Uint8Array(n);
-    for (let i = 0; i < n; i++) mountain[i] = land[i] && d.lake[i] !== 1 && d.elevation[i] >= 1300 ? 1 : 0;
-    for (const cells of components(mesh, mountain)) {
-      if (cells.length < 6) continue;
-      let peak = cells[0];
-      for (const c of cells) if (d.elevation[c] > d.elevation[peak]) peak = c;
-      const volcanic = cells.length < 40 && d.elevation[peak] > 1500;
-      add('range', cells, 6.5 + Math.log10(areaOf(cells)), volcanic ? ['volcanic'] : []);
-      if (d.elevation[peak] >= 2600 || (volcanic && d.elevation[peak] >= 1500)) {
-        add('peak', [peak], 5 + d.elevation[peak] / 3000, volcanic ? ['volcanic'] : [], peak);
-        out[out.length - 1].x = mesh.x[peak];
-        out[out.length - 1].y = mesh.y[peak];
-      }
-    }
-    const plateau = new Uint8Array(n);
-    const plain = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      if (!land[i] || d.lake[i] === 1) continue;
-      if (d.elevation[i] >= 1200 && d.slope[i] <= 8) plateau[i] = 1;
-      if (d.elevation[i] <= 400 && d.slope[i] <= 2.5) plain[i] = 1;
-    }
-    for (const cells of components(mesh, plateau)) if (cells.length >= 15) add('plateau', cells, 6 + Math.log10(areaOf(cells)));
-    const plains = components(mesh, plain).filter((c) => c.length >= 40).sort((a, b) => b.length - a.length).slice(0, 8);
-    for (const cells of plains) add('plain', cells, 5.5 + Math.log10(areaOf(cells)));
-    // 盆地：被高出很多的地形围住的低地
-    const basin = new Uint8Array(n);
-    const near = new Float64Array(n);
+  for (const cells of components(mesh, plateau)) if (cells.length >= 15) put(list, 'plateau', cells, 6 + Math.log10(areaOf(world, cells)));
+  const plains = components(mesh, plain).filter((c) => c.length >= 40).sort((a, b) => b.length - a.length).slice(0, 8);
+  for (const cells of plains) put(list, 'plain', cells, 5.5 + Math.log10(areaOf(world, cells)));
+  // 盆地：被高出很多的地形围住的低地
+  const basin = new Uint8Array(n);
+  const near = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
+    let mx = d.elevation[i];
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) mx = Math.max(mx, d.elevation[mesh.adj[e]]);
+    near[i] = mx;
+  }
+  for (let pass = 0; pass < 4; pass++) {
+    const next = Float64Array.from(near);
     for (let i = 0; i < n; i++) {
       if (!land[i]) continue;
-      let mx = d.elevation[i];
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) mx = Math.max(mx, d.elevation[mesh.adj[e]]);
-      near[i] = mx;
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) next[i] = Math.max(next[i], near[mesh.adj[e]]);
     }
-    for (let pass = 0; pass < 4; pass++) {
-      const next = Float64Array.from(near);
-      for (let i = 0; i < n; i++) {
-        if (!land[i]) continue;
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) next[i] = Math.max(next[i], near[mesh.adj[e]]);
-      }
-      near.set(next);
-    }
-    for (let i = 0; i < n; i++) if (land[i] && d.elevation[i] < 900 && near[i] - d.elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
-    for (const cells of components(mesh, basin)) if (cells.length >= 20) add('basin', cells, 5.5 + Math.log10(areaOf(cells)));
+    near.set(next);
   }
+  for (let i = 0; i < n; i++) if (land[i] && d.elevation[i] < 900 && near[i] - d.elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
+  for (const cells of components(mesh, basin)) if (cells.length >= 20) put(list, 'basin', cells, 5.5 + Math.log10(areaOf(world, cells)));
+  return list;
+}
 
-  // 大片生态区
-  {
-    const S = small.species;
-    const group = (s: number) => {
-      if (s < 0) return '';
-      const sp = S[s];
-      if (sp.id === 'ice') return 'icecap';
-      if (sp.terrain === 'desert') return 'desert';
-      if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
-      if (sp.terrain === 'arctic') return 'tundra';
-      if (sp.terrain === 'marsh') return 'wetland';
-      return '';
-    };
-    for (const g of ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const) {
-      const mask = new Uint8Array(n);
-      for (let i = 0; i < n; i++) mask[i] = land[i] && group(d.dominant[i]) === g ? 1 : 0;
-      const min = g === 'wetland' ? 12 : 30;
-      const comps = components(mesh, mask)
-        .filter((c) => c.length >= min)
-        .sort((a, b) => b.length - a.length)
-        .slice(0, 10);
-      for (const cells of comps) add(g, cells, 5 + Math.log10(areaOf(cells)));
-    }
+const BIOMES = ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const;
+
+// 每格属于哪一大类（BIOMES 里的下标 + 1，0 为都不是）
+function biomesOf(world: World, d: Derived): Uint8Array {
+  const n = world.mesh.n;
+  const land = world.causes.land;
+  const S = world.small.species;
+  const group = (s: number) => {
+    if (s < 0) return '';
+    const sp = S[s];
+    if (sp.id === 'ice') return 'icecap';
+    if (sp.terrain === 'desert') return 'desert';
+    if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
+    if (sp.terrain === 'arctic') return 'tundra';
+    if (sp.terrain === 'marsh') return 'wetland';
+    return '';
+  };
+  const kindOf = S.map((_, s) => (BIOMES as readonly string[]).indexOf(group(s)) + 1);
+  const biome = new Uint8Array(n);
+  for (let i = 0; i < n; i++) if (land[i] && d.dominant[i] >= 0) biome[i] = kindOf[d.dominant[i]];
+  return biome;
+}
+
+// 大片生态区：只取决于每格的大类
+function natureInputs(world: World, biome: Uint8Array): AddInput[] {
+  const { mesh } = world;
+  const n = mesh.n;
+  const list: AddInput[] = [];
+  for (let k = 0; k < BIOMES.length; k++) {
+    const g = BIOMES[k];
+    const mask = new Uint8Array(n);
+    for (let i = 0; i < n; i++) mask[i] = biome[i] === k + 1 ? 1 : 0;
+    const min = g === 'wetland' ? 12 : 30;
+    const comps = components(mesh, mask)
+      .filter((c) => c.length >= min)
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 10);
+    for (const cells of comps) put(list, g, cells, 5 + Math.log10(areaOf(world, cells)));
   }
+  return list;
+}
+
+export function detectFeatures(world: World, d: Derived): GeoFeature[] {
+  const { mesh, causes, small, kmPerUnit } = world;
+  const globe = mesh.kind === 'sphere';
+  const out: GeoFeature[] = [];
+
+  const climateTags = (cells: Int32Array) => tagsOf(world, d, cells);
+
+  const add = (type: FeatureType, cells: Int32Array, importance: number, extraTags: string[] = [], anchor?: number) => {
+    if (!cells.length) return;
+    const a = anchor ?? stableAnchor(cells);
+    const ax = axis(mesh, cells, unwrapped(mesh, cells));
+    out.push({
+      key: `${type}:${a}`,
+      type,
+      anchor: a,
+      cells: cells.slice(),
+      areaKm2: areaOf(world, cells),
+      x: ax.x,
+      y: ax.y,
+      angle: ax.angle,
+      span: ax.span,
+      tags: [...new Set([...climateTags(cells), ...extraTags])],
+      importance,
+      name: '',
+      custom: false,
+    });
+  };
+
+  // 按记下的输入逐个 add
+  const replay = (list: AddInput[]) => {
+    for (const a of list) {
+      let tags = a.tags;
+      if (a.mark === 'islet') {
+        let maxH = 0;
+        for (const c of a.cells) maxH = Math.max(maxH, d.elevation[c]);
+        if (maxH > 1400) tags = [...tags, 'volcanic'];
+      }
+      const before = out.length;
+      add(a.type, a.cells, a.importance, tags, a.anchor);
+      if (out.length === before) continue;
+      const f = out[before];
+      if (a.mark === 'peak') {
+        f.x = mesh.x[a.cells[0]];
+        f.y = mesh.y[a.cells[0]];
+      } else if (a.mark === 'river') {
+        // 标注沿河中段
+        const line = Array.from(a.cells, (s) => [mesh.x[s], mesh.y[s]] as [number, number]).reverse();
+        // 整个星球：沿河展开经度，跨过接缝的河也是连续的一条线
+        if (globe) for (let k = 1; k < line.length; k++) line[k][0] = line[k - 1][0] + wrapDelta(line[k][0] - line[k - 1][0]);
+        f.line = line;
+        const mid = Math.floor(line.length / 2);
+        f.x = globe ? wrapX(line[mid][0]) : line[mid][0];
+        f.y = line[mid][1];
+      }
+    }
+  };
+
+  // 各段按它实际读的数组缓存（数值放进 Float64Array）；段的先后就是地物的先后
+  const km = Float64Array.of(kmPerUnit);
+  const terrain = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
+  replay(terrain.list);
+  replay(memoized(mesh, 'lake', [d.lake, d.elevation, km], () => lakeInputs(world, d)));
+  replay(memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d)));
+  replay(memoized(mesh, 'relief', [causes.land, d.lake, d.elevation, d.slope, km], () => reliefInputs(world, d, terrain.dLand)));
+  const biome = biomesOf(world, d);
+  replay(memoized(mesh, 'nature', [biome, km], () => natureInputs(world, biome)));
 
   out.push(...regionFeatures(world, d));
   assignNames(world, out);
