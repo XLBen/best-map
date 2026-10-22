@@ -1,4 +1,4 @@
-import { Delaunay } from 'd3-delaunay';
+import { Delaunay, type Voronoi } from 'd3-delaunay';
 import { mulberry32 } from './rng';
 
 // 单元格图：Voronoi 格是编辑与计算的基本单位。
@@ -74,18 +74,19 @@ export function buildMesh(cells: number, aspect: number, seed: number): PlaneMes
   }
   let coords = Float64Array.from(pts);
   let delaunay = new Delaunay(coords);
-  let voronoi = delaunay.voronoi([0, 0, width, height]);
   const n = coords.length / 2;
+  let cell = clipCells(delaunay.voronoi([0, 0, width, height]), n);
   const relaxed = new Float64Array(coords.length);
   for (let i = 0; i < n; i++) {
-    const poly = voronoi.cellPolygon(i);
-    const [cx, cy] = poly ? centroid(poly) : [coords[2 * i], coords[2 * i + 1]];
+    const k0 = cell.off[i];
+    const k1 = cell.off[i + 1];
+    const [cx, cy] = k1 > k0 ? centroid(cell.xy, k0, k1) : [coords[2 * i], coords[2 * i + 1]];
     relaxed[2 * i] = cx;
     relaxed[2 * i + 1] = cy;
   }
   coords = relaxed;
   delaunay = new Delaunay(coords);
-  voronoi = delaunay.voronoi([0, 0, width, height]);
+  cell = clipCells(delaunay.voronoi([0, 0, width, height]), n);
 
   const x = new Float64Array(n);
   const y = new Float64Array(n);
@@ -94,66 +95,84 @@ export function buildMesh(cells: number, aspect: number, seed: number): PlaneMes
     y[i] = coords[2 * i + 1];
   }
 
-  const polys: Float64Array[] = [];
+  const { raw, rawOff, off: polyOff, xy } = cell;
   const area = new Float64Array(n);
   const boundary = new Uint8Array(n);
   const inwardX = new Float32Array(n);
   const inwardY = new Float32Array(n);
   const eps = 1e-9;
-  let polyLen = 0;
   for (let i = 0; i < n; i++) {
-    const p = voronoi.cellPolygon(i);
-    const flat = new Float64Array(p ? (p.length - 1) * 2 : 0);
-    if (p) {
-      for (let k = 0; k < p.length - 1; k++) {
-        flat[2 * k] = p[k][0];
-        flat[2 * k + 1] = p[k][1];
-        if (p[k][0] < eps) inwardX[i] = 1;
-        if (p[k][0] > width - eps) inwardX[i] = -1;
-        if (p[k][1] < eps) inwardY[i] = 1;
-        if (p[k][1] > height - eps) inwardY[i] = -1;
+    const k0 = polyOff[i];
+    const k1 = polyOff[i + 1];
+    if (k1 > k0) {
+      for (let k = k0; k < k1; k++) {
+        if (xy[2 * k] < eps) inwardX[i] = 1;
+        if (xy[2 * k] > width - eps) inwardX[i] = -1;
+        if (xy[2 * k + 1] < eps) inwardY[i] = 1;
+        if (xy[2 * k + 1] > height - eps) inwardY[i] = -1;
       }
-      area[i] = Math.abs(shoelace(flat));
+      area[i] = Math.abs(shoelace(xy, k0, k1));
     }
     if (inwardX[i] || inwardY[i]) boundary[i] = 1;
-    polys.push(flat);
-    polyLen += flat.length;
   }
-  const polyOff = new Int32Array(n + 1);
-  const poly = new Float32Array(polyLen);
-  for (let i = 0, o = 0; i < n; i++) {
-    polyOff[i] = o / 2;
-    poly.set(polys[i], o);
-    o += polys[i].length;
-  }
-  polyOff[n] = polyLen / 2;
+  const poly = new Float32Array(xy);
 
-  // 邻接：Voronoi 邻居，共享边由两多边形的公共顶点求出
-  const key = (px: number, py: number) => `${Math.round(px * 1e8)},${Math.round(py * 1e8)}`;
-  const lists: number[][] = [];
-  for (let i = 0; i < n; i++) lists.push([...voronoi.neighbors(i)]);
+  // 邻接：Voronoi 邻居（同 voronoi.neighbors：Delaunay 邻居里裁剪后仍有公共边的），共享边由两多边形的公共顶点求出
+  const hullIndex = new Int32Array(n).fill(-1);
+  for (let k = 0; k < delaunay.hull.length; k++) hullIndex[delaunay.hull[k]] = k;
+  const cand: number[] = [];
+  const nb: number[] = [];
   const off = new Int32Array(n + 1);
-  for (let i = 0; i < n; i++) off[i + 1] = off[i] + lists[i].length;
-  const adj = new Int32Array(off[n]);
+  for (let i = 0; i < n; i++) {
+    if (rawOff[i + 1] > rawOff[i]) {
+      delaunayNeighbors(delaunay, hullIndex, i, cand);
+      for (const j of cand) {
+        if (sharesEdge(raw, rawOff[i], rawOff[i + 1], rawOff[j], rawOff[j + 1])) nb.push(j);
+      }
+    }
+    off[i + 1] = nb.length;
+  }
+  const adj = Int32Array.from(nb);
   const dist = new Float64Array(off[n]);
   const edgeLen = new Float64Array(off[n]);
   const edgeSeg = new Float32Array(off[n] * 4);
+  // 公共顶点按坐标取整到 1e-8 比较
+  const rx = new Float64Array(xy.length / 2);
+  const ry = new Float64Array(xy.length / 2);
+  for (let k = 0; k < rx.length; k++) {
+    rx[k] = round8(xy[2 * k]);
+    ry[k] = round8(xy[2 * k + 1]);
+  }
   for (let i = 0; i < n; i++) {
-    const pi = polys[i];
-    const verts = new Map<string, number>();
-    for (let k = 0; k < pi.length / 2; k++) verts.set(key(pi[2 * k], pi[2 * k + 1]), k);
-    lists[i].forEach((j, t) => {
-      const e = off[i] + t;
-      adj[e] = j;
+    const k0 = polyOff[i];
+    const k1 = polyOff[i + 1];
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
       dist[e] = Math.hypot(x[i] - x[j], y[i] - y[j]);
-      const pj = polys[j];
-      const shared: number[] = [];
-      for (let k = 0; k < pj.length / 2 && shared.length < 4; k++) {
-        if (verts.has(key(pj[2 * k], pj[2 * k + 1]))) shared.push(pj[2 * k], pj[2 * k + 1]);
+      // 按 j 的顶点顺序取前两个也是 i 顶点的点
+      let shared = 0;
+      let ax = 0;
+      let ay = 0;
+      let bx = 0;
+      let by = 0;
+      for (let k = polyOff[j]; k < polyOff[j + 1] && shared < 2; k++) {
+        let h = k0;
+        while (h < k1 && !(rx[h] === rx[k] && ry[h] === ry[k])) h++;
+        if (h === k1) continue;
+        if (shared++ === 0) {
+          ax = xy[2 * k];
+          ay = xy[2 * k + 1];
+        } else {
+          bx = xy[2 * k];
+          by = xy[2 * k + 1];
+        }
       }
-      if (shared.length === 4) {
-        edgeLen[e] = Math.hypot(shared[0] - shared[2], shared[1] - shared[3]);
-        edgeSeg.set(shared, e * 4);
+      if (shared === 2) {
+        edgeLen[e] = Math.hypot(ax - bx, ay - by);
+        edgeSeg[e * 4] = ax;
+        edgeSeg[e * 4 + 1] = ay;
+        edgeSeg[e * 4 + 2] = bx;
+        edgeSeg[e * 4 + 3] = by;
       } else {
         // 退化情况（数值误差导致公共顶点没对上）：用两格中心的中垂线段近似
         const mx = (x[i] + x[j]) / 2;
@@ -164,7 +183,7 @@ export function buildMesh(cells: number, aspect: number, seed: number): PlaneMes
         edgeLen[e] = half * 2;
         edgeSeg.set([mx - nx * half, my - ny * half, mx + nx * half, my + ny * half], e * 4);
       }
-    });
+    }
   }
 
   let total = 0;
@@ -194,29 +213,132 @@ export function buildMesh(cells: number, aspect: number, seed: number): PlaneMes
   };
 }
 
-function shoelace(flat: Float64Array): number {
+// d3-delaunay 内部的单格裁剪：cellPolygon 与 neighbors 都由它算出，同一格每次结果相同，所以每格只裁一次
+interface Clipper {
+  _clip(i: number): number[] | null;
+}
+
+// 每格的裁剪结果，首尾相接放进 Float64Array（不留下几万个小数组，垃圾回收省事得多）：
+// 原样的裁剪结果是 raw[rawOff[i] .. rawOff[i+1])（判邻居用，没有时为空）；
+// 多边形顶点与 cellPolygon 相同（不含闭合点），是 xy[2·off[i] .. 2·off[i+1])
+function clipCells(voronoi: Voronoi<number>, n: number): { raw: Float64Array; rawOff: Int32Array; off: Int32Array; xy: Float64Array } {
+  const clipper = voronoi as unknown as Clipper;
+  let raw = new Float64Array(n * 16);
+  let xy = new Float64Array(n * 16);
+  const rawOff = new Int32Array(n + 1);
+  const off = new Int32Array(n + 1);
+  let r = 0;
+  let q = 0;
+  for (let i = 0; i < n; i++) {
+    const c = clipper._clip(i);
+    if (c !== null && c.length) {
+      if (r + c.length > raw.length) raw = grow(raw, r + c.length);
+      if (q + c.length > xy.length) xy = grow(xy, q + c.length);
+      for (let k = 0; k < c.length; k++) raw[r++] = c[k];
+      // 同 renderCell：去掉末尾与起点重合的点，跳过与前一点相同的点
+      xy[q++] = c[0];
+      xy[q++] = c[1];
+      let m = c.length;
+      while (c[0] === c[m - 2] && c[1] === c[m - 1] && m > 1) m -= 2;
+      for (let k = 2; k < m; k += 2) {
+        if (c[k] !== c[k - 2] || c[k + 1] !== c[k - 1]) {
+          xy[q++] = c[k];
+          xy[q++] = c[k + 1];
+        }
+      }
+    }
+    rawOff[i + 1] = r;
+    off[i + 1] = q / 2;
+  }
+  return { raw, rawOff, off, xy: xy.slice(0, q) };
+}
+
+// 容量不够时加倍（一般用不到：每格平均不到 8 个顶点）
+function grow(a: Float64Array, need: number): Float64Array<ArrayBuffer> {
+  const b = new Float64Array(Math.max(need, a.length * 2));
+  b.set(a);
+  return b;
+}
+
+// 格 i 的 Delaunay 邻居放进 out，顺序与 delaunay.neighbors(i) 相同（照抄它，只是不用生成器，快得多）：
+// 绕 i 的半边转一圈，凸包上的格再补上凸包的下一点。hullIndex 是各点在凸包里的位置（不在为 −1）
+function delaunayNeighbors(delaunay: Delaunay<number>, hullIndex: Int32Array, i: number, out: number[]): void {
+  out.length = 0;
+  // 所有点共线的退化情况仍交给 d3
+  if ((delaunay as unknown as { collinear?: Int32Array }).collinear) {
+    for (const j of delaunay.neighbors(i)) out.push(j);
+    return;
+  }
+  const { inedges, hull, halfedges, triangles } = delaunay;
+  const e0 = inedges[i];
+  if (e0 === -1) return; // 重合的点
+  let e = e0;
+  let p0 = -1;
+  do {
+    out.push((p0 = triangles[e]));
+    e = e % 3 === 2 ? e - 2 : e + 1;
+    if (triangles[e] !== i) return; // 坏的三角剖分
+    e = halfedges[e];
+    if (e === -1) {
+      const p = hull[(hullIndex[i] + 1) % hull.length];
+      if (p !== p0) out.push(p);
+      return;
+    }
+  } while (e !== e0);
+}
+
+// 同 voronoi.neighbors 的公共边判定：i 的某条边正好是 j 的一条反向边（两格的裁剪结果是 c[a0..a1)、c[b0..b1)）
+function sharesEdge(c: Float64Array, a0: number, a1: number, b0: number, b1: number): boolean {
+  const li = a1 - a0;
+  const lj = b1 - b0;
+  for (let ai = 0; ai < li; ai += 2) {
+    for (let aj = 0; aj < lj; aj += 2) {
+      if (
+        c[a0 + ai] === c[b0 + aj] &&
+        c[a0 + ai + 1] === c[b0 + aj + 1] &&
+        c[a0 + ((ai + 2) % li)] === c[b0 + ((aj + lj - 2) % lj)] &&
+        c[a0 + ((ai + 3) % li)] === c[b0 + ((aj + lj - 1) % lj)]
+      )
+        return true;
+    }
+  }
+  return false;
+}
+
+// 坐标取整到 1e-8 后用 === 比较，与原先的字符串键 `${Math.round(v * 1e8)}` 判等完全一致
+// （-0 与 0 相等；NaN 的字符串彼此相等，所以换成取整得不到的 0.5）
+function round8(v: number): number {
+  const r = Math.round(v * 1e8);
+  return r === r ? r : 0.5;
+}
+
+// 顶点 xy[2·k0 .. 2·k1) 围成的多边形的有向面积
+function shoelace(xy: Float64Array, k0: number, k1: number): number {
   let a = 0;
-  const m = flat.length / 2;
+  const m = k1 - k0;
   for (let k = 0; k < m; k++) {
     const j = (k + 1) % m;
-    a += flat[2 * k] * flat[2 * j + 1] - flat[2 * j] * flat[2 * k + 1];
+    a += xy[2 * (k0 + k)] * xy[2 * (k0 + j) + 1] - xy[2 * (k0 + j)] * xy[2 * (k0 + k) + 1];
   }
   return a / 2;
 }
 
-function centroid(p: ArrayLike<[number, number]> & { length: number }): [number, number] {
+function centroid(xy: Float64Array, k0: number, k1: number): [number, number] {
   let a = 0;
   let cx = 0;
   let cy = 0;
-  for (let k = 0; k < p.length - 1; k++) {
-    const [x0, y0] = p[k];
-    const [x1, y1] = p[k + 1];
+  for (let k = k0; k < k1; k++) {
+    const k2 = k + 1 < k1 ? k + 1 : k0;
+    const x0 = xy[2 * k];
+    const y0 = xy[2 * k + 1];
+    const x1 = xy[2 * k2];
+    const y1 = xy[2 * k2 + 1];
     const c = x0 * y1 - x1 * y0;
     a += c;
     cx += (x0 + x1) * c;
     cy += (y0 + y1) * c;
   }
-  if (Math.abs(a) < 1e-14) return [p[0][0], p[0][1]];
+  if (Math.abs(a) < 1e-14) return [xy[2 * k0], xy[2 * k0 + 1]];
   return [cx / (3 * a), cy / (3 * a)];
 }
 
