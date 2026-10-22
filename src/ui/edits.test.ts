@@ -179,4 +179,15 @@ describe('岛上特有', () => {
       }
     }
   });
+
+  it('往离已有生态的颜色更远的那一边转（森林不转成草原的黄）', () => {
+    const dist = (a: string, b: string) => Math.hypot(...[1, 3, 5].map((k) => parseInt(a.slice(k, k + 2), 16) - parseInt(b.slice(k, k + 2), 16)));
+    const avoid = ['#5f9c3c', '#b5b259', '#c2bd7c', '#a7a35b', '#7f9e45'];
+    for (const salt of [0, 1]) {
+      const c = shiftColor('#5f9c3c', salt, avoid);
+      const other = [shiftColor('#5f9c3c', 0), shiftColor('#5f9c3c', 1)].find((x) => x !== c)!;
+      const near = (x: string) => Math.min(...avoid.map((y) => dist(x, y)));
+      expect(near(c)).toBeGreaterThanOrEqual(near(other));
+    }
+  });
 });

@@ -15,7 +15,7 @@ export function endemicSpecies(world: World, islandCells: number[], id: string, 
     ...structuredClone(b),
     id,
     name: `${islandName}${b.name || b.id}`,
-    color: shiftColor(b.color, islandCells[0] ?? 0),
+    color: shiftColor(b.color, islandCells[0] ?? 0, world.small.species.map((x) => x.color)),
     competition: Math.min(100, b.competition * 1.001),
     dispersal: { origins: land.slice(0, 200), range: 20000, gapCost: 4, seaCost: 1e6 },
   };
@@ -43,12 +43,24 @@ export function endemicBase(world: World, land: number[]): number {
 }
 
 // 在底色上转开一大截色相（40°，以前 22°）、明暗也拉开（暗色变亮、亮色变暗）、更饱和一点：
-// 放在底生态旁边一眼分得开，又还看得出是近亲。往哪边转按岛定，结果固定
-export function shiftColor(hex: string, salt: number): string {
+// 放在底生态旁边一眼分得开，又还看得出是近亲。往哪边转：离已有各生态的颜色都更远的那一边
+// （免得转成另一种常见生态的颜色，比如森林转黄就像草原）；一样远时按岛定。结果固定
+export function shiftColor(hex: string, salt: number, avoid: string[] = []): string {
   const [h, s, l] = hexToHsl(hex);
-  const turn = salt % 2 === 0 ? 40 : -40;
   const dl = l < 0.45 ? 0.13 : -0.13;
-  return hslToHex((h + turn + 360) % 360, Math.min(1, Math.max(0.3, s + 0.06)), Math.max(0.08, Math.min(0.9, l + dl)));
+  const at = (turn: number) => hslToHex((h + turn + 360) % 360, Math.min(1, Math.max(0.3, s + 0.06)), Math.max(0.08, Math.min(0.9, l + dl)));
+  const first = salt % 2 === 0 ? 40 : -40;
+  const a = at(first);
+  const b = at(-first);
+  if (!avoid.length) return a;
+  const nearest = (c: string) => Math.min(...avoid.map((x) => rgbDist(c, x)));
+  return nearest(b) > nearest(a) + 1e-9 ? b : a;
+}
+
+function rgbDist(a: string, b: string): number {
+  let d = 0;
+  for (const k of [1, 3, 5]) d += (parseInt(a.slice(k, k + 2), 16) - parseInt(b.slice(k, k + 2), 16)) ** 2;
+  return Math.sqrt(d);
 }
 
 function hexToHsl(hex: string): [number, number, number] {
