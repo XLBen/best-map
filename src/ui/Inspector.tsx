@@ -2,7 +2,7 @@ import type { GeoFeature } from '../../core/features';
 import { BUILTIN_FIELDS } from '../../core/species';
 import { type CellExplanation, explainCell } from '../../core/vegetation';
 import { type World, longitudeOf, worldLatitude } from '../../core/world';
-import { exec, hoverCell, options, world } from '../state';
+import { exec, hoverCell, hoverProvinceCell, options, world } from '../state';
 import { category } from './defs/tools';
 
 // 检查器：用人话说清楚“这里是什么、为什么”，数字放在第二层
@@ -224,12 +224,13 @@ function Details({ w, cell }: { w: World; cell: number }) {
 }
 
 let lastCell = -1;
+// 省份那一行按的格：地图上这一点画出来的省（剪刀切线旁按显示的那一边，可能不是 lastCell 的省）
+let lastProvinceCell = -1;
 
 export function Inspector() {
   const w = world.value;
   if (!w) return null;
-  if (hoverCell.value >= 0) lastCell = hoverCell.value;
-  const cell = lastCell;
+  const cell = lastHoverCell();
   if (cell < 0 || cell >= w.mesh.n) return <p class="muted">把鼠标移到地图上，这里会告诉你那是什么地方。</p>;
   const d = w.derived;
   const land = w.causes.land[cell] === 1;
@@ -242,7 +243,7 @@ export function Inspector() {
   const river = d.discharge[cell] >= w.small.planet.riverThreshold ? named(['river'])[0] : undefined;
   // 用户圈的地区（最小的那个）
   const region = feats.filter((f) => f.region && f.type !== 'spot').sort((a, b) => a.areaKm2 - b.areaKm2)[0];
-  const p = w.causes.province[cell];
+  const p = w.causes.province[lastProvinceCell >= 0 && lastProvinceCell < w.mesh.n ? lastProvinceCell : cell];
   const pmeta = p >= 0 ? w.small.provinces[p] : null;
   const place = [...new Set([where?.name, region?.name, range?.name, area?.name, river ? `${river.name}边` : null].filter(Boolean))].join(' · ');
   return (
@@ -303,6 +304,9 @@ export function hereLine(w: World, cell: number): string {
 
 // 最后一次停在地图上的格（鼠标移到面板上时还看得到）
 export function lastHoverCell(): number {
-  if (hoverCell.value >= 0) lastCell = hoverCell.value;
+  if (hoverCell.value >= 0) {
+    lastCell = hoverCell.value;
+    lastProvinceCell = hoverProvinceCell.value;
+  }
   return lastCell;
 }

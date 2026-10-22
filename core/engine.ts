@@ -7,7 +7,6 @@ import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { computeVegetation, isVegetated } from './vegetation';
-import type { ProvinceSeam } from './seams';
 import { resolveTerrain, shareTerrainBase } from './terrain';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
@@ -516,7 +515,7 @@ export interface PreviewResult {
 export interface ProvincesPreview {
   province: Int32Array;
   provinces: SmallState['provinces'];
-  seams: ProvinceSeam[] | null;
+  seams: NonNullable<SmallState['provinceSeams']> | null;
   summary: string;
   // 命令有没有改动什么（什么都没改时执行也不进历史）
   changed: boolean;

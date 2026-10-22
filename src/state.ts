@@ -80,6 +80,9 @@ export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
 export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false });
 export const hoverCell = signal<number>(-1);
+// 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
+// 与 hoverCell 一起设
+export const hoverProvinceCell = signal<number>(-1);
 // 地图上鼠标旁的说明（工具预览的一句话）。warn：做不了；caution：做得了，但要留意（比如合并后是一省两块）
 export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 export const focusSpecies = signal<string | null>(null);
@@ -300,10 +303,11 @@ export function onlyEditsPending(): boolean {
   return true;
 }
 
-// 还没算完的编辑（执行、撤销、重做、换一个）有几步：排队时“换个形状”要等它们算完
+// 还没算完的编辑（执行、撤销、重做）有几步：排队时“换个形状”要等它们算完。
+// 换一个本身不算：连点两下“换个形状”，第二下换掉的还是同一步
 export function editsInFlight(): number {
   let k = 0;
-  for (const p of pending.values()) if (EDITS.has(p.kind)) k++;
+  for (const p of pending.values()) if (EDITS.has(p.kind) && p.kind !== 'replaceLast') k++;
   return k;
 }
 let meshCache: { key: string; mesh: Mesh } | null = null;

@@ -10,7 +10,7 @@ import { groupPreview, provinceFlat, provinceGroups } from '../render/colors';
 import { busy, describeChange, exec, options, previewProvinces, selectedProvince, setOptions, sliderActive, toast, world } from '../state';
 import { TOOL_DEFS } from './defs/tools';
 import { pendingEdits } from './pending';
-import { barPreview, clearBarPreview, showSplit } from './provincePreview';
+import { barPreview, clearBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 import {
   type Pointer,
   chainTool,
@@ -453,6 +453,36 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     expect(barPreview.value).toBeNull();
   });
 
+  it('按新规则重新划分：鼠标停在按钮上先画出新的省界和省名（与点下去的结果相同）；只是划过去的不算', async () => {
+    const eng = continents({ provinces: true });
+    const w = eng.world;
+    world.value = w;
+    vi.mocked(previewProvinces).mockImplementation(async (cmd) => eng.previewProvinces(cmd));
+    vi.mocked(previewProvinces).mockClear();
+    const cmd: Command = { op: 'generate_provinces', rules: { ...w.small.provinceRules, size: 'small', seed: w.small.provinceRules.seed + 1 } };
+    // 从按钮上划过去
+    showProvinceCommand(cmd);
+    clearBarPreview();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(previewProvinces).not.toHaveBeenCalled();
+    expect(barPreview.value).toBeNull();
+    // 停在按钮上
+    showProvinceCommand(cmd);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(previewProvinces).toHaveBeenCalledTimes(1);
+    const pv = barPreview.value!;
+    expect(pv.base).toBe(w);
+    const shown = groupPreview(w, pv.provinces, 'provinces');
+    eng.exec(cmd);
+    const after = eng.world;
+    expect(Array.from(shown.group)).toEqual(groupsOf(after));
+    expect(Array.from(shown.flat!)).toEqual(Array.from(provinceFlat(after, after.causes.province)));
+    expect(pv.provinces.metas).toEqual(after.small.provinces);
+    clearBarPreview();
+    vi.mocked(previewProvinces).mockReset();
+    vi.mocked(previewProvinces).mockImplementation(async () => null);
+  });
+
   it('合并：锁定的省标红、点了不合并；不相邻的两省黄色提醒，照样能合并', async () => {
     const eng = continents({ provinces: true });
     const [a, b] = bigLand(eng.world);
@@ -487,6 +517,7 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     const w = eng.world;
     world.value = w;
     vi.mocked(previewProvinces).mockImplementation(async (cmd) => eng.previewProvinces(cmd));
+    vi.mocked(previewProvinces).mockClear();
     vi.mocked(exec).mockClear();
     const [p] = bigLand(w);
     const cells = cellsOf(w, p);
@@ -502,10 +533,28 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     await new Promise((r) => setTimeout(r, 300));
     const exact = t.preview();
     expect(exact.hint).toMatch(/^重划 \d+ 个省 → \d+ 个$/);
-    // 松手：发出的命令执行后的省份与省名，就是停下时画出来的
+    // 接着涂到邻省的一格（邻省远没涂到一半，重划的还是这个省）：新省界一直留着，不跳回涂黄，也不再算一遍
+    const sizes = new Map<number, number>();
+    w.causes.province.forEach((q) => q >= 0 && sizes.set(q, (sizes.get(q) ?? 0) + 1));
+    let nb = -1;
+    for (const c of cells) {
+      for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1] && nb < 0; e++) {
+        const q = w.causes.province[w.mesh.adj[e]];
+        if (q >= 0 && q !== p && (sizes.get(q) ?? 0) >= 10) nb = w.mesh.adj[e];
+      }
+    }
+    expect(nb).toBeGreaterThanOrEqual(0);
+    t.move?.(at(w, nb), true);
+    const more = t.preview();
+    expect(more.provinces).toBe(exact.provinces);
+    expect(more.hint).toBe(exact.hint);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(previewProvinces).toHaveBeenCalledTimes(1);
+    // 松手：发出的命令（多涂了邻省那一格）执行后的省份与省名，就是停下时画出来的
     await t.up?.(at(w, cells[cells.length - 1]));
     const cmd = vi.mocked(exec).mock.calls[0][0] as Command;
     expect(cmd.op).toBe('regenerate_provinces');
+    expect((cmd as { cells: number[] }).cells).toContain(nb);
     const old = new Set(Object.keys(w.small.provinces));
     eng.exec(cmd);
     expect(Array.from(exact.provinces!.province!)).toEqual(Array.from(eng.world.causes.province));

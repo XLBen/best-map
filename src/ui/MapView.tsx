@@ -1,4 +1,4 @@
-import { effect } from '@preact/signals';
+import { batch, effect } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { displayCellAt } from '../../core/display';
 import { FEATURE_INFO, type FeatureType } from '../../core/features';
@@ -15,6 +15,7 @@ import {
   flash,
   focusSpecies,
   hoverCell,
+  hoverProvinceCell,
   labelGroups,
   mapStyle,
   measure,
@@ -100,11 +101,14 @@ function mergeProvinces(from: (ProvincePreview | null | undefined)[]): ProvinceP
     const top = list.map((x) => !!x.province).lastIndexOf(true);
     const base = top >= 0 ? list[top] : null;
     const rest = list.slice(top + 1);
+    // 将来全部的切线：最后给出的那一份（对半分开时切线接着管分出来的一半）
+    const seamList = [base, ...rest].reverse().find((x) => x && x.seamList !== undefined)?.seamList;
     out = {
       cells: [...(base?.cells ?? []), ...rest.flatMap((x) => x.cells)],
       ids: [...(base?.ids ?? []), ...rest.flatMap((x) => x.ids)],
       seams: [...(base?.seams ?? []), ...rest.flatMap((x) => x.seams ?? [])],
-      ...(base ? { province: base.province, seamList: base.seamList, metas: base.metas } : {}),
+      ...(base ? { province: base.province, metas: base.metas } : {}),
+      ...(seamList !== undefined ? { seamList } : {}),
     };
   }
   merged = { from, out };
@@ -438,7 +442,7 @@ export function MapView() {
       provinceLabels = provinceLabelsOf(w, w.causes.province, w.small.provinces);
       // 鼠标没动、世界变了（编辑的结果到了）：屏幕上这一点画的格可能变了（陆海、切线），重新算
       for (const p of new Set([pointer, lastPointer])) if (p && p.cell >= 0) p.shown = displayCellAt(w, p.x, p.y, p.cell);
-      if (pointer?.shown && hoverCell.peek() !== pointer.shown.here) hoverCell.value = pointer.shown.here;
+      if (pointer?.shown) setHover(pointer);
       requestDraw();
     });
 
@@ -517,6 +521,16 @@ export function MapView() {
     };
     // 悬停卡片“这里”说的那一格：屏幕上这一点画成的陆地或海
     const hereOf = (p: Pointer) => p.shown?.here ?? p.cell;
+    // 鼠标下的格：“这里”说的那一格，省份那一行按画出来的省（切线旁按显示的那一边）。世界的 effect 里也调它，所以是函数声明
+    function setHover(p: Pointer) {
+      const here = p.shown?.here ?? p.cell;
+      const prov = p.shown?.province ?? p.cell;
+      if (hoverCell.peek() === here && hoverProvinceCell.peek() === prov) return;
+      batch(() => {
+        hoverProvinceCell.value = prov;
+        hoverCell.value = here;
+      });
+    }
     const pointerOf = (e: PointerEvent | MouseEvent): Pointer => {
       const r = ovCanvas.getBoundingClientRect();
       return pointerAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey, e.altKey);
@@ -530,7 +544,7 @@ export function MapView() {
       const p = pointerAt(pointer.sx, pointer.sy, pointer.shift, pointer.alt);
       pointer = p;
       lastPointer = p;
-      if (hoverCell.value !== hereOf(p)) hoverCell.value = hereOf(p);
+      setHover(p);
       active().move?.(p, pressed);
     }
 
@@ -607,7 +621,7 @@ export function MapView() {
         clickStart = null;
         return;
       }
-      if (hoverCell.value !== hereOf(p)) hoverCell.value = hereOf(p);
+      setHover(p);
       if (category.value === 'names') hoverLabel = hitLabel(p.sx, p.sy);
       active().move?.(p, pressed);
       requestDraw();

@@ -1827,31 +1827,38 @@ export function provinceMergeTool(): ToolHandler {
   };
 }
 
-// 重划：涂到一大半的省重新划分。笔画停下 150 毫秒后在 Worker 里算确切的结果（与执行同一个算法、同样的省名），
-// 地图上直接画出新的省界和省名；算好之前先把会重划的省涂黄
+// 重划：涂到一大半的省重新划分。会重划哪几个省定下来 150 毫秒后在 Worker 里算确切的结果（与执行同一个算法、
+// 同样的省名），地图上直接画出新的省界和省名；算好之前先把会重划的省涂黄。
+// 结果只取决于重划哪几个省（不看具体涂了哪几格），所以接着在这几个省里涂时新省界一直留着，不重算、不闪回
 export function provinceRegenTool(): ToolHandler {
-  let cache: { key: string; s: Stroke; cells: number[]; count: number; rough: HighlightLayer[]; framed: HighlightLayer[] } | null = null;
+  let cache: { key: string; s: Stroke; ids: string; cells: number[]; count: number; rough: HighlightLayer[]; framed: HighlightLayer[] } | null = null;
   let exact: { key: string; s: Stroke; prov: ProvincePreview; fresh: number } | null = null;
   let wanted: { key: string; s: Stroke } | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  const stop = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
   // 会被重新划分的省份：被涂到一半以上的（与命令用同一个判断）
   const targets = (w: World, s: Stroke) => {
     const key = `${worldId(w)}|${s.t.size}|${s.cells[s.cells.length - 1]}`;
     if (cache?.s !== s || cache.key !== key) {
-      const ids = new Set(regenTargets(w, s.cells));
+      const list = regenTargets(w, s.cells);
+      const ids = new Set(list);
       const cells: number[] = [];
       for (let i = 0; i < w.mesh.n; i++) if (ids.has(w.causes.province[i])) cells.push(i);
       const stroke: HighlightLayer = { cells: s.cells, color: [255, 255, 255], alpha: 0.25 };
       // 确切的新省界画出来以后，会重划的范围只描边（不盖住新的省界）
-      cache = { key, s, cells, count: ids.size, rough: [stroke, { cells, color: [255, 220, 90], alpha: 0.6 }], framed: [stroke, { cells, color: [255, 220, 90], pattern: 'outline' }] };
+      cache = { key, s, ids: `${worldId(w)}|${list.join(',')}`, cells, count: ids.size, rough: [stroke, { cells, color: [255, 220, 90], alpha: 0.6 }], framed: [stroke, { cells, color: [255, 220, 90], pattern: 'outline' }] };
     }
     return cache;
   };
+  // key：这个世界上重划哪几个省
   const want = (w: World, s: Stroke, key: string) => {
     if (wanted?.key === key && wanted.s === s) return;
     const mine = { key, s };
     wanted = mine;
-    if (timer) clearTimeout(timer);
+    stop();
     const cells = s.cells;
     timer = setTimeout(() => {
       timer = null;
@@ -1867,8 +1874,9 @@ export function provinceRegenTool(): ToolHandler {
     hint: () => ({ text: null }),
     layers(w, s) {
       const t = targets(w, s);
-      if (t.count) want(w, s, t.key);
-      const x = exact?.s === s && exact.key === t.key ? exact : null;
+      // 拖滑块时预览的单点一笔不去 Worker 里算（地图上只画涂黄的范围）
+      if (t.count && !sliderActive.value) want(w, s, t.ids);
+      const x = exact?.s === s && exact.key === t.ids ? exact : null;
       return {
         layers: x ? t.framed : t.rough,
         hint: !t.count ? '再多涂一些' : x ? `重划 ${t.count} 个省 → ${x.fresh} 个` : `重划 ${t.count} 个省`,
@@ -1876,6 +1884,8 @@ export function provinceRegenTool(): ToolHandler {
       };
     },
     async commit(w, s) {
+      // 松手了：还没到时候的预览不必再算（Worker 先算这一步）
+      stop();
       if (!targets(w, s).count) {
         showToast('涂的范围要盖住省份的一大半，那个省份才会重新划分', true);
         return;

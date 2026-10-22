@@ -42,32 +42,43 @@ function compare(w: World, W: number, H: number): number {
   return moved / n;
 }
 
+// 横切一个大的陆地省，让地图上有切线（整个星球：经度取圆周平均）
+function cutBig(eng: Engine) {
+  const w = eng.world;
+  const { mesh } = w;
+  const sphere = mesh.kind === 'sphere';
+  const sizes = new Map<number, number>();
+  w.causes.province.forEach((p) => p >= 0 && sizes.set(p, (sizes.get(p) ?? 0) + 1));
+  const bigs = [...sizes].filter(([p]) => w.small.provinces[p]?.land).sort((a, b) => b[1] - a[1]);
+  const s = mesh.spacing;
+  for (const [big, size] of bigs.slice(0, 5)) {
+    let sx = 0;
+    let cx = 0;
+    let cy = 0;
+    w.causes.province.forEach((p, i) => {
+      if (p !== big) return;
+      sx += sphere ? Math.sin(Math.PI * mesh.x[i]) : mesh.x[i];
+      cx += sphere ? Math.cos(Math.PI * mesh.x[i]) : 0;
+      cy += mesh.y[i];
+    });
+    const x = sphere ? Math.atan2(sx, cx) / Math.PI : sx / size;
+    const y = cy / size;
+    const { line, cut } = scissors(w, [
+      [x - 2 * s, y + 0.2 * s],
+      [x + 2 * s, y - 0.1 * s],
+    ]);
+    if (!cut.plans.length) continue;
+    eng.exec({ op: 'cut_province', line });
+    expect(eng.world.small.provinceSeams?.length).toBeGreaterThan(0);
+    return;
+  }
+  throw new Error('没有切得开的省');
+}
+
 describe('屏幕上画出来的那一格', () => {
   it('一块地区：陆海、格、切线两边的省都与着色器的规则一致', () => {
     const eng = continents({ provinces: true });
-    const w0 = eng.world;
-    const { mesh } = w0;
-    // 横切一个大省，让地图上有切线
-    const sizes = new Map<number, number>();
-    w0.causes.province.forEach((p) => p >= 0 && sizes.set(p, (sizes.get(p) ?? 0) + 1));
-    const big = [...sizes].filter(([p]) => w0.small.provinces[p]?.land).sort((a, b) => b[1] - a[1])[0][0];
-    let cx = 0;
-    let cy = 0;
-    w0.causes.province.forEach((p, i) => {
-      if (p !== big) return;
-      cx += mesh.x[i];
-      cy += mesh.y[i];
-    });
-    cx /= sizes.get(big)!;
-    cy /= sizes.get(big)!;
-    const s = mesh.spacing;
-    const { line, cut } = scissors(w0, [
-      [cx - 2 * s, cy + 0.2 * s],
-      [cx + 2 * s, cy - 0.1 * s],
-    ]);
-    expect(cut.plans.length).toBeGreaterThan(0);
-    eng.exec({ op: 'cut_province', line });
-    expect(eng.world.small.provinceSeams?.length).toBeGreaterThan(0);
+    cutBig(eng);
     const moved = compare(eng.world, 480, 300);
     // 不扭曲、按最近格取的老办法有不少像素读错
     expect(moved).toBeGreaterThan(0.03);
@@ -80,6 +91,8 @@ describe('屏幕上画出来的那一格', () => {
       e.exec({ op: 'generate_provinces', rules: { seed: 2 } });
       return e;
     });
+    // 也切一刀：切线在星球上按经度绕回
+    cutBig(eng);
     compare(eng.world, 400, 200);
     // 平铺的另一份上同一点读到的一样
     const w = eng.world;

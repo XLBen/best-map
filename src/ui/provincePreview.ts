@@ -23,6 +23,12 @@ export const barPreview = signal<BarPreview | null>(null);
 
 // 每次换一个按钮、移开就换一代：还在路上的旧预览不再显示
 let token = 0;
+// 鼠标停下后才去算的那一次（还没发出去）
+let timer: ReturnType<typeof setTimeout> | null = null;
+const stop = () => {
+  if (timer) clearTimeout(timer);
+  timer = null;
+};
 
 // 对半分开：分出来的那一半（与命令同一个算法：splitCells 只看网格与这个省的格）用它将来的颜色淡淡地涂上，
 // 新的省界画在中间。切线也像命令一样让分出来的那一半接着管
@@ -40,25 +46,32 @@ export function showSplit(w: World, id: number) {
   };
 }
 
-// 整张图重新划分：在 Worker 里算好将来的省界与省名再画（几十到一两百毫秒）；那时鼠标已经移开就不画
+// 整张图重新划分：鼠标停 150 毫秒后在 Worker 里算好将来的省界与省名再画（几十到一两百毫秒）；
+// 只是从按钮上划过去的不算，算好时鼠标已经移开就不画
 export function showProvinceCommand(cmd: Command) {
   const t = ++token;
-  const w = world.value;
-  if (!w) return;
-  void previewProvinces(cmd).then((r) => {
-    if (!r || t !== token || world.value !== w) return;
-    barPreview.value = { base: w, provinces: { cells: [], ids: [], province: r.province, seamList: r.seams, metas: r.provinces }, layers: [] };
-  });
+  stop();
+  timer = setTimeout(() => {
+    timer = null;
+    const w = world.value;
+    if (t !== token || !w) return;
+    void previewProvinces(cmd).then((r) => {
+      if (!r || t !== token || world.value !== w) return;
+      barPreview.value = { base: w, provinces: { cells: [], ids: [], province: r.province, seamList: r.seams, metas: r.provinces }, layers: [] };
+    });
+  }, 150);
 }
 
 // 鼠标移开：不再预览（点下去了的留到结果回来）
 export function clearBarPreview() {
   token++;
+  stop();
   if (barPreview.value && !barPreview.value.held) barPreview.value = null;
 }
 
-// 点下去了：预览留到这一步的结果回来
+// 点下去了：预览留到这一步的结果回来（还没开始算的预览不算了：Worker 先算这一步）
 export function holdBarPreview(done: Promise<unknown>) {
+  stop();
   const p = barPreview.value;
   if (!p) return;
   const held = { ...p, held: true };
