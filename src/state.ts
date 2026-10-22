@@ -5,9 +5,11 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { previewWorldOf } from '../core/preview-world';
+import { isRiverCell } from '../core/select';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
+import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 
@@ -88,8 +90,8 @@ export const hoverProvinceCell = signal<number>(-1);
 export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 export const focusSpecies = signal<string | null>(null);
 
-// 顶栏按钮弹出的面板：同一时间只开一个
-export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | `cat:${Category}`;
+// 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
+export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
@@ -102,6 +104,8 @@ export const uiHidden = signal(false);
 export const sliderActive = signal(false);
 // 工具的异步预览算好了：地图重画一次
 export const redrawTick = signal(0);
+// 拖一条画的河的“粗细”时地图上先这样画（不等 worker）；null 照存下的画
+export const riverStyleOverride = signal<RiverStyleOverride | null>(null);
 // “调整”面板拖滑块时的预览（会变成陆地 / 海的格、山会变高变矮的格、每格将来的海岸值：地图上画出将来的海岸线）
 export const adjustPreview = signal<TerrainPreview | null>(null);
 
@@ -124,6 +128,22 @@ export const selectedFeature = signal<string | null>(null);
 export const focusName = signal<string | null>(null);
 // 省份：选中的省份
 export const selectedProvince = signal<number | null>(null);
+// 河：一条画的河（河道 id），或一条自然的河（河上的一格）
+export type RiverRef = { kind: 'guide'; id: string } | { kind: 'natural'; cell: number };
+// 画河时点中的河（底部条换成这条河的设置）；河流列表里鼠标停着的那条（地图上亮一下，什么工具都一样）
+export const selectedRiver = signal<RiverRef | null>(null);
+export const hoverRiver = signal<RiverRef | null>(null);
+// 画的河穿过了别的河：松手后底部条问一句（截走它 / 到这里汇入 / 取消），回车、Esc 也行
+export interface RiverPending {
+  text: string;
+  capture(): Promise<void>;
+  // 到这里汇入（穿过的是改道的这条河自己时没有）
+  join: (() => Promise<void>) | null;
+  cancel(): void;
+  // 鼠标停在“到这里汇入”上：地图上换成汇入的样子
+  showJoin(on: boolean): void;
+}
+export const riverPending = signal<RiverPending | null>(null);
 // 显示哪些地名：按大类
 export type LabelGroup = 'land' | 'water' | 'relief' | 'nature';
 export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 'relief', 'nature']));
@@ -244,6 +264,10 @@ export interface ToolOptions {
   lakeKm: number;
   // 画的河有多大：一路加进来的水合计为“河流多少”门槛的几倍
   riverFlow: number;
+  // 画河：顺地势（点源头，河自己找路），还是自定义走向（按住画出河道，河照着走）
+  riverMode: 'flow' | 'course';
+  // 自定义走向画到的终点还在陆地上时：顺着地势接着流，还是在那里消失
+  riverEnd: 'flow' | 'sink';
   // 正在涂的自定义场
   field: string | null;
   fieldMode: 'add' | 'sub';
@@ -271,6 +295,8 @@ export const options = signal<ToolOptions>({
   climateAmount: 1,
   lakeKm: 40,
   riverFlow: 4,
+  riverMode: 'flow',
+  riverEnd: 'flow',
   field: null,
   fieldMode: 'add',
   fieldAmount: 0.25,
@@ -413,6 +439,13 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   noteTimings(s.timings);
   // 选中的省份可能已被合并；关注的生态、要涂的生态可能已被撤销掉
   if (selectedProvince.value !== null && !s.small.provinces[selectedProvince.value]) selectedProvince.value = null;
+  // 选中的河：换了世界，画的河被删掉、撤销掉了，或者自然的河那一格不再是河
+  const sel = selectedRiver.value;
+  if (sel && (fresh || (sel.kind === 'guide' ? !next.small.guides.some((g) => g.id === sel.id) : !isRiverCell(next, next.derived, sel.cell)))) selectedRiver.value = null;
+  const hov = hoverRiver.value;
+  if (hov && (fresh || (hov.kind === 'guide' && !next.small.guides.some((g) => g.id === hov.id)))) hoverRiver.value = null;
+  // 等着确认的那一笔是照原来的世界算的：世界变了就不算了
+  riverPending.value?.cancel();
   if (focusSpecies.value && !s.small.species.some((x) => x.id === focusSpecies.value)) focusSpecies.value = null;
   if (options.value.biome && !s.small.species.some((x) => x.id === options.value.biome)) setOptions({ biome: null });
   // 新世界：画笔、岛、湖的大小跟着地图尺度走

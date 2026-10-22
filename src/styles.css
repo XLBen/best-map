@@ -861,6 +861,50 @@ button svg {
   color: #9cc3ea;
 }
 
+/* 选项左边的两个字（“走向”） */
+.bar-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bar-chip.warn,
+.warn-text {
+  color: #ffd29b;
+}
+.bar-chip.warn {
+  border-color: var(--warn);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 河的“大小”最左边的“顺其自然”那一段 */
+.hs-detent {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  height: 8px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.river-more .row {
+  margin: 8px 0;
+  gap: 8px;
+}
+.river-more p {
+  margin: 6px 0;
+}
+.river-row {
+  align-items: center;
+  gap: 8px;
+}
+.river-row > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 左下角：量距离（比例尺画在地图画布上，就在它右边；底部条伸到左下角时一起抬到它上面，见 MapView 的 cornerLift） */
 .ruler-btn {
   position: absolute;

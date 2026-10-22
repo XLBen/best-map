@@ -1,7 +1,8 @@
-import { type Mesh, findCell } from './mesh';
+import { type Mesh, findCell, gradient } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
+import { guideBody, guideLine } from './rivers';
 import { DEFAULT_SPECIES, type Species } from './species';
-import type { Derived, RegionKind, World } from './world';
+import type { Derived, Guide, RegionKind, World } from './world';
 
 // 地理要素识别：在格图上找出大陆、岛、群岛、半岛、海、洋、湾、海峡、湖、大河、山脉、主峰、
 // 高原、平原、盆地、沙漠、森林、冻原、冰原、沼泽、涂出来的生态区，按文字包起名。
@@ -95,6 +96,8 @@ export interface GeoFeature {
   region?: string;
   // 涂出来的生态区：涂的生态的 id（自然形成的地物没有这一项）
   species?: string;
+  // 画的河（有名字的河道）：河道的 id
+  guide?: string;
 }
 
 export interface FeatureOverride {
@@ -297,8 +300,9 @@ function axisOf(m: number, X: (k: number) => number, Y: (k: number) => number): 
   return { x, y, angle, span: 4 * Math.sqrt(l1), elong: Math.sqrt(l1 / Math.max(l2, 1e-12)) };
 }
 
-// 情境标签（寒、热、干、湿、高）：按地物里陆地格的平均气候；全是水时只看冷热
-function tagsOf(world: World, d: Derived, cells: ArrayLike<number>): string[] {
+// 情境标签（寒、热、干、湿、高）：按地物里陆地格的平均气候；全是水时只看冷热。
+// 高不高按没挖河床的地形（terrain）看：画一条峡谷不会让地名换一套字
+function tagsOf(world: World, d: Derived, cells: ArrayLike<number>, terrain: ArrayLike<number> = d.elevation): string[] {
   const land = world.causes.land;
   let t = 0;
   let m = 0;
@@ -309,7 +313,7 @@ function tagsOf(world: World, d: Derived, cells: ArrayLike<number>): string[] {
     if (!land[c]) continue;
     t += d.tMean[c];
     m += Math.min(d.moisture[c], 4);
-    h += Math.max(0, d.elevation[c]);
+    h += Math.max(0, terrain[c]);
     cnt++;
   }
   if (!cnt) {
@@ -650,8 +654,8 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
   return { list: withLabels(mesh, list), dLand };
 }
 
-// 湖：只取决于湖面与高度
-function lakeInputs(world: World, d: Derived): AddInput[] {
+// 湖：只取决于湖面与高度（没挖河床的地形）
+function lakeInputs(world: World, d: Derived, terrain: ArrayLike<number>): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
   const avgCellKm2 = mapAreaOf(world) / n;
@@ -662,7 +666,7 @@ function lakeInputs(world: World, d: Derived): AddInput[] {
     const area = areaOf(world, cells);
     const tags = [area > avgCellKm2 * 30 ? 'large' : ''];
     let h = 0;
-    for (const c of cells) h += d.elevation[c];
+    for (const c of cells) h += terrain[c];
     if (h / cells.length > 2000) tags.push('high');
     put(list, 'lake', cells, 5 + Math.log10(area), tags.filter(Boolean));
   }
@@ -716,30 +720,53 @@ function riverInputs(world: World, d: Derived): AddInput[] {
   return list;
 }
 
-// 山脉与主峰；高原；平原；盆地：只取决于陆海、湖面、高度、坡度（dLand 由陆海算出）
-function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
+// 坡度（m/km），与水文里算的 d.slope 同一个算式（结果逐值相同）。按没挖河床的地形认高原、平原时用
+function slopeOf(world: World, elevation: ArrayLike<number>): Float32Array {
+  const { mesh, kmPerUnit } = world;
+  const n = mesh.n;
+  const land = world.causes.land;
+  const hPos = new Float64Array(n);
+  for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
+    const [gx, gy] = gradient(mesh, hPos, i);
+    out[i] = Math.hypot(gx, gy) / kmPerUnit;
+  }
+  return out;
+}
+
+// 没挖河床的地形的坡度：没有只挖河床的河时就是水文算好的那份（两者逐值相同），有的话按地形另算（按内容缓存）
+function terrainSlope(world: World, d: Derived, terrain: Float32Array): ArrayLike<number> {
+  if (terrain === d.elevation || !world.small.guides.some((g) => g.carve === 'bed')) return d.slope;
+  return memoized(world.mesh, 'slope', [world.causes.land, terrain], () => slopeOf(world, terrain));
+}
+
+// 山脉与主峰；高原；平原；盆地：只取决于陆海、湖面、高度、坡度（dLand 由陆海算出）。
+// 高度、坡度按没挖河床的地形（elevation、slope）：画的峡谷不会把山脉切成两段、换掉主峰，山名不变
+function reliefInputs(world: World, d: Derived, dLand: Int32Array, elevation: ArrayLike<number>, slope: ArrayLike<number>): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
   const land = world.causes.land;
   const list: AddInput[] = [];
   const mountain = new Uint8Array(n);
-  for (let i = 0; i < n; i++) mountain[i] = land[i] && d.lake[i] !== 1 && d.elevation[i] >= 1300 ? 1 : 0;
+  for (let i = 0; i < n; i++) mountain[i] = land[i] && d.lake[i] !== 1 && elevation[i] >= 1300 ? 1 : 0;
   for (const cells of components(mesh, mountain)) {
     if (cells.length < 6) continue;
     let peak = cells[0];
-    for (const c of cells) if (d.elevation[c] > d.elevation[peak]) peak = c;
-    const volcanic = cells.length < 40 && d.elevation[peak] > 1500;
+    for (const c of cells) if (elevation[c] > elevation[peak]) peak = c;
+    const volcanic = cells.length < 40 && elevation[peak] > 1500;
     put(list, 'range', cells, 6.5 + Math.log10(areaOf(world, cells)), volcanic ? ['volcanic'] : []);
-    if (d.elevation[peak] >= 2600 || (volcanic && d.elevation[peak] >= 1500)) {
-      put(list, 'peak', [peak], 5 + d.elevation[peak] / 3000, volcanic ? ['volcanic'] : [], peak, 'peak');
+    if (elevation[peak] >= 2600 || (volcanic && elevation[peak] >= 1500)) {
+      put(list, 'peak', [peak], 5 + elevation[peak] / 3000, volcanic ? ['volcanic'] : [], peak, 'peak');
     }
   }
   const plateau = new Uint8Array(n);
   const plain = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     if (!land[i] || d.lake[i] === 1) continue;
-    if (d.elevation[i] >= 1200 && d.slope[i] <= 8) plateau[i] = 1;
-    if (d.elevation[i] <= 400 && d.slope[i] <= 2.5) plain[i] = 1;
+    if (elevation[i] >= 1200 && slope[i] <= 8) plateau[i] = 1;
+    if (elevation[i] <= 400 && slope[i] <= 2.5) plain[i] = 1;
   }
   for (const cells of components(mesh, plateau)) if (cells.length >= 15) put(list, 'plateau', cells, 6 + Math.log10(areaOf(world, cells)));
   const plains = components(mesh, plain).filter((c) => c.length >= 40).sort((a, b) => b.length - a.length).slice(0, 8);
@@ -749,8 +776,8 @@ function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
   const near = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     if (!land[i]) continue;
-    let mx = d.elevation[i];
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) mx = Math.max(mx, d.elevation[mesh.adj[e]]);
+    let mx = elevation[i];
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) mx = Math.max(mx, elevation[mesh.adj[e]]);
     near[i] = mx;
   }
   for (let pass = 0; pass < 4; pass++) {
@@ -761,7 +788,7 @@ function reliefInputs(world: World, d: Derived, dLand: Int32Array): AddInput[] {
     }
     near.set(next);
   }
-  for (let i = 0; i < n; i++) if (land[i] && d.elevation[i] < 900 && near[i] - d.elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
+  for (let i = 0; i < n; i++) if (land[i] && elevation[i] < 900 && near[i] - elevation[i] > 1400 && dLand[i] > 3) basin[i] = 1;
   for (const cells of components(mesh, basin)) if (cells.length >= 20) put(list, 'basin', cells, 5.5 + Math.log10(areaOf(world, cells)));
   return withLabels(mesh, list);
 }
@@ -1044,12 +1071,14 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): Add
   return withLabels(mesh, list);
 }
 
-export function detectFeatures(world: World, d: Derived): GeoFeature[] {
+// terrain：没挖河床的地形（引擎里自然求解的高程）。山脉、山峰、高原、平原、盆地、湖的高低和“高”这个标签都按它认，
+// 所以画一条峡谷不会让山改名；省略时用推导的高程（没有只挖河床的河时两者逐值相同）
+export function detectFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
   const { mesh, causes, small, kmPerUnit } = world;
   const globe = mesh.kind === 'sphere';
   const out: GeoFeature[] = [];
 
-  const climateTags = (cells: Int32Array) => tagsOf(world, d, cells);
+  const climateTags = (cells: Int32Array) => tagsOf(world, d, cells, terrain);
 
   const add = (type: FeatureType, cells: Int32Array, importance: number, extraTags: string[] = [], anchor?: number) => {
     if (!cells.length) return;
@@ -1078,7 +1107,7 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
       let tags = a.tags;
       if (a.mark === 'islet') {
         let maxH = 0;
-        for (const c of a.cells) maxH = Math.max(maxH, d.elevation[c]);
+        for (const c of a.cells) maxH = Math.max(maxH, terrain[c]);
         if (maxH > 1400) tags = [...tags, 'volcanic'];
       }
       const before = out.length;
@@ -1108,11 +1137,15 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
 
   // 各段按它实际读的数组缓存（数值放进 Float64Array）；段的先后就是地物的先后
   const km = Float64Array.of(kmPerUnit);
-  const terrain = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
-  replay(terrain.list);
-  replay(memoized(mesh, 'lake', [d.lake, d.elevation, km], () => lakeInputs(world, d)));
-  replay(memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d)));
-  replay(memoized(mesh, 'relief', [causes.land, d.lake, d.elevation, d.slope, km], () => reliefInputs(world, d, terrain.dLand)));
+  const coast = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
+  replay(coast.list);
+  replay(memoized(mesh, 'lake', [d.lake, terrain, km], () => lakeInputs(world, d, terrain)));
+  const rivers = memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d));
+  // 有名字的画的河占了的自然大河不再单独标（同一条河只标一次）；没有这种河时照旧
+  const named = namedGuideCells(world, d);
+  replay(named ? rivers.filter((a) => !coveredBy(a, named)) : rivers);
+  // 坡度由地形、陆海算出，所以不进键（只在这一段要重算时才取）
+  replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, terrainSlope(world, d, terrain))));
   const biome = biomesOf(world, d);
   // 没涂过生态时只看大类（与原来相同）；涂过时还要看涂了什么、每格的主导生态、陆海与每种生态的样子
   const painted = paintedOf(world, d);
@@ -1122,8 +1155,95 @@ export function detectFeatures(world: World, d: Derived): GeoFeature[] {
     replay(memoized(mesh, 'nature', [biome, painted, d.dominant, causes.land, speciesKey(small.species), km], () => natureInputs(world, biome, paint)));
   }
 
-  out.push(...regionFeatures(world, d));
+  out.push(...regionFeatures(world, d, terrain), ...guideFeatures(world, d, terrain));
   assignNames(world, out);
+  return out;
+}
+
+// ---------- 画的河 ----------
+
+// 有名字的河道（有 name 或 nameKey）：画的河、固定下来的自然河
+const named = (g: Guide) => g.name !== undefined || g.nameKey !== undefined;
+
+// 有名字的画的河自己的格（见 rivers.ts 的 guideBody）；没有这种河时为 null
+function namedGuideCells(world: World, d: Derived): Uint8Array | null {
+  let mask: Uint8Array | null = null;
+  for (const g of world.small.guides) {
+    if (!named(g)) continue;
+    mask ??= new Uint8Array(world.mesh.n);
+    for (const c of guideBody(world, d, g)) mask[c] = 1;
+  }
+  return mask;
+}
+
+// 自然的大河是不是就是画的那条：河口在画的河里，或者一半以上的格在里面
+function coveredBy(a: AddInput, mask: Uint8Array): boolean {
+  if (a.type !== 'river') return false;
+  if (a.anchor !== undefined && mask[a.anchor]) return true;
+  let k = 0;
+  for (const c of a.cells) k += mask[c];
+  return k * 2 >= a.cells.length;
+}
+
+// 沿折线每隔 step 取一点（含两端）：标注的位置、方向按它（与自然的河按格心一样，点大致均匀）
+function alongLine(pts: readonly [number, number][], step: number): [number, number][] {
+  if (pts.length < 2) return pts.map((p) => [p[0], p[1]]);
+  const out: [number, number][] = [[pts[0][0], pts[0][1]]];
+  let need = step;
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const [ax, ay] = pts[k];
+    const [bx, by] = pts[k + 1];
+    const len = Math.hypot(bx - ax, by - ay);
+    let t = 0;
+    while (len - t >= need) {
+      t += need;
+      need = step;
+      out.push([ax + ((bx - ax) * t) / len, ay + ((by - ay) * t) / len]);
+    }
+    need -= len - t;
+  }
+  const last = pts[pts.length - 1];
+  const tail = out[out.length - 1];
+  if (tail[0] !== last[0] || tail[1] !== last[1]) out.push([last[0], last[1]]);
+  return out;
+}
+
+// 有名字的画的河变成地物（键 guide:河道 id，类型是河）：格是这条河自己的格（从河口往上排），标注在画出来的线的中段。
+// 标签、大小、重要度与自然的大河同一个算法，所以固定一条自然的河之后名字、先后都不变（见 assignNames）。
+// terrain 同 detectFeatures。没有名字的河道（旧存档里画的河都是）不算，旧存档的地名不变
+export function guideFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
+  const { mesh } = world;
+  const thr = world.small.planet.riverThreshold;
+  const globe = mesh.kind === 'sphere';
+  const out: GeoFeature[] = [];
+  for (const g of world.small.guides) {
+    if (!named(g)) continue;
+    const cells = Int32Array.from(guideBody(world, d, g).reverse());
+    if (!cells.length) continue;
+    const mouth = cells[0];
+    const q = Math.max(d.discharge[mouth], thr);
+    const size = q > thr * 40 ? 'big' : q > thr * 6 ? '' : 'small';
+    const ax = axis(mesh, cells, unwrapped(mesh, cells));
+    const line = alongLine(guideLine(world, g).points, mesh.spacing);
+    const mid = line[Math.floor(line.length / 2)];
+    out.push({
+      key: `guide:${g.id}`,
+      type: 'river',
+      anchor: mouth,
+      cells,
+      areaKm2: areaOf(world, cells),
+      x: globe ? wrapX(mid[0]) : mid[0],
+      y: mid[1],
+      angle: ax.angle,
+      span: ax.span,
+      tags: [...new Set([...tagsOf(world, d, cells, terrain), ...(size ? [size] : [])])],
+      importance: 6 + Math.log10(q),
+      name: '',
+      custom: false,
+      line,
+      guide: g.id,
+    });
+  }
   return out;
 }
 
@@ -1175,8 +1295,8 @@ function innermost(mesh: Mesh, cells: ArrayLike<number>, cx: number, cy: number)
   return best;
 }
 
-// 点状地名的情境：海边、河边、山上、海上、寒冷
-function spotTags(world: World, d: Derived, c: number): string[] {
+// 点状地名的情境：海边、河边、山上、海上、寒冷（山上不山上按没挖河床的地形看）
+function spotTags(world: World, d: Derived, c: number, terrain: ArrayLike<number>): string[] {
   const { mesh, causes } = world;
   const tags: string[] = [];
   let coast = false;
@@ -1185,7 +1305,7 @@ function spotTags(world: World, d: Derived, c: number): string[] {
   else {
     if (coast) tags.push('coastal');
     if (d.lake[c] !== 1 && d.discharge[c] >= world.small.planet.riverThreshold) tags.push('river');
-    if (d.elevation[c] >= 1300) tags.push('mountain');
+    if (terrain[c] >= 1300) tags.push('mountain');
   }
   if (d.tMean[c] < 0) tags.push('cold');
   return tags;
@@ -1194,14 +1314,14 @@ function spotTags(world: World, d: Derived, c: number): string[] {
 // 用户的区块变成地物：标注在离边界最远的格，狭长的（主轴比次轴长一倍以上）沿主轴写；
 // 重要度高于所有自动识别的地物，标注时先放。
 // 类型“自动”的区块每次按圈里现在的地形重新判断（涂成沙漠就变成沙漠）；类型变了，自动起的名字也跟着换一套模板
-// （改冷暖干湿让它跨过判断的门槛时也一样），用户起的名字不变
-export function regionFeatures(world: World, d: Derived): GeoFeature[] {
+// （改冷暖干湿让它跨过判断的门槛时也一样），用户起的名字不变。terrain 同 detectFeatures
+export function regionFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
   const { mesh, kmPerUnit } = world;
   return world.small.regions.map((r) => {
     const cells = Int32Array.from(r.cells);
     let areaKm2 = 0;
     for (const c of cells) areaKm2 += mesh.area[c] * kmPerUnit * kmPerUnit;
-    const kind = r.auto && r.kind !== 'spot' ? guessRegionKind(world, d, cells) : r.kind;
+    const kind = r.auto && r.kind !== 'spot' ? guessRegionKind(world, d, cells, terrain, terrainSlope(world, d, terrain)) : r.kind;
     const type = REGION_KIND_INFO[kind].type;
     const f: GeoFeature = {
       key: `region:${r.id}`,
@@ -1221,7 +1341,7 @@ export function regionFeatures(world: World, d: Derived): GeoFeature[] {
     };
     if (r.kind === 'spot') {
       if (r.at) [f.x, f.y] = r.at;
-      f.tags = spotTags(world, d, cells[0]);
+      f.tags = spotTags(world, d, cells[0], terrain);
       return f;
     }
     const ax = axis(mesh, cells, unwrapped(mesh, cells));
@@ -1230,7 +1350,7 @@ export function regionFeatures(world: World, d: Derived): GeoFeature[] {
     f.y = mesh.y[c];
     f.span = ax.span;
     f.angle = ax.elong >= 2 ? ax.angle : 0;
-    f.tags = tagsOf(world, d, cells);
+    f.tags = tagsOf(world, d, cells, terrain);
     f.importance = 20 + Math.log10(Math.max(1, areaKm2)) / 10;
     return f;
   });
@@ -1247,8 +1367,15 @@ export function featureLabel(world: World, f: GeoFeature): string {
   return sp ? speciesFeature(sp).label : FEATURE_INFO[f.type].label;
 }
 
-// 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 沙漠 / 森林，或大多是低平地 → 平原；否则是地区
-export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<number>): Exclude<RegionKind, 'spot'> {
+// 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 沙漠 / 森林，或大多是低平地 → 平原；否则是地区。
+// 高低、坡度按 elevation、slope（引擎里是没挖河床的地形：画一条峡谷不会让“山地”变成“地区”，换掉自动起的名字）
+export function guessRegionKind(
+  world: World,
+  d: Derived,
+  cells: ArrayLike<number>,
+  elevation: ArrayLike<number> = d.elevation,
+  slope: ArrayLike<number> = d.slope,
+): Exclude<RegionKind, 'spot'> {
   const { causes, small } = world;
   let water = 0;
   let n = 0;
@@ -1266,8 +1393,8 @@ export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<numbe
     const terrain = d.dominant[c] >= 0 ? small.species[d.dominant[c]]?.terrain : '';
     if (terrain === 'desert') desert++;
     if (terrain === 'forest' || terrain === 'jungle') forest++;
-    if (d.elevation[c] >= 1300) high++;
-    if (d.elevation[c] <= 400 && d.slope[c] <= 2.5) flat++;
+    if (elevation[c] >= 1300) high++;
+    if (elevation[c] <= 400 && slope[c] <= 2.5) flat++;
   }
   if (water > cells.length * 0.6) return 'sea';
   if (!n) return 'region';
@@ -1278,9 +1405,9 @@ export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<numbe
   return 'region';
 }
 
-// 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
-// 现在是涂出来的生态区；以后新加的种类（画的河、带类型的河……）也接在这里
-const secondPass = (f: GeoFeature) => f.species !== undefined;
+// 固定下来的自然河：沿用那条河的地名键（nameKey）、自己没起名。它不是新的名字，就是原来那条河，
+// 照原来的先后起名（名字与固定前一字不差），那条河改过的名字、换过的盐也照旧
+const inherits = (g: Guide | undefined) => !!g && g.nameKey !== undefined && !g.name;
 
 // 按文字包起名；用户改过的名字优先
 export function assignNames(world: World, features: GeoFeature[]) {
@@ -1297,22 +1424,52 @@ export function assignNames(world: World, features: GeoFeature[]) {
   const seed = world.small.terrain.gen?.seed ?? world.settings.seed;
   const regions = new Map(world.small.regions.map((r) => [r.id, r]));
   const species = new Map(world.small.species.map((sp) => [sp.id, sp]));
-  // 重要的先起名，同名时让给重要的；新种类的放在第二轮
+  const guides = new Map(world.small.guides.map((g) => [g.id, g]));
+  // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
+  // 现在是涂出来的生态区、画的河（固定下来的自然河除外）；以后新加的种类（带类型的河……）也接在这里
+  const secondPass = (f: GeoFeature) => f.species !== undefined || (f.guide !== undefined && !inherits(guides.get(f.guide)));
+  // 重要的先起名，同名时让给重要的；新种类的放在第二轮。第二轮里画的河按画的先后起名（排在涂出来的生态区之后）：
+  // 自动起的河名只有几百个，常常撞名，按重要度排的话新画了一条大河、或者河的水量变了，先画的河就会换名
   const byImportance = (a: GeoFeature, b: GeoFeature) => b.importance - a.importance || a.key.localeCompare(b.key);
-  const order = [...features.filter((f) => !secondPass(f)).sort(byImportance), ...features.filter(secondPass).sort(byImportance)];
+  const drawnAt = new Map(world.small.guides.map((g, k) => [g.id, k]));
+  const second = features.filter(secondPass);
+  const order = [
+    ...features.filter((f) => !secondPass(f)).sort(byImportance),
+    ...second.filter((f) => f.guide === undefined).sort(byImportance),
+    ...second.filter((f) => f.guide !== undefined).sort((a, b) => drawnAt.get(a.guide!)! - drawnAt.get(b.guide!)!),
+  ];
   // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
   // （森林被涂出一块别的生态时，名字留在锚点还在的那一边，不会两边都叫这个名字）
   const ovOf = new Map<GeoFeature, FeatureOverride>();
+  // 固定下来的自然河用着的那条改名（不再落到别的地物上）。河道整条成了水、没有地物时不占，
+  // 那条自然的河还在的话照旧用它
   const used = new Set<string>();
+  for (const f of features) {
+    const key = f.guide !== undefined ? guides.get(f.guide)?.nameKey : undefined;
+    if (key !== undefined) used.add(key);
+  }
   const match = (f: GeoFeature, ok: (a: number) => boolean) => {
     const hit = byType.get(f.type)?.find(([a, , key]) => !used.has(key) && ok(a));
     if (!hit) return;
     ovOf.set(f, hit[1]);
     used.add(hit[2]);
   };
-  for (const f of order) if (!f.region) match(f, (a) => a === f.anchor);
-  for (const f of order) if (!f.region && !ovOf.has(f)) match(f, (a) => f.cells.includes(a));
+  for (const f of order) if (!f.region && !f.guide) match(f, (a) => a === f.anchor);
+  for (const f of order) if (!f.region && !f.guide && !ovOf.has(f)) match(f, (a) => f.cells.includes(a));
   for (const f of order) {
+    const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
+    if (g) {
+      // 画的河：起了名就用；'' 按文字包自动起（键是这条河道，固定的自然河是那条河原来的键）。
+      // 只有 nameKey 的（固定下来、没自己起名的自然河）与原来那条河一样，那条河改过的名字也照旧
+      const ov = inherits(g) && g.name === undefined ? overrides[g.nameKey!] : undefined;
+      const fixed = g.name || ov?.name;
+      f.custom = !!fixed;
+      if (fixed) {
+        f.name = fixed;
+        taken.add(fixed);
+      } else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${g.nameKey ?? f.key}:${g.salt ?? ov?.salt ?? 0}`), taken);
+      continue;
+    }
     const r = f.region ? regions.get(f.region) : undefined;
     if (r) {
       // 用户的区块：起了名就用，没起名按文字包自动起（文字包里没有这一类时按省份的模板）

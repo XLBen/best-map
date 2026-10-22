@@ -6,7 +6,7 @@ import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, editGhost, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
-import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
+import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
 import { type CellLayers, Renderer } from '../render/renderer';
 import {
   FLASH_MS,
@@ -18,6 +18,7 @@ import {
   focusSpecies,
   hoverCell,
   hoverProvinceCell,
+  hoverRiver,
   labelGroups,
   mapStyle,
   measure,
@@ -28,9 +29,12 @@ import {
   prefs,
   redrawTick,
   reference,
+  riverPending,
+  riverStyleOverride,
   season,
   selectedFeature,
   selectedProvince,
+  selectedRiver,
   showToast,
   sliderActive,
   tool,
@@ -41,6 +45,7 @@ import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camer
 import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { barPreview } from './provincePreview';
+import { riverGlow } from './riverCourse';
 import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt, reliefLayers } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
@@ -147,8 +152,9 @@ export function MapView() {
     }
     const ctx = ovCanvas.getContext('2d')!;
     let paths: OverlayPaths | null = null;
-    // 河流路径按流量数组缓存：只改了名字、省份时（轻快照沿用同一批推导数组）不必重新描河
-    let pathsFor: Float32Array | null = null;
+    // 河流路径按 riverPathsKey 缓存（流量数组、河道的内容、拖粗细时的临时样子）：只改了名字、省份时
+    // （轻快照沿用同一批推导数组）不必重新描河，改了一条画的河的粗细时会重描
+    let pathsKey: unknown[] = [];
     let provinceLabels: ProvinceLabel[] = [];
     // 预览里将来的省名（重划、重新划分）：按预览对象缓存
     let previewLabels: { of: ProvincePreview | null; labels: ProvinceLabel[] } = { of: null, labels: [] };
@@ -395,6 +401,8 @@ export function MapView() {
       applyGroupPreview(w, preview.provinces ?? null);
       // 导出图片的干净画面不带幽灵海岸（画的是现在的世界）。幽灵海岸改的是画出来的那份底子（预览世界的陆地与当前世界相同）
       applyGhost(shown, clean ? null : preview);
+      // 选中的河（画河时）、河流列表里鼠标停着的河：沿河一道淡黄的光，压在工具的图形下面
+      const glow = clean ? [] : [...(tool.value === 'river' && selectedRiver.value ? riverGlow(w, selectedRiver.value) : []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : [])];
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = category.value === 'provinces';
@@ -414,7 +422,7 @@ export function MapView() {
         markers: c === 'water' && !clean,
         season: season.value,
         style: mapStyle.value,
-        shapes: preview.shapes,
+        shapes: glow.length ? [...glow, ...preview.shapes] : preview.shapes,
         provinceLabels: c === 'provinces' ? labelsFor(w, preview.provinces) : [],
         features: overlays.value.labels || c === 'names' ? shown.derived.features : null,
         labelTypes: types,
@@ -456,10 +464,6 @@ export function MapView() {
         // 鼠标还在地图上：按新的网格重新算它指着哪一格（旧的格号属于旧网格）
         refreshPointer();
       }
-      if (pathsFor !== w.derived.discharge) {
-        paths = buildPaths(w);
-        pathsFor = w.derived.discharge;
-      }
       if (provinceScaleFor !== w.causes.province) {
         renderer.provinceScale = provinceScale(w.causes.province);
         provinceScaleFor = w.causes.province;
@@ -468,6 +472,18 @@ export function MapView() {
       // 鼠标没动、世界变了（编辑的结果到了）：屏幕上这一点画的格可能变了（陆海、切线），重新算
       for (const p of new Set([pointer, lastPointer])) if (p && p.cell >= 0) p.shown = displayCellAt(w, p.x, p.y, p.cell);
       if (pointer?.shown) setHover(pointer);
+      requestDraw();
+    });
+
+    // 河流与河道标记的路径
+    const disposePaths = effect(() => {
+      const w = world.value;
+      const override = riverStyleOverride.value;
+      if (!w) return;
+      const key = riverPathsKey(w, override);
+      if (samePathsKey(key, pathsKey)) return;
+      pathsKey = key;
+      paths = buildPaths(w, override);
       requestDraw();
     });
 
@@ -522,10 +538,14 @@ export function MapView() {
       requestDraw();
     });
 
-    // 预览世界的河（河流多少、整体干湿……地图画将来的河）：按预览世界缓存；当前世界的河照旧用 paths
-    let shownPaths: { w: World; paths: OverlayPaths } | null = null;
+    // 预览世界的河（河流多少、整体干湿……地图画将来的河）：与当前世界的河用同一个键（riverPathsKey，拖粗细时的临时样子也在里面）。
+    // 键与当前世界的相同（预览没改流量、河道，比如涂生态）时直接用当前世界的路径；不同时按键另缓存一份
+    let shownPaths: { key: unknown[]; paths: OverlayPaths } | null = null;
     const pathsOf = (s: World): OverlayPaths => {
-      if (shownPaths?.w !== s) shownPaths = { w: s, paths: buildPaths(s) };
+      const override = riverStyleOverride.value;
+      const key = riverPathsKey(s, override);
+      if (paths && samePathsKey(key, pathsKey)) return paths;
+      if (!shownPaths || !samePathsKey(shownPaths.key, key)) shownPaths = { key, paths: buildPaths(s, override) };
       return shownPaths.paths;
     };
 
@@ -546,6 +566,9 @@ export function MapView() {
       void flash.value;
       void selectedProvince.value;
       void selectedFeature.value;
+      void selectedRiver.value;
+      void hoverRiver.value;
+      void riverPending.value;
       void labelGroups.value;
       void adjustPreview.value;
       void sliderActive.value;
@@ -794,6 +817,16 @@ export function MapView() {
         requestDraw();
         return true;
       },
+      escape: () => {
+        const used = !!active().escape?.();
+        if (used) requestDraw();
+        return used;
+      },
+      enter: () => {
+        const used = !!active().enter?.();
+        if (used) requestDraw();
+        return used;
+      },
     };
 
     ovCanvas.addEventListener('pointerdown', onDown);
@@ -828,6 +861,7 @@ export function MapView() {
     };
     return () => {
       disposeWorld();
+      disposePaths();
       disposeColors();
       disposeTool();
       disposeRedraw();

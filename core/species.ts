@@ -106,8 +106,11 @@ export const SPECIES_EXTENSION_KEYS = ['visual', 'effects', 'feature', 'scripts'
 // 生态能有的两种脚本
 export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
 
+// 生态、河流类型等的 id：两处用同一条规则（资源包里的各种类型互相引用时不会有的能用、有的不能用）
+export const typeIdSchema = z.string().regex(/^[\w-]+$/, 'id 只能包含字母、数字、下划线和连字符');
+
 export const speciesSchema = z.object({
-  id: z.string().regex(/^[\w-]+$/, 'id 只能包含字母、数字、下划线和连字符'),
+  id: typeIdSchema,
   name: z.string().default(''),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb').default('#88aa66'),
   // 导出 Paradox terrain 时的类别

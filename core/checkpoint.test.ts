@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { coastalStroke, digestWorld } from '../tools/hash';
 import { Engine, type WorldDoc } from './engine';
+import { encodePath } from './rivers';
+import { isRiverCell, planCourse } from './select';
 
 // 检查点：从检查点恢复（再撤掉、补上与存档不同的那几步）与从头重放逐值一致，之后的编辑、撤销、重做也一致
 
@@ -62,4 +64,33 @@ describe('检查点', () => {
       expect(Engine.fromCheckpoint(structuredClone(cp), { ...doc, settings: { ...doc.settings, seed: 9 } }, mesh)).toBeNull();
     });
   }
+
+  it('画的河（只挖河床）：恢复与重放一致；旧版的检查点里没有地形，之后的编辑也一致', () => {
+    const eng = build('region');
+    const w = eng.world;
+    const { mesh } = w;
+    // 从内陆一格往东画 12 格
+    const start = [...Array(mesh.n).keys()].find((i) => w.causes.land[i] && w.derived.continentality[i] > 0.6 && !isRiverCell(w, w.derived, i))!;
+    const plan = planCourse(w, w.derived, [[mesh.x[start], mesh.y[start]], [mesh.x[start] + 12 * mesh.spacing, mesh.y[start]]], { endOnLand: 'sink' });
+    expect(plan.blocked).toBeNull();
+    eng.exec({ op: 'add_guide', guide: { id: 'river-c', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, carve: 'bed', name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}) } });
+    eng.exec({ op: 'update_guide', id: 'river-c', patch: { flow: 4 } });
+    const cp = structuredClone(eng.toCheckpoint());
+    expect(cp.base?.terrain).toBeDefined();
+    const doc = eng.toDoc();
+    same(Engine.fromCheckpoint(structuredClone(cp), doc, mesh)!, Engine.fromDoc(doc, mesh));
+    // 旧版的检查点：base 里没有 terrain。下次重算时从高程算起
+    const old = structuredClone(cp);
+    delete old.base!.terrain;
+    const a = Engine.fromCheckpoint(old, doc, mesh)!;
+    const b = Engine.fromDoc(doc, mesh);
+    for (const e of [a, b]) e.exec({ op: 'update_guide', id: 'river-c', patch: { flow: 7 } });
+    same(a, b);
+    for (const e of [a, b]) {
+      e.undo();
+      e.undo();
+      e.exec({ op: 'set_coast_style', roughness: 1.3 });
+    }
+    same(a, b);
+  });
 });

@@ -1,4 +1,4 @@
-import { helpOpen, measure, openPanel, redo, selectedFeature, selectedProvince, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
+import { helpOpen, measure, openPanel, redo, selectedFeature, selectedProvince, selectedRiver, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
@@ -12,23 +12,31 @@ const typing = (t: EventTarget | null) => {
 
 export function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    // 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 → 量距离（先清空再退出）→ 隐藏的界面 → 抽屉 → 选中的省份 / 地名
+    // 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 → 工具自己的（不截走别的河）→ 量距离（先清空再退出）→
+    // 隐藏的界面 → 抽屉 → 选中的省份 / 地名 / 河
     if (helpOpen.value) helpOpen.value = false;
     else if (wizardOpen.value) {
       if (world.value) wizardOpen.value = false;
     } else if (openPanel.value) openPanel.value = null;
     else if (typing(e.target)) (e.target as HTMLElement).blur();
     else if (mapApi.current?.cancel()) return;
+    else if (mapApi.current?.escape()) return;
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (uiHidden.value) uiHidden.value = false;
     else if (sheet.value) sheet.value = null;
-    else if (selectedProvince.value !== null || selectedFeature.value) {
+    else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value) {
       selectedProvince.value = null;
       selectedFeature.value = null;
+      selectedRiver.value = null;
     }
     return;
   }
   if (typing(e.target) || helpOpen.value || wizardOpen.value) return;
+  // 回车：交给工具（画河时确认截走别的河）
+  if (e.key === 'Enter' && !openPanel.value && mapApi.current?.enter()) {
+    e.preventDefault();
+    return;
+  }
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();

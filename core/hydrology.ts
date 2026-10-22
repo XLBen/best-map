@@ -1,4 +1,5 @@
 import { ContentMemo } from './climate';
+import { sinkMask } from './elevation';
 import { gradient } from './mesh';
 import { type Routing, route } from './routing';
 import type { Derived, World } from './world';
@@ -9,7 +10,7 @@ import type { Derived, World } from './world';
 
 const SEC_PER_YEAR = 3.156e7;
 
-// 汇流只取决于高程、海陆和画的河强制的方向：只改气候、河流门槛时（以及约束求解的每一轮）原样复用，结果只读
+// 汇流只取决于高程、海陆、画的河强制的方向和在哪里消失：只改气候、河流门槛时（以及约束求解的每一轮）原样复用，结果只读
 export const routeMemo = new ContentMemo<Routing>();
 
 export function computeHydrology(world: World, elevation: Float32Array, d: Derived) {
@@ -18,10 +19,13 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const land = causes.land;
   const forced = new Int32Array(n).fill(-1);
   for (const g of small.guides) for (let k = 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
-  let r = routeMemo.find(mesh, [elevation, land, forced], []);
+  // 在终点消失的河：那一格当作出口（水流到那里就没了）。没有这种河时与原来逐值相同
+  const sinks = sinkMask(world);
+  const terminal = sinks ?? new Uint8Array(n);
+  let r = routeMemo.find(mesh, [elevation, land, forced, terminal], []);
   if (!r) {
-    r = route(mesh, elevation, land, forced);
-    routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced], [], r);
+    r = route(mesh, elevation, land, forced, sinks ?? undefined);
+    routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced, terminal], [], r);
   }
 
   const areaKm = new Float64Array(n);
