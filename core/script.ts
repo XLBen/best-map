@@ -961,6 +961,14 @@ function syntaxFailure(src: string): Failure | null {
   }
 }
 
+// 动态的 import()：脚本不能加载别的代码。隔离的 Worker 和页面的 CSP 也会挡住它，这里在编译时就拒绝（多一道防线），
+// 并说清楚是第几行。只看代码（注释、字符串里写的不算）；obj.import(…) 是属性、#import(…) 是私有方法，不算；...import(…) 照样算
+const IMPORT_CALL = /(?<![\p{ID_Continue}$#‌‍])(?<!(?<!\.)\.\s*)import\s*\(/u;
+function importFailure(src: string): Failure | null {
+  const m = IMPORT_CALL.exec(codeOnly(src));
+  return m ? { raw: 'import()', text: '脚本里不能用 import', line: lineCount(src.slice(0, m.index)) } : null;
+}
+
 export function compileScript(kind: ScriptKind, src: string, owner = '脚本'): CompiledScript {
   if (disallowed) throw new Error('主线程不运行脚本');
   const key = `${kind}\0${src}`;
@@ -972,7 +980,7 @@ export function compileScript(kind: ScriptKind, src: string, owner = '脚本'): 
   } else {
     scriptStats.compiles++;
     if (src.length > MAX_SCRIPT_CHARS) hit = { raw: 'too long', text: `脚本太长了（最多 ${MAX_SCRIPT_CHARS} 个字符）` };
-    else hit = syntaxFailure(src) ?? undefined;
+    else hit = importFailure(src) ?? syntaxFailure(src) ?? undefined;
     if (!hit) {
       try {
         hit = build(kind, src);

@@ -12,6 +12,9 @@ import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
+import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
+import { BUILD, engineCode, engineUrl } from './engine-source';
+import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
 import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
@@ -372,6 +375,9 @@ function sizesFor(w: World): Partial<ToolOptions> {
 export const scriptRunning = signal<string | null>(null);
 // 安全模式：这个世界里的脚本没有运行。reason 是横幅括号里的原因
 export const safeMode = signal<{ reason: string } | null>(null);
+// 脚本是不是在隔离的环境里跑：计算 Worker 是从 data: 地址开的，而且它自查的三项（来源为 null、IndexedDB 打不开、
+// fetch('data:…') 被拒）全部通过（见 engine-spawn.ts、isolation-probe.ts）。没隔离时信任的问话里老实说
+export const scriptsIsolated = signal(false);
 
 let host: EngineHost | null = null;
 let nextId = 1;
@@ -414,16 +420,75 @@ export function whenEditsIdle(): Promise<void> {
 }
 let meshCache: { key: string; mesh: Mesh } | null = null;
 
+// 隔离的结果知道了没有（第一个计算 Worker 打过招呼，或者退回了普通 Worker）；等着它的
+let isolationKnown = false;
+const isolationWaiters: (() => void)[] = [];
+function isolationResult(on: boolean) {
+  scriptsIsolated.value = on;
+  isolationKnown = true;
+  for (const w of isolationWaiters.splice(0)) w();
+}
+
+// 开计算 Worker：页面里先试隔离的（data: 地址），不行再用普通的；测试里（没有页面）直接用普通的
+const spawnMemory: SpawnMemory = {};
+function spawnEngine(): WorkerLike {
+  const create = (url: string, opts: WorkerOptions) => new Worker(url, opts) as unknown as RawWorker;
+  if (typeof document === 'undefined') return create(engineUrl, { type: 'module' });
+  let me: EngineWorker | null = null;
+  me = new EngineWorker({
+    code: engineCode,
+    url: engineUrl,
+    create,
+    memory: spawnMemory,
+    // 只听当前这个 Worker 的（停掉的旧 Worker 不会再说话，这里再挡一下）
+    isolated: (on) => {
+      if (host?.isCurrent(me) ?? true) isolationResult(on);
+    },
+  });
+  return me;
+}
+
+// 检查点存取（打包好的程序里才有）：只做存储、不运行脚本的同源 Worker，第一次用到时才开
+let store: CheckpointStore | null = null;
+function checkpointStore(): CheckpointStore | null {
+  if (!BUILD || typeof Worker === 'undefined' || typeof MessageChannel === 'undefined') return null;
+  store ??= new CheckpointStore(() => new Worker(new URL('./storage-worker.ts', import.meta.url), { type: 'module' }) as unknown as StorageWorkerLike);
+  return store;
+}
+
 function engineHost(): EngineHost {
   if (host) return host;
-  host = new EngineHost(() => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike, {
-    slow: (label) => (scriptRunning.value = label),
-    reset: engineReset,
-    restored: engineRestored,
-    failed: engineFailed,
-    abandoned: recovered,
-  });
+  host = new EngineHost(
+    spawnEngine,
+    {
+      slow: (label) => (scriptRunning.value = label),
+      reset: engineReset,
+      restored: engineRestored,
+      failed: engineFailed,
+      abandoned: recovered,
+    },
+    undefined,
+    {
+      build: BUILD,
+      storeChannel: (build, doc) => checkpointStore()?.open(build, doc) ?? null,
+      commit: (token, epoch, ids) => checkpointStore()?.commit(token, epoch, ids),
+    },
+  );
   return host;
+}
+
+// 问要不要信任脚本之前：先知道脚本能不能隔离运行（问话里怎么说）。还没有计算 Worker 时先开一个；
+// 最多等 ms 毫秒（等不到就按没隔离说，结果来了问话跟着改）。测试里（没有页面）不等
+export function knowIsolation(ms = 3000): Promise<void> {
+  if (isolationKnown || typeof document === 'undefined') return Promise.resolve();
+  engineHost().warm();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    isolationWaiters.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 // 还没回来的带提示的请求（执行、撤销、新建、打开…）有几个：busy 只看它们。
@@ -724,6 +789,7 @@ export function askUser(a: Omit<Ask, 'resolve'>): Promise<string> {
 async function askTrust(scripts: FoundScript[], verb: '打开' | '新建'): Promise<'run' | 'safe' | 'cancel'> {
   const list = await untrustedScripts(null, scripts);
   if (!list.length) return 'run';
+  await knowIsolation();
   const v = await askUser({
     title: '信任这个世界里的脚本吗？',
     text: `里面有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的世界。`,
@@ -744,6 +810,7 @@ export async function confirmImport(json: unknown): Promise<boolean> {
   if (safeMode.value) return true;
   const list = await untrustedScripts(json);
   if (!list.length) return true;
+  await knowIsolation();
   const v = await askUser({
     title: '信任这些脚本吗？',
     text: `要导入的内容里有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的。`,
@@ -1165,8 +1232,17 @@ export async function getDoc(): Promise<WorldDoc | null> {
   return r.ok ? (r.doc ?? null) : null;
 }
 
+// 带脚本的缩略图（向导里带脚本的星球形态）在另一个计算 Worker 里算（同样隔离）：脚本看不到当前打开的世界；
+// 卡住了只停掉那一个，不会把当前的世界也恢复一遍。那个 Worker 里从来不打开世界
+let scratch: EngineHost | null = null;
+function scratchCall(req: Request): Promise<Response> {
+  scratch ??= new EngineHost(spawnEngine);
+  return new Promise<Response>((resolve) => scratch!.send(req, resolve));
+}
+
 export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput, width: number, height: number): Promise<Uint8ClampedArray | null> {
-  const r = await call({ kind: 'thumb', settings, gen, width, height }, null);
+  const req: Request = { kind: 'thumb', settings, gen, width, height };
+  const r = findScripts([settings, gen]).length ? await scratchCall(req) : await call(req, null);
   if (!r.ok) {
     showToast(r.error, true);
     return null;
