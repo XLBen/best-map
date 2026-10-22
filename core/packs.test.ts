@@ -1,17 +1,21 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { docVersion } from './engine';
+import { digestWorld } from '../tools/hash';
+import { Engine, docVersion } from './engine';
 import { DEFAULT_PACK } from './names';
 import {
+  PACK_MAX,
   PACK_SECTIONS,
   type PackWorld,
   type ResourcePack,
   applyPackCommands,
+  biomeFields,
   defaultPicks,
   exportableBiomes,
   newBiomeCells,
   packFileName,
   packFromWorld,
   packProblems,
+  parsePack,
   packSummary,
   planPack,
   readPack,
@@ -57,6 +61,29 @@ describe('资源包的格式', () => {
     expect(kept.ok && kept.pack.riverTypes).toEqual([{ id: 'styx', name: '冥河', style: 'dashed' }]);
   });
 
+  it('记事本存的（开头带 BOM）照样能读；长短、多少不对时说人话', () => {
+    expect(readPack(`\uFEFF${JSON.stringify(pack())}`).ok).toBe(true);
+    const empty = readPack(JSON.stringify(pack({ id: '' })));
+    expect(!empty.ok && empty.errors).toEqual(['资源包的 id：不能是空的']);
+    const long = readPack(JSON.stringify(pack({ name: '名'.repeat(61) })));
+    expect(!long.ok && long.errors).toEqual(['资源包的名字：太长了，最多 60 个字']);
+    // 一个文件里的项有上限（几百种生态一下子加进大星球会算不动）
+    const many = readPack(JSON.stringify(pack({ biomes: Array.from({ length: PACK_MAX.biomes + 1 }, (_, k) => biome(`s${k}`)) })));
+    expect(!many.ok && many.errors).toEqual([`生态：太多了，最多 ${PACK_MAX.biomes} 个`]);
+    expect(readPack('x'.repeat(16_000_001)).ok).toBe(false);
+  });
+
+  it('文字包的名字比资源包的允许的长：截短后照样装得进、列得出（读出来的就是合格的资源包）', () => {
+    const words = readPack(JSON.stringify({ ...DEFAULT_PACK, id: 'my words/v2', name: '很长的名字'.repeat(20) }));
+    expect(words.ok && words.legacy).toBe('wordPack');
+    if (!words.ok) return;
+    expect(words.pack.name.length).toBe(60);
+    expect(words.pack.id).toBe('my-words-v2');
+    // 文字包本身原样
+    expect(words.pack.textPacks![0].name).toBe('很长的名字'.repeat(20));
+    expect(parsePack(words.pack).ok).toBe(true);
+  });
+
   it('旧格式照旧能读：生态数组、文字包，转成资源包走同一条路', () => {
     const list = readPack(JSON.stringify([biome('a'), biome('b')]));
     expect(list.ok && list.legacy).toBe('biomes');
@@ -95,12 +122,28 @@ describe('资源包的检查（不运行脚本）', () => {
       '「b」用到了河流类型 lava，资源包里没有：没有这种河时按离得很远算',
       '「b」的起名模板“{color}{nope}林”用到了不存在的词表 {nope}',
     ]);
+    // 岛上特有的默认不勾
+    const isl = pack({ biomes: [biome('x'), { ...biome('island_y'), dispersal: { origins: [1], range: 100, gapCost: 4, seaCost: 30 } }] });
+    expect(defaultPicks(isl).biomes).toEqual(['x']);
     // 用的时候同一个 id 只用第一个
     expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.filter((c) => c.op === 'add_species').map((c) => (c.op === 'add_species' ? c.species.id : ''))).toEqual(['a', 'b']);
     const many = pack({ biomes: Array.from({ length: 49 }, (_, k) => biome(`s${k}`)) });
     expect(packProblems(many)).toEqual(['生态有 49 种：超过 48 种时界面会很挤，计算也会变慢']);
     const words = pack({ textPacks: [{ ...DEFAULT_PACK, types: { island: { patterns: [{ p: '{missing}岛' }] } } }] });
     expect(packProblems(words)[0]).toMatch(/^文字包「.+」：“island”的模板“\{missing\}岛”用到了不存在的词表/);
+  });
+
+  it('脚本里不合规的场名：提醒一句，不当成要加的场（加也加不了，导出的文件也读不回来）', () => {
+    const sp = biome('a', { scripts: { placement: { api: 1, src: "return field('圣地') * field('my field') * field('海拔') * field('mana');" } } });
+    expect(biomeFields(sp)).toEqual(['mana']);
+    expect(packProblems(pack({ fields: ['mana'], biomes: [sp] }))).toEqual([
+      '「a」用到了自定义场「圣地」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场',
+      '「a」用到了自定义场「my field」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场',
+    ]);
+    expect(planPack(fakeWorld(), pack({ biomes: [sp] }), { biomes: ['a'] }).fields).toEqual(['mana']);
+    const out = packFromWorld(fakeWorld([...structuredClone(DEFAULT_SPECIES), sp]), {}, { name: 'x' });
+    expect(out.fields).toEqual(['mana']);
+    expect(readPack(JSON.stringify(out)).ok).toBe(true);
   });
 
   it('内置示例包：除了还没有的河流类型，没有别的问题', () => {
@@ -165,6 +208,10 @@ describe('资源包用到世界', () => {
     // 花纹的种子：自带 seedKey 的照旧，没有的用原来的 id
     expect(crystal.seedKey).toBe('fantasy/crystal_jungle');
     expect(added.find((s) => s.id === 'plain-2')!.seedKey).toBe('plain');
+    // 名字带上编号，列表里和世界里那份分得清；没改名的名字不变
+    expect(crystal.name).toBe('水晶丛林 2');
+    expect(plan.added.find((a) => a.from === 'crystal_jungle')!.name).toBe('水晶丛林 2');
+    expect(added.find((s) => s.id === 'dead_forest')!.name).toBe('死亡森林');
     // 虫群侵占的水晶丛林、user 侵占的 plain 都换成改名后的
     expect(added.find((s) => s.id === 'swarm_zone')!.effects!.invade!.targets).toContain('crystal_jungle-2');
     expect(added.find((s) => s.id === 'swarm_zone')!.effects!.invade!.targets).not.toContain('crystal_jungle');
@@ -260,5 +307,51 @@ describe('内置示例包', () => {
     expect(back.ok && back.legacy).toBeNull();
     // 再用到同一个世界：全是一模一样的，什么都不加
     expect(applyPackCommands(w, out).commands).toEqual([]);
+  });
+});
+
+describe('用了资源包之后的世界', () => {
+  it('撤销回到原样；存成文件再打开（从头重放）逐值相同', () => {
+    const eng = continents();
+    const before = digestWorld(eng.world);
+    eng.exec(applyPackCommands(eng.world, FANTASY_PACK));
+    const after = digestWorld(eng.world);
+    expect(after['derived.placeF']).toBeDefined();
+    expect(after['derived.look']).toBeDefined();
+    const doc = JSON.parse(JSON.stringify(eng.toDoc()));
+    expect(doc.version).toBe(4);
+    expect(digestWorld(Engine.fromDoc(doc, eng.world.mesh).world)).toEqual(after);
+    eng.undo();
+    expect(digestWorld(eng.world)).toEqual(before);
+    eng.redo();
+    expect(digestWorld(eng.world)).toEqual(after);
+  });
+
+  it('撞 id 改了名的生态，长在哪里的系数与没改名时逐值相同（种子用原来的 id，不用新 id）', () => {
+    // 包里的生态没有自带 seedKey：种子就是它的 id
+    const { seedKey: _, ...crystal } = { ...structuredClone(FANTASY_BIOMES[0]), id: 'crystal' };
+    const p = pack({ biomes: [crystal] });
+    const column = (eng: Engine, id: string) => {
+      const scripted = eng.world.small.species.filter((x) => x.scripts?.placement);
+      const k = scripted.findIndex((x) => x.id === id);
+      const f = eng.world.derived.placeF!;
+      return Float32Array.from({ length: eng.world.mesh.n }, (_, i) => f[i * scripted.length + k]);
+    };
+    const a = continents();
+    a.exec(applyPackCommands(a.world, p));
+    const ca = column(a, 'crystal');
+    expect(ca.some((v) => v > 0 && v < 1)).toBe(true);
+    // 世界里已有一种不一样的 crystal（没有脚本）：包里的改叫 crystal-2，种子还是 crystal
+    const b = continents();
+    b.exec({ op: 'add_species', species: biome('crystal', { color: '#000000' }) });
+    const plan = planPack(b.world, p, defaultPicks(p));
+    expect(plan.added).toEqual([{ section: 'biomes', from: 'crystal', id: 'crystal-2', name: '水晶丛林 2' }]);
+    b.exec(plan.command);
+    expect(column(b, 'crystal-2')).toEqual(ca);
+    // 对照：不带 seedKey 直接用新 id，花纹就不一样了
+    const c = continents();
+    c.exec({ op: 'add_species', species: biome('crystal', { color: '#000000' }) });
+    c.exec({ op: 'add_species', species: { ...crystal, id: 'crystal-2' } });
+    expect(column(c, 'crystal-2')).not.toEqual(ca);
   });
 });

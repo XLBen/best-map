@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import {
+  PACK_MAX_CHARS,
   PACK_SECTIONS,
   type PackItem,
   type ResourcePack,
@@ -12,12 +13,14 @@ import {
   packScripts,
   packSummary,
   readPack,
+  sameItem,
 } from '../../../core/packs';
+import { FANTASY_PACK } from '../../../core/packs/fantasy';
 import { PATTERN_LABEL } from '../../../core/species';
 import type { FoundScript } from '../../../core/script';
 import { type LibraryEntry, inLibrary, installPack, library, removePack, trustScripts, untrustedScripts } from '../../library';
+import { ScriptList, TrustBlock } from './Scripts';
 import { download, showToast, world } from '../../state';
-import { TrustBlock } from './Scripts';
 import { type DialogView, fileLabel, openPackApply, openPackImport, openPackLibrary, packDialog } from './store';
 
 // 资源包弹窗（世界 → 资源包…）：资源库的列表、导入（解析、检查、信任，不运行任何脚本）、从这个世界导出。
@@ -27,8 +30,12 @@ const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
-// 读一个文件：资源包或旧的生态、文字包文件（只解析、检查）
+// 读一个文件：资源包或旧的生态、文字包文件（只解析、检查）。大得离谱的文件不读进来
 export function importPackFile(file: File) {
+  if (file.size > 3 * PACK_MAX_CHARS) {
+    openPackImport({ ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不像是资源包`] }, file.name);
+    return;
+  }
   void file.text().then((text) => {
     openPackImport(readPack(text, fileLabel(file.name)), file.name);
   });
@@ -237,11 +244,12 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   }
   const p = read.pack;
   const replaces = inLibrary(p);
-  if (installed) {
+  // 就是内置的示例包（比如导出过又导入）：资源库里本来就有，不再装一份
+  if (installed || sameItem(p, FANTASY_PACK)) {
     return (
       <>
-        <h2>装好了</h2>
-        <p>「{p.name}」在资源库里了。</p>
+        <h2>{installed ? '装好了' : '资源库里已经有了'}</h2>
+        <p>{installed ? `「${p.name}」在资源库里了。` : `这就是内置的「${p.name}」，不用再装。`}</p>
         <div class="row">
           <button class="primary" disabled={!world.value} onClick={() => openPackApply(p, defaultPicks(p))}>
             用到这个世界
@@ -277,6 +285,12 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
       <PackContents pack={p} />
       <Problems list={problems} />
       {ask && <TrustBlock scripts={scripts} />}
+      {!ask && untrusted !== null && scripts.length > 0 && (
+        <details class="small">
+          <summary>查看脚本（{scripts.length} 段，以前信任过）</summary>
+          <ScriptList scripts={scripts} />
+        </details>
+      )}
       {replaces && <p class="muted small">资源库里已经有「{replaces.pack.name}」，装进去会替换它。</p>}
       <div class="row between">
         <span />
@@ -334,9 +348,11 @@ function ExportView() {
       </span>
     </label>
   );
+  // 资源库里已经有同名（同一个 id）的：存进去会替换它
+  const replaces = inLibrary(preview);
   const save = async () => {
-    // 自己世界里的脚本：记为信任
-    await trustScripts(packScripts(preview).map((s) => s.hash));
+    // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
+    // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
     const r = await installPack(preview, { mine: true });
     showToast(r.ok ? `「${preview.name}」存进资源库了` : '浏览器不让存：只在这一次打开的页面里');
     openPackLibrary();
@@ -376,6 +392,7 @@ function ExportView() {
       )}
       {!biomes.length && !rivers.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
       {endemic > 0 && <p class="muted small">岛上特有的生态只属于这个世界，不带。</p>}
+      {replaces && <p class="muted small">资源库里已经有「{replaces.pack.name}」：存进资源库会替换它（换个名字就另存一份）。</p>}
       <div class="row between">
         <span />
         <span class="row">

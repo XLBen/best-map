@@ -914,15 +914,17 @@ export function previewReply(r: Response): WorldPreview | null {
   return { result: r.preview, world: previewWorldOf(base, r.world), base };
 }
 
-// 最近一次确切预览没算成时 Worker 说的原因（比如资源包里的脚本写错了）；算成了为 null
-let worldPreviewFailure: string | null = null;
-export function worldPreviewError(): string | null {
-  return worldPreviewFailure;
+// 最近一次确切预览没算成时 Worker 说的原因（比如资源包里的脚本写错了），按命令记：
+// 问的是别的命令（或这条还没算就被更新的换掉了）时为 null，不拿别处的出错冒充这一条的
+let worldPreviewFailure: { key: string; error: string } | null = null;
+export function worldPreviewError(cmd: Command): string | null {
+  const f = worldPreviewFailure;
+  return f && f.key === JSON.stringify(cmd) ? f.error : null;
 }
 
 const worldPreviews = latest(async (cmd: Command) => {
   const r = await call({ kind: 'previewWorld', cmd }, null);
-  worldPreviewFailure = r.ok ? null : r.error;
+  worldPreviewFailure = r.ok ? null : { key: JSON.stringify(cmd), error: r.error };
   if (r.ok && r.preview) {
     noteCost(cmd, r.preview.ms);
     lastPreviewMs = r.preview.ms;

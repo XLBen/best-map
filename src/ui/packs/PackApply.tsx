@@ -1,12 +1,13 @@
 import { X } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { hexToRgb } from '../../../core/export';
-import { PACK_SECTIONS, type PackPicks, newBiomeCells, packScripts, planPack } from '../../../core/packs';
+import { packProblems as wordPackProblems } from '../../../core/names';
+import { PACK_SECTIONS, type PackPicks, type ResourcePack, newBiomeCells, packScripts, planPack } from '../../../core/packs';
 import type { FoundScript } from '../../../core/script';
 import type { World } from '../../../core/world';
 import { trustScripts, untrustedScripts } from '../../library';
 import type { HighlightLayer } from '../../render/colors';
-import { adjustPreviewWorld, cancelWorldPreview, execAdjust, previewWorld, world, worldPreviewError } from '../../state';
+import { adjustPreviewWorld, cancelWorldPreview, exactDelay, execAdjust, previewWorld, world, worldPreviewError } from '../../state';
 import { TrustBlock } from './Scripts';
 import { type ApplyState, packApply } from './store';
 
@@ -22,13 +23,18 @@ type Shown = { key: string; text: string; warn?: boolean } | null;
 function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
   const { pack } = st;
   const [picks, setPicks] = useState<PackPicks>(st.picks);
-  const [untrusted, setUntrusted] = useState<FoundScript[] | null>(null);
+  // 还没信任过的脚本，按是哪个包查的记：换了包（卡片开着又点了别的包）时，查好之前一律当作没信任，不先算预览
+  const [checked, setChecked] = useState<{ pack: ResourcePack; list: FoundScript[] } | null>(null);
+  const untrusted = checked?.pack === pack ? checked.list : null;
   const [note, setNote] = useState<Shown>(null);
   const [applying, setApplying] = useState(false);
   useEffect(() => {
     setPicks(st.picks);
-    setUntrusted(null);
-    void untrustedScripts(pack).then(setUntrusted);
+    let live = true;
+    void untrustedScripts(pack).then((list) => live && setChecked({ pack, list }));
+    return () => {
+      live = false;
+    };
   }, [st]);
 
   const plan = useMemo(() => planPack(w, pack, picks), [w, pack, picks]);
@@ -46,7 +52,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
   };
   const trusted = untrusted !== null && !untrusted.length;
 
-  // 地图上的预览：勾选停下 150 毫秒后算；世界变了（撤销、别的编辑）重新算
+  // 地图上的预览：勾选停下 150 毫秒后算（上次算得久就多等一会儿：大星球上一边画一边开着卡片时，
+  // 每一笔之后不急着重算，Worker 先算笔画）；世界变了（撤销、别的编辑）重新算
   useEffect(() => {
     if (!trusted || !cmd.commands.length) {
       setNote(null);
@@ -59,7 +66,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
       void previewWorld(cmd).then((r) => {
         if (!live || keyRef.current !== key) return;
         if (!r) {
-          const why = worldPreviewError();
+          const why = worldPreviewError(cmd);
           setNote({ key, text: why ? `用不上：${why}` : '预览没算出来', warn: !!why });
           return;
         }
@@ -81,7 +88,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
         if (!parts.length) parts.push(r.result.changedCells.length ? `会有 ${fmt(r.result.changedCells.length)} 格的生态变化` : '地图上看不出变化');
         setNote({ key, text: parts.join('，') });
       });
-    }, 150);
+    }, exactDelay(150));
     return () => {
       live = false;
       clearTimeout(t);
@@ -118,12 +125,15 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
     const cur = picks[sec] ?? [];
     setPicks({ ...picks, [sec]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   };
-  const status = (sec: 'biomes' | 'riverTypes', id: string): string => {
+  const status = (sec: 'biomes' | 'riverTypes', id: string, name: string): string => {
     const s = plan.skipped.find((x) => x.section === sec && x.from === id);
     if (s) return '已经有了';
     const a = plan.added.find((x) => x.section === sec && x.from === id);
-    return a && a.id !== a.from ? `世界里有同名的不一样的，改叫 ${a.id}` : '';
+    if (!a || a.id === a.from) return '';
+    return a.name !== name ? `世界里已有不一样的「${name}」，这一份叫「${a.name}」` : '世界里已有一份不一样的，这一份另外加上';
   };
+  // 有问题的文字包换不了（命令会拒绝）：不能勾，说一句
+  const badText = useMemo(() => new Set((pack.textPacks ?? []).filter((t) => wordPackProblems(t).length).map((t) => t.id)), [pack]);
   const rivers = pack.riverTypes ?? [];
   const riverSec = PACK_SECTIONS.riverTypes;
   const forms = pack.planetForms ?? [];
@@ -145,7 +155,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <input type="checkbox" checked={!!picks.biomes?.includes(b.id)} onChange={() => togglePick('biomes', b.id)} />
             <span>
               <span class="swatch" style={{ background: b.color }} /> {b.name || b.id}
-              {picks.biomes?.includes(b.id) && status('biomes', b.id) && <span class="muted small">（{status('biomes', b.id)}）</span>}
+              {picks.biomes?.includes(b.id) && status('biomes', b.id, b.name || b.id) && <span class="muted small">（{status('biomes', b.id, b.name || b.id)}）</span>}
+              {b.dispersal && <span class="muted small">（岛上特有的：只在做它的那个世界里有意义）</span>}
             </span>
           </label>
         ))}
@@ -157,7 +168,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                 <input type="checkbox" disabled={!riverSec.command} checked={!!riverSec.command && !!picks.riverTypes?.includes(r.id)} onChange={() => togglePick('riverTypes', r.id)} />
                 <span>
                   {r.color && <span class="swatch" style={{ background: r.color }} />} {r.name || r.id}
-                  {picks.riverTypes?.includes(r.id) && status('riverTypes', r.id) && <span class="muted small">（{status('riverTypes', r.id)}）</span>}
+                  {picks.riverTypes?.includes(r.id) && status('riverTypes', r.id, r.name || r.id) && <span class="muted small">（{status('riverTypes', r.id, r.name || r.id)}）</span>}
                 </span>
               </label>
             ))}
@@ -176,13 +187,20 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>文字包</h5>
             {texts.map((t) => (
               <label class="check">
-                <input type="checkbox" checked={picks.textPack === t.id} onChange={() => setPicks({ ...picks, textPack: picks.textPack === t.id ? null : t.id })} />
-                <span>换用文字包「{t.name}」（地名会跟着变）</span>
+                <input
+                  type="checkbox"
+                  disabled={badText.has(t.id)}
+                  checked={picks.textPack === t.id && !badText.has(t.id)}
+                  onChange={() => setPicks({ ...picks, textPack: picks.textPack === t.id ? null : t.id })}
+                />
+                <span>
+                  换用文字包「{t.name}」{badText.has(t.id) ? <span class="muted small">（模板里有不存在的词表，换不了）</span> : '（地名会跟着变）'}
+                </span>
               </label>
             ))}
           </>
         )}
-        {!!plan.fields.length && <p class="muted small">会新加自定义场：{plan.fields.join('、')}（在“自然”的自定义场里可以涂）</p>}
+        {!!plan.fields.length && <p class="muted small">会新加自定义场：{plan.fields.join('、')}（用“气候 → 涂自定义场”可以涂）</p>}
         {total > 48 && <p class="warn small">这个世界会有 {total} 种生态：太多时界面会很挤，计算也会变慢</p>}
         {untrusted !== null && !!untrusted.length && (
           <>
@@ -191,7 +209,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
               <button
                 onClick={async () => {
                   await trustScripts(packScripts(pack).map((s) => s.hash));
-                  setUntrusted([]);
+                  setChecked({ pack, list: [] });
                 }}
               >
                 信任，看看用了之后的样子

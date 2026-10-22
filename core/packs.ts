@@ -23,6 +23,10 @@ export const PACK_VERSION = 1;
 export const PACK_EXT = '.map2pack.json';
 // 生态多了界面挤、算得慢：超过这么多种时提醒一句（不拦）
 export const SPECIES_SOFT_CAP = 48;
+// 一个文件里最多这么多项（再多就不像是资源包了：一下子加几百种生态，大星球上会算不动）
+export const PACK_MAX = { biomes: 256, riverTypes: 64, planetForms: 32, textPacks: 16 } as const;
+// 文件最多这么多字（脚本最长 2 万字，256 种生态各两段也到不了）
+export const PACK_MAX_CHARS = 16_000_000;
 
 const ITEM_ID = /^[\w-]+$/;
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
@@ -92,10 +96,10 @@ export const resourcePackSchema = z.strictObject({
   author: z.string().max(60).optional(),
   description: z.string().max(2000).optional(),
   fields: z.array(fieldName).max(64).optional(),
-  biomes: z.array(speciesSchema).optional(),
-  riverTypes: z.array(z.unknown()).optional(),
-  planetForms: z.array(z.unknown()).optional(),
-  textPacks: z.array(wordPackSchema).optional(),
+  biomes: z.array(speciesSchema).max(PACK_MAX.biomes).optional(),
+  riverTypes: z.array(z.unknown()).max(PACK_MAX.riverTypes).optional(),
+  planetForms: z.array(z.unknown()).max(PACK_MAX.planetForms).optional(),
+  textPacks: z.array(wordPackSchema).max(PACK_MAX.textPacks).optional(),
 });
 
 export interface ResourcePack {
@@ -119,6 +123,10 @@ const packErrorMap: z.core.$ZodErrorMap = (iss) => {
   if (iss.code === 'unrecognized_keys') return `${iss.path?.length ? '不认识的项' : '不认识的部分'}：${iss.keys.join('、')}`;
   if (iss.code === 'invalid_type') return iss.input === undefined ? '缺少这一项' : `应该是${TYPE_ZH[iss.expected] ?? iss.expected}`;
   if (iss.code === 'invalid_value' && iss.path?.length === 1 && iss.path[0] === 'version') return `这个资源包是第 ${String(iss.input)} 版的格式，这里只认第 ${PACK_VERSION} 版`;
+  // 长短、多少：说人话（zod 的中文是“数值过小：期望 string >=1 字符”）
+  if (iss.code === 'too_small' && iss.origin === 'string') return Number(iss.minimum) <= 1 ? '不能是空的' : `太短了，至少 ${String(iss.minimum)} 个字`;
+  if (iss.code === 'too_big' && iss.origin === 'string') return `太长了，最多 ${String(iss.maximum)} 个字`;
+  if (iss.code === 'too_big' && iss.origin === 'array') return `太多了，最多 ${String(iss.maximum)} 个`;
   return zh(iss);
 };
 
@@ -132,6 +140,8 @@ function where(path: readonly PropertyKey[], json: unknown): string {
   // 版本不对的说明本身就说清楚了
   if (path.length === 1 && head === 'version') return '';
   const sec = SECTION_ZH[String(head)];
+  // 整个部分的问题（比如生态太多）
+  if (sec && path.length === 1) return sec;
   if (!sec || typeof idx !== 'number') return path.length === 1 && TOP_ZH[String(head)] ? TOP_ZH[String(head)] : path.map(String).join('.');
   const raw = (json as Record<string, unknown[]>)[String(head)]?.[idx] as { id?: unknown; name?: unknown } | undefined;
   const label = typeof raw?.name === 'string' && raw.name ? raw.name : typeof raw?.id === 'string' ? raw.id : '';
@@ -173,9 +183,11 @@ export type PackRead = { ok: true; pack: ResourcePack; legacy: 'biomes' | 'wordP
 
 // name：旧的生态文件没有名字，用这个（一般是文件名）
 export function readPack(text: string, name = '生态'): PackRead {
+  if (text.length > PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（超过 ${Math.round(PACK_MAX_CHARS / 1e6)} MB），不像是资源包`] };
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    // 记事本存的 UTF-8 文件开头可能带一个看不见的 BOM
+    json = JSON.parse(text.replace(/^\uFEFF/, ''));
   } catch (e) {
     return { ok: false, errors: [`不是 JSON 文件（${(e as Error).message}）`] };
   }
@@ -192,9 +204,11 @@ export function readPack(text: string, name = '生态'): PackRead {
       return r.ok ? { ...r, legacy: null } : r;
     }
     if (o.format === undefined && 'lists' in o && 'types' in o) {
-      const wp = wordPackSchema.safeParse(json, { error: packErrorMap });
-      if (!wp.success) return { ok: false, errors: issuesText(wp.error.issues, json) };
-      return { ok: true, pack: { format: PACK_FORMAT, version: PACK_VERSION, id: wp.data.id, name: wp.data.name, textPacks: [wp.data] }, legacy: 'wordPack' };
+      // 文字包：包一层，按资源包整个查一遍（资源包的名字、id 有长短限制，文字包的没有：太长的截短，存进资源库后才列得出来）
+      const label = (typeof o.name === 'string' ? o.name.trim().slice(0, 60) : '') || '文字包';
+      const wrapped = { format: PACK_FORMAT, version: PACK_VERSION, id: packIdFor(typeof o.id === 'string' ? o.id : label), name: label, textPacks: [json] };
+      const r = parsePack(wrapped);
+      return r.ok ? { ...r, legacy: 'wordPack' } : r;
     }
   }
   return { ok: false, errors: ['不认识这个文件：不是资源包，也不是生态或文字包'] };
@@ -296,8 +310,8 @@ export function scriptRefs(src: string): Ref[] {
   return out;
 }
 
-// 一种生态用到的自定义场：耐受条件里的 field:x，脚本里的 field('x')（内置变量的名字不算）
-export function biomeFields(sp: Species): string[] {
+// 一种生态写到的自定义场的名字：耐受条件里的 field:x，脚本里的 field('x')（内置变量的名字不算）。可能有不合规的名字
+function fieldRefs(sp: Species): string[] {
   const out = new Set<string>();
   for (const t of sp.tolerances) if (t.field.startsWith('field:')) out.add(t.field.slice(6));
   for (const s of Object.values(sp.scripts ?? {})) {
@@ -305,6 +319,11 @@ export function biomeFields(sp: Species): string[] {
     for (const r of scriptRefs(s.src)) if (r.fn === 'field' && !VAR_NAMES.has(r.name)) out.add(r.name);
   }
   return [...out];
+}
+
+// 一种生态用到的自定义场（只算合规的名字：别的名字世界里不会有这个场，加也加不了，脚本照“出错”处理）
+export function biomeFields(sp: Species): string[] {
+  return fieldRefs(sp).filter((f) => ITEM_ID.test(f));
 }
 
 // 一种生态的脚本里用到的河流类型
@@ -345,9 +364,12 @@ function rewriteBiome(sp: Species, renames: Renames): Species {
   return out;
 }
 
-// 换 id：种子用原来的（省略 seedKey 时种子就是 id），改了名花纹也不变
+// 换 id：种子用原来的（省略 seedKey 时种子就是 id），改了名花纹也不变。
+// 名字也跟着带上编号（“水晶丛林 2”）：世界里那份不一样的同名生态还在，列表里才分得清
 function biomeWithId(sp: Species, id: string, from: string): Species {
-  return id === from ? sp : { ...sp, id, seedKey: sp.seedKey ?? from };
+  if (id === from) return sp;
+  const k = id.startsWith(`${from}-`) ? id.slice(from.length + 1) : '';
+  return { ...sp, id, ...(sp.name && k ? { name: `${sp.name} ${k}` } : {}), seedKey: sp.seedKey ?? from };
 }
 
 // ---------- 检查 ----------
@@ -376,7 +398,10 @@ export function packProblems(pack: ResourcePack): string[] {
   for (const b of biomes) {
     const who = `「${b.name || b.id}」`;
     for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在这个资源包里，也不是内置的生态：世界里没有它时不起作用`);
-    for (const f of biomeFields(b)) if (!fields.has(f)) problems.push(`${who}用到了自定义场 ${f}，资源包里没有写这个场（用的时候会新加一个空的）`);
+    for (const f of fieldRefs(b)) {
+      if (!ITEM_ID.test(f)) problems.push(`${who}用到了自定义场「${f}」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场`);
+      else if (!fields.has(f)) problems.push(`${who}用到了自定义场 ${f}，资源包里没有写这个场（用的时候会新加一个空的）`);
+    }
     for (const r of biomeRivers(b)) if (!rivers.has(r)) problems.push(`${who}用到了河流类型 ${r}，资源包里没有：没有这种河时按离得很远算`);
     for (const n of b.feature?.names ?? []) {
       for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
@@ -396,10 +421,11 @@ export interface PackPicks {
   textPack?: string | null;
 }
 
-// 默认勾选：生态、能用的河流类型都勾上，文字包不勾
+// 默认勾选：生态、能用的河流类型都勾上，文字包不勾。岛上特有的生态不勾（起源地的格编号只对做它的那个世界有效，
+// 以前导出的整套生态文件里会有）
 export function defaultPicks(pack: ResourcePack): PackPicks {
   return {
-    biomes: (pack.biomes ?? []).map((b) => b.id),
+    biomes: (pack.biomes ?? []).filter((b) => !b.dispersal).map((b) => b.id),
     riverTypes: PACK_SECTIONS.riverTypes.command && PACK_SECTIONS.riverTypes.checked ? (pack.riverTypes ?? []).map((r) => r.id) : [],
     textPack: null,
   };
@@ -490,11 +516,12 @@ export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks)
   const species: Species[] = [];
   for (const b of pickedBiomes) {
     const id = biomeIds.ids.get(b.id)!;
-    const entry = { section: 'biomes' as const, from: b.id, id, name: b.name || b.id };
-    if (biomeIds.skip.has(b.id)) skipped.push(entry);
+    if (biomeIds.skip.has(b.id)) skipped.push({ section: 'biomes', from: b.id, id, name: b.name || b.id });
     else {
-      species.push(finalBiome(b, id, renames));
-      added.push(entry);
+      const sp = finalBiome(b, id, renames);
+      species.push(sp);
+      // 名字是加进世界后的（改了名的带编号）
+      added.push({ section: 'biomes', from: b.id, id, name: sp.name || id });
     }
   }
   const riverCmds: Command[] = [];
@@ -530,11 +557,12 @@ export function newBiomeCells(plan: PackPlan, after: Pick<World, 'small' | 'deri
   const ids = new Set(plan.added.filter((a) => a.section === 'biomes').map((a) => a.id));
   const out = new Map<number, number[]>();
   if (!ids.size) return out;
-  const sp = after.small.species;
+  // 按生态的下标先查好（大星球上 10 万格，不在每格比字符串）
+  const isNew = after.small.species.map((x) => ids.has(x.id));
   const dom = after.derived.dominant;
   for (let i = 0; i < dom.length; i++) {
     const s = dom[i];
-    if (s < 0 || !ids.has(sp[s].id)) continue;
+    if (s < 0 || !isNew[s]) continue;
     let list = out.get(s);
     if (!list) out.set(s, (list = []));
     list.push(i);

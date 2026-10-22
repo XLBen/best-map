@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ResourcePack } from '../core/packs';
+import { DEFAULT_PACK } from '../core/names';
+import { type ResourcePack, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { scriptHash } from '../core/script';
 import { openDb } from './idb';
@@ -127,6 +128,15 @@ describe('资源库', () => {
     // 存着的坏数据不列出来
     idb.data.get('packs')!.set('bad', { key: 'bad', pack: { format: 'map2-pack', version: 1 }, installedAt: 1 });
     expect((await refreshLibrary()).map((e) => e.key)).not.toContain('bad');
+  });
+
+  it('旧的文字包文件（名字比资源包允许的长）装进去后照样列得出来', async () => {
+    const r = readPack(JSON.stringify({ ...DEFAULT_PACK, id: 'long', name: '很长的文字包名字'.repeat(10) }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    await installPack(r.pack);
+    const e = library.value.find((x) => x.key === 'long');
+    expect(e?.pack.textPacks?.[0].name).toBe('很长的文字包名字'.repeat(10));
   });
 
   it('浏览器不让存时照样能用（只在这一次打开的页面里）', async () => {
