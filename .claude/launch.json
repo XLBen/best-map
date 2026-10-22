@@ -4,8 +4,30 @@
     {
       "name": "map2-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5191", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5191",
+        "--strictPort"
+      ],
       "port": 5191
+    },
+    {
+      "name": "map2-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--port",
+        "5193",
+        "--strictPort",
+        "--host",
+        "127.0.0.1"
+      ],
+      "port": 5193,
+      "url": "http://127.0.0.1:5193"
     }
   ]
 }

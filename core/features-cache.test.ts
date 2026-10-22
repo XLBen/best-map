@@ -15,8 +15,12 @@ const json = (fs: GeoFeature[]) =>
 function check(eng: Engine) {
   const got = json(eng.world.derived.features);
   featureMemo.on = false;
-  const fresh = json(detectFeatures(eng.world, eng.world.derived));
-  featureMemo.on = true;
+  let fresh: string;
+  try {
+    fresh = json(detectFeatures(eng.world, eng.world.derived));
+  } finally {
+    featureMemo.on = true;
+  }
   expect(got).toBe(fresh);
   // 用缓存再识别两次（撤销换回的推导可能已不在缓存里）：第二次各段都命中，结果仍相同
   expect(json(detectFeatures(eng.world, eng.world.derived))).toBe(fresh);
