@@ -1,3 +1,4 @@
+import { MinHeap } from './heap';
 import { type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
@@ -222,13 +223,54 @@ export function lakeArea(world: World, cell: number, radiusKm: number, exact?: b
 
 // ---------- 只挖河床（第八轮） ----------
 
+// 一格的水面高度（与路由填洼后的水面逐值相同）：从这格起按高低往外淹，水面是淹过的格里最高的，
+// 淹到出口（挨海、贴图边、在终点消失的格）为止。不在洼地里时就是这格的高度。
+// 只淹附近：先淹低的格，过了溢出口就顺着往下走到出口
+export function waterLevel(mesh: Mesh, land: Uint8Array, elevation: ArrayLike<number>, cell: number, terminal?: Uint8Array): number {
+  const seen = new Uint8Array(mesh.n);
+  const heap = new MinHeap(256);
+  heap.push(cell, elevation[cell]);
+  seen[cell] = 1;
+  let level = -Infinity;
+  // 一直淹不到出口（整个星球全是陆地时）：路由把最低的格当作汇点，水面是淹到它时的高度
+  let low = cell;
+  let lowLevel = elevation[cell];
+  while (heap.size) {
+    const c = heap.pop();
+    level = Math.max(level, elevation[c]);
+    if (elevation[c] < elevation[low]) {
+      low = c;
+      lowLevel = level;
+    }
+    let out = mesh.boundary[c] === 1 || terminal?.[c] === 1;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1] && !out; e++) if (!land[mesh.adj[e]]) out = true;
+    if (out) return level;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (seen[j] || !land[j]) continue;
+      seen[j] = 1;
+      heap.push(j, elevation[j]);
+    }
+  }
+  return lowLevel;
+}
+
 // 一条只挖河床的河挖完之后各格的高度（与 cells 对齐，不挖的格是原来的高度）：
-// 从源头往下取累计最小值，但不低于终点（往上游每格再高 1 cm），终点那格不动——
-//   h_k = min(E_k, max(min(E_0..E_k), E_终点 + 0.01·(终点 − k)))
-// 往高处画的河因此被压平到比终点略高，而不是挖到沿途最低处：水不会在终点前倒流、绕成圈。
-// 终点是第一格不是陆地的格（入海、流出画的范围），全是陆地时是最后一格。
-// skip：不挖的格（用户放的湖的碗），出了碗累计最小值从头算起
-export function bedLevels(land: Uint8Array, elevation: ArrayLike<number>, cells: readonly number[], skip?: Uint8Array): Float64Array {
+// 从源头往下取累计最小值，但不低于终点的水面（往上游每格再高 1 cm），终点那格不动——
+//   h_k = min(E_k, max(min(E_0..E_k), W_终点 + 0.01·(终点 − k)))
+// 往高处画的河因此被压平到比终点略高，而不是挖到沿途最低处：水不会在终点前倒流、绕成圈；
+// 流进湖的河不会挖到湖面以下，湖不会顺着河道倒流出去。
+// 终点是第一格不是陆地的格（入海、流出画的范围），全是陆地时是最后一格；它的水面见 waterLevel（海是它自己的高度）。
+// skip：不挖的格（用户放的湖的碗）：碗前的那段按湖面算（碗是那段的终点），出了碗累计最小值从头算起。
+// terminal：在终点消失的格（路由里的出口）
+export function bedLevels(
+  mesh: Mesh,
+  land: Uint8Array,
+  elevation: ArrayLike<number>,
+  cells: readonly number[],
+  skip?: Uint8Array,
+  terminal?: Uint8Array,
+): Float64Array {
   const out = Float64Array.from(cells, (c) => elevation[c]);
   let last = cells.length - 1;
   for (let k = 0; k < cells.length; k++) {
@@ -237,16 +279,24 @@ export function bedLevels(land: Uint8Array, elevation: ArrayLike<number>, cells:
       break;
     }
   }
-  const end = out[last];
   let run = Infinity;
+  // 这一段流到哪一格（下一个湖的碗或终点）、那里的水面
+  let to = -1;
+  let level = 0;
   for (let k = 0; k < last; k++) {
     if (skip?.[cells[k]]) {
       run = Infinity;
       continue;
     }
+    if (to < k) {
+      to = k;
+      while (to < last && !skip?.[cells[to]]) to++;
+      const c = cells[to];
+      level = land[c] ? waterLevel(mesh, land, elevation, c, terminal) : out[to];
+    }
     const e = out[k];
     run = Math.min(run, e);
-    out[k] = Math.min(e, Math.max(run, end + 0.01 * (last - k)));
+    out[k] = Math.min(e, Math.max(run, level + 0.01 * (to - k)));
   }
   return out;
 }
@@ -258,6 +308,19 @@ export function userLakeMask(world: World): Uint8Array {
   return mask;
 }
 
+// 在终点消失的河的终点（路由里当作出口）；没有这种河时为 null
+export function sinkMask(world: World): Uint8Array | null {
+  const land = world.causes.land;
+  let mask: Uint8Array | null = null;
+  for (const g of world.small.guides) {
+    const end = g.cells[g.cells.length - 1];
+    if (g.end !== 'sink' || !land[end]) continue;
+    mask ??= new Uint8Array(world.mesh.n);
+    mask[end] = 1;
+  }
+  return mask;
+}
+
 // 在自然求解的地形上挖出所有只挖河床的河（按画的先后，后画的看到的是先画的挖过的）。只往低里挖：
 // 河道以外的格一格不动，所以气候、山名照旧按没挖过的地形算（见 Engine.update）
 export function carveBeds(world: World, elevation: Float32Array) {
@@ -265,8 +328,9 @@ export function carveBeds(world: World, elevation: Float32Array) {
   if (!beds.length) return;
   const land = world.causes.land;
   const skip = world.small.lakes.length ? userLakeMask(world) : undefined;
+  const terminal = sinkMask(world) ?? undefined;
   for (const g of beds) {
-    const h = bedLevels(land, elevation, g.cells, skip);
+    const h = bedLevels(world.mesh, land, elevation, g.cells, skip, terminal);
     g.cells.forEach((c, k) => {
       if (h[k] < elevation[c]) elevation[c] = h[k];
     });

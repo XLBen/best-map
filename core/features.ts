@@ -735,6 +735,12 @@ function slopeOf(world: World, elevation: ArrayLike<number>): Float32Array {
   return out;
 }
 
+// 没挖河床的地形的坡度：没有只挖河床的河时就是水文算好的那份（两者逐值相同），有的话按地形另算（按内容缓存）
+function terrainSlope(world: World, d: Derived, terrain: Float32Array): ArrayLike<number> {
+  if (terrain === d.elevation || !world.small.guides.some((g) => g.carve === 'bed')) return d.slope;
+  return memoized(world.mesh, 'slope', [world.causes.land, terrain], () => slopeOf(world, terrain));
+}
+
 // 山脉与主峰；高原；平原；盆地：只取决于陆海、湖面、高度、坡度（dLand 由陆海算出）。
 // 高度、坡度按没挖河床的地形（elevation、slope）：画的峡谷不会把山脉切成两段、换掉主峰，山名不变
 function reliefInputs(world: World, d: Derived, dLand: Int32Array, elevation: ArrayLike<number>, slope: ArrayLike<number>): AddInput[] {
@@ -1110,9 +1116,8 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
   replay(coast.list);
   replay(memoized(mesh, 'lake', [d.lake, terrain, km], () => lakeInputs(world, d, terrain)));
   replay(memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d)));
-  // 坡度由地形、陆海算出：没有只挖河床的河时就是水文算好的那份，有的话按地形重算（只在这一段要重算时）
-  const beds = small.guides.some((g) => g.carve === 'bed');
-  replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, beds ? slopeOf(world, terrain) : d.slope)));
+  // 坡度由地形、陆海算出，所以不进键（只在这一段要重算时才取）
+  replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, terrainSlope(world, d, terrain))));
   const biome = biomesOf(world, d);
   // 没涂过生态时只看大类（与原来相同）；涂过时还要看涂了什么、每格的主导生态、陆海与每种生态的样子
   const painted = paintedOf(world, d);
@@ -1201,7 +1206,7 @@ export function regionFeatures(world: World, d: Derived, terrain: Float32Array =
     const cells = Int32Array.from(r.cells);
     let areaKm2 = 0;
     for (const c of cells) areaKm2 += mesh.area[c] * kmPerUnit * kmPerUnit;
-    const kind = r.auto && r.kind !== 'spot' ? guessRegionKind(world, d, cells) : r.kind;
+    const kind = r.auto && r.kind !== 'spot' ? guessRegionKind(world, d, cells, terrain, terrainSlope(world, d, terrain)) : r.kind;
     const type = REGION_KIND_INFO[kind].type;
     const f: GeoFeature = {
       key: `region:${r.id}`,
@@ -1247,8 +1252,15 @@ export function featureLabel(world: World, f: GeoFeature): string {
   return sp ? speciesFeature(sp).label : FEATURE_INFO[f.type].label;
 }
 
-// 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 沙漠 / 森林，或大多是低平地 → 平原；否则是地区
-export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<number>): Exclude<RegionKind, 'spot'> {
+// 圈出来的一块像什么：大半是水 → 海域；陆地里一半以上是山 / 沙漠 / 森林，或大多是低平地 → 平原；否则是地区。
+// 高低、坡度按 elevation、slope（引擎里是没挖河床的地形：画一条峡谷不会让“山地”变成“地区”，换掉自动起的名字）
+export function guessRegionKind(
+  world: World,
+  d: Derived,
+  cells: ArrayLike<number>,
+  elevation: ArrayLike<number> = d.elevation,
+  slope: ArrayLike<number> = d.slope,
+): Exclude<RegionKind, 'spot'> {
   const { causes, small } = world;
   let water = 0;
   let n = 0;
@@ -1266,8 +1278,8 @@ export function guessRegionKind(world: World, d: Derived, cells: ArrayLike<numbe
     const terrain = d.dominant[c] >= 0 ? small.species[d.dominant[c]]?.terrain : '';
     if (terrain === 'desert') desert++;
     if (terrain === 'forest' || terrain === 'jungle') forest++;
-    if (d.elevation[c] >= 1300) high++;
-    if (d.elevation[c] <= 400 && d.slope[c] <= 2.5) flat++;
+    if (elevation[c] >= 1300) high++;
+    if (elevation[c] <= 400 && slope[c] <= 2.5) flat++;
   }
   if (water > cells.length * 0.6) return 'sea';
   if (!n) return 'region';

@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { type Command, Dirty, commandSchema, guideDirty, truncateGuide } from './commands';
 import { Engine } from './engine';
-import { lakeArea } from './elevation';
+import { lakeArea, waterLevel } from './elevation';
 import { findCell } from './mesh';
+import { route } from './routing';
 import { courseLine, courseStep, decodePath, encodePath, pathSamples, smoothCourse } from './rivers';
-import { type CoursePlan, guideEnd, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
+import { type CoursePlan, endCourseAt, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
 import { continents, engineFor } from './testing/fixtures';
 import { type Guide, guideSchema, type World } from './world';
 
@@ -312,6 +313,140 @@ describe('只挖河床', () => {
   });
 });
 
+describe('流进湖、汇入', () => {
+  it('终点的水面（挖河床时不挖到它以下）与路由填洼后的水面逐值相同', () => {
+    const eng = continents();
+    const w = eng.world;
+    const C = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && w.derived.continentality[i] > 0.7)!;
+    eng.exec({ op: 'add_lake', lake: { cell: C, radius: 40, depth: 300, perennial: true } });
+    const h = w.derived.elevation;
+    const r = route(w.mesh, h, w.causes.land);
+    let lake = 0;
+    for (let i = 0; i < w.mesh.n; i += 5) {
+      if (!w.causes.land[i]) continue;
+      expect(waterLevel(w.mesh, w.causes.land, h, i)).toBe(r.water[i]);
+      if (r.water[i] > h[i]) lake++;
+    }
+    for (const c of lakeArea(w, C, 40)) expect(waterLevel(w.mesh, w.causes.land, h, c)).toBe(r.water[c]);
+    expect(lake).toBeGreaterThan(0);
+  });
+
+  it('流进湖：河床不挖到湖面以下，湖不顺着河道倒流，水照着画的走（翻过一道坡流进湖也一样）', () => {
+    const base = continents();
+    const w0 = base.world;
+    const { mesh } = w0;
+    // 内陆高处放湖，从四面画进去；只看往高处流进湖的（起点比湖面低，挖到湖底就会让湖从河道倒流出去）
+    const cand = [...Array(mesh.n).keys()].filter((i) => w0.causes.land[i] && w0.derived.continentality[i] > 0.6 && w0.derived.elevation[i] > 600 && !isRiverCell(w0, w0.derived, i));
+    let checked = 0;
+    for (const C of cand.filter((_, k) => k % 41 === 0)) {
+      if (checked >= 4) break;
+      const eng = base.clone();
+      eng.exec({ op: 'add_lake', lake: { cell: C, radius: 30, depth: 200, perennial: true } });
+      const w = eng.world;
+      const lake = [...Array(mesh.n).keys()].filter((i) => w.derived.lake[i] === 1).join(',');
+      for (let a = 0; a < 8 && checked < 4; a++) {
+        const R = 7 * mesh.spacing;
+        const plan = planCourse(w, w.derived, line([mesh.x[C] + Math.cos(a * 0.8) * R, mesh.y[C] + Math.sin(a * 0.8) * R], at(w, C)), { endOnLand: 'flow' });
+        if (plan.blocked || plan.end !== 'lake' || plan.crossings.length || plan.reroute || plan.uphill < 30) continue;
+        const e = eng.clone();
+        e.exec(courseCmd(plan));
+        expect(followed(e.world, plan.cells)).toBe(true);
+        expect([...Array(mesh.n).keys()].filter((i) => e.world.derived.lake[i] === 1).join(',')).toBe(lake);
+        // 河道上最后一格陆地仍比湖面高
+        const body = plan.cells.slice(0, -1);
+        const end = plan.cells[plan.cells.length - 1];
+        expect(e.world.derived.elevation[body[body.length - 1]]).toBeGreaterThan(e.world.derived.water[end]);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('到这里汇入：河道截在第一次穿过的那条河上，照着走；汇入的河不改道', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh } = w;
+    let plan: CoursePlan | null = null;
+    for (let i = 0; i < mesh.n && !plan; i += 11) {
+      if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
+      const p = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 16 * mesh.spacing, mesh.y[i] - 3 * mesh.spacing]), { endOnLand: 'flow' });
+      if (!p.blocked && !p.reroute && p.crossings.length && p.crossings[0].guide === null && p.crossings[0].from > 2) plan = p;
+    }
+    expect(plan).not.toBeNull();
+    const k = plan!.crossings[0].from;
+    const joined = endCourseAt(w, w.derived, plan!, k);
+    expect(joined.blocked).toBeNull();
+    expect(joined.end).toBe('river');
+    expect(joined.cells).toEqual(plan!.cells.slice(0, k + 1));
+    expect(joined.crossings).toEqual([]);
+    expect(joined.cut).not.toBeNull();
+    // 折线截在第一次进汇合那格的地方：取样点都在河道里
+    const smp = pathSamples(joined.path, courseStep(mesh));
+    for (let j = 0; j < smp.x.length; j++) expect(joined.cells).toContain(findCell(mesh, smp.x[j], smp.y[j]));
+    expect(findCell(mesh, ...joined.path[joined.path.length - 1])).toBe(joined.join);
+    const recv = w.derived.receiver[joined.join];
+    eng.exec(courseCmd(joined));
+    expect(followed(w, joined.cells)).toBe(true);
+    expect(w.derived.receiver[joined.join]).toBe(recv);
+    expect(guideEnd(w, w.derived, w.small.guides[0])).toEqual({ kind: 'river', cell: joined.join });
+  });
+
+  it('改一段时绕成圈的拦下：这条河汇入的河往下流会经过新画的一段', () => {
+    // G 沿着一条河 R 往上游画，在 J 汇入 R；再把 G 中间的一段改成横穿 J 下游的 R：水会 G → R → G 绕圈
+    const base = continents();
+    const w0 = base.world;
+    const { mesh } = w0;
+    let checked = 0;
+    for (const f of w0.derived.features.filter((x) => x.type === 'river')) {
+      const stem = riverStem(w0, w0.derived, f.anchor).cells.filter((c) => w0.causes.land[c]);
+      if (stem.length < 16) continue;
+      for (const side of [1, -1]) {
+        for (const i of [stem.length - 3, stem.length - 5]) {
+          const x = stem[i];
+          const J = stem[i - 9];
+          const len = Math.hypot(mesh.x[J] - mesh.x[x], mesh.y[J] - mesh.y[x]);
+          const nx = (-(mesh.y[J] - mesh.y[x]) / len) * side * mesh.spacing;
+          const ny = ((mesh.x[J] - mesh.x[x]) / len) * side * mesh.spacing;
+          const P: Pt = [mesh.x[x] + 2.2 * nx, mesh.y[x] + 2.2 * ny];
+          const Q: Pt = [mesh.x[J] + 2.2 * nx, mesh.y[J] + 2.2 * ny];
+          const plan = planCourse(w0, w0.derived, [...line(P, Q), ...line(Q, at(w0, J), 10).slice(1)], { endOnLand: 'sink' });
+          if (plan.blocked || plan.end !== 'river' || plan.crossings.length || plan.reroute) continue;
+          const eng = base.clone();
+          eng.exec(courseCmd(plan, { id: 'river-g' }));
+          const w = eng.world;
+          const along = (t: number): Pt => [P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t];
+          const M: Pt = [mesh.x[x] - 0.8 * nx, mesh.y[x] - 0.8 * ny];
+          const r = spliceCourse(w, w.derived, w.small.guides[0], [...line(along(0.12), M, 30), ...line(M, along(0.5), 30).slice(1)], { endOnLand: 'sink', tol: 0.5 * mesh.spacing });
+          if (!('blocked' in r)) {
+            // 没有横穿 R：照常改，水照着走
+            if (r.patch.cells!.some((c) => stem.includes(c))) throw new Error('横穿了 J 下游的河却没有拦下');
+            continue;
+          }
+          if (r.blocked === '这样水会绕成圈') checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('定大小：拖到的就是这条河的总水量（自然流来的水加上画的河自己加的）', () => {
+    const eng = continents();
+    const w = eng.world;
+    const plan = planCourse(w, w.derived, acrossRange(w).stroke, { endOnLand: 'flow' });
+    eng.exec(courseCmd(plan, { id: 'river-f' }));
+    const g = () => w.small.guides[0];
+    const { total, natural } = guideFlow(w, w.derived, g());
+    expect(total - natural).toBeCloseTo(2, 6);
+    for (const target of [natural + 5, natural + 20]) {
+      eng.exec({ op: 'update_guide', id: 'river-f', patch: { flow: Math.max(1.2, target - natural) } });
+      expect(guideFlow(w, w.derived, g()).total).toBeCloseTo(target, 6);
+    }
+    // 最左边“顺其自然”：不再加水
+    eng.exec({ op: 'update_guide', id: 'river-f', patch: { spring: false, flow: null } });
+    expect(guideFlow(w, w.derived, g()).total).toBeCloseTo(natural, 6);
+  });
+});
+
 describe('画的线就是河道', () => {
   it('画的线经过的格就是河道：折线上的取样点都在河道里，格相邻、不重复，起点就在画的第一点下面', () => {
     const w = continents().world;
@@ -404,6 +539,57 @@ describe('画的线就是河道', () => {
       expect(after.name).toBe('青河');
       expect(after.flow).toBe(2);
       expect(followed(e.world, after.cells)).toBe(true);
+    }
+  });
+
+  it('顺地势流下去的那段、旧式的河道也能改一段：没改的地方格不变，画出来也不动', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { mesh } = w;
+    // 画一小段就松手，之后顺地势流下去很长一段
+    let plan: CoursePlan | null = null;
+    for (let i = 0; i < mesh.n && !plan; i += 7) {
+      if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
+      const p = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 2.5 * mesh.spacing, mesh.y[i]], 10), { endOnLand: 'flow' });
+      if (!p.blocked && !p.reroute && !p.crossings.length && p.cells.length - p.drawn >= 12 && p.end === 'sea') plan = p;
+    }
+    expect(plan).not.toBeNull();
+    // 一条新画的（只有一小段折线），一条旧式的（没有折线、下切山谷）
+    for (const g of [
+      guideSchema.parse({ ...(courseCmd(plan!) as { guide: object }).guide, id: 'river-n' }),
+      guideSchema.parse({ id: 'river-o', cells: plan!.cells, locked: true, spring: true }),
+    ]) {
+      const e = continents();
+      e.exec({ op: 'add_guide', guide: g });
+      const ew = e.world;
+      const P0 = guidePoints(ew, g);
+      // 改流下去的那段的中间：从第 drawn+3 格到第 drawn+8 格绕一下
+      const ka = plan!.drawn + 3;
+      const kb = plan!.drawn + 8;
+      const [a, b] = [at(ew, plan!.cells[ka]), at(ew, plan!.cells[kb])];
+      const nx = -(b[1] - a[1]);
+      const ny = b[0] - a[0];
+      const l = Math.hypot(nx, ny);
+      const detour: Pt[] = [];
+      for (let k = 0; k <= 40; k++) {
+        const t = k / 40;
+        const o = Math.sin(Math.PI * t) * 2 * mesh.spacing;
+        detour.push([a[0] + (b[0] - a[0]) * t + (nx / l) * o, a[1] + (b[1] - a[1]) * t + (ny / l) * o]);
+      }
+      const r = spliceCourse(ew, ew.derived, g, detour, { endOnLand: 'flow', tol: 0.5 * mesh.spacing });
+      if ('blocked' in r) throw new Error(r.blocked);
+      const cells = r.patch.cells!;
+      expect(cells.slice(0, ka + 1)).toEqual(g.cells.slice(0, ka + 1));
+      expect(cells.slice(cells.length - (g.cells.length - kb))).toEqual(g.cells.slice(kb));
+      // 改后的折线：前面一段的点与原来画出来的控制点相同，后面一段也是
+      const path = decodePath(r.patch.path!);
+      const ia = P0.findIndex((p) => findCell(mesh, ...p) === g.cells[ka]);
+      expect(path.slice(0, ia)).toEqual(P0.slice(0, ia));
+      expect(path.slice(path.length - 3)).toEqual(P0.slice(P0.length - 3));
+      e.exec({ op: 'update_guide', id: g.id, patch: r.patch });
+      const after = ew.small.guides[0];
+      expect(after.carve).toBe('bed');
+      expect(followed(ew, after.cells)).toBe(true);
     }
   });
 

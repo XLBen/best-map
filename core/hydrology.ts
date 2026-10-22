@@ -1,4 +1,5 @@
 import { ContentMemo } from './climate';
+import { sinkMask } from './elevation';
 import { gradient } from './mesh';
 import { type Routing, route } from './routing';
 import type { Derived, World } from './world';
@@ -19,17 +20,11 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const forced = new Int32Array(n).fill(-1);
   for (const g of small.guides) for (let k = 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
   // 在终点消失的河：那一格当作出口（水流到那里就没了）。没有这种河时与原来逐值相同
-  const terminal = new Uint8Array(n);
-  let sinks = false;
-  for (const g of small.guides) {
-    const end = g.cells[g.cells.length - 1];
-    if (g.end !== 'sink' || !land[end]) continue;
-    terminal[end] = 1;
-    sinks = true;
-  }
+  const sinks = sinkMask(world);
+  const terminal = sinks ?? new Uint8Array(n);
   let r = routeMemo.find(mesh, [elevation, land, forced, terminal], []);
   if (!r) {
-    r = route(mesh, elevation, land, forced, sinks ? terminal : undefined);
+    r = route(mesh, elevation, land, forced, sinks ?? undefined);
     routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced, terminal], [], r);
   }
 
