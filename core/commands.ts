@@ -17,7 +17,9 @@ import {
 } from './provinces';
 import { SEAM_MAX_POINTS, cutSeams, dropSeams, inheritSeams, seamsAfterCut } from './seams';
 import { cutProvinces } from './select';
-import { speciesSchema } from './species';
+import { checkSpeciesScripts } from './biome-scripts';
+import { CommandError } from './errors';
+import { type Species, speciesSchema } from './species';
 import {
   ISLAND_KIND_INFO,
   chainIslands,
@@ -143,7 +145,8 @@ export const commandSchema: z.ZodType<Command> = z.lazy(() =>
   z.union([single, z.object({ op: z.literal('batch'), label: z.string().optional(), commands: z.array(commandSchema) })]),
 ) as z.ZodType<Command>;
 
-export class CommandError extends Error {}
+// 在 errors.ts 里（避免循环引用），这里照旧导出
+export { CommandError };
 
 // 推导需要从哪一层开始重算
 export const Dirty = {
@@ -291,6 +294,24 @@ function applyTerrain(world: World): { gained: number; lost: number } {
 }
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
+
+// 改生态时按实际改了哪几项决定重算到哪一层（与改之前逐项比较，不看补丁里写了什么）：
+// - 只改外观（花纹、发光）：只影响画法，什么都不重算（Worker 发轻快照）；
+// - 只改外观、名字、地名设定：长什么不变，只重新起名（生态区的类型名、名字跟着生态的名字和地名设定）；
+// - 别的（耐受、竞争力、扩散、脚本、效果、种子、颜色、地形类别……）：照旧从求解重算。
+// 颜色也不能算进第一种：地图的着色只在推导数组换了时才重算（见 MapView 的 colorKey）
+const LOOK_KEYS = new Set(['visual']);
+const NAME_KEYS = new Set(['visual', 'name', 'feature']);
+function speciesChange(before: Species, after: Species): { dirty: Dirty; what: string } {
+  const a = before as Record<string, unknown>;
+  const b = after as Record<string, unknown>;
+  const changed = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+  const only = (k: string) => changed.length > 0 && changed.every((x) => x === k);
+  const what = only('visual') ? '的外观' : only('feature') ? '的地名' : only('scripts') ? '的脚本' : only('effects') ? '对周围的影响' : '';
+  if (changed.every((k) => LOOK_KEYS.has(k))) return { dirty: Dirty.None, what };
+  if (changed.every((k) => NAME_KEYS.has(k))) return { dirty: Dirty.Names, what };
+  return { dirty: Dirty.Solve, what };
+}
 
 // 新建一个空的省份：陆海随这些格，类型随这些格原来所在省份的多数（assign_province 'new' 与剪刀共用）
 function newProvince(world: World, cells: number[]): number {
@@ -493,7 +514,10 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'add_species': {
       if (small.species.some((s) => s.id === cmd.species.id)) throw new CommandError(`类型 id "${cmd.species.id}" 已存在`);
-      small.species.push(speciesSchema.parse(cmd.species));
+      const sp = speciesSchema.parse(cmd.species);
+      // 脚本先编译一遍（只查语法）：写错了整条命令不生效，并说明第几行错了
+      checkSpeciesScripts(sp);
+      small.species.push(sp);
       return { dirty: Dirty.Solve, summary: `新建生态“${cmd.species.name || cmd.species.id}”` };
     }
     case 'update_species': {
@@ -505,8 +529,11 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete merged[k];
       const parsed = speciesSchema.safeParse(merged);
       if (!parsed.success) throw new CommandError(`update_species 参数无效：${formatIssues(parsed.error)}`);
+      checkSpeciesScripts(parsed.data);
+      const before = small.species[idx];
       small.species[idx] = parsed.data;
-      return { dirty: Dirty.Solve, summary: `修改了生态“${parsed.data.name || cmd.id}”` };
+      const { dirty, what } = speciesChange(before, parsed.data);
+      return { dirty, summary: `修改了生态“${parsed.data.name || cmd.id}”${what}` };
     }
     case 'remove_species': {
       const idx = small.species.findIndex((s) => s.id === cmd.id);

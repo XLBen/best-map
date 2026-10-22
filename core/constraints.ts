@@ -1,7 +1,8 @@
+import { placementSlots } from './biome-scripts';
 import { type ClimateBase, petHalf } from './climate';
 import { graphDistance } from './mesh';
 import { BUILTIN_FIELDS, type Tolerance, trapezoid } from './species';
-import { fieldGetter, isVegetated } from './vegetation';
+import { fieldGetter, invadeBoost, invadeTable, isVegetated } from './vegetation';
 import type { Conflict, Constraint, Derived, World } from './world';
 
 // 约束求解：用户规定结果（这些格是类型 X），系统反推原因。
@@ -97,14 +98,33 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
   const stampT = new Int32Array(NT);
   let stamp = 0;
 
-  const scoreOf = (s: number) => {
-    let v = 1;
-    for (let q = progStart[s]; q < progStart[s + 1] && v > 0; q++) {
-      const j = prog[q];
-      v *= tolClim[j] >= 0 ? trapezoid(tols[j], cv[tolClim[j]]) : fac[j];
-    }
-    return v * species[s].competition * d.reach[ri + s];
-  };
+  // 第三批：长在哪里的脚本的系数、侵占的倍数。都按最近一遍植被的结果（气候是那一遍的），试算各个修正时当作不变
+  // （脚本只在 Worker 的植被一步里跑，这里只读 placeF；侵占的目标适宜度也取那一遍的）。
+  // 两样都没有时 extra 为 false，得分走原来的算式（逐值不变）
+  const { slot: placeSlot, P } = placementSlots(species);
+  const placeF = P > 0 && d.placeF?.length === n * P ? d.placeF : null;
+  const invade = invadeTable(species);
+  const extra = placeF !== null || invade !== null;
+  // 这一格各类型要再乘的倍数（系数 × 侵占）
+  const mul = new Float64Array(S).fill(1);
+
+  const scoreOf = !extra
+    ? (s: number) => {
+        let v = 1;
+        for (let q = progStart[s]; q < progStart[s + 1] && v > 0; q++) {
+          const j = prog[q];
+          v *= tolClim[j] >= 0 ? trapezoid(tols[j], cv[tolClim[j]]) : fac[j];
+        }
+        return v * species[s].competition * d.reach[ri + s];
+      }
+    : (s: number) => {
+        let v = 1;
+        for (let q = progStart[s]; q < progStart[s + 1] && v > 0; q++) {
+          const j = prog[q];
+          v *= tolClim[j] >= 0 ? trapezoid(tols[j], cv[tolClim[j]]) : fac[j];
+        }
+        return v * species[s].competition * d.reach[ri + s] * mul[s];
+      };
 
   const plans: Plan[] = [];
   for (const c of small.constraints) {
@@ -153,6 +173,13 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
       for (let s = 0; s < S; s++) {
         progStart[s] = q;
         let zero = d.reach[ri + s] === 0 || species[s].competition === 0;
+        if (extra) {
+          // 脚本的系数为 0：怎么修正气候都长不出来（目标是它时这一格做不到，进冲突）
+          let m = placeF && placeSlot[s] >= 0 ? placeF[i * P + placeSlot[s]] : 1;
+          if (invade) m *= invadeBoost(invade, d.suit, S, i, s);
+          mul[s] = m;
+          if (m === 0) zero = true;
+        }
         for (let j = tolStart[s]; j < tolStart[s + 1]; j++) {
           if (tolClim[j] < 0) {
             const f = trapezoid(tols[j], vals[tolVal[j]]);
@@ -431,6 +458,13 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     const S = species.length;
     const unreachable = failing.filter((i) => d.reach[i * S + target] === 0).length;
     if (unreachable > failing.length / 2) suggestions.push('该类型从起源扩散不到这里：增加起源格、加大扩散距离，或降低跨海/跨不适宜地带的代价');
+    // 长在哪里的脚本在没涂成的格里大多是 0：怎么调气候都长不出来
+    const { slot: placeSlot, P } = placementSlots(species);
+    const placeF = P > 0 && placeSlot[target] >= 0 && d.placeF?.length === world.mesh.n * P ? d.placeF : null;
+    if (placeF) {
+      const zero = failing.filter((i) => placeF[i * P + placeSlot[target]] === 0).length;
+      if (zero > failing.length / 2) suggestions.push(`“${sp.name || sp.id}”的脚本条件在这些格里是 0（脚本不让它长在这里）：改一改它的“长在哪里”脚本`);
+    }
     for (const l of limiting.slice(0, 3)) {
       const info = FIELD_LABEL.get(l.field);
       const label = info?.label ?? l.field;

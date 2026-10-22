@@ -6,6 +6,7 @@ import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
 import type { ProvinceSeam } from './seams';
+import type { ScriptIssue } from './script';
 import { DEFAULT_SPECIES, type Species } from './species';
 
 // 世界的三类数据：
@@ -255,6 +256,13 @@ export interface Derived {
   currentX: Float32Array;
   currentY: Float32Array;
   sstAnom: Float32Array;
+  // ---------- 第三批：只在用到时才有（从来没用过脚本的世界里没有这些键；用过又去掉了的为 undefined） ----------
+  // 长在哪里的脚本的系数：n × P，P 是带这种脚本的生态个数（按生态的顺序，见 biome-scripts.ts 的 placementSlots）
+  placeF?: Float32Array;
+  // 颜色脚本算出的每格植被颜色（n × 4：r、g、b，a 为 255；水上为 0），见 biome-look.ts 的 computeLook
+  look?: Uint8Array;
+  // 这一次推导里出错的脚本（按没有脚本处理了）；普通的 JSON，不是类型数组
+  scriptIssues?: ScriptIssue[];
 }
 
 export interface World {
