@@ -370,6 +370,21 @@ export function editsInFlight(): number {
   for (const p of pending.values()) if (EDITS.has(p.kind) && p.kind !== 'replaceLast') k++;
   return k;
 }
+
+// 改动世界的请求（执行、撤销、重做、换一个，还有新建、打开）都算完了：这时 world、worldState 就是引擎里的样子。
+// 脚本框要据此决定“换掉最后一步”还是“新的一步”（还有别人的改动在排队时换掉的会是别人的那一步）；
+// 正在打开别的世界时也要等：不然排在打开后面的提交会落到新世界里同名的生态上
+const WORLD_CHANGES = new Set<Request['kind']>([...EDITS, 'init', 'load']);
+export function editsIdle(): boolean {
+  for (const p of pending.values()) if (WORLD_CHANGES.has(p.kind)) return false;
+  return true;
+}
+const idleWaiters: (() => void)[] = [];
+// 等到 editsIdle()（回复到达、快照换上之后才算完）
+export function whenEditsIdle(): Promise<void> {
+  if (editsIdle()) return Promise.resolve();
+  return new Promise<void>((r) => idleWaiters.push(r));
+}
 let meshCache: { key: string; mesh: Mesh } | null = null;
 
 function engineHost(): EngineHost {
@@ -404,6 +419,8 @@ function call(req: Request, label: string | null, safeReason?: string): Promise<
         pending.delete(id);
         if (label && --labelled === 0) busy.value = recovering ? RECOVERING : null;
         resolve(r);
+        // 排在这条回复的处理（换上快照）之后再叫醒等着的
+        if (idleWaiters.length && editsIdle()) for (const w of idleWaiters.splice(0)) w();
       },
       safeReason,
     );

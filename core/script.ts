@@ -383,6 +383,8 @@ function nameLine(src: string, name: string): number | undefined {
 
 export interface ScriptIssue {
   owner: string;
+  // 所属对象的 id（runScript 给出的说明里有；界面靠它找到是哪一种生态的脚本，名字可能重复）
+  id?: string;
   kind: ScriptKind;
   // syntax 语法错误；runtime 运行时出错；value 返回值不对（NaN、类型）；disabled 安全模式下没有运行
   reason: 'syntax' | 'runtime' | 'value' | 'disabled';
@@ -799,6 +801,28 @@ function poison(name: string): unknown {
   return new Proxy(Object.freeze(function () {}), new Proxy({}, { get: () => fail }));
 }
 const SHADOW_VALUES: unknown[] = SHADOW.map((n) => (n === 'Math' ? SAFE_MATH : n in POISONED ? poison(n) : undefined));
+
+// ---------- 编辑器用：只处理文字，不编译、不运行（主线程上也能用） ----------
+
+// 语法错误的中文说明。raw 是解析器的原话（编辑器用 acorn 只解析时也拿它来换成中文）
+export function syntaxErrorText(raw: string, src: string): string {
+  return syntaxText(raw, src);
+}
+
+// 脚本里用了没有的名字：“没有变量 tMeen（是不是 tMean？）”，或者“只有颜色脚本能用”
+export function unknownVariableText(name: string, kind: ScriptKind): string {
+  return missingVariable(name, kind);
+}
+
+// 脚本里不能用的名字（被遮住的全局名字，还有 Math.random）的说明；能用时为 undefined
+export function blockedNameText(name: string): string | undefined {
+  if (name === 'Math.random') return '用 rand() 代替 Math.random()';
+  if (name === 'Math' || !(SHADOW as readonly string[]).includes(name)) return undefined;
+  return POISONED[name as keyof typeof POISONED] ?? `脚本里不能用 ${name}`;
+}
+
+// 辅助函数的名字（noise、rand、field……）
+export const SCRIPT_HELPER_NAMES: readonly string[] = HELPER_NAMES;
 
 // ---------- 编译 ----------
 
@@ -1487,13 +1511,16 @@ function end() {
   RUN.bad = undefined;
 }
 
+// 出错说明带上所属对象的 id（没有 id 时照旧）
+const withId = (issue: ScriptIssue, id: string | undefined): ScriptIssue => (id === undefined || issue.id === id ? issue : { ...issue, id });
+
 // 对一串格运行一段每格的脚本。出错不抛（语法错误、运行时出错、NaN、类型不对、缺变量、安全模式），
 // 返回 {ok: false, issue, output}，output 为“没有这段脚本”的结果；超出范围的数被截到范围内。
 // 只有调用方的错（主线程上 disallowScripts 之后、地形脚本缺原来的地形、看门狗本身出错）才抛
 export function runScript<K extends CellKind>(script: { kind: K; src: string }, opts: RunOptions): CellResult<K> {
   const { kind, src } = script;
   const { inputs, cells, owner } = opts;
-  const fail = (issue: ScriptIssue): CellResult<K> => ({ ok: false, issue, output: absentOutput(kind, inputs, cells) as CellOutputs[K] });
+  const fail = (issue: ScriptIssue): CellResult<K> => ({ ok: false, issue: withId(issue, opts.id), output: absentOutput(kind, inputs, cells) as CellOutputs[K] });
   if (!enabled) return fail(makeIssue(owner, kind, 'disabled', '安全模式下脚本不运行', 'disabled'));
   let c: CompiledScript;
   try {
