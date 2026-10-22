@@ -15,7 +15,7 @@ import {
   repairProvinces,
   splitCells,
 } from './provinces';
-import { SEAM_MAX_POINTS, dropSeams, seamTrim } from './seams';
+import { SEAM_MAX_POINTS, cutSeams, dropSeams } from './seams';
 import { cutProvinces } from './select';
 import { speciesSchema } from './species';
 import {
@@ -108,7 +108,7 @@ const baseCommands = [
   z.object({ op: z.literal('merge_province'), from: z.number().int(), into: z.number().int() }),
   z.object({ op: z.literal('split_province'), id: z.number().int() }),
   // 剪刀：沿画的线切开省份。线是界面上已经延长、化简好的（见 seams.ts 的 seamLine），这里不再延长；
-  // 切出的每块成一个新省，线（切开省的那一段）记进 provinceSeams，切开的两省之间的边界就画在这条线上
+  // 切出的每块成一个新省，线（每个切开的省一条，只留在那个省里的一段）记进 provinceSeams，切开的几块之间的边界就画在线上
   z.object({ op: z.literal('cut_province'), line: z.array(z.tuple([z.number(), z.number()])).min(2).max(SEAM_MAX_POINTS) }),
   z.object({
     op: z.literal('set_province'),
@@ -673,8 +673,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const cut = cutProvinces(world, cmd.line, { extend: false });
       if (!cut.plans.length) throw new CommandError('线没有把省份分开');
       const names = cut.plans.map((pl) => `“${small.provinces[pl.id].name || `省份 ${pl.id}`}”`).join('、');
-      // 记下的切线只留切开省的那一段（按切之前的省份算，与预览相同）
-      const seam = seamTrim(world, cmd.line, new Set(cut.plans.map((pl) => pl.id)));
+      // 记下的切线：每个切开的省一条，只留线在那个省里的一段（按切之前的省份算，与预览的 cutSeams 相同）
+      const seams = cutSeams(world, cmd.line, cut);
       let count = 0;
       for (const pl of cut.plans) {
         for (const part of pl.parts.slice(1)) {
@@ -684,7 +684,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
           count++;
         }
       }
-      small.provinceSeams = [...(small.provinceSeams ?? []), { id: nextId(world, 'seam'), line: seam }];
+      small.provinceSeams = [...(small.provinceSeams ?? []), ...seams.map((sm) => ({ id: nextId(world, 'seam'), ...sm }))];
       return { dirty: Dirty.None, summary: `切开了${names}（多出 ${count} 个省份）` };
     }
     case 'rename_feature': {

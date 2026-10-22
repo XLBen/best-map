@@ -3,15 +3,17 @@ import { findCell } from './mesh';
 import { type CutResult, cutProvinces } from './select';
 import type { World } from './world';
 
-// 切线：剪刀切省时画的线。切线附近（两边各 1.25 格以内）的像素按“在线的哪一边”决定属于哪个省，
+// 切线：剪刀切省时画的线，每个切开的省一条（只留线在那个省里的一段）。切线附近（两边各 1.25 格以内）的像素
+// 按“在线的哪一边”决定属于哪个省，
 // 所以屏幕上、导出的 provinces.bmp 里切开的两省之间的边界就是画的那条线，而不是格子的边再加自然弯曲。
 // 着色器（src/render/renderer.ts 的 FS_SEAM 与 seamCell）与导出（applySeams）用同一条规则：
 //   1. 像素按没扭曲的位置找最近的切线段，在带内（距离 < BAND）才管。同样近时段号小的优先（GPU 上按段号依次画、
 //      深度测试 LESS）。过了切线真正的两端就不算（两端没有半圆形的帽子）；
 //   2. 在线的哪一边：落在线段中间看叉积；落在线段端点外（转角处）用相邻两段法向之和（伪法向），转角两边不会错位；
-//   3. 每段两边各是哪个省：两边各取 1.2 格以内的格投票（陆地省 p+1、海域省 −(p+1)；哪一边按格中心最近的段算），取最多的；
-//      一边一格都没有时借用同一条切线上最近的段。两边相同（比如后来合并了）、一边陆地一边海、
-//      一边的省在另一边也不少（线头伸进了邻省）时这一段就不起作用；
+//   3. 每段两边各是哪个省：两边各取 1.2 格以内、这条切线切开的那几块里的格投票（陆地省 p+1、海域省 −(p+1)；
+//      哪一边按格中心最近的段算），取最多的；一边一格都没有时借用同一条切线上最近的段。两边相同（比如后来合并了）、
+//      一边陆地一边海、一边的省在另一边也不少时这一段就不起作用。
+//      所以切线只在切开的那几块之间换像素（切之前都是同一个省的），邻省的像素一个不动；
 //   4. 像素原本按扭曲后的格取省（c）。这一段起作用、c 的数据与它的格中心所在那一侧相符（ok[c]）、
 //      c 的省正好是另一边的省时，像素换成这一边的代表格（repL / repR）；否则还是 c。
 //      所以后来用涂省改过的格、切的时候并回去的一格碎块，照它们的数据画出来。
@@ -19,8 +21,18 @@ import type { World } from './world';
 
 export interface ProvinceSeam {
   id: string;
-  // 画的折线（地图单位），只留切开省的那一段；整个星球上沿线展开经度（点可以超出 [0, 2)）
+  // 画的折线（地图单位），只留在这个省里的那一段；整个星球上沿线展开经度（点可以超出 [0, 2)）
   line: [number, number][];
+  // 切开的这个省分成的几块：原来的省在前，切出来的新省依次在后
+  provinces: number[];
+}
+
+// 一刀记下的切线：切开几个省就记几条，每条只留线在那个省里的一段、只管那个省切出来的几块。
+// 一条线连着穿过几个省时，每个省切开的地方都按线画，两省原来的交界不动。
+// 新省的编号按命令里新建的顺序（从 nextProvince 起依次加一）；剪刀的预览与切线命令都用它，编号、切线都一样
+export function cutSeams(world: World, line: [number, number][], cut: CutResult): Omit<ProvinceSeam, 'id'>[] {
+  let next = world.small.nextProvince;
+  return cut.plans.map((pl) => ({ line: seamTrim(world, line, new Set([pl.id])), provinces: [pl.id, ...pl.parts.slice(1).map(() => next++)] }));
 }
 
 // 切线管多宽：两边各这么多格距
@@ -288,7 +300,10 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
   }
   near.sort((a, b) => a - b);
   // 2. 每格离它最近的段与在哪一边；给 1.2 格以内的每一段投票。投的是“在最近那一段的哪一边”：
-  //    转弯处，一格在前一段端点外看像在左边，其实在后一段的右边（像素规则也按最近的段算）
+  //    转弯处，一格在前一段端点外看像在左边，其实在后一段的右边（像素规则也按最近的段算）。
+  //    只有这条切线切开的几块里的格投票（切之前它们是同一个省）：线贴着邻省走时，那一边仍是切开的那一块，
+  //    邻省的格再多也不算，邻省的像素一个不动
+  const pieces = seams.map((sm) => new Set(sm.provinces));
   const votes: Map<number, number>[][] = Array.from({ length: m }, () => [new Map(), new Map()]);
   const voters: number[][][] = Array.from({ length: m }, () => [[], []]);
   const cellSeg = new Int32Array(near.length);
@@ -304,6 +319,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
       const list = L.grid.lists.get(gridKey(Math.floor((x - shift) / L.grid.size), Math.floor(y / L.grid.size)));
       if (!list) continue;
       for (const s of list) {
+        if (!pieces[S.seam[s]].has(province[c])) continue;
         const d = segDist(S, s, x - shift, y);
         if (d < 0 || d >= vote) continue;
         votes[s][side].set(g, (votes[s][side].get(g) ?? 0) + 1);
@@ -362,10 +378,9 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
     }
   }
   // 这一段不起作用的几种情况：
-  //   · 两边是同一个省、有一边没有省；
+  //   · 两边是同一个省（比如后来合并了）、有一边没有切开的那几块（比如后来并进了别的省）；
   //   · 一边陆地一边海（线穿过海岸的那几段）：只在两个陆地省或两个海域省之间换格，陆地像素不会换成海上的格；
-  //   · 一边的省在另一边也占了不少（超过四分之一）：线在这里不是两省的边界，比如线头伸进了邻省、
-  //     线从两个省的交界处穿过。只有线真正隔开的两个省之间才换格，邻省的边界不动
+  //   · 一边的省在另一边也占了不少（超过四分之一）：线在这里不是两块的边界
   const mixed = (s: number, side: number, g: number) => {
     let total = 0;
     for (const n of votes[s][side].values()) total += n;
@@ -487,19 +502,22 @@ export function exportProvinceCells(world: World, cell: Int32Array, width: numbe
     const drop = new Set<number>();
     for (let s = 0; s < L.segs.count; s++) if (groups.has(L.gL[s]) || groups.has(L.gR[s])) drop.add(L.segs.seam[s]);
     if (!drop.size) return { cell: out, warnings };
-    for (const id of lost) warnings.push(`省份“${small.provinces[id]?.name || id}”太小，切线附近的像素都分给了邻省：导出时那里的边界按格子画`);
+    for (const id of lost) warnings.push(`省份“${small.provinces[id]?.name || id}”太小，按剪刀画的线分不到像素：导出时它那里的边界按格子画`);
     seams = seams.filter((_, k) => !drop.has(k));
   }
 }
 
 // 剪刀：界面上画的线 → 命令里的线（两端按需延长、再化简）与切出来的块。拖动时的预览与松手后的命令用同一条线、
 // 同一个算法（命令里不再延长），所以预览就是结果：ext 是延长后的线（画虚线用），cut 是命令会切出来的块，
-// seam 是命令会记下的切线（seamTrim）
-export function scissors(world: World, raw: [number, number][]): { ext: CutResult; line: [number, number][]; cut: CutResult; seam: [number, number][] } {
+// seams 是命令会记下的切线（cutSeams：每个切开的省一条，与切出来的新省的编号）
+export function scissors(
+  world: World,
+  raw: [number, number][],
+): { ext: CutResult; line: [number, number][]; cut: CutResult; seams: Omit<ProvinceSeam, 'id'>[] } {
   const ext = cutProvinces(world, raw);
   const line = seamLine(world, ext.line);
   const cut = cutProvinces(world, line, { extend: false });
-  return { ext, line, cut, seam: seamTrim(world, line, new Set(cut.plans.map((pl) => pl.id))) };
+  return { ext, line, cut, seams: cutSeams(world, line, cut) };
 }
 
 // 记下的切线只留真正切开省的那一段：从线第一次进入被切的省（ids，切之前的省份）到最后一次离开。
@@ -581,17 +599,19 @@ function simplify(pts: [number, number][], tol: number): [number, number][] {
   return pts.filter((_, k) => keep[k]);
 }
 
-// 去掉有一个点落在这些省里的切线（重新划分了那一片）；全去掉了就删掉这一项
+// 去掉有一个点落在这些省里、或者切开的省里有这些省的切线（重新划分了那一片）；全去掉了就删掉这一项
 export function dropSeams(world: World, inside: (province: number) => boolean) {
   const { small, mesh, causes } = world;
   if (!small.provinceSeams) return;
   let hint = 0;
-  const kept = small.provinceSeams.filter((s) =>
-    s.line.every(([x, y]) => {
-      if (y < 0 || y > mesh.height || (mesh.kind !== 'sphere' && (x < 0 || x > mesh.width))) return true;
-      hint = findCell(mesh, x, y, hint);
-      return !inside(causes.province[hint]);
-    }),
+  const kept = small.provinceSeams.filter(
+    (s) =>
+      !s.provinces.some(inside) &&
+      s.line.every(([x, y]) => {
+        if (y < 0 || y > mesh.height || (mesh.kind !== 'sphere' && (x < 0 || x > mesh.width))) return true;
+        hint = findCell(mesh, x, y, hint);
+        return !inside(causes.province[hint]);
+      }),
   );
   if (kept.length) small.provinceSeams = kept;
   else delete small.provinceSeams;

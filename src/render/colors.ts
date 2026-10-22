@@ -1,6 +1,7 @@
 import { blendRgb } from '../../core/biome-look';
 import { hexToRgb } from '../../core/export';
 import { gradient } from '../../core/mesh';
+import type { ProvinceKind } from '../../core/provinces';
 import { type ProvinceSeam, type SeamLayers, seamLayers } from '../../core/seams';
 import { coastValues } from '../../core/subcell';
 import { COAST_AMP } from '../../core/terrain';
@@ -272,27 +273,29 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
 }
 
 // 省份着色的平涂：每省一种颜色；无人区偏灰、湖省偏蓝，一眼能和普通省份分开。
-// kindOf：省的类型（预览里还没有的新省，取它切出来的那个省的类型）
-export function provinceFlat(world: World, province: Int32Array, kindOf = (p: number, _i: number) => world.small.provinces[p]?.kind): Uint8Array {
+// kindOf：省的类型（预览里还没有的新省，取它切出来的那个省的类型）。每个省的颜色只算一次：
+// 剪刀、涂省拖动时每动一下都要整张重算，十万格的星球上逐格查类型、建颜色数组要几十毫秒
+export function provinceFlat(world: World, province: Int32Array, kindOf = (p: number) => world.small.provinces[p]?.kind): Uint8Array {
   const { mesh, causes } = world;
   const flat = new Uint8Array(mesh.n * 4);
+  // 每个省：颜色与陆地、海上的不透明度
+  const look = new Map<number, [number, number, number, number, number]>();
   for (let i = 0; i < mesh.n; i++) {
     const p = province[i];
     if (p < 0) continue;
-    const kind = kindOf(p, i);
-    let c: RGB = provinceColor(p);
-    let a = causes.land[i] ? 140 : 70;
-    if (kind === 'wasteland') {
-      c = [(c[0] + 2 * 150) / 3, (c[1] + 2 * 150) / 3, (c[2] + 2 * 150) / 3];
-      a = 170;
-    } else if (kind === 'lake') {
-      c = [70, 125, 190];
-      a = 150;
+    let v = look.get(p);
+    if (!v) {
+      const kind = kindOf(p);
+      const c = provinceColor(p);
+      if (kind === 'wasteland') v = [(c[0] + 2 * 150) / 3, (c[1] + 2 * 150) / 3, (c[2] + 2 * 150) / 3, 170, 170];
+      else if (kind === 'lake') v = [70, 125, 190, 150, 150];
+      else v = [c[0], c[1], c[2], 140, 70];
+      look.set(p, v);
     }
-    flat[i * 4] = c[0];
-    flat[i * 4 + 1] = c[1];
-    flat[i * 4 + 2] = c[2];
-    flat[i * 4 + 3] = a;
+    flat[i * 4] = v[0];
+    flat[i * 4 + 1] = v[1];
+    flat[i * 4 + 2] = v[2];
+    flat[i * 4 + 3] = causes.land[i] ? v[3] : v[4];
   }
   return flat;
 }
@@ -310,18 +313,23 @@ export function provinceGroups(world: World, province: Int32Array, seams: SeamLa
   return group;
 }
 
-// 省份预览（剪刀、涂省、合并）：这些格换成将来的省（剪刀还多一条将来的切线 seam），返回整份分组、
+// 省份预览（剪刀、涂省、合并）：这些格换成将来的省（剪刀还多几条将来的切线 seams），返回整份分组、
 // （省份着色时的）平涂与切线，交给 Renderer.setGroupPreview。着色器照此画出将来真实的省界，用的是和结果相同的编码、扭曲与切线规则
 export function groupPreview(
   world: World,
-  change: { cells: ArrayLike<number>; ids: ArrayLike<number>; seam?: [number, number][] },
+  change: { cells: ArrayLike<number>; ids: ArrayLike<number>; seams?: Omit<ProvinceSeam, 'id'>[] },
   mode: ViewMode,
 ): { group: Float32Array; flat: Uint8Array | null; seams: SeamLayers | null } {
   const province = world.causes.province.slice();
   for (let k = 0; k < change.cells.length; k++) province[change.cells[k]] = change.ids[k];
-  const base = world.causes.province;
-  const kindOf = (p: number, i: number) => world.small.provinces[p]?.kind ?? world.small.provinces[base[i]]?.kind;
-  const list: ProvinceSeam[] = [...(world.small.provinceSeams ?? []), ...(change.seam ? [{ id: 'preview', line: change.seam }] : [])];
+  // 还没有的新省（剪刀切出来的几块）：类型随它切出来的那个省（与 cut_province 里按多数取的相同：一块只来自一个省）
+  const born = new Map<number, ProvinceKind | undefined>();
+  for (let k = 0; k < change.cells.length; k++) {
+    const id = change.ids[k];
+    if (!world.small.provinces[id] && !born.has(id)) born.set(id, world.small.provinces[world.causes.province[change.cells[k]]]?.kind);
+  }
+  const kindOf = (p: number) => world.small.provinces[p]?.kind ?? born.get(p);
+  const list: ProvinceSeam[] = [...(world.small.provinceSeams ?? []), ...(change.seams ?? []).map((sm, k) => ({ id: `preview-${k}`, ...sm }))];
   const seams = seamLayers(world, province, list);
   return { group: provinceGroups(world, province, seams), flat: mode === 'provinces' ? provinceFlat(world, province, kindOf) : null, seams };
 }

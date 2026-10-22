@@ -135,15 +135,16 @@ function borderOffsets(w: World, line: Pt[], A: number, B: number, cell: Int32Ar
 }
 
 // 切一刀：剪刀（界面）的线 → cut_province；同样的块走旧的 batch（assign_province 'new'）作对照。
-// line 是命令里的线，seam 是记下的切线（切开省的那一段）
+// line 是命令里的线，future 是会记下的切线（每个切开的省一条），trimmed 是第一条（切开省的那一段）
 function cutBoth(eng: Engine, raw: Pt[]) {
   const w = eng.world;
-  const { line, cut, seam: trimmed } = scissors(w, raw);
+  const { line, cut, seams: future } = scissors(w, raw);
+  const trimmed = future[0].line;
   const seam = eng.clone();
   seam.exec({ op: 'cut_province', line });
   const old = eng.clone();
   old.exec({ op: 'batch', commands: cut.plans.flatMap((pl) => pl.parts.slice(1).map((cells) => ({ op: 'assign_province' as const, cells, province: 'new' as const }))) });
-  return { line, trimmed, cut, seam, old };
+  return { line, trimmed, future, cut, seam, old };
 }
 
 describe('剪刀切线', () => {
@@ -156,12 +157,13 @@ describe('剪刀切线', () => {
     const H = 512;
     const raster = rasterizeWorld(eng.world, W, H);
     for (const angle of [0, 1.6]) {
-      const { line, trimmed, cut, seam, old } = cutBoth(eng, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.5, angle));
+      const { line, trimmed, future, cut, seam, old } = cutBoth(eng, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.5, angle));
       expect(cut.plans.map((pl) => pl.id)).toEqual([A]);
       const B = eng.world.small.nextProvince;
-      // 两条路分出来的格一模一样，只是 cut_province 多记了一条切线（命令里的线去掉伸进邻省的线头）
+      // 两条路分出来的格一模一样，只是 cut_province 多记了一条切线（命令里的线去掉伸进邻省的线头，与切开的两块）
       expect(Array.from(seam.world.causes.province)).toEqual(Array.from(old.world.causes.province));
-      expect(seam.world.small.provinceSeams?.map((s) => s.line)).toEqual([trimmed]);
+      expect(seam.world.small.provinceSeams?.map(({ line, provinces }) => ({ line, provinces }))).toEqual(future);
+      expect(future.map((f) => f.provinces)).toEqual([[A, B]]);
       expect(trimmed.length).toBeLessThanOrEqual(line.length);
       expect(old.world.small.provinceSeams).toBeUndefined();
       // 地形不变，栅格化的格也不变：两边共用一份
@@ -173,6 +175,88 @@ describe('剪刀切线', () => {
     }
   });
 
+  it('一条直线连着切开几个省：每个省切开的地方都是画的线', () => {
+    const eng = region().clone();
+    const w0 = eng.world;
+    const { mesh } = w0;
+    const s = mesh.spacing;
+    const center = inland(w0, (i) => mesh.x[i] > 0.3 && mesh.x[i] < 1.7 && mesh.y[i] > 0.2 && mesh.y[i] < 0.8);
+    const cx = mesh.x[center];
+    const cy = mesh.y[center];
+    // 一排三个省，各约 7 格宽
+    const ids: number[] = [];
+    for (const off of [-7, 0, 7]) {
+      const cells: number[] = [];
+      for (let i = 0; i < mesh.n; i++) if (w0.causes.land[i] && Math.hypot(mesh.x[i] - (cx + off * s), mesh.y[i] - cy) < 3.5 * s) cells.push(i);
+      eng.exec({ op: 'assign_province', cells, province: 'new' });
+      ids.push(eng.world.small.nextProvince - 1);
+    }
+    // 一刀直线：化简后只剩两个点、一段线，穿过三个省
+    const { line, cut, seams } = scissors(eng.world, [
+      [cx - 10 * s, cy + 0.3 * s],
+      [cx + 10 * s, cy - 0.2 * s],
+    ]);
+    expect(line).toHaveLength(2);
+    expect(cut.plans.map((pl) => pl.id)).toEqual(ids);
+    const W = 1024;
+    const H = 512;
+    const raster = rasterizeWorld(eng.world, W, H);
+    eng.exec({ op: 'cut_province', line });
+    const w = eng.world;
+    // 每个切开的省一条切线，只留线在那个省里的一段
+    expect(w.small.provinceSeams?.map((sm) => sm.provinces)).toEqual(seams.map((sm) => sm.provinces));
+    const out = exportProvinceCells(w, raster.cell, W, H).cell;
+    for (const sm of w.small.provinceSeams!) {
+      expect(sm.provinces).toHaveLength(2);
+      const r = borderOffsets(w, sm.line, sm.provinces[0], sm.provinces[1], out, W, H);
+      expect(r.count).toBeGreaterThanOrEqual(10);
+      expect(r.max).toBeLessThanOrEqual(1.5);
+    }
+  });
+
+  it('切线只在切开的那几块之间换像素：邻省的像素一个不动', () => {
+    const base = region();
+    const w0 = base.world;
+    const { mesh } = w0;
+    const W = 512;
+    const H = 256;
+    const raster = rasterizeWorld(w0, W, H);
+    // 随便切十几刀（固定的随机数）：省里任意一点、任意方向、长 4–12 格、弯一点
+    let seed = 7;
+    const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+    const land = Object.keys(w0.small.provinces)
+      .map(Number)
+      .filter((id) => w0.small.provinces[id].land && provinceCells(w0, id).length >= 20);
+    let cuts = 0;
+    let moved = 0;
+    for (let t = 0; t < 30 && cuts < 16; t++) {
+      const cells = provinceCells(w0, land[Math.floor(rnd() * land.length)]);
+      const c = cells[Math.floor(rnd() * cells.length)];
+      const { line, cut } = scissors(w0, wavy(w0, mesh.x[c], mesh.y[c], 4 + rnd() * 8, rnd() * 1.5, rnd() * Math.PI));
+      if (!cut.plans.length) continue;
+      const eng = base.clone();
+      eng.exec({ op: 'cut_province', line });
+      const w = eng.world;
+      const out = exportProvinceCells(w, raster.cell, W, H).cell;
+      // 换了省的像素：前后两个省是同一条切线切出来的几块
+      const pieceOf = new Map<number, number>();
+      w.small.provinceSeams!.forEach((sm, k) => {
+        for (const p of sm.provinces) pieceOf.set(p, k);
+      });
+      for (let p = 0; p < out.length; p++) {
+        const a = w.causes.province[raster.cell[p]];
+        const b = w.causes.province[out[p]];
+        if (a === b) continue;
+        moved++;
+        expect(pieceOf.get(a)).toBeDefined();
+        expect(pieceOf.get(b)).toBe(pieceOf.get(a));
+      }
+      cuts++;
+    }
+    expect(cuts).toBe(16);
+    expect(moved).toBeGreaterThan(200);
+  });
+
   it('导出逐行扫描与逐点找最近的段结果相同（着色器按段号依次画、近的胜，也是这条规则）', () => {
     const eng = region().clone();
     const w0 = eng.world;
@@ -181,7 +265,8 @@ describe('剪刀切线', () => {
     // 两刀交叉：最近的段在两条线之间换来换去
     for (const angle of [0.4, 2.0]) eng.exec({ op: 'cut_province', line: scissors(eng.world, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.2, angle)).line });
     const w = eng.world;
-    expect(w.small.provinceSeams).toHaveLength(2);
+    // 第二刀切开了第一刀切出来的两块：每个切开的省一条切线，一共三条
+    expect(w.small.provinceSeams).toHaveLength(3);
     const W = 512;
     const H = 256;
     const raster = rasterizeWorld(w, W, H);
@@ -243,13 +328,27 @@ describe('剪刀切线', () => {
     const w0 = eng.world;
     const center = inland(w0, (i) => w0.mesh.x[i] > 0.3 && w0.mesh.x[i] < 1.7 && w0.mesh.y[i] > 0.2 && w0.mesh.y[i] < 0.8);
     const A = bigProvince(eng, center, 7);
-    const B = eng.world.small.nextProvince;
+    // 这一刀还切开了旁边的一个省：每个切开的省各记一条切线
     eng.exec({ op: 'cut_province', line: scissors(eng.world, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.5, 0.3)).line });
-    eng.exec({ op: 'merge_province', from: B, into: A });
     const w = eng.world;
-    expect(w.small.provinceSeams).toHaveLength(1);
-    const L = seamLayers(w, w.causes.province, w.small.provinceSeams)!;
-    for (let s = 0; s < L.segs.count; s++) expect(L.gL[s]).toBe(L.gR[s]);
+    const seams = w.small.provinceSeams!;
+    expect(seams.length).toBeGreaterThanOrEqual(2);
+    expect(seams[0].provinces[0]).toBe(A);
+    const active = () => {
+      const L = seamLayers(w, w.causes.province, w.small.provinceSeams)!;
+      const on = seams.map(() => 0);
+      for (let s = 0; s < L.segs.count; s++) if (L.gL[s] !== L.gR[s]) on[L.segs.seam[s]]++;
+      return on;
+    };
+    expect(active().every((n) => n > 0)).toBe(true);
+    // 只把 A 切出来的那块并回去：A 的切线失效，别的省的切线照旧
+    eng.exec({ op: 'merge_province', from: seams[0].provinces[1], into: A });
+    expect(active()[0]).toBe(0);
+    expect(active().slice(1).every((n) => n > 0)).toBe(true);
+    // 都并回去：切线都失效
+    for (const sm of seams.slice(1)) for (const p of sm.provinces.slice(1)) eng.exec({ op: 'merge_province', from: p, into: sm.provinces[0] });
+    expect(w.small.provinceSeams).toHaveLength(seams.length);
+    expect(active().every((n) => n === 0)).toBe(true);
     // 导出的省份图与没有切线时逐字节相同
     const bmp = (e: Engine) => unzipSync(exportPackage(e.world, e.toDoc(), { width: 512, height: 256, seaLevelGray: 95, maxElevation: 6000 }).zip)['provinces.bmp'];
     const bare = eng.clone();
@@ -317,24 +416,25 @@ describe('剪刀切线', () => {
     for (const raw of raws) {
       const e = eng.clone();
       const w = e.world;
-      // 界面上：预览的块与新省份的编号（按命令里的顺序）
-      const { line, cut } = scissors(w, raw);
+      // 界面上：预览的块与新省份的编号（与剪刀工具一样，编号取 seams 里记的）
+      const { line, cut, seams } = scissors(w, raw);
       expect(line.length).toBeLessThanOrEqual(raw.length + 2);
       const expect0 = w.causes.province.slice();
-      let next = w.small.nextProvince;
       let pieces = 0;
-      for (const pl of cut.plans) {
-        for (const part of pl.parts.slice(1)) {
-          for (const c of part) expect0[c] = next;
-          next++;
+      cut.plans.forEach((pl, k) => {
+        pl.parts.forEach((part, j) => {
+          if (!j) return;
+          for (const c of part) expect0[c] = seams[k].provinces[j];
           pieces++;
-        }
-      }
+        });
+      });
       expect(pieces).toBeGreaterThan(raw.length === 4 ? 1 : 2);
-      // 执行命令：分出来的格与编号都与预览相同
+      const next = w.small.nextProvince + pieces;
+      // 执行命令：分出来的格与编号、记下的切线都与预览相同
       e.exec({ op: 'cut_province', line });
       expect(Array.from(w.causes.province)).toEqual(Array.from(expect0));
       expect(w.small.nextProvince).toBe(next);
+      expect(w.small.provinceSeams?.map(({ line, provinces }) => ({ line, provinces }))).toEqual(seams);
     }
   });
 

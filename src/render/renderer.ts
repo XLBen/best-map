@@ -737,6 +737,9 @@ export class Renderer {
     this.idTex = this.makeTex();
     this.seamTex = this.makeTex();
     this.seamDepth = gl.createRenderbuffer()!;
+    // 每段的数据先放一个空纹素：还没有切线时合成程序照样绑着它，不能是没有内容的纹理
+    gl.bindTexture(gl.TEXTURE_2D, this.tex.segData);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4));
     // 切线：长方形的四个角（每个顶点一个），与每段的实例数据：10 个数（aSeg 4、aNb 4、aEnds 2）
     this.seamVao = gl.createVertexArray()!;
     gl.bindVertexArray(this.seamVao);
