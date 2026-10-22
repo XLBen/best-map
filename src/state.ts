@@ -12,6 +12,7 @@ import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
+import type { HighlightLayer } from './render/colors';
 import { EngineHost, type WorkerLike } from './sandbox';
 import { clearLoading, markLoading, readLoading, tidyTrusted, trustScripts, uniqueScripts, untrustedScripts } from './trust';
 
@@ -148,8 +149,9 @@ export const adjustPreview = signal<TerrainPreview | null>(null);
 export const wizardOpen = signal(false);
 export const helpOpen = signal(false);
 // “调整”面板拖气候、河流的滑块，生态编辑器拖色块时：停下后算出的将来的世界，地图直接画它。
-// key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）
-export const adjustPreviewWorld = signal<{ key: string; base: World; world: World } | null>(null);
+// key：预览的是哪条命令（JSON）；base：按哪个世界算的（世界换了就不再显示）；
+// layers：同时要高亮的格（资源包“用到这个世界”：会变的格描边、新生态的格淡淡涂上）
+export const adjustPreviewWorld = signal<{ key: string; base: World; world: World; layers?: HighlightLayer[] } | null>(null);
 // 正在拖的那一行下面的小字：正在算预览 / 地图上是松手后的样子 / 松手后约 N 秒出结果
 export const adjustPreviewNote = signal<{ key: string; text: string } | null>(null);
 // 当前世界的状态编号（Worker 每改一次换一个）：预览只在按这个状态算出来时才显示，过期的丢掉
@@ -1186,8 +1188,17 @@ export function previewReply(r: Response): WorldPreview | null {
   return { result: r.preview, world: previewWorldOf(base, r.world), base };
 }
 
+// 最近一次确切预览没算成时 Worker 说的原因（比如资源包里的脚本写错了），按命令记：
+// 问的是别的命令（或这条还没算就被更新的换掉了）时为 null，不拿别处的出错冒充这一条的
+let worldPreviewFailure: { key: string; error: string } | null = null;
+export function worldPreviewError(cmd: Command): string | null {
+  const f = worldPreviewFailure;
+  return f && f.key === JSON.stringify(cmd) ? f.error : null;
+}
+
 const worldPreviews = latest(async (cmd: Command) => {
   const r = await call({ kind: 'previewWorld', cmd }, null);
+  worldPreviewFailure = r.ok ? null : { key: JSON.stringify(cmd), error: r.error };
   if (r.ok && r.preview) {
     noteCost(cmd, r.preview.ms);
     lastPreviewMs = r.preview.ms;

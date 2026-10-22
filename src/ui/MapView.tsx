@@ -256,6 +256,12 @@ export function MapView() {
         if (ap.relief.cells.length) layers.push(...reliefLayers(ap.relief));
         key.push(ap);
       }
+      // 调整面板、资源包的预览世界带的高亮（资源包：会变的格描边、新生态的格淡淡涂上）
+      const apw = adjustPreviewWorld.value;
+      if (apw?.layers && apw.base === w) {
+        layers.push(...apw.layers);
+        key.push(apw);
+      }
       // 改完后变化的格：淡淡地亮一下就淡出，轮廓跟着一起淡（着色器里轮廓的浓淡随填充）
       const fl = flash.value;
       if (fl) {
