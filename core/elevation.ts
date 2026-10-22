@@ -1,4 +1,4 @@
-import { graphDistance } from './mesh';
+import { type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
 import { accumulate, route } from './routing';
@@ -19,20 +19,61 @@ export interface ElevationResult {
   coastKm: Float64Array;
 }
 
+// 每格的噪声因子：抬升、可蚀性的倍数与初始高程的起伏。只取决于网格与种子，
+// 所以按网格缓存（每个网格只留两个种子），编辑地形时不再重算这三个分形噪声场
+interface NoiseFactors {
+  fu: Float64Array;
+  fk: Float64Array;
+  fs: Float64Array;
+}
+const noiseCache = new WeakMap<Mesh, Map<number, NoiseFactors>>();
+
+function noiseFactors(mesh: Mesh, seed: number): NoiseFactors {
+  let bySeed = noiseCache.get(mesh);
+  if (!bySeed) noiseCache.set(mesh, (bySeed = new Map()));
+  let f = bySeed.get(seed);
+  if (f) return f;
+  const n = mesh.n;
+  const fu = new Float64Array(n);
+  const fk = new Float64Array(n);
+  const fs = new Float64Array(n);
+  if (mesh.kind === 'sphere') {
+    // 整个星球：同样的频率，在球面的布局坐标上取三维噪声
+    const noiseU = gradientNoise3(mixSeed(seed, 101));
+    const noiseK = gradientNoise3(mixSeed(seed, 102));
+    const noiseS = gradientNoise3(mixSeed(seed, 103));
+    for (let i = 0; i < n; i++) {
+      const px = mesh.p[3 * i] * LAYOUT_R;
+      const py = mesh.p[3 * i + 1] * LAYOUT_R;
+      const pz = mesh.p[3 * i + 2] * LAYOUT_R;
+      fu[i] = 0.8 + 0.4 * (0.5 + 0.5 * fbm3(noiseU, px, py, pz, 7, 3));
+      fk[i] = 0.75 + 0.5 * (0.5 + 0.5 * fbm3(noiseK, px, py, pz, 9, 3));
+      fs[i] = fbm3(noiseS, px, py, pz, 25, 2);
+    }
+  } else {
+    const noiseU = gradientNoise(mixSeed(seed, 101));
+    const noiseK = gradientNoise(mixSeed(seed, 102));
+    const noiseS = gradientNoise(mixSeed(seed, 103));
+    for (let i = 0; i < n; i++) {
+      const x = mesh.x[i];
+      const y = mesh.y[i];
+      fu[i] = 0.8 + 0.4 * (0.5 + 0.5 * fbm(noiseU, x, y, 7, 3));
+      fk[i] = 0.75 + 0.5 * (0.5 + 0.5 * fbm(noiseK, x, y, 9, 3));
+      fs[i] = fbm(noiseS, x, y, 25, 2);
+    }
+  }
+  f = { fu, fk, fs };
+  if (bySeed.size >= 2) bySeed.delete(bySeed.keys().next().value!);
+  bySeed.set(seed, f);
+  return f;
+}
+
 export function computeElevation(world: World): ElevationResult {
   const { mesh, causes, small, kmPerUnit } = world;
   const n = mesh.n;
   const land = causes.land;
-  const seed = world.settings.seed;
-  const noiseU = gradientNoise(mixSeed(seed, 101));
-  const noiseK = gradientNoise(mixSeed(seed, 102));
-  const noiseS = gradientNoise(mixSeed(seed, 103));
-  // 整个星球：同样的频率，在球面的布局坐标上取三维噪声
   const sphere = mesh.kind === 'sphere' ? mesh : null;
-  const noiseU3 = gradientNoise3(mixSeed(seed, 101));
-  const noiseK3 = gradientNoise3(mixSeed(seed, 102));
-  const noiseS3 = gradientNoise3(mixSeed(seed, 103));
-  const at3 = (i: number): [number, number, number] => [sphere!.p[3 * i] * LAYOUT_R, sphere!.p[3 * i + 1] * LAYOUT_R, sphere!.p[3 * i + 2] * LAYOUT_R];
+  const { fu, fk, fs } = noiseFactors(mesh, world.settings.seed);
 
   // 海岸距离
   const coastCells: number[] = [];
@@ -56,17 +97,9 @@ export function computeElevation(world: World): ElevationResult {
   const areaReg = sphere ? (mesh.totalArea * (kmPerUnit / 2) * (kmPerUnit / 2)) / 20000 : (mesh.width * mesh.height * kmPerUnit * kmPerUnit) / 20000;
   const forced = new Int32Array(n).fill(-1);
   for (let i = 0; i < n; i++) {
-    const x = mesh.x[i];
-    const y = mesh.y[i];
     // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
-    if (sphere) {
-      const [px, py, pz] = at3(i);
-      u[i] = (0.035 + causes.uplift[i]) * (0.8 + 0.4 * (0.5 + 0.5 * fbm3(noiseU3, px, py, pz, 7, 3)));
-      K[i] = causes.erod[i] * (0.75 + 0.5 * (0.5 + 0.5 * fbm3(noiseK3, px, py, pz, 9, 3)));
-    } else {
-      u[i] = (0.035 + causes.uplift[i]) * (0.8 + 0.4 * (0.5 + 0.5 * fbm(noiseU, x, y, 7, 3)));
-      K[i] = causes.erod[i] * (0.75 + 0.5 * (0.5 + 0.5 * fbm(noiseK, x, y, 9, 3)));
-    }
+    u[i] = (0.035 + causes.uplift[i]) * fu[i];
+    K[i] = causes.erod[i] * fk[i];
     areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
   }
   for (const g of small.guides) {
@@ -83,8 +116,7 @@ export function computeElevation(world: World): ElevationResult {
   const h = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     if (!land[i]) continue;
-    const s = sphere ? fbm3(noiseS3, ...at3(i), 25, 2) : fbm(noiseS, mesh.x[i], mesh.y[i], 25, 2);
-    h[i] = coastKm[i] * 0.002 * (0.3 + u[i]) + 0.05 * (1 + s);
+    h[i] = coastKm[i] * 0.002 * (0.3 + u[i]) + 0.05 * (1 + fs[i]);
   }
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
