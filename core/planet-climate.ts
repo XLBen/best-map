@@ -1,7 +1,7 @@
-import { type ClimateBase, insolationTable, radiativeTemp, saturation } from './climate';
+import { type ClimateBase, ContentMemo, insolationTable, radiativeTemp, saturation, smoothPass } from './climate';
 import { type SphereMesh, gradient, ringDistance } from './mesh';
 import { computeOcean } from './ocean';
-import { PLANET_SWEEPS, buildFlowSphere, solveTransportSphere } from './sphere-flow';
+import { PLANET_SWEEPS, type SphereFlow, buildFlowSphere } from './sphere-flow';
 import { clamp, smoothstep } from './rng';
 import { type Derived, type World, worldLatitude } from './world';
 
@@ -15,7 +15,7 @@ import { type Derived, type World, worldLatitude } from './world';
 //   · 扫描固定遍数：一处修改不会因为迭代次数变化而改动无关的地方
 //   · 季风用的大尺度陆地占比在 2° 经纬格上做东西方向首尾相接的高斯模糊（比几百轮格上扩散快得多）
 
-export { PLANET_SWEEPS, buildFlowSphere, solveTransportSphere, sphereAux } from './sphere-flow';
+export { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './sphere-flow';
 
 // ---------- 大尺度陆地占比（季风用） ----------
 
@@ -106,8 +106,9 @@ export function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit
     const ty = fy - r0;
     const ca = ((c0 % COLS) + COLS) % COLS;
     const cb = (ca + 1) % COLS;
-    const g = (r: number, c: number) => blurred[r * COLS + c];
-    out[i] = (g(r0, ca) * (1 - tx) + g(r0, cb) * tx) * (1 - ty) + (g(r0 + 1, ca) * (1 - tx) + g(r0 + 1, cb) * tx) * ty;
+    const a = r0 * COLS;
+    const b = (r0 + 1) * COLS;
+    out[i] = (blurred[a + ca] * (1 - tx) + blurred[a + cb] * tx) * (1 - ty) + (blurred[b + ca] * (1 - tx) + blurred[b + cb] * tx) * ty;
   }
   list.unshift({ land: land.slice(), kmPerUnit, result: out });
   // 每个网格留两份（预览用的副本不会把正在用的挤掉）
@@ -117,15 +118,53 @@ export function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit
 
 // ---------- 整个星球的气候 ----------
 
-export function computeClimateSphere(world: World, elevation: Float32Array, out: Derived): ClimateBase {
+// 输运图里输运要用的部分（入流表，见 SphereFlow）
+type Inflow = Pick<SphereFlow, 'order' | 'koff' | 'src' | 'w' | 'den'>;
+
+// 只取决于地形的部分：风、输运图、大陆度、洋流（海温的偏离与它随风带上陆地的部分）、地形对降水的影响，以及
+// 不含直减率、冷暖微调的温度。只取决于海陆、高程、各格纬度、倾角、自转、日照、洋流强弱、比例尺与扫描遍数，
+// 只改冷暖干湿、湿度、直减率时原样复用
+interface SphereTerrain {
+  // 写进推导的（windSX、windSY、windWX、windWY、continentality、currentX、currentY、sstAnom 的顺序）
+  written: Float32Array[];
+  flows: Inflow[];
+  // 格距（km）与按格距在约 150 km、900 km 上降下、回到饱和的比例
+  dKm: Float64Array;
+  e150: Float64Array;
+  e900: Float64Array;
+  // 两季：年均温加季节振幅（不含直减率与微调）、洋流带来的增减（没有洋流时为 null）、海面温度的饱和水汽量
+  t0: Float64Array[];
+  add: Float64Array[] | null;
+  satSea: Float64Array[];
+  // 两季降水速率里只取决于纬度的部分（辐合 × 副高下沉 × 风暴带）、背风的抑制（不在背风处为 1）、洋流的影响
+  rain: Float64Array[];
+  lee: Float64Array[];
+  cur: Float64Array[] | null;
+}
+
+// 一份约每万格 2.7 MB：大网格只留一份
+export const sphereMemo = new ContentMemo<SphereTerrain>(60000);
+
+const SEASONS = [1, -1] as const;
+const itczOf = (sigma: number, tilt: number) => sigma * 0.35 * tilt;
+
+function sphereTerrain(world: World, elevation: Float32Array, out: Derived): SphereTerrain {
   const { causes, small, kmPerUnit } = world;
   const mesh = world.mesh as SphereMesh;
   const n = mesh.n;
   const planet = small.planet;
   const land = causes.land;
-  const ins = insolationTable(planet.tilt, planet.solar);
   const lat = new Float64Array(n);
   for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
+  const strength = planet.currents ?? 1;
+  const written = [out.windSX, out.windSY, out.windWX, out.windWY, out.continentality, out.currentX, out.currentY, out.sstAnom];
+  const params = [planet.tilt, planet.rotation, planet.solar, strength, kmPerUnit, PLANET_SWEEPS.wind, PLANET_SWEEPS.ocean];
+  const hit = sphereMemo.find(mesh, [land, elevation, lat], params);
+  if (hit) {
+    written.forEach((a, k) => a.set(hit.written[k]));
+    return hit;
+  }
+  const ins = insolationTable(planet.tilt, planet.solar);
   const spacingKm = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     let s = 0;
@@ -146,18 +185,16 @@ export function computeClimateSphere(world: World, elevation: Float32Array, out:
   // 高程梯度（m/km），先平滑到约 200 km 尺度
   const hx = new Float64Array(n);
   const hy = new Float64Array(n);
-  const hPos = new Float64Array(n);
+  let hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? Math.max(0, elevation[i]) : 0;
   {
     const passes = Math.max(1, Math.round(((200 / kmPerUnit / mesh.spacing) ** 2) / 2));
-    const next = new Float64Array(n);
+    let next = new Float64Array(n);
     for (let it = 0; it < passes; it++) {
-      for (let i = 0; i < n; i++) {
-        let s = hPos[i];
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) s += hPos[mesh.adj[e]];
-        next[i] = s / (1 + mesh.off[i + 1] - mesh.off[i]);
-      }
-      hPos.set(next);
+      smoothPass(mesh, hPos, next);
+      const t = hPos;
+      hPos = next;
+      next = t;
     }
   }
   for (let i = 0; i < n; i++) {
@@ -166,15 +203,13 @@ export function computeClimateSphere(world: World, elevation: Float32Array, out:
     hy[i] = gy / kmPerUnit;
   }
 
-  const seasons = [1, -1] as const;
   const winds: [Float32Array, Float32Array][] = [
     [out.windSX, out.windSY],
     [out.windWX, out.windWY],
   ];
-  const itczOf = (sigma: number) => sigma * 0.35 * planet.tilt;
-  seasons.forEach((sigma, si) => {
+  SEASONS.forEach((sigma, si) => {
     const [wx, wy] = winds[si];
-    const phiC = itczOf(sigma);
+    const phiC = itczOf(sigma, planet.tilt);
     for (let i = 0; i < n; i++) {
       const d = lat[i] - phiC;
       const ad = Math.min(90, Math.abs(d));
@@ -204,25 +239,23 @@ export function computeClimateSphere(world: World, elevation: Float32Array, out:
     }
   });
 
-  const flow = winds.map(([wx, wy]) => buildFlowSphere(mesh, wx, wy, { lag: 'seam' }));
+  const flows = winds.map(([wx, wy]) => buildFlowSphere(mesh, wx, wy, { lag: 'seam' }));
 
   // 大陆度：海洋气团示踪量随风深入陆地后衰减
+  const marineInit = new Float64Array(n);
+  const decay = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    marineInit[i] = land[i] ? 0.5 : 1;
+    if (land[i]) decay[i] = Math.exp(-spacingKm[i] / 1500);
+  }
   const marine = new Float64Array(n);
   for (let si = 0; si < 2; si++) {
-    const m = solveTransportSphere(
-      mesh,
-      flow[si],
-      PLANET_SWEEPS.wind,
-      (i, inflow) => (land[i] ? inflow * Math.exp(-spacingKm[i] / 1500) : 1),
-      (i) => (land[i] ? 0.5 : 1),
-      (i) => (land[i] ? 0 : 1),
-    );
+    const m = landSweeps(flows[si], land, marineInit, decay);
     for (let i = 0; i < n; i++) marine[i] += 0.5 * clamp(m[i], 0, 1);
   }
   for (let i = 0; i < n; i++) out.continentality[i] = land[i] ? 1 - marine[i] : 0;
 
   // 洋流：海面温度的偏离，再由风带上陆地。洋流强弱为 0 时整段跳过，结果与没有洋流逐值相同
-  const strength = planet.currents ?? 1;
   let dSST: Float64Array | null = null;
   let anomaly: Float64Array[] | null = null;
   if (strength > 0) {
@@ -243,16 +276,13 @@ export function computeClimateSphere(world: World, elevation: Float32Array, out:
     }
     dSST = sst;
     // 海温的偏离随风带上陆地：约 1200 km 内衰减，山会挡住
-    anomaly = flow.map((f) =>
-      solveTransportSphere(
-        mesh,
-        f,
-        PLANET_SWEEPS.wind,
-        (i, a) => (land[i] ? a * Math.exp((-spacingKm[i] * (1 + Math.max(0, elevation[i]) / 800)) / 1200) : sst[i]),
-        (i) => (land[i] ? 0 : sst[i]),
-        (i) => (land[i] ? 0 : sst[i]),
-      ),
-    );
+    const sstInit = new Float64Array(n);
+    const sstDecay = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      sstInit[i] = land[i] ? 0 : sst[i];
+      if (land[i]) sstDecay[i] = Math.exp((-spacingKm[i] * (1 + Math.max(0, elevation[i]) / 800)) / 1200);
+    }
+    anomaly = flows.map((f) => landSweeps(f, land, sstInit, sstDecay));
     // 海风：吹离岸风的海岸也受海的影响（沿岸约 150 km 内和邻格平均）
     let meanSpacing = 0;
     for (let i = 0; i < n; i++) meanSpacing += spacingKm[i];
@@ -281,99 +311,174 @@ export function computeClimateSphere(world: World, elevation: Float32Array, out:
     out.currentX.fill(0);
     out.currentY.fill(0);
   }
+  for (let i = 0; i < n; i++) out.sstAnom[i] = dSST && anomaly ? (land[i] ? (0.8 * (anomaly[0][i] + anomaly[1][i])) / 2 : dSST[i]) : 0;
 
-  // 温度
-  const base: ClimateBase = { tS: new Float32Array(n), tW: new Float32Array(n), pS: new Float32Array(n), pW: new Float32Array(n) };
-  const oceanT: Float64Array[] = [new Float64Array(n), new Float64Array(n)];
+  // 温度里只取决于地形的部分；洋流：海上直接改变海温，陆上是风带来的海洋影响
+  const t0 = [new Float64Array(n), new Float64Array(n)];
+  const add = dSST && anomaly ? [new Float64Array(n), new Float64Array(n)] : null;
+  const satSea = [new Float64Array(n), new Float64Array(n)];
   for (let i = 0; i < n; i++) {
     const q = ins(lat[i]);
     const tAnn = radiativeTemp(q.ann);
     const amp = land[i] ? 0.3 + 0.7 * out.continentality[i] : 0.3;
-    const lapse = land[i] ? (planet.lapse * Math.max(0, elevation[i])) / 1000 : 0;
-    const off = causes.tempOffset[i];
     const k = 0.09 * (1 + (0.4 * Math.abs(lat[i])) / 90);
-    base.tS[i] = tAnn + k * (q.s - q.ann) * amp - lapse + off;
-    base.tW[i] = tAnn + k * (q.w - q.ann) * amp - lapse + off;
-    oceanT[0][i] = tAnn + k * (q.s - q.ann) * 0.3;
-    oceanT[1][i] = tAnn + k * (q.w - q.ann) * 0.3;
-    // 洋流：海上直接改变海温；陆上是风带来的海洋影响
-    if (dSST && anomaly) {
+    t0[0][i] = tAnn + k * (q.s - q.ann) * amp;
+    t0[1][i] = tAnn + k * (q.w - q.ann) * amp;
+    let oS = tAnn + k * (q.s - q.ann) * 0.3;
+    let oW = tAnn + k * (q.w - q.ann) * 0.3;
+    if (add && dSST && anomaly) {
       if (land[i]) {
-        base.tS[i] += 0.8 * anomaly[0][i];
-        base.tW[i] += 0.8 * anomaly[1][i];
+        add[0][i] = 0.8 * anomaly[0][i];
+        add[1][i] = 0.8 * anomaly[1][i];
       } else {
-        base.tS[i] += dSST[i];
-        base.tW[i] += dSST[i];
-        oceanT[0][i] += dSST[i];
-        oceanT[1][i] += dSST[i];
+        add[0][i] = dSST[i];
+        add[1][i] = dSST[i];
+        oS += dSST[i];
+        oW += dSST[i];
       }
     }
+    satSea[0][i] = saturation(oS);
+    satSea[1][i] = saturation(oW);
   }
-  for (let i = 0; i < n; i++) out.sstAnom[i] = dSST && anomaly ? (land[i] ? (0.8 * (anomaly[0][i] + anomaly[1][i])) / 2 : dSST[i]) : 0;
 
-  // 降水
+  // 降水里只取决于地形的部分
+  const rain = [new Float64Array(n), new Float64Array(n)];
+  const lee = [new Float64Array(n), new Float64Array(n)];
+  const cur = dSST && anomaly ? [new Float64Array(n), new Float64Array(n)] : null;
   for (let si = 0; si < 2; si++) {
-    const sigma = seasons[si];
     const [wx, wy] = winds[si];
-    const T = si === 0 ? base.tS : base.tW;
-    const P = si === 0 ? base.pS : base.pW;
-    const phiC = itczOf(sigma);
-    const rate = new Float64Array(n);
+    const phiC = itczOf(SEASONS[si], planet.tilt);
     for (let i = 0; i < n; i++) {
       const d = lat[i] - phiC;
       const ad = Math.abs(d);
       const conv = 1 + 1.6 * Math.exp(-((d / 9) ** 2));
       const subs = 1 - 0.75 * Math.exp(-(((ad - 27) / 9) ** 2));
       const storm = 1 + 0.45 * Math.exp(-(((ad - 52) / 11) ** 2));
-      const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
-      let r = (conv * subs * storm * warmth) / 1800;
+      rain[si][i] = conv * subs * storm;
+      lee[si][i] = 1;
       if (land[i]) {
         const wm = Math.hypot(wx[i], wy[i]) || 1;
         const up = (wx[i] * hx[i] + wy[i] * hy[i]) / wm;
-        if (up < 0) r *= Math.exp(up / 1.5);
+        if (up < 0) lee[si][i] = Math.exp(up / 1.5);
       }
       // 冷水海岸空气稳定（多雾少雨），暖流上空对流更强
-      if (dSST && anomaly) r *= clamp(1 + 0.06 * (land[i] ? anomaly[si][i] : dSST[i]), 0.5, 1.25);
-      rate[i] = r;
+      if (cur && dSST && anomaly) cur[si][i] = clamp(1 + 0.06 * (land[i] ? anomaly[si][i] : dSST[i]), 0.5, 1.25);
     }
-    const satOcean = (i: number) => planet.humidity * saturation(oceanT[si][i]);
-    const capOf = (i: number) => planet.humidity * saturation(T[i]) * 1.1;
+  }
+  const e150 = new Float64Array(n);
+  const e900 = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    e150[i] = 1 - Math.exp(-spacingKm[i] / 150);
+    e900[i] = 1 - Math.exp(-spacingKm[i] / 900);
+  }
+
+  // 只留输运要用的入流表（frac、lagged 不再用到）
+  const kept = flows.map(({ order, koff, src, w, den }): Inflow => ({ order, koff, src, w, den }));
+  const t: SphereTerrain = { written: written.map((a) => a.slice()), flows: kept, dKm: spacingKm, e150, e900, t0, add, satSea, rain, lee, cur };
+  sphereMemo.keep(mesh, [land.slice(), elevation.slice(), lat], params, t);
+  return t;
+}
+
+export function computeClimateSphere(world: World, elevation: Float32Array, out: Derived): ClimateBase {
+  const { causes, small } = world;
+  const n = world.mesh.n;
+  const planet = small.planet;
+  const land = causes.land;
+  const tr = sphereTerrain(world, elevation, out);
+  const { dKm, e150, e900 } = tr;
+
+  // 温度
+  const base: ClimateBase = { tS: new Float32Array(n), tW: new Float32Array(n), pS: new Float32Array(n), pW: new Float32Array(n) };
+  const [t0S, t0W] = tr.t0;
+  for (let i = 0; i < n; i++) {
+    const lapse = land[i] ? (planet.lapse * Math.max(0, elevation[i])) / 1000 : 0;
+    const off = causes.tempOffset[i];
+    base.tS[i] = t0S[i] - lapse + off;
+    base.tW[i] = t0W[i] - lapse + off;
+    if (tr.add) {
+      base.tS[i] += tr.add[0][i];
+      base.tW[i] += tr.add[1][i];
+    }
+  }
+
+  // 降水：每格的降落比例、饱和量先算好（与逐遍现算的值相同），输运时每遍只做加权平均与逐格的收支
+  for (let si = 0; si < 2; si++) {
+    const T = si === 0 ? base.tS : base.tW;
+    const P = si === 0 ? base.pS : base.pW;
+    const rain = tr.rain[si];
+    const lee = tr.lee[si];
+    const cur = tr.cur ? tr.cur[si] : null;
+    const satSea = tr.satSea[si];
+    // fall：本格降落的比例；lim：陆上抬升冷却后的饱和量（cap），海上为海面饱和量；evap：陆面蒸散回补的比例
+    const fall = new Float64Array(n);
+    const lim = new Float64Array(n);
+    const evap = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
+      // 不在背风处 lee 为 1，乘上去数值不变
+      let r = ((rain[i] * warmth) / 1800) * lee[i];
+      if (cur) r *= cur[i];
+      fall[i] = 1 - Math.exp(-r * dKm[i]);
+      if (land[i]) {
+        lim[i] = planet.humidity * saturation(T[i]) * 1.1;
+        evap[i] = smoothstep(0, 25, T[i]);
+      } else lim[i] = planet.humidity * satSea[i];
+    }
+    const { order, koff, src, w, den } = tr.flows[si];
     const removed = new Float64Array(n);
-    solveTransportSphere(
-      mesh,
-      flow[si],
-      PLANET_SWEEPS.wind,
-      (i, inflow) => {
-        const dKm = spacingKm[i];
-        let m = inflow;
-        let p = m * (1 - Math.exp(-rate[i] * dKm));
+    // 水汽，初值：陆上为饱和量的一半，海上为海面饱和量
+    const moist = new Float64Array(n);
+    for (let i = 0; i < n; i++) moist[i] = land[i] ? 0.5 * lim[i] : lim[i];
+    for (let s = 0; s < PLANET_SWEEPS.wind; s++) {
+      for (let k = 0; k < n; k++) {
+        const i = order[k];
+        let num = 0;
+        for (let q = koff[k]; q < koff[k + 1]; q++) num += moist[src[q]] * w[q];
+        // 辐散中心是下沉气流：相对湿度约一半
+        let m = den[k] > 1e-9 ? num / den[k] : land[i] ? (0.5 * lim[i]) / 1.1 : 0.5 * lim[i];
+        let p = m * fall[i];
         m -= p;
         if (land[i]) {
-          const cap = capOf(i);
+          const cap = lim[i];
           if (m > cap) {
-            const excess = (m - cap) * (1 - Math.exp(-dKm / 150));
+            const excess = (m - cap) * e150[i];
             p += excess;
             m -= excess;
           }
-          m += p * 0.6 * smoothstep(0, 25, T[i]);
+          m += p * 0.6 * evap[i];
         } else {
-          const sat = satOcean(i);
+          const sat = lim[i];
           if (m > sat * 1.1) {
-            const excess = (m - sat * 1.1) * (1 - Math.exp(-dKm / 150));
+            const excess = (m - sat * 1.1) * e150[i];
             p += excess;
             m -= excess;
           }
-          m += (sat - m) * (1 - Math.exp(-dKm / 900));
+          m += (sat - m) * e900[i];
         }
-        removed[i] = p / dKm;
-        return Math.max(0, m);
-      },
-      (i) => (land[i] ? 0.5 * capOf(i) : satOcean(i)),
-      // 辐散中心是下沉气流：相对湿度约一半
-      (i) => (land[i] ? 0.5 * capOf(i) / 1.1 : 0.5 * satOcean(i)),
-    );
+        removed[i] = p / dKm[i];
+        moist[i] = Math.max(0, m);
+      }
+    }
     const off = causes.moistOffset;
     for (let i = 0; i < n; i++) P[i] = removed[i] * 1.7e6 * Math.exp(off[i]);
   }
   return base;
+}
+
+// 示踪量的稳态输运（与按格回调的通用写法逐值相同）：沿拓扑序扫描固定遍数，每格取上风各格的加权平均再乘上本格的衰减；
+// 海上格的值一直是初值，只扫陆地格。没有任何上风来源的陆地格取 0
+function landSweeps(f: Inflow, land: Uint8Array, init: Float64Array, decay: Float64Array): Float64Array {
+  const n = land.length;
+  const { order, koff, src, w, den } = f;
+  const out = Float64Array.from(init);
+  for (let s = 0; s < PLANET_SWEEPS.wind; s++) {
+    for (let k = 0; k < n; k++) {
+      const i = order[k];
+      if (!land[i]) continue;
+      let num = 0;
+      for (let q = koff[k]; q < koff[k + 1]; q++) num += out[src[q]] * w[q];
+      out[i] = (den[k] > 1e-9 ? num / den[k] : 0) * decay[i];
+    }
+  }
+  return out;
 }

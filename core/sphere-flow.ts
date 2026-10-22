@@ -1,8 +1,9 @@
 import { type Flow, kahnOrder } from './climate';
 import type { SphereMesh } from './mesh';
 
-// 球面上的输运图与稳态输运（水汽随风、海温随海流）：与 climate.ts 的 buildFlow / solveTransport 同一种做法，
-// 区别是方向用每格的切平面分量、绕星球一圈的环保留为“滞后边”、扫描固定遍数（见 planet-climate.ts 的说明）
+// 球面上的输运图（水汽随风、海温随海流）：与 climate.ts 的 buildFlow 同一种做法，
+// 区别是方向用每格的切平面分量、绕星球一圈的环保留为“滞后边”（见 planet-climate.ts 的说明）。
+// 稳态输运沿拓扑序扫描固定遍数（PLANET_SWEEPS）；滞后边的源头排在后面，读到的是上一遍的值
 
 export const PLANET_SWEEPS = { wind: 4, ocean: 6 };
 
@@ -47,8 +48,14 @@ export function sphereAux(mesh: SphereMesh): SphereAux {
 
 // ---------- 输运图 ----------
 
+// 入流表（按拓扑序的位置 k）：第 k 格 order[k] 的上风来源 src[koff[k]..koff[k+1]) 与权重 w（即 frac(来源→该格)），
+// 按该格的邻接顺序、只含权重 > 0 的边；den[k] 是权重之和（与逐遍现加的顺序相同）
 export interface SphereFlow extends Flow {
   lagged: Uint8Array;
+  koff: Int32Array;
+  src: Int32Array;
+  w: Float64Array;
+  den: Float64Array;
 }
 
 export interface FlowOptions {
@@ -137,38 +144,23 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
       else if (!lagged[e]) frac[e] = 0;
     }
   }
-  return { frac, order, lagged };
-}
-
-// 稳态输运：沿拓扑序扫描固定遍数；滞后边的源头排在后面，读到的是上一遍的值。
-// init：第一遍里滞后边读到的值；fallback：没有任何上风来源的格（辐散中心）
-export function solveTransportSphere(
-  mesh: SphereMesh,
-  flow: Flow,
-  sweeps: number,
-  step: (i: number, inflow: number) => number,
-  init: (i: number) => number,
-  fallback: (i: number) => number,
-): Float64Array {
-  const n = mesh.n;
-  const { rev } = sphereAux(mesh);
-  const out = new Float64Array(n);
-  for (let i = 0; i < n; i++) out[i] = init(i);
-  const { frac, order } = flow;
-  for (let s = 0; s < sweeps; s++) {
-    for (let k = 0; k < n; k++) {
-      const i = order[k];
-      let num = 0;
-      let den = 0;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        const f = frac[rev[e]];
-        if (f <= 0) continue;
-        num += out[mesh.adj[e]] * f;
-        den += f;
-      }
-      out[i] = step(i, den > 1e-9 ? num / den : fallback(i));
+  const koff = new Int32Array(n + 1);
+  const src = new Int32Array(E);
+  const w = new Float64Array(E);
+  const den = new Float64Array(n);
+  let p = 0;
+  for (let k = 0; k < n; k++) {
+    const i = order[k];
+    let s = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const f = frac[rev[e]];
+      if (f <= 0) continue;
+      src[p] = mesh.adj[e];
+      w[p++] = f;
+      s += f;
     }
+    den[k] = s;
+    koff[k + 1] = p;
   }
-  return out;
+  return { frac, order, lagged, koff, src: src.slice(0, p), w: w.slice(0, p), den };
 }
-
