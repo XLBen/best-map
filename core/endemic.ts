@@ -4,21 +4,11 @@ import type { World } from './world';
 // 岛屿特有生态：以岛上最多的那种生态为底，照抄它喜欢的冷暖干湿和条件，强势程度只高一丝（×1.001，
 // 和底生态适宜度完全相同，所以正好在底生态占上风的地方胜出），
 // 只能在这个岛上扩散（不能跨海）。所以岛上原来是这种生态的地方换成特有的版本，
-// 冰原、湿地等别的生态不受影响，岛外也不会出现。颜色在底生态上略微偏一点，看得出是近亲。
+// 冰原、湿地等别的生态不受影响，岛外也不会出现。颜色在底生态上明显地偏开（见 shiftColor），一眼看得出是新的一种。
 // 岛上没有能长东西的地方时返回 null
 export function endemicSpecies(world: World, islandCells: number[], id: string, islandName: string): Species | null {
-  const d = world.derived;
-  const land = islandCells.filter((c) => world.causes.land[c] && d.lake[c] !== 1);
-  const counts = new Map<number, number>();
-  for (const c of land) if (d.dominant[c] >= 0) counts.set(d.dominant[c], (counts.get(d.dominant[c]) ?? 0) + 1);
-  let base = -1;
-  let most = 0;
-  for (const [s, n] of counts) {
-    if (n > most) {
-      most = n;
-      base = s;
-    }
-  }
+  const land = endemicLand(world, islandCells);
+  const base = endemicBase(world, land);
   if (base < 0) return null;
   const b = world.small.species[base];
   return {
@@ -31,11 +21,34 @@ export function endemicSpecies(world: World, islandCells: number[], id: string, 
   };
 }
 
-// 在底色上转一点色相、略微压暗：一眼看得出是近亲，又分得开。往哪边转按岛定，结果固定
-function shiftColor(hex: string, salt: number): string {
+// 岛上能长东西的陆地格（不算湖面）
+function endemicLand(world: World, islandCells: number[]): number[] {
+  return islandCells.filter((c) => world.causes.land[c] && world.derived.lake[c] !== 1);
+}
+
+// 岛上最多的那种生态（特有生态的底）的下标；没有能长东西的地方为 −1。land：岛上的陆地格
+export function endemicBase(world: World, land: number[]): number {
+  const d = world.derived;
+  const counts = new Map<number, number>();
+  for (const c of land) if (d.dominant[c] >= 0) counts.set(d.dominant[c], (counts.get(d.dominant[c]) ?? 0) + 1);
+  let base = -1;
+  let most = 0;
+  for (const [s, n] of counts) {
+    if (n > most) {
+      most = n;
+      base = s;
+    }
+  }
+  return base;
+}
+
+// 在底色上转开一大截色相（40°，以前 22°）、明暗也拉开（暗色变亮、亮色变暗）、更饱和一点：
+// 放在底生态旁边一眼分得开，又还看得出是近亲。往哪边转按岛定，结果固定
+export function shiftColor(hex: string, salt: number): string {
   const [h, s, l] = hexToHsl(hex);
-  const turn = salt % 2 === 0 ? 22 : -22;
-  return hslToHex((h + turn + 360) % 360, Math.min(1, s + 0.06), Math.max(0, l - 0.05));
+  const turn = salt % 2 === 0 ? 40 : -40;
+  const dl = l < 0.45 ? 0.13 : -0.13;
+  return hslToHex((h + turn + 360) % 360, Math.min(1, Math.max(0.3, s + 0.06)), Math.max(0.08, Math.min(0.9, l + dl)));
 }
 
 function hexToHsl(hex: string): [number, number, number] {

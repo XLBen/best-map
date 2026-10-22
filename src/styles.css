@@ -902,6 +902,21 @@ button svg {
   border-right: 1px solid var(--glass-line);
   white-space: nowrap;
 }
+/* 底部条第二行最左边：这个工具做什么。窄时折成两行，再多就省略（鼠标停着看全文） */
+.bar-how {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 300px;
+  padding: 0 6px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
 .bar-note {
   color: var(--muted);
   font-size: 12.5px;

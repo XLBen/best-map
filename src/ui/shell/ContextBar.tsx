@@ -9,7 +9,8 @@ import { pathKm } from '../tools';
 import { nudgeSlider, sliderPos, sliderValue } from './sliders';
 
 // 底部条：上一行是这一类的全部工具（点一下就换，末尾“⋯”是这一类的设置），
-// 下一行是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示
+// 下一行最左边一直写着这个工具做什么（一句话，窄时折成两行、再多就省略，鼠标停着看全文），
+// 后面是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示
 
 function Item({ item }: { item: BarItem }) {
   if (item.kind === 'choice') {
@@ -154,16 +155,17 @@ export function ContextBar() {
       {measure.value ? (
         <MeasureRow w={w} pts={measure.value} />
       ) : (
-        (sliders.length > 0 || items.length > 0) && (
-          <div class="bb-row">
-            {sliders.map((s) => (
-              <HSlider def={s} w={w} />
-            ))}
-            {items.map((it) => (
-              <Item item={it} />
-            ))}
-          </div>
-        )
+        <div class="bb-row">
+          <span class="bar-how" title={def.how}>
+            {def.how}
+          </span>
+          {sliders.map((s) => (
+            <HSlider def={s} w={w} />
+          ))}
+          {items.map((it) => (
+            <Item item={it} />
+          ))}
+        </div>
       )}
     </div>
   );

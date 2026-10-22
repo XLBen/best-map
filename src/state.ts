@@ -90,7 +90,7 @@ export const tool = signal<ToolId>('land');
 export const mode = signal<ViewMode>('terrain');
 export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
-export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false });
+export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false, edits: false });
 export const hoverCell = signal<number>(-1);
 // 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
 // 与 hoverCell 一起设

@@ -1,6 +1,7 @@
 import { TriangleAlert } from 'lucide-preact';
-import { openPanel, options, world } from '../../state';
+import { focusSpecies, openPanel, options, sheet, world } from '../../state';
 import { UnmetPanel } from '../panels';
+import { endemicPicked, removePickedEndemic } from '../tools';
 
 // 注册表里引用的几个小部件：底部条上的当前生态、“没涂成”的提醒，工具列表下方的设置
 export { NamesBar, NamesExtras } from '../panels/names';
@@ -28,6 +29,32 @@ export function UnmetChip() {
     <button class="bar-btn warn" onClick={() => (openPanel.value = 'cat:nature')}>
       <TriangleAlert size={15} /> {n} 处没涂成
     </button>
+  );
+}
+
+// 岛上特有：点了一个已有特有生态的岛，底部条写出它是哪一种，给“去掉它”（删掉这种生态，可撤销）
+export function EndemicBar() {
+  const pick = endemicPicked.value;
+  const sp = pick ? world.value?.small.species.find((s) => s.id === pick.id) : null;
+  if (!sp) return null;
+  return (
+    <>
+      <span class="bar-value">
+        <span class="swatch" style={{ background: sp.color }} /> 已有：{sp.name}
+      </span>
+      <button class="bar-btn" onClick={() => void removePickedEndemic()} title="删掉这种生态，岛上换回原来的；可以撤销">
+        去掉它
+      </button>
+      <button
+        class="bar-btn"
+        onClick={() => {
+          focusSpecies.value = sp.id;
+          sheet.value = 'species';
+        }}
+      >
+        编辑
+      </button>
+    </>
   );
 }
 

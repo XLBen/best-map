@@ -47,7 +47,8 @@ import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { barPreview } from './provincePreview';
 import { riverGlow } from './riverCourse';
-import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt, reliefLayers } from './tools';
+import { editLayers } from './edits';
+import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, endemicPicked, measureTool, provinceCellAt, reliefLayers } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
 
@@ -228,11 +229,15 @@ export function MapView() {
     }
 
     // shown：画出来的世界（确切预览、调整面板预览的将来的世界，或当前世界）：没涂成的格按它画
-    function highlightLayers(w: World, shown: World, preview: Preview): { layers: HighlightLayer[]; key: unknown[] } {
+    // back：工具选中时一直画着的图层（橡皮擦能擦的格、岛上特有的岛），画在预览下面
+    function highlightLayers(w: World, shown: World, preview: Preview, back: HighlightLayer[]): { layers: HighlightLayer[]; key: unknown[] } {
       const layers: HighlightLayer[] = [];
       const c = category.value;
+      // 图层里的“我改过的地方”：四种改动分色，压在最下面（任何工具下都能打开）
+      const edits = overlays.value.edits ? editLayers(w) : [];
+      layers.push(...edits);
       // 按每个图层对象比较：工具沿用同一个图层时不必重新上传
-      const key: unknown[] = [w, shown, c, ...preview.layers];
+      const key: unknown[] = [w, shown, c, ...edits, '|', ...back, '|', ...preview.layers];
       if (c === 'nature') {
         // 没涂成的格：红色斜线
         const failing = shown.derived.conflicts.flatMap((x) => x.failing);
@@ -278,7 +283,7 @@ export function MapView() {
         if (step > 0) layers.push({ cells: fl.cells, color: [255, 236, 120], alpha: step / 40 });
         key.push(fl, step);
       }
-      layers.push(...preview.layers);
+      layers.push(...back, ...preview.layers);
       return { layers, key };
     }
 
@@ -374,6 +379,8 @@ export function MapView() {
       // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）；点了以后还在算、不排队的那一步（重画这一片）也留着
       const showPreview = !clean && (!!pointer || pressed || sliderActive.value || !!measure.value || !!active().keep?.());
       const own: Preview = showPreview ? active().preview() : NO_PREVIEW;
+      // 工具选中时一直画着的东西（鼠标不在地图上也画）
+      const back = clean ? null : (active().backdrop?.() ?? null);
       // 排队中的编辑（松手时的预览，直到结果换上，鼠标离开地图也留着）与底部条、“⋯”里按钮悬停的省份预览
       // （对半分开、重新划分）画在当前工具的预览下面。幽灵海岸几步合在一起；将来的世界用当前工具的确切预览，
       // 没有时用排队中最后一个有确切预览的（都是按当前世界算的，见 pending.ts）
@@ -400,7 +407,7 @@ export function MapView() {
         renderer.setHighlight(null);
         lastHighlightKey = [];
       } else {
-        const { layers, key } = highlightLayers(w, shown, preview);
+        const { layers, key } = highlightLayers(w, shown, preview, back?.layers ?? []);
         if (key.length !== lastHighlightKey.length || key.some((k, i) => k !== lastHighlightKey[i])) {
           renderer.setHighlight(highlightColors(w, layers));
           lastHighlightKey = key;
@@ -430,7 +437,7 @@ export function MapView() {
         markers: c === 'water' && !clean,
         season: season.value,
         style: mapStyle.value,
-        shapes: glow.length ? [...glow, ...preview.shapes] : preview.shapes,
+        shapes: glow.length || back?.shapes.length ? [...(back?.shapes ?? []), ...glow, ...preview.shapes] : preview.shapes,
         provinceLabels: c === 'provinces' ? labelsFor(w, preview.provinces) : [],
         features: overlays.value.labels || c === 'names' ? shown.derived.features : null,
         labelTypes: types,
@@ -603,6 +610,7 @@ export function MapView() {
       void visualOverrides.value;
       void pendingEdits.value;
       void barPreview.value;
+      void endemicPicked.value;
       requestDraw();
     });
 
