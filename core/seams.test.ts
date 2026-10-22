@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
+import { groupPreview, provinceFlat, provinceGroups } from '../src/render/colors';
 import { digestWorld } from '../tools/hash';
 import { Engine } from './engine';
 import { exportPackage } from './export';
@@ -11,7 +12,8 @@ import { snapshot } from './testing/fixtures';
 import type { World } from './world';
 
 // 第八轮：剪刀切出的边就是画的线。切线附近的像素按“在线的哪一边”分省，屏幕（着色器）与导出（provinces.bmp）同一条规则；
-// 合并后自动失效，重新划分时删掉，撤销、重放照旧。着色器那一半只能在浏览器里看，这里验的是导出与点选（JS 那一半）
+// 合并后自动失效，重新划分时删掉，撤销、重放照旧；只在切开的那几块之间换像素，邻省不动。
+// 着色器那一半只能在浏览器里看，这里验的是导出、点选与交给着色器的数据（JS 那一半）
 
 type Pt = [number, number];
 
@@ -239,8 +241,21 @@ describe('剪刀切线', () => {
       [cx - 0.3 * s, cy + 5 * s],
     ]);
     expect(second.seams.map((sm) => sm.provinces[0]).sort()).toEqual([A, B].sort());
+    // 拖动时着色器拿到的省界数据（旧切线也管新块）与结果相同
+    const cells: number[] = [];
+    const ids: number[] = [];
+    second.cut.plans.forEach((pl, k) =>
+      pl.parts.forEach((part, j) => {
+        for (const c of j ? part : []) {
+          cells.push(c);
+          ids.push(second.seams[k].provinces[j]);
+        }
+      }),
+    );
+    const shown = groupPreview(eng.world, { cells, ids, seams: second.seams }, 'terrain');
     eng.exec({ op: 'cut_province', line: second.line });
     const w = eng.world;
+    expect(Array.from(provinceGroups(w, w.causes.province, seamLayers(w, w.causes.province, w.small.provinceSeams)))).toEqual(Array.from(shown.group));
     // 第一条切线也管第二刀切出来的两块
     const born = second.seams.flatMap((sm) => sm.provinces.slice(1));
     expect(w.small.provinceSeams![0].provinces).toEqual([A, B, ...born]);
@@ -495,11 +510,20 @@ describe('剪刀切线', () => {
       });
       expect(pieces).toBeGreaterThan(raw.length === 4 ? 1 : 2);
       const next = w.small.nextProvince + pieces;
+      // 拖动时交给着色器的省界数据（分组、省份着色、切线两边的省）
+      const changed: number[] = [];
+      for (let i = 0; i < w.mesh.n; i++) if (expect0[i] !== w.causes.province[i]) changed.push(i);
+      const shown = groupPreview(w, { cells: changed, ids: changed.map((i) => expect0[i]), seams }, 'provinces');
       // 执行命令：分出来的格与编号、记下的切线都与预览相同
       e.exec({ op: 'cut_province', line });
       expect(Array.from(w.causes.province)).toEqual(Array.from(expect0));
       expect(w.small.nextProvince).toBe(next);
       expect(w.small.provinceSeams?.map(({ line, provinces }) => ({ line, provinces }))).toEqual(seams);
+      // 结果回来后着色器拿到的数据与拖动时的一样：松手时省界不跳
+      const after = seamLayers(w, w.causes.province, w.small.provinceSeams)!;
+      expect(Array.from(provinceGroups(w, w.causes.province, after))).toEqual(Array.from(shown.group));
+      expect(Array.from(provinceFlat(w, w.causes.province))).toEqual(Array.from(shown.flat!));
+      for (const key of ['gL', 'gR', 'repL', 'repR'] as const) expect(Array.from(after[key])).toEqual(Array.from(shown.seams![key]));
     }
   });
 
