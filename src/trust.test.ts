@@ -126,6 +126,23 @@ describe('打开时的信任检查', () => {
     expect(sentKinds().length).toBe(before);
   });
 
+  it('河流类型的“哪些自然的河是这一种”（match）脚本：打开时与生态的一起列出来问', async () => {
+    const before = sentKinds().length;
+    const base = docWith(species('m', 'return 0.15;'));
+    const blood: Command = { op: 'set_river_type', type: { id: 'blood', name: '血河', color: '#8f1414', scripts: { match: script('return 流量 > 1000;') } } };
+    const p = loadDoc({ ...base, commands: [...base.commands, blood] });
+    await tick();
+    const a = ask.value!;
+    expect(a.title).toBe('信任这个世界里的脚本吗？');
+    expect(a.scripts!.map((s) => [s.owner, s.kind, s.src])).toEqual([
+      ['生态m', 'placement', 'return 0.15;'],
+      ['血河', 'match', 'return 流量 > 1000;'],
+    ]);
+    a.resolve('cancel');
+    expect(await p).toBe(false);
+    expect(sentKinds().length).toBe(before);
+  });
+
   it('不运行脚本打开：安全模式（不记为信任）；信任并打开：记下来，下次不再问', async () => {
     const doc = docWith(species('d', 'return 0.25;'));
     let p = loadDoc(doc);

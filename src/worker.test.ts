@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../core/commands';
 import type { Checkpoint, WorldDoc } from '../core/engine';
 import type { CheckpointPut } from './checkpoint-store';
@@ -158,5 +158,52 @@ describe('计算 Worker 的约定', () => {
     expect(safe.got).toHaveLength(0);
     expect(notices()).toHaveLength(before + 1);
     safe.close();
+  });
+});
+
+// 河流类型（第三批）也在这个 Worker 里算：一遍“气候 → 水文 → 河的类型 → 植被”是引擎里的一个函数，
+// match 脚本与生态的脚本一样在这里（隔离的环境里）跑；检查点带着每格的河的类型、两岸的影响，恢复出来与重放逐值一致
+describe('计算 Worker 里的河流类型', () => {
+  const typed: Command[] = [
+    ...commands,
+    {
+      op: 'set_river_type',
+      type: { id: 'blood', name: '血河', color: '#8f1414', bank: { radiusKm: 200, dT: 3 }, scripts: { match: { api: 1, src: 'return 流量 > 0;' } } },
+    },
+  ];
+  const views = (s: Snapshot) => Object.entries(s.derived).filter(([, v]) => ArrayBuffer.isView(v)) as [string, ArrayLike<number>][];
+
+  // 上面最后打开过安全模式：一个 Worker 进了安全模式就一直是（主线程要另开一个）。这里也换一个新的
+  beforeAll(async () => {
+    vi.resetModules();
+    await import('./worker');
+  });
+
+  it('match 脚本在这里跑：河格带上类型、两岸变暖；检查点恢复出来与重放逐值一致；安全模式下不运行', async () => {
+    const st = storeEnd();
+    const r = await send({ kind: 'init', settings, commands: typed, build: 'b2', store: st.port });
+    const snap = r.snapshot as Snapshot;
+    expect(snap.derived.scriptIssues ?? []).toEqual([]);
+    expect(snap.derived.riverType).toBeInstanceOf(Uint8Array);
+    expect(Array.from(snap.derived.riverType!).some((v) => v === 1)).toBe(true);
+    expect(Array.from(snap.derived.effT!).some((v) => v > 0)).toBe(true);
+    await send({ kind: 'checkpoint' });
+    await until(() => st.got.length === 1);
+    const cp = st.got[0].cp;
+    expect(cp.derived.riverType).toEqual(snap.derived.riverType);
+    const typedDoc = (await send({ kind: 'doc' })).doc!;
+    st.close();
+    // 打开：端口里的检查点直接恢复，与刚才算出来的逐值一致
+    const back = storeEnd();
+    back.ch.port1.postMessage({ cp: structuredClone(cp) });
+    const restored = (await send({ kind: 'load', doc: typedDoc, build: 'b2', store: back.port })).snapshot as Snapshot;
+    const all = views(snap);
+    expect(all.map(([k]) => k)).toEqual(expect.arrayContaining(['riverType', 'effT', 'effP']));
+    for (const [k, v] of all) expect(Array.from(restored.derived[k as keyof Snapshot['derived']] as ArrayLike<number>), k).toEqual(Array.from(v));
+    back.close();
+    // 安全模式：match 脚本不运行，没有河带上类型，也就没有两岸的影响
+    const safe = (await send({ kind: 'load', doc: typedDoc, safe: true })).snapshot as Snapshot;
+    expect(Array.from(safe.derived.riverType!).every((v) => v === 0)).toBe(true);
+    expect(safe.derived.effT).toBeUndefined();
   });
 });
