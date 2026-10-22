@@ -4,6 +4,7 @@ import { adjustPreviewNote, commitTerrain, exec, execAdjust, mode, openPanel, pr
 import { ADJUSTMENTS, PLANET_TOGGLES } from '../defs/adjustments';
 import { setTool } from '../defs/tools';
 import type { AdjustmentDef } from '../defs/types';
+import { FormRow } from './FormPicker';
 
 // “调整”：整个世界的参数。地形类的滑块拖动时地图上实时画出将来的海岸线（与结果逐格相同）；
 // 气候、河流的滑块停一下，地图上就是松手后的样子（在世界的副本上算好，松手时直接采用）。
@@ -128,6 +129,7 @@ export function AdjustPanel() {
         <section>
           <h5>{g}</h5>
           {g === '地形' && !w.small.terrain.gen && <p class="muted small">这是一片空白海洋：用“画陆地”“放岛”来造。想要自动生成的世界，点左上角“世界”。</p>}
+          {g === '地形' && <FormRow w={w} />}
           {ADJUSTMENTS.filter((a) => a.group === g && !a.hidden?.(w)).map((a) => (
             <AdjustRow def={a} w={w} />
           ))}

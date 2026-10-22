@@ -34,6 +34,8 @@ interface Props {
   onShowCell?: (cell: number) => void;
   // 变了就把光标放进框里（别处的“编辑”）
   focusSignal?: number;
+  // 框里的文字变了（还没检查、提交的也算）：星球形态编辑器点按钮时要用框里现在写的
+  onDraft?: (src: string) => void;
 }
 
 const lineCount = (s: string) => s.split(/\r\n|[\n\r\u2028\u2029]/).length;
@@ -70,7 +72,10 @@ export function ScriptBox(props: Props) {
           issue: () => live.current.issue(),
           idle: () => live.current.idle?.() ?? true,
           settle: () => live.current.settle?.() ?? Promise.resolve(),
-          onChange: () => redraw((x) => x + 1),
+          onChange: () => {
+            redraw((x) => x + 1);
+            live.current.onDraft?.(edit.view().draft);
+          },
         },
         value,
         props.issue(),

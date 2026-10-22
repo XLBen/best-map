@@ -758,6 +758,26 @@ export async function confirmImport(json: unknown): Promise<boolean> {
   return true;
 }
 
+// 星球形态里没见过的脚本（向导里点了形态的卡片、打开形态编辑器，调整里选了一个形态）：先问，信任了才用
+// （缩略图、预览都会运行它）。inWorld：用到现在的世界上；安全模式下脚本不运行，不问（也不记为信任，“再试一次”时照样会问）
+export async function trustFormScripts(json: unknown, inWorld = false): Promise<boolean> {
+  if (inWorld && safeMode.value) return true;
+  const list = await untrustedScripts(json);
+  if (!list.length) return true;
+  const v = await askUser({
+    title: '信任这个星球形态里的脚本吗？',
+    text: `里面有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的。`,
+    scripts: list,
+    choices: [
+      { value: 'run', label: '信任', primary: true },
+      { value: 'cancel', label: '取消' },
+    ],
+  });
+  if (v !== 'run') return false;
+  await trustScripts(list);
+  return true;
+}
+
 // 自己提交的脚本（加、改生态……）记为信任。安全模式下不记：那里的脚本可能是从没信任的世界里复制来的。
 // 每一笔都要过一遍（涂一笔的命令里有上万个格号）：findScripts 不把数放进栈，比先转成 JSON 再找快
 function trustOwn(cmd: Command) {
@@ -1152,6 +1172,19 @@ export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput,
     return null;
   }
   return r.thumb ?? null;
+}
+
+// 星球形态编辑器的实时缩略图：不弹提示条，出错（脚本的语法错误、形态写得不对）时把原因给回来；
+// 脚本运行时出的错（这一次按没有脚本算）在 issues 里
+export async function formThumbnail(
+  settings: Partial<Settings>,
+  gen: WorldgenInput,
+  width: number,
+  height: number,
+): Promise<{ thumb: Uint8ClampedArray; issues: ScriptIssue[] } | { error: string }> {
+  const r = await call({ kind: 'thumb', settings, gen, width, height }, null);
+  if (!r.ok) return { error: r.error };
+  return r.thumb ? { thumb: r.thumb, issues: r.issues ?? [] } : { error: '缩略图没算出来' };
 }
 
 export function download(name: string, data: Uint8Array | string | Blob, type: string) {

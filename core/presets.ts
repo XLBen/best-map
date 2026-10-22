@@ -90,7 +90,9 @@ export const PLANET_TYPES = [
   { key: 'ocean_islands', name: '海洋星球', hint: '一片大洋，只有火山岛露出海面', type: 'ocean', islands: 0.7 },
   { key: 'blank', name: '空白星球', hint: '全是海，自己来画', type: 'ocean', islands: undefined },
 ] as const satisfies readonly { key: string; name: string; hint: string; type: WorldType; islands: number | undefined }[];
-export type PlanetType = (typeof PLANET_TYPES)[number]['key'];
+// 向导里选的星球：PLANET_TYPES 里的一种（key），或者一个星球形态（资源库里的键，见 src/ui/forms.ts），所以是字符串
+export type PlanetTypeKey = (typeof PLANET_TYPES)[number]['key'];
+export type PlanetType = string;
 
 // 星球的大小：只改变 km，不改变布局（同一颗星球放大缩小）
 export const PLANET_SIZES = {

@@ -80,7 +80,7 @@ function respond(req: Request): Record<string, unknown> {
   return { summary: '完成', snapshot: snap() };
 }
 
-const { ask, confirmImport, exec, loadDoc, newWorld, resumeLast, retryScripts, safeMode } = await import('./state');
+const { ask, confirmImport, exec, loadDoc, newWorld, resumeLast, retryScripts, safeMode, trustFormScripts } = await import('./state');
 const { forgetTrustCache, trustScripts, untrustedScripts } = await import('./trust');
 
 // 信任列表里的键：源码的 SHA-256
@@ -242,6 +242,38 @@ describe('打开时的信任检查', () => {
     expect(ask.value!.choices.map((c) => c.label)).toEqual(['信任并新建', '不运行脚本新建', '取消']);
     ask.value!.resolve('cancel');
     expect(await p).toBe(false);
+  });
+});
+
+describe('星球形态里的脚本（向导、形态编辑器、调整里换形态）', () => {
+  it('内置的不问；没见过的先问（列出每段），取消就不用，信任了记下来不再问；安全模式下用到世界上时不问', async () => {
+    expect(await trustFormScripts(FANTASY_FORMS[2])).toBe(true);
+    expect(ask.value).toBeNull();
+    const form = { ...FANTASY_FORMS[2], id: 'theirs', name: '别人的', scripts: { crust: script('return { height: height + 7 };') } };
+    let p = trustFormScripts(form);
+    await tick();
+    expect(ask.value!.title).toBe('信任这个星球形态里的脚本吗？');
+    expect(ask.value!.scripts!.map((x) => [x.owner, x.kind, x.src])).toEqual([['别人的', 'crust', 'return { height: height + 7 };']]);
+    expect(ask.value!.choices.map((c) => c.label)).toEqual(['信任', '取消']);
+    ask.value!.resolve('cancel');
+    expect(await p).toBe(false);
+    p = trustFormScripts(form);
+    await tick();
+    ask.value!.resolve('run');
+    expect(await p).toBe(true);
+    expect(await untrustedScripts(form)).toEqual([]);
+    expect(await trustFormScripts(form)).toBe(true);
+    expect(ask.value).toBeNull();
+    // 安全模式（脚本不运行）：用到现在的世界上时不问，也不记为信任
+    const other = { ...form, id: 'other', scripts: { crust: script('return { height: height + 8 };') } };
+    safeMode.value = { reason: '测试' };
+    try {
+      expect(await trustFormScripts(other, true)).toBe(true);
+      expect(ask.value).toBeNull();
+      expect((await untrustedScripts(other)).length).toBe(1);
+    } finally {
+      safeMode.value = null;
+    }
   });
 });
 

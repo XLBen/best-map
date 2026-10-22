@@ -559,6 +559,75 @@ ol.history li.undone {
 .thumb.loading canvas {
   animation: pulse 1.2s ease-in-out infinite;
 }
+/* 向导里星球形态的卡片：右上角一个小的“编辑…” */
+.form-card {
+  position: relative;
+  display: flex;
+}
+.form-card .card {
+  flex: 1;
+  padding-right: 48px;
+}
+.form-card .form-edit {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  color: var(--muted);
+}
+.card.dashed {
+  border-style: dashed;
+  background: transparent;
+}
+/* 调整 → 星球形态 → 换…：列出能换的形态 */
+.form-picker {
+  margin-top: 6px;
+}
+.form-picker .card b .muted {
+  font-weight: normal;
+}
+/* 星球形态编辑器：左边是名字、滑块、脚本，右边是实时的缩略图 */
+.modal.form-editor {
+  width: 760px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 18px;
+  align-items: start;
+}
+.form-preview {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.form-preview canvas {
+  width: 100%;
+  aspect-ratio: 2;
+  border-radius: 4px;
+  background: #1a2a40;
+  transition: opacity 0.2s;
+}
+.form-preview canvas.stale {
+  opacity: 0.55;
+}
+.form-fields select {
+  display: block;
+  margin-top: 2px;
+}
+.form-fields .seg.off {
+  opacity: 0.45;
+}
+@media (max-width: 700px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-preview {
+    position: static;
+  }
+}
 @keyframes pulse {
   50% {
     opacity: 0.5;

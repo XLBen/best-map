@@ -18,7 +18,7 @@ const LAYOUT_AREA = 4 * Math.PI * LAYOUT_R * LAYOUT_R;
 
 type V3 = [number, number, number];
 
-interface PlanetProfile {
+export interface PlanetProfile {
   landFraction: number;
   islands: number;
   plates: [number, number];
@@ -44,6 +44,11 @@ const PLANET_PROFILES: Record<WorldType, PlanetProfile> = {
   inland_sea: { landFraction: 0.4, islands: 0.3, plates: [10, 14], blocks: [8, 11], radius: [0.16, 0.23], rise: 1400, relief: 600, hotspots: [3, 5], seamounts: 150, ring: true },
   ocean: { landFraction: 0, islands: 0, plates: [10, 16], blocks: [0, 0], radius: [0.1, 0.2], rise: 1000, relief: 300, hotspots: [8, 12], seamounts: 360 },
 };
+
+// 一种星球原来的配方（星球形态编辑器的滑块按它显示形态没改的项）。给出的是副本
+export function planetProfile(type: WorldType): PlanetProfile {
+  return structuredClone(PLANET_PROFILES[type]);
+}
 
 // 这种星球的配方：星球形态改过的项换成形态的值（type 与 form.base 相同由 set_worldgen 保证）
 function profileOf(p: Worldgen): PlanetProfile {

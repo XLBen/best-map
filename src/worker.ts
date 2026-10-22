@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { Dirty } from '../core/commands';
 import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
-import { previewTerrain, resolveTerrain } from '../core/terrain';
+import { planetFormIssues, previewTerrain, resolveTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
 import { setScriptHost, setScriptsEnabled } from '../core/script';
@@ -283,7 +283,9 @@ async function handle(id: number, req: Request) {
           ],
         });
         const thumb = renderThumbnail(e.world, req.width, req.height);
-        reply({ id, ok: true, thumb }, [thumb.buffer as ArrayBuffer]);
+        // 星球形态的脚本出的错（形态编辑器写在缩略图下面）：只在有形态时带上
+        const issues = req.gen.form ? planetFormIssues(e.world) : undefined;
+        reply({ id, ok: true, thumb, ...(issues ? { issues } : {}) }, [thumb.buffer as ArrayBuffer]);
         return;
       }
     }

@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
-import { type ResourcePack, parsePack } from '../core/packs';
+import { PACK_FORMAT, PACK_MAX, PACK_VERSION, type PackItem, type ResourcePack, packIdFor, parsePack } from '../core/packs';
+import type { PlanetForm } from '../core/planet-form';
 import { FANTASY_PACK, FANTASY_PACK_ID } from '../core/packs/fantasy';
 import { idbAll, idbTx } from './idb';
 import { addTrustedSource } from './trust';
@@ -113,3 +114,23 @@ addTrustedSource(async () => {
   if (trustedPacks?.from !== list) trustedPacks = { from: list, packs: list.filter((e) => !e.mine).map((e) => e.pack) };
   return trustedPacks.packs;
 });
+
+// ---------- 自己做的星球形态 ----------
+
+// 形态编辑器的“存进资源库”：存进“我的资源”这个包（没有就新建；包里原来的生态等都留着），同一个 id 的形态换成新的。
+// 形态里的脚本由编辑器记为信任（是自己写的、或者打开编辑器时信任过的），这里不管
+export const MY_PACK_NAME = '我的资源';
+export type SaveForm = { ok: true; entry: LibraryEntry; stored: boolean } | { ok: false; error: string };
+export async function saveForm(form: PlanetForm): Promise<SaveForm> {
+  const id = packIdFor(MY_PACK_NAME);
+  const cur = (await refreshLibrary()).find((e) => !e.builtin && e.key === id);
+  const pack: ResourcePack = cur ? structuredClone(cur.pack) : { format: PACK_FORMAT, version: PACK_VERSION, id, name: MY_PACK_NAME };
+  const forms = (pack.planetForms ?? []).filter((f) => f.id !== form.id);
+  // 超过上限的包读不回来（整个“我的资源”就不见了）：先拦下
+  if (forms.length >= PACK_MAX.planetForms) return { ok: false, error: `“${MY_PACK_NAME}”里的星球形态已经有 ${PACK_MAX.planetForms} 个了，先在“资源包…”里整理一下` };
+  pack.planetForms = [...forms, structuredClone(form) as unknown as PackItem];
+  const r = parsePack(pack);
+  if (!r.ok) return { ok: false, error: r.errors[0] };
+  const { entry, ok } = await installPack(r.pack, { mine: true });
+  return { ok: true, entry, stored: ok };
+}

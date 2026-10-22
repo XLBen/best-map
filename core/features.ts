@@ -94,7 +94,7 @@ export interface GeoFeature {
   line?: [number, number][];
   // 用户圈的区块、放的地名：对应的区块 id
   region?: string;
-  // 涂出来的生态区：涂的生态的 id（自然形成的地物没有这一项）
+  // 涂出来的生态区、自带地名设定的生态自然长成的一片：那种生态的 id（别的自然形成的地物没有这一项）
   species?: string;
   // 画的河（有名字的河道）：河道的 id
   guide?: string;
@@ -346,7 +346,7 @@ interface AddInput {
   mark?: 'river' | 'peak' | 'islet';
   // 标注放在这一格（质心落在地物外面时才有，见 withLabels）
   labelCell?: number;
-  // 涂出来的生态区：涂的生态的下标
+  // 涂出来的生态区、自带地名设定的生态自然长成的一片：那种生态的下标
   species?: number;
 }
 
@@ -902,6 +902,30 @@ function paintedOf(world: World, d: Derived): Int16Array | null {
   return out;
 }
 
+// 自然长成的一片也有自己的名字的生态：自带地名设定（第三批的 feature：类型名、起名模板），而且不是内置的大类生态
+// （针叶林、荒漠……自然长成的本来就是大类的地物：森林、沙漠……）。内置的生态都没有 feature，
+// 所以没有这样的生态的世界（以前的、只用内置生态的），地物与以前完全一样
+export function namesNaturally(sp: Species): boolean {
+  return !!sp.feature && speciesFeature(sp).type === 'biome';
+}
+
+// 自带地名设定的生态自然长成的格：每格是主导生态的下标（只看 namesNaturally 的生态），别的为 -1。一格都没有时为 null
+function ownOf(world: World, d: Derived): Int16Array | null {
+  const species = world.small.species;
+  const own = species.map(namesNaturally);
+  if (!own.some(Boolean)) return null;
+  const n = world.mesh.n;
+  const land = world.causes.land;
+  let out: Int16Array | null = null;
+  for (let i = 0; i < n; i++) {
+    const s = d.dominant[i];
+    if (s < 0 || !land[i] || !own[s]) continue;
+    if (!out) out = new Int16Array(n).fill(-1);
+    out[i] = s;
+  }
+  return out;
+}
+
 // 涂过的世界里，生态区还要看的几样（都在缓存的键里）
 interface Paint {
   // 每格涂的生态（paintedOf）
@@ -919,7 +943,11 @@ interface Paint {
 //   在森林中间涂别的生态、在森林里补涂同一种，锚点都不动；往外涂出去的部分不算，森林往外长名字也不变。
 //   涂抹连着森林外面、又盖住了原来锚点的（在森林边上涂一片），没涂的部分换一个锚点、换名字；
 //   改气候（温度画笔、自然融入的影响范围）让锚点那一格不再是森林时也一样（用户起的名字只要原锚点还在这片地物里就留得住）
-function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): AddInput[] {
+// 自带地名设定的生态（namesNaturally）自然长成的一片（own：每格的这种生态，ownOf）：除去上面涂出来的生态区，
+// 同一种生态连成的块 8 格以上的，每种取最大的 10 块，成为自己的地物（与涂出来的一样带上生态、第二轮起名，
+// 锚点按生态加盐）；它们占的格从大类的地物里去掉。大类地物的锚点仍按整块（没涂过时）取：
+// 森林里长出、消失一片水晶丛林，森林的名字不变
+function natureInputs(world: World, biome: Uint8Array, paint: Paint | null, own: Int16Array | null = null): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
   const list: AddInput[] = [];
@@ -1031,6 +1059,40 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): Add
       for (const c of q) dom.push(c);
     }
   }
+  // 自带地名设定的生态自然长成的一片（涂出来的生态区占的格不算）：每种取最大的 10 块，8 格以上
+  const naturals: { s: number; cells: number[] }[] = [];
+  if (own) {
+    const seen = new Uint8Array(n);
+    const bySpecies = new Map<number, number[][]>();
+    for (let i = 0; i < n; i++) {
+      const s = own[i];
+      if (s < 0 || kept[i] || seen[i]) continue;
+      const q = [i];
+      seen[i] = 1;
+      for (let h = 0; h < q.length; h++) {
+        const c = q[h];
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (own[j] === s && !kept[j] && !seen[j]) {
+            seen[j] = 1;
+            q.push(j);
+          }
+        }
+      }
+      const l = bySpecies.get(s) ?? [];
+      l.push(q);
+      bySpecies.set(s, l);
+    }
+    for (const s of [...bySpecies.keys()].sort((a, b) => a - b)) {
+      const comps = bySpecies
+        .get(s)!
+        .filter((c) => c.length >= 8)
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 10);
+      for (const cells of comps) naturals.push({ s, cells });
+    }
+    for (const { cells } of naturals) for (const c of cells) kept[c] = 1;
+  }
   // 原来的地物：每个大类按剩下的格数取最大的 10 块（没涂过时与原来完全相同）
   const usedBy = new Map<FeatureType, Set<number>>();
   const usedOf = (t: FeatureType) => {
@@ -1044,14 +1106,16 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): Add
     const rests: { gi: number; cells: number[] }[] = [];
     groups.forEach((G, gi) => {
       if (G.k !== k) return;
-      const cells = regions.length ? G.cells.filter((c) => !kept[c]) : G.cells;
+      const cells = regions.length || naturals.length ? G.cells.filter((c) => !kept[c]) : G.cells;
       if (cells.length >= min) rests.push({ gi, cells });
     });
     rests.sort((a, b) => b.cells.length - a.cells.length);
     const used = usedOf(g);
     for (const { gi, cells } of rests.slice(0, 10)) {
       const dom = domain[gi];
-      let anchor = stableAnchor(dom?.length ? dom : cells);
+      // 没涂过的块按整块取锚点：去掉的只有自然长成的、自带地名的生态（没有它们时就是 cells，与以前相同）
+      const whole = dom === null && naturals.length ? groups[gi].cells : cells;
+      let anchor = stableAnchor(dom?.length ? dom : whole);
       if (used.has(anchor)) anchor = freeAnchor(cells, used);
       if (anchor < 0) continue;
       used.add(anchor);
@@ -1067,6 +1131,17 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null): Add
     if (anchor < 0) continue;
     used.add(anchor);
     list.push({ type: info.type, cells: Int32Array.from(cells), importance: 6 + Math.log10(areaOf(world, cells)), tags: info.tags, anchor, species: s });
+  }
+  // 自带地名设定的生态自然长成的一片：重要度与同样大的自然地物相同；锚点与涂出来的一样按生态加盐
+  // （涂出来的一片后来自然长成了同样的格，名字不变）
+  for (const { s, cells } of naturals) {
+    const sp = world.small.species[s];
+    const info = speciesFeature(sp);
+    const used = usedOf(info.type);
+    const anchor = freeAnchor(cells, used, hashString(sp.id));
+    if (anchor < 0) continue;
+    used.add(anchor);
+    list.push({ type: info.type, cells: Int32Array.from(cells), importance: 5 + Math.log10(areaOf(world, cells)), tags: info.tags, anchor, species: s });
   }
   return withLabels(mesh, list);
 }
@@ -1147,9 +1222,15 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
   // 坡度由地形、陆海算出，所以不进键（只在这一段要重算时才取）
   replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, terrainSlope(world, d, terrain))));
   const biome = biomesOf(world, d);
-  // 没涂过生态时只看大类（与原来相同）；涂过时还要看涂了什么、每格的主导生态、陆海与每种生态的样子
+  // 没涂过生态时只看大类（与原来相同）；涂过时还要看涂了什么、每格的主导生态、陆海与每种生态的样子。
+  // 有自带地名设定的生态自然长成的格时（第三批）另走一段、另记缓存：没有这样的格的世界与以前完全一样
   const painted = paintedOf(world, d);
-  if (!painted) replay(memoized(mesh, 'nature', [biome, km], () => natureInputs(world, biome, null)));
+  const own = ownOf(world, d);
+  if (own) {
+    const paint = painted ? { painted, dominant: d.dominant, land: causes.land } : null;
+    const inputs = painted ? [biome, own, painted, d.dominant, causes.land, speciesKey(small.species), km] : [biome, own, speciesKey(small.species), km];
+    replay(memoized(mesh, 'nature-own', inputs, () => natureInputs(world, biome, paint, own)));
+  } else if (!painted) replay(memoized(mesh, 'nature', [biome, km], () => natureInputs(world, biome, null)));
   else {
     const paint = { painted, dominant: d.dominant, land: causes.land };
     replay(memoized(mesh, 'nature', [biome, painted, d.dominant, causes.land, speciesKey(small.species), km], () => natureInputs(world, biome, paint)));
@@ -1426,7 +1507,7 @@ export function assignNames(world: World, features: GeoFeature[]) {
   const species = new Map(world.small.species.map((sp) => [sp.id, sp]));
   const guides = new Map(world.small.guides.map((g) => [g.id, g]));
   // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
-  // 现在是涂出来的生态区、画的河（固定下来的自然河除外）；以后新加的种类（带类型的河……）也接在这里
+  // 现在是涂出来的生态区、自带地名设定的生态自然长成的一片、画的河（固定下来的自然河除外）；以后新加的种类（带类型的河……）也接在这里
   const secondPass = (f: GeoFeature) => f.species !== undefined || (f.guide !== undefined && !inherits(guides.get(f.guide)));
   // 重要的先起名，同名时让给重要的；新种类的放在第二轮。第二轮里画的河按画的先后起名（排在涂出来的生态区之后）：
   // 自动起的河名只有几百个，常常撞名，按重要度排的话新画了一条大河、或者河的水量变了，先画的河就会换名
@@ -1489,7 +1570,7 @@ export function assignNames(world: World, features: GeoFeature[]) {
     f.custom = false;
     const sp = f.species !== undefined ? species.get(f.species) : undefined;
     if (sp) {
-      // 涂出来的生态区：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
+      // 涂出来的生态区、自然长成的自带地名的一片：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
       const how = speciesFeature(sp).naming(pack);
       f.name = generateName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${ov?.salt ?? 0}`), taken);
     } else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${ov?.salt ?? 0}`), taken);
