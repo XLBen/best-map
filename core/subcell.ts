@@ -334,12 +334,16 @@ export function coastValues(world: World): Float32Array {
   const coast = coastNoiseField(mesh, coastSeed(world));
   const amp = COAST_AMP * world.small.terrain.coastRoughness;
   const s = new Float32Array(mesh.n);
-  for (let i = 0; i < mesh.n; i++) {
-    const v = causes.landness[i] + amp * coast[i];
-    const signed = causes.land[i] ? Math.max(v, 1) : Math.min(v, -1);
-    s[i] = COAST_SQUASH * Math.tanh(signed / COAST_SQUASH);
-  }
+  for (let i = 0; i < mesh.n; i++) s[i] = coastValueAt(causes.landness[i], coast[i], amp, causes.land[i] !== 0);
   return s;
+}
+
+// 一格的海岸值：landness、这格的海岸噪声、噪声幅度（COAST_AMP × 破碎度）、这格算不算陆地。
+// 预览将来的海岸（还没改动世界）时按同一个算式逐格算
+export function coastValueAt(landness: number, noise: number, amp: number, land: boolean): number {
+  const v = landness + amp * noise;
+  const signed = land ? Math.max(v, 1) : Math.min(v, -1);
+  return COAST_SQUASH * Math.tanh(signed / COAST_SQUASH);
 }
 
 // 格以下的海岸细节幅度（m）：山地海岸更曲折，平原海岸更平滑

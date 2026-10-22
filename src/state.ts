@@ -5,7 +5,7 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { viewOf } from '../core/sphere';
-import { type IslandKind, type TerrainPatch, defaultIslandKm, roundKm } from '../core/terrain';
+import { type IslandKind, type TerrainPatch, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
@@ -70,6 +70,7 @@ export const history = signal<{ summary: string; done: boolean }[]>([]);
 export const canUndo = signal(false);
 export const canRedo = signal(false);
 export const timings = signal<Timings>({ total: 0 });
+// 正在算的带提示的请求（执行、撤销、新建、打开…）的提示；后台的预览、自动保存不算
 export const busy = signal<string | null>(null);
 export const toast = signal<{ text: string; error: boolean } | null>(null);
 
@@ -261,40 +262,18 @@ export function setOptions(patch: Partial<ToolOptions>) {
   options.value = { ...options.value, ...patch };
 }
 
-// 地图的尺度（km）：宽、格距。整个星球按半圈（πR，约 2 万 km）算，
-// 这样类地星球的默认画笔约 700 km、最大约 4,000 km
-export function mapKm(w: World): { width: number; cell: number } {
-  const width = w.mesh.kind === 'sphere' ? w.kmPerUnit : w.mesh.width * w.kmPerUnit;
-  return { width, cell: w.mesh.spacing * w.kmPerUnit };
-}
-
-// 画笔半径的范围（km）：随地图尺度。最小的笔刷正好一格
-export function brushRange(w: World): [number, number] {
-  const { width, cell } = mapKm(w);
-  return [cell * 0.6, width * 0.2];
-}
-
-// 湖的半径范围（km）
-export function lakeRange(w: World): [number, number] {
-  const { width, cell } = mapKm(w);
-  return [Math.max(8, cell * 1.5), Math.max(cell * 4, width * 0.05)];
-}
-
-// 自然融入的过渡范围（km）
-export function reachRange(w: World): [number, number] {
-  const width = mapKm(w).width;
-  return [Math.max(30, width * 0.015), Math.min(5000, width * 0.2)];
-}
+// 地图的尺度（km），画笔、湖、过渡的半径范围：放在 core 里（测试拿它们对照 schema），这里沿用原来的名字
+export { mapScaleKm as mapKm, brushRangeKm as brushRange, lakeRangeKm as lakeRange, reachRangeKm as reachRange };
 
 // 新世界：大小类的选项跟着地图尺度走
 function sizesFor(w: World): Partial<ToolOptions> {
-  const { width, cell } = mapKm(w);
+  const { width, cell } = mapScaleKm(w);
   const clampTo = (v: number, [lo, hi]: [number, number]) => Math.min(hi, Math.max(lo, v));
   return {
-    brushKm: roundKm(clampTo(width * 0.035, brushRange(w))),
+    brushKm: roundKm(clampTo(width * 0.035, brushRangeKm(w))),
     islandKm: roundKm(defaultIslandKm(w) * 2) / 2,
-    lakeKm: roundKm(clampTo(Math.max(cell * 1.6, width * 0.006) * 2, lakeRange(w)) * 2) / 2,
-    reachKm: roundKm(clampTo(width * 0.04, reachRange(w))),
+    lakeKm: roundKm(clampTo(Math.max(cell * 1.6, width * 0.006) * 2, lakeRangeKm(w)) * 2) / 2,
+    reachKm: roundKm(clampTo(width * 0.04, reachRangeKm(w))),
   };
 }
 
@@ -306,7 +285,8 @@ let nextId = 1;
 const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean }>();
 const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
 
-// 正在算的只有编辑（或不改世界的后台请求）：这时画的笔画可以排在后面，按顺序执行
+// 正在算的只有编辑（或不改世界的后台请求）：这时画的笔画可以排在后面，按顺序执行。
+// busy 不为空且这里是 false：在算的是新建、打开世界，工具要等它算完
 export function onlyEditsPending(): boolean {
   for (const p of pending.values()) if (!p.edit) return false;
   return true;
@@ -326,16 +306,23 @@ function ensureWorker(): Worker {
   return worker;
 }
 
+// 还没回来的带提示的请求（执行、撤销、新建、打开…）有几个：busy 只看它们。
+// 后台的预览、缩略图、自动保存不改世界，还在算的时候也不挡工具
+let labelled = 0;
+
 function call(req: Request, label: string | null): Promise<Response> {
   const w = ensureWorker();
   const id = nextId++;
-  if (label) busy.value = label;
+  if (label) {
+    labelled++;
+    busy.value = label;
+  }
   return new Promise<Response>((resolve) => {
     pending.set(id, {
       // 不带提示的请求（预览、自动保存）不改世界，不挡排队
       edit: EDITS.has(req.kind) || !label,
       resolve: (r) => {
-        if (pending.size === 0) busy.value = null;
+        if (label && --labelled === 0) busy.value = null;
         resolve(r);
       },
     });

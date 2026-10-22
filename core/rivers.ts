@@ -27,7 +27,6 @@ export function traceRivers(world: World): RiverLine[] {
   sources.sort((a, b) => d.elevation[b] - d.elevation[a]);
   const visited = new Uint8Array(n);
   const lines: RiverLine[] = [];
-  const meander = 0.22 * mesh.spacing;
   // 整个星球：沿河展开经度（每一点取离上一点最近的那一份），跨过经度 180° 的河也是连续的一条线；
   // 画的时候每一份平铺的副本各画一遍
   const sphere = mesh.kind === 'sphere';
@@ -59,18 +58,26 @@ export function traceRivers(world: World): RiverLine[] {
       c = r;
     }
     if (pts.length < 2) continue;
-    // 曲流：中间点沿垂直方向错开一点（按位置取噪声，结果确定）
-    for (let k = 1; k < pts.length - 1; k++) {
-      const [x0, y0] = pts[k - 1];
-      const [x1, y1] = pts[k + 1];
-      const len = Math.hypot(x1 - x0, y1 - y0) || 1;
-      const off = meander * vnoise(pts[k][0] / mesh.spacing * 0.9 + 11.1, pts[k][1] / mesh.spacing * 0.9);
-      pts[k] = [pts[k][0] - ((y1 - y0) / len) * off, pts[k][1] + ((x1 - x0) / len) * off];
-    }
-    // 三遍平滑：放大到最大（一格约 64 像素）时也看不出折角
-    lines.push(chaikin({ points: pts, flow }, 3));
+    lines.push(smoothCourse(pts, flow, mesh.spacing));
   }
   return lines;
+}
+
+// 河道的样子：中间点加轻微的曲流，再做三遍 Chaikin 平滑。pts 是沿河的点（格心、入海口），
+// flow 是每个点的流量，spacing 是格距。自然的河、画的河、预览都用它，画出来的样子才一致。不改动传进来的数组
+export function smoothCourse(pts: readonly [number, number][], flow: number[], spacing: number): RiverLine {
+  const points = pts.slice();
+  const meander = 0.22 * spacing;
+  // 曲流：中间点沿垂直方向错开一点（按位置取噪声，结果确定）。前一点已经错开过，按错开后的位置算
+  for (let k = 1; k < points.length - 1; k++) {
+    const [x0, y0] = points[k - 1];
+    const [x1, y1] = points[k + 1];
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const off = meander * vnoise(points[k][0] / spacing * 0.9 + 11.1, points[k][1] / spacing * 0.9);
+    points[k] = [points[k][0] - ((y1 - y0) / len) * off, points[k][1] + ((x1 - x0) / len) * off];
+  }
+  // 三遍平滑：放大到最大（一格约 64 像素）时也看不出折角
+  return chaikin({ points, flow }, 3);
 }
 
 function chaikin(line: RiverLine, iterations: number): RiverLine {

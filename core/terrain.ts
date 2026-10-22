@@ -148,6 +148,14 @@ export function ensureBase(world: World): BaseCache {
   return cache;
 }
 
+// 世界的副本（预览、测试的模板）共用原世界的生成器结果，不必重新采样整个生成器。
+// 共用是安全的：ensureBase 每次都按调用它的世界重新组合缓存里的数组，读的地方都先调用它；
+// 重画变了时另建一份缓存（局部重算复制原来的分量，不改动它），原世界的那一份不受影响
+export function shareTerrainBase(from: World, to: World) {
+  const cache = baseCache.get(from);
+  if (cache) baseCache.set(to, cache);
+}
+
 // 同一次重画：逐字段比（−0 与 +0 也算不同，宁可多重算几格）
 const sameReroll = (a: Reroll, b: Reroll) => Object.is(a.x, b.x) && Object.is(a.y, b.y) && Object.is(a.radius, b.radius) && Object.is(a.variant, b.variant);
 
@@ -511,6 +519,31 @@ export function islandSizeRangeKm(world: World): [number, number] {
   const cellKm = world.mesh.spacing * world.kmPerUnit;
   const mapKm = refKm(world);
   return [cellKm * 1.5, Math.max(cellKm * 3, mapKm * 0.2)];
+}
+
+// 地图的尺度（km）：宽、格距。整个星球按半圈（πR，约 2 万 km）算，
+// 这样类地星球的默认画笔约 700 km、最大约 4,000 km
+export function mapScaleKm(world: World): { width: number; cell: number } {
+  const width = world.mesh.kind === 'sphere' ? world.kmPerUnit : world.mesh.width * world.kmPerUnit;
+  return { width, cell: world.mesh.spacing * world.kmPerUnit };
+}
+
+// 画笔半径的范围（km）：随地图尺度。最小的笔刷正好一格
+export function brushRangeKm(world: World): [number, number] {
+  const { width, cell } = mapScaleKm(world);
+  return [cell * 0.6, width * 0.2];
+}
+
+// 湖的半径范围（km）
+export function lakeRangeKm(world: World): [number, number] {
+  const { width, cell } = mapScaleKm(world);
+  return [Math.max(8, cell * 1.5), Math.max(cell * 4, width * 0.05)];
+}
+
+// 自然融入的过渡范围（km）
+export function reachRangeKm(world: World): [number, number] {
+  const width = mapScaleKm(world).width;
+  return [Math.max(30, width * 0.015), Math.min(5000, width * 0.2)];
 }
 
 // 新世界里“放岛”默认的大小：与旧的“中”档看起来一样大

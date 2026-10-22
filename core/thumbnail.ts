@@ -1,3 +1,4 @@
+import { blendRgb } from './biome-look';
 import { hexToRgb } from './export';
 import { rasterizeWorld } from './subcell';
 import type { World } from './world';
@@ -7,7 +8,6 @@ import type { World } from './world';
 export function renderThumbnail(world: World, width: number, height: number): Uint8ClampedArray {
   const { mesh, causes, derived: d, small } = world;
   const r = rasterizeWorld(world, width, height);
-  const S = small.species.length;
   const colors = small.species.map((s) => hexToRgb(s.color));
   const cellColor = new Float32Array(mesh.n * 3);
   for (let i = 0; i < mesh.n; i++) {
@@ -15,19 +15,7 @@ export function renderThumbnail(world: World, width: number, height: number): Ui
     let c: [number, number, number];
     if (d.lake[i] === 1) c = [70, 125, 175];
     else {
-      let rr = 0;
-      let g = 0;
-      let b = 0;
-      let t = 0;
-      for (let s = 0; s < S; s++) {
-        const w = d.share[i * S + s];
-        if (w <= 0) continue;
-        rr += w * colors[s][0];
-        g += w * colors[s][1];
-        b += w * colors[s][2];
-        t += w;
-      }
-      c = t > 0 ? [rr / t, g / t, b / t] : [205, 190, 160];
+      c = blendRgb(d.share, i, colors);
       if (d.tWarm[i] < 0) {
         const k = Math.min(1, -d.tWarm[i] / 6);
         c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];

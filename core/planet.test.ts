@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hashArray } from '../tools/hash';
+import { coastalStroke, digestWorld, hashArray } from '../tools/hash';
+import type { Command } from './commands';
 import { Engine } from './engine';
 import { exportPackage, featuresCsv } from './export';
 import { renderThumbnail } from './thumbnail';
@@ -176,5 +177,28 @@ describe('生成整个星球', () => {
     const pkg = exportPackage(eng.world, eng.toDoc(), { width: 512, height: 256, seaLevelGray: 95, maxElevation: 8000 });
     expect(pkg.zip.length).toBeGreaterThan(1000);
     expect(pkg.files).toContain('features.csv');
+  });
+
+  it('副本共用生成器的结果：在副本上画陆地、重画一片（跨接缝），与新世界上执行逐值相同', () => {
+    const make = () => {
+      const eng = new Engine(globe(3000), meshOf(3000));
+      eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
+      return eng;
+    };
+    const a = make();
+    const cells = coastalStroke(a.world, 0.3, 4);
+    const cmds: Command[] = [
+      { op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' },
+      { op: 'reroll_region', x: 1.98, y: 0.45, radius: 0.12, variant: 1 },
+    ];
+    const before = digestWorld(a.world);
+    for (const cmd of cmds) {
+      const copy = a.clone();
+      copy.exec(cmd);
+      const fresh = make();
+      fresh.exec(cmd);
+      expect(digestWorld(copy.world), cmd.op).toEqual(digestWorld(fresh.world));
+    }
+    expect(digestWorld(a.world)).toEqual(before);
   });
 });

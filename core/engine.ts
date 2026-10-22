@@ -7,7 +7,7 @@ import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { computeVegetation, isVegetated } from './vegetation';
-import { resolveTerrain } from './terrain';
+import { resolveTerrain, shareTerrainBase } from './terrain';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
@@ -15,8 +15,9 @@ import { type Causes, type Derived, type Settings, type SmallState, type World, 
 
 export interface WorldDoc {
   format: 'map2-world';
-  // 2：一块地区；3：整个星球（旧版程序打不开，不会把星球当成平面重放）
-  version: 2 | 3;
+  // 2：一块地区；3：整个星球（旧版程序打不开，不会把星球当成平面重放）；
+  // 4：用了第八轮起新加的字段、命令（旧版程序会悄悄丢掉不认识的字段、按错的样子重放，所以要让它拒绝打开）。见 docVersion
+  version: 2 | 3 | 4;
   settings: Settings;
   commands: Command[];
 }
@@ -87,8 +88,9 @@ export class Engine {
   lastNoop = false;
   // 识别地物（起名）。向导的缩略图用不着，关掉省时间
   features = true;
-  // 最近一次确切预览算好的副本：紧接着执行同一条命令时直接采用，不再重算（画河改道松手时）
-  private lastPreview: { key: string; copy: Engine } | null = null;
+  // 最近一次确切预览算好的副本：紧接着执行同一条命令时直接采用，不再重算（画河改道松手时）。
+  // changed：预览的命令有没有改动什么（什么都没改的命令不能借采用预览进历史）
+  private lastPreview: { key: string; copy: Engine; changed: boolean } | null = null;
   lastTimings: Timings = { total: 0 };
 
   constructor(settings: Partial<Settings> = {}, mesh?: Mesh) {
@@ -112,7 +114,7 @@ export class Engine {
     const adopted = this.adoptPreview(cmd);
     if (adopted !== null) return adopted;
     const fresh = this.dirty === Dirty.None;
-    const summary = this.applyOnly(cmd, true);
+    const { summary } = this.applyOnly(cmd, true);
     if (this.lastNoop) return summary;
     this.dropUndone();
     this.keepBefore(fresh);
@@ -120,17 +122,18 @@ export class Engine {
     return summary;
   }
 
-  // skipNoop：什么都没改的命令不记进历史（重放存档时照旧记，历史与文件一一对应）
-  private applyOnly(cmd: Command, skipNoop = false): string {
+  // skipNoop：什么都没改的命令不记进历史（重放存档时照旧记，历史与文件一一对应）。
+  // changed：命令有没有改动原因或小数据
+  private applyOnly(cmd: Command, skipNoop = false): { summary: string; changed: boolean } {
     const r = applyCommand(this.world, cmd, { ensureDerived: () => this.update() });
     this.lastNoop = skipNoop && !r.changed;
-    if (this.lastNoop) return r.summary;
+    if (this.lastNoop) return { summary: r.summary, changed: false };
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
     // 新起的省名记进命令（存档、重做时照用）
     const recorded = r.provinceNames ? { ...cmd, provinceNames: r.provinceNames } : cmd;
     this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
-    return r.summary;
+    return { summary: r.summary, changed: r.changed };
   }
 
   // ---------- 撤销缓存：最近几步的推导结果 ----------
@@ -230,7 +233,7 @@ export class Engine {
     h.state = undefined;
     let summary: string;
     try {
-      summary = this.applyOnly(cmd);
+      summary = this.applyOnly(cmd).summary;
     } catch (e) {
       // 新命令做不了：把原来那一步放回去
       this.applyOnly(h.cmd);
@@ -321,7 +324,8 @@ export class Engine {
   }
 
   toDoc(): WorldDoc {
-    return { format: 'map2-world', version: this.world.settings.globe ? 3 : 2, settings: this.world.settings, commands: this.done.map((h) => h.cmd) };
+    const commands = this.done.map((h) => h.cmd);
+    return { format: 'map2-world', version: docVersion(this.world.settings, commands), settings: this.world.settings, commands };
   }
 
   stepIds(): number[] {
@@ -381,7 +385,7 @@ export class Engine {
 
   static fromDoc(doc: WorldDoc, mesh?: Mesh): Engine {
     if (doc.format !== 'map2-world') throw new CommandError('不是 map2 世界文件');
-    if (doc.version !== 2 && doc.version !== 3) throw new CommandError('这是旧版本的世界文件，与当前版本的地形模型不兼容');
+    if (doc.version !== 2 && doc.version !== 3 && doc.version !== 4) throw new CommandError('这是旧版本的世界文件，与当前版本的地形模型不兼容');
     const settings = settingsSchema.parse(doc.settings);
     const engine = new Engine(settings, mesh);
     doc.commands.forEach((cmd, k) => {
@@ -400,18 +404,19 @@ export class Engine {
   preview(cmd: Command): PreviewResult {
     this.update();
     const copy = this.clone();
-    copy.applyOnly(cmd);
+    const { changed } = copy.applyOnly(cmd);
     copy.update();
-    this.lastPreview = { key: JSON.stringify(cmd), copy };
+    this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
     return diffWorlds(this.world, copy.world);
   }
 
   // 采用预览算好的结果：只用于只改小数据的命令（画河、改道），原因数组不变，世界对象也不换
-  // （地形底图缓存按世界对象存）。返回这一步的说明；用不上时返回 null
+  // （地形底图缓存按世界对象存）。返回这一步的说明；用不上时返回 null。
+  // 预览的命令什么都没改时不采用：照常执行，按“没有变化”处理，不进历史
   private adoptPreview(cmd: Command): string | null {
     const p = this.lastPreview;
     this.lastPreview = null;
-    if (!p || this.dirty !== Dirty.None || p.key !== JSON.stringify(cmd)) return null;
+    if (!p || !p.changed || this.dirty !== Dirty.None || p.key !== JSON.stringify(cmd)) return null;
     const step = p.copy.done[p.copy.done.length - 1];
     if (!step || step.undo.arrays.length || step.undo.fields.length) return null;
     this.world.small = p.copy.world.small;
@@ -426,10 +431,12 @@ export class Engine {
   }
 
   // 副本：原因、推导、小数据都复制，历史照旧（撤销记录里的数组只读，自定义场的旧数组会被放回世界，另外复制）。
-  // 不经过构造函数（构造函数要为空白世界组合一遍地形）
+  // 不经过构造函数（构造函数要为空白世界组合一遍地形）。生成器的结果与原世界共用：
+  // 地形命令的预览不必重新采样整个生成器
   clone(): Engine {
     const e = Object.create(Engine.prototype) as Engine;
     e.world = cloneWorld(this.world);
+    shareTerrainBase(this.world, e.world);
     e.base = this.base;
     e.solve = this.solve;
     e.dirty = this.dirty;
@@ -445,6 +452,19 @@ export class Engine {
     e.lastTimings = this.lastTimings;
     return e;
   }
+}
+
+// 文档的版本：2 一块地区，3 整个星球；用了新加的字段、命令时是 4（新旧世界都是）。
+// 只在真的用到时才写 4，所以没用新东西的世界照旧能被旧版程序打开
+export function docVersion(settings: Pick<Settings, 'globe'>, commands: readonly Command[]): WorldDoc['version'] {
+  if (commands.some(usesExtensions)) return 4;
+  return settings.globe ? 3 : 2;
+}
+
+// 一条命令有没有用到旧版程序不认识的字段、命令（batch 里的逐条看）。后面加新字段、新命令时在这里加一项检测
+function usesExtensions(cmd: Command): boolean {
+  if (cmd.op === 'batch') return cmd.commands.some(usesExtensions);
+  return false;
 }
 
 export interface DocTail extends Omit<WorldDoc, 'commands'> {

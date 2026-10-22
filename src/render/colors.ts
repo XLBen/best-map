@@ -1,3 +1,4 @@
+import { blendRgb } from '../../core/biome-look';
 import { hexToRgb } from '../../core/export';
 import { gradient } from '../../core/mesh';
 import { coastValues } from '../../core/subcell';
@@ -166,19 +167,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       case 'dominant':
       case 'provinces': {
         // 植被按份额混色，积雪按季节覆盖
-        let r = 0;
-        let g = 0;
-        let b = 0;
-        let t = 0;
-        for (let s = 0; s < S; s++) {
-          const w = d.share[i * S + s];
-          if (w <= 0) continue;
-          r += w * speciesRgb[s][0];
-          g += w * speciesRgb[s][1];
-          b += w * speciesRgb[s][2];
-          t += w;
-        }
-        c = t > 0 ? [r / t, g / t, b / t] : [205, 190, 160];
+        c = blendRgb(d.share, i, speciesRgb);
         if (d.lake[i] === 2) c = playaColor;
         const snowT = o.season === 'winter' ? Math.min(d.tS[i], d.tW[i]) : o.season === 'summer' ? Math.max(d.tS[i], d.tW[i]) : d.tWarm[i];
         if (snowT < 0) {
