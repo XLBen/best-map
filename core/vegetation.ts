@@ -93,7 +93,7 @@ export function invadeBoost(table: InvadeTable, suit: ArrayLike<number>, S: numb
 // 长在哪里的脚本的系数（第三批）：脚本没关掉、有生态带这种脚本时，对每个长植被的格运行，
 // 写进 d.placeF（n × P，P 为带脚本的生态个数，见 placementSlots；不长植被的格为 1）。
 // 脚本出错时这一段按没有脚本处理（系数 1），说明记进 issues。没有这种脚本时 placeF 为 undefined
-function computePlacement(world: World, d: Derived, issues: ScriptIssue[]): { slot: Int32Array; P: number; placeF: Float32Array } | null {
+function computePlacement(world: World, d: Derived, issues: ScriptIssue[], session: () => ScriptSession): { slot: Int32Array; P: number; placeF: Float32Array } | null {
   const species = world.small.species;
   const { slot, P } = scriptsEnabled() ? placementSlots(species) : { slot: null, P: 0 };
   if (!slot || P === 0) {
@@ -113,13 +113,12 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[]): { sl
     }
   }
   const cells = Int32Array.from(list);
-  const session = new ScriptSession(world);
   const inputs = worldInputs(world, d);
   const seed = worldSeedOf(world);
   species.forEach((sp, s) => {
     const p = slot[s];
     if (p < 0) return;
-    const r = session.run('placement', sp, sp.scripts!.placement!.src, inputs, cells, mask, seed);
+    const r = session().run('placement', sp, sp.scripts!.placement!.src, inputs, cells, mask, seed);
     if (!r.ok) {
       issues.push(r.issue);
       return;
@@ -129,7 +128,6 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[]): { sl
       placeF[i * P + p] = r.out[i];
     }
   });
-  session.finish();
   d.placeF = placeF;
   return { slot, P, placeF };
 }
@@ -148,7 +146,10 @@ export function computeVegetation(world: World, d: Derived) {
   for (const sp of species) for (const t of sp.tolerances) if (!getters.has(t.field)) getters.set(t.field, fieldGetter(world, d, t.field));
   // 脚本出的问题（不挡操作：出错的脚本这一次按没有脚本处理）
   const issues: ScriptIssue[] = [];
-  const place = computePlacement(world, d, issues);
+  // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
+  const run: { session?: ScriptSession } = {};
+  const sessionOf = () => (run.session ??= new ScriptSession(world));
+  const place = computePlacement(world, d, issues, sessionOf);
 
   for (let s = 0; s < S; s++) {
     const sp = species[s];
@@ -232,7 +233,8 @@ export function computeVegetation(world: World, d: Derived) {
   }
 
   // 颜色脚本（第三批）：按最后的份额算每格的颜色，写进 d.look（没有颜色脚本时为 undefined）
-  computeLook(world, d, issues);
+  computeLook(world, d, issues, sessionOf);
+  run.session?.finish();
   // 没有问题时为 undefined（与 placeF 一样只在曾经有过时才赋值：从来没有脚本的世界里没有这个键）
   if (issues.length) d.scriptIssues = issues;
   else if (d.scriptIssues !== undefined) d.scriptIssues = undefined;

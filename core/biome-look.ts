@@ -38,8 +38,9 @@ const rgbOf = (hex: string): RGB => {
 
 // 颜色脚本（第三批）：每格的植被颜色按份额混合（blendRgb），带颜色脚本的生态在它份额超过 LOOK_MIN_SHARE 的格上
 // 用脚本算出的颜色代替它的基础色。结果写进 d.look（n × 4，a 为 255；海、湖为 0），屏幕、缩略图以后直接用它。
-// 只在脚本没关掉、有生态带颜色脚本时算；否则 d.look 为 undefined。脚本出错时那种生态这一次用基础色，说明记进 issues
-export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []): void {
+// 只在脚本没关掉、有生态带颜色脚本时算；否则 d.look 为 undefined。脚本出错时那种生态这一次用基础色，说明记进 issues。
+// session：与长在哪里的脚本共用的那一次运行（computeVegetation 传进来，由它 finish）；不传时自己开一次
+export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = [], session?: () => ScriptSession): void {
   const species = world.small.species;
   const scripted = scriptsEnabled() ? species.map((sp, s) => (sp.scripts?.color ? s : -1)).filter((s) => s >= 0) : [];
   if (!scripted.length) {
@@ -51,7 +52,8 @@ export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []
   const S = species.length;
   const base = species.map((sp) => rgbOf(sp.color));
   const veg = (i: number) => causes.land[i] === 1 && d.lake[i] !== 1;
-  const session = new ScriptSession(world);
+  const mine = !session;
+  const run = session ? session() : new ScriptSession(world);
   const seed = worldSeedOf(world);
   // 每种带脚本的生态：在哪些格用脚本的颜色（mask）、颜色是什么（rgb，n × 3）
   const own: { s: number; mask: Uint8Array; rgb: Uint8Array }[] = [];
@@ -70,14 +72,14 @@ export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []
     }
     const inputs = worldInputs(world, d, { extra: { share, color: base[s] } });
     // share 是这种生态自己的，记录里换个键，免得与别的生态的混在一起
-    const r = session.run('color', sp, sp.scripts!.color!.src, inputs, Int32Array.from(list), mask, seed, { share: `share#${sp.seedKey ?? sp.id}` });
+    const r = run.run('color', sp, sp.scripts!.color!.src, inputs, Int32Array.from(list), mask, seed, { share: `share#${sp.id}` });
     if (!r.ok) {
       issues.push(r.issue);
       continue;
     }
     own.push({ s, mask, rgb: r.out });
   }
-  session.finish();
+  if (mine) run.finish();
   const look = d.look?.length === n * 4 ? d.look : new Uint8Array(n * 4);
   const colors = base.map((c) => [c[0], c[1], c[2]] as RGB);
   for (let i = 0; i < n; i++) {

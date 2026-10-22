@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { blendRgb } from './biome-look';
-import { placementSlots, scriptRunStats } from './biome-scripts';
+import { forgetScriptResults, placementSlots, scriptRunStats } from './biome-scripts';
 import { type Command, CommandError, Dirty } from './commands';
 import { Engine, docVersion } from './engine';
 import { featureLabel } from './features';
@@ -34,6 +34,17 @@ const near = (w: World, f: number, k: number) => {
   return [...land].sort((a, b) => dist[a] - dist[b] || a - b).slice(0, k);
 };
 const fantasy = (w: World, picks?: string[]) => fantasyBiomeCommands({ fields: Object.keys(w.causes.fields), species: w.small.species.map((s) => s.id) }, picks);
+// 从头算：忘掉这个网格上记下的脚本结果，再在同一个网格上重放
+const scratch = (eng: Engine) => {
+  forgetScriptResults(eng.world.mesh);
+  const again = Engine.fromDoc(eng.toDoc(), eng.world.mesh);
+  return { digest: digestWorld(again.world), issues: again.world.derived.scriptIssues };
+};
+const sameAsScratch = (eng: Engine, label: string) => {
+  const s = scratch(eng);
+  expect(digestWorld(eng.world), label).toEqual(s.digest);
+  expect(eng.world.derived.scriptIssues, label).toEqual(s.issues);
+};
 
 afterEach(() => setScriptsEnabled(true));
 
@@ -243,7 +254,7 @@ describe('没有用到时', () => {
 });
 
 describe('只改外观、名字', () => {
-  it('只改外观不重算；只改名字、地名设定只重新起名；改脚本照旧重算', () => {
+  it('只改外观不重算；只改名字、地名设定只重新起名；带脚本的生态改名、改脚本照旧重算', () => {
     const eng = world();
     eng.exec(fantasy(eng.world, ['crystal_jungle']));
     eng.takeRecomputed();
@@ -257,8 +268,14 @@ describe('只改外观、名字', () => {
     eng.undo();
     expect(eng.takeRecomputed()).toBe(Dirty.None);
     expect(eng.world.small.species.at(-1)!.visual!.pattern).toBe('sparkle');
-    eng.exec({ op: 'update_species', id: 'crystal_jungle', patch: { name: '琉璃林', visual: { pattern: 'none' } } });
+    // 没有脚本的生态改名：只重新起名
+    eng.exec({ op: 'update_species', id: 'taiga', patch: { name: '北方针叶林', visual: { pattern: 'stripes' } } });
     expect(eng.takeRecomputed()).toBe(Dirty.Names);
+    // 带脚本的：出错的说明里有它的名字，从求解重算（脚本记着结果，不重跑）
+    scriptRunStats.placement = 0;
+    eng.exec({ op: 'update_species', id: 'crystal_jungle', patch: { name: '琉璃林', visual: { pattern: 'none' } } });
+    expect(eng.takeRecomputed()).toBe(Dirty.Solve);
+    expect(scriptRunStats.placement).toBe(0);
     eng.exec({ op: 'update_species', id: 'crystal_jungle', patch: { feature: { label: '琉璃' } } });
     expect(eng.takeRecomputed()).toBe(Dirty.Names);
     eng.exec({ op: 'update_species', id: 'crystal_jungle', patch: { scripts: { placement: script('return 0.9;') } } });
@@ -268,6 +285,29 @@ describe('只改外观、名字', () => {
     // 结果与从头重放逐值相同
     const again = Engine.fromDoc(eng.toDoc(), eng.world.mesh);
     expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
+  });
+});
+
+describe('改名', () => {
+  it('带脚本的生态改名后，出错的说明换成新名字（与重放相同）', () => {
+    const eng = world();
+    eng.exec({ op: 'add_species', species: wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 1, scripts: { placement: script('return NaN;') } }) });
+    expect(eng.world.derived.scriptIssues![0].message).toContain('「玻璃原」');
+    eng.exec({ op: 'update_species', id: 'glass', patch: { name: '琉璃原' } });
+    expect(eng.world.derived.scriptIssues![0].message).toContain('「琉璃原」');
+    sameAsScratch(eng, '改名');
+  });
+
+  it('冲突的建议里不写生态的名字，改名后与重放相同', () => {
+    const eng = world();
+    const w = eng.world;
+    eng.exec({ op: 'add_species', species: wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 1, scripts: { placement: script('return 0;') } }) });
+    eng.exec({ op: 'add_constraint', constraint: { id: 'c1', cells: near(w, 0.5, 40), species: 'glass', mode: 'constraint', ratio: 1, radius: 400 } });
+    const tips = () => w.derived.conflicts.find((c) => c.constraintId === 'c1')!.suggestions;
+    expect(tips().some((t) => t.includes('脚本条件'))).toBe(true);
+    for (const t of tips()) expect(t).not.toContain('玻璃原');
+    eng.exec({ op: 'update_species', id: 'glass', patch: { name: '琉璃原' } });
+    expect(Engine.fromDoc(eng.toDoc(), w.mesh).world.derived.conflicts).toEqual(w.derived.conflicts);
   });
 });
 
@@ -429,5 +469,58 @@ describe('按格记住结果', () => {
     expect(scriptRunStats.placement).toBeGreaterThan(0);
     expect(scriptRunStats.placement).toBeLessThan((P * land.length) / 3);
     expect(digestWorld(Engine.fromDoc(eng.toDoc(), buildMeshFor(settingsSchema.parse(w.settings))).world)).toEqual(digestWorld(w));
+  });
+
+  it('读的时候还没有的自定义场以后有了：整个重算（field 不再回退成同名的内置变量）', () => {
+    const eng = world();
+    const w = eng.world;
+    eng.exec({ op: 'add_species', species: wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 1, scripts: { placement: script("// 没有叫 elevation 的自定义场时就是海拔\nreturn clamp(field('elevation') / 2000);") } }) });
+    expect(veg(w).some((i) => w.derived.placeF![i] > 0)).toBe(true);
+    eng.exec({ op: 'add_field', name: 'elevation' });
+    // 同名的自定义场（全是 0）：系数都是 0
+    expect(veg(w).every((i) => w.derived.placeF![i] === 0)).toBe(true);
+    sameAsScratch(eng, '加了场');
+    eng.undo();
+    expect(veg(w).some((i) => w.derived.placeF![i] > 0)).toBe(true);
+    sameAsScratch(eng, '撤销');
+  });
+
+  it('两种生态的源码、seedKey 都相同（复制出来的）：各记各的', () => {
+    const eng = world();
+    const w = eng.world;
+    const src = '// 份额越大越红\nreturn mixColor(color, [255, 0, 0], share);';
+    const a = wide({ id: 'a1', name: '甲', color: '#88ccdd', terrain: 'plains', competition: 1, seedKey: 'k', scripts: { color: script(src) } });
+    eng.exec({ op: 'add_species', species: a });
+    eng.exec({ op: 'add_species', species: { ...a, id: 'a2', name: '乙', competition: 2 } });
+    eng.exec({ op: 'paint', field: 'tempOffset', cells: near(w, 0.5, 60), value: 1, mode: 'add' });
+    sameAsScratch(eng, '冷暖');
+  });
+
+  it('每一步都与从头算相同：预览、涂自定义场、删掉脚本读的场（出错）、撤销、改颜色脚本、自然融入、重做', () => {
+    const eng = world();
+    const w = eng.world;
+    eng.exec(fantasy(w));
+    sameAsScratch(eng, '加上示例生态');
+    // 预览改了记下的输入（同一个网格），接着做的是另一步
+    eng.preview({ op: 'paint', field: 'tempOffset', cells: near(w, 0.3, 120), value: 4, mode: 'add' });
+    eng.exec({ op: 'paint', field: 'moistOffset', cells: near(w, 0.6, 120), value: -0.6, mode: 'add' });
+    sameAsScratch(eng, '预览后干湿');
+    eng.exec({ op: 'paint', field: 'field:holy', cells: near(w, 0.4, 40), value: 1, mode: 'set' });
+    sameAsScratch(eng, '圣地场');
+    // 神圣之地读的场没了：它的脚本这一次按没有脚本处理
+    eng.exec({ op: 'remove_field', name: 'holy' });
+    expect(w.derived.scriptIssues?.map((x) => x.owner)).toEqual(['神圣之地']);
+    sameAsScratch(eng, '删场');
+    eng.undo();
+    expect(w.derived.scriptIssues).toBeUndefined();
+    sameAsScratch(eng, '撤销删场');
+    eng.exec({ op: 'update_species', id: 'dead_forest', patch: { scripts: { ...w.small.species.find((sp) => sp.id === 'dead_forest')!.scripts, color: script('return mixColor(color, [200, 40, 40], smoothstep(0, 18, wetness));') } } });
+    sameAsScratch(eng, '改颜色脚本');
+    eng.exec({ op: 'add_constraint', constraint: { cells: near(w, 0.8, 60), species: 'swarm_zone', mode: 'constraint', ratio: 1, radius: 500 } });
+    sameAsScratch(eng, '自然融入');
+    eng.undo();
+    eng.undo();
+    eng.redo();
+    sameAsScratch(eng, '撤销两步、重做一步');
   });
 });

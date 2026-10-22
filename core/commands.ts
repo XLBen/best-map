@@ -309,6 +309,8 @@ function speciesChange(before: Species, after: Species): { dirty: Dirty; what: s
   const only = (k: string) => changed.length > 0 && changed.every((x) => x === k);
   const what = only('visual') ? '的外观' : only('feature') ? '的地名' : only('scripts') ? '的脚本' : only('effects') ? '对周围的影响' : '';
   if (changed.every((k) => LOOK_KEYS.has(k))) return { dirty: Dirty.None, what };
+  // 带脚本的生态改名也从求解重算：脚本出错的说明（d.scriptIssues）里有它的名字，要与重放一致（脚本本身记着结果，不重跑）
+  if (changed.includes('name') && (before.scripts || after.scripts)) return { dirty: Dirty.Solve, what };
   if (changed.every((k) => NAME_KEYS.has(k))) return { dirty: Dirty.Names, what };
   return { dirty: Dirty.Solve, what };
 }

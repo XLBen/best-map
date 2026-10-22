@@ -18,7 +18,8 @@ import type { World } from './world';
 //
 // 速度：每段脚本按格记住上一次的结果，只重算“它读到的输入变了”的格（脚本必须是纯的，提交前由 checkPurity 检查）。
 // 运行时记下脚本实际读了哪些输入（变量、field() 的自定义场、river() 的河岸场），下次逐格比较这些输入的内容；
-// 种类、源码、种子、整体的值（世界参数、颜色脚本的 color）放在记录的键里。只取决于网格的位置（x、y、px…）不用比较。
+// 种类、生态、源码、种子、整体的值（世界参数、颜色脚本的 color）放在记录的键里。只取决于网格的位置（x、y、px…）不用比较。
+// 读的时候还没有的自定义场、河岸场（field() 回退成同名的内置变量、river() 为 0）也记下：以后有了就整个重算。
 // 记住的东西按网格存（与 features.ts 的 memoized 一样按内容比较，不按数组对象）：同一网格上的副本、预览、
 // 撤销缓存都能用，结果与从头算逐值相同——每格的结果只取决于这一格的输入、种子和源码。
 // 涂生态（硬覆盖）不改脚本读的东西，一格也不用重算；涂自定义场只重算涂到的格；改气候只重算跟着变了的一片
@@ -70,6 +71,8 @@ interface Entry {
   valid: Uint8Array;
   // 读到的输入 → 当时快照的版本。null：这一次改过、还没对上快照（finish 之前；没走到 finish 时下次整个重算）
   deps: Map<string, number> | null;
+  // 读的时候还没有的自定义场、河岸场（'field:名字'、'river:类型'）：这次有了就整个重算
+  absent: Set<string>;
 }
 
 interface Store {
@@ -85,6 +88,11 @@ const MAX_ENTRIES = 32;
 // 统计（测试用）：累计实际运行脚本的格数
 export const scriptRunStats = { placement: 0, color: 0 };
 const stores = new WeakMap<Mesh, Store>();
+
+// 忘掉这个网格上记下的结果，下一次全部从头算（测试用它对照“从头算”）
+export function forgetScriptResults(mesh: Mesh): void {
+  stores.delete(mesh);
+}
 
 function storeOf(mesh: Mesh): Store {
   let s = stores.get(mesh);
@@ -195,7 +203,8 @@ export class ScriptSession {
       return v !== undefined && typeof v === 'object' ? null : (v ?? null);
     });
     const colorArg = kind === 'color' ? inputs.get('color') : undefined;
-    const key = JSON.stringify([kind, src, sp.seedKey ?? sp.id, seed, inputs.globe, scalars, colorArg ? Array.from(colorArg as ArrayLike<number>) : null]);
+    // 键里有生态的 id：两种生态的源码、seedKey 都相同时（复制出来的生态）也各记各的（颜色脚本读的 share 各不相同）
+    const key = JSON.stringify([kind, sp.id, src, sp.seedKey ?? sp.id, seed, inputs.globe, scalars, colorArg ? Array.from(colorArg as ArrayLike<number>) : null]);
     const store = this.store;
     let entry = store.entries.get(key);
     if (entry) {
@@ -220,7 +229,9 @@ export class ScriptSession {
     let batch: Int32Array = cells;
     let changes: Uint8Array[] = [];
     let full = true;
-    if (entry && entry.deps && entry.out.length === n * stride) {
+    // 上次没有、这次有了的自定义场、河岸场：脚本读到的值变了（不再回退成内置变量或 0），整个重算
+    const appeared = (dep: string) => (dep.startsWith('field:') ? inputs.field?.(dep.slice(6)) : inputs.river?.(dep.slice(6))) !== undefined;
+    if (entry && entry.deps && entry.out.length === n * stride && ![...entry.absent].some(appeared)) {
       changes = [];
       for (const [dep, ver] of entry.deps) {
         const snap = store.snaps.get(dep);
@@ -254,12 +265,19 @@ export class ScriptSession {
       }
       return v;
     };
+    // 读了却还没有的自定义场、河岸场
+    const absent = new Set<string>();
+    const maybe = (dep: string, v: ArrayLike<number> | undefined) => {
+      if (v === undefined) absent.add(dep);
+      return note(dep, v) as ArrayLike<number> | undefined;
+    };
     const recording: ScriptInputs = {
       n: inputs.n,
       globe: inputs.globe,
       get: (k) => note(toAlias(k), inputs.get(k)),
-      field: (name) => note(`field:${name}`, inputs.field?.(name)) as ArrayLike<number> | undefined,
-      river: inputs.river && ((id) => note(`river:${id}`, inputs.river!(id)) as ArrayLike<number> | undefined),
+      field: (name) => maybe(`field:${name}`, inputs.field?.(name)),
+      // 总是给 river：还没有河流类型（inputs.river 为空）时也记下读了哪一种
+      river: (id) => maybe(`river:${id}`, inputs.river?.(id)),
     };
     scriptRunStats[kind] += batch.length;
     const r = (batch.length ? runScript({ kind, src }, { ...opts, inputs: recording, cells: batch }) : { ok: true, output: null }) as
@@ -272,10 +290,11 @@ export class ScriptSession {
       return { ok: false, issue: r.issue };
     }
     if (!entry || full || entry.out.length !== n * stride) {
-      entry = { out: stride === 1 ? new Float32Array(n) : new Uint8Array(n * stride), valid: new Uint8Array(n), deps: null };
+      entry = { out: stride === 1 ? new Float32Array(n) : new Uint8Array(n * stride), valid: new Uint8Array(n), deps: null, absent };
       store.entries.delete(key);
       store.entries.set(key, entry);
     } else {
+      for (const dep of absent) entry.absent.add(dep);
       // 不在这次范围里、输入却变了的格：记录对不上新的快照了
       for (let i = 0; i < n; i++) {
         if (!entry.valid[i] || mask[i]) continue;

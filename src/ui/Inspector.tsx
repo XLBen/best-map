@@ -103,7 +103,7 @@ function whyNot(e: CellExplanation, winner: string | null): string {
   // 长在哪里的脚本：比最卡的那条耐受条件还卡时先说它
   const place = e.placement;
   if (place !== undefined && place < 0.6 && !(limiting && limiting.factor < place)) {
-    return place === 0 ? '它的脚本条件不让它长在这里' : `它的脚本条件在这里只有 ×${fmt(place, 2)}`;
+    return place === 0 ? '它的脚本条件不让它长在这里' : place < 0.005 ? '它的脚本条件在这里几乎是 0' : `它的脚本条件在这里只有 ×${fmt(place, 2)}`;
   }
   if (limiting && limiting.factor < 0.6) return reasonText(limiting);
   return winner ? `这里也能长，但竞争不过“${winner}”` : '这里也能长，但不占上风';

@@ -463,7 +463,8 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     const placeF = P > 0 && placeSlot[target] >= 0 && d.placeF?.length === world.mesh.n * P ? d.placeF : null;
     if (placeF) {
       const zero = failing.filter((i) => placeF[i * P + placeSlot[target]] === 0).length;
-      if (zero > failing.length / 2) suggestions.push(`“${sp.name || sp.id}”的脚本条件在这些格里是 0（脚本不让它长在这里）：改一改它的“长在哪里”脚本`);
+      // 不写生态的名字：只改名字时不重算冲突（Dirty.Names），写了会对不上
+      if (zero > failing.length / 2) suggestions.push('这种生态的脚本条件在这些格里是 0（“长在哪里”的脚本不让它长在这里，怎么调冷暖干湿都长不出来）：改一改这个脚本');
     }
     for (const l of limiting.slice(0, 3)) {
       const info = FIELD_LABEL.get(l.field);
