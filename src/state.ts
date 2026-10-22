@@ -5,6 +5,7 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { previewWorldOf } from '../core/preview-world';
+import type { Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
@@ -87,6 +88,19 @@ export const hoverProvinceCell = signal<number>(-1);
 // 地图上鼠标旁的说明（工具预览的一句话）。warn：做不了；caution：做得了，但要留意（比如合并后是一省两块）
 export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 export const focusSpecies = signal<string | null>(null);
+
+// 拖生态的花纹、发光滑块时：地图在主线程上立即按这份外观画（只影响画法，不改世界，不进历史）。按生态 id 记。
+// 用法：拖动时 setSpeciesVisualOverride(id, 外观)；松手提交（update_species），等 exec 返回（结果已换上）再给 null 去掉，
+// 这样中间不会闪回旧的样子。新建、打开世界时全部去掉
+export const visualOverrides = signal<ReadonlyMap<string, Visual>>(new Map());
+export function setSpeciesVisualOverride(id: string, visual: Visual | null) {
+  const cur = visualOverrides.value;
+  if (!visual && !cur.has(id)) return;
+  const next = new Map(cur);
+  if (visual) next.set(id, visual);
+  else next.delete(id);
+  visualOverrides.value = next;
+}
 
 // 顶栏按钮弹出的面板：同一时间只开一个
 export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | `cat:${Category}`;
@@ -397,6 +411,7 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
     if (fresh) {
       worldEpoch.value++;
       measure.value = null;
+      if (visualOverrides.value.size) visualOverrides.value = new Map();
     }
     world.value = next;
     worldState.value = s.stateId;

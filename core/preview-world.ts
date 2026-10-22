@@ -24,6 +24,8 @@ export interface PreviewPatch {
   suit: SparseRows | null;
   features: GeoFeature[];
   conflicts: Conflict[];
+  // 副本里没有了的可选推导数组（比如去掉颜色脚本后的 look）：拼回来时也去掉，不沿用当前世界的。没有时不带这一项
+  gone?: (keyof Derived)[];
 }
 
 // 两个数组的内容逐字节相同（−0 与 +0 算不同：拼回来的世界与副本逐位一致）
@@ -93,6 +95,9 @@ export function previewPatch(live: World, copy: World): PreviewPatch {
     const old = (live.derived as unknown as Record<string, ArrayBufferView>)[k];
     if (!old || !same(old, v)) (derived as Record<string, Typed>)[k] = v as Typed;
   }
+  const gone = Object.entries(live.derived)
+    .filter(([k, v]) => ArrayBuffer.isView(v) && !ArrayBuffer.isView((copy.derived as unknown as Record<string, unknown>)[k]))
+    .map(([k]) => k as keyof Derived);
   return {
     small: copy.small,
     causes,
@@ -103,6 +108,7 @@ export function previewPatch(live: World, copy: World): PreviewPatch {
     suit: resized ? null : changedRows(live.derived.suit, copy.derived.suit, S),
     features: copy.derived.features,
     conflicts: copy.derived.conflicts,
+    ...(gone.length ? { gone } : {}),
   };
 }
 
@@ -113,6 +119,7 @@ export function previewWorldOf(base: World, p: PreviewPatch): World {
   if (p.corrF) derived.corrF = p.corrF;
   if (p.share) derived.share = withRows(base.derived.share, p.share, S);
   if (p.suit) derived.suit = withRows(base.derived.suit, p.suit, S);
+  for (const k of p.gone ?? []) delete (derived as unknown as Record<string, unknown>)[k];
   const causes: Causes = { ...base.causes, ...(p.causes as Partial<Causes>) };
   if (p.fields) causes.fields = p.fields;
   return { ...base, causes, small: p.small, derived };

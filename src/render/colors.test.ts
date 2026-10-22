@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { fxPalette, fxSet } from '../../core/biome-look';
 import type { Command } from '../../core/commands';
 import { type PreviewPatch, previewWorldOf } from '../../core/preview-world';
 import { brushCells } from '../../core/select';
+import type { Species, Visual } from '../../core/species';
 import { islandStamp, landStroke, previewTerrain } from '../../core/terrain';
 import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
-import { type ColorOptions, GhostBuffer, cellLayers, editGhost, ghostLayers, highlightColors, provinceScale, terrainGhost } from './colors';
+import { type ColorOptions, GhostBuffer, cellLayers, editGhost, fxLayers, ghostLayers, highlightColors, provinceScale, terrainGhost } from './colors';
 
-// 高亮的编码（着色器按 alpha 字节解码）、省界淡出用的省份大小、幽灵海岸的图层、预览世界的着色
+// 高亮的编码（着色器按 alpha 字节解码）、省界淡出用的省份大小、幽灵海岸的图层、预览世界的着色、
+// 生态的颜色脚本（d.look）与花纹、发光（fx）
 
 describe('highlightColors 的 alpha 字节', () => {
   const w = continents().world;
@@ -201,5 +204,147 @@ describe('预览世界的着色', () => {
     expect(Array.from(a.coast)).toEqual(Array.from(b.coast));
     expect(Array.from(a.elevation)).toEqual(Array.from(b.elevation));
     expect(Array.from(a.smooth)).toEqual(Array.from(b.smooth));
+  });
+});
+
+describe('生态的颜色脚本、花纹与发光', () => {
+  const opts = (mode: ColorOptions['mode'], season: ColorOptions['season'] = 'annual'): ColorOptions => ({ mode, season, focusSpecies: null, borders: false });
+  const withSpecies = (w: World, change: (s: Species) => Species): World => ({ ...w, small: { ...w.small, species: w.small.species.map(change) } });
+  const veg = (w: World, i: number) => w.causes.land[i] === 1 && w.derived.lake[i] !== 1;
+  const snowAt = (w: World, i: number) => (w.derived.tWarm[i] < 0 ? Math.min(1, -w.derived.tWarm[i] / 6) : 0);
+
+  it('有 d.look 时用它当植被颜色，之后照旧加盐壳、积雪；look 为 0 的格照旧按份额混色', () => {
+    const w = continents({ cells: 5000 }).world;
+    const look = new Uint8Array(w.mesh.n * 4);
+    for (let i = 0; i < w.mesh.n; i++) if (veg(w, i) && i % 3) look.set([10, 200, 30, 255], i * 4);
+    const plain = cellLayers(w, opts('terrain'));
+    const lw: World = { ...w, derived: { ...w.derived, look } };
+    const a = cellLayers(lw, opts('terrain'));
+    let used = 0;
+    let bad = 0;
+    for (let i = 0; i < w.mesh.n; i++) {
+      const got = Array.from(a.smooth.subarray(i * 4, i * 4 + 4));
+      // 海、湖、没有 look 的格：与没有 look 时一样
+      let want = Array.from(plain.smooth.subarray(i * 4, i * 4 + 4));
+      if (veg(w, i) && i % 3) {
+        let c = w.derived.lake[i] === 2 ? [226, 218, 196] : [10, 200, 30];
+        const k = snowAt(w, i);
+        if (k > 0) c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
+        // alpha（沙质）不变
+        want = [...Array.from(new Uint8Array(c)), plain.smooth[i * 4 + 3]];
+        used++;
+      }
+      if (got.some((v, k) => v !== want[k])) bad++;
+    }
+    expect(bad).toBe(0);
+    expect(used).toBeGreaterThan(500);
+    // 数据底图（气温）不管植被颜色
+    expect(Array.from(cellLayers(lw, opts('temperature')).smooth)).toEqual(Array.from(cellLayers(w, opts('temperature')).smooth));
+  });
+
+  it('没有花纹、没有发光：不出 fx，其他图层与以前逐字节相同', () => {
+    const w = continents({ cells: 5000 }).world;
+    const a = cellLayers(w, opts('terrain'));
+    expect(a.fx).toBeNull();
+    expect(a.fxPalette).toBeNull();
+    expect(fxLayers(w, opts('terrain'))).toBeNull();
+    // 外观写了但“没有花纹也不发光”：同样跳过
+    const none = withSpecies(w, (s) => ({ ...s, visual: { pattern: 'none', glow: 0 } }));
+    expect(cellLayers(none, opts('terrain')).fx).toBeNull();
+    // 有花纹时也只多出 fx，其他图层不变
+    const pat = withSpecies(w, (s) => ({ ...s, visual: { pattern: 'mottle', glow: 0.3 } }));
+    const b = cellLayers(pat, opts('terrain'));
+    expect(b.fx).toBeInstanceOf(Uint8Array);
+    for (const k of ['smooth', 'other', 'elevation', 'coast', 'grad'] as const) expect(Array.from(b[k]), k).toEqual(Array.from(a[k]));
+    // 数据底图不画花纹；主导生态、省份着色照样画
+    expect(cellLayers(pat, opts('precip')).fx).toBeNull();
+    expect(cellLayers(pat, opts('dominant')).fx).toBeInstanceOf(Uint8Array);
+  });
+
+  it('fx 的编码：R 花纹那一行 + 1、G 份额（雪、盐壳盖住的不算）、B 发光、A 发光颜色那一行 + 1；调色板与 core 的一致', () => {
+    const w = continents({ cells: 5000 }).world;
+    const S = w.small.species.length;
+    const pi = w.small.species.findIndex((s) => s.id === 'taiga');
+    const gi = w.small.species.findIndex((s) => s.id === 'temperate_forest');
+    const vw = withSpecies(w, (s) =>
+      s.id === 'taiga' ? { ...s, visual: { pattern: 'cracks', amount: 0.8, size: 1 } } : s.id === 'temperate_forest' ? { ...s, visual: { pattern: 'none', glow: 0.5, glowColor: '#ff0000' } } : s,
+    );
+    const set = fxSet(vw.small.species, false)!;
+    const ps = set.slotOf[pi];
+    const gs = set.slotOf[gi];
+    // 调色板的行按生态的顺序
+    expect([ps, gs]).toEqual([0, 1]);
+    for (const season of ['annual', 'winter'] as const) {
+      const L = cellLayers(vw, opts('terrain', season));
+      const fx = L.fx!;
+      expect(Array.from(L.fxPalette!)).toEqual(Array.from(fxPalette(set)));
+      let patterned = 0;
+      let glowing = 0;
+      let bad = 0;
+      const d = w.derived;
+      for (let i = 0; i < w.mesh.n; i++) {
+        const got = Array.from(fx.subarray(i * 4, i * 4 + 4));
+        let want = [0, 0, 0, 0];
+        if (veg(w, i)) {
+          const snowT = season === 'winter' ? Math.min(d.tS[i], d.tW[i]) : d.tWarm[i];
+          const cover = d.lake[i] === 2 ? 0 : 1 - (snowT < 0 ? Math.min(1, -snowT / 6) : 0);
+          const ws = d.share[i * S + pi];
+          const wg = d.share[i * S + gi];
+          want = [ws > 0 ? ps + 1 : 0, ws > 0 ? Math.round(255 * ws * cover) : 0, Math.round(255 * Math.min(1, wg * 0.5)), wg > 0 ? gs + 1 : 0];
+        }
+        if (got.some((v, k) => v !== want[k])) bad++;
+        if (got[1] > 20) patterned++;
+        if (got[2] > 20) glowing++;
+      }
+      expect(bad, season).toBe(0);
+      expect(patterned, season).toBeGreaterThan(30);
+      expect(glowing, season).toBeGreaterThan(30);
+    }
+  });
+
+  it('拖滑块时的外观覆盖：只换花纹，与把外观写进世界后着色的一样', () => {
+    const w = continents({ cells: 5000 }).world;
+    const v: Visual = { pattern: 'spots', color2: '#203040', amount: 0.7, size: 1.5, glow: 0.2 };
+    const ov = fxLayers(w, opts('terrain'), new Map([['steppe', v]]))!;
+    const withV = withSpecies(w, (s) => (s.id === 'steppe' ? { ...s, visual: v } : s));
+    const real = cellLayers(withV, opts('terrain'));
+    expect(Array.from(ov.fx)).toEqual(Array.from(real.fx!));
+    expect(Array.from(ov.palette)).toEqual(Array.from(real.fxPalette!));
+    // 覆盖成没有花纹：这种生态不画
+    expect(fxLayers(withV, opts('terrain'), new Map<string, Visual>([['steppe', { pattern: 'none' }]]))).toBeNull();
+  });
+
+  it('预览世界：去掉颜色脚本后的 look 不沿用当前世界的，着色与执行后相同', () => {
+    const o = opts('terrain');
+    const eng = continents({ cells: 5000 });
+    eng.exec({ op: 'update_species', id: 'temperate_forest', patch: { scripts: { color: { api: 1, src: 'return [200, 40, 40];' } } } });
+    expect(eng.world.derived.look).toBeInstanceOf(Uint8Array);
+    const cmd: Command = { op: 'update_species', id: 'temperate_forest', patch: { scripts: {} } };
+    const { patch }: { patch: PreviewPatch } = eng.previewWorld(cmd);
+    expect(patch.gone).toContain('look');
+    const pw = previewWorldOf(eng.world, structuredClone(patch));
+    expect(pw.derived.look).toBeUndefined();
+    const a = cellLayers(pw, o);
+    eng.exec(cmd);
+    expect(eng.world.derived.look).toBeUndefined();
+    const b = cellLayers(eng.world, o);
+    expect(Array.from(a.smooth)).toEqual(Array.from(b.smooth));
+    // 什么都没去掉时不带这一项
+    expect(eng.previewWorld({ op: 'set_planet', patch: { humidity: 1.2 } }).patch.gone).toBeUndefined();
+  });
+
+  it('合成着色器：平面用二维的花纹、星球换成球面上的三维花纹，括号配得上', async () => {
+    // 没有 WebGL：只看拼出来的源码（替换找不到时模块加载就会报错）
+    const { COMPOSE_SOURCES } = await import('./renderer');
+    const count = (src: string, s: string) => src.split(s).length - 1;
+    for (const [name, src] of Object.entries(COMPOSE_SOURCES)) {
+      expect(count(src, '{'), name).toBe(count(src, '}'));
+      expect(count(src, '('), name).toBe(count(src, ')'));
+      expect(count(src, 'float patternAt(int kind'), name).toBe(1);
+      for (const u of ['uniform sampler2D uFx;', 'uniform highp sampler2D uFxPal;', 'uniform int uHasFx;']) expect(src, name).toContain(u);
+      expect(src).toContain(`const float PAT_DETAIL[7] = float[7](1.0, 0.4, 0.3, 1.0, 0.3, 0.6, 0.7);`);
+    }
+    expect(COMPOSE_SOURCES.plane).not.toContain('patternValue3');
+    expect(COMPOSE_SOURCES.planet).toContain('return patternValue3(kind, sphereOf(world) * (uNoiseK / size)');
   });
 });
