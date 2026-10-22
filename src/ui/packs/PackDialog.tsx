@@ -21,7 +21,7 @@ import type { FoundScript } from '../../../core/script';
 import { type LibraryEntry, inLibrary, installPack, library, removePack } from '../../library';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
-import { download, showToast, world } from '../../state';
+import { download, knowIsolation, showToast, world } from '../../state';
 import { type DialogView, fileLabel, openPackApply, openPackImport, openPackLibrary, packDialog } from './store';
 
 // 资源包弹窗（世界 → 资源包…）：资源库的列表、导入（解析、检查、信任，不运行任何脚本）、从这个世界导出。
@@ -224,7 +224,8 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   const [working, setWorking] = useState(false);
   useEffect(() => {
     setUntrusted(null);
-    if (pack) void untrustedScripts(pack).then(setUntrusted);
+    // 问要不要信任之前先知道脚本能不能隔离运行（问话里怎么说）
+    if (pack) void Promise.all([untrustedScripts(pack), knowIsolation()]).then(([list]) => setUntrusted(list));
   }, [pack]);
   if (!read.ok) {
     return (

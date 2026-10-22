@@ -2,6 +2,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!-- 脚本的隔离：计算 Worker 从 data: 地址开（不透明的来源），也受这里的规则管：只能连同源（不能联网）。
+         'unsafe-eval'：脚本要编译成函数才能运行（只在计算 Worker 里）。开发时 connect-src 另加热更新的 WebSocket -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' data: blob:; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>架空世界编辑器</title>
   </head>

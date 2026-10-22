@@ -1,11 +1,9 @@
-import { signal } from '@preact/signals';
 import { SCRIPT_KIND_LABEL, type FoundScript } from '../../../core/script';
+import { scriptsIsolated } from '../../state';
 
 // 资源包里的脚本：信任的问话、只读地查看源码（旧的生态文件导入时问的是 state.ts 的 confirmImport）
 
-// 脚本是不是在隔离的环境里跑（隔离那一步做好、探测通过后设为 true）。没隔离时老实说
-export const scriptsIsolated = signal(false);
-
+// 脚本是不是在隔离的环境里跑（state.ts 的 scriptsIsolated：计算 Worker 从 data: 地址开、自查三项全部通过）。没隔离时老实说
 export function isolationNote(): string {
   return scriptsIsolated.value ? '脚本在隔离的环境里运行，读不到你保存的其他世界，也不能联网。' : '当前环境不能把脚本隔离运行：脚本能读到这个浏览器里保存的世界。';
 }

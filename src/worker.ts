@@ -6,10 +6,14 @@ import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
 import { setScriptHost, setScriptsEnabled } from '../core/script';
 import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
-import { idbGet, idbTx } from './idb';
-import type { LightSnapshot, MirrorLog, Request, Response, ScriptPing, Snapshot } from './protocol';
+import { probeIsolation } from './isolation-probe';
+import type { CheckpointData, Hello, LightSnapshot, MirrorLog, Request, Response, ScriptPing, Snapshot } from './protocol';
+import { cloneForTransfer } from './transfer';
 
-// 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程
+// 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程。
+// 用户的脚本在这里跑：主线程尽量从 data: 地址开它（不透明的来源，页面的 CSP 管着），这样脚本读不到这个浏览器里
+// 保存的世界、也不能联网。所以这里不碰 IndexedDB：检查点发给主线程，由它核对后转交只做存储的 Worker（storage-worker.ts）；
+// 打开时的检查点从主线程给的端口收。也不读自己的文件地址（data: 地址开的 Worker 没有），版本号由主线程告诉
 
 let engine: Engine | null = null;
 
@@ -28,7 +32,7 @@ const LABEL_MAX = 60;
 let scriptLabel = '';
 let tickAt = 0;
 function ping(phase: ScriptPing['phase']) {
-  (self as DedicatedWorkerGlobalScope).postMessage({ kind: 'script', phase, label: scriptLabel } satisfies ScriptPing);
+  post({ kind: 'script', phase, label: scriptLabel });
 }
 setScriptHost({
   enter(label) {
@@ -139,9 +143,13 @@ function reply(msg: Response, transfer: Transferable[] = []) {
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
 }
 
-// ---------- 检查点：存进 IndexedDB，打开上次的世界时直接恢复 ----------
-// 只在打包好的程序里用：Worker 文件名带内容哈希，代码一变就不会用上旧的检查点（开发时文件名不变，不用）
-const BUILD = import.meta.env.DEV ? null : import.meta.url;
+// ---------- 检查点：打开上次的世界时直接恢复，不必重放 ----------
+// 只在打包好的程序里用：版本号是引擎文件的地址（文件名带内容哈希），代码一变就不会用上旧的检查点。
+// 由主线程随新建、打开告诉这里（开发时没有，不写）
+let BUILD: string | null = null;
+function useBuild(build: unknown) {
+  BUILD = typeof build === 'string' && build ? build : null;
+}
 let ckKey = '';
 let ckAt = -Infinity;
 let ckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -159,24 +167,57 @@ function writeCheckpoint(force = false) {
   }
   ckKey = key;
   ckAt = performance.now();
-  // put 时就复制了数据（结构化克隆），之后的改动不影响；写盘在后台进行
-  void idbTx(['checkpoint'], 'readwrite', (s) => s.put({ build: BUILD, cp: engine!.toCheckpoint() }, 'current')).catch(() => (ckKey = ''));
+  // 在这里复制一份（与以前存进 IndexedDB 时一样，之后的改动不影响），数组转移给主线程：主线程不复制，
+  // 核对步号与它的命令记录对得上后再转移给存储 Worker 写盘
+  try {
+    const { value, transfer } = cloneForTransfer(engine.toCheckpoint());
+    post({ kind: 'checkpointData', build: BUILD, epoch, cp: value } satisfies CheckpointData, transfer);
+  } catch {
+    ckKey = '';
+  }
 }
 
-// 安全模式下不用：检查点里的推导运行过脚本
-async function restore(doc: WorldDoc, mesh: Mesh): Promise<Engine | null> {
-  if (!BUILD || safeMode) return null;
+// 打开时的检查点：从主线程给的端口收一条（存储 Worker 只发对得上这个世界的，否则发 null）。
+// 安全模式下不用（检查点里的推导运行过脚本）；等不到（存储 Worker 出了事）就照旧重放
+const CHECKPOINT_WAIT_MS = 5000;
+function receiveCheckpoint(port: MessagePort | undefined): Promise<Checkpoint | null> {
+  if (!port || typeof port.postMessage !== 'function') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const done = (cp: Checkpoint | null) => {
+      clearTimeout(timer);
+      port.onmessage = null;
+      port.close();
+      resolve(cp);
+    };
+    const timer = setTimeout(() => done(null), CHECKPOINT_WAIT_MS);
+    port.onmessage = (ev: MessageEvent<{ cp?: Checkpoint | null }>) => {
+      const cp = ev.data?.cp;
+      done(cp && typeof cp === 'object' ? cp : null);
+    };
+  });
+}
+
+async function restore(port: MessagePort | undefined, doc: WorldDoc, mesh: Mesh): Promise<Engine | null> {
+  const cp = await receiveCheckpoint(port);
+  if (!cp || !BUILD || safeMode) return null;
   try {
-    const saved = await idbGet<{ build: string; cp: Checkpoint }>('checkpoint', 'current');
-    return saved && saved.build === BUILD ? Engine.fromCheckpoint(saved.cp, doc, mesh) : null;
+    return Engine.fromCheckpoint(cp, doc, mesh);
   } catch {
-    // 读不了或对不上：照旧重放
+    // 对不上、恢复时出错：照旧重放
     return null;
   }
 }
 
-// 请求一个接一个处理（有的要等 IndexedDB）
-let chain: Promise<void> = Promise.resolve();
+function post(msg: Hello | CheckpointData | ScriptPing, transfer: Transferable[] = []) {
+  (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
+}
+
+// 请求一个接一个处理（打开时要等检查点）。第一件事是自查是不是在隔离的环境里、跟主线程打招呼：
+// 招呼发出之前不处理任何请求，脚本也就不可能抢在前面伪造一条“隔离了”
+let chain: Promise<void> = probeIsolation(self).then(
+  (isolated) => post({ kind: 'hello', isolated }),
+  () => post({ kind: 'hello', isolated: false }),
+);
 // 一件出了错（比如后台补写检查点时重算出错）不能让后面的都不再处理
 function queue(run: () => Promise<void>) {
   chain = chain.then(run).catch(() => undefined);
@@ -197,6 +238,7 @@ async function handle(id: number, req: Request) {
     switch (req.kind) {
       case 'init': {
         useSafeMode(req.safe);
+        useBuild(req.build);
         const e = new Engine(req.settings, meshFor(req.settings));
         for (const cmd of req.commands ?? []) e.exec(cmd);
         e.update();
@@ -206,8 +248,9 @@ async function handle(id: number, req: Request) {
       }
       case 'load': {
         useSafeMode(req.safe);
+        useBuild(req.build);
         const mesh = meshFor(req.doc.settings);
-        const restored = await restore(req.doc, mesh);
+        const restored = await restore(req.checkpoint, req.doc, mesh);
         useEngine(restored ?? Engine.fromDoc(req.doc, mesh));
         withSnap('已打开世界文件', false, true);
         if (restored) {
