@@ -73,7 +73,7 @@ describe('打包的结果', () => {
 
   it('开发时 CSP 里加上热更新的 WebSocket（只加本机地址、当前端口）', () => {
     const html = `<meta http-equiv="Content-Security-Policy" content="${CSP}" />`;
-    expect(devConnectSrc(html, 5191)).toContain("connect-src 'self' ws://localhost:5191 ws://127.0.0.1:5191 ws://[::1]:5191;");
+    expect(devConnectSrc(html, 5191)).toContain("connect-src 'self' ws://localhost:5191 ws://127.0.0.1:5191;");
     expect(devConnectSrc(html, null)).toBe(html);
   });
 });

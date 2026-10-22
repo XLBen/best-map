@@ -40,10 +40,11 @@ function inSources(root: string, file: string): boolean {
   return /^(core|src)[\\/]/.test(rel);
 }
 
-// 开发时页面的 CSP 里加上热更新的 WebSocket（只加本机地址、当前端口）
+// 开发时页面的 CSP 里加上热更新的 WebSocket（只加本机地址、当前端口）。
+// IPv6 的 [::1] 在 CSP 里不是合法的来源写法（浏览器报错并忽略）；从 [::1] 打开时同源的 'self' 已经管用
 export function devConnectSrc(html: string, port: number | null): string {
   if (!port) return html;
-  const extra = [`ws://localhost:${port}`, `ws://127.0.0.1:${port}`, `ws://[::1]:${port}`].join(' ');
+  const extra = [`ws://localhost:${port}`, `ws://127.0.0.1:${port}`].join(' ');
   return html.replace("connect-src 'self'", `connect-src 'self' ${extra}`);
 }
 
