@@ -1,5 +1,7 @@
 import { Ban, Lock, LockOpen, Palette, ScanSearch, SplitSquareHorizontal, X } from 'lucide-preact';
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { Command } from '../../core/commands';
 import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
@@ -7,6 +9,7 @@ import { provinceColor } from '../../core/world';
 import { type ViewMode, exec, mapKm, mode, selectedProvince, world } from '../state';
 import { focusOn } from './camera';
 import { Seg } from './common';
+import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 
 // 省份：底部条上的“选中省份”编辑、省份着色开关；“⋯”里的自动划分规则
 
@@ -39,6 +42,8 @@ export function ProvinceBar() {
   // Esc：放弃这次输入（不在失去焦点时提交）
   const cancelled = useRef(false);
   useEffect(() => setName(meta?.name ?? ''), [id, meta?.name]);
+  // 按钮不见了（取消选择、换了工具）时鼠标移开的事件不会来：一并去掉按钮的预览
+  useEffect(() => clearBarPreview, []);
   if (!w || id === null || !meta) return null;
   const cells = provinceCells(w, id);
   const area = Math.round((cells.length * mapKm(w).cell ** 2) / 100) * 100;
@@ -95,7 +100,14 @@ export function ProvinceBar() {
       >
         {meta.locked ? <Lock size={15} /> : <LockOpen size={15} />} {meta.locked ? '已锁定' : '锁定'}
       </button>
-      <button class="bar-btn" disabled={meta.locked || cells.length < 2} onClick={() => void exec({ op: 'split_province', id }, '正在划分…')}>
+      {/* 鼠标停在按钮上：地图上先画出新的省界，分出来的那一半淡淡地涂上它将来的颜色 */}
+      <button
+        class="bar-btn"
+        disabled={meta.locked || cells.length < 2}
+        onPointerEnter={() => showSplit(w, id)}
+        onPointerLeave={clearBarPreview}
+        onClick={() => holdBarPreview(exec({ op: 'split_province', id }, '正在划分…'))}
+      >
         <SplitSquareHorizontal size={15} /> 对半分开
       </button>
       <button class="bar-btn icon" onClick={() => focusOn(cells)} title="在地图上看">
@@ -112,6 +124,7 @@ function RulesBox({ w }: { w: World }) {
   const rules = w.small.provinceRules;
   const [draft, setDraft] = useState<ProvinceRules>(rules);
   useEffect(() => setDraft(rules), [JSON.stringify(rules)]);
+  useEffect(() => clearBarPreview, []);
   const changed = JSON.stringify(draft) !== JSON.stringify(rules);
   const counts = new Map<ProvinceKind, number>();
   for (const m of Object.values(w.small.provinces)) counts.set(m.kind, (counts.get(m.kind) ?? 0) + 1);
@@ -138,15 +151,29 @@ function RulesBox({ w }: { w: World }) {
       {check('wasteland', '冰原、深漠、高山划成无人区')}
       {check('lakes', '大湖单独成省')}
       {check('seaByDistance', '近海的海域小，远洋的大')}
+      {/* 鼠标停在按钮上：地图上先画出新的省界和省名（与点下去的结果相同）；点下去照样一下就做，可以撤销 */}
       <div class="row wrap">
-        <button class="primary" onClick={() => void exec({ op: 'generate_provinces', rules: draft }, '正在划分省份…')}>
+        <RegenButton cmd={{ op: 'generate_provinces', rules: draft }} primary>
           {changed ? '按新规则重新划分' : '重新划分'}
-        </button>
-        <button onClick={() => void exec({ op: 'generate_provinces', rules: { ...draft, seed: rules.seed + 1 } }, '正在划分省份…')}>换一种划分</button>
+        </RegenButton>
+        <RegenButton cmd={{ op: 'generate_provinces', rules: { ...draft, seed: rules.seed + 1 } }}>换一种划分</RegenButton>
       </div>
       <p class="muted small">同样的规则划出来的结果是固定的；想要别的分法点“换一种划分”。锁定的省份不会变，撤销可以回到原来的划分。</p>
       <p class="muted small">图例：灰色斜线 = 无人区；蓝色字 = 湖省</p>
     </section>
+  );
+}
+
+function RegenButton({ cmd, primary, children }: { cmd: Command; primary?: boolean; children: ComponentChildren }) {
+  return (
+    <button
+      class={primary ? 'primary' : undefined}
+      onPointerEnter={() => showProvinceCommand(cmd)}
+      onPointerLeave={clearBarPreview}
+      onClick={() => holdBarPreview(exec(cmd, '正在划分省份…'))}
+    >
+      {children}
+    </button>
   );
 }
 

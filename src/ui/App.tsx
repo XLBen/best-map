@@ -87,7 +87,7 @@ function CursorHint() {
   const cw = window.innerWidth;
   const pos = h.x > cw * 0.55 ? { right: `${Math.max(4, cw - h.x + 12)}px` } : { left: `${h.x + 16}px` };
   return (
-    <div class={`cursor-hint ${h.warn ? 'warn' : ''}`} style={{ ...pos, top: `${h.y + 20}px` }}>
+    <div class={`cursor-hint ${h.warn ? 'warn' : h.caution ? 'caution' : ''}`} style={{ ...pos, top: `${h.y + 20}px` }}>
       {h.text}
     </div>
   );

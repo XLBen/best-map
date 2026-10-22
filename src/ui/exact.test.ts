@@ -5,6 +5,7 @@ import { previewWorldOf } from '../../core/preview-world';
 import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { exactDelay, exec, noteCost, previewReply, previewWorld, setOptions, sliderActive, slowPreview, world, worldState } from '../state';
+import { pendingEdits, pendingPreview } from './pending';
 import { type Pointer, biomeTool, climateTool, growTool } from './tools';
 
 // 确切预览：按住停顿时在副本上算出将来的世界，接着画不跳回原样，松手执行的是同一条命令（Worker 直接采用）；
@@ -174,6 +175,54 @@ describe('涂生态、冷暖：确切预览', () => {
     const previewed = vi.mocked(previewWorld).mock.calls[0][0];
     await t.up?.(at(w, far));
     expect(JSON.stringify(vi.mocked(exec).mock.calls[0][0])).toBe(JSON.stringify(previewed));
+  });
+});
+
+describe('排队中的笔画', () => {
+  it('松手后才算好的确切预览交给排队中的这一笔：地图照样画出将来的世界，换了工具也留着，结果换上才去掉', async () => {
+    const { w, c, d } = setup();
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    // 预览发出去了，还没回来
+    let reply: () => void = () => {};
+    vi.mocked(previewWorld).mockImplementationOnce(
+      (cmd: Command) =>
+        new Promise((r) => {
+          reply = () => {
+            const { result, patch } = eng.previewWorld(cmd);
+            r({ result, world: previewWorldOf(w, structuredClone(patch)), base: w });
+          };
+        }),
+    );
+    const t = biomeTool();
+    t.down?.(at(w, c));
+    t.move?.(at(w, d), true);
+    t.preview();
+    vi.advanceTimersByTime(300);
+    await settle();
+    expect(previewWorld).toHaveBeenCalledTimes(1);
+    // 这时松手：排队中的这一笔先是松手时的预览
+    const done = t.up?.(at(w, d));
+    expect(pendingEdits.value).toHaveLength(1);
+    const e = pendingEdits.value[0];
+    expect(pendingPreview(e, w).world ?? null).toBeNull();
+    // 发出去的那一个照算（它就是这一笔的结果）：回来以后排队中的这一笔画出将来的世界、变了的格描边
+    reply();
+    await settle();
+    const v = pendingPreview(e, w);
+    expect(v.world).toBeTruthy();
+    expect(v.layers[0].pattern).toBe('outline');
+    expect(pendingPreview(e, w)).toBe(v);
+    // 换了工具（旧的工具对象取消掉）：已经算好的留给排队中的这一笔
+    t.cancel?.();
+    expect(pendingPreview(e, w).world).toBe(v.world);
+    // 预览的就是执行的那一条命令
+    expect(JSON.stringify(vi.mocked(exec).mock.calls.at(-1)![0])).toBe(JSON.stringify(vi.mocked(previewWorld).mock.calls.at(-1)![0]));
+    // 世界换了（结果到了）：按旧世界算的将来不再画
+    expect(pendingPreview(e, { ...w }).world ?? null).toBeNull();
+    finish(true);
+    await done;
+    expect(pendingEdits.value).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { Command } from '../core/commands';
-import type { DocTail, PreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { DocTail, PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { PreviewPatch } from '../core/preview-world';
@@ -16,6 +16,8 @@ export type Request =
   | { kind: 'undo' }
   | { kind: 'redo' }
   | { kind: 'preview'; cmd: Command }
+  // 省份命令的轻预览：只算省份（重划、按新规则重新划分之前先看新的省界和省名）
+  | { kind: 'previewProvinces'; cmd: Command }
   // “调整”面板拖滑块时：只组合地形，返回陆海的变化
   | { kind: 'previewTerrain'; patch: TerrainPatch }
   // 预览，连同将来的世界（与当前世界的差别）：地图画出将来的样子
@@ -78,6 +80,7 @@ export type Response =
       noop?: boolean;
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
+      provinces?: ProvincesPreview;
       terrain?: TerrainPreview;
       // 预览世界：与当前世界的差别（previewWorld）
       world?: PreviewPatch;

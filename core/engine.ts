@@ -430,6 +430,18 @@ export class Engine {
     return { ...diffWorlds(this.world, copy.world), ...landAndFailing(this.world, copy.world), summary: step?.summary ?? '', ms, stateId: this.stateId };
   }
 
+  // 省份命令的轻预览：只复制省份数组与小数据，在临时的世界上执行（推导照用当前的：省份命令不重算推导，
+  // 新省的名字按同样的推导起），返回执行后的省份数组、各省（含新起的名字）、切线与历史里会写的一句话。
+  // 与执行逐值相同；活的世界、历史都不变。只接受省份命令（含只由省份命令组成的 batch），别的命令报错
+  previewProvinces(cmd: Command): ProvincesPreview {
+    if (!provinceOnly(cmd)) throw new CommandError('这一步不是省份的改动，不能用省份预览');
+    const d = this.update();
+    const w = this.world;
+    const scratch: World = { ...w, causes: { ...w.causes, province: w.causes.province.slice() }, small: structuredClone(w.small) };
+    const r = applyCommand(scratch, cmd, { ensureDerived: () => d });
+    return { province: scratch.causes.province, provinces: scratch.small.provinces, seams: scratch.small.provinceSeams ?? null, summary: r.summary, changed: r.changed };
+  }
+
   // 采用预览算好的结果：紧接着执行同一条命令时直接换上副本的原因、小数据与推导，不再重算（画河、
   // 涂生态、冷暖干湿、调整面板松手时）。原因数组抄进当前世界的数组里，世界对象不换（地形底图缓存按世界对象存，
   // 换成副本的那一份：重画一片时副本另建过）。返回这一步的说明；用不上时返回 null。
@@ -556,6 +568,22 @@ export interface PreviewResult extends PreviewExtras {
   conflicts: number;
   // 预览后各约束的满足比例
   satisfied: { id: string; satisfied: number; required: number }[];
+}
+
+// 省份的轻预览（Engine.previewProvinces）：执行后的省份数组、各省、切线（没有切线时为 null）与历史里会写的一句话
+export interface ProvincesPreview {
+  province: Int32Array;
+  provinces: SmallState['provinces'];
+  seams: NonNullable<SmallState['provinceSeams']> | null;
+  summary: string;
+  // 命令有没有改动什么（什么都没改时执行也不进历史）
+  changed: boolean;
+}
+
+// 省份预览能做的命令：只改省份数组与小数据里的省份、切线
+const PROVINCE_OPS = new Set<Command['op']>(['assign_province', 'merge_province', 'split_province', 'regenerate_provinces', 'generate_provinces', 'set_province', 'cut_province']);
+function provinceOnly(cmd: Command): boolean {
+  return cmd.op === 'batch' ? cmd.commands.every(provinceOnly) : PROVINCE_OPS.has(cmd.op);
 }
 
 function diffWorlds(a: World, b: World): Omit<PreviewResult, keyof PreviewExtras> {

@@ -1,6 +1,6 @@
 import { batch, signal } from '@preact/signals';
 import type { Command } from '../core/commands';
-import type { PreviewResult, Timings, WorldDoc } from '../core/engine';
+import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
@@ -81,8 +81,11 @@ export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
 export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false });
 export const hoverCell = signal<number>(-1);
-// 地图上鼠标旁的说明（工具预览的一句话）
-export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean } | null>(null);
+// 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
+// 与 hoverCell 一起设
+export const hoverProvinceCell = signal<number>(-1);
+// 地图上鼠标旁的说明（工具预览的一句话）。warn：做不了；caution：做得了，但要留意（比如合并后是一省两块）
+export const cursorHint = signal<{ x: number; y: number; text: string; warn?: boolean; caution?: boolean } | null>(null);
 export const focusSpecies = signal<string | null>(null);
 
 // 顶栏按钮弹出的面板：同一时间只开一个
@@ -298,7 +301,7 @@ function sizesFor(w: World): Partial<ToolOptions> {
 let worker: Worker | null = null;
 let nextId = 1;
 // edit：改动世界的请求（执行、撤销、重做、换一个）；画笔可以在它们后面排队
-const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean }>();
+const pending = new Map<number, { resolve: (r: Response) => void; edit: boolean; kind: Request['kind'] }>();
 const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
 
 // 正在算的只有编辑（或不改世界的后台请求）：这时画的笔画可以排在后面，按顺序执行。
@@ -306,6 +309,14 @@ const EDITS = new Set<Request['kind']>(['exec', 'undo', 'redo', 'replaceLast']);
 export function onlyEditsPending(): boolean {
   for (const p of pending.values()) if (!p.edit) return false;
   return true;
+}
+
+// 还没算完的编辑（执行、撤销、重做）有几步：排队时“换个形状”要等它们算完。
+// 换一个本身不算：连点两下“换个形状”，第二下换掉的还是同一步
+export function editsInFlight(): number {
+  let k = 0;
+  for (const p of pending.values()) if (EDITS.has(p.kind) && p.kind !== 'replaceLast') k++;
+  return k;
 }
 let meshCache: { key: string; mesh: Mesh } | null = null;
 
@@ -337,6 +348,7 @@ function call(req: Request, label: string | null): Promise<Response> {
     pending.set(id, {
       // 不带提示的请求（预览、自动保存）不改世界，不挡排队
       edit: EDITS.has(req.kind) || !label,
+      kind: req.kind,
       resolve: (r) => {
         if (label && --labelled === 0) busy.value = null;
         resolve(r);
@@ -577,6 +589,11 @@ function againAction(again: Again | undefined, label: string) {
   return {
     label: again.label,
     run: () => {
+      // 后面还有排队的编辑：现在换掉的会是排在最后的那一步，不是这一步
+      if (editsInFlight()) {
+        showToast('等排队的几步算完再换');
+        return;
+      }
       const next = again.next();
       if (next) void replaceLast(next, label, again);
     },
@@ -680,27 +697,15 @@ export async function commitTerrain(cmd: Command, label: string, patch: TerrainP
   return ok;
 }
 
-// 一次性的地形预览（重画这一片悬停时）：同一时间只算一个，排队时来了新的，旧的直接得到 null；
+// 一次性的地形预览（重画这一片悬停时）：同一时间只算一个，排队时来了新的，旧的直接得到 null（见下面的 latest）；
 // 算的过程中世界换了也得到 null。结果里的 ms 是 Worker 算它用了多久（工具据此决定要不要自动预览）
-let terrainOnce: { patch: TerrainPatch; resolve: (r: TerrainPreview | null) => void } | null = null;
-let terrainOnceBusy = false;
+const terrainOnce = latest(async (patch: TerrainPatch) => {
+  const w = world.value;
+  const r = await call({ kind: 'previewTerrain', patch }, null);
+  return r.ok && r.terrain && world.value === w ? r.terrain : null;
+});
 export function previewTerrainOnce(patch: TerrainPatch): Promise<TerrainPreview | null> {
-  return new Promise((resolve) => {
-    terrainOnce?.resolve(null);
-    terrainOnce = { patch, resolve };
-    if (terrainOnceBusy) return;
-    void (async () => {
-      terrainOnceBusy = true;
-      while (terrainOnce) {
-        const p = terrainOnce;
-        terrainOnce = null;
-        const w = world.value;
-        const r = await call({ kind: 'previewTerrain', patch: p.patch }, null);
-        p.resolve(r.ok && r.terrain && world.value === w ? r.terrain : null);
-      }
-      terrainOnceBusy = false;
-    })();
-  });
+  return terrainOnce.ask(patch);
 }
 
 // 命令的确切预览：在世界的副本上执行，返回会出现 / 消失的河等（画河改道时用）。
@@ -730,6 +735,17 @@ export function previewCommand(cmd: Command): Promise<PreviewResult | null> {
       cmdBusy = false;
     })();
   });
+}
+
+// 省份命令的轻预览（重划、按新规则重新划分、换一种划分）：只算省份，返回执行后的省份数组、各省（含新起的名字）与切线。
+// 同一时间只算一个；排队时来了新的，旧的直接得到 null（见下面的 latest）。做不成（比如涂得不够）、世界已经变了也是 null，不提示
+const provincePreviews = latest(async (cmd: Command) => {
+  const w = world.value;
+  const r = await call({ kind: 'previewProvinces', cmd }, null);
+  return r.ok && r.provinces && world.value === w ? r.provinces : null;
+});
+export function previewProvinces(cmd: Command): Promise<ProvincesPreview | null> {
+  return provincePreviews.ask(cmd);
 }
 
 // 导出：在单独的 Worker 里用主线程上的这一份世界生成（期间照样能看、能改地图），进度显示在顶部，可以取消

@@ -1,10 +1,11 @@
-import { effect } from '@preact/signals';
+import { batch, effect } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
+import { displayCellAt } from '../../core/display';
 import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
-import type { World } from '../../core/world';
-import { GhostBuffer, type HighlightLayer, cellLayers, editGhost, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
+import type { ProvinceMeta, World } from '../../core/world';
+import { type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, editGhost, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
 import { type CellLayers, Renderer } from '../render/renderer';
 import {
@@ -16,6 +17,7 @@ import {
   flash,
   focusSpecies,
   hoverCell,
+  hoverProvinceCell,
   labelGroups,
   mapStyle,
   measure,
@@ -37,6 +39,8 @@ import {
 } from '../state';
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
+import { pendingEdits, pendingPreview } from './pending';
+import { barPreview } from './provincePreview';
 import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt, reliefLayers } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
@@ -52,6 +56,78 @@ function looksLikeTrackpad(e: WheelEvent): boolean {
   if (typeof wd === 'number' && wd !== 0 && wd % 120 === 0) return false;
   return true;
 }
+
+// 省名标签：每个省放在它的格的中心。province、metas 可以是预览里将来的（重划、重新划分时先看新的省名）
+function provinceLabelsOf(w: World, province: Int32Array, metas: Record<number, ProvinceMeta>): ProvinceLabel[] {
+  if (w.mesh.kind === 'sphere') {
+    // 整个星球：经度取圆周平均，跨过经度 180° 的省份名字也落在省份上
+    const sums = new Map<number, [number, number, number, number]>();
+    for (let i = 0; i < w.mesh.n; i++) {
+      const p = province[i];
+      if (p < 0) continue;
+      const s = sums.get(p) ?? [0, 0, 0, 0];
+      s[0] += Math.sin(Math.PI * w.mesh.x[i]);
+      s[1] += Math.cos(Math.PI * w.mesh.x[i]);
+      s[2] += w.mesh.y[i];
+      s[3]++;
+      sums.set(p, s);
+    }
+    return [...sums]
+      .filter(([p]) => metas[p])
+      .map(([p, [sn, cs, y, c]]) => {
+        const x = Math.atan2(sn, cs) / Math.PI;
+        return { x: x < 0 ? x + 2 : x, y: y / c, text: metas[p].name || String(p), kind: metas[p].kind };
+      });
+  }
+  const sums = new Map<number, [number, number, number]>();
+  for (let i = 0; i < w.mesh.n; i++) {
+    const p = province[i];
+    if (p < 0) continue;
+    const s = sums.get(p) ?? [0, 0, 0];
+    s[0] += w.mesh.x[i];
+    s[1] += w.mesh.y[i];
+    s[2]++;
+    sums.set(p, s);
+  }
+  return [...sums].filter(([p]) => metas[p]).map(([p, [x, y, c]]) => ({ x: x / c, y: y / c, text: metas[p].name || String(p), kind: metas[p].kind }));
+}
+
+// 几个省份预览叠在一起（排队中的、按钮悬停的、当前工具的，后面的盖住前面的）。整份的（重划、重新划分）作底，
+// 它前面的就不要了。同样的几个预览给同一个对象（地图不必重新上传）
+let merged: { from: (ProvincePreview | null | undefined)[]; out: ProvincePreview | null } = { from: [], out: null };
+function mergeProvinces(from: (ProvincePreview | null | undefined)[]): ProvincePreview | null {
+  if (from.length === merged.from.length && from.every((x, k) => x === merged.from[k])) return merged.out;
+  const list = from.filter((x): x is ProvincePreview => !!x);
+  let out: ProvincePreview | null = list[0] ?? null;
+  if (list.length > 1) {
+    const top = list.map((x) => !!x.province).lastIndexOf(true);
+    const base = top >= 0 ? list[top] : null;
+    const rest = list.slice(top + 1);
+    // 将来全部的切线：最后给出的那一份（对半分开时切线接着管分出来的一半）
+    const seamList = [base, ...rest].reverse().find((x) => x && x.seamList !== undefined)?.seamList;
+    out = {
+      cells: [...(base?.cells ?? []), ...rest.flatMap((x) => x.cells)],
+      ids: [...(base?.ids ?? []), ...rest.flatMap((x) => x.ids)],
+      seams: [...(base?.seams ?? []), ...rest.flatMap((x) => x.seams ?? [])],
+      ...(base ? { province: base.province, metas: base.metas } : {}),
+      ...(seamList !== undefined ? { seamList } : {}),
+    };
+  }
+  merged = { from, out };
+  return out;
+}
+
+// 几步的幽灵海岸合在一起（排队中的、当前工具的；同一格的增量相加）。同样的几份给同一个对象（地图不必重算）
+let ghosts: { from: (GhostEdit | null | undefined)[]; out: GhostEdit | null } = { from: [], out: null };
+function mergeGhosts(from: (GhostEdit | null | undefined)[]): GhostEdit | null {
+  if (from.length === ghosts.from.length && from.every((x, k) => x === ghosts.from[k])) return ghosts.out;
+  const list = from.filter((x): x is GhostEdit => !!x);
+  const out = list.length <= 1 ? (list[0] ?? null) : { cells: list.flatMap((g) => g.cells), delta: list.flatMap((g) => g.delta), lake: list.flatMap((g) => g.lake ?? []) };
+  ghosts = { from, out };
+  return out;
+}
+
+const NO_PREVIEW: Preview = { layers: [], shapes: [], hint: null };
 
 export function MapView() {
   const glRef = useRef<HTMLCanvasElement>(null);
@@ -74,6 +150,17 @@ export function MapView() {
     // 河流路径按流量数组缓存：只改了名字、省份时（轻快照沿用同一批推导数组）不必重新描河
     let pathsFor: Float32Array | null = null;
     let provinceLabels: ProvinceLabel[] = [];
+    // 预览里将来的省名（重划、重新划分）：按预览对象缓存
+    let previewLabels: { of: ProvincePreview | null; labels: ProvinceLabel[] } = { of: null, labels: [] };
+    const labelsFor = (w: World, pv: ProvincePreview | null | undefined): ProvinceLabel[] => {
+      if (!pv?.province || !pv.metas) return provinceLabels;
+      if (previewLabels.of !== pv) {
+        const province = pv.province.slice();
+        pv.cells.forEach((c, k) => (province[c] = pv.ids[k]));
+        previewLabels = { of: pv, labels: provinceLabelsOf(w, province, pv.metas) };
+      }
+      return previewLabels.labels;
+    };
     let labelBoxes: LabelBox[] = [];
     let fittedMesh: unknown = null;
     let fittedEpoch = -1;
@@ -269,10 +356,26 @@ export function MapView() {
         lastPointer = { x, y, sx, sy, cell: findCell(w.mesh, x, y), shift: false, alt: false };
         handler.move?.(lastPointer, false);
       }
-      // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）；排队中的笔画鼠标离开后也留着
+      // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）；点了以后还在算、不排队的那一步（重画这一片）也留着
       const showPreview = !clean && (!!pointer || pressed || sliderActive.value || !!measure.value || !!active().keep?.());
-      const preview: Preview = showPreview ? active().preview() : { layers: [], shapes: [], hint: null };
-      // 画出来的世界：工具的确切预览、调整面板预览的将来的世界，或当前世界（导出图片只画当前世界）。
+      const own: Preview = showPreview ? active().preview() : NO_PREVIEW;
+      // 排队中的编辑（松手时的预览，直到结果换上，鼠标离开地图也留着）与底部条、“⋯”里按钮悬停的省份预览
+      // （对半分开、重新划分）画在当前工具的预览下面。幽灵海岸几步合在一起；将来的世界用当前工具的确切预览，
+      // 没有时用排队中最后一个有确切预览的（都是按当前世界算的，见 pending.ts）
+      const queued = clean ? [] : pendingEdits.value.map((e) => pendingPreview(e, w));
+      const button = !clean && barPreview.value?.base === w ? barPreview.value : null;
+      const preview: Preview =
+        queued.length || button
+          ? {
+              ...own,
+              layers: [...queued.flatMap((q) => q.layers), ...(button?.layers ?? []), ...own.layers],
+              shapes: [...queued.flatMap((q) => q.shapes), ...own.shapes],
+              provinces: mergeProvinces([...queued.map((q) => q.provinces), button?.provinces, own.provinces]),
+              ghost: mergeGhosts([...queued.map((q) => q.ghost), own.ghost]),
+              world: own.world ?? [...queued].reverse().find((q) => q.world)?.world ?? null,
+            }
+          : own;
+      // 画出来的世界：工具的确切预览、排队中的画笔的确切预览、调整面板预览的将来的世界，或当前世界（导出图片只画当前世界）。
       // 生态颜色、雪、河、地名、风、没涂成的格按它画；工具、悬停卡片照旧看当前世界
       const ap = adjustPreviewWorld.value;
       const shown = clean ? w : (preview.world ?? (ap && ap.base === w ? ap.world : null) ?? w);
@@ -310,7 +413,7 @@ export function MapView() {
         season: season.value,
         style: mapStyle.value,
         shapes: preview.shapes,
-        provinceLabels: c === 'provinces' ? provinceLabels : [],
+        provinceLabels: c === 'provinces' ? labelsFor(w, preview.provinces) : [],
         features: overlays.value.labels || c === 'names' ? shown.derived.features : null,
         labelTypes: types,
         kmPerUnit: w.kmPerUnit,
@@ -325,9 +428,9 @@ export function MapView() {
       if (clean) return;
       // 鼠标旁的一句话（拖滑块时一般由滑块上的数说明，这里不显示；画笔在鼠标最后停的地方预览涂一下时，写在那里）
       const at = sliderActive.value ? (preview.sliderHint ? lastPointer : null) : pointer;
-      const hint = at && preview.hint ? { x: at.sx, y: at.sy, text: preview.hint, warn: preview.warn } : null;
+      const hint = at && preview.hint ? { x: at.sx, y: at.sy, text: preview.hint, warn: preview.warn, caution: preview.caution } : null;
       const cur = cursorHint.value;
-      if (hint?.text !== cur?.text || hint?.x !== cur?.x || hint?.y !== cur?.y || hint?.warn !== cur?.warn) cursorHint.value = hint;
+      if (hint?.text !== cur?.text || hint?.x !== cur?.x || hint?.y !== cur?.y || hint?.warn !== cur?.warn || hint?.caution !== cur?.caution) cursorHint.value = hint;
       if (flash.value && !flashTimer) {
         flashTimer = setTimeout(() => {
           flashTimer = null;
@@ -359,40 +462,10 @@ export function MapView() {
         renderer.provinceScale = provinceScale(w.causes.province);
         provinceScaleFor = w.causes.province;
       }
-      if (w.mesh.kind === 'sphere') {
-        // 整个星球：经度取圆周平均，跨过经度 180° 的省份名字也落在省份上
-        const sums = new Map<number, [number, number, number, number]>();
-        for (let i = 0; i < w.mesh.n; i++) {
-          const p = w.causes.province[i];
-          if (p < 0) continue;
-          const s = sums.get(p) ?? [0, 0, 0, 0];
-          s[0] += Math.sin(Math.PI * w.mesh.x[i]);
-          s[1] += Math.cos(Math.PI * w.mesh.x[i]);
-          s[2] += w.mesh.y[i];
-          s[3]++;
-          sums.set(p, s);
-        }
-        provinceLabels = [...sums]
-          .filter(([p]) => w.small.provinces[p])
-          .map(([p, [sn, cs, y, c]]) => {
-            const x = Math.atan2(sn, cs) / Math.PI;
-            return { x: x < 0 ? x + 2 : x, y: y / c, text: w.small.provinces[p].name || String(p), kind: w.small.provinces[p].kind };
-          });
-      } else {
-        const sums = new Map<number, [number, number, number]>();
-        for (let i = 0; i < w.mesh.n; i++) {
-          const p = w.causes.province[i];
-          if (p < 0) continue;
-          const s = sums.get(p) ?? [0, 0, 0];
-          s[0] += w.mesh.x[i];
-          s[1] += w.mesh.y[i];
-          s[2]++;
-          sums.set(p, s);
-        }
-        provinceLabels = [...sums]
-          .filter(([p]) => w.small.provinces[p])
-          .map(([p, [x, y, c]]) => ({ x: x / c, y: y / c, text: w.small.provinces[p].name || String(p), kind: w.small.provinces[p].kind }));
-      }
+      provinceLabels = provinceLabelsOf(w, w.causes.province, w.small.provinces);
+      // 鼠标没动、世界变了（编辑的结果到了）：屏幕上这一点画的格可能变了（陆海、切线），重新算
+      for (const p of new Set([pointer, lastPointer])) if (p && p.cell >= 0) p.shown = displayCellAt(w, p.x, p.y, p.cell);
+      if (pointer?.shown) setHover(pointer);
       requestDraw();
     });
 
@@ -478,6 +551,8 @@ export function MapView() {
       void measure.value;
       void reference.value;
       void redrawTick.value;
+      void pendingEdits.value;
+      void barPreview.value;
       requestDraw();
     });
 
@@ -496,14 +571,27 @@ export function MapView() {
     let clickStart: { sx: number; sy: number } | null = null;
     let spaceDown = false;
 
-    // 屏幕上的一点（CSS 像素，相对画布）在地图上的哪里
+    // 屏幕上的一点（CSS 像素，相对画布）在地图上的哪里；shown：那里画的是哪一格（悬停卡片、吸取、选省按它）
     const pointerAt = (sx: number, sy: number, shift: boolean, alt: boolean): Pointer => {
       const [x, y] = renderer.screenToWorld(sx, sy);
       const w = world.value;
       // 整个星球东西相接：只看南北
       const inside = !!w && (w.mesh.kind === 'sphere' ? y >= 0 && y <= 1 : x >= 0 && y >= 0 && x <= w.mesh.width && y <= w.mesh.height);
-      return { x, y, sx, sy, cell: inside ? findCell(w!.mesh, x, y) : -1, shift, alt };
+      const cell = inside ? findCell(w!.mesh, x, y) : -1;
+      return { x, y, sx, sy, cell, shift, alt, shown: cell >= 0 ? displayCellAt(w!, x, y, cell) : undefined };
     };
+    // 悬停卡片“这里”说的那一格：屏幕上这一点画成的陆地或海
+    const hereOf = (p: Pointer) => p.shown?.here ?? p.cell;
+    // 鼠标下的格：“这里”说的那一格，省份那一行按画出来的省（切线旁按显示的那一边）。世界的 effect 里也调它，所以是函数声明
+    function setHover(p: Pointer) {
+      const here = p.shown?.here ?? p.cell;
+      const prov = p.shown?.province ?? p.cell;
+      if (hoverCell.peek() === here && hoverProvinceCell.peek() === prov) return;
+      batch(() => {
+        hoverProvinceCell.value = prov;
+        hoverCell.value = here;
+      });
+    }
     const pointerOf = (e: PointerEvent | MouseEvent): Pointer => {
       const r = ovCanvas.getBoundingClientRect();
       return pointerAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey, e.altKey);
@@ -517,7 +605,7 @@ export function MapView() {
       const p = pointerAt(pointer.sx, pointer.sy, pointer.shift, pointer.alt);
       pointer = p;
       lastPointer = p;
-      if (hoverCell.value !== p.cell) hoverCell.value = p.cell;
+      setHover(p);
       active().move?.(p, pressed);
     }
 
@@ -560,8 +648,8 @@ export function MapView() {
       // Alt+点：吸取（取这里的生态、这里的省份）
       const def = TOOL_DEFS[tool.value];
       if (e.altKey && def.pick && !measure.value) {
-        // 吸取省份：剪刀切线附近按显示出来的那一边算
-        const cell = def.category === 'provinces' ? provinceCellAt(w, p) : p.cell;
+        // 吸取的是屏幕上这一点画的：省份按画出来的省（扭曲后的格、切线两边），生态按画成的陆地
+        const cell = def.category === 'provinces' ? provinceCellAt(w, p) : hereOf(p);
         const got = cell >= 0 ? def.pick(w, cell) : null;
         showToast(got ? `吸取了“${got}”` : '这里没有可以吸取的', !got);
         requestDraw();
@@ -594,7 +682,7 @@ export function MapView() {
         clickStart = null;
         return;
       }
-      if (hoverCell.value !== p.cell) hoverCell.value = p.cell;
+      setHover(p);
       if (category.value === 'names') hoverLabel = hitLabel(p.sx, p.sy);
       active().move?.(p, pressed);
       requestDraw();
