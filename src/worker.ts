@@ -55,6 +55,7 @@ function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
       canUndo: e.canUndo,
       canRedo: e.canRedo,
       timings: e.lastTimings,
+      stateId: e.stateId,
     },
     transfer,
   };
@@ -74,6 +75,7 @@ function lightSnapshot(e: Engine): { snap: LightSnapshot; transfer: Transferable
       canUndo: e.canUndo,
       canRedo: e.canRedo,
       timings: e.lastTimings,
+      stateId: e.stateId,
     },
     transfer: [province.buffer],
   };
@@ -170,9 +172,21 @@ async function handle(id: number, req: Request) {
         engine!.redo();
         withSnap('重做', true);
         return;
-      case 'preview':
-        reply({ id, ok: true, preview: engine!.preview(req.cmd) });
+      case 'preview': {
+        if (!req.world) {
+          reply({ id, ok: true, preview: engine!.preview(req.cmd) });
+          return;
+        }
+        // 差别里的数组是副本的（副本留着给紧接着的执行采用）：不转移，结构化克隆复制一份发过去
+        const { result, patch } = engine!.previewWorld(req.cmd);
+        reply({ id, ok: true, preview: result, world: patch });
         return;
+      }
+      case 'previewProvinces': {
+        const p = engine!.previewProvinces(req.cmd);
+        reply({ id, ok: true, provinces: p }, [p.province.buffer as ArrayBuffer]);
+        return;
+      }
       case 'previewTerrain':
         reply({ id, ok: true, terrain: previewTerrain(engine!.world, req.patch) });
         return;

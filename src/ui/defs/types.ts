@@ -95,8 +95,8 @@ export interface AdjustmentDef {
   step: number;
   format(v: number): string;
   command(w: World, v: number): Command;
-  // 'terrain'：拖动时实时预览陆海变化
-  preview?: 'terrain';
+  // 'terrain'：拖动时实时预览陆海变化；'world'：停下后在副本上算出将来的世界（生态、雪、河、风），地图直接画它
+  preview?: 'terrain' | 'world';
   // 预览要用的参数（与 command 对应）
   patch?(v: number): Record<string, number>;
   busyLabel: string;

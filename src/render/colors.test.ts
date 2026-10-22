@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { Command } from '../../core/commands';
+import { type PreviewPatch, previewWorldOf } from '../../core/preview-world';
 import { continents } from '../../core/testing/fixtures';
-import { highlightColors, provinceScale } from './colors';
+import { cellLayers, highlightColors, provinceScale } from './colors';
 
-// 高亮的编码（着色器按 alpha 字节解码）与省界淡出用的省份大小
+// 高亮的编码（着色器按 alpha 字节解码）、省界淡出用的省份大小、预览世界的着色
 
 describe('highlightColors 的 alpha 字节', () => {
   const w = continents().world;
@@ -58,5 +60,28 @@ describe('provinceScale', () => {
     const s = provinceScale(w.causes.province);
     expect(s).toBeGreaterThan(2);
     expect(s).toBeLessThan(40);
+  });
+});
+
+describe('预览世界的着色', () => {
+  it('高程没变、湖变了（整体干湿）：海岸、水深与执行后一致，不画出旧的湖', () => {
+    const o = { mode: 'terrain', season: 'annual', focusSpecies: null, borders: false } as const;
+    // 内陆放一个季节性的湖：雨水多了，湖面变大
+    const eng = continents({ cells: 5000 });
+    const w = eng.world;
+    const inland = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && w.causes.landness[i] >= 300);
+    eng.exec({ op: 'add_lake', lake: { cell: inland[Math.floor(inland.length * 0.2)], radius: 120, depth: 120, perennial: false } });
+    const cmd: Command = { op: 'set_planet', patch: { humidity: 3 } };
+    const { patch }: { patch: PreviewPatch } = eng.previewWorld(cmd);
+    expect(patch.derived.lake).toBeDefined();
+    expect(patch.derived.elevation).toBeUndefined();
+    // 当前世界的着色先进了缓存（同一份高程）
+    cellLayers(eng.world, o);
+    const a = cellLayers(previewWorldOf(eng.world, structuredClone(patch)), o);
+    eng.exec(cmd);
+    const b = cellLayers(eng.world, o);
+    expect(Array.from(a.coast)).toEqual(Array.from(b.coast));
+    expect(Array.from(a.elevation)).toEqual(Array.from(b.elevation));
+    expect(Array.from(a.smooth)).toEqual(Array.from(b.smooth));
   });
 });

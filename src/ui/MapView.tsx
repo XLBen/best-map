@@ -5,10 +5,11 @@ import { findCell } from '../../core/mesh';
 import type { World } from '../../core/world';
 import { type HighlightLayer, cellLayers, groupPreview, highlightColors, provinceScale } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
-import { Renderer } from '../render/renderer';
+import { type CellLayers, Renderer } from '../render/renderer';
 import {
   FLASH_MS,
   adjustPreview,
+  adjustPreviewWorld,
   cornerLift,
   cursorHint,
   flash,
@@ -131,14 +132,15 @@ export function MapView() {
       return waste.layer;
     }
 
-    function highlightLayers(w: World, preview: Preview): { layers: HighlightLayer[]; key: unknown[] } {
+    // shown：画出来的世界（确切预览、调整面板预览的将来的世界，或当前世界）：没涂成的格按它画
+    function highlightLayers(w: World, shown: World, preview: Preview): { layers: HighlightLayer[]; key: unknown[] } {
       const layers: HighlightLayer[] = [];
       const c = category.value;
       // 按每个图层对象比较：工具沿用同一个图层时不必重新上传
-      const key: unknown[] = [w, c, ...preview.layers];
+      const key: unknown[] = [w, shown, c, ...preview.layers];
       if (c === 'nature') {
         // 没涂成的格：红色斜线
-        const failing = w.derived.conflicts.flatMap((x) => x.failing);
+        const failing = shown.derived.conflicts.flatMap((x) => x.failing);
         if (failing.length) layers.push({ cells: failing, color: [235, 60, 50], alpha: 0.85, pattern: 'hatch' });
       }
       if (c === 'provinces' && selectedProvince.value !== null) {
@@ -269,11 +271,16 @@ export function MapView() {
       // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）；排队中的笔画鼠标离开后也留着
       const showPreview = !clean && (!!pointer || pressed || sliderActive.value || !!measure.value || !!active().keep?.());
       const preview: Preview = showPreview ? active().preview() : { layers: [], shapes: [], hint: null };
+      // 画出来的世界：工具的确切预览、调整面板预览的将来的世界，或当前世界（导出图片只画当前世界）。
+      // 生态颜色、雪、河、地名、风、没涂成的格按它画；工具、悬停卡片照旧看当前世界
+      const ap = adjustPreviewWorld.value;
+      const shown = clean ? w : (preview.world ?? (ap && ap.base === w ? ap.world : null) ?? w);
+      applyColors(shown);
       if (clean) {
         renderer.setHighlight(null);
         lastHighlightKey = [];
       } else {
-        const { layers, key } = highlightLayers(w, preview);
+        const { layers, key } = highlightLayers(w, shown, preview);
         if (key.length !== lastHighlightKey.length || key.some((k, i) => k !== lastHighlightKey[i])) {
           renderer.setHighlight(highlightColors(w, layers));
           lastHighlightKey = key;
@@ -293,7 +300,7 @@ export function MapView() {
       const lift = r && r.left < 300 ? Math.ceil(window.innerHeight - r.top) + 4 : 0;
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
-      labelBoxes = drawOverlay(ctx, w, paths, renderer.camera, {
+      labelBoxes = drawOverlay(ctx, shown, shown === w ? paths : pathsOf(shown), renderer.camera, {
         rivers: overlays.value.rivers,
         wind: overlays.value.wind,
         markers: c === 'water' && !clean,
@@ -301,14 +308,14 @@ export function MapView() {
         style: mapStyle.value,
         shapes: preview.shapes,
         provinceLabels: c === 'provinces' ? provinceLabels : [],
-        features: overlays.value.labels || c === 'names' ? w.derived.features : null,
+        features: overlays.value.labels || c === 'names' ? shown.derived.features : null,
         labelTypes: types,
         kmPerUnit: w.kmPerUnit,
         hoverLabel: c === 'names' && !clean ? (hoverLabel ?? selectedFeature.value) : null,
         scaleBar: overlays.value.scale,
         cornerLift: lift,
         latitude: overlays.value.latitude
-          ? { north: w.settings.latNorth + w.small.planet.latShift, south: w.settings.latSouth + w.small.planet.latShift }
+          ? { north: shown.settings.latNorth + shown.small.planet.latShift, south: shown.settings.latSouth + shown.small.planet.latShift }
           : null,
         currents: overlays.value.currents,
       });
@@ -386,25 +393,51 @@ export function MapView() {
       requestDraw();
     });
 
-    // 着色：视图模式、季节、关注的类型、边界。着色用到的东西都没变（只改了名字的轻快照）就不重新着色、不重画地形
+    // 着色：视图模式、季节、关注的类型、边界，按画出来的世界（预览的将来的世界或当前世界，在 draw 里做）。
+    // 着色用到的数组都没变（只改了名字的轻快照；预览世界里没变的数组沿用当前世界的同一个对象）就不重新着色、不重画地形。
+    // 最近的两份着色留着：预览出现、消失时来回切换不必重算
     let colorKey: unknown[] = [];
-    const disposeColors = effect(() => {
-      const w = world.value;
-      if (!w) return;
+    const colorCache: { key: unknown[]; layers: CellLayers }[] = [];
+    const sameKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
+    function applyColors(w: World) {
       const o = { mode: mode.value, season: season.value, focusSpecies: focusSpecies.value, borders: overlays.value.borders && (category.value === 'provinces' || mode.value === 'provinces') };
       const kinds = Object.entries(w.small.provinces)
         .map(([p, m]) => `${p}:${m.kind}`)
         .join(',');
       const seams = (w.small.provinceSeams ?? []).map((s) => s.id).join(',');
-      const key = [w.mesh, w.derived.elevation, w.derived.dominant, w.causes.province, kinds, seams, o.mode, o.season, o.focusSpecies, o.borders];
-      if (key.length === colorKey.length && key.every((k, i) => k === colorKey[i])) return;
+      const arrays: unknown[] = [];
+      for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
+      for (const v of Object.values(w.causes)) if (ArrayBuffer.isView(v)) arrays.push(v);
+      arrays.push(...Object.values(w.derived.corrF), ...Object.values(w.causes.fields));
+      const colors = w.small.species.map((s) => s.color).join(',');
+      const key = [w.mesh, ...arrays, colors, kinds, seams, o.mode, o.season, o.focusSpecies, o.borders];
+      if (sameKey(key, colorKey)) return;
       colorKey = key;
+      let hit = colorCache.find((x) => sameKey(x.key, key));
+      if (!hit) {
+        hit = { key, layers: cellLayers(w, o) };
+        colorCache.unshift(hit);
+        colorCache.length = Math.min(colorCache.length, 2);
+      }
       renderer.setMesh(w.mesh);
-      renderer.setLayers(cellLayers(w, o));
+      renderer.setLayers(hit.layers);
       lastHighlightKey = [];
       groupKey = [];
+    }
+    // 着色的选项变了、调整面板的预览世界到了：重画
+    const disposeColors = effect(() => {
+      void mode.value;
+      void focusSpecies.value;
+      void adjustPreviewWorld.value;
       requestDraw();
     });
+
+    // 预览世界的河（河流多少、整体干湿……地图画将来的河）：按预览世界缓存；当前世界的河照旧用 paths
+    let shownPaths: { w: World; paths: OverlayPaths } | null = null;
+    const pathsOf = (s: World): OverlayPaths => {
+      if (shownPaths?.w !== s) shownPaths = { w: s, paths: buildPaths(s) };
+      return shownPaths.paths;
+    };
 
     // 换工具：新的工具对象；其他会影响预览或叠加的状态变化时重画
     const disposeTool = effect(() => {

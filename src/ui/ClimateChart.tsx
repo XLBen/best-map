@@ -17,11 +17,13 @@ import {
 } from '../../core/species';
 import { isVegetated } from '../../core/vegetation';
 import type { World } from '../../core/world';
-import { download, exec, focusSpecies, hoverCell, options, showToast, tool, world } from '../state';
+import type { Command } from '../../core/commands';
+import { adjustPreviewNote, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
 import { paintWith } from './defs/tools';
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
-// 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风
+// 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风。
+// 拖色块时手停一下，地图上就是松手后的样子（在世界的副本上算好，松手时直接采用）
 
 const W = 340;
 const H = 250;
@@ -116,6 +118,11 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
     return [((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H] as const;
   };
   const rectOf = (sp: Species) => (draftRect?.id === sp.id ? draftRect.rect : speciesRect(sp));
+  // 松手时执行的命令（拖动中预览的也是它）
+  const commandFor = (id: string, rect: Rect): Command | null => {
+    const sp = w.small.species.find((s) => s.id === id);
+    return sp ? { op: 'update_species', id: sp.id, patch: { tolerances: withRect(sp, rect).tolerances } } : null;
+  };
 
   const onDown = (e: PointerEvent, sp: Species) => {
     e.stopPropagation();
@@ -147,20 +154,30 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
       if (drag.edges.t) y0 = Math.max(PAD.t, Math.min(y1 - 4, y0 + dy));
       if (drag.edges.b) y1 = Math.min(H - PAD.b, Math.max(y0 + 4, y1 + dy));
     }
-    setDraftRect({ id: drag.id, rect: rectFromPx(x0, x1, y0, y1) });
+    const rect = rectFromPx(x0, x1, y0, y1);
+    setDraftRect({ id: drag.id, rect });
+    // 手停下 200 毫秒：地图上画出松手后的世界
+    previewAdjust(commandFor(drag.id, rect));
   };
   const onUp = () => {
     const d = drag;
     setDrag(null);
-    if (!d || !draftRect || draftRect.id !== d.id) return;
-    const sp = w.small.species.find((s) => s.id === d.id);
-    if (!sp) return;
-    const next = withRect(sp, draftRect.rect);
-    void exec({ op: 'update_species', id: sp.id, patch: { tolerances: next.tolerances } }, '正在计算生态…');
+    if (!d || !draftRect || draftRect.id !== d.id) {
+      if (d) previewAdjust(null);
+      return;
+    }
+    const cmd = commandFor(d.id, draftRect.rect);
+    // 预览过的就是它：结果直接采用，预览的世界留到结果换上
+    if (cmd) void execAdjust(cmd, '正在计算生态…');
+    else previewAdjust(null);
   };
 
   const hover = hoverCell.value;
   const here = hover >= 0 && isVegetated(w, w.derived, hover) ? { x: xOf(w.derived.tMean[hover]), y: yOf(w.derived.moisture[hover]) } : null;
+  // 拖着色块时：预览算到哪一步了（正在算预览 / 地图上是松手后的样子 / 松手后约 N 秒出结果）
+  const note = adjustPreviewNote.value;
+  const dragged = drag && draftRect?.id === drag.id ? commandFor(drag.id, draftRect.rect) : null;
+  const previewNote = dragged && note?.key === JSON.stringify(dragged) ? note.text : null;
   // 选中的画在最上面
   const order = [...w.small.species].sort((a, b) => (a.id === selected?.id ? 1 : 0) - (b.id === selected?.id ? 1 : 0));
   const sel = selected ? rectPx(rectOf(selected)) : null;
@@ -232,6 +249,11 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
               这里
             </text>
           </g>
+        )}
+        {previewNote && (
+          <text x={W - PAD.r - 4} y={PAD.t + 12} text-anchor="end" class="axis" pointer-events="none">
+            {previewNote}
+          </text>
         )}
       </svg>
     </div>

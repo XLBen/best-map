@@ -1,4 +1,5 @@
 import type { Command } from '../../core/commands';
+import type { PreviewResult } from '../../core/engine';
 import { lakeArea } from '../../core/elevation';
 import { endemicSpecies } from '../../core/endemic';
 import { hexToRgb } from '../../core/export';
@@ -50,6 +51,7 @@ import {
   sliderActive,
   world,
 } from '../state';
+import { Exact, type ExactView } from './exact';
 
 // 地图工具：每个工具在动手前或动手时给出确切的预览（高亮的格、矢量图形、一句话），
 // 松手后执行的命令与预览用同一份计算，所以结果与预览一致。
@@ -77,6 +79,8 @@ export interface Preview {
   sliderHint?: boolean;
   // 省份的预览：这些格将来属于哪个省。地图照此画出将来真实的省界（同一个对象不必重新上传）
   provinces?: ProvincePreview | null;
+  // 确切预览算出的将来的世界：地图按它画生态颜色、雪、河、地名、风和没涂成的格（工具、悬停卡片照旧看当前世界）
+  world?: World | null;
 }
 
 export interface ProvincePreview {
@@ -130,8 +134,12 @@ const isBusy = () => {
 };
 
 // 一笔：经过的格与到笔画中心线的最近归一化距离 t（0 中心，1 边缘）
+let strokeIds = 0;
 class Stroke {
   t = new Map<number, number>();
+  id = ++strokeIds;
+  // 改过几次（涂到新的格、离中心线更近）：确切预览按它判断还是不是同一笔
+  rev = 0;
   private last: [number, number] | null = null;
 
   add(w: World, x: number, y: number, filter?: (i: number) => boolean) {
@@ -145,7 +153,10 @@ class Stroke {
       b.cells.forEach((c, j) => {
         if (filter && !filter(c)) return;
         const prev = this.t.get(c);
-        if (prev === undefined || b.t[j] < prev) this.t.set(c, b.t[j]);
+        if (prev === undefined || b.t[j] < prev) {
+          this.t.set(c, b.t[j]);
+          this.rev++;
+        }
       });
     }
     this.last = [x, y];
@@ -172,20 +183,91 @@ interface BrushConfig {
   commit: (w: World, s: Stroke, shift: boolean) => Promise<unknown>;
   // 画笔圈画在半径的几倍处：最后一个是主圈（悬停时虚线、按住时实线），前面的是细实线。省略时只在半径处画一圈
   rings?: number[];
+  // 确切预览：松手时会执行的命令（commit 执行的就是它）。有这一项的画笔，按住停顿 250 毫秒时在世界的副本上
+  // 算一遍，地图画出将来的世界、变了的格描边；拖底部条的滑块时在鼠标最后停的地方确切地预览涂一下
+  exact?: (w: World, s: Stroke, shift: boolean) => Command | null;
+  // 确切的结果到了以后鼠标旁的那句话（如“森林 · 38 格会变 · 6 格没涂成”）
+  exactHint?: (w: World, s: Stroke, shift: boolean, r: PreviewResult) => string;
+  // 画笔圈外再画一道淡淡的虚线圈：周围跟着变的范围（自然融入的过渡，地图单位）；null 不画
+  reach?: (w: World) => number | null;
 }
 
 // 一笔涂多重的预览深浅：变化量占滑块最大值的比例，最淡也有 0.35（力度很小时也看得见涂到了哪里）
 export const strengthValues = (deltas: number[], max: number) => deltas.map((d) => 0.35 + 0.65 * Math.min(1, Math.abs(d) / max));
 
+// 选项的编号：确切预览的 key 用它（换了生态、力度、过渡，就不是同一个预览）
+const optionIds = new WeakMap<ToolOptions, number>();
+let nextOptionId = 1;
+const optionsId = () => {
+  let id = optionIds.get(options.value);
+  if (!id) optionIds.set(options.value, (id = nextOptionId++));
+  return id;
+};
+
+// 图层里只留一部分格（确切预览之后新涂的格）
+function onlyCells(l: HighlightLayer, keep: (c: number) => boolean): HighlightLayer {
+  const cells: number[] = [];
+  const values: number[] = [];
+  l.cells.forEach((c, k) => {
+    if (!keep(c)) return;
+    cells.push(c);
+    if (l.values) values.push(l.values[k]);
+  });
+  return { ...l, cells, values: l.values ? values : undefined };
+}
+
+// 确切预览的说法：几格会变、这一笔里几格没涂成
+export function exactCounts(r: PreviewResult, cells: Iterable<number>): { changed: number; failing: number } {
+  const mine = new Set(cells);
+  return { changed: r.changedCells.length, failing: r.failing.filter((c) => mine.has(c)).length };
+}
+
 // 画笔可以排队：前面的笔画还在算时照样能画，松手后按顺序执行，各自是一步（结果与一笔一笔等着画相同）。
-// 排队中的笔画一直显示松手时的预览，直到结果换上（不先跳回原样，也不变成白色的“等待”）
+// 排队中的笔画一直显示松手时的预览，直到结果换上（不先跳回原样，也不变成白色的“等待”）。
+// 有确切预览的画笔（cfg.exact）：按住停顿时地图画出将来的世界；之后接着画也不跳回原样（一直显示上一个确切预览，
+// 新涂的格淡淡地涂上估计的颜色），直到新的确切预览换上。松手执行的是同一条命令，Worker 直接采用算好的结果
 function brushTool(cfg: BrushConfig): ToolHandler {
   let stroke: Stroke | null = null;
   let pointer: Pointer | null = null;
   // 鼠标在不在地图上：离开后只留排队中的笔画（拖滑块时照样在最后停的地方预览）
   let inside = false;
-  // 排队中的笔画：各自松手时的预览图层
-  let queued: { s: Stroke; layers: HighlightLayer[] }[] = [];
+  // 排队中的笔画：各自松手时的预览图层；有确切预览的还带着它（key：松手时这一笔的确切预览的 key）
+  let queued: { s: Stroke; layers: HighlightLayer[]; key: string; view: ExactView | null }[] = [];
+  const ex = new Exact();
+  // 每个确切预览算的时候这一笔已经涂到了哪些格：之后新涂的格另外淡淡地涂上估计的颜色
+  const covered = new Map<string, Set<number>>();
+  const keyOf = (w: World, s: Stroke, shift: boolean) => `${worldId(w)}|${s.id}|${s.rev}|${shift}|${optionsId()}`;
+  const wantExact = (w: World, s: Stroke, shift: boolean, pause?: number) => {
+    const key = keyOf(w, s, shift);
+    ex.want(
+      key,
+      () => {
+        // 停顿期间又涂了几格（还没来得及重画）、世界换了：等下一次
+        if (world.value !== w || keyOf(w, s, shift) !== key || !s.t.size) return null;
+        const cmd = cfg.exact!(w, s, shift);
+        if (cmd) covered.set(key, new Set(s.t.keys()));
+        return cmd;
+      },
+      pause,
+    );
+    return key;
+  };
+  // 确切预览到了：变了的格描边（将来的颜色由地图画出来），之后新涂的格淡淡地涂上估计的颜色。按预览与这一笔缓存
+  const exactCache = new WeakMap<Stroke, { v: ExactView; rev: number; o: ToolOptions; layers: HighlightLayer[] }>();
+  const exactLayers = (v: ExactView, s: Stroke, est: () => HighlightLayer[]): HighlightLayer[] => {
+    const c = exactCache.get(s);
+    if (c?.v === v && c.rev === s.rev && c.o === options.value) return c.layers;
+    const cov = covered.get(v.key);
+    const added = (cov ? est().map((l) => onlyCells(l, (i) => !cov.has(i))) : est()).filter((l) => l.cells.length);
+    const layers: HighlightLayer[] = [{ cells: v.result.changedCells, color: WHITE, pattern: 'outline' }, ...added];
+    exactCache.set(s, { v, rev: s.rev, o: options.value, layers });
+    return layers;
+  };
+  // 排队中的笔画能显示的确切预览：松手后才算好的（还在 ex 里）优先；世界换了就没有
+  const viewOf = (q: (typeof queued)[number]): ExactView | null => {
+    const v = ex.view?.key === q.key ? ex.view : q.view;
+    return v && v.base === world.value ? v : null;
+  };
   // 省份预览（涂省）：松手后一直留到结果回来，省界不会先跳回原样再跳过去
   let lastProv: ProvincePreview | null = null;
   let held: { s: Stroke; prov: ProvincePreview }[] = [];
@@ -209,25 +291,28 @@ function brushTool(cfg: BrushConfig): ToolHandler {
   };
   // 拖底部条上的滑块（半径、力度、过渡……）时：在鼠标最后停的地方预览涂一下会怎样，大小、深浅跟着滑块变，
   // 旁边写出这一下的变化量（如“堆山 约 +600 m”）
-  let dab: { w: World; o: ToolOptions; p: Pointer; layers: HighlightLayer[]; hint: string | null; warn?: boolean } | null = null;
+  let dab: { w: World; o: ToolOptions; p: Pointer; s: Stroke; layers: HighlightLayer[]; hint: string | null; warn?: boolean } | null = null;
   const dabAt = (w: World, p: Pointer) => {
     if (dab?.w !== w || dab.o !== options.value || dab.p !== p) {
       const s = new Stroke();
       if (p.cell >= 0) s.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
       // 特别大的画笔（两万格以上）不预览，免得拖滑块卡顿
       const r = s.t.size && s.t.size <= 20000 ? cfg.layers(w, s, p.shift) : null;
-      dab = { w, o: options.value, p, layers: r?.layers ?? [], hint: r?.hint ?? null, warn: r?.warn };
+      dab = { w, o: options.value, p, s, layers: r?.layers ?? [], hint: r?.hint ?? null, warn: r?.warn };
     }
     return dab;
   };
   const ringsAt = (w: World, p: Pointer): Shape[] => {
     const r = brushR(w);
     const ks = cfg.rings ?? [1];
-    return ks.map((k, j): Shape =>
+    const shapes = ks.map((k, j): Shape =>
       j === ks.length - 1
         ? { kind: 'circle', x: p.x, y: p.y, r: r * k, dashed: !stroke, geodesic: true }
         : { kind: 'circle', x: p.x, y: p.y, r: r * k, color: 'rgba(255, 255, 255, 0.6)', width: 1, geodesic: true },
     );
+    const reach = cfg.reach?.(w);
+    if (reach) shapes.unshift({ kind: 'circle', x: p.x, y: p.y, r: r + reach, dashed: true, color: 'rgba(255, 255, 255, 0.35)', width: 1, geodesic: true });
+    return shapes;
   };
   return {
     drags: true,
@@ -242,6 +327,11 @@ function brushTool(cfg: BrushConfig): ToolHandler {
         showToast(h.text ?? '现在不能用', true);
         return;
       }
+      // 新的一笔：上一笔松手后才算好的确切预览交给它的排队项，拖滑块时预览的那一下不要了
+      for (const q of queued) if (ex.view?.key === q.key) q.view = ex.view;
+      ex.clear();
+      const kept = new Set(queued.map((q) => q.view?.key));
+      for (const k of [...covered.keys()]) if (!kept.has(k)) covered.delete(k);
       stroke = new Stroke();
       stroke.add(w, p.x, p.y, cfg.filter && ((i) => cfg.filter!(w, i)));
       pointer = p;
@@ -256,9 +346,15 @@ function brushTool(cfg: BrushConfig): ToolHandler {
       const w = world.value;
       const s = stroke;
       stroke = null;
-      if (!w || !s || !s.t.size) return;
+      if (!w || !s || !s.t.size) {
+        ex.clear();
+        return;
+      }
+      // 不再算新的确切预览（已经发出去的照算：它就是这一笔的结果，执行时直接采用）
+      const key = cfg.exact ? keyOf(w, s, p.shift) : '';
+      ex.stop();
       // 松手时的预览留在图上，直到这一笔的结果换上
-      const q = { s, layers: cfg.layers(w, s, p.shift).layers };
+      const q = { s, layers: cfg.layers(w, s, p.shift).layers, key, view: ex.view };
       queued.push(q);
       if (lastProv) held.push({ s, prov: lastProv });
       lastProv = null;
@@ -273,6 +369,7 @@ function brushTool(cfg: BrushConfig): ToolHandler {
     cancel() {
       stroke = null;
       lastProv = null;
+      ex.clear();
     },
     leave() {
       inside = false;
@@ -281,21 +378,48 @@ function brushTool(cfg: BrushConfig): ToolHandler {
     preview() {
       const w = world.value;
       if (!w || !pointer) return held.length ? { ...EMPTY, provinces: provincesWith(null) } : EMPTY;
-      // 排队时世界还没换上前面笔画的结果：每一笔照旧显示松手时的预览
-      const waiting = queued.flatMap((q) => q.layers);
+      // 排队时世界还没换上前面笔画的结果：每一笔照旧显示松手时的预览（有确切预览的画出将来的世界）
+      let future: World | null = null;
+      const waiting = queued.flatMap((q) => {
+        const v = viewOf(q);
+        if (!v) return q.layers;
+        future = v.world;
+        return exactLayers(v, q.s, () => q.layers);
+      });
       const inLine = queued.length ? `正在计算…（${queued.length} 笔）` : null;
       if (!stroke) {
-        if (!inside && !sliderActive.value) return waiting.length || held.length ? { layers: waiting, shapes: [], hint: null, provinces: provincesWith(null) } : EMPTY;
+        // 松开了滑块：不再预览涂一下（空闲悬停只有圈）
+        if (!sliderActive.value) ex.stop();
+        if (!inside && !sliderActive.value) return waiting.length || held.length ? { layers: waiting, shapes: [], hint: null, provinces: provincesWith(null), world: future } : EMPTY;
         const h = cfg.hint(pointer.shift);
         if (sliderActive.value && !h.warn) {
           const d = dabAt(w, pointer);
-          return { layers: [...waiting, ...d.layers], shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true, provinces: provincesWith(null) };
+          // 拖滑块：在这里确切地涂一下会怎样（只在拖滑块时；空闲悬停只有圈）
+          if (cfg.exact && d.s.t.size && d.s.t.size <= 20000 && !queued.length) {
+            const key = wantExact(w, d.s, pointer.shift, 200);
+            const v = ex.view?.key === key ? ex.view : null;
+            if (v) return { layers: exactLayers(v, d.s, () => d.layers), shapes: ringsAt(w, pointer), hint: '在这里涂会这样', sliderHint: true, world: v.world };
+          }
+          return { layers: [...waiting, ...d.layers], shapes: ringsAt(w, pointer), hint: inLine ?? d.hint, warn: d.warn, sliderHint: true, provinces: provincesWith(null), world: future };
         }
-        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes: ringsAt(w, pointer), hint: inLine ?? h.text, warn: h.warn, provinces: provincesWith(null) };
+        return { layers: [...waiting, ...(h.warn ? [] : footprint(w, pointer))], shapes: ringsAt(w, pointer), hint: inLine ?? h.text, warn: h.warn, provinces: provincesWith(null), world: future };
       }
       const r = cfg.layers(w, stroke, pointer.shift);
       lastProv = r.provinces ?? null;
-      return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: queued.length ? `排队中：前面还有 ${queued.length} 笔` : (r.hint ?? null), warn: r.warn, provinces: provincesWith(lastProv) };
+      const head = queued.length ? `排队中：前面还有 ${queued.length} 笔` : null;
+      if (cfg.exact) {
+        // 按住停顿 250 毫秒：确切预览；接着画时一直显示上一个，直到新的换上（不跳回原样）
+        const key = wantExact(w, stroke, pointer.shift);
+        const v = ex.view;
+        if (v) {
+          const s = stroke;
+          const hint = v.key === key && cfg.exactHint ? cfg.exactHint(w, s, pointer.shift, v.result) : `${r.hint ?? ''}…`;
+          return { layers: [...waiting, ...exactLayers(v, s, () => r.layers)], shapes: ringsAt(w, pointer), hint: head ?? hint, warn: r.warn, provinces: provincesWith(lastProv), world: v.world };
+        }
+        const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '';
+        return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: head ?? `${r.hint ?? ''}${slow}`, warn: r.warn, provinces: provincesWith(lastProv), world: future };
+      }
+      return { layers: [...waiting, ...r.layers], shapes: ringsAt(w, pointer), hint: head ?? r.hint ?? null, warn: r.warn, provinces: provincesWith(lastProv), world: future };
     },
   };
 }
@@ -797,6 +921,9 @@ function constraintCmd(cells: number[], species: string) {
   return { op: 'add_constraint' as const, constraint: { cells, species, mode: o.biomeMode === 'natural' ? ('constraint' as const) : ('override' as const), ratio: 1, radius: o.reachKm, label: '' } };
 }
 
+// 确切预览的结果怎么说：几格生态会变（没有变的说“生态不变”）
+const biomeChange = (r: PreviewResult) => (r.changedCells.length ? `${r.changedCells.length} 格生态会变` : '生态不变');
+
 export function biomeTool(): ToolHandler {
   return brushTool({
     hint: () => {
@@ -808,8 +935,17 @@ export function biomeTool(): ToolHandler {
     filter: (w, i) => isVegetated(w, w.derived, i),
     layers(w, s) {
       const sp = speciesOf(w, options.value.biome)!;
-      return { layers: [{ cells: s.cells, color: hexToRgb(sp.color), alpha: 0.8 }], hint: `${sp.name} ${s.t.size} 格` };
+      // 估计：涂到的格淡淡地涂上这种生态的颜色（停一下就换成确切的结果）
+      return { layers: [{ cells: s.cells, color: hexToRgb(sp.color), alpha: 0.35 }], hint: `${sp.name} ${s.t.size} 格` };
     },
+    exact: (w, s) => (speciesOf(w, options.value.biome) && s.t.size ? constraintCmd(s.cells, options.value.biome!) : null),
+    exactHint(w, s, _shift, r) {
+      const sp = speciesOf(w, options.value.biome)!;
+      const { changed, failing } = exactCounts(r, s.t.keys());
+      return `${sp.name} · ${changed} 格会变${failing ? ` · ${failing} 格没涂成` : ''}`;
+    },
+    // 自然融入：周围这么远跟着平滑过渡
+    reach: (w) => (options.value.biomeMode === 'natural' ? options.value.reachKm / w.kmPerUnit : null),
     commit: (_w, s) => exec(constraintCmd(s.cells, options.value.biome!), '正在计算生态…'),
   });
 }
@@ -833,11 +969,15 @@ function patchAt(w: World, cell: number): number[] {
   return out;
 }
 
+// 拖动扩张：按住一片生态往外拖。手停下 250 毫秒时确切地预览（与涂生态一样），松手执行同一条命令
 export function growTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let start: { x: number; y: number; cell: number; region: number[]; species: number } | null = null;
   let committing = false;
   let cache: { key: string; grown: number[] } | null = null;
+  const ex = new Exact();
+  // 确切预览算的时候扩张到了哪些格（之后多出来的格另外淡淡地涂上）
+  const covered = new Map<string, Set<number>>();
   const grownNow = (w: World): number[] => {
     if (!start || !pointer) return [];
     const dx = pointer.x - start.x;
@@ -859,6 +999,8 @@ export function growTool(): ToolHandler {
       }
       start = { x: p.x, y: p.y, cell: p.cell, region: patchAt(w, p.cell), species: s };
       pointer = p;
+      ex.clear();
+      covered.clear();
     },
     move(p) {
       pointer = p;
@@ -868,8 +1010,11 @@ export function growTool(): ToolHandler {
       if (!w || !start || committing) return;
       const grown = grownNow(w);
       const sp = w.small.species[start.species];
+      // 不再算新的确切预览；已经算好的一直显示到结果换上
+      ex.stop();
       if (!grown.length || !sp) {
         start = null;
+        ex.clear();
         return;
       }
       committing = true;
@@ -879,10 +1024,14 @@ export function growTool(): ToolHandler {
         committing = false;
         start = null;
         cache = null;
+        ex.clear();
       }
     },
     cancel() {
-      if (!committing) start = null;
+      if (!committing) {
+        start = null;
+        ex.clear();
+      }
     },
     preview() {
       const w = world.value;
@@ -900,13 +1049,36 @@ export function growTool(): ToolHandler {
       }
       const sp = w.small.species[start.species];
       const grown = grownNow(w);
+      const shapes: Shape[] = [{ kind: 'arrow', points: [[start.x, start.y], [pointer.x, pointer.y]], color: 'rgba(255, 240, 140, 0.95)', width: 2.5 }];
+      const key = `${cache?.key}|${optionsId()}`;
+      if (!committing && grown.length && sp) {
+        ex.want(key, () => {
+          if (world.value !== w || `${cache?.key}|${optionsId()}` !== key) return null;
+          covered.set(key, new Set(grown));
+          return constraintCmd(grown, sp.id);
+        });
+      }
+      const v = ex.view;
+      if (v && sp) {
+        // 确切预览：地图画出将来的世界，变了的格描边；之后多拖出来的格淡淡地涂上
+        const cov = covered.get(v.key);
+        const added = cov ? grown.filter((c) => !cov.has(c)) : grown;
+        const { changed, failing } = exactCounts(v.result, grown);
+        return {
+          layers: [{ cells: v.result.changedCells, color: WHITE, pattern: 'outline' }, ...(added.length ? [{ cells: added, color: hexToRgb(sp.color), alpha: 0.35 }] : [])],
+          shapes,
+          hint: committing ? '正在计算…' : v.key === key ? `${sp.name} +${grown.length} 格 · ${changed} 格会变${failing ? ` · ${failing} 格没涂成` : ''}` : `${sp.name} +${grown.length} 格…`,
+          world: v.world,
+        };
+      }
+      const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '';
       return {
         layers: [
           { cells: start.region, color: WHITE, alpha: 0.3 },
           { cells: grown, color: hexToRgb(sp.color), alpha: 0.8 },
         ],
-        shapes: [{ kind: 'arrow', points: [[start.x, start.y], [pointer.x, pointer.y]], color: 'rgba(255, 240, 140, 0.95)', width: 2.5 }],
-        hint: committing ? '正在计算…' : `${sp.name} +${grown.length} 格`,
+        shapes,
+        hint: committing ? '正在计算…' : `${sp.name} +${grown.length} 格${slow}`,
       };
     },
   };
@@ -943,6 +1115,15 @@ export function climateKind(group: 'temp' | 'moist'): ClimateKind {
 
 export function climateTool(group: 'temp' | 'moist'): ToolHandler {
   const kindOf = (shift: boolean): ClimateKind => (shift ? CLIMATE_INFO[climateKind(group)].flip : climateKind(group));
+  // 松手时执行的命令（确切预览算的也是它）
+  const cmdOf = (s: Stroke, shift: boolean): Command => {
+    const e = climateEffect(kindOf(shift), options.value.climateAmount);
+    return { op: 'paint', field: e.field, cells: s.cells, values: s.weights().map((wt) => wt * e.value), mode: 'add' };
+  };
+  const head = (shift: boolean) => {
+    const c = kindOf(shift);
+    return `${CLIMATE_INFO[c].name} ${climateEffect(c, options.value.climateAmount).short}`;
+  };
   return brushTool({
     hint: () => ({ text: null }),
     layers(_w, s, shift) {
@@ -950,12 +1131,11 @@ export function climateTool(group: 'temp' | 'moist'): ToolHandler {
       const amount = options.value.climateAmount;
       // 深浅跟着力度：拖“力度”滑块时预览跟着变
       const values = strengthValues(s.weights().map((wt) => wt * amount), CLIMATE_MAX);
-      return { layers: [{ cells: s.cells, values, color: CLIMATE_INFO[c].color, alpha: 0.65 }], hint: `${CLIMATE_INFO[c].name} ${climateEffect(c, amount).short}` };
+      return { layers: [{ cells: s.cells, values, color: CLIMATE_INFO[c].color, alpha: 0.65 }], hint: head(shift) };
     },
-    commit(_w, s, shift) {
-      const e = climateEffect(kindOf(shift), options.value.climateAmount);
-      return exec({ op: 'paint', field: e.field, cells: s.cells, values: s.weights().map((wt) => wt * e.value), mode: 'add' }, '正在计算气候…');
-    },
+    exact: (_w, s, shift) => (s.t.size ? cmdOf(s, shift) : null),
+    exactHint: (_w, _s, shift, r) => `${head(shift)} · ${biomeChange(r)}`,
+    commit: (_w, s, shift) => exec(cmdOf(s, shift), '正在计算气候…'),
   });
 }
 
@@ -968,6 +1148,8 @@ export function climateEraseTool(): ToolHandler {
     layers(_w, s) {
       return { layers: [{ cells: s.cells, values: s.weights(), color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦掉 ${s.t.size} 格` : '这里没改过' };
     },
+    exact: (_w, s) => (s.t.size ? { op: 'restore_climate', cells: s.cells, t: s.ts } : null),
+    exactHint: (_w, s, _shift, r) => `擦掉 ${s.t.size} 格 · ${biomeChange(r)}`,
     async commit(_w, s) {
       if (!s.t.size) {
         showToast('这里的冷暖干湿没改过', true);
@@ -1068,6 +1250,8 @@ export function eraseTool(): ToolHandler {
     layers(_w, s) {
       return { layers: [{ cells: s.cells, color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦掉 ${s.t.size} 格` : '这里没涂过' };
     },
+    exact: (_w, s) => (s.t.size ? { op: 'erase_constraints', cells: s.cells } : null),
+    exactHint: (_w, s, _shift, r) => `擦掉 ${s.t.size} 格 · ${biomeChange(r)}`,
     async commit(_w, s) {
       if (!s.t.size) {
         showToast('这里没有涂过的生态', true);
@@ -1081,6 +1265,15 @@ export function eraseTool(): ToolHandler {
 // 自定义场：按住拖动增加或减少（中心多、边缘少），按住 Shift 反过来
 export function fieldTool(): ToolHandler {
   const sign = (shift: boolean) => ((options.value.fieldMode === 'add') !== shift ? 1 : -1);
+  // 松手时执行的命令（确切预览算的也是它）
+  const cmdOf = (s: Stroke, shift: boolean): Command => {
+    const amount = sign(shift) * options.value.fieldAmount;
+    return { op: 'paint', field: `field:${options.value.field}`, cells: s.cells, values: s.weights().map((wt) => wt * amount), mode: 'add' };
+  };
+  const head = (shift: boolean) => {
+    const up = sign(shift) > 0;
+    return `${options.value.field} ${up ? '变大' : '变小'}：中心 ${up ? '+' : '−'}${options.value.fieldAmount.toFixed(2)}`;
+  };
   return brushTool({
     hint: () => {
       const name = options.value.field;
@@ -1093,12 +1286,11 @@ export function fieldTool(): ToolHandler {
       // 深浅跟着力度：拖“力度”滑块时预览跟着变；提示写出中心变多少
       const values = strengthValues(s.weights().map((wt) => wt * amount), FIELD_MAX);
       const up = sign(shift) > 0;
-      return { layers: [{ cells: s.cells, values, color: up ? [190, 120, 230] : [120, 120, 140], alpha: 0.65 }], hint: `${options.value.field} ${up ? '变大' : '变小'}：中心 ${up ? '+' : '−'}${amount.toFixed(2)}` };
+      return { layers: [{ cells: s.cells, values, color: up ? [190, 120, 230] : [120, 120, 140], alpha: 0.65 }], hint: head(shift) };
     },
-    commit(_w, s, shift) {
-      const amount = sign(shift) * options.value.fieldAmount;
-      return exec({ op: 'paint', field: `field:${options.value.field}`, cells: s.cells, values: s.weights().map((wt) => wt * amount), mode: 'add' }, '正在计算…');
-    },
+    exact: (w, s, shift) => (s.t.size && options.value.field && w.causes.fields[options.value.field] ? cmdOf(s, shift) : null),
+    exactHint: (_w, _s, shift, r) => `${head(shift)} · ${biomeChange(r)}`,
+    commit: (_w, s, shift) => exec(cmdOf(s, shift), '正在计算…'),
   });
 }
 

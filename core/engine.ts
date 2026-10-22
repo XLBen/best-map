@@ -7,8 +7,9 @@ import { assignNames, detectFeatures, regionFeatures } from './features';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { computeVegetation, isVegetated } from './vegetation';
+import { type PreviewPatch, previewPatch } from './preview-world';
 import { resolveTerrain, shareTerrainBase } from './terrain';
-import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
+import { type Causes, type Derived, type ProvinceMeta, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
 //   高程 → 气候（基础）→ [约束求解 → 修正场] → 水文 → 植被 → 冲突检查
@@ -70,8 +71,13 @@ interface UndoneStep {
   state?: DerivedState;
 }
 
+// 状态编号：引擎的状态每变一次（新建、打开、执行、撤销、重做、换一个）就换一个新的，同一个 Worker 里不重复。
+// 快照、预览都带着它：主线程只显示按当前世界的状态算出来的预览，过期的丢掉
+let states = 0;
+
 export class Engine {
   world: World;
+  stateId = ++states;
   private base: ClimateBase | null = null;
   private solve: SolveResult = { plans: [] };
   private dirty: Dirty = Dirty.Elevation;
@@ -112,10 +118,14 @@ export class Engine {
   // 执行命令；推导立即更新。命令什么都没改时不重算、不进历史（lastNoop）
   exec(cmd: Command): string {
     const adopted = this.adoptPreview(cmd);
-    if (adopted !== null) return adopted;
+    if (adopted !== null) {
+      this.stateId = ++states;
+      return adopted;
+    }
     const fresh = this.dirty === Dirty.None;
     const { summary } = this.applyOnly(cmd, true);
     if (this.lastNoop) return summary;
+    this.stateId = ++states;
     this.dropUndone();
     this.keepBefore(fresh);
     this.update();
@@ -189,6 +199,7 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const h = this.revertLast();
     if (!h) return false;
+    this.stateId = ++states;
     const step: UndoneStep = { cmd: h.cmd, summary: h.summary };
     const before = h.state;
     h.state = undefined;
@@ -209,6 +220,7 @@ export class Engine {
     const fresh = this.dirty === Dirty.None;
     const h = this.undone.pop();
     if (!h) return false;
+    this.stateId = ++states;
     const after = h.state;
     h.state = undefined;
     this.applyOnly(h.cmd);
@@ -241,6 +253,7 @@ export class Engine {
       this.update();
       throw e;
     }
+    this.stateId = ++states;
     this.dropUndone();
     const step = this.done[this.done.length - 1];
     if (before && step.dirty > Dirty.Names) this.keep(step, before);
@@ -372,6 +385,7 @@ export class Engine {
     e.lastPreview = null;
     e.features = true;
     e.lastTimings = cp.timings;
+    e.stateId = ++states;
     while (e.done.length > p) e.revertLast();
     for (let k = p; k < doc.commands.length; k++) {
       try {
@@ -404,23 +418,50 @@ export class Engine {
   // 紧接着执行同一条命令时直接采用
   preview(cmd: Command): PreviewResult {
     this.update();
+    // 先放掉上一份副本（星球上一份约 30 MB），再复制新的
+    this.lastPreview = null;
+    const t0 = performance.now();
     const copy = this.clone();
     const { changed } = copy.applyOnly(cmd);
     copy.update();
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
-    return diffWorlds(this.world, copy.world);
+    const step = copy.done[copy.done.length - 1];
+    return { ...diffWorlds(this.world, copy.world), summary: step?.summary ?? '', ms: performance.now() - t0, stateId: this.stateId };
   }
 
-  // 采用预览算好的结果：只用于只改小数据的命令（画河、改道），原因数组不变，世界对象也不换
-  // （地形底图缓存按世界对象存）。返回这一步的说明；用不上时返回 null。
+  // 预览，并带上将来的世界与当前世界的差别（只带内容变了的数组，见 preview-world.ts）：地图据此画出将来的样子
+  previewWorld(cmd: Command): { result: PreviewResult; patch: PreviewPatch } {
+    const result = this.preview(cmd);
+    return { result, patch: previewPatch(this.world, this.lastPreview!.copy.world) };
+  }
+
+  // 省份命令的轻预览：只复制省份数组与小数据，在当前的推导上执行（省份命令不改推导），不复制整个世界。
+  // 返回将来的省份数组、各省（名字、类型）与切线；当前世界不变
+  previewProvinces(cmd: Command): ProvincePreviewResult {
+    if (!provincesOnly(cmd)) throw new CommandError('这条命令不只改省份，不能这样预览');
+    const d = this.update();
+    const w = this.world;
+    const scratch: World = { ...w, causes: { ...w.causes, province: w.causes.province.slice() }, small: structuredClone(w.small) };
+    const r = applyCommand(scratch, cmd, { ensureDerived: () => d });
+    return { province: scratch.causes.province, provinces: scratch.small.provinces, provinceSeams: scratch.small.provinceSeams ?? null, summary: r.summary, stateId: this.stateId };
+  }
+
+  // 采用预览算好的结果：紧接着执行同一条命令时直接换上副本的原因、小数据与推导，不再重算（画河、
+  // 涂生态、冷暖干湿、调整面板松手时）。原因数组抄进当前世界的数组里，世界对象不换（地形底图缓存按世界对象存，
+  // 换成副本的那一份：重画一片时副本另建过）。返回这一步的说明；用不上时返回 null。
   // 预览的命令什么都没改时不采用：照常执行，按“没有变化”处理，不进历史
   private adoptPreview(cmd: Command): string | null {
     const p = this.lastPreview;
     this.lastPreview = null;
     if (!p || !p.changed || this.dirty !== Dirty.None || p.key !== JSON.stringify(cmd)) return null;
     const step = p.copy.done[p.copy.done.length - 1];
-    if (!step || step.undo.arrays.length || step.undo.fields.length) return null;
-    this.world.small = p.copy.world.small;
+    if (!step) return null;
+    const copy = p.copy.world;
+    const live = this.world.causes as unknown as Record<string, unknown>;
+    for (const [k, v] of Object.entries(copy.causes)) if (ArrayBuffer.isView(v)) (live[k] as Float32Array).set(v as Float32Array);
+    this.world.causes.fields = copy.causes.fields;
+    shareTerrainBase(copy, this.world);
+    this.world.small = copy.small;
     this.done.push({ id: ++this.seq, cmd: step.cmd, undo: step.undo, summary: step.summary, dirty: step.dirty });
     this.dropUndone();
     // 换下来的推导不再被改动，直接留给撤销
@@ -451,8 +492,24 @@ export class Engine {
     e.lastPreview = null;
     e.features = this.features;
     e.lastTimings = this.lastTimings;
+    e.stateId = this.stateId;
     return e;
   }
+}
+
+// 只改省份的命令（省份的轻预览只接受这些）
+const PROVINCE_OPS = new Set<Command['op']>(['assign_province', 'merge_province', 'split_province', 'regenerate_provinces', 'generate_provinces', 'cut_province', 'set_province']);
+function provincesOnly(cmd: Command): boolean {
+  return cmd.op === 'batch' ? cmd.commands.every(provincesOnly) : PROVINCE_OPS.has(cmd.op);
+}
+
+export interface ProvincePreviewResult {
+  province: Int32Array;
+  provinces: Record<number, ProvinceMeta>;
+  provinceSeams: SmallState['provinceSeams'] | null;
+  // 历史里会写的话
+  summary: string;
+  stateId: number;
 }
 
 // 文档的版本：2 一块地区，3 整个星球；用了新加的字段、命令时是 4（新旧世界都是）。
@@ -497,17 +554,28 @@ export interface PreviewResult {
   conflicts: number;
   // 预览后各约束的满足比例
   satisfied: { id: string; satisfied: number; required: number }[];
+  // 第八轮：执行后涂不成的格（与执行后的冲突一致）、变成陆地 / 变成海的格、历史里会写的话、
+  // 预览算了多久（毫秒，成本闸门用）、按哪个状态算的（主线程只显示与当前世界同一状态的预览）
+  failing: number[];
+  landGained: number[];
+  landLost: number[];
+  summary: string;
+  ms: number;
+  stateId: number;
 }
 
-function diffWorlds(a: World, b: World): PreviewResult {
+function diffWorlds(a: World, b: World): Omit<PreviewResult, 'summary' | 'ms' | 'stateId'> {
   const n = a.mesh.n;
   const thr = a.small.planet.riverThreshold;
   const changedCells: number[] = [];
   const riverAdded: number[] = [];
   const riverRemoved: number[] = [];
+  const landGained: number[] = [];
+  const landLost: number[] = [];
   let maxCorrT = 0;
   let maxCorrP = 0;
   for (let i = 0; i < n; i++) {
+    if (a.causes.land[i] !== b.causes.land[i]) (b.causes.land[i] ? landGained : landLost).push(i);
     const da = a.derived.dominant[i];
     const db = b.derived.dominant[i];
     const ida = da >= 0 ? a.small.species[da]?.id : da;
@@ -529,7 +597,8 @@ function diffWorlds(a: World, b: World): PreviewResult {
     void S;
     return { id: c.id, satisfied: valid.length ? ok / valid.length : 0, required: c.ratio };
   });
-  return { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: b.derived.conflicts.length, satisfied };
+  const failing = b.derived.conflicts.flatMap((c) => c.failing);
+  return { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: b.derived.conflicts.length, satisfied, failing, landGained, landLost };
 }
 
 // 复制时用展开（与原对象同形），逐个赋值会让对象退化成字典模式，之后每次读写都变慢

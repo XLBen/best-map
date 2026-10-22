@@ -41,6 +41,7 @@ function planet(key: keyof Planet, label: string, hint: string, range: [number, 
     step,
     format,
     command: (_w, v) => ({ op: 'set_planet', patch: { [key]: v } }),
+    preview: 'world',
     busyLabel: '正在重算气候…',
   };
 }
@@ -69,6 +70,8 @@ const LATITUDE: AdjustmentDef = {
   format: (v) => `中心在${latText(v)}`,
   note: (w, v) => latitudeNote(w, v),
   command: (w, v) => ({ op: 'set_planet', patch: { latShift: Math.round((v - baseCenter(w)) * 10) / 10 } }),
+  // 不经过 planet()：单独给上预览
+  preview: 'world',
   busyLabel: '正在重算气候…',
 };
 
