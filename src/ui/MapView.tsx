@@ -233,9 +233,10 @@ export function MapView() {
     function highlightLayers(w: World, shown: World, preview: Preview, back: HighlightLayer[]): { layers: HighlightLayer[]; key: unknown[] } {
       const layers: HighlightLayer[] = [];
       const c = category.value;
-      // 图层里的“我改过的地方”：四种改动分色，压在最下面（任何工具下都能打开）
+      // 图层里的“我改过的地方”：四种改动分色（任何工具下都能打开）。压在工具的描边（岛上特有描的岛）之上、
+      // 别的高亮之下：只描边的格一盖就没了颜色，而描边本来就画在有高亮与没有高亮的格之间，盖上以后照样在
       const edits = overlays.value.edits ? editLayers(w) : [];
-      layers.push(...edits);
+      layers.push(...back.filter((l) => l.pattern === 'outline'), ...edits);
       // 按每个图层对象比较：工具沿用同一个图层时不必重新上传
       const key: unknown[] = [w, shown, c, ...edits, '|', ...back, '|', ...preview.layers];
       if (c === 'nature') {
@@ -283,7 +284,7 @@ export function MapView() {
         if (step > 0) layers.push({ cells: fl.cells, color: [255, 236, 120], alpha: step / 40 });
         key.push(fl, step);
       }
-      layers.push(...back, ...preview.layers);
+      layers.push(...back.filter((l) => l.pattern !== 'outline'), ...preview.layers);
       return { layers, key };
     }
 

@@ -88,6 +88,20 @@ export const natureMask = memo(
   (w) => [w.mesh, w.small.constraints],
 );
 
+// 岛上特有的生态长着的格（不是涂上去的，擦除擦不掉；只在图层的“我改过的地方”里和涂过的生态一起标绿）
+export const endemicMask = memo(
+  (w) => {
+    const has = new Uint8Array(w.mesh.n);
+    const ids = new Set<number>();
+    w.small.species.forEach((s, k) => {
+      if (s.id.startsWith('endemic_')) ids.add(k);
+    });
+    if (ids.size) for (let i = 0; i < w.mesh.n; i++) if (ids.has(w.derived.dominant[i])) has[i] = 1;
+    return fromFlags(has);
+  },
+  (w) => [w.mesh, w.small.species, w.derived.dominant],
+);
+
 // 画的河（河道经过的格）与放的湖（湖心所在的那一片湖面；干了的湖只标湖心）
 export const waterMask = memo(
   (w) => {
@@ -118,8 +132,6 @@ export const waterMask = memo(
   (w) => [w.mesh, w.small.guides, w.small.lakes, w.derived.lake],
 );
 
-export const MASKS: Record<EditKind, (w: World) => EditMask> = { terrain: terrainMask, climate: climateMask, nature: natureMask, water: waterMask };
-
 // 橡皮擦选中时：能擦的格淡淡的白色斜线（同一个掩码给同一个图层对象，不必重新上传）
 const hatchLayers = new WeakMap<EditMask, HighlightLayer>();
 export function erasableLayer(m: EditMask): HighlightLayer | null {
@@ -129,12 +141,18 @@ export function erasableLayer(m: EditMask): HighlightLayer | null {
   return l;
 }
 
-// 图层里的“我改过的地方”：四种分色，后面的盖住前面的（河湖最细，放在最上面）
+// 图层里的“我改过的地方”：四种分色，后面的盖住前面的（河湖最细，放在最上面）；生态连同岛上特有的生态
 const fillLayers = new WeakMap<EditMask, HighlightLayer>();
 export function editLayers(w: World): HighlightLayer[] {
   const out: HighlightLayer[] = [];
-  for (const k of ['terrain', 'climate', 'nature', 'water'] as EditKind[]) {
-    const m = MASKS[k](w);
+  const kinds: [EditKind, EditMask][] = [
+    ['terrain', terrainMask(w)],
+    ['climate', climateMask(w)],
+    ['nature', natureMask(w)],
+    ['nature', endemicMask(w)],
+    ['water', waterMask(w)],
+  ];
+  for (const [k, m] of kinds) {
     if (!m.cells.length) continue;
     let l = fillLayers.get(m);
     if (!l) fillLayers.set(m, (l = { cells: m.cells, color: EDIT_COLORS[k], alpha: 0.42 }));

@@ -36,7 +36,7 @@ export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLa
   { key: 'wind', label: '风向' },
   { key: 'currents', label: '洋流', hint: '暖流偏橙、寒流偏蓝', planetOnly: true },
   { key: 'scale', label: '比例尺', hint: '左下角；导出的图片里也有' },
-  { key: 'edits', label: '我改过的地方', hint: '地形橙、气候蓝、生态绿、河湖青；导出的图片里没有' },
+  { key: 'edits', label: '我改过的地方', hint: '地形橙、气候蓝、生态绿、河湖青' },
   { key: 'latitude', label: '纬度刻度', hint: '地图左边每 10° 一格，回归线、极圈', planetLabel: '经纬网', planetHint: '经线、纬线，回归线、极圈' },
 ];
 
