@@ -1,4 +1,4 @@
-import { type ClimateBase, ContentMemo, insolationTable, radiativeTemp, saturation, smoothPass } from './climate';
+import { type ClimateBase, ContentMemo, deflectWind, insolationTable, radiativeTemp, saturation, smoothPass } from './climate';
 import { type SphereMesh, gradient, ringDistance } from './mesh';
 import { computeOcean } from './ocean';
 import { PLANET_SWEEPS, type SphereFlow, buildFlowSphere } from './sphere-flow';
@@ -122,7 +122,7 @@ export function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit
 type Inflow = Pick<SphereFlow, 'order' | 'koff' | 'src' | 'w' | 'den'>;
 
 // 只取决于地形的部分：风、输运图、大陆度、洋流（海温的偏离与它随风带上陆地的部分）、地形对降水的影响，以及
-// 不含直减率、冷暖微调的温度。只取决于海陆、高程、各格纬度、倾角、自转、日照、洋流强弱、比例尺与扫描遍数，
+// 不含直减率、冷暖微调的温度。只取决于海陆、高程、各格纬度、倾角、自转、日照、洋流强弱、山挡风、比例尺与扫描遍数，
 // 只改冷暖干湿、湿度、直减率时原样复用
 interface SphereTerrain {
   // 写进推导的（windSX、windSY、windWX、windWY、continentality、currentX、currentY、sstAnom 的顺序）
@@ -157,8 +157,10 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
   const lat = new Float64Array(n);
   for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
   const strength = planet.currents ?? 1;
+  // 山挡风：旧存档里没有这一项，按 0（风直接翻过山）
+  const terrainWind = planet.terrainWind ?? 0;
   const written = [out.windSX, out.windSY, out.windWX, out.windWY, out.continentality, out.currentX, out.currentY, out.sstAnom];
-  const params = [planet.tilt, planet.rotation, planet.solar, strength, kmPerUnit, PLANET_SWEEPS.wind, PLANET_SWEEPS.ocean];
+  const params = [planet.tilt, planet.rotation, planet.solar, strength, kmPerUnit, PLANET_SWEEPS.wind, PLANET_SWEEPS.ocean, terrainWind];
   const hit = sphereMemo.find(mesh, [land, elevation, lat], params);
   if (hit) {
     written.forEach((a, k) => a.set(hit.written[k]));
@@ -207,6 +209,9 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
     [out.windSX, out.windSY],
     [out.windWX, out.windWY],
   ];
+  // 山挡风打开时：两季还没乘极地衰减的风（双精度）与每格的衰减，先偏转、再乘衰减（偏转不会漏到极点上）
+  const raw = terrainWind > 0 ? winds.map((): [Float64Array, Float64Array] => [new Float64Array(n), new Float64Array(n)]) : null;
+  const taper = terrainWind > 0 ? new Float64Array(n) : null;
   SEASONS.forEach((sigma, si) => {
     const [wx, wy] = winds[si];
     const phiC = itczOf(sigma, planet.tilt);
@@ -236,8 +241,33 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
       const t = Math.min(1, r / 4) ** 2;
       wx[i] = u * t;
       wy[i] = v * t;
+      if (raw && taper) {
+        raw[si][0][i] = u;
+        raw[si][1][i] = v;
+        taper[i] = t;
+      }
     }
   });
+  // 山挡风：为 0 时整段跳过（与没有这一步逐值相同）。洋流照旧用背景风（上面写好的值）的两季平均，
+  // 所以洋流和它的缓存都不变；大陆度、海温上岸、背风、输运都跟着拐过的风走
+  let background: [Float64Array, Float64Array] | null = null;
+  if (raw && taper) {
+    background = [new Float64Array(n), new Float64Array(n)];
+    for (let i = 0; i < n; i++) {
+      background[0][i] = (out.windSX[i] + out.windWX[i]) / 2;
+      background[1][i] = (out.windSY[i] + out.windWY[i]) / 2;
+    }
+    const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, mesh.spacing * kmPerUnit, [raw[0], raw[1]]);
+    raw.forEach(([u, v], si) => {
+      const [wx, wy] = winds[si];
+      const [du, dv] = delta[si];
+      for (let i = 0; i < n; i++) {
+        if (du[i] === 0 && dv[i] === 0) continue;
+        wx[i] = (u[i] + du[i]) * taper[i];
+        wy[i] = (v[i] + dv[i]) * taper[i];
+      }
+    });
+  }
 
   const flows = winds.map(([wx, wy]) => buildFlowSphere(mesh, wx, wy, { lag: 'seam' }));
 
@@ -264,8 +294,8 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
     const wS = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       tAnn[i] = radiativeTemp(ins(lat[i]).ann);
-      wE[i] = (out.windSX[i] + out.windWX[i]) / 2;
-      wS[i] = (out.windSY[i] + out.windWY[i]) / 2;
+      wE[i] = background ? background[0][i] : (out.windSX[i] + out.windWX[i]) / 2;
+      wS[i] = background ? background[1][i] : (out.windSY[i] + out.windWY[i]) / 2;
     }
     const oc = computeOcean(world, { lat, tAnn, wE, wS, spacingKm });
     const sst = new Float64Array(n);

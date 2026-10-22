@@ -34,6 +34,15 @@ function currentText(w: World, cell: number): string | null {
   return `洋流：向${COMPASS[k]}${kind}`;
 }
 
+// 风从哪边吹来、多大：“西南风（中）”。风的分量是东、南（y 朝南）；风从 (−东, +北) 的方向来。
+// 快慢分档与风向图层相同
+function windText(x: number, y: number): string {
+  const m = Math.hypot(x, y);
+  if (m < 0.05) return '无风';
+  const k = (((Math.round(Math.atan2(y, -x) / (Math.PI / 4)) % 8) + 8) % 8) as number;
+  return `${COMPASS[k]}风（${m < 0.35 ? '弱' : m < 0.75 ? '中' : '强'}）`;
+}
+
 // 每格属于哪些地理要素，按世界缓存
 const featureCache = new WeakMap<World, Map<number, GeoFeature[]>>();
 export function featuresAt(w: World, cell: number): GeoFeature[] {
@@ -182,6 +191,7 @@ function Details({ w, cell }: { w: World; cell: number }) {
     [land ? '海拔' : '水深', `${fmt(Math.abs(d.elevation[cell]))} m`],
     ['夏 / 冬气温', `${fmt(d.tS[cell], 1)} / ${fmt(d.tW[cell], 1)} °C`],
     ['年降水', `${fmt(d.precip[cell])} mm`],
+    ['夏 / 冬风向', `${windText(d.windSX[cell], d.windSY[cell])} / ${windText(d.windWX[cell], d.windWY[cell])}`],
   ];
   if (land) {
     rows.push(

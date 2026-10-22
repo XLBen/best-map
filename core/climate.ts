@@ -1,10 +1,10 @@
-import { type Mesh, gradient } from './mesh';
+import { type Mesh, gradient, ringDistance } from './mesh';
 import { clamp, smoothstep } from './rng';
 import { type Derived, type World, worldLatitude } from './world';
 
 // 气候：少参数的物理过程模型，不对地球的海陆形状做拟合，换一块大陆也成立。
 //   温度 = 日照（纬度、季节）→ 辐射平衡温度；海陆热惯性由“海洋气团占比”（大陆度）调节；海拔直减
-//   风   = 三圈环流的纬向风带随季节南北摆动 + 大陆夏季热低压（季风）
+//   风   = 三圈环流的纬向风带随季节南北摆动 + 大陆夏季热低压（季风）；高山挡住的风顺着山走（山挡风）
 //   降水 = 水汽沿风向在格图上输运：海上蒸发补充，陆上按速率降落；
 //          抬升冷却使饱和水汽量下降，多出的水汽在迎风坡降下 → 背风坡雨影自然出现
 // 两个季节：s = 北半球夏半年，w = 北半球冬半年。
@@ -230,6 +230,122 @@ function sameBytes(a: ArrayBufferView, b: ArrayBufferView): boolean {
   return true;
 }
 
+// ---------- 山挡风：高山让风拐弯（平面与球面共用） ----------
+
+// 两季的风（东、南分量）
+type SeasonWinds = readonly [readonly [ArrayLike<number>, ArrayLike<number>], readonly [ArrayLike<number>, ArrayLike<number>]];
+
+// 按局地 Froude 数（风速 / (浮力频率 × 山高)，风 1 = 10 m/s、N = 0.01/s）判断山挡不挡得住风：
+//   · 挡住的翻山分量去掉（至少留 5%，不会变成静风）；背风坡只去掉一半
+//   · 迎风坡被挡住的气流顺着山走：北半球向左拐、南半球向右拐（障碍急流），自转反向时反过来
+//   · 迎风、背风处风变小，顺山走的急流保持风速
+// 只平滑变化量 Δ（固定遍数，最多 48 遍）：离山远的地方 Δ 正好是 0，风与没有这一步逐位相同。
+// hPos：平滑到约 200 km 的陆地高程（m），hx、hy：它的梯度（m/km，东、南分量）；winds：两季的背景风。
+// strength 为 0 时调用方整段跳过（与旧算法逐值相同）。返回两季平滑后的 Δ（东、南分量）
+export function deflectWind(
+  mesh: Mesh,
+  lat: Float64Array,
+  hPos: Float64Array,
+  hx: Float64Array,
+  hy: Float64Array,
+  strength: number,
+  rotation: number,
+  spacingKm: number,
+  winds: SeasonWinds,
+): [Float64Array, Float64Array][] {
+  const n = mesh.n;
+  // 每格四个数挨着放（夏东、夏南、冬东、冬南）：平滑时一格的邻居只读一遍
+  let cur = new Float64Array(4 * n);
+  const seeds: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const g = Math.sqrt(hx[i] * hx[i] + hy[i] * hy[i]);
+    if (g <= 0.5) continue;
+    // 指向上坡的单位向量；a > 0 迎风坡，a < 0 背风坡
+    const nx = hx[i] / g;
+    const ny = hy[i] / g;
+    const h = Math.max(hPos[i], 1);
+    const slope = smoothstep(0.5, 4, g);
+    let touched = false;
+    for (let s = 0; s < 2; s++) {
+      const u0 = winds[s][0][i];
+      const v0 = winds[s][1][i];
+      const m0 = Math.sqrt(u0 * u0 + v0 * v0);
+      // 无风的格没有方向可改（下面要除以风速）
+      if (m0 < 1e-9) continue;
+      const fr = (1000 * m0) / h;
+      if (fr >= 1.6) continue;
+      const a = u0 * nx + v0 * ny;
+      let beta = Math.min(0.95, strength * 0.85 * (1 - smoothstep(0.4, 1.6, fr)) * slope);
+      if (a < 0) beta *= 0.5;
+      if (beta <= 0) continue;
+      let u1 = u0 - beta * a * nx;
+      let v1 = v0 - beta * a * ny;
+      if (a > 0) {
+        // 东、南分量里 (ny, −nx) 是面朝上坡时的左手边；赤道附近没有偏转
+        const c = rotation * Math.sign(lat[i]) * Math.min(1, Math.abs(Math.sin((lat[i] * Math.PI) / 180)) / 0.5);
+        u1 += 0.7 * beta * a * c * ny;
+        v1 -= 0.7 * beta * a * c * nx;
+      }
+      const k = (m0 * (1 - 0.5 * beta * (a / m0) ** 2)) / Math.sqrt(u1 * u1 + v1 * v1);
+      cur[4 * i + 2 * s] = u1 * k - u0;
+      cur[4 * i + 2 * s + 1] = v1 * k - v0;
+      touched = true;
+    }
+    if (touched) seeds.push(i);
+  }
+  const out: [Float64Array, Float64Array][] = [
+    [new Float64Array(n), new Float64Array(n)],
+    [new Float64Array(n), new Float64Array(n)],
+  ];
+  if (!seeds.length) return out;
+  // 平滑到约 150 km（迎风的气流在山前就开始拐）；格很密时封顶 48 遍。
+  // 与 smoothPass 同样的一轮扩散，只算离有变化的格 passes 步以内的格：更远的格在这几遍里一直是 0
+  const passes = Math.min(48, Math.max(1, Math.round((150 / spacingKm) ** 2 / 2)));
+  const reach = ringDistance(mesh, seeds, passes);
+  let m = 0;
+  for (let i = 0; i < n; i++) if (reach[i] >= 0) m++;
+  const active = new Int32Array(m);
+  m = 0;
+  for (let i = 0; i < n; i++) if (reach[i] >= 0) active[m++] = i;
+  const { off, adj } = mesh;
+  let next = new Float64Array(4 * n);
+  // 格很密的小比例尺地图上几乎整张图都在里面、要算满 48 遍：按下标走类型数组，比 for…of 快约三成
+  for (let it = 0; it < passes; it++) {
+    for (let k = 0; k < m; k++) {
+      const i = active[k];
+      const b = 4 * i;
+      let s0 = cur[b];
+      let s1 = cur[b + 1];
+      let s2 = cur[b + 2];
+      let s3 = cur[b + 3];
+      const e0 = off[i];
+      const e1 = off[i + 1];
+      for (let e = e0; e < e1; e++) {
+        const j = 4 * adj[e];
+        s0 += cur[j];
+        s1 += cur[j + 1];
+        s2 += cur[j + 2];
+        s3 += cur[j + 3];
+      }
+      const den = 1 + e1 - e0;
+      next[b] = s0 / den;
+      next[b + 1] = s1 / den;
+      next[b + 2] = s2 / den;
+      next[b + 3] = s3 / den;
+    }
+    const t = cur;
+    cur = next;
+    next = t;
+  }
+  for (const i of active) {
+    out[0][0][i] = cur[4 * i];
+    out[0][1][i] = cur[4 * i + 1];
+    out[1][0][i] = cur[4 * i + 2];
+    out[1][1][i] = cur[4 * i + 3];
+  }
+  return out;
+}
+
 // ---------- 气候里只取决于地形的部分 ----------
 
 // 一季的输运图：入流表（按格，见 PlaneFlow）与权重之和（从图外来流的权重加起）
@@ -241,7 +357,7 @@ interface Inflow {
   den: Float64Array;
 }
 
-// 风、输运图、大陆度、地形对降水的影响：只取决于海陆、高程、各格纬度、倾角、自转、图外是不是海、比例尺与扫描遍数。
+// 风、输运图、大陆度、地形对降水的影响：只取决于海陆、高程、各格纬度、倾角、自转、图外是不是海、山挡风、比例尺与扫描遍数。
 // 只改冷暖干湿、湿度、直减率、日照时原样复用
 interface PlaneTerrain {
   lat: Float64Array;
@@ -274,7 +390,9 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   const lat = new Float64Array(n);
   for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
   const written = [out.windSX, out.windSY, out.windWX, out.windWY, out.continentality];
-  const params = [planet.tilt, planet.rotation, planet.outsideOcean, kmPerUnit, SWEEPS];
+  // 山挡风：旧存档里没有这一项，按 0（风直接翻过山）
+  const terrainWind = planet.terrainWind ?? 0;
+  const params = [planet.tilt, planet.rotation, planet.outsideOcean, kmPerUnit, SWEEPS, terrainWind];
   const hit = planeMemo.find(mesh, [land, elevation, lat], params);
   if (hit) {
     written.forEach((a, k) => a.set(hit.written[k]));
@@ -353,6 +471,18 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
       wy[i] = v;
     }
   });
+  // 山挡风：为 0 时整段跳过（与没有这一步逐值相同）。图边来流、背风、大陆度、输运都跟着拐过的风走
+  if (terrainWind > 0) {
+    const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, mesh.spacing * kmPerUnit, [winds[0], winds[1]]);
+    winds.forEach(([wx, wy], si) => {
+      const [du, dv] = delta[si];
+      for (let i = 0; i < n; i++) {
+        if (du[i] === 0 && dv[i] === 0) continue;
+        wx[i] += du[i];
+        wy[i] += dv[i];
+      }
+    });
+  }
 
   // 每个季节的输运权重：格 i 的出流按风向分给下风方向的邻居，另有一小部分各向均匀扩散
   const flow = winds.map(([wx, wy]) => buildFlow(mesh, wx, wy));

@@ -508,11 +508,18 @@ export async function newWorld(settings: Partial<Settings>, commands: Command[])
   return handle(await r, true);
 }
 
+// 打开从没设过山挡风的旧存档时，在历史末尾补的一步（可撤销）
+const LEGACY_WIND: Command = { op: 'batch', label: '山挡风：旧存档也打开', commands: [{ op: 'set_planet', patch: { terrainWind: 1 } }] };
+
 export async function loadDoc(doc: WorldDoc) {
   changeNote.value = null;
   const r = call({ kind: 'load', doc }, '正在打开世界…');
   prebuildMesh(doc.settings);
-  return handle(await r, true);
+  const ok = await handle(await r, true);
+  // 山挡风：重放完没有这一项，就是没有哪条命令设过它（核心里按 0，前面的每一步照原样重放）。
+  // 在末尾补一步“打开”，之后照常自动保存；存档里有了这一步，下次打开就不再补
+  if (ok && world.value && world.value.small.planet.terrainWind === undefined) await exec(LEGACY_WIND, '正在重算气候…');
+  return ok;
 }
 
 // “换一个”：给出下一条命令（比如换了 variant 的放岛），替换掉刚做的那一步

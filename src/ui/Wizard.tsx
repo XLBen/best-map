@@ -157,8 +157,17 @@ export function Wizard() {
 
   const pick = async (seed: number) => {
     setCreating(true);
+    const gen = genOf(seed);
     const ok = await newWorld(settingsOf(kind === 'planet' ? PLANET_CELLS : CELLS), [
-      { op: 'set_worldgen', params: genOf(seed), reset: true },
+      // 山挡风在划分省份之前打开（省份按拐过的风算出的气候来分）。与生成放在同一步里：只算一遍，历史里也只有“新世界”
+      {
+        op: 'batch',
+        label: `新世界：${WORLD_TYPE_INFO[gen.type].name}`,
+        commands: [
+          { op: 'set_worldgen', params: gen, reset: true },
+          { op: 'set_planet', patch: { terrainWind: 1 } },
+        ],
+      },
       { op: 'generate_provinces', rules: { seed } },
     ]);
     setCreating(false);

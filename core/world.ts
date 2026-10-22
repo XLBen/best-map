@@ -54,6 +54,9 @@ const planetFields = {
   latShift: z.number().min(-180).max(180),
   // 洋流强弱（只用于整个星球）：0 没有洋流，1 与地球相当，2 更强。省略时星球按 1
   currents: z.number().min(0).max(2),
+  // 山挡风：高山让风拐弯的强弱。0 风直接翻过山（原来的算法），1 与地球相当，2 更强。
+  // 省略时为 0（旧存档照原样重放）；新建世界、打开没设过的旧存档时由界面设成 1
+  terrainWind: z.number().min(0).max(2),
 };
 
 export const planetSchema = z.object({
@@ -69,6 +72,7 @@ export const planetSchema = z.object({
   latShift: planetFields.latShift.default(0),
   // 没有默认值：旧文档里没有这一项，解析结果不变
   currents: planetFields.currents.optional(),
+  terrainWind: planetFields.terrainWind.optional(),
 });
 export type Planet = z.output<typeof planetSchema>;
 
