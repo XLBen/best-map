@@ -1,5 +1,6 @@
+import { ContentMemo } from './climate';
 import { gradient } from './mesh';
-import { route } from './routing';
+import { type Routing, route } from './routing';
 import type { Derived, World } from './world';
 
 // 水文：径流（Budyko 曲线）→ 汇流 → 河流与湖泊。
@@ -8,13 +9,20 @@ import type { Derived, World } from './world';
 
 const SEC_PER_YEAR = 3.156e7;
 
+// 汇流只取决于高程、海陆和画的河强制的方向：只改气候、河流门槛时（以及约束求解的每一轮）原样复用，结果只读
+export const routeMemo = new ContentMemo<Routing>();
+
 export function computeHydrology(world: World, elevation: Float32Array, d: Derived) {
   const { mesh, causes, small, kmPerUnit } = world;
   const n = mesh.n;
   const land = causes.land;
   const forced = new Int32Array(n).fill(-1);
   for (const g of small.guides) for (let k = 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
-  const r = route(mesh, elevation, land, forced);
+  let r = routeMemo.find(mesh, [elevation, land, forced], []);
+  if (!r) {
+    r = route(mesh, elevation, land, forced);
+    routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced], [], r);
+  }
 
   const areaKm = new Float64Array(n);
   for (let i = 0; i < n; i++) areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;

@@ -1,6 +1,6 @@
 import { type SphereMesh, gradient, graphDistance } from './mesh';
 import { clamp, smoothstep } from './rng';
-import { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './sphere-flow';
+import { PLANET_SWEEPS, buildFlowSphere } from './sphere-flow';
 import type { World } from './world';
 
 // 简化的洋流（只用于整个星球）。给人看的说法：
@@ -41,6 +41,8 @@ const DELTA = 400;
 const LD = 8000;
 // ψ 的梯度换成海流速度的系数
 const KAPPA = 0.08;
+// 环流强度随大洋宽度增长，很宽时饱和
+const widthSat = (D: number) => LD * (1 - Math.exp(-D / LD));
 
 // 每个网格留两份：撤销一笔海陆修改时直接用上一份
 const resultCache = new WeakMap<SphereMesh, { key: string; land: Uint8Array; result: OceanResult }[]>();
@@ -167,8 +169,7 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
     for (let c = 0; c < cols; c++) {
       const k = r * cols + c;
       if (steer[cells[k]]) continue;
-      const S = (D: number) => LD * (1 - Math.exp(-D / LD));
-      psiPx[k] = G * (rot > 0 ? S(dE[k]) * (1 - Math.exp(-dW[k] / DELTA)) : S(dW[k]) * (1 - Math.exp(-dE[k] / DELTA)));
+      psiPx[k] = G * (rot > 0 ? widthSat(dE[k]) * (1 - Math.exp(-dW[k] / DELTA)) : widthSat(dW[k]) * (1 - Math.exp(-dE[k] / DELTA)));
     }
   }
   // 南北方向平滑约 1.5°
@@ -200,8 +201,9 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
     const ty = fy - r0;
     const ca = ((c0 % cols) + cols) % cols;
     const cb = (ca + 1) % cols;
-    const g = (r: number, c: number) => arr[r * cols + c];
-    return (g(r0, ca) * (1 - tx) + g(r0, cb) * tx) * (1 - ty) + (g(r0 + 1, ca) * (1 - tx) + g(r0 + 1, cb) * tx) * ty;
+    const a = r0 * cols;
+    const b = (r0 + 1) * cols;
+    return (arr[a + ca] * (1 - tx) + arr[a + cb] * tx) * (1 - ty) + (arr[b + ca] * (1 - tx) + arr[b + cb] * tx) * ty;
   };
   const psi = new Float64Array(n);
   for (let i = 0; i < n; i++) psi[i] = steer[i] ? 0 : sample(psiPx, mesh.x[i], mesh.y[i]);
@@ -309,46 +311,23 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
   const teq = new Float64Array(n);
   for (let i = 0; i < n; i++) teq[i] = inp.tAnn[i] + dUp[i];
   const flowC = buildFlowSphere(mesh, cE, cS, { lag: 'all', mask: ocean });
-  // 与 solveTransportSphere 逐值相同的专用写法：陆地格一直是 teq，不用扫；
-  // 海上每格回到平衡的比例、上游来源与权重（按邻接顺序）先算好，每遍只做加权平均
+  // 稳态输运的专用写法：陆地格一直是 teq，不用扫；海上每格回到平衡的比例先算好，
+  // 每遍按输运图的入流表（上游来源与权重）只做加权平均
   const fac = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     if (!ocean[i]) continue;
     const lambda = 1500 * Math.sqrt(clamp(Math.hypot(cE[i], cS[i]) / 0.5, 0.5, 2));
     fac[i] = 1 - Math.exp(-inp.spacingKm[i] / lambda);
   }
-  const { rev } = sphereAux(mesh);
-  const sea: number[] = [];
-  const inOff: number[] = [0];
-  const inSrc: number[] = [];
-  const inW: number[] = [];
-  for (let k = 0; k < n; k++) {
-    const i = flowC.order[k];
-    if (!ocean[i]) continue;
-    sea.push(i);
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      const f = flowC.frac[rev[e]];
-      if (f <= 0) continue;
-      inSrc.push(mesh.adj[e]);
-      inW.push(f);
-    }
-    inOff.push(inSrc.length);
-  }
-  const seaOrder = Int32Array.from(sea);
-  const srcOff = Int32Array.from(inOff);
-  const srcCell = Int32Array.from(inSrc);
-  const srcW = Float64Array.from(inW);
+  const { order, koff, src, w: srcW, den } = flowC;
   const sst = Float64Array.from(teq);
   for (let s = 0; s < PLANET_SWEEPS.ocean; s++) {
-    for (let k = 0; k < seaOrder.length; k++) {
-      const i = seaOrder[k];
+    for (let k = 0; k < n; k++) {
+      const i = order[k];
+      if (!ocean[i]) continue;
       let num = 0;
-      let den = 0;
-      for (let p = srcOff[k]; p < srcOff[k + 1]; p++) {
-        num += sst[srcCell[p]] * srcW[p];
-        den += srcW[p];
-      }
-      const T = den > 1e-9 ? num / den : teq[i];
+      for (let p = koff[k]; p < koff[k + 1]; p++) num += sst[src[p]] * srcW[p];
+      const T = den[k] > 1e-9 ? num / den[k] : teq[i];
       sst[i] = T + (teq[i] - T) * fac[i];
     }
   }
