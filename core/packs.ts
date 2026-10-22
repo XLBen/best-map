@@ -2,6 +2,7 @@ import { z } from 'zod';
 import zhCN from 'zod/v4/locales/zh-CN.js';
 import type { Command } from './commands';
 import { DEFAULT_PACK, type WordPack, packProblems as wordPackProblems, wordPackSchema } from './names';
+import { type PlanetForm, planetFormSchema } from './planet-form';
 import { type FoundScript, VARIABLES, codeOnly, findScripts } from './script';
 import { DEFAULT_SPECIES, type Species, speciesSchema } from './species';
 import type { World } from './world';
@@ -15,8 +16,10 @@ import type { World } from './world';
 // 同 id 不同内容的改名为 “id-2”，包里对它的引用（侵占的目标、river('x')）一起改；噪声种子用固定的 seedKey，改名不改花纹。
 // 世界自带它用到的全部内容（都在命令里），别人没有这个包也能打开。
 //
-// 河流类型、星球形态由另外两支做：这里先按“带 id 的对象”收下（原样保留），各自的校验、用到世界的命令、
-// 从世界导出、改名，由那两支在 registerPackSection 里填上（见 PACK_SECTIONS）。
+// 河流类型由另一支做：这里先按“带 id 的对象”收下（原样保留），它的校验、用到世界的命令、
+// 从世界导出、改名，由那一支在 registerPackSection 里填上（见 PACK_SECTIONS）。
+// 星球形态在本文件末尾注册：按 planet-form.ts 的格式逐项检查，导出时带上世界在用的形态；
+// 不在“用到这个世界”里用（在 调整 → 星球形态 里换，或新建世界时选）。
 
 export const PACK_FORMAT = 'map2-pack';
 export const PACK_VERSION = 1;
@@ -73,7 +76,7 @@ const plainItem = z.looseObject({
 }) as unknown as z.ZodType<PackItem>;
 
 // TODO(河流类型那一支)：registerPackSection('riverTypes', {schema, inWorld, command: set_river_type, withId, fromWorld, rewrite})
-// TODO(星球形态那一支)：registerPackSection('planetForms', {schema, fromWorld, ...})；星球形态不在这里用到世界（调整 → 星球形态）
+// 星球形态的校验、导出在本文件末尾注册（见 registerPackSection('planetForms', …)）；它不在这里用到世界（调整 → 星球形态）
 export const PACK_SECTIONS: Record<PackSectionKey, PackSection> = {
   riverTypes: { label: '河流', schema: plainItem, checked: true, note: '这一版还不能用河流类型' },
   planetForms: { label: '星球', schema: plainItem, checked: false, note: '星球形态在 调整 → 星球形态 里换，或新建世界时选' },
@@ -273,6 +276,9 @@ function stableJson(v: unknown): string {
 export function sameItem(a: unknown, b: unknown): boolean {
   return stableJson(a) === stableJson(b);
 }
+
+// sameItem 比较用的键：要和许多项比的时候每项只算一次（向导、调整里列出的星球形态去重）
+export const itemKey = (v: unknown): string => stableJson(v);
 
 // 包里（或一条命令里、任意 JSON 里）的全部脚本：信任检查、“查看脚本”用
 export function packScripts(json: unknown): FoundScript[] {
@@ -620,4 +626,23 @@ export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMet
   if (planetForms.length) pack.planetForms = planetForms.map((x) => structuredClone(x));
   if (picks.wordPack && wp) pack.textPacks = [structuredClone(wp)];
   return pack;
+}
+
+// ---------- 星球形态 ----------
+
+// 星球形态：每一项按 planet-form.ts 的格式检查（id、名字、从哪种星球改起、配方、脚本……）；
+// 用到世界不经过资源包的“用到这个世界”（命令是 set_worldgen 的 params.form：在 调整 → 星球形态 里换，或新建世界时选），
+// 所以不给 command，那条说明留着。从世界导出时带上世界在用的那一个
+registerPackSection('planetForms', {
+  schema: planetFormSchema as unknown as z.ZodType<PackItem>,
+  fromWorld: (w) => {
+    // 只有生态、场的小世界（测试、旧的调用方）没有 terrain
+    const form = w.small.terrain?.gen?.form;
+    return form ? [form as unknown as PackItem] : [];
+  },
+});
+
+// 包里的星球形态（已按格式检查过：parsePack 读出来的、内置的）
+export function packForms(pack: Pick<ResourcePack, 'planetForms'>): PlanetForm[] {
+  return (pack.planetForms ?? []) as unknown as PlanetForm[];
 }

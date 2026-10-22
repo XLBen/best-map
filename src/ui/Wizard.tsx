@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldType } from '../../core/generate';
+import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldgenInput, type WorldType } from '../../core/generate';
+import { type PlanetForm, hasFormScripts } from '../../core/planet-form';
 import {
   CLIMATE_ZONES,
   type ClimateZone,
@@ -19,11 +20,16 @@ import {
   planetSettings,
   settingsAt,
 } from '../../core/presets';
-import { autosaved, newWorld, resumeLast, thumbnail, wizardOpen, world } from '../state';
+import { library, refreshLibrary } from '../library';
+import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts, wizardOpen, world } from '../state';
 import { resetTools } from './defs/tools';
+import { FormEditor } from './FormEditor';
+import { closeFormEditor, openFormEditor } from './form-store';
+import { type FormChoice, blankForm, formChoices, formGen, formSource, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
 
 // 新建向导：先选一块地区还是整个星球。
-// 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型、大小。
+// 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
+// 带脚本的标上“脚本”，卡片上的“编辑…”打开形态编辑器）、大小。
 // → Worker 用 4000 格生成 6 张缩略图 → 点一张开始。
 // 缩略图与成品的大格局一致（生成器的随机都按地图上的位置取，与格数无关）。
 // 地图本来就跨好几个气候带：第 3 步只是把它放在星球上的某个纬度
@@ -124,9 +130,29 @@ export function Wizard() {
   const savedAt = !world.value ? autosaved.value : null;
 
   const seeds = Array.from({ length: COUNT }, (_, k) => (base + k * 7919) % 0xffffffff);
-  const planet = PLANET_TYPES.find((t) => t.key === ptype)!;
-  const genOf = (seed: number) => (kind === 'planet' ? { seed, type: planet.type, islands: planet.islands } : { seed, type });
+  // 星球形态：内置的示例与资源库里装的（打开向导时再读一遍资源库）
+  const choices = formChoices(library.value);
+  const chosen = choices.find((c) => c.key === ptype);
+  const planet = PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0];
+  const genOf = (seed: number): WorldgenInput =>
+    kind === 'planet' ? (chosen ? formGen(seed, chosen.form) : { seed, type: planet.type, islands: planet.islands }) : { seed, type };
+  // 历史里的“新世界：像地球”“新世界：双子大陆”
+  const nameOf = () => wizardWorldName(kind, ptype, choices, type);
   const settingsOf = (cells: number) => (kind === 'planet' ? planetSettings(psize, cells) : settingsAt(size, center, cells));
+  // 缩略图按形态的内容重算（资源库每读一遍都是新的对象，内容没变时不重算）
+  const formKey = chosen ? JSON.stringify(chosen.form) : '';
+
+  useEffect(() => {
+    if (!wizardOpen.value) {
+      closeFormEditor();
+      return;
+    }
+    void refreshLibrary();
+  }, [wizardOpen.value]);
+  // 选着的形态不在资源库里了（删掉了）：换回“像地球”
+  useEffect(() => {
+    if (!chosen && !PLANET_TYPES.some((t) => t.key === ptype)) setPtype('continents');
+  }, [chosen, ptype]);
 
   useEffect(() => {
     if (!wizardOpen.value) return;
@@ -141,7 +167,7 @@ export function Wizard() {
       }
     }, 120);
     return () => clearTimeout(timer);
-  }, [kind, ptype, psize, type, size, center, base, wizardOpen.value]);
+  }, [kind, ptype, formKey, psize, type, size, center, base, wizardOpen.value]);
 
   if (!wizardOpen.value) return null;
 
@@ -155,26 +181,39 @@ export function Wizard() {
     setCenter((c) => clampCenter(z, c));
   };
 
-  const pick = async (seed: number) => {
+  // 新建：gen、name 是这个世界的生成参数和叫法；cells 是格数
+  const create = async (gen: WorldgenInput, name: string, seed: number, cells: Parameters<typeof settingsOf>[0]): Promise<boolean> => {
     setCreating(true);
-    const gen = genOf(seed);
-    const ok = await newWorld(settingsOf(kind === 'planet' ? PLANET_CELLS : CELLS), [
-      // 山挡风在划分省份之前打开（省份按拐过的风算出的气候来分）。与生成放在同一步里：只算一遍，历史里也只有“新世界”
-      {
-        op: 'batch',
-        label: `新世界：${WORLD_TYPE_INFO[gen.type].name}`,
-        commands: [
-          { op: 'set_worldgen', params: gen, reset: true },
-          { op: 'set_planet', patch: { terrainWind: 1 } },
-        ],
-      },
-      { op: 'generate_provinces', rules: { seed } },
-    ]);
+    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed));
     setCreating(false);
     if (ok) {
       wizardOpen.value = false;
       resetTools();
     }
+    return ok;
+  };
+  const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? PLANET_CELLS : CELLS);
+
+  // 点一张形态的卡片：里面有没见过的脚本先问（缩略图就会运行它），不信任就不选
+  const chooseForm = async (c: FormChoice) => {
+    if (await trustFormScripts(c.form)) setPtype(c.key);
+  };
+  // 编辑一个形态（c 为 null：自己做一个）。编辑器里的缩略图会运行脚本，没见过的先问
+  const editForm = async (c: FormChoice | null) => {
+    if (c && !(await trustFormScripts(c.form))) return;
+    const initial: PlanetForm = c ? structuredClone(c.form) : blankForm();
+    openFormEditor({
+      initial,
+      original: c?.form ?? null,
+      originalKey: c?.key ?? null,
+      mine: c?.mine ?? false,
+      others: choices.map((x) => x.form),
+      settings: planetSettings(psize, 4000),
+      radiusKm: PLANET_SIZES[psize].radiusKm,
+      seed: seeds[0],
+      onSaved: (_f, key) => setPtype(key),
+      onCreate: (f, seed) => create(formGen(seed, f), f.name, seed, PLANET_CELLS),
+    });
   };
 
   return (
@@ -253,6 +292,29 @@ export function Wizard() {
                 </button>
               ))}
             </div>
+            <h5>星球形态</h5>
+            <div class="cards three">
+              {choices.map((c) => (
+                <div class="form-card">
+                  <button class={`card ${ptype === c.key ? 'on' : ''}`} onClick={() => void chooseForm(c)} disabled={creating}>
+                    <b>
+                      {c.form.name}
+                      {hasFormScripts(c.form) && <span class="tag">脚本</span>}
+                    </b>
+                    <span class="how">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
+                    {!c.builtin && <span class="how">{formSource(c)}</span>}
+                  </button>
+                  <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改一改它：名字、几个滑块、脚本">
+                    编辑…
+                  </button>
+                </div>
+              ))}
+              <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
+                <b>自己做一个…</b>
+                <span class="how">从一种星球改起，调几项，也可以写脚本</span>
+              </button>
+            </div>
+            {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="muted small">现在是安全模式：缩略图里没有脚本的效果，建好的新世界里脚本照常运行。</p>}
             <h4>2. 多大</h4>
             <div class="cards three">
               {(Object.keys(PLANET_SIZES) as PlanetSize[]).map((s) => (
@@ -282,6 +344,7 @@ export function Wizard() {
           缩略图是同一个世界的粗略版：挑中后会用更精细的网格生成，大格局不变；小图里看不到很小的岛。{creating ? ' 正在生成，请稍等…' : ''}
         </p>
       </div>
+      <FormEditor />
     </div>
   );
 }

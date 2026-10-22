@@ -4,7 +4,10 @@ import { type ResourcePack, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
-import { installPack, library, refreshLibrary, removePack } from './library';
+import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm } from './library';
+import { PACK_MAX } from '../core/packs';
+import { TWIN_CONTINENTS } from '../core/packs/fantasy-forms';
+import type { PlanetForm } from '../core/planet-form';
 import { forgetTrustCache, trustScripts, untrustedScripts } from './trust';
 
 // 资源库与信任的脚本：IndexedDB 换成一个只在内存里的小替身（够这里用的几个操作）
@@ -159,6 +162,68 @@ describe('资源库', () => {
 });
 
 // 信任只有一处（trust.ts，按源码的 SHA-256）：资源库只是登记成总是信任的来源
+describe('自己做的星球形态存进资源库', () => {
+  const form = (id: string, name = id): PlanetForm => ({ id, name, api: 1, base: 'archipelago', profile: { landFraction: 0.2 } });
+  it('存进“我的资源”：没有就新建；再存一个接在后面；同一个 id 换成新的；包里原来的生态留着', async () => {
+    await installPack(userPack(MY_PACK_NAME, { biomes: withScript('x', 'return 1;').biomes }), { mine: true });
+    const a = await saveForm(form('my_a', '千岛'));
+    expect(a.ok && a.entry.key).toBe(MY_PACK_NAME);
+    expect(a.ok && a.stored).toBe(true);
+    await saveForm({ ...TWIN_CONTINENTS, id: 'my_b', name: '双子大陆 2' });
+    await saveForm(form('my_a', '万岛'));
+    const mine = library.value.find((e) => e.key === MY_PACK_NAME)!;
+    expect(mine.mine).toBe(true);
+    expect(mine.pack.biomes!.map((b) => b.id)).toEqual(['x_b']);
+    expect(mine.pack.planetForms!.map((f) => [f.id, f.name])).toEqual([
+      ['my_b', '双子大陆 2'],
+      ['my_a', '万岛'],
+    ]);
+    // 存的是副本
+    expect(mine.pack.planetForms![0]).not.toBe(TWIN_CONTINENTS);
+  });
+
+  it('没有“我的资源”时新建一个；超过上限时不存（存了整个包会读不回来），说一句', async () => {
+    const first = await saveForm(form('my_0'));
+    expect(first.ok && first.entry.pack).toEqual({ format: 'map2-pack', version: 1, id: MY_PACK_NAME, name: MY_PACK_NAME, planetForms: [form('my_0')] });
+    for (let k = 1; k < PACK_MAX.planetForms; k++) expect((await saveForm(form(`my_${k}`))).ok).toBe(true);
+    const over = await saveForm(form('my_over'));
+    expect(over.ok).toBe(false);
+    expect(!over.ok && over.error).toContain('已经有 32 个了');
+    // 替换已有的照样可以
+    expect((await saveForm(form('my_3', '改过的'))).ok).toBe(true);
+    expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.length).toBe(PACK_MAX.planetForms);
+  });
+
+  it('从世界导出存进“我的资源”（替换它）时，形态编辑器存在里面的星球形态留着；同一个 id 用导出的；别人的包、新的名字不管', async () => {
+    await saveForm(form('my_a', '千岛'));
+    await saveForm(form('my_b', '万岛'));
+    // 导出的包：世界里的生态和世界在用的形态（与存着的 my_b 同 id、改过）
+    const exported = userPack(MY_PACK_NAME, { biomes: withScript('y', 'return 1;').biomes, planetForms: [form('my_b', '万岛新') as never] });
+    const old = inLibrary(exported);
+    expect(old?.mine).toBe(true);
+    const stored = keepSavedForms(exported, old);
+    expect(stored.planetForms!.map((f) => [f.id, f.name])).toEqual([
+      ['my_b', '万岛新'],
+      ['my_a', '千岛'],
+    ]);
+    expect(stored.biomes).toBe(exported.biomes);
+    await installPack(stored, { mine: true });
+    expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
+    // 没有形态的导出也一样留着
+    const plain = userPack(MY_PACK_NAME, { biomes: withScript('z', 'return 1;').biomes });
+    expect(keepSavedForms(plain, inLibrary(plain)).planetForms!.map((f) => f.id)).toEqual(['my_b', 'my_a']);
+    // 替换的不是自己的包、没有要替换的：原样
+    await installPack(userPack('别人的', { planetForms: [form('x_1') as never] }));
+    const theirs = userPack('别人的', { name: '别人的' });
+    expect(keepSavedForms(theirs, inLibrary(theirs))).toBe(theirs);
+    const fresh = userPack('新的');
+    expect(keepSavedForms(fresh, inLibrary(fresh))).toBe(fresh);
+    // 加起来超过上限的不留（存了整个包会读不回来）
+    const many = { ...old!, pack: { ...old!.pack, planetForms: Array.from({ length: PACK_MAX.planetForms }, (_, k) => form(`my_${k}`) as never) } };
+    expect(keepSavedForms(exported, many).planetForms!.length).toBe(PACK_MAX.planetForms);
+  });
+});
+
 describe('信任的脚本', () => {
   it('内置示例包的脚本总是信任的', async () => {
     expect(await untrustedScripts(FANTASY_PACK)).toEqual([]);
@@ -210,7 +275,8 @@ describe('信任的脚本', () => {
         id: 'other',
         name: 'other',
         riverTypes: [{ id: 'blood', scripts: { color: { api: 1, src: 'return [200, 0, 0];' } } }],
-        planetForms: [{ id: 'ring', name: '环', scripts: { crust: { api: 1, src: 'return height;' } } }],
+        // 星球形态按 planet-form.ts 的格式检查（要写 api、从哪种星球改起）
+        planetForms: [{ id: 'ring', name: '环', api: 1, base: 'inland_sea', scripts: { crust: { api: 1, src: 'return height;' } } }],
       }),
     );
     expect(other.ok).toBe(true);

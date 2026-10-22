@@ -3,6 +3,7 @@ import { mapApi } from '../camera';
 import { TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
 import { packApply, packDialog } from '../packs/store';
+import { closeFormEditor, formEditor } from '../form-store';
 
 // 键盘：一个地方统一处理，Esc 按固定顺序一层层退出
 
@@ -13,10 +14,15 @@ const typing = (t: EventTarget | null) => {
 
 export function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 说明 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
+    // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 说明 → 星球形态编辑器 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
     // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 隐藏的界面 → 资源包“用到这个世界”的卡片 → 抽屉 → 选中的省份 / 地名 / 河
     if (packDialog.value) packDialog.value = null;
     else if (helpOpen.value) helpOpen.value = false;
+    else if (formEditor.value) {
+      // 正在框里写：先离开框（写的东西还在），再按一次才关上编辑器
+      if (typing(e.target)) (e.target as HTMLElement).blur();
+      else closeFormEditor();
+    }
     else if (wizardOpen.value) {
       if (world.value) wizardOpen.value = false;
     } else if (openPanel.value) openPanel.value = null;

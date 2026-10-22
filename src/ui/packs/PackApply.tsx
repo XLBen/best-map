@@ -179,7 +179,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
           <>
             <h5>星球形态</h5>
             <p class="small">{forms.map((f) => f.name || f.id).join('、')}</p>
-            {PACK_SECTIONS.planetForms.note && <p class="muted small">{PACK_SECTIONS.planetForms.note}</p>}
+            {/* 一块地区上没有“调整 → 星球形态”：形态只用在整个星球上 */}
+            <p class="muted small">{w.settings.globe ? PACK_SECTIONS.planetForms.note : '星球形态只用在整个星球上：新建世界时选“整个星球”就能选它们'}</p>
           </>
         )}
         {st.only !== 'biomes' && !!texts.length && (

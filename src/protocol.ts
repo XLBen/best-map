@@ -5,6 +5,7 @@ import type { WorldgenInput } from '../core/generate';
 import type { PreviewPatch } from '../core/preview-world';
 import type { TerrainPatch, TerrainPreview } from '../core/terrain';
 import type { GeoFeature } from '../core/features';
+import type { ScriptIssue } from '../core/script';
 import type { Causes, Derived, Settings, SmallState } from '../core/world';
 
 // 主线程与计算 Worker 之间的消息
@@ -106,5 +107,7 @@ export type Response =
       doc?: WorldDoc;
       tail?: DocTail;
       thumb?: Uint8ClampedArray;
+      // 缩略图里星球形态的脚本出的错（thumb 的回复里，有形态时才有）
+      issues?: ScriptIssue[];
     }
   | { id: number; ok: false; error: string };

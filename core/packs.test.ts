@@ -13,6 +13,7 @@ import {
   exportableBiomes,
   newBiomeCells,
   packFileName,
+  packForms,
   packFromWorld,
   packProblems,
   parsePack,
@@ -25,9 +26,10 @@ import {
 } from './packs';
 import { FANTASY_BIOMES } from './packs/fantasy-biomes';
 import { FANTASY_PACK } from './packs/fantasy';
+import { FANTASY_FORMS, POLAR_CONTINENTS, TWIN_CONTINENTS } from './packs/fantasy-forms';
 import { findScripts } from './script';
 import { DEFAULT_SPECIES, type Species, withRect } from './species';
-import { continents } from './testing/fixtures';
+import { continents, engineFor } from './testing/fixtures';
 
 // 资源包：格式、检查、用到世界（一整步、撞 id 改名、一模一样的跳过）、从世界导出、内置示例包
 
@@ -353,5 +355,41 @@ describe('用了资源包之后的世界', () => {
     c.exec({ op: 'add_species', species: biome('crystal', { color: '#000000' }) });
     c.exec({ op: 'add_species', species: { ...crystal, id: 'crystal-2' } });
     expect(column(c, 'crystal-2')).not.toEqual(ca);
+  });
+});
+
+describe('资源包里的星球形态', () => {
+  it('内置的三种形态：存成文件再读回来一样；写错时用中文说是哪一个；只列出来，不在“用到这个世界”里用', () => {
+    expect(packForms(FANTASY_PACK).map((f) => f.name)).toEqual(['双子大陆', '环形内海', '极地大陆']);
+    expect(packSummary(FANTASY_PACK)).toBe('生态 5 · 星球 3');
+    const back = readPack(JSON.stringify(FANTASY_PACK));
+    expect(back.ok && back.pack.planetForms).toEqual(FANTASY_FORMS);
+    const bad = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, base: 'moon' } as never] })));
+    expect(!bad.ok && bad.errors.length).toBe(1);
+    expect(!bad.ok && bad.errors[0]).toMatch(/^星球形态第 1 个「双子大陆」的 base：/);
+    const noName = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, name: '' }] as never })));
+    expect(!noName.ok && noName.errors[0]).toMatch(/^星球形态第 1 个「twin_continents」的 name：/);
+    expect(PACK_SECTIONS.planetForms.note).toBe('星球形态在 调整 → 星球形态 里换，或新建世界时选');
+    expect(planPack(fakeWorld(), FANTASY_PACK, { biomes: [] }).command.commands).toEqual([]);
+  });
+
+  it('从世界导出：带上世界在用的形态（一份副本）；不勾就不带；没有形态的世界不带', () => {
+    const eng = engineFor({ cells: 2000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', form: POLAR_CONTINENTS }, reset: true });
+    const out = packFromWorld(eng.world, {}, { name: '我的星球' });
+    expect(out.planetForms).toEqual([POLAR_CONTINENTS]);
+    expect(out.planetForms![0]).not.toBe(eng.world.small.terrain.gen!.form);
+    expect(packFromWorld(eng.world, { planetForms: [] }, { name: 'x' }).planetForms).toBeUndefined();
+    // 导出的文件读回来，用里面的形态新建同一个种子的星球：与原来逐值相同
+    const back = readPack(JSON.stringify(out, null, 2));
+    expect(back.ok && back.pack).toEqual(out);
+    if (!back.ok) return;
+    const again = engineFor({ cells: 2000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    again.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', form: packForms(back.pack)[0] }, reset: true });
+    expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
+    // 没有形态的世界
+    const plain = engineFor({ cells: 2000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    plain.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
+    expect(packFromWorld(plain.world, {}, { name: 'x' }).planetForms).toBeUndefined();
   });
 });

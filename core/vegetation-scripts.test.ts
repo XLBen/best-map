@@ -221,7 +221,8 @@ describe('没有用到时', () => {
     expect('placeF' in d0).toBe(false);
     expect('look' in d0).toBe(false);
     expect('scriptIssues' in d0).toBe(false);
-    // 只带外观、地名、侵占目标为空的生态：推导与不带这些项时逐值相同（只有 small 不同）
+    // 只带外观、地名、侵占目标为空的生态：推导与不带这些项时逐值相同（只有 small 不同；
+    // 带地名设定的生态自然长成的一片有自己的地名，所以地物也多了几个，见下面）
     const plain = wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 2 });
     const a = world();
     a.exec({ op: 'add_species', species: plain });
@@ -232,7 +233,11 @@ describe('没有用到时', () => {
     const da = digestWorld(a.world);
     const db = digestWorld(b.world);
     expect(Object.keys(db).sort()).toEqual(Object.keys(da).sort());
-    for (const key of Object.keys(da)) if (key !== 'small') expect(db[key], key).toBe(da[key]);
+    for (const key of Object.keys(da)) if (key !== 'small' && key !== 'derived.features') expect(db[key], key).toBe(da[key]);
+    const named = b.world.derived.features.filter((f) => f.species === 'glass');
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.every((f) => f.type === 'biome' && featureLabel(b.world, f) === '玻原')).toBe(true);
+    expect(a.world.derived.features.some((f) => f.species === 'glass')).toBe(false);
     // 用过脚本又去掉：值为 undefined
     b.exec({ op: 'update_species', id: 'glass', patch: { scripts: { placement: script('return 0.5;') } } });
     expect(b.world.derived.placeF).toBeDefined();

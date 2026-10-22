@@ -64,6 +64,13 @@ describe('地物识别的缓存与从头识别逐值一致', () => {
       check(eng);
       eng.exec({ op: 'update_species', id: 'crystal', patch: { name: '水晶林' } });
       check(eng);
+      // 自带地名设定的生态：涂出来的与自然长成的一起（另一段缓存）；加一种到处能长、带地名设定的生态
+      eng.exec({ op: 'update_species', id: 'crystal', patch: { feature: { label: '晶林' } } });
+      check(eng);
+      const wide = { field: 'tMean', min: -30, optLow: -10, optHigh: 30, max: 45 };
+      eng.exec({ op: 'add_species', species: { id: 'glass', name: '玻璃原', terrain: 'plains', competition: 6, tolerances: [wide], feature: { label: '玻原' } } });
+      check(eng);
+      expect(w.derived.features.some((f) => f.species === 'glass')).toBe(true);
       // 改海陆（先预览：预览用的副本与引擎共用网格，也共用缓存）
       let cells = coastalStroke(w, 0.4, 5);
       const cmd = { op: 'paint_land' as const, cells, t: cells.map(() => 0), mode: 'land' as const };

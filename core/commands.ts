@@ -20,6 +20,7 @@ import {
 import { SEAM_MAX_POINTS, cutSeams, dropSeams, inheritSeams, seamsAfterCut } from './seams';
 import { cutProvinces } from './select';
 import { checkSpeciesScripts } from './biome-scripts';
+import { namesNaturally } from './features';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
@@ -360,7 +361,9 @@ function speciesChange(before: Species, after: Species): { dirty: Dirty; what: s
   if (changed.every((k) => LOOK_KEYS.has(k))) return { dirty: Dirty.None, what };
   // 带脚本的生态改名也从求解重算：脚本出错的说明（d.scriptIssues）里有它的名字，要与重放一致（脚本本身记着结果，不重跑）
   if (changed.includes('name') && (before.scripts || after.scripts)) return { dirty: Dirty.Solve, what };
-  if (changed.every((k) => NAME_KEYS.has(k))) return { dirty: Dirty.Names, what };
+  // 加上、去掉地名设定（feature）时，自然长成的那些片要不要成为自己的地物也跟着变（features.ts 的 namesNaturally）：
+  // 地物要重新识别，不只是重新起名
+  if (changed.every((k) => NAME_KEYS.has(k)) && namesNaturally(before) === namesNaturally(after)) return { dirty: Dirty.Names, what };
   return { dirty: Dirty.Solve, what };
 }
 

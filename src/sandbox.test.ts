@@ -3,7 +3,7 @@ import type { Command } from '../core/commands';
 import type { WorldDoc } from '../core/engine';
 import { settingsSchema } from '../core/world';
 import type { MirrorLog, Request, Response } from './protocol';
-import { type Clock, EngineHost, Mirror, WATCH, Watchdog, type WorkerLike, readWorkerMessage } from './sandbox';
+import { CANCELLED, type Clock, EngineHost, Mirror, WATCH, Watchdog, type WorkerLike, readWorkerMessage } from './sandbox';
 
 // 计算 Worker 的看护：看门狗只在脚本运行期间计时、电脑睡眠不算；卡住、停下时停掉 Worker，用主线程的命令记录另开一个恢复；
 // 恢复也卡住就用安全模式；旧的纪元、旧的 Worker 的消息不要。这里的时钟、Worker 都是假的
@@ -406,6 +406,8 @@ describe('卡住了：恢复', () => {
     t.worker(0).enter('双子大陆');
     t.clock.advance(5000);
     expect(t.results).toEqual([{ id: 0, ok: false, error: '「双子大陆」的脚本卡住了（4 秒没有算完），已经停下，这一步没有做' }]);
+    // 星球形态编辑器按这个编号认出“被停下了”（同样的脚本不再自动重算缩略图）
+    expect(t.results[0].id).toBe(CANCELLED);
     expect(t.events.reset).not.toHaveBeenCalled();
     expect(t.events.failed).not.toHaveBeenCalled();
     expect(FakeWorker.all).toHaveLength(1);
