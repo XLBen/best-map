@@ -1,6 +1,6 @@
 import { type SphereMesh, gradient, graphDistance } from './mesh';
 import { clamp, smoothstep } from './rng';
-import { PLANET_SWEEPS, buildFlowSphere, solveTransportSphere } from './sphere-flow';
+import { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './sphere-flow';
 import type { World } from './world';
 
 // 简化的洋流（只用于整个星球）。给人看的说法：
@@ -42,7 +42,8 @@ const LD = 8000;
 // ψ 的梯度换成海流速度的系数
 const KAPPA = 0.08;
 
-const resultCache = new WeakMap<SphereMesh, { key: string; land: Uint8Array; result: OceanResult }>();
+// 每个网格留两份：撤销一笔海陆修改时直接用上一份
+const resultCache = new WeakMap<SphereMesh, { key: string; land: Uint8Array; result: OceanResult }[]>();
 const pixelCache = new WeakMap<SphereMesh, { cols: number; rows: number; cells: Int32Array }>();
 
 function pixels(mesh: SphereMesh): { cols: number; rows: number; cells: Int32Array } {
@@ -82,8 +83,8 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
   const land = causes.land;
   const planet = small.planet;
   const key = `${planet.tilt}|${planet.rotation}|${planet.solar}|${kmPerUnit}`;
-  const hit = resultCache.get(mesh);
-  if (hit && hit.key === key && hit.land.length === land.length && hit.land.every((v, i) => v === land[i])) return hit.result;
+  const list = resultCache.get(mesh) ?? [];
+  for (const c of list) if (c.key === key && c.land.length === land.length && c.land.every((v, i) => v === land[i])) return c.result;
 
   const n = mesh.n;
   const R = kmPerUnit / Math.PI;
@@ -308,18 +309,49 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
   const teq = new Float64Array(n);
   for (let i = 0; i < n; i++) teq[i] = inp.tAnn[i] + dUp[i];
   const flowC = buildFlowSphere(mesh, cE, cS, { lag: 'all', mask: ocean });
-  const sst = solveTransportSphere(
-    mesh,
-    flowC,
-    PLANET_SWEEPS.ocean,
-    (i, T) => {
-      if (!ocean[i]) return teq[i];
-      const lambda = 1500 * Math.sqrt(clamp(Math.hypot(cE[i], cS[i]) / 0.5, 0.5, 2));
-      return T + (teq[i] - T) * (1 - Math.exp(-inp.spacingKm[i] / lambda));
-    },
-    (i) => teq[i],
-    (i) => teq[i],
-  );
+  // 与 solveTransportSphere 逐值相同的专用写法：陆地格一直是 teq，不用扫；
+  // 海上每格回到平衡的比例、上游来源与权重（按邻接顺序）先算好，每遍只做加权平均
+  const fac = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!ocean[i]) continue;
+    const lambda = 1500 * Math.sqrt(clamp(Math.hypot(cE[i], cS[i]) / 0.5, 0.5, 2));
+    fac[i] = 1 - Math.exp(-inp.spacingKm[i] / lambda);
+  }
+  const { rev } = sphereAux(mesh);
+  const sea: number[] = [];
+  const inOff: number[] = [0];
+  const inSrc: number[] = [];
+  const inW: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const i = flowC.order[k];
+    if (!ocean[i]) continue;
+    sea.push(i);
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const f = flowC.frac[rev[e]];
+      if (f <= 0) continue;
+      inSrc.push(mesh.adj[e]);
+      inW.push(f);
+    }
+    inOff.push(inSrc.length);
+  }
+  const seaOrder = Int32Array.from(sea);
+  const srcOff = Int32Array.from(inOff);
+  const srcCell = Int32Array.from(inSrc);
+  const srcW = Float64Array.from(inW);
+  const sst = Float64Array.from(teq);
+  for (let s = 0; s < PLANET_SWEEPS.ocean; s++) {
+    for (let k = 0; k < seaOrder.length; k++) {
+      const i = seaOrder[k];
+      let num = 0;
+      let den = 0;
+      for (let p = srcOff[k]; p < srcOff[k + 1]; p++) {
+        num += sst[srcCell[p]] * srcW[p];
+        den += srcW[p];
+      }
+      const T = den > 1e-9 ? num / den : teq[i];
+      sst[i] = T + (teq[i] - T) * fac[i];
+    }
+  }
   // 去掉每条纬度带的平均偏离：按纬度的平衡温度是按地球的实测拟合的，已经含有洋流的平均作用，
   // 这里只保留洋流造成的东西差别（西侧暖、东侧冷、冷水舌……）。全是海的星球因此没有偏离
   const BINS = 90;
@@ -345,6 +377,7 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
   for (let i = 0; i < n; i++) dSST1[i] = ocean[i] ? clamp(sst[i] - inp.tAnn[i] - meanAt(inp.lat[i]), -10, 10) : 0;
 
   const result = { cE, cS, dSST1 };
-  resultCache.set(mesh, { key, land: land.slice(), result });
+  list.unshift({ key, land: land.slice(), result });
+  resultCache.set(mesh, list.slice(0, 2));
   return result;
 }

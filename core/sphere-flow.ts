@@ -1,5 +1,4 @@
-import type { Flow } from './climate';
-import { MinHeap } from './heap';
+import { type Flow, kahnOrder } from './climate';
 import type { SphereMesh } from './mesh';
 
 // 球面上的输运图与稳态输运（水汽随风、海温随海流）：与 climate.ts 的 buildFlow / solveTransport 同一种做法，
@@ -111,19 +110,24 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
   if (o.lag === 'seam') {
     for (let i = 0; i < n; i++) {
       if (calm[i]) continue;
-      const mi = Math.hypot(wx[i], wy[i]);
       for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
         if (!seam[e] || frac[e] <= 0) continue;
         const j = mesh.adj[e];
         if (calm[j]) continue;
-        // 向东跨过接缝时 x 从近 2 变成近 0
+        // 向东跨过接缝时 x 从近 2 变成近 0（风速只在接缝上的边才要算）
         const s = mesh.x[j] < mesh.x[i] ? 1 : -1;
+        const mi = Math.hypot(wx[i], wy[i]);
         const mj = Math.hypot(wx[j], wy[j]);
         if ((s * wx[i]) / mi > 0.3 && (s * wx[j]) / mj > 0.3) lagged[e] = 1;
       }
     }
   }
-  const order = kahnOrder(mesh, (i, e) => !calm[i] && frac[e] > 0 && !lagged[e]);
+  const em = new Uint8Array(E);
+  for (let i = 0; i < n; i++) {
+    if (calm[i]) continue;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (frac[e] > 0 && !lagged[e]) em[e] = 1;
+  }
+  const order = kahnOrder(mesh, em);
   const pos = new Int32Array(n);
   for (let k = 0; k < n; k++) pos[order[k]] = k;
   for (let i = 0; i < n; i++) {
@@ -134,47 +138,6 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
     }
   }
   return { frac, order, lagged };
-}
-
-// Kahn 拓扑排序（与 climate.ts 的 buildFlow 相同）：卡在环上时放入剩余入度最小的格
-function kahnOrder(mesh: SphereMesh, edge: (i: number, e: number) => boolean): Int32Array {
-  const n = mesh.n;
-  const indeg = new Int32Array(n);
-  for (let i = 0; i < n; i++) for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (edge(i, e)) indeg[mesh.adj[e]]++;
-  const order = new Int32Array(n);
-  const placed = new Uint8Array(n);
-  let head = 0;
-  let tail = 0;
-  const place = (c: number) => {
-    order[tail++] = c;
-    placed[c] = 1;
-  };
-  const heap = new MinHeap(n);
-  for (let i = 0; i < n; i++) {
-    if (indeg[i] === 0) place(i);
-    else heap.push(i, indeg[i]);
-  }
-  while (tail < n) {
-    while (head < tail) {
-      const i = order[head++];
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        if (!edge(i, e)) continue;
-        const j = mesh.adj[e];
-        if (placed[j]) continue;
-        if (--indeg[j] === 0) place(j);
-        else heap.push(j, indeg[j]);
-      }
-    }
-    if (tail >= n) break;
-    for (;;) {
-      const c = heap.pop();
-      if (!placed[c] && heap.lastKey === indeg[c]) {
-        place(c);
-        break;
-      }
-    }
-  }
-  return order;
 }
 
 // 稳态输运：沿拓扑序扫描固定遍数；滞后边的源头排在后面，读到的是上一遍的值。
