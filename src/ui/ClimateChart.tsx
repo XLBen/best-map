@@ -267,7 +267,12 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
 function AdvancedTolerances({ sp }: { sp: Species }) {
   const w = world.value!;
   const tols = advancedTolerances(sp);
-  const fields = [...BUILTIN_FIELDS, ...Object.keys(w.causes.fields).map((f) => ({ id: `field:${f}`, label: `自定义：${f}`, unit: '' }))];
+  // 河流类型的河岸场（第三批）：离这种河多近，0–1
+  const fields = [
+    ...BUILTIN_FIELDS,
+    ...Object.keys(w.causes.fields).map((f) => ({ id: `field:${f}`, label: `自定义：${f}`, unit: '' })),
+    ...(w.small.riverTypes ?? []).map((t) => ({ id: `river:${t.id}`, label: `靠近${t.name}（0–1）`, unit: '' })),
+  ];
   const others = sp.tolerances.filter((t) => !tols.includes(t));
   const save = (next: Tolerance[]) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: [...others, ...next] } }, '正在计算生态…');
   return (
@@ -277,7 +282,12 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
         <div class="tol">
           <select
             value={t.field}
-            onChange={(e) => save(tols.map((x, i) => (i === k ? { ...x, field: (e.target as HTMLSelectElement).value } : x)))}
+            onChange={(e) => {
+              const field = (e.target as HTMLSelectElement).value;
+              // 换成“靠近某种河”（0–1）：原来的数（比如海拔的 0–3000）在这里没有意义，换成“离河近的地方最适合”
+              const near = field.startsWith('river:') && !t.field.startsWith('river:') ? { min: 0.1, optLow: 0.5, optHigh: 1, max: 1 } : {};
+              save(tols.map((x, i) => (i === k ? { ...x, field, ...near } : x)));
+            }}
           >
             {fields.map((f) => (
               <option value={f.id}>{f.label}</option>

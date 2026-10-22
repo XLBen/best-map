@@ -1,5 +1,6 @@
 import { type Mesh, findCell, gradient } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
+import { PLAIN_RIVER, type RiverType, majorityType } from './river-types';
 import { guideBody, guideLine } from './rivers';
 import { DEFAULT_SPECIES, type Species } from './species';
 import type { Derived, Guide, RegionKind, World } from './world';
@@ -1236,9 +1237,39 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
     replay(memoized(mesh, 'nature', [biome, painted, d.dominant, causes.land, speciesKey(small.species), km], () => natureInputs(world, biome, paint)));
   }
 
+  // 带类型的自然的河（第三批）：标上是哪一种（没有河流类型时什么都不做）
+  if (d.riverType) for (const f of out) if (f.type === 'river') tagRiverType(world, d, f);
   out.push(...regionFeatures(world, d, terrain), ...guideFeatures(world, d, terrain));
   assignNames(world, out);
   return out;
+}
+
+// ---------- 带类型的河（第三批） ----------
+
+// 河的地物是哪一种河：标签里写上 rtype:类型 id。自然的河按它的格里多数是哪一种；画的河按它选的类型（没选时同自然的河）；
+// 固定下来、没自己起名的自然河自己选了类型时不标：名字照固定之前的（选个类型不会让河改名）。
+// 有标签、那种河有起名模板的河用模板起名，种子里带上类型，第二轮起名（见 assignNames）
+const RTYPE = 'rtype:';
+function tagRiverType(world: World, d: Derived, f: GeoFeature, g?: Guide): void {
+  const types = world.small.riverTypes;
+  if (!types?.length || !d.riverType) return;
+  let id: string | undefined;
+  if (g?.type !== undefined) {
+    if (g.type !== PLAIN_RIVER && !inherits(g)) id = types.find((t) => t.id === g.type)?.id;
+  } else {
+    const k = majorityType(d, f.cells);
+    if (k >= 0) id = types[k].id;
+  }
+  // 标签数组可能是缓存里那一份（memoized 的输入）：换一份新的，不改它
+  if (id !== undefined) f.tags = [...f.tags, `${RTYPE}${id}`];
+}
+
+// 地物的河流类型（有起名模板的才算）
+function namedRiverType(f: GeoFeature, types: ReadonlyMap<string, RiverType>): RiverType | undefined {
+  if (f.type !== 'river') return undefined;
+  const tag = f.tags.find((t) => t.startsWith(RTYPE));
+  const t = tag ? types.get(tag.slice(RTYPE.length)) : undefined;
+  return t?.names ? t : undefined;
 }
 
 // ---------- 画的河 ----------
@@ -1324,6 +1355,7 @@ export function guideFeatures(world: World, d: Derived, terrain: Float32Array = 
       line,
       guide: g.id,
     });
+    if (d.riverType) tagRiverType(world, d, out[out.length - 1], g);
   }
   return out;
 }
@@ -1506,19 +1538,31 @@ export function assignNames(world: World, features: GeoFeature[]) {
   const regions = new Map(world.small.regions.map((r) => [r.id, r]));
   const species = new Map(world.small.species.map((sp) => [sp.id, sp]));
   const guides = new Map(world.small.guides.map((g) => [g.id, g]));
+  // 带类型、有起名模板的河（第三批）
+  const riverTypes = new Map((world.small.riverTypes ?? []).map((t) => [t.id, t]));
+  const typed = (f: GeoFeature) => (riverTypes.size ? namedRiverType(f, riverTypes) : undefined);
+  // 画的河（固定下来的自然河除外）
+  const drawn = (f: GeoFeature) => f.guide !== undefined && !inherits(guides.get(f.guide));
   // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
-  // 现在是涂出来的生态区、自带地名设定的生态自然长成的一片、画的河（固定下来的自然河除外）；以后新加的种类（带类型的河……）也接在这里
-  const secondPass = (f: GeoFeature) => f.species !== undefined || (f.guide !== undefined && !inherits(guides.get(f.guide)));
-  // 重要的先起名，同名时让给重要的；新种类的放在第二轮。第二轮里画的河按画的先后起名（排在涂出来的生态区之后）：
+  // 现在是涂出来的生态区、自带地名设定的生态自然长成的一片、画的河（固定下来的自然河除外）、带类型的河
+  const secondPass = (f: GeoFeature) => f.species !== undefined || drawn(f) || typed(f) !== undefined;
+  // 重要的先起名，同名时让给重要的；新种类的放在第二轮。第二轮里画的河按画的先后起名
+  // （排在涂出来的生态区、自然长成的自带地名的一片、带类型的自然河之后）：
   // 自动起的河名只有几百个，常常撞名，按重要度排的话新画了一条大河、或者河的水量变了，先画的河就会换名
   const byImportance = (a: GeoFeature, b: GeoFeature) => b.importance - a.importance || a.key.localeCompare(b.key);
   const drawnAt = new Map(world.small.guides.map((g, k) => [g.id, k]));
   const second = features.filter(secondPass);
   const order = [
     ...features.filter((f) => !secondPass(f)).sort(byImportance),
-    ...second.filter((f) => f.guide === undefined).sort(byImportance),
-    ...second.filter((f) => f.guide !== undefined).sort((a, b) => drawnAt.get(a.guide!)! - drawnAt.get(b.guide!)!),
+    ...second.filter((f) => !drawn(f)).sort(byImportance),
+    ...second.filter(drawn).sort((a, b) => drawnAt.get(a.guide!)! - drawnAt.get(b.guide!)!),
   ];
+  // 按河流类型的模板起名（种子里带上类型：同一条河换成别的类型，名字也换）
+  const typedName = (f: GeoFeature, t: RiverType, key: string, salt: number) => {
+    const own = t.names!;
+    const p = withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, t.name, own);
+    return generateName(p, OWN_TYPE, f.tags, hashString(`${seed}:${key}:${t.id}:${salt}`), taken);
+  };
   // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
   // （森林被涂出一块别的生态时，名字留在锚点还在的那一边，不会两边都叫这个名字）
   const ovOf = new Map<GeoFeature, FeatureOverride>();
@@ -1545,10 +1589,12 @@ export function assignNames(world: World, features: GeoFeature[]) {
       const ov = inherits(g) && g.name === undefined ? overrides[g.nameKey!] : undefined;
       const fixed = g.name || ov?.name;
       f.custom = !!fixed;
+      const rt = typed(f);
       if (fixed) {
         f.name = fixed;
         taken.add(fixed);
-      } else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${g.nameKey ?? f.key}:${g.salt ?? ov?.salt ?? 0}`), taken);
+      } else if (rt) f.name = typedName(f, rt, g.nameKey ?? f.key, g.salt ?? ov?.salt ?? 0);
+      else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${g.nameKey ?? f.key}:${g.salt ?? ov?.salt ?? 0}`), taken);
       continue;
     }
     const r = f.region ? regions.get(f.region) : undefined;
@@ -1569,7 +1615,9 @@ export function assignNames(world: World, features: GeoFeature[]) {
     }
     f.custom = false;
     const sp = f.species !== undefined ? species.get(f.species) : undefined;
-    if (sp) {
+    const rt = typed(f);
+    if (rt) f.name = typedName(f, rt, f.key, ov?.salt ?? 0);
+    else if (sp) {
       // 涂出来的生态区、自然长成的自带地名的一片：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
       const how = speciesFeature(sp).naming(pack);
       f.name = generateName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${ov?.salt ?? 0}`), taken);

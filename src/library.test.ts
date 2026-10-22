@@ -274,14 +274,15 @@ describe('信任的脚本', () => {
         version: 1,
         id: 'other',
         name: 'other',
-        riverTypes: [{ id: 'blood', scripts: { color: { api: 1, src: 'return [200, 0, 0];' } } }],
+        // 河流类型按 river-types.ts 的格式检查（要有名字、颜色，脚本只能是 match）
+        riverTypes: [{ id: 'blood', name: '血河', color: '#8f1414', scripts: { match: { api: 1, src: 'return 流量 > 1000;' } } }],
         // 星球形态按 planet-form.ts 的格式检查（要写 api、从哪种星球改起）
         planetForms: [{ id: 'ring', name: '环', api: 1, base: 'inland_sea', scripts: { crust: { api: 1, src: 'return height;' } } }],
       }),
     );
     expect(other.ok).toBe(true);
     expect((await untrustedScripts(other.ok && other.pack)).map((s) => [s.owner, s.kind, s.src])).toEqual([
-      ['blood', 'color', 'return [200, 0, 0];'],
+      ['血河', 'match', 'return 流量 > 1000;'],
       ['环', 'crust', 'return height;'],
     ]);
   });

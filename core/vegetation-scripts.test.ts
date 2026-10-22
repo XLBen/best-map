@@ -447,7 +447,11 @@ describe('按格记住结果', () => {
   it('只重算脚本读到的输入变了的格：涂生态、冷暖画笔一格不算，涂自定义场只算涂到的格，干湿画笔只算一片', () => {
     const eng = world();
     const w = eng.world;
-    eng.exec(fantasy(w));
+    // 去掉“对周围的影响”：有影响时涂了生态，影响的源头就变了，周围的气候、河跟着变，那一片的脚本要重算（那是对的）。
+    // 这里只看脚本记住的结果
+    const cmd = fantasy(w);
+    if (cmd.op === 'batch') for (const c of cmd.commands) if (c.op === 'add_species' && c.species.effects?.climate) c.species = { ...c.species, effects: { ...c.species.effects, climate: undefined } };
+    eng.exec(cmd);
     const land = veg(w);
     const reset = () => {
       scriptRunStats.placement = 0;

@@ -27,6 +27,7 @@ import {
 } from '../riverCourse';
 import { fmtFlow, riverSizeName } from '../tools';
 import { NameInput } from './names';
+import { RiverTypeButton, RiverTypesSection, riverTypeOfRiver } from './riverTypes';
 
 // 河：选中一条河后的底部条（名字、大小、⋯ 里的粗细、终点、删除）、穿过别的河时的确认条、“水系 ⋯”里的河流列表
 
@@ -34,7 +35,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const quoted = (name: string | null) => (name ? `「${name}」` : '这条河');
 
 // 底部条上的滑块：拖动时 onDraft（地图上先画出估计的样子），松手 onCommit；左右方向键走一小步
-function DragSlider({ label, pos, text, title, detent, onDraft, onCommit, onCancel }: {
+export function DragSlider({ label, pos, text, title, detent, onDraft, onCommit, onCancel }: {
   label: string;
   pos: number;
   text: string;
@@ -257,6 +258,7 @@ function GuideRiverBar({ w, g }: { w: World; g: Guide }) {
   const salt = g.salt ?? (g.nameKey ? w.small.featureNames[g.nameKey]?.salt : undefined) ?? 0;
   const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id: g.id, patch, label }, busy);
   const warnings = riverInfo(w, { kind: 'guide', id: g.id })?.warnings ?? [];
+  const rt = riverTypeOfRiver(w, { kind: 'guide', id: g.id });
   return (
     <>
       <NameInput fkey={`guide:${g.id}`} value={f?.name ?? ''} placeholder="起个名字" onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
@@ -270,6 +272,7 @@ function GuideRiverBar({ w, g }: { w: World; g: Guide }) {
           <LockOpen size={15} /> 恢复自动
         </button>
       )}
+      <RiverTypeButton type={rt.type} auto={rt.chosen === null} />
       <FlowSlider w={w} g={g} />
       {warnings.length > 0 && (
         <span class="bar-chip warn" title={warnings.join('；')}>
@@ -292,6 +295,7 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
   if (!info) return null;
   const f = info.feature;
   const cut = pinCommand(w, cell, true);
+  const rt = riverTypeOfRiver(w, { kind: 'natural', cell });
   return (
     <>
       {f ? (
@@ -309,6 +313,7 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
       <span class="bar-label">
         {info.size} · {fmtFlow(info.flow)} m³/s · {info.dest}
       </span>
+      <RiverTypeButton type={rt.type} auto={rt.chosen === null} />
       <button
         class="bar-btn"
         onClick={() => {
@@ -456,7 +461,8 @@ function RiverRow({ w, river: ref, children }: { w: World; river: RiverRef; chil
   if (!info) return null;
   const sel = selectedRiver.value;
   const on = !!sel && sel.kind === ref.kind && (sel.kind === 'guide' ? sel.id === (ref as { id: string }).id : sel.cell === (ref as { cell: number }).cell);
-  const g = ref.kind === 'guide' ? guideOf(w, ref.id) : undefined;
+  // 是哪一种河（世界里有河流类型时）：色块
+  const rt = w.small.riverTypes?.length ? riverTypeOfRiver(w, ref).type : null;
   return (
     <div
       class={`feature-row river-row ${on ? 'on' : ''}`}
@@ -469,8 +475,7 @@ function RiverRow({ w, river: ref, children }: { w: World; river: RiverRef; chil
       onMouseLeave={() => (hoverRiver.value = null)}
     >
       <span class={info.feature?.custom ? 'custom' : ''}>
-        {/* 第三批：河流类型的色块放在这里 */}
-        {g?.type !== undefined && <span class="swatch" />}
+        {rt && <span class="swatch" style={{ background: rt.color }} title={rt.name} />}
         {info.name ?? (ref.kind === 'guide' ? '（还没名字）' : '无名的河')}
       </span>
       <span class="muted small">
@@ -503,6 +508,7 @@ export function RiverExtras() {
     .filter((x) => x.cell >= 0);
   return (
     <>
+      <RiverTypesSection />
       {warned > 0 && <p class="small warn-text">有 {warned} 条河要看一下</p>}
       <section>
         <h5>画的河（{guides.length}）</h5>

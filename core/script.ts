@@ -215,6 +215,9 @@ export const VARIABLES: readonly ScriptVariable[] = [
   { key: 'drainArea', zh: '汇水', label: '上游汇水面积', unit: 'km²', group: '水', kinds: CELL },
   { key: 'isRiver', zh: '是河', label: '是不是河（1 是，0 不是）', group: '水', kinds: CELL },
   { key: 'riverDist', zh: '离河', label: '离最近的河多远', unit: 'km', group: '水', kinds: CELL },
+  // 只给河流类型的 match（每条河算一次）：整条河的长度、源头的海拔
+  { key: 'riverLength', zh: '河长', label: '这条河有多长（到汇入更大的河、入海或入湖为止）', unit: 'km', group: '水', kinds: ['match'] },
+  { key: 'sourceElevation', zh: '源头海拔', label: '这条河源头的海拔', unit: 'm', group: '水', kinds: ['match'] },
   { key: 'x', label: '地图上的横坐标（地图高为 1）', group: '位置', kinds: CELL },
   { key: 'y', label: '地图上的纵坐标（向南增大）', group: '位置', kinds: CELL },
   { key: 'lat', zh: '纬度', label: '纬度（北纬为正）', unit: '°', group: '位置', kinds: CELL_CRUST },
@@ -256,6 +259,7 @@ export const SCRIPT_HELPERS: readonly { name: string; usage: string; label: stri
   { name: 'rand', usage: 'rand(k = 0)', label: '0–1 的随机数：每格固定，与计算顺序无关；换 k 得到另一组' },
   { name: 'field', usage: "field('名字')", label: '自定义场（或内置变量）在这一格的值' },
   { name: 'river', usage: "river('类型 id')", label: '离这种河多近（0–1，河上为 1）' },
+  { name: 'hasRiver', usage: "hasRiver('类型 id')", label: '地图上有没有这种河（任何地方有一格就是 true）' },
   { name: 'smoothstep', usage: 'smoothstep(a, b, v)', label: 'v 从 a 到 b 平滑地从 0 变到 1' },
   { name: 'clamp', usage: 'clamp(v, lo = 0, hi = 1)', label: '把 v 限制在 lo 到 hi 之间' },
   { name: 'mix', usage: 'mix(a, b, t)', label: '按 t（0–1）在 a、b 之间取值' },
@@ -726,6 +730,17 @@ function river(typeId: string): number {
   return a ? a[st.cell] : 0;
 }
 
+// 地图上有没有这种河（任何地方）。与 river() 读同一份河岸场：这种河出现、消失时引擎记着的结果整个重算
+function hasRiver(typeId: string): boolean {
+  const st = RUN;
+  let a = st.rivers.get(typeId);
+  if (a === undefined) {
+    a = st.inputs?.river?.(String(typeId)) ?? null;
+    st.rivers.set(typeId, a);
+  }
+  return a !== null;
+}
+
 type Rgb = [number, number, number];
 
 // 颜色：[r, g, b]（0–255）或 '#rrggbb' / '#rgb'；不认识时为 null
@@ -763,6 +778,7 @@ const HELPERS = Object.freeze({
   rand,
   field,
   river,
+  hasRiver,
   smoothstep: (a: number, b: number, v: number) => (a === b ? (v < a ? 0 : 1) : smoothKernel(a, b, v)),
   clamp: (v: number, lo = 0, hi = 1) => clampRange(v, lo, hi),
   mix: (a: number, b: number, t: number) => a + (b - a) * t,

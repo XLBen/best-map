@@ -1,5 +1,6 @@
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
 import { circle as geoCircle, wrapX } from '../../core/geo';
+import type { RiverStyle, RiverType } from '../../core/river-types';
 import { type RiverLine, guideShape, guidesSignature, riverWidth, traceRivers } from '../../core/rivers';
 import type { World } from '../../core/world';
 import type { Camera } from './renderer';
@@ -12,6 +13,9 @@ import { drawCurrents, drawWind } from './wind';
 export interface OverlayPaths {
   // 河流按宽度分档，每档一条 Path2D
   rivers: { path: Path2D; width: number }[];
+  // 带类型的河（第三批）：按（类型，宽度 × 类型的粗细）分档，type 是 derived.riverType 的值（第 type − 1 种）。
+  // 只在世界里有河流类型时才有；带类型的河段不在 rivers 里
+  typed?: { path: Path2D; width: number; type: number }[];
   guides: Path2D;
   lockedGuides: Path2D;
   // 在终点消失的河道的终点（水模式下画一个小圈）
@@ -35,6 +39,38 @@ export function riverStroke(style: 'realistic' | 'atlas'): string {
   return style === 'atlas' ? 'rgba(70, 110, 150, 0.95)' : 'rgba(52, 104, 168, 0.92)';
 }
 
+// 一种河流类型画出来的颜色（地图集风格用 atlasColor）
+export function riverTypeColor(t: Pick<RiverType, 'color' | 'atlasColor'>, style: 'realistic' | 'atlas'): string {
+  return style === 'atlas' ? (t.atlasColor ?? t.color) : t.color;
+}
+
+// 按河流类型的画法描一档河（lw 是线宽，单位与路径相同）：
+// 实线；虚线（3 倍线宽一段、2 倍线宽一空）；双线（先描整条，再在中间描一道 0.45 倍宽的半透明白线）；发光（同色的 6 像素光晕）
+export function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw: number, color: string, style: RiverStyle, dpr: number): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  if (style === 'dashed') {
+    ctx.setLineDash([3 * lw, 2 * lw]);
+    ctx.stroke(path);
+    ctx.setLineDash([]);
+    return;
+  }
+  if (style === 'glow') {
+    ctx.shadowBlur = 6 * dpr;
+    ctx.shadowColor = color;
+    ctx.stroke(path);
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    return;
+  }
+  ctx.stroke(path);
+  if (style === 'double') {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 0.45 * lw;
+    ctx.stroke(path);
+  }
+}
+
 // 把河的折线按宽度档加进 Path2D（每段一条子路径，圆头）。scale：再乘的粗细（拖“粗细”时）。
 // 整个星球：每段按起点挪到 [0, 2) 里那一份（展开的河可以伸出很远，平铺的副本只看 [-0.6, 2.6]）
 function addRiver(buckets: Map<number, Path2D>, line: RiverLine, thr: number, sphere: boolean, scale = 1) {
@@ -50,6 +86,43 @@ function addRiver(buckets: Map<number, Path2D>, line: RiverLine, thr: number, sp
 }
 
 const sortedBuckets = (buckets: Map<number, Path2D>) => [...buckets].sort((a, b) => a[0] - b[0]).map(([width, path]) => ({ path, width }));
+
+// 带类型的河段（第三批）：按（类型，宽度档）分，同一档里连着的几段画成一条折线（虚线不在每段重新开始）。
+// 普通的河段照旧放进 plain（与没有河流类型时一样）
+interface TypedBuckets {
+  map: Map<string, { path: Path2D; width: number; type: number }>;
+}
+function addTypedRiver(plain: Map<number, Path2D>, typed: TypedBuckets, line: RiverLine, thr: number, sphere: boolean, types: readonly RiverType[], scale = 1) {
+  const { points, flow, mul, type } = line;
+  let lastKey = '';
+  let lastShift = Number.NaN;
+  for (let k = 0; k + 1 < points.length; k++) {
+    const t = type![k];
+    const spec = t > 0 ? types[t - 1] : undefined;
+    const m = (mul ? (mul[k] + mul[k + 1]) / 2 : 1) * scale;
+    const shift = sphere ? 2 * Math.floor(points[k][0] / 2) : 0;
+    if (!spec) {
+      const key = riverBucket((flow[k] + flow[k + 1]) / 2, thr, m);
+      let p = plain.get(key);
+      if (!p) plain.set(key, (p = new Path2D()));
+      p.moveTo(points[k][0] - shift, points[k][1]);
+      p.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
+      lastKey = '';
+      continue;
+    }
+    const width = riverBucket((flow[k] + flow[k + 1]) / 2, thr, m * (spec.width ?? 1));
+    const key = `${t}|${width}`;
+    let b = typed.map.get(key);
+    if (!b) typed.map.set(key, (b = { path: new Path2D(), width, type: t }));
+    // 与上一段同一档、同一份平铺：接着画；否则另起一笔
+    if (key !== lastKey || shift !== lastShift) b.path.moveTo(points[k][0] - shift, points[k][1]);
+    b.path.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
+    lastKey = key;
+    lastShift = shift;
+  }
+}
+
+const sortedTyped = (t: TypedBuckets) => [...t.map.values()].sort((a, b) => a.width - b.width || a.type - b.type);
 
 // 一串河线画成按宽度分档的 Path2D（预览的河用；地图上的河见 buildPaths）
 export function riverPaths(world: World, lines: RiverLine[]): { path: Path2D; width: number }[] {
@@ -84,6 +157,17 @@ export interface RiverStyleOverride {
 // 预览世界（地图画将来的样子）只换了内容变了的数组：流量没变、湖面或高程变了的预览也不会错用当前世界的河
 export function riverPathsKey(world: World, override: RiverStyleOverride | null): unknown[] {
   return [
+    ...riverLinesKey(world),
+    override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
+    // 河流类型（第三批）：类型的颜色、画法、粗细（按内容）
+    riverTypesSignature(world.small.riverTypes),
+  ];
+}
+
+// 河的折线（traceRivers）读的：上面那些数组、门槛、河道的内容，和每格是哪一种河（推导换了就换）。
+// 河流类型的颜色、画法、粗细不改折线：只改这几项时不重新描河（大星球上描一遍要几十毫秒），只重新分档
+function riverLinesKey(world: World): unknown[] {
+  return [
     world.mesh,
     world.derived.discharge,
     world.derived.receiver,
@@ -92,20 +176,23 @@ export function riverPathsKey(world: World, override: RiverStyleOverride | null)
     world.causes.land,
     world.small.planet.riverThreshold,
     guidesSignature(world.small.guides),
-    override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
-    // 河流类型（第三批）：类型的定义变了也要重画，留在这一格
-    '',
+    world.derived.riverType,
   ];
+}
+
+// 河流类型里影响画法的几项（没有河流类型时为 ''）
+export function riverTypesSignature(types: readonly RiverType[] | undefined): string {
+  return types?.length ? JSON.stringify(types.map((t) => [t.id, t.color, t.atlasColor ?? '', t.style ?? 'solid', t.width ?? 1])) : '';
 }
 
 export const samePathsKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
 
-// 地图上的河的折线（traceRivers），按 riverPathsKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
+// 地图上的河的折线（traceRivers），按 riverLinesKey 缓存。只在主线程用：worker 里水文就地改写流量数组，
 // 按数组认会认错。留最近用过的两份：地图画预览世界（将来的河）时，点河、河的光照旧按当前世界的河算，
 // 预览世界一份份换（拖着调整面板的滑块）也不会把当前世界的那份挤掉、来回重描
 const linesMemo: { key: unknown[]; lines: RiverLine[] }[] = [];
 export function riverLines(world: World): RiverLine[] {
-  const key = riverPathsKey(world, null);
+  const key = riverLinesKey(world);
   const at = linesMemo.findIndex((m) => samePathsKey(m.key, key));
   if (at >= 0) {
     const [hit] = linesMemo.splice(at, 1);
@@ -124,9 +211,13 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
   const sphere = mesh.kind === 'sphere';
   const buckets = new Map<number, Path2D>();
   const own = override ? small.guides.find((g) => g.id === override.id) : undefined;
+  // 带类型的河（第三批）：只在世界里有河流类型时分开画
+  const types = small.riverTypes?.length && world.derived.riverType ? small.riverTypes : null;
+  const typed: TypedBuckets = { map: new Map() };
+  const add = (line: RiverLine, scale = 1) => (types && line.type ? addTypedRiver(buckets, typed, line, thr, sphere, types, scale) : addRiver(buckets, line, thr, sphere, scale));
   for (const line of riverLines(world)) {
-    if (!override || line.guide !== override.id) addRiver(buckets, line, thr, sphere);
-    else if (!override.hide) addRiver(buckets, line, thr, sphere, override.width !== undefined ? override.width / (own?.width ?? 1) : 1);
+    if (!override || line.guide !== override.id) add(line);
+    else if (!override.hide) add(line, override.width !== undefined ? override.width / (own?.width ?? 1) : 1);
   }
   const rivers = sortedBuckets(buckets);
   const guides = new Path2D();
@@ -141,7 +232,7 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
       sinks.push([sphere ? wrapX(x) : x, y]);
     }
   }
-  return { rivers, guides, lockedGuides, sinks };
+  return types ? { rivers, typed: sortedTyped(typed), guides, lockedGuides, sinks } : { rivers, guides, lockedGuides, sinks };
 }
 
 // 工具预览的矢量图形（地图单位）
@@ -161,6 +252,8 @@ export interface Shape {
   // 线宽（屏幕像素）
   width?: number;
   dashed?: boolean;
+  // river：按这种河流类型的画法、颜色、粗细画（画河时选了类型的预览）
+  riverType?: RiverType;
   // 整个星球：圆是球面上真实大小的圆（画笔），投影到平铺图上（高纬度是横向拉长的椭圆）
   geodesic?: boolean;
   // 实心的圆（小礁的预览）
@@ -258,6 +351,14 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
         ctx.lineWidth = r.width * scale * px * dpr;
         ctx.stroke(r.path);
       }
+      // 带类型的河：各按自己的颜色、画法
+      if (paths.typed) {
+        const types = world.small.riverTypes ?? [];
+        for (const r of paths.typed) {
+          const t = types[r.type - 1];
+          if (t) strokeRiverStyle(ctx, r.path, r.width * scale * px * dpr, riverTypeColor(t, st.style), t.style ?? 'solid', dpr);
+        }
+      }
     }
     if (st.markers) {
       // 画过的河：细虚线标出走向是固定的
@@ -297,7 +398,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
 
   for (const k of ks) {
     setT(k);
-    for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river);
+    for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river, st.style);
   }
 
   if (st.provinceLabels.length && rz > 900) {
@@ -494,9 +595,9 @@ function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUnit: num
 }
 
 // unit：一个屏幕像素合多少地图单位；river：地图上的河现在的宽度系数与颜色（river 图形照它画）
-function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }) {
+function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: 'realistic' | 'atlas') {
   if (sh.kind === 'river') {
-    drawRiverShape(ctx, world, sh, unit, river);
+    drawRiverShape(ctx, world, sh, unit, river, style);
     return;
   }
   const color = sh.color ?? 'rgba(255,255,255,0.9)';
@@ -550,15 +651,26 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit:
 }
 
 // 预览的河：与地图上的河同一套分档、宽度、颜色、圆头（见 addRiver）
-function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }) {
+function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: 'realistic' | 'atlas') {
   const pts = sh.points;
   const flow = sh.flow;
   if (!pts || !flow || pts.length < 2) return;
   ctx.setLineDash([]);
-  ctx.strokeStyle = sh.color ?? river.color;
-  for (const r of riverPaths(world, [{ points: pts, flow, mul: sh.mul }])) {
-    ctx.lineWidth = r.width * river.scale * unit;
-    ctx.stroke(r.path);
+  const rt = sh.riverType;
+  const color = sh.color ?? (rt ? riverTypeColor(rt, style) : river.color);
+  if (rt) {
+    // 选了河流类型：与地图上这种河同样画（粗细、颜色、画法）
+    const typed: TypedBuckets = { map: new Map() };
+    const line: RiverLine = { points: pts, flow, mul: sh.mul, type: pts.map(() => 1) };
+    addTypedRiver(new Map(), typed, line, world.small.planet.riverThreshold, world.mesh.kind === 'sphere', [rt]);
+    const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+    for (const r of sortedTyped(typed)) strokeRiverStyle(ctx, r.path, r.width * river.scale * unit, color, rt.style ?? 'solid', dpr);
+  } else {
+    ctx.strokeStyle = color;
+    for (const r of riverPaths(world, [{ points: pts, flow, mul: sh.mul }])) {
+      ctx.lineWidth = r.width * river.scale * unit;
+      ctx.stroke(r.path);
+    }
   }
   if (!sh.arrow) return;
   // 河口的小箭头：比河稍宽，顺着最后一段
@@ -566,10 +678,10 @@ function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, 
   const shift = world.mesh.kind === 'sphere' ? 2 * Math.floor(pts[n - 2][0] / 2) : 0;
   const [x1, y1] = [pts[n - 1][0] - shift, pts[n - 1][1]];
   const [x0, y0] = [pts[n - 2][0] - shift, pts[n - 2][1]];
-  const w = riverBucket(flow[n - 1], world.small.planet.riverThreshold, sh.mul?.[n - 1] ?? 1) * river.scale;
+  const w = riverBucket(flow[n - 1], world.small.planet.riverThreshold, (sh.mul?.[n - 1] ?? 1) * (rt?.width ?? 1)) * river.scale;
   const hs = Math.max(8, w * 2.4) * unit;
   const a = Math.atan2(y1 - y0, x1 - x0);
-  ctx.fillStyle = sh.color ?? river.color;
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(x1 + Math.cos(a) * hs * 0.5, y1 + Math.sin(a) * hs * 0.5);
   ctx.lineTo(x1 - hs * Math.cos(a - 0.45), y1 - hs * Math.sin(a - 0.45));

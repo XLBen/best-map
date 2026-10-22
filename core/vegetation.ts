@@ -1,6 +1,7 @@
 import { computeLook } from './biome-look';
 import { ScriptSession, placementSlots, worldSeedOf } from './biome-scripts';
 import { graphDistance } from './mesh';
+import { riverBank, riverProvider } from './river-types';
 import { planetFormIssues } from './terrain';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
 import { worldLatitude, type Derived, type World } from './world';
@@ -13,6 +14,11 @@ import { type Species, trapezoid } from './species';
 export type FieldGetter = (i: number) => number;
 
 export function fieldGetter(world: World, d: Derived, field: string): FieldGetter {
+  if (field.startsWith('river:')) {
+    // 河岸场（第三批）：离这种河多近，0–1。没有这种河时为 0
+    const arr = riverBank(world, d, field.slice(6));
+    return arr ? (i) => arr[i] : () => 0;
+  }
   if (field.startsWith('field:')) {
     const name = field.slice(6);
     const arr = world.causes.fields[name];
@@ -114,7 +120,7 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[], sessi
     }
   }
   const cells = Int32Array.from(list);
-  const inputs = worldInputs(world, d);
+  const inputs = worldInputs(world, d, { river: riverProvider(world, d) });
   const seed = worldSeedOf(world);
   species.forEach((sp, s) => {
     const p = slot[s];
@@ -133,7 +139,8 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[], sessi
   return { slot, P, placeF };
 }
 
-export function computeVegetation(world: World, d: Derived) {
+// extraIssues：这一遍里别处出的脚本问题（河流类型的 match 脚本，见 river-types.ts 的 typeRivers），排在星球形态的之后
+export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = []) {
   const { mesh, small } = world;
   const n = mesh.n;
   const species = small.species;
@@ -146,7 +153,7 @@ export function computeVegetation(world: World, d: Derived) {
   const getters = new Map<string, FieldGetter>();
   for (const sp of species) for (const t of sp.tolerances) if (!getters.has(t.field)) getters.set(t.field, fieldGetter(world, d, t.field));
   // 脚本出的问题（不挡操作：出错的脚本这一次按没有脚本处理）。星球形态的脚本的问题（地形那一步记下的）排在最前
-  const issues: ScriptIssue[] = planetFormIssues(world, d.scriptIssues);
+  const issues: ScriptIssue[] = [...planetFormIssues(world, d.scriptIssues), ...extraIssues];
   // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
   const run: { session?: ScriptSession } = {};
   const sessionOf = () => (run.session ??= new ScriptSession(world));

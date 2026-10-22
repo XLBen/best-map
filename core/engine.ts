@@ -1,13 +1,16 @@
-import { type ClimateBase, computeClimate, finalizeClimate } from './climate';
+import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate } from './climate';
 import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, revert } from './commands';
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere } from './planet-climate';
 import { carveBeds, computeElevation } from './elevation';
 import { assignNames, detectFeatures, guideFeatures, regionFeatures } from './features';
+import { computeEffects } from './effects';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
+import { typeRivers } from './river-types';
 import { scriptsEnabled } from './script';
+import { worldSeedOf } from './biome-scripts';
 import { SPECIES_EXTENSION_KEYS } from './species';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
@@ -79,6 +82,9 @@ interface UndoneStep {
   // 这一步之后的推导结果（重做时换回）
   state?: DerivedState;
 }
+
+// 统计（测试用）：一共算了多少遍“气候 → 水文 → 河的类型 → 植被”
+export const passStats = { passes: 0 };
 
 // 状态编号：引擎的状态每变一次（新建、打开、执行、撤销、重做、换一个）就换一个新的，同一个 Worker 里不重复。
 // 快照、预览都带着它：主线程只显示按当前世界的状态算出来的预览，过期的丢掉
@@ -424,27 +430,36 @@ export class Engine {
       d.suit = fresh.suit;
       d.reach = fresh.reach;
     }
+    // 一遍：气候（加上修正场、对周围的影响）→ 水文 → 河的类型 → 植被
+    const base = this.base;
+    const seed = worldSeedOf(w);
+    const pass = (eff: ClimateEffects | null) => {
+      passStats.passes++;
+      finalizeClimate(w, base, d, eff);
+      computeHydrology(w, d.elevation, d);
+      // 河流类型（第三批）：没有时什么都不做；match 脚本出的问题交给植被一起记下
+      computeVegetation(w, d, typeRivers(w, d, seed));
+    };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);
     d.corrP.fill(0);
     for (const k of Object.keys(d.corrF)) delete d.corrF[k];
-    finalizeClimate(w, this.base, d);
-    computeHydrology(w, d.elevation, d);
-    computeVegetation(w, d);
+    pass(null);
     lap('hydrology');
+    // 生态、河对周围的影响（第三批）：按第一遍的结果算一次，之后的求解和最后一遍都在加了影响的气候上算
+    // （没有这种影响时为 null，下面照原来的样子）
+    const eff = computeEffects(w, d);
     this.solve = { plans: [] };
     if (w.small.constraints.some((c) => c.mode === 'constraint')) {
       // 水文随修正场变化会影响湿地等类型，最多再迭代一轮
       for (let round = 0; round < 2; round++) {
-        this.solve = solveConstraints(w, this.base, d);
-        finalizeClimate(w, this.base, d);
-        computeHydrology(w, d.elevation, d);
-        computeVegetation(w, d);
+        this.solve = solveConstraints(w, base, d, eff);
+        pass(eff);
         const failing = this.solve.plans.some((p) => p.anchors.some((k) => d.dominant[p.cells[k]] !== p.target));
         if (!failing) break;
       }
       lap('solve');
-    }
+    } else if (eff) pass(eff);
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
     // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
@@ -653,6 +668,8 @@ function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'update_species' && SPECIES_EXTENSION_KEYS.some((k) => k in cmd.patch)) return true;
   // 第八轮第三批：星球形态
   if (cmd.op === 'set_worldgen' && cmd.params.form !== undefined) return true;
+  // 第八轮第三批：河流类型
+  if (cmd.op === 'set_river_type' || cmd.op === 'remove_river_type') return true;
   return false;
 }
 

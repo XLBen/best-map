@@ -715,8 +715,34 @@ function moistSweeps(
   }
 }
 
-// 把修正场（约束求解结果）叠到基础气候上，并计算派生的年值与指数
-export function finalizeClimate(world: World, base: ClimateBase, out: Derived) {
+// 生态、河对周围的影响（effects.ts）：每格变暖变冷多少、降水的对数修正
+export interface ClimateEffects {
+  t: ArrayLike<number>;
+  p: ArrayLike<number>;
+}
+
+// 把修正场（约束求解结果）叠到基础气候上，并计算派生的年值与指数。
+// eff：生态、河对周围的影响，先加在基础气候上（与约束求解试算时的基础相同），再加修正场。
+// 单独一个分支：没有影响时照原来的算式，逐值不变（加 0 也可能把 −0 变成 +0）
+export function finalizeClimate(world: World, base: ClimateBase, out: Derived, eff?: ClimateEffects | null) {
+  if (eff) {
+    for (let i = 0; i < world.mesh.n; i++) {
+      const eT = eff.t[i];
+      const eP = Math.exp(eff.p[i]);
+      const dT = out.corrT[i];
+      const fP = Math.exp(out.corrP[i]);
+      const tS = base.tS[i] + eT + dT;
+      const tW = base.tW[i] + eT + dT;
+      const pS = base.pS[i] * eP * fP;
+      const pW = base.pW[i] * eP * fP;
+      out.tS[i] = tS;
+      out.tW[i] = tW;
+      out.pS[i] = pS;
+      out.pW[i] = pW;
+      summarize(out, i, tS, tW, pS, pW);
+    }
+    return;
+  }
   for (let i = 0; i < world.mesh.n; i++) {
     const dT = out.corrT[i];
     const fP = Math.exp(out.corrP[i]);

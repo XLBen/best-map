@@ -1,5 +1,6 @@
 import type { GeoFeature } from '../../core/features';
 import { BUILTIN_FIELDS } from '../../core/species';
+import { effectsAt } from '../../core/effects';
 import { type CellExplanation, explainCell } from '../../core/vegetation';
 import { type World, longitudeOf, worldLatitude } from '../../core/world';
 import { exec, hoverCell, hoverProvinceCell, options, world } from '../state';
@@ -78,10 +79,16 @@ const WORDS: Record<string, [string, string]> = {
 
 type Factor = CellExplanation['factors'][number];
 
+// “靠近某种河”的条件（河岸场 river:<id>）：说出是哪一种河（世界里没有这种河时说“那种河”）
+function riverWords(id: string): [string, string] {
+  const name = world.value?.small.riverTypes?.find((t) => t.id === id)?.name ?? '那种河';
+  return [`离${name}太远`, `离${name}太近`];
+}
+
 // 卡住一种生态的那一项，用人话说
 export function reasonText(f: Factor): string {
   const low = f.value < f.range[1];
-  const words = WORDS[f.field] ?? [`${fieldLabel.get(f.field) ?? f.field}太低`, `${fieldLabel.get(f.field) ?? f.field}太高`];
+  const words = WORDS[f.field] ?? (f.field.startsWith('river:') ? riverWords(f.field.slice(6)) : [`${fieldLabel.get(f.field) ?? f.field}太低`, `${fieldLabel.get(f.field) ?? f.field}太高`]);
   const need = low ? f.range[1] : f.range[2];
   switch (f.field) {
     case 'tMean':
@@ -118,6 +125,21 @@ function Sentence({ w, cell }: { w: World; cell: number }) {
   );
 }
 
+// 生态、河对周围的影响（第三批）：“受「神圣之地」影响：这里暖了 1.8 °C”。数是引擎算好的（d.effT、d.effP），
+// 是谁的影响按现在的生态、河认；很小时不说
+export function effectText(w: World, cell: number): string | null {
+  const d = w.derived;
+  if (!d.effT || !d.effP || !w.causes.land[cell]) return null;
+  const t = d.effT[cell];
+  const p = Math.exp(d.effP[cell]) - 1;
+  const parts: string[] = [];
+  if (Math.abs(t) >= 0.1) parts.push(`${t > 0 ? '暖' : '冷'}了 ${fmt(Math.abs(t), 1)} °C`);
+  if (Math.abs(p) >= 0.01) parts.push(`雨水${p > 0 ? '多' : '少'}了 ${fmt(Math.abs(p) * 100)}%`);
+  if (!parts.length) return null;
+  const who = effectsAt(w, d, cell).slice(0, 2).map((e) => `「${e.name}」`);
+  return `${who.length ? `受${who.join('、')}影响` : '受附近生态、河的影响'}：这里${parts.join('，')}`;
+}
+
 function LandInfo({ w, cell }: { w: World; cell: number }) {
   const d = w.derived;
   const S = w.small.species;
@@ -132,6 +154,7 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
   const brushEx = brush && brush !== sp?.id ? explain.find((e) => e.species === brush) : null;
   const corrT = d.corrT[cell];
   const corrP = Math.exp(d.corrP[cell]);
+  const effect = effectText(w, cell);
   return (
     <>
       <h3>
@@ -151,6 +174,7 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
           {failing && <span class="warn"> 这一格没涂成。</span>}
         </p>
       )}
+      {effect && <p class="muted small">{effect}</p>}
       {(Math.abs(corrT) > 0.3 || Math.abs(corrP - 1) > 0.05) && (
         <p class="muted small">
           为了让涂的生态长出来，这里被调{corrT > 0 ? '暖' : '冷'}了约 {fmt(Math.abs(corrT), 1)} °C，雨水{corrP >= 1 ? '多' : '少'}了约 {fmt(Math.abs(corrP - 1) * 100)}%。
@@ -216,6 +240,11 @@ function Details({ w, cell }: { w: World; cell: number }) {
       ['抬升 / 岩石软硬', `${fmt(w.causes.uplift[cell], 2)} / ${fmt(w.causes.erod[cell], 2)}`],
       ['气候修正', `${fmt(d.corrT[cell] + w.causes.tempOffset[cell], 1)} °C，降水 ×${fmt(Math.exp(d.corrP[cell] + w.causes.moistOffset[cell]), 2)}`],
     );
+    if (d.effT && d.effP) rows.push(['周围的影响', `${fmt(d.effT[cell], 1)} °C，降水 ×${fmt(Math.exp(d.effP[cell]), 2)}`]);
+    if (d.riverType?.[cell]) {
+      const t = w.small.riverTypes?.[d.riverType[cell] - 1];
+      if (t) rows.push(['河的类型', t.name]);
+    }
   }
   for (const [k, v] of Object.entries(w.causes.fields)) rows.push([k, fmt(v[cell] + (d.corrF[k]?.[cell] ?? 0), 2)]);
   return (

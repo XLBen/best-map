@@ -1,6 +1,7 @@
 import { ScriptSession, worldSeedOf } from './biome-scripts';
 import { hashString } from './names';
 import { smoothstep } from './rng';
+import { riverProvider } from './river-types';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
 import { PATTERNS, type Pattern, type Species, type Visual } from './species';
 import { fbmSub, fbmSub3, hashU, hashU3, vnoise, vnoise3 } from './subcell';
@@ -74,7 +75,7 @@ export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []
         list.push(i);
       }
     }
-    const inputs = worldInputs(world, d, { extra: { share, color: base[s] } });
+    const inputs = worldInputs(world, d, { extra: { share, color: base[s] }, river: riverProvider(world, d) });
     // share 是这种生态自己的，记录里换个键，免得与别的生态的混在一起
     const r = run.run('color', sp, sp.scripts!.color!.src, inputs, Int32Array.from(list), mask, seed, { share: `share#${sp.id}` });
     if (!r.ok) {

@@ -21,6 +21,7 @@ import { SEAM_MAX_POINTS, cutSeams, dropSeams, inheritSeams, seamsAfterCut } fro
 import { cutProvinces } from './select';
 import { checkSpeciesScripts } from './biome-scripts';
 import { namesNaturally } from './features';
+import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema } from './river-types';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
@@ -173,6 +174,9 @@ const baseCommands = [
     reroll: z.boolean().optional(),
   }),
   z.object({ op: z.literal('remove_region'), id: z.string() }),
+  // 河流类型（第三批）：新建或整份换掉（按 id）；删掉时画的河上选的这一种也去掉
+  z.object({ op: z.literal('set_river_type'), type: riverTypeSchema }),
+  z.object({ op: z.literal('remove_river_type'), id: z.string() }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用
@@ -754,6 +758,32 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.guides = small.guides.map((x, k) => (k === idx ? g : x));
       if (cmd.capture) small.guides = captureBy(world, small.guides, g);
       return { dirty: guideDirty(before, small.guides), summary: cmd.label || (g.name ? `改了「${g.name}」` : '改了一条河') };
+    }
+    case 'set_river_type': {
+      const t = riverTypeSchema.parse(cmd.type);
+      // 脚本先编译一遍（只查语法）：写错了整条命令不生效，并说明第几行错了
+      checkRiverTypeScripts(t);
+      const list = small.riverTypes ?? [];
+      const at = list.findIndex((x) => x.id === t.id);
+      if (at < 0 && list.length >= MAX_RIVER_TYPES) throw new CommandError(`河流类型最多 ${MAX_RIVER_TYPES} 种`);
+      const before = at >= 0 ? list[at] : undefined;
+      small.riverTypes = at >= 0 ? list.map((x, k) => (k === at ? t : x)) : [...list, t];
+      const level = riverTypeDirty(before, t);
+      const dirty = level === 'none' ? Dirty.None : level === 'names' ? Dirty.Names : Dirty.Vegetation;
+      return { dirty, summary: `${before ? '修改了' : '新建了'}河流类型「${t.name}」` };
+    }
+    case 'remove_river_type': {
+      const list = small.riverTypes ?? [];
+      const gone = list.find((x) => x.id === cmd.id);
+      if (!gone) throw new CommandError(`找不到河流类型 "${cmd.id}"`);
+      small.riverTypes = list.filter((x) => x.id !== cmd.id);
+      // 画的河上选的这一种也去掉（撤销时一起回来）：不然以后新建一种同 id 的类型，这些河会悄悄变成它
+      small.guides = small.guides.map((g) => {
+        if (g.type !== cmd.id) return g;
+        const { type: _, ...rest } = g;
+        return rest as typeof g;
+      });
+      return { dirty: Dirty.Vegetation, summary: `删掉了河流类型「${gone.name}」` };
     }
     case 'add_lake': {
       checkCells([cmd.lake.cell]);

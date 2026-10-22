@@ -1,5 +1,5 @@
 import { placementSlots } from './biome-scripts';
-import { type ClimateBase, petHalf } from './climate';
+import { type ClimateBase, type ClimateEffects, petHalf } from './climate';
 import { graphDistance } from './mesh';
 import { BUILTIN_FIELDS, type Tolerance, trapezoid } from './species';
 import { fieldGetter, invadeBoost, invadeTable, isVegetated } from './vegetation';
@@ -52,7 +52,9 @@ export interface SolveResult {
 // 曲线端点都是不太大的有限数时，梯形值总在 [0, 1]、不会是 NaN（输入为 NaN 时是 1）
 const tame = (x: number) => Math.abs(x) <= 1e15;
 
-export function solveConstraints(world: World, base: ClimateBase, d: Derived): SolveResult {
+// eff：生态、河对周围的影响（effects.ts）。有的时候试算的基础气候先加上它（与 finalizeClimate 的有影响的分支一致），
+// 求解出的修正就把影响算进去了；没有时照原来的算式
+export function solveConstraints(world: World, base: ClimateBase, d: Derived, eff?: ClimateEffects | null): SolveResult {
   const { mesh, small, causes } = world;
   const n = mesh.n;
   const species = small.species;
@@ -194,10 +196,10 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived): S
       }
       progStart[S] = q;
 
-      const tS0 = base.tS[i];
-      const tW0 = base.tW[i];
-      const pS0 = base.pS[i];
-      const pW0 = base.pW[i];
+      const tS0 = eff ? base.tS[i] + eff.t[i] : base.tS[i];
+      const tW0 = eff ? base.tW[i] + eff.t[i] : base.tW[i];
+      const pS0 = eff ? base.pS[i] * Math.exp(eff.p[i]) : base.pS[i];
+      const pW0 = eff ? base.pW[i] * Math.exp(eff.p[i]) : base.pW[i];
       stamp++;
       let bestTargetScore = -1;
       // 上一次挡住目标的类型（先试它；挡没挡住与试的顺序无关）

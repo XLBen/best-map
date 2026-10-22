@@ -12,8 +12,8 @@ import { type SpeciesScriptKind, applySpeciesScript, queueSpeciesEdit, settleSpe
 // 每次提交都排进队里、按那时世界上最新的这种生态做出补丁（见 species-scripts.ts）：大星球上连着改几处时不会互相冲掉；
 // 只改动这次动了的那一项，资源包里超出滑块范围的值（比如降水 −78%）不会因为改了别的而被改掉
 
-// “对周围的影响”接进气候以后改成 true（那时去掉“先记下”的说明）
-export const CLIMATE_EFFECTS_LIVE = false;
+// “对周围的影响”已经接进气候（core/effects.ts）：为 false 时显示“先记下”的说明
+export const CLIMATE_EFFECTS_LIVE = true;
 
 type Patch = Record<string, unknown>;
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
