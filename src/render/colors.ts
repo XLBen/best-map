@@ -3,6 +3,7 @@ import { hexToRgb } from '../../core/export';
 import { gradient } from '../../core/mesh';
 import type { ProvinceKind } from '../../core/provinces';
 import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '../../core/seams';
+import type { LakeType } from '../../core/lake-types';
 import type { Visual } from '../../core/species';
 import { coastPatch, coastValues } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
@@ -317,6 +318,68 @@ export function fxLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'>,
     fx[o4 + 3] = cf[3] + 1;
   }
   return { fx, palette: fxPalette(set) };
+}
+
+// ---------- 湖泊类型的颜色（第九轮） ----------
+// 每格一个 RGBA 字节：RGB 是这种湖的颜色（地图集风格用 atlasColor），A 的低两位是水面的画法（1 染色、2 像干湖底那样的盐壳），
+// 再两位是陆上的（1 湖岸的光晕、2 干涸湖底的盐壳），16 是发光（湖面亮一些）。湖岸那一圈陆地格也带上水面的画法：
+// 湖岸线在格以下（不是格的边），落在岸边那格里的水面像素也要染上。
+// 只在地形类的着色里画；世界里没有湖泊类型（或者一个带类型的湖都没有）时为 null（着色器整段跳过，画面与以前逐像素相同）
+export const LAKE_WATER_TINT = 1;
+export const LAKE_WATER_CRUST = 2;
+export const LAKE_LAND_GLOW = 4;
+export const LAKE_LAND_CRUST = 8;
+export const LAKE_GLOW = 16;
+
+// 一种湖画出来的颜色（地图集风格用 atlasColor）
+export function lakeTypeColor(t: Pick<LakeType, 'color' | 'atlasColor'>, style: 'realistic' | 'atlas'): string {
+  return style === 'atlas' ? (t.atlasColor ?? t.color) : t.color;
+}
+
+// 湖泊类型里影响画法的几项（没有时为 ''）
+export function lakeTypesSignature(types: readonly LakeType[] | undefined): string {
+  return types?.length ? JSON.stringify(types.map((t) => [t.id, t.color, t.atlasColor ?? '', t.style ?? 'solid'])) : '';
+}
+
+export function lakeTintLayer(world: World, o: Pick<ColorOptions, 'mode'>, style: 'realistic' | 'atlas'): Uint8Array | null {
+  const types = world.small.lakeTypes;
+  const lt = world.derived.lakeType;
+  if (!types?.length || !lt || !terrainLikeMode(o.mode)) return null;
+  const { mesh, causes, derived: d } = world;
+  const n = mesh.n;
+  const rgb = types.map((t) => hexToRgb(lakeTypeColor(t, style)));
+  const out = new Uint8Array(n * 4);
+  let any = false;
+  const put = (i: number, k: number, bits: number) => {
+    const o4 = i * 4;
+    out[o4] = rgb[k][0];
+    out[o4 + 1] = rgb[k][1];
+    out[o4 + 2] = rgb[k][2];
+    out[o4 + 3] |= bits;
+  };
+  for (let i = 0; i < n; i++) {
+    const v = lt[i];
+    if (!v || !causes.land[i]) continue;
+    const t = types[v - 1];
+    if (!t) continue;
+    any = true;
+    const playa = t.style === 'playa';
+    const glow = t.style === 'glow' ? LAKE_GLOW : 0;
+    const water = playa ? LAKE_WATER_CRUST : LAKE_WATER_TINT;
+    if (d.lake[i] !== 1) {
+      // 干涸的湖底：陆上的盐壳带上这种湖的颜色
+      put(i, v - 1, LAKE_LAND_CRUST | water);
+      continue;
+    }
+    put(i, v - 1, water | glow);
+    // 湖岸那一圈：水面像素照湖的画法；发光的湖岸上一圈光晕
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (lt[j] || !causes.land[j]) continue;
+      if (out[j * 4 + 3] === 0 || glow) put(j, v - 1, water | glow | (glow ? LAKE_LAND_GLOW : 0));
+    }
+  }
+  return any ? out : null;
 }
 
 // 省份着色的平涂：每省一种颜色；无人区偏灰、湖省偏蓝，一眼能和普通省份分开。

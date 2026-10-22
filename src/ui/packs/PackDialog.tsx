@@ -44,7 +44,7 @@ export function importPackFile(file: File) {
 
 // 颜色小方块（最多几个）
 function Swatches({ pack, max = 6 }: { pack: ResourcePack; max?: number }) {
-  const colors = [...(pack.biomes ?? []).map((b) => b.color), ...(pack.riverTypes ?? []).flatMap((r) => (r.color ? [r.color] : []))].slice(0, max);
+  const colors = [...(pack.biomes ?? []).map((b) => b.color), ...[...(pack.riverTypes ?? []), ...(pack.lakeTypes ?? [])].flatMap((r) => (r.color ? [r.color] : []))].slice(0, max);
   return (
     <span class="pack-swatches">
       {colors.map((c) => (
@@ -89,6 +89,12 @@ export function PackContents({ pack }: { pack: ResourcePack }) {
         <>
           <h5>河流类型 {pack.riverTypes.length}</h5>
           <ItemChips items={pack.riverTypes.map((r) => ({ name: itemName(r), color: r.color }))} />
+        </>
+      )}
+      {!!pack.lakeTypes?.length && (
+        <>
+          <h5>湖泊类型 {pack.lakeTypes.length}</h5>
+          <ItemChips items={pack.lakeTypes.map((r) => ({ name: itemName(r), color: r.color }))} />
         </>
       )}
       {!!pack.planetForms?.length && (
@@ -316,6 +322,7 @@ function ExportView() {
   const [desc, setDesc] = useState('');
   const biomes = useMemo(() => (w ? exportableBiomes(w) : []), [w]);
   const rivers = useMemo(() => (w ? (PACK_SECTIONS.riverTypes.fromWorld?.(w) ?? []) : []), [w]);
+  const lakes = useMemo(() => (w ? (PACK_SECTIONS.lakeTypes.fromWorld?.(w) ?? []) : []), [w]);
   const forms = useMemo(() => (w ? (PACK_SECTIONS.planetForms.fromWorld?.(w) ?? []) : []), [w]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [words, setWords] = useState(false);
@@ -333,13 +340,14 @@ function ExportView() {
       {
         biomes: biomes.filter((b) => on('b', b.id)).map((b) => b.id),
         riverTypes: rivers.filter((r) => on('r', r.id)).map((r) => r.id),
+        lakeTypes: lakes.filter((r) => on('l', r.id)).map((r) => r.id),
         planetForms: forms.filter((f) => on('f', f.id)).map((f) => f.id),
         wordPack: words,
       },
       { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined },
     );
   const preview = make();
-  const empty = !preview.biomes && !preview.riverTypes && !preview.planetForms && !preview.textPacks;
+  const empty = !preview.biomes && !preview.riverTypes && !preview.lakeTypes && !preview.planetForms && !preview.textPacks;
   const endemic = endemicCount(w);
   // 普通函数（不是组件）：每次重画不会把勾选框换成新的
   const check = (k: string, label: string, color?: string) => (
@@ -386,6 +394,9 @@ function ExportView() {
       {rivers.map((r) => (
         check(`r:${r.id}`, `河流类型：${itemName(r)}`, r.color)
       ))}
+      {lakes.map((r) => (
+        check(`l:${r.id}`, `湖泊类型：${itemName(r)}`, r.color)
+      ))}
       {forms.map((f) => (
         check(`f:${f.id}`, `星球形态：${itemName(f)}`)
       ))}
@@ -395,7 +406,7 @@ function ExportView() {
           <span>文字包「{w.small.wordPack.name}」</span>
         </label>
       )}
-      {!biomes.length && !rivers.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
+      {!biomes.length && !rivers.length && !lakes.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
       {endemic > 0 && <p class="muted small">岛上特有的生态只属于这个世界，不带。</p>}
       {replaces && (
         <p class="muted small">

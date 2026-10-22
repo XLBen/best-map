@@ -122,11 +122,11 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
     }
   };
 
-  const togglePick = (sec: 'biomes' | 'riverTypes', id: string) => {
+  const togglePick = (sec: 'biomes' | 'riverTypes' | 'lakeTypes', id: string) => {
     const cur = picks[sec] ?? [];
     setPicks({ ...picks, [sec]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   };
-  const status = (sec: 'biomes' | 'riverTypes', id: string, name: string): string => {
+  const status = (sec: 'biomes' | 'riverTypes' | 'lakeTypes', id: string, name: string): string => {
     const s = plan.skipped.find((x) => x.section === sec && x.from === id);
     if (s) return '已经有了';
     const a = plan.added.find((x) => x.section === sec && x.from === id);
@@ -137,6 +137,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
   const badText = useMemo(() => new Set((pack.textPacks ?? []).filter((t) => wordPackProblems(t).length).map((t) => t.id)), [pack]);
   const rivers = pack.riverTypes ?? [];
   const riverSec = PACK_SECTIONS.riverTypes;
+  const lakes = pack.lakeTypes ?? [];
+  const lakeSec = PACK_SECTIONS.lakeTypes;
   const forms = pack.planetForms ?? [];
   const texts = pack.textPacks ?? [];
   const total = w.small.species.length + plan.added.filter((a) => a.section === 'biomes').length;
@@ -174,6 +176,21 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
               </label>
             ))}
             {riverSec.note && <p class="muted small">{riverSec.note}</p>}
+          </>
+        )}
+        {st.only !== 'biomes' && !!lakes.length && (
+          <>
+            <h5>湖泊类型</h5>
+            {lakes.map((r) => (
+              <label class="check">
+                <input type="checkbox" disabled={!lakeSec.command} checked={!!lakeSec.command && !!picks.lakeTypes?.includes(r.id)} onChange={() => togglePick('lakeTypes', r.id)} />
+                <span>
+                  {r.color && <span class="swatch" style={{ background: r.color }} />} {r.name || r.id}
+                  {picks.lakeTypes?.includes(r.id) && status('lakeTypes', r.id, r.name || r.id) && <span class="muted small">（{status('lakeTypes', r.id, r.name || r.id)}）</span>}
+                </span>
+              </label>
+            ))}
+            {lakeSec.note && <p class="muted small">{lakeSec.note}</p>}
           </>
         )}
         {st.only !== 'biomes' && !!forms.length && (

@@ -22,3 +22,11 @@ export const SCRIPT_EXAMPLES: Record<ScriptKind, { label: string; src: string }[
   crust: [{ label: '两极抬高', src: '// 纬度 55° 以上慢慢抬高，最多 900 米\nconst polar = smoothstep(55, 80, Math.abs(纬度));\nreturn { height: 高度 + 900 * polar };' }],
   setup: [{ label: '再加一块大陆', src: 'addBlock({ lat: 30, lon: 60, size: 25 });' }],
 };
+
+// 湖泊类型的 match（第九轮）：“变量和例子”在湖的编辑器里换成这几段（河的那几段用到河长、源头海拔，湖里没有）
+export const LAKE_MATCH_EXAMPLES: { label: string; src: string }[] = [
+  { label: '高山上的湖', src: '// 整个湖的平均海拔在 2000 米以上\nreturn 海拔 > 2000;' },
+  { label: '大湖', src: '// 连干涸的湖底 5000 平方千米以上\nreturn 湖面积 > 5000;' },
+  { label: '干湖', src: '// 只剩干涸的湖底\nreturn 干湖 === 1;' },
+  { label: '热地方的湖、一片一片的', src: '// 年均温 20 °C 以上，再用噪声挑出一部分\nreturn 年均温 > 20 && fbmAt(2, 2) > 0;' },
+];

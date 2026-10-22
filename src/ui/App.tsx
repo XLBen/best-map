@@ -26,7 +26,8 @@ import { BiomePanel } from './panels/BiomePanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { CategoryMore } from './panels/ToolLibrary';
 import { RiverMore } from './panels/rivers';
-import { RiverTypeMenu } from './panels/riverTypes';
+import { LakeTypeMenu, NewLakeTypeMenu } from './panels/lakes';
+import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
@@ -81,8 +82,26 @@ function PanelHost({ id }: { id: PanelId }) {
       );
     case 'rivertype':
       return (
-        <Popover id={id} title="是哪一种河" width={280}>
+        <Popover id={id} title="这条河是哪一种" width={280}>
           <RiverTypeMenu />
+        </Popover>
+      );
+    case 'newrivertype':
+      return (
+        <Popover id={id} title="新画的河是哪一种" width={280}>
+          <NewRiverTypeMenu />
+        </Popover>
+      );
+    case 'laketype':
+      return (
+        <Popover id={id} title="这个湖是哪一种" width={280}>
+          <LakeTypeMenu />
+        </Popover>
+      );
+    case 'newlaketype':
+      return (
+        <Popover id={id} title="新放的湖是哪一种" width={280}>
+          <NewLakeTypeMenu />
         </Popover>
       );
     default: {

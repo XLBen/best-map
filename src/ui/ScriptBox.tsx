@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { SCRIPT_HELPERS, type ScriptKind, type ScriptVariable, scriptVariablesFor } from '../../core/script';
 import { worldEpoch, worldState } from '../state';
 import { type ApplyMode, type ApplyResult, ScriptEdit, type ScriptProblem, isNote, problemCell, problemLine } from './script-commit';
-import { SCRIPT_EXAMPLES } from './script-examples';
+import { LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
 import { checkScript, loadAcorn } from './script-syntax';
 
 // 脚本框：等宽字的文本框，左边有行号；下面一行红字说哪里不对（“第 3 行：没有变量 tMeen（是不是 tMean？）”）；
@@ -36,6 +36,8 @@ interface Props {
   focusSignal?: number;
   // 框里的文字变了（还没检查、提交的也算）：星球形态编辑器点按钮时要用框里现在写的
   onDraft?: (src: string) => void;
+  // match 是河流类型的还是湖泊类型的（“变量和例子”只列那一种能用的）
+  scope?: 'river' | 'lake';
 }
 
 const lineCount = (s: string) => s.split(/\r\n|[\n\r\u2028\u2029]/).length;
@@ -196,14 +198,15 @@ export function ScriptBox(props: Props) {
           {v.stale && !note && <div class="muted">地图上还是上一次没出错的样子。</div>}
         </div>
       )}
-      {help && <ScriptHelp kind={kind} replace={!!v.draft.trim()} onInsert={insert} />}
+      {help && <ScriptHelp kind={kind} scope={props.scope} replace={!!v.draft.trim()} onInsert={insert} />}
     </div>
   );
 }
 
 // 变量和例子（点名字插到光标处，点例子换掉框里的）。replace：框里已经有东西了
-function ScriptHelp({ kind, replace, onInsert }: { kind: ScriptKind; replace: boolean; onInsert: (text: string, whole?: boolean) => void }) {
-  const vars = scriptVariablesFor(kind);
+function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scope?: 'river' | 'lake'; replace: boolean; onInsert: (text: string, whole?: boolean) => void }) {
+  const vars = scriptVariablesFor(kind).filter((v) => !v.for || v.for === (scope ?? 'river'));
+  const examples = kind === 'match' && scope === 'lake' ? LAKE_MATCH_EXAMPLES : SCRIPT_EXAMPLES[kind];
   const groups = GROUP_ORDER.map((g) => [g, vars.filter((x) => x.group === g)] as const).filter(([, list]) => list.length);
   // 按钮不抢走框里的光标
   const keep = (e: Event) => e.preventDefault();
@@ -213,7 +216,7 @@ function ScriptHelp({ kind, replace, onInsert }: { kind: ScriptKind; replace: bo
         脚本是一段小程序，最后写 <code>return …</code> 给出结果。变量用英文名、中文名都行。点名字插进光标处。
       </p>
       <h5>例子</h5>
-      {SCRIPT_EXAMPLES[kind].map((ex) => (
+      {examples.map((ex) => (
         <div class="script-example">
           <pre>{ex.src}</pre>
           <button class="small" onMouseDown={keep} onClick={() => onInsert(ex.src, true)} title={ex.label}>

@@ -9,7 +9,7 @@ import { newWorld, world, worldEpoch, worldState } from '../state';
 import { inThisWorld } from './ScriptBox';
 import { type CommittedScript, registerScriptCommitted } from './editor-hooks';
 import { type ApplyMode, type ApplyResult, ScriptEdit, type ScriptEditDeps, type ScriptProblem, problemCell, problemLine } from './script-commit';
-import { SCRIPT_EXAMPLES } from './script-examples';
+import { LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
 import { LOOP_NOTE, bracketProblem, checkNow, installAcorn, syntaxProblem } from './script-syntax';
 import { applySpeciesScript, queueSpeciesEdit, settleSpeciesEdits, speciesEditsSettled, speciesIssue, speciesScriptCommand } from './species-scripts';
 
@@ -122,6 +122,7 @@ describe('用了没有的变量、不能用的名字', () => {
     for (const [kind, list] of Object.entries(SCRIPT_EXAMPLES)) {
       for (const ex of list) expect(checkNow(kind as keyof typeof SCRIPT_EXAMPLES, ex.src), `${kind}：${ex.label}`).toBeNull();
     }
+    for (const ex of LAKE_MATCH_EXAMPLES) expect(checkNow('match', ex.src), `湖：${ex.label}`).toBeNull();
   });
 });
 

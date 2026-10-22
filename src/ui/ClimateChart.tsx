@@ -272,6 +272,7 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
     ...BUILTIN_FIELDS,
     ...Object.keys(w.causes.fields).map((f) => ({ id: `field:${f}`, label: `自定义：${f}`, unit: '' })),
     ...(w.small.riverTypes ?? []).map((t) => ({ id: `river:${t.id}`, label: `靠近${t.name}（0–1）`, unit: '' })),
+    ...(w.small.lakeTypes ?? []).map((t) => ({ id: `lake:${t.id}`, label: `靠近${t.name}（0–1）`, unit: '' })),
   ];
   const others = sp.tolerances.filter((t) => !tols.includes(t));
   const save = (next: Tolerance[]) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: [...others, ...next] } }, '正在计算生态…');
@@ -285,7 +286,7 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
             onChange={(e) => {
               const field = (e.target as HTMLSelectElement).value;
               // 换成“靠近某种河”（0–1）：原来的数（比如海拔的 0–3000）在这里没有意义，换成“离河近的地方最适合”
-              const near = field.startsWith('river:') && !t.field.startsWith('river:') ? { min: 0.1, optLow: 0.5, optHigh: 1, max: 1 } : {};
+              const near = (field.startsWith('river:') || field.startsWith('lake:')) && !(t.field.startsWith('river:') || t.field.startsWith('lake:')) ? { min: 0.1, optLow: 0.5, optHigh: 1, max: 1 } : {};
               save(tols.map((x, i) => (i === k ? { ...x, field, ...near } : x)));
             }}
           >

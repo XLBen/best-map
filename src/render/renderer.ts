@@ -399,6 +399,9 @@ uniform float uProvScale;
 uniform sampler2D uFx;
 uniform highp sampler2D uFxPal;
 uniform int uHasFx;
+// 湖泊类型（第九轮）：每格的颜色与画法（见 colors.ts 的 lakeTintLayer）
+uniform sampler2D uTint;
+uniform int uHasTint;
 out vec4 oColor;
 ${NOISE_GLSL}
 int idAt(vec2 uv) {
@@ -486,6 +489,26 @@ void main() {
     col *= mix(1.0, shade, uShade);
   } else {
     col *= mix(1.0, 0.92 + 0.08 * shade, uShade);
+  }
+  // 湖泊类型：A 的低两位是水面的画法（1 染色、2 干湖底那样的盐壳），再两位是陆上的（1 湖岸的光晕、2 干涸湖底的盐壳），
+  // 16 是发光（湖面亮一些）。盐壳是干湖底的颜色与类型的颜色各一半
+  if (uHasTint == 1 && id >= 0) {
+    vec4 tc = cellTex(uTint, id);
+    int A = int(tc.a * 255.0 + 0.5);
+    if (A > 0) {
+      int wm = A & 3;
+      int lm = (A >> 2) & 3;
+      vec3 crust = mix(vec3(0.886, 0.855, 0.769), tc.rgb, 0.5);
+      if (!land) {
+        if (wm == 1) col = mix(col, tc.rgb * (0.82 + 0.18 * clamp(shade, 0.6, 1.2)), 0.82);
+        else if (wm == 2) col = crust * mix(1.0, shade, 0.5);
+        if ((A & 16) != 0 && wm > 0) col += tc.rgb * 0.2;
+      } else if (lm == 1) {
+        col = mix(col, tc.rgb, 0.25) + tc.rgb * 0.12;
+      } else if (lm == 2) {
+        col = mix(col, crust * mix(1.0, shade, 0.6), 0.7);
+      }
+    }
   }
   ${FX_BEGIN}
   // 生态的发光：加在晕渲之后（背光的坡上照样亮）
@@ -815,7 +838,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint', WebGLTexture>;
   private fbo: WebGLFramebuffer;
   private fboId: WebGLFramebuffer;
   private fboSeam: WebGLFramebuffer;
@@ -873,6 +896,9 @@ export class Renderer {
   private fxBase: { fx: Uint8Array | null; palette: Float32Array | null } = { fx: null, palette: null };
   private fxShown: { fx: Uint8Array | null; palette: Float32Array | null } = { fx: null, palette: null };
   private fxVersion = 0;
+  // 湖泊类型的颜色（colors.ts 的 lakeTintLayer）：没有时为 null（着色器整段跳过）
+  private tintShown: Uint8Array | null = null;
+  private tintVersion = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -884,7 +910,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t() };
     this.fbo = gl.createFramebuffer()!;
     this.fboId = gl.createFramebuffer()!;
     this.fboSeam = gl.createFramebuffer()!;
@@ -1111,6 +1137,14 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.tex.fxPal);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 3, palette.length / 12, 0, gl.RGBA, gl.FLOAT, palette);
+  }
+
+  // 湖泊类型的颜色与画法（每格 RGBA 字节，见 colors.ts 的 lakeTintLayer）；null 不画。同一份不重新上传
+  setTint(tint: Uint8Array | null) {
+    if (tint === this.tintShown) return;
+    this.tintShown = tint;
+    this.tintVersion++;
+    if (tint) this.upload(this.tex.tint, tint, this.mesh?.n ?? 0, 4);
   }
 
   // 幽灵海岸：几格的地形输入（颜色、对岸的颜色、高程、海岸值，与平涂、分组）换成将来的样子，着色器照此画出将来真实的海岸线；
@@ -1344,7 +1378,7 @@ export class Renderer {
     // 切线层：镜头、窗口、切线变了才重画
     const hasSeams = this.hasGroup && this.seamCount > 0;
     const seamKey = hasSeams ? `${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
-    const composeKey = `${sceneKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
+    const composeKey = `${sceneKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -1461,6 +1495,8 @@ export class Renderer {
     this.bindTex(pc, 'uFx', this.tex.fx, 8);
     this.bindTex(pc, 'uFxPal', this.tex.fxPal, 9);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFx'), hasFx ? 1 : 0);
+    this.bindTex(pc, 'uTint', this.tex.tint, 10);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
     gl.bindVertexArray(null);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

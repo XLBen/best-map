@@ -137,7 +137,8 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 
 // 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
 // rivertype：给新画的河、选中的河选是哪一种河（第三批的河流类型）
-export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | 'rivertype' | `cat:${Category}`;
+// rivertype / laketype：选中的这条河、这个湖是哪一种；newrivertype / newlaketype：新画的河、新放的湖是哪一种
+export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
@@ -180,6 +181,9 @@ export type RiverRef = { kind: 'guide'; id: string } | { kind: 'natural'; cell: 
 // 画河时点中的河（底部条换成这条河的设置）；河流列表里鼠标停着的那条（地图上亮一下，什么工具都一样）
 export const selectedRiver = signal<RiverRef | null>(null);
 export const hoverRiver = signal<RiverRef | null>(null);
+// 湖（第九轮）：一个放的湖（id），或一个自然的湖（湖里的一格）。放湖时点中的湖（底部条换成这个湖的设置）
+export type LakeRef = { kind: 'placed'; id: string } | { kind: 'natural'; cell: number };
+export const selectedLake = signal<LakeRef | null>(null);
 // 画的河穿过了别的河：松手后底部条问一句（截走它 / 到这里汇入 / 取消），回车、Esc 也行
 export interface RiverPending {
   text: string;
@@ -315,8 +319,10 @@ export interface ToolOptions {
   riverMode: 'flow' | 'course';
   // 自定义走向画到的终点还在陆地上时：顺着地势接着流，还是在那里消失
   riverEnd: 'flow' | 'sink';
-  // 新画的河是哪一种（河流类型的 id；'' 为普通的河：按各类型的规则判断）
+  // 新画的河是哪一种（河流类型的 id；'' 按各类型的规则判断；'plain' 普通的河）
   riverType: string;
+  // 新放的湖是哪一种（同上，湖泊类型）
+  lakeType: string;
   // 正在涂的自定义场
   field: string | null;
   fieldMode: 'add' | 'sub';
@@ -347,6 +353,7 @@ export const options = signal<ToolOptions>({
   riverMode: 'flow',
   riverEnd: 'flow',
   riverType: '',
+  lakeType: '',
   field: null,
   fieldMode: 'add',
   fieldAmount: 0.25,
@@ -615,6 +622,9 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   // 选中的河：换了世界，画的河被删掉、撤销掉了，或者自然的河那一格不再是河
   const sel = selectedRiver.value;
   if (sel && (fresh || (sel.kind === 'guide' ? !next.small.guides.some((g) => g.id === sel.id) : !isRiverCell(next, next.derived, sel.cell)))) selectedRiver.value = null;
+  // 选中的湖：放的湖被删掉、撤销掉了，或者自然的湖那一格不再是湖
+  const lk = selectedLake.value;
+  if (lk && (fresh || (lk.kind === 'placed' ? !next.small.lakes.some((l) => l.id === lk.id) : !next.derived.lake[lk.cell]))) selectedLake.value = null;
   const hov = hoverRiver.value;
   if (hov && (fresh || (hov.kind === 'guide' && !next.small.guides.some((g) => g.id === hov.id)))) hoverRiver.value = null;
   // 等着确认的那一笔是照原来的世界算的：世界变了就不算了
@@ -980,19 +990,32 @@ function scriptOfIssue(issue: ScriptIssue): { id: string; kind: SpeciesScriptKin
   const sp = world.value?.small.species.find((s) => (issue.id !== undefined ? s.id === issue.id : speciesOwner(s) === issue.owner));
   return sp && { id: sp.id, kind };
 }
-// 河流类型的 match 脚本（第三批）：出错时“编辑”打开“水系 ⋯”里这种河的编辑（见 ui/panels/riverTypes.tsx）
-export const riverTypeEditorRequest = signal<string | null>(null);
-const riverTypeOfIssue = (issue: ScriptIssue) => (issue.kind === 'match' && issue.id !== undefined ? world.value?.small.riverTypes?.find((t) => t.id === issue.id) : undefined);
+// 河流、湖泊类型的 match 脚本（第三批、第九轮）：出错时“编辑”打开“水系 ⋯”里“水体类型”这一种的编辑（见 ui/panels/waterTypes.tsx）。
+// “新建类型…”之后也用它打开新的那一种
+export const waterTypeEditorRequest = signal<{ kind: 'river' | 'lake'; id: string } | null>(null);
+function waterTypeOfIssue(issue: ScriptIssue): { kind: 'river' | 'lake'; id: string } | undefined {
+  if (issue.kind !== 'match' || issue.id === undefined) return undefined;
+  const small = world.value?.small;
+  const river = small?.riverTypes?.find((t) => t.id === issue.id);
+  const lake = small?.lakeTypes?.find((t) => t.id === issue.id);
+  // 河、湖的类型 id 相同时按名字分
+  if (lake && (!river || (lake.name === issue.owner && river.name !== issue.owner))) return { kind: 'lake', id: lake.id };
+  return river ? { kind: 'river', id: river.id } : undefined;
+}
+// 打开“水系 ⋯”里这一种的编辑
+export function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
+  if (tool.value !== 'river' && tool.value !== 'lake' && tool.value !== 'unwater') tool.value = kind === 'lake' ? 'lake' : 'river';
+  waterTypeEditorRequest.value = { kind, id };
+  openPanel.value = 'cat:water';
+}
 // 有没有地方可以打开它（没有时提示条上不放“编辑”）
 export function canEditScript(issue: ScriptIssue): boolean {
-  return scriptOfIssue(issue) !== undefined || riverTypeOfIssue(issue) !== undefined;
+  return scriptOfIssue(issue) !== undefined || waterTypeOfIssue(issue) !== undefined;
 }
 export function editScript(issue: ScriptIssue) {
-  const rt = riverTypeOfIssue(issue);
-  if (rt) {
-    tool.value = 'river';
-    riverTypeEditorRequest.value = rt.id;
-    openPanel.value = 'cat:water';
+  const wt = waterTypeOfIssue(issue);
+  if (wt) {
+    openWaterTypeEditor(wt.kind, wt.id);
     return;
   }
   const at = scriptOfIssue(issue);

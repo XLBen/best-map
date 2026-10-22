@@ -5,7 +5,7 @@ import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
-import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, provinceScale, terrainGhost } from '../render/colors';
+import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
 import { type CellLayers, Renderer } from '../render/renderer';
 import {
@@ -34,6 +34,7 @@ import {
   season,
   selectedFeature,
   selectedProvince,
+  selectedLake,
   selectedRiver,
   showToast,
   sliderActive,
@@ -46,6 +47,7 @@ import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camer
 import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { barPreview } from './provincePreview';
+import { lakeSizeDraft } from './lakeInfo';
 import { riverGlow } from './riverCourse';
 import { editLayers } from './edits';
 import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, endemicPicked, measureTool, provinceCellAt, reliefLayers } from './tools';
@@ -406,6 +408,7 @@ export function MapView() {
       const shown = clean ? w : (preview.world ?? (ap && ap.base === w ? ap.world : null) ?? w);
       applyColors(shown);
       applyFx(shown, clean);
+      applyTint(shown);
       if (clean) {
         renderer.setHighlight(null);
         lastHighlightKey = [];
@@ -564,6 +567,14 @@ export function MapView() {
       const f = on ? fxLayers(w, colorOpts, ov) : null;
       renderer.setFx(on ? (f?.fx ?? null) : (baseLayers.fx ?? null), on ? (f?.palette ?? null) : (baseLayers.fxPalette ?? null));
     }
+    // 湖泊类型的颜色（第九轮）：按画出来的世界、地图风格、视图模式；没有带类型的湖时为 null
+    let tintKey: unknown[] = [];
+    function applyTint(w: World) {
+      const key = [w.mesh, w.derived.lakeType, w.derived.lake, w.causes.land, lakeTypesSignature(w.small.lakeTypes), mapStyle.value, mode.value];
+      if (sameKey(key, tintKey)) return;
+      tintKey = key;
+      renderer.setTint(lakeTintLayer(w, { mode: mode.value }, mapStyle.value));
+    }
     // 着色的选项变了、调整面板的预览世界到了：重画
     const disposeColors = effect(() => {
       void mode.value;
@@ -601,6 +612,8 @@ export function MapView() {
       void selectedProvince.value;
       void selectedFeature.value;
       void selectedRiver.value;
+      void selectedLake.value;
+      void lakeSizeDraft.value;
       void hoverRiver.value;
       void riverPending.value;
       void labelGroups.value;

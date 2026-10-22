@@ -159,10 +159,10 @@ describe('别的口子', () => {
     const tool = state.tool.value;
     state.editScript(issue);
     expect(state.tool.value).toBe('river');
-    expect(state.riverTypeEditorRequest.value).toBe('blood');
+    expect(state.waterTypeEditorRequest.value).toEqual({ kind: 'river', id: 'blood' });
     expect(state.openPanel.value).toBe('cat:water');
     expect(state.canEditScript({ ...issue, id: 'gone' })).toBe(false);
-    state.riverTypeEditorRequest.value = null;
+    state.waterTypeEditorRequest.value = null;
     state.openPanel.value = null;
     state.tool.value = tool;
   });

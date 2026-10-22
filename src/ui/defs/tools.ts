@@ -43,6 +43,7 @@ import {
   reachRange,
   riverPending,
   selectedProvince,
+  selectedLake,
   selectedRiver,
   setOptions,
   tool,
@@ -93,6 +94,8 @@ import {
   RiverBar,
   RiverExtras,
   NewRiverTypePick,
+  LakeBar,
+  NewLakeTypePick,
   RiverPendingBar,
   UnmetChip,
 } from './extras';
@@ -470,8 +473,10 @@ const defs: ToolDef[] = [
     icon: Droplet,
     name: '放湖',
     short: '放湖',
-    how: '点一下放湖，按住往外拖直接拖出大小',
-    size: LAKE,
+    how: '点一下放湖，按住往外拖直接拖出大小 · 点一个湖选中它',
+    // 选中一个湖时，底部条换成这个湖的设置（新湖的大小先收起来）
+    size: { ...LAKE, enabled: () => !selectedLake.value },
+    bar: () => (selectedLake.value ? [{ kind: 'custom', render: LakeBar }] : [{ kind: 'custom', render: NewLakeTypePick }]),
     create: () => lakeTool(),
   },
   {
@@ -606,6 +611,8 @@ export function setTool(id: ToolId) {
     riverPending.value?.cancel();
     selectedRiver.value = null;
   }
+  // 离开放湖：选中的湖不要了
+  if (tool.value === 'lake' && id !== 'lake') selectedLake.value = null;
   if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;
   tool.value = id;
   cursorHint.value = null;

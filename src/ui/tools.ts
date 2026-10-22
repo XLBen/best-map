@@ -47,6 +47,7 @@ import {
   previewTerrainOnce,
   redrawTick,
   selectedFeature,
+  selectedLake,
   selectedProvince,
   setOptions,
   sheet,
@@ -58,6 +59,7 @@ import {
 import { climateHere, climateMask, erasableLayer, natureHere, natureMask, terrainHere, terrainMask } from './edits';
 import { Exact, type ExactView } from './exact';
 import { ghostFollows, queueHint, queuedCount, trackEdit } from './pending';
+import { chosenLakeType, lakeCellsAt, lakeInfo, lakeRefAt, lakeSizeDraft } from './lakeInfo';
 
 // 地图工具：每个工具在动手前或动手时给出确切的预览（高亮的格、矢量图形、一句话），
 // 松手后执行的命令与预览用同一份计算，所以结果与预览一致。
@@ -1595,10 +1597,21 @@ export function groupCount(w: World, cells: number[]): number {
   return groups;
 }
 
-// 点一下：用底部滑块的大小放湖；按住往外拖：拖多远湖就多大。前面的编辑还在算时也能放（排队）
+// 点一下：用底部滑块的大小放湖；按住往外拖：拖多远湖就多大。前面的编辑还在算时也能放（排队）。
+// 点在湖上是选中它（底部条换成这个湖的设置）；选着一个湖时点别处只是取消选择
+const LAKE_PICK: [number, number, number] = [255, 236, 150];
 export function lakeTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
+  // 按下时点在湖上（松手时没拖开就选中它）
+  let pick: { cell: number; sx: number; sy: number } | null = null;
+  // 鼠标下的湖（悬停时描出来）：按格缓存
+  let hover: { key: string; cells: number[] } | null = null;
+  const hoverLake = (w: World, cell: number) => {
+    const key = `${worldId(w)}|${cell}`;
+    if (hover?.key !== key) hover = { key, cells: lakeCellsAt(w, cell) };
+    return hover.cells;
+  };
   let settled: Settled = null;
   let cache: { key: string; cells: number[]; ghost: GhostEdit } | null = null;
   const centerOf = () => drag ?? (pointer && pointer.cell >= 0 ? pointer : null);
@@ -1626,6 +1639,15 @@ export function lakeTool(): ToolHandler {
     down(p) {
       const w = world.value;
       if (!w || p.cell < 0 || !movedAway(settled, p)) return;
+      // 点在湖上：选中它；选着一个湖时点别处：取消选择
+      if (w.causes.land[p.cell] && w.derived.lake[p.cell]) {
+        pick = { cell: p.cell, sx: p.sx, sy: p.sy };
+        return;
+      }
+      if (selectedLake.value) {
+        selectedLake.value = null;
+        return;
+      }
       if (blockedByOther()) return busyNote();
       if (!w.causes.land[p.cell]) {
         showToast('湖要放在陆地上', true);
@@ -1648,6 +1670,12 @@ export function lakeTool(): ToolHandler {
     },
     async up(p) {
       const w = world.value;
+      if (pick) {
+        const at = pick;
+        pick = null;
+        if (w && Math.hypot(p.sx - at.sx, p.sy - at.sy) <= 6) selectedLake.value = lakeRefAt(w, at.cell);
+        return;
+      }
       const d = drag;
       if (!w || !d) return;
       // 碰到海岸的湖存不住水，放了也看不见：松手时就拦下，不进历史
@@ -1668,18 +1696,42 @@ export function lakeTool(): ToolHandler {
         // 松手时的湖面留在图上，直到结果换上（鼠标离开地图也留着）。排在前面的编辑先换上了：按新的世界重算湖面
         const shown: Preview = { layers: [], shapes: [], hint: null, ghost: { cells: [], delta: [], lake: cells } };
         const ghostAt = (now: World): GhostEdit => ({ cells: [], delta: [], lake: lakeArea(now, d.cell, radius, true) });
-        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, exact: true } }, '正在计算湖泊…'), ghostFollows(shown, w, ghostAt));
+        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, exact: true, ...chosenLakeType(w) } }, '正在计算湖泊…'), ghostFollows(shown, w, ghostAt));
       } finally {
         if (settled === mark) settled = null;
       }
     },
     cancel() {
       drag = null;
+      pick = null;
     },
     preview() {
       const w = world.value;
-      if (!w || !pointer) return EMPTY;
+      if (!w) return EMPTY;
+      // 选着一个湖：描出它；拖底部条的“大小”时画出将来的湖面
+      const sel = selectedLake.value;
+      if (sel) {
+        const info = lakeInfo(w, sel);
+        const sz = lakeSizeDraft.value;
+        const spec = sz && info?.placed?.id === sz.id ? info.placed : undefined;
+        const future = spec && sz ? lakeArea(w, spec.cell, sz.radius, spec.exact) : null;
+        const over = pointer && pointer.cell >= 0 && w.derived.lake[pointer.cell] && !info?.cells.includes(pointer.cell) ? hoverLake(w, pointer.cell) : [];
+        return {
+          layers: [
+            ...(info ? [{ cells: future ?? info.cells, color: LAKE_PICK, pattern: 'outline' as const }] : []),
+            ...(over.length ? [{ cells: over, color: [255, 255, 255] as [number, number, number], pattern: 'outline' as const }] : []),
+          ],
+          shapes: [],
+          hint: over.length ? '点一下选中这个湖' : null,
+          ghost: future ? { cells: [], delta: [], lake: future } : null,
+        };
+      }
+      if (!pointer) return EMPTY;
       if (settled) return { ...EMPTY, hint: '正在计算…' };
+      // 鼠标在湖上：描出这个湖，点一下选中它
+      if (!drag && pointer.cell >= 0 && w.causes.land[pointer.cell] && w.derived.lake[pointer.cell]) {
+        return { layers: [{ cells: hoverLake(w, pointer.cell), color: [255, 255, 255], pattern: 'outline' }], shapes: [], hint: '点一下选中这个湖' };
+      }
       const c = centerOf();
       if (!c || !w.causes.land[c.cell]) return EMPTY;
       const lake = lakeNow(w);

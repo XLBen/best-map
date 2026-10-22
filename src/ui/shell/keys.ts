@@ -1,4 +1,4 @@
-import { helpOpen, measure, openPanel, redo, selectedFeature, selectedProvince, selectedRiver, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
+import { helpOpen, measure, openPanel, redo, selectedFeature, selectedLake, selectedProvince, selectedRiver, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
@@ -33,10 +33,11 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (uiHidden.value) uiHidden.value = false;
     else if (packApply.value) packApply.value = null;
     else if (sheet.value) sheet.value = null;
-    else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value) {
+    else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value || selectedLake.value) {
       selectedProvince.value = null;
       selectedFeature.value = null;
       selectedRiver.value = null;
+      selectedLake.value = null;
     }
     return;
   }

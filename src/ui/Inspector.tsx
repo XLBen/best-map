@@ -85,10 +85,16 @@ function riverWords(id: string): [string, string] {
   return [`离${name}太远`, `离${name}太近`];
 }
 
+// “靠近某种湖”（湖岸场 lake:<id>，第九轮）
+function lakeWords(id: string): [string, string] {
+  const name = world.value?.small.lakeTypes?.find((t) => t.id === id)?.name ?? '那种湖';
+  return [`离${name}太远`, `离${name}太近`];
+}
+
 // 卡住一种生态的那一项，用人话说
 export function reasonText(f: Factor): string {
   const low = f.value < f.range[1];
-  const words = WORDS[f.field] ?? (f.field.startsWith('river:') ? riverWords(f.field.slice(6)) : [`${fieldLabel.get(f.field) ?? f.field}太低`, `${fieldLabel.get(f.field) ?? f.field}太高`]);
+  const words = WORDS[f.field] ?? (f.field.startsWith('river:') ? riverWords(f.field.slice(6)) : f.field.startsWith('lake:') ? lakeWords(f.field.slice(5)) : [`${fieldLabel.get(f.field) ?? f.field}太低`, `${fieldLabel.get(f.field) ?? f.field}太高`]);
   const need = low ? f.range[1] : f.range[2];
   switch (f.field) {
     case 'tMean':
@@ -244,6 +250,10 @@ function Details({ w, cell }: { w: World; cell: number }) {
     if (d.riverType?.[cell]) {
       const t = w.small.riverTypes?.[d.riverType[cell] - 1];
       if (t) rows.push(['河的类型', t.name]);
+    }
+    if (d.lakeType?.[cell]) {
+      const t = w.small.lakeTypes?.[d.lakeType[cell] - 1];
+      if (t) rows.push(['湖的类型', t.name]);
     }
   }
   for (const [k, v] of Object.entries(w.causes.fields)) rows.push([k, fmt(v[cell] + (d.corrF[k]?.[cell] ?? 0), 2)]);

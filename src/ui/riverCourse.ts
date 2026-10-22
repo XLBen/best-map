@@ -3,6 +3,7 @@ import type { Command, GuidePatch } from '../../core/commands';
 import type { PreviewResult } from '../../core/engine';
 import { lakeArea } from '../../core/elevation';
 import type { GeoFeature } from '../../core/features';
+import { PLAIN_RIVER } from '../../core/river-types';
 import { arcUnits, wrapX } from '../../core/geo';
 import { type GuideLine, type RiverLine, centrePoints, encodePath, guideLine, guideShape, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
 import {
@@ -383,7 +384,7 @@ function springProfile(w: World, cells: readonly number[], spring: boolean, flow
 // 新画的河选的河流类型（画河工具条上选的；那种类型已经删掉了时为普通的河）
 export function chosenRiverType(w: World): { type: string } | Record<string, never> {
   const id = options.value.riverType;
-  return id && w.small.riverTypes?.some((t) => t.id === id) ? { type: id } : {};
+  return id && (id === PLAIN_RIVER ? w.small.riverTypes?.some((t) => !!t.scripts?.match) : w.small.riverTypes?.some((t) => t.id === id)) ? { type: id } : {};
 }
 
 // 一条河道画出来按哪一种河流类型（预览照这种河画）

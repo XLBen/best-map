@@ -7,6 +7,7 @@ import { endemicPicked, removePickedEndemic } from '../tools';
 export { NamesBar, NamesExtras } from '../panels/names';
 export { RiverBar, RiverExtras, RiverPendingBar } from '../panels/rivers';
 export { NewRiverTypePick } from '../panels/riverTypes';
+export { LakeBar, NewLakeTypePick } from '../panels/lakes';
 export { ProvinceBar, ProvinceColorToggle, ProvinceExtras } from '../provincePanel';
 
 // 当前要涂的生态：点开是色板（与顶栏“生态”是同一个面板）

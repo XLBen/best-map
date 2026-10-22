@@ -8,7 +8,7 @@ import { decodePath } from '../../../core/rivers';
 import { continueCourse, guideFlow, isRiverCell } from '../../../core/select';
 import { roundKm as km } from '../../../core/terrain';
 import type { Guide, World } from '../../../core/world';
-import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverPending, riverStyleOverride, selectedRiver, showToast, togglePanel, world } from '../../state';
+import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverPending, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
@@ -27,7 +27,8 @@ import {
 } from '../riverCourse';
 import { fmtFlow, riverSizeName } from '../tools';
 import { NameInput } from './names';
-import { RiverTypeButton, RiverTypesSection, riverTypeOfRiver } from './riverTypes';
+import { RiverTypeButton, riverTypeOfRiver } from './riverTypes';
+import { WaterTypesSection } from './waterTypes';
 
 // 河：选中一条河后的底部条（名字、大小、⋯ 里的粗细、终点、删除）、穿过别的河时的确认条、“水系 ⋯”里的河流列表
 
@@ -384,7 +385,7 @@ export function RiverPendingBar() {
 
 // 选中的河没了（撤销、删掉）：它的“⋯”也关上
 effect(() => {
-  if (!selectedRiver.value && openPanel.value === 'river') openPanel.value = null;
+  if (!selectedRiver.value && (openPanel.value === 'river' || openPanel.value === 'rivertype')) openPanel.value = null;
 });
 
 // “⋯”：这条河的说明与提醒、粗细、终点、在地图上看、删掉
@@ -508,7 +509,7 @@ export function RiverExtras() {
     .filter((x) => x.cell >= 0);
   return (
     <>
-      <RiverTypesSection />
+      <WaterTypesSection initial={tool.value === 'lake' ? 'lake' : 'river'} />
       {warned > 0 && <p class="small warn-text">有 {warned} 条河要看一下</p>}
       <section>
         <h5>画的河（{guides.length}）</h5>
