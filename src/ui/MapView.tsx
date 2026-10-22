@@ -3,8 +3,8 @@ import { useEffect, useRef } from 'preact/hooks';
 import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import type { World } from '../../core/world';
-import { type HighlightLayer, cellLayers, highlightColors, provinceScale } from '../render/colors';
-import { type LabelBox, type OverlayPaths, buildPaths, drawOverlay } from '../render/overlay';
+import { type HighlightLayer, cellLayers, groupPreview, highlightColors, provinceScale } from '../render/colors';
+import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay } from '../render/overlay';
 import { Renderer } from '../render/renderer';
 import {
   FLASH_MS,
@@ -35,7 +35,7 @@ import {
 } from '../state';
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
-import { type Pointer, type Preview, type ToolHandler, measureTool } from './tools';
+import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, provinceCellAt } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
 
@@ -71,7 +71,7 @@ export function MapView() {
     let paths: OverlayPaths | null = null;
     // 河流路径按流量数组缓存：只改了名字、省份时（轻快照沿用同一批推导数组）不必重新描河
     let pathsFor: Float32Array | null = null;
-    let provinceLabels: { x: number; y: number; text: string }[] = [];
+    let provinceLabels: ProvinceLabel[] = [];
     let labelBoxes: LabelBox[] = [];
     let fittedMesh: unknown = null;
     let fittedEpoch = -1;
@@ -116,6 +116,21 @@ export function MapView() {
       requestDraw();
     };
 
+    // 无人区省份的斜线图层：按省份数组与各省的类型缓存（同一个图层对象，不必重新上传）
+    let waste: { key: string; province: Int32Array; layer: HighlightLayer | null } | null = null;
+    function wasteLayer(w: World): HighlightLayer | null {
+      const ids = Object.entries(w.small.provinces)
+        .filter(([, m]) => m.kind === 'wasteland')
+        .map(([p]) => p)
+        .join(',');
+      if (waste?.province === w.causes.province && waste.key === ids) return waste.layer;
+      const set = new Set(ids ? ids.split(',').map(Number) : []);
+      const cells: number[] = [];
+      if (set.size) for (let i = 0; i < w.mesh.n; i++) if (set.has(w.causes.province[i])) cells.push(i);
+      waste = { key: ids, province: w.causes.province, layer: cells.length ? { cells, color: [90, 90, 90], alpha: 0.45, pattern: 'hatch' } : null };
+      return waste.layer;
+    }
+
     function highlightLayers(w: World, preview: Preview): { layers: HighlightLayer[]; key: unknown[] } {
       const layers: HighlightLayer[] = [];
       const c = category.value;
@@ -132,6 +147,12 @@ export function MapView() {
         for (let i = 0; i < w.mesh.n; i++) if (w.causes.province[i] === id) cells.push(i);
         layers.push({ cells, color: [255, 255, 255], alpha: 0.28 });
         key.push(id);
+      }
+      // 无人区：灰色斜线，压在选中高亮之上（选中的省改成无人区时当场看得见）
+      if (c === 'provinces') {
+        const waste = wasteLayer(w);
+        if (waste) layers.push(waste);
+        key.push(waste);
       }
       if (c === 'names' && selectedFeature.value) {
         const f = w.derived.features.find((x) => x.key === selectedFeature.value);
@@ -173,6 +194,15 @@ export function MapView() {
       }
       layers.push(...preview.layers);
       return { layers, key };
+    }
+
+    // 省份预览（剪刀、涂省、合并）：将来的省界直接画在地图上。同一个预览对象不重新上传；换了底图着色后重新给
+    let groupKey: unknown[] = [];
+    function applyGroupPreview(w: World, pv: ProvincePreview | null) {
+      const key = [w, pv, mode.value];
+      if (key.length === groupKey.length && key.every((k, i) => k === groupKey[i])) return;
+      groupKey = key;
+      renderer.setGroupPreview(pv ? groupPreview(w, pv, mode.value) : null);
     }
 
     // 参考图：盖在整张地图的范围上（保持比例时放在中间），跟着镜头走
@@ -249,6 +279,10 @@ export function MapView() {
           lastHighlightKey = key;
         }
       }
+      applyGroupPreview(w, preview.provinces ?? null);
+      // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
+      renderer.flatByGroup = mode.value === 'provinces';
+      renderer.highlightByGroup = category.value === 'provinces';
       renderer.style = mapStyle.value;
       renderer.render(w.kmPerUnit);
       const c = category.value;
@@ -332,7 +366,7 @@ export function MapView() {
           .filter(([p]) => w.small.provinces[p])
           .map(([p, [sn, cs, y, c]]) => {
             const x = Math.atan2(sn, cs) / Math.PI;
-            return { x: x < 0 ? x + 2 : x, y: y / c, text: w.small.provinces[p].name || String(p) };
+            return { x: x < 0 ? x + 2 : x, y: y / c, text: w.small.provinces[p].name || String(p), kind: w.small.provinces[p].kind };
           });
       } else {
         const sums = new Map<number, [number, number, number]>();
@@ -345,7 +379,9 @@ export function MapView() {
           s[2]++;
           sums.set(p, s);
         }
-        provinceLabels = [...sums].filter(([p]) => w.small.provinces[p]).map(([p, [x, y, c]]) => ({ x: x / c, y: y / c, text: w.small.provinces[p].name || String(p) }));
+        provinceLabels = [...sums]
+          .filter(([p]) => w.small.provinces[p])
+          .map(([p, [x, y, c]]) => ({ x: x / c, y: y / c, text: w.small.provinces[p].name || String(p), kind: w.small.provinces[p].kind }));
       }
       requestDraw();
     });
@@ -359,12 +395,14 @@ export function MapView() {
       const kinds = Object.entries(w.small.provinces)
         .map(([p, m]) => `${p}:${m.kind}`)
         .join(',');
-      const key = [w.mesh, w.derived.elevation, w.derived.dominant, w.causes.province, kinds, o.mode, o.season, o.focusSpecies, o.borders];
+      const seams = (w.small.provinceSeams ?? []).map((s) => s.id).join(',');
+      const key = [w.mesh, w.derived.elevation, w.derived.dominant, w.causes.province, kinds, seams, o.mode, o.season, o.focusSpecies, o.borders];
       if (key.length === colorKey.length && key.every((k, i) => k === colorKey[i])) return;
       colorKey = key;
       renderer.setMesh(w.mesh);
       renderer.setLayers(cellLayers(w, o));
       lastHighlightKey = [];
+      groupKey = [];
       requestDraw();
     });
 
@@ -474,7 +512,9 @@ export function MapView() {
       // Alt+点：吸取（取这里的生态、这里的省份）
       const def = TOOL_DEFS[tool.value];
       if (e.altKey && def.pick && !measure.value) {
-        const got = p.cell >= 0 ? def.pick(w, p.cell) : null;
+        // 吸取省份：剪刀切线附近按显示出来的那一边算
+        const cell = def.category === 'provinces' ? provinceCellAt(w, p) : p.cell;
+        const got = cell >= 0 ? def.pick(w, cell) : null;
         showToast(got ? `吸取了“${got}”` : '这里没有可以吸取的', !got);
         requestDraw();
         return;

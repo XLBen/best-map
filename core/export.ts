@@ -4,6 +4,7 @@ import { featureLabel } from './features';
 import { summarizeProvinces } from './provinces';
 import { riverWidth, traceRivers } from './rivers';
 import { findCell } from './mesh';
+import { exportProvinceCells } from './seams';
 import { rasterizeWorld } from './subcell';
 import { type World, longitudeOf, provinceColor, worldLatitude } from './world';
 
@@ -165,8 +166,14 @@ export function encodePng16Gray(values: Uint16Array, width: number, height: numb
   return png;
 }
 
-// onProgress（可选）：报告完成的比例（0–1），栅格化约占前 70%，最后的压缩打包是一步（报不了中间进度）；不影响结果
-export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions, onProgress?: (fraction: number) => void): { zip: Uint8Array; files: string[] } {
+// onProgress（可选）：报告完成的比例（0–1），栅格化约占前 70%，最后的压缩打包是一步（报不了中间进度）；不影响结果。
+// warnings：要告诉用户的几句话（也写进 README.txt），没有就是空的
+export function exportPackage(
+  world: World,
+  doc: WorldDoc,
+  opts: ExportOptions,
+  onProgress?: (fraction: number) => void,
+): { zip: Uint8Array; files: string[]; warnings: string[] } {
   const { width, height } = opts;
   const { mesh, derived, small, causes } = world;
   // 与屏幕相同的判定：格以下的海岸细节、自然弯曲的省份边界、地表细节
@@ -197,8 +204,10 @@ export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions, 
     const pid = causes.province[i];
     if (pid >= 0) provRgb.set(provinceColor(pid), i * 3);
   }
+  // 剪刀切过的地方：切线附近的像素按在线的哪一边分省（与屏幕上相同，见 seams.ts）；别的文件仍按格
+  const prov = exportProvinceCells(world, cellOf, width, height);
   const rgb = new Uint8Array(n * 3);
-  copyCellRgb(rgb, provRgb, cellOf);
+  copyCellRgb(rgb, provRgb, prov.cell);
   files['provinces.bmp'] = encodeBmp24(rgb, width, height);
   const def = ['province;red;green;blue;name;x'];
   const csv = ['id,name,land,kind,terrain,species,cells,mean_elevation_m'];
@@ -291,11 +300,12 @@ export function exportPackage(world: World, doc: WorldDoc, opts: ExportOptions, 
       'biomes.bmp：按类型颜色着色的植被图',
       'rivers.bmp：24 位，需转为游戏要求的 8 位索引调色板',
       'world.json：完整的世界文件（设置 + 命令记录），可在编辑器中重新打开',
+      ...(prov.warnings.length ? ['', '注意：', ...prov.warnings] : []),
     ].join('\n'),
   );
   const zip = zipSync(files, { level: 6 });
   onProgress?.(1);
-  return { zip, files: Object.keys(files) };
+  return { zip, files: Object.keys(files), warnings: prov.warnings };
 }
 
 // 逐像素按格抄颜色：out[p] = cellRgb[cellOf[p]]（各三个字节）

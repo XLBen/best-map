@@ -66,6 +66,15 @@ export interface Shape {
   fill?: boolean;
 }
 
+// 省份名字：无人区灰色、湖省蓝色（不用斜体：中文的斜体是把字硬拉斜）
+export interface ProvinceLabel {
+  x: number;
+  y: number;
+  text: string;
+  kind?: 'land' | 'wasteland' | 'lake' | 'sea';
+}
+const PROVINCE_LABEL_COLOR: Record<string, string> = { wasteland: 'rgba(95,95,95,0.95)', lake: 'rgba(40,95,160,0.95)' };
+
 export interface OverlayState {
   rivers: boolean;
   wind: boolean;
@@ -74,7 +83,7 @@ export interface OverlayState {
   season: 'annual' | 'summer' | 'winter';
   style: 'realistic' | 'atlas';
   shapes: Shape[];
-  provinceLabels: { x: number; y: number; text: string }[];
+  provinceLabels: ProvinceLabel[];
   // 地名标注；labelTypes 为 null 时显示全部类型
   features: GeoFeature[] | null;
   labelTypes: Set<FeatureType> | null;
@@ -194,6 +203,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
         const sx = ((l.x + 2 * k - cam.x) * cam.zoom + cw / 2) * dpr;
         const sy = ((l.y - cam.y) * cam.zoom + ch / 2) * dpr;
         if (sx < -50 || sy < -20 || sx > canvas.width + 50 || sy > canvas.height + 20) continue;
+        ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
         ctx.strokeText(l.text, sx, sy);
         ctx.fillText(l.text, sx, sy);
       }

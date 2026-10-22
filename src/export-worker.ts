@@ -15,7 +15,7 @@ self.onmessage = (ev: MessageEvent<ExportJob>) => {
   try {
     const world = { settings, mesh: buildMeshFor(settings), kmPerUnit: kmPerUnit(settings), causes, small, derived };
     const r = exportPackage(world, doc, opts, (progress) => post({ progress }));
-    post({ ok: true, zip: r.zip }, [r.zip.buffer as ArrayBuffer]);
+    post({ ok: true, zip: r.zip, warnings: r.warnings }, [r.zip.buffer as ArrayBuffer]);
   } catch (e) {
     post({ ok: false, error: (e as Error).message });
   }

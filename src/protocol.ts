@@ -60,7 +60,8 @@ export interface ExportJob {
   opts: ExportOptions;
 }
 
-export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array } | { ok: false; error: string };
+// warnings：导出时要告诉用户的话（比如极小的省在切线附近分不到像素）
+export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array; warnings?: string[] } | { ok: false; error: string };
 
 export type Response =
   | {

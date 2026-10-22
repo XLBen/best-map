@@ -1,4 +1,5 @@
 import type { Mesh } from '../../core/mesh';
+import type { SeamLayers } from '../../core/seams';
 import { viewOf } from '../../core/sphere';
 
 // WebGL2 渲染：
@@ -7,9 +8,11 @@ import { viewOf } from '../../core/sphere';
 //      格以下补海岸细节与沿坡向的冲沟纹理（噪声在格中心为 0，陆海与模拟一致）→ 离屏的颜色、高度、坡度。
 //      陆地像素只用陆色、水面像素只用水色（每格另带一份“对岸的颜色”），颜色不跨海岸互相渗；
 //      晕渲的大尺度坡度用插值后的格坡度，没有三角形折面；海岸线在这里画成抗锯齿的细线
-//   3. 合成：晕渲、陡坡露岩、两种风格；按扭曲后的坐标取格，画分类平涂（主导生态、省份）、
-//      分组边界（省份）、高亮与轮廓。边界因此是自然的曲线而不是六边形
-// 1、2 只在镜头、图层、窗口大小变了时重画；鼠标移动、高亮变化只重画合成层。
+//   3. 切线层：剪刀切省时画的线（core/seams.ts）。每段一个长方形，像素写入离它最近的那一段与在线的哪一边
+//      （深度 = 距离 / 带宽，近的胜）
+//   4. 合成：晕渲、陡坡露岩、两种风格；按扭曲后的坐标取格，画分类平涂（主导生态、省份）、
+//      分组边界（省份）、高亮与轮廓。边界因此是自然的曲线而不是六边形；切线附近按在线的哪一边换格，省界就是画的线
+// 1、2 只在镜头、图层、窗口大小变了时重画，3 另外在切线变了时重画；鼠标移动、高亮变化只重画合成层。
 // 海岸噪声与 core/subcell.ts 逐位一致，导出的位图与屏幕一致。
 
 const TEX_W = 1024;
@@ -196,6 +199,81 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
+// 切线层：每段一个盖住带宽的长方形（实例 = 段，四个角 aCorner 画两个三角形），uShift 是整个星球上的副本平移。
+// 距离、在线的哪一边与 core/seams.ts 的 segDist 一步一步相同
+const VS_SEAM = `#version 300 es
+in float aCorner;
+in vec4 aSeg;
+in vec4 aNb;
+in vec2 aEnds;
+uniform vec4 uView;
+uniform float uShift;
+uniform float uBand;
+out vec2 vWorld;
+flat out vec4 vSeg;
+flat out vec4 vNb;
+flat out vec2 vEnds;
+flat out int vIdx;
+void main() {
+  vec2 a = aSeg.xy;
+  vec2 b = aSeg.zw;
+  vec2 d = normalize(b - a);
+  vec2 nrm = vec2(-d.y, d.x);
+  int k = int(aCorner + 0.5);
+  vec2 p = ((k == 1 || k == 3) ? b + d * uBand : a - d * uBand) + nrm * (k >= 2 ? uBand : -uBand);
+  vWorld = p;
+  vSeg = aSeg;
+  vNb = aNb;
+  vEnds = aEnds;
+  vIdx = gl_InstanceID;
+  gl_Position = vec4((p + vec2(uShift, 0.0)) * uView.xy + uView.zw, 0.0, 1.0);
+}`;
+
+const FS_SEAM = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vWorld;
+flat in vec4 vSeg;
+flat in vec4 vNb;
+flat in vec2 vEnds;
+flat in int vIdx;
+uniform float uBand;
+layout(location = 0) out vec4 oSeam;
+vec2 leftNormal(vec2 e) {
+  float l = length(e);
+  return l > 0.0 ? vec2(-e.y, e.x) / l : vec2(0.0);
+}
+void main() {
+  vec2 a = vSeg.xy;
+  vec2 e = vSeg.zw - a;
+  vec2 q = vWorld - a;
+  float t = dot(q, e) / dot(e, e);
+  // 过了切线真正的两端不管
+  if (t < 0.0 && vEnds.x < 0.5) discard;
+  if (t > 1.0 && vEnds.y < 0.5) discard;
+  float d;
+  bool left;
+  if (t > 0.0 && t < 1.0) {
+    left = e.x * q.y - e.y * q.x > 0.0;
+    d = length(q - e * t);
+  } else {
+    // 端点外（转角处）：到端点的距离；哪一边按两段法向之和
+    bool start = t <= 0.0;
+    vec2 v = start ? a : vSeg.zw;
+    vec2 sn = leftNormal(e);
+    vec2 on = start ? leftNormal(a - vNb.xy) : leftNormal(vNb.zw - v);
+    vec2 nn = sn + on;
+    if (dot(nn, nn) < 1e-8) nn = sn;
+    vec2 r = vWorld - v;
+    left = dot(r, nn) > 0.0;
+    d = length(r);
+  }
+  if (d >= uBand) discard;
+  gl_FragDepth = d / uBand;
+  int id = vIdx + 1;
+  oSeam = vec4(float(id & 255), float((id >> 8) & 255), float((id >> 16) & 255), left ? 255.0 : 0.0) / 255.0;
+}`;
+
 const FS_COMPOSE = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -205,6 +283,13 @@ uniform sampler2D uIdTex;
 uniform sampler2D uFlat;
 uniform sampler2D uHighlight;
 uniform highp sampler2D uGroup;
+// 切线层（屏幕大小）与每段的数据（两边的分组值、代表格：gL, gR, repL, repR）
+uniform sampler2D uSeam;
+uniform highp sampler2D uSegData;
+uniform int uHasSeams;
+// 平涂、高亮按省份取（省份着色、省份工具）：切线附近也跟着换格
+uniform int uFlatByGroup;
+uniform int uHighlightByGroup;
 uniform vec2 uTexel;
 uniform vec4 uView;
 uniform float uSpacing;
@@ -229,6 +314,21 @@ vec4 cellTex(sampler2D tex, int id) {
 }
 // 分组值：陆地省份 = 编号 + 1（> 0），海域省份 = −(编号 + 1)（< 0），未划分 = 0，地图外 = −1e9
 float groupOf(int id) { return id < 0 ? -1e9 : cellTex(uGroup, id).r; }
+// 切线附近按在线的哪一边换格（与 core/seams.ts 的 seamPixel 相同）：id 是像素按扭曲后的位置取的格，
+// uv 是像素没扭曲的位置（切线层按它找最近的段）
+int seamCell(int id, vec2 uv) {
+  if (uHasSeams == 0 || id < 0) return id;
+  vec4 s = texture(uSeam, uv) * 255.0;
+  int seg = int(s.r + 0.5) + int(s.g + 0.5) * 256 + int(s.b + 0.5) * 65536 - 1;
+  if (seg < 0) return id;
+  vec4 sd = texelFetch(uSegData, ivec2(seg % ${TEX_W}, seg / ${TEX_W}), 0);
+  if (sd.r == sd.g) return id;
+  vec2 g = cellTex(uGroup, id).rg;
+  if (g.g < 0.5) return id;
+  bool left = s.a > 127.5;
+  if (g.r != (left ? sd.g : sd.r)) return id;
+  return int((left ? sd.b : sd.a) + 0.5);
+}
 // 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors）：0 没有，1–127 平涂，128 只描边，129–255 斜线
 float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
 // 平涂、斜线的不透明度；只描边的是 0
@@ -252,8 +352,10 @@ void main() {
   vec2 uvW = ((world + w) * uView.xy + uView.zw) * 0.5 + 0.5;
   int id = idAt(uvW);
 
+  // 省界、省份着色、省份的高亮用切线换过的格
+  int idG = seamCell(id, vUv);
   if (uHasFlat == 1 && id >= 0) {
-    vec4 fc = cellTex(uFlat, id);
+    vec4 fc = cellTex(uFlat, uFlatByGroup == 1 ? idG : id);
     col = mix(col, fc.rgb, fc.a);
   }
   if (land) {
@@ -281,9 +383,11 @@ void main() {
 
   // 分组边界（省份）：扭曲坐标下相邻像素的分组不同
   if (uHasGroup == 1 && id >= 0) {
-    float g0 = groupOf(id);
-    float gx = groupOf(idAt(uvW + vec2(uTexel.x * 1.5, 0.0)));
-    float gy = groupOf(idAt(uvW + vec2(0.0, uTexel.y * 1.5)));
+    vec2 dx = vec2(uTexel.x * 1.5, 0.0);
+    vec2 dy = vec2(0.0, uTexel.y * 1.5);
+    float g0 = groupOf(idG);
+    float gx = groupOf(seamCell(idAt(uvW + dx), vUv + dx));
+    float gy = groupOf(seamCell(idAt(uvW + dy), vUv + dy));
     // 陆海之间的边界已经由海岸线画出，这里只画同类之间的
     bool bx = gx > -1e8 && gx != g0 && (gx > 0.0) == (g0 > 0.0);
     bool by = gy > -1e8 && gy != g0 && (gy > 0.0) == (g0 > 0.0);
@@ -295,7 +399,9 @@ void main() {
 
   // 高亮与轮廓
   if (uHasHighlight == 1 && id >= 0) {
-    vec4 hc = cellTex(uHighlight, id);
+    bool byGroup = uHighlightByGroup == 1;
+    int idH = byGroup ? idG : id;
+    vec4 hc = cellTex(uHighlight, idH);
     float A0 = hc.a * 255.0;
     float a0 = hlAlpha(A0);
     if (A0 > 128.5) {
@@ -307,8 +413,12 @@ void main() {
     }
     // 轮廓画在有高亮（不论多淡）与没有高亮的格之间。浓淡跟着两边较浓的一侧：0.18 以上照旧，
     // 更淡的（闪烁淡出时、渐变的边缘）跟着一起淡，不会在中途忽然断掉；只描边的格固定 0.75
-    float Ax = hlByte(idAt(uvW + vec2(uTexel.x * 1.5, 0.0)));
-    float Ay = hlByte(idAt(uvW + vec2(0.0, uTexel.y * 1.5)));
+    vec2 hx = vec2(uTexel.x * 1.5, 0.0);
+    vec2 hy = vec2(0.0, uTexel.y * 1.5);
+    int ix = idAt(uvW + hx);
+    int iy = idAt(uvW + hy);
+    float Ax = hlByte(byGroup ? seamCell(ix, vUv + hx) : ix);
+    float Ay = hlByte(byGroup ? seamCell(iy, vUv + hy) : iy);
     bool on0 = A0 > 0.5;
     if (on0 != (Ax > 0.5) || on0 != (Ay > 0.5)) {
       bool lineOnly = abs(A0 - 128.0) < 0.5 || abs(Ax - 128.0) < 0.5 || abs(Ay - 128.0) < 0.5;
@@ -543,8 +653,10 @@ export interface CellLayers {
   grad: Float32Array;
   // 分类平涂（alpha = 覆盖度），null 不画
   flat: Uint8Array | null;
-  // 分组编号（省份），画分组边界；null 不画
+  // 分组（省份），画分组边界；每格两个值（分组编号、切线用的标记，见 colors.ts 的 provinceGroups）；null 不画
   group: Float32Array | null;
+  // 剪刀切过的线（core/seams.ts）：切线附近按在线的哪一边换格；没有切线时为 null
+  seams?: SeamLayers | null;
   shade: number;
   rock: number;
   coastAmp: number;
@@ -557,6 +669,7 @@ export class Renderer {
   private progId: WebGLProgram;
   private progTerrain: WebGLProgram;
   private progCompose: WebGLProgram;
+  private progSeam: WebGLProgram;
   // 整个星球用的三个程序（第一次遇到星球时才编译）
   private planetProgs: { id: WebGLProgram; terrain: WebGLProgram; compose: WebGLProgram } | null = null;
   private planet = false;
@@ -566,12 +679,25 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'flat' | 'highlight' | 'group', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'flat' | 'highlight' | 'group' | 'segData', WebGLTexture>;
   private fbo: WebGLFramebuffer;
   private fboId: WebGLFramebuffer;
+  private fboSeam: WebGLFramebuffer;
   private sceneColor: WebGLTexture;
   private sceneHeight: WebGLTexture;
   private idTex: WebGLTexture;
+  private seamTex: WebGLTexture;
+  private seamDepth: WebGLRenderbuffer;
+  // 切线：每段一个实例（两端、前后两段的端点、前后有没有段）。setLayers 给的与现在显示的（剪刀拖动时多一条）
+  private seamVao: WebGLVertexArrayObject;
+  private seamBuf: WebGLBuffer;
+  private seamCount = 0;
+  private seamBand = 0;
+  private seamX: [number, number] = [0, 0];
+  private seamsBase: SeamLayers | null = null;
+  private seamsShown: SeamLayers | null = null;
+  private seamVersion = 0;
+  private seamKey = '';
   private fboSize = [0, 0];
   private mesh: Mesh | null = null;
   private hasFlat = false;
@@ -582,6 +708,9 @@ export class Renderer {
   private coastAmp = 180;
   style: MapStyle = 'realistic';
   detail = 1;
+  // 平涂是省份着色、高亮是省份工具的：切线附近也按换过的格取（否则按像素自己的格）
+  flatByGroup = false;
+  highlightByGroup = false;
   camera: Camera = { x: 1, y: 0.5, zoom: 500 };
   // 晕渲的夸张倍数（全图时）：真实的山坡很缓，不夸张就看不出起伏
   relief = 24;
@@ -592,6 +721,12 @@ export class Renderer {
   private highlightVersion = 0;
   private sceneKey = '';
   private composeKey = '';
+  // 分组、平涂：setLayers 给的底子与现在显示的（省份预览覆盖时不同）。换预览时只上传变了的行
+  private groupBase: Float32Array | null = null;
+  private groupShown: Float32Array | null = null;
+  private flatBase: Uint8Array | null = null;
+  private flatShown: Uint8Array | null = null;
+  private groupVersion = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -601,13 +736,41 @@ export class Renderer {
     this.progId = compile(gl, VS_CELL, FS_ID);
     this.progTerrain = compile(gl, VS_CELL, FS_TERRAIN);
     this.progCompose = compile(gl, VS_QUAD, FS_COMPOSE);
+    this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t(), segData: t() };
     this.fbo = gl.createFramebuffer()!;
     this.fboId = gl.createFramebuffer()!;
+    this.fboSeam = gl.createFramebuffer()!;
     this.sceneColor = this.makeTex(true);
     this.sceneHeight = this.makeTex();
     this.idTex = this.makeTex();
+    this.seamTex = this.makeTex();
+    this.seamDepth = gl.createRenderbuffer()!;
+    // 每段的数据先放一个空纹素：还没有切线时合成程序照样绑着它，不能是没有内容的纹理
+    gl.bindTexture(gl.TEXTURE_2D, this.tex.segData);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4));
+    // 切线：长方形的四个角（每个顶点一个），与每段的实例数据：10 个数（aSeg 4、aNb 4、aEnds 2）
+    this.seamVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.seamVao);
+    const corners = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, corners);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 2, 3]), gl.STATIC_DRAW);
+    const cornerLoc = gl.getAttribLocation(this.progSeam, 'aCorner');
+    gl.enableVertexAttribArray(cornerLoc);
+    gl.vertexAttribPointer(cornerLoc, 1, gl.FLOAT, false, 0, 0);
+    this.seamBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.seamBuf);
+    const attr = (name: string, size: number, offset: number) => {
+      const loc = gl.getAttribLocation(this.progSeam, name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 40, offset);
+      gl.vertexAttribDivisor(loc, 1);
+    };
+    attr('aSeg', 4, 0);
+    attr('aNb', 4, 16);
+    attr('aEnds', 2, 32);
+    gl.bindVertexArray(null);
   }
 
   private makeTex(linear = false): WebGLTexture {
@@ -767,10 +930,97 @@ export class Renderer {
     this.hasFlat = !!l.flat;
     if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
-    if (l.group) this.upload(this.tex.group, l.group, n, 1);
+    if (l.group) this.upload(this.tex.group, l.group, n, 2);
+    this.groupBase = this.groupShown = l.group;
+    this.flatBase = this.flatShown = l.flat;
+    this.seamsBase = l.group ? (l.seams ?? null) : null;
+    this.showSeams(this.seamsBase);
     this.shade = l.shade;
     this.rock = l.rock;
     this.coastAmp = l.coastAmp;
+  }
+
+  // 省份预览：整份分组（与平涂、切线）换成将来的样子，着色器照此画出真实的新省界；null 回到 setLayers 给的。
+  // 没有画分组边界时不管。setLayers 之后预览就没了，调用方要重新给
+  setGroupPreview(p: { group: Float32Array; flat: Uint8Array | null; seams?: SeamLayers | null } | null) {
+    if (!this.groupBase || !this.groupShown) return;
+    const group = p ? p.group : this.groupBase;
+    const flat = p && p.flat && this.flatBase ? p.flat : this.flatBase;
+    const seams = p ? (p.seams ?? null) : this.seamsBase;
+    if (group === this.groupShown && flat === this.flatShown && seams === this.seamsShown) return;
+    this.uploadChanged(this.tex.group, this.groupShown, group, 2);
+    this.groupShown = group;
+    if (flat && this.flatShown && flat !== this.flatShown) {
+      this.uploadChanged(this.tex.flat, this.flatShown, flat, 4);
+      this.flatShown = flat;
+    }
+    this.showSeams(seams);
+    this.groupVersion++;
+  }
+
+  // 切线：每段的几何（实例数据）与两边的省（gL, gR, repL, repR 一段一个纹素）
+  private showSeams(L: SeamLayers | null) {
+    if (L === this.seamsShown) return;
+    this.seamsShown = L;
+    this.seamVersion++;
+    const m = L ? L.segs.count : 0;
+    this.seamCount = m;
+    if (!L || !m) return;
+    const gl = this.gl;
+    const S = L.segs;
+    const inst = new Float32Array(m * 10);
+    const data = new Float32Array(m * 4);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    for (let s = 0; s < m; s++) {
+      inst.set([S.ax[s], S.ay[s], S.bx[s], S.by[s], S.px[s], S.py[s], S.nx[s], S.ny[s], S.hasPrev[s], S.hasNext[s]], s * 10);
+      data.set([L.gL[s], L.gR[s], L.repL[s], L.repR[s]], s * 4);
+      x0 = Math.min(x0, S.ax[s], S.bx[s]);
+      x1 = Math.max(x1, S.ax[s], S.bx[s]);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.seamBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, inst, gl.DYNAMIC_DRAW);
+    const rows = Math.ceil(m / TEX_W);
+    const padded = new Float32Array(TEX_W * rows * 4);
+    padded.set(data);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex.segData);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, TEX_W, rows, 0, gl.RGBA, gl.FLOAT, padded);
+    this.seamBand = L.band;
+    this.seamX = [x0, x1];
+  }
+
+  // 只上传与现在显示的不同的那些行（每行 TEX_W 格）：涂省、剪刀每动一下只改一小片
+  private uploadChanged(tex: WebGLTexture, before: Float32Array | Uint8Array, after: Float32Array | Uint8Array, channels: 2 | 4) {
+    const gl = this.gl;
+    const n = this.mesh?.n ?? 0;
+    const rows = Math.ceil(n / TEX_W);
+    const per = TEX_W * channels;
+    const differs = (r: number) => {
+      const end = Math.min(n * channels, (r + 1) * per);
+      for (let k = r * per; k < end; k++) if (before[k] !== after[k]) return true;
+      return false;
+    };
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    for (let r = 0; r < rows; ) {
+      if (!differs(r)) {
+        r++;
+        continue;
+      }
+      let r1 = r + 1;
+      while (r1 < rows && differs(r1)) r1++;
+      // 最后一行不满时补齐
+      let src: Float32Array | Uint8Array = after.subarray(r * per, Math.min(after.length, r1 * per));
+      if (src.length < (r1 - r) * per) {
+        const padded = after instanceof Float32Array ? new Float32Array((r1 - r) * per) : new Uint8Array((r1 - r) * per);
+        padded.set(src);
+        src = padded;
+      }
+      if (channels === 2) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RG, gl.FLOAT, src);
+      else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      r = r1;
+    }
   }
 
   setHighlight(h: Uint8Array | null) {
@@ -807,6 +1057,14 @@ export class Renderer {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.sceneHeight, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboId);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.idTex, 0);
+    // 切线层：段号与哪一边（RGBA8），深度 = 到段的距离 / 带宽
+    gl.bindTexture(gl.TEXTURE_2D, this.seamTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, this.seamDepth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT32F, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboSeam);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.seamTex, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.seamDepth);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
@@ -846,7 +1104,10 @@ export class Renderer {
     }
     const pp = this.planet ? this.planetProgs : null;
     const noiseK = 1 / (Math.PI * mesh.spacing);
-    const composeKey = `${sceneKey}|${this.highlightVersion}|${this.style}|${relief}|${this.provinceScale}`;
+    // 切线层：镜头、窗口、切线变了才重画
+    const hasSeams = this.hasGroup && this.seamCount > 0;
+    const seamKey = hasSeams ? `${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
+    const composeKey = `${sceneKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -900,7 +1161,37 @@ export class Renderer {
       } else gl.drawArrays(gl.TRIANGLES, 0, this.triCount);
     }
 
-    // 3. 合成
+    // 3. 切线层：每段画一个长方形，片元算到段的距离与在哪一边，近的胜（深度测试 LESS，同样近时先画的段号小的胜）
+    if (hasSeams && seamKey !== this.seamKey) {
+      this.seamKey = seamKey;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboSeam);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+      gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+      gl.clearBufferfv(gl.DEPTH, 0, [1]);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LESS);
+      gl.depthMask(true);
+      const ps = this.progSeam;
+      gl.useProgram(ps);
+      gl.uniform4fv(gl.getUniformLocation(ps, 'uView'), view);
+      gl.uniform1f(gl.getUniformLocation(ps, 'uBand'), this.seamBand);
+      gl.bindVertexArray(this.seamVao);
+      // 整个星球：线（经度展开后可能超出 [0, 2)）在屏幕上看得见的那几份
+      let k0 = 0;
+      let k1 = 0;
+      if (this.planet) {
+        const halfW = this.canvas.clientWidth / 2 / cam.zoom;
+        k0 = Math.ceil((cam.x - halfW - this.seamX[1] - this.seamBand) / 2);
+        k1 = Math.min(k0 + 6, Math.floor((cam.x + halfW - this.seamX[0] + this.seamBand) / 2));
+      }
+      for (let k = k0; k <= k1; k++) {
+        gl.uniform1f(gl.getUniformLocation(ps, 'uShift'), 2 * k);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.seamCount);
+      }
+      gl.disable(gl.DEPTH_TEST);
+    }
+
+    // 4. 合成
     this.composeKey = composeKey;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     const pc = pp ? pp.compose : this.progCompose;
@@ -912,6 +1203,11 @@ export class Renderer {
     this.bindTex(pc, 'uFlat', this.tex.flat, 3);
     this.bindTex(pc, 'uHighlight', this.tex.highlight, 4);
     this.bindTex(pc, 'uGroup', this.tex.group, 5);
+    this.bindTex(pc, 'uSeam', this.seamTex, 6);
+    this.bindTex(pc, 'uSegData', this.tex.segData, 7);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uHasSeams'), hasSeams ? 1 : 0);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uFlatByGroup'), this.flatByGroup ? 1 : 0);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uHighlightByGroup'), this.highlightByGroup ? 1 : 0);
     gl.uniform2f(gl.getUniformLocation(pc, 'uTexel'), 1 / w, 1 / h);
     gl.uniform4fv(gl.getUniformLocation(pc, 'uView'), view);
     gl.uniform1f(gl.getUniformLocation(pc, 'uSpacing'), mesh.spacing);

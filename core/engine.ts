@@ -470,6 +470,8 @@ function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'add_island_chain' && cmd.chain.fine) return true;
   // 第八轮 1e：山挡风
   if (cmd.op === 'set_planet' && cmd.patch.terrainWind !== undefined) return true;
+  // 第八轮 1f：剪刀切线（provinceSeams）
+  if (cmd.op === 'cut_province') return true;
   return false;
 }
 

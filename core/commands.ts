@@ -15,6 +15,8 @@ import {
   repairProvinces,
   splitCells,
 } from './provinces';
+import { SEAM_MAX_POINTS, cutSeams, dropSeams, inheritSeams, seamsAfterCut } from './seams';
+import { cutProvinces } from './select';
 import { speciesSchema } from './species';
 import {
   ISLAND_KIND_INFO,
@@ -105,6 +107,9 @@ const baseCommands = [
   z.object({ op: z.literal('assign_province'), cells, province: z.union([z.number().int().min(0), z.literal('new')]) }),
   z.object({ op: z.literal('merge_province'), from: z.number().int(), into: z.number().int() }),
   z.object({ op: z.literal('split_province'), id: z.number().int() }),
+  // 剪刀：沿画的线切开省份。线是界面上已经延长、化简好的（见 seams.ts 的 seamLine），这里不再延长；
+  // 切出的每块成一个新省，线（每个切开的省一条，只留在那个省里的一段）记进 provinceSeams，切开的几块之间的边界就画在线上
+  z.object({ op: z.literal('cut_province'), line: z.array(z.tuple([z.number(), z.number()])).min(2).max(SEAM_MAX_POINTS) }),
   z.object({
     op: z.literal('set_province'),
     id: z.number().int(),
@@ -198,6 +203,7 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'assign_province':
     case 'merge_province':
     case 'split_province':
+    case 'cut_province':
       return ['province'];
     case 'batch':
       return [...new Set(cmd.commands.flatMap((c) => touchedArrays(world, c)))];
@@ -284,6 +290,26 @@ function applyTerrain(world: World): { gained: number; lost: number } {
 }
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
+
+// 新建一个空的省份：陆海随这些格，类型随这些格原来所在省份的多数（assign_province 'new' 与剪刀共用）
+function newProvince(world: World, cells: number[]): number {
+  const { causes, small } = world;
+  const land = cells.length ? causes.land[cells[0]] === 1 : true;
+  const kinds = new Map<ProvinceKind, number>();
+  for (const i of cells) {
+    const k = small.provinces[causes.province[i]]?.kind;
+    if (k) kinds.set(k, (kinds.get(k) ?? 0) + 1);
+  }
+  let kind: ProvinceKind = land ? 'land' : 'sea';
+  let bk = 0;
+  for (const [k, c] of kinds) if (c > bk && (k === 'sea') !== land) {
+    bk = c;
+    kind = k;
+  }
+  const id = small.nextProvince++;
+  small.provinces[id] = { name: '', locked: false, land, kind };
+  return id;
+}
 
 function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; summary: string } {
   const { causes, small, mesh } = world;
@@ -580,6 +606,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const d = ctx.ensureDerived();
       const rules = provinceRulesSchema.parse({ ...small.provinceRules, ...(cmd.rules ?? {}) });
       generateProvinces(world, d, rules);
+      // 整张图重新划分：切线都不要了
+      delete small.provinceSeams;
       return { dirty: Dirty.None, summary: `自动划分省份：${Object.keys(small.provinces).length} 个` };
     }
     case 'regenerate_provinces': {
@@ -587,29 +615,17 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const ids = regenTargets(world, cmd.cells);
       if (!ids.length) throw new CommandError('涂的范围要盖住省份的一大半，那个省份才会重新划分');
       const d = ctx.ensureDerived();
+      // 碰到重新划分的省的切线不要了（看划分前的省份）
+      const regen = new Set(ids);
+      dropSeams(world, (p) => regen.has(p));
       const fresh = regenerateProvinces(world, d, ids);
       return { dirty: Dirty.None, summary: `重新划分了 ${ids.length} 个省份 → ${fresh.length} 个` };
     }
     case 'assign_province': {
       checkCells(cmd.cells);
       let id: number;
-      const land = cmd.cells.length ? causes.land[cmd.cells[0]] === 1 : true;
-      if (cmd.province === 'new') {
-        // 新省份的类型随这些格原来所在省份的多数
-        const kinds = new Map<ProvinceKind, number>();
-        for (const i of cmd.cells) {
-          const k = small.provinces[causes.province[i]]?.kind;
-          if (k) kinds.set(k, (kinds.get(k) ?? 0) + 1);
-        }
-        let kind: ProvinceKind = land ? 'land' : 'sea';
-        let bk = 0;
-        for (const [k, c] of kinds) if (c > bk && (k === 'sea') !== land) {
-          bk = c;
-          kind = k;
-        }
-        id = small.nextProvince++;
-        small.provinces[id] = { name: '', locked: false, land, kind };
-      } else {
+      if (cmd.province === 'new') id = newProvince(world, cmd.cells);
+      else {
         id = cmd.province;
         if (!small.provinces[id]) throw new CommandError(`找不到省份 ${id}`);
       }
@@ -653,7 +669,28 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.provinces[id] = { name: '', locked: false, land: meta.land, kind: meta.kind };
       for (const i of right) causes.province[i] = id;
       nameNewProvince(world, id);
+      // 剪刀切过这个省时：切线也管分出来的这一半（没有切线的世界不变）
+      if (small.provinceSeams) small.provinceSeams = inheritSeams(small.provinceSeams, cmd.id, [id]);
       return { dirty: Dirty.None, summary: `拆分省份 ${meta.name || cmd.id}` };
+    }
+    case 'cut_province': {
+      // 与界面上拖动时的预览同一个算法、同一条线，切出来的块与新省份的编号都与预览相同
+      const cut = cutProvinces(world, cmd.line, { extend: false });
+      if (!cut.plans.length) throw new CommandError('线没有把省份分开');
+      const names = cut.plans.map((pl) => `“${small.provinces[pl.id].name || `省份 ${pl.id}`}”`).join('、');
+      // 记下的切线：每个切开的省一条，只留线在那个省里的一段（按切之前的省份算，与预览的 cutSeams 相同）
+      const seams = cutSeams(world, cmd.line, cut);
+      let count = 0;
+      for (const pl of cut.plans) {
+        for (const part of pl.parts.slice(1)) {
+          const id = newProvince(world, part);
+          for (const i of part) causes.province[i] = id;
+          nameNewProvince(world, id);
+          count++;
+        }
+      }
+      small.provinceSeams = seamsAfterCut(small.provinceSeams, seams, () => nextId(world, 'seam'));
+      return { dirty: Dirty.None, summary: `切开了${names}（多出 ${count} 个省份）` };
     }
     case 'rename_feature': {
       const ov = { ...(small.featureNames[cmd.key] ?? {}) };
