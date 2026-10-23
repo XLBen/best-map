@@ -2,7 +2,7 @@ import { wrapX } from './geo';
 import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
-import { coastDetail, coastDetail3, coastDetailAmp, coastValues, locate, warpOffset, warpOffset3 } from './subcell';
+import { coastDetail, coastDetail3, coastDetailAmp, coastValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
 import { coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -240,7 +240,8 @@ export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | 
   return -1;
 }
 
-// 最近格、扭曲后那一格与最近格的邻格里，离这一点最近的同类格（与导出 rasterizeWorld 的 sameKindCell 相同）；都不同类时保持原格
+// 最近格、扭曲后那一格与最近格的邻格里，离这一点最近的同类格（与导出 rasterizeWorld 的 sameKindCell 相同）；都不同类时陆上的点保持原格，
+// 海上的点按 nearestSeaCell 往外找
 function sameKindNear(world: World, land: boolean, cell: number, near: number, x: number, y: number): number {
   const { mesh, causes } = world;
   let best = -1;
@@ -257,5 +258,7 @@ function sameKindNear(world: World, land: boolean, cell: number, near: number, x
   tryCell(near);
   for (let e = mesh.off[cell]; e < mesh.off[cell + 1]; e++) tryCell(mesh.adj[e]);
   for (let e = mesh.off[near]; e < mesh.off[near + 1]; e++) tryCell(mesh.adj[e]);
-  return best >= 0 ? best : cell;
+  if (best >= 0) return best;
+  // 海上的点都不同类时沿网格往外找最近的海格（与导出相同：海上的像素永远不取陆地格）
+  return land ? cell : nearestSeaCell(mesh, causes.land, cell, x, y);
 }

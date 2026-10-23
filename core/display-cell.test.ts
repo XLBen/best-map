@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { type DisplayCell, displayCellAt } from './display';
+import { type DisplayCell, displayCellAt, displayCoast, displayCoastAt } from './display';
 import { Engine } from './engine';
 import { findCell } from './mesh';
-import { applySeams, scissors, seamLayers } from './seams';
+import { traceRivers } from './rivers';
+import { applySeams, scissors, seamLayers, seamPick } from './seams';
 import { rasterizeWorld } from './subcell';
 import { continents, snapshot } from './testing/fixtures';
 import type { World } from './world';
@@ -10,6 +11,13 @@ import type { World } from './world';
 // 第八轮第四批：悬停卡片“这里”、Alt 吸取、选省、合并读的是屏幕上画出来的那一格。
 // 着色器那一半只能在浏览器里看；这里拿与着色器同一套规则的 JS 实现对照：导出的 rasterizeWorld
 // （逐像素：海岸值 + 格以下细节判陆海，扭曲后取最近的格；只多一步“陆海不一致时换成同类的邻格”）与 applySeams（切线规则）
+
+// 第十三轮：画成水面（湖面在导出里算陆地）的点取到陆地格时，省份按 provinceCell 换成水面格（导出的切线规则不管湖面）
+function provinceRule(w: World, exported: number, d: DisplayCell): number {
+  const coast = displayCoast(w).coast;
+  if (!d.water || coast[exported] < 0) return exported;
+  return d.province < 0 || coast[d.province] < 0 ? d.province : exported;
+}
 
 // 逐像素对照：陆海与导出一致；格与陆海同类时就是导出的格（着色器的 id），不同类时 here 是导出换成的同类格；
 // 省份按切线换过的格与导出的切线规则一致（同类时）。返回扭曲后与没扭曲的最近格不同的像素占几成
@@ -33,7 +41,7 @@ function compare(w: World, W: number, H: number): number {
       if (d.cell !== findCell(mesh, x, y, hint)) moved++;
       const same = (causes.land[d.cell] === 1) === d.land;
       if (d.land !== (raster.land[p] === 1)) bad.push(`${px},${py} 陆海`);
-      else if (same && (d.cell !== raster.cell[p] || d.here !== d.cell || d.province !== byProvince[p])) bad.push(`${px},${py} 格`);
+      else if (same && (d.cell !== raster.cell[p] || d.here !== d.cell || d.province !== provinceRule(w, byProvince[p], d))) bad.push(`${px},${py} 格`);
       else if (!same && d.here !== raster.cell[p]) bad.push(`${px},${py} 同类格`);
       if (bad.length > 5) break;
     }
@@ -99,5 +107,111 @@ describe('屏幕上画出来的那一格', () => {
     const a = displayCellAt(w, 0.37, 0.41);
     expect(displayCellAt(w, 0.37 + 2, 0.41)).toEqual(a);
     expect(displayCellAt(w, 0.37 - 4, 0.41)).toEqual(a);
+  });
+});
+
+// 第十三轮：海上的像素永远不属于陆上的省（陆上的小块可以算进海省）。曲折的海岸（破碎度 2.5）、窄海湾最容易出错
+describe('水面的像素只取水面格', () => {
+  const rugged = () =>
+    snapshot('display:rugged-provinces', () => {
+      const eng = continents({ provinces: true });
+      eng.exec({ op: 'set_coast_style', roughness: 2.5 });
+      return eng;
+    });
+
+  it('选省、悬停（displayCellAt）：画成水面的点省份格是水面格或 −1；海上的点没有一个落进陆地省。原来按扭曲取格时有不少', () => {
+    const eng = rugged();
+    cutBig(eng);
+    const w = eng.world;
+    const { mesh, causes } = w;
+    const coast = displayCoast(w).coast;
+    const L = seamLayers(w, causes.province, w.small.provinceSeams);
+    const W = 600;
+    const H = 375;
+    let hint = 0;
+    let water = 0;
+    let sea = 0;
+    let before = 0;
+    let none = 0;
+    const bad: string[] = [];
+    for (let py = 0; py < H; py++) {
+      const y = ((py + 0.5) / H) * mesh.height;
+      for (let px = 0; px < W; px++) {
+        const x = ((px + 0.5) / W) * mesh.width;
+        const d = displayCellAt(w, x, y, hint);
+        hint = d.cell;
+        if (!d.water) continue;
+        water++;
+        const old = seamPick(L, w, x, y, d.cell);
+        if (old >= 0 && coast[old] > 0) before++;
+        if (d.province < 0) {
+          // 没有省：只在离所有水面格都超过一格的地方（破碎的海岸按格以下的细节在陆地里画出的小水洼）
+          none++;
+          let near = Infinity;
+          for (let i = 0; i < mesh.n; i++) if (coast[i] < 0) near = Math.min(near, Math.hypot(mesh.x[i] - x, mesh.y[i] - y));
+          if (near < mesh.spacing) bad.push(`${px},${py} 近处有水面格却没有省`);
+          continue;
+        }
+        if (coast[d.province] > 0) bad.push(`${px},${py} 陆地格`);
+        // 海上（不是湖面）的点：格是海格，省是海省或没有省
+        if (!d.land) {
+          sea++;
+          const p = causes.province[d.province];
+          if (causes.land[d.province] === 1 || (p >= 0 && w.small.provinces[p]?.land)) bad.push(`${px},${py} 陆地省`);
+        }
+        if (bad.length > 5) break;
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(sea).toBeGreaterThan(water * 0.5);
+    // 原来的规则（扭曲后的格按切线换过）在海岸边有不少水面像素取到陆地格；找不到水面格的很少（破碎度 2.5 时约 1%，默认的海岸约万分之三）
+    expect(before).toBeGreaterThan(200);
+    expect(none).toBeLessThan(water * 0.02);
+  });
+
+  it('导出（provinces.bmp 取的格）：每个海上的像素都取海格，切线换过以后也是', () => {
+    const eng = rugged();
+    cutBig(eng);
+    const w = eng.world;
+    const { causes } = w;
+    for (const [W, H] of [
+      [300, 150],
+      [700, 437],
+    ]) {
+      const raster = rasterizeWorld(w, W, H);
+      const byProvince = applySeams(w, seamLayers(w, causes.province, w.small.provinceSeams), raster.cell, W, H);
+      let seaPx = 0;
+      const bad: number[] = [];
+      for (let p = 0; p < W * H; p++) {
+        if (raster.land[p]) continue;
+        seaPx++;
+        if (causes.land[raster.cell[p]] === 1 || causes.land[byProvince[p]] === 1) bad.push(p);
+      }
+      expect(seaPx).toBeGreaterThan(W * H * 0.2);
+      expect(bad.slice(0, 5)).toEqual([]);
+    }
+  });
+
+  it('河口：河线最后一点落在画出来的水面上（河画到岸线以外一点，不留缝），合成时按每像素的陆海遮掉（与地形层的海岸场同一个判定）', () => {
+    const w = rugged().world;
+    const f = displayCoast(w);
+    let mouths = 0;
+    for (const l of traceRivers(w)) {
+      const [x, y] = l.points[l.points.length - 1];
+      const d = displayCellAt(w, x, y);
+      if (!d.water) continue;
+      mouths++;
+      // 遮罩：画成水面（湖面也算）的像素不画河；与地形层、着色器的 land（海岸场 > 0）同一个正负
+      expect(displayCoastAt(w, f, x, y).v).toBeLessThanOrEqual(0);
+      // 沿河往回走，水面上的那一小段不长（河口那一点刚过岸线）
+      let s = 0;
+      for (let k = l.points.length - 1; k > 0; k--) {
+        const [ax, ay] = l.points[k - 1];
+        s += Math.hypot(ax - l.points[k][0], ay - l.points[k][1]);
+        if (!displayCellAt(w, ax, ay).water) break;
+      }
+      expect(s).toBeLessThan(2 * w.mesh.spacing);
+    }
+    expect(mouths).toBeGreaterThan(5);
   });
 });

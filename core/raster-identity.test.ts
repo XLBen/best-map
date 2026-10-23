@@ -28,7 +28,9 @@ import { renderThumbnail } from './thumbnail';
 // world.json 的四个值更新过一次：命令里记下了新起的省名（provinceNames），图片与表格不变。
 // features.csv 的四个值在第八轮更新过一次：质心落在地物外面的标注改放到地物自己的格上（只有标注的坐标列变了，名字不变）。
 // 第九轮去掉旧存档兼容时重录一次：山挡风默认打开，气候往后（生态、省份、河、地形类别、地名、world.json 的版本）都变了；
-// 陆地、高程、格号、高度图、公开函数的摘要一个没变
+// 陆地、高程、格号、高度图、公开函数的摘要一个没变。
+// 第十三轮重录格号（cell）与 provinces.bmp 各四个：海上的像素永远不取陆地格，窄海湾里邻格都是陆地时沿网格往外找最近的海格
+// （原来保持扭曲后的陆地格、涂成陆上省的颜色）；其余文件不变
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -112,7 +114,7 @@ function digests(): Record<string, string> {
 const RECORDED: Record<string, string> = {
   'planet 256x128 README.txt': 'b7a646e76c32e29d',
   'planet 256x128 biomes.bmp': '59d8e121b6809c3f',
-  'planet 256x128 cell': '23e701544692ac1a',
+  'planet 256x128 cell': 'f74050f0bcca1e32',
   'planet 256x128 definition.csv': '508bd74be7dce0d7',
   'planet 256x128 elevation': '918a5d510a5e6d39',
   'planet 256x128 features.csv': '5e0f807481d35d28',
@@ -120,14 +122,14 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 heightmap.bmp': 'f5932d045240b862',
   'planet 256x128 heightmap16.png': 'ba806beac5b29c20',
   'planet 256x128 land': 'b85808d36c33a47f',
-  'planet 256x128 provinces.bmp': '77ab30b4fb19ec2c',
+  'planet 256x128 provinces.bmp': '9e253ebec4c8f0d0',
   'planet 256x128 provinces_summary.csv': 'c5cee2757def7c69',
   'planet 256x128 rivers.bmp': 'e553a2cee2534212',
   'planet 256x128 terrain.bmp': '9fdafe6b9fbc738d',
   'planet 256x128 world.json': 'b14bcf5ed922a8a4',
   'planet 300x150 README.txt': 'e7359468a5732b0c',
   'planet 300x150 biomes.bmp': '939fa2890bf5adb7',
-  'planet 300x150 cell': 'f89d13db475bcf1b',
+  'planet 300x150 cell': 'e165a362f722d0a0',
   'planet 300x150 definition.csv': '508bd74be7dce0d7',
   'planet 300x150 elevation': '382f7ac1673cd381',
   'planet 300x150 features.csv': 'b63107cddbad7461',
@@ -135,7 +137,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 heightmap.bmp': '34667f07eb872903',
   'planet 300x150 heightmap16.png': 'e021f3e569e20d21',
   'planet 300x150 land': '48937e82e23fbbee',
-  'planet 300x150 provinces.bmp': '5df928872caacfe1',
+  'planet 300x150 provinces.bmp': '2951b132a665b99e',
   'planet 300x150 provinces_summary.csv': 'c5cee2757def7c69',
   'planet 300x150 rivers.bmp': '3454113fbfd99b41',
   'planet 300x150 terrain.bmp': '8105c547a5341a41',
@@ -144,7 +146,7 @@ const RECORDED: Record<string, string> = {
   'planet thumbnail': 'c0217c4ba684fcbd',
   'region 256x128 README.txt': 'b10d9ed431cf0ba8',
   'region 256x128 biomes.bmp': '471ded2a992f1b84',
-  'region 256x128 cell': '4d373da43c419ed2',
+  'region 256x128 cell': '942d20834cea5d15',
   'region 256x128 definition.csv': '8e3722e0bb046a94',
   'region 256x128 elevation': '06109f3dbe21f84d',
   'region 256x128 features.csv': '359fb2ab06831e09',
@@ -152,14 +154,14 @@ const RECORDED: Record<string, string> = {
   'region 256x128 heightmap.bmp': '805cd785187f601d',
   'region 256x128 heightmap16.png': '7a3989d121875811',
   'region 256x128 land': '43e81fd39da93b8f',
-  'region 256x128 provinces.bmp': '85fe48960fd210de',
+  'region 256x128 provinces.bmp': 'd22019b3ccc16311',
   'region 256x128 provinces_summary.csv': 'ad9e38d0a0ac3e08',
   'region 256x128 rivers.bmp': 'dab532c372e7fe83',
   'region 256x128 terrain.bmp': 'c5b0bda858aed9cc',
   'region 256x128 world.json': '3e04512e12984af0',
   'region 300x150 README.txt': '01463f1b85660501',
   'region 300x150 biomes.bmp': '3fbe46d72a7887bd',
-  'region 300x150 cell': 'eb8b16d095052842',
+  'region 300x150 cell': '306ed850739324f2',
   'region 300x150 definition.csv': '8e3722e0bb046a94',
   'region 300x150 elevation': 'bc4c47dead4d2710',
   'region 300x150 features.csv': '7ef0439e65109dac',
@@ -167,7 +169,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 heightmap.bmp': 'c386f8dd22973995',
   'region 300x150 heightmap16.png': '8cdd7297e158a527',
   'region 300x150 land': '91e58b02df0dee26',
-  'region 300x150 provinces.bmp': '9e9f92812216136b',
+  'region 300x150 provinces.bmp': 'a0b2b00ede2c734a',
   'region 300x150 provinces_summary.csv': 'ad9e38d0a0ac3e08',
   'region 300x150 rivers.bmp': '2f1096793517af69',
   'region 300x150 terrain.bmp': 'e71bafa3cbdba515',

@@ -392,5 +392,32 @@ describe('生态的颜色脚本、花纹与发光', () => {
       expect(atlasSea.indexOf('col = mix(col, fc.rgb, fc.a);'), name).toBeGreaterThan(atlasSea.indexOf('col = vec3(0.80, 0.88, 0.89);'));
     }
   });
+
+  it('第十三轮：河只合在画成陆地的像素上，排在平涂、湖面之后，海岸线、省界、高亮之前；省份的平涂、省界、高亮都按 provCell 取格', async () => {
+    const { COMPOSE_SOURCES } = await import('./renderer');
+    for (const [name, src] of Object.entries(COMPOSE_SOURCES)) {
+      const main = src.slice(src.indexOf('void main() {'));
+      const river = main.indexOf('if (uHasRiver == 1 && land) {');
+      expect(river, name).toBeGreaterThan(0);
+      expect(river, name).toBeGreaterThan(main.indexOf('if (uHasTint == 1 && id >= 0) {'));
+      expect(river, name).toBeGreaterThan(main.indexOf('col = mix(col, fc.rgb, fc.a);'));
+      expect(river, name).toBeLessThan(main.indexOf('// 海岸线：'));
+      expect(river, name).toBeLessThan(main.indexOf('if (uHasGroup == 1 && pc >= 0) {'));
+      expect(river, name).toBeLessThan(main.indexOf('if (uHasHighlight == 1 && id >= 0) {'));
+      // 省份：像素自己的格、省界与轮廓的相邻像素都过 provCell（水面的像素不取陆地格）
+      expect(main, name).toContain('int pc = provCell(seamCell(id, vUv), vUv, land);');
+      expect(main, name).toContain('float gx = groupOf(provAt(vUv + dx, uvW + dx));');
+      expect(main, name).toContain('int idH = byGroup ? pc : id;');
+      expect(main, name).toContain('hlByte(byGroup ? provAt(vUv + hx, uvW + hx)');
+      // 地图册的海不再另判海省（provCell 已保证水面只取水面格）
+      expect(main, name).not.toContain('gS < -0.5');
+      // 环上取样的个数、半径与 CPU 的 provinceCell 相同
+      expect(src, name).toContain('for (int ring = 1; ring <= 2; ring++) {');
+      expect(src, name).toContain('vec2 r = (0.6 * float(ring) * uCellPx) * uTexel;');
+      expect(src, name).toContain('for (int k = 0; k < 8; k++) {');
+    }
+    const { PROVINCE_RING } = await import('../../core/display');
+    expect(PROVINCE_RING).toEqual({ n: 8, radii: [0.6, 1.2] });
+  });
 });
 
