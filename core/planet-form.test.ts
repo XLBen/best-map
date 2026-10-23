@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { coastalStroke, digest, digestWorld } from '../tools/hash';
-import { Engine, docVersion } from './engine';
+import { Engine } from './engine';
 import { type Reroll, type WorldType, rerollSchema, worldgenSchema } from './generate';
 import type { SphereMesh } from './mesh';
 import { POLAR_CONTINENTS, RING_SEA, FANTASY_FORMS, TWIN_CONTINENTS } from './packs/fantasy-forms';
@@ -461,8 +461,6 @@ describe('命令', () => {
     expect(eng.exec({ op: 'set_worldgen', params: { ...eng.world.small.terrain.gen!, landFraction: 0.2 } })).toBe('调整了陆地多少');
     expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25, form: RING_SEA } })).toBe('换了星球形态：环形内海；调整了陆地多少');
     expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25 } })).toBe('去掉了星球形态「环形内海」');
-    expect(eng.toDoc().version).toBe(4);
-    expect(docVersion({ globe: true }, [{ op: 'batch', commands: [{ op: 'set_worldgen', params: { seed: 1, type: 'continents', form: TWIN_CONTINENTS }, reset: true }] }])).toBe(4);
     expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean', islands: 0.7 }, reset: true })).toBe('新世界：海洋星球');
     expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true })).toBe('新世界：空白星球');
     expect(engineFor({ cells: 3000, seed: 1 }).exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true })).toBe('新世界：几块大陆');

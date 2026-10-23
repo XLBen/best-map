@@ -3,7 +3,7 @@ import { digestWorld } from '../tools/hash';
 import { blendRgb } from './biome-look';
 import { forgetScriptResults, placementSlots, scriptRunStats } from './biome-scripts';
 import { type Command, CommandError, Dirty } from './commands';
-import { Engine, docVersion } from './engine';
+import { Engine } from './engine';
 import { featureLabel } from './features';
 import { graphDistance } from './mesh';
 import { FANTASY_BIOMES, fantasyBiomeCommands } from './packs/fantasy-biomes';
@@ -244,17 +244,6 @@ describe('没有用到时', () => {
     b.exec({ op: 'update_species', id: 'glass', patch: { scripts: null } });
     expect(b.world.derived.placeF).toBeUndefined();
     expect(digestWorld(b.world)['derived.dominant']).toBe(da['derived.dominant']);
-  });
-
-  it('文档版本：用了生态的新项存成 4', () => {
-    const plain = wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 2 });
-    const v = (cmds: Command[]) => docVersion({ globe: false }, cmds);
-    expect(v([{ op: 'add_species', species: plain }, { op: 'update_species', id: 'glass', patch: { competition: 3 } }])).toBe(2);
-    expect(v([{ op: 'add_species', species: { ...plain, visual: { pattern: 'spots' } } }])).toBe(4);
-    expect(v([{ op: 'add_species', species: { ...plain, seedKey: 'k' } }])).toBe(4);
-    expect(v([{ op: 'batch', commands: [{ op: 'update_species', id: 'glass', patch: { feature: null } }] }])).toBe(4);
-    expect(v([{ op: 'update_species', id: 'glass', patch: { scripts: { placement: script('return 1;') } } }])).toBe(4);
-    expect(v([{ op: 'update_species', id: 'glass', patch: { effects: { invade: { targets: ['taiga'], strength: 1 } } } }])).toBe(4);
   });
 });
 

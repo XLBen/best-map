@@ -11,7 +11,7 @@ import { continents, engineFor } from './testing/fixtures';
 import { type Guide, guideSchema, type World } from './world';
 
 // 第八轮第二批：自定义走向的河。河完全照着画的线走，只挖河床（周围的地形、气候、山名都不变），
-// 可以在终点消失、截走别的河、改一段、固定自然的河；旧存档里画的河照旧逐值重放（见 rivers.test 旧存档）
+// 可以在终点消失、截走别的河、改一段、固定自然的河
 
 type Pt = [number, number];
 
@@ -27,7 +27,7 @@ const at = (w: World, c: number): Pt => [w.mesh.x[c], w.mesh.y[c]];
 function courseCmd(plan: CoursePlan, extra: Partial<Guide> = {}): Command {
   return {
     op: 'add_guide',
-    guide: { cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 2, carve: 'bed', name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}), ...extra },
+    guide: { cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 2, name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}), ...extra },
   };
 }
 
@@ -78,25 +78,20 @@ function uphillStroke(w: World, end: 'sink' | 'river', minUp: number): { plan: C
 }
 
 describe('画的河的数据', () => {
-  it('旧文档解析不变：旧式的河道、命令逐字照旧，截断的写法与原来相同，文档版本照旧', () => {
-    const old = { id: 'river-3', cells: [5, 6, 7], locked: true, spring: true, flow: 4 };
-    expect(JSON.stringify(guideSchema.parse(old))).toBe(JSON.stringify(old));
+  it('河道、命令逐字照存，截断时只动有的项；写错的项名直接报错；同一格两次、id 重复都拒绝', () => {
+    const g0 = { id: 'river-3', cells: [5, 6, 7], locked: true, spring: true, flow: 4 };
+    expect(JSON.stringify(guideSchema.parse(g0))).toBe(JSON.stringify(g0));
     const cmd = { op: 'add_guide', guide: { cells: [5, 6, 7], locked: false, spring: false }, reroute: true, label: '让河改道' };
     expect(JSON.stringify(commandSchema.parse(cmd))).toBe(JSON.stringify(cmd));
     const w = continents().world;
-    expect(JSON.stringify(truncateGuide(w, guideSchema.parse(old), 1))).toBe(JSON.stringify({ ...old, cells: [5, 6] }));
-    // 新的几项：存成第 4 版
+    expect(JSON.stringify(truncateGuide(w, guideSchema.parse(g0), 1))).toBe(JSON.stringify({ ...g0, cells: [5, 6] }));
     const eng = continents();
-    eng.exec({ op: 'set_planet', patch: { riverThreshold: 140 } });
-    expect(eng.toDoc().version).toBe(2);
     const plan = planCourse(eng.world, eng.world.derived, acrossRange(eng.world).stroke, { endOnLand: 'flow' });
     eng.exec(courseCmd(plan, { id: 'river-x' }));
-    expect(eng.toDoc().version).toBe(4);
-    eng.undo();
-    eng.exec({ op: 'add_guide', guide: { cells: plan.cells, locked: true, spring: true } });
-    expect(eng.toDoc().version).toBe(2);
-    eng.exec({ op: 'update_guide', id: eng.world.small.guides[0].id, patch: { width: 2 } });
-    expect(eng.toDoc().version).toBe(4);
+    expect(() => eng.exec(courseCmd(plan, { id: 'river-x' }))).toThrow('已存在');
+    const [a, b] = plan.cells;
+    expect(() => eng.exec({ op: 'add_guide', guide: { cells: [a, b, a], locked: true, spring: true } })).toThrow('同一格两次');
+    eng.exec({ op: 'update_guide', id: 'river-x', patch: { width: 2 } });
     // 写错的项名直接报错
     expect(() => eng.exec({ op: 'update_guide', id: eng.world.small.guides[0].id, patch: { widht: 2 } as never })).toThrow('参数无效');
   });
@@ -105,7 +100,7 @@ describe('画的河的数据', () => {
     const eng = continents();
     const w = eng.world;
     const plan = planCourse(w, w.derived, acrossRange(w).stroke, { endOnLand: 'flow' });
-    // 旧式的河道（下切山谷）：一条与画的河不相干的大河的主干
+    // 另一条画的河（没有折线，顺地势画的那种）：一条与画的河不相干的大河的主干
     const other = w.derived.features.find((f) => f.type === 'river' && !plan.cells.some((c) => f.cells.includes(c)))!;
     const valley = riverStem(w, w.derived, other.anchor).cells;
     expect(valley.length).toBeGreaterThan(4);
@@ -119,8 +114,8 @@ describe('画的河的数据', () => {
       [{ op: 'update_guide', id: 'river-a', patch: { cells: plan.cells.slice(0, -1), end: 'sink' } }, Dirty.Vegetation],
       [{ op: 'update_guide', id: 'river-a', patch: { type: 'blood' } }, Dirty.Vegetation],
       [{ op: 'update_guide', id: 'river-a', patch: { name: null } }, Dirty.Vegetation],
-      // 改了走向的旧式河道变成只挖河床：周围的地形要从高程重算
-      [{ op: 'update_guide', id: 'old-1', patch: { cells: valley.slice(0, -1) } }, Dirty.Elevation],
+      // 改了走向：只挖河床，不用重算高程与气候
+      [{ op: 'update_guide', id: 'old-1', patch: { cells: valley.slice(0, -1) } }, Dirty.Vegetation],
     ];
     const smalls: string[] = [JSON.stringify(w.small)];
     eng.takeRecomputed();
@@ -129,7 +124,6 @@ describe('画的河的数据', () => {
       expect(eng.takeRecomputed(), JSON.stringify(cmd)).toBe(dirty);
       smalls.push(JSON.stringify(eng.world.small));
     }
-    expect(eng.world.small.guides.find((g) => g.id === 'old-1')!.carve).toBe('bed');
     expect(eng.world.small.guides.find((g) => g.id === 'river-a')).not.toHaveProperty('name');
     expect(digestWorld(eng.world)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
     for (let k = steps.length; k > 0; k--) {
@@ -138,12 +132,11 @@ describe('画的河的数据', () => {
     }
     expect(digestWorld(eng.world)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
     // 规则本身：只看有关的几项
-    const g = guideSchema.parse({ id: 'r', cells: [1, 2], carve: 'bed' });
+    const g = guideSchema.parse({ id: 'r', cells: [1, 2] });
     expect(guideDirty([g], [{ ...g, width: 2 }])).toBe(Dirty.None);
     expect(guideDirty([g], [{ ...g, path: [0, 0, 1, 1] }])).toBe(Dirty.Names);
     expect(guideDirty([g], [{ ...g, nameKey: 'river:9' }])).toBe(Dirty.Vegetation);
     expect(guideDirty([g], [])).toBe(Dirty.Vegetation);
-    expect(guideDirty([{ ...g, carve: undefined }], [])).toBe(Dirty.Elevation);
   });
 
   it('截走画过的河：它从第一次碰到的地方截断，折线也截在那里；撤销还原', () => {
@@ -254,7 +247,7 @@ describe('只挖河床', () => {
     // 横穿山脉入海的那条河，在入海前两格消失（顺坡而下，终点在陆地上）
     const plan = planCourse(w, w.derived, acrossRange(w).stroke, { endOnLand: 'flow' });
     const cells = plan.cells.slice(0, -2);
-    eng.exec({ op: 'add_guide', guide: { id: 'river-s', cells, locked: true, spring: true, flow: 2, carve: 'bed', name: '', end: 'sink' } });
+    eng.exec({ op: 'add_guide', guide: { id: 'river-s', cells, locked: true, spring: true, flow: 2, name: '', end: 'sink' } });
     expect(followed(w, cells)).toBe(true);
     const sink = cells[cells.length - 1];
     expect(w.derived.receiver[sink]).toBe(-1);
@@ -328,8 +321,8 @@ describe('只挖河床', () => {
     eng.exec(courseCmd(plan));
     const body = plan.cells.filter((c) => w.causes.land[c]);
     const c = body[Math.floor(body.length / 2)];
-    eng.exec({ op: 'add_lake', lake: { cell: c, radius: 1, depth: 300, perennial: true, exact: true } });
-    const bowl = new Set(lakeArea(w, c, 1, true));
+    eng.exec({ op: 'add_lake', lake: { cell: c, radius: 1, depth: 300, perennial: true } });
+    const bowl = new Set(lakeArea(w, c, 1));
     const k = body.findIndex((x) => bowl.has(x));
     let last = k;
     while (last + 1 < body.length && bowl.has(body[last + 1])) last++;
@@ -573,7 +566,7 @@ describe('画的线就是河道', () => {
     }
   });
 
-  it('顺地势流下去的那段、旧式的河道也能改一段：没改的地方格不变，画出来也不动', () => {
+  it('顺地势流下去的那段、没有折线的河道也能改一段：没改的地方格不变，画出来也不动', () => {
     const eng = continents();
     const w = eng.world;
     const { mesh } = w;
@@ -585,7 +578,7 @@ describe('画的线就是河道', () => {
       if (!p.blocked && !p.reroute && !p.crossings.length && p.cells.length - p.drawn >= 12 && p.end === 'sea') plan = p;
     }
     expect(plan).not.toBeNull();
-    // 一条新画的（只有一小段折线），一条旧式的（没有折线、下切山谷）
+    // 一条新画的（只有一小段折线），一条没有折线的
     for (const g of [
       guideSchema.parse({ ...(courseCmd(plan!) as { guide: object }).guide, id: 'river-n' }),
       guideSchema.parse({ id: 'river-o', cells: plan!.cells, locked: true, spring: true }),
@@ -619,7 +612,6 @@ describe('画的线就是河道', () => {
       expect(path.slice(path.length - 3)).toEqual(P0.slice(P0.length - 3));
       e.exec({ op: 'update_guide', id: g.id, patch: r.patch });
       const after = ew.small.guides[0];
-      expect(after.carve).toBe('bed');
       expect(followed(ew, after.cells)).toBe(true);
     }
   });
@@ -664,7 +656,7 @@ describe('固定自然的河', () => {
       expect(stem.end).not.toBeNull();
       const set = riverSet(w);
       const elevation = w.derived.elevation.slice();
-      eng.exec({ op: 'add_guide', guide: { cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, carve: 'bed', nameKey: f.key } });
+      eng.exec({ op: 'add_guide', guide: { cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, nameKey: f.key } });
       expect(riverSet(w)).toBe(set);
       let changed = 0;
       for (let i = 0; i < w.mesh.n; i++) if (w.derived.elevation[i] !== elevation[i]) changed++;

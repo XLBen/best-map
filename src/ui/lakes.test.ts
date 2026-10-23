@@ -21,7 +21,7 @@ function setup() {
     if (cells.some((c) => Math.hypot(w.mesh.x[c] - w.mesh.x[i], w.mesh.y[c] - w.mesh.y[i]) < 0.15)) continue;
     cells.push(i);
   }
-  cells.forEach((cell, k) => eng.exec({ op: 'add_lake', lake: { id: `L${k}`, cell, radius: 120, depth: 150, perennial: true, exact: true } }));
+  cells.forEach((cell, k) => eng.exec({ op: 'add_lake', lake: { id: `L${k}`, cell, radius: 120, depth: 150, perennial: true } }));
   return { eng, w, cells };
 }
 
@@ -81,7 +81,7 @@ describe('一片湖里放了两个湖：与引擎同一个规则', () => {
     eng.exec({ op: 'update_lake', id: 'L0', patch: { type: blood.id } });
     // 在 L0 的湖里再放一个小湖（后放的，没带类型）
     const inner = lakeInfo(w, { kind: 'placed', id: 'L0' })!.cells.find((c) => c !== cells[0] && w.derived.lake[c] === 1)!;
-    eng.exec({ op: 'add_lake', lake: { id: 'L9', cell: inner, radius: 20, depth: 150, perennial: true, exact: true } });
+    eng.exec({ op: 'add_lake', lake: { id: 'L9', cell: inner, radius: 20, depth: 150, perennial: true } });
     const ref = lakeRefAt(w, cells[0])!;
     expect(ref).toEqual({ kind: 'placed', id: 'L9' });
     expect(w.derived.lakeType![cells[0]]).toBe(1);

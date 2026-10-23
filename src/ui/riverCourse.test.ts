@@ -115,7 +115,7 @@ describe('自定义走向：画的线就是河', () => {
     expect(exec).toHaveBeenCalledTimes(1);
     const cmd = lastExec();
     expect(cmd).toEqual(newCourse(w, plan, stroke).cmd);
-    expect(cmd).toMatchObject({ op: 'add_guide', guide: { cells: plan.cells, locked: true, spring: true, flow: 4, carve: 'bed', name: '', end: 'sink' } });
+    expect(cmd).toMatchObject({ op: 'add_guide', guide: { cells: plan.cells, locked: true, spring: true, flow: 4, name: '', end: 'sink' } });
     if (cmd.op !== 'add_guide') throw new Error();
     // 折线按整数存
     expect(cmd.guide.path!.every((v) => Number.isInteger(v))).toBe(true);
@@ -180,7 +180,7 @@ describe('自定义走向：画的线就是河', () => {
     const cmd = lastExec();
     if (cmd.op !== 'add_guide') throw new Error();
     expect(cmd.guide.path).toBeUndefined();
-    expect(cmd.guide).toMatchObject({ spring: true, flow: 4, carve: 'bed', name: '' });
+    expect(cmd.guide).toMatchObject({ spring: true, flow: 4, name: '' });
   });
 });
 
@@ -442,7 +442,7 @@ describe('固定自然的河', () => {
     const f = w.derived.features.find((x) => x.type === 'river' && x.name && x.cells.length > 6)!;
     const cell = Array.from(f.cells).find((c) => isRiverCell(w, w.derived, c))!;
     const pin = pinCommand(w, cell)!;
-    expect(pin.cmd).toMatchObject({ op: 'add_guide', guide: { locked: true, spring: false, carve: 'bed', nameKey: f.key } });
+    expect(pin.cmd).toMatchObject({ op: 'add_guide', guide: { locked: true, spring: false, nameKey: f.key } });
     eng.exec(pin.cmd);
     const g = eng.world.small.guides[eng.world.small.guides.length - 1];
     const gf = eng.world.derived.features.find((x) => x.guide === g.id)!;

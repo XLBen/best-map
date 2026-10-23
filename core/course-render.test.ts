@@ -28,7 +28,7 @@ const at = (w: World, c: number): Pt => [w.mesh.x[c], w.mesh.y[c]];
 function courseCmd(plan: CoursePlan, extra: Partial<Guide> = {}): Command {
   return {
     op: 'add_guide',
-    guide: { cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 2, carve: 'bed', name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}), ...extra },
+    guide: { cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 2, name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}), ...extra },
   };
 }
 
@@ -246,18 +246,18 @@ describe('画的线就是河', () => {
 });
 
 describe('画的河的名字', () => {
-  it('旧存档地名不变：没有名字的河道（旧式的、画的）不成为地物，自然的大河照旧标', () => {
+  it('没有名字的河道不成为地物，自然的大河照旧标、地名一个不变', () => {
     const eng = continents();
     const w = eng.world;
     const f = w.derived.features.find((x) => x.type === 'river')!;
     const stem = riverStem(w, w.derived, f.anchor);
-    // 旧式的河道（旧存档里画的河都是这样）：不成为地物，地名照旧由自然的河识别（逐值不变见 rivers.test 旧存档）
+    // 没有折线、没有名字的河道：不成为地物，地名照旧由自然的河识别
     eng.exec({ op: 'add_guide', guide: { cells: stem.cells, locked: true, spring: false } });
     expect(w.derived.features.some((x) => x.guide)).toBe(false);
-    // 只挖河床、存了折线但没有名字：也不成为地物，地名一个不变
+    // 存了折线但没有名字：也不成为地物，地名一个不变
     eng.undo();
     const before = w.derived.features.map((x) => `${x.key}=${x.name}`);
-    eng.exec({ op: 'add_guide', guide: { cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, carve: 'bed' } });
+    eng.exec({ op: 'add_guide', guide: { cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false } });
     expect(w.derived.features.some((x) => x.guide)).toBe(false);
     expect(w.derived.features.map((x) => `${x.key}=${x.name}`)).toEqual(before);
   });
@@ -352,7 +352,7 @@ describe('画的河的名字', () => {
       const old = w.derived.features.find((x) => x.key === f.key)!;
       const before = new Map(w.derived.features.map((x) => [x.key, `${x.name}|${x.custom}`]));
       const stem = riverStem(w, w.derived, f.anchor);
-      eng.exec({ op: 'add_guide', guide: { cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, carve: 'bed', nameKey: f.key } });
+      eng.exec({ op: 'add_guide', guide: { cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, nameKey: f.key } });
       const withMouth = w.derived.features.filter((x) => x.type === 'river' && x.cells.includes(f.anchor));
       expect(withMouth.length).toBe(1);
       const g = withMouth[0];

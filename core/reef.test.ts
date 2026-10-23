@@ -97,9 +97,9 @@ function withReefs(name: keyof typeof WORLDS): Placed {
     const { mesh } = eng.world;
     const at = spots(eng, 8);
     const before = eng.world.causes.land.slice();
-    eng.exec({ op: 'add_island', island: { x: mesh.x[at[0]], y: mesh.y[at[0]], kind: 'reef' } });
+    eng.exec({ op: 'add_island', island: { x: mesh.x[at[0]], y: mesh.y[at[0]], kind: 'reef', size: 1 } });
     const summary = eng.history.at(-1)!.summary;
-    eng.exec({ op: 'batch', label: '小礁', commands: at.slice(1).map((c) => ({ op: 'add_island' as const, island: { x: mesh.x[c], y: mesh.y[c], kind: 'reef' as const } })) });
+    eng.exec({ op: 'batch', label: '小礁', commands: at.slice(1).map((c) => ({ op: 'add_island' as const, island: { x: mesh.x[c], y: mesh.y[c], kind: 'reef' as const, size: 1 } })) });
     placed.set(name, (p = { eng, at, before, summary }));
   }
   return { ...p, eng: p.eng.clone() };
@@ -151,7 +151,7 @@ describe('小礁', () => {
     const eng = base('地区');
     const w = eng.world;
     const land = [...w.causes.land.keys()].find((i) => w.causes.land[i])!;
-    expect(() => eng.exec({ op: 'add_island', island: { x: w.mesh.x[land], y: w.mesh.y[land], kind: 'reef' } })).toThrow('放不下');
-    expect(() => eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.3], [0.8, 0.4]], kind: 'reef' as 'volcanic' } })).toThrow();
+    expect(() => eng.exec({ op: 'add_island', island: { x: w.mesh.x[land], y: w.mesh.y[land], kind: 'reef', size: 1 } })).toThrow('放不下');
+    expect(() => eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.3], [0.8, 0.4]], kind: 'reef' as 'volcanic', size: 100 } })).toThrow();
   });
 });

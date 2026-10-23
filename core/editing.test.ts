@@ -142,13 +142,16 @@ describe('省份：自动划分也稳定', () => {
     expect(farKept).toBeGreaterThan(50);
   });
 
-  it('改省份类型：陆地省份可以改成无人区，不能改成海域', () => {
+  it('改省份类型：陆地省份可以改成无人区，不能改成海域、湖省；海域省份不能改', () => {
     const eng = continents();
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
     const id = Number(Object.entries(eng.world.small.provinces).find(([, p]) => p.kind === 'land')![0]);
     eng.exec({ op: 'set_province', id, kind: 'wasteland' });
     expect(eng.world.small.provinces[id].kind).toBe('wasteland');
-    expect(() => eng.exec({ op: 'set_province', id, kind: 'sea' })).toThrow();
+    expect(() => eng.exec({ op: 'set_province', id, kind: 'sea' as never })).toThrow();
+    expect(() => eng.exec({ op: 'set_province', id, kind: 'lake' as never })).toThrow();
+    const sea = Number(Object.entries(eng.world.small.provinces).find(([, p]) => p.kind === 'sea')![0]);
+    expect(() => eng.exec({ op: 'set_province', id: sea, kind: 'land' })).toThrow('海上的省份只能是海域');
   });
 });
 
@@ -170,7 +173,7 @@ describe('地名不乱跳', () => {
       });
       if (spot === undefined) continue;
       const name = sea.name;
-      eng.exec({ op: 'add_island', island: { x: w.mesh.x[spot], y: w.mesh.y[spot], kind: 'volcanic', size: 'small', variant: 0 } });
+      eng.exec({ op: 'add_island', island: { x: w.mesh.x[spot], y: w.mesh.y[spot], kind: 'volcanic', size: 370, variant: 0 } });
       if (w.causes.land[anchor]) continue;
       const again = w.derived.features.find((f) => f.type === sea.type && f.cells.includes(anchor));
       expect(again?.name).toBe(name);

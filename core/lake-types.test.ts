@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
-import { Engine, docVersion, passStats } from './engine';
+import { Engine, passStats } from './engine';
 import { FANTASY_PACK } from './packs/fantasy';
 import { type LakeType, PLAIN_LAKE, lakeBank, lakeParts, matchRunStats } from './lake-types';
 import { graphDistance } from './mesh';
@@ -31,7 +31,7 @@ function inland(w: World, count: number): number[] {
 function withLakes(): { eng: Engine; cells: number[] } {
   const eng = continents();
   const cells = inland(eng.world, 4);
-  cells.forEach((cell, k) => eng.exec({ op: 'add_lake', lake: { id: `L${k}`, cell, radius: 60 + 60 * k, depth: 150, perennial: true, exact: true } }));
+  cells.forEach((cell, k) => eng.exec({ op: 'add_lake', lake: { id: `L${k}`, cell, radius: 60 + 60 * k, depth: 150, perennial: true } }));
   return { eng, cells };
 }
 
@@ -45,7 +45,6 @@ describe('湖泊类型：每个湖是哪一种', () => {
     expect(eng.world.derived.lakeType!.every((v) => v === 0)).toBe(true);
     eng.exec({ op: 'remove_lake_type', id: blood.id });
     expect(eng.world.derived.lakeType).toBeUndefined();
-    expect(docVersion({ globe: false }, eng.toDoc().commands)).toBe(4);
   });
 
   it('match 每个湖只算一次（变量是整个湖的汇总），一个湖整片是同一种', () => {

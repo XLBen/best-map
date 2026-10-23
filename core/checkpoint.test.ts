@@ -65,7 +65,7 @@ describe('检查点', () => {
     });
   }
 
-  it('画的河（只挖河床）：恢复与重放一致；旧版的检查点里没有地形，之后的编辑也一致', () => {
+  it('画的河（只挖河床）：恢复与重放一致，之后的编辑也一致', () => {
     const eng = build('region');
     const w = eng.world;
     const { mesh } = w;
@@ -73,16 +73,13 @@ describe('检查点', () => {
     const start = [...Array(mesh.n).keys()].find((i) => w.causes.land[i] && w.derived.continentality[i] > 0.6 && !isRiverCell(w, w.derived, i))!;
     const plan = planCourse(w, w.derived, [[mesh.x[start], mesh.y[start]], [mesh.x[start] + 12 * mesh.spacing, mesh.y[start]]], { endOnLand: 'sink' });
     expect(plan.blocked).toBeNull();
-    eng.exec({ op: 'add_guide', guide: { id: 'river-c', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, carve: 'bed', name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}) } });
+    eng.exec({ op: 'add_guide', guide: { id: 'river-c', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, name: '', ...(plan.end === 'sink' ? { end: 'sink' } : {}) } });
     eng.exec({ op: 'update_guide', id: 'river-c', patch: { flow: 4 } });
     const cp = structuredClone(eng.toCheckpoint());
     expect(cp.base?.terrain).toBeDefined();
     const doc = eng.toDoc();
     same(Engine.fromCheckpoint(structuredClone(cp), doc, mesh)!, Engine.fromDoc(doc, mesh));
-    // 旧版的检查点：base 里没有 terrain。下次重算时从高程算起
-    const old = structuredClone(cp);
-    delete old.base!.terrain;
-    const a = Engine.fromCheckpoint(old, doc, mesh)!;
+    const a = Engine.fromCheckpoint(structuredClone(cp), doc, mesh)!;
     const b = Engine.fromDoc(doc, mesh);
     for (const e of [a, b]) e.exec({ op: 'update_guide', id: 'river-c', patch: { flow: 7 } });
     same(a, b);

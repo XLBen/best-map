@@ -5,7 +5,7 @@ import { type Mesh, buildMesh } from './mesh';
 import { mulberry32 } from './rng';
 import { buildSphereMesh } from './sphere';
 
-// 输运图的拓扑序：按入度分桶的写法必须与原来的最小堆写法给出完全相同的顺序（旧存档逐值重放靠它）
+// 输运图的拓扑序：按入度分桶的写法必须与原来的最小堆写法给出完全相同的顺序（结果逐值不变靠它）
 
 // 原来的写法：浮点优先级的最小堆，同优先级先进先出，弹出时跳过过期项
 function heapOrder(mesh: Mesh, em: Uint8Array): Int32Array {

@@ -8,7 +8,7 @@ import { isRiverCell, lassoBandKm, lassoStroke, planRiver, traceRiver } from './
 import { landStroke, previewLand } from './terrain';
 import type { World } from './world';
 
-// 第四轮：画河能汇入别的河、能改道、能选大小；旧存档里画的河照旧逐值重放
+// 第四轮：画河能汇入别的河、能改道、能选大小；画的河逐值不变（固定的哈希）
 
 // 两格之间贪心地走相邻格：只用来造固定的路线，与界面上画河的规则无关
 function walk(w: World, from: number, to: number): number[] {
@@ -33,9 +33,9 @@ function walk(w: World, from: number, to: number): number[] {
   return path;
 }
 
-describe('旧存档', () => {
-  it('旧式的画河（有泉水、不带大小）照旧逐值重放', () => {
-    // 哈希来自改动前的代码：点源头画的河、横穿一片的河（会截走别的河）、不带泉水的河道
+describe('画的河逐值不变', () => {
+  it('有泉水、不带大小的画河，横穿一片的河，不带泉水的河道', () => {
+    // 第九轮去掉旧存档兼容时重录（画的河都只挖河床，不再下切山谷）；之后的优化必须逐值不变
     const eng = new Engine({ seed: 6, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
     const w = eng.world;
@@ -65,7 +65,6 @@ describe('旧存档', () => {
       lake: hashArray(d.lake),
       features: hashString(d.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16),
     };
-    // 第五轮起不足 3 格的自然洼地不算湖：流量、湖、地名变了，高程与河道走向不变
     expect(got).toEqual({ guides: '4,10,3', elevation: '6959cdb4', discharge: 'bccec68d', receiver: '57d14845', lake: 'c5611545', features: '1a703c21' });
   });
 });

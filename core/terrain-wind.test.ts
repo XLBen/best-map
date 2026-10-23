@@ -2,28 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { digest, digestWorld, hashArray } from '../tools/hash';
 import { deflectWind, smoothPass, windDeflectPasses } from './climate';
 import type { Command } from './commands';
-import { Engine, docVersion } from './engine';
+import { Engine } from './engine';
 import { gradient } from './mesh';
 import { engineFor, meshFor } from './testing/fixtures';
 import { type World, worldLatitude } from './world';
 
-// 山挡风：高山让风拐弯。为 0（旧存档里没有这一项时也按 0）与原来的算法逐值相同；
+// 山挡风：高山让风拐弯。新世界默认是 1；为 0 时风直接翻过山（下面记着固定的哈希）；
 // 打开后迎风坡的风顺着山走、离山远的地方风逐位不变；星球上先偏转再乘极地衰减，洋流照旧用背景风。
 // 整个星球为 0 时的逐值对照（加长的操作，较慢）、打开后两极照样几乎无风（要 2 万格才有离极点 1° 以内的格）
 // 在 planet-climate.test.ts
 
 const windOff: Command = { op: 'set_planet', patch: { terrainWind: 0 } };
 
-describe('山挡风为 0 时与旧算法逐值相同', () => {
+describe('山挡风为 0 时逐值不变', () => {
   it('一块地区：与 golden-hashes 同一组参考操作', () => {
-    // 加山挡风之前记下的哈希（core/golden-hashes.json 里气候往后的几项），以后重录金标准时这里也不改
+    // 第九轮去掉旧存档兼容时重录（放岛只收 km 数，岛的形状变了）；之后的优化必须逐值不变
     const FROZEN = { tS: '57ec5622', pS: 'c9bbd67f', discharge: 'da8eb618', dominant: '418d8605', corrT: 'c928e485', province: '52404e05' };
     const eng = new Engine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
-    eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'volcanic', size: 'medium', variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'volcanic', size: 440, variant: 0 } });
     const d = w.derived;
     const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && d.lake[i] !== 1);
     eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(2000, 2300), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });
@@ -57,8 +57,8 @@ function ridge(strength: number | null): World {
 }
 
 describe('山挡风打开', () => {
-  const off = ridge(null);
-  const on = ridge(1);
+  const off = ridge(0);
+  const on = ridge(null);
   const { mesh } = off;
   const inBand = (x0: number, x1: number) => [...Array(mesh.n).keys()].filter((i) => mesh.x[i] > x0 && mesh.x[i] < x1 && mesh.y[i] > 0.3 && mesh.y[i] < 0.7);
   const mean = (cells: number[], f: (i: number) => number) => cells.reduce((s, i) => s + f(i), 0) / cells.length;
@@ -141,8 +141,8 @@ describe('整个星球打开山挡风', () => {
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
     return eng.world;
   };
-  const off = run(null);
-  const on = run(1);
+  const off = run(0);
+  const on = run(null);
 
   it('风确实拐了', () => {
     const { mesh } = on;
@@ -163,37 +163,21 @@ describe('整个星球打开山挡风', () => {
   });
 });
 
-describe('旧存档与文档版本', () => {
-  it('设了山挡风的文档存成版本 4（batch 里的也算）；没设过的照旧是 2、3', () => {
-    const on: Command = { op: 'set_planet', patch: { terrainWind: 1 } };
-    expect(docVersion({ globe: false }, [on])).toBe(4);
-    expect(docVersion({ globe: true }, [{ op: 'batch', label: '一组', commands: [{ op: 'set_planet', patch: { humidity: 1.2 } }, on] }])).toBe(4);
-    expect(docVersion({ globe: false }, [{ op: 'set_planet', patch: { currents: 1 } }])).toBe(2);
-    expect(docVersion({ globe: true }, [{ op: 'set_planet', patch: { currents: 1 } }])).toBe(3);
-  });
-
-  it('打开没设过的旧存档：照原样重放；末尾补一步“打开”，可撤销，存回去再打开就不再缺', () => {
+describe('新世界默认打开山挡风', () => {
+  it('没设过的世界是 1（与设成 1 逐值相同），存成文件再打开照旧是 1', () => {
     const settings = { cells: 3000, seed: 2 };
-    const old = engineFor(settings);
-    old.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
-    old.exec({ op: 'generate_provinces', rules: { seed: 2 } });
-    const doc = old.toDoc();
-    expect(doc.version).toBe(2);
-    const mesh = meshFor(settings);
-    const eng = Engine.fromDoc(doc, mesh);
-    const replayed = digestWorld(eng.world);
-    expect(replayed).toEqual(digestWorld(old.world));
-    // 界面据此判断要不要补（src/state.ts 的 loadDoc）：重放完没有这一项 = 没有哪条命令设过它
-    expect(eng.world.small.planet.terrainWind).toBeUndefined();
-    const summary = eng.exec({ op: 'batch', label: '山挡风：旧存档也打开', commands: [{ op: 'set_planet', patch: { terrainWind: 1 } }] });
-    expect(summary).toBe('山挡风：旧存档也打开');
-    expect(digest(eng.world.derived.windSX)).not.toBe(replayed['derived.windSX']);
-    const saved = eng.toDoc();
-    expect(saved.version).toBe(4);
-    const again = Engine.fromDoc(saved, mesh);
+    const a = engineFor(settings);
+    a.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
+    expect(a.world.small.planet.terrainWind).toBe(1);
+    const b = engineFor(settings);
+    b.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
+    b.exec({ op: 'set_planet', patch: { terrainWind: 1 } });
+    for (const k of ['windSX', 'windSY', 'precip', 'dominant'] as const) expect(digest(a.world.derived[k]), k).toBe(digest(b.world.derived[k]));
+    const again = Engine.fromDoc(a.toDoc(), meshFor(settings));
     expect(again.world.small.planet.terrainWind).toBe(1);
-    expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
-    eng.undo();
-    expect(digestWorld(eng.world)).toEqual(replayed);
+    expect(digestWorld(again.world)).toEqual(digestWorld(a.world));
+    // 设成 0：风直接翻过山
+    a.exec({ op: 'set_planet', patch: { terrainWind: 0 } });
+    expect(digest(a.world.derived.windSX)).not.toBe(digest(b.world.derived.windSX));
   });
 });

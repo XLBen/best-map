@@ -29,7 +29,7 @@ describe('重放后省名不变', () => {
       }
       const replay = Engine.fromDoc(eng.toDoc(), mesh);
       expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));
-      // 没有记名字的旧存档照旧能打开
+      // 命令里没有记名字（provinceNames 是可选的）也能打开
       const old = eng.toDoc();
       old.commands = old.commands.map(({ provinceNames: _, ...c }) => c as typeof c);
       expect(() => Engine.fromDoc(old, mesh)).not.toThrow();
@@ -49,7 +49,7 @@ describe('重放后画的河的名字不变', () => {
       const plan = planCourse(w, w.derived, [[mesh.x[i], mesh.y[i]], [mesh.x[i] + 12 * mesh.spacing, mesh.y[i] + 3 * mesh.spacing]], { endOnLand: 'flow' });
       if (plan.blocked || plan.crossings.length || plan.reroute) continue;
       const id = `river-${drawn.length}`;
-      eng.exec({ op: 'add_guide', guide: { id, cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 3, carve: 'bed', name: '' } });
+      eng.exec({ op: 'add_guide', guide: { id, cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 3, name: '' } });
       drawn.push(id);
     }
     expect(drawn.length).toBe(2);
@@ -57,7 +57,7 @@ describe('重放后画的河的名字不变', () => {
     eng.exec({ op: 'update_guide', id: drawn[1], patch: { name: '', salt: 4 } });
     const f = w.derived.features.find((x) => x.type === 'river' && !x.guide)!;
     const stem = riverStem(w, w.derived, f.anchor);
-    eng.exec({ op: 'add_guide', guide: { id: 'pin', cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, carve: 'bed', nameKey: f.key } });
+    eng.exec({ op: 'add_guide', guide: { id: 'pin', cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, nameKey: f.key } });
     const names = (ww: typeof w) => ww.derived.features.filter((x) => x.guide).map((x) => `${x.key}=${x.name}|${x.custom}`);
     expect(names(w)).toContain('guide:river-0=赤江|true');
     expect(names(w)).toContain(`guide:pin=${f.name}|false`);

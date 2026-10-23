@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { forgetScriptResults, placementSlots } from './biome-scripts';
 import { Dirty } from './commands';
-import { Engine, docVersion, passStats } from './engine';
+import { Engine, passStats } from './engine';
 import { graphDistance } from './mesh';
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
 import { type RiverType, PLAIN_RIVER, matchRunStats, riverBank, riverNet, riverTypeSchema } from './river-types';
@@ -41,7 +41,6 @@ describe('河流类型：每格是哪一种河', () => {
     expect(eng.world.derived.riverType!.every((v) => v === 0)).toBe(true);
     eng.exec({ op: 'remove_river_type', id: 'blood' });
     expect(eng.world.derived.riverType).toBeUndefined();
-    expect(docVersion({ globe: false }, eng.toDoc().commands)).toBe(4);
   });
 
   it('画的河带类型：这一段和下游的主干都是它，汇入更大的河就停了', () => {
@@ -50,7 +49,7 @@ describe('河流类型：每格是哪一种河', () => {
     const w = eng.world;
     const stem = tributary(w);
     const top = Array.from(stem.slice(0, Math.ceil(stem.length / 2)));
-    eng.exec({ op: 'add_guide', guide: { cells: top, path: stemPath(w, top), locked: true, spring: false, carve: 'bed', name: '', type: 'blood' } });
+    eng.exec({ op: 'add_guide', guide: { cells: top, path: stemPath(w, top), locked: true, spring: false, name: '', type: 'blood' } });
     const d = w.derived;
     for (const c of top) expect(typeOf(w, c)).toBe(1);
     // 执行后的这条河：从画的那段的源头往下
@@ -106,7 +105,7 @@ describe('河流类型：每格是哪一种河', () => {
     const stem = tributary(w);
     expect(Array.from(stem).every((c) => typeOf(w, c) === 1)).toBe(true);
     const cells = Array.from(stem);
-    eng.exec({ op: 'add_guide', guide: { cells, path: stemPath(w, cells), locked: true, spring: false, carve: 'bed', name: '', type: PLAIN_RIVER } });
+    eng.exec({ op: 'add_guide', guide: { cells, path: stemPath(w, cells), locked: true, spring: false, name: '', type: PLAIN_RIVER } });
     expect(cells.slice(0, -1).every((c) => typeOf(w, c) === 0)).toBe(true);
     eng.exec({ op: 'set_river_type', type: { ...blood, scripts: { match: { api: 1, src: 'const o = undefined;\nreturn o.x;' } } } });
     expect(w.derived.riverType!.every((v) => v === 0)).toBe(true);
@@ -118,7 +117,7 @@ describe('河流类型：每格是哪一种河', () => {
     const w = eng.world;
     eng.exec({ op: 'set_river_type', type: blood });
     const top = Array.from(tributary(w).slice(0, 4));
-    eng.exec({ op: 'add_guide', guide: { cells: top, path: stemPath(w, top), locked: true, spring: false, carve: 'bed', name: '', type: 'blood' } });
+    eng.exec({ op: 'add_guide', guide: { cells: top, path: stemPath(w, top), locked: true, spring: false, name: '', type: 'blood' } });
     eng.exec({ op: 'remove_river_type', id: 'blood' });
     expect(w.small.guides.at(-1)!.type).toBeUndefined();
     eng.undo();
@@ -261,7 +260,7 @@ describe('名字', () => {
     const mouth = f.cells[0];
     const stem = riverStem(w, w.derived, mouth);
     const cells = stem.cells;
-    eng.exec({ op: 'add_guide', guide: { cells, path: stemPath(w, cells), locked: true, spring: false, carve: 'bed', nameKey: f.key, type: 'blood' }, label: `${f.name}改成血河` });
+    eng.exec({ op: 'add_guide', guide: { cells, path: stemPath(w, cells), locked: true, spring: false, nameKey: f.key, type: 'blood' }, label: `${f.name}改成血河` });
     const g = w.small.guides.at(-1)!;
     const pinned = w.derived.features.find((x) => x.guide === g.id)!;
     expect(pinned.name).toBe(f.name);
@@ -315,7 +314,7 @@ describe('重放、撤销、检查点', () => {
     const start = digestWorld(w);
     for (const t of FANTASY_RIVER_TYPES) eng.exec({ op: 'set_river_type', type: t });
     const top = Array.from(tributary(w).slice(0, 5));
-    eng.exec({ op: 'add_guide', guide: { cells: top, path: stemPath(w, top), locked: true, spring: false, carve: 'bed', name: '', type: 'styx' } });
+    eng.exec({ op: 'add_guide', guide: { cells: top, path: stemPath(w, top), locked: true, spring: false, name: '', type: 'styx' } });
     eng.exec({ op: 'set_river_type', type: { ...FANTASY_RIVER_TYPES[0], color: '#222222' } });
     eng.exec({ op: 'remove_river_type', id: 'crystal_river' });
     expect(w.derived.effT).toBeInstanceOf(Float32Array);

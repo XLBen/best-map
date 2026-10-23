@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { checkSpeciesScripts } from './biome-scripts';
-import { docVersion } from './engine';
 import { FANTASY_BIOMES, FANTASY_FIELDS, fantasyBiomeCommands } from './packs/fantasy-biomes';
 import { speciesSchema } from './species';
 import { continents } from './testing/fixtures';
@@ -18,7 +17,6 @@ describe('示例生态', () => {
     }
     const cmd = fantasyBiomeCommands({ fields: [], species: [] });
     expect(cmd.op === 'batch' && cmd.commands.map((c) => c.op)).toEqual(['add_field', ...FANTASY_BIOMES.map(() => 'add_species')]);
-    expect(docVersion({ globe: false }, [cmd])).toBe(4);
     // 已有的场、生态跳过
     const again = fantasyBiomeCommands({ fields: [...FANTASY_FIELDS], species: ['crystal_jungle'] });
     expect(again.op === 'batch' && again.commands.length).toBe(4);

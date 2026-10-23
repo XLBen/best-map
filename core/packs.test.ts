@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
-import { Engine, docVersion } from './engine';
+import { Engine } from './engine';
 import { DEFAULT_PACK } from './names';
 import {
   PACK_MAX,
@@ -195,7 +195,6 @@ describe('资源包用到世界', () => {
       ...FANTASY_BIOMES.map(() => 'add_species'),
     ]);
     expect(cmd.commands[0]).toEqual({ op: 'add_field', name: 'holy' });
-    expect(docVersion({ globe: false }, [cmd])).toBe(4);
     // 只挑一种：只加它，它不用的场不加
     const one = planPack(w, FANTASY_PACK, { biomes: ['crystal_jungle'], riverTypes: [], lakeTypes: [] });
     expect(one.command.commands.map((c) => c.op)).toEqual(['add_species']);

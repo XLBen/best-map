@@ -717,12 +717,12 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
 
   it('放湖：内陆给出成湖的格，贴着海时只有橙色', () => {
     const w = setup();
-    const inland = [...Array(w.mesh.n).keys()].find((i) => i % 7 === 0 && w.causes.land[i] && !lakeArea(w, i, options.value.lakeKm, true).some((c) => coastal(w, c)))!;
+    const inland = [...Array(w.mesh.n).keys()].find((i) => i % 7 === 0 && w.causes.land[i] && !lakeArea(w, i, options.value.lakeKm).some((c) => coastal(w, c)))!;
     const t = lakeTool();
     t.move?.(at(w, inland), false);
     const pv = t.preview();
     expect(pv.layers).toEqual([]);
-    expect(pv.ghost!.lake).toEqual(lakeArea(w, inland, options.value.lakeKm, true));
+    expect(pv.ghost!.lake).toEqual(lakeArea(w, inland, options.value.lakeKm));
     const shore = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && coastal(w, i))!;
     t.move?.(at(w, shore), false);
     const warn = t.preview();

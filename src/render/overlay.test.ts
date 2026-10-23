@@ -83,7 +83,7 @@ function drawCourse(
     if (!stroke) continue;
     const plan = planCourse(w, w.derived, stroke, { endOnLand: 'flow' });
     if (plan.blocked || plan.drawn < 5 || !ok(plan)) continue;
-    eng.exec({ op: 'add_guide', guide: { id: 'river-a', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 4, carve: 'bed', name: '' } });
+    eng.exec({ op: 'add_guide', guide: { id: 'river-a', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 4, name: '' } });
     return 'river-a';
   }
   throw new Error('画不出河');
@@ -141,7 +141,7 @@ describe('地图上的河、预览的河同一套画法', () => {
       if (!w.causes.land[i] || w.derived.continentality[i] <= 0.5 || i % 7 !== 0) continue;
       const plan = planCourse(w, w.derived, [[mesh.x[i], mesh.y[i]], [mesh.x[i] + 12 * mesh.spacing, mesh.y[i] + 2 * mesh.spacing]], { endOnLand: 'flow' });
       if (plan.blocked || plan.drawn < 5 || plan.crossings.length || plan.reroute) continue;
-      cmd = { op: 'add_guide', guide: { id: 'river-a', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 4, carve: 'bed', name: '' } };
+      cmd = { op: 'add_guide', guide: { id: 'river-a', cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 4, name: '' } };
     }
     expect(cmd).not.toBeNull();
     const liveKey = riverPathsKey(w, null);

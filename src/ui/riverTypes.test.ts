@@ -27,7 +27,6 @@ describe('给河选类型', () => {
     expect(cmd.op).toBe('add_guide');
     if (cmd.op !== 'add_guide') return;
     expect(cmd.guide.type).toBe('crystal');
-    expect(cmd.guide.carve).toBe('bed');
     if (f) expect(cmd.guide.nameKey).toBe(f.key);
     const name = riverInfo(w, ref)?.name;
     expect(cmd.label).toBe(`${name ? `「${name}」` : '这条河'}改成晶川`);

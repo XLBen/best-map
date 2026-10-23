@@ -57,7 +57,7 @@ describe('撤销从受影响的那一层重算', () => {
     expect(fingerprint(eng)).toBe(fingerprint(Engine.fromDoc(eng.toDoc(), w.mesh)));
   });
 
-  it('画的河（第八轮）：只挖河床、改大小、在终点消失、重画、旧式河道、删掉，逐个撤销都与从头重放一致', () => {
+  it('画的河（第八轮）：只挖河床、改大小、在终点消失、重画、没有折线的河道、删掉，逐个撤销都与从头重放一致', () => {
     const eng = new Engine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
     eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
     const w = eng.world;
@@ -80,12 +80,12 @@ describe('撤销从受影响的那一层重算', () => {
     const path = encodePath(plan.path);
     const stem = riverStem(w, w.derived, w.derived.features.find((f) => f.type === 'river' && !cells.some((c) => f.cells.includes(c)))!.anchor).cells;
     const steps: Command[] = [
-      { op: 'add_guide', guide: { id: 'river-u', cells, path, locked: true, spring: true, flow: 3, carve: 'bed', name: '' } },
+      { op: 'add_guide', guide: { id: 'river-u', cells, path, locked: true, spring: true, flow: 3, name: '' } },
       { op: 'update_guide', id: 'river-u', patch: { flow: 6, width: 2 } },
       { op: 'update_guide', id: 'river-u', patch: { cells: cells.slice(0, -2), end: 'sink' } },
       { op: 'update_guide', id: 'river-u', patch: { name: '试验河', salt: 1 } },
       { op: 'update_guide', id: 'river-u', patch: { cells, end: null } },
-      // 旧式的河道（下切山谷）与只挖河床的混在一起
+      // 没有折线、没有名字的河道与画的河混在一起
       { op: 'add_guide', guide: { cells: stem, locked: true, spring: false } },
       { op: 'remove_guide', id: 'river-u' },
     ];

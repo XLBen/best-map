@@ -103,8 +103,8 @@ describe('整个星球的气候', () => {
       eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
       return eng.world;
     };
-    const off = run(null);
-    const on = run(1);
+    const off = run(0);
+    const on = run(null);
     const mesh = on.mesh as SphereMesh;
     const d = on.derived;
     let polar = 0;
@@ -161,7 +161,7 @@ describe('整个星球的气候', () => {
   });
 });
 
-// 山挡风为 0（旧存档里没有这一项时也按 0）：与加山挡风之前的算法逐值相同（一块地区的在 terrain-wind.test.ts）
+// 山挡风为 0：与加山挡风之前的算法逐值相同（一块地区的在 terrain-wind.test.ts）
 describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
   it('与 golden-full 同一组加长的操作（含洋流强弱、撤销与重做）', () => {
     // 加山挡风之前记下的 core/golden-full.json（planet）里风、洋流、气候往后的几项

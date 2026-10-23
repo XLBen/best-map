@@ -1,47 +1,61 @@
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import type { Command } from './commands';
-import { Engine, docVersion } from './engine';
+import { DOC_VERSION, OLD_DOC_ERROR, isCurrentDoc } from './doc-version';
+import { Engine, type WorldDoc } from './engine';
 import { engineFor, meshFor } from './testing/fixtures';
 
-// 文档版本：没用新字段、新命令的世界照旧是 2（一块地区）或 3（整个星球）；打开时也接受 4
+// 文档版本：第九轮起一律是 5，不再兼容以前的存档。旧版本的世界打开时直接说打不开，不去重放
 
-describe('docVersion', () => {
+describe('文档版本', () => {
   const cmds: Command[] = [
     { op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true },
     { op: 'batch', label: '一组', commands: [{ op: 'set_planet', patch: { riverThreshold: 80 } }, { op: 'batch', commands: [{ op: 'set_coast_style', roughness: 1.2 }] }] },
   ];
 
-  it('与原来的写法相同：地区 2、星球 3（batch 里的命令也逐条看）', () => {
-    expect(docVersion({ globe: false }, [])).toBe(2);
-    expect(docVersion({ globe: true }, [])).toBe(3);
-    expect(docVersion({ globe: false }, cmds)).toBe(2);
-    expect(docVersion({ globe: true }, cmds)).toBe(3);
+  it('toDoc 一律存成 5（一块地区、整个星球都是）；fromDoc 照样打开', () => {
+    for (const settings of [{ seed: 2, cells: 3000 }, { seed: 2, cells: 3000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }]) {
+      const eng = engineFor(settings);
+      for (const c of cmds) eng.exec(c);
+      const doc = eng.toDoc();
+      expect(doc.version).toBe(DOC_VERSION);
+      expect(DOC_VERSION).toBe(5);
+      const again = Engine.fromDoc(JSON.parse(JSON.stringify(doc)) as WorldDoc, meshFor(settings));
+      expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
+    }
   });
 
-  it('toDoc 用它；fromDoc 接受 2、3、4，拒绝别的', () => {
+  it('第 2、3、4 版（第八轮以前）的世界：打开时说“这是旧版本的世界，打不开”，不重放', () => {
+    const settings = { seed: 2, cells: 3000 };
+    const mesh = meshFor(settings);
+    // 一个第八轮存的世界（第 4 版，带山挡风那一步）
+    const v4 = {
+      format: 'map2-world',
+      version: 4,
+      settings,
+      commands: [
+        { op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true },
+        { op: 'batch', label: '山挡风：旧存档也打开', commands: [{ op: 'set_planet', patch: { terrainWind: 1 } }] },
+      ],
+    } as unknown as WorldDoc;
+    for (const version of [1, 2, 3, 4, 6]) {
+      const doc = { ...v4, version } as unknown as WorldDoc;
+      expect(() => Engine.fromDoc(doc, mesh)).toThrow(OLD_DOC_ERROR);
+      expect(isCurrentDoc(doc)).toBe(false);
+    }
+    expect(OLD_DOC_ERROR).toBe('这是旧版本的世界，打不开（第九轮起不再兼容旧存档）');
+    expect(() => Engine.fromDoc({ ...v4, format: 'x' } as unknown as WorldDoc, mesh)).toThrow('不是 map2 世界文件');
+    expect(isCurrentDoc({ ...v4, version: 5 })).toBe(true);
+    expect(isCurrentDoc(null)).toBe(false);
+  });
+
+  it('检查点也不能拿来恢复旧版本的世界', () => {
     const settings = { seed: 2, cells: 3000 };
     const eng = engineFor(settings);
     for (const c of cmds) eng.exec(c);
+    const cp = eng.toCheckpoint();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(2);
-    const mesh = meshFor(settings);
-    const again = Engine.fromDoc({ ...doc, version: 4 }, mesh);
-    expect(digestWorld(again.world)).toEqual(digestWorld(eng.world));
-    expect(() => Engine.fromDoc({ ...doc, version: 1 as 2 }, mesh)).toThrow('旧版本');
-  });
-
-  it('画的河（第八轮）：用了新的几项、截走、改一条画的河的存成 4；旧式的画河照旧', () => {
-    expect(docVersion({ globe: false }, [{ op: 'add_guide', guide: { cells: [1, 2, 3], locked: true, spring: true, flow: 3 }, reroute: true, label: '画了一条河' }])).toBe(2);
-    expect(docVersion({ globe: false }, [{ op: 'add_guide', guide: { cells: [1, 2], carve: 'bed' } }])).toBe(4);
-    expect(docVersion({ globe: false }, [{ op: 'add_guide', guide: { cells: [1, 2], name: '' } }])).toBe(4);
-    expect(docVersion({ globe: true }, [{ op: 'add_guide', guide: { cells: [1, 2] }, capture: true }])).toBe(4);
-    expect(docVersion({ globe: false }, [{ op: 'batch', commands: [{ op: 'update_guide', id: 'river-1', patch: { width: 2 } }] }])).toBe(4);
-  });
-
-  it('类型自动判断的区块（第八轮）：存成 4；只是圈地区、改类型的照旧', () => {
-    expect(docVersion({ globe: false }, [{ op: 'add_region', region: { kind: 'forest', cells: [1, 2, 3], auto: true } }])).toBe(4);
-    expect(docVersion({ globe: true }, [{ op: 'batch', commands: [{ op: 'update_region', id: 'r1', auto: false }] }])).toBe(4);
-    expect(docVersion({ globe: false }, [{ op: 'add_region', region: { kind: 'forest', cells: [1, 2, 3] } }, { op: 'update_region', id: 'r1', kind: 'plain' }])).toBe(2);
+    expect(Engine.fromCheckpoint(cp, doc, meshFor(settings))).not.toBeNull();
+    expect(() => Engine.fromCheckpoint(cp, { ...doc, version: 4 } as unknown as WorldDoc, meshFor(settings))).toThrow(OLD_DOC_ERROR);
   });
 });

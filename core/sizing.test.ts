@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { hashArray } from '../tools/hash';
 import { type Command, commandSchema } from './commands';
 import { lakeArea } from './elevation';
-import { Engine, docVersion } from './engine';
+import { Engine } from './engine';
 import { hashString } from './names';
 import { buildMesh, findCell, ringDistance } from './mesh';
 import { planetSettings, settingsFor } from './presets';
@@ -24,13 +24,13 @@ import {
 import { continents, meshFor } from './testing/fixtures';
 import { type Settings, createWorld, settingsSchema } from './world';
 
-// 第三轮：岛的大小连续可调（旧存档照旧逐值重放）；“调整”面板拖滑块时的预览就是松手后的结果
-// 第八轮：岛、湖、画笔的最小值更小；小礁
+// 第三轮：岛的大小连续可调；“调整”面板拖滑块时的预览就是松手后的结果
+// 第八轮：岛、湖、画笔的最小值更小；小礁。第九轮：岛的大小只收 km 数，湖、岛链只有新的下限
 
 const mesh = buildMesh(40000, 2, 1);
 
-// 第八轮之前就有的四种岛（小礁是新加的，旧存档里没有）：固定的哈希按这四种排
-const LEGACY_KINDS = ISLAND_KINDS.filter((k) => k !== 'reef');
+// 有形状的四种岛（小礁只占一格）：固定的哈希按这四种排
+const SHAPED_KINDS = ISLAND_KINDS.filter((k) => k !== 'reef');
 
 function ocean(rough = 1) {
   const w = createWorld({ cells: mesh.n, seed: 1 }, mesh);
@@ -41,25 +41,25 @@ function ocean(rough = 1) {
 }
 
 describe('岛的大小', () => {
-  it('旧存档里的小 · 中 · 大照旧逐值重放', () => {
-    // 哈希来自改动前的代码：四种岛 × 三档、两条岛链、一个湖
+  it('放岛、岛链、湖的固定哈希', () => {
+    // 四种岛 × 三种大小（约等于以前的小 · 中 · 大）、两条岛链、一个湖。第九轮去掉旧存档兼容时重录；之后的优化必须逐值不变
     const eng = new Engine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
-    for (const kind of LEGACY_KINDS) {
-      for (const size of ['small', 'medium', 'large'] as const) {
+    for (const kind of SHAPED_KINDS) {
+      for (const size of [370, 810, 1660]) {
         try {
           eng.exec({ op: 'add_island', island: { x: 0.2 + (k % 6) * 0.3, y: 0.15 + Math.floor(k / 6) * 0.35, kind, size, variant: k % 3 } });
         } catch {
-          // 放不下（已经是陆地）的跳过，改动前也一样
+          // 放不下（已经是陆地）的跳过
         }
         k++;
       }
     }
-    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.8], [1.0, 0.9], [1.7, 0.75]], kind: 'volcanic', size: 'small', density: 1.4, variant: 2 } });
-    eng.exec({ op: 'add_island_chain', chain: { points: [[0.2, 0.6], [0.9, 0.55]], kind: 'continental', size: 'large', density: 0.7, variant: 0 } });
+    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.8], [1.0, 0.9], [1.7, 0.75]], kind: 'volcanic', size: 370, density: 1.4, variant: 2 } });
+    eng.exec({ op: 'add_island_chain', chain: { points: [[0.2, 0.6], [0.9, 0.55]], kind: 'continental', size: 1660, density: 0.7, variant: 0 } });
     const w = eng.world;
-    // 湖的格写死（存档里的命令就是这样存的），以后改水文也不会挪到别处
+    // 湖的格写死，以后改水文也不会挪到别处
     eng.exec({ op: 'add_lake', lake: { cell: 5490, radius: 60, depth: 120, perennial: true } });
     expect({
       landDelta: hashArray(w.causes.landDelta),
@@ -67,7 +67,6 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-      // 第五轮起不足 3 格的自然洼地不算湖：流量变了，地形、高程不变
     }).toEqual({ landDelta: 'd2ae5e44', upliftDelta: 'cf768e09', land: '78511545', elevation: 'f58c005c', discharge: 'b8650ac7' });
   });
 
@@ -76,7 +75,7 @@ describe('岛的大小', () => {
       const w = ocean(rough);
       const cellKm = mesh.spacing * w.kmPerUnit;
       const cellArea = (mesh.width * mesh.height * w.kmPerUnit ** 2) / mesh.n;
-      for (const kind of LEGACY_KINDS) {
+      for (const kind of SHAPED_KINDS) {
         for (const mult of [4, 10, 24]) {
           const rKm = cellKm * mult;
           const x = 0.5 + mult * 0.04;
@@ -154,8 +153,8 @@ describe('岛的大小', () => {
 });
 
 describe('放岛只在岛的附近找格', () => {
-  it('结果与原来的全图扫描逐值相同（地图边上、接缝、高纬度）', () => {
-    // 哈希来自第八轮改动前（全图扫描）的代码
+  it('固定哈希（地图边上、接缝、高纬度）', () => {
+    // 原来按第八轮改动前（全图扫描）的代码记下；第九轮去掉“小 · 中 · 大”三档时重录
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'archipelago', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -171,9 +170,9 @@ describe('放岛只在岛的附近找格', () => {
       const cellKm = w.mesh.spacing * w.kmPerUnit;
       const parts: string[] = [];
       for (const kind of ['volcanic', 'continental', 'low', 'atoll'] as const) {
-        for (const size of ['small', 'medium', 'large', 1.5, 2, 5, 14] as const) {
+        for (const size of [1.5, 2, 5, 14]) {
           spots.forEach(([x, y], k) => {
-            const s = islandStamp(w, { x, y, kind, size: typeof size === 'number' ? cellKm * size : size, variant: k });
+            const s = islandStamp(w, { x, y, kind, size: cellKm * size, variant: k });
             parts.push([hashArray(s.cells), hashArray(s.landDelta), hashArray(s.upliftDelta), hashArray(s.footprint)].join(','));
           });
         }
@@ -184,9 +183,9 @@ describe('放岛只在岛的附近找格', () => {
   });
 });
 
-describe('岛链的下限冻结', () => {
-  it('旧存档里的数值岛链（不带 fine）照旧逐值重放', () => {
-    // 哈希来自第八轮改动前的代码：底数 0.99 × 1.5 格（旧的拖动取整后会略小于下限）、1.6 格、3 格；一块地区与整个星球
+describe('岛链的固定哈希', () => {
+  it('小一号的岛最小到 islandMinCells，太小时岛心那一格成陆', () => {
+    // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -200,7 +199,7 @@ describe('岛链的下限冻结', () => {
         for (const kind of ['volcanic', 'continental'] as const) {
           const islands = chainIslands(w, { points: pts.map(([x, y]) => [x, y] as [number, number]), kind, size: cellKm * mult, density: 1, variant: 1 });
           const r = combineStamps(w, islands);
-          got[`${name}|${label}|${kind}`] = [hashArray(islands.map((s) => s.size as number)), hashArray(r.cells), hashArray(r.landDelta), hashArray(r.upliftDelta), r.footprint.length].join(' ');
+          got[`${name}|${label}|${kind}`] = [hashArray(islands.map((s) => s.size)), hashArray(r.cells), hashArray(r.landDelta), hashArray(r.upliftDelta), r.footprint.length].join(' ');
         }
       }
     }
@@ -279,40 +278,31 @@ describe('第八轮：更小的岛、湖、画笔', () => {
     }
   });
 
-  it('岛心成陆只在大小不到 1.5 格时发生；旧岛链（不带 fine）照旧不补', () => {
+  it('太小、一格陆地都放不出来时岛心那一格成陆（岛心在地图外时不补）；岛链也一样', () => {
     const w = ocean();
     const cellKm = mesh.spacing * w.kmPerUnit;
-    let filled = 0;
+    let single = 0;
     for (let v = 0; v < 40; v++) {
       const spec = { x: 0.1 + ((v * 0.0437) % 1.8), y: 0.1 + ((v * 0.0721) % 0.8), kind: 'volcanic' as const, variant: v };
-      // 0.4 格：旧的写法（不补）常常一格陆地都放不出来，新的写法补上岛心那一格
-      const tiny = { ...spec, size: cellKm * 0.4 };
-      const old = islandStamp(w, tiny, false);
-      const now = islandStamp(w, tiny);
-      if (!old.footprint.length) {
-        filled++;
-        expect(now.footprint.length).toBe(1);
-      } else expect(now).toEqual(old);
-      // 1.5 格以上（旧的最小值）：补不补都一样
-      for (const mult of [1.5, 3]) {
-        const big = { ...spec, size: cellKm * mult };
-        expect(islandStamp(w, big)).toEqual(islandStamp(w, big, false));
-      }
+      // 0.4 格：常常只有岛心那一格
+      const now = islandStamp(w, { ...spec, size: cellKm * 0.4 });
+      expect(now.footprint.length).toBeGreaterThanOrEqual(1);
+      if (now.footprint.length === 1) single++;
+      // 1.5 格以上放得出陆地，不用补
+      for (const mult of [1.5, 3]) expect(islandStamp(w, { ...spec, size: cellKm * mult }).footprint.length).toBeGreaterThan(1);
     }
-    expect(filled).toBeGreaterThan(0);
+    expect(single).toBeGreaterThan(0);
     // 岛心在地图外（岛链画出了地图边）：没有岛心那一格，不补
     for (const [x, y] of [[-cellKm / w.kmPerUnit, 0.5], [1, 1 + (3 * cellKm) / w.kmPerUnit]]) {
       expect(islandStamp(w, { x, y, kind: 'volcanic', size: cellKm * 0.4, variant: 0 }).footprint).toEqual([]);
     }
-    // 岛链：带 fine 的才补（命令里的大小比滑块的最小值还小时）
-    const chain = { points: [[0.2, 0.3], [1.8, 0.7]] as [number, number][], kind: 'volcanic' as const, size: cellKm * 0.4, density: 1, variant: 0 };
-    const islands = chainIslands(w, { ...chain, fine: true });
-    const fine = combineStamps(w, islands, true);
-    const old = combineStamps(w, islands);
-    expect(fine.footprint.length).toBeGreaterThan(old.footprint.length);
+    // 岛链（命令里的大小比滑块的最小值还小时）：每个岛都至少有一格陆地
+    const islands = chainIslands(w, { points: [[0.2, 0.3], [1.8, 0.7]], kind: 'volcanic', size: cellKm * 0.4, density: 1, variant: 0 });
+    for (const isl of islands) expect(islandStamp(w, isl).footprint.length).toBeGreaterThanOrEqual(1);
+    expect(combineStamps(w, islands).footprint.length).toBeGreaterThanOrEqual(islands.length / 2);
   });
 
-  it('最小的湖只有一格 / 旧湖照旧', () => {
+  it('最小的湖只有一格', () => {
     const eng = continents();
     const w = eng.world;
     const { mesh: m } = w;
@@ -326,17 +316,14 @@ describe('第八轮：更小的岛、湖、画笔', () => {
       .slice(0, 5);
     expect(inland.length).toBe(5);
     for (const c of inland) {
-      // 新湖（exact）：最小只淹放湖的那一格
-      expect(lakeArea(w, c, lo, true)).toEqual([c]);
-      // 旧湖（不带 exact）照旧至少一格半
-      const old = lakeArea(w, c, lo);
-      expect(old.length).toBeGreaterThan(1);
-      expect(old).toEqual(lakeArea(w, c, cellKm * 1.5, true));
+      // 最小只淹放湖的那一格；一格半就不止一格
+      expect(lakeArea(w, c, lo)).toEqual([c]);
+      expect(lakeArea(w, c, cellKm * 1.5).length).toBeGreaterThan(1);
     }
     // 放下去：湖面就是那一格
     const c = inland[0];
     const before = w.derived.lake.slice();
-    eng.exec({ op: 'add_lake', lake: { cell: c, radius: lo, depth: 120, perennial: true, exact: true } });
+    eng.exec({ op: 'add_lake', lake: { cell: c, radius: lo, depth: 120, perennial: true } });
     const added = [...Array(m.n).keys()].filter((i) => w.derived.lake[i] === 1 && before[i] !== 1);
     expect(added).toEqual([c]);
     // 按世界文件重放，结果相同
@@ -359,11 +346,11 @@ describe('第八轮：更小的岛、湖、画笔', () => {
       const island = islandSizeRangeKm(w, 'volcanic')[0];
       const brush = brushRangeKm(w)[0];
       const cmds: Command[] = [
-        { op: 'add_lake', lake: { cell: 0, radius: lake, depth: 120, perennial: true, exact: true } },
+        { op: 'add_lake', lake: { cell: 0, radius: lake, depth: 120, perennial: true } },
         { op: 'add_constraint', constraint: { cells: [0], species: 'forest', mode: 'constraint', ratio: 1, radius: reach, label: '' } },
         { op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: island, variant: 0 } },
         { op: 'add_island', island: { x: 1, y: 0.5, kind: 'reef', size: island, variant: 0 } },
-        { op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1, 0.5]], kind: 'volcanic', size: island, density: 1, variant: 0, fine: true } },
+        { op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1, 0.5]], kind: 'volcanic', size: island, density: 1, variant: 0 } },
         { op: 'reroll_region', x: 1, y: 0.5, radius: Math.max(brush / w.kmPerUnit, w.mesh.spacing * 1.2), variant: 1 },
         // 画河的“大小”最小 1.0（正好是“河流多少”的门槛）
         { op: 'add_guide', guide: { cells: [0, 1], locked: true, spring: true, flow: 1 } },
@@ -377,25 +364,6 @@ describe('第八轮：更小的岛、湖、画笔', () => {
       // 最小的画笔不到半格：只涂鼠标下那一格
       expect(brush).toBe(cellKm * 0.4);
       expect(brushCells(w, 1, 0.5, brush)).toEqual({ cells: [findCell(w.mesh, 1, 0.5)], t: [0], weights: [1] });
-    }
-  });
-
-  it('用了小礁、只淹一格的湖、带 fine 的岛链：文档存成第 4 版', () => {
-    const old: Command[] = [
-      { op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: 'medium', variant: 0 } },
-      { op: 'add_lake', lake: { cell: 3, radius: 60, depth: 120, perennial: true } },
-      { op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1, 0.5]], kind: 'volcanic', size: 40, density: 1, variant: 0 } },
-    ];
-    expect(docVersion({ globe: false }, old)).toBe(2);
-    expect(docVersion({ globe: true }, old)).toBe(3);
-    const fresh: Command[] = [
-      { op: 'add_island', island: { x: 1, y: 0.5, kind: 'reef' } },
-      { op: 'add_lake', lake: { cell: 3, radius: 6, depth: 120, perennial: true, exact: true } },
-      { op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1, 0.5]], kind: 'volcanic', size: 40, density: 1, variant: 0, fine: true } },
-    ];
-    for (const cmd of fresh) {
-      expect(docVersion({ globe: false }, [...old, cmd])).toBe(4);
-      expect(docVersion({ globe: true }, [{ op: 'batch', commands: [cmd] }])).toBe(4);
     }
   });
 });

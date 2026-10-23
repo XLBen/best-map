@@ -118,8 +118,8 @@ const CASES: Case[] = [
       const w = eng.world;
       const c = seaCell(w);
       const sp = w.mesh.spacing;
-      const chain: ChainSpec = { points: [[w.mesh.x[c] - 3 * sp, w.mesh.y[c] - sp], [w.mesh.x[c] + 3 * sp, w.mesh.y[c] + sp]], kind: 'volcanic', size: 1.2 * cellKm(w), density: 1, variant: 0, fine: true };
-      const st = combineStamps(w, chainIslands(w, chain), true);
+      const chain: ChainSpec = { points: [[w.mesh.x[c] - 3 * sp, w.mesh.y[c] - sp], [w.mesh.x[c] + 3 * sp, w.mesh.y[c] + sp]], kind: 'volcanic', size: 1.2 * cellKm(w), density: 1, variant: 0 };
+      const st = combineStamps(w, chainIslands(w, chain));
       return { ghost: { cells: st.cells, delta: st.landDelta }, cmd: { op: 'add_island_chain', chain } };
     },
   },

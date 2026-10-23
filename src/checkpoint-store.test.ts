@@ -10,7 +10,7 @@ import { collectBuffers } from './transfer';
 
 const settings = settingsSchema.parse({ cells: 2000, seed: 1 });
 const cmd = (humidity: number): Command => ({ op: 'set_planet', patch: { humidity } });
-const docOf = (commands: Command[], s: unknown = settings): WorldDoc => ({ format: 'map2-world', version: 2, settings: s as WorldDoc['settings'], commands });
+const docOf = (commands: Command[], s: unknown = settings): WorldDoc => ({ format: 'map2-world', version: 5, settings: s as WorldDoc['settings'], commands });
 const saved = (commands: Command[], build = 'b1', s: unknown = settings) => ({
   build,
   cp: { settings: s, done: commands.map((c, k) => ({ id: k + 1, cmd: c, summary: '', dirty: 0, undo: {} })), causes: { h: new Float32Array(4) } },
@@ -34,6 +34,8 @@ describe('检查点对不对得上', () => {
     expect(checkpointFits(undefined, 'b1', doc)).toBe(false);
     expect(checkpointFits({ build: 'b1', cp: { settings, done: 'x' } }, 'b1', doc)).toBe(false);
     expect(checkpointFits({ build: 'b1', cp: { settings, done: [null] } }, 'b1', doc)).toBe(false);
+    // 旧版本的世界（第九轮起不再兼容）：不给
+    expect(checkpointFits(saved([cmd(1.1)]), 'b1', { ...doc, version: 4 } as unknown as WorldDoc)).toBe(false);
   });
 });
 
