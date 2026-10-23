@@ -169,7 +169,8 @@ export function newWaterType(w: World, kind: WaterKind): WaterType {
   const ids = new Set(def.list(w).map((t) => t.id));
   let k = 1;
   while (ids.has(`${def.idPrefix}-${k}`)) k++;
-  return { id: `${def.idPrefix}-${k}`, name: `新的${def.noun} ${k}`, color: NEW_COLORS[(k - 1) % NEW_COLORS.length] };
+  // 新建的默认不自然生成（第十二轮）：只用在画的河、选了它的河（湖）上，打开“自然生成”才按条件自己出现
+  return { id: `${def.idPrefix}-${k}`, name: `新的${def.noun} ${k}`, color: NEW_COLORS[(k - 1) % NEW_COLORS.length], natural: false };
 }
 
 // 新建一种并用上：then 是用上它的命令（新画的河、新放的湖只改选项，没有命令）。一整步，然后打开它的编辑
@@ -408,6 +409,7 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
       </p>
       <textarea class="names-box" rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
       {namesBad && <p class="small warn-text">“{namesBad.slice(0, 12)}…”太长了，最多 40 个字</p>}
+      <NaturalBox w={w} kind={kind} t={t} edit={edit} />
       <ScriptBox
         key={`${worldEpoch.value}:${kind}:${t.id}:match`}
         kind="match"
@@ -428,6 +430,57 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
         </button>
       </div>
     </div>
+  );
+}
+
+// 第十二轮：自然生成的开关、只在这些生态里出现
+function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterType; edit: (label: string, make: (x: WaterType) => WaterType | null) => void }) {
+  const noun = KINDS[kind].noun;
+  const on = t.natural !== false;
+  const picked = new Set(t.biomes ?? []);
+  const script = !!t.scripts?.match?.src;
+  const where = kind === 'river' ? '流经的格' : '湖岸一圈';
+  const hint = !on
+    ? `关着：只用在${kind === 'river' ? '画的河、选了它的河' : '放的湖、选了它的湖'}上。`
+    : !script && !picked.size
+      ? `还没有条件：选下面“只在这些生态里”，或者写规则，${noun}才会自己变成这一种。`
+      : !script
+        ? `选的生态里的${noun}都是这一种（${where}至少一半是这些生态）。`
+        : picked.size
+          ? `规则说是、并且${where}至少一半是选的生态的${noun}是这一种。`
+          : `规则说是的${noun}是这一种。`;
+  const toggle = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    // 按生态的先后存（结果与点的先后无关）
+    const list = w.small.species.map((s) => s.id).filter((x) => next.has(x));
+    const sp = w.small.species.find((s) => s.id === id);
+    edit(`「${t.name}」${next.has(id) ? '可以' : '不再'}出现在${sp?.name || id}里`, (x) => ({ ...x, biomes: list.length ? list : undefined }));
+  };
+  return (
+    <>
+      <h5>自己出现</h5>
+      <label class="check">
+        <input type="checkbox" checked={on} onChange={() => edit(on ? `「${t.name}」不再自然生成` : `「${t.name}」自然生成`, (x) => ({ ...x, natural: !on }))} />
+        自然生成：在地图上按条件自己出现
+      </label>
+      <p class="muted small">{hint}</p>
+      <details>
+        <summary>
+          只在这些生态里出现（{picked.size ? `${picked.size} 种` : '不限'}）
+        </summary>
+        <div class="biome-picks">
+          {w.small.species.map((sp) => (
+            <label class="check" key={sp.id}>
+              <input type="checkbox" checked={picked.has(sp.id)} onChange={() => toggle(sp.id)} />
+              <span class="swatch" style={{ background: sp.color }} /> {sp.name || sp.id}
+            </label>
+          ))}
+        </div>
+        <p class="muted small">规则里也能用 biome('生态 id')（{where}里这种生态占多少）、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
+      </details>
+    </>
   );
 }
 
@@ -473,7 +526,7 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
                 </span>
                 <span class="muted small">
                   {def.styleLabel[t.style ?? 'solid']}
-                  {t.scripts?.match ? ' · 有规则' : ''}
+                  {t.natural === false ? ' · 不自然生成' : t.scripts?.match || t.biomes?.length ? ' · 自己出现' : ''}
                 </span>
               </div>
               {open === t.id && <TypeEditor w={w} kind={kind} t={t} />}

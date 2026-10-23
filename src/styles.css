@@ -352,6 +352,32 @@ h5 {
 .box.conflict {
   border-color: #6b3a2a;
 }
+/* 第十二轮：说了“就这样”的没涂成（收在“!”里） */
+.box.ignored {
+  border-style: dashed;
+  opacity: 0.9;
+}
+.ignored-chip b,
+.ignored-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: #1d2128;
+  font-size: 11px;
+  font-weight: 700;
+}
+/* 水体类型：只在这些生态里出现 */
+.biome-picks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  max-height: 200px;
+  overflow: auto;
+}
 .swatch {
   display: inline-block;
   width: 11px;

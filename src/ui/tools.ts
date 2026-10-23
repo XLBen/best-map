@@ -130,7 +130,7 @@ export interface ToolHandler {
   escape?(): boolean;
   enter?(): boolean;
   preview(): Preview;
-  // 工具选中时一直画着的东西（鼠标不在地图上也画）：橡皮擦能擦的格、岛上特有的岛、重画过的范围……
+  // 工具选中时一直画着的东西（鼠标不在地图上也画）：橡皮擦能擦的格、重画过的范围……
   // 画在预览下面。同样的输入给同一个图层对象（地图不必重新上传）
   backdrop?(): Backdrop | null;
 }
@@ -1541,7 +1541,6 @@ export function rangeTool(): ToolHandler {
 }
 
 // 自然的擦除：擦掉涂过的生态。选中时地图上一直用浅斜线标出涂过的格，悬停说这里涂成了什么；
-// 指着有岛上特有生态的岛时说它在哪里去掉（它不是涂上去的，擦不掉）
 export function eraseTool(): ToolHandler {
   return brushTool({
     hint: () => ({ text: null }),

@@ -15,11 +15,12 @@ import {
   withCondition,
   withRect,
 } from '../../core/species';
-import { isVegetated } from '../../core/vegetation';
+import { isVegetated, landmassCells } from '../../core/vegetation';
 import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
-import { adjustPreviewNote, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, showToast, tool, world } from '../state';
-import { paintWith } from './defs/tools';
+import { adjustPreviewNote, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
+import { paintWith, setTool } from './defs/tools';
+import { rangePick } from './tools';
 import { readPack } from '../../core/packs';
 import { FANTASY_PACK } from '../../core/packs/fantasy';
 import { fileLabel, openPackApply, openPackImport } from './packs/store';
@@ -384,6 +385,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
           </button>
         ))}
       </div>
+      <SpeciesWhere sp={sp} />
       {sp.dispersal && (
         <p class="muted small">
           只在起源地附近、能扩散到的地方出现（{sp.dispersal.seaCost >= 1e5 ? '不能跨海' : '可以跨海'}）。
@@ -406,7 +408,8 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
             const w = world.value!;
             let id = `${sp.id}_copy`;
             for (let k = 2; w.small.species.some((s) => s.id === id); k++) id = `${sp.id}_copy${k}`;
-            if (await exec({ op: 'add_species', species: { ...structuredClone(sp), id, name: `${sp.name}（副本）` } })) focusSpecies.value = id;
+            // 副本不自然生成（不然会和原来的那种平分地盘）：涂到哪里长到哪里，要它自己长时在“长在哪里”打开
+            if (await exec({ op: 'add_species', species: { ...structuredClone(sp), id, name: `${sp.name}（副本）`, natural: false } })) focusSpecies.value = id;
           }}
         >
           复制
@@ -421,6 +424,65 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// ---------- 第十二轮：长在哪里（自然生成、只在一个岛上、只在圈的范围里） ----------
+
+// 范围现在说的是哪里：岛的名字（那块陆地多大），圈的格数；岛沉了（那一格不是陆地了）时说一声
+function rangeText(w: World, sp: Species): string {
+  const r = sp.range;
+  if (!r) return '';
+  if (r.kind === 'cells') return `圈的 ${r.cells.length} 格里`;
+  const mass = landmassCells(w, r.cell);
+  let n = 0;
+  for (let i = 0; i < mass.length; i++) n += mass[i];
+  if (!n) return '选的那个岛已经不在了（那里变成了海）：重新选一个';
+  const f = w.derived.features.find((x) => (x.type === 'island' || x.type === 'continent') && Array.prototype.includes.call(x.cells, r.cell));
+  return `${f?.name ? `「${f.name}」` : '那块陆地'}上（${n} 格）`;
+}
+
+function SpeciesWhere({ sp }: { sp: Species }) {
+  const w = world.value!;
+  const natural = sp.natural !== false;
+  const kind = sp.range?.kind ?? 'everywhere';
+  const pick = (k: 'island' | 'cells') => {
+    rangePick.value = { species: sp.id, kind: k, back: tool.value === 'range' ? 'biome' : tool.value };
+    setTool('range');
+    sheet.value = null;
+  };
+  return (
+    <>
+      <h5>长在哪里</h5>
+      <label class="check" title="关掉时只长在涂了它的地方（涂的地方照样按“自然融入”算）">
+        <input
+          type="checkbox"
+          checked={natural}
+          onChange={() => void exec({ op: 'update_species', id: sp.id, patch: { natural: !natural } }, '正在计算生态…')}
+        />
+        自然生成：在地图上按条件自己出现
+      </label>
+      <p class="muted small">{natural ? '冷暖干湿合适、竞争得过的地方都会长。' : '只长在涂了它的地方。'}</p>
+      <div class="seg wide">
+        <button class={kind === 'everywhere' ? 'on' : ''} onClick={() => sp.range && void exec({ op: 'update_species', id: sp.id, patch: { range: null } }, '正在计算生态…')}>
+          到处
+        </button>
+        <button class={kind === 'island' ? 'on' : ''} onClick={() => pick('island')} title="点地图上的一个岛（或一块大陆）">
+          只在一个岛上
+        </button>
+        <button class={kind === 'cells' ? 'on' : ''} onClick={() => pick('cells')} title="在地图上按住圈一片">
+          只在圈的范围里
+        </button>
+      </div>
+      {sp.range && (
+        <p class="muted small">
+          只长在{rangeText(w, sp)}。
+          <button class="small" onClick={() => pick(sp.range!.kind)}>
+            {sp.range.kind === 'island' ? '换一个岛' : '重新圈'}
+          </button>
+        </p>
+      )}
+    </>
   );
 }
 
@@ -447,7 +509,8 @@ export function SpeciesPanel() {
     let k = w.small.species.length + 1;
     let id = `custom_${k}`;
     while (w.small.species.some((s) => s.id === id)) id = `custom_${++k}`;
-    const base: Species = { id, name: `新生态 ${k}`, color: PALETTE[k % PALETTE.length], terrain: 'plains', competition: 3, tolerances: [] };
+    // 新建的生态默认不自然生成：只长在涂了它的地方（在“长在哪里”里打开“自然生成”就按条件自己长）
+    const base: Species = { id, name: `新生态 ${k}`, color: PALETTE[k % PALETTE.length], terrain: 'plains', competition: 3, tolerances: [], natural: false };
     const sp = withRect(base, { t0: 5, t1: 18, m0: 0.6, m1: 1.6 });
     if (await exec({ op: 'add_species', species: sp })) focusSpecies.value = id;
   };

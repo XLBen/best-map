@@ -243,11 +243,11 @@ export function MapView() {
     }
 
     // shown：画出来的世界（确切预览、调整面板预览的将来的世界，或当前世界）：没涂成的格按它画
-    // back：工具选中时一直画着的图层（橡皮擦能擦的格、岛上特有的岛），画在预览下面
+    // back：工具选中时一直画着的图层（橡皮擦能擦的格、重画过的范围），画在预览下面
     function highlightLayers(w: World, shown: World, preview: Preview, back: HighlightLayer[]): { layers: HighlightLayer[]; key: unknown[] } {
       const layers: HighlightLayer[] = [];
       const c = category.value;
-      // 图层里的“我改过的地方”：四种改动分色（任何工具下都能打开）。压在工具的描边（岛上特有描的岛）之上、
+      // 图层里的“我改过的地方”：四种改动分色（任何工具下都能打开）。压在工具的描边之上、
       // 别的高亮之下：只描边的格一盖就没了颜色，而描边本来就画在有高亮与没有高亮的格之间，盖上以后照样在
       const edits = overlays.value.edits ? editLayers(w) : [];
       layers.push(...back.filter((l) => l.pattern === 'outline'), ...edits);

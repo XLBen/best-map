@@ -159,7 +159,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <span>
               <span class="swatch" style={{ background: b.color }} /> {b.name || b.id}
               {picks.biomes?.includes(b.id) && status('biomes', b.id, b.name || b.id) && <span class="muted small">（{status('biomes', b.id, b.name || b.id)}）</span>}
-              {b.dispersal && <span class="muted small">（岛上特有的：只在做它的那个世界里有意义）</span>}
+              {(b.dispersal || b.range) && <span class="muted small">（只长在某处的：只在做它的那个世界里有意义）</span>}
             </span>
           </label>
         ))}

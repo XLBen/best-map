@@ -475,7 +475,7 @@ export interface PackPicks {
   textPack?: string | null;
 }
 
-// 默认勾选：生态、能用的河流类型都勾上，文字包不勾。岛上特有的生态不勾（起源地的格编号只对做它的那个世界有效，
+// 默认勾选：生态、能用的河流类型都勾上，文字包不勾。只长在某处的生态（从起源地扩散、只在某个岛上、圈的范围里）不勾（起源地的格编号只对做它的那个世界有效，
 // 以前导出的整套生态文件里会有）
 export function defaultPicks(pack: ResourcePack): PackPicks {
   return {

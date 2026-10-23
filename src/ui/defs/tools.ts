@@ -425,7 +425,7 @@ const defs: ToolDef[] = [
     icon: Eraser,
     name: '擦除',
     short: '擦除',
-    how: '按住涂：擦掉涂过的生态（斜线标出的格），恢复自然；岛上特有的在“岛上特有”里去掉',
+    how: '按住涂：擦掉涂过的生态（斜线标出的格），恢复自然；只长在某个岛上的生态在生态抽屉的“长在哪里”里改',
     size: BRUSH,
     create: () => eraseTool(),
   },
