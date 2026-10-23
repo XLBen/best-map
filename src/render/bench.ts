@@ -36,9 +36,33 @@ function stats(total: number[], gl: number[]): Stats {
 type Step = (cam: Camera, i: number) => void;
 
 // 几种镜头：看全图平移、放大到一格约 8 像素后平移、捏合缩放（来回）、放大到一格约 24 像素后平移
-function scenariosFor(h: BenchHooks): Record<string, { start: Camera; step: Step }> {
+// proj（第十三轮 G4）：等面积、球形投影的几种镜头——看全图时转动（等面积转中央经线、球形转球）、放大到一格约 8 像素后平移 / 转动、
+// 捏合缩放、镜头不动只重画
+function scenariosFor(h: BenchHooks, proj?: 'equalEarth' | 'globe'): Record<string, { start: Camera; step: Step }> {
   const sp = h.spacing();
   const cw = h.canvas.clientWidth;
+  const ch = h.canvas.clientHeight;
+  if (proj === 'globe') {
+    const p = { kind: 'globe' as const, lon0: 0, lat0: 0.3 };
+    const z8 = 8 / sp / (0.5 * Math.PI);
+    const turn = (d: number) => (c: Camera) => (c.proj = { ...c.proj!, lon0: c.proj!.lon0 + d });
+    return {
+      'globe-rotate-full': { start: { x: 1, y: 0.5, zoom: ch * 0.8, proj: p }, step: turn(0.02) },
+      'globe-rotate-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: p }, step: turn(6 / (z8 * 0.5)) },
+      'globe-zoom': { start: { x: 1, y: 0.5, zoom: ch * 0.8, proj: p }, step: (c, i) => (c.zoom *= i % 40 < 20 ? 1.04 : 1 / 1.04) },
+      'globe-still-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: p }, step: () => {} },
+    };
+  }
+  if (proj === 'equalEarth') {
+    const p = { kind: 'equalEarth' as const, lon0: 0, lat0: 0 };
+    const z8 = 8 / sp / (Math.PI * 0.3795);
+    return {
+      'ee-turn-full': { start: { x: 1, y: 0.5, zoom: cw / 2.3, proj: p }, step: (c) => (c.proj = { ...c.proj!, lon0: c.proj!.lon0 + 0.015 }) },
+      'ee-pan-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: p }, step: (c) => (c.x += 6 / c.zoom) },
+      'ee-zoom': { start: { x: 1, y: 0.5, zoom: 3 / sp, proj: p }, step: (c, i) => (c.zoom *= i % 40 < 20 ? 1.04 : 1 / 1.04) },
+      'ee-still-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: p }, step: () => {} },
+    };
+  }
   return {
     'pan-full': { start: { x: 1, y: 0.5, zoom: cw / 2.2 }, step: (c) => (c.x += 6 / c.zoom) },
     'pan-8px': { start: { x: 1, y: 0.5, zoom: 8 / sp }, step: (c) => (c.x += 6 / c.zoom) },
@@ -106,7 +130,7 @@ export async function overlayBench(h: BenchHooks & { overlay: (ctx: CanvasRender
   return out;
 }
 
-export async function runBench(h: BenchHooks, opts: { frames?: number; only?: string[] } = {}): Promise<Record<string, Stats>> {
+export async function runBench(h: BenchHooks, opts: { frames?: number; only?: string[]; proj?: 'equalEarth' | 'globe' } = {}): Promise<Record<string, Stats>> {
   const { renderer } = h;
   const gl = (h.canvas.getContext('webgl2') as WebGL2RenderingContext)!;
   const px = new Uint8Array(4);
@@ -125,7 +149,7 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
     glTime += performance.now() - t;
     return out as ReturnType<Renderer['render']>;
   };
-  const scenarios = scenariosFor(h);
+  const scenarios = scenariosFor(h, opts.proj);
   const out: Record<string, Stats> = {};
   try {
     for (const [name, sc] of Object.entries(scenarios)) {
