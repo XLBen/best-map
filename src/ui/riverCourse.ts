@@ -4,6 +4,7 @@ import type { PreviewResult } from '../../core/engine';
 import { lakeArea } from '../../core/elevation';
 import type { GeoFeature } from '../../core/features';
 import { arcUnits, wrapX } from '../../core/geo';
+import { findCell } from '../../core/mesh';
 import {
   type EditPoint,
   type EditResult,
@@ -1240,10 +1241,24 @@ export function riverTool(zoom: () => number): ToolHandler {
   const cutCell = (w: World, p: Pointer): number => {
     const sel = selectedRiver.value;
     if (sel?.kind !== 'natural') return -1;
-    const hit = riverAt(w, p.x, p.y, SNAP_PX / zoom(), p.cell);
-    if (hit?.ref.kind !== 'natural') return -1;
-    const stem = stemOf(w, sel.cell).cells;
-    return stem.includes(hit.ref.cell) ? hit.ref.cell : -1;
+    const T = targetOf(w, sel);
+    if (!T) return -1;
+    const e = editPoint(w, T, p.x, p.y);
+    if (e.d > SNAP_PX / zoom()) return -1;
+    // 投影点所在的格（是这条河的）；不是时取这条河上离它最近的一格
+    const own = T.own.filter((c) => !water(w, c));
+    const c = findCell(w.mesh, e.p[0], e.p[1], own[0]);
+    if (own.includes(c)) return c;
+    let best = -1;
+    let bd = Infinity;
+    for (const k of own) {
+      const d = near(w, [w.mesh.x[k], w.mesh.y[k]], e.p[0], e.p[1]);
+      if (d < bd) {
+        bd = d;
+        best = k;
+      }
+    }
+    return best;
   };
 
   return {

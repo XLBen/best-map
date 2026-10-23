@@ -1069,6 +1069,8 @@ export function MapView() {
         __map2PassTimes: (moving?: boolean) => import('../render/bench').then((b) => b.passTimes(hooks, moving)),
         __map2BrushBench: (frames?: number) => import('../render/bench').then((b) => b.brushBench(hooks, frames)),
         __map2OverlayBench: (opts?: { frames?: number; only?: string[] }) => import('../render/bench').then((b) => b.overlayBench(hooks, opts)),
+        // 地图单位 → 屏幕上的 CSS 像素（开发时在浏览器里按地图上的点拖动、核对用）
+        __map2ToScreen: (x: number, y: number) => renderer.worldToScreen(x, y),
       });
     }
     return () => {
