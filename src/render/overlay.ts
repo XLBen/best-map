@@ -4,7 +4,7 @@ import type { RiverStyle, RiverType } from '../../core/river-types';
 import { type RiverLine, type RiverRibbon, guideShape, guidesSignature, riverRibbon, traceRivers } from '../../core/rivers';
 import { coastSeed } from '../../core/terrain';
 import type { World } from '../../core/world';
-import type { Camera } from './renderer';
+import type { Camera, RiverTex } from './renderer';
 import { drawCurrents, drawWind } from './wind';
 
 // 2D 画布上的矢量叠加：河流、河道引导、湖标记、风向、画笔、箭头、预览路径、地名。
@@ -464,6 +464,7 @@ export interface ProvinceLabel {
 const PROVINCE_LABEL_COLOR: Record<string, string> = { wasteland: 'rgba(95,95,95,0.95)', lake: 'rgba(40,95,160,0.95)' };
 
 export interface OverlayState {
+  // 河画在叠加层上（屏幕、导出的地图上河由渲染器合成，只画在陆地上：MapView 给 false，见 riverLayer）
   rivers: boolean;
   wind: boolean;
   // 画过的河与湖的标记（水模式）
@@ -577,34 +578,10 @@ function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContex
   const px = 1 / z;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  // 看得见的范围（地图单位，第 0 份；四周多留 48 个 CSS 像素给线宽、发光）
-  const m = 48 / cam.zoom;
-  const view: [number, number, number, number] = [cam.x - cw / 2 / cam.zoom - m, cam.y - ch / 2 / cam.zoom - m, cam.x + cw / 2 / cam.zoom + m, cam.y + ch / 2 / cam.zoom + m];
   if (st.rivers) {
-    // 河：每条河按看得见的副本各加一份（坐标里平移 2），同色的带子一次填
-    setT(0);
-    const scale = riverScale(world, cam.zoom);
-    const unit = 1 / cam.zoom;
-    const colorOf = typeColors(world.small.riverTypes ?? [], st.style, riverStroke(st.style));
-    const low = world.mesh.spacing * cam.zoom < LOW_ZOOM_CELL_PX;
-    const paint = newPaint();
-    if (low) {
-      // 整个世界的河缓存着（第 0 份的坐标）：每份看得见的副本各描一遍
-      const cached = lowZoomStrokes(paths, world.mesh.spacing * cam.zoom, world.mesh.spacing, st.style, colorOf, world.small.riverTypes);
-      ctx.lineJoin = 'round';
-      for (const k of ks) {
-        setT(k);
-        ctx.lineCap = 'butt';
-        for (const e of cached.plain.values()) {
-          ctx.strokeStyle = e.color;
-          ctx.lineWidth = e.w * scale * unit;
-          ctx.stroke(e.path);
-        }
-        for (const e of cached.styled) strokeRiverStyle(ctx as CanvasRenderingContext2D, e.path, e.w * scale * unit, e.color, e.style, dev);
-      }
-      setT(0);
-    } else for (const d of paths.rivers) addRiverPaint(paint, d, scale * unit, unit, scale, view, sphere, colorOf);
-    if (!low) strokeRiverPaint(ctx as CanvasRenderingContext2D, paint, unit, st.style, dev);
+    drawRivers(ctx, world, paths, cam, st.style, cw, ch, dev);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
   }
   for (const k of ks) {
     setT(k);
@@ -635,6 +612,43 @@ function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContex
       }
     }
   }
+}
+
+// 河，画进 ctx：画布是 cw × ch 个 CSS 像素、每个 CSS 像素 dev 个像素，镜头在画布中间。河只加画布上看得见的那几条（按外接框裁）
+function drawRivers(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, style: 'realistic' | 'atlas', cw: number, ch: number, dev: number) {
+  const z = cam.zoom * dev;
+  const sphere = world.mesh.kind === 'sphere';
+  const ks = sphere ? copiesFor(cam, cw) : [0];
+  const setT = (k: number) => ctx.setTransform(z, 0, 0, z, (cw / 2 - (cam.x - 2 * k) * cam.zoom) * dev, (ch / 2 - cam.y * cam.zoom) * dev);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // 看得见的范围（地图单位，第 0 份；四周多留 48 个 CSS 像素给线宽、发光）
+  const m = 48 / cam.zoom;
+  const view: [number, number, number, number] = [cam.x - cw / 2 / cam.zoom - m, cam.y - ch / 2 / cam.zoom - m, cam.x + cw / 2 / cam.zoom + m, cam.y + ch / 2 / cam.zoom + m];
+  // 每条河按看得见的副本各加一份（坐标里平移 2），同色的带子一次填
+  setT(0);
+  const scale = riverScale(world, cam.zoom);
+  const unit = 1 / cam.zoom;
+  const colorOf = typeColors(world.small.riverTypes ?? [], style, riverStroke(style));
+  const low = world.mesh.spacing * cam.zoom < LOW_ZOOM_CELL_PX;
+  const paint = newPaint();
+  if (low) {
+    // 整个世界的河缓存着（第 0 份的坐标）：每份看得见的副本各描一遍
+    const cached = lowZoomStrokes(paths, world.mesh.spacing * cam.zoom, world.mesh.spacing, style, colorOf, world.small.riverTypes);
+    ctx.lineJoin = 'round';
+    for (const k of ks) {
+      setT(k);
+      ctx.lineCap = 'butt';
+      for (const e of cached.plain.values()) {
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = e.w * scale * unit;
+        ctx.stroke(e.path);
+      }
+      for (const e of cached.styled) strokeRiverStyle(ctx as CanvasRenderingContext2D, e.path, e.w * scale * unit, e.color, e.style, dev);
+    }
+    setT(0);
+  } else for (const d of paths.rivers) addRiverPaint(paint, d, scale * unit, unit, scale, view, sphere, colorOf);
+  if (!low) strokeRiverPaint(ctx as CanvasRenderingContext2D, paint, unit, style, dev);
 }
 
 // 底层的键（镜头另比）：画出来的路径、湖标记、选项、河流类型的画法
@@ -708,6 +722,103 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
+// ---------- 河的图层（第十三轮）：画进一张离屏画布，交给渲染器在合成一步里按每像素的陆海混进地图 ----------
+// 海面、湖面上不画（河口正好停在岸线），排在省份着色、晕渲之后，海岸线、省界、高亮之前（见 renderer.ts 的 FS_COMPOSE）。
+// 停稳时是与地图画布一样大的一张；移动中按 MOTION_LAYER_SCALE 的分辨率、四周多画 MOTION_LAYER_MARGIN，镜头还在边距之内、
+// 缩放没变太多时照用（渲染器按 toUv 挪一挪、缩一缩取），渲染器移动中的场景重画时同一帧重画。导出整张地图时每块另画一张
+interface RiverCache {
+  canvas: HTMLCanvasElement | OffscreenCanvas;
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  key: unknown[];
+  cam: Camera;
+  // 画它时的虚拟画布（CSS 像素）与每个 CSS 像素几个像素
+  cw: number;
+  ch: number;
+  dev: number;
+  soft: boolean;
+  version: number;
+  epoch?: number;
+}
+let riverRest: RiverCache | null = null;
+let riverMotion: RiverCache | null = null;
+let riverTile: RiverCache | null = null;
+// 每画一次河的图层加一（渲染器按它决定要不要重新上传）
+let riverVersion = 0;
+
+function riverCache(old: RiverCache | null, W: number, H: number): RiverCache {
+  if (old && old.canvas.width === W && old.canvas.height === H && old.soft === overlayDebug.softLayers) return old;
+  const L = makeLayer(W, H, 1);
+  return { canvas: L.canvas, ctx: L.ctx, key: [], cam: { x: 0, y: 0, zoom: 1 }, cw: 0, ch: 0, dev: 0, soft: L.soft, version: -1 };
+}
+
+function paintRivers(L: RiverCache, world: World, paths: OverlayPaths, cam: Camera, style: 'realistic' | 'atlas', cw: number, ch: number, dev: number, key: unknown[]) {
+  L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  L.ctx.clearRect(0, 0, L.canvas.width, L.canvas.height);
+  drawRivers(L.ctx, world, paths, cam, style, cw, ch, dev);
+  L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  L.key = key;
+  L.cam = { ...cam };
+  L.cw = cw;
+  L.ch = ch;
+  L.dev = dev;
+  L.version = ++riverVersion;
+}
+
+// 地图单位 → 这张图上的位置（0–1，v 向上：上传时上下翻转）
+function riverTex(L: RiverCache): RiverTex {
+  const c = L.cam;
+  const z = c.zoom * L.dev;
+  const W = L.canvas.width;
+  const H = L.canvas.height;
+  return { source: L.canvas, version: L.version, toUv: [z / W, ((L.cw / 2 - c.x * c.zoom) * L.dev) / W, -z / H, 1 - ((L.ch / 2 - c.y * c.zoom) * L.dev) / H] };
+}
+
+const riverKey = (world: World, paths: OverlayPaths, style: string): unknown[] => [paths, world.mesh, style, world.small.riverTypes, world.small.planet.riverThreshold];
+
+// 屏幕上的河。screen：地图的画布（像素数与 CSS 大小）；motion：渲染器这一帧按移动中的画法画（或刚停下的那一帧）
+export function riverLayer(
+  world: World,
+  paths: OverlayPaths,
+  cam: Camera,
+  st: { style: 'realistic' | 'atlas'; motion?: boolean; motionEpoch?: number },
+  screen: { width: number; height: number; clientWidth: number; clientHeight: number },
+): RiverTex {
+  const cw = screen.clientWidth || 1;
+  const ch = screen.clientHeight || 1;
+  const dpr = screen.width / cw || 1;
+  const key = riverKey(world, paths, st.style);
+  if (!st.motion) {
+    const L = (riverRest = riverCache(riverRest, screen.width, screen.height));
+    const c = L.cam;
+    if (!samePathsKey(key, L.key) || c.x !== cam.x || c.y !== cam.y || c.zoom !== cam.zoom || L.cw !== cw || L.ch !== ch || L.dev !== dpr) paintRivers(L, world, paths, cam, st.style, cw, ch, dpr, key);
+    return riverTex(L);
+  }
+  const lw = cw * (1 + 2 * MOTION_LAYER_MARGIN);
+  const lh = ch * (1 + 2 * MOTION_LAYER_MARGIN);
+  const dev = dpr * MOTION_LAYER_SCALE;
+  const L = (riverMotion = riverCache(riverMotion, Math.max(1, Math.round(lw * dev)), Math.max(1, Math.round(lh * dev))));
+  const c = L.cam;
+  const fits = cam.zoom / c.zoom <= MOTION_LAYER_ZOOM && Math.abs(cam.x - c.x) + cw / 2 / cam.zoom <= lw / 2 / c.zoom && Math.abs(cam.y - c.y) + ch / 2 / cam.zoom <= lh / 2 / c.zoom;
+  if (!samePathsKey(key, L.key) || !fits || L.cw !== lw || L.ch !== lh || L.dev !== dev || (st.motionEpoch !== undefined && L.epoch !== st.motionEpoch)) {
+    paintRivers(L, world, paths, cam, st.style, lw, lh, dev, key);
+    L.epoch = st.motionEpoch;
+  }
+  return riverTex(L);
+}
+
+// 导出整张地图的一块：T × T 像素、每个 CSS 像素 dpr 个像素，镜头 cam 在这一块的中间（export-plan.ts 的 tileView 的 cx、cy）
+export function riverLayerTile(world: World, paths: OverlayPaths, cam: Camera, style: 'realistic' | 'atlas', T: number, dpr: number): RiverTex {
+  const L = (riverTile = riverCache(riverTile, T, T));
+  paintRivers(L, world, paths, cam, style, T / dpr, T / dpr, dpr, riverKey(world, paths, style));
+  return riverTex(L);
+}
+
+// 导出完放掉那一块的画布
+export function releaseRiverTile() {
+  riverTile = null;
+}
+
+// st.rivers：河画在叠加层上（测试、测速用；屏幕与导出的地图上河由渲染器合成，见 riverLayer，MapView 这里给 false）
 export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState): LabelBox[] {
   const canvas = ctx.canvas;
   const f = frameOf(ctx, st);

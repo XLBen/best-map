@@ -151,8 +151,11 @@ export interface DisplayCell {
   land: boolean;
   // 与这一点同类的格（描述这里是什么、吸取生态、点地名用）
   here: number;
-  // 省份按哪一格算（剪刀切线附近按在线的哪一边换过：省界、省份着色画的是它）
+  // 省份按哪一格算（剪刀切线附近按在线的哪一边换过：省界、省份着色画的是它）。画成水面的点只取水面格（见 provinceCell），
+  // 附近没有水面格时为 −1
   province: number;
+  // 这一点画成水面（海、湖；湖面在 land 里算陆地）
+  water: boolean;
 }
 
 // 海岸值按陆度数组缓存（同一个世界只算一次；只改了名字、省份的轻快照沿用同一个数组）
@@ -197,12 +200,44 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
   const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
   const land = sv + weight * coastDetailAmp(world, Math.max(0, h)) * detail > 0;
+  // 画成水面（海、湖）还是陆地：画面上的海岸场（湖面取负，与地形层、着色器的 land 相同）
+  const f = displayCoast(world);
+  const sw = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
+  const hw = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
+  const water = sw + weight * coastDetailAmp(world, Math.max(0, hw)) * detail <= 0;
   // 扭曲后的最近格（整个星球：南北夹在两极以内，与着色器相同）
   const [wx, wy] = sphere ? warpOffset3(px, y, sp) : warpOffset(px, y, sp);
   const qy = sphere ? Math.min(1, Math.max(0, y + wy)) : y + wy;
   const cell = findCell(mesh, px + wx, qy, loc.nearest);
   const here = (causes.land[cell] === 1) === land ? cell : sameKindNear(world, land, cell, loc.nearest, px, y);
-  return { cell, land, here, province: seamPick(seamsOf(world), world, px, y, cell) };
+  return { cell, land, water, here, province: provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water) };
+}
+
+// 省份按哪一格（第十三轮；与着色器的 provCell 同一条规则）：扭曲后的格按剪刀切线换过；这一点画成水面（海、湖）而那一格是陆地格时
+// 不取它（海上的像素永远不属于陆上的省）：依次试没扭曲的最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），
+// 取第一个水面格；都不是时为 −1（不着色、不画省界、选不中）。画成陆地的像素取到海格照旧（小块陆地可以算进海省）。
+// coast：画面上每格的海岸值（displayCoast，湖面 < 0）；near：没扭曲的最近格
+export const PROVINCE_RING = { n: 8, radii: [0.6, 1.2] } as const;
+export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | null, x: number, y: number, cell: number, near: number, water: boolean): number {
+  const first = seamPick(L, world, x, y, cell);
+  if (!water || first < 0 || coast[first] < 0) return first;
+  const ok = (c: number) => {
+    const g = seamPick(L, world, x, y, c);
+    return g >= 0 && coast[g] < 0 ? g : -1;
+  };
+  let g = ok(near);
+  if (g >= 0) return g;
+  const { mesh } = world;
+  for (const r of PROVINCE_RING.radii) {
+    const rr = r * mesh.spacing;
+    for (let k = 0; k < PROVINCE_RING.n; k++) {
+      const a = (k * 2 * Math.PI) / PROVINCE_RING.n;
+      // 着色器里的角度按画面（y 向上）量：地图上 y 向下，所以减
+      g = ok(findCell(mesh, x + rr * Math.cos(a), y - rr * Math.sin(a), near));
+      if (g >= 0) return g;
+    }
+  }
+  return -1;
 }
 
 // 最近格、扭曲后那一格与最近格的邻格里，离这一点最近的同类格（与导出 rasterizeWorld 的 sameKindCell 相同）；都不同类时保持原格

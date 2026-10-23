@@ -429,6 +429,12 @@ uniform int uHasFx;
 // 湖泊类型（第九轮）：每格的颜色与画法（见 colors.ts 的 lakeTintLayer）
 uniform sampler2D uTint;
 uniform int uHasTint;
+// 每格画面上的海岸值（湖面 < 0）：省份按格取时水面的像素只取水面格（见 provCell）
+uniform highp sampler2D uCellCoast;
+// 河（第十三轮）：叠加层画好的河（预乘 alpha），只合在画成陆地的像素上；uRiverXf：画面上的位置 → 河的那张图上的位置
+uniform sampler2D uRiver;
+uniform int uHasRiver;
+uniform vec4 uRiverXf;
 out vec4 oColor;
 ${NOISE_GLSL}
 // 场景上的位置夹在场景之内（停稳时与画面相同；移动中、导出的一块块场景四周多画了一圈，扭曲后伸出画面的取到那一圈）
@@ -455,6 +461,30 @@ int seamCell(int id, vec2 uv) {
   bool left = s.a > 127.5;
   if (g.r != (left ? sd.g : sd.r)) return id;
   return int((left ? sd.b : sd.a) + 0.5);
+}
+bool waterCell(int id) { return cellTex(uCellCoast, id).r < 0.0; }
+// 省份按哪一格（第十三轮；core/display.ts 的 provinceCell 是同一条规则）：idG 是扭曲后按切线换过的格，uv 是像素没扭曲的位置，
+// landPx 是这个像素画成陆地。画成水面（海、湖）的像素取到陆地格时不要它（海上的像素永远不属于陆上的省）：依次试没扭曲的
+// 最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），取第一个水面格；都不是时 −1（不着色、不画省界）。
+// 画成陆地的像素取到海格照旧（小块陆地可以算进海省）
+int provCell(int idG, vec2 uv, bool landPx) {
+  if (landPx || idG < 0 || waterCell(idG)) return idG;
+  int c = seamCell(idAt(uv), uv);
+  if (c >= 0 && waterCell(c)) return c;
+  for (int ring = 1; ring <= 2; ring++) {
+    vec2 r = (0.6 * float(ring) * uCellPx) * uTexel;
+    for (int k = 0; k < 8; k++) {
+      float a = float(k) * 0.7853982;
+      c = seamCell(idAt(uv + vec2(cos(a), sin(a)) * r), uv);
+      if (c >= 0 && waterCell(c)) return c;
+    }
+  }
+  return -1;
+}
+// 画面上另一点（省界、轮廓看的相邻像素）的省份格：陆海按那一点自己的场景像素
+int provAt(vec2 uv, vec2 uvW) {
+  bool l = texture(uSceneHeight, uv * uSceneXf.xy + uSceneXf.zw).g > 0.0;
+  return provCell(seamCell(idAt(uvW), uv), uv, l);
 }
 // 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors）：0 没有，1–127 平涂，128 只描边，129–255 斜线
 float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
@@ -485,11 +515,12 @@ void main() {
   vec2 uvW = ((world + w) * uView.xy + uView.zw) * 0.5 + 0.5;
   int id = idAt(uvW);
 
-  // 省界、省份着色、省份的高亮用切线换过的格
-  int idG = seamCell(id, vUv);
+  // 省界、省份着色、省份的高亮用切线换过、水面只取水面格的格（provCell）
+  int pc = provCell(seamCell(id, vUv), vUv, land);
+  int idF = uFlatByGroup == 1 ? pc : id;
   vec4 fc = vec4(0.0);
-  if (uHasFlat == 1 && id >= 0) {
-    fc = cellTex(uFlat, uFlatByGroup == 1 ? idG : id);
+  if (uHasFlat == 1 && idF >= 0) {
+    fc = cellTex(uFlat, idF);
     col = mix(col, fc.rgb, fc.a);
   }
   ${FX_BEGIN}
@@ -546,10 +577,9 @@ void main() {
         iso = max(iso, 1.0 - smoothstep(0.5, 1.5, abs(depth - T) / fw));
       }
       col = mix(col, vec3(0.45, 0.58, 0.66), 0.35 * iso);
-      // 平涂的海盖掉了前面的省份着色：再涂一次（海省默认不着色、A 为 0；用户给海省选了颜色时与写实风格一样涂上）
-      // 只涂海省的格：海岸边按扭曲落到陆格上的海上像素不涂陆上省的颜色（地图册的海原来就盖住它们）
-      float gS = uHasGroup == 1 && id >= 0 ? groupOf(uFlatByGroup == 1 ? idG : id) : -1.0;
-      if (gS < -0.5) col = mix(col, fc.rgb, fc.a);
+      // 平涂的海盖掉了前面的省份着色：再涂一次（海省默认不着色、A 为 0；用户给海省选了颜色时与写实风格一样涂上；
+      // 湖省、湖所在的省照样涂）。水面的像素只取水面格（provCell），不会涂上陆上省的颜色
+      col = mix(col, fc.rgb, fc.a);
       col *= mix(1.0, 0.94 + 0.06 * shade, uShade);
     }
   } else if (land) {
@@ -594,16 +624,22 @@ void main() {
   if (glowSlot >= 0 && fx.b > 0.5) col += texelFetch(uFxPal, ivec2(1, glowSlot), 0).rgb * (fx.b / 255.0) * (uStyle == 1 ? ${glsl(GLOW_GAIN_ATLAS)} : ${glsl(GLOW_GAIN)});
   ${FX_END}
 
+  // 河：画在平涂、晕渲之后，海岸线、省界、高亮之前；只画在画成陆地的像素上（海面、湖面上不画，河口正好停在岸线）
+  if (uHasRiver == 1 && land) {
+    vec4 rv = texture(uRiver, vUv * uRiverXf.xy + uRiverXf.zw);
+    col = col * (1.0 - rv.a) + rv.rgb;
+  }
+
   // 海岸线：地形层画好的抗锯齿细线
   col = mix(col, uStyle == 1 ? vec3(0.35, 0.27, 0.2) : vec3(0.18, 0.22, 0.24), base.a * (uStyle == 1 ? 0.8 : 0.4) / sqrt(max(uScenePx, 1.0)));
 
   // 分组边界（省份）：扭曲坐标下相邻像素的分组不同
-  if (uHasGroup == 1 && id >= 0) {
+  if (uHasGroup == 1 && pc >= 0) {
     vec2 dx = vec2(uTexel.x * 1.5, 0.0);
     vec2 dy = vec2(0.0, uTexel.y * 1.5);
-    float g0 = groupOf(idG);
-    float gx = groupOf(seamCell(idAt(uvW + dx), vUv + dx));
-    float gy = groupOf(seamCell(idAt(uvW + dy), vUv + dy));
+    float g0 = groupOf(pc);
+    float gx = groupOf(provAt(vUv + dx, uvW + dx));
+    float gy = groupOf(provAt(vUv + dy, uvW + dy));
     // 陆海之间的边界已经由海岸线画出，这里只画同类之间的
     bool bx = gx > -1e8 && gx != g0 && (gx > 0.0) == (g0 > 0.0);
     bool by = gy > -1e8 && gy != g0 && (gy > 0.0) == (g0 > 0.0);
@@ -616,8 +652,8 @@ void main() {
   // 高亮与轮廓
   if (uHasHighlight == 1 && id >= 0) {
     bool byGroup = uHighlightByGroup == 1;
-    int idH = byGroup ? idG : id;
-    vec4 hc = cellTex(uHighlight, idH);
+    int idH = byGroup ? pc : id;
+    vec4 hc = idH >= 0 ? cellTex(uHighlight, idH) : vec4(0.0);
     float A0 = hc.a * 255.0;
     float a0 = hlAlpha(A0);
     if (A0 > 128.5) {
@@ -631,10 +667,8 @@ void main() {
     // 更淡的（闪烁淡出时、渐变的边缘）跟着一起淡，不会在中途忽然断掉；只描边的格固定 0.75
     vec2 hx = vec2(uTexel.x * 1.5, 0.0);
     vec2 hy = vec2(0.0, uTexel.y * 1.5);
-    int ix = idAt(uvW + hx);
-    int iy = idAt(uvW + hy);
-    float Ax = hlByte(byGroup ? seamCell(ix, vUv + hx) : ix);
-    float Ay = hlByte(byGroup ? seamCell(iy, vUv + hy) : iy);
+    float Ax = hlByte(byGroup ? provAt(vUv + hx, uvW + hx) : idAt(uvW + hx));
+    float Ay = hlByte(byGroup ? provAt(vUv + hy, uvW + hy) : idAt(uvW + hy));
     bool on0 = A0 > 0.5;
     if (on0 != (Ax > 0.5) || on0 != (Ay > 0.5)) {
       bool lineOnly = abs(A0 - 128.0) < 0.5 || abs(Ax - 128.0) < 0.5 || abs(Ay - 128.0) < 0.5;
@@ -909,6 +943,14 @@ export interface CellLayers {
 
 export type MapStyle = 'realistic' | 'atlas';
 
+// 河的图层（第十三轮，overlay.ts 的 riverLayer 画的）：一张预乘之前的 RGBA 画布，合成时只混进画成陆地的像素。
+// version 变了才重新上传；toUv：地图单位 → 这张图上的位置（0–1，v 向上），u = x·a + b，v = y·c + d
+export interface RiverTex {
+  source: HTMLCanvasElement | OffscreenCanvas;
+  version: number;
+  toUv: [number, number, number, number];
+}
+
 type V4 = [number, number, number, number];
 // 一块像素（x, y, 宽, 高；GL 的 y 向上）
 type Rect = [number, number, number, number];
@@ -979,7 +1021,10 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river', WebGLTexture>;
+  // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取），null 不画河。现在上传着的是哪一张、哪个版本
+  riverLayer: ((motion: boolean) => RiverTex | null) | null = null;
+  private riverShown: { source: unknown; version: number } | null = null;
   // 场景（编号层、地形层、切线层）：停稳时画在与画布一样大的一组目标上；移动中画在低分辨率、带边距的另一组上
   private rest: SceneTarget;
   private moving: SceneTarget;
@@ -1066,7 +1111,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true) };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1078,6 +1123,9 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     gl.bindTexture(gl.TEXTURE_2D, this.tex.fxPal);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4));
+    // 河的图层也先放一个空纹素
+    gl.bindTexture(gl.TEXTURE_2D, this.tex.river);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     // 切线：长方形的四个角（每个顶点一个），与每段的实例数据：10 个数（aSeg 4、aNb 4、aEnds 2）
     this.seamVao = gl.createVertexArray()!;
     gl.bindVertexArray(this.seamVao);
@@ -1458,6 +1506,22 @@ export class Renderer {
     }
   }
 
+  // 河的图层：换了画布或版本才上传（上下翻转、预乘 alpha：线性插值时透明处不发黑，合成按预乘混）
+  private useRiver(r: RiverTex | null): RiverTex | null {
+    if (!r) return null;
+    const s = this.riverShown;
+    if (s && s.source === r.source && s.version === r.version) return r;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex.river);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, r.source);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    this.riverShown = { source: r.source, version: r.version };
+    return r;
+  }
+
   setHighlight(h: Uint8Array | null) {
     this.highlightVersion++;
     this.hasHighlight = !!h;
@@ -1598,7 +1662,10 @@ export class Renderer {
     // 切线层：镜头、窗口、切线变了才重画
     const hasSeams = this.hasGroup && this.seamCount > 0;
     const seamKey = hasSeams ? `${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
-    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
+    // 河的图层：刚停下的那一帧照用移动中的那张（停稳的那张下一帧再画，两样重活分在两帧）
+    const river = this.riverLayer?.(this.justSettled) ?? null;
+    const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${riverKey}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -1619,7 +1686,7 @@ export class Renderer {
       this.drawSeams(t, view, cam.x, halfW);
     }
     this.composeKey = composeKey;
-    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], mesh.spacing * cam.zoom * dpr, 1, 1, relief, hasSeams);
+    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], mesh.spacing * cam.zoom * dpr, 1, 1, relief, hasSeams, this.useRiver(river));
   }
 
   // 移动中的画法：场景按 MOTION_SCALE 的分辨率、四周各多画 MOTION_MARGIN 画在另一组目标上；镜头还在边距之内、
@@ -1685,7 +1752,8 @@ export class Renderer {
     const sy = (-2 * z1) / oh;
     const view: V4 = [sx, sy, -cam.x * sx, -cam.y * sy];
     gl.viewport(0, 0, ow, oh);
-    this.compose(this.out.fbo, this.moving, view, xf, [1 / ow, 1 / oh], mesh.spacing * z1, w / ow, (z1 / z0) * (w / ow), this.reliefNow(), hasSeams);
+    const river = this.useRiver(this.riverLayer?.(true) ?? null);
+    this.compose(this.out.fbo, this.moving, view, xf, [1 / ow, 1 / oh], mesh.spacing * z1, w / ow, (z1 / z0) * (w / ow), this.reliefNow(), hasSeams, river);
     // 放大拷到画布上
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.out.fbo);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
@@ -1710,7 +1778,8 @@ export class Renderer {
   // 按停稳的画法（全分辨率，同样的着色器）画一块：tv 见 export-plan.ts 的 tileView；zoom 是虚拟镜头的缩放（CSS 像素 / 地图单位），
   // dpr 是每个 CSS 像素合几个图上的像素。返回 T × T 的 RGBA，从上到下一行行。
   // 画的是渲染器现在的图层（调用方先换成干净的：不带高亮、预览、幽灵海岸）；屏幕上的画布、停稳时的场景不动
-  renderTile(kmPerUnit: number, tv: { scene: V4; out: V4; xf: V4; cx: number; halfW: number; S: number }, T: number, zoom: number, dpr: number): Uint8Array {
+  // river：这一块的河（overlay.ts 的 riverLayerTile），null 不画
+  renderTile(kmPerUnit: number, tv: { scene: V4; out: V4; xf: V4; cx: number; halfW: number; S: number }, T: number, zoom: number, dpr: number, river: RiverTex | null = null): Uint8Array {
     const gl = this.gl;
     const mesh = this.mesh;
     if (!mesh || !this.triVao || !this.fanVao) throw new Error('还没有地图');
@@ -1737,7 +1806,7 @@ export class Renderer {
     this.drawTerrain(E.scene, tv.scene, 1 / Z, copy0, copies, coastAmp, kmPerUnit, null);
     if (hasSeams) this.drawSeams(E.scene, tv.scene, tv.cx, tv.halfW);
     gl.viewport(0, 0, T, T);
-    this.compose(E.fbo, E.scene, tv.out, tv.xf, [1 / T, 1 / T], mesh.spacing * Z, 1, 1, this.reliefAt(zoom), hasSeams);
+    this.compose(E.fbo, E.scene, tv.out, tv.xf, [1 / T, 1 / T], mesh.spacing * Z, 1, 1, this.reliefAt(zoom), hasSeams, this.useRiver(river));
     const px = new Uint8Array(T * T * 4);
     gl.readPixels(0, 0, T, T, gl.RGBA, gl.UNSIGNED_BYTE, px);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1846,7 +1915,8 @@ export class Renderer {
 
   // 4. 合成：画进 fb（null 是画布）。xf：画面上的位置 → 场景 t 上的位置；texel：画面一个像素（0–1）；
   // cellPx：一格合画面几个像素；pxScale：画面一个像素合几个屏幕像素；scenePx：场景一个像素合几个屏幕像素
-  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean) {
+  // river：已上传的河的图层（null 不画）
+  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean, river: RiverTex | null) {
     const gl = this.gl;
     const mesh = this.mesh!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
@@ -1887,6 +1957,14 @@ export class Renderer {
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFx'), hasFx ? 1 : 0);
     this.bindTex(pc, 'uTint', this.tex.tint, 10);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
+    this.bindTex(pc, 'uCellCoast', this.tex.coast, 11);
+    this.bindTex(pc, 'uRiver', this.tex.river, 12);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uHasRiver'), river ? 1 : 0);
+    if (river) {
+      // 画面上的位置（0–1）→ 地图单位 → 河的那张图上的位置（双精度在这里算好，着色器里只乘加一次）
+      const [a, b, c, d] = river.toUv;
+      gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), (2 * a) / view[0], (2 * c) / view[1], ((-1 - view[2]) / view[0]) * a + b, ((-1 - view[3]) / view[1]) * c + d);
+    }
     gl.bindVertexArray(null);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

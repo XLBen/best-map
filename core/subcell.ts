@@ -917,7 +917,11 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
       // 扭曲后的点离最近格的中心足够近时 findCell 必定返回它（整个星球：与 mesh.locate 同样绕回经度）
       const near2 = sphere ? within(dl, r2, qx - 2 * Math.floor(qx / 2), qy, near) : within(dl, r2, qx, qy, near);
       let cell = near2 ? near : findCell(mesh, qx, qy, near);
-      if ((landOf[cell] === 1) !== land) cell = sameKindCell(mesh, landOf, land, cell, near, x, y);
+      if ((landOf[cell] === 1) !== land) {
+        cell = sameKindCell(mesh, landOf, land, cell, near, x, y);
+        // 海上的像素永远不取陆地格（第十三轮）：窄的海湾里邻格都是陆地时，沿网格的相邻往外找最近的海格
+        if (!land && landOf[cell] === 1) cell = nearestSeaCell(mesh, landOf, cell, x, y);
+      }
       outCell[p] = cell;
     }
     if (onProgress && ((py + 1) % PROGRESS_ROWS === 0 || py === height - 1)) onProgress((py + 1) / height);
@@ -949,6 +953,34 @@ function sameKindCell(mesh: Mesh, landOf: Uint8Array, land: boolean, cell: numbe
     }
   }
   return best >= 0 ? best : cell;
+}
+
+// 从格 start 起沿网格的相邻一圈圈往外找，第一圈里有海格时取离像素最近的那个；一直没有（没有海的世界）时保持原格
+const SEA_SEARCH_RINGS = 64;
+export function nearestSeaCell(mesh: Mesh, landOf: Uint8Array, start: number, x: number, y: number): number {
+  const seen = new Set<number>([start]);
+  let frontier = [start];
+  for (let ring = 0; ring < SEA_SEARCH_RINGS && frontier.length; ring++) {
+    const next: number[] = [];
+    let best = -1;
+    let bd = Infinity;
+    for (const c of frontier) {
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (seen.has(j)) continue;
+        seen.add(j);
+        next.push(j);
+        const d = sameKindDist(mesh, landOf, false, j, x, y);
+        if (d < bd || (d === bd && j < best)) {
+          bd = d;
+          best = j;
+        }
+      }
+    }
+    if (best >= 0) return best;
+    frontier = next;
+  }
+  return start;
 }
 
 // 格 j 与像素同类时返回到像素的距离平方，不同类返回 Infinity（不参与比较）

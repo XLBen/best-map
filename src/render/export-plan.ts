@@ -121,8 +121,8 @@ export function tileSize(limit: number, margin: number, pref = 1024): number {
 type V4 = [number, number, number, number];
 
 // 一块的视图：scene 是场景（S × S，S = T + 2m）的“地图单位 → 裁剪空间”，out 是合成画面（T × T）的，
-// xf 是合成画面上的位置（0–1）→ 场景上的位置；cx 是这一块的中心（地图单位），halfW 是场景的半宽（地图单位）
-export function tileView(f: ExportFrame, x0: number, y0: number, T: number, m: number): { scene: V4; out: V4; xf: V4; cx: number; halfW: number; S: number } {
+// xf 是合成画面上的位置（0–1）→ 场景上的位置；cx、cy 是这一块的中心（地图单位），halfW 是场景的半宽（地图单位）
+export function tileView(f: ExportFrame, x0: number, y0: number, T: number, m: number): { scene: V4; out: V4; xf: V4; cx: number; cy: number; halfW: number; S: number } {
   const Z = f.cam.zoom * f.dpr;
   const S = T + 2 * m;
   const cx = f.cam.x + (x0 + T / 2 - f.width / 2) / Z;
@@ -132,5 +132,5 @@ export function tileView(f: ExportFrame, x0: number, y0: number, T: number, m: n
     const sy = (-2 * Z) / n;
     return [sx, sy, -cx * sx, -cy * sy];
   };
-  return { scene: view(S), out: view(T), xf: [T / S, T / S, m / S, m / S], cx, halfW: S / 2 / Z, S };
+  return { scene: view(S), out: view(T), xf: [T / S, T / S, m / S, m / S], cx, cy, halfW: S / 2 / Z, S };
 }

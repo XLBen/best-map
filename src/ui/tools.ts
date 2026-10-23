@@ -1852,9 +1852,15 @@ function shownAt(w: World, p: Pointer): DisplayCell | null {
 
 // 鼠标下算哪一格的省（选省、合并、吸取省份用）：地图上这一点画成哪个省就是哪个
 // （扭曲后的格、剪刀切线两边按显示出来的那一边，与着色器同一条规则）
+// 画成水面（海、湖）的点只取水面格（海上的点永远不算陆上的省）；附近没有水面格时为 −1
 export function provinceCellAt(w: World, p: Pointer): number {
   return shownAt(w, p)?.province ?? -1;
 }
+// 鼠标下画出来的省（省份编号；没有时 −1）
+const provinceIdAt = (w: World, p: Pointer): number => {
+  const c = provinceCellAt(w, p);
+  return c >= 0 ? w.causes.province[c] : -1;
+};
 
 export function provinceSelectTool(): ToolHandler {
   let pointer: Pointer | null = null;
@@ -1866,13 +1872,13 @@ export function provinceSelectTool(): ToolHandler {
     click(p) {
       const w = world.value;
       if (!w || p.cell < 0) return;
-      const id = w.causes.province[provinceCellAt(w, p)];
+      const id = provinceIdAt(w, p);
       selectedProvince.value = id >= 0 ? id : null;
     },
     preview() {
       const w = world.value;
       if (!w || !pointer || pointer.cell < 0) return EMPTY;
-      const id = w.causes.province[provinceCellAt(w, pointer)];
+      const id = provinceIdAt(w, pointer);
       if (id < 0) return EMPTY;
       return { layers: [], shapes: [], hint: provinceName(w, id) };
     },
@@ -2080,7 +2086,7 @@ export function provinceMergeTool(): ToolHandler {
   const view = (): Preview => {
     const w = world.value;
     if (!w || !pointer || pointer.cell < 0) return EMPTY;
-    const id = w.causes.province[provinceCellAt(w, pointer)];
+    const id = provinceIdAt(w, pointer);
     const sel = selectedProvince.value;
     if (id < 0) return EMPTY;
     if (sel === null || sel === id || !w.small.provinces[sel]) return { layers: [], shapes: [], hint: provinceName(w, id) };
@@ -2121,7 +2127,7 @@ export function provinceMergeTool(): ToolHandler {
     async click(p) {
       const w = world.value;
       if (!w || p.cell < 0 || isBusy()) return;
-      const id = w.causes.province[provinceCellAt(w, p)];
+      const id = provinceIdAt(w, p);
       const sel = selectedProvince.value;
       if (id < 0) return;
       if (sel === null || sel === id || !w.small.provinces[sel]) {

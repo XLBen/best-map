@@ -8,7 +8,7 @@ import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
 import { exportFrame, type LabelSize, planTiles, tileMargin, tileSize, tileView } from '../render/export-plan';
-import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
+import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type ProvinceLabel, buildPaths, drawOverlay, releaseRiverTile, riverLayer, riverLayerTile, riverPathsKey, samePathsKey } from '../render/overlay';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import {
   FLASH_MS,
@@ -476,6 +476,12 @@ export function MapView() {
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = category.value === 'provinces';
       renderer.style = mapStyle.value;
+      // 河由渲染器在合成一步里画（只画在陆地上，排在省界、高亮下面）：渲染器按这一帧是不是移动中取停稳或移动中的那张
+      const shownRivers = shown === w ? paths : pathsOf(shown);
+      const style = mapStyle.value;
+      renderer.riverLayer = overlays.value.rivers
+        ? (motion) => riverLayer(shown, shownRivers, renderer.camera, { style, motion, motionEpoch: renderer.motionEpoch }, glCanvas)
+        : null;
       // 镜头正在动：渲染器按低分辨率画了这一帧，停下 SETTLE_MS 以后再画一次（补上全分辨率的）。导出图片一定按停稳的画法画
       const moving = renderer.render(w.kmPerUnit, { still: clean });
       // 停下后补画全分辨率的那一帧：地图这一帧按停稳的画法画，叠加层先照移动中的样子贴，下一帧再按停稳的画（两样重活分在两帧）
@@ -494,8 +500,8 @@ export function MapView() {
       const lift = barLift();
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
-      const ovArgs: OverlayArgs = [shown, shown === w ? paths : pathsOf(shown), renderer.camera, {
-        rivers: overlays.value.rivers,
+      const ovArgs: OverlayArgs = [shown, shownRivers, renderer.camera, {
+        rivers: false,
         wind: overlays.value.wind,
         markers: c === 'water' && !clean,
         season: season.value,
@@ -1009,7 +1015,10 @@ export function MapView() {
           // 每一块前都按当前世界换成干净的图层（中间世界变了也一致：都按开始时的这一份）
           cleanState(w);
           const t = tiles[i];
-          const px = renderer.renderTile(w.kmPerUnit, tileView(fr, t.x, t.y, T, m), T, fr.cam.zoom, fr.dpr);
+          const tv = tileView(fr, t.x, t.y, T, m);
+          // 这一块的河（只画在陆地上，与屏幕上一样由渲染器合成）
+          const river = overlays.value.rivers ? riverLayerTile(w, paths, { x: tv.cx, y: tv.cy, zoom: fr.cam.zoom }, mapStyle.value, T, fr.dpr) : null;
+          const px = renderer.renderTile(w.kmPerUnit, tv, T, fr.cam.zoom, fr.dpr, river);
           const img = new ImageData(t.w, t.h);
           if (t.w === T) img.data.set(px.subarray(0, T * t.h * 4));
           else for (let r = 0; r < t.h; r++) img.data.set(px.subarray(r * T * 4, (r * T + t.w) * 4), r * t.w * 4);
@@ -1023,6 +1032,7 @@ export function MapView() {
         return out;
       } finally {
         renderer.releaseExport();
+        releaseRiverTile();
         exportBusy = false;
         lastHighlightKey = [];
         requestDraw();
@@ -1049,7 +1059,8 @@ export function MapView() {
       const groups = labelGroups.value;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
       return {
-        rivers: overlays.value.rivers,
+        // 河画在每一块里（renderTile）
+        rivers: false,
         wind: overlays.value.wind,
         markers: false,
         season: season.value,
