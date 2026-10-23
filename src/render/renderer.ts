@@ -1509,14 +1509,15 @@ export class Renderer {
     const relief = this.reliefNow();
     // 幽灵海岸带着将来的海岸细节幅度（拖海岸曲折时）
     const coastAmp = this.ghostAmp ?? this.coastAmp;
-    const idKey = `${this.meshVersion}|${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}`;
+    // 带上 dpr：页面缩放变了而画布像素数没变（CSS 大小跟着反过来变）时也要重画
+    const idKey = `${this.meshVersion}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}`;
     const terrainStatic = `${idKey}|${this.detail}|${coastAmp}|${kmPerUnit}`;
     const terrainKey = `${terrainStatic}|${this.layersVersion}`;
     const halfW = this.canvas.clientWidth / 2 / cam.zoom;
     const [copy0, copies] = this.copiesFor(cam.x, halfW);
     // 切线层：镜头、窗口、切线变了才重画
     const hasSeams = this.hasGroup && this.seamCount > 0;
-    const seamKey = hasSeams ? `${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
+    const seamKey = hasSeams ? `${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
     const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;

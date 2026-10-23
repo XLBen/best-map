@@ -379,6 +379,8 @@ interface BackLayer {
   soft: boolean;
   // 缓存里已经画好（停稳的那一张第一次没变时才画）
   ready: boolean;
+  // 画它时每个 CSS 像素几个像素（页面缩放变了、画布像素数没变时也要重画）
+  dpr: number;
 }
 let restLayer: BackLayer | null = null;
 let motionLayer: BackLayer | null = null;
@@ -386,10 +388,10 @@ let motionLayer: BackLayer | null = null;
 // 开发用（src/render/bench.ts 的 overlayBench）：底层改用软件画的画布，测速时能同步量到画它花的时间
 export const overlayDebug = { softLayers: false };
 
-function makeLayer(w: number, h: number): BackLayer {
+function makeLayer(w: number, h: number, dpr: number): BackLayer {
   const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
   const ctx = canvas.getContext('2d', overlayDebug.softLayers ? { willReadFrequently: true } : undefined) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-  return { canvas, ctx, key: [], cam: { x: 0, y: 0, zoom: 1 }, soft: overlayDebug.softLayers, ready: false };
+  return { canvas, ctx, key: [], cam: { x: 0, y: 0, zoom: 1 }, soft: overlayDebug.softLayers, ready: false, dpr };
 }
 
 // 底层的河与标记，画进 ctx：画布是 cw × ch 个 CSS 像素、每个 CSS 像素 dev 个像素，镜头在画布中间
@@ -472,7 +474,8 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
   const key = backKey(world, paths, st);
   if (!st.rivers && !st.markers) return;
   if (!st.motion) {
-    if (!restLayer || restLayer.canvas.width !== canvas.width || restLayer.canvas.height !== canvas.height || restLayer.soft !== overlayDebug.softLayers) restLayer = makeLayer(canvas.width, canvas.height);
+    if (!restLayer || restLayer.canvas.width !== canvas.width || restLayer.canvas.height !== canvas.height || restLayer.soft !== overlayDebug.softLayers || restLayer.dpr !== dpr)
+      restLayer = makeLayer(canvas.width, canvas.height, dpr);
     const L = restLayer;
     const c = L.cam;
     if (st.exact || !samePathsKey(key, L.key) || c.x !== cam.x || c.y !== cam.y || c.zoom !== cam.zoom) {
@@ -502,7 +505,7 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
   const dev = dpr * MOTION_LAYER_SCALE;
   const W = Math.max(1, Math.round(lw * dev));
   const H = Math.max(1, Math.round(lh * dev));
-  if (!motionLayer || motionLayer.canvas.width !== W || motionLayer.canvas.height !== H || motionLayer.soft !== overlayDebug.softLayers) motionLayer = makeLayer(W, H);
+  if (!motionLayer || motionLayer.canvas.width !== W || motionLayer.canvas.height !== H || motionLayer.soft !== overlayDebug.softLayers || motionLayer.dpr !== dpr) motionLayer = makeLayer(W, H, dpr);
   const L = motionLayer;
   const fits = (c: Camera) =>
     cam.zoom / c.zoom <= MOTION_LAYER_ZOOM && Math.abs(cam.x - c.x) + cw / 2 / cam.zoom <= lw / 2 / c.zoom && Math.abs(cam.y - c.y) + ch / 2 / cam.zoom <= lh / 2 / c.zoom;
