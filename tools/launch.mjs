@@ -125,7 +125,7 @@ const hash = sourceHash();
 let built = existsSync(join(root, 'dist', 'index.html')) && existsSync(STAMP) && readFileSync(STAMP, 'utf8').trim() === hash;
 if (!built) {
   console.log('正在打包地图（代码更新后第一次要一会儿）…');
-  built = await runNode([vite, 'build', '--logLevel', 'warn']);
+  built = await runNode([vite, 'build', '--logLevel', 'error']);
   if (built) writeFileSync(STAMP, hash);
   else console.log('打包没有成功，改用开发模式开启（慢一些，打开世界时要从头算）。');
 }
