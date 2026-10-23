@@ -66,7 +66,7 @@ export function WorldMenu() {
         <Boxes size={18} />
         <span>
           <b>资源包…</b>
-          <span class="how">装进别人做好的生态、河流类型、星球形态，或把这个世界里自己做的导出来</span>
+          <span class="how">装进别人做好的生态、河流和湖泊类型、星球形态，或把这个世界里自己做的导出来</span>
         </span>
       </button>
       <p class="muted small">浏览器里会自动保存最近一次的世界；换电脑或想留备份时，用“保存世界文件”。</p>

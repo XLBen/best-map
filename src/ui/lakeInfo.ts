@@ -105,11 +105,15 @@ export function lakeTypeChoiceCommand(w: World, ref: LakeRef, choice: string | n
   const who = name ? `「${name}」` : '这个湖';
   const what = choice === PLAIN_LAKE ? '普通的湖' : ((w.small.lakeTypes ?? []).find((t) => t.id === choice)?.name ?? choice);
   const label = choice === null ? `${who}的类型改回按规则` : `${who}改成${what}`;
-  if (info.placed) {
-    if ((info.placed.type ?? null) === want) return null;
-    return { op: 'update_lake', id: info.placed.id, patch: { type: want }, label };
-  }
   const old = typingIn(w, info.cells);
+  if (info.placed) {
+    // 放进一个选过类型的自然湖里的湖：那片湖原来选的一起去掉（不然放的湖改回按规则时还是那一种）
+    const drop: Command[] = old.length ? [{ op: 'type_lake', cell: old[0].cell, type: null, drop: old.map((e) => e.cell) }] : [];
+    const own: Command[] = (info.placed.type ?? null) === want ? [] : [{ op: 'update_lake', id: info.placed.id, patch: { type: want } }];
+    if (!own.length && !drop.length) return null;
+    if (!drop.length) return { ...own[0], label } as Command;
+    return { op: 'batch', label, commands: [...own, ...drop] };
+  }
   if ((old.at(-1)?.type ?? null) === want && old.length <= 1) return null;
   const cell = ref.kind === 'natural' ? ref.cell : info.cells[0];
   return { op: 'type_lake', cell, type: want, ...(old.length ? { drop: old.map((e) => e.cell) } : {}), label };

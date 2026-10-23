@@ -20,8 +20,10 @@ import { type MenuItem, TypeButton, TypeMenu, createAndUse } from './waterTypes'
 export function NewLakeTypePick() {
   const w = world.value;
   if (!w) return null;
-  const t = w.small.lakeTypes?.find((x) => x.id === options.value.lakeType) ?? null;
-  return <TypeButton kind="lake" prefix="新放的湖" type={t} panel="newlaketype" />;
+  const cur = options.value.lakeType;
+  const t = w.small.lakeTypes?.find((x) => x.id === cur) ?? null;
+  const byRules = !t && cur !== PLAIN_LAKE && hasLakeRules(w);
+  return <TypeButton kind="lake" prefix="新放的湖" type={t} panel="newlaketype" plainText={byRules ? '按规则' : '普通'} />;
 }
 
 // 新放的湖用哪一种

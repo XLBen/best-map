@@ -1611,6 +1611,11 @@ kbd {
   background: var(--accent-bg);
   border-color: var(--accent-line);
 }
+/* 菜单行里的色块不跟着文字撑开 */
+.menu-row span.swatch {
+  flex: 0 0 auto;
+  display: inline-block;
+}
 .river-type-editor {
   padding: 6px 4px 10px 12px;
   border-left: 2px solid var(--line);

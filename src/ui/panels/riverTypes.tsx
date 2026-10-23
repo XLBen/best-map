@@ -76,7 +76,8 @@ export function NewRiverTypePick() {
   if (!w) return null;
   const cur = options.value.riverType;
   const t = w.small.riverTypes?.find((x) => x.id === cur) ?? null;
-  return <TypeButton kind="river" prefix="新画的河" type={t} panel="newrivertype" />;
+  const byRules = !t && cur !== PLAIN_RIVER && hasRules(w);
+  return <TypeButton kind="river" prefix="新画的河" type={t} panel="newrivertype" plainText={byRules ? '按规则' : '普通'} />;
 }
 
 // 新画的河用哪一种：有规则时“按规则”“普通的河”分开（普通的河不按规则变），没有规则时只有“普通的河”

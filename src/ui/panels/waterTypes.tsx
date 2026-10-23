@@ -109,7 +109,8 @@ export function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }
 
 // 底部条上的按钮：“新画的河：血河 ▾”“这个湖：普通 ▾”。总是显示（世界里还没有类型时是“普通”，列表里能新建）。
 // auto：现在是按各类型的规则判断出来的
-export function TypeButton({ kind, prefix, type, auto, panel }: { kind: WaterKind; prefix: string; type: WaterType | null; auto?: boolean; panel: PanelId }) {
+// plainText：没有类型时写什么（新画的河、新放的湖按规则时写“按规则”）
+export function TypeButton({ kind, prefix, type, auto, panel, plainText = '普通' }: { kind: WaterKind; prefix: string; type: WaterType | null; auto?: boolean; panel: PanelId; plainText?: string }) {
   const noun = KINDS[kind].noun;
   return (
     <button
@@ -119,7 +120,7 @@ export function TypeButton({ kind, prefix, type, auto, panel }: { kind: WaterKin
       title={auto ? `是哪一种${noun}（现在是按规则判断的）` : `是哪一种${noun}`}
     >
       <span class="muted">{prefix}：</span>
-      <TypeSwatch kind={kind} t={type} /> {type ? type.name : '普通'}
+      <TypeSwatch kind={kind} t={type} /> {type ? type.name : plainText}
       {auto && type ? <span class="muted small">（按规则）</span> : null}
       <ChevronDown size={13} />
     </button>

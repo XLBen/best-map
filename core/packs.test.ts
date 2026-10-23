@@ -252,6 +252,32 @@ describe('资源包用到世界', () => {
     expect(p2.skipped.find((s) => s.from === 'crystal_jungle')?.id).toBe('crystal_jungle-2');
   });
 
+  it('湖泊类型：先加湖泊类型、再加生态；撞 id 改名，生态脚本里的 nearLake()、hasLake() 和条件 lake:x 跟着改；导出再导入一样', () => {
+    const user = biome('lakeside', {
+      tolerances: [{ field: 'lake:blood_pool', min: 0.1, optLow: 0.5, optHigh: 1, max: 1 }],
+      scripts: { placement: { api: 1, src: "return hasLake('blood_pool') ? nearLake('blood_pool') : river('blood_pool');" } },
+    });
+    const p = pack({ biomes: [user], lakeTypes: [{ id: 'blood_pool', name: '血池', color: '#9b1b1b' }] });
+    // river('blood_pool') 是河流类型（包里没有），湖泊类型的引用都在
+    expect(packProblems(p)).toEqual(['「lakeside」用到了河流类型 blood_pool，资源包里没有：没有这种河时按离得很远算']);
+    expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.map((c) => c.op)).toEqual(['set_lake_type', 'add_species']);
+    const w = fakeWorld();
+    (w.small as { lakeTypes?: unknown }).lakeTypes = [{ id: 'blood_pool', name: '别的血池', color: '#000000' }];
+    const renamed = planPack(w, p, defaultPicks(p));
+    const set = renamed.command.commands[0];
+    expect(set.op === 'set_lake_type' && set.type).toEqual({ id: 'blood_pool-2', name: '血池 2', color: '#9b1b1b', seedKey: 'blood_pool' });
+    const sp = renamed.command.commands.find((c) => c.op === 'add_species');
+    const s = sp?.op === 'add_species' ? (sp.species as Species) : null;
+    expect(s!.scripts!.placement!.src).toBe("return hasLake('blood_pool-2') ? nearLake('blood_pool-2') : river('blood_pool');");
+    expect(s!.tolerances.map((t) => t.field)).toContain('lake:blood_pool-2');
+    expect(s!.tolerances.map((t) => t.field)).not.toContain('lake:blood_pool');
+    // 引用了包里没有的湖泊类型：提醒一句
+    expect(packProblems(pack({ biomes: [user] }))).toContain('「lakeside」用到了湖泊类型 blood_pool，资源包里没有：没有这种湖时按离得很远算');
+    // 导出再导入：一模一样
+    const back = readPack(JSON.stringify(FANTASY_PACK));
+    expect(back.ok && back.pack.lakeTypes).toEqual(FANTASY_PACK.lakeTypes);
+  });
+
   it('河流类型：先加河流类型、再加生态；撞 id 改名，生态脚本里的 river()、hasRiver() 跟着改', () => {
     // 注册好的：用到世界时是 set_river_type（在生态之前，生态的脚本、条件要用它）
     const p = pack({ biomes: [FANTASY_BIOMES[4]], riverTypes: [{ id: 'blood_river', name: '血河', color: '#8f1414' }] });

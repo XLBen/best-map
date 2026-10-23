@@ -357,6 +357,14 @@ export function lakeTintLayer(world: World, o: Pick<ColorOptions, 'mode'>, style
     out[o4 + 2] = rgb[k][2];
     out[o4 + 3] |= bits;
   };
+  // 这一格挨着海、或者挨着别的湖（不是第 v 种）的湖面
+  const sharesWater = (j: number, v: number) => {
+    for (let f = mesh.off[j]; f < mesh.off[j + 1]; f++) {
+      const k = mesh.adj[f];
+      if (!causes.land[k] || (d.lake[k] === 1 && lt[k] !== v)) return true;
+    }
+    return false;
+  };
   for (let i = 0; i < n; i++) {
     const v = lt[i];
     if (!v || !causes.land[i]) continue;
@@ -367,16 +375,18 @@ export function lakeTintLayer(world: World, o: Pick<ColorOptions, 'mode'>, style
     const glow = t.style === 'glow' ? LAKE_GLOW : 0;
     const water = playa ? LAKE_WATER_CRUST : LAKE_WATER_TINT;
     if (d.lake[i] !== 1) {
-      // 干涸的湖底：陆上的盐壳带上这种湖的颜色
-      put(i, v - 1, LAKE_LAND_CRUST | water);
+      // 干涸的湖底：陆上的盐壳带上这种湖的颜色（挨着海、别的湖时水面像素不染）
+      put(i, v - 1, LAKE_LAND_CRUST | (sharesWater(i, v) ? 0 : water));
       continue;
     }
     put(i, v - 1, water | glow);
-    // 湖岸那一圈：水面像素照湖的画法；发光的湖岸上一圈光晕
+    // 湖岸那一圈：水面像素照湖的画法；发光的湖岸上一圈光晕。
+    // 岸边那格也挨着别的湖（不是这一种）时不染水面：那格里的水面像素可能是那个湖的
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       const j = mesh.adj[e];
       if (lt[j] || !causes.land[j]) continue;
-      if (out[j * 4 + 3] === 0 || glow) put(j, v - 1, water | glow | (glow ? LAKE_LAND_GLOW : 0));
+      const bits = (sharesWater(j, v) ? 0 : water | glow) | (glow ? LAKE_LAND_GLOW : 0);
+      if (bits && (out[j * 4 + 3] === 0 || glow)) put(j, v - 1, bits);
     }
   }
   return any ? out : null;

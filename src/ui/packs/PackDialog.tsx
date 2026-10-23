@@ -186,7 +186,7 @@ function LibraryView() {
         <h2>资源包</h2>
         <button onClick={close}>关上</button>
       </div>
-      <p class="muted small">资源包里是做好的生态、河流类型、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
+      <p class="muted small">资源包里是做好的生态、河流类型、湖泊类型、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
       <div class="row wrap">
         <label class="file-button">
           导入资源包…
