@@ -3,7 +3,7 @@ import type { Command } from '../core/commands';
 import type { ProvincesPreview } from '../core/engine';
 import { continents } from '../core/testing/fixtures';
 import type { Request, Response } from './protocol';
-import { type Again, changeNote, exec, previewProvinces, toast, world } from './state';
+import { type Again, busy, changeNote, editsIdle, exec, newWorld, onlyEditsPending, previewProvinces, toast, whenEditsIdle, world } from './state';
 
 // 主线程与 Worker 之间的排队：这里没有真的 Worker，换成一个假的，记下发来的请求，测试决定什么时候回复
 
@@ -84,5 +84,32 @@ describe('省份的轻预览', () => {
     world.value = { ...w };
     fw.reply(lastId(fw), { ok: true, provinces: provinces(3) });
     expect(await p3).toBeNull();
+  });
+});
+
+describe('新建、打开：网格、快照换上之前一直算在忙', () => {
+  it('引擎回复了但网格还没建好（快照没换上）时，排队的编辑、whenEditsIdle 都还要等', async () => {
+    const w = continents().world;
+    world.value = w;
+    const opened = newWorld(w.settings, []);
+    // newWorld 里先 await 了几步才发出去
+    for (let k = 0; k < 5; k++) await Promise.resolve();
+    const fw = FakeWorker.last!;
+    const init = fw.sent.find((m) => m.req.kind === 'init')!;
+    expect(init).toBeTruthy();
+    let idle = false;
+    void whenEditsIdle().then(() => (idle = true));
+    fw.reply(init.id, { ok: true, summary: '新的世界' });
+    // 回复到了，可网格（测试里是让出一帧后就地建）还没好、快照还没换上
+    for (let k = 0; k < 5; k++) await Promise.resolve();
+    expect(editsIdle()).toBe(false);
+    expect(onlyEditsPending()).toBe(false);
+    expect(busy.value).not.toBeNull();
+    expect(idle).toBe(false);
+    expect(await opened).toBe(true);
+    expect(editsIdle()).toBe(true);
+    expect(busy.value).toBeNull();
+    await tick();
+    expect(idle).toBe(true);
   });
 });

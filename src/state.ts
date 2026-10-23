@@ -526,8 +526,10 @@ export function knowIsolation(ms = 3000): Promise<void> {
 // 后台的预览、缩略图、自动保存不改世界，还在算的时候也不挡工具
 let labelled = 0;
 
-// safeReason：安全模式打开的原因（新建、打开时）
-function call(req: Request, label: string | null, safeReason?: string): Promise<Response> {
+// safeReason：安全模式打开的原因（新建、打开时）。
+// after：回复到了之后还要等的处理（新建、打开时等网格、换上快照）：它做完之前这个请求照样算在 pending、busy 里，
+// 等着 whenEditsIdle 的也不叫醒（不然画笔、排着的编辑、自动保存会在新引擎上动手，而界面上还是旧世界）
+function call(req: Request, label: string | null, safeReason?: string, after?: (r: Response) => Promise<unknown>): Promise<Response> {
   const id = nextId++;
   if (label) {
     labelled++;
@@ -536,14 +538,20 @@ function call(req: Request, label: string | null, safeReason?: string): Promise<
   return new Promise<Response>((resolve) => {
     // 不带提示的请求（预览、自动保存）不改世界，不挡排队
     pending.set(id, { edit: EDITS.has(req.kind) || !label, kind: req.kind });
+    const finish = (r: Response) => {
+      pending.delete(id);
+      if (label && --labelled === 0) busy.value = recovering ? RECOVERING : null;
+      resolve(r);
+      // 排在这条回复的处理（换上快照）之后再叫醒等着的
+      if (idleWaiters.length && editsIdle()) for (const w of idleWaiters.splice(0)) w();
+    };
     engineHost().send(
       req,
       (r) => {
-        pending.delete(id);
-        if (label && --labelled === 0) busy.value = recovering ? RECOVERING : null;
-        resolve(r);
-        // 排在这条回复的处理（换上快照）之后再叫醒等着的
-        if (idleWaiters.length && editsIdle()) for (const w of idleWaiters.splice(0)) w();
+        if (!after) return finish(r);
+        after(r)
+          .catch((e) => console.error(e))
+          .finally(() => finish(r));
       },
       safeReason,
     );
@@ -1040,15 +1048,19 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
   if (marked) await markLoading(scripts.map((s) => s.hash));
   // 检查点的版本号（开发时要先取引擎文件算哈希；页面里才有）
   if (typeof document !== 'undefined') hostOpts.build = await buildKey();
-  const r = call(safe === null ? req : { ...req, safe: true }, label, safe ?? undefined);
-  const meshReady = prebuildMesh(settings);
-  const res = await r;
-  await meshReady;
-  if (marked) void clearLoading();
-  // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
-  if (res.ok) resetAutosaveIds();
-  const ok = await handle(res, !opts.keepView);
-  if (ok) afterOpen(res, scripts);
+  let meshReady: Promise<void> = Promise.resolve();
+  let ok = false;
+  // 等网格、换上快照都在 call 的 after 里：做完之前新建、打开一直算在 pending、busy 里（见 call）
+  const r = call(safe === null ? req : { ...req, safe: true }, label, safe ?? undefined, async (res) => {
+    await meshReady;
+    if (marked) void clearLoading();
+    // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
+    if (res.ok) resetAutosaveIds();
+    ok = await handle(res, !opts.keepView);
+    if (ok) afterOpen(res, scripts);
+  });
+  meshReady = prebuildMesh(settings);
+  await r;
   return ok;
 }
 
