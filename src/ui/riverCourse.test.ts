@@ -697,6 +697,37 @@ describe('第九轮 C：从河中间改道还是同一条河；悬停与按下�
     if (name) expect(eng.world.derived.features.find((f) => f.guide === g.id)?.name).toBe(name);
   });
 
+  it('从画的河中间改道：不会汇进流回旧河道的河（那样又断成两条），流回旧河道时照它原来的流向走，还是这一条河', () => {
+    const { w, g } = drawnLong();
+    const d = w.derived;
+    let checked = 0;
+    for (let k = 2; k < g.cells.length - 2; k++) {
+      const c = g.cells[k];
+      if (!isRiverCell(w, d, c)) continue;
+      const down = new Set(g.cells.slice(k + 1));
+      for (let a = 0; a < 32; a++) {
+        const ang = (a * Math.PI) / 16;
+        const len = 2 + (a % 5);
+        const s = line(w, at(w, c), [w.mesh.x[c] + len * w.mesh.spacing * Math.cos(ang), w.mesh.y[c] + len * w.mesh.spacing * Math.sin(ang)]);
+        const r = rerouteCourse(w, d, s, { endOnLand: 'flow', px: 1 / zoomOf(w) });
+        if (!r || r.plan.blocked) continue;
+        checked++;
+        if (r.plan.end === 'river') {
+          for (let x = r.plan.join, guard = 0; x >= 0 && w.causes.land[x] && guard < w.mesh.n; x = d.receiver[x], guard++) expect(down.has(x)).toBe(false);
+        }
+        // 画完之后顺地势流回了旧河道：之后与它原来的一样
+        const back = r.plan.cells.findIndex((x, i) => i > r.plan.drawn && down.has(x));
+        // （旧河道往下的格已经画过了时除外：水不能再流回画过的格）
+        if (back >= 0 && !g.cells.slice(g.cells.indexOf(r.plan.cells[back]) + 1).some((x) => r.plan.cells.indexOf(x) >= 0 && r.plan.cells.indexOf(x) < back)) {
+          const j = g.cells.indexOf(r.plan.cells[back]);
+          const n = Math.min(3, g.cells.length - j, r.plan.cells.length - back);
+          expect(r.plan.cells.slice(back, back + n)).toEqual(g.cells.slice(j, j + n));
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+  });
+
   it('悬停与按下用同一个起笔：鼠标在画的河的线旁（脚下那一格不是河）时，悬停说从这里起笔会怎样，按下去拖出去也是改这条河，不是截走它', async () => {
     const { w, g, t } = drawnLong();
     const L = lineOf(w, g).points;

@@ -1078,8 +1078,16 @@ function courseFrom(world: World, d: Derived, base: { cells: number[]; path: Pt[
     for (let c = d.receiver[from], guard = 0; c >= 0 && !water(c) && guard < mesh.n; c = d.receiver[c], guard++) chain.add(c);
     up = upstreamOf(world, d, from);
   }
+  // 改道的这条河自己往下的那段（opts.reroute 时）：流进它的河（比如紧挨着旧河道的一条小支流）也不汇入——
+  // 汇进去水又回到旧河道上，这条河就断成了两条；顺着流下去，到了旧河道上还是这一条河
+  const ownDown = new Set([...chain].filter((c) => own.has(c)));
+  const intoOwn = (i: number) => {
+    if (!ownDown.size) return false;
+    for (let c = i, guard = 0; c >= 0 && !water(c) && guard < mesh.n; c = d.receiver[c], guard++) if (ownDown.has(c)) return true;
+    return false;
+  };
   // 能汇入的河：不是这条河道上的格、不是重画的那条河自己、不是改道的这条河的上游，也不是改道的这条河自己往下的那段
-  const joinable = (i: number) => isRiver(i) && !ignore.has(i) && !(up && up[i]) && !own.has(i);
+  const joinable = (i: number) => isRiver(i) && !ignore.has(i) && !(up && up[i]) && !own.has(i) && !intoOwn(i);
 
   // 终点
   const L = cells[cells.length - 1];
@@ -1099,25 +1107,36 @@ function courseFrom(world: World, d: Derived, base: { cells: number[]; path: Pt[
     };
     let c = L;
     let loop = false;
-    for (let guard = 0; guard < mesh.n; guard++) {
-      const r = d.receiver[c];
-      // 流到这里就没了（在终点消失的河的终点，比如把消失的河改回接着流）：也改走最省力的路径
-      if (r < 0) {
-        loop = !edge(c);
-        break;
+    const follow = () => {
+      loop = false;
+      for (let guard = 0; guard < mesh.n; guard++) {
+        const r = d.receiver[c];
+        // 流到这里就没了（在终点消失的河的终点，比如把消失的河改回接着流）：也改走最省力的路径
+        if (r < 0) {
+          loop = !edge(c);
+          break;
+        }
+        if (pos.has(r) || (up && up[r])) {
+          loop = true;
+          break;
+        }
+        const stop = stops(r);
+        push(r);
+        c = r;
+        if (stop) break;
       }
-      if (pos.has(r) || (up && up[r])) {
-        loop = true;
-        break;
-      }
-      const stop = stops(r);
-      push(r);
-      c = r;
-      if (stop) break;
-    }
+    };
+    follow();
+    const avoid = (i: number) => pos.has(i) || (up !== null && up[i] === 1);
     if (loop) {
-      const rest = pathToTarget(world, d, c, (i) => pos.has(i) || (up !== null && up[i] === 1), (i) => stops(i) || edge(i));
+      // 改道时最省力的路径回到了这条河原来往下的那段上：之后照它原来的流向走（还是这一条河）
+      const rest = pathToTarget(world, d, c, avoid, (i) => stops(i) || edge(i) || ownDown.has(i));
       for (const r of rest.slice(1)) push(r);
+      c = cells[cells.length - 1];
+      if (ownDown.has(c)) {
+        follow();
+        if (loop) for (const r of pathToTarget(world, d, c, avoid, (i) => stops(i) || edge(i)).slice(1)) push(r);
+      }
     }
     const last = cells[cells.length - 1];
     end = water(last) ? (causes.land[last] ? 'lake' : 'sea') : last !== L && joinable(last) ? 'river' : edge(last) ? 'edge' : null;
