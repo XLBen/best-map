@@ -358,6 +358,8 @@ interface SeafloorMemoEntry {
   landness: Float32Array;
   landDelta: Float32Array;
   uplift: Float32Array;
+  // 每个陆格所在陆块的大小系数（海格为 0）：改了一小片海陆时只重新数挨着改动的陆块
+  lsize: Float32Array;
   // 每个岸边海格挨着的陆地的抬升（最大）与陆块大小系数；不是岸边的格为 0。toOcean：每个海格离洋壳的格数
   up: Float32Array;
   size: Float32Array;
@@ -427,6 +429,9 @@ export function seafloor(world: World, elevation: Float32Array) {
   const same = entries.filter((e) => sameArray(e.land, land) && sameArray(e.landness, causes.landness) && sameArray(e.landDelta, causes.landDelta));
   const reuse = (e: SeafloorMemoEntry) => {
     seafloorStats.reused++;
+    // 照用的那一次放到最前：下一次改动多半从它改起（撤销后再画），只重算改动附近时以它为准
+    const list = seafloorMemo.get(mesh)!;
+    if (list[0] !== e) seafloorMemo.set(mesh, [e, ...list.filter((x) => x !== e)]);
     for (let i = 0; i < n; i++) if (!land[i]) elevation[i] = e.z[i];
   };
   const hit = same.find((e) => sameArray(e.uplift, causes.uplift));
@@ -454,32 +459,10 @@ export function seafloor(world: World, elevation: Float32Array) {
     }
   }
 
-  // 岸边的海格（挨着陆地）与它们的属性：挨着的陆地的抬升（高山海岸 = 活动边缘）、陆块的大小
-  const up = new Float32Array(n);
-  const size = new Float32Array(n);
-  const sources: number[] = [];
-  let comp: Int32Array | null = null;
-  // 每个陆块的大小系数：“边长”（面积的平方根）150 km 以下算小岛，1200 km 以上算大陆
-  let compSize: Float32Array | null = null;
-  const uplift = causes.uplift;
-  for (let i = 0; i < n; i++) {
-    if (land[i]) continue;
-    let coastal = false;
-    for (let e = off[i], end = off[i + 1]; e < end; e++) {
-      const j = adj[e];
-      if (!land[j]) continue;
-      if (!comp) {
-        const [c, area] = landComponents(world);
-        comp = c;
-        compSize = Float32Array.from(area, (a) => smoothstep(150, 1200, Math.sqrt(a)));
-      }
-      coastal = true;
-      if (uplift[j] > up[i]) up[i] = uplift[j];
-      const sz = compSize![comp[j]];
-      if (sz > size[i]) size[i] = sz;
-    }
-    if (coastal) sources.push(i);
-  }
+  // 岸边的海格（挨着陆地）与它们的属性：挨着的陆地的抬升（高山海岸 = 活动边缘）、陆块的大小。
+  // 有上一次（同样的生成器场）的结果时只重算改动附近（见 coastAttrs），结果与整个重算逐位相同
+  const base = entries[0];
+  const { up, size, lsize, flips } = coastAttrs(world, base);
   const hit2 = same.find((e) => sameArray(e.up, up) && sameArray(e.size, size));
   if (hit2) {
     // 只是陆上的抬升变了：结果照旧，记下这次的抬升
@@ -495,39 +478,26 @@ export function seafloor(world: World, elevation: Float32Array) {
 
   // 每个海格离洋壳多远（只走海格，按格数；陆壳上的海一直宽到洋壳为止，最多 SHELF_MAX_KM）：
   // 宽的大陆架就是淹在水下的陆壳，陆架坡折在陆壳的边上
-  const toOcean = new Int32Array(n).fill(-1);
-  if (fields) {
-    const queue = new Int32Array(n);
-    let len = 0;
-    for (let i = 0; i < n; i++) {
-      if (!land[i] && fields.shelf[i] < 0.5) {
-        toOcean[i] = 0;
-        queue[len++] = i;
-      }
-    }
-    const steps = Math.ceil(SHELF_MAX_KM / cellKm);
-    for (let q = 0; q < len; q++) {
-      const i = queue[q];
-      if (toOcean[i] >= steps) continue;
-      for (let e = off[i]; e < off[i + 1]; e++) {
-        const j = adj[e];
-        if (land[j] || toOcean[j] >= 0) continue;
-        toOcean[j] = toOcean[i] + 1;
-        queue[len++] = j;
-      }
-    }
-  }
+  const toOcean = oceanSteps(world, fields, Math.ceil(SHELF_MAX_KM / cellKm), base, flips);
 
   // 只重算改动附近：从上一次（同样的生成器场）的结果改起。改动 = 陆海变了的格、landness 变了的海格、
   // 属性（抬升、陆块大小、离洋壳）变了的海格；要重算的是离它们 limit 加十格以内的格（平滑三圈也够，只会多算，不会少算）
   let region: Uint8Array | null = null;
-  const base = entries[0];
+  let rlist: Int32Array | null = null;
   if (base) {
     const seeds: number[] = [];
+    const landness = causes.landness;
+    const landDelta = causes.landDelta;
+    const bLand = base.land;
+    const bLandness = base.landness;
+    const bLandDelta = base.landDelta;
+    const bUp = base.up;
+    const bSize = base.size;
+    const bTo = base.toOcean;
     for (let i = 0; i < n; i++) {
-      if (land[i] !== base.land[i]) seeds.push(i);
+      if (land[i] !== bLand[i]) seeds.push(i);
       else if (!land[i]) {
-        if (causes.landness[i] !== base.landness[i] || causes.landDelta[i] !== base.landDelta[i] || up[i] !== base.up[i] || size[i] !== base.size[i] || toOcean[i] !== base.toOcean[i]) seeds.push(i);
+        if (landness[i] !== bLandness[i] || landDelta[i] !== bLandDelta[i] || up[i] !== bUp[i] || size[i] !== bSize[i] || toOcean[i] !== bTo[i]) seeds.push(i);
       }
     }
     if (seeds.length * 16 < n) {
@@ -542,35 +512,56 @@ export function seafloor(world: World, elevation: Float32Array) {
       }
       // 改动太大（要重算的格超过一半）：整个重算更快
       if (count * 2 > n) region = null;
+      else {
+        rlist = new Int32Array(count);
+        for (let i = 0, k = 0; i < n; i++) if (region[i]) rlist[k++] = i;
+      }
+    }
+  }
+  // 要重算的格（按编号从小到大）：只重算改动附近时是重算区里的格，否则是所有格
+  const todo = rlist ? rlist.length : n;
+  const at = rlist ? (k: number) => rlist![k] : (k: number) => k;
+  // 岸边的海格（挨着陆地）：Dijkstra 的起点
+  const sources: number[] = [];
+  for (let k = 0; k < todo; k++) {
+    const i = at(k);
+    if (land[i]) continue;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      if (land[adj[e]]) {
+        sources.push(i);
+        break;
+      }
     }
   }
   const prev = region ? base : undefined;
-  const inR = (i: number) => !region || region[i] === 1;
 
   // 只走海格的图距离与最近的岸边格（Dijkstra，走到 limit 为止；距离相同时取编号小的岸边格）
-  const dist = prev ? Float64Array.from(prev.dist) : new Float64Array(n).fill(Infinity);
-  const owner = prev ? Int32Array.from(prev.owner) : new Int32Array(n).fill(-1);
+  const dist = prev ? prev.dist.slice() : new Float64Array(n).fill(Infinity);
+  const owner = prev ? prev.owner.slice() : new Int32Array(n).fill(-1);
   {
     const heap = new HeapLite(Math.max(1024, sources.length * 2));
-    if (region) {
-      for (let i = 0; i < n; i++) {
-        if (!region[i]) continue;
+    if (region && rlist) {
+      for (let k = 0; k < rlist.length; k++) {
+        const i = rlist[k];
         dist[i] = Infinity;
         owner[i] = -1;
       }
-      // 重算区外紧挨着它的海格：照用上一次的距离（它们离改动都超过 limit，不会变）
-      for (let i = 0; i < n; i++) {
-        if (region[i] || land[i] || owner[i] < 0) continue;
-        for (let e = off[i]; e < off[i + 1]; e++) {
-          if (region[adj[e]]) {
-            heap.push(i, dist[i]);
-            break;
-          }
+      // 重算区外紧挨着它的海格：照用上一次的距离（它们离改动都超过 limit，不会变）；按编号入堆
+      const rim: number[] = [];
+      const seen = new Uint8Array(n);
+      for (let k = 0; k < rlist.length; k++) {
+        const r = rlist[k];
+        for (let e = off[r], end = off[r + 1]; e < end; e++) {
+          const i = adj[e];
+          if (region[i] || seen[i] || land[i] || owner[i] < 0) continue;
+          seen[i] = 1;
+          rim.push(i);
         }
       }
+      rim.sort((a, b) => a - b);
+      for (const i of rim) heap.push(i, dist[i]);
     }
     for (const s of sources) {
-      if (!inR(s)) continue;
       dist[s] = 0;
       owner[s] = s;
       heap.push(s, 0);
@@ -582,7 +573,7 @@ export function seafloor(world: World, elevation: Float32Array) {
       const oi = owner[i];
       for (let e = off[i], end = off[i + 1]; e < end; e++) {
         const j = adj[e];
-        if (land[j] || !inR(j)) continue;
+        if (land[j] || (region && !region[j])) continue;
         const nd = di + md[e];
         if (nd > limit) continue;
         if (nd < dist[j]) {
@@ -598,11 +589,11 @@ export function seafloor(world: World, elevation: Float32Array) {
   // 每个海格的大陆架宽度 W、活动程度 A：先按最近的岸边格取，再在海上平滑几遍（岸边格换了的地方不留台阶）
   const Ws: Float32Array[] = [];
   const As: Float32Array[] = [];
-  const W0 = prev ? Float32Array.from(prev.W[0]) : new Float32Array(n);
-  const A0 = prev ? Float32Array.from(prev.A[0]) : new Float32Array(n);
+  const W0 = prev ? prev.W[0].slice() : new Float32Array(n);
+  const A0 = prev ? prev.A[0].slice() : new Float32Array(n);
   const cells: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (!inR(i)) continue;
+  for (let k = 0; k < todo; k++) {
+    const i = at(k);
     const o = owner[i];
     if (o < 0) {
       W0[i] = 0;
@@ -629,12 +620,13 @@ export function seafloor(world: World, elevation: Float32Array) {
   for (let pass = 1; pass <= SMOOTH_PASSES; pass++) {
     const Wp = Ws[pass - 1];
     const Ap = As[pass - 1];
-    const W2 = prev ? Float32Array.from(prev.W[pass]) : new Float32Array(n);
-    const A2 = prev ? Float32Array.from(prev.A[pass]) : new Float32Array(n);
-    if (region) {
+    const W2 = prev ? prev.W[pass].slice() : new Float32Array(n);
+    const A2 = prev ? prev.A[pass].slice() : new Float32Array(n);
+    if (rlist) {
       // 重算区里没走到的格：清零（与整个重算时相同）
-      for (let i = 0; i < n; i++) {
-        if (region[i] && owner[i] < 0) {
+      for (let k = 0; k < rlist.length; k++) {
+        const i = rlist[k];
+        if (owner[i] < 0) {
           W2[i] = 0;
           A2[i] = 0;
         }
@@ -661,9 +653,9 @@ export function seafloor(world: World, elevation: Float32Array) {
   const W = Ws[SMOOTH_PASSES];
   const A = As[SMOOTH_PASSES];
 
-  const z = prev ? Float32Array.from(prev.z) : new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    if (!inR(i)) continue;
+  const z = prev ? prev.z.slice() : new Float32Array(n);
+  for (let k = 0; k < todo; k++) {
+    const i = at(k);
     if (land[i]) {
       z[i] = 0;
       continue;
@@ -706,6 +698,7 @@ export function seafloor(world: World, elevation: Float32Array) {
       seed,
       kmPerUnit,
       fields,
+      lsize,
       land: land.slice(),
       landness: causes.landness.slice(),
       landDelta: causes.landDelta.slice(),
@@ -721,6 +714,217 @@ export function seafloor(world: World, elevation: Float32Array) {
     };
     seafloorMemo.set(mesh, [entry, ...(seafloorMemo.get(mesh) ?? [])].slice(0, 2));
   }
+}
+
+// 陆块的大小系数：“边长”（面积的平方根）150 km 以下算小岛，1200 km 以上算大陆
+const landSize = (area: number) => smoothstep(150, 1200, Math.sqrt(area));
+
+// 岸边海格的属性：up = 挨着的陆格的抬升（最大，没有为 0）、size = 挨着的陆格所在陆块的大小系数（最大）；
+// lsize = 每个陆格所在陆块的大小系数（海格为 0）；flips = 与 base 比陆海变了的格（没有 base 时为 null）。
+// 有 base 时只重算改动附近，与整个重算逐位相同：
+//   陆块：只有含陆海变了的格、或挨着它的陆块会变（别的陆块与上一次是同一组格，面积也就相同）；
+//     重新数时与 landComponents 一样从块里编号最小的格起按同样的顺序加面积，面积逐位相同（块的编号不影响结果）；
+//   一个海格的 up、size 只取决于挨着的格的陆海、抬升、陆块大小系数：只重算挨着这些变了的格的海格
+function coastAttrs(world: World, base: SeafloorMemoEntry | undefined): { up: Float32Array; size: Float32Array; lsize: Float32Array; flips: number[] | null } {
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const uplift = causes.uplift;
+  const { off, adj } = mesh;
+  if (!base) {
+    const up = new Float32Array(n);
+    const size = new Float32Array(n);
+    const lsize = new Float32Array(n);
+    const [comp, area] = landComponents(world);
+    const compSize = Float32Array.from(area, landSize);
+    for (let i = 0; i < n; i++) {
+      if (land[i]) {
+        lsize[i] = compSize[comp[i]];
+        continue;
+      }
+      for (let e = off[i], end = off[i + 1]; e < end; e++) {
+        const j = adj[e];
+        if (!land[j]) continue;
+        if (uplift[j] > up[i]) up[i] = uplift[j];
+        const sz = compSize[comp[j]];
+        if (sz > size[i]) size[i] = sz;
+      }
+    }
+    return { up, size, lsize, flips: null };
+  }
+  // 变了的格：陆海变了的、抬升（按位）变了的陆格，再加陆块大小系数变了的陆格
+  const flips: number[] = [];
+  const dirty: number[] = [];
+  const ub = new Uint32Array(uplift.buffer, uplift.byteOffset, n);
+  const eb = new Uint32Array(base.uplift.buffer, base.uplift.byteOffset, n);
+  const bl = base.land;
+  for (let i = 0; i < n; i++) {
+    if (land[i] !== bl[i]) {
+      flips.push(i);
+      dirty.push(i);
+    } else if (land[i] && ub[i] !== eb[i]) dirty.push(i);
+  }
+  const lsize = base.lsize.slice();
+  if (flips.length) {
+    const k2 = kmPerUnit * kmPerUnit;
+    const done = new Uint8Array(n);
+    const again = new Uint8Array(n);
+    const queue = new Int32Array(n);
+    // 从 s 起按 landComponents 的顺序走一个陆块：格在 queue[0, len) 里，返回 len 与面积
+    let a = 0;
+    const flood = (s: number, mark: Uint8Array): number => {
+      let len = 0;
+      a = 0;
+      queue[len++] = s;
+      mark[s] = 1;
+      for (let q = 0; q < len; q++) {
+        const c = queue[q];
+        a += mesh.area[c] * k2;
+        for (let e = off[c], end = off[c + 1]; e < end; e++) {
+          const j = adj[e];
+          if (land[j] && !mark[j]) {
+            mark[j] = 1;
+            queue[len++] = j;
+          }
+        }
+      }
+      return len;
+    };
+    const recount = (s: number) => {
+      if (!land[s] || done[s]) return;
+      let len = flood(s, done);
+      let first = s;
+      for (let k = 0; k < len; k++) if (queue[k] < first) first = queue[k];
+      if (first !== s) len = flood(first, again);
+      const v = Math.fround(landSize(a));
+      for (let k = 0; k < len; k++) {
+        const c = queue[k];
+        if (lsize[c] !== v) {
+          lsize[c] = v;
+          dirty.push(c);
+        }
+      }
+    };
+    for (const i of flips) {
+      if (!land[i]) lsize[i] = 0;
+      recount(i);
+      for (let e = off[i], end = off[i + 1]; e < end; e++) recount(adj[e]);
+    }
+  }
+  const up = base.up.slice();
+  const size = base.size.slice();
+  const mark = new Uint8Array(n);
+  const redo = (i: number) => {
+    if (mark[i]) return;
+    mark[i] = 1;
+    up[i] = 0;
+    size[i] = 0;
+    if (land[i]) return;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (!land[j]) continue;
+      if (uplift[j] > up[i]) up[i] = uplift[j];
+      const sz = lsize[j];
+      if (sz > size[i]) size[i] = sz;
+    }
+  };
+  for (const c of dirty) {
+    redo(c);
+    for (let e = off[c], end = off[c + 1]; e < end; e++) redo(adj[e]);
+  }
+  return { up, size, lsize, flips };
+}
+
+// 每个海格离洋壳多远（只走海格的格数，最多 steps；再远、陆格为 −1）。
+// 有 base（同样的生成器场）时只重算离陆海变了的格 steps 格以内的格：再远的格，最短的路（不超过 steps 格）上没有变了的格，
+// 与上一次相同。重算区里的格从洋壳格（0）与区外紧挨着的格（上一次的格数 + 1）起按层走，最短格数唯一，与整个重算逐位相同
+function oceanSteps(world: World, fields: ReturnType<typeof seabedFields>, steps: number, base: SeafloorMemoEntry | undefined, flips: number[] | null): Int32Array {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  if (!fields) return new Int32Array(n).fill(-1);
+  if (base && flips) {
+    if (!flips.length) return base.toOcean.slice();
+    const near = new Uint8Array(n);
+    const list: number[] = [];
+    for (const f of flips) {
+      near[f] = 1;
+      list.push(f);
+    }
+    for (let s = 0, head = 0; s < steps && list.length * 2 <= n; s++) {
+      const end = list.length;
+      for (; head < end; head++) {
+        const i = list[head];
+        for (let e = off[i], stop = off[i + 1]; e < stop; e++) {
+          const j = adj[e];
+          if (!near[j]) {
+            near[j] = 1;
+            list.push(j);
+          }
+        }
+      }
+    }
+    if (list.length * 2 <= n) {
+      const toOcean = base.toOcean.slice();
+      const far = steps + 1;
+      const buckets: number[][] = [];
+      for (let s = 0; s <= steps; s++) buckets.push([]);
+      for (const i of list) toOcean[i] = land[i] ? -1 : far;
+      for (const i of list) {
+        if (land[i]) continue;
+        if (fields.shelf[i] < 0.5) {
+          toOcean[i] = 0;
+          buckets[0].push(i);
+          continue;
+        }
+        let best = far;
+        for (let e = off[i], end = off[i + 1]; e < end; e++) {
+          const j = adj[e];
+          if (near[j] || land[j]) continue;
+          const t = toOcean[j];
+          if (t >= 0 && t < steps && t + 1 < best) best = t + 1;
+        }
+        if (best < far) {
+          toOcean[i] = best;
+          buckets[best].push(i);
+        }
+      }
+      for (let s = 0; s < steps; s++) {
+        for (const i of buckets[s]) {
+          if (toOcean[i] !== s) continue;
+          for (let e = off[i], end = off[i + 1]; e < end; e++) {
+            const j = adj[e];
+            if (!near[j] || land[j] || toOcean[j] <= s + 1) continue;
+            toOcean[j] = s + 1;
+            buckets[s + 1].push(j);
+          }
+        }
+      }
+      for (const i of list) if (toOcean[i] === far) toOcean[i] = -1;
+      return toOcean;
+    }
+  }
+  const toOcean = new Int32Array(n).fill(-1);
+  const queue = new Int32Array(n);
+  let len = 0;
+  for (let i = 0; i < n; i++) {
+    if (!land[i] && fields.shelf[i] < 0.5) {
+      toOcean[i] = 0;
+      queue[len++] = i;
+    }
+  }
+  for (let q = 0; q < len; q++) {
+    const i = queue[q];
+    if (toOcean[i] >= steps) continue;
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
+      if (land[j] || toOcean[j] >= 0) continue;
+      toOcean[j] = toOcean[i] + 1;
+      queue[len++] = j;
+    }
+  }
+  return toOcean;
 }
 
 // 陆地的连通块：每格的块编号（海格 −1）与每块的面积（km²）

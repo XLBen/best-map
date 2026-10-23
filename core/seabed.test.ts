@@ -184,17 +184,31 @@ describe('海底的剖面', () => {
       const eng = make();
       const w = eng.world;
       const { mesh } = w;
-      const check = (what: string) => {
+      // 缓存里先放这个世界现在的结果（别的测试留下的缓存与它无关）
+      seafloor(w, new Float32Array(mesh.n));
+      // 与整个重算（不读缓存）逐位相同；path：这一步海底应走的路（partial：只重算改动附近，reused：照用上一次的结果）
+      let last = { ...seafloorStats };
+      const check = (what: string, path?: 'partial' | 'reused') => {
         const got = w.derived.elevation;
+        const now = { ...seafloorStats };
+        if (path === 'partial') {
+          expect(now.partial, what).toBeGreaterThan(last.partial);
+          expect(now.computed, what).toBe(last.computed);
+        }
+        if (path === 'reused') {
+          expect(now.reused, what).toBeGreaterThan(last.reused);
+          expect(now.partial + now.computed, what).toBe(last.partial + last.computed);
+        }
         seafloorStats.on = false;
         try {
           const fresh = new Float32Array(mesh.n).fill(Number.NaN);
           seafloor(w, fresh);
           let bad = 0;
-          for (let i = 0; i < mesh.n; i++) if (!w.causes.land[i] && got[i] !== fresh[i]) bad++;
+          for (let i = 0; i < mesh.n; i++) if (!w.causes.land[i] && !Object.is(got[i], fresh[i])) bad++;
           expect(bad, what).toBe(0);
         } finally {
           seafloorStats.on = true;
+          last = { ...seafloorStats };
         }
       };
       // 沿海随机几处画陆地、画海（确定的伪随机）
@@ -218,14 +232,40 @@ describe('海底的剖面', () => {
         const c = list[Math.floor(rand() * list.length)];
         const cells = disc(c, 2.5);
         eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0.3), mode: step % 2 ? 'sea' : 'land' });
-        check(`第 ${step + 1} 笔`);
+        check(`第 ${step + 1} 笔`, 'partial');
       }
-      // 远洋里放一个岛
+      // 远洋里放一个岛（离岸最远的海格）
+      const far = seaDistance(w);
+      let o = -1;
+      for (let i = 0; i < mesh.n; i++) if (!w.causes.land[i] && far[i] < Infinity && (o < 0 || far[i] > far[o])) o = i;
+      eng.exec({ op: 'add_island', island: { x: mesh.x[o], y: mesh.y[o], kind: 'volcanic', size: 300, variant: 0 } });
+      check('放岛', 'partial');
+      // 岛的岸边再画一笔陆地（岛变大：岛上所有岸边海格的陆块大小都变）、再画一笔海（岛变小，可能断成两块）
+      const isleCoast = coastal().filter((i) => Math.hypot(mesh.x[i] - mesh.x[o], mesh.y[i] - mesh.y[o]) < 0.3);
+      if (isleCoast.length) {
+        const grow = disc(isleCoast[0], 1.5);
+        eng.exec({ op: 'paint_land', cells: grow, t: grow.map(() => 0), mode: 'land' });
+        check('岛的岸边画陆地', 'partial');
+        const cut = disc(o, 1.2).filter((i) => w.causes.land[i]);
+        if (cut.length) {
+          eng.exec({ op: 'paint_land', cells: cut, t: cut.map(() => 0), mode: 'sea' });
+          check('岛上画海', 'partial');
+        }
+      }
+      // 远洋里画一个岛
       const sea = [...Array(mesh.n).keys()].filter((i) => !w.causes.land[i]);
-      const o = sea[Math.floor(rand() * sea.length)];
-      const isle = disc(o, 1.5);
+      const o2 = sea[Math.floor(rand() * sea.length)];
+      const isle = disc(o2, 1.5);
       eng.exec({ op: 'paint_land', cells: isle, t: isle.map(() => 0), mode: 'land' });
-      check('远洋的岛');
+      check('远洋画的岛', 'partial');
+      // 内陆堆山（挨着海的陆格的抬升不变）：照用上一次的结果
+      const toSea = graphDistance(mesh, sea, Infinity);
+      const inland = [...Array(mesh.n).keys()].filter((i) => w.causes.land[i] && toSea[i] > mesh.spacing * 4);
+      if (inland.length) {
+        const hillIn = disc(inland[Math.floor(inland.length / 2)], 1.2).filter((i) => w.causes.land[i] && toSea[i] > mesh.spacing * 2.5);
+        eng.exec({ op: 'paint_relief', cells: hillIn, t: hillIn.map(() => 0), strength: 1 });
+        check('内陆堆山', 'reused');
+      }
       // 海岸上堆山（只改抬升）
       const hill = coastal().slice(0, 1).flatMap((c) => disc(c, 3)).filter((i) => w.causes.land[i]);
       if (hill.length) {
@@ -236,6 +276,8 @@ describe('海底的剖面', () => {
       check('撤销');
       eng.undo();
       check('再撤销');
+      eng.redo();
+      check('重做');
       expect(seafloorStats.partial).toBeGreaterThan(p0);
     });
   }
