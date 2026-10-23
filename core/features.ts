@@ -1859,9 +1859,22 @@ export function carryNames(world: World, features: GeoFeature[], prevSmall: Smal
     features,
     curKeys,
   );
-  if (!pairs.length) return null;
   const keep: Record<string, KeptName | null> = {};
   const move: Record<string, string> = {};
+  // 这一步里没了的自然的河（放了湖、水被引走，水少到不再标，或者挤出了标注的前几十条）：自动起的名字按它的键留着。
+  // 以后同一条河（键相同）又出来时照旧叫它，不会因为大小的标签变了换个名字（比如放了湖之后出湖的河不标了，
+  // 再画一条河流进湖里，出湖的河又标出来）
+  const paired = new Set(pairs.map(([i]) => i));
+  const present = new Set(curKeys);
+  old.forEach((o, i) => {
+    if (o.type !== 'river' || o.guide !== undefined || o.custom || paired.has(i)) return;
+    const om = oldMeta.get(o);
+    if (!om?.ctx || present.has(om.key)) return;
+    const e = kept[om.key];
+    if (e && e.name === o.name && e.ctx === om.ctx) return;
+    kept[om.key] = keep[om.key] = { name: o.name, ctx: om.ctx };
+  });
+  if (!pairs.length) return Object.keys(keep).length ? { keep } : null;
   // 留下一些名字之后，别的地物可能跟着换（原来撞名退到后面的名字现在空出来了）：再看一遍，直到没有新的要留
   for (let round = 0; round < 16; round++) {
     const cur = features.map((f) => ({ ...f }));

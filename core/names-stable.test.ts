@@ -4,7 +4,8 @@ import { Engine } from './engine';
 import { type GeoFeature, assignNames } from './features';
 import { ringDistance } from './mesh';
 import { DEFAULT_PACK, type WordPack } from './names';
-import { riverStem, stemPath } from './select';
+import { encodePath } from './rivers';
+import { isRiverCell, planCourse, riverStem, stemPath } from './select';
 import { fantasyBiomeCommands } from './packs/fantasy-biomes';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 
@@ -264,6 +265,68 @@ describe('名字不乱跳', () => {
     eng.exec({ op: 'add_guide', guide: { id: 'pin', cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, nameKey: river.key } });
     const pinned = w.derived.features.find((f) => f.key === 'guide:pin')!;
     expect([pinned.name, pinned.custom]).toEqual(['测试河', false]);
+    expectReplay(eng);
+  });
+
+  // 第十二轮修：放了湖之后出湖的河水少了、不再标，再画一条河流进湖里，出湖的河又标出来，名字却换了
+  // （同一个键、起名的办法也一样，只是大小的标签变了，按标签挑的模板就不同）。这一步里没了的自然的河留着名字，
+  // 又出来时照旧叫它。这里用河的门槛做出“没了又出来、标签变了”：先调高到它不够标，再调低到它成了大河
+  it('自然的河没了又出来（大小的标签变了）：还叫原来的名字；重放一样', () => {
+    const eng = continents();
+    const w = eng.world;
+    const thr = w.small.planet.riverThreshold;
+    const q = (f: GeoFeature) => w.derived.discharge[f.anchor!];
+    const rivers = w.derived.features.filter((f) => f.type === 'river' && !f.guide && !f.tags.includes('big'));
+    expect(rivers.length).toBeGreaterThan(3);
+    const before = new Map(rivers.map((f) => [f.key, f.name]));
+    // 门槛调高到这几条河都不够标（河口的流量不到门槛的 3 倍）
+    const top = Math.max(...rivers.map(q));
+    eng.exec({ op: 'set_planet', patch: { riverThreshold: Math.ceil(top / 2) } });
+    for (const key of before.keys()) expect(w.derived.features.some((f) => f.key === key)).toBe(false);
+    // 门槛调低：都成了大河（标签变了），名字照旧
+    eng.exec({ op: 'set_planet', patch: { riverThreshold: Math.max(1, Math.floor(Math.min(...rivers.map(q)) / 41)) } });
+    let back = 0;
+    for (const [key, name] of before) {
+      const f = w.derived.features.find((x) => x.key === key);
+      if (!f) continue;
+      back++;
+      expect(f.tags).toContain('big');
+      expect(f.name, key).toBe(name);
+    }
+    expect(back).toBeGreaterThan(2);
+    expect(thr).toBeGreaterThan(1);
+    expectReplay(eng);
+  });
+
+  it('放湖、出湖的河、画一条河流进湖里：原有的河都不换名字', () => {
+    const base = continents();
+    const w0 = base.world;
+    const { mesh } = w0;
+    const river = w0.derived.features.filter((f) => f.type === 'river' && !f.guide).sort((a, b) => b.cells.length - a.cells.length)[0];
+    // 在最长的那条河的中上游放湖：出湖的河就是原来那条河的下游
+    const eng = continents();
+    const w = eng.world;
+    eng.exec({ op: 'add_lake', lake: { cell: river.cells[Math.floor(river.cells.length * 0.6)], radius: 2.5 * mesh.spacing * w.kmPerUnit, depth: 150, perennial: true } });
+    const lake = [...Array(mesh.n).keys()].filter((c) => w.derived.lake[c] === 1 && w.causes.land[c]);
+    expect(lake.length).toBeGreaterThan(3);
+    const outlet = w.derived.features.find((f) => f.key === river.key);
+    expect(outlet?.name).toBe(river.name);
+    const before = w.derived.features.filter((f) => f.type === 'river').map((f) => ({ ...f }));
+    // 从湖外 9 格画一条直着流进湖的河（不穿过别的河）
+    const L = lake[Math.floor(lake.length / 2)];
+    let drawn = false;
+    for (let a = 0; a < 16 && !drawn; a++) {
+      const ang = (a / 16) * 2 * Math.PI;
+      const from: [number, number] = [mesh.x[L] + 9 * mesh.spacing * Math.cos(ang), mesh.y[L] + 9 * mesh.spacing * Math.sin(ang)];
+      const stroke = Array.from({ length: 41 }, (_, k) => [from[0] + ((mesh.x[L] - from[0]) * k) / 40, from[1] + ((mesh.y[L] - from[1]) * k) / 40] as [number, number]);
+      const plan = planCourse(w, w.derived, stroke, { endOnLand: 'flow' });
+      if (plan.blocked || plan.end !== 'lake' || plan.crossings.length || plan.reroute || isRiverCell(w, w.derived, plan.cells[0])) continue;
+      eng.exec({ op: 'add_guide', guide: { cells: plan.cells, path: encodePath(plan.path), locked: true, spring: true, flow: 30, name: '' } });
+      drawn = true;
+    }
+    expect(drawn).toBe(true);
+    expect(jumps(before, w.derived.features.filter((f) => f.type === 'river' && !f.guide))).toEqual([]);
+    expect(w.derived.features.find((f) => f.key === river.key)?.name).toBe(river.name);
     expectReplay(eng);
   });
 });
