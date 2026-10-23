@@ -1,4 +1,4 @@
-import { Dices, Pencil, Square, Undo2, X } from 'lucide-preact';
+import { Pencil, Square, Undo2, X } from 'lucide-preact';
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { busy, canUndo, cancelExport, changeNote, exportProgress, holdNote, scriptRunning, stopScripts, toast, undo, world } from '../../state';
 import { installLateClickGuard, lateClicks } from './noticeTimer';
@@ -73,11 +73,6 @@ function ChangeNote({ n }: { n: NonNullable<typeof changeNote.value> }) {
       {n.undoable && canUndo.value && (
         <button class="pill-btn" onClick={() => void undo()}>
           <Undo2 size={14} /> 撤销
-        </button>
-      )}
-      {n.again && (
-        <button class="pill-btn" onClick={n.again.run} title="撤掉这一步，换一个重新放">
-          <Dices size={14} /> {n.again.label}
         </button>
       )}
       {n.action && (

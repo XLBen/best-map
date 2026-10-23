@@ -75,7 +75,6 @@ import {
   restoreTool,
   rangePick,
   rangeTool,
-  rerollChain,
   rerollTool,
   riverSizeName,
   snapRadiusKm,
@@ -258,14 +257,8 @@ const defs: ToolDef[] = [
     short: '放岛',
     how: '点一下放岛，按住往外拖直接拖出大小',
     size: ISLAND,
-    // 小礁只有一种样子，不用“换个形状”
-    bar: () => [
-      islandKinds,
-      ...(options.value.islandKind === 'reef'
-        ? []
-        : [{ kind: 'action' as const, icon: Dices, label: '换个形状', title: '快捷键 R', run: () => setOptions({ islandVariant: options.value.islandVariant + 1 }) }]),
-    ],
-    reroll: () => setOptions({ islandVariant: options.value.islandVariant + 1 }),
+    // 每放一个岛自动换一个形状（只用鼠标，没有“换个形状”按钮）
+    bar: () => [islandKinds],
     create: () => islandTool(),
   },
   {
@@ -286,9 +279,8 @@ const defs: ToolDef[] = [
       // 用岛链自己的大小（第十二轮修正：以前误用了放岛的大小）
       format: (v, w) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], options.value.chainKm)) / v)} km`,
     },
-    // 换个排列：上一条岛链还是最后一步时重新排它（只算一次，历史里只留一步），否则换下一条的排列
-    bar: () => [chainKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '重新排上一条岛链（快捷键 R）', run: () => void rerollChain() }],
-    reroll: () => void rerollChain(),
+    // 每画一条岛链自动换一种排列（只用鼠标，没有“换个排列”按钮）
+    bar: () => [chainKinds],
     create: () => chainTool(),
   },
   {

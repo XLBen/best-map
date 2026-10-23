@@ -29,11 +29,7 @@ import { type DisplayCell, displayCellAt } from '../../core/display';
 import type { GhostEdit, HighlightLayer } from '../render/colors';
 import type { Shape } from '../render/overlay';
 import {
-  type Again,
   type ToolId,
-  editsIdle,
-  history,
-  replaceLast,
   type ToolOptions,
   busy,
   exec,
@@ -773,19 +769,6 @@ export const worldId = (w: World) => {
 // 岛的大小取整成好读的直径：气泡、提示、历史里是同一个数
 export const snapRadiusKm = (r: number) => km(r * 2) / 2;
 
-// “换个形状”：同一个位置换下一个形状重放（替换刚放的那个岛）
-function islandAgain(spec: IslandSpec): Again {
-  let cur = spec;
-  return {
-    label: '换个形状',
-    next: () => {
-      cur = { ...cur, variant: options.value.islandVariant };
-      setOptions({ islandVariant: cur.variant + 1 });
-      return { op: 'add_island', island: cur };
-    },
-  };
-}
-
 // 刚松手、鼠标还停在原处（屏幕上 6 像素以内）：这一步还在算时不画下一次的悬停预览，只留排队中的那个；
 // 在原处再按一下也不算（多点了一下，不在同一个地方叠一个）
 type Settled = { sx: number; sy: number } | null;
@@ -866,7 +849,7 @@ export function islandTool(): ToolHandler {
         return;
       }
       const spec = c.spec;
-      // 滑块停在拖出的大小；下一个岛换个形状（悬停的预览里看得到）
+      // 滑块停在拖出的大小；下一个岛自动换一个形状（悬停的预览里看得到）
       setOptions({ islandVariant: spec.variant + 1, ...(d.km !== null ? { islandKm: d.km } : {}) });
       const mark = { sx: p.sx, sy: p.sy };
       settled = mark;
@@ -878,8 +861,7 @@ export function islandTool(): ToolHandler {
         return { cells: st.cells, delta: st.landDelta };
       };
       try {
-        // 小礁只有一种样子：不用“换个形状”
-        await trackEdit(shown, exec({ op: 'add_island', island: spec }, '正在造岛…', spec.kind === 'reef' ? undefined : islandAgain(spec)), ghostFollows(shown, w, ghostAt));
+        await trackEdit(shown, exec({ op: 'add_island', island: spec }, '正在造岛…'), ghostFollows(shown, w, ghostAt));
       } finally {
         if (settled === mark) settled = null;
       }
@@ -895,43 +877,6 @@ export function islandTool(): ToolHandler {
       return q ? { ...c.preview, hint: q } : c.preview;
     },
   };
-}
-
-// “换个排列”：同一条线换下一种排列重放
-function chainAgain(chain: ChainSpec): Again {
-  let cur = chain;
-  return {
-    label: '换个排列',
-    next: () => {
-      cur = { ...cur, variant: options.value.chainVariant };
-      setOptions({ chainVariant: cur.variant + 1 });
-      return { op: 'add_island_chain', chain: cur };
-    },
-  };
-}
-
-// 上一条画完的岛链（第十二轮）：工具栏的“换个排列”、R 重新排它。done：那时做完的步数（之后又做了别的、撤销了就不再是它）
-let lastChain: { again: Again; done: number } | null = null;
-const doneSteps = () => history.value.filter((h) => h.done);
-const CHAIN_SUMMARY = '画了一条岛链';
-
-// 工具栏的“换个排列”、R：上一条岛链还是最后一步时换下一种排列重放它（与松手后提示里的“换个排列”相同：只算一次，历史里只留一步）；
-// 不是时（之后又改了别的、撤销了）换下一条岛链的排列，并说一声
-export async function rerollChain(): Promise<void> {
-  const lc = lastChain;
-  const steps = doneSteps();
-  const still = lc !== null && steps.length === lc.done && (steps.at(-1)?.summary.startsWith(CHAIN_SUMMARY) ?? false);
-  if (!still) {
-    setOptions({ chainVariant: options.value.chainVariant + 1 });
-    showToast(lc ? '上一条岛链之后又改了别的：下一条岛链换个排列' : '画一条岛链之后，这里会重新排它；现在换的是下一条的排列');
-    return;
-  }
-  if (!editsIdle()) {
-    showToast('等排队的几步算完再换');
-    return;
-  }
-  const next = lc.again.next();
-  if (next) await replaceLast(next, '正在造岛链…', lc.again);
 }
 
 // 岛链：按住拖出一条线，岛沿着线排开。前面的编辑还在算时也能画（排队）
@@ -1008,11 +953,9 @@ export function chainTool(): ToolHandler {
         const st = combineStamps(now, chainIslands(now, chain));
         return { cells: st.cells, delta: st.landDelta };
       };
+      // 下一条岛链自动换一种排列
       setOptions({ chainVariant: chain.variant + 1 });
-      const again = chainAgain(chain);
-      const run = exec({ op: 'add_island_chain', chain }, '正在造岛链…', again);
-      await trackEdit(at, run, ghostFollows(at, w, ghostAt));
-      if (await run) lastChain = { again, done: doneSteps().length };
+      await trackEdit(at, exec({ op: 'add_island_chain', chain }, '正在造岛链…'), ghostFollows(at, w, ghostAt));
     },
     cancel() {
       points = null;
@@ -1468,7 +1411,7 @@ export function rangeTool(): ToolHandler {
   const commit = async (range: { kind: 'island'; cell: number } | { kind: 'cells'; cells: number[] }, what: string) => {
     const t = target();
     if (!t?.sp) return leaveRangePick();
-    const ok = await exec({ op: 'update_species', id: t.sp.id, patch: { range } }, '正在计算生态…', undefined, undefined, `「${t.sp.name || t.sp.id}」只长在${what}`);
+    const ok = await exec({ op: 'update_species', id: t.sp.id, patch: { range } }, '正在计算生态…', undefined, `「${t.sp.name || t.sp.id}」只长在${what}`);
     if (ok) leaveRangePick();
   };
   return {
