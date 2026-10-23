@@ -551,6 +551,7 @@ export function riverWidth(flow: number, threshold: number): number {
 
 // ---------- 河画出来的样子：一条连续的带子（屏幕与导出的 rivers.bmp 共用） ----------
 // 河线（traceRivers 的折线）加密到约 1/16 格，宽度沿河平滑、往下游只增不减；源头收尖（约 1.25 格里从一成半宽到全宽），
+// 从湖里流出来的短河从湖岸起收细（见 OUTLET_MIN），
 // 入海、入湖的河口在最后约 0.6 格里略张开、平头收在岸线上；再沿法向加一点细小的弯曲（约 0.08 格、半格一个弯，
 // 宽的河弯得少，两头不弯）。弯曲只在画的时候加：存下的折线、点河、量长度都照原来的线
 
@@ -580,6 +581,11 @@ const TAPER_LEN = 1.25;
 const TAPER_MIN = 0.15;
 const FLARE_LEN = 0.6;
 const FLARE = 0.3;
+// 从湖里流出来的短河（不到 2 格；2–4 格之间渐渐不收）：从湖岸起收细，湖岸处约四成宽，到全长的七成是全宽。
+// 不然一个小湖流出来一两格就入海、入别的湖的河画成一块平头的方块
+const OUTLET_MIN = 0.4;
+const OUTLET_SHORT = 2;
+const OUTLET_FADE = 2;
 const WIDTH_SMOOTH = 0.5;
 const MEANDER_AMP = 0.08;
 // 弯曲的噪声频率：格点相隔 1/4 格，约半格一个弯
@@ -632,12 +638,14 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
     const a = 1 - Math.exp(-(s[i + 1] - s[i]) / lam);
     w[i] = w[i + 1] + (w[i] - w[i + 1]) * a;
   }
-  // 4. 源头收尖、河口张开，乘上粗细
+  // 4. 源头收尖、河口张开（从湖里流出来的短河从湖岸起收细），乘上粗细
+  const outlet = line.head === 'lake' && L > 0 ? 1 - smooth01((L / spacing - OUTLET_SHORT) / OUTLET_FADE) : 0;
   const hw = new Float32Array(count);
   let maxHw = 0;
   for (let i = 0; i < count; i++) {
     let f = mul[i];
     if (line.head === 'source') f *= TAPER_MIN + (1 - TAPER_MIN) * smooth01(s[i] / (TAPER_LEN * spacing));
+    if (outlet > 0) f *= 1 - outlet * (1 - OUTLET_MIN) * (1 - smooth01(s[i] / (0.7 * L)));
     if (line.mouth) f *= 1 + FLARE * smooth01((s[i] - (L - FLARE_LEN * spacing)) / (FLARE_LEN * spacing));
     hw[i] = (w[i] * f) / 2;
     if (hw[i] > maxHw) maxHw = hw[i];

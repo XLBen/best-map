@@ -163,6 +163,20 @@ describe('河的带子', () => {
     expect(lake.hw[0]).toBeCloseTo(full, 3);
   });
 
+  // 第十二轮修：小湖流出来一两格就入海的河以前画成一块平头的方块（41、42 号截图里血色的那条）
+  it('从湖里流出来的短河：湖岸处约四成宽，往下游渐渐全宽；4 格以上的不收', () => {
+    const full = riverWidth(200, thr) / 2;
+    const short = riverRibbon({ ...straight(4, () => 200), head: 'lake', mouth: true }, thr, sp);
+    const L = short.s[short.s.length - 1];
+    expect(L).toBeCloseTo(1.5 * sp, 9);
+    expect(short.hw[0]).toBeCloseTo(0.4 * full, 3);
+    for (let i = 1; i < short.hw.length; i++) expect(short.hw[i]).toBeGreaterThanOrEqual(short.hw[i - 1] - 1e-6);
+    const at = (s: number) => short.hw[short.s.findIndex((v) => v >= s)];
+    expect(at(0.75 * L)).toBeGreaterThan(0.99 * full);
+    const long = riverRibbon({ ...straight(10, () => 200), head: 'lake' }, thr, sp);
+    expect(long.hw[0]).toBeCloseTo(full, 3);
+  });
+
   it('河口略张开（最后约 0.6 格），最后一点就是河线的最后一点（平头收在岸线上）；两头不加弯曲', () => {
     const line = straight(30, () => 200, { mouth: true });
     const rb = riverRibbon(line, thr, sp);
