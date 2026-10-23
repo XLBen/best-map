@@ -43,6 +43,7 @@ function ocean(rough = 1) {
 describe('岛的大小', () => {
   it('放岛、岛链、湖的固定哈希', () => {
     // 四种岛 × 三种大小（约等于以前的小 · 中 · 大）、两条岛链、一个湖。第九轮去掉旧存档兼容时重录；之后的优化必须逐值不变
+    // 第十二轮修：岛链不并进原有的岛（太近时缩小、岛心在陆地上的不放），有意改变结果，重录
     const eng = new Engine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
@@ -67,7 +68,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: '99ffb', upliftDelta: '821033b0', land: 'f5511545', elevation: 'd3387498', discharge: 'c20f3323' });
+    }).toEqual({ landDelta: 'f32e9614', upliftDelta: '94f153cb', land: 'b8211545', elevation: '7b634c8a', discharge: '368fa8b8' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -186,6 +187,7 @@ describe('放岛只在岛的附近找格', () => {
 describe('岛链的固定哈希', () => {
   it('小一号的岛最小到 islandMinCells，太小时岛心那一格成陆', () => {
     // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）
+    // 第十二轮修：第 1 种起按第 0 种的面积之和缩放岛的大小（换个排列时陆地一样多），重录
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -204,18 +206,18 @@ describe('岛链的固定哈希', () => {
       }
     }
     expect(got).toEqual({
-      '地区|0.99×1.5|continental': '3342885 9f7ea69d 457fde82 4673bb7c 443',
-      '地区|0.99×1.5|volcanic': '3342885 2bfca245 2808b9f7 eb0675ad 430',
-      '地区|1.6|continental': '3d5d1ba4 25e4713d df61e32 ef0a6260 445',
-      '地区|1.6|volcanic': '3d5d1ba4 6df7806d 51b99164 c7c943b1 426',
-      '地区|3|continental': '329e98f1 55e91ea5 b6a778e9 23a2f295 798',
-      '地区|3|volcanic': '329e98f1 7537260d 9cc316b5 40e2e5a8 773',
-      '星球|0.99×1.5|continental': '5d93fc10 88e08dad 398620c6 21d0f22e 75',
-      '星球|0.99×1.5|volcanic': '5d93fc10 7840850d 126d6ab3 a34910a7 67',
-      '星球|1.6|continental': '9717d8a5 17c15925 e1bae196 3c7fa6e3 81',
-      '星球|1.6|volcanic': '9717d8a5 cf44cecd f2d4dd1d 4b762841 83',
-      '星球|3|continental': 'dfc6dbd6 76158b1d 53186351 e44d7db5 163',
-      '星球|3|volcanic': 'dfc6dbd6 c9f61c95 74632075 865ada3 160',
+      '地区|0.99×1.5|continental': '226fa546 b5891995 70ddbeeb 3fb1e86c 467',
+      '地区|0.99×1.5|volcanic': '226fa546 21ec8895 af1c30df da721d86 456',
+      '地区|1.6|continental': 'a0851fda 9e8bf34d e9e49f4e 5dd46468 499',
+      '地区|1.6|volcanic': 'a0851fda c72a7d25 849fecd2 92a21fe 475',
+      '地区|3|continental': '35ccfc81 d2510db5 c74eb974 db1104f0 1023',
+      '地区|3|volcanic': '35ccfc81 678f1335 f401ab52 fbffd399 987',
+      '星球|0.99×1.5|continental': 'b40a725d c0ebe3fd 9e2444da 70cdff 189',
+      '星球|0.99×1.5|volcanic': 'b40a725d f2187f5d d3245cb8 5ca92527 186',
+      '星球|1.6|continental': 'ef569565 2a4226b5 152c53b7 370c3e90 214',
+      '星球|1.6|volcanic': 'ef569565 53869655 2dea7aaa 2ff88f6d 219',
+      '星球|3|continental': 'fdc24236 f91098f5 f21c987f e883f700 424',
+      '星球|3|volcanic': 'fdc24236 b60ad3dd d9ae9e40 9a8f4f9c 415',
     });
   });
 });

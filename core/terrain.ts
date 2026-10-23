@@ -949,6 +949,68 @@ function chainLayout(rand: () => number, count0: number, baseKm: number, minKm: 
   return out.sort((a, b) => a.t - b.t);
 }
 
+// 换个排列时陆地的总量大致不变（第十二轮修）：第 1 种起按第 0 种（同一条线、同样的个数）的岛的面积之和（大小的平方和）
+// 等比例缩放各个岛，所以几种排列的陆地一样多（最小的岛不再缩）；第 0 种不变
+function chainSlots(seedOf: (variant: number) => number, count: number, baseKm: number, minKm: number, variant: number): ChainSlot[] {
+  const slots = chainLayout(mulberry32(seedOf(variant)), count, baseKm, minKm, variant);
+  if (variant <= 0 || !slots.length) return slots;
+  const ref = chainLayout(mulberry32(seedOf(0)), count, baseKm, minKm, 0);
+  const area = (list: ChainSlot[]) => list.reduce((a, s) => a + s.size * s.size, 0);
+  const scale = Math.sqrt(area(ref) / area(slots));
+  return slots.map((s) => ({ ...s, size: Math.max(minKm, s.size * scale) }));
+}
+
+// 岛链不并进原有的陆地（第十二轮修）：岛心离原来的陆地太近时把岛缩小到碰不到它（岛的轮廓按最长约 1.6 倍大小、再空一格），
+// 缩到比最小的岛还小、或岛心就在陆地上时不放这个岛
+const CHAIN_REACH = 1.6;
+function avoidLand(world: World, islands: IslandSpec[], minKm: number): IslandSpec[] {
+  const { mesh, causes, kmPerUnit } = world;
+  const cellKm = mesh.spacing * kmPerUnit;
+  const out: IslandSpec[] = [];
+  for (const spec of islands) {
+    const maxKm = spec.size * CHAIN_REACH + cellKm;
+    const d = nearestLandKm(world, spec.x, spec.y, maxKm);
+    if (d >= maxKm) {
+      out.push(spec);
+      continue;
+    }
+    const size = (d - cellKm) / CHAIN_REACH;
+    if (size < minKm || causes.land[centerCell(mesh, spec.x, spec.y)]) continue;
+    out.push({ ...spec, size });
+  }
+  return out;
+}
+
+// 离 (x, y) 最近的陆格有多远（km，按格心）；maxKm 以内没有陆地时返回 maxKm。从那一格往外只走 maxKm 以内的格
+function nearestLandKm(world: World, x: number, y: number, maxKm: number): number {
+  const { mesh, causes, kmPerUnit } = world;
+  const sphere = mesh.kind === 'sphere' ? mesh : null;
+  const center: V3 | null = sphere ? toUnit(x, y) : null;
+  const distKm = (i: number) => {
+    if (sphere && center) {
+      const dot = sphere.p[3 * i] * center[0] + sphere.p[3 * i + 1] * center[1] + sphere.p[3 * i + 2] * center[2];
+      return (Math.acos(Math.max(-1, Math.min(1, dot))) / Math.PI) * kmPerUnit;
+    }
+    return Math.hypot(mesh.x[i] - x, mesh.y[i] - y) * kmPerUnit;
+  };
+  const c0 = centerCell(mesh, x, y);
+  let best = maxKm;
+  const seen = new Set<number>([c0]);
+  const queue = [c0];
+  for (let h = 0; h < queue.length; h++) {
+    const c = queue[h];
+    const dc = distKm(c);
+    if (causes.land[c] && dc < best) best = dc;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (seen.has(j)) continue;
+      seen.add(j);
+      if (distKm(j) <= maxKm + mesh.spacing * kmPerUnit) queue.push(j);
+    }
+  }
+  return best;
+}
+
 // 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落；排列按 variant 换（见 chainLayout）
 export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
   if (world.mesh.kind === 'sphere') return chainIslandsSphere(world, spec);
@@ -964,9 +1026,9 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
   const baseR = baseKm / world.kmPerUnit;
   const spacing = (baseR * 2.6) / spec.density;
   const count = Math.max(1, Math.round(total / spacing));
-  const rand = mulberry32(mixSeed(coastSeed(world), 555, Math.round(pts[0][0] * 1e4), Math.round(pts[0][1] * 1e4), spec.variant));
+  const seedOf = (v: number) => mixSeed(coastSeed(world), 555, Math.round(pts[0][0] * 1e4), Math.round(pts[0][1] * 1e4), v);
   const minKm = chainMinKm(world, spec);
-  const slots = chainLayout(rand, count, baseKm, minKm, spec.variant);
+  const slots = chainSlots(seedOf, count, baseKm, minKm, spec.variant);
   const out: IslandSpec[] = [];
   for (let k = 0; k < slots.length; k++) {
     let s = slots[k].t * total;
@@ -985,7 +1047,7 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
     const variant = 1_000_000 + spec.variant * 1000 + k;
     out.push({ x: x0 + (x1 - x0) * t + nx * off, y: y0 + (y1 - y0) * t + ny * off, kind: spec.kind, size: slots[k].size, variant });
   }
-  return out;
+  return avoidLand(world, out, minKm);
 }
 
 // 整个星球上的岛链：折线各段是大圆弧，沿弧插值，向两侧的错落沿弧的法向
@@ -1003,9 +1065,9 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
   const spacing = (baseR * 2.6) / spec.density;
   const count = Math.max(1, Math.round(total / spacing));
   const x0 = wrapX(spec.points[0][0]);
-  const rand = mulberry32(mixSeed(coastSeed(world), 555, Math.round(x0 * 1e4), Math.round(spec.points[0][1] * 1e4), spec.variant));
+  const seedOf = (v: number) => mixSeed(coastSeed(world), 555, Math.round(x0 * 1e4), Math.round(spec.points[0][1] * 1e4), v);
   const minKm = chainMinKm(world, spec);
-  const slots = chainLayout(rand, count, baseKm, minKm, spec.variant);
+  const slots = chainSlots(seedOf, count, baseKm, minKm, spec.variant);
   const out: IslandSpec[] = [];
   for (let k = 0; k < slots.length; k++) {
     let s = slots[k].t * total;
@@ -1032,7 +1094,7 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
     const [x, y] = fromUnit([q[0] / ql, q[1] / ql, q[2] / ql]);
     out.push({ x, y, kind: spec.kind, size: slots[k].size, variant: 1_000_000 + spec.variant * 1000 + k });
   }
-  return out;
+  return avoidLand(world, out, minKm);
 }
 
 
