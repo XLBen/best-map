@@ -1472,7 +1472,10 @@ export function rangeTool(): ToolHandler {
     if (ok) leaveRangePick();
   };
   return {
-    drags: true,
+    // 点岛时是单击类工具（按住拖动是平移地图），圈一片时按住画圈
+    get drags() {
+      return rangePick.value?.kind === 'cells';
+    },
     down(p) {
       const t = target();
       if (!t || t.pick.kind !== 'cells' || p.cell < 0) return;

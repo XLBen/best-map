@@ -73,6 +73,7 @@ import {
   reliefTool,
   renameTool,
   restoreTool,
+  rangePick,
   rangeTool,
   rerollChain,
   rerollTool,
@@ -610,6 +611,8 @@ export function setTool(id: ToolId) {
   if (tool.value === 'river' && id !== 'river') selectedRiver.value = null;
   // 离开放湖：选中的湖不要了
   if (tool.value === 'lake' && id !== 'lake') selectedLake.value = null;
+  // 离开选生态的范围：不选了
+  if (tool.value === 'range' && id !== 'range') rangePick.value = null;
   if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;
   tool.value = id;
   cursorHint.value = null;

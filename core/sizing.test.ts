@@ -67,7 +67,8 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: '3fd60a33', upliftDelta: 'cb0b32bd', land: '83511545', elevation: '8e076b20', discharge: 'b8a79f65' });
+      // 第十二轮重录：第 2 种排列（成团）改了排法
+    }).toEqual({ landDelta: '99ffb', upliftDelta: '821033b0', land: 'f5511545', elevation: 'defc1ae4', discharge: '7171ad23' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -185,7 +186,7 @@ describe('放岛只在岛的附近找格', () => {
 
 describe('岛链的固定哈希', () => {
   it('小一号的岛最小到 islandMinCells，太小时岛心那一格成陆', () => {
-    // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）
+    // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）；第十二轮第 1 种排列改成错落着排，再重录
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -204,18 +205,18 @@ describe('岛链的固定哈希', () => {
       }
     }
     expect(got).toEqual({
-      '地区|0.99×1.5|continental': 'b137f079 32602555 ee1beffd 20271b3 463',
-      '地区|0.99×1.5|volcanic': 'b137f079 93b4974d c6f709a4 ff475b63 467',
-      '地区|1.6|continental': '692f1204 34fde13d 7b58efcb 7f901cc5 524',
-      '地区|1.6|volcanic': '692f1204 5bcec595 132a4712 6ead8d4a 531',
-      '地区|3|continental': '2d639ef5 23dd75e5 20e36a14 6b332680 727',
-      '地区|3|volcanic': '2d639ef5 bfa84f75 601185d9 c1a74d25 733',
-      '星球|0.99×1.5|continental': '3c4c8c7 ab1f97bd 376f8845 c43885e9 121',
-      '星球|0.99×1.5|volcanic': '3c4c8c7 ef291a95 4904e6c1 ca3ab69e 129',
-      '星球|1.6|continental': '128f36bd 768022b5 f3f931e4 4c15c76b 135',
-      '星球|1.6|volcanic': '128f36bd 3af3959d 51296a66 e4fa6b98 142',
-      '星球|3|continental': '5a89615 6351b4bd 17824cfe 1639f772 261',
-      '星球|3|volcanic': '5a89615 c9b86b25 8e2f67b3 ada37b6e 242',
+      '地区|0.99×1.5|continental': '3342885 9f7ea69d 457fde82 4673bb7c 443',
+      '地区|0.99×1.5|volcanic': '3342885 2bfca245 2808b9f7 eb0675ad 430',
+      '地区|1.6|continental': '3d5d1ba4 25e4713d df61e32 ef0a6260 445',
+      '地区|1.6|volcanic': '3d5d1ba4 6df7806d 51b99164 c7c943b1 426',
+      '地区|3|continental': '329e98f1 55e91ea5 b6a778e9 23a2f295 798',
+      '地区|3|volcanic': '329e98f1 7537260d 9cc316b5 40e2e5a8 773',
+      '星球|0.99×1.5|continental': '5d93fc10 88e08dad 398620c6 21d0f22e 75',
+      '星球|0.99×1.5|volcanic': '5d93fc10 7840850d 126d6ab3 a34910a7 67',
+      '星球|1.6|continental': '9717d8a5 17c15925 e1bae196 3c7fa6e3 81',
+      '星球|1.6|volcanic': '9717d8a5 cf44cecd f2d4dd1d 4b762841 83',
+      '星球|3|continental': 'dfc6dbd6 76158b1d 53186351 e44d7db5 163',
+      '星球|3|volcanic': 'dfc6dbd6 c9f61c95 74632075 865ada3 160',
     });
   });
 });
