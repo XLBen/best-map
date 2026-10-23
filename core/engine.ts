@@ -674,9 +674,9 @@ function usesExtensions(cmd: Command): boolean {
   if (cmd.op === 'set_worldgen' && cmd.params.form !== undefined) return true;
   // 第八轮第三批：河流类型
   if (cmd.op === 'set_river_type' || cmd.op === 'remove_river_type') return true;
-  // 第九轮：湖泊类型、改一个放的湖、给自然的湖选类型、带名字或类型的新湖
+  // 第九轮：湖泊类型、改一个放的湖、给自然的湖选类型、带类型的新湖
   if (cmd.op === 'set_lake_type' || cmd.op === 'remove_lake_type' || cmd.op === 'update_lake' || cmd.op === 'type_lake') return true;
-  if (cmd.op === 'add_lake' && (cmd.lake.name !== undefined || cmd.lake.salt !== undefined || cmd.lake.type !== undefined)) return true;
+  if (cmd.op === 'add_lake' && cmd.lake.type !== undefined) return true;
   return false;
 }
 

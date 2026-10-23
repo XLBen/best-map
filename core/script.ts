@@ -286,8 +286,12 @@ for (const v of VARIABLES) {
 }
 
 // 某种脚本能用的变量
-export function scriptVariablesFor(kind: ScriptKind): ScriptVariable[] {
-  return VARIABLES.filter((v) => v.kinds.includes(kind));
+// match 是河流类型的还是湖泊类型的（只给一种的变量另一种里没有，名字可以随便用）。省略为河
+export type MatchScope = 'river' | 'lake';
+const inScope = (v: ScriptVariable, kind: ScriptKind, scope: MatchScope = 'river') => !v.for || kind !== 'match' || v.for === scope;
+
+export function scriptVariablesFor(kind: ScriptKind, scope?: MatchScope): ScriptVariable[] {
+  return VARIABLES.filter((v) => v.kinds.includes(kind) && inScope(v, kind, scope));
 }
 
 // 源码里出现了这个名字（前后不是字母、数字、_、$；中文名同样适用）。只在 codeOnly 之后的代码里找
@@ -917,11 +921,11 @@ export function setSyntaxLocator(f: ((src: string) => number | undefined) | null
 }
 
 // 源码里用到的变量（只看代码：注释、字符串里的不算）
-function paramsOf(kind: ScriptKind, src: string): ScriptParam[] {
+function paramsOf(kind: ScriptKind, src: string, scope?: MatchScope): ScriptParam[] {
   const code = codeOnly(src);
   const out: ScriptParam[] = [];
   for (const v of VARIABLES) {
-    if (!v.kinds.includes(kind)) continue;
+    if (!v.kinds.includes(kind) || !inScope(v, kind, scope)) continue;
     const mode: ParamMode = v.key === 'cell' ? 'cell' : v.scalar ? 'scalar' : 'array';
     for (const name of v.zh ? [v.key, v.zh] : [v.key]) if (NAME_RE.get(name)!.test(code)) out.push({ name, key: v.key, mode });
   }
@@ -973,8 +977,8 @@ function generate(kind: ScriptKind, src: string, params: ScriptParam[]): string 
   return `${head}${src}\n} }\n${loop}\nreturn [__map2_script, __map2_loop];`;
 }
 
-function build(kind: ScriptKind, src: string): CompiledScript {
-  const params = paramsOf(kind, src);
+function build(kind: ScriptKind, src: string, scope?: MatchScope): CompiledScript {
+  const params = paramsOf(kind, src, scope);
   const factory = new Function(...SHADOW, '__h', '__st', generate(kind, src, params)) as (...a: unknown[]) => [CompiledScript['script'], CompiledScript['loop']];
   const [script, loop] = factory(...SHADOW_VALUES, HELPERS, RUN);
   return { kind, src, names: params.map((p) => p.name), keys: params.map((p) => p.key), params, script, loop };
@@ -1001,9 +1005,10 @@ function importFailure(src: string): Failure | null {
   return m ? { raw: 'import()', text: '脚本里不能用 import', line: lineCount(src.slice(0, m.index)) } : null;
 }
 
-export function compileScript(kind: ScriptKind, src: string, owner = '脚本'): CompiledScript {
+export function compileScript(kind: ScriptKind, src: string, owner = '脚本', scope?: MatchScope): CompiledScript {
   if (disallowed) throw new Error('主线程不运行脚本');
-  const key = `${kind}\0${src}`;
+  const sc = kind === 'match' && scope === 'lake' ? 'lake' : undefined;
+  const key = `${kind}${sc ? `:${sc}` : ''}\0${src}`;
   let hit = cache.get(key);
   if (hit) {
     scriptStats.hits++;
@@ -1015,7 +1020,7 @@ export function compileScript(kind: ScriptKind, src: string, owner = '脚本'): 
     else hit = importFailure(src) ?? syntaxFailure(src) ?? undefined;
     if (!hit) {
       try {
-        hit = build(kind, src);
+        hit = build(kind, src, sc);
       } catch (e) {
         // 单独能通过、放进生成代码却不行：用了生成代码自己的名字（var __st）
         const raw = errorInfo(e).raw;
@@ -1557,14 +1562,14 @@ const withId = (issue: ScriptIssue, id: string | undefined): ScriptIssue => (id 
 // 对一串格运行一段每格的脚本。出错不抛（语法错误、运行时出错、NaN、类型不对、缺变量、安全模式），
 // 返回 {ok: false, issue, output}，output 为“没有这段脚本”的结果；超出范围的数被截到范围内。
 // 只有调用方的错（主线程上 disallowScripts 之后、地形脚本缺原来的地形、看门狗本身出错）才抛
-export function runScript<K extends CellKind>(script: { kind: K; src: string }, opts: RunOptions): CellResult<K> {
-  const { kind, src } = script;
+export function runScript<K extends CellKind>(script: { kind: K; src: string; scope?: MatchScope }, opts: RunOptions): CellResult<K> {
+  const { kind, src, scope } = script;
   const { inputs, cells, owner } = opts;
   const fail = (issue: ScriptIssue): CellResult<K> => ({ ok: false, issue: withId(issue, opts.id), output: absentOutput(kind, inputs, cells) as CellOutputs[K] });
   if (!enabled) return fail(makeIssue(owner, kind, 'disabled', '安全模式下脚本不运行', 'disabled'));
   let c: CompiledScript;
   try {
-    c = compileScript(kind, src, owner);
+    c = compileScript(kind, src, owner, scope);
   } catch (e) {
     if (e instanceof ScriptError) return fail(e.issue);
     throw e;

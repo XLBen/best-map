@@ -622,9 +622,10 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   // 选中的河：换了世界，画的河被删掉、撤销掉了，或者自然的河那一格不再是河
   const sel = selectedRiver.value;
   if (sel && (fresh || (sel.kind === 'guide' ? !next.small.guides.some((g) => g.id === sel.id) : !isRiverCell(next, next.derived, sel.cell)))) selectedRiver.value = null;
-  // 选中的湖：放的湖被删掉、撤销掉了，或者自然的湖那一格不再是湖
+  // 选中的湖：放的湖被删掉、撤销掉了，或者那一格（放的湖的中心、自然的湖上点的那格）不再是湖
   const lk = selectedLake.value;
-  if (lk && (fresh || (lk.kind === 'placed' ? !next.small.lakes.some((l) => l.id === lk.id) : !next.derived.lake[lk.cell]))) selectedLake.value = null;
+  const lkCell = lk?.kind === 'placed' ? next.small.lakes.find((l) => l.id === lk.id)?.cell : lk?.cell;
+  if (lk && (fresh || lkCell === undefined || !next.derived.lake[lkCell])) selectedLake.value = null;
   const hov = hoverRiver.value;
   if (hov && (fresh || (hov.kind === 'guide' && !next.small.guides.some((g) => g.id === hov.id)))) hoverRiver.value = null;
   // 等着确认的那一笔是照原来的世界算的：世界变了就不算了

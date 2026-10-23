@@ -5,6 +5,7 @@ import { FANTASY_PACK } from './packs/fantasy';
 import { type LakeType, PLAIN_LAKE, lakeBank, lakeParts, matchRunStats } from './lake-types';
 import { graphDistance } from './mesh';
 import { applyPackCommands, packFromWorld, readPack } from './packs';
+import { arrayInputs, runScript } from './script';
 import { continents } from './testing/fixtures';
 import type { World } from './world';
 
@@ -185,7 +186,7 @@ describe('湖岸场 lake:<id>', () => {
 });
 
 describe('湖的名字', () => {
-  it('带起名模板的湖按模板起名；放的湖自己起的名字、换一个、恢复自动', () => {
+  it('带起名模板的湖按模板起名；放的湖的名字只有地名一处（改名、换一个、恢复自动都是它）', () => {
     const { eng, cells } = withLakes();
     const w = eng.world;
     const lakeName = (cell: number) => w.derived.features.find((f) => f.type === 'lake' && f.cells.includes(cell))?.name;
@@ -194,18 +195,28 @@ describe('湖的名字', () => {
     eng.exec({ op: 'set_lake_type', type: { ...blood, names: [{ p: '{__species}之{color}潭' }] } });
     eng.exec({ op: 'type_lake', cell: cells[1], type: blood.id });
     expect(lakeName(cells[1])).toMatch(/^血池之.+潭$/);
-    // 放的湖自己起的名字：只重新起名
+    // 放的湖：名字是地名（rename_feature），湖上没有另一份名字
+    const feature = () => w.derived.features.find((f) => f.cells.includes(cells[0]) && f.type === 'lake')!;
+    const auto = lakeName(cells[0]);
+    const key = feature().key;
     eng.takeRecomputed();
-    eng.exec({ op: 'update_lake', id: 'L0', patch: { name: '镜海' } });
+    eng.exec({ op: 'rename_feature', key, name: '镜海' });
     expect(eng.takeRecomputed()).toBe(1);
     expect(lakeName(cells[0])).toBe('镜海');
-    expect(w.derived.features.find((f) => f.cells.includes(cells[0]) && f.type === 'lake')!.custom).toBe(true);
-    eng.exec({ op: 'update_lake', id: 'L0', patch: { name: null } });
-    const auto = lakeName(cells[0]);
-    eng.exec({ op: 'update_lake', id: 'L0', patch: { salt: 1 } });
+    expect(feature().custom).toBe(true);
+    // 换一个：自己起的名字不要了，换一个自动的
+    eng.exec({ op: 'reroll_feature', key });
+    expect(feature().custom).toBe(false);
+    expect(lakeName(cells[0])).not.toBe('镜海');
     expect(lakeName(cells[0])).not.toBe(auto);
-    eng.exec({ op: 'update_lake', id: 'L0', patch: { salt: null } });
-    expect(lakeName(cells[0])).toBe(auto);
+    // 再改名、恢复自动：回到换过的那个自动名字
+    const rerolled = lakeName(cells[0]);
+    eng.exec({ op: 'rename_feature', key, name: '镜海' });
+    eng.exec({ op: 'rename_feature', key, name: '' });
+    expect(lakeName(cells[0])).toBe(rerolled);
+    // 湖上不收名字
+    expect(() => eng.exec({ op: 'update_lake', id: 'L0', patch: { name: 'x' } } as never)).toThrow();
+    expect(w.small.lakes.every((l) => !('name' in l) && !('salt' in l))).toBe(true);
   });
 });
 
@@ -216,7 +227,7 @@ describe('奇幻包里的湖、重放', () => {
     const w = eng.world;
     expect(w.small.lakeTypes?.map((t) => t.name)).toEqual(['血池', '晶湖', '冥湖', '熔岩湖']);
     // 冥湖没有规则：只能自己选
-    eng.exec({ op: 'update_lake', id: 'L1', patch: { type: 'styx_lake', name: '' } });
+    eng.exec({ op: 'update_lake', id: 'L1', patch: { type: 'styx_lake' } });
     expect(typeOf(w, cells[1])).toBe(3);
     const f = w.derived.features.find((x) => x.type === 'lake' && x.cells.includes(cells[1]))!;
     expect(f.name).toMatch(/冥湖|幽潭/);
@@ -230,5 +241,36 @@ describe('奇幻包里的湖、重放', () => {
     const again = new Engine(w.settings, w.mesh);
     for (const c of eng.toDoc().commands) again.exec(c);
     expect(digestWorld(again.world)).toEqual(digestWorld(w));
+  });
+});
+
+describe('match 脚本分河、湖：只给一种的变量另一种里没有，名字可以随便用', () => {
+  const inputs = arrayInputs(2, { discharge: [1, 3], lakeArea: [10, 20], riverLength: [5, 50] });
+  const run = (src: string, scope?: 'river' | 'lake') => runScript({ kind: 'match', src, scope }, { owner: 't', id: 't', seed: 1, inputs, cells: [0, 1] });
+  it('河的脚本里 inflow、perennial 是自己的名字（第九轮之前能用的照样能用）', () => {
+    const a = run('const inflow = discharge * 2;\nreturn inflow > 4;');
+    expect(a.ok && Array.from(a.output.match)).toEqual([0, 1]);
+    const b = run('const o = { perennial: 1, 干湖: 2 };\nreturn o.perennial + o.干湖 === 3;');
+    expect(b.ok && Array.from(b.output.match)).toEqual([1, 1]);
+    // 湖才有的变量在河里不是变量
+    const c = run('return lakeArea > 15;');
+    expect(c.ok).toBe(false);
+  });
+  it('湖的脚本能读湖的变量；河长在湖里是自己的名字', () => {
+    const a = run('return 湖面积 > 15;', 'lake');
+    expect(a.ok && Array.from(a.output.match)).toEqual([0, 1]);
+    const b = run('const riverLength = 1;\nreturn riverLength > 0;', 'lake');
+    expect(b.ok && Array.from(b.output.match)).toEqual([1, 1]);
+  });
+});
+
+describe('新世界清掉自然湖选的类型', () => {
+  it('set_worldgen reset 时 lakeTyping 去掉', () => {
+    const { eng, cells } = withLakes();
+    eng.exec({ op: 'set_lake_type', type: blood });
+    eng.exec({ op: 'type_lake', cell: cells[0], type: blood.id });
+    expect(eng.world.small.lakeTyping).toBeDefined();
+    eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents', landFraction: 0.4 }, reset: true });
+    expect(eng.world.small.lakeTyping).toBeUndefined();
   });
 });

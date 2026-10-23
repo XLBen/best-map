@@ -1603,8 +1603,8 @@ const LAKE_PICK: [number, number, number] = [255, 236, 150];
 export function lakeTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
-  // 按下时点在湖上（松手时没拖开就选中它）
-  let pick: { cell: number; sx: number; sy: number } | null = null;
+  // 按下时点在湖上：松手时没拖开就选中它；按住拖开了就照常拖出一个新湖（可以放在已有的湖上）
+  let pick: { cell: number; x: number; y: number; sx: number; sy: number } | null = null;
   // 鼠标下的湖（悬停时描出来）：按格缓存
   let hover: { key: string; cells: number[] } | null = null;
   const hoverLake = (w: World, cell: number) => {
@@ -1639,9 +1639,10 @@ export function lakeTool(): ToolHandler {
     down(p) {
       const w = world.value;
       if (!w || p.cell < 0 || !movedAway(settled, p)) return;
-      // 点在湖上：选中它；选着一个湖时点别处：取消选择
+      // 点在湖上：选中它（按住拖开是放湖，见 move）；选着一个湖时点别处：取消选择
       if (w.causes.land[p.cell] && w.derived.lake[p.cell]) {
-        pick = { cell: p.cell, sx: p.sx, sy: p.sy };
+        pointer = p;
+        pick = { cell: p.cell, x: p.x, y: p.y, sx: p.sx, sy: p.sy };
         return;
       }
       if (selectedLake.value) {
@@ -1660,6 +1661,13 @@ export function lakeTool(): ToolHandler {
       pointer = p;
       if (movedAway(settled, p)) settled = null;
       const w = world.value;
+      if (pressed && pick && w && Math.hypot(p.sx - pick.sx, p.sy - pick.sy) > 6) {
+        const at = pick;
+        pick = null;
+        if (blockedByOther()) return busyNote();
+        selectedLake.value = null;
+        drag = { x: at.x, y: at.y, cell: at.cell, sx: at.sx, sy: at.sy, km: null };
+      }
       if (!pressed || !drag || !w) return;
       if (Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
       else {
@@ -1730,7 +1738,7 @@ export function lakeTool(): ToolHandler {
       if (settled) return { ...EMPTY, hint: '正在计算…' };
       // 鼠标在湖上：描出这个湖，点一下选中它
       if (!drag && pointer.cell >= 0 && w.causes.land[pointer.cell] && w.derived.lake[pointer.cell]) {
-        return { layers: [{ cells: hoverLake(w, pointer.cell), color: [255, 255, 255], pattern: 'outline' }], shapes: [], hint: '点一下选中这个湖' };
+        return { layers: [{ cells: hoverLake(w, pointer.cell), color: [255, 255, 255], pattern: 'outline' }], shapes: [], hint: '点一下选中这个湖 · 按住拖开放一个新湖' };
       }
       const c = centerOf();
       if (!c || !w.causes.land[c.cell]) return EMPTY;

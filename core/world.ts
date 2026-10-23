@@ -149,10 +149,8 @@ export const lakeSchema = z.object({
   perennial: z.boolean().default(true),
   // 第八轮起的新湖：半径就按给的算，最小半格（只淹一格）。旧湖没有这一项，照旧至少一格半
   exact: z.literal(true).optional(),
-  // 第九轮：名字（'' 按文字包自动起）、自动起名的盐（“换一个”）、湖泊类型（'plain' 是“普通的湖”，见 lake-types.ts）。
-  // 这个湖所在的那一片湖面都按它
-  name: z.string().max(40).optional(),
-  salt: z.number().int().min(0).optional(),
+  // 第九轮：湖泊类型（'plain' 是“普通的湖”，见 lake-types.ts）。这个湖所在的那一片湖面都按它。
+  // 名字不在这里：与自然的湖一样是地名（rename_feature、reroll_feature，键是“lake:锚点格”），只有一处说了算
   type: typeIdSchema.optional(),
 });
 export type LakeSpec = z.output<typeof lakeSchema>;

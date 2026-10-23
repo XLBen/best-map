@@ -35,6 +35,12 @@ function placedIn(w: World, cells: readonly number[]): LakeSpec | undefined {
   return undefined;
 }
 
+// 一串格里全部放的湖（按放的先后）
+function placedAll(w: World, cells: readonly number[]): LakeSpec[] {
+  const set = new Set(cells);
+  return w.small.lakes.filter((l) => set.has(l.cell));
+}
+
 // 点在湖上：选中的是哪个湖（里面有放的湖时是那个放的湖）
 export function lakeRefAt(w: World, cell: number): LakeRef | null {
   const cells = lakeCellsAt(w, cell);
@@ -81,10 +87,21 @@ function typingIn(w: World, cells: readonly number[]) {
   return (w.small.lakeTyping ?? []).filter((e) => set.has(e.cell));
 }
 
+// 一个湖自己选的类型：与 core/lake-types.ts 的 typeLakes 同一个规则——先看自然的湖上选的（lakeTyping），
+// 再看湖里放的湖带的类型（按放的先后），后面的说了算；类型已经删掉了的当作没选
+function chosenIn(w: World, cells: readonly number[]): string | undefined {
+  const set = new Set(cells);
+  const ok = (t: string) => t === PLAIN_LAKE || (w.small.lakeTypes ?? []).some((x) => x.id === t);
+  let own: string | undefined;
+  for (const e of w.small.lakeTyping ?? []) if (set.has(e.cell) && ok(e.type)) own = e.type;
+  for (const l of w.small.lakes) if (l.type !== undefined && set.has(l.cell) && ok(l.type)) own = l.type;
+  return own;
+}
+
 export function lakeTypeOfLake(w: World, ref: LakeRef): LakeTypeOfLake {
   const types = w.small.lakeTypes ?? [];
   const info = lakeInfo(w, ref);
-  const own = info?.placed?.type ?? (info ? typingIn(w, info.cells).at(-1)?.type : undefined);
+  const own = info ? chosenIn(w, info.cells) : undefined;
   if (own === PLAIN_LAKE) return { type: null, chosen: 'plain' };
   const t = own !== undefined ? types.find((x) => x.id === own) : undefined;
   if (t) return { type: t, chosen: 'type' };
@@ -95,7 +112,7 @@ export function lakeTypeOfLake(w: World, ref: LakeRef): LakeTypeOfLake {
 export const hasLakeRules = (w: World) => (w.small.lakeTypes ?? []).some((t) => !!t.scripts?.match);
 
 // 给一个湖选类型（choice：类型 id、'plain' 普通的湖、null 按规则）的命令；不用改时为 null。
-// 放的湖改它自己的 type；自然的湖记在 lakeTyping（这个湖里原来选的先去掉）
+// 有放的湖时记在选中的放的湖上（同一片里别的放的湖、lakeTyping 上选的去掉）；自然的湖记在 lakeTyping（这个湖里原来选的先去掉）
 export function lakeTypeChoiceCommand(w: World, ref: LakeRef, choice: string | null): Command | null {
   const info = lakeInfo(w, ref);
   if (!info) return null;
@@ -106,17 +123,22 @@ export function lakeTypeChoiceCommand(w: World, ref: LakeRef, choice: string | n
   const what = choice === PLAIN_LAKE ? '普通的湖' : ((w.small.lakeTypes ?? []).find((t) => t.id === choice)?.name ?? choice);
   const label = choice === null ? `${who}的类型改回按规则` : `${who}改成${what}`;
   const old = typingIn(w, info.cells);
-  if (info.placed) {
-    // 放进一个选过类型的自然湖里的湖：那片湖原来选的一起去掉（不然放的湖改回按规则时还是那一种）
-    const drop: Command[] = old.length ? [{ op: 'type_lake', cell: old[0].cell, type: null, drop: old.map((e) => e.cell) }] : [];
-    const own: Command[] = (info.placed.type ?? null) === want ? [] : [{ op: 'update_lake', id: info.placed.id, patch: { type: want } }];
-    if (!own.length && !drop.length) return null;
-    if (!drop.length) return { ...own[0], label } as Command;
-    return { op: 'batch', label, commands: [...own, ...drop] };
+  // 自然的湖已经是这样选的：不用改
+  if (!info.placed && old.length === 1 && old[0].type === want) return null;
+  // 这片湖原来选的（自然的湖上选的、湖里每个放的湖带的）都去掉，再把选的记在一处：
+  // 有放的湖时记在选中的那个放的湖上，没有时记进 lakeTyping
+  const cmds: Command[] = [];
+  if (old.length && (info.placed || want === null)) cmds.push({ op: 'type_lake', cell: old[0].cell, type: null, drop: old.map((e) => e.cell) });
+  for (const l of placedAll(w, info.cells)) {
+    const to = info.placed && l.id === info.placed.id ? want : null;
+    if ((l.type ?? null) !== to) cmds.push({ op: 'update_lake', id: l.id, patch: { type: to } });
   }
-  if ((old.at(-1)?.type ?? null) === want && old.length <= 1) return null;
-  const cell = ref.kind === 'natural' ? ref.cell : info.cells[0];
-  return { op: 'type_lake', cell, type: want, ...(old.length ? { drop: old.map((e) => e.cell) } : {}), label };
+  if (!info.placed && want !== null) {
+    const cell = ref.kind === 'natural' ? ref.cell : info.cells[0];
+    cmds.push({ op: 'type_lake', cell, type: want, ...(old.length ? { drop: old.map((e) => e.cell) } : {}) });
+  }
+  if (!cmds.length) return null;
+  return cmds.length === 1 ? ({ ...cmds[0], label } as Command) : { op: 'batch', label, commands: cmds };
 }
 
 // 新放的湖带上的类型（工具条上选的；那种类型已经删掉了时不带）

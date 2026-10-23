@@ -50,7 +50,7 @@ describe('点中的湖、给湖选类型', () => {
     // 这片湖里有放的湖 L1：它没选，这片湖选的照样算
     expect(lakeTypeOfLake(w, { kind: 'placed', id: 'L1' })).toMatchObject({ chosen: 'type', type: { id: blood.id } });
     // 给 L1 改回按规则：这片湖原来选的也一起去掉
-    expect(lakeTypeChoiceCommand(w, { kind: 'placed', id: 'L1' }, null)).toMatchObject({ op: 'batch', commands: [{ op: 'type_lake', type: null }] });
+    expect(lakeTypeChoiceCommand(w, { kind: 'placed', id: 'L1' }, null)).toMatchObject({ op: 'type_lake', type: null, drop: [cells[1]] });
     expect(w.derived.lakeType![cells[1]]).toBe(1);
     const parts = lakeParts(w, w.derived);
     const other = Array.from(parts.lakes[parts.of[cells[1]]]).find((c) => c !== cells[1])!;
@@ -70,6 +70,32 @@ describe('点中的湖、给湖选类型', () => {
     expect(chosenLakeType(w)).toEqual({});
     setOptions({ lakeType: '' });
     expect(newWaterType(w, 'lake').id).toBe('lake-type-1');
+  });
+});
+
+describe('一片湖里放了两个湖：与引擎同一个规则', () => {
+  it('前一个带类型、后一个没带：显示前一个的类型；改回按规则两个都清掉；给后一个选别的，前一个的去掉', () => {
+    const { eng, w, cells } = setup();
+    eng.exec({ op: 'set_lake_type', type: blood });
+    eng.exec({ op: 'set_lake_type', type: { id: 'ice', name: '冰湖', color: '#ccefff' } });
+    eng.exec({ op: 'update_lake', id: 'L0', patch: { type: blood.id } });
+    // 在 L0 的湖里再放一个小湖（后放的，没带类型）
+    const inner = lakeInfo(w, { kind: 'placed', id: 'L0' })!.cells.find((c) => c !== cells[0] && w.derived.lake[c] === 1)!;
+    eng.exec({ op: 'add_lake', lake: { id: 'L9', cell: inner, radius: 20, depth: 150, perennial: true, exact: true } });
+    const ref = lakeRefAt(w, cells[0])!;
+    expect(ref).toEqual({ kind: 'placed', id: 'L9' });
+    expect(w.derived.lakeType![cells[0]]).toBe(1);
+    expect(lakeTypeOfLake(w, ref)).toMatchObject({ chosen: 'type', type: { id: blood.id } });
+    const clear = lakeTypeChoiceCommand(w, ref, null)!;
+    expect(clear).toMatchObject({ op: 'update_lake', id: 'L0', patch: { type: null } });
+    const ice = lakeTypeChoiceCommand(w, ref, 'ice')!;
+    eng.exec(ice);
+    expect(w.small.lakes.find((l) => l.id === 'L0')!.type).toBeUndefined();
+    expect(w.small.lakes.find((l) => l.id === 'L9')!.type).toBe('ice');
+    expect(lakeTypeOfLake(w, ref)).toMatchObject({ chosen: 'type', type: { id: 'ice' } });
+    eng.exec(lakeTypeChoiceCommand(w, ref, null)!);
+    expect(lakeTypeOfLake(w, ref).chosen).toBeNull();
+    expect(w.small.lakes.every((l) => l.type === undefined)).toBe(true);
   });
 });
 

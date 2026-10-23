@@ -122,7 +122,11 @@ describe('用了没有的变量、不能用的名字', () => {
     for (const [kind, list] of Object.entries(SCRIPT_EXAMPLES)) {
       for (const ex of list) expect(checkNow(kind as keyof typeof SCRIPT_EXAMPLES, ex.src), `${kind}：${ex.label}`).toBeNull();
     }
-    for (const ex of LAKE_MATCH_EXAMPLES) expect(checkNow('match', ex.src), `湖：${ex.label}`).toBeNull();
+    for (const ex of LAKE_MATCH_EXAMPLES) expect(checkNow('match', ex.src, undefined, { scope: 'lake' }), `湖：${ex.label}`).toBeNull();
+    // 湖的变量在河的脚本里不是变量；湖的脚本里河长也不是
+    expect(checkNow('match', 'return 湖面积 > 1;')?.reason).toBe('name');
+    expect(checkNow('match', 'return 河长 > 1;', undefined, { scope: 'lake' })?.reason).toBe('name');
+    expect(checkNow('match', 'const inflow = 流量 * 2;\nreturn inflow > 1;')).toBeNull();
   });
 });
 

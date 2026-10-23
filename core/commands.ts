@@ -93,8 +93,6 @@ export type GuidePatch = z.input<typeof guidePatchSchema>;
 const L = lakeSchema.shape;
 const lakePatchSchema = z
   .object({
-    name: L.name.unwrap().nullable().optional(),
-    salt: L.salt.unwrap().nullable().optional(),
     type: L.type.unwrap().nullable().optional(),
     radius: z.number().min(0.1).max(2000).optional(),
   })
@@ -153,7 +151,7 @@ const baseCommands = [
   }),
   z.object({ op: z.literal('add_lake'), lake: lakeSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
   z.object({ op: z.literal('remove_lake'), id: z.string() }),
-  // 改一个放的湖（第九轮）：名字（'' 自动起，null 去掉）、换一个名字的盐、类型（'plain' 普通的湖，null 按规则）、大小
+  // 改一个放的湖（第九轮）：类型（'plain' 普通的湖，null 按规则）、大小。名字用 rename_feature（与自然的湖一样）
   z.object({
     op: z.literal('update_lake'),
     id: z.string(),
@@ -511,6 +509,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         small.constraints = [];
         small.guides = [];
         small.lakes = [];
+        delete small.lakeTyping;
       }
       const prev = small.terrain.gen;
       small.terrain.gen = params;
@@ -840,8 +839,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (!parsed.success) throw new CommandError(`update_lake 参数无效：${formatIssues(parsed.error)}`);
       const l = parsed.data;
       small.lakes = small.lakes.map((x, k) => (k === idx ? l : x));
-      // 大小：重挖湖盆；类型：从水文起（岸边的影响、生态的条件会变）；名字、盐：只重新起名
-      const dirty = l.radius !== old.radius ? Dirty.Elevation : (l.type ?? null) !== (old.type ?? null) ? Dirty.Vegetation : Dirty.Names;
+      // 大小：重挖湖盆；类型：从水文起（岸边的影响、生态的条件会变）
+      const dirty = l.radius !== old.radius ? Dirty.Elevation : Dirty.Vegetation;
       return { dirty, summary: cmd.label || (l.radius !== old.radius ? `湖的直径改成约 ${roundKm(l.radius * 2)} km` : '改了一个湖') };
     }
     case 'type_lake': {

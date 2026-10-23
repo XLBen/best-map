@@ -1566,13 +1566,6 @@ export function assignNames(world: World, features: GeoFeature[]) {
   const lakeTypes = new Map((world.small.lakeTypes ?? []).map((t) => [t.id, t]));
   const typed = (f: GeoFeature): RiverType | LakeType | undefined =>
     (riverTypes.size ? namedRiverType(f, riverTypes) : undefined) ?? (lakeTypes.size ? namedLakeType(f, lakeTypes) : undefined);
-  // 放的湖自己起的名字、换过的盐（第九轮）：湖面里有放的湖的那一格（几个连成一片时后放的说了算）
-  const ownLakes = world.small.lakes.filter((l) => l.name !== undefined || l.salt !== undefined);
-  const placedLake = (f: GeoFeature) => {
-    if (f.type !== 'lake' || !ownLakes.length) return undefined;
-    for (let k = ownLakes.length - 1; k >= 0; k--) if (f.cells.includes(ownLakes[k].cell)) return ownLakes[k];
-    return undefined;
-  };
   // 画的河（固定下来的自然河除外）
   const drawn = (f: GeoFeature) => f.guide !== undefined && !inherits(guides.get(f.guide));
   // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
@@ -1639,23 +1632,15 @@ export function assignNames(world: World, features: GeoFeature[]) {
       continue;
     }
     const ov = ovOf.get(f);
-    const own = placedLake(f);
-    const fixed = own?.name || ov?.name;
-    if (fixed) {
-      f.name = fixed;
+    if (ov?.name) {
+      f.name = ov.name;
       f.custom = true;
-      taken.add(fixed);
+      taken.add(ov.name);
       continue;
     }
     f.custom = false;
     const sp = f.species !== undefined ? species.get(f.species) : undefined;
     const rt = typed(f);
-    const salt = own?.salt ?? ov?.salt ?? 0;
-    if (own) {
-      // 放的湖“换一个”、自动起名：盐是湖自己的
-      f.name = rt ? typedName(f, rt, f.key, salt) : generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${salt}`), taken);
-      continue;
-    }
     if (rt) f.name = typedName(f, rt, f.key, ov?.salt ?? 0);
     else if (sp) {
       // 涂出来的生态区、自然长成的自带地名的一片：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）

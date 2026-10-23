@@ -64,13 +64,13 @@ export interface WaterType {
 export const waterTypeOwner = (t: Pick<WaterType, 'name' | 'id'>) => t.name || t.id;
 
 // 添加、修改时检查脚本：只能有 match，语法要对（错了整条命令不生效，并说明第几行错了）
-export function checkMatchScripts(t: WaterType, what: string, noun: string): void {
+export function checkMatchScripts(t: WaterType, what: string, noun: string, scope: 'river' | 'lake' = 'river'): void {
   const box = t.scripts;
   if (!box) return;
   for (const [kind, s] of Object.entries(box)) {
     if (!s) continue;
     if (kind !== 'match') throw new CommandError(`${what}「${waterTypeOwner(t)}」只能有“哪些${noun}是这一种”的脚本`);
-    compileScript('match', (s as { src: string }).src, waterTypeOwner(t));
+    compileScript('match', (s as { src: string }).src, waterTypeOwner(t), scope);
   }
 }
 

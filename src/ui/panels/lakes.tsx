@@ -140,19 +140,21 @@ export function LakeBar() {
   const sel = selectedLake.value;
   if (!w || !sel) return null;
   const info = lakeInfo(w, sel);
-  if (!info) return null;
+  if (!info) {
+    // 放的湖的中心不再是湖（比如那里被画成了海）：取消选择，不留一个空的底部条
+    queueMicrotask(() => {
+      if (selectedLake.value === sel) selectedLake.value = null;
+    });
+    return null;
+  }
   const f = info.feature;
   const l = info.placed;
   const size = info.dry ? `干湖 · 约 ${Math.round(info.areaKm2).toLocaleString()} km²` : `约 ${Math.round(info.areaKm2).toLocaleString()} km²`;
-  const update = (patch: Record<string, unknown>, label: string, busy = '正在起名…') => l && void exec({ op: 'update_lake', id: l.id, patch, label }, busy);
+  // 名字放的湖、自然的湖都一样：是这个湖的地名（与“地名”工具改的是同一个）
   return (
     <>
       {f ? (
-        l ? (
-          <NameInput fkey={`lake:${l.id}`} value={f.name} onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
-        ) : (
-          <NameInput fkey={f.key} value={f.name} onCommit={(v) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…')} />
-        )
+        <NameInput fkey={f.key} value={f.name} onCommit={(v) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…')} />
       ) : (
         <span class="bar-label" title="只剩干涸的湖底，没有地名">
           {info.dry ? '干湖' : '无名的湖'}
@@ -161,14 +163,14 @@ export function LakeBar() {
       {f && (
         <button
           class="bar-btn"
-          onClick={() => (l ? update({ name: null, salt: (l.salt ?? 0) + 1 }, '换了个名字') : void exec({ op: 'reroll_feature', key: f.key }, '正在起名…'))}
+          onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')}
           title="自动换一个名字"
         >
           <Dices size={15} /> 换一个
         </button>
       )}
-      {f?.custom && l?.name && (
-        <button class="bar-btn" onClick={() => update({ name: null }, '恢复自动命名')} title="不用自己起的名字，按文字包自动起">
+      {f?.custom && (
+        <button class="bar-btn" onClick={() => void exec({ op: 'rename_feature', key: f.key, name: '' }, '正在起名…')} title="不用自己起的名字，按文字包自动起">
           <LockOpen size={15} /> 恢复自动
         </button>
       )}

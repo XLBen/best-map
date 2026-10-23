@@ -5,6 +5,7 @@ import {
   type ScriptKind,
   blockedNameText,
   codeOnly,
+  type MatchScope,
   scriptVariablesFor,
   setSyntaxLocator,
   syntaxErrorText,
@@ -294,7 +295,7 @@ function notVariable(parent: AstNode | null, key: string): boolean {
 // 用了这种脚本里没有的变量、不能用的名字：按出现的先后报第一处。只看名字有没有在哪里声明过（不细分作用域），
 // 所以只会少报、不会把声明过的名字报成没有。
 // fields：世界上有的自定义场；给出时也查 field('名字') 里写的场在不在（内置变量的名字也算在）
-export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly string[]): SyntaxProblem | null {
+export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly string[], scope?: MatchScope): SyntaxProblem | null {
   const declared = new Set<string>();
   const uses: { name: string; at: number; line?: number; field?: true }[] = [];
   const visit = (node: AstNode, parent: AstNode | null, key: string): void => {
@@ -349,7 +350,7 @@ export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly s
   const known = new Set<string>([...BUILTINS, ...SCRIPT_HELPER_NAMES]);
   // 按格变的变量（field() 也能按名字取它们）
   const perCell = new Set<string>();
-  for (const v of scriptVariablesFor(kind)) {
+  for (const v of scriptVariablesFor(kind, scope)) {
     for (const name of v.zh ? [v.key, v.zh] : [v.key]) {
       known.add(name);
       if (!v.scalar) perCell.add(name);
@@ -393,16 +394,16 @@ export const LOOP_NOTE = '这段有循环，点到框外面时才用到地图上
 
 // 编辑器提交前的检查：长度、写法、名字；pause（打字停下时，不是离开框时）还看有没有循环。
 // 没问题、或 acorn 加载不了时为 null（长度照样查）
-export function checkNow(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean } = {}): SyntaxProblem | null {
+export function checkNow(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean; scope?: MatchScope } = {}): SyntaxProblem | null {
   if (src.length > MAX_SCRIPT_CHARS) return { text: `脚本太长了（最多 ${MAX_SCRIPT_CHARS} 个字符）`, reason: 'syntax' };
   // acorn 加载不了：只按字面找循环（宁可多等一次，也不提交写到一半的循环）
   if (!acorn) return opts.pause && /\b(?:while|for|do)\b/.test(codeOnly(src)) ? { text: LOOP_NOTE, reason: 'wait' } : null;
   const r = parse(acorn, src);
   if ('error' in r) return errorProblem(r.error, src);
-  return namesProblem(r.ast, kind, fields) ?? (opts.pause && hasLoop(r.ast) ? { text: LOOP_NOTE, reason: 'wait' } : null);
+  return namesProblem(r.ast, kind, fields, opts.scope) ?? (opts.pause && hasLoop(r.ast) ? { text: LOOP_NOTE, reason: 'wait' } : null);
 }
 
-export async function checkScript(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean } = {}): Promise<SyntaxProblem | null> {
+export async function checkScript(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean; scope?: MatchScope } = {}): Promise<SyntaxProblem | null> {
   await loadAcorn();
   return checkNow(kind, src, fields, opts);
 }

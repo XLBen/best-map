@@ -66,7 +66,7 @@ export function ScriptBox(props: Props) {
           check: async (src, final) => {
             const p = live.current;
             // 有了验证（能停下卡住的脚本）就不必等离开框
-            const syntax = await checkScript(kind, src, p.fields, { pause: !final && !p.validate });
+            const syntax = await checkScript(kind, src, p.fields, { pause: !final && !p.validate, scope: p.scope });
             return syntax ?? (src && p.validate ? await p.validate(src) : null);
           },
           apply: inThisWorld((src, mode, revert) => live.current.apply(src, mode, revert)),
@@ -205,7 +205,7 @@ export function ScriptBox(props: Props) {
 
 // 变量和例子（点名字插到光标处，点例子换掉框里的）。replace：框里已经有东西了
 function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scope?: 'river' | 'lake'; replace: boolean; onInsert: (text: string, whole?: boolean) => void }) {
-  const vars = scriptVariablesFor(kind).filter((v) => !v.for || v.for === (scope ?? 'river'));
+  const vars = scriptVariablesFor(kind, scope);
   const examples = kind === 'match' && scope === 'lake' ? LAKE_MATCH_EXAMPLES : SCRIPT_EXAMPLES[kind];
   const groups = GROUP_ORDER.map((g) => [g, vars.filter((x) => x.group === g)] as const).filter(([, list]) => list.length);
   // 按钮不抢走框里的光标

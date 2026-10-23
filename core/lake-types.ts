@@ -32,7 +32,7 @@ export type LakeTypeInput = z.input<typeof lakeTypeSchema>;
 
 export const lakeTypesOf = (small: Pick<SmallState, 'lakeTypes'>): readonly LakeType[] => small.lakeTypes ?? [];
 export const lakeTypeOwner = (t: LakeType) => waterTypeOwner(t);
-export const checkLakeTypeScripts = (t: LakeType): void => checkMatchScripts(t, '湖泊类型', '湖');
+export const checkLakeTypeScripts = (t: LakeType): void => checkMatchScripts(t, '湖泊类型', '湖', 'lake');
 
 // 颜色、地图集颜色、画法只重画
 const LOOK_KEYS = new Set(['color', 'atlasColor', 'style']);
@@ -204,7 +204,7 @@ export function typeLakes(world: World, d: Derived, seed: number): ScriptIssue[]
     inputs ??= lakeInputs(world, d, parts, open);
     const firsts = Int32Array.from(open, (j) => parts.lakes[j][0]);
     matchRunStats.lakes += firsts.length;
-    const r = runScript({ kind: 'match', src }, { owner: lakeTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: firsts });
+    const r = runScript({ kind: 'match', src, scope: 'lake' }, { owner: lakeTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: firsts });
     if (!r.ok) {
       issues.push(r.issue);
       return;
