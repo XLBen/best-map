@@ -908,6 +908,21 @@ export function MapView() {
         return out;
       },
     };
+    // 开发时的平移缩放测速（src/render/bench.ts）：控制台里 await __map2Bench()
+    if (import.meta.env.DEV) {
+      const hooks = {
+        renderer,
+        canvas: glCanvas,
+        draw: () => draw(),
+        spacing: () => world.value?.mesh.spacing ?? 0.01,
+        snapshot: () => snapshotCanvas()!,
+      };
+      Object.assign(window, {
+        __map2Bench: (opts?: { frames?: number; only?: string[] }) => import('../render/bench').then((b) => b.runBench(hooks, opts)),
+        __map2SaveRefs: (tag?: string) => import('../render/bench').then((b) => b.saveRefs(hooks, tag)),
+        __map2CompareRefs: (tag?: string) => import('../render/bench').then((b) => b.compareRefs(hooks, tag)),
+      });
+    }
     return () => {
       disposeWorld();
       disposePaths();
