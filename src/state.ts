@@ -1474,7 +1474,11 @@ export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null>
 
 export function cancelExport() {
   exporting?.done(null);
+  imageExportCancel.current?.();
 }
+
+// 导出整张地图（.png，MapView 的 exportFullMap）正在画时登记的取消：顶部提示条上的“取消”也停它
+export const imageExportCancel: { current: (() => void) | null } = { current: null };
 
 export async function getDoc(): Promise<WorldDoc | null> {
   const r = await call({ kind: 'doc' }, null);
