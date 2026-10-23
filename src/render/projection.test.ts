@@ -350,7 +350,7 @@ describe('投影的着色器源码', () => {
     expect(src).toContain('oColor = projFinish(col);');
     expect(src).toContain('texture(uRiver, toScene(pW) * uRiverXf.xy + uRiverXf.zw)');
     // 省份的环上取样照旧（半径按格算，在世界坐标上）
-    expect(src).toContain('vec2 r = (0.6 * float(ring) * uCellPx) * uTexel;');
+    expect(src).toContain('vec2 r = ((landPx ? 0.3 : 0.6) * float(ring) * uCellPx) * uTexel;');
     // 等距圆柱的两份不受影响
     expect(COMPOSE_SOURCES.plane).not.toContain('projInv');
     expect(COMPOSE_SOURCES.planet).not.toContain('projInv');

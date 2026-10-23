@@ -26,7 +26,9 @@ describe('高程与水文', () => {
 
   it('陆地高于海平面，海洋低于海平面', () => {
     for (let i = 0; i < world.mesh.n; i++) {
-      if (world.causes.land[i]) expect(d.elevation[i]).toBeGreaterThan(0);
+      // 湖底（湖面、干湖底）可以在海平面以下（第十二轮起按面积修深；第十三轮修：小块内海挖成的湖挨着低地，湖底常在海平面以下）
+      if (world.causes.land[i] && d.lake[i] === 0) expect(d.elevation[i]).toBeGreaterThan(0);
+      else if (world.causes.land[i]) expect(d.water[i] || 1).toBeGreaterThan(0);
       else expect(d.elevation[i]).toBeLessThan(0);
     }
   });

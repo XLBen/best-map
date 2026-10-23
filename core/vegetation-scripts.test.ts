@@ -65,7 +65,8 @@ describe('长在哪里的脚本', () => {
     expect(d.scriptIssues).toBeUndefined();
     let checked = 0;
     let partial = 0;
-    for (const i of veg(w)) {
+    // 干湖底（d.lake = 2）的高程在植被算完后才修深（hydrology.ts 的 shapeLakeBeds），脚本读的是修之前的：不比
+    for (const i of veg(w).filter((c) => d.lake[c] === 0)) {
       const want = Math.fround(Math.min(1, Math.max(0, d.elevation[i] / 2000)));
       expect(d.placeF![i]).toBe(want);
       let trap = 1;

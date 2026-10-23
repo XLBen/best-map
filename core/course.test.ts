@@ -581,7 +581,8 @@ describe('画的线就是河道', () => {
     const { mesh } = w;
     // 画一小段就松手，之后顺地势流下去很长一段
     let plan: CoursePlan | null = null;
-    for (let i = 0; i < mesh.n && !plan; i += 7) {
+    // 第十三轮修（陆地围住的小块海成了湖）后每 7 格取一个找不到了：每 3 格取一个
+    for (let i = 0; i < mesh.n && !plan; i += 3) {
       if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
       const p = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 2.5 * mesh.spacing, mesh.y[i]], 10), { endOnLand: 'flow' });
       if (!p.blocked && !p.reroute && !p.crossings.length && p.cells.length - p.drawn >= 12 && p.end === 'sea') plan = p;

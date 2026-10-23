@@ -194,10 +194,15 @@ describe('涂出来的生态区有自己的名字', () => {
     const grouped = (c: number) => ['forest', 'jungle', 'desert', 'arctic', 'marsh'].includes(w.small.species[w.derived.dominant[c]]?.terrain ?? '');
     const far = ringDistance(w.mesh, [...Array(w.mesh.n).keys()].filter(grouped), 4);
     const open = [...Array(w.mesh.n).keys()].filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1 && w.derived.dominant[c] >= 0 && far[c] < 0);
-    for (const k of [0, 1, 2]) {
-      const cells = nearest(eng, open, open[Math.floor((open.length * (k + 0.5)) / 3)], 25);
-      paint(eng, cells, 'rainforest');
+    // 三片互相离得够远（不连成一片）：按空地的 1/6、3/6、5/6 处取，太近的换下一个位置；每片 14 格
+    // （第十三轮修：小块内海并回陆地后空地少了，原来每片 25 格、按位置取时有两片连成了一片）
+    const seeds: number[] = [];
+    for (const f of [1 / 6, 3 / 6, 5 / 6, 0.05, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.95]) {
+      const c = open[Math.floor(open.length * f)];
+      if (seeds.every((t) => graphDistance(w.mesh, [t])[c] > 6 * w.mesh.spacing)) seeds.push(c);
+      if (seeds.length === 3) break;
     }
+    for (const c of seeds) paint(eng, nearest(eng, open, c, 14), 'rainforest');
     const painted = paintedFeatures(eng);
     expect(painted.length).toBe(3);
     expect(painted.every((f) => f.type === 'forest' && f.name.endsWith('林'))).toBe(true);
