@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, sampleComponents, withParams } from './generate';
+import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, resolvedParams, sampleComponents, withParams } from './generate';
 import { type V3, arc, fromUnit, localOffset, slerp, toUnit, wrapX } from './geo';
-import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, samplePlanetComponents, withPlanetParams } from './planet-gen';
+import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, resolvedPlanetParams, samplePlanetComponents, withPlanetParams } from './planet-gen';
 import { formDigest } from './planet-form';
 import type { ScriptIssue } from './script';
 import { type Mesh, type SphereMesh, findCell } from './mesh';
@@ -210,12 +210,14 @@ export function shareTerrainBase(from: World, to: World) {
 // 同一次重画：逐字段比（−0 与 +0 也算不同，宁可多重算几格）
 const sameReroll = (a: Reroll, b: Reroll) => Object.is(a.x, b.x) && Object.is(a.y, b.y) && Object.is(a.radius, b.radius) && Object.is(a.variant, b.variant);
 
+// 没写的陆地比例、岛多少按现在的 gen 取类型的默认值，不取缓存模型里的：模型只在采样键变了时才换参数，
+// 键没变时（比如撤销到重画之前、又撤掉了陆地比例）模型的参数还是建它那时的 gen 的
 function composeParams(world: World, cache: BaseCache, patch: Partial<ComposeParams>): ComposeParams {
   const gen = world.small.terrain.gen!;
-  const p = cache.model!.params;
+  const fallback = () => (cache.model!.kind === 'planet' ? resolvedPlanetParams(gen) : resolvedParams(gen));
   return {
-    landFraction: patch.landFraction ?? gen.landFraction ?? p.landFraction,
-    islands: patch.islands ?? gen.islands ?? p.islands,
+    landFraction: patch.landFraction ?? gen.landFraction ?? fallback().landFraction,
+    islands: patch.islands ?? gen.islands ?? fallback().islands,
     mountains: patch.mountains ?? gen.mountains,
     rough: patch.rough ?? world.small.terrain.coastRoughness,
   };

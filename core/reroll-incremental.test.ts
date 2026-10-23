@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hashArray } from '../tools/hash';
+import { digestWorld, hashArray } from '../tools/hash';
+import { Engine } from './engine';
 import type { Reroll } from './generate';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
@@ -79,5 +80,26 @@ describe('海平面排序', () => {
     for (const rough of [1.3, 0.6, 1.3, 1.8]) {
       expect(previewTerrain(w, { rough })).toEqual(previewTerrain(worldOf(flat, []), { rough }));
     }
+  });
+});
+
+describe('重画、撤销之后没写的陆地比例取默认值', () => {
+  it('新世界 → 陆地比例 0.4 → 重画一片 → 撤销两次：每一步都与按文档重新打开的相同', () => {
+    const eng = new Engine({ seed: 2, cells: 3000 });
+    const same = (tag: string) => {
+      const a = digestWorld(eng.world);
+      const b = digestWorld(Engine.fromDoc(eng.toDoc()).world);
+      expect(Object.keys(a).filter((k) => !k.startsWith('mesh.') && a[k] !== b[k]), tag).toEqual([]);
+    };
+    eng.exec({ op: 'set_worldgen', params: { seed: 12, type: 'continents' }, reset: true });
+    eng.exec({ op: 'set_worldgen', params: { seed: 12, type: 'continents', mountains: 1, rerolls: [], landFraction: 0.4 } });
+    eng.exec({ op: 'reroll_region', x: 0.867, y: 0.4225, radius: 0.08, variant: 2 });
+    same('重画');
+    eng.undo();
+    same('撤销一次');
+    eng.undo();
+    same('撤销两次');
+    eng.redo();
+    same('重做');
   });
 });
