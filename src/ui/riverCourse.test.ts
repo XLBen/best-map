@@ -374,8 +374,8 @@ describe('从画过的河的源头再画（没选中它时）', () => {
     expect(eng.world.derived.features.find((f) => f.guide === g.id)?.name).toBe(name);
   });
 
-  it('顺地势：同样改这条河道，原来画的折线不要了', async () => {
-    const { w, g, t } = drawn();
+  it('顺地势：同样改这条河道，原来画的折线不要了（与自定义走向一样先问一句）', async () => {
+    const { w, g, name, t } = drawn();
     setOptions({ riverMode: 'flow' });
     // 工具记下的是拖过的格
     const cellsOf = (s: Pt[]) => s.map((p) => findCell(w.mesh, p[0], p[1])).filter((c, k, a) => k === 0 || c !== a[k - 1]);
@@ -385,6 +385,9 @@ describe('从画过的河的源头再画（没选中它时）', () => {
     });
     vi.mocked(exec).mockClear();
     await drag(t, w, s);
+    expect(exec).not.toHaveBeenCalled();
+    expect(riverPending.value?.confirm).toBe(`重画整条「${name}」`);
+    await riverPending.value!.capture();
     const cmd = lastExec();
     expect(cmd).toMatchObject({ op: 'update_guide', id: g.id, patch: { cells: planRiver(w, w.derived, cellsOf(s)).cells, path: null } });
   });
@@ -734,5 +737,34 @@ describe('第九轮 C：从河中间改道还是同一条河；悬停与按下�
     expect(lastExec()).toMatchObject({ op: 'update_guide', id: g.id });
   });
 
+  it('顺地势从一条河中间拖出去：松手后先问“从这里改道……”，点“改道”才改；取消什么都不做', async () => {
+    const { w, t } = setup();
+    setOptions({ riverMode: 'flow' });
+    const { mesh, derived: d } = w;
+    const thr = w.small.planet.riverThreshold;
+    const cellsOf = (s: Pt[]) => s.map((p) => findCell(mesh, p[0], p[1])).filter((c, k, a) => k === 0 || c !== a[k - 1]);
+    let s: Pt[] | null = null;
+    for (let c = 0; c < mesh.n && !s; c++) {
+      if (!isRiverCell(w, d, c) || d.discharge[c] < 3 * thr) continue;
+      for (let a = 0; a < 8 && !s; a++) {
+        const ang = (a * Math.PI) / 4;
+        const x = line(w, at(w, c), [mesh.x[c] + 4 * mesh.spacing * Math.cos(ang), mesh.y[c] + 4 * mesh.spacing * Math.sin(ang)]);
+        const p = planRiver(w, d, cellsOf(x));
+        if (!p.blocked && !p.same && p.reroute && p.cells.length > 2 && p.end) s = x;
+      }
+    }
+    expect(s).not.toBeNull();
+    await drag(t, w, s!);
+    expect(exec).not.toHaveBeenCalled();
+    expect(riverPending.value?.confirm).toBe('改道');
+    expect(riverPending.value?.text).toMatch(/^从这里改道：/);
+    expect(t.keep?.()).toBe(true);
+    riverPending.value!.cancel();
+    expect(riverPending.value).toBeNull();
+    expect(exec).not.toHaveBeenCalled();
+    await drag(t, w, s!);
+    await riverPending.value!.capture();
+    expect(lastExec()).toMatchObject({ op: 'add_guide', reroute: true });
+  });
 
 });

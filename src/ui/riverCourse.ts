@@ -987,6 +987,8 @@ export function riverTool(zoom: () => number): ToolHandler {
   const exact = new RiverExact();
   // 穿过了别的河、等着确认的那一笔；view：地图上显示截走的样子还是汇入的样子
   let pending: { course: Course; join: Course | null; view: 'capture' | 'join' } | null = null;
+  // 顺地势从一条河上拖出去（改道、从画的河的源头重画）、等着确认的那一笔：拖过的格
+  let flowPending: number[] | null = null;
 
   // ---- 顺地势（与以前相同，只是新河只挖河床、自动起名） ----
   const flowPlan = (w: World, cells: number[]): RiverPlan | null => {
@@ -1223,6 +1225,11 @@ export function riverTool(zoom: () => number): ToolHandler {
     if (!p || p.cells.length < 2) return showToast('这里画不出河', true);
     if (p.blocked) return showToast(p.blocked, true);
     if (p.same) return showToast('河本来就这么流，没有改');
+    // 从一条河上拖出去：与自定义走向一样先问一句（改道 / 重画整条「赤江」 / 取消）
+    if (p.reroute) return askFlow(w, cells, p);
+    await runFlow(w, p);
+  };
+  const runFlow = async (w: World, p: RiverPlan) => {
     committing = p;
     try {
       await exec(flowCommand(w, p), p.reroute ? '正在改道…' : '正在计算河流…');
@@ -1230,6 +1237,54 @@ export function riverTool(zoom: () => number): ToolHandler {
       committing = null;
       exact.reset();
     }
+  };
+  // 底部条上的话：从中间改道时原来的下游变干多长（有确切结果时按它）；从画的河的源头是重画整条
+  const flowNote = (w: World, p: RiverPlan, x: PreviewResult | null): StartNote => {
+    const start = p.cells[0];
+    const src = sourceGuide(w, start);
+    if (src) {
+      const name = quoted(guideName(w, src), '这条画的河');
+      return { text: `从源头起笔：${name}原来的河道不要了，照新拖的走`, label: `重画整条${name}` };
+    }
+    const name = quoted(startRiverName(w, start), '这条河');
+    let n = p.dried.length;
+    if (x) {
+      const old = new Set<number>();
+      for (let c = w.derived.receiver[start]; c >= 0 && !water(w, c) && !old.has(c); c = w.derived.receiver[c]) old.add(c);
+      n = x.riverRemoved.filter((c) => old.has(c)).length;
+    }
+    return { text: n ? `从这里改道：${name}下游约 ${cellsKm(w, n).toLocaleString()} km 会变干` : `从这里改道：${name}从这里起照新拖的走`, label: '改道' };
+  };
+  const askFlow = (w: World, cells: number[], p: RiverPlan) => {
+    const cmd = flowCommand(w, p);
+    const key = JSON.stringify(cmd);
+    exact.want(key, cmd, 0);
+    flowPending = cells;
+    exact.onGot = (k, r) => {
+      if (k === key && flowPending === cells && riverPending.value) riverPending.value = { ...riverPending.value, text: flowNote(w, p, r).text };
+    };
+    const done = () => {
+      flowPending = null;
+      exact.onGot = null;
+      riverPending.value = null;
+      redrawTick.value++;
+    };
+    const note = flowNote(w, p, exact.get(key));
+    riverPending.value = {
+      text: note.text,
+      confirm: note.label,
+      capture: () => {
+        done();
+        return runFlow(w, p);
+      },
+      join: null,
+      cancel: () => {
+        done();
+        exact.reset();
+        cancelPreviews();
+      },
+      showJoin: () => {},
+    };
   };
 
   return {
@@ -1317,7 +1372,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     },
     // 鼠标离开地图后预览还留着：等着确认截不截走、底部条上的预览，以及松手后还在算的那一笔
     // （画河不排队：结果换上之前一直显示松手时的样子，不闪回原样）
-    keep: () => !!pending || !!committing || !!riverBarPreview.value,
+    keep: () => !!pending || !!flowPending || !!committing || !!riverBarPreview.value,
     escape() {
       if (!riverPending.value) return false;
       riverPending.value.cancel();
@@ -1331,6 +1386,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     preview() {
       const w = world.value;
       if (!w) return EMPTY;
+      if (flowPending) return { ...flowPreview(w, flowPending), hint: null };
       if (pending) {
         const v = pending.view === 'join' && pending.join ? pending.join : pending.course;
         const line = v.after ? tempLine(w, v.after) : null;
