@@ -549,9 +549,15 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
 }
 
 // “水体类型”：河 / 湖两栏，同一个编辑器。打开时在用着放湖工具就先看湖那一栏
-export function WaterTypesSection({ initial }: { initial?: WaterKind }) {
+// tab、onTab（可选）：哪一栏由外面管（“水系 ⋯”在“湖”那一栏下面列出全部的湖）
+export function WaterTypesSection({ initial, tab: outer, onTab }: { initial?: WaterKind; tab?: WaterKind; onTab?: (k: WaterKind) => void }) {
   const w = world.value;
-  const [tab, setTab] = useState<WaterKind>(initial ?? 'river');
+  const [own, setOwn] = useState<WaterKind>(initial ?? 'river');
+  const tab = outer ?? own;
+  const setTab = (k: WaterKind) => {
+    setOwn(k);
+    onTab?.(k);
+  };
   const [open, setOpen] = useState<string | null>(null);
   // 顶部“脚本出错了”的“编辑”、“新建类型…”：换到那一栏、展开那一种
   const req = waterTypeEditorRequest.value;

@@ -4,9 +4,9 @@ import { useEffect, useState } from 'preact/hooks';
 import { PLAIN_LAKE } from '../../../core/lake-types';
 import { roundKm as km } from '../../../core/terrain';
 import type { LakeSpec, World } from '../../../core/world';
-import { type LakeRef, exec, lakeRange, openPanel, options, selectedLake, setOptions, world } from '../../state';
+import { type LakeRef, cursorHint, exec, lakeRange, measure, openPanel, options, selectedLake, selectedRiver, setOptions, tool, world } from '../../state';
 import { focusOn } from '../camera';
-import { hasLakeRules, lakeInfo, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
+import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
 import { NameInput } from './names';
 import { DragSlider } from './rivers';
 import { type MenuItem, TypeButton, TypeMenu, createAndUse } from './waterTypes';
@@ -196,6 +196,66 @@ export function LakeBar() {
         <X size={15} />
       </button>
     </>
+  );
+}
+
+// ---------- 湖的列表（“水系 ⋯”里“湖”那一栏） ----------
+
+// 选中一个湖：换到放湖工具（底部条换成这个湖的设置），与从河流列表里选中一条河一样
+export function selectLake(ref: LakeRef) {
+  if (tool.value !== 'lake') {
+    if (tool.value === 'river') selectedRiver.value = null;
+    tool.value = 'lake';
+    cursorHint.value = null;
+    measure.value = null;
+  }
+  selectedLake.value = ref;
+}
+
+const LIST_NATURAL = 60;
+
+const sameLake = (a: LakeRef | null, b: LakeRef) => !!a && (a.kind === 'placed' ? b.kind === 'placed' && a.id === b.id : b.kind === 'natural' && a.cell === b.cell);
+
+// 世界里的湖：名字、面积、是哪一种；点一下选中它、镜头移过去
+export function LakeList() {
+  const w = world.value;
+  if (!w) return null;
+  const all = lakeList(w);
+  // 放的湖都列；自然的湖从大到小最多 60 个（整个星球上小湖、干湖底很多）
+  let natural = 0;
+  const list = all.filter((x) => x.ref.kind === 'placed' || natural++ < LIST_NATURAL);
+  const sel = selectedLake.value;
+  return (
+    <section>
+      <h5>湖（{all.length}）</h5>
+      {list.length === 0 ? (
+        <p class="muted small">这个世界里还没有湖。用“放湖”在陆地上点一下、按住拖开放一个。</p>
+      ) : (
+        <div class="feature-list">
+          {list.map(({ ref, info, type }) => (
+            <div
+              key={ref.kind === 'placed' ? `p:${ref.id}` : `n:${ref.cell}`}
+              class={`feature-row ${sameLake(sel, ref) ? 'on' : ''}`}
+              onClick={() => {
+                selectLake(ref);
+                focusOn(info.cells);
+                openPanel.value = null;
+              }}
+            >
+              <span class={info.feature?.custom ? 'custom' : ''}>
+                {type && <span class="swatch" style={{ background: type.color }} title={type.name} />}
+                {info.feature?.name || (info.dry ? '干湖' : '无名的湖')}
+              </span>
+              <span class="muted small">
+                约 {Math.round(info.areaKm2).toLocaleString()} km² · {type ? type.name : '普通的湖'} · {info.placed ? '放的' : '自然的'}
+                {info.dry ? ' · 干了' : ''}
+              </span>
+            </div>
+          ))}
+          {list.length < all.length && <p class="muted small">还有 {all.length - list.length} 个小一些的自然湖没列出来</p>}
+        </div>
+      )}
+    </section>
   );
 }
 

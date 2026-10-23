@@ -4,7 +4,7 @@ import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { LAKE_GLOW, LAKE_LAND_GLOW, LAKE_WATER_CRUST, LAKE_WATER_TINT, lakeTintLayer, lakeTypeColor } from '../render/colors';
 import { setOptions } from '../state';
-import { chosenLakeType, lakeInfo, lakeRefAt, lakeTypeChoiceCommand, lakeTypeOfLake } from './lakeInfo';
+import { chosenLakeType, lakeInfo, lakeList, lakeRefAt, lakeTypeChoiceCommand, lakeTypeOfLake } from './lakeInfo';
 import { newWaterType } from './panels/waterTypes';
 
 // 湖（第九轮）：点中的是哪个湖、给它选类型的命令、新放的湖带的类型、湖的颜色
@@ -96,6 +96,37 @@ describe('一片湖里放了两个湖：与引擎同一个规则', () => {
     eng.exec(lakeTypeChoiceCommand(w, ref, null)!);
     expect(lakeTypeOfLake(w, ref).chosen).toBeNull();
     expect(w.small.lakes.every((l) => l.type === undefined)).toBe(true);
+  });
+});
+
+// 第十二轮修：“水系 ⋯”里“湖”那一栏列出全部的湖（名字、面积、是哪一种），点一下选中、镜头移过去
+describe('湖的列表（lakeList）', () => {
+  it('每片湖列一次（里面有放的湖时是那个放的湖），从大到小；名字、面积、类型与点中这个湖时一样', () => {
+    const { eng, w } = setup();
+    eng.exec({ op: 'set_lake_type', type: blood });
+    eng.exec(lakeTypeChoiceCommand(w, { kind: 'placed', id: 'L0' }, blood.id)!);
+    const list = lakeList(w);
+    expect(list.map((x) => x.ref).filter((r) => r.kind === 'placed')).toEqual(expect.arrayContaining([{ kind: 'placed', id: 'L0' }, { kind: 'placed', id: 'L1' }]));
+    // 每格只在一个湖里，湖格都列到了
+    const seen = new Set<number>();
+    for (const { info } of list) for (const c of info.cells) {
+      expect(seen.has(c)).toBe(false);
+      seen.add(c);
+    }
+    const lakeCells = [...Array(w.mesh.n).keys()].filter((c) => w.derived.lake[c] && w.causes.land[c]);
+    expect(seen.size).toBe(lakeCells.length);
+    for (let k = 1; k < list.length; k++) expect(list[k - 1].info.areaKm2).toBeGreaterThanOrEqual(list[k].info.areaKm2);
+    for (const { ref, info, type } of list) {
+      const again = lakeInfo(w, ref)!;
+      expect(again.cells).toEqual(info.cells);
+      expect(again.feature?.name).toBe(info.feature?.name);
+      expect(lakeRefAt(w, info.cells[0])).toEqual(ref);
+      expect(type).toEqual(lakeTypeOfLake(w, ref).type);
+    }
+    const l0 = list.find((x) => x.ref.kind === 'placed' && x.ref.id === 'L0')!;
+    expect(l0.type?.id).toBe(blood.id);
+    expect(l0.info.feature?.name).toBeTruthy();
+    expect(l0.info.areaKm2).toBeGreaterThan(1000);
   });
 });
 

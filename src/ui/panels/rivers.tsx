@@ -29,7 +29,8 @@ import {
 import { fmtFlow, riverSizeName } from '../tools';
 import { NameInput } from './names';
 import { RiverTypeButton, riverTypeOfRiver } from './riverTypes';
-import { WaterTypesSection } from './waterTypes';
+import { LakeList } from './lakes';
+import { type WaterKind, WaterTypesSection } from './waterTypes';
 
 // 河：选中一条河后的底部条（名字、大小、⋯ 里的粗细、终点、删除）、穿过别的河时的确认条、“水系 ⋯”里的河流列表
 
@@ -484,9 +485,19 @@ function RiverRow({ w, river: ref, children }: { w: World; river: RiverRef; chil
 
 export function RiverExtras() {
   const w = world.value;
+  // “水体类型”的河 / 湖两栏：湖那一栏下面列出全部的湖，河那一栏列出河
+  const [tab, setTab] = useState<WaterKind>(tool.value === 'lake' ? 'lake' : 'river');
   // 关上列表时鼠标停着的那条不再亮
   useEffect(() => () => void (hoverRiver.value = null), []);
   if (!w) return null;
+  if (tab === 'lake') {
+    return (
+      <>
+        <WaterTypesSection tab={tab} onTab={setTab} />
+        <LakeList />
+      </>
+    );
+  }
   const guides = w.small.guides;
   // 固定下来（或改过）的自然河沿用那条河的地名键，与自己画的河分开列
   const drawn = guides.filter((g) => g.nameKey === undefined);
@@ -501,7 +512,7 @@ export function RiverExtras() {
     .filter((x) => x.cell >= 0);
   return (
     <>
-      <WaterTypesSection initial={tool.value === 'lake' ? 'lake' : 'river'} />
+      <WaterTypesSection tab={tab} onTab={setTab} />
       {warned > 0 && <p class="small warn-text">有 {warned} 条河要看一下</p>}
       <section>
         <h5>画的河（{drawn.length}）</h5>

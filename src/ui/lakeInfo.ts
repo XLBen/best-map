@@ -150,6 +150,32 @@ export function chosenLakeType(w: World): { type: string } | Record<string, neve
   return w.small.lakeTypes?.some((t) => t.id === id) ? { type: id } : {};
 }
 
+// ---------- 全部的湖（“水系 ⋯”里“湖”那一栏的列表） ----------
+
+export interface LakeListItem {
+  ref: LakeRef;
+  info: LakeInfo;
+  // 现在画出来是哪一种（普通的湖为 null）
+  type: LakeType | null;
+}
+
+// 世界里的每个湖（湖面与干涸的湖底连成的一片算一个；里面有放的湖时是那个放的湖），从大到小
+export function lakeList(w: World): LakeListItem[] {
+  const { mesh, causes, derived: d } = w;
+  const seen = new Uint8Array(mesh.n);
+  const out: LakeListItem[] = [];
+  for (let c = 0; c < mesh.n; c++) {
+    if (seen[c] || !d.lake[c] || !causes.land[c]) continue;
+    const cells = lakeCellsAt(w, c);
+    for (const x of cells) seen[x] = 1;
+    const p = placedIn(w, cells);
+    const ref: LakeRef = p ? { kind: 'placed', id: p.id } : { kind: 'natural', cell: c };
+    const info = lakeInfo(w, ref);
+    if (info) out.push({ ref, info, type: lakeTypeOfLake(w, ref).type });
+  }
+  return out.sort((a, b) => b.info.areaKm2 - a.info.areaKm2 || a.info.cells[0] - b.info.cells[0]);
+}
+
 // 拖“大小”时地图上先画出将来的湖面（放湖工具的预览读它）
 export const lakeSizeDraft = signal<{ id: string; radius: number } | null>(null);
 
