@@ -578,9 +578,10 @@ export class Engine {
       pass(eff);
       yield;
     }
+    // 颜色脚本在修湖底之前算（第十三轮修）：与长在哪里的脚本读到同一份高程，脚本按格记住的结果不会因为湖底每次整段重算
+    finishLook(w, d);
     // 自然湖的湖底按离岸距离修深（只改湖格的 d.elevation；水文、植被已经算完，见 hydrology.ts 的 shapeLakeBeds）
     shapeLakeBeds(w, d, w.small.lakes.length ? userLakeMask(w) : null);
-    finishLook(w, d);
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
     // 只取决于海陆的那一段地物先认（改了海陆时这一段很长），认完让出一次

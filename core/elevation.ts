@@ -250,7 +250,7 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   }
 }
 
-// 火山岛（第十三轮修）：放的火山岛（可蚀性正好是玄武岩 ISLAND_ERODIBILITY.volcanic 的陆格连成的一块）高度按大小定，
+// 火山岛（第十三轮修）：放的火山岛（放岛改成正好是玄武岩 ISLAND_ERODIBILITY.volcanic 的陆格连成的一块）高度按大小定，
 // 不随地图的格距、山的高低变：“半径”（面积折成圆）R km 的火山岛最高约 VOLCANO_PEAK·√(R / 100) m（直径 200 km 约 2,600 m，
 // 最高 4,200 m），整块按比例缩放（沟谷照旧）。最高处挖一个火山口：半径约 R 的 0.16（至少最高的那一格），
 // 口里比口外一圈最低的地方低约峰高的一成二，所以四周一圈是口沿。半径不到 VOLCANO_CRATER_MIN 格的小火山岛不挖
@@ -261,7 +261,8 @@ export function volcanoes(world: World, elevation: Float32Array) {
   const { mesh, causes, kmPerUnit } = world;
   const n = mesh.n;
   const basalt = ISLAND_ERODIBILITY.volcanic!;
-  const isV = (i: number) => causes.land[i] === 1 && Math.abs(causes.erod[i] - basalt) < 0.003;
+  // 放岛改过岩性（erodDelta ≠ 0）、正好是玄武岩的格：生成的地形里可蚀性也有 0.45 左右的，不能算
+  const isV = (i: number) => causes.land[i] === 1 && causes.erodDelta[i] !== 0 && Math.abs(causes.erod[i] - basalt) < 0.003;
   const seen = new Uint8Array(n);
   for (let s = 0; s < n; s++) {
     if (seen[s] || !isV(s)) continue;
