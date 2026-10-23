@@ -849,6 +849,13 @@ export function riverLayerScene(world: World, paths: OverlayPaths, sc: RiverScen
     ctx.lineJoin = 'round';
     // 河宽按 CSS 像素：每地图单位 zy / dpr 个 CSS 像素
     const zoom = sc.zy / sc.dpr;
+    if (sc.pole) {
+      drawRiversPolar(ctx, world, paths, sc, style, zoom);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      L.key = key;
+      L.version = ++riverVersion;
+      return { source: L.canvas, version: L.version, toUv: [0, 0, 0, 0] };
+    }
     const x1 = sc.x0 + sc.W / sc.zx;
     const y1 = sc.y0 + sc.H / sc.zy;
     const m = 48 / zoom;
@@ -861,6 +868,92 @@ export function riverLayerScene(world: World, paths: OverlayPaths, sc: RiverScen
     L.version = ++riverVersion;
   }
   return { source: L.canvas, version: L.version, toUv: [sc.zx / sc.W, (-sc.x0 * sc.zx) / sc.W, -sc.zy / sc.H, 1 + (sc.y0 * sc.zy) / sc.H] };
+}
+
+// 极地的场景（以极点为中心的等距方位投影）上的河：逐点换到那个平面上（像素），两岸按换过去的中线在像素里算，
+// 宽度与平面的河一样（按流量分档、随缩放变宽，CSS 像素）。虚线、双线、发光的河在这里按实线画
+function drawRiversPolar(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, sc: RiverScene, style: 'realistic' | 'atlas', zoom: number) {
+  const pole = sc.pole as 1 | -1;
+  const scale = riverScale(world, zoom);
+  const colorOf = typeColors(world.small.riverTypes ?? [], style, riverStroke(style));
+  const R = sc.x0 < 0 ? -sc.x0 : 1;
+  const dev = sc.dpr;
+  const fills = new Map<string, Path2D>();
+  const thin = new Map<string, Path2D>();
+  let px: Float64Array = new Float64Array(0);
+  let py: Float64Array = new Float64Array(0);
+  for (const d of paths.rivers) {
+    const rb = d.rb;
+    const n = rb.x.length;
+    if (n < 2) continue;
+    // 离极点太远（场景之外）的河不画
+    const near = pole > 0 ? rb.y0 : 1 - rb.y1;
+    if (near > R + 0.02) continue;
+    if (px.length < n) {
+      px = new Float64Array(n);
+      py = new Float64Array(n);
+    }
+    for (let i = 0; i < n; i++) {
+      const r = pole > 0 ? rb.y[i] : 1 - rb.y[i];
+      const a = Math.PI * (rb.x[i] - 1);
+      px[i] = (r * Math.cos(a) - sc.x0) * sc.zx;
+      py[i] = (pole * r * Math.sin(a) - sc.y0) * sc.zy;
+    }
+    for (let i0 = 0; i0 < n - 1; ) {
+      const t = d.type ? d.type[rb.src[i0]] : 0;
+      let i1 = i0 + 1;
+      while (i1 < n - 1 && (d.type ? d.type[rb.src[i1]] : 0) === t) i1++;
+      const { color } = colorOf(t);
+      // 相隔不到 0.7 像素的点不要
+      const idx: number[] = [i0];
+      for (let i = i0 + 1; i < i1; i++) if (Math.hypot(px[i] - px[idx[idx.length - 1]], py[i] - py[idx[idx.length - 1]]) >= 0.7 * dev) idx.push(i);
+      idx.push(i1);
+      let sum = 0;
+      for (let i = i0; i <= i1; i++) sum += rb.hw[i];
+      if (2 * (sum / (i1 - i0 + 1)) * scale < 1) {
+        const lw = Math.max(0.25, Math.round(((2 * sum) / (i1 - i0 + 1)) * scale * 4) / 4);
+        const k = `${color}|${lw}`;
+        let p = thin.get(k);
+        if (!p) thin.set(k, (p = new Path2D()));
+        p.moveTo(px[idx[0]], py[idx[0]]);
+        for (let j = 1; j < idx.length; j++) p.lineTo(px[idx[j]], py[idx[j]]);
+      } else {
+        let f = fills.get(color);
+        if (!f) fills.set(color, (f = new Path2D()));
+        const m = idx.length;
+        const ox: number[] = [];
+        const oy: number[] = [];
+        for (let j = 0; j < m; j++) {
+          const a = idx[Math.max(0, j - 1)];
+          const b = idx[Math.min(m - 1, j + 1)];
+          const tx = px[b] - px[a];
+          const ty = py[b] - py[a];
+          const tl = Math.hypot(tx, ty) || 1;
+          const o = rb.hw[idx[j]] * scale * dev;
+          ox.push((-ty / tl) * o);
+          oy.push((tx / tl) * o);
+        }
+        f.moveTo(px[idx[0]] + ox[0], py[idx[0]] + oy[0]);
+        for (let j = 1; j < m; j++) f.lineTo(px[idx[j]] + ox[j], py[idx[j]] + oy[j]);
+        for (let j = m - 1; j >= 0; j--) f.lineTo(px[idx[j]] - ox[j], py[idx[j]] - oy[j]);
+        f.closePath();
+      }
+      i0 = i1;
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [k, p] of thin) {
+    const [color, lw] = k.split('|');
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Number(lw) * dev;
+    ctx.stroke(p);
+  }
+  for (const [color, p] of fills) {
+    ctx.fillStyle = color;
+    ctx.fill(p);
+  }
 }
 
 // 导出完放掉那一块的画布

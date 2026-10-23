@@ -2,6 +2,7 @@ import { GLOW_GAIN, GLOW_GAIN_ATLAS, PATTERN_DETAIL, SEED_STEP, SPARKLE, SPARKLE
 import type { Mesh } from '../../core/mesh';
 import type { SeamLayers } from '../../core/seams';
 import { PATTERNS } from '../../core/species';
+import { fromUnit } from '../../core/geo';
 import { viewOf } from '../../core/sphere';
 import type { GhostLayers } from './colors';
 import { GLOBE_G, PROJ_GLSL, type Proj, effectiveZoom, planeBounds, sceneNeed, screenToWorld as projScreenToWorld, worldToScreen as projWorldToScreen } from './projection';
@@ -743,6 +744,38 @@ const planetVs = (vs: string) =>
 const VS_CELL_PLANET = planetVs(VS_CELL);
 const VS_ID_PLANET = planetVs(VS_ID);
 
+// 极地的场景（第十三轮 G4，球形投影看着极地时）：以极点为中心的等距方位投影，按球面上真实的三角形、Voronoi 画（见 projection.ts 的 SceneNeed）。
+// 平面上的位置 = 到极点的弧长（地图单位）·（cos 经度，uPole · sin 经度）。格的坡度（东、南分量）在顶点上换成这个平面上的方向再插值
+// （极点附近各格的东、南方向差得很多，直接插值会乱），片元里再换回这一点的东、南
+const POLAR_VS = (body: string) => `float pa = 3.14159265358979 * (aPos.x - 1.0);
+  float pr = uPole > 0.0 ? aPos.y : 1.0 - aPos.y;
+  vec2 polarPos = pr * vec2(cos(pa), uPole * sin(pa));
+  ${body}
+  gl_Position = vec4(polarPos * uView.xy + uView.zw, 0.0, 1.0);`;
+const VS_CELL_POLAR = must(
+  must(
+    must(must(VS_CELL, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform float uPole;\nout vec2 vPolar;'), 'out vec2 vGrad;\nout vec2 vSeaGrad;', 'out vec2 vGradP;\nout vec2 vSeaGradP;'),
+    '  vGrad = texelFetch(uGrad, t, 0).rg;\n  vSeaGrad = texelFetch(uSeaGrad, t, 0).rg;\n',
+    '',
+  ),
+  '  gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);',
+  POLAR_VS(`vPolar = polarPos;
+  vec2 pE = vec2(-sin(pa), uPole * cos(pa));
+  vec2 pS = vec2(cos(pa), uPole * sin(pa)) * uPole;
+  vec2 g0 = texelFetch(uGrad, t, 0).rg;
+  vec2 g1 = texelFetch(uSeaGrad, t, 0).rg;
+  vGradP = g0.x * pE + g0.y * pS;
+  vSeaGradP = g1.x * pE + g1.y * pS;`),
+);
+const VS_ID_POLAR = must(must(VS_ID, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform float uPole;'), '  gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);', POLAR_VS(''));
+const VS_SEAM_POLAR = must(
+  must(VS_SEAM, 'uniform float uShift;', 'uniform float uShift;\nuniform float uPole;'),
+  '  gl_Position = vec4((p + vec2(uShift, 0.0)) * uView.xy + uView.zw, 0.0, 1.0);',
+  `  float pa = 3.14159265358979 * (p.x - 1.0);
+  float pr = uPole > 0.0 ? p.y : 1.0 - p.y;
+  gl_Position = vec4(pr * vec2(cos(pa), uPole * sin(pa)) * uView.xy + uView.zw, 0.0, 1.0);`,
+);
+
 const FS_TERRAIN_PLANET = `#version 300 es
 precision highp float;
 in vec4 vLandCol;
@@ -856,6 +889,23 @@ void main() {
   oHeight = vec4(hh, s, slope);
 }`;
 
+// 极地的场景的地形层：世界坐标按这一点在极地平面上的位置算回来（不按顶点的世界坐标插值：跨过接缝、极点的三角形会乱），
+// 坡度从平面上的方向换回这一点的东、南
+const FS_TERRAIN_POLAR = must(
+  must(FS_TERRAIN_PLANET, 'in vec2 vGrad;\nin vec2 vSeaGrad;\nin vec2 vWorld;', 'in vec2 vPolar;\nin vec2 vGradP;\nin vec2 vSeaGradP;\nuniform float uPole;\nvec2 vGrad;\nvec2 vSeaGrad;\nvec2 vWorld;'),
+  'void main() {\n',
+  `void main() {
+  float pr = length(vPolar);
+  if (pr > 1.0) discard;
+  float pa = pr > 1e-9 ? atan(uPole * vPolar.y, vPolar.x) : 0.0;
+  vWorld = vec2(1.0 + pa / PI, uPole > 0.0 ? pr : 1.0 - pr);
+  vec2 pE = vec2(-sin(pa), uPole * cos(pa));
+  vec2 pS = vec2(cos(pa), uPole * sin(pa)) * uPole;
+  vGrad = vec2(dot(vGradP, pE), dot(vGradP, pS));
+  vSeaGrad = vec2(dot(vSeaGradP, pE), dot(vSeaGradP, pS));
+`,
+);
+
 // 合成：按扭曲后的坐标取格。扭曲的噪声、生态的花纹在球面上取（每份副本一样），两极以外是背景
 const PATTERN_AT_2D = 'float patternAt(int kind, vec2 world, float size, float seed) {\n  return patternValue(';
 const FS_COMPOSE_PLANET = must(
@@ -893,7 +943,15 @@ function mustAll(src: string, re: RegExp, to: string, count: number): string {
 const PROJ_TO_SCENE = `
 // 场景：世界坐标 → 场景上的位置（0–1）。场景是 x 从 uSceneX0 起的一块（整圈时宽 2），经度按 2 绕回
 vec2 wrapW(vec2 w) { return vec2(uSceneX0 + mod(w.x - uSceneX0, 2.0), w.y); }
-vec2 toScene(vec2 w) { return (wrapW(w) * uSceneView.xy + uSceneView.zw) * 0.5 + 0.5; }
+// 极地的场景（uScenePole = ±1）：以那一极为中心的等距方位投影
+vec2 toScene(vec2 w) {
+  vec2 q = wrapW(w);
+  if (uScenePole != 0.0) {
+    float a = PI * (w.x - 1.0);
+    q = (uScenePole > 0.0 ? w.y : 1.0 - w.y) * vec2(cos(a), uScenePole * sin(a));
+  }
+  return (q * uSceneView.xy + uSceneView.zw) * 0.5 + 0.5;
+}
 // 投影之外：背景（导出时透明）；球形的外面一圈淡淡的大气
 vec4 outsideColor(vec2 plane) {
   vec4 o = uOutside;
@@ -949,7 +1007,7 @@ const FS_COMPOSE_PROJ = (() => {
   s = must(s, 'in vec2 pW;', 'in vec2 vUv;\nvec2 pW;\nvec2 uDX;\nvec2 uDY;\nvec2 uPlane;\nfloat uRho;\nfloat uEdge;');
   s = must(s, 'uniform vec2 uTexel;', 'vec2 uTexel;\nuniform vec2 uPx;');
   s = must(s, 'uniform float uCellPx;', 'float uCellPx;');
-  s = must(s, 'uniform float uScenePx;', 'float uScenePx;\nuniform vec2 uSceneZ;\nuniform vec4 uSceneView;\nuniform float uSceneX0;\nuniform vec4 uOutside;\nuniform float uPlanePx;');
+  s = must(s, 'uniform float uScenePx;', 'float uScenePx;\nuniform vec2 uSceneZ;\nuniform vec4 uSceneView;\nuniform float uSceneX0;\nuniform float uScenePole;\nuniform vec4 uOutside;\nuniform float uPlanePx;');
   s = must(s, 'int idAt(vec2 uv) {', `${PROJ_GLSL}${PROJ_TO_SCENE}int idAt(vec2 uv) {`);
   s = must(s, 'vec2 world = (pW * 2.0 - 1.0 - uView.zw) / uView.xy;', 'vec2 world = pW;');
   s = must(s, 'vec2 uvW = (ww * uView.xy + uView.zw) * 0.5 + 0.5;', 'vec2 uvW = ww;');
@@ -957,7 +1015,8 @@ const FS_COMPOSE_PROJ = (() => {
   s = must(s, 'vec2 dy = vec2(0.0, uTexel.y * 1.5);', 'vec2 dy = uDY * 1.5;');
   s = must(s, 'vec2 hx = vec2(uTexel.x * 1.5, 0.0);', 'vec2 hx = uDX * 1.5;');
   s = must(s, 'vec2 hy = vec2(0.0, uTexel.y * 1.5);', 'vec2 hy = uDY * 1.5;');
-  s = must(s, 'texture(uRiver, pW * uRiverXf.xy + uRiverXf.zw)', 'texture(uRiver, wrapW(pW) * uRiverXf.xy + uRiverXf.zw)');
+  // 河的图层画在场景那一块上（同样的范围、大小）：按场景上的位置取
+  s = must(s, 'texture(uRiver, pW * uRiverXf.xy + uRiverXf.zw)', 'texture(uRiver, toScene(pW) * uRiverXf.xy + uRiverXf.zw)');
   s = must(s, 'oColor = vec4(col, 1.0);', 'oColor = projFinish(col);');
   s = must(s, 'void main() {\n', `void main() {\n${PROJ_PROLOGUE}`);
   return s;
@@ -1058,6 +1117,8 @@ export interface ProjScene {
   H: number;
   view: V4;
   full: boolean;
+  // 极地的场景（1 北极、−1 南极，见 projection.ts 的 SceneNeed）：x0..x1、y0..y1 是以极点为中心的平面上的范围
+  pole: 0 | 1 | -1;
   key: string;
 }
 
@@ -1070,6 +1131,7 @@ export interface RiverScene {
   W: number;
   H: number;
   dpr: number;
+  pole: 0 | 1 | -1;
   key: string;
 }
 
@@ -1081,19 +1143,29 @@ interface ProjCompose {
   outside: V4;
 }
 
+// 极地的场景：一极的三角形、Voronoi（见 Renderer.polarGeometry）；只画离那一极这么远（地图单位，到极点的弧长 / π）以内的
+type PolarGeom = { tri: WebGLVertexArrayObject; triCount: number; fan: WebGLVertexArrayObject; fanCount: number };
+const POLAR_REACH = 0.95;
+
 // 屏幕上投影之外的背景（与地图之外的颜色相同）
 const PROJ_BG: V4 = [0.08, 0.1, 0.14, 1];
 
 // 按需要的密度定一块场景。factor：密度打几折（移动中 0.5）；grow：四周多画范围的几分之一（整圈时不加）；
 // limit：纹理的边长上限；budget：像素总数上限
-export function planScene(need: { x0: number; x1: number; y0: number; y1: number; zx: number; zy: number; full: boolean }, factor: number, grow: number, limit: number, budget: number): ProjScene {
+export function planScene(need: { x0: number; x1: number; y0: number; y1: number; zx: number; zy: number; full: boolean; pole?: 0 | 1 | -1 }, factor: number, grow: number, limit: number, budget: number): ProjScene {
+  const pole = need.pole ?? 0;
   // 密度取 2 的 1/4 次方的整数倍（往上取）：镜头动一点点时要的密度不变，场景照用
   const q = (z: number) => Math.pow(2, Math.ceil(Math.log2(Math.max(z, 1e-9)) * 4) / 4);
   const reqZx = q(need.zx * factor);
   const reqZy = q(need.zy * factor);
   let { x0, x1, y0, y1 } = need;
   let full = need.full;
-  if (!full) {
+  if (pole) {
+    // 极地：以极点为中心的正方形，四周一样多画，半径不超过 1（另一极）
+    const R = Math.min(POLAR_REACH, Math.max(x1, x1 * (1 + grow)));
+    x0 = y0 = -R;
+    x1 = y1 = R;
+  } else if (!full) {
     const gx = (x1 - x0) * grow;
     x0 -= gx;
     x1 += gx;
@@ -1103,9 +1175,11 @@ export function planScene(need: { x0: number; x1: number; y0: number; y1: number
       x1 = 2;
     }
   }
-  const gy = (y1 - y0) * grow;
-  y0 = Math.max(0, y0 - gy);
-  y1 = Math.min(1, y1 + gy);
+  if (!pole) {
+    const gy = (y1 - y0) * grow;
+    y0 = Math.max(0, y0 - gy);
+    y1 = Math.min(1, y1 + gy);
+  }
   const s = Math.min(1, limit / ((x1 - x0) * reqZx), limit / ((y1 - y0) * reqZy), Math.sqrt(budget / ((x1 - x0) * reqZx * (y1 - y0) * reqZy)));
   const zx = reqZx * s;
   const zy = reqZy * s;
@@ -1116,15 +1190,17 @@ export function planScene(need: { x0: number; x1: number; y0: number; y1: number
   y1 = y0 + H / zy;
   const sx = (2 * zx) / W;
   const sy = (-2 * zy) / H;
-  return { x0, x1, y0, y1, zx, zy, reqZx, reqZy, W, H, view: [sx, sy, -1 - x0 * sx, 1 - y0 * sy], full, key: `${x0}|${x1}|${y0}|${y1}|${zx}|${zy}|${W}x${H}` };
+  return { x0, x1, y0, y1, zx, zy, reqZx, reqZy, W, H, view: [sx, sy, -1 - x0 * sx, 1 - y0 * sy], full, pole, key: `${pole}|${x0}|${x1}|${y0}|${y1}|${zx}|${zy}|${W}x${H}` };
 }
 
 // 场景 sc 还能不能用：盖住要的范围（整圈的盖住一切；x 按 2 绕回比），要的密度够（minF 折以上），停稳时也不能密太多（maxF 倍以下）
-export function sceneFits(sc: ProjScene, need: { x0: number; x1: number; y0: number; y1: number; zx: number; zy: number }, minF: number, maxF: number): boolean {
+export function sceneFits(sc: ProjScene, need: { x0: number; x1: number; y0: number; y1: number; zx: number; zy: number; pole?: 0 | 1 | -1 }, minF: number, maxF: number): boolean {
+  if (sc.pole !== (need.pole ?? 0)) return false;
   if (sc.reqZx < minF * need.zx || sc.reqZy < minF * need.zy) return false;
   if (sc.reqZx > maxF * need.zx && sc.reqZy > maxF * need.zy) return false;
   if (need.y0 < sc.y0 - 1e-9 || need.y1 > sc.y1 + 1e-9) return false;
   if (sc.full) return true;
+  if (sc.pole) return need.x0 >= sc.x0 - 1e-9 && need.x1 <= sc.x1 + 1e-9;
   const sh = 2 * Math.floor((need.x0 - sc.x0) / 2);
   return need.x0 - sh >= sc.x0 - 1e-9 && need.x1 - sh <= sc.x1 + 1e-9 && need.x1 - need.x0 <= 2;
 }
@@ -1207,6 +1283,9 @@ export class Renderer {
   private pSeamKey = '';
   private pComposeKey = '';
   private progProj: WebGLProgram | null = null;
+  // 极地的场景：程序（用到时才编译）与球面上真实的三角形、Voronoi（按网格缓存）
+  private polarProgs: { id: WebGLProgram; terrain: WebGLProgram; seam: WebGLProgram } | null = null;
+  private polarGeom: { mesh: Mesh; north: PolarGeom | null; south: PolarGeom | null } | null = null;
   private riverShown: { source: unknown; version: number } | null = null;
   // 场景（编号层、地形层、切线层）：停稳时画在与画布一样大的一组目标上；移动中画在低分辨率、带边距的另一组上
   private rest: SceneTarget;
@@ -1958,6 +2037,108 @@ export class Renderer {
 
   // ---------- 等面积、球形投影（第十三轮 G4） ----------
 
+  // 极地的场景的程序（第一次用到时才编译）
+  private polarPrograms() {
+    if (!this.polarProgs) {
+      const gl = this.gl;
+      const seam = compile(gl, VS_SEAM_POLAR, FS_SEAM);
+      this.polarProgs = { id: compile(gl, VS_ID_POLAR, FS_ID), terrain: compile(gl, VS_CELL_POLAR, FS_TERRAIN_POLAR), seam };
+      // 切线的实例数据按名字找位置：极地的程序与平面的程序要一致（同一个 VAO）
+      for (const name of ['aCorner', 'aSeg', 'aNb', 'aEnds']) {
+        if (gl.getAttribLocation(seam, name) !== gl.getAttribLocation(this.progSeam, name)) throw new Error(`切线的属性位置不一致：${name}`);
+      }
+    }
+    return this.polarProgs;
+  }
+
+  // 球面上真实的三角形（地形层）与 Voronoi 多边形（编号层，从格中心到相邻两个三角形的外心扇形三角化），顶点是世界坐标。
+  // 只要离这一极 POLAR_REACH 以内的（另一极附近在这个平面上是一圈，那里的三角形会横跨整个平面）；按网格、按极缓存
+  private polarGeometry(pole: 1 | -1) {
+    const mesh = this.mesh!;
+    if (this.polarGeom?.mesh !== mesh) {
+      if (this.polarGeom) {
+        for (const g of [this.polarGeom.north, this.polarGeom.south]) {
+          if (!g) continue;
+          this.gl.deleteVertexArray(g.tri);
+          this.gl.deleteVertexArray(g.fan);
+        }
+      }
+      this.polarGeom = { mesh, north: null, south: null };
+    }
+    const cached = pole > 0 ? this.polarGeom.north : this.polarGeom.south;
+    if (cached) return cached;
+    if (mesh.kind !== 'sphere') throw new Error('只有整个星球有极地的场景');
+    const far = (y: number) => (pole > 0 ? y : 1 - y) > POLAR_REACH;
+    const tris = mesh.triangles;
+    const tp: number[] = [];
+    const tc: number[] = [];
+    const tb: number[] = [];
+    for (let t = 0; t + 2 < tris.length; t += 3) {
+      if (far(mesh.y[tris[t]]) || far(mesh.y[tris[t + 1]]) || far(mesh.y[tris[t + 2]])) continue;
+      for (let k = 0; k < 3; k++) {
+        const c = tris[t + k];
+        tp.push(mesh.x[c], mesh.y[c]);
+        tc.push(c);
+        tb.push(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0);
+      }
+    }
+    const P = mesh.p;
+    const fp: number[] = [];
+    const fc: number[] = [];
+    const order: number[] = [];
+    for (let i = 0; i < mesh.n; i++) {
+      if (far(mesh.y[i])) continue;
+      const a = mesh.off[i];
+      const b = mesh.off[i + 1];
+      // 邻格按方向（本格切平面里的东、南）排一圈
+      order.length = 0;
+      for (let k = a; k < b; k++) order.push(k);
+      order.sort((u, v) => Math.atan2(mesh.edy[u], mesh.edx[u]) - Math.atan2(mesh.edy[v], mesh.edx[v]));
+      const ax = P[3 * i];
+      const ay = P[3 * i + 1];
+      const az = P[3 * i + 2];
+      const ver: [number, number][] = [];
+      for (let m = 0; m < order.length; m++) {
+        const j = mesh.adj[order[m]];
+        const k = mesh.adj[order[(m + 1) % order.length]];
+        const ux = P[3 * j] - ax;
+        const uy = P[3 * j + 1] - ay;
+        const uz = P[3 * j + 2] - az;
+        const vx = P[3 * k] - ax;
+        const vy = P[3 * k + 1] - ay;
+        const vz = P[3 * k + 2] - az;
+        let cx = uy * vz - uz * vy;
+        let cy = uz * vx - ux * vz;
+        let cz = ux * vy - uy * vx;
+        const l = Math.hypot(cx, cy, cz) || 1;
+        const sg = cx * ax + cy * ay + cz * az < 0 ? -1 / l : 1 / l;
+        cx *= sg;
+        cy *= sg;
+        cz *= sg;
+        ver.push(fromUnit([cx, cy, cz]));
+      }
+      for (let m = 0; m < ver.length; m++) {
+        const q = ver[(m + 1) % ver.length];
+        fp.push(mesh.x[i], mesh.y[i], ver[m][0], ver[m][1], q[0], q[1]);
+        fc.push(i, i, i);
+      }
+    }
+    const g = {
+      tri: this.makeVao(new Float32Array(tp), new Float32Array(tc), new Float32Array(tb)),
+      triCount: tc.length,
+      fan: this.makeVao(new Float32Array(fp), new Float32Array(fc), new Float32Array(fc.length * 3)),
+      fanCount: fc.length,
+    };
+    if (pole > 0) this.polarGeom.north = g;
+    else this.polarGeom.south = g;
+    return g;
+  }
+
+  // 现在画的是极地的场景（球面上的 Voronoi）：鼠标下的格按球面上真正最近的格取（与画出来的一致）
+  polarPick(): boolean {
+    return !!(this.planet && this.camera.proj && this.projScene?.pole);
+  }
+
   // 投影的合成程序（第一次用到时才编译）
   private projProgram(): WebGLProgram {
     this.progProj ??= compileCompose(this.gl, FS_COMPOSE_PROJ);
@@ -1992,18 +2173,19 @@ export class Renderer {
     gl.viewport(0, 0, sc.W, sc.H);
     if (force || idKey !== this.pIdKey) {
       this.pIdKey = idKey;
-      this.drawId(t, sc.view, copy0, copies);
+      this.drawId(t, sc.view, copy0, copies, sc.pole);
     }
     if (force || terrainKey !== this.pTerrainKey) {
-      const rects = !force && terrainStatic === this.pTerrainStatic && this.dirtyCells !== 'full' ? this.dirtyRects(this.dirtyCells, sc.view, sc.W, sc.H) : null;
+      // 幽灵海岸只改了几格：只重画那几格的一块（极地的场景整张重画）
+      const rects = !force && !sc.pole && terrainStatic === this.pTerrainStatic && this.dirtyCells !== 'full' ? this.dirtyRects(this.dirtyCells, sc.view, sc.W, sc.H) : null;
       this.pTerrainKey = terrainKey;
       this.pTerrainStatic = terrainStatic;
       this.dirtyCells = new Set();
-      this.drawTerrain(t, sc.view, 1 / Math.max(sc.zx, sc.zy), copy0, copies, coastAmp, kmPerUnit, rects);
+      this.drawTerrain(t, sc.view, 1 / Math.max(sc.zx, sc.zy), copy0, copies, coastAmp, kmPerUnit, rects, sc.pole);
     }
     if (hasSeams && (force || seamKey !== this.pSeamKey)) {
       this.pSeamKey = seamKey;
-      this.drawSeams(t, sc.view, cx, halfW);
+      this.drawSeams(t, sc.view, cx, halfW, sc.pole);
     }
   }
 
@@ -2051,7 +2233,7 @@ export class Renderer {
     const sy = (-2 * z1) / oh;
     const view: V4 = [sx, sy, -cam.x * sx, -cam.y * sy];
     const relief = this.reliefAt(effectiveZoom(cam));
-    const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, key: sc.key }) ?? null) : null;
+    const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: sc.key }) ?? null) : null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
     if (!moving) {
       const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${riverKey}`;
@@ -2110,7 +2292,7 @@ export class Renderer {
     [this.pIdKey, this.pTerrainKey, this.pTerrainStatic, this.pSeamKey] = keys;
     this.dirtyCells = dirty;
     this.pComposeKey = '';
-    const rt = river ? this.useRiver(river({ x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, key: `export|${sc.key}` })) : null;
+    const rt = river ? this.useRiver(river({ x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: `export|${sc.key}` })) : null;
     const relief = this.reliefAt(effectiveZoom(cam));
     const Z = cam.zoom * dpr;
     const pj: ProjCompose = { proj: cam.proj, scene: sc, planePx: Z, outside: [0, 0, 0, 0] };
@@ -2207,11 +2389,22 @@ export class Renderer {
   }
 
   // 1. 编号层
-  private drawId(t: SceneTarget, view: V4, copy0: number, copies: number) {
+  // pole：极地的场景（球面上的 Voronoi，以极点为中心的平面）
+  private drawId(t: SceneTarget, view: V4, copy0: number, copies: number, pole: 0 | 1 | -1 = 0) {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboId);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+    if (pole) {
+      const g = this.polarGeometry(pole);
+      const prog = this.polarPrograms().id;
+      gl.useProgram(prog);
+      gl.uniform4fv(gl.getUniformLocation(prog, 'uView'), view);
+      gl.uniform1f(gl.getUniformLocation(prog, 'uPole'), pole);
+      gl.bindVertexArray(g.fan);
+      gl.drawArrays(gl.TRIANGLES, 0, g.fanCount);
+      return;
+    }
     const pp = this.planet ? this.planetProgs : null;
     const pid = pp ? pp.id : this.progId;
     gl.useProgram(pid);
@@ -2225,14 +2418,14 @@ export class Renderer {
   }
 
   // 2. 地形层。pixel：一个目标像素合多少地图单位。rects：只重画这几块（设备像素，GL 的 y 向上）；null 整张
-  private drawTerrain(t: SceneTarget, view: V4, pixel: number, copy0: number, copies: number, coastAmp: number, kmPerUnit: number, rects: Rect[] | null) {
+  private drawTerrain(t: SceneTarget, view: V4, pixel: number, copy0: number, copies: number, coastAmp: number, kmPerUnit: number, rects: Rect[] | null, pole: 0 | 1 | -1 = 0) {
     const gl = this.gl;
     const mesh = this.mesh!;
     if (rects && !rects.length) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     const pp = this.planet ? this.planetProgs : null;
-    const pt = pp ? pp.terrain : this.progTerrain;
+    const pt = pole ? this.polarPrograms().terrain : pp ? pp.terrain : this.progTerrain;
     gl.useProgram(pt);
     gl.uniform4fv(gl.getUniformLocation(pt, 'uView'), view);
     gl.uniform1f(gl.getUniformLocation(pt, 'uSpacing'), mesh.spacing);
@@ -2246,24 +2439,27 @@ export class Renderer {
     this.bindTex(pt, 'uGrad', this.tex.grad, 3);
     this.bindTex(pt, 'uOther', this.tex.other, 4);
     this.bindTex(pt, 'uSeaGrad', this.tex.seaGrad, 5);
-    gl.bindVertexArray(this.triVao);
+    const polar = pole ? this.polarGeometry(pole) : null;
+    gl.bindVertexArray(polar ? polar.tri : this.triVao);
     if (pp) {
       gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);
       gl.uniform1f(gl.getUniformLocation(pt, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
     }
+    if (polar) gl.uniform1f(gl.getUniformLocation(pt, 'uPole'), pole);
     if (rects) gl.enable(gl.SCISSOR_TEST);
     for (const r of rects ?? [null]) {
       if (r) gl.scissor(r[0], r[1], r[2], r[3]);
       gl.clearBufferfv(gl.COLOR, 0, [0.08, 0.1, 0.14, 0]);
       gl.clearBufferfv(gl.COLOR, 1, [-4000, -1, 0, 0]);
-      if (pp) gl.drawArraysInstanced(gl.TRIANGLES, 0, this.triCount, copies);
+      if (polar) gl.drawArrays(gl.TRIANGLES, 0, polar.triCount);
+      else if (pp) gl.drawArraysInstanced(gl.TRIANGLES, 0, this.triCount, copies);
       else gl.drawArrays(gl.TRIANGLES, 0, this.triCount);
     }
     gl.disable(gl.SCISSOR_TEST);
   }
 
   // 3. 切线层：每段画一个长方形，片元算到段的距离与在哪一边，近的胜（深度测试 LESS，同样近时先画的段号小的胜）
-  private drawSeams(t: SceneTarget, view: V4, camX: number, halfW: number) {
+  private drawSeams(t: SceneTarget, view: V4, camX: number, halfW: number, pole: 0 | 1 | -1 = 0) {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboSeam);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
@@ -2272,15 +2468,16 @@ export class Renderer {
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LESS);
     gl.depthMask(true);
-    const ps = this.progSeam;
+    const ps = pole ? this.polarPrograms().seam : this.progSeam;
     gl.useProgram(ps);
     gl.uniform4fv(gl.getUniformLocation(ps, 'uView'), view);
     gl.uniform1f(gl.getUniformLocation(ps, 'uBand'), this.seamBand);
+    if (pole) gl.uniform1f(gl.getUniformLocation(ps, 'uPole'), pole);
     gl.bindVertexArray(this.seamVao);
-    // 整个星球：线（经度展开后可能超出 [0, 2)）在屏幕上看得见的那几份
+    // 整个星球：线（经度展开后可能超出 [0, 2)）在屏幕上看得见的那几份（极地的场景只要一份）
     let k0 = 0;
     let k1 = 0;
-    if (this.planet) {
+    if (this.planet && !pole) {
       k0 = Math.ceil((camX - halfW - this.seamX[1] - this.seamBand) / 2);
       k1 = Math.min(k0 + 6, Math.floor((camX + halfW - this.seamX[0] + this.seamBand) / 2));
     }
@@ -2312,6 +2509,7 @@ export class Renderer {
       gl.uniform2f(gl.getUniformLocation(pc, 'uSceneZ'), S.zx, S.zy);
       gl.uniform4fv(gl.getUniformLocation(pc, 'uSceneView'), S.view);
       gl.uniform1f(gl.getUniformLocation(pc, 'uSceneX0'), S.x0);
+      gl.uniform1f(gl.getUniformLocation(pc, 'uScenePole'), S.pole);
       gl.uniform4fv(gl.getUniformLocation(pc, 'uOutside'), pj.outside);
       gl.uniform1f(gl.getUniformLocation(pc, 'uPlanePx'), pj.planePx);
     }
@@ -2352,9 +2550,8 @@ export class Renderer {
     this.bindTex(pc, 'uRiver', this.tex.river, 12);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasRiver'), river ? 1 : 0);
     if (river && pj) {
-      // 投影：着色器里按世界坐标取（河的图层画在场景那一块上）
-      const [a, b, c, d] = river.toUv;
-      gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), a, c, b, d);
+      // 投影：河的图层画在场景那一块上（同样的范围、大小），按场景上的位置取
+      gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), 1, 1, 0, 0);
     } else if (river) {
       // 画面上的位置（0–1）→ 地图单位 → 河的那张图上的位置（双精度在这里算好，着色器里只乘加一次）
       const [a, b, c, d] = river.toUv;

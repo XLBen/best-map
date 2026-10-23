@@ -234,6 +234,9 @@ export function convertCamera(cam: ProjCamera, cw: number, ch: number, to: ProjK
 
 // 画面上看得见的世界范围（x 在投影中心的经度附近展开，可能伸出 [0, 2)）与需要的密度（每地图单位多少 CSS 像素，东西、南北分开）。
 // full：整圈经度都要（看得见极点，或者范围已经很宽）：x0 = 0、x1 = 2，与朝向无关（转动球时不必重画场景）。
+// pole（球形看着极地时）：场景改成以那一极为中心的等距方位投影（1 北极、−1 南极），x0..x1、y0..y1 是这个平面上的范围
+// （单位同地图单位：到极点的弧长 / π）。等距圆柱的场景在极点附近是一条线、格的三角形横跨很宽的经度，
+// 投影到球上会变成一道道放射状的条纹；极地的场景按球面上真实的三角形、Voronoi 画，极点附近没有这些条纹。
 // 画面上一点地图都没有时返回 null。margin：四周多留的地图单位（扭曲、取周围格要用到）
 export interface SceneNeed {
   x0: number;
@@ -243,7 +246,24 @@ export interface SceneNeed {
   zx: number;
   zy: number;
   full: boolean;
+  pole: 0 | 1 | -1;
 }
+
+// 以极点为中心的等距方位投影（极地的场景）：世界 → 平面、平面 → 世界
+export function polarOf(pole: 1 | -1, x: number, y: number): [number, number] {
+  const r = pole > 0 ? y : 1 - y;
+  const a = PI * (x - 1);
+  return [r * Math.cos(a), pole * r * Math.sin(a)];
+}
+export function worldOfPolar(pole: 1 | -1, X: number, Y: number): [number, number] {
+  const r = Math.hypot(X, Y);
+  const x = wrapX(1 + Math.atan2(pole * Y, X) / PI);
+  return [x, pole > 0 ? r : 1 - r];
+}
+
+// 球形看着极地时改用极地的场景：朝着的那一极离画面中心不太远（纬度 20° 以上），画面上有离极点 30° 以内的地方
+const POLAR_LAT = 0.35;
+const POLAR_NEAR = 1 / 6;
 
 export function sceneNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: number, margin: number): SceneNeed | null {
   const p = cam.proj;
@@ -259,6 +279,10 @@ export function sceneNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: numb
   let stepY = 0;
   const grid: ([number, number] | null)[] = [];
   const h = 1e-5;
+  // 离朝着的那一极最近、最远（地图单位）
+  const pole: 1 | -1 = p.lat0 >= 0 ? 1 : -1;
+  let r0 = Infinity;
+  let r1 = -Infinity;
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
       const [u, v] = screenToPlane(cam, cw, ch, (cw * i) / N, (ch * j) / N);
@@ -270,6 +294,9 @@ export function sceneNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: numb
       const x = xc + (w[0] - xc - 2 * Math.round((w[0] - xc) / 2));
       const y = w[1];
       grid.push([x, y]);
+      const r = pole > 0 ? y : 1 - y;
+      r0 = Math.min(r0, r);
+      r1 = Math.max(r1, r);
       x0 = Math.min(x0, x);
       x1 = Math.max(x1, x);
       y0 = Math.min(y0, y);
@@ -292,6 +319,8 @@ export function sceneNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: numb
     }
   }
   if (!Number.isFinite(x0)) return null;
+  // 极地的场景最远画到离极点 0.9（162°）：再远（另一极附近）在那个平面上是一圈，画不好，照旧用等距圆柱
+  if (p.kind === 'globe' && Math.abs(p.lat0) >= POLAR_LAT && r0 < POLAR_NEAR && r1 + stepY + margin <= 0.9) return polarNeed(cam, cw, ch, pole, r1 + stepY + margin, N);
   // 极点在画面上：南北伸到那一极，东西要整圈
   let full = false;
   const onScreen = (q: [number, number] | null) => {
@@ -324,7 +353,31 @@ export function sceneNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: numb
       y1 = 1;
     }
   }
-  return { x0, x1, y0, y1, zx: Math.max(zx, 1e-6), zy: Math.max(zy, 1e-6), full };
+  return { x0, x1, y0, y1, zx: Math.max(zx, 1e-6), zy: Math.max(zy, 1e-6), full, pole: 0 };
+}
+
+// 极地的场景：以极点为中心、半径 R（盖住画面上看得见的最远处；整圈，绕着极轴转动时不必重画）的正方形，
+// 密度按画面上每一点在这个平面上要多密（取最大）
+function polarNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: number, pole: 1 | -1, reach: number, N: number): SceneNeed {
+  const p = cam.proj;
+  const h = 1e-5;
+  let z = 0;
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      const [u, v] = screenToPlane(cam, cw, ch, (cw * i) / N, (ch * j) / N);
+      const w = inverse(p, u, v);
+      if (!w) continue;
+      const [X, Y] = polarOf(pole, w[0], w[1]);
+      const a = forward(p, ...worldOfPolar(pole, X, Y));
+      const b = forward(p, ...worldOfPolar(pole, X + h, Y));
+      const c = forward(p, ...worldOfPolar(pole, X, Y + h));
+      if (!a || !b || !c) continue;
+      z = Math.max(z, (Math.hypot(b[0] - a[0], b[1] - a[1]) / h) * cam.zoom, (Math.hypot(c[0] - a[0], c[1] - a[1]) / h) * cam.zoom);
+    }
+  }
+  // 半径按 1/32 取整（往上）：转动时看得见的最远处差一点点也不必重画
+  const R = Math.min(1, Math.ceil(reach * 32) / 32);
+  return { x0: -R, x1: R, y0: -R, y1: R, zx: Math.max(z, 1e-6), zy: Math.max(z, 1e-6), full: false, pole };
 }
 
 // ---------- 着色器里的同一套算式 ----------

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { displayCellAt } from '../../core/display';
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
 import { findCell } from '../../core/mesh';
+import { nearestCell } from '../../core/sphere';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
@@ -735,7 +736,8 @@ export function MapView() {
       const w = world.value;
       // 整个星球东西相接：只看南北（等面积、球形投影另看在不在投影之内）
       const inside = !!w && (w.mesh.kind === 'sphere' ? y >= 0 && y <= 1 && renderer.onProjection(sx, sy) : x >= 0 && y >= 0 && x <= w.mesh.width && y <= w.mesh.height);
-      const cell = inside ? findCell(w!.mesh, x, y) : -1;
+      // 球形看着极地时画的是球面上的 Voronoi：按球面上真正最近的格取（与画出来的一致）
+      const cell = !inside ? -1 : w!.mesh.kind === 'sphere' && renderer.polarPick() ? nearestCell(w!.mesh, x, y) : findCell(w!.mesh, x, y);
       return { x, y, sx, sy, cell, shift, alt, shown: cell >= 0 ? displayCellAt(w!, x, y, cell) : undefined };
     };
     // 悬停卡片“这里”说的那一格：屏幕上这一点画成的陆地或海
