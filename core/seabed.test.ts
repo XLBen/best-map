@@ -155,6 +155,70 @@ describe('海底的剖面', () => {
     expect(dist.length).toBe(mesh.n);
   });
 
+  for (const [label, make] of [
+    ['一块地区', () => continents()],
+    ['整个星球', planet],
+  ] as const) {
+    it(`${label}：只重算改动附近（画陆地、画海、放岛、堆山、撤销）与整个重算逐位相同`, () => {
+      const eng = make();
+      const w = eng.world;
+      const { mesh } = w;
+      const check = (what: string) => {
+        const got = w.derived.elevation;
+        seafloorStats.on = false;
+        try {
+          const fresh = new Float32Array(mesh.n).fill(Number.NaN);
+          seafloor(w, fresh);
+          let bad = 0;
+          for (let i = 0; i < mesh.n; i++) if (!w.causes.land[i] && got[i] !== fresh[i]) bad++;
+          expect(bad, what).toBe(0);
+        } finally {
+          seafloorStats.on = true;
+        }
+      };
+      // 沿海随机几处画陆地、画海（确定的伪随机）
+      let r = 12345;
+      const rand = () => ((r = (Math.imul(r, 1103515245) + 12345) >>> 0) / 2 ** 32);
+      const coastal = () => {
+        const out: number[] = [];
+        for (let i = 0; i < mesh.n; i++) {
+          if (w.causes.land[i]) continue;
+          for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (w.causes.land[mesh.adj[e]]) {
+            out.push(i);
+            break;
+          }
+        }
+        return out;
+      };
+      const disc = (c: number, rad: number) => [...Array(mesh.n).keys()].filter((i) => Math.hypot(mesh.x[i] - mesh.x[c], mesh.y[i] - mesh.y[c]) < mesh.spacing * rad);
+      const p0 = seafloorStats.partial;
+      for (let step = 0; step < 4; step++) {
+        const list = coastal();
+        const c = list[Math.floor(rand() * list.length)];
+        const cells = disc(c, 2.5);
+        eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0.3), mode: step % 2 ? 'sea' : 'land' });
+        check(`第 ${step + 1} 笔`);
+      }
+      // 远洋里放一个岛
+      const sea = [...Array(mesh.n).keys()].filter((i) => !w.causes.land[i]);
+      const o = sea[Math.floor(rand() * sea.length)];
+      const isle = disc(o, 1.5);
+      eng.exec({ op: 'paint_land', cells: isle, t: isle.map(() => 0), mode: 'land' });
+      check('远洋的岛');
+      // 海岸上堆山（只改抬升）
+      const hill = coastal().slice(0, 1).flatMap((c) => disc(c, 3)).filter((i) => w.causes.land[i]);
+      if (hill.length) {
+        eng.exec({ op: 'paint_relief', cells: hill, t: hill.map(() => 0), strength: 1 });
+        check('海岸上堆山');
+      }
+      eng.undo();
+      check('撤销');
+      eng.undo();
+      check('再撤销');
+      expect(seafloorStats.partial).toBeGreaterThan(p0);
+    });
+  }
+
   it('画的海：按离岸距离变深，宽的海中间是海盆；洋壳上画的岛只有窄窄的岛架', () => {
     const eng = continents();
     const w = eng.world;
