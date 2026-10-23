@@ -373,6 +373,31 @@ export function MapView() {
       img.style.cssText = `display:block;left:${x}px;top:${y}px;width:${W}px;height:${H}px;opacity:${r.opacity}`;
     }
 
+    // 底部条要把左下角的比例尺抬多高：量一次缓存着，底部条或窗口变了大小时作废（不在每帧查 DOM、量位置）。
+    // 没有底部条时每半秒才再找一次
+    let liftCache: number | null = null;
+    let liftBar: Element | null = null;
+    let liftAt = 0;
+    const barObs = new ResizeObserver(() => {
+      liftCache = null;
+      requestDraw();
+    });
+    const onWinResize = () => (liftCache = null);
+    window.addEventListener('resize', onWinResize);
+    function barLift(): number {
+      if (liftCache !== null && (liftBar ? liftBar.isConnected : performance.now() - liftAt < 500)) return liftCache;
+      const bar = document.querySelector('.bottombar');
+      if (bar !== liftBar) {
+        if (liftBar) barObs.unobserve(liftBar);
+        if (bar) barObs.observe(bar);
+        liftBar = bar;
+      }
+      const r = bar?.getBoundingClientRect();
+      liftCache = r && r.left < 300 ? Math.ceil(window.innerHeight - r.top) + 4 : 0;
+      liftAt = performance.now();
+      return liftCache;
+    }
+
     // clean：导出图片用的干净画面——不带高亮、闪烁、工具的图形和预览、鼠标旁的话（画完由调用者再按原样重画一次）
     function draw(clean = false) {
       frame = 0;
@@ -445,10 +470,8 @@ export function MapView() {
       }
       const c = category.value;
       const groups = labelGroups.value;
-      // 底部条伸到左下角（窗口窄、选项多）时，比例尺和尺子按钮抬到它上面
-      const bar = document.querySelector('.bottombar');
-      const r = bar?.getBoundingClientRect();
-      const lift = r && r.left < 300 ? Math.ceil(window.innerHeight - r.top) + 4 : 0;
+      // 底部条伸到左下角（窗口窄、选项多）时，比例尺和尺子按钮抬到它上面（底部条、窗口变了大小时才重新量，不在每帧查 DOM）
+      const lift = barLift();
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
       const ovArgs: OverlayArgs = [shown, shown === w ? paths : pathsOf(shown), renderer.camera, {
@@ -947,6 +970,8 @@ export function MapView() {
     }
     return () => {
       if (settleTimer) clearTimeout(settleTimer);
+      barObs.disconnect();
+      window.removeEventListener('resize', onWinResize);
       disposeWorld();
       disposePaths();
       disposeColors();
