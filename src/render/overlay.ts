@@ -576,7 +576,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
   if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr, f);
   if (st.currents && sphere) drawCurrents(ctx, world, cam, px * dpr, f);
   if (st.latitude) {
-    if (sphere) drawGraticule(ctx, cam, ks, f);
+    if (sphere) drawGraticule(ctx, cam, ks, f, !!st.frame);
     else drawLatitude(ctx, world, cam, st.latitude, f);
   }
 
@@ -617,7 +617,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
 }
 
 // 整个星球的经纬网：经线、纬线的间隔随缩放变（每条线之间至少约 60 像素），回归线、极圈用虚线并写上名字
-function drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, ks: number[], f: Frame) {
+// exporting：导出整张地图（上面没有顶栏挡着，经度写在图的最上边）
+function drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, ks: number[], f: Frame, exporting = false) {
   const { cw, ch, dpr } = f;
   const sx = (x: number) => (x - cam.x) * cam.zoom + cw / 2;
   const sy = (y: number) => (y - cam.y) * cam.zoom + ch / 2;
@@ -663,7 +664,7 @@ function drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, ks: number[],
       ctx.lineTo(x, bottom);
       ctx.stroke();
       const name = lon === 0 ? '0°' : lon === -180 ? '180°' : `${Math.abs(lon)}°${lon > 0 ? 'E' : 'W'}`;
-      label(name, x + 3, Math.max(top, 70) + 8, 'left');
+      label(name, x + 3, Math.max(top, exporting ? 0 : 70) + 8, 'left');
     }
   }
   // 回归线、极圈
