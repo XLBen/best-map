@@ -1147,17 +1147,22 @@ function courseFrom(world: World, d: Derived, base: { cells: number[]; path: Pt[
   return plan;
 }
 
-// 画到一条河上汇入时在河道的第几格结束：画的线末尾连着的那几格河（同一流域）的第一格；从那里汇入水会绕成圈时，
-// 改用画的线第一次碰到这一流域的河、汇入后不绕圈的那一格。都不行时为 −1
+// 画到一条河上汇入时在河道的第几格结束：画的线第一次碰到这条河的那一格（同一流域、顺流几格就到汇入的那条河上：
+// 同一条河上游、下游的格，或马上就汇进去的支流）；从那里汇入水会绕成圈时往后挪，都不行时为 −1。
+// 隔得远的支流不算（照常是穿过它，问截不截走）
 function joinCut(world: World, d: Derived, cells: readonly number[], lo: number, joinable: (i: number) => boolean): number {
+  const { mesh, causes } = world;
   const last = cells.length - 1;
-  const basin = d.basin[cells[last]];
-  const touches = (k: number) => joinable(cells[k]) && d.basin[cells[k]] === basin;
-  let k0 = last;
-  while (k0 - 1 >= lo && touches(k0 - 1)) k0--;
-  const tries = [k0];
-  for (let k = lo; k < last; k++) if (k !== k0 && touches(k)) tries.push(k);
-  if (k0 !== last) tries.push(last);
+  const L = cells[last];
+  const down = new Set<number>();
+  for (let c = L, guard = 0; c >= 0 && causes.land[c] && guard < mesh.n; c = d.receiver[c], guard++) down.add(c);
+  const near = (x: number, steps: number) => {
+    for (let c = x, k = 0; c >= 0 && k <= steps; c = d.receiver[c], k++) if (down.has(c)) return true;
+    return false;
+  };
+  const tries: number[] = [];
+  for (let k = lo; k < last; k++) if (joinable(cells[k]) && d.basin[cells[k]] === d.basin[L] && near(cells[k], last - k + 3)) tries.push(k);
+  tries.push(last);
   return tries.find((k) => !flowsBack(world, d, cells[k], new Set(cells.slice(0, k + 1)))) ?? -1;
 }
 

@@ -6,7 +6,7 @@ import { lakeArea, waterLevel } from './elevation';
 import { findCell } from './mesh';
 import { route } from './routing';
 import { courseLine, courseStep, decodePath, encodePath, pathSamples, smoothCourse } from './rivers';
-import { type CoursePlan, continueCourse, endCourseAt, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
+import { type CoursePlan, continueCourse, endCourseAt, extendCourse, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
 import { continents, engineFor } from './testing/fixtures';
 import { type Guide, guideSchema, type World } from './world';
 
@@ -754,5 +754,186 @@ describe('预览', () => {
     eng.exec({ op: 'update_guide', id, patch: { flow: 8 } });
     expect(q.guide!.flow).toEqual(plan.cells.map((c) => w.derived.discharge[c]));
     expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
+  });
+});
+
+describe('续画（第九轮 B）：接着别的河画，河不消失', () => {
+  // 陆地上（不是湖）的格都是河：最后一格（汇入的河、海、湖）不算，在终点消失的河的终点算
+  const wet = (w: World, g: Pick<Guide, 'cells' | 'end'>) =>
+    g.cells.filter((c, k) => (k < g.cells.length - 1 || g.end === 'sink') && w.causes.land[c] && w.derived.lake[c] !== 1).every((c) => isRiverCell(w, w.derived, c));
+
+  // 一条画到陆地上就消失的河 A（4 格以上，不碰别的河，不往高处流），世界换成画好之后的
+  function sinkRiver() {
+    const base = continents();
+    const { mesh, derived: d } = base.world;
+    for (let c = 0; c < mesh.n; c += 7) {
+      const w0 = base.world;
+      if (!w0.causes.land[c] || d.lake[c] === 1 || isRiverCell(w0, d, c) || d.elevation[c] < 300) continue;
+      const p = planCourse(w0, d, line(at(w0, c), [mesh.x[c] + 4 * mesh.spacing, mesh.y[c] + 1.5 * mesh.spacing]), { endOnLand: 'sink' });
+      if (p.blocked || p.end !== 'sink' || p.crossings.length || p.reroute || p.merge || p.cells.length < 4 || p.uphill >= 20) continue;
+      const eng = base.clone();
+      eng.exec(courseCmd(p, { id: 'river-a' }));
+      const w = eng.world;
+      const A = w.small.guides[0];
+      // 终点那格有水（水流到那里才消失）
+      if (!wet(w, A)) continue;
+      return { eng, w, A, T: A.cells[A.cells.length - 1] };
+    }
+    throw new Error('找不到一条消失的河');
+  }
+
+  // 从 T 往 16 个方向画 len 格，找第一笔满足 ok 的
+  function around(w: World, T: number, len: number, ok: (s: Pt[]) => boolean): Pt[] | null {
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8;
+      const s = line(at(w, T), [w.mesh.x[T] + len * w.mesh.spacing * Math.cos(a), w.mesh.y[T] + len * w.mesh.spacing * Math.sin(a)]);
+      if (ok(s)) return s;
+    }
+    return null;
+  }
+
+  type Extended = Exclude<ReturnType<typeof extendCourse>, null | { blocked: string }>;
+
+  it('从消失的河的终点往下游接着画：还是这一条河（update_guide），新画的一段全程有水；原来那段照旧', () => {
+    for (const endOnLand of ['flow', 'sink'] as const) {
+      const { eng, w, A, T } = sinkRiver();
+      const before = A.cells.length;
+      let r: Extended | null = null;
+      const s = around(w, T, 5, (s) => {
+        const x = extendCourse(w, w.derived, s, { endOnLand });
+        // 画到陆地上消失的那一笔多半往内陆、往高处画（照样完全按画的走）
+        if (!x || 'blocked' in x || x.plan.crossings.length || (endOnLand === 'flow' && x.plan.uphill >= 20) || x.plan.drawn < before + 3) return false;
+        if (endOnLand === 'sink' ? x.plan.end !== 'sink' : x.plan.end === 'sink') return false;
+        r = x;
+        return true;
+      });
+      expect(s).not.toBeNull();
+      const x = r! as Extended;
+      expect(x.guide.id).toBe('river-a');
+      // 接上：原来的格、折线都在前面
+      expect(x.patch.cells!.slice(0, before)).toEqual(A.cells);
+      expect(x.patch.cells!.length).toBeGreaterThan(before + 2);
+      expect(decodePath(x.patch.path!).slice(0, decodePath(A.path!).length)).toEqual(decodePath(A.path!));
+      eng.exec({ op: 'update_guide', id: 'river-a', patch: x.patch });
+      expect(w.small.guides.length).toBe(1);
+      const g = w.small.guides[0];
+      expect(g.cells).toEqual(x.patch.cells);
+      expect(g.end).toBe(endOnLand === 'sink' ? 'sink' : undefined);
+      expect(g.spring).toBe(true);
+      expect(g.flow).toBe(2);
+      expect(followed(w, g.cells)).toBe(true);
+      expect(wet(w, g)).toBe(true);
+      expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
+    }
+  });
+
+  it('从海里往一条消失的河的终点画（倒过来）：同样是接长这条河', () => {
+    const { w, T } = sinkRiver();
+    // 接长到海里的一笔，倒过来画
+    let fwd: Pt[] | null = null;
+    for (const len of [5, 8, 12, 16]) {
+      fwd ??= around(w, T, len, (s) => {
+        const x = extendCourse(w, w.derived, s, { endOnLand: 'sink' });
+        return !!x && !('blocked' in x) && x.plan.end === 'sea' && !x.plan.crossings.length;
+      });
+    }
+    expect(fwd).not.toBeNull();
+    // 多画进海里一点，再倒过来
+    const sea = fwd![fwd!.length - 1];
+    const back = [...fwd!, [sea[0] + (sea[0] - fwd![0][0]) * 0.1, sea[1] + (sea[1] - fwd![0][1]) * 0.1] as Pt].reverse();
+    const x = extendCourse(w, w.derived, back, { endOnLand: 'sink' });
+    if (!x || 'blocked' in x) throw new Error(x ? x.blocked : '没当作接长');
+    expect(x.guide.id).toBe('river-a');
+    expect(x.plan.reversed).toBe(true);
+    expect(x.plan.end).toBe('sea');
+  });
+
+  it('从消失的河的终点改道（旧的改道命令、顺地势的改道）：它不再消失，水流进改道的河', () => {
+    const { eng, w, A, T } = sinkRiver();
+    const s = around(w, T, 5, (s) => {
+      const p = planCourse(w, w.derived, s, { endOnLand: 'flow' });
+      return !p.blocked && p.reroute && !p.crossings.length && p.uphill < 20;
+    });
+    expect(s).not.toBeNull();
+    const p = planCourse(w, w.derived, s!, { endOnLand: 'flow' });
+    expect(p.cells[0]).toBe(T);
+    eng.exec({ op: 'add_guide', guide: { id: 'river-b', cells: p.cells, path: encodePath(p.path), locked: true, spring: false, name: '' }, reroute: true });
+    const a = w.small.guides.find((g) => g.id === 'river-a')!;
+    expect(a.end).toBeUndefined();
+    expect(a.cells).toEqual(A.cells);
+    expect(a.path).toEqual(A.path);
+    const b = w.small.guides.find((g) => g.id === 'river-b')!;
+    expect(wet(w, a)).toBe(true);
+    expect(wet(w, b)).toBe(true);
+  });
+
+  it('横穿一条消失的河的终点：算作穿过这条河，截走后它不再消失，新河过了交叉处照样有水', () => {
+    const { eng, w, A, T } = sinkRiver();
+    const { mesh } = w;
+    const P = A.cells[A.cells.length - 2];
+    const dx = mesh.x[T] - mesh.x[P];
+    const dy = mesh.y[T] - mesh.y[P];
+    const len = Math.hypot(dx, dy);
+    let plan: CoursePlan | null = null;
+    for (const tilt of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9]) {
+      // 大致垂直于 A 最后一段，两头各 3 格
+      const nx = (-dy / len) * Math.cos(tilt) + (dx / len) * Math.sin(tilt);
+      const ny = (dx / len) * Math.cos(tilt) + (dy / len) * Math.sin(tilt);
+      const L = 3 * mesh.spacing;
+      const p = planCourse(w, w.derived, line([mesh.x[T] - nx * L, mesh.y[T] - ny * L], [mesh.x[T] + nx * L, mesh.y[T] + ny * L]), { endOnLand: 'flow' });
+      if (p.blocked || p.reroute || p.merge || p.uphill >= 20 || !p.cells.slice(1, p.drawn).includes(T) || p.crossings.length !== 1) continue;
+      plan = p;
+      break;
+    }
+    expect(plan).not.toBeNull();
+    const x = plan!.crossings[0];
+    expect(x.guide).toBe('river-a');
+    expect(plan!.cells.slice(x.from, x.to + 1)).toContain(T);
+    eng.exec({ ...courseCmd(plan!, { id: 'river-b' }), capture: true } as Command);
+    const a = w.small.guides.find((g) => g.id === 'river-a')!;
+    expect(a.end).toBeUndefined();
+    expect(a.cells).toEqual(A.cells);
+    const b = w.small.guides.find((g) => g.id === 'river-b')!;
+    expect(followed(w, b.cells)).toBe(true);
+    expect(wet(w, b)).toBe(true);
+    expect(wet(w, a)).toBe(true);
+  });
+
+  it('斜着汇入一条大河：6 个角度都汇得进去，不说“水会绕成圈”，也不当作截走它', () => {
+    const w = continents().world;
+    const { mesh, derived: d } = w;
+    const thr = w.small.planet.riverThreshold;
+    let checked = 0;
+    for (let c = 0; c < mesh.n && checked < 8; c++) {
+      const r = d.receiver[c];
+      if (!isRiverCell(w, d, c) || d.discharge[c] < 4 * thr || r < 0 || !isRiverCell(w, d, r)) continue;
+      const fx = mesh.x[r] - mesh.x[c];
+      const fy = mesh.y[r] - mesh.y[c];
+      const fl = Math.hypot(fx, fy);
+      const L = 4 * mesh.spacing;
+      // 从上游一侧斜着来、垂直着来、从下游一侧斜着来，两岸各三个
+      const strokes = [45, 90, 135, -45, -90, -135].map((deg) => {
+        const t = (deg * Math.PI) / 180;
+        const ux = -(fx * Math.cos(t) - fy * Math.sin(t)) / fl;
+        const uy = -(fx * Math.sin(t) + fy * Math.cos(t)) / fl;
+        return line([mesh.x[c] + ux * L, mesh.y[c] + uy * L], at(w, c));
+      });
+      const plans = strokes.map((s) => {
+        const k = findCell(mesh, ...s[0]);
+        const inside = s[0][0] >= 0 && s[0][1] >= 0 && s[0][0] <= mesh.width && s[0][1] <= mesh.height;
+        return inside && w.causes.land[k] && d.lake[k] !== 1 && !isRiverCell(w, d, k) ? planCourse(w, d, s, { endOnLand: 'sink' }) : null;
+      });
+      // 起点都要在陆地上；路上穿过别的流域的河、先进了海的不算
+      if (plans.some((p) => !p || (p.end !== null && p.end !== 'river') || p.crossings.some((x) => d.basin[x.cell] !== d.basin[c]))) continue;
+      checked++;
+      for (const p of plans) {
+        expect(p!.blocked).toBeNull();
+        expect(p!.end).toBe('river');
+        expect(p!.crossings).toEqual([]);
+        // 汇入的那格在这条大河上（或马上就汇进它的支流上）
+        expect(d.basin[p!.join]).toBe(d.basin[c]);
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(5);
   });
 });
