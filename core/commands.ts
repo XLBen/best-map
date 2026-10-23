@@ -39,7 +39,7 @@ import {
   restoredLandDelta,
   roundKm,
 } from './terrain';
-import { REGION_KIND_INFO } from './features';
+import { type NameCarry, REGION_KIND_INFO, applyNameCarry } from './features';
 import type { Mesh } from './mesh';
 import { cutPathAtCell, ownsCell } from './rivers';
 import {
@@ -205,8 +205,19 @@ const baseCommands = [
   z.object({ op: z.literal('remove_lake_type'), id: z.string() }),
 ] as const;
 
-// provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用
-export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & { provinceNames?: Record<string, string> };
+// provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
+// nameCarry：这一步之后为了地名不乱跳留下的名字、挪过去的改名（见 features.ts 的 carryNames），同样由引擎记下、照用
+export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & {
+  provinceNames?: Record<string, string>;
+  nameCarry?: NameCarry;
+};
+
+// 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
+const featureKey = z.string().regex(/^\w+:\S+$/);
+const nameCarrySchema = z.object({
+  keep: z.record(featureKey, z.object({ name: z.string(), ctx: z.string() }).nullable()).optional(),
+  move: z.record(featureKey, featureKey).optional(),
+});
 
 const single = z.discriminatedUnion('op', baseCommands);
 export const commandSchema: z.ZodType<Command> = z.lazy(() =>
@@ -292,7 +303,10 @@ export function applyCommand(
   input: Command,
   ctx: ApplyContext,
 ): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean; provinceNames: Record<string, string> | null } {
-  const { provinceNames: stored, ...raw } = input;
+  const { provinceNames: stored, nameCarry: carryInput, ...raw } = input;
+  const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
+  if (carry && !carry.success) throw new CommandError(`命令里记下的地名无效：${formatIssues(carry.error)}`);
+  const nameCarry = carry?.data;
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
@@ -310,6 +324,7 @@ export function applyCommand(
         if (p && !idsBefore.has(id)) p.name = name;
       }
     }
+    if (nameCarry) applyNameCarry(world.small, nameCarry);
   } catch (e) {
     // 失败时恢复，保证命令要么完整生效要么不生效
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));

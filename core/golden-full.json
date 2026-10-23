@@ -59,9 +59,9 @@
   "derived.currentX": "8b2058c7c73ea31e",
   "derived.currentY": "8b2058c7c73ea31e",
   "derived.sstAnom": "8b2058c7c73ea31e",
-  "derived.features": "6ada7e4f6d62ce57",
+  "derived.features": "1dc456c78d6ba7dc",
   "derived.conflicts": "697c68989dbcce92",
-  "small": "9d195882e85037b8"
+  "small": "c5773c3e33b5f778"
  },
  "planet": {
   "mesh.x": "edbabd66920764cd",
@@ -126,8 +126,8 @@
   "derived.currentX": "daf9f25265bc4c7a",
   "derived.currentY": "e231f3f0ce14af61",
   "derived.sstAnom": "fbc90c3f0c9105be",
-  "derived.features": "711b22c5b2c46c2a",
+  "derived.features": "f351f64824785e8a",
   "derived.conflicts": "5b5b0211eb7aea7d",
-  "small": "756a81fab443b31d"
+  "small": "4b63a7b183e6a129"
  }
 }
