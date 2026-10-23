@@ -69,17 +69,110 @@ function noiseFactors(mesh: Mesh, seed: number): NoiseFactors {
   return f;
 }
 
+// 按陆块复用（第九轮 A2）：一块陆地（陆格的连通块）的高程只取决于它自己——海岸距离只沿陆格走、路由与
+// 汇水只在它里面（出口指向海，海格的 h 是 0）、扩散只看它的陆格与海（0）、噪声与面积只取决于网格。
+// 路由的洪泛顺序在两块陆地之间会交错，但同一块陆地里任意两格的先后只取决于这块陆地本身（同高时按入堆先后，
+// 入堆先后又由同一块里更早弹出的格决定，出口按编号入堆），所以只算一部分陆块时，这些陆块的每一格逐值相同。
+// 记下最近两次的输入（海陆、抬升、岩性）与结果（扩散后的 h、海岸距离）：一块陆地的格、它外面一圈的海、
+// 格上的抬升与岩性都与某一次逐字节相同时直接用那一次的值，其余的陆块（改过的、新出现的）一起重算。
+interface ElevationMemoEntry {
+  seed: number;
+  kmPerUnit: number;
+  land: Uint8Array;
+  uplift: Uint32Array;
+  erod: Uint32Array;
+  h: Float64Array;
+  coastKm: Float64Array;
+}
+const elevMemo = new WeakMap<Mesh, ElevationMemoEntry[]>();
+// 测试用：on = false 时不读也不写缓存；reused、computed：复用、重算的陆块数
+export const elevationMemo = { on: true, reused: 0, computed: 0 };
+
+const bitsOf = (a: Float32Array) => new Uint32Array(a.buffer, a.byteOffset, a.length);
+
+// 陆块 cells（land 的一个连通块）在 e 里是同一块、抬升与岩性逐位相同
+function sameComponent(mesh: Mesh, land: Uint8Array, uplift: Uint32Array, erod: Uint32Array, cells: Int32Array, e: ElevationMemoEntry): boolean {
+  const { off, adj } = mesh;
+  for (let k = 0; k < cells.length; k++) {
+    const c = cells[k];
+    if (e.land[c] !== 1 || e.uplift[c] !== uplift[c] || e.erod[c] !== erod[c]) return false;
+    for (let q = off[c]; q < off[c + 1]; q++) {
+      const j = adj[q];
+      if (!land[j] && e.land[j]) return false;
+    }
+  }
+  return true;
+}
+
 export function computeElevation(world: World): ElevationResult {
-  const { mesh, causes, small, kmPerUnit } = world;
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const seed = world.settings.seed;
+  const { fu, fk, fs } = noiseFactors(mesh, seed);
+  const upBits = bitsOf(causes.uplift);
+  const erBits = bitsOf(causes.erod);
+
+  // 要算的陆格（todo = 1）；能复用的陆块直接写进 h、coastKm
+  const h = new Float64Array(n);
+  const coastKm = new Float64Array(n).fill(1e5);
+  const todo = new Uint8Array(n);
+  const entries = elevationMemo.on ? (elevMemo.get(mesh) ?? []).filter((e) => e.seed === seed && e.kmPerUnit === kmPerUnit) : [];
+  let todoCount = 0;
+  {
+    const seen = new Uint8Array(n);
+    const queue = new Int32Array(n);
+    for (let s = 0; s < n; s++) {
+      if (!land[s] || seen[s]) continue;
+      let len = 0;
+      queue[len++] = s;
+      seen[s] = 1;
+      for (let q = 0; q < len; q++) {
+        const c = queue[q];
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (land[j] && !seen[j]) {
+            seen[j] = 1;
+            queue[len++] = j;
+          }
+        }
+      }
+      const cells = queue.subarray(0, len);
+      const hit = entries.find((e) => sameComponent(mesh, land, upBits, erBits, cells, e));
+      if (hit) {
+        elevationMemo.reused++;
+        for (let k = 0; k < len; k++) {
+          const c = cells[k];
+          h[c] = hit.h[c];
+          coastKm[c] = hit.coastKm[c];
+        }
+      } else {
+        elevationMemo.computed++;
+        for (let k = 0; k < len; k++) todo[cells[k]] = 1;
+        todoCount += len;
+      }
+    }
+  }
+  // 缓存关掉时照旧总是走一遍（没有陆地也路由 12 轮），与原来的每一步相同
+  if (todoCount > 0 || !elevationMemo.on) solveLand(world, todo, fu, fk, fs, h, coastKm);
+  if (elevationMemo.on) {
+    const entry: ElevationMemoEntry = { seed, kmPerUnit, land: land.slice(), uplift: upBits.slice(), erod: erBits.slice(), h: h.slice(), coastKm: coastKm.slice() };
+    elevMemo.set(mesh, [entry, ...(elevMemo.get(mesh) ?? [])].slice(0, 2));
+  }
+  return finishElevation(world, h, coastKm);
+}
+
+// 只算 todo 里的陆块（若干个完整的陆块）：写进 h（扩散后的）与 coastKm，别的格不动
+function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64Array, fs: Float64Array, h: Float64Array, coastKm: Float64Array) {
+  const { mesh, causes, kmPerUnit } = world;
   const n = mesh.n;
   const land = causes.land;
   const sphere = mesh.kind === 'sphere' ? mesh : null;
-  const { fu, fk, fs } = noiseFactors(mesh, world.settings.seed);
 
   // 海岸距离：从挨海的陆格出发只走陆格（陆上的距离与海上互不影响，海上的用不到）
   const coastCells: number[] = [];
   for (let i = 0; i < n; i++) {
-    if (!land[i]) continue;
+    if (!todo[i]) continue;
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       if (land[mesh.adj[e]] !== land[i]) {
         coastCells.push(i);
@@ -88,8 +181,7 @@ export function computeElevation(world: World): ElevationResult {
     }
   }
   const coast = graphDistance(mesh, coastCells, Infinity, (i, j, e) => (land[i] === land[j] ? mesh.dist[e] : Infinity));
-  const coastKm = new Float64Array(n);
-  for (let i = 0; i < n; i++) coastKm[i] = Number.isFinite(coast[i]) ? coast[i] * kmPerUnit : 1e5;
+  for (let i = 0; i < n; i++) if (todo[i]) coastKm[i] = Number.isFinite(coast[i]) ? coast[i] * kmPerUnit : 1e5;
 
   const u = new Float64Array(n);
   const K = new Float64Array(n);
@@ -98,6 +190,7 @@ export function computeElevation(world: World): ElevationResult {
   // 整个星球按布局尺度（半圈经线的一半）算，和同样格距的地区地图相当
   const areaReg = sphere ? (mesh.totalArea * (kmPerUnit / 2) * (kmPerUnit / 2)) / 20000 : (mesh.width * mesh.height * kmPerUnit * kmPerUnit) / 20000;
   for (let i = 0; i < n; i++) {
+    if (!todo[i]) continue;
     // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
     u[i] = (0.035 + causes.uplift[i]) * fu[i];
     K[i] = causes.erod[i] * fk[i];
@@ -106,16 +199,15 @@ export function computeElevation(world: World): ElevationResult {
   // 画的河不改地形的求解：求解之后再挖河床（carveBeds），周围的山不动
 
   // 初始高程：按离海距离给一个缓坡加噪声（固定初值，结果只取决于原因）
-  const h = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    if (!land[i]) continue;
+    if (!todo[i]) continue;
     h[i] = coastKm[i] * 0.002 * (0.3 + u[i]) + 0.05 * (1 + fs[i]);
   }
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
   // 活动格与强制方向各轮相同：路由的出口、缓冲区只建一次
   // 传一张全是 -1 的强制方向表（没有哪格强制）：与不传时的路由在平局时的先后不同，一直是这样算的，金标准按它记
-  const router = new Router(mesh, land, new Int32Array(n).fill(-1));
+  const router = new Router(mesh, todo, new Int32Array(n).fill(-1));
   const A = new Float64Array(n);
   // A^m 很费时：汇水面积与上一轮完全相同的格（源头格每轮都是）沿用上一轮的值
   const lastA = new Float64Array(n).fill(-1);
@@ -139,12 +231,10 @@ export function computeElevation(world: World): ElevationResult {
   }
 
   // 坡面过程：轻度扩散，削掉单格尖峰
-  const scale = small.planet.mountainScale * RAW_TO_M;
-  const elevation = new Float32Array(n);
   const tmp = Float64Array.from(h);
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < n; i++) {
-      if (!land[i]) continue;
+      if (!todo[i]) continue;
       let s = 0;
       let w = 0;
       for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
@@ -157,6 +247,15 @@ export function computeElevation(world: World): ElevationResult {
     }
     h.set(tmp);
   }
+}
+
+// 扩散后的 h 换成米、海底取地壳高度、挖用户放的湖
+function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): ElevationResult {
+  const { mesh, causes, small } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const scale = small.planet.mountainScale * RAW_TO_M;
+  const elevation = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     if (land[i]) {
       elevation[i] = Math.max(2, h[i] * scale);

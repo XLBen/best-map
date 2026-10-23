@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { coastalStroke, digest, digestWorld } from '../tools/hash';
 import { SWEEPS, computeClimate, planeMemo, setSweeps } from './climate';
+import { elevationMemo } from './elevation';
 import { Engine } from './engine';
 import { computeHydrology, routeMemo } from './hydrology';
 import { PLANET_SWEEPS, computeClimateSphere, sphereMemo } from './planet-climate';
@@ -10,7 +11,7 @@ import { type Derived, type World, emptyDerived } from './world';
 // 气候里只取决于地形的部分、汇流按内容缓存：用缓存与从头算（关掉缓存）逐值相同。
 // 键里每一项都单独改一次：缓存必须错过，结果与从头算相同；只改气候的输入时必须命中
 
-const memos = [planeMemo, sphereMemo, routeMemo];
+const memos = [planeMemo, sphereMemo, routeMemo, elevationMemo];
 const counts = (m: { hit: number; miss: number }) => [m.hit, m.miss];
 
 function fresh<T>(f: () => T): T {

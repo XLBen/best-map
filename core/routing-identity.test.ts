@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
-import { type ElevationResult, computeElevation } from './elevation';
+import { type ElevationResult, computeElevation, elevationMemo } from './elevation';
 import { MinHeap } from './heap';
 import { type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
@@ -217,13 +217,20 @@ describe('高程与原来的写法逐值一致', () => {
         const want = computeElevationOld(w);
         const wantTrace = trace;
         trace = [];
+        // 逐轮比路由的输入：按陆块复用的缓存关掉（开着时只算改过的陆块，每轮的 h 只有那几块）
+        elevationMemo.on = false;
         const got = computeElevation(w);
+        elevationMemo.on = true;
         expect(trace.length, label).toBe(12);
         expect(trace, label).toEqual(wantTrace);
         expect(digest(got.elevation), label).toBe(digest(want.elevation));
         // 海岸距离只沿陆格算：陆格与原来相同，海格不再算（1e5）
         const coast = Float64Array.from(want.coastKm, (v, i) => (w.causes.land[i] ? v : 1e5));
         expect(digest(got.coastKm), label).toBe(digest(coast));
+        // 缓存开着（复用上一个变体里没变的陆块）：结果相同
+        const memo = computeElevation(w);
+        expect(digest(memo.elevation), label).toBe(digest(want.elevation));
+        expect(digest(memo.coastKm), label).toBe(digest(coast));
       }
     } finally {
       Router.prototype.route = routeNew;
