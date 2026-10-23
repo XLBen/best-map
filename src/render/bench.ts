@@ -154,6 +154,12 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
       h.draw();
       flush();
       out[`${name}:settle`] = stats([performance.now() - t], [glTime]);
+      // 停下以后的第二帧（叠加层按停稳的画法重画河、地名；分两帧补画时那一半在这里）
+      glTime = 0;
+      const t2 = performance.now();
+      h.draw();
+      flush();
+      out[`${name}:settle2`] = stats([performance.now() - t2], [glTime]);
     }
   } finally {
     renderer.render = orig;
@@ -298,7 +304,7 @@ async function idb<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBR
 async function shoot(h: ShotHooks, name: (typeof REF_NAMES)[number]): Promise<ImageData> {
   h.renderer.camera = refCamera(name, h.spacing(), h.canvas.clientWidth);
   h.draw();
-  // 停稳（镜头不动 150 毫秒以上）再截
+  // 停稳（镜头不动 250 毫秒以上）再截
   await new Promise((r) => setTimeout(r, 400));
   const c = h.snapshot();
   return c.getContext('2d')!.getImageData(0, 0, c.width, c.height);

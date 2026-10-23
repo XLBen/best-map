@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BARE_RGB, blendRgb } from './biome-look';
+import { shoreCrossing } from './display';
 import { hexToRgb } from './export';
 import type { Mesh } from './mesh';
 import { type RiverLine, smoothCourse, traceRivers } from './rivers';
@@ -53,7 +54,8 @@ describe('coastValueAt 与 coastValues 逐位相同', () => {
 });
 
 describe('smoothCourse：河道与抽出前逐位相同', () => {
-  // 抽出前的 traceRivers（曲流与 Chaikin 平滑写在循环里）
+  // 抽出前的 traceRivers（曲流与 Chaikin 平滑写在循环里）。第十二轮起入海、入湖的河画到画面上的岸线（shoreCrossing，
+  // 找不到时退回两格的中点），出湖的河从湖岸画起：这里照样改了，其余逐位照旧
   function traceBefore(world: World): RiverLine[] {
     const { mesh, derived: d, causes, small } = world;
     const n = mesh.n;
@@ -73,11 +75,21 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     const meander = 0.22 * mesh.spacing;
     const sphere = mesh.kind === 'sphere';
     const xAt = (c: number, ref: number) => (sphere ? ref + (mesh.x[c] - ref - 2 * Math.round((mesh.x[c] - ref) / 2)) : mesh.x[c]);
+    const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     for (const s of sources) {
       const pts: [number, number][] = [];
       const flow: number[] = [];
       let c = s;
       let cx = mesh.x[s];
+      let donor = -1;
+      for (let j = 0; j < n; j++) {
+        if (!causes.land[j] || d.lake[j] !== 1 || d.receiver[j] !== s) continue;
+        if (donor < 0 || d.discharge[j] > d.discharge[donor] || (d.discharge[j] === d.discharge[donor] && j < donor)) donor = j;
+      }
+      if (donor >= 0) {
+        pts.push(shore([cx, mesh.y[s]], [xAt(donor, cx), mesh.y[donor]], s, donor));
+        flow.push(d.discharge[s]);
+      }
       for (let guard = 0; guard < n; guard++) {
         cx = xAt(c, cx);
         pts.push([cx, mesh.y[c]]);
@@ -86,7 +98,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
         const r = d.receiver[c];
         if (r < 0) break;
         if (!causes.land[r] || d.lake[r] === 1) {
-          pts.push([(cx + xAt(r, cx)) / 2, (mesh.y[c] + mesh.y[r]) / 2]);
+          pts.push(shore([cx, mesh.y[c]], [xAt(r, cx), mesh.y[r]], c, r));
           flow.push(d.discharge[c]);
           break;
         }

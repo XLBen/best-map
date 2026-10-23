@@ -19,6 +19,8 @@ import type { GhostLayers } from './colors';
 // 海岸噪声与 core/subcell.ts 逐位一致，导出的位图与屏幕一致。
 
 const TEX_W = 1024;
+// 海底的坡在晕渲里打几折（海底的坡比陆上陡得多，照陆上那样夸张会一片花）
+const SEA_RELIEF = 0.25;
 
 const NOISE_GLSL = `
 uint hashU(ivec2 p) {
@@ -150,11 +152,13 @@ uniform sampler2D uOther;
 uniform highp sampler2D uElev;
 uniform highp sampler2D uCoast;
 uniform highp sampler2D uGrad;
+uniform highp sampler2D uSeaGrad;
 out vec4 vLandCol;
 out vec4 vSeaCol;
 out float vElev;
 out float vCoast;
 out vec2 vGrad;
+out vec2 vSeaGrad;
 out vec2 vWorld;
 out vec3 vBary;
 flat out int vCell;
@@ -170,6 +174,7 @@ void main() {
   vSeaCol = isLand ? other : col;
   vElev = texelFetch(uElev, t, 0).r;
   vGrad = texelFetch(uGrad, t, 0).rg;
+  vSeaGrad = texelFetch(uSeaGrad, t, 0).rg;
   vWorld = aPos;
   vBary = aBary;
   vCell = c;
@@ -203,6 +208,7 @@ in vec4 vSeaCol;
 in float vElev;
 in float vCoast;
 in vec2 vGrad;
+in vec2 vSeaGrad;
 in vec2 vWorld;
 in vec3 vBary;
 uniform float uSpacing;
@@ -289,6 +295,8 @@ void main() {
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
+    // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
+    slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
   }
   oColor = vec4(col, coastLine);
   oHeight = vec4(hh, s, slope);
@@ -397,8 +405,11 @@ uniform vec2 uTexel;
 // 场景（地形层、编号层、切线层）上的位置 = 画面上的位置 × xy + zw。停稳时是 (1, 1, 0, 0)；
 // 移动中场景是按稍早的镜头、带边距、低分辨率画的那一份（见 Renderer.renderMoving）
 uniform vec4 uSceneXf;
-// 画面一个像素合几个屏幕像素（停稳 1，移动中按低分辨率画时 > 1）：斜线照屏幕像素的宽度画
+// 画面一个像素合几个屏幕像素（停稳 1，移动中按低分辨率画时 > 1）：斜线照屏幕像素的宽度画，省界、轮廓按它淡一些
 uniform float uPxScale;
+// 场景的一个像素合几个屏幕像素（停稳 1；移动中场景按低分辨率画、放大挪用时更大）：海岸线在场景上画成约 1.2 个像素宽，
+// 合到屏幕上变宽了多少倍就淡多少倍，移动中海岸线不会变深
+uniform float uScenePx;
 uniform vec4 uView;
 uniform float uSpacing;
 uniform float uRelief;
@@ -452,7 +463,11 @@ float hlAlpha(float A) { return A > 128.5 ? (A - 128.0) / 127.0 : A < 127.5 ? A 
 ${FX_BEGIN}${PATTERN_GLSL}${FX_END}
 void main() {
   vec2 sUv = vUv * uSceneXf.xy + uSceneXf.zw;
-  vec4 base = texture(uSceneColor, sUv);
+  // 颜色按像素所在的那个场景像素取（与陆海判定的高度层同一个像素）：移动中场景挪了不到一个像素时，
+  // 线性插值会把海色混进海边的陆地像素（海岸发暗）。海岸线的浓淡（alpha）照旧插值，线是平滑的。停稳时两者完全相同
+  ivec2 sSize = textureSize(uSceneColor, 0);
+  ivec2 sPx = clamp(ivec2(floor(sUv * vec2(sSize))), ivec2(0), sSize - 1);
+  vec4 base = vec4(texelFetch(uSceneColor, sPx, 0).rgb, texture(uSceneColor, sUv).a);
   vec4 hs = texture(uSceneHeight, sUv);
   float h = hs.r;
   bool land = hs.g > 0.0;
@@ -500,19 +515,42 @@ void main() {
       col = mix(col, vec3(0.93, 0.87, 0.72), 0.45);
       col *= mix(vec3(0.62, 0.52, 0.42), vec3(1.04, 1.02, 0.98), clamp(shade - 0.3, 0.0, 1.0));
     } else {
+      // 按水深分层（0–200、200–1000、1000–3000、3000 m 以下），层与层之间一道淡淡的等深线；海底的坡轻轻晕渲
       float depth = -h;
-      col = mix(vec3(0.70, 0.80, 0.83), vec3(0.80, 0.88, 0.89), 1.0 - smoothstep(20.0, 300.0, depth));
+      float fw = max(fwidth(depth), 1e-3);
+      col = vec3(0.80, 0.88, 0.89);
+      col = mix(col, vec3(0.73, 0.83, 0.86), smoothstep(200.0 - fw, 200.0 + fw, depth));
+      col = mix(col, vec3(0.66, 0.77, 0.82), smoothstep(1000.0 - fw, 1000.0 + fw, depth));
+      col = mix(col, vec3(0.59, 0.71, 0.78), smoothstep(3000.0 - fw, 3000.0 + fw, depth));
+      float iso = 0.0;
+      for (int k = 0; k < 3; k++) {
+        float T = k == 0 ? 200.0 : k == 1 ? 1000.0 : 3000.0;
+        iso = max(iso, 1.0 - smoothstep(0.5, 1.5, abs(depth - T) / fw));
+      }
+      col = mix(col, vec3(0.45, 0.58, 0.66), 0.35 * iso);
+      col *= mix(1.0, 0.94 + 0.06 * shade, uShade);
     }
   } else if (land) {
     col *= mix(1.0, shade, uShade);
   } else {
-    col *= mix(1.0, 0.92 + 0.08 * shade, uShade);
+    col *= mix(1.0, 0.86 + 0.14 * shade, uShade);
   }
   // 湖泊类型：A 的低两位是水面的画法（1 染色、2 干湖底那样的盐壳），再两位是陆上的（1 湖岸的光晕、2 干涸湖底的盐壳），
   // 16 是发光（湖面亮一些）。盐壳是干湖底的颜色与类型的颜色各一半
   if (uHasTint == 1 && id >= 0) {
     vec4 tc = cellTex(uTint, id);
     int A = int(tc.a * 255.0 + 0.5);
+    // 扭曲后取到的格与像素的水陆不合（湖岸附近：画成湖面的像素取到了岸上的格，或者反过来）时，
+    // 换成没扭曲的最近格（它有这一边的画法时）：湖面的颜色一直染到画出来的湖岸
+    int id0 = idAt(vUv);
+    if (id0 >= 0 && id0 != id && ((land ? (A >> 2) & 3 : A & 3) == 0)) {
+      vec4 t0 = cellTex(uTint, id0);
+      int A0 = int(t0.a * 255.0 + 0.5);
+      if ((land ? (A0 >> 2) & 3 : A0 & 3) != 0) {
+        tc = t0;
+        A = A0;
+      }
+    }
     if (A > 0) {
       int wm = A & 3;
       int lm = (A >> 2) & 3;
@@ -535,7 +573,7 @@ void main() {
   ${FX_END}
 
   // 海岸线：地形层画好的抗锯齿细线
-  col = mix(col, uStyle == 1 ? vec3(0.35, 0.27, 0.2) : vec3(0.18, 0.22, 0.24), base.a * (uStyle == 1 ? 0.8 : 0.4));
+  col = mix(col, uStyle == 1 ? vec3(0.35, 0.27, 0.2) : vec3(0.18, 0.22, 0.24), base.a * (uStyle == 1 ? 0.8 : 0.4) / sqrt(max(uScenePx, 1.0)));
 
   // 分组边界（省份）：扭曲坐标下相邻像素的分组不同
   if (uHasGroup == 1 && id >= 0) {
@@ -550,7 +588,7 @@ void main() {
     // 缩小到省份只有十几像素宽时淡出（看省有多大，不看格有多大），否则全图视角下边界会密成一张网；
     // 格比一个像素还小时也淡出（扭曲后取到的格在像素之间乱跳，边界碎成噪点）
     float fade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);
-    if (bx || by) col = mix(col, uStyle == 1 ? vec3(0.45, 0.2, 0.15) : vec3(0.12, 0.1, 0.08), (g0 > 0.0 ? 0.55 : 0.15) * fade);
+    if (bx || by) col = mix(col, uStyle == 1 ? vec3(0.45, 0.2, 0.15) : vec3(0.12, 0.1, 0.08), (g0 > 0.0 ? 0.55 : 0.15) * fade / uPxScale);
   }
 
   // 高亮与轮廓
@@ -579,7 +617,7 @@ void main() {
     if (on0 != (Ax > 0.5) || on0 != (Ay > 0.5)) {
       bool lineOnly = abs(A0 - 128.0) < 0.5 || abs(Ax - 128.0) < 0.5 || abs(Ay - 128.0) < 0.5;
       float oa = max(a0, max(hlAlpha(Ax), hlAlpha(Ay)));
-      col = mix(col, vec3(1.0), lineOnly ? 0.75 : 0.9 * min(1.0, oa / 0.18));
+      col = mix(col, vec3(1.0), (lineOnly ? 0.75 : 0.9 * min(1.0, oa / 0.18)) / uPxScale);
     }
   }
   if (id < 0) col = vec3(0.08, 0.1, 0.14);
@@ -655,6 +693,7 @@ in vec4 vSeaCol;
 in float vElev;
 in float vCoast;
 in vec2 vGrad;
+in vec2 vSeaGrad;
 in vec2 vWorld;
 in vec3 vBary;
 uniform float uSpacing;
@@ -753,6 +792,8 @@ void main() {
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
+    // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
+    slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
   }
   oColor = vec4(col, coastLine);
   oHeight = vec4(hh, s, slope);
@@ -828,6 +869,8 @@ export interface CellLayers {
   elevation: Float32Array;
   coast: Float32Array;
   grad: Float32Array;
+  // 海底的坡度（每格两个值，地图坐标；陆地、湖为 0）：海的晕渲。省略时没有
+  seaGrad?: Float32Array;
   // 分类平涂（alpha = 覆盖度），null 不画
   flat: Uint8Array | null;
   // 分组（省份），画分组边界；每格两个值（分组编号、切线用的标记，见 colors.ts 的 provinceGroups）；null 不画
@@ -862,12 +905,12 @@ interface SceneTarget {
   depth: WebGLRenderbuffer;
 }
 
-// 镜头停下多久以后按停稳的画法（全分辨率）补画一帧（毫秒）
-export const SETTLE_MS = 150;
+// 镜头停下多久以后按停稳的画法（全分辨率）补画一帧（毫秒）：触控板平移中间的小停顿不算停下
+export const SETTLE_MS = 250;
 // 移动中：场景、合成按画布的几分之一分辨率画；场景四周各多画画面宽高的几分之一（平移时挪用）；
 // 放大到场景画的时候的几倍以内照样挪用（再大就太糊，重画）
 const MOTION_SCALE = 0.5;
-const MOTION_MARGIN = 0.2;
+const MOTION_MARGIN = 0.35;
 const MOTION_MAX_ZOOM_IN = 1.3;
 
 // 每格的三角形（地形层）在地图上伸到多远：相对格中心的 minDx, maxDx, minDy, maxDy。
@@ -914,7 +957,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint', WebGLTexture>;
   // 场景（编号层、地形层、切线层）：停稳时画在与画布一样大的一组目标上；移动中画在低分辨率、带边距的另一组上
   private rest: SceneTarget;
   private moving: SceneTarget;
@@ -965,6 +1008,11 @@ export class Renderer {
   private movedAt = -Infinity;
   // 移动中的场景是按哪个镜头、哪些输入画的（同样的输入、镜头还在边距之内就不重画）
   private movingScene: { cam: Camera; key: string } | null = null;
+  // 移动中的场景每重画一次加一：叠加层的河、地名在同一帧跟着重画（几样缓存同时重建，卡一下而不是先后卡几下）
+  motionEpoch = 0;
+  // 这一帧是停下后补画的第一帧（停稳的画法）：叠加层这一帧先照移动中的样子贴，下一帧再按停稳的画（两样重活分在两帧）
+  justSettled = false;
+  private wasMoving = false;
   // 分组、平涂：setLayers 给的底子与现在显示的（省份预览覆盖时不同）。换预览时只上传变了的行
   private groupBase: Float32Array | null = null;
   private groupShown: Float32Array | null = null;
@@ -996,7 +1044,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t() };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1189,6 +1237,7 @@ export class Renderer {
     this.upload(this.tex.elev, l.elevation, n, 1);
     this.upload(this.tex.coast, l.coast, n, 1);
     this.upload(this.tex.grad, l.grad, n, 2);
+    this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
     this.hasFlat = !!l.flat;
     if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
@@ -1475,8 +1524,13 @@ export class Renderer {
     }
     if (!opts.still && now - this.movedAt < SETTLE_MS) {
       this.renderMoving(kmPerUnit);
+      this.wasMoving = true;
+      this.justSettled = false;
       return true;
     }
+    // 导出、截图（still）不算停下：真正停下的那一帧照样分两帧补画
+    this.justSettled = this.wasMoving && !opts.still;
+    if (!opts.still) this.wasMoving = false;
     this.renderStill(kmPerUnit);
     return false;
   }
@@ -1543,7 +1597,7 @@ export class Renderer {
       this.drawSeams(t, view, cam.x, halfW);
     }
     this.composeKey = composeKey;
-    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], mesh.spacing * cam.zoom * dpr, 1, relief, hasSeams);
+    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], mesh.spacing * cam.zoom * dpr, 1, 1, relief, hasSeams);
   }
 
   // 移动中的画法：场景按 MOTION_SCALE 的分辨率、四周各多画 MOTION_MARGIN 画在另一组目标上；镜头还在边距之内、
@@ -1586,6 +1640,7 @@ export class Renderer {
     if (!sc || sc.key !== key || !fits(sc.cam)) {
       sc = { cam: { ...cam }, key };
       this.movingScene = sc;
+      this.motionEpoch++;
       const z = cam.zoom * k;
       const sx = (2 * z) / sw;
       const sy = (-2 * z) / sh;
@@ -1608,7 +1663,7 @@ export class Renderer {
     const sy = (-2 * z1) / oh;
     const view: V4 = [sx, sy, -cam.x * sx, -cam.y * sy];
     gl.viewport(0, 0, ow, oh);
-    this.compose(this.out.fbo, this.moving, view, xf, [1 / ow, 1 / oh], mesh.spacing * z1, w / ow, this.reliefNow(), hasSeams);
+    this.compose(this.out.fbo, this.moving, view, xf, [1 / ow, 1 / oh], mesh.spacing * z1, w / ow, (z1 / z0) * (w / ow), this.reliefNow(), hasSeams);
     // 放大拷到画布上
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.out.fbo);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
@@ -1660,7 +1715,7 @@ export class Renderer {
     this.drawTerrain(E.scene, tv.scene, 1 / Z, copy0, copies, coastAmp, kmPerUnit, null);
     if (hasSeams) this.drawSeams(E.scene, tv.scene, tv.cx, tv.halfW);
     gl.viewport(0, 0, T, T);
-    this.compose(E.fbo, E.scene, tv.out, tv.xf, [1 / T, 1 / T], mesh.spacing * Z, 1, this.reliefAt(zoom), hasSeams);
+    this.compose(E.fbo, E.scene, tv.out, tv.xf, [1 / T, 1 / T], mesh.spacing * Z, 1, 1, this.reliefAt(zoom), hasSeams);
     const px = new Uint8Array(T * T * 4);
     gl.readPixels(0, 0, T, T, gl.RGBA, gl.UNSIGNED_BYTE, px);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -1721,6 +1776,7 @@ export class Renderer {
     this.bindTex(pt, 'uCoast', this.tex.coast, 2);
     this.bindTex(pt, 'uGrad', this.tex.grad, 3);
     this.bindTex(pt, 'uOther', this.tex.other, 4);
+    this.bindTex(pt, 'uSeaGrad', this.tex.seaGrad, 5);
     gl.bindVertexArray(this.triVao);
     if (pp) {
       gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);
@@ -1767,8 +1823,8 @@ export class Renderer {
   }
 
   // 4. 合成：画进 fb（null 是画布）。xf：画面上的位置 → 场景 t 上的位置；texel：画面一个像素（0–1）；
-  // cellPx：一格合画面几个像素；pxScale：画面一个像素合几个屏幕像素
-  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, relief: number, hasSeams: boolean) {
+  // cellPx：一格合画面几个像素；pxScale：画面一个像素合几个屏幕像素；scenePx：场景一个像素合几个屏幕像素
+  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean) {
     const gl = this.gl;
     const mesh = this.mesh!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
@@ -1792,6 +1848,7 @@ export class Renderer {
     gl.uniform4fv(gl.getUniformLocation(pc, 'uView'), view);
     gl.uniform4fv(gl.getUniformLocation(pc, 'uSceneXf'), xf);
     gl.uniform1f(gl.getUniformLocation(pc, 'uPxScale'), pxScale);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uScenePx'), scenePx);
     gl.uniform1f(gl.getUniformLocation(pc, 'uSpacing'), mesh.spacing);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRelief'), relief);
     gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), cellPx);

@@ -19,8 +19,9 @@ export interface ExportFrame {
   cam: Camera;
 }
 
-// 地图的范围（地图单位，左上角在原点）：一块地区是 aspect × 1，整个星球是 2 × 1（经度 360°，一份，不重复）
-export function exportFrame(map: { width: number; height: number }, width: number, labels: LabelSize): ExportFrame {
+// 地图的范围（地图单位，左上角在原点）：一块地区是 aspect × 1，整个星球是 2 × 1（经度 360°，一份，不重复）。
+// seamX（整个星球）：图的左右边（分界线）在哪个 x（[0, 2)，0 是经度 180°）；省略为 0
+export function exportFrame(map: { width: number; height: number }, width: number, labels: LabelSize, seamX = 0): ExportFrame {
   const W = Math.max(2, Math.round(width));
   const H = Math.max(2, Math.round((W * map.height) / map.width));
   // 图比参考窗口还窄时不缩小字（按 1:1 画）
@@ -29,9 +30,65 @@ export function exportFrame(map: { width: number; height: number }, width: numbe
   const zoom = ref / map.width;
   const cw = W / dpr;
   const ch = H / dpr;
-  // 左上角正好是地图的左上角（高按整像素取了整，底边最多差半个像素）
-  return { width: W, height: H, dpr, cw, ch, cam: { x: map.width / 2, y: ch / 2 / zoom, zoom } };
+  // 左上角正好是地图的左上角（整个星球：左边是分界线；高按整像素取了整，底边最多差半个像素）
+  return { width: W, height: H, dpr, cw, ch, cam: { x: seamX + map.width / 2, y: ch / 2 / zoom, zoom } };
 }
+
+// 整个星球的分界线放在哪里（x，[0, 2)）：经度分成 720 条，没有陆地（湖算陆地）的条连成的最长一段的正中
+// （绕一圈接上）；每一条都有陆地时取陆地最少的地方（前后各 10 条平滑后最少的那条的正中）。
+// 极圈以内的陆地不算（盖住两极的大陆怎么切都要切开，展平的图上本来就拉得很宽）。
+// xs、ys：每格的 x、y（ys 省略时都算），land：每格是不是陆地
+export const SEAM_BINS = 720;
+const POLAR_Y = (90 - 66.56) / 180;
+export function autoSeam(xs: ArrayLike<number>, land: ArrayLike<number>, ys?: ArrayLike<number>): number {
+  const N = SEAM_BINS;
+  const count = new Float64Array(N);
+  for (let i = 0; i < xs.length; i++) {
+    if (!land[i]) continue;
+    if (ys && (ys[i] < POLAR_Y || ys[i] > 1 - POLAR_Y)) continue;
+    const x = xs[i] - 2 * Math.floor(xs[i] / 2);
+    count[Math.min(N - 1, Math.floor((x / 2) * N))]++;
+  }
+  const binX = (b: number) => ((((b + 0.5) / N) * 2) % 2 + 2) % 2;
+  // 最长的一段空条（绕一圈）：从一条有陆地的条之后开始数
+  const start = count.findIndex((c) => c > 0);
+  if (start < 0) return 0;
+  let best = 0;
+  let bestAt = -1;
+  let run = 0;
+  for (let k = 1; k <= N; k++) {
+    const b = (start + k) % N;
+    if (count[b] === 0) {
+      run++;
+      if (run > best) {
+        best = run;
+        bestAt = b;
+      }
+    } else run = 0;
+  }
+  if (best > 0) {
+    // 这一段是 bestAt − best + 1 … bestAt，取正中（两条的正中取它们的边界）
+    const mid = bestAt - (best - 1) / 2;
+    return ((((mid + 0.5) / N) * 2) % 2 + 2) % 2;
+  }
+  const sums = new Float64Array(N);
+  let min = Infinity;
+  for (let b = 0; b < N; b++) {
+    for (let d = -10; d <= 10; d++) sums[b] += count[(b + d + N) % N];
+    min = Math.min(min, sums[b]);
+  }
+  // 最少的那几条连着的一段取正中
+  const at = sums.indexOf(min);
+  let len = 1;
+  while (len < N && sums[(at + len) % N] === min) len++;
+  return binX(at + (len - 1) / 2);
+}
+
+// 分界线（x）在哪个经度（−180–180，东经为正）
+export const seamLongitude = (seamX: number) => {
+  const lon = 180 * (seamX - 1);
+  return lon < -180 ? lon + 360 : lon >= 180 ? lon - 360 : lon;
+};
 
 // 一块：图上的位置与大小（像素，从左上角起）。每一块的场景都是同样大的 T × T（加四周的边），
 // 伸出图外的部分画了也不要：每一块的像素在 2 × 2 的组里与一次画完整张时对得齐（海岸线的抗锯齿用屏幕导数）

@@ -1,3 +1,4 @@
+import { displayCoast, displayCoastAt, shoreCrossing } from './display';
 import { wrapDelta } from './geo';
 import { type Mesh, findCell } from './mesh';
 import { vnoise } from './subcell';
@@ -5,7 +6,9 @@ import { COURSE_MAX_POINTS, type Derived, type Guide, type World } from './world
 
 // 河流折线：从源头顺流追到入海口、湖或与已画的河汇合处；加轻微的曲流并做 Chaikin 平滑。
 // 屏幕与导出共用，所以导出的 rivers.bmp 与屏幕上的河一致。
-// 画的河（有折线的河道）照存下的折线画（再平滑一遍），自然的支流画到它的线上为止
+// 画的河（有折线的河道）照存下的折线画（再平滑一遍），自然的支流画到它的线上为止。
+// 入海、入湖的河画到画面上的岸线为止（core/display.ts 的 shoreCrossing：与地形层画海岸线的是同一个海岸场），
+// 从湖里流出来的河从湖岸画起
 
 export interface RiverLine {
   points: [number, number][];
@@ -21,6 +24,10 @@ export interface RiverLine {
   // 每个点是哪一种河（与 derived.riverType 相同：0 普通，k + 1 是第 k 种河流类型）。只在世界里有河流类型时才有；
   // 画到别的河上的最后一点算这条河自己的类型（带类型的支流画到汇合处为止都是它的样子）
   type?: number[];
+  // 起点：'source' 是源头（画的时候收尖），'lake' 是从湖岸流出（不收尖）；省略的（接着画的线、截下的一段）两样都不是
+  head?: 'source' | 'lake';
+  // 最后一点在海、湖的岸线上（画的时候河口略张开、平头收在岸线上）
+  mouth?: boolean;
 }
 
 // 支流从这一点接着画（画的河流到了别的河都不经过的地方：从它的线上接出去）
@@ -56,6 +63,18 @@ export function traceRivers(world: World): RiverLine[] {
   const course = small.guides.some((g) => g.path) ? courseIndex(world, isRiver, visited) : null;
   // 河流类型（第三批）：每个点带上是哪一种河。没有河流类型时不带（点、流量照旧逐位不变）
   const rt = d.riverType;
+  const water = (c: number) => !causes.land[c] || d.lake[c] === 1;
+  // 从湖里流出来的河：源头那格的上游是湖（取流量最大的那一格湖），河从这一格湖的岸线画起
+  const lakeDonor = new Int32Array(n).fill(-1);
+  for (let j = 0; j < n; j++) {
+    if (!causes.land[j] || d.lake[j] !== 1) continue;
+    const r = d.receiver[j];
+    if (r < 0 || !isRiver(r)) continue;
+    const o = lakeDonor[r];
+    if (o < 0 || d.discharge[j] > d.discharge[o] || (d.discharge[j] === d.discharge[o] && j < o)) lakeDonor[r] = j;
+  }
+  // 画到岸线：从 a 往 b（水里）走到画面上的岸线，找不到时（a 在画面上已是水面）退回两点的中点
+  const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const walk = (s: number, lead?: Lead) => {
     const pts: [number, number][] = [];
     const flow: number[] = [];
@@ -65,8 +84,18 @@ export function traceRivers(world: World): RiverLine[] {
     const own = () => (tags && tags.length ? tags[tags.length - 1] : 0);
     let c = s;
     let cx = mesh.x[s];
+    let mouth = false;
     // 前面接着画的线已经流过这一格：只画到这一格（与支流画到画过的格一样），不然画的河在这里断开
     const reached = lead !== undefined && visited[s] === 1;
+    const fromLake = !lead && lakeDonor[s] >= 0;
+    if (fromLake) {
+      // 从湖岸画起：源头那格往湖里那一格走到岸线
+      const j = lakeDonor[s];
+      pts.push(shore([cx, mesh.y[s]], [xAt(j, cx), mesh.y[j]], s, j));
+      flow.push(d.discharge[s]);
+      cells.push(s);
+      tags?.push(rt![s]);
+    }
     if (lead) {
       pts.push(lead.p);
       flow.push(lead.flow);
@@ -89,12 +118,13 @@ export function traceRivers(world: World): RiverLine[] {
       visited[c] = 1;
       const r = d.receiver[c];
       if (r < 0) break;
-      if (!causes.land[r] || d.lake[r] === 1) {
-        // 入海、入湖：画到两格之间
-        pts.push([(cx + xAt(r, cx)) / 2, (mesh.y[c] + mesh.y[r]) / 2]);
+      if (water(r)) {
+        // 入海、入湖：画到画面上的岸线
+        pts.push(shore([cx, mesh.y[c]], [xAt(r, cx), mesh.y[r]], c, r));
         flow.push(d.discharge[c]);
         cells.push(c);
         tags?.push(rt![c]);
+        mouth = true;
         break;
       }
       if (!isRiver(r)) break;
@@ -110,6 +140,8 @@ export function traceRivers(world: World): RiverLine[] {
     }
     if (pts.length < 2) return;
     const line = smoothCourse(pts, flow, mesh.spacing, cells, tags);
+    if (!lead) line.head = fromLake ? 'lake' : 'source';
+    if (mouth) line.mouth = true;
     lines.push(line);
     course?.own(line);
   };
@@ -133,6 +165,9 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   const n = mesh.n;
   const sphere = mesh.kind === 'sphere';
   const water = (c: number) => !causes.land[c] || d.lake[c] === 1;
+  // 这一点在画面上是不是陆地（河口退回到画面上的陆地再找岸线）
+  const coastField = displayCoast(world);
+  const onLand = (pt: readonly [number, number], hint: number) => displayCoastAt(world, coastField, pt[0], pt[1], hint, true).v > 0;
   // 每格由哪条线画（先画的算）、在它的第几个点到第几个点之间
   const owner: (RiverLine | undefined)[] = new Array(n);
   const from = new Int32Array(n);
@@ -171,24 +206,54 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
       const c = cells[i];
       let q = -1;
       let tag = c;
+      let mouth = false;
       if (water(c)) {
-        // 河口：画进海、湖的第一点（离岸不到半格，与自然的河画到两格之间差不多），流量按上一格。
+        // 河口：画到画面上的岸线（从上一点往这一点走到岸线），流量按上一格。
         // 后来海、湖淹到了河道上时，不会一直画进水里
         if (i > 0 && isRiver(cells[i - 1]) && cellIdx[k - 1] !== i) {
           tag = cells[i - 1];
           q = d.discharge[tag];
+          mouth = true;
         }
       } else if (isRiver(c)) q = d.discharge[join && i === last ? cells[last - 1] : c];
       if (q < 0) {
         run = null;
         continue;
       }
-      if (!run) runs.push((run = { points: [], flow: [], cells: [], mul: [], guide: g.id }));
+      let p = points[k];
+      if (mouth && run) {
+        // 上一两点在画面上已经是水面（岸线的细节伸进了河道）：退回到画面上的陆地，从那里走到岸线
+        let b: [number, number] = points[k];
+        for (let back = 0; back < 3 && run.points.length > 1 && !onLand(run.points[run.points.length - 1], tag); back++) {
+          b = run.points.pop()!;
+          run.flow.pop();
+          run.cells!.pop();
+          run.mul!.pop();
+        }
+        const a = run.points[run.points.length - 1];
+        p = shoreCrossing(world, a, b, tag)?.p ?? points[k];
+        for (let j = 0; j < k; j++) if (where[j]?.run === run && where[j]!.j >= run.points.length) where[j] = { run, j: run.points.length - 1 };
+      }
+      if (!run) {
+        runs.push((run = { points: [], flow: [], cells: [], mul: [], guide: g.id }));
+        // 从湖里流出来：从湖岸画起（从这一点往湖里的上一点走到岸线）
+        if (k > 0 && i > 0 && d.lake[cells[cellIdx[k - 1]]] === 1 && causes.land[cells[cellIdx[k - 1]]] && onLand(points[k], c)) {
+          const hit = shoreCrossing(world, points[k], points[k - 1], c);
+          if (hit) {
+            run.points.push(hit.p);
+            run.flow.push(q);
+            run.cells!.push(tag);
+            run.mul!.push(width);
+            run.head = 'lake';
+          }
+        } else if (k === 0 && g.spring) run.head = 'source';
+      }
       where[k] = { run, j: run.points.length };
-      run.points.push(points[k]);
+      run.points.push(p);
       run.flow.push(q);
       run.cells!.push(tag);
       run.mul!.push(width);
+      if (mouth) run.mouth = true;
     }
     const kept = runs.filter((r) => r.points.length >= 2);
     const tail = kept[kept.length - 1];
@@ -391,6 +456,140 @@ function chaikin(line: RiverLine, iterations: number): RiverLine {
 // 河宽（屏幕像素，未乘缩放系数）
 export function riverWidth(flow: number, threshold: number): number {
   return 0.3 + 0.42 * Math.log2(flow / threshold + 1);
+}
+
+// ---------- 河画出来的样子：一条连续的带子（屏幕与导出的 rivers.bmp 共用） ----------
+// 河线（traceRivers 的折线）加密到约 1/16 格，宽度沿河平滑、往下游只增不减；源头收尖（约 1.25 格里从一成半宽到全宽），
+// 入海、入湖的河口在最后约 0.6 格里略张开、平头收在岸线上；再沿法向加一点细小的弯曲（约 0.08 格、半格一个弯，
+// 宽的河弯得少，两头不弯）。弯曲只在画的时候加：存下的折线、点河、量长度都照原来的线
+
+export interface RiverRibbon {
+  // 中线（地图单位；整个星球上沿河展开经度，与河线相同）
+  x: Float64Array;
+  y: Float64Array;
+  // 沿河的长度（地图单位）
+  s: Float64Array;
+  // 左手的单位法向
+  nx: Float32Array;
+  ny: Float32Array;
+  // 半宽（屏幕像素，未乘随缩放变宽的系数）
+  hw: Float32Array;
+  // 每一点来自河线的第几段（带类型的河按它取类型）
+  src: Uint32Array;
+  // 外接框（中线）与最宽处的半宽
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  maxHw: number;
+}
+
+const RIBBON_STEP = 1 / 16;
+const TAPER_LEN = 1.25;
+const TAPER_MIN = 0.15;
+const FLARE_LEN = 0.6;
+const FLARE = 0.3;
+const WIDTH_SMOOTH = 0.5;
+const MEANDER_AMP = 0.08;
+// 弯曲的噪声频率：格点相隔 1/4 格，约半格一个弯
+const MEANDER_FREQ = 4;
+
+const smooth01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+
+// line：河线；thr：河的门槛；spacing：格距；mulAt（可选）：每个河线点再乘的粗细（拖粗细、河流类型的粗细）
+export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt?: (k: number) => number): RiverRibbon {
+  const P = line.points;
+  const m = P.length;
+  // 1. 加密：每段等分到不长于 1/16 格
+  const step = RIBBON_STEP * spacing;
+  let count = 1;
+  const parts = new Uint32Array(Math.max(0, m - 1));
+  for (let k = 0; k + 1 < m; k++) {
+    parts[k] = Math.max(1, Math.ceil(Math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]) / step));
+    count += parts[k];
+  }
+  const x = new Float64Array(count);
+  const y = new Float64Array(count);
+  const w = new Float64Array(count);
+  const mul = new Float64Array(count);
+  const src = new Uint32Array(count);
+  const mulOf = (k: number) => (line.mul ? line.mul[k] : 1) * (mulAt ? mulAt(k) : 1);
+  let o = 0;
+  const put = (k: number, t: number) => {
+    const k1 = Math.min(m - 1, k + 1);
+    x[o] = P[k][0] + (P[k1][0] - P[k][0]) * t;
+    y[o] = P[k][1] + (P[k1][1] - P[k][1]) * t;
+    w[o] = riverWidth(line.flow[k] + (line.flow[k1] - line.flow[k]) * t, thr);
+    mul[o] = mulOf(k) + (mulOf(k1) - mulOf(k)) * t;
+    src[o] = Math.min(k, Math.max(0, m - 2));
+    o++;
+  };
+  put(0, 0);
+  for (let k = 0; k + 1 < m; k++) for (let j = 1; j <= parts[k]; j++) put(k, j / parts[k]);
+  // 2. 沿河的长度
+  const s = new Float64Array(count);
+  for (let i = 1; i < count; i++) s[i] = s[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]);
+  const L = s[count - 1];
+  // 3. 宽度：往下游只增不减，再沿河来回各平滑一遍（约半格；只增不减的数列平滑后仍只增不减）
+  for (let i = 1; i < count; i++) if (w[i] < w[i - 1]) w[i] = w[i - 1];
+  const lam = WIDTH_SMOOTH * spacing;
+  for (let i = 1; i < count; i++) {
+    const a = 1 - Math.exp(-(s[i] - s[i - 1]) / lam);
+    w[i] = w[i - 1] + (w[i] - w[i - 1]) * a;
+  }
+  for (let i = count - 2; i >= 0; i--) {
+    const a = 1 - Math.exp(-(s[i + 1] - s[i]) / lam);
+    w[i] = w[i + 1] + (w[i] - w[i + 1]) * a;
+  }
+  // 4. 源头收尖、河口张开，乘上粗细
+  const hw = new Float32Array(count);
+  let maxHw = 0;
+  for (let i = 0; i < count; i++) {
+    let f = mul[i];
+    if (line.head === 'source') f *= TAPER_MIN + (1 - TAPER_MIN) * smooth01(s[i] / (TAPER_LEN * spacing));
+    if (line.mouth) f *= 1 + FLARE * smooth01((s[i] - (L - FLARE_LEN * spacing)) / (FLARE_LEN * spacing));
+    hw[i] = (w[i] * f) / 2;
+    if (hw[i] > maxHw) maxHw = hw[i];
+  }
+  // 5. 细小的弯曲：沿原来那条线的法向错开（按位置取噪声，结果确定）；两头半格之内渐渐不弯，水多（按流量的宽）的河弯得少，
+  //    拖粗细不改中线
+  const nx = new Float32Array(count);
+  const ny = new Float32Array(count);
+  const normals = () => {
+    for (let i = 0; i < count; i++) {
+      const a = Math.max(0, i - 1);
+      const b = Math.min(count - 1, i + 1);
+      const tx = x[b] - x[a];
+      const ty = y[b] - y[a];
+      const l = Math.hypot(tx, ty) || 1;
+      nx[i] = -ty / l;
+      ny[i] = tx / l;
+    }
+  };
+  normals();
+  if (count > 2) {
+    const q = MEANDER_FREQ / spacing;
+    for (let i = 1; i < count - 1; i++) {
+      const ends = smooth01(s[i] / (0.5 * spacing)) * smooth01((L - s[i]) / (0.5 * spacing));
+      if (ends <= 0) continue;
+      const amp = (MEANDER_AMP * spacing * ends) / (1 + 0.5 * Math.max(0, w[i] - 1));
+      const off = amp * vnoise(x[i] * q + 5.3, y[i] * q - 7.9);
+      x[i] += nx[i] * off;
+      y[i] += ny[i] * off;
+    }
+    normals();
+  }
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i < count; i++) {
+    if (x[i] < x0) x0 = x[i];
+    if (x[i] > x1) x1 = x[i];
+    if (y[i] < y0) y0 = y[i];
+    if (y[i] > y1) y1 = y[i];
+  }
+  return { x, y, s, nx, ny, hw, src, x0, y0, x1, y1, maxHw };
 }
 
 // ---------- 画的河道折线（第八轮：自定义走向） ----------

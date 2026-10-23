@@ -478,6 +478,9 @@ export function MapView() {
       renderer.style = mapStyle.value;
       // 镜头正在动：渲染器按低分辨率画了这一帧，停下 SETTLE_MS 以后再画一次（补上全分辨率的）。导出图片一定按停稳的画法画
       const moving = renderer.render(w.kmPerUnit, { still: clean });
+      // 停下后补画全分辨率的那一帧：地图这一帧按停稳的画法画，叠加层先照移动中的样子贴，下一帧再按停稳的画（两样重活分在两帧）
+      const settling = !moving && !clean && renderer.justSettled;
+      if (settling) requestDraw();
       if (moving) {
         if (settleTimer) clearTimeout(settleTimer);
         settleTimer = setTimeout(() => {
@@ -509,7 +512,8 @@ export function MapView() {
           ? { north: shown.settings.latNorth + shown.small.planet.latShift, south: shown.settings.latSouth + shown.small.planet.latShift }
           : null,
         currents: overlays.value.currents,
-        motion: moving,
+        motion: moving || settling,
+        motionEpoch: renderer.motionEpoch,
         exact: clean,
       }];
       lastOverlay = ovArgs;
@@ -982,11 +986,12 @@ export function MapView() {
     // 导出整张地图（.png）：虚拟镜头盖住整张图（整个星球是一整圈 2:1，不重复），按停稳的画法离屏一块块画（每块四周多画一圈，
     // 拼起来没有接缝），再在整张图上画河、地名（按整张图排）、边界之外的叠加层；与“当前画面”一样是干净的画面。
     // 画的期间屏幕上的地图不重画；每画完一块让一下主线程（进度条照常动）。cancelled() 为真时停下，返回 null
-    async function exportImage(o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean }, progress: (p: number) => void, cancelled: () => boolean): Promise<HTMLCanvasElement | null> {
+    async function exportImage(o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number }, progress: (p: number) => void, cancelled: () => boolean): Promise<HTMLCanvasElement | null> {
       const w = world.value;
       if (!w || !paths || exportBusy) return null;
       const mesh = w.mesh;
-      const fr = exportFrame(mesh, o.width, o.labels);
+      // 整个星球：图的左右边放在 seam（x）上，省略时放在经度 180°
+      const fr = exportFrame(mesh, o.width, o.labels, mesh.kind === 'sphere' ? (o.seam ?? 0) : 0);
       const out = document.createElement('canvas');
       out.width = fr.width;
       out.height = fr.height;
@@ -1119,10 +1124,10 @@ export function snapshotCanvas(): HTMLCanvasElement | null {
   return hook ? hook.snapshot(true) : null;
 }
 
-type ExportImage = (o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean }, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
+type ExportImage = (o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number }, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
 
 // 导出整张地图（.png）：进度显示在顶部的提示条上（与游戏文件包共用，可以取消），得到 PNG 的 Blob；取消、出错时为 null
-export async function exportFullMap(o: { width: number; labels: LabelSize }): Promise<Blob | null> {
+export async function exportFullMap(o: { width: number; labels: LabelSize; seam?: number }): Promise<Blob | null> {
   const hook = (window as unknown as { __map2?: { exportImage: ExportImage } }).__map2;
   if (!hook || exportProgress.value !== null) return null;
   let stop = false;

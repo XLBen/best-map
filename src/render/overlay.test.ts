@@ -6,7 +6,7 @@ import { encodePath, traceRivers } from '../../core/rivers';
 import { planCourse } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
-import { type OverlayState, buildPaths, placeLabels, riverLines, riverPaths, riverPathsKey, samePathsKey } from './overlay';
+import { type OverlayPaths, type OverlayState, buildPaths, drawOverlay, placeLabels, riverDraws, riverLines, riverPathsKey, samePathsKey } from './overlay';
 
 // 放标签：用户自己的地名（圈的地区、放的地名、改过的名字）和悬停的那个总是标出来，最先放，避让时别的让它们
 
@@ -66,10 +66,62 @@ class FakePath {
   lineTo(x: number, y: number) {
     this.ops.push(['L', x, y]);
   }
+  closePath() {}
 }
 (globalThis as unknown as { Path2D: unknown }).Path2D = FakePath;
 const opsOf = (p: Path2D) => (p as unknown as FakePath).ops;
-const bucketsOf = (list: { path: Path2D; width: number }[]) => list.map((b) => [b.width, opsOf(b.path)]);
+// 每条河的带子：中线与半宽（逐位比）
+const ribbonsOf = (list: OverlayPaths['rivers']) => list.map((d) => [Array.from(d.rb.x), Array.from(d.rb.y), Array.from(d.rb.hw)]);
+const widest = (list: OverlayPaths['rivers']) => Math.max(...list.map((d) => d.rb.maxHw));
+
+// 只记下填了、描了哪些路径的假画布（drawOverlay 按导出的虚拟窗口直接画，不碰缓存）
+interface Call {
+  op: 'fill' | 'stroke';
+  style: string;
+  width: number;
+  dash: number;
+  path: FakePath | null;
+}
+function recordingCtx() {
+  const calls: Call[] = [];
+  const state: Record<string, unknown> = { fillStyle: '', strokeStyle: '', lineWidth: 1 };
+  let dash = 0;
+  const ctx = new Proxy(state, {
+    get(t, k: string) {
+      if (k === 'canvas') return { width: 800, height: 600, clientWidth: 800, clientHeight: 600 };
+      if (k === 'fill') return (p?: FakePath) => calls.push({ op: 'fill', style: String(t.fillStyle), width: Number(t.lineWidth), dash, path: p ?? null });
+      if (k === 'stroke') return (p?: FakePath) => calls.push({ op: 'stroke', style: String(t.strokeStyle), width: Number(t.lineWidth), dash, path: p ?? null });
+      if (k === 'setLineDash') return (d: number[]) => (dash = d.length);
+      if (k === 'measureText') return () => ({ width: 10 });
+      if (k in t) return t[k];
+      return () => {};
+    },
+    set(t, k: string, v) {
+      t[k] = v;
+      return true;
+    },
+  });
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
+}
+const riverState = (w: World): OverlayState =>
+  ({
+    rivers: true,
+    wind: false,
+    markers: false,
+    season: 'annual',
+    style: 'realistic',
+    shapes: [],
+    provinceLabels: [],
+    features: null,
+    labelTypes: null,
+    kmPerUnit: w.kmPerUnit,
+    hoverLabel: null,
+    scaleBar: false,
+    cornerLift: 0,
+    latitude: null,
+    frame: { cw: 800, ch: 600, dpr: 1 },
+  }) as OverlayState;
+
 
 // 画一条自定义走向的河（只挖河床、自动起名）
 function drawCourse(
@@ -90,7 +142,7 @@ function drawCourse(
 }
 
 describe('地图上的河、预览的河同一套画法', () => {
-  it('预览的河（river 图形）与地图上的河分档、坐标都一样；拖粗细只让这条河换档，hide 时不画它', () => {
+  it('预览的河（river 图形）与地图上的河是同一条带子；拖粗细只让这条河变宽，hide 时不画它', () => {
     const eng = continents();
     const w = eng.world;
     const { mesh } = w;
@@ -99,19 +151,48 @@ describe('地图上的河、预览的河同一套画法', () => {
     );
     const lines = riverLines(w);
     expect(lines.some((l) => l.guide === id)).toBe(true);
-    expect(bucketsOf(riverPaths(w, lines))).toEqual(bucketsOf(buildPaths(w).rivers));
-    const segs = (list: { path: Path2D; width: number }[]) => list.reduce((k, b) => k + opsOf(b.path).length / 2, 0);
-    const own = lines.filter((l) => l.guide === id).reduce((k, l) => k + l.points.length - 1, 0);
+    const base = buildPaths(w).rivers;
+    expect(ribbonsOf(riverDraws(w, lines))).toEqual(ribbonsOf(base));
+    const own = lines.filter((l) => l.guide === id).length;
     const wide = buildPaths(w, { id, width: 3 }).rivers;
-    expect(segs(wide)).toBe(segs(buildPaths(w).rivers));
-    expect(Math.max(...wide.map((b) => b.width))).toBeGreaterThanOrEqual(Math.max(...buildPaths(w).rivers.map((b) => b.width)));
-    expect(bucketsOf(wide)).not.toEqual(bucketsOf(buildPaths(w).rivers));
-    expect(segs(buildPaths(w, { id, hide: true }).rivers)).toBe(segs(buildPaths(w).rivers) - own);
+    expect(wide.length).toBe(base.length);
+    expect(widest(wide)).toBeGreaterThanOrEqual(widest(base));
+    // 只有这条河变了：别的河的带子逐位相同，这条河的中线不变、半宽变成三倍
+    lines.forEach((l, k) => {
+      if (l.guide !== id) expect(ribbonsOf([wide[k]])).toEqual(ribbonsOf([base[k]]));
+      else {
+        expect(Array.from(wide[k].rb.x)).toEqual(Array.from(base[k].rb.x));
+        for (let i = 0; i < base[k].rb.hw.length; i++) expect(wide[k].rb.hw[i]).toBeCloseTo(3 * base[k].rb.hw[i], 4);
+      }
+    });
+    expect(buildPaths(w, { id, hide: true }).rivers.length).toBe(base.length - own);
     // 河道的白色虚线标记：画出来的那条线，一笔连着画（虚线不在每段重新开始）
     expect(opsOf(buildPaths(w).lockedGuides).filter((o) => o[0] === 'M').length).toBe(1);
   });
 
-  it('路径缓存按河道的内容认：只改名字时不重画，改了粗细、拖粗细时重画', () => {
+  it('同色的河一次填（交汇处不叠出深色）：宽的河另描两岸（压在河面下面）；看全图时细于一个像素的河沿中线描', () => {
+    const w = continents().world;
+    const p = buildPaths(w);
+    const big = p.rivers.reduce((a, b) => (b.rb.maxHw > a.rb.maxHw ? b : a));
+    const at = (zoom: number) => {
+      const cam = { x: big.rb.x[big.rb.x.length >> 1], y: big.rb.y[big.rb.y.length >> 1], zoom };
+      const { ctx, calls } = recordingCtx();
+      drawOverlay(ctx, w, p, cam, riverState(w));
+      return calls;
+    };
+    const calls = at(40 / w.mesh.spacing);
+    const fills = calls.filter((c) => c.op === 'fill' && c.path);
+    expect(fills.length).toBe(1);
+    expect(fills[0].style).toBe('rgba(52, 104, 168, 0.92)');
+    expect(fills[0].path!.ops.filter((o) => o[0] === 'M').length).toBeGreaterThan(0);
+    const bank = calls.findIndex((c) => c.op === 'stroke' && c.style.startsWith('rgba(24, 52, 88'));
+    expect(bank).toBeGreaterThanOrEqual(0);
+    expect(bank).toBeLessThan(calls.indexOf(fills[0]));
+    const far = at((1.2 * 800) / w.mesh.width);
+    expect(far.filter((c) => c.op === 'stroke' && c.style === 'rgba(52, 104, 168, 0.92)').length).toBeGreaterThan(0);
+  });
+
+  it('路径缓存按河道的内容认：只改名字时不重画，改了粗细、拖粗细时重画；岸线（陆地程度、海岸破碎度、湖面）变了重描河', () => {
     const eng = continents();
     const w = eng.world;
     const { mesh } = w;
@@ -125,9 +206,13 @@ describe('地图上的河、预览的河同一套画法', () => {
     expect(samePathsKey(riverPathsKey(light({ name: '赤江' }), null), key)).toBe(true);
     expect(samePathsKey(riverPathsKey(light({ width: 2 }), null), key)).toBe(false);
     expect(samePathsKey(riverPathsKey(w, { id, width: 2 }), key)).toBe(false);
+    expect(samePathsKey(riverPathsKey({ ...w, causes: { ...w.causes, landness: w.causes.landness.slice() } }, null), key)).toBe(false);
+    const rough = { ...w, small: { ...w.small, terrain: { ...w.small.terrain, coastRoughness: w.small.terrain.coastRoughness + 0.1 } } };
+    expect(samePathsKey(riverPathsKey(rough, null), key)).toBe(false);
+    expect(samePathsKey(riverPathsKey({ ...w, derived: { ...w.derived, water: w.derived.water.slice() } }, null), key)).toBe(false);
   });
 
-  it('预览世界（地图画将来的样子）的河与当前世界同一个键：没改河时直接用当前世界的路径；画河的预览世界画出来的河与执行后逐段相同，拖粗细照样画', () => {
+  it('预览世界（地图画将来的样子）的河与当前世界同一个键：没改河时直接用当前世界的路径；画河的预览世界画出来的河与执行后逐点相同，拖粗细照样画', () => {
     const eng = continents();
     const w = eng.world;
     const { mesh } = w;
@@ -157,14 +242,14 @@ describe('地图上的河、预览的河同一套画法', () => {
     const wide = { id: 'river-a', width: 2.5 };
     const plain = buildPaths(shown);
     const widened = buildPaths(shown, wide);
-    expect(plain.rivers.some((b) => opsOf(b.path).length)).toBe(true);
-    expect(bucketsOf(widened.rivers)).not.toEqual(bucketsOf(plain.rivers));
-    // 松手执行（采用预览）之后的河与预览世界画的逐段相同
+    expect(plain.rivers.length).toBeGreaterThan(0);
+    expect(ribbonsOf(widened.rivers)).not.toEqual(ribbonsOf(plain.rivers));
+    // 松手执行（采用预览）之后的河与预览世界画的逐点相同
     eng.exec(cmd!);
     const after = eng.world;
-    expect(bucketsOf(buildPaths(after).rivers)).toEqual(bucketsOf(plain.rivers));
+    expect(ribbonsOf(buildPaths(after).rivers)).toEqual(ribbonsOf(plain.rivers));
     expect(opsOf(buildPaths(after).lockedGuides)).toEqual(opsOf(plain.lockedGuides));
-    expect(bucketsOf(buildPaths(after, wide).rivers)).toEqual(bucketsOf(widened.rivers));
+    expect(ribbonsOf(buildPaths(after, wide).rivers)).toEqual(ribbonsOf(widened.rivers));
   });
 
   it('预览世界只换了湖面、流向、高程或陆海（流量数组还是当前世界那个）：键不同，描出来的是它自己的河；点河用的当前世界那份不被一份份预览世界挤掉', () => {
@@ -197,7 +282,7 @@ describe('地图上的河、预览的河同一套画法', () => {
     expect(riverLines(w)).toBe(lines);
   });
 
-  it('整个星球：每段河按起点挪到 [0, 2) 里（平铺的副本只看 [-0.6, 2.6]），跨接缝的河道标记照样连着画', () => {
+  it('整个星球：跨接缝的河是连续的一条带子，画的时候按看得见的副本平移 2；跨接缝的河道标记照样连着画', () => {
     const eng = engineFor({ seed: 4, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     const { mesh } = eng.world;
@@ -212,41 +297,45 @@ describe('地图上的河、预览的河同一套画法', () => {
     const course = lines.filter((l) => l.guide);
     expect(Math.max(...course.flatMap((l) => l.points.map((p) => p[0])))).toBeGreaterThan(2);
     const p = buildPaths(w);
-    for (const b of p.rivers) {
-      const ops = opsOf(b.path);
-      for (let k = 0; k < ops.length; k += 2) {
-        expect(ops[k][0]).toBe('M');
-        expect(ops[k][1]).toBeGreaterThanOrEqual(0);
-        expect(ops[k][1]).toBeLessThan(2);
-        expect(Math.abs(ops[k + 1][1] - ops[k][1])).toBeLessThan(0.5);
-      }
-    }
+    for (const d of p.rivers) for (let i = 1; i < d.rb.x.length; i++) expect(Math.abs(d.rb.x[i] - d.rb.x[i - 1])).toBeLessThan(0.05);
+    // 镜头对着接缝（x = 0 附近）：跨接缝的那条河画得出来（平移过的那一份落在画面里）
+    const seamRiver = p.rivers.find((d) => d.rb.x1 > 2)!;
+    const { ctx, calls } = recordingCtx();
+    const zoom = 30 / mesh.spacing;
+    const k = seamRiver.rb.x.findIndex((v) => v > 2);
+    drawOverlay(ctx, w, p, { x: seamRiver.rb.x[k] - 2, y: seamRiver.rb.y[k], zoom }, riverState(w));
+    const xs = calls.filter((c) => c.path).flatMap((c) => c.path!.ops.map((o) => o[1]));
+    expect(xs.some((x) => Math.abs(x - (seamRiver.rb.x[k] - 2)) < 100 / zoom)).toBe(true);
     // 标记：挪的份数变了才另起一笔，每一笔里相邻两点挨着
     const ops = opsOf(p.lockedGuides);
     expect(ops.filter((o) => o[0] === 'M').length).toBeLessThanOrEqual(2);
     for (const o of ops) if (o[0] === 'M') expect(o[1]).toBeGreaterThanOrEqual(0);
-    for (let k = 1; k < ops.length; k++) if (ops[k][0] === 'L') expect(Math.abs(ops[k][1] - ops[k - 1][1])).toBeLessThan(0.5);
+    for (let j = 1; j < ops.length; j++) if (ops[j][0] === 'L') expect(Math.abs(ops[j][1] - ops[j - 1][1])).toBeLessThan(0.5);
   });
 
-  it('河流类型：带类型的河段按（类型，宽度 × 类型的粗细）分档、同一档连着画，普通的河段照旧；只改颜色、画法时不重新描河', () => {
+  it('河流类型：带类型的点乘类型的粗细、按类型的颜色填；虚线的河沿中线一笔描；只改颜色、画法时不重新描河', () => {
     const eng = continents();
-    const segs = (list: { path: Path2D }[]) => list.reduce((k, b) => k + opsOf(b.path).filter((o) => o[0] === 'L').length, 0);
-    const before = segs(buildPaths(eng.world).rivers);
+    const plainCount = buildPaths(eng.world).rivers.length;
     const rule = { match: { api: 1 as const, src: 'return 流量 > 3 * 河流门槛;' } };
     const blood = { id: 'blood', name: '血河', color: '#8f1414', width: 2, scripts: rule };
     eng.exec({ op: 'set_river_type', type: blood });
     const w = eng.world;
     const p = buildPaths(w);
-    expect(p.typed?.length).toBeGreaterThan(0);
-    expect(p.typed!.every((b) => b.type === 1)).toBe(true);
-    // 每一段要么在普通的档里，要么在带类型的档里（没有两岸的影响：河一点没变）
-    expect(segs(p.rivers) + segs(p.typed!)).toBe(before);
-    // 同一档里连着的几段是一笔（虚线不在每段重新开始）
-    const typedOps = p.typed!.flatMap((b) => opsOf(b.path));
-    expect(typedOps.filter((o) => o[0] === 'M').length).toBeLessThan(typedOps.filter((o) => o[0] === 'L').length / 2);
-    // 粗细：两倍粗的那几档比同样流量的普通河宽
+    expect(p.rivers.length).toBe(plainCount);
+    const typed = p.rivers.filter((d) => d.type);
+    expect(typed.length).toBeGreaterThan(0);
+    expect(typed.every((d) => d.type!.every((t) => t === 0 || t === 1))).toBe(true);
+    // 粗细：两倍粗的河比一倍的宽
     const thinner = buildPaths({ ...w, small: { ...w.small, riverTypes: [{ ...blood, width: 1 }] } });
-    expect(Math.max(...p.typed!.map((b) => b.width))).toBeGreaterThan(Math.max(...thinner.typed!.map((b) => b.width)));
+    expect(widest(p.rivers)).toBeGreaterThan(widest(thinner.rivers));
+    const big = typed.reduce((a, b) => (b.rb.maxHw > a.rb.maxHw ? b : a));
+    const k = big.rb.src.findIndex((s) => big.type![s] === 1);
+    const draw = (ww: World, paths: OverlayPaths) => {
+      const { ctx, calls } = recordingCtx();
+      drawOverlay(ctx, ww, paths, { x: big.rb.x[k], y: big.rb.y[k], zoom: 30 / ww.mesh.spacing }, riverState(ww));
+      return calls;
+    };
+    expect(draw(w, p).some((c) => c.op === 'fill' && c.style === '#8f1414')).toBe(true);
     // 只改颜色、画法（轻快照，推导数组不变）：分档的键变了（重画），描好的河照用
     const lines = riverLines(w);
     const key = riverPathsKey(w, null);
@@ -254,5 +343,9 @@ describe('地图上的河、预览的河同一套画法', () => {
     expect(eng.world.derived.riverType).toBe(w.derived.riverType);
     expect(samePathsKey(riverPathsKey(eng.world, null), key)).toBe(false);
     expect(riverLines(eng.world)).toBe(lines);
+    // 虚线：沿中线描，每条一笔
+    const dashed = draw(eng.world, buildPaths(eng.world)).filter((c) => c.op === 'stroke' && c.style === '#123456');
+    expect(dashed.length).toBeGreaterThan(0);
+    expect(dashed.every((c) => c.dash === 2 && c.path!.ops.filter((o) => o[0] === 'M').length === 1)).toBe(true);
   });
 });

@@ -1,8 +1,9 @@
 import { Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { type WheelPref, download, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
-import type { LabelSize } from '../../render/export-plan';
+import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
+import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
 import { openPackLibrary } from '../packs/store';
@@ -119,7 +120,78 @@ const LABEL_SIZES: [LabelSize, string][] = [
   ['medium', '中'],
   ['large', '大'],
 ];
-const pngChoice: { width: number; labels: LabelSize } = { width: 4096, labels: 'medium' };
+// 整个星球的分界线（图的左右边）：自动放在最宽的海上、以现在的画面为中心，或者按经度自己定
+type SeamMode = 'auto' | 'view' | 'lon';
+const SEAM_MODES: [SeamMode, string][] = [
+  ['auto', '自动'],
+  ['view', '画面中心'],
+  ['lon', '按经度'],
+];
+const SEAM_TITLES: Record<SeamMode, string> = {
+  auto: '放在最宽的海上：尽量不把陆地切成两半',
+  view: '以现在屏幕上的画面为中心，分界线在它的背面',
+  lon: '拖滑块定分界线的经度',
+};
+const pngChoice: { width: number; labels: LabelSize; seamMode: SeamMode; seamLon: number } = { width: 4096, labels: 'medium', seamMode: 'auto', seamLon: 180 };
+
+// 经度（−180–180，东经为正）→ x（[0, 2)）
+const lonToX = (lon: number) => (((lon / 180 + 1) % 2) + 2) % 2;
+const lonText = (lon: number) => {
+  const a = Math.round(Math.abs(lon));
+  return a === 0 ? '0°' : a === 180 ? '180°' : `${lon > 0 ? '东经' : '西经'} ${a}°`;
+};
+
+// 现在的画面中心在哪个 x（MapView 把渲染器挂在 window.__map2 上）
+function viewCenterX(): number {
+  const hook = (window as unknown as { __map2?: { renderer: { camera: { x: number } } } }).__map2;
+  return hook ? hook.renderer.camera.x : 1;
+}
+
+// 分界线的小预览：整个星球的陆海（每格一个点），按导出的样子从分界线切开，左右两边就是分界线
+const STRIP_W = 240;
+const STRIP_H = 120;
+const landGrids = new WeakMap<Uint8Array, Uint8Array>();
+function landGrid(w: World): Uint8Array {
+  let g = landGrids.get(w.causes.land);
+  if (g) return g;
+  g = new Uint8Array(STRIP_W * STRIP_H);
+  const { mesh, causes } = w;
+  for (let i = 0; i < mesh.n; i++) {
+    const x = Math.min(STRIP_W - 1, Math.floor(((mesh.x[i] - 2 * Math.floor(mesh.x[i] / 2)) / 2) * STRIP_W));
+    const y = Math.min(STRIP_H - 1, Math.max(0, Math.floor(mesh.y[i] * STRIP_H)));
+    if (causes.land[i]) g[y * STRIP_W + x] = 2;
+    else if (!g[y * STRIP_W + x]) g[y * STRIP_W + x] = 1;
+  }
+  landGrids.set(w.causes.land, g);
+  return g;
+}
+function SeamStrip({ w, seamX }: { w: World; seamX: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const g = landGrid(w);
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(STRIP_W, STRIP_H);
+    const shift = Math.round((seamX / 2) * STRIP_W);
+    for (let y = 0; y < STRIP_H; y++) {
+      for (let x = 0; x < STRIP_W; x++) {
+        // 按格的点画：没有点落到的像素取左右的
+        const sx = (x + shift) % STRIP_W;
+        let v = g[y * STRIP_W + sx];
+        if (!v) v = g[y * STRIP_W + ((sx + 1) % STRIP_W)] || g[y * STRIP_W + ((sx + STRIP_W - 1) % STRIP_W)];
+        const o = 4 * (y * STRIP_W + x);
+        const [r, gg, b] = v === 2 ? [176, 168, 120] : [54, 92, 130];
+        img.data[o] = r;
+        img.data[o + 1] = gg;
+        img.data[o + 2] = b;
+        img.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }, [w.causes.land, seamX]);
+  return <canvas ref={ref} class="seam-strip" width={STRIP_W} height={STRIP_H} title="导出的图的样子：左右两边就是分界线" />;
+}
 
 const WHEEL: [WheelPref, string][] = [
   ['auto', '自动'],
@@ -131,6 +203,8 @@ export function ActionsPanel() {
   const w = world.value;
   const [width, setWidth] = useState(4096);
   const [png, setPng] = useState({ ...pngChoice });
+  // 自动的分界线：按陆海算一次（世界的陆海变了才重算）
+  const autoX = useMemo(() => (w && w.mesh.kind === 'sphere' ? autoSeam(w.mesh.x, w.causes.land, w.mesh.y) : 0), [w?.mesh, w?.causes.land]);
   if (!w) return null;
   const choosePng = (v: Partial<typeof pngChoice>) => {
     Object.assign(pngChoice, v);
@@ -142,8 +216,13 @@ export function ActionsPanel() {
     const c = snapshotCanvas();
     if (c) c.toBlob((b) => b && download(pngName('（画面）'), b, 'image/png'), 'image/png');
   };
+  const sphere = w.mesh.kind === 'sphere';
+  // 分界线的 x：自动、画面中心（分界线在画面中心的背面）、按经度
+  const seamOf = (mode: SeamMode): number => (mode === 'auto' ? autoX : mode === 'view' ? (((viewCenterX() - 1) % 2) + 2) % 2 : lonToX(png.seamLon));
+  const seamX = seamOf(png.seamMode);
   const saveFullPng = async () => {
-    const b = await exportFullMap(png);
+    // 画面中心按点按钮这一刻的画面
+    const b = await exportFullMap({ width: png.width, labels: png.labels, ...(sphere ? { seam: seamOf(png.seamMode) } : {}) });
     if (b) download(pngName(), b, 'image/png');
   };
   // 整张图的高：一块地区按长宽比，整个星球是 2:1
@@ -188,6 +267,32 @@ export function ActionsPanel() {
           <span>地名字号</span>
           <Seg value={png.labels} options={LABEL_SIZES} onChange={(v) => choosePng({ labels: v })} />
         </div>
+        {sphere && (
+          <>
+            <div class="row between">
+              <span>分界线</span>
+              <Seg
+                value={png.seamMode}
+                options={SEAM_MODES}
+                titles={SEAM_TITLES}
+                onChange={(v) => choosePng(v === 'lon' && png.seamMode !== 'lon' ? { seamMode: v, seamLon: Math.round(seamLongitude(seamX)) } : { seamMode: v })}
+              />
+            </div>
+            {png.seamMode === 'lon' && (
+              <label class="adj-row">
+                <span class="row between">
+                  <span>经度</span>
+                  <span class="muted">{lonText(png.seamLon)}</span>
+                </span>
+                <input type="range" min={-180} max={180} step={1} value={png.seamLon} onInput={(e) => choosePng({ seamLon: Number((e.target as HTMLInputElement).value) })} />
+              </label>
+            )}
+            <SeamStrip w={w} seamX={seamX} />
+            <p class="muted small">
+              星球从分界线（{lonText(seamLongitude(seamX))}）切开展平{png.seamMode === 'auto' ? '：自动放在最宽的海上，尽量不切开陆地' : ''}。小图是导出的样子，左右两边就是分界线。
+            </p>
+          </>
+        )}
         <p class="muted small">
           按现在的画风和图层画出整张{w.mesh.kind === 'sphere' ? '星球（经度 360° 展开成 2:1）' : '地图'}，不管镜头在哪；不带工具的高亮和预览。地名、河按整张图排，字号“大”时标出来的地名少一些。图越大画得越久。
         </p>

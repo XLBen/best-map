@@ -1352,6 +1352,17 @@ kbd {
 .adj-row.off {
   opacity: 0.45;
 }
+/* 整张地图（.png）的分界线小预览：导出的样子，左右两边是分界线 */
+.seam-strip {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 2 / 1;
+  border-radius: 4px;
+  border-left: 2px solid #e05a4a;
+  border-right: 2px solid #e05a4a;
+  margin: 4px 0;
+}
 .accent {
   color: var(--accent);
 }
