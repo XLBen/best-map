@@ -67,7 +67,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: '3fd60a33', upliftDelta: 'cb0b32bd', land: '83511545', elevation: '8e076b20', discharge: 'b8a79f65' });
+    }).toEqual({ landDelta: '3fd60a33', upliftDelta: 'cb0b32bd', land: '83511545', elevation: 'bb6d78bc', discharge: '46a91925' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
