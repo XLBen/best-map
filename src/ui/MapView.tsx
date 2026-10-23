@@ -7,7 +7,7 @@ import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
-import { type CellLayers, Renderer } from '../render/renderer';
+import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import {
   FLASH_MS,
   adjustPreview,
@@ -177,6 +177,8 @@ export function MapView() {
     let frame = 0;
     // 改完后的闪烁每 1/40 不透明度才变一次：到那时再画，不必每一帧都画一遍
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
+    // 镜头停下以后补画全分辨率的那一帧
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
     // 省界淡出用的省份大小：按省份数组缓存（只改了名字时不必重数）
     let provinceScaleFor: Int32Array | null = null;
     let pointer: Pointer | null = null;
@@ -428,7 +430,15 @@ export function MapView() {
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = category.value === 'provinces';
       renderer.style = mapStyle.value;
-      renderer.render(w.kmPerUnit);
+      // 镜头正在动：渲染器按低分辨率画了这一帧，停下 SETTLE_MS 以后再画一次（补上全分辨率的）。导出图片一定按停稳的画法画
+      const moving = renderer.render(w.kmPerUnit, { still: clean });
+      if (moving) {
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => {
+          settleTimer = null;
+          requestDraw();
+        }, SETTLE_MS + 10);
+      }
       const c = category.value;
       const groups = labelGroups.value;
       // 底部条伸到左下角（窗口窄、选项多）时，比例尺和尺子按钮抬到它上面
@@ -922,9 +932,11 @@ export function MapView() {
         __map2SaveRefs: (tag?: string) => import('../render/bench').then((b) => b.saveRefs(hooks, tag)),
         __map2CompareRefs: (tag?: string) => import('../render/bench').then((b) => b.compareRefs(hooks, tag)),
         __map2PassTimes: (moving?: boolean) => import('../render/bench').then((b) => b.passTimes(hooks, moving)),
+        __map2BrushBench: (frames?: number) => import('../render/bench').then((b) => b.brushBench(hooks, frames)),
       });
     }
     return () => {
+      if (settleTimer) clearTimeout(settleTimer);
       disposeWorld();
       disposePaths();
       disposeColors();

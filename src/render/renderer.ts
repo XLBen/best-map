@@ -394,6 +394,11 @@ uniform int uHasSeams;
 uniform int uFlatByGroup;
 uniform int uHighlightByGroup;
 uniform vec2 uTexel;
+// 场景（地形层、编号层、切线层）上的位置 = 画面上的位置 × xy + zw。停稳时是 (1, 1, 0, 0)；
+// 移动中场景是按稍早的镜头、带边距、低分辨率画的那一份（见 Renderer.renderMoving）
+uniform vec4 uSceneXf;
+// 画面一个像素合几个屏幕像素（停稳 1，移动中按低分辨率画时 > 1）：斜线照屏幕像素的宽度画
+uniform float uPxScale;
 uniform vec4 uView;
 uniform float uSpacing;
 uniform float uRelief;
@@ -416,7 +421,7 @@ uniform int uHasTint;
 out vec4 oColor;
 ${NOISE_GLSL}
 int idAt(vec2 uv) {
-  vec4 c = texture(uIdTex, clamp(uv, vec2(0.0), vec2(1.0))) * 255.0;
+  vec4 c = texture(uIdTex, clamp(uv, vec2(0.0), vec2(1.0)) * uSceneXf.xy + uSceneXf.zw) * 255.0;
   return int(c.r + 0.5) + int(c.g + 0.5) * 256 + int(c.b + 0.5) * 65536 - 1;
 }
 vec4 cellTex(sampler2D tex, int id) {
@@ -428,7 +433,7 @@ float groupOf(int id) { return id < 0 ? -1e9 : cellTex(uGroup, id).r; }
 // uv 是像素没扭曲的位置（切线层按它找最近的段）
 int seamCell(int id, vec2 uv) {
   if (uHasSeams == 0 || id < 0) return id;
-  vec4 s = texture(uSeam, uv) * 255.0;
+  vec4 s = texture(uSeam, uv * uSceneXf.xy + uSceneXf.zw) * 255.0;
   int seg = int(s.r + 0.5) + int(s.g + 0.5) * 256 + int(s.b + 0.5) * 65536 - 1;
   if (seg < 0) return id;
   vec4 sd = texelFetch(uSegData, ivec2(seg % ${TEX_W}, seg / ${TEX_W}), 0);
@@ -445,8 +450,9 @@ float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; 
 float hlAlpha(float A) { return A > 128.5 ? (A - 128.0) / 127.0 : A < 127.5 ? A / 127.0 : 0.0; }
 ${FX_BEGIN}${PATTERN_GLSL}${FX_END}
 void main() {
-  vec4 base = texture(uSceneColor, vUv);
-  vec4 hs = texture(uSceneHeight, vUv);
+  vec2 sUv = vUv * uSceneXf.xy + uSceneXf.zw;
+  vec4 base = texture(uSceneColor, sUv);
+  vec4 hs = texture(uSceneHeight, sUv);
   float h = hs.r;
   bool land = hs.g > 0.0;
   // 地形层算好的坡度（地图坐标，y 向下）→ 法线
@@ -555,7 +561,7 @@ void main() {
     float a0 = hlAlpha(A0);
     if (A0 > 128.5) {
       // 斜线：按屏幕像素画，缩放时线宽不变
-      float stripe = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / 10.0));
+      float stripe = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) * uPxScale / 10.0));
       col = mix(col, hc.rgb, a0 * stripe);
     } else {
       col = mix(col, hc.rgb, a0);
@@ -837,6 +843,61 @@ export interface CellLayers {
 
 export type MapStyle = 'realistic' | 'atlas';
 
+type V4 = [number, number, number, number];
+// 一块像素（x, y, 宽, 高；GL 的 y 向上）
+type Rect = [number, number, number, number];
+
+// 一组场景目标：地形层（颜色、高度）、编号层、切线层（带深度）
+interface SceneTarget {
+  w: number;
+  h: number;
+  fbo: WebGLFramebuffer;
+  fboId: WebGLFramebuffer;
+  fboSeam: WebGLFramebuffer;
+  color: WebGLTexture;
+  height: WebGLTexture;
+  id: WebGLTexture;
+  seam: WebGLTexture;
+  depth: WebGLRenderbuffer;
+}
+
+// 镜头停下多久以后按停稳的画法（全分辨率）补画一帧（毫秒）
+export const SETTLE_MS = 150;
+// 移动中：场景、合成按画布的几分之一分辨率画；场景四周各多画画面宽高的几分之一（平移时挪用）；
+// 放大到场景画的时候的几倍以内照样挪用（再大就太糊，重画）
+const MOTION_SCALE = 0.5;
+const MOTION_MARGIN = 0.2;
+const MOTION_MAX_ZOOM_IN = 1.3;
+
+// 每格的三角形（地形层）在地图上伸到多远：相对格中心的 minDx, maxDx, minDy, maxDy。
+// 整个星球的显示网格里，接缝外的影子三角形按离格最近的那一份算（经度差挪到 ±1 以内）
+function cellBoxes(mesh: Mesh, tp: Float32Array, tc: Float32Array, sphere: boolean): Float32Array {
+  const box = new Float32Array(mesh.n * 4);
+  for (let t = 0; t + 2 < tc.length; t += 3) {
+    const xa = tp[2 * t];
+    const xb = tp[2 * t + 2];
+    const xc = tp[2 * t + 4];
+    const ya = tp[2 * t + 1];
+    const yb = tp[2 * t + 3];
+    const yc = tp[2 * t + 5];
+    const minX = Math.min(xa, xb, xc);
+    const maxX = Math.max(xa, xb, xc);
+    const minY = Math.min(ya, yb, yc);
+    const maxY = Math.max(ya, yb, yc);
+    for (let k = 0; k < 3; k++) {
+      const c = tc[t + k];
+      const cx = mesh.x[c];
+      const cy = mesh.y[c];
+      const shift = sphere ? 2 * Math.round(((minX + maxX) / 2 - cx) / 2) : 0;
+      box[4 * c] = Math.min(box[4 * c], minX - shift - cx);
+      box[4 * c + 1] = Math.max(box[4 * c + 1], maxX - shift - cx);
+      box[4 * c + 2] = Math.min(box[4 * c + 2], minY - cy);
+      box[4 * c + 3] = Math.max(box[4 * c + 3], maxY - cy);
+    }
+  }
+  return box;
+}
+
 export class Renderer {
   private gl: WebGL2RenderingContext;
   private progId: WebGLProgram;
@@ -853,14 +914,11 @@ export class Renderer {
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
   private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint', WebGLTexture>;
-  private fbo: WebGLFramebuffer;
-  private fboId: WebGLFramebuffer;
-  private fboSeam: WebGLFramebuffer;
-  private sceneColor: WebGLTexture;
-  private sceneHeight: WebGLTexture;
-  private idTex: WebGLTexture;
-  private seamTex: WebGLTexture;
-  private seamDepth: WebGLRenderbuffer;
+  // 场景（编号层、地形层、切线层）：停稳时画在与画布一样大的一组目标上；移动中画在低分辨率、带边距的另一组上
+  private rest: SceneTarget;
+  private moving: SceneTarget;
+  // 移动中的合成画面（低分辨率），画好后放大拷到画布上
+  private out: { fbo: WebGLFramebuffer; tex: WebGLTexture; w: number; h: number };
   // 切线：每段一个实例（两端、前后两段的端点、前后有没有段）。setLayers 给的与现在显示的（剪刀拖动时多一条）
   private seamVao: WebGLVertexArrayObject;
   private seamBuf: WebGLBuffer;
@@ -871,7 +929,6 @@ export class Renderer {
   private seamsShown: SeamLayers | null = null;
   private seamVersion = 0;
   private seamKey = '';
-  private fboSize = [0, 0];
   private mesh: Mesh | null = null;
   private hasFlat = false;
   private hasGroup = false;
@@ -892,8 +949,21 @@ export class Renderer {
   // 场景（编号层、地形层）与合成画面的版本：没变就不重画
   private layersVersion = 0;
   private highlightVersion = 0;
-  private sceneKey = '';
+  private meshVersion = 0;
+  // 停稳的编号层、地形层画的是哪个键：编号层只看网格、画布、镜头；地形层另看图层、细节、海岸幅度
+  private idKey = '';
+  private terrainKey = '';
+  private terrainStatic = '';
+  // 地形层自上次画完后哪些格的输入变了（幽灵海岸：只重画这些格所在的那一块）；'full' 整张重画
+  private dirtyCells: 'full' | Set<number> = 'full';
+  // 每格的三角形（地形层）在地图上伸到多远（相对格中心：minDx, maxDx, minDy, maxDy），算重画哪一块用
+  private cellBox: Float32Array | null = null;
   private composeKey = '';
+  // 移动中（镜头在 SETTLE_MS 之内动过）：低分辨率画、平移时挪用带边距的场景。lastCam 是上一帧的镜头，movedAt 是它最后一次变的时候
+  private lastCam = '';
+  private movedAt = -Infinity;
+  // 移动中的场景是按哪个镜头、哪些输入画的（同样的输入、镜头还在边距之内就不重画）
+  private movingScene: { cam: Camera; key: string } | null = null;
   // 分组、平涂：setLayers 给的底子与现在显示的（省份预览覆盖时不同）。换预览时只上传变了的行
   private groupBase: Float32Array | null = null;
   private groupShown: Float32Array | null = null;
@@ -903,6 +973,7 @@ export class Renderer {
   // 幽灵海岸（colors.ts 的 GhostBuffer）：setLayers 给的底子，现在显示着幽灵的那些行，幽灵的海岸细节幅度
   private base: CellLayers | null = null;
   private ghostRows: number[] = [];
+  private ghostCells: number[] = [];
   private ghostAmp: number | null = null;
   private ghostGroup: Float32Array | null = null;
   private ghostFlat: Uint8Array | null = null;
@@ -925,14 +996,9 @@ export class Renderer {
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
     this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t() };
-    this.fbo = gl.createFramebuffer()!;
-    this.fboId = gl.createFramebuffer()!;
-    this.fboSeam = gl.createFramebuffer()!;
-    this.sceneColor = this.makeTex(true);
-    this.sceneHeight = this.makeTex();
-    this.idTex = this.makeTex();
-    this.seamTex = this.makeTex();
-    this.seamDepth = gl.createRenderbuffer()!;
+    this.rest = this.makeTarget();
+    this.moving = this.makeTarget();
+    this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
     // 每段的数据先放一个空纹素：还没有切线时合成程序照样绑着它，不能是没有内容的纹理
     gl.bindTexture(gl.TEXTURE_2D, this.tex.segData);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4));
@@ -980,6 +1046,8 @@ export class Renderer {
     if (this.mesh === mesh) return;
     this.mesh = mesh;
     this.layersVersion++;
+    this.meshVersion++;
+    this.dirtyCells = 'full';
     this.planet = mesh.kind === 'sphere';
     if (mesh.kind === 'sphere') {
       this.setSphereMesh(mesh);
@@ -999,6 +1067,7 @@ export class Renderer {
     }
     this.triVao = this.makeVao(tp, tc, tb);
     this.triCount = tris.length;
+    this.cellBox = cellBoxes(mesh, tp, tc, false);
     // Voronoi：每个多边形以格中心做扇形三角化（编号层）
     const vp: number[] = [];
     const vc: number[] = [];
@@ -1051,6 +1120,7 @@ export class Renderer {
     }
     this.triVao = this.makeVao(tp, tc, tb);
     this.triCount = tris.length;
+    this.cellBox = cellBoxes(mesh, tp, tc, true);
     // 编号层：Voronoi 多边形（凸），从第一个顶点扇形三角化
     const polys = view.polygons();
     let count = 0;
@@ -1130,6 +1200,8 @@ export class Renderer {
     this.rock = l.rock;
     this.coastAmp = l.coastAmp;
     this.base = l;
+    this.dirtyCells = 'full';
+    this.ghostCells = [];
     this.ghostRows = [];
     this.ghostAmp = null;
     this.ghostGroup = null;
@@ -1190,6 +1262,14 @@ export class Renderer {
     }
     this.ghostGroup = g?.group ?? null;
     this.ghostFlat = g?.flat ?? null;
+    // 地形层只重画输入变了的格（上一次的幽灵与这一次的）；海岸细节幅度变了整张重画
+    const cells = g ? g.cells : [];
+    if (amp !== this.ghostAmp) this.dirtyCells = 'full';
+    else if (this.dirtyCells !== 'full') {
+      for (const c of this.ghostCells) this.dirtyCells.add(c);
+      for (const c of cells) this.dirtyCells.add(c);
+    }
+    this.ghostCells = Array.from(cells);
     this.ghostRows = [...now];
     this.ghostAmp = amp;
     this.layersVersion++;
@@ -1312,8 +1392,8 @@ export class Renderer {
     if (h) this.upload(this.tex.highlight, h, this.mesh?.n ?? 0, 4);
   }
 
-  // 地图单位 → 裁剪空间
-  private viewUniform(): [number, number, number, number] {
+  // 地图单位 → 裁剪空间（停稳：与画布一样大的目标）
+  private viewUniform(): V4 {
     const w = this.canvas.width;
     const h = this.canvas.height;
     const dpr = w / this.canvas.clientWidth || 1;
@@ -1323,32 +1403,49 @@ export class Renderer {
     return [sx, sy, -this.camera.x * sx, -this.camera.y * sy];
   }
 
-  private ensureFbo() {
+  private makeTarget(): SceneTarget {
     const gl = this.gl;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    if (this.fboSize[0] === w && this.fboSize[1] === h) return;
-    this.fboSize = [w, h];
-    gl.bindTexture(gl.TEXTURE_2D, this.sceneColor);
+    return {
+      w: 0,
+      h: 0,
+      fbo: gl.createFramebuffer()!,
+      fboId: gl.createFramebuffer()!,
+      fboSeam: gl.createFramebuffer()!,
+      color: this.makeTex(true),
+      height: this.makeTex(),
+      id: this.makeTex(),
+      seam: this.makeTex(),
+      depth: gl.createRenderbuffer()!,
+    };
+  }
+
+  // 一组场景目标按大小分配；大小变了返回 true
+  private sizeTarget(t: SceneTarget, w: number, h: number): boolean {
+    const gl = this.gl;
+    if (t.w === w && t.h === h) return false;
+    t.w = w;
+    t.h = h;
+    gl.bindTexture(gl.TEXTURE_2D, t.color);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.bindTexture(gl.TEXTURE_2D, this.sceneHeight);
+    gl.bindTexture(gl.TEXTURE_2D, t.height);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
-    gl.bindTexture(gl.TEXTURE_2D, this.idTex);
+    gl.bindTexture(gl.TEXTURE_2D, t.id);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sceneColor, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.sceneHeight, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboId);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.idTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.color, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, t.height, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboId);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.id, 0);
     // 切线层：段号与哪一边（RGBA8），深度 = 到段的距离 / 带宽
-    gl.bindTexture(gl.TEXTURE_2D, this.seamTex);
+    gl.bindTexture(gl.TEXTURE_2D, t.seam);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, this.seamDepth);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, t.depth);
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT32F, w, h);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboSeam);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.seamTex, 0);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.seamDepth);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboSeam);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.seam, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, t.depth);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return true;
   }
 
   resize() {
@@ -1361,137 +1458,275 @@ export class Renderer {
     }
   }
 
-  render(kmPerUnit: number) {
-    const gl = this.gl;
+  // 画一帧。镜头在 SETTLE_MS 之内动过时按移动中的画法画（低分辨率，平移时挪用带边距的场景），返回 true：
+  // 调用方要在 SETTLE_MS 之后再画一次，那时按停稳的画法补上全分辨率的（与原来逐像素相同）。
+  // still：不管镜头动没动都按停稳的画法画（导出图片、截图）
+  render(kmPerUnit: number, opts: { still?: boolean } = {}): boolean {
     const mesh = this.mesh;
-    if (!mesh || !this.triVao || !this.fanVao) return;
+    if (!mesh || !this.triVao || !this.fanVao) return false;
     this.resize();
-    this.ensureFbo();
-    const view = this.viewUniform();
+    const cam = this.camera;
+    const camKey = `${cam.x}|${cam.y}|${cam.zoom}`;
+    const now = performance.now();
+    if (camKey !== this.lastCam) {
+      if (this.lastCam) this.movedAt = now;
+      this.lastCam = camKey;
+    }
+    if (!opts.still && now - this.movedAt < SETTLE_MS) {
+      this.renderMoving(kmPerUnit);
+      return true;
+    }
+    this.renderStill(kmPerUnit);
+    return false;
+  }
+
+  // 放大后晕渲不必夸张那么多：一格 8 像素以内照旧，越放大越缓（一格 64 像素时约一半）
+  private reliefNow(): number {
+    const cellCss = this.mesh!.spacing * this.camera.zoom;
+    return this.relief / (1 + 0.4 * Math.max(0, Math.log2(cellCss / 8)));
+  }
+
+  // 整个星球：屏幕上看得见的那几份副本（x 平移 2 的倍数）。halfW：画面的半宽（地图单位）
+  private copiesFor(camX: number, halfW: number): [number, number] {
+    if (!this.planet) return [0, 1];
+    const copy0 = Math.ceil((camX - halfW - this.xRange[1]) / 2);
+    const copy1 = Math.floor((camX + halfW - this.xRange[0]) / 2);
+    return [copy0, Math.max(1, Math.min(7, copy1 - copy0 + 1))];
+  }
+
+  // 停稳的画法：画布大小的场景，编号层只在网格、画布、镜头变了时重画，地形层另在图层变了时重画
+  // （只有幽灵海岸改了几格时只重画那几格的三角形盖住的一块），切线层在切线变了时重画；合成每次重画
+  private renderStill(kmPerUnit: number) {
+    const gl = this.gl;
+    const mesh = this.mesh!;
+    const t = this.rest;
     const w = this.canvas.width;
     const h = this.canvas.height;
+    this.sizeTarget(t, w, h);
+    const view = this.viewUniform();
     const cam = this.camera;
     const dpr = w / this.canvas.clientWidth || 1;
-    // 放大后晕渲不必夸张那么多：一格 8 像素以内照旧，越放大越缓（一格 64 像素时约一半）
-    const cellCss = mesh.spacing * cam.zoom;
-    const relief = this.relief / (1 + 0.4 * Math.max(0, Math.log2(cellCss / 8)));
+    const relief = this.reliefNow();
     // 幽灵海岸带着将来的海岸细节幅度（拖海岸曲折时）
     const coastAmp = this.ghostAmp ?? this.coastAmp;
-    const sceneKey = `${this.layersVersion}|${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.detail}|${coastAmp}|${kmPerUnit}`;
-    // 整个星球：屏幕上看得见的那几份副本（x 平移 2 的倍数）
-    let copy0 = 0;
-    let copies = 1;
-    if (this.planet) {
-      const halfW = this.canvas.clientWidth / 2 / cam.zoom;
-      copy0 = Math.ceil((cam.x - halfW - this.xRange[1]) / 2);
-      const copy1 = Math.floor((cam.x + halfW - this.xRange[0]) / 2);
-      copies = Math.max(1, Math.min(7, copy1 - copy0 + 1));
-    }
-    const pp = this.planet ? this.planetProgs : null;
-    const noiseK = 1 / (Math.PI * mesh.spacing);
+    const idKey = `${this.meshVersion}|${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}`;
+    const terrainStatic = `${idKey}|${this.detail}|${coastAmp}|${kmPerUnit}`;
+    const terrainKey = `${terrainStatic}|${this.layersVersion}`;
+    const halfW = this.canvas.clientWidth / 2 / cam.zoom;
+    const [copy0, copies] = this.copiesFor(cam.x, halfW);
     // 切线层：镜头、窗口、切线变了才重画
     const hasSeams = this.hasGroup && this.seamCount > 0;
     const seamKey = hasSeams ? `${w}x${h}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
-    const composeKey = `${sceneKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
     gl.viewport(0, 0, w, h);
-
-    if (sceneKey !== this.sceneKey) {
-      this.sceneKey = sceneKey;
-      // 1. 编号层
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboId);
-      gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-      gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
-      const pid = pp ? pp.id : this.progId;
-      gl.useProgram(pid);
-      gl.uniform4fv(gl.getUniformLocation(pid, 'uView'), view);
-      // 编号层的顶点着色器（VS_ID）不读纹理：不必绑，也不会与写入目标形成反馈环
-      gl.bindVertexArray(this.fanVao);
-      if (pp) {
-        gl.uniform1i(gl.getUniformLocation(pid, 'uCopy0'), copy0);
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, this.fanCount, copies);
-      } else gl.drawArrays(gl.TRIANGLES, 0, this.fanCount);
-
-      // 2. 地形层
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-      gl.clearBufferfv(gl.COLOR, 0, [0.08, 0.1, 0.14, 0]);
-      gl.clearBufferfv(gl.COLOR, 1, [-4000, -1, 0, 0]);
-      const pt = pp ? pp.terrain : this.progTerrain;
-      gl.useProgram(pt);
-      gl.uniform4fv(gl.getUniformLocation(pt, 'uView'), view);
-      gl.uniform1f(gl.getUniformLocation(pt, 'uSpacing'), mesh.spacing);
-      gl.uniform1f(gl.getUniformLocation(pt, 'uCoastAmp'), coastAmp);
-      gl.uniform1f(gl.getUniformLocation(pt, 'uDetail'), this.detail);
-      gl.uniform1f(gl.getUniformLocation(pt, 'uPixel'), 1 / (cam.zoom * dpr));
-      gl.uniform1f(gl.getUniformLocation(pt, 'uMetersPerUnit'), kmPerUnit * 1000);
-      this.bindTex(pt, 'uColor', this.tex.color, 0);
-      this.bindTex(pt, 'uElev', this.tex.elev, 1);
-      this.bindTex(pt, 'uCoast', this.tex.coast, 2);
-      this.bindTex(pt, 'uGrad', this.tex.grad, 3);
-      this.bindTex(pt, 'uOther', this.tex.other, 4);
-      gl.bindVertexArray(this.triVao);
-      if (pp) {
-        gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);
-        gl.uniform1f(gl.getUniformLocation(pt, 'uNoiseK'), noiseK);
-        gl.drawArraysInstanced(gl.TRIANGLES, 0, this.triCount, copies);
-      } else gl.drawArrays(gl.TRIANGLES, 0, this.triCount);
+    if (idKey !== this.idKey) {
+      this.idKey = idKey;
+      this.drawId(t, view, copy0, copies);
     }
-
-    // 3. 切线层：每段画一个长方形，片元算到段的距离与在哪一边，近的胜（深度测试 LESS，同样近时先画的段号小的胜）
+    if (terrainKey !== this.terrainKey) {
+      const rects = terrainStatic === this.terrainStatic && this.dirtyCells !== 'full' ? this.dirtyRects(this.dirtyCells, view, w, h) : null;
+      this.terrainKey = terrainKey;
+      this.terrainStatic = terrainStatic;
+      this.dirtyCells = new Set();
+      this.drawTerrain(t, view, 1 / (cam.zoom * dpr), copy0, copies, coastAmp, kmPerUnit, rects);
+    }
     if (hasSeams && seamKey !== this.seamKey) {
       this.seamKey = seamKey;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboSeam);
-      gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
-      gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
-      gl.clearBufferfv(gl.DEPTH, 0, [1]);
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LESS);
-      gl.depthMask(true);
-      const ps = this.progSeam;
-      gl.useProgram(ps);
-      gl.uniform4fv(gl.getUniformLocation(ps, 'uView'), view);
-      gl.uniform1f(gl.getUniformLocation(ps, 'uBand'), this.seamBand);
-      gl.bindVertexArray(this.seamVao);
-      // 整个星球：线（经度展开后可能超出 [0, 2)）在屏幕上看得见的那几份
-      let k0 = 0;
-      let k1 = 0;
-      if (this.planet) {
-        const halfW = this.canvas.clientWidth / 2 / cam.zoom;
-        k0 = Math.ceil((cam.x - halfW - this.seamX[1] - this.seamBand) / 2);
-        k1 = Math.min(k0 + 6, Math.floor((cam.x + halfW - this.seamX[0] + this.seamBand) / 2));
-      }
-      for (let k = k0; k <= k1; k++) {
-        gl.uniform1f(gl.getUniformLocation(ps, 'uShift'), 2 * k);
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.seamCount);
-      }
-      gl.disable(gl.DEPTH_TEST);
+      this.drawSeams(t, view, halfW);
     }
-
-    // 4. 合成
     this.composeKey = composeKey;
+    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], mesh.spacing * cam.zoom * dpr, 1, relief, hasSeams);
+  }
+
+  // 移动中的画法：场景按 MOTION_SCALE 的分辨率、四周各多画 MOTION_MARGIN 画在另一组目标上；镜头还在边距之内、
+  // 放大不到 MOTION_MAX_ZOOM_IN 倍、输入没变时不重画场景，只按新镜头合成（平移、小幅缩放就是挪一挪、缩一缩那张场景）。
+  // 合成也按低分辨率画，再放大拷到画布上
+  private renderMoving(kmPerUnit: number) {
+    const gl = this.gl;
+    const mesh = this.mesh!;
+    const cam = this.camera;
+    const cw = this.canvas.clientWidth || 1;
+    const ch = this.canvas.clientHeight || 1;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const dpr = w / cw || 1;
+    // 合成画面与场景的大小（像素），k：一个 CSS 像素合几个这样的像素
+    const k = dpr * MOTION_SCALE;
+    const ow = Math.max(1, Math.round(cw * k));
+    const oh = Math.max(1, Math.round(ch * k));
+    const sw = Math.round(ow * (1 + 2 * MOTION_MARGIN));
+    const sh = Math.round(oh * (1 + 2 * MOTION_MARGIN));
+    if (this.sizeTarget(this.moving, sw, sh)) this.movingScene = null;
+    if (this.out.w !== ow || this.out.h !== oh) {
+      this.out.w = ow;
+      this.out.h = oh;
+      gl.bindTexture(gl.TEXTURE_2D, this.out.tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ow, oh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.out.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.out.tex, 0);
+    }
+    const coastAmp = this.ghostAmp ?? this.coastAmp;
+    const hasSeams = this.hasGroup && this.seamCount > 0;
+    const key = `${this.meshVersion}|${sw}x${sh}|${k}|${this.layersVersion}|${this.detail}|${coastAmp}|${kmPerUnit}|${hasSeams ? this.seamVersion : -1}`;
+    gl.disable(gl.BLEND);
+    let sc = this.movingScene;
+    // 现在的画面（地图单位的半宽、半高）是否还在场景里
+    const fits = (c: Camera) => {
+      const z = c.zoom * k;
+      return cam.zoom / c.zoom <= MOTION_MAX_ZOOM_IN && Math.abs(cam.x - c.x) + cw / 2 / cam.zoom <= sw / 2 / z && Math.abs(cam.y - c.y) + ch / 2 / cam.zoom <= sh / 2 / z;
+    };
+    if (!sc || sc.key !== key || !fits(sc.cam)) {
+      sc = { cam: { ...cam }, key };
+      this.movingScene = sc;
+      const z = cam.zoom * k;
+      const sx = (2 * z) / sw;
+      const sy = (-2 * z) / sh;
+      const view: V4 = [sx, sy, -cam.x * sx, -cam.y * sy];
+      const halfW = sw / 2 / z;
+      const [copy0, copies] = this.copiesFor(cam.x, halfW);
+      gl.viewport(0, 0, sw, sh);
+      this.drawId(this.moving, view, copy0, copies);
+      this.drawTerrain(this.moving, view, 1 / z, copy0, copies, coastAmp, kmPerUnit, null);
+      if (hasSeams) this.drawSeams(this.moving, view, halfW);
+    }
+    // 合成：画面上的位置（0–1）→ 场景上的位置
+    const c0 = sc.cam;
+    const z0 = c0.zoom * k;
+    const z1 = cam.zoom * k;
+    const ax = (ow / z1) * (z0 / sw);
+    const ay = (oh / z1) * (z0 / sh);
+    const xf: V4 = [ax, ay, ((cam.x - c0.x) * z0) / sw - 0.5 * ax + 0.5, 0.5 - ((cam.y - c0.y) * z0) / sh - 0.5 * ay];
+    const sx = (2 * z1) / ow;
+    const sy = (-2 * z1) / oh;
+    const view: V4 = [sx, sy, -cam.x * sx, -cam.y * sy];
+    gl.viewport(0, 0, ow, oh);
+    this.compose(this.out.fbo, this.moving, view, xf, [1 / ow, 1 / oh], mesh.spacing * z1, w / ow, this.reliefNow(), hasSeams);
+    // 放大拷到画布上
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.out.fbo);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, ow, oh, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // 停下来时一定按停稳的画法重画
+    this.composeKey = '';
+  }
+
+  // 1. 编号层
+  private drawId(t: SceneTarget, view: V4, copy0: number, copies: number) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboId);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+    const pp = this.planet ? this.planetProgs : null;
+    const pid = pp ? pp.id : this.progId;
+    gl.useProgram(pid);
+    gl.uniform4fv(gl.getUniformLocation(pid, 'uView'), view);
+    // 编号层的顶点着色器（VS_ID）不读纹理：不必绑，也不会与写入目标形成反馈环
+    gl.bindVertexArray(this.fanVao);
+    if (pp) {
+      gl.uniform1i(gl.getUniformLocation(pid, 'uCopy0'), copy0);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, this.fanCount, copies);
+    } else gl.drawArrays(gl.TRIANGLES, 0, this.fanCount);
+  }
+
+  // 2. 地形层。pixel：一个目标像素合多少地图单位。rects：只重画这几块（设备像素，GL 的 y 向上）；null 整张
+  private drawTerrain(t: SceneTarget, view: V4, pixel: number, copy0: number, copies: number, coastAmp: number, kmPerUnit: number, rects: Rect[] | null) {
+    const gl = this.gl;
+    const mesh = this.mesh!;
+    if (rects && !rects.length) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    const pp = this.planet ? this.planetProgs : null;
+    const pt = pp ? pp.terrain : this.progTerrain;
+    gl.useProgram(pt);
+    gl.uniform4fv(gl.getUniformLocation(pt, 'uView'), view);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uSpacing'), mesh.spacing);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uCoastAmp'), coastAmp);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uDetail'), this.detail);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uPixel'), pixel);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uMetersPerUnit'), kmPerUnit * 1000);
+    this.bindTex(pt, 'uColor', this.tex.color, 0);
+    this.bindTex(pt, 'uElev', this.tex.elev, 1);
+    this.bindTex(pt, 'uCoast', this.tex.coast, 2);
+    this.bindTex(pt, 'uGrad', this.tex.grad, 3);
+    this.bindTex(pt, 'uOther', this.tex.other, 4);
+    gl.bindVertexArray(this.triVao);
+    if (pp) {
+      gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);
+      gl.uniform1f(gl.getUniformLocation(pt, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
+    }
+    if (rects) gl.enable(gl.SCISSOR_TEST);
+    for (const r of rects ?? [null]) {
+      if (r) gl.scissor(r[0], r[1], r[2], r[3]);
+      gl.clearBufferfv(gl.COLOR, 0, [0.08, 0.1, 0.14, 0]);
+      gl.clearBufferfv(gl.COLOR, 1, [-4000, -1, 0, 0]);
+      if (pp) gl.drawArraysInstanced(gl.TRIANGLES, 0, this.triCount, copies);
+      else gl.drawArrays(gl.TRIANGLES, 0, this.triCount);
+    }
+    gl.disable(gl.SCISSOR_TEST);
+  }
+
+  // 3. 切线层：每段画一个长方形，片元算到段的距离与在哪一边，近的胜（深度测试 LESS，同样近时先画的段号小的胜）
+  private drawSeams(t: SceneTarget, view: V4, halfW: number) {
+    const gl = this.gl;
+    const cam = this.camera;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fboSeam);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+    gl.clearBufferfv(gl.DEPTH, 0, [1]);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LESS);
+    gl.depthMask(true);
+    const ps = this.progSeam;
+    gl.useProgram(ps);
+    gl.uniform4fv(gl.getUniformLocation(ps, 'uView'), view);
+    gl.uniform1f(gl.getUniformLocation(ps, 'uBand'), this.seamBand);
+    gl.bindVertexArray(this.seamVao);
+    // 整个星球：线（经度展开后可能超出 [0, 2)）在屏幕上看得见的那几份
+    let k0 = 0;
+    let k1 = 0;
+    if (this.planet) {
+      k0 = Math.ceil((cam.x - halfW - this.seamX[1] - this.seamBand) / 2);
+      k1 = Math.min(k0 + 6, Math.floor((cam.x + halfW - this.seamX[0] + this.seamBand) / 2));
+    }
+    for (let k = k0; k <= k1; k++) {
+      gl.uniform1f(gl.getUniformLocation(ps, 'uShift'), 2 * k);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.seamCount);
+    }
+    gl.disable(gl.DEPTH_TEST);
+  }
+
+  // 4. 合成：画进 fb（null 是画布）。xf：画面上的位置 → 场景 t 上的位置；texel：画面一个像素（0–1）；
+  // cellPx：一格合画面几个像素；pxScale：画面一个像素合几个屏幕像素
+  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, relief: number, hasSeams: boolean) {
+    const gl = this.gl;
+    const mesh = this.mesh!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    if (fb) gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    const pp = this.planet ? this.planetProgs : null;
     const pc = pp ? pp.compose : this.progCompose;
     gl.useProgram(pc);
-    if (pp) gl.uniform1f(gl.getUniformLocation(pc, 'uNoiseK'), noiseK);
-    this.bindTex(pc, 'uSceneColor', this.sceneColor, 0);
-    this.bindTex(pc, 'uSceneHeight', this.sceneHeight, 1);
-    this.bindTex(pc, 'uIdTex', this.idTex, 2);
+    if (pp) gl.uniform1f(gl.getUniformLocation(pc, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
+    this.bindTex(pc, 'uSceneColor', t.color, 0);
+    this.bindTex(pc, 'uSceneHeight', t.height, 1);
+    this.bindTex(pc, 'uIdTex', t.id, 2);
     this.bindTex(pc, 'uFlat', this.tex.flat, 3);
     this.bindTex(pc, 'uHighlight', this.tex.highlight, 4);
     this.bindTex(pc, 'uGroup', this.tex.group, 5);
-    this.bindTex(pc, 'uSeam', this.seamTex, 6);
+    this.bindTex(pc, 'uSeam', t.seam, 6);
     this.bindTex(pc, 'uSegData', this.tex.segData, 7);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasSeams'), hasSeams ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uFlatByGroup'), this.flatByGroup ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHighlightByGroup'), this.highlightByGroup ? 1 : 0);
-    gl.uniform2f(gl.getUniformLocation(pc, 'uTexel'), 1 / w, 1 / h);
+    gl.uniform2f(gl.getUniformLocation(pc, 'uTexel'), texel[0], texel[1]);
     gl.uniform4fv(gl.getUniformLocation(pc, 'uView'), view);
+    gl.uniform4fv(gl.getUniformLocation(pc, 'uSceneXf'), xf);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uPxScale'), pxScale);
     gl.uniform1f(gl.getUniformLocation(pc, 'uSpacing'), mesh.spacing);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRelief'), relief);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), mesh.spacing * cam.zoom * dpr);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), cellPx);
     gl.uniform1f(gl.getUniformLocation(pc, 'uProvScale'), this.provinceScale);
     gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
@@ -1507,6 +1742,54 @@ export class Renderer {
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
     gl.bindVertexArray(null);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // 幽灵海岸改了的这几格：地形层要重画的几块（设备像素，GL 的 y 向上，四周多 2 像素）。
+  // 这几格的三角形盖住的范围（cellBox）就是它们会变的全部像素；太多、跨得太宽时返回 null（整张重画）
+  private dirtyRects(cells: Set<number>, view: V4, w: number, h: number): Rect[] | null {
+    const mesh = this.mesh!;
+    const box = this.cellBox;
+    if (!box || cells.size > mesh.n / 8) return null;
+    if (!cells.size) return [];
+    const sphere = this.planet;
+    let ref = Number.NaN;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const c of cells) {
+      let x = mesh.x[c];
+      // 整个星球：经度在第一格附近展开
+      if (sphere) {
+        if (Number.isNaN(ref)) ref = x;
+        x = ref + (x - ref - 2 * Math.round((x - ref) / 2));
+      }
+      x0 = Math.min(x0, x + box[4 * c]);
+      x1 = Math.max(x1, x + box[4 * c + 1]);
+      y0 = Math.min(y0, mesh.y[c] + box[4 * c + 2]);
+      y1 = Math.max(y1, mesh.y[c] + box[4 * c + 3]);
+    }
+    if (sphere && x1 - x0 > 1) return null;
+    const px = (x: number) => (x * view[0] + view[2] + 1) * 0.5 * w;
+    const py = (y: number) => (y * view[1] + view[3] + 1) * 0.5 * h;
+    const bottom = Math.max(0, Math.floor(py(y1)) - 2);
+    const top = Math.min(h, Math.ceil(py(y0)) + 2);
+    if (top <= bottom) return [];
+    // 整个星球：每一份副本（左右相隔 2）上各一块
+    let m0 = 0;
+    let m1 = 0;
+    if (sphere) {
+      const period = view[0] * w;
+      m0 = Math.ceil((-2 - px(x1)) / period);
+      m1 = Math.floor((w + 2 - px(x0)) / period);
+    }
+    const rects: Rect[] = [];
+    for (let m = m0; m <= m1 && rects.length < 8; m++) {
+      const left = Math.max(0, Math.floor(px(x0 + 2 * m)) - 2);
+      const right = Math.min(w, Math.ceil(px(x1 + 2 * m)) + 2);
+      if (right > left) rects.push([left, bottom, right - left, top - bottom]);
+    }
+    return rects;
   }
 
   private bindTex(prog: WebGLProgram, name: string, tex: WebGLTexture, unit: number) {

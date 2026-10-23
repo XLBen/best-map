@@ -98,6 +98,58 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
   return out;
 }
 
+// 画笔拖动（当前工具，默认“陆海”画笔）：在画面中间按下、每帧挪几个像素，每帧同步画一次；最后取消这一笔（世界不变）
+export async function brushBench(h: BenchHooks, frames = 30): Promise<Stats> {
+  const gl = (h.canvas.getContext('webgl2') as WebGL2RenderingContext)!;
+  const px = new Uint8Array(4);
+  const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const ov = document.querySelector('.map-overlay') as HTMLCanvasElement;
+  const saved = { ...h.renderer.camera };
+  const orig = h.renderer.render.bind(h.renderer);
+  let glTime = 0;
+  h.renderer.render = (km: number, o?: { still?: boolean }) => {
+    const t = performance.now();
+    const out = orig(km, o);
+    sync();
+    glTime += performance.now() - t;
+    return out;
+  };
+  const capture = ov.setPointerCapture;
+  ov.setPointerCapture = () => {};
+  const { mapApi } = await import('../ui/camera');
+  try {
+    h.renderer.camera = { x: 0.83, y: 0.42, zoom: 8 / h.spacing() };
+    h.draw();
+    await new Promise((r) => setTimeout(r, 300));
+    h.draw();
+    const r = ov.getBoundingClientRect();
+    const ev = (type: string, x: number, y: number) =>
+      ov.dispatchEvent(new PointerEvent(type, { clientX: r.left + x, clientY: r.top + y, pointerId: 1, button: 0, buttons: 1, bubbles: true }));
+    const cx = r.width / 2 - 120;
+    const cy = r.height / 2;
+    ev('pointerdown', cx, cy);
+    h.draw();
+    const total: number[] = [];
+    const glt: number[] = [];
+    for (let i = 1; i <= frames; i++) {
+      glTime = 0;
+      const t = performance.now();
+      ev('pointermove', cx + i * 6, cy + i * 2);
+      h.draw();
+      sync();
+      total.push(performance.now() - t);
+      glt.push(glTime);
+    }
+    return stats(total, glt);
+  } finally {
+    mapApi.current?.cancel();
+    ov.setPointerCapture = capture;
+    h.renderer.render = orig;
+    h.renderer.camera = saved;
+    h.draw();
+  }
+}
+
 // 每一次绘制调用各花多久（前后各读回一个像素等显卡）：按“调用|顶点数|实例数”分开，10 帧平均。
 // moving：每帧挪一点镜头（移动中的画法）；否则每帧都按停稳的画法重画（改一下 detail 让地形层重画）
 export async function passTimes(h: BenchHooks, moving = false): Promise<Record<string, Record<string, number>>> {
@@ -126,6 +178,8 @@ export async function passTimes(h: BenchHooks, moving = false): Promise<Record<s
       ['24px', { x: 1, y: 0.45, zoom: 24 / sp }],
     ] as const) {
       h.renderer.camera = { ...cam };
+      h.draw();
+      await new Promise((r) => setTimeout(r, 300));
       h.draw();
       for (const k in times) delete times[k];
       for (let i = 0; i < 10; i++) {
