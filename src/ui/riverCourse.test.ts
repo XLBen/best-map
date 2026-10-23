@@ -828,3 +828,50 @@ describe('复测后补的', () => {
     throw new Error('找不到穿山的一笔');
   });
 });
+
+describe('连着改：终点 → 源头 → 终点', () => {
+  it('上一笔还在算时拖的源头、终点都排着队，按“第一个、最后一个点”认到刚固定的那条河上，三笔都改上，只有一条河', async () => {
+    const { eng, w, t } = setup();
+    const f = w.derived.features.filter((x) => x.type === 'river' && x.name && x.guide === undefined).sort((a, b) => b.cells.length - a.cells.length)[0];
+    const cell = Array.from(f.cells).find((c) => isRiverCell(w, w.derived, c) && w.derived.discharge[c] > 2 * w.small.planet.riverThreshold)!;
+    selectedRiver.value = { kind: 'natural', cell };
+    const T = targetOf(w, { kind: 'natural', cell })!;
+    const H = handlesOf(T, zoomOf(w));
+    const src = T.points[H[0]];
+    const end = T.points[H[H.length - 1]];
+    const before = eng.world.small.guides.length;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    let calls = 0;
+    vi.mocked(exec).mockImplementation(async (cmd) => {
+      if (calls++ === 0) await gate;
+      eng.exec(cmd as Command);
+      world.value = { ...eng.world };
+      return true;
+    });
+    try {
+      const s = w.mesh.spacing;
+      const dragTo = (from: Pt, to: Pt) => {
+        t.down?.(ptr(w, from));
+        for (const q of line(w, from, to).slice(1)) t.move?.(ptr(w, q), true);
+        return t.up?.(ptr(w, to));
+      };
+      // 终点往回拖（缩短）；源头往外挪一点；再拖终点（在原来终点的地方起笔：按“最后一个点”认）
+      const P = T.points;
+      const first = dragTo(end, P[Math.floor(P.length * 0.8)]);
+      await dragTo(src, [src[0] + 0.6 * s, src[1] + 0.6 * s]);
+      await dragTo(end, P[Math.floor(P.length * 0.7)]);
+      release();
+      await first;
+      await vi.waitFor(() => expect(calls).toBe(3), { timeout: 3000 });
+      const cmds = vi.mocked(exec).mock.calls.map((c) => c[0] as Command);
+      expect(cmds[0].op).toBe('add_guide');
+      const id = eng.world.small.guides[eng.world.small.guides.length - 1].id;
+      expect(cmds.slice(1).map((c) => (c.op === 'update_guide' ? c.id : c.op))).toEqual([id, id]);
+      expect(eng.world.small.guides.length).toBe(before + 1);
+      expect(eng.world.derived.features.filter((x) => x.name === f.name).length).toBe(1);
+    } finally {
+      vi.mocked(exec).mockImplementation(async () => true);
+    }
+  });
+});

@@ -84,6 +84,8 @@ const HANDLE_PX = 9;
 const PLUS_PX = 6;
 const HANDLE_GAP_PX = 40;
 const HANDLE_TOL_PX = 4;
+// 排着队（或松手前世界变了）的一笔认不出要改的河：不改，说一声
+const LOST = '这一笔没改上：河刚变了，再拖一次';
 // 双击弯点删掉它：两下之间不超过这么久（毫秒）
 const DOUBLE_MS = 400;
 
@@ -1041,6 +1043,8 @@ function courseHint(w: World, c: Course, ex: ExactView | null, line: GuideLine, 
   let text = parts.join(' · ');
   // 汇入的河在改好的世界里才有名字时，与松手后顶部说的用同一个办法换上（namedDest）
   if (ex && c.cmd) text = namedDest(ex.world, c.cmd, new Set(w.small.guides.map((g) => g.id)), text) ?? text;
+  // 还在估计、汇入的河还没有名字时不说“汇入一条河”（松手后会写出名字）：等算好了再说汇入哪条
+  if (!ex) text = text.replace('之后顺地势汇入一条河', '之后顺地势流下去').replace(' · 汇入一条河', '').replace('汇入一条河', '汇入别的河');
   return { text: ex ? text : `${text}…`, ...(caution ? { caution: true } : {}) };
 }
 
@@ -1240,29 +1244,79 @@ export function riverTool(zoom: () => number): ToolHandler {
   // ---- 自定义走向画新河、改一条河：按笔画的点数、拖到的点缓存 ----
   // 世界换了（上一笔改完了，比如自然的河刚固定成了一条画的河）：按新的世界在起笔的地方重新认河。
   // 认出来的不是同一种（控制点、河）时为 false：这一笔不改（绝不拿旧的河再新建一条）
+  // 自然的河改了一笔以后固定成了哪条画的河（主干的两头 → 河道 id）：排着队的下一笔按它认，不靠位置猜
+  const replaced = new Map<string, string>();
+  const stemKey = (T: EditTarget) => `${T.guide.cells[0]}:${T.guide.cells[T.guide.cells.length - 1]}`;
+  // 世界换了以后，原来要改的那条河现在是哪条：画的河还在就是它；自然的河刚固定成了画的河时是那条画的河；
+  // 还是自然的河（别的笔没改它）时是同一条主干。都不是时为 null（不拿旁边别的河凑数）
+  const resolveRiver = (w: World, old: RiverPick): RiverRef | null => {
+    if (old.ref.kind === 'guide') return guideOf(w, old.ref.id) ? old.ref : null;
+    const id = replaced.get(stemKey(old.T));
+    if (id) return guideOf(w, id) ? { kind: 'guide', id } : null;
+    // 别处固定了它（比如点了“固定这条河”）：沿用它的地名键的、或者河道里有它原来的格六成以上的那条画的河
+    const own = old.T.own;
+    const key = old.T.guide.nameKey;
+    const pinned = w.small.guides.find((g) => {
+      if (key !== undefined && g.nameKey === key) return true;
+      const set = new Set(g.cells);
+      return own.filter((c) => set.has(c)).length >= 0.6 * own.length;
+    });
+    if (pinned) return { kind: 'guide', id: pinned.id };
+    const T = targetOf(w, old.ref);
+    return T && stemKey(T) === stemKey(old.T) ? old.ref : null;
+  };
+
+  // 世界换了（上一笔改完了，比如自然的河刚固定成了一条画的河）：按新的世界重新认河。
+  // 拖源头、终点按“这条河的第一个、最后一个点”认（总认得出）；弯点、“+”找新的河上离起笔最近的（几个像素以内）；
+  // 从河上起笔按起笔的地方认。认不出来时为 false：这一笔不改（绝不拿旧的河再新建一条），提示一声
   const retarget = (w: World, pr: Press): boolean => {
     if (pr.lost) return false;
     if (pr.world === w) return true;
     pr.world = w;
     if (pr.kind !== 'edit' && pr.kind !== 'handle') return true;
-    const h = pick(w, pr.start.x, pr.start.y, pr.start.cell, zoom());
     const old = pr.hit;
-    const same =
-      h?.kind === (pr.kind === 'edit' ? 'river' : 'handle') &&
-      !(old?.kind === 'handle' && h.kind === 'handle' && (old.plus !== h.plus || (old.j === 0) !== (h.j === 0) || (old.j === old.H.length - 1) !== (h.j === h.H.length - 1)));
-    if (!same || !h) {
+    const lose = () => {
       pr.lost = true;
       return false;
+    };
+    if (!old) return lose();
+    if (pr.kind === 'handle' && old.kind === 'handle') {
+      const ref = resolveRiver(w, old);
+      const T = ref ? targetOf(w, ref) : null;
+      if (!ref || !T) return lose();
+      const z = zoom();
+      const H = handlesOf(T, z);
+      let j = -1;
+      if (!old.plus && old.j === 0) j = 0;
+      else if (!old.plus && old.j === old.H.length - 1) j = H.length - 1;
+      else {
+        let bd = (HANDLE_PX + 4) / z;
+        for (let k = 0; k < H.length - (old.plus ? 1 : 0); k++) {
+          if (!old.plus && (k === 0 || k === H.length - 1)) continue;
+          const d = near(w, old.plus ? plusAt(T, H, k) : T.points[H[k]], pr.start.x, pr.start.y);
+          if (d <= bd) [j, bd] = [k, d];
+        }
+      }
+      if (j < 0 || H.length < 2) return lose();
+      pr.hit = { kind: 'handle', ref, T, H, j, plus: old.plus };
+      return true;
     }
+    // 从河上起笔：还是认原来那条河（画的河、刚固定成的画的河），起笔点投影到它上面
+    const ref = resolveRiver(w, old);
+    const T = ref ? targetOf(w, ref) : null;
+    if (!ref || !T) return lose();
+    const e = editPoint(w, T, pr.start.x, pr.start.y);
+    if (e.d > (2 * SNAP_PX) / zoom()) return lose();
+    const h: RiverPick = { kind: 'river', ref, T, e, role: editRole(e, SNAP_PX / zoom()) };
     pr.hit = h;
-    if (h.kind === 'river') pr.pts[0] = [w.mesh.kind === 'sphere' ? h.e.p[0] + 2 * Math.round((pr.pts[0][0] - h.e.p[0]) / 2) : h.e.p[0], h.e.p[1]];
+    pr.pts[0] = [w.mesh.kind === 'sphere' ? h.e.p[0] + 2 * Math.round((pr.pts[0][0] - h.e.p[0]) / 2) : h.e.p[0], h.e.p[1]];
     return true;
   };
 
   const courseNow = (w: World, pr: Press): { course: Course; line: GuideLine | null; shapes: Map<string, Shape[]> } => {
     const o = options.value;
     if (!retarget(w, pr)) {
-      courseCache = { key: '', course: blocked('这条河刚改过：起笔的地方变了，重新画一笔', pr.pts.slice()), line: null, shapes: new Map() };
+      courseCache = { key: '', course: blocked(LOST, pr.pts.slice()), line: null, shapes: new Map() };
       return courseCache;
     }
     const tail = pr.pts[pr.pts.length - 1];
@@ -1342,6 +1396,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (ok && c.kind === 'edit') {
         const id = c.cmd.op === 'update_guide' ? c.cmd.id : world.value?.small.guides.find((g) => !known.has(g.id))?.id;
         if (id && world.value?.small.guides.some((g) => g.id === id)) {
+          if (c.target?.natural) replaced.set(stemKey(c.target), id);
           selectedRiver.value = { kind: 'guide', id };
           sticky = c.sticky ? { id, z: Math.round(Math.log2(zoom()) * 4), pts: c.sticky } : null;
         }
@@ -1365,7 +1420,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     if (!pr || !w) return;
     if (pr.kind === 'flow') return flowUp(w, pr.cells);
     if (!retarget(w, pr)) {
-      showToast('排着队的那一笔起笔的地方变了（上一笔改了这里的河），没有改', true);
+      showToast(LOST, true);
       return drain();
     }
     courseCache = null;
