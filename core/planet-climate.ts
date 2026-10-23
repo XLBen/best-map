@@ -194,6 +194,7 @@ interface SphereLand {
   ring: Int32Array | null;
   satSea: Float64Array[];
 }
+// 每份约每万格 1.1 MB，留两份（预览的海陆与正在用的）
 const landCache = new WeakMap<SphereStatic, SphereLand[]>();
 // 测试用：on = false 时两层都不读也不写（每次现算）
 export const sphereLayers = { on: true };
@@ -281,7 +282,8 @@ function sphereStatic(world: World, mesh: SphereMesh, lat: Float64Array): Sphere
   meanSpacing /= n;
   const breeze = Math.max(1, Math.round(150 / meanSpacing));
   const st: SphereStatic = { lat: lat.slice(), params, spacingKm, e150, e900, tAnn, kSeason, u0, v0, kf, taper, rain, breeze };
-  if (sphereLayers.on) staticCache.set(mesh, [st, ...list].slice(0, 2));
+  // 只留一份（约每万格 1.2 MB，它下面挂着只取决于海陆的那一层）：只有拖倾角、日照、自转时才换
+  if (sphereLayers.on) staticCache.set(mesh, [st]);
   return st;
 }
 
