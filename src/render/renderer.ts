@@ -519,20 +519,21 @@ bool waterCell(int id) { return cellTex(uCellCoast, id).r < 0.0; }
 // 省份按哪一格（第十三轮；core/display.ts 的 provinceCell 是同一条规则）：idG 是扭曲后按切线换过的格，uv 是像素没扭曲的位置，
 // landPx 是这个像素画成陆地。画成水面（海、湖）的像素取到陆地格时不要它（海上的像素永远不属于陆上的省）：依次试没扭曲的
 // 最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），取第一个水面格；都不是时 −1（不着色、不画省界）。
-// 画成陆地的像素取到海格照旧（小块陆地可以算进海省）
+// 画成陆地的像素取到水面格时（第十三轮修）：同样依次试没扭曲的最近格、周围 0.3 格与 0.6 格半径上各 8 个点的格，取第一个陆地格；
+// 都不是时才照旧用那个水面格（只有海边很细的一丝陆地算进海省）
 int provCell(int idG, vec2 uv, bool landPx) {
-  if (landPx || idG < 0 || waterCell(idG)) return idG;
+  if (idG < 0 || waterCell(idG) != landPx) return idG;
   int c = seamCell(idAt(uv), uv);
-  if (c >= 0 && waterCell(c)) return c;
+  if (c >= 0 && waterCell(c) != landPx) return c;
   for (int ring = 1; ring <= 2; ring++) {
-    vec2 r = (0.6 * float(ring) * uCellPx) * uTexel;
+    vec2 r = ((landPx ? 0.3 : 0.6) * float(ring) * uCellPx) * uTexel;
     for (int k = 0; k < 8; k++) {
       float a = float(k) * 0.7853982;
       c = seamCell(idAt(uv + vec2(cos(a), sin(a)) * r), uv);
-      if (c >= 0 && waterCell(c)) return c;
+      if (c >= 0 && waterCell(c) != landPx) return c;
     }
   }
-  return -1;
+  return landPx ? idG : -1;
 }
 // 画面上另一点（省界、轮廓看的相邻像素）的省份格：陆海按那一点自己的场景像素
 int provAt(vec2 uv, vec2 uvW) {

@@ -306,8 +306,11 @@ export function Inspector() {
   const river = d.discharge[cell] >= w.small.planet.riverThreshold ? named(['river'])[0] : undefined;
   // 用户圈的地区（最小的那个）
   const region = feats.filter((f) => f.region && f.type !== 'spot').sort((a, b) => a.areaKm2 - b.areaKm2)[0];
-  const p = w.causes.province[lastProvinceCell >= 0 && lastProvinceCell < w.mesh.n ? lastProvinceCell : cell];
+  const provCell = lastProvinceCell >= 0 && lastProvinceCell < w.mesh.n ? lastProvinceCell : cell;
+  const p = w.causes.province[provCell];
   const pmeta = p >= 0 ? w.small.provinces[p] : null;
+  // 省份按画出来的那一格（core/display.ts 的 provinceCell）：与这里说的格不同、省也不同时写出是哪一格，格与省对得上
+  const provNote = provCell !== cell && p !== w.causes.province[cell] ? `（格 #${provCell}）` : '';
   const place = [...new Set([where?.name, region?.name, range?.name, area?.name, river ? `${river.name}边` : null].filter(Boolean))].join(' · ');
   return (
     <div class="inspector">
@@ -327,7 +330,12 @@ export function Inspector() {
       ) : (
         <LandInfo w={w} cell={cell} />
       )}
-      {pmeta && <p class="muted small">省份：{pmeta.name}</p>}
+      {pmeta && (
+        <p class="muted small">
+          省份：{pmeta.name}
+          {provNote}
+        </p>
+      )}
       {w.settings.globe && (
         <p class="muted small">
           {lonLatText(w, cell)}

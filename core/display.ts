@@ -215,29 +215,33 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
 
 // 省份按哪一格（第十三轮；与着色器的 provCell 同一条规则）：扭曲后的格按剪刀切线换过；这一点画成水面（海、湖）而那一格是陆地格时
 // 不取它（海上的像素永远不属于陆上的省）：依次试没扭曲的最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），
-// 取第一个水面格；都不是时为 −1（不着色、不画省界、选不中）。画成陆地的像素取到海格照旧（小块陆地可以算进海省）。
+// 取第一个水面格；都不是时为 −1（不着色、不画省界、选不中）。
+// 画成陆地的像素取到水面格时（第十三轮修：海边一条条宽宽的陆地算进了海省）：同样依次试没扭曲的最近格、周围 0.3 格与 0.6 格
+// 半径上各 8 个点的格，取第一个陆地格；都不是时才照旧用那个水面格（只有海边很细的一丝陆地算进海省，海永远不算进陆上的省）。
 // coast：画面上每格的海岸值（displayCoast，湖面 < 0）；near：没扭曲的最近格
 export const PROVINCE_RING = { n: 8, radii: [0.6, 1.2] } as const;
+export const PROVINCE_LAND_RING = { n: 8, radii: [0.3, 0.6] } as const;
 export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | null, x: number, y: number, cell: number, near: number, water: boolean): number {
   const first = seamPick(L, world, x, y, cell);
-  if (!water || first < 0 || coast[first] < 0) return first;
+  if (first < 0 || coast[first] < 0 === water) return first;
   const ok = (c: number) => {
     const g = seamPick(L, world, x, y, c);
-    return g >= 0 && coast[g] < 0 ? g : -1;
+    return g >= 0 && coast[g] < 0 === water ? g : -1;
   };
   let g = ok(near);
   if (g >= 0) return g;
   const { mesh } = world;
-  for (const r of PROVINCE_RING.radii) {
+  const ring = water ? PROVINCE_RING : PROVINCE_LAND_RING;
+  for (const r of ring.radii) {
     const rr = r * mesh.spacing;
-    for (let k = 0; k < PROVINCE_RING.n; k++) {
-      const a = (k * 2 * Math.PI) / PROVINCE_RING.n;
+    for (let k = 0; k < ring.n; k++) {
+      const a = (k * 2 * Math.PI) / ring.n;
       // 着色器里的角度按画面（y 向上）量：地图上 y 向下，所以减
       g = ok(findCell(mesh, x + rr * Math.cos(a), y - rr * Math.sin(a), near));
       if (g >= 0) return g;
     }
   }
-  return -1;
+  return water ? -1 : first;
 }
 
 // 最近格、扭曲后那一格与最近格的邻格里，离这一点最近的同类格（与导出 rasterizeWorld 的 sameKindCell 相同）；都不同类时陆上的点保持原格，

@@ -413,11 +413,14 @@ describe('生态的颜色脚本、花纹与发光', () => {
       expect(main, name).not.toContain('gS < -0.5');
       // 环上取样的个数、半径与 CPU 的 provinceCell 相同
       expect(src, name).toContain('for (int ring = 1; ring <= 2; ring++) {');
-      expect(src, name).toContain('vec2 r = (0.6 * float(ring) * uCellPx) * uTexel;');
+      expect(src, name).toContain('vec2 r = ((landPx ? 0.3 : 0.6) * float(ring) * uCellPx) * uTexel;');
       expect(src, name).toContain('for (int k = 0; k < 8; k++) {');
+      // 画成陆地的像素：找不到陆地格时才用那个水面格
+      expect(src, name).toContain('return landPx ? idG : -1;');
     }
-    const { PROVINCE_RING } = await import('../../core/display');
+    const { PROVINCE_LAND_RING, PROVINCE_RING } = await import('../../core/display');
     expect(PROVINCE_RING).toEqual({ n: 8, radii: [0.6, 1.2] });
+    expect(PROVINCE_LAND_RING).toEqual({ n: 8, radii: [0.3, 0.6] });
   });
 });
 

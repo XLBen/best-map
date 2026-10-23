@@ -57,7 +57,7 @@ function inland(w: World, keep: (i: number) => boolean): number {
   return best;
 }
 
-// 把 center 周围 r 格以内的陆地都涂进 center 所在的省：一个够大的省（自动划分的省只有二三十格）
+// 把 center 周围 r 格以内的陆地（湖面除外：湖属于湖省）都涂进 center 所在的省：一个够大的省（自动划分的省只有二三十格）
 function bigProvince(eng: Engine, center: number, r: number): number {
   const w = eng.world;
   const { mesh } = w;
@@ -65,7 +65,7 @@ function bigProvince(eng: Engine, center: number, r: number): number {
   const dx = (i: number) => (mesh.kind === 'sphere' ? ((mesh.x[i] - mesh.x[center] + 3) % 2) - 1 : mesh.x[i] - mesh.x[center]);
   const cells: number[] = [];
   for (let i = 0; i < mesh.n; i++) {
-    if (w.causes.land[i] && w.causes.province[i] !== id && Math.hypot(dx(i), mesh.y[i] - mesh.y[center]) < r * mesh.spacing) cells.push(i);
+    if (w.causes.land[i] && w.derived.lake[i] !== 1 && w.causes.province[i] !== id && Math.hypot(dx(i), mesh.y[i] - mesh.y[center]) < r * mesh.spacing) cells.push(i);
   }
   eng.exec({ op: 'assign_province', cells, province: id });
   return id;
