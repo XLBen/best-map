@@ -48,6 +48,16 @@ interface BaseCache {
   uplift: Float32Array;
   erod: Float32Array;
   seaLevel: number;
+  // 海底后处理要用的两个场（见 seabedFields）：按分量、火山锥、海平面缓存一份
+  seabed?: { components: BaseComponents; cones: ConeField; seaLevel: number; fields: SeabedFields };
+}
+
+// 海底的后处理（elevation.ts 的 seafloor）要用的生成器信息，都按格：
+//   ocean：洋底的目标深度（相对海平面，m）：随洋壳年龄变深、海沟、加上海山（火山锥）
+//   shelf：这里的地壳有多“大陆”（0 洋壳，1 陆壳）：陆壳淹在水下就是宽的大陆架，洋壳上的岛只有窄窄的岛架
+export interface SeabedFields {
+  ocean: Float32Array;
+  shelf: Float32Array;
 }
 
 // 组合基础场要用的参数：陆地多少、岛多少、山多高、海岸破碎度
@@ -182,6 +192,32 @@ export function ensureBase(world: World): BaseCache {
   cache.seaLevel = composeBase(world, cache, composeParams(world, cache, {}), cache.landness, cache.uplift);
   cache.erod.set(comp.erod);
   return cache;
+}
+
+// 海底后处理要用的场（见 SeabedFields）；没有生成器（空白世界）时为 null：洋底一律按远洋算。
+// 只取决于生成器的分量、火山锥个数与海平面（陆地多少、岛多少、海岸破碎度），用户的编辑不改它们
+export function seabedFields(world: World): SeabedFields | null {
+  const cache = ensureBase(world);
+  const comp = cache.components;
+  const model = cache.model;
+  if (!world.small.terrain.gen || !comp || !model) return null;
+  const p = composeParams(world, cache, {});
+  const fixed = model.kind === 'planet' ? model.fixedCones : 0;
+  const cones = conesFor(world, cache, fixed + Math.round(p.islands * (model.cones.length - fixed)));
+  const sb = cache.seabed;
+  if (sb && sb.components === comp && sb.cones === cones && sb.seaLevel === cache.seaLevel) return sb.fields;
+  const n = world.mesh.n;
+  const ocean = new Float32Array(n);
+  const shelf = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    ocean[i] = comp.sea[i] - cache.seaLevel + cones.coneB[i];
+    // 地壳高度在 −2300 m 以下是洋壳，−500 m 以上是陆壳（大陆架、淹没的大陆）
+    const t = clamp((comp.b0[i] + 2300) / 1800, 0, 1);
+    shelf[i] = t * t * (3 - 2 * t);
+  }
+  const fields = { ocean, shelf };
+  cache.seabed = { components: comp, cones, seaLevel: cache.seaLevel, fields };
+  return fields;
 }
 
 // 星球形态的脚本这次出的问题（布局脚本、地形脚本；出错的那一部分已按没有脚本算）。没有形态、没有问题时为空。

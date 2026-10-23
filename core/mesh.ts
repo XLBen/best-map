@@ -518,7 +518,7 @@ export function updateDistance(mesh: Mesh, oldSeeds: Uint8Array, oldDist: Float6
 
 // 轻量堆（允许重复入堆，弹出时跳过过期项）。类型化数组，按需加倍；比较、移动的写法与原来 JS 数组的版本一模一样
 // （优先级相同的元素出堆的先后也相同）。pop 返回元素，它的优先级放在 lastKey（不分配元组）
-class HeapLite {
+export class HeapLite {
   private items: Int32Array;
   private keys: Float64Array;
   size = 0;

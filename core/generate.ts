@@ -408,6 +408,9 @@ export interface BaseComponents {
   mountU: Float32Array;
   hillU: Float32Array;
   erod: Float32Array;
+  // 洋底的目标深度（m，与 b0 同一个基准，不含火山锥）：随离洋中脊变深（洋壳年龄）、海沟。
+  // 只给海底的后处理用（见 elevation.ts 的 seafloor），不影响陆海与陆地
+  sea: Float32Array;
   // 星球形态的地形脚本这次出的问题（出错的那一遍按没有脚本算，见 planet-gen.ts）。普通的 JSON，只给界面看；没有地形脚本时不存在
   issues?: ScriptIssue[];
 }
@@ -425,6 +428,7 @@ export const copyComponents = (c: BaseComponents): BaseComponents => ({
   mountU: c.mountU.slice(),
   hillU: c.hillU.slice(),
   erod: c.erod.slice(),
+  sea: c.sea.slice(),
 });
 
 // 换了重画、种子与类型不变：板块、大陆块、火山锥、噪声只取决于种子与类型（和地图大小），照用，只换参数
@@ -436,7 +440,7 @@ export function sampleComponents(m: GenModel, mesh: Mesh, re?: Resample): BaseCo
   const n = mesh.n;
   const out: BaseComponents = re
     ? copyComponents(re.from)
-    : { b0: new Float32Array(n), mountB: new Float32Array(n), mountU: new Float32Array(n), hillU: new Float32Array(n), erod: new Float32Array(n) };
+    : { b0: new Float32Array(n), mountB: new Float32Array(n), mountU: new Float32Array(n), hillU: new Float32Array(n), erod: new Float32Array(n), sea: new Float32Array(n) };
   const rerolls = m.params.rerolls;
   for (let i = 0; i < n; i++) {
     const x = mesh.x[i];
@@ -460,14 +464,24 @@ function sampleCell(m: GenModel, rerolls: Reroll[], x: number, y: number, out: B
       ns = noiseSet(m.params.seed, r.variant);
       m.variants.set(r.variant, ns);
     }
-    const tmp: BaseComponents = { b0: new Float32Array(1), mountB: new Float32Array(1), mountU: new Float32Array(1), hillU: new Float32Array(1), erod: new Float32Array(1) };
+    const tmp: BaseComponents = { b0: new Float32Array(1), mountB: new Float32Array(1), mountU: new Float32Array(1), hillU: new Float32Array(1), erod: new Float32Array(1), sea: new Float32Array(1) };
     sampleInto(m, ns, x, y, tmp, 0);
     const w = 1 - smoothstep(0.6, 1, d / r.radius);
     out.b0[i] += (tmp.b0[0] - out.b0[i]) * w;
     out.mountB[i] += (tmp.mountB[0] - out.mountB[i]) * w;
     out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
     out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
+    out.sea[i] += (tmp.sea[0] - out.sea[i]) * w;
   }
+}
+
+// 洋底的目标深度（第十二轮）：板块冷却——洋壳离洋中脊越远越老、越深（轴部约 −2600 m，远处约 −5300 m），
+// age 是到最近的离散边界的距离（扩张快的洋中脊更宽：距离按扩张速度缩短）；海沟处往下拉到 −7000 到 −10000 m；
+// 再加深海丘陵的起伏。ridgeH、trenchH 是洋中脊、海沟的强弱（星球形态可以调，地区地图是 1700、2600）
+export function oceanFloor(age: number, trench: number, ridgeH: number, trenchH: number, lo: number, hi: number): number {
+  let z = -5300 + 2700 * (ridgeH / 1700) * Math.exp(-age / 0.12);
+  z += 200 * lo + 110 * hi;
+  return z + trench * (trenchH / 2600) * 0.8 * (-10200 - z);
 }
 
 function sampleInto(m: GenModel, ns: NoiseSet, x: number, y: number, out: BaseComponents, i: number) {
@@ -512,6 +526,8 @@ function sampleInto(m: GenModel, ns: NoiseSet, x: number, y: number, out: BaseCo
   let rift = 0;
   let trench = 0;
   let mm = 0;
+  // 到最近的离散边界的距离（按扩张速度缩放）：洋壳的年龄
+  let age = 1;
   for (let b = 0; b < m.plates.length; b++) {
     if (b === a) continue;
     const pb = m.plates[b];
@@ -528,6 +544,7 @@ function sampleInto(m: GenModel, ns: NoiseSet, x: number, y: number, out: BaseCo
       const div = Math.min(1, -conv);
       ridge = Math.max(ridge, div * Math.exp(-((bd / 0.04) ** 2)));
       rift = Math.max(rift, div * Math.exp(-((bd / 0.025) ** 2)));
+      age = Math.min(age, bd / (0.45 + 0.55 * div));
       continue;
     }
     // 两侧的大陆程度连续混合：碰撞带（两侧都是大陆）、大陆边缘山脉（本侧大陆、对侧大洋）、海沟（本侧大洋）
@@ -549,6 +566,7 @@ function sampleInto(m: GenModel, ns: NoiseSet, x: number, y: number, out: BaseCo
   out.mountU[i] = mountU;
   out.hillU[i] = 0.12 * Math.max(0, fbm(ns.hills, qx, qy, 6, 4)) * contW;
   out.erod[i] = clamp(1 + 0.45 * fbm(ns.erod, x + 7.7, y - 3.1, 6, 3), 0.4, 1.8);
+  out.sea[i] = oceanFloor(age, trench, 1700, 2600, fbm(ns.ocean, qx - 4.1, qy + 2.3, 3, 4), fbm(ns.ocean, qx + 6.2, qy - 8.4, 24, 3));
 }
 
 // 前 N 个火山锥对每格地壳高度与抬升的贡献（火山锥用未扭曲的坐标，保持圆形）
