@@ -1130,12 +1130,13 @@ export async function resumeLast(): Promise<boolean | null> {
     }
   }
   const ok = await loadDoc(saved.doc, safe !== null ? { safe } : {});
-  if (ok && saved.mapId) await relink(saved.mapId, saved.savedAt);
+  if (ok && saved.mapId) await relink(saved.mapId, saved.mapSynced ? 0 : saved.savedAt);
   return ok;
 }
 
 // 打开上次的世界后：它连着“我的地图”里的一张就接着连上（那一张不在了就不连）。
-// 那一张比自动保存旧（上次写完自动保存、还没来得及写它就关了页面）：马上补写一次
+// 那一张比自动保存旧（上次写完自动保存、还没来得及写它就关了页面）：马上补写一次。
+// autosavedAt：自动保存的时间；写自动保存时那一张已经相同（只是打开了它，没改）时为 0
 async function relink(id: string, autosavedAt: number) {
   try {
     const e = await idbMapStore.entry(id);
@@ -1745,8 +1746,9 @@ interface AutosaveMeta extends Omit<WorldDoc, 'commands'> {
   count: number;
   // 安全模式（脚本没有运行）的原因：下次打开时照样用安全模式（不运行脚本打开 → 自动保存 → 刷新，脚本也不会跑起来）
   safe?: string;
-  // 连着“我的地图”里的哪一张（见 maps.ts）：刷新后照样连着
+  // 连着“我的地图”里的哪一张（见 maps.ts）：刷新后照样连着。mapSynced：写这份自动保存时那一张已经与它相同
   mapId?: string;
+  mapSynced?: boolean;
 }
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveWarned = false;
@@ -1823,7 +1825,10 @@ async function autosave() {
   const { from, commands, ids, ...head } = r.tail;
   const meta: AutosaveMeta = { ...head, savedAt: Date.now(), count: ids.length };
   if (safeMode.value) meta.safe = safeMode.value.reason;
-  if (link) meta.mapId = link.id;
+  if (link) {
+    meta.mapId = link.id;
+    if (mapSavedState.value === state) meta.mapSynced = true;
+  }
   try {
     if (savedCount < 0) savedCount = ((await idb<AutosaveMeta | undefined>('readonly', (s) => s.get('autosave')))?.count ?? 0) as number;
     const stale = savedCount;
@@ -1867,6 +1872,7 @@ export interface Autosaved {
   doc: WorldDoc;
   safe?: string;
   mapId?: string;
+  mapSynced?: boolean;
 }
 export async function readAutosave(): Promise<Autosaved | null> {
   let best: Autosaved | null = null;
@@ -1877,9 +1883,10 @@ export async function readAutosave(): Promise<Autosaved | null> {
     const meta = await get<AutosaveMeta | undefined>(tx.objectStore('kv').get('autosave'));
     if (meta && meta.count > 0) {
       const commands = await get<Command[]>(tx.objectStore('autosave').getAll(IDBKeyRange.bound(0, meta.count - 1)));
-      const { savedAt, count, safe, mapId, ...head } = meta;
+      const { savedAt, count, safe, mapId, mapSynced, ...head } = meta;
       const doc = { ...head, commands };
-      if (commands.length === count && isCurrentDoc(doc)) best = { savedAt, doc, ...(typeof safe === 'string' ? { safe } : {}), ...(typeof mapId === 'string' ? { mapId } : {}) };
+      if (commands.length === count && isCurrentDoc(doc))
+        best = { savedAt, doc, ...(typeof safe === 'string' ? { safe } : {}), ...(typeof mapId === 'string' ? { mapId, mapSynced: mapSynced === true } : {}) };
     }
     db.close();
   } catch {
