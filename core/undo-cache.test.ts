@@ -59,7 +59,10 @@ describe('撤销缓存与重算逐值一致', () => {
   for (const kind of ['region', 'planet'] as const) {
     it(kind, () => {
       const run = script(kind);
-      expect(run(3)).toEqual(run(0));
+      const plain = run(0);
+      expect(run(3)).toEqual(plain);
+      // 深的缓存（第九轮：相同的数组在几份之间共用，换回来之后再重算前先复制）
+      expect(run(8)).toEqual(plain);
     });
   }
 

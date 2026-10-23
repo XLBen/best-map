@@ -98,9 +98,13 @@ export class Engine {
   // 每一步记下它影响到哪一层：撤销时只需从这一层重算
   private done: DoneStep[] = [];
   private undone: UndoneStep[] = [];
-  // 存着推导结果的步（先存的在前）；最多 undoCache 份，每份是整个世界的推导数组（4 万格约 11 MB，10 万格约 27 MB）
+  // 存着推导结果的步（先存的在前）；最多 undoCache 份，合计不超过 UNDO_BYTES。每份是整个世界的推导数组
+  // （4 万格约 11 MB，10 万格约 27 MB），但相邻几份内容相同的数组共用一个（见 shareSame），只改气候、生态的步只多占变了的那些
   private kept: (DoneStep | UndoneStep)[] = [];
   undoCache: number;
+  // 当前推导里的数组可能与撤销缓存共用（换上了存着的推导、或者与上一份共用了相同的数组）：重算之前要先各复制一份，
+  // 不能就地改（见 recompute）。复制出来的、自己重算出来的数组只属于当前的推导
+  private sharedDerived = false;
   private seq = 0;
   // 上次取走以来实际重算到的最深一层（Worker 据此决定只发名字、省份，还是整个世界）
   private recomputed: Dirty = Dirty.None;
@@ -116,7 +120,7 @@ export class Engine {
   constructor(settings: Partial<Settings> = {}, mesh?: Mesh) {
     this.world = createWorld(settings, mesh);
     resolveTerrain(this.world);
-    this.undoCache = this.world.mesh.n > 60000 ? 2 : 3;
+    this.undoCache = undoDepth(this.world.mesh.n);
   }
 
   get history(): { summary: string; done: boolean }[] {
@@ -149,6 +153,7 @@ export class Engine {
     this.keepBefore(fresh);
     try {
       this.update();
+      this.shareWithLast();
     } catch (e) {
       // 撤掉时的重算按说不会再出错；万一出了，历史、重做记录、状态编号也照样放回去
       try {
@@ -204,6 +209,7 @@ export class Engine {
 
   private install(s: DerivedState) {
     this.world.derived = s.derived;
+    this.sharedDerived = true;
     this.base = s.base;
     this.solve = s.solve;
     this.lastTimings = s.timings;
@@ -214,13 +220,48 @@ export class Engine {
     step.state = s;
     this.kept = this.kept.filter((k) => k.state && k !== step);
     this.kept.push(step);
-    while (this.kept.length > this.undoCache) this.kept.shift()!.state = undefined;
+    while (this.kept.length > this.undoCache || (this.kept.length > 1 && keptBytes(this.kept) > UNDO_BYTES)) this.kept.shift()!.state = undefined;
   }
 
-  // 刚执行的一步：推导还是执行前的（update 还没跑），复制一份留给撤销。只给要重算推导的步留
+  // 刚执行的一步：推导还是执行前的（update 还没跑）。执行前的推导原样留给撤销（之后不再改动），当前的推导换成各数组的副本
+  // 再重算（与以前复制一份留给撤销、就地重算逐值相同）。只给要重算推导的步留
   private keepBefore(fresh: boolean) {
     const h = this.done[this.done.length - 1];
-    if (fresh && h.dirty > Dirty.Names && this.undoCache > 0) this.keep(h, { ...this.current(), derived: copyDerived(this.world.derived) });
+    if (!(fresh && h.dirty > Dirty.Names && this.undoCache > 0)) return;
+    // 推导对象本身不换（别处可能拿着它），换的是里面的数组：留给撤销的是一个新对象，引用原来的那些数组
+    const live = this.world.derived;
+    const before = { ...this.current(), derived: { ...live, corrF: { ...live.corrF } } };
+    privatize(live);
+    this.sharedDerived = false;
+    this.keep(h, before);
+  }
+
+  // 重算完：与 prev（上一份推导，撤销缓存里的）内容相同的数组换成 prev 的那一个（共用，省下撤销缓存的内存）。
+  // 共用之后当前的推导不能再就地改：下一次重算之前先复制（sharedDerived）
+  private shareSame(prev: Derived | undefined) {
+    if (!prev) return;
+    const d = this.world.derived as unknown as Record<string, unknown>;
+    const p = prev as unknown as Record<string, unknown>;
+    let any = false;
+    for (const [k, v] of Object.entries(d)) {
+      const old = p[k];
+      if (!ArrayBuffer.isView(v) || !ArrayBuffer.isView(old) || old === v || !sameContent(old, v)) continue;
+      d[k] = old;
+      any = true;
+    }
+    for (const [k, v] of Object.entries(this.world.derived.corrF)) {
+      const old = prev.corrF[k];
+      if (old && old !== v && sameContent(old, v)) {
+        this.world.derived.corrF[k] = old;
+        any = true;
+      }
+    }
+    if (any) this.sharedDerived = true;
+  }
+
+  // 刚执行（或重做）的最后一步留着执行前的推导时，与它共用相同的数组
+  private shareWithLast() {
+    this.shareSame(this.done[this.done.length - 1]?.state?.derived);
   }
 
   private dropUndone() {
@@ -307,6 +348,7 @@ export class Engine {
     } else this.keepBefore(fresh);
     try {
       this.update();
+      this.shareWithLast();
     } catch (e) {
       try {
         this.rollbackLast();
@@ -351,6 +393,7 @@ export class Engine {
     if (before && step.dirty > Dirty.Names) this.keep(step, before);
     try {
       this.update();
+      this.shareWithLast();
     } catch (e) {
       // 新的一步撤掉（推导写了一半，不能留着）：原因退回去，原来那一步放回去后从头重算
       this.done.pop();
@@ -393,6 +436,11 @@ export class Engine {
   private *recompute(): Generator<void, Derived> {
     this.recomputed = Math.max(this.recomputed, this.dirty) as Dirty;
     const w = this.world;
+    // 推导里的数组可能与撤销缓存共用：先各复制一份再就地重算（地物、冲突列表照旧共用：之后整个换上新的）
+    if (this.sharedDerived && this.dirty > Dirty.Names) {
+      privatize(w.derived);
+      this.sharedDerived = false;
+    }
     const d = w.derived;
     if (this.dirty === Dirty.Names) {
       // 只改了名字、用户的区块或画的河的折线：自动识别的地物不变，换上新的区块、画的河再重新起名。
@@ -530,7 +578,8 @@ export class Engine {
     e.done = cp.done.map((h) => ({ ...h }));
     e.undone = [];
     e.kept = [];
-    e.undoCache = mesh.n > 60000 ? 2 : 3;
+    e.undoCache = undoDepth(mesh.n);
+    e.sharedDerived = false;
     e.seq = Math.max(0, ...cp.done.map((h) => h.id));
     e.recomputed = Dirty.Elevation;
     e.lastNoop = false;
@@ -657,6 +706,7 @@ export class Engine {
     e.undone = this.undone.map((h) => ({ cmd: h.cmd, summary: h.summary }));
     e.kept = [];
     e.undoCache = this.undoCache;
+    e.sharedDerived = false;
     e.recomputed = Dirty.None;
     e.lastNoop = false;
     e.lastPreview = null;
@@ -805,6 +855,53 @@ function cloneCauses(c: Causes, fields: Record<string, Float32Array>): Causes {
   for (const [k, v] of Object.entries(out)) if (ArrayBuffer.isView(v)) (out as unknown as Record<string, unknown>)[k] = (v as Float32Array).slice();
   out.fields = fields;
   return out;
+}
+
+// 撤销缓存最多几份：每份最多是整个世界的推导（10 万格约 27 MB），相同的数组共用，合计不超过 UNDO_BYTES
+function undoDepth(n: number): number {
+  return n > 60000 ? 6 : 8;
+}
+const UNDO_BYTES = 200 * 1024 * 1024;
+
+// 撤销缓存里各份推导合计占多少字节（共用的数组只算一次）
+function keptBytes(kept: readonly { state?: DerivedState }[]): number {
+  const seen = new Set<ArrayBufferLike>();
+  let bytes = 0;
+  const add = (v: unknown) => {
+    if (!ArrayBuffer.isView(v) || seen.has(v.buffer)) return;
+    seen.add(v.buffer);
+    bytes += v.byteLength;
+  };
+  for (const k of kept) {
+    const d = k.state?.derived;
+    if (!d) continue;
+    for (const v of Object.values(d)) add(v);
+    for (const v of Object.values(d.corrF)) add(v);
+  }
+  return bytes;
+}
+
+// 两个数组逐字节相同（同一种类型、同样长）
+function sameContent(a: ArrayBufferView, b: ArrayBufferView): boolean {
+  if (a.constructor !== b.constructor || a.byteLength !== b.byteLength) return false;
+  const n = a.byteLength;
+  if (n % 4 === 0 && a.byteOffset % 4 === 0 && b.byteOffset % 4 === 0) {
+    const x = new Int32Array(a.buffer, a.byteOffset, n / 4);
+    const y = new Int32Array(b.buffer, b.byteOffset, n / 4);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+  }
+  const x = new Uint8Array(a.buffer, a.byteOffset, n);
+  const y = new Uint8Array(b.buffer, b.byteOffset, n);
+  for (let i = 0; i < n; i++) if (x[i] !== y[i]) return false;
+  return true;
+}
+
+// 推导里的数组都换成副本（对象本身不换；自定义场的修正就地换）
+function privatize(d: Derived) {
+  const r = d as unknown as Record<string, unknown>;
+  for (const [k, v] of Object.entries(r)) if (ArrayBuffer.isView(v)) r[k] = (v as Float32Array).slice();
+  for (const [k, v] of Object.entries(d.corrF)) d.corrF[k] = v.slice();
 }
 
 // 推导的副本：数组都复制；地物、冲突列表照旧共用（之后的完整重算总是换上新的）
