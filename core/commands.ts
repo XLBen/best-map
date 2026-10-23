@@ -74,6 +74,7 @@ const guidePatchSchema = z
     path: G.path.unwrap().nullable().optional(),
     name: G.name.unwrap().nullable().optional(),
     nameKey: G.nameKey.unwrap().nullable().optional(),
+    autoName: G.autoName.unwrap().nullable().optional(),
     salt: G.salt.unwrap().nullable().optional(),
     spring: z.boolean().optional(),
     flow: G.flow.unwrap().nullable().optional(),
@@ -467,10 +468,11 @@ function captureBy(world: World, guides: Guide[], g: Guide): Guide[] {
 export function guideDirty(before: readonly Guide[], after: readonly Guide[]): Dirty {
   const sig = (list: readonly Guide[], f: (g: Guide) => unknown) => JSON.stringify(list.map(f));
   const same = (f: (g: Guide) => unknown) => sig(before, f) === sig(after, f);
-  if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined])) {
+  // 有没有画的线也要从水文起重算：画的河（有折线）整条按最小的河补水
+  if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined, !!g.path])) {
     return Dirty.Vegetation;
   }
-  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.salt ?? null, g.path ?? null])) return Dirty.Names;
+  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null])) return Dirty.Names;
   return Dirty.None;
 }
 

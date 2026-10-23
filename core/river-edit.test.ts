@@ -12,6 +12,7 @@ import {
   dragHandle,
   editCommand,
   editPoint,
+  editRole,
   guideTarget,
   insertHandle,
   joinAtFirst,
@@ -19,7 +20,9 @@ import {
   strokeEdit,
 } from './river-edit';
 import { decodePath, encodePath, traceRivers } from './rivers';
-import { type CoursePlan, isRiverCell, planCourse } from './select';
+import { applyPackCommands } from './packs';
+import { FANTASY_PACK } from './packs/fantasy';
+import { type CoursePlan, isRiverCell, planCourse, riverStem } from './select';
 import { continents } from './testing/fixtures';
 import type { Guide, World } from './world';
 
@@ -471,5 +474,219 @@ describe('所见即所得', () => {
     eng.exec(cmd);
     expect(riverCells(w)).toEqual(cells);
     expect(JSON.stringify(traceRivers(w))).toBe(lines);
+  });
+});
+
+// 审查后补的（第十一轮）：改河不悄悄截断别的画的河、补水只补真的照着走的那段、重放一致、
+// 自然的河在汇合处不断开、名字和类型照旧、汇进来的河不抢走下游的名字
+describe('改河的边角', () => {
+  it('从一条画的支流的终点往外接长、穿过它汇入的那条画的河：算作截走那条河（截在那里），那条河下游不留着假的河', () => {
+    const { eng, w, g: G } = withDrawn('sink');
+    const { mesh: m } = w;
+    const s = m.spacing;
+    // 画的支流 H，汇入 G 的中间一格 X
+    const X = G.cells[Math.floor(G.cells.length / 2)];
+    let H: Guide | null = null;
+    for (const ang of [Math.PI / 2, -Math.PI / 2, Math.PI / 3, -Math.PI / 3, 2, -2]) {
+      const a: Pt = [m.x[X] + 4 * s * Math.cos(ang), m.y[X] + 4 * s * Math.sin(ang)];
+      const p = planCourse(w, w.derived, line(a, at(w, X)), { endOnLand: 'flow', px: s / 20 });
+      if (p.blocked || p.end !== 'river' || p.crossings.length || p.reroute || p.merge || p.cells[p.cells.length - 1] !== X) continue;
+      eng.exec({ op: 'add_guide', guide: { cells: p.cells, path: encodePath(p.path), locked: true, spring: true, flow: 1.2, name: '' } });
+      H = w.small.guides[w.small.guides.length - 1];
+      break;
+    }
+    expect(H).not.toBeNull();
+    const TH = guideTarget(w, H!);
+    const E = TH.points[TH.points.length - 1];
+    const P0 = TH.points[0];
+    const l = Math.hypot(E[0] - P0[0], E[1] - P0[1]);
+    const e = strokeEdit(w, w.derived, TH, line(E, [E[0] + ((E[0] - P0[0]) / l) * 3 * s, E[1] + ((E[1] - P0[1]) / l) * 3 * s], 20), opts(w));
+    if (!ok(e)) throw new Error(e.blocked);
+    expect(e.patch.cells).toContain(X);
+    // 穿过 X：记作穿过 G，命令截走它
+    expect(e.plan.crossings.some((x) => x.guide === G.id)).toBe(true);
+    const cmd = editCommand(TH, e, '接长');
+    expect(cmd).toMatchObject({ capture: true });
+    eng.exec(cmd);
+    const G2 = w.small.guides.find((x) => x.id === G.id)!;
+    // G 截在新河道第一次碰到它的地方，汇进新河道
+    expect(G2.cells.length).toBeLessThan(G.cells.length);
+    expect(e.patch.cells).toContain(G2.cells[G2.cells.length - 1]);
+    for (const c of G2.cells.slice(0, -1)) expect(isRiverCell(w, w.derived, c)).toBe(true);
+  });
+
+  it('源头不能挪到别的河上；补水只补水照着这条河道走的那段（被后画的河接管的那格以下照样变干）', () => {
+    const { eng, w, g: A } = withDrawn('sink');
+    const s = spacing(w);
+    // 另一条画的河 B，源头挪到 A 的中间：不让
+    let B: Guide | null = null;
+    const PA = guideTarget(w, A).points;
+    for (const f of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+      for (const side of [1, -1]) {
+        if (B) break;
+        const a = pointAt(PA, f);
+        const n = normalAt(PA, f);
+        const p = planCourse(w, w.derived, line([a[0] + side * n[0] * 2.5 * s, a[1] + side * n[1] * 2.5 * s], [a[0] + side * n[0] * 9 * s, a[1] + side * n[1] * 9 * s]), {
+          endOnLand: 'sink',
+          px: s / 20,
+        });
+        if (p.blocked || p.crossings.length || p.reroute || p.merge || p.end !== 'sink' || p.cells.length < 4) continue;
+        eng.exec({ op: 'add_guide', guide: { cells: p.cells, path: encodePath(p.path), locked: true, spring: true, flow: 1.2, name: '', end: 'sink' } });
+        B = w.small.guides[w.small.guides.length - 1];
+      }
+    }
+    expect(B).not.toBeNull();
+    const TB = guideTarget(w, B!);
+    const H = controlHandles(TB, 0.05 * s, 1.5 * s);
+    const r = dragHandle(w, w.derived, TB, H, 0, pointAt(PA, 0.5), opts(w));
+    expect(r).toEqual({ blocked: '源头不能放在别的河上' });
+    // 一条不截走的河道（脚本、旧命令能这样写）从 A 的中间一格接管：A 那格以下不再补水
+    const k = Math.floor(A.cells.length / 2);
+    const c = A.cells[k];
+    const other = Array.from(w.mesh.adj.slice(w.mesh.off[c], w.mesh.off[c + 1])).find((j) => land(w, j) && !A.cells.includes(j) && !B!.cells.includes(j));
+    expect(other).toBeDefined();
+    eng.exec({ op: 'add_guide', guide: { cells: [c, other!], locked: true, spring: false, end: 'sink' } });
+    const below = A.cells.slice(k + 1).filter((x) => land(w, x));
+    expect(below.some((x) => !isRiverCell(w, w.derived, x))).toBe(true);
+    expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
+  });
+
+  it('只加上折线（同样的格）也从水文起重算：一步一步改与从头重放逐值一致', () => {
+    const eng = continents();
+    const w = eng.world;
+    const p = drawnRiver(w, 'sink');
+    eng.exec({ op: 'add_guide', guide: { cells: p.cells, locked: true, spring: false, end: 'sink' } });
+    const g = w.small.guides[w.small.guides.length - 1];
+    eng.exec({ op: 'update_guide', id: g.id, patch: { path: encodePath(p.path) } });
+    for (const c of g.cells) if (land(w, c)) expect(isRiverCell(w, w.derived, c)).toBe(true);
+    expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
+  });
+
+  it('很短的河：起笔离哪头近就是哪头（不总是源头）', () => {
+    const e = { seg: 0, t: 0.9, d: 0, along: 9, total: 10, p: [0, 0] as Pt };
+    expect(editRole(e, 20)).toBe('end');
+    expect(editRole({ ...e, along: 1 }, 20)).toBe('source');
+    expect(editRole({ ...e, along: 5, total: 100 }, 2)).toBe('middle');
+  });
+});
+
+describe('名字与汇合处', () => {
+  // 一条有名字的自然大河的主干上的一格
+  function namedRiver(w: World): { name: string; key: string; cell: number } {
+    const d = w.derived;
+    const f = d.features.filter((x) => x.type === 'river' && x.name && x.guide === undefined).sort((a, b) => b.cells.length - a.cells.length)[0];
+    const cell = Array.from(f.cells).find((c) => isRiverCell(w, d, c) && d.discharge[c] > 2 * w.small.planet.riverThreshold)!;
+    return { name: f.name, key: f.key, cell };
+  }
+
+  it('画的支流汇进一条自然的河：自然的河的主干照样穿过汇合处（选中、改它不会在汇合处断开）', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { cell } = namedRiver(w);
+    const stem = riverStem(w, w.derived, cell);
+    const m = w.mesh;
+    let added = false;
+    for (let k = Math.floor(stem.cells.length / 2); k < stem.cells.length - 3 && !added; k++) {
+      const X = stem.cells[k];
+      for (let e = m.off[X]; e < m.off[X + 1] && !added; e++) {
+        const Y = m.adj[e];
+        if (!land(w, Y) || isRiverCell(w, w.derived, Y) || stem.cells.includes(Y)) continue;
+        for (let e2 = m.off[Y]; e2 < m.off[Y + 1] && !added; e2++) {
+          const Z = m.adj[e2];
+          if (!land(w, Z) || isRiverCell(w, w.derived, Z) || stem.cells.includes(Z) || Z === X) continue;
+          eng.exec({ op: 'add_guide', guide: { cells: [Z, Y, X], path: encodePath([at(w, Z), at(w, Y), at(w, X)]), locked: true, spring: true, flow: 1.2, name: '' } });
+          added = true;
+        }
+      }
+    }
+    expect(added).toBe(true);
+    for (const c of [stem.cells[1], stem.cells[stem.cells.length - 3]]) {
+      const s2 = riverStem(w, w.derived, c);
+      expect(s2.cells[0]).toBe(stem.cells[0]);
+      expect(s2.cells[s2.cells.length - 1]).toBe(stem.cells[stem.cells.length - 1]);
+    }
+  });
+
+  it('自然的河改道：改的这条河还叫原来的名字（不是用户起的名字），剩下的旧河道另起名字', () => {
+    const eng = continents();
+    const w = eng.world;
+    const { name, cell } = namedRiver(w);
+    const T = naturalTarget(w, w.derived, cell)!;
+    expect(T.guide.autoName).toBe(name);
+    const P = T.points;
+    let done = false;
+    for (const f of [0.5, 0.4, 0.6, 0.3]) {
+      for (const side of [1, -1]) {
+        if (done) break;
+        const a = pointAt(P, f);
+        const n = normalAt(P, f);
+        const e = strokeEdit(w, w.derived, T, line(a, [a[0] + side * n[0] * 5 * spacing(w), a[1] + side * n[1] * 5 * spacing(w)], 25), opts(w, 'flow'));
+        if (!ok(e) || e.plan.crossings.length) continue;
+        eng.exec(editCommand(T, e, '改道'));
+        const g = w.small.guides[w.small.guides.length - 1];
+        const gf = w.derived.features.find((x) => x.guide === g.id)!;
+        expect(gf.name).toBe(name);
+        expect(gf.custom).toBe(false);
+        // 同名的只有它一个（剩下的旧河道有地名的话另起名字）
+        expect(w.derived.features.filter((x) => x.name === name).length).toBe(1);
+        // 再改一次（画的河了）：还叫这个名字
+        const T2 = guideTarget(w, g);
+        const H2 = controlHandles(T2, 0.05 * spacing(w), 2 * spacing(w));
+        const e2 = dragHandle(w, w.derived, T2, H2, 1, [T2.points[H2[1]][0] + 0.4 * spacing(w), T2.points[H2[1]][1]], opts(w));
+        if (ok(e2)) {
+          eng.exec(editCommand(T2, e2, '再改'));
+          expect(w.derived.features.find((x) => x.guide === g.id)?.name).toBe(name);
+        }
+        done = true;
+      }
+    }
+    expect(done).toBe(true);
+  });
+
+  it('按规则是血河的自然的河：固定下来、改了以后还是血河（类型记下来）', () => {
+    const eng = continents();
+    eng.exec(applyPackCommands(eng.world, FANTASY_PACK));
+    const w = eng.world;
+    const d = w.derived;
+    const types = w.small.riverTypes ?? [];
+    const c = [...Array(w.mesh.n).keys()].find((i) => isRiverCell(w, d, i) && !!d.riverType && d.riverType[i] > 0 && riverStem(w, d, i).cells.length >= 6);
+    expect(c).toBeDefined();
+    const T = naturalTarget(w, d, c!)!;
+    const id = T.guide.type!;
+    expect(types.some((t) => t.id === id)).toBe(true);
+    const H = controlHandles(T, 0.05 * spacing(w), 1.5 * spacing(w));
+    let done = false;
+    for (let j = 1; j < H.length - 1 && !done; j++) {
+      const e = dragHandle(w, d, T, H, j, [T.points[H[j]][0] + 0.3 * spacing(w), T.points[H[j]][1]], opts(w));
+      if (!ok(e) || e.plan.crossings.length) continue;
+      eng.exec(editCommand(T, e, '改'));
+      const g = w.small.guides[w.small.guides.length - 1];
+      expect(g.type).toBe(id);
+      const k = types.findIndex((t) => t.id === id) + 1;
+      expect(g.cells.filter((x) => isRiverCell(w, w.derived, x)).every((x) => w.derived.riverType![x] === k)).toBe(true);
+      done = true;
+    }
+    expect(done).toBe(true);
+  });
+
+  it('一条更大的画的河汇进自然的河：被汇入的河的下游照样叫原来的名字', () => {
+    const eng = continents();
+    const w = eng.world;
+    const d = w.derived;
+    const m = w.mesh;
+    const s = m.spacing;
+    const { name, key, cell } = namedRiver(w);
+    const stem = riverStem(w, d, cell).cells;
+    for (const X of stem.slice(Math.floor(stem.length / 4), Math.floor(stem.length / 2))) {
+      for (let a = 0; a < 8; a++) {
+        const ang = (a * Math.PI) / 4;
+        const p = planCourse(w, d, line([m.x[X] + 5 * s * Math.cos(ang), m.y[X] + 5 * s * Math.sin(ang)], at(w, X)), { endOnLand: 'flow', px: s / 20 });
+        if (p.blocked || p.end !== 'river' || p.crossings.length || p.reroute || p.merge || !stem.includes(p.join)) continue;
+        eng.exec({ op: 'add_guide', guide: { cells: p.cells, path: encodePath(p.path), locked: true, spring: true, flow: 120, name: '' } });
+        expect(w.derived.features.find((f) => f.key === key)?.name).toBe(name);
+        return;
+      }
+    }
+    throw new Error('找不到汇入的一笔');
   });
 });

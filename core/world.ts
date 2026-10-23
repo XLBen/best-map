@@ -121,6 +121,9 @@ export const guideSchema = z.object({
   name: z.string().max(40).optional(),
   // 固定一条没改过名的自然河：沿用那条河的地名键（“river:河口格”），名字、标注颜色都照旧
   nameKey: z.string().regex(/^\w+:\d+$/).max(40).optional(),
+  // 改这条河时记下的名字（第十一轮）：自动起的名字定下来，以后改走向、改大小、类型都还叫它（不算用户起的名字）。
+  // 有 name（用户起的）或那条河改过的名字时那个说了算；“换一个”“恢复自动”去掉它
+  autoName: z.string().max(40).optional(),
   // 自动起名的盐（“换一个”）
   salt: z.number().int().min(0).optional(),
   // 粗细倍数：只影响画法与导出

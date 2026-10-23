@@ -951,7 +951,11 @@ export function planCourse(world: World, d: Derived, stroke: readonly (readonly 
 // 重画一段后折线的点数超出能存的
 export const TOO_LONG = '这条河太长了，这一段改不了';
 
-const guideCells = (world: World, id: string | undefined) => new Set(id ? (world.small.guides.find((g) => g.id === id)?.cells ?? []) : []);
+// 这条画的河自己的格（它汇入的那一格是别的河的，不算：穿过、汇入那一格照常算作碰到那条河）
+const guideCells = (world: World, id: string | undefined) => {
+  const g = id ? world.small.guides.find((x) => x.id === id) : undefined;
+  return new Set(g ? g.cells.filter((_, i) => ownsCell(g, i)) : []);
+};
 
 // 从 base（不动的那段：格与折线）的最后一格接着画 pts（第一点在那一格里）。base 是空的时候是一条新画的河：
 // 起点要在陆地上，在一条河上就是改道
@@ -1595,14 +1599,15 @@ export function riverStem(world: World, d: Derived, cell: number): { cells: numb
   const { mesh, causes } = world;
   const thr = world.small.planet.riverThreshold;
   if (cell < 0 || !isRiverCell(world, d, cell)) return { cells: [], end: null, join: -1 };
+  // 画的河自己的格（它汇入的那一格是这条自然的河的，不算：画的支流汇进来，主干照样穿过汇合处）
   const owned = new Uint8Array(mesh.n);
-  for (const g of world.small.guides) for (const c of g.cells) owned[c] = 1;
-  // 最大的支流（下游是它、流量够、不是湖）
+  for (const g of world.small.guides) g.cells.forEach((c, i) => ownsCell(g, i) && (owned[c] = 1));
+  // 最大的支流（下游是它、流量够、不是湖；画的河不算，它是汇进来的支流）
   const biggest = (c: number) => {
     let best = -1;
     for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
       const j = mesh.adj[e];
-      if (d.receiver[j] !== c || !causes.land[j] || d.lake[j] === 1 || d.discharge[j] < thr) continue;
+      if (d.receiver[j] !== c || !causes.land[j] || d.lake[j] === 1 || d.discharge[j] < thr || owned[j]) continue;
       if (best < 0 || d.discharge[j] > d.discharge[best] || (d.discharge[j] === d.discharge[best] && j < best)) best = j;
     }
     return best;

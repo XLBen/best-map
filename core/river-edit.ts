@@ -12,6 +12,7 @@ import {
   cutLoop,
   emptyPlan,
   endCourseAt,
+  isRiverCell,
   endIn,
   endKind,
   flowsBack,
@@ -52,6 +53,23 @@ export interface EditTarget {
   at: number[];
   // 这条河自己的格（最后一格是它汇入的地方时不算）
   own: number[];
+  // 改之前地图上写的名字（自动起的；用户起的名字为 undefined）与按规则成了哪一种河：改了以后照旧叫它、还是这一种
+  // （名字记进 autoName、类型记进 type，见 editCommand），不因为走向、大小变了重新起名、换类型
+  autoName?: string;
+  ruleType?: string;
+}
+
+// 这条河现在按规则是哪一种（河上的格里最多的那种；普通的河、没有河流类型时为 undefined）
+export function ruleTypeOf(world: World, d: Derived, cells: readonly number[]): string | undefined {
+  const rt = d.riverType;
+  const types = world.small.riverTypes;
+  if (!rt || !types?.length) return undefined;
+  const count = new Map<number, number>();
+  for (const c of cells) if (isRiverCell(world, d, c)) count.set(rt[c], (count.get(rt[c]) ?? 0) + 1);
+  let best = 0;
+  let bn = 0;
+  for (const [v, k] of count) if (k > bn || (k === bn && v < best)) [best, bn] = [v, k];
+  return best > 0 ? types[best - 1]?.id : undefined;
 }
 
 function targetOf(world: World, g: Guide, natural: boolean): EditTarget {
@@ -73,18 +91,27 @@ function targetOf(world: World, g: Guide, natural: boolean): EditTarget {
 }
 
 // 画的河（或固定下来的河）
-export const guideTarget = (world: World, g: Guide): EditTarget => targetOf(world, g, false);
+export function guideTarget(world: World, g: Guide): EditTarget {
+  const T = targetOf(world, g, false);
+  const f = world.derived.features.find((x) => x.guide === g.id);
+  if (f?.name && !f.custom && !g.name) T.autoName = f.name;
+  if (!g.type) T.ruleType = ruleTypeOf(world, world.derived, T.own);
+  return T;
+}
 
 // 自然的河：这一格所在的主干（riverStem）当作一条固定下来的河道，名字沿用它的地名键（naming 由界面给；省略时按地物找）
-export function naturalTarget(world: World, d: Derived, cell: number, naming?: { nameKey: string } | { name: string }): EditTarget | null {
+// 固定下来时：名字记下（autoName，用户改过名的照旧跟着那条改名），按规则成了哪一种河也记下（type）
+export function naturalTarget(world: World, d: Derived, cell: number, naming?: { nameKey: string; autoName?: string } | { name: string }): EditTarget | null {
   const stem = riverStem(world, d, cell);
   if (stem.cells.length < 2) return null;
   let name = naming;
   if (!name) {
     const f = d.features.find((x) => x.type === 'river' && x.guide === undefined && x.cells.includes(cell));
-    name = f ? { nameKey: f.key } : { name: '' };
+    name = f ? { nameKey: f.key, ...(f.name && !f.custom ? { autoName: f.name } : {}) } : { name: '' };
   }
-  const g = { id: '', cells: stem.cells, path: stemPath(world, stem.cells), locked: true, spring: false, ...name } as Guide;
+  const own = stem.end === 'river' ? stem.cells.slice(0, -1) : stem.cells;
+  const type = ruleTypeOf(world, d, own);
+  const g = { id: '', cells: stem.cells, path: stemPath(world, stem.cells), locked: true, spring: false, ...name, ...(type ? { type } : {}) } as Guide;
   return targetOf(world, g, true);
 }
 
@@ -141,9 +168,12 @@ export function editPoint(world: World, T: EditTarget, x: number, y: number): Ed
 
 // 从河上哪里起笔：源头附近（tol 以内）是挪源头，终点附近是往下游接长，其余是从这里改（悬停与按下同一个判定）
 export type EditRole = 'source' | 'end' | 'middle';
+// 很短的河两头都在 tol 以内时按离哪头近
 export function editRole(e: EditPoint, tol: number): EditRole {
+  const toEnd = e.total - e.along;
+  if (e.along <= tol && e.along <= toEnd) return 'source';
+  if (toEnd <= tol) return 'end';
   if (e.along <= tol) return 'source';
-  if (e.total - e.along <= tol) return 'end';
   return 'middle';
 }
 
@@ -269,6 +299,8 @@ function headSection(world: World, d: Derived, T: EditTarget, head: readonly Pt[
   if (t.exit) return { blocked: '源头要在地图上' };
   if (t.loop || t.cells[t.cells.length - 1] !== C[b.k]) return { blocked: t.stop >= 0 ? '新的源头一段穿过了海或湖' : '没法从这里改' };
   const headCells = t.cells.slice(0, -1);
+  // 源头落在别的河上：那条河会被从中间截断、下游却还标着它（截走只认新河道中间的格），不让这样改
+  if (headCells.length && isRiverCell(world, d, headCells[0]) && !T.own.includes(headCells[0])) return { blocked: '源头不能放在别的河上' };
   const tail = C.slice(b.k);
   const tailSet = new Set(tail);
   if (headCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了这条河自己' };
@@ -507,7 +539,13 @@ const editCaptures = (T: EditTarget, e: RiverEdit) => e.plan.crossings.some((x) 
 // 改一条河的命令：画的河是 update_guide（同一个 id）；自然的河是 add_guide（固定下来，连同改好的那段，沿用它的地名）
 export function editCommand(T: EditTarget, e: RiverEdit, label: string): Command {
   const capture = editCaptures(T, e) ? { capture: true } : {};
-  if (!T.natural) return { op: 'update_guide', id: T.guide.id, patch: e.patch, ...capture, label };
+  if (!T.natural) {
+    // 名字、类型定下来：改了走向也还叫原来的名字、还是原来那一种
+    const keep: GuidePatch = {};
+    if (T.autoName && T.guide.autoName !== T.autoName) keep.autoName = T.autoName;
+    if (T.ruleType) keep.type = T.ruleType;
+    return { op: 'update_guide', id: T.guide.id, patch: { ...e.patch, ...keep }, ...capture, label };
+  }
   const { id: _, ...guide } = editedGuide(T, e);
   return { op: 'add_guide', guide, ...capture, label };
 }

@@ -265,12 +265,12 @@ function GuideRiverBar({ w, g }: { w: World; g: Guide }) {
     <>
       <NameInput fkey={`guide:${g.id}`} value={f?.name ?? ''} placeholder="起个名字" onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
       {f && (
-        <button class="bar-btn" onClick={() => update({ name: '', salt: salt + 1 }, '换了个名字')} title="自动换一个名字">
+        <button class="bar-btn" onClick={() => update({ name: '', salt: salt + 1, autoName: null }, '换了个名字')} title="自动换一个名字">
           <Dices size={15} /> 换一个
         </button>
       )}
       {f?.custom && (
-        <button class="bar-btn" onClick={() => update({ name: '', salt }, '恢复自动命名')} title="不用自己起的名字，按文字包自动起">
+        <button class="bar-btn" onClick={() => update({ name: '', salt, autoName: null }, '恢复自动命名')} title="不用自己起的名字，按文字包自动起">
           <LockOpen size={15} /> 恢复自动
         </button>
       )}

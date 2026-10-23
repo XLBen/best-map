@@ -134,7 +134,10 @@ describe('画的河的数据', () => {
     // 规则本身：只看有关的几项
     const g = guideSchema.parse({ id: 'r', cells: [1, 2] });
     expect(guideDirty([g], [{ ...g, width: 2 }])).toBe(Dirty.None);
-    expect(guideDirty([g], [{ ...g, path: [0, 0, 1, 1] }])).toBe(Dirty.Names);
+    // 有没有折线要从水文起重算（画的河整条按最小的河补水）；只换折线只重新起名
+    expect(guideDirty([g], [{ ...g, path: [0, 0, 1, 1] }])).toBe(Dirty.Vegetation);
+    expect(guideDirty([{ ...g, path: [0, 0, 1, 1] }], [{ ...g, path: [0, 0, 2, 2] }])).toBe(Dirty.Names);
+    expect(guideDirty([g], [{ ...g, autoName: '赤江' }])).toBe(Dirty.Names);
     expect(guideDirty([g], [{ ...g, nameKey: 'river:9' }])).toBe(Dirty.Vegetation);
     expect(guideDirty([g], [])).toBe(Dirty.Vegetation);
   });

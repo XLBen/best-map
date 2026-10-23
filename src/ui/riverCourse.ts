@@ -24,6 +24,7 @@ import {
   joinAtFirst,
   midHandle,
   naturalTarget,
+  ruleTypeOf,
   strokeEdit,
 } from '../../core/river-edit';
 import { PLAIN_RIVER } from '../../core/river-types';
@@ -590,7 +591,7 @@ export function targetOf(w: World, ref: RiverRef): EditTarget | null {
     T = g ? guideTarget(w, g) : null;
   } else {
     const f = naturalFeatureAt(w, ref.cell);
-    T = naturalTarget(w, w.derived, ref.cell, f ? { nameKey: f.key } : { name: '' });
+    T = naturalTarget(w, w.derived, ref.cell, f ? { nameKey: f.key, ...(f.name && !f.custom ? { autoName: f.name } : {}) } : { name: '' });
   }
   m.set(key, T);
   return T;
@@ -966,13 +967,16 @@ export function pinCommand(w: World, cell: number, downFrom = false): { cmd: Com
   const cells = downFrom ? stem.cells.slice(0, i + 1) : stem.cells;
   if (cells.length < 2 || i < 0) return null;
   const f = naturalFeatureAt(w, cell);
+  // 名字、按规则成了哪一种河都记下（固定以后不因为别处的改动换名字、换类型）
+  const type = ruleTypeOf(w, w.derived, stem.end === 'river' ? stem.cells.slice(0, -1) : stem.cells);
   const guide = {
     cells,
     path: stemPath(w, cells),
     locked: true,
     spring: false,
-    ...(f ? { nameKey: f.key } : { name: '' }),
+    ...(f ? { nameKey: f.key, ...(f.name && !f.custom ? { autoName: f.name } : {}) } : { name: '' }),
     ...(downFrom ? { end: 'sink' as const } : {}),
+    ...(type ? { type } : {}),
   };
   const name = quoted(f?.name || null, '一条河');
   const label = downFrom

@@ -1239,7 +1239,7 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
   const rivers = memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d));
   // 有名字的画的河占了的自然大河不再单独标（同一条河只标一次）；没有这种河时照旧
   const named = namedGuideCells(world, d);
-  replay(named ? rivers.filter((a) => !coveredBy(a, named)) : rivers);
+  replay(named ? rivers.flatMap((a) => uncovered(a, named)) : rivers);
   // 坡度由地形、陆海算出，所以不进键（只在这一段要重算时才取）
   replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, terrainSlope(world, d, terrain))));
   const biome = biomesOf(world, d);
@@ -1329,13 +1329,15 @@ function namedGuideCells(world: World, d: Derived): Uint8Array | null {
   return mask;
 }
 
-// 自然的大河是不是就是画的那条：河口在画的河里，或者一半以上的格在里面
-function coveredBy(a: AddInput, mask: Uint8Array): boolean {
-  if (a.type !== 'river') return false;
-  if (a.anchor !== undefined && mask[a.anchor]) return true;
-  let k = 0;
-  for (const c of a.cells) k += mask[c];
-  return k * 2 >= a.cells.length;
+// 自然的大河里不是画的河的那部分：河口在画的河里时就是画的那条（不再单独标）；否则从河口往上到碰到画的河为止
+// （画的河汇进来、或者固定了它的上游：下游照旧是这条河、叫原来的名字）。剩下太短（不到 3 格）时不标。
+// 一格也没碰到画的河时原样留着
+function uncovered(a: AddInput, mask: Uint8Array): AddInput[] {
+  if (a.type !== 'river') return [a];
+  if (a.anchor !== undefined && mask[a.anchor]) return [];
+  const k = a.cells.findIndex((c) => mask[c] === 1);
+  if (k < 0) return [a];
+  return k >= 3 ? [{ ...a, cells: a.cells.slice(0, k) }] : [];
 }
 
 // 沿折线每隔 step 取一点（含两端）：标注的位置、方向按它（与自然的河按格心一样，点大致均匀）
@@ -1672,7 +1674,8 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   const typeHow = (t: RiverType | LakeType) => `t:${hashString(JSON.stringify([t.id, t.name, t.names]))}`;
   const speciesHow = (sp: Species) => `s:${hashString(JSON.stringify([sp.id, sp.name, sp.terrain, sp.feature ?? null]))}`;
   // 每个地物怎么起名：用户起的名字（fixed），或者自动起名（gen，起名的办法 ctx）。区块没有 ctx（不留名字）
-  type Plan = { fixed: string } | { gen: () => string; ctx?: string };
+  // auto：改河时记下的自动名字（guide.autoName），照它叫，但不算用户起的名字
+  type Plan = { fixed: string; auto?: boolean } | { gen: () => string; ctx?: string };
   const plan = (f: GeoFeature): Plan => {
     const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
     if (g) {
@@ -1681,6 +1684,7 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
       const ov = inherits(g) && g.name === undefined ? overrides[g.nameKey!] : undefined;
       const fixed = g.name || ov?.name;
       if (fixed) return { fixed };
+      if (g.autoName) return { fixed: g.autoName, auto: true };
       const rt = typed(f);
       const key = g.nameKey ?? f.key;
       const salt = g.salt ?? ov?.salt ?? 0;
@@ -1721,6 +1725,10 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     const override = ovOf.get(f)?.[1];
     meta.set(f, 'fixed' in p ? { key: keyOf(f), override } : { key: keyOf(f), ctx: p.ctx, override });
   });
+  // 改河时记下的名字最先占上：这条河一直叫它，别的地物（比如改道后剩下的旧河道）另起名字
+  plans.forEach((p) => {
+    if ('fixed' in p && p.auto) taken.add(p.fixed);
+  });
   // 留着的名字最先占上（起名的办法没变的才算；同一个名字只给先排到的那个）
   const kept = world.small.keptNames;
   const keptOf = new Map<GeoFeature, string>();
@@ -1737,7 +1745,7 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     const p = plans[k];
     if ('fixed' in p) {
       f.name = p.fixed;
-      f.custom = true;
+      f.custom = !p.auto;
       taken.add(p.fixed);
       return;
     }
