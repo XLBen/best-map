@@ -646,6 +646,34 @@ function startRiverName(w: World, cell: number): string | null {
   return (g && guideName(w, g)) || riverNameAt(w, cell);
 }
 
+// 自定义走向起笔的那一点：鼠标在一条河上（悬停时写着它的名字）、脚下那一格却不是这条河的格时（在画出来的线的拐点上、
+// 源头外一两格），挪到这条河上离它最近的那一格的格心。悬停时说会怎样、按下去以后怎么画，用的都是这一点（startHint 跟着它说）
+export function courseStart(w: World, x: number, y: number, cell: number, tol: number): { x: number; y: number; cell: number } {
+  const here = { x, y, cell };
+  if (cell < 0 || water(w, cell) || isRiverCell(w, w.derived, cell) || extendPoint(w, cell)) return here;
+  const hit = riverAt(w, x, y, tol, cell);
+  if (!hit) return here;
+  let c = -1;
+  if (hit.ref.kind === 'natural') c = hit.ref.cell;
+  else {
+    const g = guideOf(w, hit.ref.id);
+    if (!g) return here;
+    const L = lineOf(w, g);
+    const h = snapOnto(L.points, x, y, 0, L.points.length - 1, w.mesh.kind === 'sphere');
+    if (!h) return here;
+    const [ax, ay] = L.points[h.k];
+    const [bx, by] = L.points[h.k + 1] ?? L.points[h.k];
+    const px = w.mesh.kind === 'sphere' ? h.p[0] - 2 * Math.round((h.p[0] - ax) / 2) : h.p[0];
+    let i = L.cellIdx[Math.hypot(px - ax, h.p[1] - ay) <= Math.hypot(px - bx, h.p[1] - by) ? h.k : Math.min(h.k + 1, L.cellIdx.length - 1)];
+    // 它汇入的那一格是别的河的：退回它自己的最后一格
+    if (!ownsCell(g, i)) i--;
+    c = i >= 0 ? g.cells[i] : -1;
+  }
+  if (c < 0 || water(w, c)) return here;
+  const cx = w.mesh.x[c] + (w.mesh.kind === 'sphere' ? 2 * Math.round((x - w.mesh.x[c]) / 2) : 0);
+  return { x: cx, y: w.mesh.y[c], cell: c };
+}
+
 // 鼠标停在一条河上（自定义走向）：从这里起笔会怎样（接在“赤江 · 中等的河 · 入海”后面）。warn：要先确认的
 export function startHint(w: World, cell: number): { text: string; warn: boolean } | null {
   if (extendPoint(w, cell)) return { text: '从这里起笔：往下游接着画这条河', warn: false };
@@ -1227,7 +1255,9 @@ export function riverTool(zoom: () => number): ToolHandler {
           guide = g.id;
         }
       }
-      press = { kind, start: p, pts: [[p.x, p.y]], last: [p.sx, p.sy], out: false, cells: [p.cell], moved: false, guide };
+      // 自定义走向：起笔的点与悬停时说的是同一点（在一条河边上按下时挪到这条河上，见 courseStart）
+      const s0 = kind === 'course' ? courseStart(w, p.x, p.y, p.cell, PICK_PX / zoom()) : p;
+      press = { kind, start: p, pts: [[s0.x, s0.y]], last: [p.sx, p.sy], out: false, cells: [p.cell], moved: false, guide };
       pointer = p;
       courseCache = null;
       exact.reset();
@@ -1330,8 +1360,8 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (hit) {
         if (sel?.kind === 'guide' && hit.ref.kind === 'guide' && hit.ref.id === sel.id && hit.d <= spliceTol(w, zoom())) return { layers: [], shapes: [], hint: '从这里拖是重画这一段' };
         const info = riverInfo(w, hit.ref);
-        // 自定义走向：写出从这里起笔会怎样（接长、改道、重画整条）
-        const act = options.value.riverMode === 'course' ? startHint(w, at.cell) : null;
+        // 自定义走向：写出从这里起笔会怎样（接长、改道、重画整条）；起笔的那一格与按下去以后用的相同
+        const act = options.value.riverMode === 'course' ? startHint(w, courseStart(w, at.x, at.y, at.cell, PICK_PX / zoom()).cell) : null;
         const label = info ? riverLabel(hit.ref, info) : null;
         const hint = act ? (label ? `${label} · ${act.text}` : act.text) : label;
         return { layers: [], shapes: riverGlow(w, hit.ref), hint, ...(act?.warn ? { warn: true } : {}) };

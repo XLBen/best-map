@@ -6,7 +6,7 @@ import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { riverLines } from '../render/overlay';
 import { busy, exec, previewCommand, riverPending, riverStyleOverride, selectedRiver, setOptions, toast, world } from '../state';
-import { lineOf, naturalFeatureAt, newCourse, pinCommand, rerouteOf, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
+import { courseStart, lineOf, naturalFeatureAt, newCourse, pinCommand, rerouteOf, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
 import type { Pointer } from './tools';
 
 // 画河的手势：自定义走向一笔 → 松手发的命令与预览是同一份；穿过别的河时先问一句（截走它 / 到这里汇入 / 取消，
@@ -694,6 +694,45 @@ describe('第九轮 C：从河中间改道还是同一条河；悬停与按下�
     if (name) expect(eng.world.derived.features.find((f) => f.guide === g.id)?.name).toBe(name);
   });
 
+  it('悬停与按下用同一个起笔：鼠标在画的河的线旁（脚下那一格不是河）时，悬停说从这里起笔会怎样，按下去拖出去也是改这条河，不是截走它', async () => {
+    const { w, g, t } = drawnLong();
+    const L = lineOf(w, g).points;
+    const tol = 8 / zoomOf(w);
+    let found: { p: Pt; s: Pt[] } | null = null;
+    for (let i = 2; i < L.length - 2 && !found; i++) {
+      const [ax, ay] = L[i - 1];
+      const [bx, by] = L[i + 1];
+      const nl = Math.hypot(bx - ax, by - ay) || 1;
+      for (const side of [1, -1]) {
+        const nx = (-(by - ay) / nl) * side;
+        const ny = ((bx - ax) / nl) * side;
+        for (const off of [0.25, 0.3, 0.35]) {
+          const p: Pt = [L[i][0] + nx * off * w.mesh.spacing, L[i][1] + ny * off * w.mesh.spacing];
+          const c = findCell(w.mesh, p[0], p[1]);
+          if (!w.causes.land[c] || w.derived.lake[c] === 1 || isRiverCell(w, w.derived, c)) continue;
+          const hit = riverAt(w, p[0], p[1], tol, c);
+          if (hit?.ref.kind !== 'guide' || hit.ref.id !== g.id) continue;
+          const st = courseStart(w, p[0], p[1], c, tol);
+          if (st.cell === g.cells[0]) continue;
+          const s = line(w, p, [p[0] + nx * 4 * w.mesh.spacing, p[1] + ny * 4 * w.mesh.spacing]);
+          const r = rerouteCourse(w, w.derived, [[st.x, st.y], ...s.slice(1)], { endOnLand: 'flow', px: 1 / zoomOf(w) });
+          if (!r || r.plan.blocked || r.plan.crossings.length) continue;
+          found = { p, s };
+          break;
+        }
+        if (found) break;
+      }
+    }
+    expect(found).not.toBeNull();
+    const { p, s } = found!;
+    t.move?.(ptr(w, p), false);
+    expect(t.preview().hint).toContain('从这里起笔：改道');
+    vi.mocked(exec).mockClear();
+    await drag(t, w, s);
+    expect(riverPending.value?.confirm).toBe('改道');
+    await riverPending.value!.capture();
+    expect(lastExec()).toMatchObject({ op: 'update_guide', id: g.id });
+  });
 
 
 });
