@@ -196,3 +196,75 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     d.wetness[i] = Math.log(a / Math.max(s / 1000, 1e-5));
   }
 }
+
+// ---------- 自然湖的湖底（第十二轮） ----------
+// 自然的湖是填洼填出来的：水面平，湖底就是洼地本来的地形，常常只有几米深、一片平。这里在水文算完之后
+// 把湖底按离岸的距离往下修成真实的样子：岸边浅、往里变深，最深处随湖的面积（约 12 m × 面积^0.3，1 km² 约 12 m，
+// 1 万 km² 约 190 m，最多 600 m）。只往深里挖，不改水面、湖的范围与流向（它们只取决于溢出口）；
+// 用户放的湖（userLake 里的格）已经有自己的湖底，不动。只改 d.elevation（地形底图、导出、检查器看到的湖底）
+export function shapeLakeBeds(world: World, d: Derived, userLake: Uint8Array | null) {
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  const dist = new Float64Array(n);
+  const cellKm = mesh.spacing * kmPerUnit;
+  const isLake = (i: number) => land[i] === 1 && d.lake[i] === 1 && !userLake?.[i];
+  for (let s = 0; s < n; s++) {
+    if (seen[s] || !isLake(s)) continue;
+    // 一片湖：水面相同的相连湖格
+    let len = 0;
+    queue[len++] = s;
+    seen[s] = 1;
+    let area = 0;
+    for (let q = 0; q < len; q++) {
+      const c = queue[q];
+      area += mesh.area[c] * kmPerUnit * kmPerUnit;
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!seen[j] && isLake(j) && Math.abs(d.water[j] - d.water[s]) < 1e-3) {
+          seen[j] = 1;
+          queue[len++] = j;
+        }
+      }
+    }
+    const cells = queue.slice(0, len);
+    // 离岸的距离（km）：从挨着岸的湖格起，只在这片湖里走（广度优先，按边长累加，近似即可）
+    const inLake = new Set<number>(cells);
+    const order: number[] = [];
+    for (const c of cells) {
+      dist[c] = Infinity;
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        if (!inLake.has(adj[e])) {
+          dist[c] = 0;
+          order.push(c);
+          break;
+        }
+      }
+    }
+    for (let q = 0; q < order.length; q++) {
+      const c = order[q];
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!inLake.has(j)) continue;
+        const nd = dist[c] + mesh.dist[e] * kmPerUnit;
+        if (nd < dist[j]) {
+          dist[j] = nd;
+          order.push(j);
+        }
+      }
+    }
+    let far = 0;
+    for (const c of cells) if (dist[c] < Infinity) far = Math.max(far, dist[c]);
+    const maxDepth = Math.min(600, Math.max(4, 12 * Math.pow(area, 0.3)));
+    for (const c of cells) {
+      const s01 = Math.min(1, ((dist[c] < Infinity ? dist[c] : far) + 0.5 * cellKm) / (far + 0.5 * cellKm));
+      // 岸边一圈浅滩，往里落下去，中间平缓
+      const f = 0.12 + 0.88 * (s01 * s01 * (3 - 2 * s01));
+      const bed = d.water[c] - maxDepth * f;
+      if (bed < d.elevation[c]) d.elevation[c] = bed;
+    }
+  }
+}

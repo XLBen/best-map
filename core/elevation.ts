@@ -1,7 +1,7 @@
 import { MinHeap } from './heap';
 import { HeapLite, type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
-import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, smoothstep } from './rng';
+import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, accumulate } from './routing';
 import { seabedFields } from './terrain';
 import type { World } from './world';
@@ -261,9 +261,11 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
   // 海底：按离岸距离的大陆架 → 陆架坡折 → 陆坡 → 陆隆 → 深海（见 seafloor）
   seafloor(world, elevation);
 
-  // 湖：挖一个碗形洼地，由水文按溢出口蓄水。
+  // 湖：挖一个洼地，由水文按溢出口蓄水。
   // 以紧贴湖面的一圈格里最低的为基准往下挖：它就是溢出口，湖面 = 它的高度，
-  // 所以湖面正好是 lakeArea 给出的那些格（预览就是结果），边上也至少有 1 m 深
+  // 所以湖面正好是 lakeArea 给出的那些格（预览就是结果），边上也至少有 1 m 深。
+  // 湖底的形状（第十二轮）：岸边一圈浅滩（湖岸带），往里陡陡地落下去，中间是湖盆，湖盆里有一两个更深的地方
+  // （位置按种子与湖的位置定，结果确定）；最深处正好是给的深度。湖深时湖底可以低于海平面（像死海、里海）
   for (const lake of small.lakes) {
     const c = lake.cell;
     if (!land[c]) continue;
@@ -279,11 +281,12 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
       }
     }
     if (!Number.isFinite(rim)) rim = elevation[c];
-    for (let i = 0; i < n; i++) {
-      if (!inside(i)) continue;
-      const t = d[i] / rUnits;
-      const bowl = rim - 1 - lake.depth * (1 - t * t);
-      elevation[i] = Math.max(1, Math.min(elevation[i], bowl));
+    const cells: number[] = [];
+    for (let i = 0; i < n; i++) if (inside(i)) cells.push(i);
+    const f = lakeBedShape(world, c, rUnits, cells, d);
+    for (let k = 0; k < cells.length; k++) {
+      const i = cells[k];
+      elevation[i] = Math.min(elevation[i], rim - 1 - lake.depth * f[k]);
     }
   }
   return { elevation, coastKm };
@@ -619,6 +622,39 @@ function landComponents(world: World): [Int32Array, number[]] {
     area.push(a);
   }
   return [comp, area];
+}
+
+// 湖底的形状：每格的深度占最深处的比例（0–1，最深的那格是 1）。t 是到湖心的距离占半径的比例：
+//   t > 0.75 是湖岸带的浅滩（最多一成半），0.75 到 0.4 陡陡地落下去，0.4 以内是湖盆；
+//   湖盆里一两个更深的地方：位置、大小按种子与放湖的格定
+export function lakeBedShape(world: World, center: number, rUnits: number, cells: readonly number[], d: ArrayLike<number>): Float64Array {
+  const { mesh } = world;
+  const rand = mulberry32(mixSeed(world.settings.seed, center, 0x1a4e));
+  const deeps: { x: number; y: number; w: number; h: number }[] = [];
+  const count = rand() < 0.45 ? 2 : 1;
+  for (let k = 0; k < count; k++) {
+    const a = rand() * Math.PI * 2;
+    const r = rUnits * (0.05 + 0.3 * rand());
+    deeps.push({ x: mesh.x[center] + Math.cos(a) * r, y: mesh.y[center] + Math.sin(a) * r, w: rUnits * (0.25 + 0.2 * rand()), h: k === 0 ? 1 : 0.6 + 0.3 * rand() });
+  }
+  const out = new Float64Array(cells.length);
+  let max = 0;
+  for (let k = 0; k < cells.length; k++) {
+    const i = cells[k];
+    const t = Math.min(1, d[i] / rUnits);
+    let deep = 0;
+    for (const p of deeps) {
+      let dx = mesh.x[i] - p.x;
+      if (mesh.kind === 'sphere') dx -= 2 * Math.round(dx / 2);
+      const dy = mesh.y[i] - p.y;
+      deep = Math.max(deep, p.h * Math.exp(-(dx * dx + dy * dy) / (p.w * p.w)));
+    }
+    const f = 0.15 * smoothstep(1, 0.75, t) + 0.7 * smoothstep(0.75, 0.4, t) + 0.15 * deep * smoothstep(0.75, 0.3, t);
+    out[k] = f;
+    max = Math.max(max, f);
+  }
+  if (max > 0) for (let k = 0; k < out.length; k++) out[k] /= max;
+  return out;
 }
 
 // 湖的半径（地图单位）：至少半格，半径不到一格时只淹放湖的那一格

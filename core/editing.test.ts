@@ -52,7 +52,7 @@ describe('省份：规则可配置', () => {
     // 在内陆放一个大湖
     const inland = landCells(w).find((i) => w.derived.continentality[i] > 0.6 && w.derived.slope[i] < 5)!;
     eng.exec({ op: 'add_lake', lake: { cell: inland, radius: 120, depth: 150, perennial: true } });
-    eng.exec({ op: 'generate_provinces', rules: { lakes: true, seed: 3 } });
+    eng.exec({ op: 'generate_provinces', rules: { lakeMode: 'separate', seed: 3 } });
     const lakeIds = Object.entries(w.small.provinces).filter(([, p]) => p.kind === 'lake').map(([k]) => Number(k));
     expect(lakeIds.length).toBeGreaterThan(0);
     // 湖省里全是湖面

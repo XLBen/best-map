@@ -1,12 +1,13 @@
 import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
-import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, revert } from './commands';
+import { type Command, CommandError, Dirty, type UndoRecord, addArrayUndo, applyCommand, revert } from './commands';
+import { lakeProvinceFix } from './provinces';
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
-import { carveBeds, computeElevation } from './elevation';
+import { carveBeds, computeElevation, userLakeMask } from './elevation';
 import { type GeoFeature, assignNames, applyNameCarry, carryNames, detectFeatures, guideFeatures, mergeNameCarry, prepareFeatures, regionFeatures } from './features';
 import { computeEffects } from './effects';
-import { computeHydrology } from './hydrology';
+import { computeHydrology, shapeLakeBeds } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
 import { typeLakes } from './lake-types';
@@ -155,6 +156,7 @@ export class Engine {
     try {
       this.update();
       if (fresh) this.carryNames(prev);
+      this.fixLakeProvinces();
       this.shareWithLast();
     } catch (e) {
       // 撤掉时的重算按说不会再出错；万一出了，历史、重做记录、状态编号也照样放回去
@@ -398,6 +400,7 @@ export class Engine {
     try {
       this.update();
       if (shown) this.carryNames(shown.features, shown.small);
+      this.fixLakeProvinces();
       this.shareWithLast();
     } catch (e) {
       // 新的一步撤掉（推导写了一半，不能留着）：原因退回去，原来那一步放回去后从头重算
@@ -427,6 +430,19 @@ export class Engine {
     step.cmd = { ...step.cmd, nameCarry: mergeNameCarry(step.cmd.nameCarry, carry) };
     this.dirty = Dirty.Names;
     this.update();
+  }
+
+  // 湖与陆地省份的整理（见 provinces.ts 的 lakeProvinceFix）：这一步改了推导（放湖、删湖、湖干了、地形变了）之后，
+  // 按新的湖把格放进对的省份。结果记进这一步的命令（重放、重做时照用，不用推导）与撤销记录；省份不进推导，不用重算
+  private fixLakeProvinces() {
+    const step = this.done[this.done.length - 1];
+    if (!step || step.dirty <= Dirty.None || step.cmd.provinceFix) return;
+    const w = this.world;
+    const before = w.causes.province.slice();
+    const fix = lakeProvinceFix(w, w.derived);
+    if (!fix) return;
+    addArrayUndo(step.undo, 'province', fix.cells, before);
+    step.cmd = { ...step.cmd, provinceFix: fix };
   }
 
   // 推导里的数组发出去了（Worker 只发变了的数组，按引用比较上一次发的）：之后重算不能就地改它们，先复制
@@ -559,6 +575,8 @@ export class Engine {
       pass(eff);
       yield;
     }
+    // 自然湖的湖底按离岸距离修深（只改湖格的 d.elevation；水文、植被已经算完，见 hydrology.ts 的 shapeLakeBeds）
+    shapeLakeBeds(w, d, w.small.lakes.length ? userLakeMask(w) : null);
     finishLook(w, d);
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
@@ -677,6 +695,7 @@ export class Engine {
     yield* copy.updateSteps();
     // 与执行时一样留名字（采用预览时命令、小数据都照用副本的）
     copy.carryNames(prev);
+    copy.fixLakeProvinces();
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
     const step = copy.done[copy.done.length - 1];
     const ms = performance.now() - t0;
