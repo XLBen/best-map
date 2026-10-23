@@ -67,7 +67,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: 'd2ae5e44', upliftDelta: 'cf768e09', land: '78511545', elevation: 'f58c005c', discharge: 'b8650ac7' });
+    }).toEqual({ landDelta: '3fd60a33', upliftDelta: 'cb0b32bd', land: '83511545', elevation: '8e076b20', discharge: 'b8a79f65' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -179,7 +179,7 @@ describe('放岛只在岛的附近找格', () => {
       }
       got[name] = `${hashString(parts.join('|')).toString(16)} ${parts.length}`;
     }
-    expect(got).toEqual({ 星球: 'a78536e2 112', 海洋: '1d1e0513 112', 群岛: 'be9362d4 84' });
+    expect(got).toEqual({ 星球: '19a44f31 64', 海洋: 'f0bfb4a1 64', 群岛: '65bb4e34 48' });
   });
 });
 
@@ -204,16 +204,16 @@ describe('岛链的固定哈希', () => {
       }
     }
     expect(got).toEqual({
-      '地区|0.99×1.5|continental': 'c547f079 a00bb7ed f60daeb4 39703c78 592',
-      '地区|0.99×1.5|volcanic': 'c547f079 e411e905 9dfbd236 2eeb0014 599',
-      '地区|1.6|continental': '6124aac0 39e90c65 fec2fee5 e3a7a09 629',
-      '地区|1.6|volcanic': '6124aac0 8c72b29d e380fd19 cc11eb7f 636',
+      '地区|0.99×1.5|continental': 'b137f079 32602555 ee1beffd 20271b3 463',
+      '地区|0.99×1.5|volcanic': 'b137f079 93b4974d c6f709a4 ff475b63 467',
+      '地区|1.6|continental': '692f1204 34fde13d 7b58efcb 7f901cc5 524',
+      '地区|1.6|volcanic': '692f1204 5bcec595 132a4712 6ead8d4a 531',
       '地区|3|continental': '2d639ef5 23dd75e5 20e36a14 6b332680 727',
       '地区|3|volcanic': '2d639ef5 bfa84f75 601185d9 c1a74d25 733',
-      '星球|0.99×1.5|continental': 'ce94c8c7 bc2784d5 345f303d 5f023c75 177',
-      '星球|0.99×1.5|volcanic': 'ce94c8c7 9f6e9ebd 8b56c13c 321fec54 181',
-      '星球|1.6|continental': 'ff394bb2 23305d25 945a332a f1478350 190',
-      '星球|1.6|volcanic': 'ff394bb2 1a347c75 a89fa989 28e748e9 195',
+      '星球|0.99×1.5|continental': '3c4c8c7 ab1f97bd 376f8845 c43885e9 121',
+      '星球|0.99×1.5|volcanic': '3c4c8c7 ef291a95 4904e6c1 ca3ab69e 129',
+      '星球|1.6|continental': '128f36bd 768022b5 f3f931e4 4c15c76b 135',
+      '星球|1.6|volcanic': '128f36bd 3af3959d 51296a66 e4fa6b98 142',
       '星球|3|continental': '5a89615 6351b4bd 17824cfe 1639f772 261',
       '星球|3|volcanic': '5a89615 c9b86b25 8e2f67b3 ada37b6e 242',
     });

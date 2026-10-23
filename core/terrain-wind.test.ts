@@ -17,7 +17,7 @@ const windOff: Command = { op: 'set_planet', patch: { terrainWind: 0 } };
 describe('山挡风为 0 时逐值不变', () => {
   it('一块地区：与 golden-hashes 同一组参考操作', () => {
     // 第九轮去掉旧存档兼容时重录（放岛只收 km 数，岛的形状变了）；之后的优化必须逐值不变
-    const FROZEN = { tS: '57ec5622', pS: 'c9bbd67f', discharge: 'da8eb618', dominant: '418d8605', corrT: 'c928e485', province: '52404e05' };
+    const FROZEN = { tS: '60df402', pS: 'c8a77a91', discharge: 'b0ca4590', dominant: '319d8605', corrT: 'c928e485', province: 'c44ede05' };
     const eng = new Engine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
