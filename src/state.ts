@@ -15,6 +15,7 @@ import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { outsideRangeReason } from './ui/biomeRange';
+import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from './ui/shell/noticeTimer';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
 import { buildKey, engineCode, engineUrl } from './engine-source';
 import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
@@ -831,6 +832,12 @@ export function describeChange(a: World, b: World): { cells: number[]; detail: s
 }
 
 let noteId = 0;
+// 改完后的一句话多久消失：带按钮（撤销、换一个……）的 20 秒，别的 9 秒；鼠标停在提示条上时暂停（holdNote）
+const noteTimer = new PausableTimer(() => (changeNote.value = null));
+export function holdNote(on: boolean) {
+  if (on) noteTimer.pause();
+  else noteTimer.resume();
+}
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 让这些格淡淡地亮一下（比如“地图上有一处出错（点这里去看）”），FLASH_MS 后去掉
@@ -847,9 +854,7 @@ function noteChange(head: string, before: World | null, again?: NoteAction, undo
   const { cells, detail } = describeChange(before, after);
   const id = ++noteId;
   changeNote.value = { id, head, detail, undoable, again, action };
-  setTimeout(() => {
-    if (changeNote.value?.id === id) changeNote.value = null;
-  }, 9000);
+  noteTimer.start(undoable || again || action ? NOTE_ACTION_MS : NOTE_MS);
   flash.value = cells.length && !quiet ? { cells, at: performance.now() } : null;
   if (flashTimer) clearTimeout(flashTimer);
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);

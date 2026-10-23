@@ -1,5 +1,7 @@
 import { Dices, Pencil, Square, Undo2, X } from 'lucide-preact';
-import { busy, canUndo, cancelExport, changeNote, exportProgress, scriptRunning, stopScripts, toast, undo, world } from '../../state';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
+import { busy, canUndo, cancelExport, changeNote, exportProgress, holdNote, scriptRunning, stopScripts, toast, undo, world } from '../../state';
+import { installLateClickGuard, lateClicks } from './noticeTimer';
 
 // 顶部中间的提示条：脚本算了很久（带“停下”）> 出错 > 正在计算 > 一般提示 > 改完后的一句话（带撤销、“换一个”）。
 // “停下”排在出错前面：一段一直报平安的慢脚本看门狗不会停，“停下”是唯一的办法，不能被前一步的出错提示（6 秒）挡住。
@@ -45,8 +47,26 @@ export function Notice() {
   }
   if (t) return <div class="notice">{t.text}</div>;
   if (!n) return null;
+  return <ChangeNote n={n} />;
+}
+
+// 改完后的一句话（带撤销等按钮）：鼠标停在上面时不消失；消失后 300 毫秒内按在它原来位置上的一下不落到地图上
+function ChangeNote({ n }: { n: NonNullable<typeof changeNote.value> }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const r = ref.current?.getBoundingClientRect();
+    lateClicks.shown(r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : null);
+  });
+  useEffect(() => {
+    installLateClickGuard();
+    return () => {
+      lateClicks.gone();
+      // 鼠标停着时提示条被关上、被别的提示换掉：计时接着算（不然下一句一直不消失）
+      holdNote(false);
+    };
+  }, []);
   return (
-    <div class="notice">
+    <div class="notice" ref={ref} onPointerEnter={() => holdNote(true)} onPointerLeave={() => holdNote(false)}>
       <span class="notice-text" title={n.detail || undefined}>
         <b>{n.head}</b>
       </span>
