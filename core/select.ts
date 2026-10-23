@@ -1300,6 +1300,8 @@ function segmentGrid(world: World, lines: readonly OverlapLine[], skip: (line: O
   };
 }
 
+const gridCache = new WeakMap<readonly OverlapLine[], Map<string, ReturnType<typeof segmentGrid>>>();
+
 // 一笔河、改一条河的重叠分析（见上）。plan 是画好的结果（画不出来的不分析）
 export function overlapsOf(world: World, d: Derived, plan: CoursePlan, opts: OverlapOptions = {}): Overlap[] {
   const out: Overlap[] = [];
@@ -1375,13 +1377,23 @@ export function overlapsOf(world: World, d: Derived, plan: CoursePlan, opts: Ove
   }
   // 贴着别的河流：连着 1.5 格以上离别的河的线不到 0.6 格。起笔、汇入处附近不算（从河上起笔、画到河上汇入本来就挨着）
   if (opts.lines?.length) {
-    const own = new Set(opts.own ?? []);
     const lines = opts.lines;
-    const grid = segmentGrid(world, lines, (line, k) => {
-      if (opts.self && line.guide === opts.self) return true;
-      const c = line.cells;
-      return !!c && own.size > 0 && own.has(c[k]) && own.has(c[k + 1]);
-    });
+    // 同一份线、同一条河反复分析（拖动时）只建一次
+    const o = opts.own ?? [];
+    const gk = `${opts.self ?? ''}|${o.length}:${o[0] ?? -1}:${o[o.length - 1] ?? -1}`;
+    let gm = gridCache.get(lines);
+    if (!gm) gridCache.set(lines, (gm = new Map()));
+    let grid = gm.get(gk);
+    if (!grid) {
+      const own = new Set(o);
+      grid = segmentGrid(world, lines, (line, k) => {
+        if (opts.self && line.guide === opts.self) return true;
+        const c = line.cells;
+        return !!c && own.size > 0 && own.has(c[k]) && own.has(c[k + 1]);
+      });
+      if (gm.size > 8) gm.clear();
+      gm.set(gk, grid);
+    }
     const at = new Int32Array(m).fill(-1);
     const hitOf: ({ l: number; k: number } | null)[] = new Array(m).fill(null);
     const head = S.along[c0] + 1.0 * sp;

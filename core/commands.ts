@@ -85,6 +85,8 @@ const guidePatchSchema = z
     width: G.width.unwrap().nullable().optional(),
     end: G.end.unwrap().nullable().optional(),
     type: G.type.unwrap().nullable().optional(),
+    branch: G.branch.unwrap().nullable().optional(),
+    sourceOf: G.sourceOf.unwrap().nullable().optional(),
   })
   .strict();
 export type GuidePatch = z.input<typeof guidePatchSchema>;
@@ -489,6 +491,7 @@ function checkCourse(mesh: Mesh, cells: readonly number[]) {
 // 河道还要查两项：不经过同一格两次（水会绕成圈）；在终点消失的，终点要在陆地上
 function checkNewCourse(world: World, g: Guide, cells: boolean, end: boolean) {
   if (cells && new Set(g.cells).size !== g.cells.length) throw new CommandError('河道不能经过同一格两次');
+  if (cells && g.branch && !world.causes.land[g.cells[0]]) throw new CommandError('分出去的一股要从陆地上的河分出来');
   if (end && g.end === 'sink' && !world.causes.land[g.cells[g.cells.length - 1]]) throw new CommandError('在终点消失的河，终点要在陆地上');
 }
 
@@ -529,10 +532,10 @@ export function guideDirty(before: readonly Guide[], after: readonly Guide[]): D
   const sig = (list: readonly Guide[], f: (g: Guide) => unknown) => JSON.stringify(list.map(f));
   const same = (f: (g: Guide) => unknown) => sig(before, f) === sig(after, f);
   // 有没有画的线也要从水文起重算：画的河（有折线）整条按最小的河补水
-  if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined, !!g.path])) {
+  if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined, !!g.path, g.branch?.share ?? null])) {
     return Dirty.Vegetation;
   }
-  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null])) return Dirty.Names;
+  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null])) return Dirty.Names;
   return Dirty.None;
 }
 

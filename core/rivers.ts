@@ -265,10 +265,11 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   const bodyOf = new Int32Array(n).fill(-1);
   guides.forEach((g, gi) => {
     const m = g.end === 'sink' ? g.cells.length : g.cells.length - 1;
-    for (let k = 0; k < m; k++) if (bodyOf[g.cells[k]] < 0) bodyOf[g.cells[k]] = gi;
+    for (let k = g.branch ? 1 : 0; k < m; k++) if (bodyOf[g.cells[k]] < 0) bodyOf[g.cells[k]] = gi;
   });
   const lines: RiverLine[] = [];
   const joins: { line: RiverLine; cell: number }[] = [];
+  const splits: { line: RiverLine; cell: number }[] = [];
   // 汇入别的河的画的河（每一段）汇入的那一格
   const joinCell = new Map<RiverLine, number>();
   guides.forEach((g, gi) => {
@@ -297,7 +298,7 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
           q = d.discharge[tag];
           mouth = true;
         }
-      } else if (isRiver(c)) q = d.discharge[join && i === last ? cells[last - 1] : c];
+      } else if (isRiver(c)) q = d.discharge[join && i === last ? cells[last - 1] : g.branch && i === 0 && cells.length > 1 ? cells[1] : c];
       if (q < 0) {
         run = null;
         continue;
@@ -356,6 +357,8 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     for (const r of kept) {
       r.cells!.forEach((c, k) => {
         if (join && c === L) return;
+        // 分出去的一股：起点那格是干流的（干流照常画过它）
+        if (g.branch && c === cells[0]) return;
         if (owner[c] === undefined) visited[c] = 1;
         take(r, k, c);
       });
@@ -363,7 +366,7 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
       if (join) joinCell.set(r, L);
     }
     // 平滑后的线擦过去、一个点也没落进的格（画的线擦过一个角时补上的格）：算在下一个点那里
-    for (let i = 0, k = 0; i < last; i++) {
+    for (let i = g.branch ? 1 : 0, k = 0; i < last; i++) {
       const c = cells[i];
       while (k < points.length && cellIdx[k] < i) k++;
       const at = where[k];
@@ -372,6 +375,9 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
       take(at.run, at.j, c);
     }
     if (join && tail && tail.cells![tail.cells!.length - 1] === L) joins.push({ line: tail, cell: L });
+    // 分出去的一股：第一点画到干流的线上（干流画好以后，见 finish）
+    const head = kept[0];
+    if (g.branch && head && head.cells![0] === cells[0]) splits.push({ line: head, cell: cells[0] });
   });
 
   // 画的河的水流到了画的河都不经过的格（比它流进的那条自然的河大、终点那格算它的，或者有一段没按画的走）：
@@ -423,6 +429,15 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     },
     // 画的河汇入别的河：在汇合的那格里离那条河的线最近的点截住，画到那条线上
     finish() {
+      // 分出去的一股从干流画出来的线上起（干流在那里不加细小的弯曲）
+      for (const { line, cell } of splits) {
+        const o = owner[cell];
+        if (!o || o === line) continue;
+        const hit = project(cell, line.points[0][0], line.points[0][1]);
+        if (!hit) continue;
+        line.points[0] = hit.p;
+        markJoin(o, hit.k + hit.t);
+      }
       for (const { line, cell } of joins) {
         if (!cutAtJoin(line, cell, (x, y) => project(cell, x, y))) continue;
         const end = line.points[line.points.length - 1];
@@ -1157,7 +1172,8 @@ export function stemPath(world: World, cells: readonly number[]): number[] {
 
 // 一条河道上算作“这条河”的第 i 格：最后一格是它汇入的地方（那条河的）不算；在终点消失的河的终点算（水在那里消失，
 // 别的河经过它也会被吞掉，所以截走、改道时要把它的“消失”去掉）
-export const ownsCell = (g: Pick<Guide, 'cells' | 'end'>, i: number) => i < g.cells.length - 1 || g.end === 'sink';
+// 分出去的一股（branch）的第一格在干流上，也不是它的
+export const ownsCell = (g: Pick<Guide, 'cells' | 'end' | 'branch'>, i: number) => (i < g.cells.length - 1 || g.end === 'sink') && !(i === 0 && g.branch);
 
 // 一条画的河的控制点（courseLine 再平滑一遍就是画出来的样子）：画的折线，再接上画完之后顺地势流下去的那段
 // （格心加上与自然的河相同的曲流）；没有折线的河道（顺地势画的）整条按格心（与固定自然的河时存的一样，见 stemPath）。
@@ -1257,6 +1273,7 @@ export function guidesSignature(guides: readonly Guide[]): string {
     mix(g.end === 'sink' ? 1 : 0);
     mix(g.locked ? 1 : 0);
     str(g.type);
+    mix(g.branch ? Math.round(g.branch.share * 1e4) : -1);
   }
   return `${guides.length}:${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}`;
 }
@@ -1282,6 +1299,8 @@ export function joinsRiver(world: World, d: Derived, g: Guide): boolean {
 // 最后一格汇入别的河时那一格是那条河的，也不算。从源头往下排
 export function guideBody(world: World, d: Derived, g: Guide): number[] {
   const land = world.causes.land;
-  const cells = joinsRiver(world, d, g) ? g.cells.slice(0, -1) : g.cells;
+  let cells = joinsRiver(world, d, g) ? g.cells.slice(0, -1) : g.cells;
+  // 分出去的一股：第一格是干流的
+  if (g.branch) cells = cells.slice(1);
   return cells.filter((c) => land[c] && d.lake[c] !== 1);
 }

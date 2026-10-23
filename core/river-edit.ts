@@ -1,4 +1,5 @@
 import type { Command, GuidePatch } from './commands';
+import { wrapDelta } from './geo';
 import { findCell } from './mesh';
 import { dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, roundPoint as roundPt, stemPath } from './rivers';
 import {
@@ -17,6 +18,7 @@ import {
   loopPoints,
   endKind,
   flowsBack,
+  planCourse,
   pointsTo,
   projectOn,
   riverStem,
@@ -383,6 +385,7 @@ export function strokeEdit(world: World, d: Derived, T: EditTarget, stroke: read
   const L = raw[raw.length - 1];
   const ee = editPoint(world, T, L[0], L[1]);
   const role = editRole(e0, opts.tol);
+  if (role === 'source' && T.guide.branch) return { blocked: BRANCH_HEAD };
   const course: CourseOptions = { endOnLand: opts.endOnLand, px: opts.px };
   const back = ee.d <= opts.tol;
   if (role === 'source') {
@@ -470,6 +473,7 @@ export function dragHandle(world: World, d: Derived, T: EditTarget, handles: rea
   const q: Pt = [to[0] + s, to[1]];
   const i = handles[j];
   const e = editPoint(world, T, q[0], q[1]);
+  if (j === 0 && T.guide.branch) return { blocked: BRANCH_HEAD };
   if (j === 0) {
     if (e.d <= opts.tol && e.along >= Math.max(world.mesh.spacing, opts.tol)) {
       const b = anchorAt(world, T, e);
@@ -539,8 +543,88 @@ export function joinAtFirst(world: World, d: Derived, T: EditTarget, e: RiverEdi
   return finish(world, T, e.kind, plan, patch, e.note);
 }
 
+// ---------- 分一股出去、加一个源头（第十三轮） ----------
+
+// 分出去的一股从干流上分出来的那一点不能挪
+const BRANCH_HEAD = '这一股从干流上分出来，分出的地方不能挪：要换地方，删掉它重新分';
+// 分出去的一股默认分多少水
+export const BRANCH_SHARE = 0.3;
+export const BRANCH_FROM = '从这条河上起笔画出去：分出去的一股';
+export const SOURCE_FROM = '从这条河上起笔往上游画：加一个源头';
+
+export interface Extra {
+  kind: 'branch' | 'source';
+  plan: CoursePlan;
+  // 分出去的那一格（branch）、源头汇入的那一格（source）
+  cell: number;
+}
+
+// 画的线开头还在这条河自己的格里的那几点去掉（从河上起笔，在河上多走了几步再离开）：留下离开前的最后一点。
+// 返回那一点所在的格与剩下的线；一直在河上时为 null
+function leaveRiver(world: World, T: EditTarget, raw: readonly Pt[]): { cell: number; pts: Pt[] } | null {
+  const own = new Set(T.own);
+  let hint = T.guide.cells[0];
+  let last = -1;
+  let cell = -1;
+  for (let k = 0; k < raw.length; k++) {
+    hint = findCell(world.mesh, raw[k][0], raw[k][1], hint);
+    if (!own.has(hint)) break;
+    last = k;
+    cell = hint;
+  }
+  if (last < 0) {
+    // 第一点吸在河画出来的线上，线擦过的是旁边一格：从离它最近的这条河的格（一格半以内）的格心接出去
+    const { mesh } = world;
+    let bd = 1.5 * mesh.spacing;
+    for (const c of own) {
+      const dx = mesh.kind === 'sphere' ? wrapDelta(mesh.x[c] - raw[0][0]) : mesh.x[c] - raw[0][0];
+      const dd = Math.hypot(dx, mesh.y[c] - raw[0][1]);
+      if (dd < bd && !water(world, world.derived, c)) [bd, cell] = [dd, c];
+    }
+    if (cell < 0) return null;
+    const x = raw[0][0] + (mesh.kind === 'sphere' ? wrapDelta(mesh.x[cell] - raw[0][0]) : mesh.x[cell] - raw[0][0]);
+    return { cell, pts: [roundPt([x, mesh.y[cell]]), ...raw.map((p) => [p[0], p[1]] as Pt)] };
+  }
+  if (last >= raw.length - 1) return null;
+  return { cell, pts: raw.slice(last).map((p) => [p[0], p[1]] as Pt) };
+}
+
+// 从选中的河 T 上分一股出去：stroke 从河上起笔（第一点吸在河上）画出去，到海、湖、别的河（也可以画回这条河的下游：
+// 分出去的水又流回来），陆地上按 opts 接着流或消失。分出的那一格是画的线离开这条河前的最后一格
+export function branchCourse(world: World, d: Derived, T: EditTarget, stroke: readonly (readonly [number, number])[], opts: Pick<CourseOptions, 'endOnLand' | 'px'>): Extra | { blocked: string } {
+  if (stroke.length < 2) return { blocked: '画得太短了' };
+  const left = leaveRiver(world, T, stroke.map((p) => [p[0], p[1]] as Pt));
+  if (!left) return { blocked: '从这条河上起笔，往河外画出去' };
+  const s = left.cell;
+  if (water(world, d, s)) return { blocked: '要从陆地上的河分出去' };
+  const start = roundPt(left.pts[0]);
+  const input = simplifyStroke(world, left.pts, opts.px);
+  if (input.length < 2) return { blocked: '画得太短了' };
+  input[0] = start;
+  const plan = courseFrom(world, d, { cells: [s], path: [start] }, dedupe(input), { endOnLand: opts.endOnLand, px: opts.px }, false);
+  if (plan.blocked) return { blocked: plan.blocked };
+  if (plan.cells.length < 2) return { blocked: '画得太短了' };
+  // 第二格又回到这条河上：没分出去
+  if (T.own.includes(plan.cells[1])) return { blocked: '从这条河上起笔，往河外画出去' };
+  return { kind: 'branch', plan, cell: s };
+}
+
+// 给选中的河 T 加一个源头：stroke 从河上起笔往外（往上游）画，水从画的线的另一头流进这条河，算作这条河的一部分（同名）
+export function sourceCourse(world: World, d: Derived, T: EditTarget, stroke: readonly (readonly [number, number])[], opts: Pick<CourseOptions, 'px'>): Extra | { blocked: string } {
+  if (stroke.length < 2) return { blocked: '画得太短了' };
+  const left = leaveRiver(world, T, stroke.map((p) => [p[0], p[1]] as Pt));
+  if (!left) return { blocked: '从这条河上起笔，往河外画出去' };
+  // 倒过来：从画的线的另一头流到这条河上
+  const rev = left.pts.slice().reverse();
+  const plan = planCourse(world, d, rev, { endOnLand: 'flow', px: opts.px });
+  if (plan.blocked) return { blocked: plan.blocked === '从河上起笔是改这条河' ? '新的源头不能在别的河上' : plan.blocked };
+  if (plan.reroute) return { blocked: '新的源头不能在别的河上' };
+  if (plan.end !== 'river' || !T.own.includes(plan.join)) return { blocked: '要画回这条河上（新的源头流进这条河）' };
+  return { kind: 'source', plan, cell: plan.join };
+}
+
 // 改好的河道
-export const editedGuide = (T: EditTarget, e: RiverEdit): Guide => applyPatch(T.guide, e.patch);
+export const editedGuide =(T: EditTarget, e: RiverEdit): Guide => applyPatch(T.guide, e.patch);
 
 // 穿过的别的画的河（截走它们）
 const editCaptures = (T: EditTarget, e: RiverEdit) => e.plan.crossings.some((x) => x.guide !== null && x.guide !== T.guide.id);
