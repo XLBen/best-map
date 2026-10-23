@@ -28,6 +28,11 @@ export interface RiverLine {
   head?: 'source' | 'lake';
   // 最后一点在海、湖的岸线上（画的时候河口略张开、平头收在岸线上）
   mouth?: boolean;
+  // 汇入别的河（最后一点画在那条河的线上）：那条河在 traceRivers 结果里的下标
+  into?: number;
+  // 别的河汇进来的地方：在这条线上的位置（第 k 段上 t 处记作 k + t）。画带子时这几处前后约半格不加细小的弯曲，
+  // 支流的最后一点就落在画出来的中线上
+  joins?: number[];
 }
 
 // 支流从这一点接着画（画的河流到了别的河都不经过的地方：从它的线上接出去）
@@ -43,23 +48,26 @@ export function traceRivers(world: World): RiverLine[] {
   const n = mesh.n;
   const thr = small.planet.riverThreshold;
   const isRiver = (i: number) => causes.land[i] === 1 && d.lake[i] !== 1 && d.discharge[i] >= thr;
-  const hasRiverDonor = new Uint8Array(n);
+  // 每格的干流上游：流进来的河里水最多的（一样多时编号小的；与地名、点选一条河认干流的办法相同）。
+  // 河在汇合处顺着水多的那条往下画，水少的画到它的线上为止
+  const main = new Int32Array(n).fill(-1);
   for (let i = 0; i < n; i++) {
     if (!isRiver(i)) continue;
     const r = d.receiver[i];
-    if (r >= 0 && isRiver(r)) hasRiverDonor[r] = 1;
+    if (r < 0 || !isRiver(r)) continue;
+    const o = main[r];
+    if (o < 0 || d.discharge[i] > d.discharge[o] || (d.discharge[i] === d.discharge[o] && i < o)) main[r] = i;
   }
   const sources: number[] = [];
-  for (let i = 0; i < n; i++) if (isRiver(i) && !hasRiverDonor[i]) sources.push(i);
-  // 源头高的先画：干流通常源远流长，支流画到汇合处为止
+  for (let i = 0; i < n; i++) if (isRiver(i) && main[i] < 0) sources.push(i);
+  // 源头高的先画（画的先后只影响结果里的顺序）
   sources.sort((a, b) => d.elevation[b] - d.elevation[a]);
   const visited = new Uint8Array(n);
-  const lines: RiverLine[] = [];
   // 整个星球：沿河展开经度（每一点取离上一点最近的那一份），跨过经度 180° 的河也是连续的一条线；
   // 画的时候每一份平铺的副本各画一遍
   const sphere = mesh.kind === 'sphere';
   const xAt = (c: number, ref: number) => (sphere ? ref + (mesh.x[c] - ref - 2 * Math.round((mesh.x[c] - ref) / 2)) : mesh.x[c]);
-  // 画的河先定下来（沿途的格算画过了）；没有画的河时什么都不做，自然的河逐位照旧
+  // 画的河先定下来（沿途的格算画过了）；没有画的河时什么都不做
   const course = small.guides.some((g) => g.path) ? courseIndex(world, isRiver, visited) : null;
   // 河流类型（第三批）：每个点带上是哪一种河。没有河流类型时不带（点、流量照旧逐位不变）
   const rt = d.riverType;
@@ -75,6 +83,23 @@ export function traceRivers(world: World): RiverLine[] {
   }
   // 画到岸线：从 a 往 b（水里）走到画面上的岸线，找不到时（a 在画面上已是水面）退回两点的中点
   const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  // 沿河的点（平滑之前）。汇入自然的河的线等那条河画好了再定最后一点（画到它平滑后的线上）、再平滑
+  interface Raw {
+    pts: [number, number][];
+    flow: number[];
+    cells: number[];
+    tags?: number[];
+    head?: 'source' | 'lake';
+    mouth: boolean;
+    // 汇入的那一格（自然的河的）
+    join: number;
+    line?: RiverLine;
+  }
+  const raws: Raw[] = [];
+  // 每格是哪一条（raws 的下标）流过的
+  const lineAt = new Int32Array(n).fill(-1);
+  // 汇入画的河：那条线与汇入的位置
+  const courseJoin = new Map<Raw, { line: RiverLine; k: number }>();
   const walk = (s: number, lead?: Lead) => {
     const pts: [number, number][] = [];
     const flow: number[] = [];
@@ -82,9 +107,12 @@ export function traceRivers(world: World): RiverLine[] {
     const tags: number[] | undefined = rt ? [] : undefined;
     // 画到别的河上的那一点：算这条河自己的类型（前一点的）
     const own = () => (tags && tags.length ? tags[tags.length - 1] : 0);
+    const self = raws.length;
     let c = s;
     let cx = mesh.x[s];
     let mouth = false;
+    let join = -1;
+    let onCourse: { line: RiverLine; k: number } | null = null;
     // 前面接着画的线已经流过这一格：只画到这一格（与支流画到画过的格一样），不然画的河在这里断开
     const reached = lead !== undefined && visited[s] === 1;
     const fromLake = !lead && lakeDonor[s] >= 0;
@@ -107,6 +135,7 @@ export function traceRivers(world: World): RiverLine[] {
         flow.push(d.discharge[s]);
         cells.push(s);
         tags?.push(own());
+        join = s;
       }
     }
     for (let guard = 0; guard < n && !reached; guard++) {
@@ -116,6 +145,7 @@ export function traceRivers(world: World): RiverLine[] {
       cells.push(c);
       tags?.push(rt![c]);
       visited[c] = 1;
+      if (lineAt[c] < 0) lineAt[c] = self;
       const r = d.receiver[c];
       if (r < 0) break;
       if (water(r)) {
@@ -128,33 +158,76 @@ export function traceRivers(world: World): RiverLine[] {
         break;
       }
       if (!isRiver(r)) break;
-      if (visited[r]) {
-        // 汇入画的河时画到它的线上（不是那一格的格心）
-        pts.push(course?.snap(r, cx, mesh.y[c]) ?? [xAt(r, cx), mesh.y[r]]);
+      if (visited[r] || main[r] !== c) {
+        // 汇入别的河（画过的格，或者这里水更多的那条接着往下流）：画到它的线上（不是那一格的格心）。
+        // 画的河的线已经定了，现在就画上去；自然的河等它画好了再定（见下面）
+        const hit = course?.snap(r, cx, mesh.y[c]) ?? null;
+        if (hit) onCourse = hit;
+        pts.push(hit ? hit.p : [xAt(r, cx), mesh.y[r]]);
         flow.push(d.discharge[r]);
         cells.push(r);
         tags?.push(own());
+        if (!hit) join = r;
         break;
       }
       c = r;
     }
     if (pts.length < 2) return;
-    const line = smoothCourse(pts, flow, mesh.spacing, cells, tags);
-    if (!lead) line.head = fromLake ? 'lake' : 'source';
-    if (mouth) line.mouth = true;
-    lines.push(line);
-    course?.own(line);
+    const raw: Raw = { pts, flow, cells, tags, mouth, join };
+    if (!lead) raw.head = fromLake ? 'lake' : 'source';
+    if (onCourse) courseJoin.set(raw, onCourse);
+    raws.push(raw);
   };
   if (course) for (const lead of course.leads) walk(lead.cell, lead);
   for (const s of sources) {
     if (visited[s]) continue;
     walk(s);
   }
+  // 平滑成线：汇入自然的河的，先画好那条河，再把最后一点放到它平滑后的线上（离上一格的格心最近的那一点）
+  const lines: RiverLine[] = new Array(raws.length);
+  const finish = (i: number, depth: number): RiverLine => {
+    const raw = raws[i];
+    if (raw.line) return raw.line;
+    let into: RiverLine | null = null;
+    let at = -1;
+    if (raw.join >= 0) {
+      const t = lineAt[raw.join];
+      if (t >= 0 && t !== i && depth < n) {
+        into = finish(t, depth + 1);
+        const m = raw.pts.length;
+        const [px, py] = raw.pts[m - 2];
+        const hit = projectNear(into, raw.join, px, py, mesh.spacing, sphere);
+        if (hit) {
+          raw.pts[m - 1] = hit.p;
+          at = hit.k + hit.t;
+        } else into = null;
+      }
+    }
+    const line = smoothCourse(raw.pts, raw.flow, mesh.spacing, raw.cells, raw.tags);
+    if (raw.head) line.head = raw.head;
+    if (raw.mouth) line.mouth = true;
+    if (into) {
+      markJoin(into, at);
+      line.into = lineAt[raw.join];
+    }
+    const c = courseJoin.get(raw);
+    if (c) markJoin(c.line, c.k);
+    raw.line = line;
+    lines[i] = line;
+    return line;
+  };
+  for (let i = 0; i < raws.length; i++) finish(i, 0);
   if (!course) return lines;
+  for (const line of lines) course.own(line);
   course.finish();
   if (rt) course.tag(rt);
   // 画的河画在自然的河之后
-  return [...lines, ...course.lines];
+  // 汇入哪一条（结果里的下标：自然的河在前，下标就是 raws 的下标）
+  const all = [...lines, ...course.lines];
+  const index = new Map(all.map((l, k) => [l, k]));
+  for (const [raw, c] of courseJoin) raw.line!.into = index.get(c.line);
+  for (const [line, target] of course.intos) line.into = index.get(target);
+  return all;
 }
 
 // 画的河在 traceRivers 里的那部分：按存下的折线画成几段（只画看得见是河的格：入海、入湖的那一点也画，
@@ -303,6 +376,7 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   }
 
   // 点 (x, y) 投影到格 c 所在那条线上 c 附近的几段（只在这几段里找，所以不会接到远处；隔得太远时不接）
+  const intos = new Map<RiverLine, RiverLine>();
   const project = (c: number, x: number, y: number) => {
     const o = owner[c];
     if (!o) return null;
@@ -312,10 +386,15 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   return {
     lines,
     leads,
-    // 自然的河汇入画的河：画到它的线上
-    snap(r: number, x: number, y: number): [number, number] | null {
-      return owner[r]?.guide !== undefined ? (project(r, x, y)?.p ?? null) : null;
+    // 自然的河汇入画的河：画到它的线上（p），那条线（line）上第 k 段 t 处记作 k + t
+    snap(r: number, x: number, y: number): { p: [number, number]; line: RiverLine; k: number } | null {
+      const o = owner[r];
+      if (o?.guide === undefined) return null;
+      const hit = project(r, x, y);
+      return hit ? { p: hit.p, line: o, k: hit.k + hit.t } : null;
     },
+    // 画的河汇入别的河：汇入的那一条
+    intos,
     own(line: RiverLine) {
       line.cells!.forEach((c, k) => take(line, k, c));
     },
@@ -330,7 +409,14 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     },
     // 画的河汇入别的河：在汇合的那格里离那条河的线最近的点截住，画到那条线上
     finish() {
-      for (const { line, cell } of joins) cutAtJoin(line, cell, (x, y) => project(cell, x, y));
+      for (const { line, cell } of joins) {
+        if (!cutAtJoin(line, cell, (x, y) => project(cell, x, y))) continue;
+        const end = line.points[line.points.length - 1];
+        const hit = project(cell, end[0], end[1]);
+        if (!hit) continue;
+        markJoin(owner[cell]!, hit.k + hit.t);
+        intos.set(line, owner[cell]!);
+      }
     },
   };
 }
@@ -361,7 +447,7 @@ export function cutAtJoin(
 }
 
 // 一点投影到河线 line 上格 cell 附近的几段（cell 在线上的第一个到最后一个点，前后各多一段）；隔得太远（3 格以上）为 null
-export function projectNear(line: RiverLine, cell: number, x: number, y: number, spacing: number, sphere: boolean): { p: [number, number]; d: number } | null {
+export function projectNear(line: RiverLine, cell: number, x: number, y: number, spacing: number, sphere: boolean): { p: [number, number]; k: number; t: number; d: number } | null {
   const cells = line.cells;
   if (!cells) return null;
   const from = cells.indexOf(cell);
@@ -380,17 +466,22 @@ export function snapOnto(
   from = 0,
   to = line.length - 1,
   sphere = false,
-): { p: [number, number]; k: number; d: number } | null {
-  let best: { p: [number, number]; k: number; d: number } | null = null;
+): { p: [number, number]; k: number; t: number; d: number } | null {
+  let best: { p: [number, number]; k: number; t: number; d: number } | null = null;
   for (let k = Math.max(0, from); k < Math.min(to, line.length - 1); k++) {
     const [ax, ay] = line[k];
     const [bx, by] = line[k + 1];
     const shift = sphere ? 2 * Math.round((x - ax) / 2) : 0;
     const r = segProject(x - shift, y, ax, ay, bx, by);
     if (best && r.d >= best.d) continue;
-    best = { p: [ax + (bx - ax) * r.t + shift, ay + (by - ay) * r.t], k, d: r.d };
+    best = { p: [ax + (bx - ax) * r.t + shift, ay + (by - ay) * r.t], k, t: r.t, d: r.d };
   }
   return best;
+}
+
+// 记下别的河在线上第 k 段 t 处（pos = k + t）汇进来（见 RiverLine.joins）
+function markJoin(line: RiverLine, pos: number): void {
+  (line.joins ??= []).push(pos);
 }
 
 // 河道的样子：中间点加轻微的曲流，再做三遍 Chaikin 平滑。pts 是沿河的点（格心、入海口），
@@ -569,8 +660,27 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   normals();
   if (count > 2) {
     const q = MEANDER_FREQ / spacing;
+    // 别的河汇进来的地方前后半格也渐渐不弯：支流的最后一点在原来那条线上，也就落在画出来的中线上（见 RiverLine.joins）
+    let damp: Float64Array | null = null;
+    if (line.joins?.length) {
+      damp = new Float64Array(count).fill(1);
+      const start = new Uint32Array(Math.max(1, m - 1));
+      for (let k = 1; k + 1 < m; k++) start[k] = start[k - 1] + parts[k - 1];
+      for (const pos of line.joins) {
+        const k = Math.max(0, Math.min(m - 2, Math.floor(pos)));
+        // 汇合点在加密后的第 i0、i0 + 1 点之间；前后各一步之内一点也不弯（这一小段就在原来的线上）
+        const f = (pos - k) * parts[k];
+        const i0 = Math.min(count - 1, start[k] + Math.floor(f));
+        const i1 = Math.min(count - 1, i0 + 1);
+        const sj = s[i0] + (s[i1] - s[i0]) * (f - Math.floor(f));
+        const reach = 0.5 * spacing + step;
+        const at = (i: number) => (damp![i] = Math.min(damp![i], smooth01((Math.abs(s[i] - sj) - step) / (0.5 * spacing))));
+        for (let i = i0; i >= 0 && sj - s[i] < reach; i--) at(i);
+        for (let i = i1; i < count && s[i] - sj < reach; i++) at(i);
+      }
+    }
     for (let i = 1; i < count - 1; i++) {
-      const ends = smooth01(s[i] / (0.5 * spacing)) * smooth01((L - s[i]) / (0.5 * spacing));
+      const ends = smooth01(s[i] / (0.5 * spacing)) * smooth01((L - s[i]) / (0.5 * spacing)) * (damp ? damp[i] : 1);
       if (ends <= 0) continue;
       const amp = (MEANDER_AMP * spacing * ends) / (1 + 0.5 * Math.max(0, w[i] - 1));
       const off = amp * vnoise(x[i] * q + 5.3, y[i] * q - 7.9);

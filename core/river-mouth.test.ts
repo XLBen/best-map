@@ -191,3 +191,69 @@ describe('河的带子', () => {
     for (let i = 0; i < a.hw.length; i++) expect(c.hw[i]).toBeCloseTo(2 * a.hw[i], 5);
   });
 });
+
+// 第十二轮修：支流画到干流画出来的中线上（干流加过曲流、平滑、带子上又加了细小的弯曲；以前支流停在汇合那格的格心，
+// 急弯处干流抄近路走开，汇合处露出一截平头的缺口）。干流在汇合处顺着水多的那条往下画（与地名、点选认干流相同）
+function checkConfluences(w: World) {
+  const { mesh, derived: d } = w;
+  const thr = w.small.planet.riverThreshold;
+  const lines = traceRivers(w);
+  const ribbons = lines.map((l) => riverRibbon(l, thr, mesh.spacing));
+  let joins = 0;
+  let worst = 0;
+  lines.forEach((l, i) => {
+    if (l.into === undefined) return;
+    joins++;
+    const t = ribbons[l.into];
+    const rb = ribbons[i];
+    const x = rb.x[rb.x.length - 1];
+    const y = rb.y[rb.y.length - 1];
+    // 到干流的中线（加密后的折线）最近的距离与那里的半宽
+    let best = Number.POSITIVE_INFINITY;
+    let hw = 0;
+    for (let k = 0; k + 1 < t.x.length; k++) {
+      const shift = mesh.kind === 'sphere' ? 2 * Math.round((x - t.x[k]) / 2) : 0;
+      const ax = t.x[k] + shift;
+      const bx = t.x[k + 1] + shift;
+      const dx = bx - ax;
+      const dy = t.y[k + 1] - t.y[k];
+      const l2 = dx * dx + dy * dy;
+      const u = l2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - t.y[k]) * dy) / l2)) : 0;
+      const dd = Math.hypot(x - ax - u * dx, y - t.y[k] - u * dy);
+      if (dd < best) {
+        best = dd;
+        hw = t.hw[k];
+      }
+    }
+    // 最大缩放（一格约 64 像素、河宽系数 4）下不到干流宽的四分之一；与格距相比几乎为零
+    expect(best).toBeLessThan(0.25 * 2 * hw * 4 * (mesh.spacing / 64));
+    worst = Math.max(worst, best / mesh.spacing);
+    // 汇合的那一格在干流上
+    expect(lines[l.into].cells).toContain(l.cells![l.cells!.length - 1]);
+  });
+  // 汇合处干流顺着水多的那条：支流流进汇合那格的那一格不比干流流进那格的那一格水多
+  lines.forEach((l) => {
+    if (l.into === undefined) return;
+    const n = l.cells!.length;
+    const r = l.cells![n - 1];
+    const prev = l.cells![n - 2];
+    const trunk = lines[l.into].cells!;
+    const up = trunk.slice(0, trunk.indexOf(r)).reverse().find((c) => c !== r);
+    if (up !== undefined && prev !== r && d.receiver[up] === r && d.receiver[prev] === r) expect(d.discharge[up]).toBeGreaterThanOrEqual(d.discharge[prev]);
+  });
+  return { joins, worst };
+}
+
+describe('支流接在干流画出来的中线上', () => {
+  it('一块地区：每个汇合处支流的最后一点都在干流的中线上', () => {
+    const { joins, worst } = checkConfluences(continents().world);
+    expect(joins).toBeGreaterThan(10);
+    expect(worst).toBeLessThan(1e-6);
+  });
+
+  it('整个星球（跨接缝的河也一样）', () => {
+    const { joins, worst } = checkConfluences(planet().world);
+    expect(joins).toBeGreaterThan(5);
+    expect(worst).toBeLessThan(1e-6);
+  });
+});

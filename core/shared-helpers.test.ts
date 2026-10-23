@@ -55,20 +55,23 @@ describe('coastValueAt 与 coastValues 逐位相同', () => {
 
 describe('smoothCourse：河道与抽出前逐位相同', () => {
   // 抽出前的 traceRivers（曲流与 Chaikin 平滑写在循环里）。第十二轮起入海、入湖的河画到画面上的岸线（shoreCrossing，
-  // 找不到时退回两格的中点），出湖的河从湖岸画起：这里照样改了，其余逐位照旧
-  function traceBefore(world: World): RiverLine[] {
+  // 找不到时退回两格的中点），出湖的河从湖岸画起；第十二轮修起汇合处顺着水多的那条往下画（一样多时编号小的），
+  // 支流的最后一点画到干流平滑后的线上（ends：第几条线的最后一点画在哪里，取现在的结果）：这里照样改了，其余逐位照旧
+  function traceBefore(world: World, ends: ([number, number] | null)[]): RiverLine[] {
     const { mesh, derived: d, causes, small } = world;
     const n = mesh.n;
     const thr = small.planet.riverThreshold;
     const isRiver = (i: number) => causes.land[i] === 1 && d.lake[i] !== 1 && d.discharge[i] >= thr;
-    const hasRiverDonor = new Uint8Array(n);
+    const main = new Int32Array(n).fill(-1);
     for (let i = 0; i < n; i++) {
       if (!isRiver(i)) continue;
       const r = d.receiver[i];
-      if (r >= 0 && isRiver(r)) hasRiverDonor[r] = 1;
+      if (r < 0 || !isRiver(r)) continue;
+      const o = main[r];
+      if (o < 0 || d.discharge[i] > d.discharge[o] || (d.discharge[i] === d.discharge[o] && i < o)) main[r] = i;
     }
     const sources: number[] = [];
-    for (let i = 0; i < n; i++) if (isRiver(i) && !hasRiverDonor[i]) sources.push(i);
+    for (let i = 0; i < n; i++) if (isRiver(i) && main[i] < 0) sources.push(i);
     sources.sort((a, b) => d.elevation[b] - d.elevation[a]);
     const visited = new Uint8Array(n);
     const lines: RiverLine[] = [];
@@ -103,8 +106,8 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
           break;
         }
         if (!isRiver(r)) break;
-        if (visited[r]) {
-          pts.push([xAt(r, cx), mesh.y[r]]);
+        if (visited[r] || main[r] !== c) {
+          pts.push(ends[lines.length] ?? [xAt(r, cx), mesh.y[r]]);
           flow.push(d.discharge[r]);
           break;
         }
@@ -146,7 +149,10 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
   it('大陆世界的全部河流', () => {
     const w = continents().world;
     const now = traceRivers(w);
-    const old = traceBefore(w);
+    const old = traceBefore(
+      w,
+      now.map((l) => (l.into !== undefined ? l.points[l.points.length - 1] : null)),
+    );
     expect(now.length).toBeGreaterThan(10);
     // 现在每条线还多记了每个点在哪一格（cells），点与流量逐位不变
     expect(now.map(({ points, flow }) => ({ points, flow }))).toEqual(old);
