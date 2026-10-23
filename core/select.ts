@@ -718,6 +718,8 @@ export interface CoursePlan {
   loops: [number, number][][];
   // 这一笔新画的是 path 的第几个点到第几个点（重画一段、接着画时前后不动的不算；省略为整条）：重叠分析只看这一段
   changed?: [number, number];
+  // 贴着别的河画、没有穿过去：在第一次碰到它的地方汇入（不截走它），这是碰到的那一格（第十三轮）
+  touch?: number;
 }
 
 export interface CourseOptions {
@@ -1118,6 +1120,18 @@ export function courseFrom(world: World, d: Derived, base: { cells: number[]; pa
   plan.cells = cells;
   // 穿过别的河（改道时原来那条河往下的那段不算）；改道后原来的河道会变干的那段
   plan.crossings = crossingsOf(world, d, cells, Math.max(1, fixed), plan.drawn, (c) => ignore.has(c) || chain.has(c), opts.ignoreGuide);
+  // 碰到别的画的河却没有穿过去（贴着它走、又从同一侧离开，或者走到它上面就停了）：不截走它（不动画好的河），
+  // 在第一次碰到它的地方汇入（第十三轮）。只有画的线从它的一侧穿到另一侧才算穿过（截走它）。
+  // 自然的河照旧：碰到就是水流进新河（没有存下的河道可截，水文自己会接上）
+  const touch = plan.crossings.find((x) => x.guide !== null && !crossesOver(world, d, plan.path, cells, x));
+  if (touch) {
+    const joined: CoursePlan = { ...endCourseAt(world, d, { ...plan, cells, end }, touch.from), touch: touch.cell };
+    if (!joined.blocked) {
+      if (reroute) joined.dried = driedBelow(world, d, d.receiver[from], d.discharge[from], new Set(joined.cells));
+      if (fixed) joined.changed = [Math.max(0, base.path.length - 1), joined.path.length - 1];
+      return joined;
+    }
+  }
   if (reroute) plan.dried = driedBelow(world, d, d.receiver[from], d.discharge[from], pos);
 
   // 估算挖多深、往高处流多少
@@ -1126,6 +1140,72 @@ export function courseFrom(world: World, d: Derived, base: { cells: number[]; pa
   plan.uphill = est.uphill;
   if (fixed) plan.changed = [Math.max(0, base.path.length - 1), plan.path.length - 1];
   return plan;
+}
+
+// 一处“穿过别的河”（crossingsOf 的 x）是不是真的穿过去了：画的线进那条河的格之前、出来之后的两点在它的两侧
+// （那条河按格心连成的线：碰到的几格往上游、下游各多两格）。贴着它走又从同一侧离开、走到它上面就停了、
+// 顺着它的线进出（离线不到 0.15 格，分不出哪一侧）都不算
+export function crossesOver(world: World, d: Derived, path: readonly Pt[], cells: readonly number[], x: CourseCrossing): boolean {
+  const { mesh } = world;
+  const sphere = mesh.kind === 'sphere';
+  const run = new Set(cells.slice(x.from, x.to + 1).filter((c) => isRiverCell(world, d, c)));
+  if (!run.size) return false;
+  // 那条河：碰到的格里水最少的一格往上游两格（沿水最多的那条支流），再顺流往下，过了碰到的格再多两格
+  let top = -1;
+  for (const c of run) if (top < 0 || d.discharge[c] < d.discharge[top]) top = c;
+  for (let k = 0; k < 2; k++) {
+    let up = -1;
+    for (let e = mesh.off[top]; e < mesh.off[top + 1]; e++) {
+      const j = mesh.adj[e];
+      if (d.receiver[j] === top && isRiverCell(world, d, j) && (up < 0 || d.discharge[j] > d.discharge[up])) up = j;
+    }
+    if (up < 0) break;
+    top = up;
+  }
+  const chain: number[] = [];
+  let left = run.size;
+  let extra = 2;
+  for (let c = top, guard = 0; c >= 0 && guard < mesh.n && world.causes.land[c]; c = d.receiver[c], guard++) {
+    chain.push(c);
+    if (run.has(c)) left--;
+    if (left <= 0 && extra-- <= 0) break;
+  }
+  if (chain.length < 2) return false;
+  // 画的线上每隔四分之一格的点在哪一格：进那几格之前的最后一点、出来之后的第一点
+  const S = pathSamples(path, courseStep(mesh));
+  const inRun = new Uint8Array(S.x.length);
+  let hint = cells[0];
+  let first = -1;
+  let last = -1;
+  for (let j = 0; j < S.x.length; j++) {
+    hint = findCell(mesh, S.x[j], S.y[j], hint);
+    if (run.has(hint)) {
+      inRun[j] = 1;
+      if (first < 0) first = j;
+      last = j;
+    }
+  }
+  if (first <= 0 || last < 0 || last >= S.x.length - 1) return false;
+  // 一点在那条河的哪一侧：离它最近的那一段（格心连线）的左右；离线太近为 0
+  const side = (px: number, py: number) => {
+    let best = Infinity;
+    let sgn = 0;
+    for (let k = 0; k + 1 < chain.length; k++) {
+      const a = chain[k];
+      const b = chain[k + 1];
+      const ax = sphere ? px + wrapDelta(mesh.x[a] - px) : mesh.x[a];
+      const bx = ax + (sphere ? wrapDelta(mesh.x[b] - mesh.x[a]) : mesh.x[b] - mesh.x[a]);
+      const r = segProject(px, py, ax, mesh.y[a], bx, mesh.y[b]);
+      if (r.d >= best) continue;
+      best = r.d;
+      const cr = (bx - ax) * (py - mesh.y[a]) - (mesh.y[b] - mesh.y[a]) * (px - ax);
+      sgn = r.d < 0.15 * mesh.spacing ? 0 : Math.sign(cr);
+    }
+    return sgn;
+  };
+  const before = side(S.x[first - 1], S.y[first - 1]);
+  const after = side(S.x[last + 1], S.y[last + 1]);
+  return before !== 0 && after !== 0 && before !== after;
 }
 
 // 画到一条河上汇入时在河道的第几格结束：画的线第一次碰到这条河的那一格（同一流域、顺流几格就到汇入的那条河上：
