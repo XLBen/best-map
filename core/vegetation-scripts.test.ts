@@ -410,7 +410,10 @@ describe('按格记住结果', () => {
     const cp = structuredClone(eng.toCheckpoint());
     const next: Command = { op: 'paint', field: 'moistOffset', cells: near(w, 0.3, 80), value: -0.5, mode: 'add' };
     eng.exec(next);
-    const restored = Engine.fromCheckpoint(cp, { ...doc, commands: [...doc.commands, next] }, w.mesh)!;
+    // 接着做的那一步按引擎记下的命令（记着为了名字不乱跳留下的名字，存档里也是这样存的）
+    const recorded = eng.toDoc().commands;
+    expect(recorded.length).toBe(doc.commands.length + 1);
+    const restored = Engine.fromCheckpoint(cp, { ...doc, commands: recorded }, w.mesh)!;
     expect(restored).not.toBeNull();
     expect(digestWorld(restored.world)).toEqual(digestWorld(w));
   });
