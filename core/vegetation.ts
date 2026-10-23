@@ -145,8 +145,9 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[], sessi
   return { slot, P, placeF };
 }
 
-// extraIssues：这一遍里别处出的脚本问题（河流、湖泊类型的 match 脚本，见 river-types.ts 的 typeRivers、lake-types.ts 的 typeLakes），排在星球形态的之后
-export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = []) {
+// extraIssues：这一遍里别处出的脚本问题（河流、湖泊类型的 match 脚本，见 river-types.ts 的 typeRivers、lake-types.ts 的 typeLakes），排在星球形态的之后。
+// look 为 false 时不算颜色脚本（引擎在不是最后一遍的那几遍里不算：之后的一遍会整个重算 d.look；最后再用 finishLook 补上）
+export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean } = {}) {
   const { mesh, small } = world;
   const n = mesh.n;
   const species = small.species;
@@ -156,8 +157,28 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
     d.suit = new Float32Array(n * S);
     d.reach = new Uint8Array(n * S);
   }
-  const getters = new Map<string, FieldGetter>();
-  for (const sp of species) for (const t of sp.tolerances) if (!getters.has(t.field)) getters.set(t.field, fieldGetter(world, d, t.field));
+  // 能长植被的格（陆地、不是湖）先算好
+  const land = world.causes.land;
+  const lake = d.lake;
+  const veg = new Uint8Array(n);
+  let count = 0;
+  for (let i = 0; i < n; i++) if ((veg[i] = land[i] === 1 && lake[i] !== 1 ? 1 : 0)) count++;
+  const vegCells = new Int32Array(count);
+  for (let i = 0, k = 0; i < n; i++) if (veg[i]) vegCells[k++] = i;
+  // 每个用到的场在能长植被的格上的值，一个场一份（与逐格调用取值函数的值完全相同：双精度存下，不经过单精度）
+  const values = new Map<string, Float64Array>();
+  for (const sp of species) {
+    for (const t of sp.tolerances) {
+      if (values.has(t.field)) continue;
+      const get = fieldGetter(world, d, t.field);
+      const arr = new Float64Array(n);
+      for (let q = 0; q < count; q++) {
+        const i = vegCells[q];
+        arr[i] = get(i);
+      }
+      values.set(t.field, arr);
+    }
+  }
   // 脚本出的问题（不挡操作：出错的脚本这一次按没有脚本处理）。星球形态的脚本的问题（地形那一步记下的）排在最前
   const issues: ScriptIssue[] = [...planetFormIssues(world, d.scriptIssues), ...extraIssues];
   // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
@@ -165,42 +186,51 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   const sessionOf = () => (run.session ??= new ScriptSession(world));
   const place = computePlacement(world, d, issues, sessionOf);
 
+  const suit = d.suit;
+  const reach = d.reach;
+  // 不长植被的格：适宜度 0、可达 1（下面只算长植被的格）
+  suit.fill(0);
+  reach.fill(1);
   for (let s = 0; s < S; s++) {
     const sp = species[s];
-    const getterList = sp.tolerances.map((t) => getters.get(t.field)!);
+    const tols = sp.tolerances;
+    const K = tols.length;
+    const fields = tols.map((t) => values.get(t.field)!);
     // 长在哪里的脚本：适宜度再乘上它的系数（没有脚本的生态 p 为 −1，与原来逐值相同）
     const p = place ? place.slot[s] : -1;
-    for (let i = 0; i < n; i++) {
-      let v = 0;
-      if (isVegetated(world, d, i)) {
-        v = 1;
-        for (let k = 0; k < sp.tolerances.length && v > 0; k++) v *= trapezoid(sp.tolerances[k], getterList[k](i));
-        if (p >= 0 && v > 0) v *= place!.placeF[i * place!.P + p];
-      }
-      d.suit[i * S + s] = v;
-      d.reach[i * S + s] = 1;
+    const placeF = place ? place.placeF : null;
+    const P = place ? place.P : 0;
+    for (let q = 0; q < count; q++) {
+      const i = vegCells[q];
+      let v = 1;
+      for (let k = 0; k < K && v > 0; k++) v *= trapezoid(tols[k], fields[k][i]);
+      if (p >= 0 && v > 0) v *= placeF![i * P + p];
+      suit[i * S + s] = v;
     }
     if (sp.dispersal) {
       const disp = sp.dispersal;
       const limit = disp.range / world.kmPerUnit;
       const origins = disp.origins.filter((c) => c < n);
       const dist = graphDistance(mesh, origins, limit, (_i, j, e) => {
-        const water = !isVegetated(world, d, j);
-        const poor = d.suit[j * S + s] < 0.2;
+        const water = !veg[j];
+        const poor = suit[j * S + s] < 0.2;
         return mesh.dist[e] * (water ? disp.seaCost : poor ? disp.gapCost : 1);
       });
-      for (let i = 0; i < n; i++) d.reach[i * S + s] = dist[i] <= limit ? 1 : 0;
+      for (let i = 0; i < n; i++) reach[i * S + s] = dist[i] <= limit ? 1 : 0;
     }
   }
 
   const k = small.planet.vegSharpness;
   // 侵占：所有适宜度都算好之后，按目标的适宜度提高得分（不回头影响适宜度，没有反馈）。没有生态侵占时走原来的算法
   const invade = invadeTable(species);
+  const comp = species.map((sp) => sp.competition);
+  const share = d.share;
+  const dominant = d.dominant;
   d.overridden.fill(0);
   for (let i = 0; i < n; i++) {
-    if (!isVegetated(world, d, i)) {
-      d.dominant[i] = -1;
-      for (let s = 0; s < S; s++) d.share[i * S + s] = 0;
+    if (!veg[i]) {
+      dominant[i] = -1;
+      for (let s = 0; s < S; s++) share[i * S + s] = 0;
       continue;
     }
     let total = 0;
@@ -208,9 +238,9 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
     let bestScore = 0;
     if (!invade) {
       for (let s = 0; s < S; s++) {
-        const score = d.suit[i * S + s] * species[s].competition * d.reach[i * S + s];
+        const score = suit[i * S + s] * comp[s] * reach[i * S + s];
         const w = score > 0 ? Math.pow(score, k) : 0;
-        d.share[i * S + s] = w;
+        share[i * S + s] = w;
         total += w;
         if (score > bestScore) {
           bestScore = score;
@@ -219,9 +249,9 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
       }
     } else {
       for (let s = 0; s < S; s++) {
-        const score = d.suit[i * S + s] * species[s].competition * d.reach[i * S + s] * invadeBoost(invade, d.suit, S, i, s);
+        const score = suit[i * S + s] * comp[s] * reach[i * S + s] * invadeBoost(invade, suit, S, i, s);
         const w = score > 0 ? Math.pow(score, k) : 0;
-        d.share[i * S + s] = w;
+        share[i * S + s] = w;
         total += w;
         if (score > bestScore) {
           bestScore = score;
@@ -229,8 +259,8 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
         }
       }
     }
-    if (total > 0) for (let s = 0; s < S; s++) d.share[i * S + s] /= total;
-    d.dominant[i] = best;
+    if (total > 0) for (let s = 0; s < S; s++) share[i * S + s] /= total;
+    dominant[i] = best;
   }
 
   // 硬覆盖：直接改结果，标为例外
@@ -239,19 +269,30 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
     const s = species.findIndex((sp) => sp.id === c.species);
     if (s < 0) continue;
     for (const i of c.cells) {
-      if (i >= n || !isVegetated(world, d, i)) continue;
-      for (let t = 0; t < S; t++) d.share[i * S + t] = t === s ? 1 : 0;
-      d.dominant[i] = s;
+      if (i >= n || !veg[i]) continue;
+      for (let t = 0; t < S; t++) share[i * S + t] = t === s ? 1 : 0;
+      dominant[i] = s;
       d.overridden[i] = 1;
     }
   }
 
   // 颜色脚本（第三批）：按最后的份额算每格的颜色，写进 d.look（没有颜色脚本时为 undefined）
-  computeLook(world, d, issues, sessionOf);
+  if (opts.look !== false) computeLook(world, d, issues, sessionOf);
   run.session?.finish();
   // 没有问题时为 undefined（与 placeF 一样只在曾经有过时才赋值：从来没有脚本的世界里没有这个键）
   if (issues.length) d.scriptIssues = issues;
   else if (d.scriptIssues !== undefined) d.scriptIssues = undefined;
+}
+
+// 不算颜色脚本的那一遍（computeVegetation 的 look 为 false）之后补上颜色：与那一遍里直接算逐值相同
+// （颜色脚本的问题排在最后，接在那一遍记下的问题之后）
+export function finishLook(world: World, d: Derived) {
+  const issues: ScriptIssue[] = d.scriptIssues ? [...d.scriptIssues] : [];
+  const before = issues.length;
+  const run: { session?: ScriptSession } = {};
+  computeLook(world, d, issues, () => (run.session ??= new ScriptSession(world)));
+  run.session?.finish();
+  if (issues.length !== before) d.scriptIssues = issues;
 }
 
 export interface CellExplanation {

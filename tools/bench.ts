@@ -6,7 +6,7 @@
 import { Engine } from '../core/engine';
 import { applyPackCommands } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
-import { coastalStroke } from './hash';
+import { coastalStroke, digest } from './hash';
 let t = performance.now();
 const results: Record<string, number> = {};
 const json = process.argv.includes('--json');
@@ -102,7 +102,8 @@ function fantasyBench() {
   const paint = { op: 'paint_land' as const, cells: stroke, t: stroke.map(() => 0), mode: 'land' as const };
   t = performance.now();
   // 预览分阶段算：最长的一段就是松手执行别的命令时最多要等多久（Worker 在阶段之间停下预览）
-  {
+  if (!eng.previewSteps) eng.preview(paint);
+  else {
     const steps = eng.previewSteps(paint);
     let worst = 0;
     for (;;) {
@@ -200,5 +201,18 @@ function fantasyBench() {
   lap(`open: replay ${doc.commands.length} cmds`, 'openReplay');
   Engine.fromCheckpoint(cp, doc, eng.world.mesh);
   lap('open: checkpoint restore', 'openCheckpoint');
+  if (process.argv.includes('--hash')) printHashes(eng);
   if (json) console.log(JSON.stringify(results));
+}
+
+// --hash：最后的世界每个数组的哈希（优化前后对照逐值一致用）
+function printHashes(eng: Engine) {
+  const w = eng.world;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(w.causes)) if (ArrayBuffer.isView(v)) out[`causes.${k}`] = digest(v);
+  for (const [k, v] of Object.entries(w.causes.fields)) out[`fields.${k}`] = digest(v);
+  for (const [k, v] of Object.entries(w.derived)) out[`derived.${k}`] = digest(ArrayBuffer.isView(v) ? v : v ?? null);
+  for (const [k, v] of Object.entries(w.derived.corrF)) out[`corrF.${k}`] = digest(v);
+  out.small = digest(w.small);
+  console.error(JSON.stringify(out, null, 1));
 }

@@ -13,7 +13,7 @@ import { typeLakes } from './lake-types';
 import { typeRivers } from './river-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
-import { computeVegetation, isVegetated } from './vegetation';
+import { computeVegetation, finishLook, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
@@ -448,7 +448,8 @@ export class Engine {
       // 湖泊类型（第九轮）同样：没有时什么都不做
       const issues = typeRivers(w, d, seed);
       const lakeIssues = typeLakes(w, d, seed);
-      computeVegetation(w, d, lakeIssues.length ? [...issues, ...lakeIssues] : issues);
+      // 颜色脚本只在全部几遍算完之后算一次（finishLook）：每一遍都整个重算 d.look，前几遍的没人用
+      computeVegetation(w, d, lakeIssues.length ? [...issues, ...lakeIssues] : issues, { look: false });
     };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);
@@ -475,6 +476,7 @@ export class Engine {
       pass(eff);
       yield;
     }
+    finishLook(w, d);
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
     // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
