@@ -1449,21 +1449,51 @@ export function extendCourse(
   if (!at) return null;
   const g = at.guide;
   const C = g.cells;
-  // 不动的那段折线：到接上的那一格为止（最后一点在那一格里）
-  let base: Pt[] = at.k === C.length - 1 ? guidePoints(world, g) : decodePath(g.path!);
-  const tail = base[base.length - 1];
-  if (!tail || findCell(mesh, tail[0], tail[1], C[at.k]) !== C[at.k]) base = dedupe([...base, roundPt([mesh.x[C[at.k]], mesh.y[C[at.k]]])]);
-  const end = base[base.length - 1];
+  const P0 = guidePoints(world, g);
+  // 不动的那段折线：到接上的第 k 格为止（最后一点在那一格里）
+  const baseTo = (k: number): Pt[] => {
+    let base: Pt[];
+    if (k === C.length - 1) base = P0;
+    else if (k === at.k) base = decodePath(g.path!);
+    else {
+      const t = traceCourse(world, P0, [], () => false);
+      const j = t.at.findIndex((a) => t.cells[a] === C[k]);
+      base = j >= 0 ? cutAt(world, P0, t, j).pts : P0.slice(0, 1);
+    }
+    const tail = base[base.length - 1];
+    if (!tail || findCell(mesh, tail[0], tail[1], C[k]) !== C[k]) {
+      const ref = tail ? tail[0] : mesh.x[C[k]];
+      base = dedupe([...base, roundPt([mesh.x[C[k]] + 2 * Math.round((ref - mesh.x[C[k]]) / 2) * (mesh.kind === 'sphere' ? 1 : 0), mesh.y[C[k]]])]);
+    }
+    return base;
+  };
+  let k = at.k;
+  let base = baseTo(k);
   // 整个星球：画的线整圈地挪到折线末端所在的那一份
   if (mesh.kind === 'sphere') {
-    const shift = 2 * Math.round((end[0] - raw[0][0]) / 2);
+    const shift = 2 * Math.round((base[base.length - 1][0] - raw[0][0]) / 2);
     if (shift) raw = raw.map(([x, y]) => [x + shift, y]);
   }
-  const room = COURSE_MAX_POINTS - base.length + 1;
+  const room = COURSE_MAX_POINTS - base.length;
   if (room < 2) return { guide: g, blocked: TOO_LONG };
-  const pts = simplifyStroke(world, raw, opts.px, room);
-  if (pts.length < 2) return { guide: g, blocked: '画得太短了' };
-  const plan = courseFrom(world, d, { cells: C.slice(0, at.k + 1), path: base }, dedupe([end, ...pts.slice(1)]), { ...opts, ignoreGuide: g.id }, reversed);
+  let input = simplifyStroke(world, raw, opts.px, room);
+  if (input.length < 2) return { guide: g, blocked: '画得太短了' };
+  // 刚起笔就擦过这条河终点前的一两格（格是斜着排的，从终点往旁边画常常这样）：从擦过的那一格接上，
+  // 它后面原来的那一小段换成新画的
+  for (let iter = 0; iter < 3; iter++) {
+    // 折线：从不动的那段的末端接到画的线的第一点（两点在同一格里，连线不出这一格），再照着画的走
+    const Q = dedupe([base[base.length - 1], ...input]);
+    const t = traceCourse(world, Q, C.slice(0, k + 1), water);
+    const L = t.loop;
+    if (!L || L.k >= k || L.k < Math.max(1, k - 3) || t.cells.length - (k + 1) > 3) break;
+    const c = C[L.k];
+    let p = roundPt([t.x[L.j], t.y[L.j]]);
+    if (findCell(mesh, p[0], p[1], c) !== c) p = roundPt([mesh.x[c] + (mesh.kind === 'sphere' ? 2 * Math.round((t.x[L.j] - mesh.x[c]) / 2) : 0), mesh.y[c]]);
+    k = L.k;
+    base = baseTo(k);
+    input = [p, ...Q.slice(t.seg[L.j] + 1)];
+  }
+  const plan = courseFrom(world, d, { cells: C.slice(0, k + 1), path: base }, dedupe([base[base.length - 1], ...input]), { ...opts, ignoreGuide: g.id }, reversed);
   if (plan.blocked) return { guide: g, blocked: plan.blocked };
   const patch: GuidePatch = { cells: plan.cells, path: encodePath(plan.path) };
   if (plan.end === 'sink') patch.end = 'sink';

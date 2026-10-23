@@ -7,7 +7,7 @@ import { findCell } from './mesh';
 import { route } from './routing';
 import { courseLine, courseStep, decodePath, encodePath, pathSamples, smoothCourse } from './rivers';
 import { type CoursePlan, continueCourse, endCourseAt, extendCourse, guideEnd, guideFlow, guidePoints, guideWarnings, isRiverCell, planCourse, riverStem, spliceCourse, stemPath } from './select';
-import { continents, engineFor } from './testing/fixtures';
+import { continents, engineFor, snapshot } from './testing/fixtures';
 import { type Guide, guideSchema, type World } from './world';
 
 // 第八轮第二批：自定义走向的河。河完全照着画的线走，只挖河床（周围的地形、气候、山名都不变），
@@ -825,6 +825,58 @@ describe('续画（第九轮 B）：接着别的河画，河不消失', () => {
       expect(wet(w, g)).toBe(true);
       expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
     }
+  });
+
+  it('从终点往外画（不往回画）：刚起笔擦过终点前一两格也照样接长，不说“碰到了这条河自己”（地区、整个星球）', () => {
+    const globe = snapshot('course-globe', () => {
+      const e = engineFor({ seed: 4, cells: 20000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+      e.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
+      return e;
+    });
+    let checked = 0;
+    let rivers = 0;
+    for (const base of [continents(), globe]) {
+      const w0 = base.world;
+      const { mesh, derived: d } = w0;
+      for (let c = 0, found = 0; c < mesh.n && found < 6; c += 11) {
+        if (!w0.causes.land[c] || d.lake[c] === 1 || isRiverCell(w0, d, c) || d.elevation[c] < 300) continue;
+        const ang = (c % 7) * 0.9;
+        const p = planCourse(w0, d, line(at(w0, c), [mesh.x[c] + 4 * mesh.spacing * Math.cos(ang), mesh.y[c] + 4 * mesh.spacing * Math.sin(ang)]), { endOnLand: 'sink' });
+        if (p.blocked || p.end !== 'sink' || p.crossings.length || p.reroute || p.merge || p.cells.length < 4) continue;
+        found++;
+        const eng = base.clone();
+        eng.exec(courseCmd(p, { id: 'river-a' }));
+        const w = eng.world;
+        const A = w.small.guides[0];
+        const T = A.cells[A.cells.length - 1];
+        rivers++;
+        // 画的线末段的方向
+        const pts = decodePath(A.path!);
+        const fx = pts[pts.length - 1][0] - pts[0][0];
+        const fy = pts[pts.length - 1][1] - pts[0][1];
+        for (let k = 0; k < 32; k++) {
+          const a = (k * Math.PI) / 16;
+          const ux = Math.cos(a);
+          const uy = Math.sin(a);
+          // 不往上游画（与画的方向夹角小于 100°）
+          if ((ux * fx + uy * fy) / Math.hypot(fx, fy) < -0.17) continue;
+          const s = line(at(w, T), [mesh.x[T] + 4 * mesh.spacing * ux, mesh.y[T] + 4 * mesh.spacing * uy]);
+          const x = extendCourse(w, w.derived, s, { endOnLand: 'sink' });
+          expect(x).not.toBeNull();
+          if (!x || 'blocked' in x) {
+            expect(x?.blocked).not.toBe('新画的一段碰到了这条河自己');
+            continue;
+          }
+          checked++;
+          // 接上的地方在原来的终点或它前面几格，格不重复
+          const diff = x.patch.cells!.findIndex((cell, i) => cell !== A.cells[i]);
+          expect(diff < 0 ? x.patch.cells!.length : diff).toBeGreaterThanOrEqual(A.cells.length - 4);
+          expect(new Set(x.patch.cells).size).toBe(x.patch.cells!.length);
+        }
+      }
+    }
+    expect(rivers).toBeGreaterThanOrEqual(10);
+    expect(checked).toBeGreaterThan(rivers * 8);
   });
 
   it('从海里往一条消失的河的终点画（倒过来）：同样是接长这条河', () => {
