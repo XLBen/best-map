@@ -20,6 +20,7 @@ import {
   mergeCourse,
   planCourse,
   planRiver,
+  rerouteCourse,
   riverStem,
   spliceCourse,
 } from '../../core/select';
@@ -403,8 +404,9 @@ export const riverTypeOfGuide = (w: World, g: Pick<Guide, 'type'> | null | undef
 
 // 一笔画出来的河：规划、松手后执行的命令（确切预览用的也是它）、执行后这条河的样子与估计的流量
 export interface Course {
-  // new：新画的河、改道、从源头重画；splice：重画一段；merge：接到一条画的河的源头前面；extend：从一条画的河的终点往下游接长
-  kind: 'new' | 'splice' | 'merge' | 'extend';
+  // new：新画的河、改道（从自然的河的源头）、从源头重画；splice：重画一段；merge：接到一条画的河的源头前面；
+  // extend：从一条画的河的终点往下游接长；reroute：从一条河中间改道（还是这一条河，见 rerouteOf）
+  kind: 'new' | 'splice' | 'merge' | 'extend' | 'reroute';
   plan: CoursePlan | null;
   blocked: string | null;
   cmd: Command | null;
@@ -495,12 +497,48 @@ export function spliceOf(w: World, g: Guide, patch: GuidePatch, plan: CoursePlan
   return { kind, plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw };
 }
 
+// 从一条河中间改道（core/select.ts 的 rerouteCourse）：还是这一条河。画的河改这条河道（名字、id、大小、类型都照旧）；
+// 自然的河固定成一条画的河（主干从源头到起笔的那一格，再接上新画的一段），沿用它的地名（像“固定这条河”）
+export function rerouteOf(w: World, g: Guide | null, plan: CoursePlan, raw: [number, number][]): Course {
+  if (plan.blocked || plan.cells.length < 2) return blocked(plan.blocked ?? '这里画不出河', raw, plan);
+  const capture = plan.crossings.some((x) => x.guide !== null);
+  const label = (name: string | null, fallback: string) => `${quoted(name, fallback)}从这里改道（约 ${km(pathKm(w, raw))} km，${destOf(w, plan)}）`;
+  // 起笔以上照旧，往下带着起笔那一格的水（沿河往下只增不减）
+  let q = 0;
+  const estimate = plan.cells.map((c) => (q = Math.max(q, w.derived.discharge[c])));
+  const patch: GuidePatch = { cells: plan.cells, path: encodePath(plan.path) };
+  if (plan.end === 'sink') patch.end = 'sink';
+  else if (g?.end) patch.end = null;
+  if (g) {
+    const name = guideName(w, g);
+    const cmd: Command = { op: 'update_guide', id: g.id, patch, ...(capture ? { capture: true } : {}), label: label(name, '一条画的河') };
+    return { kind: 'reroute', plan, blocked: null, cmd, key: JSON.stringify(cmd), after: applyPatch(g, patch), estimate, name, raw };
+  }
+  const f = naturalFeatureAt(w, plan.cells[plan.rerouteAt]) ?? null;
+  const guide = {
+    cells: plan.cells,
+    path: patch.path!,
+    locked: true,
+    spring: false,
+    ...(f ? { nameKey: f.key } : { name: '' }),
+    ...(plan.end === 'sink' ? { end: 'sink' as const } : {}),
+  };
+  const cmd: Command = { op: 'add_guide', guide, ...(capture ? { capture: true } : {}), label: label(f?.name || null, '一条河') };
+  return { kind: 'reroute', plan, blocked: null, cmd, key: JSON.stringify(cmd), after: { id: '', ...guide } as Guide, estimate, name: f?.name || null, raw };
+}
+
 // 终点怎么说（新画的河）：画到陆地上接着流的是“之后顺地势入海”
 function destOf(w: World, plan: CoursePlan, quotedName = true): string {
   const last = plan.cells.length - 1;
   if (plan.end === 'sink') return '到这里消失';
   const where = destText(w, plan.end, plan.end === 'river' ? plan.join : plan.cells[last], quotedName);
   return plan.drawn < last ? `之后顺地势${where}` : where;
+}
+
+// 穿过的别的河（改道、重画的这条河自己不算）
+function otherCrossings(c: Course): CoursePlan['crossings'] {
+  const self = c.cmd?.op === 'update_guide' ? c.cmd.id : null;
+  return (c.plan?.crossings ?? []).filter((x) => !self || x.guide !== self);
 }
 
 // 截走的画的河会不会整条去掉（与 commands.ts 的 captureBy 相同：碰到的是它的源头）
@@ -522,7 +560,7 @@ function crossingName(w: World, x: CoursePlan['crossings'][number]): string | nu
 
 // “会截走「赤江」”“会删掉「白水」”（穿过不止一条时“等 3 条河”；第一条没有名字时“会截走 3 条河”）
 export function captureText(w: World, c: Course): string {
-  const xs = c.plan?.crossings ?? [];
+  const xs = otherCrossings(c);
   if (!xs.length || !c.after) return '';
   const x = xs[0];
   const name = crossingName(w, x);
@@ -547,7 +585,7 @@ function driedParts(w: World, c: Course, x: PreviewResult): Dried {
     for (let i = d.receiver[from], guard = 0; i >= 0 && !water(w, i) && guard < w.mesh.n; i = d.receiver[i], guard++) out.add(i);
   };
   const rer = new Set<number>();
-  if (plan?.reroute && plan.cells.length) below(plan.cells[0], rer);
+  if (plan?.reroute && plan.cells.length) below(plan.cells[plan.rerouteAt], rer);
   const cap = new Set<number>();
   for (const k of plan?.crossings ?? []) for (let j = k.from; j <= k.to; j++) below(plan!.cells[j], cap);
   // 重画、接长的这条河原来的河道（和它原来的终点往下）
@@ -590,14 +628,14 @@ export interface StartNote {
 }
 export function startNote(w: World, c: Course, x: PreviewResult | null): StartNote | null {
   const plan = c.plan;
-  if (c.kind !== 'new' || !plan?.reroute || !plan.cells.length) return null;
-  const start = plan.cells[0];
-  const src = sourceGuide(w, start);
+  if ((c.kind !== 'new' && c.kind !== 'reroute') || !plan?.reroute || !plan.cells.length) return null;
+  const start = plan.cells[plan.rerouteAt];
+  const src = c.kind === 'new' ? sourceGuide(w, start) : undefined;
   if (src) {
     const name = quoted(guideName(w, src), '这条画的河');
     return { text: `从源头起笔：${name}原来的河道不要了，照新画的走`, label: `重画整条${name}` };
   }
-  const name = quoted(startRiverName(w, start), '这条河');
+  const name = quoted(c.kind === 'reroute' ? c.name : startRiverName(w, start), '这条河');
   const n = x && c.after ? driedParts(w, c, x).reroute.length : plan.dried.length;
   return { text: n ? `从这里改道：${name}下游约 ${cellsKm(w, n).toLocaleString()} km 会变干` : `从这里改道：${name}从这里起照新画的走`, label: '改道' };
 }
@@ -621,7 +659,7 @@ export function pendingText(w: World, c: Course, x: PreviewResult | null): strin
   const parts: string[] = [];
   const st = startNote(w, c, x);
   if (st) parts.push(st.text);
-  if (c.plan?.crossings.length) {
+  if (otherCrossings(c).length) {
     const dried = driedKm(w, c, x);
     parts.push(`${captureText(w, c)}${dried ? `（下游约 ${dried.toLocaleString()} km 变干）` : ''}`);
   }
@@ -756,7 +794,7 @@ function courseShapes(w: World, c: Course, x: PreviewResult | null, zoom: number
     const dried = [...plan.dried, ...plan.crossings.flatMap((k) => k.dried)];
     if (dried.length) layers.push({ cells: dried, color: RED, alpha: 0.6 });
     for (const k of plan.crossings) if (k.dried.length) shapes.push({ kind: 'cells', cells: [k.cell, ...k.dried], color: RED_LINE, width: 3, dashed: true });
-    if (plan.dried.length) shapes.push({ kind: 'cells', cells: [plan.cells[0], ...plan.dried], color: RED_LINE, width: 3, dashed: true });
+    if (plan.dried.length) shapes.push({ kind: 'cells', cells: [plan.cells[plan.rerouteAt], ...plan.dried], color: RED_LINE, width: 3, dashed: true });
   }
   const flow = x?.guide && x.guide.flow.length === c.after.cells.length ? x.guide.flow : c.estimate;
   const r = courseRiver(w, line, c.after, flow);
@@ -1026,10 +1064,13 @@ export function riverTool(zoom: () => number): ToolHandler {
     } else {
       // 从一条画的河的终点（在终点消失的河的终点、画的线的末端）起笔：往下游接长这条河，不是改道
       const ext = extendCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px });
+      // 从一条河中间起笔：从这里改道，还是这一条河
+      const rr = ext ? null : rerouteCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px });
       if (ext) course = 'blocked' in ext ? blocked(ext.blocked, pr.pts.slice()) : spliceOf(w, ext.guide, ext.patch, ext.plan, pr.pts.slice(), 'extend');
+      else if (rr) course = rerouteOf(w, rr.guide, rr.plan, pr.pts.slice());
       else course = newCourse(w, planCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px }), pr.pts.slice());
-      // 接长时原来那条河先不画（预览画的是接长后的整条河）
-      const hide = ext && !('blocked' in ext) ? ext.guide.id : null;
+      // 接长、改道一条画的河时原来那条河先不画（预览画的是改好后的整条河）
+      const hide = ext && !('blocked' in ext) ? ext.guide.id : rr?.guide && !rr.plan.blocked ? rr.guide.id : null;
       const cur = riverStyleOverride.value;
       if (hide && cur?.id !== hide) riverStyleOverride.value = { id: hide, hide: true };
       else if (!hide && cur?.hide && pr.hid === cur.id) riverStyleOverride.value = null;
@@ -1060,7 +1101,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     cancelPreviews();
     committing = c;
     try {
-      await exec(c.cmd, c.kind === 'new' ? (c.plan?.reroute ? '正在改道…' : '正在计算河流…') : c.kind === 'splice' ? '正在重画…' : '正在计算河流…');
+      await exec(c.cmd, c.kind === 'reroute' || (c.kind === 'new' && c.plan?.reroute) ? '正在改道…' : c.kind === 'splice' ? '正在重画…' : '正在计算河流…');
     } finally {
       committing = null;
       exact.reset();
@@ -1081,7 +1122,8 @@ export function riverTool(zoom: () => number): ToolHandler {
     const jp = plan.crossings.length ? endCourseAt(w, w.derived, plan, plan.crossings[0].from) : null;
     let join: Course | null = null;
     if (jp && !jp.blocked) {
-      if ((c.kind === 'splice' || c.kind === 'extend') && c.cmd?.op === 'update_guide') {
+      if (c.kind === 'reroute') join = rerouteOf(w, c.cmd?.op === 'update_guide' ? (guideOf(w, c.cmd.id) ?? null) : null, jp, c.raw);
+      else if ((c.kind === 'splice' || c.kind === 'extend') && c.cmd?.op === 'update_guide') {
         const g = guideOf(w, c.cmd.id);
         if (g) {
           const patch: GuidePatch = { cells: jp.cells, path: encodePath(jp.path) };

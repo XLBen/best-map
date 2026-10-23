@@ -14,6 +14,7 @@ import {
   roundPoint as roundPt,
   roundPathValue,
   segProject,
+  stemPath,
 } from './rivers';
 import { isVegetated } from './vegetation';
 import { COURSE_MAX_POINTS, type Derived, type Guide, type World } from './world';
@@ -769,6 +770,8 @@ export interface CoursePlan {
   join: number;
   // 从一条河上开始画：这条河从这里改走画的路线（命令里的 reroute）
   reroute: boolean;
+  // 改道从 cells 的第几格起（新画的河是 0；从一条河中间改道、河的上游一起留着时是上游的格数，见 rerouteCourse）
+  rerouteAt: number;
   // 终点是一条画的、有泉水的河的源头：接到它前面，成为同一条河（见 mergeCourse）
   merge: string | null;
   crossings: CourseCrossing[];
@@ -792,6 +795,9 @@ export interface CourseOptions {
   px?: number;
   // 这条画的河自己的格不算交叉、不能汇入（重画它的一段时）
   ignoreGuide?: string;
+  // 接着画的那段（base）是一条河从源头到起笔的那一格：从它的最后一格改道（见 rerouteCourse）。
+  // own：这条河自己的格（往下的那段不能汇入：画到上面时顺着流下去，还是这一条河）
+  reroute?: { own: readonly number[] };
 }
 
 type Pt = [number, number];
@@ -803,6 +809,7 @@ const emptyPlan = (): CoursePlan => ({
   end: null,
   join: -1,
   reroute: false,
+  rerouteAt: 0,
   merge: null,
   crossings: [],
   dried: [],
@@ -1056,19 +1063,23 @@ function courseFrom(world: World, d: Derived, base: { cells: number[]; path: Pt[
   const pos = new Map<number, number>();
   cells.forEach((c, k) => pos.set(c, k));
   const start = cells[0];
-  const reroute = !fixed && isRiver(start) && !ignore.has(start);
+  // 改道：新画的河从一条河上起笔，或者接着画的那段是一条河的上游（opts.reroute），从它的最后一格改道
+  const reroute = fixed ? !!opts.reroute : isRiver(start) && !ignore.has(start);
   plan.reroute = reroute;
+  plan.rerouteAt = fixed && reroute ? fixed - 1 : 0;
+  const from = cells[plan.rerouteAt];
+  const own = new Set(opts.reroute?.own ?? []);
 
   // 改道：原来的河往下的那段（截弯取直时会经过，不算交叉）；它的上游不能汇入（水会绕成圈）。
   // 穿过上游的支流没关系：那条支流从这里起照着画的走
   const chain = new Set<number>();
   let up: Uint8Array | null = null;
   if (reroute) {
-    for (let c = d.receiver[start], guard = 0; c >= 0 && !water(c) && guard < mesh.n; c = d.receiver[c], guard++) chain.add(c);
-    up = upstreamOf(world, d, start);
+    for (let c = d.receiver[from], guard = 0; c >= 0 && !water(c) && guard < mesh.n; c = d.receiver[c], guard++) chain.add(c);
+    up = upstreamOf(world, d, from);
   }
-  // 能汇入的河：不是这条河道上的格、不是重画的那条河自己、不是改道的这条河的上游
-  const joinable = (i: number) => isRiver(i) && !ignore.has(i) && !(up && up[i]);
+  // 能汇入的河：不是这条河道上的格、不是重画的那条河自己、不是改道的这条河的上游，也不是改道的这条河自己往下的那段
+  const joinable = (i: number) => isRiver(i) && !ignore.has(i) && !(up && up[i]) && !own.has(i);
 
   // 终点
   const L = cells[cells.length - 1];
@@ -1138,7 +1149,7 @@ function courseFrom(world: World, d: Derived, base: { cells: number[]; path: Pt[
   plan.cells = cells;
   // 穿过别的河（改道时原来那条河往下的那段不算）；改道后原来的河道会变干的那段
   plan.crossings = crossingsOf(world, d, cells, Math.max(1, fixed), plan.drawn, (c) => ignore.has(c) || chain.has(c), opts.ignoreGuide);
-  if (reroute) plan.dried = driedBelow(world, d, d.receiver[start], d.discharge[start], pos);
+  if (reroute) plan.dried = driedBelow(world, d, d.receiver[from], d.discharge[from], pos);
 
   // 估算挖多深、往高处流多少
   const est = courseEstimates(world, d.elevation, cells, end === 'sink');
@@ -1451,23 +1462,37 @@ export function extendCourse(
   const C = g.cells;
   const P0 = guidePoints(world, g);
   // 不动的那段折线：到接上的第 k 格为止（最后一点在那一格里）
-  const baseTo = (k: number): Pt[] => {
-    let base: Pt[];
-    if (k === C.length - 1) base = P0;
-    else if (k === at.k) base = decodePath(g.path!);
-    else {
-      const t = traceCourse(world, P0, [], () => false);
-      const j = t.at.findIndex((a) => t.cells[a] === C[k]);
-      base = j >= 0 ? cutAt(world, P0, t, j).pts : P0.slice(0, 1);
-    }
-    const tail = base[base.length - 1];
-    if (!tail || findCell(mesh, tail[0], tail[1], C[k]) !== C[k]) {
-      const ref = tail ? tail[0] : mesh.x[C[k]];
-      base = dedupe([...base, roundPt([mesh.x[C[k]] + 2 * Math.round((ref - mesh.x[C[k]]) / 2) * (mesh.kind === 'sphere' ? 1 : 0), mesh.y[C[k]]])]);
-    }
-    return base;
-  };
-  let k = at.k;
+  const baseTo = (k: number): Pt[] => endIn(world, k === C.length - 1 ? P0 : k === at.k ? decodePath(g.path!) : pointsTo(world, C, P0, k), C[k]);
+  const plan = continueFrom(world, d, C, at.k, baseTo, raw, { ...opts, ignoreGuide: g.id }, reversed);
+  if (plan.blocked) return { guide: g, blocked: plan.blocked };
+  const patch: GuidePatch = { cells: plan.cells, path: encodePath(plan.path) };
+  if (plan.end === 'sink') patch.end = 'sink';
+  else if (g.end) patch.end = null;
+  return { guide: g, patch, plan };
+}
+
+// 控制点 P0（河道 C 的）截到第 k 格为止
+function pointsTo(world: World, C: readonly number[], P0: Pt[], k: number): Pt[] {
+  const t = traceCourse(world, P0, [], () => false);
+  const j = t.at.findIndex((a) => t.cells[a] === C[k]);
+  return j >= 0 ? cutAt(world, P0, t, j).pts : P0.slice(0, 1);
+}
+
+// 折线的最后一点要在 cell 里：不在时补上那一格的格心（整个星球上挪到折线末端那一份）
+function endIn(world: World, base: Pt[], cell: number): Pt[] {
+  const { mesh } = world;
+  const tail = base[base.length - 1];
+  if (tail && findCell(mesh, tail[0], tail[1], cell) === cell) return base;
+  const ref = tail ? tail[0] : mesh.x[cell];
+  return dedupe([...base, roundPt([mesh.x[cell] + 2 * Math.round((ref - mesh.x[cell]) / 2) * (mesh.kind === 'sphere' ? 1 : 0), mesh.y[cell]])]);
+}
+
+// 从河道 C 的第 k 格接着画 raw（已经倒好方向）：C 的前 k + 1 格与它们的折线（baseTo(k)）不动，之后照着画的走。
+// 刚起笔就擦过第 k 格前的一两格（格是斜着排的，从河上往旁边画常常这样）：从擦过的那一格接上，它后面原来的那一小段换成新画的
+function continueFrom(world: World, d: Derived, C: readonly number[], k0: number, baseTo: (k: number) => Pt[], raw: Pt[], opts: CourseOptions, reversed: boolean): CoursePlan {
+  const { mesh, causes } = world;
+  const water = (i: number) => !causes.land[i] || d.lake[i] === 1;
+  let k = k0;
   let base = baseTo(k);
   // 整个星球：画的线整圈地挪到折线末端所在的那一份
   if (mesh.kind === 'sphere') {
@@ -1475,11 +1500,9 @@ export function extendCourse(
     if (shift) raw = raw.map(([x, y]) => [x + shift, y]);
   }
   const room = COURSE_MAX_POINTS - base.length;
-  if (room < 2) return { guide: g, blocked: TOO_LONG };
+  if (room < 2) return { ...emptyPlan(), reversed, blocked: TOO_LONG };
   let input = simplifyStroke(world, raw, opts.px, room);
-  if (input.length < 2) return { guide: g, blocked: '画得太短了' };
-  // 刚起笔就擦过这条河终点前的一两格（格是斜着排的，从终点往旁边画常常这样）：从擦过的那一格接上，
-  // 它后面原来的那一小段换成新画的
+  if (input.length < 2) return { ...emptyPlan(), reversed, blocked: '画得太短了' };
   for (let iter = 0; iter < 3; iter++) {
     // 折线：从不动的那段的末端接到画的线的第一点（两点在同一格里，连线不出这一格），再照着画的走
     const Q = dedupe([base[base.length - 1], ...input]);
@@ -1493,12 +1516,66 @@ export function extendCourse(
     base = baseTo(k);
     input = [p, ...Q.slice(t.seg[L.j] + 1)];
   }
-  const plan = courseFrom(world, d, { cells: C.slice(0, k + 1), path: base }, dedupe([base[base.length - 1], ...input]), { ...opts, ignoreGuide: g.id }, reversed);
-  if (plan.blocked) return { guide: g, blocked: plan.blocked };
+  return courseFrom(world, d, { cells: C.slice(0, k + 1), path: base }, dedupe([base[base.length - 1], ...input]), opts, reversed);
+}
+
+// 从一条河中间起笔（不是画的河的源头、不是画的河能接长的终点）：这条河从源头到起笔的那一格不动，从那里改走画的路线，
+// 还是同一条河。画的河：改这条河道（update_guide 的 patch：格、折线、终点；名字、大小、类型都照旧）；
+// 自然的河：主干从源头到这一格加上新画的一段，固定成一条画的河（像“固定这条河”，沿用它的地名）。
+// 起笔不在河上、在画的河的源头（重画整条，见 planCourse）、在自然的河的源头时为 null
+export function rerouteCourse(
+  world: World,
+  d: Derived,
+  stroke: readonly (readonly [number, number])[],
+  opts: CourseOptions,
+): { guide: Guide | null; plan: CoursePlan; patch: GuidePatch } | null {
+  const { mesh, causes } = world;
+  if (stroke.length < 2) return null;
+  const water = (i: number) => !causes.land[i] || d.lake[i] === 1;
+  let raw = stroke.map((p) => [p[0], p[1]] as Pt);
+  if (mesh.kind === 'plane') {
+    const [x, y] = raw[0];
+    if (x < 0 || y < 0 || x > mesh.width || y > mesh.height) return null;
+  }
+  const first = findCell(mesh, raw[0][0], raw[0][1]);
+  const lastCell = findCell(mesh, raw[raw.length - 1][0], raw[raw.length - 1][1]);
+  const reversed = water(first) && !water(lastCell);
+  if (reversed) raw = raw.reverse();
+  const start = reversed ? lastCell : first;
+  if (!isRiverCell(world, d, start) || extendPoint(world, start)) return null;
+  let g: Guide | null = null;
+  let k = -1;
+  for (let n = world.small.guides.length - 1; n >= 0 && !g; n--) {
+    const x = world.small.guides[n];
+    const i = x.cells.indexOf(start);
+    if (i >= 0 && ownsCell(x, i)) {
+      g = x;
+      k = i;
+    }
+  }
+  let C: readonly number[];
+  let baseTo: (k: number) => Pt[];
+  let own: number[];
+  if (g) {
+    if (k === 0) return null;
+    const G = g;
+    C = G.cells;
+    const P0 = guidePoints(world, G);
+    baseTo = (j) => endIn(world, pointsTo(world, C, P0, j), C[j]);
+    own = C.filter((_, i) => ownsCell(G, i));
+  } else {
+    const stem = riverStem(world, d, start);
+    k = stem.cells.indexOf(start);
+    if (k <= 0) return null;
+    C = stem.cells;
+    baseTo = (j) => endIn(world, decodePath(stemPath(world, C.slice(0, j + 1))), C[j]);
+    own = stem.end === 'river' ? C.slice(0, -1) : C.slice();
+  }
+  const plan = continueFrom(world, d, C, k, baseTo, raw, { ...opts, ...(g ? { ignoreGuide: g.id } : {}), reroute: { own } }, reversed);
   const patch: GuidePatch = { cells: plan.cells, path: encodePath(plan.path) };
   if (plan.end === 'sink') patch.end = 'sink';
-  else if (g.end) patch.end = null;
-  return { guide: g, patch, plan };
+  else if (g?.end) patch.end = null;
+  return { guide: g, plan, patch };
 }
 
 // 一条河道现在流到哪里（不看画的线，只看格）

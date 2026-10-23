@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import { findCell } from '../../core/mesh';
-import { type CoursePlan, endCourseAt, extendCourse, isRiverCell, planCourse, planRiver, spliceCourse } from '../../core/select';
+import { type CoursePlan, endCourseAt, extendCourse, isRiverCell, planCourse, planRiver, rerouteCourse, riverStem, spliceCourse } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { riverLines } from '../render/overlay';
 import { busy, exec, previewCommand, riverPending, riverStyleOverride, selectedRiver, setOptions, toast, world } from '../state';
-import { lineOf, newCourse, pinCommand, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
+import { lineOf, naturalFeatureAt, newCourse, pinCommand, rerouteOf, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
 import type { Pointer } from './tools';
 
 // 画河的手势：自定义走向一笔 → 松手发的命令与预览是同一份；穿过别的河时先问一句（截走它 / 到这里汇入 / 取消，
@@ -541,12 +541,22 @@ describe('续画（第九轮 B）：从一条河上起笔', () => {
     riverPending.value!.cancel();
     expect(riverPending.value).toBeNull();
     expect(exec).not.toHaveBeenCalled();
-    // 再画一次，点“改道”：发的就是改道的命令
+    // 再画一次，点“改道”：还是这一条河——主干从源头到起笔的那一格加上新画的一段，固定成一条画的河，沿用它的地名
     await drag(t, w, stroke);
     expect(exec).not.toHaveBeenCalled();
     await riverPending.value!.capture();
-    expect(lastExec()).toEqual(newCourse(w, plan, stroke).cmd);
-    expect(lastExec()).toMatchObject({ op: 'add_guide', reroute: true, guide: { spring: false } });
+    const rr = rerouteCourse(w, w.derived, stroke, opts(w))!;
+    expect(lastExec()).toEqual(rerouteOf(w, null, rr.plan, stroke).cmd);
+    const cmd = lastExec();
+    if (cmd.op !== 'add_guide') throw new Error(cmd.op);
+    const stem = riverStem(w, w.derived, plan.cells[0]).cells;
+    const k = stem.indexOf(plan.cells[0]);
+    expect(k).toBeGreaterThan(0);
+    expect(cmd.guide.cells.slice(0, k + 1)).toEqual(stem.slice(0, k + 1));
+    expect(cmd.guide.cells.slice(k)).toEqual(plan.cells);
+    expect(cmd.guide).toMatchObject({ spring: false, locked: true });
+    const f = naturalFeatureAt(w, plan.cells[0]);
+    if (f) expect(cmd.guide.nameKey).toBe(f.key);
     expect(riverPending.value).toBeNull();
   });
 
@@ -621,4 +631,69 @@ describe('续画（第九轮 B）：抢走旁边小河的集水区', () => {
       vi.mocked(previewCommand).mockResolvedValue(null);
     }
   });
+});
+
+describe('第九轮 C：从河中间改道还是同一条河；悬停与按下一致；顺地势也先问；说法', () => {
+  // 先画好一条长一些的河（画完接着流），世界换成画好之后的
+  function drawnLong() {
+    const { eng } = setup();
+    const w0 = eng.world;
+    setOptions({ riverEnd: 'flow', riverFlow: 20 });
+    const { plan, stroke } = quietStroke(w0, 'flow');
+    eng.exec(newCourse(w0, plan, stroke).cmd!);
+    const w = eng.world;
+    world.value = w;
+    const g = w.small.guides[w.small.guides.length - 1];
+    const name = w.derived.features.find((f) => f.guide === g.id)?.name ?? null;
+    return { eng, w, g, name, t: riverTool(() => zoomOf(w)) };
+  }
+  // 从画的河中间第 k 格往旁边画 4 格、不穿过别的河的一笔
+  function fromMiddle(w: World, g: { cells: number[] }) {
+    for (let k = 2; k < g.cells.length - 2; k++) {
+      const c = g.cells[k];
+      if (!isRiverCell(w, w.derived, c)) continue;
+      for (let a = 0; a < 16; a++) {
+        const ang = (a * Math.PI) / 8;
+        const s = line(w, at(w, c), [w.mesh.x[c] + 4 * w.mesh.spacing * Math.cos(ang), w.mesh.y[c] + 4 * w.mesh.spacing * Math.sin(ang)]);
+        const r = rerouteCourse(w, w.derived, s, { endOnLand: 'flow', px: 1 / zoomOf(w) });
+        if (r && r.guide && !r.plan.blocked && !r.plan.crossings.length && r.plan.cells.join() !== g.cells.join()) return { s, k, r };
+      }
+    }
+    throw new Error('从画的河中间画不出来');
+  }
+
+  it('自定义走向从一条画的河中间改道：还是这一条河（同一个 id、名字），从源头到起笔照旧，之后照新画的走；预览时原来那条先不画', async () => {
+    const { eng, w, g, name, t } = drawnLong();
+    const { s, k, r } = fromMiddle(w, g);
+    vi.mocked(exec).mockClear();
+    t.move?.(ptr(w, s[0]), false);
+    expect(t.preview().hint).toContain('从这里起笔：改道');
+    t.down?.(ptr(w, s[0]));
+    for (const p of s.slice(1)) t.move?.(ptr(w, p), true);
+    expect(t.preview().hint).toMatch(/^从这里改道：/);
+    expect(riverStyleOverride.value).toEqual({ id: g.id, hide: true });
+    await t.up?.(ptr(w, s[s.length - 1]));
+    expect(exec).not.toHaveBeenCalled();
+    expect(riverPending.value?.confirm).toBe('改道');
+    // 不会说截走它自己
+    expect(riverPending.value?.text).not.toContain('截走');
+    await riverPending.value!.capture();
+    const cmd = lastExec();
+    expect(cmd).toEqual(rerouteOf(w, g, r.plan, s).cmd);
+    if (cmd.op !== 'update_guide') throw new Error(cmd.op);
+    expect(cmd.id).toBe(g.id);
+    expect(cmd.patch.cells!.slice(0, k + 1)).toEqual(g.cells.slice(0, k + 1));
+    expect(cmd.patch.name).toBeUndefined();
+    expect(cmd.patch.flow).toBeUndefined();
+    const before = eng.world.small.guides.length;
+    eng.exec(cmd);
+    expect(eng.world.small.guides.length).toBe(before);
+    const after = eng.world.small.guides.find((x) => x.id === g.id)!;
+    expect(after.flow).toBe(g.flow);
+    expect(after.spring).toBe(g.spring);
+    if (name) expect(eng.world.derived.features.find((f) => f.guide === g.id)?.name).toBe(name);
+  });
+
+
+
 });
