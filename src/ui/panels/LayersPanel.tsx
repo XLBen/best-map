@@ -1,7 +1,24 @@
 import { useRef, useState } from 'preact/hooks';
-import { labelGroups, mapStyle, mode, overlays, reference, season, setReference, showToast, world } from '../../state';
+import { type ProjectionPref, labelGroups, mapStyle, mode, overlays, prefs, reference, season, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS } from '../defs/layers';
+
+// 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
+const PROJECTIONS: [ProjectionPref, string][] = [
+  ['equirect', '等距圆柱'],
+  ['equalEarth', '等面积'],
+  ['globe', '球形'],
+];
+const PROJECTION_TITLES: Record<ProjectionPref, string> = {
+  equirect: '平铺成 2:1 的长方形（原来的样子）',
+  equalEarth: '椭圆形，各处面积按真实比例',
+  globe: '从太空看的一面，拖动转动',
+};
+const PROJECTION_HINTS: Record<ProjectionPref, string> = {
+  equirect: '平铺成 2:1 的长方形，东西接着重复。每条纬线都画得和赤道一样长，所以越靠近两极横向拉得越宽。',
+  equalEarth: '椭圆形，各处面积按真实比例，两极不再拉宽。整个椭圆放得下时左右拖动是转动中央经线，放大以后拖动是平移。',
+  globe: '从太空看的一面：拖动转动，滚轮或捏合缩放。越往边上是斜着看的，挤得越紧。',
+};
 
 // “图层”：底图着色、画风、叠加在上面的东西、季节、参考图
 
@@ -135,6 +152,16 @@ export function LayersPanel() {
           wide
         />
       </section>
+      {planet && (
+        <section>
+          <h5>投影</h5>
+          <Seg value={prefs.value.projection} options={PROJECTIONS} titles={PROJECTION_TITLES} onChange={(v) => setPrefs({ projection: v })} wide />
+          <p class="muted small">
+            {PROJECTION_HINTS[prefs.value.projection]}
+            {prefs.value.projection !== 'equirect' ? '风向、洋流、参考图只在等距圆柱里显示。' : ''}
+          </p>
+        </section>
+      )}
       <section>
         <h5>显示</h5>
         {OVERLAYS.filter((o) => !o.planetOnly || planet).map((o) => (

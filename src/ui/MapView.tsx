@@ -7,8 +7,9 @@ import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
-import { exportFrame, type LabelSize, planTiles, tileMargin, tileSize, tileView } from '../render/export-plan';
-import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type ProvinceLabel, buildPaths, drawOverlay, releaseRiverTile, riverLayer, riverLayerTile, riverPathsKey, samePathsKey } from '../render/overlay';
+import { LABEL_REF_WIDTH, exportFrame, type LabelSize, planTiles, tileMargin, tileSize, tileView } from '../render/export-plan';
+import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type ProvinceLabel, buildPaths, drawOverlay, releaseRiverTile, riverLayer, riverLayerScene, riverLayerTile, riverPathsKey, samePathsKey } from '../render/overlay';
+import { EE_HALF_W, GLOBE_G, type Proj, convertCamera, effectiveZoom, planeBounds, rotateToAnchor, screenToPlane } from '../render/projection';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import {
   FLASH_MS,
@@ -47,7 +48,7 @@ import {
   world,
   worldEpoch,
 } from '../state';
-import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
+import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom, shapeFitsWidth } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { barPreview } from './provincePreview';
@@ -201,7 +202,8 @@ export function MapView() {
     let exportBusy = false;
 
     const hitLabel = (sx: number, sy: number) => labelBoxes.find((b) => sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1)?.key ?? null;
-    const env = { zoom: () => renderer.camera.zoom, hitLabel };
+    // 工具的像素容差、按像素定大小的图形按它算：投影时是相当于等距圆柱的缩放（投影正中的比例）
+    const env = { zoom: () => effectiveZoom(renderer.camera), hitLabel };
     let handler: ToolHandler = TOOL_DEFS[tool.value].create(env);
     // 量距离时地图上的点击交给它，不交给当前工具
     const measurer = measureTool(env.zoom);
@@ -215,8 +217,8 @@ export function MapView() {
     const fit = () => {
       const w = world.value;
       if (!w) return;
-      // 整个星球：看全图时留在当前的经度
-      const keepX = w.mesh.kind === 'sphere' ? renderer.camera.x : null;
+      // 整个星球：看全图时留在当前的经度（投影时朝向不变，放进整个形状）
+      const keepX = w.mesh.kind === 'sphere' && !renderer.camera.proj ? renderer.camera.x : null;
       renderer.fit(w.mesh, MAP_INSETS);
       if (keepX !== null) {
         renderer.camera.x = keepX;
@@ -340,7 +342,8 @@ export function MapView() {
       const tile = refTile.current;
       const r = reference.value;
       if (!img || !tile) return;
-      if (!r || !r.visible) {
+      // 等面积、球形投影时不铺参考图（图层里有说明）
+      if (!r || !r.visible || (w.mesh.kind === 'sphere' && renderer.camera.proj)) {
         img.style.display = 'none';
         tile.style.display = 'none';
         return;
@@ -480,7 +483,7 @@ export function MapView() {
       const shownRivers = shown === w ? paths : pathsOf(shown);
       const style = mapStyle.value;
       renderer.riverLayer = overlays.value.rivers
-        ? (motion) => riverLayer(shown, shownRivers, renderer.camera, { style, motion, motionEpoch: renderer.motionEpoch }, glCanvas)
+        ? (motion, scene) => (scene ? riverLayerScene(shown, shownRivers, scene, style) : riverLayer(shown, shownRivers, renderer.camera, { style, motion, motionEpoch: renderer.motionEpoch }, glCanvas))
         : null;
       // 镜头正在动：渲染器按低分辨率画了这一帧，停下 SETTLE_MS 以后再画一次（补上全分辨率的）。导出图片一定按停稳的画法画
       const moving = renderer.render(w.kmPerUnit, { still: clean });
@@ -721,7 +724,8 @@ export function MapView() {
     resizeObs.observe(glCanvas);
 
     // ---- 指针 ----
-    let panning: { x: number; y: number; cx: number; cy: number } | null = null;
+    // 拖着平移：按下的位置、那时的镜头；投影时另记那时的朝向，球形还记按下的那一点（拖着转时它跟着鼠标）
+    let panning: { x: number; y: number; cx: number; cy: number; proj?: Proj; anchor?: [number, number] | null } | null = null;
     let clickStart: { sx: number; sy: number } | null = null;
     let spaceDown = false;
 
@@ -729,8 +733,8 @@ export function MapView() {
     const pointerAt = (sx: number, sy: number, shift: boolean, alt: boolean): Pointer => {
       const [x, y] = renderer.screenToWorld(sx, sy);
       const w = world.value;
-      // 整个星球东西相接：只看南北
-      const inside = !!w && (w.mesh.kind === 'sphere' ? y >= 0 && y <= 1 : x >= 0 && y >= 0 && x <= w.mesh.width && y <= w.mesh.height);
+      // 整个星球东西相接：只看南北（等面积、球形投影另看在不在投影之内）
+      const inside = !!w && (w.mesh.kind === 'sphere' ? y >= 0 && y <= 1 && renderer.onProjection(sx, sy) : x >= 0 && y >= 0 && x <= w.mesh.width && y <= w.mesh.height);
       const cell = inside ? findCell(w!.mesh, x, y) : -1;
       return { x, y, sx, sy, cell, shift, alt, shown: cell >= 0 ? displayCellAt(w!, x, y, cell) : undefined };
     };
@@ -764,20 +768,59 @@ export function MapView() {
     }
 
     const startPan = (sx: number, sy: number) => {
-      panning = { x: sx, y: sy, cx: renderer.camera.x, cy: renderer.camera.y };
+      const c = renderer.camera;
+      const anchor = c.proj?.kind === 'globe' && renderer.onProjection(sx, sy) ? renderer.screenToWorld(sx, sy) : null;
+      panning = { x: sx, y: sy, cx: c.x, cy: c.y, proj: c.proj, anchor };
       userMoved = true;
     };
 
+    // 投影时的平移（dx、dy 是从 base 起屏幕上挪了多少 CSS 像素，正的是内容往右、往下）：
+    // 球形转动（有按下的那一点时让它跟着鼠标 (sx, sy)）；等面积平移，整个椭圆东西放得下时左右是转动中央经线
+    const panProjected = (base: { cx: number; cy: number; proj: Proj; anchor?: [number, number] | null }, dx: number, dy: number, sx: number, sy: number) => {
+      const c = renderer.camera;
+      const cw = glCanvas.clientWidth;
+      const ch = glCanvas.clientHeight;
+      if (base.proj.kind === 'globe') {
+        if (base.anchor) {
+          const [u, v] = screenToPlane(c, cw, ch, sx, sy);
+          c.proj = rotateToAnchor(c.proj ?? base.proj, base.anchor[0], base.anchor[1], u, v);
+        } else {
+          const k = c.zoom * GLOBE_G;
+          c.proj = { kind: 'globe', lon0: base.proj.lon0 - dx / k, lat0: Math.max(-Math.PI / 2, Math.min(Math.PI / 2, base.proj.lat0 + dy / k)) };
+        }
+        return;
+      }
+      c.x = base.cx - dx / c.zoom;
+      c.y = base.cy - dy / c.zoom;
+      if (shapeFitsWidth(c, cw)) {
+        const l = base.proj.lon0 - ((dx / c.zoom) * Math.PI) / EE_HALF_W;
+        c.proj = { kind: 'equalEarth', lon0: l - 2 * Math.PI * Math.floor((l + Math.PI) / (2 * Math.PI)), lat0: 0 };
+      }
+    };
+
     const zoomAt = (sx: number, sy: number, f: number) => {
-      const [wx, wy] = renderer.screenToWorld(sx, sy);
       const c = renderer.camera;
       const w = world.value;
-      c.zoom = Math.max(w ? minZoom(w.mesh, glCanvas.clientWidth, glCanvas.clientHeight) : 100, Math.min(w ? maxZoom(w.mesh) : 60000, c.zoom * f));
+      const cw = glCanvas.clientWidth;
+      const ch = glCanvas.clientHeight;
+      // 投影时按投影平面算（球形另记鼠标下的那一点，缩放后转回到鼠标下）
+      const proj = w?.mesh.kind === 'sphere' ? c.proj : undefined;
+      const anchor = proj?.kind === 'globe' && renderer.onProjection(sx, sy) ? renderer.screenToWorld(sx, sy) : null;
+      const [wx, wy] = proj ? screenToPlane(c, cw, ch, sx, sy) : renderer.screenToWorld(sx, sy);
+      c.zoom = Math.max(w ? minZoom(w.mesh, cw, ch, proj) : 100, Math.min(w ? maxZoom(w.mesh, proj) : 60000, c.zoom * f));
       userMoved = true;
-      const [nx, ny] = renderer.screenToWorld(sx, sy);
-      c.x += wx - nx;
-      c.y += wy - ny;
-      if (w) clampPlanetCamera(w.mesh, c, glCanvas.clientHeight, !pressed && !panning);
+      if (proj?.kind === 'globe') {
+        if (w) clampPlanetCamera(w.mesh, c, ch, false, cw);
+        if (anchor) {
+          const [u, v] = screenToPlane(c, cw, ch, sx, sy);
+          c.proj = rotateToAnchor(c.proj!, anchor[0], anchor[1], u, v);
+        }
+      } else {
+        const [nx, ny] = proj ? screenToPlane(c, cw, ch, sx, sy) : renderer.screenToWorld(sx, sy);
+        c.x += wx - nx;
+        c.y += wy - ny;
+        if (w) clampPlanetCamera(w.mesh, c, ch, !pressed && !panning, cw);
+      }
       refreshPointer();
       requestDraw();
     };
@@ -824,9 +867,12 @@ export function MapView() {
       pointer = p;
       lastPointer = p;
       if (panning) {
-        renderer.camera.x = panning.cx - (p.sx - panning.x) / renderer.camera.zoom;
-        renderer.camera.y = panning.cy - (p.sy - panning.y) / renderer.camera.zoom;
-        clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, false);
+        if (w.mesh.kind === 'sphere' && panning.proj && renderer.camera.proj) panProjected({ ...panning, proj: panning.proj }, p.sx - panning.x, p.sy - panning.y, p.sx, p.sy);
+        else {
+          renderer.camera.x = panning.cx - (p.sx - panning.x) / renderer.camera.zoom;
+          renderer.camera.y = panning.cy - (p.sy - panning.y) / renderer.camera.zoom;
+        }
+        clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, false, glCanvas.clientWidth);
         requestDraw();
         return;
       }
@@ -848,7 +894,7 @@ export function MapView() {
       if (panning) {
         panning = null;
         // 平移结束：整个星球的镜头绕回第一份（画面不变，但鼠标下的经度差了一整圈，画笔圈要跟着换到这一份上）
-        clampPlanetCamera(world.value.mesh, renderer.camera, glCanvas.clientHeight, true);
+        clampPlanetCamera(world.value.mesh, renderer.camera, glCanvas.clientHeight, true, glCanvas.clientWidth);
         refreshPointer();
         requestDraw();
         return;
@@ -891,10 +937,14 @@ export function MapView() {
       const pan = pref === 'pan' || (pref === 'auto' && wheelKind.trackpad);
       if (pan) {
         const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? glCanvas.clientHeight : 1;
-        renderer.camera.x += (e.deltaX * unit) / renderer.camera.zoom;
-        renderer.camera.y += (e.deltaY * unit) / renderer.camera.zoom;
         const w = world.value;
-        if (w) clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, !pressed);
+        const c = renderer.camera;
+        if (w?.mesh.kind === 'sphere' && c.proj) panProjected({ cx: c.x, cy: c.y, proj: c.proj }, -e.deltaX * unit, -e.deltaY * unit, sx, sy);
+        else {
+          renderer.camera.x += (e.deltaX * unit) / renderer.camera.zoom;
+          renderer.camera.y += (e.deltaY * unit) / renderer.camera.zoom;
+        }
+        if (w) clampPlanetCamera(w.mesh, renderer.camera, glCanvas.clientHeight, !pressed, glCanvas.clientWidth);
         userMoved = true;
         refreshPointer();
         requestDraw();
@@ -934,6 +984,24 @@ export function MapView() {
       cursorHint.value = null;
       requestDraw();
     };
+
+    // 投影（第十三轮 G4，图层里选，只对整个星球）：换了就把画面中心那一点留在中心、那里的大小不变；
+    // 还没手动动过镜头时看全图。一块地区、等距圆柱时镜头上没有投影
+    const disposeProjection = effect(() => {
+      const w = world.value;
+      const want = w?.mesh.kind === 'sphere' ? prefs.value.projection : 'equirect';
+      const cur = renderer.camera.proj?.kind ?? 'equirect';
+      if (!w || want === cur) return;
+      const cw = glCanvas.clientWidth || 800;
+      const ch = glCanvas.clientHeight || 600;
+      const c = convertCamera(renderer.camera, cw, ch, want);
+      c.zoom = Math.max(minZoom(w.mesh, cw, ch, c.proj), Math.min(maxZoom(w.mesh, c.proj), c.zoom));
+      renderer.camera = c;
+      if (!userMoved) renderer.fit(w.mesh, MAP_INSETS);
+      clampPlanetCamera(w.mesh, renderer.camera, ch, true, cw);
+      refreshPointer();
+      requestDraw();
+    });
 
     mapApi.current = {
       fit,
@@ -992,10 +1060,12 @@ export function MapView() {
     // 导出整张地图（.png）：虚拟镜头盖住整张图（整个星球是一整圈 2:1，不重复），按停稳的画法离屏一块块画（每块四周多画一圈，
     // 拼起来没有接缝），再在整张图上画河、地名（按整张图排）、边界之外的叠加层；与“当前画面”一样是干净的画面。
     // 画的期间屏幕上的地图不重画；每画完一块让一下主线程（进度条照常动）。cancelled() 为真时停下，返回 null
-    async function exportImage(o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number }, progress: (p: number) => void, cancelled: () => boolean): Promise<HTMLCanvasElement | null> {
+    async function exportImage(o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number; projected?: boolean }, progress: (p: number) => void, cancelled: () => boolean): Promise<HTMLCanvasElement | null> {
       const w = world.value;
       if (!w || !paths || exportBusy) return null;
       const mesh = w.mesh;
+      const proj = mesh.kind === 'sphere' ? renderer.camera.proj : undefined;
+      if (o.projected && proj) return exportProjected(w, paths, proj, o, progress, cancelled);
       // 整个星球：图的左右边放在 seam（x）上，省略时放在经度 180°
       const fr = exportFrame(mesh, o.width, o.labels, mesh.kind === 'sphere' ? (o.seam ?? 0) : 0);
       const out = document.createElement('canvas');
@@ -1028,6 +1098,55 @@ export function MapView() {
         }
         if (cancelled()) return null;
         if (o.overlay !== false) drawOverlay(octx as CanvasRenderingContext2D, w, paths, fr.cam, cleanOverlay(w, { cw: fr.cw, ch: fr.ch, dpr: fr.dpr }));
+        progress(0.9);
+        return out;
+      } finally {
+        renderer.releaseExport();
+        releaseRiverTile();
+        exportBusy = false;
+        lastHighlightKey = [];
+        requestDraw();
+      }
+    }
+
+    // 导出整张地图（等面积、球形投影，第十三轮 G4）：按现在的投影与朝向，整个形状放在图里（球形是朝着现在这一面的半球），
+    // 投影之外透明。先画一块整圈的场景（受显卡的纹理大小所限，很大的图会软一些），再一块块合成；地名、经纬网按整张图排
+    async function exportProjected(w: World, paths: OverlayPaths, proj: Proj, o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean }, progress: (p: number) => void, cancelled: () => boolean): Promise<HTMLCanvasElement | null> {
+      const [u0, u1, v0, v1] = planeBounds(proj);
+      const W = Math.max(2, Math.round(o.width));
+      const H = Math.max(2, Math.round((W * (v1 - v0)) / (u1 - u0)));
+      const ref = Math.min(LABEL_REF_WIDTH[o.labels], W);
+      const dpr = W / ref;
+      // 四周留一点边（球形外面一圈淡淡的大气）
+      const zoom = (ref / (u1 - u0)) * (proj.kind === 'globe' ? 0.92 : 0.97);
+      const cam = { x: (u0 + u1) / 2, y: (v0 + v1) / 2, zoom, proj };
+      const out = document.createElement('canvas');
+      out.width = W;
+      out.height = H;
+      const octx = out.getContext('2d');
+      if (!octx) throw new Error('浏览器开不了这么大的画布');
+      const T = Math.min(renderer.exportLimit(), o.tile ?? 2048);
+      if (T < 64) throw new Error('显卡支持的画布太小，导不出这么大的图');
+      const tiles = planTiles(W, H, T);
+      exportBusy = true;
+      try {
+        cleanState(w);
+        const style = mapStyle.value;
+        const ex = renderer.beginProjectedExport(w.kmPerUnit, cam, W, H, dpr, overlays.value.rivers ? (s) => riverLayerScene(w, paths, s, style, true) : null);
+        progress(0.2);
+        for (let i = 0; i < tiles.length; i++) {
+          if (cancelled()) return null;
+          const t = tiles[i];
+          const px = ex.tile(t.x, t.y, T);
+          const img = new ImageData(t.w, t.h);
+          if (t.w === T) img.data.set(px.subarray(0, T * t.h * 4));
+          else for (let r = 0; r < t.h; r++) img.data.set(px.subarray(r * T * 4, (r * T + t.w) * 4), r * t.w * 4);
+          octx.putImageData(img, t.x, t.y);
+          progress(0.2 + ((i + 1) / tiles.length) * 0.65);
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        if (cancelled()) return null;
+        if (o.overlay !== false) drawOverlay(octx as CanvasRenderingContext2D, w, paths, cam, cleanOverlay(w, { cw: W / dpr, ch: H / dpr, dpr }));
         progress(0.9);
         return out;
       } finally {
@@ -1112,6 +1231,7 @@ export function MapView() {
       disposeColors();
       disposeTool();
       disposeRedraw();
+      disposeProjection();
       resizeObs.disconnect();
       mapApi.current = null;
       window.removeEventListener('keydown', onKey);
@@ -1135,10 +1255,11 @@ export function snapshotCanvas(): HTMLCanvasElement | null {
   return hook ? hook.snapshot(true) : null;
 }
 
-type ExportImage = (o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number }, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
+type ExportImage = (o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number; projected?: boolean }, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
 
 // 导出整张地图（.png）：进度显示在顶部的提示条上（与游戏文件包共用，可以取消），得到 PNG 的 Blob；取消、出错时为 null
-export async function exportFullMap(o: { width: number; labels: LabelSize; seam?: number }): Promise<Blob | null> {
+// projected：整个星球按现在的等面积、球形投影导出（不给时是等距圆柱的 2:1）
+export async function exportFullMap(o: { width: number; labels: LabelSize; seam?: number; projected?: boolean }): Promise<Blob | null> {
   const hook = (window as unknown as { __map2?: { exportImage: ExportImage } }).__map2;
   if (!hook || exportProgress.value !== null) return null;
   let stop = false;

@@ -205,18 +205,21 @@ export const FLASH_MS = 1200;
 
 // 偏好（存在本浏览器里）：滚轮 / 双指滑动是缩放还是平移
 export type WheelPref = 'auto' | 'zoom' | 'pan';
+// 整个星球用哪种投影看（第十三轮 G4）：等距圆柱（平铺图）、等面积（椭圆形）、球形（从太空看）。只是看的方式，不写进世界文件
+export type ProjectionPref = 'equirect' | 'equalEarth' | 'globe';
 const PREFS_KEY = 'map2.prefs';
-function readPrefs(): { wheel: WheelPref } {
+type Prefs = { wheel: WheelPref; projection: ProjectionPref };
+function readPrefs(): Prefs {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null;
-    const p = raw ? (JSON.parse(raw) as { wheel?: WheelPref }) : {};
-    return { wheel: p.wheel === 'zoom' || p.wheel === 'pan' ? p.wheel : 'auto' };
+    const p = raw ? (JSON.parse(raw) as Partial<Prefs>) : {};
+    return { wheel: p.wheel === 'zoom' || p.wheel === 'pan' ? p.wheel : 'auto', projection: p.projection === 'equalEarth' || p.projection === 'globe' ? p.projection : 'equirect' };
   } catch {
-    return { wheel: 'auto' };
+    return { wheel: 'auto', projection: 'equirect' };
   }
 }
 export const prefs = signal(readPrefs());
-export function setPrefs(patch: Partial<{ wheel: WheelPref }>) {
+export function setPrefs(patch: Partial<Prefs>) {
   prefs.value = { ...prefs.value, ...patch };
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs.value));

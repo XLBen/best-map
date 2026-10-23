@@ -4,6 +4,7 @@ import type { SeamLayers } from '../../core/seams';
 import { PATTERNS } from '../../core/species';
 import { viewOf } from '../../core/sphere';
 import type { GhostLayers } from './colors';
+import { GLOBE_G, PROJ_GLSL, type Proj, effectiveZoom, planeBounds, sceneNeed, screenToWorld as projScreenToWorld, worldToScreen as projWorldToScreen } from './projection';
 
 // WebGL2 渲染：
 //   1. 编号层：Voronoi 多边形写入每个像素属于哪一格
@@ -878,8 +879,92 @@ int idAt(vec2 uv) {`),
   int id = onMap ? idAt(uvW) : -1;`,
 );
 
-// 测试用（没有 WebGL 时检查拼出来的源码）：合成着色器的平面、星球两份
-export const COMPOSE_SOURCES = { plane: FS_COMPOSE, planet: FS_COMPOSE_PLANET };
+// 着色器源码里按正则替换全部，次数不对就报错
+function mustAll(src: string, re: RegExp, to: string, count: number): string {
+  const n = (src.match(re) ?? []).length;
+  if (n !== count) throw new Error(`着色器替换失败：${re.source.slice(0, 40)}（${n} 处，应为 ${count} 处）`);
+  return src.replace(re, to);
+}
+
+// ---------- 整个星球的等面积、球形投影（第十三轮 G4）：编号层、地形层、切线层照旧画成等距圆柱的“场景”，
+// 合成时每个像素按投影反算回世界坐标，再到场景上取（见 projection.ts 的 PROJ_GLSL）。
+// 由星球的合成着色器改成：像素的位置（pW）、取周围格的偏移、圆圈都在世界坐标上；一格合几个像素（uCellPx）、
+// 场景一个像素合几个屏幕像素（uScenePx）按这个像素自己的投影比例算；投影之外画背景（球形外面一圈淡淡的大气）
+const PROJ_TO_SCENE = `
+// 场景：世界坐标 → 场景上的位置（0–1）。场景是 x 从 uSceneX0 起的一块（整圈时宽 2），经度按 2 绕回
+vec2 wrapW(vec2 w) { return vec2(uSceneX0 + mod(w.x - uSceneX0, 2.0), w.y); }
+vec2 toScene(vec2 w) { return (wrapW(w) * uSceneView.xy + uSceneView.zw) * 0.5 + 0.5; }
+// 投影之外：背景（导出时透明）；球形的外面一圈淡淡的大气
+vec4 outsideColor(vec2 plane) {
+  vec4 o = uOutside;
+  if (uProj == 2) {
+    float rho = length(vec2(plane.x - 1.0, 0.5 - plane.y)) / ${glsl(GLOBE_G)};
+    float glow = rho >= 1.0 ? exp(-(rho - 1.0) * 14.0) * 0.5 : 0.5;
+    o = vec4(mix(o.rgb, vec3(0.42, 0.62, 0.95), glow), max(o.a, glow));
+  }
+  return o;
+}
+// 收尾：球形的边上暗一点、带一点大气的颜色；投影的边缘按到边的像素数抗锯齿
+vec4 projFinish(vec3 col) {
+  if (uProj == 2) {
+    float r2 = uRho * uRho;
+    col *= 1.0 - 0.22 * r2 * r2 * r2;
+    col = mix(col, vec3(0.55, 0.72, 0.98), 0.22 * pow(uRho, 10.0));
+  }
+  float a = clamp(uEdge * uPlanePx + 0.5, 0.0, 1.0);
+  return mix(outsideColor(uPlane), vec4(col, 1.0), a);
+}
+`;
+const PROJ_PROLOGUE = `  // 投影（第十三轮 G4）：画面上的位置 → 平面 → 世界；之外画背景
+  uPlane = (vUv * 2.0 - 1.0 - uView.zw) / uView.xy;
+  if (!projInv(uPlane, pW, uEdge)) {
+    oColor = outsideColor(uPlane);
+    return;
+  }
+  {
+    // 右边、上边一个画面像素在世界坐标上差多少（省界、轮廓看的相邻像素按它取）
+    vec2 sp = 2.0 * uPx / uView.xy;
+    vec2 w2;
+    float e2;
+    uDX = projInv(uPlane + vec2(sp.x, 0.0), w2, e2) ? w2 - pW : (projInv(uPlane - vec2(sp.x, 0.0), w2, e2) ? pW - w2 : vec2(0.0));
+    uDY = projInv(uPlane + vec2(0.0, sp.y), w2, e2) ? w2 - pW : (projInv(uPlane - vec2(0.0, sp.y), w2, e2) ? pW - w2 : vec2(0.0));
+    uDX.x -= 2.0 * floor(uDX.x * 0.5 + 0.5);
+    uDY.x -= 2.0 * floor(uDY.x * 0.5 + 0.5);
+    // 一个画面像素合多少地图单位²（东西方向乘 cos 纬度是真实的面积）→ 一格合几个像素
+    float det = max(abs(uDX.x * uDY.y - uDX.y * uDY.x), 1e-20);
+    float cosLat = max(sin(PI * clamp(pW.y, 0.0, 1.0)), 1e-3);
+    uCellPx = uSpacing / sqrt(det * cosLat);
+    // 圆圈（0.6、1.2 格半径）在世界坐标上：uCellPx · uTexel = uSpacing
+    uTexel = vec2(uSpacing / uCellPx);
+    uScenePx = uPxScale / sqrt(uSceneZ.x * uSceneZ.y * det);
+    uRho = uProj == 2 ? length(vec2(uPlane.x - 1.0, 0.5 - uPlane.y)) / ${glsl(GLOBE_G)} : 0.0;
+  }
+`;
+const FS_COMPOSE_PROJ = (() => {
+  let s = FS_COMPOSE_PLANET;
+  // 场景上的位置：画面上的位置 × uSceneXf → 世界坐标的 toScene
+  s = mustAll(s, /(\(vUv \+ o[12]\)|\buv\b|\bvUv\b) \* uSceneXf\.xy \+ uSceneXf\.zw/g, 'toScene($1)', 6);
+  // 这个像素的位置换成世界坐标（pW）；画面上的位置只在开头算投影时用
+  s = s.replace(/\bvUv\b/g, 'pW');
+  s = must(s, 'in vec2 pW;', 'in vec2 vUv;\nvec2 pW;\nvec2 uDX;\nvec2 uDY;\nvec2 uPlane;\nfloat uRho;\nfloat uEdge;');
+  s = must(s, 'uniform vec2 uTexel;', 'vec2 uTexel;\nuniform vec2 uPx;');
+  s = must(s, 'uniform float uCellPx;', 'float uCellPx;');
+  s = must(s, 'uniform float uScenePx;', 'float uScenePx;\nuniform vec2 uSceneZ;\nuniform vec4 uSceneView;\nuniform float uSceneX0;\nuniform vec4 uOutside;\nuniform float uPlanePx;');
+  s = must(s, 'int idAt(vec2 uv) {', `${PROJ_GLSL}${PROJ_TO_SCENE}int idAt(vec2 uv) {`);
+  s = must(s, 'vec2 world = (pW * 2.0 - 1.0 - uView.zw) / uView.xy;', 'vec2 world = pW;');
+  s = must(s, 'vec2 uvW = (ww * uView.xy + uView.zw) * 0.5 + 0.5;', 'vec2 uvW = ww;');
+  s = must(s, 'vec2 dx = vec2(uTexel.x * 1.5, 0.0);', 'vec2 dx = uDX * 1.5;');
+  s = must(s, 'vec2 dy = vec2(0.0, uTexel.y * 1.5);', 'vec2 dy = uDY * 1.5;');
+  s = must(s, 'vec2 hx = vec2(uTexel.x * 1.5, 0.0);', 'vec2 hx = uDX * 1.5;');
+  s = must(s, 'vec2 hy = vec2(0.0, uTexel.y * 1.5);', 'vec2 hy = uDY * 1.5;');
+  s = must(s, 'texture(uRiver, pW * uRiverXf.xy + uRiverXf.zw)', 'texture(uRiver, wrapW(pW) * uRiverXf.xy + uRiverXf.zw)');
+  s = must(s, 'oColor = vec4(col, 1.0);', 'oColor = projFinish(col);');
+  s = must(s, 'void main() {\n', `void main() {\n${PROJ_PROLOGUE}`);
+  return s;
+})();
+
+// 测试用（没有 WebGL 时检查拼出来的源码）：合成着色器的平面、星球、星球投影三份
+export const COMPOSE_SOURCES = { plane: FS_COMPOSE, planet: FS_COMPOSE_PLANET, projected: FS_COMPOSE_PROJ };
 
 // 合成程序：带花纹的编译不过时退回不带花纹的（见 withoutFx），只在控制台留一句
 function compileCompose(gl: WebGL2RenderingContext, fs: string): WebGLProgram {
@@ -915,6 +1000,8 @@ export interface Camera {
   x: number;
   y: number;
   zoom: number;
+  // 整个星球的等面积、球形投影（第十三轮 G4）：镜头的 x、y 在投影平面上（见 projection.ts）；没有时是等距圆柱
+  proj?: Proj;
 }
 
 export interface CellLayers {
@@ -954,6 +1041,93 @@ export interface RiverTex {
 type V4 = [number, number, number, number];
 // 一块像素（x, y, 宽, 高；GL 的 y 向上）
 type Rect = [number, number, number, number];
+
+// 等面积、球形投影的场景（第十三轮 G4）：等距圆柱的一块 [x0, x1] × [y0, y1]（x 可以伸出 [0, 2)，整圈时是 [0, 2]），
+// 每地图单位 zx、zy 个像素（东西、南北可以不同：看极点附近时东西方向不必那么密），W × H 像素。
+// reqZx、reqZy：按需要的密度要的（受纹理大小、像素总数所限，实际的 zx、zy 可能小一些）。view：地图单位 → 场景的裁剪空间
+export interface ProjScene {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  zx: number;
+  zy: number;
+  reqZx: number;
+  reqZy: number;
+  W: number;
+  H: number;
+  view: V4;
+  full: boolean;
+  key: string;
+}
+
+// 投影时的河的图层要画的那一块（场景的范围、密度，像素）；dpr：每个 CSS 像素几个像素（河宽按 CSS 像素算）
+export interface RiverScene {
+  x0: number;
+  y0: number;
+  zx: number;
+  zy: number;
+  W: number;
+  H: number;
+  dpr: number;
+  key: string;
+}
+
+interface ProjCompose {
+  proj: Proj;
+  scene: ProjScene;
+  // 一个平面单位合几个画面像素；投影之外的颜色（屏幕上是背景色，导出时透明）
+  planePx: number;
+  outside: V4;
+}
+
+// 屏幕上投影之外的背景（与地图之外的颜色相同）
+const PROJ_BG: V4 = [0.08, 0.1, 0.14, 1];
+
+// 按需要的密度定一块场景。factor：密度打几折（移动中 0.5）；grow：四周多画范围的几分之一（整圈时不加）；
+// limit：纹理的边长上限；budget：像素总数上限
+export function planScene(need: { x0: number; x1: number; y0: number; y1: number; zx: number; zy: number; full: boolean }, factor: number, grow: number, limit: number, budget: number): ProjScene {
+  // 密度取 2 的 1/4 次方的整数倍（往上取）：镜头动一点点时要的密度不变，场景照用
+  const q = (z: number) => Math.pow(2, Math.ceil(Math.log2(Math.max(z, 1e-9)) * 4) / 4);
+  const reqZx = q(need.zx * factor);
+  const reqZy = q(need.zy * factor);
+  let { x0, x1, y0, y1 } = need;
+  let full = need.full;
+  if (!full) {
+    const gx = (x1 - x0) * grow;
+    x0 -= gx;
+    x1 += gx;
+    if (x1 - x0 >= 2) {
+      full = true;
+      x0 = 0;
+      x1 = 2;
+    }
+  }
+  const gy = (y1 - y0) * grow;
+  y0 = Math.max(0, y0 - gy);
+  y1 = Math.min(1, y1 + gy);
+  const s = Math.min(1, limit / ((x1 - x0) * reqZx), limit / ((y1 - y0) * reqZy), Math.sqrt(budget / ((x1 - x0) * reqZx * (y1 - y0) * reqZy)));
+  const zx = reqZx * s;
+  const zy = reqZy * s;
+  const W = Math.max(1, Math.min(limit, Math.ceil((x1 - x0) * zx)));
+  const H = Math.max(1, Math.min(limit, Math.ceil((y1 - y0) * zy)));
+  // 按整像素取了整：右、下边跟着挪（密度不变）
+  x1 = x0 + W / zx;
+  y1 = y0 + H / zy;
+  const sx = (2 * zx) / W;
+  const sy = (-2 * zy) / H;
+  return { x0, x1, y0, y1, zx, zy, reqZx, reqZy, W, H, view: [sx, sy, -1 - x0 * sx, 1 - y0 * sy], full, key: `${x0}|${x1}|${y0}|${y1}|${zx}|${zy}|${W}x${H}` };
+}
+
+// 场景 sc 还能不能用：盖住要的范围（整圈的盖住一切；x 按 2 绕回比），要的密度够（minF 折以上），停稳时也不能密太多（maxF 倍以下）
+export function sceneFits(sc: ProjScene, need: { x0: number; x1: number; y0: number; y1: number; zx: number; zy: number }, minF: number, maxF: number): boolean {
+  if (sc.reqZx < minF * need.zx || sc.reqZy < minF * need.zy) return false;
+  if (sc.reqZx > maxF * need.zx && sc.reqZy > maxF * need.zy) return false;
+  if (need.y0 < sc.y0 - 1e-9 || need.y1 > sc.y1 + 1e-9) return false;
+  if (sc.full) return true;
+  const sh = 2 * Math.floor((need.x0 - sc.x0) / 2);
+  return need.x0 - sh >= sc.x0 - 1e-9 && need.x1 - sh <= sc.x1 + 1e-9 && need.x1 - need.x0 <= 2;
+}
 
 // 一组场景目标：地形层（颜色、高度）、编号层、切线层（带深度）
 interface SceneTarget {
@@ -1022,8 +1196,17 @@ export class Renderer {
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
   private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river', WebGLTexture>;
-  // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取），null 不画河。现在上传着的是哪一张、哪个版本
-  riverLayer: ((motion: boolean) => RiverTex | null) | null = null;
+  // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取；投影时另给场景的那一块），null 不画河。现在上传着的是哪一张、哪个版本
+  riverLayer: ((motion: boolean, scene?: RiverScene) => RiverTex | null) | null = null;
+  // 等面积、球形投影（第十三轮 G4）：场景目标（用到时才分配）、现在的场景，与各层画的是哪个键（同停稳的那几个）
+  private projT: SceneTarget | null = null;
+  private projScene: ProjScene | null = null;
+  private pIdKey = '';
+  private pTerrainKey = '';
+  private pTerrainStatic = '';
+  private pSeamKey = '';
+  private pComposeKey = '';
+  private progProj: WebGLProgram | null = null;
   private riverShown: { source: unknown; version: number } | null = null;
   // 场景（编号层、地形层、切线层）：停稳时画在与画布一样大的一组目标上；移动中画在低分辨率、带边距的另一组上
   private rest: SceneTarget;
@@ -1602,12 +1785,22 @@ export class Renderer {
     if (!mesh || !this.triVao || !this.fanVao) return false;
     this.resize();
     const cam = this.camera;
-    const camKey = `${cam.x}|${cam.y}|${cam.zoom}`;
+    const proj = this.planet ? cam.proj : undefined;
+    const camKey = `${cam.x}|${cam.y}|${cam.zoom}${proj ? `|${proj.kind}|${proj.lon0}|${proj.lat0}` : ''}`;
     const now = performance.now();
     if (camKey !== this.lastCam) {
       if (this.lastCam) this.movedAt = now;
       this.lastCam = camKey;
     }
+    // 等面积、球形投影：另一条路（场景按需要的范围、密度画，合成时反算投影）
+    if (proj) {
+      const moving = !opts.still && now - this.movedAt < SETTLE_MS;
+      this.justSettled = this.wasMoving && !moving && !opts.still;
+      if (!opts.still) this.wasMoving = moving;
+      this.renderProjected(kmPerUnit, moving);
+      return moving;
+    }
+    if (this.projT) this.leaveProjected();
     if (!opts.still && now - this.movedAt < SETTLE_MS) {
       this.renderMoving(kmPerUnit);
       this.wasMoving = true;
@@ -1623,7 +1816,7 @@ export class Renderer {
 
   // 放大后晕渲不必夸张那么多：一格 8 像素以内照旧，越放大越缓（一格 64 像素时约一半）
   private reliefNow(): number {
-    return this.reliefAt(this.camera.zoom);
+    return this.reliefAt(this.planet ? effectiveZoom(this.camera) : this.camera.zoom);
   }
   private reliefAt(zoom: number): number {
     const cellCss = this.mesh!.spacing * zoom;
@@ -1761,6 +1954,191 @@ export class Renderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     // 停下来时一定按停稳的画法重画
     this.composeKey = '';
+  }
+
+  // ---------- 等面积、球形投影（第十三轮 G4） ----------
+
+  // 投影的合成程序（第一次用到时才编译）
+  private projProgram(): WebGLProgram {
+    this.progProj ??= compileCompose(this.gl, FS_COMPOSE_PROJ);
+    return this.progProj;
+  }
+
+  // 现在的投影场景（开发用的测速、测试看）
+  get projectedScene(): ProjScene | null {
+    return this.projScene;
+  }
+
+  // 回到等距圆柱：放掉投影的场景
+  private leaveProjected() {
+    if (this.projT) this.sizeTarget(this.projT, 1, 1);
+    this.projScene = null;
+    this.pIdKey = this.pTerrainKey = this.pTerrainStatic = this.pSeamKey = this.pComposeKey = '';
+  }
+
+  // 场景按 sc 画（编号层、地形层、切线层；同停稳的画法：哪一层的输入变了才重画那一层，幽灵海岸只重画改了的几格那一块）
+  private drawProjScene(t: SceneTarget, sc: ProjScene, kmPerUnit: number, hasSeams: boolean, force: boolean) {
+    const gl = this.gl;
+    const coastAmp = this.ghostAmp ?? this.coastAmp;
+    if (this.sizeTarget(t, sc.W, sc.H)) force = true;
+    const idKey = `${this.meshVersion}|${sc.key}`;
+    const terrainStatic = `${idKey}|${this.detail}|${coastAmp}|${kmPerUnit}`;
+    const terrainKey = `${terrainStatic}|${this.layersVersion}`;
+    const seamKey = hasSeams ? `${sc.key}|${this.seamVersion}` : '';
+    const cx = (sc.x0 + sc.x1) / 2;
+    const halfW = (sc.x1 - sc.x0) / 2;
+    const [copy0, copies] = this.copiesFor(cx, halfW);
+    gl.disable(gl.BLEND);
+    gl.viewport(0, 0, sc.W, sc.H);
+    if (force || idKey !== this.pIdKey) {
+      this.pIdKey = idKey;
+      this.drawId(t, sc.view, copy0, copies);
+    }
+    if (force || terrainKey !== this.pTerrainKey) {
+      const rects = !force && terrainStatic === this.pTerrainStatic && this.dirtyCells !== 'full' ? this.dirtyRects(this.dirtyCells, sc.view, sc.W, sc.H) : null;
+      this.pTerrainKey = terrainKey;
+      this.pTerrainStatic = terrainStatic;
+      this.dirtyCells = new Set();
+      this.drawTerrain(t, sc.view, 1 / Math.max(sc.zx, sc.zy), copy0, copies, coastAmp, kmPerUnit, rects);
+    }
+    if (hasSeams && (force || seamKey !== this.pSeamKey)) {
+      this.pSeamKey = seamKey;
+      this.drawSeams(t, sc.view, cx, halfW);
+    }
+  }
+
+  // 投影的画法：要的范围、密度（sceneNeed）→ 现在的场景还能用就只重新合成（转动球、平移时多半如此），
+  // 不能用就按要的重画一块（移动中密度打五折、四周多画一圈）。合成按每个像素反算投影；移动中按低分辨率合成再放大
+  private renderProjected(kmPerUnit: number, moving: boolean) {
+    const gl = this.gl;
+    const mesh = this.mesh!;
+    const cam = this.camera;
+    const proj = cam.proj!;
+    const cw = this.canvas.clientWidth || 1;
+    const ch = this.canvas.clientHeight || 1;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const dpr = w / cw || 1;
+    // 等距圆柱的两组场景先放掉（占显存）；回到等距圆柱时重新分配、重画
+    if (this.rest.w > 1 || this.moving.w > 1) {
+      this.sizeTarget(this.rest, 1, 1);
+      this.sizeTarget(this.moving, 1, 1);
+      this.movingScene = null;
+      this.idKey = this.terrainKey = this.terrainStatic = this.seamKey = this.composeKey = '';
+    }
+    this.projT ??= this.makeTarget();
+    const t = this.projT;
+    const hasSeams = this.hasGroup && this.seamCount > 0;
+    const need = sceneNeed({ ...cam, proj }, cw, ch, 3 * mesh.spacing);
+    let sc = this.projScene;
+    if (need) {
+      const dn = { ...need, zx: need.zx * dpr, zy: need.zy * dpr };
+      if (!sc || !sceneFits(sc, dn, moving ? 0.45 : 0.9, moving ? Infinity : 2.2)) {
+        const limit = Math.min(this.exportLimit(), 8192);
+        const budget = Math.min(8e6, Math.max(2.5e6, 1.3 * w * h)) * (moving ? 0.5 : 1);
+        sc = planScene(dn, moving ? 0.5 : 1, moving ? MOTION_MARGIN : 0.1, limit, budget);
+        this.projScene = sc;
+        this.motionEpoch++;
+      }
+    }
+    if (sc) this.drawProjScene(t, sc, kmPerUnit, hasSeams, false);
+    // 合成
+    const k = moving ? dpr * MOTION_SCALE : dpr;
+    const ow = moving ? Math.max(1, Math.round(cw * k)) : w;
+    const oh = moving ? Math.max(1, Math.round(ch * k)) : h;
+    const z1 = cam.zoom * k;
+    const sx = (2 * z1) / ow;
+    const sy = (-2 * z1) / oh;
+    const view: V4 = [sx, sy, -cam.x * sx, -cam.y * sy];
+    const relief = this.reliefAt(effectiveZoom(cam));
+    const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, key: sc.key }) ?? null) : null;
+    const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
+    if (!moving) {
+      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${riverKey}`;
+      if (key === this.pComposeKey) return;
+      this.pComposeKey = key;
+    } else this.pComposeKey = '';
+    if (!sc) {
+      // 画面上没有地图（镜头在投影外面）：只有背景
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, w, h);
+      gl.clearColor(PROJ_BG[0], PROJ_BG[1], PROJ_BG[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      return;
+    }
+    const pj: ProjCompose = { proj, scene: sc, planePx: z1, outside: PROJ_BG };
+    if (moving) {
+      if (this.out.w !== ow || this.out.h !== oh) {
+        this.out.w = ow;
+        this.out.h = oh;
+        gl.bindTexture(gl.TEXTURE_2D, this.out.tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ow, oh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.out.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.out.tex, 0);
+      }
+      gl.viewport(0, 0, ow, oh);
+      this.compose(this.out.fbo, t, view, [1, 1, 0, 0], [1 / ow, 1 / oh], 0, w / ow, 1, relief, hasSeams, this.useRiver(river), pj);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.out.fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      gl.blitFramebuffer(0, 0, ow, oh, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return;
+    }
+    gl.viewport(0, 0, w, h);
+    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], 0, 1, 1, relief, hasSeams, this.useRiver(river), pj);
+  }
+
+  // 导出整张地图（投影）：先按整张图要的密度画一块场景（整圈），再一块块合成。cam 是虚拟镜头（CSS 像素），
+  // 整张图 W × H 像素、每个 CSS 像素 dpr 个。tile(x, y, T) 返回那一块 T × T 的 RGBA（从上到下）；投影之外透明。
+  // river：按场景那一块画河（MapView 给）；用完 releaseExport
+  beginProjectedExport(kmPerUnit: number, cam: Camera & { proj: Proj }, W: number, H: number, dpr: number, river: ((s: RiverScene) => RiverTex | null) | null): { scene: ProjScene; tile: (x: number, y: number, T: number) => Uint8Array } {
+    const gl = this.gl;
+    const mesh = this.mesh;
+    if (!mesh || !this.triVao || !this.fanVao) throw new Error('还没有地图');
+    const need = sceneNeed(cam, W / dpr, H / dpr, 3 * mesh.spacing);
+    if (!need) throw new Error('图上没有地图');
+    const limit = Math.min(this.exportLimit(), 16384);
+    const sc = planScene({ ...need, zx: need.zx * dpr, zy: need.zy * dpr }, 1, 0, limit, 12e6);
+    if (!this.exp) this.exp = { scene: this.makeTarget(), fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
+    const E = this.exp;
+    const hasSeams = this.hasGroup && this.seamCount > 0;
+    // 导出用的场景目标：键另记（不碰屏幕上的那一份）
+    const keys = [this.pIdKey, this.pTerrainKey, this.pTerrainStatic, this.pSeamKey];
+    const dirty = this.dirtyCells;
+    this.dirtyCells = 'full';
+    this.drawProjScene(E.scene, sc, kmPerUnit, hasSeams, true);
+    [this.pIdKey, this.pTerrainKey, this.pTerrainStatic, this.pSeamKey] = keys;
+    this.dirtyCells = dirty;
+    this.pComposeKey = '';
+    const rt = river ? this.useRiver(river({ x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, key: `export|${sc.key}` })) : null;
+    const relief = this.reliefAt(effectiveZoom(cam));
+    const Z = cam.zoom * dpr;
+    const pj: ProjCompose = { proj: cam.proj, scene: sc, planePx: Z, outside: [0, 0, 0, 0] };
+    const tile = (x: number, y: number, T: number) => {
+      if (E.w !== T || E.h !== T) {
+        E.w = T;
+        E.h = T;
+        gl.bindTexture(gl.TEXTURE_2D, E.tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, T, T, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, E.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, E.tex, 0);
+      }
+      // 平面 → 这一块的裁剪空间：像素 = (平面 − 镜头) · Z + 整张图的中心 − 这一块的左上角
+      const sx = (2 * Z) / T;
+      const sy = (-2 * Z) / T;
+      const view: V4 = [sx, sy, ((-cam.x * Z + W / 2 - x) * 2) / T - 1, 1 - ((-cam.y * Z + H / 2 - y) * 2) / T];
+      gl.disable(gl.BLEND);
+      gl.viewport(0, 0, T, T);
+      this.compose(E.fbo, E.scene, view, [1, 1, 0, 0], [1 / T, 1 / T], 0, 1, 1, relief, hasSeams, rt, pj);
+      const px = new Uint8Array(T * T * 4);
+      gl.readPixels(0, 0, T, T, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const out = new Uint8Array(px.length);
+      const row = T * 4;
+      for (let r = 0; r < T; r++) out.set(px.subarray((T - 1 - r) * row, (T - r) * row), r * row);
+      return out;
+    };
+    return { scene: sc, tile };
   }
 
   // ---------- 导出整张地图（.png）：离屏一块块画，读回像素 ----------
@@ -1916,14 +2294,27 @@ export class Renderer {
   // 4. 合成：画进 fb（null 是画布）。xf：画面上的位置 → 场景 t 上的位置；texel：画面一个像素（0–1）；
   // cellPx：一格合画面几个像素；pxScale：画面一个像素合几个屏幕像素；scenePx：场景一个像素合几个屏幕像素
   // river：已上传的河的图层（null 不画）
-  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean, river: RiverTex | null) {
+  // pj：等面积、球形投影（view 是投影平面 → 画面，场景 t 是 pj.scene 那一块等距圆柱）
+  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean, river: RiverTex | null, pj: ProjCompose | null = null) {
     const gl = this.gl;
     const mesh = this.mesh!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     if (fb) gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     const pp = this.planet ? this.planetProgs : null;
-    const pc = pp ? pp.compose : this.progCompose;
+    const pc = pj ? this.projProgram() : pp ? pp.compose : this.progCompose;
     gl.useProgram(pc);
+    if (pj) {
+      const p = pj.proj;
+      const S = pj.scene;
+      gl.uniform1i(gl.getUniformLocation(pc, 'uProj'), p.kind === 'globe' ? 2 : 1);
+      gl.uniform4f(gl.getUniformLocation(pc, 'uProjP'), p.lon0, Math.sin(p.lat0), Math.cos(p.lat0), 0);
+      gl.uniform2f(gl.getUniformLocation(pc, 'uPx'), texel[0], texel[1]);
+      gl.uniform2f(gl.getUniformLocation(pc, 'uSceneZ'), S.zx, S.zy);
+      gl.uniform4fv(gl.getUniformLocation(pc, 'uSceneView'), S.view);
+      gl.uniform1f(gl.getUniformLocation(pc, 'uSceneX0'), S.x0);
+      gl.uniform4fv(gl.getUniformLocation(pc, 'uOutside'), pj.outside);
+      gl.uniform1f(gl.getUniformLocation(pc, 'uPlanePx'), pj.planePx);
+    }
     if (pp) gl.uniform1f(gl.getUniformLocation(pc, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
     this.bindTex(pc, 'uSceneColor', t.color, 0);
     this.bindTex(pc, 'uSceneHeight', t.height, 1);
@@ -1960,7 +2351,11 @@ export class Renderer {
     this.bindTex(pc, 'uCellCoast', this.tex.coast, 11);
     this.bindTex(pc, 'uRiver', this.tex.river, 12);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasRiver'), river ? 1 : 0);
-    if (river) {
+    if (river && pj) {
+      // 投影：着色器里按世界坐标取（河的图层画在场景那一块上）
+      const [a, b, c, d] = river.toUv;
+      gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), a, c, b, d);
+    } else if (river) {
       // 画面上的位置（0–1）→ 地图单位 → 河的那张图上的位置（双精度在这里算好，着色器里只乘加一次）
       const [a, b, c, d] = river.toUv;
       gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), (2 * a) / view[0], (2 * c) / view[1], ((-1 - view[2]) / view[0]) * a + b, ((-1 - view[3]) / view[1]) * c + d);
@@ -2025,20 +2420,40 @@ export class Renderer {
   }
 
   // 屏幕坐标（CSS 像素，相对画布）→ 地图单位
+  // 屏幕坐标（CSS 像素，相对画布）→ 地图单位。投影时在投影之外给最近的边上的一点（是不是在地图上看 pick）
   screenToWorld(px: number, py: number): [number, number] {
     const c = this.camera;
+    if (this.planet && c.proj) {
+      const p = projScreenToWorld(c, this.canvas.clientWidth, this.canvas.clientHeight, px, py);
+      return [p.x, p.y];
+    }
     return [c.x + (px - this.canvas.clientWidth / 2) / c.zoom, c.y + (py - this.canvas.clientHeight / 2) / c.zoom];
   }
 
+  // 屏幕上的一点在不在投影之内（等距圆柱时总是 true，南北、东西之内由调用方另看）
+  onProjection(px: number, py: number): boolean {
+    const c = this.camera;
+    return !(this.planet && c.proj) || projScreenToWorld(c, this.canvas.clientWidth, this.canvas.clientHeight, px, py).inside;
+  }
+
+  // 地图单位 → 屏幕坐标；投影时球的背面给 NaN
   worldToScreen(x: number, y: number): [number, number] {
     const c = this.camera;
+    if (this.planet && c.proj) return projWorldToScreen(c, this.canvas.clientWidth, this.canvas.clientHeight, x, y) ?? [Number.NaN, Number.NaN];
     return [(x - c.x) * c.zoom + this.canvas.clientWidth / 2, (y - c.y) * c.zoom + this.canvas.clientHeight / 2];
   }
 
-  // 整张图放进画布；inset：四周被浮层挡住、要留出来的边（CSS 像素）
+  // 整张图放进画布；inset：四周被浮层挡住、要留出来的边（CSS 像素）。投影时放进的是投影的整个形状（朝向不变）
   fit(mesh: Mesh, inset = { top: 0, right: 0, bottom: 0, left: 0 }) {
     const cw = Math.max(100, (this.canvas.clientWidth || 800) - inset.left - inset.right);
     const ch = Math.max(100, (this.canvas.clientHeight || 600) - inset.top - inset.bottom);
+    const proj = mesh.kind === 'sphere' ? this.camera.proj : undefined;
+    if (proj) {
+      const [u0, u1, v0, v1] = planeBounds(proj);
+      const zoom = Math.min(cw / (u1 - u0), ch / (v1 - v0)) * 0.98;
+      this.camera = { x: (u0 + u1) / 2 - (inset.left - inset.right) / 2 / zoom, y: (v0 + v1) / 2 - (inset.top - inset.bottom) / 2 / zoom, zoom, proj };
+      return;
+    }
     const zoom = Math.min(cw / mesh.width, ch / mesh.height) * 0.98;
     this.camera = {
       x: mesh.width / 2 - (inset.left - inset.right) / 2 / zoom,

@@ -4,7 +4,9 @@ import type { RiverStyle, RiverType } from '../../core/river-types';
 import { type RiverLine, type RiverRibbon, guideShape, guidesSignature, riverRibbon, traceRivers } from '../../core/rivers';
 import { coastSeed } from '../../core/terrain';
 import type { World } from '../../core/world';
-import type { Camera, RiverTex } from './renderer';
+import { drawOverlayProjected } from './overlay-proj';
+import { type Proj, trueScale, worldToScreen as projWorldToScreen } from './projection';
+import type { Camera, RiverScene, RiverTex } from './renderer';
 import { drawCurrents, drawWind } from './wind';
 
 // 2D 画布上的矢量叠加：河流、河道引导、湖标记、风向、画笔、箭头、预览路径、地名。
@@ -18,6 +20,8 @@ export interface OverlayPaths {
   lockedGuides: Path2D;
   // 在终点消失的河道的终点（水模式下画一个小圈）
   sinks: [number, number][];
+  // 画过的河道的线（地图单位；等面积、球形投影时按点投影来画，见 overlay-proj.ts）
+  guideLines?: { pts: [number, number][]; locked: boolean }[];
 }
 
 // 一条要画的河：带子，与每个河线点是哪一种河（0 普通，k + 1 是第 k 种河流类型；没有河流类型时省略）
@@ -29,7 +33,7 @@ export interface RiverDraw {
 // ---------- 河的画法（地图上的河、预览的河共用，预览与结果画出来一样） ----------
 
 // 河宽随放大变宽，一直到最大缩放（一格约 64 像素）：按“相当于 4 万格地区地图的缩放”算
-function riverScale(world: World, zoom: number): number {
+export function riverScale(world: World, zoom: number): number {
   return Math.max(0.7, Math.min(4, refZoom(world, zoom) / 1400));
 }
 
@@ -73,7 +77,7 @@ function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw: numbe
 }
 
 // 一条河线 → 要画的河。scale：再乘的粗细（拖“粗细”时）；types：河流类型（带类型的点再乘类型的粗细）
-function riverDraw(line: RiverLine, thr: number, spacing: number, types: readonly RiverType[] | null, scale = 1): RiverDraw {
+export function riverDraw(line: RiverLine, thr: number, spacing: number, types: readonly RiverType[] | null, scale = 1): RiverDraw {
   const tags = types && line.type ? line.type : null;
   const typeMul = (k: number) => {
     const t = tags ? tags[k] : 0;
@@ -412,18 +416,20 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
   const guides = new Path2D();
   const lockedGuides = new Path2D();
   const sinks: [number, number][] = [];
+  const guideLines: { pts: [number, number][]; locked: boolean }[] = [];
   for (const g of small.guides) {
     // 改着的这条河：标记也先不画（预览画改好的样子）
     if (override?.hide && g.id === override.id) continue;
     // 画出来的那条线（与河一致；整个星球上沿线展开经度，跨过接缝的线是连续的）
     const pts = guideShape(world, g);
     addPolyline(g.locked ? lockedGuides : guides, pts, sphere);
+    guideLines.push({ pts, locked: !!g.locked });
     if (g.end === 'sink' && pts.length) {
       const [x, y] = pts[pts.length - 1];
       sinks.push([sphere ? wrapX(x) : x, y]);
     }
   }
-  return { rivers, guides, lockedGuides, sinks };
+  return { rivers, guides, lockedGuides, sinks, guideLines };
 }
 
 // 工具预览的矢量图形（地图单位）
@@ -461,7 +467,7 @@ export interface ProvinceLabel {
   text: string;
   kind?: 'land' | 'wasteland' | 'lake' | 'sea';
 }
-const PROVINCE_LABEL_COLOR: Record<string, string> = { wasteland: 'rgba(95,95,95,0.95)', lake: 'rgba(40,95,160,0.95)' };
+export const PROVINCE_LABEL_COLOR: Record<string, string> = { wasteland: 'rgba(95,95,95,0.95)', lake: 'rgba(40,95,160,0.95)' };
 
 export interface OverlayState {
   // 河画在叠加层上（屏幕、导出的地图上河由渲染器合成，只画在陆地上：MapView 给 false，见 riverLayer）
@@ -522,7 +528,7 @@ function copiesFor(cam: Camera, cw: number): number[] {
 
 // 整个星球的格比同样格数的地区地图小：按格距把缩放换算成“相当于 4 万格地区地图的缩放”，
 // 河宽、何时标省名和山峰都按它算（一块地区照旧用原来的缩放）
-function refZoom(world: World, zoom: number): number {
+export function refZoom(world: World, zoom: number): number {
   return world.mesh.kind === 'sphere' ? (zoom * world.mesh.spacing) / 0.0076 : zoom;
 }
 
@@ -625,16 +631,33 @@ function drawRivers(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingCont
   // 看得见的范围（地图单位，第 0 份；四周多留 48 个 CSS 像素给线宽、发光）
   const m = 48 / cam.zoom;
   const view: [number, number, number, number] = [cam.x - cw / 2 / cam.zoom - m, cam.y - ch / 2 / cam.zoom - m, cam.x + cw / 2 / cam.zoom + m, cam.y + ch / 2 / cam.zoom + m];
+  drawRiversWith(ctx, world, paths, cam.zoom, ks, setT, view, sphere, style, dev);
+}
+
+// 河，画进 ctx：zoom 是每地图单位几个 CSS 像素（河宽、何时按低缩放的画法），ks 是要画的副本，setT(k) 设好第 k 份的变换，
+// view 是看得见的范围（地图单位，第 0 份）
+function drawRiversWith(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  world: World,
+  paths: OverlayPaths,
+  zoom: number,
+  ks: number[],
+  setT: (k: number) => void,
+  view: [number, number, number, number],
+  sphere: boolean,
+  style: 'realistic' | 'atlas',
+  dev: number,
+) {
   // 每条河按看得见的副本各加一份（坐标里平移 2），同色的带子一次填
   setT(0);
-  const scale = riverScale(world, cam.zoom);
-  const unit = 1 / cam.zoom;
+  const scale = riverScale(world, zoom);
+  const unit = 1 / zoom;
   const colorOf = typeColors(world.small.riverTypes ?? [], style, riverStroke(style));
-  const low = world.mesh.spacing * cam.zoom < LOW_ZOOM_CELL_PX;
+  const low = world.mesh.spacing * zoom < LOW_ZOOM_CELL_PX;
   const paint = newPaint();
   if (low) {
     // 整个世界的河缓存着（第 0 份的坐标）：每份看得见的副本各描一遍
-    const cached = lowZoomStrokes(paths, world.mesh.spacing * cam.zoom, world.mesh.spacing, style, colorOf, world.small.riverTypes);
+    const cached = lowZoomStrokes(paths, world.mesh.spacing * zoom, world.mesh.spacing, style, colorOf, world.small.riverTypes);
     ctx.lineJoin = 'round';
     for (const k of ks) {
       setT(k);
@@ -813,6 +836,33 @@ export function riverLayerTile(world: World, paths: OverlayPaths, cam: Camera, s
   return riverTex(L);
 }
 
+// 等面积、球形投影（第十三轮 G4）：河画在渲染器的场景那一块等距圆柱上（东西、南北的密度可以不同），合成时按投影取。
+// 场景没变就不重画；exporting：导出用另一张画布（不挤掉屏幕上的那一张）
+export function riverLayerScene(world: World, paths: OverlayPaths, sc: RiverScene, style: 'realistic' | 'atlas', exporting = false): RiverTex {
+  const L = exporting ? (riverTile = riverCache(riverTile, sc.W, sc.H)) : (riverRest = riverCache(riverRest, sc.W, sc.H));
+  const key = [...riverKey(world, paths, style), sc.key, sc.dpr];
+  if (exporting || !samePathsKey(key, L.key)) {
+    const ctx = L.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, L.canvas.width, L.canvas.height);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // 河宽按 CSS 像素：每地图单位 zy / dpr 个 CSS 像素
+    const zoom = sc.zy / sc.dpr;
+    const x1 = sc.x0 + sc.W / sc.zx;
+    const y1 = sc.y0 + sc.H / sc.zy;
+    const m = 48 / zoom;
+    const ks: number[] = [];
+    for (let k = Math.ceil((sc.x0 - 2.6) / 2); k <= Math.floor((x1 + 0.6) / 2) && ks.length < 7; k++) ks.push(k);
+    const setT = (k: number) => ctx.setTransform(sc.zx, 0, 0, sc.zy, (2 * k - sc.x0) * sc.zx, -sc.y0 * sc.zy);
+    drawRiversWith(ctx, world, paths, zoom, ks, setT, [sc.x0 - m, sc.y0 - m, x1 + m, y1 + m], world.mesh.kind === 'sphere', style, sc.dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.key = key;
+    L.version = ++riverVersion;
+  }
+  return { source: L.canvas, version: L.version, toUv: [sc.zx / sc.W, (-sc.x0 * sc.zx) / sc.W, -sc.zy / sc.H, 1 + (sc.y0 * sc.zy) / sc.H] };
+}
+
 // 导出完放掉那一块的画布
 export function releaseRiverTile() {
   riverTile = null;
@@ -829,6 +879,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (!st.frame) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // 等面积、球形投影（第十三轮 G4）：另画（点按投影算，线加密后逐点投影）
+  if (cam.proj && world.mesh.kind === 'sphere') return drawOverlayProjected(ctx, world, paths, cam as Camera & { proj: Proj }, st, f);
   const z = cam.zoom * dpr;
   const sphere = world.mesh.kind === 'sphere';
   // 整个星球：每一份看得见的副本各画一遍（一块地区只有 k = 0）
@@ -1020,7 +1072,7 @@ function drawLatitude(ctx: CanvasRenderingContext2D, world: World, cam: Camera, 
 
 // 比例尺：左下角（尺子按钮右边），长度取 1、2、5 乘 10 的整数次方公里，屏幕上不超过 140 像素。
 // 画在地图画布上，所以导出的图片里也有
-function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUnit: number, lift: number, f: Frame, where?: string) {
+export function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUnit: number, lift: number, f: Frame, where?: string) {
   const { ch, dpr } = f;
   const kmPerPx = kmPerUnit / cam.zoom;
   const max = 140 * kmPerPx;
@@ -1189,14 +1241,24 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
   return w;
 }
 
+// 版面的键里除了镜头位置的部分（移动中沿用排好的版面时比它）：投影的朝向变了（转动球）要重排
+function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera): string {
+  const p = cam.proj;
+  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}${p ? `|${p.kind}|${p.lon0}|${p.lat0}` : ''}`;
+}
+
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
 export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
   const { cw, ch: chh } = frameOf(ctx, st);
   const exporting = !!st.frame;
-  const base = `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
+  const base = labelBase(cw, chh, st, cam);
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
   if (!exporting && layout && layout.key === key && layout.features === st.features) return layout;
-  const toScreen = (x: number, y: number): [number, number] => [(x - cam.x) * cam.zoom + cw / 2, (y - cam.y) * cam.zoom + chh / 2];
+  // 等面积、球形投影：地名的中心按投影算（球的背面不标），大小按那里的比例
+  const proj = cam.proj;
+  const toScreen = proj
+    ? (x: number, y: number): [number, number] | null => projWorldToScreen(cam, cw, chh, x, y)
+    : (x: number, y: number): [number, number] | null => [(x - cam.x) * cam.zoom + cw / 2, (y - cam.y) * cam.zoom + chh / 2];
   // 移动中：画面四周再多排一圈（与渲染器移动中的场景一样宽），挪到下一次重排之前露出来的地方也有地名
   const mx = 100 + (st.motion && !exporting ? MOTION_LAYER_MARGIN * cw : 0);
   const my = 40 + (st.motion && !exporting ? MOTION_LAYER_MARGIN * chh : 0);
@@ -1209,13 +1271,17 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     if (!f.name || (st.labelTypes && !st.labelTypes.has(f.type))) continue;
     // 在屏幕上有多大；山峰、用户放的点状地名没有大小（山峰放大到一定程度才标，地点总是标）
     const point = f.type === 'peak' || f.type === 'spot';
-    const sizePx = f.type === 'river' ? f.span * cam.zoom : point ? 0 : (Math.sqrt(f.areaKm2) / st.kmPerUnit) * cam.zoom;
+    // 投影时按地名那里的比例（球形的边上小）
+    const zl = proj ? cam.zoom * trueScale(proj, f.x, f.y) : cam.zoom;
+    const sizePx = f.type === 'river' ? f.span * zl : point ? 0 : (Math.sqrt(f.areaKm2) / st.kmPerUnit) * zl;
     const minPx = f.type === 'continent' || f.type === 'ocean' ? 25 : f.type === 'river' ? 90 : point ? 0 : 45;
     if (!mine(f) && (f.type === 'peak' ? rz < 1600 : sizePx < minPx)) continue;
     // 整个星球：每份副本上都可能看得见（相隔一整圈，彼此不会挤在一起）
     const spots: [number, number][] = [];
     for (const k of ks) {
-      const [x, y] = toScreen(f.x + 2 * k, f.y);
+      const at = toScreen(f.x + 2 * k, f.y);
+      if (!at) continue;
+      const [x, y] = at;
       if (x < -mx || y < -my || x > cw + mx || y > chh + my) continue;
       // 导出整张地图：只要中心落在图里的那一份（整个星球的图是一整圈，分界线两边的副本不标两遍）
       if (exporting && (x < 0 || x >= cw)) continue;
@@ -1247,8 +1313,19 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       angle = Math.atan2(b[1] - a[1], dxl - 2 * Math.round(dxl / 2));
       if (angle > Math.PI / 2) angle -= Math.PI;
       if (angle < -Math.PI / 2) angle += Math.PI;
-    } else if (f.region ? f.angle !== 0 && f.span * cam.zoom > total * 1.4 : (f.type === 'range' || f.type === 'peninsula' || f.type === 'strait') && f.span * cam.zoom > total * 1.4) {
+    } else if (f.region ? f.angle !== 0 && f.span * zl > total * 1.4 : (f.type === 'range' || f.type === 'peninsula' || f.type === 'strait') && f.span * zl > total * 1.4) {
       angle = f.angle;
+    }
+    // 投影：地图上的方向换成屏幕上的方向（顺着地物的走向）
+    if (proj && angle !== 0) {
+      const e = 1e-4;
+      const a0 = toScreen(f.x, f.y);
+      const a1 = toScreen(f.x + e * Math.cos(angle), f.y + e * Math.sin(angle));
+      if (a0 && a1) {
+        angle = Math.atan2(a1[1] - a0[1], a1[0] - a0[0]);
+        if (angle > Math.PI / 2) angle -= Math.PI;
+        if (angle < -Math.PI / 2) angle += Math.PI;
+      }
     }
     const hw = (Math.abs(Math.cos(angle)) * total + Math.abs(Math.sin(angle)) * fontPx) / 2 + 3;
     const hh = (Math.abs(Math.sin(angle)) * total + Math.abs(Math.cos(angle)) * fontPx) / 2 + 2;
@@ -1277,7 +1354,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
 const MOTION_LABEL_SHIFT = 160;
 const MOTION_LABEL_ZOOM = 1.15;
 
-function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): LabelBox[] {
+export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): LabelBox[] {
   const { cw, ch: chh, dpr } = frameOf(ctx, st);
   // 版面上的位置（CSS 像素）→ 现在的位置：x · r + ox
   let r = 1;
@@ -1286,7 +1363,7 @@ function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState
   let placed: PlacedLabel[];
   let boxes: LabelBox[];
   const L = layout;
-  const base = `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
+  const base = labelBase(cw, chh, st, cam);
   const zr = L ? cam.zoom / L.cam.zoom : 0;
   if (
     st.motion &&

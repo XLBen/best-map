@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { type WheelPref, download, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
 import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
+import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
@@ -132,7 +133,9 @@ const SEAM_TITLES: Record<SeamMode, string> = {
   view: '以现在屏幕上的画面为中心，分界线在它的背面',
   lon: '拖滑块定分界线的经度',
 };
-const pngChoice: { width: number; labels: LabelSize; seamMode: SeamMode; seamLon: number } = { width: 4096, labels: 'medium', seamMode: 'auto', seamLon: 180 };
+// 整个星球在等面积、球形投影里看时：按现在的投影导出，还是照旧展开成 2:1（等距圆柱）
+type PngProj = 'current' | 'equirect';
+const pngChoice: { width: number; labels: LabelSize; seamMode: SeamMode; seamLon: number; proj: PngProj } = { width: 4096, labels: 'medium', seamMode: 'auto', seamLon: 180, proj: 'current' };
 
 // 经度（−180–180，东经为正）→ x（[0, 2)）
 const lonToX = (lon: number) => (((lon / 180 + 1) % 2) + 2) % 2;
@@ -143,8 +146,11 @@ const lonText = (lon: number) => {
 
 // 现在的画面中心在哪个 x（MapView 把渲染器挂在 window.__map2 上）
 function viewCenterX(): number {
-  const hook = (window as unknown as { __map2?: { renderer: { camera: { x: number } } } }).__map2;
-  return hook ? hook.renderer.camera.x : 1;
+  const hook = (window as unknown as { __map2?: { renderer: { camera: { x: number; proj?: { lon0: number } } } } }).__map2;
+  if (!hook) return 1;
+  // 等面积、球形投影：镜头在投影平面上，画面中心的经度是中央经线（球形是朝着的那一点）
+  const p = hook.renderer.camera.proj;
+  return p ? 1 + p.lon0 / Math.PI : hook.renderer.camera.x;
 }
 
 // 分界线的小预览：整个星球的陆海（每格一个点），按导出的样子从分界线切开，左右两边就是分界线
@@ -220,13 +226,16 @@ export function ActionsPanel() {
   // 分界线的 x：自动、画面中心（分界线在画面中心的背面）、按经度
   const seamOf = (mode: SeamMode): number => (mode === 'auto' ? autoX : mode === 'view' ? (((viewCenterX() - 1) % 2) + 2) % 2 : lonToX(png.seamLon));
   const seamX = seamOf(png.seamMode);
+  // 现在在等面积、球形投影里看：可以按这个投影导出
+  const viewProj = sphere && prefs.value.projection !== 'equirect' ? prefs.value.projection : null;
+  const projected = !!viewProj && png.proj === 'current';
   const saveFullPng = async () => {
     // 画面中心按点按钮这一刻的画面
-    const b = await exportFullMap({ width: png.width, labels: png.labels, ...(sphere ? { seam: seamOf(png.seamMode) } : {}) });
+    const b = await exportFullMap({ width: png.width, labels: png.labels, ...(projected ? { projected: true } : sphere ? { seam: seamOf(png.seamMode) } : {}) });
     if (b) download(pngName(), b, 'image/png');
   };
-  // 整张图的高：一块地区按长宽比，整个星球是 2:1
-  const pngHeight = (s: number) => Math.round((s * w.mesh.height) / w.mesh.width);
+  // 整张图的高：一块地区按长宽比，整个星球是 2:1；等面积约 2.05:1，球形是正方形
+  const pngHeight = (s: number) => (projected ? (viewProj === 'globe' ? s : Math.round(s / (2 * EE_HALF_W))) : Math.round((s * w.mesh.height) / w.mesh.width));
   return (
     <>
       <section>
@@ -267,7 +276,21 @@ export function ActionsPanel() {
           <span>地名字号</span>
           <Seg value={png.labels} options={LABEL_SIZES} onChange={(v) => choosePng({ labels: v })} />
         </div>
-        {sphere && (
+        {viewProj && (
+          <div class="row between">
+            <span>投影</span>
+            <Seg
+              value={png.proj}
+              options={[
+                ['current', viewProj === 'globe' ? '球形' : '等面积'],
+                ['equirect', '等距圆柱'],
+              ]}
+              titles={{ current: viewProj === 'globe' ? '朝着现在这一面的半球，球外透明' : '整个椭圆，椭圆外透明', equirect: '照旧展开成 2:1 的长方形' }}
+              onChange={(v) => choosePng({ proj: v })}
+            />
+          </div>
+        )}
+        {sphere && !projected && (
           <>
             <div class="row between">
               <span>分界线</span>
@@ -294,7 +317,7 @@ export function ActionsPanel() {
           </>
         )}
         <p class="muted small">
-          按现在的画风和图层画出整张{w.mesh.kind === 'sphere' ? '星球（经度 360° 展开成 2:1）' : '地图'}，不管镜头在哪；不带工具的高亮和预览。地名、河按整张图排，字号“大”时标出来的地名少一些。图越大画得越久。
+          按现在的画风和图层画出整张{projected ? (viewProj === 'globe' ? '星球朝着现在这一面的半球' : '星球（等面积的椭圆，中央经线与现在相同）') : w.mesh.kind === 'sphere' ? '星球（经度 360° 展开成 2:1）' : '地图'}，不管镜头在哪；不带工具的高亮和预览。地名、河按整张图排，字号“大”时标出来的地名少一些。图越大画得越久。
         </p>
         <button onClick={savePng}>
           <ImageDown size={16} /> 当前画面（.png）
