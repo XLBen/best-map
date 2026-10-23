@@ -156,6 +156,14 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     d.drainArea[i] = land[i] ? A[i] : 0;
     d.receiver[i] = land[i] ? r.receiver[i] : -1;
   }
+  // 画的河（有折线的河道）整条都是河：水不够的格按最小的河的水量补上（只补这一格，不往下游加），
+  // 所以画出来的线一路都在，预览里画的就是松手后的。最后一格汇入别的河时本来就是河（补不补一样）；
+  // 那条河后来没了时，这一格就是这条河自己的。没有画的河时什么都不做（逐值照旧）
+  const minQ = small.planet.riverThreshold * (1 + 1e-6);
+  for (const g of small.guides) {
+    if (!g.path) continue;
+    for (const c of g.cells) if (land[c] && d.lake[c] !== 1 && d.discharge[c] < minQ) d.discharge[c] = minQ;
+  }
   // 流域：沿下游方向找到出海口
   d.basin.fill(-1);
   for (let k = 0; k < r.count; k++) {
