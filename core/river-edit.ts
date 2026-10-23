@@ -14,6 +14,7 @@ import {
   endCourseAt,
   isRiverCell,
   endIn,
+  loopPoints,
   endKind,
   flowsBack,
   pointsTo,
@@ -229,9 +230,11 @@ function spliceSection(world: World, d: Derived, T: EditTarget, a: Anchor, b: An
   const wet = (i: number) => water(world, d, i);
   let Q = dedupe([a.p, ...mid.map(roundPt), b.p]);
   let t = traceCourse(world, Q, C.slice(0, a.k + 1), wet);
+  const loops: Pt[][] = [];
   for (let iter = 0; t.loop && iter < 40; iter++) {
     const next = cutLoop(Q, t, a.k + 1);
     if (!next) return { blocked: '新画的一段碰到了这条河自己' };
+    loops.push(loopPoints(t));
     Q = next;
     t = traceCourse(world, Q, C.slice(0, a.k + 1), wet);
   }
@@ -248,9 +251,11 @@ function spliceSection(world: World, d: Derived, T: EditTarget, a: Anchor, b: An
   if (midCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了这条河自己' };
   const cells = [...C.slice(0, a.k + 1), ...midCells, ...tail];
   if (flowsBack(world, d, cells[cells.length - 1], new Set(midCells))) return { blocked: '这样水会绕成圈' };
-  const path = dedupe([...prefixPath(T, a), ...Q.slice(1), ...suffixPath(T, b)]);
+  const pre = prefixPath(T, a);
+  const path = dedupe([...pre, ...Q.slice(1), ...suffixPath(T, b)]);
   if (path.length > COURSE_MAX_POINTS) return { blocked: TOO_LONG };
-  const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: endKind(world, d, T.guide, cells) };
+  const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: endKind(world, d, T.guide, cells), loops };
+  plan.changed = [pre.length - 1, Math.min(path.length - 1, pre.length - 1 + Q.length - 1)];
   plan.join = plan.end === 'river' ? cells[cells.length - 1] : -1;
   const old = new Set(C);
   plan.crossings = crossingsOf(world, d, cells, a.k + 1, a.k + 1 + midCells.length, (c) => old.has(c), T.natural ? undefined : T.guide.id);
@@ -290,9 +295,11 @@ function headSection(world: World, d: Derived, T: EditTarget, head: readonly Pt[
   const src = findCell(mesh, Q[0][0], Q[0][1], C[b.k]);
   if (wet(src)) return { blocked: '源头要在陆地上' };
   let t = traceCourse(world, Q, [], wet);
+  const loops: Pt[][] = [];
   for (let iter = 0; t.loop && iter < 40; iter++) {
     const next = cutLoop(Q, t, 0);
     if (!next) return { blocked: '画的线太乱了，换个画法' };
+    loops.push(loopPoints(t));
     Q = next;
     t = traceCourse(world, Q, [], wet);
   }
@@ -308,7 +315,8 @@ function headSection(world: World, d: Derived, T: EditTarget, head: readonly Pt[
   if (cells.length < 2) return { blocked: '河太短了' };
   const path = dedupe([...Q, ...suffixPath(T, b)]);
   if (path.length > COURSE_MAX_POINTS) return { blocked: TOO_LONG };
-  const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: endKind(world, d, T.guide, cells) };
+  const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: endKind(world, d, T.guide, cells), loops };
+  plan.changed = [0, Math.min(path.length - 1, Q.length - 1)];
   plan.join = plan.end === 'river' ? cells[cells.length - 1] : -1;
   const old = new Set(C);
   plan.crossings = crossingsOf(world, d, cells, 0, headCells.length, (c) => old.has(c), T.natural ? undefined : T.guide.id);
@@ -326,6 +334,7 @@ function shortenTo(world: World, d: Derived, T: EditTarget, a: Anchor): EditResu
   const cells = C.slice(0, a.k + 1);
   const path = prefixPath(T, a);
   const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: 'sink' };
+  plan.changed = [path.length - 1, path.length - 1];
   const est = courseEstimates(world, d.elevation, cells, true);
   plan.gorge = est.gorge;
   plan.uphill = est.uphill;

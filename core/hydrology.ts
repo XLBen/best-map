@@ -168,7 +168,8 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
       const c = cells[k];
       if (!land[c]) break;
       if (d.lake[c] !== 1 && d.discharge[c] < minQ) d.discharge[c] = minQ;
-      if (k + 1 < cells.length && forced[c] !== cells[k + 1]) break;
+      // 按路由实际的下游（强制方向绕成圈时那几格恢复成了自然的流向：水不照这条河道走，不再往下补）
+      if (k + 1 < cells.length && r.receiver[c] !== cells[k + 1]) break;
     }
   }
   // 流域：沿下游方向找到出海口
