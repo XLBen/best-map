@@ -142,6 +142,7 @@ function run(kind: 'region' | 'planet'): Record<string, Record<string, string>> 
 }
 
 // 第十三轮：默认生态换了新配色，小数据（world 一项）跟着变，别的逐值不变，重录 world
+// 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
 const RECORDED: Record<string, Record<string, Record<string, string>>> = {
   region: {
     forest: {
@@ -196,20 +197,20 @@ const RECORDED: Record<string, Record<string, Record<string, string>>> = {
   },
   planet: {
     forest: {
-      world: '44bf72d79f26c04e', corrT: '8c3d24f629ce9fbd', corrP: '63d87b0abb5f6c58', corrF: '85284cd307d8e6fb', dominant: 'db7daa7cf1b3c300',
-      share: 'c4b900d9fb50ec70', tMean: 'dd5363d623857bbc', precip: '4811bea75501625d', conflicts: 'ea283f5cfa250b7a', plans: 'da5dfb3d74026458',
+      world: '04b235ae8c7d7611', corrT: '3c1b8f10322aa19d', corrP: 'dea1ffa116f7e973', corrF: '85284cd307d8e6fb', dominant: '825674fe213b6128',
+      share: 'd6b36847f680ed7c', tMean: '86dbc46d1370d9bd', precip: '5b291974b5c5aac0', conflicts: 'e5fc81d757c50eac', plans: 'af24491f2527f84f',
     },
     tundra: {
-      world: '24c51f6d8387fb46', corrT: '3de660a51d7bbcd6', corrP: '4af2e81e5c8dcb83', corrF: '85284cd307d8e6fb', dominant: 'aa6fbf32c6b637eb',
-      share: '10c75f1be6d33c90', tMean: '80422a7e31348ce2', precip: '181bf60a939d5815', conflicts: '4ac557fd84bae41d', plans: 'c9869efb5d5434bf',
+      world: '61328b9563fdea12', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: '84e601ee755c8484',
+      share: 'e4ec5e234f389bcf', tMean: '8c90128a480d374b', precip: 'fc0f99b6415fdc1e', conflicts: '7d24fe321aea85dd', plans: '0d932eaa7efbb040',
     },
     edit: {
-      world: '6124a8ee08a8027a', corrT: '3de660a51d7bbcd6', corrP: '4af2e81e5c8dcb83', corrF: '85284cd307d8e6fb', dominant: '8d5a9f4a7371d5f9',
-      share: '9a48ad67f13347cd', tMean: '80422a7e31348ce2', precip: '2031fdb731e38cb9', conflicts: '4ac557fd84bae41d', plans: 'c9869efb5d5434bf',
+      world: 'f780c3fb201ace81', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: 'd7fcf1af64209f14',
+      share: '2749c8f8d823df07', tMean: '8c90128a480d374b', precip: '211d08601c7dfbad', conflicts: '7d24fe321aea85dd', plans: '0d932eaa7efbb040',
     },
     undo: {
-      world: '24c51f6d8387fb46', corrT: '3de660a51d7bbcd6', corrP: '4af2e81e5c8dcb83', corrF: '85284cd307d8e6fb', dominant: 'aa6fbf32c6b637eb',
-      share: '10c75f1be6d33c90', tMean: '80422a7e31348ce2', precip: '181bf60a939d5815', conflicts: '4ac557fd84bae41d', plans: 'c9869efb5d5434bf',
+      world: '61328b9563fdea12', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: '84e601ee755c8484',
+      share: 'e4ec5e234f389bcf', tMean: '8c90128a480d374b', precip: 'fc0f99b6415fdc1e', conflicts: '7d24fe321aea85dd', plans: '0d932eaa7efbb040',
     },
   },
 };

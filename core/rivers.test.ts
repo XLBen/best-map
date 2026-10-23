@@ -36,6 +36,7 @@ function walk(w: World, from: number, to: number): number[] {
 describe('画的河逐值不变', () => {
   it('有泉水、不带大小的画河，横穿一片的河，不带泉水的河道', () => {
     // 第九轮去掉旧存档兼容时重录（画的河都只挖河床，不再下切山谷）；之后的优化必须逐值不变
+    // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
     const eng = new Engine({ seed: 6, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
     const w = eng.world;
@@ -65,7 +66,7 @@ describe('画的河逐值不变', () => {
       lake: hashArray(d.lake),
       features: hashString(d.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16),
     };
-    expect(got).toEqual({ guides: '5,4,2', elevation: '310c8f02', discharge: 'a3d8c76f', receiver: 'c5d92545', lake: 'c5611545', features: 'f4021751' });
+    expect(got).toEqual({ guides: '5,7,2', elevation: '99c4bad5', discharge: '4c1e3f02', receiver: '36f23d45', lake: 'fee11545', features: 'bba446ef' });
   });
 });
 

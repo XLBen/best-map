@@ -18,7 +18,8 @@ describe('山挡风为 0 时逐值不变', () => {
   it('一块地区：与 golden-hashes 同一组参考操作', () => {
     // 第九轮去掉旧存档兼容时重录（放岛只收 km 数，岛的形状变了）；之后的优化必须逐值不变
     // 第十三轮：参考操作里放的岛有了岩性（高程变了，气候往后跟着变），与山挡风无关，tS、pS、discharge、dominant 重录
-    const FROZEN = { tS: '23254753', pS: '9a31972d', discharge: 'c9f9d71f', dominant: '47d58605', corrT: 'c928e485', province: 'c44ede05' };
+    // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
+    const FROZEN = { tS: '650fcb1b', pS: '9075cc5a', discharge: '24afab0e', dominant: '88858605', corrT: 'b905fbf1', province: '4295605' };
     const eng = new Engine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);

@@ -332,11 +332,12 @@ describe('涂出来的生态区有自己的名字', () => {
 
 // 这一轮之前的程序算出的“key=名字”（没涂过生态的世界：识别、锚点、起名都不能变，只有标注位置可以变）。
 // 第九轮去掉旧存档兼容时重录（山挡风默认打开，气候、河、地名都跟着变）
+// 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
 describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
-    expect(kv(continents())).toBe('3a34c43c');
-    expect(kv(planet())).toBe('eb1d45e2');
+    expect(kv(continents())).toBe('ea72bd4b');
+    expect(kv(planet())).toBe('594997ff');
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
     expect(kv(islands)).toBe('b00d2f79');

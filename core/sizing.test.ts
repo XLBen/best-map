@@ -47,6 +47,7 @@ describe('岛的大小', () => {
     // 四种岛 × 三种大小（约等于以前的小 · 中 · 大）、两条岛链、一个湖。第九轮去掉旧存档兼容时重录；之后的优化必须逐值不变
     // 第十二轮修：岛链不并进原有的岛（太近时缩小、岛心在陆地上的不放），有意改变结果，重录
     // 第十三轮：每种岛有岩性（erodDelta，多记一项）、火山岛抬升减半并有火山口、珊瑚岛的潟湖两头都改、最小的岛一格，有意改变结果，重录
+    // 第十三轮修：珊瑚岛的潟湖不再压低原来的陆地、放岛的轮廓按小块海并回陆地的规则算、火山岛的高度按大小定，重录
     const eng = new Engine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
@@ -72,7 +73,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: 'fb075a8d', upliftDelta: '8217bfba', erodDelta: '2c29f77d', land: '19e11545', elevation: '7ce115b1', discharge: '4e1eef82' });
+    }).toEqual({ landDelta: 'd09199cb', upliftDelta: '8217bfba', erodDelta: '28ca4e95', land: 'e6c11545', elevation: 'c000b59a', discharge: '2c4d7361' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -161,6 +162,7 @@ describe('放岛只在岛的附近找格', () => {
   it('固定哈希（地图边上、接缝、高纬度）', () => {
     // 原来按第八轮改动前（全图扫描）的代码记下；第九轮去掉“小 · 中 · 大”三档时重录；
     // 第十三轮火山岛的抬升、珊瑚岛的潟湖（两头都改、环与潟湖里的海格也进 cells）改了，重录
+    // 第十三轮修：潟湖不再压低原来的陆地、轮廓按小块海并回陆地的规则算，重录
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'archipelago', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -185,7 +187,7 @@ describe('放岛只在岛的附近找格', () => {
       }
       got[name] = `${hashString(parts.join('|')).toString(16)} ${parts.length}`;
     }
-    expect(got).toEqual({ 星球: '74f3e440 64', 海洋: '234b8221 64', 群岛: '1f1570a1 48' });
+    expect(got).toEqual({ 星球: '14fb83f3 64', 海洋: '234b8221 64', 群岛: '9c8af2ed 48' });
   });
 });
 
