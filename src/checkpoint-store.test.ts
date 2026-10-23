@@ -98,7 +98,7 @@ describe('存储 Worker 这边', () => {
     for (let k = 0; k < 500 && !ok(); k++) await new Promise((r) => setTimeout(r, 2));
     expect(ok()).toBe(true);
   };
-  function keeper(stored: unknown = null) {
+  function keeper(stored: unknown = null, mesh: unknown = undefined) {
     const puts: SavedCheckpoint[] = [];
     let current = stored;
     const k = new CheckpointKeeper({
@@ -107,16 +107,17 @@ describe('存储 Worker 这边', () => {
         puts.push(saved);
         current = saved;
       },
+      ...(mesh !== undefined ? { mesh: async () => mesh } : {}),
     });
     // 计算 Worker 那一头收到的
     const got: unknown[] = [];
     const ports: MessagePort[] = [];
     let token = 0;
-    const open = (doc: WorldDoc | null, build = 'b1') => {
+    const open = (doc: WorldDoc | null, build = 'b1', meshKey?: string) => {
       const ch = new MessageChannel();
       ports.push(ch.port1, ch.port2);
       ch.port2.onmessage = (ev) => got.push(ev.data);
-      k.handle({ kind: 'open', token: ++token, build, doc, port: ch.port1 });
+      k.handle({ kind: 'open', token: ++token, build, doc, port: ch.port1, meshKey });
       return { engine: ch.port2, token };
     };
     const close = () => ports.forEach((p) => p.close());
@@ -141,6 +142,24 @@ describe('存储 Worker 这边', () => {
     await u.k.idle();
     await new Promise((r) => setTimeout(r, 10));
     expect(u.got).toHaveLength(1);
+    t.close();
+    u.close();
+  });
+
+  it('打开时存着的网格键对得上才连同网格一起发（数组转移）；对不上、没给键时不带网格', async () => {
+    const mesh = { scalars: { n: 2 }, arrays: { x: new Float64Array([1, 2]) } };
+    const t = keeper(saved([cmd(1.1)]), { key: 'b1|globe:2:1', mesh });
+    t.open(docOf([cmd(1.1)]), 'b1', 'b1|globe:2:1');
+    await until(() => t.got.length === 1);
+    const r = t.got[0] as { cp: unknown; mesh?: typeof mesh };
+    expect(r.cp).not.toBeNull();
+    expect(Array.from(r.mesh!.arrays.x)).toEqual([1, 2]);
+    expect(mesh.arrays.x.length).toBe(0);
+    const u = keeper(null, { key: 'b1|globe:2:1', mesh: { arrays: {} } });
+    u.open(docOf([cmd(1.1)]), 'b1', 'b2|globe:2:1');
+    u.open(docOf([cmd(1.1)]), 'b1');
+    await until(() => u.got.length === 2);
+    expect(u.got).toEqual([{ cp: null }, { cp: null }]);
     t.close();
     u.close();
   });

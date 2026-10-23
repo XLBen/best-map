@@ -370,12 +370,15 @@ export function buildSphereMesh(cells: number, seed: number): SphereMesh {
     south,
     locate: () => 0,
   };
-  mesh.locate = (px, py, hint) => {
-    const view = viewOf(mesh);
-    const xw = px - 2 * Math.floor(px / 2);
-    return view.cellOf[view.delaunay.find(xw, Math.min(1, Math.max(0, py)), hint >= 0 && hint < view.cellOf.length ? hint : 0)];
-  };
+  mesh.locate = (px, py, hint) => locateOn(mesh, px, py, hint);
   return mesh;
+}
+
+// 显示坐标 (x, y) 处的格（与屏幕上画出来的分区一致）：网格的 locate
+export function locateOn(mesh: SphereMesh, px: number, py: number, hint: number): number {
+  const view = viewOf(mesh);
+  const xw = px - 2 * Math.floor(px / 2);
+  return view.cellOf[view.delaunay.find(xw, Math.min(1, Math.max(0, py)), hint >= 0 && hint < view.cellOf.length ? hint : 0)];
 }
 
 // ---------- 显示用的三角网 ----------
@@ -396,6 +399,11 @@ export interface SphereView {
 }
 
 const views = new WeakMap<SphereMesh, SphereView>();
+
+// 装上别处算好的显示用三角网（mesh-pack.ts 拆包时：与 viewOf 就地算的逐值相同）
+export function adoptView(mesh: SphereMesh, view: SphereView): void {
+  views.set(mesh, view);
+}
 
 export function viewOf(mesh: SphereMesh): SphereView {
   const hit = views.get(mesh);

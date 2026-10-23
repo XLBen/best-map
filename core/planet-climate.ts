@@ -142,8 +142,9 @@ interface SphereTerrain {
   cur: Float64Array[] | null;
 }
 
-// 一份约每万格 2.7 MB：大网格只留一份
-export const sphereMemo = new ContentMemo<SphereTerrain>(60000);
+// 一份约每万格 2.7 MB。留两份（大网格也是）：没采用的预览（比如拖着画陆地时停下算的那一份）不会把正在用的挤掉，
+// 之后撤销、换别的预览时还能命中
+export const sphereMemo = new ContentMemo<SphereTerrain>();
 
 const SEASONS = [1, -1] as const;
 const itczOf = (sigma: number, tilt: number) => sigma * 0.35 * tilt;

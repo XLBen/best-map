@@ -376,7 +376,8 @@ export function graphDistance(mesh: Mesh, seeds: Iterable<number>, limit = Infin
   return graphDistanceOwner(mesh, seeds, limit, cost).dist;
 }
 
-// 同上，并记录每格最近的种子（owner 为种子格编号，不可达为 -1）
+// 同上，并记录每格最近的种子（owner 为种子格编号，不可达为 -1）。
+// 堆是类型化数组的（见 HeapLite），弹出、入堆的顺序与原来 JS 数组写的堆完全相同，所以距离、owner（含距离相同时归谁）逐值不变
 export function graphDistanceOwner(
   mesh: Mesh,
   seeds: Iterable<number>,
@@ -391,12 +392,37 @@ export function graphDistanceOwner(
     owner[s] = s;
     heap.push(s, 0);
   }
+  const off = mesh.off;
+  const adj = mesh.adj;
+  const md = mesh.dist;
+  if (!cost) {
+    // 没有代价函数（最常见：海岸距离、河的距离……）：边长直接取，内层不调用函数
+    while (heap.size) {
+      const i = heap.pop();
+      const di = heap.lastKey;
+      if (di > d[i] || di > limit) continue;
+      const oi = owner[i];
+      for (let e = off[i], end = off[i + 1]; e < end; e++) {
+        const c = md[e];
+        if (!(c < Infinity)) continue;
+        const j = adj[e];
+        const nd = di + c;
+        if (nd < d[j] && nd <= limit) {
+          d[j] = nd;
+          owner[j] = oi;
+          heap.push(j, nd);
+        }
+      }
+    }
+    return { dist: d, owner };
+  }
   while (heap.size) {
-    const [i, di] = heap.pop();
+    const i = heap.pop();
+    const di = heap.lastKey;
     if (di > d[i] || di > limit) continue;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      const j = mesh.adj[e];
-      const c = cost ? cost(i, j, e) : mesh.dist[e];
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
+      const c = cost(i, j, e);
       if (!(c < Infinity)) continue;
       const nd = di + c;
       if (nd < d[j] && nd <= limit) {
@@ -409,20 +435,30 @@ export function graphDistanceOwner(
   return { dist: d, owner };
 }
 
-// 轻量堆（允许重复入堆，弹出时跳过过期项）
-class HeapLite {
-  private items: number[] = [];
-  private keys: number[] = [];
-  constructor(_cap: number) {}
-  get size() {
-    return this.items.length;
+// 轻量堆（允许重复入堆，弹出时跳过过期项）。类型化数组，按需加倍；比较、移动的写法与原来 JS 数组的版本一模一样
+// （优先级相同的元素出堆的先后也相同）。pop 返回元素，它的优先级放在 lastKey（不分配元组）
+export class HeapLite {
+  private items: Int32Array;
+  private keys: Float64Array;
+  size = 0;
+  lastKey = 0;
+  constructor(cap: number) {
+    const c = Math.max(16, cap);
+    this.items = new Int32Array(c);
+    this.keys = new Float64Array(c);
   }
   push(item: number, key: number) {
+    if (this.size === this.items.length) {
+      const items = new Int32Array(this.items.length * 2);
+      items.set(this.items);
+      const keys = new Float64Array(this.keys.length * 2);
+      keys.set(this.keys);
+      this.items = items;
+      this.keys = keys;
+    }
     const items = this.items;
     const keys = this.keys;
-    let i = items.length;
-    items.push(item);
-    keys.push(key);
+    let i = this.size++;
     while (i > 0) {
       const p = (i - 1) >> 1;
       if (keys[p] <= key) break;
@@ -433,13 +469,14 @@ class HeapLite {
     items[i] = item;
     keys[i] = key;
   }
-  pop(): [number, number] {
+  pop(): number {
     const items = this.items;
     const keys = this.keys;
-    const top: [number, number] = [items[0], keys[0]];
-    const lastI = items.pop()!;
-    const lastK = keys.pop()!;
-    const n = items.length;
+    const top = items[0];
+    this.lastKey = keys[0];
+    const n = --this.size;
+    const lastI = items[n];
+    const lastK = keys[n];
     if (n > 0) {
       let i = 0;
       for (;;) {

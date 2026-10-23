@@ -2,7 +2,7 @@
 
 给写架空世界的作者用的地图工具：几秒钟生成一片像真实世界的海陆，然后自己放岛、画陆地、涂生态、画河、划省份，名字自动起好，最后导出成游戏能用的位图与表格。气候、河流、植被按物理规则推导，你改了一处，下游、下风向会跟着变。想要水晶丛林、血河、双子大陆这样的奇幻设定，可以给生态、河流类型、星球形态写一小段脚本，打包成资源包给别人用。
 
-**一键开启**：先装 [Node.js](https://nodejs.org)（LTS 版），然后双击 Mac 上的 `启动-Mac.command`、Windows 上的 `启动-Windows.bat`。第一次会先联网装需要的组件（一两分钟），之后浏览器自动打开 http://localhost:5191 。地图已经开着时再双击只是打开浏览器。用完关掉那个黑色窗口就停止。世界自动保存在浏览器里、按地址分开，所以地址固定是 5191；重要的世界请用“世界 → 保存”另存一份文件。**第九轮起不再兼容以前的存档**：第九轮以前保存的世界文件、浏览器里的自动保存都打不开了（打开时提示“这是旧版本的世界，打不开”），请新建。Mac 第一次若提示“无法打开”：右键 → 打开。
+**一键开启**：先装 [Node.js](https://nodejs.org)（LTS 版），然后双击 Mac 上的 `启动-Mac.command`、Windows 上的 `启动-Windows.bat`。第一次会先联网装需要的组件（一两分钟），再打包一次（代码没变时以后不再打包），之后浏览器自动打开 http://localhost:5191 （打包好的程序，比开发服务器快，打开上次的世界直接从检查点恢复）。地图已经开着时再双击只是打开浏览器。用完关掉那个黑色窗口就停止。世界自动保存在浏览器里、按地址分开，所以地址固定是 5191；重要的世界请用“世界 → 保存”另存一份文件。**第九轮起不再兼容以前的存档**：第九轮以前保存的世界文件、浏览器里的自动保存都打不开了（打开时提示“这是旧版本的世界，打不开”），请新建。Mac 第一次若提示“无法打开”：右键 → 打开。
 
 ```bash
 npm install
@@ -322,7 +322,7 @@ return smoothstep(1500, 2500, 海拔);
 用起来的变化：
 - **撤销、重做是瞬间的**：最近几步（地区 3 步、星球 2 步）的结果都存着，直接换回来，不再重算。
 - **只改冷暖干湿快了约 4–5 倍**：气候里和地形有关的那部分（风、水汽输送图、洋流）按内容缓存，地形没变就不重算。
-- **重新打开上次的世界**：每次自动保存时，引擎的完整状态也存一份（检查点），打开时直接恢复，不必从头重放（打包后的程序里才有；星球上约 5 秒对照约 18 秒）。
+- **重新打开上次的世界**：每次自动保存时，引擎的完整状态也存一份（检查点），打开时直接恢复，不必从头重放；世界的网格也存一份，不必再建（第九轮起开发服务器里也有检查点，版本号是引擎文件的内容哈希；星球上刷新页面约 1 秒）。
 - **自动保存不会再悄悄停掉**：改存 IndexedDB、只写变了的命令（以前存在 localStorage，画多了会超过约 5 MB 的上限，之后不再保存）。旧的自动保存第一次打开时自动搬过来。
 - **算的时候照样能画**：画笔类的工具可以在前一笔还在算时接着画，松手后按顺序执行，各是一步，结果与一步一步等着做相同（第八轮扩展到放岛、岛链、圈一片、放湖，排队中照样显示松手时的样子）。要按算好的世界来的工具（画河、剪刀、合并），以及新建、打开、导出，按下会提示“还在计算上一步”，不再默默忽略；“换个形状”要等排队的几步算完。
 - **画了等于没画（比如在陆地上画陆地）**：提示“没有变化”，不重算、不进历史。
@@ -352,12 +352,12 @@ return smoothstep(1500, 2500, 海拔);
   - `subcell.ts` 格以下的细节（屏幕与导出共用）；`display.ts` 屏幕上的一点画的是哪一格（与着色器同一套规则）；`export.ts` 导出；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、星球上的纬度带
   - `testing/fixtures.ts` 测试共用的世界模板（建一次，每个测试拿一份副本）；`errors.ts`、`type-id.ts`、`world-types.ts` 是为了避免循环引用拆出来的小文件；`doc-version.ts` 世界文件的版本（第 5 版）和打开前的检查，主线程也用
   - 测试：`*.test.ts`，其中第八轮加的有：`ghost`（幽灵海岸 = 执行后的海岸）、`preview`（预览 = 执行、采用预览）、`province-preview`、`display-cell`（“这里”读的格 = 画出来的格）、`seams`（剪刀的切线）、`course` 与 `course-render`（自定义河道）、`terrain-wind`（山挡风）、`reef`（小礁与最小的岛）、`features-biome`（生态名字）、`script`、`engine-scripts`、`vegetation-scripts`、`biome-look`、`effects`、`river-types`、`planet-form`、`forms-rivers`、`packs`、`fantasy-biomes`、`doc-version`、`shared-helpers`、`import-order`，`src/` 下的 `sandbox`、`trust`、`library`、`isolation`、`isolation-probe`、`engine-spawn`、`checkpoint-store`、`worker`、`state*`，`src/ui/` 下的 `tools`、`exact`、`ScriptBox`、`SpeciesAdvanced`、`connect`、`forms`、`riverCourse`、`riverTypes`，`src/render/` 下的 `colors`、`overlay`；`golden-full.test.ts`（整个世界按字节逐值不变）、`undo-cache.test.ts`（撤销缓存与重算一致）、`checkpoint.test.ts`（检查点恢复与重放一致）、`replay-names.test.ts`（重放后省名不变），以及各项提速的新旧对照（`rng-kernel`、`mesh-build`、`reroll-incremental`、`flow-order`、`provinces-naming`、`features-cache`、`climate-cache`、`routing-identity`、`raster-identity`、`solver-identity`）是第七轮加的；`erase-cut.test.ts`（恢复原样、剪刀、最小笔刷、星球位置）、`regions.test.ts`（圈地名、放地名）、`undo.test.ts`（撤销与从头重放逐值一致）是第五轮加的；`golden.test.ts`（一块地区的结果逐值不变）、`sphere.test.ts`、`planet.test.ts`、`planet-climate.test.ts`、`ocean.test.ts`、`geo.test.ts` 是第六轮（整个星球）加的
-- `src/`：界面。`worker.ts` 在 Web Worker 里跑引擎（只改了名字、省份时只把这些发回主线程；脚本只在这里运行）；`engine-spawn.ts` 开计算 Worker（先试 data: 地址，隔离），`engine-source.ts` 它的代码从哪里来，`isolation-probe.ts` 它开起来先自查的三项；`storage-worker.ts` + `checkpoint-store.ts` 只做存储、从不运行脚本的 Worker，读写检查点（`transfer.ts` 搬数据不复制）；`export-worker.ts` 导出用的单独 Worker；`idb.ts` IndexedDB（自动保存、检查点、参考图、资源库）；`library.ts` 资源库；`trust.ts` 信任过的脚本（按源码的 SHA-256，资源库、内置示例登记为总是信任）；`sandbox.ts` Worker 的看护（看门狗、恢复、安全模式）；`render/` 是 WebGL 渲染（`renderer.ts`）、着色（`colors.ts`）、矢量叠加（`overlay.ts`）与风向流线（`wind.ts`）；`ui/` 里：
+- `src/`：界面。`worker.ts` 在 Web Worker 里跑引擎（只改了名字、省份时只把这些发回主线程；脚本只在这里运行）；`engine-spawn.ts` 开计算 Worker（先试 data: 地址，隔离），`engine-source.ts` 它的代码从哪里来，`isolation-probe.ts` 它开起来先自查的三项；`storage-worker.ts` + `checkpoint-store.ts` 只做存储、从不运行脚本的 Worker，读写检查点（`transfer.ts` 搬数据不复制）；`mesh-worker.ts` 新建、打开时给主线程建网格（存进浏览器，下次直接读，见 `core/mesh-pack.ts`）；`export-worker.ts` 导出用的单独 Worker；`idb.ts` IndexedDB（自动保存、检查点、参考图、资源库）；`library.ts` 资源库；`trust.ts` 信任过的脚本（按源码的 SHA-256，资源库、内置示例登记为总是信任）；`sandbox.ts` Worker 的看护（看门狗、恢复、安全模式）；`render/` 是 WebGL 渲染（`renderer.ts`）、着色（`colors.ts`）、矢量叠加（`overlay.ts`）与风向流线（`wind.ts`）；`ui/` 里：
   - `defs/` 是注册表：`tools.ts`（每个工具的图标、名字、底部条上的滑块与选项、吸取、换个形状）、`adjustments.ts`（“调整”里的滑块）、`layers.ts`（“图层”里的底图与开关）。加一个工具、参数或底图只要加一条声明，顶栏、底部工具条、面板都由它们生成
   - `shell/` 是浮在地图上的外壳：顶栏、弹出面板、底部工具条（`ContextBar.tsx`，量距离时换成量出来的数；横滑块的换算在 `sliders.ts`）、提示条、右下角“这里”、左下角的尺子、右边的抽屉、键盘；`Ask.tsx` 信任脚本吗、用安全模式打开吗的问话，`ScriptBanner.tsx` 安全模式的横幅与脚本出错的提示
   - `packs/` 是资源包的弹窗（资源库、导入、导出）、“用到这个世界”的卡片和信任的问话
   - `panels/` 是弹出面板的内容（`FormPicker.tsx`：调整里换星球形态；`rivers.tsx`：选中的河的底部条、截走前的确认、河流列表；`riverTypes.tsx`：河流类型）；`tools.ts` 是地图工具（预览与命令），`riverCourse.ts` 画河、选河、删河，`exact.ts` 停一下的确切预览，`pending.ts` 排队中的编辑，`provincePreview.ts` 鼠标停在按钮上时的省份预览；`ScriptBox.tsx` 脚本框（`script-syntax.ts` 只解析不运行的检查，`script-commit.ts` 停一下就提交、一次修改一步撤销，`script-examples.ts` 例子），`SpeciesAdvanced.tsx` 生态的“高级：图案、效果与脚本”（`species-scripts.ts` 怎样提交），`connect.ts`、`editor-hooks.ts` 把这几处接起来；`Wizard.tsx` 新建向导，`FormEditor.tsx` 星球形态编辑器（`forms.ts` 是它和换形态用的逻辑，`form-store.ts` 它开没开），`ClimateChart.tsx` 生态类型编辑器，`Inspector.tsx` “这里是什么”
-- `tools/`：`generate.ts` 批量导出，`bench.ts` 计时，`hash.ts` 各层哈希，`terrain-stats.ts` 地形统计，`preview-terrain.ts` 地形预览图，`isolated-engine.ts` 开发服务器上现打包计算 Worker（开发时也隔离），`launch.mjs` 一键开启（根目录的 `启动-Mac.command`、`启动-Windows.bat` 运行它）
+- `tools/`：`generate.ts` 批量导出，`bench.ts` 计时（`--globe --pack fantasy` 整个星球 + 奇幻包逐步计时，`--hash` 打出最后的世界的哈希；`bench-median.mjs` 跑几次取中位数），`hash.ts` 各层哈希，`terrain-stats.ts` 地形统计，`preview-terrain.ts` 地形预览图，`isolated-engine.ts` 开发服务器上现打包计算 Worker（开发时也隔离），`launch.mjs` 一键开启（根目录的 `启动-Mac.command`、`启动-Windows.bat` 运行它；先打包再用 vite preview 开）
 
 ## 已知限制
 
@@ -373,7 +373,7 @@ return smoothstep(1500, 2500, 海拔);
   | 重新打开（重放；有检查点时更快） | 2.5 → 0.95 秒 | 9.9 → 3.8 秒 |
 
   改名、圈地名、改省份及其撤销约 10–20 毫秒；悬停、涂画时每帧约 1–2 毫秒。导出宽 4096 的图约十几秒（地区）到半分钟（星球），期间照样能用。
-- 撤销只存最近几步的结果（地区 3 步、星球 2 步，每步约 11 / 27 MB），再往前撤销还是要重算；排队的笔画各算一遍，画得很快时要等它们一笔一笔算完。检查点只在打包后的程序里用（开发服务器里照旧重放）。
+- 撤销只存最近几步的结果（第九轮起地区 8 步、星球 6 步，相同的数组几步共用，合计不超过 200 MB），再往前撤销还是要重算；排队的笔画各算一遍，画得很快时要等它们一笔一笔算完。星球上一次确切预览要几秒：第九轮起它在阶段之间可以停下（接着画、松手执行别的命令时不再等它算完）。
 - 一块地区：地图是星球上的一块，东西不相接，“地图在星球上的位置”只能整体南北挪，南北跨度由建世界时的大小决定。最多约 4 万格（放大到最大时一格约 64 像素）。
 - 整个星球只有平铺图，没有地球仪；两极附近按平铺世界地图的样子被拉宽；圈一片、圈地名不能绕着极点画。
 - 气候是简化的过程模型，不是 GCM：洋流只有整个星球有，而且是全年平均的表层流（没有深层洋流、海冰、厄尔尼诺这类年际变化）；季风只按大尺度海陆分布估计。一块地区的地图还没有洋流。

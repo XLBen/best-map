@@ -6,6 +6,7 @@ import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
+import { type PackedMesh, storedMeshKey, unpackMesh } from '../core/mesh-pack';
 import { previewWorldOf } from '../core/preview-world';
 import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from '../core/script';
 import { isRiverCell } from '../core/select';
@@ -14,8 +15,9 @@ import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
-import { BUILD, engineCode, engineUrl } from './engine-source';
+import { buildKey, engineCode, engineUrl } from './engine-source';
 import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
+import type { MeshRequest } from './mesh-worker';
 import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
@@ -460,12 +462,25 @@ function spawnEngine(): WorkerLike {
   return me;
 }
 
-// 检查点存取（打包好的程序里才有）：只做存储、不运行脚本的同源 Worker，第一次用到时才开
+// 检查点的版本号（见 engine-source.ts 的 buildKey）：新建、打开之前取好放在这里，随新建、打开告诉计算 Worker。
+// 没有时（取不到引擎文件、测试里）不读不写检查点
+const hostOpts: { build: string | null } = { build: null };
+
+// 检查点存取：只做存储、不运行脚本的同源 Worker，第一次用到时才开
 let store: CheckpointStore | null = null;
 function checkpointStore(): CheckpointStore | null {
-  if (!BUILD || typeof Worker === 'undefined' || typeof MessageChannel === 'undefined') return null;
+  if (!hostOpts.build || typeof Worker === 'undefined' || typeof MessageChannel === 'undefined') return null;
   store ??= new CheckpointStore(() => new Worker(new URL('./storage-worker.ts', import.meta.url), { type: 'module' }) as unknown as StorageWorkerLike);
   return store;
+}
+
+// 打开的世界的网格存在浏览器里时的键（设置无效时为 null）
+function meshKeyOf(build: string, settings: Partial<Settings>): string | null {
+  try {
+    return storedMeshKey(build, settingsSchema.parse(settings));
+  } catch {
+    return null;
+  }
 }
 
 function engineHost(): EngineHost {
@@ -481,8 +496,10 @@ function engineHost(): EngineHost {
     },
     undefined,
     {
-      build: BUILD,
-      storeChannel: (build, doc) => checkpointStore()?.open(build, doc) ?? null,
+      get build() {
+        return hostOpts.build;
+      },
+      storeChannel: (build, doc) => checkpointStore()?.open(build, doc, doc ? meshKeyOf(build, doc.settings) : null) ?? null,
       commit: (token, epoch, ids) => checkpointStore()?.commit(token, epoch, ids),
     },
   );
@@ -570,17 +587,82 @@ function meshFor(s: Settings): Mesh {
   return meshCache.mesh;
 }
 
-// 新建、打开时：Worker 在算的同时，主线程先建好自己的网格（整个星球还有显示用的三角网），
-// 不必等 Worker 算完再建。先让出一帧，“正在生成”的提示先画出来
-function prebuildMesh(settings: Partial<Settings>) {
-  setTimeout(() => {
+// 新建、打开时：Worker 在算的同时，主线程要的网格（整个星球还有显示用的三角网、多边形）在另一个 Worker 里建好转交过来
+// （mesh-worker.ts，与计算 Worker 同时算），主线程不再为建网格停顿约 1 秒。没有 Worker 时（测试里）先让出一帧再就地建。
+// 返回建好（或建不成）时兑现的承诺：换上快照之前等它，快照里的世界就用这份网格
+function prebuildMesh(settings: Partial<Settings>): Promise<void> {
+  let s: Settings;
+  try {
+    s = settingsSchema.parse(settings);
+  } catch {
+    // 设置无效时 Worker 会报错，这里不管
+    return Promise.resolve();
+  }
+  const key = meshKey(s);
+  if (meshCache?.key === key) return Promise.resolve();
+  if (typeof Worker === 'undefined' || typeof document === 'undefined') {
+    return new Promise((resolve) =>
+      setTimeout(() => {
+        try {
+          const mesh = meshFor(s);
+          if (mesh.kind === 'sphere') viewOf(mesh).polygons();
+        } finally {
+          resolve();
+        }
+      }, 0),
+    );
+  }
+  const w = meshWorker();
+  if (!w) return Promise.resolve();
+  const id = ++meshSeq;
+  return new Promise<void>((resolve) => {
+    meshWaiters.set(id, (packed) => {
+      // 等的时候换成了别的网格（又新建了一个别的大小）就不要了
+      if (packed && meshCache?.key !== key) {
+        try {
+          meshCache = { key, mesh: unpackMesh(packed) };
+        } catch {
+          // 拆不了：换上快照时就地建
+        }
+      }
+      resolve();
+    });
     try {
-      const mesh = meshFor(settingsSchema.parse(settings));
-      if (mesh.kind === 'sphere') viewOf(mesh).polygons();
+      w.postMessage({ id, settings: s, build: hostOpts.build } satisfies MeshRequest);
     } catch {
-      // 设置无效时 Worker 会报错，这里不管
+      meshWaiters.delete(id);
+      resolve();
     }
-  }, 0);
+  });
+}
+
+// 建网格的 Worker（一直留着：它写 IndexedDB 时不能被停掉）。开不了、出了事就不再用，换上快照时就地建
+let meshWorkerRef: Worker | null = null;
+let meshBroken = false;
+let meshSeq = 0;
+const meshWaiters = new Map<number, (mesh: PackedMesh | null) => void>();
+function meshWorker(): Worker | null {
+  if (meshBroken) return null;
+  if (meshWorkerRef) return meshWorkerRef;
+  try {
+    const w = new Worker(new URL('./mesh-worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (ev: MessageEvent<{ id: number; ok: boolean; mesh?: PackedMesh }>) => {
+      const done = meshWaiters.get(ev.data.id);
+      meshWaiters.delete(ev.data.id);
+      done?.(ev.data.ok && ev.data.mesh ? ev.data.mesh : null);
+    };
+    w.onerror = () => {
+      meshBroken = true;
+      meshWorkerRef = null;
+      for (const done of meshWaiters.values()) done(null);
+      meshWaiters.clear();
+    };
+    meshWorkerRef = w;
+    return w;
+  } catch {
+    meshBroken = true;
+    return null;
+  }
 }
 
 // 轻快照：推导数组沿用当前世界的（同一批数组对象，地图据此跳过重新着色）；省份没变时省份数组也沿用
@@ -764,8 +846,52 @@ async function handle(r: Response, fresh = false): Promise<boolean> {
     showToast(r.error, true);
     return false;
   }
-  if (r.snapshot) applySnapshot(r.snapshot, fresh);
+  if (r.snapshot) {
+    const s = 'light' in r.snapshot ? r.snapshot : completeSnapshot(r.snapshot);
+    if (s) applySnapshot(s, fresh);
+    else {
+      // 只带变了的数组、却拼不起来（手上的世界不是 Worker 上一次发快照时的状态）：要一份完整的
+      const full = await call({ kind: 'snapshot' }, null);
+      if (full.ok && full.snapshot && !('light' in full.snapshot)) {
+        const f = completeSnapshot(full.snapshot);
+        if (f) applySnapshot(f, fresh);
+      }
+    }
+  }
   return true;
+}
+
+// 只带变了的推导数组的快照（Snapshot.same）：没发的数组沿用手上世界的同一个对象（着色、河线的缓存照样命中）。
+// 手上的世界不是 Worker 上一次发快照时的状态、网格不同时拼不起来，返回 null。完整的快照原样返回
+function completeSnapshot(s: Snapshot): Snapshot | null {
+  const same = s.same;
+  if (!same) return s;
+  const prev = world.value;
+  if (!prev || worldState.value !== same.base || prev.derived.corrF === undefined) return null;
+  const pd = prev.derived as unknown as Record<string, unknown>;
+  const d = s.derived as unknown as Record<string, unknown>;
+  for (const k of same.derived) {
+    const v = pd[k];
+    if (!ArrayBuffer.isView(v) || d[k] !== null) return null;
+    d[k] = v;
+  }
+  for (const [k, part] of Object.entries(same.rows ?? {})) {
+    const v = pd[k] as Float32Array | undefined;
+    if (!ArrayBuffer.isView(v) || d[k] !== null) return null;
+    const n = prev.mesh.n;
+    const width = v.length / n;
+    const rows = part.rows as Float32Array;
+    if (!Number.isInteger(width) || rows.constructor !== v.constructor || rows.length !== part.idx.length * width) return null;
+    const out = v.slice();
+    for (let q = 0; q < part.idx.length; q++) out.set(rows.subarray(q * width, (q + 1) * width), part.idx[q] * width);
+    d[k] = out;
+  }
+  for (const k of same.corrF) {
+    const v = prev.derived.corrF[k];
+    if (!v || (s.derived.corrF as Record<string, unknown>)[k] !== null) return null;
+    s.derived.corrF[k] = v;
+  }
+  return s;
 }
 
 // ---------- 脚本的信任、安全模式 ----------
@@ -910,9 +1036,12 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
   if (req.kind === 'init') flash.value = null;
   const marked = safe === null && scripts.length > 0;
   if (marked) await markLoading(scripts.map((s) => s.hash));
+  // 检查点的版本号（开发时要先取引擎文件算哈希；页面里才有）
+  if (typeof document !== 'undefined') hostOpts.build = await buildKey();
   const r = call(safe === null ? req : { ...req, safe: true }, label, safe ?? undefined);
-  prebuildMesh(settings);
+  const meshReady = prebuildMesh(settings);
   const res = await r;
+  await meshReady;
   if (marked) void clearLoading();
   // 新的引擎（可能在新开的 Worker 里）：步号从 1 起，自动保存从头写（镜头不动时世界的纪元不变，要在这里清）
   if (res.ok) resetAutosaveIds();
@@ -1071,6 +1200,7 @@ function againAction(again: Again | undefined, label: string) {
 // 撤掉刚做的一步，换成新的命令（只重算一次，历史里只留一步）
 export async function replaceLast(cmd: Command, label = '正在计算…', again?: Again): Promise<boolean> {
   const r = await call({ kind: 'replaceLast', cmd }, label);
+  if (r.ok && r.snapshot && !('light' in r.snapshot)) noteCost(cmd, r.snapshot.timings.total);
   const before = world.value;
   const ok = await handle(r);
   if (ok && r.ok) {
@@ -1315,8 +1445,9 @@ export function download(name: string, data: Uint8Array | string | Blob, type: s
 
 // ---------- 确切预览：将来的世界 ----------
 
-// 同一时间只算一个；排队时来了新的，旧的直接得到 null（拖动中只算最新的那个，不中途取消正在算的）
-function latest<A, R>(run: (a: A) => Promise<R | null>) {
+// 同一时间只算一个；排队时来了新的，旧的直接得到 null（拖动中只算最新的那个）。
+// cancel：正在算的那个也不要了时叫它（确切预览：Worker 在下一个阶段之间停下，不必等它算完）
+function latest<A, R>(run: (a: A) => Promise<R | null>, cancel?: () => void) {
   let waiting: { a: A; resolve: (r: R | null) => void } | null = null;
   let running = false;
   return {
@@ -1324,7 +1455,10 @@ function latest<A, R>(run: (a: A) => Promise<R | null>) {
       new Promise<R | null>((resolve) => {
         waiting?.resolve(null);
         waiting = { a, resolve };
-        if (running) return;
+        if (running) {
+          cancel?.();
+          return;
+        }
         void (async () => {
           running = true;
           while (waiting) {
@@ -1387,9 +1521,12 @@ export function slowPreview(cmd: Command): number | null {
 }
 
 // 停顿多久再预览（毫秒）：至少 base，上次预览算得久就等得久一点（上次的一半），最多 600
+// 大世界（6 万格以上，比如整个星球）：至少停 700 毫秒才算（一次预览要几秒，停顿短时算了也多半被下一笔取消）
 export function exactDelay(base: number): number {
-  return Math.min(600, Math.max(base, 0.5 * lastPreviewMs));
+  const big = (world.value?.mesh.n ?? 0) > BIG_WORLD;
+  return Math.min(big ? 900 : 600, Math.max(base, big ? 700 : 0, 0.5 * lastPreviewMs));
 }
+const BIG_WORLD = 60000;
 
 // 确切预览的结果：将来的世界。base：按哪个世界算的（世界换了就不再显示）
 export interface WorldPreview {
@@ -1423,7 +1560,14 @@ const worldPreviews = latest(async (cmd: Command) => {
   }
   // 预览算不成（比如涂的格都不能长东西）不提示：松手执行时才说
   return previewReply(r);
-});
+}, stopRunningPreview);
+
+// 正在算的确切预览不要了：告诉 Worker 在下一个阶段之间停下（星球上一次预览要几秒，新的一笔、要别的值时不必等它算完）。
+// 已经发了同一条命令的执行时 Worker 不停（执行直接采用它）。没有在算的预览时什么都不做
+function stopRunningPreview() {
+  if (![...pending.values()].some((p) => p.kind === 'previewWorld')) return;
+  void call({ kind: 'cancelPreview' }, null);
+}
 
 // 命令的确切预览，连同将来的世界（previewCommand 不变，画河改道照旧用它）。Worker 留着算好的副本：
 // 紧接着执行同一条命令时直接采用，松手后立刻出结果，颜色不跳
@@ -1431,8 +1575,11 @@ export function previewWorld(cmd: Command): Promise<WorldPreview | null> {
   return worldPreviews.ask(cmd);
 }
 
-export function cancelWorldPreview() {
+// 还没发出去的作废；hard：正在算的也停下（新的一笔、换了工具）。松手执行时不要 hard：执行同一条命令要直接采用它
+// （执行别的命令时 Worker 自己会停下它）
+export function cancelWorldPreview(hard = false) {
   worldPreviews.drop();
+  if (hard) stopRunningPreview();
 }
 
 // Worker 换了一个（卡住后恢复）：排着的、显示着的预览都不要了（按旧 Worker 的状态算的）
@@ -1464,7 +1611,7 @@ export function previewAdjust(cmd: Command | null, pause = 200) {
   adjustTimer = null;
   if (!cmd) {
     adjustKey = '';
-    worldPreviews.drop();
+    cancelWorldPreview(true);
     if (adjustPreviewWorld.value?.key !== settling) adjustPreviewWorld.value = null;
     adjustPreviewNote.value = null;
     return;

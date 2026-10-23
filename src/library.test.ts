@@ -100,14 +100,14 @@ const withScript = (id: string, src: string) =>
   userPack(id, { biomes: [{ id: `${id}_b`, name: '脚本生态', color: '#123456', terrain: 'plains', competition: 2, tolerances: [], scripts: { placement: { api: 1, src } } }] });
 
 describe('资源库', () => {
-  it('从第 3 版升上来：已有的表和里面的数据都在，只补上 packs 表', async () => {
+  it('从第 3 版升上来：已有的表和里面的数据都在，只补上 packs、meshes 表', async () => {
     idb.version = 3;
     idb.data.set('kv', new Map([['autosave', { count: 3 }]]));
     idb.data.set('autosave', new Map([[0, { op: 'paint_land' }]]));
     idb.data.set('checkpoint', new Map([['current', { build: 'x' }]]));
     const db = await openDb();
-    expect(idb.version).toBe(4);
-    expect(idb.created).toEqual(['packs']);
+    expect(idb.version).toBe(5);
+    expect(idb.created).toEqual(['packs', 'meshes']);
     expect(db.objectStoreNames.contains('packs')).toBe(true);
     expect(idb.data.get('kv')!.get('autosave')).toEqual({ count: 3 });
     expect(idb.data.get('autosave')!.get(0)).toEqual({ op: 'paint_land' });

@@ -207,3 +207,96 @@ describe('计算 Worker 里的河流类型', () => {
     expect(safe.derived.effT).toBeUndefined();
   });
 });
+
+// 确切预览分阶段算、阶段之间让出线程：松手执行别的命令、新的一笔（取消）时它在下一个阶段之间停下（回 cancelled），
+// 执行不必等它算完；执行同一条命令时不停，执行直接采用它。停下的预览不影响世界
+describe('确切预览可以中途停下', () => {
+  beforeAll(async () => {
+    vi.resetModules();
+    await import('./worker');
+  });
+  // 不等回复地发
+  const fire = (req: Request) => {
+    const id = nextId++;
+    scope.onmessage!({ data: { id, req } });
+    return async () => {
+      await until(() => posted.some((p) => (p.msg as { id?: number }).id === id));
+      return posted.find((p) => (p.msg as { id?: number }).id === id)!.msg as Extract<Response, { ok: true }>;
+    };
+  };
+  const warm: Command = { op: 'set_planet', patch: { humidity: 1.3 } };
+  const cold: Command = { op: 'set_planet', patch: { humidity: 0.7 } };
+
+  it('执行别的命令时停下，执行的结果与没有预览时相同', async () => {
+    await send({ kind: 'init', settings, commands });
+    const preview = fire({ kind: 'previewWorld', cmd: warm });
+    const exec = fire({ kind: 'exec', cmd: cold });
+    const p = await preview();
+    expect(p.cancelled).toBe(true);
+    expect(p.preview).toBeUndefined();
+    const e = (await exec()).snapshot as Snapshot;
+    // 对照：一个新的引擎直接执行
+    const plain = (await send({ kind: 'init', settings, commands: [...commands, cold] })).snapshot as Snapshot;
+    expect(Array.from(e.derived.precip)).toEqual(Array.from(plain.derived.precip));
+    expect(Array.from(e.derived.dominant)).toEqual(Array.from(plain.derived.dominant));
+  });
+
+  it('取消：停下，之后照常预览；已经发了同一条命令的执行时不停（执行直接采用）', async () => {
+    await send({ kind: 'init', settings, commands });
+    const preview = fire({ kind: 'previewWorld', cmd: warm });
+    await send({ kind: 'cancelPreview' });
+    expect((await preview()).cancelled).toBe(true);
+    const again = fire({ kind: 'previewWorld', cmd: warm });
+    const exec = fire({ kind: 'exec', cmd: warm });
+    fire({ kind: 'cancelPreview' });
+    const p = await again();
+    expect(p.cancelled).toBeUndefined();
+    expect(p.preview).toBeDefined();
+    const e = (await exec()).snapshot as Snapshot;
+    const plain = (await send({ kind: 'init', settings, commands: [...commands, warm] })).snapshot as Snapshot;
+    expect(Array.from(e.derived.precip)).toEqual(Array.from(plain.derived.precip));
+  });
+});
+
+// 快照只带变了的推导数组：没变的写 null、列进 same（主线程沿用自己的）；拼起来与完整的快照逐值相同。
+// 新建、打开、要完整的快照时是完整的
+describe('快照只带变了的数组', () => {
+  beforeAll(async () => {
+    vi.resetModules();
+    await import('./worker');
+  });
+  const filled = (s: Snapshot, prev: Snapshot) => {
+    const d = { ...s.derived } as unknown as Record<string, unknown>;
+    const p = prev.derived as unknown as Record<string, Float32Array>;
+    for (const k of s.same!.derived) d[k] = p[k];
+    for (const [k, part] of Object.entries(s.same!.rows)) {
+      const out = p[k].slice();
+      const width = out.length / s.causes.land.length;
+      const rows = part.rows as Float32Array;
+      part.idx.forEach((i, q) => out.set(rows.subarray(q * width, (q + 1) * width), i * width));
+      d[k] = out;
+    }
+    return d;
+  };
+
+  it('只改冷暖：高程、汇流等没变的不发；拼起来与完整的相同', async () => {
+    const first = (await send({ kind: 'init', settings, commands })).snapshot as Snapshot;
+    expect(first.same).toBeUndefined();
+    const land = [...first.causes.land.keys()].filter((i) => first.causes.land[i]).slice(0, 80);
+    const r = (await send({ kind: 'exec', cmd: { op: 'paint', field: 'tempOffset', cells: land, value: -3, mode: 'add' } })).snapshot as Snapshot;
+    expect(r.same?.base).toBe(first.stateId);
+    expect(r.same?.derived).toEqual(expect.arrayContaining(['elevation', 'receiver']));
+    expect(r.derived.elevation).toBeNull();
+    // 冷暖只动了一片：份额只带变了的格
+    expect(Object.keys(r.same!.rows).length).toBeGreaterThan(0);
+    const full = (await send({ kind: 'snapshot' })).snapshot as Snapshot;
+    expect(full.same).toBeUndefined();
+    const d = filled(r, first);
+    for (const [k, v] of Object.entries(full.derived)) if (ArrayBuffer.isView(v)) expect(Array.from(d[k] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
+    // 撤销：换回存着的推导，相对上一份（完整的）只带变了的
+    const u = (await send({ kind: 'undo' })).snapshot as Snapshot;
+    expect(u.same?.base).toBe(full.stateId);
+    const du = filled(u, full);
+    for (const [k, v] of Object.entries(first.derived)) if (ArrayBuffer.isView(v)) expect(Array.from(du[k] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
+  });
+});
