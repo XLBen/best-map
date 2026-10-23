@@ -11,7 +11,11 @@ import {
   type EditRole,
   type EditTarget,
   type RiverEdit,
+  type Extra,
+  BRANCH_SHARE,
   applyPatch,
+  branchCourse,
+  sourceCourse,
   controlHandles,
   deleteHandle,
   dragHandle,
@@ -30,7 +34,7 @@ import {
 import { PLAIN_RIVER } from '../../core/river-types';
 import { matchesNaturally } from '../../core/water-types';
 import { type GuideLine, type RiverLine, centrePoints, cutAtJoin, encodePath, guideLine, ownsCell, projectNear, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
-import { type CourseEnd, type CoursePlan, type RiverPlan, endCourseAt, guideEnd, guideFlow, guideWarnings, isRiverCell, mergeCourse, planCourse, planRiver, riverStem } from '../../core/select';
+import { type CourseEnd, type CoursePlan, type Overlap, type RiverPlan, endCourseAt, guideEnd, guideFlow, guideWarnings, isRiverCell, mergeCourse, overlapsOf, planCourse, planRiver, riverStem } from '../../core/select';
 import { roundKm as km } from '../../core/terrain';
 import type { Guide, World } from '../../core/world';
 import type { HighlightLayer } from '../render/colors';
@@ -377,7 +381,7 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
         size: riverSizeName(total),
         flow: total * thr,
         km: pathKm(w, lineOf(w, g).points),
-        dest: destText(w, end.kind, end.cell, true, f ?? undefined),
+        dest: sourceDest(w, g) ?? destText(w, end.kind, end.cell, true, f ?? undefined),
         warnings: guideWarnings(w, d, g),
         cells: g.cells,
         sink: end.kind === 'sink',
@@ -406,6 +410,13 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
   }
   m.set(key, info);
   return info;
+}
+
+// 另一个源头（sourceOf）：它是哪条河的源头（那条河还在时）
+function sourceDest(w: World, g: Guide): string | null {
+  const p = g.sourceOf !== undefined ? guideOf(w, g.sourceOf) : undefined;
+  if (!p) return null;
+  return `是${quoted(guideName(w, p), '一条河')}的又一个源头`;
 }
 
 // 悬停时的一句话：“赤江 · 中等的河 · 汇入「青河」”。cell：鼠标下那一格（在终点消失的河，停在终点上时说“在这里消失”）
@@ -447,8 +458,9 @@ const riverTypeOfGuide = (w: World, g: Pick<Guide, 'type'> | null | undefined) =
 
 // 一笔画出来的河、改一条河：松手后执行的命令（确切预览用的也是它）、执行后这条河的样子与估计的流量
 export interface Course {
-  // new：新画的河；merge：接到一条画的河的源头前面（成为它的上游）；edit：改一条已有的河（还是同一条河）
-  kind: 'new' | 'merge' | 'edit';
+  // new：新画的河；merge：接到一条画的河的源头前面（成为它的上游）；edit：改一条已有的河（还是同一条河）；
+  // branch：从选中的河上分一股出去；source：给选中的河加一个源头（第十三轮）
+  kind: 'new' | 'merge' | 'edit' | 'branch' | 'source';
   plan: CoursePlan | null;
   blocked: string | null;
   cmd: Command | null;
@@ -467,6 +479,10 @@ export interface Course {
   edit?: RiverEdit;
   // 拖控制点：松手后这条河上的控制点（拖的那个在松手的地方），改完以后照用（见 stickyHandles）
   sticky?: [number, number][];
+  // 重叠分析（第十三轮）：绕回自己旁边、贴着别的河流……预览里黄色标出来，提示条、顶部的话里说一声
+  overlaps?: Overlap[];
+  // 加一个源头：松手后选中哪条河道（自然的河先固定成这条）
+  selectAfter?: string;
 }
 
 const blocked = (text: string, raw: [number, number][], plan: CoursePlan | null = null): Course => ({ kind: 'new', plan, blocked: text, cmd: null, key: '', after: null, estimate: [], name: null, raw });
@@ -626,6 +642,142 @@ function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: 
   let q = 0;
   const estimate = after.cells.map((c) => Math.max(thr, (q = old.has(c) ? w.derived.discharge[c] : Math.max(q, w.derived.discharge[c]))));
   return { kind: 'edit', plan: r.plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw, target: T, edit: r };
+}
+
+// ---------- 分一股出去、加一个源头（第十三轮） ----------
+
+// 选中一条河后按了底部条上的“分一股出去”“加一个源头”：下一笔从这条河上起笔画（Esc 不加了）
+export const riverAddMode = signal<'branch' | 'source' | null>(null);
+
+// 自然的河加源头时先固定下来：河道 id（不与已有的重复）
+function pinId(w: World, T: EditTarget): string {
+  const base = `stem-${T.guide.cells[0]}-${T.guide.cells[T.guide.cells.length - 1]}`;
+  let id = base;
+  for (let k = 2; w.small.guides.some((g) => g.id === id); k++) id = `${base}-${k}`;
+  return id;
+}
+
+// 分一股出去、加一个源头：命令、执行后新的那条河道的样子与估计的流量
+function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | { blocked: string }, raw: [number, number][], kind: 'branch' | 'source'): Course {
+  if ('blocked' in r) return { ...blocked(r.blocked, raw), kind, target: T };
+  const plan = r.plan;
+  const d = w.derived;
+  const name = targetName(w, T, ref);
+  const n = quoted(name, '这条河');
+  const len = km(pathKm(w, plan.path));
+  const type = T.guide.type ?? T.ruleType;
+  const typed = type ? { type } : chosenRiverType(w);
+  if (kind === 'branch') {
+    const guide = {
+      cells: plan.cells,
+      path: encodePath(plan.path),
+      locked: true,
+      spring: false,
+      name: '',
+      branch: { share: BRANCH_SHARE },
+      ...(plan.end === 'sink' ? { end: 'sink' as const } : {}),
+      ...typed,
+    };
+    const after = { id: '', ...guide } as Guide;
+    const cap = captureWords(w, plan, after, null, true);
+    const cmd: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label: `从${n}分出一股（约 ${Math.round(BRANCH_SHARE * 100)}% 的水，约 ${len} km，${destOf(w, plan)}）${cap ? ` · ${cap}` : ''}` };
+    // 分出去的水：分出处的 share，再加上一路上本来的水
+    const q = BRANCH_SHARE * d.discharge[r.cell];
+    const estimate = plan.cells.map((c, k) => (k === 0 ? q : d.discharge[c] + q));
+    return { kind, plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw, target: T };
+  }
+  // 加一个源头：画的这段算这条河的一部分（同名）；自然的河先固定下来（一步，撤销一起撤）
+  const parent = T.natural ? pinId(w, T) : T.guide.id;
+  const guide = {
+    cells: plan.cells,
+    path: encodePath(plan.path),
+    locked: true,
+    spring: true,
+    flow: options.value.riverFlow,
+    name: '',
+    sourceOf: parent,
+    ...typed,
+  };
+  const after = { id: '', ...guide } as Guide;
+  const cap = captureWords(w, plan, after, null, true);
+  const label = `给${n}加了一个源头（约 ${len} km）${cap ? ` · ${cap}` : ''}`;
+  const add: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label };
+  let cmd: Command = add;
+  if (T.natural) {
+    const { id: _, ...pinned } = T.guide;
+    cmd = { op: 'batch', label, commands: [{ op: 'add_guide', guide: { ...pinned, id: parent }, label: `固定了${n}` }, add] };
+  }
+  const estimate = springProfile(w, plan.cells, true, options.value.riverFlow).map((q, k) => d.discharge[plan.cells[k]] + q);
+  return { kind, plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw, target: T, selectAfter: parent };
+}
+
+// ---------- 重叠分析的说法、标法 ----------
+
+// 一处重叠怎么说（提示条上）；done：松手后顶部说的（更短）
+function overlapWords(w: World, o: Overlap, done: boolean): string | null {
+  const other = () => {
+    const g = o.guide ? guideOf(w, o.guide) : undefined;
+    const n = g ? guideName(w, g) : o.cells.length ? riverNameAt(w, o.cells[0]) : null;
+    return quoted(n, '别的河');
+  };
+  switch (o.kind) {
+    case 'loop':
+      return done ? null : '画的线绕回了自己走过的地方，那个圈剪掉了（黄色）';
+    case 'near-self':
+      return done ? '有一段绕回了自己旁边' : '有一段绕回了自己旁边（黄色）：画开一点更清楚';
+    case 'alongside':
+      return done ? `有一段贴着${other()}流` : `有一段贴着${other()}流（黄色）：离远一点，或者画到它上面汇入`;
+    case 'sink-river':
+      return done ? `终点挨着${other()}` : `终点挨着${other()}：画到它上面就汇入`;
+    case 'old-flowing':
+      return null;
+    default:
+      return null;
+  }
+}
+
+// 地图上现在的河里 cells 这些格上的那几段：黄色（改道后还有水的旧河道）
+function yellowRiverShapes(w: World, cells: ReadonlySet<number>): Shape[] {
+  if (!cells.size) return [];
+  const out: Shape[] = [];
+  for (const line of riverLines(w)) for (const piece of splitRiverLine(line, cells, true)) out.push(...lineShapes(w, piece.points, { color: YELLOW_LINE, width: 2.5, dashed: true }));
+  return out;
+}
+
+function overlapShapes(w: World, c: Course): Shape[] {
+  const out: Shape[] = [];
+  for (const o of c.overlaps ?? []) {
+    if (o.points.length > 1) out.push(...lineShapes(w, o.points, { color: YELLOW_LINE, width: 4 }));
+    if (o.kind === 'old-flowing') out.push(...yellowRiverShapes(w, new Set(o.cells)));
+  }
+  return out;
+}
+
+// 拖的时候算重叠分析，松手后顶部那句话里带上
+function withOverlaps(w: World, c: Course): Course {
+  if (!c.plan || !c.cmd || c.blocked) return c;
+  const T = c.target;
+  const self = T && !T.natural ? T.guide.id : null;
+  // 分一股出去、加一个源头：干流（选中的那条河）挨着起笔处不算
+  const own = T && (T.natural || c.kind === 'branch' || c.kind === 'source') ? T.own : undefined;
+  const overlaps = overlapsOf(w, w.derived, c.plan, {
+    lines: riverLines(w),
+    self: c.kind === 'branch' || c.kind === 'source' ? (T && !T.natural ? T.guide.id : null) : self,
+    ...(own ? { own } : {}),
+    ...(c.kind === 'edit' && T ? { old: T.guide.cells } : {}),
+  });
+  if (!overlaps.length) return c;
+  const words = [...new Set(overlaps.map((o) => overlapWords(w, o, true)).filter((x): x is string => !!x))];
+  let cmd = c.cmd;
+  const c0 = c.cmd;
+  if (words.length && 'label' in c0 && typeof c0.label === 'string') {
+    const label = `${c0.label} · ${words.join(' · ')}`.slice(0, 200);
+    if (c0.op === 'batch') {
+      const list = c0.commands;
+      cmd = { ...c0, label, commands: list.map((x, k) => (k === list.length - 1 && 'label' in x ? ({ ...x, label } as Command) : x)) };
+    } else cmd = { ...c0, label } as Command;
+  }
+  return { ...c, cmd, key: JSON.stringify(cmd), overlaps };
 }
 
 // 画好以后顶部说的话：画的时候汇入的那条河还没有名字（常常是新河的水加进去它才够大、才起了名字）时说的是“汇入一条河”，
@@ -1013,11 +1165,22 @@ function courseHint(w: World, c: Course, ex: ExactView | null, line: GuideLine, 
     };
     parts.push(quoted(name, c.target?.natural ? '这条河' : '这条画的河'), what[c.edit.kind]);
     if (c.edit.kind !== 'shorten' && c.edit.kind !== 'splice' && c.edit.kind !== 'bend' && c.edit.kind !== 'source') parts.push(c.after.end === 'sink' ? '到这里消失' : destOf(w, plan));
+  } else if (c.kind === 'branch' || c.kind === 'source') {
+    parts.push(quoted(c.name, '这条河'), c.kind === 'branch' ? `分一股出去（约 ${Math.round(BRANCH_SHARE * 100)}% 的水）` : '加一个源头（同一条河）');
+    if (c.kind === 'branch') parts.push(destOf(w, plan));
+    parts.push(`${km(pathKm(w, line.points)).toLocaleString()} km`);
   } else {
     parts.push(name || '新河', c.kind === 'merge' ? '往上游接长' : destOf(w, plan));
     parts.push(`${km(pathKm(w, line.points)).toLocaleString()} km`);
   }
   let caution = false;
+  for (const o of c.overlaps ?? []) {
+    const t = overlapWords(w, o, false);
+    if (t && !parts.includes(t)) {
+      parts.push(t);
+      caution = true;
+    }
+  }
   if (c.edit?.note) {
     parts.push(c.edit.note);
     caution = true;
@@ -1157,8 +1320,10 @@ function barPreviewShapes(w: World, b: RiverBarPreview, zoom: number): Preview {
 // ---------- 画河工具 ----------
 
 interface Press {
-  // flow：顺地势画新河；course：自定义走向画新河；edit：从一条河上起笔重画一笔；handle：拖选中的河的控制点
-  kind: 'flow' | 'course' | 'edit' | 'handle';
+  // flow：顺地势画新河；course：自定义走向画新河；edit：从一条河上起笔重画一笔；handle：拖选中的河的控制点；
+  // extra：按了“分一股出去”“加一个源头”以后从选中的河上起笔画（mode 是哪一样）
+  kind: 'flow' | 'course' | 'edit' | 'handle' | 'extra';
+  mode?: 'branch' | 'source';
   start: Pointer;
   // 按下时鼠标下是什么（edit、handle 时有）
   hit: RiverPick | null;
@@ -1276,7 +1441,8 @@ export function riverTool(zoom: () => number): ToolHandler {
     if (pr.lost) return false;
     if (pr.world === w) return true;
     pr.world = w;
-    if (pr.kind !== 'edit' && pr.kind !== 'handle') return true;
+    if (pr.kind !== 'edit' && pr.kind !== 'handle' && pr.kind !== 'extra') return true;
+    if (pr.kind === 'extra' && !pr.hit) return true;
     const old = pr.hit;
     const lose = () => {
       pr.lost = true;
@@ -1324,7 +1490,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     }
     const tail = pr.pts[pr.pts.length - 1];
     const ref = pr.hit ? (pr.hit.ref.kind === 'guide' ? pr.hit.ref.id : pr.hit.T.guide.cells[0]) : '';
-    const key = `${worldId(w)}|${pr.kind}|${ref}|${pr.pts.length}|${tail[0]},${tail[1]}|${pr.to?.join(',') ?? ''}|${o.riverEnd}|${o.riverFlow}|${pr.alt ? 1 : 0}|${zoom()}`;
+    const key = `${worldId(w)}|${pr.kind}${pr.mode ?? ''}|${ref}|${pr.pts.length}|${tail[0]},${tail[1]}|${pr.to?.join(',') ?? ''}|${o.riverEnd}|${o.riverFlow}|${pr.alt ? 1 : 0}|${zoom()}`;
     if (courseCache?.key === key) return courseCache;
     const z = zoom();
     const eo = { endOnLand: o.riverEnd, px: 1 / z, tol: SNAP_PX / z };
@@ -1342,14 +1508,23 @@ export function riverTool(zoom: () => number): ToolHandler {
       let r = strokeEdit(w, w.derived, h.T, pr.pts, eo);
       if (pr.alt && !('blocked' in r)) r = joinAtFirst(w, w.derived, h.T, r);
       course = editCourse(w, h.T, h.ref, r, pr.pts.slice(), 'stroke');
+    } else if (pr.kind === 'extra') {
+      const mode = pr.mode ?? 'branch';
+      if (h?.kind !== 'river') course = { ...blocked('从选中的这条河上起笔', pr.pts.slice()), kind: mode };
+      else {
+        const r = mode === 'branch' ? branchCourse(w, w.derived, h.T, pr.pts, { endOnLand: o.riverEnd, px: 1 / z }) : sourceCourse(w, w.derived, h.T, pr.pts, { px: 1 / z });
+        course = extraCourse(w, h.T, h.ref, r, pr.pts.slice(), mode);
+      }
     } else {
       let plan = planCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px: 1 / z });
       // 按住 Alt：在第一次碰到的河那里汇入（不截走它）
       if (pr.alt && !plan.blocked && plan.crossings.length) plan = endCourseAt(w, w.derived, plan, plan.crossings[0].from);
       course = newCourse(w, plan, pr.pts.slice());
     }
+    course = withOverlaps(w, course);
     courseCache = { key, course, line: course.after ? tempLine(w, course.after) : null, shapes: new Map() };
-    if (!committing) hideFor(pr.hit, course);
+    // 分一股出去、加一个源头：选中的那条河照样画着（它不变，只是少了、多了一股水）
+    if (!committing) hideFor(pr.kind === 'extra' ? null : pr.hit, course);
     return courseCache;
   };
 
@@ -1375,7 +1550,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     const sk = view ? 'x' : 'e';
     let shapes = shapesMemo?.get(sk);
     if (!shapes) {
-      shapes = courseShapes(w, c, view, zoom(), line);
+      shapes = [...courseShapes(w, c, view, zoom(), line), ...overlapShapes(w, c)];
       shapesMemo?.set(sk, shapes);
     }
     const h = courseHint(w, c, view, line, alt);
@@ -1396,6 +1571,10 @@ export function riverTool(zoom: () => number): ToolHandler {
       const known = new Set(w?.small.guides.map((g) => g.id) ?? []);
       const busyText = c.kind === 'edit' ? '正在改河…' : '正在计算河流…';
       const ok = await exec(c.cmd, busyText, undefined, undefined, (after, said) => namedDest(after, c.cmd!, known, said));
+      if (ok && (c.kind === 'branch' || c.kind === 'source')) {
+        riverAddMode.value = null;
+        if (c.selectAfter && world.value?.small.guides.some((g) => g.id === c.selectAfter)) selectedRiver.value = { kind: 'guide', id: c.selectAfter };
+      }
       if (ok && c.kind === 'edit') {
         const id = c.cmd.op === 'update_guide' ? c.cmd.id : world.value?.small.guides.find((g) => !known.has(g.id))?.id;
         if (id && world.value?.small.guides.some((g) => g.id === id)) {
@@ -1467,6 +1646,7 @@ export function riverTool(zoom: () => number): ToolHandler {
   const click = async (w: World, pr: Press) => {
     const p = pr.start;
     const h = pr.hit;
+    if (pr.kind === 'extra') return showToast(pr.mode === 'source' ? '从选中的河上起笔，往外画出新的源头（Esc 不加了）' : '从选中的河上起笔，往外画出分出去的一股（Esc 不分了）');
     if (h?.kind === 'handle') {
       if (h.plus || h.j === 0 || h.j === h.H.length - 1) return;
       const key = `${h.ref.kind === 'guide' ? h.ref.id : h.T.guide.cells[0]}|${h.H[h.j]}`;
@@ -1524,15 +1704,28 @@ export function riverTool(zoom: () => number): ToolHandler {
       const w = world.value;
       // 上一笔还在算（committing）时照样能画下一笔：松手后排着队
       if (!w || (!committing && isBusy())) return;
-      const h = riverCutPick.value ? null : pick(w, p.x, p.y, p.cell, zoom());
-      const kind: Press['kind'] = h?.kind === 'handle' ? 'handle' : h ? 'edit' : options.value.riverMode === 'course' ? 'course' : 'flow';
+      const mode = riverAddMode.value;
+      const sel = selectedRiver.value;
+      let h: RiverPick | null;
+      let kind: Press['kind'];
+      if (mode && sel) {
+        // 分一股出去、加一个源头：从选中的河上起笔（第一点吸到河上）
+        const ST = targetOf(w, sel);
+        const tol = SNAP_PX / zoom();
+        const e = ST ? editPoint(w, ST, p.x, p.y) : null;
+        h = ST && e && e.d <= tol ? { kind: 'river', ref: sel, T: ST, e, role: editRole(e, tol) } : null;
+        kind = 'extra';
+      } else {
+        h = riverCutPick.value ? null : pick(w, p.x, p.y, p.cell, zoom());
+        kind = h?.kind === 'handle' ? 'handle' : h ? 'edit' : options.value.riverMode === 'course' ? 'course' : 'flow';
+      }
       // 从河上起笔：第一点吸到河上（整个星球上挪回鼠标那一份）
       let s0: [number, number] = [p.x, p.y];
       if (h?.kind === 'river') {
         const sx = w.mesh.kind === 'sphere' ? h.e.p[0] + 2 * Math.round((p.x - h.e.p[0]) / 2) : h.e.p[0];
         s0 = [sx, h.e.p[1]];
       }
-      press = { kind, start: p, hit: h, pts: [s0], last: [p.sx, p.sy], out: false, cells: [p.cell], moved: false, to: null, alt: p.alt, world: w };
+      press = { kind, ...(kind === 'extra' && mode ? { mode } : {}), start: p, hit: h, pts: [s0], last: [p.sx, p.sy], out: false, cells: [p.cell], moved: false, to: null, alt: p.alt, world: w };
       pointer = p;
       courseCache = null;
       if (!committing) ex.clear();
@@ -1556,7 +1749,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (!pr.moved && Math.hypot(p.sx - pr.start.sx, p.sy - pr.start.sy) > 6) {
         pr.moved = true;
         if ((pr.kind === 'edit' || pr.kind === 'handle') && !committing) hideFor(pr.hit, null);
-        else if (pr.kind !== 'edit' && pr.kind !== 'handle') selectedRiver.value = null;
+        else if (pr.kind !== 'edit' && pr.kind !== 'handle' && pr.kind !== 'extra') selectedRiver.value = null;
       }
       if (!pr.moved) return;
       if (pr.kind === 'handle' && pr.hit?.kind === 'handle') {
@@ -1625,6 +1818,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       cancelPreviews();
       riverStyleOverride.value = null;
       riverCutPick.value = false;
+      riverAddMode.value = null;
       clearRiverBarPreview();
     },
     leave() {
@@ -1633,6 +1827,10 @@ export function riverTool(zoom: () => number): ToolHandler {
     // 鼠标离开地图后预览还留着：松手后还在算的那一笔（画河不排队：结果换上之前一直显示松手时的样子，不闪回原样）、底部条上的预览
     keep: () => !!committing || !!riverBarPreview.value,
     escape() {
+      if (riverAddMode.value) {
+        riverAddMode.value = null;
+        return true;
+      }
       if (!riverCutPick.value) return false;
       riverCutPick.value = false;
       clearRiverBarPreview();
@@ -1647,7 +1845,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (!T) return null;
       const z = zoom();
       const H = handlesOf(T, z);
-      const at = !press && pointer ? pick(w, pointer.x, pointer.y, pointer.cell, z) : null;
+      const at = !press && pointer && !riverAddMode.value ? pick(w, pointer.x, pointer.y, pointer.cell, z) : null;
       const hot = at?.kind === 'handle' ? { j: at.j, plus: at.plus } : null;
       return { layers: [], shapes: handleShapes(w, T, H, z, hot) };
     },
@@ -1685,6 +1883,19 @@ export function riverTool(zoom: () => number): ToolHandler {
         if (pr.kind === 'flow') return water(w, pr.cells[0]) ? { layers: [], shapes: [], hint: '河要从陆地上开始', warn: true } : flowPreview(w, pr.cells, true);
         const { course, line, shapes } = courseNow(w, pr);
         return coursePreview(w, course, line, pr.alt, true, shapes);
+      }
+      // 按了“分一股出去”“加一个源头”：说从哪里起笔、会怎样
+      const mode = riverAddMode.value;
+      const sel = selectedRiver.value;
+      if (mode && sel) {
+        const at = pr?.start ?? pointer;
+        const ST = targetOf(w, sel);
+        const on = ST ? editPoint(w, ST, at.x, at.y).d <= SNAP_PX / zoom() : false;
+        const what =
+          mode === 'branch'
+            ? `从这里起笔画出去：分一股水出去（约 ${Math.round(BRANCH_SHARE * 100)}%），画到海里、湖里、别的河上，也可以画回这条河的下游`
+            : '从这里起笔往外画：画的另一头是新的源头，水流进这条河（同一条河、同一个名字）';
+        return { layers: [], shapes: riverGlow(w, sel), hint: on ? what : `在选中的河上起笔（${mode === 'branch' ? '分一股出去' : '加一个源头'} · Esc 不${mode === 'branch' ? '分' : '加'}了）`, ...(on ? {} : { caution: true }) };
       }
       // 悬停（或按下还没拖开）：鼠标下的控制点、河亮一下，写出是哪条河、从这里起笔会怎样
       const at = pr?.start ?? pointer;

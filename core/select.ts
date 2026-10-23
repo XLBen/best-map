@@ -1398,8 +1398,16 @@ export function overlapsOf(world: World, d: Derived, plan: CoursePlan, opts: Ove
     const hitOf: ({ l: number; k: number } | null)[] = new Array(m).fill(null);
     const head = S.along[c0] + 1.0 * sp;
     const tail = plan.end === 'river' ? 1.5 * sp : 0;
+    // 穿过别的河的那几格（截走它，另外说）不算贴着
+    const crossed = new Set<number>();
+    for (const x of plan.crossings) for (let k = x.from; k <= x.to; k++) crossed.add(plan.cells[k]);
+    let hint = plan.cells[0] ?? 0;
     for (let j = c0; j <= c1; j++) {
       if (S.along[j] < head || S.along[j] > total - tail) continue;
+      if (crossed.size) {
+        hint = findCell(mesh, S.x[j], S.y[j], hint);
+        if (crossed.has(hint)) continue;
+      }
       const h = grid(S.x[j], S.y[j]);
       if (h && h.d < ALONG_DIST * sp) {
         at[j] = h.l;

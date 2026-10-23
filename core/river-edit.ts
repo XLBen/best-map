@@ -309,7 +309,7 @@ function headSection(world: World, d: Derived, T: EditTarget, head: readonly Pt[
   if (t.loop || t.cells[t.cells.length - 1] !== C[b.k]) return { blocked: t.stop >= 0 ? '新的源头一段穿过了海或湖' : '没法从这里改' };
   const headCells = t.cells.slice(0, -1);
   // 源头落在别的河上：那条河会被从中间截断、下游却还标着它（截走只认新河道中间的格），不让这样改
-  if (headCells.length && isRiverCell(world, d, headCells[0]) && !T.own.includes(headCells[0])) return { blocked: '源头不能放在别的河上' };
+  if (headCells.length && isRiverCell(world, d, headCells[0]) && !T.own.includes(headCells[0])) return { blocked: '源头不能放在别的河上：要给那条河加源头、分一股水，先选中它，再点底部的「加一个源头」「分一股出去」' };
   const tail = C.slice(b.k);
   const tailSet = new Set(tail);
   if (headCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了这条河自己' };
