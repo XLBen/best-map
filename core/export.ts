@@ -2,7 +2,7 @@ import { strToU8, zipSync, zlibSync } from 'fflate';
 import type { WorldDoc } from './engine';
 import { featureLabel } from './features';
 import { summarizeProvinces } from './provinces';
-import { riverWidth, traceRivers } from './rivers';
+import { riverRibbon, traceRivers } from './rivers';
 import { findCell } from './mesh';
 import { exportProvinceCells } from './seams';
 import { rasterizeWorld } from './subcell';
@@ -361,19 +361,20 @@ function drawRivers(world: World, rgb: Uint8Array, land: Uint8Array, width: numb
     [0, 100, 255],
     [0, 50, 200],
   ];
+  // 与屏幕上同一条带子（core/rivers.ts 的 riverRibbon：中线带细小的弯曲，宽度平滑、源头收尖、河口张开）
   for (const line of traceRivers(world)) {
-    for (let k = 0; k + 1 < line.points.length; k++) {
-      const flow = (line.flow[k] + line.flow[k + 1]) / 2;
+    const rb = riverRibbon(line, thr, mesh.spacing);
+    for (let k = 0; k + 1 < rb.x.length; k++) {
+      const flow = (line.flow[rb.src[k]] + line.flow[Math.min(line.flow.length - 1, rb.src[k] + 1)]) / 2;
       const level = Math.min(colors.length - 1, Math.max(0, Math.floor(Math.log10(flow / thr) * 2)));
       const col = colors[level];
-      // 没有粗细倍数的（自然的河、没调过粗细的画的河）照原来的算式，逐位不变
-      const r = line.mul ? Math.max(0, (riverWidth(flow, thr) * ((line.mul[k] + line.mul[k + 1]) / 2) * scale - 1) / 2) : Math.max(0, (riverWidth(flow, thr) * scale - 1) / 2);
+      const r = Math.max(0, ((rb.hw[k] + rb.hw[k + 1]) * scale - 1) / 2);
       const ri = Math.ceil(r);
       const r2 = r * r + 0.25;
-      const x0 = line.points[k][0] * sx;
-      const y0 = line.points[k][1] * sy;
-      const x1 = line.points[k + 1][0] * sx;
-      const y1 = line.points[k + 1][1] * sy;
+      const x0 = rb.x[k] * sx;
+      const y0 = rb.y[k] * sy;
+      const x1 = rb.x[k + 1] * sx;
+      const y1 = rb.y[k + 1] * sy;
       const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2) + 1;
       for (let st = 0; st <= steps; st++) {
         const t = st / steps;

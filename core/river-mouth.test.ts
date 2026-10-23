@@ -1,0 +1,193 @@
+import { describe, expect, it } from 'vitest';
+import { displayCoast, displayCoastAt, shoreCrossing } from './display';
+import { type RiverLine, riverRibbon, riverWidth, traceRivers } from './rivers';
+import { pointIsLand } from './subcell';
+import { coastValues } from './subcell';
+import { continents, engineFor, snapshot } from './testing/fixtures';
+import type { World } from './world';
+
+// 第十二轮：河口画到画面上的岸线（与地形层画海岸线的同一个海岸场，湖也一样），出湖的河从湖岸画起；
+// 河画成一条连续的带子（宽度平滑、往下游不变窄，源头收尖，河口略张开）
+
+const planet = () =>
+  snapshot('planet-4000-s4', () => {
+    const eng = engineFor({ seed: 4, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
+    return eng;
+  });
+
+// 一点在画面上的海岸场（> 0 陆地）
+const field = (w: World, x: number, y: number) => displayCoastAt(w, displayCoast(w), x, y).v;
+
+// 沿 a → b 方向离 p 前后各 eps 的两点
+function around(p: readonly [number, number], a: readonly [number, number], b: readonly [number, number], eps: number) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const l = Math.hypot(dx, dy) || 1;
+  return { before: [p[0] - (dx / l) * eps, p[1] - (dy / l) * eps] as const, after: [p[0] + (dx / l) * eps, p[1] + (dy / l) * eps] as const };
+}
+
+describe('shoreCrossing：画面上的岸线', () => {
+  it('与 pointIsLand（导出、悬停用的陆海判定）一致：岸线前一点是陆地、后一点是海（不靠湖的地方两者是同一个场）', () => {
+    const w = continents().world;
+    const { mesh, causes, derived: d } = w;
+    const s = coastValues(w);
+    let tried = 0;
+    for (let i = 0; i < mesh.n && tried < 60; i++) {
+      if (!causes.land[i] || d.lake[i]) continue;
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        const j = mesh.adj[e];
+        if (causes.land[j]) continue;
+        const a: [number, number] = [mesh.x[i], mesh.y[i]];
+        const b: [number, number] = [mesh.x[j], mesh.y[j]];
+        const hit = shoreCrossing(w, a, b, i);
+        expect(hit).not.toBeNull();
+        const eps = mesh.spacing * 1e-3;
+        const { before, after } = around(hit!.p, a, b, eps);
+        expect(pointIsLand(w, s, d.elevation, before[0], before[1], i).land).toBe(true);
+        expect(pointIsLand(w, s, d.elevation, after[0], after[1], i).land).toBe(false);
+        // 从陆上一路走到这里都是陆地（第一次走到水面的地方）
+        for (let k = 1; k < 16; k++) {
+          const t = (hit!.t * k) / 16 - 1e-6;
+          expect(field(w, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)).toBeGreaterThan(0);
+        }
+        tried++;
+        break;
+      }
+    }
+    expect(tried).toBeGreaterThan(20);
+  });
+
+  it('陆上的起点在画面上已是水面时为 null', () => {
+    const w = continents().world;
+    const { mesh, causes } = w;
+    const sea = Array.from({ length: mesh.n }, (_, i) => i).find((i) => !causes.land[i])!;
+    expect(shoreCrossing(w, [mesh.x[sea], mesh.y[sea]], [mesh.x[sea] + mesh.spacing, mesh.y[sea]], sea)).toBeNull();
+  });
+});
+
+// 入海、入湖的河的最后一点、出湖的河的第一点都在画面上的岸线上：顺着找岸线的方向（河口那格往它流进的水面那格、
+// 源头那格往湖里那格），前面千分之二格是陆地、后面是水面。画的河另见 course-render.test.ts
+function checkEnds(w: World) {
+  const { mesh, derived: d } = w;
+  const lines = traceRivers(w).filter((l) => l.guide === undefined);
+  let mouths = 0;
+  let lakeHeads = 0;
+  const tol = mesh.spacing * 2e-3;
+  const centre = (c: number, ref: number): [number, number] => [ref + (mesh.x[c] - ref - 2 * Math.round((mesh.x[c] - ref) / 2) * (mesh.kind === 'sphere' ? 1 : 0)), mesh.y[c]];
+  const onShore = (p: readonly [number, number], from: readonly [number, number], to: readonly [number, number]) => {
+    const { before, after } = around(p, from, to, tol);
+    return field(w, before[0], before[1]) > 0 && field(w, after[0], after[1]) <= 0;
+  };
+  for (const l of lines) {
+    const n = l.points.length;
+    if (l.mouth) {
+      mouths++;
+      const p = l.points[n - 1];
+      const c = l.cells![n - 1];
+      expect(onShore(p, centre(c, p[0]), centre(d.receiver[c], p[0]))).toBe(true);
+    }
+    if (l.head === 'lake') {
+      lakeHeads++;
+      const p = l.points[0];
+      const c = l.cells![0];
+      const lake = Array.from({ length: mesh.n }, (_, j) => j).filter((j) => d.receiver[j] === c && d.lake[j] === 1 && w.causes.land[j]);
+      expect(lake.length).toBeGreaterThan(0);
+      expect(lake.some((j) => onShore(p, centre(c, p[0]), centre(j, p[0])))).toBe(true);
+    }
+  }
+  return { mouths, lakeHeads, lines };
+}
+
+describe('河口在画面上的岸线上', () => {
+  it('一块地区：入海、入湖的河画到岸线为止，出湖的河从湖岸画起', () => {
+    const w = continents().world;
+    const { mouths, lakeHeads, lines } = checkEnds(w);
+    expect(mouths).toBeGreaterThan(10);
+    expect(lines.some((l) => l.head === 'source')).toBe(true);
+    // 有湖的世界里才有出湖的河：这里只要求标得对（数可以是 0）
+    expect(lakeHeads).toBeGreaterThanOrEqual(0);
+  });
+
+  it('整个星球：岸线噪声在球面上取，河口照样在岸线上（跨接缝的河也一样）', () => {
+    const w = planet().world;
+    const { mouths } = checkEnds(w);
+    expect(mouths).toBeGreaterThan(5);
+  });
+
+  it('放一个湖：流进湖的河停在湖岸，流出湖的河从湖岸画起', () => {
+    const eng = continents();
+    const w0 = eng.world;
+    const { mesh } = w0;
+    // 找一条长河中游的一格放湖
+    const big = traceRivers(w0)
+      .filter((l) => l.cells && l.cells.length > 30)
+      .sort((a, b) => b.cells!.length - a.cells!.length)[0];
+    const cell = big.cells![Math.floor(big.cells!.length / 2)];
+    eng.exec({ op: 'add_lake', lake: { cell, radius: 2 * mesh.spacing * w0.kmPerUnit, depth: 200, perennial: true } });
+    const w = eng.world;
+    expect(w.derived.lake.some((v, i) => v === 1 && w.causes.land[i])).toBe(true);
+    const { lines } = checkEnds(w);
+    expect(lines.some((l) => l.mouth && w.derived.lake[w.derived.receiver[l.cells![l.cells!.length - 1]]] === 1)).toBe(true);
+    expect(lines.some((l) => l.head === 'lake')).toBe(true);
+  });
+});
+
+describe('河的带子', () => {
+  const thr = 10;
+  const sp = 0.01;
+  const straight = (n: number, flow: (k: number) => number, more: Partial<RiverLine> = {}): RiverLine => ({
+    points: Array.from({ length: n }, (_, k) => [k * sp * 0.5, 0.5] as [number, number]),
+    flow: Array.from({ length: n }, (_, k) => flow(k)),
+    ...more,
+  });
+
+  it('宽度往下游只增不减（流量有起伏也一样），平滑：相邻两点的半宽差得很少', () => {
+    const rb = riverRibbon(straight(40, (k) => 20 + 30 * k + (k % 3 === 0 ? -25 : 0)), thr, sp);
+    for (let i = 1; i < rb.hw.length; i++) expect(rb.hw[i]).toBeGreaterThanOrEqual(rb.hw[i - 1] - 1e-6);
+    for (let i = 1; i < rb.hw.length; i++) expect(rb.hw[i] - rb.hw[i - 1]).toBeLessThan(0.05);
+    // 点加密到约 1/16 格
+    expect(rb.x.length).toBeGreaterThan(39 * 8);
+  });
+
+  it('源头收尖：第一点约一成半宽，约 1.25 格以后是全宽；不是源头的不收', () => {
+    const line = straight(30, () => 200);
+    const full = riverWidth(200, thr) / 2;
+    const src = riverRibbon({ ...line, head: 'source' }, thr, sp);
+    expect(src.hw[0]).toBeCloseTo(0.15 * full, 3);
+    const at = (rb: typeof src, s: number) => rb.hw[rb.s.findIndex((v) => v >= s)];
+    expect(at(src, 0.6 * sp)).toBeGreaterThan(0.3 * full);
+    expect(at(src, 0.6 * sp)).toBeLessThan(0.9 * full);
+    expect(at(src, 1.3 * sp)).toBeCloseTo(full, 3);
+    const lake = riverRibbon({ ...line, head: 'lake' }, thr, sp);
+    expect(lake.hw[0]).toBeCloseTo(full, 3);
+  });
+
+  it('河口略张开（最后约 0.6 格），最后一点就是河线的最后一点（平头收在岸线上）；两头不加弯曲', () => {
+    const line = straight(30, () => 200, { mouth: true });
+    const rb = riverRibbon(line, thr, sp);
+    const n = rb.x.length;
+    const full = riverWidth(200, thr) / 2;
+    expect(rb.hw[n - 1]).toBeCloseTo(1.3 * full, 3);
+    expect(rb.hw[Math.floor(n / 2)]).toBeCloseTo(full, 3);
+    expect(rb.x[n - 1]).toBe(line.points[29][0]);
+    expect(rb.y[n - 1]).toBe(line.points[29][1]);
+    expect(rb.x[0]).toBe(line.points[0][0]);
+    expect(rb.y[0]).toBe(line.points[0][1]);
+    // 中间有细小的弯曲（不到 0.1 格），法向是单位向量
+    const off = Math.max(...Array.from(rb.y, (v) => Math.abs(v - 0.5)));
+    expect(off).toBeGreaterThan(0.005 * sp);
+    expect(off).toBeLessThan(0.1 * sp);
+    for (let i = 0; i < n; i++) expect(Math.hypot(rb.nx[i], rb.ny[i])).toBeCloseTo(1, 5);
+  });
+
+  it('结果确定：同一条线算两次逐位相同；粗细倍数乘在半宽上', () => {
+    const line = straight(20, (k) => 50 + k * 10, { head: 'source', mouth: true });
+    const a = riverRibbon(line, thr, sp);
+    const b = riverRibbon(line, thr, sp);
+    expect(Array.from(a.x)).toEqual(Array.from(b.x));
+    expect(Array.from(a.hw)).toEqual(Array.from(b.hw));
+    const c = riverRibbon(line, thr, sp, () => 2);
+    for (let i = 0; i < a.hw.length; i++) expect(c.hw[i]).toBeCloseTo(2 * a.hw[i], 5);
+  });
+});

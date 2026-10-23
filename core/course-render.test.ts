@@ -6,6 +6,7 @@ import { Engine } from './engine';
 import { exportPackage } from './export';
 import { findCell } from './mesh';
 import { DEFAULT_PACK, generateName, hashString } from './names';
+import { displayCoast, displayCoastAt } from './display';
 import { type RiverLine, decodePath, encodePath, guideBody, guideLine, snapOnto, traceRivers } from './rivers';
 import { type CoursePlan, isRiverCell, planCourse, riverStem, stemPath } from './select';
 import { continents, engineFor } from './testing/fixtures';
@@ -89,11 +90,23 @@ describe('画的线就是河', () => {
       const runs = courseOf(lines, id);
       expect(runs.length).toBeGreaterThan(0);
       for (const r of runs) {
-        // 每一段都是画的线上连续的一截（汇入别的河的最后一点接到那条河上）
+        // 每一段都是画的线上连续的一截（汇入别的河的最后一点接到那条河上；入海、入湖的最后一点在画的线上、画面上的岸线处）
         const k0 = gl.points.findIndex((p) => p[0] === r.points[0][0] && p[1] === r.points[0][1]);
         expect(k0).toBeGreaterThanOrEqual(0);
-        const m = id === 'river-b' && r === runs[runs.length - 1] ? r.points.length - 1 : r.points.length;
+        const m = (id === 'river-b' && r === runs[runs.length - 1]) || r.mouth ? r.points.length - 1 : r.points.length;
         expect(r.points.slice(0, m)).toEqual(gl.points.slice(k0, k0 + m));
+        if (r.mouth) {
+          const end = r.points[r.points.length - 1];
+          expect(snapOnto(gl.points, end[0], end[1])!.d).toBeLessThan(1e-9);
+          const f = displayCoast(w);
+          const prev = r.points[r.points.length - 2];
+          const dx = end[0] - prev[0];
+          const dy = end[1] - prev[1];
+          const l = Math.hypot(dx, dy);
+          const eps = 2e-3 * w.mesh.spacing;
+          expect(displayCoastAt(w, f, end[0] - (dx / l) * eps, end[1] - (dy / l) * eps).v).toBeGreaterThan(0);
+          expect(displayCoastAt(w, f, end[0] + (dx / l) * eps, end[1] + (dy / l) * eps).v).toBeLessThanOrEqual(0);
+        }
         expect(r.flow.length).toBe(r.points.length);
         expect(r.mul).toEqual(r.points.map(() => 1));
       }

@@ -5,6 +5,97 @@ import { coastDetail, coastDetail3, coastDetailAmp, coastValues, locate, warpOff
 import { coastSeed } from './terrain';
 import type { World } from './world';
 
+// ---------- 画面上的海岸场（地形层的着色器用的那一份）----------
+// 每格的海岸值（coastValues）与高程，湖面另算：湖面的海岸值取负、离岸至少 60 m（有岸线、有格以下的岸线细节），
+// 高程取负的水深（浅水边、海岸细节的幅度按它）。着色（src/render/colors.ts）上传给地形层的就是这一份，
+// 河口（core/rivers.ts 的 shoreCrossing）按它找画出来的岸线，所以河正好画到岸上（海、湖都一样）
+
+// 湖水深（m），至少 2 m
+export const lakeDepth = (world: World, i: number) => Math.max(2, world.derived.water[i] - world.derived.elevation[i]);
+// 湖面的海岸值：取负、离岸至少 60 m（幽灵海岸画新湖、原来的湖用同一个规则）
+export const lakeCoast = (c: number) => -Math.max(60, Math.abs(c));
+const isLakeCell = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
+
+export interface DisplayCoast {
+  coast: Float32Array;
+  elevation: Float32Array;
+}
+
+// 按高程数组缓存，另比湖、水面、陆海、陆地程度、海岸破碎度、海岸的种子（当前世界与预览世界各留一份）
+const displayCache = new WeakMap<Float32Array, { inputs: unknown[]; value: DisplayCoast }[]>();
+export function displayCoast(world: World): DisplayCoast {
+  const { derived: d, causes } = world;
+  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world)];
+  let list = displayCache.get(d.elevation);
+  if (!list) displayCache.set(d.elevation, (list = []));
+  const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
+  if (hit) return hit.value;
+  const coast = coastValues(world);
+  const elevation = d.elevation.slice();
+  for (let i = 0; i < world.mesh.n; i++) {
+    if (!isLakeCell(world, i)) continue;
+    coast[i] = lakeCoast(coast[i]);
+    elevation[i] = -lakeDepth(world, i);
+  }
+  const value = { coast, elevation };
+  list.unshift({ inputs, value });
+  list.length = Math.min(list.length, 2);
+  return value;
+}
+
+// 画面上一点的海岸场（> 0 画成陆地，湖、海 < 0）：与地形层的着色器同一个算式（三角形内插值 + 格以下的海岸细节，
+// 整个星球上细节在球面上取）。hint：附近的格；返回值与离它最近的格（下一次的 hint）
+export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: number, hint = 0): { v: number; nearest: number } {
+  const { mesh } = world;
+  const sphere = mesh.kind === 'sphere';
+  const sp = mesh.spacing;
+  const px = sphere ? wrapX(x) : x;
+  const loc = locate(mesh, px, y, hint);
+  const [a, b, c] = loc.i;
+  const [wa, wb, wc] = loc.w;
+  const sv = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
+  const h = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
+  const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
+  const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
+  return { v: sv + weight * coastDetailAmp(world, Math.max(0, h)) * detail, nearest: loc.nearest };
+}
+
+// 从陆上的一点 a 往水里的一点 b 走，画出来的岸线在哪里（第一次走到水面的地方）：先等分取 24 个点，再在跨过岸线的那一小段里二分。
+// a 在画面上不是陆地、一路都没走到水面时为 null。整个星球上 x 可以展开（结果与 a 在同一份上）
+const CROSS_SAMPLES = 24;
+const CROSS_BISECT = 14;
+export function shoreCrossing(world: World, a: readonly [number, number], b: readonly [number, number], hint = 0): { p: [number, number]; t: number } | null {
+  const f = displayCoast(world);
+  const [ax, ay] = a;
+  const dx = b[0] - ax;
+  const dy = b[1] - ay;
+  let h = hint;
+  const at = (t: number) => {
+    const r = displayCoastAt(world, f, ax + dx * t, ay + dy * t, h);
+    h = r.nearest;
+    return r.v;
+  };
+  if (at(0) <= 0) return null;
+  let t0 = 0;
+  for (let k = 1; k <= CROSS_SAMPLES; k++) {
+    const t1 = k / CROSS_SAMPLES;
+    if (at(t1) > 0) {
+      t0 = t1;
+      continue;
+    }
+    let lo = t0;
+    let hi = t1;
+    for (let it = 0; it < CROSS_BISECT; it++) {
+      const m = (lo + hi) / 2;
+      if (at(m) > 0) lo = m;
+      else hi = m;
+    }
+    // 取刚过岸线的那一点（在水面一侧）：河画到岸线为止，不留缝
+    return { p: [ax + dx * hi, ay + dy * hi], t: hi };
+  }
+  return null;
+}
+
 // 屏幕上的一点画的是哪一格：与着色器同一套规则（src/render/renderer.ts 的 FS_COMPOSE 与地形层）。
 //   · 陆还是海：三角形内插值的海岸值 + 格以下的海岸细节（地形层画海岸线的那一条，见 subcell.ts 的 pointIsLand；
 //     整个星球上细节噪声在球面上取，与着色器、导出相同）；
