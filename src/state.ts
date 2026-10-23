@@ -1187,7 +1187,8 @@ export function editScript(issue: ScriptIssue) {
 export type Again = { label: string; next: () => Command | null };
 
 // 执行一条编辑命令；成功后显示“改了什么”、撤销，以及能换一个时的“换一个”、额外的按钮
-export async function exec(cmd: Command, label = '正在计算…', again?: Again, action?: NoteAction): Promise<boolean> {
+// head：顶部说的话（不用引擎的说法时）
+export async function exec(cmd: Command, label = '正在计算…', again?: Again, action?: NoteAction, head?: string): Promise<boolean> {
   const r = await call({ kind: 'exec', cmd }, label);
   // 这类命令重算一次要多久（成本闸门：太慢的不自动预览）
   if (r.ok && r.snapshot && !('light' in r.snapshot)) noteCost(cmd, r.snapshot.timings.total);
@@ -1200,8 +1201,8 @@ export async function exec(cmd: Command, label = '正在计算…', again?: Agai
   const ok = await handle(r);
   if (ok && r.ok) {
     trustOwn(cmd);
-    const head = (cmd.op === 'add_constraint' && before && world.value && paintNote(before, world.value)) || r.summary || '完成';
-    noteChange(head, before, againAction(again, label), true, action);
+    const text = head ?? ((cmd.op === 'add_constraint' && before && world.value && paintNote(before, world.value)) || r.summary || '完成');
+    noteChange(text, before, againAction(again, label), true, action);
   }
   return ok;
 }

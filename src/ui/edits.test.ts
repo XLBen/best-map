@@ -150,6 +150,21 @@ describe('岛上特有', () => {
     expect(pv.layers[0].cells.length).toBeGreaterThan(0);
   });
 
+  it('群岛里的岛：悬停写成“岛名（群岛名）”（地图上标的常常是群岛的名字）', () => {
+    const eng = engineFor({ cells: 12000, seed: 1, latNorth: 30, latSouth: 0 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
+    const w = eng.world;
+    world.value = w;
+    const arch = w.derived.features.find((f) => f.type === 'archipelago' && f.name)!;
+    expect(arch).toBeTruthy();
+    const inArch = new Set(Array.from(arch.cells));
+    const island = w.derived.features.find((f) => f.type === 'island' && inArch.has(f.anchor) && f.name !== arch.name)!;
+    expect(island).toBeTruthy();
+    const t = endemicTool();
+    t.move?.(at(w, island.anchor), false);
+    expect(t.preview().hint).toMatch(new RegExp(`^「${island.name}（${arch.name}）」`));
+  });
+
   it('已有的岛：点一下选中（不换画笔），可以去掉；自然的擦除悬停时说在哪里去掉', async () => {
     const eng = archipelago();
     const w0 = eng.world;

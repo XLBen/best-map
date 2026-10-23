@@ -1382,6 +1382,24 @@ export function landmassOf(w: World, cell: number): GeoFeature | null {
   return m.get(cell) ?? null;
 }
 
+// 岛在哪个群岛里（没有时 null）。群岛的名字标在地图上时，岛自己的名字常常让开不标：说岛时带上群岛的名字
+const archipelagoCache = new WeakMap<World, Map<number, GeoFeature>>();
+export function archipelagoOf(w: World, f: GeoFeature): GeoFeature | null {
+  let m = archipelagoCache.get(w);
+  if (!m) {
+    m = new Map();
+    for (const a of w.derived.features) if (a.type === 'archipelago') for (const c of a.cells) m.set(c, a);
+    archipelagoCache.set(w, m);
+  }
+  return m.get(f.anchor) ?? m.get(f.cells[0]) ?? null;
+}
+
+// 岛的叫法：在群岛里的写成“炎柳岛（二雁列岛）”
+export function islandLabel(w: World, f: GeoFeature): string {
+  const a = archipelagoOf(w, f);
+  return a?.name && a.name !== f.name ? `${f.name}（${a.name}）` : f.name;
+}
+
 // 岛上特有的生态：这个岛已有的那一种（一个岛只有一种，id 跟着岛的锚点格）
 export function endemicOf(w: World, f: GeoFeature): Species | null {
   return w.small.species.find((s) => s.id === `endemic_${f.anchor}`) ?? null;
@@ -1471,7 +1489,7 @@ export function endemicTool(): ToolHandler {
         setOptions({ biome: sp.id });
         sheet.value = 'species';
       };
-      await exec({ op: 'add_species', species: sp }, '正在创造生态…', undefined, { label: '编辑', run: edit });
+      await exec({ op: 'add_species', species: sp }, '正在创造生态…', undefined, { label: '编辑', run: edit }, `「${islandLabel(w, f)}」上新的一种生态：${sp.name}`);
     },
     preview() {
       const w = world.value;
@@ -1485,11 +1503,11 @@ export function endemicTool(): ToolHandler {
         return { layers: [], shapes: [], hint: picked ? `已有：${old.name}（在下面去掉它）` : `已有：${old.name}（点一下，在下面去掉它）` };
       }
       const { sp, base, layer } = plan(w, f);
-      if (!sp || !base) return { layers: [], shapes: [], hint: `「${f.name}」上没有能长东西的地方`, warn: true };
+      if (!sp || !base) return { layers: [], shapes: [], hint: `「${islandLabel(w, f)}」上没有能长东西的地方`, warn: true };
       return {
         layers: layer ? [layer] : [],
         shapes: [],
-        hint: `「${f.name}」：${base.name || base.id} → ${sp.name}（新的一种生态，只长在这个岛上）`,
+        hint: `「${islandLabel(w, f)}」：${base.name || base.id} → ${sp.name}（新的一种生态，只长在这个岛上）`,
       };
     },
   };
