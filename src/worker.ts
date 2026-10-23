@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 import { Dirty } from '../core/commands';
+import { previewWorldOf } from '../core/preview-world';
+import { riverBuffers, worldRivers } from '../core/river-pack';
 import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
 import { planetFormIssues, previewTerrain, resolveTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
@@ -197,11 +199,15 @@ function snapshot(e: Engine, full = false): { snap: Snapshot; transfer: Transfer
       same.corrF.push(k);
     } else derived.corrF[k] = copy(v);
   }
+  // 地图上的河：在这里描好、打包转交（主线程不再描，见 core/river-pack.ts）
+  const rivers = worldRivers(w);
+  transfer.push(...riverBuffers(rivers));
   // 发出去的数组之后不能就地改（下一次按它们比较）
   e.freezeDerived();
   lastSent = sent;
   return {
     snap: {
+      rivers,
       settings: w.settings,
       causes,
       small: w.small,
@@ -434,8 +440,10 @@ async function handle(id: number, req: Request) {
           for (;;) {
             const r = steps.next();
             if (r.done) {
-              // 差别里的数组是副本的（副本留着给紧接着的执行采用）：不转移，结构化克隆复制一份发过去
-              reply({ id, ok: true, preview: r.value.result, world: r.value.patch });
+              // 差别里的数组是副本的（副本留着给紧接着的执行采用）：不转移，结构化克隆复制一份发过去。
+              // 预览世界的河也在这里描好（主线程画将来的样子时直接用）
+              const rivers = worldRivers(previewWorldOf(engine!.world, r.value.patch));
+              reply({ id, ok: true, preview: r.value.result, world: r.value.patch, rivers }, riverBuffers(rivers));
               return;
             }
             await yieldNow();

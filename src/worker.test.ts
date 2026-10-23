@@ -299,4 +299,28 @@ describe('快照只带变了的数组', () => {
     const du = filled(u, full);
     for (const [k, v] of Object.entries(first.derived)) if (ArrayBuffer.isView(v)) expect(Array.from(du[k] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
   });
+
+  // 第十三轮：地图上的河在 Worker 里描好随快照转交（主线程不再描）：拆开的与主线程按快照拼出的世界描的逐位相同，
+  // 只带变了的数组的快照也一样；预览世界的河随预览的回复送来
+  it('快照带着描好的河：与按快照拼出的世界描的逐位相同；预览世界的河也送来', async () => {
+    const { traceRivers } = await import('../core/rivers');
+    const { unpackRivers } = await import('../core/river-pack');
+    const { buildMeshFor, kmPerUnit } = await import('../core/world');
+    const worldOf = (snap: Snapshot, derived: unknown) => ({ settings: snap.settings, mesh: buildMeshFor(snap.settings), kmPerUnit: kmPerUnit(snap.settings), causes: snap.causes, small: snap.small, derived }) as never;
+    type L = ReturnType<typeof traceRivers>;
+    const json = (ls: L) => JSON.stringify(ls.map((l) => [l.points, l.flow, l.cells ?? null, l.mul ?? null, l.type ?? null, l.head ?? null, l.mouth ?? null, l.into ?? null, l.guide ?? null, l.joins ?? null]));
+    const first = (await send({ kind: 'init', settings, commands })).snapshot as Snapshot;
+    expect(first.rivers).toBeDefined();
+    const w0 = worldOf(first, first.derived);
+    const here = traceRivers(w0);
+    expect(here.length).toBeGreaterThan(3);
+    expect(json(unpackRivers(first.rivers!).lines)).toBe(json(here));
+    const r = (await send({ kind: 'exec', cmd: { op: 'set_planet', patch: { humidity: 1.2 } } })).snapshot as Snapshot;
+    expect(r.same).toBeDefined();
+    const w1 = worldOf(r, filled(r, first));
+    expect(json(unpackRivers(r.rivers!).lines)).toBe(json(traceRivers(w1)));
+    const pv = await send({ kind: 'previewWorld', cmd: { op: 'set_planet', patch: { humidity: 1.3 } } });
+    expect(pv.rivers).toBeDefined();
+    expect(unpackRivers(pv.rivers!).draws).not.toBeNull();
+  });
 });

@@ -1,7 +1,8 @@
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
 import { circle as geoCircle, wrapX } from '../../core/geo';
 import type { RiverStyle, RiverType } from '../../core/river-types';
-import { type RiverLine, type RiverRibbon, guideShape, guidesSignature, riverRibbon, traceRivers } from '../../core/rivers';
+import { MAP_UNDER_SHORE, type PackedRivers, type RiverDraw, drawTypes, drawTypesKey, riverDraw, unpackRivers } from '../../core/river-pack';
+import { type RiverLine, guideShape, guidesSignature, traceRivers } from '../../core/rivers';
 import { coastSeed } from '../../core/terrain';
 import type { World } from '../../core/world';
 import { drawOverlayProjected } from './overlay-proj';
@@ -24,11 +25,9 @@ export interface OverlayPaths {
   guideLines?: { pts: [number, number][]; locked: boolean }[];
 }
 
-// 一条要画的河：带子，与每个河线点是哪一种河（0 普通，k + 1 是第 k 种河流类型；没有河流类型时省略）
-export interface RiverDraw {
-  rb: RiverRibbon;
-  type?: Uint8Array;
-}
+// 一条要画的河（带子与每个河线点的类型）、一条河线画成要画的河：在 core/river-pack.ts（Worker 里描好的河也用它）
+export type { RiverDraw } from '../../core/river-pack';
+export { riverDraw } from '../../core/river-pack';
 
 // ---------- 河的画法（地图上的河、预览的河共用，预览与结果画出来一样） ----------
 
@@ -76,22 +75,9 @@ function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw: numbe
   }
 }
 
-// 一条河线 → 要画的河。scale：再乘的粗细（拖“粗细”时）；types：河流类型（带类型的点再乘类型的粗细）；
-// underShore：河口往水里多画多长（格）。只给合成时按陆地裁掉水面那部分的地图上的河用，河口正好停在画出来的岸线上
-export function riverDraw(line: RiverLine, thr: number, spacing: number, types: readonly RiverType[] | null, scale = 1, underShore = 0): RiverDraw {
-  const tags = types && line.type ? line.type : null;
-  const typeMul = (k: number) => {
-    const t = tags ? tags[k] : 0;
-    return scale * (t > 0 ? (types![t - 1]?.width ?? 1) : 1);
-  };
-  const rb = riverRibbon(line, thr, spacing, typeMul, underShore ? { underShore } : undefined);
-  if (!tags || !tags.some((t) => t > 0 && types![t - 1])) return { rb };
-  return { rb, type: Uint8Array.from(tags) };
-}
-
 // 一串河线画成要画的河（测试用，与地图上的河同一套：河口多画 0.3 格进水里，合成时按陆地裁掉；见 buildPaths）
 export function riverDraws(world: World, lines: RiverLine[]): RiverDraw[] {
-  return lines.map((line) => riverDraw(line, world.small.planet.riverThreshold, world.mesh.spacing, null, 1, 0.3));
+  return lines.map((line) => riverDraw(line, world.small.planet.riverThreshold, world.mesh.spacing, null, 1, MAP_UNDER_SHORE));
 }
 
 // 一次画的河：画布上要描的几样东西（按颜色合成一笔：同色的带子一次填，交汇处不会叠出深色）
@@ -388,6 +374,15 @@ export const samePathsKey = (a: unknown[], b: unknown[]) => a.length === b.lengt
 const linesMemo: { key: unknown[]; lines: RiverLine[] }[] = [];
 export function riverLines(world: World): RiverLine[] {
   const key = riverLinesKey(world);
+  // Worker 描好送来的（见 seedRivers）
+  const seeded = seeds.get(world);
+  if (seeded) {
+    seeds.delete(world);
+    if (!linesMemo.some((m) => samePathsKey(m.key, key))) {
+      linesMemo.unshift({ key, lines: seeded });
+      linesMemo.length = Math.min(linesMemo.length, 2);
+    }
+  }
   const at = linesMemo.findIndex((m) => samePathsKey(m.key, key));
   if (at >= 0) {
     const [hit] = linesMemo.splice(at, 1);
@@ -400,16 +395,34 @@ export function riverLines(world: World): RiverLine[] {
   return lines;
 }
 
+// Worker 描好的河（第十三轮，core/river-pack.ts）：快照、预览世界到了主线程就交给这里，画这个世界的河时直接用，不在主线程上描。
+// 带子按河线记（只在门槛、格距、河流类型的粗细都一样时用；拖粗细、只画一段时照样现画）
+const seeds = new WeakMap<World, RiverLine[]>();
+const seededDraws = new WeakMap<RiverLine, { key: string; d: RiverDraw }>();
+const drawKeyOf = (thr: number, spacing: number, types: string) => `${thr}|${spacing}|${types}`;
+export function seedRivers(world: World, packed: PackedRivers): void {
+  const { lines, draws } = unpackRivers(packed);
+  seeds.set(world, lines);
+  if (draws && packed.rb) {
+    const key = drawKeyOf(packed.rb.thr, packed.rb.spacing, packed.rb.types);
+    lines.forEach((l, i) => seededDraws.set(l, { key, d: draws[i] }));
+  }
+}
+
 export function buildPaths(world: World, override: RiverStyleOverride | null = null): OverlayPaths {
   const { mesh, small } = world;
   const thr = small.planet.riverThreshold;
   const sphere = mesh.kind === 'sphere';
   const own = override ? small.guides.find((g) => g.id === override.id) : undefined;
   // 带类型的河（第三批）：只在世界里有河流类型时分开画
-  const types = small.riverTypes?.length && world.derived.riverType ? small.riverTypes : null;
+  const types = drawTypes(world);
   const rivers: RiverDraw[] = [];
-  // 地图上的河在合成一步里按陆地裁（renderer 的 uRiver），河口多画 0.3 格进水里，裁出来正好停在岸线上
-  const add = (line: RiverLine, scale = 1) => rivers.push(riverDraw(line, thr, mesh.spacing, types, scale, 0.3));
+  const dk = drawKeyOf(thr, mesh.spacing, drawTypesKey(types));
+  // 地图上的河在合成一步里按陆地裁（renderer 的 uRiver），河口多画 0.3 格进水里，裁出来正好停在岸线上。Worker 描好的直接用
+  const add = (line: RiverLine, scale = 1) => {
+    const seeded = scale === 1 ? seededDraws.get(line) : undefined;
+    rivers.push(seeded && seeded.key === dk ? seeded.d : riverDraw(line, thr, mesh.spacing, types, scale, MAP_UNDER_SHORE));
+  };
   for (const line of riverLines(world)) {
     if (override?.cells && line.guide === undefined) for (const piece of splitRiverLine(line, override.cells, false)) add(piece);
     else if (!override || line.guide !== override.id) add(line);
