@@ -24,7 +24,7 @@ import {
   type TerrainPreview,
 } from '../../core/terrain';
 import { classOfKind, regenTargets } from '../../core/provinces';
-import { isVegetated, landmassCells } from '../../core/vegetation';
+import { explainCell, isVegetated, landmassCells } from '../../core/vegetation';
 import { type ProvinceMeta, type RegionKind, type World, provinceColor, provinceDisplayColor } from '../../core/world';
 import { type DisplayCell, displayCellAt } from '../../core/display';
 import type { GhostEdit, HighlightLayer } from '../render/colors';
@@ -38,6 +38,7 @@ import {
   focusSpecies,
   lakeRange,
   measure,
+  mode,
   noteCost,
   onlyEditsPending,
   options,
@@ -167,6 +168,8 @@ const blockedByOther = () => busy.value !== null && !onlyEditsPending();
 
 // 一笔：经过的格与到笔画中心线的最近归一化距离 t（0 中心，1 边缘）
 let strokeIds = 0;
+// 一格的画笔拖线时，格心离笔画不到这么多格的邻格也涂上（见 Stroke.add）
+export const LINE_CELL = 0.5;
 class Stroke {
   t = new Map<number, number>();
   id = ++strokeIds;
@@ -177,12 +180,20 @@ class Stroke {
   add(w: World, x: number, y: number, filter?: (i: number) => boolean) {
     const r = brushR(w);
     const last = this.last;
-    const steps = last ? Math.max(1, Math.ceil(Math.hypot(x - last[0], y - last[1]) / (r * 0.4))) : 1;
+    const sp = w.mesh.spacing;
+    // 只涂一格的画笔（半径不到半格）：沿着这一段每 1/4 格取一点
+    const tiny = r < sp * 0.5;
+    const step = tiny ? Math.min(r * 0.4, sp * 0.25) : r * 0.4;
+    const steps = last ? Math.max(1, Math.ceil(Math.hypot(x - last[0], y - last[1]) / step)) : 1;
+    const samples: [number, number][] = [];
+    const centers = new Set<number>();
     for (let k = 1; k <= steps; k++) {
       const px = last ? last[0] + ((x - last[0]) * k) / steps : x;
       const py = last ? last[1] + ((y - last[1]) * k) / steps : y;
+      samples.push([px, py]);
       const b = brushCells(w, px, py, options.value.brushKm);
       b.cells.forEach((c, j) => {
+        if (tiny) centers.add(c);
         if (filter && !filter(c)) return;
         const prev = this.t.get(c);
         if (prev === undefined || b.t[j] < prev) {
@@ -190,6 +201,22 @@ class Stroke {
           this.rev++;
         }
       });
+    }
+    // 一格的画笔拖出一条线（第十三轮修）：只取每一点所在的格时，格心左右交替，涂出来是锯齿。
+    // 再加上格心离这一段不到 LINE_CELL 格的邻格，一条线连续、两边整齐（约一格多宽）
+    if (tiny && last) {
+      const { mesh } = w;
+      const lim = sp * LINE_CELL;
+      for (const c of centers) {
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (this.t.get(j) === 0 || (filter && !filter(j))) continue;
+          if (samples.some(([px, py]) => mapDist(w, mesh.x[j], mesh.y[j], px, py) <= lim)) {
+            this.t.set(j, 0);
+            this.rev++;
+          }
+        }
+      }
     }
     this.last = [x, y];
   }
@@ -1104,6 +1131,16 @@ function constraintCmd(cells: number[], species: string) {
 // 确切预览的结果怎么说：几格生态会变（没有变的说“生态不变”）
 const biomeChange = (r: PreviewResult) => (r.changedCells.length ? `${r.changedCells.length} 格生态会变` : '生态不变');
 
+// “自然融入”涂一种生态几乎都没涂成时（第十三轮修：幻想生态常常一格都涂不上，只写“没涂成”看不出为什么），
+// 用一句话说为什么、怎么办：按一个没涂成的格看它卡在哪里。“强制”时不会没涂成，不说
+export function biomeFailWhy(w: World, sp: { id: string; name: string; natural?: boolean }, failing: readonly number[]): string | null {
+  if (options.value.biomeMode !== 'natural' || !failing.length) return null;
+  const e = explainCell(w, w.derived, failing[0]).find((x) => x.species === sp.id);
+  if (e && !e.reachable && e.why === 'range') return `涂不上：这里在「${sp.name}」长的范围外，改用“强制”或改它长在哪里`;
+  if (sp.natural === false) return `涂不上：这里不合「${sp.name}」的条件，改用“强制”，或打开它的“自然生成”、放宽条件`;
+  return `涂不上：这里不合「${sp.name}」的条件，改用“强制”或放宽它的条件`;
+}
+
 export function biomeTool(): ToolHandler {
   return brushTool({
     hint: () => {
@@ -1122,7 +1159,8 @@ export function biomeTool(): ToolHandler {
     exactHint(w, s, _shift, r) {
       const sp = speciesOf(w, options.value.biome)!;
       const { changed, failing } = exactCounts(r, s.t.keys());
-      return `${sp.name} · ${changed} 格会变${failing ? ` · ${failing} 格没涂成` : ''}`;
+      const why = failing && failing >= s.t.size * 0.8 ? biomeFailWhy(w, sp, r.failing.filter((c) => s.t.has(c))) : null;
+      return why ?? `${sp.name} · ${changed} 格会变${failing ? ` · ${failing} 格没涂成` : ''}`;
     },
     // 自然融入：周围这么远跟着平滑过渡
     reach: (w) => (options.value.biomeMode === 'natural' ? options.value.reachKm / w.kmPerUnit : null),
@@ -1719,9 +1757,17 @@ export function lakeTool(): ToolHandler {
       const lake = lakeNow(w);
       const cells = lake?.cells ?? [];
       const coastal = coastalOf(w, cells);
-      // 留得住水：地图上直接画出湖面（湖岸照湖的画法）；贴着海：橙色，松手会被拦下
+      // 留得住水：地图上直接画出湖面（湖岸照湖的画法）；贴着海：橙色，松手会被拦下。
+      // 省份着色开着时（第十三轮修）：省的颜色盖在湖面上，看着像又一个省：湖面另涂一层湖蓝、描一圈白边
+      const overFill: HighlightLayer[] =
+        !coastal && mode.value === 'provinces'
+          ? [
+              { cells, color: [70, 125, 175], alpha: 0.75 },
+              { cells, color: [255, 255, 255], pattern: 'outline' },
+            ]
+          : [];
       return {
-        layers: coastal ? [{ cells, color: [230, 120, 70], alpha: 0.8 }] : [],
+        layers: coastal ? [{ cells, color: [230, 120, 70], alpha: 0.8 }] : overFill,
         shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
         hint: coastal ? '离海太近，留不住水' : (queueHint() ?? `湖 · ${km(radiusNow() * 2)} km`),
         warn: coastal,

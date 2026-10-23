@@ -257,7 +257,11 @@ describe('穿过别的河：不再先问一句', () => {
     await t.up?.(ptr(w, stroke[stroke.length - 1]));
     expect(exec).toHaveBeenCalledTimes(1);
     const cmd = lastExec();
-    expect(cmd).toEqual(newCourse(w, plan, stroke).cmd);
+    // 顶部的话后面可能还带着重叠分析的一句（终点挨着别的河等，看这一笔落在哪里）：比到它之前
+    const want = newCourse(w, plan, stroke).cmd!;
+    const label = (c: typeof cmd) => (c.op === 'add_guide' ? c.label : undefined);
+    expect({ ...cmd, label: undefined }).toEqual({ ...want, label: undefined });
+    expect(label(cmd)?.startsWith(label(want)!)).toBe(true);
     expect(cmd.op === 'add_guide' && cmd.label).toMatch(/截走了/);
   });
 

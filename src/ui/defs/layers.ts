@@ -45,7 +45,17 @@ export const LABEL_GROUPS: { group: LabelGroup; label: string }[] = [
   { group: 'water', label: '海、湾、海峡、河、湖' },
   { group: 'relief', label: '山脉、山峰、高原、平原' },
   { group: 'nature', label: '森林、沙漠、冻原、沼泽' },
+  // 省名不是地物：默认不标（省份类工具打开时屏幕上照样标着，帮着选省；导出只看这里）
+  { group: 'provinces', label: '省名' },
+  { group: 'seaProvinces', label: '海域的省名' },
 ];
+
+// 按图层的设定要标的省名（第十三轮修）：打开“地名”与其中的“省名”才标；海域的省另要打开“海域的省名”。
+// 屏幕上（省份类工具没开时）与导出的图都按它，导出不看开着的是哪类工具
+export function layerProvinceLabels<T extends { kind?: string }>(labels: readonly T[], labelsOn: boolean, groups: ReadonlySet<LabelGroup>): T[] {
+  if (!labelsOn || !groups.has('provinces')) return [];
+  return groups.has('seaProvinces') ? [...labels] : labels.filter((l) => l.kind !== 'sea');
+}
 
 export const SEASONS: [Season, string][] = [
   ['annual', '全年'],

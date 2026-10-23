@@ -192,7 +192,8 @@ export const hoverRiver = signal<RiverRef | null>(null);
 export type LakeRef = { kind: 'placed'; id: string } | { kind: 'natural'; cell: number };
 export const selectedLake = signal<LakeRef | null>(null);
 // 显示哪些地名：按大类
-export type LabelGroup = 'land' | 'water' | 'relief' | 'nature';
+// provinces、seaProvinces（第十三轮修）：省名、海域的省名，默认不显示；打开后屏幕上一直标着、导出的图里也有
+export type LabelGroup = 'land' | 'water' | 'relief' | 'nature' | 'provinces' | 'seaProvinces';
 export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 'relief', 'nature']));
 
 // 编辑后的变化：一句话汇总（带撤销、“换一个”）与几秒钟的高亮

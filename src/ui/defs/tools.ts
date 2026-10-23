@@ -80,7 +80,8 @@ import {
   snapRadiusKm,
   spotTool,
 } from '../tools';
-import { riverTool, unwaterTool } from '../riverCourse';
+import { clearBarPreview } from '../provincePreview';
+import { clearRiverBarPreview, riverTool, unwaterTool } from '../riverCourse';
 import {
   BiomeChip,
   IgnoredChip,
@@ -609,6 +610,10 @@ export function setTool(id: ToolId) {
   if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;
   tool.value = id;
   cursorHint.value = null;
+  // 底部条按钮悬停时的预览（省份的对半分开、重新划分，河的截短、延长）：按钮随着换工具消失，收不到“移开”，
+  // 以前会一直画在新工具上（第十三轮修）。点下去了、等结果的那一份留着
+  clearBarPreview();
+  clearRiverBarPreview();
   // 换工具就不再量距离
   measure.value = null;
 }

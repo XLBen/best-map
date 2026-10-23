@@ -1,4 +1,4 @@
-import { batch, effect } from '@preact/signals';
+import { batch, effect, untracked } from '@preact/signals';
 import { activeConflicts } from '../../core/constraints';
 import { useEffect, useRef } from 'preact/hooks';
 import { displayCellAt } from '../../core/display';
@@ -52,6 +52,7 @@ import {
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom, shapeFitsWidth } from './camera';
 import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
+import { layerProvinceLabels as layerLabels } from './defs/layers';
 import { barPreview } from './provincePreview';
 import { lakeSizeDraft } from './lakeInfo';
 import { riverGlow, riverInfo } from './riverCourse';
@@ -170,6 +171,8 @@ export function MapView() {
     let provinceLabels: ProvinceLabel[] = [];
     // 预览里将来的省名（重划、重新划分）：按预览对象缓存
     let previewLabels: { of: ProvincePreview | null; labels: ProvinceLabel[] } = { of: null, labels: [] };
+    // 图层里打开了“省名”时标的省名（“海域的省名”另开）：屏幕上一直标着，导出也是这一份
+    const layerProvinceLabels = (): ProvinceLabel[] => layerLabels(provinceLabels, overlays.value.labels, labelGroups.value);
     const labelsFor = (w: World, pv: ProvincePreview | null | undefined): ProvinceLabel[] => {
       if (!pv?.province || !pv.metas) return provinceLabels;
       if (previewLabels.of !== pv) {
@@ -511,8 +514,9 @@ export function MapView() {
         season: season.value,
         style: mapStyle.value,
         shapes: glow.length || back?.shapes.length ? [...(back?.shapes ?? []), ...glow, ...preview.shapes] : preview.shapes,
-        provinceLabels: c === 'provinces' ? labelsFor(w, preview.provinces) : [],
-        features: overlays.value.labels || c === 'names' ? labelsShown(w, shown.derived.features, clean) : null,
+        // 省名：省份类工具打开时（不是导出）标出所有的省帮着选；别的时候、导出都按图层里的“省名”（第十三轮修）
+        provinceLabels: c === 'provinces' && !clean ? labelsFor(w, preview.provinces) : layerProvinceLabels(),
+        features: overlays.value.labels || (c === 'names' && !clean) ? labelsShown(w, shown.derived.features, clean) : null,
         labelTypes: types,
         kmPerUnit: w.kmPerUnit,
         hoverLabel: c === 'names' && !clean ? (hoverLabel ?? selectedFeature.value) : null,
@@ -680,11 +684,12 @@ export function MapView() {
     };
 
     // 换工具：新的工具对象；其他会影响预览或叠加的状态变化时重画
+    // 底部条按钮悬停时的预览由 setTool 清掉（defs/tools.ts）；鼠标不在地图上时新工具不预览（第十三轮修）
     const disposeTool = effect(() => {
       const id = tool.value;
-      handler.cancel?.();
+      untracked(() => handler.cancel?.());
       handler = TOOL_DEFS[id].create(env);
-      if (lastPointer) handler.move?.(lastPointer, false);
+      if (lastPointer && pointer) handler.move?.(lastPointer, false);
       requestDraw();
     });
     const disposeRedraw = effect(() => {
@@ -1174,9 +1179,8 @@ export function MapView() {
       renderer.style = mapStyle.value;
     }
 
-    // 干净的画面的叠加层（与 draw(true) 的一样：图层里打开的河、风、洋流、地名、比例尺、纬度刻度；省份类工具时的省名）
+    // 干净的画面的叠加层（与 draw(true) 的一样：图层里打开的河、风、洋流、地名、省名、比例尺、纬度刻度；不看开着的是哪类工具）
     function cleanOverlay(w: World, frame: Frame): OverlayState {
-      const c = category.value;
       const groups = labelGroups.value;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
       return {
@@ -1187,8 +1191,9 @@ export function MapView() {
         season: season.value,
         style: mapStyle.value,
         shapes: [],
-        provinceLabels: c === 'provinces' ? provinceLabels : [],
-        features: overlays.value.labels || c === 'names' ? w.derived.features : null,
+        // 导出只看图层的设定（第十三轮修：以前省份类、地名类工具开着时导出的图里写满了省名，连海省也有）
+        provinceLabels: layerProvinceLabels(),
+        features: overlays.value.labels ? w.derived.features : null,
         labelTypes: types,
         kmPerUnit: w.kmPerUnit,
         hoverLabel: null,
