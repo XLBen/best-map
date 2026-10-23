@@ -712,7 +712,13 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   if (selectedProvince.value !== null && !s.small.provinces[selectedProvince.value]) selectedProvince.value = null;
   // 选中的河：换了世界，画的河被删掉、撤销掉了，或者自然的河那一格不再是河
   const sel = selectedRiver.value;
-  if (sel && (fresh || (sel.kind === 'guide' ? !next.small.guides.some((g) => g.id === sel.id) : !isRiverCell(next, next.derived, sel.cell)))) selectedRiver.value = null;
+  if (sel && (fresh || (sel.kind === 'guide' ? !next.small.guides.some((g) => g.id === sel.id) : !isRiverCell(next, next.derived, sel.cell)))) {
+    // 撤销了固定一条自然的河（或改它的第一步）：那条河又是自然的河了，照样选着它
+    const old = !fresh && sel.kind === 'guide' ? before?.small.guides.find((g) => g.id === sel.id) : undefined;
+    const taken = new Set(next.small.guides.flatMap((g) => g.cells));
+    const back = old?.nameKey !== undefined ? old.cells.find((c) => isRiverCell(next, next.derived, c) && !taken.has(c)) : undefined;
+    selectedRiver.value = back !== undefined ? { kind: 'natural', cell: back } : null;
+  }
   // 选中的湖：放的湖被删掉、撤销掉了，或者那一格（放的湖的中心、自然的湖上点的那格）不再是湖
   const lk = selectedLake.value;
   const lkCell = lk?.kind === 'placed' ? next.small.lakes.find((l) => l.id === lk.id)?.cell : lk?.cell;
@@ -832,7 +838,8 @@ export function flashCells(cells: number[]) {
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
 }
 
-function noteChange(head: string, before: World | null, again?: NoteAction, undoable = true, action?: NoteAction) {
+// quiet：不闪变了的格（改河：拖的时候地图上已经是改完的样子，松手后再闪一圈反而像出了别的变化）
+function noteChange(head: string, before: World | null, again?: NoteAction, undoable = true, action?: NoteAction, quiet = false) {
   const after = world.value;
   if (!after || !before) return;
   const { cells, detail } = describeChange(before, after);
@@ -841,7 +848,7 @@ function noteChange(head: string, before: World | null, again?: NoteAction, undo
   setTimeout(() => {
     if (changeNote.value?.id === id) changeNote.value = null;
   }, 9000);
-  flash.value = cells.length ? { cells, at: performance.now() } : null;
+  flash.value = cells.length && !quiet ? { cells, at: performance.now() } : null;
   if (flashTimer) clearTimeout(flashTimer);
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
 }
@@ -1223,7 +1230,7 @@ export async function exec(cmd: Command, label = '正在计算…', again?: Agai
     trustOwn(cmd);
     const said = typeof head === 'function' ? (world.value ? head(world.value, r.summary ?? '') : null) : head;
     const text = said ?? ((cmd.op === 'add_constraint' && before && world.value && paintNote(before, world.value)) || r.summary || '完成');
-    noteChange(text, before, againAction(again, label), true, action);
+    noteChange(text, before, againAction(again, label), true, action, cmd.op === 'add_guide' || cmd.op === 'update_guide');
   }
   return ok;
 }

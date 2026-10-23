@@ -100,11 +100,13 @@ describe('给河选类型', () => {
       eng.exec(pinCommand(w, f.cells[0])!.cmd);
       const g = w.small.guides.at(-1)!;
       const pinned = w.derived.features.find((x) => x.guide === g.id)!;
-      expect(pinned.tags).toContain('rtype:blood');
+      // 固定时按规则成了哪一种也记下来（第十一轮：改了走向也还是这一种）
+      expect(g.type).toBe('blood');
       const old = pinned.name;
       // 主线程上每次快照是新的世界对象（按世界缓存的地物索引跟着换）：这里复制一份
       const cmd = riverTypeChoiceCommand({ ...w }, { kind: 'guide', id: g.id }, 'crystal')!;
-      expect(cmd).toMatchObject({ op: 'update_guide', patch: { type: 'crystal', name: old } });
+      // 名字固定时已经记在 autoName 里，换类型不必再写名字
+      expect(cmd).toMatchObject({ op: 'update_guide', patch: { type: 'crystal' } });
       eng.exec(cmd);
       expect(w.derived.features.find((x) => x.guide === g.id)?.name).toBe(old);
     }

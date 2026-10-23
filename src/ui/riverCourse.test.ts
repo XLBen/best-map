@@ -18,6 +18,7 @@ import {
   pinCommand,
   riverAt,
   riverCutPick,
+  riverGlow,
   riverInfo,
   riverLabel,
   riverTool,
@@ -378,7 +379,9 @@ describe('选中的河：控制点', () => {
         const cmd = lastExec();
         expect(cmd).toMatchObject({ op: 'update_guide', id: g.id });
         if (cmd.op !== 'update_guide') throw new Error();
-        expect(Object.keys(cmd.patch).sort()).toEqual(['cells', 'path']);
+        // 只改走向；名字定下来（autoName），以后不因为走向变了换名字
+        expect(Object.keys(cmd.patch).filter((k) => k !== 'autoName').sort()).toEqual(['cells', 'path']);
+        if (cmd.patch.autoName !== undefined) expect(cmd.patch.autoName).toBe(w.derived.features.find((f) => f.guide === g.id)?.name);
         expect(selectedRiver.value).toEqual({ kind: 'guide', id: g.id });
         expect(riverStyleOverride.value).toBeNull();
         done = true;
@@ -659,5 +662,76 @@ describe('控制点的疏密', () => {
       expect(H[H.length - 1]).toBe(T.points.length - 1);
     }
     expect(controlHandles(T, 0, 0).length).toBeGreaterThan(2);
+  });
+});
+
+describe('审查后补的', () => {
+  it('上一笔还在算时又画了一笔：排着队，上一笔改完后按改好的世界接着改（不丢掉）', async () => {
+    const { w, t } = setup();
+    const { stroke } = quietStroke(w);
+    let finish: (ok: boolean) => void = () => {};
+    vi.mocked(exec).mockImplementationOnce(() => new Promise<boolean>((r) => (finish = r)));
+    t.down?.(ptr(w, stroke[0]));
+    for (const p of stroke.slice(1)) t.move?.(ptr(w, p), true);
+    const first = t.up?.(ptr(w, stroke[stroke.length - 1]));
+    expect(exec).toHaveBeenCalledTimes(1);
+    // 第二笔：往旁边挪两格再画一遍
+    const s2 = stroke.map(([x, y]) => [x, y + 2 * w.mesh.spacing] as Pt);
+    t.down?.(ptr(w, s2[0]));
+    for (const p of s2.slice(1)) t.move?.(ptr(w, p), true);
+    expect(t.preview().hint).toMatch(/^排着队：/);
+    await t.up?.(ptr(w, s2[s2.length - 1]));
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(toast.value?.text).toContain('排着队');
+    finish(true);
+    await first;
+    await vi.waitFor(() => expect(exec).toHaveBeenCalledTimes(2));
+  });
+
+  it('拖完弯点以后控制点不跳：拖的那个就在松手的地方，别的控制点还是原来那几个', async () => {
+    const { eng, w, g, t } = withDrawn();
+    selectedRiver.value = { kind: 'guide', id: g.id };
+    const T = targetOf(w, { kind: 'guide', id: g.id })!;
+    const H = handlesOf(T, zoomOf(w));
+    vi.mocked(exec).mockImplementation(async (cmd) => {
+      eng.exec(cmd as Command);
+      // 界面上每次结果都是新的世界对象（按世界缓存的认河、控制点要重算）
+      world.value = { ...eng.world };
+      return true;
+    });
+    try {
+      for (let j = 1; j < H.length - 1; j++) {
+        const P = T.points[H[j]];
+        const to: Pt = [P[0], P[1] + 0.6 * w.mesh.spacing];
+        t.down?.(ptr(w, P));
+        for (const q of line(w, P, to).slice(1)) t.move?.(ptr(w, q), true);
+        if (t.preview().warn) {
+          t.cancel?.();
+          continue;
+        }
+        await t.up?.(ptr(w, to));
+        const w2 = world.value!;
+        const T2 = targetOf(w2, { kind: 'guide', id: g.id })!;
+        const H2 = handlesOf(T2, zoomOf(w2));
+        expect(H2.length).toBe(H.length);
+        const moved = T2.points[H2[j]];
+        expect(Math.hypot(moved[0] - to[0], moved[1] - to[1])).toBeLessThan(1e-4);
+        for (const k of [0, H.length - 1]) expect(T2.points[H2[k]]).toEqual(T.points[H[k]]);
+        return;
+      }
+      throw new Error('没有能拖的弯点');
+    } finally {
+      vi.mocked(exec).mockImplementation(async () => true);
+    }
+  });
+
+  it('选中、悬停的河：一道光下面照样画出蓝色的河（不被光盖成灰色）', () => {
+    const { w } = setup();
+    const c = [...Array(w.mesh.n).keys()].find((i) => isRiverCell(w, w.derived, i) && w.derived.discharge[i] > 3 * w.small.planet.riverThreshold)!;
+    const shapes = riverGlow(w, { kind: 'natural', cell: c });
+    expect(shapes.some((s) => s.kind === 'line')).toBe(true);
+    expect(shapes.some((s) => s.kind === 'river')).toBe(true);
+    // 河画在光的上面
+    expect(shapes.findIndex((s) => s.kind === 'river')).toBeGreaterThan(shapes.findIndex((s) => s.kind === 'line'));
   });
 });

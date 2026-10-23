@@ -302,9 +302,18 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
       {f ? (
         <NameInput fkey={f.key} value={f.name} onCommit={(v) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…')} />
       ) : (
-        <span class="bar-label" title="小河没有地名；固定下来之后可以起名">
-          无名的河
-        </span>
+        // 小河没有地名：起个名字就把它固定下来（一步），叫这个名字；留空按文字包自动起
+        <NameInput
+          fkey={`natural:${cell}`}
+          value=""
+          placeholder="起个名字（会固定这条河）"
+          onCommit={(v) => {
+            const c = pinCommand(w, cell);
+            if (!c || c.cmd.op !== 'add_guide') return;
+            const { nameKey: _, autoName: __, ...rest } = c.cmd.guide;
+            void execAndSelect({ ...c.cmd, guide: { ...rest, name: v } }, '正在固定…');
+          }}
+        />
       )}
       {f && (
         <button class="bar-btn" onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')} title="自动换一个名字">
@@ -479,6 +488,9 @@ export function RiverExtras() {
   useEffect(() => () => void (hoverRiver.value = null), []);
   if (!w) return null;
   const guides = w.small.guides;
+  // 固定下来（或改过）的自然河沿用那条河的地名键，与自己画的河分开列
+  const drawn = guides.filter((g) => g.nameKey === undefined);
+  const pinned = guides.filter((g) => g.nameKey !== undefined);
   const warned = guides.filter((g) => (riverInfo(w, { kind: 'guide', id: g.id })?.warnings.length ?? 0) > 0).length;
   // 有地名的自然大河：按重要度，最多 40 条；点一下选中，“固定”把它固定下来
   const natural = w.derived.features
@@ -492,17 +504,27 @@ export function RiverExtras() {
       <WaterTypesSection initial={tool.value === 'lake' ? 'lake' : 'river'} />
       {warned > 0 && <p class="small warn-text">有 {warned} 条河要看一下</p>}
       <section>
-        <h5>画的河（{guides.length}）</h5>
-        {guides.length === 0 ? (
+        <h5>画的河（{drawn.length}）</h5>
+        {drawn.length === 0 ? (
           <p class="muted small">还没有画过河。用“画河”在陆地上点一下，或者选“自定义走向”按住画出河道。</p>
         ) : (
           <div class="feature-list">
-            {guides.map((g) => (
+            {drawn.map((g) => (
               <RiverRow w={w} river={{ kind: 'guide', id: g.id }} />
             ))}
           </div>
         )}
       </section>
+      {pinned.length > 0 && (
+        <section>
+          <h5>固定的自然河（{pinned.length}）</h5>
+          <div class="feature-list">
+            {pinned.map((g) => (
+              <RiverRow w={w} river={{ kind: 'guide', id: g.id }} />
+            ))}
+          </div>
+        </section>
+      )}
       {natural.length > 0 && (
         <section>
           <h5>自然的河</h5>
