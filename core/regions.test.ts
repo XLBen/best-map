@@ -137,8 +137,7 @@ describe('圈的地区自动类型', () => {
     eng.exec({ op: 'update_region', id: autoId, auto: true });
     expect(eng.history[eng.history.length - 1].summary).toBe('类型改成自动判断');
     expect(regionFeature(eng)[0].type).toBe('desert');
-    // 用了新字段的存档是第 4 版；重放结果相同
-    expect(eng.toDoc().version).toBe(4);
+    // 重放结果相同
     const replay = Engine.fromDoc(eng.toDoc(), w.mesh);
     const sig = (e: Engine) => e.world.derived.features.map((f) => `${f.key}|${f.type}|${f.name}|${f.x}|${f.y}`);
     expect(sig(replay)).toEqual(sig(eng));

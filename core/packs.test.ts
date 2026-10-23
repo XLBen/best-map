@@ -431,7 +431,7 @@ describe('用了资源包之后的世界', () => {
     expect(after['derived.placeF']).toBeDefined();
     expect(after['derived.look']).toBeDefined();
     const doc = JSON.parse(JSON.stringify(eng.toDoc()));
-    expect(doc.version).toBe(4);
+    expect(doc.version).toBe(5);
     expect(digestWorld(Engine.fromDoc(doc, eng.world.mesh).world)).toEqual(after);
     eng.undo();
     expect(digestWorld(eng.world)).toEqual(before);

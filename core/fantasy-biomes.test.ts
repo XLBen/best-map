@@ -7,7 +7,7 @@ import { continents } from './testing/fixtures';
 // 内置示例包的五种生态：数据有效、脚本能编译；加进测试用的大陆世界（1.2 万格）后各占陆地 ≤ 8%，也至少有一格
 
 describe('示例生态', () => {
-  it('数据：解析后不变，脚本能编译，种子固定，用到第三批的新项（存成第 4 版）', () => {
+  it('数据：解析后不变，脚本能编译，种子固定，用到第三批的新项', () => {
     expect(FANTASY_BIOMES.map((sp) => sp.name)).toEqual(['水晶丛林', '死亡森林', '虫群占领区', '神圣之地', '血腥之地']);
     for (const sp of FANTASY_BIOMES) {
       expect(speciesSchema.parse(sp)).toEqual(sp);

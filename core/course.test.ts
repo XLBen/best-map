@@ -232,12 +232,13 @@ describe('只挖河床', () => {
     expect(found).not.toBeNull();
     const { plan } = found;
     const recv = w.derived.receiver[plan.join];
-    const rivers = new Set(riverSet(w).split(','));
+    // 汇入的那条河从汇合处往下的格（旁边刚够得上河的小河可能被画的河抢走集水区而变干，那是另一回事）
+    const down: number[] = [];
+    for (let x = plan.join; x >= 0 && w.causes.land[x]; x = w.derived.receiver[x]) down.push(x);
     eng.exec(courseCmd(plan));
     expect(followed(w, plan.cells)).toBe(true);
     expect(w.derived.receiver[plan.join]).toBe(recv);
-    const now = new Set(riverSet(w).split(','));
-    expect([...rivers].filter((c) => !now.has(c))).toEqual([]);
+    expect(down.filter((c) => !isRiverCell(w, w.derived, c))).toEqual([]);
     expect(guideEnd(w, w.derived, w.small.guides[0])).toEqual({ kind: 'river', cell: plan.join });
   });
 
@@ -342,7 +343,9 @@ describe('流进湖、汇入', () => {
     const eng = continents();
     const w = eng.world;
     const C = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && w.derived.continentality[i] > 0.7)!;
-    eng.exec({ op: 'add_lake', lake: { cell: C, radius: 40, depth: 300, perennial: true } });
+    // 一格半大的湖（湖最小只淹一格，那样隔 5 格取样时碰不到湖面）
+    const R = 1.5 * w.mesh.spacing * w.kmPerUnit;
+    eng.exec({ op: 'add_lake', lake: { cell: C, radius: R, depth: 300, perennial: true } });
     const h = w.derived.elevation;
     const r = route(w.mesh, h, w.causes.land);
     let lake = 0;
@@ -351,7 +354,7 @@ describe('流进湖、汇入', () => {
       expect(waterLevel(w.mesh, w.causes.land, h, i)).toBe(r.water[i]);
       if (r.water[i] > h[i]) lake++;
     }
-    for (const c of lakeArea(w, C, 40)) expect(waterLevel(w.mesh, w.causes.land, h, c)).toBe(r.water[c]);
+    for (const c of lakeArea(w, C, R)) expect(waterLevel(w.mesh, w.causes.land, h, c)).toBe(r.water[c]);
     expect(lake).toBeGreaterThan(0);
   });
 
@@ -416,8 +419,10 @@ describe('流进湖、汇入', () => {
   });
 
   it('改一段时绕成圈的拦下：这条河汇入的河往下流会经过新画的一段', () => {
-    // G 沿着一条河 R 往上游画，在 J 汇入 R；再把 G 中间的一段改成横穿 J 下游的 R：水会 G → R → G 绕圈
+    // G 沿着一条河 R 往上游画，在 J 汇入 R；再把 G 中间的一段改成横穿 J 下游的 R：水会 G → R → G 绕圈。
+    // 山挡风设成 0：这个世界上能这样画的地方不多，按山挡风为 0 时的河网找（山挡风打开后一处都没有）
     const base = continents();
+    base.exec({ op: 'set_planet', patch: { terrainWind: 0 } });
     const w0 = base.world;
     const { mesh } = w0;
     let checked = 0;

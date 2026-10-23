@@ -1,4 +1,3 @@
-import { isCurrentDoc } from '../core/doc-version';
 import type { Checkpoint, WorldDoc } from '../core/engine';
 import { collectBuffers } from './transfer';
 
@@ -51,9 +50,13 @@ export function checkpointIds(cp: unknown): number[] | null {
 
 const sameIds = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x, k) => x === b[k]);
 
+// 现在的世界文件版本（core/doc-version.ts 的 DOC_VERSION；存储 Worker 只按类型引用 core，所以写成字面量，
+// satisfies 保证与那边一致）
+const CURRENT_VERSION = 5 satisfies WorldDoc['version'];
+
 // 存着的检查点能不能交给打开 doc 的计算 Worker（旧版本的世界一律不用：第九轮起不再兼容旧存档）
 export function checkpointFits(saved: unknown, build: string, doc: WorldDoc): saved is SavedCheckpoint {
-  if (!build || saved === null || typeof saved !== 'object' || !isCurrentDoc(doc)) return false;
+  if (!build || saved === null || typeof saved !== 'object' || doc.version !== CURRENT_VERSION) return false;
   const s = saved as { build?: unknown; cp?: unknown };
   if (s.build !== build || s.cp === null || typeof s.cp !== 'object') return false;
   const cp = s.cp as { settings?: unknown; done?: unknown };

@@ -141,7 +141,7 @@ describe('生成整个星球', () => {
     expect(onLand / continents.length).toBeGreaterThanOrEqual(0.66);
     expect(continents.every((f) => f.x >= 0 && f.x < 2)).toBe(true);
     const doc = eng.toDoc();
-    expect(doc.version).toBe(3);
+    expect(doc.version).toBe(5);
     const replay = Engine.fromDoc(doc, w.mesh);
     for (const k of ['elevation', 'tMean', 'precip', 'discharge'] as const) expect(hashArray(replay.world.derived[k])).toBe(hashArray(w.derived[k]));
     expect(replay.world.derived.features.map((f) => f.name)).toEqual(w.derived.features.map((f) => f.name));

@@ -560,7 +560,7 @@ describe('脚本的运行环境', () => {
         { op: 'batch', commands: [{ op: 'add_species', species: { id: 'plain', name: '平原' } }] },
       ],
     };
-    const doc = { format: 'map2-world', version: 4, commands: [{ op: 'add_species', species: crystal }, batch] };
+    const doc = { format: 'map2-world', version: 5, commands: [{ op: 'add_species', species: crystal }, batch] };
     const found = findScripts(doc);
     expect(found.map((f) => `${f.owner}/${f.id}/${f.kind}`)).toEqual([
       '水晶丛林/crystal_jungle/placement',

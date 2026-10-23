@@ -191,7 +191,7 @@ describe('预览世界的着色', () => {
     const eng = continents({ cells: 5000 });
     const w = eng.world;
     const inland = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && w.causes.landness[i] >= 300);
-    eng.exec({ op: 'add_lake', lake: { cell: inland[Math.floor(inland.length * 0.2)], radius: 120, depth: 120, perennial: false } });
+    eng.exec({ op: 'add_lake', lake: { cell: inland[Math.floor(inland.length * 0.2)], radius: 1.5 * w.mesh.spacing * w.kmPerUnit, depth: 120, perennial: false } });
     const cmd: Command = { op: 'set_planet', patch: { humidity: 3 } };
     const { patch }: { patch: PreviewPatch } = eng.previewWorld(cmd);
     expect(patch.derived.lake).toBeDefined();

@@ -114,7 +114,8 @@ export function computeElevation(world: World): ElevationResult {
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
   // 活动格与强制方向各轮相同：路由的出口、缓冲区只建一次
-  const router = new Router(mesh, land);
+  // 传一张全是 -1 的强制方向表（没有哪格强制）：与不传时的路由在平局时的先后不同，一直是这样算的，金标准按它记
+  const router = new Router(mesh, land, new Int32Array(n).fill(-1));
   const A = new Float64Array(n);
   // A^m 很费时：汇水面积与上一轮完全相同的格（源头格每轮都是）沿用上一轮的值
   const lastA = new Float64Array(n).fill(-1);

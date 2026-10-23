@@ -232,6 +232,8 @@ describe('高程与原来的写法逐值一致', () => {
 });
 
 // ---- 以下是 402e638 的原样拷贝（只改了名字），不要改它 ----
+// 唯一的例外（第九轮去掉旧存档兼容）：computeElevationOld 里画的河不再强制汇流、不再让岩性变软
+// （画的河都只挖河床，高程求解不看它们），湖的最小半径从一格半改成半格。其余一字未动
 
 // core/heap.ts
 class OldHeap {
@@ -568,21 +570,11 @@ function computeElevationOld(world: World): ElevationResult {
   // 汇水面积加一个按地图面积取的常数：源头格的面积随格数变化，不加的话格越密山越高
   // 整个星球按布局尺度（半圈经线的一半）算，和同样格距的地区地图相当
   const areaReg = sphere ? (mesh.totalArea * (kmPerUnit / 2) * (kmPerUnit / 2)) / 20000 : (mesh.width * mesh.height * kmPerUnit * kmPerUnit) / 20000;
-  const forced = new Int32Array(n).fill(-1);
   for (let i = 0; i < n; i++) {
     // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
     u[i] = (0.035 + causes.uplift[i]) * fu[i];
     K[i] = causes.erod[i] * fk[i];
     areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
-  }
-  for (const g of small.guides) {
-    for (let k = 0; k < g.cells.length - 1; k++) {
-      const a = g.cells[k];
-      const b = g.cells[k + 1];
-      if (land[a]) forced[a] = b;
-      // 引导河道的岩性更软，下切更深
-      K[a] *= 3;
-    }
   }
 
   // 初始高程：按离海距离给一个缓坡加噪声（固定初值，结果只取决于原因）
@@ -596,7 +588,7 @@ function computeElevationOld(world: World): ElevationResult {
   const active = land;
   const A = new Float64Array(n);
   for (let it = 0; it < ITERATIONS_OLD; it++) {
-    const r = routeOld(mesh, h, active, forced);
+    const r = routeOld(mesh, h, active, new Int32Array(n).fill(-1));
     accumulateOld(r, areaKm, A);
     for (let k = 0; k < r.count; k++) {
       const i = r.order[k];
@@ -666,8 +658,8 @@ function computeElevationOld(world: World): ElevationResult {
   return { elevation, coastKm };
 }
 
-// 湖的半径（地图单位）：至少一格半，保证小湖也是一片水面
+// 湖的半径（地图单位）：至少半格
 function lakeRadiusUnitsOld(world: World, radiusKm: number): number {
-  return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * 1.5);
+  return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * 0.5);
 }
 

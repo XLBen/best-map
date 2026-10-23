@@ -452,10 +452,9 @@ describe('命令', () => {
     expect(eng.world.small.terrain.gen).toBeNull();
   });
 
-  it('说明文字：形态的名字、星球类型的名字；换形态写进说明；用了形态的文档存成 4', () => {
+  it('说明文字：形态的名字、星球类型的名字；换形态写进说明', () => {
     const eng = engineFor(settings);
     expect(eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true })).toBe('新世界：像地球');
-    expect(eng.toDoc().version).toBe(3);
     const gen = eng.world.small.terrain.gen!;
     expect(eng.exec({ op: 'set_worldgen', params: { ...gen, form: TWIN_CONTINENTS } })).toBe('换了星球形态：双子大陆');
     expect(eng.exec({ op: 'set_worldgen', params: { ...eng.world.small.terrain.gen!, landFraction: 0.2 } })).toBe('调整了陆地多少');
@@ -482,7 +481,7 @@ describe('命令', () => {
     eng.undo();
     eng.redo();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(4);
+    expect(doc.version).toBe(5);
     const mesh = meshFor(settings);
     const replay = Engine.fromDoc(doc, mesh);
     expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));

@@ -452,9 +452,9 @@ describe('剪刀切线', () => {
     expect(digestWorld(eng.world)).toEqual(before);
     eng.redo();
     expect(digestWorld(eng.world)).toEqual(after);
-    // 存档：用了切线命令，存成第 4 版；重放结果逐值相同
+    // 存档：重放结果逐值相同
     const doc = eng.toDoc();
-    expect(doc.version).toBe(4);
+    expect(doc.version).toBe(5);
     expect(digestWorld(Engine.fromDoc(doc, eng.world.mesh).world)).toEqual(after);
     // 重新划分切开的省：碰到它的切线不要了
     const regen = eng.clone();
