@@ -6,7 +6,7 @@ import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { riverLines } from '../render/overlay';
 import { busy, exec, previewCommand, riverPending, riverStyleOverride, selectedRiver, setOptions, toast, world } from '../state';
-import { courseStart, lineOf, naturalFeatureAt, newCourse, pinCommand, rerouteOf, riverAt, riverInfo, riverTool, spliceTol, unwaterTool } from './riverCourse';
+import { courseStart, lineOf, namedDest, naturalFeatureAt, newCourse, pinCommand, rerouteOf, riverAt, riverInfo, riverLabel, riverTool, spliceTol, unwaterTool } from './riverCourse';
 import type { Pointer } from './tools';
 
 // 画河的手势：自定义走向一笔 → 松手发的命令与预览是同一份；穿过别的河时先问一句（截走它 / 到这里汇入 / 取消，
@@ -765,6 +765,49 @@ describe('第九轮 C：从河中间改道还是同一条河；悬停与按下�
     await drag(t, w, s!);
     await riverPending.value!.capture();
     expect(lastExec()).toMatchObject({ op: 'add_guide', reroute: true });
+  });
+
+  it('画完就消失的河：停在终点那一格上说“在这里消失”，别处说“最后在终点消失”', () => {
+    const { eng, w: w0 } = setup();
+    const { plan, stroke } = quietStroke(w0);
+    eng.exec(newCourse(w0, plan, stroke).cmd!);
+    const w = eng.world;
+    world.value = w;
+    const g = w.small.guides[w.small.guides.length - 1];
+    expect(g.end).toBe('sink');
+    const ref = { kind: 'guide' as const, id: g.id };
+    const info = riverInfo(w, ref)!;
+    expect(riverLabel(ref, info, g.cells[g.cells.length - 1])).toMatch(/在这里消失$/);
+    expect(riverLabel(ref, info, g.cells[1])).toMatch(/最后在终点消失$/);
+    expect(info.dest).toBe('最后在终点消失');
+  });
+
+  it('画好以后顶部说汇入哪条河时用改好的世界里的名字（画的时候那条河还没名字，说的是“汇入一条河”）', () => {
+    const { eng, w } = setup();
+    const { mesh } = w;
+    // 一笔画到一条有名字的自然河上汇入
+    for (const f of w.derived.features) {
+      if (f.type !== 'river' || !f.name || f.guide !== undefined) continue;
+      const T = f.cells[Math.floor(f.cells.length / 2)];
+      for (let a = 0; a < 8; a++) {
+        const ang = (a * Math.PI) / 4;
+        const s = line(w, [mesh.x[T] + 4 * mesh.spacing * Math.cos(ang), mesh.y[T] + 4 * mesh.spacing * Math.sin(ang)], at(w, T));
+        const plan = planCourse(w, w.derived, s, opts(w));
+        if (plan.blocked || plan.end !== 'river' || plan.crossings.length || plan.reroute || plan.merge) continue;
+        const cmd = newCourse(w, plan, s).cmd!;
+        const known = new Set(w.small.guides.map((g) => g.id));
+        eng.exec(cmd);
+        const said = namedDest(eng.world, cmd, known, '画了一条河（约 3 km，汇入一条河）');
+        const id = eng.world.small.guides.find((g) => !known.has(g.id))!.id;
+        const dest = riverInfo(eng.world, { kind: 'guide', id })!.dest;
+        expect(dest).toMatch(/^汇入「/);
+        expect(said).toBe(`画了一条河（约 3 km，${dest}）`);
+        // 已经写着名字的不换
+        expect(namedDest(eng.world, cmd, known, '画了一条河（约 3 km，入海）')).toBeNull();
+        return;
+      }
+    }
+    throw new Error('找不到汇入一条有名字的河的一笔');
   });
 
 });

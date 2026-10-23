@@ -107,7 +107,7 @@ const riverNameAt = (w: World, cell: number, not?: GeoFeature) => featureIndex(w
 const lakeNameAt = (w: World, cell: number) => featureIndex(w).lakes.get(cell)?.name || null;
 export const guideOf = (w: World, id: string) => w.small.guides.find((g) => g.id === id);
 
-// 流到哪里：入海、流进「青湖」、汇入「赤江」……quoted 为 false 时不带引号（写进历史）
+// 流到哪里：入海、流进「青湖」、汇入「赤江」……quoted 为 false 时不带引号
 export function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: number, quoted = true, self?: GeoFeature): string {
   const q = (n: string) => (quoted ? `「${n}」` : n);
   switch (kind) {
@@ -124,7 +124,8 @@ export function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: num
     case 'edge':
       return '流出地图';
     case 'sink':
-      return '在这里消失';
+      // 说的是整条河（悬停在终点那一格上时另说“在这里消失”，见 riverLabel）
+      return '最后在终点消失';
     default:
       return '水流不出去';
   }
@@ -303,6 +304,8 @@ export interface RiverInfo {
   warnings: string[];
   // 河上的格（画的河是河道，自然的河是主干）
   cells: number[];
+  // 在终点消失（终点是 cells 的最后一格）
+  sink: boolean;
 }
 
 const infoCache = new WeakMap<World, Map<string, RiverInfo | null>>();
@@ -330,6 +333,7 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
         dest: destText(w, end.kind, end.cell, true, f ?? undefined),
         warnings: guideWarnings(w, d, g),
         cells: g.cells,
+        sink: end.kind === 'sink',
       };
     }
   } else if (isRiverCell(w, d, ref.cell)) {
@@ -349,14 +353,16 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
       dest: destText(w, stem.end, stem.end === 'river' ? stem.join : stem.end === 'lake' ? last : -1, true, f ?? undefined),
       warnings: [],
       cells: stem.cells,
+      sink: stem.end === 'sink',
     };
   }
   m.set(key, info);
   return info;
 }
 
-// 悬停时的一句话：“赤江 · 中等的河 · 汇入「青河」”
-export const riverLabel = (ref: RiverRef, info: RiverInfo) => `${info.name ?? (ref.kind === 'guide' ? '画的河' : '一条河')} · ${info.size} · ${info.dest}`;
+// 悬停时的一句话：“赤江 · 中等的河 · 汇入「青河」”。cell：鼠标下那一格（在终点消失的河，停在终点上时说“在这里消失”）
+export const riverLabel = (ref: RiverRef, info: RiverInfo, cell = -1) =>
+  `${info.name ?? (ref.kind === 'guide' ? '画的河' : '一条河')} · ${info.size} · ${info.sink && cell >= 0 && cell === info.cells[info.cells.length - 1] ? '在这里消失' : info.dest}`;
 
 // ---------- 命令 ----------
 
@@ -445,7 +451,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
     const estimate = after.cells.map((c, k) => (q = Math.max(q, w.derived.discharge[c] + (k < head ? prof[k] : 0))));
     return { kind: 'merge', plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw };
   }
-  const where = destOf(w, plan, false);
+  const where = destOf(w, plan);
   const d = w.derived;
   // 改道的河带着起点原来的水
   const rerouted = () => plan.cells.map((c) => Math.max(d.discharge[plan.cells[0]], d.discharge[c]));
@@ -486,7 +492,7 @@ export function spliceOf(w: World, g: Guide, patch: GuidePatch, plan: CoursePlan
   const name = guideName(w, g);
   const label =
     kind === 'extend'
-      ? `${quoted(name, '一条画的河')}往下游接长了（约 ${km(pathKm(w, raw))} km，${patch.end === 'sink' ? '到这里消失' : destOf(w, plan, false)}）`
+      ? `${quoted(name, '一条画的河')}往下游接长了（约 ${km(pathKm(w, raw))} km，${patch.end === 'sink' ? '到这里消失' : destOf(w, plan)}）`
       : `重画了${quoted(name, '一条河')}的一段（约 ${km(pathKm(w, raw))} km）`;
   const cmd: Command = { op: 'update_guide', id: g.id, patch, ...(capture ? { capture: true } : {}), label };
   const after = applyPatch(g, patch);
@@ -525,6 +531,15 @@ export function rerouteOf(w: World, g: Guide | null, plan: CoursePlan, raw: [num
   };
   const cmd: Command = { op: 'add_guide', guide, ...(capture ? { capture: true } : {}), label: label(f?.name || null, '一条河') };
   return { kind: 'reroute', plan, blocked: null, cmd, key: JSON.stringify(cmd), after: { id: '', ...guide } as Guide, estimate, name: f?.name || null, raw };
+}
+
+// 画好以后顶部说的话：画的时候汇入的那条河还没有名字（常常是新河的水加进去它才够大、才起了名字）时说的是“汇入一条河”，
+// 换成改好的世界里河流列表说的（汇入「黄青河」）。不用换时为 null
+export function namedDest(after: World, cmd: Command, known: ReadonlySet<string>, said: string): string | null {
+  if (!said.includes('汇入一条河')) return null;
+  const id = cmd.op === 'update_guide' ? cmd.id : cmd.op === 'add_guide' ? after.small.guides.find((g) => !known.has(g.id))?.id : undefined;
+  const info = id ? riverInfo(after, { kind: 'guide', id }) : null;
+  return info?.dest.startsWith('汇入「') ? said.replace('汇入一条河', info.dest) : null;
 }
 
 // 终点怎么说（新画的河）：画到陆地上接着流的是“之后顺地势入海”
@@ -1001,7 +1016,7 @@ export function riverTool(zoom: () => number): ToolHandler {
   // 松手后执行的命令（确切预览用的也是它）。从画过的河的源头改道等于重画它：同一条河道，泉水、大小、名字照旧
   // （顺地势找的路不是画的线：原来的折线不要了）
   const flowCommand = (w: World, p: RiverPlan): Command => {
-    const where = p.end ? `，${destText(w, p.end, p.end === 'river' ? p.join : p.cells[p.cells.length - 1], false)}` : '';
+    const where = p.end ? `，${destText(w, p.end, p.end === 'river' ? p.join : p.cells[p.cells.length - 1])}` : '';
     const src = p.reroute ? sourceGuide(w, p.cells[0]) : undefined;
     if (src) {
       const patch: GuidePatch = { cells: p.cells, ...namingFor(w, src, p.cells[0]) };
@@ -1131,7 +1146,11 @@ export function riverTool(zoom: () => number): ToolHandler {
     cancelPreviews();
     committing = c;
     try {
-      await exec(c.cmd, c.kind === 'reroute' || (c.kind === 'new' && c.plan?.reroute) ? '正在改道…' : c.kind === 'splice' ? '正在重画…' : '正在计算河流…');
+      const w = world.value;
+      const known = new Set(w?.small.guides.map((g) => g.id) ?? []);
+      await exec(c.cmd, c.kind === 'reroute' || (c.kind === 'new' && c.plan?.reroute) ? '正在改道…' : c.kind === 'splice' ? '正在重画…' : '正在计算河流…', undefined, undefined, (after, said) =>
+        namedDest(after, c.cmd!, known, said),
+      );
     } finally {
       committing = null;
       exact.reset();
@@ -1232,7 +1251,9 @@ export function riverTool(zoom: () => number): ToolHandler {
   const runFlow = async (w: World, p: RiverPlan) => {
     committing = p;
     try {
-      await exec(flowCommand(w, p), p.reroute ? '正在改道…' : '正在计算河流…');
+      const cmd = flowCommand(w, p);
+      const known = new Set(w.small.guides.map((g) => g.id));
+      await exec(cmd, p.reroute ? '正在改道…' : '正在计算河流…', undefined, undefined, (after, said) => namedDest(after, cmd, known, said));
     } finally {
       committing = null;
       exact.reset();
@@ -1418,7 +1439,7 @@ export function riverTool(zoom: () => number): ToolHandler {
         const info = riverInfo(w, hit.ref);
         // 自定义走向：写出从这里起笔会怎样（接长、改道、重画整条）；起笔的那一格与按下去以后用的相同
         const act = options.value.riverMode === 'course' ? startHint(w, courseStart(w, at.x, at.y, at.cell, PICK_PX / zoom()).cell) : null;
-        const label = info ? riverLabel(hit.ref, info) : null;
+        const label = info ? riverLabel(hit.ref, info, at.cell) : null;
         const hint = act ? (label ? `${label} · ${act.text}` : act.text) : label;
         return { layers: [], shapes: riverGlow(w, hit.ref), hint, ...(act?.warn ? { warn: true } : {}) };
       }
