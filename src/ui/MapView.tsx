@@ -36,6 +36,7 @@ import {
   selectedProvince,
   selectedLake,
   selectedRiver,
+  sheet,
   showToast,
   sliderActive,
   tool,
@@ -384,6 +385,12 @@ export function MapView() {
     });
     const onWinResize = () => (liftCache = null);
     window.addEventListener('resize', onWinResize);
+    // 生态的表打开、关上时底部条挪了位置（.app.with-sheet）却不变大小：ResizeObserver 不报，这里作废
+    const disposeSheet = effect(() => {
+      void sheet.value;
+      liftCache = null;
+      requestDraw();
+    });
     function barLift(): number {
       if (liftCache !== null && (liftBar ? liftBar.isConnected : performance.now() - liftAt < 500)) return liftCache;
       const bar = document.querySelector('.bottombar');
@@ -971,6 +978,7 @@ export function MapView() {
     return () => {
       if (settleTimer) clearTimeout(settleTimer);
       barObs.disconnect();
+      disposeSheet();
       window.removeEventListener('resize', onWinResize);
       disposeWorld();
       disposePaths();
