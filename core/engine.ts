@@ -4,7 +4,7 @@ import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, rever
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
 import { carveBeds, computeElevation } from './elevation';
-import { assignNames, detectFeatures, guideFeatures, prepareFeatures, regionFeatures } from './features';
+import { type GeoFeature, assignNames, applyNameCarry, carryNames, detectFeatures, guideFeatures, mergeNameCarry, prepareFeatures, regionFeatures } from './features';
 import { computeEffects } from './effects';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
@@ -143,6 +143,7 @@ export class Engine {
       return adopted;
     }
     const fresh = this.dirty === Dirty.None;
+    const prev = this.world.derived.features;
     const { summary } = this.applyOnly(cmd, true);
     if (this.lastNoop) return summary;
     const stateBefore = this.stateId;
@@ -153,6 +154,7 @@ export class Engine {
     this.keepBefore(fresh);
     try {
       this.update();
+      if (fresh) this.carryNames(prev);
       this.shareWithLast();
     } catch (e) {
       // 撤掉时的重算按说不会再出错；万一出了，历史、重做记录、状态编号也照样放回去
@@ -366,6 +368,8 @@ export class Engine {
   replaceLast(cmd: Command): string {
     this.lastPreview = null;
     const stateBefore = this.stateId;
+    // 换之前看到的地物与小数据：新的一步按它们留名字（换个形状的岛还叫原来的名字）
+    const shown = this.dirty === Dirty.None && this.done.length ? { features: this.world.derived.features, small: JSON.stringify(this.world.small) } : null;
     const h = this.revertLast();
     if (!h) throw new CommandError('没有可以替换的一步');
     const before = h.state;
@@ -393,6 +397,7 @@ export class Engine {
     if (before && step.dirty > Dirty.Names) this.keep(step, before);
     try {
       this.update();
+      if (shown) this.carryNames(shown.features, shown.small);
       this.shareWithLast();
     } catch (e) {
       // 新的一步撤掉（推导写了一半，不能留着）：原因退回去，原来那一步放回去后从头重算
@@ -406,6 +411,22 @@ export class Engine {
       throw e;
     }
     return summary;
+  }
+
+  // 名字跟着地方走（见 features.ts 的 carryNames）：最后一步重算之后，与这一步之前的地物 prev 比，
+  // 锚点挪了、名字被新出来的地物抢了的地物留着原来的名字，落不到地物上的改名挪过去。记进这一步的命令
+  // （重放、重做时照用，所以从头重放与一步一步编辑一字不差），再重新起名。只改名字、省份的步，没识别地物时不做
+  // prevSmall：prev 那时的小数据（JSON），默认是这一步之前的
+  private carryNames(prev: GeoFeature[], prevSmall?: string) {
+    const step = this.done[this.done.length - 1];
+    if (!this.features || !step || step.dirty <= Dirty.None || !prev.length) return;
+    const w = this.world;
+    const carry = carryNames(w, w.derived.features, JSON.parse(prevSmall ?? step.undo.small) as SmallState, prev);
+    if (!carry) return;
+    applyNameCarry(w.small, carry);
+    step.cmd = { ...step.cmd, nameCarry: mergeNameCarry(step.cmd.nameCarry, carry) };
+    this.dirty = Dirty.Names;
+    this.update();
   }
 
   // 推导里的数组发出去了（Worker 只发变了的数组，按引用比较上一次发的）：之后重算不能就地改它们，先复制
@@ -650,9 +671,12 @@ export class Engine {
     this.lastPreview = null;
     const t0 = performance.now();
     const copy = this.clone();
+    const prev = this.world.derived.features;
     const { changed } = copy.applyOnly(cmd);
     yield;
     yield* copy.updateSteps();
+    // 与执行时一样留名字（采用预览时命令、小数据都照用副本的）
+    copy.carryNames(prev);
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
     const step = copy.done[copy.done.length - 1];
     const ms = performance.now() - t0;

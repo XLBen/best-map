@@ -4,7 +4,7 @@ import { type LakeType, majorityLakeType } from './lake-types';
 import { PLAIN_RIVER, type RiverType, majorityType } from './river-types';
 import { guideBody, guideLine } from './rivers';
 import { DEFAULT_SPECIES, type Species } from './species';
-import type { Derived, Guide, RegionKind, World } from './world';
+import type { Derived, Guide, RegionKind, SmallState, World } from './world';
 
 // 地理要素识别：在格图上找出大陆、岛、群岛、半岛、海、洋、湾、海峡、湖、大河、山脉、主峰、
 // 高原、平原、盆地、沙漠、森林、冻原、冰原、沼泽、涂出来的生态区，按文字包起名。
@@ -1561,8 +1561,46 @@ export function guessRegionKind(
 // 照原来的先后起名（名字与固定前一字不差），那条河改过的名字、换过的盐也照旧
 const inherits = (g: Guide | undefined) => !!g && g.nameKey !== undefined && !g.name;
 
-// 按文字包起名；用户改过的名字优先
-export function assignNames(world: World, features: GeoFeature[]) {
+// ---------- 名字跟着地方走（第九轮） ----------
+//
+// 名字由“类型:锚点格”（键）加种子算出，撞名时先起名的拿走。只靠这些，名字会因为别处的改动而跳：
+// 锚点格被涂掉、地物长大多出一格优先级更高的格（锚点挪了，键就换了）；新出来的地物排在前面，抢走了原有地物的名字，
+// 后面的一串跟着换。所以每一步编辑之后，把这一步之后的地物与之前的配对（键相同的、否则同一种里格子重叠最多的），
+// 配上了、起名的办法也没变、名字却变了的，留着原来的名字（keptNames）；用户改过的名字落不到地物上了（原锚点被盖掉），
+// 就把那条改名挪到配上的地物的键上。这些记进那一步的命令（见 Engine），重放、重做时照用：名字只取决于原因与命令，
+// 从头重放与一步一步编辑一字不差。留着的名字起名时最先占上，新出来的地物只能另起名字
+
+// 留着的名字：ctx 是起名的办法（种子、文字包、换过几次、按哪个模板，见 assignNames）。办法变了（换了文字包、
+// 重抽、换了生态或河流类型的模板）就不再用它，照常起名
+export interface KeptName {
+  name: string;
+  ctx: string;
+}
+
+// 一步编辑之后为了名字不乱跳记下的：keep 地物的键 → 留着的名字（null：删掉那一条）；
+// move 改过的名字（featureNames 的一条）从哪个键挪到哪个键
+export interface NameCarry {
+  keep?: Record<string, KeptName | null>;
+  move?: Record<string, string>;
+}
+
+// 起名时每个地物的情况（区块除外）：ctx 自动起名的办法（用户起的名字没有）；override 用上的 featureNames 的键
+export interface NameMeta {
+  ctx?: string;
+  override?: string;
+}
+
+// 文字包的标识（内容的哈希；按对象各留一份）
+const packTags = new WeakMap<WordPack, string>();
+function packTag(pack: WordPack | null): string {
+  if (!pack) return '-';
+  let t = packTags.get(pack);
+  if (t === undefined) packTags.set(pack, (t = hashString(JSON.stringify(pack)).toString(36)));
+  return t;
+}
+
+// 按文字包起名；用户改过的名字优先，其次是留着的名字（keptNames），其余重要的先起名。返回每个地物的情况（见 NameMeta）
+export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeature, NameMeta> {
   const pack: WordPack = world.small.wordPack ?? DEFAULT_PACK;
   const overrides = world.small.featureNames;
   const byType = new Map<string, [number, FeatureOverride, string][]>();
@@ -1607,7 +1645,7 @@ export function assignNames(world: World, features: GeoFeature[]) {
   };
   // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
   // （森林被涂出一块别的生态时，名字留在锚点还在的那一边，不会两边都叫这个名字）
-  const ovOf = new Map<GeoFeature, FeatureOverride>();
+  const ovOf = new Map<GeoFeature, [FeatureOverride, string]>();
   // 固定下来的自然河用着的那条改名（不再落到别的地物上）。河道整条成了水、没有地物时不占，
   // 那条自然的河还在的话照旧用它
   const used = new Set<string>();
@@ -1618,51 +1656,224 @@ export function assignNames(world: World, features: GeoFeature[]) {
   const match = (f: GeoFeature, ok: (a: number) => boolean) => {
     const hit = byType.get(f.type)?.find(([a, , key]) => !used.has(key) && ok(a));
     if (!hit) return;
-    ovOf.set(f, hit[1]);
+    ovOf.set(f, [hit[1], hit[2]]);
     used.add(hit[2]);
   };
   for (const f of order) if (!f.region && !f.guide) match(f, (a) => a === f.anchor);
   for (const f of order) if (!f.region && !f.guide && !ovOf.has(f)) match(f, (a) => f.cells.includes(a));
-  for (const f of order) {
+
+  // 起名的办法：种子、文字包、换过几次（盐）、按哪个模板。哪一样变了，留着的名字就不再用
+  const tag = packTag(world.small.wordPack);
+  const ctxOf = (salt: number, how: string) => hashString(`${seed}|${tag}|${salt}|${how}`).toString(36);
+  const typeHow = (t: RiverType | LakeType) => `t:${hashString(JSON.stringify([t.id, t.name, t.names]))}`;
+  const speciesHow = (sp: Species) => `s:${hashString(JSON.stringify([sp.id, sp.name, sp.terrain, sp.feature ?? null]))}`;
+  // 每个地物怎么起名：用户起的名字（fixed），或者自动起名（gen，起名的办法 ctx）。区块没有 ctx（不留名字）
+  type Plan = { fixed: string } | { gen: () => string; ctx?: string };
+  const plan = (f: GeoFeature): Plan => {
     const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
     if (g) {
       // 画的河：起了名就用；'' 按文字包自动起（键是这条河道，固定的自然河是那条河原来的键）。
       // 只有 nameKey 的（固定下来、没自己起名的自然河）与原来那条河一样，那条河改过的名字也照旧
       const ov = inherits(g) && g.name === undefined ? overrides[g.nameKey!] : undefined;
       const fixed = g.name || ov?.name;
-      f.custom = !!fixed;
+      if (fixed) return { fixed };
       const rt = typed(f);
-      if (fixed) {
-        f.name = fixed;
-        taken.add(fixed);
-      } else if (rt) f.name = typedName(f, rt, g.nameKey ?? f.key, g.salt ?? ov?.salt ?? 0);
-      else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${g.nameKey ?? f.key}:${g.salt ?? ov?.salt ?? 0}`), taken);
-      continue;
+      const key = g.nameKey ?? f.key;
+      const salt = g.salt ?? ov?.salt ?? 0;
+      if (rt) return { gen: () => typedName(f, rt, key, salt), ctx: ctxOf(salt, typeHow(rt)) };
+      return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${key}:${salt}`), taken), ctx: ctxOf(salt, `g:${f.type}`) };
     }
     const r = f.region ? regions.get(f.region) : undefined;
     if (r) {
       // 用户的区块：起了名就用，没起名按文字包自动起（文字包里没有这一类时按省份的模板）
-      f.custom = !!r.name;
-      if (r.name) taken.add(r.name);
+      if (r.name) return { fixed: r.name };
       const type = pack.types[f.type] ? f.type : 'province';
-      f.name = r.name || generateName(pack, type, f.tags, hashString(`${seed}:${f.key}:${r.salt}`), taken);
-      continue;
+      return { gen: () => generateName(pack, type, f.tags, hashString(`${seed}:${f.key}:${r.salt}`), taken) };
     }
-    const ov = ovOf.get(f);
-    if (ov?.name) {
-      f.name = ov.name;
-      f.custom = true;
-      taken.add(ov.name);
-      continue;
-    }
-    f.custom = false;
+    const ov = ovOf.get(f)?.[0];
+    if (ov?.name) return { fixed: ov.name };
+    const salt = ov?.salt ?? 0;
     const sp = f.species !== undefined ? species.get(f.species) : undefined;
     const rt = typed(f);
-    if (rt) f.name = typedName(f, rt, f.key, ov?.salt ?? 0);
-    else if (sp) {
+    if (rt) return { gen: () => typedName(f, rt, f.key, salt), ctx: ctxOf(salt, typeHow(rt)) };
+    if (sp) {
       // 涂出来的生态区、自然长成的自带地名的一片：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
       const how = speciesFeature(sp).naming(pack);
-      f.name = generateName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${ov?.salt ?? 0}`), taken);
-    } else f.name = generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${ov?.salt ?? 0}`), taken);
+      return { gen: () => generateName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${salt}`), taken), ctx: ctxOf(salt, speciesHow(sp)) };
+    }
+    return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${salt}`), taken), ctx: ctxOf(salt, `f:${f.type}`) };
+  };
+  const plans = order.map(plan);
+  const meta = new Map<GeoFeature, NameMeta>();
+  order.forEach((f, k) => {
+    if (f.region && regions.has(f.region)) return;
+    const p = plans[k];
+    const override = ovOf.get(f)?.[1];
+    meta.set(f, 'fixed' in p ? { override } : { ctx: p.ctx, override });
+  });
+  // 留着的名字最先占上（起名的办法没变的才算；同一个名字只给先排到的那个）
+  const kept = world.small.keptNames;
+  const keptOf = new Map<GeoFeature, string>();
+  if (kept) {
+    order.forEach((f, k) => {
+      const p = plans[k];
+      const e = kept[f.key];
+      if (!e || 'fixed' in p || p.ctx === undefined || e.ctx !== p.ctx || taken.has(e.name)) return;
+      keptOf.set(f, e.name);
+      taken.add(e.name);
+    });
   }
+  order.forEach((f, k) => {
+    const p = plans[k];
+    if ('fixed' in p) {
+      f.name = p.fixed;
+      f.custom = true;
+      taken.add(p.fixed);
+      return;
+    }
+    f.custom = false;
+    f.name = keptOf.get(f) ?? p.gen();
+  });
+  return meta;
+}
+
+// 配对：这一步之前的地物 prev 与之后的 cur。先配键相同的（同一种），剩下的在同一种里（类型、生态相同；
+// 画的河只按键）按重叠的格数从多到少配，重叠要占两者中小的那个的一半以上（岛长大了、海被切掉一角、森林中间被涂掉一块
+// 都还是原来那个）。每个地物最多配一次。区块不配（名字跟着区块走，本来就不跳）。返回 [prev 的下标, cur 的下标]
+function pairFeatures(prev: GeoFeature[], cur: GeoFeature[]): [number, number][] {
+  const kind = (f: GeoFeature) => (f.guide !== undefined ? `g:${f.key}` : `${f.type}|${f.species ?? ''}`);
+  const pairs: [number, number][] = [];
+  const oldAt = new Map<string, number>();
+  prev.forEach((f, i) => {
+    if (f.region === undefined && !oldAt.has(f.key)) oldAt.set(f.key, i);
+  });
+  const usedOld = new Uint8Array(prev.length);
+  const usedNew = new Uint8Array(cur.length);
+  cur.forEach((f, j) => {
+    if (f.region !== undefined) return;
+    const i = oldAt.get(f.key);
+    if (i === undefined || usedOld[i] || kind(prev[i]) !== kind(f)) return;
+    pairs.push([i, j]);
+    usedOld[i] = 1;
+    usedNew[j] = 1;
+  });
+  // 没配上的旧地物：每格属于哪几个
+  const owners = new Map<number, number[]>();
+  prev.forEach((f, i) => {
+    if (usedOld[i] || f.region !== undefined || f.guide !== undefined) return;
+    for (const c of f.cells) {
+      const list = owners.get(c);
+      if (list) list.push(i);
+      else owners.set(c, [i]);
+    }
+  });
+  const cand: [number, number, number][] = [];
+  cur.forEach((f, j) => {
+    if (usedNew[j] || f.region !== undefined || f.guide !== undefined) return;
+    const k = kind(f);
+    const count = new Map<number, number>();
+    for (const c of f.cells) for (const i of owners.get(c) ?? []) if (kind(prev[i]) === k) count.set(i, (count.get(i) ?? 0) + 1);
+    for (const [i, n] of count) if (n * 2 >= Math.min(prev[i].cells.length, f.cells.length)) cand.push([n, i, j]);
+  });
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  cand.sort((a, b) => b[0] - a[0] || cmp(prev[a[1]].key, prev[b[1]].key) || cmp(cur[a[2]].key, cur[b[2]].key));
+  for (const [, i, j] of cand) {
+    if (usedOld[i] || usedNew[j]) continue;
+    pairs.push([i, j]);
+    usedOld[i] = 1;
+    usedNew[j] = 1;
+  }
+  return pairs;
+}
+
+// 这一步要记下什么才能让名字不乱跳（见本节开头）：world、features 是这一步之后的世界与地物（名字已按 world 起好），
+// prevSmall、prev 是这一步之前的小数据与地物。没有要记的时返回 null。只看这些参数，结果是确定的。
+// 换了生成的种子（整个世界重新生成）时不留：名字本来就该全换
+export function carryNames(world: World, features: GeoFeature[], prevSmall: SmallState, prev: GeoFeature[]): NameCarry | null {
+  const seedOf = (s: SmallState) => s.terrain.gen?.seed ?? world.settings.seed;
+  if (!prev.length || !features.length || seedOf(prevSmall) !== seedOf(world.small)) return null;
+  // 之前的名字与起名的情况（按之前的小数据重新起一遍：与当时起的一字不差）
+  const old = prev.map((f) => ({ ...f }));
+  const oldMeta = assignNames({ ...world, small: prevSmall }, old);
+  const pairs = pairFeatures(old, features);
+  if (!pairs.length) return null;
+  const small: SmallState = { ...world.small, featureNames: { ...world.small.featureNames }, keptNames: { ...world.small.keptNames } };
+  const kept = small.keptNames!;
+  const scratch: World = { ...world, small };
+  const keep: Record<string, KeptName | null> = {};
+  const move: Record<string, string> = {};
+  // 留下一些名字之后，别的地物可能跟着换（原来撞名退到后面的名字现在空出来了）：再看一遍，直到没有新的要留
+  for (let round = 0; round < 16; round++) {
+    const cur = features.map((f) => ({ ...f }));
+    const meta = assignNames(scratch, cur);
+    const usedOv = new Set<string>();
+    for (const m of meta.values()) if (m.override !== undefined) usedOv.add(m.override);
+    let more = false;
+    for (const [i, j] of pairs) {
+      const o = old[i];
+      const f = cur[j];
+      if (f.custom || f.name === o.name) continue;
+      const om = oldMeta.get(o);
+      const fm = meta.get(f);
+      // 改过的名字、换过的盐落不到这个地物上了（原锚点被盖掉、挪到了别处）：那一条挪到这个地物的键上
+      const from = om?.override;
+      if (from !== undefined && fm?.override === undefined && f.guide === undefined && !usedOv.has(from) && small.featureNames[from] && !small.featureNames[f.key] && !(from in move)) {
+        small.featureNames[f.key] = small.featureNames[from];
+        delete small.featureNames[from];
+        move[from] = f.key;
+        usedOv.add(from);
+        more = true;
+        continue;
+      }
+      // 自动起的名字：起名的办法没变就留着原来的名字（已经留着、但被排在前面的占了的，不再留）
+      if (o.custom || om?.ctx === undefined || fm?.ctx !== om.ctx) continue;
+      const e = kept[f.key];
+      if (e && e.name === o.name && e.ctx === fm.ctx) continue;
+      kept[f.key] = keep[f.key] = { name: o.name, ctx: fm.ctx };
+      more = true;
+    }
+    if (!more) break;
+  }
+  // 换了键的地物：原来的键上留着的名字不再用（那个键以后又出现时照常起名，不会与这里重名）
+  const keys = new Set(features.map((f) => f.key));
+  for (const [i, j] of pairs) {
+    const k = old[i].key;
+    if (k !== features[j].key && !keys.has(k) && kept[k] && !(k in keep)) keep[k] = null;
+  }
+  const out: NameCarry = {};
+  if (Object.keys(keep).length) out.keep = keep;
+  if (Object.keys(move).length) out.move = move;
+  return out.keep || out.move ? out : null;
+}
+
+// 把记下的（见 carryNames）用到小数据上：先挪改过的名字，再改留着的名字
+export function applyNameCarry(small: SmallState, carry: NameCarry) {
+  if (carry.move) {
+    const names = { ...small.featureNames };
+    for (const [from, to] of Object.entries(carry.move)) {
+      const ov = names[from];
+      if (!ov || names[to]) continue;
+      names[to] = ov;
+      delete names[from];
+    }
+    small.featureNames = names;
+  }
+  if (carry.keep) {
+    const kept = { ...small.keptNames };
+    for (const [key, e] of Object.entries(carry.keep)) {
+      if (e) kept[key] = e;
+      else delete kept[key];
+    }
+    if (Object.keys(kept).length) small.keptNames = kept;
+    else delete small.keptNames;
+  }
+}
+
+// 同一步记了两次（命令里已经记着、执行时又记了一些）：合在一起，后记的说了算
+export function mergeNameCarry(a: NameCarry | undefined, b: NameCarry): NameCarry {
+  if (!a) return b;
+  const out: NameCarry = {};
+  if (a.keep || b.keep) out.keep = { ...a.keep, ...b.keep };
+  if (a.move || b.move) out.move = { ...a.move, ...b.move };
+  return out;
 }

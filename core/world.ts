@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { FeatureOverride, GeoFeature } from './features';
+import type { FeatureOverride, GeoFeature, KeptName } from './features';
 import type { Worldgen } from './generate';
 import type { WordPack } from './names';
 import { type Mesh, buildMesh } from './mesh';
@@ -204,6 +204,9 @@ export interface SmallState {
   wordPack: WordPack | null;
   // 地理要素的手工命名与重抽：键为“类型:锚点格”
   featureNames: Record<string, FeatureOverride>;
+  // 留着的名字（第九轮）：键为“类型:锚点格”。编辑之后锚点挪了、名字被新地物抢了的地物照旧叫原来的名字，
+  // 由引擎在那一步记进命令（见 features.ts 的 carryNames）。第一次留名字之前没有这一项
+  keptNames?: Record<string, KeptName>;
   planet: Planet;
   species: Species[];
   constraints: Constraint[];
