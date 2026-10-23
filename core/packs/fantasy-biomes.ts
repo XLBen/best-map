@@ -18,7 +18,8 @@ import { type Rect, type Species, withRect } from '../species';
 
 const script = (src: string) => ({ api: 1 as const, src });
 
-const make = (base: Omit<Species, 'tolerances'>, rect: Rect): Species => withRect({ ...base, tolerances: [] }, rect);
+// 第十二轮：示例生态显式写上“自然生成”（资源包里没写的生态加进世界时默认不自然生成）
+const make = (base: Omit<Species, 'tolerances'>, rect: Rect): Species => withRect({ ...base, natural: true, tolerances: [] }, rect);
 
 // 森林类的内置生态：虫群侵占它们（和水晶丛林）
 const FORESTS = ['taiga', 'temperate_forest', 'subtropical_forest', 'dry_forest', 'monsoon_forest', 'rainforest'];

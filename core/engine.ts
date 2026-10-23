@@ -1,7 +1,7 @@
 import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
 import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, revert } from './commands';
-import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
+import { activeConflicts, checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
 import { carveBeds, computeElevation } from './elevation';
 import { type GeoFeature, assignNames, applyNameCarry, carryNames, detectFeatures, guideFeatures, mergeNameCarry, prepareFeatures, regionFeatures } from './features';
@@ -9,11 +9,12 @@ import { computeEffects } from './effects';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
-import { typeLakes } from './lake-types';
-import { typeRivers } from './river-types';
+import { lakeTypesOf, typeLakes } from './lake-types';
+import { riverTypesOf, typeRivers } from './river-types';
+import { needsBaseBiomes } from './water-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
-import { computeVegetation, finishLook, isVegetated } from './vegetation';
+import { baseBiomes, computeVegetation, finishLook, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
@@ -529,8 +530,10 @@ export class Engine {
       computeHydrology(w, d.elevation, d);
       // 河流类型（第三批）：没有时什么都不做；match 脚本出的问题交给植被一起记下
       // 湖泊类型（第九轮）同样：没有时什么都不做
-      const issues = typeRivers(w, d, seed);
-      const lakeIssues = typeLakes(w, d, seed);
+      // 第十二轮：有类型按生态限制（或规则里用了生态）时，先算一遍不计水体类型的植被，按它定哪些河、湖是哪一种
+      const bio = needsBaseBiomes([...riverTypesOf(w.small), ...lakeTypesOf(w.small)]) ? baseBiomes(w, d) : null;
+      const issues = typeRivers(w, d, seed, bio);
+      const lakeIssues = typeLakes(w, d, seed, bio);
       // 颜色脚本只在全部几遍算完之后算一次（finishLook）：每一遍都整个重算 d.look，前几遍的没人用
       computeVegetation(w, d, lakeIssues.length ? [...issues, ...lakeIssues] : issues, { look: false });
     };
@@ -797,7 +800,7 @@ function landAndFailing(a: World, b: World): Pick<PreviewExtras, 'failing' | 'la
   const la = a.causes.land;
   const lb = b.causes.land;
   for (let i = 0; i < la.length; i++) if (la[i] !== lb[i]) (lb[i] ? landGained : landLost).push(i);
-  return { failing: b.derived.conflicts.flatMap((c) => c.failing), landGained, landLost };
+  return { failing: activeConflicts(b).flatMap((c) => c.failing), landGained, landLost };
 }
 
 export interface PreviewResult extends PreviewExtras {
@@ -879,7 +882,7 @@ function diffWorlds(a: World, b: World, cmd: Command): Omit<PreviewResult, keyof
     void S;
     return { id: c.id, satisfied: valid.length ? ok / valid.length : 0, required: c.ratio };
   });
-  const out: Omit<PreviewResult, keyof PreviewExtras> = { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: b.derived.conflicts.length, satisfied, lakeAdded, lakeRemoved, carved };
+  const out: Omit<PreviewResult, keyof PreviewExtras> = { changedCells, riverAdded, riverRemoved, maxCorrT, maxCorrP, conflicts: activeConflicts(b).length, satisfied, lakeAdded, lakeRemoved, carved };
   const id = cmd.op === 'update_guide' ? cmd.id : cmd.op === 'add_guide' ? (cmd.guide.id ?? b.small.guides[b.small.guides.length - 1]?.id) : undefined;
   const g = id !== undefined ? b.small.guides.find((x) => x.id === id) : undefined;
   if (g) {

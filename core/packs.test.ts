@@ -264,7 +264,7 @@ describe('资源包用到世界', () => {
     (w.small as { lakeTypes?: unknown }).lakeTypes = [{ id: 'blood_pool', name: '别的血池', color: '#000000' }];
     const renamed = planPack(w, p, defaultPicks(p));
     const set = renamed.command.commands[0];
-    expect(set.op === 'set_lake_type' && set.type).toEqual({ id: 'blood_pool-2', name: '血池 2', color: '#9b1b1b', seedKey: 'blood_pool' });
+    expect(set.op === 'set_lake_type' && set.type).toEqual({ id: 'blood_pool-2', name: '血池 2', color: '#9b1b1b', seedKey: 'blood_pool', natural: false });
     const sp = renamed.command.commands.find((c) => c.op === 'add_species');
     const s = sp?.op === 'add_species' ? (sp.species as Species) : null;
     expect(s!.scripts!.placement!.src).toBe("return hasLake('blood_pool-2') ? nearLake('blood_pool-2') : river('blood_pool');");
@@ -287,7 +287,7 @@ describe('资源包用到世界', () => {
     (w.small as { riverTypes?: unknown }).riverTypes = [{ id: 'blood_river', name: '别的血河', color: '#000000' }];
     const renamed = planPack(w, p, defaultPicks(p));
     const set = renamed.command.commands[0];
-    expect(set.op === 'set_river_type' && set.type).toEqual({ id: 'blood_river-2', name: '血河 2', color: '#8f1414', seedKey: 'blood_river' });
+    expect(set.op === 'set_river_type' && set.type).toEqual({ id: 'blood_river-2', name: '血河 2', color: '#8f1414', seedKey: 'blood_river', natural: false });
     const sp0 = renamed.command.commands.find((c) => c.op === 'add_species');
     const src0 = sp0?.op === 'add_species' ? (sp0.species as Species).scripts!.placement!.src : '';
     expect(src0).toContain("hasRiver('blood_river-2')");
@@ -320,7 +320,9 @@ describe('河流类型的资源包', () => {
     expect(findScripts(out).map((x) => x.path)).toEqual(['riverTypes[1].scripts.match']);
     const other = continents({ latNorth: 25, latSouth: -25 });
     other.exec(applyPackCommands(other.world, out));
-    expect(other.world.small.riverTypes).toEqual(eng.world.small.riverTypes);
+    // 导出时写明了“自然生成”（世界里没写的是开着的），别的部分一模一样
+    expect(out.riverTypes!.map((t) => (t as { natural?: boolean }).natural)).toEqual([true, true]);
+    expect(other.world.small.riverTypes).toEqual(eng.world.small.riverTypes!.map((t) => ({ ...t, natural: t.natural ?? true })));
     expect(other.history.at(-1)!.summary).toBe('用了资源包「我的河」');
     expect(applyPackCommands(other.world, out).commands).toEqual([]);
     // 写错的河流类型：读的时候用中文说出在哪里
@@ -339,9 +341,13 @@ describe('从世界导出', () => {
     const w = fakeWorld(species, ['holy']);
     expect(exportableBiomes(w).map((s) => s.id)).toEqual(['taiga', 'holy_land']);
     const out = packFromWorld(w, {}, { name: '我的包', author: '我' });
-    expect(out).toEqual({ format: 'map2-pack', version: 1, id: '我的包', name: '我的包', author: '我', fields: ['holy'], biomes: [taiga, holy] });
+    // 导出时写明“自然生成”（内置的改过的没写，是开着的）
+    expect(out).toEqual({ format: 'map2-pack', version: 1, id: '我的包', name: '我的包', author: '我', fields: ['holy'], biomes: [{ ...taiga, natural: true }, holy] });
     // 只勾一种；文字包是内置的（null）时不带
-    expect(packFromWorld(w, { biomes: ['taiga'], wordPack: true }, { name: 'x' }).biomes).toEqual([taiga]);
+    expect(packFromWorld(w, { biomes: ['taiga'], wordPack: true }, { name: 'x' }).biomes).toEqual([{ ...taiga, natural: true }]);
+    // 只长在某个岛上的也不收
+    const ranged = { ...biome('ranged_x'), range: { kind: 'island' as const, cell: 3 } };
+    expect(exportableBiomes(fakeWorld([...species, ranged], ['holy'])).map((s) => s.id)).toEqual(['taiga', 'holy_land']);
     expect(packFromWorld(w, { biomes: ['taiga'], wordPack: true }, { name: 'x' }).textPacks).toBeUndefined();
     // 什么都没勾：只有名字
     expect(packFromWorld(fakeWorld(), {}, { name: '空' })).toEqual({ format: 'map2-pack', version: 1, id: '空', name: '空' });

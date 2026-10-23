@@ -111,7 +111,11 @@ export function reasonText(f: Factor): string {
 }
 
 function whyNot(e: CellExplanation, winner: string | null): string {
-  if (!e.reachable) return '它传不到这里（不能跨海，或离起源地太远）';
+  if (!e.reachable) {
+    if (e.why === 'range') return '它只长在设定的岛上或圈的范围里，这里在外面';
+    if (e.why === 'natural') return '它不自然生成：只长在涂了它的地方';
+    return '它传不到这里（不能跨海，或离起源地太远）';
+  }
   const limiting = [...e.factors].sort((a, b) => a.factor - b.factor)[0];
   // 长在哪里的脚本：比最卡的那条耐受条件还卡时先说它
   const place = e.placement;

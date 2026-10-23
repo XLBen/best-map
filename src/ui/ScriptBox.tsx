@@ -246,7 +246,7 @@ function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scop
         </>
       ))}
       <h5>辅助函数</h5>
-      {SCRIPT_HELPERS.map((h) => (
+      {SCRIPT_HELPERS.filter((h) => !h.for || (kind === 'match' && (h.for === 'water' || h.for === (scope ?? 'river')))).map((h) => (
         <div class="script-var">
           <code class="link" onMouseDown={keep} onClick={() => onInsert(h.name === 'Math' ? 'Math.' : `${h.name}(`)}>
             {h.usage}

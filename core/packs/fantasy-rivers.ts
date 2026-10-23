@@ -27,6 +27,7 @@ export const FANTASY_RIVER_TYPES: RiverType[] = [
       ),
     },
     seedKey: 'fantasy/blood_river',
+    natural: true,
   },
   {
     id: 'crystal_river',
@@ -40,6 +41,7 @@ export const FANTASY_RIVER_TYPES: RiverType[] = [
       match: script(['// 从高山上冲下来的冷河', 'return sourceElevation > 3800 && tMean < 2 && fbmAt(2, 2, 5) > -0.05;'].join('\n')),
     },
     seedKey: 'fantasy/crystal_river',
+    natural: true,
   },
   {
     id: 'styx',
@@ -49,6 +51,7 @@ export const FANTASY_RIVER_TYPES: RiverType[] = [
     bank: { radiusKm: 300, dT: -1.5, dP: -0.3 },
     names: [{ p: '{deep}冥河' }, { p: '{myth}幽川' }],
     seedKey: 'fantasy/styx',
+    natural: false,
   },
   {
     id: 'lava_river',
@@ -69,5 +72,6 @@ export const FANTASY_RIVER_TYPES: RiverType[] = [
       ),
     },
     seedKey: 'fantasy/lava_river',
+    natural: true,
   },
 ];

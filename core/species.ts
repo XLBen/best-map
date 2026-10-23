@@ -103,6 +103,13 @@ export const featureSchema = z.object({
 });
 export type SpeciesFeature = z.output<typeof featureSchema>;
 
+// 长在哪里：只在一个岛上（cell 所在的那块陆地）/ 只在圈的这些格里
+export const rangeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('island'), cell: z.number().int().min(0) }),
+  z.object({ kind: z.literal('cells'), cells: z.array(z.number().int().min(0)).min(1) }),
+]);
+export type SpeciesRange = z.output<typeof rangeSchema>;
+
 // 生态能有的两种脚本
 export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
 
@@ -134,6 +141,12 @@ export const speciesSchema = z.object({
   scripts: z.lazy(() => scriptsSchema).optional(),
   // 脚本里噪声、rand 的种子用它（省略时用 id）：资源包里的生态改了 id，花纹也不变
   seedKey: z.string().min(1).max(64).optional(),
+  // ---------- 第十二轮 ----------
+  // 自然生成：false 时不在地图上按条件自己出现，只长在涂了它的格里（涂的格里照样按“自然融入”算）。
+  // 省略为 true（内置生态照旧）；界面里新建、复制的生态和从资源包加进来的生态（包里没写时）是 false
+  natural: z.boolean().optional(),
+  // 长在哪里：只在一个岛上（这一格所在的那块陆地，每次重算时重新认，岛变了跟着变）或圈的范围里。省略为到处
+  range: rangeSchema.optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;

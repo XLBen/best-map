@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
-import { PLAIN_TYPE, bankField, bankRadiusKm, checkMatchScripts, majorityOf, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
+import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, inBiomes, majorityOf, matchesNaturally, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
 import type { Derived, SmallState, World } from './world';
 
 // 湖泊类型（第九轮）：血池、晶湖、冥湖、熔岩湖……与河流类型同一套：颜色、画法、岸边的影响、起名模板、
@@ -84,7 +84,28 @@ export const matchRunStats = { lakes: 0 };
 const AT_FIRST = new Set(['x', 'y', 'lat', 'lon', 'px', 'py', 'pz', 'cell', 'areaKm2']);
 const MAXED = new Set(['discharge', 'drainArea']);
 
-function lakeInputs(world: World, d: Derived, parts: LakeParts, open: readonly number[]): ScriptInputs {
+// 湖岸：一个湖周围一圈不是这个湖的陆地格（第十二轮：按生态限制、脚本里的 biome() 用它）
+export function lakeShores(world: World, parts: LakeParts): Int32Array[] {
+  const { mesh } = world;
+  const land = world.causes.land;
+  return parts.lakes.map((cells, k) => {
+    const seen = new Set<number>();
+    const out: number[] = [];
+    for (let q = 0; q < cells.length; q++) {
+      const c = cells[q];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (parts.of[j] !== k && land[j] === 1 && !seen.has(j)) {
+          seen.add(j);
+          out.push(j);
+        }
+      }
+    }
+    return Int32Array.from(out.sort((a, b) => a - b));
+  });
+}
+
+function lakeInputs(world: World, d: Derived, parts: LakeParts, open: readonly number[], biomes: { base: Int16Array; shores: Int32Array[] } | null): ScriptInputs {
   const base = worldInputs(world, d);
   const { mesh } = world;
   const n = mesh.n;
@@ -147,6 +168,16 @@ function lakeInputs(world: World, d: Derived, parts: LakeParts, open: readonly n
     n,
     globe: base.globe,
     get,
+    // 生态（第十二轮）：湖岸一圈
+    biomes: biomes
+      ? biomeInputsFor(
+          world.small.species,
+          biomes.base,
+          n,
+          open.map((k) => biomes.shores[k]),
+          Int32Array.from(open, (k) => parts.lakes[k][0]),
+        )
+      : undefined,
     field: (name) => {
       const key = `field:${name}`;
       let v = made.get(key) as Float64Array | undefined;
@@ -161,8 +192,9 @@ function lakeInputs(world: World, d: Derived, parts: LakeParts, open: readonly n
 }
 
 // 每格是哪一种湖：写进 d.lakeType。没有湖泊类型时为 undefined（从来没有过的世界里没有这个键）。
-// 返回 match 脚本出的问题（出错的那种这一次按“不匹配”处理，不挡操作）
-export function typeLakes(world: World, d: Derived, seed: number): ScriptIssue[] {
+// 返回 match 脚本出的问题（出错的那种这一次按“不匹配”处理，不挡操作）。
+// biomes：不计水体类型的一遍植被的主导生态（第十二轮，见 vegetation.ts 的 baseBiomes），用不到时为 null
+export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16Array | null = null): ScriptIssue[] {
   const types = lakeTypesOf(world.small);
   if (!types.length) {
     if (d.lakeType !== undefined) d.lakeType = undefined;
@@ -184,26 +216,36 @@ export function typeLakes(world: World, d: Derived, seed: number): ScriptIssue[]
   };
   for (const e of world.small.lakeTyping ?? []) choose(e.cell, e.type);
   for (const l of world.small.lakes) if (l.type !== undefined) choose(l.cell, l.type);
-  // 每个湖一次的 match（按类型的先后，先匹配上的算）。安全模式下整个跳过：按不匹配，不记问题
+  // 每个湖一次的 match（按类型的先后，先匹配上的算）。安全模式下带脚本的类型跳过：按不匹配，不记问题。
+  // 第十二轮：关掉了自然生成的类型不匹配；选了“只在这些生态里”的，湖岸一圈至少一半是那几种生态才算
   const issues: ScriptIssue[] = [];
+  const scriptsOn = scriptsEnabled();
   let open: number[] = [];
-  if (scriptsEnabled()) for (let k = 0; k < chosen.length; k++) if (chosen[k] === -2) open.push(k);
+  for (let k = 0; k < chosen.length; k++) if (chosen[k] === -2) open.push(k);
   let inputs: ScriptInputs | null = null;
+  let shores: Int32Array[] | null = null;
+  const shoresOf = () => (shores ??= lakeShores(world, parts));
   types.forEach((t, k) => {
+    if (!matchesNaturally(t) || !open.length) return;
     const src = t.scripts?.match?.src;
-    if (!src || !open.length) return;
-    inputs ??= lakeInputs(world, d, parts, open);
-    const firsts = Int32Array.from(open, (j) => parts.lakes[j][0]);
-    matchRunStats.lakes += firsts.length;
-    const r = runScript({ kind: 'match', src, scope: 'lake' }, { owner: lakeTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: firsts });
-    if (!r.ok) {
-      issues.push(r.issue);
-      return;
+    if (src && !scriptsOn) return;
+    let match: ArrayLike<number> | null = null;
+    if (src) {
+      inputs ??= lakeInputs(world, d, parts, open, biomes ? { base: biomes, shores: shoresOf() } : null);
+      const firsts = Int32Array.from(open, (j) => parts.lakes[j][0]);
+      matchRunStats.lakes += firsts.length;
+      const r = runScript({ kind: 'match', src, scope: 'lake' }, { owner: lakeTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: firsts });
+      if (!r.ok) {
+        issues.push(r.issue);
+        return;
+      }
+      match = r.output.match;
     }
-    const match = r.output.match;
+    const set = t.biomes?.length ? biomeSet(world.small.species, t.biomes) : null;
     const rest: number[] = [];
     open.forEach((j, q) => {
-      if (match[q]) chosen[j] = k;
+      const ok = (!match || match[q]) && (!set || (biomes !== null && inBiomes(biomes, shoresOf()[j], set)));
+      if (ok) chosen[j] = k;
       else rest.push(j);
     });
     open = rest;

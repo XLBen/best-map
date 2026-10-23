@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CommandError } from './errors';
 import { type Mesh, graphDistance } from './mesh';
 // 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用别的模块，顶层直接读会碰上“初始化之前不能访问”
-import { compileScript, scriptsSchema } from './script';
+import { type BiomeInputs, compileScript, scriptsSchema, usesBiomeHelpers } from './script';
 import { typeIdSchema } from './type-id';
 import type { World } from './world';
 
@@ -44,6 +44,11 @@ export function waterTypeShape(what: string, noun: string) {
       .optional(),
     // 脚本里噪声、rand 的种子用它（省略时用 id）：资源包里的类型改了 id，匹配的河、湖也不变
     seedKey: z.string().min(1).max(64).optional(),
+    // 第十二轮：自然生成。false 时不按规则自己出现（只用在画的河、放的湖、选了它的河和湖上）。
+    // 省略为 true（旧的类型照旧）；界面里新建的、资源包里没写的是 false
+    natural: z.boolean().optional(),
+    // 只在这些生态里出现：一条河流经的格（一个湖的湖岸）至少一半是这几种生态（按不计水体类型的一遍植被）
+    biomes: z.array(z.string().min(1)).min(1).max(64).optional(),
   };
 }
 
@@ -58,6 +63,101 @@ export interface WaterType {
   names?: { p: string; w?: number }[];
   scripts?: { match?: { api: 1; src: string } } & Record<string, unknown>;
   seedKey?: string;
+  natural?: boolean;
+  biomes?: string[];
+}
+
+// 会不会按规则自己出现：没关掉自然生成，并且有规则（match 脚本）或选了“只在这些生态里”。
+// 只选了生态、没写脚本时，那些生态里的河（湖）都是这一种
+export function matchesNaturally(t: Pick<WaterType, 'natural' | 'scripts' | 'biomes'>): boolean {
+  return t.natural !== false && (!!t.scripts?.match?.src || !!t.biomes?.length);
+}
+
+// 要不要先算一遍不计水体类型的植被（有类型按生态限制，或规则里用了生态的辅助函数）
+export function needsBaseBiomes(types: readonly WaterType[]): boolean {
+  return types.some((t) => matchesNaturally(t) && (!!t.biomes?.length || (!!t.scripts?.match?.src && usesBiomeHelpers(t.scripts.match.src))));
+}
+
+// 一串格里属于 biomes（生态下标的集合）的比例至少一半。base：每格的生态下标（不长植被的格为 −1，不算进分母）
+export function inBiomes(base: Int16Array, cells: ArrayLike<number>, set: ReadonlySet<number>): boolean {
+  let total = 0;
+  let hit = 0;
+  for (let k = 0; k < cells.length; k++) {
+    const b = base[cells[k]];
+    if (b < 0) continue;
+    total++;
+    if (set.has(b)) hit++;
+  }
+  return total > 0 && hit * 2 >= total;
+}
+
+// 生态 id 换成下标的集合（找不到的不算）
+export function biomeSet(species: readonly { id: string }[], ids: readonly string[] | undefined): Set<number> {
+  const out = new Set<number>();
+  for (const id of ids ?? []) {
+    const k = species.findIndex((s) => s.id === id);
+    if (k >= 0) out.add(k);
+  }
+  return out;
+}
+
+// 给 match 脚本的生态（biome、dominantBiome……）：groups[j] 是第 j 条河（第 j 个湖）用来统计的格，key[j] 是脚本按哪一格算（源头、第一格）。
+// source / mouth：河的源头、河口那一格（湖没有）
+export function biomeInputsFor(
+  species: readonly { id: string }[],
+  base: Int16Array,
+  n: number,
+  groups: readonly ArrayLike<number>[],
+  key: ArrayLike<number>,
+  ends?: { source: ArrayLike<number>; mouth: ArrayLike<number> },
+): BiomeInputs {
+  const S = species.length;
+  const counts: Int32Array[] = groups.map((cells) => {
+    const c = new Int32Array(S + 1);
+    for (let q = 0; q < cells.length; q++) {
+      const b = base[cells[q]];
+      if (b >= 0) {
+        c[b]++;
+        c[S]++;
+      }
+    }
+    return c;
+  });
+  const at = new Map<number, number>();
+  for (let j = 0; j < key.length; j++) if (!at.has(key[j])) at.set(key[j], j);
+  const idOf = (b: number) => (b >= 0 && b < S ? species[b].id : '');
+  return {
+    share(id) {
+      const out = new Float64Array(n);
+      const s = species.findIndex((x) => x.id === id);
+      if (s < 0) return out;
+      groups.forEach((_, j) => {
+        const c = counts[j];
+        out[key[j]] = c[S] ? c[s] / c[S] : 0;
+      });
+      return out;
+    },
+    dominant(cell) {
+      const j = at.get(cell);
+      if (j === undefined) return '';
+      const c = counts[j];
+      let best = -1;
+      for (let s = 0; s < S; s++) if (c[s] > 0 && (best < 0 || c[s] > c[best])) best = s;
+      return idOf(best);
+    },
+    ...(ends
+      ? {
+          atSource: (cell: number) => {
+            const j = at.get(cell);
+            return j === undefined ? '' : idOf(base[ends.source[j]]);
+          },
+          atMouth: (cell: number) => {
+            const j = at.get(cell);
+            return j === undefined ? '' : idOf(base[ends.mouth[j]]);
+          },
+        }
+      : {}),
+  };
 }
 
 // 类型显示用的名字（出错说明、看门狗提示）

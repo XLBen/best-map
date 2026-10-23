@@ -258,7 +258,8 @@ export const VARIABLES: readonly ScriptVariable[] = [
 ];
 
 // 辅助函数（编辑器的说明用；实现见下面的 HELPERS）
-export const SCRIPT_HELPERS: readonly { name: string; usage: string; label: string }[] = [
+// for：只在这一种 match 里有（编辑器只在那里列出）；'water' 是河、湖两种都有
+export const SCRIPT_HELPERS: readonly { name: string; usage: string; label: string; for?: 'river' | 'lake' | 'water' }[] = [
   { name: 'noise', usage: 'noise(x, y, k = 0)', label: '二维噪声，约 −1 到 1；k 换一组' },
   { name: 'fbm', usage: 'fbm(x, y, oct = 4, gain = 0.5, k = 0)', label: '几层叠起来的二维噪声' },
   { name: 'noise3', usage: 'noise3(x, y, z, k = 0)', label: '三维噪声' },
@@ -270,6 +271,10 @@ export const SCRIPT_HELPERS: readonly { name: string; usage: string; label: stri
   { name: 'hasRiver', usage: "hasRiver('类型 id')", label: '地图上有没有这种河（任何地方有一格就是 true）' },
   { name: 'nearLake', usage: "nearLake('类型 id')", label: '离这种湖多近（0–1，湖上为 1）' },
   { name: 'hasLake', usage: "hasLake('类型 id')", label: '地图上有没有这种湖' },
+  { name: 'biome', usage: "biome('生态 id')", label: '这条河流经的格（这个湖的湖岸）里这种生态占多少（0–1）', for: 'water' },
+  { name: 'dominantBiome', usage: 'dominantBiome()', label: "这条河流经（这个湖岸边）最多的生态的 id，比如 'wetland'", for: 'water' },
+  { name: 'biomeAtSource', usage: 'biomeAtSource()', label: '源头那里的生态的 id', for: 'river' },
+  { name: 'biomeAtMouth', usage: 'biomeAtMouth()', label: '河口（汇入、入海、入湖的地方）的生态的 id', for: 'river' },
   { name: 'smoothstep', usage: 'smoothstep(a, b, v)', label: 'v 从 a 到 b 平滑地从 0 变到 1' },
   { name: 'clamp', usage: 'clamp(v, lo = 0, hi = 1)', label: '把 v 限制在 lo 到 hi 之间' },
   { name: 'mix', usage: 'mix(a, b, t)', label: '按 t（0–1）在 a、b 之间取值' },
@@ -606,6 +611,7 @@ interface RunState {
   noise3: Map<number, Noise3>;
   fields: Map<string, ArrayLike<number>>;
   rivers: Map<string, ArrayLike<number> | null>;
+  biomeShares: Map<string, ArrayLike<number>>;
   // 布局脚本的 rand()：一条随机流
   stream: (() => number) | null;
   // 返回值不对时记下它（生成说明用）
@@ -632,6 +638,7 @@ const RUN: RunState = {
   noise3: new Map(),
   fields: new Map(),
   rivers: new Map(),
+  biomeShares: new Map(),
   stream: null,
   bad: undefined,
 };
@@ -755,6 +762,34 @@ function hasRiver(typeId: string): boolean {
   return a !== null;
 }
 
+// 生态（第十二轮）：只在河流、湖泊类型的 match 里有（按不计水体类型的一遍植被，见 vegetation.ts 的 baseBiomes）
+function biomeInputs(name: string): BiomeInputs {
+  const b = RUN.inputs?.biomes;
+  if (!b) throw new Error(`${name}() 只能在河流类型、湖泊类型的规则（哪些河、哪些湖是这一种）里用`);
+  return b;
+}
+
+function biome(id: string): number {
+  const key = String(id);
+  let a = RUN.biomeShares.get(key);
+  if (!a) RUN.biomeShares.set(key, (a = biomeInputs('biome').share(key)));
+  return a[RUN.cell];
+}
+
+const dominantBiome = (): string => biomeInputs('dominantBiome').dominant(RUN.cell);
+
+function biomeAtSource(): string {
+  const b = biomeInputs('biomeAtSource');
+  if (!b.atSource) throw new Error('biomeAtSource() 只在河流类型的规则里有（湖用 dominantBiome()）');
+  return b.atSource(RUN.cell);
+}
+
+function biomeAtMouth(): string {
+  const b = biomeInputs('biomeAtMouth');
+  if (!b.atMouth) throw new Error('biomeAtMouth() 只在河流类型的规则里有（湖用 dominantBiome()）');
+  return b.atMouth(RUN.cell);
+}
+
 // 离某种湖多近、地图上有没有这种湖（第九轮）：与河岸场同一条路，键是 'lake:类型'（见 river-types.ts 的 riverProvider）
 const nearLake = (typeId: string): number => river(`lake:${String(typeId)}`);
 const hasLake = (typeId: string): boolean => hasRiver(`lake:${String(typeId)}`);
@@ -799,6 +834,10 @@ const HELPERS = Object.freeze({
   hasRiver,
   nearLake,
   hasLake,
+  biome,
+  dominantBiome,
+  biomeAtSource,
+  biomeAtMouth,
   smoothstep: (a: number, b: number, v: number) => (a === b ? (v < a ? 0 : 1) : smoothKernel(a, b, v)),
   clamp: (v: number, lo = 0, hi = 1) => clampRange(v, lo, hi),
   mix: (a: number, b: number, t: number) => a + (b - a) * t,
@@ -1143,13 +1182,24 @@ export interface ScriptInputs {
   field?(name: string): ArrayLike<number> | undefined;
   // 河岸场 river:<id>（0–1）；由引擎在有河流类型后提供
   river?(typeId: string): ArrayLike<number> | undefined;
+  // 生态（第十二轮）：河流、湖泊类型的 match 里由引擎提供（数组、函数都按这条河的源头、这个湖的第一格取）
+  biomes?: BiomeInputs;
+}
+
+// 一条河（一个湖）上的生态。share：这种生态占的比例（0–1，没有这种生态时全是 0）；dominant：最多的那种的 id（没有为 ''）；
+// atSource、atMouth：源头、河口那一格的（只有河有）
+export interface BiomeInputs {
+  share(id: string): ArrayLike<number>;
+  dominant(cell: number): string;
+  atSource?(cell: number): string;
+  atMouth?(cell: number): string;
 }
 
 // 直接用几份数组作输入（测试、地形脚本、每条河一次的 match 用）。自定义场写成 'field:名字'
 export function arrayInputs(
   n: number,
   values: Record<string, InputValue>,
-  opts: { globe?: boolean; river?: (typeId: string) => ArrayLike<number> | undefined } = {},
+  opts: { globe?: boolean; river?: (typeId: string) => ArrayLike<number> | undefined; biomes?: BiomeInputs } = {},
 ): ScriptInputs {
   return {
     n,
@@ -1157,6 +1207,7 @@ export function arrayInputs(
     get: (key) => values[key],
     field: (name) => values[`field:${name}`] as ArrayLike<number> | undefined,
     river: opts.river,
+    biomes: opts.biomes,
   };
 }
 
@@ -1553,6 +1604,7 @@ function end() {
   RUN.noise3.clear();
   RUN.fields.clear();
   RUN.rivers.clear();
+  RUN.biomeShares.clear();
   RUN.stream = null;
   RUN.bad = undefined;
 }
@@ -1817,4 +1869,10 @@ export function checkPurity(run: (cells: Int32Array) => CellResult, cells: Array
     if (changed) res = { ...res, pure: false, changed, text: `脚本改了内置的 ${changed}（不能用它在格与格之间、两次运行之间传东西）` };
   }
   return res;
+}
+
+// 源码里用到了生态的辅助函数（biome、dominantBiome、biomeAtSource、biomeAtMouth）：要先算一遍不计水体类型的植被
+const BIOME_CALL = /(?<![\p{ID_Continue}$.])(biome|dominantBiome|biomeAtSource|biomeAtMouth)\s*\(/u;
+export function usesBiomeHelpers(src: string): boolean {
+  return BIOME_CALL.test(codeOnly(src));
 }

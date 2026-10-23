@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { LAKE_PREFIX, lakeBank } from './lake-types';
 import { joinsRiver } from './rivers';
 import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
-import { PLAIN_TYPE, bankField, bankRadiusKm, checkMatchScripts, majorityOf, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
+import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, inBiomes, majorityOf, matchesNaturally, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
 import type { Derived, Guide, SmallState, World } from './world';
 
 // 河流类型（第三批）：血河、晶川、冥河……每种有自己的颜色、画法、两岸的影响、起名模板，
@@ -107,7 +107,7 @@ export const matchRunStats = { rivers: 0 };
 const AT_SOURCE = new Set(['x', 'y', 'lat', 'lon', 'px', 'py', 'pz', 'cell', 'areaKm2']);
 const MAXED = new Set(['discharge', 'drainArea']);
 
-function stemInputs(world: World, d: Derived, stems: readonly Int32Array[]): ScriptInputs {
+function stemInputs(world: World, d: Derived, stems: readonly Int32Array[], biomes: Int16Array | null): ScriptInputs {
   const base = worldInputs(world, d);
   const n = world.mesh.n;
   const km = world.kmPerUnit;
@@ -157,10 +157,15 @@ function stemInputs(world: World, d: Derived, stems: readonly Int32Array[]): Scr
     made.set(key, v);
     return v;
   };
+  const sources = Int32Array.from(stems, (cells) => cells[0]);
   return {
     n,
     globe: base.globe,
     get,
+    // 生态（第十二轮）：整条河流经的格；源头、河口那一格
+    biomes: biomes
+      ? biomeInputsFor(world.small.species, biomes, n, stems, sources, { source: sources, mouth: Int32Array.from(stems, (cells) => cells[cells.length - 1]) })
+      : undefined,
     // 自定义场也取整条河的平均
     field: (name) => {
       const k = `field:${name}`;
@@ -176,8 +181,9 @@ function stemInputs(world: World, d: Derived, stems: readonly Int32Array[]): Scr
 }
 
 // 每格是哪一种河：写进 d.riverType。没有河流类型时为 undefined（从来没有过的世界里没有这个键）。
-// 返回 match 脚本出的问题（出错的那段这一次按“不匹配”处理，不挡操作）
-export function typeRivers(world: World, d: Derived, seed: number): ScriptIssue[] {
+// 返回 match 脚本出的问题（出错的那段这一次按“不匹配”处理，不挡操作）。
+// biomes：不计水体类型的一遍植被的主导生态（第十二轮，见 vegetation.ts 的 baseBiomes）；没有类型按生态限制、用生态的辅助函数时为 null
+export function typeRivers(world: World, d: Derived, seed: number, biomes: Int16Array | null = null): ScriptIssue[] {
   const types = riverTypesOf(world.small);
   if (!types.length) {
     if (d.riverType !== undefined) d.riverType = undefined;
@@ -201,25 +207,33 @@ export function typeRivers(world: World, d: Derived, seed: number): ScriptIssue[
       claimed[c] = 1;
     }
   }
-  // 每条河一次的 match（按类型的先后，先匹配上的算）。安全模式（脚本不运行）下与生态的脚本一样整个跳过：按不匹配，不记问题
+  // 每条河一次的 match（按类型的先后，先匹配上的算）。安全模式（脚本不运行）下带脚本的类型与生态的脚本一样跳过：按不匹配，不记问题。
+  // 第十二轮：关掉了自然生成的类型不匹配；选了“只在这些生态里”的，河流经的格至少一半是那几种生态才算（只选了生态、没写脚本的，那些生态里的河都是它）
   const issues: ScriptIssue[] = [];
-  let open = scriptsEnabled() ? stems.filter((cells) => cells.every((c) => !claimed[c])) : [];
+  const scriptsOn = scriptsEnabled();
+  let open = stems.filter((cells) => cells.every((c) => !claimed[c]));
   let inputs: ScriptInputs | null = null;
   types.forEach((t, k) => {
+    if (!matchesNaturally(t) || !open.length) return;
     const src = t.scripts?.match?.src;
-    if (!src || !open.length) return;
-    inputs ??= stemInputs(world, d, open);
-    const sources = Int32Array.from(open, (cells) => cells[0]);
-    matchRunStats.rivers += sources.length;
-    const r = runScript({ kind: 'match', src }, { owner: riverTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: sources });
-    if (!r.ok) {
-      issues.push(r.issue);
-      return;
+    if (src && !scriptsOn) return;
+    let match: ArrayLike<number> | null = null;
+    if (src) {
+      inputs ??= stemInputs(world, d, open, biomes);
+      const sources = Int32Array.from(open, (cells) => cells[0]);
+      matchRunStats.rivers += sources.length;
+      const r = runScript({ kind: 'match', src }, { owner: riverTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: sources });
+      if (!r.ok) {
+        issues.push(r.issue);
+        return;
+      }
+      match = r.output.match;
     }
-    const match = r.output.match;
+    const set = t.biomes?.length ? biomeSet(world.small.species, t.biomes) : null;
     const rest: Int32Array[] = [];
     open.forEach((cells, j) => {
-      if (match[j]) for (let q = 0; q < cells.length; q++) rt[cells[q]] = k + 1;
+      const ok = (!match || match[j]) && (!set || (biomes !== null && inBiomes(biomes, cells, set)));
+      if (ok) for (let q = 0; q < cells.length; q++) rt[cells[q]] = k + 1;
       else rest.push(cells);
     });
     open = rest;

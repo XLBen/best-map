@@ -21,6 +21,7 @@ export const FANTASY_LAKE_TYPES: LakeType[] = [
       match: script(['// 又低又热的地方，碰上一片片“血色”的湖', 'return !dryLake && elevation < 600 && tMean > 16 && fbmAt(1.5, 2, 7) > 0.3;'].join('\n')),
     },
     seedKey: 'fantasy/blood_pool',
+    natural: true,
   },
   {
     id: 'crystal_lake',
@@ -34,6 +35,7 @@ export const FANTASY_LAKE_TYPES: LakeType[] = [
       match: script(['// 高山上的冷湖', 'return !dryLake && elevation > 2500 && tMean < 3;'].join('\n')),
     },
     seedKey: 'fantasy/crystal_lake',
+    natural: true,
   },
   {
     id: 'styx_lake',
@@ -43,6 +45,7 @@ export const FANTASY_LAKE_TYPES: LakeType[] = [
     bank: { radiusKm: 250, dT: -1, dP: -0.2 },
     names: [{ p: '{deep}冥湖' }, { p: '{myth}幽潭' }],
     seedKey: 'fantasy/styx_lake',
+    natural: false,
   },
   {
     id: 'lava_lake',
@@ -56,5 +59,6 @@ export const FANTASY_LAKE_TYPES: LakeType[] = [
       match: script(['// 火山带里又高又热的湖', 'return uplift > 0.8 && elevation > 1500 && tMean >= 5;'].join('\n')),
     },
     seedKey: 'fantasy/lava_lake',
+    natural: true,
   },
 ];

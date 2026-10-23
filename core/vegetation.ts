@@ -62,6 +62,64 @@ export function fieldGetter(world: World, d: Derived, field: string): FieldGette
   }
 }
 
+// ---------- 第十二轮：长在哪里、自然生成 ----------
+
+// 一块陆地（cell 所在、四邻相连的陆地格，湖也算陆地）。cell 不是陆地时为空
+export function landmassCells(world: World, cell: number): Uint8Array {
+  const { mesh } = world;
+  const n = mesh.n;
+  const land = world.causes.land;
+  const out = new Uint8Array(n);
+  if (cell < 0 || cell >= n || land[cell] !== 1) return out;
+  const stack = [cell];
+  out[cell] = 1;
+  while (stack.length) {
+    const i = stack.pop()!;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (!out[j] && land[j] === 1) {
+        out[j] = 1;
+        stack.push(j);
+      }
+    }
+  }
+  return out;
+}
+
+// 生态的范围（只在一个岛上：按现在的海陆重新认那块陆地；圈的格）。没有范围时为 null
+export function rangeMask(world: World, sp: Pick<Species, 'range'>): Uint8Array | null {
+  const r = sp.range;
+  if (!r) return null;
+  if (r.kind === 'island') return landmassCells(world, r.cell);
+  const out = new Uint8Array(world.mesh.n);
+  for (const c of r.cells) if (c < out.length) out[c] = 1;
+  return out;
+}
+
+// 不自然生成的生态能长的格：涂了它的格（自然融入、强制都算）
+export function paintedMask(world: World, id: string): Uint8Array {
+  const out = new Uint8Array(world.mesh.n);
+  for (const c of world.small.constraints) if (c.species === id) for (const i of c.cells) if (i < out.length) out[i] = 1;
+  return out;
+}
+
+// 这种生态能长的格（范围 ∩ 不自然生成时涂过的格）；不受这两样限制时为 null
+export function allowedCells(world: World, sp: Species): Uint8Array | null {
+  const range = rangeMask(world, sp);
+  if (sp.natural !== false) return range;
+  const painted = paintedMask(world, sp.id);
+  if (range) for (let i = 0; i < painted.length; i++) painted[i] &= range[i];
+  return painted;
+}
+
+// 这一格为什么长不了这种生态（可达为 0 时）：范围外、没涂（不自然生成）、扩散不到
+export function unreachableWhy(world: World, sp: Species, i: number): 'range' | 'natural' | 'dispersal' {
+  const range = rangeMask(world, sp);
+  if (range && !range[i]) return 'range';
+  if (sp.natural === false && !paintedMask(world, sp.id)[i]) return 'natural';
+  return 'dispersal';
+}
+
 export function isVegetated(world: World, d: Derived, i: number): boolean {
   return world.causes.land[i] === 1 && d.lake[i] !== 1;
 }
@@ -209,6 +267,9 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
       });
       for (let i = 0; i < n; i++) reach[i * S + s] = dist[i] <= limit ? 1 : 0;
     }
+    // 第十二轮：长在哪里（只在一个岛上 / 圈的范围里）、不自然生成（只长在涂了它的格里）。都没有时不碰 reach（逐值不变）
+    const allowed = allowedCells(world, sp);
+    if (allowed) for (let i = 0; i < n; i++) if (!allowed[i]) reach[i * S + s] = 0;
   }
 
   const k = small.planet.vegSharpness;
@@ -275,6 +336,28 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   else if (d.scriptIssues !== undefined) d.scriptIssues = undefined;
 }
 
+// 第十二轮：不计水体类型的一遍植被的主导生态（河、湖类型“只在这些生态里出现”、脚本里的 biome() 用它）。
+// 在 d 的一份浅副本上算（河岸、湖岸场都当作没有），不改 d；结果只取决于这一遍的气候、水文，重放、撤销都一样
+export function baseBiomes(world: World, d: Derived): Int16Array {
+  const n = world.mesh.n;
+  const S = world.small.species.length;
+  const tmp: Derived = {
+    ...d,
+    riverType: undefined,
+    lakeType: undefined,
+    share: new Float32Array(n * S),
+    suit: new Float32Array(n * S),
+    reach: new Uint8Array(n * S),
+    dominant: new Int16Array(n).fill(-1),
+    overridden: new Uint8Array(n),
+    placeF: undefined,
+    look: undefined,
+    scriptIssues: undefined,
+  };
+  computeVegetation(world, tmp, [], { look: false });
+  return tmp.dominant;
+}
+
 // 不算颜色脚本的那一遍（computeVegetation 的 look 为 false）之后补上颜色：与那一遍里直接算逐值相同
 // （颜色脚本的问题排在最后，接在那一遍记下的问题之后）
 export function finishLook(world: World, d: Derived) {
@@ -301,6 +384,8 @@ export interface CellExplanation {
   placement?: number;
   // 侵占的倍数（这种生态不侵占别的生态时没有这一项）
   boost?: number;
+  // 长不了的原因（可达为 0 时）：范围外、不自然生成又没涂、扩散不到
+  why?: 'range' | 'natural' | 'dispersal';
 }
 
 export function explainCell(world: World, d: Derived, i: number): CellExplanation[] {
@@ -332,6 +417,7 @@ export function explainCell(world: World, d: Derived, i: number): CellExplanatio
       };
       if (placeF && slot[s] >= 0) out.placement = placeF[i * P + slot[s]];
       if (boost !== undefined) out.boost = boost;
+      if (!reachable) out.why = unreachableWhy(world, sp, i);
       return out;
     })
     .sort((a, b) => b.score - a.score);

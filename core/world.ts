@@ -93,6 +93,8 @@ export const constraintSchema = z.object({
   // 修正场向外衰减到 0 的距离（km）。第八轮起最小值随地图（一格半），这里只挡住不合理的值
   radius: z.number().min(1).max(5000).default(600),
   label: z.string().default(''),
+  // 没涂成时用户说了“就这样”：不再提醒（收进“!”里），见 constraints.ts 的 activeConflicts
+  ignored: z.boolean().optional(),
 });
 export type Constraint = z.output<typeof constraintSchema>;
 

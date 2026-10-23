@@ -445,6 +445,7 @@ export function packProblems(pack: ResourcePack): string[] {
       for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
     }
     if (b.dispersal) problems.push(`${who}只在起源地附近长：起源地的格编号只对做它的那个世界有效`);
+    if (b.range) problems.push(`${who}只长在某个岛上或圈的范围里：格的编号只对做它的那个世界有效`);
   }
   const typed = [
     ...(pack.riverTypes ?? []).map((x) => ({ t: x as RiverType | LakeType, what: '河流类型' })),
@@ -478,7 +479,7 @@ export interface PackPicks {
 // 以前导出的整套生态文件里会有）
 export function defaultPicks(pack: ResourcePack): PackPicks {
   return {
-    biomes: (pack.biomes ?? []).filter((b) => !b.dispersal).map((b) => b.id),
+    biomes: (pack.biomes ?? []).filter((b) => !b.dispersal && !b.range).map((b) => b.id),
     riverTypes: PACK_SECTIONS.riverTypes.command && PACK_SECTIONS.riverTypes.checked ? (pack.riverTypes ?? []).map((r) => r.id) : [],
     lakeTypes: PACK_SECTIONS.lakeTypes.command && PACK_SECTIONS.lakeTypes.checked ? (pack.lakeTypes ?? []).map((r) => r.id) : [],
     textPack: null,
@@ -560,11 +561,15 @@ export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks)
   let renames: Renames = { biomes: new Map(), riverTypes: new Map(), lakeTypes: new Map() };
   let biomeIds = empty();
   const typedIds: Record<TypedSection, ReturnType<typeof empty>> = { riverTypes: empty(), lakeTypes: empty() };
-  const finalBiome = (b: Species, id: string, r: Renames) => biomeWithId(rewriteBiome(b, r), id, b.id);
+  // 第十二轮：包里没写“自然生成”的生态、河流类型、湖泊类型加进世界时不自然生成（只长在涂了它的地方、只用在选了它的河和湖上）
+  const finalBiome = (b: Species, id: string, r: Renames) => naturalOff(biomeWithId(rewriteBiome(b, r), id, b.id));
   const finalTyped = (key: TypedSection, x: PackItem, id: string, r: Renames) => {
     const sec = PACK_SECTIONS[key];
     const re = sec.rewrite ? sec.rewrite(x, r) : x;
-    return id === x.id ? re : sec.withId ? sec.withId(re, id, x.id) : { ...re, id };
+    const out = id === x.id ? re : sec.withId ? sec.withId(re, id, x.id) : { ...re, id };
+    // “只在这些生态里”：改了名的生态按新名字
+    const biomes = (out as { biomes?: string[] }).biomes;
+    return naturalOff(biomes ? ({ ...out, biomes: biomes.map((b) => r.biomes.get(b) ?? b) } as PackItem) : out);
   };
   const flat = (r: Renames) => stableJson([...r.biomes, ...r.riverTypes, ...(r.lakeTypes ?? [])]);
   for (let round = 0; round < 6; round++) {
@@ -645,15 +650,21 @@ export function applyPackCommands(world: PackWorld, pack: ResourcePack, picks: P
 
 // ---------- 从世界导出 ----------
 
-// 世界里能导出的生态：不是内置的原样（内置的改过也算），也不是岛上特有的（只在那个岛上长，换个世界没有意义）
-export function exportableBiomes(world: PackWorld): Species[] {
-  const builtin = new Map(DEFAULT_SPECIES.map((s) => [s.id, s]));
-  return world.small.species.filter((s) => !s.dispersal && !(builtin.has(s.id) && sameItem(builtin.get(s.id), s)));
+// 没写“自然生成”的写成 false（写了的照旧）
+function naturalOff<T extends object>(x: T): T {
+  return (x as { natural?: boolean }).natural === undefined ? { ...x, natural: false } : x;
 }
 
-// 世界里有、但不能导出的岛上特有生态的个数（导出时说一句）
+// 世界里能导出的生态：不是内置的原样（内置的改过也算），也不是只在这个世界的某处长的
+// （从起源地扩散、只长在某个岛上、圈的范围里：格的编号换个世界没有意义）
+export function exportableBiomes(world: PackWorld): Species[] {
+  const builtin = new Map(DEFAULT_SPECIES.map((s) => [s.id, s]));
+  return world.small.species.filter((s) => !s.dispersal && !s.range && !(builtin.has(s.id) && sameItem(builtin.get(s.id), s)));
+}
+
+// 世界里有、但不能导出的（只在这个世界的某处长的）生态的个数（导出时说一句）
 export function endemicCount(world: PackWorld): number {
-  return world.small.species.filter((s) => !!s.dispersal).length;
+  return world.small.species.filter((s) => !!s.dispersal || !!s.range).length;
 }
 
 export interface WorldPicks {
@@ -675,7 +686,9 @@ export interface PackMeta {
 // 把世界里勾选的项做成资源包。省略 picks 里的某一类时取全部能导出的；没有内容的部分不写
 export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta): ResourcePack {
   const pick = <T extends { id: string }>(all: readonly T[], ids: readonly string[] | undefined) => (ids ? all.filter((x) => ids.includes(x.id)) : [...all]);
-  const biomes = pick(exportableBiomes(world), picks.biomes).map((s) => structuredClone(s));
+  // 第十二轮：写明“自然生成”（没写的在世界里是开着的；包里没写的加进别的世界时是关着的），换个世界照样
+  const natural = <T extends { natural?: boolean }>(x: T): T => ({ ...x, natural: x.natural ?? true });
+  const biomes = pick(exportableBiomes(world), picks.biomes).map((s) => natural(structuredClone(s)));
   const fields = [...new Set(biomes.flatMap(biomeFields))];
   const riverTypes = pick(PACK_SECTIONS.riverTypes.fromWorld?.(world) ?? [], picks.riverTypes);
   const lakeTypes = pick(PACK_SECTIONS.lakeTypes.fromWorld?.(world) ?? [], picks.lakeTypes);
@@ -686,8 +699,8 @@ export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMet
   if (meta.description) pack.description = meta.description;
   if (fields.length) pack.fields = fields;
   if (biomes.length) pack.biomes = biomes;
-  if (riverTypes.length) pack.riverTypes = riverTypes.map((x) => structuredClone(x));
-  if (lakeTypes.length) pack.lakeTypes = lakeTypes.map((x) => structuredClone(x));
+  if (riverTypes.length) pack.riverTypes = riverTypes.map((x) => natural(structuredClone(x) as PackItem & { natural?: boolean }));
+  if (lakeTypes.length) pack.lakeTypes = lakeTypes.map((x) => natural(structuredClone(x) as PackItem & { natural?: boolean }));
   if (planetForms.length) pack.planetForms = planetForms.map((x) => structuredClone(x));
   if (picks.wordPack && wp) pack.textPacks = [structuredClone(wp)];
   return pack;

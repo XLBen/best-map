@@ -734,7 +734,16 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const parsed = constraintSchema.safeParse({ ...small.constraints[idx], ...cmd.patch, id: cmd.id });
       if (!parsed.success) throw new CommandError(`update_constraint 参数无效：${formatIssues(parsed.error)}`);
       checkCells(parsed.data.cells);
+      const was = small.constraints[idx];
       small.constraints[idx] = parsed.data;
+      // 只改了“就这样”的记号：推导不变（冲突照样算，界面按记号不再提醒）
+      const { ignored: _a, ...restBefore } = was;
+      const { ignored: _b, ...restAfter } = parsed.data;
+      if (JSON.stringify(restBefore) === JSON.stringify(restAfter)) {
+        const sp = small.species.find((x) => x.id === parsed.data.species);
+        const name = sp?.name || parsed.data.species;
+        return { dirty: Dirty.None, summary: parsed.data.ignored ? `${name}没涂成的那一笔：就这样（收进“!”里）` : `${name}没涂成的那一笔：恢复提醒` };
+      }
       return { dirty: Dirty.Solve, summary: '修改了一处涂的生态' };
     }
     case 'remove_constraint': {

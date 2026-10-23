@@ -2,8 +2,8 @@ import { placementSlots } from './biome-scripts';
 import { type ClimateBase, type ClimateEffects, petHalf } from './climate';
 import { graphDistance } from './mesh';
 import { BUILTIN_FIELDS, type Tolerance, trapezoid } from './species';
-import { fieldGetter, invadeBoost, invadeTable, isVegetated } from './vegetation';
-import type { Conflict, Constraint, Derived, World } from './world';
+import { fieldGetter, invadeBoost, invadeTable, isVegetated, rangeMask } from './vegetation';
+import type { Conflict, Constraint, Derived, SmallState, World } from './world';
 
 // 约束求解：用户规定结果（这些格是类型 X），系统反推原因。
 // 1. 对每个约束格，在温度修正 dT 与降水对数修正 dl 的网格上按代价从小到大试，找到使 X 成为主导的最小修正；
@@ -459,7 +459,12 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     for (const l of limiting) reasons.push({ field: l.field, value: l.value, need: l.need });
     const S = species.length;
     const unreachable = failing.filter((i) => d.reach[i * S + target] === 0).length;
-    if (unreachable > failing.length / 2) suggestions.push('该类型从起源扩散不到这里：增加起源格、加大扩散距离，或降低跨海/跨不适宜地带的代价');
+    if (unreachable > failing.length / 2) {
+      const range = rangeMask(world, sp);
+      const outside = range ? failing.filter((i) => !range[i]).length : 0;
+      if (outside > failing.length / 2) suggestions.push('这种生态只长在设定的岛上或圈的范围里，这些格在外面：在生态的“长在哪里”里改一改范围');
+      else suggestions.push('该类型从起源扩散不到这里：增加起源格、加大扩散距离，或降低跨海/跨不适宜地带的代价');
+    }
     // 长在哪里的脚本在没涂成的格里大多是 0：怎么调气候都长不出来
     const { slot: placeSlot, P } = placementSlots(species);
     const placeF = P > 0 && placeSlot[target] >= 0 && d.placeF?.length === world.mesh.n * P ? d.placeF : null;
@@ -519,4 +524,19 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     conflicts.push({ constraintId: c.id, species: c.species, satisfied, required: c.ratio, failing, reasons, nearest, suggestions });
   }
   return conflicts;
+}
+
+// ---------- 第十二轮：没涂成的“就这样” ----------
+// 用户说“就这样”的那一笔（constraint.ignored）：冲突照样算（推导不变），界面不再提醒（红斜线、计数、提示都不算它），
+// 收进“!”里，可以恢复提醒、强制、删掉。只看设定上的记号：没涂成的格数变了也照样不提醒
+
+export function isIgnored(small: Pick<SmallState, 'constraints'>, constraintId: string): boolean {
+  return small.constraints.some((c) => c.id === constraintId && c.ignored === true);
+}
+
+// 还要提醒的冲突（去掉“就这样”的）
+export function activeConflicts(w: { small: Pick<SmallState, 'constraints'>; derived: Pick<Derived, 'conflicts'> }): Conflict[] {
+  const conflicts = w.derived.conflicts;
+  if (!w.small.constraints.some((c) => c.ignored)) return conflicts;
+  return conflicts.filter((c) => !isIgnored(w.small, c.constraintId));
 }

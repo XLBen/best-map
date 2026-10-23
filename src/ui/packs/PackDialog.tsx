@@ -407,7 +407,7 @@ function ExportView() {
         </label>
       )}
       {!biomes.length && !rivers.length && !lakes.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
-      {endemic > 0 && <p class="muted small">岛上特有的生态只属于这个世界，不带。</p>}
+      {endemic > 0 && <p class="muted small">只长在某个岛上、圈的范围里的生态只属于这个世界，不带。</p>}
       {replaces && (
         <p class="muted small">
           资源库里已经有「{replaces.pack.name}」：存进资源库会替换它（换个名字就另存一份）。{keptForms > 0 && `里面存的 ${keptForms} 个星球形态照样留着。`}
