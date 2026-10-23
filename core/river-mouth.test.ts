@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { displayCoast, displayCoastAt, shoreCrossing } from './display';
-import { type RiverLine, riverRibbon, riverWidth, traceRivers } from './rivers';
+import { type RiverLine, riverRibbon, riverWidth, seawardNormal, traceRivers } from './rivers';
 import { pointIsLand } from './subcell';
 import { coastValues } from './subcell';
 import { continents, engineFor, snapshot } from './testing/fixtures';
@@ -269,5 +269,96 @@ describe('支流接在干流画出来的中线上', () => {
     const { joins, worst } = checkConfluences(planet().world);
     expect(joins).toBeGreaterThan(5);
     expect(worst).toBeLessThan(1e-6);
+  });
+});
+
+// 第十三轮：河口那一段沿岸线的法向进水；海岸边不到 1.5 格的源头小河不画；流进同一格海、挨得很近的河口并成一条
+function mouthStats(w: World) {
+  const { mesh, causes, derived: d } = w;
+  const sp = mesh.spacing;
+  const f = displayCoast(w);
+  const lines = traceRivers(w);
+  const angles: number[] = [];
+  let stubs = 0;
+  let merged = 0;
+  const bySea = new Map<number, [number, number][]>();
+  const len = (P: [number, number][]) => P.slice(1).reduce((s, p, k) => s + Math.hypot(p[0] - P[k][0], p[1] - P[k][1]), 0);
+  for (const l of lines) {
+    const P = l.points;
+    const cells = l.cells!;
+    if (l.guide === undefined && !l.mouth && l.into !== undefined) {
+      // 在岸边汇入别的河：倒数第二格流进海
+      const r = d.receiver[cells[cells.length - 2]];
+      if (r >= 0 && !causes.land[r]) merged++;
+    }
+    if (!l.mouth) continue;
+    const c = cells[cells.length - 1];
+    const r = d.receiver[c];
+    const sea = r >= 0 && !causes.land[r];
+    if (l.guide === undefined && sea) {
+      if (l.head === 'source' && len(P) < 1.5 * sp) stubs++;
+      const list = bySea.get(r) ?? [];
+      list.push(P[P.length - 1]);
+      bySea.set(r, list);
+    }
+    // 最后约 0.25 格的方向与河口处岸线的法向
+    const end = P[P.length - 1];
+    let k = P.length - 1;
+    for (let s = 0; k > 0 && s < 0.25 * sp; k--) s += Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]);
+    const dx = end[0] - P[k][0];
+    const dy = end[1] - P[k][1];
+    const n = seawardNormal(w, f, end, c);
+    if (!n) continue;
+    angles.push((Math.acos(Math.max(-1, Math.min(1, (dx * n[0] + dy * n[1]) / (Math.hypot(dx, dy) || 1)))) * 180) / Math.PI);
+  }
+  angles.sort((a, b) => a - b);
+  // 流进同一格海的自然的河口两两之间的最近距离（格）
+  let closest = Infinity;
+  let close = 0;
+  for (const ends of bySea.values())
+    for (let i = 0; i < ends.length; i++)
+      for (let j = i + 1; j < ends.length; j++) {
+        const dx = mesh.kind === 'sphere' ? ends[i][0] - ends[j][0] - 2 * Math.round((ends[i][0] - ends[j][0]) / 2) : ends[i][0] - ends[j][0];
+        const dd = Math.hypot(dx, ends[i][1] - ends[j][1]) / sp;
+        closest = Math.min(closest, dd);
+        if (dd <= 1.6) close++;
+      }
+  return { median: angles[Math.floor(angles.length / 2)], p90: angles[Math.floor(angles.length * 0.9)], count: angles.length, stubs, merged, closest, close };
+}
+
+describe('河口沿岸线的法向进水（第十三轮）', () => {
+  it('一块地区：河口最后一段与岸线法向的夹角中位数不到 10°；没有海岸边不到 1.5 格的源头小河；同一格海里挨着的河口并成了一条', () => {
+    const s = mouthStats(continents().world);
+    expect(s.count).toBeGreaterThan(20);
+    expect(s.median).toBeLessThan(10);
+    expect(s.p90).toBeLessThan(30);
+    expect(s.stubs).toBe(0);
+    expect(s.closest).toBeGreaterThan(1.6);
+  });
+
+  it('整个星球：同上', () => {
+    const s = mouthStats(planet().world);
+    expect(s.count).toBeGreaterThan(20);
+    expect(s.median).toBeLessThan(10);
+    expect(s.p90).toBeLessThan(30);
+    expect(s.stubs).toBe(0);
+    // 挨着的河口都并了；隔着一个窄海湾（两岸之间接不过去）的照旧各自入海
+    expect(s.close).toBeLessThanOrEqual(1);
+    expect(s.merged).toBeGreaterThan(0);
+  });
+
+  it('往水里多画一段（underShore）：只多出最后那段，岸线以前的带子不变', () => {
+    const sp = 0.01;
+    const line: RiverLine = { points: Array.from({ length: 20 }, (_, k) => [k * sp * 0.5, 0.5] as [number, number]), flow: Array.from({ length: 20 }, () => 200), mouth: true };
+    const a = riverRibbon(line, 10, sp);
+    const b = riverRibbon(line, 10, sp, undefined, { underShore: 0.3 });
+    expect(b.s[b.s.length - 1]).toBeCloseTo(a.s[a.s.length - 1] + 0.3 * sp, 9);
+    for (let i = 0; i < a.x.length; i++) {
+      expect(b.x[i]).toBeCloseTo(a.x[i], 12);
+      expect(b.hw[i]).toBeCloseTo(a.hw[i], 6);
+    }
+    // 不入海的线不多画
+    const plain = { ...line, mouth: undefined };
+    expect(riverRibbon(plain, 10, sp, undefined, { underShore: 0.3 }).x.length).toBe(riverRibbon(plain, 10, sp).x.length);
   });
 });

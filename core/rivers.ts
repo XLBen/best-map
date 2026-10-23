@@ -1,4 +1,4 @@
-import { displayCoast, displayCoastAt, shoreCrossing } from './display';
+import { type DisplayCoast, displayCoast, displayCoastAt, shoreCrossing } from './display';
 import { wrapDelta } from './geo';
 import { type Mesh, findCell } from './mesh';
 import { vnoise } from './subcell';
@@ -83,6 +83,8 @@ export function traceRivers(world: World): RiverLine[] {
   }
   // 画到岸线：从 a 往 b（水里）走到画面上的岸线，找不到时（a 在画面上已是水面）退回两点的中点
   const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  let field: DisplayCoast | null = null;
+  const coastField = () => (field ??= displayCoast(world));
   // 沿河的点（平滑之前）。汇入自然的河的线等那条河画好了再定最后一点（画到它平滑后的线上）、再平滑
   interface Raw {
     pts: [number, number][];
@@ -205,7 +207,11 @@ export function traceRivers(world: World): RiverLine[] {
     }
     const line = smoothCourse(raw.pts, raw.flow, mesh.spacing, raw.cells, raw.tags);
     if (raw.head) line.head = raw.head;
-    if (raw.mouth) line.mouth = true;
+    if (raw.mouth) {
+      line.mouth = true;
+      // 别的河还没接上来（接到它的线上之前）：最后一段改成沿岸线的法向进海、进湖
+      normalMouth(world, coastField(), line, 0);
+    }
     if (into) {
       markJoin(into, at);
       line.into = lineAt[raw.join];
@@ -217,7 +223,10 @@ export function traceRivers(world: World): RiverLine[] {
     return line;
   };
   for (let i = 0; i < raws.length; i++) finish(i, 0);
-  if (!course) return lines;
+  const tidy = tidyMouths(world, lines);
+  if (!course) return tidy;
+  lines.length = 0;
+  lines.push(...tidy);
   for (const line of lines) course.own(line);
   course.finish();
   if (rt) course.tag(rt);
@@ -304,8 +313,7 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
           run.mul!.pop();
         }
         const a = run.points[run.points.length - 1];
-        p = shoreCrossing(world, a, b, tag)?.p ?? points[k];
-        for (let j = 0; j < k; j++) if (where[j]?.run === run && where[j]!.j >= run.points.length) where[j] = { run, j: run.points.length - 1 };
+        p = shoreCrossing(world, a, b, tag)?.p ?? points[k];        for (let j = 0; j < k; j++) if (where[j]?.run === run && where[j]!.j >= run.points.length) where[j] = { run, j: run.points.length - 1 };
       }
       if (!run) {
         runs.push((run = { points: [], flow: [], cells: [], mul: [], guide: g.id }));
@@ -329,6 +337,12 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
       if (mouth) run.mouth = true;
     }
     const kept = runs.filter((r) => r.points.length >= 2);
+    // 河口：最后一段沿岸线的法向进水（与自然的河相同，见 normalMouth）
+    for (const r of kept) {
+      if (!r.mouth) continue;
+      normalMouth(world, coastField, r, 0);
+      for (let j = 0; j < where.length; j++) if (where[j]?.run === r && where[j]!.j >= r.points.length) where[j] = { run: r, j: r.points.length - 1 };
+    }
     const tail = kept[kept.length - 1];
     if (tail && g.end === 'sink' && cellIdx[points.length - 1] === last && tail.points[tail.points.length - 1] === points[points.length - 1]) {
       // 在终点消失：最后一格的长度上收细到三成
@@ -484,6 +498,284 @@ function markJoin(line: RiverLine, pos: number): void {
   (line.joins ??= []).push(pos);
 }
 
+// ---------- 河口（第十三轮） ----------
+// 河口那一段沿岸线的法向进海、进湖：原来最后一段对着它流进的那格水的格心，斜着碰到岸线（中位数约 22°，一成多超过 45°），
+// 平头的末端就跨在岸线上。现在从河口往回约 0.9 格起，用一段三次 Hermite 曲线接到岸线上（起点顺着原来的方向，
+// 终点沿岸线的法向），终点是从岸上沿法向走到岸线的那一点。只改画法（屏幕、导出），水文、流向都不变
+
+// 河口往回多长（格）换成沿法向进海的一段
+const MOUTH_LEG = 0.9;
+// 量岸线法向的圈的半径（格）与取几个点：海岸细节的小弯不算，量的是约一格见方的岸线走向
+const NORMAL_R = 0.4;
+const NORMAL_N = 12;
+
+// 一点处岸线朝水面的法向（单位向量）：一圈点的海岸场加权求和（离岸线约半格以内的一圈，近似梯度的反方向）
+export function seawardNormal(world: World, f: DisplayCoast, p: readonly [number, number], hint = 0): [number, number] | null {
+  const r = NORMAL_R * world.mesh.spacing;
+  let gx = 0;
+  let gy = 0;
+  let h = hint;
+  for (let i = 0; i < NORMAL_N; i++) {
+    const a = (2 * Math.PI * i) / NORMAL_N;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const v = displayCoastAt(world, f, p[0] + r * c, p[1] + r * s, h);
+    h = v.nearest;
+    // 海岸场正的是陆地：按它加权的方向指向陆地
+    const w = Math.max(-1, Math.min(1, v.v / 50));
+    gx += w * c;
+    gy += w * s;
+  }
+  const l = Math.hypot(gx, gy);
+  return l > 1e-9 ? [-gx / l, -gy / l] : null;
+}
+
+// 从 A（方向 ta）到 B（到 B 时的方向 tb，都是单位向量）的三次 Hermite 曲线，每隔约 step 取一点（不含 A，含 B）
+function hermite(A: readonly [number, number], ta: readonly [number, number], B: readonly [number, number], tb: readonly [number, number], step: number): [number, number][] {
+  const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  const count = Math.max(2, Math.ceil(L / step));
+  const out: [number, number][] = [];
+  for (let j = 1; j <= count; j++) {
+    const u = j / count;
+    const u2 = u * u;
+    const u3 = u2 * u;
+    const h00 = 2 * u3 - 3 * u2 + 1;
+    const h10 = u3 - 2 * u2 + u;
+    const h01 = -2 * u3 + 3 * u2;
+    const h11 = u3 - u2;
+    out.push(j === count ? [B[0], B[1]] : [h00 * A[0] + h10 * L * ta[0] + h01 * B[0] + h11 * L * tb[0], h00 * A[1] + h10 * L * ta[1] + h01 * B[1] + h11 * L * tb[1]]);
+  }
+  return out;
+}
+
+// 海岸边的源头小河：从源头到入海不到这么长（格）的不画（画出来只是岸边一个尖尖的楔子）
+const STUB_LEN = 1.5;
+// 流进同一格海的几个河口：两个河口相隔这么近（格）以内时，小的画成在岸边汇入大的（接到大的河口往回约 0.45 格的地方）
+const MERGE_DIST = 1.6;
+// 接在大河河口往回多远、小河从河口往回多远起接（格）：先试最靠近岸边的
+const MERGE_TRIES: [number, number][] = [
+  [0.45, 0.6],
+  [0.9, 1],
+  [1.4, 1.5],
+];
+
+const lineLength = (P: readonly (readonly [number, number])[]) => {
+  let s = 0;
+  for (let k = 0; k + 1 < P.length; k++) s += Math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]);
+  return s;
+};
+
+// 从线尾往回量 back 远的那一点：第 k 段上 t 处（k + t），量不到时为线头
+function backAlong(P: readonly (readonly [number, number])[], back: number, lim = 0): { k: number; t: number; p: [number, number] } {
+  let s = 0;
+  for (let k = P.length - 2; k >= lim; k--) {
+    const l = Math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]);
+    if (s + l >= back) {
+      const t = l > 0 ? 1 - (back - s) / l : 0;
+      return { k, t, p: [P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t] };
+    }
+    s += l;
+  }
+  return { k: lim, t: 0, p: [P[lim][0], P[lim][1]] };
+}
+
+// 自然的河的河口收拾一下（第十三轮，只改画法）：去掉海岸边不到 1.5 格的源头小河；流进同一格海、河口挨得很近的几条，
+// 小的画成在岸边汇入大的（不再是几条河斜着挤到同一格海里、画成一个“V”）。返回留下的线，into 按新的下标
+function tidyMouths(world: World, lines: RiverLine[]): RiverLine[] {
+  const { mesh, causes, derived: d } = world;
+  const sp = mesh.spacing;
+  const sphere = mesh.kind === 'sphere';
+  const field = displayCoast(world);
+  const seaOf = (l: RiverLine) => {
+    if (!l.mouth || !l.cells?.length) return -1;
+    const r = d.receiver[l.cells[l.cells.length - 1]];
+    return r >= 0 && !causes.land[r] ? r : -1;
+  };
+  // 小河连同汇进它的（也都是不到 1.5 格的源头小河）一起不画；有别的河（比如画的河接出来的）汇进来的照画
+  const kids: number[][] = lines.map(() => []);
+  lines.forEach((l, i) => {
+    if (l.into !== undefined && l.into !== i) kids[l.into]?.push(i);
+  });
+  const small = (i: number, depth: number): boolean => {
+    const l = lines[i];
+    if (l.head !== 'source' || lineLength(l.points) >= STUB_LEN * sp || depth > 8) return false;
+    if ((l.joins?.length ?? 0) > kids[i].length) return false;
+    return kids[i].every((j) => small(j, depth + 1));
+  };
+  const keep = lines.map(() => true);
+  const drop = (i: number) => {
+    keep[i] = false;
+    for (const j of kids[i]) drop(j);
+  };
+  lines.forEach((l, i) => {
+    if (seaOf(l) >= 0 && small(i, 0)) drop(i);
+  });
+  const index = new Int32Array(lines.length).fill(-1);
+  let n = 0;
+  lines.forEach((_, i) => {
+    if (keep[i]) index[i] = n++;
+  });
+  // 汇入的那条按新的下标（去掉的小河连同汇进它的一起去掉了）
+  for (const l of lines) if (l.into !== undefined) l.into = index[l.into] >= 0 ? index[l.into] : undefined;
+  const groups = new Map<number, number[]>();
+  lines.forEach((l, i) => {
+    if (!keep[i]) return;
+    const r = seaOf(l);
+    if (r < 0) return;
+    const g = groups.get(r);
+    if (g) g.push(i);
+    else groups.set(r, [i]);
+  });
+  const endFlow = (l: RiverLine) => l.flow[l.flow.length - 1];
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    g.sort((a, b) => endFlow(lines[b]) - endFlow(lines[a]) || a - b);
+    const main = lines[g[0]];
+    const me = main.points[main.points.length - 1];
+    for (const i of g.slice(1)) {
+      const o = lines[i];
+      const oe = o.points[o.points.length - 1];
+      const dx = sphere ? oe[0] - me[0] - 2 * Math.round((oe[0] - me[0]) / 2) : oe[0] - me[0];
+      if (Math.hypot(dx, oe[1] - me[1]) > MERGE_DIST * sp) continue;
+      if (joinNearMouth(world, field, main, o, sphere ? me[0] - oe[0] + dx : 0)) {
+        delete o.mouth;
+        o.into = index[g[0]];
+      }
+    }
+  }
+  return lines.filter((_, i) => keep[i]);
+}
+
+// 河口挨得很近的小河 o 在岸边汇入大河 main：o 从河口往回约 0.6 格起接到 main 河口往回约 0.45 格的那一点
+// （到那一点时顺着 main 的方向斜着并进去）。接出来的一段有一点在水里时不接，返回 false。
+// shift：整个星球上 main 的点挪到 o 那一份要加的（平面上为 0）
+function joinNearMouth(world: World, f: DisplayCoast, main: RiverLine, o: RiverLine, shift: number): boolean {
+  // 中间隔着一点水（小海湾）时往上游一点再接
+  for (const [back, trim] of MERGE_TRIES) if (joinAt(world, f, main, o, shift, back, trim)) return true;
+  return false;
+}
+
+function joinAt(world: World, f: DisplayCoast, main: RiverLine, o: RiverLine, shift: number, back: number, trim: number): boolean {
+  const sp = world.mesh.spacing;
+  const M = main.points;
+  const O = o.points;
+  if (M.length < 2 || O.length < 2) return false;
+  const J = backAlong(M, back * sp);
+  const Jp: [number, number] = [J.p[0] - shift, J.p[1]];
+  let olim = 0;
+  for (const pos of o.joins ?? []) olim = Math.max(olim, Math.ceil(pos));
+  const A0 = backAlong(O, trim * sp, Math.min(olim, O.length - 2));
+  // 接在 A0 所在那段的起点之后（那一点留着）
+  const k = A0.k;
+  const A = O[k];
+  const B = k > 0 ? O[k - 1] : O[k + 1];
+  const tl = Math.hypot(A[0] - B[0], A[1] - B[1]) || 1;
+  const sgn = k > 0 ? 1 : -1;
+  const t0: [number, number] = [(sgn * (A[0] - B[0])) / tl, (sgn * (A[1] - B[1])) / tl];
+  const mk = Math.min(M.length - 2, J.k);
+  const ml = Math.hypot(M[mk + 1][0] - M[mk][0], M[mk + 1][1] - M[mk][1]) || 1;
+  const md: [number, number] = [(M[mk + 1][0] - M[mk][0]) / ml, (M[mk + 1][1] - M[mk][1]) / ml];
+  const L = Math.hypot(Jp[0] - A[0], Jp[1] - A[1]);
+  if (L < 1e-9) return false;
+  const ad: [number, number] = [(Jp[0] - A[0]) / L, (Jp[1] - A[1]) / L];
+  let ex = 0.5 * md[0] + ad[0];
+  let ey = 0.5 * md[1] + ad[1];
+  const el = Math.hypot(ex, ey) || 1;
+  ex /= el;
+  ey /= el;
+  const hint = o.cells?.[k] ?? 0;
+  const pts = hermite(A, t0, Jp, [ex, ey], sp / 8);
+  for (let j = 0; j + 1 < pts.length; j++) if (displayCoastAt(world, f, pts[j][0], pts[j][1], hint).v <= 0) return false;
+  const count = pts.length;
+  const keepN = k + 1;
+  const q0 = o.flow[k];
+  o.points = [...O.slice(0, keepN), ...pts];
+  o.flow = [...o.flow.slice(0, keepN), ...pts.map(() => q0)];
+  if (o.cells) {
+    const own = o.cells[k];
+    const at = main.cells?.[Math.min(main.cells.length - 1, J.t > 0.5 ? J.k + 1 : J.k)] ?? own;
+    o.cells = [...o.cells.slice(0, keepN), ...pts.map((_, j) => (j === count - 1 ? at : own))];
+  }
+  if (o.type) {
+    const t = o.type[k];
+    o.type = [...o.type.slice(0, keepN), ...pts.map(() => t)];
+  }
+  if (o.mul) {
+    const mm = o.mul[k];
+    o.mul = [...o.mul.slice(0, keepN), ...pts.map(() => mm)];
+  }
+  markJoin(main, J.k + J.t);
+  return true;
+}
+
+// 入海、入湖的线（最后一点在岸线上）：最后约 0.9 格换成沿岸线法向进水的一段（见上）。keep：这一点以前不能动
+// （别的河在那里汇进来）。法向量不出来、接出来的一段有一点在水里时不改
+function normalMouth(world: World, f: DisplayCoast, line: RiverLine, keep: number): void {
+  const { mesh } = world;
+  const sp = mesh.spacing;
+  const P = line.points;
+  const m = P.length;
+  if (m < 2) return;
+  const hint = line.cells?.[m - 1] ?? 0;
+  const land = (q: readonly [number, number]) => displayCoastAt(world, f, q[0], q[1], hint).v > 0;
+  // 岸线上沿法向的那一点：从岸上（沿法向往回 0.6 格，不在陆地上时 0.25 格）走到水面；再按那一点的法向重找一次
+  let end: readonly [number, number] = P[m - 1];
+  let n: [number, number] | null = null;
+  let p: [number, number] | null = null;
+  for (let it = 0; it < 2; it++) {
+    const nn = seawardNormal(world, f, end, hint);
+    if (!nn) break;
+    let from: [number, number] = [end[0] - nn[0] * 0.6 * sp, end[1] - nn[1] * 0.6 * sp];
+    if (!land(from)) from = [end[0] - nn[0] * 0.25 * sp, end[1] - nn[1] * 0.25 * sp];
+    if (!land(from)) break;
+    const hit = shoreCrossing(world, from, [end[0] + nn[0] * 0.6 * sp, end[1] + nn[1] * 0.6 * sp], hint);
+    if (!hit) break;
+    n = nn;
+    p = hit.p;
+    end = p;
+  }
+  if (!n || !p) return;
+  let lim = keep;
+  for (const pos of line.joins ?? []) lim = Math.max(lim, Math.ceil(pos));
+  let k = m - 1;
+  let s = 0;
+  while (k > lim && k > 0 && s < MOUTH_LEG * sp) {
+    s += Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]);
+    k--;
+  }
+  if (k >= m - 1) return;
+  const A = P[k];
+  const B = k > 0 ? P[k - 1] : P[k + 1];
+  let tx = k > 0 ? A[0] - B[0] : B[0] - A[0];
+  let ty = k > 0 ? A[1] - B[1] : B[1] - A[1];
+  const tl = Math.hypot(tx, ty) || 1;
+  tx /= tl;
+  ty /= tl;
+  const L = Math.hypot(p[0] - A[0], p[1] - A[1]);
+  if (L < 0.15 * sp) return;
+  // 最后一小段（约 0.35 格）是沿法向的直线，之前用曲线从原来的方向弯过来
+  const straight = Math.min(0.35 * sp, 0.4 * L);
+  const Q: [number, number] = [p[0] - n[0] * straight, p[1] - n[1] * straight];
+  const pts = hermite(A, [tx, ty], Q, n, sp / 8);
+  const ns = Math.max(1, Math.ceil(straight / (sp / 8)));
+  for (let j = 1; j <= ns; j++) pts.push(j === ns ? [p[0], p[1]] : [Q[0] + (p[0] - Q[0]) * (j / ns), Q[1] + (p[1] - Q[1]) * (j / ns)]);
+  for (let j = 0; j + 1 < pts.length; j++) if (!land(pts[j])) return;
+  const count = pts.length;
+  const f0 = line.flow[k];
+  const f1 = line.flow[m - 1];
+  const keepN = k + 1;
+  line.points = [...P.slice(0, keepN), ...pts];
+  line.flow = [...line.flow.slice(0, keepN), ...pts.map((_, j) => f0 + ((f1 - f0) * (j + 1)) / count)];
+  const halves = <T>(arr: T[]) => [...arr.slice(0, keepN), ...pts.map((_, j) => ((j + 1) / count < 0.5 ? arr[k] : arr[m - 1]))];
+  if (line.cells) line.cells = halves(line.cells);
+  if (line.type) line.type = halves(line.type);
+  if (line.mul) {
+    const m0 = line.mul[k];
+    const m1 = line.mul[m - 1];
+    line.mul = [...line.mul.slice(0, keepN), ...pts.map((_, j) => m0 + ((m1 - m0) * (j + 1)) / count)];
+  }
+}
+
 // 河道的样子：中间点加轻微的曲流，再做三遍 Chaikin 平滑。pts 是沿河的点（格心、入海口），
 // flow 是每个点的流量，spacing 是格距；cells（可省略）是每个点所在的格，平滑后每个点取离它最近的原来那点的格。
 // 自然的河、画的河、预览都用它，画出来的样子才一致。不改动传进来的数组
@@ -594,7 +886,19 @@ const MEANDER_FREQ = 4;
 const smooth01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
 // line：河线；thr：河的门槛；spacing：格距；mulAt（可选）：每个河线点再乘的粗细（拖粗细、河流类型的粗细）
-export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt?: (k: number) => number): RiverRibbon {
+// opts.underShore（格，可选）：入海、入湖的河沿最后一段的方向再往水里多画这么长（河口的平头埋在水面下）。只给按陆地裁掉水面上那部分的画法用
+// （地图的河那一层按画面上的陆地遮住：河口正好收在弯弯曲曲的岸线上，不是一个跨在岸线上的平头）
+export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt?: (k: number) => number, opts?: { underShore?: number }): RiverRibbon {
+  const under = line.mouth && opts?.underShore && line.points.length >= 2 ? opts.underShore * spacing : 0;
+  if (under > 0) {
+    const Q = line.points;
+    const [ax, ay] = Q[Q.length - 2];
+    const [bx, by] = Q[Q.length - 1];
+    const l = Math.hypot(bx - ax, by - ay) || 1;
+    const more: [number, number] = [bx + ((bx - ax) / l) * under, by + ((by - ay) / l) * under];
+    const last = <T>(a: T[]) => [...a, a[a.length - 1]];
+    line = { ...line, points: [...Q, more], flow: last(line.flow), ...(line.mul ? { mul: last(line.mul) } : {}), ...(line.type ? { type: last(line.type) } : {}), ...(line.cells ? { cells: last(line.cells) } : {}) };
+  }
   const P = line.points;
   const m = P.length;
   // 1. 加密：每段等分到不长于 1/16 格
@@ -627,6 +931,8 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   const s = new Float64Array(count);
   for (let i = 1; i < count; i++) s[i] = s[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]);
   const L = s[count - 1];
+  // 岸线在哪里（往水里多画的那段之前）
+  const Ls = L - under;
   // 3. 宽度：往下游只增不减，再沿河来回各平滑一遍（约半格；只增不减的数列平滑后仍只增不减）
   for (let i = 1; i < count; i++) if (w[i] < w[i - 1]) w[i] = w[i - 1];
   const lam = WIDTH_SMOOTH * spacing;
@@ -646,7 +952,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
     let f = mul[i];
     if (line.head === 'source') f *= TAPER_MIN + (1 - TAPER_MIN) * smooth01(s[i] / (TAPER_LEN * spacing));
     if (outlet > 0) f *= 1 - outlet * (1 - OUTLET_MIN) * (1 - smooth01(s[i] / (0.7 * L)));
-    if (line.mouth) f *= 1 + FLARE * smooth01((s[i] - (L - FLARE_LEN * spacing)) / (FLARE_LEN * spacing));
+    if (line.mouth) f *= 1 + FLARE * smooth01((s[i] - (Ls - FLARE_LEN * spacing)) / (FLARE_LEN * spacing));
     hw[i] = (w[i] * f) / 2;
     if (hw[i] > maxHw) maxHw = hw[i];
   }
@@ -688,7 +994,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
       }
     }
     for (let i = 1; i < count - 1; i++) {
-      const ends = smooth01(s[i] / (0.5 * spacing)) * smooth01((L - s[i]) / (0.5 * spacing)) * (damp ? damp[i] : 1);
+      const ends = smooth01(s[i] / (0.5 * spacing)) * smooth01((Ls - s[i]) / (0.5 * spacing)) * (damp ? damp[i] : 1);
       if (ends <= 0) continue;
       const amp = (MEANDER_AMP * spacing * ends) / (1 + 0.5 * Math.max(0, w[i] - 1));
       const off = amp * vnoise(x[i] * q + 5.3, y[i] * q - 7.9);
