@@ -196,3 +196,78 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     d.wetness[i] = Math.log(a / Math.max(s / 1000, 1e-5));
   }
 }
+
+// ---------- 自然湖的湖底（第十二轮） ----------
+// 自然的湖是填洼填出来的：水面平，湖底就是洼地本来的地形，常常只有几米深、一片平。这里在水文算完之后
+// 把洼地的底按离岸的距离往下修成真实的样子：岸边浅、往里变深，最深处随洼地的面积（约 12 m × 面积^0.3，
+// 1 km² 约 12 m，1 万 km² 约 190 m，最多 600 m）。修的是整片洼地（湖面与干涸的湖底，d.lake 为 1 或 2）：
+// 洼地在哪里、多大只取决于地形（填洼），与气候无关，所以湖底不随气候变（湖干了、涨了，底还是那个底）；
+// 深度从洼地里最高的那格往下量。只往深里挖，不改水面、湖的范围与流向；
+// 用户放的湖（userLake 里的格）已经有自己的湖底，不动。只改 d.elevation（地形底图、导出、检查器看到的湖底）
+export function shapeLakeBeds(world: World, d: Derived, userLake: Uint8Array | null) {
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  const dist = new Float64Array(n).fill(Infinity);
+  const cellKm = mesh.spacing * kmPerUnit;
+  const inBasin = (i: number) => land[i] === 1 && d.lake[i] !== 0 && !userLake?.[i];
+  for (let s = 0; s < n; s++) {
+    if (seen[s] || !inBasin(s)) continue;
+    // 一片洼地：相连的湖格与干湖底格
+    let len = 0;
+    queue[len++] = s;
+    seen[s] = 1;
+    let area = 0;
+    let ref = -Infinity;
+    for (let q = 0; q < len; q++) {
+      const c = queue[q];
+      area += mesh.area[c] * kmPerUnit * kmPerUnit;
+      ref = Math.max(ref, d.elevation[c]);
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!seen[j] && inBasin(j)) {
+          seen[j] = 1;
+          queue[len++] = j;
+        }
+      }
+    }
+    const cells = queue.slice(0, len);
+    // 离岸的距离（km）：从挨着岸的格起，只在这片洼地里走
+    const order: number[] = [];
+    for (const c of cells) {
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!inBasin(j)) {
+          dist[c] = 0;
+          order.push(c);
+          break;
+        }
+      }
+    }
+    for (let q = 0; q < order.length; q++) {
+      const c = order[q];
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (!inBasin(j)) continue;
+        const nd = dist[c] + mesh.dist[e] * kmPerUnit;
+        if (nd < dist[j]) {
+          dist[j] = nd;
+          order.push(j);
+        }
+      }
+    }
+    let far = 0;
+    for (const c of cells) if (dist[c] < Infinity) far = Math.max(far, dist[c]);
+    const maxDepth = Math.min(600, Math.max(4, 12 * Math.pow(area, 0.3)));
+    for (const c of cells) {
+      const s01 = Math.min(1, ((dist[c] < Infinity ? dist[c] : far) + 0.5 * cellKm) / (far + 0.5 * cellKm));
+      // 岸边一圈浅滩，往里落下去，中间平缓
+      const f = 0.12 + 0.88 * (s01 * s01 * (3 - 2 * s01));
+      const bed = ref - maxDepth * f;
+      if (bed < d.elevation[c]) d.elevation[c] = bed;
+    }
+  }
+}

@@ -5,7 +5,10 @@ import { PLANET_TYPES } from './presets';
 import { packProblems, wordPackSchema } from './names';
 import {
   PROVINCE_KIND_INFO,
+  type ProvinceFix,
   type ProvinceKind,
+  applyProvinceFix,
+  classOfKind,
   generateProvinces,
   isConnected,
   nameNewProvince,
@@ -14,6 +17,7 @@ import {
   regenTargets,
   regenerateProvinces,
   repairProvinces,
+  setLakeMode,
   splitCells,
 } from './provinces';
 import { SEAM_MAX_POINTS, cutSeams, dropSeams, inheritSeams, seamsAfterCut } from './seams';
@@ -182,7 +186,15 @@ const baseCommands = [
     locked: z.boolean().optional(),
     // 只能在陆地和无人区之间改（湖省只由自动划分产生，海域省份的类型不能改）
     kind: z.enum(['land', 'wasteland']).optional(),
+    // 自己选的颜色（#rrggbb）；null 恢复自动（陆地省按编号配色，海省不着色）。导出的 provinces.bmp 照旧按编号
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .nullable()
+      .optional(),
   }),
+  // 湖：单独成省 / 并进旁边的陆地省。只整理湖与陆地之间的格，别的省份不动
+  z.object({ op: z.literal('set_lake_mode'), mode: z.enum(['separate', 'merge']) }),
   // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名
   z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40) }),
   z.object({ op: z.literal('reroll_feature'), key: z.string().regex(/^\w+:\d+$/) }),
@@ -208,11 +220,34 @@ const baseCommands = [
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
-// nameCarry：这一步之后为了地名不乱跳留下的名字、挪过去的改名（见 features.ts 的 carryNames），同样由引擎记下、照用
+// nameCarry：这一步之后为了地名不乱跳留下的名字、挪过去的改名（见 features.ts 的 carryNames），同样由引擎记下、照用。
+// provinceFix：这一步改了湖（放湖、删湖、湖干了、地形变了）之后，湖与陆地省份的整理（见 provinces.ts 的 lakeProvinceFix），
+// 同样由引擎在推导算好之后记下，重放、重做时照用
 export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & {
   provinceNames?: Record<string, string>;
   nameCarry?: NameCarry;
+  provinceFix?: ProvinceFix;
 };
+
+const provinceMetaSchema = z.object({
+  name: z.string(),
+  locked: z.boolean(),
+  land: z.boolean(),
+  kind: z.enum(['land', 'wasteland', 'lake', 'sea']),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+});
+const provinceFixSchema = z
+  .object({
+    cells: z.array(z.number().int().min(0)),
+    to: z.array(z.number().int().min(-1)),
+    add: z.record(z.string().regex(/^\d+$/), provinceMetaSchema),
+    drop: z.array(z.number().int().min(0)),
+    next: z.number().int().min(0),
+  })
+  .refine((f) => f.cells.length === f.to.length, '格与省份的个数要一样');
 
 // 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
 const featureKey = z.string().regex(/^\w+:\S+$/);
@@ -285,6 +320,7 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
       return [cmd.field as ArrayKey];
     case 'generate_provinces':
     case 'regenerate_provinces':
+    case 'set_lake_mode':
     case 'assign_province':
     case 'merge_province':
     case 'split_province':
@@ -305,14 +341,20 @@ export function applyCommand(
   input: Command,
   ctx: ApplyContext,
 ): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean; provinceNames: Record<string, string> | null } {
-  const { provinceNames: stored, nameCarry: carryInput, ...raw } = input;
+  const { provinceNames: stored, nameCarry: carryInput, provinceFix: fixInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
   if (carry && !carry.success) throw new CommandError(`命令里记下的地名无效：${formatIssues(carry.error)}`);
   const nameCarry = carry?.data;
+  const fixParsed = fixInput === undefined ? undefined : provinceFixSchema.safeParse(fixInput);
+  if (fixParsed && !fixParsed.success) throw new CommandError(`命令里记下的省份整理无效：${formatIssues(fixParsed.error)}`);
+  const provinceFix = fixParsed?.data;
+  if (provinceFix && provinceFix.cells.some((c) => c >= world.mesh.n)) throw new CommandError('命令里记下的省份整理不是这张地图的');
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
-  const keys = touchedArrays(world, cmd).filter((k) => getArray(world, k));
+  const touched = touchedArrays(world, cmd);
+  if (provinceFix && !touched.includes('province')) touched.push('province');
+  const keys = touched.filter((k) => getArray(world, k));
   const before = keys.map((k) => Float64Array.from(getArray(world, k)!));
   const smallBefore = JSON.stringify(world.small);
   const fieldsBefore = { ...world.causes.fields };
@@ -327,6 +369,7 @@ export function applyCommand(
       }
     }
     if (nameCarry) applyNameCarry(world.small, nameCarry);
+    if (provinceFix) applyProvinceFix(world, provinceFix);
   } catch (e) {
     // 失败时恢复，保证命令要么完整生效要么不生效
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
@@ -348,6 +391,22 @@ export function applyCommand(
   const provinceNames: Record<string, string> = {};
   for (const [id, p] of Object.entries(world.small.provinces)) if (!idsBefore.has(id)) provinceNames[id] = p.name;
   return { ...result, undo, changed, provinceNames: Object.keys(provinceNames).length ? provinceNames : null };
+}
+
+// 命令执行之后又改了一个数组（引擎记进命令的整理，见 Engine.fixLakeProvinces）：把这些格改之前的值并进撤销记录。
+// before 是这次改之前的数组；撤销记录里已经有的格保留原来记的（命令之前的）值
+export function addArrayUndo(undo: UndoRecord, key: ArrayKey, cells: readonly number[], before: ArrayLike<number>) {
+  const at = undo.arrays.findIndex((a) => a.key === key);
+  const old = new Map<number, number>();
+  if (at >= 0) {
+    const a = undo.arrays[at];
+    for (let k = 0; k < a.idx.length; k++) old.set(a.idx[k], a.old[k]);
+  }
+  for (const c of cells) if (!old.has(c)) old.set(c, before[c]);
+  const idx = Int32Array.from([...old.keys()].sort((a, b) => a - b));
+  const entry = { key, idx, old: Float64Array.from(idx, (i) => old.get(i)!) };
+  if (at >= 0) undo.arrays[at] = entry;
+  else undo.arrays.push(entry);
 }
 
 export function revert(world: World, undo: UndoRecord) {
@@ -932,6 +991,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const fresh = regenerateProvinces(world, d, ids);
       return { dirty: Dirty.None, summary: `重新划分了 ${ids.length} 个省份 → ${fresh.length} 个` };
     }
+    case 'set_lake_mode': {
+      const d = ctx.ensureDerived();
+      const was = small.provinceRules.lakeMode;
+      setLakeMode(world, d, cmd.mode);
+      const what = cmd.mode === 'separate' ? '湖单独成省' : '湖并进旁边的陆地省';
+      return { dirty: Dirty.None, summary: was === cmd.mode ? `省份：${what}（整理了一遍）` : `省份：${what}` };
+    }
     case 'assign_province': {
       checkCells(cmd.cells);
       let id: number;
@@ -943,6 +1009,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const meta = small.provinces[id];
       const wrong = cmd.cells.filter((i) => (causes.land[i] === 1) !== meta.land);
       if (wrong.length) throw new CommandError(`${wrong.length} 格与省份的陆海类别不符（${meta.land ? '陆地' : '海域'}省份）`);
+      // 湖省只收湖面的格，陆地省不收湖省里的格（湖单独成省时）：按格现在所在省份的大类判断
+      const cls = classOfKind(meta.kind);
+      const mixed = cmd.cells.filter((i) => {
+        const p = small.provinces[causes.province[i]];
+        return p && p.land && classOfKind(p.kind) !== cls;
+      });
+      if (mixed.length) throw new CommandError(cls === 'lake' ? `${mixed.length} 格不是湖面，不能划进湖省` : `${mixed.length} 格是湖面（属于湖省），不能划进陆地省`);
       const lockedHit = cmd.cells.find((i) => causes.province[i] >= 0 && causes.province[i] !== id && small.provinces[causes.province[i]]?.locked);
       if (lockedHit !== undefined) throw new CommandError(`格 ${lockedHit} 属于已锁定的省份 ${causes.province[lockedHit]}`);
       for (const i of cmd.cells) causes.province[i] = id;
@@ -963,6 +1036,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const b = small.provinces[cmd.into];
       if (!a || !b) throw new CommandError('找不到要合并的省份');
       if (a.land !== b.land) throw new CommandError('陆地省份与海域省份不能合并');
+      if (classOfKind(a.kind) !== classOfKind(b.kind)) throw new CommandError('湖省与陆地省份不能合并（湖要并进陆地省，在省份规则里选“湖：并进旁边的陆地省”）');
       if (a.locked || b.locked) throw new CommandError('省份已锁定');
       for (let i = 0; i < n; i++) if (causes.province[i] === cmd.from) causes.province[i] = cmd.into;
       delete small.provinces[cmd.from];
@@ -1083,7 +1157,22 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       }
       if (cmd.name !== undefined) meta.name = cmd.name;
       if (cmd.locked !== undefined) meta.locked = cmd.locked;
-      const what = cmd.kind !== undefined ? `改成${PROVINCE_KIND_INFO[cmd.kind].name}` : cmd.locked !== undefined ? (cmd.locked ? '锁定' : '解锁') : '改名';
+      if (cmd.color !== undefined) {
+        if (cmd.color) meta.color = cmd.color.toLowerCase();
+        else delete meta.color;
+      }
+      const what =
+        cmd.kind !== undefined
+          ? `改成${PROVINCE_KIND_INFO[cmd.kind].name}`
+          : cmd.locked !== undefined
+            ? cmd.locked
+              ? '锁定'
+              : '解锁'
+            : cmd.color !== undefined
+              ? cmd.color
+                ? '换了颜色'
+                : '颜色恢复自动'
+              : '改名';
       return { dirty: Dirty.None, summary: `省份“${meta.name || cmd.id}”：${what}` };
     }
   }

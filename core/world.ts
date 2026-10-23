@@ -176,6 +176,9 @@ export interface ProvinceMeta {
   land: boolean;
   // 陆地 / 无人区 / 湖 / 海域
   kind: ProvinceKind;
+  // 用户自己选的颜色（#rrggbb，第十二轮）：地图上的省份着色用它；没有时陆地省按编号配色，海省不着色。
+  // 导出的 provinces.bmp 照旧按编号（provinceColor），颜色一一对应
+  color?: string;
 }
 
 export interface Causes {
@@ -450,6 +453,16 @@ export function createWorld(input: Partial<Settings> = {}, mesh?: Mesh): World {
     small,
     derived: emptyDerived(m.n, small.species.length),
   };
+}
+
+// 地图上显示的省份颜色：自己选的颜色，否则按编号（provinceColor）
+export function provinceDisplayColor(world: World, id: number): [number, number, number] {
+  const c = world.small.provinces[id]?.color;
+  if (c) {
+    const v = parseInt(c.slice(1), 16);
+    return [v >> 16, (v >> 8) & 255, v & 255];
+  }
+  return provinceColor(id);
 }
 
 // 每个省份一个互不相同的 RGB：乘以奇数在 2^24 上是双射

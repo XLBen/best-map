@@ -67,8 +67,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-      // 第十二轮重录：第 2 种排列（成团）改了排法
-    }).toEqual({ landDelta: '99ffb', upliftDelta: '821033b0', land: 'f5511545', elevation: 'defc1ae4', discharge: '7171ad23' });
+    }).toEqual({ landDelta: '99ffb', upliftDelta: '821033b0', land: 'f5511545', elevation: 'f7e55c65', discharge: 'c20f3323' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -186,7 +185,7 @@ describe('放岛只在岛的附近找格', () => {
 
 describe('岛链的固定哈希', () => {
   it('小一号的岛最小到 islandMinCells，太小时岛心那一格成陆', () => {
-    // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）；第十二轮第 1 种排列改成错落着排，再重录
+    // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
     resolveTerrain(planet);

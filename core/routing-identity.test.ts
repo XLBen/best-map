@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
-import { type ElevationResult, computeElevation, elevationMemo } from './elevation';
+import { type ElevationResult, computeElevation, elevationMemo, lakeBedShape, seafloor } from './elevation';
 import { MinHeap } from './heap';
 import { type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
@@ -628,14 +628,9 @@ function computeElevationOld(world: World): ElevationResult {
     }
     h.set(tmp);
   }
-  for (let i = 0; i < n; i++) {
-    if (land[i]) {
-      elevation[i] = Math.max(2, h[i] * scale);
-    } else {
-      // 海底直接取地壳高度：大陆架、陆坡、深海平原、洋中脊、海沟都来自生成器
-      elevation[i] = Math.min(-2, causes.landness[i]);
-    }
-  }
+  for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
+  // 第十二轮：海底、湖底的形状换成了新的（这里比的是陆上的求解，海底、湖底照 elevation.ts 的写法）
+  seafloor(world, elevation);
 
   // 湖：挖一个碗形洼地，由水文按溢出口蓄水。
   // 以紧贴湖面的一圈格里最低的为基准往下挖：它就是溢出口，湖面 = 它的高度，
@@ -655,12 +650,12 @@ function computeElevationOld(world: World): ElevationResult {
       }
     }
     if (!Number.isFinite(rim)) rim = elevation[c];
-    for (let i = 0; i < n; i++) {
-      if (!inside(i)) continue;
-      const t = d[i] / rUnits;
-      const bowl = rim - 1 - lake.depth * (1 - t * t);
-      elevation[i] = Math.max(1, Math.min(elevation[i], bowl));
-    }
+    const cells: number[] = [];
+    for (let i = 0; i < n; i++) if (inside(i)) cells.push(i);
+    const f = lakeBedShape(world, c, rUnits, cells, d);
+    cells.forEach((i, k) => {
+      elevation[i] = Math.min(elevation[i], rim - 1 - lake.depth * f[k]);
+    });
   }
   return { elevation, coastKm };
 }

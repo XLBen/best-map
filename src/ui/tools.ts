@@ -22,9 +22,9 @@ import {
   roundKm as km,
   type TerrainPreview,
 } from '../../core/terrain';
-import { regenTargets } from '../../core/provinces';
+import { classOfKind, regenTargets } from '../../core/provinces';
 import { isVegetated, landmassCells } from '../../core/vegetation';
-import { type ProvinceMeta, type RegionKind, type World, provinceColor } from '../../core/world';
+import { type ProvinceMeta, type RegionKind, type World, provinceColor, provinceDisplayColor } from '../../core/world';
 import { type DisplayCell, displayCellAt } from '../../core/display';
 import type { GhostEdit, HighlightLayer } from '../render/colors';
 import type { Shape } from '../render/overlay';
@@ -1955,13 +1955,16 @@ export function provinceBrushTool(): ToolHandler {
       const meta = id !== null ? w.small.provinces[id] : null;
       if (!meta) return false;
       const other = w.causes.province[i];
-      return (w.causes.land[i] === 1) === meta.land && other !== id && !(other >= 0 && w.small.provinces[other]?.locked);
+      const om = other >= 0 ? w.small.provinces[other] : undefined;
+      // 湖省与陆地省之间不换格（湖单独成省时，见 assign_province）
+      if (om && om.land && classOfKind(om.kind) !== classOfKind(meta.kind)) return false;
+      return (w.causes.land[i] === 1) === meta.land && other !== id && !om?.locked;
     },
     layers(w, s) {
       const id = target()!;
       const { value, split } = provincesOf(w, s, id);
       return {
-        layers: [{ cells: s.cells, color: provinceColor(id), alpha: 0.8 }],
+        layers: [{ cells: s.cells, color: provinceDisplayColor(w, id), alpha: 0.8 }],
         hint: split ? `会把「${provinceName(w, split.id)}」分成 ${split.parts} 块` : `${provinceName(w, id)} +${s.t.size} 格`,
         caution: !!split,
         provinces: value,
@@ -2099,7 +2102,7 @@ export function provinceMergeTool(): ToolHandler {
         cache = {
           key,
           view: {
-            layers: [{ cells, color: provinceColor(sel), alpha: 0.7 }],
+            layers: [{ cells, color: provinceDisplayColor(w, sel), alpha: 0.7 }],
             shapes: [],
             hint: apart ? '不相邻：合并后是一省两块' : `并进 ${provinceName(w, sel)}`,
             caution: apart,

@@ -5,7 +5,7 @@ import type { Command } from '../../core/commands';
 import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
-import { provinceColor } from '../../core/world';
+import { provinceDisplayColor } from '../../core/world';
 import { type ViewMode, exec, mapKm, mode, selectedProvince, world } from '../state';
 import { focusOn } from './camera';
 import { Seg } from './common';
@@ -65,10 +65,13 @@ export function ProvinceBar() {
       (e.target as HTMLInputElement).blur();
     }
   };
-  const [r, g, b] = provinceColor(id);
+  const [r, g, b] = provinceDisplayColor(w, id);
+  const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  // 海省默认不着色（地图上看得到海本来的样子）；自己选了颜色才涂
+  const auto = !meta.color;
   return (
     <>
-      <span class="swatch" style={{ background: `rgb(${r},${g},${b})` }} />
+      <span class="swatch" style={{ background: !meta.land && auto ? 'transparent' : hex }} title={!meta.land && auto ? '海上的省份默认不着色' : undefined} />
       <input class="bar-input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={onKey} onBlur={rename} />
       <span class="bar-label" title={`${cells.length} 格`}>
         约 {area.toLocaleString()} km²
@@ -84,7 +87,7 @@ export function ProvinceBar() {
         </button>
       )}
       {meta.kind === 'lake' && (
-        <span class="bar-chip" title="这个省是一大片湖（自动划分时大湖单独成省），导出时算作湖">
+        <span class="bar-chip" title="这个省是一片湖（省份规则里“湖：单独成省”），导出时算作湖">
           {lakeGone ? '湖省 · 这里已没有湖' : '湖省'}
         </span>
       )}
@@ -92,6 +95,32 @@ export function ProvinceBar() {
         <button class="bar-btn" onClick={() => void exec({ op: 'set_province', id, kind: 'land' }, '正在修改…')}>
           改回陆地
         </button>
+      )}
+      {/* 颜色：自动（陆地省按编号配色，海省不着色）/ 自己选（导出的 provinces.bmp 照旧按编号，一一对应） */}
+      <span class="bar-label">颜色</span>
+      <Seg
+        value={auto ? 'auto' : 'own'}
+        options={[
+          ['auto', '自动'],
+          ['own', '自己选'],
+        ]}
+        titles={{ auto: meta.land ? '按省份编号自动配色' : '海上的省份不着色', own: '给这个省份选一个颜色（只影响地图上的省份着色）' }}
+        onChange={(v) => {
+          if (v === 'auto' && !auto) void exec({ op: 'set_province', id, color: null }, '正在修改…');
+          if (v === 'own' && auto) void exec({ op: 'set_province', id, color: meta.land ? hex : '#4a7fb5' }, '正在修改…');
+        }}
+      />
+      {!auto && (
+        <input
+          type="color"
+          class="bar-color"
+          value={hex}
+          title="选颜色"
+          onChange={(e) => {
+            const v = (e.target as HTMLInputElement).value.toLowerCase();
+            if (v !== meta.color) void exec({ op: 'set_province', id, color: v }, '正在修改…');
+          }}
+        />
       )}
       <button
         class={`bar-btn ${meta.locked ? 'on' : ''}`}
@@ -128,7 +157,7 @@ function RulesBox({ w }: { w: World }) {
   const changed = JSON.stringify(draft) !== JSON.stringify(rules);
   const counts = new Map<ProvinceKind, number>();
   for (const m of Object.values(w.small.provinces)) counts.set(m.kind, (counts.get(m.kind) ?? 0) + 1);
-  const check = (key: 'varied' | 'wasteland' | 'lakes' | 'seaByDistance', label: string) => (
+  const check = (key: 'varied' | 'wasteland' | 'seaByDistance', label: string) => (
     <label class="check">
       <input type="checkbox" checked={draft[key]} onChange={() => setDraft({ ...draft, [key]: !draft[key] })} />
       {label}
@@ -149,17 +178,33 @@ function RulesBox({ w }: { w: World }) {
       </div>
       {check('varied', '按地形调整大小（平原、河谷、海岸小，山地、荒漠大）')}
       {check('wasteland', '冰原、深漠、高山划成无人区')}
-      {check('lakes', '大湖单独成省')}
+      <div class="row">
+        <span>湖</span>
+        <Seg
+          value={draft.lakeMode}
+          options={[
+            ['separate', '单独成省'],
+            ['merge', '并进旁边的陆地省'],
+          ]}
+          titles={{ separate: '湖面单独划成湖省（导出时算作湖）', merge: '湖面算陆地，和旁边的陆地同省' }}
+          onChange={(v) => setDraft({ ...draft, lakeMode: v })}
+        />
+      </div>
       {check('seaByDistance', '近海的海域小，远洋的大')}
+      <p class="muted small">海上的省份永远单独，不和陆地、湖同省。放湖、删湖、湖干了以后，湖和陆地的省份会自己跟着整理。</p>
       {/* 鼠标停在按钮上：地图上先画出新的省界和省名（与点下去的结果相同）；点下去照样一下就做，可以撤销 */}
       <div class="row wrap">
+        {/* 只改了湖的归属：可以只整理湖，不动别的省份 */}
+        {draft.lakeMode !== rules.lakeMode && (
+          <RegenButton cmd={{ op: 'set_lake_mode', mode: draft.lakeMode }}>只整理湖，别的省份不动</RegenButton>
+        )}
         <RegenButton cmd={{ op: 'generate_provinces', rules: draft }} primary>
           {changed ? '按新规则重新划分' : '重新划分'}
         </RegenButton>
         <RegenButton cmd={{ op: 'generate_provinces', rules: { ...draft, seed: rules.seed + 1 } }}>换一种划分</RegenButton>
       </div>
       <p class="muted small">同样的规则划出来的结果是固定的；想要别的分法点“换一种划分”。锁定的省份不会变，撤销可以回到原来的划分。</p>
-      <p class="muted small">图例：灰色斜线 = 无人区；蓝色字 = 湖省</p>
+      <p class="muted small">图例：灰色斜线 = 无人区；蓝色字 = 湖省；海上的省份默认不着色（选中一个海省可以给它选颜色）</p>
     </section>
   );
 }

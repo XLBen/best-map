@@ -166,6 +166,31 @@ function encodePng16Gray(values: Uint16Array, width: number, height: number): Ui
   return png;
 }
 
+// 湖面像素的湖底高度：这一格与相邻湖格的湖底按到像素的距离加权（栅格化给陆地像素的高度至少 2 m、带地表细节，
+// 湖底要真实的深度）
+function lakeBedAt(world: World, c: number, px: number, py: number, width: number, height: number): number {
+  const { mesh, derived } = world;
+  const x = ((px + 0.5) / width) * mesh.width;
+  const y = ((py + 0.5) / height) * mesh.height;
+  const sphere = mesh.kind === 'sphere';
+  let s = 0;
+  let w = 0;
+  const add = (j: number) => {
+    let dx = mesh.x[j] - x;
+    if (sphere) dx -= 2 * Math.round(dx / 2);
+    const dy = mesh.y[j] - y;
+    const k = 1 / (dx * dx + dy * dy + 1e-4 * mesh.spacing * mesh.spacing);
+    s += k * derived.elevation[j];
+    w += k;
+  };
+  add(c);
+  for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) if (derived.lake[mesh.adj[e]] === 1) add(mesh.adj[e]);
+  return s / w;
+}
+
+// 高度图里海平面以下的量程（m）：灰度 0 是这么深
+export const SEA_DEPTH_M = 11000;
+
 // onProgress（可选）：报告完成的比例（0–1），栅格化约占前 70%，最后的压缩打包是一步（报不了中间进度）；不影响结果。
 // warnings：要告诉用户的几句话（也写进 README.txt），没有就是空的
 export function exportPackage(
@@ -183,14 +208,19 @@ export function exportPackage(
   const files: Record<string, Uint8Array> = {};
   const n = width * height;
 
-  // 高度图：8 位（海平面 = seaLevelGray）与 16 位（海平面 = 1/4 量程）
+  // 高度图：8 位（海平面 = seaLevelGray）与 16 位（海平面 = 1/4 量程）。海底、湖底都是真实的深度：
+  // 湖面的像素取湖底（湖底比湖面至少低 1 m；很深的湖湖底可以在海平面以下，按海底的灰度算），
+  // 海平面以下按 SEA_DEPTH_M 线性（最深的海沟约 −10000 m）
   const gray = new Uint8Array(n);
   const g16 = new Uint16Array(n);
   const sea = opts.seaLevelGray;
   for (let p = 0; p < n; p++) {
-    const h = elev[p];
-    gray[p] = h > 0 ? Math.min(255, Math.round(sea + 1 + (h / opts.maxElevation) * (254 - sea))) : Math.max(0, Math.round(sea * (1 + h / 6000)));
-    g16[p] = h > 0 ? Math.min(65535, Math.round(16384 + (h / opts.maxElevation) * 49151)) : Math.max(0, Math.round(16383 * (1 + h / 6000)));
+    let h = elev[p];
+    const c = cellOf[p];
+    if (raster.land[p] && derived.lake[c] === 1) h = Math.min(lakeBedAt(world, c, p % width, Math.floor(p / width), width, height), derived.water[c] - 1);
+    elev[p] = h;
+    gray[p] = h > 0 ? Math.min(255, Math.round(sea + 1 + (h / opts.maxElevation) * (254 - sea))) : Math.max(0, Math.round(sea * (1 + h / SEA_DEPTH_M)));
+    g16[p] = h > 0 ? Math.min(65535, Math.round(16384 + (h / opts.maxElevation) * 49151)) : Math.max(0, Math.round(16383 * (1 + h / SEA_DEPTH_M)));
   }
   files['heightmap.bmp'] = encodeBmp8Gray(gray, width, height);
   files['heightmap16.png'] = encodePng16Gray(g16, width, height);
@@ -293,6 +323,7 @@ export function exportPackage(
       `尺寸：${width}×${height}`,
       `heightmap.bmp：8 位灰度，海平面灰度 ${opts.seaLevelGray}，255 ≈ ${opts.maxElevation} m`,
       'heightmap16.png：16 位灰度，16384 为海平面，65535 ≈ 最高海拔',
+      `海平面以下（海底、很深的湖底）按深度线性：0 ≈ −${SEA_DEPTH_M} m；湖面的像素是湖底的高度`,
       `provinces.bmp + definition.csv：${ids.length} 个省份，颜色一一对应`,
       'provinces_summary.csv：每个省份的名称、陆海、类型（陆地 / 无人区 / 湖 / 海域）、地形类别、主导类型、格数、平均海拔',
       'features.csv：自动识别的地名（大陆、岛、海、湾、河、山脉……）：类型、名字、面积、中心在图上的像素坐标与经纬度',

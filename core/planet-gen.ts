@@ -1,4 +1,4 @@
-import { type BaseComponents, type Resample, type Reroll, type WorldType, type Worldgen, type WorldgenInput, copyComponents, worldgenSchema } from './generate';
+import { type BaseComponents, type Resample, type Reroll, type WorldType, type Worldgen, type WorldgenInput, copyComponents, oceanFloor, worldgenSchema } from './generate';
 import type { SphereMesh } from './mesh';
 import { type PlanetForm, mergeProfile } from './planet-form';
 import { type Noise3, clamp, fbm3, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
@@ -655,6 +655,7 @@ const emptyComponents = (n: number): BaseComponents => ({
   mountU: new Float32Array(n),
   hillU: new Float32Array(n),
   erod: new Float32Array(n),
+  sea: new Float32Array(n),
 });
 
 // 换了重画、种子与类型不变：板块、大陆块、火山锥、噪声只取决于种子与类型，照用，只换参数
@@ -712,6 +713,7 @@ function sampleCell(m: PlanetModel, rerolls: PlacedReroll[], px: number, py: num
     out.mountB[i] += (tmp.mountB[0] - out.mountB[i]) * w;
     out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
     out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
+    out.sea[i] += (tmp.sea[0] - out.sea[i]) * w;
   }
 }
 
@@ -724,8 +726,10 @@ interface CellSample {
   erod: number;
   // 大陆场（地形脚本的 continent）
   c: number;
+  // 洋底的目标深度（见 generate.ts 的 oceanFloor）；地形脚本不改它
+  sea: number;
 }
-const S: CellSample = { B: 0, mountB: 0, mountU: 0, hillU: 0, erod: 0, c: 0 };
+const S: CellSample = { B: 0, mountB: 0, mountU: 0, hillU: 0, erod: 0, c: 0, sea: 0 };
 
 function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, out: BaseComponents, i: number) {
   sampleRaw(m, ns, x, y, z, S, true);
@@ -734,6 +738,7 @@ function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numb
   out.mountU[i] = S.mountU;
   out.hillU[i] = S.hillU;
   out.erod[i] = S.erod;
+  out.sea[i] = S.sea;
 }
 
 // 造山带对地壳高度的贡献（“山多高”= 1 时）。地形脚本改了山的强弱后按同一个式子重算
@@ -776,6 +781,8 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
   let rift = 0;
   let trench = 0;
   let mm = 0;
+  // 到最近的离散边界的距离（按扩张速度缩放）：洋壳的年龄
+  let age = 1;
   // 星球形态的 crustMode 'replace'：不算板块边界（山带、洋中脊、海沟、裂谷都没有）
   if (plates) {
     const a = nearestPlate(m, px, py, pz);
@@ -794,6 +801,7 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
         const div = Math.min(1, -conv);
         ridge = Math.max(ridge, div * Math.exp(-((bd / 0.04) ** 2)));
         rift = Math.max(rift, div * Math.exp(-((bd / 0.025) ** 2)));
+        age = Math.min(age, bd / (0.45 + 0.55 * div));
         continue;
       }
       const cOther = blockField(m, qx + 2 * bd * pi.n[0], qy + 2 * bd * pi.n[1], qz + 2 * bd * pi.n[2]);
@@ -815,6 +823,7 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
   s.hillU = t.hills * Math.max(0, fbm3(ns.hills, qx, qy, qz, 6, 4)) * contW;
   s.erod = clamp(1 + 0.45 * fbm3(ns.erod, x + 7.7, y - 3.1, z + 1.9, 6, 3), 0.4, 1.8);
   s.c = c;
+  s.sea = oceanFloor(age, trench, t.ridgeH, t.trenchH, fbm3(ns.ocean, qx - 4.1, qy + 2.3, qz + 1.1, 3, 4), fbm3(ns.ocean, qx + 6.2, qy - 8.4, qz - 0.7, 24, 3));
 }
 
 // ---------- 星球形态的地形脚本 ----------
@@ -850,6 +859,7 @@ interface RawPass {
   hillU: Float64Array;
   erod: Float64Array;
   c: Float64Array;
+  sea: Float64Array;
 }
 
 // 界面看的问题最多留几条（同一句话只留一条）
@@ -878,6 +888,7 @@ function sampleCells(m: PlanetModel, ns: NoiseSet3, mesh: SphereMesh, cells: Int
     raw.hillU[i] = S.hillU;
     raw.erod[i] = S.erod;
     raw.c[i] = S.c;
+    raw.sea[i] = S.sea;
   }
 }
 
@@ -945,7 +956,7 @@ function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Res
     todo.push(i);
   }
   const cells = Int32Array.from(todo);
-  const raw: RawPass = { B: new Float64Array(n), mountB: new Float64Array(n), mountU: new Float64Array(n), hillU: new Float64Array(n), erod: new Float64Array(n), c: new Float64Array(n) };
+  const raw: RawPass = { B: new Float64Array(n), mountB: new Float64Array(n), mountU: new Float64Array(n), hillU: new Float64Array(n), erod: new Float64Array(n), c: new Float64Array(n), sea: new Float64Array(n) };
   const pass: (ScriptIssue | null)[] = [];
   const first = crustPass(m, m.noise, 0, mesh, cells, raw, src, prev?.pass[0]);
   if (first === 'redo') return sampleWithCrust(m, mesh, src);
@@ -956,6 +967,7 @@ function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Res
     out.mountU[i] = raw.mountU[i];
     out.hillU[i] = raw.hillU[i];
     out.erod[i] = raw.erod[i];
+    out.sea[i] = raw.sea[i];
   }
   // 重画这一片：一次一次地叠（每格叠的顺序与逐格写法相同），圈边羽化
   for (let k = 0; k < rerolls.length; k++) {
@@ -990,6 +1002,7 @@ function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Res
       out.mountB[i] += (Math.fround(raw.mountB[i]) - out.mountB[i]) * w;
       out.mountU[i] += (Math.fround(raw.mountU[i]) - out.mountU[i]) * w;
       out.hillU[i] += (Math.fround(raw.hillU[i]) - out.hillU[i]) * w;
+      out.sea[i] += (Math.fround(raw.sea[i]) - out.sea[i]) * w;
     }
   }
   // 给界面看的问题：按遍的顺序，同一句话只留一条
