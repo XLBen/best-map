@@ -7,15 +7,30 @@
 export const DB_VERSION = 5;
 export const DB_STORES = ['kv', 'autosave', 'checkpoint', 'packs', 'meshes'] as const;
 
+// 要升级库时别的页面（旧版本还开着）占着不放：不一直等，报错（调用方各自退：读不到当没有、存不了就算了）；
+// 之后那边放开了、这里才打开的连接直接关掉。打开的连接在别人要升级时自己先关掉，不挡别人
 export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const open = indexedDB.open('map2', DB_VERSION);
+    let gaveUp = false;
     open.onupgradeneeded = () => {
       const db = open.result;
       for (const name of DB_STORES) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
     };
+    open.onblocked = () => {
+      gaveUp = true;
+      reject(new Error('浏览器里的存储被另一个打开着的页面占着（关掉旧的页面再试）'));
+    };
     open.onerror = () => reject(open.error);
-    open.onsuccess = () => resolve(open.result);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (gaveUp) {
+        db.close();
+        return;
+      }
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
   });
 }
 

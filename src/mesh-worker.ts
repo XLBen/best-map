@@ -54,8 +54,13 @@ self.onmessage = async (ev: MessageEvent<MeshRequest>) => {
       return;
     }
     const { packed, transfer } = packMesh(buildMeshFor(s));
-    if (key) await store(key, packed);
-    post({ id, ok: true, mesh: packed }, transfer);
+    if (!key) {
+      post({ id, ok: true, mesh: packed }, transfer);
+      return;
+    }
+    // 先交出去（复制一份，不转交：下面还要存这一份），再存：IndexedDB 打不开、卡住时主线程照样不用等
+    post({ id, ok: true, mesh: packed });
+    await store(key, packed);
   } catch (e) {
     post({ id, ok: false, error: (e as Error).message });
   }

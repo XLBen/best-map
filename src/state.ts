@@ -626,7 +626,12 @@ function prebuildMesh(settings: Partial<Settings>): Promise<void> {
   if (!w) return Promise.resolve();
   const id = ++meshSeq;
   return new Promise<void>((resolve) => {
+    // 建网格的 Worker 迟迟不回（比如它读 IndexedDB 卡住了）：最多等 MESH_WAIT_MS，之后不等了，换上快照时在主线程上就地建
+    const timer = setTimeout(() => {
+      if (meshWaiters.delete(id)) resolve();
+    }, MESH_WAIT_MS);
     meshWaiters.set(id, (packed) => {
+      clearTimeout(timer);
       // 等的时候换成了别的网格（又新建了一个别的大小）就不要了
       if (packed && meshCache?.key !== key) {
         try {
@@ -646,6 +651,9 @@ function prebuildMesh(settings: Partial<Settings>): Promise<void> {
   });
 }
 
+// 新建、打开时最多等建网格的 Worker 这么久（毫秒）
+const MESH_WAIT_MS = 6000;
+
 // 建网格的 Worker（一直留着：它写 IndexedDB 时不能被停掉）。开不了、出了事就不再用，换上快照时就地建
 let meshWorkerRef: Worker | null = null;
 let meshBroken = false;
@@ -661,11 +669,13 @@ function meshWorker(): Worker | null {
       meshWaiters.delete(ev.data.id);
       done?.(ev.data.ok && ev.data.mesh ? ev.data.mesh : null);
     };
-    w.onerror = () => {
+    // 出了错、收到的消息拆不开：不再用它，等着的都按没建成算（换上快照时就地建）
+    w.onerror = w.onmessageerror = () => {
       meshBroken = true;
       meshWorkerRef = null;
-      for (const done of meshWaiters.values()) done(null);
+      const waiting = [...meshWaiters.values()];
       meshWaiters.clear();
+      for (const done of waiting) done(null);
     };
     meshWorkerRef = w;
     return w;
