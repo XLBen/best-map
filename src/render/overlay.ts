@@ -759,14 +759,16 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
         const sx = ((l.x + 2 * k - cam.x) * cam.zoom + cw / 2) * dpr;
         const sy = ((l.y - cam.y) * cam.zoom + ch / 2) * dpr;
         if (sx < -50 || sy < -20 || sx > cw * dpr + 50 || sy > ch * dpr + 20) continue;
+        // 导出整张地图：每个省名只标中心落在图里的那一份（分界线附近不标两遍）
+        if (st.frame && (sx < 0 || sx >= cw * dpr)) continue;
         ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
         ctx.strokeText(l.text, sx, sy);
         ctx.fillText(l.text, sx, sy);
       }
     }
   }
-  // 导出整个星球：地名只排一份（图就是一整圈）
-  const boxes = st.features ? drawLabels(ctx, cam, st, st.frame ? [0] : ks, rz) : [];
+  // 导出整个星球：图就是一整圈（分界线可以在任何经度），每个地名只在中心落在图里的那一份上排
+  const boxes = st.features ? drawLabels(ctx, cam, st, ks, rz) : [];
   if (st.scaleBar) {
     if (sphere) {
       // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
@@ -1104,6 +1106,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     for (const k of ks) {
       const [x, y] = toScreen(f.x + 2 * k, f.y);
       if (x < -mx || y < -my || x > cw + mx || y > chh + my) continue;
+      // 导出整张地图：只要中心落在图里的那一份（整个星球的图是一整圈，分界线两边的副本不标两遍）
+      if (exporting && (x < 0 || x >= cw)) continue;
       spots.push([x, y]);
     }
     if (!spots.length) continue;

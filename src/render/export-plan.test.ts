@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FeatureType, GeoFeature } from '../../core/features';
-import { LABEL_REF_WIDTH, exportFrame, planTiles, tileMargin, tileSize, tileView } from './export-plan';
+import { LABEL_REF_WIDTH, SEAM_BINS, autoSeam, exportFrame, planTiles, seamLongitude, tileMargin, tileSize, tileView } from './export-plan';
 import { type OverlayState, placeLabels } from './overlay';
 
 // 导出整张地图（.png）：虚拟镜头、分块、每一块的视图
@@ -159,5 +159,87 @@ describe('整张图的地名', () => {
     const b = placeLabels(ctx, f.cam, st, [0], f.cam.zoom);
     expect(b.placed.map((l) => [l.key, l.x, l.y])).toEqual(a.placed.map((l) => [l.key, l.x, l.y]));
     expect(placeLabels(ctx, cam, screenSt, [0], 600)).toBe(before);
+  });
+});
+
+describe('整个星球的分界线', () => {
+  it('图的左右边在分界线上：x = seam 落在图的最左边，seam + 2 落在最右边', () => {
+    const f = exportFrame({ width: 2, height: 1 }, 4096, 'medium', 0.7);
+    expect(toImage(f, 0.7, 0)[0]).toBeCloseTo(0, 6);
+    expect(toImage(f, 2.7, 1)[0]).toBeCloseTo(4096, 6);
+    expect(seamLongitude(0)).toBe(-180);
+    expect(seamLongitude(1)).toBe(0);
+    expect(seamLongitude(1.5)).toBe(90);
+  });
+
+  // 每条一个点：land 里为 1 的条是陆地
+  const strip = (land: (b: number) => boolean) => {
+    const xs: number[] = [];
+    const ls: number[] = [];
+    for (let b = 0; b < SEAM_BINS; b++) {
+      xs.push(((b + 0.5) / SEAM_BINS) * 2);
+      ls.push(land(b) ? 1 : 0);
+    }
+    return autoSeam(xs, ls);
+  };
+
+  it('自动：放在最宽的一段海的正中（绕一圈接上）；到处都有陆地时放在陆地最少的地方', () => {
+    // 海在 100–299 条（最宽）和 500–539 条
+    const x = strip((b) => !((b >= 100 && b < 300) || (b >= 500 && b < 540)));
+    expect(x).toBeCloseTo((200 / SEAM_BINS) * 2, 6);
+    // 最宽的海跨过 x = 0：690–719、0–49 条
+    const y = strip((b) => !(b >= 690 || b < 50));
+    expect(y).toBeCloseTo((10 / SEAM_BINS) * 2, 6);
+    // 全是海：0
+    expect(strip(() => false)).toBe(0);
+    // 每条都有陆地：数量最少的地方
+    const xs: number[] = [];
+    const ls: number[] = [];
+    for (let b = 0; b < SEAM_BINS; b++) {
+      const n = Math.abs(b - 400) < 15 ? 1 : 5;
+      for (let k = 0; k < n; k++) {
+        xs.push(((b + 0.5) / SEAM_BINS) * 2);
+        ls.push(1);
+      }
+    }
+    expect(autoSeam(xs, ls)).toBeCloseTo((400.5 / SEAM_BINS) * 2, 6);
+  });
+
+  it('挪了分界线：每个地名只标一次（中心落在图里的那一份），一个不少；省略分界线时照旧', () => {
+    const ctx = { canvas: { clientWidth: 800, clientHeight: 600 }, font: '', measureText: () => ({ width: 10 }) } as unknown as CanvasRenderingContext2D;
+    const mk = (name: string, x: number, y: number): GeoFeature => ({
+      key: name,
+      type: 'lake' as FeatureType,
+      anchor: 0,
+      cells: new Int32Array(0),
+      areaKm2: 3e4,
+      x,
+      y,
+      angle: 0,
+      span: 0,
+      tags: [],
+      importance: 1,
+      name,
+      custom: false,
+    });
+    const features = [0.02, 0.4, 0.69, 0.71, 1.2, 1.98].map((x, k) => mk(`湖${k}`, x, 0.2 + 0.1 * k));
+    for (const seam of [0, 0.7, 1.33]) {
+      const f = exportFrame({ width: 2, height: 1 }, 4096, 'medium', seam);
+      const st = { features, labelTypes: null, kmPerUnit: 3000, hoverLabel: null, frame: { cw: f.cw, ch: f.ch, dpr: f.dpr } } as unknown as OverlayState;
+      // 图上看得见的副本（与 drawOverlay 的 copiesFor 一样多算一点）
+      const ks = [-2, -1, 0, 1, 2];
+      const { placed, boxes } = placeLabels(ctx, f.cam, st, ks, f.cam.zoom);
+      expect(placed.map((l) => l.key).sort()).toEqual(features.map((x) => x.key).sort());
+      // 落在图上该在的位置（中心在分界线右边、绕一圈的那一份）
+      for (const l of placed) {
+        const ft = features.find((x) => x.key === l.key)!;
+        const want = ((((ft.x - seam) % 2) + 2) % 2) / 2;
+        expect(Math.abs(l.x / f.cw - want)).toBeLessThan(0.02);
+      }
+      for (const b of boxes) {
+        expect(b.x0).toBeGreaterThanOrEqual(0);
+        expect(b.x1).toBeLessThanOrEqual(f.cw + 1e-9);
+      }
+    }
   });
 });
