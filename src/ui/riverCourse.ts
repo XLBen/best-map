@@ -233,7 +233,8 @@ export function riverAt(w: World, x: number, y: number, tol: number, cell = -1):
     // 线的最后一格是它汇入的那条河的（汇合处）：点在这一小段上算这条河自己的（不然选中的是那条大河）
     const tail = line.cells[line.cells.length - 1];
     for (let j = line.cells.length - 2; c === tail && j >= 0; j--) if (line.cells[j] !== tail) c = line.cells[j];
-    if (isRiverCell(w, d, c)) consider({ kind: 'natural', cell: c }, h.d, Math.max(line.flow[h.k], line.flow[h.k + 1]));
+    // 水量按认出来的那一格（支流画到汇合处的最后一点带的是大河的流量）
+    if (isRiverCell(w, d, c)) consider({ kind: 'natural', cell: c }, h.d, d.discharge[c]);
   }
   if (best) {
     const b: RiverHit & { score: number } = best;

@@ -754,12 +754,15 @@ describe('复测后补的', () => {
       // 小支流（门槛的 1–2 倍）汇进大河（10 倍以上）的那一点
       if (!isRiverCell(w, d, own) || d.discharge[own] > 2 * thr || d.discharge[tail] < 10 * thr) continue;
       const [x, y] = L.points[L.points.length - 1];
-      const z = zoomOf(w);
-      const h = riverAt(w, x, y, SNAP_PX / z, findCell(w.mesh, x, y));
-      expect(h).not.toBeNull();
-      const stem = riverStem(w, d, h!.ref.kind === 'natural' ? h!.ref.cell : -1).cells;
-      expect(stem.includes(tail)).toBe(true);
-      expect(stem.includes(own)).toBe(false);
+      // 拉近、拉远（一格 20、3 个屏幕像素）都一样
+      for (const px of [20, 3]) {
+        const z = px / w.mesh.spacing;
+        const h = riverAt(w, x, y, SNAP_PX / z, findCell(w.mesh, x, y));
+        expect(h).not.toBeNull();
+        const stem = riverStem(w, d, h!.ref.kind === 'natural' ? h!.ref.cell : -1).cells;
+        expect(stem.includes(tail), `${px}`).toBe(true);
+        expect(stem.includes(own), `${px}`).toBe(false);
+      }
       if (++checked >= 5) break;
     }
     expect(checked).toBeGreaterThan(0);
