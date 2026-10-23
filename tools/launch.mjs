@@ -77,27 +77,6 @@ function openBrowser() {
   spawn(cmd, args, { stdio: 'ignore', detached: true, windowsVerbatimArguments: win }).unref();
 }
 
-if (!nodeOk()) {
-  stop(`Node.js 版本太旧（现在是 ${process.versions.node}）。请到 https://nodejs.org 下载安装 LTS 版，再双击启动。`);
-}
-
-const state = await probe();
-if (state === 'map') {
-  console.log(`地图已经开着，正在打开浏览器：${url}`);
-  openBrowser();
-  process.exit(0);
-}
-if (state === 'other') {
-  stop(`端口 ${port} 被别的程序占用了。关掉那个程序再双击启动。`);
-}
-
-if (needInstall()) {
-  console.log('第一次启动：正在安装需要的组件（要联网，大约一两分钟）…');
-  if (!(await run('npm', ['install', '--no-audit', '--no-fund']))) {
-    stop('安装失败。检查网络后再双击启动试一次。');
-  }
-}
-
 // 打包要看的源码：src、core 下的文件（测试除外），页面、依赖的版本与打包设置。内容的哈希一样就不必重新打包
 const SOURCES = ['src', 'core', 'index.html', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', join('tools', 'isolated-engine.ts'), 'public'];
 const STAMP = join(root, 'dist', '.map2-source-hash');
@@ -118,6 +97,35 @@ function sourceHash() {
   };
   for (const s of SOURCES) add(join(root, s));
   return h.digest('hex');
+}
+
+if (!nodeOk()) {
+  stop(`Node.js 版本太旧（现在是 ${process.versions.node}）。请到 https://nodejs.org 下载安装 LTS 版，再双击启动。`);
+}
+
+const state = await probe();
+if (state === 'map') {
+  // 开着的是打包好的程序、代码在它打包之后又更新过（比如拉了新代码）：开着的还是旧版本，提醒一句
+  let stale = false;
+  try {
+    stale = existsSync(STAMP) && readFileSync(STAMP, 'utf8').trim() !== sourceHash();
+  } catch {
+    // 读不了就不提醒
+  }
+  if (stale) console.log('地图已经开着，但代码更新过：关掉之前那个窗口再双击一次就是新版本');
+  console.log(`地图已经开着，正在打开浏览器：${url}`);
+  openBrowser();
+  process.exit(0);
+}
+if (state === 'other') {
+  stop(`端口 ${port} 被别的程序占用了。关掉那个程序再双击启动。`);
+}
+
+if (needInstall()) {
+  console.log('第一次启动：正在安装需要的组件（要联网，大约一两分钟）…');
+  if (!(await run('npm', ['install', '--no-audit', '--no-fund']))) {
+    stop('安装失败。检查网络后再双击启动试一次。');
+  }
 }
 
 const vite = join(root, 'node_modules', 'vite', 'bin', 'vite.js');
