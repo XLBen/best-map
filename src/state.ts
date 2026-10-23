@@ -20,7 +20,7 @@ import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
 import { buildKey, engineCode, engineUrl } from './engine-source';
 import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
 import type { MeshRequest } from './mesh-worker';
-import type { RiverStyleOverride } from './render/overlay';
+import { type RiverStyleOverride, seedRivers } from './render/overlay';
 import { idbTx, openDb } from './idb';
 import { THUMB_EVERY_MS, activeLink, idbMapStore, isQuotaError, mapLink, mapSavedState, overwriteMap, thumbHook } from './maps';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
@@ -687,6 +687,8 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
     'light' in s
       ? lightWorld(before!, s)
       : { settings: s.settings, mesh: meshFor(s.settings), kmPerUnit: kmPerUnit(s.settings), causes: s.causes, small: s.small, derived: s.derived };
+  // Worker 描好的河（第十三轮）：画这个世界的河时直接用
+  if (!('light' in s) && s.rivers) seedRivers(next, s.rivers);
   const mesh = next.mesh;
   batch(() => {
     if (fresh) {
@@ -1605,7 +1607,9 @@ export interface WorldPreview {
 export function previewReply(r: Response): WorldPreview | null {
   const base = world.value;
   if (!r.ok || !r.preview || !r.world || !base || r.preview.stateId !== worldState.value) return null;
-  return { result: r.preview, world: previewWorldOf(base, r.world), base };
+  const w = previewWorldOf(base, r.world);
+  if (r.rivers) seedRivers(w, r.rivers);
+  return { result: r.preview, world: w, base };
 }
 
 // 最近一次确切预览没算成时 Worker 说的原因（比如资源包里的脚本写错了），按命令记：

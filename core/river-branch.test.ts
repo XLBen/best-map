@@ -4,7 +4,7 @@ import type { Command } from './commands';
 import { Engine } from './engine';
 import { BRANCH_SHARE, branchCourse, guideTarget, naturalTarget, sourceCourse } from './river-edit';
 import { encodePath, snapOnto, traceRivers } from './rivers';
-import { isRiverCell, planCourse, riverStem } from './select';
+import { branchedOff, guideFlow, isRiverCell, planCourse, riverStem } from './select';
 import { continents } from './testing/fixtures';
 import type { World } from './world';
 
@@ -101,6 +101,85 @@ describe('分一股出去', () => {
     expect(digestWorld(w)).toEqual(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world));
     eng.undo();
     expect(Array.from(eng.world.derived.discharge)).toEqual(Array.from(q0));
+  });
+
+  // 第十三轮修：分出去的一股以前从干流上直直地横着出去（像一条支流）；现在开头顺着干流往下游，渐渐离开
+  it('顺着干流分出去：存下的折线与画出来的线开头都顺着干流往下游的方向，之后才离开干流', () => {
+    const eng = continents();
+    const w0 = eng.world;
+    const sp = w0.mesh.spacing;
+    const { r, T } = findBranch(w0);
+    const angle = (u: readonly number[], v: readonly number[]) => (Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / ((Math.hypot(u[0], u[1]) || 1) * (Math.hypot(v[0], v[1]) || 1))))) * 180) / Math.PI;
+    // 干流在分出的地方往下游的方向（控制点连线）
+    const P0 = r.plan.path[0];
+    const hit = snapOnto(T.points, P0[0], P0[1])!;
+    const td = [T.points[hit.k + 1][0] - T.points[hit.k][0], T.points[hit.k + 1][1] - T.points[hit.k][1]];
+    // 存下的折线：第一段（约 0.2 格）顺着干流
+    const P = r.plan.path;
+    expect(angle([P[1][0] - P[0][0], P[1][1] - P[0][1]], td)).toBeLessThan(30);
+    // 画的方向与干流差得多（画的是斜着往外）：离开起点约 1.2 格以后才是画的方向
+    eng.exec(branchCmd(r.plan));
+    const w = eng.world;
+    const g = w.small.guides[w.small.guides.length - 1];
+    const lines = traceRivers(w);
+    const mine = lines.find((l) => l.guide === g.id)!;
+    const trunk = lines.filter((l) => l.guide === undefined && l.cells?.includes(r.cell));
+    const p = mine.points[0];
+    const t = trunk.map((l) => ({ l, h: snapOnto(l.points, p[0], p[1])! })).sort((a, b) => a.h.d - b.h.d)[0];
+    const tdl = [t.l.points[t.h.k + 1][0] - t.l.points[t.h.k][0], t.l.points[t.h.k + 1][1] - t.l.points[t.h.k][1]];
+    // 画出来的线：最初约 0.1 格的方向与干流画出来的线相差不到 15°（以前是横着出去，差六七十度）
+    let k = 1;
+    for (let s2 = 0; k < mine.points.length - 1 && s2 < 0.1 * sp; k++) s2 += Math.hypot(mine.points[k][0] - mine.points[k - 1][0], mine.points[k][1] - mine.points[k - 1][1]);
+    expect(angle([mine.points[k][0] - p[0], mine.points[k][1] - p[1]], tdl)).toBeLessThan(15);
+    // 渐渐离开：约 1.2 格处离干流的线已经有一段距离
+    let j = 1;
+    for (let s2 = 0; j < mine.points.length - 1 && s2 < 1.2 * sp; j++) s2 += Math.hypot(mine.points[j][0] - mine.points[j - 1][0], mine.points[j][1] - mine.points[j - 1][1]);
+    expect(snapOnto(t.l.points, mine.points[j][0], mine.points[j][1])!.d).toBeGreaterThan(0.1 * sp);
+  });
+
+  // 第十三轮修：分出去以后干流的“大小”以前按分走以后剩下的水算（拖到 100 只有 70）；现在按分出的地方的总水量，另外说分出去几成
+  it('干流的大小按分出去之前的水算，并说分出去 30%（画的干流、自然的干流都一样）', () => {
+    const eng = continents();
+    const w0 = eng.world;
+    const stem = bigRiver(w0);
+    // 先把这条河固定下来（画的干流）
+    const T0 = naturalTarget(w0, w0.derived, stem.cells[Math.floor(stem.cells.length / 2)])!;
+    const { id: _, ...pinned } = T0.guide;
+    eng.exec({ op: 'add_guide', guide: { ...pinned, id: 'trunk' } });
+    const trunk = () => eng.world.small.guides.find((g) => g.id === 'trunk')!;
+    const before = guideFlow(eng.world, eng.world.derived, trunk());
+    expect(before.split).toBe(0);
+    let done = false;
+    for (let k = Math.floor(trunk().cells.length * 0.5); k < trunk().cells.length - 4 && !done; k++) {
+      for (const side of [1, -1]) {
+        const w = eng.world;
+        const T = guideTarget(w, trunk());
+        const c = trunk().cells[k];
+        const a = trunk().cells[k - 1];
+        const b = trunk().cells[k + 1];
+        const dx = w.mesh.x[b] - w.mesh.x[a];
+        const dy = w.mesh.y[b] - w.mesh.y[a];
+        const l = Math.hypot(dx, dy) || 1;
+        const sp = w.mesh.spacing;
+        const [x, y] = at(w, c);
+        const r = branchCourse(w, w.derived, T, line([x, y], [x + ((-dy / l) * side + (dx / l) * 0.5) * 5 * sp, y + ((dx / l) * side + (dy / l) * 0.5) * 5 * sp]), { endOnLand: 'sink' });
+        if ('blocked' in r || r.plan.crossings.length || r.plan.cells.length < 4) continue;
+        eng.exec(branchCmd(r.plan));
+        done = true;
+        break;
+      }
+    }
+    expect(done).toBe(true);
+    const w = eng.world;
+    const after = guideFlow(w, w.derived, trunk());
+    expect(after.split).toBeCloseTo(BRANCH_SHARE, 9);
+    // 大小还是分出去之前的那么多（挖河床只差一点）
+    expect(Math.abs(after.total - before.total) / before.total).toBeLessThan(0.03);
+    // 终点前那格的水确实少了
+    const last = trunk().cells[trunk().cells.length - 2];
+    expect(w.derived.discharge[last] / w.small.planet.riverThreshold).toBeLessThan(after.total * (1 - 0.5 * BRANCH_SHARE));
+    // 自然的干流：分出去几成按主干的格算
+    expect(branchedOff(w, w.derived, trunk().cells).split).toBeCloseTo(BRANCH_SHARE, 9);
   });
 
   it('没有分流的世界：流量与原来逐值相同（不经过分流那一步）', () => {

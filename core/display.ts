@@ -83,13 +83,15 @@ function displayEdge(world: World, c: number, r: number, a: readonly [number, nu
 const CROSS_SAMPLES = 12;
 const CROSS_BISECT = 12;
 // edge（可选）：a、b 是相邻两格 [c, r] 的格心（河口那格与它流进的水面那格）。这条边在画面的三角网里时，线上每一点的重心坐标
-// 就是 (1 − t, t, 0)，不必一点点找三角形（逐点找要慢几倍）；不在时（整个星球两极附近）照常找
+// 就是 (1 − t, t, 0)，不必一点点找三角形（逐点找要慢几倍）；不在时（整个星球两极附近）照常找。
+// steps（可选）：先等分取几个点、再二分几次（短的线用不着 12 + 12 次：河口沿法向找岸线的线只有一格多长，6 + 8 次就准到千分之一格）
 export function shoreCrossing(
   world: World,
   a: readonly [number, number],
   b: readonly [number, number],
   hint = 0,
   edge?: readonly [number, number],
+  steps?: { samples: number; bisect: number },
 ): { p: [number, number]; t: number } | null {
   const f = displayCoast(world);
   const { mesh } = world;
@@ -115,16 +117,18 @@ export function shoreCrossing(
         return r.v;
       };
   if (at(0) <= 0) return null;
+  const samples = steps?.samples ?? CROSS_SAMPLES;
+  const bisect = steps?.bisect ?? CROSS_BISECT;
   let t0 = 0;
-  for (let k = 1; k <= CROSS_SAMPLES; k++) {
-    const t1 = k / CROSS_SAMPLES;
+  for (let k = 1; k <= samples; k++) {
+    const t1 = k / samples;
     if (at(t1) > 0) {
       t0 = t1;
       continue;
     }
     let lo = t0;
     let hi = t1;
-    for (let it = 0; it < CROSS_BISECT; it++) {
+    for (let it = 0; it < bisect; it++) {
       const m = (lo + hi) / 2;
       if (at(m) > 0) lo = m;
       else hi = m;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { displayCoast, displayCoastAt, shoreCrossing } from './display';
-import { type RiverLine, riverRibbon, riverWidth, seawardNormal, traceRivers } from './rivers';
+import { type RiverLine, TURN_CHORD, maxTurn, riverRibbon, riverWidth, seawardNormal, traceRivers } from './rivers';
 import { pointIsLand } from './subcell';
 import { coastValues } from './subcell';
 import { continents, engineFor, snapshot } from './testing/fixtures';
@@ -83,9 +83,10 @@ function checkEnds(w: World) {
     const n = l.points.length;
     if (l.mouth) {
       mouths++;
+      // 顺着最后一段的方向（沿岸线法向进水的一段、挪开的河口），或者从河口那格往它流进的水面那格（照原样画的河口）
       const p = l.points[n - 1];
       const c = l.cells![n - 1];
-      expect(onShore(p, centre(c, p[0]), centre(d.receiver[c], p[0]))).toBe(true);
+      expect(onShore(p, l.points[n - 2], p) || onShore(p, centre(c, p[0]), centre(d.receiver[c], p[0]))).toBe(true);
     }
     if (l.head === 'lake') {
       lakeHeads++;
@@ -272,7 +273,8 @@ describe('支流接在干流画出来的中线上', () => {
   });
 });
 
-// 第十三轮：河口那一段沿岸线的法向进水；海岸边不到 1.5 格的源头小河不画；流进同一格海、挨得很近的河口并成一条
+// 第十三轮：河口那一段沿岸线的法向进水；海岸边不到 1.5 格的源头小河不画；挤在一起的河口各自入海（小的沿岸挪开），
+// 只在接得顺时并成一条。河口附近从不画出钩子、往回拐的“V”
 function mouthStats(w: World) {
   const { mesh, causes, derived: d } = w;
   const sp = mesh.spacing;
@@ -281,15 +283,49 @@ function mouthStats(w: World) {
   const angles: number[] = [];
   let stubs = 0;
   let merged = 0;
-  const bySea = new Map<number, [number, number][]>();
+  // 最后 1.5 格里转得最急的（度）；并进别的河的：并进去的角度最大多少、有没有一小段往回走（大河方向上倒退）
+  let turn = 0;
+  let joinAngle = 0;
+  let backward = 0;
+  const ends: { p: [number, number]; c: number; dir: [number, number] }[] = [];
   const len = (P: [number, number][]) => P.slice(1).reduce((s, p, k) => s + Math.hypot(p[0] - P[k][0], p[1] - P[k][1]), 0);
+  const tailTurn = (P: [number, number][]) => maxTurn(P, TURN_CHORD * sp, len(P) - 1.5 * sp);
   for (const l of lines) {
     const P = l.points;
     const cells = l.cells!;
     if (l.guide === undefined && !l.mouth && l.into !== undefined) {
-      // 在岸边汇入别的河：倒数第二格流进海
-      const r = d.receiver[cells[cells.length - 2]];
-      if (r >= 0 && !causes.land[r]) merged++;
+      // 在岸边并进别的河（tidyMouths 并的）：汇合那格之前它自己的最后一格流进海（平常的汇合是流进汇合的那一格）
+      const own = [...cells].reverse().find((c) => c !== cells[cells.length - 1]);
+      const r = own === undefined ? -1 : d.receiver[own];
+      if (r >= 0 && !causes.land[r]) {
+        merged++;
+        turn = Math.max(turn, tailTurn(P));
+        const T = lines[l.into].points;
+        const e = P[P.length - 1];
+        // 大河在汇合处的方向
+        let best = 0;
+        let bd = Infinity;
+        for (let k = 0; k + 1 < T.length; k++) {
+          const dd = Math.hypot(T[k][0] - e[0], T[k][1] - e[1]);
+          if (dd < bd) [bd, best] = [dd, Math.min(k, T.length - 2)];
+        }
+        const md = [T[best + 1][0] - T[best][0], T[best + 1][1] - T[best][1]];
+        const ml = Math.hypot(md[0], md[1]) || 1;
+        // 最后约 0.3 格的弦与大河的方向
+        let k = P.length - 1;
+        for (let s2 = 0; k > 0 && s2 < 0.3 * sp; k--) s2 += Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]);
+        const cx = e[0] - P[k][0];
+        const cy = e[1] - P[k][1];
+        joinAngle = Math.max(joinAngle, (Math.acos(Math.max(-1, Math.min(1, (cx * md[0] + cy * md[1]) / ((Math.hypot(cx, cy) || 1) * ml)))) * 180) / Math.PI);
+        // 最后一格里每一小段都顺着大河往前（不往内陆拐回去）
+        let s3 = 0;
+        for (let j = P.length - 1; j > 0 && s3 < sp; j--) {
+          const sx = P[j][0] - P[j - 1][0];
+          const sy = P[j][1] - P[j - 1][1];
+          if (sx * md[0] + sy * md[1] <= 0) backward++;
+          s3 += Math.hypot(sx, sy);
+        }
+      }
     }
     if (!l.mouth) continue;
     const c = cells[cells.length - 1];
@@ -297,9 +333,12 @@ function mouthStats(w: World) {
     const sea = r >= 0 && !causes.land[r];
     if (l.guide === undefined && sea) {
       if (l.head === 'source' && len(P) < 1.5 * sp) stubs++;
-      const list = bySea.get(r) ?? [];
-      list.push(P[P.length - 1]);
-      bySea.set(r, list);
+      let k = P.length - 1;
+      for (let s2 = 0; k > 0 && s2 < 0.3 * sp; k--) s2 += Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]);
+      const e = P[P.length - 1];
+      const dl = Math.hypot(e[0] - P[k][0], e[1] - P[k][1]) || 1;
+      ends.push({ p: e, c, dir: [(e[0] - P[k][0]) / dl, (e[1] - P[k][1]) / dl] });
+      turn = Math.max(turn, tailTurn(P));
     }
     // 最后约 0.25 格的方向与河口处岸线的法向
     const end = P[P.length - 1];
@@ -312,39 +351,46 @@ function mouthStats(w: World) {
     angles.push((Math.acos(Math.max(-1, Math.min(1, (dx * n[0] + dy * n[1]) / (Math.hypot(dx, dy) || 1)))) * 180) / Math.PI);
   }
   angles.sort((a, b) => a - b);
-  // 流进同一格海的自然的河口两两之间的最近距离（格）
-  let closest = Infinity;
-  let close = 0;
-  for (const ends of bySea.values())
-    for (let i = 0; i < ends.length; i++)
-      for (let j = i + 1; j < ends.length; j++) {
-        const dx = mesh.kind === 'sphere' ? ends[i][0] - ends[j][0] - 2 * Math.round((ends[i][0] - ends[j][0]) / 2) : ends[i][0] - ends[j][0];
-        const dd = Math.hypot(dx, ends[i][1] - ends[j][1]) / sp;
-        closest = Math.min(closest, dd);
-        if (dd <= 1.6) close++;
-      }
-  return { median: angles[Math.floor(angles.length / 2)], p90: angles[Math.floor(angles.length * 0.9)], count: angles.length, stubs, merged, closest, close };
+  // 各自入海的河口里挨得不到 0.5 格、从差不多的方向（最后一段相差不到 90°）挤到一起的（两条河画成一个“V”）：只许在挪不开的小水面上
+  // （以河口为圆心 0.75 格的一圈都是陆地，比如只有一格的小海湾，几条河都流进它）。从窄海湾两岸迎面流进去的不算 V
+  let crowded = 0;
+  for (let i = 0; i < ends.length; i++)
+    for (let j = i + 1; j < ends.length; j++) {
+      const a = ends[i].p;
+      const b = ends[j].p;
+      const dx = mesh.kind === 'sphere' ? a[0] - b[0] - 2 * Math.round((a[0] - b[0]) / 2) : a[0] - b[0];
+      if (Math.hypot(dx, a[1] - b[1]) >= 0.5 * sp || ends[i].dir[0] * ends[j].dir[0] + ends[i].dir[1] * ends[j].dir[1] <= 0) continue;
+      let water = false;
+      for (let q = 0; q < 32 && !water; q++) water = field(w, a[0] + 0.75 * sp * Math.cos((q * Math.PI) / 16), a[1] + 0.75 * sp * Math.sin((q * Math.PI) / 16)) <= 0;
+      if (water) crowded++;
+    }
+  return { median: angles[Math.floor(angles.length / 2)], p90: angles[Math.floor(angles.length * 0.9)], count: angles.length, stubs, merged, turn, joinAngle, backward, crowded };
 }
 
-describe('河口沿岸线的法向进水（第十三轮）', () => {
-  it('一块地区：河口最后一段与岸线法向的夹角中位数不到 10°；没有海岸边不到 1.5 格的源头小河；同一格海里挨着的河口并成了一条', () => {
+describe('河口沿岸线的法向进水、挤在一起的河口（第十三轮）', () => {
+  it('一块地区：河口最后一段与岸线法向的夹角中位数不到 10°；没有海岸边不到 1.5 格的源头小河；河口附近不急转、不画钩子；挤在一起的河口挪开了', () => {
     const s = mouthStats(continents().world);
     expect(s.count).toBeGreaterThan(20);
     expect(s.median).toBeLessThan(10);
     expect(s.p90).toBeLessThan(30);
     expect(s.stubs).toBe(0);
-    expect(s.closest).toBeGreaterThan(1.6);
+    expect(s.turn).toBeLessThanOrEqual(60.5);
+    expect(s.joinAngle).toBeLessThan(36);
+    expect(s.backward).toBe(0);
+    expect(s.crowded).toBe(0);
   });
 
-  it('整个星球：同上', () => {
+  it('整个星球：同上（并进去的都接得顺）', () => {
     const s = mouthStats(planet().world);
     expect(s.count).toBeGreaterThan(20);
     expect(s.median).toBeLessThan(10);
     expect(s.p90).toBeLessThan(30);
     expect(s.stubs).toBe(0);
-    // 挨着的河口都并了；隔着一个窄海湾（两岸之间接不过去）的照旧各自入海
-    expect(s.close).toBeLessThanOrEqual(1);
+    expect(s.turn).toBeLessThanOrEqual(60.5);
     expect(s.merged).toBeGreaterThan(0);
+    expect(s.joinAngle).toBeLessThan(36);
+    expect(s.backward).toBe(0);
+    expect(s.crowded).toBe(0);
   });
 
   it('往水里多画一段（underShore）：只多出最后那段，岸线以前的带子不变', () => {

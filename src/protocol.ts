@@ -3,6 +3,7 @@ import type { DocTail, PreviewResult, ProvincesPreview, Timings, WorldDoc } from
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { PreviewPatch } from '../core/preview-world';
+import type { PackedRivers } from '../core/river-pack';
 import type { TerrainPatch, TerrainPreview } from '../core/terrain';
 import type { GeoFeature } from '../core/features';
 import type { ScriptIssue } from '../core/script';
@@ -62,6 +63,8 @@ export interface Snapshot {
   // rows：变了一小部分格的推导数组（比如冷暖画笔只动了一片的份额、适宜度）：只带变了的格（idx 是格，rows 依次是它们的值，
   // 每格 数组长度 / 格数 个），derived 里那一项也是 null，主线程在自己那一份的副本上补上
   same?: { base: number; derived: string[]; corrF: string[]; rows: Record<string, { idx: Int32Array; rows: ArrayBufferView }> };
+  // 地图上的河（河线与带子，第十三轮）：Worker 描好打包转交，主线程拆开直接用（见 core/river-pack.ts）
+  rivers?: PackedRivers;
 }
 
 // 轻快照：只改了名字、省份（推导没有重算）时只发这些，推导数组沿用主线程上已有的
@@ -138,6 +141,8 @@ export type Response =
       terrain?: TerrainPreview;
       // 预览世界：与当前世界的差别（previewWorld）
       world?: PreviewPatch;
+      // 预览世界的河（Worker 描好的，第十三轮）
+      rivers?: PackedRivers;
       doc?: WorldDoc;
       tail?: DocTail;
       thumb?: Uint8ClampedArray;

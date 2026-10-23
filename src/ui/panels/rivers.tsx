@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command, GuidePatch } from '../../../core/commands';
 import { findCell } from '../../../core/mesh';
 import { decodePath } from '../../../core/rivers';
-import { continueCourse, guideFlow, isRiverCell } from '../../../core/select';
+import { type GuideIssue, continueCourse, guideFlow, isRiverCell } from '../../../core/select';
 import { roundKm as km } from '../../../core/terrain';
 import type { Guide, World } from '../../../core/world';
-import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
+import { type RiverRef, cancelPreviews, exec, flashCells, hoverRiver, openPanel, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
@@ -116,7 +116,7 @@ const snapFlow = (v: number) => (v < 10 ? Math.round(v * 10) / 10 : Math.round(v
 
 function FlowSlider({ w, g }: { w: World; g: Guide }) {
   const thr = w.small.planet.riverThreshold;
-  const { total, natural } = guideFlow(w, w.derived, g);
+  const { total, natural, split } = guideFlow(w, w.derived, g);
   const lo = natural + 1.2;
   const hi = Math.min(natural + 200, Math.max(80, lo * 6));
   const [draft, setDraft] = useState<number | null | undefined>(undefined);
@@ -174,8 +174,8 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
     <DragSlider
       label="大小"
       pos={posOf(cur)}
-      text={cur === null ? '顺其自然' : `${riverSizeName(cur)} ${fmtFlow(cur * thr)} m³/s`}
-      title="这条河一共多少水；最左边是顺其自然（不另外加水，只有流进来的水）"
+      text={`${cur === null ? '顺其自然' : `${riverSizeName(cur)} ${fmtFlow(cur * thr)} m³/s`}${split > 0 ? ` · 分出去 ${Math.round(split * 100)}%` : ''}`}
+      title={`这条河一共多少水；最左边是顺其自然（不另外加水，只有流进来的水）${split > 0 ? `。算的是分出去之前的水：分出的地方往下这条河少了 ${Math.round(split * 100)}%（分出去的那几股带走了）` : ''}`}
       detent={DETENT}
       onDraft={draftTo}
       onCommit={(p) => void commit(p)}
@@ -326,6 +326,26 @@ function ShareSlider({ w, g }: { w: World; g: Guide }) {
   );
 }
 
+// 底部条上的提醒（第十三轮）：一句短话，悬停说原因，点一下在地图上标出出问题的那一段（不止一处时点一下换下一处）
+function IssueChip({ issues }: { issues: GuideIssue[] }) {
+  const [k, setK] = useState(0);
+  const x = issues[k % issues.length];
+  return (
+    <button
+      class="bar-chip warn"
+      title={`${x.why}（点一下在地图上标出这一段${issues.length > 1 ? '，再点看下一处' : ''}）`}
+      onClick={() => {
+        focusOn(x.cells);
+        flashCells(x.cells);
+        if (issues.length > 1) setK(k + 1);
+      }}
+    >
+      <TriangleAlert size={13} /> {x.text}
+      {issues.length > 1 ? ` 等 ${issues.length} 处` : ''}
+    </button>
+  );
+}
+
 // 选中的画的河：名字、换一个、大小、⋯、取消选择
 function GuideRiverBar({ w, g: own }: { w: World; g: Guide }) {
   // 另一个源头（sourceOf）：名字是它汇入的那条河的（改名、换一个都改那条河）
@@ -335,7 +355,7 @@ function GuideRiverBar({ w, g: own }: { w: World; g: Guide }) {
   // 固定下来的自然河没自己换过名字时，用那条河原来的盐
   const salt = g.salt ?? (g.nameKey ? w.small.featureNames[g.nameKey]?.salt : undefined) ?? 0;
   const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id: g.id, patch, label }, busy);
-  const warnings = riverInfo(w, { kind: 'guide', id: own.id })?.warnings ?? [];
+  const issues = riverInfo(w, { kind: 'guide', id: own.id })?.issues ?? [];
   const rt = riverTypeOfRiver(w, { kind: 'guide', id: own.id });
   return (
     <>
@@ -354,11 +374,7 @@ function GuideRiverBar({ w, g: own }: { w: World; g: Guide }) {
       <RiverTypeButton type={rt.type} auto={rt.chosen === null} />
       {own.branch ? <ShareSlider w={w} g={own} /> : <FlowSlider w={w} g={own} />}
       <AddButtons />
-      {warnings.length > 0 && (
-        <span class="bar-chip warn" title={warnings.join('；')}>
-          <TriangleAlert size={13} /> {warnings[0]}
-        </span>
-      )}
+      {issues.length > 0 && <IssueChip issues={issues} />}
       <button class={`bar-btn icon ${openPanel.value === 'river' ? 'on' : ''}`} data-panel="river" onClick={() => togglePanel('river')} title="粗细、终点、删掉这条河">
         <Ellipsis size={15} />
       </button>
@@ -398,8 +414,8 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
           <Dices size={15} /> 换一个
         </button>
       )}
-      <span class="bar-label">
-        {info.size} · {fmtFlow(info.flow)} m³/s · {info.dest}
+      <span class="bar-label" title={info.split > 0 ? `大小按分出去之前的水算：分出的地方往下这条河少了 ${Math.round(info.split * 100)}%` : undefined}>
+        {info.size} · {fmtFlow(info.flow)} m³/s{info.split > 0 ? ` · 分出去 ${Math.round(info.split * 100)}%` : ''} · {info.dest}
       </span>
       <RiverTypeButton type={rt.type} auto={rt.chosen === null} />
       <button
@@ -481,9 +497,9 @@ export function RiverMore() {
           {info.size} · {fmtFlow(info.flow)} m³/s · 约 {km(info.km).toLocaleString()} km · {info.dest}
         </p>
       )}
-      {info?.warnings.map((x) => (
-        <p class="small warn-text">
-          <TriangleAlert size={13} /> {x}
+      {info?.issues.map((x) => (
+        <p class="small warn-text" title={x.why}>
+          <TriangleAlert size={13} /> {x.text}：{x.why}
         </p>
       ))}
       {g.path && (

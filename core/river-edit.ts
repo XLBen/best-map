@@ -1,7 +1,7 @@
 import type { Command, GuidePatch } from './commands';
 import { wrapDelta } from './geo';
 import { findCell } from './mesh';
-import { courseStep, dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, pathSamples, roundPoint as roundPt, stemPath } from './rivers';
+import { courseStep, dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, pathSamples, roundPoint as roundPt, snapOnto, stemPath } from './rivers';
 import {
   type CourseOptions,
   type CoursePlan,
@@ -603,12 +603,77 @@ export function branchCourse(world: World, d: Derived, T: EditTarget, stroke: re
   const input = simplifyStroke(world, left.pts, opts.px);
   if (input.length < 2) return { blocked: '画得太短了' };
   input[0] = start;
-  const plan = courseFrom(world, d, { cells: [s], path: [start] }, dedupe(input), { endOnLand: opts.endOnLand, px: opts.px }, false);
+  const run = (pts: Pt[]) => courseFrom(world, d, { cells: [s], path: [start] }, dedupe(pts), { endOnLand: opts.endOnLand, px: opts.px }, false);
+  // 顺着干流的方向分出去（第十三轮）：开头一段从分出的地方顺着干流往下游，渐渐离开干流接到画的线上（不像支流那样直直地横着出去）。
+  // 这样画出来的格还要一样能用（不回到干流上、画得出来），不行时退一步（开头的方向取干流与画的方向之间），再不行照画的走
+  for (const lead of [1, 0.5]) {
+    const pts = tangentStart(world, T, input, lead);
+    if (!pts) break;
+    const plan = run(pts);
+    if (!plan.blocked && plan.cells.length >= 2 && !T.own.includes(plan.cells[1])) return { kind: 'branch', plan, cell: s };
+  }
+  const plan = run(input);
   if (plan.blocked) return { blocked: plan.blocked };
   if (plan.cells.length < 2) return { blocked: '画得太短了' };
   // 第二格又回到这条河上：没分出去
   if (T.own.includes(plan.cells[1])) return { blocked: '从这条河上起笔，往河外画出去' };
   return { kind: 'branch', plan, cell: s };
+}
+
+// 分出去的一股顺着干流分出来的开头：从 input[0]（分出的地方）起，开头的方向是干流在那里往下游的方向（lead 为 1；
+// 小于 1 时取它与画的方向之间），用一段三次 Bezier 曲线接到画的线上离起点约 1.2 格的那一点（到那里顺着画的线）。
+// 画的方向与干流往下游的方向差得超过 100°（往上游分）时不改，返回 null
+const BRANCH_LEAD = 1.2;
+export function tangentStart(world: World, T: EditTarget, input: readonly Pt[], lead: number): Pt[] | null {
+  const sp = world.mesh.spacing;
+  const sphere = world.mesh.kind === 'sphere';
+  const P0 = input[0];
+  // 干流在那里往下游的方向
+  const hit = snapOnto(T.points, P0[0], P0[1], 0, T.points.length - 1, sphere);
+  if (!hit) return null;
+  const a = T.points[hit.k];
+  const b = T.points[hit.k + 1];
+  const tl = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (!(tl > 0)) return null;
+  const td: Pt = [(b[0] - a[0]) / tl, (b[1] - a[1]) / tl];
+  // 画的线上离起点约 1.2 格的那一点与那里的方向
+  let acc = 0;
+  let q = -1;
+  let Q: Pt = [P0[0], P0[1]];
+  for (let k = 0; k + 1 < input.length; k++) {
+    const l = Math.hypot(input[k + 1][0] - input[k][0], input[k + 1][1] - input[k][1]);
+    if (acc + l >= BRANCH_LEAD * sp) {
+      const t = (BRANCH_LEAD * sp - acc) / l;
+      Q = [input[k][0] + (input[k + 1][0] - input[k][0]) * t, input[k][1] + (input[k + 1][1] - input[k][1]) * t];
+      q = k;
+      break;
+    }
+    acc += l;
+  }
+  if (q < 0) return null;
+  const ql = Math.hypot(input[q + 1][0] - input[q][0], input[q + 1][1] - input[q][1]) || 1;
+  const tq: Pt = [(input[q + 1][0] - input[q][0]) / ql, (input[q + 1][1] - input[q][1]) / ql];
+  const D = Math.hypot(Q[0] - P0[0], Q[1] - P0[1]);
+  const dir: Pt = [(Q[0] - P0[0]) / (D || 1), (Q[1] - P0[1]) / (D || 1)];
+  if (td[0] * dir[0] + td[1] * dir[1] < Math.cos((100 * Math.PI) / 180)) return null;
+  let t0: Pt = [td[0] * lead + dir[0] * (1 - lead), td[1] * lead + dir[1] * (1 - lead)];
+  const l0 = Math.hypot(t0[0], t0[1]) || 1;
+  t0 = [t0[0] / l0, t0[1] / l0];
+  const c1: Pt = [P0[0] + (t0[0] * D) / 3, P0[1] + (t0[1] * D) / 3];
+  const c2: Pt = [Q[0] - (tq[0] * D) / 3, Q[1] - (tq[1] * D) / 3];
+  const out: Pt[] = [[P0[0], P0[1]]];
+  const N = 6;
+  for (let j = 1; j <= N; j++) {
+    const u = j / N;
+    const v = 1 - u;
+    out.push(
+      roundPt([
+        v * v * v * P0[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u * u * u * Q[0],
+        v * v * v * P0[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u * u * u * Q[1],
+      ]),
+    );
+  }
+  return dedupe([...out, ...input.slice(q + 1).map((p) => [p[0], p[1]] as Pt)]);
 }
 
 // 给选中的河 T 加一个源头：stroke 从河上起笔往外（往上游）画，水从画的线的另一头流进这条河，算作这条河的一部分（同名）
