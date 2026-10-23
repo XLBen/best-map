@@ -146,16 +146,17 @@ float patternAt(int kind, vec2 world, float size, float seed) {
 
 // 岩性（第十三轮，colors.ts 的 lithLayer；每格插值）：r 硬岩、g 软岩、b 珊瑚砂、a 格里的潟湖（一格大的珊瑚岛）。
 // 平面与星球的地形着色器共用；没有岩性（全是 0）的地方画面不变
-const LITH_LAND_GLSL = `
+export const LITH_LAND_GLSL = `
     {
       float lowK = 1.0 - smoothstep(20.0, 160.0, hh);
       // 硬岩（火山岛的玄武岩）：暗、偏冷的灰，植被也压暗
       float lum = dot(col, vec3(0.299, 0.587, 0.114));
-      vec3 basalt = mix(vec3(lum), col, 0.6) * 0.42 + vec3(0.06, 0.06, 0.07);
-      col = mix(col, basalt, vLith.r * 0.85);
-      // 软岩（低平岛）：低处是沙，湿的地方是沼泽（青绿、偏暗）
-      vec3 soft = mix(vec3(0.36, 0.50, 0.42), vec3(0.86, 0.80, 0.60), smoothstep(0.15, 0.6, vLandCol.a));
-      col = mix(col, soft, vLith.g * lowK * 0.7);
+      // （第十三轮修：整个岛都是玄武岩的底色，大到两百公里、长满稀树草原也一眼看得出，不只陡坡）
+      vec3 basalt = mix(vec3(lum), col, 0.55) * 0.38 + vec3(0.06, 0.06, 0.07);
+      col = mix(col, basalt, vLith.r * 0.9);
+      // 软岩（低平岛）：低处是浅色的沙，湿的地方是沼泽（青绿、偏暗）；比周围的草原、森林都浅或都青
+      vec3 soft = mix(vec3(0.36, 0.50, 0.42), vec3(0.90, 0.85, 0.68), smoothstep(0.15, 0.6, vLandCol.a));
+      col = mix(col, soft, vLith.g * lowK * 0.8);
       // 珊瑚砂：白沙，海边最白
       float shoreK = 1.0 - smoothstep(0.0, 70.0, s);
       col = mix(col, vec3(0.95, 0.93, 0.85), vLith.b * mix(0.45, 0.95, shoreK));
@@ -166,8 +167,11 @@ const LITH_LAND_GLSL = `
       slope *= 1.0 - lag;
     }`;
 const LITH_SEA_GLSL = `
-    // 珊瑚砂的海底（潟湖、礁上）：青绿；珊瑚岛、小礁的岸边一圈白浪（约一格的十分之一宽）
-    col = mix(col, vec3(0.30, 0.76, 0.76), vLith.b * 0.8 * (1.0 - smoothstep(8.0, 60.0, depth)));
+    // 珊瑚砂的海底（潟湖、礁上）：青绿；珊瑚岛、小礁的岸边一圈白浪（约一格的十分之一宽）。
+    // 潟湖的边（第十三轮修）：按格插值的岩性加上格以下的噪声（格心为 0，与海岸细节同样的权重）再取阈值，
+    // 边是弯弯曲曲的，不是三角形的直边
+    float coralK = smoothstep(0.3, 0.7, vLith.b + weight * 0.5 * subN);
+    col = mix(col, vec3(0.30, 0.76, 0.76), coralK * 0.8 * (1.0 - smoothstep(8.0, 60.0, depth)));
     float surf = 1.0 - smoothstep(0.4, 1.0, -sPx / max(1.5, cellPx * 0.1));
     col = mix(col, vec3(0.94, 0.97, 0.97), min(1.0, vLith.b * 2.0) * surf * 0.8);`;
 
@@ -187,6 +191,7 @@ out vec4 vLandCol;
 out vec4 vLith;
 out vec4 vSeaCol;
 out float vElev;
+out float vSeaElev;
 out float vCoast;
 out vec2 vGrad;
 out vec2 vSeaGrad;
@@ -203,7 +208,9 @@ void main() {
   bool isLand = vCoast > 0.0;
   vLandCol = isLand ? col : other;
   vSeaCol = isLand ? other : col;
-  vElev = texelFetch(uElev, t, 0).r;
+  vec2 el = texelFetch(uElev, t, 0).rg;
+  vElev = el.r;
+  vSeaElev = el.g;
   vGrad = texelFetch(uGrad, t, 0).rg;
   vSeaGrad = texelFetch(uSeaGrad, t, 0).rg;
   vLith = texelFetch(uLith, t, 0);
@@ -238,6 +245,7 @@ precision highp float;
 in vec4 vLandCol;
 in vec4 vSeaCol;
 in float vElev;
+in float vSeaElev;
 in float vCoast;
 in vec2 vGrad;
 in vec2 vSeaGrad;
@@ -328,8 +336,11 @@ void main() {
     ${LITH_LAND_GLSL}
   } else {
     float seaDetail = uDetail * fbmFade(vWorld / uSpacing * 1.3, 3, cellPx / 1.3) * 25.0;
+    float subN = fbmSub(vWorld / uSpacing * 1.7 + 11.0, 3);
     col = vSeaCol.rgb;
-    hh = min(h + seaDetail, -2.0);
+    // 水深只按水面格的（第十三轮修）：陆地格上是挨着它的水面里最浅的那格的高程（colors.ts 的 shoreElevation），
+    // 不再把陆地的高程插值进来——陡的小岛四周的水不会整片三角形都画成浅水
+    hh = min(vSeaElev + seaDetail, -2.0);
     // 浅水：暖海偏青绿（alpha = 海水暖度），冷海偏灰绿
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
@@ -822,6 +833,7 @@ precision highp float;
 in vec4 vLandCol;
 in vec4 vSeaCol;
 in float vElev;
+in float vSeaElev;
 in float vCoast;
 in vec2 vGrad;
 in vec2 vSeaGrad;
@@ -925,8 +937,11 @@ void main() {
     ${LITH_LAND_GLSL}
   } else {
     float seaDetail = uDetail * fbmFade3(P * uNoiseK * 1.3, 3, cellPx / 1.3) * 25.0;
+    float subN = fbmSub3(P * uNoiseK * 1.7 + 11.0, 3);
     col = vSeaCol.rgb;
-    hh = min(h + seaDetail, -2.0);
+    // 水深只按水面格的（第十三轮修）：陆地格上是挨着它的水面里最浅的那格的高程（colors.ts 的 shoreElevation），
+    // 不再把陆地的高程插值进来——陡的小岛四周的水不会整片三角形都画成浅水
+    hh = min(vSeaElev + seaDetail, -2.0);
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
@@ -1114,12 +1129,24 @@ export interface Camera {
   proj?: Proj;
 }
 
+// 高程纹理的一格：r 高程，g 水面的高程（水面格就是自己的高程；陆地格是挨着的水面里最浅的，没有给时 −2 m）。
+// 陆海按海岸值（湖面 < 0）分
+export function packElevation(out: Float32Array, elevation: Float32Array, coast: Float32Array, shore: Float32Array | null, from: number, to: number) {
+  for (let i = from; i < to; i++) {
+    out[2 * i] = elevation[i];
+    out[2 * i + 1] = coast[i] <= 0 ? elevation[i] : shore ? shore[i] : -2;
+  }
+}
+
 export interface CellLayers {
   // 平滑层颜色（alpha：陆地为“沙质”程度，海为海水暖度）
   smooth: Uint8Array;
   // 对岸的颜色：陆地格是相邻水面的颜色，水面格是相邻陆地的颜色（没有对岸就是自己的）
   other: Uint8Array;
   elevation: Float32Array;
+  // 水面的高程（第十三轮修）：陆地格上是挨着它的水面格里最浅的高程（画水深、浅水只按水面，见 colors.ts 的 shoreElevation）；
+  // 水面格上不用（照 elevation）。省略时陆地格按 −2 m
+  shore?: Float32Array;
   coast: Float32Array;
   grad: Float32Array;
   // 海底的坡度（每格两个值，地图坐标；陆地、湖为 0）：海的晕渲。省略时没有
@@ -1614,12 +1641,19 @@ export class Renderer {
     }
   }
 
+  // 高程纹理（两个通道：高程、水面的高程）的打包：setLayers 的一份与幽灵用的一份
+  private elevPack = new Float32Array(0);
+  private elevGhost: Float32Array | null = null;
+
   setLayers(l: CellLayers) {
     const n = this.mesh?.n ?? 0;
     this.layersVersion++;
     this.upload(this.tex.color, l.smooth, n, 4);
     this.upload(this.tex.other, l.other, n, 4);
-    this.upload(this.tex.elev, l.elevation, n, 1);
+    this.elevPack = new Float32Array(n * 2);
+    packElevation(this.elevPack, l.elevation, l.coast, l.shore ?? null, 0, n);
+    this.elevGhost = null;
+    this.upload(this.tex.elev, this.elevPack, n, 2);
     this.upload(this.tex.coast, l.coast, n, 1);
     this.upload(this.tex.grad, l.grad, n, 2);
     this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
@@ -1683,7 +1717,10 @@ export class Renderer {
     const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, flat: base.flat, group: base.group };
     this.uploadRows(this.tex.color, src.smooth, rows, 4);
     this.uploadRows(this.tex.other, src.other, rows, 4);
-    this.uploadRows(this.tex.elev, src.elevation, rows, 1);
+    // 高程与水面的高程按行打包（陆海按这一份的海岸值分）
+    if (!this.elevGhost) this.elevGhost = this.elevPack.slice();
+    for (const r of rows) packElevation(this.elevGhost, src.elevation, src.coast, base.shore ?? null, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
+    this.uploadRows(this.tex.elev, this.elevGhost, rows, 2);
     this.uploadRows(this.tex.coast, src.coast, rows, 1);
     // 平涂、分组：显示着的是底子或上一次的幽灵时才换
     if (this.groupBase && src.group && (this.groupShown === this.groupBase || this.groupShown === this.ghostGroup)) {

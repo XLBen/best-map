@@ -96,7 +96,7 @@ export interface ColorOptions {
 // 湖在画面上是水面：海岸值取负（有岸线、有格以下的岸线细节）、高程取负的水深（浅水边）、坡度为 0
 // 按用到的数组缓存：高程、湖、水面、陆海、陆地程度（只改了名字、省份的轻快照沿用同一批数组）。
 // 预览世界只换变了的数组：整体干湿的预览高程不变、湖变了，不能只看高程，否则会画出旧的湖
-type StaticLayers = { coast: Float32Array; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array };
+type StaticLayers = { coast: Float32Array; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
 const staticCache = new WeakMap<Float32Array, { inputs: ArrayBufferView[]; value: StaticLayers }[]>();
 
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
@@ -150,7 +150,27 @@ function computeStatic(world: World): StaticLayers {
     seaGrad[2 * i] = gx;
     seaGrad[2 * i + 1] = gy;
   }
-  return { coast, grad, seaGrad, elevation };
+  return { coast, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
+}
+
+// 水面的高程（第十三轮修，地形层画水深、浅水用）：水面格（海岸值 ≤ 0，含湖）是自己的高程；
+// 陆地格是挨着它的水面格里最浅的那格的高程（至多 −2 m），不挨水面的陆地格 −2 m。
+// 画在陆地格三角形里的水（格以下的海岸细节戳出来的水、陡岛四周）按它插值，水深只来自水面格，不会被陆地的高程抬成一片浅水
+export function shoreElevation(mesh: World['mesh'], coast: Float32Array, elevation: Float32Array): Float32Array {
+  const out = new Float32Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) {
+    if (coast[i] <= 0) {
+      out[i] = elevation[i];
+      continue;
+    }
+    let best = -Infinity;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (coast[j] <= 0) best = Math.max(best, elevation[j]);
+    }
+    out[i] = Number.isFinite(best) ? Math.min(-2, best) : -2;
+  }
+  return out;
 }
 
 export function cellLayers(world: World, o: ColorOptions): CellLayers {
@@ -274,6 +294,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     smooth,
     other,
     elevation: st.elevation,
+    shore: st.shore,
     coast: st.coast,
     grad: st.grad,
     seaGrad: st.seaGrad,
