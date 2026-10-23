@@ -42,6 +42,7 @@ import {
   restoreKeep,
   restoredLandDelta,
   roundKm,
+  sizeText,
 } from './terrain';
 import { type NameCarry, REGION_KIND_INFO, applyNameCarry } from './features';
 import type { Mesh } from './mesh';
@@ -662,8 +663,9 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       });
       applyTerrain(world);
       // 小礁不看大小：画出来约半格大
-      const diameter = spec.kind === 'reef' ? world.mesh.spacing * world.kmPerUnit * 0.5 : spec.size * 2;
-      return { dirty: Dirty.Elevation, summary: `放了一个${ISLAND_KIND_INFO[spec.kind].name}（直径约 ${roundKm(diameter)} km）` };
+      const cellKm = world.mesh.spacing * world.kmPerUnit;
+      const size = spec.kind === 'reef' ? `直径约 ${roundKm(cellKm * 0.5)} km` : spec.size < cellKm * 0.5 ? sizeText(world, spec.size) : `直径约 ${roundKm(spec.size * 2)} km`;
+      return { dirty: Dirty.Elevation, summary: `放了一个${ISLAND_KIND_INFO[spec.kind].name}（${size}）` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);

@@ -14,6 +14,7 @@ import {
   chainIslands,
   combineStamps,
   islandSizeRangeKm,
+  sizeText,
   islandStamp,
   landStroke,
   previewLand,
@@ -795,7 +796,7 @@ export function islandTool(): ToolHandler {
     const name = ISLAND_KIND_INFO[spec.kind].name;
     const reef = spec.kind === 'reef';
     // 小礁不看大小：占一格（画出来的海岸约半格大，但它是一整格陆地），说一格有多大
-    const diameter = km(reef ? w.mesh.spacing * w.kmPerUnit : spec.size * 2);
+    const diameter = km(w.mesh.spacing * w.kmPerUnit);
     let block: string | null = null;
     if (spec.kind === 'atoll' && !w.causes.land[center.cell] && w.derived.tMean[center.cell] < 20) {
       block = `海水太凉（${Math.round(w.derived.tMean[center.cell])} °C），珊瑚岛要 20 °C 以上`;
@@ -807,7 +808,7 @@ export function islandTool(): ToolHandler {
     const preview: Preview = {
       layers: block ? [{ cells: stamp.footprint, color: [230, 90, 70], alpha: 0.75 }] : [],
       shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
-      hint: block ?? (reef ? `${name} · 一格（约 ${diameter} km）` : `${name} · ${diameter} km`),
+      hint: block ?? (reef ? `${name} · 一格（约 ${diameter} km）` : `${name} · ${sizeText(w, spec.size)}`),
       warn: !!block,
       ghost: block ? null : { cells: stamp.cells, delta: stamp.landDelta },
     };
@@ -897,7 +898,7 @@ export function chainTool(): ToolHandler {
       use = [];
       for (let k = 0; k < 40; k++) use.push(all[Math.round((k * (all.length - 1)) / 39)]);
     }
-    // 岛链用自己的种类和大小（小一号的岛最小到 islandMinCells，太小时岛心那一格成陆）
+    // 岛链用自己的种类和大小（小一号的岛最小一格，太小时岛心那一格成陆）
     const size = w ? Math.max(islandSizeRangeKm(w, o.chainKind)[0], o.chainKm) : o.chainKm;
     return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant };
   };
