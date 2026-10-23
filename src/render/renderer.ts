@@ -487,8 +487,9 @@ void main() {
 
   // 省界、省份着色、省份的高亮用切线换过的格
   int idG = seamCell(id, vUv);
+  vec4 fc = vec4(0.0);
   if (uHasFlat == 1 && id >= 0) {
-    vec4 fc = cellTex(uFlat, uFlatByGroup == 1 ? idG : id);
+    fc = cellTex(uFlat, uFlatByGroup == 1 ? idG : id);
     col = mix(col, fc.rgb, fc.a);
   }
   ${FX_BEGIN}
@@ -528,6 +529,8 @@ void main() {
         iso = max(iso, 1.0 - smoothstep(0.5, 1.5, abs(depth - T) / fw));
       }
       col = mix(col, vec3(0.45, 0.58, 0.66), 0.35 * iso);
+      // 平涂的海盖掉了前面的省份着色：再涂一次（海省默认不着色、A 为 0；用户给海省选了颜色时与写实风格一样涂上）
+      col = mix(col, fc.rgb, fc.a);
       col *= mix(1.0, 0.94 + 0.06 * shade, uShade);
     }
   } else if (land) {

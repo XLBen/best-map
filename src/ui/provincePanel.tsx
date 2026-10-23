@@ -5,7 +5,7 @@ import type { Command } from '../../core/commands';
 import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
-import { provinceDisplayColor } from '../../core/world';
+import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
 import { type ViewMode, exec, mapKm, mode, selectedProvince, world } from '../state';
 import { focusOn } from './camera';
 import { Seg } from './common';
@@ -107,7 +107,7 @@ export function ProvinceBar() {
         titles={{ auto: meta.land ? '按省份编号自动配色' : '海上的省份不着色', own: '给这个省份选一个颜色（只影响地图上的省份着色）' }}
         onChange={(v) => {
           if (v === 'auto' && !auto) void exec({ op: 'set_province', id, color: null }, '正在修改…');
-          if (v === 'own' && auto) void exec({ op: 'set_province', id, color: meta.land ? hex : '#4a7fb5' }, '正在修改…');
+          if (v === 'own' && auto) void exec({ op: 'set_province', id, color: meta.land ? hex : seaProvinceDefaultColor(id) }, '正在修改…');
         }}
       />
       {!auto && (

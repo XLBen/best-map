@@ -6,7 +6,7 @@ import { graphDistance } from './mesh';
 import { classOfKind, lakeCells } from './provinces';
 import { provinceCells } from './select';
 import { continents } from './testing/fixtures';
-import type { World } from './world';
+import { SEA_HUES, type World, seaProvinceDefaultColor } from './world';
 
 // 第十二轮：湖单独成省 / 并进旁边的陆地省；放湖、删湖之后省份跟着整理；海省默认不着色、省份可选颜色
 
@@ -172,5 +172,39 @@ describe('省份的颜色', () => {
     expect(w.small.provinces[seaProv].color).toBeUndefined();
     expect(provinceFlat(w, w.causes.province)[sea * 4 + 3]).toBe(0);
     expect(() => eng.exec({ op: 'set_province', id: seaProv, color: 'red' })).toThrow();
+  });
+
+  it('海省“自己选”先给的颜色：跳过海的蓝色一段、与海色差得远，同一编号总是同一个颜色', () => {
+    const hueOf = ([r, g, b]: number[]) => {
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const d = mx - mn;
+      if (d === 0) return 0;
+      const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return (h * 60 + 360) % 360;
+    };
+    // 写实（深蓝）与地图册（浅蓝灰的几层）的海色、原来给的 #4a7fb5
+    const seas = [
+      [0x4a, 0x7f, 0xb5],
+      [204, 224, 227],
+      [150, 181, 199],
+      [40, 70, 120],
+      [25, 50, 90],
+    ];
+    const seen = new Set<string>();
+    for (let id = 0; id < 2000; id++) {
+      const hex = seaProvinceDefaultColor(id);
+      expect(hex).toMatch(/^#[0-9a-f]{6}$/);
+      expect(seaProvinceDefaultColor(id)).toBe(hex);
+      seen.add(hex);
+      const v = parseInt(hex.slice(1), 16);
+      const c = [v >> 16, (v >> 8) & 255, v & 255];
+      const h = hueOf(c);
+      expect(h < SEA_HUES[0] - 1 || h > SEA_HUES[1] + 1, `${id} ${hex} ${h}`).toBe(true);
+      // 有颜色（不灰）
+      expect(Math.max(...c) - Math.min(...c)).toBeGreaterThan(80);
+      for (const s of seas) expect(Math.hypot(c[0] - s[0], c[1] - s[1], c[2] - s[2]), `${id} ${hex}`).toBeGreaterThan(90);
+    }
+    expect(seen.size).toBeGreaterThan(200);
   });
 });

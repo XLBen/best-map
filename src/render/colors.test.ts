@@ -383,4 +383,14 @@ describe('生态的颜色脚本、花纹与发光', () => {
     }
     expect(withoutFx(COMPOSE_SOURCES.planet)).toContain('vec3 Pf = sphereOf(world) * uNoiseK * 0.9;');
   });
+
+  it('地图册的海：平涂的海之后再涂一次省份着色（海省选了颜色时与写实风格一样看得到）', async () => {
+    const { COMPOSE_SOURCES } = await import('./renderer');
+    for (const [name, src] of Object.entries(COMPOSE_SOURCES)) {
+      const atlasSea = src.slice(src.indexOf('if (uStyle == 1) {'), src.indexOf('} else if (land) {'));
+      expect(atlasSea, name).toContain('col = vec3(0.80, 0.88, 0.89);');
+      expect(atlasSea.indexOf('col = mix(col, fc.rgb, fc.a);'), name).toBeGreaterThan(atlasSea.indexOf('col = vec3(0.80, 0.88, 0.89);'));
+    }
+  });
 });
+

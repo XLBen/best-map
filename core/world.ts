@@ -465,6 +465,22 @@ export function provinceDisplayColor(world: World, id: number): [number, number,
   return provinceColor(id);
 }
 
+// 海上的省份改成“自己选颜色”时先给的颜色（"#rrggbb"）：按编号取色相，但跳过海的蓝绿到蓝紫（150°–270°），
+// 饱和度、明度取中间一段，在写实与地图册的海上都一眼看得出来。同一个编号总是同一个颜色
+export const SEA_HUES: readonly [number, number] = [150, 270];
+export function seaProvinceDefaultColor(id: number): string {
+  const c = Math.imul(id + 1, 0x9e3779b1) >>> 0;
+  const span = 360 - (SEA_HUES[1] - SEA_HUES[0]);
+  const h = (SEA_HUES[1] + 5 + (c % (span - 10))) % 360;
+  const s = 0.6 + ((c >>> 12) % 16) / 100;
+  const l = 0.45 + ((c >>> 20) % 11) / 100;
+  // HSL → RGB
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+  return `#${[f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
 // 每个省份一个互不相同的 RGB：乘以奇数在 2^24 上是双射
 export function provinceColor(id: number): [number, number, number] {
   const c = Math.imul(id + 1, 0x9e3779b1) & 0xffffff;
