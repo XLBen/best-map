@@ -309,6 +309,7 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'paint_land':
     case 'add_island':
     case 'add_island_chain':
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
     case 'reroll_region':
       return ['landDelta', 'upliftDelta', 'province'];
     case 'paint_relief':
@@ -660,6 +661,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       r.cells.forEach((i, k) => {
         causes.landDelta[i] += r.landDelta[k];
         causes.upliftDelta[i] += r.upliftDelta[k];
+        causes.erodDelta[i] += r.erodDelta[k];
       });
       applyTerrain(world);
       // 小礁不看大小：画出来约半格大
@@ -674,6 +676,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       r.cells.forEach((i, k) => {
         causes.landDelta[i] += r.landDelta[k];
         causes.upliftDelta[i] += r.upliftDelta[k];
+        causes.erodDelta[i] += r.erodDelta[k];
       });
       applyTerrain(world);
       return { dirty: Dirty.Elevation, summary: `画了一条岛链：${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}` };

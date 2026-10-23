@@ -608,12 +608,20 @@ export const ISLAND_KINDS = [...CHAIN_KINDS, 'reef'] as const;
 export type IslandKind = (typeof ISLAND_KINDS)[number];
 export type ChainKind = (typeof CHAIN_KINDS)[number];
 export const ISLAND_KIND_INFO: Record<IslandKind, { name: string; hint: string }> = {
-  volcanic: { name: '火山岛', hint: '圆形，中间有高高的火山' },
+  volcanic: { name: '火山岛', hint: '圆形，中间有高高的火山，暗色的玄武岩' },
   continental: { name: '大陆岛', hint: '形状不规则，有丘陵' },
-  low: { name: '低平岛', hint: '平坦低矮，多沙洲' },
-  atoll: { name: '珊瑚岛', hint: '环形的低矮岛，中间是潟湖' },
-  reef: { name: '小礁', hint: '只占一格的小岛，画出来约半格大' },
+  low: { name: '低平岛', hint: '平坦低矮，多沙洲和沼泽' },
+  atoll: { name: '珊瑚岛', hint: '环形的白沙岛，中间是青绿色的浅潟湖' },
+  reef: { name: '小礁', hint: '只占一格的白沙小岛，四周一圈浪花，画出来约半格大' },
 };
+
+// 每种岛的岩性（第十三轮）：放岛时把新长出的陆地（珊瑚岛还有潟湖）的可蚀性（causes.erod）设成这个值，
+// 渲染按可蚀性给颜色（src/render/colors.ts 的 lithLayer），所以几种岛小到一两格也看得出来：
+//   火山岛 0.45：硬的玄武岩，暗色（生成的地形里可蚀性在 0.4–1.8，低于 0.62 的很少）；
+//   大陆岛不变（和周围的大陆一样）；
+//   低平岛 3.2：软，蚀得低平，沙与沼泽；
+//   小礁 4.3、珊瑚岛 4.8：珊瑚砂，白沙；珊瑚岛的潟湖（海格）也是 4.8，海底按它画成浅浅的青绿色潟湖（elevation.ts 的 lagoonFloor）
+export const ISLAND_ERODIBILITY: Record<IslandKind, number | null> = { volcanic: 0.45, continental: null, low: 3.2, atoll: 4.8, reef: 4.3 };
 // 给人看的公里数：百公里以上取整到十
 export const roundKm = (v: number) => (v >= 100 ? Math.round(v / 10) * 10 : Math.round(v));
 
@@ -690,6 +698,8 @@ export interface StampResult {
   cells: number[];
   landDelta: number[];
   upliftDelta: number[];
+  // 可蚀性的增量（岛的岩性，见 ISLAND_ERODIBILITY）
+  erodDelta: number[];
   // 岛的轮廓（预览用）：放岛后会是陆地的格
   footprint: number[];
 }
@@ -713,7 +723,7 @@ function centerCell(mesh: Mesh, x: number, y: number): number {
 // 第一项让现在的海岸值是 REEF_V；后两项保证海岸曲折调到 0 到 2 之间它都还在
 function reefStamp(world: World, spec: IslandSpec): StampResult {
   const { mesh, causes } = world;
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], footprint: [] };
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
   const c = centerCell(mesh, spec.x, spec.y);
   if (causes.land[c]) return out;
   const k = coastNoiseField(mesh, coastSeed(world))[c];
@@ -722,6 +732,7 @@ function reefStamp(world: World, spec: IslandSpec): StampResult {
   out.cells.push(c);
   out.landDelta.push(Math.max(0, target - causes.landness[c]));
   out.upliftDelta.push(0);
+  out.erodDelta.push(ISLAND_ERODIBILITY.reef! - causes.erod[c]);
   out.footprint = footprintOf(world, out);
   return out;
 }
@@ -745,7 +756,9 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   const sa = Math.sin(ang);
   const irregular = spec.kind === 'continental' ? 0.45 : spec.kind === 'low' ? 0.25 : 0.18;
   const core = COAST_AMP * Math.max(rough, 0.2) + 60;
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], footprint: [] };
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
+  // 珊瑚岛的环与潟湖里的海格（岛心半径的 0.96 倍以内）：岩性按珊瑚砂（潟湖的海底画成浅水）
+  const coral: boolean[] = [];
   const reach = R * 1.9;
   // 整个星球：在岛心的切平面里取位置（等距方位投影），高纬度、接缝上的岛形状大小都和赤道上一样
   const center: V3 | null = sphere ? toUnit(spec.x, spec.y) : null;
@@ -795,23 +808,29 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     let target: number;
     let lift = 0;
     if (spec.kind === 'atoll') {
-      // 环礁：一圈陆地，中间潟湖（浅水），外侧很快变深
+      // 环礁：一圈陆地，中间潟湖，外侧很快变深。潟湖的海岸值是 −core（海岸噪声怎么调都还是海），
+      // 深浅由海底的后处理定（浅浅的十几到几十米，见 elevation.ts 的 lagoonFloor）
       const ring = Math.abs(dd - 0.8);
-      target = ring < 0.16 ? core * 0.6 : dd < 0.8 ? -30 : -core * 2;
+      target = ring < 0.16 ? core * 0.6 : dd < 0.8 ? -core : -core * 2;
     } else {
       target = dd < 1 ? core + (1 - dd) * (spec.kind === 'low' ? 40 : 400) : core - (dd - 1) * 3 * core;
-      if (spec.kind === 'volcanic') lift = 1.1 * Math.pow(Math.max(0, 1 - dd), 1.4);
+      // 火山岛（第十三轮）：硬的玄武岩（可蚀性 0.45，约为平常的一半）蚀得慢，抬升减半后与原来一样高；
+      // 山顶有个火山口（抬升凹下去一点，山顶平缓）
+      if (spec.kind === 'volcanic') lift = Math.max(0, 0.5 * Math.pow(Math.max(0, 1 - dd), 1.4) - 0.2 * Math.exp(-(dd / 0.12) * (dd / 0.12)));
       else if (spec.kind === 'continental')
         lift = 0.25 * Math.max(0, 1 - dd) * (0.6 + 0.4 * fbm(shape, dx / R + 1, dy / R, 3, 3));
     }
     const L = causes.landness[i];
     let delta = 0;
-    if (spec.kind === 'atoll' && dd < 0.8 - 0.16) delta = Math.min(0, target - L);
+    // 潟湖两头都改：深海抬到 −core，原来的浅滩、陆地压到 −core
+    if (spec.kind === 'atoll' && dd < 0.8 - 0.16) delta = target - L;
     else delta = Math.max(0, target - L);
-    if (delta === 0 && lift === 0) continue;
+    const reefy = spec.kind === 'atoll' && dd < 0.96;
+    if (delta === 0 && lift === 0 && !reefy) continue;
     out.cells.push(i);
     out.landDelta.push(delta);
     out.upliftDelta.push(lift);
+    coral.push(reefy);
   }
   out.footprint = footprintOf(world, out);
   // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）。
@@ -830,10 +849,15 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
         out.cells.splice(at, 0, c0);
         out.landDelta.splice(at, 0, need);
         out.upliftDelta.splice(at, 0, 0);
+        coral.splice(at, 0, false);
       }
       out.footprint = footprintOf(world, out);
     }
   }
+  // 岩性：新长出的陆地（原来就是陆地的不动）、珊瑚岛的潟湖与环上的海格设成这种岛的可蚀性
+  const erod = ISLAND_ERODIBILITY[spec.kind];
+  const fresh = new Set(out.footprint);
+  out.erodDelta = out.cells.map((i, k) => (erod === null || causes.land[i] || !(fresh.has(i) || coral[k]) ? 0 : erod - causes.erod[i]));
   return out;
 }
 
@@ -1121,28 +1145,34 @@ function chainIslandsSphere(world: World, spec: ChainSpec, scale: number): Islan
 }
 
 
-// 多个岛依次叠加（后一个看见前一个的结果），返回合并后的增量
+// 多个岛依次叠加（后一个看见前一个的结果，海岸值与岩性都是），返回合并后的增量
 export function combineStamps(world: World, specs: IslandSpec[]): StampResult {
   const { causes } = world;
-  const landSaved = new Map<number, number>();
-  const acc = new Map<number, { land: number; lift: number }>();
+  const saved = new Map<number, [number, number]>();
+  const acc = new Map<number, { land: number; lift: number; erod: number }>();
   for (const spec of specs) {
     const r = islandStamp(world, spec);
     r.cells.forEach((i, k) => {
-      if (!landSaved.has(i)) landSaved.set(i, causes.landness[i]);
+      if (!saved.has(i)) saved.set(i, [causes.landness[i], causes.erod[i]]);
       causes.landness[i] += r.landDelta[k];
-      const a = acc.get(i) ?? { land: 0, lift: 0 };
+      causes.erod[i] += r.erodDelta[k];
+      const a = acc.get(i) ?? { land: 0, lift: 0, erod: 0 };
       a.land += r.landDelta[k];
       a.lift += r.upliftDelta[k];
+      a.erod += r.erodDelta[k];
       acc.set(i, a);
     });
   }
-  for (const [i, v] of landSaved) causes.landness[i] = v;
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], footprint: [] };
+  for (const [i, [l, e]] of saved) {
+    causes.landness[i] = l;
+    causes.erod[i] = e;
+  }
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
   for (const [i, a] of acc) {
     out.cells.push(i);
     out.landDelta.push(a.land);
     out.upliftDelta.push(a.lift);
+    out.erodDelta.push(a.erod);
   }
   out.footprint = footprintOf(world, out);
   return out;
