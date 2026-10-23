@@ -32,7 +32,6 @@ import {
   prefs,
   redrawTick,
   reference,
-  riverPending,
   riverStyleOverride,
   season,
   selectedFeature,
@@ -468,7 +467,9 @@ export function MapView() {
       // 导出图片的干净画面不带幽灵海岸（画的是现在的世界）。幽灵海岸改的是画出来的那份底子（预览世界的陆地与当前世界相同）
       applyGhost(shown, clean ? null : preview);
       // 选中的河（画河时）、河流列表里鼠标停着的河：沿河一道淡黄的光，压在工具的图形下面
-      const glow = clean ? [] : [...(tool.value === 'river' && selectedRiver.value ? riverGlow(w, selectedRiver.value) : []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : [])];
+      // 正在改这条河（原来的样子先不画）时不亮
+      const editing = !!riverStyleOverride.value?.hide || !!riverStyleOverride.value?.cells;
+      const glow = clean ? [] : [...(tool.value === 'river' && selectedRiver.value && !editing ? riverGlow(w, selectedRiver.value) : []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : [])];
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = category.value === 'provinces';
@@ -642,7 +643,9 @@ export function MapView() {
     // 键与当前世界的相同（预览没改描河读的数组、河道，比如涂生态、改名）时直接用当前世界的路径；不同时按键另缓存一份
     let shownPaths: { key: unknown[]; paths: OverlayPaths } | null = null;
     const pathsOf = (s: World): OverlayPaths => {
-      const override = riverStyleOverride.value;
+      // 预览世界里是改好的河：改着的那条河照画（先不画它只对当前世界）
+      const ov = riverStyleOverride.value;
+      const override = ov && (ov.hide || ov.cells) ? null : ov;
       const key = riverPathsKey(s, override);
       if (paths && samePathsKey(key, pathsKey)) return paths;
       if (!shownPaths || !samePathsKey(shownPaths.key, key)) shownPaths = { key, paths: buildPaths(s, override) };
@@ -670,7 +673,6 @@ export function MapView() {
       void selectedLake.value;
       void lakeSizeDraft.value;
       void hoverRiver.value;
-      void riverPending.value;
       void labelGroups.value;
       void adjustPreview.value;
       void sliderActive.value;

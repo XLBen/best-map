@@ -41,7 +41,6 @@ import {
   mode,
   options,
   reachRange,
-  riverPending,
   selectedProvince,
   selectedLake,
   selectedRiver,
@@ -96,7 +95,6 @@ import {
   NewRiverTypePick,
   LakeBar,
   NewLakeTypePick,
-  RiverPendingBar,
   UnmetChip,
 } from './extras';
 import type { CategoryDef, SliderDef, ToolDef } from './types';
@@ -198,16 +196,16 @@ const riverModes = {
   key: 'riverMode' as const,
   label: '走向',
   options: [
-    { value: 'flow', label: '顺地势', hint: '点一下或拖一下，河顺着地势流' },
-    { value: 'course', label: '自定义走向', hint: '按住画出河道，河完全照着走' },
+    { value: 'flow', label: '顺地势', hint: '新画的河：点一下或拖一下，河顺着地势流（改已有的河总是照着画的线走）' },
+    { value: 'course', label: '自定义走向', hint: '新画的河：按住画出河道，河完全照着走' },
   ],
 };
 const riverEnds = {
   kind: 'choice' as const,
   key: 'riverEnd' as const,
   options: [
-    { value: 'flow', label: '画完接着流', hint: '终点在陆地上时，顺着地势流到海、湖或别的河' },
-    { value: 'sink', label: '画完就消失', hint: '终点在陆地上时，河在那里渗进地下' },
+    { value: 'flow', label: '画完接着流', hint: '画的线停在陆地上时（新画的河、从河上改道、接长），顺着地势流到海、湖或别的河' },
+    { value: 'sink', label: '画完就消失', hint: '画的线停在陆地上时（新画的河、从河上改道、接长），河在那里渗进地下' },
   ],
 };
 
@@ -456,15 +454,13 @@ const defs: ToolDef[] = [
     icon: Spline,
     name: '画河',
     short: '画河',
-    how: '顺地势：点源头起一条河 · 自定义走向：按住画出河道，河照着走 · 点一条河选中它',
-    // 选中一条河、等着确认截走时，底部条换成那条河的设置（新河的大小先收起来）
-    size: { ...RIVER, enabled: () => !selectedRiver.value && !riverPending.value },
+    how: '从河上起笔是改这条河，从别处起笔是画新的河 · 点一条河选中它，拖它的控制点改走向',
+    // 选中一条河时，底部条换成那条河的设置（新河的大小先收起来）
+    size: { ...RIVER, enabled: () => !selectedRiver.value },
     bar: () =>
-      riverPending.value
-        ? [{ kind: 'custom', render: RiverPendingBar }]
-        : selectedRiver.value
-          ? [{ kind: 'custom', render: RiverBar }]
-          : [riverModes, ...(options.value.riverMode === 'course' ? [riverEnds] : []), { kind: 'custom', render: NewRiverTypePick }],
+      selectedRiver.value
+        ? [{ kind: 'custom', render: RiverBar }]
+        : [riverModes, riverEnds, { kind: 'custom', render: NewRiverTypePick }],
     create: (env) => riverTool(env.zoom),
   },
   {
@@ -606,11 +602,8 @@ const lastTool: Partial<Record<Category, ToolId>> = {};
 
 export function setTool(id: ToolId) {
   const from = category.value;
-  // 离开画河：选中的河、等着确认的那一笔都不要了
-  if (tool.value === 'river' && id !== 'river') {
-    riverPending.value?.cancel();
-    selectedRiver.value = null;
-  }
+  // 离开画河：选中的河不要了
+  if (tool.value === 'river' && id !== 'river') selectedRiver.value = null;
   // 离开放湖：选中的湖不要了
   if (tool.value === 'lake' && id !== 'lake') selectedLake.value = null;
   if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;

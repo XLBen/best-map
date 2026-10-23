@@ -8,7 +8,7 @@ import { decodePath } from '../../../core/rivers';
 import { continueCourse, guideFlow, isRiverCell } from '../../../core/select';
 import { roundKm as km } from '../../../core/terrain';
 import type { Guide, World } from '../../../core/world';
-import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverPending, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
+import { type RiverRef, cancelPreviews, exec, hoverRiver, openPanel, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
@@ -22,6 +22,7 @@ import {
   holdRiverBarPreview,
   pinCommand,
   previewRiverBar,
+  riverCutPick,
   riverInfo,
   selectRiver,
 } from '../riverCourse';
@@ -295,7 +296,6 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
   const info = riverInfo(w, { kind: 'natural', cell });
   if (!info) return null;
   const f = info.feature;
-  const cut = pinCommand(w, cell, true);
   const rt = riverTypeOfRiver(w, { kind: 'natural', cell });
   return (
     <>
@@ -326,16 +326,12 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
         <Pin size={15} /> 固定这条河
       </button>
       <button
-        class="bar-btn"
-        disabled={!cut}
-        onMouseEnter={() => cut && previewRiverBar(cut.cmd, cut.after, cut.estimate, 0)}
-        onMouseLeave={clearRiverBarPreview}
+        class={`bar-btn ${riverCutPick.value ? 'on' : ''}`}
         onClick={() => {
-          if (!cut) return;
-          clearRiverBarPreview();
-          void execAndSelect(cut.cmd, '正在计算河流…');
+          riverCutPick.value = !riverCutPick.value;
+          if (!riverCutPick.value) clearRiverBarPreview();
         }}
-        title={cut ? '这里往下的河没了（水在这里渗进地下），上游照旧；红色是会变干的河段' : '这里是源头'}
+        title="点了以后在这条河上点一下选位置：那里往下的河没了（水在那里渗进地下），上游照旧；悬停时先看会变干的河段。也可以直接拖终点（实心圆）到想要的位置"
       >
         <Scissors size={15} /> 从这里往下去掉
       </button>
@@ -354,33 +350,17 @@ export function RiverBar() {
   const sel = selectedRiver.value;
   // 换了选中的河、底部条收起来了（换了工具、按了数字键）：底部条上的预览不要了。
   // 不然鼠标停在“从这里往下去掉”上时换走，回到画河时地图上还画着那个预览
-  useEffect(() => () => clearRiverBarPreview(), [sel]);
+  useEffect(
+    () => () => {
+      clearRiverBarPreview();
+      riverCutPick.value = false;
+    },
+    [sel],
+  );
   if (!w || !sel) return null;
   if (sel.kind === 'natural') return <NaturalRiverBar w={w} cell={sel.cell} />;
   const g = guideOf(w, sel.id);
   return g ? <GuideRiverBar w={w} g={g} /> : null;
-}
-
-// 穿过别的河：截走它 / 到这里汇入 / 取消（回车 = 截走它，Esc = 取消）；从河中间、源头起笔：改道 / 重画整条「赤江」 / 取消
-export function RiverPendingBar() {
-  const p = riverPending.value;
-  if (!p) return null;
-  return (
-    <>
-      <span class="bar-value warn-text">{p.text}</span>
-      <button class="bar-btn primary" onClick={() => void p.capture()} title="回车">
-        {p.confirm ?? '截走它'}
-      </button>
-      {p.join && (
-        <button class="bar-btn" onMouseEnter={() => p.showJoin(true)} onMouseLeave={() => p.showJoin(false)} onClick={() => void p.join!()} title="画的河在碰到那条河的地方汇进去，后面画的不要了">
-          到这里汇入
-        </button>
-      )}
-      <button class="bar-btn" onClick={() => p.cancel()} title="Esc">
-        取消
-      </button>
-    </>
-  );
 }
 
 // 选中的河没了（撤销、删掉）：它的“⋯”也关上

@@ -265,25 +265,45 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     },
     // 画的河汇入别的河：在汇合的那格里离那条河的线最近的点截住，画到那条线上
     finish() {
-      for (const { line, cell } of joins) {
-        let best: { k: number; p: [number, number]; d: number } | null = null;
-        for (let k = line.points.length - 1; k >= 0 && line.cells![k] === cell; k--) {
-          const hit = project(cell, line.points[k][0], line.points[k][1]);
-          if (hit && (!best || hit.d < best.d)) best = { k, p: hit.p, d: hit.d };
-        }
-        if (!best) continue;
-        const keep = best.k + 1;
-        line.points.length = keep;
-        line.flow.length = keep;
-        line.cells!.length = keep;
-        line.mul!.length = keep;
-        line.points.push(best.p);
-        line.flow.push(line.flow[keep - 1]);
-        line.cells!.push(cell);
-        line.mul!.push(line.mul![keep - 1]);
-      }
+      for (const { line, cell } of joins) cutAtJoin(line, cell, (x, y) => project(cell, x, y));
     },
   };
+}
+
+// 汇入别的河的线（每个点带着格）在汇合的那一格里截住：那格里（从线尾往回）离那条河的线最近的点，最后一点画到那条线上。
+// project 给出一点投影到那条河的线上的点与距离（离得太远为 null）。地图上画的河与画河时的预览共用（汇入的地方画得一样）
+export function cutAtJoin(
+  line: { points: [number, number][]; flow: number[]; cells?: number[]; mul?: number[] },
+  cell: number,
+  project: (x: number, y: number) => { p: [number, number]; d: number } | null,
+): boolean {
+  let best: { k: number; p: [number, number]; d: number } | null = null;
+  for (let k = line.points.length - 1; k >= 0 && line.cells![k] === cell; k--) {
+    const hit = project(line.points[k][0], line.points[k][1]);
+    if (hit && (!best || hit.d < best.d)) best = { k, p: hit.p, d: hit.d };
+  }
+  if (!best) return false;
+  const keep = best.k + 1;
+  line.points.length = keep;
+  line.flow.length = keep;
+  line.cells!.length = keep;
+  if (line.mul) line.mul.length = keep;
+  line.points.push(best.p);
+  line.flow.push(line.flow[keep - 1]);
+  line.cells!.push(cell);
+  line.mul?.push(line.mul[keep - 1]);
+  return true;
+}
+
+// 一点投影到河线 line 上格 cell 附近的几段（cell 在线上的第一个到最后一个点，前后各多一段）；隔得太远（3 格以上）为 null
+export function projectNear(line: RiverLine, cell: number, x: number, y: number, spacing: number, sphere: boolean): { p: [number, number]; d: number } | null {
+  const cells = line.cells;
+  if (!cells) return null;
+  const from = cells.indexOf(cell);
+  if (from < 0) return null;
+  const to = cells.lastIndexOf(cell);
+  const hit = snapOnto(line.points, x, y, Math.max(0, from - 1), Math.min(line.points.length - 1, to + 1), sphere);
+  return hit && hit.d <= 3 * spacing ? hit : null;
 }
 
 // 点 (x, y) 到折线 line 第 from 到 to 个点之间那几段上最近的点：p 是那一点，k 是第几段，d 是距离。

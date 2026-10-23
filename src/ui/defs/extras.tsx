@@ -5,7 +5,7 @@ import { endemicPicked, removePickedEndemic } from '../tools';
 
 // 注册表里引用的几个小部件：底部条上的当前生态、“没涂成”的提醒，工具列表下方的设置
 export { NamesBar, NamesExtras } from '../panels/names';
-export { RiverBar, RiverExtras, RiverPendingBar } from '../panels/rivers';
+export { RiverBar, RiverExtras } from '../panels/rivers';
 export { NewRiverTypePick } from '../panels/riverTypes';
 export { LakeBar, NewLakeTypePick } from '../panels/lakes';
 export { ProvinceBar, ProvinceColorToggle, ProvinceExtras } from '../provincePanel';

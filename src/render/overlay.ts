@@ -187,11 +187,41 @@ function addPolyline(p: Path2D, pts: readonly [number, number][], sphere: boolea
   }
 }
 
-// 拖一条画的河的“粗细”时先这样画（不等 worker，立即看到）；hide：先不画它（拖“大小”时用预览的样子代替）
+// 拖一条画的河的“粗细”时先这样画（不等 worker，立即看到）；hide：先不画它（拖“大小”、改这条河时用预览的样子代替）。
+// cells（改一条自然的河时）：自然的河上两头都在这些格里的那几段先不画（id 为 ''）
 export interface RiverStyleOverride {
   id: string;
   width?: number;
   hide?: boolean;
+  cells?: ReadonlySet<number>;
+}
+
+// 一条河线上两头的格都在 cells 里的那几段（keep 为 false 时是其余的段）：拆成几条线
+export function splitRiverLine(line: RiverLine, cells: ReadonlySet<number>, keep: boolean): RiverLine[] {
+  const out: RiverLine[] = [];
+  const c = line.cells;
+  if (!c) return keep ? [] : [line];
+  let cur: number[] = [];
+  const flush = () => {
+    if (cur.length > 1) {
+      const pick = <T>(a: T[] | undefined) => (a ? cur.map((k) => a[k]) : undefined);
+      const piece: RiverLine = { points: pick(line.points)!, flow: pick(line.flow)!, cells: pick(line.cells) };
+      if (line.mul) piece.mul = pick(line.mul);
+      if (line.type) piece.type = pick(line.type);
+      if (line.guide !== undefined) piece.guide = line.guide;
+      out.push(piece);
+    }
+    cur = [];
+  };
+  for (let k = 0; k + 1 < line.points.length; k++) {
+    const inside = cells.has(c[k]) && cells.has(c[k + 1]);
+    if (inside === keep) {
+      if (!cur.length) cur.push(k);
+      cur.push(k + 1);
+    } else flush();
+  }
+  flush();
+  return out;
 }
 
 // 河的路径缓存的键：描河读的数组（流量、流向、湖面、高程、陆海；推导换了就换）、河的门槛、
@@ -201,6 +231,7 @@ export function riverPathsKey(world: World, override: RiverStyleOverride | null)
   return [
     ...riverLinesKey(world),
     override ? `${override.id}|${override.width ?? ''}|${override.hide ? 1 : 0}` : '',
+    override?.cells ?? null,
     // 河流类型（第三批）：类型的颜色、画法、粗细（按内容）
     riverTypesSignature(world.small.riverTypes),
   ];
@@ -258,7 +289,8 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
   const typed: TypedBuckets = { map: new Map() };
   const add = (line: RiverLine, scale = 1) => (types && line.type ? addTypedRiver(buckets, typed, line, thr, sphere, types, scale) : addRiver(buckets, line, thr, sphere, scale));
   for (const line of riverLines(world)) {
-    if (!override || line.guide !== override.id) add(line);
+    if (override?.cells && line.guide === undefined) for (const piece of splitRiverLine(line, override.cells, false)) add(piece);
+    else if (!override || line.guide !== override.id) add(line);
     else if (!override.hide) add(line, override.width !== undefined ? override.width / (own?.width ?? 1) : 1);
   }
   const rivers = sortedBuckets(buckets);
@@ -266,6 +298,8 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
   const lockedGuides = new Path2D();
   const sinks: [number, number][] = [];
   for (const g of small.guides) {
+    // 改着的这条河：标记也先不画（预览画改好的样子）
+    if (override?.hide && g.id === override.id) continue;
     // 画出来的那条线（与河一致；整个星球上沿线展开经度，跨过接缝的线是连续的）
     const pts = guideShape(world, g);
     addPolyline(g.locked ? lockedGuides : guides, pts, sphere);
