@@ -165,6 +165,7 @@ describe('整个星球的气候', () => {
 describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
   it('与 golden-full 同一组加长的操作（含洋流强弱、撤销与重做）', () => {
     // 加山挡风之前记下的 core/golden-full.json（planet）里风、洋流、气候往后的几项
+    // 第十三轮：参考操作里放的岛有了岩性（火山岛抬升减半、可蚀性变了，岛上的高程、降水往后跟着变），与山挡风无关，这九项重录
     const FROZEN: Record<string, string> = {
       'derived.windSX': '7f20aaf7ba887e51',
       'derived.windSY': '953a8cfe334432a5',
@@ -173,17 +174,17 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
       'derived.continentality': '8d7378377565d571',
       'derived.currentX': 'daf9f25265bc4c7a',
       'derived.currentY': 'e231f3f0ce14af61',
-      'derived.sstAnom': '15c504aef4e5d9a4',
-      'derived.tS': '27b7cd6bbfd11180',
-      'derived.tW': '1752dc613d57c5b9',
-      'derived.pS': '3e531f913985639a',
-      'derived.pW': '1125d9c714cb4fa4',
-      'derived.precip': '57bc9946fc17ee72',
-      'derived.moisture': '79ba6632442d947e',
+      'derived.sstAnom': '69462c8bb7be7e84',
+      'derived.tS': '0ee9607fc706298e',
+      'derived.tW': '06d718357783474b',
+      'derived.pS': 'd6902d997f477e8c',
+      'derived.pW': 'ffa598d2b18ac3dd',
+      'derived.precip': 'c9b7d8c4d0dab6f7',
+      'derived.moisture': '28d5ce203234f1d2',
       'derived.corrT': '680cda049b5b311f',
       'derived.corrP': 'b707062b22d3bfbf',
-      'derived.discharge': 'd93f0c082bae792f',
-      'derived.dominant': '8d05968b26841f7c',
+      'derived.discharge': 'ead87f943a982c6c',
+      'derived.dominant': 'e9aca5f3f6749493',
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
       'causes.province': '86a8490029146900',
     };
