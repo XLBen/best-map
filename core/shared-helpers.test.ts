@@ -57,7 +57,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
   // 抽出前的 traceRivers（曲流与 Chaikin 平滑写在循环里）。第十二轮起入海、入湖的河画到画面上的岸线（shoreCrossing，
   // 找不到时退回两格的中点），出湖的河从湖岸画起；第十二轮修起汇合处顺着水多的那条往下画（一样多时编号小的），
   // 支流的最后一点画到干流平滑后的线上（ends：第几条线的最后一点画在哪里，取现在的结果）：这里照样改了，其余逐位照旧
-  function traceBefore(world: World, ends: ([number, number] | null)[]): RiverLine[] {
+  function traceBefore(world: World, ends: Map<string, [number, number]>): RiverLine[] {
     const { mesh, derived: d, causes, small } = world;
     const n = mesh.n;
     const thr = small.planet.riverThreshold;
@@ -107,7 +107,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
         }
         if (!isRiver(r)) break;
         if (visited[r] || main[r] !== c) {
-          pts.push(ends[lines.length] ?? [xAt(r, cx), mesh.y[r]]);
+          pts.push(ends.get(`${pts[0][0]},${pts[0][1]}`) ?? [xAt(r, cx), mesh.y[r]]);
           flow.push(d.discharge[r]);
           break;
         }
@@ -151,13 +151,33 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     const now = traceRivers(w);
     const old = traceBefore(
       w,
-      now.map((l) => (l.into !== undefined ? l.points[l.points.length - 1] : null)),
+      // 汇入别的河的线的最后一点（按线头认：海岸边的小河不画了，下标对不上）
+      new Map(now.filter((l) => l.into !== undefined).map((l) => [`${l.points[0][0]},${l.points[0][1]}`, l.points[l.points.length - 1]])),
     );
     expect(now.length).toBeGreaterThan(10);
-    // 现在每条线还多记了每个点在哪一格（cells），点与流量逐位不变
-    expect(now.map(({ points, flow }) => ({ points, flow }))).toEqual(old);
     expect(now.every((l) => l.cells?.length === l.points.length)).toBe(true);
-    expect(new Uint8Array(flat(now).buffer)).toEqual(new Uint8Array(flat(old).buffer));
+    // 第十三轮起河口那一段改成沿岸线的法向（normalMouth）、海岸边的源头小河不画、挨着的河口并成一条（tidyMouths）：
+    // 这几样只改线尾（并进别的河口时最多从河口往回约 1.5 格再接过去），之前的点与流量仍与抽出前逐位相同；不入海、不并的线整条逐位相同
+    const sp = w.mesh.spacing;
+    const byHead = new Map(old.map((l) => [`${l.points[0][0]},${l.points[0][1]}`, l]));
+    let whole = 0;
+    for (const l of now) {
+      const o = byHead.get(`${l.points[0][0]},${l.points[0][1]}`);
+      expect(o).toBeDefined();
+      if (!l.mouth && !o!.points.length) continue;
+      let same = 0;
+      while (same < l.points.length && same < o!.points.length && l.points[same][0] === o!.points[same][0] && l.points[same][1] === o!.points[same][1] && l.flow[same] === o!.flow[same]) same++;
+      if (same === l.points.length && same === o!.points.length) {
+        whole++;
+        expect(new Uint8Array(flat([l]).buffer)).toEqual(new Uint8Array(flat([o!]).buffer));
+        continue;
+      }
+      let tail = 0;
+      for (let k = Math.max(0, same - 1); k + 1 < l.points.length; k++) tail += Math.hypot(l.points[k + 1][0] - l.points[k][0], l.points[k + 1][1] - l.points[k][1]);
+      expect(tail).toBeLessThan((l.mouth ? 1.6 : 3.5) * sp);
+      expect(same).toBeGreaterThan(0);
+    }
+    expect(whole).toBeGreaterThan(now.length / 2);
   });
 
   it('不改动传进来的点', () => {

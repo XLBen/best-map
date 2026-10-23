@@ -134,6 +134,11 @@ export const guideSchema = z.object({
   end: z.literal('sink').optional(),
   // 河流类型（第三批）：id 的规则与生态相同
   type: typeIdSchema.optional(),
+  // 分出去的一股（第十三轮，分流、三角洲）：cells[0] 在干流上（不是这条河的格，不改它的流向），水在那里按 share 分出去，
+  // 沿这条河道流走，干流往下少这么多（流向仍是一格一个下游，只是流量按比例沿两条链加减，见 hydrology.ts）
+  branch: z.object({ share: z.number().min(0.05).max(0.5) }).optional(),
+  // 一条河的另一个源头（第十三轮）：这条河道汇入那条画的河（河道 id），算作它的一部分：同一个名字（地名里是同一条河）
+  sourceOf: z.string().max(40).optional(),
 });
 export type Guide = z.output<typeof guideSchema>;
 

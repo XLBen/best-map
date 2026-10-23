@@ -20,6 +20,7 @@ import {
   pick,
   pinCommand,
   riverAt,
+  riverAddMode,
   riverCutPick,
   riverGlow,
   riverInfo,
@@ -873,5 +874,84 @@ describe('连着改：终点 → 源头 → 终点', () => {
     } finally {
       vi.mocked(exec).mockImplementation(async () => true);
     }
+  });
+});
+
+describe('分一股出去、加一个源头（第十三轮）：按一下按钮，再从选中的河上起笔画', () => {
+  // 自然大河中段的一格与垂直于河的方向
+  function across(w: World) {
+    const d = w.derived;
+    const f = d.features.filter((x) => x.type === 'river' && x.guide === undefined).sort((a, b) => b.cells.length - a.cells.length)[0];
+    const stem = riverStem(w, d, f.cells[Math.floor(f.cells.length / 2)]).cells;
+    return { stem, cell: (k: number) => stem[k] };
+  }
+
+  it('分一股出去：命令是带 branch 的 add_guide，分出的那一格在这条河上；Esc 不分了', async () => {
+    const { w, t } = setup();
+    const { stem } = across(w);
+    const s = w.mesh.spacing;
+    let ok = false;
+    for (let k = Math.floor(stem.length / 2); k < stem.length - 3 && !ok; k++) {
+      for (const side of [1, -1]) {
+        selectedRiver.value = { kind: 'natural', cell: stem[k] };
+        riverAddMode.value = 'branch';
+        vi.mocked(exec).mockClear();
+        const a = at(w, stem[k - 1]);
+        const b = at(w, stem[k + 1]);
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const p0 = at(w, stem[k]);
+        const p1: Pt = [p0[0] - ((b[1] - a[1]) / l) * side * 4 * s, p0[1] + ((b[0] - a[0]) / l) * side * 4 * s];
+        const pts = line(w, p0, p1);
+        t.down?.(ptr(w, pts[0]));
+        for (const p of pts.slice(1)) t.move?.(ptr(w, p), true);
+        const hint = t.preview().hint ?? '';
+        await t.up?.(ptr(w, pts[pts.length - 1]));
+        if (!vi.mocked(exec).mock.calls.length) continue;
+        expect(hint).toContain('分一股出去');
+        const cmd = lastExec();
+        if (cmd.op !== 'add_guide') throw new Error(cmd.op);
+        expect(cmd.guide.branch?.share).toBeGreaterThan(0);
+        expect(stem).toContain(cmd.guide.cells[0]);
+        expect(cmd.guide.spring).toBe(false);
+        ok = true;
+        break;
+      }
+    }
+    expect(ok).toBe(true);
+    riverAddMode.value = 'branch';
+    expect(t.escape?.()).toBe(true);
+    expect(riverAddMode.value).toBeNull();
+  });
+
+  it('加一个源头：自然的河先固定下来（一步 batch），画的那段 sourceOf 它', async () => {
+    const { w, t } = setup();
+    const { stem } = across(w);
+    const s = w.mesh.spacing;
+    let ok = false;
+    for (let k = Math.floor(stem.length / 3); k < stem.length - 3 && !ok; k++) {
+      for (const side of [1, -1]) {
+        selectedRiver.value = { kind: 'natural', cell: stem[k] };
+        riverAddMode.value = 'source';
+        vi.mocked(exec).mockClear();
+        const a = at(w, stem[k - 1]);
+        const b = at(w, stem[k + 1]);
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const p0 = at(w, stem[k]);
+        const p1: Pt = [p0[0] - ((b[1] - a[1]) / l) * side * 4 * s - ((b[0] - a[0]) / l) * 2 * s, p0[1] + ((b[0] - a[0]) / l) * side * 4 * s - ((b[1] - a[1]) / l) * 2 * s];
+        await drag(t, w, line(w, p0, p1));
+        if (!vi.mocked(exec).mock.calls.length) continue;
+        const cmd = lastExec();
+        if (cmd.op !== 'batch') throw new Error(cmd.op);
+        const [pin, add] = cmd.commands;
+        if (pin.op !== 'add_guide' || add.op !== 'add_guide') throw new Error();
+        expect(pin.guide.id).toBeTruthy();
+        expect(add.guide.sourceOf).toBe(pin.guide.id);
+        expect(add.guide.spring).toBe(true);
+        expect(pin.guide.cells).toContain(add.guide.cells[add.guide.cells.length - 1]);
+        ok = true;
+        break;
+      }
+    }
+    expect(ok).toBe(true);
   });
 });
