@@ -3,7 +3,7 @@ import type { Command } from '../core/commands';
 import type { ProvincesPreview } from '../core/engine';
 import { continents } from '../core/testing/fixtures';
 import type { Request, Response } from './protocol';
-import { type Again, busy, changeNote, editsIdle, exec, newWorld, onlyEditsPending, previewProvinces, toast, whenEditsIdle, world } from './state';
+import { busy, changeNote, editsIdle, exec, newWorld, onlyEditsPending, previewProvinces, whenEditsIdle, world } from './state';
 
 // 主线程与 Worker 之间的排队：这里没有真的 Worker，换成一个假的，记下发来的请求，测试决定什么时候回复
 
@@ -24,36 +24,19 @@ class FakeWorker {
 }
 vi.stubGlobal('Worker', FakeWorker);
 
-const kinds = (fw: FakeWorker) => fw.sent.map((m) => m.req.kind);
 const lastId = (fw: FakeWorker) => fw.sent[fw.sent.length - 1].id;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-describe('排队与“换个形状”', () => {
-  it('后面还有排队的编辑时不换（换掉的会是排在最后的那一步）；算完再换；连点两下照样换', async () => {
+describe('放岛之后的提示条（第十三轮）', () => {
+  it('只有撤销，没有“换个形状”（只用鼠标：每放一个岛自动换一个形状）', async () => {
     world.value = continents().world;
     const island: Command = { op: 'set_planet', patch: { solar: 1 } };
-    const stroke: Command = { op: 'set_planet', patch: { solar: 1.01 } };
-    const again: Again = { label: '换个形状', next: vi.fn(() => island) };
-    const a = exec(island, '正在造岛…', again);
+    const a = exec(island, '正在造岛…');
     const fw = FakeWorker.last!;
     fw.reply(lastId(fw), { ok: true, summary: '放了一个岛' });
     await a;
-    const run = changeNote.value!.again!.run;
-    // 岛算完了，后面又排了一笔
-    const b = exec(stroke);
-    toast.value = null;
-    run();
-    expect(toast.value).toMatchObject({ text: '等排队的几步算完再换' });
-    expect(again.next).not.toHaveBeenCalled();
-    expect(kinds(fw)).toEqual(['exec', 'exec']);
-    fw.reply(lastId(fw), { ok: true, summary: '画了一笔' });
-    await b;
-    // 排队的都算完了：换的就是最后一步
-    run();
-    run();
-    expect(again.next).toHaveBeenCalledTimes(2);
-    expect(kinds(fw)).toEqual(['exec', 'exec', 'replaceLast', 'replaceLast']);
-    for (const m of fw.sent.slice(2)) fw.reply(m.id, { ok: true, summary: '换了个形状' });
+    expect(changeNote.value).toMatchObject({ head: '放了一个岛', undoable: true });
+    expect(Object.keys(changeNote.value!)).not.toContain('again');
     await tick();
   });
 });

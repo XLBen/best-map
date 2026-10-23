@@ -260,6 +260,7 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
   // 海底：按离岸距离的大陆架 → 陆架坡折 → 陆坡 → 陆隆 → 深海（见 seafloor）
   seafloor(world, elevation);
+  lagoonFloor(world, elevation);
 
   // 湖：挖一个洼地，由水文按溢出口蓄水。
   // 以紧贴湖面的一圈格里最低的为基准往下挖：它就是溢出口，湖面 = 它的高度，
@@ -719,6 +720,48 @@ export function seafloor(world: World, elevation: Float32Array) {
       z,
     };
     seafloorMemo.set(mesh, [entry, ...(seafloorMemo.get(mesh) ?? [])].slice(0, 2));
+  }
+}
+
+// 珊瑚岛的潟湖（第十三轮）：可蚀性是珊瑚砂（≥ LAGOON_ERODIBILITY，只有放珊瑚岛时才这么软，见 terrain.ts 的 ISLAND_ERODIBILITY）的海格
+// 是潟湖或环上的缺口，海底是浅浅的珊瑚砂：挨着陆地的约 −15 m，往里每格深 12 m，最深 −50 m（按格号带一点起伏）。
+// 在海底的剖面（seafloor）之后改，不进它的缓存
+export const LAGOON_ERODIBILITY = 4.6;
+export function lagoonFloor(world: World, elevation: Float32Array) {
+  const { mesh, causes } = world;
+  const { off, adj } = mesh;
+  const n = mesh.n;
+  const land = causes.land;
+  const erod = causes.erod;
+  let step: Int32Array | null = null;
+  const queue: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (land[i] || erod[i] < LAGOON_ERODIBILITY) continue;
+    step ??= new Int32Array(n).fill(-1);
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      if (land[adj[e]]) {
+        step[i] = 0;
+        queue.push(i);
+        break;
+      }
+    }
+  }
+  if (!step) return;
+  for (let h = 0; h < queue.length; h++) {
+    const i = queue[h];
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
+      if (land[j] || step[j] >= 0 || erod[j] < LAGOON_ERODIBILITY) continue;
+      step[j] = step[i] + 1;
+      queue.push(j);
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    if (land[i] || erod[i] < LAGOON_ERODIBILITY) continue;
+    // 和陆地不连着的（只有潟湖本身、很少见）按最深算
+    const k = step[i] < 0 ? 3 : step[i];
+    const jitter = ((Math.imul(i + 1, 0x9e3779b1) >>> 0) / 4294967296 - 0.5) * 6;
+    elevation[i] = -Math.min(50, 15 + 12 * k + jitter);
   }
 }
 

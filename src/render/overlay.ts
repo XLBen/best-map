@@ -76,21 +76,22 @@ function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw: numbe
   }
 }
 
-// 一条河线 → 要画的河。scale：再乘的粗细（拖“粗细”时）；types：河流类型（带类型的点再乘类型的粗细）
-export function riverDraw(line: RiverLine, thr: number, spacing: number, types: readonly RiverType[] | null, scale = 1): RiverDraw {
+// 一条河线 → 要画的河。scale：再乘的粗细（拖“粗细”时）；types：河流类型（带类型的点再乘类型的粗细）；
+// underShore：河口往水里多画多长（格）。只给合成时按陆地裁掉水面那部分的地图上的河用，河口正好停在画出来的岸线上
+export function riverDraw(line: RiverLine, thr: number, spacing: number, types: readonly RiverType[] | null, scale = 1, underShore = 0): RiverDraw {
   const tags = types && line.type ? line.type : null;
   const typeMul = (k: number) => {
     const t = tags ? tags[k] : 0;
     return scale * (t > 0 ? (types![t - 1]?.width ?? 1) : 1);
   };
-  const rb = riverRibbon(line, thr, spacing, typeMul);
+  const rb = riverRibbon(line, thr, spacing, typeMul, underShore ? { underShore } : undefined);
   if (!tags || !tags.some((t) => t > 0 && types![t - 1])) return { rb };
   return { rb, type: Uint8Array.from(tags) };
 }
 
-// 一串河线画成要画的河（预览的河、测试用；地图上的河见 buildPaths）
+// 一串河线画成要画的河（测试用，与地图上的河同一套：河口多画 0.3 格进水里，合成时按陆地裁掉；见 buildPaths）
 export function riverDraws(world: World, lines: RiverLine[]): RiverDraw[] {
-  return lines.map((line) => riverDraw(line, world.small.planet.riverThreshold, world.mesh.spacing, null));
+  return lines.map((line) => riverDraw(line, world.small.planet.riverThreshold, world.mesh.spacing, null, 1, 0.3));
 }
 
 // 一次画的河：画布上要描的几样东西（按颜色合成一笔：同色的带子一次填，交汇处不会叠出深色）
@@ -407,7 +408,8 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
   // 带类型的河（第三批）：只在世界里有河流类型时分开画
   const types = small.riverTypes?.length && world.derived.riverType ? small.riverTypes : null;
   const rivers: RiverDraw[] = [];
-  const add = (line: RiverLine, scale = 1) => rivers.push(riverDraw(line, thr, mesh.spacing, types, scale));
+  // 地图上的河在合成一步里按陆地裁（renderer 的 uRiver），河口多画 0.3 格进水里，裁出来正好停在岸线上
+  const add = (line: RiverLine, scale = 1) => rivers.push(riverDraw(line, thr, mesh.spacing, types, scale, 0.3));
   for (const line of riverLines(world)) {
     if (override?.cells && line.guide === undefined) for (const piece of splitRiverLine(line, override.cells, false)) add(piece);
     else if (!override || line.guide !== override.id) add(line);

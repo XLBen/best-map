@@ -1401,9 +1401,30 @@ export function guideFeatures(world: World, d: Derived, terrain: Float32Array = 
   const thr = world.small.planet.riverThreshold;
   const globe = mesh.kind === 'sphere';
   const out: GeoFeature[] = [];
+  // 另一个源头（sourceOf）：它汇入的那条有名字的画的河还在时，不单独成一个地物，格并进那条河（同一个名字）
+  const byId = new Map(world.small.guides.map((g) => [g.id, g]));
+  const rootOf = (g: Guide): Guide => {
+    let r = g;
+    for (let guard = 0; r.sourceOf !== undefined && guard < 16; guard++) {
+      const p = byId.get(r.sourceOf);
+      if (!p || p === g || !named(p)) break;
+      r = p;
+    }
+    return r;
+  };
+  const extra = new Map<string, number[]>();
   for (const g of world.small.guides) {
-    if (!named(g)) continue;
-    const cells = Int32Array.from(guideBody(world, d, g).reverse());
+    if (!named(g) || g.sourceOf === undefined) continue;
+    const root = rootOf(g);
+    if (root === g) continue;
+    const list = extra.get(root.id) ?? [];
+    list.push(...guideBody(world, d, g).reverse());
+    extra.set(root.id, list);
+  }
+  for (const g of world.small.guides) {
+    if (!named(g) || rootOf(g) !== g) continue;
+    const more = extra.get(g.id);
+    const cells = Int32Array.from(more ? [...new Set([...guideBody(world, d, g).reverse(), ...more])] : guideBody(world, d, g).reverse());
     if (!cells.length) continue;
     const mouth = cells[0];
     const q = Math.max(d.discharge[mouth], thr);

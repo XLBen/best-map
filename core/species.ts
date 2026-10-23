@@ -239,19 +239,44 @@ const make = (id: string, name: string, color: string, terrain: string, competit
   return sp;
 };
 
-// 一套接近地球的默认生态（年均温与湿润程度的分区接近 Whittaker 生物群系图），供架空世界在此基础上修改或替换
+// 一套接近地球的默认生态（年均温与湿润程度的分区接近 Whittaker 生物群系图），供架空世界在此基础上修改或替换。
+// 第十三轮换了配色：相邻的生态更容易分开（CIEDE2000 最近的相邻一对从约 4 到约 9），仍是自然的颜色
 export const DEFAULT_SPECIES: Species[] = [
   make('ice', '冰盖', '#eef3f7', 'arctic', 8, { t0: -40, t1: -17, m0: 0, m1: 50 }),
-  make('tundra', '苔原', '#a9b49a', 'arctic', 3, { t0: -17, t1: -9, m0: 0.12, m1: 50 }),
-  make('taiga', '针叶林', '#4f7d5c', 'forest', 3, { t0: -9, t1: 3, m0: 0.55, m1: 50 }),
-  make('temperate_forest', '温带阔叶林', '#6a9e55', 'forest', 3, { t0: 3, t1: 14, m0: 0.9, m1: 50 }),
-  make('steppe', '温带草原', '#c2bd7c', 'steppe', 2, { t0: -6, t1: 16, m0: 0.25, m1: 0.6 }),
-  make('shrubland', '地中海灌木', '#a7a35b', 'hills', 3.5, { t0: 12, t1: 20, m0: 0.3, m1: 0.9 }, ['winterRain']),
-  make('subtropical_forest', '亚热带常绿林', '#4e9a4a', 'forest', 3, { t0: 14, t1: 21, m0: 1.0, m1: 50 }),
-  make('savanna', '稀树草原', '#b5b259', 'savanna', 3, { t0: 20, t1: 40, m0: 0.3, m1: 0.72 }),
-  make('dry_forest', '热带干燥林', '#7f9e45', 'forest', 3, { t0: 20, t1: 40, m0: 0.72, m1: 1.4 }),
-  make('monsoon_forest', '热带季雨林', '#5f9c3c', 'jungle', 3.2, { t0: 20, t1: 40, m0: 0.9, m1: 2.5 }, ['summerRain']),
-  make('rainforest', '热带雨林', '#2c7d3f', 'jungle', 4, { t0: 22, t1: 40, m0: 1.4, m1: 50 }),
-  make('wetland', '沼泽湿地', '#5c8a7a', 'marsh', 6, { t0: -2, t1: 40, m0: 0.5, m1: 50 }, ['wetland', 'flat']),
-  make('desert', '荒漠', '#e3d3a0', 'desert', 1, { t0: -6, t1: 40, m0: 0, m1: 0.15 }),
+  make('tundra', '苔原', '#a8ab8e', 'arctic', 3, { t0: -17, t1: -9, m0: 0.12, m1: 50 }),
+  make('taiga', '针叶林', '#3d6a52', 'forest', 3, { t0: -9, t1: 3, m0: 0.55, m1: 50 }),
+  make('temperate_forest', '温带阔叶林', '#8aac5a', 'forest', 3, { t0: 3, t1: 14, m0: 0.9, m1: 50 }),
+  make('steppe', '温带草原', '#c9c27c', 'steppe', 2, { t0: -6, t1: 16, m0: 0.25, m1: 0.6 }),
+  make('shrubland', '地中海灌木', '#a08c58', 'hills', 3.5, { t0: 12, t1: 20, m0: 0.3, m1: 0.9 }, ['winterRain']),
+  make('subtropical_forest', '亚热带常绿林', '#3c8c58', 'forest', 3, { t0: 14, t1: 21, m0: 1.0, m1: 50 }),
+  make('savanna', '稀树草原', '#d2ad56', 'savanna', 3, { t0: 20, t1: 40, m0: 0.3, m1: 0.72 }),
+  make('dry_forest', '热带干燥林', '#959a3e', 'forest', 3, { t0: 20, t1: 40, m0: 0.72, m1: 1.4 }),
+  make('monsoon_forest', '热带季雨林', '#55a02c', 'jungle', 3.2, { t0: 20, t1: 40, m0: 0.9, m1: 2.5 }, ['summerRain']),
+  make('rainforest', '热带雨林', '#1d6633', 'jungle', 4, { t0: 22, t1: 40, m0: 1.4, m1: 50 }),
+  make('wetland', '沼泽湿地', '#4c8c86', 'marsh', 6, { t0: -2, t1: 40, m0: 0.5, m1: 50 }, ['wetland', 'flat']),
+  make('desert', '荒漠', '#efd8a8', 'desert', 1, { t0: -6, t1: 40, m0: 0, m1: 0.15 }),
 ];
+
+// 第十三轮以前的默认颜色（按 id）：存档、检查点里的世界还是这些颜色时，画的时候换成新的默认颜色（speciesColor），
+// 用户自己改过的颜色不动
+export const OLD_DEFAULT_COLORS: Readonly<Record<string, string>> = {
+  tundra: '#a9b49a',
+  taiga: '#4f7d5c',
+  temperate_forest: '#6a9e55',
+  steppe: '#c2bd7c',
+  shrubland: '#a7a35b',
+  subtropical_forest: '#4e9a4a',
+  savanna: '#b5b259',
+  dry_forest: '#7f9e45',
+  monsoon_forest: '#5f9c3c',
+  rainforest: '#2c7d3f',
+  wetland: '#5c8a7a',
+  desert: '#e3d3a0',
+};
+const NEW_DEFAULT_COLORS = new Map(DEFAULT_SPECIES.map((sp) => [sp.id, sp.color]));
+
+// 画在地图上、色块里的生态颜色：还是旧的默认颜色时换成新的默认颜色
+export function speciesColor(sp: Pick<Species, 'id' | 'color'>): string {
+  const old = OLD_DEFAULT_COLORS[sp.id];
+  return old !== undefined && sp.color.toLowerCase() === old ? (NEW_DEFAULT_COLORS.get(sp.id) ?? sp.color) : sp.color;
+}

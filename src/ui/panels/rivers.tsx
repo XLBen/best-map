@@ -1,5 +1,5 @@
 import { effect } from '@preact/signals';
-import { Dices, Ellipsis, LockOpen, Pin, ScanSearch, Scissors, Trash2, TriangleAlert, X } from 'lucide-preact';
+import { Dices, Ellipsis, LockOpen, Pin, ScanSearch, Scissors, Split, Sprout, Trash2, TriangleAlert, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command, GuidePatch } from '../../../core/commands';
@@ -22,6 +22,7 @@ import {
   holdRiverBarPreview,
   pinCommand,
   previewRiverBar,
+  riverAddMode,
   riverCutPick,
   riverInfo,
   selectRiver,
@@ -254,14 +255,88 @@ function endChoice(w: World, g: Guide): number {
   return m;
 }
 
+// “分一股出去”“加一个源头”（第十三轮）：按一下，再从这条河上起笔画（不用同时按键；再按一下或 Esc 不画了）
+function AddButtons() {
+  const m = riverAddMode.value;
+  return (
+    <>
+      <button
+        class={`bar-btn ${m === 'branch' ? 'on' : ''}`}
+        onClick={() => (riverAddMode.value = m === 'branch' ? null : 'branch')}
+        title="按一下，再从这条河上起笔往外画：从那里分一股水出去（约三成），画到海里、湖里、别的河上，也可以画回这条河的下游。多分几股就是三角洲。Esc 不分了"
+      >
+        <Split size={15} /> 分一股出去
+      </button>
+      <button
+        class={`bar-btn ${m === 'source' ? 'on' : ''}`}
+        onClick={() => (riverAddMode.value = m === 'source' ? null : 'source')}
+        title="按一下，再从这条河上起笔往外画：画的另一头是这条河的又一个源头，水流进这条河（同一条河、同一个名字）。Esc 不加了"
+      >
+        <Sprout size={15} /> 加一个源头
+      </button>
+    </>
+  );
+}
+
+// 分出去的一股分多少水（5%–50%）：拖动时地图上先按估计画，停一下换成确切的；松手执行
+const SLO = 0.05;
+const SHI = 0.5;
+function ShareSlider({ w, g }: { w: World; g: Guide }) {
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => setDraft(null), [g]);
+  const share = g.branch?.share ?? 0.3;
+  const cur = draft ?? share;
+  const valueAt = (p: number) => Math.round((SLO + (SHI - SLO) * p) * 100) / 100;
+  const name = guideName(w, g);
+  const cmdFor = (v: number): Command => ({ op: 'update_guide', id: g.id, patch: { branch: { share: v } }, label: `${quoted(name)}分的水改成 ${Math.round(v * 100)}%` });
+  const done = () => {
+    riverStyleOverride.value = null;
+    clearRiverBarPreview();
+    setDraft(null);
+  };
+  return (
+    <DragSlider
+      label="分水"
+      pos={clamp01((cur - SLO) / (SHI - SLO))}
+      text={`${Math.round(cur * 100)}%`}
+      title="从干流分出来多少水（干流往下少这么多）"
+      onDraft={(p) => {
+        const v = valueAt(p);
+        setDraft(v);
+        if (v === share) {
+          riverStyleOverride.value = null;
+          clearRiverBarPreview();
+          return;
+        }
+        riverStyleOverride.value = { id: g.id, hide: true };
+        const s0 = w.derived.discharge[g.cells[0]];
+        const est = g.cells.map((c, k) => (k === 0 ? v * s0 : Math.max(0, w.derived.discharge[c] + (v - share) * s0)));
+        previewRiverBar(cmdFor(v), applyPatch(g, { branch: { share: v } }), est);
+      }}
+      onCommit={(p) => {
+        const v = valueAt(p);
+        if (v === share) return done();
+        setDraft(v);
+        holdRiverBarPreview();
+        cancelPreviews();
+        void exec(cmdFor(v), '正在计算河流…').finally(done);
+      }}
+      onCancel={done}
+    />
+  );
+}
+
 // 选中的画的河：名字、换一个、大小、⋯、取消选择
-function GuideRiverBar({ w, g }: { w: World; g: Guide }) {
+function GuideRiverBar({ w, g: own }: { w: World; g: Guide }) {
+  // 另一个源头（sourceOf）：名字是它汇入的那条河的（改名、换一个都改那条河）
+  const parent = own.sourceOf !== undefined ? guideOf(w, own.sourceOf) : undefined;
+  const g = parent ?? own;
   const f = guideFeature(w, g.id);
   // 固定下来的自然河没自己换过名字时，用那条河原来的盐
   const salt = g.salt ?? (g.nameKey ? w.small.featureNames[g.nameKey]?.salt : undefined) ?? 0;
   const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id: g.id, patch, label }, busy);
-  const warnings = riverInfo(w, { kind: 'guide', id: g.id })?.warnings ?? [];
-  const rt = riverTypeOfRiver(w, { kind: 'guide', id: g.id });
+  const warnings = riverInfo(w, { kind: 'guide', id: own.id })?.warnings ?? [];
+  const rt = riverTypeOfRiver(w, { kind: 'guide', id: own.id });
   return (
     <>
       <NameInput fkey={`guide:${g.id}`} value={f?.name ?? ''} placeholder="起个名字" onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
@@ -275,8 +350,10 @@ function GuideRiverBar({ w, g }: { w: World; g: Guide }) {
           <LockOpen size={15} /> 恢复自动
         </button>
       )}
+      {parent && <span class="bar-label" title="这一段是这条河的又一个源头：名字与它相同">源头</span>}
       <RiverTypeButton type={rt.type} auto={rt.chosen === null} />
-      <FlowSlider w={w} g={g} />
+      {own.branch ? <ShareSlider w={w} g={own} /> : <FlowSlider w={w} g={own} />}
+      <AddButtons />
       {warnings.length > 0 && (
         <span class="bar-chip warn" title={warnings.join('；')}>
           <TriangleAlert size={13} /> {warnings[0]}
@@ -345,6 +422,7 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
       >
         <Scissors size={15} /> 从这里往下去掉
       </button>
+      <AddButtons />
       <button class="bar-btn icon" onClick={() => focusOn(info.cells)} title="在地图上看">
         <ScanSearch size={15} />
       </button>
@@ -364,6 +442,7 @@ export function RiverBar() {
     () => () => {
       clearRiverBarPreview();
       riverCutPick.value = false;
+      riverAddMode.value = null;
     },
     [sel],
   );

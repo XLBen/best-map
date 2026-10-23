@@ -1,3 +1,4 @@
+import { speciesColor } from '../../../core/species';
 import { Globe, Layers, Redo2, Undo2, WandSparkles, Wrench } from 'lucide-preact';
 import type { PanelId } from '../../state';
 import { canRedo, canUndo, openPanel, options, redo, togglePanel, undo, world } from '../../state';
@@ -51,7 +52,7 @@ export function TopBar() {
         <span class="tb-sep" />
         <PanelButton panel="layers" icon={Layers} label="图层" disabled={!w} title="底图、地名、河流、边界、比例尺、参考图" />
         <button class={`tb-btn ${openPanel.value === 'biome' ? 'open' : ''}`} data-panel="biome" disabled={!w} onClick={() => togglePanel('biome')} title="要涂的生态：色板与生态类型">
-          <span class="biome-dot" style={{ background: sp?.color ?? 'transparent' }} />
+          <span class="biome-dot" style={{ background: sp ? speciesColor(sp) : 'transparent' }} />
           <span class="tb-label">生态</span>
         </button>
       </div>

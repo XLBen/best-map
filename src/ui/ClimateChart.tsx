@@ -14,6 +14,7 @@ import {
   speciesRect,
   withCondition,
   withRect,
+  speciesColor,
 } from '../../core/species';
 import { isVegetated, landmassCells } from '../../core/vegetation';
 import type { World } from '../../core/world';
@@ -229,9 +230,9 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
               y={r.y0}
               width={Math.max(2, r.x1 - r.x0)}
               height={Math.max(2, r.y1 - r.y0)}
-              fill={sp.color}
+              fill={speciesColor(sp)}
               fill-opacity={on ? 0.45 : 0.18}
-              stroke={sp.color}
+              stroke={speciesColor(sp)}
               stroke-width={on ? 2.5 : 1}
               class={on ? 'rect on' : 'rect'}
               onPointerDown={(e) => onDown(e as unknown as PointerEvent, sp)}
@@ -342,7 +343,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
   return (
     <div class="box">
       <div class="row">
-        <input type="color" value={sp.color} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { color: (e.target as HTMLInputElement).value } })} />
+        <input type="color" value={speciesColor(sp)} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { color: (e.target as HTMLInputElement).value } })} />
         <input class="grow" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={rename} onKeyDown={(e) => e.key === 'Enter' && rename()} />
       </div>
       <p class="muted small">
@@ -544,7 +545,7 @@ export function SpeciesPanel() {
       <div class="palette">
         {w.small.species.map((s, k) => (
           <button class={`chip ${s.id === focusSpecies.value ? 'on' : ''}`} onClick={() => (focusSpecies.value = s.id)}>
-            <span class="swatch" style={{ background: s.color }} />
+            <span class="swatch" style={{ background: speciesColor(s) }} />
             {s.name || s.id}
             <span class="muted small"> {fmtShare(shares.get(k) ?? 0)}</span>
           </button>

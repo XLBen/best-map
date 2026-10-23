@@ -18,7 +18,8 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const n = mesh.n;
   const land = causes.land;
   const forced = new Int32Array(n).fill(-1);
-  for (const g of small.guides) for (let k = 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
+  // 分出去的一股（branch）：第一格在干流上，它的流向不改（水按比例分出去，见下面）
+  for (const g of small.guides) for (let k = g.branch ? 1 : 0; k < g.cells.length - 1; k++) if (land[g.cells[k]]) forced[g.cells[k]] = g.cells[k + 1];
   // 在终点消失的河：那一格当作出口（水流到那里就没了）。没有这种河时与原来逐值相同
   const sinks = sinkMask(world);
   const terminal = sinks ?? new Uint8Array(n);
@@ -123,6 +124,8 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     }
   }
 
+  splitFlows(world, r, land, Q);
+
   d.lake.fill(0);
   d.water.fill(0);
   for (let id = 0; id < lakes.length; id++) {
@@ -164,11 +167,13 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   for (const g of small.guides) {
     if (!g.path) continue;
     const cells = g.cells;
-    for (let k = 0; k < cells.length; k++) {
+    // 分出去的一股从第二格起（第一格是干流的）
+    for (let k = g.branch ? 1 : 0; k < cells.length; k++) {
       const c = cells[k];
       if (!land[c]) break;
       if (d.lake[c] !== 1 && d.discharge[c] < minQ) d.discharge[c] = minQ;
-      if (k + 1 < cells.length && forced[c] !== cells[k + 1]) break;
+      // 按路由实际的下游（强制方向绕成圈时那几格恢复成了自然的流向：水不照这条河道走，不再往下补）
+      if (k + 1 < cells.length && r.receiver[c] !== cells[k + 1]) break;
     }
   }
   // 流域：沿下游方向找到出海口
@@ -194,6 +199,28 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     const width = Math.sqrt(areaKm[i]) * 1000;
     const a = (A[i] * 1e6) / width;
     d.wetness[i] = Math.log(a / Math.max(s / 1000, 1e-5));
+  }
+}
+
+// ---------- 分流（第十三轮） ----------
+// 分出去的一股（guide.branch）：分出的那一格 s 的水按 share 分一部分沿这条河道流走。流向仍是一格一个下游（流域、拓扑序都不变），
+// 只是流量：从这条河道的第二格起顺着下游加上 share × Q[s]，从 s 的下游起顺着干流往下减去同样多（不小于 0）。
+// 分出去的又流回干流（汇回同一条河的下游）时，汇合以下加减相抵，水回到干流。上游的分流先算（下游的分流按算过的水量分）
+function splitFlows(world: World, r: Routing, land: Uint8Array, Q: Float64Array) {
+  const { small, mesh } = world;
+  const splits = small.guides.filter((g) => g.branch && g.cells.length >= 2 && land[g.cells[0]] && land[g.cells[1]]);
+  if (!splits.length) return;
+  const pos = new Int32Array(mesh.n).fill(-1);
+  for (let k = 0; k < r.count; k++) pos[r.order[k]] = k;
+  // 上游的先算：在拓扑序（下游在前）里靠后的先
+  const list = splits.map((g, i) => ({ g, i, at: pos[g.cells[0]] })).filter((x) => x.at >= 0);
+  list.sort((a, b) => b.at - a.at || a.i - b.i);
+  for (const { g } of list) {
+    const s = g.cells[0];
+    const amount = g.branch!.share * Q[s];
+    if (!(amount > 0)) continue;
+    for (let c = g.cells[1], guard = 0; c >= 0 && land[c] && c !== s && guard < mesh.n; c = r.receiver[c], guard++) Q[c] += amount;
+    for (let c = r.receiver[s], guard = 0; c >= 0 && land[c] && guard < mesh.n; c = r.receiver[c], guard++) Q[c] = Math.max(0, Q[c] - amount);
   }
 }
 
