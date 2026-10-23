@@ -142,6 +142,31 @@ float patternAt(int kind, vec2 world, float size, float seed) {
 }
 `;
 
+// 岩性（第十三轮，colors.ts 的 lithLayer；每格插值）：r 硬岩、g 软岩、b 珊瑚砂、a 格里的潟湖（一格大的珊瑚岛）。
+// 平面与星球的地形着色器共用；没有岩性（全是 0）的地方画面不变
+const LITH_LAND_GLSL = `
+    {
+      float lowK = 1.0 - smoothstep(12.0, 90.0, hh);
+      // 硬岩（火山岛的玄武岩）：暗、偏冷的灰
+      col = mix(col, col * vec3(0.50, 0.50, 0.53) + vec3(0.05), vLith.r * 0.7);
+      // 软岩（低平岛）：低处是沙，湿的地方是沼泽
+      vec3 soft = mix(vec3(0.42, 0.53, 0.40), vec3(0.84, 0.78, 0.59), smoothstep(0.15, 0.55, vLandCol.a));
+      col = mix(col, soft, vLith.g * lowK * 0.6);
+      // 珊瑚砂：白沙，海边最白
+      float shoreK = 1.0 - smoothstep(0.0, 70.0, s);
+      col = mix(col, vec3(0.95, 0.93, 0.85), vLith.b * mix(0.45, 0.95, shoreK));
+      // 一格大的珊瑚岛：格心一圈是潟湖（青绿、平的）
+      float lag = smoothstep(0.80, 0.86, vLith.a);
+      col = mix(col, vec3(0.33, 0.72, 0.72), lag);
+      hh = mix(hh, 2.0, lag);
+      slope *= 1.0 - lag;
+    }`;
+const LITH_SEA_GLSL = `
+    // 珊瑚砂的海底（潟湖、礁上）：青绿；珊瑚岛、小礁的岸边一圈白浪（约一格的十分之一宽）
+    col = mix(col, vec3(0.38, 0.76, 0.74), vLith.b * 0.55 * (1.0 - smoothstep(8.0, 60.0, depth)));
+    float surf = 1.0 - smoothstep(0.4, 1.0, -sPx / max(1.5, cellPx * 0.1));
+    col = mix(col, vec3(0.94, 0.97, 0.97), min(1.0, vLith.b * 2.0) * surf * 0.8);`;
+
 const VS_CELL = `#version 300 es
 in vec2 aPos;
 in float aCell;
@@ -153,7 +178,9 @@ uniform highp sampler2D uElev;
 uniform highp sampler2D uCoast;
 uniform highp sampler2D uGrad;
 uniform highp sampler2D uSeaGrad;
+uniform sampler2D uLith;
 out vec4 vLandCol;
+out vec4 vLith;
 out vec4 vSeaCol;
 out float vElev;
 out float vCoast;
@@ -175,6 +202,7 @@ void main() {
   vElev = texelFetch(uElev, t, 0).r;
   vGrad = texelFetch(uGrad, t, 0).rg;
   vSeaGrad = texelFetch(uSeaGrad, t, 0).rg;
+  vLith = texelFetch(uLith, t, 0);
   vWorld = aPos;
   vBary = aBary;
   vCell = c;
@@ -211,9 +239,12 @@ in vec2 vGrad;
 in vec2 vSeaGrad;
 in vec2 vWorld;
 in vec3 vBary;
+in vec4 vLith;
 uniform float uSpacing;
 uniform float uCoastAmp;
 uniform float uDetail;
+// 陆地颜色的饱和度（地形类着色 1.15，别的 1）
+uniform float uSat;
 // 一个设备像素合多少地图单位；一个地图单位合多少米
 uniform float uPixel;
 uniform float uMetersPerUnit;
@@ -266,6 +297,8 @@ void main() {
   vec2 dir = gm > 1e-3 ? vGrad / gm : vec2(1.0, 0.0);
   // 海岸线：陆海交界处约 1.2 像素宽、抗锯齿
   float coastLine = 1.0 - smoothstep(0.6, 1.8, abs(s) / max(fwidth(s), 1e-6));
+  // 离海岸几个像素（陆上为正）：珊瑚岛的白浪
+  float sPx = s / max(fwidth(s), 1e-6);
   vec3 col;
   float hh;
   vec2 slope = vec2(0.0);
@@ -279,6 +312,7 @@ void main() {
     float dy = landDetailAt(vWorld + vec2(0.0, uPixel), dir, relief, h, cellPx) - landDetail;
     vec2 dDetail = vec2(dx, dy) / (uPixel * uMetersPerUnit) * 0.6;
     col = vLandCol.rgb;
+    col = clamp(mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, uSat), 0.0, 1.0);
     hh = max(h + landDetail, 2.0);
     // 坡度（地图坐标，米 / 米）：大尺度用插值后的格坡度（光滑），加上细节的差分
     slope = vGrad / uMetersPerUnit + dDetail;
@@ -287,6 +321,7 @@ void main() {
     col = mix(col, vec3(0.86, 0.80, 0.62), beach * 0.75);
     // 地表纹理的轻微明暗变化
     col *= 1.0 + 0.05 * fbmFade(vWorld / uSpacing * 3.3 - 2.0, 3, cellPx / 3.3);
+    ${LITH_LAND_GLSL}
   } else {
     float seaDetail = uDetail * fbmFade(vWorld / uSpacing * 1.3, 3, cellPx / 1.3) * 25.0;
     col = vSeaCol.rgb;
@@ -295,6 +330,7 @@ void main() {
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
+    ${LITH_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
     slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
   }
@@ -429,6 +465,8 @@ uniform int uHasFx;
 // 湖泊类型（第九轮）：每格的颜色与画法（见 colors.ts 的 lakeTintLayer）
 uniform sampler2D uTint;
 uniform int uHasTint;
+// 岩性（colors.ts 的 lithLayer）：陡坡露岩的颜色按硬岩的多少（r）从灰褐换成暗色的玄武岩
+uniform sampler2D uLith;
 out vec4 oColor;
 ${NOISE_GLSL}
 // 场景上的位置夹在场景之内（停稳时与画面相同；移动中、导出的一块块场景四周多画了一圈，扭曲后伸出画面的取到那一圈）
@@ -506,14 +544,15 @@ void main() {
   }
   ${FX_END}
   if (land) {
-    // 陡坡露岩
+    // 陡坡露岩：硬岩（火山岛）是暗色的玄武岩
     float steep = 1.0 - n.z;
-    col = mix(col, vec3(0.52, 0.48, 0.44), smoothstep(0.25, 0.6, steep) * uRock);
+    float hard = id >= 0 ? cellTex(uLith, id).r : 0.0;
+    col = mix(col, mix(vec3(0.52, 0.48, 0.44), vec3(0.25, 0.24, 0.25), hard), smoothstep(0.25, 0.6, steep) * uRock);
   }
   if (uStyle == 1) {
     // 地图册：羊皮纸底色、暖色晕渲、平涂的海
     if (land) {
-      col = mix(col, vec3(0.93, 0.87, 0.72), 0.45);
+      col = mix(col, vec3(0.93, 0.87, 0.72), 0.30);
       col *= mix(vec3(0.62, 0.52, 0.42), vec3(1.04, 1.02, 0.98), clamp(shade - 0.3, 0.0, 1.0));
     } else {
       // 按水深分层（0–200、200–1000、1000–3000、3000 m 以下），层与层之间一道淡淡的等深线；海底的坡轻轻晕渲
@@ -718,9 +757,12 @@ in vec2 vGrad;
 in vec2 vSeaGrad;
 in vec2 vWorld;
 in vec3 vBary;
+in vec4 vLith;
 uniform float uSpacing;
 uniform float uCoastAmp;
 uniform float uDetail;
+// 陆地颜色的饱和度（地形类着色 1.15，别的 1）
+uniform float uSat;
 uniform float uPixel;
 uniform float uMetersPerUnit;
 // 噪声频率：1 / (π · 格距)，一个噪声单位约一格
@@ -791,6 +833,8 @@ void main() {
   vec2 g2 = gm > 1e-3 ? vGrad / gm : vec2(1.0, 0.0);
   vec3 D = g2.x * E + g2.y * S;
   float coastLine = 1.0 - smoothstep(0.6, 1.8, abs(s) / max(fwidth(s), 1e-6));
+  // 离海岸几个像素（陆上为正）：珊瑚岛的白浪
+  float sPx = s / max(fwidth(s), 1e-6);
   vec3 col;
   float hh;
   vec2 slope = vec2(0.0);
@@ -802,11 +846,13 @@ void main() {
     float dy = landDetailAt3(sphereOf(vWorld + vec2(0.0, uPixel)), D, relief, h, cellPx) - landDetail;
     vec2 dDetail = vec2(dx / cosLat, dy) / (uPixel * uMetersPerUnit) * 0.6;
     col = vLandCol.rgb;
+    col = clamp(mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, uSat), 0.0, 1.0);
     hh = max(h + landDetail, 2.0);
     slope = vGrad / uMetersPerUnit + dDetail;
     float beach = (1.0 - smoothstep(4.0, 22.0, hh)) * (1.0 - smoothstep(0.0, 120.0, relief)) * (0.35 + 0.65 * vLandCol.a);
     col = mix(col, vec3(0.86, 0.80, 0.62), beach * 0.75);
     col *= 1.0 + 0.05 * fbmFade3(P * uNoiseK * 3.3 - 2.0, 3, cellPx / 3.3);
+    ${LITH_LAND_GLSL}
   } else {
     float seaDetail = uDetail * fbmFade3(P * uNoiseK * 1.3, 3, cellPx / 1.3) * 25.0;
     col = vSeaCol.rgb;
@@ -814,6 +860,7 @@ void main() {
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
+    ${LITH_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
     slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
   }
@@ -902,6 +949,8 @@ export interface CellLayers {
   shade: number;
   rock: number;
   coastAmp: number;
+  // 岩性（colors.ts 的 lithLayer）：每格 RGBA 字节；省略时全是 0
+  lith?: Uint8Array | null;
   // 生态的花纹与发光（colors.ts 的 fxLayers）：每格 RGBA 字节与 256 行 × 3 纹素的调色板；没有时为 null（整段跳过）
   fx?: Uint8Array | null;
   fxPalette?: Float32Array | null;
@@ -979,7 +1028,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'lith', WebGLTexture>;
   // 场景（编号层、地形层、切线层）：停稳时画在与画布一样大的一组目标上；移动中画在低分辨率、带边距的另一组上
   private rest: SceneTarget;
   private moving: SceneTarget;
@@ -1066,7 +1115,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), lith: t() };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1260,6 +1309,7 @@ export class Renderer {
     this.upload(this.tex.coast, l.coast, n, 1);
     this.upload(this.tex.grad, l.grad, n, 2);
     this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
+    this.upload(this.tex.lith, l.lith ?? new Uint8Array(n * 4), n, 4);
     this.hasFlat = !!l.flat;
     if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
@@ -1799,6 +1849,8 @@ export class Renderer {
     this.bindTex(pt, 'uGrad', this.tex.grad, 3);
     this.bindTex(pt, 'uOther', this.tex.other, 4);
     this.bindTex(pt, 'uSeaGrad', this.tex.seaGrad, 5);
+    this.bindTex(pt, 'uLith', this.tex.lith, 6);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uSat'), this.rock ? 1.15 : 1);
     gl.bindVertexArray(this.triVao);
     if (pp) {
       gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);
@@ -1886,6 +1938,7 @@ export class Renderer {
     this.bindTex(pc, 'uFxPal', this.tex.fxPal, 9);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFx'), hasFx ? 1 : 0);
     this.bindTex(pc, 'uTint', this.tex.tint, 10);
+    this.bindTex(pc, 'uLith', this.tex.lith, 11);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
     gl.bindVertexArray(null);
     gl.drawArrays(gl.TRIANGLES, 0, 3);

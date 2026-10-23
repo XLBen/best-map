@@ -4,7 +4,7 @@ import { gradient } from '../../core/mesh';
 import type { ProvinceKind } from '../../core/provinces';
 import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '../../core/seams';
 import type { LakeType } from '../../core/lake-types';
-import type { Visual } from '../../core/species';
+import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
 import { coastPatch } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
@@ -161,7 +161,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   let shade = 1;
   let rock = 0;
   const S = small.species.length;
-  const speciesRgb = small.species.map((s) => hexToRgb(s.color));
+  const speciesRgb = small.species.map((s) => hexToRgb(speciesColor(s)));
   const put = (arr: Uint8Array, i: number, c: RGB, a = 255) => {
     arr[i * 4] = c[0];
     arr[i * 4 + 1] = c[1];
@@ -270,6 +270,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   for (let i = 0; i < n; i++) fillOther(mesh, smooth, st.coast, other, i);
   const fx = fxLayers(world, o);
   return {
+    lith: terrainLike ? lithLayer(world) : null,
     smooth,
     other,
     elevation: st.elevation,
@@ -287,12 +288,45 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   };
 }
 
+// 岩性（第十三轮）：每格 RGBA 字节，地形着色器按它画几种岛（core/terrain.ts 的 ISLAND_ERODIBILITY）：
+//   r 硬岩（可蚀性 0.62 以下渐渐到 0.48：火山岛的玄武岩，暗色；陡坡露岩是暗色的玄武岩）
+//   g 软岩（2.2–3.0：低平岛，低处是沙与沼泽）
+//   b 珊瑚砂（3.9–4.25：珊瑚岛、小礁，白沙、岸边白浪；潟湖的海格也是，海底青绿）
+//   a 格里的潟湖：只有一格大的珊瑚岛（可蚀性 ≥ 4.6、挨着的陆格不到两个），格心画一圈潟湖
+// 生成的地形可蚀性在 0.4–1.8，低于 0.62 的很少，所以只有放的岛（和涂了很硬、很软的岩性的地方）看得出来
+export function lithLayer(world: World): Uint8Array {
+  const { mesh, causes, derived: d } = world;
+  const n = mesh.n;
+  const out = new Uint8Array(n * 4);
+  const ramp01 = (v: number, a: number, b: number) => Math.min(1, Math.max(0, (v - a) / (b - a)));
+  const smooth = (v: number, a: number, b: number) => {
+    const t = ramp01(v, a, b);
+    return t * t * (3 - 2 * t);
+  };
+  for (let i = 0; i < n; i++) {
+    const e = causes.erod[i];
+    const land = causes.land[i] === 1;
+    if (land && d.lake[i] === 1) continue;
+    const coral = smooth(e, 3.9, 4.25);
+    out[i * 4 + 2] = Math.round(255 * coral);
+    if (!land) continue;
+    out[i * 4] = Math.round(255 * (1 - smooth(e, 0.48, 0.62)));
+    out[i * 4 + 1] = Math.round(255 * smooth(e, 2.2, 3.0) * (1 - coral));
+    if (e >= 4.6) {
+      let k = 0;
+      for (let q = mesh.off[i]; q < mesh.off[i + 1]; q++) if (causes.land[mesh.adj[q]]) k++;
+      if (k < 2) out[i * 4 + 3] = 255;
+    }
+  }
+  return out;
+}
+
 // 小数据里着色用到的部分连成一个字符串（MapView 着色缓存的键之一）：省份类型、切线、生态的颜色与外观（花纹、发光、种子）、海岸曲折。
 // 只改生态外观的一步什么都不重算（轻快照，推导数组不变），靠外观这一段重新着色；只改名字、地名设定时不变，不重新着色
 export function colorSignature(small: World['small']): string {
   const kinds = Object.entries(small.provinces).map(([p, m]) => `${p}:${m.kind}${m.color ? `:${m.color}` : ''}`);
   const seams = (small.provinceSeams ?? []).map((s) => s.id);
-  const colors = small.species.map((s) => s.color);
+  const colors = small.species.map((s) => speciesColor(s));
   const looks = small.species.map((s) => (s.visual ? `${s.id}:${s.seedKey ?? ''}:${JSON.stringify(s.visual)}` : ''));
   return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}`;
 }

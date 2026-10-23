@@ -1,3 +1,4 @@
+import { speciesColor } from '../../../core/species';
 import { TriangleAlert } from 'lucide-preact';
 import { activeConflicts } from '../../../core/constraints';
 import { openPanel, options, world } from '../../state';
@@ -18,7 +19,7 @@ export function BiomeChip() {
   const sp = w?.small.species.find((s) => s.id === options.value.biome);
   return (
     <button class={`bar-btn biome-chip ${sp ? '' : 'warn'}`} onClick={() => (openPanel.value = 'biome')} title="换一种生态">
-      <span class="swatch" style={{ background: sp?.color ?? 'transparent' }} />
+      <span class="swatch" style={{ background: sp ? speciesColor(sp) : 'transparent' }} />
       {sp ? sp.name || sp.id : '选一种生态'}
     </button>
   );
@@ -64,7 +65,7 @@ export function RangeBar() {
   return (
     <>
       <span class="bar-value">
-        <span class="swatch" style={{ background: sp?.color }} /> {sp?.name ?? pick.species}
+        <span class="swatch" style={{ background: sp ? speciesColor(sp) : undefined }} /> {sp?.name ?? pick.species}
       </span>
       <Seg<'island' | 'cells'>
         value={pick.kind}

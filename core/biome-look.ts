@@ -3,7 +3,7 @@ import { hashString } from './names';
 import { smoothstep } from './rng';
 import { riverProvider } from './river-types';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
-import { PATTERNS, type Pattern, type Species, type Visual } from './species';
+import { PATTERNS, type Pattern, type Species, type Visual, speciesColor } from './species';
 import { fbmSub, fbmSub3, hashU, hashU3, vnoise, vnoise3 } from './subcell';
 import type { Derived, World } from './world';
 
@@ -15,7 +15,8 @@ type RGB = [number, number, number];
 export const BARE_RGB: RGB = [205, 190, 160];
 
 // 一格的植被颜色：按各生态的份额混合。share 是份额数组（每格 colors.length 个数），i 是格号；
-// 份额都是 0 时是裸地的颜色。每次给出新的数组，调用方可以直接改
+// 份额都是 0 时是裸地的颜色。每次给出新的数组，调用方可以直接改。
+// 第十三轮：按份额的平方混（再归一化），占多数的生态颜色更纯，交界处不再是一片灰绿（份额本身不变）
 export function blendRgb(share: ArrayLike<number>, i: number, colors: readonly RGB[]): RGB {
   const S = colors.length;
   let r = 0;
@@ -23,8 +24,9 @@ export function blendRgb(share: ArrayLike<number>, i: number, colors: readonly R
   let b = 0;
   let t = 0;
   for (let s = 0; s < S; s++) {
-    const w = share[i * S + s];
-    if (w <= 0) continue;
+    const v = share[i * S + s];
+    if (v <= 0) continue;
+    const w = v * v;
     r += w * colors[s][0];
     g += w * colors[s][1];
     b += w * colors[s][2];
@@ -55,7 +57,7 @@ export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []
   const { mesh, causes } = world;
   const n = mesh.n;
   const S = species.length;
-  const base = species.map((sp) => rgbOf(sp.color));
+  const base = species.map((sp) => rgbOf(speciesColor(sp)));
   const veg = (i: number) => causes.land[i] === 1 && d.lake[i] !== 1;
   const mine = !session;
   const run = session ? session() : new ScriptSession(world);
@@ -286,7 +288,7 @@ export function visualLook(sp: Species, visual: Visual | undefined, sphere: bool
   if (!visual) return null;
   const glow = visual.glow ?? 0;
   if (visual.pattern === 'none' && glow <= 0) return null;
-  const base = rgbOf(sp.color);
+  const base = rgbOf(speciesColor(sp));
   return {
     pattern: visual.pattern,
     color2: visual.color2 ? rgbOf(visual.color2) : [base[0] * 0.6, base[1] * 0.6, base[2] * 0.6],

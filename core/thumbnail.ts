@@ -1,5 +1,6 @@
 import { GLOW_GAIN, blendRgb, cellFx, fxSet, meanTint } from './biome-look';
 import { hexToRgb } from './export';
+import { speciesColor } from './species';
 import { rasterizeWorld } from './subcell';
 import type { World } from './world';
 
@@ -9,7 +10,7 @@ import type { World } from './world';
 export function renderThumbnail(world: World, width: number, height: number): Uint8ClampedArray {
   const { mesh, causes, derived: d, small } = world;
   const r = rasterizeWorld(world, width, height);
-  const colors = small.species.map((s) => hexToRgb(s.color));
+  const colors = small.species.map((s) => hexToRgb(speciesColor(s)));
   const cellColor = new Float32Array(mesh.n * 3);
   const S = small.species.length;
   const look = d.look;
