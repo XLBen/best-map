@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Command } from './commands';
 import { encodePath, guideLine, traceRivers } from './rivers';
-import { type CoursePlan, guideEnd, isRiverCell, planCourse } from './select';
+import { type CoursePlan, guideEnd, guideIssues, isRiverCell, planCourse } from './select';
 import { continents } from './testing/fixtures';
 import type { Guide, World } from './world';
 
@@ -117,6 +117,28 @@ describe('贴着别的河画不截走它（第十三轮）', () => {
       expect(last.into).toBeDefined();
       expect(lines[last.into!].guide).toBe('river-a');
       eng.undo();
+    }
+  });
+
+  it('河的提醒说得出哪一段、为什么：后画的河从中间经过却没截走它（旧命令），“有一段没按画的走”标出那几格、说是被哪条河占了', () => {
+    const { eng, w, B } = riverB();
+    const { mesh } = w;
+    const b0 = w.small.guides.find((g) => g.id === 'river-b')!;
+    expect(guideIssues(w, w.derived, b0)).toEqual([]);
+    const mid = B.cells[Math.floor(B.drawn / 2)];
+    const A = planCourse(w, w.derived, line([mesh.x[mid] - 0.5 * mesh.spacing, mesh.y[mid] - 5 * mesh.spacing], [mesh.x[mid] + 0.5 * mesh.spacing, mesh.y[mid] + 5 * mesh.spacing]), { endOnLand: 'flow' });
+    expect(A.blocked).toBeNull();
+    eng.exec(courseCmd(A, { id: 'river-a', name: '青川' }));
+    const b = w.small.guides.find((g) => g.id === 'river-b')!;
+    const issues = guideIssues(w, w.derived, b);
+    const off = issues.find((x) => x.text === '有一段没按画的走')!;
+    expect(off).toBeDefined();
+    expect(b.cells).toContain(off.cells[0]);
+    expect(A.cells).toContain(off.cells[0]);
+    expect(off.why).toContain('青川');
+    for (const x of issues) {
+      expect(x.why.length).toBeGreaterThan(8);
+      expect(x.cells.length).toBeGreaterThan(0);
     }
   });
 });

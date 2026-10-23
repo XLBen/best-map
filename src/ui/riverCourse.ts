@@ -34,7 +34,7 @@ import {
 import { PLAIN_RIVER } from '../../core/river-types';
 import { matchesNaturally } from '../../core/water-types';
 import { type GuideLine, type RiverLine, centrePoints, cutAtJoin, encodePath, guideLine, ownsCell, projectNear, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
-import { type CourseEnd, type CoursePlan, type Overlap, type RiverPlan, endCourseAt, guideEnd, guideFlow, guideWarnings, isRiverCell, mergeCourse, overlapsOf, planCourse, planRiver, riverStem } from '../../core/select';
+import { type CourseEnd, type CoursePlan, type GuideIssue, type Overlap, type RiverPlan, branchedOff, endCourseAt, guideEnd, guideFlow, guideIssues, isRiverCell, mergeCourse, overlapsOf, planCourse, planRiver, riverStem } from '../../core/select';
 import { roundKm as km } from '../../core/terrain';
 import type { Guide, World } from '../../core/world';
 import type { HighlightLayer } from '../render/colors';
@@ -353,6 +353,10 @@ export interface RiverInfo {
   km: number;
   dest: string;
   warnings: string[];
+  // 提醒的原因与出问题的那几格（底部条上的提醒点一下标出来，见 core/select.ts 的 guideIssues）
+  issues: GuideIssue[];
+  // 这条河上分出去了几成水（分出的地方的总水量里；没有分出去时为 0）
+  split: number;
   // 河上的格（画的河是河道，自然的河是主干）
   cells: number[];
   // 在终点消失（终点是 cells 的最后一格）
@@ -372,8 +376,9 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
     const g = guideOf(w, ref.id);
     if (g) {
       const f = guideFeature(w, g.id) ?? null;
-      const total = guideFlow(w, d, g).total;
+      const { total, split } = guideFlow(w, d, g);
       const end = guideEnd(w, d, g);
+      const issues = guideIssues(w, d, g);
       info = {
         // 没有自己地名的画的河：写它所在的那条自然大河的名字
         name: guideName(w, g),
@@ -382,7 +387,9 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
         flow: total * thr,
         km: pathKm(w, lineOf(w, g).points),
         dest: sourceDest(w, g) ?? destText(w, end.kind, end.cell, true, f ?? undefined),
-        warnings: guideWarnings(w, d, g),
+        warnings: issues.map((x) => x.text),
+        issues,
+        split,
         cells: g.cells,
         sink: end.kind === 'sink',
       };
@@ -404,6 +411,8 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
       km: pathKm(w, centrePoints(w, stem.cells)),
       dest: destText(w, stem.end, stem.end === 'river' ? stem.join : stem.end === 'lake' ? last : -1, true, f ?? undefined),
       warnings: [],
+      issues: [],
+      split: branchedOff(w, d, own).split,
       cells: stem.cells,
       sink: stem.end === 'sink',
     };
@@ -511,6 +520,13 @@ function captureDeletes(w: World, after: Guide, id: string): boolean {
   return g.cells.findIndex((c, i) => ownsCell(g, i) && inner.has(c)) === 0;
 }
 
+// 贴着一条画的河、没穿过去（在碰到它的地方汇入，不截走它，第十三轮）：一句话；不是这样时为 ''
+function touchWords(w: World, plan: CoursePlan | null, done: boolean): string {
+  if (!plan || plan.touch === undefined) return '';
+  const name = quoted(riverNameAt(w, plan.touch), '那条河');
+  return done ? `没穿过${name}，不截走它` : `没穿过${name}：在碰到它的地方汇入，不截走它`;
+}
+
 // “截走「赤江」”“删掉「白水」”（穿过不止一条时“等 3 条河”；第一条没有名字时“截走 3 条河”）；没穿过别的河时为 ''
 function captureWords(w: World, plan: CoursePlan | null, after: Guide | null, self: string | null, done: boolean): string {
   const xs = otherCrossings(plan, self);
@@ -558,7 +574,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
     ...chosenRiverType(w),
   };
   const after = { id: '', ...guide } as Guide;
-  const cap = captureWords(w, plan, after, null, true);
+  const cap = captureWords(w, plan, after, null, true) || touchWords(w, plan, true);
   const cmd: Command = { op: 'add_guide', guide, ...(capture ? { capture: true } : {}), label: `画了一条河（约 ${len} km，${where}）${cap ? ` · ${cap}` : ''}${plan.gorge >= 100 ? ` · ${gorgeWords(plan.gorge)}` : ''}` };
   const estimate = springProfile(w, plan.cells, true, options.value.riverFlow).map((q, k) => d.discharge[plan.cells[k]] + q);
   return { kind: 'new', plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name: null, raw };
@@ -631,7 +647,7 @@ function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: 
     default:
       label = how === 'delete' ? `删掉了${n}的一个弯点` : `改了${n}的走向`;
   }
-  const cap = captureWords(w, r.plan, after, T.natural ? null : T.guide.id, true);
+  const cap = captureWords(w, r.plan, after, T.natural ? null : T.guide.id, true) || touchWords(w, r.plan, true);
   if (cap) label += ` · ${cap}`;
   if (r.plan.gorge >= 100) label += ` · ${gorgeWords(r.plan.gorge)}`;
   if (T.natural) label += '（固定下来）';
@@ -679,7 +695,7 @@ function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | { blocke
       ...typed,
     };
     const after = { id: '', ...guide } as Guide;
-    const cap = captureWords(w, plan, after, null, true);
+    const cap = captureWords(w, plan, after, null, true) || touchWords(w, plan, true);
     const cmd: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label: `从${n}分出一股（约 ${Math.round(BRANCH_SHARE * 100)}% 的水，约 ${len} km，${destOf(w, plan)}）${cap ? ` · ${cap}` : ''}` };
     // 分出去的水：分出处的 share，再加上一路上本来的水
     const q = BRANCH_SHARE * d.discharge[r.cell];
@@ -699,7 +715,7 @@ function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | { blocke
     ...typed,
   };
   const after = { id: '', ...guide } as Guide;
-  const cap = captureWords(w, plan, after, null, true);
+  const cap = captureWords(w, plan, after, null, true) || touchWords(w, plan, true);
   const label = `给${n}加了一个源头（约 ${len} km）${cap ? ` · ${cap}` : ''}`;
   const add: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label };
   let cmd: Command = add;
@@ -713,7 +729,7 @@ function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | { blocke
 
 // ---------- 重叠分析的说法、标法 ----------
 
-// 一处重叠怎么说（提示条上）；done：松手后顶部说的（更短）
+// 一处重叠怎么说（一句短话；拖的时候黄色标出那一段，所以不再说“离远一点”之类的办法）；done：松手后顶部说的
 function overlapWords(w: World, o: Overlap, done: boolean): string | null {
   const other = () => {
     const g = o.guide ? guideOf(w, o.guide) : undefined;
@@ -722,13 +738,13 @@ function overlapWords(w: World, o: Overlap, done: boolean): string | null {
   };
   switch (o.kind) {
     case 'loop':
-      return done ? null : '画的线绕回了自己走过的地方，那个圈剪掉了（黄色）';
+      return done ? null : '剪掉了一个绕回来的圈（黄色）';
     case 'near-self':
-      return done ? '有一段绕回了自己旁边' : '有一段绕回了自己旁边（黄色）：画开一点更清楚';
+      return done ? '有一段绕回了自己旁边' : '有一段绕回了自己旁边（黄色）';
     case 'alongside':
-      return done ? `有一段贴着${other()}流` : `有一段贴着${other()}流（黄色）：离远一点，或者画到它上面汇入`;
+      return done ? `有一段贴着${other()}流` : `贴着${other()}流（黄色）`;
     case 'sink-river':
-      return done ? `终点挨着${other()}` : `终点挨着${other()}：画到它上面就汇入`;
+      return done ? `终点挨着${other()}` : `终点挨着${other()}（黄色）`;
     case 'old-flowing':
       return null;
     default:
@@ -767,11 +783,13 @@ function withOverlaps(w: World, c: Course): Course {
     ...(c.kind === 'edit' && T ? { old: T.guide.cells } : {}),
   });
   if (!overlaps.length) return c;
-  const words = [...new Set(overlaps.map((o) => overlapWords(w, o, true)).filter((x): x is string => !!x))];
+  // 顶部只多说一句（最要紧的那处）；已经说了截走、碰到就汇入的不再说贴着
+  const words = [...new Set(overlaps.map((o) => overlapWords(w, o, true)).filter((x): x is string => !!x))].slice(0, 1);
   let cmd = c.cmd;
   const c0 = c.cmd;
-  if (words.length && 'label' in c0 && typeof c0.label === 'string') {
-    const label = `${c0.label} · ${words.join(' · ')}`.slice(0, 200);
+  const said = 'label' in c0 && typeof c0.label === 'string' ? c0.label : '';
+  if (words.length && said && !/截走|删掉了|没穿过去/.test(said)) {
+    const label = `${said} · ${words[0]}`.slice(0, 200);
     if (c0.op === 'batch') {
       const list = c0.commands;
       cmd = { ...c0, label, commands: list.map((x, k) => (k === list.length - 1 && 'label' in x ? ({ ...x, label } as Command) : x)) };
@@ -1173,37 +1191,26 @@ function courseHint(w: World, c: Course, ex: ExactView | null, line: GuideLine, 
     parts.push(name || '新河', c.kind === 'merge' ? '往上游接长' : destOf(w, plan));
     parts.push(`${km(pathKm(w, line.points)).toLocaleString()} km`);
   }
-  let caution = false;
-  for (const o of c.overlaps ?? []) {
-    const t = overlapWords(w, o, false);
-    if (t && !parts.includes(t)) {
-      parts.push(t);
-      caution = true;
-    }
-  }
-  if (c.edit?.note) {
-    parts.push(c.edit.note);
-    caution = true;
-  }
+  // 要留意的只说一句（最要紧的那件）：截走别的河 > 碰到画的河就汇入（没穿过去） > 改不了的原因 > 重叠（黄色那段） > 往高处流 > 下面那段还有水。
+  // 截走与“贴着它”不同时说（不再一边说截走、一边说离远一点）
   const cap = captureWords(w, plan, c.after, self, false);
-  if (cap) {
-    parts.push(alt ? cap : `${cap}（按住 Alt 松手：在第一次碰到的河那里汇入）`);
-    caution = true;
-  }
-  if (plan.uphill >= 20) {
-    parts.push(`有一段往高处流（${meters(plan.uphill)}）`);
-    caution = true;
-  }
-  // 缩短、改道后原来的下游（改一段时换下来的那一小段不说）
-  if (c.edit && (c.edit.kind === 'shorten' || c.edit.kind === 'reroute') && leftoverFed(w, c, ex)) {
-    parts.push('下面那段还有支流的水，会成为另一条河');
-    caution = true;
-  }
+  const notes = [
+    cap ? (alt ? cap : `${cap}：横穿过去了（按住 Alt 松手改为汇入）`) : '',
+    touchWords(w, plan, false),
+    c.edit?.note ?? '',
+    ...(c.overlaps ?? []).map((o) => (cap && o.kind === 'alongside' ? null : overlapWords(w, o, false))),
+    plan.uphill >= 20 ? `有一段往高处流（${meters(plan.uphill)}）` : '',
+    // 缩短、改道后原来的下游（改一段时换下来的那一小段不说）
+    c.edit && (c.edit.kind === 'shorten' || c.edit.kind === 'reroute') && leftoverFed(w, c, ex) ? '下面那段还有支流的水，会成为另一条河' : '',
+  ].filter((x): x is string => !!x);
+  const caution = notes.length > 0;
+  if (caution) parts.push(notes[0]);
   const gorge = ex ? ex.result.carved.maxDrop : plan.gorge;
+  let deep = false;
   if (gorge >= DEEP_GORGE) {
     // 挖得很深（往往是一小段拖过了山）：黄色提醒，不拦着
     parts.push(`这一段要穿山挖很深（约 ${Math.round(gorge / 100) * 100} m${ex ? '，褐色的格' : ''}）`);
-    caution = true;
+    deep = true;
   } else if (gorge >= 100) parts.push(`穿山挖出峡谷（最深${meters(gorge)}${ex ? '，褐色的格' : ''}）`);
   if (c.target?.natural) parts.push('改了以后它就固定下来');
   let text = parts.join(' · ');
@@ -1211,7 +1218,7 @@ function courseHint(w: World, c: Course, ex: ExactView | null, line: GuideLine, 
   if (ex && c.cmd) text = namedDest(ex.world, c.cmd, new Set(w.small.guides.map((g) => g.id)), text) ?? text;
   // 还在估计、汇入的河还没有名字时不说“汇入一条河”（松手后会写出名字）：等算好了再说汇入哪条
   if (!ex) text = text.replace('之后顺地势汇入一条河', '之后顺地势流下去').replace(' · 汇入一条河', '').replace('汇入一条河', '汇入别的河');
-  return { text: ex ? text : `${text}…`, ...(caution ? { caution: true } : {}) };
+  return { text: ex ? text : `${text}…`, ...(caution || deep ? { caution: true } : {}) };
 }
 
 // ---------- 底部条上改一条河时的预览（拖大小、悬停“从这里往下去掉”） ----------
