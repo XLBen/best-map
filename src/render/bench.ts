@@ -98,6 +98,52 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
   return out;
 }
 
+// 每一次绘制调用各花多久（前后各读回一个像素等显卡）：按“调用|顶点数|实例数”分开，10 帧平均。
+// moving：每帧挪一点镜头（移动中的画法）；否则每帧都按停稳的画法重画（改一下 detail 让地形层重画）
+export async function passTimes(h: BenchHooks, moving = false): Promise<Record<string, Record<string, number>>> {
+  const gl = (h.canvas.getContext('webgl2') as WebGL2RenderingContext)!;
+  const px = new Uint8Array(4);
+  const times: Record<string, number> = {};
+  const g = gl as unknown as Record<string, unknown>;
+  const proto = WebGL2RenderingContext.prototype as unknown as Record<string, (...a: unknown[]) => void>;
+  for (const name of ['drawArrays', 'drawArraysInstanced', 'blitFramebuffer']) {
+    g[name] = (...a: unknown[]) => {
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const t = performance.now();
+      proto[name].apply(gl, a);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const k = name === 'blitFramebuffer' ? 'blit' : `${name}|${a[2]}|${a[3] ?? ''}`;
+      times[k] = (times[k] ?? 0) + performance.now() - t;
+    };
+  }
+  const sp = h.spacing();
+  const saved = { ...h.renderer.camera };
+  const out: Record<string, Record<string, number>> = {};
+  try {
+    for (const [name, cam] of [
+      ['full', { x: 1, y: 0.5, zoom: h.canvas.clientWidth / 2.2 }],
+      ['8px', { x: 1, y: 0.5, zoom: 8 / sp }],
+      ['24px', { x: 1, y: 0.45, zoom: 24 / sp }],
+    ] as const) {
+      h.renderer.camera = { ...cam };
+      h.draw();
+      for (const k in times) delete times[k];
+      for (let i = 0; i < 10; i++) {
+        if (moving) h.renderer.camera.x += 6 / cam.zoom;
+        else h.renderer.detail = i % 2 ? 1 : 1.0000001;
+        h.draw();
+      }
+      out[name] = Object.fromEntries(Object.entries(times).map(([k, v]) => [k, Math.round(v) / 10]));
+    }
+  } finally {
+    for (const name of ['drawArrays', 'drawArraysInstanced', 'blitFramebuffer']) delete g[name];
+    h.renderer.detail = 1;
+    h.renderer.camera = saved;
+    h.draw();
+  }
+  return out;
+}
+
 // ---------- 停稳后的画面对照（开发用）：同一个镜头下截一张干净的图，存进单独的 IndexedDB（map2-bench），
 // 改了渲染以后再截一次逐像素比。saveRefs 存、compareRefs 比（报不同的像素数与最大的差）
 

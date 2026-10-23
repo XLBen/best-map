@@ -176,6 +176,17 @@ void main() {
   gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);
 }`;
 
+// 编号层的顶点：只要位置和格号（不读纹理；位置的算式与 VS_CELL 逐位相同）
+const VS_ID = `#version 300 es
+in vec2 aPos;
+in float aCell;
+uniform vec4 uView;
+flat out int vCell;
+void main() {
+  vCell = int(aCell + 0.5);
+  gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);
+}`;
+
 const FS_ID = `#version 300 es
 precision highp float;
 flat in int vCell;
@@ -621,11 +632,14 @@ function must(src: string, from: string, to: string): string {
 }
 
 // 星球的顶点：画第 uCopy0 + 实例号 份（x 平移 2 的倍数）；细节噪声用基准坐标，所以每份一模一样
-const VS_CELL_PLANET = must(
-  must(VS_CELL, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform int uCopy0;'),
-  'gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);',
-  'vec2 pp = aPos + vec2(2.0 * float(uCopy0 + gl_InstanceID), 0.0);\n  gl_Position = vec4(pp * uView.xy + uView.zw, 0.0, 1.0);',
-);
+const planetVs = (vs: string) =>
+  must(
+    must(vs, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform int uCopy0;'),
+    'gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);',
+    'vec2 pp = aPos + vec2(2.0 * float(uCopy0 + gl_InstanceID), 0.0);\n  gl_Position = vec4(pp * uView.xy + uView.zw, 0.0, 1.0);',
+  );
+const VS_CELL_PLANET = planetVs(VS_CELL);
+const VS_ID_PLANET = planetVs(VS_ID);
 
 const FS_TERRAIN_PLANET = `#version 300 es
 precision highp float;
@@ -905,7 +919,7 @@ export class Renderer {
     if (!gl) throw new Error('浏览器不支持 WebGL2');
     if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('浏览器不支持浮点渲染目标（EXT_color_buffer_float）');
     this.gl = gl;
-    this.progId = compile(gl, VS_CELL, FS_ID);
+    this.progId = compile(gl, VS_ID, FS_ID);
     this.progTerrain = compile(gl, VS_CELL, FS_TERRAIN);
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
@@ -1008,7 +1022,7 @@ export class Renderer {
     const gl = this.gl;
     if (!this.planetProgs) {
       this.planetProgs = {
-        id: compile(gl, VS_CELL_PLANET, FS_ID),
+        id: compile(gl, VS_ID_PLANET, FS_ID),
         terrain: compile(gl, VS_CELL_PLANET, FS_TERRAIN_PLANET),
         compose: compileCompose(gl, FS_COMPOSE_PLANET),
       };
@@ -1393,13 +1407,7 @@ export class Renderer {
       const pid = pp ? pp.id : this.progId;
       gl.useProgram(pid);
       gl.uniform4fv(gl.getUniformLocation(pid, 'uView'), view);
-      // 顶点着色器与地形层共用，会读这些纹理：显式绑好，否则采样器默认的 0 号单元
-      // 可能正绑着刚分配的编号纹理（写入目标），形成反馈环，整帧画不出来
-      this.bindTex(pid, 'uColor', this.tex.color, 0);
-      this.bindTex(pid, 'uElev', this.tex.elev, 1);
-      this.bindTex(pid, 'uCoast', this.tex.coast, 2);
-      this.bindTex(pid, 'uGrad', this.tex.grad, 3);
-      this.bindTex(pid, 'uOther', this.tex.other, 4);
+      // 编号层的顶点着色器（VS_ID）不读纹理：不必绑，也不会与写入目标形成反馈环
       gl.bindVertexArray(this.fanVao);
       if (pp) {
         gl.uniform1i(gl.getUniformLocation(pid, 'uCopy0'), copy0);

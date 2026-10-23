@@ -921,6 +921,7 @@ export function MapView() {
         __map2Bench: (opts?: { frames?: number; only?: string[] }) => import('../render/bench').then((b) => b.runBench(hooks, opts)),
         __map2SaveRefs: (tag?: string) => import('../render/bench').then((b) => b.saveRefs(hooks, tag)),
         __map2CompareRefs: (tag?: string) => import('../render/bench').then((b) => b.compareRefs(hooks, tag)),
+        __map2PassTimes: (moving?: boolean) => import('../render/bench').then((b) => b.passTimes(hooks, moving)),
       });
     }
     return () => {
