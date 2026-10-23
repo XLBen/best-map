@@ -14,6 +14,7 @@ import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
 import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
+import { outsideRangeReason } from './ui/biomeRange';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
 import { buildKey, engineCode, engineUrl } from './engine-source';
 import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
@@ -1237,20 +1238,25 @@ export async function exec(cmd: Command, label = '正在计算…', again?: Agai
 }
 
 // 涂了一片生态之后实际的结果（与按住时的预览一样说）：“水晶丛林：60 格变了 · 495 格没涂成（这里长不了）”。
+// 没涂成的格大多在生态的范围（只在一个岛上、圈的范围里）外面时说“不在这个生态的范围里（只长在「X岛」）”。
 // 刚涂的是 after 里最后一条涂的设定；没涂成的格是它在冲突里列出的格。拼不出来时返回 null（照用引擎的说法）
 export function paintNote(before: World, after: World): string | null {
   const c = after.small.constraints[after.small.constraints.length - 1];
   if (!c || before.mesh !== after.mesh) return null;
-  const name = after.small.species.find((x) => x.id === c.species)?.name || c.species;
+  const sp = after.small.species.find((x) => x.id === c.species);
+  const name = sp?.name || c.species;
   const id = (w: World, i: number) => {
     const k = w.derived.dominant[i];
     return k >= 0 ? w.small.species[k]?.id : null;
   };
   let changed = 0;
   for (let i = 0; i < after.mesh.n; i++) if (id(before, i) !== id(after, i)) changed++;
-  const failing = after.derived.conflicts.find((x) => x.constraintId === c.id)?.failing.length ?? 0;
+  const cells = after.derived.conflicts.find((x) => x.constraintId === c.id)?.failing ?? [];
+  const failing = cells.length;
   const mode = c.mode === 'constraint' ? '自然融入' : '强制';
   const head = changed ? `${name}：${changed} 格变了` : `${name}：生态没变`;
+  const outside = failing ? outsideRangeReason(after, sp, cells) : null;
+  if (outside) return `${head} · ${failing} 格没涂成：${outside}`;
   return failing ? `${head} · ${failing} 格没涂成（这里长不了）` : `${head}（${mode}）`;
 }
 

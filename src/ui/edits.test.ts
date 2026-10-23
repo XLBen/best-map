@@ -4,6 +4,7 @@ import { brushCells } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { paintNote, setOptions, world } from '../state';
+import { outsideRangeReason } from './biomeRange';
 import { climateHere, climateMask, editLayers, natureHere, natureMask, terrainHere, terrainMask, waterMask } from './edits';
 import { type Pointer, climateEraseTool, eraseTool, rangePick, rangeTool, restoreTool } from './tools';
 
@@ -154,6 +155,30 @@ describe('选生态的范围（第十二轮，替代岛上特有）', () => {
     await t.click?.(at(w, island.anchor));
     expect(vi.mocked(exec).mock.calls[0][0]).toEqual({ op: 'update_species', id: 'desert', patch: { range: { kind: 'island', cell: island.anchor } } });
     expect(rangePick.value).toBeNull();
+  });
+
+  it('涂到范围外（只长在一个岛上的生态涂到别的岛上）：说“不在这个生态的范围里（只长在「X岛」）”，排在气候的原因前面', () => {
+    const eng = archipelago();
+    const w0 = eng.world;
+    const islands = w0.derived.features.filter((f) => f.type === 'island' && f.name).sort((a, b) => b.cells.length - a.cells.length);
+    const [home, other] = islands;
+    // 只长在 home 上的荒漠，涂到 other 上
+    eng.exec({ op: 'update_species', id: 'desert', patch: { range: { kind: 'island', cell: home.anchor } } });
+    const cells = Array.from(other.cells).filter((i) => eng.world.causes.land[i]).slice(0, 40);
+    eng.exec({ op: 'add_constraint', constraint: { cells, species: 'desert', mode: 'constraint' } });
+    const w = eng.world;
+    const sp = w.small.species.find((s) => s.id === 'desert')!;
+    const c = w.derived.conflicts.at(-1)!;
+    expect(c.failing.length).toBe(cells.length);
+    const want = `不在这个生态的范围里（只长在「${home.name}」）`;
+    expect(outsideRangeReason(w, sp, c.failing)).toBe(want);
+    expect(paintNote(w0, w)).toBe(`${sp.name}：生态没变 · ${cells.length} 格没涂成：${want}`);
+    // 范围里的格不说这一条
+    expect(outsideRangeReason(w, sp, Array.from(home.cells).slice(0, 5))).toBeNull();
+    // 圈的范围
+    expect(outsideRangeReason(w, { range: { kind: 'cells', cells: [home.anchor] } }, c.failing)).toBe('不在这个生态的范围里（只长在圈的范围里）');
+    // 没有范围
+    expect(outsideRangeReason(w, {}, c.failing)).toBeNull();
   });
 
   it('圈一片：松手后是圈里的陆地格', async () => {

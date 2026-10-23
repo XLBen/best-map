@@ -3,6 +3,7 @@ import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
 import { exec, focusSpecies, history, sheet, world } from '../state';
 import { focusOn } from './camera';
+import { outsideRangeReason } from './biomeRange';
 import { reasonText } from './Inspector';
 
 // 没涂成的地方（“自然”工具列表下方）、历史（“操作”里）
@@ -30,7 +31,9 @@ export function UnmetPanel() {
       {conflicts.map((c) => {
         const con = w.small.constraints.find((x) => x.id === c.constraintId);
         const sp = species(c.species);
-        const why = c.reasons.slice(0, 2).map((r) => reasonText({ field: r.field, value: r.value, factor: 0, range: [r.need[0], r.need[0], r.need[1], r.need[1]] }));
+        // 大多在生态的范围外：只说这一条（怎么调冷暖干湿都长不出来，气候的原因不相干）
+        const outside = outsideRangeReason(w, sp, c.failing);
+        const why = outside ? [outside] : c.reasons.slice(0, 2).map((r) => reasonText({ field: r.field, value: r.value, factor: 0, range: [r.need[0], r.need[0], r.need[1], r.need[1]] }));
         const water = c.failing.length === 0;
         return (
           <div class="box conflict">

@@ -6,6 +6,7 @@ import { type CellExplanation, explainCell } from '../../core/vegetation';
 import { type World, longitudeOf, worldLatitude } from '../../core/world';
 import { exec, hoverCell, hoverProvinceCell, options, world } from '../state';
 import { category } from './defs/tools';
+import { outsideRangeReason, outsideRangeText } from './biomeRange';
 
 // 检查器：用人话说清楚“这里是什么、为什么”，数字放在第二层
 
@@ -111,9 +112,9 @@ export function reasonText(f: Factor): string {
   }
 }
 
-function whyNot(e: CellExplanation, winner: string | null): string {
+function whyNot(w: World, e: CellExplanation, winner: string | null): string {
   if (!e.reachable) {
-    if (e.why === 'range') return '它只长在设定的岛上或圈的范围里，这里在外面';
+    if (e.why === 'range') return outsideRangeText(w, w.small.species.find((s) => s.id === e.species) ?? {}) ?? '它只长在设定的岛上或圈的范围里，这里在外面';
     if (e.why === 'natural') return '它不自然生成：只长在涂了它的地方';
     return '它传不到这里（不能跨海，或离起源地太远）';
   }
@@ -163,6 +164,9 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
   const failing = activeConflicts(w).find((c) => c.failing.includes(cell));
   // 说了“就这样”的：只轻轻提一句
   const settled = !failing && w.derived.conflicts.some((c) => c.failing.includes(cell));
+  // 没涂成的这一格在涂的生态的范围外：先说这一条（排在气候的原因前面）
+  const failSp = failing ? S.find((s) => s.id === failing.species) : undefined;
+  const failWhy = failSp ? outsideRangeReason(w, failSp, [cell]) : null;
   const brush = category.value === 'nature' ? options.value.biome : null;
   const brushEx = brush && brush !== sp?.id ? explain.find((e) => e.species === brush) : null;
   const corrT = d.corrT[cell];
@@ -184,7 +188,7 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
       {painted.length > 0 && (
         <p class="note">
           这是你涂的“{S.find((s) => s.id === painted[painted.length - 1].species)?.name}”（{painted[painted.length - 1].mode === 'constraint' ? '自然融入' : '强制'}）。
-          {failing && <span class="warn"> 这一格没涂成。</span>}
+          {failing && <span class="warn"> 这一格没涂成{failWhy ? `：${failWhy}` : ''}。</span>}
           {settled && <span class="muted"> 这一格没涂成（说过“就这样”）。</span>}
         </p>
       )}
@@ -209,19 +213,19 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
         ))}
       {!sp && runnerUp && (
         <p>
-          <b>为什么什么都不长：</b>最接近的“{runnerUp.name}”也{whyNot(runnerUp, null)}。
+          <b>为什么什么都不长：</b>最接近的“{runnerUp.name}”也{whyNot(w, runnerUp, null)}。
         </p>
       )}
       {sp && runnerUp && (
         <p>
           <b>为什么不是{runnerUp.name}：</b>
-          {whyNot(runnerUp, sp.name)}。
+          {whyNot(w, runnerUp, sp.name)}。
         </p>
       )}
       {brushEx && brushEx.species !== runnerUp?.species && (
         <p>
           <b>为什么不是{brushEx.name}：</b>
-          {whyNot(brushEx, sp?.name ?? null)}。{options.value.biomeMode === 'natural' ? '用“自然融入”涂上去，系统会调这里的气候。' : ''}
+          {whyNot(w, brushEx, sp?.name ?? null)}。{options.value.biomeMode === 'natural' ? '用“自然融入”涂上去，系统会调这里的气候。' : ''}
         </p>
       )}
       {painted.length > 0 && category.value === 'nature' && (
