@@ -1,22 +1,24 @@
-import { Boxes, CircleHelp, FilePlus, FolderOpen, ImageDown, PackageOpen, Save } from 'lucide-preact';
+import { Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
 import { useState } from 'preact/hooks';
-import type { WorldDoc } from '../../../core/engine';
-import { type WheelPref, download, exportProgress, exportZip, getDoc, helpOpen, loadDoc, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
+import { type WheelPref, download, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
 import { snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
 import { openPackLibrary } from '../packs/store';
+import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
 
-// “世界”：新建、打开、保存；“操作”：导出、历史、上手说明、偏好
+// “世界”：新建、我的地图、保存、打开文件、导出文件；“操作”：导出、历史、上手说明、偏好
 
 export function WorldMenu() {
+  const close = () => (openPanel.value = null);
   return (
     <div class="menu">
+      <p class="muted small map-status">{mapStatus()}</p>
       <button
         class="menu-row"
-        onClick={() => {
-          wizardOpen.value = true;
-          openPanel.value = null;
+        onClick={async () => {
+          close();
+          if (await beforeLeave()) wizardOpen.value = true;
         }}
       >
         <FilePlus size={18} />
@@ -25,41 +27,75 @@ export function WorldMenu() {
           <span class="how">选世界的类型、大小和在星球上的位置，从几张小图里挑一张</span>
         </span>
       </button>
-      <label class="menu-row file-button">
-        <FolderOpen size={18} />
+      <button
+        class="menu-row"
+        onClick={() => {
+          close();
+          openMaps();
+        }}
+      >
+        <Library size={18} />
         <span>
-          <b>打开世界文件…</b>
-          <span class="how">接着改以前保存的世界（.json）</span>
+          <b>我的地图…</b>
+          <span class="how">保存在这个浏览器里的世界：打开、改名、导出、删掉</span>
         </span>
-        <input
-          type="file"
-          accept="application/json"
-          onChange={(e) => {
-            const f = (e.target as HTMLInputElement).files?.[0];
-            if (f) void f.text().then((t) => loadDoc(JSON.parse(t) as WorldDoc));
-            (e.target as HTMLInputElement).value = '';
-            openPanel.value = null;
-          }}
-        />
-      </label>
+      </button>
       <button
         class="menu-row"
         disabled={!world.value}
-        onClick={async () => {
-          const doc = await getDoc();
-          if (doc) download('world.json', JSON.stringify(doc), 'application/json');
+        onClick={() => {
+          close();
+          void saveMap();
         }}
       >
         <Save size={18} />
         <span>
-          <b>保存世界文件</b>
-          <span class="how">所有编辑都在里面，之后可以打开继续改</span>
+          <b>保存</b>
+          <span class="how">{currentMap.value ? `存进“我的地图”里的「${currentMap.value.name}」（⌘S）` : '起个名字，存进“我的地图”（⌘S）'}</span>
+        </span>
+      </button>
+      <button
+        class="menu-row"
+        disabled={!world.value}
+        onClick={() => {
+          close();
+          void saveMapAs();
+        }}
+      >
+        <CopyPlus size={18} />
+        <span>
+          <b>另存为…</b>
+          <span class="how">换个名字存成新的一张，之后改的是新的这一张（⇧⌘S）</span>
+        </span>
+      </button>
+      <label class="menu-row file-button">
+        <FolderOpen size={18} />
+        <span>
+          <b>打开世界文件…</b>
+          <span class="how">接着改导出过的世界（.json）；按 ⌘S 可以存进“我的地图”</span>
+        </span>
+        <input
+          type="file"
+          accept="application/json,.json"
+          onChange={(e) => {
+            const f = (e.target as HTMLInputElement).files?.[0];
+            if (f) void openFile(f);
+            (e.target as HTMLInputElement).value = '';
+            close();
+          }}
+        />
+      </label>
+      <button class="menu-row" disabled={!world.value} onClick={() => void exportCurrent()}>
+        <FileDown size={18} />
+        <span>
+          <b>导出世界文件（.json）</b>
+          <span class="how">所有编辑都在里面，换电脑、发给别人、留备份，之后可以打开继续改</span>
         </span>
       </button>
       <button
         class="menu-row"
         onClick={() => {
-          openPanel.value = null;
+          close();
           openPackLibrary();
         }}
       >
@@ -69,7 +105,7 @@ export function WorldMenu() {
           <span class="how">装进别人做好的生态、河流和湖泊类型、星球形态，或把这个世界里自己做的导出来</span>
         </span>
       </button>
-      <p class="muted small">浏览器里会自动保存最近一次的世界；换电脑或想留备份时，用“保存世界文件”。</p>
+      <p class="muted small">⌘S 保存到“我的地图”；换电脑或留备份时导出世界文件</p>
     </div>
   );
 }

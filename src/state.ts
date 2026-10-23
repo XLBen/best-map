@@ -20,6 +20,7 @@ import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
 import type { MeshRequest } from './mesh-worker';
 import type { RiverStyleOverride } from './render/overlay';
 import { idbTx, openDb } from './idb';
+import { THUMB_EVERY_MS, activeLink, idbMapStore, isQuotaError, mapLink, mapSavedState, overwriteMap, thumbHook } from './maps';
 import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 import type { HighlightLayer } from './render/colors';
 import { CANCELLED, EngineHost, type WorkerLike } from './sandbox';
@@ -928,7 +929,9 @@ export interface Ask {
   // 列出的脚本（谁的、哪一种、源码）
   scripts?: FoundScript[];
   choices: AskChoice[];
-  resolve: (value: string) => void;
+  // 带一个输入框（起名字）：框里一开始的字。回车等于点主要的按钮
+  input?: string;
+  resolve: (value: string, text?: string) => void;
 }
 export const ask = signal<Ask | null>(null);
 
@@ -941,6 +944,21 @@ export function askUser(a: Omit<Ask, 'resolve'>): Promise<string> {
       resolve: (v) => {
         if (ask.value === me) ask.value = null;
         resolve(v);
+      },
+    };
+    ask.value = me;
+  });
+}
+
+// 问一个名字：带输入框的问话。点了哪个按钮、框里写的什么（关掉对话框是 'cancel'）
+export function askText(a: Omit<Ask, 'resolve' | 'input'> & { input: string }): Promise<{ value: string; text: string }> {
+  return new Promise((resolve) => {
+    ask.value?.resolve('cancel');
+    const me: Ask = {
+      ...a,
+      resolve: (v, text) => {
+        if (ask.value === me) ask.value = null;
+        resolve({ value: v, text: text ?? a.input });
       },
     };
     ask.value = me;
@@ -1111,7 +1129,23 @@ export async function resumeLast(): Promise<boolean | null> {
       if (v !== 'run') safe = '上次打开时程序停止了响应';
     }
   }
-  return loadDoc(saved.doc, safe !== null ? { safe } : {});
+  const ok = await loadDoc(saved.doc, safe !== null ? { safe } : {});
+  if (ok && saved.mapId) await relink(saved.mapId, saved.savedAt);
+  return ok;
+}
+
+// 打开上次的世界后：它连着“我的地图”里的一张就接着连上（那一张不在了就不连）。
+// 那一张比自动保存旧（上次写完自动保存、还没来得及写它就关了页面）：马上补写一次
+async function relink(id: string, autosavedAt: number) {
+  try {
+    const e = await idbMapStore.entry(id);
+    if (!e) return;
+    mapLink.value = { id, name: e.name, epoch: worldEpoch.value };
+    mapSavedState.value = e.savedAt >= autosavedAt ? worldState.value : -1;
+    if (mapSavedState.value < 0) void autosaveNow();
+  } catch {
+    // 读不了就当没连着
+  }
 }
 
 // 安全模式横幅的“再试一次”：另开一个 Worker，脚本照常运行（没信任过的照样先问）。
@@ -1711,6 +1745,8 @@ interface AutosaveMeta extends Omit<WorldDoc, 'commands'> {
   count: number;
   // 安全模式（脚本没有运行）的原因：下次打开时照样用安全模式（不运行脚本打开 → 自动保存 → 刷新，脚本也不会跑起来）
   safe?: string;
+  // 连着“我的地图”里的哪一张（见 maps.ts）：刷新后照样连着
+  mapId?: string;
 }
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveWarned = false;
@@ -1735,6 +1771,44 @@ function scheduleAutosave() {
   autosaveTimer = setTimeout(() => (autosaving = autosaving.then(autosave)), 1500);
 }
 
+// 马上自动保存一次（连上、断开“我的地图”里的一张之后，换别的世界之前）；等它写完
+export function autosaveNow(): Promise<void> {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  autosaving = autosaving.then(autosave);
+  return autosaving;
+}
+
+// 连着的地图上次换缩略图的时间；存满了只提醒一次
+let thumbAt = 0;
+let linkWarned = false;
+export function noteThumb(at = Date.now()) {
+  thumbAt = at;
+}
+
+// 自动保存之后：连着“我的地图”里的一张就把它也更新（世界文件；隔几分钟换一张缩略图）。
+// link、state 是这次自动保存开始时的：之后换了世界（纪元变了）就不写
+async function syncLinked(link: { id: string; name: string; epoch: number }, state: number) {
+  if (mapSavedState.value === state) return;
+  const doc = await getDoc();
+  if (!doc || link.epoch !== worldEpoch.value || activeLink(mapLink.value, worldEpoch.value)?.id !== link.id) return;
+  const now = Date.now();
+  const thumb = now - thumbAt > THUMB_EVERY_MS ? (thumbHook.make?.() ?? null) : null;
+  try {
+    const e = await overwriteMap(idbMapStore, link.id, { doc, thumb, now });
+    if (!e) {
+      // 别的页面里删掉了：这个世界不再连着它
+      if (mapLink.value?.id === link.id) mapLink.value = null;
+      return;
+    }
+    if (thumb) thumbAt = now;
+    if (mapLink.value?.id === link.id && link.epoch === worldEpoch.value) mapSavedState.value = state;
+  } catch (e) {
+    if (!linkWarned) showToast(isQuotaError(e) ? `浏览器的存储满了，「${link.name}」没能自动保存。删掉几张不要的地图，或用“世界 → 导出世界文件”留一份` : `「${link.name}」没能自动保存（浏览器的存储用不了）`, true);
+    linkWarned = true;
+  }
+}
+
 async function autosave() {
   if (savedEpoch !== worldEpoch.value) {
     savedIds = [];
@@ -1742,11 +1816,14 @@ async function autosave() {
   }
   const epoch = savedEpoch;
   const gen = savedGen;
+  const link = activeLink(mapLink.value, epoch);
+  const state = worldState.value;
   const r = await call({ kind: 'docTail', ids: savedIds }, null);
   if (!r.ok || !r.tail || epoch !== worldEpoch.value || gen !== savedGen) return;
   const { from, commands, ids, ...head } = r.tail;
   const meta: AutosaveMeta = { ...head, savedAt: Date.now(), count: ids.length };
   if (safeMode.value) meta.safe = safeMode.value.reason;
+  if (link) meta.mapId = link.id;
   try {
     if (savedCount < 0) savedCount = ((await idb<AutosaveMeta | undefined>('readonly', (s) => s.get('autosave')))?.count ?? 0) as number;
     const stale = savedCount;
@@ -1761,6 +1838,7 @@ async function autosave() {
     autosaved.value = meta.savedAt;
     // IndexedDB 用不了时存在 localStorage 里的：已经有更新的了
     localStorage.removeItem(AUTOSAVE_KEY);
+    if (link) await syncLinked(link, state);
   } catch {
     // IndexedDB 用不了（比如隐私模式）：整份存进 localStorage
     const doc = await getDoc();
@@ -1769,7 +1847,7 @@ async function autosave() {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: Date.now(), doc, ...(safeMode.value ? { safe: safeMode.value.reason } : {}) }));
       autosaved.value = Date.now();
     } catch {
-      if (!autosaveWarned) showToast('世界太大，浏览器存不下自动保存；记得在“世界 → 保存世界文件”里手动保存', true);
+      if (!autosaveWarned) showToast('世界太大，浏览器存不下自动保存；记得用“世界 → 导出世界文件”留一份', true);
       autosaveWarned = true;
     }
   }
@@ -1788,6 +1866,7 @@ export interface Autosaved {
   savedAt: number;
   doc: WorldDoc;
   safe?: string;
+  mapId?: string;
 }
 export async function readAutosave(): Promise<Autosaved | null> {
   let best: Autosaved | null = null;
@@ -1798,9 +1877,9 @@ export async function readAutosave(): Promise<Autosaved | null> {
     const meta = await get<AutosaveMeta | undefined>(tx.objectStore('kv').get('autosave'));
     if (meta && meta.count > 0) {
       const commands = await get<Command[]>(tx.objectStore('autosave').getAll(IDBKeyRange.bound(0, meta.count - 1)));
-      const { savedAt, count, safe, ...head } = meta;
+      const { savedAt, count, safe, mapId, ...head } = meta;
       const doc = { ...head, commands };
-      if (commands.length === count && isCurrentDoc(doc)) best = { savedAt, doc, ...(typeof safe === 'string' ? { safe } : {}) };
+      if (commands.length === count && isCurrentDoc(doc)) best = { savedAt, doc, ...(typeof safe === 'string' ? { safe } : {}), ...(typeof mapId === 'string' ? { mapId } : {}) };
     }
     db.close();
   } catch {

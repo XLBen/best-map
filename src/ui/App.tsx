@@ -19,6 +19,7 @@ import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
 import { PackApply } from './packs/PackApply';
+import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
 import { ActionsPanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
@@ -194,6 +195,7 @@ export function App() {
       <CursorHint />
       <Wizard />
       <PackDialog />
+      <MapsDialog />
       <Help />
       <AskDialog />
     </div>
