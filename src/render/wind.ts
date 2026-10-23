@@ -129,18 +129,22 @@ function tileLines(world: World, season: WindSeason, level: number, tx: number, 
 }
 
 // 画流线：先整体描一道深色的边，再按风速分三档画白线，线尾细、线头粗，末端带小箭头。unitPx：一个设备像素合多少地图单位
-export function drawWind(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number) {
+// size：画布的 CSS 大小（导出整张地图时是虚拟窗口；不给就按画布）
+type Size = { cw: number; ch: number };
+const sizeOf = (ctx: CanvasRenderingContext2D, size?: Size): Size => size ?? { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight };
+
+export function drawWind(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size) {
   if (world.mesh.kind === 'sphere') {
-    drawWindSphere(ctx, world, cam, season, unitPx);
+    drawWindSphere(ctx, world, cam, season, unitPx, size);
     return;
   }
   const { mesh } = world;
   const level = Math.max(3, Math.min(12, Math.round(Math.log2((mesh.width * cam.zoom) / 44))));
   const sep = mesh.width / 2 ** level;
   const span = TILE * sep;
-  const canvas = ctx.canvas;
-  const halfW = canvas.clientWidth / 2 / cam.zoom;
-  const halfH = canvas.clientHeight / 2 / cam.zoom;
+  const { cw, ch } = sizeOf(ctx, size);
+  const halfW = cw / 2 / cam.zoom;
+  const halfH = ch / 2 / cam.zoom;
   const tx0 = Math.max(0, Math.floor((cam.x - halfW) / span));
   const tx1 = Math.min(Math.ceil(mesh.width / span) - 1, Math.floor((cam.x + halfW) / span));
   const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
@@ -317,13 +321,13 @@ function tileLinesSphere(world: World, field: Field, tag: string, level: number,
 }
 
 // 星球上看得见的瓦片（经度方向不截断，按一整圈取模），每条线连同它所在副本的平移量
-function visibleLines(world: World, field: Field, tag: string, cam: Camera, ctx: CanvasRenderingContext2D): { line: Line; dx: number }[] {
+function visibleLines(world: World, field: Field, tag: string, cam: Camera, ctx: CanvasRenderingContext2D, size?: Size): { line: Line; dx: number }[] {
   const level = Math.max(4, Math.min(12, Math.round(Math.log2((2 * cam.zoom) / 44))));
   const nT = Math.max(1, Math.round(2 ** level / TILE));
   const span = 2 / nT;
-  const canvas = ctx.canvas;
-  const halfW = canvas.clientWidth / 2 / cam.zoom;
-  const halfH = canvas.clientHeight / 2 / cam.zoom;
+  const { cw, ch } = sizeOf(ctx, size);
+  const halfW = cw / 2 / cam.zoom;
+  const halfH = ch / 2 / cam.zoom;
   const tx0 = Math.floor((cam.x - halfW) / span);
   const tx1 = Math.floor((cam.x + halfW) / span);
   const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
@@ -383,24 +387,24 @@ function strokeLines(ctx: CanvasRenderingContext2D, lines: { line: Line; dx: num
   ctx.restore();
 }
 
-function drawWindSphere(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number) {
+function drawWindSphere(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size) {
   const d = world.derived;
   const field: Field = {
     key: d.windSX,
     vec: (i) =>
       season === 'summer' ? [d.windSX[i], d.windSY[i]] : season === 'winter' ? [d.windWX[i], d.windWY[i]] : [(d.windSX[i] + d.windWX[i]) / 2, (d.windSY[i] + d.windWY[i]) / 2],
   };
-  const lines = visibleLines(world, field, season, cam, ctx).map(({ line, dx }) => ({ line, dx, band: line.speed < 0.35 ? 0 : line.speed < 0.75 ? 1 : 2, color: 0 }));
+  const lines = visibleLines(world, field, season, cam, ctx, size).map(({ line, dx }) => ({ line, dx, band: line.speed < 0.35 ? 0 : line.speed < 0.75 ? 1 : 2, color: 0 }));
   strokeLines(ctx, lines, [['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0.85)']], unitPx, 'rgba(10, 16, 24, 0.28)');
 }
 
 // 洋流：只在海上，暖流（海温偏高）偏橙、寒流（偏低）偏蓝，其余白色；流得越快越不透明
-export function drawCurrents(ctx: CanvasRenderingContext2D, world: World, cam: Camera, unitPx: number) {
+export function drawCurrents(ctx: CanvasRenderingContext2D, world: World, cam: Camera, unitPx: number, size?: Size) {
   const d = world.derived;
   const land = world.causes.land;
   const field: Field = { key: d.currentX, vec: (i) => [d.currentX[i], d.currentY[i]], stop: (i) => land[i] === 1 };
   const { mesh } = world;
-  const lines = visibleLines(world, field, 'currents', cam, ctx).map(({ line, dx }) => {
+  const lines = visibleLines(world, field, 'currents', cam, ctx, size).map(({ line, dx }) => {
     const [mx, my] = line.pts[Math.floor(line.pts.length / 2)];
     const c = findCell(mesh, mx, my);
     const a = d.sstAnom[c];

@@ -6,7 +6,8 @@ import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type ColorOptions, type GhostEdit, GhostBuffer, type HighlightLayer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
-import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
+import { exportFrame, type LabelSize, planTiles, tileMargin, tileSize, tileView } from '../render/export-plan';
+import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type ProvinceLabel, buildPaths, drawOverlay, riverPathsKey, samePathsKey } from '../render/overlay';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import {
   FLASH_MS,
@@ -14,7 +15,9 @@ import {
   adjustPreviewWorld,
   cornerLift,
   cursorHint,
+  exportProgress,
   flash,
+  imageExportCancel,
   focusSpecies,
   hoverCell,
   hoverProvinceCell,
@@ -194,6 +197,8 @@ export function MapView() {
     // 用户还没手动平移缩放时，画布尺寸变了就重新适配整张图
     let userMoved = false;
     let pressed = false;
+    // 正在导出整张地图（见 exportImage）
+    let exportBusy = false;
 
     const hitLabel = (sx: number, sy: number) => labelBoxes.find((b) => sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1)?.key ?? null;
     const env = { zoom: () => renderer.camera.zoom, hitLabel };
@@ -410,6 +415,8 @@ export function MapView() {
       frame = 0;
       const w = world.value;
       if (!w || !paths) return;
+      // 正在导出整张地图：渲染器的图层是导出用的干净的那一份，屏幕先不画（导出完了重画）
+      if (exportBusy && !clean) return;
       placeReference(w);
       // 拖左侧滑块时：鼠标不在地图上，也在最后停的地方（没有就在画面中间）显示预览
       if (sliderActive.value && !pointer && !pressed && !lastPointer) {
@@ -955,7 +962,94 @@ export function MapView() {
         if (clean) requestDraw();
         return out;
       },
+      exportImage,
     };
+    // 导出整张地图（.png）：虚拟镜头盖住整张图（整个星球是一整圈 2:1，不重复），按停稳的画法离屏一块块画（每块四周多画一圈，
+    // 拼起来没有接缝），再在整张图上画河、地名（按整张图排）、边界之外的叠加层；与“当前画面”一样是干净的画面。
+    // 画的期间屏幕上的地图不重画；每画完一块让一下主线程（进度条照常动）。cancelled() 为真时停下，返回 null
+    async function exportImage(o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean }, progress: (p: number) => void, cancelled: () => boolean): Promise<HTMLCanvasElement | null> {
+      const w = world.value;
+      if (!w || !paths || exportBusy) return null;
+      const mesh = w.mesh;
+      const fr = exportFrame(mesh, o.width, o.labels);
+      const out = document.createElement('canvas');
+      out.width = fr.width;
+      out.height = fr.height;
+      const octx = out.getContext('2d');
+      if (!octx) throw new Error('浏览器开不了这么大的画布');
+      const cellPx = mesh.spacing * fr.cam.zoom * fr.dpr;
+      const m = tileMargin(cellPx);
+      const T = tileSize(renderer.exportLimit(), m, o.tile);
+      if (T < 64) throw new Error('显卡支持的画布太小，导不出这么大的图');
+      const tiles = planTiles(fr.width, fr.height, T);
+      exportBusy = true;
+      try {
+        for (let i = 0; i < tiles.length; i++) {
+          if (cancelled()) return null;
+          // 每一块前都按当前世界换成干净的图层（中间世界变了也一致：都按开始时的这一份）
+          cleanState(w);
+          const t = tiles[i];
+          const px = renderer.renderTile(w.kmPerUnit, tileView(fr, t.x, t.y, T, m), T, fr.cam.zoom, fr.dpr);
+          const img = new ImageData(t.w, t.h);
+          if (t.w === T) img.data.set(px.subarray(0, T * t.h * 4));
+          else for (let r = 0; r < t.h; r++) img.data.set(px.subarray(r * T * 4, (r * T + t.w) * 4), r * t.w * 4);
+          octx.putImageData(img, t.x, t.y);
+          progress(((i + 1) / tiles.length) * 0.85);
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        if (cancelled()) return null;
+        if (o.overlay !== false) drawOverlay(octx as CanvasRenderingContext2D, w, paths, fr.cam, cleanOverlay(w, { cw: fr.cw, ch: fr.ch, dpr: fr.dpr }));
+        progress(0.9);
+        return out;
+      } finally {
+        renderer.releaseExport();
+        exportBusy = false;
+        lastHighlightKey = [];
+        requestDraw();
+      }
+    }
+
+    // 干净的画面（导出图片）用的渲染器状态：当前世界的着色、存着的花纹，不带高亮、省份预览、幽灵海岸
+    function cleanState(w: World) {
+      applyColors(w);
+      applyFx(w, true);
+      applyTint(w);
+      renderer.setHighlight(null);
+      lastHighlightKey = [];
+      applyGroupPreview(w, null);
+      applyGhost(w, null);
+      renderer.flatByGroup = mode.value === 'provinces';
+      renderer.highlightByGroup = category.value === 'provinces';
+      renderer.style = mapStyle.value;
+    }
+
+    // 干净的画面的叠加层（与 draw(true) 的一样：图层里打开的河、风、洋流、地名、比例尺、纬度刻度；省份类工具时的省名）
+    function cleanOverlay(w: World, frame: Frame): OverlayState {
+      const c = category.value;
+      const groups = labelGroups.value;
+      const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
+      return {
+        rivers: overlays.value.rivers,
+        wind: overlays.value.wind,
+        markers: false,
+        season: season.value,
+        style: mapStyle.value,
+        shapes: [],
+        provinceLabels: c === 'provinces' ? provinceLabels : [],
+        features: overlays.value.labels || c === 'names' ? w.derived.features : null,
+        labelTypes: types,
+        kmPerUnit: w.kmPerUnit,
+        hoverLabel: null,
+        scaleBar: overlays.value.scale,
+        cornerLift: 0,
+        latitude: overlays.value.latitude ? { north: w.settings.latNorth + w.small.planet.latShift, south: w.settings.latSouth + w.small.planet.latShift } : null,
+        currents: overlays.value.currents,
+        motion: false,
+        exact: true,
+        frame,
+      };
+    }
+
     // 开发时的平移缩放测速（src/render/bench.ts）：控制台里 await __map2Bench()
     if (import.meta.env.DEV) {
       const hooks = {
@@ -1006,4 +1100,28 @@ export function MapView() {
 export function snapshotCanvas(): HTMLCanvasElement | null {
   const hook = (window as unknown as { __map2?: { snapshot: (clean?: boolean) => HTMLCanvasElement } }).__map2;
   return hook ? hook.snapshot(true) : null;
+}
+
+type ExportImage = (o: { width: number; labels: LabelSize; tile?: number; overlay?: boolean }, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
+
+// 导出整张地图（.png）：进度显示在顶部的提示条上（与游戏文件包共用，可以取消），得到 PNG 的 Blob；取消、出错时为 null
+export async function exportFullMap(o: { width: number; labels: LabelSize }): Promise<Blob | null> {
+  const hook = (window as unknown as { __map2?: { exportImage: ExportImage } }).__map2;
+  if (!hook || exportProgress.value !== null) return null;
+  let stop = false;
+  exportProgress.value = 0;
+  imageExportCancel.current = () => (stop = true);
+  try {
+    const canvas = await hook.exportImage(o, (p) => (exportProgress.value = p), () => stop);
+    if (!canvas || stop) return null;
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) showToast('图片太大，浏览器存不下：换小一点的尺寸', true);
+    return stop ? null : blob;
+  } catch (e) {
+    showToast(`导出失败：${(e as Error).message}`, true);
+    return null;
+  } finally {
+    imageExportCancel.current = null;
+    exportProgress.value = null;
+  }
 }

@@ -3,7 +3,8 @@ import { useState } from 'preact/hooks';
 import type { WorldDoc } from '../../../core/engine';
 import { type WheelPref, download, exportProgress, exportZip, getDoc, helpOpen, loadDoc, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
-import { snapshotCanvas } from '../MapView';
+import type { LabelSize } from '../../render/export-plan';
+import { exportFullMap, snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
 import { openPackLibrary } from '../packs/store';
 
@@ -74,6 +75,15 @@ export function WorldMenu() {
   );
 }
 
+// 整张地图（.png）的宽度与地名字号：面板关上再打开时还是上次选的
+const PNG_WIDTHS = [2048, 4096, 8192];
+const LABEL_SIZES: [LabelSize, string][] = [
+  ['small', '小'],
+  ['medium', '中'],
+  ['large', '大'],
+];
+const pngChoice: { width: number; labels: LabelSize } = { width: 4096, labels: 'medium' };
+
 const WHEEL: [WheelPref, string][] = [
   ['auto', '自动'],
   ['zoom', '缩放'],
@@ -83,11 +93,22 @@ const WHEEL: [WheelPref, string][] = [
 export function ActionsPanel() {
   const w = world.value;
   const [width, setWidth] = useState(4096);
+  const [png, setPng] = useState({ ...pngChoice });
   if (!w) return null;
+  const choosePng = (v: Partial<typeof pngChoice>) => {
+    Object.assign(pngChoice, v);
+    setPng({ ...pngChoice });
+  };
   const savePng = () => {
     const c = snapshotCanvas();
     if (c) c.toBlob((b) => b && download('map.png', b, 'image/png'), 'image/png');
   };
+  const saveFullPng = async () => {
+    const b = await exportFullMap(png);
+    if (b) download('map.png', b, 'image/png');
+  };
+  // 整张图的高：一块地区按长宽比，整个星球是 2:1
+  const pngHeight = (s: number) => Math.round((s * w.mesh.height) / w.mesh.width);
   return (
     <>
       <section>
@@ -112,10 +133,29 @@ export function ActionsPanel() {
           </select>
         </div>
         <p class="muted small">高度图、省份图与 definition.csv、地形、河流、生态、地名表 features.csv，还有世界文件。</p>
+        <div class="row">
+          <button disabled={exportProgress.value !== null} onClick={() => void saveFullPng()}>
+            <ImageDown size={16} /> 整张地图（.png）
+          </button>
+          <select value={png.width} onChange={(e) => choosePng({ width: Number((e.target as HTMLSelectElement).value) })} title="图片宽度">
+            {PNG_WIDTHS.map((s) => (
+              <option value={s}>
+                {s} × {pngHeight(s)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div class="row between">
+          <span>地名字号</span>
+          <Seg value={png.labels} options={LABEL_SIZES} onChange={(v) => choosePng({ labels: v })} />
+        </div>
+        <p class="muted small">
+          按现在的画风和图层画出整张{w.mesh.kind === 'sphere' ? '星球（经度 360° 展开成 2:1）' : '地图'}，不管镜头在哪；不带工具的高亮和预览。地名、河按整张图排，字号“大”时标出来的地名少一些。图越大画得越久。
+        </p>
         <button onClick={savePng}>
-          <ImageDown size={16} /> 保存当前画面（.png）
+          <ImageDown size={16} /> 当前画面（.png）
         </button>
-        <p class="muted small">存的是屏幕上现在看到的地图（含地名）。想要整张图，先按 F 看全图。</p>
+        <p class="muted small">存的是屏幕上现在看到的地图（含地名）。</p>
       </section>
       <section>
         <h5>历史</h5>

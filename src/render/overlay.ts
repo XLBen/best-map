@@ -337,6 +337,22 @@ export interface OverlayState {
   motion?: boolean;
   // 导出图片：底层的河直接画（不贴缓存），与原来逐像素相同
   exact?: boolean;
+  // 导出整张地图（.png）：画在一张离屏的大画布上，按这个虚拟窗口（cw × ch 个 CSS 像素，每个 CSS 像素 dpr 个像素）画，
+  // 不清空画布（直接画在底图上）、不用也不动屏幕上的缓存；地名排整张图、不伸出图外，整个星球只排一份
+  frame?: Frame;
+}
+
+export interface Frame {
+  cw: number;
+  ch: number;
+  dpr: number;
+}
+
+// 画布的大小（CSS 像素）与每个 CSS 像素几个像素：导出时按给的虚拟窗口，否则按屏幕上的画布
+export function frameOf(ctx: { canvas: { clientWidth: number; clientHeight: number } }, st?: { frame?: Frame }): Frame {
+  if (st?.frame) return st.frame;
+  const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+  return { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight, dpr };
 }
 
 // 整个星球的平铺图：屏幕上看得见的副本（x 平移 2k）。河、画的河展开后可能伸出 [0, 2) 一点，所以多算一点
@@ -468,11 +484,15 @@ function backKey(world: World, paths: OverlayPaths, st: OverlayState): unknown[]
 // 把底层贴到叠加层上（ctx 已清空、变换是单位矩阵）
 function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState) {
   const canvas = ctx.canvas;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = canvas.clientWidth;
-  const ch = canvas.clientHeight;
+  const { cw, ch, dpr } = frameOf(ctx, st);
   const key = backKey(world, paths, st);
   if (!st.rivers && !st.markers) return;
+  // 导出整张地图：直接画，不碰缓存
+  if (st.frame) {
+    drawBack(ctx, world, paths, cam, st, cw, ch, dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return;
+  }
   if (!st.motion) {
     if (!restLayer || restLayer.canvas.width !== canvas.width || restLayer.canvas.height !== canvas.height || restLayer.soft !== overlayDebug.softLayers || restLayer.dpr !== dpr)
       restLayer = makeLayer(canvas.width, canvas.height, dpr);
@@ -528,15 +548,14 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
 
 export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState): LabelBox[] {
   const canvas = ctx.canvas;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = canvas.clientWidth;
-  const ch = canvas.clientHeight;
-  if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
+  const f = frameOf(ctx, st);
+  const { cw, ch, dpr } = f;
+  if (!st.frame && (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr))) {
     canvas.width = Math.round(cw * dpr);
     canvas.height = Math.round(ch * dpr);
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!st.frame) ctx.clearRect(0, 0, canvas.width, canvas.height);
   const z = cam.zoom * dpr;
   const sphere = world.mesh.kind === 'sphere';
   // 整个星球：每一份看得见的副本各画一遍（一块地区只有 k = 0）
@@ -554,11 +573,11 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
   ctx.lineJoin = 'round';
   setT(0);
 
-  if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr);
-  if (st.currents && sphere) drawCurrents(ctx, world, cam, px * dpr);
+  if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr, f);
+  if (st.currents && sphere) drawCurrents(ctx, world, cam, px * dpr, f);
   if (st.latitude) {
-    if (sphere) drawGraticule(ctx, cam, ks);
-    else drawLatitude(ctx, world, cam, st.latitude);
+    if (sphere) drawGraticule(ctx, cam, ks, f);
+    else drawLatitude(ctx, world, cam, st.latitude, f);
   }
 
   for (const k of ks) {
@@ -577,31 +596,29 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
       for (const l of st.provinceLabels) {
         const sx = ((l.x + 2 * k - cam.x) * cam.zoom + cw / 2) * dpr;
         const sy = ((l.y - cam.y) * cam.zoom + ch / 2) * dpr;
-        if (sx < -50 || sy < -20 || sx > canvas.width + 50 || sy > canvas.height + 20) continue;
+        if (sx < -50 || sy < -20 || sx > cw * dpr + 50 || sy > ch * dpr + 20) continue;
         ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
         ctx.strokeText(l.text, sx, sy);
         ctx.fillText(l.text, sx, sy);
       }
     }
   }
-  const boxes = st.features ? drawLabels(ctx, cam, st, ks, rz) : [];
+  // 导出整个星球：地名只排一份（图就是一整圈）
+  const boxes = st.features ? drawLabels(ctx, cam, st, st.frame ? [0] : ks, rz) : [];
   if (st.scaleBar) {
     if (sphere) {
       // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
       const lat = Math.max(-85, Math.min(85, 90 - 180 * cam.y));
       const where = Math.abs(lat) < 2 ? '赤道' : `${lat > 0 ? '北' : '南'}纬 ${Math.round(Math.abs(lat))}°`;
-      drawScaleBar(ctx, cam, st.kmPerUnit * Math.cos((lat * Math.PI) / 180), st.cornerLift, where);
-    } else drawScaleBar(ctx, cam, st.kmPerUnit, st.cornerLift);
+      drawScaleBar(ctx, cam, st.kmPerUnit * Math.cos((lat * Math.PI) / 180), st.cornerLift, f, where);
+    } else drawScaleBar(ctx, cam, st.kmPerUnit, st.cornerLift, f);
   }
   return boxes;
 }
 
 // 整个星球的经纬网：经线、纬线的间隔随缩放变（每条线之间至少约 60 像素），回归线、极圈用虚线并写上名字
-function drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, ks: number[]) {
-  const canvas = ctx.canvas;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = canvas.clientWidth;
-  const ch = canvas.clientHeight;
+function drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, ks: number[], f: Frame) {
+  const { cw, ch, dpr } = f;
   const sx = (x: number) => (x - cam.x) * cam.zoom + cw / 2;
   const sy = (y: number) => (y - cam.y) * cam.zoom + ch / 2;
   const yOf = (lat: number) => (90 - lat) / 180;
@@ -671,11 +688,8 @@ function drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, ks: number[])
 }
 
 // 纬度刻度：地图左边每 10° 一格；回归线、极圈画一道淡淡的虚线横穿地图
-function drawLatitude(ctx: CanvasRenderingContext2D, world: World, cam: Camera, lat: { north: number; south: number }) {
-  const canvas = ctx.canvas;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = canvas.clientWidth;
-  const ch = canvas.clientHeight;
+function drawLatitude(ctx: CanvasRenderingContext2D, world: World, cam: Camera, lat: { north: number; south: number }, f: Frame) {
+  const { cw, ch, dpr } = f;
   const { mesh } = world;
   const yOf = (l: number) => ((lat.north - l) / (lat.north - lat.south)) * mesh.height;
   const sx = (x: number) => (x - cam.x) * cam.zoom + cw / 2;
@@ -730,10 +744,8 @@ function drawLatitude(ctx: CanvasRenderingContext2D, world: World, cam: Camera, 
 
 // 比例尺：左下角（尺子按钮右边），长度取 1、2、5 乘 10 的整数次方公里，屏幕上不超过 140 像素。
 // 画在地图画布上，所以导出的图片里也有
-function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUnit: number, lift: number, where?: string) {
-  const canvas = ctx.canvas;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const ch = canvas.clientHeight;
+function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUnit: number, lift: number, f: Frame, where?: string) {
+  const { ch, dpr } = f;
   const kmPerPx = kmPerUnit / cam.zoom;
   const max = 140 * kmPerPx;
   const pow = Math.pow(10, Math.floor(Math.log10(max)));
@@ -894,12 +906,11 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
 
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
 export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
-  const canvas = ctx.canvas;
-  const cw = canvas.clientWidth;
-  const chh = canvas.clientHeight;
+  const { cw, ch: chh } = frameOf(ctx, st);
+  const exporting = !!st.frame;
   const base = `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}`;
-  if (layout && layout.key === key && layout.features === st.features) return layout;
+  if (!exporting && layout && layout.key === key && layout.features === st.features) return layout;
   const toScreen = (x: number, y: number): [number, number] => [(x - cam.x) * cam.zoom + cw / 2, (y - cam.y) * cam.zoom + chh / 2];
   const placed: PlacedLabel[] = [];
   const boxes: LabelBox[] = [];
@@ -951,16 +962,24 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     }
     const hw = (Math.abs(Math.cos(angle)) * total + Math.abs(Math.sin(angle)) * fontPx) / 2 + 3;
     const hh = (Math.abs(Math.sin(angle)) * total + Math.abs(Math.cos(angle)) * fontPx) / 2 + 2;
-    for (const [x0, sy] of spots) {
-      const sx = x0 + shift;
+    for (const [x0, y0] of spots) {
+      let sx = x0 + shift;
+      let sy = y0;
+      // 导出整张地图：整个字在图里（伸出边的往里挪；比图还大的不标）
+      if (exporting) {
+        if (2 * hw > cw || 2 * hh > chh) continue;
+        sx = Math.max(hw, Math.min(cw - hw, sx));
+        sy = Math.max(hh, Math.min(chh - hh, sy));
+      }
       const box = { key: f.key, x0: sx - hw, y0: sy - hh, x1: sx + hw, y1: sy + hh };
       if (boxes.some((b) => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0)) continue;
       boxes.push(box);
       placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom ? '#7a1f5c' : style.color, x: sx, y: sy, angle });
     }
   }
-  layout = { key, base, cam: { ...cam }, features: st.features, placed, boxes };
-  return layout;
+  const out = { key, base, cam: { ...cam }, features: st.features, placed, boxes };
+  if (!exporting) layout = out;
+  return out;
 }
 
 // 移动中：镜头离排版面时挪了不到这么多（CSS 像素）、缩放变了不到这么多倍时，沿用排好的版面，整体挪一挪、缩一缩
@@ -968,9 +987,7 @@ const MOTION_LABEL_SHIFT = 160;
 const MOTION_LABEL_ZOOM = 1.15;
 
 function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): LabelBox[] {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw = ctx.canvas.clientWidth;
-  const chh = ctx.canvas.clientHeight;
+  const { cw, ch: chh, dpr } = frameOf(ctx, st);
   // 版面上的位置（CSS 像素）→ 现在的位置：x · r + ox
   let r = 1;
   let ox = 0;
@@ -982,6 +999,7 @@ function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState
   const zr = L ? cam.zoom / L.cam.zoom : 0;
   if (
     st.motion &&
+    !st.frame &&
     L &&
     L.base === base &&
     L.features === st.features &&
