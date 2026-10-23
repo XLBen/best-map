@@ -754,7 +754,9 @@ function normalMouth(world: World, f: DisplayCoast, line: RiverLine, keep: numbe
   for (const pos of line.joins ?? []) lim = Math.max(lim, Math.ceil(pos));
   let k = m - 1;
   let s = 0;
-  while (k > lim && k > 0 && s < MOUTH_LEG * sp) {
+  // 短的线（比如分出去的一小股）最多换掉后四成，前面照原来的走向
+  const leg = Math.min(MOUTH_LEG * sp, 0.4 * lineLength(P));
+  while (k > lim && k > 0 && s < leg) {
     s += Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]);
     k--;
   }
