@@ -50,6 +50,9 @@ function scenariosFor(h: BenchHooks, proj?: 'equalEarth' | 'globe'): Record<stri
       'globe-rotate-full': { start: { x: 1, y: 0.5, zoom: ch * 0.8, proj: p }, step: turn(0.02) },
       'globe-rotate-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: p }, step: turn(6 / (z8 * 0.5)) },
       'globe-zoom': { start: { x: 1, y: 0.5, zoom: ch * 0.8, proj: p }, step: (c, i) => (c.zoom *= i % 40 < 20 ? 1.04 : 1 / 1.04) },
+      // 看着极地（以极点为中心的场景）：看全图、放大到一格约 8 像素时绕极轴转
+      'globe-polar-full': { start: { x: 1, y: 0.5, zoom: ch * 0.8, proj: { kind: 'globe', lon0: 0, lat0: 1.2 } }, step: turn(0.02) },
+      'globe-polar-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: { kind: 'globe', lon0: 0, lat0: 1.3 } }, step: turn(6 / (z8 * 0.5)) },
       'globe-still-8px': { start: { x: 1, y: 0.5, zoom: z8, proj: p }, step: () => {} },
     };
   }

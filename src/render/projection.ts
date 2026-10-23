@@ -329,11 +329,12 @@ export function sceneNeed(cam: ProjCamera & { proj: Proj }, cw: number, ch: numb
     const sy = (q[1] - cam.y) * cam.zoom + ch / 2;
     return sx >= -2 && sx <= cw + 2 && sy >= -2 && sy <= ch + 2;
   };
-  if (onScreen(forward(p, xc, 0))) {
+  // （等面积的极点是一条线，看得见的那一段已经在取样里：不必整圈）
+  if (p.kind === 'globe' && onScreen(forward(p, xc, 0))) {
     y0 = 0;
     full = true;
   }
-  if (onScreen(forward(p, xc, 1))) {
+  if (p.kind === 'globe' && onScreen(forward(p, xc, 1))) {
     y1 = 1;
     full = true;
   }

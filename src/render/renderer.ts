@@ -1022,8 +1022,10 @@ const FS_COMPOSE_PROJ = (() => {
   return s;
 })();
 
-// 测试用（没有 WebGL 时检查拼出来的源码）：合成着色器的平面、星球、星球投影三份
-export const COMPOSE_SOURCES = { plane: FS_COMPOSE, planet: FS_COMPOSE_PLANET, projected: FS_COMPOSE_PROJ };
+// 测试用（没有 WebGL 时检查拼出来的源码）：合成着色器的平面、星球两份
+export const COMPOSE_SOURCES = { plane: FS_COMPOSE, planet: FS_COMPOSE_PLANET };
+// 投影（第十三轮 G4）：合成着色器与极地的场景的几个着色器
+export const PROJ_SOURCES = { compose: FS_COMPOSE_PROJ, polarCellVs: VS_CELL_POLAR, polarIdVs: VS_ID_POLAR, polarSeamVs: VS_SEAM_POLAR, polarTerrainFs: FS_TERRAIN_POLAR };
 
 // 合成程序：带花纹的编译不过时退回不带花纹的（见 withoutFx），只在控制台留一句
 function compileCompose(gl: WebGL2RenderingContext, fs: string): WebGLProgram {
