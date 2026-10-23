@@ -1,7 +1,7 @@
 import type { Command, GuidePatch } from './commands';
 import { wrapDelta } from './geo';
 import { findCell } from './mesh';
-import { dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, roundPoint as roundPt, stemPath } from './rivers';
+import { courseStep, dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, pathSamples, roundPoint as roundPt, stemPath } from './rivers';
 import {
   type CourseOptions,
   type CoursePlan,
@@ -566,27 +566,29 @@ function leaveRiver(world: World, T: EditTarget, raw: readonly Pt[]): { cell: nu
   let hint = T.guide.cells[0];
   let last = -1;
   let cell = -1;
-  for (let k = 0; k < raw.length; k++) {
-    hint = findCell(world.mesh, raw[k][0], raw[k][1], hint);
+  // 按每隔四分之一格的取样点看（画得快时线上只有几个点，两点之间还擦过这条河的格）
+  const S = pathSamples(raw, courseStep(world.mesh));
+  for (let k = 0; k < S.x.length; k++) {
+    hint = findCell(world.mesh, S.x[k], S.y[k], hint);
     if (!own.has(hint)) break;
     last = k;
     cell = hint;
   }
-  if (last < 0) {
-    // 第一点吸在河画出来的线上，线擦过的是旁边一格：从离它最近的这条河的格（一格半以内）的格心接出去
-    const { mesh } = world;
-    let bd = 1.5 * mesh.spacing;
-    for (const c of own) {
-      const dx = mesh.kind === 'sphere' ? wrapDelta(mesh.x[c] - raw[0][0]) : mesh.x[c] - raw[0][0];
-      const dd = Math.hypot(dx, mesh.y[c] - raw[0][1]);
-      if (dd < bd && !water(world, world.derived, c)) [bd, cell] = [dd, c];
-    }
-    if (cell < 0) return null;
-    const x = raw[0][0] + (mesh.kind === 'sphere' ? wrapDelta(mesh.x[cell] - raw[0][0]) : mesh.x[cell] - raw[0][0]);
-    return { cell, pts: [roundPt([x, mesh.y[cell]]), ...raw.map((p) => [p[0], p[1]] as Pt)] };
+  if (last >= 0) {
+    if (last >= S.x.length - 1) return null;
+    return { cell, pts: dedupe([[S.x[last], S.y[last]], ...raw.slice(S.seg[last] + 1).map((p) => [p[0], p[1]] as Pt)]) };
   }
-  if (last >= raw.length - 1) return null;
-  return { cell, pts: raw.slice(last).map((p) => [p[0], p[1]] as Pt) };
+  // 第一点吸在河画出来的线上，线擦过的是旁边一格：从离它最近的这条河的格（一格半以内）的格心接出去
+  const { mesh } = world;
+  let bd = 1.5 * mesh.spacing;
+  for (const c of own) {
+    const dx = mesh.kind === 'sphere' ? wrapDelta(mesh.x[c] - raw[0][0]) : mesh.x[c] - raw[0][0];
+    const dd = Math.hypot(dx, mesh.y[c] - raw[0][1]);
+    if (dd < bd && !water(world, world.derived, c)) [bd, cell] = [dd, c];
+  }
+  if (cell < 0) return null;
+  const x = raw[0][0] + (mesh.kind === 'sphere' ? wrapDelta(mesh.x[cell] - raw[0][0]) : mesh.x[cell] - raw[0][0]);
+  return { cell, pts: [roundPt([x, mesh.y[cell]]), ...raw.map((p) => [p[0], p[1]] as Pt)] };
 }
 
 // 从选中的河 T 上分一股出去：stroke 从河上起笔（第一点吸在河上）画出去，到海、湖、别的河（也可以画回这条河的下游：
