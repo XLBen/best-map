@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { Engine } from './engine';
-import type { GeoFeature } from './features';
+import { type GeoFeature, assignNames } from './features';
 import { ringDistance } from './mesh';
 import { DEFAULT_PACK, type WordPack } from './names';
+import { riverStem, stemPath } from './select';
 import { fantasyBiomeCommands } from './packs/fantasy-biomes';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 
@@ -246,5 +247,23 @@ describe('名字不乱跳', () => {
     expect(list(previewed)).toEqual(list(direct));
     expect(previewed.toDoc()).toEqual(direct.toDoc());
     expect(direct.toDoc().commands.at(-1)!.nameCarry).toBeDefined();
+  });
+
+  it('固定一条留着名字的自然河：名字照旧', () => {
+    const base = continents();
+    const river = base.world.derived.features.filter((f) => f.type === 'river' && !f.guide).sort((a, b) => b.importance - a.importance)[0];
+    // 让这条河留着一个名字（就像它的锚点挪过一次）：存档的命令里记下的照用
+    const copies = base.world.derived.features.map((f) => ({ ...f }));
+    const ctx = assignNames(base.world, copies).get(copies[base.world.derived.features.indexOf(river)])!.ctx!;
+    const doc = base.toDoc();
+    doc.commands.push({ op: 'set_word_pack', pack: null, nameCarry: { keep: { [river.key]: { name: '测试河', ctx } } } });
+    const eng = Engine.fromDoc(doc, base.world.mesh);
+    const w = eng.world;
+    expect(w.derived.features.find((f) => f.key === river.key)!.name).toBe('测试河');
+    const stem = riverStem(w, w.derived, river.anchor);
+    eng.exec({ op: 'add_guide', guide: { id: 'pin', cells: stem.cells, path: stemPath(w, stem.cells), locked: true, spring: false, nameKey: river.key } });
+    const pinned = w.derived.features.find((f) => f.key === 'guide:pin')!;
+    expect([pinned.name, pinned.custom]).toEqual(['测试河', false]);
+    expectReplay(eng);
   });
 });

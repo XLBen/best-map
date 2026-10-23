@@ -1585,8 +1585,10 @@ export interface NameCarry {
   move?: Record<string, string>;
 }
 
-// 起名时每个地物的情况（区块除外）：ctx 自动起名的办法（用户起的名字没有）；override 用上的 featureNames 的键
+// 起名时每个地物的情况（区块除外）：key 名字跟着的键（留着的名字按它记；固定下来的自然河是那条河原来的键，
+// 别的就是地物的键）；ctx 自动起名的办法（用户起的名字没有）；override 用上的 featureNames 的键
 export interface NameMeta {
+  key: string;
   ctx?: string;
   override?: string;
 }
@@ -1681,8 +1683,9 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
       const rt = typed(f);
       const key = g.nameKey ?? f.key;
       const salt = g.salt ?? ov?.salt ?? 0;
+      // 起名的办法与自然的河相同：固定一条留着名字的自然河，名字照旧
       if (rt) return { gen: () => typedName(f, rt, key, salt), ctx: ctxOf(salt, typeHow(rt)) };
-      return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${key}:${salt}`), taken), ctx: ctxOf(salt, `g:${f.type}`) };
+      return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${key}:${salt}`), taken), ctx: ctxOf(salt, `f:${f.type}`) };
     }
     const r = f.region ? regions.get(f.region) : undefined;
     if (r) {
@@ -1705,12 +1708,17 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${salt}`), taken), ctx: ctxOf(salt, `f:${f.type}`) };
   };
   const plans = order.map(plan);
+  // 名字跟着的键：固定下来的自然河跟着那条河原来的键
+  const keyOf = (f: GeoFeature) => {
+    const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
+    return g && inherits(g) ? g.nameKey! : f.key;
+  };
   const meta = new Map<GeoFeature, NameMeta>();
   order.forEach((f, k) => {
     if (f.region && regions.has(f.region)) return;
     const p = plans[k];
     const override = ovOf.get(f)?.[1];
-    meta.set(f, 'fixed' in p ? { override } : { ctx: p.ctx, override });
+    meta.set(f, 'fixed' in p ? { key: keyOf(f), override } : { key: keyOf(f), ctx: p.ctx, override });
   });
   // 留着的名字最先占上（起名的办法没变的才算；同一个名字只给先排到的那个）
   const kept = world.small.keptNames;
@@ -1718,7 +1726,7 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   if (kept) {
     order.forEach((f, k) => {
       const p = plans[k];
-      const e = kept[f.key];
+      const e = kept[keyOf(f)];
       if (!e || 'fixed' in p || p.ctx === undefined || e.ctx !== p.ctx || taken.has(e.name)) return;
       keptOf.set(f, e.name);
       taken.add(e.name);
@@ -1738,22 +1746,26 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   return meta;
 }
 
-// 配对：这一步之前的地物 prev 与之后的 cur。先配键相同的（同一种），剩下的在同一种里（类型、生态相同；
-// 画的河只按键）按重叠的格数从多到少配，重叠要占两者中小的那个的一半以上（岛长大了、海被切掉一角、森林中间被涂掉一块
-// 都还是原来那个）。每个地物最多配一次。区块不配（名字跟着区块走，本来就不跳）。返回 [prev 的下标, cur 的下标]
-function pairFeatures(prev: GeoFeature[], cur: GeoFeature[]): [number, number][] {
-  const kind = (f: GeoFeature) => (f.guide !== undefined ? `g:${f.key}` : `${f.type}|${f.species ?? ''}`);
+// 配对：这一步之前的地物 prev 与之后的 cur（名字跟着的键见 NameMeta，区块没有）。先配键相同的（同一种），
+// 剩下的在同一种里（类型、生态相同；画的河只按键）按重叠的格数从多到少配，重叠要占两者中小的那个的一半以上
+// （岛长大了、海被切掉一角、森林中间被涂掉一块都还是原来那个）。每个地物最多配一次。
+// 区块不配（名字跟着区块走，本来就不跳）。返回 [prev 的下标, cur 的下标]
+function pairFeatures(prev: GeoFeature[], prevKeys: (string | undefined)[], cur: GeoFeature[], curKeys: (string | undefined)[]): [number, number][] {
+  // 画的河自成一种（固定下来的自然河与自然的河同一种）
+  const kind = (f: GeoFeature, key: string | undefined) => (f.guide !== undefined && key === f.key ? `g:${f.key}` : `${f.type}|${f.species ?? ''}`);
   const pairs: [number, number][] = [];
   const oldAt = new Map<string, number>();
-  prev.forEach((f, i) => {
-    if (f.region === undefined && !oldAt.has(f.key)) oldAt.set(f.key, i);
+  prev.forEach((_, i) => {
+    const key = prevKeys[i];
+    if (key !== undefined && !oldAt.has(key)) oldAt.set(key, i);
   });
   const usedOld = new Uint8Array(prev.length);
   const usedNew = new Uint8Array(cur.length);
   cur.forEach((f, j) => {
-    if (f.region !== undefined) return;
-    const i = oldAt.get(f.key);
-    if (i === undefined || usedOld[i] || kind(prev[i]) !== kind(f)) return;
+    const key = curKeys[j];
+    if (key === undefined) return;
+    const i = oldAt.get(key);
+    if (i === undefined || usedOld[i] || kind(prev[i], prevKeys[i]) !== kind(f, key)) return;
     pairs.push([i, j]);
     usedOld[i] = 1;
     usedNew[j] = 1;
@@ -1761,7 +1773,7 @@ function pairFeatures(prev: GeoFeature[], cur: GeoFeature[]): [number, number][]
   // 没配上的旧地物：每格属于哪几个
   const owners = new Map<number, number[]>();
   prev.forEach((f, i) => {
-    if (usedOld[i] || f.region !== undefined || f.guide !== undefined) return;
+    if (usedOld[i] || prevKeys[i] === undefined || f.guide !== undefined) return;
     for (const c of f.cells) {
       const list = owners.get(c);
       if (list) list.push(i);
@@ -1770,10 +1782,10 @@ function pairFeatures(prev: GeoFeature[], cur: GeoFeature[]): [number, number][]
   });
   const cand: [number, number, number][] = [];
   cur.forEach((f, j) => {
-    if (usedNew[j] || f.region !== undefined || f.guide !== undefined) return;
-    const k = kind(f);
+    if (usedNew[j] || curKeys[j] === undefined || f.guide !== undefined) return;
+    const k = kind(f, curKeys[j]);
     const count = new Map<number, number>();
-    for (const c of f.cells) for (const i of owners.get(c) ?? []) if (kind(prev[i]) === k) count.set(i, (count.get(i) ?? 0) + 1);
+    for (const c of f.cells) for (const i of owners.get(c) ?? []) if (kind(prev[i], prevKeys[i]) === k) count.set(i, (count.get(i) ?? 0) + 1);
     for (const [i, n] of count) if (n * 2 >= Math.min(prev[i].cells.length, f.cells.length)) cand.push([n, i, j]);
   });
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -1796,11 +1808,19 @@ export function carryNames(world: World, features: GeoFeature[], prevSmall: Smal
   // 之前的名字与起名的情况（按之前的小数据重新起一遍：与当时起的一字不差）
   const old = prev.map((f) => ({ ...f }));
   const oldMeta = assignNames({ ...world, small: prevSmall }, old);
-  const pairs = pairFeatures(old, features);
-  if (!pairs.length) return null;
   const small: SmallState = { ...world.small, featureNames: { ...world.small.featureNames }, keptNames: { ...world.small.keptNames } };
   const kept = small.keptNames!;
   const scratch: World = { ...world, small };
+  const first = features.map((f) => ({ ...f }));
+  const firstMeta = assignNames(scratch, first);
+  const curKeys = first.map((f) => firstMeta.get(f)?.key);
+  const pairs = pairFeatures(
+    old,
+    old.map((f) => oldMeta.get(f)?.key),
+    features,
+    curKeys,
+  );
+  if (!pairs.length) return null;
   const keep: Record<string, KeptName | null> = {};
   const move: Record<string, string> = {};
   // 留下一些名字之后，别的地物可能跟着换（原来撞名退到后面的名字现在空出来了）：再看一遍，直到没有新的要留
@@ -1828,18 +1848,18 @@ export function carryNames(world: World, features: GeoFeature[], prevSmall: Smal
       }
       // 自动起的名字：起名的办法没变就留着原来的名字（已经留着、但被排在前面的占了的，不再留）
       if (o.custom || om?.ctx === undefined || fm?.ctx !== om.ctx) continue;
-      const e = kept[f.key];
+      const e = kept[fm.key];
       if (e && e.name === o.name && e.ctx === fm.ctx) continue;
-      kept[f.key] = keep[f.key] = { name: o.name, ctx: fm.ctx };
+      kept[fm.key] = keep[fm.key] = { name: o.name, ctx: fm.ctx };
       more = true;
     }
     if (!more) break;
   }
   // 换了键的地物：原来的键上留着的名字不再用（那个键以后又出现时照常起名，不会与这里重名）
-  const keys = new Set(features.map((f) => f.key));
+  const keys = new Set(curKeys);
   for (const [i, j] of pairs) {
-    const k = old[i].key;
-    if (k !== features[j].key && !keys.has(k) && kept[k] && !(k in keep)) keep[k] = null;
+    const k = oldMeta.get(old[i])?.key;
+    if (k !== undefined && k !== curKeys[j] && !keys.has(k) && kept[k] && !(k in keep)) keep[k] = null;
   }
   const out: NameCarry = {};
   if (Object.keys(keep).length) out.keep = keep;
