@@ -68,7 +68,7 @@ export const SCRIPT_KIND_LABEL: Record<ScriptKind, string> = {
 export const SCRIPT_API = 1;
 export const MAX_SCRIPT_CHARS = 20000;
 
-export const scriptSchema = z.object({ api: z.literal(SCRIPT_API), src: z.string().max(MAX_SCRIPT_CHARS) });
+const scriptSchema = z.object({ api: z.literal(SCRIPT_API), src: z.string().max(MAX_SCRIPT_CHARS) });
 export type Script = z.output<typeof scriptSchema>;
 
 // 生态、河流类型、星球形态都用同一个容器 `scripts`。全部可选、没有默认值：不写脚本的旧数据解析结果不变

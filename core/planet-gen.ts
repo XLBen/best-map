@@ -336,8 +336,8 @@ export function buildPlanetModel(input: WorldgenInput): PlanetModel {
 // ---------- 星球形态的布局脚本 ----------
 
 // 布局脚本最多加到这么多大陆块、这么多岛（防止写错的循环把模型撑得很大、每格都要算很久）
-export const MAX_FORM_BLOCKS = 120;
-export const MAX_FORM_ISLANDS = 300;
+const MAX_FORM_BLOCKS = 120;
+const MAX_FORM_ISLANDS = 300;
 
 interface SetupOutcome {
   // 运行之后的大陆块（含配方原来的、脚本加的）
@@ -367,7 +367,7 @@ export interface SetupField {
   hi?: number;
   def?: number | boolean;
 }
-export const SETUP_FIELDS: Record<'addBlock' | 'addIsland', readonly SetupField[]> = {
+const SETUP_FIELDS: Record<'addBlock' | 'addIsland', readonly SetupField[]> = {
   addBlock: [
     { key: 'lat', zh: '纬度', label: '中心的纬度（北纬为正）', unit: '°', lo: -90, hi: 90 },
     { key: 'lon', zh: '经度', label: '中心的经度（东经为正）', unit: '°', lo: -1e6, hi: 1e6 },

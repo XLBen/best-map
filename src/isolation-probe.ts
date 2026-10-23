@@ -8,7 +8,7 @@
 // 整个程序里只有这里碰 IndexedDB 的名字（隔离的 Worker 里不读写存档，检查点交给存储 Worker），见 isolation.test.ts
 
 // 每一项最多等多久（毫秒）：到时还没有结果算“没证明”（不算隔离）
-export const PROBE_MS = 1500;
+const PROBE_MS = 1500;
 
 const PROBE_DB = 'map2-isolation-probe';
 

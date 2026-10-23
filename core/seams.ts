@@ -62,7 +62,7 @@ const SEAM_PIECE = 1;
 // 格的标记（ok）要看多远的格：带内的像素扭曲后落进的格，格中心离线不会超过这么远
 const CELL_REACH = SEAM_BAND + 1.5;
 // 化简切线的容差（格距的倍数）与最多几个点（命令的上限）
-export const SEAM_TOLERANCE = 0.02;
+const SEAM_TOLERANCE = 0.02;
 export const SEAM_MAX_POINTS = 2000;
 
 export interface SeamSegments {
@@ -87,7 +87,7 @@ export interface SeamSegments {
 // 所有切线拆成线段（按切线、再按线上的顺序编号）。几乎为 0 的段（不到万分之一格）去掉：着色器里按单精度算方向会出错。
 // 长的段再等分成不超过一格的几段（方向不变，像素离线多远、在哪一边都不变）：每段两边的省是在这一小段附近投票选的，
 // 一条直线化简后只剩一段时，线上不同地方两边的省（比如后来又切了一刀，旧线两边换成了新的几块）也各按各的
-export function seamSegments(world: World, seams: readonly ProvinceSeam[]): SeamSegments {
+function seamSegments(world: World, seams: readonly ProvinceSeam[]): SeamSegments {
   const sphere = world.mesh.kind === 'sphere';
   const tiny = 1e-4 * world.mesh.spacing;
   const piece = SEAM_PIECE * world.mesh.spacing;
@@ -188,7 +188,7 @@ export interface SeamLayers {
 }
 
 // 分组值：陆地省份 = 编号 + 1，海域省份 = −(编号 + 1)，未划分 = 0（与着色器的省界编码相同）
-export function groupValue(province: Int32Array, land: Uint8Array, i: number): number {
+function groupValue(province: Int32Array, land: Uint8Array, i: number): number {
   const p = province[i];
   return p < 0 ? 0 : land[i] ? p + 1 : -(p + 1);
 }
@@ -429,7 +429,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
 }
 
 // 像素规则：c 是像素按扭曲后的位置取的格，seg / side 是像素（没扭曲的位置）最近的段与在哪一边。返回像素该取的格
-export function seamPixel(L: SeamLayers, c: number, seg: number, side: number): number {
+function seamPixel(L: SeamLayers, c: number, seg: number, side: number): number {
   if (seg < 0 || c < 0) return c;
   const gl = L.gL[seg];
   const gr = L.gR[seg];
@@ -559,7 +559,7 @@ export function scissors(
 // 记下的切线只留真正切开省的那一段：从线第一次进入这个省（切之前的省份）到最后一次离开。
 // 线头伸进邻省、线穿过别的省的那几段不要，那里的边界照旧按格画。沿线每 0.1 格看一次，
 // ids 里的每个省各给一段（线只走一遍：一条长线切开几十个省时也不慢）
-export function seamTrim(world: World, line: [number, number][], ids: readonly number[]): [number, number][][] {
+function seamTrim(world: World, line: [number, number][], ids: readonly number[]): [number, number][][] {
   const { mesh, causes } = world;
   const sphere = mesh.kind === 'sphere';
   const step = 0.1 * mesh.spacing;
@@ -598,7 +598,7 @@ export function seamTrim(world: World, line: [number, number][], ids: readonly n
 
 // 界面上画好的线变成切线命令里的线：整个星球上把第一个点挪回 [0, 2)（整条线一起挪，线还是连着的），
 // 再按 0.02 格的容差化简（Douglas–Peucker），点太多时放宽容差直到不超过上限。预览与命令用同一条线，所以切出来一样
-export function seamLine(world: World, line: [number, number][]): [number, number][] {
+function seamLine(world: World, line: [number, number][]): [number, number][] {
   if (line.length < 2) return line;
   const shift = world.mesh.kind === 'sphere' ? line[0][0] - wrapX(line[0][0]) : 0;
   let pts: [number, number][] = line.map(([x, y]) => [x - shift, y]);

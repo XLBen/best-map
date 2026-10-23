@@ -846,7 +846,7 @@ const BUILTIN_SPECIES = new Set(DEFAULT_SPECIES.map((sp) => sp.id));
 // 类型名（地名表、底部条）就是生态的名字；模板里的 {__species} 换成它。
 // 生态自带地名设定（第三批的 feature）时：类型名用它的 label，起名模板用它的 names（词表仍用文字包的；
 // 文字包里没有模板用到的词表时用内置包的）。地物的种类、锚点不看这些，所以只改地名设定时只要重新起名
-export function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (pack: WordPack) => { pack: WordPack; type: string } } {
+function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (pack: WordPack) => { pack: WordPack; type: string } } {
   const group = speciesGroup(sp);
   const type: FeatureType = group && BUILTIN_SPECIES.has(sp.id) ? group : 'biome';
   const label = sp.feature?.label ?? (sp.name || FEATURE_INFO[type].label);

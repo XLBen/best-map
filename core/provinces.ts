@@ -90,7 +90,7 @@ function components(world: World, mask: (i: number) => boolean): number[][] {
   return out;
 }
 
-export function cellClasses(world: World, d: Derived, rules: ProvinceRules): Uint8Array {
+function cellClasses(world: World, d: Derived, rules: ProvinceRules): Uint8Array {
   const { mesh, causes } = world;
   const n = mesh.n;
   const cls = new Uint8Array(n);

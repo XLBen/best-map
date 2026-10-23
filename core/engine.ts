@@ -765,7 +765,7 @@ export class Engine {
 }
 
 // 一口气走完分阶段的计算
-export function drain<R>(it: Generator<void, R>): R {
+function drain<R>(it: Generator<void, R>): R {
   for (;;) {
     const r = it.next();
     if (r.done) return r.value;
@@ -961,7 +961,7 @@ function copyDerived(d: Derived): Derived {
   return out;
 }
 
-export function cloneWorld(w: World): World {
+function cloneWorld(w: World): World {
   const c = w.causes;
   const fields: Record<string, Float32Array> = {};
   for (const [k, v] of Object.entries(c.fields)) fields[k] = v.slice();

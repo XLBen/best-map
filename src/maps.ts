@@ -121,7 +121,7 @@ export function describeMap(e: Pick<MapEntry, 'kind' | 'sizeKm' | 'cells'>): str
 // ---------- 存、改名、删 ----------
 
 let idSeq = 0;
-export function newMapId(now = Date.now()): string {
+function newMapId(now = Date.now()): string {
   const rnd = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
   return `m${now.toString(36)}-${(idSeq++).toString(36)}-${rnd}`;
 }

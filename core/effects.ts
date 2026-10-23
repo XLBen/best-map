@@ -10,8 +10,8 @@ import type { Derived, World } from './world';
 // 然后求解（自然融入）和最后一遍都在加了影响的气候上算：求解器能把影响算进去补回来，也不多跑一整遍
 // （没有自然融入的涂色时多跑一遍，固定一遍）。没有这种影响的世界里没有 effT、effP 这两个键，算法逐值照旧
 
-export const MAX_EFF_T = 15;
-export const MAX_EFF_P = 2.5;
+const MAX_EFF_T = 15;
+const MAX_EFF_P = 2.5;
 
 // 一种影响的源头
 interface Source {
@@ -24,7 +24,7 @@ interface Source {
 }
 
 // 世界里有哪些影响（量为 0 的不算）
-export function effectSources(world: World): Source[] {
+function effectSources(world: World): Source[] {
   const out: Source[] = [];
   for (const sp of world.small.species) {
     const c = sp.effects?.climate;

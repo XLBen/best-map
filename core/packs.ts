@@ -27,9 +27,9 @@ import type { World } from './world';
 
 export const PACK_FORMAT = 'map2-pack';
 export const PACK_VERSION = 1;
-export const PACK_EXT = '.map2pack.json';
+const PACK_EXT = '.map2pack.json';
 // 生态多了界面挤、算得慢：超过这么多种时提醒一句（不拦）
-export const SPECIES_SOFT_CAP = 48;
+const SPECIES_SOFT_CAP = 48;
 // 一个文件里最多这么多项（再多就不像是资源包了：一下子加几百种生态，大星球上会算不动）
 export const PACK_MAX = { biomes: 256, riverTypes: 64, lakeTypes: 64, planetForms: 32, textPacks: 16 } as const;
 // 文件最多这么多字（脚本最长 2 万字，256 种生态各两段也到不了）
@@ -96,7 +96,7 @@ export function registerPackSection(key: PackSectionKey, def: Partial<PackSectio
 // ---------- 格式 ----------
 
 // 顶层的结构（严格）；河流类型、星球形态在 parsePack 里按注册的校验逐项再查
-export const resourcePackSchema = z.strictObject({
+const resourcePackSchema = z.strictObject({
   format: z.literal(PACK_FORMAT),
   version: z.literal(PACK_VERSION),
   id: z.string().min(1).max(64),
@@ -234,7 +234,7 @@ export interface PackCounts {
   textPacks: number;
 }
 
-export function packCounts(pack: ResourcePack): PackCounts {
+function packCounts(pack: ResourcePack): PackCounts {
   return { biomes: pack.biomes?.length ?? 0, riverTypes: pack.riverTypes?.length ?? 0, lakeTypes: pack.lakeTypes?.length ?? 0, planetForms: pack.planetForms?.length ?? 0, textPacks: pack.textPacks?.length ?? 0 };
 }
 
@@ -345,7 +345,7 @@ export function biomeFields(sp: Species): string[] {
 }
 
 // 一种生态的脚本、耐受条件（river:x，“靠近某种河”）里用到的河流类型
-export function biomeRivers(sp: Species): string[] {
+function biomeRivers(sp: Species): string[] {
   const out = new Set<string>();
   for (const t of sp.tolerances) if (t.field.startsWith('river:')) out.add(t.field.slice(6));
   for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (RIVER_FNS.has(r.fn)) out.add(r.name);
@@ -353,7 +353,7 @@ export function biomeRivers(sp: Species): string[] {
 }
 
 // 一种生态的脚本、耐受条件（lake:x，“靠近某种湖”）里用到的湖泊类型
-export function biomeLakes(sp: Species): string[] {
+function biomeLakes(sp: Species): string[] {
   const out = new Set<string>();
   for (const t of sp.tolerances) if (t.field.startsWith('lake:')) out.add(t.field.slice(5));
   for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (LAKE_FNS.has(r.fn)) out.add(r.name);

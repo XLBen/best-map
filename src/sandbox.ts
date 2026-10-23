@@ -28,7 +28,7 @@ export interface Clock {
   every(ms: number, f: () => void): () => void;
 }
 
-export const realClock: Clock = {
+const realClock: Clock = {
   now: () => performance.now(),
   every: (ms, f) => {
     const h = setInterval(f, ms);
@@ -238,14 +238,14 @@ export interface HostOptions {
 type Why = 'hang' | 'stopped' | 'crash';
 
 // 给用户的话。world：有世界要恢复（恢复后重做记录就没了）；step：有在等的请求（这一步没做）
-export function stoppedText(why: Why, label: string | null, world = true, step = true): string {
+function stoppedText(why: Why, label: string | null, world = true, step = true): string {
   const who = label ? `「${label}」的脚本` : '脚本';
   const head = why === 'hang' ? `${who}卡住了（4 秒没有算完），已经停下` : why === 'stopped' ? `已经停下${who}` : '计算程序停止了响应';
   return `${head}${step ? '，这一步没有做' : ''}${world ? '。重做记录清空了' : ''}`;
 }
 
 // 安全模式的原因（横幅里括号中的话）
-export function safeReasonText(why: Why, label: string | null): string {
+function safeReasonText(why: Why, label: string | null): string {
   const who = label ? `「${label}」的脚本` : '脚本';
   if (why === 'hang') return `${who}卡住了`;
   if (why === 'stopped') return `停下了${who}`;

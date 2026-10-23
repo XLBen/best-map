@@ -62,15 +62,6 @@ export function fieldGetter(world: World, d: Derived, field: string): FieldGette
   }
 }
 
-export function suitability(sp: Species, get: (field: string) => number): number {
-  let s = 1;
-  for (const t of sp.tolerances) {
-    s *= trapezoid(t, get(t.field));
-    if (s === 0) break;
-  }
-  return s;
-}
-
 export function isVegetated(world: World, d: Derived, i: number): boolean {
   return world.causes.land[i] === 1 && d.lake[i] !== 1;
 }

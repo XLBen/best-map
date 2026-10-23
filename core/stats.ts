@@ -16,7 +16,7 @@ export interface TerrainStats {
   sizes: number[];
 }
 
-export function landmassSizes(world: World): number[] {
+function landmassSizes(world: World): number[] {
   const { mesh, causes } = world;
   const comp = new Int32Array(mesh.n).fill(-1);
   const sizes: number[] = [];
@@ -61,7 +61,7 @@ export function terrainStats(world: World): TerrainStats {
 }
 
 // 对 log N(>A) ~ -k log A 做最小二乘（只用 A ≥ 2 的点，单格岛受格子离散影响太大）
-export function fitPowerLaw(sizes: number[]): number {
+function fitPowerLaw(sizes: number[]): number {
   const s = sizes.filter((a) => a >= 2).sort((a, b) => b - a);
   if (s.length < 8) return NaN;
   const xs: number[] = [];

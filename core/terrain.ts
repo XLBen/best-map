@@ -18,8 +18,6 @@ import type { World } from './world';
 // 海岸噪声的幅度（m）；乘以“海岸风格”的破碎度
 export const COAST_AMP = 180;
 
-export const COAST_STYLES = { smooth: 0.35, natural: 1, rugged: 1.8 } as const;
-
 interface ConeField {
   coneB: Float32Array;
   coneU: Float32Array;
@@ -80,13 +78,13 @@ export function coastSeed(world: World): number {
   return world.small.terrain.gen?.seed ?? world.settings.seed;
 }
 
-export function coastNoiseAt(seed: number): (x: number, y: number) => number {
+function coastNoiseAt(seed: number): (x: number, y: number) => number {
   const noise = gradientNoise(mixSeed(seed, 909));
   return (x, y) => fbm(noise, x, y, 45, 4, 0.6);
 }
 
 // 整个星球：同样的频率，在球面的布局坐标上取三维噪声（没有接缝）
-export function coastNoiseAt3(seed: number): (x: number, y: number, z: number) => number {
+function coastNoiseAt3(seed: number): (x: number, y: number, z: number) => number {
   const noise = gradientNoise3(mixSeed(seed, 909));
   return (x, y, z) => fbm3(noise, x, y, z, 45, 4, 0.6);
 }
@@ -351,7 +349,7 @@ function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Flo
   return seaLevel;
 }
 
-export function isLandValue(landness: number, coast: number, rough: number): boolean {
+function isLandValue(landness: number, coast: number, rough: number): boolean {
   return landness + COAST_AMP * rough * coast > 0;
 }
 
@@ -509,7 +507,7 @@ export function restoreStroke(world: World, cells: number[], t: number[]): Strok
 
 // 应用 landness 增量后的陆海掩码（只算受影响的格），与 resolveTerrain 用同一规则（含单格洞的填补），
 // 所以预览与结果逐格一致。after：受影响的格在改动后是不是陆地
-export function landAfter(world: World, cells: number[], delta: number[]): Map<number, boolean> {
+function landAfter(world: World, cells: number[], delta: number[]): Map<number, boolean> {
   const { mesh, causes } = world;
   const coast = coastNoiseField(mesh, coastSeed(world));
   const rough = world.small.terrain.coastRoughness;
@@ -584,7 +582,7 @@ export const ISLAND_KIND_INFO: Record<IslandKind, { name: string; hint: string }
 export const roundKm = (v: number) => (v >= 100 ? Math.round(v / 10) * 10 : Math.round(v));
 
 // 岛的大小：海岸线的半径（km），连续可调，放出来的岛平均就这么大
-export const islandSizeSchema = z.number().min(0.1).max(20000);
+const islandSizeSchema = z.number().min(0.1).max(20000);
 
 export const islandSchema = z.object({
   x: z.number(),
@@ -598,12 +596,12 @@ export const islandSchema = z.object({
 export type IslandSpec = z.output<typeof islandSchema>;
 
 // 岛、画笔等大小的参照尺度（km）：一块地区是地图的高；整个星球取半圈经线的一半（与格距相当的地区地图同一个量级）
-export function refKm(world: World): number {
+function refKm(world: World): number {
   return world.mesh.kind === 'sphere' ? world.kmPerUnit / 2 : world.mesh.height * world.kmPerUnit;
 }
 
 // 最小的岛（格）：火山岛、大陆岛、低平岛 0.75 格（放出来 1–3 格）；珊瑚岛的环要 1.5 格才看得出来
-export function islandMinCells(kind: IslandKind): number {
+function islandMinCells(kind: IslandKind): number {
   return kind === 'atoll' ? 1.5 : 0.75;
 }
 

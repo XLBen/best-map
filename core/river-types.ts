@@ -42,7 +42,7 @@ export type RiverTypeInput = z.input<typeof riverTypeSchema>;
 export const riverTypesOf = (small: Pick<SmallState, 'riverTypes'>): readonly RiverType[] => small.riverTypes ?? [];
 
 // 类型显示用的名字（出错说明、看门狗提示）
-export const riverTypeOwner = (t: RiverType) => waterTypeOwner(t);
+const riverTypeOwner = (t: RiverType) => waterTypeOwner(t);
 
 // 添加、修改时检查脚本：只能有 match，语法要对（错了整条命令不生效，并说明第几行错了）
 export const checkRiverTypeScripts = (t: RiverType): void => checkMatchScripts(t, '河流类型', '河');

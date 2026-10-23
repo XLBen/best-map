@@ -415,7 +415,7 @@ function speciesChange(before: Species, after: Species): { dirty: Dirty; what: s
 // ---------- 画的河 ----------
 
 // 河道上前后两格必须相邻
-export function checkCourse(mesh: Mesh, cells: readonly number[]) {
+function checkCourse(mesh: Mesh, cells: readonly number[]) {
   for (let k = 0; k + 1 < cells.length; k++) {
     const a = cells[k];
     const b = cells[k + 1];

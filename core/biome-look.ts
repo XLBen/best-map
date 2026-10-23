@@ -34,7 +34,7 @@ export function blendRgb(share: ArrayLike<number>, i: number, colors: readonly R
 }
 
 // 颜色脚本只在这种生态占的份额超过它的格上运行（份额更小的格上看不出来）
-export const LOOK_MIN_SHARE = 0.004;
+const LOOK_MIN_SHARE = 0.004;
 
 const rgbOf = (hex: string): RGB => {
   const v = parseInt(hex.slice(1), 16);

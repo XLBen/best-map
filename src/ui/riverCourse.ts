@@ -108,7 +108,7 @@ const lakeNameAt = (w: World, cell: number) => featureIndex(w).lakes.get(cell)?.
 export const guideOf = (w: World, id: string) => w.small.guides.find((g) => g.id === id);
 
 // 流到哪里：入海、流进「青湖」、汇入「赤江」……quoted 为 false 时不带引号
-export function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: number, quoted = true, self?: GeoFeature): string {
+function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: number, quoted = true, self?: GeoFeature): string {
   const q = (n: string) => (quoted ? `「${n}」` : n);
   switch (kind) {
     case 'sea':
@@ -213,7 +213,7 @@ export function riverAt(w: World, x: number, y: number, tol: number, cell = -1):
 }
 
 // 这一格在哪条画的河上（它汇入的地方不算，在终点消失的河的终点算）；后画的优先
-export function guideAt(w: World, cell: number): Guide | undefined {
+function guideAt(w: World, cell: number): Guide | undefined {
   for (let n = w.small.guides.length - 1; n >= 0; n--) {
     const g = w.small.guides[n];
     const k = g.cells.indexOf(cell);
@@ -223,7 +223,7 @@ export function guideAt(w: World, cell: number): Guide | undefined {
 }
 
 // 一条折线按段的起点挪进 [0, 2)（整个星球）：挪的份数变了就另起一条，平铺的副本才画得全
-export function wrappedLines(w: World, pts: readonly [number, number][]): [number, number][][] {
+function wrappedLines(w: World, pts: readonly [number, number][]): [number, number][][] {
   if (w.mesh.kind !== 'sphere') return pts.length > 1 ? [pts.slice()] : [];
   const out: [number, number][][] = [];
   let cur = Number.NaN;
@@ -245,7 +245,7 @@ const lineShapes = (w: World, pts: readonly [number, number][], style: Omit<Shap
 
 // 自然的河的主干（选中、悬停、固定时用），按世界、格缓存
 const stemCache = new WeakMap<World, Map<number, ReturnType<typeof riverStem>>>();
-export function stemOf(w: World, cell: number) {
+function stemOf(w: World, cell: number) {
   let m = stemCache.get(w);
   if (!m) stemCache.set(w, (m = new Map()));
   let s = m.get(cell);
@@ -375,14 +375,14 @@ export function applyPatch(g: Guide, patch: GuidePatch): Guide {
 
 // 新河从一条自然的河上开始（改道）时沿用那条河的名字：有地名的沿用它的地名键（名字、标注颜色都不变），
 // 没有时按文字包自动起名
-export function inheritedName(w: World, start: number): { name: string } | { nameKey: string } {
+function inheritedName(w: World, start: number): { name: string } | { nameKey: string } {
   const f = naturalFeatureAt(w, start);
   return f ? { nameKey: f.key } : { name: '' };
 }
 
 // 从一条画过的河（或固定下来的河）的源头改道就是重画它：改的是同一条河道（update_guide），
 // 名字（自动起的也一样，键是河道 id）、大小、粗细、类型都照旧。不是从哪条河道的源头开始时为 undefined
-export const sourceGuide = (w: World, start: number) => w.small.guides.find((g) => g.cells[0] === start);
+const sourceGuide = (w: World, start: number) => w.small.guides.find((g) => g.cells[0] === start);
 
 // 重画时补上的名字：没有名字的画的河与新画的河一样沿用那条自然河的地名键或自动起名
 const namingFor = (w: World, g: Guide, start: number): GuidePatch => (g.name !== undefined || g.nameKey !== undefined ? {} : inheritedName(w, start));
@@ -406,7 +406,7 @@ export function chosenRiverType(w: World): { type: string } | Record<string, nev
 }
 
 // 一条河道画出来按哪一种河流类型（预览照这种河画）
-export const riverTypeOfGuide = (w: World, g: Pick<Guide, 'type'> | null | undefined) => (g?.type ? w.small.riverTypes?.find((t) => t.id === g.type) : undefined);
+const riverTypeOfGuide = (w: World, g: Pick<Guide, 'type'> | null | undefined) => (g?.type ? w.small.riverTypes?.find((t) => t.id === g.type) : undefined);
 
 // 一笔画出来的河：规划、松手后执行的命令（确切预览用的也是它）、执行后这条河的样子与估计的流量
 export interface Course {
@@ -487,7 +487,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
 }
 
 // 重画一条画的河的一段，或从它的终点往下游接长（extend）：名字、大小照旧
-export function spliceOf(w: World, g: Guide, patch: GuidePatch, plan: CoursePlan, raw: [number, number][], kind: 'splice' | 'extend' = 'splice'): Course {
+function spliceOf(w: World, g: Guide, patch: GuidePatch, plan: CoursePlan, raw: [number, number][], kind: 'splice' | 'extend' = 'splice'): Course {
   const capture = plan.crossings.some((x) => x.guide !== null);
   const name = guideName(w, g);
   const label =
@@ -574,7 +574,7 @@ function crossingName(w: World, x: CoursePlan['crossings'][number]): string | nu
 }
 
 // “会截走「赤江」”“会删掉「白水」”（穿过不止一条时“等 3 条河”；第一条没有名字时“会截走 3 条河”）
-export function captureText(w: World, c: Course): string {
+function captureText(w: World, c: Course): string {
   const xs = otherCrossings(c);
   if (!xs.length || !c.after) return '';
   const x = xs[0];
@@ -629,7 +629,7 @@ function driedKm(w: World, c: Course, x: PreviewResult | null): number {
 }
 
 // 旁边的小河并进来：“旁边的小河会并进来（3 格）”；没有确切结果、没有这样的格时为 null
-export function sideText(w: World, c: Course, x: PreviewResult | null): string | null {
+function sideText(w: World, c: Course, x: PreviewResult | null): string | null {
   if (!x || !c.after) return null;
   const n = driedParts(w, c, x).side.length;
   return n ? `旁边的小河会并进来（${n} 格）` : null;
@@ -641,7 +641,7 @@ export interface StartNote {
   text: string;
   label: string;
 }
-export function startNote(w: World, c: Course, x: PreviewResult | null): StartNote | null {
+function startNote(w: World, c: Course, x: PreviewResult | null): StartNote | null {
   const plan = c.plan;
   if ((c.kind !== 'new' && c.kind !== 'reroute') || !plan?.reroute || !plan.cells.length) return null;
   const start = plan.cells[plan.rerouteAt];
@@ -690,7 +690,7 @@ export function courseStart(w: World, x: number, y: number, cell: number, tol: n
 }
 
 // 鼠标停在一条河上（自定义走向）：从这里起笔会怎样（接在“赤江 · 中等的河 · 入海”后面）。warn：要先确认的
-export function startHint(w: World, cell: number): { text: string; warn: boolean } | null {
+function startHint(w: World, cell: number): { text: string; warn: boolean } | null {
   if (extendPoint(w, cell)) return { text: '从这里起笔：往下游接着画这条河', warn: false };
   if (cell < 0 || !isRiverCell(w, w.derived, cell)) return null;
   if (sourceGuide(w, cell)) return { text: '从这里起笔：重画整条河（松手后确认）', warn: true };
@@ -698,7 +698,7 @@ export function startHint(w: World, cell: number): { text: string; warn: boolean
 }
 
 // 等着确认时底部条上的话：“从这里改道：「赤江」下游约 300 km 会变干 · 会截走「白水」（下游约 80 km 变干） · 旁边的小河会并进来（3 格）”
-export function pendingText(w: World, c: Course, x: PreviewResult | null): string {
+function pendingText(w: World, c: Course, x: PreviewResult | null): string {
   const parts: string[] = [];
   const st = startNote(w, c, x);
   if (st) parts.push(st.text);
@@ -804,7 +804,7 @@ function courseRiver(w: World, line: GuideLine, g: Guide, flow: readonly number[
 
 // 确切的预览：停下来一会儿（delay 毫秒）后在 worker 里执行这条命令，算好后换上。同一个世界上同一条命令只算一次
 // （命令里没有世界：撤销了别的一步之后同一条命令要重新算，旧的结果不再用）
-export class RiverExact {
+class RiverExact {
   private wanted = '';
   // 要的这一条是照哪个世界算的
   private at: World | null = null;
@@ -944,7 +944,7 @@ export interface RiverBarPreview {
   after: Guide;
   estimate: number[];
 }
-export const riverBarPreview = signal<RiverBarPreview | null>(null);
+const riverBarPreview = signal<RiverBarPreview | null>(null);
 const barExact = new RiverExact();
 
 // 先画估计的样子，停 delay 毫秒后换成确切的

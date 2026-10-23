@@ -10,12 +10,12 @@ import { showCell } from '../editor-hooks';
 //   “水系 ⋯”里那种河（星球形态的脚本没有）
 
 // 一句话：「X」的脚本出错了，暂时按没有脚本处理（第 3 行：…）
-export function issueText(issue: ScriptIssue): string {
+function issueText(issue: ScriptIssue): string {
   return `「${issue.owner}」的脚本出错了，暂时按没有脚本处理（${issue.line ? `第 ${issue.line} 行：` : ''}${issue.text}）`;
 }
 
 // 一组问题的键：关掉后同一组不再出现
-export const issuesKey = (issues: readonly ScriptIssue[]) => issues.map((i) => i.message).join('\n');
+const issuesKey = (issues: readonly ScriptIssue[]) => issues.map((i) => i.message).join('\n');
 
 export function ScriptBanner() {
   const w = world.value;

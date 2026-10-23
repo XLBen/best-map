@@ -76,7 +76,7 @@ const LATITUDE: AdjustmentDef = {
 };
 
 // 调整面板里纬度一项的说明：跨了哪几个气候带
-export function latitudeNote(w: World, center: number): string {
+function latitudeNote(w: World, center: number): string {
   const h = halfSpan(w);
   return `${latText(center + h)} — ${latText(center - h)}，包括 ${beltsIn(center + h, center - h).join('、')}`;
 }

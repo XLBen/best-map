@@ -294,7 +294,7 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
 }
 
 // 湖的半径（地图单位）：至少半格，半径不到一格时只淹放湖的那一格
-export function lakeRadiusUnits(world: World, radiusKm: number): number {
+function lakeRadiusUnits(world: World, radiusKm: number): number {
   return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * 0.5);
 }
 

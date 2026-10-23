@@ -1,7 +1,7 @@
 import type { GuidePatch } from './commands';
 import { bedLevels, sinkMask, userLakeMask, waterLevel } from './elevation';
 import { arc, fromUnit, localOffset, toUnit, wrapDelta } from './geo';
-import { type Mesh, findCell, graphDistanceOwner, ringDistance } from './mesh';
+import { type Mesh, findCell, graphDistanceOwner } from './mesh';
 import {
   courseStep,
   decodePath,
@@ -31,29 +31,6 @@ function meanX(points: [number, number][]): number {
   return s / points.length;
 }
 const unwrappedX = (mesh: Mesh, ref: number) => (mesh.kind === 'sphere' ? (i: number) => ref + wrapDelta(mesh.x[i] - ref) : null);
-
-export interface FloodOptions {
-  sameClass?: boolean;
-  sameDominant?: boolean;
-  sameBasin?: boolean;
-  sameProvince?: boolean;
-  maxSlope?: number;
-  maxSteps?: number;
-}
-
-export function floodSelect(world: World, d: Derived, seed: number, o: FloodOptions): number[] {
-  const { causes } = world;
-  const allow = (j: number) =>
-    (!o.sameClass || causes.land[j] === causes.land[seed]) &&
-    (!o.sameDominant || d.dominant[j] === d.dominant[seed]) &&
-    (!o.sameBasin || d.basin[j] === d.basin[seed]) &&
-    (!o.sameProvince || causes.province[j] === causes.province[seed]) &&
-    (o.maxSlope === undefined || d.slope[j] <= o.maxSlope);
-  const dist = ringDistance(world.mesh, [seed], o.maxSteps ?? Infinity, allow);
-  const out: number[] = [];
-  for (let i = 0; i < dist.length; i++) if (dist[i] >= 0) out.push(i);
-  return out;
-}
 
 export function provinceCells(world: World, id: number): number[] {
   const out: number[] = [];
@@ -130,55 +107,6 @@ export function growRegion(
   const out: number[] = [];
   for (let i = 0; i < mesh.n; i++) if (Number.isFinite(dist[i]) && !inRegion.has(i)) out.push(i);
   return out;
-}
-
-// 河道引导路径：两格之间偏好下坡、避开海的最短路径
-export function riverPath(world: World, d: Derived, from: number, target: number): number[] {
-  const { mesh, causes } = world;
-  // 终点在海上：落到离点击处最近的近岸海格，河在那里入海
-  let to = target;
-  if (!causes.land[target]) {
-    let best = -1;
-    let bd = Infinity;
-    for (let i = 0; i < mesh.n; i++) {
-      if (causes.land[i]) continue;
-      let coastal = false;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (causes.land[mesh.adj[e]]) coastal = true;
-      if (!coastal) continue;
-      const dd = (mesh.x[i] - mesh.x[target]) ** 2 + (mesh.y[i] - mesh.y[target]) ** 2;
-      if (dd < bd) {
-        bd = dd;
-        best = i;
-      }
-    }
-    if (best < 0) return [];
-    to = best;
-  }
-  const { dist } = graphDistanceOwner(mesh, [from], Infinity, (i, j, e) => {
-    if (!causes.land[j] && j !== to) return Infinity;
-    const up = Math.max(0, d.elevation[j] - d.elevation[i]);
-    return mesh.dist[e] * (1 + up / 50);
-  });
-  if (!Number.isFinite(dist[to])) return [];
-  // 回溯：从终点每次走到满足 dist[j] + cost = dist[i] 的邻居
-  const path = [to];
-  let cur = to;
-  let guard = mesh.n;
-  while (cur !== from && guard-- > 0) {
-    let best = -1;
-    let bd = Infinity;
-    for (let e = mesh.off[cur]; e < mesh.off[cur + 1]; e++) {
-      const j = mesh.adj[e];
-      if (dist[j] < bd) {
-        bd = dist[j];
-        best = j;
-      }
-    }
-    if (best < 0 || bd >= dist[cur]) break;
-    path.push(best);
-    cur = best;
-  }
-  return path.reverse();
 }
 
 // 沿当前汇流方向从一格走到海或终点：“锁定河道”用
@@ -849,7 +777,7 @@ function chaikinPts(pts: readonly Pt[], iterations: number): Pt[] {
 
 // 画的线 → 存下的折线：磨圆两遍，再化简（容差取 0.03 格与一个屏幕像素中大的那个；点太多时放宽，最多 1500 个点），
 // 坐标取整到存的精度。max：最多留几个点（重画一段时要给前后不动的两段留出位置）
-export function simplifyStroke(world: World, stroke: readonly (readonly [number, number])[], px = 0, max = COURSE_MAX_POINTS): [number, number][] {
+function simplifyStroke(world: World, stroke: readonly (readonly [number, number])[], px = 0, max = COURSE_MAX_POINTS): [number, number][] {
   const smooth = chaikinPts(stroke.map((p) => [p[0], p[1]] as Pt), 2);
   let tol = Math.max(0.03 * world.mesh.spacing, px);
   let out = douglasPeucker(smooth, tol);

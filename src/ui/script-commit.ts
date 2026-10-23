@@ -80,7 +80,7 @@ export interface ScriptEditView {
   busy: boolean;
 }
 
-export const SCRIPT_PAUSE_MS = 600;
+const SCRIPT_PAUSE_MS = 600;
 
 const realTimers: Timers = { set: (f, ms) => setTimeout(f, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
 

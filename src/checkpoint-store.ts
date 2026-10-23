@@ -39,7 +39,7 @@ export interface CheckpointPut {
 }
 
 // 检查点里每一步的编号；样子不对时为 null
-export function checkpointIds(cp: unknown): number[] | null {
+function checkpointIds(cp: unknown): number[] | null {
   if (cp === null || typeof cp !== 'object') return null;
   const done = (cp as { done?: unknown }).done;
   if (!Array.isArray(done)) return null;

@@ -31,7 +31,7 @@ export type LakeType = z.output<typeof lakeTypeSchema>;
 export type LakeTypeInput = z.input<typeof lakeTypeSchema>;
 
 export const lakeTypesOf = (small: Pick<SmallState, 'lakeTypes'>): readonly LakeType[] => small.lakeTypes ?? [];
-export const lakeTypeOwner = (t: LakeType) => waterTypeOwner(t);
+const lakeTypeOwner = (t: LakeType) => waterTypeOwner(t);
 export const checkLakeTypeScripts = (t: LakeType): void => checkMatchScripts(t, '湖泊类型', '湖', 'lake');
 
 // 颜色、地图集颜色、画法只重画
@@ -74,15 +74,6 @@ export function lakeParts(world: World, d: Pick<Derived, 'lake'>): LakeParts {
     lakes.push(Int32Array.from(q));
   }
   return { lakes, of };
-}
-
-// 一格所在的湖里放的湖（几个放的湖连成一片时取最后放的那个）；没有为 undefined
-export function placedLakeIn(world: World, parts: LakeParts, cell: number) {
-  const k = parts.of[cell];
-  if (k < 0) return undefined;
-  const lakes = world.small.lakes;
-  for (let j = lakes.length - 1; j >= 0; j--) if (parts.of[lakes[j].cell] === k) return lakes[j];
-  return undefined;
 }
 
 // 统计（测试用）：match 脚本一共算了多少个湖

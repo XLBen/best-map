@@ -21,7 +21,7 @@ export const setSweeps = (v: number) => (SWEEPS = v);
 const cache = new WeakMap<Mesh, { rev: Int32Array; orders: Int32Array[] }>();
 
 // rev[e]：邻接项 e（i→j）在 j 的邻接表中指回 i 的那一项
-export function meshAux(mesh: Mesh) {
+function meshAux(mesh: Mesh) {
   let aux = cache.get(mesh);
   if (aux) return aux;
   const rev = new Int32Array(mesh.adj.length);
@@ -766,7 +766,7 @@ export function finalizeClimate(world: World, base: ClimateBase, out: Derived, e
 }
 
 // 约束求解的试算（core/constraints.ts）写了同一套算式，改这里时那里也要改
-export function summarize(out: Derived, i: number, tS: number, tW: number, pS: number, pW: number) {
+function summarize(out: Derived, i: number, tS: number, tW: number, pS: number, pW: number) {
   out.tMean[i] = (tS + tW) / 2;
   const summerWarm = tS >= tW;
   out.tWarm[i] = summerWarm ? tS : tW;
@@ -795,7 +795,7 @@ export interface PlaneFlow extends Flow {
   w: Float64Array;
 }
 
-export function buildFlow(mesh: Mesh, wx: Float32Array, wy: Float32Array): PlaneFlow {
+function buildFlow(mesh: Mesh, wx: Float32Array, wy: Float32Array): PlaneFlow {
   const n = mesh.n;
   const frac = new Float64Array(mesh.adj.length);
   const diffuse = 0.15;

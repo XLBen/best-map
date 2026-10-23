@@ -257,7 +257,7 @@ function onlyCells(l: HighlightLayer, keep: (c: number) => boolean): HighlightLa
 }
 
 // 确切预览的说法：几格会变、这一笔里几格没涂成
-export function exactCounts(r: PreviewResult, cells: Iterable<number>): { changed: number; failing: number } {
+function exactCounts(r: PreviewResult, cells: Iterable<number>): { changed: number; failing: number } {
   const mine = new Set(cells);
   return { changed: r.changedCells.length, failing: r.failing.filter((c) => mine.has(c)).length };
 }
@@ -1291,7 +1291,7 @@ export function growTool(): ToolHandler {
   };
 }
 
-export const CLIMATE_INFO = {
+const CLIMATE_INFO = {
   warm: { name: '更暖', color: [235, 110, 70] as RGB, flip: 'cold' },
   cold: { name: '更冷', color: [90, 150, 235] as RGB, flip: 'warm' },
   wet: { name: '更湿', color: [60, 190, 170] as RGB, flip: 'dry' },
@@ -1372,7 +1372,7 @@ export function climateEraseTool(): ToolHandler {
 
 // 每格属于哪个陆块要素（大陆或岛），按世界缓存
 const landmassCache = new WeakMap<World, Map<number, GeoFeature>>();
-export function landmassOf(w: World, cell: number): GeoFeature | null {
+function landmassOf(w: World, cell: number): GeoFeature | null {
   let m = landmassCache.get(w);
   if (!m) {
     m = new Map();
@@ -1384,7 +1384,7 @@ export function landmassOf(w: World, cell: number): GeoFeature | null {
 
 // 岛在哪个群岛里（没有时 null）。群岛的名字标在地图上时，岛自己的名字常常让开不标：说岛时带上群岛的名字
 const archipelagoCache = new WeakMap<World, Map<number, GeoFeature>>();
-export function archipelagoOf(w: World, f: GeoFeature): GeoFeature | null {
+function archipelagoOf(w: World, f: GeoFeature): GeoFeature | null {
   let m = archipelagoCache.get(w);
   if (!m) {
     m = new Map();
@@ -1395,13 +1395,13 @@ export function archipelagoOf(w: World, f: GeoFeature): GeoFeature | null {
 }
 
 // 岛的叫法：在群岛里的写成“炎柳岛（二雁列岛）”
-export function islandLabel(w: World, f: GeoFeature): string {
+function islandLabel(w: World, f: GeoFeature): string {
   const a = archipelagoOf(w, f);
   return a?.name && a.name !== f.name ? `${f.name}（${a.name}）` : f.name;
 }
 
 // 岛上特有的生态：这个岛已有的那一种（一个岛只有一种，id 跟着岛的锚点格）
-export function endemicOf(w: World, f: GeoFeature): Species | null {
+function endemicOf(w: World, f: GeoFeature): Species | null {
   return w.small.species.find((s) => s.id === `endemic_${f.anchor}`) ?? null;
 }
 
@@ -1832,7 +1832,7 @@ export function measureTool(zoom: () => number): ToolHandler {
 const provinceName = (w: World, id: number) => w.small.provinces[id]?.name || `省份 ${id}`;
 
 // 屏幕上这一点画的是哪一格（见 core/display.ts）：MapView 算好放在指针上，没有时（比如测试里）当场算
-export function shownAt(w: World, p: Pointer): DisplayCell | null {
+function shownAt(w: World, p: Pointer): DisplayCell | null {
   if (p.cell < 0) return null;
   return p.shown ?? displayCellAt(w, p.x, p.y, p.cell);
 }

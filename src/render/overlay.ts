@@ -25,12 +25,12 @@ export interface OverlayPaths {
 // ---------- 河的画法（地图上的河、预览的河共用，预览与结果画出来一样） ----------
 
 // 河宽随放大变宽，一直到最大缩放（一格约 64 像素）：按“相当于 4 万格地区地图的缩放”算
-export function riverScale(world: World, zoom: number): number {
+function riverScale(world: World, zoom: number): number {
   return Math.max(0.7, Math.min(4, refZoom(world, zoom) / 1400));
 }
 
 // 一段河的宽度档（屏幕像素，未乘 riverScale）：每 1/4 像素一档。mul 是画的河的粗细倍数
-export function riverBucket(flow: number, thr: number, mul = 1): number {
+function riverBucket(flow: number, thr: number, mul = 1): number {
   return Math.max(0.25, Math.round(riverWidth(flow, thr) * mul * 4) / 4);
 }
 
@@ -46,7 +46,7 @@ export function riverTypeColor(t: Pick<RiverType, 'color' | 'atlasColor'>, style
 
 // 按河流类型的画法描一档河（lw 是线宽，单位与路径相同）：
 // 实线；虚线（3 倍线宽一段、2 倍线宽一空）；双线（先描整条，再在中间描一道 0.45 倍宽的半透明白线）；发光（同色的 6 像素光晕）
-export function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw: number, color: string, style: RiverStyle, dpr: number): void {
+function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw: number, color: string, style: RiverStyle, dpr: number): void {
   ctx.strokeStyle = color;
   ctx.lineWidth = lw;
   if (style === 'dashed') {
@@ -223,7 +223,7 @@ function riverLinesKey(world: World): unknown[] {
 }
 
 // 河流类型里影响画法的几项（没有河流类型时为 ''）
-export function riverTypesSignature(types: readonly RiverType[] | undefined): string {
+function riverTypesSignature(types: readonly RiverType[] | undefined): string {
   return types?.length ? JSON.stringify(types.map((t) => [t.id, t.color, t.atlasColor ?? '', t.style ?? 'solid', t.width ?? 1])) : '';
 }
 
@@ -349,14 +349,14 @@ export interface Frame {
 }
 
 // 画布的大小（CSS 像素）与每个 CSS 像素几个像素：导出时按给的虚拟窗口，否则按屏幕上的画布
-export function frameOf(ctx: { canvas: { clientWidth: number; clientHeight: number } }, st?: { frame?: Frame }): Frame {
+function frameOf(ctx: { canvas: { clientWidth: number; clientHeight: number } }, st?: { frame?: Frame }): Frame {
   if (st?.frame) return st.frame;
   const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   return { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight, dpr };
 }
 
 // 整个星球的平铺图：屏幕上看得见的副本（x 平移 2k）。河、画的河展开后可能伸出 [0, 2) 一点，所以多算一点
-export function copiesFor(cam: Camera, cw: number): number[] {
+function copiesFor(cam: Camera, cw: number): number[] {
   const halfW = cw / 2 / cam.zoom;
   const k0 = Math.ceil((cam.x - halfW - 2.6) / 2);
   const k1 = Math.floor((cam.x + halfW + 0.6) / 2);
@@ -367,7 +367,7 @@ export function copiesFor(cam: Camera, cw: number): number[] {
 
 // 整个星球的格比同样格数的地区地图小：按格距把缩放换算成“相当于 4 万格地区地图的缩放”，
 // 河宽、何时标省名和山峰都按它算（一块地区照旧用原来的缩放）
-export function refZoom(world: World, zoom: number): number {
+function refZoom(world: World, zoom: number): number {
   return world.mesh.kind === 'sphere' ? (zoom * world.mesh.spacing) / 0.0076 : zoom;
 }
 

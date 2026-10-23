@@ -3,7 +3,7 @@ import { tangentBasis, toUnit } from './sphere';
 // 整个星球的几何小工具（纯函数）：显示坐标 x = 1 + 经度/180（0–2，东西相接），y = (90 − 纬度)/180。
 // 距离用“地图单位”：弧长 / π（与 mesh.dist 相同），×kmPerUnit 就是 km
 
-export { tangentBasis, toUnit };
+export { toUnit };
 
 export type V3 = [number, number, number];
 
@@ -63,7 +63,7 @@ export function localOffset(c: V3, p: V3): [number, number] {
 }
 
 // 从 c 出发，按局部的（东、南）位移（地图单位）沿大圆走到的点
-export function destination(c: V3, de: number, ds: number): V3 {
+function destination(c: V3, de: number, ds: number): V3 {
   const [ex, ey, ez, sx, sy, sz] = tangentBasis(c[0], c[1], c[2]);
   const len = Math.hypot(de, ds);
   if (len < 1e-15) return [c[0], c[1], c[2]];

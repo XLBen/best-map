@@ -46,7 +46,7 @@ function windText(x: number, y: number): string {
 
 // 每格属于哪些地理要素，按世界缓存
 const featureCache = new WeakMap<World, Map<number, GeoFeature[]>>();
-export function featuresAt(w: World, cell: number): GeoFeature[] {
+function featuresAt(w: World, cell: number): GeoFeature[] {
   let m = featureCache.get(w);
   if (!m) {
     m = new Map();
@@ -133,7 +133,7 @@ function Sentence({ w, cell }: { w: World; cell: number }) {
 
 // 生态、河对周围的影响（第三批）：“受「神圣之地」影响：这里暖了 1.8 °C”。数是引擎算好的（d.effT、d.effP），
 // 是谁的影响按现在的生态、河认；很小时不说
-export function effectText(w: World, cell: number): string | null {
+function effectText(w: World, cell: number): string | null {
   const d = w.derived;
   if (!d.effT || !d.effP || !w.causes.land[cell]) return null;
   const t = d.effT[cell];

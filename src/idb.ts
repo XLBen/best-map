@@ -5,8 +5,8 @@
 //   meshes：最近一个世界的网格（第 5 版加的，'current' 存 {key, mesh}：建网格的 Worker 写、打开时主线程与计算 Worker 直接用，见 mesh-worker.ts）；
 //   maps、mapDocs：“我的地图”（第 6 版加的，按地图的 id 存列表里的一条和整个世界文件，见 maps.ts）
 // 升级只补上没有的表，已有的表和里面的数据都不动（从第 3 版升上来，自动保存、检查点照旧在）
-export const DB_VERSION = 6;
-export const DB_STORES = ['kv', 'autosave', 'checkpoint', 'packs', 'meshes', 'maps', 'mapDocs'] as const;
+const DB_VERSION = 6;
+const DB_STORES = ['kv', 'autosave', 'checkpoint', 'packs', 'meshes', 'maps', 'mapDocs'] as const;
 
 // 要升级库时别的页面（旧版本还开着）占着不放：不一直等，报错（调用方各自退：读不到当没有、存不了就算了）；
 // 之后那边放开了、这里才打开的连接直接关掉。打开的连接在别人要升级时自己先关掉，不挡别人

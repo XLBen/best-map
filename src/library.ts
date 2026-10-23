@@ -60,7 +60,7 @@ export async function refreshLibrary(): Promise<LibraryEntry[]> {
 }
 
 // 装进资源库时用的键：与内置的同 id 时另起一个，不盖住内置的
-export function libraryKey(pack: ResourcePack): string {
+function libraryKey(pack: ResourcePack): string {
   return pack.id === FANTASY_PACK_ID ? `${pack.id}-2` : pack.id;
 }
 

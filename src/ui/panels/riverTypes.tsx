@@ -30,7 +30,7 @@ export function riverTypeOfRiver(w: World, ref: RiverRef): RiverTypeOfRiver {
 }
 
 // 有没有哪一种带“哪些自然的河是这一种”的规则
-export const hasRules = (w: World) => (w.small.riverTypes ?? []).some((t) => !!t.scripts?.match);
+const hasRules = (w: World) => (w.small.riverTypes ?? []).some((t) => !!t.scripts?.match);
 
 // 给一条河选类型（choice：类型 id、'plain' 普通的河、null 按规则）的命令；不用改时为 null。
 // 画的河改它自己的 type；自然的河固定下来并带上类型（一步：固定、选类型、名字照旧）

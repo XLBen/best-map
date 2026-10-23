@@ -36,7 +36,7 @@ export const TERRAIN_COLORS: Record<string, [number, number, number]> = {
   marsh: [80, 120, 100],
 };
 
-export function terrainColor(terrain: string): [number, number, number] {
+function terrainColor(terrain: string): [number, number, number] {
   return TERRAIN_COLORS[terrain] ?? [255, 0, 255];
 }
 
@@ -58,7 +58,7 @@ export function rasterizeCells(world: World, width: number, height: number): Int
   return out;
 }
 
-export function encodeBmp24(rgb: Uint8Array, width: number, height: number): Uint8Array {
+function encodeBmp24(rgb: Uint8Array, width: number, height: number): Uint8Array {
   const rowSize = Math.ceil((width * 3) / 4) * 4;
   const size = 54 + rowSize * height;
   const buf = new Uint8Array(size);
@@ -86,7 +86,7 @@ export function encodeBmp24(rgb: Uint8Array, width: number, height: number): Uin
 }
 
 // 8 位灰度 BMP（带 256 级灰度调色板）
-export function encodeBmp8Gray(gray: Uint8Array, width: number, height: number): Uint8Array {
+function encodeBmp8Gray(gray: Uint8Array, width: number, height: number): Uint8Array {
   const rowSize = Math.ceil(width / 4) * 4;
   const offset = 54 + 1024;
   const size = offset + rowSize * height;
@@ -129,7 +129,7 @@ function crc32(data: Uint8Array): number {
 }
 
 // 16 位灰度 PNG
-export function encodePng16Gray(values: Uint16Array, width: number, height: number): Uint8Array {
+function encodePng16Gray(values: Uint16Array, width: number, height: number): Uint8Array {
   const raw = new Uint8Array((width * 2 + 1) * height);
   for (let y = 0; y < height; y++) {
     const row = y * (width * 2 + 1);

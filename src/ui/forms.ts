@@ -2,7 +2,7 @@ import type { Command } from '../../core/commands';
 import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../core/generate';
 import { itemKey, packForms, packIdFor, sameItem } from '../../core/packs';
 import { LAYOUT_R, planetProfile } from '../../core/planet-gen';
-import { type PlanetForm, hasFormScripts, planetFormSchema } from '../../core/planet-form';
+import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
 import { PLANET_TYPES } from '../../core/presets';
 import { type LibraryEntry, MY_PACK_NAME } from '../library';
 
@@ -112,8 +112,6 @@ export function keptByWorld(gen: Worldgen): string {
   if (gen.islands !== undefined) parts.push('岛多少照现在的');
   return parts.join('，');
 }
-
-export const formHasScripts = hasFormScripts;
 
 // ---------- 形态编辑器 ----------
 

@@ -7,9 +7,9 @@ import type { HighlightLayer } from '../render/colors';
 
 // 地形改动多大才算“改过”：画笔、放岛边上那一圈很淡的零头不算（恢复原样擦掉它们看不出变化），
 // 否则一笔画陆地就会把周围一大片都标上。landness 的单位约是米（海岸值的幅度 180），抬升、岩性是 0–2、0.1–5 的系数
-export const TERRAIN_EPS = { land: 20, uplift: 0.02, erod: 0.05 };
+const TERRAIN_EPS = { land: 20, uplift: 0.02, erod: 0.05 };
 // 冷暖干湿：0.05 °C、雨水 1%
-export const CLIMATE_EPS = { temp: 0.05, moist: 0.01 };
+const CLIMATE_EPS = { temp: 0.05, moist: 0.01 };
 
 export type EditKind = 'terrain' | 'climate' | 'nature' | 'water';
 
@@ -21,13 +21,12 @@ export interface EditMask {
 }
 
 // 分色（图层里的“我改过的地方”）：地形橙、气候蓝、生态绿、河湖青
-export const EDIT_COLORS: Record<EditKind, [number, number, number]> = {
+const EDIT_COLORS: Record<EditKind, [number, number, number]> = {
   terrain: [240, 150, 60],
   climate: [110, 150, 255],
   nature: [110, 215, 90],
   water: [70, 220, 235],
 };
-export const EDIT_NAMES: Record<EditKind, string> = { terrain: '地形', climate: '气候', nature: '生态', water: '河湖' };
 
 // 一格的缓存：键里的对象都没换就沿用
 function memo<T>(f: (w: World) => T, keys: (w: World) => unknown[]): (w: World) => T {
@@ -47,7 +46,7 @@ function fromFlags(has: Uint8Array): EditMask {
   return { cells, has };
 }
 
-export const terrainEdited = (w: World, i: number) => {
+const terrainEdited = (w: World, i: number) => {
   const c = w.causes;
   return Math.abs(c.landDelta[i]) >= TERRAIN_EPS.land || Math.abs(c.upliftDelta[i]) >= TERRAIN_EPS.uplift || Math.abs(c.erodDelta[i]) >= TERRAIN_EPS.erod;
 };
@@ -89,7 +88,7 @@ export const natureMask = memo(
 );
 
 // 岛上特有的生态长着的格（不是涂上去的，擦除擦不掉；只在图层的“我改过的地方”里和涂过的生态一起标绿）
-export const endemicMask = memo(
+const endemicMask = memo(
   (w) => {
     const has = new Uint8Array(w.mesh.n);
     const ids = new Set<number>();

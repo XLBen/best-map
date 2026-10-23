@@ -328,7 +328,7 @@ export function fxLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'>,
 export const LAKE_WATER_TINT = 1;
 export const LAKE_WATER_CRUST = 2;
 export const LAKE_LAND_GLOW = 4;
-export const LAKE_LAND_CRUST = 8;
+const LAKE_LAND_CRUST = 8;
 export const LAKE_GLOW = 16;
 
 // 一种湖画出来的颜色（地图集风格用 atlasColor）

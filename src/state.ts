@@ -85,7 +85,7 @@ export const worldEpoch = signal(0);
 export const history = signal<{ summary: string; done: boolean }[]>([]);
 export const canUndo = signal(false);
 export const canRedo = signal(false);
-export const timings = signal<Timings>({ total: 0 });
+const timings = signal<Timings>({ total: 0 });
 // 正在算的带提示的请求（执行、撤销、新建、打开…）的提示；后台的预览、自动保存不算
 export const busy = signal<string | null>(null);
 export const toast = signal<{ text: string; error: boolean } | null>(null);
@@ -415,7 +415,7 @@ export function onlyEditsPending(): boolean {
 
 // 还没算完的编辑（执行、撤销、重做）有几步：排队时“换个形状”要等它们算完。
 // 换一个本身不算：连点两下“换个形状”，第二下换掉的还是同一步
-export function editsInFlight(): number {
+function editsInFlight(): number {
   let k = 0;
   for (const p of pending.values()) if (EDITS.has(p.kind) && p.kind !== 'replaceLast') k++;
   return k;
@@ -1193,7 +1193,7 @@ function waterTypeOfIssue(issue: ScriptIssue): { kind: 'river' | 'lake'; id: str
   return river ? { kind: 'river', id: river.id } : undefined;
 }
 // 打开“水系 ⋯”里这一种的编辑
-export function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
+function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
   if (tool.value !== 'river' && tool.value !== 'lake' && tool.value !== 'unwater') tool.value = kind === 'lake' ? 'lake' : 'river';
   waterTypeEditorRequest.value = { kind, id };
   openPanel.value = 'cat:water';
@@ -1579,7 +1579,7 @@ function costs(): Map<string, number> {
 let lastPreviewMs = 0;
 
 // 哪一类命令（代价相近的算一类）
-export function costKey(cmd: Command): string {
+function costKey(cmd: Command): string {
   if (cmd.op === 'set_planet') return `set_planet:${Object.keys(cmd.patch).sort().join(',')}`;
   if (cmd.op === 'paint') return `paint:${cmd.field.startsWith('field:') ? 'field' : cmd.field}`;
   if (cmd.op === 'batch') return `batch:${cmd.commands.map(costKey).join('+')}`;
@@ -1878,7 +1878,7 @@ export interface Autosaved {
   mapId?: string;
   mapSynced?: boolean;
 }
-export async function readAutosave(): Promise<Autosaved | null> {
+async function readAutosave(): Promise<Autosaved | null> {
   let best: Autosaved | null = null;
   try {
     const db = await openDb();

@@ -28,7 +28,7 @@ function pair(lo: number, hi: number, what: string, int = false) {
 }
 
 // 星球的“配方”（与 planet-gen.ts 的 PlanetProfile 一项项对应；省略的项取 base 那种星球的值）
-export const formProfileSchema = z.object({
+const formProfileSchema = z.object({
   // 陆地多少（面积比例）、岛多少（火山锥露出多少）：与“调整”里的两个滑块相同，滑块的值优先
   landFraction: z.number().min(0, '陆地多少最小是 0').max(0.85, '陆地多少最大是 0.85').optional(),
   islands: z.number().min(0, '岛多少最小是 0').max(1, '岛多少最大是 1').optional(),
@@ -52,7 +52,7 @@ export const formProfileSchema = z.object({
 export type FormProfile = z.output<typeof formProfileSchema>;
 
 // 地壳细节的倍数（省略为 1）。只收那些“1 倍时与今天的字面量逐位相同”的项
-export const formTuningSchema = z.object({
+const formTuningSchema = z.object({
   // 山带宽窄：碰撞带、大陆边缘山带的宽度
   beltWidth: z.number().min(0.3, '山带宽窄最小是 0.3').max(3, '山带宽窄最大是 3').optional(),
   // 洋中脊的抬升、海沟的深度、大陆裂谷的下陷

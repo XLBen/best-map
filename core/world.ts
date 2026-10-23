@@ -30,9 +30,8 @@ export const settingsSchema = z.object({
 });
 export type Settings = z.output<typeof settingsSchema>;
 
-export const EARTH_RADIUS_KM = 6371;
+const EARTH_RADIUS_KM = 6371;
 
-export const isGlobe = (s: Settings): boolean => s.globe === true;
 export const planetRadiusKm = (s: Settings): number => s.radiusKm ?? EARTH_RADIUS_KM;
 
 // 星球参数的取值范围（不带默认值）
@@ -100,7 +99,7 @@ export type Constraint = z.output<typeof constraintSchema>;
 // 画的河道折线（自定义走向）：化简后的控制点，x、y 交替存成整数（地图单位 × 1e5，见 rivers.ts 的 encodePath），
 // 最多 1500 个点。整个星球上 x 沿河连续展开（起点在 [0, 2) 里，之后可以超出）
 export const COURSE_MAX_POINTS = 1500;
-export const coursePathSchema = z
+const coursePathSchema = z
   .array(z.number().int().min(-1_000_000).max(1_000_000))
   .min(4)
   .max(COURSE_MAX_POINTS * 2)
@@ -352,7 +351,7 @@ export function meshKey(s: Settings): string {
   return s.globe ? `globe:${s.cells}:${s.seed}` : `${s.cells}:${s.aspect}:${s.seed}`;
 }
 
-export function emptyCauses(n: number): Causes {
+function emptyCauses(n: number): Causes {
   return {
     landDelta: new Float32Array(n),
     upliftDelta: new Float32Array(n),
@@ -412,7 +411,7 @@ export function emptyDerived(n: number, speciesCount: number): Derived {
   };
 }
 
-export function defaultSmall(): SmallState {
+function defaultSmall(): SmallState {
   return {
     terrain: { gen: null, coastRoughness: 1 },
     wordPack: null,
@@ -452,8 +451,4 @@ export function createWorld(input: Partial<Settings> = {}, mesh?: Mesh): World {
 export function provinceColor(id: number): [number, number, number] {
   const c = Math.imul(id + 1, 0x9e3779b1) & 0xffffff;
   return [c >> 16, (c >> 8) & 255, c & 255];
-}
-
-export function speciesIndex(small: SmallState, id: string): number {
-  return small.species.findIndex((s) => s.id === id);
 }

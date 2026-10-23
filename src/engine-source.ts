@@ -8,7 +8,7 @@ export { engineUrl };
 
 // 检查点的版本号：打包好的程序里是引擎文件的完整地址（文件名带内容哈希，代码一变就不同，与以前 Worker 里的
 // import.meta.url 一样）；开发时文件名不变，版本号改用引擎文件内容的哈希（见 buildKey），这里为 null
-export const BUILD: string | null = import.meta.env.DEV ? null : new URL(engineUrl, location.href).href;
+const BUILD: string | null = import.meta.env.DEV ? null : new URL(engineUrl, location.href).href;
 
 const DEV_ENGINE = `${import.meta.env.BASE_URL}__map2/engine.js`;
 

@@ -110,7 +110,7 @@ const G3X = new Float64Array([1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 0, 
 const G3Y = new Float64Array([1, 1, -1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, 1, -1, -1]);
 const G3Z = new Float64Array([0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 0, 0, 1, -1]);
 // 让三维噪声的标准差与二维的相同（一次标定，之后固定）
-export const NOISE3_SCALE = 1.125;
+const NOISE3_SCALE = 1.125;
 
 export type Noise3 = { (x: number, y: number, z: number): number; seed?: number };
 
@@ -215,7 +215,7 @@ export function fbm3(noise: Noise3, x: number, y: number, z: number, frequency: 
 }
 
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
-export const clamp01 = (v: number) => clamp(v, 0, 1);
+const clamp01 = (v: number) => clamp(v, 0, 1);
 export const smoothstep = (a: number, b: number, v: number) => {
   const t = clamp01((v - a) / (b - a));
   return t * t * (3 - 2 * t);

@@ -325,7 +325,7 @@ export function courseLine(pts: readonly [number, number][], flow: number[]): Ri
 
 // 曲流：中间点沿垂直方向错开一点（按位置取噪声，结果确定）。前一点已经错开过，按错开后的位置算。
 // 固定一条自然的河时存下的折线就是这一步的结果（再平滑一遍就是原来画出来的样子）。不改动传进来的数组
-export function meander(pts: readonly [number, number][], spacing: number): [number, number][] {
+function meander(pts: readonly [number, number][], spacing: number): [number, number][] {
   const points = pts.slice();
   const amp = 0.22 * spacing;
   for (let k = 1; k < points.length - 1; k++) {
@@ -376,7 +376,7 @@ export function riverWidth(flow: number, threshold: number): number {
 // ---------- 画的河道折线（第八轮：自定义走向） ----------
 
 // 存的是整数：地图单位 × 1e5（约 100–200 m，不到一格的百分之一），JSON 短，存取往返逐位相同
-export const PATH_SCALE = 1e5;
+const PATH_SCALE = 1e5;
 
 export const roundPathValue = (v: number) => Math.round(v * PATH_SCALE) / PATH_SCALE;
 export const roundPoint = (p: readonly [number, number]): [number, number] => [roundPathValue(p[0]), roundPathValue(p[1])];

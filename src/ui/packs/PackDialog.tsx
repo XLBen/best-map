@@ -32,7 +32,7 @@ const close = () => (packDialog.value = null);
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
 // 读一个文件：资源包或旧的生态、文字包文件（只解析、检查）。大得离谱的文件不读进来
-export function importPackFile(file: File) {
+function importPackFile(file: File) {
   if (file.size > 3 * PACK_MAX_CHARS) {
     openPackImport({ ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不像是资源包`] }, file.name);
     return;
@@ -70,7 +70,7 @@ function ItemChips({ items }: { items: { name: string; color?: string; title?: s
 const itemName = (x: PackItem) => (typeof x.name === 'string' && x.name) || x.id;
 
 // 资源包里有什么：生态（色块、花纹）、河流类型、星球形态、文字包、自定义场
-export function PackContents({ pack }: { pack: ResourcePack }) {
+function PackContents({ pack }: { pack: ResourcePack }) {
   return (
     <div class="pack-contents">
       {!!pack.biomes?.length && (

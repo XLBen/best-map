@@ -27,10 +27,6 @@ import { askText, askUser, autosaveNow, download, getDoc, history, loadDoc, note
 // 存进浏览器失败（隐私模式、存储被关、满了）时改成下载世界文件，并说清楚
 
 let store: MapStore = idbMapStore;
-// 测试里换成内存里的
-export function useMapStore(s: MapStore) {
-  store = s;
-}
 
 // 我的地图的弹窗；列表（打开弹窗时读一次，改了之后重读）
 export const mapsDialog = signal(false);
@@ -39,7 +35,7 @@ export const mapList = signal<MapEntry[] | null>(null);
 // 当前的世界连着的那一张（新建、打开了别的世界之后为 null）
 export const currentMap = computed(() => activeLink(mapLink.value, worldEpoch.value));
 // 连着的那一张有没写进去的改动（自动保存 1.5 秒后就写进去）
-export const mapDirty = computed(() => currentMap.value !== null && mapSavedState.value !== worldState.value);
+const mapDirty = computed(() => currentMap.value !== null && mapSavedState.value !== worldState.value);
 
 // “当前：赤原 · 已保存”“当前：没保存的新世界”
 export function mapStatus(): string {
@@ -49,7 +45,7 @@ export function mapStatus(): string {
   return `当前：${link.name} · ${mapDirty.value ? '有改动没保存' : '已保存'}`;
 }
 
-export async function refreshMaps(): Promise<MapEntry[]> {
+async function refreshMaps(): Promise<MapEntry[]> {
   try {
     mapList.value = await listMaps(store);
   } catch {
@@ -65,7 +61,7 @@ export function openMaps() {
 
 // 缩略图：截地图画面（干净的，不带高亮和预览），缩成约 240 像素宽的 JPEG
 const THUMB_W = 240;
-export function makeThumb(): string | null {
+function makeThumb(): string | null {
   try {
     const hook = (window as unknown as { __map2?: { snapshot: (clean?: boolean) => HTMLCanvasElement } }).__map2;
     const src = hook?.snapshot(true);

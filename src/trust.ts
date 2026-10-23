@@ -146,7 +146,7 @@ export async function isTrusted(src: string): Promise<boolean> {
 }
 
 // 从信任列表里去掉（总是信任的照样信任）
-export async function forgetScripts(scripts: Iterable<{ src: string }>): Promise<void> {
+async function forgetScripts(scripts: Iterable<{ src: string }>): Promise<void> {
   const t = await load();
   let any = false;
   for (const s of scripts) any = t.delete(await keyOf(s.src)) || any;

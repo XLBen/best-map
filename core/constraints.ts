@@ -12,8 +12,8 @@ import type { Conflict, Constraint, Derived, World } from './world';
 // 3. 锚点的修正值固定，半径 R 外为 0，中间在格图上解拉普拉斯方程（调和插值）→ 修正从地块向外平滑衰减。
 // 修正场作用在气候上，水文、植被随之重算，所以河流与手工设定始终自洽。
 
-export const MAX_DT = 15;
-export const MAX_DL = 2.5;
+const MAX_DT = 15;
+const MAX_DL = 2.5;
 
 const CANDIDATES: [number, number][] = (() => {
   const list: [number, number, number][] = [];

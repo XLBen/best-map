@@ -74,8 +74,8 @@ export function coastDetail(x: number, y: number, spacing: number): number {
 }
 
 // 边界扭曲（地图单位）：约半个格，足以把六边形的边扭成自然的曲线
-export const WARP_AMP = 0.6;
-export const WARP_FREQ = 0.9;
+const WARP_AMP = 0.6;
+const WARP_FREQ = 0.9;
 export function warpOffset(x: number, y: number, spacing: number): [number, number] {
   const f = WARP_FREQ / spacing;
   return [WARP_AMP * spacing * fbmSub(x * f + 3.7, y * f, 3), WARP_AMP * spacing * fbmSub(x * f, y * f - 5.1, 3)];
@@ -182,7 +182,7 @@ export function fbmSub3(x: number, y: number, z: number, octaves: number): numbe
 }
 
 // 显示坐标 → 球面上的点（与着色器的 sphereOf 相同的公式）
-export function sphereOf(x: number, y: number): [number, number, number] {
+function sphereOf(x: number, y: number): [number, number, number] {
   const lon = Math.PI * (x - 1);
   const colat = Math.PI * Math.min(1, Math.max(0, y));
   const s = Math.sin(colat);
@@ -327,7 +327,7 @@ function locateSphere(view: SphereView, r2: Float64Array, x: number, y: number, 
 
 // 每格的“海岸值”：> 0 为陆地，与 causes.land 保持一致（含填掉的单格海洞）。
 // 压缩到约 ±250 m：否则山地岛屿的格值相差几千米，海岸线几乎完全由线性插值决定，成了折线
-export const COAST_SQUASH = 250;
+const COAST_SQUASH = 250;
 
 export function coastValues(world: World): Float32Array {
   const { mesh, causes } = world;

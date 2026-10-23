@@ -57,7 +57,7 @@ interface KindDef {
   namesHint: string;
 }
 
-export const KINDS: Record<WaterKind, KindDef> = {
+const KINDS: Record<WaterKind, KindDef> = {
   river: {
     kind: 'river',
     noun: '河',
@@ -97,13 +97,13 @@ export const KINDS: Record<WaterKind, KindDef> = {
 };
 
 // 一种画出来的颜色（地图集风格用 atlasColor）
-export const typeColor = (kind: WaterKind, t: WaterType, style: 'realistic' | 'atlas' = 'realistic') =>
+const typeColor = (kind: WaterKind, t: WaterType, style: 'realistic' | 'atlas' = 'realistic') =>
   kind === 'lake' ? lakeTypeColor(t, style) : riverTypeColor(t, style);
 
 // 普通的河、湖的颜色（列表里的色块）
 const PLAIN_COLOR: Record<WaterKind, string> = { river: riverStroke('realistic'), lake: 'rgb(70, 125, 175)' };
 
-export function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }) {
+function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }) {
   return <span class="swatch" style={{ background: t ? typeColor(kind, t) : PLAIN_COLOR[kind] }} />;
 }
 
@@ -135,7 +135,7 @@ export interface MenuItem {
   onPick: () => void;
 }
 
-export function MenuRow({ kind, item }: { kind: WaterKind; item: MenuItem }) {
+function MenuRow({ kind, item }: { kind: WaterKind; item: MenuItem }) {
   const t = item.t;
   return (
     <button class={`menu-row ${item.on ? 'on' : ''}`} title={item.hint} onClick={item.onPick}>
@@ -194,15 +194,15 @@ export async function createAndUse(kind: WaterKind, use: ((id: string) => Comman
 let tail: Promise<unknown> = Promise.resolve();
 let queued = 0;
 
-export const typeEditsSettled = () => queued === 0 && editsIdle();
-export async function settleTypeEdits(): Promise<void> {
+const typeEditsSettled = () => queued === 0 && editsIdle();
+async function settleTypeEdits(): Promise<void> {
   while (!typeEditsSettled()) {
     await tail;
     await whenEditsIdle();
   }
 }
 
-export function queueTypeEdit(kind: WaterKind, id: string, label: string, make: (t: WaterType) => WaterType | null): Promise<boolean> {
+function queueTypeEdit(kind: WaterKind, id: string, label: string, make: (t: WaterType) => WaterType | null): Promise<boolean> {
   const epoch = worldEpoch.value;
   queued++;
   const job = tail.then(async () => {

@@ -79,7 +79,7 @@ function parse(m: Acorn, src: string): { ast: Program } | { error: ParseError } 
 }
 
 // 位置 k 在第几行（与 JS 一样：\r\n、\r、\u2028、\u2029 都算换行）
-export function lineAt(src: string, k: number): number {
+function lineAt(src: string, k: number): number {
   return src.slice(0, k).split(/\r\n|[\n\r\u2028\u2029]/).length;
 }
 
@@ -295,7 +295,7 @@ function notVariable(parent: AstNode | null, key: string): boolean {
 // 用了这种脚本里没有的变量、不能用的名字：按出现的先后报第一处。只看名字有没有在哪里声明过（不细分作用域），
 // 所以只会少报、不会把声明过的名字报成没有。
 // fields：世界上有的自定义场；给出时也查 field('名字') 里写的场在不在（内置变量的名字也算在）
-export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly string[], scope?: MatchScope): SyntaxProblem | null {
+function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly string[], scope?: MatchScope): SyntaxProblem | null {
   const declared = new Set<string>();
   const uses: { name: string; at: number; line?: number; field?: true }[] = [];
   const visit = (node: AstNode, parent: AstNode | null, key: string): void => {
@@ -380,7 +380,7 @@ export function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly s
 // 离开框时才用。for…of、for…in 走的是现成的数组、对象，不算
 const LOOPS = new Set(['WhileStatement', 'DoWhileStatement', 'ForStatement']);
 
-export function hasLoop(node: unknown): boolean {
+function hasLoop(node: unknown): boolean {
   if (!isNode(node)) return false;
   if (LOOPS.has(node.type)) return true;
   for (const [k, v] of Object.entries(node)) {

@@ -13,7 +13,7 @@ import { type SpeciesScriptKind, applySpeciesScript, queueSpeciesEdit, settleSpe
 // 只改动这次动了的那一项，资源包里超出滑块范围的值（比如降水 −78%）不会因为改了别的而被改掉
 
 // “对周围的影响”已经接进气候（core/effects.ts）：为 false 时显示“先记下”的说明
-export const CLIMATE_EFFECTS_LIVE = true;
+const CLIMATE_EFFECTS_LIVE = true;
 
 type Patch = Record<string, unknown>;
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -227,7 +227,7 @@ function ClimateSection({ sp }: { sp: Species }) {
   );
 }
 
-export const DEFAULT_INVADE_STRENGTH = 1.5;
+const DEFAULT_INVADE_STRENGTH = 1.5;
 
 // 点了一种：有就去掉，没有就加上（按生态列表的顺序排，已经不在了的目标照旧留在后面）
 export function toggleTarget(targets: readonly string[], id: string, order: readonly string[]): string[] {

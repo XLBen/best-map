@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { scriptsSchema } from './script';
 import { typeIdSchema } from './type-id';
 
-export { typeIdSchema };
+{ typeIdSchema };
 
 // 植被 / 地块类型完全由数据定义：每种类型对任意字段给出梯形耐受曲线。
 // min = optLow 且 optHigh = max 时退化为硬区间，“A 能在 a、b 气候生存”这类离散规则就是这个特例。
@@ -152,8 +152,8 @@ export function trapezoid(t: Tolerance, v: number): number {
 
 export const T_RANGE: [number, number] = [-40, 40];
 export const M_RANGE: [number, number] = [0, 50];
-export const T_MARGIN = 3;
-export const M_MARGIN = 1.4;
+const T_MARGIN = 3;
+const M_MARGIN = 1.4;
 
 export interface Rect {
   t0: number;
