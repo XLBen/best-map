@@ -1,5 +1,6 @@
 import { wrapX } from './geo';
 import { findCell } from './mesh';
+import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
 import { coastDetail, coastDetail3, coastDetailAmp, coastValues, locate, warpOffset, warpOffset3 } from './subcell';
 import { coastSeed } from './terrain';
@@ -44,8 +45,10 @@ export function displayCoast(world: World): DisplayCoast {
 }
 
 // 画面上一点的海岸场（> 0 画成陆地，湖、海 < 0）：与地形层的着色器同一个算式（三角形内插值 + 格以下的海岸细节，
-// 整个星球上细节在球面上取）。hint：附近的格；返回值与离它最近的格（下一次的 hint）
-export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: number, hint = 0): { v: number; nearest: number } {
+// 整个星球上细节在球面上取）。hint：附近的格；返回值与离它最近的格（下一次的 hint）。
+// signOnly：只要正负时，插值的那部分比细节可能的最大值还大就不算细节（细节噪声最多 ±0.9375，结果的正负不变）
+const DETAIL_MAX = 0.9375;
+export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: number, hint = 0, signOnly = false): { v: number; nearest: number } {
   const { mesh } = world;
   const sphere = mesh.kind === 'sphere';
   const sp = mesh.spacing;
@@ -56,25 +59,61 @@ export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: numb
   const sv = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
   const h = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
   const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
+  const amp = weight * coastDetailAmp(world, Math.max(0, h));
+  if (signOnly && Math.abs(sv) > amp * DETAIL_MAX) return { v: sv, nearest: loc.nearest };
   const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
-  return { v: sv + weight * coastDetailAmp(world, Math.max(0, h)) * detail, nearest: loc.nearest };
+  return { v: sv + amp * detail, nearest: loc.nearest };
 }
 
-// 从陆上的一点 a 往水里的一点 b 走，画出来的岸线在哪里（第一次走到水面的地方）：先等分取 24 个点，再在跨过岸线的那一小段里二分。
+// 两格的格心 a、b 之间是不是画面三角网的一条边（一块地区的格与网格的相邻相同；整个星球按显示的三角网：
+// 接缝外的影子点要正好落在 b 上，两极那一行的影子点不算）
+function displayEdge(world: World, c: number, r: number, a: readonly [number, number], b: readonly [number, number]): boolean {
+  const { mesh } = world;
+  if (mesh.kind !== 'sphere') return true;
+  const view = viewOf(mesh);
+  const eps = 1e-9;
+  if (Math.abs(wrapX(a[0]) - mesh.x[c]) > eps || Math.abs(a[1] - mesh.y[c]) > eps) return false;
+  const bx = mesh.x[c] + (b[0] - a[0]);
+  for (const v of view.delaunay.neighbors(c)) if (view.cellOf[v] === r && Math.abs(view.x[v] - bx) < eps && Math.abs(view.y[v] - b[1]) < eps) return true;
+  return false;
+}
+
+// 从陆上的一点 a 往水里的一点 b 走，画出来的岸线在哪里（第一次走到水面的地方）：先等分取 12 个点，再在跨过岸线的那一小段里二分。
 // a 在画面上不是陆地、一路都没走到水面时为 null。整个星球上 x 可以展开（结果与 a 在同一份上）
-const CROSS_SAMPLES = 24;
-const CROSS_BISECT = 14;
-export function shoreCrossing(world: World, a: readonly [number, number], b: readonly [number, number], hint = 0): { p: [number, number]; t: number } | null {
+const CROSS_SAMPLES = 12;
+const CROSS_BISECT = 12;
+// edge（可选）：a、b 是相邻两格 [c, r] 的格心（河口那格与它流进的水面那格）。这条边在画面的三角网里时，线上每一点的重心坐标
+// 就是 (1 − t, t, 0)，不必一点点找三角形（逐点找要慢几倍）；不在时（整个星球两极附近）照常找
+export function shoreCrossing(
+  world: World,
+  a: readonly [number, number],
+  b: readonly [number, number],
+  hint = 0,
+  edge?: readonly [number, number],
+): { p: [number, number]; t: number } | null {
   const f = displayCoast(world);
+  const { mesh } = world;
+  const sphere = mesh.kind === 'sphere';
   const [ax, ay] = a;
   const dx = b[0] - ax;
   const dy = b[1] - ay;
   let h = hint;
-  const at = (t: number) => {
-    const r = displayCoastAt(world, f, ax + dx * t, ay + dy * t, h);
-    h = r.nearest;
-    return r.v;
-  };
+  const onEdge = edge && displayEdge(world, edge[0], edge[1], a, b);
+  const at = onEdge
+    ? (t: number) => {
+        const [c, r] = edge!;
+        const sv = f.coast[c] * (1 - t) + f.coast[r] * t;
+        const amp = Math.min(1, Math.max(0, (1 - Math.max(1 - t, t)) * 2.2)) * coastDetailAmp(world, Math.max(0, f.elevation[c] * (1 - t) + f.elevation[r] * t));
+        if (Math.abs(sv) > amp * DETAIL_MAX) return sv;
+        const x = ax + dx * t;
+        const y = ay + dy * t;
+        return sv + amp * (sphere ? coastDetail3(wrapX(x), y, mesh.spacing) : coastDetail(x, y, mesh.spacing));
+      }
+    : (t: number) => {
+        const r = displayCoastAt(world, f, ax + dx * t, ay + dy * t, h, true);
+        h = r.nearest;
+        return r.v;
+      };
   if (at(0) <= 0) return null;
   let t0 = 0;
   for (let k = 1; k <= CROSS_SAMPLES; k++) {

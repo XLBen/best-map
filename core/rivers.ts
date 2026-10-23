@@ -74,7 +74,7 @@ export function traceRivers(world: World): RiverLine[] {
     if (o < 0 || d.discharge[j] > d.discharge[o] || (d.discharge[j] === d.discharge[o] && j < o)) lakeDonor[r] = j;
   }
   // 画到岸线：从 a 往 b（水里）走到画面上的岸线，找不到时（a 在画面上已是水面）退回两点的中点
-  const shore = (a: [number, number], b: [number, number], hint: number): [number, number] => shoreCrossing(world, a, b, hint)?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const walk = (s: number, lead?: Lead) => {
     const pts: [number, number][] = [];
     const flow: number[] = [];
@@ -91,7 +91,7 @@ export function traceRivers(world: World): RiverLine[] {
     if (fromLake) {
       // 从湖岸画起：源头那格往湖里那一格走到岸线
       const j = lakeDonor[s];
-      pts.push(shore([cx, mesh.y[s]], [xAt(j, cx), mesh.y[j]], s));
+      pts.push(shore([cx, mesh.y[s]], [xAt(j, cx), mesh.y[j]], s, j));
       flow.push(d.discharge[s]);
       cells.push(s);
       tags?.push(rt![s]);
@@ -120,7 +120,7 @@ export function traceRivers(world: World): RiverLine[] {
       if (r < 0) break;
       if (water(r)) {
         // 入海、入湖：画到画面上的岸线
-        pts.push(shore([cx, mesh.y[c]], [xAt(r, cx), mesh.y[r]], c));
+        pts.push(shore([cx, mesh.y[c]], [xAt(r, cx), mesh.y[r]], c, r));
         flow.push(d.discharge[c]);
         cells.push(c);
         tags?.push(rt![c]);
@@ -167,7 +167,7 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   const water = (c: number) => !causes.land[c] || d.lake[c] === 1;
   // 这一点在画面上是不是陆地（河口退回到画面上的陆地再找岸线）
   const coastField = displayCoast(world);
-  const onLand = (pt: readonly [number, number], hint: number) => displayCoastAt(world, coastField, pt[0], pt[1], hint).v > 0;
+  const onLand = (pt: readonly [number, number], hint: number) => displayCoastAt(world, coastField, pt[0], pt[1], hint, true).v > 0;
   // 每格由哪条线画（先画的算）、在它的第几个点到第几个点之间
   const owner: (RiverLine | undefined)[] = new Array(n);
   const from = new Int32Array(n);

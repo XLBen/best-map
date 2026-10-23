@@ -75,7 +75,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     const meander = 0.22 * mesh.spacing;
     const sphere = mesh.kind === 'sphere';
     const xAt = (c: number, ref: number) => (sphere ? ref + (mesh.x[c] - ref - 2 * Math.round((mesh.x[c] - ref) / 2)) : mesh.x[c]);
-    const shore = (a: [number, number], b: [number, number]): [number, number] => shoreCrossing(world, a, b)?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     for (const s of sources) {
       const pts: [number, number][] = [];
       const flow: number[] = [];
@@ -87,7 +87,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
         if (donor < 0 || d.discharge[j] > d.discharge[donor] || (d.discharge[j] === d.discharge[donor] && j < donor)) donor = j;
       }
       if (donor >= 0) {
-        pts.push(shore([cx, mesh.y[s]], [xAt(donor, cx), mesh.y[donor]]));
+        pts.push(shore([cx, mesh.y[s]], [xAt(donor, cx), mesh.y[donor]], s, donor));
         flow.push(d.discharge[s]);
       }
       for (let guard = 0; guard < n; guard++) {
@@ -98,7 +98,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
         const r = d.receiver[c];
         if (r < 0) break;
         if (!causes.land[r] || d.lake[r] === 1) {
-          pts.push(shore([cx, mesh.y[c]], [xAt(r, cx), mesh.y[r]]));
+          pts.push(shore([cx, mesh.y[c]], [xAt(r, cx), mesh.y[r]], c, r));
           flow.push(d.discharge[c]);
           break;
         }
