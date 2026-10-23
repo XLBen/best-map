@@ -146,12 +146,14 @@ float patternAt(int kind, vec2 world, float size, float seed) {
 // 平面与星球的地形着色器共用；没有岩性（全是 0）的地方画面不变
 const LITH_LAND_GLSL = `
     {
-      float lowK = 1.0 - smoothstep(12.0, 90.0, hh);
-      // 硬岩（火山岛的玄武岩）：暗、偏冷的灰
-      col = mix(col, col * vec3(0.50, 0.50, 0.53) + vec3(0.05), vLith.r * 0.7);
-      // 软岩（低平岛）：低处是沙，湿的地方是沼泽
-      vec3 soft = mix(vec3(0.42, 0.53, 0.40), vec3(0.84, 0.78, 0.59), smoothstep(0.15, 0.55, vLandCol.a));
-      col = mix(col, soft, vLith.g * lowK * 0.6);
+      float lowK = 1.0 - smoothstep(20.0, 160.0, hh);
+      // 硬岩（火山岛的玄武岩）：暗、偏冷的灰，植被也压暗
+      float lum = dot(col, vec3(0.299, 0.587, 0.114));
+      vec3 basalt = mix(vec3(lum), col, 0.6) * 0.42 + vec3(0.06, 0.06, 0.07);
+      col = mix(col, basalt, vLith.r * 0.85);
+      // 软岩（低平岛）：低处是沙，湿的地方是沼泽（青绿、偏暗）
+      vec3 soft = mix(vec3(0.36, 0.50, 0.42), vec3(0.86, 0.80, 0.60), smoothstep(0.15, 0.6, vLandCol.a));
+      col = mix(col, soft, vLith.g * lowK * 0.7);
       // 珊瑚砂：白沙，海边最白
       float shoreK = 1.0 - smoothstep(0.0, 70.0, s);
       col = mix(col, vec3(0.95, 0.93, 0.85), vLith.b * mix(0.45, 0.95, shoreK));
@@ -163,7 +165,7 @@ const LITH_LAND_GLSL = `
     }`;
 const LITH_SEA_GLSL = `
     // 珊瑚砂的海底（潟湖、礁上）：青绿；珊瑚岛、小礁的岸边一圈白浪（约一格的十分之一宽）
-    col = mix(col, vec3(0.38, 0.76, 0.74), vLith.b * 0.55 * (1.0 - smoothstep(8.0, 60.0, depth)));
+    col = mix(col, vec3(0.30, 0.76, 0.76), vLith.b * 0.8 * (1.0 - smoothstep(8.0, 60.0, depth)));
     float surf = 1.0 - smoothstep(0.4, 1.0, -sPx / max(1.5, cellPx * 0.1));
     col = mix(col, vec3(0.94, 0.97, 0.97), min(1.0, vLith.b * 2.0) * surf * 0.8);`;
 
@@ -243,7 +245,7 @@ in vec4 vLith;
 uniform float uSpacing;
 uniform float uCoastAmp;
 uniform float uDetail;
-// 陆地颜色的饱和度（地形类着色 1.15，别的 1）
+// 陆地颜色的饱和度（地形类着色 1.1，别的 1）
 uniform float uSat;
 // 一个设备像素合多少地图单位；一个地图单位合多少米
 uniform float uPixel;
@@ -761,7 +763,7 @@ in vec4 vLith;
 uniform float uSpacing;
 uniform float uCoastAmp;
 uniform float uDetail;
-// 陆地颜色的饱和度（地形类着色 1.15，别的 1）
+// 陆地颜色的饱和度（地形类着色 1.1，别的 1）
 uniform float uSat;
 uniform float uPixel;
 uniform float uMetersPerUnit;
@@ -1850,7 +1852,7 @@ export class Renderer {
     this.bindTex(pt, 'uOther', this.tex.other, 4);
     this.bindTex(pt, 'uSeaGrad', this.tex.seaGrad, 5);
     this.bindTex(pt, 'uLith', this.tex.lith, 6);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uSat'), this.rock ? 1.15 : 1);
+    gl.uniform1f(gl.getUniformLocation(pt, 'uSat'), this.rock ? 1.1 : 1);
     gl.bindVertexArray(this.triVao);
     if (pp) {
       gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);

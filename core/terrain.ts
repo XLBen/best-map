@@ -857,7 +857,21 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   // 岩性：新长出的陆地（原来就是陆地的不动）、珊瑚岛的潟湖与环上的海格设成这种岛的可蚀性
   const erod = ISLAND_ERODIBILITY[spec.kind];
   const fresh = new Set(out.footprint);
-  out.erodDelta = out.cells.map((i, k) => (erod === null || causes.land[i] || !(fresh.has(i) || coral[k]) ? 0 : erod - causes.erod[i]));
+  // 潟湖的海格要被环围住：挨着的格里至少六成是陆地（放岛以后）或别的潟湖格；环太小、开口太大时这一格还是深海
+  // （一格大的珊瑚岛在格里画潟湖，见 colors.ts 的 lithLayer）
+  const sea = new Set(out.cells.filter((i, k) => coral[k] && !fresh.has(i) && !causes.land[i]));
+  const lagoon = new Set<number>();
+  for (const i of sea) {
+    let a = 0;
+    let t = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      t++;
+      if (fresh.has(j) || causes.land[j] || sea.has(j)) a++;
+    }
+    if (a >= 0.6 * t) lagoon.add(i);
+  }
+  out.erodDelta = out.cells.map((i) => (erod === null || causes.land[i] || !(fresh.has(i) || lagoon.has(i)) ? 0 : erod - causes.erod[i]));
   return out;
 }
 
