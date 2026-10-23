@@ -510,10 +510,10 @@ function targetName(w: World, T: EditTarget, ref: RiverRef): string | null {
 }
 
 // 怎么改的（悬停、拖动时说的、历史里记的）
-export type EditHow = 'stroke' | 'source' | 'end' | 'bend' | 'plus' | 'delete';
+type EditHow = 'stroke' | 'source' | 'end' | 'bend' | 'plus' | 'delete';
 
 // 改一条河：命令、执行后的样子（还是同一条河）。how：从哪里改的（拖控制点、重画一笔）
-export function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: [number, number][], how: EditHow): Course {
+function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: [number, number][], how: EditHow): Course {
   if ('blocked' in r) return { ...blocked(r.blocked, raw), target: T };
   const name = targetName(w, T, ref);
   const n = quoted(name, T.natural ? '这条河' : '这条画的河');

@@ -1,8 +1,7 @@
 import type { Command, GuidePatch } from './commands';
 import { findCell } from './mesh';
-import { decodePath, dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, roundPoint as roundPt, stemPath } from './rivers';
+import { dedupePoints as dedupe, douglasPeucker, encodePath, guidePoints, ownsCell, roundPoint as roundPt, stemPath } from './rivers';
 import {
-  type CourseEnd,
   type CourseOptions,
   type CoursePlan,
   TOO_LONG,
@@ -503,7 +502,7 @@ export function joinAtFirst(world: World, d: Derived, T: EditTarget, e: RiverEdi
 export const editedGuide = (T: EditTarget, e: RiverEdit): Guide => applyPatch(T.guide, e.patch);
 
 // 穿过的别的画的河（截走它们）
-export const editCaptures = (T: EditTarget, e: RiverEdit) => e.plan.crossings.some((x) => x.guide !== null && x.guide !== T.guide.id);
+const editCaptures = (T: EditTarget, e: RiverEdit) => e.plan.crossings.some((x) => x.guide !== null && x.guide !== T.guide.id);
 
 // 改一条河的命令：画的河是 update_guide（同一个 id）；自然的河是 add_guide（固定下来，连同改好的那段，沿用它的地名）
 export function editCommand(T: EditTarget, e: RiverEdit, label: string): Command {
@@ -512,9 +511,3 @@ export function editCommand(T: EditTarget, e: RiverEdit, label: string): Command
   const { id: _, ...guide } = editedGuide(T, e);
   return { op: 'add_guide', guide, ...capture, label };
 }
-
-// 这条河流到哪里（改好以后）
-export const editEnd = (e: RiverEdit): CourseEnd | null => e.plan.end;
-
-// 存下的折线（画的河的 path）解出来
-export const pathPoints = (g: Guide): Pt[] => (g.path ? decodePath(g.path) : []);
