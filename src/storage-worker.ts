@@ -10,6 +10,7 @@ const keeper = new CheckpointKeeper({
   get: () => idbGet<unknown>('checkpoint', 'current'),
   // put 时结构化克隆（在这个 Worker 里），写盘在后台进行
   put: (saved: SavedCheckpoint) => idbTx(['checkpoint'], 'readwrite', (s) => s.put(saved, 'current')),
+  mesh: () => idbGet<unknown>('meshes', 'current'),
 });
 
 self.onmessage = (ev: MessageEvent) => keeper.handle(ev.data);

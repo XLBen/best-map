@@ -1,4 +1,5 @@
 import type { Checkpoint, WorldDoc } from '../core/engine';
+import type { PackedMesh } from '../core/mesh-pack';
 import { collectBuffers } from './transfer';
 
 // 检查点的存取（隔离那一步）：计算 Worker 在隔离的环境里打不开 IndexedDB，检查点改由一个与页面同源、
@@ -19,13 +20,16 @@ export interface SavedCheckpoint {
 // 主线程发给存储 Worker 的
 export type StorageRequest =
   // 一条新的通道（新建、打开时各一条，之前的作废）：token 是主线程给的编号；doc：打开的世界（新建时为 null，不发检查点）
-  | { kind: 'open'; token: number; build: string; doc: WorldDoc | null; port: MessagePort }
+  // meshKey：打开的世界的网格存在浏览器里时的键（见 mesh-worker.ts）；对得上时连同网格一起发过去，计算 Worker 不必再建
+  | { kind: 'open'; token: number; build: string; doc: WorldDoc | null; port: MessagePort; meshKey?: string | null }
   // 主线程核对过：这条通道上纪元、步号与命令记录一模一样的那一份可以写下
   | { kind: 'commit'; token: number; epoch: number; ids: number[] };
 
 // 存储 Worker 经通道发给计算 Worker 的（只在打开时发一条）
 export interface TakeReply {
   cp: Checkpoint | null;
+  // 存着的这个世界的网格（打包的样子，见 core/mesh-pack.ts）；没有、对不上时不带
+  mesh?: PackedMesh;
 }
 
 // 计算 Worker 经通道发给存储 Worker 的：写好的检查点和写的时候引擎的纪元
@@ -113,13 +117,13 @@ export class CheckpointStore {
   }
 
   // 新建（doc 为 null）、打开时：开一条新的通道，返回交给计算 Worker 的那一头和编号；存储 Worker 用不了时为 null
-  open(build: string, doc: WorldDoc | null): { port: MessagePort; token: number } | null {
+  open(build: string, doc: WorldDoc | null, meshKey: string | null = null): { port: MessagePort; token: number } | null {
     const w = this.get();
     if (!w) return null;
     try {
       const ch = this.channel();
       const token = ++this.token;
-      w.postMessage({ kind: 'open', token, build, doc, port: ch.port1 }, [ch.port1]);
+      w.postMessage({ kind: 'open', token, build, doc, port: ch.port1, ...(meshKey ? { meshKey } : {}) }, [ch.port1]);
       return { port: ch.port2, token };
     } catch {
       return null;
@@ -143,6 +147,8 @@ export class CheckpointStore {
 export interface KeeperDb {
   get(): Promise<unknown>;
   put(saved: SavedCheckpoint): Promise<void>;
+  // 存着的网格（meshes 表的 'current'：{key, mesh}）；没有这一项时不发网格
+  mesh?(): Promise<unknown>;
 }
 
 interface Writer {
@@ -191,11 +197,12 @@ export class CheckpointKeeper {
     this.writer = w;
     w.port.onmessage = (ev: MessageEvent) => this.received(w, ev.data);
     const doc = m.doc;
-    if (doc) this.queue(() => this.take(w, doc));
+    const meshKey = typeof m.meshKey === 'string' && m.meshKey ? m.meshKey : null;
+    if (doc) this.queue(() => this.take(w, doc, meshKey));
   }
 
   // 打开时：对得上这个世界的检查点（否则 null）从通道发给计算 Worker，数组转移
-  private async take(w: Writer, doc: WorldDoc) {
+  private async take(w: Writer, doc: WorldDoc, meshKey: string | null) {
     let cp: Checkpoint | null = null;
     try {
       const saved = await this.db.get();
@@ -203,8 +210,19 @@ export class CheckpointKeeper {
     } catch {
       // 读不了：照旧重放
     }
+    // 网格：键对得上（同一个版本、同一个网格）才发
+    let mesh: PackedMesh | null = null;
+    if (meshKey && this.db.mesh) {
+      try {
+        const m = (await this.db.mesh()) as { key?: unknown; mesh?: unknown } | null | undefined;
+        if (m && m.key === meshKey && m.mesh && typeof m.mesh === 'object') mesh = m.mesh as PackedMesh;
+      } catch {
+        // 读不了：计算 Worker 自己建
+      }
+    }
     try {
-      w.port.postMessage({ cp } satisfies TakeReply, cp ? collectBuffers(cp) : []);
+      const reply: TakeReply = mesh ? { cp, mesh } : { cp };
+      w.port.postMessage(reply, [...new Set([...(cp ? collectBuffers(cp) : []), ...(mesh ? collectBuffers(mesh) : [])])]);
     } catch {
       w.port.postMessage({ cp: null } satisfies TakeReply);
     }

@@ -4,6 +4,7 @@ import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
 import { planetFormIssues, previewTerrain, resolveTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
+import { type PackedMesh, unpackMesh } from '../core/mesh-pack';
 import { setScriptHost, setScriptsEnabled } from '../core/script';
 import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
 import { probeIsolation } from './isolation-probe';
@@ -72,17 +73,29 @@ function logOf(e: Engine): MirrorLog {
 
 // 网格缓存：当前世界的网格和向导缩略图用的小网格（同一个大小、种子再新建或打开时不必重建）
 const meshes = new Map<string, Mesh>();
-function meshFor(raw: Partial<Settings>): Mesh {
+// packed：存储 Worker 发来的这个世界的网格（打包的样子，与就地建的逐值相同），有就不必建
+function meshFor(raw: Partial<Settings>, packed: PackedMesh | null = null): Mesh {
   const s = settingsSchema.parse(raw);
   const key = meshKey(s);
   let m = meshes.get(key);
   if (m) meshes.delete(key);
-  else m = buildMeshFor(s);
+  else m = unpacked(packed, s.cells) ?? buildMeshFor(s);
   meshes.set(key, m);
   // 大网格（连同挂在它上面的缓存有几十 MB）只留最近用的一个；缩略图的小网格最多留两个
   if (m.n > 5000) for (const [k, v] of meshes) if (k !== key && v.n > 5000) meshes.delete(k);
   while (meshes.size > 3) meshes.delete(meshes.keys().next().value!);
   return m;
+}
+
+function unpacked(packed: PackedMesh | null, cells: number): Mesh | null {
+  if (!packed) return null;
+  try {
+    const m = unpackMesh(packed);
+    // 格数对不上（不该发生）就自己建
+    return m.n > 0 && m.x.length === m.n && Math.abs(m.n - cells) <= cells ? m : null;
+  } catch {
+    return null;
+  }
 }
 
 function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
@@ -185,29 +198,29 @@ function writeCheckpoint(force = false) {
   }
 }
 
-// 打开时的检查点：从存储的端口收第一条（存储 Worker 只发对得上这个世界的，否则发 null）。端口留着之后写检查点用。
-// 安全模式下不用（检查点里的推导运行过脚本）；等不到（存储 Worker 出了事）就照旧重放
+// 打开时的检查点：从存储的端口收第一条（存储 Worker 只发对得上这个世界的，否则发 null；存着这个世界的网格时连同网格）。
+// 端口留着之后写检查点用。安全模式下没有端口；等不到（存储 Worker 出了事）就照旧重放
 const CHECKPOINT_WAIT_MS = 5000;
-function receiveCheckpoint(port: MessagePort | null): Promise<Checkpoint | null> {
-  if (!port) return Promise.resolve(null);
+function receiveCheckpoint(port: MessagePort | null): Promise<{ cp: Checkpoint | null; mesh: PackedMesh | null }> {
+  const none = { cp: null, mesh: null };
+  if (!port || !BUILD || safeMode) return Promise.resolve(none);
   return new Promise((resolve) => {
-    const done = (cp: Checkpoint | null) => {
+    const done = (r: { cp: Checkpoint | null; mesh: PackedMesh | null }) => {
       clearTimeout(timer);
       port.onmessage = null;
-      resolve(cp);
+      resolve(r);
     };
-    const timer = setTimeout(() => done(null), CHECKPOINT_WAIT_MS);
+    const timer = setTimeout(() => done(none), CHECKPOINT_WAIT_MS);
     port.onmessage = (ev: MessageEvent<Partial<TakeReply> | null>) => {
       const cp = ev.data?.cp;
-      done(cp && typeof cp === 'object' ? cp : null);
+      const mesh = ev.data?.mesh;
+      done({ cp: cp && typeof cp === 'object' ? cp : null, mesh: mesh && typeof mesh === 'object' ? mesh : null });
     };
   });
 }
 
-async function restore(doc: WorldDoc, mesh: Mesh): Promise<Engine | null> {
-  if (!BUILD || safeMode) return null;
-  const cp = await receiveCheckpoint(store);
-  if (!cp) return null;
+function restore(cp: Checkpoint | null, doc: WorldDoc, mesh: Mesh): Engine | null {
+  if (!cp || !BUILD || safeMode) return null;
   try {
     return Engine.fromCheckpoint(cp, doc, mesh);
   } catch {
@@ -257,8 +270,10 @@ async function handle(id: number, req: Request) {
       case 'load': {
         useSafeMode(req.safe);
         useStore(req.build, safeMode ? null : req.store);
-        const mesh = meshFor(req.doc.settings);
-        const restored = await restore(req.doc, mesh);
+        // 先收存储 Worker 发来的检查点和网格（存着这个世界的网格时不必再建）
+        const got = await receiveCheckpoint(store);
+        const mesh = meshFor(req.doc.settings, got.mesh);
+        const restored = restore(got.cp, req.doc, mesh);
         useEngine(restored ?? Engine.fromDoc(req.doc, mesh));
         withSnap('已打开世界文件', false, true);
         if (restored) {
