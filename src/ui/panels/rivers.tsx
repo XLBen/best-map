@@ -434,7 +434,7 @@ export function RiverMore() {
           onClick={() => {
             openPanel.value = null;
             selectedRiver.value = null;
-            void exec({ op: 'remove_guide', id: g.id }, '正在计算…');
+            void exec({ op: 'remove_guide', id: g.id, label: `删掉了${quoted(name)}` }, '正在计算…');
           }}
         >
           <Trash2 size={14} /> 删掉这条河

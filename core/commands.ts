@@ -136,7 +136,8 @@ const baseCommands = [
     // 历史与提示条上的一句话（画的时候算好，比如“汇入赤江”），重放时原样显示
     label: z.string().max(200).optional(),
   }),
-  z.object({ op: z.literal('remove_guide'), id: z.string() }),
+  // label：历史与提示条上的一句话（“删掉了「赤江」”，界面按地图上的名字写）
+  z.object({ op: z.literal('remove_guide'), id: z.string(), label: z.string().max(200).optional() }),
   // 改一条画的河（名字、大小、粗细、终点、重画一段……）：在原来的位置换上改好的（重叠时后面的说了算，先后不能乱）
   z.object({
     op: z.literal('update_guide'),
@@ -777,7 +778,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const before = small.guides;
       small.guides = small.guides.filter((g) => g.id !== cmd.id);
       if (small.guides.length === before.length) throw new CommandError(`找不到河道 "${cmd.id}"`);
-      return { dirty: guideDirty(before, small.guides), summary: '删掉了一条画的河' };
+      return { dirty: guideDirty(before, small.guides), summary: cmd.label || '删掉了一条画的河' };
     }
     case 'update_guide': {
       const idx = small.guides.findIndex((g) => g.id === cmd.id);

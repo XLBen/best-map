@@ -1,7 +1,7 @@
 import { batch, effect } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { displayCellAt } from '../../core/display';
-import { FEATURE_INFO, type FeatureType } from '../../core/features';
+import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
@@ -51,7 +51,7 @@ import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { barPreview } from './provincePreview';
 import { lakeSizeDraft } from './lakeInfo';
-import { riverGlow } from './riverCourse';
+import { riverGlow, riverInfo } from './riverCourse';
 import { editLayers } from './edits';
 import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, endemicPicked, measureTool, provinceCellAt, reliefLayers } from './tools';
 
@@ -497,7 +497,7 @@ export function MapView() {
         style: mapStyle.value,
         shapes: glow.length || back?.shapes.length ? [...(back?.shapes ?? []), ...glow, ...preview.shapes] : preview.shapes,
         provinceLabels: c === 'provinces' ? labelsFor(w, preview.provinces) : [],
-        features: overlays.value.labels || c === 'names' ? shown.derived.features : null,
+        features: overlays.value.labels || c === 'names' ? labelsShown(w, shown.derived.features, clean) : null,
         labelTypes: types,
         kmPerUnit: w.kmPerUnit,
         hoverLabel: c === 'names' && !clean ? (hoverLabel ?? selectedFeature.value) : null,
@@ -638,6 +638,17 @@ export function MapView() {
       void adjustPreviewWorld.value;
       requestDraw();
     });
+
+    // 画河时选中的河：它自己的地名先不标（不盖住它的控制点、“+”）。同样的输入给同一个数组
+    let labelMemo: { from: GeoFeature[]; key: string; out: GeoFeature[] } | null = null;
+    function labelsShown(w: World, list: GeoFeature[], clean: boolean): GeoFeature[] {
+      const sel = selectedRiver.value;
+      const key = !clean && tool.value === 'river' && sel ? (riverInfo(w, sel)?.feature?.key ?? '') : '';
+      if (!key) return list;
+      if (labelMemo?.from === list && labelMemo.key === key) return labelMemo.out;
+      labelMemo = { from: list, key, out: list.filter((f) => f.key !== key) };
+      return labelMemo.out;
+    }
 
     // 预览世界的河（河流多少、整体干湿……地图画将来的河）：与当前世界的河用同一个键（riverPathsKey，拖粗细时的临时样子也在里面）。
     // 键与当前世界的相同（预览没改描河读的数组、河道，比如涂生态、改名）时直接用当前世界的路径；不同时按键另缓存一份

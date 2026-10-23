@@ -1239,7 +1239,7 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
   const rivers = memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d));
   // 有名字的画的河占了的自然大河不再单独标（同一条河只标一次）；没有这种河时照旧
   const named = namedGuideCells(world, d);
-  replay(named ? rivers.flatMap((a) => uncovered(a, named)) : rivers);
+  replay(named ? rivers.flatMap((a) => uncovered(world, d, a, named)) : rivers);
   // 坡度由地形、陆海算出，所以不进键（只在这一段要重算时才取）
   replay(memoized(mesh, 'relief', [causes.land, d.lake, terrain, km], () => reliefInputs(world, d, coast.dLand, terrain, terrainSlope(world, d, terrain))));
   const biome = biomesOf(world, d);
@@ -1330,14 +1330,44 @@ function namedGuideCells(world: World, d: Derived): Uint8Array | null {
 }
 
 // 自然的大河里不是画的河的那部分：河口在画的河里时就是画的那条（不再单独标）；否则从河口往上到碰到画的河为止
-// （画的河汇进来、或者固定了它的上游：下游照旧是这条河、叫原来的名字）。剩下太短（不到 3 格）时不标。
-// 一格也没碰到画的河时原样留着
-function uncovered(a: AddInput, mask: Uint8Array): AddInput[] {
+// （画的河汇进来、或者固定了它的上游：下游照旧是这条河、叫原来的名字），再从那里沿着它自己最大的、不是画的河的上游
+// 接着往上（汇进来的画的河比它大时，它原来的上游照样是它，叫原来的名字；汇合的那一格算在画的河上时跨过它）。
+// 剩下太短（不到 3 格）时不标。一格也没碰到画的河时原样留着
+function uncovered(world: World, d: Derived, a: AddInput, mask: Uint8Array): AddInput[] {
   if (a.type !== 'river') return [a];
   if (a.anchor !== undefined && mask[a.anchor]) return [];
   const k = a.cells.findIndex((c) => mask[c] === 1);
   if (k < 0) return [a];
-  return k >= 3 ? [{ ...a, cells: a.cells.slice(0, k) }] : [];
+  const { mesh, causes } = world;
+  const thr = world.small.planet.riverThreshold;
+  const cells = Array.from(a.cells.slice(0, k));
+  const seen = new Set(cells);
+  // 流进 c、够一条河的上游（free：不是画的河的）里水最多的
+  const donor = (c: number, free: boolean) => {
+    let best = -1;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (d.receiver[j] !== c || !causes.land[j] || d.lake[j] === 1 || d.discharge[j] < thr || seen.has(j) || (free && mask[j])) continue;
+      if (best < 0 || d.discharge[j] > d.discharge[best]) best = j;
+    }
+    return best;
+  };
+  for (let c = cells[cells.length - 1], guard = 0; c !== undefined && guard < mesh.n; guard++) {
+    let j = donor(c, true);
+    // 汇合的那一格算在画的河上（画的河比它大，占了它往上的那一格）：它原来的上游在那一格后面，比别的支流大时跨过去
+    const m = donor(c, false);
+    const jm = m >= 0 && mask[m] ? donor(m, true) : -1;
+    if (jm >= 0 && (j < 0 || d.discharge[jm] > d.discharge[j])) {
+      cells.push(m);
+      seen.add(m);
+      j = jm;
+    }
+    if (j < 0) break;
+    cells.push(j);
+    seen.add(j);
+    c = j;
+  }
+  return cells.length >= 3 ? [{ ...a, cells: Int32Array.from(cells) }] : [];
 }
 
 // 沿折线每隔 step 取一点（含两端）：标注的位置、方向按它（与自然的河按格心一样，点大致均匀）

@@ -683,7 +683,12 @@ describe('名字与汇合处', () => {
         const p = planCourse(w, d, line([m.x[X] + 5 * s * Math.cos(ang), m.y[X] + 5 * s * Math.sin(ang)], at(w, X)), { endOnLand: 'flow', px: s / 20 });
         if (p.blocked || p.end !== 'river' || p.crossings.length || p.reroute || p.merge || !stem.includes(p.join)) continue;
         eng.exec({ op: 'add_guide', guide: { cells: p.cells, path: encodePath(p.path), locked: true, spring: true, flow: 120, name: '' } });
-        expect(w.derived.features.find((f) => f.key === key)?.name).toBe(name);
+        const f = w.derived.features.find((x) => x.key === key);
+        expect(f?.name).toBe(name);
+        // 它原来汇合处以上的上游也还是它（叫原来的名字）
+        const up = stem.slice(0, stem.indexOf(X)).filter((c) => isRiverCell(w, w.derived, c) && !p.cells.includes(c));
+        const inF = new Set(Array.from(f!.cells));
+        expect(up.filter((c) => inF.has(c)).length).toBeGreaterThanOrEqual(Math.floor(up.length * 0.8));
         return;
       }
     }

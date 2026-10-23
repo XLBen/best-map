@@ -237,6 +237,9 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
           </>
         )}
         {!cmd.commands.length && <p class="muted small">{plan.skipped.length ? '勾选的这些世界里都已经有了。' : '还没勾选要用的。'}</p>}
+      </div>
+      {/* 底部一直看得到（上面的说明很长时也不被挤到看不见的地方） */}
+      <div class="pack-apply-foot">
         {shown && <p class={`small ${shown.warn ? 'warn' : ''}`}>{shown.text}</p>}
         <div class="row between">
           <span class="muted small">用上是一步，可以撤销</span>

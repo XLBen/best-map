@@ -2,7 +2,7 @@ import type { Command } from '../../../core/commands';
 import { PLAIN_RIVER, type RiverType, majorityType } from '../../../core/river-types';
 import type { World } from '../../../core/world';
 import { type RiverRef, exec, openPanel, options, selectedRiver, setOptions, world } from '../../state';
-import { execAndSelect, guideOf, pinCommand, riverInfo } from '../riverCourse';
+import { BY_RULES, execAndSelect, guideOf, pinCommand, riverInfo } from '../riverCourse';
 import { type MenuItem, TypeButton, TypeMenu, createAndUse, newWaterType, typeScriptCommand } from './waterTypes';
 
 // 河流类型（第三批）：画河工具条上“新画的河”、选中一条河时“这条河”是哪一种。列表、编辑在 waterTypes.tsx（“水系 ⋯”里的“水体类型”）
@@ -76,7 +76,7 @@ export function NewRiverTypePick() {
   if (!w) return null;
   const cur = options.value.riverType;
   const t = w.small.riverTypes?.find((x) => x.id === cur) ?? null;
-  const byRules = !t && cur !== PLAIN_RIVER && hasRules(w);
+  const byRules = cur === BY_RULES && hasRules(w);
   return <TypeButton kind="river" prefix="新画的河" type={t} panel="newrivertype" plainText={byRules ? '按规则' : '普通'} />;
 }
 
@@ -87,20 +87,21 @@ export function NewRiverTypeMenu() {
   const types = w.small.riverTypes ?? [];
   const rules = hasRules(w);
   const cur = options.value.riverType;
-  const known = cur === PLAIN_RIVER || types.some((t) => t.id === cur);
+  const typed = types.some((t) => t.id === cur);
   const pick = (id: string) => {
     setOptions({ riverType: id });
     openPanel.value = null;
   };
+  // 默认是普通的河（新手画的第一条河不会因为资源包的规则变成血河）；“按规则”要自己选
   const items: MenuItem[] = [
-    ...(rules ? [{ t: null, label: '按规则', on: !known, hint: '按各类型的“哪些自然的河是这一种”判断', onPick: () => pick('') }] : []),
     {
       t: null,
       label: '普通的河',
-      on: rules ? cur === PLAIN_RIVER : !known || cur === PLAIN_RIVER,
+      on: !typed && !(rules && cur === BY_RULES),
       hint: rules ? '不按规则变成别的类型' : undefined,
-      onPick: () => pick(rules ? PLAIN_RIVER : ''),
+      onPick: () => pick(''),
     },
+    ...(rules ? [{ t: null, label: '按规则', on: cur === BY_RULES, hint: '按各类型的“哪些自然的河是这一种”判断', onPick: () => pick(BY_RULES) }] : []),
     ...types.map((t) => ({ t, label: t.name, on: cur === t.id, onPick: () => pick(t.id) })),
   ];
   return <TypeMenu kind="river" items={items} onNew={() => void createAndUse('river', null, (id) => setOptions({ riverType: id }))} />;

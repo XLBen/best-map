@@ -1489,6 +1489,18 @@ kbd {
   border-radius: 14px;
   z-index: 15;
 }
+.pack-apply .sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.pack-apply-foot {
+  flex: 0 0 auto;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--glass-line);
+}
+.pack-apply-foot p {
+  margin: 0 0 6px;
+}
 
 /* ---------- 脚本框（生态的“长在哪里”“颜色”……）---------- */
 .script-box {

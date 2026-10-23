@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import { findCell } from '../../core/mesh';
+import { PLAIN_RIVER } from '../../core/river-types';
 import { previewWorldOf } from '../../core/preview-world';
 import { controlHandles, deleteHandle, guideTarget } from '../../core/river-edit';
 import { type CoursePlan, endCourseAt, isRiverCell, planCourse, riverStem } from '../../core/select';
@@ -9,7 +10,9 @@ import type { World } from '../../core/world';
 import { riverLines } from '../render/overlay';
 import { busy, exec, previewCommand, previewWorld, riverStyleOverride, selectedRiver, setOptions, toast, world } from '../state';
 import {
+  BY_RULES,
   SNAP_PX,
+  chosenRiverType,
   handlesOf,
   lineOf,
   namedDest,
@@ -596,9 +599,11 @@ describe('删除河湖：按画出来的线认河', () => {
       expect(pv.shapes.some((s) => s.kind === 'line' && s.points!.length >= L.length - 1)).toBe(true);
       expect(previewCommand).not.toHaveBeenCalled();
       vi.advanceTimersByTime(300);
-      expect(previewCommand).toHaveBeenCalledWith({ op: 'remove_guide', id: g.id });
+      const name = w.derived.features.find((f) => f.guide === g.id)?.name;
+      const removal = { op: 'remove_guide', id: g.id, label: `删掉了「${name}」` };
+      expect(previewCommand).toHaveBeenCalledWith(removal);
       await t.click?.(p);
-      expect(lastExec()).toEqual({ op: 'remove_guide', id: g.id });
+      expect(lastExec()).toEqual(removal);
       expect(selectedRiver.value).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -733,5 +738,90 @@ describe('审查后补的', () => {
     expect(shapes.some((s) => s.kind === 'river')).toBe(true);
     // 河画在光的上面
     expect(shapes.findIndex((s) => s.kind === 'river')).toBeGreaterThan(shapes.findIndex((s) => s.kind === 'line'));
+  });
+});
+
+describe('复测后补的', () => {
+  it('点在汇合处：选中的是大河，不是挨着它的一两格的小支流', () => {
+    const { w } = setup();
+    const d = w.derived;
+    const thr = w.small.planet.riverThreshold;
+    let checked = 0;
+    for (const L of riverLines(w)) {
+      if (L.guide !== undefined || !L.cells || L.points.length < 2) continue;
+      const tail = L.cells[L.cells.length - 1];
+      const own = L.cells[L.cells.length - 2];
+      // 小支流（门槛的 1–2 倍）汇进大河（10 倍以上）的那一点
+      if (!isRiverCell(w, d, own) || d.discharge[own] > 2 * thr || d.discharge[tail] < 10 * thr) continue;
+      const [x, y] = L.points[L.points.length - 1];
+      const z = zoomOf(w);
+      const h = riverAt(w, x, y, SNAP_PX / z, findCell(w.mesh, x, y));
+      expect(h).not.toBeNull();
+      const stem = riverStem(w, d, h!.ref.kind === 'natural' ? h!.ref.cell : -1).cells;
+      expect(stem.includes(tail)).toBe(true);
+      expect(stem.includes(own)).toBe(false);
+      if (++checked >= 5) break;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('按下时还是自然的河、松手前它已经固定成画的河（上一笔改完了）：改的是那条画的河，不再新建一条', async () => {
+    const { eng, w, t } = setup();
+    const f = w.derived.features.filter((x) => x.type === 'river' && x.name && x.guide === undefined).sort((a, b) => b.cells.length - a.cells.length)[0];
+    const cell = Array.from(f.cells).find((c) => isRiverCell(w, w.derived, c) && w.derived.discharge[c] > 2 * w.small.planet.riverThreshold)!;
+    selectedRiver.value = { kind: 'natural', cell };
+    const T = targetOf(w, { kind: 'natural', cell })!;
+    const H = handlesOf(T, zoomOf(w));
+    const j = Math.floor(H.length / 2);
+    const P = T.points[H[j]];
+    t.down?.(ptr(w, P));
+    const to: Pt = [P[0], P[1] + 0.5 * w.mesh.spacing];
+    for (const q of line(w, P, to).slice(1)) t.move?.(ptr(w, q), true);
+    // 这时上一笔改完了：这条河固定成了画的河，选着它
+    eng.exec(pinCommand(w, cell)!.cmd);
+    const g = eng.world.small.guides[eng.world.small.guides.length - 1];
+    world.value = { ...eng.world };
+    selectedRiver.value = { kind: 'guide', id: g.id };
+    await t.up?.(ptr(w, to));
+    const calls = vi.mocked(exec).mock.calls;
+    // 改的是那条画的河（同一个 id），绝不另加一条
+    expect(calls.length).toBe(1);
+    const cmd = lastExec();
+    expect(cmd.op).toBe('update_guide');
+    if (cmd.op === 'update_guide') expect(cmd.id).toBe(g.id);
+  });
+
+  it('有河流类型的规则时，新画的河默认是普通的河（不按规则变成血河），“按规则”要自己选', () => {
+    const { eng, w } = setup();
+    eng.exec({ op: 'set_river_type', type: { id: 'blood', name: '血河', color: '#8f1414', scripts: { match: { api: 1, src: 'return 流量 > 3 * 河流门槛;' } } } });
+    world.value = { ...eng.world };
+    setOptions({ riverType: '' });
+    expect(chosenRiverType(world.value)).toEqual({ type: PLAIN_RIVER });
+    setOptions({ riverType: BY_RULES });
+    expect(chosenRiverType(world.value)).toEqual({});
+    setOptions({ riverType: 'blood' });
+    expect(chosenRiverType(world.value)).toEqual({ type: 'blood' });
+    setOptions({ riverType: '' });
+    void w;
+  });
+
+  it('穿山挖出峡谷的一笔：松手后顶部说“挖出了峡谷（最深约 N m）”', () => {
+    const { w } = setup();
+    const { mesh, derived: d } = w;
+    for (let i = 0; i < mesh.n; i += 5) {
+      if (!w.causes.land[i] || d.elevation[i] < 1500) continue;
+      for (let k = 0; k < 8; k++) {
+        const ang = (k * Math.PI) / 4;
+        const a: Pt = [mesh.x[i] - 4 * mesh.spacing * Math.cos(ang), mesh.y[i] - 4 * mesh.spacing * Math.sin(ang)];
+        const b: Pt = [mesh.x[i] + 4 * mesh.spacing * Math.cos(ang), mesh.y[i] + 4 * mesh.spacing * Math.sin(ang)];
+        const s = line(w, a, b);
+        const plan = planCourse(w, d, s, opts(w));
+        if (plan.blocked || plan.reroute || plan.merge || plan.gorge < 100) continue;
+        const c = newCourse(w, plan, s);
+        expect(c.cmd?.op === 'add_guide' && c.cmd.label).toContain('挖出了峡谷（最深约');
+        return;
+      }
+    }
+    throw new Error('找不到穿山的一笔');
   });
 });
