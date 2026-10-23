@@ -156,8 +156,8 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     );
     expect(now.length).toBeGreaterThan(10);
     expect(now.every((l) => l.cells?.length === l.points.length)).toBe(true);
-    // 第十三轮起河口那一段改成沿岸线的法向（normalMouth）、海岸边的源头小河不画、挨着的河口并成一条（tidyMouths）：
-    // 这几样只改线尾（并进别的河口时最多从河口往回约 1.5 格再接过去），之前的点与流量仍与抽出前逐位相同；不入海、不并的线整条逐位相同
+    // 第十三轮起河口那一段改成沿岸线的法向（normalMouth）、海岸边的源头小河不画、挤在一起的河口挪开或并成一条（tidyMouths）：
+    // 这几样只改线尾（急转时、挪开河口时最多从河口往回约 2.4 格再接过去），之前的点与流量仍与抽出前逐位相同；不入海、不并的线整条逐位相同
     const sp = w.mesh.spacing;
     const byHead = new Map(old.map((l) => [`${l.points[0][0]},${l.points[0][1]}`, l]));
     let whole = 0;
@@ -174,7 +174,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
       }
       let tail = 0;
       for (let k = Math.max(0, same - 1); k + 1 < l.points.length; k++) tail += Math.hypot(l.points[k + 1][0] - l.points[k][0], l.points[k + 1][1] - l.points[k][1]);
-      expect(tail).toBeLessThan((l.mouth ? 1.6 : 3.5) * sp);
+      expect(tail).toBeLessThan((l.mouth ? 2.6 : 3.5) * sp);
       expect(same).toBeGreaterThan(0);
     }
     expect(whole).toBeGreaterThan(now.length / 2);

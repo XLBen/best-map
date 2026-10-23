@@ -93,14 +93,14 @@ describe('画的线就是河', () => {
         // 每一段都是画的线上连续的一截（汇入别的河的最后一点接到那条河上；入海、入湖的最后一点在画的线上、画面上的岸线处）
         const k0 = gl.points.findIndex((p) => p[0] === r.points[0][0] && p[1] === r.points[0][1]);
         expect(k0).toBeGreaterThanOrEqual(0);
-        // 入海、入湖的最后约 0.9 格换成沿岸线法向进水的一段（第十三轮，见 rivers.ts 的 normalMouth）：之前的点照画的线
+        // 入海、入湖的最后约 0.9 格（急转时最多 2 格）换成沿岸线法向进水的一段（第十三轮，见 rivers.ts 的 normalMouth）：之前的点照画的线
         let m = (id === 'river-b' && r === runs[runs.length - 1]) || r.mouth ? r.points.length - 1 : r.points.length;
         if (r.mouth) {
           let same = 0;
           while (same < m && r.points[same][0] === gl.points[k0 + same]?.[0] && r.points[same][1] === gl.points[k0 + same]?.[1]) same++;
           let tail = 0;
           for (let k = Math.max(0, same - 1); k + 1 < r.points.length; k++) tail += Math.hypot(r.points[k + 1][0] - r.points[k][0], r.points[k + 1][1] - r.points[k][1]);
-          expect(tail).toBeLessThan(1.6 * w.mesh.spacing);
+          expect(tail).toBeLessThan(2.2 * w.mesh.spacing);
           m = same;
         }
         expect(r.points.slice(0, m)).toEqual(gl.points.slice(k0, k0 + m));
