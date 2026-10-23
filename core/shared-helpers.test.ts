@@ -54,7 +54,7 @@ describe('coastValueAt 与 coastValues 逐位相同', () => {
 });
 
 describe('smoothCourse：河道与抽出前逐位相同', () => {
-  // 抽出前的 traceRivers（曲流与 Chaikin 平滑写在循环里）。第十二轮起入海、入湖的河画到画面上的岸线（shoreCrossing，
+  // 抽出前的 traceRivers（曲流与 Chaikin 平滑写在循环里）。第十二轮起入海、入湖的河画到画面上的岸线（shoreCrossing，第十三轮起二分 9 次，
   // 找不到时退回两格的中点），出湖的河从湖岸画起；第十二轮修起汇合处顺着水多的那条往下画（一样多时编号小的），
   // 支流的最后一点画到干流平滑后的线上（ends：第几条线的最后一点画在哪里，取现在的结果）：这里照样改了，其余逐位照旧
   function traceBefore(world: World, ends: Map<string, [number, number]>): RiverLine[] {
@@ -78,7 +78,7 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     const meander = 0.22 * mesh.spacing;
     const sphere = mesh.kind === 'sphere';
     const xAt = (c: number, ref: number) => (sphere ? ref + (mesh.x[c] - ref - 2 * Math.round((mesh.x[c] - ref) / 2)) : mesh.x[c]);
-    const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r], { samples: 12, bisect: 9 })?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     for (const s of sources) {
       const pts: [number, number][] = [];
       const flow: number[] = [];

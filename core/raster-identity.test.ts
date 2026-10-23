@@ -34,7 +34,8 @@ import { renderThumbnail } from './thumbnail';
 // 第十三轮只重录 rivers.bmp（四个）：河口最后一段改成沿岸线的法向进水、海岸边不到 1.5 格的源头小河不画、
 // 流进同一格海挨着的河口并成一条（core/rivers.ts 的 normalMouth、tidyMouths，只改画法，水文与别的文件逐位不变）。
 // 第十三轮后来又重录 rivers.bmp（四个）：挤在一起的河口改成小的沿岸挪开、各自入海，只在接得顺时并进大河（以前常常拐回去接，画成钩子、“V”）；
-// 河口那一段不再急转（法向与原来方向差太多时偏回来、换长一点的一段）；找岸线少取几个点（准到千分之一格）
+// 河口那一段不再急转（法向与原来方向差太多时偏回来、换长一点的一段）；找岸线少取几个点（准到千分之一格）；
+// 量岸线法向的一圈从 12 个点改成 8 个、河口本来就在岸线上时不再沿法向重找（提速）
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -128,7 +129,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 land': 'b85808d36c33a47f',
   'planet 256x128 provinces.bmp': '9e253ebec4c8f0d0',
   'planet 256x128 provinces_summary.csv': 'c5cee2757def7c69',
-  'planet 256x128 rivers.bmp': 'c5ee60c713e6552d',
+  'planet 256x128 rivers.bmp': 'd422e716a84fff54',
   'planet 256x128 terrain.bmp': '9fdafe6b9fbc738d',
   'planet 256x128 world.json': 'b14bcf5ed922a8a4',
   'planet 300x150 README.txt': 'e7359468a5732b0c',
@@ -143,7 +144,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 land': '48937e82e23fbbee',
   'planet 300x150 provinces.bmp': '2951b132a665b99e',
   'planet 300x150 provinces_summary.csv': 'c5cee2757def7c69',
-  'planet 300x150 rivers.bmp': 'c66dae0ab0dcfa48',
+  'planet 300x150 rivers.bmp': '422c3b84a49c708c',
   'planet 300x150 terrain.bmp': '8105c547a5341a41',
   'planet 300x150 world.json': 'b14bcf5ed922a8a4',
   'planet functions': '360dfdd5fd12769f',
@@ -160,7 +161,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 land': '43e81fd39da93b8f',
   'region 256x128 provinces.bmp': 'd22019b3ccc16311',
   'region 256x128 provinces_summary.csv': 'ad9e38d0a0ac3e08',
-  'region 256x128 rivers.bmp': '8cbbf3304d0ed30e',
+  'region 256x128 rivers.bmp': 'cabd99368d73fa16',
   'region 256x128 terrain.bmp': 'c5b0bda858aed9cc',
   'region 256x128 world.json': '3e04512e12984af0',
   'region 300x150 README.txt': '01463f1b85660501',
@@ -175,7 +176,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 land': '91e58b02df0dee26',
   'region 300x150 provinces.bmp': 'a0b2b00ede2c734a',
   'region 300x150 provinces_summary.csv': 'ad9e38d0a0ac3e08',
-  'region 300x150 rivers.bmp': '9b24272f43c163f3',
+  'region 300x150 rivers.bmp': 'f09b44c3a58e49b3',
   'region 300x150 terrain.bmp': 'e71bafa3cbdba515',
   'region 300x150 world.json': '3e04512e12984af0',
   'region functions': '7c31fa87da6de5f9',

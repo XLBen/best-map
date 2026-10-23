@@ -43,6 +43,8 @@ interface Lead {
   from: number;
 }
 
+const WALK_SHORE = { samples: 12, bisect: 9 };
+
 export function traceRivers(world: World): RiverLine[] {
   const { mesh, derived: d, causes, small } = world;
   const n = mesh.n;
@@ -82,7 +84,8 @@ export function traceRivers(world: World): RiverLine[] {
     if (o < 0 || d.discharge[j] > d.discharge[o] || (d.discharge[j] === d.discharge[o] && j < o)) lakeDonor[r] = j;
   }
   // 画到岸线：从 a 往 b（水里）走到画面上的岸线，找不到时（a 在画面上已是水面）退回两点的中点
-  const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r])?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  // 一格长的线：等分 12 个点、二分 9 次（准到千分之一格的六分之一）
+  const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r], WALK_SHORE)?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   let field: DisplayCoast | null = null;
   const coastField = () => (field ??= displayCoast(world));
   // 沿河的点（平滑之前）。汇入自然的河的线等那条河画好了再定最后一点（画到它平滑后的线上）、再平滑
@@ -602,7 +605,7 @@ function markJoin(line: RiverLine, pos: number): void {
 const MOUTH_LEGS = [0.9, 1.4, 2];
 // 量岸线法向的圈的半径（格）与取几个点：海岸细节的小弯不算，量的是约一格见方的岸线走向
 const NORMAL_R = 0.4;
-const NORMAL_N = 12;
+const NORMAL_N = 8;
 // 进水的方向与原来的方向最多差多少（度）
 const END_TURN = 70;
 // 河口附近（最后约 1.5 格）接出来的线上任何地方最多转多少（度）：按相隔 1/4 格的前后两段弦量（见 maxTurn）
@@ -657,7 +660,7 @@ function shoreAlong(world: World, f: DisplayCoast, q: readonly [number, number],
   return shoreCrossing(world, from, [q[0] + dir[0] * 0.6 * sp, q[1] + dir[1] * 0.6 * sp], hint, undefined, SHORE_STEPS)?.p ?? null;
 }
 
-// 河口那一点的岸线法向与沿法向走到的岸线上那一点：按那一点的法向再找一次（第一次找到的点挪得不多时不必）。
+// 河口那一点的岸线法向与岸线上的那一点（河口本来就在岸线上时就是它）。
 // 按画面上的海岸场（同一个 DisplayCoast）记下来：同一个世界再画一遍河（预览、地图、导出）不再重算
 interface MouthShore {
   n: Pt;
@@ -672,16 +675,21 @@ function mouthShore(world: World, f: DisplayCoast, end: readonly [number, number
   if (hit !== undefined) return hit;
   const sp = world.mesh.spacing;
   let res: MouthShore | null = null;
-  let e: readonly [number, number] = end;
-  for (let it = 0; it < 2; it++) {
-    const n = seawardNormal(world, f, e, hint);
-    if (!n) break;
-    const p = shoreAlong(world, f, e, n, hint);
-    if (!p) break;
-    res = { n, p };
-    // 挪得不多（法向是约一格见方的岸线走向，挪 0.15 格以内差不了多少）时不必再量
-    if (Math.hypot(p[0] - e[0], p[1] - e[1]) < 0.15 * sp) break;
-    e = p;
+  const n0 = seawardNormal(world, f, end, hint);
+  // 河口那一点本来就在岸线上（walk、courseIndex 找岸线时走到的那一点，刚过岸线在水面一侧）：直接用它，不必再沿法向找一遍
+  if (n0 && !landAt(world, f, end, hint) && landAt(world, f, [end[0] - n0[0] * 0.01 * sp, end[1] - n0[1] * 0.01 * sp], hint)) res = { n: n0, p: [end[0], end[1]] };
+  else {
+    // 不在岸线上（找岸线没找到、退回到两格中点的）：沿法向走到岸线，按那一点的法向再找一次（挪得不多时不必）
+    let e: readonly [number, number] = end;
+    for (let it = 0; it < 2; it++) {
+      const n = it === 0 ? n0 : seawardNormal(world, f, e, hint);
+      if (!n) break;
+      const p = shoreAlong(world, f, e, n, hint);
+      if (!p) break;
+      res = { n, p };
+      if (Math.hypot(p[0] - e[0], p[1] - e[1]) < 0.15 * sp) break;
+      e = p;
+    }
   }
   memo.set(key, res);
   return res;
@@ -692,9 +700,25 @@ function mouthShore(world: World, f: DisplayCoast, end: readonly [number, number
 export function maxTurn(P: readonly (readonly [number, number])[], chord: number, from = 0): number {
   if (P.length < 2 || !(chord > 0)) return 0;
   const h = chord / 4;
-  const xs: number[] = [P[0][0]];
-  const ys: number[] = [P[0][1]];
-  const ss: number[] = [0];
+  // 取样点放在反复用的数组里（每个河口都要量几次）
+  let n = 0;
+  const push = (x: number, y: number, s: number) => {
+    if (n >= turnX.length) {
+      const grow = (a: Float64Array) => {
+        const b = new Float64Array(a.length * 2);
+        b.set(a);
+        return b;
+      };
+      turnX = grow(turnX);
+      turnY = grow(turnY);
+      turnS = grow(turnS);
+    }
+    turnX[n] = x;
+    turnY[n] = y;
+    turnS[n] = s;
+    n++;
+  };
+  push(P[0][0], P[0][1], 0);
   let acc = 0;
   let next = h;
   for (let k = 0; k + 1 < P.length; k++) {
@@ -704,30 +728,27 @@ export function maxTurn(P: readonly (readonly [number, number])[], chord: number
     if (l <= 0) continue;
     while (next <= acc + l) {
       const t = (next - acc) / l;
-      xs.push(P[k][0] + dx * t);
-      ys.push(P[k][1] + dy * t);
-      ss.push(next);
+      push(P[k][0] + dx * t, P[k][1] + dy * t, next);
       next += h;
     }
     acc += l;
   }
-  if (acc - ss[ss.length - 1] > 1e-3 * h) {
-    xs.push(P[P.length - 1][0]);
-    ys.push(P[P.length - 1][1]);
-    ss.push(acc);
-  }
+  if (acc - turnS[n - 1] > 1e-3 * h) push(P[P.length - 1][0], P[P.length - 1][1], acc);
   let worst = 0;
-  for (let i = 4; i + 4 < xs.length; i++) {
-    if (ss[i] < from) continue;
-    const ax = xs[i] - xs[i - 4];
-    const ay = ys[i] - ys[i - 4];
-    const bx = xs[i + 4] - xs[i];
-    const by = ys[i + 4] - ys[i];
+  for (let i = 4; i + 4 < n; i++) {
+    if (turnS[i] < from) continue;
+    const ax = turnX[i] - turnX[i - 4];
+    const ay = turnY[i] - turnY[i - 4];
+    const bx = turnX[i + 4] - turnX[i];
+    const by = turnY[i + 4] - turnY[i];
     const c = (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) || 1);
     worst = Math.max(worst, (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI);
   }
   return worst;
 }
+let turnX = new Float64Array(256);
+let turnY = new Float64Array(256);
+let turnS = new Float64Array(256);
 
 // 从 A（方向 ta）到 B（到 B 时的方向 tb，都是单位向量）的三次 Hermite 曲线，每隔约 step 取一点（不含 A，含 B）
 function hermite(A: readonly [number, number], ta: readonly [number, number], B: readonly [number, number], tb: readonly [number, number], step: number): Pt[] {
@@ -764,7 +785,7 @@ function before(P: readonly (readonly [number, number])[], k: number, sp: number
 
 // 入海、入湖的线的最后一段接到岸线上的 p（那里岸线的法向 n）：从河口往回约 leg 格的那一点（第 k 个点，keep 与别的河汇进来的地方以前不动）
 // 起一段曲线。返回接出来的点（不含第 k 个点）；有一点在水里、转得太急时为 null
-function mouthLeg(world: World, f: DisplayCoast, line: RiverLine, keep: number, n: Pt, p: Pt, leg: number, cap = 0.4): { k: number; pts: Pt[] } | null {
+function mouthLeg(world: World, f: DisplayCoast, line: RiverLine, keep: number, n: Pt, p: Pt, leg: number, cap = 0.4, checkTurn = true): { k: number; pts: Pt[] } | null {
   const sp = world.mesh.spacing;
   const P = line.points;
   const m = P.length;
@@ -808,7 +829,7 @@ function mouthLeg(world: World, f: DisplayCoast, line: RiverLine, keep: number, 
   const ns = Math.max(1, Math.ceil(straight / (sp / 8)));
   for (let j = 1; j <= ns; j++) pts.push(j === ns ? [end[0], end[1]] : [Q[0] + (end[0] - Q[0]) * (j / ns), Q[1] + (end[1] - Q[1]) * (j / ns)]);
   for (let j = 0; j + 1 < pts.length; j++) if (!landAt(world, f, pts[j], hint)) return null;
-  if (maxTurn([...before(P, k, sp), ...pts], TURN_CHORD * sp) > MOUTH_MAX_TURN) return null;
+  if (checkTurn && maxTurn([...before(P, k, sp), ...pts], TURN_CHORD * sp) > MOUTH_MAX_TURN) return null;
   return { k, pts };
 }
 
@@ -820,15 +841,25 @@ function applyLeg(line: RiverLine, k: number, pts: Pt[]): void {
   const f0 = line.flow[k];
   const f1 = line.flow[m - 1];
   const keepN = k + 1;
-  line.points = [...P.slice(0, keepN), ...pts];
-  line.flow = [...line.flow.slice(0, keepN), ...pts.map((_, j) => f0 + ((f1 - f0) * (j + 1)) / count)];
-  const halves = <T>(arr: T[]) => [...arr.slice(0, keepN), ...pts.map((_, j) => ((j + 1) / count < 0.5 ? arr[k] : arr[m - 1]))];
+  const points = P.slice(0, keepN);
+  for (const q of pts) points.push(q);
+  line.points = points;
+  const flow = line.flow.slice(0, keepN);
+  for (let j = 0; j < count; j++) flow.push(f0 + ((f1 - f0) * (j + 1)) / count);
+  line.flow = flow;
+  const halves = <T>(arr: T[]) => {
+    const out = arr.slice(0, keepN);
+    for (let j = 0; j < count; j++) out.push((j + 1) / count < 0.5 ? arr[k] : arr[m - 1]);
+    return out;
+  };
   if (line.cells) line.cells = halves(line.cells);
   if (line.type) line.type = halves(line.type);
   if (line.mul) {
     const m0 = line.mul[k];
     const m1 = line.mul[m - 1];
-    line.mul = [...line.mul.slice(0, keepN), ...pts.map((_, j) => m0 + ((m1 - m0) * (j + 1)) / count)];
+    const mul = line.mul.slice(0, keepN);
+    for (let j = 0; j < count; j++) mul.push(m0 + ((m1 - m0) * (j + 1)) / count);
+    line.mul = mul;
   }
 }
 
@@ -841,17 +872,20 @@ function normalMouth(world: World, f: DisplayCoast, line: RiverLine, keep: numbe
   const ms = mouthShore(world, f, P[m - 1], line.cells?.[m - 1] ?? 0);
   const sp = world.mesh.spacing;
   // 接好以后最后 1.5 格里转得急不急（原来的线在接出来的一段之前就急转时，换长一点的一段把它也磨圆）
+  // （接出来的一段与原来的线接上的地方也量：往前带上约 0.3 格）
   const smooth = (r: { k: number; pts: Pt[] }) => {
-    const Q = [...P.slice(backAlong(P.slice(0, r.k + 1), Math.max(0, 1.8 * sp - lineLength(r.pts))).k, r.k + 1), ...r.pts];
-    return maxTurn(Q, TURN_CHORD * sp, lineLength(Q) - 1.5 * sp) <= MOUTH_MAX_TURN;
+    const head = P.slice(backAlong(P.slice(0, r.k + 1), Math.max(0.3 * sp, 1.8 * sp - lineLength(r.pts))).k, r.k + 1);
+    const Q = [...head, ...r.pts];
+    return maxTurn(Q, TURN_CHORD * sp, Math.max(0, Math.min(lineLength(Q) - 1.5 * sp, lineLength(head) - 0.3 * sp))) <= MOUTH_MAX_TURN;
   };
   let first: { k: number; pts: Pt[] } | null = null;
   if (ms) {
     for (const leg of MOUTH_LEGS) {
-      const r = mouthLeg(world, f, line, keep, ms.n, ms.p, leg);
+      const r = mouthLeg(world, f, line, keep, ms.n, ms.p, leg, 0.4, false);
       if (!r) continue;
       if (smooth(r)) return applyLeg(line, r.k, r.pts);
-      first ??= r;
+      // 原来的线在更早的地方就急转：接出来的这一段本身不急转的话先留着
+      if (!first && maxTurn([...before(P, r.k, sp), ...r.pts], TURN_CHORD * sp) <= MOUTH_MAX_TURN) first = r;
     }
   }
   if (!first) {
@@ -862,7 +896,7 @@ function normalMouth(world: World, f: DisplayCoast, line: RiverLine, keep: numbe
   const e = P[m - 1];
   const t = dirAt(P, m - 1);
   for (const leg of MOUTH_LEGS.slice(1)) {
-    const r = mouthLeg(world, f, line, keep, t, [e[0], e[1]], leg);
+    const r = mouthLeg(world, f, line, keep, t, [e[0], e[1]], leg, 0.4, false);
     if (r && smooth(r)) return applyLeg(line, r.k, r.pts);
   }
   // 还不行（河顺着岸走到河口，水在身后）：从往回约一格的那一点顺着河的方向（左右各偏到 60°）往前找最近的岸线，在那里入海
@@ -884,7 +918,7 @@ function normalMouth(world: World, f: DisplayCoast, line: RiverLine, keep: numbe
     const n = best && seawardNormal(world, f, best, hint);
     if (best && n) {
       for (const leg of MOUTH_LEGS) {
-        const r = mouthLeg(world, f, line, keep, n, best, leg);
+        const r = mouthLeg(world, f, line, keep, n, best, leg, 0.4, false);
         if (r && smooth(r)) return applyLeg(line, r.k, r.pts);
       }
     }
