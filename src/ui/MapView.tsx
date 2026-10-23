@@ -1,4 +1,5 @@
 import { batch, effect } from '@preact/signals';
+import { activeConflicts } from '../../core/constraints';
 import { useEffect, useRef } from 'preact/hooks';
 import { displayCellAt } from '../../core/display';
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
@@ -53,7 +54,7 @@ import { barPreview } from './provincePreview';
 import { lakeSizeDraft } from './lakeInfo';
 import { riverGlow, riverInfo } from './riverCourse';
 import { editLayers } from './edits';
-import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, endemicPicked, measureTool, provinceCellAt, reliefLayers } from './tools';
+import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, rangePick, provinceCellAt, reliefLayers } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具，工具给出预览
 
@@ -256,7 +257,8 @@ export function MapView() {
       const key: unknown[] = [w, shown, c, ...edits, '|', ...back, '|', ...preview.layers];
       if (c === 'nature') {
         // 没涂成的格：红色斜线
-        const failing = shown.derived.conflicts.flatMap((x) => x.failing);
+        // 说了“就这样”的不画（收在“!”里）
+        const failing = activeConflicts(shown).flatMap((x) => x.failing);
         if (failing.length) layers.push({ cells: failing, color: [235, 60, 50], alpha: 0.85, pattern: 'hatch' });
       }
       if (c === 'provinces' && selectedProvince.value !== null) {
@@ -694,7 +696,7 @@ export function MapView() {
       void visualOverrides.value;
       void pendingEdits.value;
       void barPreview.value;
-      void endemicPicked.value;
+      void rangePick.value;
       requestDraw();
     });
 

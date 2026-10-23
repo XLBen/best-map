@@ -64,7 +64,8 @@ export type ToolId =
   | 'field'
   | 'biome'
   | 'grow'
-  | 'endemic'
+  // 给生态选“长在哪里”（第十二轮，从生态编辑器进来，不在工具列表里）
+  | 'range'
   | 'erase'
   | 'river'
   | 'lake'

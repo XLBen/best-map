@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { shiftColor } from '../../core/endemic';
+import { landmassCells } from '../../core/vegetation';
 import { brushCells } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
-import { options, paintNote, setOptions, world } from '../state';
+import { paintNote, setOptions, world } from '../state';
 import { climateHere, climateMask, editLayers, natureHere, natureMask, terrainHere, terrainMask, waterMask } from './edits';
-import { type Pointer, climateEraseTool, endemicTool, eraseTool, restoreTool } from './tools';
+import { type Pointer, climateEraseTool, eraseTool, rangePick, rangeTool, restoreTool } from './tools';
 
-// 我改过的地方：橡皮擦先标出能擦的格、悬停说这里改过什么；岛上特有只描岛、说清会怎样
+// 我改过的地方：橡皮擦先标出能擦的格、悬停说这里改过什么；选生态的范围：点岛、圈一片
 
 vi.mock('../state', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../state')>();
@@ -127,104 +127,54 @@ describe('能擦的格', () => {
   });
 });
 
-describe('岛上特有', () => {
+describe('选生态的范围（第十二轮，替代岛上特有）', () => {
   const archipelago = () => {
     const eng = engineFor({ cells: 12000, seed: 1, latNorth: 30, latSouth: 0 });
-    eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true });
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     return eng;
   };
 
-  it('只描岛，大陆不描；悬停写出岛上哪种生态换成哪一种，涂上新的颜色', () => {
-    const w = archipelago().world;
-    world.value = w;
-    const t = endemicTool();
-    const back = t.backdrop?.();
-    const outline = back!.layers[0];
-    expect(outline.pattern).toBe('outline');
-    const islands = new Set(w.derived.features.filter((f) => f.type === 'island').flatMap((f) => Array.from(f.cells)));
-    expect(new Set(outline.cells)).toEqual(islands);
-    const island = w.derived.features.filter((f) => f.type === 'island').sort((a, b) => b.cells.length - a.cells.length)[0];
-    t.move?.(at(w, island.anchor), false);
-    const pv = t.preview();
-    expect(pv.hint).toMatch(new RegExp(`^「${island.name}」：.+ → ${island.name}.+（新的一种生态，只长在这个岛上）$`));
-    expect(pv.layers[0].cells.length).toBeGreaterThan(0);
-  });
-
-  it('群岛里的岛：悬停写成“岛名（群岛名）”（地图上标的常常是群岛的名字）', () => {
-    const eng = engineFor({ cells: 12000, seed: 1, latNorth: 30, latSouth: 0 });
-    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
+  it('点岛：悬停涂白那块陆地、写成“岛名（群岛名）”；点了是 update_species 的 range（岛），然后回到原来的工具', async () => {
+    const eng = archipelago();
     const w = eng.world;
     world.value = w;
     const arch = w.derived.features.find((f) => f.type === 'archipelago' && f.name)!;
-    expect(arch).toBeTruthy();
     const inArch = new Set(Array.from(arch.cells));
     const island = w.derived.features.find((f) => f.type === 'island' && inArch.has(f.anchor) && f.name !== arch.name)!;
     expect(island).toBeTruthy();
-    const t = endemicTool();
+    rangePick.value = { species: 'desert', kind: 'island', back: 'biome' };
+    const t = rangeTool();
     t.move?.(at(w, island.anchor), false);
-    expect(t.preview().hint).toMatch(new RegExp(`^「${island.name}（${arch.name}）」`));
-  });
-
-  it('已有的岛：点一下选中（不换画笔），可以去掉；自然的擦除悬停时说在哪里去掉', async () => {
-    const eng = archipelago();
-    const w0 = eng.world;
-    world.value = w0;
-    const island = w0.derived.features.filter((f) => f.type === 'island').sort((a, b) => b.cells.length - a.cells.length)[0];
-    const t0 = endemicTool();
-    t0.move?.(at(w0, island.anchor), false);
+    const pv = t.preview();
+    expect(pv.hint).toContain(`「${island.name}（${arch.name}）」`);
+    const mass = landmassCells(w, island.anchor);
+    expect(pv.layers[0].cells.length).toBe(mass.reduce((a, b) => a + b, 0));
     const { exec } = await import('../state');
     vi.mocked(exec).mockClear();
-    await t0.click?.(at(w0, island.anchor));
-    const cmd = vi.mocked(exec).mock.calls[0][0];
-    expect(cmd.op).toBe('add_species');
-    eng.exec(cmd);
+    await t.click?.(at(w, island.anchor));
+    expect(vi.mocked(exec).mock.calls[0][0]).toEqual({ op: 'update_species', id: 'desert', patch: { range: { kind: 'island', cell: island.anchor } } });
+    expect(rangePick.value).toBeNull();
+  });
+
+  it('圈一片：松手后是圈里的陆地格', async () => {
+    const eng = archipelago();
     const w = eng.world;
     world.value = w;
-    const sp = w.small.species.find((s) => s.id === `endemic_${island.anchor}`)!;
-    const biome = options.value.biome;
-    const t = endemicTool();
-    t.move?.(at(w, island.anchor), false);
-    expect(t.preview().hint).toBe(`已有：${sp.name}（点一下，在下面去掉它）`);
-    await t.click?.(at(w, island.anchor));
-    expect(options.value.biome).toBe(biome);
-    const { endemicPicked, removePickedEndemic } = await import('./tools');
-    expect(endemicPicked.value).toEqual({ anchor: island.anchor, id: sp.id });
+    const c = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && w.mesh.x[i] > 0.3 && w.mesh.y[i] > 0.3)!;
+    const s = w.mesh.spacing * 6;
+    const [x, y] = [w.mesh.x[c], w.mesh.y[c]];
+    rangePick.value = { species: 'desert', kind: 'cells', back: 'biome' };
+    const t = rangeTool();
+    const pts: [number, number][] = [[x - s, y - s], [x + s, y - s], [x + s, y + s], [x - s, y + s]];
+    t.down?.({ ...at(w, c), x: pts[0][0], y: pts[0][1] });
+    for (const [px, py] of pts.slice(1)) t.move?.({ ...at(w, c), x: px, y: py }, true);
+    const { exec } = await import('../state');
     vi.mocked(exec).mockClear();
-    await removePickedEndemic();
-    expect(vi.mocked(exec).mock.calls[0][0]).toEqual({ op: 'remove_species', id: sp.id });
-    const e = eraseTool();
-    e.move?.(at(w, island.anchor), false);
-    expect(e.preview().hint).toBe(`「${sp.name}」是岛上特有的：点“岛上特有”，再点这个岛去掉它`);
-  });
-
-  it('新的特有生态颜色明显偏开：色相转 40°，明暗差一截', () => {
-    const hsl = (hex: string) => {
-      const [r, g, b] = [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255);
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const d = max - min;
-      const h = d === 0 ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-      return [h * 60, (max + min) / 2];
-    };
-    for (const c of ['#4f7d5c', '#6a9e55', '#c2bd7c', '#2c7d3f', '#e3d3a0']) {
-      for (const salt of [0, 1]) {
-        const [h0, l0] = hsl(c);
-        const [h1, l1] = hsl(shiftColor(c, salt));
-        const dh = Math.min(Math.abs(h1 - h0), 360 - Math.abs(h1 - h0));
-        expect(dh).toBeGreaterThan(30);
-        expect(Math.abs(l1 - l0)).toBeGreaterThan(0.1);
-      }
-    }
-  });
-
-  it('往离已有生态的颜色更远的那一边转（森林不转成草原的黄）', () => {
-    const dist = (a: string, b: string) => Math.hypot(...[1, 3, 5].map((k) => parseInt(a.slice(k, k + 2), 16) - parseInt(b.slice(k, k + 2), 16)));
-    const avoid = ['#5f9c3c', '#b5b259', '#c2bd7c', '#a7a35b', '#7f9e45'];
-    for (const salt of [0, 1]) {
-      const c = shiftColor('#5f9c3c', salt, avoid);
-      const other = [shiftColor('#5f9c3c', 0), shiftColor('#5f9c3c', 1)].find((x) => x !== c)!;
-      const near = (x: string) => Math.min(...avoid.map((y) => dist(x, y)));
-      expect(near(c)).toBeGreaterThanOrEqual(near(other));
-    }
+    await t.up?.({ ...at(w, c), x: pts[3][0], y: pts[3][1] });
+    const cmd = vi.mocked(exec).mock.calls[0][0] as { op: string; patch: { range: { kind: string; cells: number[] } } };
+    expect(cmd.op).toBe('update_species');
+    expect(cmd.patch.range.kind).toBe('cells');
+    expect(cmd.patch.range.cells).toContain(c);
+    expect(cmd.patch.range.cells.every((i) => w.causes.land[i] === 1)).toBe(true);
   });
 });

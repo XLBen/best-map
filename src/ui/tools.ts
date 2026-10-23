@@ -2,7 +2,6 @@ import { signal } from '@preact/signals';
 import type { Command } from '../../core/commands';
 import type { PreviewResult } from '../../core/engine';
 import { lakeArea } from '../../core/elevation';
-import { endemicBase, endemicSpecies } from '../../core/endemic';
 import { hexToRgb } from '../../core/export';
 import { type GeoFeature, REGION_KIND_INFO, guessRegionKind } from '../../core/features';
 import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
@@ -24,14 +23,17 @@ import {
   type TerrainPreview,
 } from '../../core/terrain';
 import { regenTargets } from '../../core/provinces';
-import { isVegetated } from '../../core/vegetation';
-import type { Species } from '../../core/species';
+import { isVegetated, landmassCells } from '../../core/vegetation';
 import { type ProvinceMeta, type RegionKind, type World, provinceColor } from '../../core/world';
 import { type DisplayCell, displayCellAt } from '../../core/display';
 import type { GhostEdit, HighlightLayer } from '../render/colors';
 import type { Shape } from '../render/overlay';
 import {
   type Again,
+  type ToolId,
+  editsIdle,
+  history,
+  replaceLast,
   type ToolOptions,
   busy,
   exec,
@@ -908,6 +910,30 @@ function chainAgain(chain: ChainSpec): Again {
   };
 }
 
+// 上一条画完的岛链（第十二轮）：工具栏的“换个排列”、R 重新排它。done：那时做完的步数（之后又做了别的、撤销了就不再是它）
+let lastChain: { again: Again; done: number } | null = null;
+const doneSteps = () => history.value.filter((h) => h.done);
+const CHAIN_SUMMARY = '画了一条岛链';
+
+// 工具栏的“换个排列”、R：上一条岛链还是最后一步时换下一种排列重放它（与松手后提示里的“换个排列”相同：只算一次，历史里只留一步）；
+// 不是时（之后又改了别的、撤销了）换下一条岛链的排列，并说一声
+export async function rerollChain(): Promise<void> {
+  const lc = lastChain;
+  const steps = doneSteps();
+  const still = lc !== null && steps.length === lc.done && (steps.at(-1)?.summary.startsWith(CHAIN_SUMMARY) ?? false);
+  if (!still) {
+    setOptions({ chainVariant: options.value.chainVariant + 1 });
+    showToast(lc ? '上一条岛链之后又改了别的：下一条岛链换个排列' : '画一条岛链之后，这里会重新排它；现在换的是下一条的排列');
+    return;
+  }
+  if (!editsIdle()) {
+    showToast('等排队的几步算完再换');
+    return;
+  }
+  const next = lc.again.next();
+  if (next) await replaceLast(next, '正在造岛链…', lc.again);
+}
+
 // 岛链：按住拖出一条线，岛沿着线排开。前面的编辑还在算时也能画（排队）
 export function chainTool(): ToolHandler {
   let pointer: Pointer | null = null;
@@ -983,7 +1009,10 @@ export function chainTool(): ToolHandler {
         return { cells: st.cells, delta: st.landDelta };
       };
       setOptions({ chainVariant: chain.variant + 1 });
-      await trackEdit(at, exec({ op: 'add_island_chain', chain }, '正在造岛链…', chainAgain(chain)), ghostFollows(at, w, ghostAt));
+      const again = chainAgain(chain);
+      const run = exec({ op: 'add_island_chain', chain }, '正在造岛链…', again);
+      await trackEdit(at, run, ghostFollows(at, w, ghostAt));
+      if (await run) lastChain = { again, done: doneSteps().length };
     },
     cancel() {
       points = null;
@@ -1400,126 +1429,115 @@ function islandLabel(w: World, f: GeoFeature): string {
   return a?.name && a.name !== f.name ? `${f.name}（${a.name}）` : f.name;
 }
 
-// 岛上特有的生态：这个岛已有的那一种（一个岛只有一种，id 跟着岛的锚点格）
-function endemicOf(w: World, f: GeoFeature): Species | null {
-  return w.small.species.find((s) => s.id === `endemic_${f.anchor}`) ?? null;
+// ---------- 第十二轮：给生态选“长在哪里” ----------
+// 生态编辑器里点“选岛”“圈一下”进来：点一个岛（那块陆地）或按住圈一片，选好回到生态编辑器。
+// back：进来之前用的工具（选好、取消都换回它）
+export const rangePick = signal<{ species: string; kind: 'island' | 'cells'; back: ToolId } | null>(null);
+
+// 选好、取消：换回原来的工具，打开生态编辑器
+function leaveRangePick() {
+  const pick = rangePick.value;
+  rangePick.value = null;
+  if (!pick) return;
+  focusSpecies.value = pick.species;
+  sheet.value = 'species';
+  void import('./defs/tools').then((m) => m.setTool(pick.back));
 }
+export const cancelRangePick = leaveRangePick;
 
-// 岛上特有：点了一个已有特有生态的岛，底部条给“去掉它”。世界换了以后按 id 找（删掉了就不再显示）
-export const endemicPicked = signal<{ anchor: number; id: string } | null>(null);
-
-// 所有算作“岛”的陆地（大陆不算）：选中岛上特有时描边。按地理要素的数组缓存
-let islandMemo: { features: GeoFeature[]; layer: HighlightLayer | null } | null = null;
-function islandOutline(w: World): HighlightLayer | null {
-  const features = w.derived.features;
-  if (islandMemo?.features !== features) {
-    const cells: number[] = [];
-    for (const f of features) if (f.type === 'island') for (const c of f.cells) cells.push(c);
-    islandMemo = { features, layer: cells.length ? { cells, color: WHITE, pattern: 'outline' } : null };
-  }
-  return islandMemo.layer;
-}
-
-// 岛上特有：点一个岛（选中工具时所有的岛都描了边，大陆不描），岛上最多的那种生态换成只长在这个岛上的新的一种
-// （名字、颜色跟着岛，颜色明显地偏开）。悬停时说清会怎样，岛上会换的格涂上新的颜色。
-// 一个岛只有一种：已经有了的岛，点一下选中它，底部条给“去掉它”（删掉这种生态，可撤销），不再悄悄换画笔
-export function endemicTool(): ToolHandler {
+export function rangeTool(): ToolHandler {
   let pointer: Pointer | null = null;
-  let cache: { w: World; anchor: number; sp: Species | null; base: Species | null; cells: number[]; layer: HighlightLayer | null } | null = null;
-  const plan = (w: World, f: GeoFeature) => {
-    if (cache?.w !== w || cache.anchor !== f.anchor) {
-      const cells = Array.from(f.cells);
-      const sp = endemicSpecies(w, cells, `endemic_${f.anchor}`, f.name);
-      const land = cells.filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1);
-      const b = sp ? endemicBase(w, land) : -1;
-      const change = b >= 0 ? cells.filter((c) => w.derived.dominant[c] === b) : [];
-      cache = { w, anchor: f.anchor, sp, base: b >= 0 ? w.small.species[b] : null, cells: change, layer: sp && change.length ? { cells: change, color: hexToRgb(sp.color), alpha: 0.9 } : null };
+  let ring: [number, number][] | null = null;
+  // 鼠标下的那块陆地（同一块不重算）
+  let mass: { w: World; mask: Uint8Array; cells: number[]; layer: HighlightLayer } | null = null;
+  const massAt = (w: World, cell: number) => {
+    if (cell < 0 || w.causes.land[cell] !== 1) return null;
+    if (mass?.w !== w || !mass.mask[cell]) {
+      const mask = landmassCells(w, cell);
+      const cells: number[] = [];
+      for (let i = 0; i < mask.length; i++) if (mask[i]) cells.push(i);
+      mass = { w, mask, cells, layer: { cells, color: WHITE, alpha: 0.35 } };
     }
-    return cache;
+    return mass;
   };
-  // 选中的岛：淡淡地涂白
-  let pickMemo: { w: World; anchor: number; out: Backdrop } | null = null;
+  const target = () => {
+    const pick = rangePick.value;
+    const w = world.value;
+    return pick && w ? { pick, w, sp: w.small.species.find((x) => x.id === pick.species) ?? null } : null;
+  };
+  const commit = async (range: { kind: 'island'; cell: number } | { kind: 'cells'; cells: number[] }, what: string) => {
+    const t = target();
+    if (!t?.sp) return leaveRangePick();
+    const ok = await exec({ op: 'update_species', id: t.sp.id, patch: { range } }, '正在计算生态…', undefined, undefined, `「${t.sp.name || t.sp.id}」只长在${what}`);
+    if (ok) leaveRangePick();
+  };
   return {
-    drags: false,
-    move(p) {
+    drags: true,
+    down(p) {
+      const t = target();
+      if (!t || t.pick.kind !== 'cells' || p.cell < 0) return;
+      if (isBusy()) return;
+      ring = [[p.x, p.y]];
       pointer = p;
+    },
+    move(p, pressed) {
+      pointer = p;
+      const w = world.value;
+      if (!pressed || !ring || !w) return;
+      const [lx, ly] = ring[ring.length - 1];
+      if (Math.hypot(p.x - lx, p.y - ly) >= w.mesh.spacing * 0.5) ring.push([p.x, p.y]);
     },
     leave() {
       pointer = null;
     },
     cancel() {
-      endemicPicked.value = null;
-    },
-    backdrop() {
-      const w = world.value;
-      if (!w) return null;
-      const outline = islandOutline(w);
-      const pick = endemicPicked.value;
-      const f = pick ? w.derived.features.find((x) => x.type === 'island' && x.anchor === pick.anchor) : null;
-      if (f && pick && w.small.species.some((s) => s.id === pick.id)) {
-        if (pickMemo?.w !== w || pickMemo.anchor !== f.anchor) {
-          pickMemo = { w, anchor: f.anchor, out: { layers: [...(outline ? [outline] : []), { cells: Array.from(f.cells), color: WHITE, alpha: 0.28 }], shapes: [] } };
-        }
-        return pickMemo.out;
-      }
-      return outline ? oneLayer(outline) : null;
+      ring = null;
     },
     async click(p) {
-      const w = world.value;
-      if (!w || p.cell < 0 || isBusy()) return;
-      const f = landmassOf(w, p.cell);
-      if (!f || f.type !== 'island') {
-        endemicPicked.value = null;
-        showToast(f ? '这是大陆：只能点描了边的岛' : '点一个描了边的岛', true);
+      const t = target();
+      if (!t || t.pick.kind !== 'island' || isBusy()) return;
+      const m = massAt(t.w, p.cell);
+      if (!m) {
+        showToast('点一块陆地（岛或大陆）', true);
         return;
       }
-      const old = endemicOf(w, f);
-      if (old) {
-        endemicPicked.value = { anchor: f.anchor, id: old.id };
+      const f = landmassOf(t.w, p.cell);
+      await commit({ kind: 'island', cell: p.cell }, f?.name ? `「${islandLabel(t.w, f)}」上` : '这块陆地上');
+    },
+    async up() {
+      const t = target();
+      const pts = ring;
+      ring = null;
+      if (!t || t.pick.kind !== 'cells' || !pts) return;
+      if (aroundPole(t.w, pts)) {
+        showToast('圈不能绕着极点画', true);
         return;
       }
-      endemicPicked.value = null;
-      const { sp } = plan(w, f);
-      if (!sp) {
-        showToast('这个岛上没有能长东西的地方', true);
+      const cells = pts.length >= 3 ? ringCells(t.w, pts).filter((i) => t.w.causes.land[i] === 1) : [];
+      if (!cells.length) {
+        showToast('圈里没有陆地：按住拖一圈再松手', true);
         return;
       }
-      const edit = () => {
-        focusSpecies.value = sp.id;
-        setOptions({ biome: sp.id });
-        sheet.value = 'species';
-      };
-      await exec({ op: 'add_species', species: sp }, '正在创造生态…', undefined, { label: '编辑', run: edit }, `「${islandLabel(w, f)}」上新的一种生态：${sp.name}`);
+      await commit({ kind: 'cells', cells }, `圈的 ${cells.length} 格里`);
     },
     preview() {
-      const w = world.value;
-      if (!w || !pointer) return EMPTY;
-      const f = pointer.cell >= 0 ? landmassOf(w, pointer.cell) : null;
-      if (!f) return { layers: [], shapes: [], hint: '点一个描了边的岛' };
-      if (f.type !== 'island') return { layers: [], shapes: [], hint: '这是大陆：只能点描了边的岛', warn: true };
-      const old = endemicOf(w, f);
-      if (old) {
-        const picked = endemicPicked.value?.id === old.id;
-        return { layers: [], shapes: [], hint: picked ? `已有：${old.name}（在下面去掉它）` : `已有：${old.name}（点一下，在下面去掉它）` };
+      const t = target();
+      if (!t || !pointer) return EMPTY;
+      const name = t.sp?.name || t.pick.species;
+      if (t.pick.kind === 'island') {
+        const m = massAt(t.w, pointer.cell);
+        if (!m) return { layers: [], shapes: [], hint: `点一块陆地：「${name}」只长在那上面` };
+        const f = landmassOf(t.w, pointer.cell);
+        return { layers: [m.layer], shapes: [], hint: `「${name}」只长在${f?.name ? `「${islandLabel(t.w, f)}」` : '这块陆地'}上（${m.cells.length} 格）` };
       }
-      const { sp, base, layer } = plan(w, f);
-      if (!sp || !base) return { layers: [], shapes: [], hint: `「${islandLabel(w, f)}」上没有能长东西的地方`, warn: true };
-      return {
-        layers: layer ? [layer] : [],
-        shapes: [],
-        hint: `「${islandLabel(w, f)}」：${base.name || base.id} → ${sp.name}（新的一种生态，只长在这个岛上）`,
-      };
+      if (!ring) return { layers: [], shapes: [], hint: `按住圈一片：「${name}」只长在圈里` };
+      const shapes: Shape[] = [{ kind: 'line', points: ring, color: 'rgba(255, 255, 255, 0.9)', width: 1.5 }];
+      if (ring.length < 3) return { layers: [], shapes, hint: null };
+      shapes.push({ kind: 'line', points: [ring[ring.length - 1], ring[0]], color: 'rgba(255, 255, 255, 0.6)', width: 1.5, dashed: true });
+      const cells = ringCells(t.w, ring).filter((i) => t.w.causes.land[i] === 1);
+      return { layers: cells.length ? [{ cells, color: WHITE, alpha: 0.35 }] : [], shapes, hint: `圈里 ${cells.length} 格陆地` };
     },
   };
-}
-
-// 去掉选中的岛上特有的生态（删掉这种生态，可撤销）
-export async function removePickedEndemic() {
-  const pick = endemicPicked.value;
-  const w = world.value;
-  const sp = pick && w?.small.species.find((s) => s.id === pick.id);
-  if (!sp || isBusy()) return;
-  if (await exec({ op: 'remove_species', id: sp.id }, '正在计算生态…')) endemicPicked.value = null;
 }
 
 // 自然的擦除：擦掉涂过的生态。选中时地图上一直用浅斜线标出涂过的格，悬停说这里涂成了什么；
@@ -1529,14 +1547,7 @@ export function eraseTool(): ToolHandler {
     hint: () => ({ text: null }),
     filter: (w, i) => natureMask(w).has[i] === 1,
     backdrop: (w) => oneLayer(erasableLayer(natureMask(w))),
-    here(w, cells, p) {
-      const text = natureHere(w, cells);
-      const f = landmassOf(w, p.cell);
-      const sp = f?.type === 'island' ? endemicOf(w, f) : null;
-      if (!sp) return text;
-      const tip = `「${sp.name}」是岛上特有的：点“岛上特有”，再点这个岛去掉它`;
-      return text === '这里没涂过' ? tip : `${text} · ${tip}`;
-    },
+    here: (w, cells) => natureHere(w, cells),
     layers(_w, s) {
       return { layers: [{ cells: s.cells, color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦掉 ${s.t.size} 格` : '这里没涂过' };
     },

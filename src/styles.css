@@ -277,7 +277,7 @@ h5 {
 .map-overlay.tool-pmerge,
 .map-overlay.tool-rename,
 .map-overlay.tool-unwater,
-.map-overlay.tool-endemic {
+.map-overlay.tool-range {
   cursor: pointer;
 }
 

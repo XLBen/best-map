@@ -819,7 +819,101 @@ function chainMinKm(world: World, spec: ChainSpec): number {
   return world.mesh.spacing * world.kmPerUnit * islandMinCells(spec.kind);
 }
 
-// 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落
+// 岛链的排列（第十二轮）：沿线的位置（0–1）、大小、向两侧的错落（以岛的半径计）。
+// 第 0 种是原来的均匀排开（不变）；之后几种轮着换：错落着排（间距忽大忽小，偶尔空一个）、几个成团（团里挨得近、有的连在一起）、
+// 由大到小（像夏威夷那样一头大一头小，间距跟着岛变）、疏密不定（间距随机，个数也多一两个）。所以“换个排列”一眼看得出变了
+export const CHAIN_STYLES = ['even', 'jitter', 'clusters', 'taper', 'random'] as const;
+export type ChainStyle = (typeof CHAIN_STYLES)[number];
+export function chainStyle(variant: number): ChainStyle {
+  return variant <= 0 ? 'even' : CHAIN_STYLES[1 + ((variant - 1) % 4)];
+}
+
+// 错落 = u × 岛的半径 × spread（分开存，第 0 种的算式与原来逐位相同）
+interface ChainSlot {
+  t: number;
+  size: number;
+  u: number;
+  spread: number;
+}
+
+// 大小按幂律：大约 15% 大一号，45% 小一号
+const chainSize = (u: number, baseKm: number, minKm: number) => (u < 0.15 ? baseKm * 2 : u < 0.6 ? baseKm : Math.max(minKm, baseKm / 2));
+
+function chainLayout(rand: () => number, count0: number, baseKm: number, minKm: number, variant: number): ChainSlot[] {
+  const style = chainStyle(variant);
+  const out: ChainSlot[] = [];
+  if (style === 'even') {
+    // 原来的排法（rand 的用法一点不变：先取所有大小，再逐个取错落）
+    const sizes: number[] = [];
+    for (let k = 0; k < count0; k++) sizes.push(chainSize(rand(), baseKm, minKm));
+    for (let k = 0; k < count0; k++) out.push({ t: (k + 0.5) / count0, size: sizes[k], u: rand() - 0.5, spread: 1.4 });
+    return out;
+  }
+  if (style === 'jitter') {
+    const count = Math.max(1, count0 + Math.round((rand() - 0.5) * 2.2));
+    for (let k = 0; k < count; k++) {
+      const t = (k + 0.5 + (rand() - 0.5) * 0.75) / count;
+      const size = chainSize(rand(), baseKm, minKm);
+      const u = rand() - 0.5;
+      // 偶尔空一个（至少留两个）
+      if (count > 2 && rand() < 0.15) continue;
+      out.push({ t, size, u, spread: 1.8 });
+    }
+  } else if (style === 'clusters') {
+    const count = Math.max(1, count0 + Math.round(rand() * 2));
+    const groups = Math.max(1, Math.min(count, 2 + Math.floor(rand() * 3)));
+    // 团的中心：大致均匀、带一点错落
+    const centers: number[] = [];
+    for (let g = 0; g < groups; g++) centers.push((g + 0.5 + (rand() - 0.5) * 0.5) / groups);
+    // 团里挨得很近（约原来间距的 0.45 倍，大一点的岛会连在一起）
+    const step = 0.45 / count0;
+    for (let k = 0; k < count; k++) {
+      const g = k % groups;
+      const within = Math.floor(k / groups);
+      const inGroup = Math.ceil((count - g) / groups);
+      const t = centers[g] + (within - (inGroup - 1) / 2) * step + (rand() - 0.5) * step * 0.5;
+      out.push({ t: Math.min(0.98, Math.max(0.02, t)), size: chainSize(rand(), baseKm, minKm), u: rand() - 0.5, spread: 2.2 });
+    }
+  } else if (style === 'taper') {
+    // 一头大一头小：大小从 2 倍降到最小，间距跟着岛的大小
+    const count = Math.max(1, count0 + Math.round((rand() - 0.5) * 2));
+    const flip = rand() < 0.5;
+    const sizes: number[] = [];
+    for (let k = 0; k < count; k++) {
+      const f = count === 1 ? 0 : k / (count - 1);
+      sizes.push(Math.max(minKm, baseKm * 2 * Math.pow(0.25, f) * (0.85 + rand() * 0.3)));
+    }
+    let acc = 0;
+    const at: number[] = [];
+    for (let k = 0; k < count; k++) {
+      acc += k === 0 ? sizes[0] * 0.5 : (sizes[k - 1] + sizes[k]) * 0.5;
+      at.push(acc);
+    }
+    const total = acc + sizes[count - 1] * 0.5;
+    for (let k = 0; k < count; k++) {
+      const t = at[k] / total;
+      out.push({ t: flip ? 1 - t : t, size: sizes[k], u: rand() - 0.5, spread: 1.2 });
+    }
+  } else {
+    // 疏密不定：间距按随机（指数分布）抽，个数多一两个
+    const count = Math.max(1, count0 + 1 + Math.floor(rand() * 2));
+    const gaps: number[] = [];
+    let sum = 0;
+    for (let k = 0; k <= count; k++) {
+      const g = -Math.log(1 - rand() * 0.95) + 0.15;
+      gaps.push(g);
+      sum += g;
+    }
+    let acc = 0;
+    for (let k = 0; k < count; k++) {
+      acc += gaps[k];
+      out.push({ t: acc / sum, size: chainSize(rand(), baseKm, minKm), u: rand() - 0.5, spread: 1.6 });
+    }
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+// 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落；排列按 variant 换（见 chainLayout）
 export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
   if (world.mesh.kind === 'sphere') return chainIslandsSphere(world, spec);
   const pts = spec.points;
@@ -836,15 +930,10 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
   const count = Math.max(1, Math.round(total / spacing));
   const rand = mulberry32(mixSeed(coastSeed(world), 555, Math.round(pts[0][0] * 1e4), Math.round(pts[0][1] * 1e4), spec.variant));
   const minKm = chainMinKm(world, spec);
-  const sizes: number[] = [];
-  for (let k = 0; k < count; k++) {
-    const u = rand();
-    // 重尾：大约 15% 大一号，45% 小一号
-    sizes.push(u < 0.15 ? baseKm * 2 : u < 0.6 ? baseKm : Math.max(minKm, baseKm / 2));
-  }
+  const slots = chainLayout(rand, count, baseKm, minKm, spec.variant);
   const out: IslandSpec[] = [];
-  for (let k = 0; k < count; k++) {
-    let s = ((k + 0.5) / count) * total;
+  for (let k = 0; k < slots.length; k++) {
+    let s = slots[k].t * total;
     let j = 0;
     while (j < seg.length - 1 && s > seg[j]) {
       s -= seg[j];
@@ -855,10 +944,10 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
     const t = seg[j] > 0 ? s / seg[j] : 0;
     const nx = -(y1 - y0) / (seg[j] || 1);
     const ny = (x1 - x0) / (seg[j] || 1);
-    const off = (rand() - 0.5) * baseR * 1.4;
+    const off = slots[k].u * baseR * slots[k].spread;
     // 岛的形状与位置无关，岛链里每个岛要用不同的 variant（也避开单独放岛用的那些）
     const variant = 1_000_000 + spec.variant * 1000 + k;
-    out.push({ x: x0 + (x1 - x0) * t + nx * off, y: y0 + (y1 - y0) * t + ny * off, kind: spec.kind, size: sizes[k], variant });
+    out.push({ x: x0 + (x1 - x0) * t + nx * off, y: y0 + (y1 - y0) * t + ny * off, kind: spec.kind, size: slots[k].size, variant });
   }
   return out;
 }
@@ -880,14 +969,10 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
   const x0 = wrapX(spec.points[0][0]);
   const rand = mulberry32(mixSeed(coastSeed(world), 555, Math.round(x0 * 1e4), Math.round(spec.points[0][1] * 1e4), spec.variant));
   const minKm = chainMinKm(world, spec);
-  const sizes: number[] = [];
-  for (let k = 0; k < count; k++) {
-    const u = rand();
-    sizes.push(u < 0.15 ? baseKm * 2 : u < 0.6 ? baseKm : Math.max(minKm, baseKm / 2));
-  }
+  const slots = chainLayout(rand, count, baseKm, minKm, spec.variant);
   const out: IslandSpec[] = [];
-  for (let k = 0; k < count; k++) {
-    let s = ((k + 0.5) / count) * total;
+  for (let k = 0; k < slots.length; k++) {
+    let s = slots[k].t * total;
     let j = 0;
     while (j < seg.length - 1 && s > seg[j]) {
       s -= seg[j];
@@ -905,11 +990,11 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
     nx /= nl;
     ny /= nl;
     nz /= nl;
-    const off = (rand() - 0.5) * baseR * 1.4 * Math.PI;
+    const off = slots[k].u * baseR * slots[k].spread * Math.PI;
     const q: V3 = [at[0] + nx * off, at[1] + ny * off, at[2] + nz * off];
     const ql = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
     const [x, y] = fromUnit([q[0] / ql, q[1] / ql, q[2] / ql]);
-    out.push({ x, y, kind: spec.kind, size: sizes[k], variant: 1_000_000 + spec.variant * 1000 + k });
+    out.push({ x, y, kind: spec.kind, size: slots[k].size, variant: 1_000_000 + spec.variant * 1000 + k });
   }
   return out;
 }

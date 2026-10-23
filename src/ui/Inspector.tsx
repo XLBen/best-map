@@ -1,4 +1,5 @@
 import type { GeoFeature } from '../../core/features';
+import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS } from '../../core/species';
 import { effectsAt } from '../../core/effects';
 import { type CellExplanation, explainCell } from '../../core/vegetation';
@@ -159,7 +160,9 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
   const winner = sp ? explain.find((e) => e.species === sp.id) : null;
   const runnerUp = explain.find((e) => e.species !== sp?.id && e.suitability > 0.02) ?? explain.find((e) => e.species !== sp?.id);
   const painted = w.small.constraints.filter((c) => c.cells.includes(cell));
-  const failing = w.derived.conflicts.find((c) => c.failing.includes(cell));
+  const failing = activeConflicts(w).find((c) => c.failing.includes(cell));
+  // 说了“就这样”的：只轻轻提一句
+  const settled = !failing && w.derived.conflicts.some((c) => c.failing.includes(cell));
   const brush = category.value === 'nature' ? options.value.biome : null;
   const brushEx = brush && brush !== sp?.id ? explain.find((e) => e.species === brush) : null;
   const corrT = d.corrT[cell];
@@ -182,6 +185,7 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
         <p class="note">
           这是你涂的“{S.find((s) => s.id === painted[painted.length - 1].species)?.name}”（{painted[painted.length - 1].mode === 'constraint' ? '自然融入' : '强制'}）。
           {failing && <span class="warn"> 这一格没涂成。</span>}
+          {settled && <span class="muted"> 这一格没涂成（说过“就这样”）。</span>}
         </p>
       )}
       {effect && <p class="muted small">{effect}</p>}

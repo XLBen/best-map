@@ -1,7 +1,6 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { lakeArea } from './elevation';
-import { endemicSpecies } from './endemic';
 import { Engine } from './engine';
 import { continents as sharedContinents } from './testing/fixtures';
 import { exportPackage } from './export';
@@ -12,7 +11,7 @@ import { isVegetated } from './vegetation';
 import type { World } from './world';
 
 // 第二轮迭代的编辑规则：省份可配置且稳定、地名不乱跳、画河与放湖所见即所得、
-// 涂生态“涂到的就是”、岛屿特有生态、导出地名表
+// 涂生态“涂到的就是”、导出地名表（只长在某个岛上的生态见 biome-range.test.ts）
 
 const continents = (cells = 12000, latNorth = 72, latSouth = 20) => sharedContinents({ cells, latNorth, latSouth });
 
@@ -266,41 +265,6 @@ describe('自然：涂到的就是', () => {
     }
     expect(grown).toBeGreaterThan(cells.length * 0.5);
     for (const c of w.derived.conflicts) expect(c.reasons.length + c.suggestions.length).toBeGreaterThan(0);
-  });
-
-  it('岛屿特有生态：只把岛上最多的那种生态换成特有版本，别的生态和岛外都不变', () => {
-    const eng = new Engine({ cells: 12000, seed: 1, latNorth: 30, latSouth: 0 });
-    eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true });
-    const w = eng.world;
-    const island = w.derived.features.filter((f) => f.type === 'island').sort((a, b) => b.cells.length - a.cells.length)[0];
-    const cells = Array.from(island.cells);
-    const before = w.derived.dominant.slice();
-    const sp = endemicSpecies(w, cells, 'endemic_test', '测试岛')!;
-    const base = w.small.species.findIndex((x) => sp.name === `测试岛${x.name || x.id}`);
-    expect(base).toBeGreaterThanOrEqual(0);
-    eng.exec({ op: 'add_species', species: sp });
-    const s = w.small.species.findIndex((x) => x.id === 'endemic_test');
-    const on = new Set(cells);
-    let replaced = 0;
-    let wasBase = 0;
-    let otherChanged = 0;
-    let other = 0;
-    for (let i = 0; i < w.mesh.n; i++) {
-      const now = w.derived.dominant[i];
-      if (!on.has(i)) {
-        expect(now).toBe(before[i]);
-        continue;
-      }
-      if (before[i] === base) {
-        wasBase++;
-        if (now === s) replaced++;
-      } else if (before[i] >= 0) {
-        other++;
-        if (now !== before[i]) otherChanged++;
-      }
-    }
-    expect(replaced).toBe(wasBase);
-    expect(otherChanged).toBeLessThanOrEqual(Math.max(2, other * 0.05));
   });
 
   it('气候图上的色块与耐受曲线互通：默认生态读出来再写回，逐值不变', () => {

@@ -6,7 +6,6 @@ import {
   Droplet,
   Droplets,
   Eraser,
-  Flower2,
   LassoSelect,
   Leaf,
   Map as MapIcon,
@@ -58,7 +57,6 @@ import {
   climateEraseTool,
   climateKind,
   climateTool,
-  endemicTool,
   eraseTool,
   fieldTool,
   fmtFlow,
@@ -75,6 +73,8 @@ import {
   reliefTool,
   renameTool,
   restoreTool,
+  rangeTool,
+  rerollChain,
   rerollTool,
   riverSizeName,
   snapRadiusKm,
@@ -83,7 +83,8 @@ import {
 import { riverTool, unwaterTool } from '../riverCourse';
 import {
   BiomeChip,
-  EndemicBar,
+  IgnoredChip,
+  RangeBar,
   NamesBar,
   NamesExtras,
   NatureExtras,
@@ -283,8 +284,9 @@ const defs: ToolDef[] = [
       // 写出岛与岛之间大约隔多远（与 chainIslands 的间距同一个算法：岛的半径 × 2.6 ÷ 疏密）
       format: (v) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * options.value.islandKm) / v)} km`,
     },
-    bar: () => [chainKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '快捷键 R', run: () => setOptions({ chainVariant: options.value.chainVariant + 1 }) }],
-    reroll: () => setOptions({ chainVariant: options.value.chainVariant + 1 }),
+    // 换个排列：上一条岛链还是最后一步时重新排它（只算一次，历史里只留一步），否则换下一条的排列
+    bar: () => [chainKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '重新排上一条岛链（快捷键 R）', run: () => void rerollChain() }],
+    reroll: () => void rerollChain(),
     create: () => chainTool(),
   },
   {
@@ -327,7 +329,7 @@ const defs: ToolDef[] = [
     how: '在陆地上涂；Alt+点吸取那里的生态',
     size: BRUSH,
     amount: REACH,
-    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }],
+    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }],
     pick: pickSpecies,
     create: () => biomeTool(),
   },
@@ -340,7 +342,7 @@ const defs: ToolDef[] = [
     how: '按住一片生态往外拖，拖得越远长得越多',
     size: brushAs('起点'),
     amount: REACH,
-    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }],
+    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }],
     create: () => growTool(),
   },
   {
@@ -406,14 +408,16 @@ const defs: ToolDef[] = [
     create: () => climateEraseTool(),
   },
   {
-    id: 'endemic',
+    // 第十二轮：给生态选“长在哪里”（从生态编辑器的“选岛”“圈一下”进来，不在工具列表里）
+    id: 'range',
     category: 'nature',
-    icon: Flower2,
-    name: '岛屿特有生态',
-    short: '岛上特有',
-    how: '点一个描了边的岛：岛上最多的那种生态换成只长在这个岛上的新的一种（大陆不行）',
-    bar: () => [{ kind: 'custom', render: EndemicBar }],
-    create: () => endemicTool(),
+    icon: LassoSelect,
+    name: '选生态的范围',
+    short: '选范围',
+    how: '点一个岛，或按住圈一片：这种生态只长在那里',
+    hidden: () => true,
+    bar: () => [{ kind: 'custom', render: RangeBar }],
+    create: () => rangeTool(),
   },
   {
     id: 'erase',
@@ -581,7 +585,7 @@ export const TOOL_DEFS = Object.fromEntries(defs.map((d) => [d.id, d])) as Recor
 export const CATEGORIES: CategoryDef[] = [
   { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'reroll', 'restore'] },
   { id: 'climate', icon: ThermometerSun, label: '气候', tools: ['temp', 'moist', 'unclimate', 'field'] },
-  { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'endemic', 'erase'], extras: NatureExtras },
+  { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'erase', 'range'], extras: NatureExtras },
   { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'], extras: RiverExtras },
   { id: 'provinces', icon: MapIcon, label: '省份', tools: ['pselect', 'pbrush', 'pcut', 'pmerge', 'pregen'], extras: ProvinceExtras },
   { id: 'names', icon: Type, label: '地名', tools: ['rename', 'area', 'spot'], extras: NamesExtras },

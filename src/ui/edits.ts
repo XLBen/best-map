@@ -87,13 +87,13 @@ export const natureMask = memo(
   (w) => [w.mesh, w.small.constraints],
 );
 
-// 岛上特有的生态长着的格（不是涂上去的，擦除擦不掉；只在图层的“我改过的地方”里和涂过的生态一起标绿）
-const endemicMask = memo(
+// 只长在某个岛上、圈的范围里的生态长着的格（不是涂上去的，擦除擦不掉；只在图层的“我改过的地方”里和涂过的生态一起标绿）
+const rangedMask = memo(
   (w) => {
     const has = new Uint8Array(w.mesh.n);
     const ids = new Set<number>();
     w.small.species.forEach((s, k) => {
-      if (s.id.startsWith('endemic_')) ids.add(k);
+      if (s.range) ids.add(k);
     });
     if (ids.size) for (let i = 0; i < w.mesh.n; i++) if (ids.has(w.derived.dominant[i])) has[i] = 1;
     return fromFlags(has);
@@ -140,7 +140,7 @@ export function erasableLayer(m: EditMask): HighlightLayer | null {
   return l;
 }
 
-// 图层里的“我改过的地方”：四种分色，后面的盖住前面的（河湖最细，放在最上面）；生态连同岛上特有的生态
+// 图层里的“我改过的地方”：四种分色，后面的盖住前面的（河湖最细，放在最上面）；生态连同只长在某处的生态
 const fillLayers = new WeakMap<EditMask, HighlightLayer>();
 export function editLayers(w: World): HighlightLayer[] {
   const out: HighlightLayer[] = [];
@@ -148,7 +148,7 @@ export function editLayers(w: World): HighlightLayer[] {
     ['terrain', terrainMask(w)],
     ['climate', climateMask(w)],
     ['nature', natureMask(w)],
-    ['nature', endemicMask(w)],
+    ['nature', rangedMask(w)],
     ['water', waterMask(w)],
   ];
   for (const [k, m] of kinds) {

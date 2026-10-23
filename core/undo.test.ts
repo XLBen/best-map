@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Command } from './commands';
 import { Engine } from './engine';
-import { endemicSpecies } from './endemic';
 import { encodePath } from './rivers';
 import { planCourse, riverStem } from './select';
 
@@ -28,13 +27,18 @@ describe('撤销从受影响的那一层重算', () => {
     const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i]);
     const patch = land.filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[land[400]], w.mesh.y[i] - w.mesh.y[land[400]]) < 0.08);
     const island = w.derived.features.find((f) => f.type === 'island' && f.cells.length > 20) ?? w.derived.features.find((f) => f.type === 'continent')!;
-    const endemic = endemicSpecies(w, Array.from(island.cells), 'endemic-1', island.name)!;
+    // 第十二轮：只长在这个岛上、不自然生成的生态（替代以前的岛上特有）
+    const base = w.small.species.find((s) => s.id === 'temperate_forest')!;
+    const endemic = { ...structuredClone(base), id: 'endemic-1', name: `${island.name}林`, competition: base.competition * 2, range: { kind: 'island' as const, cell: island.anchor } };
     const steps = [
       // 气候（Climate）
       { op: 'paint', field: 'tempOffset', cells: patch, value: -3, mode: 'add' },
       // 求解（Solve）：新生态、涂一片生态
       { op: 'add_species', species: endemic },
       { op: 'add_constraint', constraint: { cells: patch, species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 500 } },
+      { op: 'update_species', id: 'endemic-1', patch: { natural: false } },
+      { op: 'add_constraint', constraint: { id: 'isle-paint', cells: Array.from(island.cells).slice(0, 30), species: 'endemic-1', mode: 'constraint', ratio: 1, radius: 300 } },
+      { op: 'update_constraint', id: 'isle-paint', patch: { ignored: true } },
       // 植被（Vegetation）
       { op: 'set_planet', patch: { riverThreshold: 120 } },
       // 只改名字（Names）
