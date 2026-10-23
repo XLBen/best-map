@@ -356,7 +356,13 @@ describe('从画过的河的源头再画（没选中它时）', () => {
       return tags(e) === tags(eng);
     });
     vi.mocked(exec).mockClear();
+    // 从源头起笔：悬停时就写出会重画整条；松手后先问一句，点“重画整条「名字」”才改
+    t.move?.(ptr(w, s[0]), false);
+    expect(t.preview().hint).toContain('重画整条河');
     await drag(t, w, s);
+    expect(exec).not.toHaveBeenCalled();
+    expect(riverPending.value?.confirm).toBe(`重画整条「${name}」`);
+    await riverPending.value!.capture();
     const cmd = lastExec();
     expect(cmd).toEqual(newCourse(w, planCourse(w, w.derived, s, opts(w)), s).cmd);
     expect(cmd).toMatchObject({ op: 'update_guide', id: g.id });

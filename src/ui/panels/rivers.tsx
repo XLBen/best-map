@@ -361,7 +361,7 @@ export function RiverBar() {
   return g ? <GuideRiverBar w={w} g={g} /> : null;
 }
 
-// 穿过别的河：截走它 / 到这里汇入 / 取消（回车 = 截走它，Esc = 取消）
+// 穿过别的河：截走它 / 到这里汇入 / 取消（回车 = 截走它，Esc = 取消）；从河中间、源头起笔：改道 / 重画整条「赤江」 / 取消
 export function RiverPendingBar() {
   const p = riverPending.value;
   if (!p) return null;
@@ -369,7 +369,7 @@ export function RiverPendingBar() {
     <>
       <span class="bar-value warn-text">{p.text}</span>
       <button class="bar-btn primary" onClick={() => void p.capture()} title="回车">
-        截走它
+        {p.confirm ?? '截走它'}
       </button>
       {p.join && (
         <button class="bar-btn" onMouseEnter={() => p.showJoin(true)} onMouseLeave={() => p.showJoin(false)} onClick={() => void p.join!()} title="画的河在碰到那条河的地方汇进去，后面画的不要了">

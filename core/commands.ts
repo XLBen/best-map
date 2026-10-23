@@ -41,7 +41,7 @@ import {
 } from './terrain';
 import { REGION_KIND_INFO } from './features';
 import type { Mesh } from './mesh';
-import { cutPathAtCell } from './rivers';
+import { cutPathAtCell, ownsCell } from './rivers';
 import {
   REGION_KINDS,
   constraintSchema,
@@ -418,6 +418,11 @@ function checkNewCourse(world: World, g: Guide, cells: boolean, end: boolean) {
 
 // 河道截到第 k 格为止（含）：画的折线在第一次进这格的地方截断；原来在终点消失的不再消失（现在流进别的河）
 export function truncateGuide(world: World, g: Guide, k: number): Guide {
+  // 截在最后一格（在终点消失的河的终点）：格、折线都不动，只是不再消失
+  if (k >= g.cells.length - 1) {
+    const { end: _, ...rest } = g;
+    return rest;
+  }
   const out: Guide = { ...g, cells: g.cells.slice(0, k + 1) };
   if (g.path) {
     const cut = cutPathAtCell(world.mesh, g.path, g.cells[k]);
@@ -427,14 +432,14 @@ export function truncateGuide(world: World, g: Guide, k: number): Guide {
   return out;
 }
 
-// 截走：别的河道经过 g 中间（不含起点与终点）的陆地格的，从第一次碰到的地方截断，汇进 g；
-// 碰到的是它的源头就整条去掉
+// 截走：别的河道经过 g 中间（不含起点与终点）的陆地格的，从第一次碰到的地方截断，汇进 g（在终点消失的河经过的是
+// 它的终点时，只去掉“消失”）；碰到的是它的源头就整条去掉
 function captureBy(world: World, guides: Guide[], g: Guide): Guide[] {
   const land = world.causes.land;
   const inner = new Set(g.cells.slice(1, -1).filter((c) => land[c]));
   return guides.flatMap((b) => {
     if (b.id === g.id) return [b];
-    const k = b.cells.findIndex((c, i) => i < b.cells.length - 1 && inner.has(c));
+    const k = b.cells.findIndex((c, i) => ownsCell(b, i) && inner.has(c));
     if (k < 0) return [b];
     return k === 0 ? [] : [truncateGuide(world, b, k)];
   });
@@ -740,7 +745,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         const start = g.cells[0];
         small.guides = small.guides.flatMap((old) => {
           const k = old.cells.indexOf(start);
-          if (k < 0 || k === old.cells.length - 1) return [old];
+          // 从它汇入的地方（那条河的格）改道不动它；从在终点消失的河的终点改道：它不再消失，水接着流进改道的河
+          if (k < 0 || !ownsCell(old, k)) return [old];
           return k === 0 ? [] : [truncateGuide(world, old, k)];
         });
       }

@@ -5,12 +5,14 @@ import { lakeArea } from '../../core/elevation';
 import type { GeoFeature } from '../../core/features';
 import { PLAIN_RIVER } from '../../core/river-types';
 import { arcUnits, wrapX } from '../../core/geo';
-import { type GuideLine, type RiverLine, centrePoints, encodePath, guideLine, guideShape, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
+import { type GuideLine, type RiverLine, centrePoints, encodePath, guideLine, guideShape, ownsCell, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
 import {
   type CourseEnd,
   type CoursePlan,
   type RiverPlan,
   endCourseAt,
+  extendCourse,
+  extendPoint,
   guideEnd,
   guideFlow,
   guideWarnings,
@@ -204,8 +206,18 @@ export function riverAt(w: World, x: number, y: number, tol: number, cell = -1):
     if (isRiverCell(w, w.derived, c)) best = { ref: { kind: 'natural', cell: c }, d: h.d };
   }
   if (best || cell < 0 || !isRiverCell(w, w.derived, cell)) return best;
-  const g = w.small.guides.find((x) => x.cells.indexOf(cell) >= 0 && x.cells.indexOf(cell) < x.cells.length - 1);
+  const g = guideAt(w, cell);
   return { ref: g ? { kind: 'guide', id: g.id } : { kind: 'natural', cell }, d: tol };
+}
+
+// 这一格在哪条画的河上（它汇入的地方不算，在终点消失的河的终点算）；后画的优先
+export function guideAt(w: World, cell: number): Guide | undefined {
+  for (let n = w.small.guides.length - 1; n >= 0; n--) {
+    const g = w.small.guides[n];
+    const k = g.cells.indexOf(cell);
+    if (k >= 0 && ownsCell(g, k)) return g;
+  }
+  return undefined;
 }
 
 // 一条折线按段的起点挪进 [0, 2)（整个星球）：挪的份数变了就另起一条，平铺的副本才画得全
@@ -391,7 +403,8 @@ export const riverTypeOfGuide = (w: World, g: Pick<Guide, 'type'> | null | undef
 
 // 一笔画出来的河：规划、松手后执行的命令（确切预览用的也是它）、执行后这条河的样子与估计的流量
 export interface Course {
-  kind: 'new' | 'splice' | 'merge';
+  // new：新画的河、改道、从源头重画；splice：重画一段；merge：接到一条画的河的源头前面；extend：从一条画的河的终点往下游接长
+  kind: 'new' | 'splice' | 'merge' | 'extend';
   plan: CoursePlan | null;
   blocked: string | null;
   cmd: Command | null;
@@ -465,23 +478,21 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
   return { kind: 'new', plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name: null, raw };
 }
 
-// 重画一条画的河的一段（名字、大小照旧）
-export function spliceOf(w: World, g: Guide, patch: GuidePatch, plan: CoursePlan, raw: [number, number][]): Course {
+// 重画一条画的河的一段，或从它的终点往下游接长（extend）：名字、大小照旧
+export function spliceOf(w: World, g: Guide, patch: GuidePatch, plan: CoursePlan, raw: [number, number][], kind: 'splice' | 'extend' = 'splice'): Course {
   const capture = plan.crossings.some((x) => x.guide !== null);
   const name = guideName(w, g);
-  const cmd: Command = {
-    op: 'update_guide',
-    id: g.id,
-    patch,
-    ...(capture ? { capture: true } : {}),
-    label: `重画了${quoted(name, '一条河')}的一段（约 ${km(pathKm(w, raw))} km）`,
-  };
+  const label =
+    kind === 'extend'
+      ? `${quoted(name, '一条画的河')}往下游接长了（约 ${km(pathKm(w, raw))} km，${patch.end === 'sink' ? '到这里消失' : destOf(w, plan, false)}）`
+      : `重画了${quoted(name, '一条河')}的一段（约 ${km(pathKm(w, raw))} km）`;
+  const cmd: Command = { op: 'update_guide', id: g.id, patch, ...(capture ? { capture: true } : {}), label };
   const after = applyPatch(g, patch);
   // 原来河道上的格照旧（已经含着这条河的水）；新画的格带着上游流下来的水（沿河往下只增不减）
   const pos = new Set(g.cells);
   let q = 0;
   const estimate = after.cells.map((c) => (q = pos.has(c) ? w.derived.discharge[c] : Math.max(q, w.derived.discharge[c])));
-  return { kind: 'splice', plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw };
+  return { kind, plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw };
 }
 
 // 终点怎么说（新画的河）：画到陆地上接着流的是“之后顺地势入海”
@@ -497,7 +508,7 @@ function captureDeletes(w: World, after: Guide, id: string): boolean {
   const g = guideOf(w, id);
   if (!g) return false;
   const inner = new Set(after.cells.slice(1, -1).filter((c) => w.causes.land[c]));
-  return g.cells.findIndex((c, i) => i < g.cells.length - 1 && inner.has(c)) === 0;
+  return g.cells.findIndex((c, i) => ownsCell(g, i) && inner.has(c)) === 0;
 }
 
 // 穿过的那条河叫什么
@@ -520,21 +531,103 @@ export function captureText(w: World, c: Course): string {
   return `${verb}${quoted(name, verb === '会删掉' ? '一条画的河' : '一条河')}`;
 }
 
-// 截走后下游变干多长（km）：有确切结果时按它（不算这条河自己的格），否则按估计
-function driedKm(w: World, c: Course, x: PreviewResult | null): number {
-  const cellKm = w.mesh.spacing * w.kmPerUnit;
-  if (x && c.after) {
-    const own = new Set(c.after.cells);
-    return km(x.riverRemoved.filter((i) => !own.has(i)).length * cellKm);
+// 确切结果里不再是河的格分成三份：改道的那条河原来的下游、截走的河的下游，其余的是旁边的小河（集水区被新河抢走，
+// 水并进新河，它们汇进原来那条河之前的一段变干）。这条河自己的格、重画、接长的这条河原来的河道不算
+interface Dried {
+  reroute: number[];
+  capture: number[];
+  side: number[];
+}
+function driedParts(w: World, c: Course, x: PreviewResult): Dried {
+  const d = w.derived;
+  const own = new Set(c.after?.cells ?? []);
+  const plan = c.plan;
+  // 从一格顺着现在的流向往下（到海、湖为止）
+  const below = (from: number, out: Set<number>) => {
+    for (let i = d.receiver[from], guard = 0; i >= 0 && !water(w, i) && guard < w.mesh.n; i = d.receiver[i], guard++) out.add(i);
+  };
+  const rer = new Set<number>();
+  if (plan?.reroute && plan.cells.length) below(plan.cells[0], rer);
+  const cap = new Set<number>();
+  for (const k of plan?.crossings ?? []) for (let j = k.from; j <= k.to; j++) below(plan!.cells[j], cap);
+  // 重画、接长的这条河原来的河道（和它原来的终点往下）
+  const old = new Set<number>();
+  const g = c.cmd?.op === 'update_guide' ? guideOf(w, c.cmd.id) : undefined;
+  if (g) {
+    for (const i of g.cells) old.add(i);
+    below(g.cells[g.cells.length - 1], old);
   }
-  const n = new Set((c.plan?.crossings ?? []).flatMap((k) => k.dried)).size;
-  return km(n * cellKm);
+  const out: Dried = { reroute: [], capture: [], side: [] };
+  for (const i of x.riverRemoved) {
+    if (own.has(i)) continue;
+    if (rer.has(i) || old.has(i)) out.reroute.push(i);
+    else if (cap.has(i)) out.capture.push(i);
+    else out.side.push(i);
+  }
+  return out;
 }
 
-// 等着确认时底部条上的话：“会截走「赤江」（下游约 300 km 变干）”
+const cellsKm = (w: World, n: number) => km(n * w.mesh.spacing * w.kmPerUnit);
+
+// 截走后下游变干多长（km）：有确切结果时按它，否则按估计
+function driedKm(w: World, c: Course, x: PreviewResult | null): number {
+  if (x && c.after) return cellsKm(w, driedParts(w, c, x).capture.length);
+  return cellsKm(w, new Set((c.plan?.crossings ?? []).flatMap((k) => k.dried)).size);
+}
+
+// 旁边的小河并进来：“旁边的小河会并进来（3 格）”；没有确切结果、没有这样的格时为 null
+export function sideText(w: World, c: Course, x: PreviewResult | null): string | null {
+  if (!x || !c.after) return null;
+  const n = driedParts(w, c, x).side.length;
+  return n ? `旁边的小河会并进来（${n} 格）` : null;
+}
+
+// 起笔在一条河上（不是从画的河的终点接长）：松手后要先确认。
+// 在它中间：“从这里改道：「赤江」下游约 300 km 会变干” + 改道；在一条画的河的源头：重画整条「赤江」
+export interface StartNote {
+  text: string;
+  label: string;
+}
+export function startNote(w: World, c: Course, x: PreviewResult | null): StartNote | null {
+  const plan = c.plan;
+  if (c.kind !== 'new' || !plan?.reroute || !plan.cells.length) return null;
+  const start = plan.cells[0];
+  const src = sourceGuide(w, start);
+  if (src) {
+    const name = quoted(guideName(w, src), '这条画的河');
+    return { text: `从源头起笔：${name}原来的河道不要了，照新画的走`, label: `重画整条${name}` };
+  }
+  const name = quoted(startRiverName(w, start), '这条河');
+  const n = x && c.after ? driedParts(w, c, x).reroute.length : plan.dried.length;
+  return { text: n ? `从这里改道：${name}下游约 ${cellsKm(w, n).toLocaleString()} km 会变干` : `从这里改道：${name}从这里起照新画的走`, label: '改道' };
+}
+
+// 这一格上的河叫什么（画的河优先）
+function startRiverName(w: World, cell: number): string | null {
+  const g = guideAt(w, cell);
+  return (g && guideName(w, g)) || riverNameAt(w, cell);
+}
+
+// 鼠标停在一条河上（自定义走向）：从这里起笔会怎样（接在“赤江 · 中等的河 · 入海”后面）。warn：要先确认的
+export function startHint(w: World, cell: number): { text: string; warn: boolean } | null {
+  if (extendPoint(w, cell)) return { text: '从这里起笔：往下游接着画这条河', warn: false };
+  if (cell < 0 || !isRiverCell(w, w.derived, cell)) return null;
+  if (sourceGuide(w, cell)) return { text: '从这里起笔：重画整条河（松手后确认）', warn: true };
+  return { text: '从这里起笔：改道，下游会变干（松手后确认）', warn: true };
+}
+
+// 等着确认时底部条上的话：“从这里改道：「赤江」下游约 300 km 会变干 · 会截走「白水」（下游约 80 km 变干） · 旁边的小河会并进来（3 格）”
 export function pendingText(w: World, c: Course, x: PreviewResult | null): string {
-  const dried = driedKm(w, c, x);
-  return `${captureText(w, c)}${dried ? `（下游约 ${dried.toLocaleString()} km 变干）` : ''}`;
+  const parts: string[] = [];
+  const st = startNote(w, c, x);
+  if (st) parts.push(st.text);
+  if (c.plan?.crossings.length) {
+    const dried = driedKm(w, c, x);
+    parts.push(`${captureText(w, c)}${dried ? `（下游约 ${dried.toLocaleString()} km 变干）` : ''}`);
+  }
+  const side = sideText(w, c, x);
+  if (side) parts.push(side);
+  return parts.join(' · ');
 }
 
 // ---------- 预览 ----------
@@ -680,6 +773,10 @@ function courseShapes(w: World, c: Course, x: PreviewResult | null, zoom: number
 function courseHint(w: World, c: Course, x: PreviewResult | null, line: GuideLine, shift: boolean): { text: string; warn?: boolean } {
   if (c.blocked || !c.plan || !c.after) return { text: c.blocked ?? '这里画不出河', warn: true };
   const plan = c.plan;
+  const side = sideText(w, c, x);
+  const st = startNote(w, c, x);
+  // 从一条河中间、源头起笔：松手后先确认（同时穿过别的河时一起说）
+  if (st) return { text: [st.text, plan.crossings.length ? captureText(w, c) : '', side ?? '', '松手后确认'].filter(Boolean).join(' · '), warn: true };
   if (plan.crossings.length) return { text: shift ? captureText(w, c) : `${captureText(w, c)} · 松手后确认`, warn: true };
   if (plan.uphill >= 20) return { text: `这段河有一段往高处流（${meters(plan.uphill)}）`, warn: true };
   const name = x?.guide?.name || c.name || (plan.reroute ? '改道' : '新河');
@@ -687,6 +784,7 @@ function courseHint(w: World, c: Course, x: PreviewResult | null, line: GuideLin
   const gorge = x ? x.carved.maxDrop : plan.gorge;
   if (gorge >= 100) text += ` · 穿山挖出峡谷（最深${meters(gorge)}）`;
   if (x?.guide && !x.guide.followed) text += ' · 有一段没法按画的走';
+  if (side) text += ` · ${side}`;
   return { text: x ? text : `${text}…` };
 }
 
@@ -694,8 +792,8 @@ function courseHint(w: World, c: Course, x: PreviewResult | null, line: GuideLin
 function riverEndText(w: World, c: Course): string {
   const plan = c.plan!;
   if (c.kind === 'merge') return '往上游接长';
-  if (c.after?.end === 'sink') return '到这里消失';
-  return destOf(w, plan);
+  const end = c.after?.end === 'sink' ? '到这里消失' : destOf(w, plan);
+  return c.kind === 'extend' ? `往下游接长，${end}` : end;
 }
 
 // ---------- 底部条上改一条河时的预览（拖大小、悬停“从这里往下去掉”） ----------
@@ -810,6 +908,8 @@ interface Press {
   cells: number[];
   moved: boolean;
   guide: string | null;
+  // 自定义走向从一条画的河的终点接长：预览时先不画的那条河
+  hid?: string | null;
 }
 
 export function riverTool(zoom: () => number): ToolHandler {
@@ -923,7 +1023,18 @@ export function riverTool(zoom: () => number): ToolHandler {
       const g = pr.guide ? guideOf(w, pr.guide) : undefined;
       const r = g ? spliceCourse(w, w.derived, g, pr.pts, { endOnLand: g.end === 'sink' ? 'sink' : 'flow', px, tol: spliceTol(w, zoom()) }) : { blocked: '这条河已经不在了' };
       course = 'blocked' in r ? blocked(r.blocked, pr.pts.slice()) : spliceOf(w, g!, r.patch, r.plan, pr.pts.slice());
-    } else course = newCourse(w, planCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px }), pr.pts.slice());
+    } else {
+      // 从一条画的河的终点（在终点消失的河的终点、画的线的末端）起笔：往下游接长这条河，不是改道
+      const ext = extendCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px });
+      if (ext) course = 'blocked' in ext ? blocked(ext.blocked, pr.pts.slice()) : spliceOf(w, ext.guide, ext.patch, ext.plan, pr.pts.slice(), 'extend');
+      else course = newCourse(w, planCourse(w, w.derived, pr.pts, { endOnLand: o.riverEnd, px }), pr.pts.slice());
+      // 接长时原来那条河先不画（预览画的是接长后的整条河）
+      const hide = ext && !('blocked' in ext) ? ext.guide.id : null;
+      const cur = riverStyleOverride.value;
+      if (hide && cur?.id !== hide) riverStyleOverride.value = { id: hide, hide: true };
+      else if (!hide && cur?.hide && pr.hid === cur.id) riverStyleOverride.value = null;
+      pr.hid = hide;
+    }
     courseCache = { key, course, line: course.after ? tempLine(w, course.after) : null };
     return courseCache;
   };
@@ -949,7 +1060,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     cancelPreviews();
     committing = c;
     try {
-      await exec(c.cmd, c.kind === 'new' ? (c.plan?.reroute ? '正在改道…' : '正在计算河流…') : '正在重画…');
+      await exec(c.cmd, c.kind === 'new' ? (c.plan?.reroute ? '正在改道…' : '正在计算河流…') : c.kind === 'splice' ? '正在重画…' : '正在计算河流…');
     } finally {
       committing = null;
       exact.reset();
@@ -959,7 +1070,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     }
   };
 
-  // 穿过了别的河：底部条问一句；松手时就开始算截走后的确切结果
+  // 穿过了别的河、从一条河中间或源头起笔：底部条问一句；松手时就开始算确切结果
   const ask = (w: World, c: Course) => {
     // 确切结果回来后，底部条上写的变干多长换成确切的
     exact.onGot = (key, r) => {
@@ -967,15 +1078,15 @@ export function riverTool(zoom: () => number): ToolHandler {
     };
     exact.want(c.key, c.cmd!, 0);
     const plan = c.plan!;
-    const jp = endCourseAt(w, w.derived, plan, plan.crossings[0].from);
+    const jp = plan.crossings.length ? endCourseAt(w, w.derived, plan, plan.crossings[0].from) : null;
     let join: Course | null = null;
-    if (!jp.blocked) {
-      if (c.kind === 'splice' && c.cmd?.op === 'update_guide') {
+    if (jp && !jp.blocked) {
+      if ((c.kind === 'splice' || c.kind === 'extend') && c.cmd?.op === 'update_guide') {
         const g = guideOf(w, c.cmd.id);
         if (g) {
           const patch: GuidePatch = { cells: jp.cells, path: encodePath(jp.path) };
           if (g.end) patch.end = null;
-          join = spliceOf(w, g, patch, jp, c.raw);
+          join = spliceOf(w, g, patch, jp, c.raw, c.kind);
         }
       } else join = newCourse(w, jp, c.raw);
       if (join?.blocked) join = null;
@@ -987,8 +1098,10 @@ export function riverTool(zoom: () => number): ToolHandler {
       riverPending.value = null;
       redrawTick.value++;
     };
+    const st = startNote(w, c, null);
     riverPending.value = {
       text: pendingText(w, c, exact.get(c.key)),
+      ...(st ? { confirm: st.label } : {}),
       capture: () => {
         done();
         return commit(c);
@@ -1113,8 +1226,8 @@ export function riverTool(zoom: () => number): ToolHandler {
         showToast(c.blocked ?? '这里画不出河', true);
         return;
       }
-      // 穿过别的河：按住 Shift 松手直接截走，否则先问一句
-      if (c.plan.crossings.length && !p.shift) {
+      // 从一条河中间、源头起笔（改道、重画整条）：一定先问一句；穿过别的河：按住 Shift 松手直接截走，否则先问一句
+      if (startNote(w, c, null) || (c.plan.crossings.length && !p.shift)) {
         ask(w, c);
         return;
       }
@@ -1175,7 +1288,11 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (hit) {
         if (sel?.kind === 'guide' && hit.ref.kind === 'guide' && hit.ref.id === sel.id && hit.d <= spliceTol(w, zoom())) return { layers: [], shapes: [], hint: '从这里拖是重画这一段' };
         const info = riverInfo(w, hit.ref);
-        return { layers: [], shapes: riverGlow(w, hit.ref), hint: info ? riverLabel(hit.ref, info) : null };
+        // 自定义走向：写出从这里起笔会怎样（接长、改道、重画整条）
+        const act = options.value.riverMode === 'course' ? startHint(w, at.cell) : null;
+        const label = info ? riverLabel(hit.ref, info) : null;
+        const hint = act ? (label ? `${label} · ${act.text}` : act.text) : label;
+        return { layers: [], shapes: riverGlow(w, hit.ref), hint, ...(act?.warn ? { warn: true } : {}) };
       }
       // 选着一条河时点别处只是取消选择：不预览新河
       if (sel || at.cell < 0) return EMPTY;

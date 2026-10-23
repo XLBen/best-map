@@ -152,7 +152,7 @@ const keepX = (w: World, x: number) => (w.mesh.kind === 'sphere' ? wrapX(x) : x)
 // 整个星球：圈绕着极点（在平铺图上圈不住任何地方）
 const aroundPole = (w: World, ring: [number, number][]) => w.mesh.kind === 'sphere' && ringWinding(ring) !== 0;
 // 正在计算时按下：说一声，不默默地忽略
-let busyNoted = 0;
+let busyNoted = Number.NEGATIVE_INFINITY;
 const busyNote = () => {
   if (performance.now() - busyNoted < 2000) return;
   busyNoted = performance.now();

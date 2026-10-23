@@ -439,7 +439,8 @@ describe('流进湖、汇入', () => {
           const P: Pt = [mesh.x[x] + 2.2 * nx, mesh.y[x] + 2.2 * ny];
           const Q: Pt = [mesh.x[J] + 2.2 * nx, mesh.y[J] + 2.2 * ny];
           const plan = planCourse(w0, w0.derived, [...line(P, Q), ...line(Q, at(w0, J), 10).slice(1)], { endOnLand: 'sink' });
-          if (plan.blocked || plan.end !== 'river' || plan.crossings.length || plan.reroute) continue;
+          // G 要真的画到 J（中途擦过 R 的一格时，汇入点挪到先碰到的那一格，就不是这里要的样子了）
+          if (plan.blocked || plan.end !== 'river' || plan.join !== J || plan.crossings.length || plan.reroute) continue;
           const eng = base.clone();
           eng.exec(courseCmd(plan, { id: 'river-g' }));
           const w = eng.world;

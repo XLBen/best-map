@@ -512,6 +512,10 @@ export function stemPath(world: World, cells: readonly number[]): number[] {
   return encodePath(dedupePoints(out.map(roundPoint)));
 }
 
+// 一条河道上算作“这条河”的第 i 格：最后一格是它汇入的地方（那条河的）不算；在终点消失的河的终点算（水在那里消失，
+// 别的河经过它也会被吞掉，所以截走、改道时要把它的“消失”去掉）
+export const ownsCell = (g: Pick<Guide, 'cells' | 'end'>, i: number) => i < g.cells.length - 1 || g.end === 'sink';
+
 // 一条画的河的控制点（courseLine 再平滑一遍就是画出来的样子）：画的折线，再接上画完之后顺地势流下去的那段
 // （格心加上与自然的河相同的曲流）；没有折线的河道（顺地势画的）整条按格心（与固定自然的河时存的一样，见 stemPath）。
 // 重画一段、接到它前面时都按它算，所以没改的地方画出来一点不动

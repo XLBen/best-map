@@ -187,9 +187,11 @@ export const hoverRiver = signal<RiverRef | null>(null);
 // 湖（第九轮）：一个放的湖（id），或一个自然的湖（湖里的一格）。放湖时点中的湖（底部条换成这个湖的设置）
 export type LakeRef = { kind: 'placed'; id: string } | { kind: 'natural'; cell: number };
 export const selectedLake = signal<LakeRef | null>(null);
-// 画的河穿过了别的河：松手后底部条问一句（截走它 / 到这里汇入 / 取消），回车、Esc 也行
+// 画的河穿过了别的河、从一条河中间或源头起笔：松手后底部条问一句（截走它 / 改道 / 重画整条 / 到这里汇入 / 取消），回车、Esc 也行
 export interface RiverPending {
   text: string;
+  // 确认的按钮写什么（省略时“截走它”）：从河中间起笔是“改道”，从画的河的源头起笔是“重画整条「赤江」”
+  confirm?: string;
   capture(): Promise<void>;
   // 到这里汇入（穿过的是改道的这条河自己时没有）
   join: (() => Promise<void>) | null;
