@@ -148,14 +148,14 @@ describe('名字不乱跳', () => {
   }
 
   it('新出来的地物不抢原有地物的名字（字很少的文字包：常常撞名）', () => {
-    // 岛只有 144 个名字可选（别的照内置的包）：几十个岛里常有撞名的。新放的大岛比多数原有的岛重要，
-    // 以前会先挑走它们的名字，后面的一串跟着换
+    // 岛只有 12 个名字可选（别的照内置的包），岛有六到九个：常常撞名。新放的岛与原有的岛连成一个大岛时，
+    // 以前大岛先挑走别的岛的名字（“戊岛”），那个岛只好换一个；河的名字也因为撞名、先后变了而跳
     const pack: WordPack = {
       ...DEFAULT_PACK,
       id: 'few',
       name: '少字',
       lists: { ...DEFAULT_PACK.lists, few: [...'甲乙丙丁戊己庚辛壬癸子丑'] },
-      types: { ...DEFAULT_PACK.types, island: { patterns: [{ p: '{few}{few}岛' }] } },
+      types: { ...DEFAULT_PACK.types, island: { patterns: [{ p: '{few}岛' }] } },
     };
     const eng = continents();
     const w = eng.world;
