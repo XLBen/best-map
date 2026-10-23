@@ -40,6 +40,8 @@ export type Request =
   | { kind: 'docTail'; ids: number[] }
   // 页面要被隐藏、关掉：立即写检查点
   | { kind: 'checkpoint' }
+  // 要一份完整的快照（主线程拼不起只带变了的数组的快照时）
+  | { kind: 'snapshot' }
   // 新建向导：用少量格子快速生成一张缩略图（一张一张要，画好一张显示一张）
   | { kind: 'thumb'; settings: Partial<Settings>; gen: WorldgenInput; width: number; height: number };
 
@@ -54,6 +56,12 @@ export interface Snapshot {
   timings: Timings;
   // 引擎的状态编号（预览按它判断过没过期）
   stateId: number;
+  // 只带变了的推导数组（第九轮）：same 里列出的数组与上一次发的内容相同，没有发（derived、corrF 里那一项是 null），
+  // 主线程沿用自己手上的那一个（同一个数组对象，着色、河线的缓存照样命中）。base 是上一次发快照时的状态编号：
+  // 主线程的世界不是那个状态时拼不起来，要一份完整的（snapshot 请求）。没有 same 时是完整的快照
+  // rows：变了一小部分格的推导数组（比如冷暖画笔只动了一片的份额、适宜度）：只带变了的格（idx 是格，rows 依次是它们的值，
+  // 每格 数组长度 / 格数 个），derived 里那一项也是 null，主线程在自己那一份的副本上补上
+  same?: { base: number; derived: string[]; corrF: string[]; rows: Record<string, { idx: Int32Array; rows: ArrayBufferView }> };
 }
 
 // 轻快照：只改了名字、省份（推导没有重算）时只发这些，推导数组沿用主线程上已有的

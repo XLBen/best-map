@@ -257,3 +257,46 @@ describe('确切预览可以中途停下', () => {
     expect(Array.from(e.derived.precip)).toEqual(Array.from(plain.derived.precip));
   });
 });
+
+// 快照只带变了的推导数组：没变的写 null、列进 same（主线程沿用自己的）；拼起来与完整的快照逐值相同。
+// 新建、打开、要完整的快照时是完整的
+describe('快照只带变了的数组', () => {
+  beforeAll(async () => {
+    vi.resetModules();
+    await import('./worker');
+  });
+  const filled = (s: Snapshot, prev: Snapshot) => {
+    const d = { ...s.derived } as unknown as Record<string, unknown>;
+    const p = prev.derived as unknown as Record<string, Float32Array>;
+    for (const k of s.same!.derived) d[k] = p[k];
+    for (const [k, part] of Object.entries(s.same!.rows)) {
+      const out = p[k].slice();
+      const width = out.length / s.causes.land.length;
+      const rows = part.rows as Float32Array;
+      part.idx.forEach((i, q) => out.set(rows.subarray(q * width, (q + 1) * width), i * width));
+      d[k] = out;
+    }
+    return d;
+  };
+
+  it('只改冷暖：高程、汇流等没变的不发；拼起来与完整的相同', async () => {
+    const first = (await send({ kind: 'init', settings, commands })).snapshot as Snapshot;
+    expect(first.same).toBeUndefined();
+    const land = [...first.causes.land.keys()].filter((i) => first.causes.land[i]).slice(0, 80);
+    const r = (await send({ kind: 'exec', cmd: { op: 'paint', field: 'tempOffset', cells: land, value: -3, mode: 'add' } })).snapshot as Snapshot;
+    expect(r.same?.base).toBe(first.stateId);
+    expect(r.same?.derived).toEqual(expect.arrayContaining(['elevation', 'receiver']));
+    expect(r.derived.elevation).toBeNull();
+    // 冷暖只动了一片：份额只带变了的格
+    expect(Object.keys(r.same!.rows).length).toBeGreaterThan(0);
+    const full = (await send({ kind: 'snapshot' })).snapshot as Snapshot;
+    expect(full.same).toBeUndefined();
+    const d = filled(r, first);
+    for (const [k, v] of Object.entries(full.derived)) if (ArrayBuffer.isView(v)) expect(Array.from(d[k] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
+    // 撤销：换回存着的推导，相对上一份（完整的）只带变了的
+    const u = (await send({ kind: 'undo' })).snapshot as Snapshot;
+    expect(u.same?.base).toBe(full.stateId);
+    const du = filled(u, full);
+    for (const [k, v] of Object.entries(first.derived)) if (ArrayBuffer.isView(v)) expect(Array.from(du[k] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
+  });
+});

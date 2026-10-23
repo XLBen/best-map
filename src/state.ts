@@ -846,8 +846,52 @@ async function handle(r: Response, fresh = false): Promise<boolean> {
     showToast(r.error, true);
     return false;
   }
-  if (r.snapshot) applySnapshot(r.snapshot, fresh);
+  if (r.snapshot) {
+    const s = 'light' in r.snapshot ? r.snapshot : completeSnapshot(r.snapshot);
+    if (s) applySnapshot(s, fresh);
+    else {
+      // 只带变了的数组、却拼不起来（手上的世界不是 Worker 上一次发快照时的状态）：要一份完整的
+      const full = await call({ kind: 'snapshot' }, null);
+      if (full.ok && full.snapshot && !('light' in full.snapshot)) {
+        const f = completeSnapshot(full.snapshot);
+        if (f) applySnapshot(f, fresh);
+      }
+    }
+  }
   return true;
+}
+
+// 只带变了的推导数组的快照（Snapshot.same）：没发的数组沿用手上世界的同一个对象（着色、河线的缓存照样命中）。
+// 手上的世界不是 Worker 上一次发快照时的状态、网格不同时拼不起来，返回 null。完整的快照原样返回
+function completeSnapshot(s: Snapshot): Snapshot | null {
+  const same = s.same;
+  if (!same) return s;
+  const prev = world.value;
+  if (!prev || worldState.value !== same.base || prev.derived.corrF === undefined) return null;
+  const pd = prev.derived as unknown as Record<string, unknown>;
+  const d = s.derived as unknown as Record<string, unknown>;
+  for (const k of same.derived) {
+    const v = pd[k];
+    if (!ArrayBuffer.isView(v) || d[k] !== null) return null;
+    d[k] = v;
+  }
+  for (const [k, part] of Object.entries(same.rows ?? {})) {
+    const v = pd[k] as Float32Array | undefined;
+    if (!ArrayBuffer.isView(v) || d[k] !== null) return null;
+    const n = prev.mesh.n;
+    const width = v.length / n;
+    const rows = part.rows as Float32Array;
+    if (!Number.isInteger(width) || rows.constructor !== v.constructor || rows.length !== part.idx.length * width) return null;
+    const out = v.slice();
+    for (let q = 0; q < part.idx.length; q++) out.set(rows.subarray(q * width, (q + 1) * width), part.idx[q] * width);
+    d[k] = out;
+  }
+  for (const k of same.corrF) {
+    const v = prev.derived.corrF[k];
+    if (!v || (s.derived.corrF as Record<string, unknown>)[k] !== null) return null;
+    s.derived.corrF[k] = v;
+  }
+  return s;
 }
 
 // ---------- 脚本的信任、安全模式 ----------

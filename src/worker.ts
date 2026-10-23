@@ -63,6 +63,8 @@ let reported: number[] = [];
 function useEngine(e: Engine) {
   engine = e;
   epoch++;
+  // 新的引擎：下一份快照是完整的
+  lastSent = null;
   reported = [];
   // 检查点也按步号认：新引擎的步号从 1 起，可能与上一个世界写过的碰巧相同，那样这个世界的检查点就一直不写
   ckKey = '';
@@ -98,7 +100,59 @@ function unpacked(packed: PackedMesh | null, cells: number): Mesh | null {
   }
 }
 
-function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
+// 上一次发给主线程的推导数组（引用；发出去之后引擎不再就地改它们，见 Engine.freezeDerived）与那时的状态编号。
+// 下一次只发与它们内容不同的数组。换了引擎（新建、打开）、要完整的快照时清掉
+let lastSent: { state: number; derived: Map<string, ArrayBufferView>; corrF: Map<string, ArrayBufferView> } | null = null;
+
+// 两个数组内容相同（同一个对象，或者逐字节相同）
+function sameArray(a: ArrayBufferView | undefined, b: ArrayBufferView): boolean {
+  if (a === b) return true;
+  if (!a || a.constructor !== b.constructor || a.byteLength !== b.byteLength) return false;
+  const n = a.byteLength;
+  if (n % 4 === 0 && a.byteOffset % 4 === 0 && b.byteOffset % 4 === 0) {
+    const x = new Int32Array(a.buffer, a.byteOffset, n / 4);
+    const y = new Int32Array(b.buffer, b.byteOffset, n / 4);
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+  }
+  const x = new Uint8Array(a.buffer, a.byteOffset, n);
+  const y = new Uint8Array(b.buffer, b.byteOffset, n);
+  for (let i = 0; i < n; i++) if (x[i] !== y[i]) return false;
+  return true;
+}
+
+// a 与 b（同样类型、同样长）里变了的格：每格 width 个值逐位比较。变了的超过一成时为 null（整份发更省事）
+function changedCells(a: ArrayBufferView, b: ArrayBufferView, n: number): { idx: Int32Array; rows: ArrayBufferView } | null {
+  if (a.constructor !== b.constructor || a.byteLength !== b.byteLength || n <= 0) return null;
+  const T = b as unknown as Float32Array;
+  const len = T.length;
+  if (len % n !== 0) return null;
+  const width = len / n;
+  // 按位比较：4 字节的按 Int32，8 字节的按两个 Int32，其他按字节
+  const bpe = T.BYTES_PER_ELEMENT;
+  const unit = bpe >= 4 && a.byteOffset % 4 === 0 && b.byteOffset % 4 === 0 ? 4 : 1;
+  const per = (width * bpe) / unit;
+  const x = unit === 4 ? new Int32Array(a.buffer, a.byteOffset, a.byteLength / 4) : new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+  const y = unit === 4 ? new Int32Array(b.buffer, b.byteOffset, b.byteLength / 4) : new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+  const limit = Math.floor(n / 10);
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let k = i * per, end = k + per; k < end; k++) {
+      if (x[k] !== y[k]) {
+        idx.push(i);
+        break;
+      }
+    }
+    if (idx.length > limit) return null;
+  }
+  const Ctor = T.constructor as Float32ArrayConstructor;
+  const rows = new Ctor(idx.length * width);
+  for (let q = 0; q < idx.length; q++) rows.set(T.subarray(idx[q] * width, (idx[q] + 1) * width), q * width);
+  return { idx: Int32Array.from(idx), rows };
+}
+
+// 快照：原因（不大）整份复制；推导只复制、转交与上一次发的不同的数组（full 时全部），相同的写 null、列进 same
+function snapshot(e: Engine, full = false): { snap: Snapshot; transfer: Transferable[] } {
   const w = e.world;
   const transfer: Transferable[] = [];
   const copy = <T extends ArrayBufferView>(a: T): T => {
@@ -106,16 +160,46 @@ function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
     transfer.push(c.buffer as ArrayBuffer);
     return c;
   };
+  const prev = full ? null : lastSent;
   const causes = {} as Snapshot['causes'];
   for (const [k, v] of Object.entries(w.causes)) {
     (causes as unknown as Record<string, unknown>)[k] = ArrayBuffer.isView(v) ? copy(v) : v;
   }
   causes.fields = Object.fromEntries(Object.entries(w.causes.fields).map(([k, v]) => [k, copy(v)]));
+  const sent = { state: e.stateId, derived: new Map<string, ArrayBufferView>(), corrF: new Map<string, ArrayBufferView>() };
+  const same: NonNullable<Snapshot['same']> = { base: prev?.state ?? 0, derived: [], corrF: [], rows: {} };
   const derived = {} as Snapshot['derived'];
   for (const [k, v] of Object.entries(w.derived)) {
-    (derived as unknown as Record<string, unknown>)[k] = ArrayBuffer.isView(v) ? copy(v) : v;
+    if (!ArrayBuffer.isView(v)) {
+      (derived as unknown as Record<string, unknown>)[k] = v;
+      continue;
+    }
+    sent.derived.set(k, v);
+    const old = prev?.derived.get(k);
+    if (prev && sameArray(old, v)) {
+      (derived as unknown as Record<string, unknown>)[k] = null;
+      same.derived.push(k);
+      continue;
+    }
+    // 只变了一小部分格：只发那些格
+    const part = old ? changedCells(old, v, w.mesh.n) : null;
+    if (part) {
+      (derived as unknown as Record<string, unknown>)[k] = null;
+      same.rows[k] = part;
+      transfer.push(part.idx.buffer as ArrayBuffer, part.rows.buffer as ArrayBuffer);
+    } else (derived as unknown as Record<string, unknown>)[k] = copy(v);
   }
-  derived.corrF = Object.fromEntries(Object.entries(w.derived.corrF).map(([k, v]) => [k, copy(v)]));
+  derived.corrF = {};
+  for (const [k, v] of Object.entries(w.derived.corrF)) {
+    sent.corrF.set(k, v);
+    if (prev && sameArray(prev.corrF.get(k), v)) {
+      (derived.corrF as Record<string, unknown>)[k] = null;
+      same.corrF.push(k);
+    } else derived.corrF[k] = copy(v);
+  }
+  // 发出去的数组之后不能就地改（下一次按它们比较）
+  e.freezeDerived();
+  lastSent = sent;
   return {
     snap: {
       settings: w.settings,
@@ -127,6 +211,7 @@ function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
       canRedo: e.canRedo,
       timings: e.lastTimings,
       stateId: e.stateId,
+      ...(prev ? { same } : {}),
     },
     transfer,
   };
@@ -135,6 +220,8 @@ function snapshot(e: Engine): { snap: Snapshot; transfer: Transferable[] } {
 // 只改了名字、省份：推导数组没变，不必复制、传送约 10 MB 的数据
 function lightSnapshot(e: Engine): { snap: LightSnapshot; transfer: Transferable[] } {
   const w = e.world;
+  // 推导数组没变（主线程沿用）：下一份只带变了的数组的快照照样以这些数组为准，状态编号换成这一次的
+  if (lastSent) lastSent.state = e.stateId;
   const province = w.causes.province.slice();
   return {
     snap: {
@@ -387,6 +474,11 @@ async function handle(id: number, req: Request) {
       case 'doc':
         reply({ id, ok: true, doc: engine!.toDoc() });
         return;
+      case 'snapshot': {
+        const { snap, transfer } = snapshot(engine!, true);
+        reply({ id, ok: true, snapshot: snap }, transfer);
+        return;
+      }
       case 'docTail':
         reply({ id, ok: true, tail: engine!.docTail(req.ids) });
         writeCheckpoint();

@@ -408,6 +408,11 @@ export class Engine {
     return summary;
   }
 
+  // 推导里的数组发出去了（Worker 只发变了的数组，按引用比较上一次发的）：之后重算不能就地改它们，先复制
+  freezeDerived() {
+    this.sharedDerived = true;
+  }
+
   // 上次取走以来实际重算到的最深一层，取走后清零
   takeRecomputed(): Dirty {
     const r = this.recomputed;
