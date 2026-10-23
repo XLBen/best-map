@@ -227,18 +227,32 @@ export function climateHere(w: World, cells: number[]): string {
   return parts.length ? `这里：${parts.join('、')}` : '这里没改过';
 }
 
-// 生态：涂成了森林、草原
+// 生态：涂成了森林、草原；涂了却没长出来（自然融入时这里长不了）的说“涂过……（没长成）”。
+// 一种生态在圈里有的格长成了、有的没有：“涂成了……（有几格没长成）”
 export function natureHere(w: World, cells: number[]): string {
   const m = natureMask(w);
   const ids: string[] = [];
+  const grew = new Map<string, { yes: number; no: number }>();
   for (const i of cells) {
     const s = m.species.get(i);
-    if (s !== undefined && !ids.includes(s)) ids.push(s);
+    if (s === undefined) continue;
+    if (!ids.includes(s)) ids.push(s);
+    const k = w.small.species.findIndex((x) => x.id === s);
+    const g = grew.get(s) ?? { yes: 0, no: 0 };
+    if (k >= 0 && w.derived.dominant[i] === k) g.yes++;
+    else g.no++;
+    grew.set(s, g);
   }
   if (!ids.length) return '这里没涂过';
-  const names = ids.map((id) => {
-    const sp = w.small.species.find((x) => x.id === id);
-    return sp?.name || id;
-  });
-  return `这里：涂成了${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${names.length} 种` : ''}`;
+  const nameOf = (id: string) => w.small.species.find((x) => x.id === id)?.name || id;
+  const list = (names: string[]) => `${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${names.length} 种` : ''}`;
+  const done = ids.filter((id) => grew.get(id)!.yes > 0);
+  const failed = ids.filter((id) => grew.get(id)!.yes === 0);
+  const parts: string[] = [];
+  if (done.length) {
+    const partly = done.length === 1 && grew.get(done[0])!.no > 0;
+    parts.push(`涂成了${list(done.map(nameOf))}${partly ? '（有几格没长成）' : ''}`);
+  }
+  if (failed.length) parts.push(`涂过${list(failed.map(nameOf))}（没长成）`);
+  return `这里：${parts.join('；')}`;
 }

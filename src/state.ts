@@ -1200,9 +1200,28 @@ export async function exec(cmd: Command, label = '正在计算…', again?: Agai
   const ok = await handle(r);
   if (ok && r.ok) {
     trustOwn(cmd);
-    noteChange(r.summary ?? '完成', before, againAction(again, label), true, action);
+    const head = (cmd.op === 'add_constraint' && before && world.value && paintNote(before, world.value)) || r.summary || '完成';
+    noteChange(head, before, againAction(again, label), true, action);
   }
   return ok;
+}
+
+// 涂了一片生态之后实际的结果（与按住时的预览一样说）：“水晶丛林：60 格变了 · 495 格没涂成（这里长不了）”。
+// 刚涂的是 after 里最后一条涂的设定；没涂成的格是它在冲突里列出的格。拼不出来时返回 null（照用引擎的说法）
+export function paintNote(before: World, after: World): string | null {
+  const c = after.small.constraints[after.small.constraints.length - 1];
+  if (!c || before.mesh !== after.mesh) return null;
+  const name = after.small.species.find((x) => x.id === c.species)?.name || c.species;
+  const id = (w: World, i: number) => {
+    const k = w.derived.dominant[i];
+    return k >= 0 ? w.small.species[k]?.id : null;
+  };
+  let changed = 0;
+  for (let i = 0; i < after.mesh.n; i++) if (id(before, i) !== id(after, i)) changed++;
+  const failing = after.derived.conflicts.find((x) => x.constraintId === c.id)?.failing.length ?? 0;
+  const mode = c.mode === 'constraint' ? '自然融入' : '强制';
+  const head = changed ? `${name}：${changed} 格变了` : `${name}：生态没变`;
+  return failing ? `${head} · ${failing} 格没涂成（这里长不了）` : `${head}（${mode}）`;
 }
 
 function againAction(again: Again | undefined, label: string) {

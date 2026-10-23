@@ -3,7 +3,7 @@ import { shiftColor } from '../../core/endemic';
 import { brushCells } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
-import { options, setOptions, world } from '../state';
+import { options, paintNote, setOptions, world } from '../state';
 import { climateHere, climateMask, editLayers, natureHere, natureMask, terrainHere, terrainMask, waterMask } from './edits';
 import { type Pointer, climateEraseTool, endemicTool, eraseTool, restoreTool } from './tools';
 
@@ -102,6 +102,28 @@ describe('能擦的格', () => {
     t.move?.(at(w, c), false);
     expect(t.preview().hint).toBe('这里：涂成了荒漠');
     expect(editLayers(w).map((l) => l.color)).toHaveLength(1);
+  });
+
+  it('自然融入涂了却没长出来：悬停说“涂过……（没长成）”，结果说几格变了、几格没涂成', () => {
+    const eng = continents();
+    const w0 = eng.world;
+    const c = inland(w0);
+    const near = [...Array(w0.mesh.n).keys()].filter((i) => w0.causes.land[i] && Math.hypot(w0.mesh.x[i] - w0.mesh.x[c], w0.mesh.y[i] - w0.mesh.y[c]) < 0.03);
+    eng.exec({ op: 'add_constraint', constraint: { cells: near, species: 'rainforest', mode: 'constraint' } });
+    const w = eng.world;
+    const name = w.small.species.find((s) => s.id === 'rainforest')!.name;
+    const k = w.small.species.findIndex((s) => s.id === 'rainforest');
+    // 这里长不了热带雨林（这个世界在北纬 20°–72°）
+    expect(near.some((i) => w.derived.dominant[i] === k)).toBe(false);
+    expect(natureHere(w, [c])).toBe(`这里：涂过${name}（没长成）`);
+    const note = paintNote(w0, w)!;
+    expect(note).toMatch(new RegExp(`^${name}：(生态没变|\\d+ 格变了) · ${near.length} 格没涂成（这里长不了）$`));
+    // 长出来了的照旧说“涂成了”，结果不说没涂成
+    const e2 = continents();
+    e2.exec({ op: 'add_constraint', constraint: { cells: near, species: 'desert', mode: 'constraint' } });
+    const desert = e2.world.small.species.find((s) => s.id === 'desert')!.name;
+    expect(natureHere(e2.world, [c])).toBe(`这里：涂成了${desert}`);
+    expect(paintNote(w0, e2.world)).toMatch(new RegExp(`^${desert}：\\d+ 格变了（自然融入）$`));
   });
 });
 
