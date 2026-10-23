@@ -838,7 +838,7 @@ function coastAttrs(world: World, base: SeafloorMemoEntry | undefined): { up: Fl
 // 每个海格离洋壳多远（只走海格的格数，最多 steps；再远、陆格为 −1）。
 // 有 base（同样的生成器场）时只重算离陆海变了的格 steps 格以内的格：再远的格，最短的路（不超过 steps 格）上没有变了的格，
 // 与上一次相同。重算区里的格从洋壳格（0）与区外紧挨着的格（上一次的格数 + 1）起按层走，最短格数唯一，与整个重算逐位相同
-function oceanSteps(world: World, fields: ReturnType<typeof seabedFields>, steps: number, base: SeafloorMemoEntry | undefined, flips: number[] | null): Int32Array {
+export function oceanSteps(world: World, fields: ReturnType<typeof seabedFields>, steps: number, base: SeafloorMemoEntry | undefined, flips: number[] | null): Int32Array {
   const { mesh, causes } = world;
   const n = mesh.n;
   const land = causes.land;

@@ -1,11 +1,12 @@
 import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
-import { computeElevation, elevationMemo, lakeArea, seafloor, seafloorStats } from './elevation';
+import { computeElevation, elevationMemo, lakeArea, oceanSteps, seafloor, seafloorStats } from './elevation';
 import { Engine } from './engine';
 import { exportPackage } from './export';
 import { oceanFloor } from './generate';
 import { graphDistance } from './mesh';
+import { seabedFields } from './terrain';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 import type { World } from './world';
 
@@ -279,6 +280,56 @@ describe('海底的剖面', () => {
       eng.redo();
       check('重做');
       expect(seafloorStats.partial).toBeGreaterThan(p0);
+    });
+  }
+
+  for (const [label, make] of [
+    ['一块地区', () => continents()],
+    ['整个星球', planet],
+  ] as const) {
+    it(`${label}：离洋壳的格数只重算陆海变了的格附近，与整个重算逐值相同`, () => {
+      const w = make().world;
+      const { mesh, causes } = w;
+      const fields = seabedFields(w);
+      expect(fields).not.toBeNull();
+      const land0 = causes.land.slice();
+      // 岸边（离洋壳近的地方）画陆地、画海：离洋壳的格数会变
+      const toOcean0 = oceanSteps(w, fields, 3, undefined, null);
+      const shore: number[] = [];
+      for (let i = 0; i < mesh.n; i++) {
+        if (land0[i] || toOcean0[i] < 0 || toOcean0[i] > 1) continue;
+        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (land0[mesh.adj[e]]) {
+          shore.push(i);
+          break;
+        }
+      }
+      expect(shore.length).toBeGreaterThan(10);
+      let changedSome = false;
+      try {
+        for (const steps of [3, 8]) {
+          for (let k = 0; k < 12; k++) {
+            causes.land.set(land0);
+            const base = oceanSteps(w, fields, steps, undefined, null);
+            const c = shore[Math.floor(((k * 7 + steps) / 61) * shore.length) % shore.length];
+            const flips: number[] = [];
+            for (let i = 0; i < mesh.n; i++) {
+              if (Math.hypot(mesh.x[i] - mesh.x[c], mesh.y[i] - mesh.y[c]) >= mesh.spacing * (1.5 + (k % 3))) continue;
+              const v = k % 2 ? 0 : 1;
+              if (causes.land[i] !== v) {
+                causes.land[i] = v;
+                flips.push(i);
+              }
+            }
+            const inc = oceanSteps(w, fields, steps, { toOcean: base } as never, flips);
+            const ref = oceanSteps(w, fields, steps, undefined, null);
+            expect(digest(inc), `${steps} ${k}`).toBe(digest(ref));
+            if (digest(ref) !== digest(base)) changedSome = true;
+          }
+        }
+      } finally {
+        causes.land.set(land0);
+      }
+      expect(changedSome).toBe(true);
     });
   }
 
