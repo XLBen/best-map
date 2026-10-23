@@ -96,7 +96,7 @@ export interface ColorOptions {
 // 湖在画面上是水面：海岸值取负（有岸线、有格以下的岸线细节）、高程取负的水深（浅水边）、坡度为 0
 // 按用到的数组缓存：高程、湖、水面、陆海、陆地程度（只改了名字、省份的轻快照沿用同一批数组）。
 // 预览世界只换变了的数组：整体干湿的预览高程不变、湖变了，不能只看高程，否则会画出旧的湖
-type StaticLayers = { coast: Float32Array; grad: Float32Array; elevation: Float32Array };
+type StaticLayers = { coast: Float32Array; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array };
 const staticCache = new WeakMap<Float32Array, { inputs: ArrayBufferView[]; value: StaticLayers }[]>();
 
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
@@ -140,7 +140,17 @@ function computeStatic(world: World): StaticLayers {
     grad[2 * i] = gx;
     grad[2 * i + 1] = gy;
   }
-  return { coast, grad, elevation };
+  // 海底的坡度（海的晕渲）：按海底高程，陆地（含湖）当作 0 m
+  const seaGrad = new Float32Array(mesh.n * 2);
+  const hs = new Float64Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) hs[i] = causes.land[i] ? 0 : Math.min(0, d.elevation[i]);
+  for (let i = 0; i < mesh.n; i++) {
+    if (causes.land[i]) continue;
+    const [gx, gy] = gradient(mesh, hs, i);
+    seaGrad[2 * i] = gx;
+    seaGrad[2 * i + 1] = gy;
+  }
+  return { coast, grad, seaGrad, elevation };
 }
 
 export function cellLayers(world: World, o: ColorOptions): CellLayers {
@@ -265,6 +275,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     elevation: st.elevation,
     coast: st.coast,
     grad: st.grad,
+    seaGrad: st.seaGrad,
     flat,
     group,
     seams,

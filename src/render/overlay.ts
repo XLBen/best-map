@@ -92,12 +92,15 @@ export function riverDraws(world: World, lines: RiverLine[]): RiverDraw[] {
 // 一次画的河：画布上要描的几样东西（按颜色合成一笔：同色的带子一次填，交汇处不会叠出深色）
 interface RiverPaint {
   banks: Path2D | null;
-  // 细于一个像素的河：沿中线描（颜色|线宽 → 路径）
+  // 细于一个像素的河：沿中线描（颜色|线宽 → 路径；lw 是 CSS 像素）
   thin: Map<string, { path: Path2D; color: string; lw: number }>;
   fills: Map<string, Path2D>;
   // 虚线、双线、发光的河：每条一笔
   styled: { path: Path2D; color: string; lw: number; style: RiverStyle }[];
 }
+
+// 每次加一条河用的几个数组（按最长的河分配，反复用）
+let scratch = { length: 0, idx: new Int32Array(0), bx: new Float64Array(0), by: new Float64Array(0) };
 
 // 把要画的河加进 paint。k：半宽（屏幕像素）合多少地图单位；unit：一个 CSS 像素合多少地图单位；
 // view：看得见的范围（地图单位，第 0 份），null 不裁（预览的河：调用方按副本挪好了变换）；sphere：整个星球（按副本平移 2）
@@ -110,6 +113,7 @@ function addRiverPaint(
   view: [number, number, number, number] | null,
   sphere: boolean,
   colorOf: (t: number) => { color: string; style: RiverStyle },
+  step = 0.7 * unit,
 ) {
   const rb = d.rb;
   const n = rb.x.length;
@@ -125,10 +129,12 @@ function addRiverPaint(
     } else if (rb.x1 + margin < view[0] || rb.x0 - margin > view[2]) return;
   }
   // 屏幕上相隔不到 0.7 像素的点不要（看全图时一格只有几个像素）
-  const dmin = 0.7 * unit;
+  const dmin = step;
   const thin = 2 * rb.maxHw * scale < 1;
   const wide = 2 * rb.maxHw * scale >= 2.5;
   const S = rb.s;
+  if (scratch.length < n) scratch = { length: n, idx: new Int32Array(n), bx: new Float64Array(n), by: new Float64Array(n) };
+  const { idx, bx, by } = scratch;
   for (let cp = c0; cp <= c1; cp++) {
     const dx = 2 * cp;
     for (let i0 = 0; i0 < n - 1; ) {
@@ -136,10 +142,13 @@ function addRiverPaint(
       const t = d.type ? d.type[rb.src[i0]] : 0;
       let i1 = i0 + 1;
       while (i1 < n - 1 && (d.type ? d.type[rb.src[i1]] : 0) === t) i1++;
-      const idx: number[] = [i0];
-      for (let i = i0 + 1; i < i1; i++) if (S[i] - S[idx[idx.length - 1]] >= dmin) idx.push(i);
-      idx.push(i1);
+      let m = 0;
+      idx[m++] = i0;
+      for (let i = i0 + 1; i < i1; i++) if (S[i] - S[idx[m - 1]] >= dmin) idx[m++] = i;
+      idx[m++] = i1;
       const { color, style } = colorOf(t);
+      const X = rb.x;
+      const Y = rb.y;
       if (style !== 'solid' || thin) {
         let sum = 0;
         for (let i = i0; i <= i1; i++) sum += rb.hw[i];
@@ -149,36 +158,32 @@ function addRiverPaint(
         else {
           const key = `${color}|${lw}`;
           let e = paint.thin.get(key);
-          if (!e) paint.thin.set(key, (e = { path: new Path2D(), color, lw: lw * unit }));
+          if (!e) paint.thin.set(key, (e = { path: new Path2D(), color, lw }));
           path = e.path;
         }
-        path.moveTo(rb.x[idx[0]] + dx, rb.y[idx[0]]);
-        for (let j = 1; j < idx.length; j++) path.lineTo(rb.x[idx[j]] + dx, rb.y[idx[j]]);
+        path.moveTo(X[idx[0]] + dx, Y[idx[0]]);
+        for (let j = 1; j < m; j++) path.lineTo(X[idx[j]] + dx, Y[idx[j]]);
       } else {
         let f = paint.fills.get(color);
         if (!f) paint.fills.set(color, (f = new Path2D()));
-        const L = (j: number) => {
+        // 两岸的点（左岸 ox + ux，右岸 ox − ux）
+        for (let j = 0; j < m; j++) {
           const i = idx[j];
-          return [rb.x[i] + dx + rb.nx[i] * rb.hw[i] * k, rb.y[i] + rb.ny[i] * rb.hw[i] * k] as const;
-        };
-        const R = (j: number) => {
-          const i = idx[j];
-          return [rb.x[i] + dx - rb.nx[i] * rb.hw[i] * k, rb.y[i] - rb.ny[i] * rb.hw[i] * k] as const;
-        };
-        let p = L(0);
-        f.moveTo(p[0], p[1]);
-        for (let j = 1; j < idx.length; j++) (p = L(j)), f.lineTo(p[0], p[1]);
-        for (let j = idx.length - 1; j >= 0; j--) (p = R(j)), f.lineTo(p[0], p[1]);
+          const o = rb.hw[i] * k;
+          bx[j] = rb.nx[i] * o;
+          by[j] = rb.ny[i] * o;
+        }
+        f.moveTo(X[idx[0]] + dx + bx[0], Y[idx[0]] + by[0]);
+        for (let j = 1; j < m; j++) f.lineTo(X[idx[j]] + dx + bx[j], Y[idx[j]] + by[j]);
+        for (let j = m - 1; j >= 0; j--) f.lineTo(X[idx[j]] + dx - bx[j], Y[idx[j]] - by[j]);
         f.closePath();
         if (wide) {
           paint.banks ??= new Path2D();
           const b = paint.banks;
-          p = L(0);
-          b.moveTo(p[0], p[1]);
-          for (let j = 1; j < idx.length; j++) (p = L(j)), b.lineTo(p[0], p[1]);
-          p = R(0);
-          b.moveTo(p[0], p[1]);
-          for (let j = 1; j < idx.length; j++) (p = R(j)), b.lineTo(p[0], p[1]);
+          b.moveTo(X[idx[0]] + dx + bx[0], Y[idx[0]] + by[0]);
+          for (let j = 1; j < m; j++) b.lineTo(X[idx[j]] + dx + bx[j], Y[idx[j]] + by[j]);
+          b.moveTo(X[idx[0]] + dx - bx[0], Y[idx[0]] - by[0]);
+          for (let j = 1; j < m; j++) b.lineTo(X[idx[j]] + dx - bx[j], Y[idx[j]] - by[j]);
         }
       }
       i0 = i1;
@@ -198,7 +203,7 @@ function strokeRiverPaint(ctx: CanvasRenderingContext2D, paint: RiverPaint, unit
   ctx.lineCap = 'round';
   for (const e of paint.thin.values()) {
     ctx.strokeStyle = e.color;
-    ctx.lineWidth = e.lw;
+    ctx.lineWidth = e.lw * unit;
     ctx.stroke(e.path);
   }
   for (const [color, path] of paint.fills) {
@@ -209,6 +214,65 @@ function strokeRiverPaint(ctx: CanvasRenderingContext2D, paint: RiverPaint, unit
 }
 
 const newPaint = (): RiverPaint => ({ banks: null, thin: new Map(), fills: new Map(), styled: [] });
+
+// 缩小到一格不到 6 个像素时（河多、每条只占几个像素，看不出两岸和弯曲）：整个世界的河沿中线按宽度分档描，
+// 一次加好缓存着（第 0 份的坐标，与缩放无关：线宽按档 × 现在的系数，点隔多远分三档），每帧只描。
+// Path2D 每加一个点要约一微秒，看全图时有几万个点，每帧现加会卡；放大以后只加看得见的那几条，每帧现加带子
+const LOW_ZOOM_CELL_PX = 6;
+interface LowZoomStrokes {
+  // 颜色|宽度档（CSS 像素，未乘系数）→ 路径
+  plain: Map<string, { path: Path2D; color: string; w: number }>;
+  styled: { path: Path2D; color: string; w: number; style: RiverStyle }[];
+}
+const lowZoomCaches = new WeakMap<OverlayPaths, { key: string; types: unknown; v: LowZoomStrokes }[]>();
+function lowZoomStrokes(paths: OverlayPaths, cellPx: number, spacing: number, style: 'realistic' | 'atlas', colorOf: (t: number) => { color: string; style: RiverStyle }, types: unknown): LowZoomStrokes {
+  const lod = cellPx < 2 ? 0.5 : cellPx < 4 ? 0.25 : 0.125;
+  const key = `${lod}|${style}`;
+  let list = lowZoomCaches.get(paths);
+  if (!list) lowZoomCaches.set(paths, (list = []));
+  const hit = list.find((e) => e.key === key && e.types === types);
+  if (hit) return hit.v;
+  const v: LowZoomStrokes = { plain: new Map(), styled: [] };
+  const dmin = lod * spacing;
+  const bucket = (hw: number) => Math.max(0.25, Math.round(2 * hw * 4) / 4);
+  for (const d of paths.rivers) {
+    const rb = d.rb;
+    const n = rb.x.length;
+    for (let i0 = 0; i0 < n - 1; ) {
+      const t = d.type ? d.type[rb.src[i0]] : 0;
+      let i1 = i0 + 1;
+      while (i1 < n - 1 && (d.type ? d.type[rb.src[i1]] : 0) === t) i1++;
+      const { color, style: st } = colorOf(t);
+      if (st !== 'solid') {
+        let sum = 0;
+        for (let i = i0; i <= i1; i++) sum += rb.hw[i];
+        const path = new Path2D();
+        path.moveTo(rb.x[i0], rb.y[i0]);
+        let last = i0;
+        for (let i = i0 + 1; i <= i1; i++) if (i === i1 || rb.s[i] - rb.s[last] >= dmin) path.lineTo(rb.x[(last = i)], rb.y[i]);
+        v.styled.push({ path, color, w: (2 * sum) / (i1 - i0 + 1), style: st });
+      } else {
+        // 宽度档相同的一段一笔（相邻两段共用分界的点）
+        for (let a = i0; a < i1; ) {
+          const w = bucket(rb.hw[a]);
+          let b = a + 1;
+          while (b < i1 && bucket(rb.hw[b]) === w) b++;
+          const k = `${color}|${w}`;
+          let e = v.plain.get(k);
+          if (!e) v.plain.set(k, (e = { path: new Path2D(), color, w }));
+          e.path.moveTo(rb.x[a], rb.y[a]);
+          let last = a;
+          for (let i = a + 1; i <= b; i++) if (i === b || rb.s[i] - rb.s[last] >= dmin) e.path.lineTo(rb.x[(last = i)], rb.y[i]);
+          a = b;
+        }
+      }
+      i0 = i1;
+    }
+  }
+  list.unshift({ key, types, v });
+  list.length = Math.min(list.length, 3);
+  return v;
+}
 
 // 一种河的颜色与画法：0 是普通的河（color），k + 1 是第 k 种河流类型
 function typeColors(types: readonly RiverType[], style: 'realistic' | 'atlas', plain: string): (t: number) => { color: string; style: RiverStyle } {
@@ -423,6 +487,8 @@ export interface OverlayState {
   currents?: boolean;
   // 镜头正在动（渲染器按低分辨率画的那几帧）：底层的河挪用缓存的那张、地名沿用排好的版面，停稳后按原样画
   motion?: boolean;
+  // 渲染器移动中的场景重画到第几次了（Renderer.motionEpoch）：变了就在同一帧重画底层的河、重排地名
+  motionEpoch?: number;
   // 导出图片：底层的河直接画（不贴缓存），与原来逐像素相同
   exact?: boolean;
   // 导出整张地图（.png）：画在一张离屏的大画布上，按这个虚拟窗口（cw × ch 个 CSS 像素，每个 CSS 像素 dpr 个像素）画，
@@ -473,7 +539,8 @@ export interface LabelBox {
 // 整张原样贴回，与直接画在叠加层上逐像素相同；移动中按 MOTION_LAYER_SCALE 的分辨率、四周多画 MOTION_LAYER_MARGIN，
 // 镜头还在边距之内、缩放没变太多时把这一张挪一挪、缩一缩贴上，停下以后（停稳的那一帧）再按原样画
 const MOTION_LAYER_SCALE = 0.5;
-const MOTION_LAYER_MARGIN = 0.25;
+// 与渲染器移动中的场景同样的边距、缩放（同一帧重建，见 motionEpoch）
+const MOTION_LAYER_MARGIN = 0.35;
 const MOTION_LAYER_ZOOM = 1.3;
 interface BackLayer {
   canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -485,6 +552,8 @@ interface BackLayer {
   ready: boolean;
   // 画它时每个 CSS 像素几个像素（页面缩放变了、画布像素数没变时也要重画）
   dpr: number;
+  // 移动中的那张：画它时渲染器的 motionEpoch
+  epoch?: number;
 }
 let restLayer: BackLayer | null = null;
 let motionLayer: BackLayer | null = null;
@@ -498,9 +567,9 @@ function makeLayer(w: number, h: number, dpr: number): BackLayer {
   return { canvas, ctx, key: [], cam: { x: 0, y: 0, zoom: 1 }, soft: overlayDebug.softLayers, ready: false, dpr };
 }
 
-// 底层的河与标记，画进 ctx：画布是 cw × ch 个 CSS 像素、每个 CSS 像素 dev 个像素，镜头在画布中间
-// cull：只描画布上看得见的那几笔（移动中的底层用；停稳的照原样整条描，逐像素与原来相同）
-function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, cw: number, ch: number, dev: number, cull = false) {
+// 底层的河与标记，画进 ctx：画布是 cw × ch 个 CSS 像素、每个 CSS 像素 dev 个像素，镜头在画布中间。
+// 河只加画布上看得见的那几条（按外接框裁）
+function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, cw: number, ch: number, dev: number) {
   const z = cam.zoom * dev;
   const sphere = world.mesh.kind === 'sphere';
   const ks = sphere ? copiesFor(cam, cw) : [0];
@@ -517,11 +586,26 @@ function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContex
     const scale = riverScale(world, cam.zoom);
     const unit = 1 / cam.zoom;
     const colorOf = typeColors(world.small.riverTypes ?? [], st.style, riverStroke(st.style));
+    const low = world.mesh.spacing * cam.zoom < LOW_ZOOM_CELL_PX;
     const paint = newPaint();
-    for (const d of paths.rivers) addRiverPaint(paint, d, scale * unit, unit, scale, view, sphere, colorOf);
-    strokeRiverPaint(ctx as CanvasRenderingContext2D, paint, unit, st.style, dev);
+    if (low) {
+      // 整个世界的河缓存着（第 0 份的坐标）：每份看得见的副本各描一遍
+      const cached = lowZoomStrokes(paths, world.mesh.spacing * cam.zoom, world.mesh.spacing, st.style, colorOf, world.small.riverTypes);
+      ctx.lineJoin = 'round';
+      for (const k of ks) {
+        setT(k);
+        ctx.lineCap = 'butt';
+        for (const e of cached.plain.values()) {
+          ctx.strokeStyle = e.color;
+          ctx.lineWidth = e.w * scale * unit;
+          ctx.stroke(e.path);
+        }
+        for (const e of cached.styled) strokeRiverStyle(ctx as CanvasRenderingContext2D, e.path, e.w * scale * unit, e.color, e.style, dev);
+      }
+      setT(0);
+    } else for (const d of paths.rivers) addRiverPaint(paint, d, scale * unit, unit, scale, view, sphere, colorOf);
+    if (!low) strokeRiverPaint(ctx as CanvasRenderingContext2D, paint, unit, st.style, dev);
   }
-  void cull;
   for (const k of ks) {
     setT(k);
     if (st.markers) {
@@ -589,7 +673,7 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
     if (!L.ready) {
       L.ctx.setTransform(1, 0, 0, 1, 0, 0);
       L.ctx.clearRect(0, 0, L.canvas.width, L.canvas.height);
-      drawBack(L.ctx, world, paths, cam, st, cw, ch, dpr, true);
+      drawBack(L.ctx, world, paths, cam, st, cw, ch, dpr);
       L.ctx.setTransform(1, 0, 0, 1, 0, 0);
       L.ready = true;
     }
@@ -606,12 +690,13 @@ function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPa
   const L = motionLayer;
   const fits = (c: Camera) =>
     cam.zoom / c.zoom <= MOTION_LAYER_ZOOM && Math.abs(cam.x - c.x) + cw / 2 / cam.zoom <= lw / 2 / c.zoom && Math.abs(cam.y - c.y) + ch / 2 / cam.zoom <= lh / 2 / c.zoom;
-  if (!samePathsKey(key, L.key) || !fits(L.cam)) {
+  if (!samePathsKey(key, L.key) || !fits(L.cam) || (st.motionEpoch !== undefined && L.epoch !== st.motionEpoch)) {
     L.ctx.setTransform(1, 0, 0, 1, 0, 0);
     L.ctx.clearRect(0, 0, W, H);
-    drawBack(L.ctx, world, paths, cam, st, lw, lh, dev, true);
+    drawBack(L.ctx, world, paths, cam, st, lw, lh, dev);
     L.key = key;
     L.cam = { ...cam };
+    L.epoch = st.motionEpoch;
   }
   // 底层的一个像素 → 叠加层的像素
   const c0 = L.cam;
@@ -974,8 +1059,9 @@ interface PlacedLabel {
   y: number;
   angle: number;
 }
-// key：整个键；base：键里除了镜头的部分（移动中沿用排好的版面时比它）；cam：排的时候的镜头
-let layout: { key: string; base: string; cam: Camera; features: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[] } | null = null;
+// key：整个键；base：键里除了镜头的部分（移动中沿用排好的版面时比它）；cam：排的时候的镜头；
+// epoch：移动中排的那一次渲染器的 motionEpoch（停稳时排的为 undefined）
+let layout: { key: string; base: string; cam: Camera; features: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[]; epoch?: number } | null = null;
 
 // 每个字的宽度按字体缓存：平移、缩放的每一帧不必再量（字体加载完成后清空重量）
 const glyphs = new Map<string, number>();
@@ -995,9 +1081,12 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const { cw, ch: chh } = frameOf(ctx, st);
   const exporting = !!st.frame;
   const base = `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
-  const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}`;
+  const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
   if (!exporting && layout && layout.key === key && layout.features === st.features) return layout;
   const toScreen = (x: number, y: number): [number, number] => [(x - cam.x) * cam.zoom + cw / 2, (y - cam.y) * cam.zoom + chh / 2];
+  // 移动中：画面四周再多排一圈（与渲染器移动中的场景一样宽），挪到下一次重排之前露出来的地方也有地名
+  const mx = 100 + (st.motion && !exporting ? MOTION_LAYER_MARGIN * cw : 0);
+  const my = 40 + (st.motion && !exporting ? MOTION_LAYER_MARGIN * chh : 0);
   const placed: PlacedLabel[] = [];
   const boxes: LabelBox[] = [];
   // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
@@ -1014,7 +1103,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     const spots: [number, number][] = [];
     for (const k of ks) {
       const [x, y] = toScreen(f.x + 2 * k, f.y);
-      if (x < -100 || y < -40 || x > cw + 100 || y > chh + 40) continue;
+      if (x < -mx || y < -my || x > cw + mx || y > chh + my) continue;
       spots.push([x, y]);
     }
     if (!spots.length) continue;
@@ -1063,12 +1152,13 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom ? '#7a1f5c' : style.color, x: sx, y: sy, angle });
     }
   }
-  const out = { key, base, cam: { ...cam }, features: st.features, placed, boxes };
+  const out = { key, base, cam: { ...cam }, features: st.features, placed, boxes, epoch: st.motion ? st.motionEpoch : undefined };
   if (!exporting) layout = out;
   return out;
 }
 
-// 移动中：镜头离排版面时挪了不到这么多（CSS 像素）、缩放变了不到这么多倍时，沿用排好的版面，整体挪一挪、缩一缩
+// 移动中：沿用排好的版面，整体挪一挪、缩一缩；渲染器重画移动中的场景时（motionEpoch 变了）在同一帧重排。
+// 没有 motionEpoch 时（测试、开发用的测速）照旧：挪了不到这么多（CSS 像素）、缩放变了不到这么多倍时沿用
 const MOTION_LABEL_SHIFT = 160;
 const MOTION_LABEL_ZOOM = 1.15;
 
@@ -1089,10 +1179,12 @@ function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState
     L &&
     L.base === base &&
     L.features === st.features &&
-    zr < MOTION_LABEL_ZOOM &&
-    zr > 1 / MOTION_LABEL_ZOOM &&
-    Math.abs(L.cam.x - cam.x) * cam.zoom < MOTION_LABEL_SHIFT &&
-    Math.abs(L.cam.y - cam.y) * cam.zoom < MOTION_LABEL_SHIFT
+    (st.motionEpoch !== undefined
+      ? // 同一次场景（开始动的第一帧场景就重画了：地名也在这一帧按带边距的范围重排）
+        L.epoch === st.motionEpoch &&
+        zr < MOTION_LAYER_ZOOM &&
+        zr > 1 / MOTION_LAYER_ZOOM
+      : zr < MOTION_LABEL_ZOOM && zr > 1 / MOTION_LABEL_ZOOM && Math.abs(L.cam.x - cam.x) * cam.zoom < MOTION_LABEL_SHIFT && Math.abs(L.cam.y - cam.y) * cam.zoom < MOTION_LABEL_SHIFT)
   ) {
     r = zr;
     ox = cw / 2 - (cw / 2) * r + (L.cam.x - cam.x) * cam.zoom;

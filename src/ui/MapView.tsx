@@ -476,6 +476,9 @@ export function MapView() {
       renderer.style = mapStyle.value;
       // 镜头正在动：渲染器按低分辨率画了这一帧，停下 SETTLE_MS 以后再画一次（补上全分辨率的）。导出图片一定按停稳的画法画
       const moving = renderer.render(w.kmPerUnit, { still: clean });
+      // 停下后补画全分辨率的那一帧：地图这一帧按停稳的画法画，叠加层先照移动中的样子贴，下一帧再按停稳的画（两样重活分在两帧）
+      const settling = !moving && !clean && renderer.justSettled;
+      if (settling) requestDraw();
       if (moving) {
         if (settleTimer) clearTimeout(settleTimer);
         settleTimer = setTimeout(() => {
@@ -507,7 +510,8 @@ export function MapView() {
           ? { north: shown.settings.latNorth + shown.small.planet.latShift, south: shown.settings.latSouth + shown.small.planet.latShift }
           : null,
         currents: overlays.value.currents,
-        motion: moving,
+        motion: moving || settling,
+        motionEpoch: renderer.motionEpoch,
         exact: clean,
       }];
       lastOverlay = ovArgs;
