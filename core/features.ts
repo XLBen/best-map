@@ -395,6 +395,23 @@ function memoized<T>(mesh: Mesh, name: string, inputs: ArrayBufferView[], comput
   return value;
 }
 
+// 有没有记下这一段的这一份（不计入命中、不调整先后）
+function memoHas(mesh: Mesh, name: string, inputs: ArrayBufferView[]): boolean {
+  const key = inputs.map(bytesOf);
+  const list = memo.get(mesh)?.get(name) ?? [];
+  return list.some((m) => m.key.length === key.length && m.key.every((b, k) => sameBytes(b, key[k])));
+}
+
+// 分阶段算（预览在阶段之间让出线程）：先把只取决于海陆的那一段（陆块、半岛、海峡、海湾、海与洋）算好记下，
+// 之后的 detectFeatures 直接用上。已经记下、或者缓存关着时什么都不做。返回是否算了
+export function prepareFeatures(world: World): boolean {
+  if (!featureMemo.on) return false;
+  const key = [world.causes.land, Float64Array.of(world.kmPerUnit)];
+  if (memoHas(world.mesh, 'terrain', key)) return false;
+  memoized(world.mesh, 'terrain', key, () => terrainInputs(world));
+  return true;
+}
+
 // 记下一次 add 的输入
 function put(list: AddInput[], type: FeatureType, cells: number[], importance: number, tags: string[] = [], anchor?: number, mark?: AddInput['mark']) {
   list.push({ type, cells: Int32Array.from(cells), importance, tags, anchor, mark });

@@ -207,6 +207,13 @@ export class ContentMemo<T> {
     return null;
   }
 
+  // 有没有这一份（不计入命中、不调整先后）
+  peek(mesh: Mesh, arrays: ArrayBufferView[], params: unknown[]): boolean {
+    if (!this.on) return false;
+    const list = this.store.get(mesh) ?? [];
+    return list.some((c) => c.params.every((v, j) => Object.is(v, params[j])) && c.arrays.every((a, j) => sameBytes(a, arrays[j])));
+  }
+
   // arrays：键里的数组，给私有的副本
   keep(mesh: Mesh, arrays: ArrayBufferView[], params: unknown[], value: T) {
     if (!this.on) return;

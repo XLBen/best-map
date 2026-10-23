@@ -2,9 +2,9 @@ import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate 
 import { DOC_VERSION, checkDoc } from './doc-version';
 import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, revert } from './commands';
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
-import { computeClimateSphere } from './planet-climate';
+import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
 import { carveBeds, computeElevation } from './elevation';
-import { assignNames, detectFeatures, guideFeatures, regionFeatures } from './features';
+import { assignNames, detectFeatures, guideFeatures, prepareFeatures, regionFeatures } from './features';
 import { computeEffects } from './effects';
 import { computeHydrology } from './hydrology';
 import type { Mesh } from './mesh';
@@ -475,6 +475,15 @@ export class Engine {
       yield;
     }
     if (climate || !this.base) {
+      // 整个星球：只取决于纬度、海陆的两层先算（改了海陆时这一段很长），算完让出一次（预览可以在这里停下）
+      if (w.mesh.kind === 'sphere') {
+        const a = performance.now();
+        if (prepareClimateSphere(w, terrain)) {
+          const spent = performance.now() - a;
+          yield;
+          t = performance.now() - spent;
+        }
+      }
       // 整个星球用球面版本（没有地图边，风带绕星球一圈）。按没挖河床的地形算：画河不改变气候
       const base = w.mesh.kind === 'sphere' ? computeClimateSphere(w, terrain, d) : computeClimate(w, terrain, d);
       this.base = { ...base, terrain };
@@ -532,6 +541,15 @@ export class Engine {
     finishLook(w, d);
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
+    // 只取决于海陆的那一段地物先认（改了海陆时这一段很长），认完让出一次
+    if (this.features) {
+      const a = performance.now();
+      if (prepareFeatures(w)) {
+        const spent = performance.now() - a;
+        yield;
+        t = performance.now() - spent;
+      }
+    }
     // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
     if (this.features) d.features = detectFeatures(w, d, terrain);
     lap('features');

@@ -390,6 +390,22 @@ function sphereLand(world: World, mesh: SphereMesh, st: SphereStatic): SphereLan
   return lw;
 }
 
+// 分阶段算（预览在阶段之间让出线程）：先把只取决于纬度、海陆的两层算好放进缓存，之后的 computeClimateSphere 直接用上。
+// 整个地形部分已经在缓存里、或者两层缓存关着时什么都不做。返回是否算了
+export function prepareClimateSphere(world: World, elevation: Float32Array): boolean {
+  if (!sphereLayers.on) return false;
+  const { causes, small, kmPerUnit } = world;
+  const mesh = world.mesh as SphereMesh;
+  const n = mesh.n;
+  const planet = small.planet;
+  const lat = new Float64Array(n);
+  for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
+  const params = [planet.tilt, planet.rotation, planet.solar, planet.currents, kmPerUnit, PLANET_SWEEPS.wind, PLANET_SWEEPS.ocean, planet.terrainWind];
+  if (sphereMemo.peek(mesh, [causes.land, elevation, lat], params)) return false;
+  sphereLand(world, mesh, sphereStatic(world, mesh, lat));
+  return true;
+}
+
 function sphereTerrain(world: World, elevation: Float32Array, out: Derived): SphereTerrain {
   const { causes, small, kmPerUnit } = world;
   const mesh = world.mesh as SphereMesh;
