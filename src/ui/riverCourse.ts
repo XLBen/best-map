@@ -5,7 +5,7 @@ import { lakeArea } from '../../core/elevation';
 import type { GeoFeature } from '../../core/features';
 import { PLAIN_RIVER } from '../../core/river-types';
 import { arcUnits, wrapX } from '../../core/geo';
-import { type GuideLine, type RiverLine, centrePoints, encodePath, guideLine, guideShape, ownsCell, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
+import { type GuideLine, type RiverLine, centrePoints, cutPathAtCell, encodePath, guideLine, guideShape, ownsCell, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
 import {
   type CourseEnd,
   type CoursePlan,
@@ -711,6 +711,64 @@ export function pendingText(w: World, c: Course, x: PreviewResult | null): strin
   return parts.join(' · ');
 }
 
+// 顺地势从一条河中间改道（planRiver 的 reroute，起点不是画的河的源头）：还是这一条河。
+// 画的河：改这条河道（update_guide；id、名字、大小、类型照旧），起点以上的格（和画的折线）不动，之后照新拖的路线走；
+// 自然的河：主干从源头到起点再接上新的路线，固定成一条画的河，沿用它的地名（像“固定这条河”）。
+// 新路线汇回这条河自己往下的那段时，后面照它原来的河道接上（不然又断成两条）。
+// 起点在自然的河的源头、找不到这条河时为 null（照旧另起一条改道的河）
+export function flowReroute(w: World, p: RiverPlan, lenKm: number): Command | null {
+  const start = p.cells[0];
+  let g: Guide | undefined;
+  let k = -1;
+  for (let n = w.small.guides.length - 1; n >= 0 && !g; n--) {
+    const x = w.small.guides[n];
+    const i = x.cells.indexOf(start);
+    if (i >= 0 && ownsCell(x, i)) {
+      g = x;
+      k = i;
+    }
+  }
+  let old: number[];
+  let own: (j: number) => boolean;
+  if (g) {
+    if (k <= 0) return null;
+    const G = g;
+    old = G.cells;
+    own = (j) => ownsCell(G, j);
+  } else {
+    const stem = stemOf(w, start);
+    k = stem.cells.indexOf(start);
+    if (k <= 0) return null;
+    old = stem.cells;
+    own = (j) => j < old.length - 1 || stem.end !== 'river';
+  }
+  const cells = [...old.slice(0, k), ...p.cells];
+  let back = false;
+  const j = p.end === 'river' ? old.indexOf(p.join) : -1;
+  if (j > k && own(j)) {
+    const rest = old.slice(j + 1);
+    const seen = new Set(cells);
+    if (!rest.some((c) => seen.has(c))) {
+      cells.push(...rest);
+      back = true;
+    }
+  }
+  const where = back ? '，之后照原来的河道走' : p.end ? `，${destText(w, p.end, p.end === 'river' ? p.join : p.cells[p.cells.length - 1])}` : '';
+  if (g) {
+    const patch: GuidePatch = { cells };
+    // 画的折线只留起点以前的那段（之后是顺地势的格）；折线没画到起点时照旧
+    if (g.path) {
+      const cut = cutPathAtCell(w.mesh, g.path, start);
+      if (cut) patch.path = cut;
+    }
+    if (g.end) patch.end = null;
+    return { op: 'update_guide', id: g.id, patch, label: `${quoted(guideName(w, g), '一条画的河')}从这里改道（约 ${lenKm} km${where}）` };
+  }
+  const f = naturalFeatureAt(w, start);
+  const guide = { cells, locked: true, spring: false, ...(f ? { nameKey: f.key } : { name: '' }) };
+  return { op: 'add_guide', guide, label: `${quoted(f?.name || null, '一条河')}从这里改道（约 ${lenKm} km${where}）` };
+}
+
 // ---------- 预览 ----------
 
 // 执行后这条河画出来的样子：照画出来的线（guideLine），流量按格；入海、入湖画到进水的第一点为止；
@@ -1024,6 +1082,9 @@ export function riverTool(zoom: () => number): ToolHandler {
       if (src.end) patch.end = null;
       return { op: 'update_guide', id: src.id, patch, label: `重画了${quoted(guideName(w, src), '一条画的河')}（约 ${flowLen(w, p)} km${where}）` };
     }
+    // 从一条河中间改道：还是这一条河（与自定义走向一样，见 flowReroute）
+    const mid = p.reroute ? flowReroute(w, p, flowLen(w, p)) : null;
+    if (mid) return mid;
     const guide = p.reroute
       ? { cells: p.cells, locked: true, spring: false, ...inheritedName(w, p.cells[0]), ...chosenRiverType(w) }
       : { cells: p.cells, locked: true, spring: true, flow: options.value.riverFlow, name: '', ...chosenRiverType(w) };
