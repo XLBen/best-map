@@ -6,6 +6,7 @@ import type { LabelSize } from '../../render/export-plan';
 import { exportFullMap, snapshotCanvas } from '../MapView';
 import { HistoryPanel } from '../panels';
 import { openPackLibrary } from '../packs/store';
+import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
 
 // “世界”：新建、我的地图、保存、打开文件、导出文件；“操作”：导出、历史、上手说明、偏好
@@ -135,13 +136,15 @@ export function ActionsPanel() {
     Object.assign(pngChoice, v);
     setPng({ ...pngChoice });
   };
+  // 图片文件名用“我的地图”里的名字（没保存的世界叫 map）
+  const pngName = (suffix = '') => fileNameOf(currentMap.value?.name ?? 'map').replace(/\.json$/, `${suffix}.png`);
   const savePng = () => {
     const c = snapshotCanvas();
-    if (c) c.toBlob((b) => b && download('map.png', b, 'image/png'), 'image/png');
+    if (c) c.toBlob((b) => b && download(pngName('（画面）'), b, 'image/png'), 'image/png');
   };
   const saveFullPng = async () => {
     const b = await exportFullMap(png);
-    if (b) download('map.png', b, 'image/png');
+    if (b) download(pngName(), b, 'image/png');
   };
   // 整张图的高：一块地区按长宽比，整个星球是 2:1
   const pngHeight = (s: number) => Math.round((s * w.mesh.height) / w.mesh.width);
