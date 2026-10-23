@@ -4,6 +4,7 @@ import type { Command } from './commands';
 import type { Engine } from './engine';
 import { buildModel, sampleComponents } from './generate';
 import { previewWorldOf } from './preview-world';
+import { sampledBaseMemo } from './terrain';
 import { engineFor } from './testing/fixtures';
 
 // 预览：副本与原世界共用生成器的结果（地形命令的预览不重新采样整个生成器），
@@ -72,8 +73,13 @@ describe('副本共用生成器的结果', () => {
     expect(p.changedCells.length).toBeGreaterThan(0);
     expect(buildModel).not.toHaveBeenCalled();
     expect(sampleComponents).not.toHaveBeenCalled();
-    // 重画一片：模型照用，只局部重算重画圈里的格
-    a.preview(cmds.reroll_region);
+    // 重画一片：模型照用，只局部重算重画圈里的格（按网格的采样缓存关掉：前面的测试可能已经重画过同一片）
+    sampledBaseMemo.on = false;
+    try {
+      a.preview(cmds.reroll_region);
+    } finally {
+      sampledBaseMemo.on = true;
+    }
     expect(buildModel).not.toHaveBeenCalled();
     expect(sampleComponents).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sampleComponents).mock.calls[0][2]).toBeDefined();

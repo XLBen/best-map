@@ -61,6 +61,19 @@ export interface ComposeParams {
 }
 
 const baseCache = new WeakMap<World, BaseCache>();
+// 同一个网格上按采样的键留最近的两份生成器结果（模型、分量、火山锥），换了一个世界也能用（第九轮 A2）：
+// 打开存档（重放）、撤销到新建之前再重做时，新的 World 不用把整个星球重新采样一遍。
+// 分量只读（重画时另建一份）；模型的参数换成这个世界的（与重画时的做法相同），所以与重新采样逐值相同
+interface SampledBase {
+  key: string;
+  shapeKey: string;
+  model: GenModel | PlanetModel;
+  components: BaseComponents;
+  cones: Map<number, ConeField>;
+}
+const sampledCache = new WeakMap<Mesh, SampledBase[]>();
+// 测试用：on = false 时不读也不写
+export const sampledBaseMemo = { on: true, hits: 0 };
 const coastCache = new WeakMap<Mesh, Map<number, Float32Array>>();
 
 export function coastSeed(world: World): number {
@@ -120,7 +133,13 @@ export function ensureBase(world: World): BaseCache {
     let model: GenModel | PlanetModel | null;
     let components: BaseComponents | null;
     let cones = new Map<number, ConeField>();
-    if (gen && old && old.model && old.components && old.shapeKey === shapeKey && old.mesh === mesh) {
+    const sampled = gen && sampledBaseMemo.on ? sampledCache.get(mesh)?.find((s) => s.key === sampleKey) : undefined;
+    if (gen && sampled) {
+      sampledBaseMemo.hits++;
+      model = sampled.model.kind === 'planet' ? withPlanetParams(sampled.model, gen) : withParams(sampled.model, gen);
+      components = sampled.components;
+      cones = sampled.cones;
+    } else if (gen && old && old.model && old.components && old.shapeKey === shapeKey && old.mesh === mesh) {
       // 只有重画变了（重画一片、撤销、重做）：模型与火山锥照用，只重算新旧两组不同的那些重画圈里的格
       model = old.model.kind === 'planet' ? withPlanetParams(old.model, gen) : withParams(old.model, gen);
       const was = old.model.params.rerolls;
@@ -134,6 +153,10 @@ export function ensureBase(world: World): BaseCache {
       // 整个星球用球面版本的生成器（planet-gen.ts）
       model = !gen ? null : mesh.kind === 'sphere' ? buildPlanetModel(gen) : buildModel(gen, mesh.width, mesh.height);
       components = !model ? null : model.kind === 'planet' ? samplePlanetComponents(model, mesh as SphereMesh) : sampleComponents(model, mesh);
+    }
+    if (gen && model && components && sampledBaseMemo.on && !sampled) {
+      const list = sampledCache.get(mesh) ?? [];
+      sampledCache.set(mesh, [{ key: sampleKey, shapeKey, model, components, cones }, ...list].slice(0, 2));
     }
     cache = {
       key: sampleKey,
