@@ -1156,6 +1156,7 @@ function againAction(again: Again | undefined, label: string) {
 // 撤掉刚做的一步，换成新的命令（只重算一次，历史里只留一步）
 export async function replaceLast(cmd: Command, label = '正在计算…', again?: Again): Promise<boolean> {
   const r = await call({ kind: 'replaceLast', cmd }, label);
+  if (r.ok && r.snapshot && !('light' in r.snapshot)) noteCost(cmd, r.snapshot.timings.total);
   const before = world.value;
   const ok = await handle(r);
   if (ok && r.ok) {
@@ -1400,8 +1401,9 @@ export function download(name: string, data: Uint8Array | string | Blob, type: s
 
 // ---------- 确切预览：将来的世界 ----------
 
-// 同一时间只算一个；排队时来了新的，旧的直接得到 null（拖动中只算最新的那个，不中途取消正在算的）
-function latest<A, R>(run: (a: A) => Promise<R | null>) {
+// 同一时间只算一个；排队时来了新的，旧的直接得到 null（拖动中只算最新的那个）。
+// cancel：正在算的那个也不要了时叫它（确切预览：Worker 在下一个阶段之间停下，不必等它算完）
+function latest<A, R>(run: (a: A) => Promise<R | null>, cancel?: () => void) {
   let waiting: { a: A; resolve: (r: R | null) => void } | null = null;
   let running = false;
   return {
@@ -1409,7 +1411,10 @@ function latest<A, R>(run: (a: A) => Promise<R | null>) {
       new Promise<R | null>((resolve) => {
         waiting?.resolve(null);
         waiting = { a, resolve };
-        if (running) return;
+        if (running) {
+          cancel?.();
+          return;
+        }
         void (async () => {
           running = true;
           while (waiting) {
@@ -1472,9 +1477,12 @@ export function slowPreview(cmd: Command): number | null {
 }
 
 // 停顿多久再预览（毫秒）：至少 base，上次预览算得久就等得久一点（上次的一半），最多 600
+// 大世界（6 万格以上，比如整个星球）：至少停 700 毫秒才算（一次预览要几秒，停顿短时算了也多半被下一笔取消）
 export function exactDelay(base: number): number {
-  return Math.min(600, Math.max(base, 0.5 * lastPreviewMs));
+  const big = (world.value?.mesh.n ?? 0) > BIG_WORLD;
+  return Math.min(big ? 900 : 600, Math.max(base, big ? 700 : 0, 0.5 * lastPreviewMs));
 }
+const BIG_WORLD = 60000;
 
 // 确切预览的结果：将来的世界。base：按哪个世界算的（世界换了就不再显示）
 export interface WorldPreview {
@@ -1508,7 +1516,14 @@ const worldPreviews = latest(async (cmd: Command) => {
   }
   // 预览算不成（比如涂的格都不能长东西）不提示：松手执行时才说
   return previewReply(r);
-});
+}, stopRunningPreview);
+
+// 正在算的确切预览不要了：告诉 Worker 在下一个阶段之间停下（星球上一次预览要几秒，新的一笔、要别的值时不必等它算完）。
+// 已经发了同一条命令的执行时 Worker 不停（执行直接采用它）。没有在算的预览时什么都不做
+function stopRunningPreview() {
+  if (![...pending.values()].some((p) => p.kind === 'previewWorld')) return;
+  void call({ kind: 'cancelPreview' }, null);
+}
 
 // 命令的确切预览，连同将来的世界（previewCommand 不变，画河改道照旧用它）。Worker 留着算好的副本：
 // 紧接着执行同一条命令时直接采用，松手后立刻出结果，颜色不跳
@@ -1516,8 +1531,11 @@ export function previewWorld(cmd: Command): Promise<WorldPreview | null> {
   return worldPreviews.ask(cmd);
 }
 
-export function cancelWorldPreview() {
+// 还没发出去的作废；hard：正在算的也停下（新的一笔、换了工具）。松手执行时不要 hard：执行同一条命令要直接采用它
+// （执行别的命令时 Worker 自己会停下它）
+export function cancelWorldPreview(hard = false) {
   worldPreviews.drop();
+  if (hard) stopRunningPreview();
 }
 
 // Worker 换了一个（卡住后恢复）：排着的、显示着的预览都不要了（按旧 Worker 的状态算的）
@@ -1549,7 +1567,7 @@ export function previewAdjust(cmd: Command | null, pause = 200) {
   adjustTimer = null;
   if (!cmd) {
     adjustKey = '';
-    worldPreviews.drop();
+    cancelWorldPreview(true);
     if (adjustPreviewWorld.value?.key !== settling) adjustPreviewWorld.value = null;
     adjustPreviewNote.value = null;
     return;

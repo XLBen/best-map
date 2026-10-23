@@ -244,7 +244,42 @@ function queue(run: () => Promise<void>) {
   chain = chain.then(run).catch(() => undefined);
 }
 
-self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => queue(() => handle(ev.data.id, ev.data.req));
+// 收到了还没算完的确切预览（排着的和正在算的；分阶段算，阶段之间让出线程，见 previewWorld）：新来的请求要它们停下时
+// cancelled 设为 true，排着的轮到时直接不算，正在算的在下一个阶段之间停下。收到同一条命令的执行时 adopt 设为 true：
+// 执行要直接采用它，之后不再停
+interface PreviewRun {
+  key: string;
+  cancelled: boolean;
+  adopt: boolean;
+}
+const previewRuns = new Map<number, PreviewRun>();
+
+// 新来的请求：要不要停下收到了的预览。执行别的命令、撤销、重做、新建、打开、要别的预览、取消时停；执行同一条命令时留着
+const CANCELS = new Set<Request['kind']>(['exec', 'replaceLast', 'undo', 'redo', 'init', 'load', 'previewWorld', 'preview', 'cancelPreview']);
+function maybeCancelPreview(req: Request) {
+  if (!previewRuns.size || !CANCELS.has(req.kind)) return;
+  const key = req.kind === 'exec' ? JSON.stringify(req.cmd) : null;
+  for (const run of previewRuns.values()) {
+    if (run.adopt) continue;
+    if (key !== null && key === run.key) run.adopt = true;
+    else run.cancelled = true;
+  }
+}
+
+// 让出线程（这时 onmessage 收得到新的消息）
+const yieldNow = () => new Promise<void>((r) => setTimeout(r, 0));
+
+self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
+  const { id, req } = ev.data;
+  maybeCancelPreview(req);
+  if (req?.kind === 'previewWorld') previewRuns.set(id, { key: JSON.stringify(req.cmd), cancelled: false, adopt: false });
+  // 取消立即回复，不排在正在算的预览后面
+  if (req.kind === 'cancelPreview') {
+    reply({ id, ok: true });
+    return;
+  }
+  queue(() => handle(id, req));
+};
 
 async function handle(id: number, req: Request) {
   try {
@@ -301,11 +336,35 @@ async function handle(id: number, req: Request) {
         withSnap('重做', true);
         return;
       case 'previewWorld': {
-        // 差别里的数组是副本的（副本留着给紧接着的执行采用）：不转移，结构化克隆复制一份发过去
-        const { result, patch } = engine!.previewWorld(req.cmd);
-        reply({ id, ok: true, preview: result, world: patch });
-        return;
+        // 分阶段算：阶段之间让出线程，新的一笔、松手执行别的命令时在那里停下（回 cancelled），不必等它算完
+        const run = previewRuns.get(id) ?? { key: '', cancelled: false, adopt: false };
+        try {
+          if (run.cancelled) {
+            reply({ id, ok: true, cancelled: true });
+            return;
+          }
+          const steps = engine!.previewWorldSteps(req.cmd);
+          for (;;) {
+            const r = steps.next();
+            if (r.done) {
+              // 差别里的数组是副本的（副本留着给紧接着的执行采用）：不转移，结构化克隆复制一份发过去
+              reply({ id, ok: true, preview: r.value.result, world: r.value.patch });
+              return;
+            }
+            await yieldNow();
+            if (run.cancelled) {
+              steps.return(undefined as never);
+              reply({ id, ok: true, cancelled: true });
+              return;
+            }
+          }
+        } finally {
+          previewRuns.delete(id);
+        }
       }
+      case 'cancelPreview':
+        reply({ id, ok: true });
+        return;
       case 'preview':
         reply({ id, ok: true, preview: engine!.preview(req.cmd) });
         return;

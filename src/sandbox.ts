@@ -335,7 +335,7 @@ export class EngineHost {
       if (!this.worker) this.spawn(safe, null);
       // 安全模式的原因记这一次的
       if (safe) this.safeReason = safeReason ?? null;
-    } else if (req.kind !== 'thumb' && !this.loaded && ![...this.pending.values()].some((p) => opens(p.req))) {
+    } else if (req.kind !== 'thumb' && req.kind !== 'cancelPreview' && !this.loaded && ![...this.pending.values()].some((p) => opens(p.req))) {
       // 没有装着世界的 Worker（停掉后没有自动重开：安全模式下也出了事），也没有正在打开的：
       // 要用到世界时先按原来的模式把命令记录里的世界打开（向导的缩略图用不着世界）
       const doc = this.mirror.doc();

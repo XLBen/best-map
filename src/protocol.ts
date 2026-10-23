@@ -30,6 +30,9 @@ export type Request =
   | { kind: 'previewTerrain'; patch: TerrainPatch }
   // 预览，连同将来的世界（与当前世界的差别）：地图画出将来的样子
   | { kind: 'previewWorld'; cmd: Command }
+  // 不要正在算的确切预览了（新的一笔、换了工具、要的是别的值）：Worker 在下一个阶段之间停下它（那个预览回 cancelled）。
+  // 已经收到同一条命令的执行时不停（执行要直接采用它）。立即回复，不排队
+  | { kind: 'cancelPreview' }
   // 换一个：撤掉最后一步并执行新命令
   | { kind: 'replaceLast'; cmd: Command }
   | { kind: 'doc' }
@@ -119,6 +122,8 @@ export type Response =
       safe?: boolean;
       // 命令什么都没改：没有快照，也没有进历史
       noop?: boolean;
+      // 确切预览没算完就被取消了（没有 preview、world）
+      cancelled?: boolean;
       snapshot?: Snapshot | LightSnapshot;
       preview?: PreviewResult;
       provinces?: ProvincesPreview;

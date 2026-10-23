@@ -207,3 +207,53 @@ describe('计算 Worker 里的河流类型', () => {
     expect(safe.derived.effT).toBeUndefined();
   });
 });
+
+// 确切预览分阶段算、阶段之间让出线程：松手执行别的命令、新的一笔（取消）时它在下一个阶段之间停下（回 cancelled），
+// 执行不必等它算完；执行同一条命令时不停，执行直接采用它。停下的预览不影响世界
+describe('确切预览可以中途停下', () => {
+  beforeAll(async () => {
+    vi.resetModules();
+    await import('./worker');
+  });
+  // 不等回复地发
+  const fire = (req: Request) => {
+    const id = nextId++;
+    scope.onmessage!({ data: { id, req } });
+    return async () => {
+      await until(() => posted.some((p) => (p.msg as { id?: number }).id === id));
+      return posted.find((p) => (p.msg as { id?: number }).id === id)!.msg as Extract<Response, { ok: true }>;
+    };
+  };
+  const warm: Command = { op: 'set_planet', patch: { humidity: 1.3 } };
+  const cold: Command = { op: 'set_planet', patch: { humidity: 0.7 } };
+
+  it('执行别的命令时停下，执行的结果与没有预览时相同', async () => {
+    await send({ kind: 'init', settings, commands });
+    const preview = fire({ kind: 'previewWorld', cmd: warm });
+    const exec = fire({ kind: 'exec', cmd: cold });
+    const p = await preview();
+    expect(p.cancelled).toBe(true);
+    expect(p.preview).toBeUndefined();
+    const e = (await exec()).snapshot as Snapshot;
+    // 对照：一个新的引擎直接执行
+    const plain = (await send({ kind: 'init', settings, commands: [...commands, cold] })).snapshot as Snapshot;
+    expect(Array.from(e.derived.precip)).toEqual(Array.from(plain.derived.precip));
+    expect(Array.from(e.derived.dominant)).toEqual(Array.from(plain.derived.dominant));
+  });
+
+  it('取消：停下，之后照常预览；已经发了同一条命令的执行时不停（执行直接采用）', async () => {
+    await send({ kind: 'init', settings, commands });
+    const preview = fire({ kind: 'previewWorld', cmd: warm });
+    await send({ kind: 'cancelPreview' });
+    expect((await preview()).cancelled).toBe(true);
+    const again = fire({ kind: 'previewWorld', cmd: warm });
+    const exec = fire({ kind: 'exec', cmd: warm });
+    fire({ kind: 'cancelPreview' });
+    const p = await again();
+    expect(p.cancelled).toBeUndefined();
+    expect(p.preview).toBeDefined();
+    const e = (await exec()).snapshot as Snapshot;
+    const plain = (await send({ kind: 'init', settings, commands: [...commands, warm] })).snapshot as Snapshot;
+    expect(Array.from(e.derived.precip)).toEqual(Array.from(plain.derived.precip));
+  });
+});

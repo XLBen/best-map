@@ -101,7 +101,19 @@ function fantasyBench() {
   const stroke = coastalStroke(w, 0.37, 8);
   const paint = { op: 'paint_land' as const, cells: stroke, t: stroke.map(() => 0), mode: 'land' as const };
   t = performance.now();
-  eng.preview(paint);
+  // 预览分阶段算：最长的一段就是松手执行别的命令时最多要等多久（Worker 在阶段之间停下预览）
+  {
+    const steps = eng.previewSteps(paint);
+    let worst = 0;
+    for (;;) {
+      const a = performance.now();
+      const r = steps.next();
+      worst = Math.max(worst, performance.now() - a);
+      if (r.done) break;
+    }
+    results.previewLongestStage = Math.round(worst);
+    if (!json) console.log('    longest stage of the preview', Math.round(worst), 'ms');
+  }
   lap('paint land preview', 'paintLandPreview');
   eng.exec(paint);
   lap('paint land exec (adopt)', 'paintLandAdopt');

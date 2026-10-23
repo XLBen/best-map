@@ -5,8 +5,8 @@ import { type WorldPreview, cancelWorldPreview, exactDelay, previewWorld, redraw
 // 确切预览：手停下来一会儿后，在世界的副本上执行松手时会执行的同一条命令，地图上画出将来的样子
 // （生态颜色、雪、河、地名、风、没涂成的格）。松手执行时 Worker 直接采用算好的结果：立刻出结果，颜色不跳。
 // 新的结果到来之前一直显示上一个（画的过程中不会跳回原样）；世界换了（结果换上了）就不再显示。
-// 同一时间只算一个（state.ts 里排队的只留最新的）；上次这类命令算得太久（成本闸门）就不自动算，
-// 只说“松手后约 N 秒出结果”
+// 同一时间只算一个（state.ts 里排队的只留最新的；接着画、新的一笔时正在算的在 Worker 里中途停下）；
+// 上次这类命令算得太久（成本闸门）就不自动算，只说“松手后约 N 秒出结果”
 
 export interface ExactView extends WorldPreview {
   key: string;
@@ -34,6 +34,11 @@ export class Exact {
     if (key === this.wanted && (this.timer || this.running === key || this.asked === world.value)) return;
     this.wanted = key;
     this.stopTimer();
+    // 接着画了（要的不是正在算的那个）：正在算的停下（Worker 在下一个阶段之间停，星球上不必等它算完几秒）
+    if (this.running && this.running !== key) {
+      cancelWorldPreview(true);
+      this.running = '';
+    }
     // 已经算好了（比如松开滑块又拖回同一处；前面排队的笔画算完后才回来的预览也对得上）
     if (this.view?.key === key) return;
     this.timer = setTimeout(() => {
@@ -88,7 +93,10 @@ export class Exact {
 
   // 全部清掉（新的一笔、取消、换工具）
   clear() {
-    this.stop();
+    this.stopTimer();
+    this.wanted = '';
+    // 新的一笔、取消、换工具：正在算的也停下（已经发了同一条命令的执行时 Worker 不停，见 worker.ts）
+    if (this.running) cancelWorldPreview(true);
     this.gen++;
     this.shown = null;
     this.slow = null;

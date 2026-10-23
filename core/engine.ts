@@ -375,16 +375,22 @@ export class Engine {
   // 按标记重算推导。中途出错时推导写了一半：标记成从高程起全部重算（下一次一定整个重算，
   // 不会把写了一半的推导当成算好的），再把错误抛出去
   update(): Derived {
+    return drain(this.updateSteps());
+  }
+
+  // 同 update，分阶段：每算完一个阶段（高程、气候、每一遍水文与植被、求解）停一下（yield）。
+  // 一口气走完（drain）与 update 完全相同；Worker 里的预览在两个阶段之间让出线程、看看要不要取消（见 previewWorldSteps）
+  *updateSteps(): Generator<void, Derived> {
     if (this.dirty === Dirty.None) return this.world.derived;
     try {
-      return this.recompute();
+      return yield* this.recompute();
     } catch (e) {
       this.dirty = Dirty.Elevation;
       throw e;
     }
   }
 
-  private recompute(): Derived {
+  private *recompute(): Generator<void, Derived> {
     this.recomputed = Math.max(this.recomputed, this.dirty) as Dirty;
     const w = this.world;
     const d = w.derived;
@@ -413,12 +419,14 @@ export class Engine {
       terrain = computeElevation(w).elevation;
       climate = true;
       lap('elevation');
+      yield;
     }
     if (climate || !this.base) {
       // 整个星球用球面版本（没有地图边，风带绕星球一圈）。按没挖河床的地形算：画河不改变气候
       const base = w.mesh.kind === 'sphere' ? computeClimateSphere(w, terrain, d) : computeClimate(w, terrain, d);
       this.base = { ...base, terrain };
       lap('climate');
+      yield;
     }
     // 推导里的高程 = 地形再挖出只挖河床的河。每次都从地形重新挖，结果只取决于原因；没有这种河时就是地形
     d.elevation.set(terrain);
@@ -448,6 +456,7 @@ export class Engine {
     for (const k of Object.keys(d.corrF)) delete d.corrF[k];
     pass(null);
     lap('hydrology');
+    yield;
     // 生态、河对周围的影响（第三批）：按第一遍的结果算一次，之后的求解和最后一遍都在加了影响的气候上算
     // （没有这种影响时为 null，下面照原来的样子）
     const eff = computeEffects(w, d);
@@ -457,11 +466,15 @@ export class Engine {
       for (let round = 0; round < 2; round++) {
         this.solve = solveConstraints(w, base, d, eff);
         pass(eff);
+        yield;
         const failing = this.solve.plans.some((p) => p.anchors.some((k) => d.dominant[p.cells[k]] !== p.target));
         if (!failing) break;
       }
       lap('solve');
-    } else if (eff) pass(eff);
+    } else if (eff) {
+      pass(eff);
+      yield;
+    }
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
     // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
@@ -553,13 +566,19 @@ export class Engine {
   // 预览：在世界的副本上执行命令，返回与当前结果的差异，不改变当前状态。副本留到下一次改动，
   // 紧接着执行同一条命令时直接采用
   preview(cmd: Command): PreviewResult {
+    return drain(this.previewSteps(cmd));
+  }
+
+  // 同 preview，分阶段（见 updateSteps）。中途不再走下去（取消）时：当前世界、历史都没变，也不留副本
+  *previewSteps(cmd: Command): Generator<void, PreviewResult> {
     this.update();
     // 先放掉上一份副本（星球上一份约 30 MB），再复制新的
     this.lastPreview = null;
     const t0 = performance.now();
     const copy = this.clone();
     const { changed } = copy.applyOnly(cmd);
-    copy.update();
+    yield;
+    yield* copy.updateSteps();
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
     const step = copy.done[copy.done.length - 1];
     const ms = performance.now() - t0;
@@ -612,7 +631,12 @@ export class Engine {
 
   // 预览，并带上将来的世界与当前世界的差别（只带内容变了的数组，见 preview-world.ts）：地图据此画出将来的样子
   previewWorld(cmd: Command): { result: PreviewResult; patch: PreviewPatch } {
-    const result = this.preview(cmd);
+    return drain(this.previewWorldSteps(cmd));
+  }
+
+  // 同 previewWorld，分阶段（Worker 里在阶段之间看看要不要取消）
+  *previewWorldSteps(cmd: Command): Generator<void, { result: PreviewResult; patch: PreviewPatch }> {
+    const result = yield* this.previewSteps(cmd);
     return { result, patch: previewPatch(this.world, this.lastPreview!.copy.world) };
   }
 
@@ -638,6 +662,14 @@ export class Engine {
     e.lastTimings = this.lastTimings;
     e.stateId = this.stateId;
     return e;
+  }
+}
+
+// 一口气走完分阶段的计算
+export function drain<R>(it: Generator<void, R>): R {
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
   }
 }
 
