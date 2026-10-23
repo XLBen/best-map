@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// 数一数 graphDistance 被调用了几次（离海岸、离河只在脚本用到时才算）
+// 数一数距离场算了几次（离海岸、离河只在脚本用到时才算）：从头算（graphDistance）与从上一份改起（updateDistance）都算一次
 const calls = vi.hoisted(() => ({ graphDistance: 0 }));
 vi.mock('./mesh', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./mesh')>();
@@ -9,6 +9,10 @@ vi.mock('./mesh', async (importOriginal) => {
     graphDistance: (...a: Parameters<typeof actual.graphDistance>) => {
       calls.graphDistance++;
       return actual.graphDistance(...a);
+    },
+    updateDistance: (...a: Parameters<typeof actual.updateDistance>) => {
+      calls.graphDistance++;
+      return actual.updateDistance(...a);
     },
   };
 });

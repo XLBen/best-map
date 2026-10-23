@@ -5,7 +5,7 @@ import { z } from 'zod';
 // commands.ts 也间接引用本文件（generate.ts → planet-form.ts、terrain.ts → planet-gen.ts）：本文件不要值引用
 // commands.ts、generate.ts、terrain.ts、planet-gen.ts，否则循环又回来了
 import { CommandError } from './errors';
-import { type Mesh, graphDistance } from './mesh';
+import { type Mesh, graphDistance, updateDistance } from './mesh';
 import { hashString } from './names';
 import {
   type Noise2,
@@ -1162,16 +1162,18 @@ export function arrayInputs(
 
 // 按内容缓存的距离场（离海岸、离河）：causes.land 是原地改的，所以不能按数组本身做键，要逐字节比较
 // （与 features.ts 的 memoized 同一个做法；按网格、按名字各留最近用过的两份）。
+// 种子（海格、河格）变了时从最近的一份改起（updateDistance：只重算受影响的一片，与从头算逐值相同）。
 // 返回的数组是缓存本身，只读
 interface DistMemo {
-  key: Uint8Array[];
+  seeds: Uint8Array;
+  km: number;
+  // 地图单位的距离（改起用）与乘过 km 的
+  raw: Float64Array;
   value: Float64Array;
 }
 const distMemo = new WeakMap<Mesh, Map<string, DistMemo[]>>();
-
-function bytesOf(a: ArrayBufferView): Uint8Array {
-  return new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
-}
+// 测试用：on = false 时种子变了也从头算
+export const incrementalDistance = { on: true };
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
@@ -1187,18 +1189,25 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-function memoDist(mesh: Mesh, name: string, inputs: ArrayBufferView[], compute: () => Float64Array): Float64Array {
-  const key = inputs.map(bytesOf);
+// seeds：种子格为 1 的掩码（每次新建的，存进缓存）
+function memoDist(mesh: Mesh, name: string, seeds: Uint8Array, km: number): Float64Array {
   let byName = distMemo.get(mesh);
   if (!byName) distMemo.set(mesh, (byName = new Map()));
   const list = byName.get(name) ?? [];
-  const hit = list.find((m) => m.key.length === key.length && m.key.every((b, k) => sameBytes(b, key[k])));
+  const hit = list.find((m) => Object.is(m.km, km) && sameBytes(m.seeds, seeds));
   if (hit) {
     byName.set(name, [hit, ...list.filter((m) => m !== hit)]);
     return hit.value;
   }
-  const value = compute();
-  byName.set(name, [{ key: key.map((b) => b.slice()), value }, ...list].slice(0, 2));
+  let raw: Float64Array | null = null;
+  if (incrementalDistance.on && list.length) raw = updateDistance(mesh, list[0].seeds, list[0].raw, seeds);
+  if (!raw) {
+    const from: number[] = [];
+    for (let i = 0; i < seeds.length; i++) if (seeds[i]) from.push(i);
+    raw = graphDistance(mesh, from);
+  }
+  const value = raw.map((v) => v * km);
+  byName.set(name, [{ seeds, km, raw, value }, ...list].slice(0, 2));
   return value;
 }
 
@@ -1277,21 +1286,13 @@ export function worldInputs(
       case 'moistEdit':
         return causes.moistOffset;
       case 'coastDist':
-        return memoDist(mesh, 'coast', [causes.land, Float64Array.of(km)], () => {
-          const sea: number[] = [];
-          for (let i = 0; i < n; i++) if (causes.land[i] === 0) sea.push(i);
-          return graphDistance(mesh, sea).map((v) => v * km);
-        });
+        return memoDist(mesh, 'coast', Uint8Array.from(causes.land, (v) => (v === 0 ? 1 : 0)), km);
       case 'isRiver':
         return isRiver();
       case 'riverDist': {
         // 键是“哪些格是河”本身：只改了气候、流量变了一点而河没变时，不用重算
         const r = isRiver();
-        return memoDist(mesh, 'river', [r, Float64Array.of(km)], () => {
-          const seeds: number[] = [];
-          for (let i = 0; i < n; i++) if (r[i]) seeds.push(i);
-          return graphDistance(mesh, seeds).map((v) => v * km);
-        });
+        return memoDist(mesh, 'river', r.slice(), km);
       }
       case 'x':
         return mesh.x;

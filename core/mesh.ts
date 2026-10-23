@@ -435,6 +435,87 @@ export function graphDistanceOwner(
   return { dist: d, owner };
 }
 
+// graphDistance(mesh, 种子)（没有代价函数、没有上限）在种子从 oldSeeds 换成 newSeeds 后的结果，从旧的结果 oldDist
+// 改起（第九轮 A2）：只重算受影响的那一片。与从头算逐值相同——边长都为正时，“每格 = 0（种子）或邻格 + 边长里最小的”
+// 这组方程（按同样的浮点加法）只有一组解，Dijkstra 算出的就是它；这里先把去掉的种子与沿最短路靠它们的格（旧值
+// 恰好等于某个靠它们的邻格 + 边长的格，宁多勿少）作废，再从新种子、作废区四周的旧值出发做只减不增的 Dijkstra，
+// 得到的也是这组解。有不为正的边时返回 null（照旧从头算）
+const positiveEdges = new WeakMap<Mesh, boolean>();
+export function updateDistance(mesh: Mesh, oldSeeds: Uint8Array, oldDist: Float64Array, newSeeds: Uint8Array): Float64Array | null {
+  const { off, adj } = mesh;
+  const md = mesh.dist;
+  let ok = positiveEdges.get(mesh);
+  if (ok === undefined) {
+    ok = true;
+    for (let e = 0; e < md.length && ok; e++) if (!(md[e] > 1e-9)) ok = false;
+    positiveEdges.set(mesh, ok);
+  }
+  if (!ok) return null;
+  const n = mesh.n;
+  const d = Float64Array.from(oldDist);
+  const bad = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  let sp = 0;
+  for (let i = 0; i < n; i++) {
+    if (oldSeeds[i] && !newSeeds[i]) {
+      bad[i] = 1;
+      stack[sp++] = i;
+    }
+  }
+  while (sp > 0) {
+    const i = stack[--sp];
+    const di = oldDist[i];
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (bad[j] || newSeeds[j]) continue;
+      if (di + md[e] === oldDist[j]) {
+        bad[j] = 1;
+        stack[sp++] = j;
+      }
+    }
+  }
+  const heap = new HeapLite(1024);
+  for (let i = 0; i < n; i++) {
+    if (newSeeds[i]) {
+      if (d[i] !== 0) {
+        d[i] = 0;
+        heap.push(i, 0);
+      }
+      continue;
+    }
+    if (!bad[i]) continue;
+    d[i] = Infinity;
+  }
+  for (let i = 0; i < n; i++) {
+    if (!bad[i] || newSeeds[i]) continue;
+    let best = Infinity;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (bad[j] && !newSeeds[j]) continue;
+      const nd = d[j] + md[e];
+      if (nd < best) best = nd;
+    }
+    if (best < Infinity) {
+      d[i] = best;
+      heap.push(i, best);
+    }
+  }
+  while (heap.size) {
+    const i = heap.pop();
+    const di = heap.lastKey;
+    if (di > d[i]) continue;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      const nd = di + md[e];
+      if (nd < d[j]) {
+        d[j] = nd;
+        heap.push(j, nd);
+      }
+    }
+  }
+  return d;
+}
+
 // 轻量堆（允许重复入堆，弹出时跳过过期项）。类型化数组，按需加倍；比较、移动的写法与原来 JS 数组的版本一模一样
 // （优先级相同的元素出堆的先后也相同）。pop 返回元素，它的优先级放在 lastKey（不分配元组）
 export class HeapLite {
