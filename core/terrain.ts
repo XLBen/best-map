@@ -951,12 +951,12 @@ function chainLayout(rand: () => number, count0: number, baseKm: number, minKm: 
 
 // 换个排列时陆地的总量大致不变（第十二轮修）：第 1 种起按第 0 种（同一条线、同样的个数）的岛的面积之和（大小的平方和）
 // 等比例缩放各个岛，所以几种排列的陆地一样多（最小的岛不再缩）；第 0 种不变
-function chainSlots(seedOf: (variant: number) => number, count: number, baseKm: number, minKm: number, variant: number): ChainSlot[] {
+function chainSlots(seedOf: (variant: number) => number, count: number, baseKm: number, minKm: number, variant: number, extra: number): ChainSlot[] {
   const slots = chainLayout(mulberry32(seedOf(variant)), count, baseKm, minKm, variant);
   if (variant <= 0 || !slots.length) return slots;
   const ref = chainLayout(mulberry32(seedOf(0)), count, baseKm, minKm, 0);
   const area = (list: ChainSlot[]) => list.reduce((a, s) => a + s.size * s.size, 0);
-  const scale = Math.sqrt(area(ref) / area(slots));
+  const scale = Math.sqrt(area(ref) / area(slots)) * extra;
   return slots.map((s) => ({ ...s, size: Math.max(minKm, s.size * scale) }));
 }
 
@@ -1013,7 +1013,25 @@ function nearestLandKm(world: World, x: number, y: number, maxKm: number): numbe
 
 // 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落；排列按 variant 换（见 chainLayout）
 export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
-  if (world.mesh.kind === 'sphere') return chainIslandsSphere(world, spec);
+  const minKm = chainMinKm(world, spec);
+  const raw = (s: ChainSpec, scale: number) => avoidLand(world, (world.mesh.kind === 'sphere' ? chainIslandsSphere : chainIslandsFlat)(world, s, scale), minKm);
+  const islands = raw(spec, 1);
+  if (spec.variant <= 0) return islands;
+  // 按面积之和缩放之后，小岛成陆的格数不与面积成比例、有的岛不放（离原有的陆地太近）：再按实际新长出的陆格数与第 0 种比一次，
+  // 差得多（±15% 以外）时整条链再缩放一次
+  const gained = (list: IslandSpec[]) => {
+    if (!list.length) return 0;
+    let c = 0;
+    for (const i of combineStamps(world, list).footprint) if (!world.causes.land[i]) c++;
+    return c;
+  };
+  const g0 = gained(raw({ ...spec, variant: 0 }, 1));
+  const gv = gained(islands);
+  if (!g0 || !gv || Math.abs(gv / g0 - 1) < 0.15) return islands;
+  return raw(spec, Math.min(2, Math.max(0.5, Math.sqrt(g0 / gv))));
+}
+
+function chainIslandsFlat(world: World, spec: ChainSpec, scale: number): IslandSpec[] {
   const pts = spec.points;
   let total = 0;
   const seg: number[] = [];
@@ -1028,7 +1046,7 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
   const count = Math.max(1, Math.round(total / spacing));
   const seedOf = (v: number) => mixSeed(coastSeed(world), 555, Math.round(pts[0][0] * 1e4), Math.round(pts[0][1] * 1e4), v);
   const minKm = chainMinKm(world, spec);
-  const slots = chainSlots(seedOf, count, baseKm, minKm, spec.variant);
+  const slots = chainSlots(seedOf, count, baseKm, minKm, spec.variant, scale);
   const out: IslandSpec[] = [];
   for (let k = 0; k < slots.length; k++) {
     let s = slots[k].t * total;
@@ -1047,11 +1065,11 @@ export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
     const variant = 1_000_000 + spec.variant * 1000 + k;
     out.push({ x: x0 + (x1 - x0) * t + nx * off, y: y0 + (y1 - y0) * t + ny * off, kind: spec.kind, size: slots[k].size, variant });
   }
-  return avoidLand(world, out, minKm);
+  return out;
 }
 
 // 整个星球上的岛链：折线各段是大圆弧，沿弧插值，向两侧的错落沿弧的法向
-function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
+function chainIslandsSphere(world: World, spec: ChainSpec, scale: number): IslandSpec[] {
   const pts = spec.points.map(([x, y]) => toUnit(x, y));
   let total = 0;
   const seg: number[] = [];
@@ -1067,7 +1085,7 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
   const x0 = wrapX(spec.points[0][0]);
   const seedOf = (v: number) => mixSeed(coastSeed(world), 555, Math.round(x0 * 1e4), Math.round(spec.points[0][1] * 1e4), v);
   const minKm = chainMinKm(world, spec);
-  const slots = chainSlots(seedOf, count, baseKm, minKm, spec.variant);
+  const slots = chainSlots(seedOf, count, baseKm, minKm, spec.variant, scale);
   const out: IslandSpec[] = [];
   for (let k = 0; k < slots.length; k++) {
     let s = slots[k].t * total;
@@ -1094,7 +1112,7 @@ function chainIslandsSphere(world: World, spec: ChainSpec): IslandSpec[] {
     const [x, y] = fromUnit([q[0] / ql, q[1] / ql, q[2] / ql]);
     out.push({ x, y, kind: spec.kind, size: slots[k].size, variant: 1_000_000 + spec.variant * 1000 + k });
   }
-  return avoidLand(world, out, minKm);
+  return out;
 }
 
 

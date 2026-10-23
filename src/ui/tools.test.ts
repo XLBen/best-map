@@ -4,7 +4,7 @@ import type { Command } from '../../core/commands';
 import { lakeArea } from '../../core/elevation';
 import { brushCells } from '../../core/select';
 import { type IslandSpec, chainIslands, islandStamp, landStroke, previewTerrain, reliefStroke } from '../../core/terrain';
-import { continents } from '../../core/testing/fixtures';
+import { continents, engineFor } from '../../core/testing/fixtures';
 import { scissors, seamLayers } from '../../core/seams';
 import { groupPreview, provinceFlat, provinceGroups } from '../render/colors';
 import { busy, describeChange, exec, noteCost, options, previewProvinces, previewTerrainOnce, selectedProvince, setOptions, sliderActive, toast, world } from '../state';
@@ -111,7 +111,8 @@ describe('堆山 / 压低的高度估计与实际同一量级', () => {
 
 describe('岛链的“疏密”写出间距', () => {
   it('写的间距与真放出来的岛链相同（取整前差不到一成）', () => {
-    const w = continents().world;
+    // 一片海（岛链不放到原有的陆地上，穿过大陆的线会少几个岛）
+    const w = engineFor({ cells: 12000, seed: 1 }).world;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
     setOptions({ chainKm: 3 * cellKm, chainKind: 'volcanic' });
     const def = TOOL_DEFS.chain.amount!;
