@@ -260,6 +260,8 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
   const onLand = (pt: readonly [number, number], hint: number) => displayCoastAt(world, coastField, pt[0], pt[1], hint, true).v > 0;
   // 每格由哪条线画（先画的算）、在它的第几个点到第几个点之间
   const owner: (RiverLine | undefined)[] = new Array(n);
+  // 每格流过它的自然的河（在这一格汇入别的河、入海的不算）
+  const through = new Map<number, RiverLine>();
   const from = new Int32Array(n);
   const to = new Int32Array(n);
   const take = (line: RiverLine, k: number, c: number) => {
@@ -424,7 +426,12 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     // 画的河汇入别的河：汇入的那一条
     intos,
     own(line: RiverLine) {
-      line.cells!.forEach((c, k) => take(line, k, c));
+      const cs = line.cells!;
+      cs.forEach((c, k) => {
+        take(line, k, c);
+        // 流过这一格（不是在这一格汇入别的河、入海）的那条：分出去的一股顺着它的方向分出来
+        if (k < cs.length - 1 && cs[cs.length - 1] !== c && !through.has(c)) through.set(c, line);
+      });
     },
     // 河流类型：每个点按它的格；汇入别的河的那一格（那条河的）按这条河自己的
     tag(rt: Uint8Array) {
@@ -439,11 +446,33 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
     finish() {
       // 分出去的一股从干流画出来的线上起（干流在那里不加细小的弯曲）
       for (const { line, cell } of splits) {
-        const o = owner[cell];
+        // 干流：流过分出的那一格的那条（不是在那里汇入的支流），没有时按这一格是哪条线画的
+        const t = through.get(cell);
+        const o = t && t !== line ? t : owner[cell];
         if (!o || o === line) continue;
-        const hit = project(cell, line.points[0][0], line.points[0][1]);
+        let hit: { p: [number, number]; k: number; t: number; d: number } | null = null;
+        if (o === owner[cell]) hit = project(cell, line.points[0][0], line.points[0][1]);
+        else {
+          const i0 = o.cells!.indexOf(cell);
+          const h = snapOnto(o.points, line.points[0][0], line.points[0][1], Math.max(0, i0 - 1), Math.min(o.points.length - 1, o.cells!.lastIndexOf(cell) + 1), sphere);
+          hit = h && h.d <= 3 * mesh.spacing ? h : null;
+        }
         if (!hit) continue;
         line.points[0] = hit.p;
+        const a = o.points[hit.k];
+        const b = o.points[Math.min(o.points.length - 1, hit.k + 1)];
+        const cells0 = line.cells!;
+        const moved = branchStart(line, [b[0] - a[0], b[1] - a[1]], mesh.spacing);
+        if (moved) {
+          // 这一股上每格的点的范围往后挪（开头那段多了几个点）
+          const seen = new Set<number>();
+          for (const c of cells0) {
+            if (owner[c] !== line || seen.has(c)) continue;
+            seen.add(c);
+            if (from[c] >= moved.k) from[c] += moved.added;
+            if (to[c] >= moved.k) to[c] += moved.added;
+          }
+        }
         markJoin(o, hit.k + hit.t);
       }
       for (const { line, cell } of joins) {
@@ -456,6 +485,47 @@ function courseIndex(world: World, isRiver: (i: number) => boolean, visited: Uin
       }
     },
   };
+}
+
+// 分出去的一股的开头顺着干流（第十三轮）：第一点在干流的线上，从那里顺着干流往下游的方向 td，用一段三次曲线
+// 渐渐离开干流，接到这一股往下约 1.2 格（短的一股不超过它的一半）的第 k 个点上（到那里顺着这一股原来的方向）。
+// 第 1 到 k − 1 个点换成曲线上每隔约 1/16 格的点（流量、格、粗细按在这一段里的位置取原来那几个点的）。
+// 返回 k 与多出来的点数（按下标记的东西要往后挪）；原来的方向与干流往下游差得超过 100°（往上游分出去）、
+// 这一段里有别的河汇进来时不改，返回 null
+export function branchStart(line: RiverLine, td: readonly [number, number], spacing: number): { k: number; added: number } | null {
+  const P = line.points;
+  const tl = Math.hypot(td[0], td[1]);
+  if (P.length < 3 || !(tl > 0)) return null;
+  const t0: [number, number] = [td[0] / tl, td[1] / tl];
+  const L = Math.min(1.2 * spacing, 0.5 * lineLength(P));
+  let k = 0;
+  for (let s = 0; k + 1 < P.length && s < L; k++) s += Math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]);
+  if (k < 1 || k >= P.length - 1 || (line.joins ?? []).some((pos) => pos < k)) return null;
+  const A = P[0];
+  const B = P[k];
+  const D = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  if (!(D > 0) || (t0[0] * (B[0] - A[0]) + t0[1] * (B[1] - A[1])) / D < Math.cos((100 * Math.PI) / 180)) return null;
+  // 曲线上的点（不含 A、B）：三次 Bezier，开头的控制点顺着干流伸出半段长（多贴着干流走一会儿再离开）
+  const tb = dirAt(P, k);
+  const c1: [number, number] = [A[0] + t0[0] * 0.6 * D, A[1] + t0[1] * 0.6 * D];
+  const c2: [number, number] = [B[0] - tb[0] * 0.25 * D, B[1] - tb[1] * 0.25 * D];
+  const n = Math.max(2, Math.ceil(D / (spacing / 16)));
+  const pts: [number, number][] = [];
+  for (let j = 1; j < n; j++) {
+    const u = j / n;
+    const v = 1 - u;
+    pts.push([v * v * v * A[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u * u * u * B[0], v * v * v * A[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u * u * u * B[1]]);
+  }
+  const count = pts.length + 1;
+  const pick = <T>(arr: T[]) => [arr[0], ...pts.map((_, j) => arr[Math.min(k, Math.max(1, Math.round(((j + 1) / count) * k)))]), ...arr.slice(k)];
+  line.points = [[A[0], A[1]], ...pts, ...P.slice(k)];
+  line.flow = pick(line.flow);
+  if (line.cells) line.cells = pick(line.cells);
+  if (line.mul) line.mul = pick(line.mul);
+  if (line.type) line.type = pick(line.type);
+  const added = pts.length - (k - 1);
+  if (line.joins) line.joins = line.joins.map((pos) => pos + added);
+  return { k, added };
 }
 
 // 汇入别的河的线（每个点带着格）在汇合的那一格里截住：那格里（从线尾往回）离那条河的线最近的点，最后一点画到那条线上。
