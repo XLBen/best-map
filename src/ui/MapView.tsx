@@ -136,6 +136,8 @@ function mergeGhosts(from: (GhostEdit | null | undefined)[]): GhostEdit | null {
   return out;
 }
 
+type OverlayArgs = Parameters<typeof drawOverlay> extends [unknown, ...infer R] ? R : never;
+
 const NO_PREVIEW: Preview = { layers: [], shapes: [], hint: null };
 
 export function MapView() {
@@ -172,6 +174,8 @@ export function MapView() {
       return previewLabels.labels;
     };
     let labelBoxes: LabelBox[] = [];
+    // 上一帧叠加层的参数（开发用的测速重画它）
+    let lastOverlay: OverlayArgs | null = null;
     let fittedMesh: unknown = null;
     let fittedEpoch = -1;
     let frame = 0;
@@ -447,7 +451,7 @@ export function MapView() {
       const lift = r && r.left < 300 ? Math.ceil(window.innerHeight - r.top) + 4 : 0;
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
-      labelBoxes = drawOverlay(ctx, shown, shown === w ? paths : pathsOf(shown), renderer.camera, {
+      const ovArgs: OverlayArgs = [shown, shown === w ? paths : pathsOf(shown), renderer.camera, {
         rivers: overlays.value.rivers,
         wind: overlays.value.wind,
         markers: c === 'water' && !clean,
@@ -465,7 +469,11 @@ export function MapView() {
           ? { north: shown.settings.latNorth + shown.small.planet.latShift, south: shown.settings.latSouth + shown.small.planet.latShift }
           : null,
         currents: overlays.value.currents,
-      });
+        motion: moving,
+        exact: clean,
+      }];
+      lastOverlay = ovArgs;
+      labelBoxes = drawOverlay(ctx, ...ovArgs);
       if (clean) return;
       // 鼠标旁的一句话（拖滑块时一般由滑块上的数说明，这里不显示；画笔在鼠标最后停的地方预览涂一下时，写在那里）
       const at = sliderActive.value ? (preview.sliderHint ? lastPointer : null) : pointer;
@@ -926,6 +934,7 @@ export function MapView() {
         draw: () => draw(),
         spacing: () => world.value?.mesh.spacing ?? 0.01,
         snapshot: () => snapshotCanvas()!,
+        overlay: (c2: CanvasRenderingContext2D) => (lastOverlay ? drawOverlay(c2, ...lastOverlay) : []),
       };
       Object.assign(window, {
         __map2Bench: (opts?: { frames?: number; only?: string[] }) => import('../render/bench').then((b) => b.runBench(hooks, opts)),
@@ -933,6 +942,7 @@ export function MapView() {
         __map2CompareRefs: (tag?: string) => import('../render/bench').then((b) => b.compareRefs(hooks, tag)),
         __map2PassTimes: (moving?: boolean) => import('../render/bench').then((b) => b.passTimes(hooks, moving)),
         __map2BrushBench: (frames?: number) => import('../render/bench').then((b) => b.brushBench(hooks, frames)),
+        __map2OverlayBench: (opts?: { frames?: number; only?: string[] }) => import('../render/bench').then((b) => b.overlayBench(hooks, opts)),
       });
     }
     return () => {

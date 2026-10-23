@@ -12,10 +12,10 @@ import { drawCurrents, drawWind } from './wind';
 
 export interface OverlayPaths {
   // 河流按宽度分档，每档一条 Path2D
-  rivers: { path: Path2D; width: number }[];
+  rivers: { path: Path2D; width: number; pts?: Float32Array }[];
   // 带类型的河（第三批）：按（类型，宽度 × 类型的粗细）分档，type 是 derived.riverType 的值（第 type − 1 种）。
   // 只在世界里有河流类型时才有；带类型的河段不在 rivers 里
-  typed?: { path: Path2D; width: number; type: number }[];
+  typed?: { path: Path2D; width: number; type: number; pts?: Float32Array }[];
   guides: Path2D;
   lockedGuides: Path2D;
   // 在终点消失的河道的终点（水模式下画一个小圈）
@@ -71,28 +71,69 @@ export function strokeRiverStyle(ctx: CanvasRenderingContext2D, path: Path2D, lw
   }
 }
 
+// Path2D 加上记下来的点（移动中按画面裁掉看不见的部分，见 culledPath）：每一笔一串点，笔与笔之间隔一对 NaN
+class RecPath {
+  path = new Path2D();
+  pts: number[] = [];
+  moveTo(x: number, y: number) {
+    this.path.moveTo(x, y);
+    if (this.pts.length) this.pts.push(Number.NaN, Number.NaN);
+    this.pts.push(x, y);
+  }
+  lineTo(x: number, y: number) {
+    this.path.lineTo(x, y);
+    this.pts.push(x, y);
+  }
+}
+
+// 只留与这块地方（地图单位）相交的那几笔
+function culledPath(pts: Float32Array, x0: number, y0: number, x1: number, y1: number): Path2D {
+  const p = new Path2D();
+  const n = pts.length;
+  for (let i = 0; i < n; ) {
+    let j = i;
+    let ax = Infinity;
+    let bx = -Infinity;
+    let ay = Infinity;
+    let by = -Infinity;
+    while (j < n && !Number.isNaN(pts[j])) {
+      ax = Math.min(ax, pts[j]);
+      bx = Math.max(bx, pts[j]);
+      ay = Math.min(ay, pts[j + 1]);
+      by = Math.max(by, pts[j + 1]);
+      j += 2;
+    }
+    if (bx >= x0 && ax <= x1 && by >= y0 && ay <= y1) {
+      p.moveTo(pts[i], pts[i + 1]);
+      for (let k = i + 2; k < j; k += 2) p.lineTo(pts[k], pts[k + 1]);
+    }
+    i = j + 2;
+  }
+  return p;
+}
+
 // 把河的折线按宽度档加进 Path2D（每段一条子路径，圆头）。scale：再乘的粗细（拖“粗细”时）。
 // 整个星球：每段按起点挪到 [0, 2) 里那一份（展开的河可以伸出很远，平铺的副本只看 [-0.6, 2.6]）
-function addRiver(buckets: Map<number, Path2D>, line: RiverLine, thr: number, sphere: boolean, scale = 1) {
+function addRiver(buckets: Map<number, RecPath>, line: RiverLine, thr: number, sphere: boolean, scale = 1) {
   const { points, flow, mul } = line;
   for (let k = 0; k + 1 < points.length; k++) {
     const key = riverBucket((flow[k] + flow[k + 1]) / 2, thr, (mul ? (mul[k] + mul[k + 1]) / 2 : 1) * scale);
     let p = buckets.get(key);
-    if (!p) buckets.set(key, (p = new Path2D()));
+    if (!p) buckets.set(key, (p = new RecPath()));
     const shift = sphere ? 2 * Math.floor(points[k][0] / 2) : 0;
     p.moveTo(points[k][0] - shift, points[k][1]);
     p.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
   }
 }
 
-const sortedBuckets = (buckets: Map<number, Path2D>) => [...buckets].sort((a, b) => a[0] - b[0]).map(([width, path]) => ({ path, width }));
+const sortedBuckets = (buckets: Map<number, RecPath>) => [...buckets].sort((a, b) => a[0] - b[0]).map(([width, r]) => ({ path: r.path, width, pts: new Float32Array(r.pts) }));
 
 // 带类型的河段（第三批）：按（类型，宽度档）分，同一档里连着的几段画成一条折线（虚线不在每段重新开始）。
 // 普通的河段照旧放进 plain（与没有河流类型时一样）
 interface TypedBuckets {
-  map: Map<string, { path: Path2D; width: number; type: number }>;
+  map: Map<string, { rec: RecPath; width: number; type: number }>;
 }
-function addTypedRiver(plain: Map<number, Path2D>, typed: TypedBuckets, line: RiverLine, thr: number, sphere: boolean, types: readonly RiverType[], scale = 1) {
+function addTypedRiver(plain: Map<number, RecPath>, typed: TypedBuckets, line: RiverLine, thr: number, sphere: boolean, types: readonly RiverType[], scale = 1) {
   const { points, flow, mul, type } = line;
   let lastKey = '';
   let lastShift = Number.NaN;
@@ -104,7 +145,7 @@ function addTypedRiver(plain: Map<number, Path2D>, typed: TypedBuckets, line: Ri
     if (!spec) {
       const key = riverBucket((flow[k] + flow[k + 1]) / 2, thr, m);
       let p = plain.get(key);
-      if (!p) plain.set(key, (p = new Path2D()));
+      if (!p) plain.set(key, (p = new RecPath()));
       p.moveTo(points[k][0] - shift, points[k][1]);
       p.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
       lastKey = '';
@@ -113,20 +154,21 @@ function addTypedRiver(plain: Map<number, Path2D>, typed: TypedBuckets, line: Ri
     const width = riverBucket((flow[k] + flow[k + 1]) / 2, thr, m * (spec.width ?? 1));
     const key = `${t}|${width}`;
     let b = typed.map.get(key);
-    if (!b) typed.map.set(key, (b = { path: new Path2D(), width, type: t }));
+    if (!b) typed.map.set(key, (b = { rec: new RecPath(), width, type: t }));
     // 与上一段同一档、同一份平铺：接着画；否则另起一笔
-    if (key !== lastKey || shift !== lastShift) b.path.moveTo(points[k][0] - shift, points[k][1]);
-    b.path.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
+    if (key !== lastKey || shift !== lastShift) b.rec.moveTo(points[k][0] - shift, points[k][1]);
+    b.rec.lineTo(points[k + 1][0] - shift, points[k + 1][1]);
     lastKey = key;
     lastShift = shift;
   }
 }
 
-const sortedTyped = (t: TypedBuckets) => [...t.map.values()].sort((a, b) => a.width - b.width || a.type - b.type);
+const sortedTyped = (t: TypedBuckets) =>
+  [...t.map.values()].sort((a, b) => a.width - b.width || a.type - b.type).map((b) => ({ path: b.rec.path, width: b.width, type: b.type, pts: new Float32Array(b.rec.pts) }));
 
 // 一串河线画成按宽度分档的 Path2D（预览的河用；地图上的河见 buildPaths）
 export function riverPaths(world: World, lines: RiverLine[]): { path: Path2D; width: number }[] {
-  const buckets = new Map<number, Path2D>();
+  const buckets = new Map<number, RecPath>();
   for (const line of lines) addRiver(buckets, line, world.small.planet.riverThreshold, world.mesh.kind === 'sphere');
   return sortedBuckets(buckets);
 }
@@ -209,7 +251,7 @@ export function buildPaths(world: World, override: RiverStyleOverride | null = n
   const { mesh, small } = world;
   const thr = small.planet.riverThreshold;
   const sphere = mesh.kind === 'sphere';
-  const buckets = new Map<number, Path2D>();
+  const buckets = new Map<number, RecPath>();
   const own = override ? small.guides.find((g) => g.id === override.id) : undefined;
   // 带类型的河（第三批）：只在世界里有河流类型时分开画
   const types = small.riverTypes?.length && world.derived.riverType ? small.riverTypes : null;
@@ -291,6 +333,10 @@ export interface OverlayState {
   latitude: { north: number; south: number } | null;
   // 洋流流线（整个星球）
   currents?: boolean;
+  // 镜头正在动（渲染器按低分辨率画的那几帧）：底层的河挪用缓存的那张、地名沿用排好的版面，停稳后按原样画
+  motion?: boolean;
+  // 导出图片：底层的河直接画（不贴缓存），与原来逐像素相同
+  exact?: boolean;
 }
 
 // 整个星球的平铺图：屏幕上看得见的副本（x 平移 2k）。河、画的河展开后可能伸出 [0, 2) 一点，所以多算一点
@@ -318,6 +364,165 @@ export interface LabelBox {
   y1: number;
 }
 
+// 叠加层最底下的那一层（河、画的河道标记、湖标记）：只随画出来的世界、河的路径、镜头、选项变。
+// 停稳时画进一张与叠加层一样大的离屏画布缓存着（画笔拖动、鼠标移动时不重描几万段河），先清空再画、
+// 整张原样贴回，与直接画在叠加层上逐像素相同；移动中按 MOTION_LAYER_SCALE 的分辨率、四周多画 MOTION_LAYER_MARGIN，
+// 镜头还在边距之内、缩放没变太多时把这一张挪一挪、缩一缩贴上，停下以后（停稳的那一帧）再按原样画
+const MOTION_LAYER_SCALE = 0.5;
+const MOTION_LAYER_MARGIN = 0.25;
+const MOTION_LAYER_ZOOM = 1.3;
+interface BackLayer {
+  canvas: HTMLCanvasElement | OffscreenCanvas;
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  key: unknown[];
+  cam: Camera;
+  soft: boolean;
+  // 缓存里已经画好（停稳的那一张第一次没变时才画）
+  ready: boolean;
+}
+let restLayer: BackLayer | null = null;
+let motionLayer: BackLayer | null = null;
+
+// 开发用（src/render/bench.ts 的 overlayBench）：底层改用软件画的画布，测速时能同步量到画它花的时间
+export const overlayDebug = { softLayers: false };
+
+function makeLayer(w: number, h: number): BackLayer {
+  const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = canvas.getContext('2d', overlayDebug.softLayers ? { willReadFrequently: true } : undefined) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  return { canvas, ctx, key: [], cam: { x: 0, y: 0, zoom: 1 }, soft: overlayDebug.softLayers, ready: false };
+}
+
+// 底层的河与标记，画进 ctx：画布是 cw × ch 个 CSS 像素、每个 CSS 像素 dev 个像素，镜头在画布中间
+// cull：只描画布上看得见的那几笔（移动中的底层用；停稳的照原样整条描，逐像素与原来相同）
+function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, cw: number, ch: number, dev: number, cull = false) {
+  const z = cam.zoom * dev;
+  const sphere = world.mesh.kind === 'sphere';
+  const ks = sphere ? copiesFor(cam, cw) : [0];
+  const setT = (k: number) => ctx.setTransform(z, 0, 0, z, (cw / 2 - (cam.x - 2 * k) * cam.zoom) * dev, (ch / 2 - cam.y * cam.zoom) * dev);
+  const px = 1 / z;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const scale = riverScale(world, cam.zoom);
+  const color = riverStroke(st.style);
+  // 看得见的范围（地图单位，第 0 份；四周多留 48 个 CSS 像素给线宽、发光）。不到半个星球宽时才裁
+  const m = 48 / cam.zoom;
+  const vx0 = cam.x - cw / 2 / cam.zoom - m;
+  const vx1 = cam.x + cw / 2 / cam.zoom + m;
+  const vy0 = cam.y - ch / 2 / cam.zoom - m;
+  const vy1 = cam.y + ch / 2 / cam.zoom + m;
+  const clip = cull && vx1 - vx0 < (sphere ? 1 : world.mesh.width / 2);
+  const pathOf = (r: { path: Path2D; pts?: Float32Array }, k: number) => (clip && r.pts ? culledPath(r.pts, vx0 - 2 * k, vy0, vx1 - 2 * k, vy1) : r.path);
+  for (const k of ks) {
+    setT(k);
+    if (st.rivers) {
+      ctx.strokeStyle = color;
+      for (const r of paths.rivers) {
+        ctx.lineWidth = r.width * scale * px * dev;
+        ctx.stroke(pathOf(r, k));
+      }
+      // 带类型的河：各按自己的颜色、画法
+      if (paths.typed) {
+        const types = world.small.riverTypes ?? [];
+        for (const r of paths.typed) {
+          const t = types[r.type - 1];
+          if (t) strokeRiverStyle(ctx as CanvasRenderingContext2D, pathOf(r, k), r.width * scale * px * dev, riverTypeColor(t, st.style), t.style ?? 'solid', dev);
+        }
+      }
+    }
+    if (st.markers) {
+      // 画过的河：细虚线标出走向是固定的
+      ctx.setLineDash([5 * px * dev, 4 * px * dev]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 1.2 * px * dev;
+      ctx.stroke(paths.guides);
+      ctx.stroke(paths.lockedGuides);
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.strokeStyle = 'rgba(30,80,140,0.95)';
+      ctx.lineWidth = 1.5 * px * dev;
+      for (const l of world.small.lakes) {
+        ctx.beginPath();
+        ctx.arc(world.mesh.x[l.cell], world.mesh.y[l.cell], 4 * px * dev, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      // 在终点消失的河：终点一个空心小圈
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 1.5 * px * dev;
+      for (const [x, y] of paths.sinks) {
+        ctx.beginPath();
+        ctx.arc(x, y, 3 * px * dev, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// 底层的键（镜头另比）：画出来的路径、湖标记、选项、河流类型的画法
+function backKey(world: World, paths: OverlayPaths, st: OverlayState): unknown[] {
+  return [paths, world.small.lakes, world.mesh, st.rivers, st.markers, st.style, world.small.riverTypes, world.small.planet.riverThreshold];
+}
+
+// 把底层贴到叠加层上（ctx 已清空、变换是单位矩阵）
+function pasteBack(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState) {
+  const canvas = ctx.canvas;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cw = canvas.clientWidth;
+  const ch = canvas.clientHeight;
+  const key = backKey(world, paths, st);
+  if (!st.rivers && !st.markers) return;
+  if (!st.motion) {
+    if (!restLayer || restLayer.canvas.width !== canvas.width || restLayer.canvas.height !== canvas.height || restLayer.soft !== overlayDebug.softLayers) restLayer = makeLayer(canvas.width, canvas.height);
+    const L = restLayer;
+    const c = L.cam;
+    if (st.exact || !samePathsKey(key, L.key) || c.x !== cam.x || c.y !== cam.y || c.zoom !== cam.zoom) {
+      // 变了（停下后的第一帧、换了世界……）或导出图片：直接画在叠加层上，与原来逐像素相同。
+      // （先画进缓存再贴回会差一点点：叠加层上河与后画的字在同一遍里抗锯齿，分两张画布画时字边上差 1–13 级）
+      drawBack(ctx, world, paths, cam, st, cw, ch, dpr);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      L.key = key;
+      L.cam = { ...cam };
+      L.ready = false;
+      return;
+    }
+    // 没变（画笔拖动、鼠标移动）：第二帧起画进缓存，之后只贴
+    if (!L.ready) {
+      L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      L.ctx.clearRect(0, 0, L.canvas.width, L.canvas.height);
+      drawBack(L.ctx, world, paths, cam, st, cw, ch, dpr, true);
+      L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      L.ready = true;
+    }
+    ctx.drawImage(L.canvas, 0, 0);
+    return;
+  }
+  // 移动中
+  const lw = cw * (1 + 2 * MOTION_LAYER_MARGIN);
+  const lh = ch * (1 + 2 * MOTION_LAYER_MARGIN);
+  const dev = dpr * MOTION_LAYER_SCALE;
+  const W = Math.max(1, Math.round(lw * dev));
+  const H = Math.max(1, Math.round(lh * dev));
+  if (!motionLayer || motionLayer.canvas.width !== W || motionLayer.canvas.height !== H || motionLayer.soft !== overlayDebug.softLayers) motionLayer = makeLayer(W, H);
+  const L = motionLayer;
+  const fits = (c: Camera) =>
+    cam.zoom / c.zoom <= MOTION_LAYER_ZOOM && Math.abs(cam.x - c.x) + cw / 2 / cam.zoom <= lw / 2 / c.zoom && Math.abs(cam.y - c.y) + ch / 2 / cam.zoom <= lh / 2 / c.zoom;
+  if (!samePathsKey(key, L.key) || !fits(L.cam)) {
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.ctx.clearRect(0, 0, W, H);
+    drawBack(L.ctx, world, paths, cam, st, lw, lh, dev, true);
+    L.key = key;
+    L.cam = { ...cam };
+  }
+  // 底层的一个像素 → 叠加层的像素
+  const c0 = L.cam;
+  const a = (dpr * cam.zoom) / (dev * c0.zoom);
+  const bx = dpr * ((c0.x - cam.x) * cam.zoom - (lw / 2) * (cam.zoom / c0.zoom) + cw / 2);
+  const by = dpr * ((c0.y - cam.y) * cam.zoom - (lh / 2) * (cam.zoom / c0.zoom) + ch / 2);
+  ctx.setTransform(a, 0, 0, a, bx, by);
+  ctx.drawImage(L.canvas, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
 export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState): LabelBox[] {
   const canvas = ctx.canvas;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -335,58 +540,15 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
   const ks = sphere ? copiesFor(cam, cw) : [0];
   // 地图单位 → 设备像素（第 k 份副本向右平移 2k）
   const setT = (k: number) => ctx.setTransform(z, 0, 0, z, (cw / 2 - (cam.x - 2 * k) * cam.zoom) * dpr, (ch / 2 - cam.y * cam.zoom) * dpr);
-  setT(0);
   const px = 1 / z;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
   const rz = refZoom(world, cam.zoom);
 
   const scale = riverScale(world, cam.zoom);
   const river = { scale, color: riverStroke(st.style) };
-  for (const k of ks) {
-    setT(k);
-    if (st.rivers) {
-      ctx.strokeStyle = river.color;
-      for (const r of paths.rivers) {
-        ctx.lineWidth = r.width * scale * px * dpr;
-        ctx.stroke(r.path);
-      }
-      // 带类型的河：各按自己的颜色、画法
-      if (paths.typed) {
-        const types = world.small.riverTypes ?? [];
-        for (const r of paths.typed) {
-          const t = types[r.type - 1];
-          if (t) strokeRiverStyle(ctx, r.path, r.width * scale * px * dpr, riverTypeColor(t, st.style), t.style ?? 'solid', dpr);
-        }
-      }
-    }
-    if (st.markers) {
-      // 画过的河：细虚线标出走向是固定的
-      ctx.setLineDash([5 * px * dpr, 4 * px * dpr]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.lineWidth = 1.2 * px * dpr;
-      ctx.stroke(paths.guides);
-      ctx.stroke(paths.lockedGuides);
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.strokeStyle = 'rgba(30,80,140,0.95)';
-      ctx.lineWidth = 1.5 * px * dpr;
-      for (const l of world.small.lakes) {
-        ctx.beginPath();
-        ctx.arc(world.mesh.x[l.cell], world.mesh.y[l.cell], 4 * px * dpr, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-      // 在终点消失的河：终点一个空心小圈
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 1.5 * px * dpr;
-      for (const [x, y] of paths.sinks) {
-        ctx.beginPath();
-        ctx.arc(x, y, 3 * px * dpr, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-  }
+  // 河、河道标记、湖标记（缓存着的底层）
+  pasteBack(ctx, world, paths, cam, st);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   setT(0);
 
   if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr);
@@ -711,7 +873,8 @@ interface PlacedLabel {
   y: number;
   angle: number;
 }
-let layout: { key: string; features: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[] } | null = null;
+// key：整个键；base：键里除了镜头的部分（移动中沿用排好的版面时比它）；cam：排的时候的镜头
+let layout: { key: string; base: string; cam: Camera; features: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[] } | null = null;
 
 // 每个字的宽度按字体缓存：平移、缩放的每一帧不必再量（字体加载完成后清空重量）
 const glyphs = new Map<string, number>();
@@ -731,7 +894,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const canvas = ctx.canvas;
   const cw = canvas.clientWidth;
   const chh = canvas.clientHeight;
-  const key = `${cam.x}|${cam.y}|${cam.zoom}|${cw}|${chh}|${st.kmPerUnit}|${ks.join(',')}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
+  const base = `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
+  const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}`;
   if (layout && layout.key === key && layout.features === st.features) return layout;
   const toScreen = (x: number, y: number): [number, number] => [(x - cam.x) * cam.zoom + cw / 2, (y - cam.y) * cam.zoom + chh / 2];
   const placed: PlacedLabel[] = [];
@@ -792,14 +956,45 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom ? '#7a1f5c' : style.color, x: sx, y: sy, angle });
     }
   }
-  layout = { key, features: st.features, placed, boxes };
+  layout = { key, base, cam: { ...cam }, features: st.features, placed, boxes };
   return layout;
 }
 
+// 移动中：镜头离排版面时挪了不到这么多（CSS 像素）、缩放变了不到这么多倍时，沿用排好的版面，整体挪一挪、缩一缩
+const MOTION_LABEL_SHIFT = 160;
+const MOTION_LABEL_ZOOM = 1.15;
+
 function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): LabelBox[] {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const { placed, boxes } = placeLabels(ctx, cam, st, ks, rz);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cw = ctx.canvas.clientWidth;
+  const chh = ctx.canvas.clientHeight;
+  // 版面上的位置（CSS 像素）→ 现在的位置：x · r + ox
+  let r = 1;
+  let ox = 0;
+  let oy = 0;
+  let placed: PlacedLabel[];
+  let boxes: LabelBox[];
+  const L = layout;
+  const base = `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}`;
+  const zr = L ? cam.zoom / L.cam.zoom : 0;
+  if (
+    st.motion &&
+    L &&
+    L.base === base &&
+    L.features === st.features &&
+    zr < MOTION_LABEL_ZOOM &&
+    zr > 1 / MOTION_LABEL_ZOOM &&
+    Math.abs(L.cam.x - cam.x) * cam.zoom < MOTION_LABEL_SHIFT &&
+    Math.abs(L.cam.y - cam.y) * cam.zoom < MOTION_LABEL_SHIFT
+  ) {
+    r = zr;
+    ox = cw / 2 - (cw / 2) * r + (L.cam.x - cam.x) * cam.zoom;
+    oy = chh / 2 - (chh / 2) * r + (L.cam.y - cam.y) * cam.zoom;
+    placed = L.placed;
+    boxes = L.boxes.map((b) => ({ key: b.key, x0: b.x0 * r + ox, y0: b.y0 * r + oy, x1: b.x1 * r + ox, y1: b.y1 * r + oy }));
+  } else ({ placed, boxes } = placeLabels(ctx, cam, st, ks, rz));
+  if (r === 1 && ox === 0 && oy === 0) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  else ctx.setTransform(dpr * r, 0, 0, dpr * r, dpr * ox, dpr * oy);
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   ctx.lineWidth = 3;

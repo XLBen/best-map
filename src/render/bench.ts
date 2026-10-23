@@ -35,11 +35,84 @@ function stats(total: number[], gl: number[]): Stats {
 
 type Step = (cam: Camera, i: number) => void;
 
+// 几种镜头：看全图平移、放大到一格约 8 像素后平移、捏合缩放（来回）、放大到一格约 24 像素后平移
+function scenariosFor(h: BenchHooks): Record<string, { start: Camera; step: Step }> {
+  const sp = h.spacing();
+  const cw = h.canvas.clientWidth;
+  return {
+    'pan-full': { start: { x: 1, y: 0.5, zoom: cw / 2.2 }, step: (c) => (c.x += 6 / c.zoom) },
+    'pan-8px': { start: { x: 1, y: 0.5, zoom: 8 / sp }, step: (c) => (c.x += 6 / c.zoom) },
+    'pan-24px': { start: { x: 1, y: 0.45, zoom: 24 / sp }, step: (c) => ((c.x += 5 / c.zoom), (c.y += 2 / c.zoom)) },
+    zoom: { start: { x: 1, y: 0.5, zoom: 3 / sp }, step: (c, i) => (c.zoom *= i % 40 < 20 ? 1.04 : 1 / 1.04) },
+    // 镜头不动、只重画（画笔拖动、鼠标移动时叠加层的那部分）
+    'still-8px': { start: { x: 1, y: 0.5, zoom: 8 / sp }, step: () => {} },
+  };
+}
+
+// 叠加层（河、地名、比例尺……）：每帧挪一下镜头、画一帧，再把这一帧的叠加层另画到一张软件画的 2D 画布上
+// （与地图的叠加层一样大）并读回一个像素等它画完。软件画比显卡画慢，但能同步量到（显卡画的在另一个进程里，量不到）
+export async function overlayBench(h: BenchHooks & { overlay: (ctx: CanvasRenderingContext2D) => unknown }, opts: { frames?: number; only?: string[] } = {}): Promise<Record<string, Stats>> {
+  const src = document.querySelector('.map-overlay') as HTMLCanvasElement;
+  const c = document.createElement('canvas');
+  c.style.cssText = `position:fixed;left:0;top:0;width:${src.clientWidth}px;height:${src.clientHeight}px;visibility:hidden;pointer-events:none`;
+  document.body.appendChild(c);
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const { overlayDebug } = await import('./overlay');
+  overlayDebug.softLayers = true;
+  const gl = (h.canvas.getContext('webgl2') as WebGL2RenderingContext)!;
+  const px = new Uint8Array(4);
+  const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const orig = h.renderer.render.bind(h.renderer);
+  let glTime = 0;
+  h.renderer.render = (km: number, o?: { still?: boolean }) => {
+    const t = performance.now();
+    const out = orig(km, o);
+    sync();
+    glTime += performance.now() - t;
+    return out;
+  };
+  const saved = { ...h.renderer.camera };
+  const out: Record<string, Stats> = {};
+  try {
+    for (const [name, sc] of Object.entries(scenariosFor(h))) {
+      if (opts.only && !opts.only.includes(name)) continue;
+      h.renderer.camera = { ...sc.start };
+      h.draw();
+      await new Promise((r) => setTimeout(r, 300));
+      const total: number[] = [];
+      for (let i = 0; i < (opts.frames ?? 30); i++) {
+        sc.step(h.renderer.camera, i);
+        // 画一帧（缓存的底层在这里按需重画，软件画的，同步）：减去 WebGL 的那部分
+        glTime = 0;
+        const t0 = performance.now();
+        h.draw();
+        sync();
+        const drawCpu = performance.now() - t0 - glTime;
+        // 这一帧的叠加层再画到软件画布上（贴底层、画地名……），读回一个像素等它画完
+        const t = performance.now();
+        h.overlay(ctx);
+        ctx.getImageData(0, 0, 1, 1);
+        total.push(drawCpu + performance.now() - t);
+      }
+      out[name] = stats(total, total);
+    }
+  } finally {
+    h.renderer.render = orig;
+    overlayDebug.softLayers = false;
+    c.remove();
+    h.renderer.camera = saved;
+    h.draw();
+  }
+  return out;
+}
+
 export async function runBench(h: BenchHooks, opts: { frames?: number; only?: string[] } = {}): Promise<Record<string, Stats>> {
   const { renderer } = h;
   const gl = (h.canvas.getContext('webgl2') as WebGL2RenderingContext)!;
   const px = new Uint8Array(4);
   const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  // 叠加层（2D 画布）不在这里等：读回它的像素会让浏览器把它换成软件画（之后一直慢），叠加层另用 overlayBench 测
+  const flush = sync;
   const N = opts.frames ?? 60;
   const saved = { ...renderer.camera };
   // WebGL 那部分：包住 render，画完读回一个像素
@@ -52,15 +125,7 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
     glTime += performance.now() - t;
     return out as ReturnType<Renderer['render']>;
   };
-  const sp = h.spacing();
-  const cw = h.canvas.clientWidth;
-  // 几种镜头：看全图平移、放大到一格约 8 像素后平移、捏合缩放（来回）、放大到一格约 24 像素后平移
-  const scenarios: Record<string, { start: Camera; step: Step }> = {
-    'pan-full': { start: { x: 1, y: 0.5, zoom: cw / 2.2 }, step: (c) => (c.x += 6 / c.zoom) },
-    'pan-8px': { start: { x: 1, y: 0.5, zoom: 8 / sp }, step: (c) => (c.x += 6 / c.zoom) },
-    'pan-24px': { start: { x: 1, y: 0.45, zoom: 24 / sp }, step: (c) => ((c.x += 5 / c.zoom), (c.y += 2 / c.zoom)) },
-    zoom: { start: { x: 1, y: 0.5, zoom: 3 / sp }, step: (c, i) => (c.zoom *= i % 40 < 20 ? 1.04 : 1 / 1.04) },
-  };
+  const scenarios = scenariosFor(h);
   const out: Record<string, Stats> = {};
   try {
     for (const [name, sc] of Object.entries(scenarios)) {
@@ -77,7 +142,7 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
         glTime = 0;
         const t = performance.now();
         h.draw();
-        sync();
+        flush();
         total.push(performance.now() - t);
         glt.push(glTime);
       }
@@ -87,7 +152,7 @@ export async function runBench(h: BenchHooks, opts: { frames?: number; only?: st
       glTime = 0;
       const t = performance.now();
       h.draw();
-      sync();
+      flush();
       out[`${name}:settle`] = stats([performance.now() - t], [glTime]);
     }
   } finally {
@@ -103,6 +168,8 @@ export async function brushBench(h: BenchHooks, frames = 30): Promise<Stats> {
   const gl = (h.canvas.getContext('webgl2') as WebGL2RenderingContext)!;
   const px = new Uint8Array(4);
   const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  // 叠加层（2D 画布）不在这里等：读回它的像素会让浏览器把它换成软件画（之后一直慢），叠加层另用 overlayBench 测
+  const flush = sync;
   const ov = document.querySelector('.map-overlay') as HTMLCanvasElement;
   const saved = { ...h.renderer.camera };
   const orig = h.renderer.render.bind(h.renderer);
@@ -136,7 +203,7 @@ export async function brushBench(h: BenchHooks, frames = 30): Promise<Stats> {
       const t = performance.now();
       ev('pointermove', cx + i * 6, cy + i * 2);
       h.draw();
-      sync();
+      flush();
       total.push(performance.now() - t);
       glt.push(glTime);
     }
