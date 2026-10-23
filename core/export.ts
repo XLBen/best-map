@@ -166,6 +166,28 @@ function encodePng16Gray(values: Uint16Array, width: number, height: number): Ui
   return png;
 }
 
+// 湖面像素的湖底高度：这一格与相邻湖格的湖底按到像素的距离加权（栅格化给陆地像素的高度至少 2 m、带地表细节，
+// 湖底要真实的深度）
+function lakeBedAt(world: World, c: number, px: number, py: number, width: number, height: number): number {
+  const { mesh, derived } = world;
+  const x = ((px + 0.5) / width) * mesh.width;
+  const y = ((py + 0.5) / height) * mesh.height;
+  const sphere = mesh.kind === 'sphere';
+  let s = 0;
+  let w = 0;
+  const add = (j: number) => {
+    let dx = mesh.x[j] - x;
+    if (sphere) dx -= 2 * Math.round(dx / 2);
+    const dy = mesh.y[j] - y;
+    const k = 1 / (dx * dx + dy * dy + 1e-4 * mesh.spacing * mesh.spacing);
+    s += k * derived.elevation[j];
+    w += k;
+  };
+  add(c);
+  for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) if (derived.lake[mesh.adj[e]] === 1) add(mesh.adj[e]);
+  return s / w;
+}
+
 // 高度图里海平面以下的量程（m）：灰度 0 是这么深
 export const SEA_DEPTH_M = 11000;
 
@@ -195,7 +217,7 @@ export function exportPackage(
   for (let p = 0; p < n; p++) {
     let h = elev[p];
     const c = cellOf[p];
-    if (raster.land[p] && derived.lake[c] === 1) h = Math.min(h, derived.water[c] - 1);
+    if (raster.land[p] && derived.lake[c] === 1) h = Math.min(lakeBedAt(world, c, p % width, Math.floor(p / width), width, height), derived.water[c] - 1);
     elev[p] = h;
     gray[p] = h > 0 ? Math.min(255, Math.round(sea + 1 + (h / opts.maxElevation) * (254 - sea))) : Math.max(0, Math.round(sea * (1 + h / SEA_DEPTH_M)));
     g16[p] = h > 0 ? Math.min(65535, Math.round(16384 + (h / opts.maxElevation) * 49151)) : Math.max(0, Math.round(16383 * (1 + h / SEA_DEPTH_M)));
