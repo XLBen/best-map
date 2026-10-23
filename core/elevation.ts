@@ -316,20 +316,11 @@ export function volcanoes(world: World, elevation: Float32Array) {
 // 小块海挖成的湖有多深（m）：水文认湖要 3 m 以上
 const POCKET_DEPTH = 5;
 
-// 扩散后的 h 换成米、海底取地壳高度、挖用户放的湖
-function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): ElevationResult {
-  const { mesh, causes, small } = world;
-  const n = mesh.n;
+// 并回陆地的小块海（三格以上，见 terrain.ts 的 fillSeaPockets）挖成湖：比四周最低的岸低 POCKET_DEPTH，
+// 水文按溢出口蓄水，河流进湖、从出口接着流向大海
+export function carvePocketLakes(world: World, elevation: Float32Array) {
+  const { mesh, causes } = world;
   const land = causes.land;
-  const scale = small.planet.mountainScale * RAW_TO_M;
-  const elevation = new Float32Array(n);
-  for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
-  volcanoes(world, elevation);
-  // 海底：按离岸距离的大陆架 → 陆架坡折 → 陆坡 → 陆隆 → 深海（见 seafloor）
-  seafloor(world, elevation);
-  lagoonFloor(world, elevation);
-  // 并回陆地的小块海（三格以上，见 terrain.ts 的 fillSeaPockets）挖成湖：比四周最低的岸低 POCKET_DEPTH，
-  // 水文按溢出口蓄水，河流进湖、从出口接着流向大海
   for (const cells of pocketLakes(world)) {
     const inside = new Set(cells);
     let rim = Infinity;
@@ -342,6 +333,22 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
     if (!Number.isFinite(rim)) continue;
     for (const i of cells) elevation[i] = Math.min(elevation[i], rim - 1 - POCKET_DEPTH);
   }
+}
+
+
+// 扩散后的 h 换成米、海底取地壳高度、挖用户放的湖
+function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): ElevationResult {
+  const { mesh, causes, small } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const scale = small.planet.mountainScale * RAW_TO_M;
+  const elevation = new Float32Array(n);
+  for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
+  volcanoes(world, elevation);
+  // 海底：按离岸距离的大陆架 → 陆架坡折 → 陆坡 → 陆隆 → 深海（见 seafloor）
+  seafloor(world, elevation);
+  lagoonFloor(world, elevation);
+  carvePocketLakes(world, elevation);
 
   // 湖：挖一个洼地，由水文按溢出口蓄水。
   // 以紧贴湖面的一圈格里最低的为基准往下挖：它就是溢出口，湖面 = 它的高度，
