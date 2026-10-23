@@ -28,6 +28,7 @@ import {
   strokeEdit,
 } from '../../core/river-edit';
 import { PLAIN_RIVER } from '../../core/river-types';
+import { matchesNaturally } from '../../core/water-types';
 import { type GuideLine, type RiverLine, centrePoints, cutAtJoin, encodePath, guideLine, ownsCell, projectNear, smoothCourse, snapOnto, stemPath } from '../../core/rivers';
 import { type CourseEnd, type CoursePlan, type RiverPlan, endCourseAt, guideEnd, guideFlow, guideWarnings, isRiverCell, mergeCourse, planCourse, planRiver, riverStem } from '../../core/select';
 import { roundKm as km } from '../../core/terrain';
@@ -429,14 +430,16 @@ function springProfile(w: World, cells: readonly number[], spring: boolean, flow
 // 新画的河“按规则”（画河工具条上要自己选；默认是普通的河）
 export const BY_RULES = '*rules';
 
-// 新画的河选的河流类型（画河工具条上选的；默认、那种类型已经删掉了时为普通的河）。有规则时普通的河写成 plain
-// （不按规则变成血河之类），选了“按规则”时不写类型
+// 有没有哪一种河会按规则自己出现（写了 match 脚本，或只选了“只在这些生态里”；关掉了自然生成的不算）
+export const hasRiverRules = (w: World) => (w.small.riverTypes ?? []).some(matchesNaturally);
+
+// 新画的河选的河流类型（画河工具条上选的；默认、那种类型已经删掉了时为普通的河）。普通的河总是写成 plain
+// （工具条上写着“普通”画的河，以后加了规则、只选了生态的类型也不变成别的河）；有规则并选了“按规则”时才不写类型
 export function chosenRiverType(w: World): { type: string } | Record<string, never> {
   const id = options.value.riverType;
-  const rules = !!w.small.riverTypes?.some((t) => !!t.scripts?.match);
-  if (id === BY_RULES) return {};
-  if (id && id !== PLAIN_RIVER && w.small.riverTypes?.some((t) => t.id === id)) return { type: id };
-  return rules ? { type: PLAIN_RIVER } : {};
+  if (id === BY_RULES && hasRiverRules(w)) return {};
+  if (id && id !== PLAIN_RIVER && id !== BY_RULES && w.small.riverTypes?.some((t) => t.id === id)) return { type: id };
+  return { type: PLAIN_RIVER };
 }
 
 // 一条河道画出来按哪一种河流类型（预览照这种河画）

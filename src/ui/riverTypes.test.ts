@@ -3,7 +3,7 @@ import { PLAIN_RIVER, riverNet } from '../../core/river-types';
 import { continents } from '../../core/testing/fixtures';
 import { setOptions, world } from '../state';
 import { riverTypeChoiceCommand, riverTypeOfRiver, riverTypeScriptCommand, newRiverType } from './panels/riverTypes';
-import { chosenRiverType, pinCommand, riverInfo } from './riverCourse';
+import { BY_RULES, chosenRiverType, hasRiverRules, pinCommand, riverInfo } from './riverCourse';
 
 // 给河选类型：自然的河固定下来并带上类型（一步，名字照旧）；画的河改它自己的 type；新画的河用工具条上选的
 
@@ -43,7 +43,7 @@ describe('给河选类型', () => {
     expect(riverTypeChoiceCommand(w, ref, null)).toBeNull();
   });
 
-  it('没有规则时“普通的河”就是不选；新画的河用工具条上选的（删掉了的类型不算）', () => {
+  it('没有规则时自然的河选“普通的河”就是不选；新画的河用工具条上选的（删掉了的类型不算），普通的河写成 plain', () => {
     const eng = continents();
     eng.exec({ op: 'set_river_type', type: blood });
     const w = eng.world;
@@ -54,9 +54,46 @@ describe('给河选类型', () => {
     setOptions({ riverType: 'blood' });
     expect(chosenRiverType(w)).toEqual({ type: 'blood' });
     setOptions({ riverType: 'gone' });
+    expect(chosenRiverType(w)).toEqual({ type: PLAIN_RIVER });
+    setOptions({ riverType: '' });
+    expect(chosenRiverType(w)).toEqual({ type: PLAIN_RIVER });
+    // 没有规则时工具条上不显示“按规则”（写着“普通”）：留着的“按规则”也照普通的河写
+    setOptions({ riverType: BY_RULES });
+    expect(chosenRiverType(w)).toEqual({ type: PLAIN_RIVER });
+    setOptions({ riverType: '' });
+  });
+
+  it('只选了生态（没写脚本）、会自然生成的类型也算规则；工具条写着“普通”画的河写成 plain，以后不按规则变成那种河', () => {
+    const eng = continents();
+    const w = eng.world;
+    world.value = w;
+    expect(hasRiverRules(w)).toBe(false);
+    const biome = w.small.species[0].id;
+    eng.exec({ op: 'set_river_type', type: { id: 'moss', name: '苔河', color: '#4f7a3a', biomes: [biome], natural: false } });
+    // 关掉了自然生成：不算
+    expect(hasRiverRules(w)).toBe(false);
+    eng.exec({ op: 'set_river_type', type: { id: 'moss', name: '苔河', color: '#4f7a3a', biomes: [biome] } });
+    expect(hasRiverRules(w)).toBe(true);
+    setOptions({ riverType: '' });
+    expect(chosenRiverType(w)).toEqual({ type: PLAIN_RIVER });
+    setOptions({ riverType: BY_RULES });
     expect(chosenRiverType(w)).toEqual({});
     setOptions({ riverType: '' });
-    expect(chosenRiverType(w)).toEqual({});
+  });
+
+  it('画的河在没有规则时选“普通的河”：写成 plain（以后加了规则也还是普通的河）', () => {
+    const eng = continents();
+    eng.exec({ op: 'set_river_type', type: blood });
+    const w = eng.world;
+    world.value = w;
+    const stem = riverNet(w, w.derived).stems.find((s) => s.length >= 3)!;
+    const pin = pinCommand(w, stem[0])!;
+    expect(pin.cmd.op).toBe('add_guide');
+    if (pin.cmd.op !== 'add_guide') return;
+    eng.exec({ ...pin.cmd, guide: { ...pin.cmd.guide, type: undefined } });
+    const g = w.small.guides.at(-1)!;
+    expect(g.type).toBeUndefined();
+    expect(riverTypeChoiceCommand({ ...w }, { kind: 'guide', id: g.id }, PLAIN_RIVER)).toMatchObject({ op: 'update_guide', id: g.id, patch: { type: PLAIN_RIVER } });
   });
 
   it('新建的类型 id 不重复；规则脚本的命令只带 match（空的去掉）', () => {

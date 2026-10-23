@@ -2,7 +2,7 @@ import type { Command } from '../../../core/commands';
 import { PLAIN_RIVER, type RiverType, majorityType } from '../../../core/river-types';
 import type { World } from '../../../core/world';
 import { type RiverRef, exec, openPanel, options, selectedRiver, setOptions, world } from '../../state';
-import { BY_RULES, execAndSelect, guideOf, pinCommand, riverInfo } from '../riverCourse';
+import { BY_RULES, execAndSelect, guideOf, hasRiverRules as hasRules, pinCommand, riverInfo } from '../riverCourse';
 import { type MenuItem, TypeButton, TypeMenu, createAndUse, newWaterType, typeScriptCommand } from './waterTypes';
 
 // 河流类型（第三批）：画河工具条上“新画的河”、选中一条河时“这条河”是哪一种。列表、编辑在 waterTypes.tsx（“水系 ⋯”里的“水体类型”）
@@ -29,16 +29,13 @@ export function riverTypeOfRiver(w: World, ref: RiverRef): RiverTypeOfRiver {
   return { type: k >= 0 ? types[k] : null, chosen: null };
 }
 
-// 有没有哪一种带“哪些自然的河是这一种”的规则
-const hasRules = (w: World) => (w.small.riverTypes ?? []).some((t) => !!t.scripts?.match);
-
 // 给一条河选类型（choice：类型 id、'plain' 普通的河、null 按规则）的命令；不用改时为 null。
 // 画的河改它自己的 type；自然的河固定下来并带上类型（一步：固定、选类型、名字照旧）
 export function riverTypeChoiceCommand(w: World, ref: RiverRef, choice: string | null): Command | null {
   const types = w.small.riverTypes ?? [];
   const cur = riverTypeOfRiver(w, ref);
-  // 没有规则时“普通的河”就是不选
-  const want = choice === PLAIN_RIVER && !hasRules(w) ? null : choice;
+  // 没有规则时自然的河选“普通的河”就是不选；画的河写成 plain（以后加了规则也还是普通的河，与新画的河一样）
+  const want = choice === PLAIN_RIVER && !hasRules(w) && ref.kind !== 'guide' ? null : choice;
   const name = riverInfo(w, ref)?.name;
   const who = name ? `「${name}」` : '这条河';
   // 说明按点的是什么写（没有规则时点“普通的河”，命令是去掉类型，说明仍是“改成普通的河”）

@@ -2,6 +2,7 @@ import { signal } from '@preact/signals';
 import type { Command } from '../../core/commands';
 import type { GeoFeature } from '../../core/features';
 import { type LakeType, PLAIN_LAKE } from '../../core/lake-types';
+import { matchesNaturally } from '../../core/water-types';
 import type { LakeSpec, World } from '../../core/world';
 import { type LakeRef, options } from '../state';
 
@@ -109,7 +110,7 @@ export function lakeTypeOfLake(w: World, ref: LakeRef): LakeTypeOfLake {
   return { type: v ? (types[v - 1] ?? null) : null, chosen: null };
 }
 
-export const hasLakeRules = (w: World) => (w.small.lakeTypes ?? []).some((t) => !!t.scripts?.match);
+export const hasLakeRules = (w: World) => (w.small.lakeTypes ?? []).some(matchesNaturally);
 
 // 给一个湖选类型（choice：类型 id、'plain' 普通的湖、null 按规则）的命令；不用改时为 null。
 // 有放的湖时记在选中的放的湖上（同一片里别的放的湖、lakeTyping 上选的去掉）；自然的湖记在 lakeTyping（这个湖里原来选的先去掉）
