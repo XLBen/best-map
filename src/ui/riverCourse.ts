@@ -972,7 +972,8 @@ function courseHint(w: World, c: Course, ex: ExactView | null, line: GuideLine, 
     parts.push(`有一段往高处流（${meters(plan.uphill)}）`);
     caution = true;
   }
-  if (c.kind === 'edit' && leftoverFed(w, c, ex)) {
+  // 缩短、改道后原来的下游（改一段时换下来的那一小段不说）
+  if (c.edit && (c.edit.kind === 'shorten' || c.edit.kind === 'reroute') && leftoverFed(w, c, ex)) {
     parts.push('下面那段还有支流的水，会成为另一条河');
     caution = true;
   }
