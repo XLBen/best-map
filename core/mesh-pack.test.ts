@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { packMesh, unpackMesh } from './mesh-pack';
+import { MESH_PACK_VERSION, packMesh, storedMeshKey, unpackMesh } from './mesh-pack';
 import { type Mesh, findCell } from './mesh';
 import { viewOf } from './sphere';
 import { buildMeshFor, settingsSchema } from './world';
@@ -59,5 +59,14 @@ describe('网格打包、拆包后与就地建的逐值相同', () => {
       expect(b.triangles).toBe(b.delaunay.triangles);
       expect([...b.delaunay.neighbors(17)]).toEqual([...a.delaunay.neighbors(17)]);
     }
+  });
+});
+
+describe('存进浏览器的网格的键', () => {
+  it('带着打包格式的版本：打包的代码变了（版本加一），旧的存着的网格对不上', () => {
+    const s = settingsSchema.parse({ seed: 3, cells: 3000 });
+    const key = storedMeshKey('b1', s);
+    expect(key).toContain(`|p${MESH_PACK_VERSION}|`);
+    expect(key.startsWith('b1|')).toBe(true);
   });
 });

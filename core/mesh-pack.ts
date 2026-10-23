@@ -142,9 +142,13 @@ export function unpackMesh(p: PackedMesh): Mesh {
   return mesh;
 }
 
-// 存进浏览器的网格的键：程序的版本号 + 网格的键（同一个键建出同一个网格；代码一变版本号就不同）
+// 打包格式的版本：改了 packMesh / unpackMesh（存的样子变了）时加一。程序的版本号只看计算引擎的代码，
+// 打包的代码在主线程、建网格的 Worker 里，变了它不一定跟着变
+export const MESH_PACK_VERSION = 1;
+
+// 存进浏览器的网格的键：程序的版本号 + 打包格式的版本 + 网格的键（同一个键建出同一个网格；代码一变版本号就不同）
 export function storedMeshKey(build: string, settings: Settings): string {
-  return `${build}|${meshKey(settings)}`;
+  return `${build}|p${MESH_PACK_VERSION}|${meshKey(settings)}`;
 }
 
 // 打包的网格里全部的缓冲区（转交用）
