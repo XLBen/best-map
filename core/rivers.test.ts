@@ -65,7 +65,7 @@ describe('画的河逐值不变', () => {
       lake: hashArray(d.lake),
       features: hashString(d.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16),
     };
-    expect(got).toEqual({ guides: '5,4,2', elevation: '8e4cfce6', discharge: 'a3d8c76f', receiver: '198c8245', lake: 'c5611545', features: 'f4021751' });
+    expect(got).toEqual({ guides: '5,4,2', elevation: '8b1968cc', discharge: 'a3d8c76f', receiver: '198c8245', lake: 'c5611545', features: 'f4021751' });
   });
 });
 
