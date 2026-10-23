@@ -518,6 +518,23 @@ void main() {
     } else {
       // 按水深分层（0–200、200–1000、1000–3000、3000 m 以下），层与层之间一道淡淡的等深线；海底的坡轻轻晕渲
       float depth = -h;
+      // 放大到一格有好几个像素时，按三角形线性插值的水深画出的等深线是折线（第十二轮修）：分层与等深线按约 0.6 格半径的两圈
+      // 共 16 点的平均水深画，折角化开成圆滑的曲线；一格不到 3 像素时照旧（看不出折角），3–8 像素之间渐渐换过去
+      float smoothK = smoothstep(3.0, 8.0, uCellPx);
+      if (smoothK > 0.0) {
+        float r = 0.6 * uCellPx;
+        float sum = max(depth, 0.0);
+        float wsum = 1.0;
+        for (int k = 0; k < 8; k++) {
+          float a = float(k) * 0.7853982;
+          vec2 o1 = vec2(cos(a), sin(a)) * r * uTexel;
+          vec2 o2 = vec2(cos(a + 0.3926991), sin(a + 0.3926991)) * (0.5 * r) * uTexel;
+          sum += 0.6 * max(-texture(uSceneHeight, (vUv + o1) * uSceneXf.xy + uSceneXf.zw).r, 0.0);
+          sum += max(-texture(uSceneHeight, (vUv + o2) * uSceneXf.xy + uSceneXf.zw).r, 0.0);
+          wsum += 1.6;
+        }
+        depth = mix(depth, sum / wsum, smoothK);
+      }
       float fw = max(fwidth(depth), 1e-3);
       col = vec3(0.80, 0.88, 0.89);
       col = mix(col, vec3(0.73, 0.83, 0.86), smoothstep(200.0 - fw, 200.0 + fw, depth));
