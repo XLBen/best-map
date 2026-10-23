@@ -36,7 +36,10 @@ import { renderThumbnail } from './thumbnail';
 // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
 // 第十三轮后来又重录 rivers.bmp（四个）：挤在一起的河口改成小的沿岸挪开、各自入海，只在接得顺时并进大河（以前常常拐回去接，画成钩子、“V”）；
 // 河口那一段不再急转（法向与原来方向差太多时偏回来、换长一点的一段）；找岸线少取几个点（准到千分之一格）；
-// 量岸线法向的一圈从 12 个点改成 8 个、河口本来就在岸线上时不再沿法向重找（提速）
+// 量岸线法向的一圈从 12 个点改成 8 个、河口本来就在岸线上时不再沿法向重找（提速）。
+// 与小海并回陆地、火山岛高度那一批合起来以后再重录 rivers.bmp（四个，只有河变了）：地形变了河口跟着变；另外窄海湾湾头两边斜着
+// 流进来的两条河（小的挪不开、接不顺）现在把大河的河口往另一侧挪开（在那一段汇进来的支流重新接上），并进大河时多试几种曲线
+// （离岸 0.1 格接、起点切向短一点、一路沿大河方向往前的曲线），挪小河的河口时圆周上与岸线相交的几处都试
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -130,7 +133,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 land': '5b0a363376c22aaf',
   'planet 256x128 provinces.bmp': 'c9082dcb44757d53',
   'planet 256x128 provinces_summary.csv': 'ddabba04ce0a1bee',
-  'planet 256x128 rivers.bmp': '723232310a709a27',
+  'planet 256x128 rivers.bmp': '6e8650a1ae84fddf',
   'planet 256x128 terrain.bmp': 'd2786c03fc0c539b',
   'planet 256x128 world.json': '8a107b21f5949bd3',
   'planet 300x150 README.txt': '70b84ac4e51407d0',
@@ -145,7 +148,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 land': 'dde226cd48a2d703',
   'planet 300x150 provinces.bmp': 'aa9dad989cf4df9a',
   'planet 300x150 provinces_summary.csv': 'ddabba04ce0a1bee',
-  'planet 300x150 rivers.bmp': 'befcf41c9bde9f42',
+  'planet 300x150 rivers.bmp': 'dcdb9a8098b056d0',
   'planet 300x150 terrain.bmp': '84790df221446874',
   'planet 300x150 world.json': '8a107b21f5949bd3',
   'planet functions': 'ecb4ac7af1985234',
@@ -162,7 +165,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 land': '444e93600b6444da',
   'region 256x128 provinces.bmp': 'dae8c214e32cf3cc',
   'region 256x128 provinces_summary.csv': '5dc0ab305487dd86',
-  'region 256x128 rivers.bmp': 'b362f08a9017ba7a',
+  'region 256x128 rivers.bmp': '61275afd5abb6391',
   'region 256x128 terrain.bmp': '05bbf3c3c89f8f39',
   'region 256x128 world.json': '22e33075333b73b7',
   'region 300x150 README.txt': 'aaac48241077e658',
@@ -177,7 +180,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 land': '45b844d3802a1b17',
   'region 300x150 provinces.bmp': '18acb72bc645beef',
   'region 300x150 provinces_summary.csv': '5dc0ab305487dd86',
-  'region 300x150 rivers.bmp': 'f918c5e922f2a437',
+  'region 300x150 rivers.bmp': '25a677f2231dd230',
   'region 300x150 terrain.bmp': 'da661901ced45171',
   'region 300x150 world.json': '22e33075333b73b7',
   'region functions': 'ec0eb23ceb75674c',
