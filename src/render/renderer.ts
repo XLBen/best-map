@@ -1662,8 +1662,8 @@ export class Renderer {
     // 切线层：镜头、窗口、切线变了才重画
     const hasSeams = this.hasGroup && this.seamCount > 0;
     const seamKey = hasSeams ? `${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${this.seamVersion}` : '';
-    // 河的图层：刚停下的那一帧照用移动中的那张（停稳的那张下一帧再画，两样重活分在两帧）
-    const river = this.riverLayer?.(this.justSettled) ?? null;
+    // 河的图层：停稳的那张（刚停下的那一帧就画好：照用移动中的那张的话，下一帧换上停稳的那张时要整张再合成一次，比画河慢得多）
+    const river = this.riverLayer?.(false) ?? null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
     const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${riverKey}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
