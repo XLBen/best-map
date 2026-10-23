@@ -307,10 +307,11 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
 
 // 海底的几个噪声（每格一个值）：只取决于网格与种子，按网格缓存
 interface SeaNoise {
-  // 大陆架宽度的低频变化、坡折深度、架上的起伏
+  // 大陆架宽度的低频变化、坡折深度、架上的起伏；i：岛架宽度沿岸的变化（波长几百 km，岛的四周宽窄不一）
   w: Float32Array;
   b: Float32Array;
   s: Float32Array;
+  i: Float32Array;
 }
 const seaNoiseCache = new WeakMap<Mesh, Map<number, SeaNoise>>();
 
@@ -320,11 +321,12 @@ function seaNoise(mesh: Mesh, seed: number): SeaNoise {
   let f = bySeed.get(seed);
   if (f) return f;
   const n = mesh.n;
-  f = { w: new Float32Array(n), b: new Float32Array(n), s: new Float32Array(n) };
+  f = { w: new Float32Array(n), b: new Float32Array(n), s: new Float32Array(n), i: new Float32Array(n) };
   if (mesh.kind === 'sphere') {
     const nw = gradientNoise3(mixSeed(seed, 121));
     const nb = gradientNoise3(mixSeed(seed, 122));
     const ns = gradientNoise3(mixSeed(seed, 123));
+    const ni = gradientNoise3(mixSeed(seed, 124));
     for (let i = 0; i < n; i++) {
       const px = mesh.p[3 * i] * LAYOUT_R;
       const py = mesh.p[3 * i + 1] * LAYOUT_R;
@@ -332,17 +334,20 @@ function seaNoise(mesh: Mesh, seed: number): SeaNoise {
       f.w[i] = fbm3(nw, px, py, pz, 3, 3);
       f.b[i] = fbm3(nb, px, py, pz, 6, 2);
       f.s[i] = fbm3(ns, px, py, pz, 40, 3);
+      f.i[i] = fbm3(ni, px, py, pz, 16, 3);
     }
   } else {
     const nw = gradientNoise(mixSeed(seed, 121));
     const nb = gradientNoise(mixSeed(seed, 122));
     const ns = gradientNoise(mixSeed(seed, 123));
+    const ni = gradientNoise(mixSeed(seed, 124));
     for (let i = 0; i < n; i++) {
       const x = mesh.x[i];
       const y = mesh.y[i];
       f.w[i] = fbm(nw, x, y, 3, 3);
       f.b[i] = fbm(nb, x, y, 6, 2);
       f.s[i] = fbm(ns, x, y, 40, 3);
+      f.i[i] = fbm(ni, x, y, 16, 3);
     }
   }
   if (bySeed.size >= 2) bySeed.delete(bySeed.keys().next().value!);
@@ -603,8 +608,9 @@ export function seafloor(world: World, elevation: Float32Array) {
     cells.push(i);
     const act = smoothstep(0.35, 1, up[o]);
     const wBase = SHELF_KM * Math.exp(0.8 * noise.w[i]);
-    // 岛架：按陆块大小（洋壳上的小岛只有几 km）；陆架：一直到洋壳（至少有一半的 wBase）
-    const wIsland = SHELF_MIN_KM + (wBase - SHELF_MIN_KM) * 0.85 * size[o];
+    // 岛架：按陆块大小（洋壳上的小岛只有几 km），沿岸宽窄不一（×0.5–×1.6，按这一格的位置，小岛的岛架不是一个圆）；
+    // 陆架：一直到洋壳（至少有一半的 wBase）
+    const wIsland = (SHELF_MIN_KM + (wBase - SHELF_MIN_KM) * 0.85 * size[o]) * Math.min(1.6, Math.max(0.5, Math.exp(2.2 * noise.i[i])));
     let wCont = 0;
     if (fields && fields.shelf[o] > 0) {
       const t = toOcean[o];
