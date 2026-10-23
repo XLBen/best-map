@@ -2,6 +2,7 @@ import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
 import { computeElevation, elevationMemo, lakeArea, seafloor, seafloorStats } from './elevation';
+import { Engine } from './engine';
 import { exportPackage } from './export';
 import { oceanFloor } from './generate';
 import { graphDistance } from './mesh';
@@ -121,6 +122,26 @@ describe('海底的剖面', () => {
     seafloor(w, memo);
     expect(seafloorStats.reused).toBe(r0 + 1);
     expect(digest(memo)).toBe(digest(e));
+  });
+
+  it('重新打开（整段重放）的世界：生成器的场是另一份、内容相同，海底照用缓存，与整个重算逐位相同', () => {
+    const eng = continents();
+    const w = eng.world;
+    const before = w.derived.elevation.slice();
+    const r0 = seafloorStats.reused;
+    const opened = Engine.fromDoc(eng.toDoc(), w.mesh);
+    const w2 = opened.world;
+    expect(seafloorStats.reused).toBeGreaterThan(r0);
+    seafloorStats.on = false;
+    try {
+      const fresh = new Float32Array(w2.mesh.n).fill(Number.NaN);
+      seafloor(w2, fresh);
+      let bad = 0;
+      for (let i = 0; i < w2.mesh.n; i++) if (!w2.causes.land[i] && (w2.derived.elevation[i] !== fresh[i] || before[i] !== fresh[i])) bad++;
+      expect(bad).toBe(0);
+    } finally {
+      seafloorStats.on = true;
+    }
   });
 
   it('只改陆上的抬升（海岸上的没变）：海底照用缓存；改了海陆：与从头算相同', () => {

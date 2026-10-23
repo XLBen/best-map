@@ -353,7 +353,7 @@ function seaNoise(mesh: Mesh, seed: number): SeaNoise {
 interface SeafloorMemoEntry {
   seed: number;
   kmPerUnit: number;
-  fields: object | null;
+  fields: ReturnType<typeof seabedFields>;
   land: Uint8Array;
   landness: Float32Array;
   landDelta: Float32Array;
@@ -372,6 +372,13 @@ interface SeafloorMemoEntry {
 const seafloorMemo = new WeakMap<Mesh, SeafloorMemoEntry[]>();
 // 测试用：on = false 时不读也不写缓存；reused：直接用上一次的结果，partial：只重算改动附近，computed：整个重算
 export const seafloorStats = { on: true, reused: 0, partial: 0, computed: 0 };
+
+// 生成器的两个场按内容比（重新打开的世界是另一份数组，内容相同）
+function sameFields(a: { ocean: Float32Array; shelf: Float32Array } | null, b: { ocean: Float32Array; shelf: Float32Array } | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return sameArray(a.ocean, b.ocean) && sameArray(a.shelf, b.shelf);
+}
 
 function sameArray(a: Float32Array | Uint8Array | Int32Array, b: Float32Array | Uint8Array | Int32Array): boolean {
   if (a.length !== b.length) return false;
@@ -406,8 +413,17 @@ export function seafloor(world: World, elevation: Float32Array) {
   const seed = world.settings.seed;
   const fields = seabedFields(world);
 
-  // 与上一次（或上上次）的输入逐字节相同：直接用那一次的结果。抬升变了的时候先看海岸上的抬升变没变
-  const entries = seafloorStats.on ? (seafloorMemo.get(mesh) ?? []).filter((e) => e.seed === seed && e.kmPerUnit === kmPerUnit && e.fields === fields) : [];
+  // 与上一次（或上上次）的输入逐字节相同：直接用那一次的结果。抬升变了的时候先看海岸上的抬升变没变。
+  // 生成器的场按内容比：重新打开的世界另有一份（内容相同），比上了就换成这一份，下次直接按对象比
+  const entries = seafloorStats.on
+    ? (seafloorMemo.get(mesh) ?? []).filter((e) => {
+        if (e.seed !== seed || e.kmPerUnit !== kmPerUnit) return false;
+        if (e.fields === fields) return true;
+        if (!sameFields(e.fields, fields)) return false;
+        e.fields = fields;
+        return true;
+      })
+    : [];
   const same = entries.filter((e) => sameArray(e.land, land) && sameArray(e.landness, causes.landness) && sameArray(e.landDelta, causes.landDelta));
   const reuse = (e: SeafloorMemoEntry) => {
     seafloorStats.reused++;
