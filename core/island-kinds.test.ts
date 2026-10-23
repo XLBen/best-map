@@ -173,3 +173,42 @@ describe('生态的新配色', () => {
     expect(minPair(now)).toBeGreaterThan(minPair(old) * 1.5);
   });
 });
+
+// 第十三轮修：放岛只添陆地；火山岛的高度按大小定、山顶有火山口
+describe('放岛只添陆地', () => {
+  it('珊瑚岛贴着别的岛放：原来的陆地一格不少（潟湖只压原来是海的格）', () => {
+    for (const kind of ['volcanic', 'continental'] as const) {
+      const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+      eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
+      eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind, size: 60, variant: 1 } });
+      const before = eng.world.causes.land.slice();
+      eng.exec({ op: 'add_island', island: { x: 0.92, y: 0.5, kind: 'atoll', size: 70, variant: 2 } });
+      const w = eng.world;
+      for (let i = 0; i < w.mesh.n; i++) if (before[i]) expect(w.causes.land[i], `${kind} #${i}`).toBe(1);
+      // 还是有潟湖
+      let lagoon = 0;
+      for (let i = 0; i < w.mesh.n; i++) if (!w.causes.land[i] && w.causes.erod[i] >= LAGOON_ERODIBILITY) lagoon++;
+      expect(lagoon, kind).toBeGreaterThan(3);
+    }
+  });
+
+  it('火山岛：直径 200 km 的最高约 2,000–3,000 m（与格距无关），山顶有凹下去的火山口', () => {
+    for (const cells of [12000, 40000]) {
+      const eng = new Engine({ seed: 4, cells, latNorth: 18, latSouth: 8 });
+      eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
+      const before = eng.world.causes.land.slice();
+      eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: 100, variant: 2 } });
+      const w = eng.world;
+      const fresh: number[] = [];
+      for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i] && !before[i]) fresh.push(i);
+      const top = Math.max(...fresh.map((i) => w.derived.elevation[i]));
+      expect(top, `${cells}`).toBeGreaterThan(2000);
+      expect(top, `${cells}`).toBeLessThan(3000);
+      // 火山口：最高的格（口沿）附近有比口沿低几百米的格
+      const peak = fresh.find((i) => w.derived.elevation[i] === top)!;
+      const near = fresh.filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[peak], w.mesh.y[i] - w.mesh.y[peak]) < w.mesh.spacing * 3);
+      const low = Math.min(...near.map((i) => w.derived.elevation[i]));
+      expect(top - low, `${cells}`).toBeGreaterThan(200);
+    }
+  });
+});

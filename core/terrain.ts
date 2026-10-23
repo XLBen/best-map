@@ -403,20 +403,80 @@ export function resolveTerrain(world: World) {
     causes.erod[i] = clamp(base.erod[i] + causes.erodDelta[i], 0.1, 5);
     causes.land[i] = isLandValue(L, coast[i], rough) ? 1 : 0;
   }
-  fillTinyHoles(mesh, causes.land);
+  fillSeaPockets(mesh, causes.land, causes.erod);
 }
 
-// 陆地里被海岸噪声戳出的单格“海”洞并回陆地（真正的内海、海湾都比这大）。
-// 只看“四周全是陆地”这一条：陆地越多越容易满足，所以陆地比例调大时旧陆地一定被完整包含
-function fillTinyHoles(mesh: Mesh, land: Uint8Array) {
+// 陆地里围住的小块“海”并回陆地（第十三轮：以前只填单格的洞）。一块海（海格的连通块）不挨地图边、
+// 不超过 POCKET_MAX 格时不是真正的海：两三格的“内海”会把流进来的大河整条吞掉（河在海里就到头了）。
+// 这样的小块并回陆地；三格以上的在高程里挖成湖（elevation.ts 的 pocketLakes），河流进湖、从湖的出口接着流向大海；
+// 两格以下的就是平地，河照常流过。珊瑚岛的潟湖（可蚀性 ≥ LAGOON_ERODIBILITY 的海格）不算（单格的洞照旧填）。
+// 整个星球没有地图边：只看大小。陆地越多海块越小，所以陆地比例调大时旧陆地一定被完整包含（与原来的单格洞相同）
+export const POCKET_MAX = 6;
+// 珊瑚岛潟湖的可蚀性下限（elevation.ts 的 lagoonFloor 按它认潟湖）
+export const LAGOON_ERODIBILITY = 4.6;
+// 从 start（一格海）起找它所在的海块：是要并回陆地的小块时返回块里的格（按找到的先后），否则 null。
+// 最多走 POCKET_MAX + 1 格就有结论，所以每格都调一次也不慢；结果只取决于海块本身，与从哪一格起找无关
+function seaPocket(mesh: Mesh, isSea: (i: number) => boolean, isLagoon: (i: number) => boolean, start: number): number[] | null {
+  if (mesh.boundary[start]) return null;
+  const cells = [start];
+  let lagoon = isLagoon(start);
+  for (let h = 0; h < cells.length; h++) {
+    const c = cells[h];
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (!isSea(j) || cells.includes(j)) continue;
+      if (mesh.boundary[j] || cells.length >= POCKET_MAX) return null;
+      cells.push(j);
+      if (isLagoon(j)) lagoon = true;
+    }
+  }
+  return cells.length > 1 && lagoon ? null : cells;
+}
+
+function fillSeaPockets(mesh: Mesh, land: Uint8Array, erod: ArrayLike<number>) {
+  const done = new Uint8Array(mesh.n);
   const fill: number[] = [];
+  const isSea = (i: number) => !land[i];
+  const isLagoon = (i: number) => erod[i] >= LAGOON_ERODIBILITY;
   for (let i = 0; i < mesh.n; i++) {
-    if (land[i] || mesh.boundary[i]) continue;
-    let enclosed = true;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1] && enclosed; e++) if (!land[mesh.adj[e]]) enclosed = false;
-    if (enclosed) fill.push(i);
+    if (land[i] || done[i]) continue;
+    const p = seaPocket(mesh, isSea, isLagoon, i);
+    if (!p) continue;
+    for (const c of p) {
+      done[c] = 1;
+      fill.push(c);
+    }
   }
   for (const i of fill) land[i] = 1;
+}
+
+// 并回陆地的小块海（三格以上的）：高程按它们挖成湖（elevation.ts 的 finishElevation）。
+// 按格算：是陆格、按 landness 与海岸噪声本来是海的格就是填进来的（单格的洞、两格的小块不挖，见 POCKET_MAX）
+export const POCKET_LAKE_MIN = 3;
+export function pocketLakes(world: World): number[][] {
+  const { mesh, causes } = world;
+  const coast = coastNoiseField(mesh, coastSeed(world));
+  const rough = world.small.terrain.coastRoughness;
+  const filled = (i: number) => causes.land[i] === 1 && !isLandValue(causes.landness[i], coast[i], rough);
+  const seen = new Uint8Array(mesh.n);
+  const out: number[][] = [];
+  for (let s = 0; s < mesh.n; s++) {
+    if (seen[s] || !filled(s)) continue;
+    const cells = [s];
+    seen[s] = 1;
+    for (let h = 0; h < cells.length; h++) {
+      const c = cells[h];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!seen[j] && filled(j)) {
+          seen[j] = 1;
+          cells.push(j);
+        }
+      }
+    }
+    if (cells.length >= POCKET_LAKE_MIN) out.push(cells.sort((a, b) => a - b));
+  }
+  return out;
 }
 
 // “调整”面板拖滑块时的预览：按新的陆地多少 / 岛多少 / 山多高 / 海岸破碎度组合一遍，
@@ -464,7 +524,7 @@ export function previewTerrain(world: World, patch: TerrainPatch): TerrainPrevie
   const coast = coastNoiseField(mesh, coastSeed(world));
   const land = new Uint8Array(n);
   for (let i = 0; i < n; i++) land[i] = isLandValue(L[i] + causes.landDelta[i], coast[i], rough) ? 1 : 0;
-  fillTinyHoles(mesh, land);
+  fillSeaPockets(mesh, land, causes.erod);
   // 海岸值：与 resolveTerrain 写回的 landness（float32）、coastValues 同一个算式
   const amp = COAST_AMP * rough;
   for (let i = 0; i < n; i++) out.coast[i] = coastValueAt(Math.fround(L[i] + causes.landDelta[i]), coast[i], amp, land[i] === 1);
@@ -541,29 +601,56 @@ export function restoreStroke(world: World, cells: number[], t: number[]): Strok
   return out;
 }
 
-// 应用 landness 增量后的陆海掩码（只算受影响的格），与 resolveTerrain 用同一规则（含单格洞的填补），
-// 所以预览与结果逐格一致。after：受影响的格在改动后是不是陆地
-function landAfter(world: World, cells: number[], delta: number[]): Map<number, boolean> {
+// 应用 landness 增量后的陆海掩码（只算受影响的格），与 resolveTerrain 用同一规则（含小块海的填补，见 fillSeaPockets），
+// 所以预览与结果逐格一致。after：受影响的格在改动后是不是陆地。erodAfter：放岛时改了岩性的格改后的可蚀性（潟湖按它认）
+function landAfter(world: World, cells: number[], delta: number[], erodAfter?: ReadonlyMap<number, number>): Map<number, boolean> {
   const { mesh, causes } = world;
   const coast = coastNoiseField(mesh, coastSeed(world));
   const rough = world.small.terrain.coastRoughness;
   const d = new Map<number, number>();
   cells.forEach((i, k) => d.set(i, (d.get(i) ?? 0) + delta[k]));
   const raw = (i: number) => isLandValue(causes.landness[i] + (d.get(i) ?? 0), coast[i], rough);
-  // 单格洞的填补看邻居，所以改动格的邻居也可能变
+  const isSea = (i: number) => !raw(i);
+  const isLagoon = (i: number) => (erodAfter?.get(i) ?? causes.erod[i]) >= LAGOON_ERODIBILITY;
+  // 小块海的填补看邻居，所以改动格的邻居也可能变
   const touched = new Set<number>();
+  // 有格从陆地变成海时，原来填掉的小块海可能连上了大海（又是海了）
+  let opened = false;
   for (const i of d.keys()) {
     touched.add(i);
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) touched.add(mesh.adj[e]);
+    if (!raw(i) && isLandValue(causes.landness[i], coast[i], rough)) opened = true;
   }
   const after = new Map<number, boolean>();
-  for (const i of touched) {
-    let land = raw(i);
-    if (!land && !mesh.boundary[i]) {
-      land = true;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1] && land; e++) if (!raw(mesh.adj[e])) land = false;
+  for (const i of [...touched].sort((a, b) => a - b)) {
+    if (after.has(i)) continue;
+    if (raw(i)) {
+      after.set(i, true);
+      continue;
     }
-    after.set(i, land);
+    const p = seaPocket(mesh, isSea, isLagoon, i);
+    if (p) {
+      for (const c of p) after.set(c, true);
+      continue;
+    }
+    after.set(i, false);
+    if (!opened) continue;
+    // 这一块海不是小块：离它 POCKET_MAX 步以内、原来填成陆地的海格都在这一块里，变回海
+    let ring = [i];
+    const seen = new Set<number>(ring);
+    for (let step = 0; step < POCKET_MAX && ring.length; step++) {
+      const next: number[] = [];
+      for (const c of ring) {
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (seen.has(j) || !isSea(j)) continue;
+          seen.add(j);
+          next.push(j);
+          if (causes.land[j] === 1 && !after.has(j)) after.set(j, false);
+        }
+      }
+      ring = next;
+    }
   }
   return after;
 }
@@ -759,6 +846,8 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
   // 珊瑚岛的环与潟湖里的海格（岛心半径的 0.96 倍以内）：岩性按珊瑚砂（潟湖的海底画成浅水）
   const coral: boolean[] = [];
+  // 潟湖里（环以内）原来是海的格
+  const lagoonish: boolean[] = [];
   const reach = R * 1.9;
   // 整个星球：在岛心的切平面里取位置（等距方位投影），高纬度、接缝上的岛形状大小都和赤道上一样
   const center: V3 | null = sphere ? toUnit(spec.x, spec.y) : null;
@@ -822,8 +911,10 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     }
     const L = causes.landness[i];
     let delta = 0;
-    // 潟湖两头都改：深海抬到 −core，原来的浅滩、陆地压到 −core
-    if (spec.kind === 'atoll' && dd < 0.8 - 0.16) delta = target - L;
+    // 放岛只添陆地（第十三轮修）：潟湖里的海格两头都改（深海抬到 −core，浅滩压到 −core），
+    // 原来就是陆地的格（挨着的岛、大陆）一格不动，不会被潟湖挖掉
+    const inner = spec.kind === 'atoll' && dd < 0.8 - 0.16;
+    if (inner && !causes.land[i]) delta = target - L;
     else delta = Math.max(0, target - L);
     const reefy = spec.kind === 'atoll' && dd < 0.96;
     if (delta === 0 && lift === 0 && !reefy) continue;
@@ -831,7 +922,10 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     out.landDelta.push(delta);
     out.upliftDelta.push(lift);
     coral.push(reefy);
+    lagoonish.push(inner && !causes.land[i]);
   }
+  // 先按“潟湖里的海格都是潟湖”算轮廓：围住的小块海是潟湖时不并回陆地（见 fillSeaPockets）
+  out.erodDelta = out.cells.map((i, k) => (lagoonish[k] ? ISLAND_ERODIBILITY.atoll! - causes.erod[i] : 0));
   out.footprint = footprintOf(world, out);
   // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）。
   // 岛心在地图外（岛链画出了地图边）时没有“岛心那一格”，不补：否则地图边上会多出一格一格的小岛
@@ -849,7 +943,9 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
         out.cells.splice(at, 0, c0);
         out.landDelta.splice(at, 0, need);
         out.upliftDelta.splice(at, 0, 0);
+        out.erodDelta.splice(at, 0, 0);
         coral.splice(at, 0, false);
+        lagoonish.splice(at, 0, false);
       }
       out.footprint = footprintOf(world, out);
     }
@@ -871,14 +967,27 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     }
     if (a >= 0.6 * t) lagoon.add(i);
   }
-  out.erodDelta = out.cells.map((i) => (erod === null || causes.land[i] || !(fresh.has(i) || lagoon.has(i)) ? 0 : erod - causes.erod[i]));
+  const erodOf = (f: Set<number>) => out.cells.map((i) => (erod === null || causes.land[i] || !(f.has(i) || lagoon.has(i)) ? 0 : erod - causes.erod[i]));
+  out.erodDelta = erodOf(fresh);
+  if (spec.kind === 'atoll') {
+    // 按真正的潟湖再算一次轮廓：没被环围住的小块海照常并回陆地（与执行后 resolveTerrain 的结果相同）
+    out.footprint = footprintOf(world, out);
+    out.erodDelta = erodOf(new Set(out.footprint));
+  }
   return out;
 }
 
-// 岛的轮廓：放岛后在受影响范围内是陆地的格
-function footprintOf(world: World, r: { cells: number[]; landDelta: number[] }): number[] {
+// 岛的轮廓：放岛后在受影响范围内是陆地的格。erodDelta（与 cells 对齐，可省）：放岛改的岩性，潟湖的海格按它认
+function footprintOf(world: World, r: { cells: number[]; landDelta: number[]; erodDelta?: number[] }): number[] {
   const out: number[] = [];
-  for (const [i, land] of landAfter(world, r.cells, r.landDelta)) if (land) out.push(i);
+  let erod: Map<number, number> | undefined;
+  if (r.erodDelta?.length) {
+    erod = new Map();
+    r.cells.forEach((i, k) => {
+      if (r.erodDelta![k]) erod!.set(i, world.causes.erod[i] + r.erodDelta![k]);
+    });
+  }
+  for (const [i, land] of landAfter(world, r.cells, r.landDelta, erod)) if (land) out.push(i);
   return out.sort((a, b) => a - b);
 }
 

@@ -3,7 +3,7 @@ import { HeapLite, type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, accumulate } from './routing';
-import { seabedFields } from './terrain';
+import { ISLAND_ERODIBILITY, LAGOON_ERODIBILITY, pocketLakes, seabedFields } from './terrain';
 import type { World } from './world';
 
 // 高程 = 抬升与河流下切的稳态（stream power law，n = 1）：
@@ -250,6 +250,71 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   }
 }
 
+// 火山岛（第十三轮修）：放的火山岛（可蚀性正好是玄武岩 ISLAND_ERODIBILITY.volcanic 的陆格连成的一块）高度按大小定，
+// 不随地图的格距、山的高低变：“半径”（面积折成圆）R km 的火山岛最高约 VOLCANO_PEAK·√(R / 100) m（直径 200 km 约 2,600 m，
+// 最高 4,200 m），整块按比例缩放（沟谷照旧）。最高处挖一个火山口：半径约 R 的 0.16（至少最高的那一格），
+// 口里比口外一圈最低的地方低约峰高的一成二，所以四周一圈是口沿。半径不到 VOLCANO_CRATER_MIN 格的小火山岛不挖
+const VOLCANO_PEAK = 2600;
+const VOLCANO_MAX = 4200;
+const VOLCANO_CRATER_MIN = 3;
+export function volcanoes(world: World, elevation: Float32Array) {
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const basalt = ISLAND_ERODIBILITY.volcanic!;
+  const isV = (i: number) => causes.land[i] === 1 && Math.abs(causes.erod[i] - basalt) < 0.003;
+  const seen = new Uint8Array(n);
+  for (let s = 0; s < n; s++) {
+    if (seen[s] || !isV(s)) continue;
+    const cells = [s];
+    seen[s] = 1;
+    for (let k = 0; k < cells.length; k++) {
+      const c = cells[k];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!seen[j] && isV(j)) {
+          seen[j] = 1;
+          cells.push(j);
+        }
+      }
+    }
+    let area = 0;
+    let top = cells[0];
+    for (const c of cells) {
+      area += mesh.area[c] * kmPerUnit * kmPerUnit;
+      if (elevation[c] > elevation[top] || (elevation[c] === elevation[top] && c < top)) top = c;
+    }
+    const rKm = Math.sqrt(area / Math.PI);
+    const peak = Math.min(VOLCANO_MAX, VOLCANO_PEAK * Math.sqrt(rKm / 100));
+    const k = peak / Math.max(elevation[top], 2);
+    for (const c of cells) elevation[c] = Math.max(2, elevation[c] * k);
+    const rCells = rKm / (mesh.spacing * kmPerUnit);
+    if (rCells < VOLCANO_CRATER_MIN) continue;
+    // 火山口：离最高处 0.16·R 以内（沿网格量）的火山格
+    const rc = Math.max(0.16 * rCells, 0.5) * mesh.spacing;
+    const d = graphDistance(mesh, [top], rc * 1.5);
+    const inside = cells.filter((c) => d[c] <= rc);
+    if (!inside.includes(top)) inside.push(top);
+    const set = new Set(inside);
+    let rim = Infinity;
+    for (const c of inside) {
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!set.has(j)) rim = Math.min(rim, causes.land[j] ? elevation[j] : 0);
+      }
+    }
+    if (!Number.isFinite(rim) || rim < 50) continue;
+    // 口底中间深、边上浅一点（碗形）；口沿很低时最多挖到它的一半，不挖到海平面以下
+    const depth = Math.min(peak * 0.12, rim * 0.5);
+    for (const c of inside) {
+      const t = Math.min(1, d[c] / rc);
+      elevation[c] = Math.min(elevation[c], rim - depth * (1 - 0.4 * t * t));
+    }
+  }
+}
+
+// 小块海挖成的湖有多深（m）：水文认湖要 3 m 以上
+const POCKET_DEPTH = 5;
+
 // 扩散后的 h 换成米、海底取地壳高度、挖用户放的湖
 function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): ElevationResult {
   const { mesh, causes, small } = world;
@@ -258,9 +323,24 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
   const scale = small.planet.mountainScale * RAW_TO_M;
   const elevation = new Float32Array(n);
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
+  volcanoes(world, elevation);
   // 海底：按离岸距离的大陆架 → 陆架坡折 → 陆坡 → 陆隆 → 深海（见 seafloor）
   seafloor(world, elevation);
   lagoonFloor(world, elevation);
+  // 并回陆地的小块海（三格以上，见 terrain.ts 的 fillSeaPockets）挖成湖：比四周最低的岸低 POCKET_DEPTH，
+  // 水文按溢出口蓄水，河流进湖、从出口接着流向大海
+  for (const cells of pocketLakes(world)) {
+    const inside = new Set(cells);
+    let rim = Infinity;
+    for (const i of cells) {
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!inside.has(j)) rim = Math.min(rim, land[j] ? elevation[j] : 0);
+      }
+    }
+    if (!Number.isFinite(rim)) continue;
+    for (const i of cells) elevation[i] = Math.min(elevation[i], rim - 1 - POCKET_DEPTH);
+  }
 
   // 湖：挖一个洼地，由水文按溢出口蓄水。
   // 以紧贴湖面的一圈格里最低的为基准往下挖：它就是溢出口，湖面 = 它的高度，
@@ -726,7 +806,7 @@ export function seafloor(world: World, elevation: Float32Array) {
 // 珊瑚岛的潟湖（第十三轮）：可蚀性是珊瑚砂（≥ LAGOON_ERODIBILITY，只有放珊瑚岛时才这么软，见 terrain.ts 的 ISLAND_ERODIBILITY）的海格
 // 是潟湖或环上的缺口，海底是浅浅的珊瑚砂：挨着陆地的约 −15 m，往里每格深 12 m，最深 −50 m（按格号带一点起伏）。
 // 在海底的剖面（seafloor）之后改，不进它的缓存
-export const LAGOON_ERODIBILITY = 4.6;
+export { LAGOON_ERODIBILITY };
 export function lagoonFloor(world: World, elevation: Float32Array) {
   const { mesh, causes } = world;
   const { off, adj } = mesh;
