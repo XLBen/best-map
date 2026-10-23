@@ -431,6 +431,28 @@ export function seafloor(world: World, elevation: Float32Array) {
   };
   const hit = same.find((e) => sameArray(e.uplift, causes.uplift));
   if (hit) return reuse(hit);
+  // 只有陆上的抬升变了（海陆、陆块都不变）：岸边海格的属性只取决于挨着海的陆格的抬升，
+  // 那些陆格的抬升（按位）都没变就照用（与下面按 up、size 比的结果相同，只是不必扫整个海岸、数陆块）
+  if (same.length) {
+    const ub = new Uint32Array(causes.uplift.buffer, causes.uplift.byteOffset, n);
+    for (const e of same) {
+      const eb = new Uint32Array(e.uplift.buffer, e.uplift.byteOffset, n);
+      let ok = true;
+      for (let i = 0; i < n && ok; i++) {
+        if (ub[i] === eb[i] || !land[i]) continue;
+        for (let q = off[i], end = off[i + 1]; q < end; q++) {
+          if (!land[adj[q]]) {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if (ok) {
+        e.uplift = causes.uplift.slice();
+        return reuse(e);
+      }
+    }
+  }
 
   // 岸边的海格（挨着陆地）与它们的属性：挨着的陆地的抬升（高山海岸 = 活动边缘）、陆块的大小
   const up = new Float32Array(n);
