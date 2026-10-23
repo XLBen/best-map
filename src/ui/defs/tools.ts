@@ -283,7 +283,8 @@ const defs: ToolDef[] = [
       scale: 'log',
       snap: (v) => Math.round(v * 20) / 20,
       // 写出岛与岛之间大约隔多远（与 chainIslands 的间距同一个算法：岛的半径 × 2.6 ÷ 疏密）
-      format: (v) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * options.value.islandKm) / v)} km`,
+      // 用岛链自己的大小（第十二轮修正：以前误用了放岛的大小）
+      format: (v, w) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], options.value.chainKm)) / v)} km`,
     },
     // 换个排列：上一条岛链还是最后一步时重新排它（只算一次，历史里只留一步），否则换下一条的排列
     bar: () => [chainKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '重新排上一条岛链（快捷键 R）', run: () => void rerollChain() }],

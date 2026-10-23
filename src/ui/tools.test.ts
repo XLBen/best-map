@@ -113,14 +113,14 @@ describe('岛链的“疏密”写出间距', () => {
   it('写的间距与真放出来的岛链相同（取整前差不到一成）', () => {
     const w = continents().world;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
-    setOptions({ islandKm: 3 * cellKm });
+    setOptions({ chainKm: 3 * cellKm, chainKind: 'volcanic' });
     const def = TOOL_DEFS.chain.amount!;
     for (const v of [0.4, 1, 2.5]) {
       const text = def.format(v, w);
       expect(text).toMatch(/^(稀疏|正常|密集) \d+% · 间距约 \d+ km$/);
       const said = Number(text.match(/间距约 (\d+) km/)![1]);
       // 一条横贯地图的直线：沿线的岛距 = 全长 ÷ 岛数
-      const isl = chainIslands(w, { points: [[0.1 * w.mesh.width, 0.5 * w.mesh.height], [0.9 * w.mesh.width, 0.5 * w.mesh.height]], kind: 'volcanic', size: options.value.islandKm, density: v, variant: 0 });
+      const isl = chainIslands(w, { points: [[0.1 * w.mesh.width, 0.5 * w.mesh.height], [0.9 * w.mesh.width, 0.5 * w.mesh.height]], kind: 'volcanic', size: options.value.chainKm, density: v, variant: 0 });
       const real = (0.8 * w.mesh.width * w.kmPerUnit) / isl.length;
       expect(Math.abs(said - real) / real).toBeLessThan(0.1);
     }
