@@ -103,9 +103,6 @@ export const featureSchema = z.object({
 });
 export type SpeciesFeature = z.output<typeof featureSchema>;
 
-// 第三批新加的项：旧版程序不认识，用到时世界存成第 4 版（engine.ts 的 usesExtensions）
-export const SPECIES_EXTENSION_KEYS = ['visual', 'effects', 'feature', 'scripts', 'seedKey'] as const;
-
 // 生态能有的两种脚本
 export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
 

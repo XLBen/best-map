@@ -366,7 +366,7 @@ function drawRivers(world: World, rgb: Uint8Array, land: Uint8Array, width: numb
       const flow = (line.flow[k] + line.flow[k + 1]) / 2;
       const level = Math.min(colors.length - 1, Math.max(0, Math.floor(Math.log10(flow / thr) * 2)));
       const col = colors[level];
-      // 没有粗细倍数的（自然的河、旧存档）照原来的算式，逐位不变
+      // 没有粗细倍数的（自然的河、没调过粗细的画的河）照原来的算式，逐位不变
       const r = line.mul ? Math.max(0, (riverWidth(flow, thr) * ((line.mul[k] + line.mul[k + 1]) / 2) * scale - 1) / 2) : Math.max(0, (riverWidth(flow, thr) * scale - 1) / 2);
       const ri = Math.ceil(r);
       const r2 = r * r + 0.25;

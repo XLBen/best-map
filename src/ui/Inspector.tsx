@@ -22,7 +22,7 @@ function lonLatText(w: World, cell: number): string {
 // 整个星球的洋流：海上“洋流：向东北 · 暖流 +3.0 °C”，陆地上“洋流让这里暖 1.8 °C”；没有洋流时为 null
 const COMPASS = ['东', '东北', '北', '西北', '西', '西南', '南', '东南'];
 function currentText(w: World, cell: number): string | null {
-  if (!w.settings.globe || (w.small.planet.currents ?? 1) === 0) return null;
+  if (!w.settings.globe || w.small.planet.currents === 0) return null;
   const d = w.derived;
   const a = d.sstAnom[cell];
   if (w.causes.land[cell]) return Math.abs(a) >= 0.3 ? `洋流让这里${a > 0 ? '暖' : '凉'} ${fmt(Math.abs(a), 1)} °C` : null;

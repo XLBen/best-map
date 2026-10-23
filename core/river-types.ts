@@ -15,7 +15,7 @@ import type { Derived, Guide, SmallState, World } from './world';
 //      有一格已经由河道定下类型（或者是选了“普通的河”的河道）的河不再匹配；
 //   3. 往下游传：还没有类型的河格，它最大的上游有类型、并且那条上游的水不少于这一格的一半时，跟着上游。
 //      所以带类型的河流进更大的河就停了。
-// 没有河流类型的世界里根本没有 riverType 这个键（旧存档的推导逐值不变）
+// 没有河流类型的世界里根本没有 riverType 这个键（推导与没有这一层时逐值相同）
 
 // 画法
 export const RIVER_STYLES = ['solid', 'dashed', 'double', 'glow'] as const;

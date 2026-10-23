@@ -156,9 +156,9 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
   const land = causes.land;
   const lat = new Float64Array(n);
   for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
-  const strength = planet.currents ?? 1;
-  // 山挡风：旧存档里没有这一项，按 0（风直接翻过山）
-  const terrainWind = planet.terrainWind ?? 0;
+  const strength = planet.currents;
+  // 山挡风：0 时风直接翻过山
+  const terrainWind = planet.terrainWind;
   const written = [out.windSX, out.windSY, out.windWX, out.windWY, out.continentality, out.currentX, out.currentY, out.sstAnom];
   const params = [planet.tilt, planet.rotation, planet.solar, strength, kmPerUnit, PLANET_SWEEPS.wind, PLANET_SWEEPS.ocean, terrainWind];
   const hit = sphereMemo.find(mesh, [land, elevation, lat], params);

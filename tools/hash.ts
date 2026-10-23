@@ -21,7 +21,7 @@ export function referenceHashes(): Record<string, string> {
   const out: Record<string, string> = { meshX: hashArray(w.mesh.x), meshAdj: hashArray(w.mesh.adj) };
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
-  eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'volcanic', size: 'medium', variant: 0 } });
+  eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'volcanic', size: 440, variant: 0 } });
   const d = w.derived;
   const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && d.lake[i] !== 1);
   eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(2000, 2300), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });

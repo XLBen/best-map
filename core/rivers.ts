@@ -513,7 +513,7 @@ export function stemPath(world: World, cells: readonly number[]): number[] {
 }
 
 // 一条画的河的控制点（courseLine 再平滑一遍就是画出来的样子）：画的折线，再接上画完之后顺地势流下去的那段
-// （格心加上与自然的河相同的曲流）；旧式的河道没有折线，整条按格心（与固定自然的河时存的一样，见 stemPath）。
+// （格心加上与自然的河相同的曲流）；没有折线的河道（顺地势画的）整条按格心（与固定自然的河时存的一样，见 stemPath）。
 // 重画一段、接到它前面时都按它算，所以没改的地方画出来一点不动
 export function guidePoints(world: World, g: Guide): [number, number][] {
   if (!g.path) return decodePath(stemPath(world, g.cells));

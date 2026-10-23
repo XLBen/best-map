@@ -738,9 +738,9 @@ function slopeOf(world: World, elevation: ArrayLike<number>): Float32Array {
   return out;
 }
 
-// 没挖河床的地形的坡度：没有只挖河床的河时就是水文算好的那份（两者逐值相同），有的话按地形另算（按内容缓存）
+// 没挖河床的地形的坡度：没有画的河时就是水文算好的那份（两者逐值相同），有的话按地形另算（按内容缓存）
 function terrainSlope(world: World, d: Derived, terrain: Float32Array): ArrayLike<number> {
-  if (terrain === d.elevation || !world.small.guides.some((g) => g.carve === 'bed')) return d.slope;
+  if (terrain === d.elevation || !world.small.guides.length) return d.slope;
   return memoized(world.mesh, 'slope', [world.causes.land, terrain], () => slopeOf(world, terrain));
 }
 
@@ -1344,7 +1344,7 @@ function alongLine(pts: readonly [number, number][], step: number): [number, num
 
 // 有名字的画的河变成地物（键 guide:河道 id，类型是河）：格是这条河自己的格（从河口往上排），标注在画出来的线的中段。
 // 标签、大小、重要度与自然的大河同一个算法，所以固定一条自然的河之后名字、先后都不变（见 assignNames）。
-// terrain 同 detectFeatures。没有名字的河道（旧存档里画的河都是）不算，旧存档的地名不变
+// terrain 同 detectFeatures。没有名字的河道（命令里既没有 name 也没有 nameKey）不算
 export function guideFeatures(world: World, d: Derived, terrain: Float32Array = d.elevation): GeoFeature[] {
   const { mesh } = world;
   const thr = world.small.planet.riverThreshold;

@@ -23,7 +23,7 @@ export const settingsSchema = z.object({
   aspect: z.number().min(0.5).max(4).default(2),
   latNorth: z.number().min(-90).max(90).default(72),
   latSouth: z.number().min(-90).max(90).default(-8),
-  // 整个星球（从北极到南极、东西相接）。没有这一项就是一块地区；旧文档没有这两项，解析结果不变
+  // 整个星球（从北极到南极、东西相接）。没有这一项就是一块地区
   globe: z.boolean().optional(),
   // 星球半径（km），只用于整个星球；省略时与地球相同
   radiusKm: z.number().min(1500).max(20000).optional(),
@@ -57,10 +57,9 @@ const planetFields = {
   vegSharpness: z.number().min(0.5).max(20),
   // 建好后把地图在星球上整体南北挪了多少度（正为往北）；纬度跨度不变，所以地图的大小不变
   latShift: z.number().min(-180).max(180),
-  // 洋流强弱（只用于整个星球）：0 没有洋流，1 与地球相当，2 更强。省略时星球按 1
+  // 洋流强弱（只用于整个星球）：0 没有洋流，1 与地球相当，2 更强
   currents: z.number().min(0).max(2),
-  // 山挡风：高山让风拐弯的强弱。0 风直接翻过山（原来的算法），1 与地球相当，2 更强。
-  // 省略时为 0（旧存档照原样重放）；新建世界、打开没设过的旧存档时由界面设成 1
+  // 山挡风：高山让风拐弯的强弱。0 风直接翻过山，1 与地球相当，2 更强
   terrainWind: z.number().min(0).max(2),
 };
 
@@ -75,9 +74,8 @@ export const planetSchema = z.object({
   riverThreshold: planetFields.riverThreshold.default(150),
   vegSharpness: planetFields.vegSharpness.default(4),
   latShift: planetFields.latShift.default(0),
-  // 没有默认值：旧文档里没有这一项，解析结果不变
-  currents: planetFields.currents.optional(),
-  terrainWind: planetFields.terrainWind.optional(),
+  currents: planetFields.currents.default(1),
+  terrainWind: planetFields.terrainWind.default(1),
 });
 export type Planet = z.output<typeof planetSchema>;
 
@@ -108,10 +106,10 @@ export const coursePathSchema = z
   .max(COURSE_MAX_POINTS * 2)
   .refine((a) => a.length % 2 === 0, '折线的坐标要成对');
 
-// 画的河：沿相邻格组成的路径强制汇流方向并加强下切，走向固定；
+// 画的河：沿相邻格组成的路径强制汇流方向，走向固定；只挖河床：地形照自然求解，再把河道格压成从源头往下的
+// 累计最小值（见 elevation.ts 的 carveBeds），周围的山不动；
 // spring 表示源头有泉水，从源头起水量就够显示成河；
 // flow 是河的大小：这一段一路上加进来的水，到末端合计为“河流多少”门槛的几倍（省略为 1.2，刚好看得见）。
-// 第八轮起的几项都可以省略（旧存档没有，解析结果不变；只在有这一项时才有新的行为）
 export const guideSchema = z.object({
   id: z.string(),
   cells: z.array(z.number().int().min(0)).min(2),
@@ -130,25 +128,19 @@ export const guideSchema = z.object({
   width: z.number().min(0.3).max(4).optional(),
   // 在终点那格消失（渗进地下）：路由里那一格是出口
   end: z.literal('sink').optional(),
-  // 只挖河床：地形照自然求解，再把河道格压成从源头往下的累计最小值（见 elevation.ts 的 bedLevels）。
-  // 省略是旧式的下切山谷（强制汇流方向、岩性更软，周围的地形跟着变）
-  carve: z.literal('bed').optional(),
   // 河流类型（第三批）：id 的规则与生态相同
   type: typeIdSchema.optional(),
 });
 export type Guide = z.output<typeof guideSchema>;
-// 第八轮起加的那几项：用到任何一项的文档要存成第 4 版（见 engine.ts 的 docVersion）
-export const GUIDE_EXTENSIONS = ['path', 'name', 'nameKey', 'salt', 'width', 'end', 'carve', 'type'] as const;
 
 export const lakeSchema = z.object({
   id: z.string(),
   cell: z.number().int().min(0),
+  // 半径（km）就按给的算，最小半格（只淹放湖的那一格，见 elevation.ts 的 lakeRadiusUnits）
   radius: z.number().min(0.1).max(2000).default(150),
   depth: z.number().min(5).max(2000).default(120),
   // 不受蒸发影响，始终蓄满（泉水、魔法湖）
   perennial: z.boolean().default(true),
-  // 第八轮起的新湖：半径就按给的算，最小半格（只淹一格）。旧湖没有这一项，照旧至少一格半
-  exact: z.literal(true).optional(),
   // 第九轮：湖泊类型（'plain' 是“普通的湖”，见 lake-types.ts）。这个湖所在的那一片湖面都按它。
   // 名字不在这里：与自然的湖一样是地名（rename_feature、reroll_feature，键是“lake:锚点格”），只有一处说了算
   type: typeIdSchema.optional(),

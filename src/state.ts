@@ -1,6 +1,7 @@
 import { batch, signal } from '@preact/signals';
 import { speciesOwner } from '../core/biome-scripts';
 import type { Command } from '../core/commands';
+import { checkDoc, isCurrentDoc } from '../core/doc-version';
 import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
@@ -924,16 +925,16 @@ export async function newWorld(settings: Partial<Settings>, commands: Command[],
   return open({ kind: 'init', settings, commands }, '正在生成世界…', opts, '新建', settings);
 }
 
-// 打开从没设过山挡风的旧存档时，在历史末尾补的一步（可撤销）
-const LEGACY_WIND: Command = { op: 'batch', label: '山挡风：旧存档也打开', commands: [{ op: 'set_planet', patch: { terrainWind: 1 } }] };
-
-// 打开世界：世界文件、自动保存（连同检查点）、“再试一次”都经过这里，带脚本时统一查信任
+// 打开世界：世界文件、自动保存（连同检查点）、“再试一次”都经过这里，带脚本时统一查信任。
+// 不是世界文件、是旧版本的世界（第九轮起不再兼容）时直接说打不开，不去重放
 export async function loadDoc(doc: WorldDoc, opts: OpenOptions = {}) {
-  const ok = await open({ kind: 'load', doc }, '正在打开世界…', opts, '打开', doc.settings);
-  // 山挡风：重放完没有这一项，就是没有哪条命令设过它（核心里按 0，前面的每一步照原样重放）。
-  // 在末尾补一步“打开”，之后照常自动保存；存档里有了这一步，下次打开就不再补
-  if (ok && world.value && world.value.small.planet.terrainWind === undefined) await exec(LEGACY_WIND, '正在重算气候…');
-  return ok;
+  try {
+    checkDoc(doc);
+  } catch (e) {
+    showToast((e as Error).message, true);
+    return false;
+  }
+  return open({ kind: 'load', doc }, '正在打开世界…', opts, '打开', doc.settings);
 }
 
 // 继续上次的世界（启动时、向导里）：读自动保存，上次是安全模式就照样用安全模式打开。
@@ -1566,7 +1567,7 @@ async function autosave() {
     if (epoch === worldEpoch.value && gen === savedGen) savedIds = ids;
     savedCount = meta.count;
     autosaved.value = meta.savedAt;
-    // 旧版存在 localStorage 里的：已经搬过来了
+    // IndexedDB 用不了时存在 localStorage 里的：已经有更新的了
     localStorage.removeItem(AUTOSAVE_KEY);
   } catch {
     // IndexedDB 用不了（比如隐私模式）：整份存进 localStorage
@@ -1589,7 +1590,8 @@ if (typeof document !== 'undefined') {
   });
 }
 
-// 读上次的自动保存：IndexedDB 与（旧版的）localStorage 里较新的那一份。safe：上次是安全模式（原因）
+// 读上次的自动保存：IndexedDB 与 localStorage（IndexedDB 用不了时的后备）里较新的那一份。safe：上次是安全模式（原因）。
+// 旧版本的世界（第九轮起不再兼容）当作没有：启动时弹出向导新建，不报错；新世界的自动保存会盖掉它
 export interface Autosaved {
   savedAt: number;
   doc: WorldDoc;
@@ -1605,7 +1607,8 @@ export async function readAutosave(): Promise<Autosaved | null> {
     if (meta && meta.count > 0) {
       const commands = await get<Command[]>(tx.objectStore('autosave').getAll(IDBKeyRange.bound(0, meta.count - 1)));
       const { savedAt, count, safe, ...head } = meta;
-      if (commands.length === count) best = { savedAt, doc: { ...head, commands }, ...(typeof safe === 'string' ? { safe } : {}) };
+      const doc = { ...head, commands };
+      if (commands.length === count && isCurrentDoc(doc)) best = { savedAt, doc, ...(typeof safe === 'string' ? { safe } : {}) };
     }
     db.close();
   } catch {
@@ -1614,7 +1617,7 @@ export async function readAutosave(): Promise<Autosaved | null> {
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
     const old = raw ? (JSON.parse(raw) as Autosaved) : null;
-    if (old && (!best || old.savedAt > best.savedAt)) best = { savedAt: old.savedAt, doc: old.doc, ...(typeof old.safe === 'string' ? { safe: old.safe } : {}) };
+    if (old && isCurrentDoc(old.doc) && (!best || old.savedAt > best.savedAt)) best = { savedAt: old.savedAt, doc: old.doc, ...(typeof old.safe === 'string' ? { safe: old.safe } : {}) };
   } catch {
     // 坏了就当没有
   }

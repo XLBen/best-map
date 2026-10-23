@@ -1294,7 +1294,7 @@ export function spliceCourse(
     [p0, pe] = [pe, p0];
   }
   const C = g.cells;
-  // 投影点所在的格要在河道上；不在（旧式河道的格心连线擦过别的格）就挪到最近的折点
+  // 投影点所在的格要在河道上；不在（没有折线的河道的格心连线擦过别的格）就挪到最近的折点
   const indexOf = (p: { seg: number; t: number; p: Pt }): { k: number; p: Pt } => {
     const r = roundPt(p.p);
     const k = C.indexOf(findCell(mesh, r[0], r[1]));

@@ -325,14 +325,7 @@ async function handle(id: number, req: Request) {
         const settings = { ...req.settings, cells: 4000 };
         const e = new Engine(settings, meshFor(settings));
         e.features = false;
-        // 与向导建出的世界一样打开山挡风（生态颜色跟着拐过的风算），同一步里只算一遍
-        e.exec({
-          op: 'batch',
-          commands: [
-            { op: 'set_worldgen', params: req.gen, reset: true },
-            { op: 'set_planet', patch: { terrainWind: 1 } },
-          ],
-        });
+        e.exec({ op: 'set_worldgen', params: req.gen, reset: true });
         const thumb = renderThumbnail(e.world, req.width, req.height);
         // 星球形态的脚本出的错（形态编辑器写在缩略图下面）：只在有形态时带上
         const issues = req.gen.form ? planetFormIssues(e.world) : undefined;

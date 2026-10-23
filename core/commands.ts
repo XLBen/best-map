@@ -4,7 +4,6 @@ import { checkForm, sameForm } from './planet-form';
 import { PLANET_TYPES } from './presets';
 import { packProblems, wordPackSchema } from './names';
 import {
-  PROVINCE_KINDS,
   PROVINCE_KIND_INFO,
   type ProvinceKind,
   generateProvinces,
@@ -31,7 +30,6 @@ import {
   chainIslands,
   chainSchema,
   combineStamps,
-  islandRadiusKm,
   islandSchema,
   islandStamp,
   landStroke,
@@ -48,7 +46,6 @@ import {
   REGION_KINDS,
   constraintSchema,
   type Derived,
-  GUIDE_EXTENSIONS,
   type Guide,
   guideSchema,
   lakeSchema,
@@ -82,8 +79,6 @@ const guidePatchSchema = z
     flow: G.flow.unwrap().nullable().optional(),
     width: G.width.unwrap().nullable().optional(),
     end: G.end.unwrap().nullable().optional(),
-    // 只能改成只挖河床（旧式的下切山谷不再新建）
-    carve: G.carve.unwrap().optional(),
     type: G.type.unwrap().nullable().optional(),
   })
   .strict();
@@ -183,7 +178,8 @@ const baseCommands = [
     id: z.number().int(),
     name: z.string().optional(),
     locked: z.boolean().optional(),
-    kind: z.enum(PROVINCE_KINDS).optional(),
+    // 只能在陆地和无人区之间改（湖省只由自动划分产生，海域省份的类型不能改）
+    kind: z.enum(['land', 'wasteland']).optional(),
   }),
   // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名
   z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40) }),
@@ -290,7 +286,7 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
 
 // changed：命令有没有改动原因或小数据（没改动时推导也不会变）。
 // provinceNames：这一步新起的省名。起名要看推导（河、山、冷暖），重放时推导还没算到这一步，起出来的名字可能
-// 与当时不同，所以记进命令；命令里记着的就照用（旧存档没有记，照旧重放）
+// 与当时不同，所以记进命令；命令里记着的就照用（没有记的：这一步没有新起的省名）
 export function applyCommand(
   world: World,
   input: Command,
@@ -414,14 +410,13 @@ export function checkCourse(mesh: Mesh, cells: readonly number[]) {
   }
 }
 
-// 第八轮起的河道多查两项：不经过同一格两次（水会绕成圈）；在终点消失的，终点要在陆地上
+// 河道还要查两项：不经过同一格两次（水会绕成圈）；在终点消失的，终点要在陆地上
 function checkNewCourse(world: World, g: Guide, cells: boolean, end: boolean) {
   if (cells && new Set(g.cells).size !== g.cells.length) throw new CommandError('河道不能经过同一格两次');
   if (end && g.end === 'sink' && !world.causes.land[g.cells[g.cells.length - 1]]) throw new CommandError('在终点消失的河，终点要在陆地上');
 }
 
-// 河道截到第 k 格为止（含）：画的折线在第一次进这格的地方截断；原来在终点消失的不再消失（现在流进别的河）。
-// 只动有的项：旧存档里的河道截断后与原来的写法逐字相同
+// 河道截到第 k 格为止（含）：画的折线在第一次进这格的地方截断；原来在终点消失的不再消失（现在流进别的河）
 export function truncateGuide(world: World, g: Guide, k: number): Guide {
   const out: Guide = { ...g, cells: g.cells.slice(0, k + 1) };
   if (g.path) {
@@ -445,17 +440,14 @@ function captureBy(world: World, guides: Guide[], g: Guide): Guide[] {
   });
 }
 
-// 改了画的河之后要从哪一层重算：
-//   · 旧式下切山谷的格变了 → 高程（与原来相同：旧存档照旧从高程重算）；
-//   · 走向、只挖河床、泉水、大小、终点、类型变了，或者有没有名字变了（地物多了、少了）→ 植被（从水文起）；
+// 改了画的河之后要从哪一层重算（画的河只挖河床，不改地形的求解，所以从不需要重算高程与气候）：
+//   · 走向、泉水、大小、终点、类型变了，或者有没有名字变了（地物多了、少了）→ 植被（从水文起）；
 //   · 名字、盐、画的折线变了 → 只重新起名；
 //   · 只改粗细 → 不用重算
 export function guideDirty(before: readonly Guide[], after: readonly Guide[]): Dirty {
   const sig = (list: readonly Guide[], f: (g: Guide) => unknown) => JSON.stringify(list.map(f));
   const same = (f: (g: Guide) => unknown) => sig(before, f) === sig(after, f);
-  const valley = (g: Guide) => g.carve !== 'bed';
-  if (sig(before.filter(valley), (g) => g.cells) !== sig(after.filter(valley), (g) => g.cells)) return Dirty.Elevation;
-  if (!same((g) => [g.id, g.cells, g.carve ?? null, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined])) {
+  if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined])) {
     return Dirty.Vegetation;
   }
   if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.salt ?? null, g.path ?? null])) return Dirty.Names;
@@ -588,13 +580,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       });
       applyTerrain(world);
       // 小礁不看大小：画出来约半格大
-      const diameter = spec.kind === 'reef' ? world.mesh.spacing * world.kmPerUnit * 0.5 : islandRadiusKm(world, spec.size) * 2;
+      const diameter = spec.kind === 'reef' ? world.mesh.spacing * world.kmPerUnit * 0.5 : spec.size * 2;
       return { dirty: Dirty.Elevation, summary: `放了一个${ISLAND_KIND_INFO[spec.kind].name}（直径约 ${roundKm(diameter)} km）` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);
       const islands = chainIslands(world, spec);
-      const r = combineStamps(world, islands, spec.fine === true);
+      const r = combineStamps(world, islands);
       r.cells.forEach((i, k) => {
         causes.landDelta[i] += r.landDelta[k];
         causes.upliftDelta[i] += r.upliftDelta[k];
@@ -740,11 +732,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       checkCells(cmd.guide.cells);
       checkCourse(mesh, cmd.guide.cells);
       const g = guideSchema.parse({ ...cmd.guide, id: cmd.guide.id ?? nextId(world, cmd.guide.locked ? 'lock' : 'river') });
-      // 第八轮起的河道多查几项（旧存档里的照旧不查，照原样重放）
-      if (GUIDE_EXTENSIONS.some((k) => g[k] !== undefined)) {
-        if (small.guides.some((x) => x.id === g.id)) throw new CommandError(`河道 id "${g.id}" 已存在`);
-        checkNewCourse(world, g, true, true);
-      }
+      if (small.guides.some((x) => x.id === g.id)) throw new CommandError(`河道 id "${g.id}" 已存在`);
+      checkNewCourse(world, g, true, true);
       const before = small.guides.slice();
       if (cmd.reroute) {
         // 原来那段河道不再留着（也就不再有白色虚线标记）
@@ -774,8 +763,6 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const merged: Record<string, unknown> = { ...old, ...cmd.patch };
       for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete merged[k];
       const moved = cmd.patch.cells !== undefined && JSON.stringify(cmd.patch.cells) !== JSON.stringify(old.cells);
-      // 改了走向的旧式河道一律改成只挖河床：重画一段不会再把沿途的山削平
-      if (moved) merged.carve = 'bed';
       const parsed = guideSchema.safeParse(merged);
       if (!parsed.success) throw new CommandError(`update_guide 参数无效：${formatIssues(parsed.error)}`);
       const g = parsed.data;
@@ -1058,7 +1045,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const meta = small.provinces[cmd.id];
       if (!meta) throw new CommandError(`找不到省份 ${cmd.id}`);
       if (cmd.kind !== undefined) {
-        if ((cmd.kind === 'sea') === meta.land) throw new CommandError(meta.land ? '陆地上的省份不能改成海域' : '海上的省份只能是海域');
+        if (!meta.land) throw new CommandError('海上的省份只能是海域');
         meta.kind = cmd.kind;
       }
       if (cmd.name !== undefined) meta.name = cmd.name;

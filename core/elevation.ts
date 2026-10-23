@@ -97,24 +97,13 @@ export function computeElevation(world: World): ElevationResult {
   // 汇水面积加一个按地图面积取的常数：源头格的面积随格数变化，不加的话格越密山越高
   // 整个星球按布局尺度（半圈经线的一半）算，和同样格距的地区地图相当
   const areaReg = sphere ? (mesh.totalArea * (kmPerUnit / 2) * (kmPerUnit / 2)) / 20000 : (mesh.width * mesh.height * kmPerUnit * kmPerUnit) / 20000;
-  const forced = new Int32Array(n).fill(-1);
   for (let i = 0; i < n; i++) {
     // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
     u[i] = (0.035 + causes.uplift[i]) * fu[i];
     K[i] = causes.erod[i] * fk[i];
     areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
   }
-  for (const g of small.guides) {
-    // 只挖河床的河不改地形的求解：求解之后再挖（carveBeds），周围的山不动
-    if (g.carve === 'bed') continue;
-    for (let k = 0; k < g.cells.length - 1; k++) {
-      const a = g.cells[k];
-      const b = g.cells[k + 1];
-      if (land[a]) forced[a] = b;
-      // 引导河道的岩性更软，下切更深
-      K[a] *= 3;
-    }
-  }
+  // 画的河不改地形的求解：求解之后再挖河床（carveBeds），周围的山不动
 
   // 初始高程：按离海距离给一个缓坡加噪声（固定初值，结果只取决于原因）
   const h = new Float64Array(n);
@@ -125,7 +114,7 @@ export function computeElevation(world: World): ElevationResult {
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
   // 活动格与强制方向各轮相同：路由的出口、缓冲区只建一次
-  const router = new Router(mesh, land, forced);
+  const router = new Router(mesh, land);
   const A = new Float64Array(n);
   // A^m 很费时：汇水面积与上一轮完全相同的格（源头格每轮都是）沿用上一轮的值
   const lastA = new Float64Array(n).fill(-1);
@@ -182,7 +171,7 @@ export function computeElevation(world: World): ElevationResult {
   for (const lake of small.lakes) {
     const c = lake.cell;
     if (!land[c]) continue;
-    const rUnits = lakeRadiusUnits(world, lake.radius, lake.exact);
+    const rUnits = lakeRadiusUnits(world, lake.radius);
     const d = graphDistance(mesh, [c], rUnits);
     const inside = (i: number) => land[i] && d[i] <= rUnits;
     let rim = Infinity;
@@ -204,17 +193,16 @@ export function computeElevation(world: World): ElevationResult {
   return { elevation, coastKm };
 }
 
-// 湖的半径（地图单位）：旧湖至少一格半，保证小湖也是一片水面；
-// 第八轮起的新湖（exact）至少半格：半径不到一格时只淹放湖的那一格
-export function lakeRadiusUnits(world: World, radiusKm: number, exact?: boolean): number {
-  return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * (exact ? 0.5 : 1.5));
+// 湖的半径（地图单位）：至少半格，半径不到一格时只淹放湖的那一格
+export function lakeRadiusUnits(world: World, radiusKm: number): number {
+  return Math.max(radiusKm / world.kmPerUnit, world.mesh.spacing * 0.5);
 }
 
 // 放湖后会被淹的格（预览用）：与挖洼地用同一个范围，所以预览就是结果
-export function lakeArea(world: World, cell: number, radiusKm: number, exact?: boolean): number[] {
+export function lakeArea(world: World, cell: number, radiusKm: number): number[] {
   const { mesh, causes } = world;
   if (!causes.land[cell]) return [];
-  const rUnits = lakeRadiusUnits(world, radiusKm, exact);
+  const rUnits = lakeRadiusUnits(world, radiusKm);
   const d = graphDistance(mesh, [cell], rUnits);
   const out: number[] = [];
   for (let i = 0; i < mesh.n; i++) if (causes.land[i] && d[i] <= rUnits) out.push(i);
@@ -304,7 +292,7 @@ export function bedLevels(
 // 用户放的湖淹到的格（湖的碗）
 export function userLakeMask(world: World): Uint8Array {
   const mask = new Uint8Array(world.mesh.n);
-  for (const l of world.small.lakes) for (const c of lakeArea(world, l.cell, l.radius, l.exact)) mask[c] = 1;
+  for (const l of world.small.lakes) for (const c of lakeArea(world, l.cell, l.radius)) mask[c] = 1;
   return mask;
 }
 
@@ -321,10 +309,10 @@ export function sinkMask(world: World): Uint8Array | null {
   return mask;
 }
 
-// 在自然求解的地形上挖出所有只挖河床的河（按画的先后，后画的看到的是先画的挖过的）。只往低里挖：
+// 在自然求解的地形上挖出所有画的河的河床（按画的先后，后画的看到的是先画的挖过的）。只往低里挖：
 // 河道以外的格一格不动，所以气候、山名照旧按没挖过的地形算（见 Engine.update）
 export function carveBeds(world: World, elevation: Float32Array) {
-  const beds = world.small.guides.filter((g) => g.carve === 'bed');
+  const beds = world.small.guides;
   if (!beds.length) return;
   const land = world.causes.land;
   const skip = world.small.lakes.length ? userLakeMask(world) : undefined;

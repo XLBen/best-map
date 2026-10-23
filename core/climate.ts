@@ -399,8 +399,8 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   const lat = new Float64Array(n);
   for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
   const written = [out.windSX, out.windSY, out.windWX, out.windWY, out.continentality];
-  // 山挡风：旧存档里没有这一项，按 0（风直接翻过山）
-  const terrainWind = planet.terrainWind ?? 0;
+  // 山挡风：0 时风直接翻过山
+  const terrainWind = planet.terrainWind;
   const params = [planet.tilt, planet.rotation, planet.outsideOcean, kmPerUnit, SWEEPS, terrainWind];
   const hit = planeMemo.find(mesh, [land, elevation, lat], params);
   if (hit) {

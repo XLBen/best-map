@@ -91,18 +91,10 @@ export function wizardWorldName(kind: 'region' | 'planet', ptype: string, choice
   return form?.name ?? (PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0]).name;
 }
 
-// 向导新建的命令：生成与“山挡风”放在同一步里（标签“新世界：X”；山挡风在划分省份之前打开，省份按拐过的风算出的气候来分，
-// 只算一遍，历史里也只有“新世界”），再划分省份
+// 向导新建的命令：生成（标签“新世界：X”，山挡风默认就是打开的），再划分省份
 export function newWorldCommands(gen: WorldgenInput, name: string, seed: number): Command[] {
   return [
-    {
-      op: 'batch',
-      label: `新世界：${name}`,
-      commands: [
-        { op: 'set_worldgen', params: gen, reset: true },
-        { op: 'set_planet', patch: { terrainWind: 1 } },
-      ],
-    },
+    { op: 'batch', label: `新世界：${name}`, commands: [{ op: 'set_worldgen', params: gen, reset: true }] },
     { op: 'generate_provinces', rules: { seed } },
   ];
 }

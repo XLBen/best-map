@@ -136,7 +136,6 @@ export function App() {
     if (location.hash === '#demo') {
       void newWorld(settingsFor('region', 'tropical', 40000), [
         { op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true },
-        { op: 'set_planet', patch: { terrainWind: 1 } },
         { op: 'generate_provinces', rules: { seed: 3 } },
       ]);
     } else {

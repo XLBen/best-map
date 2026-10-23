@@ -1,4 +1,5 @@
 import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate } from './climate';
+import { DOC_VERSION, checkDoc } from './doc-version';
 import { type Command, CommandError, Dirty, type UndoRecord, applyCommand, revert } from './commands';
 import { checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere } from './planet-climate';
@@ -12,19 +13,17 @@ import { typeLakes } from './lake-types';
 import { typeRivers } from './river-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
-import { SPECIES_EXTENSION_KEYS } from './species';
 import { computeVegetation, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
-import { type Causes, type Derived, GUIDE_EXTENSIONS, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
+import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
 //   高程 → 气候（基础）→ [约束求解 → 修正场] → 水文 → 植被 → 冲突检查
 
 export interface WorldDoc {
   format: 'map2-world';
-  // 2：一块地区；3：整个星球（旧版程序打不开，不会把星球当成平面重放）；
-  // 4：用了第八轮起新加的字段、命令（旧版程序会悄悄丢掉不认识的字段、按错的样子重放，所以要让它拒绝打开）。见 docVersion
-  version: 2 | 3 | 4;
+  // 文档的版本（doc-version.ts 的 DOC_VERSION）。第九轮起不再兼容旧存档：别的版本一律打不开
+  version: typeof DOC_VERSION;
   settings: Settings;
   commands: Command[];
 }
@@ -41,9 +40,8 @@ export interface Timings {
 
 // 气候的基础（没有修正场时的两季温度、降水），加上地形：自然求解的高程（含湖的碗，不含只挖河床的河）。
 // 气候、山名都按它算，所以画河、改河不会改变气候和山名，也不用重算高程与气候。
-// 旧版存的检查点里没有 terrain：下次重算时从高程算起
 export interface EngineBase extends ClimateBase {
-  terrain?: Float32Array;
+  terrain: Float32Array;
 }
 
 // 一份完整的推导结果：撤销、重做时直接换回，不必重算
@@ -477,7 +475,7 @@ export class Engine {
 
   toDoc(): WorldDoc {
     const commands = this.done.map((h) => h.cmd);
-    return { format: 'map2-world', version: docVersion(this.world.settings, commands), settings: this.world.settings, commands };
+    return { format: 'map2-world', version: DOC_VERSION, settings: this.world.settings, commands };
   }
 
   stepIds(): number[] {
@@ -502,6 +500,7 @@ export class Engine {
   // 从检查点恢复，再对齐到存档的命令：共同的前缀之后，检查点多出来的步撤掉，存档多出来的命令执行。
   // 与从头重放逐值一致（撤销、执行都与重放逐值一致）。设置不同或没有共同的前缀时返回 null（改用重放）
   static fromCheckpoint(cp: Checkpoint, doc: WorldDoc, mesh: Mesh): Engine | null {
+    checkDoc(doc);
     const settings = settingsSchema.parse(doc.settings);
     if (JSON.stringify(settings) !== JSON.stringify(cp.settings)) return null;
     let p = 0;
@@ -537,8 +536,7 @@ export class Engine {
   }
 
   static fromDoc(doc: WorldDoc, mesh?: Mesh): Engine {
-    if (doc.format !== 'map2-world') throw new CommandError('不是 map2 世界文件');
-    if (doc.version !== 2 && doc.version !== 3 && doc.version !== 4) throw new CommandError('这是旧版本的世界文件，与当前版本的地形模型不兼容');
+    checkDoc(doc);
     const settings = settingsSchema.parse(doc.settings);
     const engine = new Engine(settings, mesh);
     doc.commands.forEach((cmd, k) => {
@@ -641,43 +639,6 @@ export class Engine {
     e.stateId = this.stateId;
     return e;
   }
-}
-
-// 文档的版本：2 一块地区，3 整个星球；用了新加的字段、命令时是 4（新旧世界都是）。
-// 只在真的用到时才写 4，所以没用新东西的世界照旧能被旧版程序打开
-export function docVersion(settings: Pick<Settings, 'globe'>, commands: readonly Command[]): WorldDoc['version'] {
-  if (commands.some(usesExtensions)) return 4;
-  return settings.globe ? 3 : 2;
-}
-
-// 一条命令有没有用到旧版程序不认识的字段、命令（batch 里的逐条看）。后面加新字段、新命令时在这里加一项检测
-function usesExtensions(cmd: Command): boolean {
-  if (cmd.op === 'batch') return cmd.commands.some(usesExtensions);
-  // 第八轮 1b：小礁、只淹一格的湖、带 fine 的岛链
-  if (cmd.op === 'add_island' && cmd.island.kind === 'reef') return true;
-  if (cmd.op === 'add_lake' && cmd.lake.exact) return true;
-  if (cmd.op === 'add_island_chain' && cmd.chain.fine) return true;
-  // 第八轮 1e：山挡风
-  if (cmd.op === 'set_planet' && cmd.patch.terrainWind !== undefined) return true;
-  // 第八轮 1f：剪刀切线（provinceSeams）
-  if (cmd.op === 'cut_province') return true;
-  // 第八轮 1d：类型自动判断的地区
-  if (cmd.op === 'add_region' && cmd.region.auto) return true;
-  if (cmd.op === 'update_region' && cmd.auto !== undefined) return true;
-  // 第八轮第二批：画的河的新几项（自定义走向、名字、只挖河床、在终点消失……）、截走、改一条画的河
-  if (cmd.op === 'update_guide') return true;
-  if (cmd.op === 'add_guide' && (cmd.capture !== undefined || GUIDE_EXTENSIONS.some((k) => cmd.guide[k] !== undefined))) return true;
-  // 第八轮第三批：生态的外观、效果、地名、脚本、种子（补丁里写成 null 去掉的也算：旧版程序不认识这一项）
-  if (cmd.op === 'add_species' && SPECIES_EXTENSION_KEYS.some((k) => (cmd.species as Record<string, unknown>)[k] !== undefined)) return true;
-  if (cmd.op === 'update_species' && SPECIES_EXTENSION_KEYS.some((k) => k in cmd.patch)) return true;
-  // 第八轮第三批：星球形态
-  if (cmd.op === 'set_worldgen' && cmd.params.form !== undefined) return true;
-  // 第八轮第三批：河流类型
-  if (cmd.op === 'set_river_type' || cmd.op === 'remove_river_type') return true;
-  // 第九轮：湖泊类型、改一个放的湖、给自然的湖选类型、带类型的新湖
-  if (cmd.op === 'set_lake_type' || cmd.op === 'remove_lake_type' || cmd.op === 'update_lake' || cmd.op === 'type_lake') return true;
-  if (cmd.op === 'add_lake' && cmd.lake.type !== undefined) return true;
-  return false;
 }
 
 export interface DocTail extends Omit<WorldDoc, 'commands'> {

@@ -308,7 +308,7 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
       const total = guideFlow(w, d, g).total;
       const end = guideEnd(w, d, g);
       info = {
-        // 旧存档里画的河没有自己的地名：写它所在的那条自然大河的名字
+        // 没有自己地名的画的河：写它所在的那条自然大河的名字
         name: guideName(w, g),
         feature: f,
         size: riverSizeName(total),
@@ -347,11 +347,10 @@ export const riverLabel = (ref: RiverRef, info: RiverInfo) => `${info.name ?? (r
 
 // ---------- 命令 ----------
 
-// 改一条河道（与 update_guide 相同：null 删掉这一项；改了走向的一律只挖河床）
+// 改一条河道（与 update_guide 相同：null 删掉这一项）
 export function applyPatch(g: Guide, patch: GuidePatch): Guide {
   const out: Record<string, unknown> = { ...g, ...patch };
   for (const [k, v] of Object.entries(patch)) if (v === null) delete out[k];
-  if (patch.cells && JSON.stringify(patch.cells) !== JSON.stringify(g.cells)) out.carve = 'bed';
   return out as Guide;
 }
 
@@ -366,7 +365,7 @@ export function inheritedName(w: World, start: number): { name: string } | { nam
 // 名字（自动起的也一样，键是河道 id）、大小、粗细、类型都照旧。不是从哪条河道的源头开始时为 undefined
 export const sourceGuide = (w: World, start: number) => w.small.guides.find((g) => g.cells[0] === start);
 
-// 重画时补上的名字：旧存档里画的河没有名字，与新画的河一样沿用那条自然河的地名键或自动起名
+// 重画时补上的名字：没有名字的画的河与新画的河一样沿用那条自然河的地名键或自动起名
 const namingFor = (w: World, g: Guide, start: number): GuidePatch => (g.name !== undefined || g.nameKey !== undefined ? {} : inheritedName(w, start));
 
 // 画的河现在叫什么（没名字时为 null）
@@ -450,7 +449,6 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
     locked: true,
     spring: !plan.reroute,
     ...(plan.reroute ? {} : { flow: options.value.riverFlow }),
-    carve: 'bed' as const,
     ...(plan.reroute ? inheritedName(w, plan.cells[0]) : { name: '' }),
     ...(plan.end === 'sink' ? { end: 'sink' as const } : {}),
     ...chosenRiverType(w),
@@ -752,7 +750,6 @@ export function pinCommand(w: World, cell: number, downFrom = false): { cmd: Com
     path: stemPath(w, cells),
     locked: true,
     spring: false,
-    carve: 'bed' as const,
     ...(f ? { nameKey: f.key } : { name: '' }),
     ...(downFrom ? { end: 'sink' as const } : {}),
   };
@@ -845,8 +842,8 @@ export function riverTool(zoom: () => number): ToolHandler {
       return { op: 'update_guide', id: src.id, patch, label: `重画了${quoted(guideName(w, src), '一条画的河')}（约 ${flowLen(w, p)} km${where}）` };
     }
     const guide = p.reroute
-      ? { cells: p.cells, locked: true, spring: false, carve: 'bed' as const, ...inheritedName(w, p.cells[0]), ...chosenRiverType(w) }
-      : { cells: p.cells, locked: true, spring: true, flow: options.value.riverFlow, carve: 'bed' as const, name: '', ...chosenRiverType(w) };
+      ? { cells: p.cells, locked: true, spring: false, ...inheritedName(w, p.cells[0]), ...chosenRiverType(w) }
+      : { cells: p.cells, locked: true, spring: true, flow: options.value.riverFlow, name: '', ...chosenRiverType(w) };
     const label = `${p.reroute ? '让河改道' : '画了一条河'}（约 ${flowLen(w, p)} km${where}）`;
     return { op: 'add_guide', guide, ...(p.reroute ? { reroute: true } : {}), label };
   };
@@ -1206,7 +1203,7 @@ export function unwaterTool(zoom: () => number): ToolHandler {
       const dd = (sphere ? arcUnits(mesh.x[l.cell], mesh.y[l.cell], pointer.x, pointer.y) : Math.hypot(mesh.x[l.cell] - pointer.x, mesh.y[l.cell] - pointer.y)) - l.radius / w.kmPerUnit;
       if (dd < bd) {
         bd = Math.max(0, dd);
-        best = { kind: 'lake', id: l.id, cells: lakeArea(w, l.cell, l.radius, l.exact) };
+        best = { kind: 'lake', id: l.id, cells: lakeArea(w, l.cell, l.radius) };
       }
     }
     for (const g of w.small.guides) {

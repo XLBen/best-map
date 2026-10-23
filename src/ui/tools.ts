@@ -14,7 +14,6 @@ import {
   type IslandSpec,
   chainIslands,
   combineStamps,
-  islandRadiusKm,
   islandSizeRangeKm,
   islandStamp,
   landStroke,
@@ -811,7 +810,7 @@ export function islandTool(): ToolHandler {
     const name = ISLAND_KIND_INFO[spec.kind].name;
     const reef = spec.kind === 'reef';
     // 小礁不看大小：画出来约半格大
-    const diameter = km(reef ? w.mesh.spacing * w.kmPerUnit * 0.5 : islandRadiusKm(w, spec.size) * 2);
+    const diameter = km(reef ? w.mesh.spacing * w.kmPerUnit * 0.5 : spec.size * 2);
     let block: string | null = null;
     if (spec.kind === 'atoll' && !w.causes.land[center.cell] && w.derived.tMean[center.cell] < 20) {
       block = `海水太凉（${Math.round(w.derived.tMean[center.cell])} °C），珊瑚岛要 20 °C 以上`;
@@ -927,16 +926,16 @@ export function chainTool(): ToolHandler {
       use = [];
       for (let k = 0; k < 40; k++) use.push(all[Math.round((k * (all.length - 1)) / 39)]);
     }
-    // 岛链用自己的种类和大小；fine：小一号的岛最小到 0.75 格（旧存档里的岛链没有这一项，照旧）
+    // 岛链用自己的种类和大小（小一号的岛最小到 islandMinCells，太小时岛心那一格成陆）
     const size = w ? Math.max(islandSizeRangeKm(w, o.chainKind)[0], o.chainKm) : o.chainKm;
-    return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant, fine: true as const };
+    return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant };
   };
-  // 一条岛链的预览（按世界与参数缓存）：与命令同一个规则（带 fine：太小的岛岛心那一格成陆），预览就是结果
+  // 一条岛链的预览（按世界与参数缓存）：与命令同一个规则（太小的岛岛心那一格成陆），预览就是结果
   const previewOf = (w: World, spec: ChainSpec): Preview => {
     const key = `${worldId(w)}|${JSON.stringify(spec)}`;
     if (cache?.key !== key) {
       const islands = chainIslands(w, spec);
-      const stamp = combineStamps(w, islands, spec.fine);
+      const stamp = combineStamps(w, islands);
       cache = {
         key,
         preview: {
@@ -980,7 +979,7 @@ export function chainTool(): ToolHandler {
       // 排在前面的编辑先换上了：按新的世界重算（结果按执行时的世界算）
       const at: Preview = { ...previewOf(w, chain), hint: null };
       const ghostAt = (now: World): GhostEdit => {
-        const st = combineStamps(now, chainIslands(now, chain), chain.fine);
+        const st = combineStamps(now, chainIslands(now, chain));
         return { cells: st.cells, delta: st.landDelta };
       };
       setOptions({ chainVariant: chain.variant + 1 });
@@ -1622,7 +1621,7 @@ export function lakeTool(): ToolHandler {
     const key = `${worldId(w)}|${c.cell}|${radiusNow()}`;
     // 新湖都带 exact：半径就按给的算（最小只淹一格）
     if (cache?.key !== key) {
-      const cells = lakeArea(w, c.cell, radiusNow(), true);
+      const cells = lakeArea(w, c.cell, radiusNow());
       cache = { key, cells, ghost: { cells: [], delta: [], lake: cells } };
     }
     return cache;
@@ -1703,8 +1702,8 @@ export function lakeTool(): ToolHandler {
       try {
         // 松手时的湖面留在图上，直到结果换上（鼠标离开地图也留着）。排在前面的编辑先换上了：按新的世界重算湖面
         const shown: Preview = { layers: [], shapes: [], hint: null, ghost: { cells: [], delta: [], lake: cells } };
-        const ghostAt = (now: World): GhostEdit => ({ cells: [], delta: [], lake: lakeArea(now, d.cell, radius, true) });
-        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, exact: true, ...chosenLakeType(w) } }, '正在计算湖泊…'), ghostFollows(shown, w, ghostAt));
+        const ghostAt = (now: World): GhostEdit => ({ cells: [], delta: [], lake: lakeArea(now, d.cell, radius) });
+        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, ...chosenLakeType(w) } }, '正在计算湖泊…'), ghostFollows(shown, w, ghostAt));
       } finally {
         if (settled === mark) settled = null;
       }
@@ -1722,7 +1721,7 @@ export function lakeTool(): ToolHandler {
         const info = lakeInfo(w, sel);
         const sz = lakeSizeDraft.value;
         const spec = sz && info?.placed?.id === sz.id ? info.placed : undefined;
-        const future = spec && sz ? lakeArea(w, spec.cell, sz.radius, spec.exact) : null;
+        const future = spec && sz ? lakeArea(w, spec.cell, sz.radius) : null;
         const over = pointer && pointer.cell >= 0 && w.derived.lake[pointer.cell] && !info?.cells.includes(pointer.cell) ? hoverLake(w, pointer.cell) : [];
         return {
           layers: [
