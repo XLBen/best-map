@@ -1395,7 +1395,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       const w = world.value;
       const known = new Set(w?.small.guides.map((g) => g.id) ?? []);
       const busyText = c.kind === 'edit' ? '正在改河…' : '正在计算河流…';
-      const ok = await exec(c.cmd, busyText, undefined, undefined, (after, said) => namedDest(after, c.cmd!, known, said));
+      const ok = await exec(c.cmd, busyText, undefined, (after, said) => namedDest(after, c.cmd!, known, said));
       if (ok && c.kind === 'edit') {
         const id = c.cmd.op === 'update_guide' ? c.cmd.id : world.value?.small.guides.find((g) => !known.has(g.id))?.id;
         if (id && world.value?.small.guides.some((g) => g.id === id)) {
@@ -1443,7 +1443,7 @@ export function riverTool(zoom: () => number): ToolHandler {
     try {
       const cmd = flowCommand(w, p);
       const known = new Set(w.small.guides.map((g) => g.id));
-      await exec(cmd, '正在计算河流…', undefined, undefined, (after, said) => namedDest(after, cmd, known, said));
+      await exec(cmd, '正在计算河流…', undefined, (after, said) => namedDest(after, cmd, known, said));
     } finally {
       committing = null;
       ex.clear();

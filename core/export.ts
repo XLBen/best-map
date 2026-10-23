@@ -1,3 +1,4 @@
+import { speciesColor } from './species';
 import { strToU8, zipSync, zlibSync } from 'fflate';
 import type { WorldDoc } from './engine';
 import { featureLabel } from './features';
@@ -262,7 +263,7 @@ export function exportPackage(
     const s = derived.dominant[i];
     const sp = s >= 0 ? small.species[s] : null;
     kindRgb.set(terrainColor(sp?.terrain ?? 'desert'), i * 3);
-    vegRgb.set(sp ? hexToRgb(sp.color) : [200, 200, 200], i * 3);
+    vegRgb.set(sp ? hexToRgb(speciesColor(sp)) : [200, 200, 200], i * 3);
   }
   const fixed = new Uint8Array(18);
   ['ocean', 'lake', 'mountains', 'hills'].forEach((t, k) => fixed.set(terrainColor(t), k * 3));

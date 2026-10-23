@@ -17,6 +17,8 @@ import {
   islandSizeRangeKm,
   islandStamp,
   lakeRangeKm,
+  roundKm,
+  sizeText,
   previewTerrain,
   reachRangeKm,
   resolveTerrain,
@@ -44,6 +46,7 @@ describe('岛的大小', () => {
   it('放岛、岛链、湖的固定哈希', () => {
     // 四种岛 × 三种大小（约等于以前的小 · 中 · 大）、两条岛链、一个湖。第九轮去掉旧存档兼容时重录；之后的优化必须逐值不变
     // 第十二轮修：岛链不并进原有的岛（太近时缩小、岛心在陆地上的不放），有意改变结果，重录
+    // 第十三轮：每种岛有岩性（erodDelta，多记一项）、火山岛抬升减半并有火山口、珊瑚岛的潟湖两头都改、最小的岛一格，有意改变结果，重录
     const eng = new Engine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
@@ -65,10 +68,11 @@ describe('岛的大小', () => {
     expect({
       landDelta: hashArray(w.causes.landDelta),
       upliftDelta: hashArray(w.causes.upliftDelta),
+      erodDelta: hashArray(w.causes.erodDelta),
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: 'dc8c0982', upliftDelta: '3f7e67b5', land: '6d11545', elevation: '805d7807', discharge: '94c24b33' });
+    }).toEqual({ landDelta: 'fb075a8d', upliftDelta: '8217bfba', erodDelta: '2c29f77d', land: '19e11545', elevation: '7ce115b1', discharge: '4e1eef82' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -137,7 +141,7 @@ describe('岛的大小', () => {
     expect(Array.from(w.causes.landDelta)).toEqual(Array.from(before));
   });
 
-  it('“换个形状”只留一步历史，结果与撤销后重放相同', () => {
+  it('换掉最后一步（replaceLast）只留一步历史，结果与撤销后重放相同', () => {
     const eng = new Engine({ seed: 2, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true });
     const r = islandSizeRangeKm(eng.world)[1] / 4;
@@ -155,7 +159,8 @@ describe('岛的大小', () => {
 
 describe('放岛只在岛的附近找格', () => {
   it('固定哈希（地图边上、接缝、高纬度）', () => {
-    // 原来按第八轮改动前（全图扫描）的代码记下；第九轮去掉“小 · 中 · 大”三档时重录
+    // 原来按第八轮改动前（全图扫描）的代码记下；第九轮去掉“小 · 中 · 大”三档时重录；
+    // 第十三轮火山岛的抬升、珊瑚岛的潟湖（两头都改、环与潟湖里的海格也进 cells）改了，重录
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'archipelago', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -180,14 +185,15 @@ describe('放岛只在岛的附近找格', () => {
       }
       got[name] = `${hashString(parts.join('|')).toString(16)} ${parts.length}`;
     }
-    expect(got).toEqual({ 星球: '19a44f31 64', 海洋: 'f0bfb4a1 64', 群岛: '65bb4e34 48' });
+    expect(got).toEqual({ 星球: '74f3e440 64', 海洋: '234b8221 64', 群岛: '1f1570a1 48' });
   });
 });
 
 describe('岛链的固定哈希', () => {
-  it('小一号的岛最小到 islandMinCells，太小时岛心那一格成陆', () => {
+  it('小一号的岛最小一格（与放岛的最小值相同），太小时岛心那一格成陆', () => {
     // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）
     // 第十二轮修：第 1 种起按第 0 种的面积之和缩放岛的大小（换个排列时陆地一样多），重录
+    // 第十三轮：小一号的岛最小 0.4 格（以前 0.75 格，0.99×1.5 一档的大小变了）、火山岛的抬升减半，重录
     const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
@@ -206,18 +212,18 @@ describe('岛链的固定哈希', () => {
       }
     }
     expect(got).toEqual({
-      '地区|0.99×1.5|continental': '226fa546 b5891995 70ddbeeb 3fb1e86c 467',
-      '地区|0.99×1.5|volcanic': '226fa546 21ec8895 af1c30df da721d86 456',
+      '地区|0.99×1.5|continental': '60cecec5 b5891995 d5536d25 1f5b5c5d 467',
+      '地区|0.99×1.5|volcanic': '60cecec5 33a5c7fd 77742a77 fc7f90db 455',
       '地区|1.6|continental': 'a0851fda 9e8bf34d e9e49f4e 5dd46468 499',
-      '地区|1.6|volcanic': 'a0851fda c72a7d25 849fecd2 92a21fe 475',
+      '地区|1.6|volcanic': 'a0851fda c72a7d25 849fecd2 f968503 475',
       '地区|3|continental': '35ccfc81 d2510db5 c74eb974 db1104f0 1023',
-      '地区|3|volcanic': '35ccfc81 678f1335 f401ab52 fbffd399 987',
-      '星球|0.99×1.5|continental': 'b40a725d c0ebe3fd 9e2444da 70cdff 189',
-      '星球|0.99×1.5|volcanic': 'b40a725d f2187f5d d3245cb8 5ca92527 186',
+      '地区|3|volcanic': '35ccfc81 678f1335 f401ab52 edc9a5a9 987',
+      '星球|0.99×1.5|continental': 'b1a4fe49 5c1d7675 181ce244 1d6b4f9b 189',
+      '星球|0.99×1.5|volcanic': 'b1a4fe49 67ffa875 61730bbf 270999e3 188',
       '星球|1.6|continental': 'ef569565 2a4226b5 152c53b7 370c3e90 214',
-      '星球|1.6|volcanic': 'ef569565 53869655 2dea7aaa 2ff88f6d 219',
+      '星球|1.6|volcanic': 'ef569565 53869655 2dea7aaa a3ece917 219',
       '星球|3|continental': 'fdc24236 f91098f5 f21c987f e883f700 424',
-      '星球|3|volcanic': 'fdc24236 b60ad3dd d9ae9e40 9a8f4f9c 415',
+      '星球|3|volcanic': 'fdc24236 b60ad3dd d9ae9e40 a6ebc10d 415',
     });
   });
 });
@@ -257,27 +263,32 @@ describe('调整：拖滑块时的预览就是松手后的结果', () => {
 });
 
 describe('第八轮：更小的岛、湖、画笔', () => {
-  it('最小的岛（0.75 格）不会是空的', () => {
+  // 第十三轮：最小的岛 = 最小的陆地 = 一格（0.4 格，与最小的画笔相同），四种岛一样（以前 0.75 格、珊瑚岛 1.5 格）
+  it('最小的岛（0.4 格，与最小的画笔相同）就是一两格陆地，四种岛一样', () => {
     for (const rough of [0.35, 1, 1.8]) {
       const w = ocean(rough);
       const cellKm = mesh.spacing * w.kmPerUnit;
-      for (const kind of ['volcanic', 'continental', 'low'] as const) {
-        expect(islandSizeRangeKm(w, kind)[0]).toBe(cellKm * 0.75);
+      for (const kind of SHAPED_KINDS) {
+        expect(islandSizeRangeKm(w, kind)[0]).toBe(cellKm * 0.4);
+        expect(islandSizeRangeKm(w, kind)[0]).toBe(brushRangeKm(w)[0]);
         for (let v = 0; v < 40; v++) {
           const x = 0.1 + ((v * 0.0437) % 1.8);
           const y = 0.1 + ((v * 0.0721) % 0.8);
-          const fresh = (mult: number) => islandStamp(w, { x, y, kind, size: cellKm * mult, variant: v }).footprint.filter((c) => !w.causes.land[c]).length;
-          // 放出来 1–4 格
-          const n = fresh(0.75);
+          const n = islandStamp(w, { x, y, kind, size: cellKm * 0.4, variant: v }).footprint.filter((c) => !w.causes.land[c]).length;
+          // 放出来 1–2 格：放不出陆地时岛心那一格成陆
           expect(n, `${kind} ${rough} ${v}`).toBeGreaterThanOrEqual(1);
-          expect(n, `${kind} ${rough} ${v}`).toBeLessThanOrEqual(4);
-          // 比最小值还小也不会是空的：放不出陆地时岛心那一格成陆
-          expect(fresh(0.4), `${kind} ${rough} ${v}`).toBeGreaterThanOrEqual(1);
+          expect(n, `${kind} ${rough} ${v}`).toBeLessThanOrEqual(2);
         }
       }
-      // 珊瑚岛的环要 1.5 格才看得出来：最小值不变
-      expect(islandSizeRangeKm(w, 'atoll')[0]).toBe(cellKm * 1.5);
     }
+  });
+
+  it('画笔、岛的大小都写直径，不到半格的半径写“一格 ≈ N km”', () => {
+    const w = ocean();
+    const cellKm = mesh.spacing * w.kmPerUnit;
+    expect(sizeText(w, islandSizeRangeKm(w)[0])).toBe(`一格 ≈ ${roundKm(cellKm)} km`);
+    expect(sizeText(w, brushRangeKm(w)[0])).toBe(`一格 ≈ ${roundKm(cellKm)} km`);
+    expect(sizeText(w, cellKm * 3)).toBe(`${roundKm(cellKm * 6)} km`);
   });
 
   it('太小、一格陆地都放不出来时岛心那一格成陆（岛心在地图外时不补）；岛链也一样', () => {

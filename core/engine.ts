@@ -365,13 +365,13 @@ export class Engine {
     return true;
   }
 
-  // 换一个：撤掉最后一步，执行新命令（“换个形状”用）。只重算一次，历史里只留新的一步。
+  // 换一个：撤掉最后一步，执行新命令（脚本框连着提交时用）。只重算一次，历史里只留新的一步。
   // 撤掉的那一步之前的推导，就是新的一步之前的推导：留给新的一步撤销用。
   // 新命令做不了、或者重算出错：原来那一步放回去，世界、历史、重做记录都与换之前相同
   replaceLast(cmd: Command): string {
     this.lastPreview = null;
     const stateBefore = this.stateId;
-    // 换之前看到的地物与小数据：新的一步按它们留名字（换个形状的岛还叫原来的名字）
+    // 换之前看到的地物与小数据：新的一步按它们留名字（换掉的岛还叫原来的名字）
     const shown = this.dirty === Dirty.None && this.done.length ? { features: this.world.derived.features, small: JSON.stringify(this.world.small) } : null;
     const h = this.revertLast();
     if (!h) throw new CommandError('没有可以替换的一步');

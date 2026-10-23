@@ -63,8 +63,6 @@ export interface ToolDef {
   hidden?(w: World): boolean;
   // Alt+点：吸取（取这里的生态、这里的省份）。返回取到了什么，用来提示
   pick?(w: World, cell: number): string | null;
-  // R：换个形状
-  reroll?(): void;
   create(env: ToolEnv): ToolHandler;
 }
 

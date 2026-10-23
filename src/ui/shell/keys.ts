@@ -103,7 +103,6 @@ export function onKeyDown(e: KeyboardEvent) {
   const k = e.key.toLowerCase();
   if (k === 'f') mapApi.current?.fit();
   else if (k === 'm') measure.value = measure.value ? null : [];
-  else if (k === 'r') def.reroll?.();
   else {
     const n = Number(e.key);
     const list = toolsOf(category.value, world.value);

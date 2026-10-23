@@ -180,7 +180,8 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
   });
 });
 
-describe('blendRgb 与抽出前的混色逐位相同', () => {
+// 第十三轮：混色改成按份额的平方（再归一化），占多数的生态颜色更纯；这里的对照跟着改成平方
+describe('blendRgb 与直白的写法逐位相同', () => {
   it('大陆世界的每一格陆地', () => {
     const w = continents().world;
     const d = w.derived;
@@ -190,14 +191,15 @@ describe('blendRgb 与抽出前的混色逐位相同', () => {
     let checked = 0;
     for (let i = 0; i < w.mesh.n; i++) {
       if (!w.causes.land[i]) continue;
-      // 抽出前 colors.ts、thumbnail.ts 里的写法
+      // 抽出前 colors.ts、thumbnail.ts 里的写法，份额换成份额的平方
       let r = 0;
       let g = 0;
       let b = 0;
       let t = 0;
       for (let s = 0; s < S; s++) {
-        const x = d.share[i * S + s];
-        if (x <= 0) continue;
+        const v = d.share[i * S + s];
+        if (v <= 0) continue;
+        const x = v * v;
         r += x * colors[s][0];
         g += x * colors[s][1];
         b += x * colors[s][2];
@@ -222,7 +224,11 @@ describe('blendRgb 与抽出前的混色逐位相同', () => {
     expect(bare).toEqual(BARE_RGB);
     bare[0] = 0;
     expect(blendRgb(share, 0, colors)).toEqual([205, 190, 160]);
-    expect(blendRgb(share, 1, colors)).toEqual([0.25 * 10 + 0.75 * 200, 0.25 * 20 + 0.75 * 100, 0.25 * 30]);
+    // 份额 0.25 : 0.75 → 权重 0.0625 : 0.5625（归一化后 0.1 : 0.9）
+    const [r, g, b] = blendRgb(share, 1, colors);
+    expect(r).toBeCloseTo(0.1 * 10 + 0.9 * 200, 9);
+    expect(g).toBeCloseTo(0.1 * 20 + 0.9 * 100, 9);
+    expect(b).toBeCloseTo(0.1 * 30, 9);
   });
 });
 

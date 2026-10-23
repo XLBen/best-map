@@ -198,7 +198,7 @@ export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 're
 // 编辑后的变化：一句话汇总（带撤销、“换一个”）与几秒钟的高亮
 // action：提示条上的另一个按钮（比如新建了特有生态后的“编辑”）
 export type NoteAction = { label: string; run: () => void };
-export const changeNote = signal<{ id: number; head: string; detail: string; undoable: boolean; again?: NoteAction; action?: NoteAction } | null>(null);
+export const changeNote = signal<{ id: number; head: string; detail: string; undoable: boolean; action?: NoteAction } | null>(null);
 export const flash = signal<{ cells: number[]; at: number } | null>(null);
 // 改完后变化的格淡淡地亮一下，这么久（毫秒）淡完
 export const FLASH_MS = 1200;
@@ -401,14 +401,6 @@ export function onlyEditsPending(): boolean {
   if (recovering) return false;
   for (const p of pending.values()) if (!p.edit) return false;
   return true;
-}
-
-// 还没算完的编辑（执行、撤销、重做）有几步：排队时“换个形状”要等它们算完。
-// 换一个本身不算：连点两下“换个形状”，第二下换掉的还是同一步
-function editsInFlight(): number {
-  let k = 0;
-  for (const p of pending.values()) if (EDITS.has(p.kind) && p.kind !== 'replaceLast') k++;
-  return k;
 }
 
 // 改动世界的请求（执行、撤销、重做、换一个，还有新建、打开）都算完了：这时 world、worldState 就是引擎里的样子。
@@ -848,13 +840,13 @@ export function flashCells(cells: number[]) {
 }
 
 // quiet：不闪变了的格（改河：拖的时候地图上已经是改完的样子，松手后再闪一圈反而像出了别的变化）
-function noteChange(head: string, before: World | null, again?: NoteAction, undoable = true, action?: NoteAction, quiet = false) {
+function noteChange(head: string, before: World | null, undoable = true, action?: NoteAction, quiet = false) {
   const after = world.value;
   if (!after || !before) return;
   const { cells, detail } = describeChange(before, after);
   const id = ++noteId;
-  changeNote.value = { id, head, detail, undoable, again, action };
-  noteTimer.start(undoable || again || action ? NOTE_ACTION_MS : NOTE_MS);
+  changeNote.value = { id, head, detail, undoable, action };
+  noteTimer.start(undoable || action ? NOTE_ACTION_MS : NOTE_MS);
   flash.value = cells.length && !quiet ? { cells, at: performance.now() } : null;
   if (flashTimer) clearTimeout(flashTimer);
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
@@ -1217,12 +1209,9 @@ export function editScript(issue: ScriptIssue) {
   sheet.value = 'species';
 }
 
-// “换一个”：给出下一条命令（比如换了 variant 的放岛），替换掉刚做的那一步
-export type Again = { label: string; next: () => Command | null };
-
-// 执行一条编辑命令；成功后显示“改了什么”、撤销，以及能换一个时的“换一个”、额外的按钮
+// 执行一条编辑命令；成功后显示“改了什么”、撤销，以及额外的按钮
 // head：顶部说的话（不用引擎的说法时）；是函数时按改完的世界说（返回 null 照用引擎的说法）
-export async function exec(cmd: Command, label = '正在计算…', again?: Again, action?: NoteAction, head?: string | ((after: World, summary: string) => string | null)): Promise<boolean> {
+export async function exec(cmd: Command, label = '正在计算…', action?: NoteAction, head?: string | ((after: World, summary: string) => string | null)): Promise<boolean> {
   const r = await call({ kind: 'exec', cmd }, label);
   // 这类命令重算一次要多久（成本闸门：太慢的不自动预览）
   if (r.ok && r.snapshot && !('light' in r.snapshot)) noteCost(cmd, r.snapshot.timings.total);
@@ -1237,7 +1226,7 @@ export async function exec(cmd: Command, label = '正在计算…', again?: Agai
     trustOwn(cmd);
     const said = typeof head === 'function' ? (world.value ? head(world.value, r.summary ?? '') : null) : head;
     const text = said ?? ((cmd.op === 'add_constraint' && before && world.value && paintNote(before, world.value)) || r.summary || '完成');
-    noteChange(text, before, againAction(again, label), true, action, cmd.op === 'add_guide' || cmd.op === 'update_guide');
+    noteChange(text, before, true, action, cmd.op === 'add_guide' || cmd.op === 'update_guide');
   }
   return ok;
 }
@@ -1265,31 +1254,15 @@ export function paintNote(before: World, after: World): string | null {
   return failing ? `${head} · ${failing} 格没涂成（这里长不了）` : `${head}（${mode}）`;
 }
 
-function againAction(again: Again | undefined, label: string) {
-  if (!again) return undefined;
-  return {
-    label: again.label,
-    run: () => {
-      // 后面还有排队的编辑：现在换掉的会是排在最后的那一步，不是这一步
-      if (editsInFlight()) {
-        showToast('等排队的几步算完再换');
-        return;
-      }
-      const next = again.next();
-      if (next) void replaceLast(next, label, again);
-    },
-  };
-}
-
 // 撤掉刚做的一步，换成新的命令（只重算一次，历史里只留一步）
-export async function replaceLast(cmd: Command, label = '正在计算…', again?: Again): Promise<boolean> {
+export async function replaceLast(cmd: Command, label = '正在计算…'): Promise<boolean> {
   const r = await call({ kind: 'replaceLast', cmd }, label);
   if (r.ok && r.snapshot && !('light' in r.snapshot)) noteCost(cmd, r.snapshot.timings.total);
   const before = world.value;
   const ok = await handle(r);
   if (ok && r.ok) {
     trustOwn(cmd);
-    noteChange(r.summary ?? '完成', before, againAction(again, label));
+    noteChange(r.summary ?? '完成', before);
   }
   return ok;
 }
@@ -1300,7 +1273,7 @@ export async function undo() {
   const before = world.value;
   const last = history.value.filter((h) => h.done).pop();
   const ok = await handle(r);
-  if (ok && last) noteChange(`撤销了：${last.summary}`, before, undefined, false);
+  if (ok && last) noteChange(`撤销了：${last.summary}`, before, false);
 }
 
 export async function redo() {

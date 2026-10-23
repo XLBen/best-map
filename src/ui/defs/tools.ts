@@ -28,7 +28,7 @@ import {
   Type,
   Waypoints,
 } from 'lucide-preact';
-import { CHAIN_KINDS, ISLAND_KINDS, ISLAND_KIND_INFO, islandSizeRangeKm, roundKm } from '../../../core/terrain';
+import { CHAIN_KINDS, ISLAND_KINDS, ISLAND_KIND_INFO, islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import {
   type Category,
@@ -75,7 +75,6 @@ import {
   restoreTool,
   rangePick,
   rangeTool,
-  rerollChain,
   rerollTool,
   riverSizeName,
   snapRadiusKm,
@@ -105,26 +104,26 @@ import type { CategoryDef, SliderDef, ToolDef } from './types';
 
 const fmtKm = (v: number) => String(roundKm(v));
 
+// 画笔、岛、岛链的大小都写直径（第十三轮统一）；最小都是一格，写“一格 ≈ N km”（滑块存的是半径）
 const BRUSH: SliderDef = {
   key: 'brushKm',
-  label: '半径',
+  label: '直径',
   range: brushRange,
   scale: 'log',
-  snap: (v) => roundKm(v),
-  format: (v) => `${fmtKm(v)} km`,
+  snap: snapRadiusKm,
+  format: (v, w) => sizeText(w, v),
 };
 
 const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
 
-// 岛的最小值随种类（珊瑚岛大一些）；小礁只占一格，不用调大小。
-// 滑块停在别的种类的大小上时（比如从火山岛换成珊瑚岛），写出的是补到这一种最小值后的大小，与放出来的一样
+// 四种岛的最小值相同（一格）；小礁只占一格，不用调大小
 const ISLAND: SliderDef = {
   key: 'islandKm',
   label: '直径',
   range: (w) => islandSizeRangeKm(w, options.value.islandKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v, w) => `${fmtKm(Math.max(islandSizeRangeKm(w, options.value.islandKind)[0], v) * 2)} km`,
+  format: (v, w) => sizeText(w, Math.max(islandSizeRangeKm(w, options.value.islandKind)[0], v)),
   enabled: () => options.value.islandKind !== 'reef',
 };
 
@@ -135,7 +134,7 @@ const CHAIN_SIZE: SliderDef = {
   range: (w) => islandSizeRangeKm(w, options.value.chainKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v, w) => `${fmtKm(Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], v) * 2)} km`,
+  format: (v, w) => sizeText(w, Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], v)),
 };
 
 const LAKE: SliderDef = {
@@ -258,14 +257,8 @@ const defs: ToolDef[] = [
     short: '放岛',
     how: '点一下放岛，按住往外拖直接拖出大小',
     size: ISLAND,
-    // 小礁只有一种样子，不用“换个形状”
-    bar: () => [
-      islandKinds,
-      ...(options.value.islandKind === 'reef'
-        ? []
-        : [{ kind: 'action' as const, icon: Dices, label: '换个形状', title: '快捷键 R', run: () => setOptions({ islandVariant: options.value.islandVariant + 1 }) }]),
-    ],
-    reroll: () => setOptions({ islandVariant: options.value.islandVariant + 1 }),
+    // 每放一个岛自动换一个形状（只用鼠标，没有“换个形状”按钮）
+    bar: () => [islandKinds],
     create: () => islandTool(),
   },
   {
@@ -286,9 +279,8 @@ const defs: ToolDef[] = [
       // 用岛链自己的大小（第十二轮修正：以前误用了放岛的大小）
       format: (v, w) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], options.value.chainKm)) / v)} km`,
     },
-    // 换个排列：上一条岛链还是最后一步时重新排它（只算一次，历史里只留一步），否则换下一条的排列
-    bar: () => [chainKinds, { kind: 'action', icon: Dices, label: '换个排列', title: '重新排上一条岛链（快捷键 R）', run: () => void rerollChain() }],
-    reroll: () => void rerollChain(),
+    // 每画一条岛链自动换一种排列（只用鼠标，没有“换个排列”按钮）
+    bar: () => [chainKinds],
     create: () => chainTool(),
   },
   {
@@ -319,7 +311,7 @@ const defs: ToolDef[] = [
     name: '重画这一片',
     short: '重画',
     how: '停一下先看重画后的样子；点一下，圈里的地形重新随机，圈外不变',
-    size: brushAs('半径'),
+    size: brushAs('直径'),
     create: () => rerollTool(),
   },
   {
