@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "map2-r12fix",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5196", "--strictPort", "--host", "127.0.0.1"],
+      "port": 5196,
+      "url": "http://127.0.0.1:5196"
+    },
+    {
       "name": "map2-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

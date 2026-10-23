@@ -547,7 +547,9 @@ void main() {
       }
       col = mix(col, vec3(0.45, 0.58, 0.66), 0.35 * iso);
       // 平涂的海盖掉了前面的省份着色：再涂一次（海省默认不着色、A 为 0；用户给海省选了颜色时与写实风格一样涂上）
-      col = mix(col, fc.rgb, fc.a);
+      // 只涂海省的格：海岸边按扭曲落到陆格上的海上像素不涂陆上省的颜色（地图册的海原来就盖住它们）
+      float gS = uHasGroup == 1 && id >= 0 ? groupOf(uFlatByGroup == 1 ? idG : id) : -1.0;
+      if (gS < -0.5) col = mix(col, fc.rgb, fc.a);
       col *= mix(1.0, 0.94 + 0.06 * shade, uShade);
     }
   } else if (land) {
