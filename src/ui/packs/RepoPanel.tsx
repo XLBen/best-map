@@ -240,7 +240,11 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
           <b>{row.name}</b>
           <span class="hint">　{row.from}</span>
         </div>
-        {typeof desc === 'string' && desc && <div class="hint pack-desc">{desc}</div>}
+        {typeof desc === 'string' && desc && (
+          <div class="hint pack-desc one-line" title={desc}>
+            {firstSentence(desc)}
+          </div>
+        )}
         {sample && <div class="small repo-sample">{sample}</div>}
         {!st.on && st.rename && <div class="hint">世界里已有另一份，启用后叫“{st.rename}”</div>}
         {st.locked && !st.on && <div class="hint">{st.locked}</div>}
@@ -564,4 +568,10 @@ export function RepoPanel() {
       )}
     </div>
   );
+}
+
+// 卡片上只放说明的第一句（一行，放不下省略），全文在悬停里
+export function firstSentence(s: string): string {
+  const k = s.indexOf('。');
+  return k > 0 ? s.slice(0, k) : s;
 }

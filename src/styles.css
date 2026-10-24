@@ -1900,3 +1900,10 @@ button.map-thumb {
 .script-example {
   margin-bottom: var(--sp-2);
 }
+
+/* 仓库卡片上的说明：一行 */
+.pack-desc.one-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
