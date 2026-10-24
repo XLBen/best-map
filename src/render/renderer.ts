@@ -4,6 +4,7 @@ import type { SeamLayers } from '../../core/seams';
 import { PATTERNS } from '../../core/species';
 import { fromUnit } from '../../core/geo';
 import { viewOf } from '../../core/sphere';
+import { FRAG_AMP, FRAG_D_MAX, FRAG_D_MIN, FRAG_FREQ, FRAG_G, FRAG_OFF } from '../../core/subcell';
 import type { GhostLayers } from './colors';
 import { GLOBE_G, PROJ_GLSL, type Proj, effectiveZoom, planeBounds, sceneNeed, screenToWorld as projScreenToWorld, worldToScreen as projWorldToScreen } from './projection';
 
@@ -57,6 +58,27 @@ float fbmSub(vec2 p, int oct) {
 
 // 数 → GLSL 的浮点字面量（整数也带小数点）
 const glsl = (v: number) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+
+// 破碎度（第十八轮）：与 core/subcell.ts 的 fragCoast、fragIsleHeight、fragSeaDepth 同一个算式（测试里把这一段换成 JS 与它比）。
+// 地形着色器里只在 vFrag > 0（三角形的角上有破碎的格）时才用，别处与以前逐位相同
+export const FRAG_GLSL = `
+float fragCoast(float sv, float det, float fv, float weight, float n) {
+  float u = 1.0 - fv;
+  float q = 1.0 - u * u * u;
+  float d = ${glsl(FRAG_D_MAX)} + ${glsl(FRAG_D_MIN - FRAG_D_MAX)} * q;
+  float c = min(d, max(-d, sv));
+  float m = min(1.0, max(0.0, abs(n) * ${glsl(FRAG_G)})) * 2.0 - 1.0;
+  return c + det + weight * ${glsl(FRAG_AMP)} * q * m;
+}
+float fragIsleHeight(float s) {
+  return 2.0 + 0.5 * min(s, 60.0);
+}
+float fragSeaDepth(float h, float fv) {
+  return h * (1.0 - 0.85 * fv);
+}
+`;
+const FRAG_N2 = `fbmSub(vWorld / uSpacing * ${glsl(FRAG_FREQ)} + vec2(${glsl(FRAG_OFF[0])}, ${glsl(FRAG_OFF[1])}), 3)`;
+const FRAG_N3 = `fbmSub3(P * (uNoiseK * ${glsl(FRAG_FREQ)}) + vec3(${FRAG_OFF.map(glsl).join(', ')}), 3)`;
 
 // 合成着色器里生态的花纹、发光那几段的首尾标记。这几段在个别显卡、驱动上编译不过时，去掉它们再编译一次（compileCompose）：
 // 地图照常画，只是没有花纹、发光，不会整张地图都出不来
@@ -188,6 +210,8 @@ out vec4 vSeaCol;
 out float vElev;
 out float vSeaElev;
 out float vCoast;
+// 破碎度（第十八轮，海岸值纹理的 g）
+out float vFrag;
 out vec2 vGrad;
 out vec2 vSeaGrad;
 out vec2 vWorld;
@@ -198,7 +222,9 @@ void main() {
   ivec2 t = ivec2(c % ${TEX_W}, c / ${TEX_W});
   vec4 col = texelFetch(uColor, t, 0);
   vec4 other = texelFetch(uOther, t, 0);
-  vCoast = texelFetch(uCoast, t, 0).r;
+  vec2 cf = texelFetch(uCoast, t, 0).rg;
+  vCoast = cf.r;
+  vFrag = cf.g;
   // 陆地格：陆色是自己、水色是对岸的；水面格反过来。像素再按陆海选一个，颜色不跨海岸互相渗
   bool isLand = vCoast > 0.0;
   vLandCol = isLand ? col : other;
@@ -242,6 +268,7 @@ in vec4 vSeaCol;
 in float vElev;
 in float vSeaElev;
 in float vCoast;
+in float vFrag;
 in vec2 vGrad;
 in vec2 vSeaGrad;
 in vec2 vWorld;
@@ -260,6 +287,7 @@ uniform float uMetersPerUnit;
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oHeight;
 ${NOISE_GLSL}
+${FRAG_GLSL}
 // 分形噪声：屏幕上不到两像素的那几层淡掉（全图时不闪）。pxPerUnit：p 的一个单位合多少像素。
 // 淡到正好为 0 之后的各层都是 0（波长只会越来越短），不必再算
 float fbmFade(vec2 p, int oct, float pxPerUnit) {
@@ -298,7 +326,9 @@ void main() {
   float weight = clamp((1.0 - wmax) * 2.2, 0.0, 1.0);
   float rugged = clamp(max(h, 0.0) / 1200.0, 0.0, 1.0);
   float amp = uCoastAmp * (0.55 + 0.9 * rugged);
-  float s = vCoast + weight * amp * fbmSub(vWorld / uSpacing * 2.1, 4);
+  float det = weight * amp * fbmSub(vWorld / uSpacing * 2.1, 4);
+  float s = vCoast + det;
+  if (vFrag > 0.0) s = fragCoast(vCoast, det, vFrag, weight, ${FRAG_N2});
   bool land = s > 0.0;
   float cellPx = uSpacing / uPixel;
   float gm = length(vGrad);
@@ -323,6 +353,8 @@ void main() {
     col = vLandCol.rgb;
     col = clamp(mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, uSat), 0.0, 1.0);
     hh = max(h + landDetail, 2.0);
+    // 碎岛：几米到三十来米高，边上一圈沙滩
+    if (vFrag > 0.0) hh = max(hh, fragIsleHeight(s));
     // 坡度（地图坐标，米 / 米）：大尺度用插值后的格坡度（光滑），加上细节的差分
     slope = vGrad / uMetersPerUnit + dDetail;
     // 低平海岸有沙滩
@@ -337,7 +369,7 @@ void main() {
     col = vSeaCol.rgb;
     // 水深只按水面格的（第十三轮修）：陆地格上是挨着它的水面里最浅的那格的高程（colors.ts 的 shoreElevation），
     // 不再把陆地的高程插值进来——陡的小岛四周的水不会整片三角形都画成浅水
-    hh = min(vSeaElev + seaDetail, -2.0);
+    hh = min((vFrag > 0.0 ? fragSeaDepth(vSeaElev, vFrag) : vSeaElev) + seaDetail, -2.0);
     // 浅水：暖海偏青绿（alpha = 海水暖度），冷海偏灰绿
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
@@ -516,6 +548,8 @@ int seamCell(int id, vec2 uv) {
   return int((left ? sd.b : sd.a) + 0.5);
 }
 bool waterCell(int id) { return cellTex(uCellCoast, id).r < 0.0; }
+// 破碎的格（第十八轮，海岸值纹理的 g）
+bool fragCell(int id) { return cellTex(uCellCoast, id).g > 0.0; }
 // 省份按哪一格（第十三轮；core/display.ts 的 provinceCell 是同一条规则）：idG 是扭曲后按切线换过的格，uv 是像素没扭曲的位置，
 // landPx 是这个像素画成陆地。画成水面（海、湖）的像素取到陆地格时不要它（海上的像素永远不属于陆上的省）：依次试没扭曲的
 // 最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），取第一个水面格；都不是时 −1（不着色、不画省界）。
@@ -529,6 +563,8 @@ int landCellOf(int id) {
 }
 int provCell(int idG, vec2 uv, bool landPx) {
   if (idG < 0 || waterCell(idG) != landPx) return idG;
+  // 碎岛（破碎的水面格里画成陆地的像素）归那一格：海省（湖里的归湖），第十八轮
+  if (landPx && fragCell(idG)) return idG;
   int c = seamCell(idAt(uv), uv);
   if (c >= 0 && waterCell(c) != landPx) return c;
   for (int ring = 1; ring <= 2; ring++) {
@@ -844,6 +880,7 @@ in vec4 vSeaCol;
 in float vElev;
 in float vSeaElev;
 in float vCoast;
+in float vFrag;
 in vec2 vGrad;
 in vec2 vSeaGrad;
 in vec2 vWorld;
@@ -864,6 +901,7 @@ layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oHeight;
 ${NOISE_GLSL}
 ${SPHERE_GLSL}
+${FRAG_GLSL}
 float fbmFade3(vec3 p, int oct, float pxPerUnit) {
   float s = 0.0; float amp = 0.5; float wl = pxPerUnit;
   for (int k = 0; k < 6; k++) {
@@ -913,7 +951,9 @@ void main() {
   float weight = clamp((1.0 - wmax) * 2.2, 0.0, 1.0);
   float rugged = clamp(max(h, 0.0) / 1200.0, 0.0, 1.0);
   float amp = uCoastAmp * (0.55 + 0.9 * rugged);
-  float s = vCoast + weight * amp * fbmSub3(P * uNoiseK * 2.1, 4);
+  float det = weight * amp * fbmSub3(P * uNoiseK * 2.1, 4);
+  float s = vCoast + det;
+  if (vFrag > 0.0) s = fragCoast(vCoast, det, vFrag, weight, ${FRAG_N3});
   bool land = s > 0.0;
   float cellPx = uSpacing / uPixel;
   float gm = length(vGrad);
@@ -941,6 +981,8 @@ void main() {
     col = vLandCol.rgb;
     col = clamp(mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, uSat), 0.0, 1.0);
     hh = max(h + landDetail, 2.0);
+    // 碎岛：几米到三十来米高，边上一圈沙滩
+    if (vFrag > 0.0) hh = max(hh, fragIsleHeight(s));
     slope = vGrad / uMetersPerUnit + dDetail;
     float beach = (1.0 - smoothstep(4.0, 22.0, hh)) * (1.0 - smoothstep(0.0, 120.0, relief)) * (0.35 + 0.65 * vLandCol.a);
     col = mix(col, vec3(0.86, 0.80, 0.62), beach * 0.75);
@@ -952,7 +994,7 @@ void main() {
     col = vSeaCol.rgb;
     // 水深只按水面格的（第十三轮修）：陆地格上是挨着它的水面里最浅的那格的高程（colors.ts 的 shoreElevation），
     // 不再把陆地的高程插值进来——陡的小岛四周的水不会整片三角形都画成浅水
-    hh = min(vSeaElev + seaDetail, -2.0);
+    hh = min((vFrag > 0.0 ? fragSeaDepth(vSeaElev, vFrag) : vSeaElev) + seaDetail, -2.0);
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7));
@@ -1149,6 +1191,14 @@ export function packElevation(out: Float32Array, elevation: Float32Array, coast:
   }
 }
 
+// 海岸值纹理的一格（第十八轮起两个通道）：r 海岸值，g 破碎度（0–1，没有时 0）
+export function packCoast(out: Float32Array, coast: Float32Array, frag: Float32Array | null | undefined, from: number, to: number) {
+  for (let i = from; i < to; i++) {
+    out[2 * i] = coast[i];
+    out[2 * i + 1] = frag ? frag[i] : 0;
+  }
+}
+
 export interface CellLayers {
   // 平滑层颜色（alpha：陆地为“沙质”程度，海为海水暖度）
   smooth: Uint8Array;
@@ -1159,6 +1209,8 @@ export interface CellLayers {
   // 水面格上不用（照 elevation）。省略时陆地格按 −2 m
   shore?: Float32Array;
   coast: Float32Array;
+  // 每格的破碎度（0–1，第十八轮，core/display.ts 的 displayCoast）；没打碎过时为 null
+  frag?: Float32Array | null;
   grad: Float32Array;
   // 海底的坡度（每格两个值，地图坐标；陆地、湖为 0）：海的晕渲。省略时没有
   seaGrad?: Float32Array;
@@ -1662,6 +1714,9 @@ export class Renderer {
   // 高程纹理（两个通道：高程、水面的高程）的打包：setLayers 的一份与幽灵用的一份
   private elevPack = new Float32Array(0);
   private elevGhost: Float32Array | null = null;
+  // 海岸值纹理（海岸值、破碎度）的打包：同上
+  private coastPack = new Float32Array(0);
+  private coastGhost: Float32Array | null = null;
 
   setLayers(l: CellLayers) {
     const n = this.mesh?.n ?? 0;
@@ -1672,7 +1727,10 @@ export class Renderer {
     packElevation(this.elevPack, l.elevation, l.coast, l.shore ?? null, 0, n);
     this.elevGhost = null;
     this.upload(this.tex.elev, this.elevPack, n, 2);
-    this.upload(this.tex.coast, l.coast, n, 1);
+    this.coastPack = new Float32Array(n * 2);
+    packCoast(this.coastPack, l.coast, l.frag, 0, n);
+    this.coastGhost = null;
+    this.upload(this.tex.coast, this.coastPack, n, 2);
     this.upload(this.tex.grad, l.grad, n, 2);
     this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
     this.upload(this.tex.lith, l.lith ?? new Uint8Array(n * 4), n, 4);
@@ -1735,14 +1793,16 @@ export class Renderer {
     const rows = [...new Set([...this.ghostRows, ...now])].sort((a, b) => a - b);
     const amp = g?.coastAmp ?? null;
     if (!rows.length && amp === this.ghostAmp) return;
-    const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, flat: base.flat, group: base.group };
+    const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, frag: base.frag ?? null, flat: base.flat, group: base.group };
     this.uploadRows(this.tex.color, src.smooth, rows, 4);
     this.uploadRows(this.tex.other, src.other, rows, 4);
     // 高程与水面的高程按行打包（陆海按这一份的海岸值分）
     if (!this.elevGhost) this.elevGhost = this.elevPack.slice();
     for (const r of rows) packElevation(this.elevGhost, src.elevation, src.coast, base.shore ?? null, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
     this.uploadRows(this.tex.elev, this.elevGhost, rows, 2);
-    this.uploadRows(this.tex.coast, src.coast, rows, 1);
+    if (!this.coastGhost) this.coastGhost = this.coastPack.slice();
+    for (const r of rows) packCoast(this.coastGhost, src.coast, src.frag, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
+    this.uploadRows(this.tex.coast, this.coastGhost, rows, 2);
     // 平涂、分组：显示着的是底子或上一次的幽灵时才换
     if (this.groupBase && src.group && (this.groupShown === this.groupBase || this.groupShown === this.ghostGroup)) {
       this.uploadRows(this.tex.group, src.group, rows, 2);

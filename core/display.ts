@@ -2,7 +2,7 @@ import { wrapX } from './geo';
 import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
-import { coastDetail, coastDetail3, coastDetailAmp, coastValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
+import { coastDetail, coastDetail3, coastDetailAmp, coastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
 import { landProvinceCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
@@ -21,13 +21,15 @@ const isLakeCell = (world: World, i: number) => world.causes.land[i] === 1 && wo
 export interface DisplayCoast {
   coast: Float32Array;
   elevation: Float32Array;
+  // 每格的破碎度（0–1，第十八轮；湖面格照样有：湖里也能放碎岛）。没打碎过时为 null
+  frag: Float32Array | null;
 }
 
-// 按高程数组缓存，另比湖、水面、陆海、陆地程度、海岸破碎度、海岸的种子（当前世界与预览世界各留一份）
+// 按高程数组缓存，另比湖、水面、陆海、陆地程度、海岸破碎度、海岸的种子、破碎度（当前世界与预览世界各留一份）
 const displayCache = new WeakMap<Float32Array, { inputs: unknown[]; value: DisplayCoast }[]>();
 export function displayCoast(world: World): DisplayCoast {
   const { derived: d, causes } = world;
-  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world)];
+  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment];
   let list = displayCache.get(d.elevation);
   if (!list) displayCache.set(d.elevation, (list = []));
   const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
@@ -39,7 +41,7 @@ export function displayCoast(world: World): DisplayCoast {
     coast[i] = lakeCoast(coast[i]);
     elevation[i] = -lakeDepth(world, i);
   }
-  const value = { coast, elevation };
+  const value = { coast, elevation, frag: fragValues(world, false) };
   list.unshift({ inputs, value });
   list.length = Math.min(list.length, 2);
   return value;
@@ -61,8 +63,11 @@ export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: numb
   const h = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
   const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
   const amp = weight * coastDetailAmp(world, Math.max(0, h));
-  if (signOnly && Math.abs(sv) > amp * DETAIL_MAX) return { v: sv, nearest: loc.nearest };
+  // 破碎的地方（第十八轮）：不走只看正负的捷径
+  const fv = f.frag ? f.frag[a] * wa + f.frag[b] * wb + f.frag[c] * wc : 0;
+  if (signOnly && fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX) return { v: sv, nearest: loc.nearest };
   const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
+  if (fv > 0) return { v: fragCoast(sv, amp * detail, fv, weight, sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)), nearest: loc.nearest };
   return { v: sv + amp * detail, nearest: loc.nearest };
 }
 
@@ -106,11 +111,15 @@ export function shoreCrossing(
     ? (t: number) => {
         const [c, r] = edge!;
         const sv = f.coast[c] * (1 - t) + f.coast[r] * t;
-        const amp = Math.min(1, Math.max(0, (1 - Math.max(1 - t, t)) * 2.2)) * coastDetailAmp(world, Math.max(0, f.elevation[c] * (1 - t) + f.elevation[r] * t));
-        if (Math.abs(sv) > amp * DETAIL_MAX) return sv;
+        const weight = Math.min(1, Math.max(0, (1 - Math.max(1 - t, t)) * 2.2));
+        const amp = weight * coastDetailAmp(world, Math.max(0, f.elevation[c] * (1 - t) + f.elevation[r] * t));
+        const fv = f.frag ? f.frag[c] * (1 - t) + f.frag[r] * t : 0;
+        if (fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX) return sv;
         const x = ax + dx * t;
         const y = ay + dy * t;
-        return sv + amp * (sphere ? coastDetail3(wrapX(x), y, mesh.spacing) : coastDetail(x, y, mesh.spacing));
+        const det = amp * (sphere ? coastDetail3(wrapX(x), y, mesh.spacing) : coastDetail(x, y, mesh.spacing));
+        if (fv > 0) return fragCoast(sv, det, fv, weight, sphere ? fragNoise3(wrapX(x), y, mesh.spacing) : fragNoise(x, y, mesh.spacing));
+        return sv + det;
       }
     : (t: number) => {
         const r = displayCoastAt(world, f, ax + dx * t, ay + dy * t, h, true);
@@ -197,6 +206,7 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   const px = sphere ? wrapX(x) : x;
   // 陆还是海：与 rasterizeWorld 逐像素的判定相同
   const s = coastOf(world);
+  const fl = fragLand(world);
   const loc = locate(mesh, px, y, hint);
   const [a, b, c] = loc.i;
   const [wa, wb, wc] = loc.w;
@@ -204,18 +214,27 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   const h = derived.elevation[a] * wa + derived.elevation[b] * wb + derived.elevation[c] * wc;
   const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
   const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
-  const land = sv + weight * coastDetailAmp(world, Math.max(0, h)) * detail > 0;
+  // 破碎的地方（第十八轮）：碎岛的噪声只在要用时取
+  let fn = Number.NaN;
+  const fragN = () => (Number.isNaN(fn) ? (fn = sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)) : fn);
+  const det = weight * coastDetailAmp(world, Math.max(0, h)) * detail;
+  const fv = fl ? fl[a] * wa + fl[b] * wb + fl[c] * wc : 0;
+  const land = (fv > 0 ? fragCoast(sv, det, fv, weight, fragN()) : sv + det) > 0;
   // 画成水面（海、湖）还是陆地：画面上的海岸场（湖面取负，与地形层、着色器的 land 相同）
   const f = displayCoast(world);
   const sw = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
   const hw = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
-  const water = sw + weight * coastDetailAmp(world, Math.max(0, hw)) * detail <= 0;
+  const detW = weight * coastDetailAmp(world, Math.max(0, hw)) * detail;
+  const fw = f.frag ? f.frag[a] * wa + f.frag[b] * wb + f.frag[c] * wc : 0;
+  const water = (fw > 0 ? fragCoast(sw, detW, fw, weight, fragN()) : sw + detW) <= 0;
   // 扭曲后的最近格（整个星球：南北夹在两极以内，与着色器相同）
   const [wx, wy] = sphere ? warpOffset3(px, y, sp) : warpOffset(px, y, sp);
   const qy = sphere ? Math.min(1, Math.max(0, y + wy)) : y + wy;
   const cell = findCell(mesh, px + wx, qy, loc.nearest);
-  const here = (causes.land[cell] === 1) === land ? cell : sameKindNear(world, land, cell, loc.nearest, px, y);
-  return { cell, land, water, here, province: provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water) };
+  // 碎岛（破碎的海格里画成陆地的像素）就是那一格（与导出相同）
+  const isle = land && causes.land[cell] !== 1 && !!fl && fl[cell] > 0;
+  const here = (causes.land[cell] === 1) === land || isle ? cell : sameKindNear(world, land, cell, loc.nearest, px, y);
+  return { cell, land, water, here, province: provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water, f.frag) };
 }
 
 // 省份按哪一格（第十三轮；与着色器的 provCell 同一条规则）：扭曲后的格按剪刀切线换过；这一点画成水面（海、湖）而那一格是陆地格时
@@ -227,9 +246,11 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
 // coast：画面上每格的海岸值（displayCoast，湖面 < 0）；near：没扭曲的最近格
 export const PROVINCE_RING = { n: 8, radii: [0.6, 1.2] } as const;
 export const PROVINCE_LAND_RING = { n: 8, radii: [0.3, 0.6] } as const;
-export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | null, x: number, y: number, cell: number, near: number, water: boolean): number {
+// frag（第十八轮）：画面上每格的破碎度（displayCoast 的 frag）。画成陆地的像素取到破碎的水面格时就是那一格：碎岛归海省（湖里的归湖）
+export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | null, x: number, y: number, cell: number, near: number, water: boolean, frag: Float32Array | null = null): number {
   const first = seamPick(L, world, x, y, cell);
   if (first < 0 || coast[first] < 0 === water) return first;
+  if (!water && frag && frag[first] > 0) return first;
   const ok = (c: number) => {
     const g = seamPick(L, world, x, y, c);
     return g >= 0 && coast[g] < 0 === water ? g : -1;

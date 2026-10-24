@@ -364,6 +364,79 @@ export function coastDetailAmp(world: World, elevation: number): number {
   return COAST_AMP * rough * (0.55 + 0.9 * rugged);
 }
 
+// ---------- 破碎度（第十八轮）----------
+// 每格的破碎度 f（causes.fragment / 255）在三角形里按重心插值成 fv。fv > 0 的像素（着色器里有一份同样的实现，
+// 见 src/render/renderer.ts 的 FRAG_GLSL；fv = 0 的地方不走这里，与以前逐位相同）：
+//   s = clamp(sv, −D, D) + 海岸细节 + weight · FRAG_AMP · q · m
+//   · q = 1 − (1 − fv)³：fv → 0 时为 0（碎与不碎的交界没有断口），fv 大一点就很快起作用；
+//   · D = mix(FRAG_D_MAX, FRAG_D_MIN, q)：插值的海岸值压到 ±D 以内——深海、内陆都离“海岸线”近了，
+//     加上的噪声才冒得出碎岛、裂得开水道（FRAG_D_MAX 比海岸值的上限 250 大，q 很小时不压）；
+//   · m = clamp(|n| · FRAG_G, 0, 1) · 2 − 1，n 是一层更细的噪声（fragNoise，约 1/3 格到 1/20 格）：|n| 大的地方（噪声的峰和谷）
+//     冒出一颗颗碎岛，|n| ≈ 0 的地方（噪声的零线，一条条弯曲的线）是陆上的裂缝；
+//   · weight 与海岸细节的相同（格心为 0）：格心的陆海与这一格一致，气候、河流、生态照旧按整格算。
+// 碎岛只是画出来的（所在的格还是海）
+export const FRAG_D_MAX = 260;
+export const FRAG_D_MIN = 20;
+export const FRAG_AMP = 200;
+export const FRAG_G = 3;
+// 碎岛噪声的频率（每格几个噪声单位）与偏移（与海岸细节的噪声错开）
+export const FRAG_FREQ = 2.7;
+export const FRAG_OFF: readonly [number, number, number] = [31.7, -13.9, 7.3];
+
+// sv：插值的海岸值；det：海岸细节（weight · 幅度 · coastDetail）；fv：插值的破碎度（> 0）；weight：海岸细节的权重；n：fragNoise
+export function fragCoast(sv: number, det: number, fv: number, weight: number, n: number): number {
+  const u = 1 - fv;
+  const q = 1 - u * u * u;
+  const d = FRAG_D_MAX + (FRAG_D_MIN - FRAG_D_MAX) * q;
+  const c = Math.min(d, Math.max(-d, sv));
+  const m = Math.min(1, Math.max(0, Math.abs(n) * FRAG_G)) * 2 - 1;
+  return c + det + weight * FRAG_AMP * q * m;
+}
+
+// 碎岛的噪声（平面世界）
+export function fragNoise(x: number, y: number, spacing: number): number {
+  return fbmSub((x / spacing) * FRAG_FREQ + FRAG_OFF[0], (y / spacing) * FRAG_FREQ + FRAG_OFF[1], 3);
+}
+
+// 整个星球：在球面上取
+export function fragNoise3(x: number, y: number, spacing: number): number {
+  const [px, py, pz] = sphereOf(x, y);
+  const k = noiseK(spacing) * FRAG_FREQ;
+  return fbmSub3(px * k + FRAG_OFF[0], py * k + FRAG_OFF[1], pz * k + FRAG_OFF[2], 3);
+}
+
+// 碎岛上的高度（m）：离岸越远越高一点（几米到三十来米），边上一圈是沙滩。着色器里同一个算式
+export const fragIsleHeight = (s: number) => 2 + 0.5 * Math.min(s, 60);
+// 破碎的海面浅一些（只是画法，模拟的海底不变）：fv = 1 时水深只剩 15%
+export const fragSeaDepth = (h: number, fv: number) => h * (1 - 0.85 * fv);
+
+// 每格的破碎度（0–1）；没打碎过（没有数组、全是 0）时为 null（调用方照旧算，与以前逐位相同）。
+// lakesDry：湖面格按 0 算（按 causes.land 判陆海的那一套：湖面算陆地，湖里的碎岛只在画面的海岸场里，见 display.ts 的 displayCoast）
+export function fragValues(world: World, lakesDry: boolean): Float32Array | null {
+  const f = world.causes.fragment;
+  if (!f) return null;
+  let any = false;
+  for (let i = 0; i < f.length && !any; i++) if (f[i]) any = true;
+  if (!any) return null;
+  const out = new Float32Array(f.length);
+  const { land } = world.causes;
+  const lake = world.derived.lake;
+  for (let i = 0; i < f.length; i++) out[i] = lakesDry && land[i] === 1 && lake[i] === 1 ? 0 : f[i] / 255;
+  return out;
+}
+
+// 按陆海判（湖面算陆地）用的每格破碎度：按破碎度、陆海、湖面数组缓存（悬停每动一下都要用）
+const fragLandCache = new WeakMap<Uint8Array, { land: Uint8Array; lake: Uint8Array; value: Float32Array | null }>();
+export function fragLand(world: World): Float32Array | null {
+  const f = world.causes.fragment;
+  if (!f) return null;
+  const c = fragLandCache.get(f);
+  if (c && c.land === world.causes.land && c.lake === world.derived.lake) return c.value;
+  const value = fragValues(world, true);
+  fragLandCache.set(f, { land: world.causes.land, lake: world.derived.lake, value });
+  return value;
+}
+
 // ---------- 点所在的三角形 ----------
 // 结果写进 li / lw（三个角与重心坐标），返回最近的格：逐像素调用时不新建对象和闭包
 const li = new Int32Array(3);
@@ -466,7 +539,8 @@ export function locate(mesh: Mesh, x: number, y: number, hint: number): { i: [nu
 }
 
 // 一个点是陆地还是海：与着色器的判定相同
-export function pointIsLand(world: World, s: Float32Array, elevation: Float32Array, x: number, y: number, hint: number): { land: boolean; nearest: number; height: number } {
+// frag（可选）：每格的破碎度（fragValues），省略时按没打碎算
+export function pointIsLand(world: World, s: Float32Array, elevation: Float32Array, x: number, y: number, hint: number, frag: Float32Array | null = null): { land: boolean; nearest: number; height: number } {
   const loc = locate(world.mesh, x, y, hint);
   const [a, b, c] = loc.i;
   const [wa, wb, wc] = loc.w;
@@ -474,7 +548,10 @@ export function pointIsLand(world: World, s: Float32Array, elevation: Float32Arr
   const h = elevation[a] * wa + elevation[b] * wb + elevation[c] * wc;
   const wmax = Math.max(wa, wb, wc);
   const weight = Math.min(1, (1 - wmax) * 2.2);
-  const total = sv + weight * coastDetailAmp(world, Math.max(0, h)) * coastDetail(x, y, world.mesh.spacing);
+  const det = weight * coastDetailAmp(world, Math.max(0, h)) * coastDetail(x, y, world.mesh.spacing);
+  let total = sv + det;
+  const fv = frag ? frag[a] * wa + frag[b] * wb + frag[c] * wc : 0;
+  if (fv > 0) total = fragCoast(sv, det, fv, Math.min(1, Math.max(0, (1 - wmax) * 2.2)), world.mesh.kind === 'sphere' ? fragNoise3(x, y, world.mesh.spacing) : fragNoise(x, y, world.mesh.spacing));
   return { land: total > 0, nearest: loc.nearest, height: h };
 }
 
@@ -720,6 +797,8 @@ class RowFbm3 {
 interface PixelNoise {
   row(y: number): void;
   coast(c: number): number;
+  // 碎岛的噪声（fragNoise / fragNoise3）：只在建的时候说要（有破碎度）时才有
+  frag(c: number): number;
   terrain(c: number, h: number, gx: number, gy: number, land: boolean): number;
   warp(c: number): void;
 }
@@ -736,9 +815,10 @@ class PlaneNoise implements PixelNoise {
   private readonly warpY: SepFbm;
   private readonly bumps: SepFbm;
   private readonly sea: SepFbm;
+  private readonly fragN: SepFbm | null;
   private y = 0;
 
-  constructor(xs: Float64Array, spacing: number) {
+  constructor(xs: Float64Array, spacing: number, frag: boolean) {
     this.xs = xs;
     this.spacing = spacing;
     const f = WARP_FREQ / spacing;
@@ -748,6 +828,7 @@ class PlaneNoise implements PixelNoise {
     this.warpY = new SepFbm(xs.map((x) => x * f), 3);
     this.bumps = new SepFbm(xs.map((x) => (x / spacing) * 1.7 + 5), 4);
     this.sea = new SepFbm(xs.map((x) => (x / spacing) * 1.3), 3);
+    this.fragN = frag ? new SepFbm(xs.map((x) => (x / spacing) * FRAG_FREQ + FRAG_OFF[0]), 3) : null;
   }
 
   row(y: number) {
@@ -758,10 +839,15 @@ class PlaneNoise implements PixelNoise {
     this.warpY.setRow(y * this.f - 5.1);
     this.bumps.setRow((y / spacing) * 1.7 + 5);
     this.sea.setRow((y / spacing) * 1.3);
+    this.fragN?.setRow((y / spacing) * FRAG_FREQ + FRAG_OFF[1]);
   }
 
   coast(c: number) {
     return this.coastN.at(c);
+  }
+
+  frag(c: number) {
+    return this.fragN!.at(c);
   }
 
   terrain(c: number, h: number, gx: number, gy: number, land: boolean) {
@@ -790,11 +876,13 @@ class SphereNoise implements PixelNoise {
   private readonly warpY: RowFbm3;
   private readonly bumps: RowFbm3;
   private readonly sea: RowFbm3;
+  private readonly kFrag: number;
+  private readonly fragN: RowFbm3 | null;
   // 当前行余纬的正弦、余弦
   private sc = 0;
   private cc = 0;
 
-  constructor(xs: Float64Array, spacing: number, mapWidth: number) {
+  constructor(xs: Float64Array, spacing: number, mapWidth: number, frag: boolean) {
     this.spacing = spacing;
     const k = noiseK(spacing);
     this.k = k;
@@ -808,6 +896,8 @@ class SphereNoise implements PixelNoise {
     this.warpY = new RowFbm3(3, this.f);
     this.bumps = new RowFbm3(4, k * 1.7);
     this.sea = new RowFbm3(3, k * 1.3);
+    this.kFrag = noiseK(spacing) * FRAG_FREQ;
+    this.fragN = frag ? new RowFbm3(3, this.kFrag) : null;
   }
 
   row(y: number) {
@@ -822,11 +912,17 @@ class SphereNoise implements PixelNoise {
     this.warpY.setRow(cc * this.f, step);
     this.bumps.setRow(cc * this.k * 1.7 + 5, step);
     this.sea.setRow(cc * this.k * 1.3, step);
+    this.fragN?.setRow(cc * this.kFrag + FRAG_OFF[2], step);
   }
 
   coast(c: number) {
     const k = this.kCoast;
     return this.coastN.at(this.sc * this.cosLon[c] * k, this.sc * this.sinLon[c] * k);
+  }
+
+  frag(c: number) {
+    const k = this.kFrag;
+    return this.fragN!.at(this.sc * this.cosLon[c] * k + FRAG_OFF[0], this.sc * this.sinLon[c] * k + FRAG_OFF[1]);
   }
 
   terrain(c: number, h: number, gx: number, gy: number, land: boolean) {
@@ -883,13 +979,15 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
   const landOf = causes.land;
   // 画成陆地、邻格里又没有陆地格的像素（破碎的陆地）取那一格离它最近的陆地省的格（第十四轮，与屏幕相同）
   const landCell = landProvinceCells(world);
+  // 破碎度（第十八轮）：没打碎过时为 null，逐像素照旧
+  const frag = fragLand(world);
   const sphere = mesh.kind === 'sphere';
   const view = mesh.kind === 'sphere' ? viewOf(mesh) : null;
   const dl = view ? view.delaunay : (mesh as PlaneMesh).delaunay;
   const r2 = findRadius2(dl);
   const xs = new Float64Array(width);
   for (let px = 0; px < width; px++) xs[px] = ((px + 0.5) / width) * mesh.width;
-  const noise: PixelNoise = sphere ? new SphereNoise(xs, mesh.spacing, mesh.width) : new PlaneNoise(xs, mesh.spacing);
+  const noise: PixelNoise = sphere ? new SphereNoise(xs, mesh.spacing, mesh.width, !!frag) : new PlaneNoise(xs, mesh.spacing, !!frag);
   let hint = 0;
   for (let py = 0; py < height; py++) {
     const y = ((py + 0.5) / height) * mesh.height;
@@ -907,12 +1005,17 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
       const sv = s[a] * wa + s[b] * wb + s[c] * wc;
       const h = elev[a] * wa + elev[b] * wb + elev[c] * wc;
       const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
-      const land = sv + weight * coastDetailAmp(world, Math.max(0, h)) * noise.coast(px) > 0;
+      const det = weight * coastDetailAmp(world, Math.max(0, h)) * noise.coast(px);
+      // 破碎的地方（fv > 0）按 fragCoast；别处与以前逐位相同
+      const fv = frag ? frag[a] * wa + frag[b] * wb + frag[c] * wc : 0;
+      const total = fv > 0 ? fragCoast(sv, det, fv, weight, noise.frag(px)) : sv + det;
+      const land = total > 0;
       const gx = grad[2 * a] * wa + grad[2 * b] * wb + grad[2 * c] * wc;
       const gy = grad[2 * a + 1] * wa + grad[2 * b + 1] * wb + grad[2 * c + 1] * wc;
       const p = py * width + px;
       outLand[p] = land ? 1 : 0;
-      outElev[p] = noise.terrain(px, h, gx, gy, land);
+      if (fv > 0) outElev[p] = land ? Math.max(noise.terrain(px, h, gx, gy, true), fragIsleHeight(total)) : noise.terrain(px, fragSeaDepth(h, fv), gx, gy, false);
+      else outElev[p] = noise.terrain(px, h, gx, gy, land);
       // 分类：扭曲坐标下的最近格；陆海类别与像素不一致时换成最近的同类邻格
       noise.warp(px);
       const qx = x + warpOut[0];
@@ -920,7 +1023,8 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
       // 扭曲后的点离最近格的中心足够近时 findCell 必定返回它（整个星球：与 mesh.locate 同样绕回经度）
       const near2 = sphere ? within(dl, r2, qx - 2 * Math.floor(qx / 2), qy, near) : within(dl, r2, qx, qy, near);
       let cell = near2 ? near : findCell(mesh, qx, qy, near);
-      if ((landOf[cell] === 1) !== land) {
+      // 破碎的海格里画成陆地的像素（碎岛）归这一格（海省，第十八轮；与屏幕的 provCell 同一条规则）
+      if ((landOf[cell] === 1) !== land && !(land && frag && frag[cell] > 0)) {
         cell = sameKindCell(mesh, landOf, land, cell, near, x, y);
         // 海上的像素永远不取陆地格（第十三轮）：窄的海湾里邻格都是陆地时，沿网格的相邻往外找最近的海格
         if (!land && landOf[cell] === 1) cell = nearestSeaCell(mesh, landOf, cell, x, y);

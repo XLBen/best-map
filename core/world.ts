@@ -220,6 +220,11 @@ export interface Causes {
   // 只在第一次往湖里放岛时才有（撤销到那之前时去掉）；画陆地 / 海、恢复原样画到的地方清掉。堆山、压低、删湖不改它。
   // 归海省的种类（小礁一类）在湖里：定了高度的格省份按陆地算（见 island-types.ts 的 provinceLand）
   islandHeight?: Float32Array;
+  // 破碎度（第十八轮，见 terrain.ts 的 fragmentStroke 与 subcell.ts 的 fragCoast）：0–255（0 不碎，255 最碎）。
+  // 只改画法：格以下的海岸更碎（海里冒出比一格小的碎岛、陆上裂出窄窄的水道），格心照旧与这一格的陆海一致，
+  // 所以气候、河流、生态还是按整格算。打碎笔刷、放碎岛、岛链里的碎岛写它；画陆地 / 海、恢复原样清掉。
+  // 只在第一次用到时才有（撤销到那之前时去掉）：没打碎过的世界没有这个数组，与以前逐值相同
+  fragment?: Uint8Array;
 }
 
 // causes.islandHeight 里“没定高度”的值（不用 NaN：撤销记录按 !== 比较数组，NaN 每次都算改了）

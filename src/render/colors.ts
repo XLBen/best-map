@@ -106,8 +106,8 @@ export interface ColorOptions {
 // 湖在画面上是水面：海岸值取负（有岸线、有格以下的岸线细节）、高程取负的水深（浅水边）、坡度为 0
 // 按用到的数组缓存：高程、湖、水面、陆海、陆地程度（只改了名字、省份的轻快照沿用同一批数组）。
 // 预览世界只换变了的数组：整体干湿的预览高程不变、湖变了，不能只看高程，否则会画出旧的湖
-type StaticLayers = { coast: Float32Array; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
-const staticCache = new WeakMap<Float32Array, { inputs: ArrayBufferView[]; value: StaticLayers }[]>();
+type StaticLayers = { coast: Float32Array; frag: Float32Array | null; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
+const staticCache = new WeakMap<Float32Array, { inputs: unknown[]; value: StaticLayers }[]>();
 
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
 // 湖水深、湖面的海岸值：见 core/display.ts（河口按同一份海岸场找岸线）
@@ -122,7 +122,7 @@ function snowAmount(world: World, season: Season, i: number): number {
 const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces';
 
 function staticLayers(world: World): StaticLayers {
-  const inputs = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness];
+  const inputs: unknown[] = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness, world.causes.fragment];
   let list = staticCache.get(world.derived.elevation);
   if (!list) staticCache.set(world.derived.elevation, (list = []));
   const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
@@ -137,7 +137,7 @@ function staticLayers(world: World): StaticLayers {
 function computeStatic(world: World): StaticLayers {
   const { mesh, derived: d, causes } = world;
   // 海岸值与高程（湖面取负）：与河口找岸线用的是同一份（core/display.ts 的 displayCoast）
-  const { coast, elevation } = displayCoast(world);
+  const { coast, elevation, frag } = displayCoast(world);
   const grad = new Float32Array(mesh.n * 2);
   const h = new Float64Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) {
@@ -160,7 +160,7 @@ function computeStatic(world: World): StaticLayers {
     seaGrad[2 * i] = gx;
     seaGrad[2 * i + 1] = gy;
   }
-  return { coast, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
+  return { coast, frag, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
 }
 
 // 水面的高程（第十三轮修，地形层画水深、浅水用）：水面格（海岸值 ≤ 0，含湖）是自己的高程；
@@ -312,7 +312,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   const st = staticLayers(world);
   // 对岸的颜色（fillOther）：着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
   const other = new Uint8Array(n * 4);
-  for (let i = 0; i < n; i++) fillOther(mesh, smooth, st.coast, other, i);
+  // 破碎的格（第十八轮）：没有对岸时，碎岛、裂缝画成什么颜色（见 fragColors）
+  const alt = st.frag ? { frag: st.frag, rgba: fragColors(world, o.mode, o.season, smooth, st.coast, st.frag) } : null;
+  for (let i = 0; i < n; i++) fillOther(mesh, smooth, st.coast, other, i, alt);
   const fx = fxLayers(world, o);
   return {
     lith: terrainLike ? lithLayer(world) : null,
@@ -322,6 +324,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     elevation: st.elevation,
     shore: st.shore,
     coast: st.coast,
+    frag: st.frag,
     grad: st.grad,
     seaGrad: st.seaGrad,
     flat,
@@ -338,6 +341,85 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
 
 // 放的岛自己选的颜色盖住植被颜色的多少
 const ISLAND_TINT = 0.8;
+
+// ---------- 碎岛与裂缝的颜色（第十八轮） ----------
+// 着色器里陆地像素用“陆色”、水面像素用“水色”，水面格的陆色是对岸（挨着的陆地格）的颜色。破碎的格里画出来的碎岛、裂缝
+// 常常没有对岸（四周全是海的碎岛、陆地中间的裂缝），以前会画成自己的颜色（海里的陆地像素是海色）。这里给它们一个说得通的颜色：
+//   · 水面格（碎岛）：往外 FRAG_RINGS 圈里最近的陆地格的颜色（附近的气候、生态）；附近没有陆地时按这一格的气候：
+//     冷的是冻原，干热的是沙地，别的是草地，再按季节盖上雪（数据底图里用中性的灰）；
+//   · 陆地格（裂缝）：往外最近的水面格的颜色；附近没有时是浅海的颜色。
+// 只给破碎度 > 0 的格（别处与以前逐位相同）；alpha 与平滑层的一样（陆地是沙质：碎岛低，边上一圈沙滩）
+const FRAG_RINGS = 6;
+export function fragColors(world: World, mode: ViewMode, season: Season, smooth: Uint8Array, coast: Float32Array, frag: Float32Array, only?: Iterable<number>): Uint8Array {
+  const { mesh, derived: d } = world;
+  const n = mesh.n;
+  const out = new Uint8Array(n * 4);
+  const terrainLike = terrainLikeMode(mode);
+  const depthColors = terrainLike || mode === 'elevation' || mode === 'uplift';
+  const mark = new Int32Array(n).fill(-1);
+  let ring: number[] = [];
+  let next: number[] = [];
+  const nearest = (i: number, wantLand: boolean): number => {
+    ring = [i];
+    mark[i] = i;
+    for (let r = 0; r < FRAG_RINGS; r++) {
+      next = [];
+      let best = -1;
+      let bd = Infinity;
+      for (const c of ring) {
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (mark[j] === i) continue;
+          mark[j] = i;
+          next.push(j);
+          const isLand = coast[j] > 0;
+          if (isLand !== wantLand) continue;
+          const dx = mesh.kind === 'sphere' ? mesh.x[j] - mesh.x[i] - 2 * Math.round((mesh.x[j] - mesh.x[i]) / 2) : mesh.x[j] - mesh.x[i];
+          const dd = dx * dx + (mesh.y[j] - mesh.y[i]) ** 2;
+          if (dd < bd || (dd === bd && j < best)) {
+            bd = dd;
+            best = j;
+          }
+        }
+      }
+      if (best >= 0) return best;
+      ring = next;
+    }
+    return -1;
+  };
+  const put = (i: number, c: RGB, a: number) => {
+    out[i * 4] = Math.round(c[0]);
+    out[i * 4 + 1] = Math.round(c[1]);
+    out[i * 4 + 2] = Math.round(c[2]);
+    out[i * 4 + 3] = a;
+  };
+  const one = (i: number) => {
+    if (!(frag[i] > 0)) return;
+    const wet = coast[i] <= 0;
+    const j = nearest(i, wet);
+    if (j >= 0) {
+      for (let c = 0; c < 4; c++) out[i * 4 + c] = smooth[j * 4 + c];
+      return;
+    }
+    if (!wet) {
+      put(i, depthColors ? ramp(SEA, -40) : [40, 50, 70], warmth(world, i));
+      return;
+    }
+    if (mode === 'seaTemp') return put(i, SEA_TEMP_LAND, 255);
+    if (mode === 'elevation') return put(i, ramp(HYPSO, 5), 200);
+    if (!terrainLike) return put(i, [140, 140, 140], 200);
+    // 按这一格的气候：冷的冻原、干热的沙地、别的草地；积雪按季节
+    const t = d.tMean[i];
+    const p = d.precip[i];
+    let c: RGB = t < -2 ? [150, 156, 138] : p < 250 && t > 12 ? [214, 196, 150] : t < 6 ? [118, 138, 102] : [104, 142, 84];
+    const k = snowAmount(world, season, i);
+    if (k > 0) c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
+    put(i, c, 200);
+  };
+  if (only) for (const i of only) one(i);
+  else for (let i = 0; i < n; i++) one(i);
+  return out;
+}
 
 // 岛的样子（第十三轮按可蚀性；第十四轮起按每格记下的岛的种类，见 core/island-types.ts）：每格 RGBA 字节，地形着色器按它画：
 //   r 不用（第十四轮去掉了火山岛的玄武岩）
@@ -633,6 +715,8 @@ export interface GhostEdit {
   cells: number[];
   delta: number[];
   lake?: number[];
+  // 这些格将来的破碎度（0–255，第十八轮：放碎岛、画陆地 / 海清掉破碎度）
+  frag?: { cells: number[]; value: number[] };
 }
 
 // 补丁：这些格（升序）将来的海岸值与陆海；lake：将来是湖面（海岸值照 staticLayers 的规则取负）
@@ -641,6 +725,8 @@ export interface GhostPatch {
   coast: Float32Array;
   land: Uint8Array;
   lake?: Uint8Array;
+  // 将来的破碎度（0–1）：这些格换成这些值
+  frag?: { cells: Int32Array; value: Float32Array };
 }
 
 // 工具的改动 → 补丁：landPatch 的那些格（改动的格与邻格，邻格可能因补单格海洞而变）再加上成湖的格。
@@ -660,6 +746,7 @@ export function editGhost(world: World, base: CellLayers, edit: GhostEdit): Ghos
     out.land[k] = j !== undefined ? lp.land[j] : world.causes.land[i];
     out.lake![k] = out.land[k] && (lakes.has(i) || isLake(world, i)) ? 1 : 0;
   });
+  if (edit.frag?.cells.length) out.frag = { cells: Int32Array.from(edit.frag.cells), value: Float32Array.from(edit.frag.value, (v) => v / 255) };
   return out;
 }
 
@@ -689,6 +776,8 @@ export interface GhostLayers {
   other: Uint8Array;
   elevation: Float32Array;
   coast: Float32Array;
+  // 破碎度（第十八轮）；底子和补丁里都没有时为 null
+  frag: Float32Array | null;
   flat: Uint8Array | null;
   group: Float32Array | null;
   // 现在与底子不同的格（升序）：上传时只传这些格（与上一次不同的格）所在的行
@@ -704,6 +793,8 @@ export class GhostBuffer {
   readonly other: Uint8Array;
   readonly elevation: Float32Array;
   readonly coast: Float32Array;
+  // 破碎度：底子有时是它的副本；没有时第一次用到才建（全是 0）
+  frag: Float32Array | null;
   readonly flat: Uint8Array | null;
   readonly group: Float32Array | null;
   // 上次写过的格
@@ -718,6 +809,7 @@ export class GhostBuffer {
     this.other = base.other.slice();
     this.elevation = base.elevation.slice();
     this.coast = base.coast.slice();
+    this.frag = base.frag ? base.frag.slice() : null;
     this.flat = base.flat ? base.flat.slice() : null;
     this.group = base.group ? base.group.slice() : null;
     this.mark = new Uint8Array(base.coast.length);
@@ -734,6 +826,7 @@ export class GhostBuffer {
       }
       this.elevation[i] = base.elevation[i];
       this.coast[i] = base.coast[i];
+      if (this.frag) this.frag[i] = base.frag ? base.frag[i] : 0;
       if (this.group) {
         this.group[2 * i] = base.group![2 * i];
         this.group[2 * i + 1] = base.group![2 * i + 1];
@@ -742,7 +835,7 @@ export class GhostBuffer {
     this.written = [];
     if (patch) this.write(world, patch);
     const cells = Int32Array.from(this.written).sort();
-    return { smooth: this.smooth, other: this.other, elevation: this.elevation, coast: this.coast, flat: this.flat, group: this.group, cells, coastAmp };
+    return { smooth: this.smooth, other: this.other, elevation: this.elevation, coast: this.coast, frag: this.frag, flat: this.flat, group: this.group, cells, coastAmp };
   }
 
   private touch(i: number) {
@@ -834,21 +927,37 @@ export class GhostBuffer {
       this.group[2 * i] = g;
       this.group[2 * i + 1] = 0;
     }
+    // 破碎度（第十八轮）：换上将来的值
+    const fragged: number[] = [];
+    if (p.frag) {
+      const frag = (this.frag ??= new Float32Array(coast.length));
+      for (let k = 0; k < p.frag.cells.length; k++) {
+        const i = p.frag.cells[k];
+        if (frag[i] === p.frag.value[k]) continue;
+        frag[i] = p.frag.value[k];
+        fragged.push(i);
+        this.touch(i);
+      }
+    }
     // 对岸的颜色：变过的格与它们的邻格重新取（与 cellLayers 同一个规则，用将来的海岸值分陆海）
     const redo = new Set<number>();
-    for (const list of [toLand, toSea, toLake]) {
+    for (const list of [toLand, toSea, toLake, fragged]) {
       for (const i of list) {
         redo.add(i);
         for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) redo.add(mesh.adj[e]);
       }
     }
-    for (const i of redo) fillOther(mesh, smooth, coast, this.other, i);
+    const frag = this.frag;
+    const alt = frag ? { frag, rgba: fragColors(world, this.mode, 'annual', smooth, coast, frag, redo) } : null;
+    for (const i of redo) fillOther(mesh, smooth, coast, this.other, i, alt);
     for (const i of redo) this.touch(i);
   }
 }
 
-// 一格对岸的颜色：陆地格取相邻水面格的平均色，水面格取相邻陆地格的平均色（含 alpha）；没有对岸就是自己的
-function fillOther(mesh: World['mesh'], smooth: Uint8Array, coast: Float32Array, out: Uint8Array, i: number) {
+// 一格对岸的颜色：陆地格取相邻水面格的平均色，水面格取相邻陆地格的平均色（含 alpha）；没有对岸就是自己的。
+// alt（第十八轮）：破碎的格（frag > 0）没有对岸时用 alt.rgba（碎岛、裂缝的颜色，见 fragColors）
+type FragAlt = { frag: Float32Array; rgba: Uint8Array } | null;
+function fillOther(mesh: World['mesh'], smooth: Uint8Array, coast: Float32Array, out: Uint8Array, i: number, alt: FragAlt = null) {
   const wet = coast[i] <= 0;
   let k = 0;
   const sum = [0, 0, 0, 0];
@@ -858,7 +967,8 @@ function fillOther(mesh: World['mesh'], smooth: Uint8Array, coast: Float32Array,
     for (let c = 0; c < 4; c++) sum[c] += smooth[j * 4 + c];
     k++;
   }
-  for (let c = 0; c < 4; c++) out[i * 4 + c] = k ? Math.round(sum[c] / k) : smooth[i * 4 + c];
+  const own = !k && alt && alt.frag[i] > 0 ? alt.rgba : smooth;
+  for (let c = 0; c < 4; c++) out[i * 4 + c] = k ? Math.round(sum[c] / k) : own[i * 4 + c];
 }
 
 // 一次性的幽灵图层（测试、不必持久时用）
