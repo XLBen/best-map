@@ -15,6 +15,7 @@ import { ITEM_ID, biomeFields, biomeLakes, biomeRivers, fieldRefs, naturalOff, r
 
 // 现有的内容种类登记进登记表（第二十轮）：生态、河 / 湖 / 岛的种类、星球形态、地名风格、自定义场。
 // 以前的种类在世界里的放法、命令都不变（登记表只是适配），资源包文件的格式不变。
+// 第二十一轮的地形类别、资源登记在 human/kinds.ts（在地名风格之后调用）。
 // 登记的先后就是列表、检查的先后；用到世界的先后看 order。
 
 const fieldName = z.string().regex(ITEM_ID, '场名只能包含字母、数字、下划线和连字符');
