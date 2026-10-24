@@ -33,8 +33,8 @@
     "ford": ["furt", "brück"]
   },
   "forbid": [
-    "^a$", "^e$", "^i$", "^o$", "^u$", "aa", "ii", "uu", "ee", "oo", "rr", "ll", "hh", "ss", "nn", "mm", "tt",
-    "dd", "kk", "^ng", "^r", "dt", "tg", "dk", "kg", "gk"
+    "^a$", "^e$", "^i$", "^o$", "^u$", "aa", "ii", "uu", "rr", "ll", "hh", "ss", "nn",
+    "dd", "kk", "^ng", "^r", "tg", "dk", "kg", "gk"
   ],
   "types": {
     "continent": {"patterns": [{"p": "{root}ia", "w": 2}, {"p": "{root}land"}]},

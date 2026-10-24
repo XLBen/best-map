@@ -283,11 +283,11 @@ function fillPhonetic(style: PhoneticStyle, pat: { p: string; zh?: string }, ran
     at = m.index + m[0].length;
   }
   if (at < pat.p.length) segs.push({ text: pat.p.slice(at), literal: true });
-  // 大小写：照抄的原样，拼出来的在词首大写
+  // 大小写：照抄的原样，拼出来的在词首（开头、空格或连字符后：Saint-Roumel、al-Kabir）大写
   let orig = '';
   for (const s of segs) {
     let text = s.text;
-    if (!s.literal && text && (!orig || /\s$/.test(orig))) text = text[0].toUpperCase() + text.slice(1);
+    if (!s.literal && text && (!orig || /[\s-]$/.test(orig))) text = text[0].toUpperCase() + text.slice(1);
     orig += text;
   }
   orig = orig.replace(/\s+/g, ' ').trim();
