@@ -196,7 +196,7 @@ const waterProblems =
 
 registerKind<RiverType>({
   id: 'riverType',
-  label: '河流类型',
+  label: '河的种类',
   short: '河流',
   order: 10,
   schema: riverTypeSchema as unknown as z.ZodType<RiverType>,
@@ -221,7 +221,7 @@ registerKind<RiverType>({
 
 registerKind<LakeType>({
   id: 'lakeType',
-  label: '湖泊类型',
+  label: '湖的种类',
   short: '湖泊',
   order: 11,
   schema: lakeTypeSchema as unknown as z.ZodType<LakeType>,

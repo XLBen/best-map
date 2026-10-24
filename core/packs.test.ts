@@ -59,7 +59,7 @@ describe('资源包的格式', () => {
     expect(!color.ok && color.errors).toEqual(['生态第 1 个“红林”的 color：颜色需为 #rrggbb']);
     // 河流类型按它的格式查（缺 id、缺颜色都说出来）
     const river = readPack(JSON.stringify(pack({ riverTypes: [{ name: '无名' } as never] })));
-    expect(!river.ok && river.errors).toEqual(['河流类型第 1 个“无名”的 id：缺少这一项', '河流类型第 1 个“无名”的 color：缺少这一项']);
+    expect(!river.ok && river.errors).toEqual(['河的种类第 1 个“无名”的 id：缺少这一项', '河的种类第 1 个“无名”的 color：缺少这一项']);
     const kept = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }] })));
     expect(kept.ok && kept.pack.riverTypes).toEqual([{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }]);
     // 星球形态按 planet-form.ts 的格式查（见下面“资源包里的星球形态”）
@@ -342,7 +342,7 @@ describe('河流类型的资源包', () => {
     // 写错的河流类型：读的时候用中文说出在哪里
     const bad = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'x', name: '', color: 'red' }] })));
     expect(bad.ok).toBe(false);
-    expect(!bad.ok && bad.errors.join('；')).toContain('河流类型第 1 个“x”');
+    expect(!bad.ok && bad.errors.join('；')).toContain('河的种类第 1 个“x”');
   });
 });
 

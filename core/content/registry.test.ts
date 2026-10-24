@@ -17,8 +17,8 @@ describe('内容种类的登记表', () => {
   it('现有的几种都登记了：段名、全称、简称、先后', () => {
     expect(allKinds().map((k) => [k.id, k.pack.key, k.label, k.short])).toEqual([
       ['biome', 'biomes', '生态', '生态'],
-      ['riverType', 'riverTypes', '河流类型', '河流'],
-      ['lakeType', 'lakeTypes', '湖泊类型', '湖泊'],
+      ['riverType', 'riverTypes', '河的种类', '河流'],
+      ['lakeType', 'lakeTypes', '湖的种类', '湖泊'],
       ['islandType', 'islandTypes', '岛的种类', '岛'],
       ['planetForm', 'planetForms', '星球形态', '星球'],
       ['nameStyle', 'nameStyles', '地名风格', '地名风格'],
