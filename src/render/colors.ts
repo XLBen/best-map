@@ -6,7 +6,7 @@ import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '.
 import type { LakeType } from '../../core/lake-types';
 import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
-import { classColors, resourceColors } from '../../core/human';
+import { classColors, humanColors, resourceColors, valueLayer, worldCultureGroups, worldCultures, worldDimensions, worldPopValues } from '../../core/human';
 import { coastPatch } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
 import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landPixelCells, provinceLand, ringCodes } from '../../core/island-types';
@@ -88,6 +88,28 @@ const DIVERGE: [number, RGB][] = [
   [0, [150, 150, 145]],
   [1, [200, 50, 40]],
 ];
+// 宜居度（0–1，第二十二轮）：荒凉的褐灰 → 黄 → 绿
+const HABIT: [number, RGB][] = [
+  [0, [90, 70, 60]],
+  [0.15, [170, 120, 80]],
+  [0.35, [220, 200, 110]],
+  [0.6, [130, 190, 90]],
+  [1, [40, 130, 70]],
+];
+// 人口密度（人 / km²，按对数取 log10(1 + 密度)，同导出的 population.png）：无人是暗的，越密越亮越红
+const DENSITY: [number, RGB][] = [
+  [0, [40, 40, 52]],
+  [0.5, [70, 90, 140]],
+  [1, [90, 160, 160]],
+  [1.5, [210, 200, 110]],
+  [2, [235, 140, 60]],
+  [3, [200, 40, 50]],
+];
+export const densityLevel = (d: number) => Math.log10(1 + Math.max(0, d));
+// 图例用：宜居度、人口密度色带上一个值的颜色
+export const habitRgb = (v: number): RGB => ramp(HABIT, v);
+export const densityRgb = (d: number): RGB => ramp(DENSITY, densityLevel(d));
+
 const UNIT: [number, RGB][] = [
   [0, [30, 30, 60]],
   [0.25, [60, 80, 160]],
@@ -121,7 +143,9 @@ function snowAmount(world: World, season: Season, i: number): number {
   return snowT < 0 ? Math.min(1, -snowT / 6) : 0;
 }
 // 地形类别、资源（第二十一轮）：底下是地貌（晕渲、露岩），上面按格平涂；不画生态的花纹（看得清数据）
-const humanMode = (mode: ViewMode) => mode === 'terrainClass' || mode === 'resource';
+// 第二十二轮：文化圈（按文化、按文化组）与时代的每一维也是这样（没有人的陆地不着色，看得到地貌）
+export type HumanFlatMode = 'terrainClass' | 'resource' | 'culture' | 'cultureGroup' | `dim:${string}`;
+const humanMode = (mode: ViewMode): mode is HumanFlatMode => mode === 'terrainClass' || mode === 'resource' || mode === 'culture' || mode === 'cultureGroup' || mode.startsWith('dim:');
 const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
 
 function staticLayers(world: World): StaticLayers {
@@ -239,7 +263,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       case 'dominant':
       case 'provinces':
       case 'terrainClass':
-      case 'resource': {
+      case 'resource':
+      case 'culture':
+      case 'cultureGroup': {
         // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖
         c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
         // 放的岛的种类选了颜色：岛上的地画成这个颜色（植被的颜色留一点；积雪照样盖上）
@@ -291,8 +317,19 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
         shade = 0.4;
         break;
       }
+      case 'habitability':
+        c = ramp(HABIT, d.habitability?.[i] ?? 0);
+        shade = 0.4;
+        break;
+      case 'popDensity':
+        c = ramp(DENSITY, densityLevel(d.popDensity?.[i] ?? 0));
+        shade = 0.4;
+        break;
       default: {
-        if (o.mode.startsWith('field:')) {
+        if (o.mode.startsWith('dim:')) {
+          // 时代的一维：底下是地貌（同文化圈）
+          c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
+        } else if (o.mode.startsWith('field:')) {
           const name = o.mode.slice(6);
           const v = (causes.fields[name]?.[i] ?? 0) + (d.corrF[name]?.[i] ?? 0);
           c = ramp(UNIT, v);
@@ -310,7 +347,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       if (s >= 0) put(flat, i, speciesRgb[s], d.overridden[i] ? 255 : 220);
     }
   } else if (o.mode === 'provinces') flat = provinceFlat(world, causes.province);
-  else if (humanMode(o.mode)) flat = humanFlat(world, o.mode as 'terrainClass' | 'resource');
+  else if (humanMode(o.mode)) flat = humanFlat(world, o.mode);
 
   // 省界：剪刀切过的地方按切线画（切线附近按在线的哪一边分省，见 core/seams.ts）
   const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
@@ -351,13 +388,26 @@ const HUMAN_ALPHA = 235;
 const NO_RESOURCE_ALPHA = 170;
 
 // 地形类别、资源底图的平涂层：按编号取颜色（core/human 的 classColors、resourceColors），水面不着色
-export function humanFlat(world: World, mode: 'terrainClass' | 'resource'): Uint8Array {
+// 文化圈、每一维（第二十二轮）：按 derived.popCulture / popCultureGroup / valueLayer 的编号取 humanColors，没有人的格不着色
+export function humanFlat(world: World, mode: HumanFlatMode): Uint8Array {
   const { mesh, causes, derived: d } = world;
   const n = mesh.n;
   const flat = new Uint8Array(n * 4);
-  const codes = mode === 'terrainClass' ? d.terrainClass : d.resource;
+  let codes: ArrayLike<number> | undefined;
+  let colors: (readonly number[] | null)[];
+  if (mode === 'terrainClass' || mode === 'resource') {
+    codes = mode === 'terrainClass' ? d.terrainClass : d.resource;
+    colors = mode === 'terrainClass' ? classColors(world) : resourceColors(world);
+  } else if (mode === 'culture' || mode === 'cultureGroup') {
+    codes = mode === 'culture' ? d.popCulture : d.popCultureGroup;
+    colors = humanColors(world, mode);
+  } else {
+    const dim = mode.slice(4);
+    const k = worldDimensions(world.small).findIndex((x) => x.id === dim);
+    codes = k >= 0 ? valueLayer(world, k) : undefined;
+    colors = humanColors(world, dim);
+  }
   if (!codes) return flat;
-  const colors = mode === 'terrainClass' ? classColors(world) : resourceColors(world);
   for (let i = 0; i < n; i++) {
     if (!causes.land[i] || d.lake[i] === 1) continue;
     const c = colors[codes[i]];
@@ -527,7 +577,9 @@ export function colorSignature(small: World['small']): string {
   const isles = (small.islandTypes ?? []).map((t) => `${t.color ?? ''}:${t.shape}:${t.province}`);
   // 地形类别、资源的颜色（第二十一轮）：改过、加过时才有
   const human = small.content?.terrainClass || small.content?.resource ? `|${classColors({ small }).join(';')}|${resourceColors({ small }).join(';')}` : '';
-  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}${human}`;
+  // 文化、文化组、取值的颜色（第二十二轮）：有人文时才有
+  const pop = small.human ? `|${[...worldCultures(small), ...worldCultureGroups(small), ...worldPopValues(small)].map((x) => x.color).join(';')}|${small.human.era}` : '';
+  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}${human}${pop}`;
 }
 
 // ---------- 生态的花纹与发光（第三批） ----------

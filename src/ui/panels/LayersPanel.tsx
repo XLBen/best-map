@@ -6,7 +6,7 @@ import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, suitabilityFocus } from '../defs/layers';
+import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
 const PROJECTIONS: [ProjectionPref, string][] = [
@@ -170,6 +170,22 @@ export function LayersPanel() {
         )}
         {hint && <p class="hint">{hint}</p>}
         {mode.value === 'suitability' && <SuitabilityPick w={w} />}
+      </section>
+      <section>
+        <h5>人文</h5>
+        <div class="view-grid">
+          {humanViews(w).map((v) =>
+            v.id === 'culture' ? (
+              <button class={mode.value === 'culture' || mode.value === 'cultureGroup' ? 'on' : ''} onClick={() => showView(mode.value === 'cultureGroup' ? 'cultureGroup' : 'culture')}>
+                {v.label}
+              </button>
+            ) : (
+              viewButton(v.id, v.label)
+            ),
+          )}
+        </div>
+        {(mode.value === 'culture' || mode.value === 'cultureGroup') && <Seg value={mode.value} options={CULTURE_VIEWS} onChange={showView} wide />}
+        {!w.small.human && <p class="hint">生成人文后有文化圈、人口密度</p>}
       </section>
       <section>
         <h5>画风</h5>
