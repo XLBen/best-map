@@ -3,7 +3,7 @@ import { focusSpecies, openPanel, options, sheet, world } from '../../state';
 import { paintWith } from '../defs/tools';
 
 // 生态类型的色板（第十四轮：顶栏的“生态”按钮去掉了，色板挪进“自然”）：
-// 涂生态底部条上点当前的生态弹出它；“自然 ⋯”里也有一份。选一种就换到“涂生态”。
+// 只在“自然 ⋯”里（涂生态底部条上点当前的生态也是打开它）。选一种就换到“涂生态”。
 // 编辑生态类型在右边的抽屉里，可以一边调一边看地图
 
 export function BiomePalette() {
@@ -25,17 +25,19 @@ export function BiomePalette() {
           </button>
         ))}
       </div>
-      <p class="muted small">选一种就换到“涂生态”。也可以在地图上按住 Alt 点一下，吸取那里的生态。</p>
-      <button
-        onClick={() => {
-          focusSpecies.value = options.value.biome;
-          sheet.value = 'species';
-          openPanel.value = null;
-        }}
-      >
-        编辑生态类型…
-      </button>
-      <span class="muted small"> 改颜色、名字、喜欢的冷暖干湿，或新建一种</span>
+      <p class="hint">选一种就换到“涂生态”。也可以在地图上按住 Alt 点一下，吸取那里的生态。</p>
+      <div class="row wrap">
+        <button
+          onClick={() => {
+            focusSpecies.value = options.value.biome;
+            sheet.value = 'species';
+            openPanel.value = null;
+          }}
+        >
+          编辑生态类型…
+        </button>
+        <span class="hint">改颜色、名字、喜欢的冷暖干湿，或新建一种</span>
+      </div>
     </>
   );
 }

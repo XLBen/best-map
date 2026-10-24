@@ -1,4 +1,4 @@
-import { Dices, Lock, LockOpen, ScanSearch, Spline, Trash2, X } from 'lucide-preact';
+import { Spline } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, defaultFeatureLabel, featureLabel, overrideKeyOf } from '../../../core/features';
@@ -10,6 +10,7 @@ import { download, exec, focusName, labelGroups, selectedFeature, showToast, wor
 import { focusOn } from '../camera';
 import { selectRiver } from '../riverCourse';
 import { Seg } from '../common';
+import { SelectionActions } from '../components/SelectionActions';
 
 // 地名：底部条上的“选中地名”编辑，工具列表下方的文字包与全部地名
 
@@ -152,30 +153,18 @@ function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
         />
       )}
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v })} />
-      <button class="bar-btn" onClick={() => update({ reroll: true })} title="按文字包换一个名字">
-        <Dices size={15} /> 换一个
-      </button>
-      {f.custom && (
-        <button class="bar-btn" onClick={() => update({ name: '' })} title="不用自己起的名字，按文字包自动起">
-          <LockOpen size={15} /> 恢复自动
-        </button>
-      )}
-      <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
-        <ScanSearch size={15} />
-      </button>
-      <button
-        class="bar-btn icon"
-        onClick={() => {
+      <SelectionActions
+        reroll={() => update({ reroll: true })}
+        rerollTitle="按文字包换一个名字"
+        unlock={f.custom ? () => update({ name: '' }) : undefined}
+        locate={() => focusOn(f.cells)}
+        remove={() => {
           selectedFeature.value = null;
           void exec({ op: 'remove_region', id }, '正在删除…');
         }}
-        title="删掉这个地名"
-      >
-        <Trash2 size={15} />
-      </button>
-      <button class="bar-btn icon" onClick={() => (selectedFeature.value = null)} title="取消选择">
-        <X size={15} />
-      </button>
+        removeTitle="删掉这个地名"
+        deselect={() => (selectedFeature.value = null)}
+      />
     </>
   );
 }
@@ -191,35 +180,28 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
     <>
       <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => update({ label: v || null }, v ? `类型改叫“${v}”` : '类型换回自动的叫法', '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
-      <button class="bar-btn" onClick={() => update({ name: '', salt: salt + 1 }, '换了个名字')} title="自动换一个名字">
-        <Dices size={15} /> 换一个
-      </button>
-      {f.custom ? (
-        <button class="bar-btn" onClick={() => update({ name: '', salt }, '恢复自动命名')} title="不再固定，跟着文字包自动起名">
-          <LockOpen size={15} /> 恢复自动
-        </button>
-      ) : (
-        <button class="bar-btn" onClick={() => update({ name: f.name }, `改名为“${f.name}”`, '正在改名…')} title="之后河再变，这个名字也不会变">
-          <Lock size={15} /> 锁定
-        </button>
-      )}
-      <button
-        class="bar-btn"
-        onClick={() => {
-          selectedFeature.value = null;
-          selectRiver({ kind: 'guide', id });
-        }}
-        title="换到“画河”：改大小、粗细、终点，重画一段"
+      <SelectionActions
+        reroll={() => update({ name: '', salt: salt + 1 }, '换了个名字')}
+        unlock={f.custom ? () => update({ name: '', salt }, '恢复自动命名') : undefined}
+        unlockTitle="不再固定，跟着文字包自动起名"
+        lock={f.custom ? undefined : () => update({ name: f.name }, `改名为“${f.name}”`, '正在改名…')}
+        lockTitle="之后河再变，这个名字也不会变"
+        locate={() => focusOn(f.cells)}
+        remove={hideAndDeselect(() => update({ hidden: true }, `删掉了地名「${f.name}」`))}
+        removeTitle={HIDE_TITLE}
+        deselect={() => (selectedFeature.value = null)}
       >
-        <Spline size={15} /> 管理这条河
-      </button>
-      <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
-        <ScanSearch size={15} />
-      </button>
-      <HideButton onHide={() => update({ hidden: true }, `删掉了地名「${f.name}」`)} />
-      <button class="bar-btn icon" onClick={() => (selectedFeature.value = null)} title="取消选择">
-        <X size={15} />
-      </button>
+        <button
+          class="bar-btn"
+          onClick={() => {
+            selectedFeature.value = null;
+            selectRiver({ kind: 'guide', id });
+          }}
+          title="换到“画河”：改大小、粗细、终点，重画一段"
+        >
+          <Spline /> 管理这条河
+        </button>
+      </SelectionActions>
     </>
   );
 }
@@ -235,44 +217,26 @@ export function NamesBar() {
     <>
       <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => void exec(labelCommand(w, f, v), '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={rename} />
-      <button class="bar-btn" onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')} title="自动换一个名字">
-        <Dices size={15} /> 换一个
-      </button>
-      {f.custom ? (
-        <button class="bar-btn" onClick={() => rename('')} title="不再固定，跟着文字包自动起名">
-          <LockOpen size={15} /> 恢复自动
-        </button>
-      ) : (
-        <button class="bar-btn" onClick={() => rename(f.name)} title="之后地形再变，这个名字也不会变">
-          <Lock size={15} /> 锁定
-        </button>
-      )}
-      <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
-        <ScanSearch size={15} />
-      </button>
-      <HideButton onHide={() => void exec(hideCommand(w, f, true), '正在删除…')} />
-      <button class="bar-btn icon" onClick={() => (selectedFeature.value = null)} title="取消选择">
-        <X size={15} />
-      </button>
+      <SelectionActions
+        reroll={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')}
+        unlock={f.custom ? () => rename('') : undefined}
+        unlockTitle="不再固定，跟着文字包自动起名"
+        lock={f.custom ? undefined : () => rename(f.name)}
+        locate={() => focusOn(f.cells)}
+        remove={hideAndDeselect(() => void exec(hideCommand(w, f, true), '正在删除…'))}
+        removeTitle={HIDE_TITLE}
+        deselect={() => (selectedFeature.value = null)}
+      />
     </>
   );
 }
 
 // 删掉地名（第十六轮）：地物还在（山还是山、河还是河），只是不再标名字；“地名 ⋯ → 删掉的地名”里恢复
-function HideButton({ onHide }: { onHide: () => void }) {
-  return (
-    <button
-      class="bar-btn icon"
-      onClick={() => {
-        selectedFeature.value = null;
-        onHide();
-      }}
-      title="删掉这个地名（地物还在，只是不标名字；在“⋯ → 删掉的地名”里能恢复）"
-    >
-      <Trash2 size={15} />
-    </button>
-  );
-}
+const HIDE_TITLE = '删掉这个地名（地物还在，只是不标名字；在“⋯ → 删掉的地名”里能恢复）';
+const hideAndDeselect = (onHide: () => void) => () => {
+  selectedFeature.value = null;
+  onHide();
+};
 
 // 自然的地物写在落到它上面的那条改动上（同 labelCommand），画的河写在河道上
 export function hideCommand(w: World, f: GeoFeature, hidden: boolean) {
@@ -298,7 +262,7 @@ function WordPackBox({ w }: { w: World }) {
   return (
     <section>
       <h5>文字包：{pack.name}</h5>
-      <p class="muted small">名字由文字包按地貌类型生成（岛、山脉、海湾……各有模板和词表）。可以导出来改，做成别的风格再导入。</p>
+      <p class="hint">名字由文字包按地貌类型生成（岛、山脉、海湾……各有模板和词表）。可以导出来改，做成别的风格再导入。</p>
       <div class="row wrap">
         <button onClick={() => download(`${pack.id}.json`, JSON.stringify(pack, null, 2), 'application/json')}>导出文字包</button>
         <label class="file-button">
@@ -330,17 +294,17 @@ function FeatureList({ w }: { w: World }) {
     <section>
       <h5>全部地名</h5>
       <input class="wide-input" placeholder="找地名…" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
-      <div class="feature-list">
+      <div class="list">
         {list.map((f) => (
           <div
-            class={`feature-row ${selectedFeature.value === f.key ? 'on' : ''}`}
+            class={`item ${selectedFeature.value === f.key ? 'on' : ''}`}
             onClick={() => {
               selectedFeature.value = f.key;
               focusOn(f.cells);
             }}
           >
-            <span class={f.custom ? 'custom' : ''}>{f.name}</span>
-            <span class="muted small">{featureLabel(w, f)}</span>
+            <span class={`grow ellipsis ${f.custom ? 'custom' : ''}`}>{f.name}</span>
+            <span class="hint">{featureLabel(w, f)}</span>
           </div>
         ))}
       </div>
@@ -354,16 +318,16 @@ function HiddenList({ w }: { w: World }) {
   const hidden = w.derived.features.filter((f) => f.name && f.hidden).sort((a, b) => b.importance - a.importance);
   if (!hidden.length) return null;
   return (
-    <details class="hidden-names">
+    <details>
       <summary>删掉的地名（{hidden.length}）</summary>
-      <div class="feature-list">
+      <div class="list">
         {hidden.map((f) => (
-          <div class="feature-row" key={f.key}>
-            <span class="muted" onClick={() => focusOn(f.cells)} title="在地图上看">
+          <div class="item" key={f.key}>
+            <span class="grow ellipsis muted" onClick={() => focusOn(f.cells)} title="在地图上看">
               {f.name}
             </span>
-            <span class="muted small">{featureLabel(w, f)}</span>
-            <button class="bar-btn small" onClick={() => void exec(hideCommand(w, f, false), '正在恢复…')} title="地图上重新标出这个名字">
+            <span class="hint">{featureLabel(w, f)}</span>
+            <button class="small" onClick={() => void exec(hideCommand(w, f, false), '正在恢复…')} title="地图上重新标出这个名字">
               恢复
             </button>
           </div>

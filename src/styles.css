@@ -1,20 +1,74 @@
+/* ---------- 一套 token：字号、圆角、阴影、间距、控件高度、颜色都只从这里取 ---------- */
 :root {
+  color-scheme: dark;
+
+  /* 字号四档：小字（标签、刻度）/ 说明与次要 / 正文 / 标题 */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --font: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* 圆角三档；胶囊、圆点用 --r-pill */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* 阴影两档：小的（滑块、开关的圆点）/ 浮在地图上的 */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.4);
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+
+  /* 控件高度两档 */
+  --h-sm: 28px;
+  --h-md: 32px;
+
+  /* 灰阶：从最深的底到字 */
+  --field: #12151a;
   --bg: #15181d;
-  --panel: #1d2128;
-  --panel2: #252a33;
-  --panel3: #2c323d;
+  --surface: #1d2128;
   --line: #333a45;
-  --text: #dfe3e8;
+  --faint: #5d6673;
   --muted: #8b95a3;
+  --text: #dfe3e8;
+
+  /* 浮在地图上的毛玻璃，和叠在任何底上的白（按钮的底、悬停、按下） */
+  --glass: rgba(22, 25, 31, 0.84);
+  --glass-strong: rgba(26, 30, 37, 0.96);
+  --fill: rgba(255, 255, 255, 0.08);
+  --hover: rgba(255, 255, 255, 0.06);
+  --press: rgba(255, 255, 255, 0.14);
+  --scrim: rgba(8, 10, 14, 0.72);
+
+  /* 强调 */
   --accent: #4fa3e0;
   --accent-bg: #2a5f8a;
   --accent-line: #3a7bb0;
+  /* 警告 */
   --warn: #f0a040;
+  --warn-text: #ffd29b;
+  --warn-bg: #5a3418;
+  /* 危险 */
   --danger: #e0574f;
+  --danger-text: #ff9a92;
+  --danger-bg: #5c2622;
+  /* 好的、气候图上鼠标所指的黄圈、缩略图没画好时的海 */
   --ok: #6cc070;
-  color-scheme: dark;
+  --mark: #ffe14d;
+  --sea: #1a2a40;
+
+  /* 右边抽屉的宽：抽屉开着时底部条按它居中 */
+  --sheet-w: min(420px, calc(100% - 80px));
 }
 
+/* ---------- 基础 ---------- */
 * {
   box-sizing: border-box;
 }
@@ -26,26 +80,37 @@ body,
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font: var(--fs-md) / 1.5 var(--font);
 }
 
 button,
 select,
-input {
+input,
+textarea {
   font: inherit;
   color: inherit;
 }
 
-button {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 10px;
+/* 按钮：没有边框（浮在毛玻璃上不再框中框），淡淡的底；悬停在任何底上叠同一层白 */
+button,
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  margin: 0;
+  padding: 0 var(--sp-3);
+  background-color: var(--fill);
+  border: 0;
+  border-radius: var(--r-sm);
   cursor: pointer;
+  white-space: nowrap;
 }
-button:hover:not(:disabled) {
-  border-color: #4b5563;
-  background: var(--panel3);
+button:hover:not(:disabled),
+.file-button:hover,
+.item:hover:not(.big) {
+  background-image: linear-gradient(var(--hover), var(--hover));
 }
 button:disabled {
   opacity: 0.45;
@@ -53,41 +118,62 @@ button:disabled {
 }
 button.primary,
 button.on {
-  background: var(--accent-bg);
-  border-color: var(--accent-line);
+  background-color: var(--accent-bg);
 }
-button.primary:hover:not(:disabled),
-button.on:hover:not(:disabled) {
-  background: #31709f;
-  border-color: var(--accent-line);
+button.open {
+  background-color: var(--press);
 }
-button.danger {
-  color: #ffb3ad;
+button.danger,
+.item.danger {
+  color: var(--danger-text);
 }
 button.small {
-  padding: 1px 7px;
-  font-size: 12px;
+  min-height: 24px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+}
+button.small.icon {
+  width: 24px;
+  padding: 0;
 }
 button.ghost {
-  background: transparent;
-  border-color: transparent;
+  background-color: transparent;
+}
+button svg,
+.item svg {
+  flex: none;
+}
+.file-button input {
+  display: none;
 }
 
 select,
-input[type='number'],
 input:not([type]),
-input[type='text'] {
-  background: #12151a;
+input[type='text'],
+input[type='number'],
+textarea {
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2);
+  background: var(--field);
   border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 4px 6px;
+  border-radius: var(--r-sm);
 }
-input[type='range'] {
+textarea {
+  display: block;
   width: 100%;
+  min-height: 56px;
+  padding: var(--sp-1) var(--sp-2);
+  resize: vertical;
+}
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-line);
 }
 input[type='color'] {
-  width: 34px;
-  height: 28px;
+  width: 32px;
+  height: var(--h-sm);
   padding: 0;
   border: none;
   background: none;
@@ -95,149 +181,452 @@ input[type='color'] {
 
 label {
   display: block;
-  margin: 6px 0;
+  margin: var(--sp-1) 0;
 }
+/* 从一组里挑几样：勾选框（开 / 关一项设置用 Toggle） */
 label.check {
   display: flex;
-  gap: 7px;
+  gap: var(--sp-2);
   align-items: flex-start;
 }
 label.check input {
-  margin-top: 3px;
+  margin-top: var(--sp-1);
+  accent-color: var(--accent);
 }
 label.inline {
   display: inline-flex;
-  gap: 6px;
+  gap: var(--sp-2);
   align-items: center;
   margin: 0;
   color: var(--muted);
 }
 
 details {
-  margin: 8px 0;
+  margin: var(--sp-2) 0;
 }
 summary {
   cursor: pointer;
   color: var(--muted);
 }
 
-h2 {
-  margin: 0;
-  font-size: 18px;
-}
+/* 标题：弹窗、问话、“这里”的地名一种；面板里的小标题一种（h5） */
+h2,
 h3 {
-  margin: 6px 0;
-  font-size: 16px;
-}
-h4 {
-  margin: 12px 0 6px;
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-lg);
+  font-weight: 600;
 }
 h5 {
-  margin: 10px 0 4px;
+  margin: var(--sp-3) 0 var(--sp-1);
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--muted);
 }
-
-.seg {
-  display: inline-flex;
-}
-.seg button {
-  border-radius: 0;
-  margin-left: -1px;
-}
-.seg button:first-child {
-  border-radius: 6px 0 0 6px;
-  margin-left: 0;
-}
-.seg button:last-child {
-  border-radius: 0 6px 6px 0;
-}
-.seg.wide {
-  display: flex;
-  width: 100%;
-  margin: 4px 0;
-}
-.seg.wide button {
-  flex: 1;
-  padding: 5px 4px;
+p {
+  margin: var(--sp-1) 0;
 }
 
-.card .how {
-  font-size: 11.5px;
+kbd,
+code,
+pre {
+  font-family: var(--mono);
+}
+kbd {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  border: 1px solid var(--fill);
+  border-radius: var(--r-sm);
+  padding: 2px var(--sp-1);
+}
+
+/* ---------- 小工具 ---------- */
+.muted {
   color: var(--muted);
 }
-.card.on .how {
-  color: #cfe3f5;
+/* 说明文字：全界面一种 */
+.hint {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
 }
-.cards {
+.small {
+  font-size: var(--fs-sm);
+}
+.warn {
+  color: var(--warn-text);
+}
+.accent {
+  color: var(--accent);
+}
+.row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  margin: var(--sp-1) 0;
+}
+.row.wrap {
+  flex-wrap: wrap;
+}
+.row.between {
+  justify-content: space-between;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom {
+  font-weight: 600;
+}
+.grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  margin: 4px 0;
-}
-.cards.three {
-  grid-template-columns: 1fr 1fr 1fr;
-}
-.card {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-  padding: 6px 8px;
-  line-height: 1.35;
-}
-.palette {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 6px 0;
-}
-.chip {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 12px;
-}
-.chip .swatch {
-  margin-right: 4px;
+  gap: 0 var(--sp-4);
 }
 .wide-input {
   width: 100%;
 }
-.feature-list {
+.link {
+  cursor: pointer;
+}
+.link:hover {
+  text-decoration: underline;
+}
+button.link-btn {
+  min-height: 0;
+  padding: 0 2px;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+}
+button.link-btn:hover:not(:disabled) {
+  background-image: none;
+  text-decoration: underline;
+}
+
+/* ---------- 控件 ---------- */
+
+/* 分段选择（common.tsx 的 Seg）：一条淡底，选着的一段是强调色 */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--fill);
+  border-radius: var(--r-md);
+}
+.seg button {
+  min-height: 24px;
+  padding: 0 var(--sp-2);
+  background-color: transparent;
+}
+.seg button.on {
+  background-color: var(--accent-bg);
+}
+.seg.wide {
+  display: flex;
+  width: 100%;
+  margin: var(--sp-1) 0;
+}
+.seg.wide button {
+  flex: 1;
+}
+.seg.off {
+  opacity: 0.45;
+}
+
+/* 滑块（components/Slider.tsx）：名字、滑轨、数值；stacked 是面板里的两行 */
+.slider {
+  --thumb: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.slider-label {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.slider-track {
+  position: relative;
+  width: 120px;
+  height: 20px;
+  cursor: ew-resize;
+  touch-action: none;
+  outline: none;
+}
+.slider-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--press);
+}
+.slider-track:focus-visible::before {
+  box-shadow: 0 0 0 2px var(--accent-line);
+}
+.slider-detent {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--fill);
+}
+.slider-fill {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+.slider-thumb {
+  position: absolute;
+  top: 4px;
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.slider.drag .slider-thumb {
+  transform: scale(1.15);
+}
+.slider-value {
+  min-width: 4.5em;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.slider-value.changed {
+  color: var(--accent);
+}
+.slider.off {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.slider.stacked {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'label value' 'track track' 'note note';
+  gap: 0 var(--sp-2);
+  width: 100%;
+  margin: var(--sp-2) 0;
+}
+.slider.stacked .slider-label {
+  grid-area: label;
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+.slider.stacked .slider-value {
+  grid-area: value;
+  min-width: 0;
+  text-align: right;
+  color: var(--muted);
+}
+.slider.stacked .slider-value.changed {
+  color: var(--accent);
+}
+.slider.stacked .slider-track {
+  grid-area: track;
+  width: 100%;
+}
+.slider-note {
+  grid-area: note;
+}
+.slider-note-line {
+  display: block;
+}
+
+/* 开关（components/Toggle.tsx）：开 / 关一项设置。面板里占一行，底部条上和别的按钮排在一起 */
+button.toggle {
+  justify-content: flex-start;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 2px var(--sp-1);
+  background-color: transparent;
+  text-align: left;
+  white-space: normal;
+}
+.bottombar button.toggle,
+.row button.toggle {
+  width: auto;
+  padding-right: var(--sp-2);
+  white-space: nowrap;
+}
+.toggle-track {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--press);
+  transition: background 0.15s;
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+.toggle.on .toggle-track {
+  background: var(--accent);
+}
+.toggle.on .toggle-knob {
+  transform: translateX(12px);
+}
+
+/* 色块（圆点）、色板、标签 */
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  vertical-align: -1px;
+  box-shadow: inset 0 0 0 1px var(--fill);
+}
+.swatch.big {
+  width: 15px;
+  height: 15px;
+  vertical-align: -2px;
+}
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin: var(--sp-2) 0;
+}
+.chip {
+  gap: var(--sp-2);
+  min-height: 24px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  border-radius: var(--r-lg);
+}
+.chip.static {
+  display: inline-flex;
+  align-items: center;
+  background: var(--fill);
+}
+.tag {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: normal;
+  color: var(--warn);
+  border: 1px solid currentColor;
+  border-radius: var(--r-sm);
+  vertical-align: 2px;
+}
+.tag.ok {
+  color: var(--ok);
+}
+
+/* ---------- 列表行：菜单、地名、河、湖、涂过的地方、资源包、我的地图都是这一种 ---------- */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   max-height: 340px;
   overflow-y: auto;
-  margin-top: 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  margin-top: var(--sp-1);
 }
-.feature-row {
+.item {
   display: flex;
-  justify-content: space-between;
-  padding: 3px 8px;
-  cursor: pointer;
-  border-bottom: 1px solid #262b33;
-}
-.feature-row:hover {
-  background: var(--panel2);
-}
-.feature-row.on {
-  background: var(--accent-bg);
-}
-.feature-row .custom {
-  font-weight: 600;
-}
-/* 删掉的地名：名字、类型字、“恢复” */
-.hidden-names .feature-row {
   align-items: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--h-md);
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  background-color: transparent;
+  border-radius: var(--r-sm);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+.item.on {
+  background-color: var(--accent-bg);
+}
+.item.on .hint {
+  color: var(--text);
+}
+.item-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.item input[type='file'] {
+  display: none;
+}
+/* 弹窗里带缩略图、几行字和按钮的大行（资源包、我的地图）：不亮，行与行之间一条线 */
+.item.big {
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
   cursor: default;
 }
-.hidden-names .feature-row > :first-child {
-  flex: 1;
-  cursor: pointer;
+.item.big .row {
+  margin: 0;
 }
-.hidden-names summary {
-  margin-top: 8px;
-  cursor: pointer;
+
+/* ---------- 盒子 ---------- */
+.box {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--fill);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+}
+.box h5:first-child {
+  margin-top: 0;
+}
+.box.conflict {
+  border-color: var(--danger-bg);
+}
+/* 说了“就这样”的没涂成 */
+.box.ignored {
+  border-style: dashed;
+  border-color: var(--line);
+}
+.box.trust {
+  border-color: var(--accent-line);
+}
+.box.pack-problems {
+  border-color: var(--warn-bg);
+}
+.pack-problems ul {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+}
+
+/* ---------- 整体：地图铺满全屏，界面浮在上面（Procreate 式） ---------- */
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
 }
 .map {
   position: absolute;
@@ -265,418 +654,7 @@ h5 {
   max-width: none;
 }
 
-.inspector .place {
-  color: var(--muted);
-  margin: 2px 0;
-}
-.inspector p {
-  margin: 6px 0;
-}
-.note {
-  background: var(--panel2);
-  border-left: 3px solid var(--accent);
-  padding: 4px 8px;
-  border-radius: 3px;
-}
-.tag {
-  font-size: 11px;
-  border: 1px solid var(--warn);
-  color: var(--warn);
-  border-radius: 4px;
-  padding: 0 4px;
-  margin-left: 6px;
-  vertical-align: 2px;
-}
-
-.muted {
-  color: var(--muted);
-}
-.small {
-  font-size: 12px;
-}
-.warn {
-  color: var(--warn);
-}
-.row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin: 5px 0;
-}
-.row.wrap {
-  flex-wrap: wrap;
-}
-.row.between {
-  justify-content: space-between;
-}
-.grow {
-  flex: 1;
-  min-width: 0;
-}
-.box {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 8px 10px;
-  margin: 8px 0;
-}
-.box h5:first-child {
-  margin-top: 0;
-}
-.box.conflict {
-  border-color: #6b3a2a;
-}
-/* 第十二轮：说了“就这样”的没涂成（收在“!”里） */
-.box.ignored {
-  border-style: dashed;
-  opacity: 0.9;
-}
-.ignored-chip b,
-.ignored-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--warn);
-  color: #1d2128;
-  font-size: 11px;
-  font-weight: 700;
-}
-/* 水体类型：只在这些生态里出现 */
-.biome-picks {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px 8px;
-  max-height: 200px;
-  overflow: auto;
-}
-.swatch {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
-  vertical-align: -1px;
-  border: 1px solid rgba(0, 0, 0, 0.4);
-}
-.swatch.big {
-  width: 15px;
-  height: 15px;
-  vertical-align: -2px;
-}
-.grid2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 14px;
-}
-/* 图层 → 某种生态的适宜程度：选哪一种 */
-.suit-pick {
-  gap: 6px;
-  margin-top: 4px;
-}
-.suit-pick select {
-  flex: 1;
-}
-/* 新建向导的“地形”：两列滑块 */
-.wizard-terrain .adj-row {
-  display: block;
-  margin: 4px 0;
-}
-.wizard-terrain input[type='range'] {
-  width: 100%;
-}
-@media (max-width: 520px) {
-  .wizard-terrain .grid2 {
-    grid-template-columns: 1fr;
-  }
-}
-
-table.kv {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-table.kv th {
-  text-align: left;
-  color: var(--muted);
-  font-weight: normal;
-  padding: 1px 8px 1px 0;
-  white-space: nowrap;
-}
-table.kv td {
-  padding: 1px 6px 1px 0;
-}
-
-/* 气候图 */
-.chart {
-  position: relative;
-  width: 100%;
-  max-width: 420px;
-  margin: 6px auto;
-  user-select: none;
-  touch-action: none;
-}
-.chart canvas,
-.chart svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.chart .tick {
-  font-size: 9.5px;
-  fill: var(--muted);
-}
-.chart .axis {
-  font-size: 10.5px;
-  fill: var(--muted);
-}
-.chart .cursor-mark {
-  font-size: 10px;
-  fill: #ff5;
-}
-.chart .rect {
-  cursor: pointer;
-}
-.chart .rect.on {
-  cursor: move;
-}
-.tol {
-  border-top: 1px solid var(--line);
-  padding: 5px 0;
-}
-.nums input {
-  width: 62px;
-}
-
-.file-button {
-  display: inline-block;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-  margin: 0;
-}
-.file-button input {
-  display: none;
-}
-
-.constraint-row {
-  font-size: 12px;
-  border-bottom: 1px solid #2a2f37;
-  padding: 3px 0;
-  margin: 0;
-}
-.link {
-  cursor: pointer;
-}
-.link:hover {
-  text-decoration: underline;
-}
-ol.history {
-  padding-left: 22px;
-  font-size: 12px;
-}
-ol.history li.undone {
-  color: var(--muted);
-  text-decoration: line-through;
-}
-
-/* ---------- 弹窗：新建向导、帮助 ---------- */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(8, 10, 14, 0.72);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 30px 16px;
-  overflow-y: auto;
-  z-index: 50;
-}
-.modal {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 16px 20px;
-  width: 860px;
-  max-width: 100%;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-.modal.help {
-  width: 620px;
-}
-.resume {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-}
-/* 新建向导：星球竖条与地图的纬度窗 */
-.planet {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-}
-.planet-strip {
-  position: relative;
-  flex: none;
-  width: 46px;
-  border-radius: 23px;
-  overflow: hidden;
-  cursor: ns-resize;
-  touch-action: none;
-  box-shadow: 0 0 0 1px var(--line);
-}
-.planet-strip .belt {
-  position: absolute;
-  left: 0;
-  right: 0;
-  opacity: 0.8;
-}
-.planet-strip .equator {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.7);
-}
-.planet-strip .band {
-  position: absolute;
-  left: 2px;
-  right: 2px;
-  border: 2px solid #fff;
-  border-radius: 6px;
-  background: rgba(79, 163, 224, 0.28);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-}
-.planet-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-.thumbs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-.thumb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-}
-.thumb canvas {
-  width: 100%;
-  aspect-ratio: 2;
-  border-radius: 4px;
-  background: #1a2a40;
-}
-.thumb.pending canvas {
-  animation: pulse 1.2s ease-in-out infinite;
-}
-/* 向导里星球形态的卡片：右上角一个小的“编辑…” */
-.form-card {
-  position: relative;
-  display: flex;
-}
-.form-card .card {
-  flex: 1;
-  padding-right: 48px;
-}
-.form-card .form-edit {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  color: var(--muted);
-}
-.card.dashed {
-  border-style: dashed;
-  background: transparent;
-}
-/* 星球形态编辑器：左边是名字、滑块、脚本，右边是实时的缩略图 */
-.modal.form-editor {
-  width: 760px;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 18px;
-  align-items: start;
-}
-.form-preview {
-  position: sticky;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-}
-.form-preview canvas {
-  width: 100%;
-  aspect-ratio: 2;
-  border-radius: 4px;
-  background: #1a2a40;
-  transition: opacity 0.2s;
-}
-.form-preview canvas.stale {
-  opacity: 0.55;
-}
-.form-fields select {
-  display: block;
-  margin-top: 2px;
-}
-.form-fields .seg.off {
-  opacity: 0.45;
-}
-@media (max-width: 700px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-preview {
-    position: static;
-  }
-}
-@keyframes pulse {
-  50% {
-    opacity: 0.5;
-  }
-}
-.steps {
-  padding-left: 22px;
-}
-.steps li {
-  margin: 8px 0;
-}
-.steps p {
-  margin: 2px 0;
-  color: #c8ced6;
-}
-
-/* ---------- 整体：地图铺满全屏，界面浮在上面（Procreate 式） ---------- */
-:root {
-  --glass: rgba(22, 25, 31, 0.84);
-  --glass-strong: rgba(26, 30, 37, 0.96);
-  --glass-line: rgba(255, 255, 255, 0.08);
-  --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  --radius: 12px;
-  --sheet-w: min(420px, calc(100% - 80px));
-}
-.app {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: var(--bg);
-}
-button svg {
-  flex: none;
-  vertical-align: -3px;
-}
+/* 浮在地图上的都是毛玻璃 */
 .tb-group,
 .bottombar,
 .ruler-btn,
@@ -687,20 +665,20 @@ button svg {
 .notice {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--glass-line);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--fill);
+  box-shadow: var(--shadow-lg);
 }
 
-/* 顶栏 */
+/* 顶栏：左右两组浮着，中间是空的 */
 .topbar {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  right: var(--sp-2);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--sp-2);
   pointer-events: none;
   z-index: 10;
 }
@@ -709,76 +687,53 @@ button svg {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
+  padding: var(--sp-1);
   background: var(--glass);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   min-width: 0;
 }
-.tb-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  white-space: nowrap;
-}
-.tb-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: transparent;
-}
-.tb-btn.open {
-  background: rgba(255, 255, 255, 0.11);
-}
-.tb-btn.on {
-  background: var(--accent-bg);
-  border-color: var(--accent-line);
-}
-.tb-btn.on:hover:not(:disabled) {
-  background: #31709f;
-  border-color: var(--accent-line);
+/* 顶栏的按钮、底部条的工具：同一种 */
+.tb-btn,
+.bb-tool {
+  gap: var(--sp-2);
+  min-height: var(--h-md);
+  padding: 0 var(--sp-3);
+  background-color: transparent;
+  border-radius: var(--r-md);
 }
 .tb-btn.icon {
-  width: 34px;
+  width: var(--h-md);
   padding: 0;
-  justify-content: center;
+}
+.bb-tool.more {
+  padding: 0 var(--sp-2);
 }
 .tb-sep {
   width: 1px;
-  height: 22px;
-  background: var(--glass-line);
-  margin: 0 4px;
+  height: 20px;
+  background: var(--fill);
+  margin: 0 var(--sp-1);
 }
 @media (max-width: 900px) {
   .tb-label {
     display: none;
   }
   .tb-btn {
-    padding: 0 8px;
+    padding: 0 var(--sp-2);
   }
 }
 
-.icon-btn {
-  width: 28px;
-  height: 28px;
+/* 面板头上的关上、收起 */
+button.icon-btn {
+  width: var(--h-sm);
   padding: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: transparent;
-  border-color: transparent;
-}
-.icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: transparent;
+  background-color: transparent;
 }
 
 /* 底部条：上一行是这一类的工具，下一行是当前工具的设置 */
 .bottombar {
   position: absolute;
-  bottom: 12px;
+  bottom: var(--sp-3);
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
@@ -786,290 +741,130 @@ button svg {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
   background: var(--glass);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   z-index: 9;
+}
+/* 右边抽屉开着时，底部条挪到剩下的地方中间（抽屉宽 --sheet-w，右边留 10px） */
+.app.with-sheet .bottombar {
+  left: calc((100% - var(--sheet-w) - 10px) / 2);
+  max-width: calc(100% - var(--sheet-w) - 34px);
 }
 .bb-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--sp-2);
+}
+.bb-row:empty {
+  display: none;
 }
 .bb-tools {
   gap: 2px;
 }
 .bb-tools + .bb-row {
-  border-top: 1px solid var(--glass-line);
-  padding-top: 5px;
   width: 100%;
+  padding: var(--sp-1) 0 2px;
+  border-top: 1px solid var(--fill);
 }
-.bb-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  white-space: nowrap;
-  font-size: 13px;
+.bar-btn.icon {
+  width: var(--h-sm);
+  padding: 0;
 }
-.bb-tool:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: transparent;
+.bar-btn.warn {
+  background-color: var(--warn-bg);
+  color: var(--warn-text);
 }
-.bb-tool.on {
-  background: var(--accent-bg);
-  border-color: var(--accent-line);
+.bar-input {
+  width: 11em;
 }
-.bb-tool.open {
-  background: rgba(255, 255, 255, 0.11);
+.bar-input.label-input {
+  width: 6em;
 }
-.bb-tool.more {
-  padding: 0 8px;
-}
-/* 横向滑块：名字、滑轨、数值 */
-.hs {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 4px;
-}
-.hs-label {
-  font-size: 12.5px;
+.bar-label {
   color: var(--muted);
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
-.hs-track {
-  position: relative;
-  width: 120px;
-  height: 22px;
-  cursor: ew-resize;
-  touch-action: none;
-  outline: none;
-}
-.hs-track::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 9px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.14);
-}
-.hs-track:focus-visible::before {
-  box-shadow: 0 0 0 2px var(--accent-line);
-}
-.hs-fill {
-  position: absolute;
-  left: 0;
-  top: 9px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.hs-thumb {
-  position: absolute;
-  top: 5px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #e8eef5;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-}
-.hs.drag .hs-thumb {
-  transform: scale(1.15);
-}
-.hs-value {
-  font-size: 12.5px;
-  min-width: 4.5em;
+.bar-value {
+  font-size: var(--fs-sm);
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 .bar-tool {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 4px;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) 0 var(--sp-1);
   font-weight: 600;
-  border-right: 1px solid var(--glass-line);
+  border-right: 1px solid var(--fill);
   white-space: nowrap;
 }
-/* 底部条第二行最左边：这个工具做什么。窄时折成两行，再多就省略（鼠标停着看全文） */
-.bar-how {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 300px;
-  padding: 0 6px 0 4px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
+.bar-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
-.bar-note {
+/* 底部条上只读的标记（湖省、无人区）、河的提醒 */
+.bar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 24px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
   color: var(--muted);
-  font-size: 12.5px;
-  padding: 0 4px;
-}
-.bar-label {
-  color: var(--muted);
-  font-size: 12px;
+  background: var(--fill);
+  border-radius: var(--r-lg);
   white-space: nowrap;
+}
+button.bar-chip.warn {
+  color: var(--warn-text);
+  background-color: var(--warn-bg);
 }
 /* 名字前面的类型字：点一下改（第十四轮） */
 button.label-edit {
-  background: none;
-  border: 0;
+  min-height: 0;
   padding: 0 2px;
-  height: auto;
+  background: none;
   cursor: text;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
 button.label-edit:hover:not(:disabled) {
-  background: none;
+  background-image: none;
   color: var(--text);
-  text-decoration: underline dotted;
-}
-.bar-input.label-input {
-  width: 6em;
-}
-.bar-value {
-  font-size: 12.5px;
-  padding: 0 4px;
-  white-space: nowrap;
-}
-.bar-value .muted {
-  font-size: 11.5px;
-  margin-left: 2px;
-}
-/* 底部条上只读的标记（比如“湖省”） */
-.bar-chip {
-  font-size: 12px;
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  white-space: nowrap;
-  color: #9cc3ea;
-}
-
-/* 选项左边的两个字（“走向”） */
-.bar-choice {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.bar-chip.warn,
-.warn-text {
-  color: #ffd29b;
-}
-.bar-chip.warn {
-  border-color: var(--warn);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-/* 河的“大小”最左边的“顺其自然”那一段 */
-.hs-detent {
-  position: absolute;
-  left: 0;
-  top: 7px;
-  height: 8px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
-}
-.river-more .row {
-  margin: 8px 0;
-  gap: 8px;
-}
-.river-more p {
-  margin: 6px 0;
-}
-.river-row {
-  align-items: center;
-  gap: 8px;
-}
-.river-row > span:first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* 左下角：量距离（比例尺画在地图画布上，就在它右边；底部条伸到左下角时一起抬到它上面，见 MapView 的 cornerLift） */
-.ruler-btn {
+button.ruler-btn {
   position: absolute;
   left: 10px;
   bottom: 6px;
-  width: 34px;
-  height: 34px;
+  width: var(--h-md);
+  height: var(--h-md);
   padding: 0;
-  display: grid;
-  place-items: center;
   border-radius: 50%;
-  background: var(--glass);
+  background-color: var(--glass);
   z-index: 9;
 }
-.ruler-btn:hover:not(:disabled) {
-  background: rgba(40, 46, 56, 0.95);
-}
-.ruler-btn.on {
-  background: var(--accent-bg);
-  border-color: var(--accent-line);
-}
-.bar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  white-space: nowrap;
-}
-.bar-btn.icon {
-  width: 30px;
-  padding: 0;
-  justify-content: center;
-}
-.bar-btn.warn {
-  background: #5a3418;
-  border-color: var(--warn);
-  color: #ffd29b;
-}
-.bar-input {
-  width: 11em;
-  height: 30px;
-}
-.bottombar .seg button {
-  height: 30px;
-  padding: 0 10px;
-}
-.bottombar .swatch,
-.biome-chip .swatch {
-  margin: 0;
+button.ruler-btn.on {
+  background-color: var(--accent-bg);
 }
 
 /* 顶部中间的提示条（安全模式、脚本出错的横幅在它上面，一起往下排） */
 .notices {
   position: absolute;
-  top: 62px;
+  top: 60px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 40px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   z-index: 12;
   pointer-events: none;
 }
@@ -1080,61 +875,19 @@ button.label-edit:hover:not(:disabled) {
   max-width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 6px 5px 14px;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
   background: var(--glass-strong);
-  border-radius: 20px;
-  font-size: 13px;
+  border-radius: var(--r-lg);
 }
 .notice.banner {
-  border-color: rgba(240, 160, 64, 0.45);
-}
-.notice .link-btn {
-  background: none;
-  border: none;
-  padding: 0 2px;
-  color: var(--accent);
-  font-size: 12.5px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.notice .link-btn:hover {
-  text-decoration: underline;
-}
-
-/* 问一句的对话框（信任脚本吗、用安全模式打开吗） */
-.modal.ask {
-  width: 560px;
-}
-.ask-scripts {
-  max-height: 50vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 10px 0;
-}
-.ask-scripts pre {
-  margin: 4px 0 0;
-  padding: 8px 10px;
-  max-height: 180px;
-  overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: pre;
-}
-.ask-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
+  border-color: var(--warn-bg);
 }
 .notice.error {
-  background: rgba(80, 30, 28, 0.96);
+  background: var(--danger-bg);
   border-color: var(--danger);
-  padding-right: 14px;
+  padding-right: var(--sp-3);
 }
 .notice-text {
   white-space: nowrap;
@@ -1143,26 +896,19 @@ button.label-edit:hover:not(:disabled) {
   min-width: 0;
 }
 .pill-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 13px;
-  font-size: 12.5px;
-  white-space: nowrap;
+  font-size: var(--fs-sm);
+  border-radius: var(--r-lg);
 }
 .pill-btn.icon {
-  width: 26px;
+  width: var(--h-sm);
   padding: 0;
-  justify-content: center;
-  background: transparent;
-  border-color: transparent;
+  background-color: transparent;
 }
 .spinner {
+  flex: none;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  border: 2px solid var(--press);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1173,20 +919,21 @@ button.label-edit:hover:not(:disabled) {
   }
 }
 
-/* 右下角“这里” */
+/* 右下角“这里”：收起时是一个按钮，点开是一张卡 */
 .here {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  max-width: 340px;
+  right: var(--sp-3);
+  bottom: var(--sp-3);
   z-index: 8;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
-  background: var(--glass);
-  border-radius: var(--radius);
-  font-size: 12.5px;
+  background-color: var(--glass);
+  border-radius: var(--r-lg);
+}
+button.here {
+  max-width: 340px;
+  gap: var(--sp-2);
+  min-height: var(--h-md);
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
   text-align: left;
 }
 .here-line {
@@ -1195,22 +942,21 @@ button.label-edit:hover:not(:disabled) {
   white-space: nowrap;
 }
 .here.open {
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
   width: 340px;
   max-height: 55vh;
-  padding: 0;
   background: var(--glass-strong);
 }
 .here-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 8px 2px 12px;
+  padding: var(--sp-2) var(--sp-2) 2px var(--sp-3);
 }
 .here-body {
   overflow-y: auto;
-  padding: 0 12px 12px;
+  padding: 0 var(--sp-3) var(--sp-3);
 }
 @media (max-width: 1300px) {
   .here:not(.open) .here-line {
@@ -1226,8 +972,7 @@ button.label-edit:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  border-radius: var(--r-lg);
   animation: pop-in 120ms ease-out;
 }
 @keyframes pop-in {
@@ -1248,8 +993,8 @@ button.label-edit:hover:not(:disabled) {
   margin-left: -6px;
   transform: rotate(45deg);
   background: var(--glass-strong);
-  border-left: 1px solid var(--glass-line);
-  border-top: 1px solid var(--glass-line);
+  border-left: 1px solid var(--fill);
+  border-top: 1px solid var(--fill);
 }
 .popover.up {
   max-height: calc(100vh - 170px);
@@ -1266,115 +1011,56 @@ button.label-edit:hover:not(:disabled) {
   bottom: -7px;
   border-left: none;
   border-top: none;
-  border-right: 1px solid var(--glass-line);
-  border-bottom: 1px solid var(--glass-line);
+  border-right: 1px solid var(--fill);
+  border-bottom: 1px solid var(--fill);
 }
 .popover-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 8px 4px 14px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-4);
 }
 .popover-head b {
-  font-size: 14px;
+  font-size: var(--fs-md);
+  font-weight: 600;
 }
-.popover-body {
+.popover-body,
+.sheet-body {
   overflow-y: auto;
-  padding: 2px 14px 14px;
+  padding: 2px var(--sp-4) var(--sp-4);
 }
+/* 面板里一段一段之间一条线 */
 .popover-body > section + section,
-.extras section + section {
-  border-top: 1px solid var(--glass-line);
-  margin-top: 10px;
+.extras section + section,
+.menu > section {
+  border-top: 1px solid var(--fill);
+  margin-top: var(--sp-3);
 }
 .popover-body h5:first-child,
-.popover-body section > h5:first-child {
-  margin-top: 6px;
+.popover-body section > h5:first-child,
+.popover-body section > .row:first-child > h5 {
+  margin-top: var(--sp-2);
 }
-
-/* 菜单行（世界、操作） */
-.menu-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px;
-  margin: 0;
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
+.map-status {
+  margin: 0 var(--sp-2) var(--sp-1);
 }
-.menu-row:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: transparent;
-}
-.menu-row span {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.35;
-}
-.menu-row .how {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-kbd {
-  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--muted);
-  border: 1px solid var(--glass-line);
-  border-radius: 4px;
-  padding: 3px 5px;
-}
-.extras {
-  margin-top: 2px;
-}
-.menu {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* 调整、图层 */
-.adj-row {
-  margin: 8px 0;
-}
-.adj-row.off {
-  opacity: 0.45;
-}
-/* 整张地图（.png）的分界线小预览：导出的样子，左右两边是分界线 */
-.seam-strip {
-  display: block;
-  width: 100%;
-  max-width: 240px;
-  aspect-ratio: 2 / 1;
-  border-radius: 4px;
-  border-left: 2px solid #e05a4a;
-  border-right: 2px solid #e05a4a;
-  margin: 4px 0;
-}
-.accent {
-  color: var(--accent);
-}
-.view-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  margin: 4px 0;
-}
-.view-grid button {
-  padding: 5px 4px;
-  font-size: 12.5px;
-}
-.sub-checks {
-  margin-left: 22px;
+.export-body {
+  padding: 0 var(--sp-2);
 }
 .history-box {
   max-height: 220px;
   overflow-y: auto;
 }
+ol.history {
+  padding-left: 22px;
+  font-size: var(--fs-sm);
+}
+ol.history li.undone {
+  color: var(--muted);
+  text-decoration: line-through;
+}
 
-/* 右边的抽屉 */
+/* 右边的抽屉（生态类型编辑） */
 .sheet {
   position: absolute;
   top: 60px;
@@ -1384,125 +1070,10 @@ kbd {
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   z-index: 15;
 }
-.sheet-body {
-  overflow-y: auto;
-  padding: 2px 14px 14px;
-}
 
-/* 其他浮在地图上的东西 */
-.loading {
-  position: absolute;
-  top: 45%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--glass-strong);
-  border: 1px solid var(--glass-line);
-  padding: 6px 16px;
-  border-radius: 16px;
-}
-.hidden-hint {
-  position: absolute;
-  bottom: 10px;
-  right: 12px;
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.55);
-  text-shadow: 0 0 3px #000;
-  pointer-events: none;
-}
-.cursor-hint {
-  position: absolute;
-  width: max-content;
-  max-width: min(340px, 80%);
-  background: var(--glass-strong);
-  border: 1px solid var(--glass-line);
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: 12.5px;
-  pointer-events: none;
-  z-index: 11;
-}
-.cursor-hint.warn {
-  border-color: var(--warn);
-  color: #ffd29b;
-}
-/* 做得了、但要留意（合并后是一省两块、会把别的省分成几块）：只描黄边，字照常 */
-.cursor-hint.caution {
-  border-color: var(--warn);
-}
-/* 右边抽屉开着时，底部条挪到剩下的地方中间（抽屉宽 --sheet-w，右边留 10px） */
-.app.with-sheet .bottombar {
-  left: calc((100% - var(--sheet-w) - 10px) / 2);
-  max-width: calc(100% - var(--sheet-w) - 34px);
-}
-
-/* ---------- 资源包 ---------- */
-.modal.packs {
-  width: 660px;
-}
-.modal.packs textarea {
-  background: #12151a;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 4px 6px;
-  font: inherit;
-  color: inherit;
-  resize: vertical;
-}
-.pack-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-.pack-swatches {
-  display: inline-flex;
-  gap: 2px;
-  flex: none;
-  min-width: 17px;
-}
-.pack-desc {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.chip.static {
-  display: inline-flex;
-  align-items: center;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  cursor: default;
-}
-.pack-problems {
-  border-color: #6b5a2a;
-}
-.pack-problems ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-.box.trust {
-  border-color: var(--accent-line);
-}
-.box.trust p {
-  margin: 4px 0;
-}
-.script-src {
-  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  background: #12151a;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 6px 8px;
-  margin: 3px 0 8px;
-  max-height: 220px;
-  overflow: auto;
-  white-space: pre;
-  tab-size: 2;
-}
 /* “用到这个世界”的卡片：浮在地图左边，不挡地图 */
 .pack-apply {
   position: absolute;
@@ -1513,7 +1084,7 @@ kbd {
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   z-index: 15;
 }
 .pack-apply .sheet-body {
@@ -1522,211 +1093,417 @@ kbd {
 }
 .pack-apply-foot {
   flex: 0 0 auto;
-  padding: 8px 14px 12px;
-  border-top: 1px solid var(--glass-line);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  border-top: 1px solid var(--fill);
 }
 .pack-apply-foot p {
-  margin: 0 0 6px;
+  margin: 0 0 var(--sp-2);
 }
 
-/* ---------- 脚本框（生态的“长在哪里”“颜色”……）---------- */
-.script-box {
-  position: relative;
-  margin: 8px 0 10px;
-}
-.script-head {
-  margin: 0 0 3px;
-  font-size: 12.5px;
-}
-.script-edit {
-  display: flex;
-  background: #12151a;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.script-edit:focus-within {
-  border-color: var(--accent-line);
-}
-.script-edit.has-problem {
-  border-color: #7a3a33;
-}
-.script-gutter,
-.script-edit textarea {
-  font: 12px/18px ui-monospace, SFMono-Regular, Menlo, monospace;
-  padding-top: 5px;
-  padding-bottom: 5px;
-}
-.script-gutter {
-  flex: none;
-  min-width: 30px;
-  padding-left: 6px;
-  padding-right: 6px;
-  text-align: right;
-  color: #5d6673;
-  background: #171a20;
-  overflow: hidden;
-  user-select: none;
-}
-.script-gutter .bad {
-  color: #fff;
-  background: #7a2f2a;
-  border-radius: 3px;
-}
-.script-edit textarea {
-  flex: 1;
-  min-width: 0;
-  padding-left: 8px;
-  padding-right: 8px;
-  border: none;
-  outline: none;
-  resize: vertical;
-  background: transparent;
-  color: var(--text);
-  white-space: pre;
-  overflow: auto;
-  tab-size: 2;
-}
-.script-problem {
-  margin-top: 3px;
-  color: #ff9a92;
-}
-.script-note {
-  margin-top: 3px;
-}
-.script-help {
+/* 其他浮在地图上的东西 */
+.loading {
   position: absolute;
-  z-index: 5;
-  top: 26px;
-  left: 0;
-  right: 0;
-  max-height: 340px;
-  overflow-y: auto;
-  padding: 4px 10px 10px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
+  top: 45%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--glass-strong);
+  border: 1px solid var(--fill);
+  border-radius: var(--r-lg);
 }
-.script-help code,
-.script-example pre {
-  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+.hidden-hint {
+  position: absolute;
+  bottom: 10px;
+  right: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  text-shadow: var(--shadow-sm);
+  pointer-events: none;
 }
-.script-var {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  padding: 1px 0;
-  font-size: 12px;
+.cursor-hint {
+  position: absolute;
+  width: max-content;
+  max-width: min(340px, 80%);
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--glass-strong);
+  border: 1px solid var(--fill);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+  z-index: 11;
 }
-.script-var code {
-  flex: none;
+.cursor-hint.warn {
+  border-color: var(--warn);
+  color: var(--warn-text);
 }
-.script-example pre {
-  margin: 4px 0 3px;
-  padding: 4px 6px;
-  background: #12151a;
-  border-radius: 5px;
-  white-space: pre-wrap;
-}
-.script-example {
-  margin-bottom: 6px;
-}
-/* 生态的“高级：图案、效果与脚本” */
-.species-advanced textarea.names {
-  width: 100%;
-  min-height: 64px;
-  background: #12151a;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 4px 6px;
-  color: var(--text);
-  font: inherit;
-  resize: vertical;
+/* 做得了、但要留意（合并后是一省两块、会把别的省分成几块）：只描黄边，字照常 */
+.cursor-hint.caution {
+  border-color: var(--warn);
 }
 
-/* 河流类型（第三批）：“是哪一种河”的列表里选中的那一行；“水系 ⋯”里展开的编辑 */
-.menu-row.on {
-  background: var(--accent-bg);
-  border-color: var(--accent-line);
+/* ---------- 面板里的东西 ---------- */
+.river-more .row {
+  margin: var(--sp-2) 0;
 }
-/* 菜单行里的色块不跟着文字撑开 */
-.menu-row span.swatch {
-  flex: 0 0 auto;
-  display: inline-block;
-}
+/* 列表里展开的一种（河流类型、湖泊类型、岛的种类）的编辑 */
 .river-type-editor {
-  padding: 6px 4px 10px 12px;
+  padding: var(--sp-2) var(--sp-1) var(--sp-3) var(--sp-3);
   border-left: 2px solid var(--line);
-  margin: 2px 0 8px 6px;
-}
-.river-type-editor .row {
-  margin: 6px 0;
-  gap: 8px;
-  align-items: center;
+  margin: 2px 0 var(--sp-2) var(--sp-2);
 }
 .river-type-editor h5 {
-  margin: 10px 0 2px;
+  margin: var(--sp-3) 0 2px;
 }
-.river-type-editor textarea.names-box {
+/* 水体类型：只在这些生态里出现 */
+.biome-picks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px var(--sp-2);
+  max-height: 200px;
+  overflow: auto;
+}
+/* 图层 → 某种生态的适宜程度：选哪一种 */
+.suit-pick select {
+  flex: 1;
+}
+.view-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0;
+}
+.view-grid button {
+  font-size: var(--fs-sm);
+}
+.sub-checks {
+  margin-left: 22px;
+}
+/* 整张地图（.png）的分界线小预览：导出的样子，左右两边是分界线 */
+.seam-strip {
+  display: block;
   width: 100%;
-  min-height: 52px;
-  background: #12151a;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 4px 6px;
-  color: var(--text);
-  font: inherit;
-  resize: vertical;
+  max-width: 240px;
+  aspect-ratio: 2 / 1;
+  border-radius: var(--r-sm);
+  border-left: 2px solid var(--danger);
+  border-right: 2px solid var(--danger);
+  margin: var(--sp-1) 0;
+}
+/* 生态的“更精细的条件” */
+.tol {
+  border-top: 1px solid var(--line);
+  padding: var(--sp-1) 0;
+}
+.nums input {
+  width: 62px;
+}
+table.kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+table.kv th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: normal;
+  padding: 1px var(--sp-2) 1px 0;
+  white-space: nowrap;
+}
+table.kv td {
+  padding: 1px var(--sp-2) 1px 0;
+}
+.inspector .place {
+  color: var(--muted);
+  margin: 2px 0;
 }
 
-/* ---------- 我的地图 ---------- */
-.ask-input {
+/* 气候图（生态类型编辑器） */
+.chart {
+  position: relative;
   width: 100%;
-  box-sizing: border-box;
-  margin: 4px 0 12px;
-  padding: 6px 8px;
-  background: #12151a;
+  max-width: 420px;
+  margin: var(--sp-2) auto;
+  user-select: none;
+  touch-action: none;
+}
+.chart canvas,
+.chart svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.chart .tick,
+.chart .axis {
+  font-size: var(--fs-xs);
+  fill: var(--muted);
+}
+.chart text.cursor-mark {
+  font-size: var(--fs-xs);
+  fill: var(--mark);
+}
+.chart circle.cursor-mark {
+  fill: none;
+  stroke: var(--mark);
+  stroke-width: 2;
+}
+.chart .rect {
+  cursor: pointer;
+}
+.chart .rect.on {
+  cursor: move;
+}
+
+/* ---------- 弹窗：新建向导、帮助、问话、我的地图、资源包 ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 30px var(--sp-4);
+  overflow-y: auto;
+  z-index: 50;
+}
+.modal {
+  width: 860px;
+  max-width: 100%;
+  padding: var(--sp-4) var(--sp-4);
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 15px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
 }
-.ask-input:focus {
-  outline: none;
-  border-color: var(--accent-line);
-}
-.map-status {
-  margin: 0 10px 4px;
-}
+.modal.help,
 .modal.maps {
   width: 620px;
 }
+.modal.ask {
+  width: 560px;
+}
+.modal.packs {
+  width: 660px;
+}
+.modal.form-editor {
+  width: 760px;
+}
+.resume {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 新建向导：卡片 */
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+}
+.cards.three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+button.card {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+  text-align: left;
+  line-height: 1.35;
+  white-space: normal;
+}
+.card.on .hint {
+  color: var(--text);
+}
+button.card.dashed {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/* 向导里星球形态的卡片：右上角一个小的“编辑…” */
+.form-card {
+  position: relative;
+  display: flex;
+}
+.form-card .card {
+  flex: 1;
+  padding-right: 48px;
+}
+.form-card .form-edit {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-1);
+  color: var(--muted);
+}
+/* 星球竖条与地图的纬度窗 */
+.planet {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+.planet-strip {
+  position: relative;
+  flex: none;
+  width: 46px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  cursor: ns-resize;
+  touch-action: none;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.planet-strip .belt {
+  position: absolute;
+  left: 0;
+  right: 0;
+  opacity: 0.8;
+}
+.planet-strip .equator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--text);
+}
+.planet-strip .band {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border: 2px solid var(--text);
+  border-radius: var(--r-sm);
+  background: var(--fill);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+.planet-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+@media (max-width: 520px) {
+  .wizard-terrain .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+.thumbs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-3);
+}
+button.thumb {
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
+}
+.thumb canvas,
+.form-preview canvas {
+  width: 100%;
+  aspect-ratio: 2;
+  border-radius: var(--r-sm);
+  background: var(--sea);
+}
+.thumb.pending canvas {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+/* 星球形态编辑器：左边是名字、滑块、脚本，右边是实时的缩略图 */
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: var(--sp-4);
+  align-items: start;
+}
+.form-preview {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: flex-start;
+}
+.form-preview canvas {
+  transition: opacity 0.2s;
+}
+.form-preview canvas.stale {
+  opacity: 0.55;
+}
+.form-fields select {
+  display: block;
+  margin-top: 2px;
+}
+@media (max-width: 700px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-preview {
+    position: static;
+  }
+}
+/* 上手说明 */
+.steps {
+  padding-left: 22px;
+}
+.steps li {
+  margin: var(--sp-2) 0;
+}
+.steps p {
+  margin: 2px 0;
+}
+
+/* 问一句的对话框（信任脚本吗、用安全模式打开吗、起个名字），资源包里的脚本 */
+.ask-scripts {
+  max-height: 50vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+}
+.ask-scripts pre,
+.script-src {
+  margin: var(--sp-1) 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-2);
+  max-height: 200px;
+  overflow: auto;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  white-space: pre;
+  tab-size: 2;
+}
+.ask-actions {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+input.ask-input {
+  width: 100%;
+  min-height: var(--h-md);
+  margin: var(--sp-1) 0 var(--sp-3);
+  font-size: var(--fs-lg);
+}
+
+/* 我的地图 */
 .maps-empty {
   padding: 24px 0;
   text-align: center;
 }
-.map-row {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-.map-row.on .tag {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-.map-thumb {
+button.map-thumb {
   flex: none;
   width: 160px;
   height: 90px;
   padding: 0;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #12151a;
-  border-radius: 6px;
+  background-color: var(--field);
 }
 .map-thumb img {
   width: 100%;
@@ -1739,21 +1516,133 @@ kbd {
   min-width: 0;
 }
 .map-info > b {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   overflow-wrap: anywhere;
 }
 .map-actions {
-  margin-top: 6px;
-  gap: 6px;
-}
-.map-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  margin-top: var(--sp-2);
 }
 @media (max-width: 520px) {
-  .map-thumb {
+  button.map-thumb {
     width: 96px;
     height: 60px;
   }
+}
+
+/* 资源包 */
+.pack-swatches {
+  display: inline-flex;
+  gap: 2px;
+  flex: none;
+  min-width: 17px;
+}
+.pack-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- 脚本框（生态的“长在哪里”“颜色”……）---------- */
+.script-box {
+  position: relative;
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+.script-head {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-sm);
+}
+.script-edit {
+  display: flex;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.script-edit:focus-within {
+  border-color: var(--accent-line);
+}
+.script-edit.has-problem {
+  border-color: var(--danger-bg);
+}
+.script-gutter,
+.script-edit textarea {
+  font: var(--fs-sm) / 18px var(--mono);
+  padding-top: var(--sp-1);
+  padding-bottom: var(--sp-1);
+}
+.script-gutter {
+  flex: none;
+  min-width: 30px;
+  padding-left: var(--sp-2);
+  padding-right: var(--sp-2);
+  text-align: right;
+  color: var(--faint);
+  background: var(--bg);
+  overflow: hidden;
+  user-select: none;
+}
+.script-gutter .bad {
+  color: var(--text);
+  background: var(--danger-bg);
+  border-radius: var(--r-sm);
+}
+.script-edit textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding-left: var(--sp-2);
+  padding-right: var(--sp-2);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.script-problem {
+  margin-top: var(--sp-1);
+  color: var(--danger-text);
+}
+.script-note {
+  margin-top: var(--sp-1);
+}
+.script-help {
+  position: absolute;
+  z-index: 5;
+  top: 26px;
+  left: 0;
+  right: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: var(--sp-1) var(--sp-3) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+}
+.script-help code,
+.script-example pre {
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+.script-var {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  padding: 1px 0;
+  font-size: var(--fs-sm);
+}
+.script-var code {
+  flex: none;
+}
+.script-example pre {
+  margin: var(--sp-1) 0 var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--field);
+  border-radius: var(--r-sm);
+  white-space: pre-wrap;
+}
+.script-example {
+  margin-bottom: var(--sp-2);
 }

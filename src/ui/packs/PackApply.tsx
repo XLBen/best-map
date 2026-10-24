@@ -152,7 +152,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
       <div class="popover-head">
         <b>用到这个世界 · {pack.name}</b>
         <button class="icon-btn" onClick={close} title="关上（Esc）">
-          <X size={16} />
+          <X />
         </button>
       </div>
       <div class="sheet-body">
@@ -162,8 +162,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <input type="checkbox" checked={!!picks.biomes?.includes(b.id)} onChange={() => togglePick('biomes', b.id)} />
             <span>
               <span class="swatch" style={{ background: b.color }} /> {b.name || b.id}
-              {picks.biomes?.includes(b.id) && status('biomes', b.id, b.name || b.id) && <span class="muted small">（{status('biomes', b.id, b.name || b.id)}）</span>}
-              {(b.dispersal || b.range) && <span class="muted small">（只长在某处的：只在做它的那个世界里有意义）</span>}
+              {picks.biomes?.includes(b.id) && status('biomes', b.id, b.name || b.id) && <span class="hint">（{status('biomes', b.id, b.name || b.id)}）</span>}
+              {(b.dispersal || b.range) && <span class="hint">（只长在某处的：只在做它的那个世界里有意义）</span>}
             </span>
           </label>
         ))}
@@ -175,11 +175,11 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                 <input type="checkbox" disabled={!riverSec.command} checked={!!riverSec.command && !!picks.riverTypes?.includes(r.id)} onChange={() => togglePick('riverTypes', r.id)} />
                 <span>
                   {r.color && <span class="swatch" style={{ background: r.color }} />} {r.name || r.id}
-                  {picks.riverTypes?.includes(r.id) && status('riverTypes', r.id, r.name || r.id) && <span class="muted small">（{status('riverTypes', r.id, r.name || r.id)}）</span>}
+                  {picks.riverTypes?.includes(r.id) && status('riverTypes', r.id, r.name || r.id) && <span class="hint">（{status('riverTypes', r.id, r.name || r.id)}）</span>}
                 </span>
               </label>
             ))}
-            {riverSec.note && <p class="muted small">{riverSec.note}</p>}
+            {riverSec.note && <p class="hint">{riverSec.note}</p>}
           </>
         )}
         {st.only !== 'biomes' && !!lakes.length && (
@@ -190,11 +190,11 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                 <input type="checkbox" disabled={!lakeSec.command} checked={!!lakeSec.command && !!picks.lakeTypes?.includes(r.id)} onChange={() => togglePick('lakeTypes', r.id)} />
                 <span>
                   {r.color && <span class="swatch" style={{ background: r.color }} />} {r.name || r.id}
-                  {picks.lakeTypes?.includes(r.id) && status('lakeTypes', r.id, r.name || r.id) && <span class="muted small">（{status('lakeTypes', r.id, r.name || r.id)}）</span>}
+                  {picks.lakeTypes?.includes(r.id) && status('lakeTypes', r.id, r.name || r.id) && <span class="hint">（{status('lakeTypes', r.id, r.name || r.id)}）</span>}
                 </span>
               </label>
             ))}
-            {lakeSec.note && <p class="muted small">{lakeSec.note}</p>}
+            {lakeSec.note && <p class="hint">{lakeSec.note}</p>}
           </>
         )}
         {st.only !== 'biomes' && !!isles.length && (
@@ -205,11 +205,11 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                 <input type="checkbox" disabled={!isleSec.command} checked={!!isleSec.command && !!picks.islandTypes?.includes(r.id)} onChange={() => togglePick('islandTypes', r.id)} />
                 <span>
                   <span class="swatch" style={{ background: islandSwatch(r as unknown as IslandType) }} /> {r.name || r.id}
-                  {picks.islandTypes?.includes(r.id) && status('islandTypes', r.id, r.name || r.id) && <span class="muted small">（{status('islandTypes', r.id, r.name || r.id)}）</span>}
+                  {picks.islandTypes?.includes(r.id) && status('islandTypes', r.id, r.name || r.id) && <span class="hint">（{status('islandTypes', r.id, r.name || r.id)}）</span>}
                 </span>
               </label>
             ))}
-            <p class="muted small">用上之后在放岛、画岛链的“岛：▾”里选。</p>
+            <p class="hint">用上之后在放岛、画岛链的“岛：▾”里选。</p>
           </>
         )}
         {st.only !== 'biomes' && !!forms.length && (
@@ -217,7 +217,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>星球形态</h5>
             <p class="small">{forms.map((f) => f.name || f.id).join('、')}</p>
             {/* 一块地区上没有“调整 → 星球形态”：形态只用在整个星球上 */}
-            <p class="muted small">{w.settings.globe ? PACK_SECTIONS.planetForms.note : '星球形态只用在整个星球上：新建世界时选“整个星球”就能选它们'}</p>
+            <p class="hint">{w.settings.globe ? PACK_SECTIONS.planetForms.note : '星球形态只用在整个星球上：新建世界时选“整个星球”就能选它们'}</p>
           </>
         )}
         {st.only !== 'biomes' && !!texts.length && (
@@ -232,13 +232,13 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                   onChange={() => setPicks({ ...picks, textPack: picks.textPack === t.id ? null : t.id })}
                 />
                 <span>
-                  换用文字包「{t.name}」{badText.has(t.id) ? <span class="muted small">（模板里有不存在的词表，换不了）</span> : '（地名会跟着变）'}
+                  换用文字包「{t.name}」{badText.has(t.id) ? <span class="hint">（模板里有不存在的词表，换不了）</span> : '（地名会跟着变）'}
                 </span>
               </label>
             ))}
           </>
         )}
-        {!!plan.fields.length && <p class="muted small">会新加自定义场：{plan.fields.join('、')}（用“气候 → 涂自定义场”可以涂）</p>}
+        {!!plan.fields.length && <p class="hint">会新加自定义场：{plan.fields.join('、')}（用“气候 → 涂自定义场”可以涂）</p>}
         {total > 48 && <p class="warn small">这个世界会有 {total} 种生态：太多时界面会很挤，计算也会变慢</p>}
         {untrusted !== null && !!untrusted.length && (
           <>
@@ -255,13 +255,13 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             </div>
           </>
         )}
-        {!cmd.commands.length && <p class="muted small">{plan.skipped.length ? '勾选的这些世界里都已经有了。' : '还没勾选要用的。'}</p>}
+        {!cmd.commands.length && <p class="hint">{plan.skipped.length ? '勾选的这些世界里都已经有了。' : '还没勾选要用的。'}</p>}
       </div>
       {/* 底部一直看得到（上面的说明很长时也不被挤到看不见的地方） */}
       <div class="pack-apply-foot">
         {shown && <p class={`small ${shown.warn ? 'warn' : ''}`}>{shown.text}</p>}
         <div class="row between">
-          <span class="muted small">用上是一步，可以撤销</span>
+          <span class="hint">用上是一步，可以撤销</span>
           <span class="row">
             <button onClick={close}>取消</button>
             <button class="primary" disabled={!trusted || !cmd.commands.length || applying || !!shown?.warn} onClick={() => void apply()}>

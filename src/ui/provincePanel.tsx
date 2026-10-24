@@ -1,4 +1,5 @@
-import { Ban, Lock, LockOpen, Palette, ScanSearch, SplitSquareHorizontal, X } from 'lucide-preact';
+import { effect } from '@preact/signals';
+import { SplitSquareHorizontal, Waves } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
@@ -6,21 +7,23 @@ import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRul
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
 import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
-import { type ViewMode, exec, mapKm, mode, selectedProvince, world } from '../state';
+import { type ViewMode, exec, mapKm, mode, openPanel, selectedProvince, world } from '../state';
 import { focusOn } from './camera';
 import { Seg } from './common';
+import { MenuItem, SelectionActions } from './components/SelectionActions';
+import { Toggle } from './components/Toggle';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 
-// 省份：底部条上的“选中省份”编辑、省份着色开关；“⋯”里的自动划分规则
+// 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的自动划分规则
 
 // 省份着色：底图只在用户点了才换成省份；再点一下回到原来的底图
 let viewBefore: ViewMode = 'terrain';
 export function ProvinceColorToggle() {
   const on = mode.value === 'provinces';
   return (
-    <button
-      class={`bar-btn ${on ? 'on' : ''}`}
-      onClick={() => {
+    <Toggle
+      on={on}
+      onChange={() => {
         if (on) mode.value = viewBefore === 'provinces' ? 'terrain' : viewBefore;
         else {
           viewBefore = mode.value;
@@ -29,9 +32,19 @@ export function ProvinceColorToggle() {
       }}
       title="底图按省份着色（“图层”里也能换）"
     >
-      <Palette size={15} /> 省份着色
-    </button>
+      省份着色
+    </Toggle>
   );
+}
+
+// 选中的省：一些算好的数
+function provinceOf(w: World, id: number) {
+  const meta = w.small.provinces[id];
+  const cells = provinceCells(w, id);
+  const [r, g, b] = provinceDisplayColor(w, id);
+  // 湖省：一半以上的格已经不是湖了（湖被删掉、干了），可以改回陆地
+  const lakeGone = meta.kind === 'lake' && cells.filter((i) => w.derived.lake[i] === 1).length * 2 < cells.length;
+  return { meta, cells, lakeGone, hex: `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`, auto: !meta.color };
 }
 
 export function ProvinceBar() {
@@ -45,10 +58,8 @@ export function ProvinceBar() {
   // 按钮不见了（取消选择、换了工具）时鼠标移开的事件不会来：一并去掉按钮的预览
   useEffect(() => clearBarPreview, []);
   if (!w || id === null || !meta) return null;
-  const cells = provinceCells(w, id);
+  const { cells, lakeGone, hex, auto } = provinceOf(w, id);
   const area = Math.round((cells.length * mapKm(w).cell ** 2) / 100) * 100;
-  // 湖省：一半以上的格已经不是湖了（湖被删掉、干了），可以改回陆地
-  const lakeGone = meta.kind === 'lake' && cells.filter((i) => w.derived.lake[i] === 1).length * 2 < cells.length;
   const rename = () => {
     if (cancelled.current) {
       cancelled.current = false;
@@ -65,10 +76,7 @@ export function ProvinceBar() {
       (e.target as HTMLInputElement).blur();
     }
   };
-  const [r, g, b] = provinceDisplayColor(w, id);
-  const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
   // 海省默认不着色（地图上看得到海本来的样子）；自己选了颜色才涂
-  const auto = !meta.color;
   return (
     <>
       <span class="swatch" style={{ background: !meta.land && auto ? 'transparent' : hex }} title={!meta.land && auto ? '海上的省份默认不着色' : undefined} />
@@ -76,59 +84,15 @@ export function ProvinceBar() {
       <span class="bar-label" title={`${cells.length} 格`}>
         约 {area.toLocaleString()} km²
       </span>
-      {/* 类型：陆地省份只有“无人区”一个开关；湖省只由自动划分产生，这里只标出来 */}
-      {meta.land && meta.kind !== 'lake' && (
-        <button
-          class={`bar-btn ${meta.kind === 'wasteland' ? 'on' : ''}`}
-          onClick={() => void exec({ op: 'set_province', id, kind: meta.kind === 'wasteland' ? 'land' : 'wasteland' }, '正在修改…')}
-          title="没人住的地方（冰原、深漠、高山）。导出到游戏时算作不可进入的荒地；地图上画灰色斜线。不改地形和生态"
-        >
-          <Ban size={15} /> 无人区
-        </button>
-      )}
+      {meta.kind === 'wasteland' && <span class="bar-chip">无人区</span>}
       {meta.kind === 'lake' && (
         <span class="bar-chip" title="这个省是一片湖（省份规则里“湖：单独成省”），导出时算作湖">
           {lakeGone ? '湖省 · 这里已没有湖' : '湖省'}
         </span>
       )}
-      {lakeGone && (
-        <button class="bar-btn" onClick={() => void exec({ op: 'set_province', id, kind: 'land' }, '正在修改…')}>
-          改回陆地
-        </button>
-      )}
-      {/* 颜色：自动（陆地省按编号配色，海省不着色）/ 自己选（导出的 provinces.bmp 照旧按编号，一一对应） */}
-      <span class="bar-label">颜色</span>
-      <Seg
-        value={auto ? 'auto' : 'own'}
-        options={[
-          ['auto', '自动'],
-          ['own', '自己选'],
-        ]}
-        titles={{ auto: meta.land ? '按省份编号自动配色' : '海上的省份不着色', own: '给这个省份选一个颜色（只影响地图上的省份着色）' }}
-        onChange={(v) => {
-          if (v === 'auto' && !auto) void exec({ op: 'set_province', id, color: null }, '正在修改…');
-          if (v === 'own' && auto) void exec({ op: 'set_province', id, color: meta.land ? hex : seaProvinceDefaultColor(id) }, '正在修改…');
-        }}
-      />
-      {!auto && (
-        <input
-          type="color"
-          class="bar-color"
-          value={hex}
-          title="选颜色"
-          onChange={(e) => {
-            const v = (e.target as HTMLInputElement).value.toLowerCase();
-            if (v !== meta.color) void exec({ op: 'set_province', id, color: v }, '正在修改…');
-          }}
-        />
-      )}
-      <button
-        class={`bar-btn ${meta.locked ? 'on' : ''}`}
-        onClick={() => void exec({ op: 'set_province', id, locked: !meta.locked }, '正在修改…')}
-        title="锁定后，重新划分时不动它，也不能从它这里拿格子"
-      >
-        {meta.locked ? <Lock size={15} /> : <LockOpen size={15} />} {meta.locked ? '已锁定' : '锁定'}
-      </button>
+      <Toggle on={!!meta.locked} onChange={(on) => void exec({ op: 'set_province', id, locked: on }, '正在修改…')} title="锁定后，重新划分时不动它，也不能从它这里拿格子">
+        锁定
+      </Toggle>
       {/* 鼠标停在按钮上：地图上先画出新的省界，分出来的那一半淡淡地涂上它将来的颜色 */}
       <button
         class="bar-btn"
@@ -137,17 +101,66 @@ export function ProvinceBar() {
         onPointerLeave={clearBarPreview}
         onClick={() => holdBarPreview(exec({ op: 'split_province', id }, '正在划分…'))}
       >
-        <SplitSquareHorizontal size={15} /> 对半分开
+        <SplitSquareHorizontal /> 对半分开
       </button>
-      <button class="bar-btn icon" onClick={() => focusOn(cells)} title="在地图上看">
-        <ScanSearch size={15} />
-      </button>
-      <button class="bar-btn icon" onClick={() => (selectedProvince.value = null)} title="取消选择">
-        <X size={15} />
-      </button>
+      <SelectionActions more="province" moreTitle="无人区、颜色、在地图上看" deselect={() => (selectedProvince.value = null)} />
     </>
   );
 }
+
+// 选中的省底部条上的“⋯”：无人区、颜色、改回陆地、在地图上看
+export function ProvinceMore() {
+  const w = world.value;
+  const id = selectedProvince.value;
+  if (!w || id === null || !w.small.provinces[id]) return null;
+  const { meta, cells, lakeGone, hex, auto } = provinceOf(w, id);
+  return (
+    <>
+      {/* 类型：陆地省份只有“无人区”一个开关；湖省只由自动划分产生，底部条上只标出来 */}
+      {meta.land && meta.kind !== 'lake' && (
+        <Toggle
+          on={meta.kind === 'wasteland'}
+          onChange={(on) => void exec({ op: 'set_province', id, kind: on ? 'wasteland' : 'land' }, '正在修改…')}
+          title="没人住的地方（冰原、深漠、高山）。导出到游戏时算作不可进入的荒地；地图上画灰色斜线。不改地形和生态"
+        >
+          无人区
+        </Toggle>
+      )}
+      {/* 颜色：自动（陆地省按编号配色，海省不着色）/ 自己选（导出的 provinces.bmp 照旧按编号，一一对应） */}
+      <div class="row">
+        <Toggle
+          on={!auto}
+          onChange={(on) => {
+            if (!on) void exec({ op: 'set_province', id, color: null }, '正在修改…');
+            else void exec({ op: 'set_province', id, color: meta.land ? hex : seaProvinceDefaultColor(id) }, '正在修改…');
+          }}
+          title={auto ? (meta.land ? '现在按省份编号自动配色；打开给这个省份选一个颜色（只影响地图上的省份着色）' : '海上的省份默认不着色；打开给它选一个颜色') : '关上换回自动的颜色'}
+        >
+          颜色自己选
+        </Toggle>
+        {!auto && (
+          <input
+            type="color"
+            value={hex}
+            title="选颜色"
+            onChange={(e) => {
+              const v = (e.target as HTMLInputElement).value.toLowerCase();
+              if (v !== meta.color) void exec({ op: 'set_province', id, color: v }, '正在修改…');
+            }}
+          />
+        )}
+      </div>
+      <SelectionActions menu locate={() => focusOn(cells)}>
+        {lakeGone && <MenuItem icon={<Waves />} label="改回陆地" run={() => void exec({ op: 'set_province', id, kind: 'land' }, '正在修改…')} />}
+      </SelectionActions>
+    </>
+  );
+}
+
+// 选中的省没了（撤销、换了类别）：它的“⋯”也关上
+effect(() => {
+  if (selectedProvince.value === null && openPanel.value === 'province') openPanel.value = null;
+});
 
 function RulesBox({ w }: { w: World }) {
   const rules = w.small.provinceRules;
@@ -158,15 +171,14 @@ function RulesBox({ w }: { w: World }) {
   const counts = new Map<ProvinceKind, number>();
   for (const m of Object.values(w.small.provinces)) counts.set(m.kind, (counts.get(m.kind) ?? 0) + 1);
   const check = (key: 'varied' | 'wasteland' | 'seaByDistance', label: string) => (
-    <label class="check">
-      <input type="checkbox" checked={draft[key]} onChange={() => setDraft({ ...draft, [key]: !draft[key] })} />
+    <Toggle on={draft[key]} onChange={(on) => setDraft({ ...draft, [key]: on })}>
       {label}
-    </label>
+    </Toggle>
   );
   return (
     <section>
       <h5>自动划分</h5>
-      <p class="muted small">
+      <p class="hint">
         现在：
         {PROVINCE_KINDS.filter((k) => counts.get(k))
           .map((k) => `${PROVINCE_KIND_INFO[k].name} ${counts.get(k)} 个`)
@@ -191,7 +203,7 @@ function RulesBox({ w }: { w: World }) {
         />
       </div>
       {check('seaByDistance', '近海的海域小，远洋的大')}
-      <p class="muted small">海上的省份永远单独，不和陆地、湖同省。放湖、删湖、湖干了以后，湖和陆地的省份会自己跟着整理。</p>
+      <p class="hint">海上的省份永远单独，不和陆地、湖同省。放湖、删湖、湖干了以后，湖和陆地的省份会自己跟着整理。</p>
       {/* 鼠标停在按钮上：地图上先画出新的省界和省名（与点下去的结果相同）；点下去照样一下就做，可以撤销 */}
       <div class="row wrap">
         {/* 只改了湖的归属：可以只整理湖，不动别的省份 */}
@@ -203,8 +215,8 @@ function RulesBox({ w }: { w: World }) {
         </RegenButton>
         <RegenButton cmd={{ op: 'generate_provinces', rules: { ...draft, seed: rules.seed + 1 } }}>换一种划分</RegenButton>
       </div>
-      <p class="muted small">同样的规则划出来的结果是固定的；想要别的分法点“换一种划分”。锁定的省份不会变，撤销可以回到原来的划分。</p>
-      <p class="muted small">图例：灰色斜线 = 无人区；蓝色字 = 湖省；海上的省份默认不着色（选中一个海省可以给它选颜色）</p>
+      <p class="hint">同样的规则划出来的结果是固定的；想要别的分法点“换一种划分”。锁定的省份不会变，撤销可以回到原来的划分。</p>
+      <p class="hint">图例：灰色斜线 = 无人区；蓝色字 = 湖省；海上的省份默认不着色（选中一个海省可以给它选颜色）</p>
     </section>
   );
 }

@@ -56,7 +56,7 @@ export interface ToolSpec {
   name: string;
   // 底部工具条上图标下面的两个字
   short: string;
-  // 一句“怎么用”：选中工具时写在底部条第二行的最左边，鼠标停在工具上时也写
+  // 一句“怎么用”：鼠标停在底部条的工具按钮上时写（底部条上不再常显）
   how: string;
   // 底部条上的两个滑块
   size?: SliderDef;

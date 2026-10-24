@@ -1,17 +1,19 @@
 import { effect } from '@preact/signals';
-import { Dices, Ellipsis, LockOpen, Pin, ScanSearch, Scissors, Split, Sprout, Trash2, TriangleAlert, X } from 'lucide-preact';
+import { Pin, Scissors, Split, Sprout, TriangleAlert } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type { Command, GuidePatch } from '../../../core/commands';
 import { findCell } from '../../../core/mesh';
 import { decodePath } from '../../../core/rivers';
 import { type GuideIssue, continueCourse, guideFlow, isRiverCell } from '../../../core/select';
 import { roundKm as km } from '../../../core/terrain';
 import type { Guide, World } from '../../../core/world';
-import { type RiverRef, cancelPreviews, exec, flashCells, hoverRiver, openPanel, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
+import { type RiverRef, cancelPreviews, exec, flashCells, hoverRiver, openPanel, riverStyleOverride, selectedRiver, showToast, tool, world } from '../../state';
 import { clearBarPreview } from '../barPreview';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
+import { MenuItem, SelectionActions } from '../components/SelectionActions';
+import { Slider } from '../components/Slider';
 import {
   RIVER_END_HINTS,
   applyPatch,
@@ -38,77 +40,6 @@ import { type WaterKind, WaterTypesSection } from './waterTypes';
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const quoted = (name: string | null) => (name ? `「${name}」` : '这条河');
-
-// 底部条上的滑块：拖动时 onDraft（地图上先画出估计的样子），松手 onCommit；左右方向键走一小步
-export function DragSlider({ label, pos, text, title, detent, onDraft, onCommit, onCancel }: {
-  label: string;
-  pos: number;
-  text: string;
-  title?: string;
-  // 最左边这一段是一个单独的选择（“顺其自然”），滑轨上淡淡地标出来
-  detent?: number;
-  onDraft: (p: number) => void;
-  onCommit: (p: number) => void;
-  onCancel: () => void;
-}) {
-  const track = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const last = useRef(pos);
-  const [drag, setDrag] = useState(false);
-  const at = (e: PointerEvent) => {
-    const r = track.current!.getBoundingClientRect();
-    return clamp01((e.clientX - r.left) / r.width);
-  };
-  const stop = (commit: boolean) => {
-    if (!dragging.current) return;
-    dragging.current = false;
-    setDrag(false);
-    if (commit) onCommit(last.current);
-    else onCancel();
-  };
-  // 拖着的时候底部条收起来了（Esc 取消了选择、按数字键换了工具）：当作取消，地图上不留着拖到一半的样子
-  useEffect(
-    () => () => {
-      if (dragging.current) onCancel();
-    },
-    [],
-  );
-  return (
-    <div class={`hs ${drag ? 'drag' : ''}`} title={title}>
-      <span class="hs-label">{label}</span>
-      <div
-        class="hs-track"
-        ref={track}
-        tabIndex={0}
-        onPointerDown={(e) => {
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          dragging.current = true;
-          setDrag(true);
-          last.current = at(e);
-          onDraft(last.current);
-        }}
-        onPointerMove={(e) => {
-          if (!dragging.current) return;
-          last.current = at(e);
-          onDraft(last.current);
-        }}
-        onPointerUp={() => stop(true)}
-        onPointerCancel={() => stop(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            e.preventDefault();
-            onCommit(clamp01(pos + (e.key === 'ArrowRight' ? 0.06 : -0.06)));
-          }
-        }}
-      >
-        {detent !== undefined && <div class="hs-detent" style={{ width: `${detent * 100}%` }} />}
-        <div class="hs-fill" style={{ width: `${pos * 100}%` }} />
-        <div class="hs-thumb" style={{ left: `calc((100% - 12px) * ${pos})` }} />
-      </div>
-      <span class="hs-value">{text}</span>
-    </div>
-  );
-}
 
 // “大小”：这条河的总水量（本来的水加上画的时候加进来的），最左边是“顺其自然”（不另外加水）。
 // 拖动时地图上先按估计画，停一下换成确切的；松手执行（直接用算好的预览）
@@ -172,7 +103,7 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
     }
   };
   return (
-    <DragSlider
+    <Slider
       label="大小"
       pos={posOf(cur)}
       text={`${cur === null ? '顺其自然' : `${riverSizeName(cur)} ${fmtFlow(cur * thr)} m³/s`}${split > 0 ? ` · 分出去 ${Math.round(split * 100)}%` : ''}`}
@@ -213,7 +144,8 @@ function WidthSlider({ w, g }: { w: World; g: Guide }) {
     }
   };
   return (
-    <DragSlider
+    <Slider
+      stacked
       label="粗细"
       pos={clamp01(Math.log(cur / WLO) / Math.log(WHI / WLO))}
       text={`${Math.round(cur * 100)}%`}
@@ -256,26 +188,41 @@ function endChoice(w: World, g: Guide): number {
   return m;
 }
 
-// “分一股出去”“加一个源头”（第十三轮）：按一下，再从这条河上起笔画（不用同时按键；再按一下或 Esc 不画了）
-function AddButtons() {
+// “分一股出去”“加一个源头”（第十三轮）：按一下，再从这条河上起笔画（不用同时按键；再按一下或 Esc 不画了）。收在“⋯”里，按了就关上面板去画
+function AddItems() {
   const m = riverAddMode.value;
+  const toggle = (k: 'branch' | 'source') => {
+    riverAddMode.value = m === k ? null : k;
+    if (riverAddMode.value) openPanel.value = null;
+  };
   return (
     <>
-      <button
-        class={`bar-btn ${m === 'branch' ? 'on' : ''}`}
-        onClick={() => (riverAddMode.value = m === 'branch' ? null : 'branch')}
+      <MenuItem
+        icon={<Split />}
+        label="分一股出去"
+        on={m === 'branch'}
+        run={() => toggle('branch')}
         title="按一下，再从这条河上起笔往外画：从那里分一股水出去（约三成），画到海里、湖里、别的河上，也可以画回这条河的下游。多分几股就是三角洲。Esc 不分了"
-      >
-        <Split size={15} /> 分一股出去
-      </button>
-      <button
-        class={`bar-btn ${m === 'source' ? 'on' : ''}`}
-        onClick={() => (riverAddMode.value = m === 'source' ? null : 'source')}
+      />
+      <MenuItem
+        icon={<Sprout />}
+        label="加一个源头"
+        on={m === 'source'}
+        run={() => toggle('source')}
         title="按一下，再从这条河上起笔往外画：画的另一头是这条河的又一个源头，水流进这条河（同一条河、同一个名字）。Esc 不加了"
-      >
-        <Sprout size={15} /> 加一个源头
-      </button>
+      />
     </>
+  );
+}
+
+// 正在“分一股出去”“加一个源头”时底部条上写着，点一下不画了
+function AddModeChip() {
+  const m = riverAddMode.value;
+  if (!m) return null;
+  return (
+    <button class="bar-btn open" onClick={() => (riverAddMode.value = null)} title="从这条河上起笔画；点一下或 Esc 不画了">
+      {m === 'branch' ? <Split /> : <Sprout />} {m === 'branch' ? '分一股出去' : '加一个源头'}
+    </button>
   );
 }
 
@@ -296,7 +243,7 @@ function ShareSlider({ w, g }: { w: World; g: Guide }) {
     setDraft(null);
   };
   return (
-    <DragSlider
+    <Slider
       label="分水"
       pos={clamp01((cur - SLO) / (SHI - SLO))}
       text={`${Math.round(cur * 100)}%`}
@@ -341,52 +288,49 @@ function IssueChip({ issues }: { issues: GuideIssue[] }) {
         if (issues.length > 1) setK(k + 1);
       }}
     >
-      <TriangleAlert size={13} /> {x.text}
+      <TriangleAlert /> {x.text}
       {issues.length > 1 ? ` 等 ${issues.length} 处` : ''}
     </button>
   );
 }
 
-// 选中的画的河：名字、换一个、大小、⋯、取消选择
-function GuideRiverBar({ w, g: own }: { w: World; g: Guide }) {
-  // 另一个源头（sourceOf）：名字是它汇入的那条河的（改名、换一个都改那条河）
+// 画的河的名字：换一个、恢复自动（另一个源头 sourceOf 的名字是它汇入的那条河的：改名、换一个都改那条河）
+function guideNaming(w: World, own: Guide) {
   const parent = own.sourceOf !== undefined ? guideOf(w, own.sourceOf) : undefined;
   const g = parent ?? own;
   const f = guideFeature(w, g.id);
   // 固定下来的自然河没自己换过名字时，用那条河原来的盐
   const salt = g.salt ?? (g.nameKey ? w.small.featureNames[g.nameKey]?.salt : undefined) ?? 0;
   const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id: g.id, patch, label }, busy);
+  return {
+    parent,
+    g,
+    f,
+    update,
+    reroll: f ? () => update({ name: '', salt: salt + 1, autoName: null }, '换了个名字') : undefined,
+    unlock: f?.custom ? () => update({ name: '', salt, autoName: null }, '恢复自动命名') : undefined,
+  };
+}
+
+// 选中的画的河：名字、是哪一种、大小，别的在“⋯”里
+function GuideRiverBar({ w, g: own }: { w: World; g: Guide }) {
+  const { parent, g, f, update } = guideNaming(w, own);
   const issues = riverInfo(w, { kind: 'guide', id: own.id })?.issues ?? [];
   const rt = riverTypeOfRiver(w, { kind: 'guide', id: own.id });
   return (
     <>
       <NameInput fkey={`guide:${g.id}`} value={f?.name ?? ''} placeholder="起个名字" onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
-      {f && (
-        <button class="bar-btn" onClick={() => update({ name: '', salt: salt + 1, autoName: null }, '换了个名字')} title="自动换一个名字">
-          <Dices size={15} /> 换一个
-        </button>
-      )}
-      {f?.custom && (
-        <button class="bar-btn" onClick={() => update({ name: '', salt, autoName: null }, '恢复自动命名')} title="不用自己起的名字，按文字包自动起">
-          <LockOpen size={15} /> 恢复自动
-        </button>
-      )}
       {parent && <span class="bar-label" title="这一段是这条河的又一个源头：名字与它相同">源头</span>}
       <RiverTypeButton type={rt.type} auto={rt.chosen === null} />
       {own.branch ? <ShareSlider w={w} g={own} /> : <FlowSlider w={w} g={own} />}
-      <AddButtons />
+      <AddModeChip />
       {issues.length > 0 && <IssueChip issues={issues} />}
-      <button class={`bar-btn icon ${openPanel.value === 'river' ? 'on' : ''}`} data-panel="river" onClick={() => togglePanel('river')} title="粗细、终点、删掉这条河">
-        <Ellipsis size={15} />
-      </button>
-      <button class="bar-btn icon" onClick={() => (selectedRiver.value = null)} title="取消选择（Esc）">
-        <X size={15} />
-      </button>
+      <SelectionActions more="river" moreTitle="换名字、分一股出去、加一个源头、粗细、终点、删掉" deselect={() => (selectedRiver.value = null)} />
     </>
   );
 }
 
-// 选中的自然的河：名字（有地名的大河）、它是什么样的河、固定这条河、从这里往下去掉
+// 选中的自然的河：名字（有地名的大河）、它是什么样的河、是哪一种、固定这条河，别的在“⋯”里
 function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
   const info = riverInfo(w, { kind: 'natural', cell });
   if (!info) return null;
@@ -410,11 +354,6 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
           }}
         />
       )}
-      {f && (
-        <button class="bar-btn" onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')} title="自动换一个名字">
-          <Dices size={15} /> 换一个
-        </button>
-      )}
       <span class="bar-label" title={info.split > 0 ? `大小按分出去之前的水算：分出的地方往下这条河少了 ${Math.round(info.split * 100)}%` : undefined}>
         {info.size} · {fmtFlow(info.flow)} m³/s{info.split > 0 ? ` · 分出去 ${Math.round(info.split * 100)}%` : ''} · {info.dest}
       </span>
@@ -427,27 +366,22 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
         }}
         title="把这条河的走向固定下来，之后改地形它也不会挪；可以改名、改大小、重画"
       >
-        <Pin size={15} /> 固定这条河
+        <Pin /> 固定这条河
       </button>
-      <button
-        class={`bar-btn ${riverCutPick.value ? 'on' : ''}`}
-        onClick={() => {
-          riverCutPick.value = !riverCutPick.value;
-          if (!riverCutPick.value) clearBarPreview();
-        }}
-        title="点了以后在这条河上点一下选位置：那里往下的河没了（水在那里渗进地下），上游照旧；悬停时先看会变干的河段。也可以直接拖终点（实心圆）到想要的位置"
-      >
-        <Scissors size={15} /> 从这里往下去掉
-      </button>
-      <AddButtons />
-      <button class="bar-btn icon" onClick={() => focusOn(info.cells)} title="在地图上看">
-        <ScanSearch size={15} />
-      </button>
-      <button class="bar-btn icon" onClick={() => (selectedRiver.value = null)} title="取消选择（Esc）">
-        <X size={15} />
-      </button>
+      <AddModeChip />
+      {riverCutPick.value && (
+        <button class="bar-btn open" onClick={() => setCutPick(false)} title="在这条河上点一下选位置；点这里或 Esc 不去掉了">
+          <Scissors /> 从这里往下去掉
+        </button>
+      )}
+      <SelectionActions more="river" moreTitle="换名字、从这里往下去掉、分一股出去、加一个源头、在地图上看" deselect={() => (selectedRiver.value = null)} />
     </>
   );
+}
+
+function setCutPick(on: boolean) {
+  riverCutPick.value = on;
+  if (!on) clearBarPreview();
 }
 
 export function RiverBar() {
@@ -474,15 +408,18 @@ effect(() => {
   if (!selectedRiver.value && (openPanel.value === 'river' || openPanel.value === 'rivertype')) openPanel.value = null;
 });
 
-// “⋯”：这条河的说明与提醒、粗细、终点、在地图上看、删掉
+// “⋯”：这条河的说明与提醒、粗细、终点、换名字、分一股出去、加一个源头、在地图上看、删掉（自然的河：从这里往下去掉）
 export function RiverMore() {
   const w = world.value;
   const sel = selectedRiver.value;
-  const g = w && sel?.kind === 'guide' ? guideOf(w, sel.id) : undefined;
-  if (!w || !g || !sel) return null;
+  if (!w || !sel) return null;
+  if (sel.kind === 'natural') return <NaturalRiverMore w={w} cell={sel.cell} />;
+  const g = guideOf(w, sel.id);
+  if (!g) return null;
   const info = riverInfo(w, sel);
   const m = endChoice(w, g);
   const name = guideName(w, g);
+  const naming = guideNaming(w, g);
   const setEnd = (sink: boolean) => {
     if (sink === (g.end === 'sink')) return;
     // 停在这：只留到画到的那格；流下去：从那格起顺着地势流下去的那段也算这条河的（与画的时候选“流下去”一样）
@@ -494,23 +431,19 @@ export function RiverMore() {
   return (
     <div class="river-more">
       {info && (
-        <p class="small">
+        <p class="hint">
           {info.size} · {fmtFlow(info.flow)} m³/s · 约 {km(info.km).toLocaleString()} km · {info.dest}
         </p>
       )}
       {info?.issues.map((x) => (
-        <p class="small warn-text" title={x.why}>
-          <TriangleAlert size={13} /> {x.text}：{x.why}
+        <p class="hint warn" title={x.why}>
+          <TriangleAlert /> {x.text}：{x.why}
         </p>
       ))}
-      {g.path && (
-        <div class="row">
-          <WidthSlider w={w} g={g} />
-        </div>
-      )}
+      {g.path && <WidthSlider w={w} g={g} />}
       {m >= 0 && (
         <div class="row">
-          <span class="hs-label">终点</span>
+          <span class="bar-label">终点</span>
           <Seg
             value={g.end === 'sink' ? 'sink' : 'flow'}
             options={[
@@ -522,22 +455,42 @@ export function RiverMore() {
           />
         </div>
       )}
-      <div class="row wrap">
-        <button class="small" onClick={() => focusOn(g.cells)}>
-          <ScanSearch size={14} /> 在地图上看
-        </button>
-        <button
-          class="small danger"
-          onClick={() => {
-            openPanel.value = null;
-            selectedRiver.value = null;
-            void exec({ op: 'remove_guide', id: g.id, label: `删掉了${quoted(name)}` }, '正在计算…');
-          }}
-        >
-          <Trash2 size={14} /> 删掉这条河
-        </button>
-      </div>
+      <SelectionActions
+        menu
+        reroll={naming.reroll}
+        unlock={naming.unlock}
+        locate={() => focusOn(g.cells)}
+        removeLabel="删掉这条河"
+        remove={() => {
+          openPanel.value = null;
+          selectedRiver.value = null;
+          void exec({ op: 'remove_guide', id: g.id, label: `删掉了${quoted(name)}` }, '正在计算…');
+        }}
+      >
+        <AddItems />
+      </SelectionActions>
     </div>
+  );
+}
+
+function NaturalRiverMore({ w, cell }: { w: World; cell: number }) {
+  const info = riverInfo(w, { kind: 'natural', cell });
+  if (!info) return null;
+  const f = info.feature;
+  return (
+    <SelectionActions menu reroll={f ? () => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…') : undefined} locate={() => focusOn(info.cells)}>
+      <MenuItem
+        icon={<Scissors />}
+        label="从这里往下去掉"
+        on={riverCutPick.value}
+        run={() => {
+          setCutPick(!riverCutPick.value);
+          if (riverCutPick.value) openPanel.value = null;
+        }}
+        title="点了以后在这条河上点一下选位置：那里往下的河没了（水在那里渗进地下），上游照旧；悬停时先看会变干的河段。也可以直接拖终点（实心圆）到想要的位置"
+      />
+      <AddItems />
+    </SelectionActions>
   );
 }
 
@@ -552,7 +505,7 @@ function RiverRow({ w, river: ref, children }: { w: World; river: RiverRef; chil
   const rt = w.small.riverTypes?.length ? riverTypeOfRiver(w, ref).type : null;
   return (
     <div
-      class={`feature-row river-row ${on ? 'on' : ''}`}
+      class={`item ${on ? 'on' : ''}`}
       onClick={() => {
         selectRiver(ref);
         focusOn(info.cells);
@@ -561,16 +514,16 @@ function RiverRow({ w, river: ref, children }: { w: World; river: RiverRef; chil
       onMouseEnter={() => (hoverRiver.value = ref)}
       onMouseLeave={() => (hoverRiver.value = null)}
     >
-      <span class={info.feature?.custom ? 'custom' : ''}>
+      <span class={`grow ellipsis ${info.feature?.custom ? 'custom' : ''}`}>
         {rt && <span class="swatch" style={{ background: rt.color }} title={rt.name} />}
         {info.name ?? (ref.kind === 'guide' ? '（还没名字）' : '无名的河')}
       </span>
-      <span class="muted small">
+      <span class="hint">
         {info.size} · {km(info.km).toLocaleString()} km · {info.dest}
         {info.warnings.length > 0 && (
-          <span class="warn-text" title={info.warnings.join('；')}>
+          <span class="warn" title={info.warnings.join('；')}>
             {' '}
-            <TriangleAlert size={12} /> {info.warnings.length}
+            <TriangleAlert /> {info.warnings.length}
           </span>
         )}
       </span>
@@ -609,13 +562,13 @@ export function RiverExtras() {
   return (
     <>
       <WaterTypesSection tab={tab} onTab={setTab} />
-      {warned > 0 && <p class="small warn-text">有 {warned} 条河要看一下</p>}
+      {warned > 0 && <p class="hint warn">有 {warned} 条河要看一下</p>}
       <section>
         <h5>画的河（{drawn.length}）</h5>
         {drawn.length === 0 ? (
-          <p class="muted small">还没有画过河。用“画河”在陆地上点一下，或者选“自定义走向”按住画出河道。</p>
+          <p class="hint">还没有画过河。用“画河”在陆地上点一下，或者选“自定义走向”按住画出河道。</p>
         ) : (
-          <div class="feature-list">
+          <div class="list">
             {drawn.map((g) => (
               <RiverRow w={w} river={{ kind: 'guide', id: g.id }} />
             ))}
@@ -625,7 +578,7 @@ export function RiverExtras() {
       {pinned.length > 0 && (
         <section>
           <h5>固定的自然河（{pinned.length}）</h5>
-          <div class="feature-list">
+          <div class="list">
             {pinned.map((g) => (
               <RiverRow w={w} river={{ kind: 'guide', id: g.id }} />
             ))}
@@ -635,11 +588,11 @@ export function RiverExtras() {
       {natural.length > 0 && (
         <section>
           <h5>自然的河</h5>
-          <div class="feature-list">
+          <div class="list">
             {natural.map(({ cell }) => (
               <RiverRow w={w} river={{ kind: 'natural', cell }}>
                 <button
-                  class="small"
+                  class="bar-btn"
                   title="把这条河的走向固定下来，之后改地形它也不会挪；可以改名、改大小、重画"
                   onClick={(e) => {
                     e.stopPropagation();

@@ -1,12 +1,14 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { SCRIPT_KIND_LABEL } from '../../core/script';
 import { type Effects, PATTERNS, PATTERN_LABEL, type Pattern, SPECIES_SCRIPT_KINDS, type Species, type SpeciesFeature, type Visual } from '../../core/species';
 import { world, worldEpoch } from '../state';
 import { ScriptBox } from './ScriptBox';
+import { Slider, linear } from './components/Slider';
 import { previewVisual, scriptEditorRequest, showCell } from './editor-hooks';
 import { type SpeciesScriptKind, applySpeciesScript, queueSpeciesEdit, settleSpeciesEdits, speciesEditsSettled, speciesIssue } from './species-scripts';
 
-// 生态抽屉里收起来的“高级：图案、效果与脚本”（第三批）：花纹与发光、对周围的影响、侵占、地名、两个脚本框。
+// 生态抽屉里收起来的“高级”（第三批；第十九轮把“更精细的条件”也并进来）：花纹与发光、对周围的影响、侵占、地名、两个脚本框。
 // 滑块松手才提交（一步撤销）；拖花纹、发光滑块时地图上立即换上（画面那边装上了 previewVisual 时）；
 // 脚本停一下就用到地图上（见 ScriptBox）。
 // 每次提交都排进队里、按那时世界上最新的这种生态做出补丁（见 species-scripts.ts）：大星球上连着改几处时不会互相冲掉；
@@ -47,8 +49,8 @@ function useLocal<T>(spId: string): [T | null, (v: T | null) => void, (job: Prom
   return [local, setLocal, track, () => jobs.current > 0];
 }
 
-// 滑块：拖动时 onLive，松手时 onDone（值没变时没有 onDone，只有 onEnd）
-function Slider(p: {
+// 滑块（界面上同一种 Slider）：拖动时 onLive，松手时值变了 onDone，最后 onEnd（值没变、取消时只有 onEnd）
+function Knob(p: {
   label: string;
   min: number;
   max: number;
@@ -59,25 +61,31 @@ function Slider(p: {
   onDone: (v: number) => void;
   onEnd?: () => void;
 }) {
+  // 按下时的值：松手时和它比，没变就不提交
+  const start = useRef<number | null>(null);
+  const scale = linear(p.min, p.max, p.step);
   return (
-    <label>
-      <span class="row between">
-        <span>{p.label}</span>
-        <span class="muted">{p.text}</span>
-      </span>
-      <input
-        type="range"
-        min={p.min}
-        max={p.max}
-        step={p.step}
-        value={p.value}
-        onInput={(e) => p.onLive?.(Number((e.target as HTMLInputElement).value))}
-        onChange={(e) => p.onDone(Number((e.target as HTMLInputElement).value))}
-        // 松手的 change 在 pointerup 之后才到：等它一下
-        onPointerUp={() => p.onEnd && setTimeout(p.onEnd, 0)}
-        onPointerCancel={() => p.onEnd && setTimeout(p.onEnd, 0)}
-      />
-    </label>
+    <Slider
+      stacked
+      label={p.label}
+      pos={scale.pos(p.value)}
+      text={p.text}
+      onDraft={(pos) => {
+        start.current ??= p.value;
+        p.onLive?.(scale.at(pos));
+      }}
+      onCommit={(pos) => {
+        const v = scale.at(pos);
+        const from = start.current ?? p.value;
+        start.current = null;
+        if (v !== from) p.onDone(v);
+        p.onEnd?.();
+      }}
+      onCancel={() => {
+        start.current = null;
+        p.onEnd?.();
+      }}
+    />
   );
 }
 
@@ -149,11 +157,11 @@ function LookSection({ sp }: { sp: Species }) {
       </div>
       {v.pattern !== 'none' && (
         <>
-          <Slider label="明显程度" min={0} max={1} step={0.05} value={v.amount ?? 0.6} text={pct(v.amount ?? 0.6)} onLive={(x) => live({ amount: x })} onDone={(x) => save({ amount: x })} onEnd={end} />
-          <Slider label="大小" min={0.1} max={4} step={0.05} value={v.size ?? 0.5} text={`${(v.size ?? 0.5).toFixed(2)} 格`} onLive={(x) => live({ size: x })} onDone={(x) => save({ size: x })} onEnd={end} />
+          <Knob label="明显程度" min={0} max={1} step={0.05} value={v.amount ?? 0.6} text={pct(v.amount ?? 0.6)} onLive={(x) => live({ amount: x })} onDone={(x) => save({ amount: x })} onEnd={end} />
+          <Knob label="大小" min={0.1} max={4} step={0.05} value={v.size ?? 0.5} text={`${(v.size ?? 0.5).toFixed(2)} 格`} onLive={(x) => live({ size: x })} onDone={(x) => save({ size: x })} onEnd={end} />
         </>
       )}
-      <Slider label="发光" min={0} max={1} step={0.05} value={glow} text={glow > 0 ? pct(glow) : '不发光'} onLive={(x) => live({ glow: x })} onDone={(x) => save({ glow: x })} onEnd={end} />
+      <Knob label="发光" min={0} max={1} step={0.05} value={glow} text={glow > 0 ? pct(glow) : '不发光'} onLive={(x) => live({ glow: x })} onDone={(x) => save({ glow: x })} onEnd={end} />
       {glow > 0 && (
         <label class="inline">
           发光的颜色
@@ -207,8 +215,8 @@ function ClimateSection({ sp }: { sp: Species }) {
   return (
     <>
       <h5>对周围的影响</h5>
-      <Slider label="变暖变冷" min={-5} max={5} step={0.5} value={dT} text={signed(dT, ' °C')} onLive={(x) => live({ dT: x })} onDone={(x) => save({ dT: x })} onEnd={end} />
-      <Slider
+      <Knob label="变暖变冷" min={-5} max={5} step={0.5} value={dT} text={signed(dT, ' °C')} onLive={(x) => live({ dT: x })} onDone={(x) => save({ dT: x })} onEnd={end} />
+      <Knob
         label="变湿变干"
         min={-50}
         max={100}
@@ -220,9 +228,9 @@ function ClimateSection({ sp }: { sp: Species }) {
         onEnd={end}
       />
       {(dT !== 0 || dP !== 0) && (
-        <Slider label="范围" min={50} max={1500} step={10} value={r} text={`${r} 千米`} onLive={(x) => live({ radiusKm: x })} onDone={(x) => save({ radiusKm: x })} onEnd={end} />
+        <Knob label="范围" min={50} max={1500} step={10} value={r} text={`${r} 千米`} onLive={(x) => live({ radiusKm: x })} onDone={(x) => save({ radiusKm: x })} onEnd={end} />
       )}
-      <p class="muted small">离它越远影响越小，到范围的边上就没有了。{CLIMATE_EFFECTS_LIVE ? '' : '这一项先记下，现在还不改地图上的冷暖干湿。'}</p>
+      <p class="hint">离它越远影响越小，到范围的边上就没有了。{CLIMATE_EFFECTS_LIVE ? '' : '这一项先记下，现在还不改地图上的冷暖干湿。'}</p>
     </>
   );
 }
@@ -262,7 +270,7 @@ function InvadeSection({ sp }: { sp: Species }) {
   return (
     <>
       <h5>侵占</h5>
-      <p class="muted small">在选中的这些生态适宜的地方，它更容易占上风。</p>
+      <p class="hint">在选中的这些生态适宜的地方，它更容易占上风。</p>
       <div class="palette">
         {others.map((o) => (
           <button class={`chip ${targets.includes(o.id) ? 'on' : ''}`} onClick={() => save({ toggle: o.id })}>
@@ -272,7 +280,7 @@ function InvadeSection({ sp }: { sp: Species }) {
         ))}
       </div>
       {targets.length > 0 && (
-        <Slider
+        <Knob
           label="强度"
           min={0}
           max={5}
@@ -348,7 +356,7 @@ function NamesSection({ sp }: { sp: Species }) {
       <label>
         <span class="row between">
           <span>类型名</span>
-          <span class="muted small">地图上这一片是什么，比如“晶林”</span>
+          <span class="hint">地图上这一片是什么，比如“晶林”</span>
         </span>
         <input
           class="wide-input"
@@ -361,9 +369,9 @@ function NamesSection({ sp }: { sp: Species }) {
       </label>
       <label>
         <span>起名模板（每行一个）</span>
-        <textarea class="names" value={names} placeholder={'{color}晶林\n{myth}晶丛'} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={save} />
+        <textarea value={names} placeholder={'{color}晶林\n{myth}晶丛'} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={save} />
       </label>
-      <p class="muted small">{'花括号里的词会换成文字包里的词，比如 {color}晶林、{myth}晶丛。不写就按生态的名字起。'}</p>
+      <p class="hint">{'花括号里的词会换成文字包里的词，比如 {color}晶林、{myth}晶丛。不写就按生态的名字起。'}</p>
       {problem && <div class="script-problem small">{problem}</div>}
     </>
   );
@@ -388,7 +396,7 @@ function ScriptsSection({ sp }: { sp: Species }) {
   return (
     <>
       <h5>脚本</h5>
-      <p class="muted small">用一小段 JavaScript 更自由地决定它长在哪里、是什么颜色。停一下就用到地图上；一次修改只算一步撤销。</p>
+      <p class="hint">用一小段 JavaScript 更自由地决定它长在哪里、是什么颜色。停一下就用到地图上；一次修改只算一步撤销。</p>
       {SPECIES_SCRIPT_KINDS.map((kind) => (
         <ScriptBox
           // 换了世界、换了生态都是新的框（还没提交的不会落到别的世界、别的生态上）
@@ -410,7 +418,8 @@ function ScriptsSection({ sp }: { sp: Species }) {
   );
 }
 
-export function SpeciesAdvanced({ sp }: { sp: Species }) {
+// children：放在最前面的（生态抽屉的“更精细的条件”）——两个“高级”合成这一个
+export function SpeciesAdvanced({ sp, children }: { sp: Species; children?: ComponentChildren }) {
   const req = scriptEditorRequest.value;
   // 收着时里面的东西不画（脚本框要加载 acorn）
   const [open, setOpen] = useState(false);
@@ -419,9 +428,10 @@ export function SpeciesAdvanced({ sp }: { sp: Species }) {
   }, [req, sp.id]);
   return (
     <details class="species-advanced" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary>高级：图案、效果与脚本</summary>
+      <summary>高级</summary>
       {open && (
         <>
+          {children}
           <LookSection sp={sp} />
           <ClimateSection sp={sp} />
           <InvadeSection sp={sp} />

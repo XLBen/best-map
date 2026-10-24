@@ -29,6 +29,8 @@ import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
 import { type FormChoice, blankForm, formChoices, formGen, formSource, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
 import { RES, fromPos, toPos } from './panels/AdjustPanel';
+import { Seg } from './common';
+import { Slider } from './components/Slider';
 import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
 
 // 新建向导：先选一块地区还是整个星球。
@@ -88,8 +90,8 @@ function PlanetBand({ size, center, onChange }: { size: MapSize; center: number;
         <b>
           {latText(north)} — {latText(south)}
         </b>
-        <span class="muted small">包括 {beltsIn(north, south).join('、')}</span>
-        <span class="muted small">地图里本来就有好几种气候：越往极地越冷，靠海、山上也都不一样。这里只是选地图放在星球上的哪里。</span>
+        <span class="hint">包括 {beltsIn(north, south).join('、')}</span>
+        <span class="hint">地图里本来就有好几种气候：越往极地越冷，靠海、山上也都不一样。这里只是选地图放在星球上的哪里。</span>
         <div class="row wrap">
           {(Object.keys(CLIMATE_ZONES) as ClimateZone[]).map((z) => (
             <button class="small" title={CLIMATE_ZONES[z].hint} onClick={() => onChange(clampCenter(size, CLIMATE_ZONES[z].lat))}>
@@ -121,26 +123,22 @@ function Thumb({ data, onPick, label }: { data: Uint8ClampedArray | null; onPick
 function TerrainRow({ s, value, base, onChange }: { s: TerrainSlider; value: number; base: number; onChange: (v: number) => void }) {
   const [draft, setDraft] = useState<number | null>(null);
   const v = draft ?? value;
-  const changed = Math.abs(v - base) >= s.step / 2;
+  const at = (p: number) => fromPos(s, p * RES, s.range);
   return (
-    <label class="adj-row" title={s.hint}>
-      <span class="row between">
-        <span>{s.label}</span>
-        <span class={changed ? 'accent' : 'muted'}>{s.format(v)}</span>
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={RES}
-        step={1}
-        value={toPos(s, v, s.range)}
-        onInput={(e) => setDraft(fromPos(s, Number((e.target as HTMLInputElement).value), s.range))}
-        onChange={(e) => {
-          setDraft(null);
-          onChange(fromPos(s, Number((e.target as HTMLInputElement).value), s.range));
-        }}
-      />
-    </label>
+    <Slider
+      stacked
+      label={s.label}
+      title={s.hint}
+      changed={Math.abs(v - base) >= s.step / 2}
+      pos={toPos(s, v, s.range) / RES}
+      text={s.format(v)}
+      onDraft={(p) => setDraft(at(p))}
+      onCommit={(p) => {
+        setDraft(null);
+        onChange(at(p));
+      }}
+      onCancel={() => setDraft(null)}
+    />
   );
 }
 
@@ -153,7 +151,7 @@ function TerrainBox({ defaults, value, onChange }: { defaults: Record<TerrainKey
           <TerrainRow s={s} value={value[s.key] ?? defaults[s.key]} base={defaults[s.key]} onChange={(v) => onChange({ ...value, [s.key]: v })} />
         ))}
       </div>
-      <p class="muted small">
+      <p class="hint">
         不动就是这种世界本来的样子。建好以后用“地形”里的画笔改。
         {touched && (
           <button class="link" onClick={() => onChange({})}>
@@ -311,53 +309,55 @@ export function Wizard() {
             </button>
           </div>
         )}
-        <div class="seg wide">
-          <button class={kind === 'region' ? 'on' : ''} onClick={() => setKind('region')} disabled={creating}>
-            一块地区
-          </button>
-          <button class={kind === 'planet' ? 'on' : ''} onClick={() => setKind('planet')} disabled={creating}>
-            整个星球
-          </button>
-        </div>
+        <Seg<'region' | 'planet'>
+          value={kind}
+          options={[
+            ['region', '一块地区'],
+            ['planet', '整个星球'],
+          ]}
+          onChange={setKind}
+          disabled={creating}
+          wide
+        />
         {kind === 'region' ? (
           <>
-            <h4>1. 选一种世界</h4>
+            <h5>1. 选一种世界</h5>
             <div class="cards three">
               {WORLD_TYPES.map((t) => (
                 <button class={`card ${type === t ? 'on' : ''}`} onClick={() => chooseType(t)}>
                   <b>{WORLD_TYPE_INFO[t].name}</b>
-                  <span class="how">{WORLD_TYPE_INFO[t].hint}</span>
+                  <span class="hint">{WORLD_TYPE_INFO[t].hint}</span>
                 </button>
               ))}
             </div>
             <div class="grid2">
               <div>
-                <h4>2. 多大</h4>
+                <h5>2. 多大</h5>
                 <div class="cards">
                   {(Object.keys(MAP_SIZES) as MapSize[]).map((s) => (
                     <button class={`card ${size === s ? 'on' : ''}`} onClick={() => chooseSize(s)}>
                       <b>{MAP_SIZES[s].name}</b>
-                      <span class="how">{MAP_SIZES[s].hint}</span>
+                      <span class="hint">{MAP_SIZES[s].hint}</span>
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <h4>3. 放在星球的哪里</h4>
+                <h5>3. 放在星球的哪里</h5>
                 <PlanetBand size={size} center={center} onChange={setCenter} />
               </div>
             </div>
-            <h4>4. 地形</h4>
+            <h5>4. 地形</h5>
             <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
           </>
         ) : (
           <>
-            <h4>1. 选一种星球</h4>
+            <h5>1. 选一种星球</h5>
             <div class="cards three">
               {PLANET_TYPES.map((t) => (
                 <button class={`card ${ptype === t.key ? 'on' : ''}`} onClick={() => setPtype(t.key)}>
                   <b>{t.name}</b>
-                  <span class="how">{t.hint}</span>
+                  <span class="hint">{t.hint}</span>
                 </button>
               ))}
             </div>
@@ -370,8 +370,8 @@ export function Wizard() {
                       {c.form.name}
                       {hasFormScripts(c.form) && <span class="tag">脚本</span>}
                     </b>
-                    <span class="how">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
-                    {!c.builtin && <span class="how">{formSource(c)}</span>}
+                    <span class="hint">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
+                    {!c.builtin && <span class="hint">{formSource(c)}</span>}
                   </button>
                   <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改一改它：名字、几个滑块、脚本">
                     编辑…
@@ -380,28 +380,28 @@ export function Wizard() {
               ))}
               <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
                 <b>自己做一个…</b>
-                <span class="how">从一种星球改起，调几项，也可以写脚本</span>
+                <span class="hint">从一种星球改起，调几项，也可以写脚本</span>
               </button>
             </div>
-            {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="muted small">现在是安全模式：缩略图里没有脚本的效果，建好的新世界里脚本照常运行。</p>}
-            <h4>2. 多大</h4>
+            {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="hint">现在是安全模式：缩略图里没有脚本的效果，建好的新世界里脚本照常运行。</p>}
+            <h5>2. 多大</h5>
             <div class="cards three">
               {(Object.keys(PLANET_SIZES) as PlanetSize[]).map((s) => (
                 <button class={`card ${psize === s ? 'on' : ''}`} onClick={() => setPsize(s)}>
                   <b>{PLANET_SIZES[s].name}</b>
-                  <span class="how">
+                  <span class="hint">
                     半径约 {PLANET_SIZES[s].radiusKm.toLocaleString()} km，{equatorText(PLANET_SIZES[s].radiusKm)}
                   </span>
-                  <span class="how">每格约 {PLANET_CELL_KM} km</span>
+                  <span class="hint">每格约 {PLANET_CELL_KM} km</span>
                 </button>
               ))}
             </div>
-            <h4>3. 地形</h4>
+            <h5>3. 地形</h5>
             <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
           </>
         )}
         <div class="row between">
-          <h4>{kind === 'region' ? 5 : 4}. 挑一张开始</h4>
+          <h5>{kind === 'region' ? 5 : 4}. 挑一张开始</h5>
           <button onClick={() => setBase(randomBase())} disabled={creating}>
             换一组
           </button>
@@ -411,7 +411,7 @@ export function Wizard() {
             <Thumb data={thumbs[k]} label={`第 ${k + 1} 个`} onPick={() => void pick(seed)} />
           ))}
         </div>
-        <p class="muted small">
+        <p class="hint">
           {kind === 'planet' ? '整个星球平铺成一张图：左右两边连着，上下是南北极。' : ''}
           缩略图是同一个世界的粗略版：挑中后会用更精细的网格生成，大格局不变；小图里看不到很小的岛。{creating ? ' 正在生成，请稍等…' : ''}
         </p>

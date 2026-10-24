@@ -38,13 +38,13 @@ export function AskDialog() {
         <h3>{a.title}</h3>
         {a.text && <p class="muted">{a.text}</p>}
         {a.input !== undefined && <input ref={input} class="ask-input" type="text" maxLength={60} />}
-        {!!a.scripts?.length && a.choices.some((c) => c.value === 'run') && <p class="muted small">{isolationNote()}</p>}
+        {!!a.scripts?.length && a.choices.some((c) => c.value === 'run') && <p class="hint">{isolationNote()}</p>}
         {a.scripts && a.scripts.length > 0 && (
           <div class="ask-scripts">
             {a.scripts.map((s) => (
               <div key={s.path}>
                 <b>{s.owner}</b>
-                <span class="muted small"> · {SCRIPT_KIND_LABEL[s.kind]}的脚本</span>
+                <span class="hint"> · {SCRIPT_KIND_LABEL[s.kind]}的脚本</span>
                 <pre>{s.src}</pre>
               </div>
             ))}

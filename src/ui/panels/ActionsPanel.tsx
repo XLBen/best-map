@@ -2,6 +2,7 @@ import { Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown,
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { type WheelPref, download, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
+import { Slider, linear } from '../components/Slider';
 import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
 import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
@@ -11,72 +12,72 @@ import { openPackLibrary } from '../packs/store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
 
-// “世界”：新建、我的地图、保存、打开文件、导出文件；“操作”：导出、历史、上手说明、偏好
+// “世界”：新建、我的地图、保存、打开文件、资源包、导出（世界文件、游戏文件包、图片都在这里）；“更多”：历史、偏好、上手说明
 
 export function WorldMenu() {
   const close = () => (openPanel.value = null);
   return (
     <div class="menu">
-      <p class="muted small map-status">{mapStatus()}</p>
+      <p class="hint map-status">{mapStatus()}</p>
       <button
-        class="menu-row"
+        class="item"
         onClick={async () => {
           close();
           if (await beforeLeave()) wizardOpen.value = true;
         }}
       >
-        <FilePlus size={18} />
-        <span>
+        <FilePlus />
+        <span class="grow item-text">
           <b>新世界…</b>
-          <span class="how">选世界的类型、大小和在星球上的位置，从几张小图里挑一张</span>
+          <span class="hint">选世界的类型、大小和在星球上的位置，从几张小图里挑一张</span>
         </span>
       </button>
       <button
-        class="menu-row"
+        class="item"
         onClick={() => {
           close();
           openMaps();
         }}
       >
-        <Library size={18} />
-        <span>
+        <Library />
+        <span class="grow item-text">
           <b>我的地图…</b>
-          <span class="how">保存在这个浏览器里的世界：打开、改名、导出、删掉</span>
+          <span class="hint">保存在这个浏览器里的世界：打开、改名、导出、删掉</span>
         </span>
       </button>
       <button
-        class="menu-row"
+        class="item"
         disabled={!world.value}
         onClick={() => {
           close();
           void saveMap();
         }}
       >
-        <Save size={18} />
-        <span>
+        <Save />
+        <span class="grow item-text">
           <b>保存</b>
-          <span class="how">{currentMap.value ? `存进“我的地图”里的「${currentMap.value.name}」（⌘S）` : '起个名字，存进“我的地图”（⌘S）'}</span>
+          <span class="hint">{currentMap.value ? `存进“我的地图”里的「${currentMap.value.name}」（⌘S）` : '起个名字，存进“我的地图”（⌘S）'}</span>
         </span>
       </button>
       <button
-        class="menu-row"
+        class="item"
         disabled={!world.value}
         onClick={() => {
           close();
           void saveMapAs();
         }}
       >
-        <CopyPlus size={18} />
-        <span>
+        <CopyPlus />
+        <span class="grow item-text">
           <b>另存为…</b>
-          <span class="how">换个名字存成新的一张，之后改的是新的这一张（⇧⌘S）</span>
+          <span class="hint">换个名字存成新的一张，之后改的是新的这一张（⇧⌘S）</span>
         </span>
       </button>
-      <label class="menu-row file-button">
-        <FolderOpen size={18} />
-        <span>
+      <label class="item">
+        <FolderOpen />
+        <span class="grow item-text">
           <b>打开世界文件…</b>
-          <span class="how">接着改导出过的世界（.json）；按 ⌘S 可以存进“我的地图”</span>
+          <span class="hint">接着改导出过的世界（.json）；按 ⌘S 可以存进“我的地图”</span>
         </span>
         <input
           type="file"
@@ -89,27 +90,20 @@ export function WorldMenu() {
           }}
         />
       </label>
-      <button class="menu-row" disabled={!world.value} onClick={() => void exportCurrent()}>
-        <FileDown size={18} />
-        <span>
-          <b>导出世界文件（.json）</b>
-          <span class="how">所有编辑都在里面，换电脑、发给别人、留备份，之后可以打开继续改</span>
-        </span>
-      </button>
       <button
-        class="menu-row"
+        class="item"
         onClick={() => {
           close();
           openPackLibrary();
         }}
       >
-        <Boxes size={18} />
-        <span>
+        <Boxes />
+        <span class="grow item-text">
           <b>资源包…</b>
-          <span class="how">装进别人做好的生态、河流和湖泊类型、星球形态，或把这个世界里自己做的导出来</span>
+          <span class="hint">装进别人做好的生态、河流和湖泊类型、星球形态，或把这个世界里自己做的导出来</span>
         </span>
       </button>
-      <p class="muted small">⌘S 保存到“我的地图”；换电脑或留备份时导出世界文件</p>
+      <ExportSection />
     </div>
   );
 }
@@ -136,6 +130,9 @@ const SEAM_TITLES: Record<SeamMode, string> = {
 // 整个星球在等面积、球形投影里看时：按现在的投影导出，还是照旧展开成 2:1（等距圆柱）
 type PngProj = 'current' | 'equirect';
 const pngChoice: { width: number; labels: LabelSize; seamMode: SeamMode; seamLon: number; proj: PngProj } = { width: 4096, labels: 'medium', seamMode: 'auto', seamLon: 180, proj: 'current' };
+
+// 分界线的经度滑块（−180–180，每格 1°）
+const LON = linear(-180, 180, 1);
 
 // 经度（−180–180，东经为正）→ x（[0, 2)）
 const lonToX = (lon: number) => (((lon / 180 + 1) % 2) + 2) % 2;
@@ -205,7 +202,8 @@ const WHEEL: [WheelPref, string][] = [
   ['pan', '平移'],
 ];
 
-export function ActionsPanel() {
+// 导出：世界文件、游戏文件包、整张地图、当前画面
+function ExportSection() {
   const w = world.value;
   const [width, setWidth] = useState(4096);
   const [png, setPng] = useState({ ...pngChoice });
@@ -237,9 +235,16 @@ export function ActionsPanel() {
   // 整张图的高：一块地区按长宽比，整个星球是 2:1；等面积约 2.05:1，球形是正方形
   const pngHeight = (s: number) => (projected ? (viewProj === 'globe' ? s : Math.round(s / (2 * EE_HALF_W))) : Math.round((s * w.mesh.height) / w.mesh.width));
   return (
-    <>
-      <section>
-        <h5>导出</h5>
+    <section>
+      <h5>导出</h5>
+      <button class="item" disabled={!world.value} onClick={() => void exportCurrent()}>
+        <FileDown />
+        <span class="grow item-text">
+          <b>世界文件（.json）</b>
+          <span class="hint">所有编辑都在里面，换电脑、发给别人、留备份，之后可以打开继续改</span>
+        </span>
+      </button>
+      <div class="export-body">
         <div class="row">
           <button
             class="primary"
@@ -249,7 +254,7 @@ export function ActionsPanel() {
               if (zip) download('world-export.zip', zip, 'application/zip');
             }}
           >
-            <PackageOpen size={16} /> 游戏文件包（.zip）
+            <PackageOpen /> 游戏文件包（.zip）
           </button>
           <select value={width} onChange={(e) => setWidth(Number((e.target as HTMLSelectElement).value))} title="图片宽度">
             {[1024, 2048, 4096, 5632, 8192].map((s) => (
@@ -259,10 +264,10 @@ export function ActionsPanel() {
             ))}
           </select>
         </div>
-        <p class="muted small">高度图、省份图与 definition.csv、地形、河流、生态、地名表 features.csv，还有世界文件。</p>
+        <p class="hint">高度图、省份图与 definition.csv、地形、河流、生态、地名表 features.csv，还有世界文件。</p>
         <div class="row">
           <button disabled={exportProgress.value !== null} onClick={() => void saveFullPng()}>
-            <ImageDown size={16} /> 整张地图（.png）
+            <ImageDown /> 整张地图（.png）
           </button>
           <select value={png.width} onChange={(e) => choosePng({ width: Number((e.target as HTMLSelectElement).value) })} title="图片宽度">
             {PNG_WIDTHS.map((s) => (
@@ -302,28 +307,30 @@ export function ActionsPanel() {
               />
             </div>
             {png.seamMode === 'lon' && (
-              <label class="adj-row">
-                <span class="row between">
-                  <span>经度</span>
-                  <span class="muted">{lonText(png.seamLon)}</span>
-                </span>
-                <input type="range" min={-180} max={180} step={1} value={png.seamLon} onInput={(e) => choosePng({ seamLon: Number((e.target as HTMLInputElement).value) })} />
-              </label>
+              <Slider stacked label="经度" pos={LON.pos(png.seamLon)} text={lonText(png.seamLon)} onDraft={(p) => choosePng({ seamLon: LON.at(p) })} onCommit={(p) => choosePng({ seamLon: LON.at(p) })} />
             )}
             <SeamStrip w={w} seamX={seamX} />
-            <p class="muted small">
+            <p class="hint">
               星球从分界线（{lonText(seamLongitude(seamX))}）切开展平{png.seamMode === 'auto' ? '：自动放在最宽的海上，尽量不切开陆地' : ''}。小图是导出的样子，左右两边就是分界线。
             </p>
           </>
         )}
-        <p class="muted small">
+        <p class="hint">
           按现在的画风和图层画出整张{projected ? (viewProj === 'globe' ? '星球朝着现在这一面的半球' : '星球（等面积的椭圆，中央经线与现在相同）') : w.mesh.kind === 'sphere' ? '星球（经度 360° 展开成 2:1）' : '地图'}，不管镜头在哪；不带工具的高亮和预览。地名、河按整张图排，字号“大”时标出来的地名少一些。图越大画得越久。
         </p>
         <button onClick={savePng}>
-          <ImageDown size={16} /> 当前画面（.png）
+          <ImageDown /> 当前画面（.png）
         </button>
-        <p class="muted small">存的是屏幕上现在看到的地图（含地名）。</p>
-      </section>
+        <p class="hint">存的是屏幕上现在看到的地图（含地名）。</p>
+      </div>
+    </section>
+  );
+}
+
+// “更多”：历史、偏好、上手说明
+export function MorePanel() {
+  return (
+    <>
       <section>
         <h5>历史</h5>
         <div class="history-box">
@@ -336,7 +343,7 @@ export function ActionsPanel() {
           <span>滚轮 / 双指滑动</span>
           <Seg value={prefs.value.wheel} options={WHEEL} onChange={(v) => setPrefs({ wheel: v })} />
         </div>
-        <p class="muted small">“自动”：鼠标滚轮缩放，触控板双指滑动平移、捏合缩放。分辨不准时改成固定的“缩放”或“平移”。</p>
+        <p class="hint">“自动”：鼠标滚轮缩放，触控板双指滑动平移、捏合缩放。分辨不准时改成固定的“缩放”或“平移”。</p>
       </section>
       <button
         onClick={() => {
@@ -344,7 +351,7 @@ export function ActionsPanel() {
           openPanel.value = null;
         }}
       >
-        <CircleHelp size={16} /> 上手说明
+        <CircleHelp /> 上手说明
       </button>
     </>
   );

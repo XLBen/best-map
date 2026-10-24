@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { ChevronDown, Plus, Trash2 } from 'lucide-preact';
+import { Plus, Trash2 } from 'lucide-preact';
 import { Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
@@ -17,9 +17,11 @@ import {
   liveIslandKind,
 } from '../../../core/island-types';
 import type { World } from '../../../core/world';
-import { exec, openPanel, options, setOptions, togglePanel, whenEditsIdle, world, worldEpoch } from '../../state';
+import { exec, openPanel, options, setOptions, whenEditsIdle, world, worldEpoch } from '../../state';
 import { Seg } from '../common';
-import { DragSlider } from './rivers';
+import { Toggle } from '../components/Toggle';
+import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { Slider } from '../components/Slider';
 
 // 岛的种类（第十四轮）：放岛、画岛链底部条上“岛：珊瑚岛 ▾”的按钮、弹出的列表（最后一项“新建…”），
 // “地形 ⋯”里的“岛的种类”（新建、修改、删掉自己的岛）
@@ -45,14 +47,7 @@ function TypePick({ which }: { which: Which }) {
   const w = world.value;
   if (!w) return null;
   const t = islandTypeById(w.small, liveIslandKind(w, options.value[KEY[which]]));
-  const panel = PANEL[which];
-  return (
-    <button class={`bar-btn ${openPanel.value === panel ? 'on' : ''}`} data-panel={panel} onClick={() => togglePanel(panel)} title={t ? hintOf(t) : '放哪一种岛'}>
-      <span class="muted">岛：</span>
-      <span class="swatch" style={{ background: islandSwatch(t) }} /> {t?.name ?? '大陆岛'}
-      <ChevronDown size={13} />
-    </button>
-  );
+  return <TypePickerButton panel={PANEL[which]} prefix="岛" swatch={islandSwatch(t)} name={t?.name ?? '大陆岛'} title={t ? hintOf(t) : '放哪一种岛'} />;
 }
 
 // 放岛工具条上的“岛：X ▾”
@@ -69,7 +64,7 @@ export function ChainFragSlider() {
   const v = options.value.chainFrag;
   const snap = (p: number) => Math.round(Math.max(0, Math.min(1, p)) * 20) / 20;
   return (
-    <DragSlider
+    <Slider
       label="碎岛"
       pos={v}
       text={`${Math.round(v * 100)}%`}
@@ -100,19 +95,19 @@ export function IslandTypeMenu({ which }: { which: Which }) {
     openPanel.value = null;
   };
   return (
-    <div class="menu">
-      {allIslandTypes(w.small).map((t) => (
-        <button key={t.id} class={`menu-row ${cur === t.id ? 'on' : ''}`} title={hintOf(t)} onClick={() => pick(t.id)}>
-          <span class="swatch" style={{ background: islandSwatch(t) }} />
-          <span>{t.name}</span>
-          <span class="muted small">{ISLAND_SHAPE_INFO[t.shape].name}</span>
-        </button>
-      ))}
-      <button class="menu-row" onClick={() => void createAndUse(which)} title="新建一种岛，用上它，并打开它的设置">
-        <Plus size={14} />
-        <span>新建…</span>
-      </button>
-    </div>
+    <TypePicker
+      items={allIslandTypes(w.small).map((t) => ({
+        label: t.name,
+        swatch: islandSwatch(t),
+        on: cur === t.id,
+        hint: hintOf(t),
+        meta: ISLAND_SHAPE_INFO[t.shape].name,
+        onPick: () => pick(t.id),
+      }))}
+      onNew={() => void createAndUse(which)}
+      newLabel="新建…"
+      newTitle="新建一种岛，用上它，并打开它的设置"
+    />
   );
 }
 
@@ -197,10 +192,10 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       <div class="row">
         <input class="grow" value={name} maxLength={12} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       </div>
-      {shards && <p class="muted small">碎岛的格还是海：颜色按附近的地，归海省，一片碎岛起一个列岛 / 群岛的名字。</p>}
+      {shards && <p class="hint">碎岛的格还是海：颜色按附近的地，归海省，一片碎岛起一个列岛 / 群岛的名字。</p>}
       {!shards && (
       <div class="row wrap">
-        <span class="hs-label">颜色</span>
+        <span class="bar-label">颜色</span>
         <Seg<ColorChoice>
           value={cc}
           options={[
@@ -217,7 +212,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       )}
       {!shards && (
       <div class="row wrap">
-        <span class="hs-label">省份</span>
+        <span class="bar-label">省份</span>
         <Seg<'land' | 'sea'>
           value={t.province}
           options={[
@@ -230,9 +225,9 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       </div>
       )}
       <h5>以后放的岛</h5>
-      <p class="muted small">形状、高低、岩石只用在以后放的岛上；颜色、省份、起名马上用到已经放的岛上。</p>
+      <p class="hint">形状、高低、岩石只用在以后放的岛上；颜色、省份、起名马上用到已经放的岛上。</p>
       <div class="row wrap">
-        <span class="hs-label">形状</span>
+        <span class="bar-label">形状</span>
         <Seg<IslandType['shape']>
           value={t.shape}
           options={ISLAND_SHAPES.map((s) => [s, ISLAND_SHAPE_INFO[s].name])}
@@ -242,7 +237,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       </div>
       {!flatOnly && (
         <div class="row wrap">
-          <span class="hs-label">高低</span>
+          <span class="bar-label">高低</span>
           <Seg<IslandType['height']>
             value={t.height}
             options={ISLAND_HEIGHTS.map((h) => [h, ISLAND_HEIGHT_INFO[h].name])}
@@ -252,36 +247,32 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
         </div>
       )}
       {!shards && (
-      <div class="row wrap">
-        <label class="check">
-          <input type="checkbox" checked={t.rock === undefined} onChange={() => edit(t.id, (x) => ({ ...x, rock: x.rock === undefined ? 1 : undefined }))} />
+        <Toggle on={t.rock === undefined} onChange={() => edit(t.id, (x) => ({ ...x, rock: x.rock === undefined ? 1 : undefined }))}>
           岩石和周围一样
-        </label>
-      </div>
+        </Toggle>
       )}
       {!shards && t.rock !== undefined && (
-        <div class="row">
-          <DragSlider
-            label="岩石"
-            pos={rockPos(rock ?? t.rock)}
-            text={rockText(rock ?? t.rock)}
-            title="硬的蚀得慢、留得高；软的蚀得低平"
-            onDraft={(p) => setRock(rockAt(p))}
-            onCommit={(p) => {
-              const v = rockAt(p);
-              setRock(v);
-              edit(t.id, (x) => ({ ...x, rock: v }));
-            }}
-            onCancel={() => setRock(null)}
-          />
-        </div>
+        <Slider
+          stacked
+          label="岩石"
+          pos={rockPos(rock ?? t.rock)}
+          text={rockText(rock ?? t.rock)}
+          title="硬的蚀得慢、留得高；软的蚀得低平"
+          onDraft={(p) => setRock(rockAt(p))}
+          onCommit={(p) => {
+            const v = rockAt(p);
+            setRock(v);
+            edit(t.id, (x) => ({ ...x, rock: v }));
+          }}
+          onCancel={() => setRock(null)}
+        />
       )}
       <h5>起名</h5>
-      <p class="muted small">每行一个模板，比如 {'{color}'}沙岛、{'{animal}'}礁；不写时按普通的岛起名。岛的大半是这一种时用。</p>
-      <textarea class="names-box" rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
+      <p class="hint">每行一个模板，比如 {'{color}'}沙岛、{'{animal}'}礁；不写时按普通的岛起名。岛的大半是这一种时用。</p>
+      <textarea rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
       <div class="row wrap">
         <button class="small danger" onClick={() => void exec({ op: 'remove_island_type', id: t.id }, '正在删掉…')} title="删掉这一种：已经放的这种岛变成大陆岛">
-          <Trash2 size={14} /> 删掉这一种
+          <Trash2 /> 删掉这一种
         </button>
       </div>
     </div>
@@ -303,18 +294,18 @@ export function IslandTypesSection() {
   return (
     <section>
       <h5>岛的种类</h5>
-      <p class="muted small">
+      <p class="hint">
         内置的有{BUILTIN_ISLAND_TYPES.map((t) => t.name).join('、')}。自己的岛可以选形状、颜色、岩石、高低、归哪种省和起名的样子，放岛、画岛链时都能选。
       </p>
       {own.length > 0 && (
-        <div class="feature-list">
+        <div class="list">
           {own.map((t) => (
             <Fragment key={t.id}>
-              <div class={`feature-row river-row ${open === t.id ? 'on' : ''}`} onClick={() => setOpen(open === t.id ? null : t.id)}>
-                <span>
+              <div class={`item ${open === t.id ? 'on' : ''}`} onClick={() => setOpen(open === t.id ? null : t.id)}>
+                <span class="grow ellipsis">
                   <span class="swatch" style={{ background: islandSwatch(t) }} /> {t.name}
                 </span>
-                <span class="muted small">
+                <span class="hint">
                   {ISLAND_SHAPE_INFO[t.shape].name}
                   {t.province === 'sea' ? ' · 归海省' : ''}
                 </span>
@@ -326,7 +317,7 @@ export function IslandTypesSection() {
       )}
       <div class="row wrap">
         <button class="small" onClick={() => void createAndUse(null)}>
-          <Plus size={14} /> 新建
+          <Plus /> 新建
         </button>
       </div>
     </section>

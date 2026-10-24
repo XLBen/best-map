@@ -61,7 +61,7 @@ export function ScriptBanner() {
         </button>
       )}
       <button class="pill-btn icon" onClick={() => (dismissedIssues.value = key)} title="关上">
-        <X size={14} />
+        <X />
       </button>
     </div>
   );

@@ -4,7 +4,7 @@ import type { World } from '../../core/world';
 import { flashCells } from '../state';
 import { focusOn } from './camera';
 
-// 涂生态底部条上“没涂成”旁边的“在地图上看”（第十四轮）：按一下看第一处，再按看下一处，看完一圈回到第一处。
+// “自然 ⋯”里“没涂成的地方”旁边的“一处一处看”（第十四轮放在底部条上，第十九轮收进去）：按一下看第一处，再按看下一处，看完一圈回到第一处。
 // 先是还要提醒的（没长出来的格；涂到水面上的看涂的那几格），再是说了“就这样”的（没长出来的格；已经长出来的看涂的格）
 
 export function unmetSpots(w: Pick<World, 'small' | 'derived'>): number[][] {

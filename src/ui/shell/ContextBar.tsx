@@ -1,33 +1,30 @@
 import { Ellipsis, Ruler } from 'lucide-preact';
-import { useRef, useState } from 'preact/hooks';
 import { roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
-import { type PanelId, measure, openPanel, options, setOptions, sliderActive, togglePanel, tool, world } from '../../state';
+import { type PanelId, measure, openPanel, options, setOptions, togglePanel, tool, world } from '../../state';
 import { CATEGORY_DEFS, TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
-import { nudgeSlider, sliderPos, sliderValue } from './sliders';
+import { Seg } from '../common';
+import { OptionSlider } from '../components/Slider';
 
-// 底部条：上一行是这一类的全部工具（点一下就换，末尾“⋯”是这一类的设置），
-// 下一行最左边一直写着这个工具做什么（一句话，窄时折成两行、再多就省略，鼠标停着看全文），
-// 后面是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示
+// 底部条：上一行是这一类的全部工具（点一下就换，末尾“⋯”是这一类的设置；工具做什么写在工具按钮的悬停里），
+// 下一行是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示
 
 function Item({ item }: { item: BarItem }) {
   if (item.kind === 'choice') {
-    const cur = options.value[item.key];
     const seg = (
-      <div class="seg">
-        {item.options.map((o) => (
-          <button class={cur === o.value ? 'on' : ''} title={o.hint} onClick={() => setOptions({ [item.key]: o.value })}>
-            {o.swatch && <span class="swatch" style={{ background: o.swatch }} />}
-            {o.label}
-          </button>
-        ))}
-      </div>
+      <Seg<string>
+        value={options.value[item.key] as string}
+        options={item.options.map((o) => [o.value, o.label])}
+        titles={Object.fromEntries(item.options.filter((o) => o.hint).map((o) => [o.value, o.hint]))}
+        swatches={Object.fromEntries(item.options.filter((o) => o.swatch).map((o) => [o.value, o.swatch]))}
+        onChange={(v) => setOptions({ [item.key]: v })}
+      />
     );
     return item.label ? (
       <span class="bar-choice">
-        <span class="hs-label">{item.label}</span>
+        <span class="bar-label">{item.label}</span>
         {seg}
       </span>
     ) : (
@@ -38,58 +35,12 @@ function Item({ item }: { item: BarItem }) {
     const I = item.icon;
     return (
       <button class="bar-btn" title={item.title} onClick={item.run}>
-        {I && <I size={15} />} {item.label}
+        {I && <I />} {item.label}
       </button>
     );
   }
   const R = item.render;
   return <R />;
-}
-
-// 横向滑块：左边是名字，右边一直显示数值；拖动时地图在鼠标最后停的地方预览
-function HSlider({ def, w }: { def: SliderDef; w: World }) {
-  const track = useRef<HTMLDivElement>(null);
-  const [drag, setDrag] = useState(false);
-  const value = options.value[def.key];
-  const pos = sliderPos(def, w, value);
-  const setFrom = (e: PointerEvent) => {
-    if (!track.current) return;
-    const r = track.current.getBoundingClientRect();
-    setOptions({ [def.key]: sliderValue(def, w, (e.clientX - r.left) / r.width) });
-  };
-  const stop = () => {
-    setDrag(false);
-    sliderActive.value = false;
-  };
-  return (
-    <div class={`hs ${drag ? 'drag' : ''}`}>
-      <span class="hs-label">{def.label}</span>
-      <div
-        class="hs-track"
-        ref={track}
-        tabIndex={0}
-        onPointerDown={(e) => {
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          setDrag(true);
-          sliderActive.value = true;
-          setFrom(e);
-        }}
-        onPointerMove={(e) => drag && setFrom(e)}
-        onPointerUp={stop}
-        onPointerCancel={stop}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            e.preventDefault();
-            nudgeSlider(def, e.key === 'ArrowRight' ? 1 : -1);
-          }
-        }}
-      >
-        <div class="hs-fill" style={{ width: `${pos * 100}%` }} />
-        <div class="hs-thumb" style={{ left: `calc((100% - 12px) * ${pos})` }} />
-      </div>
-      <span class="hs-value">{def.format(value, w)}</span>
-    </div>
-  );
 }
 
 // 步行：每天约 30 km
@@ -103,7 +54,7 @@ function MeasureRow({ w, pts }: { w: World; pts: [number, number][] }) {
   return (
     <div class="bb-row">
       <span class="bar-tool">
-        <Ruler size={16} strokeWidth={1.8} />
+        <Ruler />
         量距离
       </span>
       {pts.length < 2 ? (
@@ -111,7 +62,7 @@ function MeasureRow({ w, pts }: { w: World; pts: [number, number][] }) {
       ) : (
         <span class="bar-value">
           共 {roundKm(total).toLocaleString()} km{straight ? `（直线 ${roundKm(straight).toLocaleString()} km）` : ''} · 步行{walk}
-          <span class="muted">（每天 {WALK_KM_PER_DAY} km）</span>
+          <span class="hint">（每天 {WALK_KM_PER_DAY} km）</span>
         </span>
       )}
       <button class="bar-btn" disabled={!pts.length} onClick={() => (measure.value = [])} title="Backspace 删掉最后一点">
@@ -141,14 +92,14 @@ export function ContextBar() {
           const I = t.icon;
           return (
             <button class={`bb-tool ${tool.value === id ? 'on' : ''}`} onClick={() => setTool(id)} title={`${t.name}：${t.how}（${k + 1}）`}>
-              <I size={17} strokeWidth={1.8} />
+              <I />
               <span>{t.short}</span>
             </button>
           );
         })}
         {cat.extras && (
           <button class={`bb-tool more ${openPanel.value === more ? 'open' : ''}`} data-panel={more} onClick={() => togglePanel(more)} title={`${cat.label}的更多设置`}>
-            <Ellipsis size={17} strokeWidth={1.8} />
+            <Ellipsis />
           </button>
         )}
       </div>
@@ -156,11 +107,8 @@ export function ContextBar() {
         <MeasureRow w={w} pts={measure.value} />
       ) : (
         <div class="bb-row">
-          <span class="bar-how" title={def.how}>
-            {def.how}
-          </span>
           {sliders.map((s) => (
-            <HSlider def={s} w={w} />
+            <OptionSlider def={s} w={w} />
           ))}
           {items.map((it) => (
             <Item item={it} />

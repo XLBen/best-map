@@ -1,15 +1,15 @@
 import { effect } from '@preact/signals';
-import { Dices, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { PLAIN_LAKE } from '../../../core/lake-types';
 import { roundKm as km } from '../../../core/terrain';
 import type { LakeSpec, World } from '../../../core/world';
 import { type LakeRef, exec, lakeRange, openPanel, options, selectedLake, setOptions, switchTool, tool, world } from '../../state';
 import { focusOn } from '../camera';
+import { SelectionActions } from '../components/SelectionActions';
 import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
 import { NameInput } from './names';
-import { DragSlider } from './rivers';
 import { type MenuItem, TypeButton, TypeMenu, createAndUse } from './waterTypes';
+import { Slider } from '../components/Slider';
 
 // 湖（第九轮）：放湖时点一下湖就选中它，底部条换成这个湖的设置（名字、换一个、是哪一种、大小、删掉），
 // 与画河时点一条河选中它一样。“新放的湖：X ▾”是新放的湖用哪一种
@@ -109,7 +109,7 @@ function LakeSizeSlider({ w, l }: { w: World; l: LakeSpec }) {
     setDraft(null);
   };
   return (
-    <DragSlider
+    <Slider
       label="大小"
       pos={clamp01(Math.log(cur / lo) / Math.log(hi / lo))}
       text={`直径 ${km(cur * 2)} km`}
@@ -160,41 +160,24 @@ export function LakeBar() {
           {info.dry ? '干湖' : '无名的湖'}
         </span>
       )}
-      {f && (
-        <button
-          class="bar-btn"
-          onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')}
-          title="自动换一个名字"
-        >
-          <Dices size={15} /> 换一个
-        </button>
-      )}
-      {f?.custom && (
-        <button class="bar-btn" onClick={() => void exec({ op: 'rename_feature', key: f.key, name: '' }, '正在起名…')} title="不用自己起的名字，按文字包自动起">
-          <LockOpen size={15} /> 恢复自动
-        </button>
-      )}
       <LakeTypeButton w={w} sel={sel} />
       {l ? <LakeSizeSlider w={w} l={l} /> : <span class="bar-label">自然的湖 · {size}</span>}
-      {l && <span class="bar-label muted">{size}</span>}
-      <button class="bar-btn icon" onClick={() => focusOn(info.cells)} title="在地图上看">
-        <ScanSearch size={15} />
-      </button>
-      {l && (
-        <button
-          class="bar-btn"
-          onClick={() => {
-            selectedLake.value = null;
-            void exec({ op: 'remove_lake', id: l.id }, '正在计算湖泊…');
-          }}
-          title="删掉这个放的湖"
-        >
-          <Trash2 size={15} /> 删掉
-        </button>
-      )}
-      <button class="bar-btn icon" onClick={() => (selectedLake.value = null)} title="取消选择（Esc）">
-        <X size={15} />
-      </button>
+      {l && <span class="bar-label">{size}</span>}
+      <SelectionActions
+        reroll={f ? () => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…') : undefined}
+        unlock={f?.custom ? () => void exec({ op: 'rename_feature', key: f.key, name: '' }, '正在起名…') : undefined}
+        locate={() => focusOn(info.cells)}
+        remove={
+          l
+            ? () => {
+                selectedLake.value = null;
+                void exec({ op: 'remove_lake', id: l.id }, '正在计算湖泊…');
+              }
+            : undefined
+        }
+        removeTitle="删掉这个放的湖"
+        deselect={() => (selectedLake.value = null)}
+      />
     </>
   );
 }
@@ -224,30 +207,30 @@ export function LakeList() {
     <section>
       <h5>湖（{all.length}）</h5>
       {list.length === 0 ? (
-        <p class="muted small">这个世界里还没有湖。用“放湖”在陆地上点一下、按住拖开放一个。</p>
+        <p class="hint">这个世界里还没有湖。用“放湖”在陆地上点一下、按住拖开放一个。</p>
       ) : (
-        <div class="feature-list">
+        <div class="list">
           {list.map(({ ref, info, type }) => (
             <div
               key={ref.kind === 'placed' ? `p:${ref.id}` : `n:${ref.cell}`}
-              class={`feature-row ${sameLake(sel, ref) ? 'on' : ''}`}
+              class={`item ${sameLake(sel, ref) ? 'on' : ''}`}
               onClick={() => {
                 selectLake(ref);
                 focusOn(info.cells);
                 openPanel.value = null;
               }}
             >
-              <span class={info.feature?.custom ? 'custom' : ''}>
+              <span class={`grow ellipsis ${info.feature?.custom ? 'custom' : ''}`}>
                 {type && <span class="swatch" style={{ background: type.color }} title={type.name} />}
                 {info.feature?.name || (info.dry ? '干湖' : '无名的湖')}
               </span>
-              <span class="muted small">
+              <span class="hint">
                 约 {Math.round(info.areaKm2).toLocaleString()} km² · {type ? type.name : '普通的湖'} · {info.placed ? '放的' : '自然的'}
                 {info.dry ? ' · 干了' : ''}
               </span>
             </div>
           ))}
-          {list.length < all.length && <p class="muted small">还有 {all.length - list.length} 个小一些的自然湖没列出来</p>}
+          {list.length < all.length && <p class="hint">还有 {all.length - list.length} 个小一些的自然湖没列出来</p>}
         </div>
       )}
     </section>

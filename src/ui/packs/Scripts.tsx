@@ -11,9 +11,9 @@ export function isolationNote(): string {
 // 只读的源码，按所属（生态、河流类型……）和种类标出来
 export function ScriptList({ scripts }: { scripts: FoundScript[] }) {
   return (
-    <div class="script-list">
+    <div>
       {scripts.map((s) => (
-        <div class="script-item">
+        <div>
           <div class="small">
             「{s.owner}」的{SCRIPT_KIND_LABEL[s.kind]}脚本
           </div>
@@ -32,7 +32,7 @@ export function TrustBlock({ scripts, what = '资源包' }: { scripts: FoundScri
       <p class="small">
         这个{what}里有 {scripts.length} 段脚本（作者写的小程序），会在你的电脑上运行。只导入你信任的人做的{what}。
       </p>
-      <p class="muted small">{isolationNote()}</p>
+      <p class="hint">{isolationNote()}</p>
       <details>
         <summary>查看脚本</summary>
         <ScriptList scripts={scripts} />

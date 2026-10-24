@@ -11,7 +11,7 @@ export function RulerButton() {
       onClick={() => (measure.value = on ? null : [])}
       title={on ? '退出量距离（M）' : '量距离（M）'}
     >
-      <Ruler size={17} strokeWidth={1.8} />
+      <Ruler />
     </button>
   );
 }

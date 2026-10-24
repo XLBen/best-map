@@ -186,15 +186,15 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
       </h3>
       <Sentence w={w} cell={cell} />
       {painted.length > 0 && (
-        <p class="note">
+        <p class="hint">
           这是你涂的“{S.find((s) => s.id === painted[painted.length - 1].species)?.name}”（{painted[painted.length - 1].mode === 'constraint' ? '自然融入' : '强制'}）。
           {failing && <span class="warn"> 这一格没涂成{failWhy ? `：${failWhy}` : ''}。</span>}
           {settled && <span class="muted"> 这一格没涂成（说过“就这样”）。</span>}
         </p>
       )}
-      {effect && <p class="muted small">{effect}</p>}
+      {effect && <p class="hint">{effect}</p>}
       {(Math.abs(corrT) > 0.3 || Math.abs(corrP - 1) > 0.05) && (
-        <p class="muted small">
+        <p class="hint">
           为了让涂的生态长出来，这里被调{corrT > 0 ? '暖' : '冷'}了约 {fmt(Math.abs(corrT), 1)} °C，雨水{corrP >= 1 ? '多' : '少'}了约 {fmt(Math.abs(corrP - 1) * 100)}%。
         </p>
       )}
@@ -207,7 +207,7 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
       {explain
         .filter((e) => e.boost !== undefined && e.boost >= 1.05 && e.share >= 0.05)
         .map((e) => (
-          <p key={e.species} class="muted small">
+          <p key={e.species} class="hint">
             「{e.name}」在侵占这里（×{fmt(e.boost!, 1)}）
           </p>
         ))}
@@ -331,13 +331,13 @@ export function Inspector() {
         <LandInfo w={w} cell={cell} />
       )}
       {pmeta && (
-        <p class="muted small">
+        <p class="hint">
           省份：{pmeta.name}
           {provNote}
         </p>
       )}
       {w.settings.globe && (
-        <p class="muted small">
+        <p class="hint">
           {lonLatText(w, cell)}
           {currentText(w, cell) && (
             <>

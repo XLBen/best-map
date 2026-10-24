@@ -3,6 +3,8 @@ import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
 import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, overlays, prefs, reference, season, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
+import { Slider, linear } from '../components/Slider';
+import { Toggle } from '../components/Toggle';
 import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, suitabilityFocus } from '../defs/layers';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
@@ -21,6 +23,9 @@ const PROJECTION_HINTS: Record<ProjectionPref, string> = {
   equalEarth: '椭圆形，各处面积按真实比例，两极不再拉宽。整个椭圆放得下时左右拖动是转动中央经线，放大以后拖动是平移。',
   globe: '从太空看的一面：拖动转动，滚轮或捏合缩放。越往边上是斜着看的，挤得越紧。',
 };
+
+// 参考图的浓淡：10%–100%，每格 5%
+const OPACITY = linear(10, 100, 5);
 
 // “图层”：底图着色、画风、叠加在上面的东西、季节、参考图
 
@@ -93,33 +98,29 @@ function ReferenceBox() {
       <input ref={file} type="file" accept="image/*" hidden onChange={onFile} />
       {!r ? (
         <>
-          <p class="muted small">
+          <p class="hint">
             把手绘的草图铺在地图上，照着画陆地。{world.value?.settings.globe ? '整个星球的草图：宽是高的两倍，左右两边接得上。' : ''}图只存在这个浏览器里，不写进世界文件，也不进导出的图片。
           </p>
           <button onClick={pick}>导入图片…</button>
         </>
       ) : (
         <>
-          <label class="check">
-            <input type="checkbox" checked={r.visible} onChange={() => void setReference({ ...r, visible: !r.visible })} />
+          <Toggle on={r.visible} onChange={(visible) => void setReference({ ...r, visible })}>
             显示参考图
-          </label>
-          <label class={`adj-row ${r.visible ? '' : 'off'}`}>
-            <span class="row between">
-              <span>浓淡</span>
-              <span class="muted">{Math.round(r.opacity * 100)}%</span>
-            </span>
-            <input
-              type="range"
-              min={10}
-              max={100}
-              step={5}
-              disabled={!r.visible}
-              value={Math.round(r.opacity * 100)}
-              onInput={(e) => void setReference({ ...r, opacity: Number((e.target as HTMLInputElement).value) / 100 }, false)}
-              onChange={() => reference.value && void setReference(reference.value)}
-            />
-          </label>
+          </Toggle>
+          <Slider
+            stacked
+            label="浓淡"
+            disabled={!r.visible}
+            pos={OPACITY.pos(Math.round(r.opacity * 100))}
+            text={`${Math.round(r.opacity * 100)}%`}
+            onDraft={(p) => void setReference({ ...r, opacity: OPACITY.at(p) / 100 }, false)}
+            onCommit={(p) => {
+              // 松手才存进浏览器
+              const cur = reference.value;
+              if (cur) void setReference({ ...cur, opacity: OPACITY.at(p) / 100 });
+            }}
+          />
           <Seg
             value={r.fit}
             options={[
@@ -157,7 +158,7 @@ export function LayersPanel() {
       <section>
         <h5>底图</h5>
         <div class="view-grid">{VIEWS.filter((v) => !v.more).map((v) => viewButton(v.id, v.label))}</div>
-        <button class="link" onClick={() => setMore(!more)}>
+        <button class="link-btn" onClick={() => setMore(!more)}>
           {more ? '收起' : '更多底图…'}
         </button>
         {more && (
@@ -166,7 +167,7 @@ export function LayersPanel() {
             {fields.map((f) => viewButton(`field:${f}`, `场：${f}`))}
           </div>
         )}
-        {hint && <p class="muted small">{hint}</p>}
+        {hint && <p class="hint">{hint}</p>}
         {mode.value === 'suitability' && <SuitabilityPick w={w} />}
       </section>
       <section>
@@ -185,7 +186,7 @@ export function LayersPanel() {
         <section>
           <h5>投影</h5>
           <Seg value={prefs.value.projection} options={PROJECTIONS} titles={PROJECTION_TITLES} onChange={(v) => setPrefs({ projection: v })} wide />
-          <p class="muted small">
+          <p class="hint">
             {PROJECTION_HINTS[prefs.value.projection]}
             {prefs.value.projection !== 'equirect' ? '风向、洋流、参考图只在等距圆柱里显示。' : ''}
           </p>
@@ -195,11 +196,9 @@ export function LayersPanel() {
         <h5>显示</h5>
         {OVERLAYS.filter((o) => !o.planetOnly || planet).map((o) => (
           <>
-            <label class="check">
-              <input type="checkbox" checked={overlays.value[o.key]} onChange={() => (overlays.value = { ...overlays.value, [o.key]: !overlays.value[o.key] })} />
+            <Toggle on={overlays.value[o.key]} onChange={(on) => (overlays.value = { ...overlays.value, [o.key]: on })} title={(planet && o.planetHint) || o.hint}>
               {(planet && o.planetLabel) || o.label}
-              {((planet && o.planetHint) || o.hint) && <span class="muted small">（{(planet && o.planetHint) || o.hint}）</span>}
-            </label>
+            </Toggle>
             {o.key === 'labels' && overlays.value.labels && (
               <div class="sub-checks">
                 {LABEL_GROUPS.map(({ group, label }) => (

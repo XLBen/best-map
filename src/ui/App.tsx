@@ -1,7 +1,10 @@
+import { LucideProvider } from 'lucide-preact';
+import type { ComponentType } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { settingsFor } from '../../core/presets';
 import {
   type PanelId,
+  type TypePanelId,
   busy,
   cursorHint,
   helpOpen,
@@ -21,12 +24,12 @@ import { MapView } from './MapView';
 import { PackApply } from './packs/PackApply';
 import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
-import { ActionsPanel, WorldMenu } from './panels/ActionsPanel';
+import { MorePanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
-import { BiomePalette } from './panels/BiomePanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { CategoryMore } from './panels/ToolLibrary';
 import { RiverMore } from './panels/rivers';
+import { ProvinceMore } from './provincePanel';
 import { LakeTypeMenu, NewLakeTypeMenu } from './panels/lakes';
 import { IslandTypeMenu } from './panels/islandTypes';
 import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
@@ -44,18 +47,28 @@ import { Wizard } from './Wizard';
 
 // 整体：地图铺满全屏，界面浮在上面——顶栏、底部工具条、顶部提示条、右下角“这里”
 
+// 选“哪一种”的六个列表：同一个 TypePicker，只是种类表不一样
+const TYPE_PANELS: Record<TypePanelId, { title: string; menu: ComponentType }> = {
+  rivertype: { title: '河的种类', menu: RiverTypeMenu },
+  newrivertype: { title: '新河的种类', menu: NewRiverTypeMenu },
+  laketype: { title: '湖的种类', menu: LakeTypeMenu },
+  newlaketype: { title: '新湖的种类', menu: NewLakeTypeMenu },
+  islandtype: { title: '岛的种类', menu: () => <IslandTypeMenu which="island" /> },
+  chaintype: { title: '岛链的种类', menu: () => <IslandTypeMenu which="chain" /> },
+};
+
 function PanelHost({ id }: { id: PanelId }) {
   switch (id) {
     case 'world':
       return (
-        <Popover id={id} title="世界" width={340}>
+        <Popover id={id} title="世界" width={360}>
           <WorldMenu />
         </Popover>
       );
-    case 'actions':
+    case 'more':
       return (
-        <Popover id={id} title="操作" width={360}>
-          <ActionsPanel />
+        <Popover id={id} title="更多" width={340}>
+          <MorePanel />
         </Popover>
       );
     case 'adjust':
@@ -70,55 +83,27 @@ function PanelHost({ id }: { id: PanelId }) {
           <LayersPanel />
         </Popover>
       );
-    case 'biomepick':
-      return (
-        <Popover id={id} title="要涂的生态" width={360}>
-          <BiomePalette />
-        </Popover>
-      );
     case 'river':
       return (
         <Popover id={id} title="这条河" width={320}>
           <RiverMore />
         </Popover>
       );
-    case 'rivertype':
+    case 'province':
       return (
-        <Popover id={id} title="这条河是哪一种" width={280}>
-          <RiverTypeMenu />
-        </Popover>
-      );
-    case 'newrivertype':
-      return (
-        <Popover id={id} title="新画的河是哪一种" width={280}>
-          <NewRiverTypeMenu />
-        </Popover>
-      );
-    case 'laketype':
-      return (
-        <Popover id={id} title="这个湖是哪一种" width={280}>
-          <LakeTypeMenu />
-        </Popover>
-      );
-    case 'newlaketype':
-      return (
-        <Popover id={id} title="新放的湖是哪一种" width={280}>
-          <NewLakeTypeMenu />
-        </Popover>
-      );
-    case 'islandtype':
-      return (
-        <Popover id={id} title="放哪一种岛" width={280}>
-          <IslandTypeMenu which="island" />
-        </Popover>
-      );
-    case 'chaintype':
-      return (
-        <Popover id={id} title="岛链用哪一种岛" width={280}>
-          <IslandTypeMenu which="chain" />
+        <Popover id={id} title="这个省" width={300}>
+          <ProvinceMore />
         </Popover>
       );
     default: {
+      if (id in TYPE_PANELS) {
+        const { title, menu: Menu } = TYPE_PANELS[id as TypePanelId];
+        return (
+          <Popover id={id} title={title} width={280}>
+            <Menu />
+          </Popover>
+        );
+      }
       // 底部工具条末尾的“⋯”：这一类的设置
       const c = id.slice(4) as keyof typeof CATEGORY_DEFS;
       return (
@@ -185,32 +170,35 @@ export function App() {
 
   const w = world.value;
   const hidden = uiHidden.value;
+  // 图标一种大小、一种粗细（顶栏的大一号，在 TopBar 里写）
   return (
-    <div class={`app ${sheet.value ? 'with-sheet' : ''}`}>
-      <MapView />
-      {!w && !wizardOpen.value && <div class="loading">{busy.value ?? '正在准备…'}</div>}
-      {!hidden && (
-        <div class="shell">
-          <TopBar />
-          {w && <ContextBar />}
-          {w && <RulerButton />}
-          <HereCard />
-          <Sheet />
-          <PackApply />
-          {openPanel.value && <PanelHost id={openPanel.value} />}
+    <LucideProvider size={16} strokeWidth={1.8}>
+      <div class={`app ${sheet.value ? 'with-sheet' : ''}`}>
+        <MapView />
+        {!w && !wizardOpen.value && <div class="loading">{busy.value ?? '正在准备…'}</div>}
+        {!hidden && (
+          <>
+            <TopBar />
+            {w && <ContextBar />}
+            {w && <RulerButton />}
+            <HereCard />
+            <Sheet />
+            <PackApply />
+            {openPanel.value && <PanelHost id={openPanel.value} />}
+          </>
+        )}
+        {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
+        <div class="notices">
+          <ScriptBanner />
+          <Notice />
         </div>
-      )}
-      {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
-      <div class="notices">
-        <ScriptBanner />
-        <Notice />
+        <CursorHint />
+        <Wizard />
+        <PackDialog />
+        <MapsDialog />
+        <Help />
+        <AskDialog />
       </div>
-      <CursorHint />
-      <Wizard />
-      <PackDialog />
-      <MapsDialog />
-      <Help />
-      <AskDialog />
-    </div>
+    </LucideProvider>
   );
 }

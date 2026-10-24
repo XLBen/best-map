@@ -21,7 +21,7 @@ import type { FoundScript } from '../../../core/script';
 import { type LibraryEntry, inLibrary, installPack, keepSavedForms, library, removePack } from '../../library';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
-import { download, knowIsolation, showToast, world } from '../../state';
+import { askUser, download, knowIsolation, showToast, world } from '../../state';
 import { type DialogView, fileLabel, openPackApply, openPackImport, openPackLibrary, packDialog } from './store';
 
 // 资源包弹窗（世界 → 资源包…）：资源库的列表、导入（解析、检查、信任，不运行任何脚本）、从这个世界导出。
@@ -72,7 +72,7 @@ const itemName = (x: PackItem) => (typeof x.name === 'string' && x.name) || x.id
 // 资源包里有什么：生态（色块、花纹）、河流类型、星球形态、文字包、自定义场
 function PackContents({ pack }: { pack: ResourcePack }) {
   return (
-    <div class="pack-contents">
+    <div>
       {!!pack.biomes?.length && (
         <>
           <h5>生态 {pack.biomes.length}</h5>
@@ -115,7 +115,7 @@ function PackContents({ pack }: { pack: ResourcePack }) {
           <ItemChips items={pack.textPacks.map((t) => ({ name: t.name }))} />
         </>
       )}
-      {!!pack.fields?.length && <p class="muted small">用到的自定义场：{pack.fields.join('、')}</p>}
+      {!!pack.fields?.length && <p class="hint">用到的自定义场：{pack.fields.join('、')}</p>}
     </div>
   );
 }
@@ -140,7 +140,7 @@ function Problems({ list }: { list: string[] }) {
 function LibraryRow({ e }: { e: LibraryEntry }) {
   const w = world.value;
   return (
-    <div class="pack-row">
+    <div class="item big">
       <Swatches pack={e.pack} />
       <div class="grow">
         <div>
@@ -151,7 +151,7 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
           <span class="muted">　{packSummary(e.pack)}</span>
         </div>
         {(e.pack.author || e.pack.description) && (
-          <div class="muted small pack-desc">
+          <div class="hint pack-desc">
             {e.pack.author ? `${e.pack.author}　` : ''}
             {e.pack.description ?? ''}
           </div>
@@ -167,8 +167,16 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
         {!e.builtin && (
           <button
             class="danger"
-            onClick={() => {
-              if (confirm(`从资源库里删掉「${e.pack.name}」？用过它的世界不受影响。`)) void removePack(e.key);
+            onClick={async () => {
+              const v = await askUser({
+                title: `从资源库里删掉「${e.pack.name}」？`,
+                text: '用过它的世界不受影响。',
+                choices: [
+                  { value: 'delete', label: '删除', primary: true },
+                  { value: 'cancel', label: '取消' },
+                ],
+              });
+              if (v === 'delete') void removePack(e.key);
             }}
           >
             删除
@@ -192,7 +200,7 @@ function LibraryView() {
         <h2>资源包</h2>
         <button onClick={close}>关上</button>
       </div>
-      <p class="muted small">资源包里是做好的生态、河流类型、湖泊类型、岛的种类、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
+      <p class="hint">资源包里是做好的生态、河流类型、湖泊类型、岛的种类、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
       <div class="row wrap">
         <label class="file-button">
           导入资源包…
@@ -220,7 +228,7 @@ function LibraryView() {
           </>
         ) : null,
       )}
-      {list.length === 1 && <p class="muted small">还没有别的资源包。导入别人发来的 .map2pack.json，或者把这个世界里自己做的生态导出来。</p>}
+      {list.length === 1 && <p class="hint">还没有别的资源包。导入别人发来的 .map2pack.json，或者把这个世界里自己做的生态导出来。</p>}
     </>
   );
 }
@@ -293,9 +301,9 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         <b>{p.name}</b>
         {p.author && <span class="muted">　作者：{p.author}</span>}
       </p>
-      {p.description && <p class="muted small">{p.description}</p>}
-      {read.legacy === 'biomes' && <p class="muted small">这是以前导出的生态文件。装进资源库后，可以挑几种加进世界。</p>}
-      {read.legacy === 'wordPack' && <p class="muted small">这是一个文字包。装进资源库后，可以在“用到这个世界”里换用它。</p>}
+      {p.description && <p class="hint">{p.description}</p>}
+      {read.legacy === 'biomes' && <p class="hint">这是以前导出的生态文件。装进资源库后，可以挑几种加进世界。</p>}
+      {read.legacy === 'wordPack' && <p class="hint">这是一个文字包。装进资源库后，可以在“用到这个世界”里换用它。</p>}
       <PackContents pack={p} />
       <Problems list={problems} />
       {ask && <TrustBlock scripts={scripts} />}
@@ -305,7 +313,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
           <ScriptList scripts={scripts} />
         </details>
       )}
-      {replaces && <p class="muted small">资源库里已经有「{replaces.pack.name}」，装进去会替换它。</p>}
+      {replaces && <p class="hint">资源库里已经有「{replaces.pack.name}」，装进去会替换它。</p>}
       <div class="row between">
         <span />
         <span class="row">
@@ -383,17 +391,17 @@ function ExportView() {
       <h2>从这个世界导出</h2>
       <div class="grid2">
         <label>
-          <span class="small muted">名字</span>
+          <span class="hint">名字</span>
           <input class="wide-input" value={name} maxLength={60} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
         </label>
         <label>
-          <span class="small muted">作者（可以不写）</span>
+          <span class="hint">作者（可以不写）</span>
           <input class="wide-input" value={author} maxLength={60} onInput={(e) => setAuthor((e.target as HTMLInputElement).value)} />
         </label>
       </div>
       <label>
-        <span class="small muted">说明（可以不写）</span>
-        <textarea class="wide-input" rows={2} maxLength={2000} value={desc} onInput={(e) => setDesc((e.target as HTMLTextAreaElement).value)} />
+        <span class="hint">说明（可以不写）</span>
+        <textarea rows={2} maxLength={2000} value={desc} onInput={(e) => setDesc((e.target as HTMLTextAreaElement).value)} />
       </label>
       <h5>带上哪些</h5>
       {biomes.map((b) => (
@@ -417,10 +425,10 @@ function ExportView() {
           <span>文字包「{w.small.wordPack.name}」</span>
         </label>
       )}
-      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
-      {endemic > 0 && <p class="muted small">只长在某个岛上、圈的范围里的生态只属于这个世界，不带。</p>}
+      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && <p class="hint">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
+      {endemic > 0 && <p class="hint">只长在某个岛上、圈的范围里的生态只属于这个世界，不带。</p>}
       {replaces && (
-        <p class="muted small">
+        <p class="hint">
           资源库里已经有「{replaces.pack.name}」：存进资源库会替换它（换个名字就另存一份）。{keptForms > 0 && `里面存的 ${keptForms} 个星球形态照样留着。`}
         </p>
       )}

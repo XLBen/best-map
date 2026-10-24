@@ -45,9 +45,9 @@ export function HereCard() {
   if (!open) {
     return (
       <button class="here" ref={ref as never} style={style} onClick={() => setOpen(true)} title="点开看详细：为什么是这种生态、为什么不是别的">
-        <Info size={15} />
+        <Info />
         <span class="here-line">{line}</span>
-        <ChevronUp size={14} />
+        <ChevronUp />
       </button>
     );
   }
@@ -56,7 +56,7 @@ export function HereCard() {
       <div class="here-head">
         <b>这里是什么</b>
         <button class="icon-btn" onClick={() => setOpen(false)} title="收起">
-          <ChevronDown size={16} />
+          <ChevronDown />
         </button>
       </div>
       <div class="here-body">

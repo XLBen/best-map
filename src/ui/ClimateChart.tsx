@@ -19,7 +19,11 @@ import {
 import { isVegetated, landmassCells } from '../../core/vegetation';
 import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
-import { adjustPreviewNote, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
+import { X } from 'lucide-preact';
+import { adjustPreviewNote, askUser, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
+import { Seg } from './common';
+import { Slider, linear } from './components/Slider';
+import { Toggle } from './components/Toggle';
 import { paintWith, setTool } from './defs/tools';
 import { rangePick } from './tools';
 import { readPack } from '../../core/packs';
@@ -250,7 +254,7 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
           ].map(([x, y]) => <rect x={x - 3} y={y - 3} width={6} height={6} fill="#fff" stroke="#000" stroke-width={0.8} pointer-events="none" />)}
         {here && (
           <g pointer-events="none">
-            <circle cx={here.x} cy={here.y} r={5} fill="none" stroke="#ff5" stroke-width={2} />
+            <circle cx={here.x} cy={here.y} r={5} class="cursor-mark" />
             <text x={here.x + 7} y={here.y - 6} class="cursor-mark">
               这里
             </text>
@@ -280,7 +284,8 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
   const save = (next: Tolerance[]) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: [...others, ...next] } }, '正在计算生态…');
   return (
     <div>
-      <p class="muted small">更精细的条件：对任意一项（海拔、坡度、河流流量、纬度、自定义场……）给出“最小 · 最适下限 · 最适上限 · 最大”。最适区间里最适合，向两端渐渐变差。</p>
+      <h5>更精细的条件</h5>
+      <p class="hint">对任意一项（海拔、坡度、河流流量、纬度、自定义场……）给出“最小 · 最适下限 · 最适上限 · 最大”。最适区间里最适合，向两端渐渐变差。</p>
       {tols.map((t, k) => (
         <div class="tol">
           <select
@@ -306,8 +311,8 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
                 onChange={(e) => save(tols.map((x, i) => (i === k ? { ...x, [key]: Number((e.target as HTMLInputElement).value) } : x)))}
               />
             ))}
-            <button class="small" onClick={() => save(tols.filter((_, i) => i !== k))}>
-              ✕
+            <button class="small icon" onClick={() => save(tols.filter((_, i) => i !== k))} title="去掉这个条件">
+              <X />
             </button>
           </div>
         </div>
@@ -332,8 +337,13 @@ const RAIN: [string, ConditionId | null][] = [
 ];
 const PLACES: ConditionId[] = ['coast', 'river', 'mountain', 'flat', 'wetland'];
 
+const COMPETITION = linear(0.5, 10, 0.1);
+
 function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
   const [name, setName] = useState(sp.name);
+  // 拖着“强势程度”时先显示拖到的数，松手才提交
+  const [competition, setCompetition] = useState<number | null>(null);
+  useEffect(() => setCompetition(null), [sp.id, sp.competition]);
   useEffect(() => setName(sp.name), [sp.id, sp.name]);
   const conds = speciesConditions(sp);
   const rect = speciesRect(sp);
@@ -346,25 +356,26 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         <input type="color" value={speciesColor(sp)} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { color: (e.target as HTMLInputElement).value } })} />
         <input class="grow" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={rename} onKeyDown={(e) => e.key === 'Enter' && rename()} />
       </div>
-      <p class="muted small">
+      <p class="hint">
         最适合：年均 {fmtT(rect.t0, T_RANGE[0])} ～ {fmtT(rect.t1, T_RANGE[1])}，湿润程度 {fmtM(rect.m0, M_RANGE[0])} ～ {fmtM(rect.m1, M_RANGE[1])}
         。现在占陆地 {fmtShare(share)}。
       </p>
-      <label>
-        <span class="row between">
-          <span>强势程度</span>
-          <span class="muted">{sp.competition.toFixed(1)}</span>
-        </span>
-        <input
-          type="range"
-          min={0.5}
-          max={10}
-          step={0.1}
-          value={sp.competition}
-          onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { competition: Number((e.target as HTMLInputElement).value) } }, '正在计算生态…')}
-        />
-        <span class="muted small">两种生态都能长的地方，强势的那种占上风</span>
-      </label>
+      <Slider
+        stacked
+        label="强势程度"
+        pos={COMPETITION.pos(competition ?? sp.competition)}
+        text={(competition ?? sp.competition).toFixed(1)}
+        changed={competition !== null && competition !== sp.competition}
+        note="两种生态都能长的地方，强势的那种占上风"
+        onDraft={(p) => setCompetition(COMPETITION.at(p))}
+        onCommit={(p) => {
+          const v = COMPETITION.at(p);
+          if (v === sp.competition) return setCompetition(null);
+          setCompetition(v);
+          void exec({ op: 'update_species', id: sp.id, patch: { competition: v } }, '正在计算生态…');
+        }}
+        onCancel={() => setCompetition(null)}
+      />
       <h5>只长在……</h5>
       {PLACES.map((id) => (
         <label class="check">
@@ -373,33 +384,27 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         </label>
       ))}
       <h5>雨季</h5>
-      <div class="seg wide">
-        {RAIN.map(([label, id]) => (
-          <button
-            class={rain === id ? 'on' : ''}
-            onClick={() => {
-              if (id) setCond(id, true);
-              else if (rain) setCond(rain, false);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Seg<string>
+        value={rain ?? ''}
+        options={RAIN.map(([label, id]) => [id ?? '', label])}
+        onChange={(id) => {
+          if (id) setCond(id as ConditionId, true);
+          else if (rain) setCond(rain, false);
+        }}
+        wide
+      />
       <SpeciesWhere sp={sp} />
       {sp.dispersal && (
-        <p class="muted small">
+        <p class="hint">
           只在起源地附近、能扩散到的地方出现（{sp.dispersal.seaCost >= 1e5 ? '不能跨海' : '可以跨海'}）。
           <button class="small" onClick={() => void exec({ op: 'update_species', id: sp.id, patch: { dispersal: null } }, '正在计算生态…')}>
             取消这个限制
           </button>
         </p>
       )}
-      <details>
-        <summary>高级</summary>
+      <SpeciesAdvanced sp={sp}>
         <AdvancedTolerances sp={sp} />
-      </details>
-      <SpeciesAdvanced sp={sp} />
+      </SpeciesAdvanced>
       <div class="row wrap">
         <button onClick={() => paintWith(sp.id)} disabled={options.value.biome === sp.id && tool.value === 'biome'}>
           {options.value.biome === sp.id && tool.value === 'biome' ? '画笔正在用它' : '用它涂'}
@@ -417,8 +422,16 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         </button>
         <button
           class="danger"
-          onClick={() => {
-            if (confirm(`删除生态“${sp.name}”？原来长它的地方会换成别的生态。`)) void exec({ op: 'remove_species', id: sp.id }, '正在计算生态…');
+          onClick={async () => {
+            const v = await askUser({
+              title: `删除生态“${sp.name}”？`,
+              text: '原来长它的地方会换成别的生态。',
+              choices: [
+                { value: 'delete', label: '删除', primary: true },
+                { value: 'cancel', label: '取消' },
+              ],
+            });
+            if (v === 'delete') void exec({ op: 'remove_species', id: sp.id }, '正在计算生态…');
           }}
         >
           删除
@@ -455,28 +468,27 @@ function SpeciesWhere({ sp }: { sp: Species }) {
   return (
     <>
       <h5>长在哪里</h5>
-      <label class="check" title="关掉时只长在涂了它的地方（涂的地方照样按“自然融入”算）">
-        <input
-          type="checkbox"
-          checked={natural}
-          onChange={() => void exec({ op: 'update_species', id: sp.id, patch: { natural: !natural } }, '正在计算生态…')}
-        />
+      <Toggle on={natural} onChange={(on) => void exec({ op: 'update_species', id: sp.id, patch: { natural: on } }, '正在计算生态…')} title="关掉时只长在涂了它的地方（涂的地方照样按“自然融入”算）">
         自然生成：在地图上按条件自己出现
-      </label>
-      <p class="muted small">{natural ? '冷暖干湿合适、竞争得过的地方都会长。' : '只长在涂了它的地方。'}</p>
-      <div class="seg wide">
-        <button class={kind === 'everywhere' ? 'on' : ''} onClick={() => sp.range && void exec({ op: 'update_species', id: sp.id, patch: { range: null } }, '正在计算生态…')}>
-          到处
-        </button>
-        <button class={kind === 'island' ? 'on' : ''} onClick={() => pick('island')} title="点地图上的一个岛（或一块大陆）">
-          只在一个岛上
-        </button>
-        <button class={kind === 'cells' ? 'on' : ''} onClick={() => pick('cells')} title="在地图上按住圈一片">
-          只在圈的范围里
-        </button>
-      </div>
+      </Toggle>
+      <p class="hint">{natural ? '冷暖干湿合适、竞争得过的地方都会长。' : '只长在涂了它的地方。'}</p>
+      {/* 已经选着的“只在一个岛上”再点一下是重新选 */}
+      <Seg<'everywhere' | 'island' | 'cells'>
+        value={kind}
+        options={[
+          ['everywhere', '到处'],
+          ['island', '只在一个岛上'],
+          ['cells', '只在圈的范围里'],
+        ]}
+        titles={{ island: '点地图上的一个岛（或一块大陆）', cells: '在地图上按住圈一片' }}
+        onChange={(k) => {
+          if (k !== 'everywhere') pick(k);
+          else if (sp.range) void exec({ op: 'update_species', id: sp.id, patch: { range: null } }, '正在计算生态…');
+        }}
+        wide
+      />
       {sp.range && (
-        <p class="muted small">
+        <p class="hint">
           只长在{rangeText(w, sp)}。
           <button class="small" onClick={() => pick(sp.range!.kind)}>
             {sp.range.kind === 'island' ? '换一个岛' : '重新圈'}
@@ -539,15 +551,15 @@ export function SpeciesPanel() {
     });
   };
   return (
-    <div class="species">
-      <p class="muted small">每个色块是一种生态最适合的冷暖干湿范围：拖动色块移动，拖边或角改大小，拖到图边表示“不限”。灰色的点是这个世界上所有陆地的分布，黄圈是鼠标所指的地方。</p>
+    <div>
+      <p class="hint">每个色块是一种生态最适合的冷暖干湿范围：拖动色块移动，拖边或角改大小，拖到图边表示“不限”。灰色的点是这个世界上所有陆地的分布，黄圈是鼠标所指的地方。</p>
       <Chart w={w} selected={selected} onSelect={(id) => (focusSpecies.value = id)} />
       <div class="palette">
         {w.small.species.map((s, k) => (
           <button class={`chip ${s.id === focusSpecies.value ? 'on' : ''}`} onClick={() => (focusSpecies.value = s.id)}>
             <span class="swatch" style={{ background: speciesColor(s) }} />
             {s.name || s.id}
-            <span class="muted small"> {fmtShare(shares.get(k) ?? 0)}</span>
+            <span class="hint"> {fmtShare(shares.get(k) ?? 0)}</span>
           </button>
         ))}
       </div>
@@ -570,7 +582,7 @@ export function SpeciesPanel() {
           />
         </label>
       </div>
-      {selected ? <SpeciesDetails sp={selected} share={shares.get(w.small.species.indexOf(selected)) ?? 0} /> : <p class="muted small">点一个色块或下面的名字来编辑。</p>}
+      {selected ? <SpeciesDetails sp={selected} share={shares.get(w.small.species.indexOf(selected)) ?? 0} /> : <p class="hint">点一个色块或下面的名字来编辑。</p>}
     </div>
   );
 }

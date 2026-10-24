@@ -7,6 +7,8 @@ import { trustScripts } from '../trust';
 import { type FormEditorState, closeFormEditor, formEditor } from './form-store';
 import { FORM_BASES, FORM_KNOBS, type FormScriptKind, finalForm, formGen, formProblem, knobText, planetTypeName, withCrustMode, withScript } from './forms';
 import { ScriptBox } from './ScriptBox';
+import { Seg } from './common';
+import { Slider, linear } from './components/Slider';
 import { type ScriptProblem, normScript, problemLine, problemOfIssue } from './script-commit';
 import { checkScript } from './script-syntax';
 
@@ -179,15 +181,15 @@ function Editor({ st }: { st: FormEditorState }) {
         <div class="row between">
           <h2>{st.original ? '编辑星球形态' : '自己做一个星球形态'}</h2>
         </div>
-        {st.original && !st.mine && <p class="muted small">改的是一份副本，原来的「{st.original.name}」不变。</p>}
+        {st.original && !st.mine && <p class="hint">改的是一份副本，原来的「{st.original.name}」不变。</p>}
         <div class="form-grid">
           <div class="form-fields">
             <label>
-              <span class="small muted">名字</span>
+              <span class="hint">名字</span>
               <input class="wide-input" value={form.name} maxLength={12} onInput={(e) => setForm({ ...formRef.current, name: (e.target as HTMLInputElement).value })} />
             </label>
             <label>
-              <span class="small muted">一句话说明（可以不写）</span>
+              <span class="hint">一句话说明（可以不写）</span>
               <input
                 class="wide-input"
                 value={form.hint ?? ''}
@@ -200,7 +202,7 @@ function Editor({ st }: { st: FormEditorState }) {
               />
             </label>
             <label>
-              <span class="small muted">从哪种星球改起</span>
+              <span class="hint">从哪种星球改起</span>
               <select value={form.base} onChange={(e) => setForm({ ...formRef.current, base: (e.target as HTMLSelectElement).value as PlanetForm['base'] })}>
                 {FORM_BASES.map((t) => (
                   <option value={t}>{planetTypeName(t)}</option>
@@ -208,20 +210,13 @@ function Editor({ st }: { st: FormEditorState }) {
               </select>
             </label>
             {FORM_KNOBS.map((k) => {
-              const v = k.read(form);
-              return (
-                <label class="adj-row" title={k.hint}>
-                  <span class="row between">
-                    <span>{k.label}</span>
-                    <span class="muted">{knobText(k, form, st.radiusKm)}</span>
-                  </span>
-                  <input type="range" min={k.range[0]} max={k.range[1]} step={k.step} value={v} onInput={(e) => setForm(k.write(formRef.current, Number((e.target as HTMLInputElement).value)))} />
-                </label>
-              );
+              const scale = linear(k.range[0], k.range[1], k.step);
+              const set = (p: number) => setForm(k.write(formRef.current, scale.at(p)));
+              return <Slider stacked label={k.label} title={k.hint} pos={scale.pos(k.read(form))} text={knobText(k, form, st.radiusKm)} onDraft={set} onCommit={set} />;
             })}
             <details open={!!st.initial.scripts}>
               <summary>脚本</summary>
-              <p class="muted small">脚本是一小段程序：布局脚本加大陆块、加岛；地形脚本改每一格的高度、山、丘陵、岩性。不会写也没关系，上面的滑块就够用。</p>
+              <p class="hint">脚本是一小段程序：布局脚本加大陆块、加岛；地形脚本改每一格的高度、山、丘陵、岩性。不会写也没关系，上面的滑块就够用。</p>
               <ScriptBox
                 key={`${st.id}:setup`}
                 kind="setup"
@@ -242,14 +237,16 @@ function Editor({ st }: { st: FormEditorState }) {
                 apply={applyScript('crust')}
                 onDraft={(src) => (drafts.current.crust = src)}
               />
-              <div class={`seg ${crust ? '' : 'off'}`} title={crust ? '' : '写了地形脚本才起作用'}>
-                <button class={form.crustMode !== 'replace' ? 'on' : ''} onClick={() => setForm(withCrustMode(formRef.current, 'modify'))}>
-                  在原来的地形上改
-                </button>
-                <button class={form.crustMode === 'replace' ? 'on' : ''} onClick={() => setForm(withCrustMode(formRef.current, 'replace'))}>
-                  完全由脚本决定
-                </button>
-              </div>
+              <Seg<'modify' | 'replace'>
+                value={form.crustMode === 'replace' ? 'replace' : 'modify'}
+                options={[
+                  ['modify', '在原来的地形上改'],
+                  ['replace', '完全由脚本决定'],
+                ]}
+                onChange={(m) => setForm(withCrustMode(formRef.current, m))}
+                off={!crust}
+                title={crust ? undefined : '写了地形脚本才起作用'}
+              />
             </details>
           </div>
           <div class="form-preview">
@@ -263,9 +260,9 @@ function Editor({ st }: { st: FormEditorState }) {
             ) : firstIssue ? (
               <p class="script-problem small">{firstIssue.message}（缩略图里按没有这段脚本算）</p>
             ) : disabled ? (
-              <p class="muted small">安全模式下脚本没有运行，缩略图里没有脚本的效果。</p>
+              <p class="hint">安全模式下脚本没有运行，缩略图里没有脚本的效果。</p>
             ) : (
-              <p class="muted small">{current ? '缩略图是粗略版，新建时用更精细的网格，大格局不变。' : '正在算缩略图…'}</p>
+              <p class="hint">{current ? '缩略图是粗略版，新建时用更精细的网格，大格局不变。' : '正在算缩略图…'}</p>
             )}
             <button class="small" onClick={() => setSeed(randomSeed())}>
               换个种子

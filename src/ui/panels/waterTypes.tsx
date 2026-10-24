@@ -1,5 +1,5 @@
 import { speciesColor } from '../../../core/species';
-import { ChevronDown, Plus, Trash2 } from 'lucide-preact';
+import { Plus, Trash2 } from 'lucide-preact';
 import { Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
@@ -17,7 +17,6 @@ import {
   openPanel,
   replaceLast,
   toast,
-  togglePanel,
   trustHandledElsewhere,
   waterTypeEditorRequest,
   whenEditsIdle,
@@ -25,12 +24,14 @@ import {
   worldEpoch,
 } from '../../state';
 import { Seg } from '../common';
+import { Toggle } from '../components/Toggle';
+import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import { noteScriptCommitted, showCell } from '../editor-hooks';
 import { ScriptBox } from '../ScriptBox';
 import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from '../script-commit';
 import { lakeTypeColor } from '../../render/colors';
 import { riverStroke, riverTypeColor } from '../../render/overlay';
-import { DragSlider } from './rivers';
+import { Slider } from '../components/Slider';
 
 // 水体类型（河流类型、湖泊类型）共用的界面：底部条上“新画的河：血河 ▾”“这个湖：晶湖 ▾”的按钮、弹出的列表（最后一项“新建类型…”），
 // “水系 ⋯”里的“水体类型”（河 / 湖两栏，同一个编辑器）
@@ -114,17 +115,14 @@ function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }) {
 export function TypeButton({ kind, prefix, type, auto, panel, plainText = '普通' }: { kind: WaterKind; prefix: string; type: WaterType | null; auto?: boolean; panel: PanelId; plainText?: string }) {
   const noun = KINDS[kind].noun;
   return (
-    <button
-      class={`bar-btn ${openPanel.value === panel ? 'on' : ''}`}
-      data-panel={panel}
-      onClick={() => togglePanel(panel)}
+    <TypePickerButton
+      panel={panel}
+      prefix={prefix}
+      swatch={type ? typeColor(kind, type) : PLAIN_COLOR[kind]}
+      name={type ? type.name : plainText}
+      auto={auto && !!type}
       title={auto ? `是哪一种${noun}（现在是按规则判断的）` : `是哪一种${noun}`}
-    >
-      <span class="muted">{prefix}：</span>
-      <TypeSwatch kind={kind} t={type} /> {type ? type.name : plainText}
-      {auto && type ? <span class="muted small">（按规则）</span> : null}
-      <ChevronDown size={13} />
-    </button>
+    />
   );
 }
 
@@ -136,30 +134,24 @@ export interface MenuItem {
   onPick: () => void;
 }
 
-function MenuRow({ kind, item }: { kind: WaterKind; item: MenuItem }) {
-  const t = item.t;
-  return (
-    <button class={`menu-row ${item.on ? 'on' : ''}`} title={item.hint} onClick={item.onPick}>
-      <TypeSwatch kind={kind} t={t} />
-      <span>{item.label}</span>
-      {t?.style && t.style !== 'solid' ? <span class="muted small">{KINDS[kind].styleLabel[t.style]}</span> : null}
-    </button>
-  );
-}
-
 // 弹出的列表：几行选择，最后一项“新建类型…”（新建一种、用上它，并打开它的编辑）
 export function TypeMenu({ kind, items, onNew, note }: { kind: WaterKind; items: MenuItem[]; onNew: () => void; note?: string }) {
+  const def = KINDS[kind];
   return (
-    <div class="menu">
-      {items.map((it) => (
-        <MenuRow key={it.label} kind={kind} item={it} />
-      ))}
-      <button class="menu-row" onClick={onNew} title={`新建一种${KINDS[kind].noun}，用上它，并打开它的设置`}>
-        <Plus size={14} />
-        <span>新建类型…</span>
-      </button>
-      {note && <p class="muted small">{note}</p>}
-    </div>
+    <TypePicker
+      items={items.map((it) => ({
+        label: it.label,
+        on: it.on,
+        hint: it.hint,
+        onPick: it.onPick,
+        swatch: it.t ? typeColor(kind, it.t) : PLAIN_COLOR[kind],
+        meta: it.t?.style && it.t.style !== 'solid' ? def.styleLabel[it.t.style] : undefined,
+      }))}
+      onNew={onNew}
+      newLabel="新建类型…"
+      newTitle={`新建一种${def.noun}，用上它，并打开它的设置`}
+      note={note}
+    />
   );
 }
 
@@ -292,7 +284,8 @@ function TypeSlider({ label, value, pos, at, text, title, commit }: {
   useEffect(() => setDraft(null), [value]);
   const cur = draft ?? value;
   return (
-    <DragSlider
+    <Slider
+      stacked
       label={label}
       pos={pos(cur)}
       text={text(cur)}
@@ -345,7 +338,7 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
         <NameBox value={t.name} onCommit={(v) => edit(`「${t.name}」改名为「${v}」`, (x) => ({ ...x, name: v }))} />
       </div>
       <div class="row">
-        <span class="hs-label">画法</span>
+        <span class="bar-label">画法</span>
         <Seg<string>
           value={t.style ?? 'solid'}
           options={def.styles.map((s) => [s, def.styleLabel[s]])}
@@ -353,63 +346,55 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
         />
       </div>
       {def.width && (
-        <div class="row">
-          <TypeSlider
-            label="粗细"
-            value={width ?? 1}
-            pos={(v) => logPos(v, WLO, WHI)}
-            at={(p) => {
-              const v = Math.round(logAt(p, WLO, WHI) * 20) / 20;
-              return Math.abs(v - 1) < 0.06 ? 1 : v;
-            }}
-            text={(v) => `${Math.round(v * 100)}%`}
-            title="这种河画得比普通的河粗多少（只影响画法）"
-            commit={(v) => edit(`「${t.name}」的粗细改成 ${Math.round(v * 100)}%`, (x) => ({ ...x, width: v === 1 ? undefined : v }) as WaterType)}
-          />
-        </div>
+        <TypeSlider
+          label="粗细"
+          value={width ?? 1}
+          pos={(v) => logPos(v, WLO, WHI)}
+          at={(p) => {
+            const v = Math.round(logAt(p, WLO, WHI) * 20) / 20;
+            return Math.abs(v - 1) < 0.06 ? 1 : v;
+          }}
+          text={(v) => `${Math.round(v * 100)}%`}
+          title="这种河画得比普通的河粗多少（只影响画法）"
+          commit={(v) => edit(`「${t.name}」的粗细改成 ${Math.round(v * 100)}%`, (x) => ({ ...x, width: v === 1 ? undefined : v }) as WaterType)}
+        />
       )}
       <h5>{shore}</h5>
-      <p class="muted small">
+      <p class="hint">
         离这种{def.noun}越近影响越大，到范围的边上就没有了。生态的条件、脚本里也能用“靠近{t.name}”。
       </p>
-      <div class="row">
-        <TypeSlider
-          label="范围"
-          value={bank?.radiusKm ?? 0}
-          pos={(v) => logPos(v || autoRadius(t), RLO, RHI)}
-          at={(p) => Math.round(logAt(p, RLO, RHI) / 10) * 10 || 10}
-          text={(v) => (v ? `${v} km` : `自动（约 ${autoRadius(t)} km）`)}
-          commit={(v) => setBank({ radiusKm: v }, `改了「${t.name}」${shore}的范围`)}
-        />
-      </div>
-      <div class="row">
-        <TypeSlider
-          label="冷暖"
-          value={dT}
-          pos={(v) => (v + 10) / 20}
-          at={(p) => Math.round((p * 20 - 10) * 2) / 2}
-          text={(v) => (v ? `${fmtSigned(v)} °C` : '不变')}
-          title={`让${shore}变暖、变冷`}
-          commit={(v) => setBank({ dT: v || undefined }, `改了「${t.name}」${shore}的冷暖`)}
-        />
-      </div>
-      <div class="row">
-        <TypeSlider
-          label="干湿"
-          value={dPpct}
-          pos={(v) => (Math.log(1 + v / 100) + 1.5) / 3}
-          at={(p) => Math.round((Math.exp(p * 3 - 1.5) - 1) * 20) * 5}
-          text={(v) => (v ? `雨水 ${fmtSigned(v, 0)}%` : '不变')}
-          title={`让${shore}的雨水变多、变少`}
-          commit={(v) => setBank({ dP: v ? Math.max(-1.5, Math.min(1.5, Math.log(1 + v / 100))) : undefined }, `改了「${t.name}」${shore}的干湿`)}
-        />
-      </div>
+      <TypeSlider
+        label="范围"
+        value={bank?.radiusKm ?? 0}
+        pos={(v) => logPos(v || autoRadius(t), RLO, RHI)}
+        at={(p) => Math.round(logAt(p, RLO, RHI) / 10) * 10 || 10}
+        text={(v) => (v ? `${v} km` : `自动（约 ${autoRadius(t)} km）`)}
+        commit={(v) => setBank({ radiusKm: v }, `改了「${t.name}」${shore}的范围`)}
+      />
+      <TypeSlider
+        label="冷暖"
+        value={dT}
+        pos={(v) => (v + 10) / 20}
+        at={(p) => Math.round((p * 20 - 10) * 2) / 2}
+        text={(v) => (v ? `${fmtSigned(v)} °C` : '不变')}
+        title={`让${shore}变暖、变冷`}
+        commit={(v) => setBank({ dT: v || undefined }, `改了「${t.name}」${shore}的冷暖`)}
+      />
+      <TypeSlider
+        label="干湿"
+        value={dPpct}
+        pos={(v) => (Math.log(1 + v / 100) + 1.5) / 3}
+        at={(p) => Math.round((Math.exp(p * 3 - 1.5) - 1) * 20) * 5}
+        text={(v) => (v ? `雨水 ${fmtSigned(v, 0)}%` : '不变')}
+        title={`让${shore}的雨水变多、变少`}
+        commit={(v) => setBank({ dP: v ? Math.max(-1.5, Math.min(1.5, Math.log(1 + v / 100))) : undefined }, `改了「${t.name}」${shore}的干湿`)}
+      />
       <h5>起名</h5>
-      <p class="muted small">
+      <p class="hint">
         每行一个模板，比如 {def.namesHint}；不写时按普通的{def.noun}起名。
       </p>
-      <textarea class="names-box" rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
-      {namesBad && <p class="small warn-text">“{namesBad.slice(0, 12)}…”太长了，最多 40 个字</p>}
+      <textarea rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
+      {namesBad && <p class="hint warn">“{namesBad.slice(0, 12)}…”太长了，最多 40 个字</p>}
       <NaturalBox w={w} kind={kind} t={t} edit={edit} />
       <ScriptBox
         key={`${worldEpoch.value}:${kind}:${t.id}:match`}
@@ -427,7 +412,7 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
       />
       <div class="row wrap">
         <button class="small danger" onClick={() => void exec(def.remove(t.id), def.busy)} title={`删掉这种${def.noun}：选了它的${def.noun}变回普通的${def.noun}`}>
-          <Trash2 size={14} /> 删掉这种{def.noun}
+          <Trash2 /> 删掉这种{def.noun}
         </button>
       </div>
     </div>
@@ -462,11 +447,10 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
   return (
     <>
       <h5>自己出现</h5>
-      <label class="check">
-        <input type="checkbox" checked={on} onChange={() => edit(on ? `「${t.name}」不再自然生成` : `「${t.name}」自然生成`, (x) => ({ ...x, natural: !on }))} />
+      <Toggle on={on} onChange={() => edit(on ? `「${t.name}」不再自然生成` : `「${t.name}」自然生成`, (x) => ({ ...x, natural: !on }))}>
         自然生成：在地图上按条件自己出现
-      </label>
-      <p class="muted small">{hint}</p>
+      </Toggle>
+      <p class="hint">{hint}</p>
       <details>
         <summary>
           只在这些生态里出现（{picked.size ? `${picked.size} 种` : '不限'}）
@@ -479,7 +463,7 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
             </label>
           ))}
         </div>
-        <p class="muted small">规则里也能用 biome('生态 id')（{where}里这种生态占多少）、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
+        <p class="hint">规则里也能用 biome('生态 id')（{where}里这种生态占多少）、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
       </details>
     </>
   );
@@ -516,16 +500,16 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
   };
   return (
     <>
-      {types.length === 0 && <p class="muted small">{def.intro}</p>}
+      {types.length === 0 && <p class="hint">{def.intro}</p>}
       {types.length > 0 && (
-        <div class="feature-list">
+        <div class="list">
           {types.map((t) => (
             <Fragment key={t.id}>
-              <div class={`feature-row river-row ${open === t.id ? 'on' : ''}`} onClick={() => setOpen(open === t.id ? null : t.id)}>
-                <span>
+              <div class={`item ${open === t.id ? 'on' : ''}`} onClick={() => setOpen(open === t.id ? null : t.id)}>
+                <span class="grow ellipsis">
                   <TypeSwatch kind={kind} t={t} /> {waterTypeOwner(t)}
                 </span>
-                <span class="muted small">
+                <span class="hint">
                   {def.styleLabel[t.style ?? 'solid']}
                   {t.natural === false ? ' · 不自然生成' : t.scripts?.match || t.biomes?.length ? ' · 自己出现' : ''}
                 </span>
@@ -537,7 +521,7 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
       )}
       <div class="row wrap">
         <button class="small" onClick={() => void add(newWaterType(w, kind))}>
-          <Plus size={14} /> 新建
+          <Plus /> 新建
         </button>
         {samples.map((x) => (
           <button key={x.id} class="small" title={`加上示例里的「${x.name}」`} onClick={() => void add(structuredClone(x))}>

@@ -1,15 +1,17 @@
 import { speciesColor } from '../../core/species';
 import { signal } from '@preact/signals';
+import { BellOff, ScanSearch, X } from 'lucide-preact';
 import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
 import { exec, focusSpecies, history, sheet, world } from '../state';
 import { focusOn } from './camera';
 import { outsideRangeReason } from './biomeRange';
 import { reasonText } from './Inspector';
+import { locateNextUnmet, locateTitle, unmetLooked, unmetSpots } from './unmetLocate';
 
-// 没涂成的地方（“自然”工具列表下方）、历史（“操作”里）
+// 没涂成的地方（“自然 ⋯”里）、历史（“更多”里）
 
-// 说了“就这样”的列表要不要展开（底部条上的“!”点开时展开）
+// 说了“就这样”的列表要不要展开（只剩说了“就这样”的时，底部条上的入口点开时展开）
 export const showIgnored = signal(false);
 
 const BUSY = '正在计算生态…';
@@ -25,10 +27,21 @@ export function UnmetPanel() {
   const force = (c: Conflict, radius: number) =>
     void exec({ op: 'add_constraint', constraint: { cells: c.failing, species: c.species, mode: 'override', ratio: 1, radius, label: '' } }, BUSY);
   const setIgnored = (id: string, on: boolean) => void exec({ op: 'update_constraint', id, patch: { ignored: on } }, '正在保存…');
+  // 没涂成的地方（还要提醒的和说了“就这样”的）一处一处看：按一下看下一处，看过之后写着第几处
+  const spots = unmetSpots(w).length;
+  const k = unmetLooked.value;
   return (
     <div>
-      <h4>没涂成的地方</h4>
-      {conflicts.length === 0 && <p class="muted">{ignored.length ? '要提醒的都长出来了。' : '涂过的生态都长出来了。'}</p>}
+      <div class="row between">
+        <h5>没涂成的地方</h5>
+        {spots > 0 && (
+          <button class="bar-btn" onClick={() => locateNextUnmet(w)} title={locateTitle(k, spots)}>
+            <ScanSearch />
+            {k >= 0 && k < spots && spots > 1 ? ` ${k + 1}/${spots}` : ' 一处一处看'}
+          </button>
+        )}
+      </div>
+      {conflicts.length === 0 && <p class="hint">{ignored.length ? '要提醒的都长出来了。' : '涂过的生态都长出来了。'}</p>}
       {conflicts.map((c) => {
         const con = w.small.constraints.find((x) => x.id === c.constraintId);
         const sp = species(c.species);
@@ -60,7 +73,7 @@ export function UnmetPanel() {
                 调整这种生态
               </button>
               {con && (
-                <button class="small" title="不再提醒（地图上的红斜线、计数都不算它），收进底部条的“!”里；随时能恢复" onClick={() => setIgnored(con.id, true)}>
+                <button class="small" title="不再提醒（地图上的红斜线、计数都不算它），收进下面“说了‘就这样’的”里；随时能恢复" onClick={() => setIgnored(con.id, true)}>
                   就这样
                 </button>
               )}
@@ -74,9 +87,9 @@ export function UnmetPanel() {
       {ignored.length > 0 && (
         <details open={showIgnored.value} onToggle={(e) => (showIgnored.value = (e.currentTarget as HTMLDetailsElement).open)}>
           <summary>
-            <b class="ignored-mark">!</b> 说了“就这样”的（{ignored.length}）
+            <BellOff /> 说了“就这样”的（{ignored.length}）
           </summary>
-          <p class="muted small">没涂成也不再提醒。格数变了也照样不提醒，直到点“恢复提醒”。</p>
+          <p class="hint">没涂成也不再提醒。格数变了也照样不提醒，直到点“恢复提醒”。</p>
           {ignored.map((con) => {
             const sp = species(con.species);
             const c = conflictOf(con.id);
@@ -107,22 +120,22 @@ export function UnmetPanel() {
           })}
         </details>
       )}
-      <h4>涂过的地方（{w.small.constraints.length}）</h4>
-      {w.small.constraints.length === 0 && <p class="muted small">还没有涂过。用上面的“涂生态”或“拖动扩张”。</p>}
+      <h5>涂过的地方（{w.small.constraints.length}）</h5>
+      {w.small.constraints.length === 0 && <p class="hint">还没有涂过。用上面的“涂生态”或“拖动扩张”。</p>}
       {w.small.constraints.map((c) => {
         const sp = species(c.species);
         return (
-          <div class="row between constraint-row">
-            <span class="link" onClick={() => focusOn(c.cells)}>
+          <div class="item">
+            <span class="grow ellipsis" onClick={() => focusOn(c.cells)} title="在地图上看">
               <span class="swatch" style={{ background: sp ? speciesColor(sp) : undefined }} /> {sp?.name ?? c.species} · {c.cells.length} 格 · {c.mode === 'constraint' ? '自然融入' : '强制'}
-              {c.ignored ? ' · !' : ''}
+              {c.ignored ? <BellOff /> : null}
             </span>
             <span class="row">
               <button class="small" onClick={() => void exec({ op: 'update_constraint', id: c.id, patch: { mode: c.mode === 'constraint' ? 'override' : 'constraint' } }, BUSY)}>
                 改成{c.mode === 'constraint' ? '强制' : '自然融入'}
               </button>
-              <button class="small danger" onClick={() => void exec({ op: 'remove_constraint', id: c.id }, BUSY)}>
-                ✕
+              <button class="small icon danger" onClick={() => void exec({ op: 'remove_constraint', id: c.id }, BUSY)} title="不要这一笔了">
+                <X />
               </button>
             </span>
           </div>
@@ -134,7 +147,7 @@ export function UnmetPanel() {
 
 export function HistoryPanel() {
   const list = history.value;
-  if (!list.length) return <p class="muted small">还没有做过修改。</p>;
+  if (!list.length) return <p class="hint">还没有做过修改。</p>;
   return (
     <ol class="history">
       {list.map((h) => (

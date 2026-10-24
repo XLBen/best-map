@@ -47,7 +47,7 @@ export function Popover({ id, title, width = 340, children }: { id: PanelId; tit
       <div class="popover-head">
         <b>{title}</b>
         <button class="icon-btn" onClick={() => (openPanel.value = null)} title="关上（Esc）">
-          <X size={16} />
+          <X />
         </button>
       </div>
       <div class="popover-body">{children}</div>

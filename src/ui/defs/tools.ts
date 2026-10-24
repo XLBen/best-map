@@ -90,7 +90,6 @@ import { clearBarPreview } from '../barPreview';
 import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
 import {
   BiomeChip,
-  IgnoredChip,
   RangeBar,
   NamesBar,
   NamesExtras,
@@ -104,7 +103,6 @@ import {
   LakeBar,
   NewLakeTypePick,
   UnmetChip,
-  UnmetLocate,
 } from './extras';
 import { failingHighlights, featureHighlights, provinceHighlights, selectedRiverFocus } from '../map/highlights';
 import type { CategoryDef, SliderDef, ToolDef, ToolSpec } from './types';
@@ -352,7 +350,7 @@ const SPECS = {
     how: '在陆地上涂；Alt+点吸取那里的生态',
     size: BRUSH,
     amount: REACH,
-    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }, { kind: 'custom', render: UnmetLocate }],
+    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }],
     pick: pickSpecies,
     create: () => biomeTool(),
   },
@@ -364,7 +362,7 @@ const SPECS = {
     how: '按住一片生态往外拖，拖得越远长得越多',
     size: brushAs('起点'),
     amount: REACH,
-    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }, { kind: 'custom', render: UnmetLocate }],
+    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }],
     create: () => growTool(),
   },
   restore: {

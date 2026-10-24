@@ -11,7 +11,7 @@ export function Sheet() {
       <div class="popover-head">
         <b>生态类型</b>
         <button class="icon-btn" onClick={() => (sheet.value = null)} title="关上">
-          <X size={16} />
+          <X />
         </button>
       </div>
       <div class="sheet-body">

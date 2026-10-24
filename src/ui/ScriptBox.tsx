@@ -148,7 +148,7 @@ export function ScriptBox(props: Props) {
       <div class="row between script-head">
         <span>
           {label}
-          {hint && <span class="muted small"> {hint}</span>}
+          {hint && <span class="hint"> {hint}</span>}
         </span>
         {/* 按下时不抢走框里的光标：不然一点就算离开框、立即提交，再插例子又是新的一步撤销 */}
         <button class={`small ghost ${help ? 'on' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => setHelp(!help)}>
@@ -212,7 +212,7 @@ function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scop
   const keep = (e: Event) => e.preventDefault();
   return (
     <div class="script-help">
-      <p class="muted small">
+      <p class="hint">
         脚本是一段小程序，最后写 <code>return …</code> 给出结果。变量用英文名、中文名都行。点名字插进光标处。
       </p>
       <h5>例子</h5>

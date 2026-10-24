@@ -126,25 +126,12 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
   if (next) visualOverrides.value = next;
 }
 
-// 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
-// rivertype：给新画的河、选中的河选是哪一种河（第三批的河流类型）
-// rivertype / laketype：选中的这条河、这个湖是哪一种；newrivertype / newlaketype：新画的河、新放的湖是哪一种
-// biomepick：涂生态底部条上点当前的生态，弹出生态的色板（第十四轮起顶栏没有“生态”按钮）
-// islandtype / chaintype：放岛、画岛链用哪一种岛（第十四轮）
-export type PanelId =
-  | 'world'
-  | 'actions'
-  | 'adjust'
-  | 'layers'
-  | 'biomepick'
-  | 'river'
-  | 'rivertype'
-  | 'newrivertype'
-  | 'laketype'
-  | 'newlaketype'
-  | 'islandtype'
-  | 'chaintype'
-  | `cat:${Category}`;
+// 顶栏按钮弹出的面板：同一时间只开一个。world：世界（新建、保存、打开、导出）；more：更多（历史、偏好、上手说明）
+// river / province：选中的河、省底部条上的“⋯”（不常用的按钮收在里面）
+// 选“哪一种”（同一个 TypePicker，见 App.tsx 的 TYPE_PANELS）：rivertype / laketype 选中的这条河、这个湖，
+// newrivertype / newlaketype 新画的河、新放的湖，islandtype / chaintype 放岛、画岛链用哪一种岛
+export type TypePanelId = 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | 'islandtype' | 'chaintype';
+export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
