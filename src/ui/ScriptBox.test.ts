@@ -9,7 +9,7 @@ import { newWorld, world, worldEpoch, worldState } from '../state';
 import { inThisWorld } from './ScriptBox';
 import { type CommittedScript, registerScriptCommitted } from './editor-hooks';
 import { type ApplyMode, type ApplyResult, ScriptEdit, type ScriptEditDeps, type ScriptProblem, problemCell, problemLine } from './script-commit';
-import { LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
+import { ISLAND_PLACEMENT_EXAMPLES, LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
 import { LOOP_NOTE, bracketProblem, checkNow, installAcorn, syntaxProblem } from './script-syntax';
 import { applySpeciesScript, queueSpeciesEdit, settleSpeciesEdits, speciesEditsSettled, speciesIssue, speciesScriptCommand } from './species-scripts';
 
@@ -120,9 +120,15 @@ describe('用了没有的变量、不能用的名字', () => {
 
   it('“变量和例子”里的例子都能通过检查', () => {
     for (const [kind, list] of Object.entries(SCRIPT_EXAMPLES)) {
-      for (const ex of list) expect(checkNow(kind as keyof typeof SCRIPT_EXAMPLES, ex.src), `${kind}：${ex.label}`).toBeNull();
+      // 岛的样子只在岛的种类里有（第十五轮）
+      const scope = kind === 'shape' ? ('island' as const) : undefined;
+      for (const ex of list) expect(checkNow(kind as keyof typeof SCRIPT_EXAMPLES, ex.src, undefined, { scope }), `${kind}：${ex.label}`).toBeNull();
     }
     for (const ex of LAKE_MATCH_EXAMPLES) expect(checkNow('match', ex.src, undefined, { scope: 'lake' }), `湖：${ex.label}`).toBeNull();
+    for (const ex of ISLAND_PLACEMENT_EXAMPLES) expect(checkNow('placement', ex.src, undefined, { scope: 'island' }), `岛：${ex.label}`).toBeNull();
+    // 岛的变量只在岛的脚本里有；岛的脚本里照样能用海拔、湖
+    expect(checkNow('placement', 'return 离岛心 < 1;')?.text).toBe('没有变量 离岛心（只有岛的种类的脚本能用）');
+    expect(checkNow('placement', 'return 离岛心 < 1 && 湖 === 1 && 海拔 > 0;', undefined, { scope: 'island' })).toBeNull();
     // 湖的变量在河的脚本里不是变量；湖的脚本里河长也不是
     expect(checkNow('match', 'return 湖面积 > 1;')?.reason).toBe('name');
     expect(checkNow('match', 'return 河长 > 1;', undefined, { scope: 'lake' })?.reason).toBe('name');

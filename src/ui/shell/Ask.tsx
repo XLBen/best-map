@@ -44,7 +44,7 @@ export function AskDialog() {
             {a.scripts.map((s) => (
               <div key={s.path}>
                 <b>{s.owner}</b>
-                <span class="muted small"> · {SCRIPT_KIND_LABEL[s.kind]}的脚本</span>
+                <span class="muted small"> · {s.label ?? SCRIPT_KIND_LABEL[s.kind]}的脚本</span>
                 <pre>{s.src}</pre>
               </div>
             ))}

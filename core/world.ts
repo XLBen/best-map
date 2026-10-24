@@ -212,7 +212,14 @@ export interface Causes {
   // 放的岛是哪一种（第十四轮，见 island-types.ts）：0 不是放的岛，否则是种类的编号。放岛、画岛链时写在新长出的陆地
   // （环礁还有潟湖的海格）上；画陆地 / 海、恢复原样画到的地方清掉。颜色、潟湖、小礁归海省都按它
   islandType: Uint8Array;
+  // 岛的脚本定下的高度（第十五轮，见 island-scripts.ts）：米，FREE_HEIGHT 是没定（照常按地形算）。
+  // 陆地格上定了的，高程算完（挖完放的湖）之后直接换成它（见 elevation.ts 的 finishElevation）。
+  // 只在第一次放带“岛的样子”脚本的岛时才有（撤销到那之前时去掉）；画陆地 / 海、恢复原样画到的地方清掉。堆山、压低不改它
+  islandHeight?: Float32Array;
 }
+
+// causes.islandHeight 里“没定高度”的值（不用 NaN：撤销记录按 !== 比较数组，NaN 每次都算改了）
+export const FREE_HEIGHT = -Infinity;
 
 export interface TerrainState {
   // 生成参数；null 为空白海洋

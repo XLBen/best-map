@@ -1,5 +1,5 @@
 import { ContentMemo } from './climate';
-import { sinkMask } from './elevation';
+import { placedLakeAnchor, sinkMask } from './elevation';
 import { gradient } from './mesh';
 import { type Routing, route } from './routing';
 import type { Derived, World } from './world';
@@ -32,6 +32,8 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const areaKm = new Float64Array(n);
   for (let i = 0; i < n; i++) areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
 
+  // 放的湖认哪一格（湖心那一格不再是水面时取碗里最近的水面格，见 placedLakeAnchor）
+  const anchors = small.lakes.map((l) => placedLakeAnchor(world, l, (i) => land[i] === 1 && r.water[i] - elevation[i] >= 0.5));
   // 湖：填洼深度超过 3 m 的连通平水面
   const lakeId = new Int32Array(n).fill(-1);
   const lakes: { cells: number[]; outlet: number; area: number; perennial: boolean; evap: number }[] = [];
@@ -55,13 +57,13 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     lakes.push({ cells, outlet: -1, area: 0, perennial: false, evap: 0 });
     // 太浅的不算湖；只有一两格的自然洼地多半是高程平滑留下的小坑，也不算（水照常流过），
     // 否则荒漠里会有零星的蓝点。用户放的湖照旧
-    const tiny = cells.length < 3 && !small.lakes.some((l) => cells.includes(l.cell));
+    const tiny = cells.length < 3 && !anchors.some((a) => cells.includes(a));
     if (maxDepth < 3 || tiny) for (const c of cells) lakeId[c] = -2 - id;
   }
-  for (const spec of small.lakes) {
-    const id = lakeId[spec.cell];
+  small.lakes.forEach((spec, k) => {
+    const id = lakeId[anchors[k]];
     if (id >= 0 && spec.perennial) lakes[id].perennial = true;
-  }
+  });
   for (let id = 0; id < lakes.length; id++) {
     const L = lakes[id];
     if (lakeId[L.cells[0]] !== id) continue;

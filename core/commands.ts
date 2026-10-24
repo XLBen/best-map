@@ -26,7 +26,7 @@ import { checkSpeciesScripts } from './biome-scripts';
 import { namesNaturally } from './features';
 import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema } from './river-types';
 import { MAX_LAKE_TYPES, checkLakeTypeScripts, lakeTypeDirty, lakeTypeSchema } from './lake-types';
-import { LAGOON_BIT, MAX_ISLAND_TYPES, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
+import { LAGOON_BIT, MAX_ISLAND_TYPES, hasIslandScripts, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
 import { typeIdSchema } from './type-id';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
@@ -37,7 +37,7 @@ import {
   chainSchema,
   combineStamps,
   islandSchema,
-  islandStamp,
+  type StampResult,
   landStroke,
   reliefStroke,
   resolveTerrain,
@@ -61,7 +61,9 @@ import {
   regionSchema,
   type SmallState,
   type World,
+  FREE_HEIGHT,
 } from './world';
+import { checkIslandScripts, islandOwner, issueNote, scriptedStamper, stampIsland } from './island-scripts';
 
 // 所有编辑都是可序列化的命令。命令只改“原因”，并且只保存明确的格编号，
 // 所以重放结果与当时界面上的推导状态无关（例外：generate_provinces 需要当时的水文与高程，引擎会先把推导算好）。
@@ -288,7 +290,7 @@ export const Dirty = {
 } as const;
 export type Dirty = (typeof Dirty)[keyof typeof Dirty];
 
-type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | `field:${string}`;
+type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | `field:${string}`;
 
 function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Int32Array | undefined {
   if (key.startsWith('field:')) return world.causes.fields[key.slice(6)];
@@ -301,6 +303,8 @@ export interface UndoRecord {
   // 新增或删除的自定义场：撤销时恢复为 old（null 表示原来不存在）
   fields: { name: string; old: Float32Array | null }[];
   small: string;
+  // 这一步第一次有了岛的脚本定下的高度（causes.islandHeight）：撤销时去掉整个数组
+  dropHeights?: true;
 }
 
 function formatIssues(err: z.ZodError): string {
@@ -310,6 +314,8 @@ function formatIssues(err: z.ZodError): string {
 export interface ApplyContext {
   // 需要推导结果的命令调用它，保证推导是最新的
   ensureDerived: () => Derived;
+  // 在批量命令里（第十五轮：带脚本的岛不能放进去，见 island-scripts.ts）
+  inBatch?: boolean;
 }
 
 function touchedArrays(world: World, cmd: Command): ArrayKey[] {
@@ -319,7 +325,7 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'add_island':
     case 'add_island_chain':
     case 'restore_terrain':
-      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType'];
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight'];
     case 'set_coast_style':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
     case 'set_island_type':
@@ -373,6 +379,7 @@ export function applyCommand(
   const before = keys.map((k) => Float64Array.from(getArray(world, k)!));
   const smallBefore = JSON.stringify(world.small);
   const fieldsBefore = { ...world.causes.fields };
+  const heightsBefore = world.causes.islandHeight;
   const idsBefore = new Set(Object.keys(world.small.provinces));
   let result: { dirty: Dirty; summary: string };
   try {
@@ -390,9 +397,11 @@ export function applyCommand(
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
     world.small = JSON.parse(smallBefore);
     world.causes.fields = fieldsBefore;
+    if (!heightsBefore) delete world.causes.islandHeight;
     throw e;
   }
   const undo: UndoRecord = { arrays: [], fields: [], small: smallBefore };
+  if (!heightsBefore && world.causes.islandHeight) undo.dropHeights = true;
   keys.forEach((k, idx) => {
     const now = getArray(world, k)!;
     const old = before[idx];
@@ -402,7 +411,7 @@ export function applyCommand(
   });
   const names = new Set([...Object.keys(fieldsBefore), ...Object.keys(world.causes.fields)]);
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
-  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || JSON.stringify(world.small) !== smallBefore;
+  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || JSON.stringify(world.small) !== smallBefore;
   const provinceNames: Record<string, string> = {};
   for (const [id, p] of Object.entries(world.small.provinces)) if (!idsBefore.has(id)) provinceNames[id] = p.name;
   return { ...result, undo, changed, provinceNames: Object.keys(provinceNames).length ? provinceNames : null };
@@ -433,6 +442,7 @@ export function revert(world: World, undo: UndoRecord) {
     const arr = getArray(world, a.key)!;
     for (let k = 0; k < a.idx.length; k++) arr[a.idx[k]] = a.old[k];
   }
+  if (undo.dropHeights) delete world.causes.islandHeight;
   world.small = JSON.parse(undo.small) as SmallState;
   // 陆海、抬升等组合值由增量与生成参数算出，撤销后重新组合
   resolveTerrain(world);
@@ -458,7 +468,11 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
   const { causes } = world;
   const before = causes.land.slice();
   const classBefore = opts.classBefore ?? provinceLand(world);
-  if (opts.clear) for (const i of opts.clear) causes.islandType[i] = 0;
+  const fixed = causes.islandHeight;
+  if (opts.clear) {
+    for (const i of opts.clear) causes.islandType[i] = 0;
+    if (fixed) for (const i of opts.clear) fixed[i] = FREE_HEIGHT;
+  }
   resolveTerrain(world);
   let gained = 0;
   let lost = 0;
@@ -467,6 +481,7 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
     if (!before[i]) gained++;
     else lost++;
     if (opts.clear && !(causes.islandType[i] & LAGOON_BIT)) causes.islandType[i] = 0;
+    if (opts.clear && fixed) fixed[i] = FREE_HEIGHT;
   }
   const after = provinceLand(world);
   let moved = false;
@@ -476,6 +491,23 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
 }
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
+
+// 放岛的增量加进原因；脚本定下的高度写进 causes.islandHeight（第一次用到时才建）
+function putStamp(world: World, r: StampResult) {
+  const { causes } = world;
+  r.cells.forEach((i, k) => {
+    causes.landDelta[i] += r.landDelta[k];
+    causes.upliftDelta[i] += r.upliftDelta[k];
+    causes.erodDelta[i] += r.erodDelta[k];
+    if (r.types[k]) causes.islandType[i] = r.types[k];
+  });
+  if (!r.heights) return;
+  const fixed = (causes.islandHeight ??= new Float32Array(world.mesh.n).fill(FREE_HEIGHT));
+  r.cells.forEach((i, k) => {
+    const h = r.heights![k];
+    if (!Number.isNaN(h)) fixed[i] = h;
+  });
+}
 
 // 画笔中心七成半径以内的格（t ≤ 0.7：画陆地 / 海一定变成陆地、海，恢复原样完全恢复的那一圈）
 const brushCore = (cells: number[], t: number[]) => cells.filter((_, k) => t[k] <= 0.7);
@@ -607,7 +639,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
   switch (cmd.op) {
     case 'batch': {
       let dirty: Dirty = Dirty.None;
-      for (const c of cmd.commands) dirty = Math.max(dirty, run(world, c, ctx).dirty) as Dirty;
+      const inner = { ...ctx, inBatch: true };
+      for (const c of cmd.commands) dirty = Math.max(dirty, run(world, c, inner).dirty) as Dirty;
       return { dirty, summary: cmd.label ?? `批量 ${cmd.commands.length} 条` };
     }
     case 'set_worldgen': {
@@ -620,6 +653,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.upliftDelta.fill(0);
         causes.erodDelta.fill(0);
         causes.islandType.fill(0);
+        causes.islandHeight?.fill(FREE_HEIGHT);
         causes.province.fill(-1);
         small.provinces = {};
         small.constraints = [];
@@ -698,36 +732,40 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'add_island': {
       const spec = islandSchema.parse(cmd.island);
-      const r = islandStamp(world, spec);
-      if (!r.footprint.length) throw new CommandError('这里放不下岛（可能已经是陆地）');
+      checkIslandKind(world, spec.kind);
+      const scripted = hasIslandScripts(islandTypeById(small, spec.kind));
+      if (scripted && ctx.inBatch) throw new CommandError('带脚本的岛不能放进批量命令里，一个一个放');
+      const { stamp: r, issues } = stampIsland(world, spec, ctx.ensureDerived);
+      if (!r.footprint.length) throw new CommandError(scripted ? '这里放不下这种岛' : '这里放不下岛（可能已经是陆地）');
       const classBefore = provinceLand(world);
-      r.cells.forEach((i, k) => {
-        causes.landDelta[i] += r.landDelta[k];
-        causes.upliftDelta[i] += r.upliftDelta[k];
-        causes.erodDelta[i] += r.erodDelta[k];
-        if (r.types[k]) causes.islandType[i] = r.types[k];
-      });
+      putStamp(world, r);
       applyTerrain(world, { classBefore });
       // 一格的岛（小礁）不看大小：画出来约半格大
       const cellKm = world.mesh.spacing * world.kmPerUnit;
       const one = islandTypeById(small, spec.kind)?.shape === 'cell';
       const size = one ? `直径约 ${roundKm(cellKm * 0.5)} km` : spec.size < cellKm * 0.5 ? sizeText(world, spec.size) : `直径约 ${roundKm(spec.size * 2)} km`;
-      return { dirty: Dirty.Elevation, summary: `放了一个${islandTypeName(world, spec.kind)}（${size}）` };
+      return { dirty: Dirty.Elevation, summary: `放了一个${islandTypeName(world, spec.kind)}（${size}）${issueNote(issues)}` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);
       checkIslandKind(world, spec.kind);
       const islands = chainIslands(world, spec);
-      const r = combineStamps(world, islands);
+      const type = islandTypeById(small, spec.kind);
+      let r: StampResult;
+      let note = '';
+      let count = islands.length;
+      if (hasIslandScripts(type)) {
+        if (ctx.inBatch) throw new CommandError('带脚本的岛不能放进批量命令里，一个一个放');
+        const s = scriptedStamper(world, ctx.ensureDerived);
+        r = combineStamps(world, islands, s.stamp);
+        count -= s.refused();
+        if (!count || !r.footprint.length) throw new CommandError(s.refused() ? `「${islandOwner(type!)}」的脚本说这里放不了` : '这里放不下这种岛');
+        note = issueNote(s.issues());
+      } else r = combineStamps(world, islands);
       const classBefore = provinceLand(world);
-      r.cells.forEach((i, k) => {
-        causes.landDelta[i] += r.landDelta[k];
-        causes.upliftDelta[i] += r.upliftDelta[k];
-        causes.erodDelta[i] += r.erodDelta[k];
-        if (r.types[k]) causes.islandType[i] = r.types[k];
-      });
+      putStamp(world, r);
       applyTerrain(world, { classBefore });
-      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${islands.length} 个${islandTypeName(world, spec.kind)}` };
+      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${count} 个${islandTypeName(world, spec.kind)}${note}` };
     }
     case 'reroll_region': {
       const gen = small.terrain.gen;
@@ -1016,6 +1054,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'set_island_type': {
       const t = islandTypeSchema.parse(cmd.type);
+      // 脚本有语法错误时当场拒绝（运行时的错在放岛时才知道，那一段按没有脚本算）
+      checkIslandScripts(t);
       const list = islandTypesOf(small);
       const at = list.findIndex((x) => x.id === t.id);
       if (at < 0 && list.length >= MAX_ISLAND_TYPES) throw new CommandError(`岛的种类最多 ${MAX_ISLAND_TYPES} 种`);

@@ -26,7 +26,7 @@ function check(eng: Engine) {
   expect(json(detectFeatures(eng.world, eng.world.derived))).toBe(fresh);
   const hits = featureMemo.hits;
   expect(json(detectFeatures(eng.world, eng.world.derived))).toBe(fresh);
-  expect(featureMemo.hits - hits).toBe(5);
+  expect(featureMemo.hits - hits).toBe(6);
 }
 
 describe('地物识别的缓存与从头识别逐值一致', () => {

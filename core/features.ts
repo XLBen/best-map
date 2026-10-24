@@ -680,6 +680,54 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
   return { list: withLabels(mesh, list), dLand };
 }
 
+// 湖里的岛（第十五轮）：四周全是湖面的干陆地（陆格里不是湖面的连通块，挨着的格都是湖面，不挨地图边）。
+// 陆块按陆海分，湖面也是陆格，所以湖里的岛不会单独成为陆块：这里另外认出来，与海里的岛一样是“岛”（大小、标签同一个规则）。
+// 只取决于陆海与湖面；没有这样的地方时什么都不加（与以前逐值相同）
+function lakeIslandInputs(world: World, d: Derived): AddInput[] {
+  const { mesh } = world;
+  const n = mesh.n;
+  const land = world.causes.land;
+  const avgCellKm2 = mapAreaOf(world) / n;
+  const dry = new Uint8Array(n);
+  let lakes = 0;
+  for (let i = 0; i < n; i++) {
+    dry[i] = land[i] && d.lake[i] !== 1 ? 1 : 0;
+    if (d.lake[i] === 1) lakes++;
+  }
+  const list: AddInput[] = [];
+  if (!lakes) return list;
+  // 挨着湖面的干陆地格才可能是湖里的岛：从它们出发只走干陆地，碰到不是湖面的邻格（海、地图边）就不是
+  const comp = new Int32Array(n).fill(-1);
+  for (let s = 0; s < n; s++) {
+    if (!dry[s] || comp[s] >= 0) continue;
+    let byLake = false;
+    for (let e = mesh.off[s]; e < mesh.off[s + 1] && !byLake; e++) if (d.lake[mesh.adj[e]] === 1) byLake = true;
+    if (!byLake) continue;
+    const cells = [s];
+    comp[s] = s;
+    let enclosed = !mesh.boundary[s];
+    for (let h = 0; h < cells.length; h++) {
+      const c = cells[h];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (dry[j]) {
+          if (comp[j] < 0) {
+            comp[j] = s;
+            cells.push(j);
+            if (mesh.boundary[j]) enclosed = false;
+          }
+        } else if (!land[j] || d.lake[j] !== 1) enclosed = false;
+      }
+    }
+    if (!enclosed || cells.length < 2) continue;
+    cells.sort((a, b) => a - b);
+    const area = areaOf(world, cells);
+    const tags = [area > avgCellKm2 * 400 ? 'large' : area < avgCellKm2 * 6 ? 'small' : ''];
+    put(list, 'island', cells, 4 + Math.log10(area), tags.filter(Boolean), undefined, cells.length < 120 ? 'islet' : undefined);
+  }
+  return withLabels(mesh, list);
+}
+
 // 湖：只取决于湖面与高度（没挖河床的地形）
 function lakeInputs(world: World, d: Derived, terrain: ArrayLike<number>): AddInput[] {
   const { mesh } = world;
@@ -1241,6 +1289,7 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
   const coast = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
   replay(coast.list);
   replay(memoized(mesh, 'lake', [d.lake, terrain, km], () => lakeInputs(world, d, terrain)));
+  replay(memoized(mesh, 'lake-island', [causes.land, d.lake, km], () => lakeIslandInputs(world, d)));
   const rivers = memoized(mesh, 'river', [causes.land, d.receiver, d.discharge, d.lake, Float64Array.of(small.planet.riverThreshold)], () => riverInputs(world, d));
   // 有名字的画的河占了的自然大河不再单独标（同一条河只标一次）；没有这种河时照旧
   const named = namedGuideCells(world, d);

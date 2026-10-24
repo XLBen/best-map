@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
 import type { Command } from '../../core/commands';
+import { placedLakeCell } from '../../core/elevation';
 import type { GeoFeature } from '../../core/features';
 import { type LakeType, PLAIN_LAKE } from '../../core/lake-types';
 import { matchesNaturally } from '../../core/water-types';
@@ -30,16 +31,17 @@ export function lakeCellsAt(w: World, cell: number): number[] {
 }
 
 // 一串格里放的湖（几个连成一片时取最后放的那个，与起名、类型一致）
+// 放的湖认哪一格：湖心那一格不再是湖（湖心放了岛）时取碗里最近的湖格（与水文、湖的类型一样，见 placedLakeCell）
 function placedIn(w: World, cells: readonly number[]): LakeSpec | undefined {
   const set = new Set(cells);
-  for (let k = w.small.lakes.length - 1; k >= 0; k--) if (set.has(w.small.lakes[k].cell)) return w.small.lakes[k];
+  for (let k = w.small.lakes.length - 1; k >= 0; k--) if (set.has(placedLakeCell(w, w.small.lakes[k], w.derived.lake))) return w.small.lakes[k];
   return undefined;
 }
 
 // 一串格里全部放的湖（按放的先后）
 function placedAll(w: World, cells: readonly number[]): LakeSpec[] {
   const set = new Set(cells);
-  return w.small.lakes.filter((l) => set.has(l.cell));
+  return w.small.lakes.filter((l) => set.has(placedLakeCell(w, l, w.derived.lake)));
 }
 
 // 点在湖上：选中的是哪个湖（里面有放的湖时是那个放的湖）

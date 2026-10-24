@@ -97,6 +97,12 @@ function PackContents({ pack }: { pack: ResourcePack }) {
           <ItemChips items={pack.lakeTypes.map((r) => ({ name: itemName(r), color: r.color }))} />
         </>
       )}
+      {!!pack.islandTypes?.length && (
+        <>
+          <h5>岛的种类 {pack.islandTypes.length}</h5>
+          <ItemChips items={pack.islandTypes.map((r) => ({ name: itemName(r), color: typeof r.color === 'string' && r.color.startsWith('#') ? r.color : undefined }))} />
+        </>
+      )}
       {!!pack.planetForms?.length && (
         <>
           <h5>星球形态 {pack.planetForms.length}</h5>
@@ -186,7 +192,7 @@ function LibraryView() {
         <h2>资源包</h2>
         <button onClick={close}>关上</button>
       </div>
-      <p class="muted small">资源包里是做好的生态、河流类型、湖泊类型、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
+      <p class="muted small">资源包里是做好的生态、河流类型、湖泊类型、岛的种类、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
       <div class="row wrap">
         <label class="file-button">
           导入资源包…
@@ -323,6 +329,7 @@ function ExportView() {
   const biomes = useMemo(() => (w ? exportableBiomes(w) : []), [w]);
   const rivers = useMemo(() => (w ? (PACK_SECTIONS.riverTypes.fromWorld?.(w) ?? []) : []), [w]);
   const lakes = useMemo(() => (w ? (PACK_SECTIONS.lakeTypes.fromWorld?.(w) ?? []) : []), [w]);
+  const isles = useMemo(() => (w ? (PACK_SECTIONS.islandTypes.fromWorld?.(w) ?? []) : []), [w]);
   const forms = useMemo(() => (w ? (PACK_SECTIONS.planetForms.fromWorld?.(w) ?? []) : []), [w]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [words, setWords] = useState(false);
@@ -341,13 +348,14 @@ function ExportView() {
         biomes: biomes.filter((b) => on('b', b.id)).map((b) => b.id),
         riverTypes: rivers.filter((r) => on('r', r.id)).map((r) => r.id),
         lakeTypes: lakes.filter((r) => on('l', r.id)).map((r) => r.id),
+        islandTypes: isles.filter((r) => on('i', r.id)).map((r) => r.id),
         planetForms: forms.filter((f) => on('f', f.id)).map((f) => f.id),
         wordPack: words,
       },
       { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined },
     );
   const preview = make();
-  const empty = !preview.biomes && !preview.riverTypes && !preview.lakeTypes && !preview.planetForms && !preview.textPacks;
+  const empty = !preview.biomes && !preview.riverTypes && !preview.lakeTypes && !preview.islandTypes && !preview.planetForms && !preview.textPacks;
   const endemic = endemicCount(w);
   // 普通函数（不是组件）：每次重画不会把勾选框换成新的
   const check = (k: string, label: string, color?: string) => (
@@ -397,6 +405,9 @@ function ExportView() {
       {lakes.map((r) => (
         check(`l:${r.id}`, `湖泊类型：${itemName(r)}`, r.color)
       ))}
+      {isles.map((r) => (
+        check(`i:${r.id}`, `岛的种类：${itemName(r)}`, typeof r.color === 'string' && r.color.startsWith('#') ? r.color : undefined)
+      ))}
       {forms.map((f) => (
         check(`f:${f.id}`, `星球形态：${itemName(f)}`)
       ))}
@@ -406,7 +417,7 @@ function ExportView() {
           <span>文字包「{w.small.wordPack.name}」</span>
         </label>
       )}
-      {!biomes.length && !rivers.length && !lakes.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
+      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && <p class="muted small">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
       {endemic > 0 && <p class="muted small">只长在某个岛上、圈的范围里的生态只属于这个世界，不带。</p>}
       {replaces && (
         <p class="muted small">

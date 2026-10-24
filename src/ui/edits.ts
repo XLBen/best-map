@@ -1,3 +1,4 @@
+import { placedLakeCell } from '../../core/elevation';
 import type { World } from '../../core/world';
 import type { HighlightLayer } from '../render/colors';
 
@@ -111,8 +112,10 @@ export const waterMask = memo(
     for (const l of w.small.lakes) {
       if (l.cell >= mesh.n) continue;
       has[l.cell] = 1;
-      if (lake[l.cell] !== 1) continue;
-      const stack = [l.cell];
+      // 湖心放了岛：从碗里最近的湖格起（见 placedLakeCell）
+      const at = placedLakeCell(w, l, lake);
+      if (lake[at] !== 1) continue;
+      const stack = [at];
       const seen = new Set(stack);
       while (stack.length) {
         const c = stack.pop()!;

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+// 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用别的模块，顶层直接读会碰上“初始化之前不能访问”
+import { scriptsSchema } from './script';
 import { typeIdSchema } from './type-id';
 import type { SmallState, World } from './world';
 
@@ -63,6 +65,11 @@ export const islandTypeSchema = z.object({
     .array(z.object({ p: z.string().min(1).max(40), w: z.number().positive().optional() }))
     .min(1)
     .max(20)
+    .optional(),
+  // 脚本（第十五轮，见 island-scripts.ts）：放在哪里（placement）、岛的样子（shape）。和形状、高低一样只在放岛的那一刻起作用
+  scripts: z
+    .lazy(() => scriptsSchema)
+    .refine((s) => Object.entries(s).every(([k, v]) => k === 'placement' || k === 'shape' || v === undefined), '岛的种类只能有“放在哪里”和“岛的样子”两种脚本')
     .optional(),
 });
 export type IslandType = z.output<typeof islandTypeSchema>;
@@ -150,7 +157,7 @@ export function removeIslandCode(arr: Uint8Array, k: number): void {
 }
 
 // 改一种要从哪一层重算：只改颜色只重画；只改名字、起名模板只重新起名；改了归哪种省要整理省份（命令里做）；
-// 形状、高低、岩石只影响以后放的岛（什么都不重算）
+// 形状、高低、岩石、脚本只影响以后放的岛（什么都不重算）
 export function islandTypeDirty(before: IslandType | undefined, after: IslandType): 'none' | 'names' {
   if (!before) return 'none';
   return JSON.stringify([before.name, before.names ?? null]) === JSON.stringify([after.name, after.names ?? null]) ? 'none' : 'names';
@@ -245,4 +252,9 @@ export function landProvinceCells(world: Pick<World, 'mesh' | 'causes' | 'small'
   list.unshift({ key, value: owner });
   list.length = Math.min(list.length, 3);
   return owner;
+}
+
+// 有没有岛的脚本（放在哪里、岛的样子）。有时放岛要在 Worker 里按脚本算（见 island-scripts.ts），主线程只画轮廓
+export function hasIslandScripts(t: Pick<IslandType, 'scripts'> | undefined): boolean {
+  return !!(t?.scripts?.placement?.src.trim() || t?.scripts?.shape?.src.trim());
 }

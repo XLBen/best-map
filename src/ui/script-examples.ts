@@ -1,3 +1,4 @@
+import { LAKE_ISLE_PLACEMENT, LAKE_ISLE_SHAPE } from '../../core/packs/fantasy-islands';
 import type { ScriptKind } from '../../core/script';
 
 // 脚本框“变量和例子”里每种脚本的几段例子（变量用中文名；测试检查它们都能通过编辑器的检查）
@@ -21,7 +22,19 @@ export const SCRIPT_EXAMPLES: Record<ScriptKind, { label: string; src: string }[
   ],
   crust: [{ label: '两极抬高', src: '// 纬度 55° 以上慢慢抬高，最多 900 米\nconst polar = smoothstep(55, 80, Math.abs(纬度));\nreturn { height: 高度 + 900 * polar };' }],
   setup: [{ label: '再加一块大陆', src: 'addBlock({ lat: 30, lon: 60, size: 25 });' }],
+  shape: [
+    { label: '湖心岛：高出湖面的小丘', src: LAKE_ISLE_SHAPE },
+    { label: '平平的沙洲', src: '// 只高出水面两三米\nreturn 水面高度 + 2 + rand();' },
+    { label: '中间一座尖山', src: '// 岛心 1200 米，往外很快低下去\nreturn Math.max(水面高度 + 5, 1200 * Math.pow(1 - 离岛心, 2));' },
+  ],
 };
+
+// 岛的种类的“放在哪里”（第十五轮）：“变量和例子”在岛的编辑器里换成这几段
+export const ISLAND_PLACEMENT_EXAMPLES: { label: string; src: string }[] = [
+  { label: '湖心岛：只放在湖里', src: LAKE_ISLE_PLACEMENT },
+  { label: '只放在海里', src: 'return 是海 === 1;' },
+  { label: '只放在暖和的海里', src: '// 年均温 20 °C 以上的海\nreturn 是海 === 1 && 年均温 > 20;' },
+];
 
 // 湖泊类型的 match（第九轮）：“变量和例子”在湖的编辑器里换成这几段（河的那几段用到河长、源头海拔，湖里没有）
 export const LAKE_MATCH_EXAMPLES: { label: string; src: string }[] = [

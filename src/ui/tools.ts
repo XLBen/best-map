@@ -23,7 +23,8 @@ import {
   roundKm as km,
   type TerrainPreview,
 } from '../../core/terrain';
-import { islandTypeById, liveIslandKind } from '../../core/island-types';
+import { hasIslandScripts, islandTypeById, liveIslandKind } from '../../core/island-types';
+import { islandOutline } from '../../core/island-scripts';
 import { classOfKind, regenTargets } from '../../core/provinces';
 import { explainCell, isVegetated, landmassCells } from '../../core/vegetation';
 import { type ProvinceMeta, type RegionKind, type World, provinceColor, provinceDisplayColor } from '../../core/world';
@@ -55,6 +56,7 @@ import {
   sliderActive,
   slowPreview,
   world,
+  worldPreviewError,
 } from '../state';
 import { climateHere, climateMask, erasableLayer, natureHere, natureMask, terrainHere, terrainMask } from './edits';
 import { Exact, type ExactView } from './exact';
@@ -805,11 +807,15 @@ const movedAway = (s: Settled, p: Pointer) => !s || Math.hypot(p.sx - s.sx, p.sy
 
 // 点一下：用底部滑块的大小放岛；按住往外拖：拖多远岛就多大（松手后滑块也停在这个大小）。
 // 前面的编辑还在算时也能放（排队）：命令只看位置、种类、大小、形状，与等着放相同
+// 带脚本的岛（第十五轮）：主线程不运行脚本，先画出岛的范围（虚线框），手停下时在 Worker 里确切地预览（就是松手后的样子）；
+// 放在哪里的脚本说放不了时轮廓涂红、写出原因，松手也不放
 export function islandTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let drag: { x: number; y: number; cell: number; sx: number; sy: number; km: number | null } | null = null;
   let settled: Settled = null;
-  let cache: { key: string; preview: Preview; spec: IslandSpec | null; block: string | null } | null = null;
+  let cache: { key: string; preview: Preview; spec: IslandSpec | null; block: string | null; outline?: number[] } | null = null;
+  const ex = new Exact();
+  const cmdOf = (spec: IslandSpec): Command => ({ op: 'add_island', island: spec });
   const compute = () => {
     const w = world.value;
     if (!w || !pointer) return null;
@@ -830,6 +836,17 @@ export function islandTool(): ToolHandler {
     let block: string | null = null;
     if (spec.kind === 'atoll' && !w.causes.land[center.cell] && w.derived.tMean[center.cell] < 20) {
       block = `海水太凉（${Math.round(w.derived.tMean[center.cell])} °C），珊瑚岛要 20 °C 以上`;
+    }
+    if (hasIslandScripts(islandTypeById(w.small, spec.kind))) {
+      // 带脚本的岛：先画范围，确切的样子等 Worker（见 preview）
+      const outline = islandOutline(w, spec);
+      const preview: Preview = {
+        layers: [{ cells: outline, color: WHITE, pattern: 'outline' }],
+        shapes: drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [],
+        hint: reef ? `${name} · 一格（约 ${diameter} km）` : `${name} · ${sizeText(w, spec.size)}`,
+      };
+      cache = { key, preview, spec, block: null, outline };
+      return cache;
     }
     const stamp = islandStamp(w, spec);
     const fresh = stamp.footprint.filter((c) => !w.causes.land[c]);
@@ -875,8 +892,9 @@ export function islandTool(): ToolHandler {
       const c = compute();
       drag = null;
       if (!c?.spec || !w) return;
-      if (c.block) {
-        showToast(c.block, true);
+      const why = c.outline ? worldPreviewError(cmdOf(c.spec)) : null;
+      if (c.block || why) {
+        showToast(c.block ?? why!, true);
         return;
       }
       const spec = c.spec;
@@ -886,24 +904,52 @@ export function islandTool(): ToolHandler {
       settled = mark;
       // 松手时的岛（将来的海岸线）留在图上直到结果换上，鼠标离开地图也留着，不闪回原来的海岸（拖大小的虚线不留）。
       // 排在前面的编辑先换上了：按新的世界重算（结果按执行时的世界算）
+      if (c.outline) {
+        // 带脚本的岛：确切预览算好了就留着它（将来的世界），没算好时留着范围
+        ex.stop();
+        const v = ex.view;
+        const key = JSON.stringify(cmdOf(spec));
+        const shown: Preview = v?.key === key ? { layers: [], shapes: [], hint: null, world: v.world } : { layers: c.preview.layers, shapes: [], hint: null };
+        try {
+          await trackEdit(shown, exec(cmdOf(spec), '正在造岛…'));
+        } finally {
+          if (settled === mark) settled = null;
+          ex.clear();
+        }
+        return;
+      }
       const shown: Preview = { layers: c.preview.layers, shapes: [], hint: null, ghost: c.preview.ghost };
       const ghostAt = (now: World): GhostEdit => {
         const st = islandStamp(now, spec);
         return { cells: st.cells, delta: st.landDelta };
       };
       try {
-        await trackEdit(shown, exec({ op: 'add_island', island: spec }, '正在造岛…'), ghostFollows(shown, w, ghostAt));
+        await trackEdit(shown, exec(cmdOf(spec), '正在造岛…'), ghostFollows(shown, w, ghostAt));
       } finally {
         if (settled === mark) settled = null;
       }
     },
     cancel() {
       drag = null;
+      ex.clear();
     },
     preview() {
       if (settled) return { ...EMPTY, hint: '正在计算…' };
       const c = compute();
       if (!c) return EMPTY;
+      if (c.outline && c.spec) {
+        const cmd = cmdOf(c.spec);
+        const key = JSON.stringify(cmd);
+        const w = world.value;
+        ex.want(key, () => (world.value === w ? cmd : null));
+        const why = worldPreviewError(cmd);
+        if (why) return { ...c.preview, layers: [{ cells: c.outline, color: [230, 90, 70], alpha: 0.75 }], hint: why, warn: true };
+        const v = ex.view;
+        const q = queueHint();
+        if (v?.key === key) return { ...c.preview, layers: [{ cells: v.result.changedCells, color: WHITE, pattern: 'outline' }], hint: q ?? c.preview.hint, world: v.world };
+        const slow = ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '…';
+        return { ...c.preview, hint: q ?? `${c.preview.hint}${slow}` };
+      }
       const q = c.block ? null : queueHint();
       return q ? { ...c.preview, hint: q } : c.preview;
     },
@@ -911,11 +957,13 @@ export function islandTool(): ToolHandler {
 }
 
 // 岛链：按住拖出一条线，岛沿着线排开。前面的编辑还在算时也能画（排队）
+// 带脚本的岛（第十五轮）：画出每个岛的范围，手停下时在 Worker 里确切地预览（与放岛一样）
 export function chainTool(): ToolHandler {
   let pointer: Pointer | null = null;
   let points: [number, number][] | null = null;
   let lastScreen: [number, number] = [0, 0];
-  let cache: { key: string; preview: Preview } | null = null;
+  let cache: { key: string; preview: Preview; scripted: boolean } | null = null;
+  const ex = new Exact();
   // 预览与执行用同一份参数
   const specFor = (pts: [number, number][]) => {
     const o = options.value;
@@ -938,19 +986,35 @@ export function chainTool(): ToolHandler {
     const key = `${worldId(w)}|${JSON.stringify(spec)}`;
     if (cache?.key !== key) {
       const islands = chainIslands(w, spec);
-      const stamp = combineStamps(w, islands);
-      cache = {
-        key,
-        preview: {
-          layers: [],
-          shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
-          hint: `${islands.length} 个${islandTypeName(w, spec.kind)}`,
-          // 地图上直接画出岛链将来的海岸线
-          ghost: { cells: stamp.cells, delta: stamp.landDelta },
-        },
-      };
+      const line: Shape = { kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' };
+      if (hasIslandScripts(islandTypeById(w.small, spec.kind))) {
+        // 带脚本的岛：先画每个岛的范围，确切的样子等 Worker
+        const outline = [...new Set(islands.flatMap((s) => islandOutline(w, s)))];
+        cache = { key, scripted: true, preview: { layers: [{ cells: outline, color: WHITE, pattern: 'outline' }], shapes: [line], hint: `最多 ${islands.length} 个${islandTypeName(w, spec.kind)}` } };
+      } else {
+        const stamp = combineStamps(w, islands);
+        cache = {
+          key,
+          scripted: false,
+          preview: {
+            layers: [],
+            shapes: [line],
+            hint: `${islands.length} 个${islandTypeName(w, spec.kind)}`,
+            // 地图上直接画出岛链将来的海岸线
+            ghost: { cells: stamp.cells, delta: stamp.landDelta },
+          },
+        };
+      }
     }
-    return cache.preview;
+    if (!cache.scripted) return cache.preview;
+    const cmd: Command = { op: 'add_island_chain', chain: spec };
+    const ck = JSON.stringify(cmd);
+    ex.want(ck, () => (world.value === w ? cmd : null));
+    const why = worldPreviewError(cmd);
+    if (why) return { ...cache.preview, layers: cache.preview.layers.map((l) => ({ ...l, color: [230, 90, 70] as RGB })), hint: why, warn: true };
+    const v = ex.view;
+    if (v?.key === ck) return { ...cache.preview, layers: [{ cells: v.result.changedCells, color: WHITE, pattern: 'outline' }], hint: v.result.summary.replace(/^画了一条岛链：/, '') || cache.preview.hint, world: v.world };
+    return { ...cache.preview, hint: `${cache.preview.hint}${ex.slow !== null ? `，松手后约 ${ex.slow} 秒出结果` : '…'}` };
   };
   return {
     drags: true,
@@ -978,6 +1042,25 @@ export function chainTool(): ToolHandler {
         return;
       }
       const chain = specFor(pts);
+      if (cache?.scripted) {
+        const cmd: Command = { op: 'add_island_chain', chain };
+        const why = worldPreviewError(cmd);
+        if (why) {
+          showToast(why, true);
+          ex.clear();
+          return;
+        }
+        ex.stop();
+        const v = ex.view;
+        const shown: Preview = v?.key === JSON.stringify(cmd) ? { layers: [], shapes: [], hint: null, world: v.world } : { ...previewOf(w, chain), hint: null };
+        setOptions({ chainVariant: chain.variant + 1 });
+        try {
+          await trackEdit(shown, exec(cmd, '正在造岛链…'));
+        } finally {
+          ex.clear();
+        }
+        return;
+      }
       // 松手时的岛（将来的海岸线）与线留在图上，直到结果换上（滑块马上换到下一种排列，不能再按滑块重算）。
       // 排在前面的编辑先换上了：按新的世界重算（结果按执行时的世界算）
       const at: Preview = { ...previewOf(w, chain), hint: null };
@@ -991,6 +1074,7 @@ export function chainTool(): ToolHandler {
     },
     cancel() {
       points = null;
+      ex.clear();
     },
     preview() {
       const w = world.value;

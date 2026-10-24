@@ -4,7 +4,7 @@ import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, accumulate } from './routing';
 import { lagoonTest, pocketLakes, seabedFields } from './terrain';
-import type { World } from './world';
+import { FREE_HEIGHT, type World } from './world';
 
 // 高程 = 抬升与河流下切的稳态（stream power law，n = 1）：
 //   dh/dt = U − K·A^m·S = 0  ⇒  沿河道 h_i = h_下游 + U_i·L / (K_i·A_i^m)
@@ -314,6 +314,10 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
       elevation[i] = Math.min(elevation[i], rim - 1 - lake.depth * f[k]);
     }
   }
+  // 岛的脚本定下的高度（第十五轮）：陆地格上直接换成它（湖里的岛：高出湖面的格是干的陆地，湖照旧按溢出口蓄水）。
+  // 放在挖湖之后：放的湖里的岛不会被湖底挖掉。没有放过这样的岛时没有这个数组，什么都不做
+  const fixed = causes.islandHeight;
+  if (fixed) for (let i = 0; i < n; i++) if (land[i] && fixed[i] !== FREE_HEIGHT) elevation[i] = fixed[i];
   return { elevation, coastKm };
 }
 
@@ -1078,6 +1082,24 @@ export function lakeArea(world: World, cell: number, radiusKm: number): number[]
   const out: number[] = [];
   for (let i = 0; i < mesh.n; i++) if (causes.land[i] && d[i] <= rUnits) out.push(i);
   return out;
+}
+
+// 放的湖在水文里认哪一格（第十五轮）：放湖的那一格；那一格不再是水面时（湖心放了岛、抬高了），
+// 取湖的碗里（与挖洼地同一个范围）离它最近的水面格（一样近取编号小的）；碗里一格水面都没有时还是放湖的那一格。
+// 这样湖心有岛的湖照旧是“放的湖”（常年蓄满、不算太小的湖）
+export function placedLakeAnchor(world: World, lake: { cell: number; radius: number }, isWater: (i: number) => boolean): number {
+  if (isWater(lake.cell)) return lake.cell;
+  const { mesh, causes } = world;
+  const rUnits = lakeRadiusUnits(world, lake.radius);
+  const d = graphDistance(mesh, [lake.cell], rUnits);
+  let best = -1;
+  for (let i = 0; i < mesh.n; i++) if (causes.land[i] && d[i] <= rUnits && isWater(i) && (best < 0 || d[i] < d[best])) best = i;
+  return best < 0 ? lake.cell : best;
+}
+
+// 推导算好之后，放的湖认哪一格（湖类型、选中湖时用）：同上，按推导里的湖（湖面、干涸的湖底都算）
+export function placedLakeCell(world: World, lake: { cell: number; radius: number }, dLake: ArrayLike<number>): number {
+  return lake.cell < world.mesh.n ? placedLakeAnchor(world, lake, (i) => dLake[i] !== 0) : lake.cell;
 }
 
 // ---------- 只挖河床（第八轮） ----------

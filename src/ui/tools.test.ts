@@ -695,6 +695,31 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     expect(blocked.hint).toBe('这里已经是陆地');
   });
 
+  it('带脚本的岛（第十五轮）：主线程不运行脚本，悬停画出岛的范围（不按“只能放在海里”拦），松手照常发出放岛的命令', async () => {
+    const w0 = setup();
+    const isle = { id: 'lake_isle', name: '湖心岛', shape: 'round' as const, height: 'flat' as const, province: 'land' as const, scripts: { placement: { api: 1 as const, src: 'return 湖 === 1;' } } };
+    const w = { ...w0, small: { ...w0.small, islandTypes: [isle] } };
+    world.value = w;
+    setOptions({ islandKind: 'lake_isle' });
+    try {
+      const land = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 6).every((j) => w.causes.land[j]))!;
+      const t = islandTool();
+      t.move?.(at(w, land), false);
+      const pv = t.preview();
+      expect(pv.hint).not.toBe('这里已经是陆地');
+      expect(pv.warn).toBeFalsy();
+      expect(pv.ghost ?? null).toBeNull();
+      expect(pv.layers[0].pattern).toBe('outline');
+      expect(pv.layers[0].cells).toContain(land);
+      t.down?.(at(w, land));
+      await t.up?.(at(w, land));
+      const sent = vi.mocked(exec).mock.calls.at(-1)![0];
+      expect(sent.op === 'add_island' && sent.island.kind).toBe('lake_isle');
+    } finally {
+      setOptions({ islandKind: 'continental' });
+    }
+  });
+
   it('放岛松手后算的期间：一直是松手时的那个岛（滑块已经换到下一个形状也不跟着变）', async () => {
     const w = setup();
     const sea = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 5).every((j) => !w.causes.land[j] && !w.mesh.boundary[j]))!;

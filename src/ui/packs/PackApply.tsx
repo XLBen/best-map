@@ -4,11 +4,13 @@ import { hexToRgb } from '../../../core/export';
 import { packProblems as wordPackProblems } from '../../../core/names';
 import { PACK_SECTIONS, type PackPicks, type ResourcePack, newBiomeCells, packScripts, planPack } from '../../../core/packs';
 import type { FoundScript } from '../../../core/script';
+import type { IslandType } from '../../../core/island-types';
 import type { World } from '../../../core/world';
 import { trustScripts, untrustedScripts } from '../../trust';
 import type { HighlightLayer } from '../../render/colors';
 import { adjustPreviewWorld, cancelWorldPreview, exactDelay, execAdjust, knowIsolation, previewWorld, world, worldPreviewError } from '../../state';
 import { TrustBlock } from './Scripts';
+import { islandSwatch } from '../panels/islandTypes';
 import { type ApplyState, packApply } from './store';
 
 // “用到这个世界”：浮在地图左边的卡片（不挡地图）。勾选要用的项，地图上先画出用了之后的样子
@@ -122,11 +124,11 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
     }
   };
 
-  const togglePick = (sec: 'biomes' | 'riverTypes' | 'lakeTypes', id: string) => {
+  const togglePick = (sec: 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes', id: string) => {
     const cur = picks[sec] ?? [];
     setPicks({ ...picks, [sec]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   };
-  const status = (sec: 'biomes' | 'riverTypes' | 'lakeTypes', id: string, name: string): string => {
+  const status = (sec: 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes', id: string, name: string): string => {
     const s = plan.skipped.find((x) => x.section === sec && x.from === id);
     if (s) return '已经有了';
     const a = plan.added.find((x) => x.section === sec && x.from === id);
@@ -139,6 +141,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
   const riverSec = PACK_SECTIONS.riverTypes;
   const lakes = pack.lakeTypes ?? [];
   const lakeSec = PACK_SECTIONS.lakeTypes;
+  const isles = pack.islandTypes ?? [];
+  const isleSec = PACK_SECTIONS.islandTypes;
   const forms = pack.planetForms ?? [];
   const texts = pack.textPacks ?? [];
   const total = w.small.species.length + plan.added.filter((a) => a.section === 'biomes').length;
@@ -191,6 +195,21 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
               </label>
             ))}
             {lakeSec.note && <p class="muted small">{lakeSec.note}</p>}
+          </>
+        )}
+        {st.only !== 'biomes' && !!isles.length && (
+          <>
+            <h5>岛的种类</h5>
+            {isles.map((r) => (
+              <label class="check">
+                <input type="checkbox" disabled={!isleSec.command} checked={!!isleSec.command && !!picks.islandTypes?.includes(r.id)} onChange={() => togglePick('islandTypes', r.id)} />
+                <span>
+                  <span class="swatch" style={{ background: islandSwatch(r as unknown as IslandType) }} /> {r.name || r.id}
+                  {picks.islandTypes?.includes(r.id) && status('islandTypes', r.id, r.name || r.id) && <span class="muted small">（{status('islandTypes', r.id, r.name || r.id)}）</span>}
+                </span>
+              </label>
+            ))}
+            <p class="muted small">用上之后在放岛、画岛链的“岛：▾”里选。</p>
           </>
         )}
         {st.only !== 'biomes' && !!forms.length && (

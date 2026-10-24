@@ -5,11 +5,11 @@ import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, resolve
 import { formDigest } from './planet-form';
 import type { ScriptIssue } from './script';
 import { type Mesh, type SphereMesh, findCell } from './mesh';
-import { clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
+import { type Noise2, clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
 import { nearestCell } from './sphere';
 import { coastValueAt } from './subcell';
 import { CommandError } from './errors';
-import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, islandCode, islandTypeById } from './island-types';
+import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, hasIslandScripts, islandCode, islandTypeById } from './island-types';
 import type { World } from './world';
 
 // 地形“原因”的组合：
@@ -797,6 +797,8 @@ export interface StampResult {
   types: number[];
   // 岛的轮廓（预览用）：放岛后会是陆地的格
   footprint: number[];
+  // 岛的脚本定下的高度（m，与 cells 对齐；NaN 是没定）。只有带“岛的样子”脚本的岛才有（见 island-scripts.ts）
+  heights?: number[];
 }
 
 // 数值大小指海岸线的半径：轮廓平均落在这个距离上。岛心半径 R 与海岸线的比例按形状不同
@@ -813,22 +815,27 @@ const REEF_V = 100;
 const REEF_KEEP = 30;
 
 // 岛心所在的格：整个星球按球面上最近的格（与 toUnit 同一个换算）
-function centerCell(mesh: Mesh, x: number, y: number): number {
+export function centerCell(mesh: Mesh, x: number, y: number): number {
   return mesh.kind === 'sphere' ? nearestCell(mesh, x, y) : findCell(mesh, x, y);
 }
 
 // 一格的岛（小礁）：只把岛心那一格抬成陆地，不看大小和形状。陆度取 max(REEF_V − a·k, REEF_KEEP − 2·COAST_AMP·k, REEF_KEEP)：
 // 第一项让现在的海岸值是 REEF_V；后两项保证海岸曲折调到 0 到 2 之间它都还在
+// 一格的岛那一格要加的陆度（见 reefStamp）
+export function reefLandDelta(world: World, c: number): number {
+  const k = coastNoiseField(world.mesh, coastSeed(world))[c];
+  const a = COAST_AMP * world.small.terrain.coastRoughness;
+  const target = Math.max(REEF_V - a * k, REEF_KEEP - 2 * COAST_AMP * k, REEF_KEEP);
+  return Math.max(0, target - world.causes.landness[c]);
+}
+
 function reefStamp(world: World, spec: IslandSpec, t: IslandType, code: number): StampResult {
   const { mesh, causes } = world;
   const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
   const c = centerCell(mesh, spec.x, spec.y);
   if (causes.land[c]) return out;
-  const k = coastNoiseField(mesh, coastSeed(world))[c];
-  const a = COAST_AMP * world.small.terrain.coastRoughness;
-  const target = Math.max(REEF_V - a * k, REEF_KEEP - 2 * COAST_AMP * k, REEF_KEEP);
   out.cells.push(c);
-  out.landDelta.push(Math.max(0, target - causes.landness[c]));
+  out.landDelta.push(reefLandDelta(world, c));
   out.upliftDelta.push(0);
   out.erodDelta.push(t.rock === undefined ? 0 : t.rock - causes.erod[c]);
   out.types.push(code);
@@ -836,14 +843,23 @@ function reefStamp(world: World, spec: IslandSpec, t: IslandType, code: number):
   return out;
 }
 
-// 太小、一格陆地都放不出来时（大小不到 1.5 格才会发生），把岛心那一格抬成陆地
-export function islandStamp(world: World, spec: IslandSpec): StampResult {
-  const { t, code } = typeOfSpec(world, spec.kind);
-  if (t.shape === 'cell') return reefStamp(world, spec, t, code);
-  const { mesh, causes } = world;
-  const ring = t.shape === 'ring';
+// 岛的轮廓的几何（第十五轮从 islandStamp 里拆出来，岛的脚本也用它）：岛心附近每格相对岛心的位置（东、南，地图单位）
+// 与“按形状量的距离” dd（岛心半径 R 的倍数，噪声让边缘有湾有岬）。只列 dd 的原始距离 d ≤ 1.9 的格，按编号排
+export interface IslandGeometry {
+  R: number;
+  // 岛心所在的格
+  c0: number;
+  // 形状的噪声（起伏的丘陵也用它）
+  shape: Noise2;
+  cells: number[];
+  dx: number[];
+  dy: number[];
+  dd: number[];
+}
+
+export function islandGeometry(world: World, spec: IslandSpec, t: IslandType): IslandGeometry {
+  const { mesh } = world;
   const R = spec.size / SHORE[t.shape] / world.kmPerUnit;
-  const rough = world.small.terrain.coastRoughness;
   // 形状只取决于形状这一项与 variant：噪声按“相对岛心、以半径为单位”的坐标取，所以换位置不变形、改大小是等比例缩放
   const sphere = mesh.kind === 'sphere' ? mesh : null;
   const seed = mixSeed(coastSeed(world), 778, spec.variant, SHAPE_SEED[t.shape]);
@@ -855,14 +871,6 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   const ca = Math.cos(ang);
   const sa = Math.sin(ang);
   const irregular = t.shape === 'rugged' ? 0.45 : t.shape === 'long' ? 0.25 : 0.18;
-  // 平的岛内圈只比海岸高一点，起伏、高的岛高得多
-  const bump = t.height === 'flat' ? 40 : 400;
-  const core = COAST_AMP * Math.max(rough, 0.2) + 60;
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
-  // 环礁的环与潟湖里的海格（岛心半径的 0.96 倍以内）：记上这种岛（潟湖的海底画成浅水）
-  const coral: boolean[] = [];
-  // 潟湖里（环以内）原来是海的格
-  const lagoonish: boolean[] = [];
   const reach = R * 1.9;
   // 整个星球：在岛心的切平面里取位置（等距方位投影），高纬度、接缝上的岛形状大小都和赤道上一样
   const center: V3 | null = sphere ? toUnit(spec.x, spec.y) : null;
@@ -891,6 +899,7 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     }
     nearby.sort((a, b) => a - b);
   }
+  const geo: IslandGeometry = { R, c0, shape, cells: [], dx: [], dy: [], dd: [] };
   for (const i of nearby) {
     let dx: number;
     let dy: number;
@@ -908,20 +917,62 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     const d = Math.hypot(u, v) / R;
     if (d > 1.9) continue;
     // 轮廓：噪声让边缘有湾有岬
-    const dd = d * (1 + irregular * fbm(shape, dx / R, dy / R, 1.6, 3));
-    let target: number;
-    let lift = 0;
-    if (ring) {
-      // 环礁：一圈陆地，中间潟湖，外侧很快变深。潟湖的海岸值是 −core（海岸噪声怎么调都还是海），
-      // 深浅由海底的后处理定（浅浅的十几到几十米，见 elevation.ts 的 lagoonFloor）。总是平的
-      const band = Math.abs(dd - 0.8);
-      target = band < 0.16 ? core * 0.6 : dd < 0.8 ? -core : -core * 2;
-    } else {
-      target = dd < 1 ? core + (1 - dd) * bump : core - (dd - 1) * 3 * core;
-      // 高：中间隆起成山（抬升从中心往外很快变小）；起伏：丘陵（抬升随噪声起伏）
-      if (t.height === 'high') lift = 0.5 * Math.pow(Math.max(0, 1 - dd), 1.4);
-      else if (t.height === 'hilly') lift = 0.25 * Math.max(0, 1 - dd) * (0.6 + 0.4 * fbm(shape, dx / R + 1, dy / R, 3, 3));
-    }
+    geo.cells.push(i);
+    geo.dx.push(dx);
+    geo.dy.push(dy);
+    geo.dd.push(d * (1 + irregular * fbm(shape, dx / R, dy / R, 1.6, 3)));
+  }
+  return geo;
+}
+
+// 岛的轮廓里一格本来的样子（没有岛的样子脚本时）：海岸值的目标与抬升。core 见 islandCore
+export function islandCellTarget(t: IslandType, dd: number, core: number, geo: IslandGeometry, k: number): { target: number; lift: number } {
+  // 平的岛内圈只比海岸高一点，起伏、高的岛高得多
+  const bump = t.height === 'flat' ? 40 : 400;
+  if (t.shape === 'ring') {
+    // 环礁：一圈陆地，中间潟湖，外侧很快变深。潟湖的海岸值是 −core（海岸噪声怎么调都还是海），
+    // 深浅由海底的后处理定（浅浅的十几到几十米，见 elevation.ts 的 lagoonFloor）。总是平的
+    const band = Math.abs(dd - 0.8);
+    return { target: band < 0.16 ? core * 0.6 : dd < 0.8 ? -core : -core * 2, lift: 0 };
+  }
+  const target = dd < 1 ? core + (1 - dd) * bump : core - (dd - 1) * 3 * core;
+  // 高：中间隆起成山（抬升从中心往外很快变小）；起伏：丘陵（抬升随噪声起伏）
+  const R = geo.R;
+  const lift =
+    t.height === 'high'
+      ? 0.5 * Math.pow(Math.max(0, 1 - dd), 1.4)
+      : t.height === 'hilly'
+        ? 0.25 * Math.max(0, 1 - dd) * (0.6 + 0.4 * fbm(geo.shape, geo.dx[k] / R + 1, geo.dy[k] / R, 3, 3))
+        : 0;
+  return { target, lift };
+}
+
+// 岛的内圈的海岸值（m）：海岸曲折怎么调都还是陆地
+export const islandCore = (world: World) => COAST_AMP * Math.max(world.small.terrain.coastRoughness, 0.2) + 60;
+
+// 按形状量的距离换成“离岛心”（0 岛心，1 岛的边上：海岸线大约落在这里）
+export const islandRadiusOf = (t: IslandType, dd: number) => dd / SHORE[t.shape];
+
+// 太小、一格陆地都放不出来时（大小不到 1.5 格才会发生），把岛心那一格抬成陆地
+export function islandStamp(world: World, spec: IslandSpec): StampResult {
+  const { t, code } = typeOfSpec(world, spec.kind);
+  if (t.shape === 'cell') return reefStamp(world, spec, t, code);
+  const { mesh, causes } = world;
+  const ring = t.shape === 'ring';
+  const rough = world.small.terrain.coastRoughness;
+  const sphere = mesh.kind === 'sphere' ? mesh : null;
+  const geo = islandGeometry(world, spec, t);
+  const { c0 } = geo;
+  const core = islandCore(world);
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
+  // 环礁的环与潟湖里的海格（岛心半径的 0.96 倍以内）：记上这种岛（潟湖的海底画成浅水）
+  const coral: boolean[] = [];
+  // 潟湖里（环以内）原来是海的格
+  const lagoonish: boolean[] = [];
+  for (let k = 0; k < geo.cells.length; k++) {
+    const i = geo.cells[k];
+    const dd = geo.dd[k];
+    const { target, lift } = islandCellTarget(t, dd, core, geo, k);
     const L = causes.landness[i];
     let delta = 0;
     // 放岛只添陆地（第十三轮修）：潟湖里的海格两头都改（深海抬到 −core，浅滩压到 −core），
@@ -999,7 +1050,7 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
 }
 
 // 岛的轮廓：放岛后在受影响范围内是陆地的格。types（与 cells 对齐，可省）：放岛记上的种类，潟湖的海格按它认
-function footprintOf(world: World, r: { cells: number[]; landDelta: number[]; types?: number[] }): number[] {
+export function footprintOf(world: World, r: { cells: number[]; landDelta: number[]; types?: number[] }): number[] {
   const out: number[] = [];
   let types: Map<number, number> | undefined;
   if (r.types?.length) {
@@ -1184,8 +1235,10 @@ function nearestLandKm(world: World, x: number, y: number, maxKm: number): numbe
   return best;
 }
 
-// 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落；排列按 variant 换（见 chainLayout）
+// 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落；排列按 variant 换（见 chainLayout）。
+// 带脚本的岛（第十五轮）：不躲开原来的陆地、不按长出的陆格数再缩放——哪里能放由“放在哪里”的脚本定（每个岛按它裁，见 island-scripts.ts）
 export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
+  if (hasIslandScripts(islandTypeById(world.small, spec.kind))) return (world.mesh.kind === 'sphere' ? chainIslandsSphere : chainIslandsFlat)(world, spec, 1);
   const minKm = chainMinKm(world);
   const raw = (s: ChainSpec, scale: number) => avoidLand(world, (world.mesh.kind === 'sphere' ? chainIslandsSphere : chainIslandsFlat)(world, s, scale), minKm);
   const islands = raw(spec, 1);
@@ -1289,24 +1342,31 @@ function chainIslandsSphere(world: World, spec: ChainSpec, scale: number): Islan
 }
 
 
-// 多个岛依次叠加（后一个看见前一个的结果，海岸值与岩性都是），返回合并后的增量
-export function combineStamps(world: World, specs: IslandSpec[]): StampResult {
+// 多个岛依次叠加（后一个看见前一个的结果，海岸值与岩性都是），返回合并后的增量。
+// stamp：一个岛怎么放（带脚本的岛用 island-scripts.ts 的，见 commands.ts）。定下的高度后放的岛说了算
+export function combineStamps(world: World, specs: IslandSpec[], stamp: (world: World, spec: IslandSpec) => StampResult = islandStamp): StampResult {
   const { causes } = world;
   const saved = new Map<number, [number, number, number]>();
-  const acc = new Map<number, { land: number; lift: number; erod: number; type: number }>();
+  const acc = new Map<number, { land: number; lift: number; erod: number; type: number; h: number }>();
+  let fixed = false;
   try {
     for (const spec of specs) {
-      const r = islandStamp(world, spec);
+      const r = stamp(world, spec);
       r.cells.forEach((i, k) => {
         if (!saved.has(i)) saved.set(i, [causes.landness[i], causes.erod[i], causes.islandType[i]]);
         causes.landness[i] += r.landDelta[k];
         causes.erod[i] += r.erodDelta[k];
         if (r.types[k]) causes.islandType[i] = r.types[k];
-        const a = acc.get(i) ?? { land: 0, lift: 0, erod: 0, type: 0 };
+        const a = acc.get(i) ?? { land: 0, lift: 0, erod: 0, type: 0, h: NaN };
         a.land += r.landDelta[k];
         a.lift += r.upliftDelta[k];
         a.erod += r.erodDelta[k];
         if (r.types[k]) a.type = r.types[k];
+        const h = r.heights?.[k];
+        if (h !== undefined && !Number.isNaN(h)) {
+          a.h = h;
+          fixed = true;
+        }
         acc.set(i, a);
       });
     }
@@ -1318,12 +1378,14 @@ export function combineStamps(world: World, specs: IslandSpec[]): StampResult {
     }
   }
   const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
+  if (fixed) out.heights = [];
   for (const [i, a] of acc) {
     out.cells.push(i);
     out.landDelta.push(a.land);
     out.upliftDelta.push(a.lift);
     out.erodDelta.push(a.erod);
     out.types.push(a.type);
+    out.heights?.push(a.h);
   }
   out.footprint = footprintOf(world, out);
   return out;

@@ -16,9 +16,14 @@ import {
   islandTypesOf,
   liveIslandKind,
 } from '../../../core/island-types';
+import type { Command } from '../../../core/commands';
+import { SCRIPT_API } from '../../../core/script';
 import type { World } from '../../../core/world';
-import { exec, openPanel, options, setOptions, togglePanel, whenEditsIdle, world, worldEpoch } from '../../state';
+import { exec, openPanel, options, replaceLast, setOptions, toast, togglePanel, trustHandledElsewhere, whenEditsIdle, world, worldEpoch } from '../../state';
 import { Seg } from '../common';
+import { noteScriptCommitted, showCell } from '../editor-hooks';
+import { ScriptBox } from '../ScriptBox';
+import { type ApplyMode, type ApplyResult, normScript } from '../script-commit';
 import { DragSlider } from './rivers';
 
 // 岛的种类（第十四轮）：放岛、画岛链底部条上“岛：珊瑚岛 ▾”的按钮、弹出的列表（最后一项“新建…”），
@@ -113,8 +118,10 @@ async function createAndUse(which: Which | null): Promise<void> {
 
 // 连着改几项时排队：后一步按前一步改完之后世界上的这一种做出整份（set_island_type 是整份换掉）
 let tail: Promise<unknown> = Promise.resolve();
+let queued = 0;
 function edit(id: string, make: (t: IslandType) => IslandType) {
   const epoch = worldEpoch.value;
+  queued++;
   tail = tail.then(async () => {
     await whenEditsIdle();
     const w = world.value;
@@ -126,6 +133,80 @@ function edit(id: string, make: (t: IslandType) => IslandType) {
     for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
     if (JSON.stringify(out) !== JSON.stringify(t)) await exec({ op: 'set_island_type', type: out as unknown as IslandType }, '正在修改…');
   });
+  tail = tail.then(
+    () => void queued--,
+    () => void queued--,
+  );
+}
+
+// ---------- 脚本（第十五轮） ----------
+
+type IslandScriptKind = 'placement' | 'shape';
+
+// 排着的修改都做完了没有、等它们做完（脚本框提交前先等，“换掉最后一步”才不会换掉别人的那一步）
+const editsSettled = () => queued === 0;
+async function settleEdits(): Promise<void> {
+  while (!editsSettled()) {
+    await tail;
+    await whenEditsIdle();
+  }
+}
+
+// 这一种的一段脚本换成 src（空的就去掉）
+export function islandScriptCommand(t: IslandType, kind: IslandScriptKind, src: string): Command {
+  const s = normScript(src);
+  const scripts = { ...(t.scripts ?? {}) };
+  if (s) scripts[kind] = { api: SCRIPT_API, src: s };
+  else delete scripts[kind];
+  const next = { ...t } as IslandType;
+  if (Object.keys(scripts).length) next.scripts = scripts;
+  else delete next.scripts;
+  return { op: 'set_island_type', type: next };
+}
+
+// 提交脚本。信任与别的脚本框一样只记框里写的这一段；revert：出错后换回旧写法，不报给信任列表
+async function applyIslandScript(id: string, kind: IslandScriptKind, src: string, mode: ApplyMode, revert = false): Promise<ApplyResult> {
+  const w = world.value;
+  const t = w ? islandTypesOf(w.small).find((x) => x.id === id) : undefined;
+  if (!t) return { ok: false, error: '这种岛已经不在了' };
+  const before = t.scripts?.[kind]?.src ?? '';
+  const cmd = trustHandledElsewhere(islandScriptCommand(t, kind, src));
+  const ok = mode === 'exec' ? await exec(cmd, '正在修改…') : await replaceLast(cmd, '正在修改…');
+  if (ok) {
+    if (!revert) noteScriptCommitted({ species: `island:${id}`, kind, src: normScript(src), before, mode });
+    return { ok: true };
+  }
+  const x = toast.value;
+  return { ok: false, error: x?.error ? x.text : '没有改成' };
+}
+
+function IslandScripts({ t }: { t: IslandType }) {
+  const w = world.value;
+  if (!w) return null;
+  const box = (kind: IslandScriptKind, label: string, hint: string) => (
+    <ScriptBox
+      key={`${worldEpoch.value}:island:${t.id}:${kind}`}
+      kind={kind}
+      scope="island"
+      label={label}
+      hint={hint}
+      value={t.scripts?.[kind]?.src ?? ''}
+      issue={() => null}
+      apply={(src, mode, revert) => applyIslandScript(t.id, kind, src, mode, revert)}
+      idle={editsSettled}
+      settle={settleEdits}
+      fields={Object.keys(w.causes.fields)}
+      onShowCell={showCell}
+    />
+  );
+  return (
+    <>
+      <h5>脚本</h5>
+      <p class="muted small">放岛的那一刻才运行，只影响以后放的岛。出错的那一段按没有脚本放，并在放岛的说明里写出来。</p>
+      {box('placement', '放在哪里', '每格一次，真的格岛才能占；点的地方不行就不放')}
+      {box('shape', '岛的样子', '每格一次，返回这格的高度（米），或 {height, rock, land}')}
+    </>
+  );
 }
 
 const ROCK_LO = ISLAND_ROCK_RANGE[0];
@@ -193,7 +274,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
         />
       </div>
       <h5>以后放的岛</h5>
-      <p class="muted small">形状、高低、岩石只用在以后放的岛上；颜色、省份、起名马上用到已经放的岛上。</p>
+      <p class="muted small">形状、高低、岩石、脚本只用在以后放的岛上；颜色、省份、起名马上用到已经放的岛上。</p>
       <div class="row wrap">
         <span class="hs-label">形状</span>
         <Seg<IslandType['shape']>
@@ -240,6 +321,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       <h5>起名</h5>
       <p class="muted small">每行一个模板，比如 {'{color}'}沙岛、{'{animal}'}礁；不写时按普通的岛起名。岛的大半是这一种时用。</p>
       <textarea class="names-box" rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
+      <IslandScripts t={t} />
       <div class="row wrap">
         <button class="small danger" onClick={() => void exec({ op: 'remove_island_type', id: t.id }, '正在删掉…')} title="删掉这一种：已经放的这种岛变成大陆岛">
           <Trash2 size={14} /> 删掉这一种
@@ -265,7 +347,7 @@ export function IslandTypesSection() {
     <section>
       <h5>岛的种类</h5>
       <p class="muted small">
-        内置的有{BUILTIN_ISLAND_TYPES.map((t) => t.name).join('、')}。自己的岛可以选形状、颜色、岩石、高低、归哪种省和起名的样子，放岛、画岛链时都能选。
+        内置的有{BUILTIN_ISLAND_TYPES.map((t) => t.name).join('、')}。自己的岛可以选形状、颜色、岩石、高低、归哪种省和起名的样子，还能写脚本定放在哪里、长成什么样（示例包里的湖心岛就是这样做的），放岛、画岛链时都能选。
       </p>
       {own.length > 0 && (
         <div class="feature-list">

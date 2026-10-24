@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { placedLakeCell } from './elevation';
 import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
 import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, inBiomes, majorityOf, matchesNaturally, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
 import type { Derived, SmallState, World } from './world';
@@ -127,7 +128,7 @@ function lakeInputs(world: World, d: Derived, parts: LakeParts, open: readonly n
       return max ? s : s / cells.length;
     });
   const placed = (k: number, perennialOnly: boolean) =>
-    world.small.lakes.some((l) => parts.of[l.cell] === k && (!perennialOnly || l.perennial)) ? 1 : 0;
+    world.small.lakes.some((l) => parts.of[placedLakeCell(world, l, d.lake)] === k && (!perennialOnly || l.perennial)) ? 1 : 0;
   const get = (key: string): InputValue | undefined => {
     let v = made.get(key);
     if (v !== undefined) return v;
@@ -215,7 +216,7 @@ export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16A
     if (k !== undefined) chosen[at] = k;
   };
   for (const e of world.small.lakeTyping ?? []) choose(e.cell, e.type);
-  for (const l of world.small.lakes) if (l.type !== undefined) choose(l.cell, l.type);
+  for (const l of world.small.lakes) if (l.type !== undefined) choose(placedLakeCell(world, l, d.lake), l.type);
   // 每个湖一次的 match（按类型的先后，先匹配上的算）。安全模式下带脚本的类型跳过：按不匹配，不记问题。
   // 第十二轮：关掉了自然生成的类型不匹配；选了“只在这些生态里”的，湖岸一圈至少一半是那几种生态才算
   const issues: ScriptIssue[] = [];
