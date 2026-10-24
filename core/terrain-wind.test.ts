@@ -19,13 +19,13 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第九轮去掉旧存档兼容时重录（放岛只收 km 数，岛的形状变了）；之后的优化必须逐值不变
     // 第十三轮：参考操作里放的岛有了岩性（高程变了，气候往后跟着变），与山挡风无关，tS、pS、discharge、dominant 重录
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
-    const FROZEN = { tS: '650fcb1b', pS: '9075cc5a', discharge: '24afab0e', dominant: '88858605', corrT: 'b905fbf1', province: '4295605' };
+    const FROZEN = { tS: '493021bb', pS: '514f6329', discharge: '88d29ef0', dominant: '97a98605', corrT: 'b905fbf1', province: '96066e05' };
     const eng = new Engine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
-    eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'volcanic', size: 440, variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'continental', size: 440, variant: 0 } });
     const d = w.derived;
     const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && d.lake[i] !== 1);
     eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(2000, 2300), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });

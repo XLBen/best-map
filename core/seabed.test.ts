@@ -239,7 +239,7 @@ describe('海底的剖面', () => {
       const far = seaDistance(w);
       let o = -1;
       for (let i = 0; i < mesh.n; i++) if (!w.causes.land[i] && far[i] < Infinity && (o < 0 || far[i] > far[o])) o = i;
-      eng.exec({ op: 'add_island', island: { x: mesh.x[o], y: mesh.y[o], kind: 'volcanic', size: 300, variant: 0 } });
+      eng.exec({ op: 'add_island', island: { x: mesh.x[o], y: mesh.y[o], kind: 'continental', size: 300, variant: 0 } });
       check('放岛', 'partial');
       // 岛的岸边再画一笔陆地（岛变大：岛上所有岸边海格的陆块大小都变）、再画一笔海（岛变小，可能断成两块）
       const isleCoast = coastal().filter((i) => Math.hypot(mesh.x[i] - mesh.x[o], mesh.y[i] - mesh.y[o]) < 0.3);

@@ -8,6 +8,8 @@ import { type Mesh, type SphereMesh, findCell } from './mesh';
 import { clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
 import { nearestCell } from './sphere';
 import { coastValueAt } from './subcell';
+import { CommandError } from './errors';
+import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, islandCode, islandTypeById } from './island-types';
 import type { World } from './world';
 
 // 地形“原因”的组合：
@@ -403,17 +405,20 @@ export function resolveTerrain(world: World) {
     causes.erod[i] = clamp(base.erod[i] + causes.erodDelta[i], 0.1, 5);
     causes.land[i] = isLandValue(L, coast[i], rough) ? 1 : 0;
   }
-  fillSeaPockets(mesh, causes.land, causes.erod);
+  fillSeaPockets(mesh, causes.land, lagoonTest(world));
 }
 
 // 陆地里围住的小块“海”并回陆地（第十三轮：以前只填单格的洞）。一块海（海格的连通块）不挨地图边、
 // 不超过 POCKET_MAX 格时不是真正的海：两三格的“内海”会把流进来的大河整条吞掉（河在海里就到头了）。
 // 这样的小块并回陆地；三格以上的在高程里挖成湖（elevation.ts 的 pocketLakes），河流进湖、从湖的出口接着流向大海；
-// 两格以下的就是平地，河照常流过。珊瑚岛的潟湖（可蚀性 ≥ LAGOON_ERODIBILITY 的海格）不算（单格的洞照旧填）。
+// 两格以下的就是平地，河照常流过。环礁的潟湖（记着环礁形状的岛的种类的海格，见 island-types.ts）不算（单格的洞照旧填）。
 // 整个星球没有地图边：只看大小。陆地越多海块越小，所以陆地比例调大时旧陆地一定被完整包含（与原来的单格洞相同）
 export const POCKET_MAX = 6;
-// 珊瑚岛潟湖的可蚀性下限（elevation.ts 的 lagoonFloor 按它认潟湖）
-export const LAGOON_ERODIBILITY = 4.6;
+// 潟湖：放环礁时记上 LAGOON_BIT 的海格（第十四轮：以前按可蚀性 ≥ 4.6 认，涂了很软的岩石的海也会当成潟湖）
+export function lagoonTest(world: Pick<World, 'causes'>, typeAfter?: ReadonlyMap<number, number>): (i: number) => boolean {
+  const t = world.causes.islandType;
+  return typeAfter ? (i) => ((typeAfter.get(i) ?? t[i]) & LAGOON_BIT) !== 0 : (i) => (t[i] & LAGOON_BIT) !== 0;
+}
 // 从 start（一格海）起找它所在的海块：是要并回陆地的小块时返回块里的格（按找到的先后），否则 null。
 // 最多走 POCKET_MAX + 1 格就有结论，所以每格都调一次也不慢；结果只取决于海块本身，与从哪一格起找无关
 function seaPocket(mesh: Mesh, isSea: (i: number) => boolean, isLagoon: (i: number) => boolean, start: number): number[] | null {
@@ -433,11 +438,10 @@ function seaPocket(mesh: Mesh, isSea: (i: number) => boolean, isLagoon: (i: numb
   return cells.length > 1 && lagoon ? null : cells;
 }
 
-function fillSeaPockets(mesh: Mesh, land: Uint8Array, erod: ArrayLike<number>) {
+function fillSeaPockets(mesh: Mesh, land: Uint8Array, isLagoon: (i: number) => boolean) {
   const done = new Uint8Array(mesh.n);
   const fill: number[] = [];
   const isSea = (i: number) => !land[i];
-  const isLagoon = (i: number) => erod[i] >= LAGOON_ERODIBILITY;
   for (let i = 0; i < mesh.n; i++) {
     if (land[i] || done[i]) continue;
     const p = seaPocket(mesh, isSea, isLagoon, i);
@@ -524,7 +528,7 @@ export function previewTerrain(world: World, patch: TerrainPatch): TerrainPrevie
   const coast = coastNoiseField(mesh, coastSeed(world));
   const land = new Uint8Array(n);
   for (let i = 0; i < n; i++) land[i] = isLandValue(L[i] + causes.landDelta[i], coast[i], rough) ? 1 : 0;
-  fillSeaPockets(mesh, land, causes.erod);
+  fillSeaPockets(mesh, land, lagoonTest(world));
   // 海岸值：与 resolveTerrain 写回的 landness（float32）、coastValues 同一个算式
   const amp = COAST_AMP * rough;
   for (let i = 0; i < n; i++) out.coast[i] = coastValueAt(Math.fround(L[i] + causes.landDelta[i]), coast[i], amp, land[i] === 1);
@@ -602,8 +606,8 @@ export function restoreStroke(world: World, cells: number[], t: number[]): Strok
 }
 
 // 应用 landness 增量后的陆海掩码（只算受影响的格），与 resolveTerrain 用同一规则（含小块海的填补，见 fillSeaPockets），
-// 所以预览与结果逐格一致。after：受影响的格在改动后是不是陆地。erodAfter：放岛时改了岩性的格改后的可蚀性（潟湖按它认）
-function landAfter(world: World, cells: number[], delta: number[], erodAfter?: ReadonlyMap<number, number>): Map<number, boolean> {
+// 所以预览与结果逐格一致。after：受影响的格在改动后是不是陆地。typeAfter：放岛时记上岛的种类的格改后的种类（潟湖按它认）
+function landAfter(world: World, cells: number[], delta: number[], typeAfter?: ReadonlyMap<number, number>): Map<number, boolean> {
   const { mesh, causes } = world;
   const coast = coastNoiseField(mesh, coastSeed(world));
   const rough = world.small.terrain.coastRoughness;
@@ -611,7 +615,7 @@ function landAfter(world: World, cells: number[], delta: number[], erodAfter?: R
   cells.forEach((i, k) => d.set(i, (d.get(i) ?? 0) + delta[k]));
   const raw = (i: number) => isLandValue(causes.landness[i] + (d.get(i) ?? 0), coast[i], rough);
   const isSea = (i: number) => !raw(i);
-  const isLagoon = (i: number) => (erodAfter?.get(i) ?? causes.erod[i]) >= LAGOON_ERODIBILITY;
+  const isLagoon = lagoonTest(world, typeAfter);
   // 小块海的填补看邻居，所以改动格的邻居也可能变
   const touched = new Set<number>();
   // 有格从陆地变成海时，原来填掉的小块海可能连上了大海（又是海了）
@@ -689,36 +693,38 @@ export function previewLand(world: World, cells: number[], delta: number[]): { g
 
 // ---------- 放岛 ----------
 
-// 岛链能用的种类；放岛另有“小礁”（只占一格，不进岛链）。新种类只往后加：种类的序号参与形状的种子
-export const CHAIN_KINDS = ['volcanic', 'continental', 'low', 'atoll'] as const;
-export const ISLAND_KINDS = [...CHAIN_KINDS, 'reef'] as const;
-export type IslandKind = (typeof ISLAND_KINDS)[number];
-export type ChainKind = (typeof CHAIN_KINDS)[number];
-export const ISLAND_KIND_INFO: Record<IslandKind, { name: string; hint: string }> = {
-  volcanic: { name: '火山岛', hint: '圆形，中间有高高的火山，暗色的玄武岩' },
-  continental: { name: '大陆岛', hint: '形状不规则，有丘陵' },
-  low: { name: '低平岛', hint: '平坦低矮，多沙洲和沼泽' },
-  atoll: { name: '珊瑚岛', hint: '环形的白沙岛，中间是青绿色的浅潟湖' },
-  reef: { name: '小礁', hint: '只占一格的白沙小岛，四周一圈浪花，画出来约半格大' },
-};
+// 岛的种类在 island-types.ts（第十四轮：内置的大陆岛、低平岛、珊瑚岛、小礁，和用户自己的）。命令里记种类的 id；
+// 放岛时按这种岛的形状、高低、岩石长出陆地，并在新长出的陆地（环礁还有潟湖的海格）上记下种类（causes.islandType）。
+// 第十四轮去掉了火山岛（以后另做地标）
 
-// 每种岛的岩性（第十三轮）：放岛时把新长出的陆地（珊瑚岛还有潟湖）的可蚀性（causes.erod）设成这个值，
-// 渲染按可蚀性给颜色（src/render/colors.ts 的 lithLayer），所以几种岛小到一两格也看得出来：
-//   火山岛 0.45：硬的玄武岩，暗色（生成的地形里可蚀性在 0.4–1.8，低于 0.62 的很少）；
-//   大陆岛不变（和周围的大陆一样）；
-//   低平岛 3.2：软，蚀得低平，沙与沼泽；
-//   小礁 4.3、珊瑚岛 4.8：珊瑚砂，白沙；珊瑚岛的潟湖（海格）也是 4.8，海底按它画成浅浅的青绿色潟湖（elevation.ts 的 lagoonFloor）
-export const ISLAND_ERODIBILITY: Record<IslandKind, number | null> = { volcanic: 0.45, continental: null, low: 3.2, atoll: 4.8, reef: 4.3 };
-// 给人看的公里数：百公里以上取整到十
+// 这一种岛（找不到时报错）与它的编号
+function typeOfSpec(world: World, kind: string): { t: IslandType; code: number } {
+  const t = islandTypeById(world.small, kind);
+  if (!t) throw new CommandError(kind === 'volcanic' ? '火山岛已经去掉了（第十四轮），换一种岛' : `没有“${kind}”这种岛`);
+  return { t, code: islandCode(world.small, kind) };
+}
+
+// 命令里的种类要有：没有时报错
+export function checkIslandKind(world: World, kind: string): void {
+  typeOfSpec(world, kind);
+}
+
+// 岛的名字（提示、历史里用）
+export function islandTypeName(world: World, kind: string): string {
+  return islandTypeById(world.small, kind)?.name ?? kind;
+}
+
 export const roundKm = (v: number) => (v >= 100 ? Math.round(v / 10) * 10 : Math.round(v));
 
 // 岛的大小：海岸线的半径（km），连续可调，放出来的岛平均就这么大
 const islandSizeSchema = z.number().min(0.1).max(20000);
+// 种类：内置的或自己的岛的 id（执行时查有没有这一种）
+const islandKindSchema = z.string().min(1).max(64).default(DEFAULT_ISLAND_TYPE);
 
 export const islandSchema = z.object({
   x: z.number(),
   y: z.number(),
-  kind: z.enum(ISLAND_KINDS).default('volcanic'),
+  kind: islandKindSchema,
   size: islandSizeSchema,
   // 同一选项、同一 variant → 同一个形状；每放一个岛换下一个 variant。
   // 岛的形状与位置无关：鼠标移动时预览的轮廓跟着走、不变形，拖大拖小是同一个岛等比例缩放
@@ -732,11 +738,11 @@ function refKm(world: World): number {
 }
 
 // 最小的岛（格，海岸线的半径）：与最小的画笔一样是 0.4 格，就是一格陆地（放不出陆地时岛心那一格成陆，见 islandStamp）。
-// 第十三轮：四种岛一样（以前 0.75 格、珊瑚岛 1.5 格）；一格大的珊瑚岛在这一格里画出环和潟湖（渲染按岩性）
+// 第十三轮：几种岛一样（以前 0.75 格、珊瑚岛 1.5 格）；一格大的环礁在这一格里画出环和潟湖（渲染按岛的种类）
 const ISLAND_MIN_CELLS = 0.4;
 
-// 可调的半径范围（km）：最小一格（见 ISLAND_MIN_CELLS），最大是地图高度的 20%。四种岛一样；小礁不看大小
-export function islandSizeRangeKm(world: World, _kind: IslandKind = 'volcanic'): [number, number] {
+// 可调的半径范围（km）：最小一格（见 ISLAND_MIN_CELLS），最大是地图高度的 20%。各种岛一样；一格的岛（小礁）不看大小
+export function islandSizeRangeKm(world: World, _kind?: string): [number, number] {
   const cellKm = world.mesh.spacing * world.kmPerUnit;
   const mapKm = refKm(world);
   return [cellKm * ISLAND_MIN_CELLS, Math.max(cellKm * 3, mapKm * 0.2)];
@@ -778,22 +784,27 @@ export function defaultIslandKm(world: World): number {
   const [lo, hi] = islandSizeRangeKm(world);
   const cellKm = world.mesh.spacing * world.kmPerUnit;
   const core = Math.max(cellKm * 2.2, refKm(world) * 0.012) * 2.2;
-  return Math.min(hi, Math.max(lo, core * SHORE.volcanic));
+  return Math.min(hi, Math.max(lo, core * SHORE.round));
 }
 
 export interface StampResult {
   cells: number[];
   landDelta: number[];
   upliftDelta: number[];
-  // 可蚀性的增量（岛的岩性，见 ISLAND_ERODIBILITY）
+  // 可蚀性的增量（岛的岩石软硬，见 island-types.ts）
   erodDelta: number[];
+  // 记下的岛的种类（编号，0 不改）：新长出的陆地、环礁潟湖的海格
+  types: number[];
   // 岛的轮廓（预览用）：放岛后会是陆地的格
   footprint: number[];
 }
 
-// 数值大小指海岸线的半径：轮廓平均落在这个距离上。岛心半径 R 与海岸线的比例按种类不同
-// （高岛的地势在 R 以外再延伸约三分之一才入海；环礁的外缘在 R 以内一点）
-const SHORE: Record<IslandKind, number> = { volcanic: 4 / 3, continental: 4 / 3, low: 4 / 3, atoll: 0.96, reef: 1 };
+// 数值大小指海岸线的半径：轮廓平均落在这个距离上。岛心半径 R 与海岸线的比例按形状不同
+// （地势在 R 以外再延伸约三分之一才入海；环礁的外缘在 R 以内一点）
+const SHORE: Record<IslandShape, number> = { round: 4 / 3, long: 4 / 3, rugged: 4 / 3, ring: 0.96, cell: 1 };
+// 形状的种子（第十四轮：每种形状一个固定的数，不按种类在列表里的位置：去掉、加上一种岛，别的岛形状不变）。
+// 与以前的序号相同：圆 0（原来的火山岛）、不规则 1（大陆岛）、长条 2（低平岛）、环礁 3（珊瑚岛）
+const SHAPE_SEED: Record<IslandShape, number> = { round: 0, rugged: 1, long: 2, ring: 3, cell: 4 };
 
 // 小礁那一格的海岸值约 +95 m（250·tanh(100/250)）。四周深海约 −250 m，海岸线落在每条边离格心约 0.28 处，
 // 屏幕和导出都画成约半格宽的小岛（实测约占这一格面积的四分之一）
@@ -806,11 +817,11 @@ function centerCell(mesh: Mesh, x: number, y: number): number {
   return mesh.kind === 'sphere' ? nearestCell(mesh, x, y) : findCell(mesh, x, y);
 }
 
-// 小礁：只把岛心那一格抬成陆地，不看大小和形状。陆度取 max(REEF_V − a·k, REEF_KEEP − 2·COAST_AMP·k, REEF_KEEP)：
+// 一格的岛（小礁）：只把岛心那一格抬成陆地，不看大小和形状。陆度取 max(REEF_V − a·k, REEF_KEEP − 2·COAST_AMP·k, REEF_KEEP)：
 // 第一项让现在的海岸值是 REEF_V；后两项保证海岸曲折调到 0 到 2 之间它都还在
-function reefStamp(world: World, spec: IslandSpec): StampResult {
+function reefStamp(world: World, spec: IslandSpec, t: IslandType, code: number): StampResult {
   const { mesh, causes } = world;
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
   const c = centerCell(mesh, spec.x, spec.y);
   if (causes.land[c]) return out;
   const k = coastNoiseField(mesh, coastSeed(world))[c];
@@ -819,32 +830,36 @@ function reefStamp(world: World, spec: IslandSpec): StampResult {
   out.cells.push(c);
   out.landDelta.push(Math.max(0, target - causes.landness[c]));
   out.upliftDelta.push(0);
-  out.erodDelta.push(ISLAND_ERODIBILITY.reef! - causes.erod[c]);
+  out.erodDelta.push(t.rock === undefined ? 0 : t.rock - causes.erod[c]);
+  out.types.push(code);
   out.footprint = footprintOf(world, out);
   return out;
 }
 
 // 太小、一格陆地都放不出来时（大小不到 1.5 格才会发生），把岛心那一格抬成陆地
 export function islandStamp(world: World, spec: IslandSpec): StampResult {
-  if (spec.kind === 'reef') return reefStamp(world, spec);
+  const { t, code } = typeOfSpec(world, spec.kind);
+  if (t.shape === 'cell') return reefStamp(world, spec, t, code);
   const { mesh, causes } = world;
-  const R = spec.size / SHORE[spec.kind] / world.kmPerUnit;
+  const ring = t.shape === 'ring';
+  const R = spec.size / SHORE[t.shape] / world.kmPerUnit;
   const rough = world.small.terrain.coastRoughness;
-  // 形状只取决于种类与 variant：噪声按“相对岛心、以半径为单位”的坐标取，所以换位置不变形、改大小是等比例缩放
+  // 形状只取决于形状这一项与 variant：噪声按“相对岛心、以半径为单位”的坐标取，所以换位置不变形、改大小是等比例缩放
   const sphere = mesh.kind === 'sphere' ? mesh : null;
-  const kindIdx = ISLAND_KINDS.indexOf(spec.kind);
-  const seed = mixSeed(coastSeed(world), 778, spec.variant, kindIdx);
+  const seed = mixSeed(coastSeed(world), 778, spec.variant, SHAPE_SEED[t.shape]);
   const shape = gradientNoise(seed);
   const rand = mulberry32(seed);
-  // 大陆岛拉长、旋转；火山岛接近圆形
-  const elong = spec.kind === 'continental' ? 1 + 0.8 * rand() : spec.kind === 'low' ? 1.3 + 0.9 * rand() : 1 + 0.15 * rand();
+  // 不规则的拉长一点、长条的拉得更长，都旋转；圆的、环礁接近圆形
+  const elong = t.shape === 'rugged' ? 1 + 0.8 * rand() : t.shape === 'long' ? 1.3 + 0.9 * rand() : 1 + 0.15 * rand();
   const ang = rand() * Math.PI;
   const ca = Math.cos(ang);
   const sa = Math.sin(ang);
-  const irregular = spec.kind === 'continental' ? 0.45 : spec.kind === 'low' ? 0.25 : 0.18;
+  const irregular = t.shape === 'rugged' ? 0.45 : t.shape === 'long' ? 0.25 : 0.18;
+  // 平的岛内圈只比海岸高一点，起伏、高的岛高得多
+  const bump = t.height === 'flat' ? 40 : 400;
   const core = COAST_AMP * Math.max(rough, 0.2) + 60;
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
-  // 珊瑚岛的环与潟湖里的海格（岛心半径的 0.96 倍以内）：岩性按珊瑚砂（潟湖的海底画成浅水）
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
+  // 环礁的环与潟湖里的海格（岛心半径的 0.96 倍以内）：记上这种岛（潟湖的海底画成浅水）
   const coral: boolean[] = [];
   // 潟湖里（环以内）原来是海的格
   const lagoonish: boolean[] = [];
@@ -896,27 +911,25 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     const dd = d * (1 + irregular * fbm(shape, dx / R, dy / R, 1.6, 3));
     let target: number;
     let lift = 0;
-    if (spec.kind === 'atoll') {
+    if (ring) {
       // 环礁：一圈陆地，中间潟湖，外侧很快变深。潟湖的海岸值是 −core（海岸噪声怎么调都还是海），
-      // 深浅由海底的后处理定（浅浅的十几到几十米，见 elevation.ts 的 lagoonFloor）
-      const ring = Math.abs(dd - 0.8);
-      target = ring < 0.16 ? core * 0.6 : dd < 0.8 ? -core : -core * 2;
+      // 深浅由海底的后处理定（浅浅的十几到几十米，见 elevation.ts 的 lagoonFloor）。总是平的
+      const band = Math.abs(dd - 0.8);
+      target = band < 0.16 ? core * 0.6 : dd < 0.8 ? -core : -core * 2;
     } else {
-      target = dd < 1 ? core + (1 - dd) * (spec.kind === 'low' ? 40 : 400) : core - (dd - 1) * 3 * core;
-      // 火山岛（第十三轮）：硬的玄武岩（可蚀性 0.45，约为平常的一半）蚀得慢，抬升减半后与原来一样高；
-      // 山顶有个火山口（抬升凹下去一点，山顶平缓）
-      if (spec.kind === 'volcanic') lift = Math.max(0, 0.5 * Math.pow(Math.max(0, 1 - dd), 1.4) - 0.2 * Math.exp(-(dd / 0.12) * (dd / 0.12)));
-      else if (spec.kind === 'continental')
-        lift = 0.25 * Math.max(0, 1 - dd) * (0.6 + 0.4 * fbm(shape, dx / R + 1, dy / R, 3, 3));
+      target = dd < 1 ? core + (1 - dd) * bump : core - (dd - 1) * 3 * core;
+      // 高：中间隆起成山（抬升从中心往外很快变小）；起伏：丘陵（抬升随噪声起伏）
+      if (t.height === 'high') lift = 0.5 * Math.pow(Math.max(0, 1 - dd), 1.4);
+      else if (t.height === 'hilly') lift = 0.25 * Math.max(0, 1 - dd) * (0.6 + 0.4 * fbm(shape, dx / R + 1, dy / R, 3, 3));
     }
     const L = causes.landness[i];
     let delta = 0;
     // 放岛只添陆地（第十三轮修）：潟湖里的海格两头都改（深海抬到 −core，浅滩压到 −core），
     // 原来就是陆地的格（挨着的岛、大陆）一格不动，不会被潟湖挖掉
-    const inner = spec.kind === 'atoll' && dd < 0.8 - 0.16;
+    const inner = ring && dd < 0.8 - 0.16;
     if (inner && !causes.land[i]) delta = target - L;
     else delta = Math.max(0, target - L);
-    const reefy = spec.kind === 'atoll' && dd < 0.96;
+    const reefy = ring && dd < 0.96;
     if (delta === 0 && lift === 0 && !reefy) continue;
     out.cells.push(i);
     out.landDelta.push(delta);
@@ -925,7 +938,8 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     lagoonish.push(inner && !causes.land[i]);
   }
   // 先按“潟湖里的海格都是潟湖”算轮廓：围住的小块海是潟湖时不并回陆地（见 fillSeaPockets）
-  out.erodDelta = out.cells.map((i, k) => (lagoonish[k] ? ISLAND_ERODIBILITY.atoll! - causes.erod[i] : 0));
+  out.erodDelta = out.cells.map(() => 0);
+  out.types = out.cells.map((_, k) => (lagoonish[k] ? code | LAGOON_BIT : 0));
   out.footprint = footprintOf(world, out);
   // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）。
   // 岛心在地图外（岛链画出了地图边）时没有“岛心那一格”，不补：否则地图边上会多出一格一格的小岛
@@ -944,17 +958,18 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
         out.landDelta.splice(at, 0, need);
         out.upliftDelta.splice(at, 0, 0);
         out.erodDelta.splice(at, 0, 0);
+        out.types.splice(at, 0, 0);
         coral.splice(at, 0, false);
         lagoonish.splice(at, 0, false);
       }
       out.footprint = footprintOf(world, out);
     }
   }
-  // 岩性：新长出的陆地（原来就是陆地的不动）、珊瑚岛的潟湖与环上的海格设成这种岛的可蚀性
-  const erod = ISLAND_ERODIBILITY[spec.kind];
+  // 岩石与种类：新长出的陆地（原来就是陆地的不动）、环礁的潟湖与环上的海格设成这种岛的可蚀性（没写岩石时不改），记上种类
+  const erod = t.rock ?? null;
   const fresh = new Set(out.footprint);
   // 潟湖的海格要被环围住：挨着的格里至少六成是陆地（放岛以后）或别的潟湖格；环太小、开口太大时这一格还是深海
-  // （一格大的珊瑚岛在格里画潟湖，见 colors.ts 的 lithLayer）
+  // （一格大的环礁在格里画潟湖，见 colors.ts 的 lithLayer）
   const sea = new Set(out.cells.filter((i, k) => coral[k] && !fresh.has(i) && !causes.land[i]));
   const lagoon = new Set<number>();
   for (const i of sea) {
@@ -967,34 +982,40 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
     }
     if (a >= 0.6 * t) lagoon.add(i);
   }
-  const erodOf = (f: Set<number>) => out.cells.map((i) => (erod === null || causes.land[i] || !(f.has(i) || lagoon.has(i)) ? 0 : erod - causes.erod[i]));
+  const mine = (f: Set<number>, i: number) => !causes.land[i] && (f.has(i) || lagoon.has(i));
+  const erodOf = (f: Set<number>) => out.cells.map((i) => (erod === null || !mine(f, i) ? 0 : erod - causes.erod[i]));
+  // 潟湖的海格（不在新长出的陆地里）另加 LAGOON_BIT
+  const typesOf = (f: Set<number>) => out.cells.map((i) => (!mine(f, i) ? 0 : f.has(i) ? code : code | LAGOON_BIT));
   out.erodDelta = erodOf(fresh);
-  if (spec.kind === 'atoll') {
+  out.types = typesOf(fresh);
+  if (ring) {
     // 按真正的潟湖再算一次轮廓：没被环围住的小块海照常并回陆地（与执行后 resolveTerrain 的结果相同）
     out.footprint = footprintOf(world, out);
-    out.erodDelta = erodOf(new Set(out.footprint));
+    const f = new Set(out.footprint);
+    out.erodDelta = erodOf(f);
+    out.types = typesOf(f);
   }
   return out;
 }
 
-// 岛的轮廓：放岛后在受影响范围内是陆地的格。erodDelta（与 cells 对齐，可省）：放岛改的岩性，潟湖的海格按它认
-function footprintOf(world: World, r: { cells: number[]; landDelta: number[]; erodDelta?: number[] }): number[] {
+// 岛的轮廓：放岛后在受影响范围内是陆地的格。types（与 cells 对齐，可省）：放岛记上的种类，潟湖的海格按它认
+function footprintOf(world: World, r: { cells: number[]; landDelta: number[]; types?: number[] }): number[] {
   const out: number[] = [];
-  let erod: Map<number, number> | undefined;
-  if (r.erodDelta?.length) {
-    erod = new Map();
+  let types: Map<number, number> | undefined;
+  if (r.types?.length) {
+    types = new Map();
     r.cells.forEach((i, k) => {
-      if (r.erodDelta![k]) erod!.set(i, world.causes.erod[i] + r.erodDelta![k]);
+      if (r.types![k]) types!.set(i, r.types![k]);
     });
   }
-  for (const [i, land] of landAfter(world, r.cells, r.landDelta, erod)) if (land) out.push(i);
+  for (const [i, land] of landAfter(world, r.cells, r.landDelta, types)) if (land) out.push(i);
   return out.sort((a, b) => a - b);
 }
 
 export const chainSchema = z.object({
   // 折线顶点（地图单位）
   points: z.array(z.tuple([z.number(), z.number()])).min(2),
-  kind: z.enum(CHAIN_KINDS).default('volcanic'),
+  kind: islandKindSchema,
   size: islandSizeSchema,
   // 0.5 稀疏，1 正常，2 密集
   density: z.number().min(0.2).max(3).default(1),
@@ -1271,31 +1292,38 @@ function chainIslandsSphere(world: World, spec: ChainSpec, scale: number): Islan
 // 多个岛依次叠加（后一个看见前一个的结果，海岸值与岩性都是），返回合并后的增量
 export function combineStamps(world: World, specs: IslandSpec[]): StampResult {
   const { causes } = world;
-  const saved = new Map<number, [number, number]>();
-  const acc = new Map<number, { land: number; lift: number; erod: number }>();
-  for (const spec of specs) {
-    const r = islandStamp(world, spec);
-    r.cells.forEach((i, k) => {
-      if (!saved.has(i)) saved.set(i, [causes.landness[i], causes.erod[i]]);
-      causes.landness[i] += r.landDelta[k];
-      causes.erod[i] += r.erodDelta[k];
-      const a = acc.get(i) ?? { land: 0, lift: 0, erod: 0 };
-      a.land += r.landDelta[k];
-      a.lift += r.upliftDelta[k];
-      a.erod += r.erodDelta[k];
-      acc.set(i, a);
-    });
+  const saved = new Map<number, [number, number, number]>();
+  const acc = new Map<number, { land: number; lift: number; erod: number; type: number }>();
+  try {
+    for (const spec of specs) {
+      const r = islandStamp(world, spec);
+      r.cells.forEach((i, k) => {
+        if (!saved.has(i)) saved.set(i, [causes.landness[i], causes.erod[i], causes.islandType[i]]);
+        causes.landness[i] += r.landDelta[k];
+        causes.erod[i] += r.erodDelta[k];
+        if (r.types[k]) causes.islandType[i] = r.types[k];
+        const a = acc.get(i) ?? { land: 0, lift: 0, erod: 0, type: 0 };
+        a.land += r.landDelta[k];
+        a.lift += r.upliftDelta[k];
+        a.erod += r.erodDelta[k];
+        if (r.types[k]) a.type = r.types[k];
+        acc.set(i, a);
+      });
+    }
+  } finally {
+    for (const [i, [l, e, t]] of saved) {
+      causes.landness[i] = l;
+      causes.erod[i] = e;
+      causes.islandType[i] = t;
+    }
   }
-  for (const [i, [l, e]] of saved) {
-    causes.landness[i] = l;
-    causes.erod[i] = e;
-  }
-  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], footprint: [] };
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
   for (const [i, a] of acc) {
     out.cells.push(i);
     out.landDelta.push(a.land);
     out.upliftDelta.push(a.lift);
     out.erodDelta.push(a.erod);
+    out.types.push(a.type);
   }
   out.footprint = footprintOf(world, out);
   return out;

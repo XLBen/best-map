@@ -1,6 +1,7 @@
 import type { Delaunay } from 'd3-delaunay';
 import { type Mesh, type PlaneMesh, findCell, gradient } from './mesh';
 import { type SphereView, viewOf } from './sphere';
+import { landProvinceCells } from './island-types';
 import { COAST_AMP, coastNoiseField, coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -880,6 +881,8 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
   const outCell = out.cell;
   const elev = derived.elevation;
   const landOf = causes.land;
+  // 画成陆地、邻格里又没有陆地格的像素（破碎的陆地）取那一格离它最近的陆地省的格（第十四轮，与屏幕相同）
+  const landCell = landProvinceCells(world);
   const sphere = mesh.kind === 'sphere';
   const view = mesh.kind === 'sphere' ? viewOf(mesh) : null;
   const dl = view ? view.delaunay : (mesh as PlaneMesh).delaunay;
@@ -921,6 +924,7 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
         cell = sameKindCell(mesh, landOf, land, cell, near, x, y);
         // 海上的像素永远不取陆地格（第十三轮）：窄的海湾里邻格都是陆地时，沿网格的相邻往外找最近的海格
         if (!land && landOf[cell] === 1) cell = nearestSeaCell(mesh, landOf, cell, x, y);
+        else if (land && landOf[cell] !== 1 && landCell[cell] >= 0) cell = landCell[cell];
       }
       outCell[p] = cell;
     }

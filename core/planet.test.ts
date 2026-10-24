@@ -88,7 +88,7 @@ describe('生成整个星球', () => {
   it('同一个岛放在接缝上、赤道中间、高纬度，大小一样', () => {
     const w = planet(40000, 'ocean', 1);
     const areaOf = (x: number, y: number) => {
-      const s = islandStamp(w, { x, y, kind: 'volcanic', size: 600, variant: 3 });
+      const s = islandStamp(w, { x, y, kind: 'continental', size: 600, variant: 3 });
       const p = previewLand(w, s.cells, s.landDelta);
       let a = 0;
       for (const c of p.gained) a += w.mesh.area[c] * w.kmPerUnit * w.kmPerUnit;
@@ -132,7 +132,7 @@ describe('生成整个星球', () => {
   it('像地球的星球：识别出几块大陆；存档重放逐值一致', () => {
     const eng = new Engine(globe(20000));
     eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continents' }, reset: true });
-    eng.exec({ op: 'add_island', island: { x: 1.9995, y: 0.4, kind: 'volcanic', size: 500, variant: 1 } });
+    eng.exec({ op: 'add_island', island: { x: 1.9995, y: 0.4, kind: 'continental', size: 500, variant: 1 } });
     const w = eng.world;
     const continents = w.derived.features.filter((f) => f.type === 'continent');
     expect(continents.length).toBeGreaterThanOrEqual(3);

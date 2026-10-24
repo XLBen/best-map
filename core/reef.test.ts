@@ -147,11 +147,17 @@ describe('小礁', () => {
     });
   }
 
-  it('小礁已经是陆地的地方放不下；岛链里没有小礁', () => {
+  // 第十四轮：岛链能用任何一种岛（小礁的岛链是一串一格的礁）
+  it('小礁已经是陆地的地方放不下；小礁的岛链是一串一格的礁', () => {
     const eng = base('地区');
     const w = eng.world;
     const land = [...w.causes.land.keys()].find((i) => w.causes.land[i])!;
     expect(() => eng.exec({ op: 'add_island', island: { x: w.mesh.x[land], y: w.mesh.y[land], kind: 'reef', size: 1 } })).toThrow('放不下');
-    expect(() => eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.3], [0.8, 0.4]], kind: 'reef' as 'volcanic', size: 100 } })).toThrow();
+    const before = eng.world.causes.land.slice();
+    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.3], [0.8, 0.4]], kind: 'reef', size: 100 } });
+    const now = eng.world;
+    const fresh = [...now.causes.land.keys()].filter((i) => now.causes.land[i] && !before[i]);
+    expect(fresh.length).toBeGreaterThan(0);
+    for (const i of fresh) expect(now.causes.islandType[i]).toBe(4);
   });
 });

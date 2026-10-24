@@ -26,11 +26,13 @@ import { checkSpeciesScripts } from './biome-scripts';
 import { namesNaturally } from './features';
 import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema } from './river-types';
 import { MAX_LAKE_TYPES, checkLakeTypeScripts, lakeTypeDirty, lakeTypeSchema } from './lake-types';
+import { LAGOON_BIT, MAX_ISLAND_TYPES, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
 import { typeIdSchema } from './type-id';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
-  ISLAND_KIND_INFO,
+  checkIslandKind,
+  islandTypeName,
   chainIslands,
   chainSchema,
   combineStamps,
@@ -224,6 +226,9 @@ const baseCommands = [
   // 湖泊类型（第九轮）：同河流类型；删掉时放的湖、自然的湖上选的这一种也去掉
   z.object({ op: z.literal('set_lake_type'), type: lakeTypeSchema }),
   z.object({ op: z.literal('remove_lake_type'), id: z.string() }),
+  // 岛的种类（第十四轮，见 island-types.ts）：新建或整份换掉（按 id）；删掉时这种岛变成大陆岛
+  z.object({ op: z.literal('set_island_type'), type: islandTypeSchema }),
+  z.object({ op: z.literal('remove_island_type'), id: z.string() }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
@@ -283,7 +288,7 @@ export const Dirty = {
 } as const;
 export type Dirty = (typeof Dirty)[keyof typeof Dirty];
 
-type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | `field:${string}`;
+type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | `field:${string}`;
 
 function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Int32Array | undefined {
   if (key.startsWith('field:')) return world.causes.fields[key.slice(6)];
@@ -310,18 +315,20 @@ export interface ApplyContext {
 function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   switch (cmd.op) {
     case 'set_worldgen':
-      return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
-    case 'set_coast_style':
     case 'paint_land':
     case 'add_island':
     case 'add_island_chain':
+    case 'restore_terrain':
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType'];
+    case 'set_coast_style':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
+    case 'set_island_type':
+    case 'remove_island_type':
+      return ['islandType', 'province'];
     case 'reroll_region':
       return ['landDelta', 'upliftDelta', 'province'];
     case 'paint_relief':
       return ['upliftDelta'];
-    case 'restore_terrain':
-      return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
     case 'restore_climate':
       return ['tempOffset', 'moistOffset'];
     case 'paint':
@@ -444,20 +451,45 @@ function worldgenName(params: Worldgen, globe: boolean): string {
   return WORLD_TYPE_INFO[params.type].name;
 }
 
-function applyTerrain(world: World): { gained: number; lost: number } {
-  const before = world.causes.land.slice();
+// 组合地形，陆海变了的格修补省份。classBefore：命令改之前省份按格分的陆海（provinceLand；放岛记上了归海省的岛时
+// 陆海没变、省份的陆海也会变）。clear：画陆地 / 海、恢复原样画到的格，先清掉记着的岛的种类（画成了普通的陆地、海）；
+// 这时陆海变了的格也清掉（潟湖的海格除外：它们是不是潟湖要与重新组合的结果一致）
+function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: number[] } = {}): { gained: number; lost: number } {
+  const { causes } = world;
+  const before = causes.land.slice();
+  const classBefore = opts.classBefore ?? provinceLand(world);
+  if (opts.clear) for (const i of opts.clear) causes.islandType[i] = 0;
   resolveTerrain(world);
   let gained = 0;
   let lost = 0;
   for (let i = 0; i < before.length; i++) {
-    if (!before[i] && world.causes.land[i]) gained++;
-    else if (before[i] && !world.causes.land[i]) lost++;
+    if (before[i] === causes.land[i]) continue;
+    if (!before[i]) gained++;
+    else lost++;
+    if (opts.clear && !(causes.islandType[i] & LAGOON_BIT)) causes.islandType[i] = 0;
   }
-  if (gained || lost) repairProvinces(world);
+  const after = provinceLand(world);
+  let moved = false;
+  for (let i = 0; i < after.length && !moved; i++) if (after[i] !== classBefore[i]) moved = true;
+  if (moved) repairProvinces(world);
   return { gained, lost };
 }
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
+
+// 画笔中心七成半径以内的格（t ≤ 0.7：画陆地 / 海一定变成陆地、海，恢复原样完全恢复的那一圈）
+const brushCore = (cells: number[], t: number[]) => cells.filter((_, k) => t[k] <= 0.7);
+
+// 岛的种类改了归哪种省、删了一种之后：省份按格分的陆海变了的格换到对的省份里（与陆海变了时一样就近修补）
+function refileProvinces(world: World, classBefore: Uint8Array) {
+  const after = provinceLand(world);
+  for (let i = 0; i < after.length; i++) {
+    if (after[i] !== classBefore[i]) {
+      repairProvinces(world);
+      return;
+    }
+  }
+}
 
 // 改生态时按实际改了哪几项决定重算到哪一层（与改之前逐项比较，不看补丁里写了什么）：
 // - 只改外观（花纹、发光）：只影响画法，什么都不重算（Worker 发轻快照）；
@@ -548,7 +580,7 @@ export function guideDirty(before: readonly Guide[], after: readonly Guide[]): D
 // 新建一个空的省份：陆海随这些格，类型随这些格原来所在省份的多数（assign_province 'new' 与剪刀共用）
 function newProvince(world: World, cells: number[]): number {
   const { causes, small } = world;
-  const land = cells.length ? causes.land[cells[0]] === 1 : true;
+  const land = cells.length ? provinceLand(world)[cells[0]] === 1 : true;
   const kinds = new Map<ProvinceKind, number>();
   for (const i of cells) {
     const k = small.provinces[causes.province[i]]?.kind;
@@ -587,6 +619,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.landDelta.fill(0);
         causes.upliftDelta.fill(0);
         causes.erodDelta.fill(0);
+        causes.islandType.fill(0);
         causes.province.fill(-1);
         small.provinces = {};
         small.constraints = [];
@@ -623,7 +656,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (cmd.t.length !== cmd.cells.length) throw new CommandError('t 的长度必须与 cells 相同');
       const r = landStroke(world, cmd.cells, cmd.t, cmd.mode);
       r.cells.forEach((i, k) => (causes.landDelta[i] += r.delta[k]));
-      const ch = applyTerrain(world);
+      // 画笔中心（七成半径以内，一定变成陆地、海的那一圈）画到的岛成了普通的陆地、海
+      const ch = applyTerrain(world, { clear: brushCore(cmd.cells, cmd.t) });
       return { dirty: Dirty.Elevation, summary: cmd.mode === 'land' ? `画陆地：新增 ${ch.gained} 格陆地` : `画海：${ch.lost} 格陆地变成海` };
     }
     case 'paint_relief': {
@@ -645,7 +679,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.upliftDelta[i] = snap(causes.upliftDelta[i] * keep, 1e-3);
         causes.erodDelta[i] = snap(causes.erodDelta[i] * keep, 1e-3);
       });
-      const ch = applyTerrain(world);
+      // 完全恢复的地方（画笔中心七成半径以内）不再是放的岛
+      const ch = applyTerrain(world, { clear: brushCore(cmd.cells, cmd.t) });
       return { dirty: Dirty.Elevation, summary: ch.gained || ch.lost ? `恢复原样（陆地 +${ch.gained} / −${ch.lost} 格）` : '恢复原样' };
     }
     case 'restore_climate': {
@@ -665,28 +700,34 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const spec = islandSchema.parse(cmd.island);
       const r = islandStamp(world, spec);
       if (!r.footprint.length) throw new CommandError('这里放不下岛（可能已经是陆地）');
+      const classBefore = provinceLand(world);
       r.cells.forEach((i, k) => {
         causes.landDelta[i] += r.landDelta[k];
         causes.upliftDelta[i] += r.upliftDelta[k];
         causes.erodDelta[i] += r.erodDelta[k];
+        if (r.types[k]) causes.islandType[i] = r.types[k];
       });
-      applyTerrain(world);
-      // 小礁不看大小：画出来约半格大
+      applyTerrain(world, { classBefore });
+      // 一格的岛（小礁）不看大小：画出来约半格大
       const cellKm = world.mesh.spacing * world.kmPerUnit;
-      const size = spec.kind === 'reef' ? `直径约 ${roundKm(cellKm * 0.5)} km` : spec.size < cellKm * 0.5 ? sizeText(world, spec.size) : `直径约 ${roundKm(spec.size * 2)} km`;
-      return { dirty: Dirty.Elevation, summary: `放了一个${ISLAND_KIND_INFO[spec.kind].name}（${size}）` };
+      const one = islandTypeById(small, spec.kind)?.shape === 'cell';
+      const size = one ? `直径约 ${roundKm(cellKm * 0.5)} km` : spec.size < cellKm * 0.5 ? sizeText(world, spec.size) : `直径约 ${roundKm(spec.size * 2)} km`;
+      return { dirty: Dirty.Elevation, summary: `放了一个${islandTypeName(world, spec.kind)}（${size}）` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);
+      checkIslandKind(world, spec.kind);
       const islands = chainIslands(world, spec);
       const r = combineStamps(world, islands);
+      const classBefore = provinceLand(world);
       r.cells.forEach((i, k) => {
         causes.landDelta[i] += r.landDelta[k];
         causes.upliftDelta[i] += r.upliftDelta[k];
         causes.erodDelta[i] += r.erodDelta[k];
+        if (r.types[k]) causes.islandType[i] = r.types[k];
       });
-      applyTerrain(world);
-      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}` };
+      applyTerrain(world, { classBefore });
+      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${islands.length} 个${islandTypeName(world, spec.kind)}` };
     }
     case 'reroll_region': {
       const gen = small.terrain.gen;
@@ -973,6 +1014,32 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       }
       return { dirty: Dirty.Vegetation, summary: `删掉了湖泊类型「${gone.name}」` };
     }
+    case 'set_island_type': {
+      const t = islandTypeSchema.parse(cmd.type);
+      const list = islandTypesOf(small);
+      const at = list.findIndex((x) => x.id === t.id);
+      if (at < 0 && list.length >= MAX_ISLAND_TYPES) throw new CommandError(`岛的种类最多 ${MAX_ISLAND_TYPES} 种`);
+      const before = at >= 0 ? list[at] : undefined;
+      const classBefore = provinceLand(world);
+      small.islandTypes = at >= 0 ? list.map((x, k) => (k === at ? t : x)) : [...list, t];
+      // 改了归陆地省还是海省：这种岛的格换到对的省份里
+      if (before && before.province !== t.province) refileProvinces(world, classBefore);
+      const dirty = islandTypeDirty(before, t) === 'names' ? Dirty.Names : Dirty.None;
+      return { dirty, summary: `${before ? '修改了' : '新建了'}岛的种类「${t.name}」` };
+    }
+    case 'remove_island_type': {
+      const list = islandTypesOf(small);
+      const k = list.findIndex((x) => x.id === cmd.id);
+      if (k < 0) throw new CommandError(`找不到岛的种类 "${cmd.id}"`);
+      const gone = list[k];
+      const classBefore = provinceLand(world);
+      small.islandTypes = list.filter((x) => x.id !== cmd.id);
+      if (!small.islandTypes.length) delete small.islandTypes;
+      // 这种岛变成大陆岛（潟湖照旧是潟湖），后面的编号往前挪
+      removeIslandCode(causes.islandType, k);
+      refileProvinces(world, classBefore);
+      return { dirty: Dirty.Names, summary: `删掉了岛的种类「${gone.name}」（这种岛变成大陆岛）` };
+    }
     case 'add_field': {
       if (causes.fields[cmd.name]) throw new CommandError(`场 "${cmd.name}" 已存在`);
       causes.fields = { ...causes.fields, [cmd.name]: new Float32Array(n) };
@@ -1019,8 +1086,10 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         if (!small.provinces[id]) throw new CommandError(`找不到省份 ${id}`);
       }
       const meta = small.provinces[id];
-      const wrong = cmd.cells.filter((i) => (causes.land[i] === 1) !== meta.land);
-      if (wrong.length) throw new CommandError(`${wrong.length} 格与省份的陆海类别不符（${meta.land ? '陆地' : '海域'}省份）`);
+      // 归海省的岛（小礁）算海：只能划进海省
+      const pland = provinceLand(world);
+      const wrong = cmd.cells.filter((i) => (pland[i] === 1) !== meta.land);
+      if (wrong.length) throw new CommandError(`${wrong.length} 格与省份的陆海类别不符（${meta.land ? '陆地' : '海域'}省份${meta.land ? '；小礁算海' : ''}）`);
       // 湖省只收湖面的格，陆地省不收湖省里的格（湖单独成省时）：按格现在所在省份的大类判断
       const cls = classOfKind(meta.kind);
       const mixed = cmd.cells.filter((i) => {

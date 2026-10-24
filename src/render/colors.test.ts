@@ -94,7 +94,7 @@ describe('幽灵海岸的图层', () => {
     const w = continents({ provinces: true }).world;
     const base = cellLayers(w, opts('provinces'));
     const c = seaCell(w);
-    const st = islandStamp(w, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'volcanic', size: 2.5 * cellKm(w), variant: 0 });
+    const st = islandStamp(w, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'continental', size: 2.5 * cellKm(w), variant: 0 });
     const patch = editGhost(w, base, { cells: st.cells, delta: st.landDelta });
     const g = ghostLayers(w, base, patch, 'provinces');
     const newLand = [...patch.cells].filter((i, k) => patch.land[k] && !w.causes.land[i]);
@@ -147,7 +147,7 @@ describe('幽灵海岸的图层', () => {
     const base = cellLayers(w, opts('terrain'));
     const buf = new GhostBuffer(base, 'terrain');
     const at = (c: number) => {
-      const st = islandStamp(w, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'volcanic', size: 2 * cellKm(w), variant: 0 });
+      const st = islandStamp(w, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'continental', size: 2 * cellKm(w), variant: 0 });
       return editGhost(w, base, { cells: st.cells, delta: st.landDelta });
     };
     const c = seaCell(w);
@@ -415,8 +415,8 @@ describe('生态的颜色脚本、花纹与发光', () => {
       expect(src, name).toContain('for (int ring = 1; ring <= 2; ring++) {');
       expect(src, name).toContain('vec2 r = ((landPx ? 0.3 : 0.6) * float(ring) * uCellPx) * uTexel;');
       expect(src, name).toContain('for (int k = 0; k < 8; k++) {');
-      // 画成陆地的像素：找不到陆地格时才用那个水面格
-      expect(src, name).toContain('return landPx ? idG : -1;');
+      // 画成陆地的像素：附近找不到陆地格时取那个水面格离它最近的陆地省的格（第十四轮）
+      expect(src, name).toContain('return landPx ? landCellOf(idG) : -1;');
     }
     const { PROVINCE_LAND_RING, PROVINCE_RING } = await import('../../core/display');
     expect(PROVINCE_RING).toEqual({ n: 8, radii: [0.6, 1.2] });

@@ -28,6 +28,7 @@ import { LayersPanel } from './panels/LayersPanel';
 import { CategoryMore } from './panels/ToolLibrary';
 import { RiverMore } from './panels/rivers';
 import { LakeTypeMenu, NewLakeTypeMenu } from './panels/lakes';
+import { IslandTypeMenu } from './panels/islandTypes';
 import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
@@ -103,6 +104,18 @@ function PanelHost({ id }: { id: PanelId }) {
       return (
         <Popover id={id} title="新放的湖是哪一种" width={280}>
           <NewLakeTypeMenu />
+        </Popover>
+      );
+    case 'islandtype':
+      return (
+        <Popover id={id} title="放哪一种岛" width={280}>
+          <IslandTypeMenu which="island" />
+        </Popover>
+      );
+    case 'chaintype':
+      return (
+        <Popover id={id} title="岛链用哪一种岛" width={280}>
+          <IslandTypeMenu which="chain" />
         </Popover>
       );
     default: {

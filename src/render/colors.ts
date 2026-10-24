@@ -8,6 +8,7 @@ import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
 import { coastPatch } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
+import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landProvinceCells, provinceLand, ringCodes } from '../../core/island-types';
 import { type World, provinceColor, provinceDisplayColor } from '../../core/world';
 import type { Season, ViewMode } from '../state';
 import type { CellLayers } from './renderer';
@@ -203,6 +204,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     o.season === 'summer' ? (half ? s[i] * 2 : s[i]) : o.season === 'winter' ? (half ? w[i] * 2 : w[i]) : annual[i];
   const terrainLike = terrainLikeMode(o.mode);
   if (terrainLike) rock = 1;
+  // 岛的种类自己选的颜色（第十四轮）：按编号查（没有自己选颜色的种类为 null）
+  const tints = allIslandTypes(small).map((t) => islandTint(t));
+  const anyTint = tints.some((t) => t !== null);
 
   const seaTemp = o.mode === 'seaTemp';
   if (seaTemp) shade = 0.4;
@@ -233,6 +237,10 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       case 'provinces': {
         // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖
         c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
+        // 放的岛的种类选了颜色：岛上的地画成这个颜色（植被的颜色留一点；积雪照样盖上）
+        const code = causes.islandType[i] & ISLAND_CODE_MASK;
+        const tint = anyTint && code ? tints[code - 1] : null;
+        if (tint) c = [c[0] + (tint[0] - c[0]) * ISLAND_TINT, c[1] + (tint[1] - c[1]) * ISLAND_TINT, c[2] + (tint[2] - c[2]) * ISLAND_TINT];
         if (d.lake[i] === 2) c = playaColor;
         const k = snowAmount(world, o.season, i);
         if (k > 0) c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
@@ -308,6 +316,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   const fx = fxLayers(world, o);
   return {
     lith: terrainLike ? lithLayer(world) : null,
+    landCell: group ? landCellLayer(world) : null,
     smooth,
     other,
     elevation: st.elevation,
@@ -327,35 +336,50 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   };
 }
 
-// 岩性（第十三轮）：每格 RGBA 字节，地形着色器按它画几种岛（core/terrain.ts 的 ISLAND_ERODIBILITY）：
-//   r 硬岩（可蚀性 0.62 以下渐渐到 0.48：火山岛的玄武岩，暗色；陡坡露岩是暗色的玄武岩）
-//   g 软岩（2.2–3.0：低平岛，低处是沙与沼泽）
-//   b 珊瑚砂（3.9–4.25：珊瑚岛、小礁，白沙、岸边白浪；潟湖的海格也是，海底青绿）
-//   a 格里的潟湖：只有一格大的珊瑚岛（可蚀性 ≥ 4.6、挨着的陆格不到两个），格心画一圈潟湖
-// 生成的地形可蚀性在 0.4–1.8，低于 0.62 的很少，所以只有放的岛（和涂了很硬、很软的岩性的地方）看得出来
+// 放的岛自己选的颜色盖住植被颜色的多少
+const ISLAND_TINT = 0.8;
+
+// 岛的样子（第十三轮按可蚀性；第十四轮起按每格记下的岛的种类，见 core/island-types.ts）：每格 RGBA 字节，地形着色器按它画：
+//   r 不用（第十四轮去掉了火山岛的玄武岩）
+//   g 沙洲（颜色选“沙洲”的岛，如低平岛：低处是沙与沼泽）
+//   b 白沙（颜色选“白沙”的岛，如珊瑚岛、小礁：白沙、岸边白浪；潟湖的海格也是，海底青绿）
+//   a 格里的潟湖：环礁形状、只有一格大（挨着的陆格不到两个）的岛，格心画一圈潟湖
+// 没有放岛的地方（包括涂了很硬、很软的岩石的地方）全是 0，画面不变
 export function lithLayer(world: World): Uint8Array {
-  const { mesh, causes, derived: d } = world;
+  const { mesh, causes, derived: d, small } = world;
   const n = mesh.n;
   const out = new Uint8Array(n * 4);
-  const ramp01 = (v: number, a: number, b: number) => Math.min(1, Math.max(0, (v - a) / (b - a)));
-  const smooth = (v: number, a: number, b: number) => {
-    const t = ramp01(v, a, b);
-    return t * t * (3 - 2 * t);
-  };
+  const coral = codeFlags(small, (t) => t.color === 'coral');
+  const marsh = codeFlags(small, (t) => t.color === 'marsh');
+  const ring = ringCodes(small);
   for (let i = 0; i < n; i++) {
-    const e = causes.erod[i];
+    const code = causes.islandType[i] & ISLAND_CODE_MASK;
+    if (!code) continue;
     const land = causes.land[i] === 1;
     if (land && d.lake[i] === 1) continue;
-    const coral = smooth(e, 3.9, 4.25);
-    out[i * 4 + 2] = Math.round(255 * coral);
+    if (coral[code]) out[i * 4 + 2] = 255;
     if (!land) continue;
-    out[i * 4] = Math.round(255 * (1 - smooth(e, 0.48, 0.62)));
-    out[i * 4 + 1] = Math.round(255 * smooth(e, 2.2, 3.0) * (1 - coral));
-    if (e >= 4.6) {
+    if (marsh[code]) out[i * 4 + 1] = 255;
+    if (ring[code]) {
       let k = 0;
       for (let q = mesh.off[i]; q < mesh.off[i + 1]; q++) if (causes.land[mesh.adj[q]]) k++;
       if (k < 2) out[i * 4 + 3] = 255;
     }
+  }
+  return out;
+}
+
+// 画成陆地、落在水面格（海、湖）里的像素归哪一格的省（core/island-types.ts 的 landProvinceCells）：每格 RGBA 字节，
+// 格号 + 1 写在 r、g、b 里（与编号层相同的编码，0 是没有）。着色器的 provCell 在附近找不到陆地格时用它
+export function landCellLayer(world: World): Uint8Array {
+  const table = landProvinceCells(world);
+  const out = new Uint8Array(table.length * 4);
+  for (let i = 0; i < table.length; i++) {
+    const v = table[i] + 1;
+    out[i * 4] = v & 255;
+    out[i * 4 + 1] = (v >> 8) & 255;
+    out[i * 4 + 2] = (v >> 16) & 255;
+    out[i * 4 + 3] = 255;
   }
   return out;
 }
@@ -367,7 +391,9 @@ export function colorSignature(small: World['small']): string {
   const seams = (small.provinceSeams ?? []).map((s) => s.id);
   const colors = small.species.map((s) => speciesColor(s));
   const looks = small.species.map((s) => (s.visual ? `${s.id}:${s.seedKey ?? ''}:${JSON.stringify(s.visual)}` : ''));
-  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}`;
+  // 岛的种类：颜色、形状（一格的环礁画潟湖）、归哪种省（省份的着色、省界）
+  const isles = (small.islandTypes ?? []).map((t) => `${t.color ?? ''}:${t.shape}:${t.province}`);
+  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}`;
 }
 
 // ---------- 生态的花纹与发光（第三批） ----------
@@ -475,7 +501,9 @@ export function lakeTintLayer(world: World, o: Pick<ColorOptions, 'mode'>, style
 // kindOf：省的类型（预览里还没有的新省，取它切出来的那个省的类型）。每个省的颜色只算一次：
 // 剪刀、涂省拖动时每动一下都要整张重算，十万格的星球上逐格查类型、建颜色数组要几十毫秒
 export function provinceFlat(world: World, province: Int32Array, kindOf = (p: number) => world.small.provinces[p]?.kind): Uint8Array {
-  const { mesh, causes } = world;
+  const { mesh } = world;
+  // 归海省的岛（小礁）按海上的不透明度：海省默认不着色，礁上照样看得到白沙
+  const pland = provinceLand(world);
   const flat = new Uint8Array(mesh.n * 4);
   // 每个省：颜色与陆地、海上的不透明度
   const look = new Map<number, [number, number, number, number, number]>();
@@ -495,7 +523,7 @@ export function provinceFlat(world: World, province: Int32Array, kindOf = (p: nu
     flat[i * 4] = v[0];
     flat[i * 4 + 1] = v[1];
     flat[i * 4 + 2] = v[2];
-    flat[i * 4 + 3] = causes.land[i] ? v[3] : v[4];
+    flat[i * 4 + 3] = pland[i] ? v[3] : v[4];
   }
   return flat;
 }
@@ -503,11 +531,12 @@ export function provinceFlat(world: World, province: Int32Array, kindOf = (p: nu
 // 分组（画省界）：每格两个值。第一个：陆地省份 = 编号 + 1，海域省份 = −(编号 + 1)，未划分 = 0；
 // 第二个：切线附近这一格能不能按切线换（seams.ts 的 ok，没有切线时都是 0）
 export function provinceGroups(world: World, province: Int32Array, seams: SeamLayers | null = null): Float32Array {
-  const { mesh, causes } = world;
+  const { mesh } = world;
+  const pland = provinceLand(world);
   const group = new Float32Array(mesh.n * 2);
   for (let i = 0; i < mesh.n; i++) {
     const p = province[i];
-    group[2 * i] = p < 0 ? 0 : causes.land[i] ? p + 1 : -(p + 1);
+    group[2 * i] = p < 0 ? 0 : pland[i] ? p + 1 : -(p + 1);
     if (seams) group[2 * i + 1] = seams.ok[i];
   }
   return group;

@@ -95,7 +95,7 @@ const island = (kind: IslandSpec['kind']): Case => ({
 const CASES: Case[] = [
   paint('land'),
   paint('sea'),
-  ...(['volcanic', 'continental', 'low', 'atoll', 'reef'] as const).map(island),
+  ...(['continental', 'low', 'atoll', 'reef'] as const).map(island),
   {
     name: '恢复原样',
     edit: (eng) => {
@@ -118,7 +118,7 @@ const CASES: Case[] = [
       const w = eng.world;
       const c = seaCell(w);
       const sp = w.mesh.spacing;
-      const chain: ChainSpec = { points: [[w.mesh.x[c] - 3 * sp, w.mesh.y[c] - sp], [w.mesh.x[c] + 3 * sp, w.mesh.y[c] + sp]], kind: 'volcanic', size: 1.2 * cellKm(w), density: 1, variant: 0 };
+      const chain: ChainSpec = { points: [[w.mesh.x[c] - 3 * sp, w.mesh.y[c] - sp], [w.mesh.x[c] + 3 * sp, w.mesh.y[c] + sp]], kind: 'continental', size: 1.2 * cellKm(w), density: 1, variant: 0 };
       const st = combineStamps(w, chainIslands(w, chain));
       return { ghost: { cells: st.cells, delta: st.landDelta }, cmd: { op: 'add_island_chain', chain } };
     },
@@ -183,7 +183,7 @@ describe('landPatch 的海岸值 = 执行后的 coastValues', () => {
 
 describe('幽灵海岸与渲染一致', () => {
   const opts = { mode: 'terrain', season: 'annual', focusSpecies: null, borders: false } as const;
-  const picked = CASES.filter((c) => ['画陆地', '画海', '放岛（volcanic）', '放岛（reef）'].includes(c.name));
+  const picked = CASES.filter((c) => ['画陆地', '画海', '放岛（continental）', '放岛（reef）'].includes(c.name));
   for (const [world, make] of WORLDS) {
     for (const c of picked) {
       it(`${world}：${c.name}`, () => {

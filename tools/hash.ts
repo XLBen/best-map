@@ -21,7 +21,7 @@ export function referenceHashes(): Record<string, string> {
   const out: Record<string, string> = { meshX: hashArray(w.mesh.x), meshAdj: hashArray(w.mesh.adj) };
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
-  eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'volcanic', size: 440, variant: 0 } });
+  eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'continental', size: 440, variant: 0 } });
   const d = w.derived;
   const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && d.lake[i] !== 1);
   eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(2000, 2300), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });
@@ -115,7 +115,7 @@ export function extendedHashes(kind: 'region' | 'planet'): Record<string, string
   eng.exec({ op: 'paint', field: 'tempOffset', cells: land.slice(100, 400), value: 2, mode: 'add' });
   eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(500, 650), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });
   eng.exec({ op: 'set_worldgen', params: { ...w.small.terrain.gen!, landFraction: kind === 'planet' ? 0.33 : 0.2 } });
-  eng.exec({ op: 'add_island', island: { x: kind === 'planet' ? 1.9995 : 0.6, y: 0.3, kind: 'volcanic', size: 400, variant: 2 } });
+  eng.exec({ op: 'add_island', island: { x: kind === 'planet' ? 1.9995 : 0.6, y: 0.3, kind: 'continental', size: 400, variant: 2 } });
   if (kind === 'planet') eng.exec({ op: 'set_planet', patch: { currents: 1.5 } });
   eng.undo();
   eng.undo();

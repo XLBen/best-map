@@ -175,17 +175,17 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
       'derived.continentality': '9aada6e07020e955',
       'derived.currentX': 'f0961155fa632e8d',
       'derived.currentY': 'ae2591d51603d7ec',
-      'derived.sstAnom': '7f8b1c1003be7fe8',
-      'derived.tS': 'cdf77044988e6f1e',
-      'derived.tW': 'a7e74581fb07c1b0',
-      'derived.pS': 'e339124a6f1d434f',
-      'derived.pW': 'e599d61edd308583',
-      'derived.precip': 'ddc1ca9c7b296985',
-      'derived.moisture': '65c5ef717cbde461',
+      'derived.sstAnom': '451edb342df34269',
+      'derived.tS': '0b2779ada54cb633',
+      'derived.tW': '92ccc9c6361104a5',
+      'derived.pS': 'd5fa6009e382af88',
+      'derived.pW': '1eeb28ca148c16e3',
+      'derived.precip': 'a9ef83d05948f120',
+      'derived.moisture': '87a2480e0161666e',
       'derived.corrT': 'c2ca788e568363b1',
       'derived.corrP': '1c164b7619290e5f',
-      'derived.discharge': '339ab1ed0a3aeaf5',
-      'derived.dominant': 'f39c7331b0e6534c',
+      'derived.discharge': 'c8c8cb649231acdf',
+      'derived.dominant': 'b504c19310d6808e',
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
       'causes.province': '9e2c9ef66446f75b',
     };
@@ -204,7 +204,7 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
     eng.exec({ op: 'paint', field: 'tempOffset', cells: land.slice(100, 400), value: 2, mode: 'add' });
     eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(500, 650), species: 'temperate_forest', mode: 'constraint', ratio: 1, radius: 600 } });
     eng.exec({ op: 'set_worldgen', params: { ...w.small.terrain.gen!, landFraction: 0.33 } });
-    eng.exec({ op: 'add_island', island: { x: 1.9995, y: 0.3, kind: 'volcanic', size: 400, variant: 2 } });
+    eng.exec({ op: 'add_island', island: { x: 1.9995, y: 0.3, kind: 'continental', size: 400, variant: 2 } });
     eng.exec({ op: 'set_planet', patch: { currents: 1.5 } });
     eng.undo();
     eng.undo();

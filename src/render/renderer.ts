@@ -144,30 +144,25 @@ float patternAt(int kind, vec2 world, float size, float seed) {
 }
 `;
 
-// 岩性（第十三轮，colors.ts 的 lithLayer；每格插值）：r 硬岩、g 软岩、b 珊瑚砂、a 格里的潟湖（一格大的珊瑚岛）。
-// 平面与星球的地形着色器共用；没有岩性（全是 0）的地方画面不变
+// 岛的样子（colors.ts 的 lithLayer；每格插值，第十四轮起按每格记下的岛的种类）：g 沙洲、b 白沙、a 格里的潟湖（一格大的环礁）；
+// r 不用（第十四轮去掉了火山岛的玄武岩）。平面与星球的地形着色器共用；没有放岛（全是 0）的地方画面不变
 export const LITH_LAND_GLSL = `
     {
       float lowK = 1.0 - smoothstep(20.0, 160.0, hh);
-      // 硬岩（火山岛的玄武岩）：暗、偏冷的灰，植被也压暗
-      float lum = dot(col, vec3(0.299, 0.587, 0.114));
-      // （第十三轮修：整个岛都是玄武岩的底色，大到两百公里、长满稀树草原也一眼看得出，不只陡坡）
-      vec3 basalt = mix(vec3(lum), col, 0.55) * 0.38 + vec3(0.06, 0.06, 0.07);
-      col = mix(col, basalt, vLith.r * 0.9);
-      // 软岩（低平岛）：低处是浅色的沙，湿的地方是沼泽（青绿、偏暗）；比周围的草原、森林都浅或都青
+      // 沙洲（低平岛）：低处是浅色的沙，湿的地方是沼泽（青绿、偏暗）；比周围的草原、森林都浅或都青
       vec3 soft = mix(vec3(0.36, 0.50, 0.42), vec3(0.90, 0.85, 0.68), smoothstep(0.15, 0.6, vLandCol.a));
       col = mix(col, soft, vLith.g * lowK * 0.8);
-      // 珊瑚砂：白沙，海边最白
+      // 白沙（珊瑚岛、小礁）：海边最白
       float shoreK = 1.0 - smoothstep(0.0, 70.0, s);
       col = mix(col, vec3(0.95, 0.93, 0.85), vLith.b * mix(0.45, 0.95, shoreK));
-      // 一格大的珊瑚岛：格心一圈是潟湖（青绿、平的）
+      // 一格大的环礁：格心一圈是潟湖（青绿、平的）
       float lag = smoothstep(0.80, 0.86, vLith.a);
       col = mix(col, vec3(0.33, 0.72, 0.72), lag);
       hh = mix(hh, 2.0, lag);
       slope *= 1.0 - lag;
     }`;
 const LITH_SEA_GLSL = `
-    // 珊瑚砂的海底（潟湖、礁上）：青绿；珊瑚岛、小礁的岸边一圈白浪（约一格的十分之一宽）。
+    // 白沙的海底（潟湖、礁上）：青绿；珊瑚岛、小礁的岸边一圈白浪（约一格的十分之一宽）。
     // 潟湖的边（第十三轮修）：按格插值的岩性加上格以下的噪声（格心为 0，与海岸细节同样的权重）再取阈值，
     // 边是弯弯曲曲的，不是三角形的直边
     float coralK = smoothstep(0.3, 0.7, vLith.b + weight * 0.5 * subN);
@@ -490,8 +485,9 @@ uniform highp sampler2D uCellCoast;
 uniform sampler2D uRiver;
 uniform int uHasRiver;
 uniform vec4 uRiverXf;
-// 岩性（colors.ts 的 lithLayer）：陡坡露岩的颜色按硬岩的多少（r）从灰褐换成暗色的玄武岩
-uniform sampler2D uLith;
+// 画成陆地的像素落在水面格里、附近又找不到陆地格时归哪一格的省（colors.ts 的 landCellLayer，格号 + 1 写在 rgb）
+uniform sampler2D uLandCell;
+uniform int uHasLandCell;
 out vec4 oColor;
 ${NOISE_GLSL}
 // 场景上的位置夹在场景之内（停稳时与画面相同；移动中、导出的一块块场景四周多画了一圈，扭曲后伸出画面的取到那一圈）
@@ -524,7 +520,13 @@ bool waterCell(int id) { return cellTex(uCellCoast, id).r < 0.0; }
 // landPx 是这个像素画成陆地。画成水面（海、湖）的像素取到陆地格时不要它（海上的像素永远不属于陆上的省）：依次试没扭曲的
 // 最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），取第一个水面格；都不是时 −1（不着色、不画省界）。
 // 画成陆地的像素取到水面格时（第十三轮修）：同样依次试没扭曲的最近格、周围 0.3 格与 0.6 格半径上各 8 个点的格，取第一个陆地格；
-// 都不是时才照旧用那个水面格（只有海边很细的一丝陆地算进海省）
+// 都不是时（第十四轮）取那个水面格离它最近的陆地省的格（landCellOf），破碎的陆地永远归陆地省
+int landCellOf(int id) {
+  if (uHasLandCell == 0) return id;
+  vec4 c = cellTex(uLandCell, id) * 255.0;
+  int v = int(c.r + 0.5) + int(c.g + 0.5) * 256 + int(c.b + 0.5) * 65536 - 1;
+  return v >= 0 ? v : id;
+}
 int provCell(int idG, vec2 uv, bool landPx) {
   if (idG < 0 || waterCell(idG) != landPx) return idG;
   int c = seamCell(idAt(uv), uv);
@@ -537,7 +539,7 @@ int provCell(int idG, vec2 uv, bool landPx) {
       if (c >= 0 && waterCell(c) != landPx) return c;
     }
   }
-  return landPx ? idG : -1;
+  return landPx ? landCellOf(idG) : -1;
 }
 // 画面上另一点（省界、轮廓看的相邻像素）的省份格：陆海按那一点自己的场景像素
 int provAt(vec2 uv, vec2 uvW) {
@@ -595,10 +597,9 @@ void main() {
   }
   ${FX_END}
   if (land) {
-    // 陡坡露岩：硬岩（火山岛）是暗色的玄武岩
+    // 陡坡露岩
     float steep = 1.0 - n.z;
-    float hard = id >= 0 ? cellTex(uLith, id).r : 0.0;
-    col = mix(col, mix(vec3(0.52, 0.48, 0.44), vec3(0.25, 0.24, 0.25), hard), smoothstep(0.25, 0.6, steep) * uRock);
+    col = mix(col, vec3(0.52, 0.48, 0.44), smoothstep(0.25, 0.6, steep) * uRock);
   }
   if (uStyle == 1) {
     // 地图册：羊皮纸底色、暖色晕渲、平涂的海
@@ -1172,8 +1173,10 @@ export interface CellLayers {
   // 海面也是数据（第十四轮，海水温度底图）：着色器不给浅水加青绿、地图册画风不把海涂平，海面就是每格的颜色
   seaData?: boolean;
   coastAmp: number;
-  // 岩性（colors.ts 的 lithLayer）：每格 RGBA 字节；省略时全是 0
+  // 岛的样子（colors.ts 的 lithLayer）：每格 RGBA 字节；省略时全是 0
   lith?: Uint8Array | null;
+  // 破碎的陆地归哪一格的省（colors.ts 的 landCellLayer）：每格 RGBA 字节；省略时着色器照旧用那个水面格
+  landCell?: Uint8Array | null;
   // 生态的花纹与发光（colors.ts 的 fxLayers）：每格 RGBA 字节与 256 行 × 3 纹素的调色板；没有时为 null（整段跳过）
   fx?: Uint8Array | null;
   fxPalette?: Float32Array | null;
@@ -1363,7 +1366,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell', WebGLTexture>;
   // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取；投影时另给场景的那一块），null 不画河。现在上传着的是哪一张、哪个版本
   riverLayer: ((motion: boolean, scene?: RiverScene) => RiverTex | null) | null = null;
   // 等面积、球形投影（第十三轮 G4）：场景目标（用到时才分配）、现在的场景，与各层画的是哪个键（同停稳的那几个）
@@ -1397,6 +1400,7 @@ export class Renderer {
   private mesh: Mesh | null = null;
   private hasFlat = false;
   private hasGroup = false;
+  private hasLandCell = false;
   private hasHighlight = false;
   private shade = 1;
   private rock = 1;
@@ -1467,7 +1471,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t() };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1672,6 +1676,8 @@ export class Renderer {
     this.upload(this.tex.grad, l.grad, n, 2);
     this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
     this.upload(this.tex.lith, l.lith ?? new Uint8Array(n * 4), n, 4);
+    this.hasLandCell = !!l.landCell;
+    if (l.landCell) this.upload(this.tex.landCell, l.landCell, n, 4);
     this.hasFlat = !!l.flat;
     if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
@@ -2655,7 +2661,8 @@ export class Renderer {
     this.bindTex(pc, 'uFxPal', this.tex.fxPal, 9);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFx'), hasFx ? 1 : 0);
     this.bindTex(pc, 'uTint', this.tex.tint, 10);
-    this.bindTex(pc, 'uLith', this.tex.lith, 13);
+    this.bindTex(pc, 'uLandCell', this.tex.landCell, 14);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uHasLandCell'), this.hasLandCell ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
     this.bindTex(pc, 'uCellCoast', this.tex.coast, 11);
     this.bindTex(pc, 'uRiver', this.tex.river, 12);

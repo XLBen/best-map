@@ -145,7 +145,7 @@ describe('可预期：画笔与放岛所见即所得', () => {
 
   it('岛链：沿线排开、大小不一', () => {
     const w = generated('ocean', 1, fine);
-    const islands = chainIslands(w, { points: [[0.3, 0.3], [1.2, 0.5], [1.7, 0.8]], kind: 'volcanic', size: 440, density: 1, variant: 0 });
+    const islands = chainIslands(w, { points: [[0.3, 0.3], [1.2, 0.5], [1.7, 0.8]], kind: 'continental', size: 440, density: 1, variant: 0 });
     expect(islands.length).toBeGreaterThan(5);
     expect(new Set(islands.map((s) => s.size)).size).toBeGreaterThan(1);
     const r = combineStamps(w, islands);
@@ -205,8 +205,8 @@ describe('可预期：编辑只影响局部', () => {
     const w = eng.world;
     const land = w.causes.land.slice();
     const elev = Float32Array.from(w.derived.elevation);
-    eng.exec({ op: 'add_island', island: { x: 1.1, y: 0.55, kind: 'volcanic', size: 2000, variant: 0 } });
-    eng.exec({ op: 'add_island_chain', chain: { points: [[0.2, 0.2], [0.6, 0.3]], kind: 'volcanic', size: 450, density: 1, variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 1.1, y: 0.55, kind: 'continental', size: 2000, variant: 0 } });
+    eng.exec({ op: 'add_island_chain', chain: { points: [[0.2, 0.2], [0.6, 0.3]], kind: 'continental', size: 450, density: 1, variant: 0 } });
     eng.undo();
     eng.undo();
     expect(Array.from(w.causes.land)).toEqual(Array.from(land));
@@ -216,7 +216,7 @@ describe('可预期：编辑只影响局部', () => {
   it('滑块：只调参数时保留手工编辑', () => {
     const eng = new Engine({ cells: 8000, seed: 1 });
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents' }, reset: true });
-    eng.exec({ op: 'add_island', island: { x: 1.0, y: 0.5, kind: 'volcanic', size: 1000, variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 1.0, y: 0.5, kind: 'continental', size: 1000, variant: 0 } });
     const delta = Float32Array.from(eng.world.causes.landDelta);
     eng.exec({ op: 'set_worldgen', params: { ...eng.world.small.terrain.gen!, landFraction: 0.4 } });
     expect(Array.from(eng.world.causes.landDelta)).toEqual(Array.from(delta));

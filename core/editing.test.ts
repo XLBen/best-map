@@ -172,7 +172,7 @@ describe('地名不乱跳', () => {
       });
       if (spot === undefined) continue;
       const name = sea.name;
-      eng.exec({ op: 'add_island', island: { x: w.mesh.x[spot], y: w.mesh.y[spot], kind: 'volcanic', size: 370, variant: 0 } });
+      eng.exec({ op: 'add_island', island: { x: w.mesh.x[spot], y: w.mesh.y[spot], kind: 'continental', size: 370, variant: 0 } });
       if (w.causes.land[anchor]) continue;
       const again = w.derived.features.find((f) => f.type === sea.type && f.cells.includes(anchor));
       expect(again?.name).toBe(name);

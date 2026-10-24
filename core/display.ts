@@ -3,6 +3,7 @@ import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
 import { coastDetail, coastDetail3, coastDetailAmp, coastValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
+import { landProvinceCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -221,7 +222,8 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
 // 不取它（海上的像素永远不属于陆上的省）：依次试没扭曲的最近格、周围 0.6 格与 1.2 格半径上各 8 个点的格（同样按切线换过），
 // 取第一个水面格；都不是时为 −1（不着色、不画省界、选不中）。
 // 画成陆地的像素取到水面格时（第十三轮修：海边一条条宽宽的陆地算进了海省）：同样依次试没扭曲的最近格、周围 0.3 格与 0.6 格
-// 半径上各 8 个点的格，取第一个陆地格；都不是时才照旧用那个水面格（只有海边很细的一丝陆地算进海省，海永远不算进陆上的省）。
+// 半径上各 8 个点的格，取第一个陆地格；都不是时（第十四轮）取那个水面格离它最近的陆地省的格（island-types.ts 的 landProvinceCells），
+// 破碎的陆地永远归陆地省（海永远不算进陆上的省）。
 // coast：画面上每格的海岸值（displayCoast，湖面 < 0）；near：没扭曲的最近格
 export const PROVINCE_RING = { n: 8, radii: [0.6, 1.2] } as const;
 export const PROVINCE_LAND_RING = { n: 8, radii: [0.3, 0.6] } as const;
@@ -245,11 +247,13 @@ export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | 
       if (g >= 0) return g;
     }
   }
-  return water ? -1 : first;
+  if (water) return -1;
+  const fallback = landProvinceCells(world)[first];
+  return fallback >= 0 ? fallback : first;
 }
 
-// 最近格、扭曲后那一格与最近格的邻格里，离这一点最近的同类格（与导出 rasterizeWorld 的 sameKindCell 相同）；都不同类时陆上的点保持原格，
-// 海上的点按 nearestSeaCell 往外找
+// 最近格、扭曲后那一格与最近格的邻格里，离这一点最近的同类格（与导出 rasterizeWorld 的 sameKindCell 相同）；都不同类时陆上的点
+// 取那一格离它最近的陆地省的格（landProvinceCells，第十四轮），海上的点按 nearestSeaCell 往外找
 function sameKindNear(world: World, land: boolean, cell: number, near: number, x: number, y: number): number {
   const { mesh, causes } = world;
   let best = -1;
@@ -268,5 +272,7 @@ function sameKindNear(world: World, land: boolean, cell: number, near: number, x
   for (let e = mesh.off[near]; e < mesh.off[near + 1]; e++) tryCell(mesh.adj[e]);
   if (best >= 0) return best;
   // 海上的点都不同类时沿网格往外找最近的海格（与导出相同：海上的像素永远不取陆地格）
-  return land ? cell : nearestSeaCell(mesh, causes.land, cell, x, y);
+  if (!land) return nearestSeaCell(mesh, causes.land, cell, x, y);
+  const fallback = landProvinceCells(world)[cell];
+  return fallback >= 0 ? fallback : cell;
 }

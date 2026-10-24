@@ -55,7 +55,7 @@ function answerLast(): Request {
     for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete next[k];
     return next as Species;
   });
-  const snap: LightSnapshot = { light: true, small: { ...w.small, species }, features: w.derived.features, province: w.causes.province.slice(), history: [], canUndo: true, canRedo: false, timings: { total: 0 }, stateId: ++nextState };
+  const snap: LightSnapshot = { light: true, small: { ...w.small, species }, features: w.derived.features, province: w.causes.province.slice(), islandType: w.causes.islandType.slice(), history: [], canUndo: true, canRedo: false, timings: { total: 0 }, stateId: ++nextState };
   fw.onmessage!({ data: { id: m.id, ok: true, summary: '修改了生态', snapshot: snap } });
   return m.req;
 }

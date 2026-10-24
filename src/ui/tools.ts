@@ -8,7 +8,7 @@ import { arcUnits, densify, unwrapNear, wrapX } from '../../core/geo';
 import { type ProvinceSeam, scissors } from '../../core/seams';
 import { type CutResult, brushCells, growRegion, lassoStroke, provinceCells, ringCells, ringWinding } from '../../core/select';
 import {
-  ISLAND_KIND_INFO,
+  islandTypeName,
   type ChainSpec,
   type IslandSpec,
   chainIslands,
@@ -23,6 +23,7 @@ import {
   roundKm as km,
   type TerrainPreview,
 } from '../../core/terrain';
+import { islandTypeById, liveIslandKind } from '../../core/island-types';
 import { classOfKind, regenTargets } from '../../core/provinces';
 import { explainCell, isVegetated, landmassCells } from '../../core/vegetation';
 import { type ProvinceMeta, type RegionKind, type World, provinceColor, provinceDisplayColor } from '../../core/world';
@@ -815,14 +816,16 @@ export function islandTool(): ToolHandler {
     const center = drag ?? (pointer.cell >= 0 ? pointer : null);
     if (!center) return null;
     const o = options.value;
-    // 滑块停在别的种类的大小上（比如从火山岛换成珊瑚岛）时，补到这一种的最小值
-    const size = Math.max(islandSizeRangeKm(w, o.islandKind)[0], drag?.km ?? o.islandKm);
-    const spec: IslandSpec = { x: keepX(w, center.x), y: center.y, kind: o.islandKind, size, variant: o.islandVariant };
+    // 选着的种类被删掉了：按大陆岛
+    const kind = liveIslandKind(w, o.islandKind);
+    // 滑块停在别的种类的大小上时，补到这一种的最小值
+    const size = Math.max(islandSizeRangeKm(w, kind)[0], drag?.km ?? o.islandKm);
+    const spec: IslandSpec = { x: keepX(w, center.x), y: center.y, kind, size, variant: o.islandVariant };
     const key = `${worldId(w)}|${spec.x.toFixed(5)},${spec.y.toFixed(5)}|${spec.kind}|${spec.size}|${spec.variant}`;
     if (cache?.key === key) return cache;
-    const name = ISLAND_KIND_INFO[spec.kind].name;
-    const reef = spec.kind === 'reef';
-    // 小礁不看大小：占一格（画出来的海岸约半格大，但它是一整格陆地），说一格有多大
+    const name = islandTypeName(w, spec.kind);
+    const reef = islandTypeById(w.small, spec.kind)?.shape === 'cell';
+    // 一格的岛（小礁）不看大小：占一格（画出来的海岸约半格大，但它是一整格陆地），说一格有多大
     const diameter = km(w.mesh.spacing * w.kmPerUnit);
     let block: string | null = null;
     if (spec.kind === 'atoll' && !w.causes.land[center.cell] && w.derived.tMean[center.cell] < 20) {
@@ -855,9 +858,9 @@ export function islandTool(): ToolHandler {
       if (movedAway(settled, p)) settled = null;
       const w = world.value;
       if (!pressed || !drag || !w) return;
-      // 拖出 6 像素以上才算在拖大小，手抖不算；小礁不看大小
-      const kind = options.value.islandKind;
-      if (kind === 'reef' || Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
+      // 拖出 6 像素以上才算在拖大小，手抖不算；一格的岛（小礁）不看大小
+      const kind = liveIslandKind(w, options.value.islandKind);
+      if (islandTypeById(w.small, kind)?.shape === 'cell' || Math.hypot(p.sx - drag.sx, p.sy - drag.sy) <= 6) drag.km = null;
       else {
         // 先取整再限制在范围里：取整后不会比最小值还小
         const [lo, hi] = islandSizeRangeKm(w, kind);
@@ -926,8 +929,9 @@ export function chainTool(): ToolHandler {
       for (let k = 0; k < 40; k++) use.push(all[Math.round((k * (all.length - 1)) / 39)]);
     }
     // 岛链用自己的种类和大小（小一号的岛最小一格，太小时岛心那一格成陆）
-    const size = w ? Math.max(islandSizeRangeKm(w, o.chainKind)[0], o.chainKm) : o.chainKm;
-    return { points: use, kind: o.chainKind, size, density: o.chainDensity, variant: o.chainVariant };
+    const kind = liveIslandKind(w, o.chainKind);
+    const size = w ? Math.max(islandSizeRangeKm(w, kind)[0], o.chainKm) : o.chainKm;
+    return { points: use, kind, size, density: o.chainDensity, variant: o.chainVariant };
   };
   // 一条岛链的预览（按世界与参数缓存）：与命令同一个规则（太小的岛岛心那一格成陆），预览就是结果
   const previewOf = (w: World, spec: ChainSpec): Preview => {
@@ -940,7 +944,7 @@ export function chainTool(): ToolHandler {
         preview: {
           layers: [],
           shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
-          hint: `${islands.length} 个${ISLAND_KIND_INFO[spec.kind].name}`,
+          hint: `${islands.length} 个${islandTypeName(w, spec.kind)}`,
           // 地图上直接画出岛链将来的海岸线
           ghost: { cells: stamp.cells, delta: stamp.landDelta },
         },

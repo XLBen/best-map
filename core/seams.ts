@@ -1,5 +1,6 @@
 import { wrapDelta, wrapX } from './geo';
 import { findCell } from './mesh';
+import { provinceLand } from './island-types';
 import { type CutResult, cutProvinces } from './select';
 import type { World } from './world';
 
@@ -263,7 +264,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
   if (!seams?.length) return null;
   const S = seamSegments(world, seams);
   if (!S.count) return null;
-  const { mesh, causes } = world;
+  const { mesh } = world;
   const sp = mesh.spacing;
   const reach = CELL_REACH * sp;
   const vote = VOTE * sp;
@@ -278,7 +279,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
     repR: new Int32Array(m).fill(-1),
     ok: new Uint8Array(mesh.n),
     province,
-    land: causes.land,
+    land: provinceLand(world),
     grid: buildGrid(S, reach),
     shifts: shiftsOf(world, S, reach),
   };
@@ -340,7 +341,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
     cellSeg[k] = nearest(L, x, y, reach);
     const side = (cellSide[k] = sideOut[0]);
     if (cellSeg[k] < 0) return;
-    const g = groupValue(province, causes.land, c);
+    const g = groupValue(province, L.land, c);
     for (const shift of L.shifts) {
       const list = L.grid.lists.get(gridKey(Math.floor((x - shift) / L.grid.size), Math.floor(y / L.grid.size)));
       if (!list) continue;
@@ -375,7 +376,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
       let rep = -1;
       let rd = Infinity;
       for (const c of voters[s][side]) {
-        if (groupValue(province, causes.land, c) !== best) continue;
+        if (groupValue(province, L.land, c) !== best) continue;
         const x = sphere ? mesh.x[c] + 2 * Math.round((mx - mesh.x[c]) / 2) : mesh.x[c];
         const d = (x - mx) ** 2 + (mesh.y[c] - my) ** 2;
         if (d < rd || (d === rd && c < rep)) {
@@ -423,7 +424,7 @@ export function seamLayers(world: World, province: Int32Array, seams: readonly P
   near.forEach((c, k) => {
     const s = cellSeg[k];
     if (s < 0 || L.gL[s] === L.gR[s]) return;
-    L.ok[c] = groupValue(province, causes.land, c) === (cellSide[k] ? L.gL[s] : L.gR[s]) ? 1 : 0;
+    L.ok[c] = groupValue(province, L.land, c) === (cellSide[k] ? L.gL[s] : L.gR[s]) ? 1 : 0;
   });
   return L;
 }
