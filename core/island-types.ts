@@ -269,3 +269,61 @@ export function landProvinceCells(world: Pick<World, 'mesh' | 'causes' | 'small'
   list.length = Math.min(list.length, 3);
   return owner;
 }
+
+// ---------- 碎岛的像素归哪一格（第十八轮） ----------
+// 画成陆地的像素落在海格里时，以前一律按 landProvinceCells 归最近的陆地省。碎岛（破碎度 > 0 的海格里画出来的小岛）归海省：
+// 破碎的海格是它自己；离破碎的海格不到 ISLE_RINGS 步的海格（碎岛的一片的边上，碎岛会画到那里、扭曲后也会取到那里）
+// 是最近一圈里最碎的那一格（一样碎取编号小的）；别的照 landProvinceCells。没打碎过时就是 landProvinceCells（同一个数组）。
+// 屏幕（着色器的 landCellOf）、悬停与选省（display.ts）、导出（subcell.ts 的 rasterizeWorld）都用它
+const ISLE_RINGS = 2;
+const pixelCellCache = new WeakMap<object, { key: string; base: Int32Array; value: Int32Array }[]>();
+export function landPixelCells(world: Pick<World, 'mesh' | 'causes' | 'small' | 'derived'>): Int32Array {
+  const base = landProvinceCells(world);
+  const frag = world.causes.fragment;
+  if (!frag) return base;
+  const { mesh, causes } = world;
+  const key = `${hashBytes(2166136261, frag)}`;
+  let list = pixelCellCache.get(mesh);
+  if (!list) pixelCellCache.set(mesh, (list = []));
+  const hit = list.find((e) => e.key === key && e.base === base);
+  if (hit) return hit.value;
+  const land = causes.land;
+  const owner = new Int32Array(mesh.n).fill(-1);
+  let ring: number[] = [];
+  for (let i = 0; i < mesh.n; i++) {
+    if (!land[i] && frag[i]) {
+      owner[i] = i;
+      ring.push(i);
+    }
+  }
+  let value = base;
+  if (ring.length) {
+    value = base.slice();
+    for (const i of ring) value[i] = i;
+    const better = (a: number, b: number) => frag[a] > frag[b] || (frag[a] === frag[b] && a < b);
+    for (let r = 0; r < ISLE_RINGS && ring.length; r++) {
+      const next: number[] = [];
+      const cand = new Map<number, number>();
+      for (const c of ring) {
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (land[j] || owner[j] >= 0) continue;
+          const o = owner[c];
+          const prev = cand.get(j);
+          if (prev === undefined) {
+            cand.set(j, o);
+            next.push(j);
+          } else if (better(o, prev)) cand.set(j, o);
+        }
+      }
+      for (const j of next) {
+        owner[j] = cand.get(j)!;
+        value[j] = owner[j];
+      }
+      ring = next;
+    }
+  }
+  list.unshift({ key, base, value });
+  list.length = Math.min(list.length, 3);
+  return value;
+}

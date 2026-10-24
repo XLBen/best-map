@@ -1,7 +1,7 @@
 import type { Delaunay } from 'd3-delaunay';
 import { type Mesh, type PlaneMesh, findCell, gradient } from './mesh';
 import { type SphereView, viewOf } from './sphere';
-import { landProvinceCells } from './island-types';
+import { landPixelCells } from './island-types';
 import { COAST_AMP, coastNoiseField, coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -978,7 +978,7 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
   const elev = derived.elevation;
   const landOf = causes.land;
   // 画成陆地、邻格里又没有陆地格的像素（破碎的陆地）取那一格离它最近的陆地省的格（第十四轮，与屏幕相同）
-  const landCell = landProvinceCells(world);
+  const landCell = landPixelCells(world);
   // 破碎度（第十八轮）：没打碎过时为 null，逐像素照旧
   const frag = fragLand(world);
   const sphere = mesh.kind === 'sphere';

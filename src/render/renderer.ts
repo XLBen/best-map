@@ -1141,6 +1141,8 @@ const FS_COMPOSE_PROJ = (() => {
 
 // 测试用（没有 WebGL 时检查拼出来的源码）：合成着色器的平面、星球两份
 export const COMPOSE_SOURCES = { plane: FS_COMPOSE, planet: FS_COMPOSE_PLANET };
+// 地形着色器的平面、星球两份（第十八轮：破碎度那一段与 CPU 对照）
+export const TERRAIN_SOURCES = { plane: FS_TERRAIN, planet: FS_TERRAIN_PLANET };
 // 投影（第十三轮 G4）：合成着色器与极地的场景的几个着色器
 export const PROJ_SOURCES = { compose: FS_COMPOSE_PROJ, polarCellVs: VS_CELL_POLAR, polarIdVs: VS_ID_POLAR, polarSeamVs: VS_SEAM_POLAR, polarTerrainFs: FS_TERRAIN_POLAR };
 

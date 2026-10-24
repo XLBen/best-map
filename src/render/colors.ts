@@ -8,7 +8,7 @@ import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
 import { coastPatch } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
-import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landProvinceCells, provinceLand, ringCodes } from '../../core/island-types';
+import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landPixelCells, provinceLand, ringCodes } from '../../core/island-types';
 import { type World, provinceColor, provinceDisplayColor } from '../../core/world';
 import type { Season, ViewMode } from '../state';
 import type { CellLayers } from './renderer';
@@ -454,7 +454,7 @@ export function lithLayer(world: World): Uint8Array {
 // 画成陆地、落在水面格（海、湖）里的像素归哪一格的省（core/island-types.ts 的 landProvinceCells）：每格 RGBA 字节，
 // 格号 + 1 写在 r、g、b 里（与编号层相同的编码，0 是没有）。着色器的 provCell 在附近找不到陆地格时用它
 export function landCellLayer(world: World): Uint8Array {
-  const table = landProvinceCells(world);
+  const table = landPixelCells(world);
   const out = new Uint8Array(table.length * 4);
   for (let i = 0; i < table.length; i++) {
     const v = table[i] + 1;

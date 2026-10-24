@@ -319,6 +319,7 @@ describe('湖里的岛', () => {
     }
     eng.exec(cmds[0]);
     expect(heights(w)).toEqual(cells);
-    expect(BUILTIN_COUNT).toBe(4);
+    // 第十八轮加了碎岛
+    expect(BUILTIN_COUNT).toBe(5);
   });
 });

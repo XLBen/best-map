@@ -31,8 +31,8 @@ import { type Settings, createWorld, settingsSchema } from './world';
 
 const mesh = buildMesh(40000, 2, 1);
 
-// 有形状的内置岛（小礁只占一格）。第十四轮去掉了火山岛
-const SHAPED_KINDS = BUILTIN_ISLAND_TYPES.filter((t) => t.shape !== 'cell').map((t) => t.id);
+// 有形状的内置岛（小礁只占一格）。第十四轮去掉了火山岛；第十八轮的碎岛不长出陆地（见 shards.test.ts）
+const SHAPED_KINDS = BUILTIN_ISLAND_TYPES.filter((t) => t.shape !== 'cell' && t.shape !== 'frag').map((t) => t.id);
 
 function ocean(rough = 1) {
   const w = createWorld({ cells: mesh.n, seed: 1 }, mesh);

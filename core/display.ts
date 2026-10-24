@@ -3,7 +3,7 @@ import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
 import { coastDetail, coastDetail3, coastDetailAmp, coastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
-import { landProvinceCells } from './island-types';
+import { landPixelCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -269,7 +269,7 @@ export function provinceCell(world: World, coast: Float32Array, L: SeamLayers | 
     }
   }
   if (water) return -1;
-  const fallback = landProvinceCells(world)[first];
+  const fallback = landPixelCells(world)[first];
   return fallback >= 0 ? fallback : first;
 }
 
@@ -294,6 +294,6 @@ function sameKindNear(world: World, land: boolean, cell: number, near: number, x
   if (best >= 0) return best;
   // 海上的点都不同类时沿网格往外找最近的海格（与导出相同：海上的像素永远不取陆地格）
   if (!land) return nearestSeaCell(mesh, causes.land, cell, x, y);
-  const fallback = landProvinceCells(world)[cell];
+  const fallback = landPixelCells(world)[cell];
   return fallback >= 0 ? fallback : cell;
 }

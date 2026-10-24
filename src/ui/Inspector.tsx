@@ -1,4 +1,4 @@
-import type { GeoFeature } from '../../core/features';
+import { type GeoFeature, ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
 import { effectsAt } from '../../core/effects';
@@ -360,6 +360,11 @@ export function hereLine(w: World, cell: number): string {
   if (!w.causes.land[cell]) {
     const water = named(['bay', 'strait', 'sea', 'ocean']);
     const kind = d.elevation[cell] > -200 ? '浅海' : d.elevation[cell] > -2000 ? '海' : '深海';
+    // 有碎岛的海格（第十八轮）：带上列岛 / 群岛的名字
+    if ((w.causes.fragment?.[cell] ?? 0) >= ISLET_FRAG) {
+      const isles = named(['archipelago']);
+      return `${isles?.name && !isles.hidden ? `${isles.name} · ` : ''}碎岛 · ${water?.name ? `${water.name} · ` : ''}${kind}`;
+    }
     return `${water?.name ? `${water.name} · ` : ''}${kind} · 水深约 ${fmt(-d.elevation[cell])} m`;
   }
   const where = named(['island', 'continent', 'peninsula']);
