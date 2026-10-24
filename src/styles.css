@@ -1993,3 +1993,63 @@ button.map-thumb {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- 人文（第二十二轮）：一个群体占多少的条、生成人文的选择、菜单里的分组 ---------- */
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  font-size: var(--fs-sm);
+}
+.share-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-bar {
+  flex: 0 0 64px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--press);
+  overflow: hidden;
+}
+.share-bar > span {
+  display: block;
+  height: 100%;
+}
+input.share-input {
+  width: 4.2em;
+  height: 22px;
+}
+.human-choices .cards {
+  margin-bottom: var(--sp-1);
+}
+.human-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.human-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+}
+.human-group label.check .hint {
+  margin-left: var(--sp-1);
+}
+.wizard-human {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.menu h5.menu-group {
+  margin: var(--sp-2) 0 2px;
+}
+
+.repo-list h5.repo-section {
+  margin: var(--sp-2) 0 2px;
+}

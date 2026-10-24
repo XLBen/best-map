@@ -1,12 +1,13 @@
-import { Mountain } from 'lucide-preact';
+import { Mountain, Plus, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
-import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, resourceAt, worldResources, worldTerrainClasses } from '../../core/human';
+import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, resourceAt, typicalTuple, worldCultureGroups, worldCultures, worldResources, worldTerrainClasses } from '../../core/human';
 import type { World } from '../../core/world';
 import { exec } from '../state';
 import { SelectionActions } from './components/SelectionActions';
-import { autoNameCommand, cellClassCommand, cellResourceCommand, noteCommand, renameCommand, rerollCommand } from './archive';
+import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellResourceCommand, cellTotalCommand, groupShareCommand, noteCommand, popRows, removeGroupCommand, renameCommand, rerollCommand } from './archive';
+import { densityText, popText, shareText } from './human';
 
 // “这里”卡片里的档案（第二十一轮）：小地名、是山峰时的“xx峰 · 高度”、地形类别、资源、备注。
 // 钉住一格（右键点地图）时可以改；没钉住时只读，跟着鼠标
@@ -32,6 +33,125 @@ function Line({ label, children }: { label: string; children: ComponentChildren 
       <span class="arch-label">{label}</span>
       {children}
     </div>
+  );
+}
+
+// ---------- 人口（第二十二轮） ----------
+
+type Pop = NonNullable<CellArchive['population']>;
+
+// 一个群体：色块（文化的颜色）、“大和 · 祖灵信仰”、占比的条、百分比
+function ShareRow({ color, label, share, title, children }: { color: string; label: string; share: number; title?: string; children?: ComponentChildren }) {
+  return (
+    <div class="share-row" title={title}>
+      <span class="swatch" style={{ background: color }} />
+      <span class="share-name">{label}</span>
+      <span class="share-bar">
+        <span style={{ width: `${Math.round(share * 100)}%`, background: color }} />
+      </span>
+      {children ?? <span class="hint">{shareText(share)}</span>}
+    </div>
+  );
+}
+
+function PopReadOnly({ p, a }: { p: Pop; a: CellArchive }) {
+  return (
+    <>
+      <Line label="人口">
+        <span class="grow">
+          {p.total > 0 ? `${popText(p.total)} 人 · ${densityText(p.density)}` : '无人'}
+          {p.manual && <span class="tag">手改</span>}
+        </span>
+        <span class="hint" title="宜居度">
+          宜居 {Math.round(a.habitability * 100)}%
+        </span>
+      </Line>
+      {p.groups.map((g) => (
+        <ShareRow color={g.culture?.color ?? 'transparent'} label={g.label} share={g.share} title={`${popText(g.people)} 人${g.group ? ` · ${g.group.name}` : ''}`} />
+      ))}
+      {p.other > 0.005 && <ShareRow color="transparent" label="其他" share={p.other} />}
+    </>
+  );
+}
+
+// 钉住时：总人数可以改；群体可以去掉、加上，占比可以改（写百分比）
+function PopEditable({ p, a, w }: { p: Pop; a: CellArchive; w: World }) {
+  const [total, setTotal] = useState(popText(p.total));
+  const [adding, setAdding] = useState('');
+  useEffect(() => setTotal(popText(p.total)), [a.cell, p.total]);
+  const rows: PopRow[] = popRows(p);
+  const groups = new Map(worldCultureGroups(w.small).map((g) => [g.id, g.name]));
+  const commitTotal = () => {
+    const cmd = cellTotalCommand(a.cell, total, p.total);
+    if (cmd) run(cmd, '正在计算…');
+    else setTotal(popText(p.total));
+  };
+  return (
+    <>
+      <Line label="人口">
+        <input
+          class="grow"
+          value={total}
+          title="可以写 5000、3.2万、1.5亿"
+          onInput={(e) => setTotal((e.target as HTMLInputElement).value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setTotal(popText(p.total));
+            }
+          }}
+          onBlur={commitTotal}
+        />
+        <span class="hint">{densityText(p.density)}</span>
+        {p.manual && <span class="tag">手改</span>}
+      </Line>
+      {p.total > 0 &&
+        p.groups.map((g, k) => (
+          <ShareRow color={g.culture?.color ?? 'transparent'} label={g.label} share={g.share} title={`${popText(g.people)} 人`}>
+            <input
+              class="share-input"
+              type="number"
+              min={0}
+              max={100}
+              value={Math.round(g.share * 100)}
+              title="占比（%）"
+              onChange={(e) => run(groupShareCommand(a.cell, rows, k, Number((e.target as HTMLInputElement).value) / 100), '正在计算…')}
+            />
+            <button class="icon-btn" title="删除" onClick={() => run(removeGroupCommand(a.cell, rows, k), '正在计算…')}>
+              <X />
+            </button>
+          </ShareRow>
+        ))}
+      {p.total > 0 && p.other > 0.005 && <ShareRow color="transparent" label="其他" share={p.other} />}
+      {p.total > 0 && (
+        <Line label="加上">
+          <select class="grow" value={adding} onChange={(e) => setAdding((e.target as HTMLSelectElement).value)}>
+            <option value="">选文化</option>
+            {[...groups.entries()].map(([gid, gname]) => (
+              <optgroup label={gname}>
+                {worldCultures(w.small)
+                  .filter((c) => c.group === gid)
+                  .map((c) => (
+                    <option value={c.id}>{c.name}</option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+          <button
+            class="icon-btn"
+            title="加上这个文化最常见的一群人，占 25%"
+            disabled={!adding}
+            onClick={() => {
+              run(addGroupCommand(a.cell, rows, typicalTuple(w, adding)), '正在计算…');
+              setAdding('');
+            }}
+          >
+            <Plus />
+          </button>
+        </Line>
+      )}
+    </>
   );
 }
 
@@ -71,6 +191,7 @@ function ReadOnly({ a }: { a: CellArchive }) {
           </span>
         </Line>
       )}
+      {a.population && <PopReadOnly p={a.population} a={a} />}
       {a.note && <p class="arch-note">{a.note}</p>}
       <p class="hint">右键点地图上的一格，钉住后可改</p>
     </>
@@ -183,6 +304,7 @@ function Editable({ a, w }: { a: CellArchive; w: World }) {
           </select>
         </Line>
       )}
+      {a.population && a.surface === 'land' && <PopEditable p={a.population} a={a} w={w} />}
       <textarea
         class="arch-note-input"
         rows={2}

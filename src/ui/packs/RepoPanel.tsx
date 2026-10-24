@@ -29,12 +29,13 @@ import { trustScripts, untrustedScripts } from '../../trust';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
 import { scriptTrustText } from '../copy';
-import { category, setTool } from '../defs/tools';
+import { category, setCategory, setTool } from '../defs/tools';
 import { createAndUse as createIslandType, islandSwatch, requestIslandTypeEditor } from '../panels/islandTypes';
 import { createAndUse as createWaterType } from '../panels/waterTypes';
 import { FieldsBox } from './ContentEditor';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
-import { REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, restoreRowCommand, toggleCommand } from './repo';
+import { HUMAN_KINDS, REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, repoSections, restoreRowCommand, toggleCommand } from './repo';
+import { eraChoices, groupChoices } from '../human';
 import { isolationNote } from './Scripts';
 import { type RepoEdit, closeRepo, fileLabel, openPackImport, openPackList, packDialog, patchRepo, repo } from './store';
 import { missingCount, restyleOffer } from './styles';
@@ -504,6 +505,20 @@ function CornerMenu({ w }: { w: World | null }) {
   );
 }
 
+// 维度、文化组的名字（取值按维度、文化按文化组分段）
+function sectionNames(w: World | null) {
+  const dims = new Map<string, string>();
+  for (const e of eraChoices(w?.small)) for (const d of e.dimensions) if (!dims.has(d.id)) dims.set(d.id, d.label);
+  return { dims, groups: new Map(groupChoices(w?.small).map((g) => [g.id, g.name])) };
+}
+
+// 生成、重新生成人文在“文化 ⋯”里
+function openHuman() {
+  closeRepo();
+  setCategory('culture');
+  openPanel.value = 'cat:culture';
+}
+
 // ---------- 整个仓库 ----------
 
 export function RepoPanel() {
@@ -567,11 +582,24 @@ export function RepoPanel() {
                 {missing > 0 && <p class="hint warn">{missing} 处用的风格已停用，按世界默认起名</p>}
               </div>
               <div class="repo-list">
-                {shown.map((r) => (
-                  <Card key={r.key} row={r} w={w} onHover={preview.setHover} onRun={preview.settle} />
+                {repoSections(kind, shown, sectionNames(w)).map((sec) => (
+                  <>
+                    {sec.label && <h5 class="repo-section">{sec.label}</h5>}
+                    {sec.rows.map((r) => (
+                      <Card key={r.key} row={r} w={w} onHover={preview.setHover} onRun={preview.settle} />
+                    ))}
+                  </>
                 ))}
                 {!shown.length && <p class="hint">没有内容</p>}
               </div>
+              {HUMAN_KINDS.has(kind.id) && w && (
+                <div class="row between repo-restyle">
+                  <span class="hint">{w.small.human ? '改了内容后重新生成才用到' : '还没有生成人文'}</span>
+                  <button class="small" onClick={openHuman}>
+                    {w.small.human ? '重新生成…' : '生成人文…'}
+                  </button>
+                </div>
+              )}
               {restyle && (
                 <div class="row between repo-restyle">
                   <span class="hint">换了默认，已有的省名不变</span>

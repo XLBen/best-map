@@ -1,3 +1,5 @@
+import { worldCultures } from '../../core/human';
+import { popText } from './human';
 import { type GeoFeature, ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
@@ -365,6 +367,16 @@ export function Inspector() {
 }
 
 // 右下角“这里”的一行：地名 + 是什么 + 冷暖雨水
+// 生成过人文时：这里占多数的文化与人数（第二十二轮）
+function peopleHere(w: World, cell: number): string {
+  if (!w.small.human || !w.causes.popTotal) return '';
+  const n = w.causes.popTotal[cell];
+  if (!(n > 0)) return ' · 无人';
+  const code = w.derived.popCulture?.[cell] ?? 0;
+  const c = code ? worldCultures(w.small)[code - 1] : undefined;
+  return ` · ${c ? `${c.name} ` : ''}${popText(n)} 人`;
+}
+
 export function hereLine(w: World, cell: number): string {
   const d = w.derived;
   const feats = featuresAt(w, cell);
@@ -387,7 +399,7 @@ export function hereLine(w: World, cell: number): string {
   const river = d.discharge[cell] >= w.small.planet.riverThreshold ? `${named(['river'])?.name || '河边'} · ` : '';
   const s = d.dominant[cell];
   const sp = s >= 0 ? w.small.species[s] : null;
-  return `${prefix}${river}${sp?.name ?? '什么都长不了'} · 年均 ${fmt(d.tMean[cell])} °C · 年降水 ${fmt(d.precip[cell])} mm`;
+  return `${prefix}${river}${sp?.name ?? '什么都长不了'}${peopleHere(w, cell)} · 年均 ${fmt(d.tMean[cell])} °C · 年降水 ${fmt(d.precip[cell])} mm`;
 }
 
 // 最后一次停在地图上的格（鼠标移到面板上时还看得到）；钉住了一格时是那一格

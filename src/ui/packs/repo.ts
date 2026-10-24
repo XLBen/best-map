@@ -185,3 +185,27 @@ export function defaultStyleCommand(row: RepoRow, world: PackWorld): Command | n
 export function enabledCount(kind: ContentKind, world: PackWorld | null): number {
   return world ? kind.inWorld(world).length : 0;
 }
+
+// ---------- 分组（第二十二轮） ----------
+
+// 列表分成几段：人口维度的取值按维度（宗教、种族……），文化按文化组；别的种类一段（label 为 null）。
+// names.dims：维度 id → 名字（内置的时代与世界里的时代写了的）；names.groups：文化组 id → 名字
+export function repoSections(
+  kind: ContentKind,
+  rows: readonly RepoRow[],
+  names: { dims: ReadonlyMap<string, string>; groups: ReadonlyMap<string, string> },
+): { label: string | null; rows: RepoRow[] }[] {
+  const key = kind.id === 'popValue' ? 'dimension' : kind.id === 'culture' ? 'group' : null;
+  if (!key) return [{ label: null, rows: [...rows] }];
+  const labels = key === 'dimension' ? names.dims : names.groups;
+  const out = new Map<string, RepoRow[]>();
+  for (const r of rows) {
+    const k = String((r.item as Record<string, unknown>)[key] ?? '');
+    if (!out.has(k)) out.set(k, []);
+    out.get(k)!.push(r);
+  }
+  return [...out.entries()].map(([k, list]) => ({ label: labels.get(k) ?? (k || '其他'), rows: list }));
+}
+
+// 人文的四种：仓库里有“生成人文…”的入口
+export const HUMAN_KINDS: ReadonlySet<string> = new Set(['era', 'popValue', 'cultureGroup', 'culture']);
