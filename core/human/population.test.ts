@@ -36,6 +36,8 @@ const GROUPS = [
   { id: 'steppe', weight: 1.5 },
 ];
 const GEN: Command = { op: 'generate_human', era: 'medieval', groups: GROUPS };
+// 用到的三个组的内置文化（按组的先后）
+const SAMPLE_CULTURES = GROUPS.flatMap((g) => BUILTIN_CULTURES.filter((c) => c.group === g.id).map((c) => c.id));
 
 // 生成过人文的大陆世界（1.2 万格的地区）
 const peopled = (): Engine =>
@@ -123,7 +125,7 @@ describe('生成人文', () => {
     const era = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
     expect(w.small.content?.era?.medieval).toEqual(era);
     expect(Object.keys(w.small.content?.cultureGroup ?? {})).toEqual(['western', 'eastern', 'steppe']);
-    expect(worldCultures(w.small).map((c) => c.id)).toEqual(BUILTIN_CULTURES.map((c) => c.id));
+    expect(worldCultures(w.small).map((c) => c.id)).toEqual(SAMPLE_CULTURES);
     for (const c of worldCultures(w.small)) if (c.nameStyle !== 'zh-default') expect(w.small.content?.nameStyle?.[c.nameStyle], c.id).toBeDefined();
     expect(dimensionValues(w.small, 'religion').map((v) => v.id)).toEqual(['sun-faith', 'moon-faith', 'ancestor-rites', 'sky-way']);
     expect(w.small.human!.totalPop).toBe(defaultTotalPop(w, w.derived, era));
@@ -184,7 +186,7 @@ describe('生成人文', () => {
     const w = peopled().world;
     const hs = w.small.human!.hearths;
     expect(hs.filter((h) => !h.culture).map((h) => h.group).sort()).toEqual(['eastern', 'steppe', 'western']);
-    expect(hs.filter((h) => h.culture).map((h) => h.culture)).toEqual(BUILTIN_CULTURES.map((c) => c.id));
+    expect(hs.filter((h) => h.culture).map((h) => h.culture)).toEqual(SAMPLE_CULTURES);
     for (const h of hs) expect(dry(w, h.cell), `${h.group}/${h.culture}`).toBe(true);
     const steppe = hs.find((h) => h.group === 'steppe' && !h.culture)!;
     expect(['steppe', 'grasslands', 'desert']).toContain(classAt(w.small, w.derived.terrainClass[steppe.cell])?.id);
