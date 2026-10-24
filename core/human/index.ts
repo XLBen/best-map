@@ -1,0 +1,86 @@
+import type { Derived, World } from '../world';
+import { findPeaks, peakList } from './peaks';
+import { distributeResources, effectiveResources, worldResources } from './resources';
+import { cellInputs } from './rules';
+import { classifyTerrain, effectiveClasses, worldTerrainClasses } from './terrain-class';
+
+// 人文的几层（第二十一轮）：只读自然的推导，不反向影响自然的部分。
+// 引擎在自然的推导（植被之后、地物识别之后）算好后算一遍（natural）；只画地形类别、资源、改它们的内容时（Dirty.Human）
+// 只算这一段，自然的推导没变：自动的类别、资源在规则没变时照用上一份（按数组记下当时的规则）。
+// 每次都换上新的数组（不就地改）：撤销缓存、发给主线程的上一份照旧可以共用
+
+// 自动的类别、资源是按什么算的（数组 → 规则的标识；资源另记当时生效的类别）
+const classMemo = new WeakMap<Uint8Array, string>();
+const resourceMemo = new WeakMap<Uint8Array, { key: string; cls: Uint8Array }>();
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+export function computeHuman(world: World, d: Derived, natural = true): void {
+  const x = cellInputs(world, d);
+  const classes = worldTerrainClasses(world.small);
+  const species = JSON.stringify(world.small.species.map((sp) => [sp.id, sp.terrain]));
+  const classKey = `${species}|${JSON.stringify(classes)}`;
+  const reuse = !natural && classMemo.get(d.terrainClassAuto) === classKey;
+  const auto = reuse ? d.terrainClassAuto : classifyTerrain(x, classes, world.small.species);
+  if (!reuse) classMemo.set(auto, classKey);
+  const cls = effectiveClasses(auto, world.causes.terrainClass, x.dry, classes.length);
+  const resources = worldResources(world.small);
+  const resKey = `${classKey}|${world.small.terrain.gen?.seed ?? world.settings.seed}|${JSON.stringify(resources)}`;
+  const prev = natural ? undefined : resourceMemo.get(d.resourceAuto);
+  let rAuto: Uint8Array;
+  if (prev && prev.key === resKey && sameBytes(prev.cls, cls)) rAuto = d.resourceAuto;
+  else {
+    rAuto = distributeResources(
+      world,
+      x,
+      cls,
+      resources,
+      classes.map((c) => c.id),
+    );
+    resourceMemo.set(rAuto, { key: resKey, cls });
+  }
+  d.terrainClassAuto = auto;
+  // 没画过时与自动的是同一份数组：发给主线程、撤销缓存都只算一份
+  d.terrainClass = cls;
+  d.resourceAuto = rAuto;
+  d.resource = effectiveResources(rAuto, world.causes.resource, x.dry, resources.length);
+  d.peak = findPeaks(world.mesh, d.elevation, x.dry, cls, classes);
+}
+
+// 图层的颜色：编号 → [r, g, b]（0 为 null：水面、没有资源）
+export function classColors(world: Pick<World, 'small'>): ([number, number, number] | null)[] {
+  return [null, ...worldTerrainClasses(world.small).map((c) => rgb(c.color))];
+}
+export function resourceColors(world: Pick<World, 'small'>): ([number, number, number] | null)[] {
+  return [null, ...worldResources(world.small).map((r) => rgb(r.color))];
+}
+function rgb(hex: string): [number, number, number] {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+export { cellArchive, cellName, peakFeatureAt, peakMarks, type CellArchive } from './cells';
+export { PEAK_MIN, peakList } from './peaks';
+
+// 全部山峰的格，按海拔从高到低（按 derived.peak 缓存）
+export const peakCells = (world: Pick<World, 'derived'>): Int32Array => peakList(world.derived.peak, world.derived.elevation);
+export {
+  CATEGORY_LABEL,
+  FANTASY_RESOURCES,
+  GENERAL_RESOURCES,
+  RESOURCE_CATEGORIES,
+  RESOURCE_NONE,
+  type Resource,
+  type ResourceCategory,
+  resourceAt,
+  resourceCode,
+  resourceSchema,
+  worldResources,
+} from './resources';
+export { BUILTIN_CLASSES, type TerrainClass, classAt, classCode, terrainClassSchema, worldTerrainClasses } from './terrain-class';
+export { type CellRule, cellRuleSchema } from './rules';

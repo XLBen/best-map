@@ -32,6 +32,8 @@ import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema
 import { MAX_LAKE_TYPES, checkLakeTypeScripts, lakeTypeDirty, lakeTypeSchema } from './lake-types';
 import { ISLAND_CODE_MASK, LAGOON_BIT, MAX_ISLAND_TYPES, islandCode, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
 import { typeIdSchema } from './type-id';
+import { classAt, classCode } from './human/terrain-class';
+import { RESOURCE_NONE, resourceAt, resourceCode } from './human/resources';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
@@ -263,6 +265,21 @@ const baseCommands = [
   // 岛的种类（第十四轮，见 island-types.ts）：新建或整份换掉（按 id）；删掉时这种岛变成大陆岛
   z.object({ op: z.literal('set_island_type'), type: islandTypeSchema }),
   z.object({ op: z.literal('remove_island_type'), id: z.string() }),
+  // 画地形类别（第二十一轮，见 human/terrain-class.ts）：这些格（只画陆地格）的类别换成 class，null 恢复自动。只改类别、不改高度
+  z.object({ op: z.literal('set_cell_class'), cells, class: typeIdSchema.nullable() }),
+  // 画资源（第二十一轮，见 human/resources.ts）：'none' 是明确没有，null 恢复自动
+  z.object({ op: z.literal('set_cell_resource'), cells, resource: typeIdSchema.nullable() }),
+  // 一格的档案（第二十一轮，见 human/cells.ts）：小地名（null 恢复自动；orig 跟着 name，只写 name 时原文去掉）、
+  // 换一个自动的名字（reroll，或直接写 salt）、备注（null 去掉）
+  z.object({
+    op: z.literal('set_cell'),
+    cell: z.number().int().min(0),
+    name: z.string().max(40).nullable().optional(),
+    orig: z.string().max(80).nullable().optional(),
+    salt: z.number().int().min(0).optional(),
+    reroll: z.literal(true).optional(),
+    note: z.string().max(2000).nullable().optional(),
+  }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
@@ -319,14 +336,20 @@ export const Dirty = {
   None: 0,
   // 只需要重新起名（地物本身没变）
   Names: 1,
-  Vegetation: 2,
-  Solve: 3,
-  Climate: 4,
-  Elevation: 5,
+  // 只重算人文的几层（第二十一轮：地形类别、资源、山峰，见 human/index.ts）与名字；自然的部分不动
+  Human: 2,
+  Vegetation: 3,
+  Solve: 4,
+  Climate: 5,
+  Elevation: 6,
 } as const;
 export type Dirty = (typeof Dirty)[keyof typeof Dirty];
 
-type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | 'fragment' | `field:${string}`;
+type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | 'fragment' | HumanArray | `field:${string}`;
+
+// 人文的原因数组（第二十一轮）：第一次画时才建，撤销到那之前时去掉（UndoRecord.dropArrays）
+type HumanArray = 'terrainClass' | 'resource';
+const HUMAN_ARRAYS: readonly HumanArray[] = ['terrainClass', 'resource'];
 
 function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Int32Array | undefined {
   if (key.startsWith('field:')) return world.causes.fields[key.slice(6)];
@@ -343,6 +366,8 @@ export interface UndoRecord {
   dropHeights?: true;
   // 这一步第一次有了破碎度（causes.fragment，第十八轮）：撤销时去掉整个数组
   dropFragment?: true;
+  // 这一步第一次有了画的地形类别、资源（第二十一轮）：撤销时去掉这些数组
+  dropArrays?: HumanArray[];
 }
 
 function formatIssues(err: z.ZodError): string {
@@ -359,12 +384,19 @@ export interface ApplyContext {
 function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   switch (cmd.op) {
     case 'set_worldgen':
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'terrainClass', 'resource'];
     case 'paint_land':
     case 'add_island':
     case 'add_island_chain':
     case 'restore_terrain':
     case 'fragment':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment'];
+    case 'set_cell_class':
+      return ['terrainClass'];
+    case 'set_cell_resource':
+      return ['resource'];
+    case 'set_content':
+      return [...(kindOf(cmd.kind)?.arrays ?? [])];
     case 'set_coast_style':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
     case 'set_island_type':
@@ -427,6 +459,7 @@ export function applyCommand(
   const fieldsBefore = { ...world.causes.fields };
   const heightsBefore = world.causes.islandHeight;
   const fragmentBefore = world.causes.fragment;
+  const humanBefore = HUMAN_ARRAYS.filter((k) => world.causes[k]);
   const idsBefore = new Set(Object.keys(world.small.provinces));
   let result: { dirty: Dirty; summary: string };
   try {
@@ -451,11 +484,14 @@ export function applyCommand(
     world.causes.fields = fieldsBefore;
     if (!heightsBefore) delete world.causes.islandHeight;
     if (!fragmentBefore) delete world.causes.fragment;
+    for (const k of HUMAN_ARRAYS) if (!humanBefore.includes(k)) delete world.causes[k];
     throw e;
   }
   const undo: UndoRecord = { arrays: [], fields: [], small: smallBefore };
   if (!heightsBefore && world.causes.islandHeight) undo.dropHeights = true;
   if (!fragmentBefore && world.causes.fragment) undo.dropFragment = true;
+  const created = HUMAN_ARRAYS.filter((k) => world.causes[k] && !humanBefore.includes(k));
+  if (created.length) undo.dropArrays = created;
   keys.forEach((k, idx) => {
     const now = getArray(world, k)!;
     const old = before[idx];
@@ -465,7 +501,7 @@ export function applyCommand(
   });
   const names = new Set([...Object.keys(fieldsBefore), ...Object.keys(world.causes.fields)]);
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
-  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || !!undo.dropFragment || JSON.stringify(world.small) !== smallBefore;
+  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || !!undo.dropFragment || !!undo.dropArrays || JSON.stringify(world.small) !== smallBefore;
   const provinceNames: Record<string, string> = {};
   const provinceOrig: Record<string, string> = {};
   for (const [id, p] of Object.entries(world.small.provinces)) {
@@ -509,6 +545,7 @@ export function revert(world: World, undo: UndoRecord) {
   }
   if (undo.dropHeights) delete world.causes.islandHeight;
   if (undo.dropFragment) delete world.causes.fragment;
+  for (const k of undo.dropArrays ?? []) delete world.causes[k];
   world.small = JSON.parse(undo.small) as SmallState;
   // 陆海、抬升等组合值由增量与生成参数算出，撤销后重新组合
   resolveTerrain(world);
@@ -567,6 +604,7 @@ const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId
 const DIRTY_OF: Record<DirtyLevel, Dirty> = {
   none: Dirty.None,
   names: Dirty.Names,
+  human: Dirty.Human,
   vegetation: Dirty.Vegetation,
   solve: Dirty.Solve,
   climate: Dirty.Climate,
@@ -587,6 +625,8 @@ function setContent(world: World, kindId: string, id: string, raw: Record<string
   const small = world.small;
   const store = { ...(small.content?.[kindId] ?? {}) };
   const before = store[id];
+  // 改之前这一种的全部 id（按编号的先后）：停用一种之后画过的格按它换编号
+  const idsBefore = kind.afterSet ? kind.inWorld(world).map((x) => itemId(kind, x)) : [];
   let after: unknown;
   if (raw === null) {
     if (before === undefined) throw new CommandError(`世界里没有${kind.label} "${id}"`);
@@ -605,6 +645,7 @@ function setContent(world: World, kindId: string, id: string, raw: Record<string
   if (!Object.keys(store).length) delete content[kindId];
   if (Object.keys(content).length) small.content = content;
   else delete small.content;
+  kind.afterSet?.(world, idsBefore);
   const level = kind.dirty?.(before, after, world) ?? 'none';
   const name = itemName(kind, after ?? before);
   const what = raw === null ? '停用' : before === undefined ? '启用' : '修改';
@@ -785,7 +826,10 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.islandType.fill(0);
         causes.islandHeight?.fill(FREE_HEIGHT);
         causes.fragment?.fill(0);
+        causes.terrainClass?.fill(0);
+        causes.resource?.fill(0);
         causes.province.fill(-1);
+        delete small.cells;
         small.provinces = {};
         small.constraints = [];
         small.guides = [];
@@ -1484,6 +1528,69 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       else delete names[cmd.key];
       small.featureNames = names;
       return { dirty: Dirty.Names, summary: cmd.style === null ? '地名风格恢复自动' : `地名风格改为“${styleLabel(small, cmd.style)}”` };
+    }
+    case 'set_cell_class': {
+      checkCells(cmd.cells);
+      const code = cmd.class === null ? 0 : classCode(small, cmd.class);
+      if (cmd.class !== null && !code) throw new CommandError(`世界里没有地形类别 "${cmd.class}"`);
+      const land = cmd.cells.filter((i) => causes.land[i]);
+      if (land.length && (code || causes.terrainClass)) {
+        const arr = (causes.terrainClass ??= new Uint8Array(n));
+        for (const i of land) arr[i] = code;
+      }
+      const name = classAt(small, code)?.name;
+      return { dirty: Dirty.Human, summary: name ? `地形类别“${name}” · ${land.length} 格` : `地形类别恢复自动 · ${land.length} 格` };
+    }
+    case 'set_cell_resource': {
+      checkCells(cmd.cells);
+      const code = cmd.resource === null ? 0 : cmd.resource === 'none' ? RESOURCE_NONE : resourceCode(small, cmd.resource);
+      if (cmd.resource !== null && !code) throw new CommandError(`世界里没有资源 "${cmd.resource}"`);
+      const land = cmd.cells.filter((i) => causes.land[i]);
+      if (land.length && (code || causes.resource)) {
+        const arr = (causes.resource ??= new Uint8Array(n));
+        for (const i of land) arr[i] = code;
+      }
+      const name = resourceAt(small, code)?.name;
+      const what = name ? `资源“${name}”` : code === RESOURCE_NONE ? '去掉资源' : '资源恢复自动';
+      return { dirty: Dirty.Human, summary: `${what} · ${land.length} 格` };
+    }
+    case 'set_cell': {
+      checkCells([cmd.cell]);
+      const meta = { ...(small.cells?.[cmd.cell] ?? {}) };
+      let summary = '修改格的档案';
+      if (cmd.name !== undefined) {
+        const name = cmd.name?.trim();
+        if (name) meta.name = name;
+        else delete meta.name;
+        summary = name ? `改名为“${name}”` : '名字恢复自动';
+      }
+      // 原文跟着自己起的名字；只改中文名时去掉
+      if (cmd.name !== undefined || cmd.orig !== undefined) {
+        const orig = cmd.orig?.trim();
+        if (orig && meta.name) meta.orig = orig;
+        else delete meta.orig;
+        if (cmd.name === undefined) summary = orig ? `原文改为“${orig}”` : '去掉原文';
+      }
+      if (cmd.salt !== undefined || cmd.reroll) {
+        delete meta.name;
+        delete meta.orig;
+        const salt = cmd.salt ?? (meta.salt ?? 0) + 1;
+        if (salt) meta.salt = salt;
+        else delete meta.salt;
+        summary = '换名字';
+      }
+      if (cmd.note !== undefined) {
+        const note = cmd.note?.trim();
+        if (note) meta.note = note;
+        else delete meta.note;
+        summary = note ? '写备注' : '删除备注';
+      }
+      const cellsMeta = { ...small.cells };
+      if (Object.keys(meta).length) cellsMeta[cmd.cell] = meta;
+      else delete cellsMeta[cmd.cell];
+      if (Object.keys(cellsMeta).length) small.cells = cellsMeta;
+      else delete small.cells;
+      return { dirty: Dirty.None, summary };
     }
     case 'set_province': {
       const meta = small.provinces[cmd.id];

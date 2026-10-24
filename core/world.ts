@@ -238,6 +238,19 @@ export interface Causes {
   // 所以气候、河流、生态还是按整格算。打碎笔刷、放碎岛、岛链里的碎岛写它；画陆地 / 海、恢复原样清掉。
   // 只在第一次用到时才有（撤销到那之前时去掉）：没打碎过的世界没有这个数组，与以前逐值相同
   fragment?: Uint8Array;
+  // 画的地形类别（第二十一轮，见 human/terrain-class.ts）：0 自动，否则是世界里类别的编号（下标 + 1）。
+  // 只改类别、不改高度；第一次画时才有（撤销到那之前时去掉），新世界清零
+  terrainClass?: Uint8Array;
+  // 画的资源（第二十一轮，见 human/resources.ts）：0 自动，255 明确没有，否则是资源的编号（下标 + 1）。同上
+  resource?: Uint8Array;
+}
+
+// 一格的档案里自己写的（第二十一轮，见 human/cells.ts）：小地名（不上地图）、原文、换过几次（盐）、备注
+export interface CellMeta {
+  name?: string;
+  orig?: string;
+  salt?: number;
+  note?: string;
 }
 
 // causes.islandHeight 里“没定高度”的值（不用 NaN：撤销记录按 !== 比较数组，NaN 每次都算改了）
@@ -284,6 +297,8 @@ export interface SmallState {
   content?: ContentStore;
   // 世界默认的地名风格（第二十轮）：没有这一项是内置中文（zh-default）
   nameStyle?: string;
+  // 格的档案（第二十一轮）：格的编号 → 自己写的小地名、备注。第一次写之前没有这一项
+  cells?: Record<string, CellMeta>;
 }
 
 export interface Conflict {
@@ -367,7 +382,19 @@ export interface Derived {
   // 只在有生态带“对周围的影响”、或有河流类型带“两岸的影响”时才有
   effT?: Float32Array;
   effP?: Float32Array;
+  // ---------- 人文的几层（第二十一轮，见 human/index.ts）：自然的推导算好之后算，画地形类别、资源时只重算这几层 ----------
+  // 自动的地形类别、生效的地形类别（画过的用画的）：编号是世界里类别的下标 + 1，水面为 0
+  terrainClassAuto: Uint8Array;
+  terrainClass: Uint8Array;
+  // 自动的资源、生效的资源：编号是资源的下标 + 1，0 没有
+  resourceAuto: Uint8Array;
+  resource: Uint8Array;
+  // 山峰：1 是（见 human/peaks.ts）
+  peak: Uint8Array;
 }
+
+// 人文的推导数组（第二十一轮）：不进金标准的哈希（tools/hash.ts 的 digestWorld），另有自己的测试
+export const HUMAN_DERIVED = ['terrainClassAuto', 'terrainClass', 'resourceAuto', 'resource', 'peak'] as const;
 
 export interface World {
   settings: Settings;
@@ -468,6 +495,11 @@ export function emptyDerived(n: number, speciesCount: number): Derived {
     currentX: f(),
     currentY: f(),
     sstAnom: f(),
+    terrainClassAuto: new Uint8Array(n),
+    terrainClass: new Uint8Array(n),
+    resourceAuto: new Uint8Array(n),
+    resource: new Uint8Array(n),
+    peak: new Uint8Array(n),
   };
 }
 

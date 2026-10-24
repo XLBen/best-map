@@ -1,6 +1,7 @@
 // 打印各层数据的哈希，用于核对不同环境下结果是否逐值一致（Node 与浏览器跑同一段代码，比对输出）
 import { Engine } from '../core/engine';
 import { hashString } from '../core/names';
+import { HUMAN_DERIVED } from '../core/world';
 
 export function hashArray(a: ArrayLike<number>): string {
   let h = 0x811c9dc5;
@@ -59,11 +60,14 @@ export function digest(v: unknown): string {
   return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
 }
 
-// 一个世界的全部状态：网格、原因、推导的每一个类型数组，地物（名字、位置、标签、面积），省份等小数据
+// 一个世界的全部状态：网格、原因、推导的每一个类型数组，地物（名字、位置、标签、面积），省份等小数据。
+// 人文的推导数组（第二十一轮：地形类别、资源、山峰，world.ts 的 HUMAN_DERIVED）不算在这里：金标准记下时还没有它们，
+// 它们的逐值不变由 human/human.test.ts 自己的哈希管
 export function digestWorld(w: Engine['world']): Record<string, string> {
   const out: Record<string, string> = {};
+  const skip = new Set<string>(HUMAN_DERIVED);
   const add = (prefix: string, o: object) => {
-    for (const [k, v] of Object.entries(o)) if (ArrayBuffer.isView(v)) out[`${prefix}.${k}`] = digest(v);
+    for (const [k, v] of Object.entries(o)) if (ArrayBuffer.isView(v) && !(prefix === 'derived' && skip.has(k))) out[`${prefix}.${k}`] = digest(v);
   };
   add('mesh', w.mesh);
   add('causes', w.causes);

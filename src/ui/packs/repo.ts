@@ -69,6 +69,9 @@ function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: P
   }
   const isDefault = (wid: string) => (kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === wid } : {});
   if (isZh(kind, id)) return { on: true, worldId: DEFAULT_STYLE, locked: '内置中文总在', ...isDefault(DEFAULT_STYLE) };
+  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：开关不能动
+  const always = kind.alwaysOn?.(id);
+  if (always && inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item))) return { on: true, worldId: id, locked: always };
   // 世界里有一模一样的（内置的生态本来就在世界里）
   if (inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item))) return { on: true, worldId: id, ...isDefault(id) };
   if (kind.id === 'nameStyle') {

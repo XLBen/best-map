@@ -394,21 +394,25 @@ function contentTag(style: object): string {
   return t;
 }
 
-// 要给哪一处起名：地物（override 是落到它上面的改名，见 features.ts 的 assignNames；省略时按它自己的键找）或省份
-export type StyleTarget = { feature: Pick<GeoFeature, 'key'>; override?: FeatureOverride } | { province: number };
+// 要给哪一处起名：地物（override 是落到它上面的改名，见 features.ts 的 assignNames；省略时按它自己的键找）、省份，
+// 或者一格（第二十一轮：格的小地名、山峰，按它所在的省份）
+export type StyleTarget = { feature: Pick<GeoFeature, 'key'>; override?: FeatureOverride } | { province: number } | { cell: number };
 
 // 自己选的风格 id（没有选时 undefined）。第二十二轮在这里接上“当地文化的风格”
-export function ownStyleId(small: StyleSmall, target: StyleTarget): string | undefined {
+export function ownStyleId(small: StyleSmall, target: Exclude<StyleTarget, { cell: number }>): string | undefined {
   if ('province' in target) return small.provinces[target.province]?.style;
   // 给了落到它上面的改名（起名时）就只看它，没给时按地物自己的键找
   return target.override ? target.override.style : small.featureNames[target.feature.key]?.style;
 }
 
 // 一处地方用哪种风格：自己选的 → 世界默认 → 内置中文。选的风格不在世界里了（停用了）时按世界默认
-export function styleFor(world: { small: StyleSmall }, target?: StyleTarget): ResolvedStyle {
+// 一格按它所在的省份（不在省份里时按世界默认）
+export function styleFor(world: { small: StyleSmall; causes?: { province: Int32Array } }, target?: StyleTarget): ResolvedStyle {
   const small = world.small;
   const def = worldStyleId(small);
-  const own = target ? ownStyleId(small, target) : undefined;
+  const at = target && 'cell' in target ? (world.causes?.province[target.cell] ?? -1) : 0;
+  const t = target && 'cell' in target ? (at >= 0 ? { province: at } : undefined) : target;
+  const own = t ? ownStyleId(small, t) : undefined;
   const id = own && styleById(small, own) ? own : def;
   const style = styleById(small, id)!;
   const tag = id === DEFAULT_STYLE ? (small.wordPack ? contentTag(small.wordPack) : '-') : contentTag(style);

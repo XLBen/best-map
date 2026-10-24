@@ -17,6 +17,7 @@ import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
 import { baseBiomes, computeVegetation, finishLook, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
+import { computeHuman } from './human';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
@@ -37,6 +38,8 @@ export interface Timings {
   hydrology?: number;
   vegetation?: number;
   features?: number;
+  // 人文的几层（第二十一轮：地形类别、资源、山峰）
+  human?: number;
   total: number;
 }
 
@@ -240,7 +243,7 @@ export class Engine {
   // 再重算（与以前复制一份留给撤销、就地重算逐值相同）。只给要重算推导的步留
   private keepBefore(fresh: boolean) {
     const h = this.done[this.done.length - 1];
-    if (!(fresh && h.dirty > Dirty.Names && this.undoCache > 0)) return;
+    if (!(fresh && h.dirty > Dirty.Human && this.undoCache > 0)) return;
     // 推导对象本身不换（别处可能拿着它），换的是里面的数组：留给撤销的是一个新对象，引用原来的那些数组
     const live = this.world.derived;
     const before = { ...this.current(), derived: { ...live, corrF: { ...live.corrF } } };
@@ -353,7 +356,7 @@ export class Engine {
       throw e;
     }
     const step = this.done[this.done.length - 1];
-    if (fresh && after && step.dirty > Dirty.Names) {
+    if (fresh && after && step.dirty > Dirty.Human) {
       const before = this.current();
       this.install(after);
       this.keep(step, before);
@@ -405,7 +408,7 @@ export class Engine {
     const undone = this.undone;
     this.dropUndone();
     const step = this.done[this.done.length - 1];
-    if (before && step.dirty > Dirty.Names) this.keep(step, before);
+    if (before && step.dirty > Dirty.Human) this.keep(step, before);
     try {
       this.update();
       if (shown) this.carryNames(shown.features, shown.small);
@@ -488,12 +491,19 @@ export class Engine {
     this.recomputed = Math.max(this.recomputed, this.dirty) as Dirty;
     const w = this.world;
     // 推导里的数组可能与撤销缓存共用：先各复制一份再就地重算（地物、冲突列表照旧共用：之后整个换上新的）
-    if (this.sharedDerived && this.dirty > Dirty.Names) {
+    if (this.sharedDerived && this.dirty > Dirty.Human) {
       privatize(w.derived);
       this.sharedDerived = false;
     }
     const d = w.derived;
-    if (this.dirty === Dirty.Names) {
+    if (this.dirty === Dirty.Names || this.dirty === Dirty.Human) {
+      // 只画了地形类别、资源（第二十一轮）：自然的推导不动，人文的几层换上新算的数组（不就地改，可以与撤销缓存共用）。
+      // 同一步里可能还改了名字（批量），所以照样重新起名
+      if (this.dirty === Dirty.Human) {
+        const t0 = performance.now();
+        computeHuman(w, d, false);
+        this.lastTimings = { ...this.lastTimings, human: performance.now() - t0 };
+      }
       // 只改了名字、用户的区块或画的河的折线：自动识别的地物不变，换上新的区块、画的河再重新起名。
       // （画的河有没有名字、占了哪些格变了的时候不走这里，所以哪些自然的河不单独标也不变。）
       // 地物对象可能和副本（Engine.clone、撤销缓存）共用，起名会改它们的名字，所以先各复制一份
@@ -604,6 +614,9 @@ export class Engine {
     // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
     if (this.features) d.features = detectFeatures(w, d, terrain);
     lap('features');
+    // 人文的几层（第二十一轮）：按自然的推导算
+    computeHuman(w, d);
+    lap('human');
     timings.total = performance.now() - t0;
     this.lastTimings = timings;
     this.dirty = Dirty.None;
@@ -751,7 +764,7 @@ export class Engine {
     this.done.push({ id: ++this.seq, cmd: step.cmd, undo: step.undo, summary: step.summary, dirty: step.dirty });
     this.dropUndone();
     // 换下来的推导不再被改动，直接留给撤销
-    if (step.dirty > Dirty.Names && this.undoCache > 0) this.keep(this.done[this.done.length - 1], this.current());
+    if (step.dirty > Dirty.Human && this.undoCache > 0) this.keep(this.done[this.done.length - 1], this.current());
     this.install({ derived: p.copy.world.derived, base: p.copy.base, solve: p.copy.solve, timings: p.copy.lastTimings });
     this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
     this.lastNoop = false;

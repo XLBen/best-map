@@ -9,6 +9,7 @@ import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
 import { DEFAULT_SPECIES, type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
+import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, type Renames, registerKind } from './registry';
 import { ITEM_ID, biomeFields, biomeLakes, biomeRivers, fieldRefs, naturalOff, rewriteRiverRefs, sameItem, stableJson, templateLists } from './refs';
 
@@ -450,6 +451,10 @@ registerKind<NameStyle>({
     problems: (items) => items.flatMap((s) => [...styleProblems(s), ...styleNotes(s)].map((p) => `地名风格“${s.name}”：${p}`)),
   },
 });
+
+// ---------- 地形类别、资源（第二十一轮，见 human/kinds.ts） ----------
+
+registerHumanKinds();
 
 // ---------- 自定义场 ----------
 

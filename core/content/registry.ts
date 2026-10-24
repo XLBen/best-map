@@ -13,8 +13,9 @@ import type { World } from '../world';
 //     登记表只经 inWorld、enable、disable 适配（重放结果不变，旧的世界文件照旧打得开）。
 // 资源包的格式不变：每种一段（pack.key），旧文件里的别名（aliases）读进同一种。
 
-// 重算到哪一层（与 commands.ts 的 Dirty 一一对应；这里不引用 commands.ts，免得循环引用）
-export type DirtyLevel = 'none' | 'names' | 'vegetation' | 'solve' | 'climate' | 'elevation';
+// 重算到哪一层（与 commands.ts 的 Dirty 一一对应；这里不引用 commands.ts，免得循环引用）。
+// human（第二十一轮）：只重算人文的几层（地形类别、资源、山峰）与名字，不重算自然的部分
+export type DirtyLevel = 'none' | 'names' | 'human' | 'vegetation' | 'solve' | 'climate' | 'elevation';
 
 // 通用编辑器的一个字段
 export type FieldType =
@@ -141,6 +142,12 @@ export interface ContentKind<T = unknown> {
   // store 为 'content' 的种类：启用前的检查（不行就抛 CommandError），一个世界最多几项
   check?(item: T, world: ContentWorld): void;
   maxInWorld?: number;
+  // store 为 'content' 的种类（第二十一轮）：set_content 会改的原因数组（撤销记录要先记下），与改完之后的整理
+  // （停用一种地形类别后，画成它的格按 id 换编号）。before 是改之前世界里这一种的全部 id（按编号的先后）
+  arrays?: readonly ('terrainClass' | 'resource')[];
+  afterSet?(world: ContentWorld, before: readonly string[]): void;
+  // 内置的、总在世界里的项（不用启用、不能停用，像内置中文）：开关不能动的原因；不是时为 undefined
+  alwaysOn?(id: string): string | undefined;
   // 通用编辑器的字段表
   fields: readonly FieldDesc[];
   // 新建一项时的样子（编辑器的“新建”）
