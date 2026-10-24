@@ -1291,6 +1291,34 @@ export function restoredFragment(v: number, t: number): number {
   return r < 4 ? 0 : r;
 }
 
+// 画笔中心七成半径以内的格（t ≤ 0.7：画陆地 / 海一定变成陆地、海，恢复原样完全恢复的那一圈）。
+// 画陆地 / 海、恢复原样时这些格记着的岛的种类、破碎度清掉（见 commands.ts 的 applyTerrain）
+export const brushCore = (cells: number[], t: number[]) => cells.filter((_, k) => t[k] <= 0.7);
+
+// 画陆地 / 海（restore 为 false）、恢复原样之后这些格将来的破碎度（预览用；与命令同一个规则）：恢复原样先按画笔权重退回，
+// 画笔中心（brushCore）、陆海变了的格（changed）清零。没打碎过、什么都不变时为 undefined
+export function fragmentAfter(world: World, cells: number[], t: number[], changed: number[], restore: boolean): { cells: number[]; value: number[] } | undefined {
+  const f = world.causes.fragment;
+  if (!f) return undefined;
+  const core = new Set(brushCore(cells, t));
+  const out: number[] = [];
+  const value: number[] = [];
+  cells.forEach((i, k) => {
+    const v = core.has(i) ? 0 : restore ? restoredFragment(f[i], t[k]) : f[i];
+    if (v !== f[i]) {
+      out.push(i);
+      value.push(v);
+    }
+  });
+  for (const i of changed) {
+    if (f[i]) {
+      out.push(i);
+      value.push(0);
+    }
+  }
+  return out.length ? { cells: out, value } : undefined;
+}
+
 // ---------- 湖里的岛（第十五轮） ----------
 // 湖面和海一样能放岛：每一种岛（内置的、自己的）都能点在湖面上，岛链也能画过湖。岛只占它岛心所在的那个湖：
 //   · 只抬这个湖（连成一片、湖面一样高的湖面格）里的格，湖岸、别的湖一格不动；岛四周留一圈湖面（挨着湖岸、地图边的湖格不抬），

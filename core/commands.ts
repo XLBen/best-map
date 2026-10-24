@@ -40,6 +40,7 @@ import {
   islandSchema,
   type LakeView,
   type StampResult,
+  brushCore,
   centerCell,
   landStroke,
   placeIsland,
@@ -540,9 +541,6 @@ function hasLakeIsles(world: World, code: number): boolean {
   for (let i = 0; i < fixed.length; i++) if (fixed[i] !== FREE_HEIGHT && (types[i] & ISLAND_CODE_MASK) === code) return true;
   return false;
 }
-
-// 画笔中心七成半径以内的格（t ≤ 0.7：画陆地 / 海一定变成陆地、海，恢复原样完全恢复的那一圈）
-const brushCore = (cells: number[], t: number[]) => cells.filter((_, k) => t[k] <= 0.7);
 
 // 岛的种类改了归哪种省、删了一种之后：省份按格分的陆海变了的格换到对的省份里（与陆海变了时一样就近修补）
 function refileProvinces(world: World, classBefore: Uint8Array) {

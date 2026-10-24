@@ -180,14 +180,14 @@ const RIVER: SliderDef = {
 
 const percent = (v: number, base: number) => `${Math.round((v / base) * 100)}%`;
 
-// 冷暖、干湿的力度：数值写成会升降多少度、雨水多少
+// 冷暖、干湿的力度（各有各的）：数值写成会升降多少度、雨水多少
 const CLIMATE_AMOUNT = (group: 'temp' | 'moist'): SliderDef => ({
-  key: 'climateAmount',
+  key: group === 'temp' ? 'tempAmount' : 'moistAmount',
   label: '力度',
   range: () => [0.25, CLIMATE_MAX],
   scale: 'log',
   snap: (v) => Math.round(v * 20) / 20,
-  format: (v) => climateEffect(climateKind(group), v).short,
+  format: (v) => climateEffect(climateKind(group, options.value), v).short,
 });
 
 // ---------- 底部条上常用的几项 ----------

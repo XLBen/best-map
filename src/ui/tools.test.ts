@@ -14,6 +14,8 @@ import { barPreview, clearBarPreview, showProvinceCommand, showSplit } from './p
 import {
   type Pointer,
   chainTool,
+  chainVariant,
+  islandVariant,
   fmtMeters,
   islandTool,
   lakeTool,
@@ -298,7 +300,13 @@ describe('放岛、岛链、圈一片、放湖也能排队', () => {
     const chainAt = near(w, (i) => inMiddle(i) && open(i) && Math.hypot(w.mesh.x[i] - w.mesh.x[isle], w.mesh.y[i] - w.mesh.y[isle]) > 15 * s);
     const coast = near(w, (i) => inMiddle(i) && !w.causes.land[i] && brushCells(w, w.mesh.x[i], w.mesh.y[i], 2 * cellKm).cells.some((c) => w.causes.land[c]) && Math.hypot(w.mesh.x[i] - w.mesh.x[isle], w.mesh.y[i] - w.mesh.y[isle]) > 15 * s && Math.hypot(w.mesh.x[i] - w.mesh.x[chainAt], w.mesh.y[i] - w.mesh.y[chainAt]) > 15 * s);
     const lake = near(w, (i) => w.causes.land[i] === 1 && brushCells(w, w.mesh.x[i], w.mesh.y[i], 6 * cellKm).cells.every((c) => w.causes.land[c]));
-    const start = { islandKind: 'continental' as const, islandKm: 2 * cellKm, islandVariant: 3, chainKind: 'continental' as const, chainKm: 2 * cellKm, chainVariant: 1, chainDensity: 1, lakeKm: 1.5 * cellKm, landShape: 'lasso' as const, landMode: 'land' as const };
+    const options0 = { islandKind: 'continental' as const, islandKm: 2 * cellKm, chainKind: 'continental' as const, chainKm: 2 * cellKm, chainDensity: 1, lakeKm: 1.5 * cellKm, landShape: 'lasso' as const, landMode: 'land' as const };
+    // 底部条上的选项与下一个岛、下一条岛链的形状
+    const start = () => {
+      setOptions(options0);
+      islandVariant.value = 3;
+      chainVariant.value = 1;
+    };
     const gestures = (): Gesture[] => {
       const island = islandTool();
       const chain = chainTool();
@@ -336,7 +344,7 @@ describe('放岛、岛链、圈一片、放湖也能排队', () => {
   it('前面的还在算时照样能用：不说“还在计算上一步”，松手时的预览一直留着，算完才去掉', async () => {
     const { eng, start, gestures, isle } = setupQueue();
     world.value = eng.world;
-    setOptions(start);
+    start();
     toast.value = null;
     vi.mocked(exec).mockClear();
     const finish: ((ok: boolean) => void)[] = [];
@@ -374,14 +382,14 @@ describe('放岛、岛链、圈一片、放湖也能排队', () => {
     const { eng, start, gestures } = setupQueue();
     // 排队：四步都在原来的世界上松手，命令一起发出去
     world.value = eng.world;
-    setOptions(start);
+    start();
     const queued: Command[] = [];
     vi.mocked(exec).mockImplementation(async (cmd) => (queued.push(cmd), true));
     for (const g of gestures()) await g();
     // 依次：每一步算完、世界换上以后再做下一步
     const seq = eng.clone();
     world.value = seq.world;
-    setOptions(start);
+    start();
     const sequential: Command[] = [];
     vi.mocked(exec).mockImplementation(async (cmd) => {
       sequential.push(cmd);
@@ -707,7 +715,7 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
       const t = islandTool();
       t.move?.(at(w, inland), false);
       const pv = t.preview();
-      const want = lakeIslandStamp(w, { x: w.mesh.x[inland], y: w.mesh.y[inland], kind: 'low', size: 150, variant: options.value.islandVariant }, w.derived).cells;
+      const want = lakeIslandStamp(w, { x: w.mesh.x[inland], y: w.mesh.y[inland], kind: 'low', size: 150, variant: islandVariant.value }, w.derived).cells;
       expect(want.length).toBeGreaterThan(0);
       expect(pv.warn).toBeFalsy();
       expect(pv.hint).toMatch(/^湖里的低平岛/);

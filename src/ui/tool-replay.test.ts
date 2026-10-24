@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import { brushCells } from '../../core/select';
 import { continents } from '../../core/testing/fixtures';
-import type { World } from '../../core/world';
 import { exec, options, selectedLake, selectedProvince, selectedRiver, setOptions, sliderActive, toast, world } from '../state';
 import { riverTool, unwaterTool } from './riverCourse';
 import {
@@ -112,7 +111,7 @@ describe('工具的命令流（拆分前后逐条相同）', () => {
         name,
         preview: pv ? summary(pv) : null,
         sent: vi.mocked(exec).mock.calls.map((c) => ({ cmd: c[0] as Command, busy: c[1] ?? null, head: typeof c[3] })),
-        toast: toast.value?.text ?? null,
+        toast: (toast.value as { text: string } | null)?.text ?? null,
       });
     };
     // 按住拖过这串点再松手；返回松手前的预览

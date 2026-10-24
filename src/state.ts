@@ -98,6 +98,14 @@ export const busy = signal<string | null>(null);
 export const toast = signal<{ text: string; error: boolean } | null>(null);
 
 export const tool = signal<ToolId>('land');
+// 换工具：defs/tools.ts 的 setTool 登记进来（换工具时要清掉的东西都在那里）。面板、工具里换工具都走它，不直接写 tool
+let toolSwitch = (id: ToolId) => {
+  tool.value = id;
+};
+export const switchTool = (id: ToolId) => toolSwitch(id);
+export function registerToolSwitch(f: (id: ToolId) => void) {
+  toolSwitch = f;
+}
 export const mode = signal<ViewMode>('terrain');
 export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
@@ -317,12 +325,10 @@ export interface ToolOptions {
   islandKind: string;
   // 岛的海岸线半径（km）
   islandKm: number;
-  islandVariant: number;
   // 岛链有自己的种类和大小（没有小礁），放岛时选小礁不影响岛链
   chainKind: string;
   chainKm: number;
   chainDensity: number;
-  chainVariant: number;
   // 岛链里碎岛的比例（第十八轮，0–1）
   chainFrag: number;
   // 打碎（第十八轮）：裂成碎块还是只打碎海岸，力度 0.1–1
@@ -334,8 +340,9 @@ export interface ToolOptions {
   reachKm: number;
   tempMode: 'cold' | 'warm';
   moistMode: 'wet' | 'dry';
-  // 冷暖干湿的力度：1 相当于升降 4 °C、雨水多少约四成
-  climateAmount: number;
+  // 冷暖、干湿各自的力度：1 相当于升降 4 °C、雨水多少约四成
+  tempAmount: number;
+  moistAmount: number;
   // 湖的半径（km）
   lakeKm: number;
   // 画的河有多大：一路加进来的水合计为“河流多少”门槛的几倍
@@ -362,11 +369,9 @@ export const options = signal<ToolOptions>({
   reliefAmount: 0.7,
   islandKind: 'continental',
   islandKm: 100,
-  islandVariant: 0,
   chainKind: 'continental',
   chainKm: 100,
   chainDensity: 1,
-  chainVariant: 0,
   chainFrag: 0,
   fragMode: 'blocks',
   fragAmount: 0.5,
@@ -375,7 +380,8 @@ export const options = signal<ToolOptions>({
   reachKm: 400,
   tempMode: 'cold',
   moistMode: 'wet',
-  climateAmount: 1,
+  tempAmount: 1,
+  moistAmount: 1,
   lakeKm: 40,
   riverFlow: 4,
   riverMode: 'flow',
@@ -1227,7 +1233,7 @@ function waterTypeOfIssue(issue: ScriptIssue): { kind: 'river' | 'lake'; id: str
 }
 // 打开“水系 ⋯”里这一种的编辑
 function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
-  if (tool.value !== 'river' && tool.value !== 'lake' && tool.value !== 'unwater') tool.value = kind === 'lake' ? 'lake' : 'river';
+  if (tool.value !== 'river' && tool.value !== 'lake' && tool.value !== 'unwater') switchTool(kind === 'lake' ? 'lake' : 'river');
   waterTypeEditorRequest.value = { kind, id };
   openPanel.value = 'cat:water';
 }
@@ -1623,6 +1629,9 @@ export function slowPreview(cmd: Command): number | null {
   return ms !== undefined && ms > COST_LIMIT ? Math.max(1, Math.round(ms / 1000)) : null;
 }
 
+// 太慢不自动预览时说的那一句（滑块下的小字、鼠标旁都用它）
+export const slowHint = (sec: number) => `松手后约 ${sec} 秒出结果`;
+
 // 停顿多久再预览（毫秒）：至少 base，上次预览算得久就等得久一点（上次的一半），最多 600
 // 大世界（6 万格以上，比如类地、大星球；小星球 1.78 万格算得快，不算大世界）：至少停 700 毫秒才算
 // （一次预览要一两秒，停顿短时算了也多半被下一笔取消）
@@ -1729,7 +1738,7 @@ export function previewAdjust(cmd: Command | null, pause = 200) {
   if (slow !== null) {
     // 不会再有新的预览换上：别的值的预览世界不能留在图上冒充这个值的
     if (adjustPreviewWorld.value?.key !== settling) adjustPreviewWorld.value = null;
-    adjustPreviewNote.value = { key, text: `松手后约 ${slow} 秒出结果` };
+    adjustPreviewNote.value = { key, text: slowHint(slow) };
     return;
   }
   adjustPreviewNote.value = { key, text: '正在算预览…' };

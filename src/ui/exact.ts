@@ -1,12 +1,14 @@
 import type { Command } from '../../core/commands';
 import type { World } from '../../core/world';
-import { type WorldPreview, cancelWorldPreview, exactDelay, previewWorld, redrawTick, slowPreview, world } from '../state';
+import type { HighlightLayer } from '../render/colors';
+import { type WorldPreview, cancelWorldPreview, exactDelay, previewWorld, redrawTick, slowHint, slowPreview, world } from '../state';
 
 // 确切预览：手停下来一会儿后，在世界的副本上执行松手时会执行的同一条命令，地图上画出将来的样子
 // （生态颜色、雪、河、地名、风、没涂成的格）。松手执行时 Worker 直接采用算好的结果：立刻出结果，颜色不跳。
 // 新的结果到来之前一直显示上一个（画的过程中不会跳回原样）；世界换了（结果换上了）就不再显示。
 // 同一时间只算一个（state.ts 里排队的只留最新的；接着画、新的一笔时正在算的在 Worker 里中途停下）；
-// 上次这类命令算得太久（成本闸门）就不自动算，只说“松手后约 N 秒出结果”
+// 上次这类命令算得太久（成本闸门）就不自动算，只说“松手后约 N 秒出结果”。
+// 只要一份轻的预览（河的变化、地形、省份）的用下面的 Settle：同样是停一下再算、新的顶掉旧的
 
 export interface ExactView extends WorldPreview {
   key: string;
@@ -108,5 +110,110 @@ export class Exact {
   private stopTimer() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+  }
+}
+
+// 鼠标旁那句话的尾巴：太慢不自动预览时“，松手后约 N 秒出结果”，不慢时 fallback（还在算时“…”）
+export const slowTail = (slow: number | null, fallback = '') => (slow !== null ? `，${slowHint(slow)}` : fallback);
+
+// 图层里只留一部分格（确切预览之后新涂的格）
+function onlyCells(l: HighlightLayer, keep: (c: number) => boolean): HighlightLayer {
+  const cells: number[] = [];
+  const values: number[] = [];
+  l.cells.forEach((c, k) => {
+    if (!keep(c)) return;
+    cells.push(c);
+    if (l.values) values.push(l.values[k]);
+  });
+  return { ...l, cells, values: l.values ? values : undefined };
+}
+
+// 每个确切预览算的时候已经涂到了哪些格（画笔、拖动扩张）：确切预览到了以后，变了的格描边（将来的颜色由地图画出来），
+// 之后新涂的格另外淡淡地涂上估计的颜色
+export class Covered {
+  private map = new Map<string, Set<number>>();
+  note(key: string, cells: Iterable<number>) {
+    this.map.set(key, new Set(cells));
+  }
+  // 只留这些 key 的（排队中的笔画用得到的）
+  keep(keys: Set<string | undefined>) {
+    for (const k of [...this.map.keys()]) if (!keys.has(k)) this.map.delete(k);
+  }
+  clear() {
+    this.map.clear();
+  }
+  layers(v: ExactView, est: HighlightLayer[]): HighlightLayer[] {
+    const cov = this.map.get(v.key);
+    const added = (cov ? est.map((l) => onlyCells(l, (i) => !cov.has(i))) : est).filter((l) => l.cells.length);
+    return [{ cells: v.result.changedCells, color: [255, 255, 255], pattern: 'outline' }, ...added];
+  }
+}
+
+// 停一下再算一份轻的预览（底部条上改河、删河时河的变化，重画这一片的地形，重划的省份）：要 key 的预览，停 delay 毫秒后
+// 算 run()（delay 为 0：现在就算，同一个还在等计时器时也提前）。同一个世界上同一个 key 只算一次；
+// retry：没算成（排队时被新的预览顶掉了）时下次再要就重新算。新的 key 顶掉旧的：旧的回来了也不要
+export class Settle<T> {
+  private key = '';
+  private at: World | null = null;
+  private sent = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private got: { key: string; at: World | null; value: T } | null = null;
+  constructor(private readonly retry = false) {}
+
+  want(key: string, run: () => Promise<T | null>, delay: number) {
+    const at = world.value;
+    if (key === this.key && at === this.at && (this.sent || (this.timer && delay > 0))) return;
+    this.key = key;
+    this.at = at;
+    this.sent = false;
+    this.hold();
+    if (delay <= 0) void this.run(key, at, run);
+    else this.timer = setTimeout(() => void this.run(key, at, run), delay);
+  }
+
+  // 现在就算这一份，等它回来（点得快时先等预览再决定）
+  now(key: string, run: () => Promise<T | null>): Promise<T | null> {
+    this.key = key;
+    this.at = world.value;
+    this.hold();
+    return this.run(key, this.at, run);
+  }
+
+  private async run(key: string, at: World | null, run: () => Promise<T | null>): Promise<T | null> {
+    this.timer = null;
+    this.sent = true;
+    const value = await run();
+    if (this.key !== key || this.at !== at) return value;
+    if (value === null) {
+      if (this.retry) this.sent = false;
+      return value;
+    }
+    this.got = { key, at, value };
+    redrawTick.value++;
+    return value;
+  }
+
+  // 当前世界上 key 的结果（还没算好、世界换了时为 null）
+  get(key: string): T | null {
+    return this.got?.key === key && this.got.at === world.value ? this.got.value : null;
+  }
+
+  // 松手执行了：还在等计时器的不必再算（执行时自己会算；已经发出去的照样算完）
+  hold() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  // 不再要（鼠标移开了）：算好的留着，回来时再要一次
+  stop() {
+    this.hold();
+    this.key = '';
+  }
+
+  reset() {
+    this.stop();
+    this.at = null;
+    this.sent = false;
+    this.got = null;
   }
 }

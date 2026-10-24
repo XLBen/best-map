@@ -26,7 +26,7 @@ function setup() {
   world.value = w;
   sliderActive.value = false;
   const cellKm = w.mesh.spacing * w.kmPerUnit;
-  setOptions({ brushKm: 3 * cellKm, biome: 'temperate_forest', biomeMode: 'natural', reachKm: 10 * cellKm, tempMode: 'cold', climateAmount: 1 });
+  setOptions({ brushKm: 3 * cellKm, biome: 'temperate_forest', biomeMode: 'natural', reachKm: 10 * cellKm, tempMode: 'cold', tempAmount: 1 });
   // 两格离海远一点、能长东西的陆地
   const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && w.derived.dominant[i] >= 0 && w.derived.elevation[i] > 100);
   const c = land[Math.floor(land.length / 3)];
