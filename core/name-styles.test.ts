@@ -30,8 +30,8 @@ const japanese = BUILTIN_STYLES.find((s) => s.id === 'ja-kanji')!;
 const TYPES = ['continent', 'island', 'archipelago', 'peninsula', 'ocean', 'sea', 'bay', 'strait', 'lake', 'river', 'range', 'peak', 'plateau', 'plain', 'basin', 'desert', 'forest', 'tundra', 'icecap', 'wetland', 'province', 'region', 'spot'];
 
 describe('内置的地名风格', () => {
-  it('三种都合格、没有问题；中文·默认就是以前的内置文字包', () => {
-    expect(BUILTIN_STYLES.map((s) => s.id)).toEqual(['zh-default', 'west-germanic', 'ja-kanji']);
+  it('都合格、没有问题；中文·默认就是以前的内置文字包（每一种的样子见 name-styles-builtin.test.ts）', () => {
+    expect(BUILTIN_STYLES.slice(0, 3).map((s) => s.id)).toEqual(['zh-default', 'west-germanic', 'ja-kanji']);
     for (const s of BUILTIN_STYLES) {
       expect(styleProblems(s), s.id).toEqual([]);
       expect(styleNotes(s), s.id).toEqual([]);
@@ -39,7 +39,7 @@ describe('内置的地名风格', () => {
     }
     const { kind: _, ...zh } = BUILTIN_STYLES[0] as NameStyle & { kind: string };
     expect(zh).toEqual(DEFAULT_PACK);
-    expect(NAME_STYLES_PACK.nameStyles!.map((s) => s.id)).toEqual(['west-germanic', 'ja-kanji']);
+    expect(NAME_STYLES_PACK.nameStyles!.map((s) => s.id)).toEqual(BUILTIN_STYLES.slice(1).map((s) => s.id));
   });
 
   it('每种地物都起得出名字；音译式与带读音表的都有原文', () => {
