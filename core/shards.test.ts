@@ -6,7 +6,8 @@ import { type DisplayCell, displayCellAt, displayCoast } from './display';
 import { Engine } from './engine';
 import { ISLET_FRAG } from './features';
 import { brushCells } from './select';
-import { rasterizeWorld } from './subcell';
+import { fragLand, rasterizeWorld } from './subcell';
+import { worldRivers } from './river-pack';
 import { chainFragAt, chainIslands, crackAt, crackBlockSize, crackHalfWidth, crackSeed, fragmentStroke, islandStamp } from './terrain';
 import { previewWorldOf } from './preview-world';
 import { continents } from './testing/fixtures';
@@ -534,3 +535,68 @@ describe('预览与颜色', () => {
     expect(lonely).toBeGreaterThan(3);
   });
 });
+
+// 优化检查查出的（第十八轮）：只改破碎度的一步之后，河口要重新描；引擎就地改破碎度时显示用的缓存不能拿旧的
+describe('破碎度改了，河与显示的缓存跟着变', () => {
+  const setup = () => {
+    const e = new Engine({ seed: 3, cells: 6000 });
+    e.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', landFraction: 0.4 }, reset: true });
+    const { mesh } = e.world;
+    const coast: number[] = [];
+    for (let i = 0; i < mesh.n; i++) {
+      if (!e.world.causes.land[i] || e.world.derived.lake[i] === 1 || mesh.boundary[i]) continue;
+      for (let q = mesh.off[i]; q < mesh.off[i + 1]; q++)
+        if (!e.world.causes.land[mesh.adj[q]]) {
+          coast.push(i);
+          break;
+        }
+    }
+    coast.sort((a, b) => e.world.derived.discharge[b] - e.world.derived.discharge[a]);
+    const km = mesh.spacing * e.world.kmPerUnit;
+    const stroke = (c: number) => {
+      const b = brushCells(e.world, mesh.x[c], mesh.y[c], 4 * km);
+      e.exec({ op: 'fragment', cells: b.cells, t: b.t, strength: 1, mode: 'coast', size: 4 * km });
+    };
+    return { e, coast, stroke };
+  };
+
+  it('只打碎海岸之后，描出的河是新描的（不用旧的河）', () => {
+    const e = new Engine({ seed: 3, cells: 6000 });
+    e.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', landFraction: 0.4 }, reset: true });
+    const w = e.world;
+    const { mesh } = w;
+    let best = -1;
+    for (let i = 0; i < mesh.n; i++) {
+      if (!w.causes.land[i] || w.derived.lake[i] === 1) continue;
+      let coast = false;
+      for (let q = mesh.off[i]; q < mesh.off[i + 1]; q++) if (!w.causes.land[mesh.adj[q]]) coast = true;
+      if (coast && (best < 0 || w.derived.discharge[i] > w.derived.discharge[best])) best = i;
+    }
+    worldRivers(e.world);
+    const km = mesh.spacing * w.kmPerUnit;
+    const b = brushCells(w, mesh.x[best], mesh.y[best], 4 * km);
+    e.exec({ op: 'fragment', cells: b.cells, t: b.t, strength: 1, mode: 'coast', size: 4 * km });
+    const live = Array.from(worldRivers(e.world).pts);
+    // 先描别的世界把缓存挤掉，再描同一个世界：就是从头描的
+    worldRivers(new Engine({ seed: 9, cells: 1000 }).world);
+    const fresh = Array.from(worldRivers(e.world).pts);
+    expect(live).toEqual(fresh);
+  });
+
+  it('在两处打碎海岸（同一个破碎度数组）：fragLand、displayCoast、导出的栅格都按新的', () => {
+    const { e, coast, stroke } = setup();
+    stroke(coast[0]);
+    const f1 = fragLand(e.world);
+    const d1 = displayCoast(e.world).frag;
+    stroke(coast[Math.floor(coast.length / 2)]);
+    const again = Engine.fromDoc(e.toDoc(), e.world.mesh).world;
+    expect(Array.from(fragLand(e.world)!)).toEqual(Array.from(fragLand(again)!));
+    expect(Array.from(displayCoast(e.world).frag!)).toEqual(Array.from(displayCoast(again).frag!));
+    expect(fragLand(e.world)).not.toBe(f1);
+    expect(displayCoast(e.world).frag).not.toBe(d1);
+    const a = rasterizeWorld(e.world, 200, 100);
+    const b = rasterizeWorld(again, 200, 100);
+    expect(Array.from(a.land)).toEqual(Array.from(b.land));
+  });
+});
+

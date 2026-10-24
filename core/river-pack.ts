@@ -290,6 +290,6 @@ function riversKey(world: World, types: string): string {
     const u = new Uint8Array(x.buffer, x.byteOffset + n4 * 4, x.byteLength - n4 * 4);
     for (let i = 0; i < u.length; i++) mix(u[i]);
   };
-  for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness]) arr(x);
+  for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness, causes.fragment]) arr(x);
   return [world.settings.seed, mesh.n, mesh.spacing, small.planet.riverThreshold, guidesSignature(small.guides), small.terrain.coastRoughness, coastSeed(world), types, a >>> 0, b >>> 0].join('|');
 }

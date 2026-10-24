@@ -2,7 +2,7 @@ import { wrapX } from './geo';
 import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
-import { coastDetail, coastDetail3, coastDetailAmp, coastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
+import { bytesHash, coastDetail, coastDetail3, coastDetailAmp, coastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
 import { landPixelCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
@@ -29,7 +29,7 @@ export interface DisplayCoast {
 const displayCache = new WeakMap<Float32Array, { inputs: unknown[]; value: DisplayCoast }[]>();
 export function displayCoast(world: World): DisplayCoast {
   const { derived: d, causes } = world;
-  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment];
+  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment && bytesHash(2166136261, causes.fragment)];
   let list = displayCache.get(d.elevation);
   if (!list) displayCache.set(d.elevation, (list = []));
   const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));

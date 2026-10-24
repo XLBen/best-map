@@ -425,15 +425,23 @@ export function fragValues(world: World, lakesDry: boolean): Float32Array | null
   return out;
 }
 
-// 按陆海判（湖面算陆地）用的每格破碎度：按破碎度、陆海、湖面数组缓存（悬停每动一下都要用）
-const fragLandCache = new WeakMap<Uint8Array, { land: Uint8Array; lake: Uint8Array; value: Float32Array | null }>();
+// 字节数组的内容摘要（FNV）：引擎就地改破碎度、陆海数组（同一个对象），缓存按内容认
+export function bytesHash(h: number, a: Uint8Array | undefined): number {
+  if (!a) return Math.imul(h ^ 0xff, 16777619) >>> 0;
+  for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619);
+  return h >>> 0;
+}
+
+// 按陆海判（湖面算陆地）用的每格破碎度：按破碎度、陆海、湖面的内容缓存（悬停每动一下都要用；摘要几万格不到 1 毫秒）
+const fragLandCache = new WeakMap<object, { key: number; value: Float32Array | null }>();
 export function fragLand(world: World): Float32Array | null {
   const f = world.causes.fragment;
   if (!f) return null;
-  const c = fragLandCache.get(f);
-  if (c && c.land === world.causes.land && c.lake === world.derived.lake) return c.value;
+  const key = bytesHash(bytesHash(bytesHash(2166136261, f), world.causes.land), world.derived.lake);
+  const c = fragLandCache.get(world.mesh);
+  if (c && c.key === key) return c.value;
   const value = fragValues(world, true);
-  fragLandCache.set(f, { land: world.causes.land, lake: world.derived.lake, value });
+  fragLandCache.set(world.mesh, { key, value });
   return value;
 }
 
