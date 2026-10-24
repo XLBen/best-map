@@ -1,9 +1,9 @@
-import { Dices, Ellipsis, Lock, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
+import { Dices, Ellipsis, EyeOff, Lock, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { type PanelId, openPanel, togglePanel } from '../../state';
 import { NAME_TIPS } from '../copy';
 
-// 选中了一样东西（河、湖、省、地名）时的那几个按钮：换一个、恢复自动、锁定、在地图上看、删掉、取消选择。
+// 选中了一样东西（河、湖、省、地名）时的那几个按钮：换一个、恢复自动、锁定、定位、删除或隐藏、取消选择。
 // 四处共用一份。底部条上放常用的；河、省把不常用的收进“⋯”（more：弹出哪个面板），
 // 弹出的面板里用 menu 布局再放一遍同一个组件（一行一个，带字）
 
@@ -21,6 +21,8 @@ export interface SelectionHandlers {
   remove?: () => void;
   removeTitle?: string;
   removeLabel?: string;
+  // 隐藏（地名）：能再显示，图标用闭眼而不是垃圾桶
+  hide?: boolean;
 }
 
 export function SelectionActions({
@@ -39,7 +41,7 @@ export function SelectionActions({
         {h.lock && <MenuItem icon={<Lock />} label="锁定名字" title={h.lockTitle ?? NAME_TIPS.lock} run={h.lock} />}
         {children}
         {h.locate && <MenuItem icon={<ScanSearch />} label="定位" run={h.locate} />}
-        {h.remove && <MenuItem icon={<Trash2 />} label={h.removeLabel ?? '删除'} title={h.removeTitle} run={h.remove} danger />}
+        {h.remove && <MenuItem icon={h.hide ? <EyeOff /> : <Trash2 />} label={h.removeLabel ?? (h.hide ? '隐藏' : '删除')} title={h.removeTitle} run={h.remove} danger={!h.hide} />}
       </div>
     );
   }
@@ -67,8 +69,8 @@ export function SelectionActions({
         </button>
       )}
       {h.remove && (
-        <button class="bar-btn icon" onClick={h.remove} title={h.removeTitle ?? h.removeLabel ?? '删除'}>
-          <Trash2 />
+        <button class="bar-btn icon" onClick={h.remove} title={h.removeTitle ?? h.removeLabel ?? (h.hide ? '隐藏' : '删除')}>
+          {h.hide ? <EyeOff /> : <Trash2 />}
         </button>
       )}
       {more && (

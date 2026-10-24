@@ -684,7 +684,7 @@ export function sourceCourse(world: World, d: Derived, T: EditTarget, stroke: re
   // 倒过来：从画的线的另一头流到这条河上
   const rev = left.pts.slice().reverse();
   const plan = planCourse(world, d, rev, { endOnLand: 'flow', px: opts.px });
-  if (plan.blocked) return { blocked: plan.blocked === '从河上起笔是改这条河' ? '新的源头不能在别的河上' : plan.blocked };
+  if (plan.blocked) return { blocked: plan.blocked };
   if (plan.reroute) return { blocked: '新的源头不能在别的河上' };
   if (plan.end !== 'river' || !T.own.includes(plan.join)) return { blocked: '要画回这条河上' };
   return { kind: 'source', plan, cell: plan.join };

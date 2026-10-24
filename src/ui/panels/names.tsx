@@ -185,7 +185,7 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
         lock={f.custom ? undefined : () => update({ name: f.name }, `改名为“${f.name}”`, '正在改名…')}
         locate={() => focusOn(f.cells)}
         remove={hideAndDeselect(() => update({ hidden: true }, `隐藏地名“${f.name}”`, '正在隐藏…'))}
-        removeLabel="隐藏"
+        hide
         removeTitle={HIDE_TITLE}
         deselect={() => (selectedFeature.value = null)}
       >
@@ -221,7 +221,7 @@ export function NamesBar() {
         lock={f.custom ? undefined : () => rename(f.name)}
         locate={() => focusOn(f.cells)}
         remove={hideAndDeselect(() => void exec(hideCommand(w, f, true), '正在隐藏…'))}
-        removeLabel="隐藏"
+        hide
         removeTitle={HIDE_TITLE}
         deselect={() => (selectedFeature.value = null)}
       />
