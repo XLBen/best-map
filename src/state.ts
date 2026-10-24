@@ -53,12 +53,18 @@ export type ViewMode =
   // 地形类别、资源（第二十一轮）：每格一种颜色，平涂在地貌上
   | 'terrainClass'
   | 'resource'
+  // 人文（第二十二轮）：宜居度、人口密度（色带），文化圈（按文化、按文化组）与时代的每一维（dim:维度 id），平涂在地貌上
+  | 'habitability'
+  | 'popDensity'
+  | 'culture'
+  | 'cultureGroup'
+  | `dim:${string}`
   | `field:${string}`;
 
 export type Season = 'annual' | 'summer' | 'winter';
 
-// 工具分六类，顶栏右边一类一个按钮
-export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names';
+// 工具分七类，顶栏右边一类一个按钮（第二十二轮加了“文化”）
+export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture';
 
 // 工具的 id：由 ui/defs/tools.ts 的工具表推出来
 export type { ToolId };
@@ -137,7 +143,20 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 // 选“哪一种”（同一个 TypePicker，见 App.tsx 的 TYPE_PANELS）：rivertype / laketype 选中的这条河、这个湖，
 // newrivertype / newlaketype 新画的河、新放的湖，islandtype / chaintype 放岛、画岛链用哪一种岛
 // classpick / resourcepick（第二十一轮）：画地形类别、资源用哪一种
-export type TypePanelId = 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | 'islandtype' | 'chaintype' | 'featurestyle' | 'classpick' | 'resourcepick';
+// culturepick / poppick / valuepick（第二十二轮）：文化笔刷的文化、人口笔刷“改成分”的群体、“改一个维度”的取值
+export type TypePanelId =
+  | 'rivertype'
+  | 'newrivertype'
+  | 'laketype'
+  | 'newlaketype'
+  | 'islandtype'
+  | 'chaintype'
+  | 'featurestyle'
+  | 'classpick'
+  | 'resourcepick'
+  | 'culturepick'
+  | 'poppick'
+  | 'valuepick';
 export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
@@ -358,6 +377,22 @@ export interface ToolOptions {
   terrainClass: string;
   // 画资源：资源的 id，'none' 明确没有，'' 恢复自动
   resource: string;
+  // 文化笔刷（第二十二轮）：文化的 id（'' 还没选：用世界里第一个），力度（每笔换掉多少人，0–1），
+  // keep：只换文化、别的维度不变；typical：换成这个文化最典型的群体
+  culture: string;
+  cultureAmount: number;
+  cultureMode: 'keep' | 'typical';
+  // 人口笔刷：改成分 / 改人数 / 改一个维度
+  popMode: 'share' | 'count' | 'value';
+  // 改成分的群体（文化 + 每一维的取值；null 还没选：用这里最多的人）
+  popTuple: { culture: string; values: Record<string, string> } | null;
+  // 改成分、改一个维度的力度（0–1）
+  popAmount: number;
+  // 改人数的倍数（Shift 反过来）
+  popFactor: number;
+  // 改一个维度：维度的 id、取值的 id（'' 还没选：用第一维、第一个取值）
+  popDim: string;
+  popValue: string;
 }
 
 export const options = signal<ToolOptions>({
@@ -392,6 +427,15 @@ export const options = signal<ToolOptions>({
   fieldAmount: 0.25,
   terrainClass: 'hills',
   resource: 'iron',
+  culture: '',
+  cultureAmount: 0.6,
+  cultureMode: 'keep',
+  popMode: 'share',
+  popTuple: null,
+  popAmount: 0.4,
+  popFactor: 1.5,
+  popDim: '',
+  popValue: '',
 });
 
 export function setOptions(patch: Partial<ToolOptions>) {

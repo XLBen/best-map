@@ -29,12 +29,18 @@ import {
   TreePalm,
   Trash2,
   Type,
+  Users,
+  UsersRound,
   Waypoints,
+  Flag,
+  Languages,
 } from 'lucide-preact';
 import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import { islandTypeById, liveIslandKind } from '../../../core/island-types';
+import { viewAvailable } from './layers';
 import { ChainFragSlider, ChainTypePick, IslandTypePick, TerrainExtras } from '../panels/islandTypes';
 import type { World } from '../../../core/world';
+import { worldDimensions } from '../../../core/human';
 import {
   type Category,
   type ViewMode,
@@ -94,6 +100,8 @@ import {
   pickResource,
 } from '../tools';
 import { ClassPick, ResourcePick } from '../panels/human';
+import { CultureExtras, CulturePick, FactorSlider, HearthBar, NoHumanChip, PopTuplePick, ValuePick } from '../panels/culture';
+import { cultureTool, hearthTool, pickCulture, pickPop, popTool } from '../tools/culture';
 import { clearBarPreview } from '../barPreview';
 import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
 import {
@@ -631,7 +639,79 @@ const SPECS = {
     how: '点击放地名，如城镇、渡口',
     bar: () => [{ kind: 'custom', render: NamesBar }],
     create: (env) => spotTool(env.hitLabel, env.zoom),
-
+  },
+  culture: {
+    // 第二十二轮：文化笔刷
+    category: 'culture',
+    icon: Languages,
+    name: '文化',
+    short: '文化',
+    how: '按住涂，这里的人换成这种文化；Alt+点击吸取',
+    size: BRUSH,
+    amount: { key: 'cultureAmount', label: '力度', range: () => [0.05, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => percent(v, 1) },
+    bar: () => [
+      { kind: 'custom', render: NoHumanChip },
+      { kind: 'custom', render: CulturePick },
+      {
+        kind: 'choice',
+        key: 'cultureMode',
+        options: [
+          { value: 'keep', label: '只换文化', hint: '宗教等别的维度不变' },
+          { value: 'typical', label: '连同倾向', hint: '换成这个文化最常见的一群人' },
+        ],
+      },
+    ],
+    pick: pickCulture,
+    view: 'culture',
+    create: () => cultureTool(),
+  },
+  pop: {
+    // 人口笔刷：改成分、改人数、改一个维度
+    category: 'culture',
+    icon: Users,
+    name: '人口',
+    short: '人口',
+    how: '按住涂，改这里的人口；Alt+点击吸取',
+    size: BRUSH,
+    amount: {
+      key: 'popAmount',
+      label: '力度',
+      range: () => [0.05, 1],
+      scale: 'linear',
+      snap: (v) => Math.round(v * 20) / 20,
+      format: (v) => percent(v, 1),
+      enabled: () => options.value.popMode !== 'count',
+    },
+    bar: () => [
+      { kind: 'custom', render: NoHumanChip },
+      {
+        kind: 'choice',
+        key: 'popMode',
+        options: [
+          { value: 'share', label: '改成分', hint: '这群人的占比升高，人数不变' },
+          { value: 'count', label: '改人数', hint: '人数乘以倍数；Shift 减少' },
+          { value: 'value', label: '改一个维度', hint: '改宗、传教：只改这一维' },
+        ],
+      },
+      { kind: 'custom', render: PopTuplePick },
+      { kind: 'custom', render: ValuePick },
+      { kind: 'custom', render: FactorSlider },
+    ],
+    pick: pickPop,
+    // 底图跟着模式：改成分看文化，改人数看人口密度，改一个维度看那一维
+    view: () => (options.value.popMode === 'share' ? 'culture' : options.value.popMode === 'count' ? 'popDensity' : `dim:${options.value.popDim || (world.value ? (worldDimensions(world.value.small)[0]?.id ?? '') : '')}`),
+    create: () => popTool(),
+  },
+  hearth: {
+    // 发源地：拖动，人文重新生成
+    category: 'culture',
+    icon: Flag,
+    name: '发源地',
+    short: '发源地',
+    how: '拖动发源地，人文重新生成',
+    bar: () => [{ kind: 'custom', render: NoHumanChip }, { kind: 'custom', render: HearthBar }],
+    view: 'cultureGroup',
+    create: (env) => hearthTool(env.zoom),
   },
 } satisfies Record<string, ToolSpec>;
 
@@ -672,6 +752,8 @@ export const CATEGORIES: CategoryDef[] = [
     watch: () => selectedFeature.value,
     map: { highlights: featureHighlights, labels: () => selectedFeature.value },
   },
+  // 第二十二轮：文化（文化、人口笔刷，发源地）。没有人文时底部条上是“生成人文…”
+  { id: 'culture', icon: UsersRound, label: '文化', tools: toolsIn('culture'), extras: CultureExtras },
 ];
 
 export const CATEGORY_DEFS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Category, CategoryDef>;
@@ -695,8 +777,15 @@ export function watchTools() {
 const lastTool: Partial<Record<Category, ToolId>> = {};
 // 换成工具的那一层之前的底图（set：换成了哪一层）。离开时底图还是那一层才换回去（这期间在图层里换过就不动）
 let viewBefore: { mode: ViewMode; set: ViewMode } | null = null;
+// 工具的那一层（世界里没有这一层时没有：没有人文的世界不换底图）
+const viewOf = (id: ToolId): ViewMode | undefined => {
+  const raw = TOOL_DEFS[id].view;
+  const v = typeof raw === 'function' ? raw() : raw;
+  const w = world.value;
+  return v && (!w || viewAvailable(w, v)) ? v : undefined;
+};
 function switchView(to: ToolId) {
-  const v = TOOL_DEFS[to].view;
+  const v = viewOf(to);
   if (v) {
     if (!viewBefore) viewBefore = { mode: mode.value, set: v };
     else if (mode.value === viewBefore.set) viewBefore.set = v;
@@ -748,6 +837,32 @@ export function resetTools() {
   for (const k of Object.keys(lastTool)) delete lastTool[k as Category];
   mode.value = 'terrain';
 }
+
+// 底图跟着工具的选项变（人口笔刷换了模式）：底图还是工具换上的那一层时跟着换
+effect(() => {
+  const id = tool.value;
+  void options.value;
+  if (typeof TOOL_DEFS[id].view !== 'function' || !viewBefore) return;
+  const v = viewOf(id);
+  if (!v || v === viewBefore.set) return;
+  if (mode.peek() === viewBefore.set) mode.value = v;
+  viewBefore.set = v;
+});
+
+// 世界里没有这一层了（删除了人文、换了时代、打开了别的世界）：底图回到地貌
+// 开着人文的工具时生成了人文：换上工具的那一层
+effect(() => {
+  const w = world.value;
+  if (!w) return;
+  if (!viewAvailable(w, mode.value)) {
+    // 是工具换上的那一层：回到换之前的底图，人文又有了时再换上
+    const back = viewBefore && mode.value === viewBefore.set ? viewBefore.mode : 'terrain';
+    viewBefore = null;
+    mode.value = viewAvailable(w, back) ? back : 'terrain';
+  }
+  const id = tool.peek();
+  if (!viewBefore && TOOL_DEFS[id].view && viewOf(id)) switchView(id);
+});
 
 // 涂自定义场：自定义场被删掉了就换一个，都删了就回到冷暖
 effect(() => {

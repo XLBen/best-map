@@ -11,3 +11,4 @@ export * from './tools/provinces';
 export * from './tools/names';
 export * from './tools/measure';
 export * from './tools/human';
+export * from './tools/culture';

@@ -12,6 +12,8 @@ export interface TypeChoice {
   hint?: string;
   // 右边灰色的一小段（画法、形状）
   meta?: string;
+  // 分组（第二十二轮：文化按文化组列）：与上一行不同时先写一行小标题
+  group?: string;
   onPick: () => void;
 }
 
@@ -19,12 +21,15 @@ export interface TypeChoice {
 export function TypePicker({ items, onNew, newLabel, newTitle, note }: { items: TypeChoice[]; onNew: () => void; newLabel: string; newTitle: string; note?: string }) {
   return (
     <div class="menu">
-      {items.map((it) => (
-        <button key={it.label} class={`item ${it.on ? 'on' : ''}`} title={it.hint} onClick={it.onPick}>
-          {it.swatch !== undefined && <span class="swatch" style={{ background: it.swatch }} />}
-          <span class="grow">{it.label}</span>
-          {it.meta && <span class="hint">{it.meta}</span>}
-        </button>
+      {items.map((it, k) => (
+        <>
+          {it.group !== undefined && it.group !== items[k - 1]?.group && <h5 class="menu-group">{it.group}</h5>}
+          <button key={`${it.group ?? ''}:${it.label}`} class={`item ${it.on ? 'on' : ''}`} title={it.hint} onClick={it.onPick}>
+            {it.swatch !== undefined && <span class="swatch" style={{ background: it.swatch }} />}
+            <span class="grow">{it.label}</span>
+            {it.meta && <span class="hint">{it.meta}</span>}
+          </button>
+        </>
       ))}
       <button class="item" onClick={onNew} title={newTitle}>
         <Plus />

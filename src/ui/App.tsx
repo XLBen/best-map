@@ -35,6 +35,7 @@ import { IslandTypeMenu } from './panels/islandTypes';
 import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
 import { FeatureStyleMenu } from './panels/names';
 import { ClassMenu, ResourceMenu } from './panels/human';
+import { CultureMenu, PopTupleMenu, ValueMenu } from './panels/culture';
 import { MapLegend } from './shell/MapLegend';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
@@ -61,6 +62,9 @@ const TYPE_PANELS: Record<TypePanelId, { title: string; menu: ComponentType }> =
   featurestyle: { title: '地名风格', menu: FeatureStyleMenu },
   classpick: { title: '地形类别', menu: ClassMenu },
   resourcepick: { title: '资源', menu: ResourceMenu },
+  culturepick: { title: '文化', menu: CultureMenu },
+  poppick: { title: '人口群体', menu: PopTupleMenu },
+  valuepick: { title: '取值', menu: ValueMenu },
 };
 
 function PanelHost({ id }: { id: PanelId }) {
