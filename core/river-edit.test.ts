@@ -539,7 +539,7 @@ describe('改河的边角', () => {
     const TB = guideTarget(w, B!);
     const H = controlHandles(TB, 0.05 * s, 1.5 * s);
     const r = dragHandle(w, w.derived, TB, H, 0, pointAt(PA, 0.5), opts(w));
-    expect('blocked' in r && r.blocked.startsWith('源头不能放在别的河上：')).toBe(true);
+    expect('blocked' in r && r.blocked.startsWith('源头不能在别的河上：')).toBe(true);
     // 一条不截走的河道（脚本、旧命令能这样写）从 A 的中间一格接管：A 那格以下不再补水
     const k = Math.floor(A.cells.length / 2);
     const c = A.cells[k];

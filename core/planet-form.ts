@@ -114,7 +114,7 @@ export function sameForm(a: PlanetForm | undefined, b: PlanetForm | undefined): 
 // 本文件不能引用 generate.ts）
 export function checkForm(form: PlanetForm, type: WorldType, globe: boolean, typeName: (t: WorldType) => string = (t) => t): void {
   if (!globe) throw new CommandError('星球形态只能用在整个星球上');
-  if (form.base !== type) throw new CommandError(`星球形态「${form.name}」只能用在“${typeName(form.base)}”这种星球上，这里是“${typeName(type)}”`);
+  if (form.base !== type) throw new CommandError(`星球形态“${form.name}”只能用在“${typeName(form.base)}”上，这里是“${typeName(type)}”`);
   if (form.scripts?.setup) compileScript('setup', form.scripts.setup.src, form.name);
   if (form.scripts?.crust) compileScript('crust', form.scripts.crust.src, form.name);
 }

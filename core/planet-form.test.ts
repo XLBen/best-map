@@ -439,7 +439,7 @@ describe('命令', () => {
     const region = engineFor({ cells: 3000, seed: 1 });
     expect(() => region.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continents', form: TWIN_CONTINENTS }, reset: true })).toThrow('星球形态只能用在整个星球上');
     const eng = engineFor(settings);
-    expect(() => eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continent', form: TWIN_CONTINENTS }, reset: true })).toThrow('星球形态「双子大陆」只能用在“像地球”这种星球上，这里是“一块超大陆”');
+    expect(() => eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continent', form: TWIN_CONTINENTS }, reset: true })).toThrow('星球形态“双子大陆”只能用在“像地球”上，这里是“一块超大陆”');
     let err: unknown;
     try {
       eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continents', form: withScripts(TWIN_CONTINENTS, { setup: src('const a = 1;\naddBlock({ lat: 0, lon: 0, size: 20 ) });') }) }, reset: true });
@@ -447,22 +447,22 @@ describe('命令', () => {
       err = e;
     }
     expect(err).toBeInstanceOf(ScriptError);
-    expect((err as ScriptError).message).toContain('「双子大陆」的布局脚本');
+    expect((err as ScriptError).message).toContain('“双子大陆”的布局脚本');
     expect(eng.history).toEqual([]);
     expect(eng.world.small.terrain.gen).toBeNull();
   });
 
   it('说明文字：形态的名字、星球类型的名字；换形态写进说明', () => {
     const eng = engineFor(settings);
-    expect(eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true })).toBe('新世界：像地球');
+    expect(eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true })).toBe('新世界“像地球”');
     const gen = eng.world.small.terrain.gen!;
-    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, form: TWIN_CONTINENTS } })).toBe('换了星球形态：双子大陆');
-    expect(eng.exec({ op: 'set_worldgen', params: { ...eng.world.small.terrain.gen!, landFraction: 0.2 } })).toBe('调整了陆地多少');
-    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25, form: RING_SEA } })).toBe('换了星球形态：环形内海；调整了陆地多少');
-    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25 } })).toBe('去掉了星球形态「环形内海」');
-    expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean', islands: 0.7 }, reset: true })).toBe('新世界：海洋星球');
-    expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true })).toBe('新世界：空白星球');
-    expect(engineFor({ cells: 3000, seed: 1 }).exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true })).toBe('新世界：几块大陆');
+    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, form: TWIN_CONTINENTS } })).toBe('换星球形态“双子大陆”');
+    expect(eng.exec({ op: 'set_worldgen', params: { ...eng.world.small.terrain.gen!, landFraction: 0.2 } })).toBe('调整 · 陆地多少');
+    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25, form: RING_SEA } })).toBe('换星球形态“环形内海” · 陆地多少');
+    expect(eng.exec({ op: 'set_worldgen', params: { ...gen, type: 'inland_sea', landFraction: 0.25 } })).toBe('删除星球形态“环形内海”');
+    expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean', islands: 0.7 }, reset: true })).toBe('新世界“海洋星球”');
+    expect(engineFor(settings).exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true })).toBe('新世界“空白星球”');
+    expect(engineFor({ cells: 3000, seed: 1 }).exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true })).toBe('新世界“几块大陆”');
   });
 
   it('重放与撤销逐值一致（含地形脚本、重画一片、检查点）', () => {

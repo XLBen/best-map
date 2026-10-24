@@ -17,7 +17,7 @@ const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
 // 两种共有的几项。what：出错说明里的叫法（“河流类型”“湖泊类型”）；kind：match 脚本说明里的“哪些河 / 哪些湖”
 export function waterTypeShape(what: string, noun: string) {
   return {
-    id: typeIdSchema.refine((id) => id !== PLAIN_TYPE, `“${PLAIN_TYPE}”是留给“普通的${noun}”的，换一个 id`),
+    id: typeIdSchema.refine((id) => id !== PLAIN_TYPE, `“${PLAIN_TYPE}”留给“普通的${noun}”，换一个 id`),
     name: z.string().min(1).max(12),
     color: hexColor,
     // 地图集风格里用的颜色（省略时同 color）
@@ -169,7 +169,7 @@ export function checkMatchScripts(t: WaterType, what: string, noun: string, scop
   if (!box) return;
   for (const [kind, s] of Object.entries(box)) {
     if (!s) continue;
-    if (kind !== 'match') throw new CommandError(`${what}「${waterTypeOwner(t)}」只能有“哪些${noun}是这一种”的脚本`);
+    if (kind !== 'match') throw new CommandError(`${what}“${waterTypeOwner(t)}”只能有“哪些${noun}是这一种”的脚本`);
     compileScript('match', (s as { src: string }).src, waterTypeOwner(t), scope);
   }
 }

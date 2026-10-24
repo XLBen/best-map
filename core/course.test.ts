@@ -868,7 +868,7 @@ describe('续画（第九轮 B）：接着别的河画，河不消失', () => {
           const x = extendCourse(w, w.derived, s, { endOnLand: 'sink' });
           expect(x).not.toBeNull();
           if (!x || 'blocked' in x) {
-            expect(x?.blocked).not.toBe('新画的一段碰到了这条河自己');
+            expect(x?.blocked).not.toBe('新画的一段碰到了河自己');
             continue;
           }
           checked++;

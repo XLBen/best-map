@@ -83,10 +83,10 @@ const plainItem = z.looseObject({
 // 河流类型的校验、命令等在本文件末尾注册（registerPackSection('riverTypes', …)）。
 // 星球形态的校验、导出在本文件末尾注册（见 registerPackSection('planetForms', …)）；它不在这里用到世界（调整 → 星球形态）
 export const PACK_SECTIONS: Record<PackSectionKey, PackSection> = {
-  riverTypes: { label: '河流', schema: plainItem, checked: true, note: '这一版还不能用河流类型' },
-  lakeTypes: { label: '湖泊', schema: plainItem, checked: true, note: '这一版还不能用湖泊类型' },
-  islandTypes: { label: '岛', schema: plainItem, checked: true, note: '这一版还不能用岛的种类' },
-  planetForms: { label: '星球', schema: plainItem, checked: false, note: '星球形态在 调整 → 星球形态 里换，或新建世界时选' },
+  riverTypes: { label: '河流', schema: plainItem, checked: true, note: '暂不支持河流类型' },
+  lakeTypes: { label: '湖泊', schema: plainItem, checked: true, note: '暂不支持湖泊类型' },
+  islandTypes: { label: '岛', schema: plainItem, checked: true, note: '暂不支持岛的种类' },
+  planetForms: { label: '星球', schema: plainItem, checked: false, note: '在“调整 → 星球形态”里换，或新建时选' },
 };
 
 export function registerPackSection(key: PackSectionKey, def: Partial<PackSection>): void {
@@ -136,11 +136,11 @@ const TYPE_ZH: Record<string, string> = { string: '文字', number: '数', boole
 const packErrorMap: z.core.$ZodErrorMap = (iss) => {
   if (iss.code === 'unrecognized_keys') return `${iss.path?.length ? '不认识的项' : '不认识的部分'}：${iss.keys.join('、')}`;
   if (iss.code === 'invalid_type') return iss.input === undefined ? '缺少这一项' : `应该是${TYPE_ZH[iss.expected] ?? iss.expected}`;
-  if (iss.code === 'invalid_value' && iss.path?.length === 1 && iss.path[0] === 'version') return `这个资源包是第 ${String(iss.input)} 版的格式，这里只认第 ${PACK_VERSION} 版`;
+  if (iss.code === 'invalid_value' && iss.path?.length === 1 && iss.path[0] === 'version') return `资源包格式是第 ${String(iss.input)} 版，只支持第 ${PACK_VERSION} 版`;
   // 长短、多少：说人话（zod 的中文是“数值过小：期望 string >=1 字符”）
-  if (iss.code === 'too_small' && iss.origin === 'string') return Number(iss.minimum) <= 1 ? '不能是空的' : `太短了，至少 ${String(iss.minimum)} 个字`;
-  if (iss.code === 'too_big' && iss.origin === 'string') return `太长了，最多 ${String(iss.maximum)} 个字`;
-  if (iss.code === 'too_big' && iss.origin === 'array') return `太多了，最多 ${String(iss.maximum)} 个`;
+  if (iss.code === 'too_small' && iss.origin === 'string') return Number(iss.minimum) <= 1 ? '不能是空的' : `太短，至少 ${String(iss.minimum)} 个字`;
+  if (iss.code === 'too_big' && iss.origin === 'string') return `太长，最多 ${String(iss.maximum)} 个字`;
+  if (iss.code === 'too_big' && iss.origin === 'array') return `太多，最多 ${String(iss.maximum)} 个`;
   return zh(iss);
 };
 
@@ -159,7 +159,7 @@ function where(path: readonly PropertyKey[], json: unknown): string {
   if (!sec || typeof idx !== 'number') return path.length === 1 && TOP_ZH[String(head)] ? TOP_ZH[String(head)] : path.map(String).join('.');
   const raw = (json as Record<string, unknown[]>)[String(head)]?.[idx] as { id?: unknown; name?: unknown } | undefined;
   const label = typeof raw?.name === 'string' && raw.name ? raw.name : typeof raw?.id === 'string' ? raw.id : '';
-  return `${sec}第 ${idx + 1} 个${label ? `「${label}」` : ''}${rest.length ? `的 ${rest.map(String).join('.')}` : ''}`;
+  return `${sec}第 ${idx + 1} 个${label ? `“${label}”` : ''}${rest.length ? `的 ${rest.map(String).join('.')}` : ''}`;
 }
 
 function issuesText(issues: readonly z.core.$ZodIssue[], json: unknown, prefix: PropertyKey[] = []): string[] {
@@ -197,7 +197,7 @@ export type PackRead = { ok: true; pack: ResourcePack; legacy: 'biomes' | 'wordP
 
 // name：旧的生态文件没有名字，用这个（一般是文件名）
 export function readPack(text: string, name = '生态'): PackRead {
-  if (text.length > PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（超过 ${Math.round(PACK_MAX_CHARS / 1e6)} MB），不像是资源包`] };
+  if (text.length > PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（超过 ${Math.round(PACK_MAX_CHARS / 1e6)} MB），不是资源包`] };
   let json: unknown;
   try {
     // 记事本存的 UTF-8 文件开头可能带一个看不见的 BOM
@@ -225,7 +225,7 @@ export function readPack(text: string, name = '生态'): PackRead {
       return r.ok ? { ...r, legacy: 'wordPack' } : r;
     }
   }
-  return { ok: false, errors: ['不认识这个文件：不是资源包，也不是生态或文字包'] };
+  return { ok: false, errors: ['不认识的文件：不是资源包、生态或文字包'] };
 }
 
 // ---------- 内容 ----------
@@ -432,7 +432,7 @@ export function packProblems(pack: ResourcePack): string[] {
   dupes('岛的种类', (pack.islandTypes ?? []).map((r) => r.id));
   dupes('星球形态', (pack.planetForms ?? []).map((r) => r.id));
   dupes('文字包', (pack.textPacks ?? []).map((t) => t.id));
-  if (biomes.length > SPECIES_SOFT_CAP) problems.push(`生态有 ${biomes.length} 种：超过 ${SPECIES_SOFT_CAP} 种时界面会很挤，计算也会变慢`);
+  if (biomes.length > SPECIES_SOFT_CAP) problems.push(`生态有 ${biomes.length} 种（超过 ${SPECIES_SOFT_CAP}）：界面会挤，计算会变慢`);
 
   const known = new Set([...biomes.map((b) => b.id), ...DEFAULT_SPECIES.map((b) => b.id)]);
   const fields = new Set(pack.fields ?? []);
@@ -440,29 +440,29 @@ export function packProblems(pack: ResourcePack): string[] {
   const lakeIds = new Set((pack.lakeTypes ?? []).map((r) => r.id));
   const lists = new Set([...Object.keys(DEFAULT_PACK.lists), ...(pack.textPacks ?? []).flatMap((t) => Object.keys(t.lists)), '__species']);
   for (const b of biomes) {
-    const who = `「${b.name || b.id}」`;
-    for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在这个资源包里，也不是内置的生态：世界里没有它时不起作用`);
+    const who = `“${b.name || b.id}”`;
+    for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在资源包里，也不是内置生态：世界里没有它时无效`);
     for (const f of fieldRefs(b)) {
-      if (!ITEM_ID.test(f)) problems.push(`${who}用到了自定义场「${f}」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场`);
-      else if (!fields.has(f)) problems.push(`${who}用到了自定义场 ${f}，资源包里没有写这个场（用的时候会新加一个空的）`);
+      if (!ITEM_ID.test(f)) problems.push(`${who}用到的自定义场“${f}”名字无效：只能用字母、数字、下划线和连字符`);
+      else if (!fields.has(f)) problems.push(`${who}用到的自定义场 ${f} 不在资源包里，用时新建一个空的`);
     }
-    for (const r of biomeRivers(b)) if (!rivers.has(r)) problems.push(`${who}用到了河流类型 ${r}，资源包里没有：没有这种河时按离得很远算`);
-    for (const r of biomeLakes(b)) if (!lakeIds.has(r)) problems.push(`${who}用到了湖泊类型 ${r}，资源包里没有：没有这种湖时按离得很远算`);
+    for (const r of biomeRivers(b)) if (!rivers.has(r)) problems.push(`${who}用到的河流类型 ${r} 不在资源包里：没有这种河时按很远算`);
+    for (const r of biomeLakes(b)) if (!lakeIds.has(r)) problems.push(`${who}用到的湖泊类型 ${r} 不在资源包里：没有这种湖时按很远算`);
     for (const n of b.feature?.names ?? []) {
       for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
     }
-    if (b.dispersal) problems.push(`${who}只在起源地附近长：起源地的格编号只对做它的那个世界有效`);
-    if (b.range) problems.push(`${who}只长在某个岛上或圈的范围里：格的编号只对做它的那个世界有效`);
+    if (b.dispersal) problems.push(`${who}只在起源地附近长：只对原来的世界有效`);
+    if (b.range) problems.push(`${who}只长在某处：只对原来的世界有效`);
   }
   const typed = [
     ...(pack.riverTypes ?? []).map((x) => ({ t: x as RiverType | LakeType, what: '河流类型' })),
     ...(pack.lakeTypes ?? []).map((x) => ({ t: x as RiverType | LakeType, what: '湖泊类型' })),
   ];
   for (const { t, what } of typed) {
-    const who = `${what}「${t.name || t.id}」`;
+    const who = `${what}“${t.name || t.id}”`;
     for (const f of fieldRefs(t)) {
-      if (!ITEM_ID.test(f)) problems.push(`${who}用到了自定义场「${f}」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场`);
-      else if (!fields.has(f)) problems.push(`${who}用到了自定义场 ${f}，资源包里没有写这个场（用的时候会新加一个空的）`);
+      if (!ITEM_ID.test(f)) problems.push(`${who}用到的自定义场“${f}”名字无效：只能用字母、数字、下划线和连字符`);
+      else if (!fields.has(f)) problems.push(`${who}用到的自定义场 ${f} 不在资源包里，用时新建一个空的`);
     }
     for (const n of t.names ?? []) {
       for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
@@ -470,10 +470,10 @@ export function packProblems(pack: ResourcePack): string[] {
   }
   for (const t of (pack.islandTypes ?? []) as unknown as IslandType[]) {
     for (const n of t.names ?? []) {
-      for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`岛的种类「${t.name || t.id}」的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
+      for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`岛的种类“${t.name || t.id}”的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
     }
   }
-  for (const t of pack.textPacks ?? []) problems.push(...wordPackProblems(t).map((p) => `文字包「${t.name}」：${p}`));
+  for (const t of pack.textPacks ?? []) problems.push(...wordPackProblems(t).map((p) => `文字包“${t.name}”：${p}`));
   return problems;
 }
 
@@ -638,7 +638,7 @@ export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks)
     ...species.map((sp): Command => ({ op: 'add_species', species: sp })),
     ...(textPack ? [{ op: 'set_word_pack', pack: textPack } as Command] : []),
   ];
-  return { command: { op: 'batch', label: `用了资源包「${pack.name}」`, commands }, added, skipped, fields, textPack };
+  return { command: { op: 'batch', label: `用上资源包“${pack.name}”`, commands }, added, skipped, fields, textPack };
 }
 
 // 用了之后变成新生态的格（按生态分开：主导生态是这次新加的，改了名的按新 id）。world 是用了之后的世界（确切预览算出的）

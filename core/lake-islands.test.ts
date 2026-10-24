@@ -75,7 +75,7 @@ describe('湖里的岛', () => {
       const lakeSet = new Set(lake);
       const before = { elev: w.derived.elevation.slice(), landDelta: w.causes.landDelta.slice(), uplift: w.causes.upliftDelta.slice(), erod: w.causes.erodDelta.slice(), land: w.causes.land.slice() };
       const otherLakes = all(w).filter((i) => w.derived.lake[i] === 1 && !lakeSet.has(i));
-      expect(eng.exec({ op: 'add_island', island: at(w, c, kind) })).toMatch(/^在湖里放了一个/);
+      expect(eng.exec({ op: 'add_island', island: at(w, c, kind) })).toMatch(/^在湖里放/);
       const isle = heights(w);
       expect(isle.length).toBeGreaterThan(0);
       const code = islandCode(w.small, kind);
@@ -137,7 +137,7 @@ describe('湖里的岛', () => {
       for (let e = w.mesh.off[i]; e < w.mesh.off[i + 1]; e++) if (!lakeSet.has(w.mesh.adj[e])) return true;
       return false;
     })!;
-    expect(() => eng.exec({ op: 'add_island', island: at(w, shore, 'reef') })).toThrow('湖太窄了，放不下岛');
+    expect(() => eng.exec({ op: 'add_island', island: at(w, shore, 'reef') })).toThrow('湖太窄，放不下岛');
     expect(lakeIslandStamp(w, at(w, shore, 'reef'), w.derived).cells).toEqual([]);
     // 干的陆地：不定高度
     const dry = all(w).find((i) => w.causes.land[i] && w.derived.lake[i] === 0 && w.derived.continentality[i] > 0.7)!;
@@ -169,7 +169,7 @@ describe('湖里的岛', () => {
     expect(chainIslands(w, chain).length).toBe(where.filter((x) => x === 'sea').length);
     const land0 = w.causes.land.slice();
     const s = eng.exec({ op: 'add_island_chain', chain });
-    expect(s).toMatch(/^画了一条岛链：\d+ 个低平岛$/);
+    expect(s).toMatch(/^画岛链 · \d+ 个低平岛$/);
     const isle = heights(w);
     expect(isle.length).toBeGreaterThan(0);
     for (const i of isle) expect(land0[i]).toBe(1);

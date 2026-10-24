@@ -162,8 +162,8 @@ describe('去掉了火山岛（第十四轮）', () => {
     expect(BUILTIN_ISLAND_TYPES.map((t) => t.id)).toEqual(['continental', 'low', 'atoll', 'reef', 'shards']);
     expect('volcanoes' in elevation).toBe(false);
     const eng = ocean();
-    expect(() => eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: 100, variant: 0 } })).toThrow(/火山岛已经去掉了/);
-    expect(() => eng.exec({ op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1.2, 0.5]], kind: 'volcanic', size: 60 } })).toThrow(/火山岛已经去掉了/);
+    expect(() => eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: 100, variant: 0 } })).toThrow(/没有火山岛了/);
+    expect(() => eng.exec({ op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1.2, 0.5]], kind: 'volcanic', size: 60 } })).toThrow(/没有火山岛了/);
   });
 
   it('不写种类时是大陆岛', () => {

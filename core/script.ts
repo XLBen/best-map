@@ -252,8 +252,8 @@ export const VARIABLES: readonly ScriptVariable[] = [
   { key: 'continent', zh: '大陆', label: '大陆场（大于 0 是大陆，小于 0 是大洋）', group: '地形生成', kinds: ['crust'] },
   { key: 'addBlock', zh: '加大陆块', label: '加一块大陆：addBlock({lat, lon, size, stretch, angle})', group: '布局', kinds: ['setup'], scalar: true },
   { key: 'addIsland', zh: '加岛', label: '加一个岛：addIsland({lat, lon, height, size})', group: '布局', kinds: ['setup'], scalar: true },
-  { key: 'clearBlocks', zh: '清空大陆块', label: '去掉原来的大陆块', group: '布局', kinds: ['setup'], scalar: true },
-  { key: 'clearIslands', zh: '清空岛', label: '去掉原来的岛', group: '布局', kinds: ['setup'], scalar: true },
+  { key: 'clearBlocks', zh: '清空大陆块', label: '删除原来的大陆块', group: '布局', kinds: ['setup'], scalar: true },
+  { key: 'clearIslands', zh: '清空岛', label: '删除原来的岛', group: '布局', kinds: ['setup'], scalar: true },
   { key: 'blocks', zh: '大陆块', label: '原来的大陆块（只读列表，每项 {lat, lon, size}）', group: '布局', kinds: ['setup'], scalar: true },
 ];
 
@@ -441,7 +441,7 @@ export class ScriptError extends CommandError {
 }
 
 function makeIssue(owner: string, kind: ScriptKind, reason: ScriptIssue['reason'], text: string, raw: string, line?: number, cell?: number): ScriptIssue {
-  const where = `「${owner}」的${SCRIPT_KIND_LABEL[kind]}脚本${line ? `第 ${line} 行` : ''}`;
+  const where = `“${owner}”的${SCRIPT_KIND_LABEL[kind]}脚本${line ? `第 ${line} 行` : ''}`;
   const message =
     reason === 'syntax' ? `${where}有语法错误：${text}` : reason === 'disabled' ? `${where}没有运行：${text}` : `${where}出错：${text}`;
   return { owner, kind, reason, line, cell, text, raw, message };
@@ -522,7 +522,7 @@ const POISONED: Partial<Record<(typeof SHADOW)[number], string>> = {
   performance: '脚本里不能用时间',
   Temporal: '脚本里不能用时间',
   crypto: '用 rand() 代替 crypto 的随机数',
-  Intl: '脚本里不能用 Intl（结果会随电脑的语言和时区变）',
+  Intl: '脚本里不能用 Intl',
 };
 const POISON_MESSAGE = / is not available in scripts$/;
 
@@ -534,9 +534,9 @@ function runtimeText(raw: string, kind: ScriptKind): string {
   if (ref) return missingVariable(ref[1], kind);
   const fn = /^(\S+) is not a (?:function|constructor)/.exec(raw);
   if (fn && (SHADOW as readonly string[]).includes(fn[1])) return `脚本里不能用 ${fn[1]}`;
-  if (/Maximum call stack size exceeded|too much recursion/.test(raw)) return '函数调用太深了（是不是写了没有尽头的递归？）';
+  if (/Maximum call stack size exceeded|too much recursion/.test(raw)) return '函数调用太深：递归没有尽头';
   const prop = /Cannot read properties of (undefined|null) \(reading '(.+)'\)/.exec(raw) ?? /can't access property "(.+)", .+ is (undefined|null)/.exec(raw);
-  if (prop) return prop[0].startsWith('Cannot') ? `读不到「${prop[2]}」：前面的值是 ${prop[1]}` : `读不到「${prop[1]}」：前面的值是 ${prop[2]}`;
+  if (prop) return prop[0].startsWith('Cannot') ? `读不到“${prop[2]}”：前面的值是 ${prop[1]}` : `读不到“${prop[1]}”：前面的值是 ${prop[2]}`;
   if (fn) return `${fn[1]} 不是${raw.includes('constructor') ? '能 new 的类型' : '函数'}`;
   return raw;
 }
@@ -565,23 +565,23 @@ function syntaxText(raw: string, src: string): string {
   const code = codeOnly(src);
   const brackets = bracketText(code);
   if (brackets) return brackets;
-  if (/Unexpected end of input|missing \} after function body|end of script|Unexpected EOF/i.test(raw)) return '代码没写完（是不是少了右括号 ) 或右花括号 }？）';
+  if (/Unexpected end of input|missing \} after function body|end of script|Unexpected EOF/i.test(raw)) return '代码没写完：少了 ) 或 }';
   if (/missing \) after argument list|missing \) in parenthetical|missing \) after condition|Expected '\)'/.test(raw)) return '少了右括号 )';
   if (/Unterminated template/i.test(raw)) return '反引号 ` 没有配对';
   if (/Unterminated string|unterminated string literal/i.test(raw)) return '引号没有配对';
   if (/Invalid or unexpected token|illegal character|Invalid character/i.test(raw)) {
     // 只看代码里的：注释、字符串里写中文标点没有关系
-    return /[（），；：“”‘’。、！？【】]/.test(code) ? '用了中文标点（，；（ ）“ ”），要换成英文标点' : '有不认识的字符（是不是引号没有配对？）';
+    return /[（），；：“”‘’。、！？【】]/.test(code) ? '中文标点（，；（ ）“ ”）要换成英文的' : '有不认识的字符，或引号没有配对';
   }
-  if ((m = /Identifier '(.+)' has already been declared/.exec(raw) ?? /redeclaration of (?:let|const|var|formal parameter) (.+)/.exec(raw))) return `「${m[1]}」重复声明了`;
-  if ((m = /Unexpected identifier(?: '(.+)')?/.exec(raw))) return `这里不该出现${m[1] ? `「${m[1]}」` : '名字'}（是不是少了运算符、逗号或分号？）`;
-  if (/Unexpected number/.test(raw)) return '这里不该出现数字（是不是少了运算符或逗号？）';
-  if (/Unexpected string/.test(raw)) return '这里不该出现字符串（是不是少了运算符或逗号？）';
-  if (/reserved word|reserved identifier/i.test(raw)) return '用了保留字（比如 let、yield、static）当名字';
+  if ((m = /Identifier '(.+)' has already been declared/.exec(raw) ?? /redeclaration of (?:let|const|var|formal parameter) (.+)/.exec(raw))) return `“${m[1]}”重复声明了`;
+  if ((m = /Unexpected identifier(?: '(.+)')?/.exec(raw))) return `这里不该出现${m[1] ? `“${m[1]}”` : '名字'}：少了运算符、逗号或分号`;
+  if (/Unexpected number/.test(raw)) return '这里不该出现数字：少了运算符或逗号';
+  if (/Unexpected string/.test(raw)) return '这里不该出现字符串：少了运算符或逗号';
+  if (/reserved word|reserved identifier/i.test(raw)) return '保留字（let、yield、static……）不能当名字';
   if (/Octal/i.test(raw)) return '不能用 0 开头的八进制数字';
-  if (/Invalid left-hand side in assignment|invalid assignment left-hand side/i.test(raw)) return '等号左边不能被赋值（比较是否相等要用 ===）';
+  if (/Invalid left-hand side in assignment|invalid assignment left-hand side/i.test(raw)) return '等号左边不能赋值（比较用 ===）';
   if (/Illegal (break|continue)/.test(raw)) return '这里不能用 break 或 continue';
-  if ((m = /Unexpected token:? '?(.+?)'?$/i.exec(raw) ?? /expected expression, got '?(.+?)'?$/.exec(raw))) return `这里不该出现「${m[1]}」`;
+  if ((m = /Unexpected token:? '?(.+?)'?$/i.exec(raw) ?? /expected expression, got '?(.+?)'?$/.exec(raw))) return `这里不该出现“${m[1]}”`;
   if (/missing ; before statement/.test(raw)) return '少了分号或运算符';
   return `语法不对（${raw}）`;
 }
@@ -734,7 +734,7 @@ function field(name: string): number {
       const got = v && !v.scalar ? st.inputs?.get(v.key) : undefined;
       if (got !== undefined && typeof got === 'object') a = got as ArrayLike<number>;
     }
-    if (!a) throw new Error(`没有自定义场「${key}」`);
+    if (!a) throw new Error(`没有自定义场“${key}”`);
     st.fields.set(name, a);
   }
   return a[st.cell];
@@ -765,7 +765,7 @@ function hasRiver(typeId: string): boolean {
 // 生态（第十二轮）：只在河流、湖泊类型的 match 里有（按不计水体类型的一遍植被，见 vegetation.ts 的 baseBiomes）
 function biomeInputs(name: string): BiomeInputs {
   const b = RUN.inputs?.biomes;
-  if (!b) throw new Error(`${name}() 只能在河流类型、湖泊类型的规则（哪些河、哪些湖是这一种）里用`);
+  if (!b) throw new Error(`${name}() 只能在河流类型、湖泊类型的规则里用`);
   return b;
 }
 
@@ -1055,7 +1055,7 @@ export function compileScript(kind: ScriptKind, src: string, owner = '脚本', s
     cache.set(key, hit);
   } else {
     scriptStats.compiles++;
-    if (src.length > MAX_SCRIPT_CHARS) hit = { raw: 'too long', text: `脚本太长了（最多 ${MAX_SCRIPT_CHARS} 个字符）` };
+    if (src.length > MAX_SCRIPT_CHARS) hit = { raw: 'too long', text: `脚本太长（最多 ${MAX_SCRIPT_CHARS} 个字符）` };
     else hit = importFailure(src) ?? syntaxFailure(src) ?? undefined;
     if (!hit) {
       try {
@@ -1090,7 +1090,7 @@ function errorInfo(e: unknown): { raw: string; stack?: string } {
   try {
     return { raw: String(e) };
   } catch {
-    return { raw: '（脚本抛出了一个没法显示的值）' };
+    return { raw: '（脚本抛出的值无法显示）' };
   }
 }
 
@@ -1516,7 +1516,7 @@ function hasNaN(kind: CellKind, v: unknown): boolean {
 
 // 返回值不对时的说明
 function valueText(kind: CellKind, v: unknown): string {
-  if (v === undefined) return '地图上有一处没有返回值（是不是忘了写 return？）';
+  if (v === undefined) return '地图上有一处没有返回值：少了 return';
   if (hasNaN(kind, v)) return '地图上有一处算出了 NaN（不是数字）';
   const want =
     kind === 'placement'
@@ -1852,7 +1852,7 @@ function compareRuns(run: (cells: Int32Array) => CellResult, fwd: Int32Array): P
     if (!c.ok) return { pure: false, issue: c.issue };
     i = firstDiff(a.output, m, c.output, odd.length, (j) => 2 * j + 1);
   }
-  if (i >= 0) return { pure: false, cell: fwd[i], text: '地图上有一处几次算出的结果不一样（脚本是不是记住了别的格算出的东西？）' };
+  if (i >= 0) return { pure: false, cell: fwd[i], text: '地图上有一处几次算出的结果不一样：不要记住别的格的结果' };
   return { pure: true };
 }
 
@@ -1866,7 +1866,7 @@ export function checkPurity(run: (cells: Int32Array) => CellResult, cells: Array
     res = compareRuns(run, Int32Array.from(cells));
   } finally {
     const changed = restoreIntrinsics(snap);
-    if (changed) res = { ...res, pure: false, changed, text: `脚本改了内置的 ${changed}（不能用它在格与格之间、两次运行之间传东西）` };
+    if (changed) res = { ...res, pure: false, changed, text: `脚本改了内置的 ${changed}：不能用它在格之间传东西` };
   }
   return res;
 }

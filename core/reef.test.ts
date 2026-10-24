@@ -111,7 +111,7 @@ describe('小礁', () => {
       const { eng, at, before, summary } = withReefs(name);
       const w = eng.world;
       expect(at.length).toBe(8);
-      expect(summary).toBe(`放了一个小礁（直径约 ${roundKm(w.mesh.spacing * w.kmPerUnit * 0.5)} km）`);
+      expect(summary).toBe(`放小礁 · 直径约 ${roundKm(w.mesh.spacing * w.kmPerUnit * 0.5)} km`);
       // 每个小礁正好一格新陆地，就是点下去的那一格
       const gained = [...w.causes.land.keys()].filter((i) => w.causes.land[i] && !before[i]);
       expect(gained).toEqual([...at].sort((a, b) => a - b));

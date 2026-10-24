@@ -539,7 +539,7 @@ export function exportProvinceCells(world: World, cell: Int32Array, width: numbe
     const drop = new Set<number>();
     for (let s = 0; s < L.segs.count; s++) if (groups.has(L.gL[s]) || groups.has(L.gR[s])) drop.add(L.segs.seam[s]);
     if (!drop.size) return { cell: out, warnings };
-    for (const id of lost) warnings.push(`省份“${small.provinces[id]?.name || id}”太小，按剪刀画的线分不到像素：导出时它那里的边界按格子画`);
+    for (const id of lost) warnings.push(`省份“${small.provinces[id]?.name || id}”太小，剪刀线分不到像素：导出时边界按格画`);
     seams = seams.filter((_, k) => !drop.has(k));
   }
 }

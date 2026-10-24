@@ -700,7 +700,7 @@ export function previewLand(world: World, cells: number[], delta: number[]): { g
 // 这一种岛（找不到时报错）与它的编号
 function typeOfSpec(world: World, kind: string): { t: IslandType; code: number } {
   const t = islandTypeById(world.small, kind);
-  if (!t) throw new CommandError(kind === 'volcanic' ? '火山岛已经去掉了（第十四轮），换一种岛' : `没有“${kind}”这种岛`);
+  if (!t) throw new CommandError(kind === 'volcanic' ? '没有火山岛了，换一种岛' : `没有“${kind}”这种岛`);
   return { t, code: islandCode(world.small, kind) };
 }
 

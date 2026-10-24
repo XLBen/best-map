@@ -37,7 +37,7 @@ export function checkSpeciesScripts(sp: Species): void {
   if (!box) return;
   for (const [kind, s] of Object.entries(box)) {
     if (!s) continue;
-    if (!(SPECIES_SCRIPT_KINDS as readonly string[]).includes(kind)) throw new CommandError(`生态「${speciesOwner(sp)}」只能有“长在哪里”和“颜色”两种脚本`);
+    if (!(SPECIES_SCRIPT_KINDS as readonly string[]).includes(kind)) throw new CommandError(`生态“${speciesOwner(sp)}”只能有“长在哪里”和“颜色”两种脚本`);
     compileScript(kind as (typeof SPECIES_SCRIPT_KINDS)[number], s.src, speciesOwner(sp));
   }
 }

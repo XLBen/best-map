@@ -19,8 +19,8 @@ export const ISLAND_SHAPE_INFO: Record<IslandShape, { name: string; hint: string
   long: { name: '长条', hint: '拉得长长的' },
   rugged: { name: '不规则', hint: '有湾有岬，形状不规则' },
   ring: { name: '环礁', hint: '一圈陆地，中间是浅浅的潟湖' },
-  cell: { name: '一格', hint: '只占一格，画出来约半格大，不看大小' },
-  frag: { name: '碎', hint: '一片比一格还小的碎岛：格还是海，只是画出来，归海省' },
+  cell: { name: '一格', hint: '只占一格，不看大小' },
+  frag: { name: '碎', hint: '比一格还小的碎岛，归海省' },
 };
 
 // 高低：平（低矮平坦）、起伏（有丘陵）、高（中间隆起成山）。环礁、一格的岛总是平的
@@ -49,7 +49,7 @@ const BUILTIN_IDS = ['continental', 'low', 'atoll', 'reef', 'shards'] as const;
 export type BuiltinIslandId = (typeof BUILTIN_IDS)[number];
 
 export const islandTypeSchema = z.object({
-  id: typeIdSchema.refine((id) => !(BUILTIN_IDS as readonly string[]).includes(id), '这个 id 是内置的岛用的，换一个'),
+  id: typeIdSchema.refine((id) => !(BUILTIN_IDS as readonly string[]).includes(id), 'id 与内置的岛重复，换一个'),
   name: z.string().min(1).max(12),
   shape: z.enum(ISLAND_SHAPES).default('rugged'),
   height: z.enum(ISLAND_HEIGHTS).default('hilly'),
@@ -73,10 +73,10 @@ export type IslandTypeInput = z.input<typeof islandTypeSchema>;
 export const BUILTIN_ISLAND_TYPES: readonly (IslandType & { id: BuiltinIslandId; hint: string })[] = [
   { id: 'continental', name: '大陆岛', hint: '形状不规则，有丘陵', shape: 'rugged', height: 'hilly', province: 'land' },
   { id: 'low', name: '低平岛', hint: '平坦低矮，多沙洲和沼泽', shape: 'long', height: 'flat', color: 'marsh', rock: 3.2, province: 'land' },
-  { id: 'atoll', name: '珊瑚岛', hint: '环形的白沙岛，中间是青绿色的浅潟湖', shape: 'ring', height: 'flat', color: 'coral', rock: 4.8, province: 'land' },
-  { id: 'reef', name: '小礁', hint: '只占一格的白沙小岛，四周一圈浪花，算进旁边的海省', shape: 'cell', height: 'flat', color: 'coral', rock: 4.3, province: 'sea' },
+  { id: 'atoll', name: '珊瑚岛', hint: '环形白沙岛，中间是青绿的浅潟湖', shape: 'ring', height: 'flat', color: 'coral', rock: 4.8, province: 'land' },
+  { id: 'reef', name: '小礁', hint: '一格的白沙小岛，归海省', shape: 'cell', height: 'flat', color: 'coral', rock: 4.3, province: 'sea' },
   // 第十八轮：一片比一格还小的碎岛（格还是海，只是画出来；归海省，一片碎岛起一个列岛 / 群岛的名字）
-  { id: 'shards', name: '碎岛', hint: '一片比一格还小的碎岛，格还是海，归海省，一片起一个名字', shape: 'frag', height: 'flat', province: 'sea' },
+  { id: 'shards', name: '碎岛', hint: '比一格还小的碎岛，归海省', shape: 'frag', height: 'flat', province: 'sea' },
 ];
 // 岛链里的碎岛（chainSchema 的 fragRatio）用的种类
 export const SHARDS_ISLAND_TYPE: BuiltinIslandId = 'shards';

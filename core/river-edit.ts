@@ -228,29 +228,29 @@ function finish(world: World, T: EditTarget, kind: EditKind, plan: CoursePlan, p
 // 新画的一段没能回到 b（中途进了海、湖，出了地图）时返回 fallback 与原因：照实际会发生的从 a 改道
 function spliceSection(world: World, d: Derived, T: EditTarget, a: Anchor, b: Anchor, mid: readonly Pt[], kind: EditKind): EditResult | { fallback: string } {
   const C = T.guide.cells;
-  if (b.k <= a.k) return { blocked: '这一段太短了' };
+  if (b.k <= a.k) return { blocked: '这一段太短' };
   const wet = (i: number) => water(world, d, i);
   let Q = dedupe([a.p, ...mid.map(roundPt), b.p]);
   let t = traceCourse(world, Q, C.slice(0, a.k + 1), wet);
   const loops: Pt[][] = [];
   for (let iter = 0; t.loop && iter < 40; iter++) {
     const next = cutLoop(Q, t, a.k + 1);
-    if (!next) return { blocked: '新画的一段碰到了这条河自己' };
+    if (!next) return { blocked: '新画的一段碰到了河自己' };
     loops.push(loopPoints(t));
     Q = next;
     t = traceCourse(world, Q, C.slice(0, a.k + 1), wet);
   }
-  if (t.loop) return { blocked: '画的线太乱了，换个画法' };
+  if (t.loop) return { blocked: '线太乱，换个画法' };
   const lastIn = t.cells[t.cells.length - 1];
   if (lastIn !== C[b.k]) {
-    if (t.exit) return { fallback: '这段出了地图' };
-    if (t.stop >= 0 && wet(lastIn)) return { fallback: world.causes.land[lastIn] ? '这段穿过了湖，河会在这里流进湖' : '这段穿过了海，河会在这里入海' };
-    return { fallback: '这段没回到河上' };
+    if (t.exit) return { fallback: '出了地图' };
+    if (t.stop >= 0 && wet(lastIn)) return { fallback: world.causes.land[lastIn] ? '穿过湖：河在这里流进湖' : '穿过海：河在这里入海' };
+    return { fallback: '没回到河上' };
   }
   const midCells = t.cells.slice(a.k + 1, -1);
   const tail = C.slice(b.k);
   const tailSet = new Set(tail);
-  if (midCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了这条河自己' };
+  if (midCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了河自己' };
   const cells = [...C.slice(0, a.k + 1), ...midCells, ...tail];
   if (flowsBack(world, d, cells[cells.length - 1], new Set(midCells))) return { blocked: '这样水会绕成圈' };
   const pre = prefixPath(T, a);
@@ -281,7 +281,7 @@ function rerouteFrom(world: World, d: Derived, T: EditTarget, a: Anchor, input: 
     plan = courseFrom(world, d, { cells: C.slice(0, a.k + 1), path: base }, dedupe([base[base.length - 1], ...input.slice(1).map(roundPt)]), sub, false);
   }
   if (plan.blocked) return { blocked: plan.blocked };
-  if (plan.cells.length < 2) return { blocked: '画得太短了' };
+  if (plan.cells.length < 2) return { blocked: '画得太短' };
   const patch: GuidePatch = { cells: plan.cells, path: encodePath(plan.path) };
   if (plan.end === 'sink') patch.end = 'sink';
   else if (T.guide.end) patch.end = null;
@@ -300,21 +300,21 @@ function headSection(world: World, d: Derived, T: EditTarget, head: readonly Pt[
   const loops: Pt[][] = [];
   for (let iter = 0; t.loop && iter < 40; iter++) {
     const next = cutLoop(Q, t, 0);
-    if (!next) return { blocked: '画的线太乱了，换个画法' };
+    if (!next) return { blocked: '线太乱，换个画法' };
     loops.push(loopPoints(t));
     Q = next;
     t = traceCourse(world, Q, [], wet);
   }
   if (t.exit) return { blocked: '源头要在地图上' };
-  if (t.loop || t.cells[t.cells.length - 1] !== C[b.k]) return { blocked: t.stop >= 0 ? '新的源头一段穿过了海或湖' : '没法从这里改' };
+  if (t.loop || t.cells[t.cells.length - 1] !== C[b.k]) return { blocked: t.stop >= 0 ? '新源头穿过了海或湖' : '这里改不了' };
   const headCells = t.cells.slice(0, -1);
   // 源头落在别的河上：那条河会被从中间截断、下游却还标着它（截走只认新河道中间的格），不让这样改
-  if (headCells.length && isRiverCell(world, d, headCells[0]) && !T.own.includes(headCells[0])) return { blocked: '源头不能放在别的河上：要给那条河加源头、分一股水，先选中它，再点底部的「加一个源头」「分一股出去」' };
+  if (headCells.length && isRiverCell(world, d, headCells[0]) && !T.own.includes(headCells[0])) return { blocked: '源头不能在别的河上：先选中那条河再加源头' };
   const tail = C.slice(b.k);
   const tailSet = new Set(tail);
-  if (headCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了这条河自己' };
+  if (headCells.some((c) => tailSet.has(c))) return { blocked: '新画的一段碰到了河自己' };
   const cells = [...headCells, ...tail];
-  if (cells.length < 2) return { blocked: '河太短了' };
+  if (cells.length < 2) return { blocked: '河太短' };
   const path = dedupe([...Q, ...suffixPath(T, b)]);
   if (path.length > COURSE_MAX_POINTS) return { blocked: TOO_LONG };
   const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: endKind(world, d, T.guide, cells), loops };
@@ -331,8 +331,8 @@ function headSection(world: World, d: Derived, T: EditTarget, head: readonly Pt[
 // 终点挪回河上的 a（缩短）：a 以下不要了，河在这里消失
 function shortenTo(world: World, d: Derived, T: EditTarget, a: Anchor): EditResult {
   const C = T.guide.cells;
-  if (a.k < 1) return { blocked: '河太短了' };
-  if (water(world, d, C[a.k])) return { blocked: '没法在这里结束' };
+  if (a.k < 1) return { blocked: '河太短' };
+  if (water(world, d, C[a.k])) return { blocked: '这里不能结束' };
   const cells = C.slice(0, a.k + 1);
   const path = prefixPath(T, a);
   const plan: CoursePlan = { ...emptyPlan(), cells, path, drawn: cells.length - 1, end: 'sink' };
@@ -375,9 +375,9 @@ function bent(P: readonly Pt[], i0: number, i: number, i1: number, to: Pt): Pt[]
 // 中间那段没能回到河上（穿过了海、湖）时照实际会发生的改道，note 写明原因
 export function strokeEdit(world: World, d: Derived, T: EditTarget, stroke: readonly (readonly [number, number])[], opts: EditOptions): EditResult {
   const { mesh } = world;
-  if (stroke.length < 2) return { blocked: '画得太短了' };
+  if (stroke.length < 2) return { blocked: '画得太短' };
   const P = T.points;
-  if (P.length < 2) return { blocked: '没法从这里改' };
+  if (P.length < 2) return { blocked: '这里改不了' };
   let raw = stroke.map((p) => [p[0], p[1]] as Pt);
   const s = alignTo(world, P, raw[0]);
   if (s) raw = raw.map(([x, y]) => [x + s, y]);
@@ -391,7 +391,7 @@ export function strokeEdit(world: World, d: Derived, T: EditTarget, stroke: read
   if (role === 'source') {
     if (back && ee.along >= Math.max(mesh.spacing, opts.tol)) {
       const b = anchorAt(world, T, ee);
-      if (!b) return { blocked: '没法从这里改' };
+      if (!b) return { blocked: '这里改不了' };
       return headSection(world, d, T, [b.p], b);
     }
     const drawn = simplifyStroke(world, raw, opts.px, COURSE_MAX_POINTS - (P.length - 1));
@@ -400,7 +400,7 @@ export function strokeEdit(world: World, d: Derived, T: EditTarget, stroke: read
   if (role === 'end') {
     const C = T.guide.cells;
     const k = T.own.length - 1;
-    if (k < 0) return { blocked: '没法从这里改' };
+    if (k < 0) return { blocked: '这里改不了' };
     const baseTo = (j: number): Pt[] => endIn(world, j === C.length - 1 ? P.slice() : pointsTo(world, C, P, j), C[j]);
     const sub: CourseOptions = { ...course, ...(T.natural ? {} : { ignoreGuide: T.guide.id }) };
     const plan = continueFrom(world, d, C, k, baseTo, raw, sub, false);
@@ -411,7 +411,7 @@ export function strokeEdit(world: World, d: Derived, T: EditTarget, stroke: read
     return finish(world, T, 'extend', plan, patch);
   }
   let a = anchorAt(world, T, e0);
-  if (!a) return { blocked: '没法从这里改' };
+  if (!a) return { blocked: '这里改不了' };
   if (back && Math.abs(ee.along - e0.along) >= mesh.spacing) {
     let b = anchorAt(world, T, ee);
     let pts = raw;
@@ -468,7 +468,7 @@ export function midHandle(T: EditTarget, i0: number, i1: number): number {
 export function dragHandle(world: World, d: Derived, T: EditTarget, handles: readonly number[], j: number, to: Pt, opts: EditOptions): EditResult {
   const P = T.points;
   const n = handles.length;
-  if (n < 2 || j < 0 || j >= n) return { blocked: '没法从这里改' };
+  if (n < 2 || j < 0 || j >= n) return { blocked: '这里改不了' };
   const s = alignTo(world, P, to);
   const q: Pt = [to[0] + s, to[1]];
   const i = handles[j];
@@ -477,7 +477,7 @@ export function dragHandle(world: World, d: Derived, T: EditTarget, handles: rea
   if (j === 0) {
     if (e.d <= opts.tol && e.along >= Math.max(world.mesh.spacing, opts.tol)) {
       const b = anchorAt(world, T, e);
-      return b ? headSection(world, d, T, [b.p], b) : { blocked: '没法从这里改' };
+      return b ? headSection(world, d, T, [b.p], b) : { blocked: '这里改不了' };
     }
     const i1 = handles[1];
     const f = similar(P[i1], P[0], q);
@@ -487,7 +487,7 @@ export function dragHandle(world: World, d: Derived, T: EditTarget, handles: rea
   if (j === n - 1) {
     if (e.d <= opts.tol && e.total - e.along >= Math.max(world.mesh.spacing, opts.tol)) {
       const a = anchorAt(world, T, e);
-      return a ? shortenTo(world, d, T, a) : { blocked: '没法从这里改' };
+      return a ? shortenTo(world, d, T, a) : { blocked: '这里改不了' };
     }
     const f = similar(P[i0], P[i], q);
     return rerouteFrom(world, d, T, vertexAnchor(T, i0), [P[i0], ...P.slice(i0 + 1, i).map(f), q], { endOnLand: 'sink', px: opts.px }, 'reroute', false);
@@ -498,7 +498,7 @@ export function dragHandle(world: World, d: Derived, T: EditTarget, handles: rea
 // 在第 j 与 j + 1 个控制点之间加一个控制点，拖到 to
 export function insertHandle(world: World, d: Derived, T: EditTarget, handles: readonly number[], j: number, to: Pt): EditResult {
   const P = T.points;
-  if (j < 0 || j + 1 >= handles.length) return { blocked: '没法从这里改' };
+  if (j < 0 || j + 1 >= handles.length) return { blocked: '这里改不了' };
   const s = alignTo(world, P, to);
   const q: Pt = [to[0] + s, to[1]];
   const i0 = handles[j];
@@ -546,11 +546,11 @@ export function joinAtFirst(world: World, d: Derived, T: EditTarget, e: RiverEdi
 // ---------- 分一股出去、加一个源头（第十三轮） ----------
 
 // 分出去的一股从干流上分出来的那一点不能挪
-const BRANCH_HEAD = '这一股从干流上分出来，分出的地方不能挪：要换地方，删掉它重新分';
+const BRANCH_HEAD = '分出的地方不能挪：删除后重新分';
 // 分出去的一股默认分多少水
 export const BRANCH_SHARE = 0.3;
-export const BRANCH_FROM = '从这条河上起笔画出去：分出去的一股';
-export const SOURCE_FROM = '从这条河上起笔往上游画：加一个源头';
+export const BRANCH_FROM = '从河上往外画：分出一股';
+export const SOURCE_FROM = '从河上往上游画：加源头';
 
 export interface Extra {
   kind: 'branch' | 'source';
@@ -594,14 +594,14 @@ function leaveRiver(world: World, T: EditTarget, raw: readonly Pt[]): { cell: nu
 // 从选中的河 T 上分一股出去：stroke 从河上起笔（第一点吸在河上）画出去，到海、湖、别的河（也可以画回这条河的下游：
 // 分出去的水又流回来），陆地上按 opts 接着流或消失。分出的那一格是画的线离开这条河前的最后一格
 export function branchCourse(world: World, d: Derived, T: EditTarget, stroke: readonly (readonly [number, number])[], opts: Pick<CourseOptions, 'endOnLand' | 'px'>): Extra | { blocked: string } {
-  if (stroke.length < 2) return { blocked: '画得太短了' };
+  if (stroke.length < 2) return { blocked: '画得太短' };
   const left = leaveRiver(world, T, stroke.map((p) => [p[0], p[1]] as Pt));
-  if (!left) return { blocked: '从这条河上起笔，往河外画出去' };
+  if (!left) return { blocked: '从河上起笔，往外画' };
   const s = left.cell;
   if (water(world, d, s)) return { blocked: '要从陆地上的河分出去' };
   const start = roundPt(left.pts[0]);
   const input = simplifyStroke(world, left.pts, opts.px);
-  if (input.length < 2) return { blocked: '画得太短了' };
+  if (input.length < 2) return { blocked: '画得太短' };
   input[0] = start;
   const run = (pts: Pt[]) => courseFrom(world, d, { cells: [s], path: [start] }, dedupe(pts), { endOnLand: opts.endOnLand, px: opts.px }, false);
   // 顺着干流的方向分出去（第十三轮）：开头一段从分出的地方顺着干流往下游，渐渐离开干流接到画的线上（不像支流那样直直地横着出去）。
@@ -614,9 +614,9 @@ export function branchCourse(world: World, d: Derived, T: EditTarget, stroke: re
   }
   const plan = run(input);
   if (plan.blocked) return { blocked: plan.blocked };
-  if (plan.cells.length < 2) return { blocked: '画得太短了' };
+  if (plan.cells.length < 2) return { blocked: '画得太短' };
   // 第二格又回到这条河上：没分出去
-  if (T.own.includes(plan.cells[1])) return { blocked: '从这条河上起笔，往河外画出去' };
+  if (T.own.includes(plan.cells[1])) return { blocked: '从河上起笔，往外画' };
   return { kind: 'branch', plan, cell: s };
 }
 
@@ -678,15 +678,15 @@ export function tangentStart(world: World, T: EditTarget, input: readonly Pt[], 
 
 // 给选中的河 T 加一个源头：stroke 从河上起笔往外（往上游）画，水从画的线的另一头流进这条河，算作这条河的一部分（同名）
 export function sourceCourse(world: World, d: Derived, T: EditTarget, stroke: readonly (readonly [number, number])[], opts: Pick<CourseOptions, 'px'>): Extra | { blocked: string } {
-  if (stroke.length < 2) return { blocked: '画得太短了' };
+  if (stroke.length < 2) return { blocked: '画得太短' };
   const left = leaveRiver(world, T, stroke.map((p) => [p[0], p[1]] as Pt));
-  if (!left) return { blocked: '从这条河上起笔，往河外画出去' };
+  if (!left) return { blocked: '从河上起笔，往外画' };
   // 倒过来：从画的线的另一头流到这条河上
   const rev = left.pts.slice().reverse();
   const plan = planCourse(world, d, rev, { endOnLand: 'flow', px: opts.px });
   if (plan.blocked) return { blocked: plan.blocked === '从河上起笔是改这条河' ? '新的源头不能在别的河上' : plan.blocked };
   if (plan.reroute) return { blocked: '新的源头不能在别的河上' };
-  if (plan.end !== 'river' || !T.own.includes(plan.join)) return { blocked: '要画回这条河上（新的源头流进这条河）' };
+  if (plan.end !== 'river' || !T.own.includes(plan.join)) return { blocked: '要画回这条河上' };
   return { kind: 'source', plan, cell: plan.join };
 }
 

@@ -20,10 +20,10 @@ export type ProvinceKind = (typeof PROVINCE_KINDS)[number];
 // 类型只影响导出（游戏里怎么算）、省份着色和自动起名，不改地形和生态。
 // 湖省只由自动划分与“湖单独成省”的整理产生，不能把陆地改成湖省（set_province 只收陆地、无人区）
 export const PROVINCE_KIND_INFO: Record<ProvinceKind, { name: string; hint: string }> = {
-  land: { name: '陆地', hint: '普通的陆地省份' },
-  wasteland: { name: '无人区', hint: '没人住的地方（冰原、深漠、高山）：导出到游戏时算作不可进入的荒地，地图上画灰色斜线' },
-  lake: { name: '湖', hint: '一片湖面单独成省：导出时算作湖' },
-  sea: { name: '海域', hint: '海上的省份' },
+  land: { name: '陆地', hint: '陆地省份' },
+  wasteland: { name: '无人区', hint: '没人住的荒地，导出时不可进入' },
+  lake: { name: '湖省', hint: '湖面单独成省，导出时算作湖' },
+  sea: { name: '海省', hint: '海上的省份' },
 };
 
 const ruleFields = {

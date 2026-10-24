@@ -269,7 +269,7 @@ const provinceFixSchema = z
     drop: z.array(z.number().int().min(0)),
     next: z.number().int().min(0),
   })
-  .refine((f) => f.cells.length === f.to.length, '格与省份的个数要一样');
+  .refine((f) => f.cells.length === f.to.length, '格与省份的个数不同');
 
 // 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
 const featureKey = z.string().regex(/^\w+:\S+$/);
@@ -375,12 +375,12 @@ export function applyCommand(
 ): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean; provinceNames: Record<string, string> | null } {
   const { provinceNames: stored, nameCarry: carryInput, provinceFix: fixInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
-  if (carry && !carry.success) throw new CommandError(`命令里记下的地名无效：${formatIssues(carry.error)}`);
+  if (carry && !carry.success) throw new CommandError(`命令里的地名无效：${formatIssues(carry.error)}`);
   const nameCarry = carry?.data;
   const fixParsed = fixInput === undefined ? undefined : provinceFixSchema.safeParse(fixInput);
-  if (fixParsed && !fixParsed.success) throw new CommandError(`命令里记下的省份整理无效：${formatIssues(fixParsed.error)}`);
+  if (fixParsed && !fixParsed.success) throw new CommandError(`命令里的省份整理无效：${formatIssues(fixParsed.error)}`);
   const provinceFix = fixParsed?.data;
-  if (provinceFix && provinceFix.cells.some((c) => c >= world.mesh.n)) throw new CommandError('命令里记下的省份整理不是这张地图的');
+  if (provinceFix && provinceFix.cells.some((c) => c >= world.mesh.n)) throw new CommandError('命令里的省份整理不属于这张地图');
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
@@ -565,7 +565,7 @@ function speciesChange(before: Species, after: Species): { dirty: Dirty; what: s
   const b = after as Record<string, unknown>;
   const changed = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
   const only = (k: string) => changed.length > 0 && changed.every((x) => x === k);
-  const what = only('visual') ? '的外观' : only('feature') ? '的地名' : only('scripts') ? '的脚本' : only('effects') ? '对周围的影响' : '';
+  const what = only('visual') ? ' · 外观' : only('feature') ? ' · 地名' : only('scripts') ? ' · 脚本' : only('effects') ? ' · 对周围的影响' : '';
   if (changed.every((k) => LOOK_KEYS.has(k))) return { dirty: Dirty.None, what };
   // 带脚本的生态改名也从求解重算：脚本出错的说明（d.scriptIssues）里有它的名字，要与重放一致（脚本本身记着结果，不重跑）
   if (changed.includes('name') && (before.scripts || after.scripts)) return { dirty: Dirty.Solve, what };
@@ -591,7 +591,7 @@ function checkCourse(mesh: Mesh, cells: readonly number[]) {
 // 河道还要查两项：不经过同一格两次（水会绕成圈）；在终点消失的，终点要在陆地上
 function checkNewCourse(world: World, g: Guide, cells: boolean, end: boolean) {
   if (cells && new Set(g.cells).size !== g.cells.length) throw new CommandError('河道不能经过同一格两次');
-  if (cells && g.branch && !world.causes.land[g.cells[0]]) throw new CommandError('分出去的一股要从陆地上的河分出来');
+  if (cells && g.branch && !world.causes.land[g.cells[0]]) throw new CommandError('分出的一股要从陆地上的河分出');
   if (end && g.end === 'sink' && !world.causes.land[g.cells[g.cells.length - 1]]) throw new CommandError('停在终点的河，终点要在陆地上');
 }
 
@@ -671,7 +671,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       let dirty: Dirty = Dirty.None;
       const inner = { ...ctx, inBatch: true };
       for (const c of cmd.commands) dirty = Math.max(dirty, run(world, c, inner).dirty) as Dirty;
-      return { dirty, summary: cmd.label ?? `批量 ${cmd.commands.length} 条` };
+      return { dirty, summary: cmd.label ?? `批量 · ${cmd.commands.length} 条` };
     }
     case 'set_worldgen': {
       const params = worldgenSchema.parse(cmd.params);
@@ -696,25 +696,25 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.terrain.gen = params;
       applyTerrain(world);
       const name = worldgenName(params, world.settings.globe === true);
-      if (cmd.reset || !prev) return { dirty: Dirty.Elevation, summary: `新世界：${name}` };
+      if (cmd.reset || !prev) return { dirty: Dirty.Elevation, summary: `新世界“${name}”` };
       const what = [
         prev.landFraction !== params.landFraction ? '陆地多少' : '',
         prev.islands !== params.islands ? '岛多少' : '',
         prev.mountains !== params.mountains ? '山多高' : '',
       ].filter(Boolean);
       if (!sameForm(prev.form, params.form)) {
-        const more = what.length ? `；调整了${what.join('、')}` : '';
+        const more = what.length ? ` · ${what.join('、')}` : '';
         // 去掉形态时说去掉了哪一个（“换了星球形态：像地球”读起来像是换成了另一个形态）
-        if (!params.form && prev.form) return { dirty: Dirty.Elevation, summary: `去掉了星球形态「${prev.form.name}」${more}` };
-        return { dirty: Dirty.Elevation, summary: `换了星球形态：${name}${more}` };
+        if (!params.form && prev.form) return { dirty: Dirty.Elevation, summary: `删除星球形态“${prev.form.name}”${more}` };
+        return { dirty: Dirty.Elevation, summary: `换星球形态“${name}”${more}` };
       }
-      return { dirty: Dirty.Elevation, summary: `调整了${what.length ? what.join('、') : '世界参数'}` };
+      return { dirty: Dirty.Elevation, summary: `调整 · ${what.length ? what.join('、') : '世界参数'}` };
     }
     case 'set_coast_style': {
       small.terrain.coastRoughness = cmd.roughness;
       applyTerrain(world);
       const style = cmd.roughness < 0.6 ? '平滑' : cmd.roughness < 1.4 ? '自然' : '破碎';
-      return { dirty: Dirty.Elevation, summary: `海岸风格改为“${style}”` };
+      return { dirty: Dirty.Elevation, summary: `海岸风格 · ${style}` };
     }
     case 'paint_land': {
       checkCells(cmd.cells);
@@ -724,7 +724,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       // 画到的地方成了整块的陆地、整片的海：破碎度在 applyTerrain 里随岛的种类一起清掉
       // 画笔中心（七成半径以内，一定变成陆地、海的那一圈）画到的岛成了普通的陆地、海
       const ch = applyTerrain(world, { clear: brushCore(cmd.cells, cmd.t) });
-      return { dirty: Dirty.Elevation, summary: cmd.mode === 'land' ? `画陆地：新增 ${ch.gained} 格陆地` : `画海：${ch.lost} 格陆地变成海` };
+      return { dirty: Dirty.Elevation, summary: cmd.mode === 'land' ? `画陆地 · ${ch.gained} 格` : `画海 · ${ch.lost} 格` };
     }
     case 'paint_relief': {
       checkCells(cmd.cells);
@@ -732,7 +732,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const r = reliefStroke(cmd.cells, cmd.t, cmd.strength);
       r.cells.forEach((i, k) => (causes.upliftDelta[i] += r.delta[k]));
       applyTerrain(world);
-      return { dirty: Dirty.Elevation, summary: cmd.strength >= 0 ? `堆山：${cmd.cells.length} 格` : `压低：${cmd.cells.length} 格` };
+      return { dirty: Dirty.Elevation, summary: cmd.strength >= 0 ? `堆山 · ${cmd.cells.length} 格` : `压低 · ${cmd.cells.length} 格` };
     }
     case 'restore_terrain': {
       checkCells(cmd.cells);
@@ -748,7 +748,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       });
       // 完全恢复的地方（画笔中心七成半径以内）不再是放的岛
       const ch = applyTerrain(world, { clear: brushCore(cmd.cells, cmd.t) });
-      return { dirty: Dirty.Elevation, summary: ch.gained || ch.lost ? `恢复原样（陆地 +${ch.gained} / −${ch.lost} 格）` : '恢复原样' };
+      return { dirty: Dirty.Elevation, summary: ch.gained || ch.lost ? `恢复 · 陆地 +${ch.gained} / −${ch.lost} 格` : '恢复' };
     }
     case 'fragment': {
       checkCells(cmd.cells);
@@ -759,11 +759,11 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         r.frag.cells.forEach((i, k) => (f[i] = r.frag.value[k]));
       }
       if (!r.cells.length) {
-        return { dirty: Dirty.Vegetation, summary: cmd.mode === 'coast' ? `打碎海岸：${r.frag.cells.length} 格` : `打碎：${r.frag.cells.length} 格` };
+        return { dirty: Dirty.Vegetation, summary: cmd.mode === 'coast' ? `打碎海岸 · ${r.frag.cells.length} 格` : `打碎 · ${r.frag.cells.length} 格` };
       }
       r.cells.forEach((i, k) => (causes.landDelta[i] += r.delta[k]));
       const ch = applyTerrain(world);
-      return { dirty: Dirty.Elevation, summary: `裂成碎块：${ch.lost} 格陆地裂开成海` };
+      return { dirty: Dirty.Elevation, summary: `裂成碎块 · ${ch.lost} 格` };
     }
     case 'restore_climate': {
       checkCells(cmd.cells);
@@ -776,28 +776,28 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.moistOffset[i] = Math.abs(causes.moistOffset[i] * keep) < 0.01 ? 0 : causes.moistOffset[i] * keep;
         n++;
       });
-      return { dirty: Dirty.Climate, summary: `擦掉了 ${n} 格的冷暖干湿改动` };
+      return { dirty: Dirty.Climate, summary: `擦除冷暖干湿 · ${n} 格` };
     }
     case 'add_island': {
       const spec = islandSchema.parse(cmd.island);
       checkIslandKind(world, spec.kind);
       // 岛心在陆格上（湖面或干的陆地）：要看推导里的湖面。批量命令里推导不是最新的，不放
       const c0 = centerCell(world.mesh, spec.x, spec.y);
-      if (causes.land[c0] && ctx.inBatch) throw new CommandError('批量命令里的岛只能放在海里（湖里的岛要单独放）');
+      if (causes.land[c0] && ctx.inBatch) throw new CommandError('批量命令里的岛只能放在海里');
       const { stamp: r, lake } = placeIsland(world, spec, () => ctx.ensureDerived());
       const shards = islandTypeById(small, spec.kind)?.shape === 'frag';
       if (shards) {
         // 碎岛（第十八轮）：不改陆海，只抬破碎度
         if (!r.frag?.cells.length) {
           const c = centerCell(world.mesh, spec.x, spec.y);
-          throw new CommandError(causes.land[c] && !lake ? '碎岛要放在海里或湖里' : '这里已经是这么碎的碎岛了');
+          throw new CommandError(causes.land[c] && !lake ? '碎岛要放在海里或湖里' : '这里已经是同样的碎岛');
         }
         putStamp(world, r);
         const fragKm = Math.max(spec.size, world.mesh.spacing * world.kmPerUnit * 0.75);
-        return { dirty: Dirty.Vegetation, summary: `${lake ? '在湖里' : ''}放了一片${islandTypeName(world, spec.kind)}（直径约 ${roundKm(fragKm * 2)} km）` };
+        return { dirty: Dirty.Vegetation, summary: `${lake ? '在湖里' : ''}放${islandTypeName(world, spec.kind)} · 直径约 ${roundKm(fragKm * 2)} km` };
       }
-      if (lake && !r.cells.length) throw new CommandError('湖太窄了，放不下岛（岛四周要留一圈湖面）');
-      if (!r.footprint.length) throw new CommandError('这里放不下岛（可能已经是陆地）');
+      if (lake && !r.cells.length) throw new CommandError('湖太窄，放不下岛');
+      if (!r.footprint.length) throw new CommandError('这里放不下岛');
       const classBefore = provinceLand(world);
       putStamp(world, r);
       applyTerrain(world, { classBefore });
@@ -805,7 +805,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const cellKm = world.mesh.spacing * world.kmPerUnit;
       const one = islandTypeById(small, spec.kind)?.shape === 'cell';
       const size = one ? `直径约 ${roundKm(cellKm * 0.5)} km` : spec.size < cellKm * 0.5 ? sizeText(world, spec.size) : `直径约 ${roundKm(spec.size * 2)} km`;
-      return { dirty: Dirty.Elevation, summary: `${lake ? '在湖里' : ''}放了一个${islandTypeName(world, spec.kind)}（${size}）` };
+      return { dirty: Dirty.Elevation, summary: `${lake ? '在湖里' : ''}放${islandTypeName(world, spec.kind)} · ${size}` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);
@@ -824,19 +824,19 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const placed = islands.length - (r.skipped ?? 0);
       const shards = islands.filter((x) => islandTypeById(small, x.kind)?.shape === 'frag').length;
       const what = shards && shards < islands.length ? `${placed} 个岛（其中 ${shards} 片碎岛）` : `${placed} 个${islandTypeName(world, spec.kind)}`;
-      return { dirty: fragOnly ? Dirty.Vegetation : Dirty.Elevation, summary: `画了一条岛链：${shards === islands.length && islandTypeById(small, spec.kind)?.shape !== 'frag' ? `${placed} 片碎岛` : what}` };
+      return { dirty: fragOnly ? Dirty.Vegetation : Dirty.Elevation, summary: `画岛链 · ${shards === islands.length && islandTypeById(small, spec.kind)?.shape !== 'frag' ? `${placed} 片碎岛` : what}` };
     }
     case 'reroll_region': {
       const gen = small.terrain.gen;
-      if (!gen) throw new CommandError('空白海洋没有可重画的生成地形；先用“画陆地”或“放岛”');
+      if (!gen) throw new CommandError('空白海洋没有可重画的地形');
       gen.rerolls = [...gen.rerolls, { x: cmd.x, y: cmd.y, radius: cmd.radius, variant: cmd.variant }];
       const ch = applyTerrain(world);
-      return { dirty: Dirty.Elevation, summary: `重画了这一片（陆地 +${ch.gained} / −${ch.lost} 格）` };
+      return { dirty: Dirty.Elevation, summary: `重画 · 陆地 +${ch.gained} / −${ch.lost} 格` };
     }
     case 'paint': {
       checkCells(cmd.cells);
       const arr = getArray(world, cmd.field as ArrayKey);
-      if (!arr) throw new CommandError(`没有字段 ${cmd.field}；自定义场需先用 add_field 创建`);
+      if (!arr) throw new CommandError(`没有字段 ${cmd.field}；先用 add_field 新建`);
       if (cmd.values && cmd.values.length !== cmd.cells.length) throw new CommandError('values 的长度必须与 cells 相同');
       const mode = cmd.mode ?? 'set';
       cmd.cells.forEach((i, k) => {
@@ -846,7 +846,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       });
       if (cmd.field === 'erodDelta') {
         applyTerrain(world);
-        return { dirty: Dirty.Elevation, summary: `改变岩石软硬：${cmd.cells.length} 格` };
+        return { dirty: Dirty.Elevation, summary: `岩石软硬 · ${cmd.cells.length} 格` };
       }
       const dirty = cmd.field.startsWith('field:') ? Dirty.Solve : Dirty.Climate;
       const sign = cmd.values ? cmd.values.reduce((a, b) => a + b, 0) : (cmd.value ?? 1);
@@ -854,18 +854,18 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const peak = cmd.values ? cmd.values.reduce((m, v) => (Math.abs(v) > Math.abs(m) ? v : m), 0) : (cmd.value ?? 1);
       const signed = (v: number, digits: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(digits)}`;
       if (cmd.field === 'tempOffset') {
-        return { dirty, summary: `${sign >= 0 ? '变暖' : '变冷'} ${cmd.cells.length} 格，最多 ${signed(peak, Math.abs(peak) < 2 ? 1 : 0)} °C` };
+        return { dirty, summary: `${sign >= 0 ? '变暖' : '变冷'} · ${cmd.cells.length} 格 · 最多 ${signed(peak, Math.abs(peak) < 2 ? 1 : 0)} °C` };
       }
       if (cmd.field === 'moistOffset') {
         const pct = Math.round((Math.exp(peak) - 1) * 100);
-        return { dirty, summary: `${sign >= 0 ? '变湿' : '变干'} ${cmd.cells.length} 格，雨水最多 ${signed(pct, 0)}%` };
+        return { dirty, summary: `${sign >= 0 ? '变湿' : '变干'} · ${cmd.cells.length} 格 · 雨水最多 ${signed(pct, 0)}%` };
       }
-      return { dirty, summary: `调整“${cmd.field.slice(6)}”：${cmd.cells.length} 格` };
+      return { dirty, summary: `调整“${cmd.field.slice(6)}” · ${cmd.cells.length} 格` };
     }
     case 'set_planet': {
       const before = small.planet;
       if (world.settings.globe && 'latShift' in cmd.patch && cmd.patch.latShift !== undefined) throw new CommandError('整个星球不能南北挪动');
-      if (world.settings.globe && 'outsideOcean' in cmd.patch && cmd.patch.outsideOcean !== undefined) throw new CommandError('整个星球没有“地图外面”');
+      if (world.settings.globe && 'outsideOcean' in cmd.patch && cmd.patch.outsideOcean !== undefined) throw new CommandError('整个星球没有地图外面');
       const parsed = planetSchema.safeParse({ ...before, ...cmd.patch });
       if (!parsed.success) throw new CommandError(`set_planet 参数无效：${formatIssues(parsed.error)}`);
       small.planet = parsed.data;
@@ -894,7 +894,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         currents: '洋流强弱',
         terrainWind: '山挡风',
       };
-      return { dirty, summary: `调整了${keys.map((k) => names[k] ?? k).join('、')}` };
+      return { dirty, summary: `调整 · ${keys.map((k) => names[k] ?? k).join('、')}` };
     }
     case 'add_species': {
       if (small.species.some((s) => s.id === cmd.species.id)) throw new CommandError(`类型 id "${cmd.species.id}" 已存在`);
@@ -907,7 +907,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     case 'update_species': {
       const idx = small.species.findIndex((s) => s.id === cmd.id);
       if (idx < 0) throw new CommandError(`找不到类型 "${cmd.id}"`);
-      if ('id' in cmd.patch && cmd.patch.id !== cmd.id) throw new CommandError('不能修改类型 id；请新增后删除旧的');
+      if ('id' in cmd.patch && cmd.patch.id !== cmd.id) throw new CommandError('不能修改类型 id；请新建后删除旧的');
       // 值为 null 的项表示去掉（例如取消扩散限制）；命令要能存成 JSON，所以不用 undefined
       const merged: Record<string, unknown> = { ...small.species[idx], ...cmd.patch };
       for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete merged[k];
@@ -917,13 +917,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const before = small.species[idx];
       small.species[idx] = parsed.data;
       const { dirty, what } = speciesChange(before, parsed.data);
-      return { dirty, summary: `修改了生态“${parsed.data.name || cmd.id}”${what}` };
+      return { dirty, summary: `修改生态“${parsed.data.name || cmd.id}”${what}` };
     }
     case 'remove_species': {
       const idx = small.species.findIndex((s) => s.id === cmd.id);
       if (idx < 0) throw new CommandError(`找不到类型 "${cmd.id}"`);
       const [gone] = small.species.splice(idx, 1);
-      return { dirty: Dirty.Solve, summary: `删除了生态“${gone.name || cmd.id}”` };
+      return { dirty: Dirty.Solve, summary: `删除生态“${gone.name || cmd.id}”` };
     }
     case 'add_constraint': {
       checkCells(cmd.constraint.cells);
@@ -935,7 +935,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.constraints = small.constraints.map((x) => ({ ...x, cells: x.cells.filter((i) => !mine.has(i)) })).filter((x) => x.cells.length > 0);
       small.constraints.push(c);
       const sp = small.species.find((x) => x.id === c.species);
-      return { dirty: Dirty.Solve, summary: `涂了 ${c.cells.length} 格${sp?.name || c.species}（${c.mode === 'constraint' ? '自然融入' : '强制'}）` };
+      return { dirty: Dirty.Solve, summary: `涂“${sp?.name || c.species}” · ${c.cells.length} 格 · ${c.mode === 'constraint' ? '自然融入' : '强制'}` };
     }
     case 'update_constraint': {
       const idx = small.constraints.findIndex((c) => c.id === cmd.id);
@@ -951,15 +951,15 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (JSON.stringify(restBefore) === JSON.stringify(restAfter)) {
         const sp = small.species.find((x) => x.id === parsed.data.species);
         const name = sp?.name || parsed.data.species;
-        return { dirty: Dirty.None, summary: parsed.data.ignored ? `${name}没涂成的那一笔：就这样（收进“!”里）` : `${name}没涂成的那一笔：恢复提醒` };
+        return { dirty: Dirty.None, summary: parsed.data.ignored ? `忽略没涂成的“${name}”` : `恢复提醒“${name}”` };
       }
-      return { dirty: Dirty.Solve, summary: '修改了一处涂的生态' };
+      return { dirty: Dirty.Solve, summary: '修改涂的生态' };
     }
     case 'remove_constraint': {
       const before = small.constraints.length;
       small.constraints = small.constraints.filter((c) => c.id !== cmd.id);
       if (small.constraints.length === before) throw new CommandError(`找不到约束 "${cmd.id}"`);
-      return { dirty: Dirty.Solve, summary: '去掉了一处涂的生态，恢复自然' };
+      return { dirty: Dirty.Solve, summary: '删除涂的生态' };
     }
     case 'erase_constraints': {
       checkCells(cmd.cells);
@@ -967,7 +967,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const before = small.constraints.reduce((k, c) => k + c.cells.length, 0);
       small.constraints = small.constraints.map((x) => ({ ...x, cells: x.cells.filter((i) => !gone.has(i)) })).filter((x) => x.cells.length > 0);
       const after = small.constraints.reduce((k, c) => k + c.cells.length, 0);
-      return { dirty: Dirty.Solve, summary: `擦掉了 ${before - after} 格的设定，恢复自然` };
+      return { dirty: Dirty.Solve, summary: `擦除生态 · ${before - after} 格` };
     }
     case 'add_guide': {
       checkCells(cmd.guide.cells);
@@ -989,14 +989,14 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (cmd.capture) small.guides = captureBy(world, small.guides, g);
       small.guides.push(g);
       const km = roundKm(g.cells.length * mesh.spacing * world.kmPerUnit);
-      const summary = cmd.label || (cmd.reroute ? `让河改道（约 ${km} km）` : g.spring ? `画了一条河（约 ${km} km）` : `固定了一段河道（约 ${km} km）`);
+      const summary = cmd.label || (cmd.reroute ? `改道 · 约 ${km} km` : g.spring ? `画河 · 约 ${km} km` : `锁定河段 · 约 ${km} km`);
       return { dirty: guideDirty(before, small.guides), summary };
     }
     case 'remove_guide': {
       const before = small.guides;
       small.guides = small.guides.filter((g) => g.id !== cmd.id);
       if (small.guides.length === before.length) throw new CommandError(`找不到河道 "${cmd.id}"`);
-      return { dirty: guideDirty(before, small.guides), summary: cmd.label || '删掉了一条画的河' };
+      return { dirty: guideDirty(before, small.guides), summary: cmd.label || '删除河' };
     }
     case 'update_guide': {
       const idx = small.guides.findIndex((g) => g.id === cmd.id);
@@ -1017,7 +1017,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const before = small.guides;
       small.guides = small.guides.map((x, k) => (k === idx ? g : x));
       if (cmd.capture) small.guides = captureBy(world, small.guides, g);
-      return { dirty: guideDirty(before, small.guides), summary: cmd.label || (g.name ? `改了「${g.name}」` : '改了一条河') };
+      return { dirty: guideDirty(before, small.guides), summary: cmd.label || (g.name ? `修改“${g.name}”` : '修改河') };
     }
     case 'set_river_type': {
       const t = riverTypeSchema.parse(cmd.type);
@@ -1030,7 +1030,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.riverTypes = at >= 0 ? list.map((x, k) => (k === at ? t : x)) : [...list, t];
       const level = riverTypeDirty(before, t);
       const dirty = level === 'none' ? Dirty.None : level === 'names' ? Dirty.Names : Dirty.Vegetation;
-      return { dirty, summary: `${before ? '修改了' : '新建了'}河流类型「${t.name}」` };
+      return { dirty, summary: `${before ? '修改' : '新建'}河流类型“${t.name}”` };
     }
     case 'remove_river_type': {
       const list = small.riverTypes ?? [];
@@ -1043,20 +1043,20 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         const { type: _, ...rest } = g;
         return rest as typeof g;
       });
-      return { dirty: Dirty.Vegetation, summary: `删掉了河流类型「${gone.name}」` };
+      return { dirty: Dirty.Vegetation, summary: `删除河流类型“${gone.name}”` };
     }
     case 'add_lake': {
       checkCells([cmd.lake.cell]);
       if (!causes.land[cmd.lake.cell]) throw new CommandError('湖必须放在陆地上');
       const l = lakeSchema.parse({ ...cmd.lake, id: cmd.lake.id ?? nextId(world, 'lake') });
       small.lakes.push(l);
-      return { dirty: Dirty.Elevation, summary: `放了一个湖（直径约 ${roundKm(l.radius * 2)} km）` };
+      return { dirty: Dirty.Elevation, summary: `放湖 · 直径约 ${roundKm(l.radius * 2)} km` };
     }
     case 'remove_lake': {
       const before = small.lakes.length;
       small.lakes = small.lakes.filter((l) => l.id !== cmd.id);
       if (small.lakes.length === before) throw new CommandError(`找不到湖 "${cmd.id}"`);
-      return { dirty: Dirty.Elevation, summary: '删掉了一个湖' };
+      return { dirty: Dirty.Elevation, summary: '删除湖' };
     }
     case 'update_lake': {
       const idx = small.lakes.findIndex((l) => l.id === cmd.id);
@@ -1070,7 +1070,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.lakes = small.lakes.map((x, k) => (k === idx ? l : x));
       // 大小：重挖湖盆；类型：从水文起（岸边的影响、生态的条件会变）
       const dirty = l.radius !== old.radius ? Dirty.Elevation : Dirty.Vegetation;
-      return { dirty, summary: cmd.label || (l.radius !== old.radius ? `湖的直径改成约 ${roundKm(l.radius * 2)} km` : '改了一个湖') };
+      return { dirty, summary: cmd.label || (l.radius !== old.radius ? `修改湖的直径 · 约 ${roundKm(l.radius * 2)} km` : '修改湖') };
     }
     case 'type_lake': {
       checkCells([cmd.cell, ...(cmd.drop ?? [])]);
@@ -1079,7 +1079,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (cmd.type !== null) list.push({ cell: cmd.cell, type: cmd.type });
       if (list.length) small.lakeTyping = list;
       else delete small.lakeTyping;
-      return { dirty: Dirty.Vegetation, summary: cmd.label || (cmd.type === null ? '湖的类型改回按规则' : '改了湖的类型') };
+      return { dirty: Dirty.Vegetation, summary: cmd.label || (cmd.type === null ? '湖的类型恢复自动' : '修改湖的类型') };
     }
     case 'set_lake_type': {
       const t = lakeTypeSchema.parse(cmd.type);
@@ -1091,7 +1091,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.lakeTypes = at >= 0 ? list.map((x, k) => (k === at ? t : x)) : [...list, t];
       const level = lakeTypeDirty(before, t);
       const dirty = level === 'none' ? Dirty.None : level === 'names' ? Dirty.Names : Dirty.Vegetation;
-      return { dirty, summary: `${before ? '修改了' : '新建了'}湖泊类型「${t.name}」` };
+      return { dirty, summary: `${before ? '修改' : '新建'}湖泊类型“${t.name}”` };
     }
     case 'remove_lake_type': {
       const list = small.lakeTypes ?? [];
@@ -1109,7 +1109,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         if (left.length) small.lakeTyping = left;
         else delete small.lakeTyping;
       }
-      return { dirty: Dirty.Vegetation, summary: `删掉了湖泊类型「${gone.name}」` };
+      return { dirty: Dirty.Vegetation, summary: `删除湖泊类型“${gone.name}”` };
     }
     case 'set_island_type': {
       const t = islandTypeSchema.parse(cmd.type);
@@ -1125,7 +1125,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (moved) refileProvinces(world, classBefore);
       let dirty: Dirty = islandTypeDirty(before, t) === 'names' ? Dirty.Names : Dirty.None;
       if (moved && dirty < Dirty.Names && hasLakeIsles(world, islandCode(small, t.id))) dirty = Dirty.Names;
-      return { dirty, summary: `${before ? '修改了' : '新建了'}岛的种类「${t.name}」` };
+      return { dirty, summary: `${before ? '修改' : '新建'}岛的种类“${t.name}”` };
     }
     case 'remove_island_type': {
       const list = islandTypesOf(small);
@@ -1139,18 +1139,18 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       removeIslandCode(causes.islandType, k);
       refileProvinces(world, classBefore);
       // 地物要重算：这种岛上的 itype: 标签要去掉（只重新起名会留着旧标签，同一个 id 再新建时名字就和重放不一样）
-      return { dirty: Dirty.Vegetation, summary: `删掉了岛的种类「${gone.name}」（这种岛变成大陆岛）` };
+      return { dirty: Dirty.Vegetation, summary: `删除岛的种类“${gone.name}”` };
     }
     case 'add_field': {
       if (causes.fields[cmd.name]) throw new CommandError(`场 "${cmd.name}" 已存在`);
       causes.fields = { ...causes.fields, [cmd.name]: new Float32Array(n) };
-      return { dirty: Dirty.Solve, summary: `新增自定义场 ${cmd.name}` };
+      return { dirty: Dirty.Solve, summary: `新建自定义场“${cmd.name}”` };
     }
     case 'remove_field': {
       if (!causes.fields[cmd.name]) throw new CommandError(`没有场 "${cmd.name}"`);
       const { [cmd.name]: _removed, ...rest } = causes.fields;
       causes.fields = rest;
-      return { dirty: Dirty.Solve, summary: `删除自定义场 ${cmd.name}` };
+      return { dirty: Dirty.Solve, summary: `删除自定义场“${cmd.name}”` };
     }
     case 'generate_provinces': {
       const d = ctx.ensureDerived();
@@ -1158,25 +1158,25 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       generateProvinces(world, d, rules);
       // 整张图重新划分：切线都不要了
       delete small.provinceSeams;
-      return { dirty: Dirty.None, summary: `自动划分省份：${Object.keys(small.provinces).length} 个` };
+      return { dirty: Dirty.None, summary: `划分省份 · ${Object.keys(small.provinces).length} 个` };
     }
     case 'regenerate_provinces': {
       checkCells(cmd.cells);
       const ids = regenTargets(world, cmd.cells);
-      if (!ids.length) throw new CommandError('涂的范围要盖住省份的一大半，那个省份才会重新划分');
+      if (!ids.length) throw new CommandError('要涂满省份的一大半才会重新划分');
       const d = ctx.ensureDerived();
       // 碰到重新划分的省的切线不要了（看划分前的省份）
       const regen = new Set(ids);
       dropSeams(world, (p) => regen.has(p));
       const fresh = regenerateProvinces(world, d, ids);
-      return { dirty: Dirty.None, summary: `重新划分了 ${ids.length} 个省份 → ${fresh.length} 个` };
+      return { dirty: Dirty.None, summary: `重新划分 · ${ids.length} → ${fresh.length} 个省份` };
     }
     case 'set_lake_mode': {
       const d = ctx.ensureDerived();
       const was = small.provinceRules.lakeMode;
       setLakeMode(world, d, cmd.mode);
       const what = cmd.mode === 'separate' ? '湖单独成省' : '湖并进旁边的陆地省';
-      return { dirty: Dirty.None, summary: was === cmd.mode ? `省份：${what}（整理了一遍）` : `省份：${what}` };
+      return { dirty: Dirty.None, summary: was === cmd.mode ? `${what} · 重新整理` : what };
     }
     case 'assign_province': {
       checkCells(cmd.cells);
@@ -1190,14 +1190,14 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       // 归海省的岛（小礁）算海：只能划进海省
       const pland = provinceLand(world);
       const wrong = cmd.cells.filter((i) => (pland[i] === 1) !== meta.land);
-      if (wrong.length) throw new CommandError(`${wrong.length} 格与省份的陆海类别不符（${meta.land ? '陆地' : '海域'}省份${meta.land ? '；小礁算海' : ''}）`);
+      if (wrong.length) throw new CommandError(`${wrong.length} 格与省份的陆海不符（${meta.land ? '陆地省份；小礁算海' : '海省'}）`);
       // 湖省只收湖面的格，陆地省不收湖省里的格（湖单独成省时）：按格现在所在省份的大类判断
       const cls = classOfKind(meta.kind);
       const mixed = cmd.cells.filter((i) => {
         const p = small.provinces[causes.province[i]];
         return p && p.land && classOfKind(p.kind) !== cls;
       });
-      if (mixed.length) throw new CommandError(cls === 'lake' ? `${mixed.length} 格不是湖面，不能划进湖省` : `${mixed.length} 格是湖面（属于湖省），不能划进陆地省`);
+      if (mixed.length) throw new CommandError(cls === 'lake' ? `${mixed.length} 格不是湖面，不能划进湖省` : `${mixed.length} 格是湖面，不能划进陆地省`);
       const lockedHit = cmd.cells.find((i) => causes.province[i] >= 0 && causes.province[i] !== id && small.provinces[causes.province[i]]?.locked);
       if (lockedHit !== undefined) throw new CommandError(`格 ${lockedHit} 属于已锁定的省份 ${causes.province[lockedHit]}`);
       for (const i of cmd.cells) causes.province[i] = id;
@@ -1210,19 +1210,19 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         for (let i = 0; i < n; i++) if (causes.province[i] === p) out.push(i);
         return out;
       };
-      const warn = isConnected(world, cellsOf(id)) ? '' : '（注意：省份不连通）';
-      return { dirty: Dirty.None, summary: `${cmd.cells.length} 格划入省份 ${small.provinces[id].name || id}${warn}` };
+      const warn = isConnected(world, cellsOf(id)) ? '' : ' · 不连通';
+      return { dirty: Dirty.None, summary: `涂省份“${small.provinces[id].name || id}” · ${cmd.cells.length} 格${warn}` };
     }
     case 'merge_province': {
       const a = small.provinces[cmd.from];
       const b = small.provinces[cmd.into];
       if (!a || !b) throw new CommandError('找不到要合并的省份');
-      if (a.land !== b.land) throw new CommandError('陆地省份与海域省份不能合并');
-      if (classOfKind(a.kind) !== classOfKind(b.kind)) throw new CommandError('湖省与陆地省份不能合并（湖要并进陆地省，在省份规则里选“湖：并进旁边的陆地省”）');
+      if (a.land !== b.land) throw new CommandError('陆地省份与海省不能合并');
+      if (classOfKind(a.kind) !== classOfKind(b.kind)) throw new CommandError('湖省与陆地省份不能合并');
       if (a.locked || b.locked) throw new CommandError('省份已锁定');
       for (let i = 0; i < n; i++) if (causes.province[i] === cmd.from) causes.province[i] = cmd.into;
       delete small.provinces[cmd.from];
-      return { dirty: Dirty.None, summary: `省份 ${a.name || cmd.from} 并入 ${b.name || cmd.into}` };
+      return { dirty: Dirty.None, summary: `合并省份“${a.name || cmd.from}” → “${b.name || cmd.into}”` };
     }
     case 'split_province': {
       const meta = small.provinces[cmd.id];
@@ -1238,7 +1238,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       nameNewProvince(world, id);
       // 剪刀切过这个省时：切线也管分出来的这一半（没有切线的世界不变）
       if (small.provinceSeams) small.provinceSeams = inheritSeams(small.provinceSeams, cmd.id, [id]);
-      return { dirty: Dirty.None, summary: `拆分省份 ${meta.name || cmd.id}` };
+      return { dirty: Dirty.None, summary: `拆分省份“${meta.name || cmd.id}”` };
     }
     case 'cut_province': {
       // 与界面上拖动时的预览同一个算法、同一条线，切出来的块与新省份的编号都与预览相同
@@ -1257,7 +1257,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         }
       }
       small.provinceSeams = seamsAfterCut(small.provinceSeams, seams, () => nextId(world, 'seam'));
-      return { dirty: Dirty.None, summary: `切开了${names}（多出 ${count} 个省份）` };
+      return { dirty: Dirty.None, summary: `切开${names} · 多出 ${count} 个省份` };
     }
     case 'rename_feature': {
       if (cmd.name === undefined && cmd.label === undefined && cmd.hidden === undefined) throw new CommandError('rename_feature 要写 name、label 或 hidden');
@@ -1277,16 +1277,16 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         else delete ov.label;
       }
       small.featureNames = { ...small.featureNames, [cmd.key]: ov };
-      if (cmd.hidden !== undefined && cmd.name === undefined && cmd.label === undefined) return { dirty: Dirty.Names, summary: cmd.hidden ? '删掉了一个地名' : '恢复了一个地名' };
-      if (cmd.name === undefined) return { dirty: Dirty.Names, summary: label ? `类型改叫“${label}”` : '类型换回自动的叫法' };
-      return { dirty: Dirty.Names, summary: cmd.name.trim() ? `改名为“${cmd.name.trim()}”` : '恢复自动命名' };
+      if (cmd.hidden !== undefined && cmd.name === undefined && cmd.label === undefined) return { dirty: Dirty.Names, summary: cmd.hidden ? '隐藏地名' : '显示地名' };
+      if (cmd.name === undefined) return { dirty: Dirty.Names, summary: label ? `类型改叫“${label}”` : '类型恢复自动' };
+      return { dirty: Dirty.Names, summary: cmd.name.trim() ? `改名为“${cmd.name.trim()}”` : '名字恢复自动' };
     }
     case 'reroll_feature': {
       const ov = { ...(small.featureNames[cmd.key] ?? {}) };
       delete ov.name;
       ov.salt = (ov.salt ?? 0) + 1;
       small.featureNames = { ...small.featureNames, [cmd.key]: ov };
-      return { dirty: Dirty.Names, summary: '换了个名字' };
+      return { dirty: Dirty.Names, summary: '换名字' };
     }
     case 'add_region': {
       checkCells(cmd.region.cells);
@@ -1296,7 +1296,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (region.kind === 'spot' && region.auto) throw new CommandError('点状地名没有类型可以自动判断');
       region.name = region.name.trim();
       small.regions = [...small.regions, region];
-      const what = region.kind === 'spot' ? '放了一个地名' : `圈了一块${REGION_KIND_INFO[region.kind].label}`;
+      const what = region.kind === 'spot' ? '放地名' : `圈${REGION_KIND_INFO[region.kind].label}`;
       return { dirty: Dirty.Names, summary: region.name ? `${what}“${region.name}”` : what };
     }
     case 'update_region': {
@@ -1328,16 +1328,16 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const summary = onlyLabel
         ? label
           ? `类型改叫“${label}”`
-          : '类型换回自动的叫法'
+          : '类型恢复自动'
         : cmd.reroll
-        ? '换了个名字'
+        ? '换名字'
         : next.auto && !r.auto
-          ? '类型改成自动判断'
+          ? '类型改成自动'
           : next.kind !== r.kind || (r.auto && !next.auto)
             ? `改成${REGION_KIND_INFO[next.kind].label}`
             : next.name
               ? `改名为“${next.name}”`
-              : '恢复自动命名';
+              : '名字恢复自动';
       return { dirty: Dirty.Names, summary };
     }
     case 'remove_region': {
@@ -1345,7 +1345,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (!r) throw new CommandError(`找不到地名 ${cmd.id}`);
       small.regions = small.regions.filter((x) => x.id !== cmd.id);
       const what = r.kind === 'spot' ? '地名' : REGION_KIND_INFO[r.kind].label;
-      return { dirty: Dirty.Names, summary: r.name ? `删除了${what}“${r.name}”` : `删除了一个${what}` };
+      return { dirty: Dirty.Names, summary: r.name ? `删除${what}“${r.name}”` : `删除${what}` };
     }
     case 'set_word_pack': {
       if (cmd.pack) {
@@ -1353,13 +1353,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         if (problems.length) throw new CommandError(`文字包有问题：${problems.slice(0, 3).join('；')}`);
       }
       small.wordPack = cmd.pack;
-      return { dirty: Dirty.Names, summary: cmd.pack ? `换用文字包“${cmd.pack.name}”` : '换回内置文字包' };
+      return { dirty: Dirty.Names, summary: cmd.pack ? `换用文字包“${cmd.pack.name}”` : '文字包恢复自动' };
     }
     case 'set_province': {
       const meta = small.provinces[cmd.id];
       if (!meta) throw new CommandError(`找不到省份 ${cmd.id}`);
       if (cmd.kind !== undefined) {
-        if (!meta.land) throw new CommandError('海上的省份只能是海域');
+        if (!meta.land) throw new CommandError('海省的类型不能改');
         meta.kind = cmd.kind;
       }
       if (cmd.name !== undefined) meta.name = cmd.name;
@@ -1377,10 +1377,10 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
               : '解锁'
             : cmd.color !== undefined
               ? cmd.color
-                ? '换了颜色'
+                ? '换颜色'
                 : '颜色恢复自动'
               : '改名';
-      return { dirty: Dirty.None, summary: `省份“${meta.name || cmd.id}”：${what}` };
+      return { dirty: Dirty.None, summary: `省份“${meta.name || cmd.id}” · ${what}` };
     }
   }
 }

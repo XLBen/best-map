@@ -54,12 +54,12 @@ describe('资源包的格式', () => {
     const bad = readPack('{oops');
     expect(!bad.ok && bad.errors[0]).toMatch(/^不是 JSON 文件/);
     const v2 = readPack(JSON.stringify({ ...pack(), version: 2 }));
-    expect(!v2.ok && v2.errors[0]).toBe('这个资源包是第 2 版的格式，这里只认第 1 版');
+    expect(!v2.ok && v2.errors[0]).toBe('资源包格式是第 2 版，只支持第 1 版');
     const color = readPack(JSON.stringify(pack({ biomes: [{ ...biome('a'), name: '红林', color: 'red' }] })));
-    expect(!color.ok && color.errors).toEqual(['生态第 1 个「红林」的 color：颜色需为 #rrggbb']);
+    expect(!color.ok && color.errors).toEqual(['生态第 1 个“红林”的 color：颜色需为 #rrggbb']);
     // 河流类型按它的格式查（缺 id、缺颜色都说出来）
     const river = readPack(JSON.stringify(pack({ riverTypes: [{ name: '无名' } as never] })));
-    expect(!river.ok && river.errors).toEqual(['河流类型第 1 个「无名」的 id：缺少这一项', '河流类型第 1 个「无名」的 color：缺少这一项']);
+    expect(!river.ok && river.errors).toEqual(['河流类型第 1 个“无名”的 id：缺少这一项', '河流类型第 1 个“无名”的 color：缺少这一项']);
     const kept = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }] })));
     expect(kept.ok && kept.pack.riverTypes).toEqual([{ id: 'styx', name: '冥河', color: '#2c2742', style: 'dashed' }]);
     // 星球形态按 planet-form.ts 的格式查（见下面“资源包里的星球形态”）
@@ -70,10 +70,10 @@ describe('资源包的格式', () => {
     const empty = readPack(JSON.stringify(pack({ id: '' })));
     expect(!empty.ok && empty.errors).toEqual(['资源包的 id：不能是空的']);
     const long = readPack(JSON.stringify(pack({ name: '名'.repeat(61) })));
-    expect(!long.ok && long.errors).toEqual(['资源包的名字：太长了，最多 60 个字']);
+    expect(!long.ok && long.errors).toEqual(['资源包的名字：太长，最多 60 个字']);
     // 一个文件里的项有上限（几百种生态一下子加进大星球会算不动）
     const many = readPack(JSON.stringify(pack({ biomes: Array.from({ length: PACK_MAX.biomes + 1 }, (_, k) => biome(`s${k}`)) })));
-    expect(!many.ok && many.errors).toEqual([`生态：太多了，最多 ${PACK_MAX.biomes} 个`]);
+    expect(!many.ok && many.errors).toEqual([`生态：太多，最多 ${PACK_MAX.biomes} 个`]);
     expect(readPack('x'.repeat(16_000_001)).ok).toBe(false);
   });
 
@@ -121,10 +121,10 @@ describe('资源包的检查（不运行脚本）', () => {
     });
     expect(packProblems(p)).toEqual([
       '有两个生态的 id 都是 a',
-      '「a」侵占的 ghost 不在这个资源包里，也不是内置的生态：世界里没有它时不起作用',
-      '「b」用到了自定义场 mana，资源包里没有写这个场（用的时候会新加一个空的）',
-      '「b」用到了河流类型 lava，资源包里没有：没有这种河时按离得很远算',
-      '「b」的起名模板“{color}{nope}林”用到了不存在的词表 {nope}',
+      '“a”侵占的 ghost 不在资源包里，也不是内置生态：世界里没有它时无效',
+      '“b”用到的自定义场 mana 不在资源包里，用时新建一个空的',
+      '“b”用到的河流类型 lava 不在资源包里：没有这种河时按很远算',
+      '“b”的起名模板“{color}{nope}林”用到了不存在的词表 {nope}',
     ]);
     // 岛上特有的默认不勾
     const isl = pack({ biomes: [biome('x'), { ...biome('island_y'), dispersal: { origins: [1], range: 100, gapCost: 4, seaCost: 30 } }] });
@@ -132,17 +132,17 @@ describe('资源包的检查（不运行脚本）', () => {
     // 用的时候同一个 id 只用第一个
     expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.filter((c) => c.op === 'add_species').map((c) => (c.op === 'add_species' ? c.species.id : ''))).toEqual(['a', 'b']);
     const many = pack({ biomes: Array.from({ length: 49 }, (_, k) => biome(`s${k}`)) });
-    expect(packProblems(many)).toEqual(['生态有 49 种：超过 48 种时界面会很挤，计算也会变慢']);
+    expect(packProblems(many)).toEqual(['生态有 49 种（超过 48）：界面会挤，计算会变慢']);
     const words = pack({ textPacks: [{ ...DEFAULT_PACK, types: { island: { patterns: [{ p: '{missing}岛' }] } } }] });
-    expect(packProblems(words)[0]).toMatch(/^文字包「.+」：“island”的模板“\{missing\}岛”用到了不存在的词表/);
+    expect(packProblems(words)[0]).toMatch(/^文字包“.+”：“island”的模板“\{missing\}岛”用到了不存在的词表/);
   });
 
   it('脚本里不合规的场名：提醒一句，不当成要加的场（加也加不了，导出的文件也读不回来）', () => {
     const sp = biome('a', { scripts: { placement: { api: 1, src: "return field('圣地') * field('my field') * field('海拔') * field('mana');" } } });
     expect(biomeFields(sp)).toEqual(['mana']);
     expect(packProblems(pack({ fields: ['mana'], biomes: [sp] }))).toEqual([
-      '「a」用到了自定义场「圣地」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场',
-      '「a」用到了自定义场「my field」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场',
+      '“a”用到的自定义场“圣地”名字无效：只能用字母、数字、下划线和连字符',
+      '“a”用到的自定义场“my field”名字无效：只能用字母、数字、下划线和连字符',
     ]);
     expect(planPack(fakeWorld(), pack({ biomes: [sp] }), { biomes: ['a'] }).fields).toEqual(['mana']);
     const out = packFromWorld(fakeWorld([...structuredClone(DEFAULT_SPECIES), sp]), {}, { name: 'x' });
@@ -156,8 +156,8 @@ describe('资源包的检查（不运行脚本）', () => {
     // 河流类型的模板用到了不存在的词表、不合规的场名：提醒
     const bad = pack({ riverTypes: [{ id: 'r', name: '红河', color: '#aa0000', names: [{ p: '{nope}河' }], scripts: { match: { api: 1, src: "return field('圣地') > 0;" } } }] });
     expect(packProblems(bad)).toEqual([
-      '河流类型「红河」用到了自定义场「圣地」：场名只能用字母、数字、下划线和连字符，世界里不会有这个场',
-      '河流类型「红河」的起名模板“{nope}河”用到了不存在的词表 {nope}',
+      '河流类型“红河”用到的自定义场“圣地”名字无效：只能用字母、数字、下划线和连字符',
+      '河流类型“红河”的起名模板“{nope}河”用到了不存在的词表 {nope}',
     ]);
   });
 
@@ -186,7 +186,7 @@ describe('资源包用到世界', () => {
     const w = fakeWorld();
     const cmd = applyPackCommands(w, FANTASY_PACK);
     expect(cmd.op).toBe('batch');
-    expect(cmd.label).toBe('用了资源包「奇幻生态示例」');
+    expect(cmd.label).toBe('用上资源包“奇幻生态示例”');
     // 场、河流类型、湖泊类型、生态（生态的脚本、条件要用到河流、湖泊类型）
     expect(cmd.commands.map((c) => c.op)).toEqual([
       'add_field',
@@ -258,7 +258,7 @@ describe('资源包用到世界', () => {
     });
     const p = pack({ biomes: [user], lakeTypes: [{ id: 'blood_pool', name: '血池', color: '#9b1b1b' }] });
     // river('blood_pool') 是河流类型（包里没有），湖泊类型的引用都在
-    expect(packProblems(p)).toEqual(['「lakeside」用到了河流类型 blood_pool，资源包里没有：没有这种河时按离得很远算']);
+    expect(packProblems(p)).toEqual(['“lakeside”用到的河流类型 blood_pool 不在资源包里：没有这种河时按很远算']);
     expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.map((c) => c.op)).toEqual(['set_lake_type', 'add_species']);
     const w = fakeWorld();
     (w.small as { lakeTypes?: unknown }).lakeTypes = [{ id: 'blood_pool', name: '别的血池', color: '#000000' }];
@@ -271,7 +271,7 @@ describe('资源包用到世界', () => {
     expect(s!.tolerances.map((t) => t.field)).toContain('lake:blood_pool-2');
     expect(s!.tolerances.map((t) => t.field)).not.toContain('lake:blood_pool');
     // 引用了包里没有的湖泊类型：提醒一句
-    expect(packProblems(pack({ biomes: [user] }))).toContain('「lakeside」用到了湖泊类型 blood_pool，资源包里没有：没有这种湖时按离得很远算');
+    expect(packProblems(pack({ biomes: [user] }))).toContain('“lakeside”用到的湖泊类型 blood_pool 不在资源包里：没有这种湖时按很远算');
     // 导出再导入：一模一样
     const back = readPack(JSON.stringify(FANTASY_PACK));
     expect(back.ok && back.pack.lakeTypes).toEqual(FANTASY_PACK.lakeTypes);
@@ -323,12 +323,12 @@ describe('河流类型的资源包', () => {
     // 导出时写明了“自然生成”（世界里没写的是开着的），别的部分一模一样
     expect(out.riverTypes!.map((t) => (t as { natural?: boolean }).natural)).toEqual([true, true]);
     expect(other.world.small.riverTypes).toEqual(eng.world.small.riverTypes!.map((t) => ({ ...t, natural: t.natural ?? true })));
-    expect(other.history.at(-1)!.summary).toBe('用了资源包「我的河」');
+    expect(other.history.at(-1)!.summary).toBe('用上资源包“我的河”');
     expect(applyPackCommands(other.world, out).commands).toEqual([]);
     // 写错的河流类型：读的时候用中文说出在哪里
     const bad = readPack(JSON.stringify(pack({ riverTypes: [{ id: 'x', name: '', color: 'red' }] })));
     expect(bad.ok).toBe(false);
-    expect(!bad.ok && bad.errors.join('；')).toContain('河流类型第 1 个「x」');
+    expect(!bad.ok && bad.errors.join('；')).toContain('河流类型第 1 个“x”');
   });
 });
 
@@ -368,7 +368,7 @@ describe('内置示例包', () => {
     expect(newBiomeCells(plan, w)).toEqual(predicted);
     expect([...predicted.values()].reduce((a, c) => a + c.length, 0)).toBeGreaterThan(0);
     expect(eng.history.length).toBe(steps + 1);
-    expect(eng.history.at(-1)!.summary).toBe('用了资源包「奇幻生态示例」');
+    expect(eng.history.at(-1)!.summary).toBe('用上资源包“奇幻生态示例”');
     expect(w.derived.scriptIssues).toBeUndefined();
     let land = 0;
     for (let i = 0; i < w.mesh.n; i++) if (w.causes.land[i]) land++;
@@ -482,10 +482,10 @@ describe('资源包里的星球形态', () => {
     expect(back.ok && back.pack.planetForms).toEqual(FANTASY_FORMS);
     const bad = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, base: 'moon' } as never] })));
     expect(!bad.ok && bad.errors.length).toBe(1);
-    expect(!bad.ok && bad.errors[0]).toMatch(/^星球形态第 1 个「双子大陆」的 base：/);
+    expect(!bad.ok && bad.errors[0]).toMatch(/^星球形态第 1 个“双子大陆”的 base：/);
     const noName = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, name: '' }] as never })));
-    expect(!noName.ok && noName.errors[0]).toMatch(/^星球形态第 1 个「twin_continents」的 name：/);
-    expect(PACK_SECTIONS.planetForms.note).toBe('星球形态在 调整 → 星球形态 里换，或新建世界时选');
+    expect(!noName.ok && noName.errors[0]).toMatch(/^星球形态第 1 个“twin_continents”的 name：/);
+    expect(PACK_SECTIONS.planetForms.note).toBe('在“调整 → 星球形态”里换，或新建时选');
     expect(planPack(fakeWorld(), FANTASY_PACK, { biomes: [] }).command.commands).toEqual([]);
   });
 

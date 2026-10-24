@@ -43,7 +43,7 @@ describe('文档版本', () => {
       expect(() => Engine.fromDoc(doc, mesh)).toThrow(OLD_DOC_ERROR);
       expect(isCurrentDoc(doc)).toBe(false);
     }
-    expect(OLD_DOC_ERROR).toBe('这是旧版本的世界，打不开（第九轮起不再兼容旧存档）');
+    expect(OLD_DOC_ERROR).toBe('旧版本的世界文件打不开');
     expect(() => Engine.fromDoc({ ...v4, format: 'x' } as unknown as WorldDoc, mesh)).toThrow('不是 map2 世界文件');
     expect(isCurrentDoc({ ...v4, version: 5 })).toBe(true);
     expect(isCurrentDoc(null)).toBe(false);

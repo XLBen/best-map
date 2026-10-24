@@ -25,7 +25,7 @@ describe('圈一块起名', () => {
     expect(cells.length).toBeGreaterThan(50);
     const kind = guessRegionKind(w, w.derived, cells);
     eng.exec({ op: 'add_region', region: { kind, cells } });
-    expect(eng.history[eng.history.length - 1].summary).toMatch(/^圈了一块/);
+    expect(eng.history[eng.history.length - 1].summary).toMatch(/^圈/);
     const [f] = regionFeature(eng);
     expect(f.name.length).toBeGreaterThan(0);
     expect(f.custom).toBe(false);
@@ -74,7 +74,7 @@ describe('圈一块起名', () => {
     const w = eng.world;
     const c = findCell(w.mesh, 0.7, 0.4);
     eng.exec({ op: 'add_region', region: { kind: 'spot', cells: [c], at: [0.7, 0.4], name: '白鹭渡' } });
-    expect(eng.history[eng.history.length - 1].summary).toBe('放了一个地名“白鹭渡”');
+    expect(eng.history[eng.history.length - 1].summary).toBe('放地名“白鹭渡”');
     const spot = regionFeature(eng)[0];
     expect([spot.x, spot.y, spot.type, spot.name]).toEqual([0.7, 0.4, 'spot', '白鹭渡']);
     eng.exec({ op: 'remove_region', id: w.small.regions[0].id });
@@ -135,7 +135,7 @@ describe('圈的地区自动类型', () => {
     expect(w.small.regions[0].auto).toBeUndefined();
     expect(regionFeature(eng)[0].type).toBe('plain');
     eng.exec({ op: 'update_region', id: autoId, auto: true });
-    expect(eng.history[eng.history.length - 1].summary).toBe('类型改成自动判断');
+    expect(eng.history[eng.history.length - 1].summary).toBe('类型改成自动');
     expect(regionFeature(eng)[0].type).toBe('desert');
     // 重放结果相同
     const replay = Engine.fromDoc(eng.toDoc(), w.mesh);

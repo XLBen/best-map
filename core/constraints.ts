@@ -427,7 +427,7 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
   for (const c of small.constraints) {
     const target = species.findIndex((sp) => sp.id === c.species);
     if (target < 0) {
-      conflicts.push({ constraintId: c.id, species: c.species, satisfied: 0, required: c.ratio, failing: c.cells, reasons: [], nearest: null, suggestions: [`类型“${c.species}”已不存在：删除这条设定或换一个类型`] });
+      conflicts.push({ constraintId: c.id, species: c.species, satisfied: 0, required: c.ratio, failing: c.cells, reasons: [], nearest: null, suggestions: [`类型“${c.species}”已删除：删除这处或换一种生态`] });
       continue;
     }
     const cells = c.cells.filter((i) => i < world.mesh.n);
@@ -440,7 +440,7 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     const sp = species[target];
     const reasons: Conflict['reasons'] = [];
     const suggestions: string[] = [];
-    if (water.length && !valid.length) suggestions.push('这些格是水体（海或湖），长不了植被');
+    if (water.length && !valid.length) suggestions.push('这些格是海或湖，长不了植被');
     // 每条耐受曲线在失败格上的典型取值
     const median = (arr: number[]) => {
       const s = [...arr].sort((a, b) => a - b);
@@ -462,8 +462,8 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     if (unreachable > failing.length / 2) {
       const range = rangeMask(world, sp);
       const outside = range ? failing.filter((i) => !range[i]).length : 0;
-      if (outside > failing.length / 2) suggestions.push('这种生态只长在设定的岛上或圈的范围里，这些格在外面：在生态的“长在哪里”里改一改范围');
-      else suggestions.push('该类型从起源扩散不到这里：增加起源格、加大扩散距离，或降低跨海/跨不适宜地带的代价');
+      if (outside > failing.length / 2) suggestions.push('这里在生态的范围外：在“长在哪里”里改范围');
+      else suggestions.push('从起源扩散不到这里：加起源、加大扩散距离或降低跨越代价');
     }
     // 长在哪里的脚本在没涂成的格里大多是 0：怎么调气候都长不出来
     const { slot: placeSlot, P } = placementSlots(species);
@@ -471,7 +471,7 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
     if (placeF) {
       const zero = failing.filter((i) => placeF[i * P + placeSlot[target]] === 0).length;
       // 不写生态的名字：只改名字时不重算冲突（Dirty.Names），写了会对不上
-      if (zero > failing.length / 2) suggestions.push('这种生态的脚本条件在这些格里是 0（“长在哪里”的脚本不让它长在这里，怎么调冷暖干湿都长不出来）：改一改这个脚本');
+      if (zero > failing.length / 2) suggestions.push('“长在哪里”的脚本不让它长在这里：改脚本');
     }
     for (const l of limiting.slice(0, 3)) {
       const info = FIELD_LABEL.get(l.field);
@@ -484,26 +484,26 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
         const need = l.value < l.need[0] ? l.need[0] - l.value : l.need[1] - l.value;
         suggestions.push(
           Math.abs(need) > MAX_DT
-            ? `${label}约 ${cur}，需要 ${range}：所需温度修正 ${need.toFixed(1)} °C 超过 ±${MAX_DT} °C 上限`
-            : `${label}约 ${cur}，需要 ${range}：需${need > 0 ? '升温' : '降温'}约 ${Math.abs(need).toFixed(1)} °C（在修正范围内，但与其他条件不能同时满足）`,
+            ? `${label}约 ${cur}，需要 ${range}：要改 ${need.toFixed(1)} °C，超过 ±${MAX_DT} °C 上限`
+            : `${label}约 ${cur}，需要 ${range}：要${need > 0 ? '升温' : '降温'}约 ${Math.abs(need).toFixed(1)} °C，与其他条件冲突`,
         );
       } else if (info?.correctable === 'precip') {
         const factor = l.value > 0 ? (l.value < l.need[0] ? l.need[0] / l.value : l.need[1] / l.value) : Infinity;
         const within = Math.abs(Math.log(factor)) <= MAX_DL;
         suggestions.push(
           within
-            ? `${label}约 ${cur}，需要 ${range}：降水需×${factor.toFixed(2)}（在修正范围内，但与其他条件不能同时满足）`
-            : `${label}约 ${cur}，需要 ${range}：降水需×${factor.toFixed(1)}，超过修正上限（×${Math.exp(MAX_DL).toFixed(0)}）`,
+            ? `${label}约 ${cur}，需要 ${range}：降水要×${factor.toFixed(2)}，与其他条件冲突`
+            : `${label}约 ${cur}，需要 ${range}：降水要×${factor.toFixed(1)}，超过上限 ×${Math.exp(MAX_DL).toFixed(0)}`,
         );
       }
-      else if (l.field === 'elevation') suggestions.push(`海拔约 ${cur}，需要 ${range}：用抬升笔${l.value > l.need[1] ? '降低' : '抬高'}这里的抬升`);
-      else if (l.field === 'wetness' || l.field === 'discharge') suggestions.push(`${label}约 ${cur}，需要 ${range}：加一条河道引导或湖，让水汇到这里`);
-      else if (l.field === 'slope') suggestions.push(`${label}约 ${cur}，需要 ${range}：调整这里的抬升或岩性`);
-      else if (l.field === 'seasonality') suggestions.push(`${label}约 ${cur}，需要 ${range}：季节性由风带与季风决定，需要改变海陆格局或纬度`);
+      else if (l.field === 'elevation') suggestions.push(`海拔约 ${cur}，需要 ${range}：用“堆山 / 压低”${l.value > l.need[1] ? '压低' : '堆高'}这里`);
+      else if (l.field === 'wetness' || l.field === 'discharge') suggestions.push(`${label}约 ${cur}，需要 ${range}：画河或放湖，让水汇到这里`);
+      else if (l.field === 'slope') suggestions.push(`${label}约 ${cur}，需要 ${range}：用“堆山 / 压低”改地势`);
+      else if (l.field === 'seasonality') suggestions.push(`${label}约 ${cur}，需要 ${range}：季节由风带决定，要改海陆或纬度`);
       else suggestions.push(`${label}约 ${cur}，需要 ${range}`);
     }
-    if (!suggestions.length) suggestions.push('竞争不过当地的其他类型：提高该类型的竞争力，或改用硬覆盖');
-    suggestions.push('也可以改用硬覆盖（标为例外，水文不认它）');
+    if (!suggestions.length) suggestions.push('竞争不过当地的生态：提高竞争力，或改用“强制”');
+    suggestions.push('也可以改用“强制”');
     // 最接近的可行类型：失败格上最常见的“修正上限内能达到的主导类型”
     const plan = solve.plans.find((p) => p.constraint.id === c.id);
     // 格在计划里的序号（同一格出现多次时取第一次，与 indexOf 相同）

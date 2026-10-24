@@ -164,7 +164,7 @@ describe('小礁归海省', () => {
       if (eng.world.causes.land[j] && eng.world.causes.province[j] >= 0) landP = eng.world.causes.province[j];
     }
     expect(landP).toBeGreaterThanOrEqual(0);
-    expect(() => eng.exec({ op: 'assign_province', cells: [c], province: landP })).toThrow('陆海类别不符');
+    expect(() => eng.exec({ op: 'assign_province', cells: [c], province: landP })).toThrow('陆海不符');
     const seaP = Object.entries(eng.world.small.provinces).find(([, m]) => !m.land)![0];
     eng.exec({ op: 'assign_province', cells: [c], province: Number(seaP) });
     expect(eng.world.causes.province[c]).toBe(Number(seaP));

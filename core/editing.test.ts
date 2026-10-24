@@ -150,7 +150,7 @@ describe('省份：自动划分也稳定', () => {
     expect(() => eng.exec({ op: 'set_province', id, kind: 'sea' as never })).toThrow();
     expect(() => eng.exec({ op: 'set_province', id, kind: 'lake' as never })).toThrow();
     const sea = Number(Object.entries(eng.world.small.provinces).find(([, p]) => p.kind === 'sea')![0]);
-    expect(() => eng.exec({ op: 'set_province', id: sea, kind: 'land' })).toThrow('海上的省份只能是海域');
+    expect(() => eng.exec({ op: 'set_province', id: sea, kind: 'land' })).toThrow('海省的类型不能改');
   });
 });
 

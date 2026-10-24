@@ -222,7 +222,7 @@ describe('约束求解', () => {
     expect(c.length).toBe(1);
     // 默认的冰盖按年均温定义
     expect(c[0].reasons[0].field).toBe('tMean');
-    expect(c[0].suggestions.join('')).toContain('硬覆盖');
+    expect(c[0].suggestions.join('')).toContain('强制');
   });
 
   it('硬覆盖只改结果，不改气候', () => {

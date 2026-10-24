@@ -231,7 +231,7 @@ describe('只改样子不重算', () => {
     expect(eng.takeRecomputed()).toBe(Dirty.None);
     expect(w.derived).toBe(d);
     expect(w.derived.riverType).toBe(rt);
-    expect(eng.history.at(-1)!.summary).toBe('修改了河流类型「血河」');
+    expect(eng.history.at(-1)!.summary).toBe('修改河流类型“血河”');
     eng.exec({ op: 'set_river_type', type: { ...t, color: '#123456', style: 'glow', width: 2, atlasColor: '#654321', names: [{ p: '{color}血河' }] } });
     expect(eng.takeRecomputed()).toBe(Dirty.Names);
     eng.exec({ op: 'set_river_type', type: { ...t, scripts: { match: { api: 1, src: 'return false;' } } } });

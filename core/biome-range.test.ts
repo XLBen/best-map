@@ -95,7 +95,7 @@ describe('生态只长在哪里（range）', () => {
     eng.exec({ op: 'add_constraint', constraint: { cells: near(far, 0.03), species: 'ringed', mode: 'constraint' } });
     const c = w.derived.conflicts.find((x) => x.species === 'ringed')!;
     expect(c).toBeTruthy();
-    expect(c.suggestions.join('')).toContain('设定的岛上或圈的范围里');
+    expect(c.suggestions.join('')).toContain('生态的范围外');
   });
 });
 
@@ -230,7 +230,7 @@ describe('没涂成的“就这样”', () => {
     const digest = digestWorld(w);
     const conflicts = JSON.stringify(w.derived.conflicts);
     eng.exec({ op: 'update_constraint', id: 'hot', patch: { ignored: true } });
-    expect(eng.history.at(-1)!.summary).toContain('就这样');
+    expect(eng.history.at(-1)!.summary).toContain('忽略没涂成');
     expect(JSON.stringify(w.derived.conflicts)).toBe(conflicts);
     expect(activeConflicts(w).map((c) => c.constraintId)).not.toContain('hot');
     expect(w.small.constraints.find((c) => c.id === 'hot')!.ignored).toBe(true);

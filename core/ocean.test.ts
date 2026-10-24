@@ -95,7 +95,7 @@ describe('洋流', () => {
     const a2 = box(strong, 31, 40, 20, 35, false).anom;
     expect(a2 / a1).toBeGreaterThan(1.8);
     expect(a2 / a1).toBeLessThan(2.2);
-    expect(off.history[off.history.length - 1].summary).toBe('调整了洋流强弱');
+    expect(off.history[off.history.length - 1].summary).toBe('调整 · 洋流强弱');
   });
 
   it('全是海的星球：没有东西差别，海温几乎不偏离', () => {

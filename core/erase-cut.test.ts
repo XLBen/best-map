@@ -63,7 +63,7 @@ describe('恢复原样', () => {
     const tBefore = w.derived.tMean.slice();
     const brush = disc(w, center, 4);
     eng.exec({ op: 'paint', field: 'tempOffset', cells: brush.cells, values: brush.t.map((u) => -4 * (1 - u)), mode: 'add' });
-    expect(eng.history[eng.history.length - 1].summary).toMatch(/^变冷 \d+ 格，最多 −4 °C$/);
+    expect(eng.history[eng.history.length - 1].summary).toMatch(/^变冷 · \d+ 格 · 最多 −4 °C$/);
     expect(Math.min(...brush.cells.map((i) => w.derived.tMean[i] - tBefore[i]))).toBeLessThan(-2);
     const erase = disc(w, center, 6);
     eng.exec({ op: 'restore_climate', cells: erase.cells, t: erase.t });
@@ -247,7 +247,7 @@ describe('地图在星球上的位置', () => {
     };
     eng.exec({ op: 'set_planet', patch: { latShift: 12 } });
     expect(mean(w.derived.tMean)).toBeLessThan(mean(tBefore) - 3);
-    expect(eng.history[eng.history.length - 1].summary).toBe('调整了地图在星球上的位置');
+    expect(eng.history[eng.history.length - 1].summary).toBe('调整 · 地图在星球上的位置');
     const replay = Engine.fromDoc(eng.toDoc(), w.mesh);
     for (let i = 0; i < w.mesh.n; i++) expect(replay.world.derived.tMean[i]).toBe(w.derived.tMean[i]);
     eng.undo();
@@ -259,9 +259,9 @@ describe('调整整个世界', () => {
   it('改一项星球参数，不会把别的几项重置回默认值', () => {
     const eng = new Engine({ seed: 1, cells: 4000 });
     eng.exec({ op: 'set_planet', patch: { tilt: 30 } });
-    expect(eng.history[eng.history.length - 1].summary).toBe('调整了四季分明');
+    expect(eng.history[eng.history.length - 1].summary).toBe('调整 · 四季分明');
     eng.exec({ op: 'set_planet', patch: { solar: 1.1 } });
-    expect(eng.history[eng.history.length - 1].summary).toBe('调整了整体冷暖');
+    expect(eng.history[eng.history.length - 1].summary).toBe('调整 · 整体冷暖');
     expect(eng.world.small.planet.tilt).toBe(30);
     expect(eng.world.small.planet.solar).toBe(1.1);
   });

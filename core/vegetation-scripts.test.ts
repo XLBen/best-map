@@ -112,7 +112,7 @@ describe('长在哪里的脚本', () => {
     const conflict = d.conflicts.find((c) => c.constraintId === 'c1')!;
     expect(conflict).toBeDefined();
     for (const i of zero) expect(conflict.failing).toContain(i);
-    expect(conflict.suggestions.some((t) => t.includes('脚本条件'))).toBe(true);
+    expect(conflict.suggestions.some((t) => t.includes('“长在哪里”的脚本'))).toBe(true);
   });
 
   it('脚本出错（NaN）时按没有脚本处理且记下问题、画笔照常', () => {
@@ -124,7 +124,7 @@ describe('长在哪里的脚本', () => {
     const d = eng.world.derived;
     expect(d.scriptIssues).toHaveLength(1);
     expect(d.scriptIssues![0].reason).toBe('value');
-    expect(d.scriptIssues![0].message).toContain('「玻璃原」');
+    expect(d.scriptIssues![0].message).toContain('“玻璃原”');
     expect(d.scriptIssues![0].text).toContain('NaN');
     // 系数全是 1：适宜度、份额与没有脚本时逐值相同
     expect(d.placeF!.every((v) => v === 1)).toBe(true);
@@ -156,7 +156,7 @@ describe('长在哪里的脚本', () => {
     }
     expect(err).toBeInstanceOf(ScriptError);
     expect(err).toBeInstanceOf(CommandError);
-    expect((err as Error).message).toContain('「玻璃原」的长在哪里脚本');
+    expect((err as Error).message).toContain('“玻璃原”的长在哪里脚本');
     expect(digestWorld(eng.world)).toEqual(before);
     expect(eng.history.length).toBe(steps);
     // 生态只能有两种脚本
@@ -259,7 +259,7 @@ describe('只改外观、名字', () => {
     expect(eng.takeRecomputed()).toBe(Dirty.None);
     expect(eng.world.derived).toBe(d);
     expect(eng.world.derived.share).toBe(share);
-    expect(eng.history.at(-1)!.summary).toBe('修改了生态“水晶丛林”的外观');
+    expect(eng.history.at(-1)!.summary).toBe('修改生态“水晶丛林” · 外观');
     eng.undo();
     expect(eng.takeRecomputed()).toBe(Dirty.None);
     expect(eng.world.small.species.at(-1)!.visual!.pattern).toBe('sparkle');
@@ -287,9 +287,9 @@ describe('改名', () => {
   it('带脚本的生态改名后，出错的说明换成新名字（与重放相同）', () => {
     const eng = world();
     eng.exec({ op: 'add_species', species: wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 1, scripts: { placement: script('return NaN;') } }) });
-    expect(eng.world.derived.scriptIssues![0].message).toContain('「玻璃原」');
+    expect(eng.world.derived.scriptIssues![0].message).toContain('“玻璃原”');
     eng.exec({ op: 'update_species', id: 'glass', patch: { name: '琉璃原' } });
-    expect(eng.world.derived.scriptIssues![0].message).toContain('「琉璃原」');
+    expect(eng.world.derived.scriptIssues![0].message).toContain('“琉璃原”');
     sameAsScratch(eng, '改名');
   });
 
@@ -299,7 +299,7 @@ describe('改名', () => {
     eng.exec({ op: 'add_species', species: wide({ id: 'glass', name: '玻璃原', color: '#88ccdd', terrain: 'plains', competition: 1, scripts: { placement: script('return 0;') } }) });
     eng.exec({ op: 'add_constraint', constraint: { id: 'c1', cells: near(w, 0.5, 40), species: 'glass', mode: 'constraint', ratio: 1, radius: 400 } });
     const tips = () => w.derived.conflicts.find((c) => c.constraintId === 'c1')!.suggestions;
-    expect(tips().some((t) => t.includes('脚本条件'))).toBe(true);
+    expect(tips().some((t) => t.includes('“长在哪里”的脚本'))).toBe(true);
     for (const t of tips()) expect(t).not.toContain('玻璃原');
     eng.exec({ op: 'update_species', id: 'glass', patch: { name: '琉璃原' } });
     expect(Engine.fromDoc(eng.toDoc(), w.mesh).world.derived.conflicts).toEqual(w.derived.conflicts);

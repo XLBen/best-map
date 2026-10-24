@@ -79,15 +79,15 @@ describe('脚本的运行环境', () => {
     expect(e).toBeInstanceOf(CommandError);
     expect(e.owner).toBe('水晶丛林');
     expect(e.kind).toBe('placement');
-    expect(e.message).toMatch(/^「水晶丛林」的长在哪里脚本(第 \d+ 行)?有语法错误：这里不该出现「;」/);
+    expect(e.message).toMatch(/^“水晶丛林”的长在哪里脚本(第 \d+ 行)?有语法错误：这里不该出现“;”/);
     expect(syntaxError('return smoothstep(0, 1, elevation;').message).toContain('少了右括号 )');
     expect(syntaxError('if (elevation > 0) {\n  return 1;').message).toContain('代码没写完（少了右花括号 }）');
     expect(syntaxError('// 注释里的 { 不算\nreturn clamp(elevation));').message).toContain('多了一个 )');
     expect(syntaxError('return [1, 2);').message).toContain('括号没有配对');
     expect(syntaxError('return 海拔 > 100，').message).toContain('中文标点');
     // 注释、字符串里的中文标点、括号不算（真正的错是引号没配对）
-    expect(syntaxError('// 注释里有中文标点，还有一个 (\nreturn "abc;').message).toContain('有不认识的字符（是不是引号没有配对？）');
-    expect(syntaxError('return ")" + /[(]/.test("x") + ;').message).toMatch(/这里不该出现「;」/);
+    expect(syntaxError('// 注释里有中文标点，还有一个 (\nreturn "abc;').message).toContain('有不认识的字符，或引号没有配对');
+    expect(syntaxError('return ")" + /[(]/.test("x") + ;').message).toMatch(/这里不该出现“;”/);
     // 行号：V8 不给，留给编辑器装的定位器（懒加载的 acorn）
     setSyntaxLocator(() => 2);
     expect(syntaxError('const a = 1;\nreturn (a + ;;').message).toMatch(/第 2 行有语法错误/);
@@ -109,13 +109,13 @@ describe('脚本的运行环境', () => {
     if (res.ok) return;
     expect(res.issue.line).toBe(3);
     expect(res.issue.cell).toBe(opts.cells[0]);
-    expect(res.issue.message).toBe('「水晶丛林」的长在哪里脚本第 3 行出错：没有变量 tMeen（是不是 tMean？）');
+    expect(res.issue.message).toBe('“水晶丛林”的长在哪里脚本第 3 行出错：没有变量 tMeen（是不是 tMean？）');
     // 中文名也给提示
     const zh = runScript(placement('// 越暖越多\nreturn smoothstep(0, 20, 年均温度);'), opts);
-    expect(zh.ok ? '' : zh.issue.message).toBe('「水晶丛林」的长在哪里脚本第 2 行出错：没有变量 年均温度（是不是 年均温？）');
+    expect(zh.ok ? '' : zh.issue.message).toBe('“水晶丛林”的长在哪里脚本第 2 行出错：没有变量 年均温度（是不是 年均温？）');
     // 辅助函数里抛出的错误落在调用它的那一行
     const f = runScript(placement('const a = 1;\nreturn field("没有的场") * a;'), opts);
-    expect(f.ok ? '' : f.issue.message).toBe('「水晶丛林」的长在哪里脚本第 2 行出错：没有自定义场「没有的场」');
+    expect(f.ok ? '' : f.issue.message).toBe('“水晶丛林”的长在哪里脚本第 2 行出错：没有自定义场“没有的场”');
     // 用户自己写的函数里出错，也是那一行
     const g = runScript(placement('function f(v) {\n  return v.foo.bar;\n}\nreturn f({}) ? 1 : 0;'), opts);
     expect(g.ok ? undefined : g.issue.line).toBe(2);
@@ -165,7 +165,7 @@ describe('脚本的运行环境', () => {
     // 别的会随时间、随电脑变的东西
     expect(text('return crypto.getRandomValues(new Uint8Array(1))[0] / 255;')).toBe('1:用 rand() 代替 crypto 的随机数');
     expect(text('return Temporal.Now.instant().epochMilliseconds % 2;')).toBe('1:脚本里不能用时间');
-    expect(text('return new Intl.DateTimeFormat().format().length > 3;')).toBe('1:脚本里不能用 Intl（结果会随电脑的语言和时区变）');
+    expect(text('return new Intl.DateTimeFormat().format().length > 3;')).toBe('1:脚本里不能用 Intl');
     expect(text('return new Worker("x") ? 1 : 0;')).toBe('1:脚本里不能用 Worker');
     expect(text("return typeof navigator === 'undefined' && typeof WeakRef === 'undefined' && typeof global === 'undefined';")).toBe('ok');
     // 用户自己的报错里出现 Date 这个词，不当成“用了时间”
@@ -204,7 +204,7 @@ describe('脚本的运行环境', () => {
     if (res.ok) return;
     expect(res.issue.reason).toBe('value');
     expect(d.elevation[res.issue.cell!]).toBeGreaterThan(300);
-    expect(res.issue.message).toBe('「水晶丛林」的长在哪里脚本出错：地图上有一处算出了 NaN（不是数字）');
+    expect(res.issue.message).toBe('“水晶丛林”的长在哪里脚本出错：地图上有一处算出了 NaN（不是数字）');
     // 当作没有这段脚本：系数 1
     expect(res.output.factor.length).toBe(opts.cells.length);
     expect([...res.output.factor].every((v) => v === 1)).toBe(true);
@@ -212,7 +212,7 @@ describe('脚本的运行环境', () => {
     const str = runScript(placement('return "很多";'), opts);
     expect(str.ok ? '' : str.issue.text).toBe('应该返回0 到 1 之间的数，或 true / false，地图上有一处返回了文字 "很多"');
     const none = runScript(placement('elevation > 0;'), opts);
-    expect(none.ok ? '' : none.issue.text).toContain('忘了写 return');
+    expect(none.ok ? '' : none.issue.text).toContain('少了 return');
     // 超出范围的数截到 0–1；true / false 是 1 / 0
     const big = runScript(placement('return elevation / 100 - 3;'), opts);
     expect(big.ok).toBe(true);
@@ -422,8 +422,8 @@ describe('脚本的运行环境', () => {
     expect(scriptStats.compiles - before).toBe(1);
     // 语法错误也只编译一次，报错里用各自的名字
     const bad = 'return (; // 只编译一次';
-    expect(() => compileScript('placement', bad, '甲')).toThrow(/「甲」/);
-    expect(() => compileScript('placement', bad, '乙')).toThrow(/「乙」/);
+    expect(() => compileScript('placement', bad, '甲')).toThrow(/“甲”/);
+    expect(() => compileScript('placement', bad, '乙')).toThrow(/“乙”/);
     expect(scriptStats.compiles - before).toBe(2);
     // 最近用过的 128 段：再编译 128 段别的，最早那段被挤出去，要重新编译
     for (let k = 0; k < 128; k++) compileScript('placement', `return ${k} / 1000; // 挤掉`);
@@ -537,7 +537,7 @@ describe('脚本的运行环境', () => {
     runSetup({ src }, { owner: '双子大陆', id: 'twins', seed: 9, values: { ...values, addBlock: (b: object) => again.push(b) } });
     expect(again).toEqual(blocks);
     const bad = runSetup({ src: '\naddIsland({});' }, { owner: '双子大陆', seed: 9, values });
-    expect(bad.ok ? '' : bad.issue.message).toBe('「双子大陆」的布局脚本第 2 行出错：这里没有变量 addIsland');
+    expect(bad.ok ? '' : bad.issue.message).toBe('“双子大陆”的布局脚本第 2 行出错：这里没有变量 addIsland');
     // 脚本拿到的是冻结的副本：改不了调用方的列表，也不能在函数上记东西
     const old = [{ lat: 1, lon: 2, size: 3 }];
     const mutate = runSetup({ src: 'blocks[0].lat = 50;\nreturn 1;' }, { owner: '双子大陆', seed: 9, values: { blocks: old } });
@@ -630,7 +630,7 @@ describe('脚本的运行环境', () => {
     const e = syntaxError('const a = 1;\nreturn import("https://example.com/x.js");');
     expect(e.issue.reason).toBe('syntax');
     expect(e.line).toBe(2);
-    expect(e.message).toBe('「水晶丛林」的长在哪里脚本第 2 行有语法错误：脚本里不能用 import');
+    expect(e.message).toBe('“水晶丛林”的长在哪里脚本第 2 行有语法错误：脚本里不能用 import');
     // 换行、注释夹在中间，展开运算符后面，模板里的 ${…}
     expect(syntaxError('return import\n  /* 注释 */ ("x");').line).toBe(1);
     expect(syntaxError('const a = [...import("x")];\nreturn 1;').line).toBe(1);

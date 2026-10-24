@@ -142,7 +142,7 @@ describe('湖与省份', () => {
     expect(() => eng.exec({ op: 'assign_province', cells: [cell], province: landProv })).toThrow(/湖面/);
     expect(() => eng.exec({ op: 'assign_province', cells: [landCell], province: lakeProv })).toThrow(/不是湖面/);
     const sea = [...Array(w.mesh.n).keys()].find((i) => !w.causes.land[i])!;
-    expect(() => eng.exec({ op: 'merge_province', from: w.causes.province[sea], into: landProv })).toThrow(/陆地省份与海域省份不能合并/);
+    expect(() => eng.exec({ op: 'merge_province', from: w.causes.province[sea], into: landProv })).toThrow(/陆地省份与海省不能合并/);
   });
 });
 
