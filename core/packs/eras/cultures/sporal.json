@@ -1,0 +1,43 @@
+{
+  "group": {
+    "id": "sporal",
+    "name": "孢林诸族",
+    "color": "#2de178",
+    "description": "菌丝相连的孢生种族，整片林子是一个意识。",
+    "prefs": [
+      { "classes": ["jungle", "marsh"], "factor": 3 },
+      { "classes": ["forest"], "factor": 1.5 },
+      { "tempMin": 14, "factor": 1.5 }
+    ],
+    "eras": ["scifi"]
+  },
+  "tendencies": {
+    "ideology": [["sf-collective", 5], ["sf-naturalist", 3]],
+    "species": [["sporal", 10]]
+  },
+  "cultures": [
+    {
+      "id": "mycel",
+      "group": "sporal",
+      "name": "菌丝网",
+      "color": "#00e178",
+      "nameStyle": "fantasy-elf",
+      "weight": 1.5,
+      "description": "覆盖整片雨林的菌丝意识。"
+    },
+    {
+      "id": "bloomveil",
+      "group": "sporal",
+      "name": "花幕族",
+      "color": "#2de1a5",
+      "nameStyle": "fantasy-elf",
+      "description": "随花季迁徙的孢生族群。",
+      "tendencies": {
+        "ideology": [["sf-naturalist", 4], ["sf-collective", 2], ["sf-psionic", 1]]
+      },
+      "prefs": [
+        { "classes": ["forest", "marsh"], "factor": 1.4 }
+      ]
+    }
+  ]
+}

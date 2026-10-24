@@ -1,0 +1,61 @@
+{
+  "group": {
+    "id": "africa",
+    "name": "非洲",
+    "color": "#78a52d",
+    "description": "稀树草原与雨林之间的农牧民族。",
+    "prefs": [
+      { "tempMin": 20, "factor": 2 },
+      { "terrain": ["savanna"], "factor": 2 },
+      { "classes": ["grasslands", "plains"], "factor": 1.2 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["spirit-ways", 5], ["ancestor-rites", 3], ["moon-faith", 2], ["sun-faith", 3], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]],
+    "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+    "ideology": [["auth-nationalist", 3], ["traditionalist", 3], ["social-democracy", 2], ["rev-socialism", 2], ["market-liberal", 1], ["theocratic", 1], ["sf-federalist", 3], ["sf-naturalist", 2], ["sf-free", 2], ["sf-ascension", 1]],
+    "race": [["human", 8], ["dragonborn", 1], ["orc", 0.5]],
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "mwanga",
+      "group": "africa",
+      "name": "姆旺加人",
+      "color": "#78c34b",
+      "nameStyle": "bantu-swahili",
+      "weight": 1.5,
+      "description": "高原与稀树草原上的农牧民。"
+    },
+    {
+      "id": "kusini",
+      "group": "africa",
+      "name": "库西尼人",
+      "color": "#007800",
+      "nameStyle": "bantu-swahili",
+      "description": "南方草原上的牧牛人。",
+      "tendencies": {
+        "religion": [["ancestor-rites", 5], ["spirit-ways", 3], ["sun-faith", 3], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]]
+      },
+      "prefs": [
+        { "classes": ["grasslands", "steppe"], "factor": 1.4 }
+      ]
+    },
+    {
+      "id": "bahari",
+      "group": "africa",
+      "name": "巴哈里人",
+      "color": "#c3d278",
+      "nameStyle": "bantu-swahili",
+      "weight": 0.8,
+      "description": "东岸的港口商人，帆船往来于季风之间。",
+      "tendencies": {
+        "religion": [["moon-faith", 5], ["spirit-ways", 2], ["ancestor-rites", 1], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]],
+        "nation": [["religious-community", 3], ["civic-nation", 2], ["regional", 2], ["ethnic-nation", 1]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.8 }
+      ]
+    }
+  ]
+}

@@ -1,16 +1,77 @@
 {
   "group": {
     "id": "eastern",
-    "name": "东方",
-    "color": "#c8a23a",
-    "description": "温暖湿润的大河平原上的稻作民族。",
+    "name": "东亚",
+    "color": "#d24b3c",
+    "description": "季风吹拂的大河平原与海岛，稻作与文书的传统。",
     "prefs": [
       { "tempMin": 8, "factor": 2 },
       { "river": true, "factor": 1.5 }
     ]
   },
+  "tendencies": {
+    "religion": [["sky-way", 4], ["ancestor-rites", 3], ["awakening", 3], ["secular", 3], ["spirit-ways", 0.5], ["elder-dragons", 3], ["arcane-eye", 2], ["silver-lady", 2], ["grey-warden", 2], ["harvest-maid", 2]],
+    "nation": [["ethnic-nation", 5], ["civic-nation", 2], ["imperial", 2], ["pan-group", 1]],
+    "ideology": [["liberal-conservative", 3], ["auth-socialism", 3], ["auth-nationalist", 2], ["market-liberal", 2], ["social-democracy", 1.5], ["traditionalist", 1], ["sf-technocracy", 4], ["sf-corporate", 3], ["sf-federalist", 1.5], ["sf-militarist", 1]],
+    "race": [["human", 8], ["dragonborn", 1], ["half-elf", 1]],
+    "species": [["terran", 5], ["augmented", 3], ["synthetic", 2.5]]
+  },
   "cultures": [
-    { "id": "huaxia", "group": "eastern", "name": "华夏", "color": "#d4372c", "nameStyle": "zh-default", "weight": 2, "tendencies": { "religion": [["sky-way", 3], ["ancestor-rites", 2]] } },
-    { "id": "yamato", "group": "eastern", "name": "大和", "color": "#e98aa5", "nameStyle": "ja-kanji", "tendencies": { "religion": [["ancestor-rites", 3], ["sky-way", 1]] }, "prefs": [{ "coast": true, "factor": 1.5 }] }
+    {
+      "id": "huaxia",
+      "group": "eastern",
+      "name": "华川人",
+      "color": "#d24b3c",
+      "nameStyle": "zh-default",
+      "weight": 2,
+      "description": "大河中下游的农耕民族，城郭与官署相连。",
+      "tendencies": {
+        "religion": [["sky-way", 4], ["ancestor-rites", 2], ["awakening", 2], ["secular", 3], ["elder-dragons", 3], ["arcane-eye", 2], ["silver-lady", 2], ["grey-warden", 2], ["harvest-maid", 2]]
+      }
+    },
+    {
+      "id": "yamato",
+      "group": "eastern",
+      "name": "汐见人",
+      "color": "#d26900",
+      "nameStyle": "ja-kanji",
+      "description": "群岛上的渔耕民族，山海之间的小平原上人烟稠密。",
+      "tendencies": {
+        "religion": [["ancestor-rites", 4], ["awakening", 2.5], ["sky-way", 1], ["secular", 3], ["elder-dragons", 3], ["arcane-eye", 2], ["silver-lady", 2], ["grey-warden", 2], ["harvest-maid", 2]],
+        "nation": [["ethnic-nation", 5], ["imperial", 2], ["civic-nation", 2]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.5 }
+      ]
+    },
+    {
+      "id": "cheonggu",
+      "group": "eastern",
+      "name": "青丘人",
+      "color": "#f06987",
+      "nameStyle": "ko-hanja",
+      "description": "半岛与山地之间的民族，重宗族与书院。",
+      "tendencies": {
+        "religion": [["sky-way", 3], ["awakening", 2.5], ["ancestor-rites", 2], ["sun-faith", 1.2], ["secular", 2], ["elder-dragons", 3], ["arcane-eye", 2], ["silver-lady", 2], ["grey-warden", 2], ["harvest-maid", 2]]
+      },
+      "prefs": [
+        { "classes": ["hills"], "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "nanming",
+      "group": "eastern",
+      "name": "南溟人",
+      "color": "#e11e00",
+      "nameStyle": "zh-default",
+      "description": "温暖海岸的商港与稻田，舟船通达远方。",
+      "tendencies": {
+        "religion": [["ancestor-rites", 3], ["awakening", 3], ["sky-way", 2], ["secular", 2], ["elder-dragons", 3], ["arcane-eye", 2], ["silver-lady", 2], ["grey-warden", 2], ["harvest-maid", 2]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.4 },
+        { "tempMin": 16, "factor": 1.4 }
+      ]
+    }
   ]
 }

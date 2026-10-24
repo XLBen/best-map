@@ -1,0 +1,40 @@
+{
+  "group": {
+    "id": "tidal",
+    "name": "潮汐诸族",
+    "color": "#00a5f0",
+    "description": "两栖的水生种族，城市半没在浅海里。",
+    "prefs": [
+      { "coast": true, "factor": 4 },
+      { "coast": false, "factor": 0.3 },
+      { "lake": true, "factor": 1.5 }
+    ],
+    "eras": ["scifi"]
+  },
+  "tendencies": {
+    "ideology": [["sf-naturalist", 3], ["sf-federalist", 2], ["sf-collective", 1]],
+    "species": [["tidal-kin", 9], ["terran", 0.5]]
+  },
+  "cultures": [
+    {
+      "id": "deeptide",
+      "group": "tidal",
+      "name": "深潮氏族",
+      "color": "#00a5ff",
+      "nameStyle": "fantasy-seafolk",
+      "weight": 1.5,
+      "description": "冷水海岸的潮裔，城市建在海底的斜坡上。"
+    },
+    {
+      "id": "reefsong",
+      "group": "tidal",
+      "name": "礁歌氏族",
+      "color": "#0078ff",
+      "nameStyle": "polynesian",
+      "description": "温暖礁海里的潮裔，以声波歌唱交流。",
+      "prefs": [
+        { "tempMin": 18, "factor": 1.4 }
+      ]
+    }
+  ]
+}

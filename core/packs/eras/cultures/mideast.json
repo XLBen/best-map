@@ -1,0 +1,68 @@
+{
+  "group": {
+    "id": "mideast",
+    "name": "中东",
+    "color": "#875a2d",
+    "description": "大河与荒漠之间的绿洲、城市与商路。",
+    "prefs": [
+      { "classes": ["desert", "steppe"], "factor": 2.2 },
+      { "river": true, "factor": 1.8 },
+      { "tempMin": 14, "factor": 1.5 },
+      { "classes": ["forest", "woods", "jungle", "marsh"], "factor": 0.5 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["moon-faith", 6], ["fire-temple", 2], ["river-gods", 4], ["city-pantheon", 1], ["sun-faith", 0.5], ["secular", 0.5], ["arcane-eye", 4], ["silver-lady", 3], ["elder-dragons", 2], ["pact-lords", 1]],
+    "nation": [["religious-community", 5], ["pan-group", 3], ["ethnic-nation", 2], ["imperial", 1.5]],
+    "ideology": [["auth-nationalist", 4], ["theocratic", 3], ["monarchist", 3], ["traditionalist", 2], ["rev-socialism", 1], ["social-democracy", 0.5], ["sf-psionic", 3], ["sf-corporate", 2], ["sf-supremacist", 2], ["sf-federalist", 1]],
+    "race": [["human", 8], ["tiefling", 2], ["dragonborn", 1.5]],
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "arab",
+      "group": "mideast",
+      "name": "萨赫兰人",
+      "color": "#96785a",
+      "nameStyle": "arabic",
+      "weight": 1.5,
+      "description": "荒漠与绿洲的商旅民族，驼队连起远方的城市。",
+      "prefs": [
+        { "classes": ["desert"], "factor": 1.6 },
+        { "river": true, "factor": 1.5 }
+      ]
+    },
+    {
+      "id": "darian",
+      "group": "mideast",
+      "name": "达里安人",
+      "color": "#4b5a1e",
+      "nameStyle": "persian",
+      "description": "高原上的古老王国之民，以诗歌与花园闻名。",
+      "tendencies": {
+        "religion": [["fire-temple", 5], ["moon-faith", 5], ["river-gods", 1], ["secular", 0.5], ["arcane-eye", 4], ["silver-lady", 3], ["elder-dragons", 2], ["pact-lords", 1]],
+        "nation": [["ethnic-nation", 3], ["religious-community", 4], ["imperial", 2]]
+      },
+      "prefs": [
+        { "classes": ["highlands", "hills"], "factor": 1.5 }
+      ]
+    },
+    {
+      "id": "badiya",
+      "group": "mideast",
+      "name": "巴迪亚人",
+      "color": "#873c3c",
+      "nameStyle": "arabic",
+      "weight": 0.6,
+      "description": "深入荒漠的游牧部落。",
+      "tendencies": {
+        "religion": [["moon-faith", 6], ["spirit-ways", 2], ["river-gods", 1], ["arcane-eye", 4], ["silver-lady", 3], ["elder-dragons", 2], ["pact-lords", 1]],
+        "nation": [["religious-community", 4], ["regional", 4], ["pan-group", 2]]
+      },
+      "prefs": [
+        { "classes": ["desert"], "factor": 2 },
+        { "classes": ["steppe"], "factor": 1.3 }
+      ]
+    }
+  ]
+}

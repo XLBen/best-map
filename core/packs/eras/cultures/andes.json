@@ -1,0 +1,42 @@
+{
+  "group": {
+    "id": "andes",
+    "name": "安第斯",
+    "color": "#784b69",
+    "description": "高山峡谷里修梯田的民族。",
+    "prefs": [
+      { "classes": ["highlands", "mountains"], "factor": 3 },
+      { "elevMin": 1500, "factor": 1.6 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["feathered-god", 5], ["ancestor-rites", 3], ["spirit-ways", 2], ["sun-faith", 5], ["secular", 0.5], ["dawnlord", 4], ["forge-father", 2], ["grey-warden", 2]],
+    "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+    "ideology": [["dem-socialism", 3], ["social-democracy", 2], ["auth-nationalist", 2], ["rev-socialism", 2], ["liberal-conservative", 1.5], ["traditionalist", 1], ["sf-naturalist", 3], ["sf-federalist", 2], ["sf-ascension", 1]],
+    "race": [["human", 8], ["dwarf", 1], ["gnome", 1]],
+    "species": [["terran", 7], ["augmented", 1], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "wayna",
+      "group": "andes",
+      "name": "瓦伊纳人",
+      "color": "#784b69",
+      "nameStyle": "quechua",
+      "weight": 1.5,
+      "description": "高原上的梯田农民与牧人。"
+    },
+    {
+      "id": "killa",
+      "group": "andes",
+      "name": "基利亚人",
+      "color": "#872d5a",
+      "nameStyle": "quechua",
+      "description": "山脚河谷与海岸上的灌溉农民。",
+      "prefs": [
+        { "river": true, "factor": 1.4 },
+        { "coast": true, "factor": 1.2 }
+      ]
+    }
+  ]
+}

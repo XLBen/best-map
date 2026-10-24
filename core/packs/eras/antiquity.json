@@ -1,0 +1,19 @@
+{
+  "era": {
+    "id": "antiquity",
+    "name": "青铜与古典",
+    "description": "青铜器与早期铁器的时代，城邦与最早的帝国。人挤在大河谷地与温暖的海岸，别处多是无人的荒野。",
+    "color": "#b5a642",
+    "dimensions": [
+      { "id": "religion", "label": "宗教", "required": true }
+    ],
+    "popDensity": 0.9,
+    "sparsity": 2.6,
+    "urbanization": 0.05,
+    "unclaimed": { "minHabitability": 0.25, "nomads": 0.05 },
+    "seaClaimKm": 0,
+    "defaultGroups": [["mediterranean", 3], ["mideast", 3], ["eastern", 3], ["southasia", 2], ["western", 1.5], ["steppe", 1.5]],
+    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "gems", "spices", "fur", "wine", "silk", "tea"]
+  }
+}

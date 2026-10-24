@@ -1,0 +1,39 @@
+{
+  "era": {
+    "id": "scifi",
+    "name": "科幻",
+    "description": "星际殖民的时代：人类的殖民地与本地的异星种族共处一颗行星，派系之争取代了旧日的宗教。",
+    "color": "#2fa5a0",
+    "dimensions": [
+      { "id": "species", "label": "物种", "required": true },
+      { "id": "ideology", "label": "派系", "required": true }
+    ],
+    "popDensity": 20,
+    "sparsity": 1.3,
+    "urbanization": 0.7,
+    "unclaimed": { "minHabitability": 0.02, "nomads": 0.7 },
+    "seaClaimKm": 200,
+    "defaultGroups": [["eastern", 3], ["western", 2], ["southasia", 2], ["tidal", 1.5], ["lithic", 1.5], ["sporal", 1.5], ["chitin", 1.5]],
+    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania", "tidal", "lithic", "sporal", "chitin"],
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"]
+  },
+  "values": [
+    { "id": "terran", "dimension": "species", "name": "人类", "color": "#e1a578", "description": "从母星迁来的人类。", "eras": ["scifi"] },
+    { "id": "augmented", "dimension": "species", "name": "改造人", "color": "#e1693c", "description": "经基因与义体改造的人类。", "eras": ["scifi"] },
+    { "id": "synthetic", "dimension": "species", "name": "合成人", "color": "#a5b4c3", "description": "有自我意识的人造智能体。", "eras": ["scifi"], "prefs": [{ "classes": ["desert", "glacier", "highlands"], "factor": 1.3 }] },
+    { "id": "tidal-kin", "dimension": "species", "name": "潮裔", "color": "#2d87c3", "description": "两栖的水生种族，离不开海水。", "eras": ["scifi"], "prefs": [{ "coast": true, "factor": 2.5 }] },
+    { "id": "lithic", "dimension": "species", "name": "晶岩族", "color": "#9678b4", "description": "以硅为骨的岩石种族，生长极慢。", "eras": ["scifi"], "prefs": [{ "classes": ["mountains", "peaks", "highlands", "desert"], "factor": 2 }] },
+    { "id": "sporal", "dimension": "species", "name": "孢生族", "color": "#5aa53c", "description": "菌丝相连的孢生种族，喜湿热。", "eras": ["scifi"], "prefs": [{ "classes": ["jungle", "marsh", "forest"], "factor": 2 }] },
+    { "id": "chitin", "dimension": "species", "name": "甲壳族", "color": "#b4871e", "description": "群居的甲壳种族，耐干旱。", "eras": ["scifi"], "prefs": [{ "classes": ["desert", "steppe"], "factor": 1.8 }] },
+    { "id": "sf-federalist", "dimension": "ideology", "name": "联邦派", "color": "#4b78c3", "description": "主张各殖民地平等加入星际联邦。", "eras": ["scifi"] },
+    { "id": "sf-corporate", "dimension": "ideology", "name": "企业联合", "color": "#e1b42d", "description": "由大公司董事会治理殖民地。", "eras": ["scifi"], "prefs": [{ "coast": true, "factor": 1.3 }] },
+    { "id": "sf-technocracy", "dimension": "ideology", "name": "技术统治", "color": "#3cb4c3", "description": "由科学家与工程师按数据治理。", "eras": ["scifi"] },
+    { "id": "sf-ascension", "dimension": "ideology", "name": "飞升派", "color": "#c34bc3", "description": "追求以改造与机械超越肉身。", "eras": ["scifi"] },
+    { "id": "sf-naturalist", "dimension": "ideology", "name": "自然守护", "color": "#4bb45a", "description": "守护行星原本的生态，反对改造星球。", "eras": ["scifi"], "prefs": [{ "classes": ["forest", "jungle", "woods"], "factor": 1.4 }] },
+    { "id": "sf-supremacist", "dimension": "ideology", "name": "本族至上", "color": "#782d2d", "description": "认为本族应当主宰其他种族。", "eras": ["scifi"] },
+    { "id": "sf-free", "dimension": "ideology", "name": "自由星民", "color": "#e1783c", "description": "拒绝任何中央政府的拓荒者与行商。", "eras": ["scifi"], "prefs": [{ "classes": ["steppe", "desert", "highlands"], "factor": 1.3 }] },
+    { "id": "sf-collective", "dimension": "ideology", "name": "集体意识", "color": "#5a3ca5", "description": "个体服从整体，决策由群体共同作出。", "eras": ["scifi"] },
+    { "id": "sf-psionic", "dimension": "ideology", "name": "灵能教团", "color": "#d24b78", "description": "以灵能者为首的神秘教团。", "eras": ["scifi"] },
+    { "id": "sf-militarist", "dimension": "ideology", "name": "军政派", "color": "#5a5a3c", "description": "由舰队与军官团掌权，重防御与扩张。", "eras": ["scifi"] }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "group": {
+    "id": "elves",
+    "name": "精灵",
+    "color": "#1ee178",
+    "description": "古老森林里长寿的精灵。",
+    "prefs": [
+      { "classes": ["forest", "woods"], "factor": 3 },
+      { "classes": ["jungle"], "factor": 1.5 },
+      { "classes": ["desert", "steppe"], "factor": 0.4 }
+    ],
+    "eras": ["fantasy"]
+  },
+  "tendencies": {
+    "religion": [["grove-mother", 5], ["silver-lady", 3], ["arcane-eye", 2]],
+    "race": [["elf", 8], ["half-elf", 2], ["human", 0.5]]
+  },
+  "cultures": [
+    {
+      "id": "sylvan",
+      "group": "elves",
+      "name": "林语精灵",
+      "color": "#00e178",
+      "nameStyle": "fantasy-elf",
+      "weight": 1.5,
+      "description": "深林里的猎人与德鲁伊，树屋连成城镇。"
+    },
+    {
+      "id": "starlight",
+      "group": "elves",
+      "name": "星辉精灵",
+      "color": "#2de1a5",
+      "nameStyle": "fantasy-elf",
+      "description": "海边白塔里的学者与法师。",
+      "tendencies": {
+        "religion": [["arcane-eye", 4], ["silver-lady", 3], ["grove-mother", 2]],
+        "race": [["elf", 8], ["half-elf", 2], ["human", 1]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.6 }
+      ]
+    },
+    {
+      "id": "shadow-elf",
+      "group": "elves",
+      "name": "幽影精灵",
+      "color": "#5ae12d",
+      "nameStyle": "fantasy-elf",
+      "weight": 0.6,
+      "description": "退入山中洞窟的精灵，与地上的同族不和。",
+      "tendencies": {
+        "religion": [["pact-lords", 3], ["silver-lady", 3], ["grey-warden", 1]],
+        "race": [["elf", 9], ["goblin", 1]]
+      },
+      "prefs": [
+        { "classes": ["mountains", "hills"], "factor": 1.8 }
+      ]
+    }
+  ]
+}

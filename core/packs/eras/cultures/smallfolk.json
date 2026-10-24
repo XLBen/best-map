@@ -1,0 +1,43 @@
+{
+  "group": {
+    "id": "smallfolk",
+    "name": "小民",
+    "color": "#d2d200",
+    "description": "丘陵与田野间的半身人与侏儒。",
+    "prefs": [
+      { "classes": ["plains", "grasslands", "hills"], "factor": 2 },
+      { "tempMin": 4, "tempMax": 18, "factor": 1.8 }
+    ],
+    "eras": ["fantasy"]
+  },
+  "tendencies": {
+    "religion": [["harvest-maid", 5], ["trickster", 2], ["dawnlord", 1]],
+    "race": [["halfling", 8], ["human", 1], ["gnome", 1]]
+  },
+  "cultures": [
+    {
+      "id": "greenhill",
+      "group": "smallfolk",
+      "name": "绿丘半身人",
+      "color": "#d2d200",
+      "nameStyle": "en-english",
+      "weight": 1.5,
+      "description": "住在丘洞里的农人，爱好宴饮。"
+    },
+    {
+      "id": "cogwork",
+      "group": "smallfolk",
+      "name": "齿轮侏儒",
+      "color": "#96d20f",
+      "nameStyle": "nl-dutch",
+      "description": "丘陵里的工匠与发明家。",
+      "tendencies": {
+        "religion": [["arcane-eye", 4], ["trickster", 2], ["forge-father", 1]],
+        "race": [["gnome", 8], ["halfling", 1], ["dwarf", 1]]
+      },
+      "prefs": [
+        { "classes": ["hills"], "factor": 1.4 }
+      ]
+    }
+  ]
+}

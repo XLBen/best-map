@@ -1,0 +1,20 @@
+{
+  "era": {
+    "id": "industrial",
+    "name": "近现代",
+    "description": "铁路、工厂与民族国家的时代。人口成倍增长，民族认同成了人群的新分界，近海开始划归国家。",
+    "color": "#6b6f7a",
+    "dimensions": [
+      { "id": "religion", "label": "宗教", "required": true },
+      { "id": "nation", "label": "民族认同", "required": true }
+    ],
+    "popDensity": 9,
+    "sparsity": 1.45,
+    "urbanization": 0.2,
+    "unclaimed": { "minHabitability": 0.03, "nomads": 0.5 },
+    "seaClaimKm": 40,
+    "defaultGroups": [["western", 3], ["eastern", 3], ["southasia", 3], ["slavic", 2], ["mediterranean", 2], ["mideast", 1.5], ["nordic", 1]],
+    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"]
+  }
+}
