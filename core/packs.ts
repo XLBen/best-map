@@ -137,6 +137,12 @@ function issuesText(issues: readonly z.core.$ZodIssue[], json: unknown, prefix: 
   });
 }
 
+// 一项按它那一种的格式查（编辑器用）：出错的位置（字段的路径）和中文的说明
+export function itemErrors(kind: ContentKind, item: unknown): { path: PropertyKey[]; message: string }[] {
+  const r = kind.schema.safeParse(item, { error: packErrorMap });
+  return r.success ? [] : r.error.issues.map((i) => ({ path: [...i.path], message: i.message }));
+}
+
 export type PackParse = { ok: true; pack: ResourcePack } | { ok: false; errors: string[] };
 
 // 校验一个资源包（已经是 JSON 值）。只解析、检查，不运行脚本。别名里的项（旧的 textPacks）读进那一种的段里

@@ -309,10 +309,11 @@ export function stemFeature(w: World, own: readonly number[]): GeoFeature | null
 }
 
 // 固定一条自然的河时的名字：沿用那条河的地名键，记下现在的名字（autoName）。那个键已经有一条画的河用着
-// （改道后剩下的旧河道还叫着那个键的地名）时不再用它，只记下名字，不会两条河同一个键
-export function stemNaming(w: World, f: GeoFeature | null): { nameKey: string; autoName?: string } | { name: string; autoName?: string } {
+// （改道后剩下的旧河道还叫着那个键的地名）时不再用它，只记下名字，不会两条河同一个键。名字有原文时原文一起记下（autoOrig）
+type StemNaming = { autoName?: string; autoOrig?: string };
+export function stemNaming(w: World, f: GeoFeature | null): ({ nameKey: string } & StemNaming) | ({ name: string } & StemNaming) {
   if (!f) return { name: '' };
-  const auto = f.name && !f.custom ? { autoName: f.name } : {};
+  const auto = f.name && !f.custom ? { autoName: f.name, ...(f.orig ? { autoOrig: f.orig } : {}) } : {};
   if (w.small.guides.some((g) => g.nameKey === f.key)) return { name: '', ...auto };
   return { nameKey: f.key, ...auto };
 }

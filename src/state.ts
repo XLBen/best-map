@@ -8,7 +8,7 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { type PackedMesh, storedMeshKey, unpackMesh } from '../core/mesh-pack';
-import { DEFAULT_NAME_MODE, type NameMode } from '../core/name-display';
+import { DEFAULT_NAME_MODE, NAME_MODES, type NameMode } from '../core/name-display';
 import { previewWorldOf } from '../core/preview-world';
 import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from '../core/script';
 import { isRiverCell } from '../core/select';
@@ -183,8 +183,6 @@ export const selectedLake = signal<LakeRef | null>(null);
 // provinces、seaProvinces（第十三轮修）：省名、海域的省名，默认不显示；打开后屏幕上一直标着、导出的图里也有
 export type LabelGroup = 'land' | 'water' | 'relief' | 'nature' | 'provinces' | 'seaProvinces';
 export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 'relief', 'nature']));
-// 地名显示中文、原文还是两者（第二十轮，见 core/name-display.ts）：屏幕与导出的图片都按它
-export const nameMode = signal<NameMode>(DEFAULT_NAME_MODE);
 
 // 编辑后的变化：一句话汇总（带撤销、“换一个”）与几秒钟的高亮
 // action：提示条上的另一个按钮（比如新建了特有生态后的“编辑”）
@@ -199,14 +197,27 @@ export type WheelPref = 'auto' | 'zoom' | 'pan';
 // 整个星球用哪种投影看（第十三轮 G4）：等距圆柱（平铺图）、等面积（椭圆形）、球形（从太空看）。只是看的方式，不写进世界文件
 export type ProjectionPref = 'equirect' | 'equalEarth' | 'globe';
 const PREFS_KEY = 'map2.prefs';
-type Prefs = { wheel: WheelPref; projection: ProjectionPref };
+// names：地名显示中文、原文还是两者（第二十轮）
+export type Prefs = { wheel: WheelPref; projection: ProjectionPref; names: NameMode };
+// 存着的偏好（JSON）读回来：不认识的值用默认的
+export function parsePrefs(raw: string | null): Prefs {
+  let p: Partial<Prefs> = {};
+  try {
+    p = raw ? (JSON.parse(raw) as Partial<Prefs>) : {};
+  } catch {
+    // 坏了就全用默认的
+  }
+  return {
+    wheel: p.wheel === 'zoom' || p.wheel === 'pan' ? p.wheel : 'auto',
+    projection: p.projection === 'equalEarth' || p.projection === 'globe' ? p.projection : 'equirect',
+    names: NAME_MODES.some((m) => m.id === p.names) ? (p.names as NameMode) : DEFAULT_NAME_MODE,
+  };
+}
 function readPrefs(): Prefs {
   try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null;
-    const p = raw ? (JSON.parse(raw) as Partial<Prefs>) : {};
-    return { wheel: p.wheel === 'zoom' || p.wheel === 'pan' ? p.wheel : 'auto', projection: p.projection === 'equalEarth' || p.projection === 'globe' ? p.projection : 'equirect' };
+    return parsePrefs(typeof localStorage !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null);
   } catch {
-    return { wheel: 'auto', projection: 'equirect' };
+    return parsePrefs(null);
   }
 }
 export const prefs = signal(readPrefs());
@@ -217,6 +228,13 @@ export function setPrefs(patch: Partial<Prefs>) {
   } catch {
     // 存不了就只在这次打开时有效
   }
+}
+
+// 地名显示中文、原文还是两者（第二十轮，见 core/name-display.ts）：屏幕与导出的图片都按它。存在这个浏览器里，不写进世界
+export const nameMode = signal<NameMode>(prefs.value.names);
+export function setNameMode(m: NameMode) {
+  nameMode.value = m;
+  setPrefs({ names: m });
 }
 
 // 参考图（手绘草图）：铺在地图上照着画。只存在这个浏览器里（IndexedDB，不占自动保存的空间），不写进世界文件

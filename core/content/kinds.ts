@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { type IslandType, ISLAND_HEIGHTS, ISLAND_LOOKS, ISLAND_SHAPES, islandTypeSchema, islandTypesOf } from '../island-types';
 import { type LakeType, lakeTypeSchema, lakeTypesOf } from '../lake-types';
-import { DEFAULT_STYLE, type NameStyle, nameStyleSchema, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
+import { FEATURE_INFO, type FeatureType } from '../features';
+import { DEFAULT_STYLE, type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
 import { DEFAULT_PACK } from '../names';
 import { BUILTIN_STYLES } from '../packs/names';
 import { type PlanetForm, planetFormSchema } from '../planet-form';
@@ -330,6 +331,18 @@ function readStyle(raw: unknown): unknown {
   return out;
 }
 
+// 编辑器里的随机示例：省份在前，之后按地物的先后，每类 4 个（有原文的写在后面）。风格有问题时不起
+const SAMPLE_ORDER = ['province', ...Object.keys(FEATURE_INFO)];
+function styleSamples(style: NameStyle, seed: number): { label: string; lines: string[] }[] {
+  if (styleProblems(style).length) return [];
+  const rank = (t: string) => (SAMPLE_ORDER.includes(t) ? SAMPLE_ORDER.indexOf(t) : SAMPLE_ORDER.length);
+  const types = Object.keys(style.types).sort((a, b) => rank(a) - rank(b));
+  return types.slice(0, 12).map((type) => ({
+    label: type === 'province' ? '省份' : (FEATURE_INFO[type as FeatureType]?.label ?? type),
+    lines: sampleNames(style, type, 4, seed).map((n) => (n.orig ? `${n.zh}　${n.orig}` : n.zh)),
+  }));
+}
+
 const PHONETIC = { key: 'kind', is: 'phonetic' } as const;
 const TEMPLATE = { key: 'kind', is: 'template' } as const;
 const PATTERN_FIELDS: readonly FieldDesc[] = [
@@ -364,6 +377,8 @@ registerKind<NameStyle>({
     if (problems.length) throw new CommandError(`地名风格有问题：${problems.slice(0, 3).join('；')}`);
   },
   blank: () => ({ id: 'my-style', name: '新风格', kind: 'template', lists: { a: ['青', '白'] }, types: { island: { patterns: [{ p: '{a}岛' }] } } }),
+  notes: (style) => styleNotes(style),
+  samples: styleSamples,
   fields: [
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },

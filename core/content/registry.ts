@@ -145,6 +145,10 @@ export interface ContentKind<T = unknown> {
   fields: readonly FieldDesc[];
   // 新建一项时的样子（编辑器的“新建”）
   blank?(): T;
+  // 编辑器里的提醒（不挡启用；挡启用的写在 check 里）
+  notes?(item: T): string[];
+  // 编辑器里的随机示例：几组，每组一个小标题和几行（地名风格：每类地物几个名字）。seed 是“换一批”换的
+  samples?(item: T, seed: number): { label: string; lines: string[] }[];
   pack: PackSpec<T>;
 }
 

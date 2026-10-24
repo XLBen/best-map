@@ -4,7 +4,8 @@ import { type ResourcePack, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
-import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm } from './library';
+import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm, saveItem } from './library';
+import { BUILTIN_STYLES, NAME_STYLES_PACK, NAME_STYLES_PACK_ID } from '../core/packs/names';
 import { PACK_MAX } from '../core/packs';
 import { TWIN_CONTINENTS } from '../core/packs/fantasy-forms';
 import type { PlanetForm } from '../core/planet-form';
@@ -115,11 +116,11 @@ describe('资源库', () => {
   });
 
   it('内置示例包总在最前面、删不掉；装、替换、删除只动资源库', async () => {
-    expect((await refreshLibrary()).map((e) => [e.key, e.builtin])).toEqual([['fantasy', true]]);
+    expect((await refreshLibrary()).map((e) => [e.key, e.builtin])).toEqual([['fantasy', true], ['name-styles', true]]);
     await installPack(userPack('a'));
     await installPack(userPack('mine', { name: '我的' }), { mine: true });
     // 我的资源排在导入的前面
-    expect(library.value.map((e) => e.key)).toEqual(['fantasy', 'mine', 'a']);
+    expect(library.value.map((e) => e.key)).toEqual(['fantasy', 'name-styles', 'mine', 'a']);
     // 同一个 id 再装：替换
     await installPack(userPack('a', { name: '新的 a' }));
     expect(library.value.filter((e) => e.key === 'a').map((e) => e.pack.name)).toEqual(['新的 a']);
@@ -129,7 +130,7 @@ describe('资源库', () => {
     expect(library.value[0].pack).toBe(FANTASY_PACK);
     await removePack('fantasy');
     await removePack('a');
-    expect(library.value.map((e) => e.key)).toEqual(['fantasy', 'mine', 'fantasy-2']);
+    expect(library.value.map((e) => e.key)).toEqual(['fantasy', 'name-styles', 'mine', 'fantasy-2']);
     // 存着的坏数据不列出来
     idb.data.get('packs')!.set('bad', { key: 'bad', pack: { format: 'map2-pack', version: 1 }, installedAt: 1 });
     expect((await refreshLibrary()).map((e) => e.key)).not.toContain('bad');
@@ -224,6 +225,32 @@ describe('自己做的星球形态存进资源库', () => {
   });
 });
 
+describe('仓库的编辑器存进“我的资源”（第二十轮）', () => {
+  it('地名风格存进“我的资源”：同一个 id 换成新的；从世界导出替换“我的资源”时它留着', async () => {
+    const style = { ...BUILTIN_STYLES.find((s) => s.id === 'west-germanic')!, id: 'my-g', name: '我的日耳曼' };
+    const a = await saveItem('nameStyles', style);
+    expect(a.ok && a.entry.pack.nameStyles!.map((s) => s.name)).toEqual(['我的日耳曼']);
+    await saveItem('nameStyles', { ...style, name: '改过的' });
+    const mine = library.value.find((e) => e.key === MY_PACK_NAME)!;
+    expect(mine.pack.nameStyles!.map((s) => [s.id, s.name])).toEqual([['my-g', '改过的']]);
+    const exported = userPack(MY_PACK_NAME, { biomes: withScript('y', 'return 1;').biomes });
+    expect(keepSavedForms(exported, inLibrary(exported)).nameStyles!.map((s) => s.id)).toEqual(['my-g']);
+    // 坏的存不进去
+    const bad = await saveItem('nameStyles', { ...style, id: 'bad', kind: 'nope' });
+    expect(bad.ok).toBe(false);
+    expect((await saveItem('nope', style)).ok).toBe(false);
+  });
+
+  it('地名风格示例是内置的：在最前面、默认信任、删不掉', async () => {
+    const list = await refreshLibrary();
+    const e = list.find((x) => x.key === NAME_STYLES_PACK_ID)!;
+    expect([e.builtin, e.pack]).toEqual([true, NAME_STYLES_PACK]);
+    await removePack(NAME_STYLES_PACK_ID);
+    expect(library.value.map((x) => x.key)).toContain(NAME_STYLES_PACK_ID);
+    expect((await installPack(userPack(NAME_STYLES_PACK_ID))).entry.key).toBe(`${NAME_STYLES_PACK_ID}-2`);
+  });
+});
+
 describe('信任的脚本', () => {
   it('内置示例包的脚本总是信任的', async () => {
     expect(await untrustedScripts(FANTASY_PACK)).toEqual([]);
@@ -297,7 +324,7 @@ describe('信任的脚本', () => {
     vi.resetModules();
     const lib = await import('./library');
     const tr = await import('./trust');
-    expect(lib.library.value.map((e) => e.key)).toEqual(['fantasy']);
+    expect(lib.library.value.map((e) => e.key)).toEqual(['fantasy', 'name-styles']);
     expect(await tr.untrustedScripts(theirs)).toEqual([]);
     expect((await tr.untrustedScripts(mine)).length).toBe(1);
   });
