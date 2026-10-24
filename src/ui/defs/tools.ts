@@ -206,6 +206,7 @@ const riverModes = {
 export const riverEnds = {
   kind: 'choice' as const,
   key: 'riverEnd' as const,
+  label: '终点',
   options: [
     { value: 'flow', label: '流下去', hint: RIVER_END_HINTS.flow },
     { value: 'sink', label: '停在这', hint: RIVER_END_HINTS.sink },

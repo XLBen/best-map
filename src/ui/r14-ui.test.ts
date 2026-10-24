@@ -152,8 +152,10 @@ describe('海水温度底图', () => {
     expect(Array.from(t.smooth.slice(s * 4, s * 4 + 3))).toEqual([40, 50, 70]);
   });
 
-  it('在“更多底图”里', () => {
-    expect(VIEWS.find((v) => v.id === 'seaTemp')).toMatchObject({ label: '海水温度', more: true });
+  it('和气温、降水一样在常用的底图里', () => {
+    const v = VIEWS.find((x) => x.id === 'seaTemp');
+    expect(v).toMatchObject({ label: '海水温度' });
+    expect(v?.more).toBeFalsy();
   });
 });
 

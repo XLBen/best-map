@@ -967,6 +967,8 @@ button.label-edit {
   padding: 0 2px;
   height: auto;
   cursor: text;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 button.label-edit:hover:not(:disabled) {
   background: none;

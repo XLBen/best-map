@@ -17,7 +17,7 @@ export const VIEWS: ViewDef[] = [
   { id: 'temperature', label: '气温' },
   { id: 'precip', label: '降水' },
   { id: 'elevation', label: '海拔' },
-  { id: 'seaTemp', label: '海水温度', more: true, hint: '海面的冷暖，与“气温”同一条色带；整个星球上看得出暖流、寒流。陆地是灰的' },
+  { id: 'seaTemp', label: '海水温度', hint: '海面的冷暖，与“气温”同一条色带；整个星球上看得出暖流、寒流。陆地是灰的' },
   { id: 'moisture', label: '湿润程度', more: true },
   { id: 'wetness', label: '地形湿度', more: true },
   { id: 'continentality', label: '离海远近', more: true },
