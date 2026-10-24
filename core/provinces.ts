@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { MinHeap } from './heap';
 import { lakeSeaIsles, provinceLand } from './island-types';
 import { graphDistanceOwner, ringDistance } from './mesh';
-import { DEFAULT_PACK, generateName, hashString } from './names';
+import { hashString } from './names';
+import { type GenName, hasType, styleFor, styleName } from './name-styles';
 import { mixSeed, mulberry32 } from './rng';
 import type { Derived, ProvinceMeta, World } from './world';
 
@@ -477,7 +478,7 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
     // 按编号排好，取字时的累加顺序与扫全图收集时相同
     taken ??= takenNames(world);
     queue.sort((a, b) => a - b);
-    meta.name = provinceName(world, id, queue, meta.kind, taken);
+    setProvinceName(meta, provinceName(world, id, queue, meta.kind, taken));
     // 空名字不算已用（重新收集时会被滤掉）
     if (!meta.name) taken.delete('');
   }
@@ -627,13 +628,32 @@ function provinceTags(world: World, cells: number[], kind: ProvinceKind): string
   return tags;
 }
 
-function provinceName(world: World, id: number, cells: number[], kind: ProvinceKind, taken: Set<string>): string {
+// 按这个省的地名风格起名（第二十轮：风格见 name-styles.ts 的 styleFor；不是世界默认的风格时种子加上风格 id）
+function provinceName(world: World, id: number, cells: number[], kind: ProvinceKind, taken: Set<string>): GenName {
   const seed = world.small.terrain.gen?.seed ?? world.settings.seed;
-  const pack = world.small.wordPack ?? DEFAULT_PACK;
+  const rs = styleFor(world, { province: id });
   const tags = provinceTags(world, cells, kind);
   // 湖省用湖的命名模板
-  const type = kind === 'lake' && pack.types.lake ? 'lake' : 'province';
-  return generateName(pack, type, tags, hashString(`${seed}:province:${id}`), taken);
+  const type = kind === 'lake' && hasType(rs.style, 'lake') ? 'lake' : 'province';
+  return styleName(rs.style, type, tags, hashString(`${seed}:province:${id}${rs.suffix}`), taken);
+}
+
+// 名字与原文写进省份（没有原文时去掉）
+function setProvinceName(meta: ProvinceMeta, n: GenName) {
+  meta.name = n.zh;
+  if (n.orig) meta.orig = n.orig;
+  else delete meta.orig;
+}
+
+// 按现在的地名风格给一个省重新起名（换了风格时；要最新的推导）
+export function renameProvince(world: World, id: number) {
+  const meta = world.small.provinces[id];
+  if (!meta) return;
+  const cells: number[] = [];
+  for (let i = 0; i < world.causes.province.length; i++) if (world.causes.province[i] === id) cells.push(i);
+  const taken = takenNames(world);
+  taken.delete(meta.name);
+  setProvinceName(meta, provinceName(world, id, cells, meta.kind, taken));
 }
 
 function cellsByProvince(world: World): Map<number, number[]> {
@@ -659,7 +679,7 @@ function nameProvinces(world: World, ids: number[]) {
   for (const id of ids) {
     const meta = world.small.provinces[id];
     if (!meta || meta.name) continue;
-    meta.name = provinceName(world, id, byId.get(id) ?? [], meta.kind, taken);
+    setProvinceName(meta, provinceName(world, id, byId.get(id) ?? [], meta.kind, taken));
   }
 }
 
@@ -668,7 +688,7 @@ export function nameNewProvince(world: World, id: number) {
   if (!meta || meta.name) return;
   const cells: number[] = [];
   for (let i = 0; i < world.causes.province.length; i++) if (world.causes.province[i] === id) cells.push(i);
-  meta.name = provinceName(world, id, cells, meta.kind, takenNames(world));
+  setProvinceName(meta, provinceName(world, id, cells, meta.kind, takenNames(world)));
 }
 
 export interface ProvinceSummary {

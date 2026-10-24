@@ -1,8 +1,8 @@
 import { X } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { hexToRgb } from '../../../core/export';
-import { packProblems as wordPackProblems } from '../../../core/names';
-import { PACK_SECTIONS, type PackPicks, type ResourcePack, newBiomeCells, packScripts, planPack } from '../../../core/packs';
+import { styleProblems } from '../../../core/name-styles';
+import { type PackPicks, type ResourcePack, canApply, newBiomeCells, packScripts, packSection, pickedIds, planPack } from '../../../core/packs';
 import type { FoundScript } from '../../../core/script';
 import type { IslandType } from '../../../core/island-types';
 import type { World } from '../../../core/world';
@@ -87,7 +87,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
         mine.current = key;
         const parts: string[] = [];
         if (anyNew) parts.push(count ? `${fmt(count)} 格会变成新生态` : '新生态在这里长不出来');
-        if (plan.textPack) parts.push('地名按新文字包重起');
+        if (plan.defaultStyle) parts.push('地名按新的风格重起');
         if (!parts.length) parts.push(r.result.changedCells.length ? `${fmt(r.result.changedCells.length)} 格生态会变` : '地图上没有变化');
         setNote({ key, text: parts.join('，') });
       });
@@ -124,27 +124,30 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
     }
   };
 
-  const togglePick = (sec: 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes', id: string) => {
-    const cur = picks[sec] ?? [];
-    setPicks({ ...picks, [sec]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  const togglePick = (sec: 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes' | 'nameStyles', id: string) => {
+    const cur = pickedIds(picks, sec) ?? [];
+    const on = cur.includes(id);
+    // 不启用的风格也不能设为默认
+    const def = on && sec === 'nameStyles' && picks.defaultStyle === id ? { defaultStyle: null } : {};
+    setPicks({ ...picks, [sec]: on ? cur.filter((x) => x !== id) : [...cur, id], ...def });
   };
-  const status = (sec: 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes', id: string, name: string): string => {
+  const status = (sec: 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes' | 'nameStyles', id: string, name: string): string => {
     const s = plan.skipped.find((x) => x.section === sec && x.from === id);
     if (s) return '已经有了';
     const a = plan.added.find((x) => x.section === sec && x.from === id);
     if (!a || a.id === a.from) return '';
     return a.name !== name ? `世界里已有另一个“${name}”，这一份叫“${a.name}”` : '世界里已有另一份，这一份另外加上';
   };
-  // 有问题的文字包换不了（命令会拒绝）：不能勾，说一句
-  const badText = useMemo(() => new Set((pack.textPacks ?? []).filter((t) => wordPackProblems(t).length).map((t) => t.id)), [pack]);
+  // 有问题的地名风格用不了（命令会拒绝）：不能勾，说一句
+  const badText = useMemo(() => new Set((pack.nameStyles ?? []).filter((t) => styleProblems(t).length).map((t) => t.id)), [pack]);
   const rivers = pack.riverTypes ?? [];
-  const riverSec = PACK_SECTIONS.riverTypes;
+  const riverSec = packSection('riverTypes')!;
   const lakes = pack.lakeTypes ?? [];
-  const lakeSec = PACK_SECTIONS.lakeTypes;
+  const lakeSec = packSection('lakeTypes')!;
   const isles = pack.islandTypes ?? [];
-  const isleSec = PACK_SECTIONS.islandTypes;
+  const isleSec = packSection('islandTypes')!;
   const forms = pack.planetForms ?? [];
-  const texts = pack.textPacks ?? [];
+  const texts = pack.nameStyles ?? [];
   const total = w.small.species.length + plan.added.filter((a) => a.section === 'biomes').length;
   const shown = note && note.key === key ? note : null;
   return (
@@ -172,14 +175,14 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>河流类型</h5>
             {rivers.map((r) => (
               <label class="check">
-                <input type="checkbox" disabled={!riverSec.command} checked={!!riverSec.command && !!picks.riverTypes?.includes(r.id)} onChange={() => togglePick('riverTypes', r.id)} />
+                <input type="checkbox" disabled={!canApply(riverSec)} checked={canApply(riverSec) && !!picks.riverTypes?.includes(r.id)} onChange={() => togglePick('riverTypes', r.id)} />
                 <span>
                   {r.color && <span class="swatch" style={{ background: r.color }} />} {r.name || r.id}
                   {picks.riverTypes?.includes(r.id) && status('riverTypes', r.id, r.name || r.id) && <span class="hint">（{status('riverTypes', r.id, r.name || r.id)}）</span>}
                 </span>
               </label>
             ))}
-            {riverSec.note && <p class="hint">{riverSec.note}</p>}
+            {riverSec.pack.note && <p class="hint">{riverSec.pack.note}</p>}
           </>
         )}
         {st.only !== 'biomes' && !!lakes.length && (
@@ -187,14 +190,14 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>湖泊类型</h5>
             {lakes.map((r) => (
               <label class="check">
-                <input type="checkbox" disabled={!lakeSec.command} checked={!!lakeSec.command && !!picks.lakeTypes?.includes(r.id)} onChange={() => togglePick('lakeTypes', r.id)} />
+                <input type="checkbox" disabled={!canApply(lakeSec)} checked={canApply(lakeSec) && !!picks.lakeTypes?.includes(r.id)} onChange={() => togglePick('lakeTypes', r.id)} />
                 <span>
                   {r.color && <span class="swatch" style={{ background: r.color }} />} {r.name || r.id}
                   {picks.lakeTypes?.includes(r.id) && status('lakeTypes', r.id, r.name || r.id) && <span class="hint">（{status('lakeTypes', r.id, r.name || r.id)}）</span>}
                 </span>
               </label>
             ))}
-            {lakeSec.note && <p class="hint">{lakeSec.note}</p>}
+            {lakeSec.pack.note && <p class="hint">{lakeSec.pack.note}</p>}
           </>
         )}
         {st.only !== 'biomes' && !!isles.length && (
@@ -202,7 +205,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>岛的种类</h5>
             {isles.map((r) => (
               <label class="check">
-                <input type="checkbox" disabled={!isleSec.command} checked={!!isleSec.command && !!picks.islandTypes?.includes(r.id)} onChange={() => togglePick('islandTypes', r.id)} />
+                <input type="checkbox" disabled={!canApply(isleSec)} checked={canApply(isleSec) && !!picks.islandTypes?.includes(r.id)} onChange={() => togglePick('islandTypes', r.id)} />
                 <span>
                   <span class="swatch" style={{ background: islandSwatch(r as unknown as IslandType) }} /> {r.name || r.id}
                   {picks.islandTypes?.includes(r.id) && status('islandTypes', r.id, r.name || r.id) && <span class="hint">（{status('islandTypes', r.id, r.name || r.id)}）</span>}
@@ -217,25 +220,37 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>星球形态</h5>
             <p class="small">{forms.map((f) => f.name || f.id).join('、')}</p>
             {/* 一块地区上没有“调整 → 星球形态”：形态只用在整个星球上 */}
-            <p class="hint">{w.settings.globe ? PACK_SECTIONS.planetForms.note : '只用于整个星球：新建时选“整个星球”'}</p>
+            <p class="hint">{w.settings.globe ? packSection('planetForms')?.pack.note : '只用于整个星球：新建时选“整个星球”'}</p>
           </>
         )}
         {st.only !== 'biomes' && !!texts.length && (
           <>
-            <h5>文字包</h5>
-            {texts.map((t) => (
-              <label class="check">
-                <input
-                  type="checkbox"
-                  disabled={badText.has(t.id)}
-                  checked={picks.textPack === t.id && !badText.has(t.id)}
-                  onChange={() => setPicks({ ...picks, textPack: picks.textPack === t.id ? null : t.id })}
-                />
-                <span>
-                  换用文字包“{t.name}”{badText.has(t.id) ? <span class="hint" title="模板里有不存在的词表">（换不了）</span> : <span class="hint">（地名跟着变）</span>}
-                </span>
-              </label>
-            ))}
+            <h5>地名风格</h5>
+            {texts.map((t) => {
+              const on = !badText.has(t.id) && !!picks.nameStyles?.includes(t.id);
+              return (
+                <>
+                  <label class="check">
+                    <input type="checkbox" disabled={badText.has(t.id)} checked={on} onChange={() => togglePick('nameStyles', t.id)} />
+                    <span>
+                      {t.name}
+                      {badText.has(t.id) && (
+                        <span class="hint" title="模板里有不存在的词表">
+                          （用不了）
+                        </span>
+                      )}
+                      {on && status('nameStyles', t.id, t.name) && <span class="hint">（{status('nameStyles', t.id, t.name)}）</span>}
+                    </span>
+                  </label>
+                  {on && (
+                    <label class="check">
+                      <input type="checkbox" checked={picks.defaultStyle === t.id} onChange={() => setPicks({ ...picks, defaultStyle: picks.defaultStyle === t.id ? null : t.id })} />
+                      <span class="hint">设为世界默认（地名跟着变）</span>
+                    </label>
+                  )}
+                </>
+              );
+            })}
           </>
         )}
         {!!plan.fields.length && <p class="hint" title="在“气候 → 涂自定义场”里涂">新建自定义场：{plan.fields.join('、')}</p>}

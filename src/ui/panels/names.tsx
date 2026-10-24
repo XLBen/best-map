@@ -252,7 +252,9 @@ function WordPackBox({ w }: { w: World }) {
         showToast(`文字包无法读取：${read.errors.slice(0, 3).join('；')}`, true);
         return;
       }
-      const wp = read.legacy === 'wordPack' ? read.pack.textPacks?.[0] : undefined;
+      // 模板式的单个文字包照旧换掉内置中文；音译式的风格走资源包的导入（启用后再选）
+      const st = read.legacy === 'wordPack' ? read.pack.nameStyles?.[0] : undefined;
+      const wp = st?.kind === 'template' ? st : undefined;
       if (wp) await exec({ op: 'set_word_pack', pack: wp }, '正在起名…');
       else openPackImport(read, file.name);
     });

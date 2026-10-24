@@ -59,6 +59,8 @@ export interface EditTarget {
   // 改之前地图上写的名字（自动起的；用户起的名字为 undefined）与按规则成了哪一种河：改了以后照旧叫它、还是这一种
   // （名字记进 autoName、类型记进 type，见 editCommand），不因为走向、大小变了重新起名、换类型
   autoName?: string;
+  // 那个名字的原文（第二十轮，记进 autoOrig）
+  autoOrig?: string;
   ruleType?: string;
 }
 
@@ -97,20 +99,23 @@ function targetOf(world: World, g: Guide, natural: boolean): EditTarget {
 export function guideTarget(world: World, g: Guide): EditTarget {
   const T = targetOf(world, g, false);
   const f = world.derived.features.find((x) => x.guide === g.id);
-  if (f?.name && !f.custom && !g.name) T.autoName = f.name;
+  if (f?.name && !f.custom && !g.name) {
+    T.autoName = f.name;
+    if (f.orig) T.autoOrig = f.orig;
+  }
   if (!g.type) T.ruleType = ruleTypeOf(world, world.derived, T.own);
   return T;
 }
 
 // 自然的河：这一格所在的主干（riverStem）当作一条固定下来的河道，名字沿用它的地名键（naming 由界面给；省略时按地物找）
 // 固定下来时：名字记下（autoName，用户改过名的照旧跟着那条改名），按规则成了哪一种河也记下（type）
-export function naturalTarget(world: World, d: Derived, cell: number, naming?: { nameKey: string; autoName?: string } | { name: string }): EditTarget | null {
+export function naturalTarget(world: World, d: Derived, cell: number, naming?: { nameKey: string; autoName?: string; autoOrig?: string } | { name: string }): EditTarget | null {
   const stem = riverStem(world, d, cell);
   if (stem.cells.length < 2) return null;
   let name = naming;
   if (!name) {
     const f = d.features.find((x) => x.type === 'river' && x.guide === undefined && x.cells.includes(cell));
-    name = f ? { nameKey: f.key, ...(f.name && !f.custom ? { autoName: f.name } : {}) } : { name: '' };
+    name = f ? { nameKey: f.key, ...(f.name && !f.custom ? { autoName: f.name, ...(f.orig ? { autoOrig: f.orig } : {}) } : {}) } : { name: '' };
   }
   const own = stem.end === 'river' ? stem.cells.slice(0, -1) : stem.cells;
   const type = ruleTypeOf(world, d, own);
@@ -703,6 +708,7 @@ export function editCommand(T: EditTarget, e: RiverEdit, label: string): Command
     // 名字、类型定下来：改了走向也还叫原来的名字、还是原来那一种
     const keep: GuidePatch = {};
     if (T.autoName && T.guide.autoName !== T.autoName) keep.autoName = T.autoName;
+    if (T.autoOrig && T.guide.autoOrig !== T.autoOrig) keep.autoOrig = T.autoOrig;
     if (T.ruleType) keep.type = T.ruleType;
     return { op: 'update_guide', id: T.guide.id, patch: { ...e.patch, ...keep }, ...capture, label };
   }

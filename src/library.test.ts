@@ -141,7 +141,7 @@ describe('资源库', () => {
     if (!r.ok) return;
     await installPack(r.pack);
     const e = library.value.find((x) => x.key === 'long');
-    expect(e?.pack.textPacks?.[0].name).toBe('很长的文字包名字'.repeat(10));
+    expect(e?.pack.nameStyles?.[0].name).toBe('很长的文字包名字'.repeat(10));
   });
 
   it('浏览器不让存时照样能用（只在这一次打开的页面里）', async () => {

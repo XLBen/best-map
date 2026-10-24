@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { FeatureOverride, GeoFeature, KeptName } from './features';
 import type { Worldgen } from './generate';
 import type { WordPack } from './names';
+import type { NameStyle } from './name-styles';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
@@ -130,6 +131,8 @@ export const guideSchema = z.object({
   // 改这条河时记下的名字（第十一轮）：自动起的名字定下来，以后改走向、改大小、类型都还叫它（不算用户起的名字）。
   // 有 name（用户起的）或那条河改过的名字时那个说了算；“换一个”“恢复自动”去掉它
   autoName: z.string().max(40).optional(),
+  // 那个名字的原文（第二十轮）：跟着 autoName 记、一起去掉
+  autoOrig: z.string().max(80).optional(),
   // 自动起名的盐（“换一个”）
   salt: z.number().int().min(0).optional(),
   // 粗细倍数：只影响画法与导出
@@ -194,6 +197,16 @@ export interface ProvinceMeta {
   // 用户自己选的颜色（#rrggbb，第十二轮）：地图上的省份着色用它；没有时陆地省按编号配色，海省不着色。
   // 导出的 provinces.bmp 照旧按编号（provinceColor），颜色一一对应
   color?: string;
+  // 自己选的地名风格（第二十轮，见 name-styles.ts 的 styleFor）：没有时按世界默认
+  style?: string;
+  // 名字的原文（第二十轮）：按音译式、带读音表的风格起的名字才有
+  orig?: string;
+}
+
+// 世界里启用的内容（第二十轮，见 content/registry.ts）：种类 → id → 一项，复制进世界，打开不依赖仓库
+export interface ContentStore {
+  nameStyle?: Record<string, NameStyle>;
+  [kind: string]: Record<string, unknown> | undefined;
 }
 
 export interface Causes {
@@ -267,6 +280,10 @@ export interface SmallState {
   lakeTyping?: { cell: number; type: string }[];
   // 自己的岛的种类（第十四轮，见 island-types.ts）：第一次新建之前没有这一项
   islandTypes?: IslandType[];
+  // 启用的内容（第二十轮，见 content/registry.ts）：第一次启用之前没有这一项
+  content?: ContentStore;
+  // 世界默认的地名风格（第二十轮）：没有这一项是内置中文（zh-default）
+  nameStyle?: string;
 }
 
 export interface Conflict {

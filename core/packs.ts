@@ -1,48 +1,39 @@
 import { z } from 'zod';
 import zhCN from 'zod/v4/locales/zh-CN.js';
 import type { Command } from './commands';
-import { DEFAULT_PACK, type WordPack, packProblems as wordPackProblems, wordPackSchema } from './names';
-import { type PlanetForm, planetFormSchema } from './planet-form';
-import { type LakeType, type LakeTypeInput, lakeTypeSchema, lakeTypesOf } from './lake-types';
-import { type IslandType, type IslandTypeInput, islandTypeSchema, islandTypesOf } from './island-types';
-import { type RiverType, type RiverTypeInput, riverTypeSchema, riverTypesOf } from './river-types';
-import { type FoundScript, VARIABLES, codeOnly, findScripts } from './script';
-import { DEFAULT_SPECIES, type Species, speciesSchema } from './species';
+import './content/kinds';
+import { type ContentKind, type PackContext, type Renames, allKinds, itemId, kindByPackKey, kindOf, registryVersion } from './content/registry';
+import { ITEM_ID, sameItem, stableJson } from './content/refs';
+import { DEFAULT_STYLE, type NameStyle } from './name-styles';
+import { DEFAULT_PACK } from './names';
+import type { PlanetForm } from './planet-form';
+import { type FoundScript, findScripts } from './script';
+import type { Species } from './species';
 import type { World } from './world';
 
-// 资源包（第三批，*.map2pack.json）：几种生态、河流类型、星球形态、文字包放在一个文件里，导入、导出、用到世界。
+// 资源包（第三批，*.map2pack.json）：几种生态、河流类型、星球形态、地名风格放在一个文件里，导入、导出、用到世界。
 //
-//   {format: 'map2-pack', version: 1, id, name, author?, description?, fields?, biomes?, riverTypes?, lakeTypes?, islandTypes?, planetForms?, textPacks?}
+//   {format: 'map2-pack', version: 1, id, name, author?, description?, fields?, biomes?, riverTypes?, lakeTypes?, islandTypes?,
+//    planetForms?, nameStyles?}（旧文件里的 textPacks 是模板式的地名风格，照旧读）
 //
+// 第二十轮起，有哪几段、每段的格式、数、列表的一行、检查、撞 id 改名、从世界导出，都由内容种类的登记表（content/registry.ts，
+// 各种类登记在 content/kinds.ts）推出来；加一种内容只要登记一次。
 // 顶层严格：不认识的部分直接报错（“不认识的部分：xxx”），不悄悄丢掉。读包只做解析与检查，不运行任何脚本。
 // 用到世界是一整步（一个 batch，可撤销）：先加用到的自定义场，再加各项；世界里已有一模一样的项跳过，
 // 同 id 不同内容的改名为 “id-2”，包里对它的引用（侵占的目标、river('x')）一起改；噪声种子用固定的 seedKey，改名不改花纹。
 // 世界自带它用到的全部内容（都在命令里），别人没有这个包也能打开。
-//
-// 河流类型、星球形态：PACK_SECTIONS 里先按“带 id 的对象”收下（原样保留），各自的校验、用到世界的命令、
-// 从世界导出、改名，在本文件末尾用 registerPackSection 填上。
-// 河流类型按 river-types.ts 的格式检查、湖泊类型（第九轮）按 lake-types.ts，用到世界时排在自定义场之后、生态之前
-// （生态的脚本、条件会用到它们）。
-// 星球形态按 planet-form.ts 的格式逐项检查，导出时带上世界在用的形态；
-// 不在“用到这个世界”里用（在 调整 → 星球形态 里换，或新建世界时选）。
 
 export const PACK_FORMAT = 'map2-pack';
 export const PACK_VERSION = 1;
 const PACK_EXT = '.map2pack.json';
-// 生态多了界面挤、算得慢：超过这么多种时提醒一句（不拦）
-const SPECIES_SOFT_CAP = 48;
-// 一个文件里最多这么多项（再多就不像是资源包了：一下子加几百种生态，大星球上会算不动）
-export const PACK_MAX = { biomes: 256, riverTypes: 64, lakeTypes: 64, islandTypes: 64, planetForms: 32, textPacks: 16 } as const;
 // 文件最多这么多字（脚本最长 2 万字，256 种生态各两段也到不了）
 export const PACK_MAX_CHARS = 16_000_000;
 
-const ITEM_ID = /^[\w-]+$/;
-const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
-const fieldName = z.string().regex(ITEM_ID, '场名只能包含字母、数字、下划线和连字符');
+// 一个文件里每段最多这么多项（再多就不像是资源包了：一下子加几百种生态，大星球上会算不动）。由登记表推出
+export const PACK_MAX: Readonly<Record<string, number>> = new Proxy({} as Record<string, number>, {
+  get: (_, key) => (typeof key === 'string' ? kindByPackKey(key)?.pack.max : undefined),
+});
 
-// ---------- 河流类型、星球形态：可插拔的部分 ----------
-
-export type PackSectionKey = 'riverTypes' | 'lakeTypes' | 'islandTypes' | 'planetForms';
 export type PackWorld = Pick<World, 'small' | 'causes'>;
 
 // 每一项至少是带 id 的对象（名字、颜色可选，其余原样保留）
@@ -53,66 +44,36 @@ export interface PackItem {
   [k: string]: unknown;
 }
 
-export interface PackSection {
-  // 列表里的叫法：“河流 4”“星球 3”
-  label: string;
-  // 每一项的校验。那一支注册之前只要求是带 id 的对象
-  schema: z.ZodType<PackItem>;
-  // 用到这个世界时默认勾上
-  checked: boolean;
-  // 不能直接用到世界时的说明（列出来，不能勾）
-  note?: string;
-  // 世界里已有的同类项（撞 id 时比较是不是一模一样）
-  inWorld?(world: PackWorld): readonly PackItem[];
-  // 用到世界的命令（每项一条）。没有时这一类只列出来
-  command?(item: PackItem): Command;
-  // 换 id（撞 id 改名时）：种子要用原来的，花纹才不变
-  withId?(item: PackItem, id: string, from: string): PackItem;
-  // 从世界导出的项（只要不是内置的）
-  fromWorld?(world: PackWorld): PackItem[];
-  // 包里别的项改了名时，这一项里的引用跟着改（比如河流类型的脚本里 field('x')）
-  rewrite?(item: PackItem, renames: Renames): PackItem;
+// 资源包里的一段（就是登记表里的一种内容）
+export function packSection(key: string): ContentKind | undefined {
+  return kindByPackKey(key);
 }
 
-const plainItem = z.looseObject({
-  id: z.string().regex(ITEM_ID, 'id 只能包含字母、数字、下划线和连字符'),
-  name: z.string().optional(),
-  color: hexColor.optional(),
-}) as unknown as z.ZodType<PackItem>;
-
-// 河流类型的校验、命令等在本文件末尾注册（registerPackSection('riverTypes', …)）。
-// 星球形态的校验、导出在本文件末尾注册（见 registerPackSection('planetForms', …)）；它不在这里用到世界（调整 → 星球形态）
-export const PACK_SECTIONS: Record<PackSectionKey, PackSection> = {
-  riverTypes: { label: '河流', schema: plainItem, checked: true, note: '暂不支持河流类型' },
-  lakeTypes: { label: '湖泊', schema: plainItem, checked: true, note: '暂不支持湖泊类型' },
-  islandTypes: { label: '岛', schema: plainItem, checked: true, note: '暂不支持岛的种类' },
-  planetForms: { label: '星球', schema: plainItem, checked: false, note: '在“调整 → 星球形态”里换，或新建时选' },
-};
-
-export function registerPackSection(key: PackSectionKey, def: Partial<PackSection>): void {
-  const cur = PACK_SECTIONS[key];
-  // 能用到世界了：去掉“还不能用”的说明（除非另给）
-  PACK_SECTIONS[key] = { ...cur, ...(def.command && !('note' in def) ? { note: undefined } : {}), ...def };
+// 列出来的几段（有段名、可以勾选的；自定义场跟着别的自动加，不列），按登记的先后
+export function packSections(): ContentKind[] {
+  return allKinds().filter((k) => k.pack.listed);
 }
 
 // ---------- 格式 ----------
 
-// 顶层的结构（严格）；河流类型、星球形态在 parsePack 里按注册的校验逐项再查
-const resourcePackSchema = z.strictObject({
-  format: z.literal(PACK_FORMAT),
-  version: z.literal(PACK_VERSION),
-  id: z.string().min(1).max(64),
-  name: z.string().min(1).max(60),
-  author: z.string().max(60).optional(),
-  description: z.string().max(2000).optional(),
-  fields: z.array(fieldName).max(64).optional(),
-  biomes: z.array(speciesSchema).max(PACK_MAX.biomes).optional(),
-  riverTypes: z.array(z.unknown()).max(PACK_MAX.riverTypes).optional(),
-  lakeTypes: z.array(z.unknown()).max(PACK_MAX.lakeTypes).optional(),
-  islandTypes: z.array(z.unknown()).max(PACK_MAX.islandTypes).optional(),
-  planetForms: z.array(z.unknown()).max(PACK_MAX.planetForms).optional(),
-  textPacks: z.array(wordPackSchema).max(PACK_MAX.textPacks).optional(),
-});
+const META_KEYS = ['format', 'version', 'id', 'name', 'author', 'description'] as const;
+
+// 顶层的结构（严格）：各段先按“列表”收下，在 parsePack 里按登记的格式逐项再查。登记表变了重新建
+let topCache: { version: number; schema: z.ZodType } | null = null;
+function topSchema(): z.ZodType {
+  if (topCache?.version === registryVersion()) return topCache.schema;
+  const shape: Record<string, z.ZodType> = {
+    format: z.literal(PACK_FORMAT),
+    version: z.literal(PACK_VERSION),
+    id: z.string().min(1).max(64),
+    name: z.string().min(1).max(60),
+    author: z.string().max(60).optional(),
+    description: z.string().max(2000).optional(),
+  };
+  for (const k of allKinds()) for (const key of [k.pack.key, ...(k.pack.aliases ?? [])]) shape[key] = z.array(z.unknown()).max(k.pack.max).optional();
+  topCache = { version: registryVersion(), schema: z.strictObject(shape) };
+  return topCache.schema;
+}
 
 export interface ResourcePack {
   format: typeof PACK_FORMAT;
@@ -127,7 +88,15 @@ export interface ResourcePack {
   lakeTypes?: PackItem[];
   islandTypes?: PackItem[];
   planetForms?: PackItem[];
-  textPacks?: WordPack[];
+  nameStyles?: NameStyle[];
+  // 以后的种类（文化、时代……）按登记的段名
+  [section: string]: unknown;
+}
+
+// 包里一段的项（没有时是空的）
+export function packItems<T = unknown>(pack: ResourcePack, key: string): T[] {
+  const v = pack[key];
+  return Array.isArray(v) ? (v as T[]) : [];
 }
 
 // 出错说明：顶层多出来的部分说“不认识的部分”，类型不对、缺项用中文说，其余用 zod 的中文
@@ -144,7 +113,6 @@ const packErrorMap: z.core.$ZodErrorMap = (iss) => {
   return zh(iss);
 };
 
-const SECTION_ZH: Record<string, string> = { biomes: '生态', riverTypes: '河流类型', lakeTypes: '湖泊类型', islandTypes: '岛的种类', planetForms: '星球形态', textPacks: '文字包', fields: '自定义场' };
 const TOP_ZH: Record<string, string> = { format: '格式', id: '资源包的 id', name: '资源包的名字', author: '作者', description: '说明' };
 
 // 出错的位置：“生态第 2 个「crystal」的 color”
@@ -153,7 +121,7 @@ function where(path: readonly PropertyKey[], json: unknown): string {
   const [head, idx, ...rest] = path;
   // 版本不对的说明本身就说清楚了
   if (path.length === 1 && head === 'version') return '';
-  const sec = SECTION_ZH[String(head)];
+  const sec = kindByPackKey(String(head))?.label;
   // 整个部分的问题（比如生态太多）
   if (sec && path.length === 1) return sec;
   if (!sec || typeof idx !== 'number') return path.length === 1 && TOP_ZH[String(head)] ? TOP_ZH[String(head)] : path.map(String).join('.');
@@ -171,22 +139,29 @@ function issuesText(issues: readonly z.core.$ZodIssue[], json: unknown, prefix: 
 
 export type PackParse = { ok: true; pack: ResourcePack } | { ok: false; errors: string[] };
 
-// 校验一个资源包（已经是 JSON 值）。只解析、检查，不运行脚本
+// 校验一个资源包（已经是 JSON 值）。只解析、检查，不运行脚本。别名里的项（旧的 textPacks）读进那一种的段里
 export function parsePack(json: unknown): PackParse {
-  const top = resourcePackSchema.safeParse(json, { error: packErrorMap });
+  const top = topSchema().safeParse(json, { error: packErrorMap });
   if (!top.success) return { ok: false, errors: issuesText(top.error.issues, json) };
-  const pack = top.data as ResourcePack;
+  const data = top.data as Record<string, unknown>;
+  const pack = {} as ResourcePack;
+  for (const k of META_KEYS) if (data[k] !== undefined) (pack as Record<string, unknown>)[k] = data[k];
   const errors: string[] = [];
-  for (const key of ['riverTypes', 'lakeTypes', 'islandTypes', 'planetForms'] as const) {
-    const list = top.data[key];
-    if (!list) continue;
-    const parsed: PackItem[] = [];
-    list.forEach((item, k) => {
-      const r = PACK_SECTIONS[key].schema.safeParse(item, { error: packErrorMap });
-      if (r.success) parsed.push(r.data);
-      else errors.push(...issuesText(r.error.issues, json, [key, k]));
-    });
-    pack[key] = parsed;
+  for (const kind of allKinds()) {
+    let any = false;
+    const parsed: unknown[] = [];
+    for (const key of [kind.pack.key, ...(kind.pack.aliases ?? [])]) {
+      const list = data[key] as unknown[] | undefined;
+      if (!list) continue;
+      any = true;
+      list.forEach((raw, k) => {
+        const item = kind.pack.read ? kind.pack.read(raw, key === kind.pack.key ? undefined : key) : raw;
+        const r = kind.schema.safeParse(item, { error: packErrorMap });
+        if (r.success) parsed.push(r.data);
+        else errors.push(...issuesText(r.error.issues, json, [key, k]));
+      });
+    }
+    if (any) pack[kind.pack.key] = parsed;
   }
   return errors.length ? { ok: false, errors } : { ok: true, pack };
 }
@@ -201,7 +176,7 @@ export function readPack(text: string, name = '生态'): PackRead {
   let json: unknown;
   try {
     // 记事本存的 UTF-8 文件开头可能带一个看不见的 BOM
-    json = JSON.parse(text.replace(/^\uFEFF/, ''));
+    json = JSON.parse(text.replace(/^﻿/, ''));
   } catch (e) {
     return { ok: false, errors: [`不是 JSON 文件（${(e as Error).message}）`] };
   }
@@ -217,42 +192,31 @@ export function readPack(text: string, name = '生态'): PackRead {
       const r = parsePack(json);
       return r.ok ? { ...r, legacy: null } : r;
     }
-    if (o.format === undefined && 'lists' in o && 'types' in o) {
-      // 文字包：包一层，按资源包整个查一遍（资源包的名字、id 有长短限制，文字包的没有：太长的截短，存进资源库后才列得出来）
-      const label = (typeof o.name === 'string' ? o.name.trim().slice(0, 60) : '') || '文字包';
-      const wrapped = { format: PACK_FORMAT, version: PACK_VERSION, id: packIdFor(typeof o.id === 'string' ? o.id : label), name: label, textPacks: [json] };
+    if (o.format === undefined && 'types' in o && ('lists' in o || o.kind === 'phonetic')) {
+      // 单独的文字包、地名风格：包一层，按资源包整个查一遍（资源包的名字、id 有长短限制，文字包的没有：太长的截短，存进资源库后才列得出来）
+      const label = (typeof o.name === 'string' ? o.name.trim().slice(0, 60) : '') || '地名风格';
+      const wrapped = { format: PACK_FORMAT, version: PACK_VERSION, id: packIdFor(typeof o.id === 'string' ? o.id : label), name: label, nameStyles: [json] };
       const r = parsePack(wrapped);
       return r.ok ? { ...r, legacy: 'wordPack' } : r;
     }
   }
-  return { ok: false, errors: ['不认识的文件：不是资源包、生态或文字包'] };
+  return { ok: false, errors: ['不认识的文件：不是资源包、生态或地名风格'] };
 }
 
 // ---------- 内容 ----------
 
-export interface PackCounts {
-  biomes: number;
-  riverTypes: number;
-  lakeTypes: number;
-  islandTypes: number;
-  planetForms: number;
-  textPacks: number;
-}
-
-function packCounts(pack: ResourcePack): PackCounts {
-  return { biomes: pack.biomes?.length ?? 0, riverTypes: pack.riverTypes?.length ?? 0, lakeTypes: pack.lakeTypes?.length ?? 0, islandTypes: pack.islandTypes?.length ?? 0, planetForms: pack.planetForms?.length ?? 0, textPacks: pack.textPacks?.length ?? 0 };
+// 每段有几项（按段名）
+export function packCounts(pack: ResourcePack): Record<string, number> {
+  return Object.fromEntries(allKinds().map((k) => [k.pack.key, packItems(pack, k.pack.key).length]));
 }
 
 // 列表里的一行：“生态 5 · 河流 4 · 星球 3”（数从数据来，没有的不写）
 export function packSummary(pack: ResourcePack): string {
-  const c = packCounts(pack);
   const parts: string[] = [];
-  if (c.biomes) parts.push(`生态 ${c.biomes}`);
-  if (c.riverTypes) parts.push(`${PACK_SECTIONS.riverTypes.label} ${c.riverTypes}`);
-  if (c.lakeTypes) parts.push(`${PACK_SECTIONS.lakeTypes.label} ${c.lakeTypes}`);
-  if (c.islandTypes) parts.push(`${PACK_SECTIONS.islandTypes.label} ${c.islandTypes}`);
-  if (c.planetForms) parts.push(`${PACK_SECTIONS.planetForms.label} ${c.planetForms}`);
-  if (c.textPacks) parts.push(`文字包 ${c.textPacks}`);
+  for (const k of packSections()) {
+    const n = packItems(pack, k.pack.key).length;
+    if (n) parts.push(`${k.short} ${n}`);
+  }
   return parts.join(' · ') || '空的';
 }
 
@@ -276,21 +240,7 @@ export function packIdFor(name: string): string {
   );
 }
 
-// 键排好序的 JSON：比较两项是不是一模一样（键的顺序不算）
-function stableJson(v: unknown): string {
-  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
-  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
-  const o = v as Record<string, unknown>;
-  return `{${Object.keys(o)
-    .filter((k) => o[k] !== undefined)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`)
-    .join(',')}}`;
-}
-
-export function sameItem(a: unknown, b: unknown): boolean {
-  return stableJson(a) === stableJson(b);
-}
+export { sameItem };
 
 // sameItem 比较用的键：要和许多项比的时候每项只算一次（向导、调整里列出的星球形态去重）
 export const itemKey = (v: unknown): string => stableJson(v);
@@ -300,207 +250,81 @@ export function packScripts(json: unknown): FoundScript[] {
   return findScripts(json);
 }
 
-// ---------- 脚本里的引用：field('x')、river('x')、hasRiver('x')、nearLake('x')、hasLake('x') ----------
-
-const VAR_NAMES = new Set(VARIABLES.flatMap((v) => (v.zh ? [v.key, v.zh] : [v.key])));
-const CALL_RE = /(?<![\p{L}\p{N}_$.])(field|river|hasRiver|nearLake|hasLake)\s*\(/gu;
-const RIVER_FNS = new Set(['river', 'hasRiver']);
-const LAKE_FNS = new Set(['nearLake', 'hasLake']);
-
-interface Ref {
-  // river、hasRiver 引用河流类型；nearLake、hasLake 引用湖泊类型
-  fn: 'field' | 'river' | 'hasRiver' | 'nearLake' | 'hasLake';
-  name: string;
-  // 名字在源码里的位置（不含引号）
-  start: number;
-  end: number;
-}
-
-// 源码里 field('x')、river('x')、hasRiver('x') 的字面量参数（只看代码，注释里的不算；参数不是字面量的找不到，不报）
-export function scriptRefs(src: string): Ref[] {
-  const code = codeOnly(src);
-  const out: Ref[] = [];
-  for (const m of code.matchAll(CALL_RE)) {
-    let at = m.index + m[0].length;
-    while (at < src.length && /\s/.test(src[at])) at++;
-    const q = src[at];
-    if (q !== "'" && q !== '"' && q !== '`') continue;
-    const end = src.indexOf(q, at + 1);
-    if (end < 0) continue;
-    const name = src.slice(at + 1, end);
-    if (name.includes('${') || name.includes('\n')) continue;
-    out.push({ fn: m[1] as Ref['fn'], name, start: at + 1, end });
-  }
-  return out;
-}
-
-// 一种生态（或河流类型）写到的自定义场的名字：耐受条件里的 field:x，脚本里的 field('x')（内置变量的名字不算）。可能有不合规的名字
-function fieldRefs(sp: Pick<Species, 'scripts'> & { tolerances?: Species['tolerances'] }): string[] {
-  const out = new Set<string>();
-  for (const t of sp.tolerances ?? []) if (t.field.startsWith('field:')) out.add(t.field.slice(6));
-  for (const s of Object.values(sp.scripts ?? {})) {
-    if (!s) continue;
-    for (const r of scriptRefs(s.src)) if (r.fn === 'field' && !VAR_NAMES.has(r.name)) out.add(r.name);
-  }
-  return [...out];
-}
-
-// 一种生态用到的自定义场（只算合规的名字：别的名字世界里不会有这个场，加也加不了，脚本照“出错”处理）
-export function biomeFields(sp: Species): string[] {
-  return fieldRefs(sp).filter((f) => ITEM_ID.test(f));
-}
-
-// 一种生态的脚本、耐受条件（river:x，“靠近某种河”）里用到的河流类型
-function biomeRivers(sp: Species): string[] {
-  const out = new Set<string>();
-  for (const t of sp.tolerances) if (t.field.startsWith('river:')) out.add(t.field.slice(6));
-  for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (RIVER_FNS.has(r.fn)) out.add(r.name);
-  return [...out];
-}
-
-// 一种生态的脚本、耐受条件（lake:x，“靠近某种湖”）里用到的湖泊类型
-function biomeLakes(sp: Species): string[] {
-  const out = new Set<string>();
-  for (const t of sp.tolerances) if (t.field.startsWith('lake:')) out.add(t.field.slice(5));
-  for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (LAKE_FNS.has(r.fn)) out.add(r.name);
-  return [...out];
-}
-
-// 改名表：包里的 id → 用到世界时的 id
-export interface Renames {
-  biomes: ReadonlyMap<string, string>;
-  riverTypes: ReadonlyMap<string, string>;
-  lakeTypes?: ReadonlyMap<string, string>;
-}
-
-// 把源码里 river('旧')、hasRiver('旧')（以及 nearLake('旧')、hasLake('旧')，按 lakes）换成新的（只换代码里的字面量）
-export function rewriteRiverRefs(src: string, rivers: ReadonlyMap<string, string>, lakes: ReadonlyMap<string, string> = new Map()): string {
-  if (!rivers.size && !lakes.size) return src;
-  let out = src;
-  for (const r of scriptRefs(src).reverse()) {
-    const to = RIVER_FNS.has(r.fn) ? rivers.get(r.name) : LAKE_FNS.has(r.fn) ? lakes.get(r.name) : undefined;
-    if (to !== undefined && to !== r.name) out = out.slice(0, r.start) + to + out.slice(r.end);
-  }
-  return out;
-}
-
-// 生态里的引用跟着改名：侵占的目标、脚本里的 river('x')、耐受条件里的 river:x
-function rewriteBiome(sp: Species, renames: Renames): Species {
-  let out = sp;
-  if (sp.tolerances.some((t) => t.field.startsWith('river:') && (renames.riverTypes.get(t.field.slice(6)) ?? t.field.slice(6)) !== t.field.slice(6))) {
-    out = { ...out, tolerances: sp.tolerances.map((t) => (t.field.startsWith('river:') ? { ...t, field: `river:${renames.riverTypes.get(t.field.slice(6)) ?? t.field.slice(6)}` } : t)) };
-  }
-  const lakes = renames.lakeTypes ?? new Map<string, string>();
-  if (sp.tolerances.some((t) => t.field.startsWith('lake:') && (lakes.get(t.field.slice(5)) ?? t.field.slice(5)) !== t.field.slice(5))) {
-    out = { ...out, tolerances: out.tolerances.map((t) => (t.field.startsWith('lake:') ? { ...t, field: `lake:${lakes.get(t.field.slice(5)) ?? t.field.slice(5)}` } : t)) };
-  }
-  const inv = sp.effects?.invade;
-  if (inv && inv.targets.some((t) => (renames.biomes.get(t) ?? t) !== t)) {
-    out = { ...out, effects: { ...out.effects, invade: { ...inv, targets: inv.targets.map((t) => renames.biomes.get(t) ?? t) } } };
-  }
-  if (sp.scripts && (renames.riverTypes.size || lakes.size)) {
-    const scripts = Object.fromEntries(Object.entries(sp.scripts).map(([k, s]) => [k, s && { ...s, src: rewriteRiverRefs(s.src, renames.riverTypes, lakes) }]));
-    if (stableJson(scripts) !== stableJson(sp.scripts)) out = { ...out, scripts };
-  }
-  return out;
-}
-
-// 换 id：种子用原来的（省略 seedKey 时种子就是 id），改了名花纹也不变。
-// 名字也跟着带上编号（“水晶丛林 2”）：世界里那份不一样的同名生态还在，列表里才分得清
-function biomeWithId(sp: Species, id: string, from: string): Species {
-  if (id === from) return sp;
-  const k = id.startsWith(`${from}-`) ? id.slice(from.length + 1) : '';
-  return { ...sp, id, ...(sp.name && k ? { name: `${sp.name} ${k}` } : {}), seedKey: sp.seedKey ?? from };
-}
+// 脚本里的引用（拆到 content/refs.ts，这里照旧导出）
+export { biomeFields, rewriteRiverRefs, scriptRefs } from './content/refs';
+export type { Renames } from './content/registry';
+export { exportableBiomes } from './content/kinds';
 
 // ---------- 检查 ----------
 
-// 包里的问题（不挡导入，列出来给用户看）：重复的 id、指向不存在的东西的引用、文字包里不存在的词表、生态太多……
+// 包里的问题（不挡导入，列出来给用户看）：重复的 id、指向不存在的东西的引用、地名风格里不存在的词表、生态太多……
 export function packProblems(pack: ResourcePack): string[] {
   const problems: string[] = [];
-  const dupes = (label: string, ids: string[]) => {
+  const kinds = allKinds();
+  for (const k of kinds) {
+    if (!k.pack.listed) continue;
     const seen = new Set<string>();
-    for (const id of ids) {
-      if (seen.has(id)) problems.push(`有两个${label}的 id 都是 ${id}`);
+    for (const x of packItems(pack, k.pack.key)) {
+      const id = itemId(k, x);
+      if (seen.has(id)) problems.push(`有两个${k.label}的 id 都是 ${id}`);
       seen.add(id);
     }
+  }
+  // 模板式起名能用的词表：内置中文的、包里模板式风格的，加上起名时才放进去的 __species
+  const styles = packItems<NameStyle>(pack, 'nameStyles');
+  const lists = new Set([...Object.keys(DEFAULT_PACK.lists), ...styles.flatMap((s) => (s.kind === 'template' ? Object.keys(s.lists) : [])), '__species']);
+  const ctx: PackContext = {
+    ids: (key) => {
+      const k = kindByPackKey(key);
+      return new Set(k ? packItems(pack, key).map((x) => itemId(k, x)) : []);
+    },
+    fields: new Set(pack.fields ?? []),
+    lists,
   };
-  const biomes = pack.biomes ?? [];
-  dupes('生态', biomes.map((b) => b.id));
-  dupes('河流类型', (pack.riverTypes ?? []).map((r) => r.id));
-  dupes('湖泊类型', (pack.lakeTypes ?? []).map((r) => r.id));
-  dupes('岛的种类', (pack.islandTypes ?? []).map((r) => r.id));
-  dupes('星球形态', (pack.planetForms ?? []).map((r) => r.id));
-  dupes('文字包', (pack.textPacks ?? []).map((t) => t.id));
-  if (biomes.length > SPECIES_SOFT_CAP) problems.push(`生态有 ${biomes.length} 种（超过 ${SPECIES_SOFT_CAP}）：界面会挤，计算会变慢`);
-
-  const known = new Set([...biomes.map((b) => b.id), ...DEFAULT_SPECIES.map((b) => b.id)]);
-  const fields = new Set(pack.fields ?? []);
-  const rivers = new Set((pack.riverTypes ?? []).map((r) => r.id));
-  const lakeIds = new Set((pack.lakeTypes ?? []).map((r) => r.id));
-  const lists = new Set([...Object.keys(DEFAULT_PACK.lists), ...(pack.textPacks ?? []).flatMap((t) => Object.keys(t.lists)), '__species']);
-  for (const b of biomes) {
-    const who = `“${b.name || b.id}”`;
-    for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在资源包里，也不是内置生态：世界里没有它时无效`);
-    for (const f of fieldRefs(b)) {
-      if (!ITEM_ID.test(f)) problems.push(`${who}用到的自定义场“${f}”名字无效：只能用字母、数字、下划线和连字符`);
-      else if (!fields.has(f)) problems.push(`${who}用到的自定义场 ${f} 不在资源包里，用时新建一个空的`);
-    }
-    for (const r of biomeRivers(b)) if (!rivers.has(r)) problems.push(`${who}用到的河流类型 ${r} 不在资源包里：没有这种河时按很远算`);
-    for (const r of biomeLakes(b)) if (!lakeIds.has(r)) problems.push(`${who}用到的湖泊类型 ${r} 不在资源包里：没有这种湖时按很远算`);
-    for (const n of b.feature?.names ?? []) {
-      for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
-    }
-    if (b.dispersal) problems.push(`${who}只在起源地附近长：只对原来的世界有效`);
-    if (b.range) problems.push(`${who}只长在某处：只对原来的世界有效`);
-  }
-  const typed = [
-    ...(pack.riverTypes ?? []).map((x) => ({ t: x as RiverType | LakeType, what: '河流类型' })),
-    ...(pack.lakeTypes ?? []).map((x) => ({ t: x as RiverType | LakeType, what: '湖泊类型' })),
-  ];
-  for (const { t, what } of typed) {
-    const who = `${what}“${t.name || t.id}”`;
-    for (const f of fieldRefs(t)) {
-      if (!ITEM_ID.test(f)) problems.push(`${who}用到的自定义场“${f}”名字无效：只能用字母、数字、下划线和连字符`);
-      else if (!fields.has(f)) problems.push(`${who}用到的自定义场 ${f} 不在资源包里，用时新建一个空的`);
-    }
-    for (const n of t.names ?? []) {
-      for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`${who}的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
-    }
-  }
-  for (const t of (pack.islandTypes ?? []) as unknown as IslandType[]) {
-    for (const n of t.names ?? []) {
-      for (const m of n.p.matchAll(/\{([^{}]+)\}/g)) if (!lists.has(m[1])) problems.push(`岛的种类“${t.name || t.id}”的起名模板“${n.p}”用到了不存在的词表 {${m[1]}}`);
-    }
-  }
-  for (const t of pack.textPacks ?? []) problems.push(...wordPackProblems(t).map((p) => `文字包“${t.name}”：${p}`));
+  for (const k of kinds) if (k.pack.problems) problems.push(...k.pack.problems(packItems(pack, k.pack.key), ctx));
   return problems;
 }
 
 // ---------- 用到世界 ----------
 
-// 要用哪些项：生态、河流类型的 id；文字包的 id（换用它），null 或省略为不换
+// 要用哪些项：按段名给 id 列表（省略的段不用）；defaultStyle：用了之后世界默认用这种地名风格（null 或省略为不换）
 export interface PackPicks {
   biomes?: readonly string[];
   riverTypes?: readonly string[];
   lakeTypes?: readonly string[];
   islandTypes?: readonly string[];
-  textPack?: string | null;
+  nameStyles?: readonly string[];
+  defaultStyle?: string | null;
+  [key: string]: readonly string[] | string | null | undefined;
 }
 
-// 默认勾选：生态、能用的河流类型都勾上，文字包不勾。只长在某处的生态（从起源地扩散、只在某个岛上、圈的范围里）不勾（起源地的格编号只对做它的那个世界有效，
-// 以前导出的整套生态文件里会有）
+// 一段勾了哪些
+export function pickedIds(picks: PackPicks, key: string): readonly string[] | undefined {
+  const v = picks[key];
+  return Array.isArray(v) ? v : undefined;
+}
+
+// 这一段能不能用到世界（有启用的命令）
+export const canApply = (k: ContentKind): boolean => k.enable !== undefined || k.store === 'content';
+
+// 能用到世界的几段，按用到世界的先后
+const applicable = () =>
+  packSections()
+    .filter(canApply)
+    .sort((a, b) => a.order - b.order);
+
+// 默认勾选：能用的几段按各自的规则（省略时全勾）；地名风格勾上但不换世界默认
 export function defaultPicks(pack: ResourcePack): PackPicks {
-  return {
-    biomes: (pack.biomes ?? []).filter((b) => !b.dispersal && !b.range).map((b) => b.id),
-    riverTypes: PACK_SECTIONS.riverTypes.command && PACK_SECTIONS.riverTypes.checked ? (pack.riverTypes ?? []).map((r) => r.id) : [],
-    lakeTypes: PACK_SECTIONS.lakeTypes.command && PACK_SECTIONS.lakeTypes.checked ? (pack.lakeTypes ?? []).map((r) => r.id) : [],
-    islandTypes: PACK_SECTIONS.islandTypes.command && PACK_SECTIONS.islandTypes.checked ? (pack.islandTypes ?? []).map((r) => r.id) : [],
-    textPack: null,
-  };
+  const picks: PackPicks = { defaultStyle: null };
+  for (const k of packSections()) {
+    if (!canApply(k)) continue;
+    picks[k.pack.key] = k.pack.checked ? packItems(pack, k.pack.key).filter((x) => k.pack.defaultPick?.(x) ?? true).map((x) => itemId(k, x)) : [];
+  }
+  return picks;
 }
 
-export type PackSectionName = 'biomes' | 'riverTypes' | 'lakeTypes' | 'islandTypes';
+// 改名表里的段名（以前叫 PackSectionName）
+export type PackSectionName = string;
 
 export interface PackPlan {
   command: Extract<Command, { op: 'batch' }>;
@@ -510,37 +334,35 @@ export interface PackPlan {
   skipped: { section: PackSectionName; from: string; id: string; name: string }[];
   // 新加的自定义场
   fields: string[];
-  // 换用的文字包（世界里已经是它时为 null）
-  textPack: WordPack | null;
+  // 用了之后世界默认的地名风格（世界里已经是它时为 null）
+  defaultStyle: string | null;
 }
 
 // 给包里的一类项定下用到世界时的 id：没有冲突的照旧；世界里有一模一样的跳过（引用指向世界里那一项）；
 // 同 id 不同内容的改名为 id-2、id-3……（跳过也看改了名的那一项：同一个包用两次，第二次全部跳过）
-function assignIds<T extends { id: string }>(
-  items: readonly T[],
-  worldItems: readonly { id: string }[],
-  finalOf: (item: T, id: string) => unknown,
-): { ids: Map<string, string>; skip: Set<string> } {
-  const byId = new Map(worldItems.map((x) => [x.id, x]));
+function assignIds(kind: ContentKind, items: readonly unknown[], worldItems: readonly unknown[], finalOf: (item: unknown, id: string) => unknown): { ids: Map<string, string>; skip: Set<string> } {
+  const idOf = (x: unknown) => itemId(kind, x);
+  const byId = new Map(worldItems.map((x) => [idOf(x), x]));
   const ids = new Map<string, string>();
   const skip = new Set<string>();
   // 包里自己的 id 先占上（不用改名的那些），改名时避开
-  const taken = new Set([...byId.keys(), ...items.filter((x) => !byId.has(x.id)).map((x) => x.id)]);
+  const taken = new Set([...byId.keys(), ...items.filter((x) => !byId.has(idOf(x))).map(idOf)]);
   for (const item of items) {
-    if (!byId.has(item.id)) {
-      ids.set(item.id, item.id);
+    const id0 = idOf(item);
+    if (!byId.has(id0)) {
+      ids.set(id0, id0);
       continue;
     }
     for (let k = 1; ; k++) {
-      const cand = k === 1 ? item.id : `${item.id}-${k}`;
+      const cand = k === 1 ? id0 : `${id0}-${k}`;
       const there = byId.get(cand);
       if (there && sameItem(there, finalOf(item, cand))) {
-        ids.set(item.id, cand);
-        skip.add(item.id);
+        ids.set(id0, cand);
+        skip.add(id0);
         break;
       }
       if (k > 1 && !there && !taken.has(cand)) {
-        ids.set(item.id, cand);
+        ids.set(id0, cand);
         taken.add(cand);
         break;
       }
@@ -549,96 +371,98 @@ function assignIds<T extends { id: string }>(
   return { ids, skip };
 }
 
-// 资源包用到世界的计划：一整步（batch，标签“用了资源包「X」”）
 // 同一个 id 在包里出现几次时只用第一个（packProblems 会提醒）
-function firstOfEach<T extends { id: string }>(items: readonly T[], ids: readonly string[] | undefined): T[] {
+function firstOfEach(kind: ContentKind, items: readonly unknown[], ids: readonly string[] | undefined): unknown[] {
   const seen = new Set<string>();
-  return items.filter((x) => ids?.includes(x.id) && !seen.has(x.id) && (seen.add(x.id), true));
+  return items.filter((x) => {
+    const id = itemId(kind, x);
+    return ids?.includes(id) && !seen.has(id) && (seen.add(id), true);
+  });
 }
 
-// 河流类型、湖泊类型、岛的种类：同样的做法（撞 id 改名、跳过一模一样的、命令排在生态之前）
-const TYPED_SECTIONS = ['riverTypes', 'lakeTypes', 'islandTypes'] as const;
-type TypedSection = (typeof TYPED_SECTIONS)[number];
+// 加进世界的最终样子：引用跟着改名 → 换 id → 最后一步（自然生成关掉……）
+function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames): unknown {
+  const p = kind.pack;
+  const re = p.rewrite ? p.rewrite(x, r) : x;
+  const out = id === itemId(kind, x) ? re : p.withId ? p.withId(re, id, itemId(kind, x)) : { ...(re as object), id };
+  return p.finalize ? p.finalize(out, r) : out;
+}
 
+// 资源包用到世界的计划：一整步（batch，标签“用上资源包“X””）
 export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks): PackPlan {
-  const pickedBiomes = firstOfEach(pack.biomes ?? [], picks.biomes);
-  const picked = {} as Record<TypedSection, PackItem[]>;
-  const inWorld = {} as Record<TypedSection, readonly PackItem[]>;
-  for (const key of TYPED_SECTIONS) {
-    const sec = PACK_SECTIONS[key];
-    picked[key] = sec.command ? firstOfEach(pack[key] ?? [], picks[key]) : [];
-    inWorld[key] = sec.inWorld?.(world) ?? [];
+  const kinds = applicable();
+  const picked = new Map<ContentKind, unknown[]>();
+  const inWorld = new Map<ContentKind, readonly unknown[]>();
+  for (const k of kinds) {
+    picked.set(k, firstOfEach(k, packItems(pack, k.pack.key), pickedIds(picks, k.pack.key)));
+    inWorld.set(k, k.inWorld(world));
   }
 
   // 改名表要一起定：生态 A 侵占生态 B 时，A 是不是一模一样还要看 B 改没改名。反复几遍直到不再变
-  const empty = () => ({ ids: new Map<string, string>(), skip: new Set<string>() });
-  let renames: Renames = { biomes: new Map(), riverTypes: new Map(), lakeTypes: new Map() };
-  let biomeIds = empty();
-  const typedIds: Record<TypedSection, ReturnType<typeof empty>> = { riverTypes: empty(), lakeTypes: empty(), islandTypes: empty() };
-  // 第十二轮：包里没写“自然生成”的生态、河流类型、湖泊类型加进世界时不自然生成（只长在涂了它的地方、只用在选了它的河和湖上）
-  const finalBiome = (b: Species, id: string, r: Renames) => naturalOff(biomeWithId(rewriteBiome(b, r), id, b.id));
-  const finalTyped = (key: TypedSection, x: PackItem, id: string, r: Renames) => {
-    const sec = PACK_SECTIONS[key];
-    const re = sec.rewrite ? sec.rewrite(x, r) : x;
-    const out = id === x.id ? re : sec.withId ? sec.withId(re, id, x.id) : { ...re, id };
-    // 岛的种类没有“自然生成”“只在这些生态里”
-    if (key === 'islandTypes') return out;
-    // “只在这些生态里”：改了名的生态按新名字
-    const biomes = (out as { biomes?: string[] }).biomes;
-    return naturalOff(biomes ? ({ ...out, biomes: biomes.map((b) => r.biomes.get(b) ?? b) } as PackItem) : out);
+  const emptyRenames = (): Renames => ({ biomes: new Map(), riverTypes: new Map(), lakeTypes: new Map() });
+  let renames = emptyRenames();
+  let assigned = new Map<ContentKind, ReturnType<typeof assignIds>>();
+  const flat = (r: Renames) => stableJson(kinds.map((k) => [...(r[k.pack.key] ?? [])]));
+  const toRenames = (a: Map<ContentKind, ReturnType<typeof assignIds>>): Renames => {
+    const r = emptyRenames();
+    for (const [k, v] of a) r[k.pack.key] = v.ids;
+    return r;
   };
-  const flat = (r: Renames) => stableJson([...r.biomes, ...r.riverTypes, ...(r.lakeTypes ?? [])]);
   for (let round = 0; round < 6; round++) {
-    biomeIds = assignIds(pickedBiomes, world.small.species, (b, id) => finalBiome(b, id, renames));
-    for (const key of TYPED_SECTIONS) typedIds[key] = assignIds(picked[key], inWorld[key], (x, id) => finalTyped(key, x, id, renames));
-    const next: Renames = { biomes: biomeIds.ids, riverTypes: typedIds.riverTypes.ids, lakeTypes: typedIds.lakeTypes.ids };
+    assigned = new Map(kinds.map((k) => [k, assignIds(k, picked.get(k)!, inWorld.get(k)!, (x, id) => finalItem(k, x, id, renames))]));
+    const next = toRenames(assigned);
     if (flat(next) === flat(renames)) break;
     renames = next;
   }
-  renames = { biomes: biomeIds.ids, riverTypes: typedIds.riverTypes.ids, lakeTypes: typedIds.lakeTypes.ids };
+  renames = toRenames(assigned);
 
+  // 加了、跳过的按登记的先后列（生态在前）；命令按用到世界的先后
   const added: PackPlan['added'] = [];
   const skipped: PackPlan['skipped'] = [];
-  const species: Species[] = [];
-  for (const b of pickedBiomes) {
-    const id = biomeIds.ids.get(b.id)!;
-    if (biomeIds.skip.has(b.id)) skipped.push({ section: 'biomes', from: b.id, id, name: b.name || b.id });
-    else {
-      const sp = finalBiome(b, id, renames);
-      species.push(sp);
-      // 名字是加进世界后的（改了名的带编号）
-      added.push({ section: 'biomes', from: b.id, id, name: sp.name || id });
-    }
-  }
-  const typeCmds: Command[] = [];
-  for (const key of TYPED_SECTIONS) {
-    for (const x of picked[key]) {
-      const id = typedIds[key].ids.get(x.id)!;
-      const entry = { section: key, from: x.id, id, name: x.name || x.id };
-      if (typedIds[key].skip.has(x.id)) skipped.push(entry);
-      else {
-        typeCmds.push(PACK_SECTIONS[key].command!(finalTyped(key, x, id, renames)));
-        added.push(entry);
+  const cmdsOf = new Map<ContentKind, Command[]>();
+  const newFields: string[] = [];
+  for (const k of packSections().filter((x) => assigned.has(x))) {
+    const a = assigned.get(k)!;
+    const cmds: Command[] = [];
+    cmdsOf.set(k, cmds);
+    for (const x of picked.get(k)!) {
+      const from = itemId(k, x);
+      const id = a.ids.get(from)!;
+      if (a.skip.has(from)) {
+        skipped.push({ section: k.pack.key, from, id, name: nameOf(k, x) || from });
+        continue;
       }
+      const item = finalItem(k, x, id, renames);
+      cmds.push(k.enable ? k.enable(item, world) : { op: 'set_content', kind: k.id, id, item: item as Record<string, unknown> });
+      // 名字是加进世界后的（改了名的带编号）
+      added.push({ section: k.pack.key, from, id, name: nameOf(k, item) || id });
+      newFields.push(...(k.pack.fieldsOf?.(item) ?? []));
     }
   }
+  const itemCmds = kinds.flatMap((k) => cmdsOf.get(k) ?? []);
 
-  // 新加的生态、河流类型、湖泊类型用到、世界里还没有的自定义场
+  // 新加的项用到、世界里还没有的自定义场
   const have = new Set(Object.keys(world.causes.fields));
   const fields: string[] = [];
-  const typeFields = typeCmds.flatMap((c) => (c.op === 'set_river_type' || c.op === 'set_lake_type' ? fieldRefs(c.type as RiverType).filter((f) => ITEM_ID.test(f)) : []));
-  for (const f of [...species.flatMap(biomeFields), ...typeFields]) if (!have.has(f) && !fields.includes(f)) fields.push(f);
+  for (const f of newFields) if (ITEM_ID.test(f) && !have.has(f) && !fields.includes(f)) fields.push(f);
 
-  const wanted = picks.textPack ? (pack.textPacks ?? []).find((t) => t.id === picks.textPack) : undefined;
-  const textPack = wanted && !sameItem(wanted, world.small.wordPack) ? wanted : null;
+  // 世界默认的地名风格：包里的这一种（改了名的按新 id）；世界里已经是它时不换
+  const styleIds = renames.nameStyles;
+  const wanted = picks.defaultStyle ? (styleIds?.get(picks.defaultStyle) ?? (picks.defaultStyle === DEFAULT_STYLE ? DEFAULT_STYLE : undefined)) : undefined;
+  const defaultStyle = wanted && wanted !== (world.small.nameStyle ?? DEFAULT_STYLE) ? wanted : null;
 
+  const fieldKind = kindOf('field');
   const commands: Command[] = [
-    ...fields.map((name): Command => ({ op: 'add_field', name })),
-    ...typeCmds,
-    ...species.map((sp): Command => ({ op: 'add_species', species: sp })),
-    ...(textPack ? [{ op: 'set_word_pack', pack: textPack } as Command] : []),
+    ...fields.map((name): Command => (fieldKind?.enable ? fieldKind.enable(name, world) : { op: 'add_field', name })),
+    ...itemCmds,
+    ...(defaultStyle ? [{ op: 'set_name_style', id: defaultStyle } as Command] : []),
   ];
-  return { command: { op: 'batch', label: `用上资源包“${pack.name}”`, commands }, added, skipped, fields, textPack };
+  return { command: { op: 'batch', label: `用上资源包“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
+}
+
+function nameOf(kind: ContentKind, item: unknown): string {
+  const n = (item as { name?: unknown }).name;
+  return kind.nameOf ? kind.nameOf(item) : typeof n === 'string' ? n : '';
 }
 
 // 用了之后变成新生态的格（按生态分开：主导生态是这次新加的，改了名的按新 id）。world 是用了之后的世界（确切预览算出的）
@@ -666,31 +490,21 @@ export function applyPackCommands(world: PackWorld, pack: ResourcePack, picks: P
 
 // ---------- 从世界导出 ----------
 
-// 没写“自然生成”的写成 false（写了的照旧）
-function naturalOff<T extends object>(x: T): T {
-  return (x as { natural?: boolean }).natural === undefined ? { ...x, natural: false } : x;
-}
-
-// 世界里能导出的生态：不是内置的原样（内置的改过也算），也不是只在这个世界的某处长的
-// （从起源地扩散、只长在某个岛上、圈的范围里：格的编号换个世界没有意义）
-export function exportableBiomes(world: PackWorld): Species[] {
-  const builtin = new Map(DEFAULT_SPECIES.map((s) => [s.id, s]));
-  return world.small.species.filter((s) => !s.dispersal && !s.range && !(builtin.has(s.id) && sameItem(builtin.get(s.id), s)));
-}
-
 // 世界里有、但不能导出的（只在这个世界的某处长的）生态的个数（导出时说一句）
 export function endemicCount(world: PackWorld): number {
   return world.small.species.filter((s) => !!s.dispersal || !!s.range).length;
 }
 
+// 按段名给要导出的 id（省略的段取全部能导出的）；wordPack：带上世界在用的旧文字包（换过内置中文时）
 export interface WorldPicks {
   biomes?: readonly string[];
   riverTypes?: readonly string[];
   lakeTypes?: readonly string[];
   islandTypes?: readonly string[];
   planetForms?: readonly string[];
-  // 带上世界在用的文字包（不是内置的时）
+  nameStyles?: readonly string[];
   wordPack?: boolean;
+  [key: string]: readonly string[] | boolean | undefined;
 }
 
 export interface PackMeta {
@@ -700,99 +514,30 @@ export interface PackMeta {
   description?: string;
 }
 
-// 把世界里勾选的项做成资源包。省略 picks 里的某一类时取全部能导出的；没有内容的部分不写
+// 把世界里勾选的项做成资源包。省略 picks 里的某一段时取全部能导出的；没有内容的段不写
 export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta): ResourcePack {
-  const pick = <T extends { id: string }>(all: readonly T[], ids: readonly string[] | undefined) => (ids ? all.filter((x) => ids.includes(x.id)) : [...all]);
-  // 第十二轮：写明“自然生成”（没写的在世界里是开着的；包里没写的加进别的世界时是关着的），换个世界照样
-  const natural = <T extends { natural?: boolean }>(x: T): T => ({ ...x, natural: x.natural ?? true });
-  const biomes = pick(exportableBiomes(world), picks.biomes).map((s) => natural(structuredClone(s)));
-  const fields = [...new Set(biomes.flatMap(biomeFields))];
-  const riverTypes = pick(PACK_SECTIONS.riverTypes.fromWorld?.(world) ?? [], picks.riverTypes);
-  const lakeTypes = pick(PACK_SECTIONS.lakeTypes.fromWorld?.(world) ?? [], picks.lakeTypes);
-  const islandTypes = pick(PACK_SECTIONS.islandTypes.fromWorld?.(world) ?? [], picks.islandTypes);
-  const planetForms = pick(PACK_SECTIONS.planetForms.fromWorld?.(world) ?? [], picks.planetForms);
-  const wp = world.small.wordPack;
   const pack: ResourcePack = { format: PACK_FORMAT, version: PACK_VERSION, id: meta.id ?? packIdFor(meta.name), name: meta.name };
   if (meta.author) pack.author = meta.author;
   if (meta.description) pack.description = meta.description;
-  if (fields.length) pack.fields = fields;
-  if (biomes.length) pack.biomes = biomes;
-  if (riverTypes.length) pack.riverTypes = riverTypes.map((x) => natural(structuredClone(x) as PackItem & { natural?: boolean }));
-  if (lakeTypes.length) pack.lakeTypes = lakeTypes.map((x) => natural(structuredClone(x) as PackItem & { natural?: boolean }));
-  if (islandTypes.length) pack.islandTypes = islandTypes.map((x) => structuredClone(x));
-  if (planetForms.length) pack.planetForms = planetForms.map((x) => structuredClone(x));
-  if (picks.wordPack && wp) pack.textPacks = [structuredClone(wp)];
+  const fields = new Set<string>();
+  const sections: [string, unknown[]][] = [];
+  for (const k of packSections()) {
+    const all = k.pack.fromWorld ? k.pack.fromWorld(world) : [];
+    const ids = picks[k.pack.key];
+    const chosen = Array.isArray(ids) ? all.filter((x) => ids.includes(itemId(k, x))) : all;
+    const items = chosen.map((x) => (k.pack.exportItem ? k.pack.exportItem(x) : x));
+    // 旧的文字包（换过内置中文时）：按模板式的地名风格带上
+    if (k.pack.key === 'nameStyles' && picks.wordPack && world.small.wordPack) items.push({ ...structuredClone(world.small.wordPack), kind: 'template' });
+    // 自定义场只跟着生态（与以前一样）
+    if (k.pack.key === 'biomes') for (const x of items) for (const f of k.pack.fieldsOf?.(x) ?? []) fields.add(f);
+    if (items.length) sections.push([k.pack.key, items]);
+  }
+  if (fields.size) pack.fields = [...fields];
+  for (const [key, items] of sections) pack[key] = items;
   return pack;
 }
-
-// ---------- 星球形态 ----------
-
-// 星球形态：每一项按 planet-form.ts 的格式检查（id、名字、从哪种星球改起、配方、脚本……）；
-// 用到世界不经过资源包的“用到这个世界”（命令是 set_worldgen 的 params.form：在 调整 → 星球形态 里换，或新建世界时选），
-// 所以不给 command，那条说明留着。从世界导出时带上世界在用的那一个
-registerPackSection('planetForms', {
-  schema: planetFormSchema as unknown as z.ZodType<PackItem>,
-  fromWorld: (w) => {
-    // 只有生态、场的小世界（测试、旧的调用方）没有 terrain
-    const form = w.small.terrain?.gen?.form;
-    return form ? [form as unknown as PackItem] : [];
-  },
-});
 
 // 包里的星球形态（已按格式检查过：parsePack 读出来的、内置的）
 export function packForms(pack: Pick<ResourcePack, 'planetForms'>): PlanetForm[] {
   return (pack.planetForms ?? []) as unknown as PlanetForm[];
 }
-
-// ---------- 河流类型（第三批，见 river-types.ts） ----------
-
-// 撞 id 改名时：种子用原来的（匹配的河、湖不变），名字带上编号（“血河 2”，最多 12 个字）
-function riverTypeWithId(item: PackItem, id: string, from: string): PackItem {
-  if (id === from) return item;
-  const t = item as unknown as RiverType | LakeType;
-  const k = id.startsWith(`${from}-`) ? id.slice(from.length + 1) : '';
-  const name = t.name && k ? `${t.name.slice(0, Math.max(1, 11 - k.length))} ${k}` : t.name;
-  return { ...item, id, name, seedKey: t.seedKey ?? from };
-}
-
-registerPackSection('riverTypes', {
-  schema: riverTypeSchema as unknown as z.ZodType<PackItem>,
-  checked: true,
-  inWorld: (w) => riverTypesOf(w.small) as unknown as PackItem[],
-  command: (item) => ({ op: 'set_river_type', type: item as unknown as RiverTypeInput }),
-  withId: riverTypeWithId,
-  // 世界里的河流类型都是用户加的（没有内置的），全部能导出
-  fromWorld: (w) => riverTypesOf(w.small).map((t) => structuredClone(t)) as unknown as PackItem[],
-});
-
-// ---------- 湖泊类型（第九轮，见 lake-types.ts） ----------
-
-registerPackSection('lakeTypes', {
-  schema: lakeTypeSchema as unknown as z.ZodType<PackItem>,
-  checked: true,
-  inWorld: (w) => lakeTypesOf(w.small) as unknown as PackItem[],
-  command: (item) => ({ op: 'set_lake_type', type: item as unknown as LakeTypeInput }),
-  withId: riverTypeWithId,
-  fromWorld: (w) => lakeTypesOf(w.small).map((t) => structuredClone(t)) as unknown as PackItem[],
-});
-
-// ---------- 岛的种类（第十四轮，见 island-types.ts） ----------
-
-// 撞 id 改名时名字带上编号（“黑沙岛 2”，最多 12 个字）
-function islandTypeWithId(item: PackItem, id: string, from: string): PackItem {
-  if (id === from) return item;
-  const t = item as unknown as IslandType;
-  const k = id.startsWith(`${from}-`) ? id.slice(from.length + 1) : '';
-  const name = t.name && k ? `${t.name.slice(0, Math.max(1, 11 - k.length))} ${k}` : t.name;
-  return { ...item, id, name };
-}
-
-registerPackSection('islandTypes', {
-  schema: islandTypeSchema as unknown as z.ZodType<PackItem>,
-  checked: true,
-  inWorld: (w) => islandTypesOf(w.small) as unknown as PackItem[],
-  command: (item) => ({ op: 'set_island_type', type: item as unknown as IslandTypeInput }),
-  withId: islandTypeWithId,
-  // 内置的四种不在 small.islandTypes 里：世界里的都是用户加的，全部能导出
-  fromWorld: (w) => islandTypesOf(w.small).map((t) => structuredClone(t)) as unknown as PackItem[],
-});

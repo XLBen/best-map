@@ -198,8 +198,16 @@ export class Engine {
     // 新起的省名记进命令（存档、重做时照用）。
     // 安全模式（脚本不运行）下推导与正常时不同，这一步新起的省可能少几个：命令里已经记着的名字一个不丢，
     // 不然用安全模式打开一次、自动保存之后，再正常打开时那几个省就换了名字（命令照旧保留）
-    const names = r.provinceNames && cmd.provinceNames && !scriptsEnabled() ? { ...cmd.provinceNames, ...r.provinceNames } : r.provinceNames;
-    const recorded = names ? { ...cmd, provinceNames: names } : cmd;
+    const merge = !!(r.provinceNames && cmd.provinceNames && !scriptsEnabled());
+    const names = merge ? { ...cmd.provinceNames, ...r.provinceNames } : r.provinceNames;
+    // 省名的原文（第二十轮）跟着省名记；没有原文时不写这一项
+    const orig = merge && cmd.provinceOrig ? { ...cmd.provinceOrig, ...r.provinceOrig } : r.provinceOrig;
+    let recorded: Command = names ? { ...cmd, provinceNames: names } : cmd;
+    if (orig) recorded = { ...recorded, provinceOrig: orig };
+    else if (names && recorded.provinceOrig) {
+      const { provinceOrig: _, ...rest } = recorded;
+      recorded = rest as Command;
+    }
     this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
     return { summary: r.summary, changed: r.changed };

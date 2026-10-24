@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { Engine } from './engine';
 import { DEFAULT_PACK } from './names';
+import { kindOf, registerKind, updateKind } from './content/registry';
 import {
   PACK_MAX,
-  PACK_SECTIONS,
+  packSection,
   type PackWorld,
   type ResourcePack,
   applyPackCommands,
@@ -20,7 +21,6 @@ import {
   packSummary,
   planPack,
   readPack,
-  registerPackSection,
   rewriteRiverRefs,
   scriptRefs,
 } from './packs';
@@ -84,7 +84,9 @@ describe('资源包的格式', () => {
     expect(words.pack.name.length).toBe(60);
     expect(words.pack.id).toBe('my-words-v2');
     // 文字包本身原样
-    expect(words.pack.textPacks![0].name).toBe('很长的名字'.repeat(20));
+    expect(words.pack.nameStyles![0].name).toBe('很长的名字'.repeat(20));
+    // 文字包的 id 不合规时换成合规的（地名风格的 id 规则与生态相同）
+    expect(words.pack.nameStyles![0].id).toBe('my-words-v2');
     expect(parsePack(words.pack).ok).toBe(true);
   });
 
@@ -94,13 +96,18 @@ describe('资源包的格式', () => {
     expect(list.ok && list.pack.biomes?.map((b) => b.id)).toEqual(['a', 'b']);
     const words = readPack(JSON.stringify(DEFAULT_PACK));
     expect(words.ok && words.legacy).toBe('wordPack');
-    expect(words.ok && words.pack.textPacks).toEqual([DEFAULT_PACK]);
+    // 文字包读成模板式的地名风格
+    expect(words.ok && words.pack.nameStyles).toEqual([{ ...DEFAULT_PACK, kind: 'template' }]);
+    // 资源包里旧的 textPacks 一段也照旧读进地名风格
+    const old = readPack(JSON.stringify(pack({ textPacks: [DEFAULT_PACK] })));
+    expect(old.ok && old.pack.nameStyles).toEqual([{ ...DEFAULT_PACK, kind: 'template' }]);
+    expect(old.ok && 'textPacks' in old.pack).toBe(false);
     expect(readPack('{"a":1}').ok).toBe(false);
   });
 
   it('列表里的一行、文件名', () => {
     expect(packSummary(FANTASY_PACK)).toMatch(/^生态 5/);
-    expect(packSummary(pack({ biomes: [biome('a')], riverTypes: [{ id: 'r' }, { id: 's' }], textPacks: [DEFAULT_PACK] }))).toBe('生态 1 · 河流 2 · 文字包 1');
+    expect(packSummary(pack({ biomes: [biome('a')], riverTypes: [{ id: 'r' }, { id: 's' }], nameStyles: [{ ...DEFAULT_PACK, kind: 'template' }] }))).toBe('生态 1 · 河流 2 · 地名风格 1');
     expect(packFileName({ id: 'x', name: '我的 奇幻/生态' })).toBe('我的-奇幻-生态.map2pack.json');
   });
 });
@@ -133,8 +140,8 @@ describe('资源包的检查（不运行脚本）', () => {
     expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.filter((c) => c.op === 'add_species').map((c) => (c.op === 'add_species' ? c.species.id : ''))).toEqual(['a', 'b']);
     const many = pack({ biomes: Array.from({ length: 49 }, (_, k) => biome(`s${k}`)) });
     expect(packProblems(many)).toEqual(['生态有 49 种（超过 48）：界面会挤，计算会变慢']);
-    const words = pack({ textPacks: [{ ...DEFAULT_PACK, types: { island: { patterns: [{ p: '{missing}岛' }] } } }] });
-    expect(packProblems(words)[0]).toMatch(/^文字包“.+”：“island”的模板“\{missing\}岛”用到了不存在的词表/);
+    const words = pack({ nameStyles: [{ ...DEFAULT_PACK, kind: 'template', types: { island: { patterns: [{ p: '{missing}岛' }] } } }] });
+    expect(packProblems(words)[0]).toMatch(/^地名风格“.+”：“island”的模板“\{missing\}岛”用到了不存在的词表/);
   });
 
   it('脚本里不合规的场名：提醒一句，不当成要加的场（加也加不了，导出的文件也读不回来）', () => {
@@ -177,9 +184,9 @@ describe('资源包的检查（不运行脚本）', () => {
 });
 
 describe('资源包用到世界', () => {
-  const saved = { ...PACK_SECTIONS.riverTypes };
+  const saved = kindOf('riverType')!;
   afterEach(() => {
-    PACK_SECTIONS.riverTypes = saved;
+    registerKind(saved);
   });
 
   it('一整步：先加用到的场，再加生态；文字包勾了才换', () => {
@@ -201,10 +208,16 @@ describe('资源包用到世界', () => {
     expect(one.fields).toEqual([]);
     // 场已经有了：不再加
     expect(planPack(fakeWorld(undefined, ['holy']), FANTASY_PACK, defaultPicks(FANTASY_PACK)).fields).toEqual([]);
-    // 文字包
-    const words = pack({ textPacks: [{ ...DEFAULT_PACK, id: 'w2', name: '另一套' }] });
-    expect(planPack(w, words, { textPack: null }).command.commands).toEqual([]);
-    expect(planPack(w, words, { textPack: 'w2' }).command.commands.map((c) => c.op)).toEqual(['set_word_pack']);
+    // 地名风格：勾了才启用，设为默认才换
+    const words = pack({ nameStyles: [{ ...DEFAULT_PACK, id: 'w2', name: '另一套', kind: 'template' }] });
+    expect(planPack(w, words, { nameStyles: [] }).command.commands).toEqual([]);
+    expect(planPack(w, words, { nameStyles: ['w2'] }).command.commands.map((c) => c.op)).toEqual(['set_content']);
+    const def = planPack(w, words, { nameStyles: ['w2'], defaultStyle: 'w2' });
+    expect(def.command.commands.map((c) => c.op)).toEqual(['set_content', 'set_name_style']);
+    expect(def.defaultStyle).toBe('w2');
+    // 和内置中文一模一样的：跳过
+    const same = planPack(w, pack({ nameStyles: [{ ...DEFAULT_PACK, kind: 'template' }] }), { nameStyles: ['zh-default'] });
+    expect([same.command.commands, same.skipped.map((s) => s.id)]).toEqual([[], ['zh-default']]);
   });
 
   it('同 id 不同内容的改名为 -2，包里对它的引用一起改，种子不变', () => {
@@ -280,7 +293,7 @@ describe('资源包用到世界', () => {
   it('河流类型：先加河流类型、再加生态；撞 id 改名，生态脚本里的 river()、hasRiver() 跟着改', () => {
     // 注册好的：用到世界时是 set_river_type（在生态之前，生态的脚本、条件要用它）
     const p = pack({ biomes: [FANTASY_BIOMES[4]], riverTypes: [{ id: 'blood_river', name: '血河', color: '#8f1414' }] });
-    expect(PACK_SECTIONS.riverTypes.note).toBeUndefined();
+    expect(packSection('riverTypes')!.pack.note).toBeUndefined();
     expect(planPack(fakeWorld(), p, defaultPicks(p)).command.commands.map((c) => c.op)).toEqual(['set_river_type', 'add_species']);
     // 世界里有一种不一样的 blood_river：改叫 blood_river-2，名字带编号，种子用原来的 id
     const w = fakeWorld();
@@ -292,11 +305,12 @@ describe('资源包用到世界', () => {
     const src0 = sp0?.op === 'add_species' ? (sp0.species as Species).scripts!.placement!.src : '';
     expect(src0).toContain("hasRiver('blood_river-2')");
     expect(src0).toContain("river('blood_river-2')");
-    registerPackSection('riverTypes', {
+    // 登记表里换掉这一种的放法和命令：用到世界照新的来
+    updateKind('riverType', {
       inWorld: () => [{ id: 'blood_river', name: '别的血河', color: '#000000' }],
-      command: (item) => ({ op: 'batch', label: `河流类型 ${item.id}`, commands: [] }),
+      enable: (item) => ({ op: 'batch', label: `河流类型 ${(item as { id: string }).id}`, commands: [] }),
     });
-    expect(PACK_SECTIONS.riverTypes.note).toBeUndefined();
+    expect(packSection('riverTypes')!.pack.note).toBeUndefined();
     const plan = planPack(fakeWorld(), p, defaultPicks(p));
     expect(plan.command.commands.map((c) => (c.op === 'batch' ? c.label : c.op))).toEqual(['河流类型 blood_river-2', 'add_species']);
     const sp = plan.command.commands.find((c) => c.op === 'add_species');
@@ -343,12 +357,12 @@ describe('从世界导出', () => {
     const out = packFromWorld(w, {}, { name: '我的包', author: '我' });
     // 导出时写明“自然生成”（内置的改过的没写，是开着的）
     expect(out).toEqual({ format: 'map2-pack', version: 1, id: '我的包', name: '我的包', author: '我', fields: ['holy'], biomes: [{ ...taiga, natural: true }, holy] });
-    // 只勾一种；文字包是内置的（null）时不带
+    // 只勾一种；内置中文没换过（wordPack 为 null）时不带
     expect(packFromWorld(w, { biomes: ['taiga'], wordPack: true }, { name: 'x' }).biomes).toEqual([{ ...taiga, natural: true }]);
     // 只长在某个岛上的也不收
     const ranged = { ...biome('ranged_x'), range: { kind: 'island' as const, cell: 3 } };
     expect(exportableBiomes(fakeWorld([...species, ranged], ['holy'])).map((s) => s.id)).toEqual(['taiga', 'holy_land']);
-    expect(packFromWorld(w, { biomes: ['taiga'], wordPack: true }, { name: 'x' }).textPacks).toBeUndefined();
+    expect(packFromWorld(w, { biomes: ['taiga'], wordPack: true }, { name: 'x' }).nameStyles).toBeUndefined();
     // 什么都没勾：只有名字
     expect(packFromWorld(fakeWorld(), {}, { name: '空' })).toEqual({ format: 'map2-pack', version: 1, id: '空', name: '空' });
   });
@@ -485,7 +499,7 @@ describe('资源包里的星球形态', () => {
     expect(!bad.ok && bad.errors[0]).toMatch(/^星球形态第 1 个“双子大陆”的 base：/);
     const noName = readPack(JSON.stringify(pack({ planetForms: [{ ...TWIN_CONTINENTS, name: '' }] as never })));
     expect(!noName.ok && noName.errors[0]).toMatch(/^星球形态第 1 个“twin_continents”的 name：/);
-    expect(PACK_SECTIONS.planetForms.note).toBe('在“调整 → 星球形态”里换，或新建时选');
+    expect(packSection('planetForms')!.pack.note).toBe('在“调整 → 星球形态”里换，或新建时选');
     expect(planPack(fakeWorld(), FANTASY_PACK, { biomes: [] }).command.commands).toEqual([]);
   });
 

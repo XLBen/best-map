@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import {
   PACK_MAX_CHARS,
-  PACK_SECTIONS,
   type PackItem,
+  packSection,
   type ResourcePack,
   defaultPicks,
   endemicCount,
@@ -109,10 +109,10 @@ function PackContents({ pack }: { pack: ResourcePack }) {
           <ItemChips items={pack.planetForms.map((f) => ({ name: itemName(f) }))} />
         </>
       )}
-      {!!pack.textPacks?.length && (
+      {!!pack.nameStyles?.length && (
         <>
-          <h5>文字包</h5>
-          <ItemChips items={pack.textPacks.map((t) => ({ name: t.name }))} />
+          <h5>地名风格 {pack.nameStyles.length}</h5>
+          <ItemChips items={pack.nameStyles.map((t) => ({ name: t.name }))} />
         </>
       )}
       {!!pack.fields?.length && <p class="hint">用到的自定义场：{pack.fields.join('、')}</p>}
@@ -335,10 +335,12 @@ function ExportView() {
   const [author, setAuthor] = useState('');
   const [desc, setDesc] = useState('');
   const biomes = useMemo(() => (w ? exportableBiomes(w) : []), [w]);
-  const rivers = useMemo(() => (w ? (PACK_SECTIONS.riverTypes.fromWorld?.(w) ?? []) : []), [w]);
-  const lakes = useMemo(() => (w ? (PACK_SECTIONS.lakeTypes.fromWorld?.(w) ?? []) : []), [w]);
-  const isles = useMemo(() => (w ? (PACK_SECTIONS.islandTypes.fromWorld?.(w) ?? []) : []), [w]);
-  const forms = useMemo(() => (w ? (PACK_SECTIONS.planetForms.fromWorld?.(w) ?? []) : []), [w]);
+  const fromWorld = (key: string): PackItem[] => (w ? ((packSection(key)?.pack.fromWorld?.(w) ?? []) as PackItem[]) : []);
+  const rivers = useMemo(() => fromWorld('riverTypes'), [w]);
+  const lakes = useMemo(() => fromWorld('lakeTypes'), [w]);
+  const isles = useMemo(() => fromWorld('islandTypes'), [w]);
+  const forms = useMemo(() => fromWorld('planetForms'), [w]);
+  const styles = useMemo(() => fromWorld('nameStyles'), [w]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [words, setWords] = useState(false);
   if (!w) return null;
@@ -358,12 +360,13 @@ function ExportView() {
         lakeTypes: lakes.filter((r) => on('l', r.id)).map((r) => r.id),
         islandTypes: isles.filter((r) => on('i', r.id)).map((r) => r.id),
         planetForms: forms.filter((f) => on('f', f.id)).map((f) => f.id),
+        nameStyles: styles.filter((s) => on('s', s.id)).map((s) => s.id),
         wordPack: words,
       },
       { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined },
     );
   const preview = make();
-  const empty = !preview.biomes && !preview.riverTypes && !preview.lakeTypes && !preview.islandTypes && !preview.planetForms && !preview.textPacks;
+  const empty = !preview.biomes && !preview.riverTypes && !preview.lakeTypes && !preview.islandTypes && !preview.planetForms && !preview.nameStyles;
   const endemic = endemicCount(w);
   // 普通函数（不是组件）：每次重画不会把勾选框换成新的
   const check = (k: string, label: string, color?: string) => (
@@ -419,13 +422,16 @@ function ExportView() {
       {forms.map((f) => (
         check(`f:${f.id}`, `星球形态：${itemName(f)}`)
       ))}
+      {styles.map((s) => (
+        check(`s:${s.id}`, `地名风格：${itemName(s)}`)
+      ))}
       {w.small.wordPack && (
         <label class="check">
           <input type="checkbox" checked={words} onChange={() => setWords(!words)} />
           <span>文字包“{w.small.wordPack.name}”</span>
         </label>
       )}
-      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && <p class="hint">没有自己做的内容</p>}
+      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && !styles.length && <p class="hint">没有自己做的内容</p>}
       {endemic > 0 && <p class="hint">只长在某处的生态不带</p>}
       {replaces && (
         <p class="hint">

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 // 画的河的类型 id 与生态 id 同一条规则，world.ts 在模块顶层就要用（在只引用 zod 的 type-id.ts 里）。
 // 不管先引用哪一个模块都不能碰上“初始化之前不能访问”：每个模块都在清空的模块表里先引用一次
 
-const MODULES = ['species', 'script', 'commands', 'errors', 'world', 'engine', 'vegetation', 'constraints', 'features', 'biome-look', 'biome-scripts', 'packs/fantasy-biomes', 'names', 'provinces', 'select', 'seams', 'planet-form', 'generate', 'planet-gen', 'terrain', 'world-types', 'packs/fantasy-forms', 'packs/fantasy', 'packs', 'type-id', 'river-types', 'effects', 'packs/fantasy-rivers'];
+const MODULES = ['species', 'script', 'commands', 'errors', 'world', 'engine', 'vegetation', 'constraints', 'features', 'biome-look', 'biome-scripts', 'packs/fantasy-biomes', 'names', 'provinces', 'select', 'seams', 'planet-form', 'generate', 'planet-gen', 'terrain', 'world-types', 'packs/fantasy-forms', 'packs/fantasy', 'packs', 'type-id', 'river-types', 'effects', 'packs/fantasy-rivers', 'name-styles', 'content/registry', 'content/kinds', 'packs/names/index'];
 
 describe('引用的先后', () => {
   for (const m of MODULES) {

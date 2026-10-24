@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import zhPack from './packs/zh.json';
+import zhPack from './packs/names/zh-default.json';
 import { mixSeed, mulberry32 } from './rng';
 
 // 文字包：按地貌类型给出命名模板与词表，用户可以导入、导出、替换。

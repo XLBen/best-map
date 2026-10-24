@@ -3,8 +3,12 @@ import { WORLD_TYPE_INFO, type Worldgen, worldgenSchema } from './generate';
 import { checkForm, sameForm } from './planet-form';
 import { PLANET_TYPES } from './presets';
 import { packProblems, wordPackSchema } from './names';
+import { DEFAULT_STYLE, styleById } from './name-styles';
+import './content/kinds';
+import { type DirtyLevel, itemId, itemName, kindOf } from './content/registry';
 import {
   PROVINCE_KIND_INFO,
+  renameProvince,
   type ProvinceFix,
   type ProvinceKind,
   applyProvinceFix,
@@ -89,6 +93,7 @@ const guidePatchSchema = z
     name: G.name.unwrap().nullable().optional(),
     nameKey: G.nameKey.unwrap().nullable().optional(),
     autoName: G.autoName.unwrap().nullable().optional(),
+    autoOrig: G.autoOrig.unwrap().nullable().optional(),
     salt: G.salt.unwrap().nullable().optional(),
     spring: z.boolean().optional(),
     flow: G.flow.unwrap().nullable().optional(),
@@ -208,14 +213,33 @@ const baseCommands = [
       .regex(/^#[0-9a-fA-F]{6}$/)
       .nullable()
       .optional(),
+    // 名字的原文（第二十轮）：和 name 一起写；只改 name 时原文去掉，'' 也是去掉
+    orig: z.string().max(80).optional(),
+    // 地名风格（第二十轮）：按这种风格重新起名；null 换回世界默认（也重新起名）
+    style: typeIdSchema.nullable().optional(),
   }),
   // 湖：单独成省 / 并进旁边的陆地省。只整理湖与陆地之间的格，别的省份不动
   z.object({ op: z.literal('set_lake_mode'), mode: z.enum(['separate', 'merge']) }),
   // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名。
   // label（第十四轮）：名字前面的类型字（“圣山”），空字符串换回按地物类型的；只改 label 时不写 name
-  z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40).optional(), label: z.string().max(20).optional(), hidden: z.boolean().optional() }),
+  // orig（第二十轮）：名字的原文，和 name 一起写；只写 name 时原文去掉
+  z.object({
+    op: z.literal('rename_feature'),
+    key: z.string().regex(/^\w+:\d+$/),
+    name: z.string().max(40).optional(),
+    orig: z.string().max(80).optional(),
+    label: z.string().max(20).optional(),
+    hidden: z.boolean().optional(),
+  }),
   z.object({ op: z.literal('reroll_feature'), key: z.string().regex(/^\w+:\d+$/) }),
+  // 旧的文字包：换掉内置中文风格的内容（null 换回内置的）。新的做法是地名风格（set_content、set_name_style）
   z.object({ op: z.literal('set_word_pack'), pack: wordPackSchema.nullable() }),
+  // 启用、修改、停用一项内容（第二十轮，见 content/registry.ts）：item 为 null 是停用。只用于存在 small.content 里的种类
+  z.object({ op: z.literal('set_content'), kind: typeIdSchema, id: typeIdSchema, item: z.record(z.string(), z.unknown()).nullable() }),
+  // 世界默认的地名风格（第二十轮）：null 换回内置中文
+  z.object({ op: z.literal('set_name_style'), id: typeIdSchema.nullable() }),
+  // 一个地物的地名风格（第二十轮）：key 是地物的键（“类型:锚点格”“guide:id”“region:id”）；null 换回世界默认
+  z.object({ op: z.literal('set_feature_style'), key: z.string().regex(/^\w+:\S+$/).max(60), style: typeIdSchema.nullable() }),
   // 用户的地名：圈一块（cells）或放一个点（kind = spot，at 为位置）；name 为空时按文字包自动起名
   z.object({ op: z.literal('add_region'), region: regionSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
   // 改名（空字符串恢复自动）、改类型（选了类型就不再自动判断）、auto 类型改成自动判断、reroll 换一个自动的名字
@@ -244,9 +268,11 @@ const baseCommands = [
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
 // nameCarry：这一步之后为了地名不乱跳留下的名字、挪过去的改名（见 features.ts 的 carryNames），同样由引擎记下、照用。
 // provinceFix：这一步改了湖（放湖、删湖、湖干了、地形变了）之后，湖与陆地省份的整理（见 provinces.ts 的 lakeProvinceFix），
-// 同样由引擎在推导算好之后记下，重放、重做时照用
+// 同样由引擎在推导算好之后记下，重放、重做时照用。
+// provinceOrig（第二十轮）：新起的省名里有原文的那些（省份编号 → 原文），和 provinceNames 一起记、一起用
 export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & {
   provinceNames?: Record<string, string>;
+  provinceOrig?: Record<string, string>;
   nameCarry?: NameCarry;
   provinceFix?: ProvinceFix;
 };
@@ -260,6 +286,8 @@ const provinceMetaSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
+  style: typeIdSchema.optional(),
+  orig: z.string().optional(),
 });
 const provinceFixSchema = z
   .object({
@@ -274,7 +302,7 @@ const provinceFixSchema = z
 // 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
 const featureKey = z.string().regex(/^\w+:\S+$/);
 const nameCarrySchema = z.object({
-  keep: z.record(featureKey, z.object({ name: z.string(), ctx: z.string() }).nullable()).optional(),
+  keep: z.record(featureKey, z.object({ name: z.string(), ctx: z.string(), orig: z.string().optional() }).nullable()).optional(),
   move: z.record(featureKey, featureKey).optional(),
 });
 
@@ -372,8 +400,15 @@ export function applyCommand(
   world: World,
   input: Command,
   ctx: ApplyContext,
-): { dirty: Dirty; summary: string; undo: UndoRecord; changed: boolean; provinceNames: Record<string, string> | null } {
-  const { provinceNames: stored, nameCarry: carryInput, provinceFix: fixInput, ...raw } = input;
+): {
+  dirty: Dirty;
+  summary: string;
+  undo: UndoRecord;
+  changed: boolean;
+  provinceNames: Record<string, string> | null;
+  provinceOrig: Record<string, string> | null;
+} {
+  const { provinceNames: stored, provinceOrig: storedOrig, nameCarry: carryInput, provinceFix: fixInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
   if (carry && !carry.success) throw new CommandError(`命令里的地名无效：${formatIssues(carry.error)}`);
   const nameCarry = carry?.data;
@@ -399,7 +434,12 @@ export function applyCommand(
     if (stored) {
       for (const [id, name] of Object.entries(stored)) {
         const p = world.small.provinces[Number(id)];
-        if (p && !idsBefore.has(id)) p.name = name;
+        if (!p || idsBefore.has(id)) continue;
+        p.name = name;
+        // 原文跟着记下的名字（没记原文的名字没有原文）
+        const orig = storedOrig?.[id];
+        if (orig) p.orig = orig;
+        else delete p.orig;
       }
     }
     if (nameCarry) applyNameCarry(world.small, nameCarry);
@@ -427,8 +467,19 @@ export function applyCommand(
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
   const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || !!undo.dropFragment || JSON.stringify(world.small) !== smallBefore;
   const provinceNames: Record<string, string> = {};
-  for (const [id, p] of Object.entries(world.small.provinces)) if (!idsBefore.has(id)) provinceNames[id] = p.name;
-  return { ...result, undo, changed, provinceNames: Object.keys(provinceNames).length ? provinceNames : null };
+  const provinceOrig: Record<string, string> = {};
+  for (const [id, p] of Object.entries(world.small.provinces)) {
+    if (idsBefore.has(id)) continue;
+    provinceNames[id] = p.name;
+    if (p.orig) provinceOrig[id] = p.orig;
+  }
+  return {
+    ...result,
+    undo,
+    changed,
+    provinceNames: Object.keys(provinceNames).length ? provinceNames : null,
+    provinceOrig: Object.keys(provinceOrig).length ? provinceOrig : null,
+  };
 }
 
 // 命令执行之后又改了一个数组（引擎记进命令的整理，见 Engine.fixLakeProvinces）：把这些格改之前的值并进撤销记录。
@@ -510,6 +561,55 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
 }
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
+
+// ---------- 内容（第二十轮，见 content/registry.ts） ----------
+
+const DIRTY_OF: Record<DirtyLevel, Dirty> = {
+  none: Dirty.None,
+  names: Dirty.Names,
+  vegetation: Dirty.Vegetation,
+  solve: Dirty.Solve,
+  climate: Dirty.Climate,
+  elevation: Dirty.Elevation,
+};
+
+// 历史里地名风格的名字
+function styleLabel(small: SmallState, id: string): string {
+  if (id === DEFAULT_STYLE) return '中文·默认';
+  const s = styleById(small, id);
+  return s && 'name' in s ? s.name : id;
+}
+
+// 启用、修改、停用一项放在 small.content 里的内容（set_content）：按登记的格式检查，重算到登记的那一层
+function setContent(world: World, kindId: string, id: string, raw: Record<string, unknown> | null): { dirty: Dirty; summary: string } {
+  const kind = kindOf(kindId);
+  if (!kind || kind.store !== 'content') throw new CommandError(`不认识的内容种类 "${kindId}"`);
+  const small = world.small;
+  const store = { ...(small.content?.[kindId] ?? {}) };
+  const before = store[id];
+  let after: unknown;
+  if (raw === null) {
+    if (before === undefined) throw new CommandError(`世界里没有${kind.label} "${id}"`);
+    delete store[id];
+  } else {
+    const r = kind.schema.safeParse(raw);
+    if (!r.success) throw new CommandError(`${kind.label}无效：${formatIssues(r.error)}`);
+    after = r.data;
+    if (itemId(kind, after) !== id) throw new CommandError(`${kind.label}的 id 与命令里的不同`);
+    kind.check?.(after, world);
+    if (before === undefined && kind.maxInWorld !== undefined && Object.keys(store).length >= kind.maxInWorld) throw new CommandError(`${kind.label}最多 ${kind.maxInWorld} 种`);
+    store[id] = after;
+  }
+  // 空了就去掉，世界与没启用过时一样
+  const content = { ...small.content, [kindId]: store };
+  if (!Object.keys(store).length) delete content[kindId];
+  if (Object.keys(content).length) small.content = content;
+  else delete small.content;
+  const level = kind.dirty?.(before, after, world) ?? 'none';
+  const name = itemName(kind, after ?? before);
+  const what = raw === null ? '停用' : before === undefined ? '启用' : '修改';
+  return { dirty: DIRTY_OF[level], summary: `${what}${kind.label}“${name}”` };
+}
 
 // 放岛的增量加进原因；湖里的岛定下的高度写进 causes.islandHeight（第一次用到时才建）
 function putStamp(world: World, r: StampResult) {
@@ -635,7 +735,7 @@ export function guideDirty(before: readonly Guide[], after: readonly Guide[]): D
   if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined, !!g.path, g.branch?.share ?? null])) {
     return Dirty.Vegetation;
   }
-  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null, g.label ?? null, g.hidden ?? null])) return Dirty.Names;
+  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.autoOrig ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null, g.label ?? null, g.hidden ?? null])) return Dirty.Names;
   return Dirty.None;
 }
 
@@ -1004,6 +1104,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const old = small.guides[idx];
       const merged: Record<string, unknown> = { ...old, ...cmd.patch };
       for (const [k, v] of Object.entries(cmd.patch)) if (v === null) delete merged[k];
+      // 记下的名字去掉了，它的原文也去掉
+      if (merged.autoName === undefined) delete merged.autoOrig;
       const moved = cmd.patch.cells !== undefined && JSON.stringify(cmd.patch.cells) !== JSON.stringify(old.cells);
       const parsed = guideSchema.safeParse(merged);
       if (!parsed.success) throw new CommandError(`update_guide 参数无效：${formatIssues(parsed.error)}`);
@@ -1260,7 +1362,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       return { dirty: Dirty.None, summary: `切开${names} · 多出 ${count} 个省份` };
     }
     case 'rename_feature': {
-      if (cmd.name === undefined && cmd.label === undefined && cmd.hidden === undefined) throw new CommandError('rename_feature 要写 name、label 或 hidden');
+      if (cmd.name === undefined && cmd.label === undefined && cmd.hidden === undefined && cmd.orig === undefined) throw new CommandError('rename_feature 要写 name、orig、label 或 hidden');
       const ov = { ...(small.featureNames[cmd.key] ?? {}) };
       // 删掉地名（第十六轮）：地物照旧，只是不标；恢复就去掉这一项
       if (cmd.hidden !== undefined) {
@@ -1270,6 +1372,14 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (cmd.name !== undefined) {
         if (cmd.name.trim()) ov.name = cmd.name.trim();
         else delete ov.name;
+      }
+      // 原文（第二十轮）：跟着自己起的名字；改了中文名没写原文时去掉
+      const orig = cmd.orig?.trim();
+      if (orig && ov.name) ov.orig = orig;
+      else if (cmd.orig !== undefined || cmd.name !== undefined) delete ov.orig;
+      if (cmd.orig !== undefined && cmd.name === undefined && cmd.label === undefined && cmd.hidden === undefined) {
+        small.featureNames = { ...small.featureNames, [cmd.key]: ov };
+        return { dirty: Dirty.Names, summary: orig ? `原文改为“${orig}”` : '去掉原文' };
       }
       const label = cmd.label?.trim();
       if (cmd.label !== undefined) {
@@ -1284,6 +1394,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     case 'reroll_feature': {
       const ov = { ...(small.featureNames[cmd.key] ?? {}) };
       delete ov.name;
+      delete ov.orig;
       ov.salt = (ov.salt ?? 0) + 1;
       small.featureNames = { ...small.featureNames, [cmd.key]: ov };
       return { dirty: Dirty.Names, summary: '换名字' };
@@ -1355,6 +1466,25 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       small.wordPack = cmd.pack;
       return { dirty: Dirty.Names, summary: cmd.pack ? `换用文字包“${cmd.pack.name}”` : '文字包恢复自动' };
     }
+    case 'set_content':
+      return setContent(world, cmd.kind, cmd.id, cmd.item);
+    case 'set_name_style': {
+      if (cmd.id !== null && !styleById(small, cmd.id)) throw new CommandError(`世界里没有地名风格 "${cmd.id}"`);
+      if (cmd.id === null || cmd.id === DEFAULT_STYLE) delete small.nameStyle;
+      else small.nameStyle = cmd.id;
+      return { dirty: Dirty.Names, summary: `地名风格改为“${styleLabel(small, cmd.id ?? DEFAULT_STYLE)}”` };
+    }
+    case 'set_feature_style': {
+      if (cmd.style !== null && !styleById(small, cmd.style)) throw new CommandError(`世界里没有地名风格 "${cmd.style}"`);
+      const ov = { ...(small.featureNames[cmd.key] ?? {}) };
+      if (cmd.style === null) delete ov.style;
+      else ov.style = cmd.style;
+      const names = { ...small.featureNames };
+      if (Object.keys(ov).length) names[cmd.key] = ov;
+      else delete names[cmd.key];
+      small.featureNames = names;
+      return { dirty: Dirty.Names, summary: cmd.style === null ? '地名风格恢复自动' : `地名风格改为“${styleLabel(small, cmd.style)}”` };
+    }
     case 'set_province': {
       const meta = small.provinces[cmd.id];
       if (!meta) throw new CommandError(`找不到省份 ${cmd.id}`);
@@ -1362,11 +1492,28 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         if (!meta.land) throw new CommandError('海省的类型不能改');
         meta.kind = cmd.kind;
       }
-      if (cmd.name !== undefined) meta.name = cmd.name;
+      if (cmd.name !== undefined) {
+        meta.name = cmd.name;
+        // 原文跟着名字：没写原文时去掉
+        const orig = cmd.orig?.trim();
+        if (orig) meta.orig = orig;
+        else delete meta.orig;
+      }
       if (cmd.locked !== undefined) meta.locked = cmd.locked;
       if (cmd.color !== undefined) {
         if (cmd.color) meta.color = cmd.color.toLowerCase();
         else delete meta.color;
+      }
+      if (cmd.style !== undefined) {
+        if (cmd.style !== null && !styleById(small, cmd.style)) throw new CommandError(`世界里没有地名风格 "${cmd.style}"`);
+        if (cmd.style === null) delete meta.style;
+        else meta.style = cmd.style;
+        // 按新的风格重新起名：起名要看这里的河、山、冷暖（推导），先算好
+        if (cmd.name === undefined) {
+          ctx.ensureDerived();
+          renameProvince(world, cmd.id);
+        }
+        return { dirty: Dirty.None, summary: `省份“${meta.name || cmd.id}” · ${cmd.style === null ? '地名风格恢复自动' : `地名风格改为“${styleLabel(small, cmd.style)}”`}` };
       }
       const what =
         cmd.kind !== undefined

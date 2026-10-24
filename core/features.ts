@@ -1,5 +1,6 @@
 import { type Mesh, findCell, gradient } from './mesh';
-import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
+import { DEFAULT_PACK, type WordPack, hashString } from './names';
+import { type GenName, type ResolvedStyle, type StyleBody, hasType, isPhonetic, styleFor, styleName, templateName, templateOf } from './name-styles';
 import { type LakeType, majorityLakeType } from './lake-types';
 import { BUILTIN_COUNT, ISLAND_CODE_MASK, type IslandType, islandTypeOfCode } from './island-types';
 import { PLAIN_RIVER, type RiverType, majorityType } from './river-types';
@@ -106,6 +107,10 @@ export interface GeoFeature {
   label?: string;
   // 删掉了名字（第十六轮）：地图上、导出的图片和 features.csv 里不标，“地名 ⋯ → 删掉的地名”里能恢复
   hidden?: true;
+  // 名字的原文（第二十轮）：按音译式、带读音表的地名风格起的名字才有（Karvilsburg）
+  orig?: string;
+  // 自己选的地名风格（第二十轮）：不是世界默认的时才有
+  style?: string;
 }
 
 export interface FeatureOverride {
@@ -116,6 +121,10 @@ export interface FeatureOverride {
   label?: string;
   // 删掉了这个地名（第十六轮）：地物还在，只是不标
   hidden?: true;
+  // 自己起的名字的原文（第二十轮）：改名时一起写；只改中文名时去掉
+  orig?: string;
+  // 这个地物用的地名风格（第二十轮，见 name-styles.ts 的 styleFor）
+  style?: string;
 }
 
 // ---------- 格图工具 ----------
@@ -951,13 +960,20 @@ const BUILTIN_SPECIES = new Set(DEFAULT_SPECIES.map((sp) => sp.id));
 // 类型名（地名表、底部条）就是生态的名字；模板里的 {__species} 换成它。
 // 生态自带地名设定（第三批的 feature）时：类型名用它的 label，起名模板用它的 names（词表仍用文字包的；
 // 文字包里没有模板用到的词表时用内置包的）。地物的种类、锚点不看这些，所以只改地名设定时只要重新起名
-function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (pack: WordPack) => { pack: WordPack; type: string } } {
+// 地名风格是音译式时（第二十轮）：生态自带的模板是中文的，用内置中文包；别的按风格里的 biome.<id>、大类、biome 起名，
+// 生态的名字由 species 带进去（中文的写法里写 {__species}）
+function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (style: StyleBody) => { pack: StyleBody; type: string; species?: string } } {
   const group = speciesGroup(sp);
   const type: FeatureType = group && BUILTIN_SPECIES.has(sp.id) ? group : 'biome';
   const label = sp.feature?.label ?? (sp.name || FEATURE_INFO[type].label);
   const own = sp.feature?.names;
-  const naming = (pack: WordPack) => {
+  const naming = (style: StyleBody): { pack: StyleBody; type: string; species?: string } => {
+    const pack = templateOf(style);
     if (own) return { pack: withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, label, own), type: OWN_TYPE };
+    if (isPhonetic(style)) {
+      const t = style.types[`biome.${sp.id}`] ? `biome.${sp.id}` : type !== 'biome' && style.types[type] ? type : 'biome';
+      return { pack: style, type: t, species: label };
+    }
     if (type !== 'biome') return { pack: withSpecies(pack, label), type };
     for (const p of [pack, DEFAULT_PACK]) {
       const t = p.types[`biome.${sp.id}`] ? `biome.${sp.id}` : p.types.biome ? 'biome' : '';
@@ -1772,6 +1788,8 @@ const inherits = (g: Guide | undefined) => !!g && g.nameKey !== undefined && !g.
 export interface KeptName {
   name: string;
   ctx: string;
+  // 名字的原文（第二十轮）：有原文的名字一起留
+  orig?: string;
 }
 
 // 一步编辑之后为了名字不乱跳记下的：keep 地物的键 → 留着的名字（null：删掉那一条）；
@@ -1789,18 +1807,16 @@ export interface NameMeta {
   override?: string;
 }
 
-// 文字包的标识（内容的哈希；按对象各留一份）
-const packTags = new WeakMap<WordPack, string>();
-function packTag(pack: WordPack | null): string {
-  if (!pack) return '-';
-  let t = packTags.get(pack);
-  if (t === undefined) packTags.set(pack, (t = hashString(JSON.stringify(pack)).toString(36)));
-  return t;
+// 名字与原文写到地物上（没有原文时去掉这一项：同一个地物对象会被重复起名）
+function setName(f: GeoFeature, name: string, orig: string | undefined) {
+  f.name = name;
+  if (orig) f.orig = orig;
+  else delete f.orig;
 }
 
-// 按文字包起名；用户改过的名字优先，其次是留着的名字（keptNames），其余重要的先起名。返回每个地物的情况（见 NameMeta）
+// 按地名风格起名（第二十轮：每个地物的风格见 name-styles.ts 的 styleFor）；用户改过的名字优先，其次是留着的名字（keptNames），
+// 其余重要的先起名。返回每个地物的情况（见 NameMeta）
 export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeature, NameMeta> {
-  const pack: WordPack = world.small.wordPack ?? DEFAULT_PACK;
   const overrides = world.small.featureNames;
   const byType = new Map<string, [number, FeatureOverride, string][]>();
   for (const [key, ov] of Object.entries(overrides)) {
@@ -1840,11 +1856,12 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     ...second.filter((f) => !drawn(f)).sort(byImportance),
     ...second.filter(drawn).sort((a, b) => drawnAt.get(a.guide!)! - drawnAt.get(b.guide!)!),
   ];
-  // 按河流类型的模板起名（种子里带上类型：同一条河换成别的类型，名字也换）
-  const typedName = (f: GeoFeature, t: RiverType | LakeType | IslandType, key: string, salt: number) => {
+  // 按河流类型的模板起名（种子里带上类型：同一条河换成别的类型，名字也换）。模板是中文的：风格是音译式时用内置中文包的词表
+  const typedName = (f: GeoFeature, t: RiverType | LakeType | IslandType, key: string, salt: number, rs: ResolvedStyle): GenName => {
     const own = t.names!;
+    const pack = templateOf(rs.style);
     const p = withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, t.name, own);
-    return generateName(p, OWN_TYPE, f.tags, hashString(`${seed}:${key}:${t.id}:${salt}`), taken);
+    return templateName(p, OWN_TYPE, f.tags, hashString(`${seed}:${key}:${t.id}:${salt}${rs.suffix}`), taken);
   };
   // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
   // （森林被涂出一块别的生态时，名字留在锚点还在的那一边，不会两边都叫这个名字）
@@ -1865,49 +1882,62 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   for (const f of order) if (!f.region && !f.guide) match(f, (a) => a === f.anchor);
   for (const f of order) if (!f.region && !f.guide && !ovOf.has(f)) match(f, (a) => f.cells.includes(a));
 
-  // 起名的办法：种子、文字包、换过几次（盐）、按哪个模板。哪一样变了，留着的名字就不再用
-  const tag = packTag(world.small.wordPack);
-  const ctxOf = (salt: number, how: string) => hashString(`${seed}|${tag}|${salt}|${how}`).toString(36);
+  // 每个地物的地名风格（第二十轮）：自己选的（画的河、圈的地名按自己的键，固定下来的自然河也看原来那条河的；
+  // 别的看落到它上面的改名）→ 世界默认 → 内置中文
+  const ownOverride = (f: GeoFeature): FeatureOverride | undefined => {
+    const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
+    if (g) return overrides[f.key] ?? (inherits(g) ? overrides[g.nameKey!] : undefined);
+    return f.region ? overrides[f.key] : ovOf.get(f)?.[0];
+  };
+  const styleOf = (f: GeoFeature): ResolvedStyle => styleFor(world, { feature: f, override: ownOverride(f) ?? {} });
+  // 起名的办法：种子、地名风格（内置中文时是旧的文字包）、换过几次（盐）、按哪个模板。哪一样变了，留着的名字就不再用
+  const ctxOf = (rs: ResolvedStyle, salt: number, how: string) => hashString(`${seed}|${rs.tag}|${salt}|${how}`).toString(36);
   const typeHow = (t: RiverType | LakeType | IslandType) => `t:${hashString(JSON.stringify([t.id, t.name, t.names]))}`;
   const speciesHow = (sp: Species) => `s:${hashString(JSON.stringify([sp.id, sp.name, sp.terrain, sp.feature ?? null]))}`;
   // 每个地物怎么起名：用户起的名字（fixed），或者自动起名（gen，起名的办法 ctx）。区块没有 ctx（不留名字）
   // auto：改河时记下的自动名字（guide.autoName），照它叫，但不算用户起的名字
-  type Plan = { fixed: string; auto?: boolean } | { gen: () => string; ctx?: string };
+  type Plan = { fixed: string; orig?: string; auto?: boolean } | { gen: () => GenName; ctx?: string };
   const plan = (f: GeoFeature): Plan => {
     const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
     if (g) {
-      // 画的河：起了名就用；'' 按文字包自动起（键是这条河道，固定的自然河是那条河原来的键）。
+      // 画的河：起了名就用；'' 按地名风格自动起（键是这条河道，固定的自然河是那条河原来的键）。
       // 只有 nameKey 的（固定下来、没自己起名的自然河）与原来那条河一样，那条河改过的名字也照旧
       const ov = inherits(g) && g.name === undefined ? overrides[g.nameKey!] : undefined;
-      const fixed = g.name || ov?.name;
-      if (fixed) return { fixed };
-      if (g.autoName) return { fixed: g.autoName, auto: true };
+      if (g.name) return { fixed: g.name };
+      if (ov?.name) return { fixed: ov.name, orig: ov.orig };
+      if (g.autoName) return { fixed: g.autoName, orig: g.autoOrig, auto: true };
+      const rs = styleOf(f);
       const rt = typed(f);
       const key = g.nameKey ?? f.key;
       const salt = g.salt ?? ov?.salt ?? 0;
       // 起名的办法与自然的河相同：固定一条留着名字的自然河，名字照旧
-      if (rt) return { gen: () => typedName(f, rt, key, salt), ctx: ctxOf(salt, typeHow(rt)) };
-      return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${key}:${salt}`), taken), ctx: ctxOf(salt, `f:${f.type}`) };
+      if (rt) return { gen: () => typedName(f, rt, key, salt, rs), ctx: ctxOf(rs, salt, typeHow(rt)) };
+      return { gen: () => styleName(rs.style, f.type, f.tags, hashString(`${seed}:${key}:${salt}${rs.suffix}`), taken), ctx: ctxOf(rs, salt, `f:${f.type}`) };
     }
     const r = f.region ? regions.get(f.region) : undefined;
     if (r) {
-      // 用户的区块：起了名就用，没起名按文字包自动起（文字包里没有这一类时按省份的模板）
+      // 用户的区块：起了名就用，没起名按地名风格自动起（风格里没有这一类时按省份的模板）
       if (r.name) return { fixed: r.name };
-      const type = pack.types[f.type] ? f.type : 'province';
-      return { gen: () => generateName(pack, type, f.tags, hashString(`${seed}:${f.key}:${r.salt}`), taken) };
+      const rs = styleOf(f);
+      const type = hasType(rs.style, f.type) ? f.type : 'province';
+      return { gen: () => styleName(rs.style, type, f.tags, hashString(`${seed}:${f.key}:${r.salt}${rs.suffix}`), taken) };
     }
     const ov = ovOf.get(f)?.[0];
-    if (ov?.name) return { fixed: ov.name };
+    if (ov?.name) return { fixed: ov.name, orig: ov.orig };
     const salt = ov?.salt ?? 0;
+    const rs = styleOf(f);
     const sp = f.species !== undefined ? species.get(f.species) : undefined;
     const rt = typed(f);
-    if (rt) return { gen: () => typedName(f, rt, f.key, salt), ctx: ctxOf(salt, typeHow(rt)) };
+    if (rt) return { gen: () => typedName(f, rt, f.key, salt, rs), ctx: ctxOf(rs, salt, typeHow(rt)) };
     if (sp) {
       // 涂出来的生态区、自然长成的自带地名的一片：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
-      const how = speciesFeature(sp).naming(pack);
-      return { gen: () => generateName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${salt}`), taken), ctx: ctxOf(salt, speciesHow(sp)) };
+      const how = speciesFeature(sp).naming(rs.style);
+      return {
+        gen: () => styleName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${salt}${rs.suffix}`), taken, how.species),
+        ctx: ctxOf(rs, salt, speciesHow(sp)),
+      };
     }
-    return { gen: () => generateName(pack, f.type, f.tags, hashString(`${seed}:${f.key}:${salt}`), taken), ctx: ctxOf(salt, `f:${f.type}`) };
+    return { gen: () => styleName(rs.style, f.type, f.tags, hashString(`${seed}:${f.key}:${salt}${rs.suffix}`), taken), ctx: ctxOf(rs, salt, `f:${f.type}`) };
   };
   const plans = order.map(plan);
   // 名字跟着的键：固定下来的自然河跟着那条河原来的键
@@ -1928,13 +1958,13 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   });
   // 留着的名字最先占上（起名的办法没变的才算；同一个名字只给先排到的那个）
   const kept = world.small.keptNames;
-  const keptOf = new Map<GeoFeature, string>();
+  const keptOf = new Map<GeoFeature, KeptName>();
   if (kept) {
     order.forEach((f, k) => {
       const p = plans[k];
       const e = kept[keyOf(f)];
       if (!e || 'fixed' in p || p.ctx === undefined || e.ctx !== p.ctx || taken.has(e.name)) return;
-      keptOf.set(f, e.name);
+      keptOf.set(f, e);
       taken.add(e.name);
     });
   }
@@ -1949,17 +1979,26 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     const hidden = g ? (g.hidden ?? (inherits(g) ? overrides[g.nameKey!]?.hidden : undefined)) : r ? undefined : ovOf.get(f)?.[0].hidden;
     if (hidden) f.hidden = true;
     else delete f.hidden;
+    // 自己选的地名风格（不是世界默认、还在世界里的）：界面上的“风格”读它
+    const rs = styleOf(f);
+    if (rs.suffix) f.style = rs.id;
+    else delete f.style;
   });
   order.forEach((f, k) => {
     const p = plans[k];
     if ('fixed' in p) {
-      f.name = p.fixed;
+      setName(f, p.fixed, p.orig);
       f.custom = !p.auto;
       taken.add(p.fixed);
       return;
     }
     f.custom = false;
-    f.name = keptOf.get(f) ?? p.gen();
+    const e = keptOf.get(f);
+    if (e) setName(f, e.name, e.orig);
+    else {
+      const n = p.gen();
+      setName(f, n.zh, n.orig);
+    }
   });
   return meta;
 }
@@ -2028,6 +2067,9 @@ function pairFeatures(prev: GeoFeature[], prevKeys: (string | undefined)[], cur:
   return pairs;
 }
 
+// 留着的名字：原文（第二十轮）一起留，没有原文时不写这一项
+const keptName = (f: GeoFeature, ctx: string): KeptName => (f.orig ? { name: f.name, ctx, orig: f.orig } : { name: f.name, ctx });
+
 // 这一步要记下什么才能让名字不乱跳（见本节开头）：world、features 是这一步之后的世界与地物（名字已按 world 起好），
 // prevSmall、prev 是这一步之前的小数据与地物。没有要记的时返回 null。只看这些参数，结果是确定的。
 // 换了生成的种子（整个世界重新生成）时不留：名字本来就该全换
@@ -2062,7 +2104,7 @@ export function carryNames(world: World, features: GeoFeature[], prevSmall: Smal
     if (!om?.ctx || present.has(om.key)) return;
     const e = kept[om.key];
     if (e && e.name === o.name && e.ctx === om.ctx) return;
-    kept[om.key] = keep[om.key] = { name: o.name, ctx: om.ctx };
+    kept[om.key] = keep[om.key] = keptName(o, om.ctx);
   });
   if (!pairs.length) return Object.keys(keep).length ? { keep } : null;
   // 留下一些名字之后，别的地物可能跟着换（原来撞名退到后面的名字现在空出来了）：再看一遍，直到没有新的要留
@@ -2092,7 +2134,7 @@ export function carryNames(world: World, features: GeoFeature[], prevSmall: Smal
       if (o.custom || om?.ctx === undefined || fm?.ctx !== om.ctx) continue;
       const e = kept[fm.key];
       if (e && e.name === o.name && e.ctx === fm.ctx) continue;
-      kept[fm.key] = keep[fm.key] = { name: o.name, ctx: fm.ctx };
+      kept[fm.key] = keep[fm.key] = keptName(o, fm.ctx);
       more = true;
     }
     if (!more) break;
