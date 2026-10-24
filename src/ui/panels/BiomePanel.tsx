@@ -2,9 +2,11 @@ import { speciesColor } from '../../../core/species';
 import { focusSpecies, openPanel, options, sheet, world } from '../../state';
 import { paintWith } from '../defs/tools';
 
-// “生态”：要涂的生态（色板）；编辑生态类型在右边的抽屉里，可以一边调一边看地图
+// 生态类型的色板（第十四轮：顶栏的“生态”按钮去掉了，色板挪进“自然”）：
+// 涂生态底部条上点当前的生态弹出它；“自然 ⋯”里也有一份。选一种就换到“涂生态”。
+// 编辑生态类型在右边的抽屉里，可以一边调一边看地图
 
-export function BiomePanel() {
+export function BiomePalette() {
   const w = world.value;
   if (!w) return null;
   return (

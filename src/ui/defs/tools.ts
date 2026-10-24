@@ -81,7 +81,7 @@ import {
   spotTool,
 } from '../tools';
 import { clearBarPreview } from '../provincePreview';
-import { clearRiverBarPreview, riverTool, unwaterTool } from '../riverCourse';
+import { RIVER_END_HINTS, clearRiverBarPreview, riverTool, unwaterTool } from '../riverCourse';
 import {
   BiomeChip,
   IgnoredChip,
@@ -98,6 +98,7 @@ import {
   LakeBar,
   NewLakeTypePick,
   UnmetChip,
+  UnmetLocate,
 } from './extras';
 import type { CategoryDef, SliderDef, ToolDef } from './types';
 
@@ -192,7 +193,7 @@ const biomeModes = {
   ],
 };
 
-// 画河：顺地势还是自定义走向；自定义走向时画到陆地上之后接着流还是消失
+// 画河：顺地势还是自定义走向；画的线停在陆地上时“流下去”还是“停在这”（第十四轮改成短的叫法，细的说法在悬停的提示里）
 const riverModes = {
   kind: 'choice' as const,
   key: 'riverMode' as const,
@@ -202,12 +203,12 @@ const riverModes = {
     { value: 'course', label: '自定义走向', hint: '新画的河：按住画出河道，河完全照着走' },
   ],
 };
-const riverEnds = {
+export const riverEnds = {
   kind: 'choice' as const,
   key: 'riverEnd' as const,
   options: [
-    { value: 'flow', label: '画完接着流', hint: '画的线停在陆地上时（新画的河、从河上改道、接长），顺着地势流到海、湖或别的河' },
-    { value: 'sink', label: '画完就消失', hint: '画的线停在陆地上时（新画的河、从河上改道、接长），河在那里渗进地下' },
+    { value: 'flow', label: '流下去', hint: RIVER_END_HINTS.flow },
+    { value: 'sink', label: '停在这', hint: RIVER_END_HINTS.sink },
   ],
 };
 
@@ -324,7 +325,7 @@ const defs: ToolDef[] = [
     how: '在陆地上涂；Alt+点吸取那里的生态',
     size: BRUSH,
     amount: REACH,
-    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }],
+    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }, { kind: 'custom', render: UnmetLocate }],
     pick: pickSpecies,
     create: () => biomeTool(),
   },
@@ -337,7 +338,7 @@ const defs: ToolDef[] = [
     how: '按住一片生态往外拖，拖得越远长得越多',
     size: brushAs('起点'),
     amount: REACH,
-    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }],
+    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }, { kind: 'custom', render: UnmetLocate }],
     create: () => growTool(),
   },
   {

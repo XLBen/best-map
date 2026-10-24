@@ -4,20 +4,20 @@ import { adjustPreviewNote, commitTerrain, exec, execAdjust, mode, openPanel, pr
 import { ADJUSTMENTS, PLANET_TOGGLES } from '../defs/adjustments';
 import { setTool } from '../defs/tools';
 import type { AdjustmentDef } from '../defs/types';
-import { FormRow } from './FormPicker';
 
-// “调整”：整个世界的参数。地形类的滑块拖动时地图上实时画出将来的海岸线（与结果逐格相同）；
-// 气候、河流的滑块停一下，地图上就是松手后的样子（在世界的副本上算好，松手时直接采用）。
-// 松手才执行，一次一步，可以撤销
+// “调整”：整个世界的参数（气候与河流）。滑块停一下，地图上就是松手后的样子（在世界的副本上算好，松手时直接采用）。
+// 松手才执行，一次一步，可以撤销。地形（陆地多少、海岸曲折……）在新建向导里定，这里不再有
 
-const RES = 1000;
+export const RES = 1000;
 
-function toPos(def: AdjustmentDef, v: number, [lo, hi]: [number, number]) {
+// 滑块位置与值的换算（新建向导的“地形”也用）
+type Scaled = Pick<AdjustmentDef, 'scale' | 'step'>;
+export function toPos(def: Scaled, v: number, [lo, hi]: [number, number]) {
   const p = def.scale === 'log' ? Math.log(v / lo) / Math.log(hi / lo) : (v - lo) / (hi - lo);
   return Math.round(Math.max(0, Math.min(1, p)) * RES);
 }
 
-function fromPos(def: AdjustmentDef, pos: number, [lo, hi]: [number, number]) {
+export function fromPos(def: Scaled, pos: number, [lo, hi]: [number, number]) {
   const p = pos / RES;
   const raw = def.scale === 'log' ? lo * Math.pow(hi / lo, p) : lo + (hi - lo) * p;
   // 按步长取整（避免 0.30000000000000004 这样的数）
@@ -128,8 +128,6 @@ export function AdjustPanel() {
       {groups.map((g) => (
         <section>
           <h5>{g}</h5>
-          {g === '地形' && !w.small.terrain.gen && <p class="muted small">这是一片空白海洋：用“画陆地”“放岛”来造。想要自动生成的世界，点左上角“世界”。</p>}
-          {g === '地形' && <FormRow w={w} />}
           {ADJUSTMENTS.filter((a) => a.group === g && !a.hidden?.(w)).map((a) => (
             <AdjustRow def={a} w={w} />
           ))}
@@ -142,7 +140,7 @@ export function AdjustPanel() {
             ))}
         </section>
       ))}
-      <p class="muted small">拖地形的滑块时地图上先画出将来的海岸线；拖气候、河流的滑块停一下，地图上就是松手后的样子。松手才执行，你手画的陆地、放的岛都会保留。每一下都能撤销。</p>
+      <p class="muted small">拖着停一下，地图上就是松手后的样子。松手才执行，每一下都能撤销。陆地多少、山多高这些地形在新建世界时定，建好后用“地形”里的画笔改。</p>
       <FieldsBox w={w} />
     </>
   );

@@ -101,12 +101,16 @@ export interface GeoFeature {
   species?: string;
   // 画的河（有名字的河道）：河道的 id
   guide?: string;
+  // 自己写的类型字（第十四轮）：起名时按改过的名字、画的河、圈的地名填上；没有时 featureLabel 按类型
+  label?: string;
 }
 
 export interface FeatureOverride {
   name?: string;
   // 重抽名字时的盐
   salt?: number;
+  // 名字前面的类型字（第十四轮）：自己写的，比如“圣山”
+  label?: string;
 }
 
 // ---------- 格图工具 ----------
@@ -1566,8 +1570,15 @@ export function regionFeatures(world: World, d: Derived, terrain: Float32Array =
 // 区块的地物类型 → 区块类型（自动判断的区块只记了地物类型）
 const REGION_KIND_OF_TYPE = new Map((Object.keys(REGION_KIND_INFO) as RegionKind[]).map((k) => [REGION_KIND_INFO[k].type, k]));
 
-// 地名的类型名：用户的区块按它（自动判断后）的类型（山地、地点……），涂出来的生态区是生态的名字，其余按地物类型
+// 地名的类型名：自己写过的（第十四轮，“圣山”）最先；用户的区块按它（自动判断后）的类型（山地、地点……），
+// 涂出来的生态区是生态的名字，其余按地物类型
 export function featureLabel(world: World, f: GeoFeature): string {
+  if (f.label) return f.label;
+  return defaultFeatureLabel(world, f);
+}
+
+// 不算自己写的类型字时的叫法（改类型字的框里留空就换回它）
+export function defaultFeatureLabel(world: World, f: GeoFeature): string {
   const kind = f.region ? REGION_KIND_OF_TYPE.get(f.type) : undefined;
   if (kind) return REGION_KIND_INFO[kind].label;
   const sp = f.species ? world.small.species.find((x) => x.id === f.species) : undefined;
@@ -1792,6 +1803,14 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
       taken.add(e.name);
     });
   }
+  // 自己写的类型字：画的河写在河道上（固定下来、没自己写过的自然河照旧用那条河改过的），圈的地名写在区块上，别的跟着改过的名字
+  order.forEach((f) => {
+    const g = f.guide !== undefined ? guides.get(f.guide) : undefined;
+    const r = f.region ? regions.get(f.region) : undefined;
+    const label = g ? (g.label ?? (inherits(g) ? overrides[g.nameKey!]?.label : undefined)) : r ? r.label : ovOf.get(f)?.[0].label;
+    if (label) f.label = label;
+    else delete f.label;
+  });
   order.forEach((f, k) => {
     const p = plans[k];
     if ('fixed' in p) {
@@ -1804,6 +1823,17 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     f.name = keptOf.get(f) ?? p.gen();
   });
   return meta;
+}
+
+// 改这个地物的类型字（第十四轮）该写在 featureNames 的哪个键上：已经有落到它上面的改动（改过的名字、换过的盐；
+// 锚点挪了、按包含原锚点落上来的也算）就写进那一条，免得在它自己的键上另起一条、把原来那条顶掉；没有时是它自己的键。
+// 只用于自然形成的地物（画的河、圈的地名写在河道、区块上）
+export function overrideKeyOf(world: World, f: GeoFeature): string {
+  const list = world.derived.features;
+  const at = list.findIndex((x) => x.key === f.key);
+  if (at < 0) return f.key;
+  const copies = list.map((x) => ({ ...x }));
+  return assignNames(world, copies).get(copies[at])?.override ?? f.key;
 }
 
 // 配对：这一步之前的地物 prev 与之后的 cur（名字跟着的键见 NameMeta，区块没有）。先配键相同的（同一种），

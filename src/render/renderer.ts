@@ -257,6 +257,8 @@ uniform float uCoastAmp;
 uniform float uDetail;
 // 陆地颜色的饱和度（地形类着色 1.1，别的 1）
 uniform float uSat;
+// 海面也是数据（海水温度底图，第十四轮）：不加浅水的青绿，海面就是每格的颜色
+uniform int uSeaData;
 // 一个设备像素合多少地图单位；一个地图单位合多少米
 uniform float uPixel;
 uniform float uMetersPerUnit;
@@ -344,7 +346,7 @@ void main() {
     // 浅水：暖海偏青绿（alpha = 海水暖度），冷海偏灰绿
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
-    col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
+    col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7));
     ${LITH_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
     slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
@@ -467,6 +469,8 @@ uniform float uRelief;
 uniform float uShade;
 uniform float uRock;
 uniform int uStyle;
+// 海面也是数据（海水温度底图）：地图册画风也不把海涂平
+uniform int uSeaData;
 uniform int uHasFlat;
 uniform int uHasGroup;
 uniform int uHasHighlight;
@@ -601,6 +605,9 @@ void main() {
     if (land) {
       col = mix(col, vec3(0.93, 0.87, 0.72), 0.30);
       col *= mix(vec3(0.62, 0.52, 0.42), vec3(1.04, 1.02, 0.98), clamp(shade - 0.3, 0.0, 1.0));
+    } else if (uSeaData == 1) {
+      // 海面也是数据（海水温度）：不涂平，与写实风格一样
+      col *= mix(1.0, 0.86 + 0.14 * shade, uShade);
     } else {
       // 按水深分层（0–200、200–1000、1000–3000、3000 m 以下），层与层之间一道淡淡的等深线；海底的坡轻轻晕渲
       float depth = -h;
@@ -846,6 +853,8 @@ uniform float uCoastAmp;
 uniform float uDetail;
 // 陆地颜色的饱和度（地形类着色 1.1，别的 1）
 uniform float uSat;
+// 海面也是数据（海水温度底图，第十四轮）：不加浅水的青绿，海面就是每格的颜色
+uniform int uSeaData;
 uniform float uPixel;
 uniform float uMetersPerUnit;
 // 噪声频率：1 / (π · 格距)，一个噪声单位约一格
@@ -945,7 +954,7 @@ void main() {
     hh = min(vSeaElev + seaDetail, -2.0);
     float depth = -hh;
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
-    col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * 0.7);
+    col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7));
     ${LITH_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
     slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
@@ -1160,6 +1169,8 @@ export interface CellLayers {
   seams?: SeamLayers | null;
   shade: number;
   rock: number;
+  // 海面也是数据（第十四轮，海水温度底图）：着色器不给浅水加青绿、地图册画风不把海涂平，海面就是每格的颜色
+  seaData?: boolean;
   coastAmp: number;
   // 岩性（colors.ts 的 lithLayer）：每格 RGBA 字节；省略时全是 0
   lith?: Uint8Array | null;
@@ -1389,6 +1400,8 @@ export class Renderer {
   private hasHighlight = false;
   private shade = 1;
   private rock = 1;
+  // 海面也是数据（海水温度底图）：见 CellLayers.seaData
+  private seaData = false;
   private coastAmp = 180;
   style: MapStyle = 'realistic';
   detail = 1;
@@ -1669,6 +1682,7 @@ export class Renderer {
     this.showSeams(this.seamsBase);
     this.shade = l.shade;
     this.rock = l.rock;
+    this.seaData = !!l.seaData;
     this.coastAmp = l.coastAmp;
     this.base = l;
     this.dirtyCells = 'full';
@@ -2533,6 +2547,7 @@ export class Renderer {
     this.bindTex(pt, 'uSeaGrad', this.tex.seaGrad, 5);
     this.bindTex(pt, 'uLith', this.tex.lith, 6);
     gl.uniform1f(gl.getUniformLocation(pt, 'uSat'), this.rock ? 1.1 : 1);
+    gl.uniform1i(gl.getUniformLocation(pt, 'uSeaData'), this.seaData ? 1 : 0);
     const polar = pole ? this.polarGeometry(pole) : null;
     gl.bindVertexArray(polar ? polar.tri : this.triVao);
     if (pp) {
@@ -2631,6 +2646,7 @@ export class Renderer {
     gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
     gl.uniform1i(gl.getUniformLocation(pc, 'uStyle'), this.style === 'atlas' ? 1 : 0);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uSeaData'), this.seaData ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFlat'), this.hasFlat ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasGroup'), this.hasGroup ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasHighlight'), this.hasHighlight ? 1 : 0);

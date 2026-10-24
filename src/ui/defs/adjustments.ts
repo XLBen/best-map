@@ -1,32 +1,12 @@
-import { resolvedParams } from '../../../core/generate';
-import { resolvedPlanetParams } from '../../../core/planet-gen';
 import { beltsIn, latText } from '../../../core/presets';
 import type { Planet, World } from '../../../core/world';
 import type { AdjustmentDef } from './types';
 
-// “调整”面板：整个世界的参数。拖动时预览（地形类），松手执行一条可撤销的命令
+// “调整”面板：整个世界的参数（气候与河流）。拖着停一下先看松手后的样子，松手执行一条可撤销的命令。
+// 地形（陆地多少、岛多少、山多高、海岸曲折、最高的山）第十四轮起只在新建向导里定（wizardTerrain.ts）；
+// 那几条命令（set_worldgen、set_coast_style、set_planet 的 mountainScale）引擎里照旧有，旧的记录照样重放
 
-const pct = (v: number) => `${Math.round(v * 100)}%`;
 const level = (v: number, words: [string, string, string, string]) => (v < 0.25 ? words[0] : v < 0.5 ? words[1] : v < 0.8 ? words[2] : words[3]);
-
-function worldgen(id: 'landFraction' | 'islands' | 'mountains', label: string, hint: string, range: [number, number], format: (v: number) => string): AdjustmentDef {
-  return {
-    id,
-    group: '地形',
-    label,
-    hint,
-    available: (w) => !!w.small.terrain.gen,
-    // 整个星球用星球的默认值（与生成器一致）
-    read: (w) => (w.settings.globe ? resolvedPlanetParams : resolvedParams)(w.small.terrain.gen!)[id],
-    range,
-    step: 0.01,
-    format,
-    command: (w, v) => ({ op: 'set_worldgen', params: { ...w.small.terrain.gen!, [id]: v } }),
-    preview: 'terrain',
-    patch: (v) => ({ [id]: v }),
-    busyLabel: '正在调整世界…',
-  };
-}
 
 function planet(key: keyof Planet, label: string, hint: string, range: [number, number], step: number, format: (v: number) => string, scale: 'log' | 'linear' = 'linear'): AdjustmentDef {
   return {
@@ -82,30 +62,11 @@ function latitudeNote(w: World, center: number): string {
 }
 
 export const ADJUSTMENTS: AdjustmentDef[] = [
-  worldgen('landFraction', '陆地多少', '就是升降海平面：陆地多时，原来的陆地一格不少', [0.03, 0.7], pct),
-  worldgen('islands', '岛多少', '增减火山岛和小岛，不动大陆的海岸', [0, 1], (v) => level(v, ['很少', '较少', '较多', '很多'])),
-  worldgen('mountains', '山多高', '整体缩放造山带', [0, 2], pct),
-  {
-    id: 'coast',
-    group: '地形',
-    label: '海岸曲折',
-    hint: '海岸线有多曲折：平滑的海岸少湾少岬，破碎的海岸多半岛、小岛',
-    available: () => true,
-    read: (w) => w.small.terrain.coastRoughness,
-    range: [0.2, 2],
-    step: 0.05,
-    format: (v) => `${v < 0.6 ? '平滑' : v < 1.4 ? '自然' : '破碎'}（${v.toFixed(2)}）`,
-    command: (_w, v) => ({ op: 'set_coast_style', roughness: v }),
-    preview: 'terrain',
-    patch: (v) => ({ rough: v }),
-    busyLabel: '正在调整海岸…',
-  },
   LATITUDE,
   planet('solar', '整体冷暖', '太阳亮度：整个世界更热或更冷', [0.7, 1.3], 0.01, (v) => `${v < 0.97 ? '偏冷' : v > 1.03 ? '偏热' : '和地球差不多'}（×${v.toFixed(2)}）`),
   planet('humidity', '整体干湿', '整个世界的水汽更多或更少', [0.2, 3], 0.05, (v) => `${v < 0.8 ? '偏干' : v > 1.25 ? '偏湿' : '适中'}（×${v.toFixed(2)}）`, 'log'),
   planet('tilt', '四季分明', '轴倾角：越大冬夏差别越大，雨带摆得越远', [0, 60], 0.5, (v) => `轴倾角 ${v.toFixed(1)}°`),
   planet('lapse', '越高越冷', '山上比山下冷多少', [2, 10], 0.1, (v) => `每升高 1 km 冷 ${v.toFixed(1)} °C`),
-  planet('mountainScale', '最高的山', '整体缩放山的高度', [1000, 12000], 100, (v) => `约 ${Math.round(v / 100) * 100} m`),
   {
     ...planet('riverThreshold', '河流多少', '多大的水流才画成河：往右河越多', [0, 1], 0.01, (p) => `${level(p, ['很少', '较少', '较多', '很多'])}（≥ ${riverThr(p)} m³/s 画成河）`),
     read: (w: World) => riverPos(w.small.planet.riverThreshold),

@@ -111,6 +111,9 @@ const coursePathSchema = z
 // 累计最小值（见 elevation.ts 的 carveBeds），周围的山不动；
 // spring 表示源头有泉水，从源头起水量就够显示成河；
 // flow 是河的大小：这一段一路上加进来的水，到末端合计为“河流多少”门槛的几倍（省略为 1.2，刚好看得见）。
+// 地名前面灰色的类型字（第十四轮）：自己写的，比如“圣山”；不写就按地物类型
+export const featureLabelSchema = z.string().trim().min(1).max(20);
+
 export const guideSchema = z.object({
   id: z.string(),
   cells: z.array(z.number().int().min(0)).min(2),
@@ -139,6 +142,8 @@ export const guideSchema = z.object({
   branch: z.object({ share: z.number().min(0.05).max(0.5) }).optional(),
   // 一条河的另一个源头（第十三轮）：这条河道汇入那条画的河（河道 id），算作它的一部分：同一个名字（地名里是同一条河）
   sourceOf: z.string().max(40).optional(),
+  // 名字前面的类型字（第十四轮）：自己写的（比如“圣河”）；没有时按地物类型（“河”）
+  label: featureLabelSchema.optional(),
 });
 export type Guide = z.output<typeof guideSchema>;
 
@@ -171,6 +176,8 @@ export const regionSchema = z.object({
   salt: z.number().int().min(0).default(0),
   // 类型按圈里现在的地形自动判断（kind 只是圈的时候判断的结果）；没有这一项为固定的类型
   auto: z.literal(true).optional(),
+  // 名字前面的类型字（第十四轮，点状地名的“地点”）：自己写的；没有时按类型
+  label: featureLabelSchema.optional(),
 });
 export type RegionSpec = z.output<typeof regionSchema>;
 

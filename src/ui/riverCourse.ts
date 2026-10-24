@@ -59,6 +59,14 @@ import { type Pointer, type Preview, type ToolHandler, isBusy, pathKm, riverSize
 
 export { applyPatch } from '../../core/river-edit';
 
+
+// 画的线停在陆地上时的两种终点（第十四轮：短的叫法“流下去”“停在这”，细的说法在悬停的提示里）。
+// 底部条的“终点”和选中的河“⋯ → 终点”同用
+export const RIVER_END_HINTS = {
+  flow: '线停在陆地上时，河顺着地势接着往低处流，直到入海、入湖或汇进别的河',
+  sink: '河就在你画的线的终点结束，不再往下流',
+} as const;
+
 // 画河、选河、改河、删河（第十一轮：在原来的河上直接改，所见即所得）。一条记得住的规则：
 //   · 从河上起笔（离河的线 14 个屏幕像素以内，不随缩放变）= 改这条河；从别处起笔 = 画新的河。不管选没选中、哪种走向都一样；
 //     悬停与按下用同一个判定（pick），悬停时就写着松手后会怎样；
@@ -149,8 +157,8 @@ function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: number, qu
     case 'edge':
       return '流出地图';
     case 'sink':
-      // 说的是整条河（悬停在终点那一格上时另说“在这里消失”，见 riverLabel）
-      return '最后在终点消失';
+      // 说的是整条河（悬停在终点那一格上时另说“停在这里”，见 riverLabel）
+      return '最后停在终点';
     default:
       return '水流不出去';
   }
@@ -252,7 +260,7 @@ export function riverAt(w: World, x: number, y: number, tol: number, cell = -1):
   return { ref: g ? { kind: 'guide', id: g.id } : { kind: 'natural', cell }, d: tol };
 }
 
-// 这一格在哪条画的河上（它汇入的地方不算，在终点消失的河的终点算）；后画的优先
+// 这一格在哪条画的河上（它汇入的地方不算，停在终点的河的终点算）；后画的优先
 function guideAt(w: World, cell: number): Guide | undefined {
   for (let n = w.small.guides.length - 1; n >= 0; n--) {
     const g = w.small.guides[n];
@@ -359,7 +367,7 @@ export interface RiverInfo {
   split: number;
   // 河上的格（画的河是河道，自然的河是主干）
   cells: number[];
-  // 在终点消失（终点是 cells 的最后一格）
+  // 停在终点（终点是 cells 的最后一格）
   sink: boolean;
 }
 
@@ -428,9 +436,9 @@ function sourceDest(w: World, g: Guide): string | null {
   return `是${quoted(guideName(w, p), '一条河')}的又一个源头`;
 }
 
-// 悬停时的一句话：“赤江 · 中等的河 · 汇入「青河」”。cell：鼠标下那一格（在终点消失的河，停在终点上时说“在这里消失”）
+// 悬停时的一句话：“赤江 · 中等的河 · 汇入「青河」”。cell：鼠标下那一格（停在终点的河，停在终点上时说“停在这里”）
 export const riverLabel = (ref: RiverRef, info: RiverInfo, cell = -1) =>
-  `${info.name ?? (ref.kind === 'guide' ? '画的河' : '一条河')} · ${info.size} · ${info.sink && cell >= 0 && cell === info.cells[info.cells.length - 1] ? '在这里消失' : info.dest}`;
+  `${info.name ?? (ref.kind === 'guide' ? '画的河' : '一条河')} · ${info.size} · ${info.sink && cell >= 0 && cell === info.cells[info.cells.length - 1] ? '停在这里' : info.dest}`;
 
 
 // ---------- 命令 ----------
@@ -626,7 +634,7 @@ function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: 
   const n = quoted(name, T.natural ? '这条河' : '这条画的河');
   const after = editedGuide(T, r);
   const len = km(pathKm(w, raw));
-  const dest = r.patch.end === 'sink' ? '在这里消失' : destOf(w, r.plan);
+  const dest = r.patch.end === 'sink' ? '停在这里' : destOf(w, r.plan);
   let label: string;
   switch (r.kind) {
     case 'splice':
@@ -639,7 +647,7 @@ function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: 
       label = `挪了${n}的源头`;
       break;
     case 'shorten':
-      label = `${n}缩短了，在这里消失`;
+      label = `${n}缩短了，停在这里`;
       break;
     case 'reroute':
       label = how === 'end' ? `挪了${n}的终点（${dest}）` : how === 'stroke' ? `${n}从这里改道（约 ${len} km，${dest}）` : `改了${n}的走向（${dest}）`;
@@ -810,7 +818,7 @@ export function namedDest(after: World, cmd: Command, known: ReadonlySet<string>
 // 终点怎么说：画到陆地上接着流的是“之后顺地势入海”
 function destOf(w: World, plan: CoursePlan, quotedName = true): string {
   const last = plan.cells.length - 1;
-  if (plan.end === 'sink') return '到这里消失';
+  if (plan.end === 'sink') return '停在这里';
   const where = destText(w, plan.end, plan.end === 'river' ? plan.join : plan.cells[last], quotedName);
   return plan.drawn < last ? `之后顺地势${where}` : where;
 }
@@ -998,7 +1006,7 @@ function roleHint(h: Extract<RiverPick, { kind: 'river' }>): string {
 // ---------- 预览 ----------
 
 // 执行后这条河画出来的样子（与地图上画的河同一个画法，见 core/rivers.ts 的 courseIndex）：照画出来的线（guideLine），流量按格；
-// 入海、入湖画到进水的第一点为止；在终点消失的最后一格收细到三成；汇入别的河时画到那条河的线上（cutAtJoin，与地图上相同）
+// 入海、入湖画到进水的第一点为止；停在终点的最后一格收细到三成；汇入别的河时画到那条河的线上（cutAtJoin，与地图上相同）
 function courseRiver(w: World, line: GuideLine, g: Guide, flow: readonly number[], self: string | null): { points: [number, number][]; flow: number[]; mul: number[]; cells: number[] } {
   const { points, cellIdx } = line;
   const width = g.width ?? 1;
@@ -1178,11 +1186,11 @@ function courseHint(w: World, c: Course, ex: ExactView | null, line: GuideLine, 
       reroute: '从这里改道',
       extend: '往下游接长',
       source: '挪源头',
-      shorten: '缩短，在这里消失',
+      shorten: '缩短，停在这里',
       bend: '改这一段',
     };
     parts.push(quoted(name, c.target?.natural ? '这条河' : '这条画的河'), what[c.edit.kind]);
-    if (c.edit.kind !== 'shorten' && c.edit.kind !== 'splice' && c.edit.kind !== 'bend' && c.edit.kind !== 'source') parts.push(c.after.end === 'sink' ? '到这里消失' : destOf(w, plan));
+    if (c.edit.kind !== 'shorten' && c.edit.kind !== 'splice' && c.edit.kind !== 'bend' && c.edit.kind !== 'source') parts.push(c.after.end === 'sink' ? '停在这里' : destOf(w, plan));
   } else if (c.kind === 'branch' || c.kind === 'source') {
     parts.push(quoted(c.name, '这条河'), c.kind === 'branch' ? `分一股出去（约 ${Math.round(BRANCH_SHARE * 100)}% 的水）` : '加一个源头（同一条河）');
     if (c.kind === 'branch') parts.push(destOf(w, plan));
@@ -1261,7 +1269,7 @@ export function flowEstimate(w: World, g: Guide, spring: boolean, flow: number |
   return g.cells.map((c, k) => Math.max(0, w.derived.discharge[c] - old[k] + add[k]));
 }
 
-// 固定一条自然的河（downFrom：只固定到这一格为止，在这里消失，下游的水没了）：沿用它的地名键，名字、颜色不变
+// 固定一条自然的河（downFrom：只固定到这一格为止，停在这里，下游的水没了）：沿用它的地名键，名字、颜色不变
 export function pinCommand(w: World, cell: number, downFrom = false): { cmd: Command; after: Guide; estimate: number[] } | null {
   const stem = stemOf(w, cell);
   const i = stem.cells.indexOf(cell);

@@ -46,6 +46,15 @@ const HYPSO: [number, RGB][] = [
   [4500, [210, 205, 205]],
   [6500, [250, 250, 250]],
 ];
+// 气温、海水温度底图的颜色（°C）
+export function tempRgb(v: number): RGB {
+  return ramp(TEMP, v);
+}
+
+// 海水温度底图里的陆地、湖面（第十四轮）：不带颜色的灰
+export const SEA_TEMP_LAND: RGB = [150, 150, 150];
+export const SEA_TEMP_LAKE: RGB = [120, 120, 120];
+
 const TEMP: [number, RGB][] = [
   [-35, [60, 30, 120]],
   [-15, [70, 110, 210]],
@@ -195,11 +204,19 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   const terrainLike = terrainLikeMode(o.mode);
   if (terrainLike) rock = 1;
 
+  const seaTemp = o.mode === 'seaTemp';
+  if (seaTemp) shade = 0.4;
   for (let i = 0; i < n; i++) {
     const land = causes.land[i] === 1;
     if (!land) {
-      // alpha：海水暖度，决定浅水的颜色
-      put(smooth, i, terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70], warmth(world, i));
+      // alpha：海水暖度，决定浅水的颜色。海水温度底图：海面按海水的冷暖（整个星球上已含洋流），与“气温”同一条色带
+      const c: RGB = seaTemp ? tempRgb(seasonal(d.tMean, d.tS, d.tW, i)) : terrainLike || o.mode === 'elevation' || o.mode === 'uplift' ? ramp(SEA, d.elevation[i]) : [40, 50, 70];
+      put(smooth, i, c, warmth(world, i));
+      continue;
+    }
+    // 海水温度底图：陆地、湖面都是灰的（只看海）
+    if (seaTemp) {
+      put(smooth, i, d.lake[i] === 1 ? SEA_TEMP_LAKE : SEA_TEMP_LAND, 255);
       continue;
     }
     if (d.lake[i] === 1) {
@@ -303,6 +320,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     seams,
     shade,
     rock,
+    seaData: seaTemp,
     coastAmp: COAST_AMP * small.terrain.coastRoughness,
     fx: fx?.fx ?? null,
     fxPalette: fx?.palette ?? null,

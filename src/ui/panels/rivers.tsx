@@ -12,6 +12,7 @@ import { type RiverRef, cancelPreviews, exec, flashCells, hoverRiver, openPanel,
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
+  RIVER_END_HINTS,
   applyPatch,
   clearRiverBarPreview,
   execAndSelect,
@@ -236,7 +237,7 @@ function drawnEnd(w: World, g: Guide): number {
   return g.cells.indexOf(findCell(w.mesh, x, y, g.cells[g.cells.length - 1]));
 }
 
-// “终点：接着流 | 消失”只在画到的那一格在陆地上、不是别的河时有：在别的河上消失会把那条河的水也吞掉
+// “终点：流下去 | 停在这”只在画到的那一格在陆地上、不是别的河时有：停在别的河上会把那条河的水也吞掉
 function endChoice(w: World, g: Guide): number {
   const m = drawnEnd(w, g);
   if (m < 0) return -1;
@@ -244,7 +245,7 @@ function endChoice(w: World, g: Guide): number {
   const c = g.cells[m];
   if (!causes.land[c] || d.lake[c] === 1) return -1;
   if (g.end === 'sink') return m;
-  // 画到的地方就是终点、在地图边上：流出地图，不必消失
+  // 画到的地方就是终点、在地图边上：流出地图，不必停
   if (m === g.cells.length - 1 && mesh.boundary[c] === 1) return -1;
   // 画到的那格（之后顺地势流下去的那段里也一样）有别的河流进来
   const prev = g.cells[m - 1];
@@ -484,11 +485,11 @@ export function RiverMore() {
   const name = guideName(w, g);
   const setEnd = (sink: boolean) => {
     if (sink === (g.end === 'sink')) return;
-    // 消失：只留到画到的那格；接着流：从那格起顺着地势流下去的那段也算这条河的（与画的时候选“画完接着流”一样）
+    // 停在这：只留到画到的那格；流下去：从那格起顺着地势流下去的那段也算这条河的（与画的时候选“流下去”一样）
     const r = sink ? null : continueCourse(w, w.derived, g);
     if (r && 'blocked' in r) return showToast(r.blocked, true);
     const patch: GuidePatch = r ? r.patch : { ...(m < g.cells.length - 1 ? { cells: g.cells.slice(0, m + 1) } : {}), end: 'sink' };
-    void exec({ op: 'update_guide', id: g.id, patch, label: sink ? `${quoted(name)}在画到的地方消失` : `${quoted(name)}画完接着流` }, '正在计算河流…');
+    void exec({ op: 'update_guide', id: g.id, patch, label: sink ? `${quoted(name)}停在画到的地方` : `${quoted(name)}从画到的地方流下去` }, '正在计算河流…');
   };
   return (
     <div class="river-more">
@@ -513,10 +514,10 @@ export function RiverMore() {
           <Seg
             value={g.end === 'sink' ? 'sink' : 'flow'}
             options={[
-              ['flow', '接着流'],
-              ['sink', '消失'],
+              ['flow', '流下去'],
+              ['sink', '停在这'],
             ]}
-            titles={{ flow: '画到的地方之后顺着地势接着流', sink: '河在画到的地方渗进地下' }}
+            titles={RIVER_END_HINTS}
             onChange={(v) => setEnd(v === 'sink')}
           />
         </div>

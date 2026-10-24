@@ -36,6 +36,8 @@ export type ViewMode =
   | 'dominant'
   | 'elevation'
   | 'temperature'
+  // 海水温度（第十四轮）：只给海着色，陆地灰色
+  | 'seaTemp'
   | 'precip'
   | 'moisture'
   | 'wetness'
@@ -144,8 +146,9 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 
 // 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
 // rivertype：给新画的河、选中的河选是哪一种河（第三批的河流类型）
-// rivertype / laketype：选中的这条河、这个湖是哪一种；newrivertype / newlaketype：新画的河、新放的湖是哪一种
-export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | `cat:${Category}`;
+// rivertype / laketype：选中的这条河、这个湖是哪一种；newrivertype / newlaketype：新画的河、新放的湖是哪一种；
+// biomepick：涂生态底部条上点当前的生态，弹出生态的色板（第十四轮起顶栏没有“生态”按钮）
+export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biomepick' | 'river' | 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
@@ -317,7 +320,7 @@ export interface ToolOptions {
   riverFlow: number;
   // 画河：顺地势（点源头，河自己找路），还是自定义走向（按住画出河道，河照着走）
   riverMode: 'flow' | 'course';
-  // 自定义走向画到的终点还在陆地上时：顺着地势接着流，还是在那里消失
+  // 画的线停在陆地上时：流下去（顺着地势接着流），还是停在这（河在那里结束）
   riverEnd: 'flow' | 'sink';
   // 新画的河是哪一种（河流类型的 id；'' 按各类型的规则判断；'plain' 普通的河）
   riverType: string;

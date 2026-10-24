@@ -26,13 +26,16 @@ import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
 import { type FormChoice, blankForm, formChoices, formGen, formSource, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
+import { RES, fromPos, toPos } from './panels/AdjustPanel';
+import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
 // 带脚本的标上“脚本”，卡片上的“编辑…”打开形态编辑器）、大小。
 // → Worker 用 4000 格生成 6 张缩略图 → 点一张开始。
 // 缩略图与成品的大格局一致（生成器的随机都按地图上的位置取，与格数无关）。
-// 地图本来就跨好几个气候带：第 3 步只是把它放在星球上的某个纬度
+// 地图本来就跨好几个气候带：第 3 步只是把它放在星球上的某个纬度。
+// “地形”（第十四轮从“调整”挪过来）：陆地多少、岛多少、山多高、海岸曲折、最高的山；不动就是这种世界本来的样子
 
 const THUMB_W = 240;
 const THUMB_H = 120;
@@ -113,6 +116,54 @@ function Thumb({ data, onPick, label }: { data: Uint8ClampedArray | null; onPick
   );
 }
 
+// 向导里的一个地形滑块：拖的时候只改写的数，松手才换（缩略图松手后重画）
+function TerrainRow({ s, value, base, onChange }: { s: TerrainSlider; value: number; base: number; onChange: (v: number) => void }) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const v = draft ?? value;
+  const changed = Math.abs(v - base) >= s.step / 2;
+  return (
+    <label class="adj-row" title={s.hint}>
+      <span class="row between">
+        <span>{s.label}</span>
+        <span class={changed ? 'accent' : 'muted'}>{s.format(v)}</span>
+      </span>
+      <input
+        type="range"
+        min={0}
+        max={RES}
+        step={1}
+        value={toPos(s, v, s.range)}
+        onInput={(e) => setDraft(fromPos(s, Number((e.target as HTMLInputElement).value), s.range))}
+        onChange={(e) => {
+          setDraft(null);
+          onChange(fromPos(s, Number((e.target as HTMLInputElement).value), s.range));
+        }}
+      />
+    </label>
+  );
+}
+
+function TerrainBox({ defaults, value, onChange }: { defaults: Record<TerrainKey, number>; value: WizardTerrain; onChange: (t: WizardTerrain) => void }) {
+  const touched = Object.keys(value).length > 0;
+  return (
+    <div class="wizard-terrain">
+      <div class="grid2">
+        {TERRAIN_SLIDERS.map((s) => (
+          <TerrainRow s={s} value={value[s.key] ?? defaults[s.key]} base={defaults[s.key]} onChange={(v) => onChange({ ...value, [s.key]: v })} />
+        ))}
+      </div>
+      <p class="muted small">
+        不动就是这种世界本来的样子。建好以后用“地形”里的画笔改。
+        {touched && (
+          <button class="link" onClick={() => onChange({})}>
+            都恢复默认
+          </button>
+        )}
+      </p>
+    </div>
+  );
+}
+
 const randomBase = () => Math.floor(Math.random() * 1e6);
 
 export function Wizard() {
@@ -126,6 +177,8 @@ export function Wizard() {
   const [base, setBase] = useState(randomBase);
   const [thumbs, setThumbs] = useState<(Uint8ClampedArray | null)[]>(Array(COUNT).fill(null));
   const [creating, setCreating] = useState(false);
+  // 地形：只记动过的几项
+  const [terrain, setTerrain] = useState<WizardTerrain>({});
   const request = useRef(0);
   const savedAt = !world.value ? autosaved.value : null;
 
@@ -134,13 +187,25 @@ export function Wizard() {
   const choices = formChoices(library.value);
   const chosen = choices.find((c) => c.key === ptype);
   const planet = PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0];
-  const genOf = (seed: number): WorldgenInput =>
+  const baseGen = (seed: number): WorldgenInput =>
     kind === 'planet' ? (chosen ? formGen(seed, chosen.form) : { seed, type: planet.type, islands: planet.islands }) : { seed, type };
+  const genOf = (seed: number): WorldgenInput => withTerrain(baseGen(seed), terrain);
+  // 这种世界不动滑块时的地形（陆地多少、岛多少按世界类型、星球形态）
+  const terrainBase = terrainDefaults(baseGen(0), kind === 'planet');
   // 历史里的“新世界：像地球”“新世界：双子大陆”
   const nameOf = () => wizardWorldName(kind, ptype, choices, type);
   const settingsOf = (cells: number) => (kind === 'planet' ? planetSettings(psize, cells) : settingsAt(size, center, cells));
   // 缩略图按形态的内容重算（资源库每读一遍都是新的对象，内容没变时不重算）
   const formKey = chosen ? JSON.stringify(chosen.form) : '';
+  // 陆地多少、岛多少各种世界不一样：换了世界的种类就回到那一种的默认（别的几项照旧）
+  useEffect(() => {
+    setTerrain((t) => {
+      if (t.landFraction === undefined && t.islands === undefined) return t;
+      const { landFraction: _l, islands: _i, ...rest } = t;
+      return rest;
+    });
+  }, [kind, type, ptype]);
+  const terrainKey = JSON.stringify([terrain.landFraction, terrain.islands, terrain.mountains]);
 
   useEffect(() => {
     if (!wizardOpen.value) {
@@ -167,7 +232,7 @@ export function Wizard() {
       }
     }, 120);
     return () => clearTimeout(timer);
-  }, [kind, ptype, formKey, psize, type, size, center, base, wizardOpen.value]);
+  }, [kind, ptype, formKey, psize, type, size, center, base, terrainKey, wizardOpen.value]);
 
   if (!wizardOpen.value) return null;
 
@@ -184,7 +249,7 @@ export function Wizard() {
   // 新建：gen、name 是这个世界的生成参数和叫法；cells 是格数
   const create = async (gen: WorldgenInput, name: string, seed: number, cells: Parameters<typeof settingsOf>[0]): Promise<boolean> => {
     setCreating(true);
-    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed));
+    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain)));
     setCreating(false);
     if (ok) {
       wizardOpen.value = false;
@@ -212,7 +277,8 @@ export function Wizard() {
       radiusKm: PLANET_SIZES[psize].radiusKm,
       seed: seeds[0],
       onSaved: (_f, key) => setPtype(key),
-      onCreate: (f, seed) => create(formGen(seed, f), f.name, seed, PLANET_CELLS),
+      // 形态里有自己的陆地多少、岛多少：向导“地形”里只带上山多高、海岸曲折、最高的山
+      onCreate: (f, seed) => create(withTerrain(formGen(seed, f), { mountains: terrain.mountains }), f.name, seed, PLANET_CELLS),
     });
   };
 
@@ -280,6 +346,8 @@ export function Wizard() {
                 <PlanetBand size={size} center={center} onChange={setCenter} />
               </div>
             </div>
+            <h4>4. 地形</h4>
+            <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
           </>
         ) : (
           <>
@@ -326,10 +394,12 @@ export function Wizard() {
                 </button>
               ))}
             </div>
+            <h4>3. 地形</h4>
+            <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
           </>
         )}
         <div class="row between">
-          <h4>{kind === 'region' ? 4 : 3}. 挑一张开始</h4>
+          <h4>{kind === 'region' ? 5 : 4}. 挑一张开始</h4>
           <button onClick={() => setBase(randomBase())} disabled={creating}>
             换一组
           </button>

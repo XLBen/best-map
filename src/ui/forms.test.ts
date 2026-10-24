@@ -12,12 +12,10 @@ import { type LibraryEntry, MY_PACK_NAME } from '../library';
 import {
   FORM_KNOBS,
   blankForm,
-  currentFormName,
   finalForm,
   formChoices,
   formSource,
   genWithForm,
-  keptByWorld,
   knobText,
   newWorldCommands,
   planetNameOf,
@@ -26,10 +24,14 @@ import {
   withScript,
   wizardWorldName,
 } from './forms';
-import { formCommand, landNote } from './panels/FormPicker';
+import type { Command } from '../../core/commands';
+import type { Worldgen } from '../../core/generate';
 
-// 星球形态的界面逻辑：向导、调整里列出的形态，向导新建的命令与名字，形态编辑器的滑块、脚本、存之前定 id，
-// 调整里换形态的命令（预览说的多出、少掉的陆地就是执行后的，画过的改动照样叠在新地形上）
+// 换形态的命令（第十四轮起“调整”里不再换形态，旧的命令记录照样重放）
+const formCommand = (gen: Worldgen, form: PlanetForm | null): Command => ({ op: 'set_worldgen', params: genWithForm(gen, form) });
+
+// 星球形态的界面逻辑：向导里列出的形态，向导新建的命令与名字，形态编辑器的滑块、脚本、存之前定 id，
+// 换形态的命令（以前“调整”里的；预览说的多出、少掉的陆地就是执行后的，画过的改动照样叠在新地形上）
 
 const pack = (id: string, forms: PlanetForm[]): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, planetForms: forms as unknown as PackItem[] });
 const entry = (key: string, p: ResourcePack, extra: Partial<LibraryEntry> = {}): LibraryEntry => ({ key, pack: p, builtin: false, mine: false, installedAt: 1, ...extra });
@@ -71,11 +73,8 @@ describe('列出来的形态', () => {
     expect(planetTypeName('continents')).toBe('像地球');
     expect(planetTypeName('ocean')).toBe('空白星球');
     expect(planetTypeName('inland_sea')).toBe('内海');
-    expect(currentFormName({ seed: 1, type: 'continents', mountains: 1, rerolls: [] })).toBe('不用（像地球）');
-    expect(currentFormName({ seed: 1, type: 'continents', mountains: 1, rerolls: [], form: TWIN_CONTINENTS })).toBe('双子大陆');
     // 海洋星球与空白星球是同一种生成器，按岛多少分（向导里的海洋星球是岛 0.7）
-    expect(currentFormName({ seed: 1, type: 'ocean', mountains: 1, rerolls: [], islands: 0.7 })).toBe('不用（海洋星球）');
-    expect(currentFormName({ seed: 1, type: 'ocean', mountains: 1, rerolls: [] })).toBe('不用（空白星球）');
+    expect(planetNameOf({ type: 'ocean', islands: 0.7 })).toBe('海洋星球');
     expect(planetNameOf({ type: 'ocean', islands: 0 })).toBe('空白星球');
     expect(planetNameOf({ type: 'archipelago', islands: 0.9 })).toBe('群岛星球');
   });
@@ -159,7 +158,7 @@ describe('形态编辑器', () => {
   });
 });
 
-describe('调整里换形态', () => {
+describe('换形态的命令（旧记录照样重放）', () => {
   it('预览说的多出、少掉的陆地就是执行后的；画过的改动照样叠在新地形上；一步“换了星球形态”，可以撤销；去掉形态也是一步', () => {
     const eng = engineFor(globe);
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents', landFraction: 0.3 }, reset: true });
@@ -196,29 +195,20 @@ describe('调整里换形态', () => {
     expect(digestWorld(Engine.fromDoc(eng.toDoc(), w.mesh).world)).toEqual(digestWorld(w));
   });
 
-  it('换成另一种星球的形态：type 跟着形态（环形内海是“内海”）；说的话', () => {
+  it('换成另一种星球的形态：type 跟着形态（环形内海是“内海”）', () => {
     const gen = { seed: 2, type: 'continents' as const, mountains: 1, rerolls: [], islands: 0.7 };
     expect(genWithForm(gen, RING_SEA)).toEqual({ ...gen, type: 'inland_sea', form: RING_SEA });
     expect(genWithForm({ ...gen, type: 'inland_sea', form: RING_SEA }, null)).toEqual({ ...gen, type: 'inland_sea' });
-    expect(landNote(0, 0)).toBe('陆地看不出变化');
-    expect(landNote(1234, 0)).toBe('会多出 1,234 格陆地（地图上淡黄的是多出的，斜线是会变成海的）');
-    expect(landNote(12, 5)).toBe('会多出 12 格陆地、少掉 5 格（地图上淡黄的是多出的，斜线是会变成海的）');
-    expect(landNote(0, 5)).toBe('会少掉 5 格陆地（地图上淡黄的是多出的，斜线是会变成海的）');
-    // 照旧用世界里的陆地多少、岛多少（形态里写的这两项不起作用）：说一声
-    expect(keptByWorld(gen)).toBe('岛多少照现在的');
-    expect(keptByWorld({ ...gen, landFraction: 0.3 })).toBe('陆地多少照现在的 30%，岛多少照现在的');
-    expect(keptByWorld({ seed: 2, type: 'continents', mountains: 1, rerolls: [] })).toBe('');
   });
 
-  it('换成形态时照旧的岛多少确实照旧（形态里写的不起作用）：说的话与执行后一致', () => {
+  it('换成形态时照旧的岛多少确实照旧（形态里写的不起作用）', () => {
     const eng = engineFor(globe);
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean', islands: 0.7 }, reset: true });
     const gen = eng.world.small.terrain.gen!;
-    expect(currentFormName(gen)).toBe('不用（海洋星球）');
+    expect(planetNameOf(gen)).toBe('海洋星球');
     eng.exec(formCommand(gen, { ...TWIN_CONTINENTS, profile: { ...TWIN_CONTINENTS.profile, islands: 0.1 } }));
     const after = eng.world.small.terrain.gen!;
     expect(after.islands).toBe(0.7);
-    expect(keptByWorld(after)).toBe('岛多少照现在的');
     // 去掉形态：回到的是“像地球”（type 跟着形态换过了），不是原来的海洋星球
     expect(planetNameOf(genWithForm(after, null))).toBe('像地球');
   });

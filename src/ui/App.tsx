@@ -23,7 +23,7 @@ import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
 import { ActionsPanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
-import { BiomePanel } from './panels/BiomePanel';
+import { BiomePalette } from './panels/BiomePanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { CategoryMore } from './panels/ToolLibrary';
 import { RiverMore } from './panels/rivers';
@@ -69,10 +69,10 @@ function PanelHost({ id }: { id: PanelId }) {
           <LayersPanel />
         </Popover>
       );
-    case 'biome':
+    case 'biomepick':
       return (
         <Popover id={id} title="要涂的生态" width={360}>
-          <BiomePanel />
+          <BiomePalette />
         </Popover>
       );
     case 'river':

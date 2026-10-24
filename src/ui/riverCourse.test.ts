@@ -124,7 +124,7 @@ function setup() {
   return { eng, w, t: riverTool(() => zoomOf(w)) };
 }
 
-// 先画好一条弯弯曲曲的河（12 格，在终点消失），世界换成画好之后的
+// 先画好一条弯弯曲曲的河（12 格，停在终点），世界换成画好之后的
 function withDrawn() {
   const { eng } = setup();
   const w0 = eng.world;
@@ -156,7 +156,7 @@ beforeEach(() => {
 });
 
 describe('自定义走向：画的线就是河', () => {
-  it('预览是与地图同样画法的河（带河口的箭头、白色虚线），松手发的命令就是这条：只挖河床、自动起名、在终点消失', async () => {
+  it('预览是与地图同样画法的河（带河口的箭头、白色虚线），松手发的命令就是这条：只挖河床、自动起名、停在终点', async () => {
     const { w, t } = setup();
     const { stroke, plan } = quietStroke(w);
     t.down?.(ptr(w, stroke[0]));
@@ -164,7 +164,7 @@ describe('自定义走向：画的线就是河', () => {
     const pv = t.preview();
     expect(pv.shapes.some((s) => s.kind === 'river')).toBe(true);
     expect(pv.shapes.some((s) => s.kind === 'line' && s.dashed)).toBe(true);
-    expect(pv.hint).toMatch(/^新河 · 到这里消失 · [\d,]+ km/);
+    expect(pv.hint).toMatch(/^新河 · 停在这里 · [\d,]+ km/);
     await t.up?.(ptr(w, stroke[stroke.length - 1]));
     expect(exec).toHaveBeenCalledTimes(1);
     const cmd = lastExec();
@@ -174,7 +174,7 @@ describe('自定义走向：画的线就是河', () => {
     expect(cmd.guide.path!.every((v) => Number.isInteger(v))).toBe(true);
   });
 
-  it('画到陆地上选“画完接着流”：之后顺地势流下去的格也在河道里，提示写“之后顺地势……”', async () => {
+  it('画到陆地上选“流下去”：之后顺地势流下去的格也在河道里，提示写“之后顺地势……”', async () => {
     const { w, t } = setup();
     setOptions({ riverEnd: 'flow' });
     const { stroke, plan } = quietStroke(w, 'flow');
@@ -568,7 +568,7 @@ describe('固定自然的河', () => {
     expect(gf.custom).toBe(false);
   });
 
-  it('从这里往下去掉：固定到这一格，在这里消失', () => {
+  it('从这里往下去掉：固定到这一格，停在这里', () => {
     const w = continents().world;
     const f = w.derived.features.find((x) => x.type === 'river' && x.name && x.cells.length > 6)!;
     const cells = Array.from(f.cells).filter((c) => isRiverCell(w, w.derived, c));
@@ -617,7 +617,7 @@ describe('删除河湖：按画出来的线认河', () => {
 });
 
 describe('说法', () => {
-  it('画完就消失的河：停在终点那一格上说“在这里消失”，别处说“最后在终点消失”', () => {
+  it('停在终点的河：鼠标在终点那一格上说“停在这里”，别处说“最后停在终点”', () => {
     const { eng, w: w0 } = setup();
     const { plan, stroke } = quietStroke(w0);
     eng.exec(newCourse(w0, plan, stroke).cmd!);
@@ -627,9 +627,9 @@ describe('说法', () => {
     expect(g.end).toBe('sink');
     const ref = { kind: 'guide' as const, id: g.id };
     const info = riverInfo(w, ref)!;
-    expect(riverLabel(ref, info, g.cells[g.cells.length - 1])).toMatch(/在这里消失$/);
-    expect(riverLabel(ref, info, g.cells[1])).toMatch(/最后在终点消失$/);
-    expect(info.dest).toBe('最后在终点消失');
+    expect(riverLabel(ref, info, g.cells[g.cells.length - 1])).toMatch(/停在这里$/);
+    expect(riverLabel(ref, info, g.cells[1])).toMatch(/最后停在终点$/);
+    expect(info.dest).toBe('最后停在终点');
   });
 
   it('画好以后顶部说汇入哪条河时用改好的世界里的名字（画的时候那条河还没名字，说的是“汇入一条河”）', () => {

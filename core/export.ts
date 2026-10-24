@@ -364,7 +364,7 @@ export function featuresCsv(world: World, width: number, height: number): string
     rows.push(
       [
         f.type,
-        featureLabel(world, f),
+        esc(featureLabel(world, f)),
         esc(f.name),
         f.custom ? 1 : 0,
         Math.round(f.areaKm2),

@@ -1960,7 +1960,7 @@ export function guideIssues(world: World, d: Derived, g: Guide): GuideIssue[] {
     out.push({ text: '有一段没按画的走', why, cells: off });
   }
   if (g.spring && dry) out.push({ text: '有一段水被截走了', why: '画的河里有几格没有水了（上游被别的河截走）', cells: cells.filter((c) => land[c] && d.lake[c] !== 1 && d.discharge[c] < thr) });
-  if (guideEnd(world, d, g).kind === 'unknown') out.push({ text: '水流不出去', why: '终点之后顺着地势流不到海、湖、别的河：画到海里、湖里或别的河上，或者让它在终点消失', cells: [cells[cells.length - 1]] });
+  if (guideEnd(world, d, g).kind === 'unknown') out.push({ text: '水流不出去', why: '终点之后顺着地势流不到海、湖、别的河：画到海里、湖里或别的河上，或者让它停在终点（底部“终点：停在这”）', cells: [cells[cells.length - 1]] });
   return out;
 }
 

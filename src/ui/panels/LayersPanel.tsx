@@ -1,7 +1,9 @@
-import { useRef, useState } from 'preact/hooks';
-import { type ProjectionPref, labelGroups, mapStyle, mode, overlays, prefs, reference, season, setPrefs, setReference, showToast, world } from '../../state';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { speciesColor } from '../../../core/species';
+import type { World } from '../../../core/world';
+import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, overlays, prefs, reference, season, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
-import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS } from '../defs/layers';
+import { LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, suitabilityFocus } from '../defs/layers';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
 const PROJECTIONS: [ProjectionPref, string][] = [
@@ -21,6 +23,32 @@ const PROJECTION_HINTS: Record<ProjectionPref, string> = {
 };
 
 // “图层”：底图着色、画风、叠加在上面的东西、季节、参考图
+
+// 换底图。“某种生态的适宜程度”先定下看哪一种（没选过、选的那种没了时是第一种）
+export function showView(id: ViewMode) {
+  if (id === 'suitability') focusSpecies.value = suitabilityFocus(world.value?.small.species ?? [], focusSpecies.value);
+  mode.value = id;
+}
+
+// 适宜程度底图下面：看哪一种生态
+function SuitabilityPick({ w }: { w: World }) {
+  const id = suitabilityFocus(w.small.species, focusSpecies.value);
+  // 选的那种被删掉了（撤销、删生态）：换成第一种，地图上不是一片灰
+  useEffect(() => {
+    if (id !== focusSpecies.value) focusSpecies.value = id;
+  }, [id]);
+  const sp = w.small.species.find((s) => s.id === id);
+  return (
+    <label class="row suit-pick">
+      <span class="swatch" style={{ background: sp ? speciesColor(sp) : 'transparent' }} />
+      <select value={id ?? ''} onChange={(e) => (focusSpecies.value = (e.target as HTMLSelectElement).value)}>
+        {w.small.species.map((s) => (
+          <option value={s.id}>{s.name || s.id}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 // 读进来的图缩到最长边 4096 像素以内，存成 PNG（保留透明的底）
 async function readImage(file: File): Promise<Blob> {
@@ -119,7 +147,7 @@ export function LayersPanel() {
   if (!w) return null;
   const fields = Object.keys(w.causes.fields);
   const viewButton = (id: typeof mode.value, label: string) => (
-    <button class={mode.value === id ? 'on' : ''} onClick={() => (mode.value = id)}>
+    <button class={mode.value === id ? 'on' : ''} onClick={() => showView(id)}>
       {label}
     </button>
   );
@@ -139,6 +167,7 @@ export function LayersPanel() {
           </div>
         )}
         {hint && <p class="muted small">{hint}</p>}
+        {mode.value === 'suitability' && <SuitabilityPick w={w} />}
       </section>
       <section>
         <h5>画风</h5>

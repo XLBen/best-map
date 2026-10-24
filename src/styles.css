@@ -396,6 +396,27 @@ h5 {
   grid-template-columns: 1fr 1fr;
   gap: 0 14px;
 }
+/* 图层 → 某种生态的适宜程度：选哪一种 */
+.suit-pick {
+  gap: 6px;
+  margin-top: 4px;
+}
+.suit-pick select {
+  flex: 1;
+}
+/* 新建向导的“地形”：两列滑块 */
+.wizard-terrain .adj-row {
+  display: block;
+  margin: 4px 0;
+}
+.wizard-terrain input[type='range'] {
+  width: 100%;
+}
+@media (max-width: 520px) {
+  .wizard-terrain .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
 
 table.kv {
   width: 100%;
@@ -604,13 +625,6 @@ ol.history li.undone {
   border-style: dashed;
   background: transparent;
 }
-/* 调整 → 星球形态 → 换…：列出能换的形态 */
-.form-picker {
-  margin-top: 6px;
-}
-.form-picker .card b .muted {
-  font-weight: normal;
-}
 /* 星球形态编辑器：左边是名字、滑块、脚本，右边是实时的缩略图 */
 .modal.form-editor {
   width: 760px;
@@ -770,13 +784,6 @@ button svg {
   height: 22px;
   background: var(--glass-line);
   margin: 0 4px;
-}
-.biome-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 }
 @media (max-width: 900px) {
   .tb-label {
@@ -952,6 +959,22 @@ button svg {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+/* 名字前面的类型字：点一下改（第十四轮） */
+button.label-edit {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  height: auto;
+  cursor: text;
+}
+button.label-edit:hover:not(:disabled) {
+  background: none;
+  color: var(--text);
+  text-decoration: underline dotted;
+}
+.bar-input.label-input {
+  width: 6em;
 }
 .bar-value {
   font-size: 12.5px;

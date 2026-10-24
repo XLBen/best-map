@@ -1,7 +1,7 @@
 import { Dices, Lock, LockOpen, ScanSearch, Spline, Trash2, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
-import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, featureLabel } from '../../../core/features';
+import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, defaultFeatureLabel, featureLabel, overrideKeyOf } from '../../../core/features';
 import { DEFAULT_PACK } from '../../../core/names';
 import { readPack } from '../../../core/packs';
 import { fileLabel, openPackImport } from '../packs/store';
@@ -58,6 +58,75 @@ export function NameInput({ fkey, value, onCommit, placeholder }: { fkey: string
   );
 }
 
+// 名字前面灰色的类型字（第十四轮）：点一下改成自己的叫法（比如“圣山”），清空或写回默认的叫法就换回默认的。
+// 回车或点别处提交，Esc 放弃。label：现在的叫法；auto：不改时的叫法；onCommit('')：换回默认的
+export function labelCommit(text: string, label: string, auto: string): string | null {
+  const v = text.trim();
+  const custom = label !== auto;
+  if (!v || v === auto) return custom ? '' : null;
+  return v === label ? null : v;
+}
+
+export function LabelEdit({ label, auto, onCommit }: { label: string; auto: string; onCommit: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(label);
+  const cancelled = useRef(false);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!editing || !ref.current) return;
+    ref.current.focus();
+    ref.current.select();
+  }, [editing]);
+  if (!editing) {
+    return (
+      <button
+        class="bar-label label-edit"
+        title={label !== auto ? `自己写的叫法（默认是“${auto}”）：点一下改，清空就换回默认的` : '点一下改成自己的叫法，比如“圣山”'}
+        onClick={() => {
+          setText(label);
+          setEditing(true);
+        }}
+      >
+        {label}
+      </button>
+    );
+  }
+  const done = () => {
+    setEditing(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    const v = labelCommit(text, label, auto);
+    if (v !== null) onCommit(v);
+  };
+  return (
+    <input
+      ref={ref}
+      class="bar-input label-input"
+      value={text}
+      maxLength={20}
+      placeholder={auto}
+      title={`名字前面的叫法；清空就换回“${auto}”`}
+      onInput={(e) => setText((e.target as HTMLInputElement).value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          cancelled.current = true;
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      onBlur={done}
+    />
+  );
+}
+
+// 改自然形成的地物（山脉、湖、自然的河……）的类型字：写进落到它上面的那条改动（见 overrideKeyOf）
+export function labelCommand(w: World, f: GeoFeature, v: string) {
+  return { op: 'rename_feature' as const, key: overrideKeyOf(w, f), label: v };
+}
+
 const AREA_KINDS = REGION_KINDS.filter((k) => k !== 'spot') as Exclude<RegionKind, 'spot'>[];
 type AreaChoice = Exclude<RegionKind, 'spot'> | 'auto';
 const KIND_CHOICES = AREA_KINDS.map((k): [AreaChoice, string] => [k, REGION_KIND_INFO[k].label]);
@@ -66,11 +135,11 @@ const KIND_CHOICES = AREA_KINDS.map((k): [AreaChoice, string] => [k, REGION_KIND
 function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
   const r = w.small.regions.find((x) => x.id === id);
   if (!r) return null;
-  const update = (patch: { name?: string; kind?: RegionKind; auto?: boolean; reroll?: boolean }) => void exec({ op: 'update_region', id, ...patch }, '正在起名…');
+  const update = (patch: { name?: string; kind?: RegionKind; auto?: boolean; reroll?: boolean; label?: string }) => void exec({ op: 'update_region', id, ...patch }, '正在起名…');
   return (
     <>
       {r.kind === 'spot' ? (
-        <span class="bar-label">地点</span>
+        <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => update({ label: v })} />
       ) : (
         // “自动”时写出现在判断成了什么；点已经选着的那一项不算一步
         <Seg<AreaChoice>
@@ -120,7 +189,7 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
   const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id, patch, label }, busy);
   return (
     <>
-      <span class="bar-label">{featureLabel(w, f)}</span>
+      <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => update({ label: v || null }, v ? `类型改叫“${v}”` : '类型换回自动的叫法', '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
       <button class="bar-btn" onClick={() => update({ name: '', salt: salt + 1 }, '换了个名字')} title="自动换一个名字">
         <Dices size={15} /> 换一个
@@ -163,7 +232,7 @@ export function NamesBar() {
   const rename = (v: string) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…');
   return (
     <>
-      <span class="bar-label">{featureLabel(w, f)}</span>
+      <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => void exec(labelCommand(w, f, v), '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={rename} />
       <button class="bar-btn" onClick={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')} title="自动换一个名字">
         <Dices size={15} /> 换一个

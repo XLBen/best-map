@@ -17,14 +17,21 @@ export const VIEWS: ViewDef[] = [
   { id: 'temperature', label: '气温' },
   { id: 'precip', label: '降水' },
   { id: 'elevation', label: '海拔' },
+  { id: 'seaTemp', label: '海水温度', more: true, hint: '海面的冷暖，与“气温”同一条色带；整个星球上看得出暖流、寒流。陆地是灰的' },
   { id: 'moisture', label: '湿润程度', more: true },
   { id: 'wetness', label: '地形湿度', more: true },
   { id: 'continentality', label: '离海远近', more: true },
   { id: 'corrT', label: '涂生态时的温度调整', more: true },
   { id: 'corrP', label: '涂生态时的降水调整', more: true },
-  { id: 'suitability', label: '某种生态的适宜程度', more: true, hint: '在“生态”里选中的那种：越亮越适合' },
+  { id: 'suitability', label: '某种生态的适宜程度', more: true, hint: '越亮越适合下面选的那种生态' },
   { id: 'uplift', label: '抬升', more: true },
 ];
+
+// “某种生态的适宜程度”看哪一种（第十四轮：底图下面自己选，不再靠“生态”面板里选中的）：
+// 选过的那种还在就是它，否则是第一种
+export function suitabilityFocus(species: readonly { id: string }[], cur: string | null): string | null {
+  return cur && species.some((s) => s.id === cur) ? cur : (species[0]?.id ?? null);
+}
 
 export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' | 'scale' | 'latitude' | 'edits';
 

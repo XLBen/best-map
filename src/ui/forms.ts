@@ -91,26 +91,13 @@ export function wizardWorldName(kind: 'region' | 'planet', ptype: string, choice
   return form?.name ?? (PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0]).name;
 }
 
-// 向导新建的命令：生成（标签“新世界：X”，山挡风默认就是打开的），再划分省份
-export function newWorldCommands(gen: WorldgenInput, name: string, seed: number): Command[] {
+// 向导新建的命令：生成（标签“新世界：X”，山挡风默认就是打开的），再划分省份。
+// before：向导“地形”里动过的海岸曲折、最高的山（见 wizardTerrain.ts），在生成之前设好，同在这一步里
+export function newWorldCommands(gen: WorldgenInput, name: string, seed: number, before: Command[] = []): Command[] {
   return [
-    { op: 'batch', label: `新世界：${name}`, commands: [{ op: 'set_worldgen', params: gen, reset: true }] },
+    { op: 'batch', label: `新世界：${name}`, commands: [...before, { op: 'set_worldgen', params: gen, reset: true }] },
     { op: 'generate_provinces', rules: { seed } },
   ];
-}
-
-// 世界现在的星球形态的叫法：“双子大陆”，没有形态时“不用（像地球）”
-export function currentFormName(gen: Worldgen): string {
-  return gen.form ? gen.form.name : `不用（${planetNameOf(gen)}）`;
-}
-
-// 换形态时照旧用世界里的、不用形态自己的几项（genWithForm 保留的）：调过（或建世界时定下）的陆地多少、岛多少。
-// 换形态的列表里说一句，免得以为形态里写的陆地多少没起作用是出了错
-export function keptByWorld(gen: Worldgen): string {
-  const parts: string[] = [];
-  if (gen.landFraction !== undefined) parts.push(`陆地多少照现在的 ${Math.round(gen.landFraction * 100)}%`);
-  if (gen.islands !== undefined) parts.push('岛多少照现在的');
-  return parts.join('，');
 }
 
 // ---------- 形态编辑器 ----------

@@ -88,6 +88,7 @@ const guidePatchSchema = z
     type: G.type.unwrap().nullable().optional(),
     branch: G.branch.unwrap().nullable().optional(),
     sourceOf: G.sourceOf.unwrap().nullable().optional(),
+    label: G.label.unwrap().nullable().optional(),
   })
   .strict();
 export type GuidePatch = z.input<typeof guidePatchSchema>;
@@ -198,8 +199,9 @@ const baseCommands = [
   }),
   // 湖：单独成省 / 并进旁边的陆地省。只整理湖与陆地之间的格，别的省份不动
   z.object({ op: z.literal('set_lake_mode'), mode: z.enum(['separate', 'merge']) }),
-  // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名
-  z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40) }),
+  // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名。
+  // label（第十四轮）：名字前面的类型字（“圣山”），空字符串换回按地物类型的；只改 label 时不写 name
+  z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40).optional(), label: z.string().max(20).optional() }),
   z.object({ op: z.literal('reroll_feature'), key: z.string().regex(/^\w+:\d+$/) }),
   z.object({ op: z.literal('set_word_pack'), pack: wordPackSchema.nullable() }),
   // 用户的地名：圈一块（cells）或放一个点（kind = spot，at 为位置）；name 为空时按文字包自动起名
@@ -212,6 +214,8 @@ const baseCommands = [
     kind: z.enum(REGION_KINDS).optional(),
     auto: z.boolean().optional(),
     reroll: z.boolean().optional(),
+    // 名字前面的类型字（第十四轮）：空字符串换回按类型的
+    label: z.string().max(20).optional(),
   }),
   z.object({ op: z.literal('remove_region'), id: z.string() }),
   // 河流类型（第三批）：新建或整份换掉（按 id）；删掉时画的河上选的这一种也去掉
@@ -494,7 +498,7 @@ function checkCourse(mesh: Mesh, cells: readonly number[]) {
 function checkNewCourse(world: World, g: Guide, cells: boolean, end: boolean) {
   if (cells && new Set(g.cells).size !== g.cells.length) throw new CommandError('河道不能经过同一格两次');
   if (cells && g.branch && !world.causes.land[g.cells[0]]) throw new CommandError('分出去的一股要从陆地上的河分出来');
-  if (end && g.end === 'sink' && !world.causes.land[g.cells[g.cells.length - 1]]) throw new CommandError('在终点消失的河，终点要在陆地上');
+  if (end && g.end === 'sink' && !world.causes.land[g.cells[g.cells.length - 1]]) throw new CommandError('停在终点的河，终点要在陆地上');
 }
 
 // 河道截到第 k 格为止（含）：画的折线在第一次进这格的地方截断；原来在终点消失的不再消失（现在流进别的河）
@@ -537,7 +541,7 @@ export function guideDirty(before: readonly Guide[], after: readonly Guide[]): D
   if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined, !!g.path, g.branch?.share ?? null])) {
     return Dirty.Vegetation;
   }
-  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null])) return Dirty.Names;
+  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null, g.label ?? null])) return Dirty.Names;
   return Dirty.None;
 }
 
@@ -1086,10 +1090,19 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       return { dirty: Dirty.None, summary: `切开了${names}（多出 ${count} 个省份）` };
     }
     case 'rename_feature': {
+      if (cmd.name === undefined && cmd.label === undefined) throw new CommandError('rename_feature 要写 name 或 label');
       const ov = { ...(small.featureNames[cmd.key] ?? {}) };
-      if (cmd.name.trim()) ov.name = cmd.name.trim();
-      else delete ov.name;
+      if (cmd.name !== undefined) {
+        if (cmd.name.trim()) ov.name = cmd.name.trim();
+        else delete ov.name;
+      }
+      const label = cmd.label?.trim();
+      if (cmd.label !== undefined) {
+        if (label) ov.label = label;
+        else delete ov.label;
+      }
       small.featureNames = { ...small.featureNames, [cmd.key]: ov };
+      if (cmd.name === undefined) return { dirty: Dirty.Names, summary: label ? `类型改叫“${label}”` : '类型换回自动的叫法' };
       return { dirty: Dirty.Names, summary: cmd.name.trim() ? `改名为“${cmd.name.trim()}”` : '恢复自动命名' };
     }
     case 'reroll_feature': {
@@ -1129,8 +1142,18 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         next.name = '';
         next.salt = r.salt + 1;
       }
+      const label = cmd.label?.trim();
+      if (cmd.label !== undefined) {
+        if (label) next.label = label;
+        else delete next.label;
+      }
       small.regions = small.regions.map((x) => (x.id === r.id ? next : x));
-      const summary = cmd.reroll
+      const onlyLabel = cmd.label !== undefined && cmd.name === undefined && cmd.kind === undefined && cmd.auto === undefined && !cmd.reroll;
+      const summary = onlyLabel
+        ? label
+          ? `类型改叫“${label}”`
+          : '类型换回自动的叫法'
+        : cmd.reroll
         ? '换了个名字'
         : next.auto && !r.auto
           ? '类型改成自动判断'
