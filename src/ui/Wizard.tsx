@@ -33,6 +33,9 @@ import { RES, fromPos, toPos } from './panels/AdjustPanel';
 import { Seg } from './common';
 import { Slider } from './components/Slider';
 import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
+import { Toggle } from './components/Toggle';
+import { HumanChoices } from './panels/culture';
+import { type HumanChoice, defaultChoice, eraChoices, estimateLandKm2, generateCommand } from './human';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
@@ -40,7 +43,8 @@ import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrai
 // → Worker 用 4000 格生成 6 张缩略图 → 点一张开始。
 // 缩略图与成品的大格局一致（生成器的随机都按地图上的位置取，与格数无关）。
 // 地图本来就跨好几个气候带：第 3 步只是把它放在星球上的某个纬度。
-// “地形”（第十四轮从“调整”挪过来）：陆地多少、岛多少、山多高、海岸曲折、最高的山；不动就是这种世界本来的样子
+// “地形”（第十四轮从“调整”挪过来）：陆地多少、岛多少、山多高、海岸曲折、最高的山；不动就是这种世界本来的样子。
+// “人文”（第二十二轮）：要不要生成人文，时代、文化组与各占多少、总人口（按地图的面积 × 陆地多少估，建好后按真的陆地面积）。缩略图不画人文
 
 const THUMB_W = 240;
 const THUMB_H = 120;
@@ -179,6 +183,8 @@ export function Wizard() {
   const [creating, setCreating] = useState(false);
   // 地形：只记动过的几项
   const [terrain, setTerrain] = useState<WizardTerrain>({});
+  // 人文：默认生成（内置的第一个时代与它的文化组）
+  const [human, setHuman] = useState<HumanChoice>(() => defaultChoice(null, true));
   const request = useRef(0);
   const savedAt = !world.value ? autosaved.value : null;
 
@@ -249,7 +255,7 @@ export function Wizard() {
   // 新建：gen、name 是这个世界的生成参数和叫法；cells 是格数
   const create = async (gen: WorldgenInput, name: string, seed: number, cells: Parameters<typeof settingsOf>[0]): Promise<boolean> => {
     setCreating(true);
-    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain)));
+    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain), generateCommand(human)));
     setCreating(false);
     if (ok) {
       wizardOpen.value = false;
@@ -257,6 +263,18 @@ export function Wizard() {
     }
     return ok;
   };
+  // 总人口的默认：时代的默认密度 × 估的陆地面积
+  const era = eraChoices(null).find((e) => e.id === human.era);
+  const landKm2 = estimateLandKm2({ globe: kind === 'planet', radiusKm: PLANET_SIZES[psize].radiusKm, mapKm: MAP_SIZES[size].km, landFraction: terrain.landFraction ?? terrainBase.landFraction });
+  const popDefault = Math.round((era?.popDensity ?? 1) * landKm2);
+  const humanBox = (
+    <div class="wizard-human">
+      <Toggle on={human.on} onChange={(on) => setHuman({ ...human, on })} disabled={creating}>
+        生成人文
+      </Toggle>
+      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} defaultPop={popDefault} disabled={creating} /> : <p class="hint">建好后可在“文化”里生成</p>}
+    </div>
+  );
   const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? planetCells(PLANET_SIZES[psize].radiusKm) : CELLS);
 
   // 点一张形态的卡片：里面有没见过的脚本先问（缩略图就会运行它），不信任就不选
@@ -350,6 +368,8 @@ export function Wizard() {
             </div>
             <h5>4. 地形</h5>
             <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
+            <h5>5. 人文</h5>
+            {humanBox}
           </>
         ) : (
           <>
@@ -399,10 +419,12 @@ export function Wizard() {
             </div>
             <h5>3. 地形</h5>
             <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
+            <h5>4. 人文</h5>
+            {humanBox}
           </>
         )}
         <div class="row between">
-          <h5>{kind === 'region' ? 5 : 4}. 挑一张开始</h5>
+          <h5>{kind === 'region' ? 6 : 5}. 挑一张开始</h5>
           <button onClick={() => setBase(randomBase())} disabled={creating}>
             换一组
           </button>

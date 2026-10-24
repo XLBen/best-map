@@ -91,11 +91,13 @@ export function wizardWorldName(kind: 'region' | 'planet', ptype: string, choice
   return form?.name ?? (PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0]).name;
 }
 
-// 向导新建的命令：生成（标签“新世界：X”，山挡风默认就是打开的），再划分省份。
-// before：向导“地形”里动过的海岸曲折、最高的山（见 wizardTerrain.ts），在生成之前设好，同在这一步里
-export function newWorldCommands(gen: WorldgenInput, name: string, seed: number, before: Command[] = []): Command[] {
+// 向导新建的命令：生成（标签“新世界：X”，山挡风默认就是打开的），生成人文，再划分省份。
+// before：向导“地形”里动过的海岸曲折、最高的山（见 wizardTerrain.ts），在生成之前设好，同在这一步里。
+// human（第二十二轮）：向导“人文”里的 generate_human（关着时 null）。排在划分省份之前：省名按当地的文化起
+export function newWorldCommands(gen: WorldgenInput, name: string, seed: number, before: Command[] = [], human: Command | null = null): Command[] {
   return [
     { op: 'batch', label: `新世界“${name}”`, commands: [...before, { op: 'set_worldgen', params: gen, reset: true }] },
+    ...(human ? [human] : []),
     { op: 'generate_provinces', rules: { seed } },
   ];
 }
