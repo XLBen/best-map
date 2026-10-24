@@ -5,7 +5,7 @@ import { Seg } from '../common';
 import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
 import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
-import { exportFullMap, snapshotCanvas } from '../MapView';
+import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
 import { openPackLibrary } from '../packs/store';
 import { fileNameOf } from '../../maps';

@@ -1,3 +1,4 @@
+import type { ToolId } from './ui/defs/tools';
 import { batch, signal } from '@preact/signals';
 import { speciesOwner } from '../core/biome-scripts';
 import type { Command } from '../core/commands';
@@ -54,37 +55,8 @@ export type Season = 'annual' | 'summer' | 'winter';
 // 工具分六类，顶栏右边一类一个按钮
 export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names';
 
-export type ToolId =
-  | 'land'
-  | 'island'
-  | 'chain'
-  | 'relief'
-  // 打碎（第十八轮）
-  | 'fragment'
-  | 'reroll'
-  | 'restore'
-  // 气候：冷暖、干湿、擦掉冷暖干湿的改动、涂自定义场（有自定义场时才出现）
-  | 'temp'
-  | 'moist'
-  | 'unclimate'
-  | 'field'
-  | 'biome'
-  | 'grow'
-  // 给生态选“长在哪里”（第十二轮，从生态编辑器进来，不在工具列表里）
-  | 'range'
-  | 'erase'
-  | 'river'
-  | 'lake'
-  | 'unwater'
-  | 'pselect'
-  | 'pbrush'
-  | 'pcut'
-  | 'pmerge'
-  | 'pregen'
-  // 地名：改名、圈一块起名、放一个点状地名
-  | 'rename'
-  | 'area'
-  | 'spot';
+// 工具的 id：由 ui/defs/tools.ts 的工具表推出来
+export type { ToolId };
 
 export const world = signal<World | null>(null);
 // 新建或打开世界时加一：地图据此看全图（同样大小的世界共用网格，不能只看网格变没变）

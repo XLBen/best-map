@@ -35,7 +35,6 @@ import { ChainFragSlider, ChainTypePick, IslandTypePick, TerrainExtras } from '.
 import type { World } from '../../../core/world';
 import {
   type Category,
-  type ToolId,
   brushRange,
   cursorHint,
   lakeRange,
@@ -43,6 +42,8 @@ import {
   mode,
   options,
   reachRange,
+  registerToolSwitch,
+  selectedFeature,
   selectedProvince,
   selectedLake,
   selectedRiver,
@@ -50,6 +51,7 @@ import {
   tool,
   world,
 } from '../../state';
+import { lakeSizeDraft } from '../lakeInfo';
 import {
   CLIMATE_MAX,
   FIELD_MAX,
@@ -104,7 +106,8 @@ import {
   UnmetChip,
   UnmetLocate,
 } from './extras';
-import type { CategoryDef, SliderDef, ToolDef } from './types';
+import { failingHighlights, featureHighlights, provinceHighlights, selectedRiverFocus } from '../map/highlights';
+import type { CategoryDef, SliderDef, ToolDef, ToolSpec } from './types';
 
 // ---------- 滑块 ----------
 
@@ -231,9 +234,8 @@ const pickSpecies = (w: World, cell: number) => {
 
 // ---------- 工具 ----------
 
-const defs: ToolDef[] = [
-  {
-    id: 'land',
+const SPECS = {
+  land: {
     category: 'terrain',
     icon: Brush,
     name: '画陆地 / 海',
@@ -260,8 +262,7 @@ const defs: ToolDef[] = [
     ],
     create: () => landTool(),
   },
-  {
-    id: 'island',
+  island: {
     category: 'terrain',
     icon: TreePalm,
     name: '放岛',
@@ -272,8 +273,7 @@ const defs: ToolDef[] = [
     bar: () => [{ kind: 'custom', render: IslandTypePick }],
     create: () => islandTool(),
   },
-  {
-    id: 'chain',
+  chain: {
     category: 'terrain',
     icon: Waypoints,
     name: '画岛链',
@@ -294,8 +294,7 @@ const defs: ToolDef[] = [
     bar: () => [{ kind: 'custom', render: ChainTypePick }, { kind: 'custom', render: ChainFragSlider }],
     create: () => chainTool(),
   },
-  {
-    id: 'relief',
+  relief: {
     category: 'terrain',
     icon: MountainSnow,
     name: '堆山 / 压低',
@@ -315,9 +314,8 @@ const defs: ToolDef[] = [
     ],
     create: () => reliefTool(),
   },
-  {
+  fragment: {
     // 第十八轮：打碎
-    id: 'fragment',
     category: 'terrain',
     icon: Hammer,
     name: '打碎',
@@ -337,8 +335,7 @@ const defs: ToolDef[] = [
     ],
     create: () => fragmentTool(),
   },
-  {
-    id: 'reroll',
+  reroll: {
     category: 'terrain',
     icon: Dices,
     name: '重画这一片',
@@ -347,8 +344,7 @@ const defs: ToolDef[] = [
     size: brushAs('直径'),
     create: () => rerollTool(),
   },
-  {
-    id: 'biome',
+  biome: {
     category: 'nature',
     icon: Paintbrush,
     name: '涂生态',
@@ -360,8 +356,7 @@ const defs: ToolDef[] = [
     pick: pickSpecies,
     create: () => biomeTool(),
   },
-  {
-    id: 'grow',
+  grow: {
     category: 'nature',
     icon: Move,
     name: '拖动扩张',
@@ -372,8 +367,7 @@ const defs: ToolDef[] = [
     bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }, { kind: 'custom', render: IgnoredChip }, { kind: 'custom', render: UnmetLocate }],
     create: () => growTool(),
   },
-  {
-    id: 'restore',
+  restore: {
     category: 'terrain',
     icon: Eraser,
     name: '恢复原样',
@@ -382,8 +376,7 @@ const defs: ToolDef[] = [
     size: BRUSH,
     create: () => restoreTool(),
   },
-  {
-    id: 'temp',
+  temp: {
     category: 'climate',
     icon: Thermometer,
     name: '冷暖',
@@ -403,8 +396,7 @@ const defs: ToolDef[] = [
     ],
     create: () => climateTool('temp'),
   },
-  {
-    id: 'moist',
+  moist: {
     category: 'climate',
     icon: CloudRain,
     name: '干湿',
@@ -424,8 +416,7 @@ const defs: ToolDef[] = [
     ],
     create: () => climateTool('moist'),
   },
-  {
-    id: 'unclimate',
+  unclimate: {
     category: 'climate',
     icon: Eraser,
     name: '擦掉冷暖干湿',
@@ -434,20 +425,7 @@ const defs: ToolDef[] = [
     size: BRUSH,
     create: () => climateEraseTool(),
   },
-  {
-    // 第十二轮：给生态选“长在哪里”（从生态编辑器的“选岛”“圈一下”进来，不在工具列表里）
-    id: 'range',
-    category: 'nature',
-    icon: LassoSelect,
-    name: '选生态的范围',
-    short: '选范围',
-    how: '点一个岛，或按住圈一片：这种生态只长在那里',
-    hidden: () => true,
-    bar: () => [{ kind: 'custom', render: RangeBar }],
-    create: () => rangeTool(),
-  },
-  {
-    id: 'erase',
+  erase: {
     category: 'nature',
     icon: Eraser,
     name: '擦除',
@@ -456,8 +434,25 @@ const defs: ToolDef[] = [
     size: BRUSH,
     create: () => eraseTool(),
   },
-  {
-    id: 'field',
+  range: {
+    // 第十二轮：给生态选“长在哪里”（从生态编辑器的“选岛”“圈一下”进来，不在工具列表里）
+    category: 'nature',
+    icon: LassoSelect,
+    name: '选生态的范围',
+    short: '选范围',
+    how: '点一个岛，或按住圈一片：这种生态只长在那里',
+    hidden: () => true,
+    bar: () => [{ kind: 'custom', render: RangeBar }],
+    cursor: 'pointer',
+    // 离开选生态的范围：不选了
+    onLeave(): void {
+      rangePick.value = null;
+    },
+    // 写明类型：它读的状态的类型里有 ToolId（由这张表推出来），不写会绕成一个圈
+    watch: (): unknown => rangePick.value,
+    create: () => rangeTool(),
+  },
+  field: {
     category: 'climate',
     icon: Sparkles,
     name: '涂自定义场',
@@ -479,8 +474,7 @@ const defs: ToolDef[] = [
     ],
     create: () => fieldTool(),
   },
-  {
-    id: 'river',
+  river: {
     category: 'water',
     icon: Spline,
     name: '画河',
@@ -492,10 +486,15 @@ const defs: ToolDef[] = [
       selectedRiver.value
         ? [{ kind: 'custom', render: RiverBar }]
         : [riverModes, riverEnds, { kind: 'custom', render: NewRiverTypePick }],
+    // 离开画河：选中的河不要了
+    onLeave(): void {
+      selectedRiver.value = null;
+    },
+    watch: (): unknown => selectedRiver.value,
+    focus: selectedRiverFocus,
     create: (env) => riverTool(env.zoom),
   },
-  {
-    id: 'lake',
+  lake: {
     category: 'water',
     icon: Droplet,
     name: '放湖',
@@ -504,29 +503,33 @@ const defs: ToolDef[] = [
     // 选中一个湖时，底部条换成这个湖的设置（新湖的大小先收起来）
     size: { ...LAKE, enabled: () => !selectedLake.value },
     bar: () => (selectedLake.value ? [{ kind: 'custom', render: LakeBar }] : [{ kind: 'custom', render: NewLakeTypePick }]),
+    // 离开放湖：选中的湖不要了
+    onLeave(): void {
+      selectedLake.value = null;
+    },
+    watch: (): unknown => [selectedLake.value, lakeSizeDraft.value],
     create: () => lakeTool(),
   },
-  {
-    id: 'unwater',
+  unwater: {
     category: 'water',
     icon: Trash2,
     name: '删除河湖',
     short: '删河湖',
     how: '删掉画过的河或湖；停一下会标出真正会变干的河段',
+    cursor: 'pointer',
     create: (env) => unwaterTool(env.zoom),
   },
-  {
-    id: 'pselect',
+  pselect: {
     category: 'provinces',
     icon: MousePointer2,
     name: '选省份',
     short: '选省',
     how: '点一个省，在下面改名、改类型',
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    cursor: 'pointer',
     create: () => provinceSelectTool(),
   },
-  {
-    id: 'pbrush',
+  pbrush: {
     category: 'provinces',
     icon: Paintbrush,
     name: '省份画笔',
@@ -542,8 +545,7 @@ const defs: ToolDef[] = [
     },
     create: () => provinceBrushTool(),
   },
-  {
-    id: 'pcut',
+  pcut: {
     category: 'provinces',
     icon: Scissors,
     name: '剪刀',
@@ -552,18 +554,17 @@ const defs: ToolDef[] = [
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
     create: (env) => provinceCutTool(env.zoom),
   },
-  {
-    id: 'pmerge',
+  pmerge: {
     category: 'provinces',
     icon: Merge,
     name: '合并',
     short: '合并',
     how: '先点一个省，再点要并进来的省',
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    cursor: 'pointer',
     create: () => provinceMergeTool(),
   },
-  {
-    id: 'pregen',
+  pregen: {
     category: 'provinces',
     icon: RefreshCw,
     name: '重新划分',
@@ -573,18 +574,17 @@ const defs: ToolDef[] = [
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }],
     create: () => provinceRegenTool(),
   },
-  {
-    id: 'rename',
+  rename: {
     category: 'names',
     icon: PenLine,
     name: '改名',
     short: '改名',
     how: '点地图上的名字',
     bar: () => [{ kind: 'custom', render: NamesBar }],
+    cursor: 'pointer',
     create: (env) => renameTool(env.hitLabel),
   },
-  {
-    id: 'area',
+  area: {
     category: 'names',
     icon: LassoSelect,
     name: '圈一块起名',
@@ -593,8 +593,7 @@ const defs: ToolDef[] = [
     bar: () => [{ kind: 'custom', render: NamesBar }],
     create: (env) => regionTool(env.hitLabel),
   },
-  {
-    id: 'spot',
+  spot: {
     category: 'names',
     icon: MapPinPlus,
     name: '放一个地名',
@@ -602,20 +601,47 @@ const defs: ToolDef[] = [
     how: '点一下放一个地名，比如城镇、渡口、海角',
     bar: () => [{ kind: 'custom', render: NamesBar }],
     create: (env) => spotTool(env.hitLabel, env.zoom),
-  },
-];
 
-export const TOOL_DEFS = Object.fromEntries(defs.map((d) => [d.id, d])) as Record<ToolId, ToolDef>;
+  },
+} satisfies Record<string, ToolSpec>;
+
+// 工具的 id：工具表里的键
+export type ToolId = keyof typeof SPECS;
+
+export const TOOL_DEFS = Object.fromEntries(Object.entries(SPECS).map(([id, d]) => [id, { ...d, id }])) as Record<ToolId, ToolDef>;
 
 // ---------- 类别 ----------
 
+// 每一类的工具按工具表里的先后
+const toolsIn = (c: Category) => (Object.keys(TOOL_DEFS) as ToolId[]).filter((id) => TOOL_DEFS[id].category === c);
+
 export const CATEGORIES: CategoryDef[] = [
-  { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'fragment', 'reroll', 'restore'], extras: TerrainExtras },
-  { id: 'climate', icon: ThermometerSun, label: '气候', tools: ['temp', 'moist', 'unclimate', 'field'] },
-  { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'erase', 'range'], extras: NatureExtras },
-  { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'], extras: RiverExtras },
-  { id: 'provinces', icon: MapIcon, label: '省份', tools: ['pselect', 'pbrush', 'pcut', 'pmerge', 'pregen'], extras: ProvinceExtras },
-  { id: 'names', icon: Type, label: '地名', tools: ['rename', 'area', 'spot'], extras: NamesExtras },
+  { id: 'terrain', icon: Mountain, label: '地形', tools: toolsIn('terrain'), extras: TerrainExtras },
+  { id: 'climate', icon: ThermometerSun, label: '气候', tools: toolsIn('climate') },
+  { id: 'nature', icon: Leaf, label: '自然', tools: toolsIn('nature'), extras: NatureExtras, map: { highlights: failingHighlights } },
+  { id: 'water', icon: Droplets, label: '水系', tools: toolsIn('water'), extras: RiverExtras, map: { markers: true } },
+  {
+    id: 'provinces',
+    icon: MapIcon,
+    label: '省份',
+    tools: toolsIn('provinces'),
+    extras: ProvinceExtras,
+    // 离开省份：选中的省不要了
+    onLeave: () => (selectedProvince.value = null),
+    watch: () => selectedProvince.value,
+    map: { highlights: provinceHighlights, provinces: true },
+  },
+  {
+    id: 'names',
+    icon: Type,
+    label: '地名',
+    tools: toolsIn('names'),
+    extras: NamesExtras,
+    // 离开地名：选中的地名不要了
+    onLeave: () => (selectedFeature.value = null),
+    watch: () => selectedFeature.value,
+    map: { highlights: featureHighlights, labels: () => selectedFeature.value },
+  },
 ];
 
 export const CATEGORY_DEFS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Category, CategoryDef>;
@@ -628,18 +654,24 @@ export function toolsOf(c: Category, w: World | null): ToolId[] {
   return CATEGORY_DEFS[c].tools.filter((id) => id === tool.value || !w || !TOOL_DEFS[id].hidden?.(w));
 }
 
+// 地图跟着重画的状态：所有工具、类别声明的（不管开着的是哪个）
+export function watchTools() {
+  for (const d of Object.values(TOOL_DEFS)) d.watch?.();
+  for (const c of CATEGORIES) c.watch?.();
+}
+
 // 每一类记住上次用的工具：换回来时还是原样。底图只在“图层”里换，换工具、换类别都不动它
 const lastTool: Partial<Record<Category, ToolId>> = {};
 
+// 换工具（所有换工具都走这里：面板里、工具里经 state.ts 的 switchTool）：离开的工具、离开的类别声明的东西清掉
 export function setTool(id: ToolId) {
+  const fromTool = tool.value;
   const from = category.value;
-  // 离开画河：选中的河不要了
-  if (tool.value === 'river' && id !== 'river') selectedRiver.value = null;
-  // 离开放湖：选中的湖不要了
-  if (tool.value === 'lake' && id !== 'lake') selectedLake.value = null;
-  // 离开选生态的范围：不选了
-  if (tool.value === 'range' && id !== 'range') rangePick.value = null;
-  if (from !== TOOL_DEFS[id].category) lastTool[from] = tool.value;
+  if (fromTool !== id) TOOL_DEFS[fromTool].onLeave?.();
+  if (from !== TOOL_DEFS[id].category) {
+    CATEGORY_DEFS[from].onLeave?.();
+    lastTool[from] = fromTool;
+  }
   tool.value = id;
   cursorHint.value = null;
   // 底部条按钮悬停时的预览（省份的对半分开、重新划分，河的截短、延长）：按钮随着换工具消失，收不到“移开”，
@@ -648,6 +680,7 @@ export function setTool(id: ToolId) {
   // 换工具就不再量距离
   measure.value = null;
 }
+registerToolSwitch(setTool);
 
 export function setCategory(c: Category) {
   if (c === category.value) return;
@@ -662,10 +695,10 @@ export function paintWith(speciesId: string) {
   if (tool.value !== 'biome') setTool('biome');
 }
 
-// 新世界：回到地形、画陆地
+// 新世界：回到地形、画陆地，各类不再记着上次用的工具
 export function resetTools() {
+  setTool('land');
   for (const k of Object.keys(lastTool)) delete lastTool[k as Category];
-  tool.value = 'land';
   mode.value = 'terrain';
 }
 

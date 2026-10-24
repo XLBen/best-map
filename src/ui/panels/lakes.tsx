@@ -4,7 +4,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { PLAIN_LAKE } from '../../../core/lake-types';
 import { roundKm as km } from '../../../core/terrain';
 import type { LakeSpec, World } from '../../../core/world';
-import { type LakeRef, cursorHint, exec, lakeRange, measure, openPanel, options, selectedLake, selectedRiver, setOptions, tool, world } from '../../state';
+import { type LakeRef, exec, lakeRange, openPanel, options, selectedLake, setOptions, switchTool, tool, world } from '../../state';
 import { focusOn } from '../camera';
 import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
 import { NameInput } from './names';
@@ -203,12 +203,7 @@ export function LakeBar() {
 
 // 选中一个湖：换到放湖工具（底部条换成这个湖的设置），与从河流列表里选中一条河一样
 export function selectLake(ref: LakeRef) {
-  if (tool.value !== 'lake') {
-    if (tool.value === 'river') selectedRiver.value = null;
-    tool.value = 'lake';
-    cursorHint.value = null;
-    measure.value = null;
-  }
+  if (tool.value !== 'lake') switchTool('lake');
   selectedLake.value = ref;
 }
 

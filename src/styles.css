@@ -276,6 +276,7 @@ h5 {
   display: block;
 }
 .map-overlay {
+  /* 点选类的工具换成手指：工具表里声明（defs/tools.ts 的 cursor），MapView 设在元素上 */
   cursor: crosshair;
   touch-action: none;
 }
@@ -286,13 +287,6 @@ h5 {
   pointer-events: none;
   user-select: none;
   max-width: none;
-}
-.map-overlay.tool-pselect,
-.map-overlay.tool-pmerge,
-.map-overlay.tool-rename,
-.map-overlay.tool-unwater,
-.map-overlay.tool-range {
-  cursor: pointer;
 }
 
 .right {
