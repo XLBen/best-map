@@ -349,3 +349,11 @@ describe('地图上的河、预览的河同一套画法', () => {
     expect(dashed.every((c) => c.dash === 2 && c.path!.ops.filter((o) => o[0] === 'M').length === 1)).toBe(true);
   });
 });
+
+describe('删掉的地名（第十六轮）', () => {
+  it('不标；选中、悬停着的那个照样标出来', () => {
+    const features = [feature('大森林', 'forest', 1e6, 0.5, { hidden: true }), feature('小湾', 'bay', 1e5, 0.2)];
+    expect(shown(features)).toEqual(['小湾']);
+    expect(shown(features, '大森林')).toContain('大森林');
+  });
+});

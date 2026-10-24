@@ -4,6 +4,7 @@ import { type GeoFeature, featureLabel } from './features';
 import { findCell, graphDistance, ringDistance } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
 import { continents, engineFor, snapshot } from './testing/fixtures';
+import { featuresCsv } from './export';
 
 // 人工构造的地图：一块带半岛和海湾的大陆，东边两个岛之间隔着一道窄海峡
 function handmade() {
@@ -341,5 +342,44 @@ describe('名字稳定', () => {
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
     expect(kv(islands)).toBe('b00d2f79');
+  });
+});
+
+describe('删掉地名（第十六轮）', () => {
+  it('删掉之后地物还在、不标名字，导出的 features.csv 里没有；地形再变照旧删着；恢复、撤销、重放都对', () => {
+    const eng = handmade();
+    const island = near(eng, 'island', 1.42, 0.5)!;
+    const name = island.name;
+    eng.exec({ op: 'rename_feature', key: island.key, hidden: true });
+    const hid = near(eng, 'island', 1.42, 0.5)!;
+    expect(hid.hidden).toBe(true);
+    expect(hid.name).toBe(name);
+    expect(featuresCsv(eng.world, 1024, 512)).not.toContain(`,${name},`);
+    // 在别处放一个岛，地物整体重算：照旧删着
+    eng.exec({ op: 'add_island', island: { x: 0.6, y: 0.1, kind: 'continental', size: 370, variant: 0 } });
+    expect(near(eng, 'island', 1.42, 0.5)!.hidden).toBe(true);
+    const again = Engine.fromDoc(eng.toDoc(), eng.world.mesh);
+    expect(near(again, 'island', 1.42, 0.5)!.hidden).toBe(true);
+    eng.undo();
+    eng.undo();
+    expect(near(eng, 'island', 1.42, 0.5)!.hidden).toBeUndefined();
+    eng.redo();
+    eng.exec({ op: 'rename_feature', key: island.key, hidden: false });
+    const back = near(eng, 'island', 1.42, 0.5)!;
+    expect(back.hidden).toBeUndefined();
+    expect(back.name).toBe(name);
+    expect(featuresCsv(eng.world, 1024, 512)).toContain(`,${name},`);
+  });
+
+  it('删掉的同时改过的名字、类型字留着，恢复后照旧', () => {
+    const eng = handmade();
+    const bay = near(eng, 'bay', 0.92, 0.5)!;
+    eng.exec({ op: 'rename_feature', key: bay.key, name: '我的湾', label: '港' });
+    eng.exec({ op: 'rename_feature', key: bay.key, hidden: true });
+    expect(near(eng, 'bay', 0.92, 0.5)).toMatchObject({ name: '我的湾', label: '港', hidden: true });
+    eng.exec({ op: 'rename_feature', key: bay.key, hidden: false });
+    const f = near(eng, 'bay', 0.92, 0.5)!;
+    expect(f).toMatchObject({ name: '我的湾', label: '港' });
+    expect(f.hidden).toBeUndefined();
   });
 });

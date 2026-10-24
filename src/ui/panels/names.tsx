@@ -216,6 +216,7 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
       <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
         <ScanSearch size={15} />
       </button>
+      <HideButton onHide={() => update({ hidden: true }, `删掉了地名「${f.name}」`)} />
       <button class="bar-btn icon" onClick={() => (selectedFeature.value = null)} title="取消选择">
         <X size={15} />
       </button>
@@ -249,11 +250,34 @@ export function NamesBar() {
       <button class="bar-btn icon" onClick={() => focusOn(f.cells)} title="在地图上看">
         <ScanSearch size={15} />
       </button>
+      <HideButton onHide={() => void exec(hideCommand(w, f, true), '正在删除…')} />
       <button class="bar-btn icon" onClick={() => (selectedFeature.value = null)} title="取消选择">
         <X size={15} />
       </button>
     </>
   );
+}
+
+// 删掉地名（第十六轮）：地物还在（山还是山、河还是河），只是不再标名字；“地名 ⋯ → 删掉的地名”里恢复
+function HideButton({ onHide }: { onHide: () => void }) {
+  return (
+    <button
+      class="bar-btn icon"
+      onClick={() => {
+        selectedFeature.value = null;
+        onHide();
+      }}
+      title="删掉这个地名（地物还在，只是不标名字；在“⋯ → 删掉的地名”里能恢复）"
+    >
+      <Trash2 size={15} />
+    </button>
+  );
+}
+
+// 自然的地物写在落到它上面的那条改动上（同 labelCommand），画的河写在河道上
+export function hideCommand(w: World, f: GeoFeature, hidden: boolean) {
+  if (f.guide) return { op: 'update_guide' as const, id: f.guide, patch: { hidden: hidden ? (true as const) : null }, label: hidden ? `删掉了地名「${f.name}」` : `恢复了地名「${f.name}」` };
+  return { op: 'rename_feature' as const, key: overrideKeyOf(w, f), hidden };
 }
 
 function WordPackBox({ w }: { w: World }) {
@@ -299,7 +323,7 @@ function FeatureList({ w }: { w: World }) {
   const [q, setQ] = useState('');
   const groups = labelGroups.value;
   const list = w.derived.features
-    .filter((f) => f.name && groups.has(FEATURE_INFO[f.type].group) && (!q || f.name.includes(q) || featureLabel(w, f).includes(q)))
+    .filter((f) => f.name && !f.hidden && groups.has(FEATURE_INFO[f.type].group) && (!q || f.name.includes(q) || featureLabel(w, f).includes(q)))
     .sort((a, b) => b.importance - a.importance)
     .slice(0, 150);
   return (
@@ -320,7 +344,32 @@ function FeatureList({ w }: { w: World }) {
           </div>
         ))}
       </div>
+      <HiddenList w={w} />
     </section>
+  );
+}
+
+// 删掉的地名：一个个恢复，点名字在地图上看
+function HiddenList({ w }: { w: World }) {
+  const hidden = w.derived.features.filter((f) => f.name && f.hidden).sort((a, b) => b.importance - a.importance);
+  if (!hidden.length) return null;
+  return (
+    <details class="hidden-names">
+      <summary>删掉的地名（{hidden.length}）</summary>
+      <div class="feature-list">
+        {hidden.map((f) => (
+          <div class="feature-row" key={f.key}>
+            <span class="muted" onClick={() => focusOn(f.cells)} title="在地图上看">
+              {f.name}
+            </span>
+            <span class="muted small">{featureLabel(w, f)}</span>
+            <button class="bar-btn small" onClick={() => void exec(hideCommand(w, f, false), '正在恢复…')} title="地图上重新标出这个名字">
+              恢复
+            </button>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 

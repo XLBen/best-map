@@ -145,6 +145,8 @@ export const guideSchema = z.object({
   sourceOf: z.string().max(40).optional(),
   // 名字前面的类型字（第十四轮）：自己写的（比如“圣河”）；没有时按地物类型（“河”）
   label: featureLabelSchema.optional(),
+  // 删掉了名字（第十六轮）：河照旧，地图上、导出的地名里不标
+  hidden: z.literal(true).optional(),
 });
 export type Guide = z.output<typeof guideSchema>;
 

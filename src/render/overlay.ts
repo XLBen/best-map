@@ -1377,6 +1377,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
   for (const f of features) {
     if (!f.name || (st.labelTypes && !st.labelTypes.has(f.type))) continue;
+    // 删掉的地名不标（选中、悬停着的那个照样标出来，看得到在改哪一个；导出的图里不标）
+    if (f.hidden && (exporting || f.key !== st.hoverLabel)) continue;
     // 在屏幕上有多大；山峰、用户放的点状地名没有大小（山峰放大到一定程度才标，地点总是标）
     const point = f.type === 'peak' || f.type === 'spot';
     // 投影时按地名那里的比例（球形的边上小）

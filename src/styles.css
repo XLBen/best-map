@@ -242,6 +242,20 @@ h5 {
 .feature-row .custom {
   font-weight: 600;
 }
+/* 删掉的地名：名字、类型字、“恢复” */
+.hidden-names .feature-row {
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+.hidden-names .feature-row > :first-child {
+  flex: 1;
+  cursor: pointer;
+}
+.hidden-names summary {
+  margin-top: 8px;
+  cursor: pointer;
+}
 
 .center {
   flex: 1;

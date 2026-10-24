@@ -356,7 +356,7 @@ export function featuresCsv(world: World, width: number, height: number): string
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const rows = ['type,type_name,name,custom,area_km2,x_px,y_px,lat,lon,key'];
   const lonSpan = (mesh.width * world.kmPerUnit) / 111.2;
-  const features = [...world.derived.features].sort((a, b) => b.importance - a.importance);
+  const features = world.derived.features.filter((f) => !f.hidden).sort((a, b) => b.importance - a.importance);
   for (const f of features) {
     const lat = worldLatitude(world, f.y);
     // 整个星球：真实的经度；一块地区按赤道尺度把 x 换成相对地图中心的经度

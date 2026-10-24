@@ -95,6 +95,7 @@ const guidePatchSchema = z
     branch: G.branch.unwrap().nullable().optional(),
     sourceOf: G.sourceOf.unwrap().nullable().optional(),
     label: G.label.unwrap().nullable().optional(),
+    hidden: G.hidden.unwrap().nullable().optional(),
   })
   .strict();
 export type GuidePatch = z.input<typeof guidePatchSchema>;
@@ -207,7 +208,7 @@ const baseCommands = [
   z.object({ op: z.literal('set_lake_mode'), mode: z.enum(['separate', 'merge']) }),
   // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名。
   // label（第十四轮）：名字前面的类型字（“圣山”），空字符串换回按地物类型的；只改 label 时不写 name
-  z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40).optional(), label: z.string().max(20).optional() }),
+  z.object({ op: z.literal('rename_feature'), key: z.string().regex(/^\w+:\d+$/), name: z.string().max(40).optional(), label: z.string().max(20).optional(), hidden: z.boolean().optional() }),
   z.object({ op: z.literal('reroll_feature'), key: z.string().regex(/^\w+:\d+$/) }),
   z.object({ op: z.literal('set_word_pack'), pack: wordPackSchema.nullable() }),
   // 用户的地名：圈一块（cells）或放一个点（kind = spot，at 为位置）；name 为空时按文字包自动起名
@@ -616,7 +617,7 @@ export function guideDirty(before: readonly Guide[], after: readonly Guide[]): D
   if (!same((g) => [g.id, g.cells, g.spring, g.flow ?? null, g.end ?? null, g.type ?? null, g.name !== undefined || g.nameKey !== undefined, !!g.path, g.branch?.share ?? null])) {
     return Dirty.Vegetation;
   }
-  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null, g.label ?? null])) return Dirty.Names;
+  if (!same((g) => [g.name ?? null, g.nameKey ?? null, g.autoName ?? null, g.salt ?? null, g.path ?? null, g.sourceOf ?? null, g.label ?? null, g.hidden ?? null])) return Dirty.Names;
   return Dirty.None;
 }
 
@@ -1207,8 +1208,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       return { dirty: Dirty.None, summary: `切开了${names}（多出 ${count} 个省份）` };
     }
     case 'rename_feature': {
-      if (cmd.name === undefined && cmd.label === undefined) throw new CommandError('rename_feature 要写 name 或 label');
+      if (cmd.name === undefined && cmd.label === undefined && cmd.hidden === undefined) throw new CommandError('rename_feature 要写 name、label 或 hidden');
       const ov = { ...(small.featureNames[cmd.key] ?? {}) };
+      // 删掉地名（第十六轮）：地物照旧，只是不标；恢复就去掉这一项
+      if (cmd.hidden !== undefined) {
+        if (cmd.hidden) ov.hidden = true;
+        else delete ov.hidden;
+      }
       if (cmd.name !== undefined) {
         if (cmd.name.trim()) ov.name = cmd.name.trim();
         else delete ov.name;
@@ -1219,6 +1225,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         else delete ov.label;
       }
       small.featureNames = { ...small.featureNames, [cmd.key]: ov };
+      if (cmd.hidden !== undefined && cmd.name === undefined && cmd.label === undefined) return { dirty: Dirty.Names, summary: cmd.hidden ? '删掉了一个地名' : '恢复了一个地名' };
       if (cmd.name === undefined) return { dirty: Dirty.Names, summary: label ? `类型改叫“${label}”` : '类型换回自动的叫法' };
       return { dirty: Dirty.Names, summary: cmd.name.trim() ? `改名为“${cmd.name.trim()}”` : '恢复自动命名' };
     }

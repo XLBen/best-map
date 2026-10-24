@@ -104,6 +104,8 @@ export interface GeoFeature {
   guide?: string;
   // 自己写的类型字（第十四轮）：起名时按改过的名字、画的河、圈的地名填上；没有时 featureLabel 按类型
   label?: string;
+  // 删掉了名字（第十六轮）：地图上、导出的图片和 features.csv 里不标，“地名 ⋯ → 删掉的地名”里能恢复
+  hidden?: true;
 }
 
 export interface FeatureOverride {
@@ -112,6 +114,8 @@ export interface FeatureOverride {
   salt?: number;
   // 名字前面的类型字（第十四轮）：自己写的，比如“圣山”
   label?: string;
+  // 删掉了这个地名（第十六轮）：地物还在，只是不标
+  hidden?: true;
 }
 
 // ---------- 格图工具 ----------
@@ -1893,6 +1897,10 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     const label = g ? (g.label ?? (inherits(g) ? overrides[g.nameKey!]?.label : undefined)) : r ? r.label : ovOf.get(f)?.[0].label;
     if (label) f.label = label;
     else delete f.label;
+    // 删掉的地名同理：画的河写在河道上，别的跟着改过的名字（圈的地名直接删掉区块，没有这一项）
+    const hidden = g ? (g.hidden ?? (inherits(g) ? overrides[g.nameKey!]?.hidden : undefined)) : r ? undefined : ovOf.get(f)?.[0].hidden;
+    if (hidden) f.hidden = true;
+    else delete f.hidden;
   });
   order.forEach((f, k) => {
     const p = plans[k];
