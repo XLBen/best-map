@@ -3,6 +3,7 @@ import type { FeatureOverride, GeoFeature } from './features';
 import { DEFAULT_PACK, type WordPack, generateName, hashString, packProblems as templateListProblems, wordPackSchema } from './names';
 import { mixSeed, mulberry32 } from './rng';
 import { typeIdSchema } from './type-id';
+import { type Cells, type CultureWorld, cultureStyleId } from './human/culture-style';
 import type { SmallState } from './world';
 
 // 地名风格（第二十轮）：一个世界可以启用好几种，各地物、省份可以单独选。两种写法：
@@ -358,7 +359,7 @@ export function styleNotes(style: NameStyle): string[] {
 
 // ---------- 世界里的风格 ----------
 
-type StyleSmall = Pick<SmallState, 'wordPack' | 'featureNames' | 'provinces'> & Partial<Pick<SmallState, 'content' | 'nameStyle'>>;
+type StyleSmall = Pick<SmallState, 'wordPack' | 'featureNames' | 'provinces'> & Partial<Pick<SmallState, 'content' | 'nameStyle' | 'human'>>;
 
 // 世界里启用的风格（不含内置中文）
 export function worldStyles(small: Pick<Partial<SmallState>, 'content'>): Record<string, NameStyle> {
@@ -394,26 +395,51 @@ function contentTag(style: object): string {
   return t;
 }
 
-// 要给哪一处起名：地物（override 是落到它上面的改名，见 features.ts 的 assignNames；省略时按它自己的键找）、省份，
+// 要给哪一处起名：地物（override 是落到它上面的改名，见 features.ts 的 assignNames；省略时按它自己的键找；
+// 第二十二轮：带上 cells 时按这些格找当地的文化，省略时按键在 derived.features 里找）、省份（cells 省略时按 causes.province 找），
 // 或者一格（第二十一轮：格的小地名、山峰，按它所在的省份）
-export type StyleTarget = { feature: Pick<GeoFeature, 'key'>; override?: FeatureOverride } | { province: number } | { cell: number };
+export type StyleTarget =
+  | { feature: Pick<GeoFeature, 'key'> & { cells?: Cells }; override?: FeatureOverride }
+  | { province: number; cells?: Cells }
+  | { cell: number };
 
-// 自己选的风格 id（没有选时 undefined）。第二十二轮在这里接上“当地文化的风格”
+// 自己选的风格 id（没有选时 undefined）
 export function ownStyleId(small: StyleSmall, target: Exclude<StyleTarget, { cell: number }>): string | undefined {
   if ('province' in target) return small.provinces[target.province]?.style;
   // 给了落到它上面的改名（起名时）就只看它，没给时按地物自己的键找
   return target.override ? target.override.style : small.featureNames[target.feature.key]?.style;
 }
 
-// 一处地方用哪种风格：自己选的 → 世界默认 → 内置中文。选的风格不在世界里了（停用了）时按世界默认
-// 一格按它所在的省份（不在省份里时按世界默认）
-export function styleFor(world: { small: StyleSmall; causes?: { province: Int32Array } }, target?: StyleTarget): ResolvedStyle {
+// 起名要看的世界：小数据；有人文时还要原因（省份、人数）与推导（占多数的文化、最近的文化、地物）
+export type StyleWorld = { small: StyleSmall; causes?: CultureWorld['causes'] & { province: Int32Array }; derived?: CultureWorld['derived'] & { features?: readonly GeoFeature[] } };
+
+// 这一处地方的格（找当地的文化用）
+function targetCells(world: StyleWorld, target: StyleTarget): Cells {
+  if ('cell' in target) return [target.cell];
+  if ('province' in target) {
+    if (target.cells) return target.cells;
+    const p = world.causes?.province;
+    const out: number[] = [];
+    if (p) for (let i = 0; i < p.length; i++) if (p[i] === target.province) out.push(i);
+    return out;
+  }
+  return target.feature.cells ?? world.derived?.features?.find((f) => f.key === target.feature.key)?.cells ?? [];
+}
+
+// 一处地方用哪种风格：自己选的 → 当地占多数的文化的风格（第二十二轮，见 human/culture-style.ts）→ 世界默认 → 内置中文。
+// 选的风格不在世界里了（停用了）时跳过它。一格按它所在的省份自己选的风格，没有时按这一格的文化
+export function styleFor(world: StyleWorld, target?: StyleTarget): ResolvedStyle {
   const small = world.small;
   const def = worldStyleId(small);
   const at = target && 'cell' in target ? (world.causes?.province[target.cell] ?? -1) : 0;
   const t = target && 'cell' in target ? (at >= 0 ? { province: at } : undefined) : target;
   const own = t ? ownStyleId(small, t) : undefined;
-  const id = own && styleById(small, own) ? own : def;
+  let id = own && styleById(small, own) ? own : undefined;
+  if (!id && target && small.human) {
+    const c = cultureStyleId(world, targetCells(world, target));
+    if (c && styleById(small, c)) id = c;
+  }
+  id ??= def;
   const style = styleById(small, id)!;
   const tag = id === DEFAULT_STYLE ? (small.wordPack ? contentTag(small.wordPack) : '-') : contentTag(style);
   return { id, style, suffix: id === def ? '' : `:${id}`, tag };

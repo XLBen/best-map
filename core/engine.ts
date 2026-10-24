@@ -18,6 +18,8 @@ import { worldSeedOf } from './biome-scripts';
 import { baseBiomes, computeVegetation, finishLook, isVegetated } from './vegetation';
 import { resolveTerrain, shareTerrainBase } from './terrain';
 import { computeHuman } from './human';
+import { SLOTS } from './human/groups';
+import { applyPopFix, populationFix } from './human/population';
 import { type Causes, type Derived, type Settings, type SmallState, type World, createWorld, emptyDerived, kmPerUnit, settingsSchema } from './world';
 
 // 引擎：持有世界、命令历史与推导缓存。命令改原因 → 标记从哪层开始重算 → 流水线
@@ -149,6 +151,7 @@ export class Engine {
     }
     const fresh = this.dirty === Dirty.None;
     const prev = this.world.derived.features;
+    const water0 = this.waterMask();
     const { summary } = this.applyOnly(cmd, true);
     if (this.lastNoop) return summary;
     const stateBefore = this.stateId;
@@ -161,6 +164,7 @@ export class Engine {
       this.update();
       if (fresh) this.carryNames(prev);
       this.fixLakeProvinces();
+      this.fixPopulation(water0);
       this.shareWithLast();
     } catch (e) {
       // 撤掉时的重算按说不会再出错；万一出了，历史、重做记录、状态编号也照样放回去
@@ -386,6 +390,7 @@ export class Engine {
     const shown = this.dirty === Dirty.None && this.done.length ? { features: this.world.derived.features, small: JSON.stringify(this.world.small) } : null;
     const h = this.revertLast();
     if (!h) throw new CommandError('没有可以替换的一步');
+    const water0 = this.waterMask();
     const before = h.state;
     h.state = undefined;
     // 把原来那一步放回去（推导要重算：before 是它之前的推导，不能直接换上）
@@ -413,6 +418,7 @@ export class Engine {
       this.update();
       if (shown) this.carryNames(shown.features, shown.small);
       this.fixLakeProvinces();
+      this.fixPopulation(water0);
       this.shareWithLast();
     } catch (e) {
       // 新的一步撤掉（推导写了一半，不能留着）：原因退回去，原来那一步放回去后从头重算
@@ -436,6 +442,9 @@ export class Engine {
     const step = this.done[this.done.length - 1];
     if (!this.features || !step || step.dirty <= Dirty.None || !prev.length) return;
     const w = this.world;
+    // 只重算了人文的几层（第二十二轮）：地物还是那些，名字变了的都是换了风格（当地的文化变了）的，起名的办法变了，
+    // 没有要留的名字（与整个比一遍的结果相同，省下三遍起名）
+    if (step.dirty === Dirty.Human && step.cmd.op !== 'batch' && onlyRestyled(prev, w.derived.features)) return;
     const carry = carryNames(w, w.derived.features, JSON.parse(prevSmall ?? step.undo.small) as SmallState, prev);
     if (!carry) return;
     applyNameCarry(w.small, carry);
@@ -449,12 +458,46 @@ export class Engine {
   private fixLakeProvinces() {
     const step = this.done[this.done.length - 1];
     if (!step || step.dirty <= Dirty.None || step.cmd.provinceFix) return;
+    // 只画了人文（第二十二轮）：湖、陆海、岛的种类都没变，不用整理
+    if (step.dirty === Dirty.Human && step.cmd.op !== 'batch') return;
     const w = this.world;
     const before = w.causes.province.slice();
     const fix = lakeProvinceFix(w, w.derived);
     if (!fix) return;
     addArrayUndo(step.undo, 'province', fix.cells, before);
     step.cmd = { ...step.cmd, provinceFix: fix };
+  }
+
+  // 有人文时这一步之前的水面（海、湖）：改了陆海之后修补人口用（见 fixPopulation）
+  private waterMask(): Uint8Array | null {
+    const w = this.world;
+    if (!w.small.human || !w.causes.popTotal) return null;
+    const n = w.mesh.n;
+    const land = w.causes.land;
+    const lake = w.derived.lake;
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (!land[i] || lake[i] === 1) out[i] = 1;
+    return out;
+  }
+
+  // 人口的修补（第二十二轮，见 human/population.ts 的 populationFix）：这一步改了陆海、湖之后，变成水面的格没有人了，
+  // 新的干的陆地按宜居度补上人。结果记进这一步的命令（popFix，重放、重做时照用）与撤销记录，再重算人文的几层与名字
+  private fixPopulation(water0: Uint8Array | null) {
+    const step = this.done[this.done.length - 1];
+    const w = this.world;
+    if (!water0 || !step || step.dirty <= Dirty.Human || step.cmd.popFix || !w.small.human || !w.causes.popTotal) return;
+    const fix = populationFix(w, w.derived, water0);
+    if (!fix) return;
+    const c = w.causes;
+    const before = { t: c.popTotal!.slice(), g: c.popGroup!.slice(), s: c.popShare!.slice() };
+    applyPopFix(w, fix);
+    const slots = fix.cells.flatMap((i) => Array.from({ length: SLOTS }, (_, k) => i * SLOTS + k));
+    addArrayUndo(step.undo, 'popTotal', fix.cells, before.t);
+    addArrayUndo(step.undo, 'popGroup', slots, before.g);
+    addArrayUndo(step.undo, 'popShare', slots, before.s);
+    step.cmd = { ...step.cmd, popFix: fix };
+    this.dirty = Dirty.Human;
+    this.update();
   }
 
   // 推导里的数组发出去了（Worker 只发变了的数组，按引用比较上一次发的）：之后重算不能就地改它们，先复制
@@ -602,6 +645,9 @@ export class Engine {
     shapeLakeBeds(w, d, w.small.lakes.length ? userLakeMask(w) : null);
     d.conflicts = checkConstraints(w, d, this.solve);
     lap('vegetation');
+    // 人文的几层（第二十一轮）：按自然的推导算。第二十二轮挪到认地物之前：地名跟着当地的文化，起名要看人口的几层
+    computeHuman(w, d);
+    lap('human');
     // 只取决于海陆的那一段地物先认（改了海陆时这一段很长），认完让出一次
     if (this.features) {
       const a = performance.now();
@@ -614,9 +660,6 @@ export class Engine {
     // 山脉、山峰、盆地按没挖河床的地形认：峡谷不会让山改名
     if (this.features) d.features = detectFeatures(w, d, terrain);
     lap('features');
-    // 人文的几层（第二十一轮）：按自然的推导算
-    computeHuman(w, d);
-    lap('human');
     timings.total = performance.now() - t0;
     this.lastTimings = timings;
     this.dirty = Dirty.None;
@@ -715,12 +758,14 @@ export class Engine {
     const t0 = performance.now();
     const copy = this.clone();
     const prev = this.world.derived.features;
+    const water0 = this.waterMask();
     const { changed } = copy.applyOnly(cmd);
     yield;
     yield* copy.updateSteps();
     // 与执行时一样留名字（采用预览时命令、小数据都照用副本的）
     copy.carryNames(prev);
     copy.fixLakeProvinces();
+    copy.fixPopulation(water0);
     this.lastPreview = { key: JSON.stringify(cmd), copy, changed };
     const step = copy.done[copy.done.length - 1];
     const ms = performance.now() - t0;
@@ -806,6 +851,18 @@ export class Engine {
     e.stateId = this.stateId;
     return e;
   }
+}
+
+// 两份地物一一对应（同样的键、同样的先后），名字变了的地物风格也都变了
+function onlyRestyled(prev: readonly GeoFeature[], cur: readonly GeoFeature[]): boolean {
+  if (prev.length !== cur.length) return false;
+  for (let k = 0; k < cur.length; k++) {
+    const a = prev[k];
+    const b = cur[k];
+    if (a.key !== b.key) return false;
+    if (a.name !== b.name && a.style === b.style) return false;
+  }
+  return true;
 }
 
 // 一口气走完分阶段的计算

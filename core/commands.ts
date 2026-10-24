@@ -34,6 +34,10 @@ import { ISLAND_CODE_MASK, LAGOON_BIT, MAX_ISLAND_TYPES, islandCode, islandTypeB
 import { typeIdSchema } from './type-id';
 import { classAt, classCode } from './human/terrain-class';
 import { RESOURCE_NONE, resourceAt, resourceCode } from './human/resources';
+import { generateHuman, regenerateHuman } from './human/generate';
+import { cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from './human/era';
+import { type PopBrush, type PopFix, applyPopFix, paintPop, scalePop, setCellPop } from './human/population';
+import { groupInfo } from './human/layers';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
@@ -80,6 +84,14 @@ import {
 // 所以重放结果与当时界面上的推导状态无关（例外：generate_provinces 需要当时的水文与高程，引擎会先把推导算好）。
 
 const cells = z.array(z.number().int().min(0));
+// 人文（第二十二轮）
+const popCount = z.number().min(0).max(1e13);
+const seedSchema = z.number().int().min(0).max(0xffffffff);
+const humanGroups = z
+  .array(z.object({ id: typeIdSchema, weight: z.number().min(0).max(1000), cultures: z.array(typeIdSchema).max(64).optional() }))
+  .min(1)
+  .max(32);
+const popTupleSchema = z.object({ culture: typeIdSchema, values: z.record(typeIdSchema, typeIdSchema) });
 const fieldName = z.string().regex(/^[\w-]+$/, '场名只能包含字母、数字、下划线和连字符');
 const paintField = z.union([z.enum(['erodDelta', 'tempOffset', 'moistOffset']), z.string().regex(/^field:[\w-]+$/)]);
 // 画笔落点：每格到画笔中心的归一化距离（0 中心，1 边缘），与 cells 对齐
@@ -280,18 +292,61 @@ const baseCommands = [
     reroll: z.literal(true).optional(),
     note: z.string().max(2000).nullable().optional(),
   }),
+  // ---------- 人文（第二十二轮，见 human/generate.ts、human/population.ts） ----------
+  // 生成：时代、文化组与权重（cultures 只用组里的这几个文化）、总人口（省略时按时代的默认密度）、种子（省略时用世界的）
+  z.object({ op: z.literal('generate_human'), era: typeIdSchema, groups: humanGroups, totalPop: popCount.optional(), seed: seedSchema.optional() }),
+  // 按记着的参数重新生成（拖过的发源地留着）；写了的几项换掉。keepManual：手改过的格不动（省略为 true）
+  z.object({ op: z.literal('regenerate_human'), era: typeIdSchema.optional(), groups: humanGroups.optional(), totalPop: popCount.optional(), seed: seedSchema.optional(), keepManual: z.boolean().optional() }),
+  // 挪一个发源地（文化组的写 group，同一组有几个时 index 是第几个；文化的写 culture），挪过的锁定；cell 为 null 是不再锁定。之后重新生成
+  z.object({
+    op: z.literal('move_hearth'),
+    group: typeIdSchema.optional(),
+    culture: typeIdSchema.optional(),
+    index: z.number().int().min(0).optional(),
+    cell: z.number().int().min(0).nullable(),
+    keepManual: z.boolean().optional(),
+  }),
+  // 去掉人文（人口清零）
+  z.object({ op: z.literal('remove_human') }),
+  // 总人口按比例改
+  z.object({ op: z.literal('set_pop_total'), total: popCount }),
+  // 人口笔刷：share 这个群体的占比升高 amount（人数不变）；count 人数 × factor（Shift 反过来由界面给小于 1 的 factor）；
+  // value 每个群体里 amount 的人这一维换成 value（传教、改宗）。t 是画笔的权重（省略为 1）
+  z.object({
+    op: z.literal('paint_pop'),
+    cells,
+    t: strokeT.optional(),
+    mode: z.enum(['share', 'count', 'value']),
+    group: popTupleSchema.optional(),
+    amount: z.number().min(0).max(1).optional(),
+    factor: z.number().min(0.01).max(100).optional(),
+    dimension: typeIdSchema.optional(),
+    value: typeIdSchema.optional(),
+  }),
+  // 文化笔刷：每个群体里 amount 的人换成这个文化（其余维度不变；typical 时换成这个文化最典型的群体）
+  z.object({ op: z.literal('paint_culture'), cells, t: strokeT.optional(), culture: typeIdSchema, amount: z.number().min(0).max(1), typical: z.boolean().optional() }),
+  // 档案里改一格的人口：总人数、各群体的占比（0–1，不到 1 的是“其他”）
+  z.object({
+    op: z.literal('set_cell_pop'),
+    cell: z.number().int().min(0),
+    total: popCount.optional(),
+    groups: z.array(popTupleSchema.extend({ share: z.number().min(0).max(1) })).max(8).optional(),
+  }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
 // nameCarry：这一步之后为了地名不乱跳留下的名字、挪过去的改名（见 features.ts 的 carryNames），同样由引擎记下、照用。
 // provinceFix：这一步改了湖（放湖、删湖、湖干了、地形变了）之后，湖与陆地省份的整理（见 provinces.ts 的 lakeProvinceFix），
 // 同样由引擎在推导算好之后记下，重放、重做时照用。
-// provinceOrig（第二十轮）：新起的省名里有原文的那些（省份编号 → 原文），和 provinceNames 一起记、一起用
+// provinceOrig（第二十轮）：新起的省名里有原文的那些（省份编号 → 原文），和 provinceNames 一起记、一起用。
+// popFix（第二十二轮）：改了陆海之后人口的修补（变成水面的格没有人了，新的陆地按宜居度补上人，见 human/population.ts 的 populationFix），
+// 同样由引擎在推导算好之后记下，重放、重做时照用
 export type Command = (z.input<(typeof baseCommands)[number]> | { op: 'batch'; label?: string; commands: Command[] }) & {
   provinceNames?: Record<string, string>;
   provinceOrig?: Record<string, string>;
   nameCarry?: NameCarry;
   provinceFix?: ProvinceFix;
+  popFix?: PopFix;
 };
 
 const provinceMetaSchema = z.object({
@@ -315,6 +370,15 @@ const provinceFixSchema = z
     next: z.number().int().min(0),
   })
   .refine((f) => f.cells.length === f.to.length, '格与省份的个数不同');
+
+const popFixSchema = z
+  .object({
+    cells: z.array(z.number().int().min(0)),
+    total: z.array(z.number().min(0)),
+    groups: z.array(z.number().int().min(0).max(65535)),
+    shares: z.array(z.number().int().min(0).max(255)),
+  })
+  .refine((f) => f.cells.length === f.total.length && f.groups.length === f.cells.length * 4 && f.shares.length === f.cells.length * 4, '人口修补的长短不对');
 
 // 命令里记下的地名（见 Command 的 nameCarry）：键是“类型:锚点格”或“guide:河道 id”
 const featureKey = z.string().regex(/^\w+:\S+$/);
@@ -347,11 +411,13 @@ export type Dirty = (typeof Dirty)[keyof typeof Dirty];
 
 type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | 'fragment' | HumanArray | `field:${string}`;
 
-// 人文的原因数组（第二十一轮）：第一次画时才建，撤销到那之前时去掉（UndoRecord.dropArrays）
-type HumanArray = 'terrainClass' | 'resource';
-const HUMAN_ARRAYS: readonly HumanArray[] = ['terrainClass', 'resource'];
+// 人文的原因数组（第二十一轮）：第一次画时才建，撤销到那之前时去掉（UndoRecord.dropArrays）。第二十二轮加了人口的四个
+type HumanArray = 'terrainClass' | 'resource' | PopArray;
+type PopArray = 'popTotal' | 'popGroup' | 'popShare' | 'popManual';
+const POP_ARRAYS: readonly PopArray[] = ['popTotal', 'popGroup', 'popShare', 'popManual'];
+const HUMAN_ARRAYS: readonly HumanArray[] = ['terrainClass', 'resource', ...POP_ARRAYS];
 
-function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Int32Array | undefined {
+function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Uint16Array | Int32Array | undefined {
   if (key.startsWith('field:')) return world.causes.fields[key.slice(6)];
   return world.causes[key as Exclude<ArrayKey, `field:${string}`>];
 }
@@ -384,7 +450,16 @@ export interface ApplyContext {
 function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   switch (cmd.op) {
     case 'set_worldgen':
-      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'terrainClass', 'resource'];
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'terrainClass', 'resource', ...POP_ARRAYS];
+    case 'generate_human':
+    case 'regenerate_human':
+    case 'move_hearth':
+    case 'remove_human':
+    case 'set_pop_total':
+    case 'paint_pop':
+    case 'paint_culture':
+    case 'set_cell_pop':
+      return [...POP_ARRAYS];
     case 'paint_land':
     case 'add_island':
     case 'add_island_chain':
@@ -440,7 +515,7 @@ export function applyCommand(
   provinceNames: Record<string, string> | null;
   provinceOrig: Record<string, string> | null;
 } {
-  const { provinceNames: stored, provinceOrig: storedOrig, nameCarry: carryInput, provinceFix: fixInput, ...raw } = input;
+  const { provinceNames: stored, provinceOrig: storedOrig, nameCarry: carryInput, provinceFix: fixInput, popFix: popInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
   if (carry && !carry.success) throw new CommandError(`命令里的地名无效：${formatIssues(carry.error)}`);
   const nameCarry = carry?.data;
@@ -448,11 +523,16 @@ export function applyCommand(
   if (fixParsed && !fixParsed.success) throw new CommandError(`命令里的省份整理无效：${formatIssues(fixParsed.error)}`);
   const provinceFix = fixParsed?.data;
   if (provinceFix && provinceFix.cells.some((c) => c >= world.mesh.n)) throw new CommandError('命令里的省份整理不属于这张地图');
+  const popParsed = popInput === undefined ? undefined : popFixSchema.safeParse(popInput);
+  if (popParsed && !popParsed.success) throw new CommandError(`命令里的人口修补无效：${formatIssues(popParsed.error)}`);
+  const popFix = popParsed?.data;
+  if (popFix && popFix.cells.some((c) => c >= world.mesh.n)) throw new CommandError('命令里的人口修补不属于这张地图');
   const parsed = commandSchema.safeParse(raw);
   if (!parsed.success) throw new CommandError(`命令参数无效：${formatIssues(parsed.error)}`);
   const cmd = parsed.data;
   const touched = touchedArrays(world, cmd);
   if (provinceFix && !touched.includes('province')) touched.push('province');
+  if (popFix) for (const k of POP_ARRAYS) if (!touched.includes(k)) touched.push(k);
   const keys = touched.filter((k) => getArray(world, k));
   const before = keys.map((k) => Float64Array.from(getArray(world, k)!));
   const smallBefore = JSON.stringify(world.small);
@@ -477,6 +557,7 @@ export function applyCommand(
     }
     if (nameCarry) applyNameCarry(world.small, nameCarry);
     if (provinceFix) applyProvinceFix(world, provinceFix);
+    if (popFix) applyPopFix(world, popFix);
   } catch (e) {
     // 失败时恢复，保证命令要么完整生效要么不生效
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
@@ -599,6 +680,36 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
 
+// ---------- 人文（第二十二轮） ----------
+
+// 人数写成“4.0 亿”“35.2 万”“820”
+export function popText(n: number): string {
+  if (n >= 1e8) return `${(n / 1e8).toFixed(1)} 亿`;
+  if (n >= 1e4) return `${(n / 1e4).toFixed(1)} 万`;
+  return `${Math.round(n)}`;
+}
+
+// 去掉人文：人口清零（数组留着，撤销时照旧退回），小数据里的去掉
+function clearPop(world: World) {
+  const c = world.causes;
+  c.popTotal?.fill(0);
+  c.popGroup?.fill(0);
+  c.popShare?.fill(0);
+  c.popManual?.fill(0);
+  delete world.small.human;
+  delete world.small.popGroups;
+}
+
+// 群体里的文化、取值都要在世界里，维度要是这个时代的
+function checkTuple(small: SmallState, t: { culture: string; values: Record<string, string> }) {
+  if (!cultureById(small, t.culture)) throw new CommandError(`世界里没有文化 "${t.culture}"`);
+  const dims = new Set(worldDimensions(small).map((x) => x.id));
+  for (const [dim, v] of Object.entries(t.values)) {
+    if (!dims.has(dim)) throw new CommandError(`这个时代没有维度 "${dim}"`);
+    if (popValueById(small, v)?.dimension !== dim) throw new CommandError(`维度 "${dim}" 没有取值 "${v}"`);
+  }
+}
+
 // ---------- 内容（第二十轮，见 content/registry.ts） ----------
 
 const DIRTY_OF: Record<DirtyLevel, Dirty> = {
@@ -713,6 +824,8 @@ function speciesChange(before: Species, after: Species): { dirty: Dirty; what: s
   // 加上、去掉地名设定（feature）时，自然长成的那些片要不要成为自己的地物也跟着变（features.ts 的 namesNaturally）：
   // 地物要重新识别，不只是重新起名
   if (changed.every((k) => NAME_KEYS.has(k)) && namesNaturally(before) === namesNaturally(after)) return { dirty: Dirty.Names, what };
+  // 只改宜居度（第二十二轮）：长什么不变，只重算人文的几层
+  if (changed.every((k) => k === 'habitability' || NAME_KEYS.has(k)) && namesNaturally(before) === namesNaturally(after)) return { dirty: Dirty.Human, what: only('habitability') ? ' · 宜居度' : what };
   return { dirty: Dirty.Solve, what };
 }
 
@@ -828,6 +941,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.fragment?.fill(0);
         causes.terrainClass?.fill(0);
         causes.resource?.fill(0);
+        clearPop(world);
         causes.province.fill(-1);
         delete small.cells;
         small.provinces = {};
@@ -1591,6 +1705,91 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (Object.keys(cellsMeta).length) small.cells = cellsMeta;
       else delete small.cells;
       return { dirty: Dirty.None, summary };
+    }
+    case 'generate_human': {
+      const d = ctx.ensureDerived();
+      const h = generateHuman(world, d, { era: cmd.era, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed });
+      const era = worldEra(small);
+      return { dirty: Dirty.Human, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}` };
+    }
+    case 'regenerate_human': {
+      const d = ctx.ensureDerived();
+      const patch = { era: cmd.era, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed };
+      regenerateHuman(world, d, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { keepManual: cmd.keepManual ?? true });
+      return { dirty: Dirty.Human, summary: '重新生成人文' };
+    }
+    case 'move_hearth': {
+      const h = small.human;
+      if (!h) throw new CommandError('还没有生成人文');
+      if (!cmd.group === !cmd.culture) throw new CommandError('写 group 或 culture 中的一个');
+      if (cmd.cell !== null) {
+        checkCells([cmd.cell]);
+        if (!causes.land[cmd.cell]) throw new CommandError('发源地要在陆地上');
+      }
+      const list = h.hearths.filter((x) => (cmd.culture ? x.culture === cmd.culture : x.group === cmd.group && !x.culture));
+      const target = list[cmd.index ?? 0];
+      if (!target) throw new CommandError(cmd.culture ? `没有文化“${cmd.culture}”的发源地` : `没有文化组“${cmd.group}”的发源地`);
+      if (cmd.cell === null) delete target.locked;
+      else {
+        target.cell = cmd.cell;
+        target.locked = true;
+      }
+      const d = ctx.ensureDerived();
+      regenerateHuman(world, d, {}, { keepManual: cmd.keepManual ?? true });
+      const name = cmd.culture ? (cultureById(small, cmd.culture)?.name ?? cmd.culture) : (cultureGroupById(small, cmd.group!)?.name ?? cmd.group!);
+      return { dirty: Dirty.Human, summary: cmd.cell === null ? `发源地“${name}”恢复自动` : `挪动发源地“${name}”` };
+    }
+    case 'remove_human': {
+      if (!small.human) throw new CommandError('还没有生成人文');
+      clearPop(world);
+      return { dirty: Dirty.Human, summary: '删除人文' };
+    }
+    case 'set_pop_total': {
+      if (!small.human) throw new CommandError('还没有生成人文');
+      scalePop(world, cmd.total);
+      return { dirty: Dirty.Human, summary: `总人口 · ${popText(cmd.total)}` };
+    }
+    case 'paint_pop':
+    case 'paint_culture': {
+      checkCells(cmd.cells);
+      if (!small.human) throw new CommandError('还没有生成人文');
+      if (cmd.t && cmd.t.length !== cmd.cells.length) throw new CommandError('t 的长度必须与 cells 相同');
+      let brush: PopBrush;
+      let what: string;
+      if (cmd.op === 'paint_culture') {
+        const c = cultureById(small, cmd.culture);
+        if (!c) throw new CommandError(`世界里没有文化 "${cmd.culture}"`);
+        brush = { mode: 'culture', culture: cmd.culture, amount: cmd.amount, ...(cmd.typical ? { typical: true } : {}) };
+        what = `文化“${c.name}”`;
+      } else if (cmd.mode === 'count') {
+        if (cmd.factor === undefined) throw new CommandError('改人数要写 factor');
+        brush = { mode: 'count', factor: cmd.factor };
+        what = `人数 ×${cmd.factor >= 1 ? cmd.factor.toFixed(2).replace(/\.?0+$/, '') : cmd.factor.toFixed(2)}`;
+      } else if (cmd.mode === 'share') {
+        if (!cmd.group || cmd.amount === undefined) throw new CommandError('改成分要写 group 与 amount');
+        checkTuple(small, cmd.group);
+        brush = { mode: 'share', group: cmd.group, amount: cmd.amount };
+        what = `人口“${groupInfo(world, 0, cmd.group).label}”`;
+      } else {
+        if (!cmd.dimension || !cmd.value || cmd.amount === undefined) throw new CommandError('改一个维度要写 dimension、value 与 amount');
+        const dim = worldDimensions(small).find((x) => x.id === cmd.dimension);
+        if (!dim) throw new CommandError(`这个时代没有维度 "${cmd.dimension}"`);
+        const v = dimensionValues(small, dim.id).find((x) => x.id === cmd.value);
+        if (!v) throw new CommandError(`${dim.label}没有 "${cmd.value}"`);
+        brush = { mode: 'value', dimension: dim.id, value: v.id, amount: cmd.amount };
+        what = `${dim.label}改为“${v.name}”`;
+      }
+      const d = ctx.ensureDerived();
+      const k = paintPop(world, d, cmd.cells, cmd.t, brush);
+      return { dirty: Dirty.Human, summary: `${what} · ${k} 格` };
+    }
+    case 'set_cell_pop': {
+      checkCells([cmd.cell]);
+      if (!small.human) throw new CommandError('还没有生成人文');
+      if (!causes.land[cmd.cell]) throw new CommandError('海上没有人口');
+      for (const g of cmd.groups ?? []) checkTuple(small, g);
+      setCellPop(world, cmd.cell, cmd.total, cmd.groups);
+      return { dirty: Dirty.Human, summary: cmd.total !== undefined && !cmd.groups ? `人口改为 ${popText(cmd.total)}` : '修改人口' };
     }
     case 'set_province': {
       const meta = small.provinces[cmd.id];

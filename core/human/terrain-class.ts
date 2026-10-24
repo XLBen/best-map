@@ -36,6 +36,8 @@ export const terrainClassSchema = z.object({
   peaks: z.boolean().optional(),
   // 通行难度（平原为 1；以后的道路按它）
   movement: z.number().min(0.1).max(20).optional(),
+  // 宜居度的倍数（第二十二轮，见 habitability.ts）：省略时内置的按 CLASS_HABITABILITY，别的为 1
+  habitability: z.number().min(0).max(3).optional(),
 });
 export type TerrainClass = z.output<typeof terrainClassSchema>;
 

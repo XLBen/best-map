@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { type FieldDesc, contentItems, registerKind } from '../content/registry';
 import { sameItem } from '../content/refs';
 import { CATEGORY_LABEL, FANTASY_RESOURCES, GENERAL_RESOURCES, RESOURCE_CATEGORIES, RESOURCE_NONE, type Resource, isGeneralResource, resourceSchema, worldResources } from './resources';
+import { registerPopKinds } from './pop-kinds';
 import { RESOURCE_RULE_FIELDS, RULE_FIELDS } from './rules';
 import { BUILTIN_CLASSES, type TerrainClass, checkTerrainClass, isBuiltinClass, remapCodes, terrainClassItems, terrainClassSchema, worldTerrainClasses } from './terrain-class';
 
@@ -31,6 +32,7 @@ const CLASS_FIELDS: readonly FieldDesc[] = [
   { key: 'ore', label: '写有没有矿', type: 'bool', optional: true },
   { key: 'peaks', label: '有山峰', type: 'bool', optional: true, hint: '比四周都高的格算山峰' },
   { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.1, hint: '平原为 1' },
+  { key: 'habitability', label: '宜居度倍数', type: 'number', optional: true, min: 0, max: 3, step: 0.05, hint: '平原为 1' },
 ];
 
 const RESOURCE_FIELDS: readonly FieldDesc[] = [
@@ -108,4 +110,6 @@ export function registerHumanKinds(): void {
       exportItem: (r) => structuredClone(r),
     },
   });
+  // 第二十二轮：时代、人口维度的取值、文化组、文化
+  registerPopKinds();
 }

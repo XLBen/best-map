@@ -1,0 +1,16 @@
+{
+  "group": {
+    "id": "eastern",
+    "name": "东方",
+    "color": "#c8a23a",
+    "description": "温暖湿润的大河平原上的稻作民族。",
+    "prefs": [
+      { "tempMin": 8, "factor": 2 },
+      { "river": true, "factor": 1.5 }
+    ]
+  },
+  "cultures": [
+    { "id": "huaxia", "group": "eastern", "name": "华夏", "color": "#d4372c", "nameStyle": "zh-default", "weight": 2, "tendencies": { "religion": [["sky-way", 3], ["ancestor-rites", 2]] } },
+    { "id": "yamato", "group": "eastern", "name": "大和", "color": "#e98aa5", "nameStyle": "ja-kanji", "tendencies": { "religion": [["ancestor-rites", 3], ["sky-way", 1]] }, "prefs": [{ "coast": true, "factor": 1.5 }] }
+  ]
+}

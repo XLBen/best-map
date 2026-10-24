@@ -631,7 +631,7 @@ function provinceTags(world: World, cells: number[], kind: ProvinceKind): string
 // 按这个省的地名风格起名（第二十轮：风格见 name-styles.ts 的 styleFor；不是世界默认的风格时种子加上风格 id）
 function provinceName(world: World, id: number, cells: number[], kind: ProvinceKind, taken: Set<string>): GenName {
   const seed = world.small.terrain.gen?.seed ?? world.settings.seed;
-  const rs = styleFor(world, { province: id });
+  const rs = styleFor(world, { province: id, cells });
   const tags = provinceTags(world, cells, kind);
   // 湖省用湖的命名模板
   const type = kind === 'lake' && hasType(rs.style, 'lake') ? 'lake' : 'province';

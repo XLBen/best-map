@@ -5,7 +5,7 @@ import type { Causes, Conflict, Derived, SmallState, World } from './world';
 // 补上它们，得到将来的世界画在地图上；没变的数组沿用当前世界的同一个对象，地图的着色缓存照样命中）。
 // 份额、适宜度（格数 × 生态种数）只带变了的那几格；生态的种数变了时整份放进 derived
 
-type Typed = Float32Array | Int32Array | Uint8Array | Int16Array;
+type Typed = Float32Array | Int32Array | Uint8Array | Uint16Array | Int16Array;
 
 // 稀疏的行：idx 是变了的格，rows 依次是它们的值（每格“生态种数”个）
 export interface SparseRows {

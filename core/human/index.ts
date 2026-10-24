@@ -3,6 +3,8 @@ import { findPeaks, peakList } from './peaks';
 import { distributeResources, effectiveResources, worldResources } from './resources';
 import { cellInputs } from './rules';
 import { classifyTerrain, effectiveClasses, worldTerrainClasses } from './terrain-class';
+import { computeHabitability } from './habitability';
+import { computePopLayers } from './layers';
 
 // 人文的几层（第二十一轮）：只读自然的推导，不反向影响自然的部分。
 // 引擎在自然的推导（植被之后、地物识别之后）算好后算一遍（natural）；只画地形类别、资源、改它们的内容时（Dirty.Human）
@@ -50,6 +52,9 @@ export function computeHuman(world: World, d: Derived, natural = true): void {
   d.resourceAuto = rAuto;
   d.resource = effectiveResources(rAuto, world.causes.resource, x.dry, resources.length);
   d.peak = findPeaks(world.mesh, d.elevation, x.dry, cls, classes);
+  // 第二十二轮：宜居度（自然、地形类别变了才重算）与人口的几层（按原因从头算）
+  d.habitability = computeHabitability(world, d, x, cls, classes, natural);
+  computePopLayers(world, d);
 }
 
 // 每个省份里格数最多的地形类别、资源（没有资源的格不算；一格资源都没有时为 null）。导出的 provinces_summary.csv 用
@@ -115,3 +120,46 @@ export {
 } from './resources';
 export { BUILTIN_CLASSES, type TerrainClass, classAt, classCode, terrainClassSchema, worldTerrainClasses } from './terrain-class';
 export { type CellRule, cellRuleSchema } from './rules';
+// 第二十二轮：时代、文化、人口
+export {
+  type Culture,
+  type CultureGroup,
+  type Dimension,
+  type Era,
+  type PopValue,
+  type Preference,
+  cultureById,
+  cultureGroupById,
+  cultureGroupSchema,
+  cultureSchema,
+  dimensionValues,
+  eraSchema,
+  popValueById,
+  popValueSchema,
+  preferenceSchema,
+  weightedList,
+  worldCultureGroups,
+  worldCultures,
+  worldDimensions,
+  worldEra,
+  worldEras,
+  worldPopValues,
+} from './era';
+export { BIOME_HABITABILITY, CLASS_HABITABILITY, biomeHabitability, classHabitability } from './habitability';
+export { type HumanParams, defaultTotalPop, dryLandKm2, ensureHumanContent, generateHuman, humanStages, regenerateHuman, registerHumanStage, unregisterHumanStage } from './generate';
+export { type GenContext, type GenGroup, type HumanStage } from './context';
+export { SLOTS, type Share, readComp } from './groups';
+export { type PopBrush, type PopFix, typicalTuple } from './population';
+export {
+  type CellPopulation,
+  type GroupInfo,
+  type LegendEntry,
+  cellPopulation,
+  groupInfo,
+  humanColors,
+  humanLayers,
+  humanLegend,
+  populationSummary,
+  valueLayer,
+} from './layers';
+export { majorityCulture } from './culture-style';

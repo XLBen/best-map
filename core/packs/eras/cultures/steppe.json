@@ -1,0 +1,17 @@
+{
+  "group": {
+    "id": "steppe",
+    "name": "草原与荒漠",
+    "color": "#b5763a",
+    "description": "草原上的牧民与荒漠绿洲里的商旅民族。",
+    "prefs": [
+      { "classes": ["steppe", "grasslands"], "factor": 3 },
+      { "classes": ["desert"], "factor": 1.8 },
+      { "classes": ["forest", "jungle", "marsh"], "factor": 0.5 }
+    ]
+  },
+  "cultures": [
+    { "id": "turkic", "group": "steppe", "name": "突厥", "color": "#3c9a6a", "nameStyle": "turkic", "tendencies": { "religion": [["sky-way", 2], ["moon-faith", 2]] } },
+    { "id": "arab", "group": "steppe", "name": "阿拉伯", "color": "#8c5a2b", "nameStyle": "arabic", "tendencies": { "religion": [["moon-faith", 4], ["sun-faith", 1]] }, "prefs": [{ "classes": ["desert"], "factor": 1.6 }, { "river": true, "factor": 1.5 }] }
+  ]
+}

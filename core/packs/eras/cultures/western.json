@@ -1,0 +1,17 @@
+{
+  "group": {
+    "id": "western",
+    "name": "西方",
+    "color": "#3f6fb5",
+    "description": "温带的平原与森林里的农耕民族。",
+    "prefs": [
+      { "tempMin": -2, "tempMax": 16, "factor": 2 },
+      { "classes": ["plains", "woods", "forest"], "factor": 1.4 }
+    ]
+  },
+  "cultures": [
+    { "id": "anglic", "group": "western", "name": "盎格鲁", "color": "#8a55b0", "nameStyle": "en-english", "tendencies": { "religion": [["sun-faith", 3], ["moon-faith", 1]] }, "prefs": [{ "coast": true, "factor": 1.3 }] },
+    { "id": "frankish", "group": "western", "name": "法兰克", "color": "#2e64c8", "nameStyle": "fr-french", "tendencies": { "religion": [["sun-faith", 4], ["moon-faith", 1]] } },
+    { "id": "teutonic", "group": "western", "name": "条顿", "color": "#7a7f8c", "nameStyle": "west-germanic", "tendencies": { "religion": [["sun-faith", 2], ["moon-faith", 2]] } }
+  ]
+}

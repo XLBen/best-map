@@ -147,6 +147,9 @@ export const speciesSchema = z.object({
   natural: z.boolean().optional(),
   // 长在哪里：只在一个岛上（这一格所在的那块陆地，每次重算时重新认，岛变了跟着变）或圈的范围里。省略为到处
   range: rangeSchema.optional(),
+  // ---------- 第二十二轮 ----------
+  // 宜居度（0–1）：这种生态里住人有多合适。省略时按生态的地形与气候估一个（见 human/habitability.ts 的 biomeHabitability）
+  habitability: z.number().min(0).max(1).optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;

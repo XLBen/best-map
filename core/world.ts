@@ -243,6 +243,42 @@ export interface Causes {
   terrainClass?: Uint8Array;
   // 画的资源（第二十一轮，见 human/resources.ts）：0 自动，255 明确没有，否则是资源的编号（下标 + 1）。同上
   resource?: Uint8Array;
+  // ---------- 人口（第二十二轮，见 human/population.ts）：生成人文时才建，撤销到那之前时去掉 ----------
+  // 每格的人数
+  popTotal?: Float32Array;
+  // 每格人数最多的 4 个群体（n × 4，第 i 格是 [4i, 4i + 4)，按占比从大到小）：群体的编号（small.popGroups 的键），0 是空位
+  popGroup?: Uint16Array;
+  // 与 popGroup 对齐的占比（/255）；4 个加起来不超过 255，剩下的是“其他”
+  popShare?: Uint8Array;
+  // 1 是用笔刷、档案改过的格（修补、保留手改的重新生成不动它）。第一次改时才建
+  popManual?: Uint8Array;
+}
+
+// 人文的生成（第二十二轮，见 human/generate.ts）：时代、种子、文化组与各占多少、总人口、发源地
+export interface HumanHearth {
+  // 文化组的发源地（culture 省略）或组里某个文化的发源地
+  group: string;
+  culture?: string;
+  cell: number;
+  // 拖过的：重新生成时留在这里
+  locked?: true;
+}
+export interface HumanState {
+  era: string;
+  seed: number;
+  // 文化组与权重；cultures 是只用组里的这几个文化（省略时用世界里这一组的全部）
+  groups: { id: string; weight: number; cultures?: string[] }[];
+  totalPop: number;
+  // 每一份“生成权重”（km² × 宜居度^sparsity）合多少人：新长出的陆地按它补上人口（见 population.ts 的 fillCell）
+  perWeight: number;
+  hearths: HumanHearth[];
+  // 下一个人口群体的编号
+  nextGroup: number;
+}
+// 一个人口群体：文化 + 时代每一维的取值（没有这一维的取值时不写）
+export interface PopTuple {
+  culture: string;
+  values: Record<string, string>;
 }
 
 // 一格的档案里自己写的（第二十一轮，见 human/cells.ts）：小地名（不上地图）、原文、换过几次（盐）、备注
@@ -299,6 +335,10 @@ export interface SmallState {
   nameStyle?: string;
   // 格的档案（第二十一轮）：格的编号 → 自己写的小地名、备注。第一次写之前没有这一项
   cells?: Record<string, CellMeta>;
+  // 人文（第二十二轮）：生成过才有
+  human?: HumanState;
+  // 人口群体：编号 → 群体（causes.popGroup 里的编号）。生成过才有
+  popGroups?: Record<string, PopTuple>;
 }
 
 export interface Conflict {
@@ -391,10 +431,23 @@ export interface Derived {
   resource: Uint8Array;
   // 山峰：1 是（见 human/peaks.ts）
   peak: Uint8Array;
+  // 宜居度（第二十二轮，见 human/habitability.ts）：0–1，水面为 0
+  habitability: Float32Array;
+  // ---------- 人口的几层（第二十二轮，见 human/layers.ts）：只在生成过人文时才有 ----------
+  // 人口密度（人 / km²）
+  popDensity?: Float32Array;
+  // 人口里占多数的文化、文化组（世界里的编号：worldCultures / worldCultureGroups 的下标 + 1；0 没有人）
+  popCulture?: Uint16Array;
+  popCultureGroup?: Uint16Array;
+  // 每一维占多数的取值：按维度分段（第 k 维是 [k·n, (k+1)·n)，维度按时代的先后），编号是 dimensionValues 的下标 + 1，0 没有
+  popValue?: Uint16Array;
+  // 最近的文化（没有人的格、海也有：离它最近的有人的格占多数的文化）。地名跟着它
+  cultureNear?: Uint16Array;
 }
 
-// 人文的推导数组（第二十一轮）：不进金标准的哈希（tools/hash.ts 的 digestWorld），另有自己的测试
-export const HUMAN_DERIVED = ['terrainClassAuto', 'terrainClass', 'resourceAuto', 'resource', 'peak'] as const;
+// 人文的推导数组（第二十一轮）：不进金标准的哈希（tools/hash.ts 的 digestWorld），另有自己的测试。第二十二轮加了宜居度与人口的几层
+export const HUMAN_DERIVED = ['terrainClassAuto', 'terrainClass', 'resourceAuto', 'resource', 'peak', 'habitability'] as const;
+export const POP_DERIVED = ['popDensity', 'popCulture', 'popCultureGroup', 'popValue', 'cultureNear'] as const;
 
 export interface World {
   settings: Settings;
@@ -500,6 +553,7 @@ export function emptyDerived(n: number, speciesCount: number): Derived {
     resourceAuto: new Uint8Array(n),
     resource: new Uint8Array(n),
     peak: new Uint8Array(n),
+    habitability: new Float32Array(n),
   };
 }
 

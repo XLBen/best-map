@@ -135,6 +135,7 @@ registerKind<Species>({
     { key: 'terrain', label: '地形类别', type: 'text', hint: '导出的地形图按它着色' },
     { key: 'competition', label: '竞争力', type: 'number', min: 0, max: 100, step: 0.5 },
     { key: 'natural', label: '自然生成', type: 'bool', optional: true },
+    { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'tolerances', label: '耐受条件', type: 'json' },
     { key: 'visual', label: '样子', type: 'json', optional: true },
     { key: 'effects', label: '对周围的影响', type: 'json', optional: true },

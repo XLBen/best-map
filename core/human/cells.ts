@@ -4,6 +4,7 @@ import { type GenName, hasType, styleFor, styleName } from '../name-styles';
 import { type CellMeta, type World, longitudeOf, worldLatitude } from '../world';
 import { CATEGORY_LABEL, type Resource, type ResourceCategory, resourceAt } from './resources';
 import { classAt, type TerrainClass } from './terrain-class';
+import { type CellPopulation, cellPopulation } from './layers';
 
 // 格的档案（第二十一轮）：悬停卡片展开后看、改的那些——小地名（不上地图，按当地的地名风格起）、地形类别、资源、
 // 是山峰时的“xx峰 · 高度”、备注。自己写的存在 small.cells（命令 set_cell），别的都按推导现算
@@ -79,6 +80,10 @@ export interface CellArchive {
   resourceNone?: string;
   // 是山峰时：名字（同上面的 name）与海拔（m，取整）
   peak?: { name: string; orig?: string; elevation: number; feature?: string };
+  // 宜居度（第二十二轮，0–1；水面为 0）
+  habitability: number;
+  // 人口与成分（第二十二轮）：生成过人文时才有（海上也有，人数为 0）
+  population?: CellPopulation;
 }
 
 // 一格的档案（界面直接用）
@@ -117,7 +122,10 @@ export function cellArchive(world: World, cell: number): CellArchive {
     ...(pid >= 0 && small.provinces[pid] ? { provinceName: small.provinces[pid].name } : {}),
     ...(sp ? { biome: { id: sp.id, name: sp.name || sp.id } } : {}),
     resourceAuto: !over,
+    habitability: d.habitability[cell] ?? 0,
   };
+  const pop = cellPopulation(world, cell);
+  if (pop) out.population = pop;
   if (surface === 'land') {
     if (tc) out.terrainClass = { id: tc.id, name: tc.name, color: tc.color, auto: !causes.terrainClass?.[cell], ...(auto ? { autoId: auto.id } : {}) };
     if (r) out.resource = { id: r.id, name: r.name, color: r.color, ...(r.icon ? { icon: r.icon } : {}), category: r.category, categoryLabel: CATEGORY_LABEL[r.category] };
