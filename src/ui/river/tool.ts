@@ -15,7 +15,7 @@ import { type RiverRef, cancelPreviews, exec, options, previewCommand, redrawTic
 import { barPreview, clearBarPreview } from '../barPreview';
 import { Exact, type ExactView, Settle } from '../exact';
 import { EMPTY, type Pointer, type Preview, type RGB, type ToolHandler, isBusy, pathKm, worldId } from '../tools';
-import { previewRiverBar } from './bar';
+import { previewRiverBar, riverBarView } from './bar';
 import {
   type Course,
   type EditHow,
@@ -429,7 +429,6 @@ export function riverTool(zoom: () => number): ToolHandler {
     riverStyleOverride.value = T && !T.natural ? { id: T.guide.id, hide: true, ...withCells } : cells.size ? { id: '', ...withCells } : null;
   };
 
-
   const coursePreview = (w: World, c: Course, line: GuideLine | null, alt: boolean, fetch: boolean, shapesMemo?: Map<string, Shape[]>): Preview => {
     if (fetch && c.cmd) ex.want(c.key, () => c.cmd, 150);
     const v = ex.view;
@@ -713,7 +712,7 @@ export function riverTool(zoom: () => number): ToolHandler {
       pointer = null;
     },
     // 鼠标离开地图后预览还留着：松手后还在算的那一笔（画河不排队：结果换上之前一直显示松手时的样子，不闪回原样）、底部条上的预览
-    keep: () => !!committing,
+    keep: () => !!committing || barPreview.value?.kind === 'river',
     escape() {
       if (riverAddMode.value) {
         riverAddMode.value = null;
@@ -762,8 +761,10 @@ export function riverTool(zoom: () => number): ToolHandler {
               })();
         return { ...held, shapes: [...held.shapes, ...next.shapes], hint: `排着队：${next.hint ?? ''}` };
       }
-      // 底部条上改这条河的预览（拖大小、悬停“从这里往下去掉”）：由地图画出来（见 ../barPreview.ts），这里只说一句
-      if (barPreview.value?.kind === 'river' && !press) return { ...EMPTY, hint: riverCutPick.value ? '点一下：从这里往下去掉' : null };
+      // 底部条上改这条河的预览（拖大小、悬停“从这里往下去掉”，在 ../barPreview.ts 的通道里）：画河工具自己画
+      // （正在画一笔、松手后还在算时不画它）
+      const bar = barPreview.value;
+      if (bar?.kind === 'river' && !press) return { ...riverBarView(w, bar, zoom()), hint: riverCutPick.value ? '点一下：从这里往下去掉' : null };
       if (!pointer) return EMPTY;
       if (riverCutPick.value) return { layers: [], shapes: [], hint: '在选中的这条河上点一下：从那里往下去掉（Esc 不去掉了）' };
       const pr = press;
@@ -897,4 +898,3 @@ export function unwaterTool(zoom: () => number): ToolHandler {
     },
   };
 }
-

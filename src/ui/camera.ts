@@ -23,7 +23,7 @@ export function minZoom(mesh: Mesh, cw: number, ch: number, proj?: Proj): number
   return 0.75 * Math.min(aw / 2, ah) * 0.98;
 }
 
-// 等面积：整个椭圆东西放得下（这时左右拖动是转动中央经线，见 MapView）
+// 等面积：整个椭圆东西放得下（这时左右拖动是转动中央经线，见 map/input.ts）
 export function shapeFitsWidth(cam: ProjCamera, cw: number): boolean {
   if (!cam.proj) return false;
   const [u0, u1] = planeBounds(cam.proj);

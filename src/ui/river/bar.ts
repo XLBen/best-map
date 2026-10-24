@@ -10,7 +10,7 @@ import { riverTypeOfGuide } from './model';
 import { tempLine } from './query';
 import { courseRiver, exactLayers, ringAt } from './shapes';
 
-// 底部条上改一条河时的预览（拖大小、分水，悬停“从这里往下去掉”）：走底部条预览的通道（barPreview.ts），地图每帧画它
+// 底部条上改一条河时的预览（拖大小、分水，悬停“从这里往下去掉”）：走底部条预览的通道（barPreview.ts），画河工具每帧画它
 
 type RiverBar = Extract<BarPreview, { kind: 'river' }>;
 

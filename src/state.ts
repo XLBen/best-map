@@ -1474,7 +1474,7 @@ export function cancelExport() {
   imageExportCancel.current?.();
 }
 
-// 导出整张地图（.png，MapView 的 exportFullMap）正在画时登记的取消：顶部提示条上的“取消”也停它
+// 导出整张地图（.png，ui/map/export.ts 的 exportFullMap）正在画时登记的取消：顶部提示条上的“取消”也停它
 export const imageExportCancel: { current: (() => void) | null } = { current: null };
 
 export async function getDoc(): Promise<WorldDoc | null> {

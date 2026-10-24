@@ -8,7 +8,7 @@ import type { ProvincePreview } from './tools';
 //   · provinces：对半分开、按新规则重新划分、换一种划分（provincePreview.ts）。base：算的时候的世界，世界换了就不再画；
 //     held：点下去了，结果回来之前一直留着（鼠标移开也不先跳回原样）
 //   · river：改一条河的大小、分水，悬停“从这里往下去掉”（river/bar.ts）：先画估计的样子，停一下换成确切的
-// 地图把它画在当前工具的预览下面；换工具时 setTool 清掉（clearBarPreview）
+// 省份的那一份由地图画在当前工具的预览下面，河的那一份由画河工具画（正在画、正在算时不画）；换工具时 setTool 清掉（clearBarPreview）
 
 export type BarPreview =
   | { kind: 'provinces'; base: World; provinces: ProvincePreview; layers: HighlightLayer[]; held?: boolean }

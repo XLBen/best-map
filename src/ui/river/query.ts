@@ -186,7 +186,6 @@ export function guideAt(w: World, cell: number): Guide | undefined {
   return undefined;
 }
 
-
 // 自然的河的主干（选中、悬停、固定时用），按世界、格缓存
 const stemCache = new WeakMap<World, Map<number, ReturnType<typeof riverStem>>>();
 export function stemOf(w: World, cell: number) {
