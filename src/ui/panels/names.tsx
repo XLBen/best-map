@@ -2,17 +2,18 @@ import { Spline } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, defaultFeatureLabel, featureLabel, overrideKeyOf } from '../../../core/features';
-import { DEFAULT_PACK } from '../../../core/names';
-import { readPack } from '../../../core/packs';
-import { fileLabel, openPackImport } from '../packs/store';
+import { DEFAULT_STYLE, worldStyleId } from '../../../core/name-styles';
+import { openRepo } from '../packs/store';
+import { defaultStyleName, featureStyleCommand, missingCount, restyleOffer, styleChoices, styleNameOf } from '../packs/styles';
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
-import { download, exec, focusName, labelGroups, selectedFeature, showToast, world } from '../../state';
+import { exec, focusName, labelGroups, openPanel, selectedFeature, world } from '../../state';
+import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import { focusOn } from '../camera';
 import { selectRiver } from '../riverCourse';
 import { Seg } from '../common';
 import { SelectionActions } from '../components/SelectionActions';
 
-// 地名：底部条上的“选中地名”编辑，工具列表下方的文字包与全部地名
+// 地名：底部条上的“选中地名”编辑（名字、风格），“地名 ⋯”里的地名风格与全部地名
 
 // 名字框：回车或点别处提交，Esc 放弃这次输入（不在失去焦点时提交）。
 // 刚圈好、刚放下的地名会让它获得焦点并选中文字，直接打字就是改名
@@ -153,6 +154,7 @@ function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
         />
       )}
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v })} />
+      <StyleButton w={w} f={f} />
       <SelectionActions
         reroll={() => update({ reroll: true })}
         unlock={f.custom ? () => update({ name: '' }) : undefined}
@@ -179,6 +181,7 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
     <>
       <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => update({ label: v || null }, v ? `类型改叫“${v}”` : '类型恢复自动', '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
+      <StyleButton w={w} f={f} />
       <SelectionActions
         reroll={() => update({ name: '', salt: salt + 1 }, '换名字')}
         unlock={f.custom ? () => update({ name: '', salt }, '名字恢复自动') : undefined}
@@ -215,6 +218,7 @@ export function NamesBar() {
     <>
       <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => void exec(labelCommand(w, f, v), '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={rename} />
+      <StyleButton w={w} f={f} />
       <SelectionActions
         reroll={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')}
         unlock={f.custom ? () => rename('') : undefined}
@@ -242,43 +246,75 @@ export function hideCommand(w: World, f: GeoFeature, hidden: boolean) {
   return { op: 'rename_feature' as const, key: overrideKeyOf(w, f), hidden };
 }
 
-function WordPackBox({ w }: { w: World }) {
-  const pack = w.small.wordPack ?? DEFAULT_PACK;
-  // 导入：和资源包走同一条路（只解析、检查）。文字包文件照旧直接换用；选的是资源包时打开资源包的导入
-  const importPack = (file: File) => {
-    void file.text().then(async (text) => {
-      const read = readPack(text, fileLabel(file.name));
-      if (!read.ok) {
-        showToast(`文字包无法读取：${read.errors.slice(0, 3).join('；')}`, true);
-        return;
-      }
-      // 模板式的单个文字包照旧换掉内置中文；音译式的风格走资源包的导入（启用后再选）
-      const st = read.legacy === 'wordPack' ? read.pack.nameStyles?.[0] : undefined;
-      const wp = st?.kind === 'template' ? st : undefined;
-      if (wp) await exec({ op: 'set_word_pack', pack: wp }, '正在起名…');
-      else openPackImport(read, file.name);
-    });
+// 选中的地名用哪种地名风格（第二十轮）：底部条上的“风格：西欧·日耳曼 ▾”，弹出的列表里换
+function StyleButton({ w, f }: { w: World; f: GeoFeature }) {
+  // 地物带着 style 只在不是世界默认时（见 name-styles.ts 的 styleFor）
+  const name = f.style ? styleNameOf(w.small, f.style) : defaultStyleName(w.small);
+  return <TypePickerButton panel="featurestyle" prefix="风格" name={name} auto={!f.style} title="这个地名用哪种地名风格" />;
+}
+
+export function FeatureStyleMenu() {
+  const w = world.value;
+  const f = w?.derived.features.find((x) => x.key === selectedFeature.value);
+  if (!w || !f) return null;
+  const pick = (id: string | null) => {
+    openPanel.value = null;
+    if (id !== (f.style ?? null)) void exec(featureStyleCommand(w, f, id), '正在起名…');
   };
   return (
+    <TypePicker
+      items={[
+        { label: `自动（${defaultStyleName(w.small)}）`, on: !f.style, hint: '按世界默认', onPick: () => pick(null) },
+        ...styleChoices(w.small).map((c) => ({ label: c.name, on: f.style === c.id, onPick: () => pick(c.id) })),
+      ]}
+      onNew={() => {
+        openPanel.value = null;
+        openRepo({ kind: 'nameStyle' });
+      }}
+      newLabel="仓库…"
+      newTitle="启用更多地名风格"
+    />
+  );
+}
+
+// “地名 ⋯”里的地名风格：世界默认用哪种（列出世界里启用的），停用了还在用的提示，按新的默认重起省名
+function StyleBox({ w }: { w: World }) {
+  const def = worldStyleId(w.small);
+  const missing = missingCount(w.small);
+  const restyle = restyleOffer(w);
+  return (
     <section>
-      <h5>文字包：{pack.name}</h5>
-      <p class="hint">名字由文字包按地貌生成，可导出修改再导入</p>
-      <div class="row wrap">
-        <button onClick={() => download(`${pack.id}.json`, JSON.stringify(pack, null, 2), 'application/json')}>导出文字包</button>
-        <label class="file-button">
-          导入文字包…
-          <input
-            type="file"
-            accept="application/json"
-            onChange={(e) => {
-              const f = (e.target as HTMLInputElement).files?.[0];
-              if (f) importPack(f);
-              (e.target as HTMLInputElement).value = '';
-            }}
-          />
-        </label>
-        {w.small.wordPack && <button onClick={() => void exec({ op: 'set_word_pack', pack: null }, '正在起名…')}>恢复自动</button>}
-      </div>
+      <h5>地名风格</h5>
+      <TypePicker
+        items={styleChoices(w.small).map((c) => ({
+          label: c.name,
+          on: c.id === def,
+          onPick: () => {
+            if (c.id !== def) void exec({ op: 'set_name_style', id: c.id === DEFAULT_STYLE ? null : c.id }, '正在起名…');
+          },
+        }))}
+        onNew={() => openRepo({ kind: 'nameStyle' })}
+        newLabel="仓库…"
+        newTitle="启用、编辑地名风格"
+        note="世界默认的风格。选中地名可以单独换。"
+      />
+      {w.small.wordPack && (
+        <div class="row between">
+          <span class="hint">内置中文换成了文字包“{w.small.wordPack.name}”</span>
+          <button class="small" onClick={() => void exec({ op: 'set_word_pack', pack: null }, '正在起名…')}>
+            恢复自动
+          </button>
+        </div>
+      )}
+      {missing > 0 && <p class="hint warn">{missing} 处用的风格已停用，按世界默认起名</p>}
+      {restyle && (
+        <div class="row between">
+          <span class="hint">已有的省名不跟着默认变</span>
+          <button class="small" title="锁定的、自己选了风格的不动" onClick={() => void exec(restyle, '正在起名…')}>
+            重起省名
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -342,8 +378,8 @@ export function NamesExtras() {
   if (!w) return null;
   return (
     <>
+      <StyleBox w={w} />
       <FeatureList w={w} />
-      <WordPackBox w={w} />
     </>
   );
 }

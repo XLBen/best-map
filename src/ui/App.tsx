@@ -21,9 +21,9 @@ import {
 import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
-import { PackApply } from './packs/PackApply';
 import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
+import { RepoPanel } from './packs/RepoPanel';
 import { MorePanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
 import { LayersPanel } from './panels/LayersPanel';
@@ -33,6 +33,7 @@ import { ProvinceMore } from './provincePanel';
 import { LakeTypeMenu, NewLakeTypeMenu } from './panels/lakes';
 import { IslandTypeMenu } from './panels/islandTypes';
 import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
+import { FeatureStyleMenu } from './panels/names';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
@@ -55,6 +56,7 @@ const TYPE_PANELS: Record<TypePanelId, { title: string; menu: ComponentType }> =
   newlaketype: { title: '新湖的种类', menu: NewLakeTypeMenu },
   islandtype: { title: '岛的种类', menu: () => <IslandTypeMenu which="island" /> },
   chaintype: { title: '岛链的种类', menu: () => <IslandTypeMenu which="chain" /> },
+  featurestyle: { title: '地名风格', menu: FeatureStyleMenu },
 };
 
 function PanelHost({ id }: { id: PanelId }) {
@@ -183,7 +185,7 @@ export function App() {
             {w && <RulerButton />}
             <HereCard />
             <Sheet />
-            <PackApply />
+            <RepoPanel />
             {openPanel.value && <PanelHost id={openPanel.value} />}
           </>
         )}

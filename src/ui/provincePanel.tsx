@@ -12,6 +12,9 @@ import { focusOn } from './camera';
 import { Seg } from './common';
 import { MenuItem, SelectionActions } from './components/SelectionActions';
 import { Toggle } from './components/Toggle';
+import { TypePicker } from './components/TypePicker';
+import { openRepo } from './packs/store';
+import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 
 // 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的自动划分规则
@@ -103,12 +106,12 @@ export function ProvinceBar() {
       >
         <SplitSquareHorizontal /> 对半分开
       </button>
-      <SelectionActions more="province" moreTitle="无人区、颜色、定位" deselect={() => (selectedProvince.value = null)} />
+      <SelectionActions more="province" moreTitle="无人区、颜色、风格、定位" deselect={() => (selectedProvince.value = null)} />
     </>
   );
 }
 
-// 选中的省底部条上的“⋯”：无人区、颜色、改回陆地、在地图上看
+// 选中的省底部条上的“⋯”：无人区、颜色、地名风格、改回陆地、在地图上看
 export function ProvinceMore() {
   const w = world.value;
   const id = selectedProvince.value;
@@ -150,10 +153,36 @@ export function ProvinceMore() {
           />
         )}
       </div>
+      <ProvinceStyle w={w} id={id} />
       <SelectionActions menu locate={() => focusOn(cells)}>
         {lakeGone && <MenuItem icon={<Waves />} label="改回陆地" run={() => void exec({ op: 'set_province', id, kind: 'land' }, '正在修改…')} />}
       </SelectionActions>
     </>
+  );
+}
+
+// 这个省用哪种地名风格（第二十轮）：换了就按新风格重新起名；“自动”是世界默认
+function ProvinceStyle({ w, id }: { w: World; id: number }) {
+  const own = w.small.provinces[id]?.style;
+  const pick = (style: string | null) => {
+    if (style !== (own ?? null)) void exec({ op: 'set_province', id, style }, '正在起名…');
+  };
+  return (
+    <section>
+      <h5>地名风格</h5>
+      <TypePicker
+        items={[
+          { label: `自动（${defaultStyleName(w.small)}）`, on: !own, hint: '按世界默认', onPick: () => pick(null) },
+          ...styleChoices(w.small).map((c) => ({ label: c.name, on: own === c.id, onPick: () => pick(c.id) })),
+        ]}
+        onNew={() => {
+          openPanel.value = null;
+          openRepo({ kind: 'nameStyle' });
+        }}
+        newLabel="仓库…"
+        newTitle="启用更多地名风格"
+      />
+    </section>
   );
 }
 
@@ -234,7 +263,29 @@ function RegenButton({ cmd, primary, children }: { cmd: Command; primary?: boole
   );
 }
 
+// 省名：世界默认的地名风格换了以后，已有的省名不变，在这里按新的默认重起
+function NamesBox({ w }: { w: World }) {
+  const cmd = restyleOffer(w);
+  if (!cmd) return null;
+  return (
+    <section>
+      <h5>省名</h5>
+      <div class="row between">
+        <span class="hint">按“{defaultStyleName(w.small)}”，锁定的不动</span>
+        <button class="small" onClick={() => void exec(cmd, '正在起名…')}>
+          重起省名
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function ProvinceExtras() {
   const w = world.value;
-  return w ? <RulesBox w={w} /> : null;
+  return w ? (
+    <>
+      <RulesBox w={w} />
+      <NamesBox w={w} />
+    </>
+  ) : null;
 }

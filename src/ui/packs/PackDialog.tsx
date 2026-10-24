@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import {
-  PACK_MAX_CHARS,
   type PackItem,
   packSection,
   type ResourcePack,
-  defaultPicks,
   endemicCount,
   exportableBiomes,
   packFileName,
   packFromWorld,
+  packItems,
   packProblems,
   packScripts,
   packSummary,
-  readPack,
   sameItem,
 } from '../../../core/packs';
 import { FANTASY_PACK } from '../../../core/packs/fantasy';
@@ -22,24 +20,20 @@ import { type LibraryEntry, inLibrary, installPack, keepSavedForms, library, rem
 import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
 import { askUser, download, knowIsolation, showToast, world } from '../../state';
-import { type DialogView, fileLabel, openPackApply, openPackImport, openPackLibrary, packDialog } from './store';
+import { repoKinds } from './repo';
+import { type DialogView, openRepo, packDialog } from './store';
 
-// 资源包弹窗（世界 → 资源包…）：资源库的列表、导入（解析、检查、信任，不运行任何脚本）、从这个世界导出。
-// “用到这个世界”换成一张不挡地图的卡片（PackApply），在地图上看用了之后的样子
+// 仓库角落“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、导入文件（解析、检查、信任，不运行任何脚本）、
+// 从这个世界存进仓库。用到世界在仓库里一项一项开关（RepoPanel）
 
 const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
-// 读一个文件：资源包或旧的生态、文字包文件（只解析、检查）。大得离谱的文件不读进来
-function importPackFile(file: File) {
-  if (file.size > 3 * PACK_MAX_CHARS) {
-    openPackImport({ ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是资源包`] }, file.name);
-    return;
-  }
-  void file.text().then((text) => {
-    openPackImport(readPack(text, fileLabel(file.name)), file.name);
-  });
+// 在仓库里看这个包：选上它有内容的第一类，只列它的
+function showInRepo(key: string, pack: ResourcePack) {
+  const kind = repoKinds().find((k) => packItems(pack, k.pack.key).length)?.id;
+  openRepo({ entry: key, ...(kind ? { kind } : {}) });
 }
 
 // 颜色小方块（最多几个）
@@ -138,7 +132,6 @@ function Problems({ list }: { list: string[] }) {
 // ---------- 资源库 ----------
 
 function LibraryRow({ e }: { e: LibraryEntry }) {
-  const w = world.value;
   return (
     <div class="item big">
       <Swatches pack={e.pack} />
@@ -158,8 +151,8 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
         )}
       </div>
       <div class="row">
-        <button class="primary" disabled={!w} onClick={() => openPackApply(e.pack, defaultPicks(e.pack))} title={w ? '挑几样加进世界' : '先新建或打开世界'}>
-          用到世界
+        <button class="primary" onClick={() => showInRepo(e.key, e.pack)} title="在仓库里一项一项启用">
+          查看
         </button>
         <button onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
           导出
@@ -187,7 +180,7 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
   );
 }
 
-function LibraryView() {
+function PacksView() {
   const list = library.value;
   const groups: [string, LibraryEntry[]][] = [
     ['内置', list.filter((e) => e.builtin)],
@@ -200,24 +193,7 @@ function LibraryView() {
         <h2>资源包</h2>
         <button onClick={close}>关闭</button>
       </div>
-      <p class="hint">做好的生态、水体类型、岛、星球形态和文字包。用到的内容存在世界里。</p>
-      <div class="row wrap">
-        <label class="file-button">
-          导入资源包…
-          <input
-            type="file"
-            accept=".json,application/json"
-            onChange={(ev) => {
-              const f = (ev.target as HTMLInputElement).files?.[0];
-              if (f) importPackFile(f);
-              (ev.target as HTMLInputElement).value = '';
-            }}
-          />
-        </label>
-        <button disabled={!world.value} onClick={() => (packDialog.value = { view: 'export' })}>
-          从世界导出…
-        </button>
-      </div>
+      <p class="hint">仓库里的内容按包存着。删除包不影响用过它的世界。</p>
       {groups.map(([title, entries]) =>
         entries.length ? (
           <>
@@ -228,7 +204,6 @@ function LibraryView() {
           </>
         ) : null,
       )}
-      {list.length === 1 && <p class="hint">没有别的资源包</p>}
     </>
   );
 }
@@ -259,7 +234,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
           {read.errors.length > 8 && <li>还有 {read.errors.length - 8} 处…</li>}
         </ul>
         <div class="row">
-          <button onClick={openPackLibrary}>回到资源库</button>
+          <button onClick={close}>关闭</button>
         </div>
       </>
     );
@@ -270,13 +245,13 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   if (installed || sameItem(p, FANTASY_PACK)) {
     return (
       <>
-        <h2>{installed ? '已安装' : '已在资源库里'}</h2>
-        <p>{installed ? `“${p.name}”已在资源库里。` : `“${p.name}”是内置的。`}</p>
+        <h2>{installed ? '已安装' : '已在仓库里'}</h2>
+        <p>{installed ? `“${p.name}”已在仓库里。` : `“${p.name}”是内置的。`}</p>
         <div class="row">
-          <button class="primary" disabled={!world.value} onClick={() => openPackApply(p, defaultPicks(p))}>
-            用到世界
+          <button class="primary" onClick={() => showInRepo(installed ?? '', p)} title="在仓库里一项一项启用">
+            查看
           </button>
-          <button onClick={openPackLibrary}>回到资源库</button>
+          <button onClick={close}>关闭</button>
         </div>
       </>
     );
@@ -302,8 +277,8 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         {p.author && <span class="muted">　作者：{p.author}</span>}
       </p>
       {p.description && <p class="hint">{p.description}</p>}
-      {read.legacy === 'biomes' && <p class="hint">旧版的生态文件，装进资源库后可以用</p>}
-      {read.legacy === 'wordPack' && <p class="hint">文字包，装进资源库后可以用</p>}
+      {read.legacy === 'biomes' && <p class="hint">旧版的生态文件，装进仓库后可以用</p>}
+      {read.legacy === 'wordPack' && <p class="hint">地名风格，装进仓库后可以用</p>}
       <PackContents pack={p} />
       <Problems list={problems} />
       {ask && <TrustBlock scripts={scripts} />}
@@ -313,11 +288,11 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
           <ScriptList scripts={scripts} />
         </details>
       )}
-      {replaces && <p class="hint">会替换资源库里的“{replaces.pack.name}”</p>}
+      {replaces && <p class="hint">会替换仓库里的“{replaces.pack.name}”</p>}
       <div class="row between">
         <span />
         <span class="row">
-          <button onClick={openPackLibrary}>取消</button>
+          <button onClick={close}>取消</button>
           <button class="primary" disabled={untrusted === null || working} onClick={() => void install()}>
             {ask ? '信任并安装' : '安装'}
           </button>
@@ -381,17 +356,18 @@ function ExportView() {
   const replaces = inLibrary(preview);
   // 替换的是自己的包时，形态编辑器存在里面的星球形态留着（见 keepSavedForms）
   const stored = keepSavedForms(preview, replaces);
-  const keptForms = (stored.planetForms?.length ?? 0) - (preview.planetForms?.length ?? 0);
+  const countItems = (p: ResourcePack) => repoKinds().reduce((n, k) => n + packItems(p, k.pack.key).length, 0);
+  const keptForms = countItems(stored) - countItems(preview);
   const save = async () => {
     // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
     // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
     const r = await installPack(stored, { mine: true });
-    showToast(r.ok ? `“${preview.name}”已存进资源库` : '存不进浏览器：只在这次打开的页面里');
-    openPackLibrary();
+    showToast(r.ok ? `“${preview.name}”已存进仓库` : '存不进浏览器：只在这次打开的页面里');
+    close();
   };
   return (
     <>
-      <h2>从世界导出</h2>
+      <h2>从世界存进仓库</h2>
       <div class="grid2">
         <label>
           <span class="hint">名字</span>
@@ -435,15 +411,15 @@ function ExportView() {
       {endemic > 0 && <p class="hint">只长在某处的生态不带</p>}
       {replaces && (
         <p class="hint">
-          会替换资源库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `其中 ${keptForms} 个星球形态保留。`}
+          会替换仓库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `编辑器存的 ${keptForms} 项保留。`}
         </p>
       )}
       <div class="row between">
         <span />
         <span class="row">
-          <button onClick={openPackLibrary}>取消</button>
+          <button onClick={close}>取消</button>
           <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
-            存进资源库
+            存进仓库
           </button>
           <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
             导出文件
@@ -460,7 +436,7 @@ export function PackDialog() {
   return (
     <div class="modal-backdrop" onClick={close}>
       <div class="modal packs" onClick={(e) => e.stopPropagation()}>
-        {d.view === 'library' && <LibraryView />}
+        {d.view === 'packs' && <PacksView />}
         {d.view === 'import' && <ImportView {...d} />}
         {d.view === 'export' && <ExportView />}
       </div>

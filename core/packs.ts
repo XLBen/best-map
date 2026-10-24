@@ -110,6 +110,9 @@ const packErrorMap: z.core.$ZodErrorMap = (iss) => {
   if (iss.code === 'too_small' && iss.origin === 'string') return Number(iss.minimum) <= 1 ? '不能是空的' : `太短，至少 ${String(iss.minimum)} 个字`;
   if (iss.code === 'too_big' && iss.origin === 'string') return `太长，最多 ${String(iss.maximum)} 个字`;
   if (iss.code === 'too_big' && iss.origin === 'array') return `太多，最多 ${String(iss.maximum)} 个`;
+  if (iss.code === 'too_small' && iss.origin === 'number') return `${iss.inclusive ? '不能小于' : '要大于'} ${String(iss.minimum)}`;
+  if (iss.code === 'too_big' && iss.origin === 'number') return `${iss.inclusive ? '不能大于' : '要小于'} ${String(iss.maximum)}`;
+  if (iss.code === 'too_small' && iss.origin === 'array') return Number(iss.minimum) <= 1 ? '至少要有一个' : `太少，至少 ${String(iss.minimum)} 个`;
   return zh(iss);
 };
 

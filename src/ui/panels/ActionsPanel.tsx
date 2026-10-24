@@ -8,7 +8,7 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
-import { openPackLibrary } from '../packs/store';
+import { openRepo } from '../packs/store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
 
@@ -94,13 +94,13 @@ export function WorldMenu() {
         class="item"
         onClick={() => {
           close();
-          openPackLibrary();
+          openRepo();
         }}
       >
         <Boxes />
         <span class="grow item-text">
-          <b>资源包…</b>
-          <span class="hint">导入、导出生态、水体类型、星球形态</span>
+          <b>仓库…</b>
+          <span class="hint">地名风格、生态、水体类型、岛、星球形态</span>
         </span>
       </button>
       <ExportSection />

@@ -115,6 +115,8 @@ export function IslandTypeMenu({ which }: { which: Which }) {
 
 // “地形 ⋯”里要展开哪一种（新建之后打开它的设置）
 const editorRequest = signal<string | null>(null);
+// 别处（仓库的“编辑”）要打开某一种的设置
+export const requestIslandTypeEditor = (id: string) => void (editorRequest.value = id);
 
 const NEW_COLORS = ['#3d3a38', '#b5523b', '#6b8f3a', '#c9a24a', '#4d7f9c', '#8a5aa8'];
 export function newIslandType(w: World): IslandType {
@@ -124,7 +126,7 @@ export function newIslandType(w: World): IslandType {
   return { id: `island-type-${k}`, name: `新的岛 ${k}`, shape: 'rugged', height: 'hilly', color: NEW_COLORS[(k - 1) % NEW_COLORS.length], province: 'land' };
 }
 
-async function createAndUse(which: Which | null): Promise<void> {
+export async function createAndUse(which: Which | null): Promise<void> {
   const w = world.value;
   if (!w) return;
   openPanel.value = null;

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
-import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, overlays, prefs, reference, season, setPrefs, setReference, showToast, world } from '../../state';
+import { NAME_MODES } from '../../../core/name-display';
+import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
@@ -216,6 +217,8 @@ export function LayersPanel() {
                     {label}
                   </label>
                 ))}
+                {/* 中文 / 原文 / 两者：只是显示，不改世界；没有原文的名字照旧写中文 */}
+                <Seg value={nameMode.value} options={NAME_MODES.map((m): [typeof m.id, string] => [m.id, m.label])} onChange={setNameMode} titles={{ orig: '没有原文的照旧写中文' }} wide />
               </div>
             )}
           </>

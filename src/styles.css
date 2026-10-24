@@ -661,7 +661,7 @@ button.toggle {
 .here,
 .popover,
 .sheet,
-.pack-apply,
+.repo,
 .notice {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -1078,30 +1078,275 @@ ol.history li.undone {
   z-index: 15;
 }
 
-/* “用到这个世界”的卡片：浮在地图左边，不挡地图 */
-.pack-apply {
+/* 仓库（packs/RepoPanel.tsx）：浮在地图左边，不挡地图。左边按类，右边是这一类的内容（一行一项）或编辑器 */
+.repo {
   position: absolute;
   top: 60px;
   left: 10px;
-  width: min(340px, calc(100% - 20px));
-  max-height: calc(100% - 150px);
+  /* 让出底部的工具条 */
+  bottom: 84px;
+  width: min(680px, calc(100% - 20px));
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
   border-radius: var(--r-lg);
   z-index: 15;
 }
-.pack-apply .sheet-body {
+.repo .popover-head .row {
+  margin: 0;
+  gap: 2px;
+}
+.repo-body {
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) 0 var(--sp-2);
 }
-.pack-apply-foot {
+.repo-kinds {
+  flex: 0 0 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.repo-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-right: var(--sp-1);
+}
+.repo-tools {
+  flex: none;
+}
+.repo-tools input[type='search'] {
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.repo-tools .chip {
+  margin: var(--sp-1) 0;
+  padding-right: 0;
+}
+.repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-2);
+}
+/* 一项：名字、来自哪里、示例；右边是开关、默认、编辑。鼠标停着时地图上先画出开关之后的样子 */
+.repo-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+}
+.repo-card:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+.repo-card .swatch.big {
+  margin-top: 3px;
+}
+.repo-card-text {
+  line-height: 1.4;
+}
+.repo-sample {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-card-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.repo-card-side button.toggle {
+  width: auto;
+  white-space: nowrap;
+}
+.repo-card-side .check {
+  font-size: var(--fs-sm);
+}
+.repo-restyle {
+  flex: none;
+  border-top: 1px solid var(--fill);
+  padding-top: var(--sp-1);
+}
+.repo-foot {
   flex: 0 0 auto;
-  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  padding: var(--sp-1) var(--sp-4) var(--sp-2);
   border-top: 1px solid var(--fill);
 }
-.pack-apply-foot p {
-  margin: 0 0 var(--sp-2);
+.repo-foot p {
+  margin: 0;
+}
+/* 角落的“⋯”：导入文件、从世界存进仓库、资源包 */
+.repo-corner {
+  position: relative;
+}
+.repo-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 200px;
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 2;
+}
+.repo-menu .file-item input {
+  display: none;
+}
+@media (max-width: 560px) {
+  .repo-body {
+    flex-direction: column;
+  }
+  .repo-kinds {
+    flex: none;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .repo-kinds .item {
+    width: auto;
+    flex: none;
+  }
+}
+
+/* 通用编辑器（packs/ContentEditor.tsx）：一行一个字段，复杂的（列表、键 → 值）收在可以展开的一段里 */
+.repo-editor {
+  padding-bottom: var(--sp-3);
+}
+.repo-editor h3 {
+  margin: 0;
+}
+.repo-editor-foot {
+  position: sticky;
+  bottom: 0;
+  padding: var(--sp-2) 0;
+  background: var(--glass-strong);
+}
+.ed-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.ed-field {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--sp-2);
+  align-items: start;
+}
+.ed-label {
+  padding-top: 5px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.ed-control input[type='text'],
+.ed-control input:not([type]),
+.ed-control textarea,
+.ed-control select,
+.ed-key input,
+.ed-row input[type='text'] {
+  width: 100%;
+}
+.ed-control textarea.mono,
+.ed-group textarea.mono {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+.ed-control p,
+.ed-group p {
+  margin: 2px 0 0;
+}
+.ed-group {
+  margin: var(--sp-1) 0;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--fill);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+}
+.ed-group.bad {
+  border-color: var(--warn-bg);
+}
+.ed-group > summary,
+.ed-group > .ed-label {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.ed-list,
+.ed-map,
+.ed-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0;
+}
+.ed-list > button,
+.ed-map > button,
+.ed-rows > button {
+  align-self: flex-start;
+}
+.ed-item {
+  display: flex;
+  gap: var(--sp-1);
+  align-items: flex-start;
+  padding: var(--sp-1);
+  border: 1px solid var(--fill);
+  border-radius: var(--r-sm);
+}
+.ed-item > .ed-fields {
+  flex: 1;
+  min-width: 0;
+}
+.ed-row,
+.ed-key {
+  display: flex;
+  gap: var(--sp-1);
+  align-items: center;
+}
+.ed-row input[type='text'],
+.ed-key input {
+  flex: 1;
+  min-width: 0;
+}
+.ed-weight {
+  width: 64px;
+}
+.ed-map:not(.nested) .ed-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--sp-1);
+}
+.ed-map.nested .ed-entry {
+  padding: var(--sp-1);
+  border: 1px solid var(--fill);
+  border-radius: var(--r-sm);
+}
+.ed-map.nested .ed-value {
+  margin-top: var(--sp-1);
+}
+.ed-samples {
+  margin-top: var(--sp-2);
+}
+.ed-sample {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  padding: 2px 0;
 }
 
 /* 其他浮在地图上的东西 */

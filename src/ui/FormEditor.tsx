@@ -141,7 +141,7 @@ function Editor({ st }: { st: FormEditorState }) {
       if (!f) return;
       // 没改过：它本来就在资源库里，不再存一份一模一样的（列表里一模一样的只列一次，存了也看不到），选上它
       if (st.original && f === st.original && st.originalKey) {
-        showToast(`“${f.name}”已在资源库里`);
+        showToast(`“${f.name}”已在仓库里`);
         closeFormEditor();
         st.onSaved(f, st.originalKey);
         return;
@@ -153,7 +153,7 @@ function Editor({ st }: { st: FormEditorState }) {
         setMsg(r.error);
         return;
       }
-      showToast(r.stored ? `“${f.name}”已存进资源库` : '浏览器无法保存，只在这次打开的页面里');
+      showToast(r.stored ? `“${f.name}”已存进仓库` : '浏览器无法保存，只在这次打开的页面里');
       closeFormEditor();
       st.onSaved(f, `${r.entry.key}:${f.id}`);
     } finally {
@@ -278,7 +278,7 @@ function Editor({ st }: { st: FormEditorState }) {
               取消
             </button>
             <button onClick={() => void save()} disabled={busy || broken} title="存进“我的资源”，新建和调整时可选">
-              存进资源库
+              存进仓库
             </button>
             <button class="primary" onClick={() => void create()} disabled={busy || broken}>
               用它新建

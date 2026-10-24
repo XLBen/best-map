@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BUILTIN_STYLES } from '../../core/packs/names';
 import { continents } from '../../core/testing/fixtures';
-import { featureStyleCommand, missingCount, restyleProvincesCommand, styleChoices } from './packs/styles';
+import { featureStyleCommand, missingCount, restyleOffer, restyleProvincesCommand, styleChoices } from './packs/styles';
 import { stemNaming } from './river/query';
 
 // 第二十轮的界面：地名显示中文 / 原文 / 两者存在偏好里；“地名”“省份”里的风格；锁定一条自然的河时原文一起记下
@@ -37,7 +37,10 @@ describe('第二十轮的界面', () => {
   it('按世界默认重起省名：锁定的、自己选了风格的不动；一步，可以撤销', () => {
     const eng = continents({ provinces: true });
     eng.exec(enable);
+    // 只用内置中文、省名也是中文时不提
+    expect(restyleOffer(eng.world)).toBeNull();
     eng.exec({ op: 'set_name_style', id: 'west-germanic' });
+    expect(restyleOffer(eng.world)).toEqual(restyleProvincesCommand(eng.world));
     const ps = () => eng.world.small.provinces;
     const ids = Object.keys(ps()).map(Number);
     expect(ids.every((id) => !ps()[id].orig)).toBe(true);

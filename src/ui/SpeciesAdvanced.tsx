@@ -371,7 +371,7 @@ function NamesSection({ sp }: { sp: Species }) {
         <span>起名模板（每行一个）</span>
         <textarea value={names} placeholder={'{color}晶林\n{myth}晶丛'} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={save} />
       </label>
-      <p class="hint">{'花括号里的词换成文字包里的词；不写按生态名起名'}</p>
+      <p class="hint">{'花括号里的词换成地名风格的词表里的词；不写按生态名起名'}</p>
       {problem && <div class="script-problem small">{problem}</div>}
     </>
   );

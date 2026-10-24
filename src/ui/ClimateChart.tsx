@@ -27,8 +27,8 @@ import { Toggle } from './components/Toggle';
 import { paintWith, setTool } from './defs/tools';
 import { rangePick } from './tools';
 import { readPack } from '../../core/packs';
-import { FANTASY_PACK } from '../../core/packs/fantasy';
-import { fileLabel, openPackApply, openPackImport } from './packs/store';
+import { FANTASY_PACK_ID } from '../../core/packs/fantasy';
+import { fileLabel, openPackImport, openRepo } from './packs/store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
@@ -565,8 +565,8 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openPackApply(FANTASY_PACK, { biomes: (FANTASY_PACK.biomes ?? []).map((b) => b.id) }, 'biomes')} title="水晶丛林、死亡森林……先预览再添加">
-          添加示例生态…
+        <button onClick={() => openRepo({ kind: 'biome', filter: 'builtin', entry: FANTASY_PACK_ID })} title="水晶丛林、死亡森林……在仓库里启用">
+          示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>
         <label class="file-button">

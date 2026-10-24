@@ -146,6 +146,9 @@ describe('通用编辑器的字段表', () => {
     const e = editorIssues(styleKind, noP).errors[0];
     expect(e.where).toBe('各类地物 · island · 模板 · 第 1 个 · 写法');
     expect(pathLabel(fields, germanic, ['syllables', 'onsets', 0])).toBe('音节 · 声母 · 第 1 个');
+    // 刚换成音译式：空的音节表一处一处说
+    const ph = editorIssues(styleKind, setField(fields, styleKind.blank!() as Record<string, unknown>, 'kind', 'phonetic')).errors;
+    expect(ph.map((x) => `${x.where}：${x.message}`)).toEqual(expect.arrayContaining(['音节 · 声母：至少要有一个', '音节数：至少要有一个']));
     const thin = { ...germanic, translit: { ka: '卡' } };
     expect(editorIssues(styleKind, thin).notes[0]).toMatch(/音译表里没有/);
     expect(editorIssues(styleKind, germanic)).toEqual({ errors: [], notes: [] });

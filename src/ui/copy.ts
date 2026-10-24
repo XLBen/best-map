@@ -6,7 +6,7 @@ export const scriptTrustText = (n: number) => `有 ${n} 段没见过的脚本，
 // 选中的河、湖、地名、省份：名字的几个按钮
 export const NAME_TIPS = {
   reroll: '自动换一个名字',
-  unlock: '按文字包自动起名',
+  unlock: '按地名风格自动起名',
   lock: '地形再变，名字也不变',
 };
 

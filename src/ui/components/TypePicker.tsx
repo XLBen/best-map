@@ -6,8 +6,8 @@ import { type PanelId, openPanel, togglePanel } from '../../state';
 
 export interface TypeChoice {
   label: string;
-  // 色块的颜色
-  swatch: string;
+  // 色块的颜色（没有时不画：地名风格）
+  swatch?: string;
   on: boolean;
   hint?: string;
   // 右边灰色的一小段（画法、形状）
@@ -21,7 +21,7 @@ export function TypePicker({ items, onNew, newLabel, newTitle, note }: { items: 
     <div class="menu">
       {items.map((it) => (
         <button key={it.label} class={`item ${it.on ? 'on' : ''}`} title={it.hint} onClick={it.onPick}>
-          <span class="swatch" style={{ background: it.swatch }} />
+          {it.swatch !== undefined && <span class="swatch" style={{ background: it.swatch }} />}
           <span class="grow">{it.label}</span>
           {it.meta && <span class="hint">{it.meta}</span>}
         </button>
@@ -36,11 +36,11 @@ export function TypePicker({ items, onNew, newLabel, newTitle, note }: { items: 
 }
 
 // 底部条上的按钮：“前缀：色块 名字 ▾”。auto：现在是按规则判断出来的
-export function TypePickerButton({ panel, prefix, swatch, name, auto, title }: { panel: PanelId; prefix: string; swatch: string; name: string; auto?: boolean; title: string }) {
+export function TypePickerButton({ panel, prefix, swatch, name, auto, title }: { panel: PanelId; prefix: string; swatch?: string; name: string; auto?: boolean; title: string }) {
   return (
     <button class={`bar-btn ${openPanel.value === panel ? 'open' : ''}`} data-panel={panel} onClick={() => togglePanel(panel)} title={title}>
       <span class="muted">{prefix}：</span>
-      <span class="swatch" style={{ background: swatch }} /> {name}
+      {swatch !== undefined && <span class="swatch" style={{ background: swatch }} />} {name}
       {auto ? <span class="hint">（自动）</span> : null}
       <ChevronDown />
     </button>

@@ -1,21 +1,55 @@
 import { signal } from '@preact/signals';
-import type { PackPicks, PackRead, ResourcePack } from '../../../core/packs';
+import type { PackRead } from '../../../core/packs';
 import { refreshLibrary } from '../../library';
+import type { Obj } from './fields';
+import type { RepoFilter } from './repo';
 
-// 资源包的界面状态：资源库弹窗（列表、导入、导出）、“用到这个世界”的卡片。
-// 都是点了才开（世界菜单的“资源包…”、生态抽屉的“添加示例生态…”、导入文件），不会自己弹出来
+// 仓库的界面状态：浮在地图左边的仓库（按类列出内容、开关、编辑），和角落“⋯”里打开的弹窗（导入文件、从世界存进仓库、资源包）。
+// 都是点了才开（世界菜单的“仓库…”、生态抽屉的“示例生态…”、地名里的“仓库…”、导入文件），不会自己弹出来
+
+// 编辑器：改的是哪一项（新建、复制的没有 origin；改的是世界里的一项时 worldId 是它在世界里的 id）
+export interface RepoEdit {
+  item: Obj;
+  how: 'new' | 'copy' | 'edit';
+  worldId?: string;
+}
+
+export interface RepoState {
+  // 左边选着的一类（登记表里的 id）
+  kind: string;
+  filter: RepoFilter;
+  query: string;
+  // 只看一个包（资源库里的键：刚导入的包“用到世界”）
+  entry?: string;
+  edit?: RepoEdit;
+}
+
+export const repo = signal<RepoState | null>(null);
+
+export function openRepo(st: Partial<RepoState> = {}) {
+  void refreshLibrary();
+  packDialog.value = null;
+  repo.value = { kind: repo.value?.kind ?? 'nameStyle', filter: 'all', query: '', ...st };
+}
+
+export const closeRepo = () => (repo.value = null);
+
+export function patchRepo(patch: Partial<RepoState>) {
+  if (repo.value) repo.value = { ...repo.value, ...patch };
+}
 
 export type DialogView =
-  | { view: 'library' }
+  // 资源包：资源库里的包（导出、删除）
+  | { view: 'packs' }
   // 导入：读好的文件（只解析、检查过，没运行任何脚本）；installed：已经装进资源库
   | { view: 'import'; read: PackRead; file: string; installed?: string }
   | { view: 'export' };
 
 export const packDialog = signal<DialogView | null>(null);
 
-export function openPackLibrary() {
+export function openPackList() {
   void refreshLibrary();
-  packDialog.value = { view: 'library' };
+  packDialog.value = { view: 'packs' };
 }
 
 // 文件名去掉 .map2pack.json、.json：旧的生态文件没有名字，用它
@@ -25,19 +59,4 @@ export const fileLabel = (name: string) => name.replace(/(\.map2pack)?\.json$/i,
 export function openPackImport(read: PackRead, file: string) {
   void refreshLibrary();
   packDialog.value = { view: 'import', read, file };
-}
-
-// 用到这个世界：一张不挡地图的卡片（地图上画出用了之后的样子）。
-// only：只列生态（生态抽屉里的“添加示例生态…”）
-export interface ApplyState {
-  pack: ResourcePack;
-  picks: PackPicks;
-  only?: 'biomes';
-}
-
-export const packApply = signal<ApplyState | null>(null);
-
-export function openPackApply(pack: ResourcePack, picks: PackPicks, only?: 'biomes') {
-  packDialog.value = null;
-  packApply.value = { pack, picks, ...(only ? { only } : {}) };
 }

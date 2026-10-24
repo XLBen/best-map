@@ -37,3 +37,10 @@ export function restyleProvincesCommand(w: World): Command | null {
 
 // 用着已停用的风格的地方有几处（世界默认、地物、省份）：起名时按世界默认
 export const missingCount = (small: World['small']): number => missingStyles(small).length;
+
+// 要不要提“重起省名”：世界默认不是内置中文，或者有省名带着原文（按别的风格起的）时
+export function restyleOffer(w: World): Command | null {
+  const ps = Object.values(w.small.provinces).filter((p) => !p.locked && !p.style);
+  if (worldStyleId(w.small) === DEFAULT_STYLE && !ps.some((p) => p.orig)) return null;
+  return restyleProvincesCommand(w);
+}

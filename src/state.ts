@@ -132,7 +132,7 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 // river / province：选中的河、省底部条上的“⋯”（不常用的按钮收在里面）
 // 选“哪一种”（同一个 TypePicker，见 App.tsx 的 TYPE_PANELS）：rivertype / laketype 选中的这条河、这个湖，
 // newrivertype / newlaketype 新画的河、新放的湖，islandtype / chaintype 放岛、画岛链用哪一种岛
-export type TypePanelId = 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | 'islandtype' | 'chaintype';
+export type TypePanelId = 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | 'islandtype' | 'chaintype' | 'featurestyle';
 export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
@@ -1214,7 +1214,7 @@ function waterTypeOfIssue(issue: ScriptIssue): { kind: 'river' | 'lake'; id: str
   return river ? { kind: 'river', id: river.id } : undefined;
 }
 // 打开“水系 ⋯”里这一种的编辑
-function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
+export function openWaterTypeEditor(kind: 'river' | 'lake', id: string) {
   if (tool.value !== 'river' && tool.value !== 'lake' && tool.value !== 'unwater') switchTool(kind === 'lake' ? 'lake' : 'river');
   waterTypeEditorRequest.value = { kind, id };
   openPanel.value = 'cat:water';
