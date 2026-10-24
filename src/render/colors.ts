@@ -350,18 +350,30 @@ const ISLAND_TINT = 0.8;
 //   · 陆地格（裂缝）：往外最近的水面格的颜色；附近没有时是浅海的颜色。
 // 只给破碎度 > 0 的格（别处与以前逐位相同）；alpha 与平滑层的一样（陆地是沙质：碎岛低，边上一圈沙滩）
 const FRAG_RINGS = 6;
+// 往外找的时候记“这一格这一次看过了”：每次找一个新的编号，数组按格数留一份（幽灵海岸每动一下都要找几格）
+let fragMark = new Int32Array(0);
+let fragStamp = 0;
 export function fragColors(world: World, mode: ViewMode, season: Season, smooth: Uint8Array, coast: Float32Array, frag: Float32Array, only?: Iterable<number>): Uint8Array {
   const { mesh, derived: d } = world;
   const n = mesh.n;
   const out = new Uint8Array(n * 4);
   const terrainLike = terrainLikeMode(mode);
   const depthColors = terrainLike || mode === 'elevation' || mode === 'uplift';
-  const mark = new Int32Array(n).fill(-1);
+  if (fragMark.length !== n) {
+    fragMark = new Int32Array(n);
+    fragStamp = 0;
+  }
+  const mark = fragMark;
   let ring: number[] = [];
   let next: number[] = [];
   const nearest = (i: number, wantLand: boolean): number => {
+    if (++fragStamp > 0x7ffffff0) {
+      mark.fill(0);
+      fragStamp = 1;
+    }
+    const stamp = fragStamp;
     ring = [i];
-    mark[i] = i;
+    mark[i] = stamp;
     for (let r = 0; r < FRAG_RINGS; r++) {
       next = [];
       let best = -1;
@@ -369,8 +381,8 @@ export function fragColors(world: World, mode: ViewMode, season: Season, smooth:
       for (const c of ring) {
         for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
           const j = mesh.adj[e];
-          if (mark[j] === i) continue;
-          mark[j] = i;
+          if (mark[j] === stamp) continue;
+          mark[j] = stamp;
           next.push(j);
           const isLand = coast[j] > 0;
           if (isLand !== wantLand) continue;

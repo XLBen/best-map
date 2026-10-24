@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { cellLayers, editGhost, ghostLayers } from '../src/render/colors';
 import { digestWorld } from '../tools/hash';
+import type { Command } from './commands';
 import { type DisplayCell, displayCellAt, displayCoast } from './display';
 import { Engine } from './engine';
 import { ISLET_FRAG } from './features';
 import { brushCells } from './select';
 import { rasterizeWorld } from './subcell';
-import { chainFragAt, chainIslands, crackAt, crackBlockSize, crackHalfWidth, crackSeed, fragmentStroke } from './terrain';
+import { chainFragAt, chainIslands, crackAt, crackBlockSize, crackHalfWidth, crackSeed, fragmentStroke, islandStamp } from './terrain';
+import { previewWorldOf } from './preview-world';
 import { continents } from './testing/fixtures';
 import type { World } from './world';
 
@@ -473,5 +476,61 @@ describe('屏幕（CPU 版本）与导出逐像素一致', () => {
     }
     expect(bad).toEqual([]);
     expect(fragged).toBeGreaterThan(100);
+  });
+});
+
+describe('预览与颜色', () => {
+  it('确切预览就是结果：打碎（两种）、放碎岛、掺碎岛的岛链，预览的世界与执行后的世界逐值相同', () => {
+    const eng = continents();
+    const w = eng.world;
+    const c = coastCell(w, 0.9, 0.55);
+    const rKm = cellKm(w) * 6;
+    const b = brushCells(w, w.mesh.x[c], w.mesh.y[c], rKm);
+    const s0 = openSea(w, 1.0, 0.45, 6);
+    const sp = w.mesh.spacing;
+    const cmds: Command[] = [
+      { op: 'fragment', cells: b.cells, t: b.t, strength: 0.6, mode: 'blocks', size: rKm },
+      { op: 'fragment', cells: b.cells, t: b.t, strength: 0.6, mode: 'coast', size: rKm },
+      { op: 'add_island', island: { x: w.mesh.x[s0], y: w.mesh.y[s0], kind: 'shards', size: cellKm(w) * 1.5, variant: 4 } },
+      { op: 'add_island_chain', chain: { points: [[w.mesh.x[s0] - 4 * sp, w.mesh.y[s0]], [w.mesh.x[s0] + 4 * sp, w.mesh.y[s0]]], kind: 'continental', size: cellKm(w), fragRatio: 0.5 } },
+    ];
+    for (const cmd of cmds) {
+      const { patch } = eng.previewWorld(cmd);
+      const shown = previewWorldOf(w, structuredClone(patch));
+      const copy = eng.clone();
+      copy.exec(cmd);
+      expect(digestWorld(shown), cmd.op).toEqual(digestWorld(copy.world));
+    }
+  });
+
+  it('碎岛画成陆地的颜色（不再是海色）；放碎岛时的幽灵（松手前）与结果的破碎度、颜色相同', () => {
+    const eng = continents();
+    const w = eng.world;
+    const s0 = openSea(w, 1.0, 0.45, 6);
+    const spec = { x: w.mesh.x[s0], y: w.mesh.y[s0], kind: 'shards', size: cellKm(w) * 2, variant: 0 };
+    const o = { mode: 'terrain' as const, season: 'annual' as const, focusSpecies: null, borders: false };
+    const base = cellLayers(w, o);
+    const st = islandStamp(w, spec);
+    const ghost = ghostLayers(w, base, editGhost(w, base, { cells: [], delta: [], frag: st.frag }), 'terrain');
+    eng.exec({ op: 'add_island', island: spec });
+    const after = cellLayers(eng.world, o);
+    const { mesh } = w;
+    let lonely = 0;
+    for (let k = 0; k < st.frag!.cells.length; k++) {
+      const i = st.frag!.cells[k];
+      expect(ghost.frag![i]).toBeCloseTo(st.frag!.value[k] / 255, 6);
+      expect(after.frag![i]).toBeCloseTo(st.frag!.value[k] / 255, 6);
+      let landNb = false;
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (w.causes.land[mesh.adj[e]]) landNb = true;
+      if (landNb) continue;
+      lonely++;
+      const rgb = [0, 1, 2].map((c) => after.other[i * 4 + c]);
+      const sea = [0, 1, 2].map((c) => after.smooth[i * 4 + c]);
+      // 陆地的颜色：绿 / 黄 / 白，不是海的深蓝（海色的蓝明显多于红）
+      expect(rgb).not.toEqual(sea);
+      expect(rgb[0]).toBeGreaterThan(rgb[2] * 0.6);
+      for (let c = 0; c < 4; c++) expect(ghost.other[i * 4 + c], `格 ${i}`).toBe(after.other[i * 4 + c]);
+    }
+    expect(lonely).toBeGreaterThan(3);
   });
 });

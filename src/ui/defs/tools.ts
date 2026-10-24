@@ -322,7 +322,7 @@ const defs: ToolDef[] = [
     icon: Hammer,
     name: '打碎',
     short: '打碎',
-    how: '按住涂：把完整的地形打碎。裂成碎块：陆地裂开成一块块，中间是海峡；只打碎海岸：海岸支离破碎，外面一圈碎岛。停一下先看结果',
+    how: '按住涂，把地形打碎；停一下先看结果',
     size: BRUSH,
     amount: { key: 'fragAmount', label: '力度', range: () => [0.1, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => percent(v, 1) },
     bar: () => [
