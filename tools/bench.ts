@@ -58,6 +58,12 @@ function plainBench() {
   const land = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.land[i]).slice(0, 300);
   eng.exec({ op: 'paint', field: 'tempOffset', cells: land, value: 2, mode: 'add' });
   lap('paint temp (climate only)');
+  console.log('  human layers', eng.lastTimings.human?.toFixed(0), 'ms');
+  // 第二十一轮：画地形类别、资源（只重算人文的几层与名字）
+  eng.exec({ op: 'set_cell_class', cells: land.slice(0, 120), class: 'hills' });
+  lap('paint terrain class (human)');
+  eng.exec({ op: 'set_cell_resource', cells: land.slice(0, 120), resource: 'iron' });
+  lap('paint resource (human)');
   const doc = eng.toDoc();
   Engine.fromDoc(doc, eng.world.mesh);
   lap(`fromDoc replay (${doc.commands.length} commands)`);
