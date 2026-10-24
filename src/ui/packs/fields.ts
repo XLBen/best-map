@@ -14,6 +14,18 @@ export function shownFields(fields: readonly FieldDesc[], obj: Obj): FieldDesc[]
   return fields.filter((f) => !f.when || obj[f.when.key] === f.when.is);
 }
 
+// 一组全是可以不写的字段、而且很多（第二十一轮：地形类别、资源的规则有十几个条件）：只列写了的，其余从“添加”里选
+export const SPARSE_MIN = 7;
+export function isSparse(fields: readonly FieldDesc[]): boolean {
+  return fields.length >= SPARSE_MIN && fields.every((f) => f.optional);
+}
+// 写了的、还能加的
+export function sparseSplit(fields: readonly FieldDesc[], obj: Obj): { present: FieldDesc[]; missing: FieldDesc[] } {
+  return { present: fields.filter((f) => obj[f.key] !== undefined), missing: fields.filter((f) => obj[f.key] === undefined) };
+}
+// 从“添加”里加上的字段的初始值：开关是打开的（只写了才有意义）
+export const addedValue = (f: FieldDesc): unknown => (f.type === 'bool' ? true : defaultValue(f));
+
 // 新加一个字段（或列表里新加一项）时的样子
 export function defaultValue(f: FieldDesc): unknown {
   switch (f.type) {

@@ -34,7 +34,7 @@ import { createAndUse as createIslandType, islandSwatch, requestIslandTypeEditor
 import { createAndUse as createWaterType } from '../panels/waterTypes';
 import { FieldsBox } from './ContentEditor';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
-import { REPO_FILTERS, type RepoRow, defaultStyleCommand, enabledCount, filterRows, repoKinds, repoRows, toggleCommand } from './repo';
+import { REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, restoreRowCommand, toggleCommand } from './repo';
 import { isolationNote } from './Scripts';
 import { type RepoEdit, closeRepo, fileLabel, openPackImport, openPackList, packDialog, patchRepo, repo } from './store';
 import { missingCount, restyleOffer } from './styles';
@@ -197,6 +197,7 @@ function usePreview(w: World | null) {
 function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHover: (h: Hover | null) => void; onRun: () => void }) {
   const st = row.status;
   const toggle = w ? toggleCommand(row, w) : null;
+  const restore = w ? restoreRowCommand(row, w) : null;
   const def = w ? defaultStyleCommand(row, w) : null;
   const style = row.kind.id === 'nameStyle';
   // 点过之后鼠标移开之前不再预览（不然地图上会先画出“再点一下”的样子）
@@ -250,9 +251,26 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
         {st.locked && !st.on && <div class="hint">{st.locked}</div>}
       </div>
       <div class="repo-card-side">
-        <Toggle on={st.on} disabled={!toggle} title={st.locked} onChange={() => void run(toggle, st.on ? '正在停用…' : '正在启用…')}>
-          用在这个世界
-        </Toggle>
+        {st.always ? (
+          <span class="row">
+            {st.modified ? <span class="tag">已修改</span> : <span class="hint" title={st.locked}>内置·常开</span>}
+            {restore && (
+              <button
+                class="small"
+                title="换回内置的这一项"
+                onPointerEnter={() => onHover(hoverOf(restore, 'off'))}
+                onPointerLeave={() => onHover(null)}
+                onClick={() => void run(restore, '正在计算…')}
+              >
+                恢复
+              </button>
+            )}
+          </span>
+        ) : (
+          <Toggle on={st.on} disabled={!toggle} title={st.locked} onChange={() => void run(toggle, st.on ? '正在停用…' : '正在启用…')}>
+            用在这个世界
+          </Toggle>
+        )}
         {style && (
           <label class="check" title="世界默认的地名风格" onPointerEnter={() => onHover(hoverOf(def, 'default'))} onPointerLeave={() => onHover(hoverOf(toggle, st.on ? 'off' : 'on'))}>
             <input type="radio" name="default-style" checked={!!st.isDefault} disabled={!def && !st.isDefault} onChange={() => void run(def, '正在起名…')} />
@@ -260,7 +278,7 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
           </label>
         )}
         {canEdit && (
-          <button class="small" title={row.source === 'builtin' && !st.on ? '复制一份改' : undefined} onClick={() => editRow(row)}>
+          <button class="small" title={row.source === 'builtin' && !st.on && !st.always ? '复制一份改' : undefined} onClick={() => editRow(row)}>
             <Pencil /> 编辑
           </button>
         )}
@@ -286,6 +304,11 @@ function editRow(row: RepoRow) {
       requestIslandTypeEditor(wid);
       openPanel.value = 'cat:terrain';
       return;
+  }
+  // 总在的内置项（地形类别、通用资源）：改的是世界里的那一份（同 id，用到世界就换掉内置的）
+  if (row.status.always) {
+    patchRepo({ edit: { item: structuredClone(editStart(row, world.value)) as Obj, how: 'edit', worldId: row.id } });
+    return;
   }
   const copy = row.status.locked || (row.source === 'builtin' && !row.status.on);
   const item = copy ? copyItem(row.kind, row.item, takenIds(row.kind)) : (structuredClone(row.item) as Obj);

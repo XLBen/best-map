@@ -7,7 +7,9 @@ import { Toggle } from '../components/Toggle';
 import {
   type EditorIssue,
   type Obj,
+  addedValue,
   defaultValue,
+  isSparse,
   isObj,
   issuesAt,
   newKey,
@@ -16,6 +18,7 @@ import {
   renameKey,
   setField,
   shownFields,
+  sparseSplit,
   tagsText,
   weightedRows,
   weightedValue,
@@ -40,11 +43,50 @@ const keyLabel = (k: string): string | undefined => (k === 'province' ? '省份'
 
 // 一组字段（一个对象）
 export function FieldsBox({ fields, value, onChange, path = [], issues }: Props) {
+  if (isSparse(shownFields(fields, value))) return <SparseBox fields={shownFields(fields, value)} value={value} onChange={onChange} path={path} issues={issues} />;
   return (
     <div class="ed-fields">
       {shownFields(fields, value).map((f) => (
         <Field key={f.key} f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(fields, value, f.key, v))} />
       ))}
+    </div>
+  );
+}
+
+// 全是可以不写的一组（规则的条件）：只列写了的（每项可以删），其余从“添加”里选
+function SparseBox({ fields, value, onChange, path = [], issues }: Props) {
+  const { present, missing } = sparseSplit(fields, value);
+  const drop = (key: string) => {
+    const next = { ...value };
+    delete next[key];
+    onChange(next);
+  };
+  return (
+    <div class="ed-fields">
+      {present.map((f) => (
+        <div class="ed-sparse" key={f.key}>
+          <Field f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(fields, value, f.key, v))} />
+          <button class="small icon ghost" title="删除" onClick={() => drop(f.key)}>
+            <X />
+          </button>
+        </div>
+      ))}
+      {!present.length && <p class="hint">没有条件</p>}
+      {missing.length > 0 && (
+        <select
+          class="ed-add"
+          value=""
+          onChange={(e) => {
+            const f = missing.find((x) => x.key === (e.target as HTMLSelectElement).value);
+            if (f) onChange({ ...value, [f.key]: addedValue(f) });
+          }}
+        >
+          <option value="">添加</option>
+          {missing.map((f) => (
+            <option value={f.key}>{f.label}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

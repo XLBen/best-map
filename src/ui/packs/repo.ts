@@ -35,6 +35,10 @@ export interface RepoStatus {
   rename?: string;
   // 地名风格：是世界默认
   isDefault?: boolean;
+  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：没有开关，写“内置·常开”
+  always?: boolean;
+  // 总在的内置项在这个世界里改过（small.content 里同 id 的一份）：可以恢复
+  modified?: boolean;
 }
 
 export interface RepoRow {
@@ -59,7 +63,8 @@ const wrap = (kind: ContentKind, items: readonly unknown[], id: string, name: st
 const isZh = (kind: ContentKind, id: string) => kind.id === 'nameStyle' && id === DEFAULT_STYLE;
 
 // 一项在这个世界里的状态
-function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: PackWorld | null): RepoStatus {
+// builtin：登记表里的内置项（不是资源库里的包）
+function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: PackWorld | null, builtin = false): RepoStatus {
   const id = itemId(kind, item);
   if (!world) return { on: false, locked: '先新建或打开世界' };
   const inWorld = kind.inWorld(world);
@@ -69,8 +74,12 @@ function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: P
   }
   const isDefault = (wid: string) => (kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === wid } : {});
   if (isZh(kind, id)) return { on: true, worldId: DEFAULT_STYLE, locked: '内置中文总在', ...isDefault(DEFAULT_STYLE) };
-  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：开关不能动
+  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：开关不能动；世界里那一份改过时写“已修改”
   const always = kind.alwaysOn?.(id);
+  if (always && builtin) {
+    const cur = inWorld.find((x) => itemId(kind, x) === id);
+    return { on: true, worldId: id, locked: always, always: true, ...(cur && !sameItem(cur, item) ? { modified: true } : {}) };
+  }
   if (always && inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item))) return { on: true, worldId: id, locked: always };
   // 世界里有一模一样的（内置的生态本来就在世界里）
   if (inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item))) return { on: true, worldId: id, ...isDefault(id) };
@@ -89,14 +98,14 @@ function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: P
 // 一种内容在仓库里的全部（内置在前，之后是我的、导入的，最后是世界里有、仓库里没有的）
 export function repoRows(kind: ContentKind, world: PackWorld | null, lib: readonly LibraryEntry[]): RepoRow[] {
   const rows: RepoRow[] = [];
-  const push = (item: unknown, source: RepoSource, pack: ResourcePack, from: string, entry?: string) => {
+  const push = (item: unknown, source: RepoSource, pack: ResourcePack, from: string, entry?: string, own = false) => {
     const id = itemId(kind, item);
-    rows.push({ kind, key: `${source}:${entry ?? ''}:${id}`, id, name: itemName(kind, item), item, source, pack, from, ...(entry ? { entry } : {}), status: statusOf(kind, item, pack, world) });
+    rows.push({ kind, key: `${source}:${entry ?? ''}:${id}`, id, name: itemName(kind, item), item, source, pack, from, ...(entry ? { entry } : {}), status: statusOf(kind, item, pack, world, own) });
   };
   // 内置：登记表里的、内置示例包里的（同一项只列一次）
   const own = kind.builtin?.() ?? [];
   const ownPack = wrap(kind, own, `builtin-${kind.id}`, '内置');
-  for (const x of own) push(x, 'builtin', ownPack, '内置');
+  for (const x of own) push(x, 'builtin', ownPack, '内置', undefined, true);
   for (const e of lib.filter((x) => x.builtin)) {
     for (const x of packItems(e.pack, kind.pack.key)) {
       const id = itemId(kind, x);
@@ -140,6 +149,18 @@ export function disableRowCommand(row: RepoRow, world: PackWorld): Command {
   const off = kindDisable(row.kind, id, world);
   if (row.status.isDefault) return { op: 'batch', label: `停用${quoted(row)}`, commands: [{ op: 'set_name_style', id: null }, off] };
   return off;
+}
+
+// 恢复：总在的内置项改过时，去掉世界里改过的那一份（换回内置的）。没改过时 null
+export function restoreRowCommand(row: RepoRow, world: PackWorld): Command | null {
+  if (!row.status.always || !row.status.modified) return null;
+  return { op: 'batch', label: `恢复${quoted(row)}`, commands: [kindDisable(row.kind, row.id, world)] };
+}
+
+// 编辑时从哪一份开始：总在的内置项编辑的是世界里的那一份（改过的）
+export function editStart(row: RepoRow, world: PackWorld | null): unknown {
+  if (!row.status.always || !world) return row.item;
+  return row.kind.inWorld(world).find((x) => itemId(row.kind, x) === row.id) ?? row.item;
 }
 
 // 开关：现在开着就停用，关着就启用。不能动时 null
