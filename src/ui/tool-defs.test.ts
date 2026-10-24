@@ -28,11 +28,11 @@ describe('工具表', () => {
     const listed = CATEGORIES.flatMap((c) => c.tools);
     expect([...listed].sort()).toEqual([...ids].sort());
     expect(new Set(listed).size).toBe(listed.length);
-    // 每一类里的先后与第十九轮之前相同（底部工具条上的位置、数字键）
+    // 每一类里的先后与第十九轮之前相同（底部工具条上的位置、数字键）；第二十一轮在地形、自然的最后加了地形类别、资源
     expect(Object.fromEntries(CATEGORIES.map((c) => [c.id, c.tools]))).toEqual({
-      terrain: ['land', 'island', 'chain', 'relief', 'fragment', 'reroll', 'restore'],
+      terrain: ['land', 'island', 'chain', 'relief', 'fragment', 'reroll', 'restore', 'terrainClass'],
       climate: ['temp', 'moist', 'unclimate', 'field'],
-      nature: ['biome', 'grow', 'erase', 'range'],
+      nature: ['biome', 'grow', 'erase', 'range', 'resource'],
       water: ['river', 'lake', 'unwater'],
       provinces: ['pselect', 'pbrush', 'pcut', 'pmerge', 'pregen'],
       names: ['rename', 'area', 'spot'],

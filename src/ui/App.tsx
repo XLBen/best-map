@@ -34,6 +34,8 @@ import { LakeTypeMenu, NewLakeTypeMenu } from './panels/lakes';
 import { IslandTypeMenu } from './panels/islandTypes';
 import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
 import { FeatureStyleMenu } from './panels/names';
+import { ClassMenu, ResourceMenu } from './panels/human';
+import { MapLegend } from './shell/MapLegend';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
@@ -57,6 +59,8 @@ const TYPE_PANELS: Record<TypePanelId, { title: string; menu: ComponentType }> =
   islandtype: { title: '岛的种类', menu: () => <IslandTypeMenu which="island" /> },
   chaintype: { title: '岛链的种类', menu: () => <IslandTypeMenu which="chain" /> },
   featurestyle: { title: '地名风格', menu: FeatureStyleMenu },
+  classpick: { title: '地形类别', menu: ClassMenu },
+  resourcepick: { title: '资源', menu: ResourceMenu },
 };
 
 function PanelHost({ id }: { id: PanelId }) {
@@ -183,6 +187,7 @@ export function App() {
             <TopBar />
             {w && <ContextBar />}
             {w && <RulerButton />}
+            <MapLegend />
             <HereCard />
             <Sheet />
             <RepoPanel />

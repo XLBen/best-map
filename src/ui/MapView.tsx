@@ -6,7 +6,7 @@ import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type ColorOptions, type GhostEdit, GhostBuffer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
-import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, riverLayer, riverLayerScene, riverPathsKey, samePathsKey } from '../render/overlay';
+import { type LabelBox, type OverlayPaths, type ProvinceLabel, type Shape, buildPaths, drawOverlay, peakLabels, riverLayer, riverLayerScene, riverPathsKey, samePathsKey } from '../render/overlay';
 import { convertCamera, effectiveZoom } from '../render/projection';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import {
@@ -25,6 +25,7 @@ import {
   openPanel,
   options,
   overlays,
+  pinnedCell,
   prefs,
   redrawTick,
   reference,
@@ -124,6 +125,13 @@ function mergeGhosts(from: (GhostEdit | null | undefined)[]): GhostEdit | null {
 }
 
 const NO_PREVIEW: Preview = { layers: [], shapes: [], hint: null };
+
+// 钉住的格（“这里”卡片停在这一格）：一个黄圈
+function pinRing(w: World): Shape[] {
+  const c = pinnedCell.value;
+  if (c < 0 || c >= w.mesh.n) return [];
+  return [{ kind: 'circle', x: w.mesh.x[c], y: w.mesh.y[c], r: w.mesh.spacing * 0.8, color: 'rgba(255, 225, 77, 0.95)', width: 2 }];
+}
 
 export function MapView() {
   const glRef = useRef<HTMLCanvasElement>(null);
@@ -388,7 +396,7 @@ export function MapView() {
       // 导出图片的干净画面不带幽灵海岸（画的是现在的世界）。幽灵海岸改的是画出来的那份底子（预览世界的陆地与当前世界相同）
       applyGhost(shown, clean ? null : preview);
       // 工具选中的东西（画河时选中的河）、河流列表里鼠标停着的河：沿河一道淡黄的光，压在工具的图形下面
-      const glow = clean ? [] : [...(def.focus?.glow(w) ?? []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : [])];
+      const glow = clean ? [] : [...(def.focus?.glow(w) ?? []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : []), ...pinRing(w)];
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
       renderer.flatByGroup = mode.value === 'provinces';
       renderer.highlightByGroup = !!cm.provinces;
@@ -427,6 +435,7 @@ export function MapView() {
         provinceLabels: cm.provinces && !clean ? labelsFor(w, preview.provinces) : layerProvinceLabels(),
         features: overlays.value.labels || (cm.labels && !clean) ? labelsShown(shown.derived.features, def.focus && !clean ? def.focus.hideLabel(w) : '') : null,
         labelTypes: types,
+        peaks: overlays.value.peaks ? peakLabels(shown) : null,
         nameMode: nameMode.value,
         kmPerUnit: w.kmPerUnit,
         hoverLabel: cm.labels && !clean ? (view.hoverLabel ?? cm.labels()) : null,
@@ -617,6 +626,7 @@ export function MapView() {
     });
     const disposeRedraw = effect(() => {
       void options.value;
+      void pinnedCell.value;
       void overlays.value;
       void season.value;
       void mapStyle.value;

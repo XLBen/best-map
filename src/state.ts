@@ -50,6 +50,9 @@ export type ViewMode =
   | 'suitability'
   | 'provinces'
   | 'uplift'
+  // 地形类别、资源（第二十一轮）：每格一种颜色，平涂在地貌上
+  | 'terrainClass'
+  | 'resource'
   | `field:${string}`;
 
 export type Season = 'annual' | 'summer' | 'winter';
@@ -83,7 +86,8 @@ export function registerToolSwitch(f: (id: ToolId) => void) {
 export const mode = signal<ViewMode>('terrain');
 export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
-export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false, edits: false });
+// peaks（第二十一轮）：全部山峰画成小三角，放大后标名字
+export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false, edits: false, peaks: false });
 export const hoverCell = signal<number>(-1);
 // 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
 // 与 hoverCell 一起设
@@ -132,7 +136,8 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 // river / province：选中的河、省底部条上的“⋯”（不常用的按钮收在里面）
 // 选“哪一种”（同一个 TypePicker，见 App.tsx 的 TYPE_PANELS）：rivertype / laketype 选中的这条河、这个湖，
 // newrivertype / newlaketype 新画的河、新放的湖，islandtype / chaintype 放岛、画岛链用哪一种岛
-export type TypePanelId = 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | 'islandtype' | 'chaintype' | 'featurestyle';
+// classpick / resourcepick（第二十一轮）：画地形类别、资源用哪一种
+export type TypePanelId = 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | 'islandtype' | 'chaintype' | 'featurestyle' | 'classpick' | 'resourcepick';
 export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
@@ -165,6 +170,15 @@ export const worldState = signal(0);
 export const cornerLift = signal(0);
 // 量距离：已经点的点（地图单位）；null 表示没在量
 export const measure = signal<[number, number][] | null>(null);
+// “这里”卡片（第二十一轮）：展开着没有；钉住的格（右键点地图上的一格，卡片停在那一格，-1 没钉）
+export const hereOpen = signal(false);
+export const pinnedCell = signal(-1);
+export function pinCell(cell: number) {
+  batch(() => {
+    pinnedCell.value = cell;
+    if (cell >= 0) hereOpen.value = true;
+  });
+}
 // 地名：选中的地名（键）
 export const selectedFeature = signal<string | null>(null);
 // 刚圈好、刚放下的地名：底部条的名字框收到后获得焦点（选中全部文字，直接打字就是改名）
@@ -340,6 +354,10 @@ export interface ToolOptions {
   field: string | null;
   fieldMode: 'add' | 'sub';
   fieldAmount: number;
+  // 画地形类别（第二十一轮）：类别的 id，'' 恢复自动
+  terrainClass: string;
+  // 画资源：资源的 id，'none' 明确没有，'' 恢复自动
+  resource: string;
 }
 
 export const options = signal<ToolOptions>({
@@ -372,6 +390,8 @@ export const options = signal<ToolOptions>({
   field: null,
   fieldMode: 'add',
   fieldAmount: 0.25,
+  terrainClass: 'hills',
+  resource: 'iron',
 });
 
 export function setOptions(patch: Partial<ToolOptions>) {
@@ -717,6 +737,7 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
     if (fresh) {
       worldEpoch.value++;
       measure.value = null;
+      pinnedCell.value = -1;
       if (visualOverrides.value.size) visualOverrides.value = new Map();
     } else pruneVisualOverrides(next.small.species);
     world.value = next;
@@ -750,6 +771,8 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   const hov = hoverRiver.value;
   if (hov && (fresh || (hov.kind === 'guide' && !next.small.guides.some((g) => g.id === hov.id)))) hoverRiver.value = null;
   if (focusSpecies.value && !s.small.species.some((x) => x.id === focusSpecies.value)) focusSpecies.value = null;
+  // 钉住的格：换了大小的网格（打开别的世界之外，撤销到新建之前……）就不钉了
+  if (pinnedCell.value >= next.mesh.n) pinnedCell.value = -1;
   if (options.value.biome && !s.small.species.some((x) => x.id === options.value.biome)) setOptions({ biome: null });
   // 新世界：画笔、岛、湖的大小跟着地图尺度走
   if (!before || before.mesh !== mesh || before.kmPerUnit !== next.kmPerUnit) setOptions(sizesFor(next));

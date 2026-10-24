@@ -6,7 +6,9 @@ import {
   Droplet,
   Droplets,
   Eraser,
+  Gem,
   Hammer,
+  LandPlot,
   LassoSelect,
   Leaf,
   Map as MapIcon,
@@ -35,6 +37,7 @@ import { ChainFragSlider, ChainTypePick, IslandTypePick, TerrainExtras } from '.
 import type { World } from '../../../core/world';
 import {
   type Category,
+  type ViewMode,
   brushRange,
   cursorHint,
   lakeRange,
@@ -85,7 +88,12 @@ import {
   riverSizeName,
   snapRadiusKm,
   spotTool,
+  terrainClassTool,
+  resourceTool,
+  pickClass,
+  pickResource,
 } from '../tools';
+import { ClassPick, ResourcePick } from '../panels/human';
 import { clearBarPreview } from '../barPreview';
 import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
 import {
@@ -372,6 +380,19 @@ const SPECS = {
     size: BRUSH,
     create: () => restoreTool(),
   },
+  terrainClass: {
+    // 第二十一轮：画地形类别（只改类别，不动高度）
+    category: 'terrain',
+    icon: LandPlot,
+    name: '地形类别',
+    short: '类别',
+    how: '按住涂，改地形类别；Alt+点击吸取',
+    size: BRUSH,
+    bar: () => [{ kind: 'custom', render: ClassPick }],
+    pick: pickClass,
+    view: 'terrainClass',
+    create: () => terrainClassTool(),
+  },
   temp: {
     category: 'climate',
     icon: Thermometer,
@@ -447,6 +468,19 @@ const SPECS = {
     // 写明类型：它读的状态的类型里有 ToolId（由这张表推出来），不写会绕成一个圈
     watch: (): unknown => rangePick.value,
     create: () => rangeTool(),
+  },
+  resource: {
+    // 第二十一轮：画资源
+    category: 'nature',
+    icon: Gem,
+    name: '资源',
+    short: '资源',
+    how: '按住涂，改资源；Alt+点击吸取',
+    size: BRUSH,
+    bar: () => [{ kind: 'custom', render: ResourcePick }],
+    pick: pickResource,
+    view: 'resource',
+    create: () => resourceTool(),
   },
   field: {
     category: 'climate',
@@ -656,8 +690,23 @@ export function watchTools() {
   for (const c of CATEGORIES) c.watch?.();
 }
 
-// 每一类记住上次用的工具：换回来时还是原样。底图只在“图层”里换，换工具、换类别都不动它
+// 每一类记住上次用的工具：换回来时还是原样。底图只在“图层”里换，换工具、换类别都不动它——
+// 只有声明了 view 的工具（地形类别、资源）开着时换成它的那一层，离开时换回去
 const lastTool: Partial<Record<Category, ToolId>> = {};
+// 换成工具的那一层之前的底图（set：换成了哪一层）。离开时底图还是那一层才换回去（这期间在图层里换过就不动）
+let viewBefore: { mode: ViewMode; set: ViewMode } | null = null;
+function switchView(to: ToolId) {
+  const v = TOOL_DEFS[to].view;
+  if (v) {
+    if (!viewBefore) viewBefore = { mode: mode.value, set: v };
+    else if (mode.value === viewBefore.set) viewBefore.set = v;
+    else viewBefore = { mode: mode.value, set: v };
+    mode.value = v;
+  } else if (viewBefore) {
+    if (mode.value === viewBefore.set) mode.value = viewBefore.mode;
+    viewBefore = null;
+  }
+}
 
 // 换工具（所有换工具都走这里：面板里、工具里经 state.ts 的 switchTool）：离开的工具、离开的类别声明的东西清掉
 export function setTool(id: ToolId) {
@@ -668,6 +717,7 @@ export function setTool(id: ToolId) {
     CATEGORY_DEFS[from].onLeave?.();
     lastTool[from] = fromTool;
   }
+  if (fromTool !== id) switchView(id);
   tool.value = id;
   cursorHint.value = null;
   // 底部条按钮悬停时的预览（省份的对半分开、重新划分，河的截短、延长）：按钮随着换工具消失，收不到“移开”，
@@ -694,6 +744,7 @@ export function paintWith(speciesId: string) {
 // 新世界：回到地形、画陆地，各类不再记着上次用的工具
 export function resetTools() {
   setTool('land');
+  viewBefore = null;
   for (const k of Object.keys(lastTool)) delete lastTool[k as Category];
   mode.value = 'terrain';
 }

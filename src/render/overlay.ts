@@ -5,6 +5,7 @@ import type { RiverStyle, RiverType } from '../../core/river-types';
 import { MAP_UNDER_SHORE, type PackedRivers, type RiverDraw, drawTypes, drawTypesKey, riverDraw, unpackRivers } from '../../core/river-pack';
 import { type RiverLine, guideShape, guidesSignature, traceRivers } from '../../core/rivers';
 import { coastSeed } from '../../core/terrain';
+import { cellName, peakMarks } from '../../core/human';
 import type { World } from '../../core/world';
 import { drawOverlayProjected } from './overlay-proj';
 import { type Proj, trueScale, worldToScreen as projWorldToScreen } from './projection';
@@ -500,6 +501,8 @@ export interface OverlayState {
   labelTypes: Set<FeatureType> | null;
   // 地名显示中文、原文还是两者（第二十轮；省略为中文）
   nameMode?: NameMode;
+  // 全部山峰（第二十一轮，图层里的“山峰”；见 peakLabels）：画成小三角，放大后标名字，排在别的地名之后；null 不画
+  peaks?: GeoFeature[] | null;
   kmPerUnit: number;
   // 鼠标悬停或选中的地名（高亮）
   hoverLabel: string | null;
@@ -1042,7 +1045,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
     }
   }
   // 导出整个星球：图就是一整圈（分界线可以在任何经度），每个地名只在中心落在图里的那一份上排
-  const boxes = st.features ? drawLabels(ctx, cam, st, ks, rz) : [];
+  const boxes = st.features || st.peaks?.length ? drawLabels(ctx, cam, st, ks, rz) : [];
   if (st.scaleBar) {
     if (sphere) {
       // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
@@ -1337,7 +1340,8 @@ interface PlacedLabel {
 }
 // key：整个键；base：键里除了镜头的部分（移动中沿用排好的版面时比它）；cam：排的时候的镜头；
 // epoch：移动中排的那一次渲染器的 motionEpoch（停稳时排的为 undefined）
-let layout: { key: string; base: string; cam: Camera; features: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[]; epoch?: number } | null = null;
+// marks：没标名字的山峰的小三角（CSS 像素）
+let layout: { key: string; base: string; cam: Camera; features: GeoFeature[] | null; peaks: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[]; marks: [number, number][]; epoch?: number } | null = null;
 
 // 每个字的宽度按字体缓存：平移、缩放的每一帧不必再量（字体加载完成后清空重量）
 const glyphs = new Map<string, number>();
@@ -1359,12 +1363,13 @@ function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera): stri
 }
 
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
-export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[] } {
+export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: OverlayState, ks: number[], rz: number): { placed: PlacedLabel[]; boxes: LabelBox[]; marks: [number, number][] } {
   const { cw, ch: chh } = frameOf(ctx, st);
   const exporting = !!st.frame;
   const base = labelBase(cw, chh, st, cam);
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
-  if (!exporting && layout && layout.key === key && layout.features === st.features) return layout;
+  const peaks = st.peaks ?? null;
+  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks) return layout;
   // 等面积、球形投影：地名的中心按投影算（球的背面不标），大小按那里的比例
   const proj = cam.proj;
   const toScreen = proj
@@ -1378,8 +1383,17 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
   const mine = (f: GeoFeature) => !!f.region || f.custom || f.key === st.hoverLabel;
   const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
+  // 全部山峰：排在别的地名之后（按海拔从高到低）；地名里已有的主峰不再标一遍
+  const pseudo = new Set<GeoFeature>();
+  if (peaks?.length) {
+    const shown = new Set(features.filter((f) => f.type === 'peak' && (!st.labelTypes || st.labelTypes.has('peak'))).map((f) => f.anchor));
+    for (const f of peaks) if (!shown.has(f.anchor)) pseudo.add(f);
+    features.push(...pseudo);
+  }
+  const named = new Set<GeoFeature>();
   for (const f of features) {
-    if (!f.name || (st.labelTypes && !st.labelTypes.has(f.type))) continue;
+    const isPeak = pseudo.has(f);
+    if (!f.name || (!isPeak && st.labelTypes && !st.labelTypes.has(f.type))) continue;
     // 删掉的地名不标（选中、悬停着的那个照样标出来，看得到在改哪一个；导出的图里不标）
     if (f.hidden && (exporting || f.key !== st.hoverLabel)) continue;
     // 在屏幕上有多大；山峰、用户放的点状地名没有大小（山峰放大到一定程度才标，地点总是标）
@@ -1388,7 +1402,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     const zl = proj ? cam.zoom * trueScale(proj, f.x, f.y) : cam.zoom;
     const sizePx = f.type === 'river' ? f.span * zl : point ? 0 : (Math.sqrt(f.areaKm2) / st.kmPerUnit) * zl;
     const minPx = f.type === 'continent' || f.type === 'ocean' ? 25 : f.type === 'river' ? 90 : point ? 0 : 45;
-    if (!mine(f) && (f.type === 'peak' ? rz < 1600 : sizePx < minPx)) continue;
+    if (!mine(f) && (f.type === 'peak' ? rz < (isPeak ? PEAK_NAME_ZOOM : 1600) : sizePx < minPx)) continue;
     // 整个星球：每份副本上都可能看得见（相隔一整圈，彼此不会挤在一起）
     const spots: [number, number][] = [];
     for (const k of ks) {
@@ -1455,10 +1469,36 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       const box = { key: f.key, x0: sx - hw, y0: sy - hh, x1: sx + hw, y1: sy + hh };
       if (boxes.some((b) => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0)) continue;
       boxes.push(box);
-      placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom ? '#7a1f5c' : style.color, x: sx, y: sy, angle });
+      placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom && !isPeak ? '#7a1f5c' : style.color, x: sx, y: sy, angle });
+      if (isPeak) named.add(f);
     }
   }
-  const out = { key, base, cam: { ...cam }, features: st.features, placed, boxes, epoch: st.motion ? st.motionEpoch : undefined };
+  // 没标名字的山峰：画一个小三角（与已标的地名、别的三角隔开 PEAK_GAP 像素以上才画，高的先画）
+  const marks: [number, number][] = [];
+  // 按 PEAK_GAP 分格记下画了的三角：只看相邻的九格
+  const grid = new Map<string, [number, number][]>();
+  const near = (x: number, y: number) => {
+    const gx = Math.floor(x / PEAK_GAP);
+    const gy = Math.floor(y / PEAK_GAP);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const [px0, py0] of grid.get(`${gx + i},${gy + j}`) ?? []) if (Math.abs(px0 - x) < PEAK_GAP && Math.abs(py0 - y) < PEAK_GAP) return true;
+    return false;
+  };
+  for (const f of pseudo) {
+    if (named.has(f)) continue;
+    for (const k of ks) {
+      const at = toScreen(f.x + 2 * k, f.y);
+      if (!at) continue;
+      const [x, y] = at;
+      if (x < -mx || y < -my || x > cw + mx || y > chh + my || (exporting && (x < 0 || x >= cw))) continue;
+      if (near(x, y) || boxes.some((b) => b.x0 < x + 4 && b.x1 > x - 4 && b.y0 < y + 4 && b.y1 > y - 4)) continue;
+      marks.push([x, y]);
+      const g = `${Math.floor(x / PEAK_GAP)},${Math.floor(y / PEAK_GAP)}`;
+      grid.set(g, [...(grid.get(g) ?? []), [x, y]]);
+    }
+  }
+  // 点击命中只给真的地名（山峰不是地物，点了没有可改的名字）
+  const hits = pseudo.size ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY)) : boxes;
+  const out = { key, base, cam: { ...cam }, features: st.features, peaks, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
   if (!exporting) layout = out;
   return out;
 }
@@ -1476,6 +1516,7 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
   let oy = 0;
   let placed: PlacedLabel[];
   let boxes: LabelBox[];
+  let marks: [number, number][];
   const L = layout;
   const base = labelBase(cw, chh, st, cam);
   const zr = L ? cam.zoom / L.cam.zoom : 0;
@@ -1485,6 +1526,7 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     L &&
     L.base === base &&
     L.features === st.features &&
+    L.peaks === (st.peaks ?? null) &&
     (st.motionEpoch !== undefined
       ? // 同一次场景（开始动的第一帧场景就重画了：地名也在这一帧按带边距的范围重排）
         L.epoch === st.motionEpoch &&
@@ -1496,8 +1538,9 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     ox = cw / 2 - (cw / 2) * r + (L.cam.x - cam.x) * cam.zoom;
     oy = chh / 2 - (chh / 2) * r + (L.cam.y - cam.y) * cam.zoom;
     placed = L.placed;
+    marks = L.marks;
     boxes = L.boxes.map((b) => ({ key: b.key, x0: b.x0 * r + ox, y0: b.y0 * r + oy, x1: b.x1 * r + ox, y1: b.y1 * r + oy }));
-  } else ({ placed, boxes } = placeLabels(ctx, cam, st, ks, rz));
+  } else ({ placed, boxes, marks } = placeLabels(ctx, cam, st, ks, rz));
   if (r === 1 && ox === 0 && oy === 0) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   else ctx.setTransform(dpr * r, 0, 0, dpr * r, dpr * ox, dpr * oy);
   ctx.textBaseline = 'middle';
@@ -1524,5 +1567,56 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     });
     ctx.restore();
   }
+  if (marks.length) {
+    // 山峰的小三角：白边、山脉地名的颜色
+    ctx.beginPath();
+    for (const [mx0, my0] of marks) {
+      ctx.moveTo(mx0, my0 - 4.5);
+      ctx.lineTo(mx0 + 4, my0 + 3);
+      ctx.lineTo(mx0 - 4, my0 + 3);
+      ctx.closePath();
+    }
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.stroke();
+    ctx.fillStyle = LABEL_STYLE.relief.color;
+    ctx.fill();
+  }
   return boxes;
+}
+
+// 图层里的“山峰”（第二十一轮）：全部山峰（core/human 的 peakMarks）当作地名排，键是 PEAK_KEY + 格。
+// 放大到 PEAK_NAME_ZOOM（同 refZoom）才标名字，之前只画小三角，彼此至少隔 PEAK_GAP 像素
+export const PEAK_KEY = 'cellpeak:';
+const PEAK_NAME_ZOOM = 1600;
+const PEAK_GAP = 14;
+const peakCache = new WeakMap<Uint8Array, { cells: unknown; features: unknown; list: GeoFeature[] }>();
+export function peakLabels(world: World): GeoFeature[] {
+  const d = world.derived;
+  if (!d.peak) return [];
+  const hit = peakCache.get(d.peak);
+  if (hit && hit.cells === world.small.cells && hit.features === d.features) return hit.list;
+  const list: GeoFeature[] = peakMarks(world).map((m) => {
+    const n = m.feature ? null : cellName(world, m.cell);
+    const f = m.feature ? d.features.find((x) => x.key === m.feature) : undefined;
+    const orig = n ? n.orig : f?.orig;
+    return {
+      key: `${PEAK_KEY}${m.cell}`,
+      type: 'peak',
+      anchor: m.cell,
+      cells: new Int32Array(0),
+      areaKm2: 0,
+      x: m.x,
+      y: m.y,
+      angle: 0,
+      span: 0,
+      tags: [],
+      importance: m.elevation,
+      name: m.name,
+      custom: false,
+      ...(orig ? { orig } : {}),
+    };
+  });
+  peakCache.set(d.peak, { cells: world.small.cells, features: d.features, list });
+  return list;
 }

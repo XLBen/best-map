@@ -1,7 +1,7 @@
 import { FEATURE_INFO, type FeatureType } from '../../../core/features';
 import type { World } from '../../../core/world';
 import { LABEL_REF_WIDTH, type LabelSize, exportFrame, planTiles, tileMargin, tileSize, tileView } from '../../render/export-plan';
-import { type Frame, type OverlayPaths, type OverlayState, type ProvinceLabel, drawOverlay, releaseRiverTile, riverLayerScene, riverLayerTile } from '../../render/overlay';
+import { type Frame, type OverlayPaths, type OverlayState, type ProvinceLabel, drawOverlay, peakLabels, releaseRiverTile, riverLayerScene, riverLayerTile } from '../../render/overlay';
 import { type Proj, planeBounds } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
 import { exportProgress, imageExportCancel, labelGroups, mapStyle, nameMode, overlays, season, showToast, world } from '../../state';
@@ -28,6 +28,7 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     provinceLabels,
     features: overlays.value.labels ? w.derived.features : null,
     labelTypes: types,
+    peaks: overlays.value.peaks ? peakLabels(w) : null,
     nameMode: nameMode.value,
     kmPerUnit: w.kmPerUnit,
     hoverLabel: null,

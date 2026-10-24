@@ -6,6 +6,7 @@ import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '.
 import type { LakeType } from '../../core/lake-types';
 import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
+import { classColors, resourceColors } from '../../core/human';
 import { coastPatch } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
 import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landPixelCells, provinceLand, ringCodes } from '../../core/island-types';
@@ -119,7 +120,9 @@ function snowAmount(world: World, season: Season, i: number): number {
   const snowT = season === 'winter' ? Math.min(d.tS[i], d.tW[i]) : season === 'summer' ? Math.max(d.tS[i], d.tW[i]) : d.tWarm[i];
   return snowT < 0 ? Math.min(1, -snowT / 6) : 0;
 }
-const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces';
+// 地形类别、资源（第二十一轮）：底下是地貌（晕渲、露岩），上面按格平涂；不画生态的花纹（看得清数据）
+const humanMode = (mode: ViewMode) => mode === 'terrainClass' || mode === 'resource';
+const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
 
 function staticLayers(world: World): StaticLayers {
   const inputs: unknown[] = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness, world.causes.fragment];
@@ -234,7 +237,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     switch (o.mode) {
       case 'terrain':
       case 'dominant':
-      case 'provinces': {
+      case 'provinces':
+      case 'terrainClass':
+      case 'resource': {
         // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖
         c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
         // 放的岛的种类选了颜色：岛上的地画成这个颜色（植被的颜色留一点；积雪照样盖上）
@@ -305,6 +310,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       if (s >= 0) put(flat, i, speciesRgb[s], d.overridden[i] ? 255 : 220);
     }
   } else if (o.mode === 'provinces') flat = provinceFlat(world, causes.province);
+  else if (humanMode(o.mode)) flat = humanFlat(world, o.mode as 'terrainClass' | 'resource');
 
   // 省界：剪刀切过的地方按切线画（切线附近按在线的哪一边分省，见 core/seams.ts）
   const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
@@ -337,6 +343,38 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     fx: fx?.fx ?? null,
     fxPalette: fx?.palette ?? null,
   };
+}
+
+// 资源底图里没有资源的陆地：中性的灰，淡淡盖住地貌
+export const NO_RESOURCE: RGB = [128, 124, 118];
+const HUMAN_ALPHA = 235;
+const NO_RESOURCE_ALPHA = 170;
+
+// 地形类别、资源底图的平涂层：按编号取颜色（core/human 的 classColors、resourceColors），水面不着色
+export function humanFlat(world: World, mode: 'terrainClass' | 'resource'): Uint8Array {
+  const { mesh, causes, derived: d } = world;
+  const n = mesh.n;
+  const flat = new Uint8Array(n * 4);
+  const codes = mode === 'terrainClass' ? d.terrainClass : d.resource;
+  if (!codes) return flat;
+  const colors = mode === 'terrainClass' ? classColors(world) : resourceColors(world);
+  for (let i = 0; i < n; i++) {
+    if (!causes.land[i] || d.lake[i] === 1) continue;
+    const c = colors[codes[i]];
+    const k = i * 4;
+    if (c) {
+      flat[k] = c[0];
+      flat[k + 1] = c[1];
+      flat[k + 2] = c[2];
+      flat[k + 3] = HUMAN_ALPHA;
+    } else if (mode === 'resource') {
+      flat[k] = NO_RESOURCE[0];
+      flat[k + 1] = NO_RESOURCE[1];
+      flat[k + 2] = NO_RESOURCE[2];
+      flat[k + 3] = NO_RESOURCE_ALPHA;
+    }
+  }
+  return flat;
 }
 
 // 放的岛自己选的颜色盖住植被颜色的多少
@@ -487,7 +525,9 @@ export function colorSignature(small: World['small']): string {
   const looks = small.species.map((s) => (s.visual ? `${s.id}:${s.seedKey ?? ''}:${JSON.stringify(s.visual)}` : ''));
   // 岛的种类：颜色、形状（一格的环礁画潟湖）、归哪种省（省份的着色、省界）
   const isles = (small.islandTypes ?? []).map((t) => `${t.color ?? ''}:${t.shape}:${t.province}`);
-  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}`;
+  // 地形类别、资源的颜色（第二十一轮）：改过、加过时才有
+  const human = small.content?.terrainClass || small.content?.resource ? `|${classColors({ small }).join(';')}|${resourceColors({ small }).join(';')}` : '';
+  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}${human}`;
 }
 
 // ---------- 生态的花纹与发光（第三批） ----------
@@ -497,7 +537,7 @@ export function colorSignature(small: World['small']): string {
 // 没有一种生态有花纹或发光时为 null（着色器整段跳过，画面与以前逐像素相同）。
 // overrides：拖花纹、发光滑块时按 id 换上的外观（主线程上立即画，不必等引擎）
 export function fxLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'>, overrides?: ReadonlyMap<string, Visual>): { fx: Uint8Array; palette: Float32Array } | null {
-  if (!terrainLikeMode(o.mode)) return null;
+  if (!terrainLikeMode(o.mode) || humanMode(o.mode)) return null;
   const { mesh, causes, derived: d, small } = world;
   const set = fxSet(small.species, mesh.kind === 'sphere', overrides);
   if (!set) return null;

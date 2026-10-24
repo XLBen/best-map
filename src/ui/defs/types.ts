@@ -3,7 +3,7 @@ import type { ComponentType } from 'preact';
 import type { Command } from '../../../core/commands';
 import type { World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
-import type { Category, ToolId, ToolOptions } from '../../state';
+import type { Category, ToolId, ToolOptions, ViewMode } from '../../state';
 import type { CategoryHighlights } from '../map/highlights';
 import type { ToolEnv, ToolHandler } from '../tools';
 
@@ -68,6 +68,8 @@ export interface ToolSpec {
   pick?(w: World, cell: number): string | null;
   // 地图上的光标：点选类的工具是手指；省略时是十字（styles.css 的 .map-overlay）
   cursor?: 'pointer';
+  // 开着时底图换成这一层（地形类别、资源），换到别的工具时换回原来的（这期间在图层里换过就不动）
+  view?: ViewMode;
   // 换到别的工具时清掉的东西（选中的河、湖，选生态的范围）
   onLeave?(): void;
   // 地图跟着重画的状态（选中的河、湖……）：读一下就行

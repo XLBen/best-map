@@ -14,6 +14,8 @@ export const VIEWS: ViewDef[] = [
   { id: 'terrain', label: '地貌' },
   { id: 'dominant', label: '生态分区' },
   { id: 'provinces', label: '省份' },
+  { id: 'terrainClass', label: '地形类别' },
+  { id: 'resource', label: '资源', hint: '灰色是没有资源的陆地' },
   { id: 'temperature', label: '气温' },
   { id: 'precip', label: '降水' },
   { id: 'elevation', label: '海拔' },
@@ -33,13 +35,14 @@ export function suitabilityFocus(species: readonly { id: string }[], cur: string
   return cur && species.some((s) => s.id === cur) ? cur : (species[0]?.id ?? null);
 }
 
-export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' | 'scale' | 'latitude' | 'edits';
+export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' | 'scale' | 'latitude' | 'edits' | 'peaks';
 
 // planetLabel / planetHint：整个星球上的说法；planetOnly：只在整个星球上出现
 export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLabel?: string; planetHint?: string; planetOnly?: boolean }[] = [
   { key: 'labels', label: '地名' },
   { key: 'rivers', label: '河流' },
   { key: 'borders', label: '省份边界', hint: '省份底图或省份工具里显示' },
+  { key: 'peaks', label: '山峰', hint: '放大后标名字' },
   { key: 'wind', label: '风向' },
   { key: 'currents', label: '洋流', hint: '暖流偏橙、寒流偏蓝', planetOnly: true },
   { key: 'scale', label: '比例尺', hint: '左下角，导出的图片里也有' },

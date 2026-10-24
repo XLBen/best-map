@@ -659,6 +659,7 @@ button.toggle {
 .bottombar,
 .ruler-btn,
 .here,
+.legend,
 .popover,
 .sheet,
 .repo,
@@ -856,6 +857,37 @@ button.ruler-btn {
 }
 button.ruler-btn.on {
   background-color: var(--accent-bg);
+}
+
+/* 左下角、量距离按钮上面：图例（按类着色的底图） */
+.legend {
+  position: absolute;
+  left: 10px;
+  z-index: 8;
+  width: 168px;
+  background-color: var(--glass);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+button.legend-head {
+  width: 100%;
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2);
+  gap: var(--sp-1);
+  background-color: transparent;
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.legend-list {
+  max-height: min(260px, 40vh);
+  overflow-y: auto;
+  padding: 0 var(--sp-2) var(--sp-2);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 20px;
 }
 
 /* 顶部中间的提示条（安全模式、脚本出错的横幅在它上面，一起往下排） */
@@ -1311,6 +1343,19 @@ ol.history li.undone {
   flex: 1;
   min-width: 0;
 }
+/* 全是可以不写的一组（规则的条件）：一项一行，右边删除 */
+.ed-sparse {
+  display: flex;
+  gap: var(--sp-1);
+  align-items: flex-start;
+}
+.ed-sparse > .ed-field {
+  flex: 1;
+  min-width: 0;
+}
+select.ed-add {
+  align-self: flex-start;
+}
 .ed-row,
 .ed-key {
   display: flex;
@@ -1464,6 +1509,47 @@ table.kv td {
 .inspector .place {
   color: var(--muted);
   margin: 2px 0;
+}
+
+/* “这里”卡片里的档案（第二十一轮） */
+.archive {
+  margin: var(--sp-2) 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--fill);
+}
+.arch-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--h-sm);
+  font-size: var(--fs-sm);
+}
+.arch-line select,
+.arch-line input {
+  min-width: 0;
+}
+.arch-label {
+  flex: none;
+  width: 2.6em;
+  color: var(--muted);
+}
+input.arch-orig {
+  width: 7em;
+}
+.arch-actions {
+  display: flex;
+  gap: var(--sp-1);
+  margin: 2px 0 var(--sp-1) calc(2.6em + 6px);
+}
+.arch-note {
+  margin: var(--sp-1) 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-sm);
+}
+textarea.arch-note-input {
+  margin-top: var(--sp-1);
+  min-height: 44px;
+  font-size: var(--fs-sm);
 }
 
 /* 气候图（生态类型编辑器） */
