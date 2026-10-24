@@ -23,13 +23,13 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const level = (v: number, words: [string, string, string, string]) => (v < 0.25 ? words[0] : v < 0.5 ? words[1] : v < 0.8 ? words[2] : words[3]);
 
 export const TERRAIN_SLIDERS: TerrainSlider[] = [
-  { key: 'landFraction', label: '陆地多少', hint: '陆地占多少：就是升降海平面', range: [0.03, 0.7], step: 0.01, format: pct },
+  { key: 'landFraction', label: '陆地多少', hint: '升降海平面', range: [0.03, 0.7], step: 0.01, format: pct },
   { key: 'islands', label: '岛多少', hint: '增减小岛，不动大陆的海岸', range: [0, 1], step: 0.01, format: (v) => level(v, ['很少', '较少', '较多', '很多']) },
   { key: 'mountains', label: '山多高', hint: '整体缩放造山带', range: [0, 2], step: 0.01, format: pct },
   {
     key: 'coast',
     label: '海岸曲折',
-    hint: '海岸线有多曲折：平滑的海岸少湾少岬，破碎的海岸多半岛、小岛',
+    hint: '越破碎，半岛、小岛越多',
     range: [0.2, 2],
     step: 0.05,
     format: (v) => `${v < 0.6 ? '平滑' : v < 1.4 ? '自然' : '破碎'}（${v.toFixed(2)}）`,

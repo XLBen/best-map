@@ -24,7 +24,7 @@ export function lassoShapes(ring: [number, number][]): Shape[] {
 }
 
 // 整个星球上圈绕着极点：画的时候说一声，松手时拦下
-export const POLE_HINT = '绕着极点了，松手不会生效';
+export const POLE_HINT = '圈绕着极点，松手无效';
 export const POLE_TOAST = '圈不能绕着极点画';
 
 // ---------- 点一下或拖出大小（放岛、放湖） ----------

@@ -115,8 +115,8 @@ export function reasonText(f: Factor): string {
 function whyNot(w: World, e: CellExplanation, winner: string | null): string {
   if (!e.reachable) {
     if (e.why === 'range') return outsideRangeText(w, w.small.species.find((s) => s.id === e.species) ?? {}) ?? '它只长在设定的岛上或圈的范围里，这里在外面';
-    if (e.why === 'natural') return '它不自然生成：只长在涂了它的地方';
-    return '它传不到这里（不能跨海，或离起源地太远）';
+    if (e.why === 'natural') return '它不自然生成，只长在涂了它的地方';
+    return '它传不到这里：隔着海，或离起源地太远';
   }
   const limiting = [...e.factors].sort((a, b) => a.factor - b.factor)[0];
   // 长在哪里的脚本：比最卡的那条耐受条件还卡时先说它
@@ -148,7 +148,7 @@ function effectText(w: World, cell: number): string | null {
   if (Math.abs(t) >= 0.1) parts.push(`${t > 0 ? '暖' : '冷'}了 ${fmt(Math.abs(t), 1)} °C`);
   if (Math.abs(p) >= 0.01) parts.push(`雨水${p > 0 ? '多' : '少'}了 ${fmt(Math.abs(p) * 100)}%`);
   if (!parts.length) return null;
-  const who = effectsAt(w, d, cell).slice(0, 2).map((e) => `「${e.name}」`);
+  const who = effectsAt(w, d, cell).slice(0, 2).map((e) => `“${e.name}”`);
   return `${who.length ? `受${who.join('、')}影响` : '受附近生态、河的影响'}：这里${parts.join('，')}`;
 }
 
@@ -187,28 +187,28 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
       <Sentence w={w} cell={cell} />
       {painted.length > 0 && (
         <p class="hint">
-          这是你涂的“{S.find((s) => s.id === painted[painted.length - 1].species)?.name}”（{painted[painted.length - 1].mode === 'constraint' ? '自然融入' : '强制'}）。
-          {failing && <span class="warn"> 这一格没涂成{failWhy ? `：${failWhy}` : ''}。</span>}
-          {settled && <span class="muted"> 这一格没涂成（说过“就这样”）。</span>}
+          涂的“{S.find((s) => s.id === painted[painted.length - 1].species)?.name}” · {painted[painted.length - 1].mode === 'constraint' ? '自然融入' : '强制'}。
+          {failing && <span class="warn"> 没涂成{failWhy ? `：${failWhy}` : ''}。</span>}
+          {settled && <span class="muted"> 没涂成，已忽略。</span>}
         </p>
       )}
       {effect && <p class="hint">{effect}</p>}
       {(Math.abs(corrT) > 0.3 || Math.abs(corrP - 1) > 0.05) && (
         <p class="hint">
-          为了让涂的生态长出来，这里被调{corrT > 0 ? '暖' : '冷'}了约 {fmt(Math.abs(corrT), 1)} °C，雨水{corrP >= 1 ? '多' : '少'}了约 {fmt(Math.abs(corrP - 1) * 100)}%。
+          为涂的生态调{corrT > 0 ? '暖' : '冷'}约 {fmt(Math.abs(corrT), 1)} °C，雨水{corrP >= 1 ? '多' : '少'}约 {fmt(Math.abs(corrP - 1) * 100)}%。
         </p>
       )}
       {sp && winner && (
         <p>
           <b>为什么是{sp.name}：</b>
-          {winner.factors.every((f) => f.factor > 0.95) ? '这里的冷暖干湿正合适。' : '这里不算最适合它，但别的生态更不适合。'}
+          {winner.factors.every((f) => f.factor > 0.95) ? '冷暖干湿正合适。' : '不是最适合，但别的生态更不适合。'}
         </p>
       )}
       {explain
         .filter((e) => e.boost !== undefined && e.boost >= 1.05 && e.share >= 0.05)
         .map((e) => (
           <p key={e.species} class="hint">
-            「{e.name}」在侵占这里（×{fmt(e.boost!, 1)}）
+            “{e.name}”在侵占这里（×{fmt(e.boost!, 1)}）
           </p>
         ))}
       {!sp && runnerUp && (
@@ -225,12 +225,12 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
       {brushEx && brushEx.species !== runnerUp?.species && (
         <p>
           <b>为什么不是{brushEx.name}：</b>
-          {whyNot(w, brushEx, sp?.name ?? null)}。{options.value.biomeMode === 'natural' ? '用“自然融入”涂上去，系统会调这里的气候。' : ''}
+          {whyNot(w, brushEx, sp?.name ?? null)}。{options.value.biomeMode === 'natural' ? '用“自然融入”涂会调这里的气候。' : ''}
         </p>
       )}
       {painted.length > 0 && category.value === 'nature' && (
-        <button class="small" onClick={() => void exec({ op: 'erase_constraints', cells: [cell] }, '正在计算生态…')}>
-          擦掉这一格的涂色
+        <button class="small" onClick={() => void exec({ op: 'erase_constraints', cells: [cell] }, '正在计算…')}>
+          擦除这一格
         </button>
       )}
     </>
@@ -294,7 +294,7 @@ export function Inspector() {
   const w = world.value;
   if (!w) return null;
   const cell = lastHoverCell();
-  if (cell < 0 || cell >= w.mesh.n) return <p class="muted">把鼠标移到地图上，这里会告诉你那是什么地方。</p>;
+  if (cell < 0 || cell >= w.mesh.n) return <p class="muted">指向地图上的一处</p>;
   const d = w.derived;
   const land = w.causes.land[cell] === 1;
   const feats = featuresAt(w, cell);
@@ -325,7 +325,7 @@ export function Inspector() {
       ) : d.lake[cell] === 1 ? (
         <>
           <h3>{water?.name ?? '湖'}</h3>
-          <p>湖面海拔约 {fmt(d.water[cell] || d.elevation[cell])} m；湖水从最低处流出成河。</p>
+          <p>湖面海拔约 {fmt(d.water[cell] || d.elevation[cell])} m。</p>
         </>
       ) : (
         <LandInfo w={w} cell={cell} />

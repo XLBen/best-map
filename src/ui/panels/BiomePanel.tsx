@@ -25,7 +25,7 @@ export function BiomePalette() {
           </button>
         ))}
       </div>
-      <p class="hint">选一种就换到“涂生态”。也可以在地图上按住 Alt 点一下，吸取那里的生态。</p>
+      <p class="hint">选一种换到“涂生态”；Alt+点吸取</p>
       <div class="row wrap">
         <button
           onClick={() => {
@@ -36,7 +36,7 @@ export function BiomePalette() {
         >
           编辑生态类型…
         </button>
-        <span class="hint">改颜色、名字、喜欢的冷暖干湿，或新建一种</span>
+        <span class="hint">颜色、名字、冷暖干湿，或新建一种</span>
       </div>
     </>
   );

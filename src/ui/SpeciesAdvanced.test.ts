@@ -64,7 +64,7 @@ describe('地名', () => {
     expect(namesProblem('晶林', ['{color}晶林'])).toBeNull();
     expect(namesProblem('一二三四五六七八九', [])).toBe('类型名最多 8 个字');
     // 一个生僻字（两个 UTF-16 单位）× 21 = 42 > 40
-    expect(namesProblem('晶林', ['𠀀'.repeat(21)])).toBe('第 1 个模板太长了（最多 40 个字）');
+    expect(namesProblem('晶林', ['𠀀'.repeat(21)])).toBe('第 1 个模板太长，最多 40 个字');
     expect(namesProblem('晶林', Array.from({ length: 21 }, (_, k) => `名${k}`))).toBe('模板最多 20 个');
   });
 

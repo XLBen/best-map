@@ -20,7 +20,7 @@ describe('openDb', () => {
     vi.stubGlobal('indexedDB', { open: () => req });
     const p = openDb();
     req.onblocked!();
-    await expect(p).rejects.toThrow(/占着/);
+    await expect(p).rejects.toThrow(/被另一个页面占用/);
     req.onsuccess!();
     expect(req.result.close).toHaveBeenCalled();
   });

@@ -178,7 +178,7 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
     }
     const cmd = commandFor(d.id, draftRect.rect);
     // 预览过的就是它：结果直接采用，预览的世界留到结果换上
-    if (cmd) void execAdjust(cmd, '正在计算生态…');
+    if (cmd) void execAdjust(cmd, '正在计算…');
     else previewAdjust(null);
   };
 
@@ -281,11 +281,11 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
     ...(w.small.lakeTypes ?? []).map((t) => ({ id: `lake:${t.id}`, label: `靠近${t.name}（0–1）`, unit: '' })),
   ];
   const others = sp.tolerances.filter((t) => !tols.includes(t));
-  const save = (next: Tolerance[]) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: [...others, ...next] } }, '正在计算生态…');
+  const save = (next: Tolerance[]) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: [...others, ...next] } }, '正在计算…');
   return (
     <div>
       <h5>更精细的条件</h5>
-      <p class="hint">对任意一项（海拔、坡度、河流流量、纬度、自定义场……）给出“最小 · 最适下限 · 最适上限 · 最大”。最适区间里最适合，向两端渐渐变差。</p>
+      <p class="hint">给任一项设“最小 · 最适下限 · 最适上限 · 最大”</p>
       {tols.map((t, k) => (
         <div class="tol">
           <select
@@ -311,7 +311,7 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
                 onChange={(e) => save(tols.map((x, i) => (i === k ? { ...x, [key]: Number((e.target as HTMLInputElement).value) } : x)))}
               />
             ))}
-            <button class="small icon" onClick={() => save(tols.filter((_, i) => i !== k))} title="去掉这个条件">
+            <button class="small icon" onClick={() => save(tols.filter((_, i) => i !== k))} title="删除条件">
               <X />
             </button>
           </div>
@@ -347,7 +347,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
   useEffect(() => setName(sp.name), [sp.id, sp.name]);
   const conds = speciesConditions(sp);
   const rect = speciesRect(sp);
-  const setCond = (id: ConditionId, on: boolean) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: withCondition(sp, id, on).tolerances } }, '正在计算生态…');
+  const setCond = (id: ConditionId, on: boolean) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: withCondition(sp, id, on).tolerances } }, '正在计算…');
   const rain = conds.has('summerRain') ? 'summerRain' : conds.has('winterRain') ? 'winterRain' : null;
   const rename = () => name.trim() && name.trim() !== sp.name && void exec({ op: 'update_species', id: sp.id, patch: { name: name.trim() } });
   return (
@@ -366,13 +366,13 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         pos={COMPETITION.pos(competition ?? sp.competition)}
         text={(competition ?? sp.competition).toFixed(1)}
         changed={competition !== null && competition !== sp.competition}
-        note="两种生态都能长的地方，强势的那种占上风"
+        note="都能长时，强势的占上风"
         onDraft={(p) => setCompetition(COMPETITION.at(p))}
         onCommit={(p) => {
           const v = COMPETITION.at(p);
           if (v === sp.competition) return setCompetition(null);
           setCompetition(v);
-          void exec({ op: 'update_species', id: sp.id, patch: { competition: v } }, '正在计算生态…');
+          void exec({ op: 'update_species', id: sp.id, patch: { competition: v } }, '正在计算…');
         }}
         onCancel={() => setCompetition(null)}
       />
@@ -396,9 +396,9 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
       <SpeciesWhere sp={sp} />
       {sp.dispersal && (
         <p class="hint">
-          只在起源地附近、能扩散到的地方出现（{sp.dispersal.seaCost >= 1e5 ? '不能跨海' : '可以跨海'}）。
-          <button class="small" onClick={() => void exec({ op: 'update_species', id: sp.id, patch: { dispersal: null } }, '正在计算生态…')}>
-            取消这个限制
+          只长在起源地能扩散到的地方 · {sp.dispersal.seaCost >= 1e5 ? '不能跨海' : '可以跨海'}
+          <button class="small" onClick={() => void exec({ op: 'update_species', id: sp.id, patch: { dispersal: null } }, '正在计算…')}>
+            取消限制
           </button>
         </p>
       )}
@@ -407,7 +407,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
       </SpeciesAdvanced>
       <div class="row wrap">
         <button onClick={() => paintWith(sp.id)} disabled={options.value.biome === sp.id && tool.value === 'biome'}>
-          {options.value.biome === sp.id && tool.value === 'biome' ? '画笔正在用它' : '用它涂'}
+          {options.value.biome === sp.id && tool.value === 'biome' ? '正在涂' : '用它涂'}
         </button>
         <button
           onClick={async () => {
@@ -425,13 +425,13 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
           onClick={async () => {
             const v = await askUser({
               title: `删除生态“${sp.name}”？`,
-              text: '原来长它的地方会换成别的生态。',
+              text: '长它的地方会换成别的生态',
               choices: [
                 { value: 'delete', label: '删除', primary: true },
                 { value: 'cancel', label: '取消' },
               ],
             });
-            if (v === 'delete') void exec({ op: 'remove_species', id: sp.id }, '正在计算生态…');
+            if (v === 'delete') void exec({ op: 'remove_species', id: sp.id }, '正在计算…');
           }}
         >
           删除
@@ -451,9 +451,9 @@ function rangeText(w: World, sp: Species): string {
   const mass = landmassCells(w, r.cell);
   let n = 0;
   for (let i = 0; i < mass.length; i++) n += mass[i];
-  if (!n) return '选的那个岛已经不在了（那里变成了海）：重新选一个';
+  if (!n) return '选的岛已不在，请重新选';
   const f = w.derived.features.find((x) => (x.type === 'island' || x.type === 'continent') && Array.prototype.includes.call(x.cells, r.cell));
-  return `${f?.name ? `「${f.name}」` : '那块陆地'}上（${n} 格）`;
+  return `${f?.name ? `“${f.name}”` : '那块陆地'}上（${n} 格）`;
 }
 
 function SpeciesWhere({ sp }: { sp: Species }) {
@@ -468,10 +468,10 @@ function SpeciesWhere({ sp }: { sp: Species }) {
   return (
     <>
       <h5>长在哪里</h5>
-      <Toggle on={natural} onChange={(on) => void exec({ op: 'update_species', id: sp.id, patch: { natural: on } }, '正在计算生态…')} title="关掉时只长在涂了它的地方（涂的地方照样按“自然融入”算）">
-        自然生成：在地图上按条件自己出现
+      <Toggle on={natural} onChange={(on) => void exec({ op: 'update_species', id: sp.id, patch: { natural: on } }, '正在计算…')}>
+        自然生成
       </Toggle>
-      <p class="hint">{natural ? '冷暖干湿合适、竞争得过的地方都会长。' : '只长在涂了它的地方。'}</p>
+      <p class="hint">{natural ? '合适且竞争得过的地方都会长' : '只长在涂了它的地方'}</p>
       {/* 已经选着的“只在一个岛上”再点一下是重新选 */}
       <Seg<'everywhere' | 'island' | 'cells'>
         value={kind}
@@ -480,10 +480,10 @@ function SpeciesWhere({ sp }: { sp: Species }) {
           ['island', '只在一个岛上'],
           ['cells', '只在圈的范围里'],
         ]}
-        titles={{ island: '点地图上的一个岛（或一块大陆）', cells: '在地图上按住圈一片' }}
+        titles={{ island: '点一个岛或一块大陆', cells: '按住圈一片' }}
         onChange={(k) => {
           if (k !== 'everywhere') pick(k);
-          else if (sp.range) void exec({ op: 'update_species', id: sp.id, patch: { range: null } }, '正在计算生态…');
+          else if (sp.range) void exec({ op: 'update_species', id: sp.id, patch: { range: null } }, '正在计算…');
         }}
         wide
       />
@@ -491,7 +491,7 @@ function SpeciesWhere({ sp }: { sp: Species }) {
         <p class="hint">
           只长在{rangeText(w, sp)}。
           <button class="small" onClick={() => pick(sp.range!.kind)}>
-            {sp.range.kind === 'island' ? '换一个岛' : '重新圈'}
+            {sp.range.kind === 'island' ? '换岛' : '重新圈'}
           </button>
         </p>
       )}
@@ -552,7 +552,7 @@ export function SpeciesPanel() {
   };
   return (
     <div>
-      <p class="hint">每个色块是一种生态最适合的冷暖干湿范围：拖动色块移动，拖边或角改大小，拖到图边表示“不限”。灰色的点是这个世界上所有陆地的分布，黄圈是鼠标所指的地方。</p>
+      <p class="hint">色块是最适合的冷暖干湿：拖动移动，拖边改大小，拖到图边为“不限”。灰点是陆地，黄圈是指针所在。</p>
       <Chart w={w} selected={selected} onSelect={(id) => (focusSpecies.value = id)} />
       <div class="palette">
         {w.small.species.map((s, k) => (
@@ -565,7 +565,7 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openPackApply(FANTASY_PACK, { biomes: (FANTASY_PACK.biomes ?? []).map((b) => b.id) }, 'biomes')} title="水晶丛林、死亡森林……先在地图上看看加了之后的样子">
+        <button onClick={() => openPackApply(FANTASY_PACK, { biomes: (FANTASY_PACK.biomes ?? []).map((b) => b.id) }, 'biomes')} title="水晶丛林、死亡森林……先预览再添加">
           添加示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>
@@ -582,7 +582,7 @@ export function SpeciesPanel() {
           />
         </label>
       </div>
-      {selected ? <SpeciesDetails sp={selected} share={shares.get(w.small.species.indexOf(selected)) ?? 0} /> : <p class="hint">点一个色块或下面的名字来编辑。</p>}
+      {selected ? <SpeciesDetails sp={selected} share={shares.get(w.small.species.indexOf(selected)) ?? 0} /> : <p class="hint">点色块或名字编辑</p>}
     </div>
   );
 }

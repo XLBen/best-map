@@ -121,7 +121,7 @@ function LookSection({ sp }: { sp: Species }) {
     const at = drags.current;
     // 真的数据到了：去掉临时的外观（结果与临时的一样时，换上快照时画面那边已经去掉了，见 state.ts 的 pruneVisualOverrides）
     track(
-      queueSpeciesEdit(id, '正在换外观…', (cur) => visualPatch(cur, change)),
+      queueSpeciesEdit(id, '正在计算…', (cur) => visualPatch(cur, change)),
       () => {
         if (drags.current === at) previewVisual(id, null);
       },
@@ -210,7 +210,7 @@ function ClimateSection({ sp }: { sp: Species }) {
   const live = (change: ClimateChange) => setLocal({ ...local, ...change });
   const save = (change: ClimateChange) => {
     live(change);
-    track(queueSpeciesEdit(sp.id, '正在计算生态…', (cur) => effectsPatch(cur, withClimate(cur.effects, change))));
+    track(queueSpeciesEdit(sp.id, '正在计算…', (cur) => effectsPatch(cur, withClimate(cur.effects, change))));
   };
   return (
     <>
@@ -230,7 +230,7 @@ function ClimateSection({ sp }: { sp: Species }) {
       {(dT !== 0 || dP !== 0) && (
         <Knob label="范围" min={50} max={1500} step={10} value={r} text={`${r} 千米`} onLive={(x) => live({ radiusKm: x })} onDone={(x) => save({ radiusKm: x })} onEnd={end} />
       )}
-      <p class="hint">离它越远影响越小，到范围的边上就没有了。{CLIMATE_EFFECTS_LIVE ? '' : '这一项先记下，现在还不改地图上的冷暖干湿。'}</p>
+      <p class="hint">越远影响越小，到范围边上为零。{CLIMATE_EFFECTS_LIVE ? '' : '暂不改地图上的冷暖干湿。'}</p>
     </>
   );
 }
@@ -264,13 +264,13 @@ function InvadeSection({ sp }: { sp: Species }) {
   const save = (change: { toggle?: string; strength?: number }) => {
     // 先在界面上显示出来（大星球上算一步要一会儿，连着点几个也都看得到）
     setLocal({ targets: change.toggle !== undefined ? toggleTarget(targets, change.toggle, order) : targets, strength: change.strength ?? strength });
-    track(queueSpeciesEdit(sp.id, '正在计算生态…', (cur) => effectsPatch(cur, withInvade(cur.effects, change, world.value?.small.species.map((o) => o.id) ?? order))));
+    track(queueSpeciesEdit(sp.id, '正在计算…', (cur) => effectsPatch(cur, withInvade(cur.effects, change, world.value?.small.species.map((o) => o.id) ?? order))));
   };
   const others = all.filter((o) => o.id !== sp.id);
   return (
     <>
       <h5>侵占</h5>
-      <p class="hint">在选中的这些生态适宜的地方，它更容易占上风。</p>
+      <p class="hint">在选中生态适宜的地方更容易占上风</p>
       <div class="palette">
         {others.map((o) => (
           <button class={`chip ${targets.includes(o.id) ? 'on' : ''}`} onClick={() => save({ toggle: o.id })}>
@@ -281,7 +281,7 @@ function InvadeSection({ sp }: { sp: Species }) {
       </div>
       {targets.length > 0 && (
         <Knob
-          label="强度"
+          label="力度"
           min={0}
           max={5}
           step={0.1}
@@ -315,7 +315,7 @@ function clip(s: string, max: number): string {
 export function namesProblem(label: string, lines: readonly string[]): string | null {
   if (label.trim().length > MAX_LABEL) return `类型名最多 ${MAX_LABEL} 个字`;
   const long = lines.findIndex((s) => s.length > MAX_TEMPLATE);
-  if (long >= 0) return `第 ${long + 1} 个模板太长了（最多 ${MAX_TEMPLATE} 个字）`;
+  if (long >= 0) return `第 ${long + 1} 个模板太长，最多 ${MAX_TEMPLATE} 个字`;
   if (lines.length > MAX_TEMPLATES) return `模板最多 ${MAX_TEMPLATES} 个`;
   return null;
 }
@@ -356,7 +356,7 @@ function NamesSection({ sp }: { sp: Species }) {
       <label>
         <span class="row between">
           <span>类型名</span>
-          <span class="hint">地图上这一片是什么，比如“晶林”</span>
+          <span class="hint">如“晶林”</span>
         </span>
         <input
           class="wide-input"
@@ -371,7 +371,7 @@ function NamesSection({ sp }: { sp: Species }) {
         <span>起名模板（每行一个）</span>
         <textarea value={names} placeholder={'{color}晶林\n{myth}晶丛'} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={save} />
       </label>
-      <p class="hint">{'花括号里的词会换成文字包里的词，比如 {color}晶林、{myth}晶丛。不写就按生态的名字起。'}</p>
+      <p class="hint">{'花括号里的词换成文字包里的词；不写按生态名起名'}</p>
       {problem && <div class="script-problem small">{problem}</div>}
     </>
   );
@@ -396,7 +396,7 @@ function ScriptsSection({ sp }: { sp: Species }) {
   return (
     <>
       <h5>脚本</h5>
-      <p class="hint">用一小段 JavaScript 更自由地决定它长在哪里、是什么颜色。停一下就用到地图上；一次修改只算一步撤销。</p>
+      <p class="hint">用 JavaScript 决定它长在哪里、什么颜色</p>
       {SPECIES_SCRIPT_KINDS.map((kind) => (
         <ScriptBox
           // 换了世界、换了生态都是新的框（还没提交的不会落到别的世界、别的生态上）

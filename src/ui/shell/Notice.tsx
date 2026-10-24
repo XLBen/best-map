@@ -17,9 +17,9 @@ export function Notice() {
     return (
       <div class="notice">
         <span class="spinner" />
-        {running ? `正在运行「${running}」的脚本…` : '正在运行脚本…'}
-        <button class="pill-btn" onClick={stopScripts} title="停掉这段脚本，这一步不做">
-          <Square /> 停下
+        {running ? `正在运行“${running}”的脚本…` : '正在运行脚本…'}
+        <button class="pill-btn" onClick={stopScripts} title="停止脚本，不做这一步">
+          <Square /> 停止
         </button>
       </div>
     );
@@ -80,7 +80,7 @@ function ChangeNote({ n }: { n: NonNullable<typeof changeNote.value> }) {
           <Pencil /> {n.action.label}
         </button>
       )}
-      <button class="pill-btn icon" onClick={() => (changeNote.value = null)} title="关上">
+      <button class="pill-btn icon" onClick={() => (changeNote.value = null)} title="关闭">
         <X />
       </button>
     </div>

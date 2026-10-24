@@ -26,15 +26,15 @@ describe('语法错误的行号（acorn）', () => {
   it('少了右花括号：报那个没配上的 { 所在的行，不是最后一行', () => {
     const src = 'if (海拔 > 100) {\n  return 1;\n\nreturn 0;';
     expect(syntaxProblem(src)).toMatchObject({ line: 1, reason: 'syntax' });
-    expect(line(src)).toBe('第 1 行：这个 { 少了配对的 }');
+    expect(line(src)).toBe('第 1 行：{ 少了配对的 }');
   });
 
   it('多了一个右括号、配错了括号：各自的行', () => {
     expect(line('const a = 1;\nreturn a;\n}\n')).toBe('第 3 行：多了一个 }');
     // ( 在第 2 行没有配上，到第 3 行的 } 才发现
-    expect(line('if (海拔 > 0) {\n  const x = Math.max(1, 2;\n}\nreturn 1;')).toBe('第 2 行：这个 ( 少了配对的 )');
+    expect(line('if (海拔 > 0) {\n  const x = Math.max(1, 2;\n}\nreturn 1;')).toBe('第 2 行：( 少了配对的 )');
     // 嵌套的 { 都配上了，外面那个没有
-    expect(line('if (a) {\n  if (b) {\n    return 1;\n  }\nreturn 0;')).toMatch(/^第 1 行：这个 \{/);
+    expect(line('if (a) {\n  if (b) {\n    return 1;\n  }\nreturn 0;')).toMatch(/^第 1 行：\{ 少了配对/);
   });
 
   it('注释、字符串、正则里的括号不算', () => {
@@ -42,15 +42,15 @@ describe('语法错误的行号（acorn）', () => {
   });
 
   it('写错的符号：第几行、换成中文说明', () => {
-    expect(line('const a = 1；\nreturn a;')).toBe('第 1 行：用了中文标点「；」，要换成英文的「;」');
-    expect(line('const a = 1;\nconst b = 2;\nreturn a b;')).toBe('第 3 行：这里不该出现「b」');
-    expect(line('const a = 1;\nreturn a @ 2;')).toBe('第 2 行：不认识的字符「@」');
-    expect(line('return 1 +* 2;')).toBe('第 1 行：这里不该出现「*」');
+    expect(line('const a = 1；\nreturn a;')).toBe('第 1 行：中文标点“；”要换成英文的“;”');
+    expect(line('const a = 1;\nconst b = 2;\nreturn a b;')).toBe('第 3 行：这里不该出现“b”');
+    expect(line('const a = 1;\nreturn a @ 2;')).toBe('第 2 行：不认识的字符“@”');
+    expect(line('return 1 +* 2;')).toBe('第 1 行：这里不该出现“*”');
     expect(line('const a = 1;\nreturn a +')).toMatch(/^第 2 行：代码没写完/);
     expect(line('const s = "abc;\nreturn 1;')).toBe('第 1 行：引号没有配对');
     // 引擎按严格模式编译，这里也按严格模式查
     expect(line('const x = 1;\nwith (Math) { return x; }')).toBe('第 2 行：脚本里不能用 with');
-    expect(line('let x = 1;\nlet x = 2;\nreturn x;')).toBe('第 2 行：「x」重复声明了');
+    expect(line('let x = 1;\nlet x = 2;\nreturn x;')).toBe('第 2 行：“x”重复声明了');
   });
 
   it('装上 acorn 后，引擎编译时报的语法错误也带上行号（setSyntaxLocator）', () => {
@@ -101,7 +101,7 @@ describe('用了没有的变量、不能用的名字', () => {
   });
 
   it("field('名字')：世界上没有这个自定义场时说出来", () => {
-    expect(line("return field('魔力');", 'placement', [])).toBe('第 1 行：没有自定义场「魔力」（先在“调整”里新建）');
+    expect(line("return field('魔力');", 'placement', [])).toBe('第 1 行：没有自定义场“魔力”，先在“调整”里新建');
     expect(line("return field('魔力');", 'placement', ['魔力'])).toBeNull();
     expect(line("return field('海拔') > 1000;", 'placement', [])).toBeNull();
   });
@@ -109,7 +109,7 @@ describe('用了没有的变量、不能用的名字', () => {
   it('import()、console、太长的脚本：提交前就说', () => {
     expect(line("const m = 1;\nreturn import('https://example.com/x.js');")).toBe('第 2 行：脚本里不能用 import');
     expect(line('console.log(海拔);\nreturn 1;')).toBe('第 1 行：脚本里不能用 console');
-    expect(line(`// ${'很长'.repeat(10001)}\nreturn 1;`)).toBe('脚本太长了（最多 20000 个字符）');
+    expect(line(`// ${'很长'.repeat(10001)}\nreturn 1;`)).toBe('脚本太长（最多 20000 个字符）');
     // 对象的属性叫 import、console 不算
     expect(line('const o = { import: 1, console: 2 };\nreturn o.import + o.console > 0;')).toBeNull();
   });

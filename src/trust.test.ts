@@ -118,7 +118,7 @@ describe('打开时的信任检查', () => {
     const p = loadDoc(doc);
     await tick();
     const a = ask.value!;
-    expect(a.title).toBe('信任这个世界里的脚本吗？');
+    expect(a.title).toBe('世界里的脚本');
     // 同一段源码只列一次
     expect(a.scripts!.map((s) => [s.owner, s.kind, s.src])).toEqual([
       ['生态a', 'placement', 'return 0.5;'],
@@ -137,7 +137,7 @@ describe('打开时的信任检查', () => {
     const p = loadDoc({ ...base, commands: [...base.commands, blood] });
     await tick();
     const a = ask.value!;
-    expect(a.title).toBe('信任这个世界里的脚本吗？');
+    expect(a.title).toBe('世界里的脚本');
     expect(a.scripts!.map((s) => [s.owner, s.kind, s.src])).toEqual([
       ['生态m', 'placement', 'return 0.15;'],
       ['血河', 'match', 'return 流量 > 1000;'],
@@ -219,7 +219,7 @@ describe('打开时的信任检查', () => {
     storage.set('map2.autosave', JSON.stringify({ savedAt: Date.now(), doc }));
     const p = resumeLast();
     await tick();
-    expect(ask.value!.title).toBe('上次打开这个世界时程序停止了响应。用安全模式打开吗？（脚本不运行）');
+    expect(ask.value!.title).toBe('上次打开时停止了响应');
     ask.value!.resolve('safe');
     expect(await p).toBe(true);
     expect(sentKinds().at(-1)).toBe('load(safe)');
@@ -247,7 +247,7 @@ describe('打开时的信任检查', () => {
     await tick();
     expect(sentKinds().slice(n)).toEqual(['exec', 'doc']);
     // 世界里的脚本没信任过：照样先问
-    expect(ask.value!.title).toBe('信任这个世界里的脚本吗？');
+    expect(ask.value!.title).toBe('世界里的脚本');
     ask.value!.resolve('cancel');
     expect(await r).toBe(false);
   });
@@ -276,7 +276,7 @@ describe('星球形态里的脚本（向导、形态编辑器、调整里换形�
     const form = { ...FANTASY_FORMS[2], id: 'theirs', name: '别人的', scripts: { crust: script('return { height: height + 7 };') } };
     let p = trustFormScripts(form);
     await tick();
-    expect(ask.value!.title).toBe('信任这个星球形态里的脚本吗？');
+    expect(ask.value!.title).toBe('星球形态里的脚本');
     expect(ask.value!.scripts!.map((x) => [x.owner, x.kind, x.src])).toEqual([['别人的', 'crust', 'return { height: height + 7 };']]);
     expect(ask.value!.choices.map((c) => c.label)).toEqual(['信任', '取消']);
     ask.value!.resolve('cancel');

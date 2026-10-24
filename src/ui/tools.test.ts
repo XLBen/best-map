@@ -184,7 +184,7 @@ describe('放湖：贴着海时松手就拦下', () => {
     t.down?.(at(w, c));
     expect(t.preview().warn).toBe(true);
     await t.up?.(at(w, c));
-    expect(toast.value?.text).toBe('离海太近，留不住水：往内陆挪一点');
+    expect(toast.value?.text).toBe('离海太近，留不住水');
     expect(exec).not.toHaveBeenCalled();
     // 拦下后不再拖着：预览回到悬停的样子
     expect(t.preview().hint).toBe('离海太近，留不住水');
@@ -362,13 +362,13 @@ describe('放岛、岛链、圈一片、放湖也能排队', () => {
     // 再放一个岛：鼠标旁说前面还有几步
     const w = eng.world;
     island.move?.(pt(w.mesh.x[isle], w.mesh.y[isle], 900, isle), false);
-    expect(island.preview().hint).toBe('排队中：前面还有 4 步');
+    expect(island.preview().hint).toBe('已排队 · 前面 4 步');
     expect(island.preview().ghost!.cells.length).toBeGreaterThan(0);
     // 河、剪刀、合并要按最新的世界算：照旧等前面算完（只说一声，不开始画）
     const cut = provinceCutTool(() => 1000);
     cut.down?.(pt(w.mesh.x[isle], w.mesh.y[isle], 10, isle));
     cut.move?.(pt(w.mesh.x[isle] + 5 * w.mesh.spacing, w.mesh.y[isle], 60, isle), true);
-    expect(said()).toBe('还在计算上一步，稍等一下');
+    expect(said()).toBe('正在计算…');
     expect(cut.preview().shapes).toEqual([]);
     finish.forEach((f) => f(true));
     await Promise.all(done);
@@ -511,14 +511,14 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     selectedProvince.value = a;
     t.move?.(at(w, interior(w, b)!), false);
     const locked = t.preview();
-    expect(locked).toMatchObject({ warn: true, hint: `「${w.small.provinces[b].name}」已锁定，不能合并` });
+    expect(locked).toMatchObject({ warn: true, hint: `“${w.small.provinces[b].name}”已锁定` });
     expect(locked.provinces).toBeUndefined();
     expect(locked.layers[0].color).toEqual([230, 90, 70]);
     await t.click?.(at(w, interior(w, b)!));
     expect(exec).not.toHaveBeenCalled();
     expect((toast.value as { text: string } | null)?.text).toBe(locked.hint);
     t.move?.(at(w, interior(w, far)!), false);
-    expect(t.preview()).toMatchObject({ caution: true, hint: '不相邻：合并后是一省两块' });
+    expect(t.preview()).toMatchObject({ caution: true, hint: '不相邻：合并后分成两块' });
     await t.click?.(at(w, interior(w, far)!));
     expect(vi.mocked(exec).mock.calls[0][0]).toEqual({ op: 'merge_province', from: far, into: a });
     selectedProvince.value = null;
@@ -540,11 +540,11 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     for (const c of cells) t.move?.(at(w, c), true);
     // 算好之前：先把会重划的省涂黄
     const rough = t.preview();
-    expect(rough.hint).toMatch(/^重划 \d+ 个省$/);
+    expect(rough.hint).toMatch(/^重划 \d+ 个省份$/);
     expect(rough.provinces).toBeNull();
     await new Promise((r) => setTimeout(r, 300));
     const exact = t.preview();
-    expect(exact.hint).toMatch(/^重划 \d+ 个省 → \d+ 个$/);
+    expect(exact.hint).toMatch(/^重划 \d+ 个省份 → \d+ 个$/);
     // 接着涂到邻省的一格（邻省远没涂到一半，重划的还是这个省）：新省界一直留着，不跳回涂黄，也不再算一遍
     const sizes = new Map<number, number>();
     w.causes.province.forEach((q) => q >= 0 && sizes.set(q, (sizes.get(q) ?? 0) + 1));
@@ -606,7 +606,7 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
       t.down?.(pts[0]);
       for (const q of pts) t.move?.(q, true);
       const pv = t.preview();
-      const m = pv.hint?.match(/^会把「(.+)」分成 (\d+) 块$/);
+      const m = pv.hint?.match(/^会把“(.+)”分成 (\d+) 块$/);
       if (!m) {
         t.cancel?.();
         continue;
@@ -700,7 +700,7 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     t.move?.(at(w, land), false);
     const blocked = t.preview();
     expect(blocked.ghost ?? null).toBeNull();
-    expect(blocked.hint).toBe('这里已经是陆地');
+    expect(blocked.hint).toBe('这里已是陆地');
   });
 
   it('湖面上（第十五轮）：放岛悬停画出岛占的湖面格（白框，就是命令的结果），松手发出放岛的命令；岛链画过湖也画出来', async () => {
@@ -801,7 +801,7 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
       const calm = [...Array(w.mesh.n).keys()].find((i) => i % 13 === 0 && near(w, i, 6).every((j) => !w.causes.land[j]) && changes(i) === 0)!;
       await t.click?.(at(w, calm));
       expect(exec).not.toHaveBeenCalled();
-      expect(toast.value?.text).toBe('这一片重画不出变化');
+      expect(toast.value?.text).toBe('重画不出变化');
       await t.click?.(at(w, busy));
       expect(vi.mocked(exec).mock.calls[0][0]).toMatchObject({ op: 'reroll_region', x: w.mesh.x[busy], y: w.mesh.y[busy] });
     } finally {

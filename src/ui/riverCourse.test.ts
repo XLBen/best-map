@@ -216,7 +216,7 @@ describe('自定义走向：画的线就是河', () => {
     try {
       await drag(t, w, stroke);
       expect(exec).not.toHaveBeenCalled();
-      expect(toast.value?.text).toBe('还在计算上一步，稍等一下');
+      expect(toast.value?.text).toBe('正在计算…');
     } finally {
       busy.value = null;
     }
@@ -230,7 +230,7 @@ describe('自定义走向：画的线就是河', () => {
     t.down?.(ptr(w, stroke[0]));
     await t.up?.(ptr(w, [stroke[0][0] + 0.1 * w.mesh.spacing, stroke[0][1]]));
     expect(exec).not.toHaveBeenCalled();
-    expect(toast.value?.text).toBe('按住拖动画一条河');
+    expect(toast.value?.text).toBe('按住拖动画河');
     setOptions({ riverMode: 'flow' });
     // 顺地势悬停时先有预览
     t.move?.(ptr(w, stroke[0]), false);
@@ -262,7 +262,7 @@ describe('穿过别的河：不再先问一句', () => {
     const label = (c: typeof cmd) => (c.op === 'add_guide' ? c.label : undefined);
     expect({ ...cmd, label: undefined }).toEqual({ ...want, label: undefined });
     expect(label(cmd)?.startsWith(label(want)!)).toBe(true);
-    expect(cmd.op === 'add_guide' && cmd.label).toMatch(/截走了/);
+    expect(cmd.op === 'add_guide' && cmd.label).toMatch(/ · 截走/);
   });
 
   it('按住 Alt 松手：在第一次碰到的那条河那里汇入', async () => {
@@ -329,7 +329,7 @@ describe('认河：悬停与按下同一个判定，14 个屏幕像素以内都�
     t.move?.(ptr(w, s), false);
     const hover = t.preview();
     expect(hover.hint).toContain('从这里起笔：');
-    expect(hover.hint).toContain('改了以后它就固定下来');
+    expect(hover.hint).toContain('改后锁定');
     const h = pick(w, s[0], s[1], findCell(w.mesh, ...s), z)!;
     expect(h.kind).toBe('river');
     // 往旁边画 4 格
@@ -370,7 +370,7 @@ describe('选中的河：控制点', () => {
         const to: Pt = [P[0], P[1] + dy * 0.8 * w.mesh.spacing];
         vi.mocked(exec).mockClear();
         t.move?.(ptr(w, P), false);
-        expect(t.preview().hint).toContain('双击删掉');
+        expect(t.preview().hint).toContain('双击删除');
         t.down?.(ptr(w, P));
         for (const q of line(w, P, to).slice(1)) t.move?.(ptr(w, q), true);
         expect(riverStyleOverride.value).toEqual({ id: g.id, hide: true });
@@ -417,7 +417,7 @@ describe('选中的河：控制点', () => {
     expect(exec).toHaveBeenCalledTimes(1);
     const cmd = lastExec();
     expect(cmd).toMatchObject({ op: 'update_guide', id: g.id });
-    expect(cmd.op === 'update_guide' && cmd.label).toContain('删掉了');
+    expect(cmd.op === 'update_guide' && cmd.label).toContain('删除');
   });
 
   it('从河中间画到旁边的陆地上：从这里改道，还是同一条河；拖的时候原来的下游画成灰色虚线', async () => {
@@ -441,7 +441,7 @@ describe('选中的河：控制点', () => {
       await t.up?.(ptr(w, end));
       const cmd = lastExec();
       expect(cmd).toMatchObject({ op: 'update_guide', id: g.id });
-      expect(cmd.op === 'update_guide' && cmd.label).toContain('从这里改道');
+      expect(cmd.op === 'update_guide' && cmd.label).toMatch(/^改道/);
       done = true;
     }
     expect(done).toBe(true);
@@ -483,7 +483,7 @@ describe('选中的河：控制点', () => {
     selectedRiver.value = { kind: 'natural', cell };
     riverCutPick.value = true;
     t.move?.(ptr(w, at(w, cell)), false);
-    expect(t.preview().hint).toBe('点一下：从这里往下去掉');
+    expect(t.preview().hint).toBe('从这里往下删除');
     expect(t.escape?.()).toBe(true);
     expect(riverCutPick.value).toBe(false);
     riverCutPick.value = true;
@@ -600,12 +600,12 @@ describe('删除河湖：按画出来的线认河', () => {
       const p = ptr(w, L[Math.floor(L.length / 2)]);
       t.move?.(p, false);
       const pv = t.preview();
-      expect(pv.hint).toBe('删掉这条河');
+      expect(pv.hint).toBe('删除河');
       expect(pv.shapes.some((s) => s.kind === 'line' && s.points!.length >= L.length - 1)).toBe(true);
       expect(previewCommand).not.toHaveBeenCalled();
       vi.advanceTimersByTime(300);
       const name = w.derived.features.find((f) => f.guide === g.id)?.name;
-      const removal = { op: 'remove_guide', id: g.id, label: `删掉了「${name}」` };
+      const removal = { op: 'remove_guide', id: g.id, label: `删除“${name}”` };
       expect(previewCommand).toHaveBeenCalledWith(removal);
       await t.click?.(p);
       expect(lastExec()).toEqual(removal);
@@ -628,8 +628,8 @@ describe('说法', () => {
     const ref = { kind: 'guide' as const, id: g.id };
     const info = riverInfo(w, ref)!;
     expect(riverLabel(ref, info, g.cells[g.cells.length - 1])).toMatch(/停在这里$/);
-    expect(riverLabel(ref, info, g.cells[1])).toMatch(/最后停在终点$/);
-    expect(info.dest).toBe('最后停在终点');
+    expect(riverLabel(ref, info, g.cells[1])).toMatch(/ · 停在终点$/);
+    expect(info.dest).toBe('停在终点');
   });
 
   it('画好以后顶部说汇入哪条河时用改好的世界里的名字（画的时候那条河还没名字，说的是“汇入一条河”）', () => {
@@ -646,12 +646,12 @@ describe('说法', () => {
         const cmd = newCourse(w, plan, s).cmd!;
         const known = new Set(w.small.guides.map((g) => g.id));
         eng.exec(cmd);
-        const said = namedDest(eng.world, cmd, known, '画了一条河（约 3 km，汇入一条河）');
+        const said = namedDest(eng.world, cmd, known, '画河 · 约 3 km · 汇入别的河');
         const id = eng.world.small.guides.find((g) => !known.has(g.id))!.id;
         const dest = riverInfo(eng.world, { kind: 'guide', id })!.dest;
-        expect(dest).toMatch(/^汇入「/);
-        expect(said).toBe(`画了一条河（约 3 km，${dest}）`);
-        expect(namedDest(eng.world, cmd, known, '画了一条河（约 3 km，入海）')).toBeNull();
+        expect(dest).toMatch(/^汇入“/);
+        expect(said).toBe(`画河 · 约 3 km · ${dest}`);
+        expect(namedDest(eng.world, cmd, known, '画河 · 约 3 km · 入海')).toBeNull();
         return;
       }
     }
@@ -689,10 +689,10 @@ describe('审查后补的', () => {
     const s2 = stroke.map(([x, y]) => [x, y + 2 * w.mesh.spacing] as Pt);
     t.down?.(ptr(w, s2[0]));
     for (const p of s2.slice(1)) t.move?.(ptr(w, p), true);
-    expect(t.preview().hint).toMatch(/^排着队：/);
+    expect(t.preview().hint).toMatch(/^已排队：/);
     await t.up?.(ptr(w, s2[s2.length - 1]));
     expect(exec).toHaveBeenCalledTimes(1);
-    expect(toast.value?.text).toContain('排着队');
+    expect(toast.value?.text).toContain('已排队');
     finish(true);
     await first;
     await vi.waitFor(() => expect(exec).toHaveBeenCalledTimes(2));
@@ -826,7 +826,7 @@ describe('复测后补的', () => {
         const plan = planCourse(w, d, s, opts(w));
         if (plan.blocked || plan.reroute || plan.merge || plan.gorge < 100) continue;
         const c = newCourse(w, plan, s);
-        expect(c.cmd?.op === 'add_guide' && c.cmd.label).toContain('挖出了峡谷（最深约');
+        expect(c.cmd?.op === 'add_guide' && c.cmd.label).toContain('峡谷最深约');
         return;
       }
     }
@@ -911,7 +911,7 @@ describe('分一股出去、加一个源头（第十三轮）：按一下按钮�
         const hint = t.preview().hint ?? '';
         await t.up?.(ptr(w, pts[pts.length - 1]));
         if (!vi.mocked(exec).mock.calls.length) continue;
-        expect(hint).toContain('分一股出去');
+        expect(hint).toContain('分出一股');
         const cmd = lastExec();
         if (cmd.op !== 'add_guide') throw new Error(cmd.op);
         expect(cmd.guide.branch?.share).toBeGreaterThan(0);

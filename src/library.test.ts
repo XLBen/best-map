@@ -188,7 +188,7 @@ describe('自己做的星球形态存进资源库', () => {
     for (let k = 1; k < PACK_MAX.planetForms; k++) expect((await saveForm(form(`my_${k}`))).ok).toBe(true);
     const over = await saveForm(form('my_over'));
     expect(over.ok).toBe(false);
-    expect(!over.ok && over.error).toContain('已经有 32 个了');
+    expect(!over.ok && over.error).toContain('已满 32 个');
     // 替换已有的照样可以
     expect((await saveForm(form('my_3', '改过的'))).ok).toBe(true);
     expect(library.value.find((e) => e.key === MY_PACK_NAME)!.pack.planetForms!.length).toBe(PACK_MAX.planetForms);

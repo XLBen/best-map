@@ -127,7 +127,7 @@ let busyNoted = Number.NEGATIVE_INFINITY;
 const busyNote = () => {
   if (performance.now() - busyNoted < 2000) return;
   busyNoted = performance.now();
-  showToast('还在计算上一步，稍等一下');
+  showToast('正在计算…');
 };
 
 // 现在不能动手：说一声，返回 true

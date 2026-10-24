@@ -41,7 +41,7 @@ export function TypePickerButton({ panel, prefix, swatch, name, auto, title }: {
     <button class={`bar-btn ${openPanel.value === panel ? 'open' : ''}`} data-panel={panel} onClick={() => togglePanel(panel)} title={title}>
       <span class="muted">{prefix}：</span>
       <span class="swatch" style={{ background: swatch }} /> {name}
-      {auto ? <span class="hint">（按规则）</span> : null}
+      {auto ? <span class="hint">（自动）</span> : null}
       <ChevronDown />
     </button>
   );

@@ -39,5 +39,5 @@ export function locateNextUnmet(w: Pick<World, 'small' | 'derived'>): number {
 
 // 按钮上的说法：“在地图上看”，看过之后带上“第几处 / 共几处”
 export function locateTitle(looked: number, total: number): string {
-  return looked >= 0 && looked < total ? `在地图上看（${looked + 1}/${total}，再按看下一处）` : '在地图上看';
+  return looked >= 0 && looked < total ? `定位 ${looked + 1}/${total}` : '定位';
 }

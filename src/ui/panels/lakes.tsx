@@ -7,6 +7,7 @@ import { type LakeRef, exec, lakeRange, openPanel, options, selectedLake, setOpt
 import { focusOn } from '../camera';
 import { SelectionActions } from '../components/SelectionActions';
 import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
+import { byRulesTip } from '../copy';
 import { NameInput } from './names';
 import { type MenuItem, TypeButton, TypeMenu, createAndUse } from './waterTypes';
 import { Slider } from '../components/Slider';
@@ -23,7 +24,7 @@ export function NewLakeTypePick() {
   const cur = options.value.lakeType;
   const t = w.small.lakeTypes?.find((x) => x.id === cur) ?? null;
   const byRules = !t && cur !== PLAIN_LAKE && hasLakeRules(w);
-  return <TypeButton kind="lake" prefix="新放的湖" type={t} panel="newlaketype" plainText={byRules ? '按规则' : '普通'} />;
+  return <TypeButton kind="lake" prefix="新湖" type={t} panel="newlaketype" plainText={byRules ? '自动' : '普通'} />;
 }
 
 // 新放的湖用哪一种
@@ -39,12 +40,12 @@ export function NewLakeTypeMenu() {
     openPanel.value = null;
   };
   const items: MenuItem[] = [
-    ...(rules ? [{ t: null, label: '按规则', on: !known, hint: '按各类型的“哪些自然的湖是这一种”判断', onPick: () => pick('') }] : []),
+    ...(rules ? [{ t: null, label: '自动', on: !known, hint: byRulesTip('湖'), onPick: () => pick('') }] : []),
     {
       t: null,
       label: '普通的湖',
       on: rules ? cur === PLAIN_LAKE : !known || cur === PLAIN_LAKE,
-      hint: rules ? '不按规则变成别的类型' : undefined,
+      hint: rules ? '不自动变成别的类型' : undefined,
       onPick: () => pick(rules ? PLAIN_LAKE : ''),
     },
     ...types.map((t) => ({ t, label: t.name, on: cur === t.id, onPick: () => pick(t.id) })),
@@ -63,16 +64,16 @@ export function LakeTypeMenu() {
   const choose = (choice: string | null) => {
     openPanel.value = null;
     const cmd = lakeTypeChoiceCommand(w, sel, choice);
-    if (cmd) void exec(cmd, '正在计算湖泊…');
+    if (cmd) void exec(cmd, '正在计算…');
   };
   const items: MenuItem[] = [
     ...(rules
       ? [
           {
             t: cur.chosen === null ? cur.type : null,
-            label: `按规则${cur.chosen === null ? `（现在是${cur.type ? cur.type.name : '普通的湖'}）` : ''}`,
+            label: `自动${cur.chosen === null ? ` · ${cur.type ? cur.type.name : '普通的湖'}` : ''}`,
             on: cur.chosen === null,
-            hint: '按各类型的“哪些自然的湖是这一种”判断',
+            hint: byRulesTip('湖'),
             onPick: () => choose(null),
           },
         ]
@@ -85,7 +86,7 @@ export function LakeTypeMenu() {
       kind="lake"
       items={items}
       onNew={() => void createAndUse('lake', (id) => lakeTypeChoiceCommand(w, sel, id))}
-      note="换了类型，湖按那种湖的起名模板换个名字（自己起的名字不变）。"
+      note="按新类型的模板改名，自己起的名字不变"
     />
   );
 }
@@ -110,9 +111,9 @@ function LakeSizeSlider({ w, l }: { w: World; l: LakeSpec }) {
   };
   return (
     <Slider
-      label="大小"
+      label="直径"
       pos={clamp01(Math.log(cur / lo) / Math.log(hi / lo))}
-      text={`直径 ${km(cur * 2)} km`}
+      text={`${km(cur * 2)} km`}
       title="湖有多大；松手后重挖湖盆"
       onDraft={(p) => {
         const v = at(p);
@@ -123,7 +124,7 @@ function LakeSizeSlider({ w, l }: { w: World; l: LakeSpec }) {
         const v = at(p);
         if (v === l.radius) return done();
         setDraft(v);
-        void exec({ op: 'update_lake', id: l.id, patch: { radius: v }, label: `湖的直径改成约 ${km(v * 2)} km` }, '正在计算湖泊…').finally(done);
+        void exec({ op: 'update_lake', id: l.id, patch: { radius: v }, label: `修改湖的直径 · 约 ${km(v * 2)} km` }, '正在计算…').finally(done);
       }}
       onCancel={done}
     />
@@ -132,7 +133,7 @@ function LakeSizeSlider({ w, l }: { w: World; l: LakeSpec }) {
 
 function LakeTypeButton({ w, sel }: { w: World; sel: LakeRef }) {
   const cur = lakeTypeOfLake(w, sel);
-  return <TypeButton kind="lake" prefix="这个湖" type={cur.type} auto={cur.chosen === null} panel="laketype" />;
+  return <TypeButton kind="lake" prefix="类型" type={cur.type} auto={cur.chosen === null} panel="laketype" />;
 }
 
 export function LakeBar() {
@@ -156,8 +157,8 @@ export function LakeBar() {
       {f ? (
         <NameInput fkey={f.key} value={f.name} onCommit={(v) => void exec({ op: 'rename_feature', key: f.key, name: v }, '正在改名…')} />
       ) : (
-        <span class="bar-label" title="只剩干涸的湖底，没有地名">
-          {info.dry ? '干湖' : '无名的湖'}
+        <span class="bar-label" title="只剩干涸的湖底">
+          {info.dry ? '干湖' : '未命名'}
         </span>
       )}
       <LakeTypeButton w={w} sel={sel} />
@@ -171,11 +172,11 @@ export function LakeBar() {
           l
             ? () => {
                 selectedLake.value = null;
-                void exec({ op: 'remove_lake', id: l.id }, '正在计算湖泊…');
+                void exec({ op: 'remove_lake', id: l.id }, '正在计算…');
               }
             : undefined
         }
-        removeTitle="删掉这个放的湖"
+        removeTitle="删除湖"
         deselect={() => (selectedLake.value = null)}
       />
     </>
@@ -207,7 +208,7 @@ export function LakeList() {
     <section>
       <h5>湖（{all.length}）</h5>
       {list.length === 0 ? (
-        <p class="hint">这个世界里还没有湖。用“放湖”在陆地上点一下、按住拖开放一个。</p>
+        <p class="hint">没有湖</p>
       ) : (
         <div class="list">
           {list.map(({ ref, info, type }) => (
@@ -222,15 +223,15 @@ export function LakeList() {
             >
               <span class={`grow ellipsis ${info.feature?.custom ? 'custom' : ''}`}>
                 {type && <span class="swatch" style={{ background: type.color }} title={type.name} />}
-                {info.feature?.name || (info.dry ? '干湖' : '无名的湖')}
+                {info.feature?.name || (info.dry ? '干湖' : '未命名')}
               </span>
               <span class="hint">
                 约 {Math.round(info.areaKm2).toLocaleString()} km² · {type ? type.name : '普通的湖'} · {info.placed ? '放的' : '自然的'}
-                {info.dry ? ' · 干了' : ''}
+                {info.dry ? ' · 干涸' : ''}
               </span>
             </div>
           ))}
-          {list.length < all.length && <p class="hint">还有 {all.length - list.length} 个小一些的自然湖没列出来</p>}
+          {list.length < all.length && <p class="hint">另有 {all.length - list.length} 个小湖未列出</p>}
         </div>
       )}
     </section>

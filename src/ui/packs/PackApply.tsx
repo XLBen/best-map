@@ -63,14 +63,14 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
       dropMine();
       return;
     }
-    setNote({ key, text: '正在算预览…' });
+    setNote({ key, text: '正在计算…' });
     let live = true;
     const t = setTimeout(() => {
       void previewWorld(cmd).then((r) => {
         if (!live || keyRef.current !== key) return;
         if (!r) {
           const why = worldPreviewError(cmd);
-          setNote({ key, text: why ? `用不上：${why}` : '预览没算出来', warn: !!why });
+          setNote({ key, text: why ? `用不上：${why}` : '预览失败', warn: !!why });
           return;
         }
         // 变成新生态的格（按生态分开，用各自的颜色淡淡涂上）
@@ -86,9 +86,9 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
         adjustPreviewWorld.value = { key, base: r.base, world: r.world, layers };
         mine.current = key;
         const parts: string[] = [];
-        if (anyNew) parts.push(count ? `会有 ${fmt(count)} 格变成新生态` : '新生态在这个世界上一格都长不出来（冷暖干湿都不合适）');
-        if (plan.textPack) parts.push('地名按新的文字包重起');
-        if (!parts.length) parts.push(r.result.changedCells.length ? `会有 ${fmt(r.result.changedCells.length)} 格的生态变化` : '地图上看不出变化');
+        if (anyNew) parts.push(count ? `${fmt(count)} 格会变成新生态` : '新生态在这里长不出来');
+        if (plan.textPack) parts.push('地名按新文字包重起');
+        if (!parts.length) parts.push(r.result.changedCells.length ? `${fmt(r.result.changedCells.length)} 格生态会变` : '地图上没有变化');
         setNote({ key, text: parts.join('，') });
       });
     }, exactDelay(150));
@@ -116,7 +116,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
     try {
       // 改了名的生态，脚本里的 river('x') 换过，源码也变了：也记为信任（信任的是这个包）
       await trustScripts(packScripts(cmd));
-      ok = await execAdjust(cmd, `正在用「${pack.name}」…`);
+      ok = await execAdjust(cmd, `正在用上“${pack.name}”…`);
     } finally {
       applyingRef.current = false;
       setApplying(false);
@@ -133,7 +133,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
     if (s) return '已经有了';
     const a = plan.added.find((x) => x.section === sec && x.from === id);
     if (!a || a.id === a.from) return '';
-    return a.name !== name ? `世界里已有不一样的「${name}」，这一份叫「${a.name}」` : '世界里已有一份不一样的，这一份另外加上';
+    return a.name !== name ? `世界里已有另一个“${name}”，这一份叫“${a.name}”` : '世界里已有另一份，这一份另外加上';
   };
   // 有问题的文字包换不了（命令会拒绝）：不能勾，说一句
   const badText = useMemo(() => new Set((pack.textPacks ?? []).filter((t) => wordPackProblems(t).length).map((t) => t.id)), [pack]);
@@ -150,8 +150,8 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
   return (
     <div class="pack-apply">
       <div class="popover-head">
-        <b>用到这个世界 · {pack.name}</b>
-        <button class="icon-btn" onClick={close} title="关上（Esc）">
+        <b>用到世界 · {pack.name}</b>
+        <button class="icon-btn" onClick={close} title="关闭">
           <X />
         </button>
       </div>
@@ -163,7 +163,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <span>
               <span class="swatch" style={{ background: b.color }} /> {b.name || b.id}
               {picks.biomes?.includes(b.id) && status('biomes', b.id, b.name || b.id) && <span class="hint">（{status('biomes', b.id, b.name || b.id)}）</span>}
-              {(b.dispersal || b.range) && <span class="hint">（只长在某处的：只在做它的那个世界里有意义）</span>}
+              {(b.dispersal || b.range) && <span class="hint" title="只长在原来那个世界的某处">（只长在某处）</span>}
             </span>
           </label>
         ))}
@@ -209,7 +209,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                 </span>
               </label>
             ))}
-            <p class="hint">用上之后在放岛、画岛链的“岛：▾”里选。</p>
+            <p class="hint">用上后在放岛、岛链的“岛：▾”里选</p>
           </>
         )}
         {st.only !== 'biomes' && !!forms.length && (
@@ -217,7 +217,7 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
             <h5>星球形态</h5>
             <p class="small">{forms.map((f) => f.name || f.id).join('、')}</p>
             {/* 一块地区上没有“调整 → 星球形态”：形态只用在整个星球上 */}
-            <p class="hint">{w.settings.globe ? PACK_SECTIONS.planetForms.note : '星球形态只用在整个星球上：新建世界时选“整个星球”就能选它们'}</p>
+            <p class="hint">{w.settings.globe ? PACK_SECTIONS.planetForms.note : '只用于整个星球：新建时选“整个星球”'}</p>
           </>
         )}
         {st.only !== 'biomes' && !!texts.length && (
@@ -232,14 +232,14 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                   onChange={() => setPicks({ ...picks, textPack: picks.textPack === t.id ? null : t.id })}
                 />
                 <span>
-                  换用文字包「{t.name}」{badText.has(t.id) ? <span class="hint">（模板里有不存在的词表，换不了）</span> : '（地名会跟着变）'}
+                  换用文字包“{t.name}”{badText.has(t.id) ? <span class="hint" title="模板里有不存在的词表">（换不了）</span> : <span class="hint">（地名跟着变）</span>}
                 </span>
               </label>
             ))}
           </>
         )}
-        {!!plan.fields.length && <p class="hint">会新加自定义场：{plan.fields.join('、')}（用“气候 → 涂自定义场”可以涂）</p>}
-        {total > 48 && <p class="warn small">这个世界会有 {total} 种生态：太多时界面会很挤，计算也会变慢</p>}
+        {!!plan.fields.length && <p class="hint" title="在“气候 → 涂自定义场”里涂">新建自定义场：{plan.fields.join('、')}</p>}
+        {total > 48 && <p class="warn small">将有 {total} 种生态：界面会挤，计算会变慢</p>}
         {untrusted !== null && !!untrusted.length && (
           <>
             <TrustBlock scripts={packScripts(pack)} />
@@ -250,18 +250,18 @@ function ApplyCard({ st, w }: { st: ApplyState; w: World }) {
                   setChecked({ pack, list: [] });
                 }}
               >
-                信任，看看用了之后的样子
+                信任并预览
               </button>
             </div>
           </>
         )}
-        {!cmd.commands.length && <p class="hint">{plan.skipped.length ? '勾选的这些世界里都已经有了。' : '还没勾选要用的。'}</p>}
+        {!cmd.commands.length && <p class="hint">{plan.skipped.length ? '勾选的都已经有了' : '没有勾选'}</p>}
       </div>
       {/* 底部一直看得到（上面的说明很长时也不被挤到看不见的地方） */}
       <div class="pack-apply-foot">
         {shown && <p class={`small ${shown.warn ? 'warn' : ''}`}>{shown.text}</p>}
         <div class="row between">
-          <span class="hint">用上是一步，可以撤销</span>
+          <span class="hint">可以撤销</span>
           <span class="row">
             <button onClick={close}>取消</button>
             <button class="primary" disabled={!trusted || !cmd.commands.length || applying || !!shown?.warn} onClick={() => void apply()}>

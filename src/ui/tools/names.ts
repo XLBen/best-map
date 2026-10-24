@@ -34,7 +34,7 @@ export function renameTool(hitLabel: (sx: number, sy: number) => string | null):
     preview() {
       if (!pointer) return EMPTY;
       const key = hitLabel(pointer.sx, pointer.sy);
-      return { layers: [], shapes: [], hint: key ? '点一下改名' : null };
+      return { layers: [], shapes: [], hint: key ? '点击改名' : null };
     },
   };
 }
@@ -96,7 +96,7 @@ export function regionTool(hitLabel: (sx: number, sy: number) => string | null):
         ring = null;
         const key = hitLabel(p.sx, p.sy);
         if (key) selectedFeature.value = key;
-        else showToast('圈太小了：按住拖一圈再松手', true);
+        else showToast('圈太小', true);
         return;
       }
       committing = true;

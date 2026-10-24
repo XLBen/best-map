@@ -127,7 +127,7 @@ export async function saveForm(form: PlanetForm): Promise<SaveForm> {
   const pack: ResourcePack = cur ? structuredClone(cur.pack) : { format: PACK_FORMAT, version: PACK_VERSION, id, name: MY_PACK_NAME };
   const forms = (pack.planetForms ?? []).filter((f) => f.id !== form.id);
   // 超过上限的包读不回来（整个“我的资源”就不见了）：先拦下
-  if (forms.length >= PACK_MAX.planetForms) return { ok: false, error: `“${MY_PACK_NAME}”里的星球形态已经有 ${PACK_MAX.planetForms} 个了，先在“资源包…”里整理一下` };
+  if (forms.length >= PACK_MAX.planetForms) return { ok: false, error: `“${MY_PACK_NAME}”里的星球形态已满 ${PACK_MAX.planetForms} 个，先在“资源包…”里整理` };
   pack.planetForms = [...forms, structuredClone(form) as unknown as PackItem];
   const r = parsePack(pack);
   if (!r.ok) return { ok: false, error: r.errors[0] };

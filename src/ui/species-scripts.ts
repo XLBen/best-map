@@ -63,14 +63,14 @@ export function speciesScriptCommand(sp: Species, kind: SpeciesScriptKind, src: 
   return { op: 'update_species', id: sp.id, patch: { scripts: Object.keys(scripts).length ? scripts : null } };
 }
 
-const LABEL = '正在计算生态…';
+const LABEL = '正在计算…';
 
 // 提交：exec 新的一步，replace 换掉最后一步（只有这次编辑做的那一步还是最后一步时，调用方才会这样要）。
 // 调用方先等 settleSpeciesEdits()：这时 world 就是引擎里的样子，另一个框刚提交的脚本也在里面。
 // revert：换回上一次没出错的写法（不是用户这次写的，不报给信任列表）
 export async function applySpeciesScript(id: string, kind: SpeciesScriptKind, src: string, mode: ApplyMode, revert = false): Promise<ApplyResult> {
   const sp = world.value?.small.species.find((s) => s.id === id);
-  if (!sp) return { ok: false, error: '这种生态已经不在了' };
+  if (!sp) return { ok: false, error: '这种生态已删除' };
   // 信任不按整条命令记（state.ts 的 trustOwn 不管它），只记下面报的这一段
   const cmd = trustHandledElsewhere(speciesScriptCommand(sp, kind, src));
   const before = sp.scripts?.[kind]?.src ?? '';
@@ -82,7 +82,7 @@ export async function applySpeciesScript(id: string, kind: SpeciesScriptKind, sr
   }
   // 引擎拒绝了（出错的说明已经显示在顶上，这里也写在框下面）
   const t = toast.value;
-  return { ok: false, error: t?.error ? t.text : '没有改成' };
+  return { ok: false, error: t?.error ? t.text : '没有改成功' };
 }
 
 // 世界上这种生态这段脚本现在出的错（d.scriptIssues 里找：先按 id，旧的说明没有 id 时按名字）

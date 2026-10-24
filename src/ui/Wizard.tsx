@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldgenInput, type WorldType } from '../../core/generate';
 import { type PlanetForm, hasFormScripts } from '../../core/planet-form';
+import { CLIMATE_BELT_NOTE } from './copy';
 import {
   CLIMATE_ZONES,
   type ClimateZone,
@@ -91,7 +92,7 @@ function PlanetBand({ size, center, onChange }: { size: MapSize; center: number;
           {latText(north)} — {latText(south)}
         </b>
         <span class="hint">包括 {beltsIn(north, south).join('、')}</span>
-        <span class="hint">地图里本来就有好几种气候：越往极地越冷，靠海、山上也都不一样。这里只是选地图放在星球上的哪里。</span>
+        <span class="hint">{CLIMATE_BELT_NOTE}</span>
         <div class="row wrap">
           {(Object.keys(CLIMATE_ZONES) as ClimateZone[]).map((z) => (
             <button class="small" title={CLIMATE_ZONES[z].hint} onClick={() => onChange(clampCenter(size, CLIMATE_ZONES[z].lat))}>
@@ -152,10 +153,10 @@ function TerrainBox({ defaults, value, onChange }: { defaults: Record<TerrainKey
         ))}
       </div>
       <p class="hint">
-        不动就是这种世界本来的样子。建好以后用“地形”里的画笔改。
+        不调时按这种世界生成；建好后用“地形”里的工具改。
         {touched && (
           <button class="link" onClick={() => onChange({})}>
-            都恢复默认
+            恢复自动
           </button>
         )}
       </p>
@@ -294,7 +295,7 @@ export function Wizard() {
         </div>
         {savedAt !== null && (
           <div class="box resume">
-            <span>上次的世界自动保存在这个浏览器里（{new Date(savedAt).toLocaleString()}）。</span>
+            <span>上次的世界已自动保存（{new Date(savedAt).toLocaleString()}）</span>
             <button
               class="primary"
               disabled={creating}
@@ -373,17 +374,17 @@ export function Wizard() {
                     <span class="hint">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
                     {!c.builtin && <span class="hint">{formSource(c)}</span>}
                   </button>
-                  <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改一改它：名字、几个滑块、脚本">
+                  <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改名字、滑块、脚本">
                     编辑…
                   </button>
                 </div>
               ))}
               <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
-                <b>自己做一个…</b>
-                <span class="hint">从一种星球改起，调几项，也可以写脚本</span>
+                <b>新建…</b>
+                <span class="hint">从一种星球改起，可写脚本</span>
               </button>
             </div>
-            {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="hint">现在是安全模式：缩略图里没有脚本的效果，建好的新世界里脚本照常运行。</p>}
+            {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="hint">安全模式：缩略图不含脚本的效果</p>}
             <h5>2. 多大</h5>
             <div class="cards three">
               {(Object.keys(PLANET_SIZES) as PlanetSize[]).map((s) => (
@@ -412,8 +413,8 @@ export function Wizard() {
           ))}
         </div>
         <p class="hint">
-          {kind === 'planet' ? '整个星球平铺成一张图：左右两边连着，上下是南北极。' : ''}
-          缩略图是同一个世界的粗略版：挑中后会用更精细的网格生成，大格局不变；小图里看不到很小的岛。{creating ? ' 正在生成，请稍等…' : ''}
+          {kind === 'planet' ? '左右相连，上下是两极。' : ''}
+          缩略图是粗略版，看不到很小的岛。{creating ? ' 正在生成…' : ''}
         </p>
       </div>
       <FormEditor />

@@ -151,7 +151,7 @@ function landLasso(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
       const count = c ? (mode === 'land' ? c.gained.length : c.lost.length) : 0;
       if (!c || !count) {
         ring = null;
-        showToast(!c ? '圈太小了：按住拖一圈再松手' : mode === 'land' ? '圈里已经都是陆地了' : '圈里没有陆地', true);
+        showToast(!c ? '圈太小' : mode === 'land' ? '圈里都是陆地' : '圈里没有陆地', true);
         return;
       }
       // 松手时的样子（合上的圈与将来的海岸线）留在图上，直到结果换上；圈马上空出来，可以接着圈下一个。
@@ -233,7 +233,7 @@ export function restoreTool(): ToolHandler {
         showToast('这里的地形没改过', true);
         return;
       }
-      await exec({ op: 'restore_terrain', cells: s.cells, t: s.ts }, '正在计算地形…');
+      await exec({ op: 'restore_terrain', cells: s.cells, t: s.ts }, '正在计算…');
     },
     // 0.7 倍半径以内全收回（细实线），往外到半径处渐变
     rings: [0.7, 1],
@@ -289,7 +289,7 @@ export function reliefTool(): ToolHandler {
         hint: s.t.size ? `${name} ${fmtMeters(reliefEstimateM(w, r.cells, r.delta, strength))}` : name,
       };
     },
-    commit: (_w, s, shift) => exec({ op: 'paint_relief', cells: s.cells, t: s.ts, strength: sign(shift) * options.value.reliefAmount }, '正在计算地形…'),
+    commit: (_w, s, shift) => exec({ op: 'paint_relief', cells: s.cells, t: s.ts, strength: sign(shift) * options.value.reliefAmount }, '正在计算…'),
   });
 }
 
@@ -316,7 +316,7 @@ export function fragmentTool(): ToolHandler {
     },
     exact: (_w, s) => (s.t.size ? cmdOf(s) : null),
     exactHint: (_w, _s, _shift, r) => r.summary,
-    commit: (_w, s) => exec(cmdOf(s), '正在打碎…'),
+    commit: (_w, s) => exec(cmdOf(s), '正在计算…'),
     // 0.7 倍半径以内裂得最开（细实线），往外到半径处渐渐收住
     rings: [0.7, 1],
   });
@@ -363,7 +363,7 @@ export function islandTool(): ToolHandler {
       // 碎岛：不占湖面格，只抬破碎度（地图上直接画出将来的碎岛）
       const took = shards ? (st.frag?.cells ?? []) : st.cells;
       if (spec.kind === 'atoll' && w.derived.tMean[c0] < 20) block = `湖水太凉（${Math.round(w.derived.tMean[c0])} °C），珊瑚岛要 20 °C 以上`;
-      else if (!took.length) block = shards ? '这里已经这么碎了' : '湖太窄了，放不下岛（岛四周要留一圈湖面）';
+      else if (!took.length) block = shards ? '这里已经这么碎了' : '湖太窄，放不下岛';
       if (shards) {
         const preview: Preview = {
           layers: block ? [{ cells: [c0], color: BLOCKED_RGB, alpha: 0.75 }] : [],
@@ -403,7 +403,7 @@ export function islandTool(): ToolHandler {
       return cache;
     }
     const fresh = stamp.footprint.filter((c) => !w.causes.land[c]);
-    if (!block && !fresh.length) block = '这里已经是陆地';
+    if (!block && !fresh.length) block = '这里已是陆地';
     // 放得下：地图上直接画出岛将来的海岸线（小礁也是，画出来约半格大）；放不下：轮廓涂红
     const preview: Preview = {
       layers: block ? [{ cells: stamp.footprint, color: BLOCKED_RGB, alpha: 0.75 }] : [],
@@ -458,7 +458,7 @@ export function islandTool(): ToolHandler {
         const future = lakeIsleRelease(ex, cmdOf(spec));
         const shown: Preview = future ? { layers: c.preview.layers, shapes: [], hint: null, world: future } : { layers: c.preview.layers, shapes: [], hint: null };
         try {
-          await trackEdit(shown, exec(cmdOf(spec), '正在造岛…'));
+          await trackEdit(shown, exec(cmdOf(spec), '正在计算…'));
         } finally {
           if (settled === mark) settled = null;
           ex.clear();
@@ -472,7 +472,7 @@ export function islandTool(): ToolHandler {
         return { cells: st.cells, delta: st.landDelta, frag: st.frag };
       };
       try {
-        await trackEdit(shown, exec(cmdOf(spec), '正在造岛…'), ghostFollows(shown, w, ghostAt));
+        await trackEdit(shown, exec(cmdOf(spec), '正在计算…'), ghostFollows(shown, w, ghostAt));
       } finally {
         if (settled === mark) settled = null;
       }
@@ -581,7 +581,7 @@ export function chainTool(): ToolHandler {
       if (!pts || !w) return;
       if (Math.hypot(p.sx - lastScreen[0], p.sy - lastScreen[1]) > 2) pts.push([p.x, p.y]);
       if (pts.length < 2) {
-        showToast('按住鼠标拖出一条线，岛会沿着线排开', true);
+        showToast('按住拖出一条线', true);
         return;
       }
       const chain = specFor(pts);
@@ -599,7 +599,7 @@ export function chainTool(): ToolHandler {
         const shown: Preview = future ? { layers: pv.layers, shapes: [], hint: null, world: future } : { ...pv, hint: null };
         chainVariant.value = chain.variant + 1;
         try {
-          await trackEdit(shown, exec(cmd, '正在造岛链…'));
+          await trackEdit(shown, exec(cmd, '正在计算…'));
         } finally {
           ex.clear();
         }
@@ -614,7 +614,7 @@ export function chainTool(): ToolHandler {
       };
       // 下一条岛链自动换一种排列
       chainVariant.value = chain.variant + 1;
-      await trackEdit(at, exec(cmd, '正在造岛链…'), ghostFollows(at, w, ghostAt));
+      await trackEdit(at, exec(cmd, '正在计算…'), ghostFollows(at, w, ghostAt));
     },
     cancel() {
       points = null;
@@ -677,7 +677,7 @@ export function rerollTool(): ToolHandler {
     if (!t) return null;
     if (t.ms !== undefined) noteCost({ op: 'reroll_region', ...r }, t.ms);
     const empty = !t.gained.length && !t.lost.length && !t.relief.cells.length;
-    const hint = empty ? '这一片重画不出变化' : t.gained.length || t.lost.length ? `重画：陆地 +${t.gained.length} / −${t.lost.length} 格` : '重画：只变山的高低';
+    const hint = empty ? '重画不出变化' : t.gained.length || t.lost.length ? `重画：陆地 +${t.gained.length} / −${t.lost.length} 格` : '重画：只变山的高低';
     return { t, layers: reliefLayers(t.relief), hint, empty };
   };
   const want = (w: World, r: ReturnType<typeof rerollAt>) => {
@@ -700,7 +700,7 @@ export function rerollTool(): ToolHandler {
       if (!w || p.cell < 0 || isBusy() || clicking) return;
       const gen = w.small.terrain.gen;
       if (!gen) {
-        showToast('空白海洋没有可以重画的地形；先用“画陆地”或“放岛”', true);
+        showToast('空白海洋没有可重画的地形', true);
         return;
       }
       const r = rerollAt(w, p);
@@ -711,11 +711,11 @@ export function rerollTool(): ToolHandler {
         const v = exact.get(key) ?? (slowSec(r) ? null : await exact.now(key, request(r)));
         if (world.value !== w) return;
         if (v?.empty) {
-          showToast('这一片重画不出变化', true);
+          showToast('重画不出变化', true);
           return;
         }
         held = v;
-        await exec({ op: 'reroll_region', ...r }, '正在重画…');
+        await exec({ op: 'reroll_region', ...r }, '正在计算…');
       } finally {
         clicking = false;
         held = null;

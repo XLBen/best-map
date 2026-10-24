@@ -14,14 +14,14 @@ const PROJECTIONS: [ProjectionPref, string][] = [
   ['globe', '球形'],
 ];
 const PROJECTION_TITLES: Record<ProjectionPref, string> = {
-  equirect: '平铺成 2:1 的长方形（原来的样子）',
-  equalEarth: '椭圆形，各处面积按真实比例',
-  globe: '从太空看的一面，拖动转动',
+  equirect: '2:1 的长方形',
+  equalEarth: '椭圆，面积按真实比例',
+  globe: '从太空看，拖动转动',
 };
 const PROJECTION_HINTS: Record<ProjectionPref, string> = {
-  equirect: '平铺成 2:1 的长方形，东西接着重复。每条纬线都画得和赤道一样长，所以越靠近两极横向拉得越宽。',
-  equalEarth: '椭圆形，各处面积按真实比例，两极不再拉宽。整个椭圆放得下时左右拖动是转动中央经线，放大以后拖动是平移。',
-  globe: '从太空看的一面：拖动转动，滚轮或捏合缩放。越往边上是斜着看的，挤得越紧。',
+  equirect: '越靠近两极，横向拉得越宽。',
+  equalEarth: '面积按真实比例，两极不拉宽。',
+  globe: '拖动转动，越往边上挤得越紧。',
 };
 
 // 参考图的浓淡：10%–100%，每格 5%
@@ -87,9 +87,9 @@ function ReferenceBox() {
     try {
       const blob = await readImage(f);
       const ok = await setReference({ url: URL.createObjectURL(blob), blob, opacity: r?.opacity ?? 0.5, fit: r?.fit ?? 'contain', visible: true });
-      showToast(ok ? '参考图铺好了：照着用“画陆地”的画笔或“圈一片”描' : '参考图存不进浏览器：这次能用，关掉页面后要重新导入', !ok);
+      showToast(ok ? '参考图已铺好' : '参考图存不进浏览器，关闭页面后要重新导入', !ok);
     } catch {
-      showToast('这张图读不了：换一张 PNG 或 JPG 试试', true);
+      showToast('无法读取这张图，请换 PNG 或 JPG', true);
     }
   };
   return (
@@ -99,7 +99,7 @@ function ReferenceBox() {
       {!r ? (
         <>
           <p class="hint">
-            把手绘的草图铺在地图上，照着画陆地。{world.value?.settings.globe ? '整个星球的草图：宽是高的两倍，左右两边接得上。' : ''}图只存在这个浏览器里，不写进世界文件，也不进导出的图片。
+            铺一张草图，照着画陆地。{world.value?.settings.globe ? '宽是高的两倍。' : ''}只存在这个浏览器里。
           </p>
           <button onClick={pick}>导入图片…</button>
         </>
@@ -127,13 +127,13 @@ function ReferenceBox() {
               ['contain', '保持比例'],
               ['stretch', '铺满地图'],
             ]}
-            titles={{ contain: '按图片原来的比例，放在地图中间', stretch: '拉伸到和整张地图一样大' }}
+            titles={{ contain: '按原比例放在中间', stretch: '拉伸到整张地图' }}
             onChange={(fit) => void setReference({ ...r, fit })}
             wide
           />
           <div class="row">
             <button onClick={pick}>换一张…</button>
-            <button onClick={() => void setReference(null)}>移除</button>
+            <button onClick={() => void setReference(null)}>删除</button>
           </div>
         </>
       )}
@@ -159,7 +159,7 @@ export function LayersPanel() {
         <h5>底图</h5>
         <div class="view-grid">{VIEWS.filter((v) => !v.more).map((v) => viewButton(v.id, v.label))}</div>
         <button class="link-btn" onClick={() => setMore(!more)}>
-          {more ? '收起' : '更多底图…'}
+          {more ? '更少底图' : '更多底图'}
         </button>
         {more && (
           <div class="view-grid">

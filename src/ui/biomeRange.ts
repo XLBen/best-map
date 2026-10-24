@@ -12,13 +12,13 @@ export function rangePlace(w: World, sp: Pick<Species, 'range'>): string | null 
   if (!r) return null;
   if (r.kind === 'cells') return '圈的范围里';
   const f = w.derived.features.find((x) => (x.type === 'island' || x.type === 'continent') && !!x.name && Array.prototype.includes.call(x.cells, r.cell));
-  return f ? `「${f.name}」` : '设定的岛上';
+  return f ? `“${f.name}”` : '设定的岛上';
 }
 
 // “不在这个生态的范围里（只长在「X岛」）”；没有范围时为 null
 export function outsideRangeText(w: World, sp: Pick<Species, 'range'>): string | null {
   const place = rangePlace(w, sp);
-  return place ? `不在这个生态的范围里（只长在${place}）` : null;
+  return place ? `不在范围里：只长在${place}` : null;
 }
 
 // 这些格（没涂成的格）大多在生态的范围外时，返回该怎么说；不是时为 null

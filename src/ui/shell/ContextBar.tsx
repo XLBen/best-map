@@ -58,14 +58,13 @@ function MeasureRow({ w, pts }: { w: World; pts: [number, number][] }) {
         量距离
       </span>
       {pts.length < 2 ? (
-        <span class="bar-note">{w.settings.globe ? '点几个点量出总长（沿最短的弧线）' : '点几个点量出总长'}</span>
+        <span class="bar-note">{w.settings.globe ? '点几个点，沿最短的弧线量总长' : '点几个点量总长'}</span>
       ) : (
         <span class="bar-value">
-          共 {roundKm(total).toLocaleString()} km{straight ? `（直线 ${roundKm(straight).toLocaleString()} km）` : ''} · 步行{walk}
-          <span class="hint">（每天 {WALK_KM_PER_DAY} km）</span>
+          共 {roundKm(total).toLocaleString()} km{straight ? ` · 直线 ${roundKm(straight).toLocaleString()} km` : ''} · <span title={`每天 ${WALK_KM_PER_DAY} km`}>步行{walk}</span>
         </span>
       )}
-      <button class="bar-btn" disabled={!pts.length} onClick={() => (measure.value = [])} title="Backspace 删掉最后一点">
+      <button class="bar-btn" disabled={!pts.length} onClick={() => (measure.value = [])} title="Backspace 删除最后一点">
         清空
       </button>
       <button class="bar-btn" onClick={() => (measure.value = null)} title="M 或 Esc">
@@ -98,7 +97,7 @@ export function ContextBar() {
           );
         })}
         {cat.extras && (
-          <button class={`bb-tool more ${openPanel.value === more ? 'open' : ''}`} data-panel={more} onClick={() => togglePanel(more)} title={`${cat.label}的更多设置`}>
+          <button class={`bb-tool more ${openPanel.value === more ? 'open' : ''}`} data-panel={more} onClick={() => togglePanel(more)} title={`${cat.label}设置`}>
             <Ellipsis />
           </button>
         )}

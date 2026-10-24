@@ -17,7 +17,7 @@ export const VIEWS: ViewDef[] = [
   { id: 'temperature', label: '气温' },
   { id: 'precip', label: '降水' },
   { id: 'elevation', label: '海拔' },
-  { id: 'seaTemp', label: '海水温度', hint: '海面的冷暖，与“气温”同一条色带；整个星球上看得出暖流、寒流。陆地是灰的' },
+  { id: 'seaTemp', label: '海水温度', hint: '海面的冷暖，色带同“气温”' },
   { id: 'moisture', label: '湿润程度', more: true },
   { id: 'wetness', label: '地形湿度', more: true },
   { id: 'continentality', label: '离海远近', more: true },
@@ -39,10 +39,10 @@ export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' |
 export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLabel?: string; planetHint?: string; planetOnly?: boolean }[] = [
   { key: 'labels', label: '地名' },
   { key: 'rivers', label: '河流' },
-  { key: 'borders', label: '省份边界', hint: '在省份底图或省份工具里显示' },
+  { key: 'borders', label: '省份边界', hint: '省份底图或省份工具里显示' },
   { key: 'wind', label: '风向' },
   { key: 'currents', label: '洋流', hint: '暖流偏橙、寒流偏蓝', planetOnly: true },
-  { key: 'scale', label: '比例尺', hint: '左下角；导出的图片里也有' },
+  { key: 'scale', label: '比例尺', hint: '左下角，导出的图片里也有' },
   { key: 'edits', label: '我改过的地方', hint: '地形橙、气候蓝、生态绿、河湖青' },
   { key: 'latitude', label: '纬度刻度', hint: '地图左边每 10° 一格，回归线、极圈', planetLabel: '经纬网', planetHint: '经线、纬线，回归线、极圈' },
 ];
@@ -54,7 +54,7 @@ export const LABEL_GROUPS: { group: LabelGroup; label: string }[] = [
   { group: 'nature', label: '森林、沙漠、冻原、沼泽' },
   // 省名不是地物：默认不标（省份类工具打开时屏幕上照样标着，帮着选省；导出只看这里）
   { group: 'provinces', label: '省名' },
-  { group: 'seaProvinces', label: '海域的省名' },
+  { group: 'seaProvinces', label: '海省的省名' },
 ];
 
 // 按图层的设定要标的省名（第十三轮修）：打开“地名”与其中的“省名”才标；海域的省另要打开“海域的省名”。

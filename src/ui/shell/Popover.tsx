@@ -46,7 +46,7 @@ export function Popover({ id, title, width = 340, children }: { id: PanelId; tit
       <span class="popover-arrow" style={{ left: `${pos.arrow}px` }} />
       <div class="popover-head">
         <b>{title}</b>
-        <button class="icon-btn" onClick={() => (openPanel.value = null)} title="关上（Esc）">
+        <button class="icon-btn" onClick={() => (openPanel.value = null)} title="关闭">
           <X />
         </button>
       </div>

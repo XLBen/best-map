@@ -175,7 +175,7 @@ export async function exportFullMap(o: { width: number; labels: LabelSize; seam?
     const canvas = await hook.exportImage(o, (p) => (exportProgress.value = p), () => stop);
     if (!canvas || stop) return null;
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) showToast('图片太大，浏览器存不下：换小一点的尺寸', true);
+    if (!blob) showToast('图片太大，换小一点的尺寸', true);
     return stop ? null : blob;
   } catch (e) {
     showToast(`导出失败：${(e as Error).message}`, true);

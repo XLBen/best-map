@@ -16,6 +16,7 @@ import { viewOf } from '../core/sphere';
 import { type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { outsideRangeReason } from './ui/biomeRange';
+import { scriptTrustText } from './ui/copy';
 import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from './ui/shell/noticeTimer';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
 import { buildKey, engineCode, engineUrl } from './engine-source';
@@ -969,8 +970,8 @@ async function askTrust(scripts: FoundScript[], verb: '打开' | '新建'): Prom
   if (!list.length) return 'run';
   await knowIsolation();
   const v = await askUser({
-    title: '信任这个世界里的脚本吗？',
-    text: `里面有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的世界。`,
+    title: '世界里的脚本',
+    text: scriptTrustText(list.length),
     scripts: list,
     choices: [
       { value: 'run', label: `信任并${verb}`, primary: true },
@@ -990,8 +991,8 @@ export async function confirmImport(json: unknown): Promise<boolean> {
   if (!list.length) return true;
   await knowIsolation();
   const v = await askUser({
-    title: '信任这些脚本吗？',
-    text: `要导入的内容里有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的。`,
+    title: '要导入的脚本',
+    text: scriptTrustText(list.length),
     scripts: list,
     choices: [
       { value: 'run', label: '信任并导入', primary: true },
@@ -1010,8 +1011,8 @@ export async function trustFormScripts(json: unknown, inWorld = false): Promise<
   const list = await untrustedScripts(json);
   if (!list.length) return true;
   const v = await askUser({
-    title: '信任这个星球形态里的脚本吗？',
-    text: `里面有 ${list.length} 段没见过的脚本。脚本是一小段程序，会在这台电脑上运行，只信任来源可靠的。`,
+    title: '星球形态里的脚本',
+    text: scriptTrustText(list.length),
     scripts: list,
     choices: [
       { value: 'run', label: '信任', primary: true },
@@ -1118,7 +1119,8 @@ export async function resumeLast(): Promise<boolean | null> {
     const mine = new Set(findScripts(saved.doc).map((s) => s.hash));
     if (safe === null && mark.hashes.some((h) => mine.has(h))) {
       const v = await askUser({
-        title: '上次打开这个世界时程序停止了响应。用安全模式打开吗？（脚本不运行）',
+        title: '上次打开时停止了响应',
+        text: '安全模式下脚本不运行。',
         choices: [
           { value: 'safe', label: '用安全模式打开', primary: true },
           { value: 'run', label: '照常打开' },
@@ -1160,7 +1162,7 @@ export async function retryScripts(): Promise<boolean> {
 export async function showScripts(): Promise<void> {
   const w = world.value;
   const list = w ? uniqueScripts(findScripts(w.small)) : [];
-  await askUser({ title: '这个世界里的脚本', text: list.length ? undefined : '这个世界里没有脚本。', scripts: list, choices: [{ value: 'close', label: '关上', primary: true }] });
+  await askUser({ title: '世界里的脚本', text: list.length ? undefined : '没有脚本', scripts: list, choices: [{ value: 'close', label: '关闭', primary: true }] });
 }
 
 // 脚本出错的提示条：用户关掉的是哪一组问题（同一组不再出现，换了才出现）
@@ -1255,10 +1257,10 @@ export function paintNote(before: World, after: World): string | null {
   const cells = after.derived.conflicts.find((x) => x.constraintId === c.id)?.failing ?? [];
   const failing = cells.length;
   const mode = c.mode === 'constraint' ? '自然融入' : '强制';
-  const head = changed ? `${name}：${changed} 格变了` : `${name}：生态没变`;
+  const head = changed ? `${name} · ${changed} 格变了` : `${name} · 生态没变`;
   const outside = failing ? outsideRangeReason(after, sp, cells) : null;
   if (outside) return `${head} · ${failing} 格没涂成：${outside}`;
-  return failing ? `${head} · ${failing} 格没涂成（这里长不了）` : `${head}（${mode}）`;
+  return failing ? `${head} · ${failing} 格没涂成` : `${head} · ${mode}`;
 }
 
 // 撤掉刚做的一步，换成新的命令（只重算一次，历史里只留一步）
@@ -1280,7 +1282,7 @@ export async function undo() {
   const before = world.value;
   const last = history.value.filter((h) => h.done).pop();
   const ok = await handle(r);
-  if (ok && last) noteChange(`撤销了：${last.summary}`, before, false);
+  if (ok && last) noteChange(`撤销：${last.summary}`, before, false);
 }
 
 export async function redo() {
@@ -1288,7 +1290,7 @@ export async function redo() {
   const before = world.value;
   const next = history.value.find((h) => !h.done);
   const ok = await handle(r);
-  if (ok && next) noteChange(`重做了：${next.summary}`, before);
+  if (ok && next) noteChange(`重做：${next.summary}`, before);
 }
 
 // “调整”面板拖滑块时的地形预览：同一时间只算一个，拖动中只算最新的值。
@@ -1498,7 +1500,7 @@ export async function formThumbnail(
 ): Promise<{ thumb: Uint8ClampedArray; issues: ScriptIssue[] } | { error: string; stopped?: boolean }> {
   const r = await call({ kind: 'thumb', settings, gen, width, height }, null);
   if (!r.ok) return { error: r.error, ...(r.id === CANCELLED ? { stopped: true } : {}) };
-  return r.thumb ? { thumb: r.thumb, issues: r.issues ?? [] } : { error: '缩略图没算出来' };
+  return r.thumb ? { thumb: r.thumb, issues: r.issues ?? [] } : { error: '缩略图生成失败' };
 }
 
 export function download(name: string, data: Uint8Array | string | Blob, type: string) {
@@ -1700,7 +1702,7 @@ export function previewAdjust(cmd: Command | null, pause = 200) {
     adjustPreviewNote.value = { key, text: slowHint(slow) };
     return;
   }
-  adjustPreviewNote.value = { key, text: '正在算预览…' };
+  adjustPreviewNote.value = { key, text: '正在计算…' };
   adjustTimer = setTimeout(() => {
     adjustTimer = null;
     void previewWorld(cmd).then((r) => {
@@ -1800,7 +1802,7 @@ async function syncLinked(link: { id: string; name: string; epoch: number }, sta
     if (thumb) thumbAt = now;
     if (mapLink.value?.id === link.id && link.epoch === worldEpoch.value) mapSavedState.value = state;
   } catch (e) {
-    if (!linkWarned) showToast(isQuotaError(e) ? `浏览器的存储满了，「${link.name}」没能自动保存。删掉几张不要的地图，或用“世界 → 导出世界文件”留一份` : `「${link.name}」没能自动保存（浏览器的存储用不了）`, true);
+    if (!linkWarned) showToast(isQuotaError(e) ? `存储已满，“${link.name}”没能自动保存。请删除几张地图，或导出世界文件` : `“${link.name}”没能自动保存：浏览器存储不可用`, true);
     linkWarned = true;
   }
 }
@@ -1846,7 +1848,7 @@ async function autosave() {
       localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ savedAt: Date.now(), doc, ...(safeMode.value ? { safe: safeMode.value.reason } : {}) }));
       autosaved.value = Date.now();
     } catch {
-      if (!autosaveWarned) showToast('世界太大，浏览器存不下自动保存；记得用“世界 → 导出世界文件”留一份', true);
+      if (!autosaveWarned) showToast('世界太大，无法自动保存；请导出世界文件', true);
       autosaveWarned = true;
     }
   }

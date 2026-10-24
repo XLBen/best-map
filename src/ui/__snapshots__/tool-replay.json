@@ -366,7 +366,7 @@
       "variant": 0
      }
     },
-    "busy": "正在造岛…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -403,7 +403,7 @@
       "variant": 1
      }
     },
-    "busy": "正在造岛…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -441,7 +441,7 @@
       "variant": 2
      }
     },
-    "busy": "正在造岛…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -639,7 +639,7 @@
       "variant": 0
      }
     },
-    "busy": "正在造岛链…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -838,7 +838,7 @@
       "fragRatio": 0.3
      }
     },
-    "busy": "正在造岛链…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -960,7 +960,7 @@
      ],
      "strength": 0.7
     },
-    "busy": "正在计算地形…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1082,7 +1082,7 @@
      ],
      "strength": -0.7
     },
-    "busy": "正在计算地形…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1181,7 +1181,7 @@
      "mode": "blocks",
      "size": 122.66336318599974
     },
-    "busy": "正在打碎…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1272,7 +1272,7 @@
      "mode": "coast",
      "size": 122.66336318599974
     },
-    "busy": "正在打碎…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1300,7 +1300,7 @@
      "radius": 0.021213226892985566,
      "variant": 1
     },
-    "busy": "正在重画…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1368,7 +1368,7 @@
       0.9771622119680506
      ]
     },
-    "busy": "正在计算地形…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1511,7 +1511,7 @@
      ],
      "mode": "add"
     },
-    "busy": "正在计算气候…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1654,7 +1654,7 @@
      ],
      "mode": "add"
     },
-    "busy": "正在计算气候…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1797,7 +1797,7 @@
      ],
      "mode": "add"
     },
-    "busy": "正在计算气候…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -1806,7 +1806,7 @@
  {
   "name": "擦掉冷暖干湿",
   "preview": {
-   "hint": "擦掉 10 格",
+   "hint": "擦除 10 格",
    "warn": false,
    "caution": false,
    "layers": [
@@ -1854,7 +1854,7 @@
       0.33388486196845746
      ]
     },
-    "busy": "正在计算气候…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2075,7 +2075,7 @@
       "label": ""
      }
     },
-    "busy": "正在计算生态…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2152,7 +2152,7 @@
       "label": ""
      }
     },
-    "busy": "正在计算生态…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2204,7 +2204,7 @@
       "label": ""
      }
     },
-    "busy": "正在计算生态…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2213,7 +2213,7 @@
  {
   "name": "擦除",
   "preview": {
-   "hint": "擦掉 10 格",
+   "hint": "擦除 10 格",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2249,7 +2249,7 @@
       2518
      ]
     },
-    "busy": "正在计算生态…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2310,7 +2310,7 @@
       }
      }
     },
-    "busy": "正在计算生态…",
+    "busy": "正在计算…",
     "head": "string"
    }
   ],
@@ -2319,7 +2319,7 @@
  {
   "name": "选范围（点岛）",
   "preview": {
-   "hint": "「冰盖」只长在「远泉洲」上（2889 格）",
+   "hint": "“冰盖”只长在“远泉洲”上 · 2889 格",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2348,7 +2348,7 @@
       }
      }
     },
-    "busy": "正在计算生态…",
+    "busy": "正在计算…",
     "head": "string"
    }
   ],
@@ -2391,9 +2391,9 @@
       "name": "",
       "type": "plain"
      },
-     "label": "画了一条河（约 99 km，入海）"
+     "label": "画河 · 约 99 km · 入海"
     },
-    "busy": "正在计算河流…",
+    "busy": "正在计算…",
     "head": "function"
    }
   ],
@@ -2434,9 +2434,9 @@
       "name": "",
       "type": "plain"
      },
-     "label": "画了一条河（约 160 km，入海）"
+     "label": "画河 · 约 160 km · 入海"
     },
-    "busy": "正在计算河流…",
+    "busy": "正在计算…",
     "head": "function"
    }
   ],
@@ -2470,7 +2470,7 @@
       "perennial": true
      }
     },
-    "busy": "正在计算湖泊…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2506,7 +2506,7 @@
       "perennial": true
      }
     },
-    "busy": "正在计算湖泊…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2515,7 +2515,7 @@
  {
   "name": "点湖选中",
   "preview": {
-   "hint": "点一下选中这个湖 · 按住拖开放一个新湖",
+   "hint": "点击选中湖 · 按住拖开放新湖",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2538,7 +2538,7 @@
  {
   "name": "删除湖",
   "preview": {
-   "hint": "删掉这个湖",
+   "hint": "删除湖",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2611,7 +2611,7 @@
      ],
      "province": 272
     },
-    "busy": "正在划分…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2667,7 +2667,7 @@
       ]
      ]
     },
-    "busy": "正在划分…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2676,7 +2676,7 @@
  {
   "name": "合并",
   "preview": {
-   "hint": "不相邻：合并后是一省两块",
+   "hint": "不相邻：合并后分成两块",
    "warn": false,
    "caution": true,
    "layers": [
@@ -2704,7 +2704,7 @@
      "from": 511,
      "into": 272
     },
-    "busy": "正在合并…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],
@@ -2713,7 +2713,7 @@
  {
   "name": "重新划分",
   "preview": {
-   "hint": "重划 4 个省",
+   "hint": "重划 4 个省份",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2799,7 +2799,7 @@
       2220
      ]
     },
-    "busy": "正在划分…",
+    "busy": "正在计算…",
     "head": "undefined"
    }
   ],

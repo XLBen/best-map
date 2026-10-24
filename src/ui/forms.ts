@@ -53,7 +53,7 @@ export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
 
 // 卡片上写的来处：内置的不写；“我的资源”里的写“我的资源”，别的写“来自「包名」”
 export function formSource(c: FormChoice): string {
-  return c.builtin ? '' : c.mine ? MY_PACK_NAME : `来自「${c.pack}」`;
+  return c.builtin ? '' : c.mine ? MY_PACK_NAME : `来自“${c.pack}”`;
 }
 
 // 一种星球的叫法：与向导里的卡片相同（像地球、一块超大陆……）；向导里没有的（内海）用生成器的名字
@@ -95,7 +95,7 @@ export function wizardWorldName(kind: 'region' | 'planet', ptype: string, choice
 // before：向导“地形”里动过的海岸曲折、最高的山（见 wizardTerrain.ts），在生成之前设好，同在这一步里
 export function newWorldCommands(gen: WorldgenInput, name: string, seed: number, before: Command[] = []): Command[] {
   return [
-    { op: 'batch', label: `新世界：${name}`, commands: [...before, { op: 'set_worldgen', params: gen, reset: true }] },
+    { op: 'batch', label: `新世界“${name}”`, commands: [...before, { op: 'set_worldgen', params: gen, reset: true }] },
     { op: 'generate_provinces', rules: { seed } },
   ];
 }
@@ -160,14 +160,14 @@ function pairKnob(id: 'plates' | 'blocks' | 'radius', label: string, hint: strin
 
 export const FORM_KNOBS: FormKnob[] = [
   profileKnob('landFraction', '陆地多少', '陆地占星球表面多少', [0.03, 0.7], (v) => `${Math.round(v * 100)}%`),
-  profileKnob('islands', '岛多少', '火山岛和小岛多不多', [0, 1], (v) => level(v, ['很少', '较少', '较多', '很多'])),
-  pairKnob('plates', '板块数', '板块越多，山脉越多、越零碎', [2, 40], [2, 40], 1, true, (v) => `约 ${Math.round(v)} 块`),
-  pairKnob('blocks', '大陆块数', '拼成陆地的大块有几块（不算岛）', [0, 60], [0, 60], 1, true, (v) => (v < 0.5 ? '没有' : `约 ${Math.round(v)} 块`)),
+  profileKnob('islands', '岛多少', '火山岛和小岛的多少', [0, 1], (v) => level(v, ['很少', '较少', '较多', '很多'])),
+  pairKnob('plates', '板块数', '越多，山脉越多越碎', [2, 40], [2, 40], 1, true, (v) => `约 ${Math.round(v)} 块`),
+  pairKnob('blocks', '大陆块数', '拼成陆地的大块，不算岛', [0, 60], [0, 60], 1, true, (v) => (v < 0.5 ? '没有' : `约 ${Math.round(v)} 块`)),
   pairKnob('radius', '大陆大小', '每块大陆有多大', [0.04, 0.5], [0.02, 0.6], 0.01, false, (v, km) => `每块约 ${(Math.round(((2 * v) / LAYOUT_R) * km / 100) * 100).toLocaleString()} 公里宽`),
   {
     id: 'beltWidth',
     label: '山脉宽窄',
-    hint: '板块碰撞处、大陆边上的山脉有多宽',
+    hint: '板块碰撞处、大陆边的山脉宽度',
     range: [0.3, 3],
     step: 0.05,
     read: (f) => f.tuning?.beltWidth ?? 1,
@@ -180,7 +180,7 @@ export const FORM_KNOBS: FormKnob[] = [
 // （双子大陆的“大陆块数”是“没有”，两块大陆都是脚本加的），有布局脚本时说一声
 export function knobText(k: FormKnob, form: PlanetForm, radiusKm: number): string {
   const text = k.format(k.read(form), radiusKm);
-  return form.scripts?.setup && (k.id === 'blocks' || k.id === 'radius') ? `${text}（布局脚本加的不算）` : text;
+  return form.scripts?.setup && (k.id === 'blocks' || k.id === 'radius') ? `${text}（不含布局脚本加的）` : text;
 }
 
 export type FormScriptKind = 'setup' | 'crust';

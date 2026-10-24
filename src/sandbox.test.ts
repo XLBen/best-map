@@ -230,7 +230,7 @@ describe('卡住了：恢复', () => {
     expect(t.worker(0).terminated).toBe(true);
     expect(t.results).toHaveLength(2);
     expect(t.results[0]).toMatchObject({ ok: false });
-    expect((t.results[0] as { error: string }).error).toBe('「水晶丛林」的脚本卡住了（4 秒没有算完），已经停下，这一步没有做。重做记录清空了');
+    expect((t.results[0] as { error: string }).error).toBe('“水晶丛林”的脚本超过 4 秒没算完，已停止，这一步没做。重做记录已清空');
     expect(t.results[1]).toMatchObject({ ok: false });
     expect(t.events.reset).toHaveBeenCalledTimes(1);
     // 新的 Worker 打开的是命令记录里的世界（卡住的那一步不在里面）
@@ -264,7 +264,7 @@ describe('卡住了：恢复', () => {
     expect(t.host.safe).toBe(true);
     w2.replyLast({ summary: '已打开世界文件', log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: true });
     expect(t.events.restored).toHaveBeenCalledTimes(1);
-    expect(t.events.restored.mock.calls[0][1]).toBe('「死亡森林」的脚本卡住了');
+    expect(t.events.restored.mock.calls[0][1]).toBe('“死亡森林”的脚本卡住了');
     // 安全模式的 Worker 里不跑脚本：之后一直用它，直到打开别的世界
     t.send({ kind: 'undo' });
     expect(FakeWorker.all).toHaveLength(3);
@@ -286,7 +286,7 @@ describe('卡住了：恢复', () => {
     expect(w1.sent.map((m) => m.req)).toEqual([{ kind: 'load', doc, safe: true }]);
     w1.replyLast({ summary: '已打开世界文件', log: log(1, 0, [cmd(5)], [1]), safe: true });
     expect(t.results[1]).toMatchObject({ ok: true, safe: true });
-    expect(t.host.safeReason).toBe('「神圣之地」的脚本卡住了');
+    expect(t.host.safeReason).toBe('“神圣之地”的脚本卡住了');
     expect(t.events.restored).not.toHaveBeenCalled();
     expect(t.host.mirror.doc()!.commands).toEqual([cmd(5)]);
   });
@@ -301,7 +301,7 @@ describe('卡住了：恢复', () => {
     expect(t.host.running).toBe('血腥之地');
     expect(t.host.stop()).toBe(true);
     expect(t.events.slow).toHaveBeenLastCalledWith(null);
-    expect((t.results[0] as { error: string }).error).toBe('已经停下「血腥之地」的脚本，这一步没有做。重做记录清空了');
+    expect((t.results[0] as { error: string }).error).toBe('已停止“血腥之地”的脚本，这一步没做。重做记录已清空');
     expect(t.worker(1).sent[0].req).toEqual({ kind: 'load', doc: docOf([cmd(1.1), cmd(1.2)]) });
   });
 
@@ -309,7 +309,7 @@ describe('卡住了：恢复', () => {
     const t = opened();
     t.send({ kind: 'exec', cmd: cmd(1.5) });
     t.worker(0).onerror?.(new Error('崩了'));
-    expect((t.results[0] as { error: string }).error).toBe('计算程序停止了响应，这一步没有做。重做记录清空了');
+    expect((t.results[0] as { error: string }).error).toBe('计算程序没有响应，这一步没做。重做记录已清空');
     const w1 = t.worker(1);
     w1.emit({ id: w1.last().id, ok: false, error: '第 2 条命令失败：坏了' });
     const w2 = t.worker(2);
@@ -414,7 +414,7 @@ describe('卡住了：恢复', () => {
     t.send({ kind: 'thumb', settings: {}, gen: { seed: 1, type: 'continents' }, width: 8, height: 4 });
     t.worker(0).enter('双子大陆');
     t.clock.advance(5000);
-    expect(t.results).toEqual([{ id: 0, ok: false, error: '「双子大陆」的脚本卡住了（4 秒没有算完），已经停下，这一步没有做' }]);
+    expect(t.results).toEqual([{ id: 0, ok: false, error: '“双子大陆”的脚本超过 4 秒没算完，已停止，这一步没做' }]);
     // 星球形态编辑器按这个编号认出“被停下了”（同样的脚本不再自动重算缩略图）
     expect(t.results[0].id).toBe(CANCELLED);
     expect(t.events.reset).not.toHaveBeenCalled();
@@ -425,7 +425,7 @@ describe('卡住了：恢复', () => {
     t.worker(1).replyLast({});
     t.worker(1).enter('双子大陆');
     t.clock.advance(5000);
-    expect(t.events.failed).toHaveBeenCalledWith('「双子大陆」的脚本卡住了（4 秒没有算完），已经停下');
+    expect(t.events.failed).toHaveBeenCalledWith('“双子大陆”的脚本超过 4 秒没算完，已停止');
     expect(t.events.reset).not.toHaveBeenCalled();
   });
 
@@ -440,11 +440,11 @@ describe('卡住了：恢复', () => {
     // 打开回复之后，Worker 在后台补算时卡住
     w1.enter('神圣之地');
     t.clock.advance(5000);
-    expect(t.events.reset).toHaveBeenLastCalledWith('「神圣之地」的脚本卡住了（4 秒没有算完），已经停下。重做记录清空了');
+    expect(t.events.reset).toHaveBeenLastCalledWith('“神圣之地”的脚本超过 4 秒没算完，已停止。重做记录已清空');
     const w2 = t.worker(2);
     expect(w2.sent.map((m) => m.req)).toEqual([{ kind: 'load', doc: docOf([cmd(1.1), cmd(1.2)]), safe: true }]);
     w2.replyLast({ log: log(1, 0, [cmd(1.1), cmd(1.2)], [1, 2]), safe: true });
-    expect(t.events.restored.mock.calls[1][1]).toBe('「神圣之地」的脚本卡住了');
+    expect(t.events.restored.mock.calls[1][1]).toBe('“神圣之地”的脚本卡住了');
 
     // 恢复后用户的一步算成了：之后再卡住照常（正常模式）恢复
     const u = opened();

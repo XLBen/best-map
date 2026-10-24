@@ -29,7 +29,7 @@ describe('给河选类型', () => {
     expect(cmd.guide.type).toBe('crystal');
     if (f) expect(cmd.guide.nameKey).toBe(f.key);
     const name = riverInfo(w, ref)?.name;
-    expect(cmd.label).toBe(`${name ? `「${name}」` : '这条河'}改成晶川`);
+    expect(cmd.label).toBe(`${name ? `“${name}”` : '河'}改成晶川`);
     eng.exec(cmd);
     const g = w.small.guides.at(-1)!;
     world.value = eng.world;

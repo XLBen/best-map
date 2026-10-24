@@ -122,9 +122,9 @@ export function lakeTypeChoiceCommand(w: World, ref: LakeRef, choice: string | n
   // 没有规则时“普通的湖”就是不选
   const want = choice === PLAIN_LAKE && !hasLakeRules(w) ? null : choice;
   const name = info.feature?.name;
-  const who = name ? `「${name}」` : '这个湖';
+  const who = name ? `“${name}”` : '湖';
   const what = choice === PLAIN_LAKE ? '普通的湖' : ((w.small.lakeTypes ?? []).find((t) => t.id === choice)?.name ?? choice);
-  const label = choice === null ? `${who}的类型改回按规则` : `${who}改成${what}`;
+  const label = choice === null ? `${who}的类型恢复自动` : `${who}改成${what}`;
   const old = typingIn(w, info.cells);
   // 自然的湖已经是这样选的：不用改
   if (!info.placed && old.length === 1 && old[0].type === want) return null;

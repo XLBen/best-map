@@ -70,12 +70,12 @@ const KINDS: Record<WaterKind, KindDef> = {
     list: (w) => w.small.riverTypes ?? [],
     set: (t) => ({ op: 'set_river_type', type: t as never }),
     remove: (id) => ({ op: 'remove_river_type', id }),
-    busy: '正在计算河流…',
+    busy: '正在计算…',
     samples: FANTASY_RIVER_TYPES,
     idPrefix: 'river-type',
     matchLabel: '哪些自然的河是这一种',
-    matchHint: '每条河算一次：海拔、坡度、气温取整条河的平均，流量取最大，位置取源头。返回真就是这一种',
-    intro: '血河、晶川……每种有自己的颜色、画法、两岸的影响和起名的样子。画河时、选中一条河时都能选。',
+    matchHint: '每条河算一次，返回真就是这一种',
+    intro: '没有河流类型',
     namesHint: '{color}血河',
   },
   lake: {
@@ -88,12 +88,12 @@ const KINDS: Record<WaterKind, KindDef> = {
     list: (w) => w.small.lakeTypes ?? [],
     set: (t) => ({ op: 'set_lake_type', type: t as never }),
     remove: (id) => ({ op: 'remove_lake_type', id }),
-    busy: '正在计算湖泊…',
+    busy: '正在计算…',
     samples: FANTASY_LAKE_TYPES,
     idPrefix: 'lake-type',
     matchLabel: '哪些自然的湖是这一种',
-    matchHint: '每个湖算一次：海拔、气温取整个湖的平均，另有湖面积、入湖水量、干湖、放的湖。返回真就是这一种',
-    intro: '血池、晶湖……每种有自己的颜色、画法、岸边的影响和起名的样子。放湖时、选中一个湖时都能选。',
+    matchHint: '每个湖算一次，返回真就是这一种',
+    intro: '没有湖泊类型',
     namesHint: '{color}血池',
   },
 };
@@ -121,7 +121,7 @@ export function TypeButton({ kind, prefix, type, auto, panel, plainText = '普�
       swatch={type ? typeColor(kind, type) : PLAIN_COLOR[kind]}
       name={type ? type.name : plainText}
       auto={auto && !!type}
-      title={auto ? `是哪一种${noun}（现在是按规则判断的）` : `是哪一种${noun}`}
+      title={auto ? `${noun}的类型 · 自动` : `${noun}的类型`}
     />
   );
 }
@@ -149,7 +149,7 @@ export function TypeMenu({ kind, items, onNew, note }: { kind: WaterKind; items:
       }))}
       onNew={onNew}
       newLabel="新建类型…"
-      newTitle={`新建一种${def.noun}，用上它，并打开它的设置`}
+      newTitle={`新建一种${def.noun}并用上`}
       note={note}
     />
   );
@@ -174,7 +174,7 @@ export async function createAndUse(kind: WaterKind, use: ((id: string) => Comman
   const t = newWaterType(w, kind);
   const def = KINDS[kind];
   const then = use?.(t.id) ?? null;
-  const cmd: Command = then ? { op: 'batch', label: `新建了${def.title}「${t.name}」并用上`, commands: [def.set(t), then] } : def.set(t);
+  const cmd: Command = then ? { op: 'batch', label: `新建${def.title}“${t.name}”`, commands: [def.set(t), then] } : def.set(t);
   const ok = await exec(cmd, def.busy);
   if (!ok) return;
   after?.(t.id);
@@ -241,7 +241,7 @@ async function applyMatch(kind: WaterKind, id: string, src: string, mode: ApplyM
   const w = world.value;
   const def = KINDS[kind];
   const t = w ? def.list(w).find((x) => x.id === id) : undefined;
-  if (!t) return { ok: false, error: `这种${def.noun}已经不在了` };
+  if (!t) return { ok: false, error: `这种${def.noun}已删除` };
   const before = t.scripts?.match?.src ?? '';
   const cmd = trustHandledElsewhere(typeScriptCommand(kind, t, src));
   const ok = mode === 'exec' ? await exec(cmd, def.busy) : await replaceLast(cmd, def.busy);
@@ -250,7 +250,7 @@ async function applyMatch(kind: WaterKind, id: string, src: string, mode: ApplyM
     return { ok: true };
   }
   const x = toast.value;
-  return { ok: false, error: x?.error ? x.text : '没有改成' };
+  return { ok: false, error: x?.error ? x.text : '没改成' };
 }
 
 // 世界上这种的 match 脚本现在出的错
@@ -318,7 +318,7 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
     if (namesBad) return;
     const old = (t.names ?? []).map((n) => n.p);
     if (JSON.stringify(old) === JSON.stringify(list)) return;
-    edit(`改了「${t.name}」的起名模板`, (x) => {
+    edit(`修改“${t.name}”的起名模板`, (x) => {
       const keep = new Map((x.names ?? []).map((n) => [n.p, n]));
       return { ...x, names: list.length ? list.map((p) => keep.get(p) ?? { p }) : undefined };
     });
@@ -334,15 +334,15 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
   return (
     <div class="river-type-editor">
       <div class="row">
-        <input type="color" value={t.color} title="颜色" onChange={(e) => edit(`改了「${t.name}」的颜色`, (x) => ({ ...x, color: (e.target as HTMLInputElement).value }))} />
-        <NameBox value={t.name} onCommit={(v) => edit(`「${t.name}」改名为「${v}」`, (x) => ({ ...x, name: v }))} />
+        <input type="color" value={t.color} title="颜色" onChange={(e) => edit(`修改“${t.name}”的颜色`, (x) => ({ ...x, color: (e.target as HTMLInputElement).value }))} />
+        <NameBox value={t.name} onCommit={(v) => edit(`“${t.name}”改名为“${v}”`, (x) => ({ ...x, name: v }))} />
       </div>
       <div class="row">
         <span class="bar-label">画法</span>
         <Seg<string>
           value={t.style ?? 'solid'}
           options={def.styles.map((s) => [s, def.styleLabel[s]])}
-          onChange={(v) => edit(`「${t.name}」改成${def.styleLabel[v]}`, (x) => ({ ...x, style: v === 'solid' ? undefined : v }))}
+          onChange={(v) => edit(`修改“${t.name}”的画法 · ${def.styleLabel[v]}`, (x) => ({ ...x, style: v === 'solid' ? undefined : v }))}
         />
       </div>
       {def.width && (
@@ -355,21 +355,21 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
             return Math.abs(v - 1) < 0.06 ? 1 : v;
           }}
           text={(v) => `${Math.round(v * 100)}%`}
-          title="这种河画得比普通的河粗多少（只影响画法）"
-          commit={(v) => edit(`「${t.name}」的粗细改成 ${Math.round(v * 100)}%`, (x) => ({ ...x, width: v === 1 ? undefined : v }) as WaterType)}
+          title="比普通的河粗多少，只影响画法"
+          commit={(v) => edit(`修改“${t.name}”的粗细 · ${Math.round(v * 100)}%`, (x) => ({ ...x, width: v === 1 ? undefined : v }) as WaterType)}
         />
       )}
       <h5>{shore}</h5>
       <p class="hint">
-        离这种{def.noun}越近影响越大，到范围的边上就没有了。生态的条件、脚本里也能用“靠近{t.name}”。
+        越近影响越大；条件里可用“靠近{t.name}”
       </p>
       <TypeSlider
         label="范围"
         value={bank?.radiusKm ?? 0}
         pos={(v) => logPos(v || autoRadius(t), RLO, RHI)}
         at={(p) => Math.round(logAt(p, RLO, RHI) / 10) * 10 || 10}
-        text={(v) => (v ? `${v} km` : `自动（约 ${autoRadius(t)} km）`)}
-        commit={(v) => setBank({ radiusKm: v }, `改了「${t.name}」${shore}的范围`)}
+        text={(v) => (v ? `${v} km` : `自动 · 约 ${autoRadius(t)} km`)}
+        commit={(v) => setBank({ radiusKm: v }, `修改“${t.name}”${shore}的范围`)}
       />
       <TypeSlider
         label="冷暖"
@@ -378,7 +378,7 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
         at={(p) => Math.round((p * 20 - 10) * 2) / 2}
         text={(v) => (v ? `${fmtSigned(v)} °C` : '不变')}
         title={`让${shore}变暖、变冷`}
-        commit={(v) => setBank({ dT: v || undefined }, `改了「${t.name}」${shore}的冷暖`)}
+        commit={(v) => setBank({ dT: v || undefined }, `修改“${t.name}”${shore}的冷暖`)}
       />
       <TypeSlider
         label="干湿"
@@ -387,14 +387,14 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
         at={(p) => Math.round((Math.exp(p * 3 - 1.5) - 1) * 20) * 5}
         text={(v) => (v ? `雨水 ${fmtSigned(v, 0)}%` : '不变')}
         title={`让${shore}的雨水变多、变少`}
-        commit={(v) => setBank({ dP: v ? Math.max(-1.5, Math.min(1.5, Math.log(1 + v / 100))) : undefined }, `改了「${t.name}」${shore}的干湿`)}
+        commit={(v) => setBank({ dP: v ? Math.max(-1.5, Math.min(1.5, Math.log(1 + v / 100))) : undefined }, `修改“${t.name}”${shore}的干湿`)}
       />
       <h5>起名</h5>
       <p class="hint">
-        每行一个模板，比如 {def.namesHint}；不写时按普通的{def.noun}起名。
+        每行一个模板，如 {def.namesHint}
       </p>
       <textarea rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
-      {namesBad && <p class="hint warn">“{namesBad.slice(0, 12)}…”太长了，最多 40 个字</p>}
+      {namesBad && <p class="hint warn">“{namesBad.slice(0, 12)}…”太长，最多 40 字</p>}
       <NaturalBox w={w} kind={kind} t={t} edit={edit} />
       <ScriptBox
         key={`${worldEpoch.value}:${kind}:${t.id}:match`}
@@ -411,8 +411,8 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
         onShowCell={showCell}
       />
       <div class="row wrap">
-        <button class="small danger" onClick={() => void exec(def.remove(t.id), def.busy)} title={`删掉这种${def.noun}：选了它的${def.noun}变回普通的${def.noun}`}>
-          <Trash2 /> 删掉这种{def.noun}
+        <button class="small danger" onClick={() => void exec(def.remove(t.id), def.busy)} title={`选了它的${def.noun}变回普通的${def.noun}`}>
+          <Trash2 /> 删除
         </button>
       </div>
     </div>
@@ -427,14 +427,14 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
   const script = !!t.scripts?.match?.src;
   const where = kind === 'river' ? '流经的格' : '湖岸一圈';
   const hint = !on
-    ? `关着：只用在${kind === 'river' ? '画的河、选了它的河' : '放的湖、选了它的湖'}上。`
+    ? `只用在${kind === 'river' ? '画的河和选了它的河' : '放的湖和选了它的湖'}上`
     : !script && !picked.size
-      ? `还没有条件：选下面“只在这些生态里”，或者写规则，${noun}才会自己变成这一种。`
+      ? '没有条件：选生态或写规则'
       : !script
-        ? `选的生态里的${noun}都是这一种（${where}至少一半是这些生态）。`
+        ? `${where}一半以上是选的生态时是这一种`
         : picked.size
-          ? `规则说是、并且${where}至少一半是选的生态的${noun}是这一种。`
-          : `规则说是的${noun}是这一种。`;
+          ? `规则说是，且${where}一半以上是选的生态`
+          : `规则说是的${noun}是这一种`;
   const toggle = (id: string) => {
     const next = new Set(picked);
     if (next.has(id)) next.delete(id);
@@ -442,18 +442,18 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
     // 按生态的先后存（结果与点的先后无关）
     const list = w.small.species.map((s) => s.id).filter((x) => next.has(x));
     const sp = w.small.species.find((s) => s.id === id);
-    edit(`「${t.name}」${next.has(id) ? '可以' : '不再'}出现在${sp?.name || id}里`, (x) => ({ ...x, biomes: list.length ? list : undefined }));
+    edit(`“${t.name}”${next.has(id) ? '可以' : '不再'}出现在“${sp?.name || id}”里`, (x) => ({ ...x, biomes: list.length ? list : undefined }));
   };
   return (
     <>
-      <h5>自己出现</h5>
-      <Toggle on={on} onChange={() => edit(on ? `「${t.name}」不再自然生成` : `「${t.name}」自然生成`, (x) => ({ ...x, natural: !on }))}>
-        自然生成：在地图上按条件自己出现
+      <h5>自然生成</h5>
+      <Toggle on={on} onChange={() => edit(on ? `“${t.name}”不再自然生成` : `“${t.name}”自然生成`, (x) => ({ ...x, natural: !on }))}>
+        按条件出现在地图上
       </Toggle>
       <p class="hint">{hint}</p>
       <details>
         <summary>
-          只在这些生态里出现（{picked.size ? `${picked.size} 种` : '不限'}）
+          只在这些生态里 · {picked.size ? `${picked.size} 种` : '不限'}
         </summary>
         <div class="biome-picks">
           {w.small.species.map((sp) => (
@@ -463,7 +463,7 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
             </label>
           ))}
         </div>
-        <p class="hint">规则里也能用 biome('生态 id')（{where}里这种生态占多少）、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
+        <p class="hint">规则里可用 biome('生态 id')、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
       </details>
     </>
   );
@@ -511,7 +511,7 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
                 </span>
                 <span class="hint">
                   {def.styleLabel[t.style ?? 'solid']}
-                  {t.natural === false ? ' · 不自然生成' : t.scripts?.match || t.biomes?.length ? ' · 自己出现' : ''}
+                  {t.natural === false ? ' · 不自然生成' : t.scripts?.match || t.biomes?.length ? ' · 自然生成' : ''}
                 </span>
               </div>
               {open === t.id && <TypeEditor w={w} kind={kind} t={t} />}
@@ -524,7 +524,7 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
           <Plus /> 新建
         </button>
         {samples.map((x) => (
-          <button key={x.id} class="small" title={`加上示例里的「${x.name}」`} onClick={() => void add(structuredClone(x))}>
+          <button key={x.id} class="small" title={`加上示例“${x.name}”`} onClick={() => void add(structuredClone(x))}>
             <TypeSwatch kind={kind} t={x} /> {x.name}
           </button>
         ))}

@@ -46,7 +46,7 @@ const lineCount = (s: string) => s.split(/\r\n|[\n\r\u2028\u2029]/).length;
 // 调用方还要按世界给框换 key：新世界里是一个新的框
 export function inThisWorld(apply: Props['apply']): Props['apply'] {
   const epoch = worldEpoch.value;
-  return (src, mode, revert) => (worldEpoch.value === epoch ? apply(src, mode, revert) : Promise.resolve({ ok: false, error: '已经换了一个世界，这段没有用上' }));
+  return (src, mode, revert) => (worldEpoch.value === epoch ? apply(src, mode, revert) : Promise.resolve({ ok: false, error: '世界已换，没有用上' }));
 }
 
 export function ScriptBox(props: Props) {
@@ -152,7 +152,7 @@ export function ScriptBox(props: Props) {
         </span>
         {/* 按下时不抢走框里的光标：不然一点就算离开框、立即提交，再插例子又是新的一步撤销 */}
         <button class={`small ghost ${help ? 'on' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => setHelp(!help)}>
-          变量和例子…
+          变量和例子
         </button>
       </div>
       <div class={`script-edit ${v.problem && !note ? 'has-problem' : ''}`}>
@@ -168,7 +168,7 @@ export function ScriptBox(props: Props) {
           wrap="off"
           spellcheck={false}
           autocomplete="off"
-          placeholder={kind === 'placement' ? '// 比如：return 海拔 > 1000;' : kind === 'color' ? '// 比如：return [200, 80, 60];' : '// 写 return …'}
+          placeholder={kind === 'placement' ? '// 例如：return 海拔 > 1000;' : kind === 'color' ? '// 例如：return [200, 80, 60];' : '// 写 return …'}
           onFocus={() => edit.focus()}
           onBlur={() => void edit.blur()}
           onInput={(e) => edit.input((e.target as HTMLTextAreaElement).value)}
@@ -189,13 +189,13 @@ export function ScriptBox(props: Props) {
           {problemLine(v.problem)}
           {cell !== undefined && (
             <>
-              {v.problem.text.includes('地图上有一处') ? '' : '。地图上有一处是这样'}
+              {v.problem.text.includes('地图上有一处') ? '' : '。地图上有一处'}
               <span class="link" onClick={() => props.onShowCell?.(cell)}>
-                （点这里去看）
+                （定位）
               </span>
             </>
           )}
-          {v.stale && !note && <div class="muted">地图上还是上一次没出错的样子。</div>}
+          {v.stale && !note && <div class="muted">地图上是上一次没出错的样子</div>}
         </div>
       )}
       {help && <ScriptHelp kind={kind} scope={props.scope} replace={!!v.draft.trim()} onInsert={insert} />}
@@ -213,14 +213,14 @@ function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scop
   return (
     <div class="script-help">
       <p class="hint">
-        脚本是一段小程序，最后写 <code>return …</code> 给出结果。变量用英文名、中文名都行。点名字插进光标处。
+        最后写 <code>return …</code> 给出结果。变量可用中英文名，点名字插入。
       </p>
       <h5>例子</h5>
       {examples.map((ex) => (
         <div class="script-example">
           <pre>{ex.src}</pre>
           <button class="small" onMouseDown={keep} onClick={() => onInsert(ex.src, true)} title={ex.label}>
-            {replace ? '换成这个' : '用这个'}：{ex.label}
+            {replace ? '替换' : '插入'}：{ex.label}
           </button>
         </div>
       ))}

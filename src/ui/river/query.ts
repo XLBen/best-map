@@ -57,7 +57,7 @@ export const guideOf = (w: World, id: string) => w.small.guides.find((g) => g.id
 
 // 流到哪里：入海、流进「青湖」、汇入「赤江」……quoted 为 false 时不带引号
 export function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: number, quoted = true, self?: GeoFeature): string {
-  const q = (n: string) => (quoted ? `「${n}」` : n);
+  const q = (n: string) => (quoted ? `“${n}”` : n);
   switch (kind) {
     case 'sea':
       return '入海';
@@ -68,13 +68,13 @@ export function destText(w: World, kind: CourseEnd | 'unknown' | null, cell: num
     case 'river': {
       // 汇合的那一格可能算在汇进来的河上（它比上游大时）：再看下游那一格，是被汇入的那条河的
       const n = cell >= 0 ? riverNameAt(w, cell, self) || riverNameAt(w, w.derived.receiver[cell], self) : null;
-      return n ? `汇入${q(n)}` : '汇入一条河';
+      return n ? `汇入${q(n)}` : '汇入别的河';
     }
     case 'edge':
       return '流出地图';
     case 'sink':
       // 说的是整条河（悬停在终点那一格上时另说“停在这里”，见 riverLabel）
-      return '最后停在终点';
+      return '停在终点';
     default:
       return '水流不出去';
   }
@@ -280,17 +280,17 @@ export function riverInfo(w: World, ref: RiverRef): RiverInfo | null {
 function sourceDest(w: World, g: Guide): string | null {
   const p = g.sourceOf !== undefined ? guideOf(w, g.sourceOf) : undefined;
   if (!p) return null;
-  return `是${quoted(guideName(w, p), '一条河')}的又一个源头`;
+  return `${quoted(guideName(w, p), '别的河')}的源头`;
 }
 
 // 悬停时的一句话：“赤江 · 中等的河 · 汇入「青河」”。cell：鼠标下那一格（停在终点的河，停在终点上时说“停在这里”）
 export const riverLabel = (ref: RiverRef, info: RiverInfo, cell = -1) =>
-  `${info.name ?? (ref.kind === 'guide' ? '画的河' : '一条河')} · ${info.size} · ${info.sink && cell >= 0 && cell === info.cells[info.cells.length - 1] ? '停在这里' : info.dest}`;
+  `${info.name ?? (ref.kind === 'guide' ? '画的河' : '河')} · ${info.size} · ${info.sink && cell >= 0 && cell === info.cells[info.cells.length - 1] ? '停在这里' : info.dest}`;
 
 // 画的河现在叫什么（没名字时为 null）
 export const guideName = (w: World, g: Guide) => guideFeature(w, g.id)?.name || riverNameAt(w, g.cells[Math.floor(g.cells.length / 2)]) || null;
 
-export const quoted = (name: string | null, fallback: string) => (name ? `「${name}」` : fallback);
+export const quoted = (name: string | null, fallback: string) => (name ? `“${name}”` : fallback);
 
 // 一条自然的河的主干（自己的格）是哪条有名字的自然大河：主干上的格一半以上在那条河的地物里。没有时为 null
 // （汇合处的小支流不会顶着大河的名字）

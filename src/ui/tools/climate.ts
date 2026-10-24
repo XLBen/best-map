@@ -63,7 +63,7 @@ export function climateTool(group: 'temp' | 'moist'): ToolHandler {
     },
     exact: (_w, s, shift) => (s.t.size ? cmdOf(s, shift) : null),
     exactHint: (_w, _s, shift, r) => `${head(shift)} · ${biomeChange(r)}`,
-    commit: (_w, s, shift) => exec(cmdOf(s, shift), '正在计算气候…'),
+    commit: (_w, s, shift) => exec(cmdOf(s, shift), '正在计算…'),
   });
 }
 
@@ -77,16 +77,16 @@ export function climateEraseTool(): ToolHandler {
     backdrop: (w) => oneLayer(erasableLayer(climateMask(w))),
     here: (w, cells) => climateHere(w, cells),
     layers(_w, s) {
-      return { layers: [{ cells: s.cells, values: s.weights(), color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦掉 ${s.t.size} 格` : '这里没改过' };
+      return { layers: [{ cells: s.cells, values: s.weights(), color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦除 ${s.t.size} 格` : '这里没改过' };
     },
     exact: (_w, s) => (s.t.size ? { op: 'restore_climate', cells: s.cells, t: s.ts } : null),
-    exactHint: (_w, s, _shift, r) => `擦掉 ${s.t.size} 格 · ${biomeChange(r)}`,
+    exactHint: (_w, s, _shift, r) => `擦除 ${s.t.size} 格 · ${biomeChange(r)}`,
     async commit(_w, s) {
       if (!s.t.size) {
         showToast('这里的冷暖干湿没改过', true);
         return;
       }
-      await exec({ op: 'restore_climate', cells: s.cells, t: s.ts }, '正在计算气候…');
+      await exec({ op: 'restore_climate', cells: s.cells, t: s.ts }, '正在计算…');
     },
   });
 }
@@ -107,7 +107,7 @@ export function fieldTool(): ToolHandler {
     hint: () => {
       const name = options.value.field;
       const w = world.value;
-      if (!name || !w?.causes.fields[name]) return { text: '先在“调整”里新建自定义场', warn: true };
+      if (!name || !w?.causes.fields[name]) return { text: '先在“调整”里新建场', warn: true };
       return { text: null };
     },
     layers(_w, s, shift) {

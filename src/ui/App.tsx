@@ -73,7 +73,7 @@ function PanelHost({ id }: { id: PanelId }) {
       );
     case 'adjust':
       return (
-        <Popover id={id} title="调整整个世界" width={360}>
+        <Popover id={id} title="调整" width={360}>
           <AdjustPanel />
         </Popover>
       );
@@ -85,13 +85,13 @@ function PanelHost({ id }: { id: PanelId }) {
       );
     case 'river':
       return (
-        <Popover id={id} title="这条河" width={320}>
+        <Popover id={id} title="河" width={320}>
           <RiverMore />
         </Popover>
       );
     case 'province':
       return (
-        <Popover id={id} title="这个省" width={300}>
+        <Popover id={id} title="省份" width={300}>
           <ProvinceMore />
         </Popover>
       );
@@ -107,7 +107,7 @@ function PanelHost({ id }: { id: PanelId }) {
       // 底部工具条末尾的“⋯”：这一类的设置
       const c = id.slice(4) as keyof typeof CATEGORY_DEFS;
       return (
-        <Popover id={id} title={`${CATEGORY_DEFS[c].label} · 更多设置`} width={380}>
+        <Popover id={id} title={`${CATEGORY_DEFS[c].label}设置`} width={380}>
           <CategoryMore c={c} />
         </Popover>
       );

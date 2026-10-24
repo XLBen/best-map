@@ -121,8 +121,6 @@ const BRUSH: SliderDef = {
   format: (v, w) => sizeText(w, v),
 };
 
-const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
-
 // 岛的大小写成直径：碎岛（第十八轮）可以比一格小，直接写多少 km；别的岛不到半格写“一格 ≈ N km”
 const islandSizeText = (w: World, kind: string, v: number) => {
   const r = Math.max(islandSizeRangeKm(w, kind)[0], v);
@@ -197,7 +195,7 @@ const biomeModes = {
   kind: 'choice' as const,
   key: 'biomeMode' as const,
   options: [
-    { value: 'natural', label: '自然融入', hint: '系统调整这里的冷暖干湿，让它真的长出来，周围平滑过渡' },
+    { value: 'natural', label: '自然融入', hint: '调整冷暖干湿，让它长出来' },
     { value: 'force', label: '强制', hint: '只改涂到的格，气候和河流不变' },
   ],
 };
@@ -208,8 +206,8 @@ const riverModes = {
   key: 'riverMode' as const,
   label: '走向',
   options: [
-    { value: 'flow', label: '顺地势', hint: '新画的河：点一下或拖一下，河顺着地势流（改已有的河总是照着画的线走）' },
-    { value: 'course', label: '自定义走向', hint: '新画的河：按住画出河道，河完全照着走' },
+    { value: 'flow', label: '顺地势', hint: '点击源头，河顺地势流' },
+    { value: 'course', label: '自定义走向', hint: '按住画出河道，河照着走' },
   ],
 };
 export const riverEnds = {
@@ -238,7 +236,7 @@ const SPECS = {
     icon: Brush,
     name: '画陆地 / 海',
     short: '陆海',
-    how: '按住涂，或选“圈一片”圈出一块；按住 Shift 反过来',
+    how: '按住涂陆地或海；Shift 反过来',
     size: { ...BRUSH, enabled: () => options.value.landShape === 'brush' },
     bar: () => [
       {
@@ -253,8 +251,8 @@ const SPECS = {
         kind: 'choice',
         key: 'landShape',
         options: [
-          { value: 'brush', label: '画笔', hint: '按住拖动，画笔下变成陆地（海）' },
-          { value: 'lasso', label: '圈一片', hint: '按住画一个圈，松手后圈里变成陆地（海）' },
+          { value: 'brush', label: '画笔', hint: '按住拖动涂' },
+          { value: 'lasso', label: '圈一片', hint: '圈住的地方变成陆地或海' },
         ],
       },
     ],
@@ -265,7 +263,7 @@ const SPECS = {
     icon: TreePalm,
     name: '放岛',
     short: '放岛',
-    how: '点一下放岛，按住往外拖直接拖出大小',
+    how: '点击放岛，往外拖定直径',
     size: ISLAND,
     // 每放一个岛自动换一个形状（只用鼠标，没有“换个形状”按钮）
     bar: () => [{ kind: 'custom', render: IslandTypePick }],
@@ -276,7 +274,7 @@ const SPECS = {
     icon: Waypoints,
     name: '画岛链',
     short: '岛链',
-    how: '拖一条线，沿线长出一串大小不一的岛',
+    how: '拖一条线，沿线长出一串岛',
     size: CHAIN_SIZE,
     amount: {
       key: 'chainDensity',
@@ -297,7 +295,7 @@ const SPECS = {
     icon: MountainSnow,
     name: '堆山 / 压低',
     short: '堆山',
-    how: '按住拖动让地势升高或降低',
+    how: '按住涂，抬高或压低地势',
     size: BRUSH,
     amount: { key: 'reliefAmount', label: '力度', range: () => [0.15, RELIEF_MAX], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => percent(v, 0.7) },
     bar: () => [
@@ -318,7 +316,7 @@ const SPECS = {
     icon: Hammer,
     name: '打碎',
     short: '打碎',
-    how: '按住涂，把地形打碎；停一下先看结果',
+    how: '按住涂，把陆地打碎',
     size: BRUSH,
     amount: { key: 'fragAmount', label: '力度', range: () => [0.1, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => percent(v, 1) },
     bar: () => [
@@ -326,8 +324,8 @@ const SPECS = {
         kind: 'choice',
         key: 'fragMode',
         options: [
-          { value: 'blocks', label: '裂成碎块', hint: '陆地裂开成一块块，块与块之间是海峡；力度越大块越小、海峡越宽' },
-          { value: 'coast', label: '只打碎海岸', hint: '内陆不动，海岸一两格以内支离破碎，外面撒一圈碎岛' },
+          { value: 'blocks', label: '裂成碎块', hint: '裂成碎块，中间是海峡' },
+          { value: 'coast', label: '只打碎海岸', hint: '内陆不动，外面撒碎岛' },
         ],
       },
     ],
@@ -336,10 +334,10 @@ const SPECS = {
   reroll: {
     category: 'terrain',
     icon: Dices,
-    name: '重画这一片',
+    name: '重画',
     short: '重画',
-    how: '停一下先看重画后的样子；点一下，圈里的地形重新随机，圈外不变',
-    size: brushAs('直径'),
+    how: '点击，圈里的地形重新随机',
+    size: BRUSH,
     create: () => rerollTool(),
   },
   biome: {
@@ -347,7 +345,7 @@ const SPECS = {
     icon: Paintbrush,
     name: '涂生态',
     short: '涂生态',
-    how: '在陆地上涂；Alt+点吸取那里的生态',
+    how: '在陆地上涂；Alt+点击吸取生态',
     size: BRUSH,
     amount: REACH,
     bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }],
@@ -359,8 +357,8 @@ const SPECS = {
     icon: Move,
     name: '拖动扩张',
     short: '扩张',
-    how: '按住一片生态往外拖，拖得越远长得越多',
-    size: brushAs('起点'),
+    how: '按住生态往外拖，越远长得越多',
+    size: BRUSH,
     amount: REACH,
     bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }],
     create: () => growTool(),
@@ -368,9 +366,9 @@ const SPECS = {
   restore: {
     category: 'terrain',
     icon: Eraser,
-    name: '恢复原样',
+    name: '恢复',
     short: '恢复',
-    how: '按住涂：画过的陆地、海、山和放的岛（斜线标出的格）退回生成时的样子；不管“重画这一片”（虚线圈，用历史撤销）',
+    how: '按住涂，地形回到生成时的样子',
     size: BRUSH,
     create: () => restoreTool(),
   },
@@ -379,7 +377,7 @@ const SPECS = {
     icon: Thermometer,
     name: '冷暖',
     short: '冷暖',
-    how: '按住涂：让一片地方变冷或变暖（冰原、雪山、热带）；按住 Shift 反过来',
+    how: '按住涂，变冷或变暖；Shift 反过来',
     size: BRUSH,
     amount: CLIMATE_AMOUNT('temp'),
     bar: () => [
@@ -399,7 +397,7 @@ const SPECS = {
     icon: CloudRain,
     name: '干湿',
     short: '干湿',
-    how: '按住涂：让一片地方雨水变多或变少；按住 Shift 反过来',
+    how: '按住涂，变湿或变干；Shift 反过来',
     size: BRUSH,
     amount: CLIMATE_AMOUNT('moist'),
     bar: () => [
@@ -417,18 +415,18 @@ const SPECS = {
   unclimate: {
     category: 'climate',
     icon: Eraser,
-    name: '擦掉冷暖干湿',
-    short: '擦掉',
-    how: '按住涂：把改过的冷暖干湿（斜线标出的格）恢复原样；不管自定义场和生态对周围的影响',
+    name: '擦除冷暖干湿',
+    short: '擦除',
+    how: '按住涂，擦除改过的冷暖干湿',
     size: BRUSH,
     create: () => climateEraseTool(),
   },
   erase: {
     category: 'nature',
     icon: Eraser,
-    name: '擦除',
+    name: '擦除生态',
     short: '擦除',
-    how: '按住涂：擦掉涂过的生态（斜线标出的格），恢复自然；只长在某个岛上的生态在生态抽屉的“长在哪里”里改',
+    how: '按住涂，擦除涂过的生态',
     size: BRUSH,
     create: () => eraseTool(),
   },
@@ -438,7 +436,7 @@ const SPECS = {
     icon: LassoSelect,
     name: '选生态的范围',
     short: '选范围',
-    how: '点一个岛，或按住圈一片：这种生态只长在那里',
+    how: '点岛或圈一片，生态只长在那里',
     hidden: () => true,
     bar: () => [{ kind: 'custom', render: RangeBar }],
     cursor: 'pointer',
@@ -455,7 +453,7 @@ const SPECS = {
     icon: Sparkles,
     name: '涂自定义场',
     short: '场',
-    how: '让“魔力”这类自定义的量变大或变小',
+    how: '按住涂，增减自定义场',
     size: BRUSH,
     amount: { key: 'fieldAmount', label: '力度', range: () => [0.05, FIELD_MAX], scale: 'log', snap: (v) => Math.round(v * 100) / 100, format: (v) => `±${v.toFixed(2)}` },
     hidden: (w) => !Object.keys(w.causes.fields).length,
@@ -477,7 +475,7 @@ const SPECS = {
     icon: Spline,
     name: '画河',
     short: '画河',
-    how: '从河上起笔是改这条河，从别处起笔是画新的河 · 点一条河选中它，拖它的控制点改走向',
+    how: '从河上起笔改河，别处起笔画新河',
     // 选中一条河时，底部条换成那条河的设置（新河的大小先收起来）
     size: { ...RIVER, enabled: () => !selectedRiver.value },
     bar: () =>
@@ -497,7 +495,7 @@ const SPECS = {
     icon: Droplet,
     name: '放湖',
     short: '放湖',
-    how: '点一下放湖，按住往外拖直接拖出大小 · 点一个湖选中它',
+    how: '点击放湖，往外拖定直径',
     // 选中一个湖时，底部条换成这个湖的设置（新湖的大小先收起来）
     size: { ...LAKE, enabled: () => !selectedLake.value },
     bar: () => (selectedLake.value ? [{ kind: 'custom', render: LakeBar }] : [{ kind: 'custom', render: NewLakeTypePick }]),
@@ -513,7 +511,7 @@ const SPECS = {
     icon: Trash2,
     name: '删除河湖',
     short: '删河湖',
-    how: '删掉画过的河或湖；停一下会标出真正会变干的河段',
+    how: '点击删除画的河或湖',
     cursor: 'pointer',
     create: (env) => unwaterTool(env.zoom),
   },
@@ -521,8 +519,8 @@ const SPECS = {
     category: 'provinces',
     icon: MousePointer2,
     name: '选省份',
-    short: '选省',
-    how: '点一个省，在下面改名、改类型',
+    short: '选择',
+    how: '点击选中省份',
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
     cursor: 'pointer',
     create: () => provinceSelectTool(),
@@ -531,8 +529,8 @@ const SPECS = {
     category: 'provinces',
     icon: Paintbrush,
     name: '省份画笔',
-    short: '涂省',
-    how: '把格子涂进选中的省；Alt+点吸取一个省',
+    short: '画笔',
+    how: '涂进选中的省份；Alt+点击吸取',
     size: BRUSH,
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
     pick: (w, cell) => {
@@ -548,7 +546,7 @@ const SPECS = {
     icon: Scissors,
     name: '剪刀',
     short: '剪刀',
-    how: '画一条线把省切开',
+    how: '画线切开省份',
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
     create: (env) => provinceCutTool(env.zoom),
   },
@@ -557,7 +555,7 @@ const SPECS = {
     icon: Merge,
     name: '合并',
     short: '合并',
-    how: '先点一个省，再点要并进来的省',
+    how: '先点省份，再点要并入的',
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
     cursor: 'pointer',
     create: () => provinceMergeTool(),
@@ -567,7 +565,7 @@ const SPECS = {
     icon: RefreshCw,
     name: '重新划分',
     short: '重划',
-    how: '涂一片，里面的省重新自动划分；停一下先看新的省界',
+    how: '涂一片，重新划分里面的省份',
     size: BRUSH,
     bar: () => [{ kind: 'custom', render: ProvinceColorToggle }],
     create: () => provinceRegenTool(),
@@ -585,18 +583,18 @@ const SPECS = {
   area: {
     category: 'names',
     icon: LassoSelect,
-    name: '圈一块起名',
+    name: '圈地名',
     short: '圈地名',
-    how: '按住画一个圈，圈里成为一个地区、平原、山地……',
+    how: '按住画圈，给圈里起名',
     bar: () => [{ kind: 'custom', render: NamesBar }],
     create: (env) => regionTool(env.hitLabel),
   },
   spot: {
     category: 'names',
     icon: MapPinPlus,
-    name: '放一个地名',
+    name: '放地名',
     short: '放地名',
-    how: '点一下放一个地名，比如城镇、渡口、海角',
+    how: '点击放地名，如城镇、渡口',
     bar: () => [{ kind: 'custom', render: NamesBar }],
     create: (env) => spotTool(env.hitLabel, env.zoom),
 

@@ -82,7 +82,7 @@ export function LabelEdit({ label, auto, onCommit }: { label: string; auto: stri
     return (
       <button
         class="bar-label label-edit"
-        title={label !== auto ? `自己写的叫法（默认是“${auto}”）：点一下改，清空就换回默认的` : '点一下改成自己的叫法，比如“圣山”'}
+        title={label !== auto ? `自定的叫法，清空恢复“${auto}”` : '改叫法，如“圣山”'}
         onClick={() => {
           setText(label);
           setEditing(true);
@@ -108,7 +108,7 @@ export function LabelEdit({ label, auto, onCommit }: { label: string; auto: stri
       value={text}
       maxLength={20}
       placeholder={auto}
-      title={`名字前面的叫法；清空就换回“${auto}”`}
+      title={`名字前的叫法，清空恢复“${auto}”`}
       onInput={(e) => setText((e.target as HTMLInputElement).value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -146,7 +146,7 @@ function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
         <Seg<AreaChoice>
           value={r.auto ? 'auto' : r.kind}
           options={[['auto', r.auto ? `自动（${featureLabel(w, f)}）` : '自动'], ...KIND_CHOICES]}
-          titles={{ auto: '按圈里的地形自动判断（涂了沙漠就变成沙漠）' }}
+          titles={{ auto: '按圈里的地形判断' }}
           onChange={(k) => {
             if (k !== (r.auto ? 'auto' : r.kind)) update(k === 'auto' ? { auto: true } : { kind: k });
           }}
@@ -155,14 +155,13 @@ function RegionBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v })} />
       <SelectionActions
         reroll={() => update({ reroll: true })}
-        rerollTitle="按文字包换一个名字"
         unlock={f.custom ? () => update({ name: '' }) : undefined}
         locate={() => focusOn(f.cells)}
         remove={() => {
           selectedFeature.value = null;
           void exec({ op: 'remove_region', id }, '正在删除…');
         }}
-        removeTitle="删掉这个地名"
+        removeTitle="删除地名"
         deselect={() => (selectedFeature.value = null)}
       />
     </>
@@ -178,16 +177,15 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
   const update = (patch: GuidePatch, label: string, busy = '正在起名…') => void exec({ op: 'update_guide', id, patch, label }, busy);
   return (
     <>
-      <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => update({ label: v || null }, v ? `类型改叫“${v}”` : '类型换回自动的叫法', '正在改名…')} />
+      <LabelEdit label={featureLabel(w, f)} auto={defaultFeatureLabel(w, f)} onCommit={(v) => update({ label: v || null }, v ? `类型改叫“${v}”` : '类型恢复自动', '正在改名…')} />
       <NameInput fkey={f.key} value={f.name} onCommit={(v) => update({ name: v }, `改名为“${v}”`, '正在改名…')} />
       <SelectionActions
-        reroll={() => update({ name: '', salt: salt + 1 }, '换了个名字')}
-        unlock={f.custom ? () => update({ name: '', salt }, '恢复自动命名') : undefined}
-        unlockTitle="不再固定，跟着文字包自动起名"
+        reroll={() => update({ name: '', salt: salt + 1 }, '换名字')}
+        unlock={f.custom ? () => update({ name: '', salt }, '名字恢复自动') : undefined}
         lock={f.custom ? undefined : () => update({ name: f.name }, `改名为“${f.name}”`, '正在改名…')}
-        lockTitle="之后河再变，这个名字也不会变"
         locate={() => focusOn(f.cells)}
-        remove={hideAndDeselect(() => update({ hidden: true }, `删掉了地名「${f.name}」`))}
+        remove={hideAndDeselect(() => update({ hidden: true }, `隐藏地名“${f.name}”`, '正在隐藏…'))}
+        removeLabel="隐藏"
         removeTitle={HIDE_TITLE}
         deselect={() => (selectedFeature.value = null)}
       >
@@ -197,9 +195,9 @@ function GuideNameBar({ w, f, id }: { w: World; f: GeoFeature; id: string }) {
             selectedFeature.value = null;
             selectRiver({ kind: 'guide', id });
           }}
-          title="换到“画河”：改大小、粗细、终点，重画一段"
+          title="在“画河”里改大小、粗细、终点"
         >
-          <Spline /> 管理这条河
+          <Spline /> 编辑河
         </button>
       </SelectionActions>
     </>
@@ -220,10 +218,10 @@ export function NamesBar() {
       <SelectionActions
         reroll={() => void exec({ op: 'reroll_feature', key: f.key }, '正在起名…')}
         unlock={f.custom ? () => rename('') : undefined}
-        unlockTitle="不再固定，跟着文字包自动起名"
         lock={f.custom ? undefined : () => rename(f.name)}
         locate={() => focusOn(f.cells)}
-        remove={hideAndDeselect(() => void exec(hideCommand(w, f, true), '正在删除…'))}
+        remove={hideAndDeselect(() => void exec(hideCommand(w, f, true), '正在隐藏…'))}
+        removeLabel="隐藏"
         removeTitle={HIDE_TITLE}
         deselect={() => (selectedFeature.value = null)}
       />
@@ -232,7 +230,7 @@ export function NamesBar() {
 }
 
 // 删掉地名（第十六轮）：地物还在（山还是山、河还是河），只是不再标名字；“地名 ⋯ → 删掉的地名”里恢复
-const HIDE_TITLE = '删掉这个地名（地物还在，只是不标名字；在“⋯ → 删掉的地名”里能恢复）';
+const HIDE_TITLE = '不标名字，可在“隐藏的地名”里显示';
 const hideAndDeselect = (onHide: () => void) => () => {
   selectedFeature.value = null;
   onHide();
@@ -240,7 +238,7 @@ const hideAndDeselect = (onHide: () => void) => () => {
 
 // 自然的地物写在落到它上面的那条改动上（同 labelCommand），画的河写在河道上
 export function hideCommand(w: World, f: GeoFeature, hidden: boolean) {
-  if (f.guide) return { op: 'update_guide' as const, id: f.guide, patch: { hidden: hidden ? (true as const) : null }, label: hidden ? `删掉了地名「${f.name}」` : `恢复了地名「${f.name}」` };
+  if (f.guide) return { op: 'update_guide' as const, id: f.guide, patch: { hidden: hidden ? (true as const) : null }, label: hidden ? `隐藏地名“${f.name}”` : `显示地名“${f.name}”` };
   return { op: 'rename_feature' as const, key: overrideKeyOf(w, f), hidden };
 }
 
@@ -251,7 +249,7 @@ function WordPackBox({ w }: { w: World }) {
     void file.text().then(async (text) => {
       const read = readPack(text, fileLabel(file.name));
       if (!read.ok) {
-        showToast(`文字包读不了：${read.errors.slice(0, 3).join('；')}`, true);
+        showToast(`文字包无法读取：${read.errors.slice(0, 3).join('；')}`, true);
         return;
       }
       const wp = read.legacy === 'wordPack' ? read.pack.textPacks?.[0] : undefined;
@@ -262,7 +260,7 @@ function WordPackBox({ w }: { w: World }) {
   return (
     <section>
       <h5>文字包：{pack.name}</h5>
-      <p class="hint">名字由文字包按地貌类型生成（岛、山脉、海湾……各有模板和词表）。可以导出来改，做成别的风格再导入。</p>
+      <p class="hint">名字由文字包按地貌生成，可导出修改再导入</p>
       <div class="row wrap">
         <button onClick={() => download(`${pack.id}.json`, JSON.stringify(pack, null, 2), 'application/json')}>导出文字包</button>
         <label class="file-button">
@@ -277,7 +275,7 @@ function WordPackBox({ w }: { w: World }) {
             }}
           />
         </label>
-        {w.small.wordPack && <button onClick={() => void exec({ op: 'set_word_pack', pack: null }, '正在起名…')}>换回内置</button>}
+        {w.small.wordPack && <button onClick={() => void exec({ op: 'set_word_pack', pack: null }, '正在起名…')}>恢复自动</button>}
       </div>
     </section>
   );
@@ -293,7 +291,7 @@ function FeatureList({ w }: { w: World }) {
   return (
     <section>
       <h5>全部地名</h5>
-      <input class="wide-input" placeholder="找地名…" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+      <input class="wide-input" placeholder="搜索地名" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
       <div class="list">
         {list.map((f) => (
           <div
@@ -319,16 +317,16 @@ function HiddenList({ w }: { w: World }) {
   if (!hidden.length) return null;
   return (
     <details>
-      <summary>删掉的地名（{hidden.length}）</summary>
+      <summary>隐藏的地名（{hidden.length}）</summary>
       <div class="list">
         {hidden.map((f) => (
           <div class="item" key={f.key}>
-            <span class="grow ellipsis muted" onClick={() => focusOn(f.cells)} title="在地图上看">
+            <span class="grow ellipsis muted" onClick={() => focusOn(f.cells)} title="定位">
               {f.name}
             </span>
             <span class="hint">{featureLabel(w, f)}</span>
-            <button class="small" onClick={() => void exec(hideCommand(w, f, false), '正在恢复…')} title="地图上重新标出这个名字">
-              恢复
+            <button class="small" onClick={() => void exec(hideCommand(w, f, false), '正在显示…')} title="重新标出名字">
+              显示
             </button>
           </div>
         ))}

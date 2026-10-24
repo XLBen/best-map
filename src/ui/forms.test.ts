@@ -52,7 +52,7 @@ describe('列出来的形态', () => {
     ]);
     expect(list[0].form).toBe(TWIN_CONTINENTS);
     expect(formChoices([BUILTIN]).map((c) => c.form)).toEqual([...FANTASY_FORMS]);
-    expect(list.map(formSource)).toEqual(['', '', '', '我的资源', '来自「x」']);
+    expect(list.map(formSource)).toEqual(['', '', '', '我的资源', '来自“x”']);
   });
 
   it('只有“我的资源”这个包里的算自己的（编辑它改的是它本身）；别的自己导出的包里的编辑时是副本', () => {
@@ -61,7 +61,7 @@ describe('列出来的形态', () => {
     const list = formChoices([BUILTIN, mine, exported]);
     expect(list.slice(3).map((c) => [c.key, c.mine, formSource(c)])).toEqual([
       [`${MY_PACK_NAME}:my_1`, true, '我的资源'],
-      ['我的星球:my_2', false, '来自「我的星球」'],
+      ['我的星球:my_2', false, '来自“我的星球”'],
     ]);
     // 没改过就“存进资源库”：用的就是原来那一个（同一个对象），不再存一份——一模一样的在列表里只列一次，存了也看不到
     const builtin = list[0];
@@ -92,7 +92,7 @@ describe('向导新建', () => {
   it('用形态新建：一步“新世界：双子大陆”，生成参数带着形态', () => {
     const eng = engineFor(globe);
     for (const cmd of newWorldCommands({ seed: 7, type: 'continents', form: TWIN_CONTINENTS }, '双子大陆', 7)) eng.exec(cmd);
-    expect(eng.history.map((h) => h.summary)[0]).toBe('新世界：双子大陆');
+    expect(eng.history.map((h) => h.summary)[0]).toBe('新世界“双子大陆”');
     expect(eng.world.small.terrain.gen!.form).toEqual(TWIN_CONTINENTS);
     expect(eng.world.small.planet.terrainWind).toBe(1);
   });
@@ -122,7 +122,7 @@ describe('形态编辑器', () => {
     expect(FORM_KNOBS.find((k) => k.id === 'radius')!.format(0.24, 6371)).toBe('每块约 4,800 公里宽');
     // 有布局脚本时，大陆块数、大小说明只管配方里的块（双子大陆的两块都是脚本加的）
     const blocks = FORM_KNOBS.find((k) => k.id === 'blocks')!;
-    expect(knobText(blocks, TWIN_CONTINENTS, 6371)).toBe('没有（布局脚本加的不算）');
+    expect(knobText(blocks, TWIN_CONTINENTS, 6371)).toBe('没有（不含布局脚本加的）');
     expect(knobText(blocks, RING_SEA, 6371)).toBe('约 11 块');
     expect(knobText(FORM_KNOBS.find((k) => k.id === 'landFraction')!, TWIN_CONTINENTS, 6371)).toBe('18%');
   });
@@ -172,7 +172,7 @@ describe('换形态的命令（旧记录照样重放）', () => {
     const cmd = formCommand(w.small.terrain.gen!, TWIN_CONTINENTS);
     expect(cmd).toEqual({ op: 'set_worldgen', params: { ...w.small.terrain.gen!, type: 'continents', form: TWIN_CONTINENTS } });
     const p = eng.preview(cmd);
-    expect(eng.exec(cmd)).toBe('换了星球形态：双子大陆');
+    expect(eng.exec(cmd)).toBe('换星球形态“双子大陆”');
     const gained: number[] = [];
     const lost: number[] = [];
     for (let i = 0; i < w.mesh.n; i++) if (land0[i] !== w.causes.land[i]) (w.causes.land[i] ? gained : lost).push(i);
@@ -186,7 +186,7 @@ describe('换形态的命令（旧记录照样重放）', () => {
     // 去掉形态：type 不变
     const back = formCommand(w.small.terrain.gen!, null);
     expect(back.op === 'set_worldgen' && back.params).toEqual({ seed: 4, type: 'continents', landFraction: 0.3, mountains: 1, rerolls: [] });
-    expect(eng.exec(back)).toBe('去掉了星球形态「双子大陆」');
+    expect(eng.exec(back)).toBe('删除星球形态“双子大陆”');
     eng.undo();
     eng.undo();
     expect(digestWorld(w)).toEqual(before);

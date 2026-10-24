@@ -23,15 +23,15 @@ export function MapsDialog() {
       <div class="modal maps" onClick={(e) => e.stopPropagation()}>
         <div class="row between">
           <h2>我的地图</h2>
-          <button onClick={close}>关上</button>
+          <button onClick={close}>关闭</button>
         </div>
-        <p class="hint">存在这个浏览器里。保存过的世界改了之后会自动保存；换电脑或留备份时用“导出文件”。</p>
-        {list === null && <p class="muted">正在读…</p>}
-        {list && list.length === 0 && <p class="muted maps-empty">还没有保存的地图。按 ⌘S 保存当前的世界</p>}
+        <p class="hint">存在浏览器里，改动自动保存。换电脑或备份用“导出”。</p>
+        {list === null && <p class="muted">正在读取…</p>}
+        {list && list.length === 0 && <p class="muted maps-empty">没有地图。按 ⌘S 保存当前世界</p>}
         {list?.map((e) => (
           <div class="item big" key={e.id}>
-            <button class="map-thumb" onClick={() => void openMap(e)} title={e.id === open ? '正开着' : `打开「${e.name}」`}>
-              {e.thumb ? <img src={e.thumb} alt="" /> : <span class="hint">没有缩略图</span>}
+            <button class="map-thumb" onClick={() => void openMap(e)} title={e.id === open ? '正开着' : `打开“${e.name}”`}>
+              {e.thumb ? <img src={e.thumb} alt="" /> : <span class="hint">无缩略图</span>}
             </button>
             <div class="map-info">
               <b>{e.name}</b>
@@ -45,11 +45,11 @@ export function MapsDialog() {
                 <button onClick={() => void renameSaved(e)}>
                   <Pencil /> 改名
                 </button>
-                <button onClick={() => void exportSaved(e)} title="下载成世界文件（.json），换电脑或留备份">
-                  <Download /> 导出文件
+                <button onClick={() => void exportSaved(e)} title="下载世界文件，用于换电脑或备份">
+                  <Download /> 导出
                 </button>
                 <button onClick={() => void deleteSaved(e)}>
-                  <Trash2 /> 删掉
+                  <Trash2 /> 删除
                 </button>
               </div>
             </div>

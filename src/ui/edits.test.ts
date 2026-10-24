@@ -96,12 +96,12 @@ describe('能擦的格', () => {
     const w = eng.world;
     world.value = w;
     expect(natureMask(w).cells).toEqual([c, c + 1].sort((a, b) => a - b));
-    expect(natureHere(w, [c])).toBe('这里：涂成了荒漠');
+    expect(natureHere(w, [c])).toBe('这里：涂了荒漠');
     expect(natureHere(w, [c + 5000])).toBe('这里没涂过');
     const t = eraseTool();
     setOptions({ brushKm: 0.2 * w.mesh.spacing * w.kmPerUnit });
     t.move?.(at(w, c), false);
-    expect(t.preview().hint).toBe('这里：涂成了荒漠');
+    expect(t.preview().hint).toBe('这里：涂了荒漠');
     expect(editLayers(w).map((l) => l.color)).toHaveLength(1);
   });
 
@@ -116,15 +116,15 @@ describe('能擦的格', () => {
     const k = w.small.species.findIndex((s) => s.id === 'rainforest');
     // 这里长不了热带雨林（这个世界在北纬 20°–72°）
     expect(near.some((i) => w.derived.dominant[i] === k)).toBe(false);
-    expect(natureHere(w, [c])).toBe(`这里：涂过${name}（没长成）`);
+    expect(natureHere(w, [c])).toBe(`这里：${name}没涂成`);
     const note = paintNote(w0, w)!;
-    expect(note).toMatch(new RegExp(`^${name}：(生态没变|\\d+ 格变了) · ${near.length} 格没涂成（这里长不了）$`));
+    expect(note).toMatch(new RegExp(`^${name} · (生态没变|\\d+ 格变了) · ${near.length} 格没涂成$`));
     // 长出来了的照旧说“涂成了”，结果不说没涂成
     const e2 = continents();
     e2.exec({ op: 'add_constraint', constraint: { cells: near, species: 'desert', mode: 'constraint' } });
     const desert = e2.world.small.species.find((s) => s.id === 'desert')!.name;
-    expect(natureHere(e2.world, [c])).toBe(`这里：涂成了${desert}`);
-    expect(paintNote(w0, e2.world)).toMatch(new RegExp(`^${desert}：\\d+ 格变了（自然融入）$`));
+    expect(natureHere(e2.world, [c])).toBe(`这里：涂了${desert}`);
+    expect(paintNote(w0, e2.world)).toMatch(new RegExp(`^${desert} · \\d+ 格变了 · 自然融入$`));
   });
 });
 
@@ -147,7 +147,7 @@ describe('选生态的范围（第十二轮，替代岛上特有）', () => {
     const t = rangeTool();
     t.move?.(at(w, island.anchor), false);
     const pv = t.preview();
-    expect(pv.hint).toContain(`「${island.name}（${arch.name}）」`);
+    expect(pv.hint).toContain(`“${island.name}（${arch.name}）”`);
     const mass = landmassCells(w, island.anchor);
     expect(pv.layers[0].cells.length).toBe(mass.reduce((a, b) => a + b, 0));
     const { exec } = await import('../state');
@@ -170,13 +170,13 @@ describe('选生态的范围（第十二轮，替代岛上特有）', () => {
     const sp = w.small.species.find((s) => s.id === 'desert')!;
     const c = w.derived.conflicts.at(-1)!;
     expect(c.failing.length).toBe(cells.length);
-    const want = `不在这个生态的范围里（只长在「${home.name}」）`;
+    const want = `不在范围里：只长在“${home.name}”`;
     expect(outsideRangeReason(w, sp, c.failing)).toBe(want);
-    expect(paintNote(w0, w)).toBe(`${sp.name}：生态没变 · ${cells.length} 格没涂成：${want}`);
+    expect(paintNote(w0, w)).toBe(`${sp.name} · 生态没变 · ${cells.length} 格没涂成：${want}`);
     // 范围里的格不说这一条
     expect(outsideRangeReason(w, sp, Array.from(home.cells).slice(0, 5))).toBeNull();
     // 圈的范围
-    expect(outsideRangeReason(w, { range: { kind: 'cells', cells: [home.anchor] } }, c.failing)).toBe('不在这个生态的范围里（只长在圈的范围里）');
+    expect(outsideRangeReason(w, { range: { kind: 'cells', cells: [home.anchor] } }, c.failing)).toBe('不在范围里：只长在圈的范围里');
     // 没有范围
     expect(outsideRangeReason(w, {}, c.failing)).toBeNull();
   });

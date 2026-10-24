@@ -1,6 +1,7 @@
 import { Dices, Ellipsis, Lock, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { type PanelId, openPanel, togglePanel } from '../../state';
+import { NAME_TIPS } from '../copy';
 
 // 选中了一样东西（河、湖、省、地名）时的那几个按钮：换一个、恢复自动、锁定、在地图上看、删掉、取消选择。
 // 四处共用一份。底部条上放常用的；河、省把不常用的收进“⋯”（more：弹出哪个面板），
@@ -33,40 +34,40 @@ export function SelectionActions({
   if (menu) {
     return (
       <div class="menu">
-        {h.reroll && <MenuItem icon={<Dices />} label="换一个名字" title={h.rerollTitle ?? '自动换一个名字'} run={h.reroll} />}
-        {h.unlock && <MenuItem icon={<LockOpen />} label="恢复自动" title={h.unlockTitle ?? '不用自己起的名字，按文字包自动起'} run={h.unlock} />}
-        {h.lock && <MenuItem icon={<Lock />} label="锁定名字" title={h.lockTitle ?? '之后地形再变，这个名字也不会变'} run={h.lock} />}
+        {h.reroll && <MenuItem icon={<Dices />} label="换名字" title={h.rerollTitle ?? NAME_TIPS.reroll} run={h.reroll} />}
+        {h.unlock && <MenuItem icon={<LockOpen />} label="恢复自动" title={h.unlockTitle ?? NAME_TIPS.unlock} run={h.unlock} />}
+        {h.lock && <MenuItem icon={<Lock />} label="锁定名字" title={h.lockTitle ?? NAME_TIPS.lock} run={h.lock} />}
         {children}
-        {h.locate && <MenuItem icon={<ScanSearch />} label="在地图上看" run={h.locate} />}
-        {h.remove && <MenuItem icon={<Trash2 />} label={h.removeLabel ?? '删掉'} title={h.removeTitle} run={h.remove} danger />}
+        {h.locate && <MenuItem icon={<ScanSearch />} label="定位" run={h.locate} />}
+        {h.remove && <MenuItem icon={<Trash2 />} label={h.removeLabel ?? '删除'} title={h.removeTitle} run={h.remove} danger />}
       </div>
     );
   }
   return (
     <>
       {h.reroll && (
-        <button class="bar-btn" onClick={h.reroll} title={h.rerollTitle ?? '自动换一个名字'}>
+        <button class="bar-btn" onClick={h.reroll} title={h.rerollTitle ?? NAME_TIPS.reroll}>
           <Dices /> 换一个
         </button>
       )}
       {h.unlock && (
-        <button class="bar-btn" onClick={h.unlock} title={h.unlockTitle ?? '不用自己起的名字，按文字包自动起'}>
+        <button class="bar-btn" onClick={h.unlock} title={h.unlockTitle ?? NAME_TIPS.unlock}>
           <LockOpen /> 恢复自动
         </button>
       )}
       {h.lock && (
-        <button class="bar-btn" onClick={h.lock} title={h.lockTitle ?? '之后地形再变，这个名字也不会变'}>
+        <button class="bar-btn" onClick={h.lock} title={h.lockTitle ?? NAME_TIPS.lock}>
           <Lock /> 锁定
         </button>
       )}
       {children}
       {h.locate && (
-        <button class="bar-btn icon" onClick={h.locate} title="在地图上看">
+        <button class="bar-btn icon" onClick={h.locate} title="定位">
           <ScanSearch />
         </button>
       )}
       {h.remove && (
-        <button class="bar-btn icon" onClick={h.remove} title={h.removeTitle ?? h.removeLabel ?? '删掉'}>
+        <button class="bar-btn icon" onClick={h.remove} title={h.removeTitle ?? h.removeLabel ?? '删除'}>
           <Trash2 />
         </button>
       )}
@@ -76,7 +77,7 @@ export function SelectionActions({
         </button>
       )}
       {deselect && (
-        <button class="bar-btn icon" onClick={deselect} title="取消选择（Esc）">
+        <button class="bar-btn icon" onClick={deselect} title="取消选择">
           <X />
         </button>
       )}

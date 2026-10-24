@@ -106,7 +106,7 @@ export function provinceBrushTool(): ToolHandler {
     hint: () => {
       const w = world.value;
       const id = target();
-      if (!w || id === null || !w.small.provinces[id]) return { text: '先按住 Alt 点一个省', warn: true };
+      if (!w || id === null || !w.small.provinces[id]) return { text: '先按住 Alt 点一个省份', warn: true };
       return { text: null };
     },
     filter: (w, i) => {
@@ -124,7 +124,7 @@ export function provinceBrushTool(): ToolHandler {
       const { value, split } = provincesOf(w, s, id);
       return {
         layers: [{ cells: s.cells, color: provinceDisplayColor(w, id), alpha: 0.8 }],
-        hint: split ? `会把「${provinceName(w, split.id)}」分成 ${split.parts} 块` : `${provinceName(w, id)} +${s.t.size} 格`,
+        hint: split ? `会把“${provinceName(w, split.id)}”分成 ${split.parts} 块` : `${provinceName(w, id)} +${s.t.size} 格`,
         caution: !!split,
         provinces: value,
       };
@@ -132,7 +132,7 @@ export function provinceBrushTool(): ToolHandler {
     async commit(_w, s) {
       const id = target();
       if (id === null || !s.t.size) return;
-      await exec({ op: 'assign_province', cells: s.cells, province: id }, '正在划分…');
+      await exec({ op: 'assign_province', cells: s.cells, province: id }, '正在计算…');
     },
   });
 }
@@ -182,7 +182,7 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
     if (ext.before) shapes.push({ kind: 'line', points: ext.line.slice(0, ext.before + 1), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
     if (ext.after) shapes.push({ kind: 'line', points: ext.line.slice(ext.line.length - 1 - ext.after), color: 'rgba(255, 90, 70, 0.8)', width: 2, dashed: true });
     const pieces = cut.plans.reduce((n, pl) => n + pl.parts.length, 0);
-    return { layers, shapes, hint: cut.plans.length ? `切成 ${pieces} 块` : '线还没把省分开', provinces: cells.length ? { cells, ids, seams } : null };
+    return { layers, shapes, hint: cut.plans.length ? `切成 ${pieces} 块` : '线还没把省份分开', provinces: cells.length ? { cells, ids, seams } : null };
   };
   return {
     drags: true,
@@ -211,7 +211,7 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
       }
       committing = true;
       try {
-        await exec({ op: 'cut_province', line: sent }, '正在划分…');
+        await exec({ op: 'cut_province', line: sent }, '正在计算…');
       } finally {
         committing = false;
         line = null;
@@ -245,14 +245,14 @@ export function provinceMergeTool(): ToolHandler {
     if (sel === null || sel === id || !w.small.provinces[sel]) return { layers: [], shapes: [], hint: provinceName(w, id) };
     const meta = w.small.provinces[id];
     const other = w.small.provinces[sel];
-    if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地和海域不能合并', warn: true };
+    if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地省份和海省不能合并', warn: true };
     const key = `${worldId(w)}|${id}|${sel}`;
     if (cache?.key !== key) {
       const cells = provinceCells(w, id);
       const locked = meta.locked ? id : other.locked ? sel : null;
       if (locked !== null) {
         // 合并不了的不画将来的省界（省界当场消失却并不成，就不是所见即所得）：这个省标红
-        cache = { key, view: { layers: [{ cells, color: BLOCKED_RGB, alpha: 0.45 }], shapes: [], hint: `「${provinceName(w, locked)}」已锁定，不能合并`, warn: true } };
+        cache = { key, view: { layers: [{ cells, color: BLOCKED_RGB, alpha: 0.45 }], shapes: [], hint: `“${provinceName(w, locked)}”已锁定`, warn: true } };
       } else {
         const apart = !cells.some((c) => {
           for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1]; e++) if (w.causes.province[w.mesh.adj[e]] === sel) return true;
@@ -263,7 +263,7 @@ export function provinceMergeTool(): ToolHandler {
           view: {
             layers: [{ cells, color: provinceDisplayColor(w, sel), alpha: 0.7 }],
             shapes: [],
-            hint: apart ? '不相邻：合并后是一省两块' : `并进 ${provinceName(w, sel)}`,
+            hint: apart ? '不相邻：合并后分成两块' : `并进“${provinceName(w, sel)}”`,
             caution: apart,
             provinces: { cells, ids: cells.map(() => sel) },
           },
@@ -291,12 +291,12 @@ export function provinceMergeTool(): ToolHandler {
       pointer = p;
       const v = view();
       if (v.warn) {
-        showToast(v.hint ?? '这两个省不能合并', true);
+        showToast(v.hint ?? '不能合并', true);
         return;
       }
       committing = v;
       try {
-        if (await exec({ op: 'merge_province', from: id, into: sel }, '正在合并…')) selectedProvince.value = sel;
+        if (await exec({ op: 'merge_province', from: id, into: sel }, '正在计算…')) selectedProvince.value = sel;
       } finally {
         committing = null;
       }
@@ -351,7 +351,7 @@ export function provinceRegenTool(): ToolHandler {
       const x = exact.get(key);
       return {
         layers: x ? t.framed : t.rough,
-        hint: !t.count ? '再多涂一些' : x ? `重划 ${t.count} 个省 → ${x.fresh} 个` : `重划 ${t.count} 个省`,
+        hint: !t.count ? '再多涂一些' : x ? `重划 ${t.count} 个省份 → ${x.fresh} 个` : `重划 ${t.count} 个省份`,
         provinces: x?.prov ?? null,
       };
     },
@@ -359,10 +359,10 @@ export function provinceRegenTool(): ToolHandler {
       // 松手了：还没到时候的预览不必再算（Worker 先算这一步）
       exact.hold();
       if (!targets(w, s).count) {
-        showToast('涂的范围要盖住省份的一大半，那个省份才会重新划分', true);
+        showToast('要盖住省份的一大半才会重划', true);
         return;
       }
-      await exec({ op: 'regenerate_provinces', cells: s.cells }, '正在划分…');
+      await exec({ op: 'regenerate_provinces', cells: s.cells }, '正在计算…');
     },
   });
 }

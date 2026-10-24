@@ -176,7 +176,7 @@ export class EngineWorker implements WorkerLike {
     }
     this.dead = true;
     this.queue.length = 0;
-    queueMicrotask(() => this.onerror?.(new Error('计算程序没有开起来')));
+    queueMicrotask(() => this.onerror?.(new Error('计算程序没能启动')));
   }
 
   private plain() {

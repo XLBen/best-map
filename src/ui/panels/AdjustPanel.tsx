@@ -95,7 +95,8 @@ function FieldsBox({ w }: { w: World }) {
   };
   const add = async () => {
     const r = await askText({
-      title: '新场的名字（字母、数字、下划线）',
+      title: '新建自定义场',
+      text: '名字只用字母、数字、下划线',
       input: 'magic',
       choices: [
         { value: 'ok', label: '新建', primary: true },
@@ -107,7 +108,7 @@ function FieldsBox({ w }: { w: World }) {
   return (
     <section>
       <h5>自定义场</h5>
-      <p class="hint">比如“魔力”“文明度”：可以在生态类型的“高级”条件里用，涂生态时系统也会调整它。</p>
+      <p class="hint">如“魔力”“文明度”，可在生态的“高级”条件里用</p>
       {names.map((f) => (
         <div class="item">
           <span class="grow ellipsis">{f}</span>
@@ -119,10 +120,10 @@ function FieldsBox({ w }: { w: World }) {
               openPanel.value = null;
             }}
           >
-            用画笔涂
+            涂抹
           </button>
           <button class="small" onClick={() => (mode.value = `field:${f}`)}>
-            看分布
+            查看
           </button>
           <button class="small danger" onClick={() => void remove(f)}>
             删除
@@ -150,13 +151,13 @@ export function AdjustPanel() {
           ))}
           {g === '气候与河流' &&
             PLANET_TOGGLES.filter((t) => !t.hidden?.(w)).map((t) => (
-              <Toggle on={t.read(w)} onChange={(on) => void exec({ op: 'set_planet', patch: t.patch(on) }, '正在重算气候…')}>
+              <Toggle on={t.read(w)} title={t.hint} onChange={(on) => void exec({ op: 'set_planet', patch: t.patch(on) }, '正在计算…')}>
                 {t.label}
               </Toggle>
             ))}
         </section>
       ))}
-      <p class="hint">拖着停一下，地图上就是松手后的样子。松手才执行，每一下都能撤销。陆地多少、山多高这些地形在新建世界时定，建好后用“地形”里的画笔改。</p>
+      <p class="hint">松手执行，可以撤销；地形用“地形”里的工具改</p>
       <FieldsBox w={w} />
     </>
   );

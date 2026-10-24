@@ -10,7 +10,7 @@ export function Sheet() {
     <div class="sheet">
       <div class="popover-head">
         <b>生态类型</b>
-        <button class="icon-btn" onClick={() => (sheet.value = null)} title="关上">
+        <button class="icon-btn" onClick={() => (sheet.value = null)} title="关闭">
           <X />
         </button>
       </div>

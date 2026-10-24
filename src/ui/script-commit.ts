@@ -220,7 +220,7 @@ export class ScriptEdit {
       p = await deps.check(src, final);
     } catch {
       // 检查本身出了问题（以后的验证 worker 起不来之类）：不提交，地图保留原来的
-      p = { text: '现在检查不了这段脚本，等一下再试', reason: 'engine' };
+      p = { text: '暂时检查不了，稍后再试', reason: 'engine' };
     }
     // 检查期间又改了：等下一次停顿（或离开时）再说
     if (normScript(this.draft) !== src) return;

@@ -1452,7 +1452,12 @@ button.thumb {
 .steps li {
   margin: var(--sp-2) 0;
 }
-.steps p {
+.steps ul {
+  margin: 2px 0;
+  padding-left: 16px;
+  color: var(--muted);
+}
+.steps ul li {
   margin: 2px 0;
 }
 

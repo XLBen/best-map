@@ -11,7 +11,7 @@ import { showCell } from '../editor-hooks';
 
 // 一句话：「X」的脚本出错了，暂时按没有脚本处理（第 3 行：…）
 function issueText(issue: ScriptIssue): string {
-  return `「${issue.owner}」的脚本出错了，暂时按没有脚本处理（${issue.line ? `第 ${issue.line} 行：` : ''}${issue.text}）`;
+  return `“${issue.owner}”的脚本出错，按没有脚本处理（${issue.line ? `第 ${issue.line} 行：` : ''}${issue.text}）`;
 }
 
 // 一组问题的键：关掉后同一组不再出现
@@ -24,10 +24,10 @@ export function ScriptBanner() {
   if (safe) {
     return (
       <div class="notice banner">
-        <span class="notice-text" title={`安全模式：这个世界里的脚本没有运行（${safe.reason}）。`}>
-          安全模式：这个世界里的脚本没有运行（{safe.reason}）。
+        <span class="notice-text" title={safe.reason}>
+          安全模式：脚本没有运行
         </span>
-        <button class="pill-btn" onClick={() => void retryScripts()} title="重新打开这个世界，让脚本照常运行">
+        <button class="pill-btn" onClick={() => void retryScripts()} title="重新打开，让脚本运行">
           再试一次
         </button>
         <button class="pill-btn" onClick={() => void showScripts()}>
@@ -52,7 +52,7 @@ export function ScriptBanner() {
       {cell !== undefined && cell >= 0 && cell < w.mesh.n && (
         // 镜头移过去，这一格连同周围一圈亮一下
         <button class="link-btn" onClick={() => showCell(cell)}>
-          地图上有一处出错（点这里去看）
+          定位
         </button>
       )}
       {canEditScript(first) && (
@@ -60,7 +60,7 @@ export function ScriptBanner() {
           编辑
         </button>
       )}
-      <button class="pill-btn icon" onClick={() => (dismissedIssues.value = key)} title="关上">
+      <button class="pill-btn icon" onClick={() => (dismissedIssues.value = key)} title="关闭">
         <X />
       </button>
     </div>

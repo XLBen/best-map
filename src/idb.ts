@@ -20,7 +20,7 @@ export function openDb(): Promise<IDBDatabase> {
     };
     open.onblocked = () => {
       gaveUp = true;
-      reject(new Error('浏览器里的存储被另一个打开着的页面占着（关掉旧的页面再试）'));
+      reject(new Error('存储被另一个页面占用：关闭旧页面后再试'));
     };
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {

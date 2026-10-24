@@ -22,10 +22,10 @@ export function BiomeChip() {
     <button
       class={`bar-btn biome-chip ${sp ? '' : 'warn'} ${openPanel.value === 'cat:nature' ? 'open' : ''}`}
       onClick={() => togglePanel('cat:nature')}
-      title="换一种生态，或编辑生态类型"
+      title="换生态、编辑生态类型"
     >
       <span class="swatch" style={{ background: sp ? speciesColor(sp) : 'transparent' }} />
-      {sp ? sp.name || sp.id : '选一种生态'}
+      {sp ? sp.name || sp.id : '选生态'}
     </button>
   );
 }
@@ -40,7 +40,7 @@ export function UnmetChip() {
   return (
     <button
       class={`bar-btn ${n ? 'warn' : ''}`}
-      title={n ? '点开看哪里没涂成、为什么' : `${ignored} 处没涂成的地方说了“就这样”：点开看`}
+      title={n ? '哪里没涂成、为什么' : `${ignored} 处没涂成，已忽略`}
       onClick={() => {
         if (!n) showIgnored.value = true;
         togglePanel('cat:nature');
@@ -56,7 +56,7 @@ export function RangeBar() {
   const pick = rangePick.value;
   const sp = pick ? world.value?.small.species.find((s) => s.id === pick.species) : null;
   if (!pick) {
-    return <span class="hint">在生态编辑器里点“选岛”或“圈一下”</span>;
+    return <span class="hint">在生态编辑器里点“只在一个岛上”或“只在圈的范围里”</span>;
   }
   return (
     <>
@@ -66,7 +66,7 @@ export function RangeBar() {
       <Seg<'island' | 'cells'>
         value={pick.kind}
         options={[
-          ['island', '点一个岛'],
+          ['island', '点岛'],
           ['cells', '圈一片'],
         ]}
         onChange={(v) => (rangePick.value = { ...pick, kind: v })}

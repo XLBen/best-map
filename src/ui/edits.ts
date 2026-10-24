@@ -258,8 +258,8 @@ export function natureHere(w: World, cells: number[]): string {
   const parts: string[] = [];
   if (done.length) {
     const partly = done.length === 1 && grew.get(done[0])!.no > 0;
-    parts.push(`涂成了${list(done.map(nameOf))}${partly ? '（有几格没长成）' : ''}`);
+    parts.push(`涂了${list(done.map(nameOf))}${partly ? ' · 有几格没涂成' : ''}`);
   }
-  if (failed.length) parts.push(`涂过${list(failed.map(nameOf))}（没长成）`);
+  if (failed.length) parts.push(`${list(failed.map(nameOf))}没涂成`);
   return `这里：${parts.join('；')}`;
 }

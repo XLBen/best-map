@@ -31,9 +31,9 @@ export const biomeChange = (r: PreviewResult) => (r.changedCells.length ? `${r.c
 export function biomeFailWhy(w: World, sp: { id: string; name: string; natural?: boolean }, failing: readonly number[], mode = options.value.biomeMode): string | null {
   if (mode !== 'natural' || !failing.length) return null;
   const e = explainCell(w, w.derived, failing[0]).find((x) => x.species === sp.id);
-  if (e && !e.reachable && e.why === 'range') return `涂不上：这里在「${sp.name}」长的范围外，改用“强制”或改它长在哪里`;
-  if (sp.natural === false) return `涂不上：这里不合「${sp.name}」的条件，改用“强制”，或打开它的“自然生成”、放宽条件`;
-  return `涂不上：这里不合「${sp.name}」的条件，改用“强制”或放宽它的条件`;
+  if (e && !e.reachable && e.why === 'range') return `涂不上：这里在“${sp.name}”的范围外。可改用“强制”`;
+  if (sp.natural === false) return `涂不上：“${sp.name}”没打开“自然生成”。可改用“强制”`;
+  return `涂不上：这里不合“${sp.name}”的条件。可改用“强制”或放宽条件`;
 }
 
 export function biomeTool(): ToolHandler {
@@ -41,7 +41,7 @@ export function biomeTool(): ToolHandler {
     hint: () => {
       const w = world.value;
       const sp = w && speciesOf(w, options.value.biome);
-      if (!sp) return { text: '先在右上角“生态”里选一种', warn: true };
+      if (!sp) return { text: '先选一种生态', warn: true };
       return { text: null };
     },
     filter: (w, i) => isVegetated(w, w.derived, i),
@@ -59,7 +59,7 @@ export function biomeTool(): ToolHandler {
     },
     // 自然融入：周围这么远跟着平滑过渡
     reach: (w) => (options.value.biomeMode === 'natural' ? options.value.reachKm / w.kmPerUnit : null),
-    commit: (_w, s) => exec(constraintCmd(s.cells, options.value.biome!, options.value), '正在计算生态…'),
+    commit: (_w, s) => exec(constraintCmd(s.cells, options.value.biome!, options.value), '正在计算…'),
   });
 }
 
@@ -108,7 +108,7 @@ export function growTool(): ToolHandler {
       if (!w || p.cell < 0 || isBusy() || committing) return;
       const s = w.derived.dominant[p.cell];
       if (s < 0 || !isVegetated(w, w.derived, p.cell)) {
-        showToast('在一片有生态的陆地上按住，再往外拖', true);
+        showToast('在有生态的陆地上按住往外拖', true);
         return;
       }
       start = { x: p.x, y: p.y, cell: p.cell, region: patchAt(w, p.cell, options.value.brushKm), species: s };
@@ -133,7 +133,7 @@ export function growTool(): ToolHandler {
       }
       committing = true;
       try {
-        await exec(constraintCmd(grown, sp.id, options.value), '正在计算生态…');
+        await exec(constraintCmd(grown, sp.id, options.value), '正在计算…');
       } finally {
         committing = false;
         start = null;
@@ -204,16 +204,16 @@ export function eraseTool(): ToolHandler {
     backdrop: (w) => oneLayer(erasableLayer(natureMask(w))),
     here: (w, cells) => natureHere(w, cells),
     layers(_w, s) {
-      return { layers: [{ cells: s.cells, color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦掉 ${s.t.size} 格` : '这里没涂过' };
+      return { layers: [{ cells: s.cells, color: WHITE, alpha: 0.6 }], hint: s.t.size ? `擦除 ${s.t.size} 格` : '这里没涂过' };
     },
     exact: (_w, s) => (s.t.size ? { op: 'erase_constraints', cells: s.cells } : null),
-    exactHint: (_w, s, _shift, r) => `擦掉 ${s.t.size} 格 · ${biomeChange(r)}`,
+    exactHint: (_w, s, _shift, r) => `擦除 ${s.t.size} 格 · ${biomeChange(r)}`,
     async commit(_w, s) {
       if (!s.t.size) {
         showToast('这里没有涂过的生态', true);
         return;
       }
-      await exec({ op: 'erase_constraints', cells: s.cells }, '正在计算生态…');
+      await exec({ op: 'erase_constraints', cells: s.cells }, '正在计算…');
     },
   });
 }
@@ -288,7 +288,7 @@ export function rangeTool(): ToolHandler {
   const commit = async (range: { kind: 'island'; cell: number } | { kind: 'cells'; cells: number[] }, what: string) => {
     const t = target();
     if (!t?.sp) return leaveRangePick();
-    const ok = await exec({ op: 'update_species', id: t.sp.id, patch: { range } }, '正在计算生态…', undefined, `「${t.sp.name || t.sp.id}」只长在${what}`);
+    const ok = await exec({ op: 'update_species', id: t.sp.id, patch: { range } }, '正在计算…', undefined, `“${t.sp.name || t.sp.id}”只长在${what}`);
     if (ok) leaveRangePick();
   };
   return {
@@ -320,11 +320,11 @@ export function rangeTool(): ToolHandler {
       if (!t || t.pick.kind !== 'island' || isBusy()) return;
       const m = massAt(t.w, p.cell);
       if (!m) {
-        showToast('点一块陆地（岛或大陆）', true);
+        showToast('点一块陆地', true);
         return;
       }
       const f = landmassOf(t.w, p.cell);
-      await commit({ kind: 'island', cell: p.cell }, f?.name ? `「${islandLabel(t.w, f)}」上` : '这块陆地上');
+      await commit({ kind: 'island', cell: p.cell }, f?.name ? `“${islandLabel(t.w, f)}”上` : '这块陆地上');
     },
     async up() {
       const t = target();
@@ -337,7 +337,7 @@ export function rangeTool(): ToolHandler {
       }
       const cells = pts.length >= 3 ? ringCells(t.w, pts).filter((i) => t.w.causes.land[i] === 1) : [];
       if (!cells.length) {
-        showToast('圈里没有陆地：按住拖一圈再松手', true);
+        showToast('圈里没有陆地', true);
         return;
       }
       await commit({ kind: 'cells', cells }, `圈的 ${cells.length} 格里`);
@@ -348,11 +348,11 @@ export function rangeTool(): ToolHandler {
       const name = t.sp?.name || t.pick.species;
       if (t.pick.kind === 'island') {
         const m = massAt(t.w, pointer.cell);
-        if (!m) return { layers: [], shapes: [], hint: `点一块陆地：「${name}」只长在那上面` };
+        if (!m) return { layers: [], shapes: [], hint: `点一块陆地：“${name}”只长在上面` };
         const f = landmassOf(t.w, pointer.cell);
-        return { layers: [m.layer], shapes: [], hint: `「${name}」只长在${f?.name ? `「${islandLabel(t.w, f)}」` : '这块陆地'}上（${m.cells.length} 格）` };
+        return { layers: [m.layer], shapes: [], hint: `“${name}”只长在${f?.name ? `“${islandLabel(t.w, f)}”` : '这块陆地'}上 · ${m.cells.length} 格` };
       }
-      if (!ring) return { layers: [], shapes: [], hint: `按住圈一片：「${name}」只长在圈里` };
+      if (!ring) return { layers: [], shapes: [], hint: `按住圈一片：“${name}”只长在圈里` };
       const shapes = lassoShapes(ring);
       if (ring.length < 3) return { layers: [], shapes, hint: null };
       const cells = ringCells(t.w, ring).filter((i) => t.w.causes.land[i] === 1);

@@ -17,8 +17,8 @@ import { destText, guideName, guideOf, meters, quoted, riverInfo, riverNameAt, s
 // 画的线停在陆地上时的两种终点（第十四轮：短的叫法“流下去”“停在这”，细的说法在悬停的提示里）。
 // 底部条的“终点”和选中的河“⋯ → 终点”同用
 export const RIVER_END_HINTS = {
-  flow: '线停在陆地上时，河顺着地势接着往低处流，直到入海、入湖或汇进别的河',
-  sink: '河就在你画的线的终点结束，不再往下流',
+  flow: '顺地势流到海、湖或别的河',
+  sink: '在线的终点结束',
 } as const;
 
 // 一路加进来的水（门槛的倍数）在河道上每格的估计：源头有泉水 1.2 倍，其余沿路平均加进来（与水文相同）
@@ -105,7 +105,7 @@ function captureDeletes(w: World, after: Guide, id: string): boolean {
 export function touchWords(w: World, plan: CoursePlan | null, done: boolean): string {
   if (!plan || plan.touch === undefined) return '';
   const name = quoted(riverNameAt(w, plan.touch), '那条河');
-  return done ? `没穿过${name}，不截走它` : `没穿过${name}：在碰到它的地方汇入，不截走它`;
+  return done ? `没穿过${name}，不截走` : `没穿过${name}，在碰到处汇入`;
 }
 
 // “截走「赤江」”“删掉「白水」”（穿过不止一条时“等 3 条河”；第一条没有名字时“截走 3 条河”）；没穿过别的河时为 ''
@@ -115,16 +115,16 @@ export function captureWords(w: World, plan: CoursePlan | null, after: Guide | n
   const x = xs[0];
   const name = crossingName(w, x);
   const del = !!x.guide && captureDeletes(w, after, x.guide);
-  const verb = done ? (del ? '删掉了' : '截走了') : del ? '会删掉' : '会截走';
-  if (xs.length > 1) return name ? `${verb}「${name}」等 ${xs.length} 条河` : `${verb} ${xs.length} 条河`;
-  return `${verb}${quoted(name, del ? '一条画的河' : '一条河')}`;
+  const verb = done ? (del ? '删除' : '截走') : del ? '会删除' : '会截走';
+  if (xs.length > 1) return name ? `${verb}“${name}”等 ${xs.length} 条河` : `${verb} ${xs.length} 条河`;
+  return `${verb}${quoted(name, del ? '画的河' : '别的河')}`;
 }
 
 // 新画的一条河（或接到一条画的河的源头前面）
 export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): Course {
   if (plan.blocked || plan.cells.length < 2) return blocked(plan.blocked ?? '这里画不出河', raw, plan);
   // 从河上起笔的一笔是改那条河（pick 认得出来），不会到这里；万一到了也不另起一条
-  if (plan.reroute) return blocked('从河上起笔是改这条河', raw, plan);
+  if (plan.reroute) return blocked('从河上起笔是改河', raw, plan);
   const capture = plan.crossings.some((x) => x.guide !== null);
   const len = km(pathKm(w, plan.path));
   const merged = plan.merge ? guideOf(w, plan.merge) : undefined;
@@ -134,7 +134,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
     const after = applyPatch(merged, patch);
     const name = guideName(w, merged);
     const cap = captureWords(w, plan, after, merged.id, true);
-    const cmd: Command = { op: 'update_guide', id: merged.id, patch, ...(capture ? { capture: true } : {}), label: `接上了${quoted(name, '一条画的河')}（约 ${len} km）${cap ? ` · ${cap}` : ''}` };
+    const cmd: Command = { op: 'update_guide', id: merged.id, patch, ...(capture ? { capture: true } : {}), label: `接长${quoted(name, '画的河')} · 约 ${len} km${cap ? ` · ${cap}` : ''}` };
     // 新画的那段：本来的水加上源头的泉水；接上的那段照旧（已经含着它的水）
     const head = plan.cells.length - 1;
     const prof = springProfile(w, after.cells, true, merged.flow);
@@ -156,7 +156,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
   };
   const after = { id: '', ...guide } as Guide;
   const cap = captureWords(w, plan, after, null, true) || touchWords(w, plan, true);
-  const cmd: Command = { op: 'add_guide', guide, ...(capture ? { capture: true } : {}), label: `画了一条河（约 ${len} km，${where}）${cap ? ` · ${cap}` : ''}${plan.gorge >= 100 ? ` · ${gorgeWords(plan.gorge)}` : ''}` };
+  const cmd: Command = { op: 'add_guide', guide, ...(capture ? { capture: true } : {}), label: `画河 · 约 ${len} km · ${where}${cap ? ` · ${cap}` : ''}${plan.gorge >= 100 ? ` · ${gorgeWords(plan.gorge)}` : ''}` };
   const estimate = springProfile(w, plan.cells, true, options.value.riverFlow).map((q, k) => d.discharge[plan.cells[k]] + q);
   return { kind: 'new', plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name: null, raw };
 }
@@ -164,7 +164,7 @@ export function newCourse(w: World, plan: CoursePlan, raw: [number, number][]): 
 // 挖得这么深（米）以上时，拖的时候黄色提醒
 export const DEEP_GORGE = 1500;
 // 改完顶部说的：挖出了峡谷（松手后褐色的格就看不见了，说一声）
-const gorgeWords = (m: number) => `挖出了峡谷（最深${meters(m)}）`;
+const gorgeWords = (m: number) => `峡谷最深${meters(m)}`;
 
 // 改的这条河叫什么：画的河按它的名字，自然的河按它主干上的地名（不是点到的那一格上的：汇合处那一格算在大河上）
 function targetName(w: World, T: EditTarget, _ref: RiverRef): string | null {
@@ -179,34 +179,34 @@ export type EditHow = 'stroke' | 'source' | 'end' | 'bend' | 'plus' | 'delete';
 export function editCourse(w: World, T: EditTarget, ref: RiverRef, r: EditResult, raw: [number, number][], how: EditHow): Course {
   if ('blocked' in r) return { ...blocked(r.blocked, raw), target: T };
   const name = targetName(w, T, ref);
-  const n = quoted(name, T.natural ? '这条河' : '这条画的河');
+  const n = quoted(name, T.natural ? '河' : '画的河');
   const after = editedGuide(T, r);
   const len = km(pathKm(w, raw));
   const dest = r.patch.end === 'sink' ? '停在这里' : destOf(w, r.plan);
   let label: string;
   switch (r.kind) {
     case 'splice':
-      label = `重画了${n}的一段（约 ${len} km）`;
+      label = `重画${n}的一段 · 约 ${len} km`;
       break;
     case 'extend':
-      label = `${n}往下游接长了（约 ${len} km，${dest}）`;
+      label = `接长${n} · 约 ${len} km · ${dest}`;
       break;
     case 'source':
-      label = `挪了${n}的源头`;
+      label = `挪动${n}的源头`;
       break;
     case 'shorten':
-      label = `${n}缩短了，停在这里`;
+      label = `缩短${n}`;
       break;
     case 'reroute':
-      label = how === 'end' ? `挪了${n}的终点（${dest}）` : how === 'stroke' ? `${n}从这里改道（约 ${len} km，${dest}）` : `改了${n}的走向（${dest}）`;
+      label = how === 'end' ? `挪动${n}的终点 · ${dest}` : how === 'stroke' ? `改道${n} · 约 ${len} km · ${dest}` : `修改${n}的走向 · ${dest}`;
       break;
     default:
-      label = how === 'delete' ? `删掉了${n}的一个弯点` : `改了${n}的走向`;
+      label = how === 'delete' ? `删除${n}的弯点` : `修改${n}的走向`;
   }
   const cap = captureWords(w, r.plan, after, T.natural ? null : T.guide.id, true) || touchWords(w, r.plan, true);
   if (cap) label += ` · ${cap}`;
   if (r.plan.gorge >= 100) label += ` · ${gorgeWords(r.plan.gorge)}`;
-  if (T.natural) label += '（固定下来）';
+  if (T.natural) label += ' · 锁定';
   const cmd = editCommand(T, r, label.slice(0, 200));
   // 原来河道上的格照旧（已经含着这条河的水）；新画的格带着上游流下来的水（沿河往下只增不减）；画的河整条是河
   const thr = w.small.planet.riverThreshold;
@@ -230,7 +230,7 @@ export function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | {
   const plan = r.plan;
   const d = w.derived;
   const name = targetName(w, T, ref);
-  const n = quoted(name, '这条河');
+  const n = quoted(name, '河');
   const len = km(pathKm(w, plan.path));
   const type = T.guide.type ?? T.ruleType;
   const typed = type ? { type } : chosenRiverType(w);
@@ -247,7 +247,7 @@ export function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | {
     };
     const after = { id: '', ...guide } as Guide;
     const cap = captureWords(w, plan, after, null, true) || touchWords(w, plan, true);
-    const cmd: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label: `从${n}分出一股（约 ${Math.round(BRANCH_SHARE * 100)}% 的水，约 ${len} km，${destOf(w, plan)}）${cap ? ` · ${cap}` : ''}` };
+    const cmd: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label: `从${n}分出一股 · 约 ${len} km · ${destOf(w, plan)}${cap ? ` · ${cap}` : ''}` };
     // 分出去的水：分出处的 share，再加上一路上本来的水
     const q = BRANCH_SHARE * d.discharge[r.cell];
     const estimate = plan.cells.map((c, k) => (k === 0 ? q : d.discharge[c] + q));
@@ -267,12 +267,12 @@ export function extraCourse(w: World, T: EditTarget, ref: RiverRef, r: Extra | {
   };
   const after = { id: '', ...guide } as Guide;
   const cap = captureWords(w, plan, after, null, true) || touchWords(w, plan, true);
-  const label = `给${n}加了一个源头（约 ${len} km）${cap ? ` · ${cap}` : ''}`;
+  const label = `给${n}加源头 · 约 ${len} km${cap ? ` · ${cap}` : ''}`;
   const add: Command = { op: 'add_guide', guide, ...(plan.crossings.some((x) => x.guide !== null) ? { capture: true } : {}), label };
   let cmd: Command = add;
   if (T.natural) {
     const { id: _, ...pinned } = T.guide;
-    cmd = { op: 'batch', label, commands: [{ op: 'add_guide', guide: { ...pinned, id: parent }, label: `固定了${n}` }, add] };
+    cmd = { op: 'batch', label, commands: [{ op: 'add_guide', guide: { ...pinned, id: parent }, label: `锁定${n}` }, add] };
   }
   const estimate = springProfile(w, plan.cells, true, options.value.riverFlow).map((q, k) => d.discharge[plan.cells[k]] + q);
   return { kind, plan, blocked: null, cmd, key: JSON.stringify(cmd), after, estimate, name, raw, target: T, selectAfter: parent };
@@ -289,13 +289,13 @@ export function overlapWords(w: World, o: Overlap, done: boolean): string | null
   };
   switch (o.kind) {
     case 'loop':
-      return done ? null : '剪掉了一个绕回来的圈（黄色）';
+      return done ? null : '剪掉绕回的圈';
     case 'near-self':
-      return done ? '有一段绕回了自己旁边' : '有一段绕回了自己旁边（黄色）';
+      return '一段绕回自己旁边';
     case 'alongside':
-      return done ? `有一段贴着${other()}流` : `贴着${other()}流（黄色）`;
+      return `一段贴着${other()}流`;
     case 'sink-river':
-      return done ? `终点挨着${other()}` : `终点挨着${other()}（黄色）`;
+      return `终点挨着${other()}`;
     case 'old-flowing':
       return null;
     default:
@@ -322,7 +322,7 @@ export function withOverlaps(w: World, c: Course): Course {
   let cmd = c.cmd;
   const c0 = c.cmd;
   const said = 'label' in c0 && typeof c0.label === 'string' ? c0.label : '';
-  if (words.length && said && !/截走|删掉了|没穿过去/.test(said)) {
+  if (words.length && said && !/截走|删除|没穿过/.test(said)) {
     const label = `${said} · ${words[0]}`.slice(0, 200);
     if (c0.op === 'batch') {
       const list = c0.commands;
@@ -335,10 +335,10 @@ export function withOverlaps(w: World, c: Course): Course {
 // 画好以后顶部说的话：画的时候汇入的那条河还没有名字（常常是新河的水加进去它才够大、才起了名字）时说的是“汇入一条河”，
 // 换成改好的世界里河流列表说的（汇入「黄青河」）。不用换时为 null
 export function namedDest(after: World, cmd: Command, known: ReadonlySet<string>, said: string): string | null {
-  if (!said.includes('汇入一条河')) return null;
+  if (!said.includes('汇入别的河')) return null;
   const id = cmd.op === 'update_guide' ? cmd.id : cmd.op === 'add_guide' ? after.small.guides.find((g) => !known.has(g.id))?.id : undefined;
   const info = id ? riverInfo(after, { kind: 'guide', id }) : null;
-  return info?.dest.startsWith('汇入「') ? said.replace('汇入一条河', info.dest) : null;
+  return info?.dest.startsWith('汇入“') ? said.replace('汇入别的河', info.dest) : null;
 }
 
 // 终点怎么说：画到陆地上接着流的是“之后顺地势入海”
@@ -375,9 +375,9 @@ export function pinCommand(w: World, cell: number, downFrom = false): { cmd: Com
     ...(downFrom ? { end: 'sink' as const } : {}),
     ...(type ? { type } : {}),
   };
-  const name = quoted(f?.name || null, '一条河');
+  const name = quoted(f?.name || null, '河');
   const label = downFrom
-    ? `${name}从这里往下去掉了（约 ${km(pathKm(w, centrePoints(w, stem.cells.slice(i))))} km）`
-    : `固定了${name}（约 ${km(pathKm(w, centrePoints(w, cells)))} km）`;
+    ? `删除${name}的下游 · 约 ${km(pathKm(w, centrePoints(w, stem.cells.slice(i))))} km`
+    : `锁定${name} · 约 ${km(pathKm(w, centrePoints(w, cells)))} km`;
   return { cmd: { op: 'add_guide', guide, label }, after: { id: '', ...guide } as Guide, estimate: cells.map((c) => w.derived.discharge[c]) };
 }

@@ -81,7 +81,7 @@ describe('自然融入涂不上时', () => {
     const c = w.causes.land.findIndex((v) => v === 1);
     setOptions({ biomeMode: 'natural' });
     const off = biomeFailWhy(w, { id: 'x', name: '幻光林', natural: false }, [c])!;
-    expect(off).toContain('「幻光林」');
+    expect(off).toContain('“幻光林”');
     expect(off).toContain('“强制”');
     expect(off).toContain('“自然生成”');
     expect(biomeFailWhy(w, { id: 'x', name: '幻光林' }, [c])).toContain('放宽');

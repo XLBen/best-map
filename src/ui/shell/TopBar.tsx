@@ -32,9 +32,9 @@ export function TopBar() {
   return (
     <div class="topbar">
       <div class="tb-group">
-        <PanelButton panel="world" icon={Globe} label="世界" title={`新世界、我的地图、保存（⌘S）、打开、资源包、导出\n${mapStatus()}`} />
+        <PanelButton panel="world" icon={Globe} label="世界" title={`新建、保存、打开、资源包、导出\n${mapStatus()}`} />
         <PanelButton panel="more" icon={CircleEllipsis} label="更多" disabled={!w} title="历史、偏好、上手说明" />
-        <PanelButton panel="adjust" icon={WandSparkles} label="调整" disabled={!w} title="整个世界：冷暖干湿、四季、河流多少……" />
+        <PanelButton panel="adjust" icon={WandSparkles} label="调整" disabled={!w} title="冷暖干湿、四季、河流多少" />
         <span class="tb-sep" />
         <button class="tb-btn icon" disabled={!canUndo.value} onClick={() => void undo()} title="撤销（⌘Z / Ctrl+Z）">
           <Undo2 size={18} />

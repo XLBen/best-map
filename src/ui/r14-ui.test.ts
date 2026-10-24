@@ -48,7 +48,7 @@ describe('新建向导的“地形”', () => {
     const eng = engineFor(region);
     for (const cmd of newWorldCommands(withTerrain({ seed: 3, type: 'archipelago' }, t), '群岛之海', 3, terrainCommands(t))) eng.exec(cmd);
     const w = eng.world;
-    expect(eng.history.map((h) => h.summary)).toEqual(['新世界：群岛之海', expect.any(String)]);
+    expect(eng.history.map((h) => h.summary)).toEqual(['新世界“群岛之海”', expect.any(String)]);
     expect(w.small.terrain.gen).toMatchObject({ landFraction: 0.3, islands: 0.2, mountains: 1.5 });
     expect(w.small.terrain.coastRoughness).toBe(1.6);
     expect(w.small.planet.mountainScale).toBe(9000);
@@ -68,8 +68,8 @@ describe('河的终点：短的叫法，细的说法在悬停的提示里', () =
       ['flow', '流下去'],
       ['sink', '停在这'],
     ]);
-    expect(riverEnds.options[0].hint).toBe('线停在陆地上时，河顺着地势接着往低处流，直到入海、入湖或汇进别的河');
-    expect(riverEnds.options[1].hint).toBe('河就在你画的线的终点结束，不再往下流');
+    expect(riverEnds.options[0].hint).toBe('顺地势流到海、湖或别的河');
+    expect(riverEnds.options[1].hint).toBe('在线的终点结束');
     expect(RIVER_END_HINTS).toEqual({ flow: riverEnds.options[0].hint, sink: riverEnds.options[1].hint });
   });
 });
@@ -196,11 +196,11 @@ describe('一处一处看没涂成的地方', () => {
 
   it('按一下看下一处，看完一圈回到第一处；按钮上写着第几处', () => {
     unmetLooked.value = -1;
-    expect(locateTitle(unmetLooked.value, 4)).toBe('在地图上看');
+    expect(locateTitle(unmetLooked.value, 4)).toBe('定位');
     const seen = [0, 1, 2, 3, 4].map(() => locateNextUnmet(fake));
     expect(seen).toEqual([0, 1, 2, 3, 0]);
     expect(vi.mocked(focusOn).mock.calls.map((c) => Array.from(c[0]))).toEqual([[2], [3, 4], [6], [7], [2]]);
-    expect(locateTitle(unmetLooked.value, 4)).toBe('在地图上看（1/4，再按看下一处）');
+    expect(locateTitle(unmetLooked.value, 4)).toBe('定位 1/4');
     // 没有可看的
     expect(locateNextUnmet({ small: { constraints: [] }, derived: { conflicts: [] } } as unknown as World)).toBe(-1);
     expect(unmetLooked.value).toBe(-1);

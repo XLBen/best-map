@@ -52,5 +52,5 @@ export const queuedCount = () => pendingEdits.value.length;
 // 排队时鼠标旁的一句（没有排队的为 null）
 export function queueHint(): string | null {
   const n = queuedCount();
-  return n ? `排队中：前面还有 ${n} 步` : null;
+  return n ? `已排队 · 前面 ${n} 步` : null;
 }

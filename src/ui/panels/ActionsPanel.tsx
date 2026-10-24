@@ -29,7 +29,7 @@ export function WorldMenu() {
         <FilePlus />
         <span class="grow item-text">
           <b>新世界…</b>
-          <span class="hint">选世界的类型、大小和在星球上的位置，从几张小图里挑一张</span>
+          <span class="hint">选类型、大小和位置</span>
         </span>
       </button>
       <button
@@ -42,7 +42,7 @@ export function WorldMenu() {
         <Library />
         <span class="grow item-text">
           <b>我的地图…</b>
-          <span class="hint">保存在这个浏览器里的世界：打开、改名、导出、删掉</span>
+          <span class="hint">存在这个浏览器里的世界</span>
         </span>
       </button>
       <button
@@ -56,7 +56,7 @@ export function WorldMenu() {
         <Save />
         <span class="grow item-text">
           <b>保存</b>
-          <span class="hint">{currentMap.value ? `存进“我的地图”里的「${currentMap.value.name}」（⌘S）` : '起个名字，存进“我的地图”（⌘S）'}</span>
+          <span class="hint">{currentMap.value ? `存进“${currentMap.value.name}”（⌘S）` : '起名存进“我的地图”（⌘S）'}</span>
         </span>
       </button>
       <button
@@ -70,14 +70,14 @@ export function WorldMenu() {
         <CopyPlus />
         <span class="grow item-text">
           <b>另存为…</b>
-          <span class="hint">换个名字存成新的一张，之后改的是新的这一张（⇧⌘S）</span>
+          <span class="hint">存成新的一张（⇧⌘S）</span>
         </span>
       </button>
       <label class="item">
         <FolderOpen />
         <span class="grow item-text">
           <b>打开世界文件…</b>
-          <span class="hint">接着改导出过的世界（.json）；按 ⌘S 可以存进“我的地图”</span>
+          <span class="hint">打开导出过的世界（.json）</span>
         </span>
         <input
           type="file"
@@ -100,7 +100,7 @@ export function WorldMenu() {
         <Boxes />
         <span class="grow item-text">
           <b>资源包…</b>
-          <span class="hint">装进别人做好的生态、河流和湖泊类型、星球形态，或把这个世界里自己做的导出来</span>
+          <span class="hint">导入、导出生态、水体类型、星球形态</span>
         </span>
       </button>
       <ExportSection />
@@ -123,9 +123,9 @@ const SEAM_MODES: [SeamMode, string][] = [
   ['lon', '按经度'],
 ];
 const SEAM_TITLES: Record<SeamMode, string> = {
-  auto: '放在最宽的海上：尽量不把陆地切成两半',
-  view: '以现在屏幕上的画面为中心，分界线在它的背面',
-  lon: '拖滑块定分界线的经度',
+  auto: '放在最宽的海上，尽量不切开陆地',
+  view: '以当前画面为中心',
+  lon: '按经度放分界线',
 };
 // 整个星球在等面积、球形投影里看时：按现在的投影导出，还是照旧展开成 2:1（等距圆柱）
 type PngProj = 'current' | 'equirect';
@@ -193,7 +193,7 @@ function SeamStrip({ w, seamX }: { w: World; seamX: number }) {
     }
     ctx.putImageData(img, 0, 0);
   }, [w.causes.land, seamX]);
-  return <canvas ref={ref} class="seam-strip" width={STRIP_W} height={STRIP_H} title="导出的图的样子：左右两边就是分界线" />;
+  return <canvas ref={ref} class="seam-strip" width={STRIP_W} height={STRIP_H} title="导出的样子，左右两边是分界线" />;
 }
 
 const WHEEL: [WheelPref, string][] = [
@@ -241,7 +241,7 @@ function ExportSection() {
         <FileDown />
         <span class="grow item-text">
           <b>世界文件（.json）</b>
-          <span class="hint">所有编辑都在里面，换电脑、发给别人、留备份，之后可以打开继续改</span>
+          <span class="hint">含全部编辑，可打开继续改</span>
         </span>
       </button>
       <div class="export-body">
@@ -264,7 +264,7 @@ function ExportSection() {
             ))}
           </select>
         </div>
-        <p class="hint">高度图、省份图与 definition.csv、地形、河流、生态、地名表 features.csv，还有世界文件。</p>
+        <p class="hint">高度图、省份图、地形、河流、生态、地名表和世界文件</p>
         <div class="row">
           <button disabled={exportProgress.value !== null} onClick={() => void saveFullPng()}>
             <ImageDown /> 整张地图（.png）
@@ -290,7 +290,7 @@ function ExportSection() {
                 ['current', viewProj === 'globe' ? '球形' : '等面积'],
                 ['equirect', '等距圆柱'],
               ]}
-              titles={{ current: viewProj === 'globe' ? '朝着现在这一面的半球，球外透明' : '整个椭圆，椭圆外透明', equirect: '照旧展开成 2:1 的长方形' }}
+              titles={{ current: viewProj === 'globe' ? '当前这一面的半球' : '整个椭圆', equirect: '展开成 2:1 的长方形' }}
               onChange={(v) => choosePng({ proj: v })}
             />
           </div>
@@ -311,17 +311,17 @@ function ExportSection() {
             )}
             <SeamStrip w={w} seamX={seamX} />
             <p class="hint">
-              星球从分界线（{lonText(seamLongitude(seamX))}）切开展平{png.seamMode === 'auto' ? '：自动放在最宽的海上，尽量不切开陆地' : ''}。小图是导出的样子，左右两边就是分界线。
+              从{lonText(seamLongitude(seamX))}切开展平
             </p>
           </>
         )}
         <p class="hint">
-          按现在的画风和图层画出整张{projected ? (viewProj === 'globe' ? '星球朝着现在这一面的半球' : '星球（等面积的椭圆，中央经线与现在相同）') : w.mesh.kind === 'sphere' ? '星球（经度 360° 展开成 2:1）' : '地图'}，不管镜头在哪；不带工具的高亮和预览。地名、河按整张图排，字号“大”时标出来的地名少一些。图越大画得越久。
+          按当前画风和图层画整张{projected && viewProj === 'globe' ? '半球' : w.mesh.kind === 'sphere' ? '星球' : '地图'}，不含工具的高亮。图越大越慢。
         </p>
         <button onClick={savePng}>
           <ImageDown /> 当前画面（.png）
         </button>
-        <p class="hint">存的是屏幕上现在看到的地图（含地名）。</p>
+        <p class="hint">屏幕上现在的画面，含地名</p>
       </div>
     </section>
   );
@@ -343,7 +343,7 @@ export function MorePanel() {
           <span>滚轮 / 双指滑动</span>
           <Seg value={prefs.value.wheel} options={WHEEL} onChange={(v) => setPrefs({ wheel: v })} />
         </div>
-        <p class="hint">“自动”：鼠标滚轮缩放，触控板双指滑动平移、捏合缩放。分辨不准时改成固定的“缩放”或“平移”。</p>
+        <p class="hint">自动：滚轮缩放，双指滑动平移；认错时选“缩放”或“平移”</p>
       </section>
       <button
         onClick={() => {

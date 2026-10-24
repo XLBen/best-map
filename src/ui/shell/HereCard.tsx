@@ -41,10 +41,10 @@ export function HereCard() {
   if (!w || sheet.value) return null;
   const style = right !== null ? { right: `${right}px` } : undefined;
   const cell = lastHoverCell();
-  const line = cell >= 0 && cell < w.mesh.n ? hereLine(w, cell) : '把鼠标移到地图上看看那是什么地方';
+  const line = cell >= 0 && cell < w.mesh.n ? hereLine(w, cell) : '鼠标移到地图上';
   if (!open) {
     return (
-      <button class="here" ref={ref as never} style={style} onClick={() => setOpen(true)} title="点开看详细：为什么是这种生态、为什么不是别的">
+      <button class="here" ref={ref as never} style={style} onClick={() => setOpen(true)} title="为什么是这种生态">
         <Info />
         <span class="here-line">{line}</span>
         <ChevronUp />
@@ -55,7 +55,7 @@ export function HereCard() {
     <div class="here open" ref={ref as never} style={style}>
       <div class="here-head">
         <b>这里是什么</b>
-        <button class="icon-btn" onClick={() => setOpen(false)} title="收起">
+        <button class="icon-btn" onClick={() => setOpen(false)} title="关闭">
           <ChevronDown />
         </button>
       </div>

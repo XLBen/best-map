@@ -40,9 +40,9 @@ const mapDirty = computed(() => currentMap.value !== null && mapSavedState.value
 // “当前：赤原 · 已保存”“当前：没保存的新世界”
 export function mapStatus(): string {
   const link = currentMap.value;
-  if (!world.value) return '还没有世界';
-  if (!link) return '当前：没保存的新世界';
-  return `当前：${link.name} · ${mapDirty.value ? '有改动没保存' : '已保存'}`;
+  if (!world.value) return '没有世界';
+  if (!link) return '当前：未保存的新世界';
+  return `当前：${link.name} · ${mapDirty.value ? '有改动未保存' : '已保存'}`;
 }
 
 async function refreshMaps(): Promise<MapEntry[]> {
@@ -86,8 +86,8 @@ function fallback(e: unknown, name: string, doc: WorldDoc) {
   download(fileNameOf(name), JSON.stringify(doc), 'application/json');
   showToast(
     isQuotaError(e)
-      ? `浏览器的存储满了，存不进“我的地图”：已下载成世界文件「${fileNameOf(name)}」。删掉几张不要的地图后再存`
-      : `这个浏览器存不了“我的地图”（可能是隐私模式）：已下载成世界文件「${fileNameOf(name)}」`,
+      ? `浏览器存储已满：已下载成世界文件“${fileNameOf(name)}”。删除几张地图后再存`
+      : `浏览器存不了“我的地图”（可能是隐私模式）：已下载成世界文件“${fileNameOf(name)}”`,
     true,
   );
 }
@@ -132,7 +132,7 @@ async function saveNew(title: string, initial: string): Promise<boolean> {
       // 自动保存记下连着的是这一张（刷新后照样连着）
       void autosaveNow();
     }
-    showToast(`已保存「${e.name}」，在“世界 → 我的地图”里`);
+    showToast(`已保存“${e.name}”到“我的地图”`);
     void refreshMaps();
     return true;
   } catch (err) {
@@ -168,7 +168,7 @@ export async function saveMap(): Promise<boolean> {
     }
     if (epoch === worldEpoch.value && mapLink.value?.id === link.id) mapSavedState.value = state;
     if (thumb) noteThumb();
-    showToast(`已保存「${e.name}」`);
+    showToast(`已保存“${e.name}”`);
     void refreshMaps();
     return true;
   } catch (err) {
@@ -194,8 +194,8 @@ export async function beforeLeave(): Promise<boolean> {
   }
   if (!needsSaveQuestion(false, doneSteps())) return true;
   const v = await askUser({
-    title: '当前的世界还没保存：先保存吗？',
-    text: '不保存的话，换了世界之后它就找不回来了。',
+    title: '保存当前世界',
+    text: '不保存的话，换了世界后找不回来。',
     choices: [
       { value: 'save', label: '保存', primary: true },
       { value: 'drop', label: '不保存' },
@@ -220,7 +220,7 @@ export async function openMap(e: MapEntry): Promise<boolean> {
     doc = undefined;
   }
   if (!doc) {
-    showToast(`读不出「${e.name}」`, true);
+    showToast(`读不出“${e.name}”`, true);
     return false;
   }
   mapsDialog.value = false;
@@ -230,7 +230,7 @@ export async function openMap(e: MapEntry): Promise<boolean> {
   mapSavedState.value = worldState.value;
   noteThumb(e.thumb ? e.savedAt : 0);
   void autosaveNow();
-  showToast(`已打开「${e.name}」`);
+  showToast(`已打开“${e.name}”`);
   return true;
 }
 
@@ -248,7 +248,7 @@ export async function renameSaved(e: MapEntry): Promise<void> {
     const n = await renameMap(store, e.id, r.text);
     if (n && mapLink.value?.id === e.id) mapLink.value = { ...mapLink.value, name: n.name };
   } catch {
-    showToast('改不了名（浏览器的存储用不了）', true);
+    showToast('改名失败：浏览器存储不可用', true);
   }
   void refreshMaps();
 }
@@ -263,15 +263,15 @@ export async function exportSaved(e: MapEntry): Promise<void> {
   } catch {
     // 下面说
   }
-  showToast(`读不出「${e.name}」`, true);
+  showToast(`读不出“${e.name}”`, true);
 }
 
 export async function deleteSaved(e: MapEntry): Promise<void> {
   const v = await askUser({
-    title: `删掉「${e.name}」？删了找不回来`,
-    text: currentMap.value?.id === e.id ? '它就是现在开着的世界：删掉后这个世界还开着，变成没保存的新世界。' : undefined,
+    title: `删除“${e.name}”`,
+    text: currentMap.value?.id === e.id ? '删除后找不回来。当前世界仍开着，变成未保存的新世界。' : '删除后找不回来。',
     choices: [
-      { value: 'delete', label: '删掉', primary: true },
+      { value: 'delete', label: '删除', primary: true },
       { value: 'cancel', label: '取消' },
     ],
   });
@@ -282,9 +282,9 @@ export async function deleteSaved(e: MapEntry): Promise<void> {
       mapLink.value = null;
       void autosaveNow();
     }
-    showToast(`已删掉「${e.name}」`);
+    showToast(`已删除“${e.name}”`);
   } catch {
-    showToast('删不了（浏览器的存储用不了）', true);
+    showToast('删除失败：浏览器存储不可用', true);
   }
   void refreshMaps();
 }
@@ -301,7 +301,7 @@ export async function openFile(f: File): Promise<void> {
   try {
     doc = JSON.parse(await f.text()) as WorldDoc;
   } catch {
-    showToast(`「${f.name}」不是世界文件`, true);
+    showToast(`“${f.name}”不是世界文件`, true);
     return;
   }
   if (!(await beforeLeave())) return;

@@ -181,7 +181,7 @@ export function mapInput(
       // 吸取的是屏幕上这一点画的：省份按画出来的省（扭曲后的格、切线两边），生态按画成的陆地
       const cell = CATEGORY_DEFS[def.category].map?.provinces ? provinceCellAt(w, p) : hereOf(p);
       const got = cell >= 0 ? def.pick(w, cell) : null;
-      showToast(got ? `吸取了“${got}”` : '这里没有可以吸取的', !got);
+      showToast(got ? `已吸取“${got}”` : '这里没有可吸取的', !got);
       requestDraw();
       return;
     }

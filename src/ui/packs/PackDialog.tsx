@@ -34,7 +34,7 @@ const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.str
 // 读一个文件：资源包或旧的生态、文字包文件（只解析、检查）。大得离谱的文件不读进来
 function importPackFile(file: File) {
   if (file.size > 3 * PACK_MAX_CHARS) {
-    openPackImport({ ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不像是资源包`] }, file.name);
+    openPackImport({ ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是资源包`] }, file.name);
     return;
   }
   void file.text().then((text) => {
@@ -158,10 +158,10 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
         )}
       </div>
       <div class="row">
-        <button class="primary" disabled={!w} onClick={() => openPackApply(e.pack, defaultPicks(e.pack))} title={w ? '挑几样加进这个世界' : '先新建或打开一个世界'}>
-          用到这个世界
+        <button class="primary" disabled={!w} onClick={() => openPackApply(e.pack, defaultPicks(e.pack))} title={w ? '挑几样加进世界' : '先新建或打开世界'}>
+          用到世界
         </button>
-        <button onClick={() => exportFile(e.pack)} title="存成 .map2pack.json 文件，可以发给别人">
+        <button onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
           导出
         </button>
         {!e.builtin && (
@@ -169,7 +169,7 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
             class="danger"
             onClick={async () => {
               const v = await askUser({
-                title: `从资源库里删掉「${e.pack.name}」？`,
+                title: `删除“${e.pack.name}”`,
                 text: '用过它的世界不受影响。',
                 choices: [
                   { value: 'delete', label: '删除', primary: true },
@@ -198,9 +198,9 @@ function LibraryView() {
     <>
       <div class="row between">
         <h2>资源包</h2>
-        <button onClick={close}>关上</button>
+        <button onClick={close}>关闭</button>
       </div>
-      <p class="hint">资源包里是做好的生态、河流类型、湖泊类型、岛的种类、星球形态和文字包。挑几样用到这个世界后，世界会带上用到的全部内容：资源包删了、发给没有这个包的人，都照样能打开。</p>
+      <p class="hint">做好的生态、水体类型、岛、星球形态和文字包。用到的内容存在世界里。</p>
       <div class="row wrap">
         <label class="file-button">
           导入资源包…
@@ -215,7 +215,7 @@ function LibraryView() {
           />
         </label>
         <button disabled={!world.value} onClick={() => (packDialog.value = { view: 'export' })}>
-          从这个世界导出…
+          从世界导出…
         </button>
       </div>
       {groups.map(([title, entries]) =>
@@ -228,7 +228,7 @@ function LibraryView() {
           </>
         ) : null,
       )}
-      {list.length === 1 && <p class="hint">还没有别的资源包。导入别人发来的 .map2pack.json，或者把这个世界里自己做的生态导出来。</p>}
+      {list.length === 1 && <p class="hint">没有别的资源包</p>}
     </>
   );
 }
@@ -251,7 +251,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
     return (
       <>
         <h2>导入资源包</h2>
-        <p class="warn">读不了「{file}」：</p>
+        <p class="warn">读不了“{file}”：</p>
         <ul class="small">
           {read.errors.slice(0, 8).map((e) => (
             <li>{e}</li>
@@ -270,11 +270,11 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   if (installed || sameItem(p, FANTASY_PACK)) {
     return (
       <>
-        <h2>{installed ? '装好了' : '资源库里已经有了'}</h2>
-        <p>{installed ? `「${p.name}」在资源库里了。` : `这就是内置的「${p.name}」，不用再装。`}</p>
+        <h2>{installed ? '已安装' : '已在资源库里'}</h2>
+        <p>{installed ? `“${p.name}”已在资源库里。` : `“${p.name}”是内置的。`}</p>
         <div class="row">
           <button class="primary" disabled={!world.value} onClick={() => openPackApply(p, defaultPicks(p))}>
-            用到这个世界
+            用到世界
           </button>
           <button onClick={openPackLibrary}>回到资源库</button>
         </div>
@@ -287,7 +287,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
       // 信任：包里全部脚本记进信任列表（trust.ts，按源码的 SHA-256；之后打开用了它的世界不再问）
       await trustScripts(scripts);
       const r = await installPack(p);
-      if (!r.ok) showToast('浏览器不让存：资源包只在这一次打开的页面里');
+      if (!r.ok) showToast('存不进浏览器：资源包只在这次打开的页面里');
       packDialog.value = { view: 'import', read, file, installed: r.entry.key };
     } finally {
       setWorking(false);
@@ -302,18 +302,18 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         {p.author && <span class="muted">　作者：{p.author}</span>}
       </p>
       {p.description && <p class="hint">{p.description}</p>}
-      {read.legacy === 'biomes' && <p class="hint">这是以前导出的生态文件。装进资源库后，可以挑几种加进世界。</p>}
-      {read.legacy === 'wordPack' && <p class="hint">这是一个文字包。装进资源库后，可以在“用到这个世界”里换用它。</p>}
+      {read.legacy === 'biomes' && <p class="hint">旧版的生态文件，装进资源库后可以用</p>}
+      {read.legacy === 'wordPack' && <p class="hint">文字包，装进资源库后可以用</p>}
       <PackContents pack={p} />
       <Problems list={problems} />
       {ask && <TrustBlock scripts={scripts} />}
       {!ask && untrusted !== null && scripts.length > 0 && (
         <details class="small">
-          <summary>查看脚本（{scripts.length} 段，以前信任过）</summary>
+          <summary>脚本（{scripts.length} 段，已信任）</summary>
           <ScriptList scripts={scripts} />
         </details>
       )}
-      {replaces && <p class="hint">资源库里已经有「{replaces.pack.name}」，装进去会替换它。</p>}
+      {replaces && <p class="hint">会替换资源库里的“{replaces.pack.name}”</p>}
       <div class="row between">
         <span />
         <span class="row">
@@ -383,24 +383,24 @@ function ExportView() {
     // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
     // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
     const r = await installPack(stored, { mine: true });
-    showToast(r.ok ? `「${preview.name}」存进资源库了` : '浏览器不让存：只在这一次打开的页面里');
+    showToast(r.ok ? `“${preview.name}”已存进资源库` : '存不进浏览器：只在这次打开的页面里');
     openPackLibrary();
   };
   return (
     <>
-      <h2>从这个世界导出</h2>
+      <h2>从世界导出</h2>
       <div class="grid2">
         <label>
           <span class="hint">名字</span>
           <input class="wide-input" value={name} maxLength={60} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
         </label>
         <label>
-          <span class="hint">作者（可以不写）</span>
+          <span class="hint">作者（选填）</span>
           <input class="wide-input" value={author} maxLength={60} onInput={(e) => setAuthor((e.target as HTMLInputElement).value)} />
         </label>
       </div>
       <label>
-        <span class="hint">说明（可以不写）</span>
+        <span class="hint">说明（选填）</span>
         <textarea rows={2} maxLength={2000} value={desc} onInput={(e) => setDesc((e.target as HTMLTextAreaElement).value)} />
       </label>
       <h5>带上哪些</h5>
@@ -422,24 +422,24 @@ function ExportView() {
       {w.small.wordPack && (
         <label class="check">
           <input type="checkbox" checked={words} onChange={() => setWords(!words)} />
-          <span>文字包「{w.small.wordPack.name}」</span>
+          <span>文字包“{w.small.wordPack.name}”</span>
         </label>
       )}
-      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && <p class="hint">这个世界里还没有自己做的生态（内置的原样不用导出）。</p>}
-      {endemic > 0 && <p class="hint">只长在某个岛上、圈的范围里的生态只属于这个世界，不带。</p>}
+      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && <p class="hint">没有自己做的内容</p>}
+      {endemic > 0 && <p class="hint">只长在某处的生态不带</p>}
       {replaces && (
         <p class="hint">
-          资源库里已经有「{replaces.pack.name}」：存进资源库会替换它（换个名字就另存一份）。{keptForms > 0 && `里面存的 ${keptForms} 个星球形态照样留着。`}
+          会替换资源库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `其中 ${keptForms} 个星球形态保留。`}
         </p>
       )}
       <div class="row between">
         <span />
         <span class="row">
           <button onClick={openPackLibrary}>取消</button>
-          <button disabled={empty} onClick={() => void save()} title="存进资源库的“我的资源”，以后用到别的世界">
+          <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
             存进资源库
           </button>
-          <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成 .map2pack.json 文件，可以发给别人">
+          <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
             导出文件
           </button>
         </span>

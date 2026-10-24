@@ -110,7 +110,7 @@ export function lakeTool(provinceView = () => mode.value === 'provinces'): ToolH
         drag = null;
         // 拖出来的大小留着：往内陆挪一点再点，还是这么大
         if (d.km !== null) setOptions({ lakeKm: d.km });
-        showToast('离海太近，留不住水：往内陆挪一点', true);
+        showToast('离海太近，留不住水', true);
         return;
       }
       const radius = radiusNow();
@@ -122,7 +122,7 @@ export function lakeTool(provinceView = () => mode.value === 'provinces'): ToolH
         // 松手时的湖面留在图上，直到结果换上（鼠标离开地图也留着）。排在前面的编辑先换上了：按新的世界重算湖面
         const shown: Preview = { layers: [], shapes: [], hint: null, ghost: { cells: [], delta: [], lake: cells } };
         const ghostAt = (now: World): GhostEdit => ({ cells: [], delta: [], lake: lakeArea(now, d.cell, radius) });
-        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, ...chosenLakeType(w) } }, '正在计算湖泊…'), ghostFollows(shown, w, ghostAt));
+        await trackEdit(shown, exec({ op: 'add_lake', lake: { cell: d.cell, radius, depth: 120, perennial: true, ...chosenLakeType(w) } }, '正在计算…'), ghostFollows(shown, w, ghostAt));
       } finally {
         if (settled === mark) settled = null;
       }
@@ -148,7 +148,7 @@ export function lakeTool(provinceView = () => mode.value === 'provinces'): ToolH
             ...(over.length ? [{ cells: over, color: [255, 255, 255] as RGB, pattern: 'outline' as const }] : []),
           ],
           shapes: [],
-          hint: over.length ? '点一下选中这个湖' : null,
+          hint: over.length ? '点击选中湖' : null,
           ghost: future ? { cells: [], delta: [], lake: future } : null,
         };
       }
@@ -156,7 +156,7 @@ export function lakeTool(provinceView = () => mode.value === 'provinces'): ToolH
       if (settled) return { ...EMPTY, hint: '正在计算…' };
       // 鼠标在湖上：描出这个湖，点一下选中它
       if (!drag && pointer.cell >= 0 && w.causes.land[pointer.cell] && w.derived.lake[pointer.cell]) {
-        return { layers: [{ cells: hoverLake(w, pointer.cell), color: [255, 255, 255], pattern: 'outline' }], shapes: [], hint: '点一下选中这个湖 · 按住拖开放一个新湖' };
+        return { layers: [{ cells: hoverLake(w, pointer.cell), color: [255, 255, 255], pattern: 'outline' }], shapes: [], hint: '点击选中湖 · 按住拖开放新湖' };
       }
       const c = centerOf();
       if (!c || !w.causes.land[c.cell]) return EMPTY;

@@ -47,7 +47,7 @@ function TypePick({ which }: { which: Which }) {
   const w = world.value;
   if (!w) return null;
   const t = islandTypeById(w.small, liveIslandKind(w, options.value[KEY[which]]));
-  return <TypePickerButton panel={PANEL[which]} prefix="岛" swatch={islandSwatch(t)} name={t?.name ?? '大陆岛'} title={t ? hintOf(t) : '放哪一种岛'} />;
+  return <TypePickerButton panel={PANEL[which]} prefix="岛" swatch={islandSwatch(t)} name={t?.name ?? '大陆岛'} title={t ? hintOf(t) : '岛的种类'} />;
 }
 
 // 放岛工具条上的“岛：X ▾”
@@ -68,7 +68,7 @@ export function ChainFragSlider() {
       label="碎岛"
       pos={v}
       text={`${Math.round(v * 100)}%`}
-      title="岛链里有多少换成碎岛（比一格还小、只是画出来的岛，归海省）：按顺序均匀地换，100% 全是碎岛"
+      title="岛链里碎岛的比例"
       onDraft={(p) => {
         start.current ??= v;
         setOptions({ chainFrag: snap(p) });
@@ -106,7 +106,7 @@ export function IslandTypeMenu({ which }: { which: Which }) {
       }))}
       onNew={() => void createAndUse(which)}
       newLabel="新建…"
-      newTitle="新建一种岛，用上它，并打开它的设置"
+      newTitle="新建一种岛并打开设置"
     />
   );
 }
@@ -192,7 +192,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       <div class="row">
         <input class="grow" value={name} maxLength={12} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       </div>
-      {shards && <p class="hint">碎岛的格还是海：颜色按附近的地，归海省，一片碎岛起一个列岛 / 群岛的名字。</p>}
+      {shards && <p class="hint">碎岛的格还是海，归海省</p>}
       {!shards && (
       <div class="row wrap">
         <span class="bar-label">颜色</span>
@@ -202,12 +202,12 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
             ['same', '和周围一样'],
             ['coral', ISLAND_LOOK_INFO.coral.name],
             ['marsh', ISLAND_LOOK_INFO.marsh.name],
-            ['own', '自己选'],
+            ['own', '自选'],
           ]}
           titles={{ coral: ISLAND_LOOK_INFO.coral.hint, marsh: ISLAND_LOOK_INFO.marsh.hint }}
           onChange={(v) => edit(t.id, (x) => ({ ...x, color: v === 'same' ? undefined : v === 'own' ? (cc === 'own' ? x.color : NEW_COLORS[0]) : v }))}
         />
-        {cc === 'own' && <input type="color" value={t.color} title="岛上的地的颜色" onChange={(e) => edit(t.id, (x) => ({ ...x, color: (e.target as HTMLInputElement).value }))} />}
+        {cc === 'own' && <input type="color" value={t.color} title="岛的颜色" onChange={(e) => edit(t.id, (x) => ({ ...x, color: (e.target as HTMLInputElement).value }))} />}
       </div>
       )}
       {!shards && (
@@ -219,13 +219,12 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
             ['land', '归陆地省'],
             ['sea', '归海省'],
           ]}
-          titles={{ sea: '像小礁一样，算进旁边的海省' }}
+          titles={{ sea: '算进旁边的海省' }}
           onChange={(v) => edit(t.id, (x) => ({ ...x, province: v }))}
         />
       </div>
       )}
       <h5>以后放的岛</h5>
-      <p class="hint">形状、高低、岩石只用在以后放的岛上；颜色、省份、起名马上用到已经放的岛上。</p>
       <div class="row wrap">
         <span class="bar-label">形状</span>
         <Seg<IslandType['shape']>
@@ -257,7 +256,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
           label="岩石"
           pos={rockPos(rock ?? t.rock)}
           text={rockText(rock ?? t.rock)}
-          title="硬的蚀得慢、留得高；软的蚀得低平"
+          title="硬的留得高，软的蚀得低"
           onDraft={(p) => setRock(rockAt(p))}
           onCommit={(p) => {
             const v = rockAt(p);
@@ -268,11 +267,11 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
         />
       )}
       <h5>起名</h5>
-      <p class="hint">每行一个模板，比如 {'{color}'}沙岛、{'{animal}'}礁；不写时按普通的岛起名。岛的大半是这一种时用。</p>
+      <p class="hint">每行一个模板，如 {'{color}'}沙岛、{'{animal}'}礁</p>
       <textarea rows={3} value={names} onInput={(e) => setNames((e.target as HTMLTextAreaElement).value)} onBlur={saveNames} />
       <div class="row wrap">
-        <button class="small danger" onClick={() => void exec({ op: 'remove_island_type', id: t.id }, '正在删掉…')} title="删掉这一种：已经放的这种岛变成大陆岛">
-          <Trash2 /> 删掉这一种
+        <button class="small danger" onClick={() => void exec({ op: 'remove_island_type', id: t.id }, '正在删除…')} title="已放的这种岛变成大陆岛">
+          <Trash2 /> 删除
         </button>
       </div>
     </div>
@@ -295,7 +294,7 @@ export function IslandTypesSection() {
     <section>
       <h5>岛的种类</h5>
       <p class="hint">
-        内置的有{BUILTIN_ISLAND_TYPES.map((t) => t.name).join('、')}。自己的岛可以选形状、颜色、岩石、高低、归哪种省和起名的样子，放岛、画岛链时都能选。
+        内置：{BUILTIN_ISLAND_TYPES.map((t) => t.name).join('、')}
       </p>
       {own.length > 0 && (
         <div class="list">

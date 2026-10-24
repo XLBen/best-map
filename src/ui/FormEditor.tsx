@@ -38,7 +38,7 @@ const keyOf = (form: PlanetForm, seed: number) => JSON.stringify([looks(form), s
 const scriptsOf = (form: PlanetForm) => JSON.stringify(form.scripts ?? null);
 // 缩略图没算完就被停下了（脚本卡住、点了“停下”）：Worker 换了一个、世界从命令记录里恢复过。
 // 同样的脚本再算还会这样（每次都要恢复一遍世界），改了脚本才再算
-const HUNG = '脚本算得太久，被停下了：改一改脚本再看';
+const HUNG = '脚本运行太久，已停止';
 // 算缩略图时名字空着也照样算（名字不影响样子；空的名字在按钮那里拦下）
 const named = (f: PlanetForm): PlanetForm => (f.name ? f : { ...f, name: '未命名' });
 const KIND_LABEL: Record<FormScriptKind, string> = { setup: '布局', crust: '地形' };
@@ -141,7 +141,7 @@ function Editor({ st }: { st: FormEditorState }) {
       if (!f) return;
       // 没改过：它本来就在资源库里，不再存一份一模一样的（列表里一模一样的只列一次，存了也看不到），选上它
       if (st.original && f === st.original && st.originalKey) {
-        showToast(`没有改动：「${f.name}」本来就在资源库里`);
+        showToast(`“${f.name}”已在资源库里`);
         closeFormEditor();
         st.onSaved(f, st.originalKey);
         return;
@@ -153,7 +153,7 @@ function Editor({ st }: { st: FormEditorState }) {
         setMsg(r.error);
         return;
       }
-      showToast(r.stored ? `「${f.name}」存进资源库了` : '浏览器不让存：只在这一次打开的页面里');
+      showToast(r.stored ? `“${f.name}”已存进资源库` : '浏览器无法保存，只在这次打开的页面里');
       closeFormEditor();
       st.onSaved(f, `${r.entry.key}:${f.id}`);
     } finally {
@@ -179,9 +179,9 @@ function Editor({ st }: { st: FormEditorState }) {
     <div class="modal-backdrop">
       <div class="modal form-editor">
         <div class="row between">
-          <h2>{st.original ? '编辑星球形态' : '自己做一个星球形态'}</h2>
+          <h2>{st.original ? '编辑星球形态' : '新建星球形态'}</h2>
         </div>
-        {st.original && !st.mine && <p class="hint">改的是一份副本，原来的「{st.original.name}」不变。</p>}
+        {st.original && !st.mine && <p class="hint">改的是副本，“{st.original.name}”不变</p>}
         <div class="form-grid">
           <div class="form-fields">
             <label>
@@ -189,7 +189,7 @@ function Editor({ st }: { st: FormEditorState }) {
               <input class="wide-input" value={form.name} maxLength={12} onInput={(e) => setForm({ ...formRef.current, name: (e.target as HTMLInputElement).value })} />
             </label>
             <label>
-              <span class="hint">一句话说明（可以不写）</span>
+              <span class="hint">说明（可不写）</span>
               <input
                 class="wide-input"
                 value={form.hint ?? ''}
@@ -216,7 +216,7 @@ function Editor({ st }: { st: FormEditorState }) {
             })}
             <details open={!!st.initial.scripts}>
               <summary>脚本</summary>
-              <p class="hint">脚本是一小段程序：布局脚本加大陆块、加岛；地形脚本改每一格的高度、山、丘陵、岩性。不会写也没关系，上面的滑块就够用。</p>
+              <p class="hint">布局脚本加大陆块、岛；地形脚本改每格的高度与岩性</p>
               <ScriptBox
                 key={`${st.id}:setup`}
                 kind="setup"
@@ -258,14 +258,14 @@ function Editor({ st }: { st: FormEditorState }) {
             ) : current?.error ? (
               <p class="script-problem small">{current.error}</p>
             ) : firstIssue ? (
-              <p class="script-problem small">{firstIssue.message}（缩略图里按没有这段脚本算）</p>
+              <p class="script-problem small">{firstIssue.message}</p>
             ) : disabled ? (
-              <p class="hint">安全模式下脚本没有运行，缩略图里没有脚本的效果。</p>
+              <p class="hint">安全模式：缩略图不含脚本的效果</p>
             ) : (
-              <p class="hint">{current ? '缩略图是粗略版，新建时用更精细的网格，大格局不变。' : '正在算缩略图…'}</p>
+              <p class="hint">{current ? '缩略图是粗略版' : '正在计算…'}</p>
             )}
             <button class="small" onClick={() => setSeed(randomSeed())}>
-              换个种子
+              换种子
             </button>
           </div>
         </div>
@@ -277,7 +277,7 @@ function Editor({ st }: { st: FormEditorState }) {
             <button onClick={closeFormEditor} disabled={busy}>
               取消
             </button>
-            <button onClick={() => void save()} disabled={busy || broken} title="存进资源库的“我的资源”，以后新建、在“调整”里都能选">
+            <button onClick={() => void save()} disabled={busy || broken} title="存进“我的资源”，新建和调整时可选">
               存进资源库
             </button>
             <button class="primary" onClick={() => void create()} disabled={busy || broken}>

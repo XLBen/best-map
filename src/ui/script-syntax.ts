@@ -97,12 +97,12 @@ export function bracketProblem(src: string): SyntaxProblem | null {
       const at = stack.pop();
       if (at === undefined) return { line: lineAt(src, k), text: `多了一个 ${c}`, reason: 'syntax' };
       // 配错了：是前面那个左括号少了它的右括号
-      if (CLOSE[code[at]] !== c) return { line: lineAt(src, at), text: `这个 ${code[at]} 少了配对的 ${CLOSE[code[at]]}`, reason: 'syntax' };
+      if (CLOSE[code[at]] !== c) return { line: lineAt(src, at), text: `${code[at]} 少了配对的 ${CLOSE[code[at]]}`, reason: 'syntax' };
     }
   }
   if (!stack.length) return null;
   const at = stack[stack.length - 1];
-  return { line: lineAt(src, at), text: `这个 ${code[at]} 少了配对的 ${CLOSE[code[at]]}`, reason: 'syntax' };
+  return { line: lineAt(src, at), text: `${code[at]} 少了配对的 ${CLOSE[code[at]]}`, reason: 'syntax' };
 }
 
 // 中文标点与该换成的英文标点
@@ -142,22 +142,22 @@ function acornText(e: ParseError, src: string): string {
   let m: RegExpExecArray | null;
   if (/^Unexpected token$/.test(msg)) {
     const t = tokenAt(src, e.pos);
-    return t === null ? '代码没写完（是不是后面少了什么？）' : `这里不该出现「${t}」`;
+    return t === null ? '代码没写完' : `这里不该出现“${t}”`;
   }
   if ((m = /^Unexpected character '(.+)'$/.exec(msg))) {
     const c = m[1];
-    return PUNCT[c] ? `用了中文标点「${c}」，要换成英文的「${PUNCT[c]}」` : `不认识的字符「${c}」`;
+    return PUNCT[c] ? `中文标点“${c}”要换成英文的“${PUNCT[c]}”` : `不认识的字符“${c}”`;
   }
   if (/^Unterminated string constant/.test(msg)) return '引号没有配对';
   if (/^Unterminated template/.test(msg)) return '反引号 ` 没有配对';
   if (/^Unterminated comment/.test(msg)) return '注释的 /* 后面少了 */';
-  if (/^Unterminated regular expression/.test(msg)) return '这里的 / 没有配对（除号的两边都要有数）';
-  if ((m = /^Identifier '(.+)' has already been declared/.exec(msg))) return `「${m[1]}」重复声明了`;
-  if (/^Assigning to rvalue|^Invalid left-hand side/.test(msg)) return '等号左边不能被赋值（比较是否相等要用 ===）';
+  if (/^Unterminated regular expression/.test(msg)) return '这里的 / 没有配对';
+  if ((m = /^Identifier '(.+)' has already been declared/.exec(msg))) return `“${m[1]}”重复声明了`;
+  if (/^Assigning to rvalue|^Invalid left-hand side/.test(msg)) return '等号左边不能赋值（比较用 ===）';
   if (/^Invalid number|^Identifier directly after number/.test(msg)) return '数字写得不对';
   if (/^Unsyntactic (break|continue)/.test(msg)) return '这里不能用 break 或 continue';
-  if ((m = /^The keyword '(.+)' is reserved/.exec(msg))) return `「${m[1]}」是保留字，不能当名字用`;
-  if ((m = /^Unexpected keyword '(.+)'/.exec(msg))) return `这里不该出现「${m[1]}」`;
+  if ((m = /^The keyword '(.+)' is reserved/.exec(msg))) return `“${m[1]}”是保留字，不能当名字`;
+  if ((m = /^Unexpected keyword '(.+)'/.exec(msg))) return `这里不该出现“${m[1]}”`;
   if (/^'with' in strict mode/.test(msg)) return '脚本里不能用 with';
   if (/^Deleting local variable/.test(msg)) return '不能 delete 一个变量';
   if (/octal/i.test(msg)) return '不能用 0 开头的八进制数字';
@@ -361,7 +361,7 @@ function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly string[]
     if (u.field) {
       // 自己定义了 field 函数时不管；内置变量的名字也能用 field('海拔') 取
       if (declared.has('field') || fields!.includes(u.name) || perCell.has(u.name)) continue;
-      return { line: u.line, text: `没有自定义场「${u.name}」（先在“调整”里新建）`, reason: 'name' };
+      return { line: u.line, text: `没有自定义场“${u.name}”，先在“调整”里新建`, reason: 'name' };
     }
     if (u.name === 'import') return { line: u.line, text: '脚本里不能用 import', reason: 'name' };
     // 自己声明了的名字随便用（自己声明的 Math 上的 random 也是自己的）
@@ -390,12 +390,12 @@ function hasLoop(node: unknown): boolean {
   return false;
 }
 
-export const LOOP_NOTE = '这段有循环，点到框外面时才用到地图上';
+export const LOOP_NOTE = '有循环：点到框外时才用到地图上';
 
 // 编辑器提交前的检查：长度、写法、名字；pause（打字停下时，不是离开框时）还看有没有循环。
 // 没问题、或 acorn 加载不了时为 null（长度照样查）
 export function checkNow(kind: ScriptKind, src: string, fields?: readonly string[], opts: { pause?: boolean; scope?: MatchScope } = {}): SyntaxProblem | null {
-  if (src.length > MAX_SCRIPT_CHARS) return { text: `脚本太长了（最多 ${MAX_SCRIPT_CHARS} 个字符）`, reason: 'syntax' };
+  if (src.length > MAX_SCRIPT_CHARS) return { text: `脚本太长（最多 ${MAX_SCRIPT_CHARS} 个字符）`, reason: 'syntax' };
   // acorn 加载不了：只按字面找循环（宁可多等一次，也不提交写到一半的循环）
   if (!acorn) return opts.pause && /\b(?:while|for|do)\b/.test(codeOnly(src)) ? { text: LOOP_NOTE, reason: 'wait' } : null;
   const r = parse(acorn, src);

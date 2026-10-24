@@ -239,17 +239,17 @@ type Why = 'hang' | 'stopped' | 'crash';
 
 // 给用户的话。world：有世界要恢复（恢复后重做记录就没了）；step：有在等的请求（这一步没做）
 function stoppedText(why: Why, label: string | null, world = true, step = true): string {
-  const who = label ? `「${label}」的脚本` : '脚本';
-  const head = why === 'hang' ? `${who}卡住了（4 秒没有算完），已经停下` : why === 'stopped' ? `已经停下${who}` : '计算程序停止了响应';
-  return `${head}${step ? '，这一步没有做' : ''}${world ? '。重做记录清空了' : ''}`;
+  const who = label ? `“${label}”的脚本` : '脚本';
+  const head = why === 'hang' ? `${who}超过 4 秒没算完，已停止` : why === 'stopped' ? `已停止${who}` : '计算程序没有响应';
+  return `${head}${step ? '，这一步没做' : ''}${world ? '。重做记录已清空' : ''}`;
 }
 
 // 安全模式的原因（横幅里括号中的话）
 function safeReasonText(why: Why, label: string | null): string {
-  const who = label ? `「${label}」的脚本` : '脚本';
+  const who = label ? `“${label}”的脚本` : '脚本';
   if (why === 'hang') return `${who}卡住了`;
-  if (why === 'stopped') return `停下了${who}`;
-  return '计算程序停止了响应';
+  if (why === 'stopped') return `已停止${who}`;
+  return '计算程序没有响应';
 }
 
 interface Pending {
@@ -331,7 +331,7 @@ export class EngineHost {
   send(req: Request, done: (r: Response) => void, safeReason?: string): void {
     if (req.kind === 'init' || req.kind === 'load') {
       const safe = req.safe === true;
-      if (this.worker && (this.safe !== safe || this.ranScripts || this.held)) this.drop('这一步没有做（换了一个世界）');
+      if (this.worker && (this.safe !== safe || this.ranScripts || this.held)) this.drop('这一步没做：世界已换');
       if (!this.worker) this.spawn(safe, null);
       // 安全模式的原因记这一次的
       if (safe) this.safeReason = safeReason ?? null;
@@ -340,7 +340,7 @@ export class EngineHost {
       // 要用到世界时先按原来的模式把命令记录里的世界打开（向导的缩略图用不着世界）
       const doc = this.mirror.doc();
       if (doc) {
-        if (this.worker) this.drop('这一步没有做');
+        if (this.worker) this.drop('这一步没做');
         this.restore(doc, this.mirrorSafe, this.mirrorReason);
       }
     }
@@ -431,7 +431,7 @@ export class EngineHost {
   private reopen() {
     const doc = this.mirror.doc();
     if (!doc) return;
-    this.drop('这一步没有做');
+    this.drop('这一步没做');
     this.restore(doc, this.mirrorSafe, this.mirrorReason);
   }
 
@@ -480,7 +480,7 @@ export class EngineHost {
     }
     if (wasSafe) {
       // 安全模式下也出了事（不是脚本的问题）：不再自动重开，下次用到世界时再按安全模式打开
-      this.events.failed?.('计算程序停止了响应，这一步没有做');
+      this.events.failed?.('计算程序没有响应，这一步没做');
       return;
     }
     this.events.reset?.(message);
