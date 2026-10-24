@@ -3,6 +3,8 @@ import { strToU8, zipSync, zlibSync } from 'fflate';
 import type { WorldDoc } from './engine';
 import { featureLabel } from './features';
 import { provinceHuman, worldResources, worldTerrainClasses } from './human';
+import { worldCultureGroups, worldCultures, worldDimensions } from './human/era';
+import { provincePopulation } from './human/layers';
 import { CATEGORY_LABEL } from './human/resources';
 import { summarizeProvinces } from './provinces';
 import { riverRibbon, traceRivers } from './rivers';
@@ -143,6 +145,18 @@ function encodePng16Gray(values: Uint16Array, width: number, height: number): Ui
       raw[row + 2 + x * 2] = v & 255;
     }
   }
+  return encodePngGray(raw, width, height, 16);
+}
+
+// 8 位灰度 PNG（第二十二轮，population.png）
+function encodePng8Gray(values: Uint8Array, width: number, height: number): Uint8Array {
+  const raw = new Uint8Array((width + 1) * height);
+  for (let y = 0; y < height; y++) raw.set(values.subarray(y * width, (y + 1) * width), y * (width + 1) + 1);
+  return encodePngGray(raw, width, height, 8);
+}
+
+// 灰度 PNG：raw 是每行前面带一个过滤字节（0）的像素
+function encodePngGray(raw: Uint8Array, width: number, height: number, depth: 8 | 16): Uint8Array {
   const chunk = (type: string, data: Uint8Array) => {
     const out = new Uint8Array(12 + data.length);
     const dv = new DataView(out.buffer);
@@ -156,7 +170,7 @@ function encodePng16Gray(values: Uint16Array, width: number, height: number): Ui
   const dv = new DataView(ihdr.buffer);
   dv.setUint32(0, width);
   dv.setUint32(4, height);
-  ihdr[8] = 16;
+  ihdr[8] = depth;
   ihdr[9] = 0;
   const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlibSync(raw, { level: 6 })), chunk('IEND', new Uint8Array(0))];
   const total = parts.reduce((s, p) => s + p.length, 0);
@@ -245,14 +259,20 @@ export function exportPackage(
   const def = ['province;red;green;blue;name;x'];
   // 第二十一轮在最后加了两列：格数最多的地形类别、资源（id）
   const human = provinceHuman(world, derived);
-  const csv = ['id,name,land,kind,terrain,species,cells,mean_elevation_m,terrain_class,resource'];
+  // 第二十二轮：有人文时再加人口、人数最多的文化、文化组、每一维的取值（没有人文的世界与以前一字不差）
+  const people = world.small.human ? provincePopulation(world) : null;
+  const dims = people ? worldDimensions(small).map((x) => x.id) : [];
+  const popHead = people ? `,population,culture,culture_group${dims.map((x) => `,${x}`).join('')}` : '';
+  const csv = [`id,name,land,kind,terrain,species,cells,mean_elevation_m,terrain_class,resource${popHead}`];
   ids.forEach((pid, k) => {
     const [r, g, b] = provinceColor(pid);
     const s = provinces.get(pid)!;
     const name = (s.name || `p${pid}`).replace(/[;,]/g, ' ');
     const h = human.get(pid);
     def.push(`${k + 1};${r};${g};${b};${name};x`);
-    csv.push(`${pid},${name},${s.land ? 1 : 0},${s.kind},${s.terrain},${s.species ?? ''},${s.cells},${s.meanElevation.toFixed(0)},${h?.terrainClass ?? ''},${h?.resource ?? ''}`);
+    const pp = people?.get(pid);
+    const popCols = people ? `,${Math.round(pp?.population ?? 0)},${pp?.culture ?? ''},${pp?.cultureGroup ?? ''}${dims.map((_, q) => `,${pp?.values[q] ?? ''}`).join('')}` : '';
+    csv.push(`${pid},${name},${s.land ? 1 : 0},${s.kind},${s.terrain},${s.species ?? ''},${s.cells},${s.meanElevation.toFixed(0)},${h?.terrainClass ?? ''},${h?.resource ?? ''}${popCols}`);
   });
   files['definition.csv'] = strToU8(`${def.join('\n')}\n`);
   files['provinces_summary.csv'] = strToU8(`${csv.join('\n')}\n`);
@@ -323,6 +343,8 @@ export function exportPackage(
 
   // 地形类别与资源（第二十一轮）
   Object.assign(files, humanFiles(world, cellOf, raster.land, width, height));
+  // 人口与文化（第二十二轮）：只在生成过人文时有
+  if (world.small.human && derived.popCulture) Object.assign(files, populationFiles(world, cellOf, raster.land, width, height));
 
   files['world.json'] = strToU8(JSON.stringify(doc));
   files['README.txt'] = strToU8(
@@ -341,6 +363,13 @@ export function exportPackage(
       'rivers.bmp：24 位，需转为游戏要求的 8 位索引调色板',
       'terrain_class.bmp + terrain_classes.csv：每格的地形类别（平原、丘陵、山地……），颜色与编号一一对应',
       'resources.bmp + resources.csv：每格的资源，白色是没有资源的陆地',
+      ...(world.small.human && derived.popCulture
+        ? [
+            `population.png：8 位灰度的人口密度，按对数：0 没有人，255 ≈ ${POP_PNG_MAX} 人/km²（灰度 = 255 × log10(1 + 密度) / log10(1 + ${POP_PNG_MAX})）`,
+            'cultures.bmp + cultures.csv：每格人口里占多数的文化，颜色与编号一一对应；白色是没有人的陆地',
+            'provinces_summary.csv 最后几列：人口、人数最多的文化、文化组与每一维的取值',
+          ]
+        : []),
       'world.json：完整的世界文件（设置 + 命令记录），可在编辑器中重新打开',
       ...(prov.warnings.length ? ['', '注意：', ...prov.warnings] : []),
     ].join('\n'),
@@ -409,6 +438,60 @@ function humanFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: n
     'resources.bmp': encodeBmp24(rc, width, height),
     'terrain_classes.csv': strToU8(`${classCsv.join('\n')}\n`),
     'resources.csv': strToU8(`${resCsv.join('\n')}\n`),
+  };
+}
+
+// population.png 的满灰度：人 / km²
+export const POP_PNG_MAX = 1000;
+
+// 人口与文化的图与表（第二十二轮）：population.png（人口密度，对数灰度）、cultures.bmp（人口里占多数的文化，海、湖用 terrain.bmp 的颜色，
+// 没有人的陆地是白色）、cultures.csv（code, id, name, group, red, green, blue, population, cells）
+function populationFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: number, height: number): Record<string, Uint8Array> {
+  const { mesh, derived: d, causes } = world;
+  const cultures = worldCultures(world.small);
+  const groups = worldCultureGroups(world.small);
+  const rgb = new Uint8Array((cultures.length + 1) * 3).fill(255);
+  cultures.forEach((c, k) => rgb.set(hexToRgb(c.color), (k + 1) * 3));
+  const sea = terrainColor('ocean');
+  const lake = terrainColor('lake');
+  const cul = d.popCulture!;
+  const dens = d.popDensity!;
+  const scale = 255 / Math.log10(1 + POP_PNG_MAX);
+  const cellGray = new Uint8Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) cellGray[i] = dens[i] > 0 ? Math.min(255, Math.max(1, Math.round(Math.log10(1 + dens[i]) * scale))) : 0;
+  const n = cellOf.length;
+  const gray = new Uint8Array(n);
+  const out = new Uint8Array(n * 3);
+  for (let p = 0; p < n; p++) {
+    const c = cellOf[p];
+    const q = p * 3;
+    if (!land[p] || d.lake[c] === 1) {
+      out.set(land[p] ? lake : sea, q);
+      continue;
+    }
+    gray[p] = cellGray[c];
+    const a = cul[c] * 3;
+    out[q] = rgb[a];
+    out[q + 1] = rgb[a + 1];
+    out[q + 2] = rgb[a + 2];
+  }
+  const pop = new Float64Array(cultures.length + 1);
+  const cells = new Int32Array(cultures.length + 1);
+  for (let i = 0; i < mesh.n; i++) {
+    if (!cul[i]) continue;
+    pop[cul[i]] += causes.popTotal![i];
+    cells[cul[i]]++;
+  }
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const csv = ['code,id,name,group,red,green,blue,population,cells'];
+  cultures.forEach((c, k) => {
+    const [r, g, b] = hexToRgb(c.color);
+    csv.push(`${k + 1},${c.id},${esc(c.name)},${groups.find((x) => x.id === c.group)?.id ?? ''},${r},${g},${b},${Math.round(pop[k + 1])},${cells[k + 1]}`);
+  });
+  return {
+    'population.png': encodePng8Gray(gray, width, height),
+    'cultures.bmp': encodeBmp24(out, width, height),
+    'cultures.csv': strToU8(`${csv.join('\n')}\n`),
   };
 }
 
