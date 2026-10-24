@@ -52,6 +52,37 @@ export function computeHuman(world: World, d: Derived, natural = true): void {
   d.peak = findPeaks(world.mesh, d.elevation, x.dry, cls, classes);
 }
 
+// 每个省份里格数最多的地形类别、资源（没有资源的格不算；一格资源都没有时为 null）。导出的 provinces_summary.csv 用
+export function provinceHuman(world: World, d: Derived): Map<number, { terrainClass: string | null; resource: string | null }> {
+  const classes = worldTerrainClasses(world.small);
+  const resources = worldResources(world.small);
+  const count = new Map<number, { c: Map<number, number>; r: Map<number, number> }>();
+  const prov = world.causes.province;
+  for (let i = 0; i < prov.length; i++) {
+    const p = prov[i];
+    if (p < 0) continue;
+    let e = count.get(p);
+    if (!e) count.set(p, (e = { c: new Map(), r: new Map() }));
+    if (d.terrainClass[i]) e.c.set(d.terrainClass[i], (e.c.get(d.terrainClass[i]) ?? 0) + 1);
+    if (d.resource[i]) e.r.set(d.resource[i], (e.r.get(d.resource[i]) ?? 0) + 1);
+  }
+  // 一样多时编号小的
+  const top = (m: Map<number, number>) => {
+    let best = 0;
+    let bc = 0;
+    for (const [k, v] of m) {
+      if (v > bc || (v === bc && k < best)) {
+        best = k;
+        bc = v;
+      }
+    }
+    return best;
+  };
+  const out = new Map<number, { terrainClass: string | null; resource: string | null }>();
+  for (const [p, e] of count) out.set(p, { terrainClass: classes[top(e.c) - 1]?.id ?? null, resource: resources[top(e.r) - 1]?.id ?? null });
+  return out;
+}
+
 // 图层的颜色：编号 → [r, g, b]（0 为 null：水面、没有资源）
 export function classColors(world: Pick<World, 'small'>): ([number, number, number] | null)[] {
   return [null, ...worldTerrainClasses(world.small).map((c) => rgb(c.color))];

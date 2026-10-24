@@ -2,6 +2,8 @@ import { speciesColor } from './species';
 import { strToU8, zipSync, zlibSync } from 'fflate';
 import type { WorldDoc } from './engine';
 import { featureLabel } from './features';
+import { provinceHuman, worldResources, worldTerrainClasses } from './human';
+import { CATEGORY_LABEL } from './human/resources';
 import { summarizeProvinces } from './provinces';
 import { riverRibbon, traceRivers } from './rivers';
 import { findCell } from './mesh';
@@ -241,13 +243,16 @@ export function exportPackage(
   copyCellRgb(rgb, provRgb, prov.cell);
   files['provinces.bmp'] = encodeBmp24(rgb, width, height);
   const def = ['province;red;green;blue;name;x'];
-  const csv = ['id,name,land,kind,terrain,species,cells,mean_elevation_m'];
+  // 第二十一轮在最后加了两列：格数最多的地形类别、资源（id）
+  const human = provinceHuman(world, derived);
+  const csv = ['id,name,land,kind,terrain,species,cells,mean_elevation_m,terrain_class,resource'];
   ids.forEach((pid, k) => {
     const [r, g, b] = provinceColor(pid);
     const s = provinces.get(pid)!;
     const name = (s.name || `p${pid}`).replace(/[;,]/g, ' ');
+    const h = human.get(pid);
     def.push(`${k + 1};${r};${g};${b};${name};x`);
-    csv.push(`${pid},${name},${s.land ? 1 : 0},${s.kind},${s.terrain},${s.species ?? ''},${s.cells},${s.meanElevation.toFixed(0)}`);
+    csv.push(`${pid},${name},${s.land ? 1 : 0},${s.kind},${s.terrain},${s.species ?? ''},${s.cells},${s.meanElevation.toFixed(0)},${h?.terrainClass ?? ''},${h?.resource ?? ''}`);
   });
   files['definition.csv'] = strToU8(`${def.join('\n')}\n`);
   files['provinces_summary.csv'] = strToU8(`${csv.join('\n')}\n`);
@@ -316,6 +321,9 @@ export function exportPackage(
   files['rivers.bmp'] = encodeBmp24(riverRgb, width, height);
   onProgress?.(0.8);
 
+  // 地形类别与资源（第二十一轮）
+  Object.assign(files, humanFiles(world, cellOf, raster.land, width, height));
+
   files['world.json'] = strToU8(JSON.stringify(doc));
   files['README.txt'] = strToU8(
     [
@@ -331,6 +339,8 @@ export function exportPackage(
       'terrain.bmp：通用地形类别着色（不是游戏的索引调色板，需按游戏的 terrain 定义重新映射）',
       'biomes.bmp：按类型颜色着色的植被图',
       'rivers.bmp：24 位，需转为游戏要求的 8 位索引调色板',
+      'terrain_class.bmp + terrain_classes.csv：每格的地形类别（平原、丘陵、山地……），颜色与编号一一对应',
+      'resources.bmp + resources.csv：每格的资源，白色是没有资源的陆地',
       'world.json：完整的世界文件（设置 + 命令记录），可在编辑器中重新打开',
       ...(prov.warnings.length ? ['', '注意：', ...prov.warnings] : []),
     ].join('\n'),
@@ -338,6 +348,68 @@ export function exportPackage(
   const zip = zipSync(files, { level: 6 });
   onProgress?.(1);
   return { zip, files: Object.keys(files), warnings: prov.warnings };
+}
+
+// 地形类别、资源的图与表（第二十一轮）：逐像素按格；海、湖用 terrain.bmp 的颜色。没有类别的陆地像素
+// （画成陆地的碎岛落在海格里）按兜底的那一类；没有资源的陆地是白色
+function humanFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: number, height: number): Record<string, Uint8Array> {
+  const { mesh, derived: d } = world;
+  const classes = worldTerrainClasses(world.small);
+  const resources = worldResources(world.small);
+  const fallback = classes.findIndex((c) => c.fallback) + 1;
+  // 每个编号的颜色：0 号是兜底的那一类 / 没有资源
+  const classRgb = new Uint8Array((classes.length + 1) * 3);
+  classes.forEach((c, k) => classRgb.set(hexToRgb(c.exportColor ?? c.color), (k + 1) * 3));
+  if (fallback) classRgb.copyWithin(0, fallback * 3, fallback * 3 + 3);
+  const resRgb = new Uint8Array((resources.length + 1) * 3).fill(255);
+  resources.forEach((r, k) => resRgb.set(hexToRgb(r.color), (k + 1) * 3));
+  const sea = terrainColor('ocean');
+  const lake = terrainColor('lake');
+  const n = cellOf.length;
+  const tc = new Uint8Array(n * 3);
+  const rc = new Uint8Array(n * 3);
+  for (let p = 0; p < n; p++) {
+    const c = cellOf[p];
+    const q = p * 3;
+    if (!land[p] || d.lake[c] === 1) {
+      const col = land[p] ? lake : sea;
+      tc.set(col, q);
+      rc.set(col, q);
+      continue;
+    }
+    const a = d.terrainClass[c] * 3;
+    tc[q] = classRgb[a];
+    tc[q + 1] = classRgb[a + 1];
+    tc[q + 2] = classRgb[a + 2];
+    const b = d.resource[c] * 3;
+    rc[q] = resRgb[b];
+    rc[q + 1] = resRgb[b + 1];
+    rc[q + 2] = resRgb[b + 2];
+  }
+  // 表：编号、id、名字、颜色、格数
+  const classCells = new Int32Array(classes.length + 1);
+  const resCells = new Int32Array(resources.length + 1);
+  for (let i = 0; i < mesh.n; i++) {
+    classCells[d.terrainClass[i]]++;
+    resCells[d.resource[i]]++;
+  }
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const classCsv = ['code,id,name,red,green,blue,terrain,cells'];
+  classes.forEach((c, k) => {
+    const [r, g, b] = hexToRgb(c.exportColor ?? c.color);
+    classCsv.push(`${k + 1},${c.id},${esc(c.name)},${r},${g},${b},${c.terrain ?? ''},${classCells[k + 1]}`);
+  });
+  const resCsv = ['code,id,name,category,red,green,blue,cells'];
+  resources.forEach((x, k) => {
+    const [r, g, b] = hexToRgb(x.color);
+    resCsv.push(`${k + 1},${x.id},${esc(x.name)},${CATEGORY_LABEL[x.category]},${r},${g},${b},${resCells[k + 1]}`);
+  });
+  return {
+    'terrain_class.bmp': encodeBmp24(tc, width, height),
+    'resources.bmp': encodeBmp24(rc, width, height),
+    'terrain_classes.csv': strToU8(`${classCsv.join('\n')}\n`),
+    'resources.csv': strToU8(`${resCsv.join('\n')}\n`),
+  };
 }
 
 // 逐像素按格抄颜色：out[p] = cellRgb[cellOf[p]]（各三个字节）
