@@ -1,0 +1,333 @@
+import { describe, expect, it } from 'vitest';
+import { digest } from '../../tools/hash';
+import { Engine } from '../engine';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
+import { BUILTIN_STYLES } from '../packs/names';
+import { DEFAULT_SPECIES } from '../species';
+import { continents, engineFor } from '../testing/fixtures';
+import type { World } from '../world';
+import { type Culture, type CultureGroup, type Era, cultureGroupSchema, cultureSchema, eraSchema, popValueSchema, weightedList } from './era';
+import { dryLandKm2 } from './generate';
+import { readComp } from './groups';
+import { humanLegend } from './layers';
+import { FANTASY_RESOURCES, GENERAL_RESOURCES } from './resources';
+import { BUILTIN_CLASSES, classAt } from './terrain-class';
+import { worldCultures, worldDimensions } from './era';
+
+// 第二十二轮 内容：内置的 6 个时代、维度的取值、文化组、文化——格式、引用、倾向写全、颜色分得开；
+// 每个时代按默认生成人文：不出错、总人口按默认密度、各组住在喜欢的地方、各维成片、确定性、地名跟着文化
+
+// 一个文化组能用在哪些时代：时代的 cultureGroups 里有它（省略时不限），组的 eras 里有这个时代（省略时不限）
+const allowed = (era: Era, g: CultureGroup) => (!era.cultureGroups || era.cultureGroups.includes(g.id)) && (!g.eras || g.eras.includes(era.id));
+const groupOf = (c: Culture) => BUILTIN_CULTURE_GROUPS.find((g) => g.id === c.group)!;
+const erasOf = (g: CultureGroup) => BUILTIN_ERAS.filter((e) => allowed(e, g));
+const valuesOf = (era: Era, dim: string) => BUILTIN_POP_VALUES.filter((v) => v.dimension === dim && (!v.eras || v.eras.includes(era.id)));
+const defaults = (era: Era) => weightedList(era.defaultGroups).map(([id, weight]) => ({ id, weight }));
+
+const CLASS_IDS = new Set(BUILTIN_CLASSES.map((c) => c.id));
+const BIOME_IDS = new Set(DEFAULT_SPECIES.map((s) => s.id));
+const TERRAIN_TAGS = new Set(DEFAULT_SPECIES.map((s) => s.terrain));
+const STYLE_IDS = new Set(BUILTIN_STYLES.map((s) => s.id));
+const RESOURCE_IDS = new Set([...GENERAL_RESOURCES, ...FANTASY_RESOURCES].map((r) => r.id));
+
+// CIE76 色差（Lab）
+function lab(hex: string): [number, number, number] {
+  const c = [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255).map((v) => (v > 0.04045 ? ((v + 0.055) / 1.055) ** 2.4 : v / 12.92));
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const x = f((c[0] * 0.4124 + c[1] * 0.3576 + c[2] * 0.1805) / 0.95047);
+  const y = f(c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722);
+  const z = f((c[0] * 0.0193 + c[1] * 0.1192 + c[2] * 0.9505) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+function closest(items: readonly { id: string; color: string }[]): { d: number; pair: string } {
+  let best = { d: Infinity, pair: '' };
+  for (let i = 0; i < items.length; i++)
+    for (let j = i + 1; j < items.length; j++) {
+      const a = lab(items[i].color);
+      const b = lab(items[j].color);
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      if (d < best.d) best = { d, pair: `${items[i].id}~${items[j].id}` };
+    }
+  return best;
+}
+
+describe('内置的时代与文化：格式与引用', () => {
+  it('6 个时代；每一项都合格，id、名字不重复', () => {
+    expect(BUILTIN_ERAS.map((e) => e.id)).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi']);
+    const check = <T extends { id: string; name: string }>(list: readonly T[], parse: (x: unknown) => T) => {
+      for (const x of list) expect(parse(JSON.parse(JSON.stringify(x))), x.id).toEqual(x);
+      expect(new Set(list.map((x) => x.id)).size).toBe(list.length);
+    };
+    check(BUILTIN_ERAS, (x) => eraSchema.parse(x));
+    check(BUILTIN_POP_VALUES, (x) => popValueSchema.parse(x));
+    check(BUILTIN_CULTURE_GROUPS, (x) => cultureGroupSchema.parse(x));
+    check(BUILTIN_CULTURES, (x) => cultureSchema.parse(x));
+    for (const list of [BUILTIN_ERAS, BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES]) expect(new Set(list.map((x) => x.name)).size).toBe(list.length);
+    // 同一维、同一个时代里取值的名字不重复
+    for (const era of BUILTIN_ERAS)
+      for (const dim of era.dimensions) {
+        const names = valuesOf(era, dim.id).map((v) => v.name);
+        expect(new Set(names).size, `${era.id}/${dim.id}`).toBe(names.length);
+      }
+    for (const x of [...BUILTIN_ERAS, ...BUILTIN_POP_VALUES, ...BUILTIN_CULTURE_GROUPS, ...BUILTIN_CULTURES]) expect(x.description?.length ?? 0, x.id).toBeGreaterThan(5);
+  });
+
+  it('时代：每一维至少两种取值，维度的名字不重复；默认的文化组都能用；资源都有', () => {
+    for (const era of BUILTIN_ERAS) {
+      expect(era.dimensions.length, era.id).toBeGreaterThan(0);
+      expect(new Set(era.dimensions.map((d) => d.label)).size).toBe(era.dimensions.length);
+      for (const dim of era.dimensions) {
+        expect(dim.required, `${era.id}/${dim.id}`).toBe(true);
+        expect(valuesOf(era, dim.id).length, `${era.id}/${dim.id}`).toBeGreaterThanOrEqual(2);
+        expect(valuesOf(era, dim.id).length, `${era.id}/${dim.id}`).toBeLessThanOrEqual(16);
+      }
+      for (const id of era.cultureGroups ?? []) expect(BUILTIN_CULTURE_GROUPS.some((g) => g.id === id && allowed(era, g)), `${era.id}: ${id}`).toBe(true);
+      const def = defaults(era);
+      expect(def.length, era.id).toBeGreaterThanOrEqual(3);
+      for (const { id } of def) expect(BUILTIN_CULTURE_GROUPS.some((g) => g.id === id && allowed(era, g)), `${era.id}: ${id}`).toBe(true);
+      for (const r of era.resources ?? []) expect(RESOURCE_IDS, `${era.id}: ${r}`).toContain(r);
+    }
+  });
+
+  it('取值的时代、文化组的时代、文化的组与地名风格、偏好里的地形类别与生态都认得', () => {
+    const eraIds = new Set(BUILTIN_ERAS.map((e) => e.id));
+    const dims = new Set(BUILTIN_ERAS.flatMap((e) => e.dimensions.map((d) => d.id)));
+    const prefsOk = (owner: string, prefs: readonly { classes?: string[]; biomes?: string[]; terrain?: string[] }[] | undefined) => {
+      for (const p of prefs ?? []) {
+        for (const c of p.classes ?? []) expect(CLASS_IDS, `${owner}: ${c}`).toContain(c);
+        for (const b of p.biomes ?? []) expect(BIOME_IDS, `${owner}: ${b}`).toContain(b);
+        for (const t of p.terrain ?? []) expect(TERRAIN_TAGS, `${owner}: ${t}`).toContain(t);
+      }
+    };
+    for (const v of BUILTIN_POP_VALUES) {
+      expect(dims, v.id).toContain(v.dimension);
+      expect(v.eras?.length, `${v.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
+      for (const e of v.eras ?? []) expect(eraIds, v.id).toContain(e);
+      // 取值属于的那一维在它的每个时代里都有
+      for (const e of v.eras ?? []) expect(BUILTIN_ERAS.find((x) => x.id === e)!.dimensions.map((d) => d.id), v.id).toContain(v.dimension);
+      prefsOk(v.id, v.prefs);
+    }
+    for (const g of BUILTIN_CULTURE_GROUPS) {
+      for (const e of g.eras ?? []) expect(eraIds, g.id).toContain(e);
+      expect(erasOf(g).length, `${g.id} 至少能用在一个时代`).toBeGreaterThan(0);
+      expect(BUILTIN_CULTURES.filter((c) => c.group === g.id).length, g.id).toBeGreaterThanOrEqual(1);
+      expect(g.prefs?.length, g.id).toBeGreaterThan(0);
+      prefsOk(g.id, g.prefs);
+    }
+    for (const c of BUILTIN_CULTURES) {
+      expect(BUILTIN_CULTURE_GROUPS.map((g) => g.id), c.id).toContain(c.group);
+      expect(STYLE_IDS, c.id).toContain(c.nameStyle);
+      prefsOk(c.id, c.prefs);
+      // 倾向的键是维度，取值属于这一维
+      for (const [dim, list] of Object.entries(c.tendencies ?? {}))
+        for (const [id] of weightedList(list)) {
+          const v = BUILTIN_POP_VALUES.find((x) => x.id === id);
+          expect(v, `${c.id}: ${id}`).toBeDefined();
+          expect(v!.dimension, `${c.id}: ${id}`).toBe(dim);
+          // 写了的取值至少在这个文化能用的一个时代里有
+          expect(erasOf(groupOf(c)).some((e) => !v!.eras || v!.eras.includes(e.id)), `${c.id}: ${id}`).toBe(true);
+        }
+    }
+  });
+
+  it('每个文化在它能用的每个时代的每一维都写了倾向（不靠平分）', () => {
+    let pairs = 0;
+    for (const c of BUILTIN_CULTURES)
+      for (const era of erasOf(groupOf(c)))
+        for (const dim of era.dimensions) {
+          const known = new Set(valuesOf(era, dim.id).map((v) => v.id));
+          const list = weightedList(c.tendencies?.[dim.id]).filter(([id, w]) => known.has(id) && w > 0);
+          expect(list.length, `${c.id} 在“${era.name}”的${dim.label}`).toBeGreaterThan(0);
+          pairs++;
+        }
+    expect(pairs).toBeGreaterThan(300);
+  });
+
+  it('27 种内置地名风格都有文化在用', () => {
+    expect(new Set(BUILTIN_CULTURES.map((c) => c.nameStyle))).toEqual(STYLE_IDS);
+  });
+
+  it('颜色分得开：同一个时代能用的文化组、文化，同一维的取值，同一组里的文化', () => {
+    for (const era of BUILTIN_ERAS) {
+      const groups = BUILTIN_CULTURE_GROUPS.filter((g) => allowed(era, g));
+      const g = closest(groups);
+      expect(g.d, `${era.id} 文化组 ${g.pair}`).toBeGreaterThan(18);
+      const c = closest(BUILTIN_CULTURES.filter((x) => groups.includes(groupOf(x))));
+      expect(c.d, `${era.id} 文化 ${c.pair}`).toBeGreaterThan(14);
+      for (const dim of era.dimensions) {
+        const v = closest(valuesOf(era, dim.id));
+        expect(v.d, `${era.id}/${dim.id} ${v.pair}`).toBeGreaterThan(18);
+      }
+    }
+    for (const g of BUILTIN_CULTURE_GROUPS) {
+      const c = closest(BUILTIN_CULTURES.filter((x) => x.group === g.id));
+      expect(c.d, `${g.id} ${c.pair}`).toBeGreaterThan(18);
+    }
+    const e = closest(BUILTIN_ERAS.map((x) => ({ id: x.id, color: x.color! })));
+    expect(e.d, e.pair).toBeGreaterThan(18);
+    // 文化组、文化在地图上看得清：不太暗、不太亮、不是灰的
+    for (const x of [...BUILTIN_CULTURE_GROUPS, ...BUILTIN_CULTURES]) {
+      const [l, a, b] = lab(x.color);
+      expect(l, x.id).toBeGreaterThan(28);
+      expect(l, x.id).toBeLessThan(86);
+      expect(Math.hypot(a, b), x.id).toBeGreaterThan(18);
+    }
+  });
+});
+
+// ---------- 按默认生成 ----------
+
+const generated = new Map<string, Engine>();
+function peopled(era: Era): Engine {
+  let e = generated.get(era.id);
+  if (!e) {
+    e = continents();
+    e.exec({ op: 'generate_human', era: era.id, groups: defaults(era) });
+    generated.set(era.id, e);
+  }
+  return e;
+}
+
+// 每个文化组的人口里，满足 test 的格占多少（按人数）
+function shareWhere(w: World, groups: readonly string[] | null, test: (i: number) => boolean): number {
+  const cultures = worldCultures(w.small);
+  let all = 0;
+  let hit = 0;
+  for (let i = 0; i < w.mesh.n; i++) {
+    const p = w.causes.popTotal![i];
+    if (!(p > 0)) continue;
+    if (groups && !groups.includes(cultures[w.derived.popCulture![i] - 1]?.group)) continue;
+    all += p;
+    if (test(i)) hit += p;
+  }
+  return hit / all;
+}
+const isClass = (w: World, ids: string[]) => (i: number) => ids.includes(classAt(w.small, w.derived.terrainClass[i])?.id ?? '');
+const isCoast = (w: World) => (i: number) => {
+  for (let e = w.mesh.off[i]; e < w.mesh.off[i + 1]; e++) if (!w.causes.land[w.mesh.adj[e]]) return true;
+  return false;
+};
+
+// 相邻的有人的两格这一维的主流取值相同的比例
+function coherence(w: World, k: number): number {
+  const n = w.mesh.n;
+  const v = w.derived.popValue!.subarray(k * n, (k + 1) * n);
+  let same = 0;
+  let all = 0;
+  for (let i = 0; i < n; i++) {
+    if (!(w.causes.popTotal![i] > 0)) continue;
+    for (let e = w.mesh.off[i]; e < w.mesh.off[i + 1]; e++) {
+      const j = w.mesh.adj[e];
+      if (!(w.causes.popTotal![j] > 0)) continue;
+      all++;
+      if (v[i] === v[j]) same++;
+    }
+  }
+  return same / all;
+}
+
+describe('每个时代按默认生成人文', () => {
+  for (const era of BUILTIN_ERAS) {
+    it(`${era.name}：不出错；总人口按默认密度；默认的组都有人；各维有好几种、成片；地名跟着文化`, () => {
+      const w = peopled(era).world;
+      const target = era.popDensity * dryLandKm2(w, w.derived);
+      let total = 0;
+      for (let i = 0; i < w.mesh.n; i++) total += w.causes.popTotal![i];
+      expect(Math.abs(total - target) / target).toBeLessThan(0.3);
+      const legend = humanLegend(w, 'cultureGroup');
+      for (const { id } of defaults(era)) expect(legend.map((x) => x.id), id).toContain(id);
+      // 组里的文化大多有人
+      const cultures = humanLegend(w, 'culture');
+      expect(cultures.length / worldCultures(w.small).length).toBeGreaterThan(0.8);
+      // 每一维：有好几种取值，成片
+      worldDimensions(w.small).forEach((dim, k) => {
+        expect(humanLegend(w, dim.id).length, dim.id).toBeGreaterThanOrEqual(3);
+        expect(coherence(w, k), dim.id).toBeGreaterThan(0.7);
+      });
+      // 每个群体的每一维都有取值（都是“每人都有”的维度）
+      for (const t of Object.values(w.small.popGroups!)) for (const dim of era.dimensions) expect(t.values[dim.id], dim.id).toBeDefined();
+      // 地名的风格都是世界里的文化用的
+      const styles = new Set(worldCultures(w.small).map((c) => c.nameStyle));
+      const used = new Set<string>();
+      for (const f of w.derived.features) {
+        if (f.style) {
+          expect(styles, f.key).toContain(f.style);
+          used.add(f.style);
+        }
+      }
+      expect(used.size).toBeGreaterThanOrEqual(3);
+    });
+  }
+
+  it('青铜时代比中世纪稀、更挤在好地方；现代最满', () => {
+    const empty = (id: string) => {
+      const w = peopled(BUILTIN_ERAS.find((e) => e.id === id)!).world;
+      let dry = 0;
+      let sparse = 0;
+      let total = 0;
+      for (let i = 0; i < w.mesh.n; i++) total += w.causes.popTotal![i];
+      const mean = total / dryLandKm2(w, w.derived);
+      for (let i = 0; i < w.mesh.n; i++) {
+        if (!w.causes.land[i] || w.derived.lake[i] === 1) continue;
+        dry++;
+        if (w.derived.popDensity![i] < mean * 0.1) sparse++;
+      }
+      return sparse / dry;
+    };
+    const ancient = empty('antiquity');
+    const medieval = empty('medieval');
+    const modern = empty('modern');
+    expect(ancient).toBeGreaterThan(medieval);
+    expect(medieval).toBeGreaterThan(modern);
+    expect(ancient).toBeGreaterThan(0.3);
+  });
+
+  it('各组住在喜欢的地方', () => {
+    const fantasy = peopled(BUILTIN_ERAS.find((e) => e.id === 'fantasy')!).world;
+    const medieval = peopled(BUILTIN_ERAS.find((e) => e.id === 'medieval')!).world;
+    const rel = (w: World, groups: string[], test: (i: number) => boolean) => shareWhere(w, groups, test) / shareWhere(w, null, test);
+    expect(rel(fantasy, ['dwarves'], isClass(fantasy, ['hills', 'mountains', 'highlands', 'peaks']))).toBeGreaterThan(1.5);
+    expect(rel(fantasy, ['elves'], isClass(fantasy, ['forest', 'woods', 'jungle']))).toBeGreaterThan(1.2);
+    expect(rel(fantasy, ['orcs'], isClass(fantasy, ['steppe', 'desert', 'highlands', 'grasslands']))).toBeGreaterThan(1.5);
+    expect(rel(fantasy, ['seafolk'], isCoast(fantasy))).toBeGreaterThan(2);
+    expect(rel(medieval, ['steppe'], isClass(medieval, ['steppe', 'grasslands', 'desert']))).toBeGreaterThan(1.3);
+    // 种族按偏好：矮人在山地的比例高于在别处
+    const dwarfShare = (test: (i: number) => boolean) => {
+      let all = 0;
+      let dwarf = 0;
+      for (let i = 0; i < fantasy.mesh.n; i++) {
+        const p = fantasy.causes.popTotal![i];
+        if (!(p > 0) || !test(i)) continue;
+        for (const x of readComp(fantasy.causes, i)) {
+          all += p * x.s;
+          if (fantasy.small.popGroups![x.code]?.values.race === 'dwarf') dwarf += p * x.s;
+        }
+      }
+      return dwarf / all;
+    };
+    const hills = isClass(fantasy, ['hills', 'mountains', 'highlands', 'peaks']);
+    expect(dwarfShare(hills)).toBeGreaterThan(2 * dwarfShare((i) => !hills(i)));
+  });
+
+  it('同样的世界、同样的参数逐值相同；整个星球上每个时代都生成得出来', () => {
+    for (const era of BUILTIN_ERAS) {
+      const a = peopled(era).world;
+      const b = continents();
+      b.exec({ op: 'generate_human', era: era.id, groups: defaults(era) });
+      expect(digest(b.world.causes.popGroup!), era.id).toBe(digest(a.causes.popGroup!));
+      expect(digest(b.world.causes.popTotal!), era.id).toBe(digest(a.causes.popTotal!));
+      expect(b.world.small.popGroups, era.id).toEqual(a.small.popGroups);
+    }
+    const globe = engineFor({ seed: 3, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    globe.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
+    for (const era of BUILTIN_ERAS) {
+      const g = globe.clone();
+      g.exec({ op: 'generate_human', era: era.id, groups: defaults(era) });
+      const w = g.world;
+      let total = 0;
+      for (let i = 0; i < w.mesh.n; i++) total += w.causes.popTotal![i];
+      expect(Math.abs(total / (era.popDensity * dryLandKm2(w, w.derived)) - 1), era.id).toBeLessThan(0.3);
+      expect(humanLegend(w, 'cultureGroup').length, era.id).toBe(defaults(era).length);
+    }
+  });
+});
