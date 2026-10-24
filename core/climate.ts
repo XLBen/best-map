@@ -54,9 +54,9 @@ function landFraction(mesh: Mesh, land: Uint8Array, kmPerUnit: number): Float64A
   const n = mesh.n;
   let landFrac = new Float64Array(n);
   for (let i = 0; i < n; i++) landFrac[i] = land[i];
-  const iters = Math.round(((1500 / kmPerUnit / mesh.spacing) ** 2) / 2);
+  const iters = Math.min(400, smoothPasses(1500, mesh.spacing * kmPerUnit));
   let tmp = new Float64Array(n);
-  for (let it = 0; it < Math.min(400, iters); it++) {
+  for (let it = 0; it < iters; it++) {
     smoothPass(mesh, landFrac, tmp);
     const t = landFrac;
     landFrac = tmp;
@@ -242,9 +242,18 @@ function sameBytes(a: ArrayBufferView, b: ArrayBufferView): boolean {
 // 两季的风（东、南分量）
 type SeasonWinds = readonly [readonly [ArrayLike<number>, ArrayLike<number>], readonly [ArrayLike<number>, ArrayLike<number>]];
 
+// 平滑到约 radiusKm 要几遍（格距 spacingKm）：一遍扩散约走 √2 格，n 遍约 √(2n) 格，所以 n ≈ (r / 格距)² / 2。
+// 至少一遍：格很粗（比如每格 100 km 的星球）时也不会变成不平滑
+export function smoothPasses(radiusKm: number, spacingKm: number): number {
+  return Math.max(1, Math.round((radiusKm / spacingKm) ** 2 / 2));
+}
+
+// 地形雨看的山体尺度：陆地高程先平滑到约 200 km（平面与球面共用）
+export const OROGRAPHIC_KM = 200;
+
 // 山挡风的变化量平滑几遍：约 150 km（迎风的气流在山前就开始拐）；格很密时封顶 48 遍
 export function windDeflectPasses(spacingKm: number): number {
-  return Math.min(48, Math.max(1, Math.round((150 / spacingKm) ** 2 / 2)));
+  return Math.min(48, smoothPasses(150, spacingKm));
 }
 
 // 按局地 Froude 数（风速 / (浮力频率 × 山高)，风 1 = 10 m/s、N = 0.01/s）判断山挡不挡得住风：
@@ -439,7 +448,7 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   let hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? Math.max(0, elevation[i]) : 0;
   {
-    const passes = Math.max(1, Math.round(((200 / kmPerUnit / mesh.spacing) ** 2) / 2));
+    const passes = smoothPasses(OROGRAPHIC_KM, mesh.spacing * kmPerUnit);
     let next = new Float64Array(n);
     for (let it = 0; it < passes; it++) {
       smoothPass(mesh, hPos, next);

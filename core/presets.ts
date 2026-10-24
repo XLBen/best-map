@@ -107,6 +107,19 @@ export function equatorText(radiusKm: number): string {
   return `赤道一圈约 ${Math.round((2 * Math.PI * radiusKm) / 1000) / 10} 万 km`;
 }
 
-export function planetSettings(size: PlanetSize, cells: number): Partial<Settings> {
+// 第十七轮：新建的整个星球每格约 100 km（相邻两格中心的平均距离，就是“一格 ≈ 100 km”里的那个数），格数随半径：
+// 小 1.78 万、类地 6.26 万、大 13.92 万。以前一律 10 万格（类地每格约 79 km）。格数在建世界时定下，已有的世界不变。
+export const PLANET_CELL_KM = 100;
+// 球面网格（core/sphere.ts，松弛过的斐波那契点）上相邻格的平均距离比同样格数的正六边形网格长约 3.1%（实测 1.030–1.032），
+// 格数要多乘它的平方
+const SPHERE_SPACING_RATIO = 1.031;
+
+// 半径 radiusKm 的星球每格约 cellKm：正六边形网格每格面积 √3/2·d²，铺满 4πR²；取到百格
+export function planetCells(radiusKm: number, cellKm = PLANET_CELL_KM): number {
+  const d = cellKm / SPHERE_SPACING_RATIO;
+  return Math.max(1000, Math.round((8 * Math.PI * radiusKm * radiusKm) / (Math.sqrt(3) * d * d) / 100) * 100);
+}
+
+export function planetSettings(size: PlanetSize, cells = planetCells(PLANET_SIZES[size].radiusKm)): Partial<Settings> {
   return { cells, aspect: 2, seed: 1, globe: true, radiusKm: PLANET_SIZES[size].radiusKm, latNorth: 90, latSouth: -90 };
 }

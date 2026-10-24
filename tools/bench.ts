@@ -1,10 +1,11 @@
 // 计时：各阶段耗时
-//   npx tsx tools/bench.ts [格数] [--globe]：--globe 是整个星球（默认 10 万格）
+//   npx tsx tools/bench.ts [格数] [--globe]：--globe 是整个星球（默认是新建类地星球的格数，每格约 100 km，见 planetCells）
 //   npx tsx tools/bench.ts --globe --pack fantasy [--json]：整个星球 + 奇幻示例包，按用户平时的操作逐步计时
 //     （新建、用资源包、画陆地、堆山、放岛、冷暖、自然融入的生态、湿度滑块、画河的预览与执行、撤销 6 次、重做、
 //     打开（整段重放）、从检查点恢复）。--json 最后一行打出 { 步骤: 毫秒 }，tools/bench-median.mjs 取几次的中位数
 import { Engine } from '../core/engine';
 import { applyPackCommands } from '../core/packs';
+import { PLANET_SIZES, planetCells } from '../core/presets';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { coastalStroke, digest } from './hash';
 let t = performance.now();
@@ -19,6 +20,7 @@ const lap = (label: string, key?: string) => {
 const globe = process.argv.includes('--globe');
 const packArg = process.argv.indexOf('--pack');
 const pack = packArg >= 0 ? process.argv[packArg + 1] : null;
+const EARTH_CELLS = planetCells(PLANET_SIZES.earth.radiusKm);
 const cellsArg = process.argv.slice(2).find((a, k, all) => !a.startsWith('--') && all[k - 1] !== '--pack');
 
 if (pack) {
@@ -29,7 +31,7 @@ if (pack) {
 function plainBench() {
   const eng = new Engine(
     globe
-      ? { seed: 3, cells: Number(cellsArg ?? 100000), globe: true, aspect: 2, latNorth: 90, latSouth: -90 }
+      ? { seed: 3, cells: Number(cellsArg ?? EARTH_CELLS), globe: true, aspect: 2, latNorth: 90, latSouth: -90 }
       : { seed: 3, cells: Number(cellsArg ?? 40000) },
   );
   lap('mesh');
@@ -83,7 +85,7 @@ function inland(eng: Engine, f: number): number {
 }
 
 function fantasyBench() {
-  const eng = new Engine({ seed: 3, cells: Number(cellsArg ?? 100000), globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
+  const eng = new Engine({ seed: 3, cells: Number(cellsArg ?? EARTH_CELLS), globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
   lap('mesh', 'mesh');
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   lap('new world', 'newWorld');

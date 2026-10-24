@@ -58,7 +58,8 @@ export const DEFAULT_PROVINCE_RULES: ProvinceRules = provinceRulesSchema.parse({
 const SIZE_CELLS = { small: 20, medium: 40, large: 80 } as const;
 
 // 目标大小（格数）：按 4 万格标定，格数不同时等比缩放，所以省份的个数与网格精细度无关。
-// 整个星球不缩放：“中”约 40 格（类地星球约 20 万 km²，一个星球约七百个陆地省）
+// 整个星球不缩放：“中”约 40 格（第十七轮起新建的星球每格约 100 km，一省约 33 万 km²，类地星球约六百个陆地省；
+// 以前 10 万格的类地星球约 20 万 km²、九百个）
 export function provinceTargets(world: World, rules: ProvinceRules): { land: number; sea: number } {
   const base = SIZE_CELLS[rules.size] * (world.mesh.kind === 'sphere' ? 1 : world.mesh.n / 40000);
   return { land: Math.max(3, base), sea: Math.max(6, base * (rules.seaByDistance ? 2 : 4)) };

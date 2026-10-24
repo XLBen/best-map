@@ -1614,7 +1614,8 @@ export function slowPreview(cmd: Command): number | null {
 }
 
 // 停顿多久再预览（毫秒）：至少 base，上次预览算得久就等得久一点（上次的一半），最多 600
-// 大世界（6 万格以上，比如整个星球）：至少停 700 毫秒才算（一次预览要几秒，停顿短时算了也多半被下一笔取消）
+// 大世界（6 万格以上，比如类地、大星球；小星球 1.78 万格算得快，不算大世界）：至少停 700 毫秒才算
+// （一次预览要一两秒，停顿短时算了也多半被下一笔取消）
 export function exactDelay(base: number): number {
   const big = (world.value?.mesh.n ?? 0) > BIG_WORLD;
   return Math.min(big ? 900 : 600, Math.max(base, big ? 700 : 0, 0.5 * lastPreviewMs));

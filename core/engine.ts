@@ -927,11 +927,13 @@ function cloneCauses(c: Causes, fields: Record<string, Float32Array>): Causes {
   return out;
 }
 
-// 撤销缓存最多几份：每份最多是整个世界的推导（10 万格约 27 MB），相同的数组共用，合计不超过 UNDO_BYTES
+// 撤销缓存最多几份：每份最多是整个世界的推导（10 万格约 27 MB），相同的数组共用，合计不超过 UNDO_BYTES。
+// 6 万格以上（新建的类地星球 6.26 万、大星球 13.92 万格，见 planetCells）存 6 份。
+// 第十七轮：大星球每份约 37 MB，200 MB 只放得下 5 份，上限提到 240 MB（类地星球 6 份约 100 MB，地区 8 份约 90 MB，不受影响）
 function undoDepth(n: number): number {
   return n > 60000 ? 6 : 8;
 }
-const UNDO_BYTES = 200 * 1024 * 1024;
+const UNDO_BYTES = 240 * 1024 * 1024;
 
 // 撤销缓存里各份推导合计占多少字节（共用的数组只算一次）
 function keptBytes(kept: readonly { state?: DerivedState }[]): number {

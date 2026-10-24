@@ -1,4 +1,4 @@
-import { type ClimateBase, ContentMemo, deflectWind, insolationTable, radiativeTemp, saturation, smoothPass, windDeflectPasses } from './climate';
+import { type ClimateBase, ContentMemo, OROGRAPHIC_KM, deflectWind, insolationTable, radiativeTemp, saturation, smoothPass, smoothPasses, windDeflectPasses } from './climate';
 import { type SphereMesh, gradient, ringDistance } from './mesh';
 import { computeOcean } from './ocean';
 import { PLANET_SWEEPS, type SphereFlow, buildFlowSphere } from './sphere-flow';
@@ -436,7 +436,7 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
   let hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? Math.max(0, elevation[i]) : 0;
   {
-    const passes = Math.max(1, Math.round(((200 / kmPerUnit / mesh.spacing) ** 2) / 2));
+    const passes = smoothPasses(OROGRAPHIC_KM, mesh.spacing * kmPerUnit);
     let next = new Float64Array(n);
     for (let it = 0; it < passes; it++) {
       smoothPass(mesh, hPos, next);

@@ -7,6 +7,7 @@ import {
   LAT_BELTS,
   MAP_SIZES,
   type MapSize,
+  PLANET_CELL_KM,
   PLANET_SIZES,
   PLANET_TYPES,
   type PlanetSize,
@@ -17,6 +18,7 @@ import {
   equatorText,
   latSpan,
   latText,
+  planetCells,
   planetSettings,
   settingsAt,
 } from '../../core/presets';
@@ -41,8 +43,7 @@ const THUMB_W = 240;
 const THUMB_H = 120;
 const COUNT = 6;
 const CELLS = 40000;
-// 整个星球默认精细：约 10 万格（类地星球每格约 75 km）
-const PLANET_CELLS = 100000;
+// 整个星球每格约 100 km：格数随半径（小 1.78 万、类地 6.26 万、大 13.92 万），见 core/presets.ts 的 planetCells
 
 // 星球竖条：从北极到南极画出各气候带，地图的纬度范围是上面一个可以拖的窗
 const STRIP_H = 168;
@@ -257,7 +258,7 @@ export function Wizard() {
     }
     return ok;
   };
-  const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? PLANET_CELLS : CELLS);
+  const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? planetCells(PLANET_SIZES[psize].radiusKm) : CELLS);
 
   // 点一张形态的卡片：里面有没见过的脚本先问（缩略图就会运行它），不信任就不选
   const chooseForm = async (c: FormChoice) => {
@@ -278,7 +279,7 @@ export function Wizard() {
       seed: seeds[0],
       onSaved: (_f, key) => setPtype(key),
       // 形态里有自己的陆地多少、岛多少：向导“地形”里只带上山多高、海岸曲折、最高的山
-      onCreate: (f, seed) => create(withTerrain(formGen(seed, f), { mountains: terrain.mountains }), f.name, seed, PLANET_CELLS),
+      onCreate: (f, seed) => create(withTerrain(formGen(seed, f), { mountains: terrain.mountains }), f.name, seed, planetCells(PLANET_SIZES[psize].radiusKm)),
     });
   };
 
@@ -391,6 +392,7 @@ export function Wizard() {
                   <span class="how">
                     半径约 {PLANET_SIZES[s].radiusKm.toLocaleString()} km，{equatorText(PLANET_SIZES[s].radiusKm)}
                   </span>
+                  <span class="how">每格约 {PLANET_CELL_KM} km</span>
                 </button>
               ))}
             </div>
