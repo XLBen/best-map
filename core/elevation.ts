@@ -314,8 +314,9 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
       elevation[i] = Math.min(elevation[i], rim - 1 - lake.depth * f[k]);
     }
   }
-  // 岛的脚本定下的高度（第十五轮）：陆地格上直接换成它（湖里的岛：高出湖面的格是干的陆地，湖照旧按溢出口蓄水）。
-  // 放在挖湖之后：放的湖里的岛不会被湖底挖掉。没有放过这样的岛时没有这个数组，什么都不做
+  // 湖里的岛定下的高度（第十五轮，见 terrain.ts 的 lakeIslandStamp）：陆地格上直接换成它（高出湖面的格是干的陆地，
+  // 湖照旧按溢出口蓄水：岛不碰湖岸、不碰溢出口，别的格的高程一格不变）。
+  // 放在挖湖之后：放的湖里的岛不会被湖底挖掉。没有往湖里放过岛时没有这个数组，什么都不做
   const fixed = causes.islandHeight;
   if (fixed) for (let i = 0; i < n; i++) if (land[i] && fixed[i] !== FREE_HEIGHT) elevation[i] = fixed[i];
   return { elevation, coastKm };

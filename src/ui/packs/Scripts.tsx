@@ -15,7 +15,7 @@ export function ScriptList({ scripts }: { scripts: FoundScript[] }) {
       {scripts.map((s) => (
         <div class="script-item">
           <div class="small">
-            「{s.owner}」的{s.label ?? SCRIPT_KIND_LABEL[s.kind]}脚本
+            「{s.owner}」的{SCRIPT_KIND_LABEL[s.kind]}脚本
           </div>
           <pre class="script-src">{s.src}</pre>
         </div>

@@ -212,9 +212,11 @@ export interface Causes {
   // 放的岛是哪一种（第十四轮，见 island-types.ts）：0 不是放的岛，否则是种类的编号。放岛、画岛链时写在新长出的陆地
   // （环礁还有潟湖的海格）上；画陆地 / 海、恢复原样画到的地方清掉。颜色、潟湖、小礁归海省都按它
   islandType: Uint8Array;
-  // 岛的脚本定下的高度（第十五轮，见 island-scripts.ts）：米，FREE_HEIGHT 是没定（照常按地形算）。
-  // 陆地格上定了的，高程算完（挖完放的湖）之后直接换成它（见 elevation.ts 的 finishElevation）。
-  // 只在第一次放带“岛的样子”脚本的岛时才有（撤销到那之前时去掉）；画陆地 / 海、恢复原样画到的地方清掉。堆山、压低不改它
+  // 湖里的岛定下的高度（第十五轮，见 terrain.ts 的 lakeIslandStamp）：米（海拔），FREE_HEIGHT 是没定（照常按地形算）。
+  // 放在湖面上的岛按种类的样子算出“湖面 + 高出湖面多少”，记在岛上的格；高程算完（挖完放的湖）之后直接换成它
+  // （见 elevation.ts 的 finishElevation），这些格在水文里永远不是湖面（见 hydrology.ts）。
+  // 只在第一次往湖里放岛时才有（撤销到那之前时去掉）；画陆地 / 海、恢复原样画到的地方清掉。堆山、压低、删湖不改它。
+  // 归海省的种类（小礁一类）在湖里：定了高度的格省份按陆地算（见 island-types.ts 的 provinceLand）
   islandHeight?: Float32Array;
 }
 

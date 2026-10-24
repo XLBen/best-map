@@ -11,10 +11,10 @@ import { type CommittedScript, openScriptEditor, registerScriptCommitted, regist
 
 registerVisualOverride(setSpeciesVisualOverride);
 
-// 世界上（各种生态、河流类型、湖泊类型、岛的种类、在用的星球形态里）还用着这一段
+// 世界上（各种生态、河流类型、在用的星球形态里）还用着这一段
 function usedInWorld(src: string): boolean {
   const w = world.value;
-  return !!w && findScripts([w.small.species, w.small.riverTypes ?? [], w.small.lakeTypes ?? [], w.small.islandTypes ?? [], w.small.terrain?.gen?.form ?? []]).some((s) => s.src === src);
+  return !!w && findScripts([w.small.species, w.small.riverTypes ?? [], w.small.lakeTypes ?? [], w.small.terrain?.gen?.form ?? []]).some((s) => s.src === src);
 }
 
 let draftEpoch = -1;

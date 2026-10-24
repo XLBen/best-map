@@ -25,16 +25,12 @@ import { type Derived, type World, longitudeOf, planetRadiusKm, worldLatitude } 
 
 // 用户脚本（第三批）的运行环境：编译、绑定变量、整段循环地运行、检查返回值，出错时给出中文说明。
 //
-// 一段脚本是一个函数体，用户写 `return …`。六种脚本：
+// 一段脚本是一个函数体，用户写 `return …`。五种脚本：
 //   placement 长在哪里 —— 每个陆地格一次，返回 0–1 的数或 true/false，乘进生态的适宜度
-//             （岛的种类里叫“放在哪里”：放岛时岛的范围里每格一次，真（> 0.5）的格岛才能占）
 //   color     颜色     —— 每格一次，返回 [r, g, b] 或 '#rrggbb'
 //   match     哪些河（湖）是这一种 —— 每条河、每个湖一次，返回真或假
 //   crust     地形     —— 整个星球每格一次，返回新的高度，或者 {height?, mountains?, hills?, rock?}
 //   setup     布局     —— 每个星球模型一次（加大陆块、加岛）
-//   shape     岛的样子 —— 放岛时岛的范围里每格一次（第十五轮），返回这格的高度，或者 {height?, rock?, land?}
-// 岛的种类的两种（placement、shape）在“岛”这个范围里（scope = 'island'）：多几个只给岛的变量（离岛心、方位、水面高度……），
-// 只在放岛的那一刻运行，结果记进原因（见 island-scripts.ts）
 //
 // 确定性：脚本看不到时间、随机数、全局对象（这些名字被同名参数遮住，Math 换成没有 random 的冻结副本），
 // 随机只能用 rand(k)：每格固定、与计算顺序无关。脚本能碰到的本模块的东西（辅助函数、它们的 prototype、
@@ -54,7 +50,7 @@ import { type Derived, type World, longitudeOf, planetRadiusKm, worldLatitude } 
 
 // ---------- 容器与格式 ----------
 
-export const SCRIPT_KINDS = ['placement', 'color', 'match', 'setup', 'crust', 'shape'] as const;
+export const SCRIPT_KINDS = ['placement', 'color', 'match', 'setup', 'crust'] as const;
 export type ScriptKind = (typeof SCRIPT_KINDS)[number];
 
 // 每格（或每条河）运行一次的四种
@@ -66,18 +62,7 @@ export const SCRIPT_KIND_LABEL: Record<ScriptKind, string> = {
   match: '哪些河湖是这一种',
   setup: '布局',
   crust: '地形',
-  shape: '岛的样子',
 };
-
-// 脚本属于哪一类东西（变量、说明按它分）：河流类型、湖泊类型的 match，岛的种类的 placement、shape。生态、星球形态没有
-export type ScriptScope = 'river' | 'lake' | 'island';
-// 以前只有 match 分河、湖
-export type MatchScope = ScriptScope;
-
-// 出错说明里的叫法：岛的种类的 placement 叫“放在哪里”
-export function scriptKindLabel(kind: ScriptKind, scope?: ScriptScope): string {
-  return kind === 'placement' && scope === 'island' ? '放在哪里' : SCRIPT_KIND_LABEL[kind];
-}
 
 // 脚本接口的版本号：以后改变量、改返回值的含义时加 1，旧脚本按旧的规则运行
 export const SCRIPT_API = 1;
@@ -93,7 +78,6 @@ export const scriptsSchema = z.object({
   match: scriptSchema.optional(),
   setup: scriptSchema.optional(),
   crust: scriptSchema.optional(),
-  shape: scriptSchema.optional(),
 });
 export type Scripts = z.output<typeof scriptsSchema>;
 
@@ -121,8 +105,6 @@ export interface FoundScript {
   hash: string;
   // 在 JSON 里的位置，如 commands[3].commands[0].species.scripts.placement
   path: string;
-  // 岛的种类的脚本（第十五轮）：说明里的叫法（“放在哪里”）。别的没有
-  label?: string;
 }
 
 // 在任意 JSON（一条命令、整个世界文件、资源包）里找出全部脚本：凡是键为 scripts 的对象都算容器，
@@ -172,18 +154,13 @@ export function findScripts(json: unknown): FoundScript[] {
     if (box !== null && typeof box === 'object' && !Array.isArray(box)) {
       const id = idObj?.id as string | undefined;
       const name = typeof o.name === 'string' ? o.name : typeof idObj?.name === 'string' ? (idObj.name as string) : undefined;
-      // 岛的种类的：有岛的样子脚本、在资源包的 islandTypes 里、或在 set_island_type 命令里
-      const up = node.up?.v as Record<string, unknown> | undefined;
-      const island = 'shape' in box || (up?.op === 'set_island_type' && node.key === 'type') || (!!node.up && node.up.key === 'islandTypes');
       for (const kind of SCRIPT_KINDS) {
         const s = (box as Record<string, unknown>)[kind];
         if (s === null || typeof s !== 'object') continue;
         const src = (s as Record<string, unknown>).src;
         if (typeof src !== 'string') continue;
         const path = pathOf(node);
-        const found: FoundScript = { owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` };
-        if (island) found.label = scriptKindLabel(kind, 'island');
-        out.push(found);
+        out.push({ owner: name || id || '脚本', id, kind, src, hash: scriptHash(src), path: `${path ? `${path}.` : ''}scripts.${kind}` });
       }
     }
     const keys = Object.keys(o);
@@ -204,18 +181,16 @@ export interface ScriptVariable {
   // 编辑器“变量和例子”里的说明
   label: string;
   unit?: string;
-  group: '气候' | '地形' | '水' | '位置' | '改动' | '世界' | '颜色' | '地形生成' | '布局' | '岛';
+  group: '气候' | '地形' | '水' | '位置' | '改动' | '世界' | '颜色' | '地形生成' | '布局';
   kinds: readonly ScriptKind[];
   // 整个世界一个值（不按格变）
   scalar?: true;
-  // match 里只有河流类型（river）或湖泊类型（lake）的才有（编辑器只列那一种的）；island：只有岛的种类的脚本里有
-  for?: 'river' | 'lake' | 'island';
+  // match 里只有河流类型（river）或湖泊类型（lake）的才有（编辑器只列那一种的）
+  for?: 'river' | 'lake';
 }
 
-// 每格的变量：岛的样子（shape）也有（放岛的那一刻按当时的推导算，结果记进原因，所以推导里的东西都能用，见 island-scripts.ts）
-const CELL: readonly ScriptKind[] = ['placement', 'color', 'match', 'shape'];
-const CELL_CRUST: readonly ScriptKind[] = ['placement', 'color', 'match', 'shape', 'crust'];
-const ISLAND: readonly ScriptKind[] = ['placement', 'shape'];
+const CELL: readonly ScriptKind[] = ['placement', 'color', 'match'];
+const CELL_CRUST: readonly ScriptKind[] = ['placement', 'color', 'match', 'crust'];
 const ALL: readonly ScriptKind[] = SCRIPT_KINDS;
 
 // 不提供省份变量：改省份的命令不触发重算，用了省份的脚本会和撤销、重放的结果不一致
@@ -275,12 +250,6 @@ export const VARIABLES: readonly ScriptVariable[] = [
   { key: 'mountains', zh: '山', label: '山的强弱（0–2）', group: '地形生成', kinds: ['crust'] },
   { key: 'hills', zh: '丘陵', label: '丘陵的强弱（0–0.5）', group: '地形生成', kinds: ['crust'] },
   { key: 'continent', zh: '大陆', label: '大陆场（大于 0 是大陆，小于 0 是大洋）', group: '地形生成', kinds: ['crust'] },
-  // 只给岛的种类的脚本（第十五轮，见 island-scripts.ts）：放岛的那一刻每格一次
-  { key: 'r', zh: '离岛心', label: '离岛心多远（0 在岛心，1 在岛的边上；按岛的形状、大小量）', group: '岛', kinds: ISLAND, for: 'island' },
-  { key: 'angle', zh: '方位', label: '从岛心看这一格在哪个方向（弧度，0 朝东，π/2 朝北）', group: '岛', kinds: ISLAND, for: 'island' },
-  { key: 'waterLevel', zh: '水面高度', label: '这一格的水面高度：湖里是湖面的海拔，海里是 0，干的陆地上是地面的海拔', unit: 'm', group: '岛', kinds: ISLAND, for: 'island' },
-  { key: 'sea', zh: '是海', label: '是不是海（1 是海，0 是陆地或湖）', group: '岛', kinds: ISLAND, for: 'island' },
-  { key: 'size', zh: '岛的大小', label: '岛的半径（放岛时选的大小）', unit: 'km', group: '岛', kinds: ISLAND, for: 'island', scalar: true },
   { key: 'addBlock', zh: '加大陆块', label: '加一块大陆：addBlock({lat, lon, size, stretch, angle})', group: '布局', kinds: ['setup'], scalar: true },
   { key: 'addIsland', zh: '加岛', label: '加一个岛：addIsland({lat, lon, height, size})', group: '布局', kinds: ['setup'], scalar: true },
   { key: 'clearBlocks', zh: '清空大陆块', label: '去掉原来的大陆块', group: '布局', kinds: ['setup'], scalar: true },
@@ -323,13 +292,10 @@ for (const v of VARIABLES) {
 
 // 某种脚本能用的变量
 // match 是河流类型的还是湖泊类型的（只给一种的变量另一种里没有，名字可以随便用）。省略为河
-// 只给岛的变量只在岛的种类的脚本里有；只给河、湖的变量只在那一种的 match 里有
-const inScope = (v: ScriptVariable, kind: ScriptKind, scope?: ScriptScope) => {
-  if (v.for === 'island') return scope === 'island';
-  return !v.for || kind !== 'match' || v.for === (scope ?? 'river');
-};
+export type MatchScope = 'river' | 'lake';
+const inScope = (v: ScriptVariable, kind: ScriptKind, scope: MatchScope = 'river') => !v.for || kind !== 'match' || v.for === scope;
 
-export function scriptVariablesFor(kind: ScriptKind, scope?: ScriptScope): ScriptVariable[] {
+export function scriptVariablesFor(kind: ScriptKind, scope?: MatchScope): ScriptVariable[] {
   return VARIABLES.filter((v) => v.kinds.includes(kind) && inScope(v, kind, scope));
 }
 
@@ -474,8 +440,8 @@ export class ScriptError extends CommandError {
   }
 }
 
-function makeIssue(owner: string, kind: ScriptKind, reason: ScriptIssue['reason'], text: string, raw: string, line?: number, cell?: number, scope?: ScriptScope): ScriptIssue {
-  const where = `「${owner}」的${scriptKindLabel(kind, scope)}脚本${line ? `第 ${line} 行` : ''}`;
+function makeIssue(owner: string, kind: ScriptKind, reason: ScriptIssue['reason'], text: string, raw: string, line?: number, cell?: number): ScriptIssue {
+  const where = `「${owner}」的${SCRIPT_KIND_LABEL[kind]}脚本${line ? `第 ${line} 行` : ''}`;
   const message =
     reason === 'syntax' ? `${where}有语法错误：${text}` : reason === 'disabled' ? `${where}没有运行：${text}` : `${where}出错：${text}`;
   return { owner, kind, reason, line, cell, text, raw, message };
@@ -494,13 +460,12 @@ function editDistance(a: string, b: string): number {
   return prev[y.length];
 }
 
-function missingVariable(name: string, kind: ScriptKind, scope?: ScriptScope): string {
+function missingVariable(name: string, kind: ScriptKind): string {
   const v = VAR_BY_NAME.get(name);
-  if (v && v.for === 'island' && scope !== 'island') return `没有变量 ${name}（只有岛的种类的脚本能用）`;
   if (v && !v.kinds.includes(kind)) {
     return `${SCRIPT_KIND_LABEL[kind]}脚本里没有变量 ${name}（只有${v.kinds.map((k) => SCRIPT_KIND_LABEL[k]).join('、')}脚本能用）`;
   }
-  const names = [...scriptVariablesFor(kind, scope).flatMap((u) => (u.zh ? [u.key, u.zh] : [u.key])), ...HELPER_NAMES];
+  const names = [...scriptVariablesFor(kind).flatMap((u) => (u.zh ? [u.key, u.zh] : [u.key])), ...HELPER_NAMES];
   let best = '';
   let bestD = Infinity;
   for (const c of names) {
@@ -562,11 +527,11 @@ const POISONED: Partial<Record<(typeof SHADOW)[number], string>> = {
 const POISON_MESSAGE = / is not available in scripts$/;
 
 // 运行时的出错信息换成中文提示（V8、Firefox、Safari 的几种写法）
-function runtimeText(raw: string, kind: ScriptKind, scope?: ScriptScope): string {
+function runtimeText(raw: string, kind: ScriptKind): string {
   if (/Math\.random is not a function/.test(raw)) return '用 rand() 代替 Math.random()';
   if (POISON_MESSAGE.test(raw)) return POISONED[raw.replace(POISON_MESSAGE, '') as keyof typeof POISONED] ?? raw;
   const ref = /^(\S+) is not defined$/.exec(raw) ?? /^Can't find variable: (\S+)$/.exec(raw);
-  if (ref) return missingVariable(ref[1], kind, scope);
+  if (ref) return missingVariable(ref[1], kind);
   const fn = /^(\S+) is not a (?:function|constructor)/.exec(raw);
   if (fn && (SHADOW as readonly string[]).includes(fn[1])) return `脚本里不能用 ${fn[1]}`;
   if (/Maximum call stack size exceeded|too much recursion/.test(raw)) return '函数调用太深了（是不是写了没有尽头的递归？）';
@@ -920,8 +885,8 @@ export function syntaxErrorText(raw: string, src: string): string {
 }
 
 // 脚本里用了没有的名字：“没有变量 tMeen（是不是 tMean？）”，或者“只有颜色脚本能用”
-export function unknownVariableText(name: string, kind: ScriptKind, scope?: ScriptScope): string {
-  return missingVariable(name, kind, scope);
+export function unknownVariableText(name: string, kind: ScriptKind): string {
+  return missingVariable(name, kind);
 }
 
 // 脚本里不能用的名字（被遮住的全局名字，还有 Math.random）的说明；能用时为 undefined
@@ -995,7 +960,7 @@ export function setSyntaxLocator(f: ((src: string) => number | undefined) | null
 }
 
 // 源码里用到的变量（只看代码：注释、字符串里的不算）
-function paramsOf(kind: ScriptKind, src: string, scope?: ScriptScope): ScriptParam[] {
+function paramsOf(kind: ScriptKind, src: string, scope?: MatchScope): ScriptParam[] {
   const code = codeOnly(src);
   const out: ScriptParam[] = [];
   for (const v of VARIABLES) {
@@ -1051,7 +1016,7 @@ function generate(kind: ScriptKind, src: string, params: ScriptParam[]): string 
   return `${head}${src}\n} }\n${loop}\nreturn [__map2_script, __map2_loop];`;
 }
 
-function build(kind: ScriptKind, src: string, scope?: ScriptScope): CompiledScript {
+function build(kind: ScriptKind, src: string, scope?: MatchScope): CompiledScript {
   const params = paramsOf(kind, src, scope);
   const factory = new Function(...SHADOW, '__h', '__st', generate(kind, src, params)) as (...a: unknown[]) => [CompiledScript['script'], CompiledScript['loop']];
   const [script, loop] = factory(...SHADOW_VALUES, HELPERS, RUN);
@@ -1079,10 +1044,9 @@ function importFailure(src: string): Failure | null {
   return m ? { raw: 'import()', text: '脚本里不能用 import', line: lineCount(src.slice(0, m.index)) } : null;
 }
 
-export function compileScript(kind: ScriptKind, src: string, owner = '脚本', scope?: ScriptScope): CompiledScript {
+export function compileScript(kind: ScriptKind, src: string, owner = '脚本', scope?: MatchScope): CompiledScript {
   if (disallowed) throw new Error('主线程不运行脚本');
-  // 河的 match 与不分范围的同一份；湖的 match、岛的两种另编译（变量不同）
-  const sc = scope === 'island' ? 'island' : kind === 'match' && scope === 'lake' ? 'lake' : undefined;
+  const sc = kind === 'match' && scope === 'lake' ? 'lake' : undefined;
   const key = `${kind}${sc ? `:${sc}` : ''}\0${src}`;
   let hit = cache.get(key);
   if (hit) {
@@ -1106,7 +1070,7 @@ export function compileScript(kind: ScriptKind, src: string, owner = '脚本', s
     if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
   }
   // 行号的定位器可能是缓存之后才装上的，所以每次报错时再问一次
-  if ('raw' in hit) throw new ScriptError(makeIssue(owner, kind, 'syntax', hit.text, hit.raw, hit.line ?? syntaxLocator?.(src), undefined, scope));
+  if ('raw' in hit) throw new ScriptError(makeIssue(owner, kind, 'syntax', hit.text, hit.raw, hit.line ?? syntaxLocator?.(src)));
   return hit;
 }
 
@@ -1192,7 +1156,7 @@ function firefoxSyntaxLine(e: unknown, src: string): number | undefined {
 }
 
 // 运行时出错的说明（软失败用）
-function runtimeIssue(e: unknown, owner: string, kind: ScriptKind, src: string, cell?: number, scope?: ScriptScope): ScriptIssue {
+function runtimeIssue(e: unknown, owner: string, kind: ScriptKind, src: string, cell?: number): ScriptIssue {
   const { raw, stack } = errorInfo(e);
   let line: number | undefined;
   try {
@@ -1200,7 +1164,7 @@ function runtimeIssue(e: unknown, owner: string, kind: ScriptKind, src: string, 
   } catch {
     line = undefined;
   }
-  return makeIssue(owner, kind, 'runtime', runtimeText(raw, kind, scope), raw, line, cell, scope);
+  return makeIssue(owner, kind, 'runtime', runtimeText(raw, kind), raw, line, cell);
 }
 
 // ---------- 输入 ----------
@@ -1459,18 +1423,7 @@ export interface CellOutputs {
   match: { match: Uint8Array };
   // 改过的地形（没改的项是原来的值）
   crust: CrustOutput;
-  // 岛的样子：高度（m，NaN 是没给，按这种岛本来的样子）、岩石（NaN 是没给）、land（−1 没给，0 这一格不动，1 一定成陆）
-  shape: ShapeOutput;
 }
-
-export interface ShapeOutput {
-  height: Float64Array;
-  rock: Float64Array;
-  land: Int8Array;
-}
-
-// 岛的样子脚本返回值的范围（岩石与岛的种类的岩石一样，见 island-types.ts 的 ISLAND_ROCK_RANGE）
-export const SHAPE_RANGE = { height: [-11000, 9000], rock: [0.3, 5] } as const;
 
 // 出错时 output 是“当作没有这段脚本”的结果，调用方照常用它
 export type CellResult<K extends CellKind = CellKind> =
@@ -1531,8 +1484,6 @@ function absentOutput(kind: CellKind, inputs: ScriptInputs, cells: ArrayLike<num
     }
     case 'crust':
       return crustBase(inputs, cells);
-    case 'shape':
-      return { height: new Float64Array(m).fill(NaN), rock: new Float64Array(m).fill(NaN), land: new Int8Array(m).fill(-1) };
   }
 }
 
@@ -1560,7 +1511,6 @@ function hasNaN(kind: CellKind, v: unknown): boolean {
     return false;
   }
   if (kind === 'crust' && v !== null && typeof v === 'object') return CRUST_KEYS.some((k) => Number.isNaN((v as Record<string, unknown>)[k]));
-  if (kind === 'shape' && v !== null && typeof v === 'object') return ['height', 'rock'].some((k) => Number.isNaN((v as Record<string, unknown>)[k]));
   return false;
 }
 
@@ -1575,14 +1525,12 @@ function valueText(kind: CellKind, v: unknown): string {
         ? "颜色 [r, g, b] 或 '#rrggbb'"
         : kind === 'match'
           ? '真或假'
-          : kind === 'shape'
-            ? '这一格的高度（一个数，米），或 {height, rock, land}'
-            : '新的高度（一个数），或 {height, mountains, hills, rock}';
+          : '新的高度（一个数），或 {height, mountains, hills, rock}';
   return `应该返回${want}，地图上有一处返回了${describe(v)}`;
 }
 
-function valueIssue(owner: string, kind: CellKind, v: unknown, cell: number, scope?: ScriptScope): ScriptIssue {
-  return makeIssue(owner, kind, 'value', valueText(kind, v), describe(v), undefined, cell, scope);
+function valueIssue(owner: string, kind: CellKind, v: unknown, cell: number): ScriptIssue {
+  return makeIssue(owner, kind, 'value', valueText(kind, v), describe(v), undefined, cell);
 }
 
 function putFor(kind: CellKind, out: CellOutputs[CellKind]): ((v: unknown, j: number) => boolean) | null {
@@ -1613,28 +1561,6 @@ function putFor(kind: CellKind, out: CellOutputs[CellKind]): ((v: unknown, j: nu
         if (typeof x !== 'number' || x !== x) return false;
         o[k][j] = clampRange(x, CRUST_RANGE[k][0], CRUST_RANGE[k][1]);
       }
-      return true;
-    };
-  }
-  if (kind === 'shape') {
-    const o = out as ShapeOutput;
-    return (v, j) => {
-      if (typeof v === 'number') {
-        if (v !== v) return false;
-        o.height[j] = clampRange(v, SHAPE_RANGE.height[0], SHAPE_RANGE.height[1]);
-        return true;
-      }
-      if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
-      const r = v as Record<string, unknown>;
-      const h = r.height;
-      const rock = r.rock;
-      const land = r.land;
-      if (h !== undefined && (typeof h !== 'number' || h !== h)) return false;
-      if (rock !== undefined && (typeof rock !== 'number' || rock !== rock)) return false;
-      if (land !== undefined && typeof land !== 'boolean') return false;
-      if (h !== undefined) o.height[j] = clampRange(h, SHAPE_RANGE.height[0], SHAPE_RANGE.height[1]);
-      if (rock !== undefined) o.rock[j] = clampRange(rock, SHAPE_RANGE.rock[0], SHAPE_RANGE.rock[1]);
-      if (land !== undefined) o.land[j] = land ? 1 : 0;
       return true;
     };
   }
@@ -1689,11 +1615,11 @@ const withId = (issue: ScriptIssue, id: string | undefined): ScriptIssue => (id 
 // 对一串格运行一段每格的脚本。出错不抛（语法错误、运行时出错、NaN、类型不对、缺变量、安全模式），
 // 返回 {ok: false, issue, output}，output 为“没有这段脚本”的结果；超出范围的数被截到范围内。
 // 只有调用方的错（主线程上 disallowScripts 之后、地形脚本缺原来的地形、看门狗本身出错）才抛
-export function runScript<K extends CellKind>(script: { kind: K; src: string; scope?: ScriptScope }, opts: RunOptions): CellResult<K> {
+export function runScript<K extends CellKind>(script: { kind: K; src: string; scope?: MatchScope }, opts: RunOptions): CellResult<K> {
   const { kind, src, scope } = script;
   const { inputs, cells, owner } = opts;
   const fail = (issue: ScriptIssue): CellResult<K> => ({ ok: false, issue: withId(issue, opts.id), output: absentOutput(kind, inputs, cells) as CellOutputs[K] });
-  if (!enabled) return fail(makeIssue(owner, kind, 'disabled', '安全模式下脚本不运行', 'disabled', undefined, undefined, scope));
+  if (!enabled) return fail(makeIssue(owner, kind, 'disabled', '安全模式下脚本不运行', 'disabled'));
   let c: CompiledScript;
   try {
     c = compileScript(kind, src, owner, scope);
@@ -1706,7 +1632,7 @@ export function runScript<K extends CellKind>(script: { kind: K; src: string; sc
   for (const p of c.params) {
     if (p.mode === 'cell') continue;
     let v: unknown = inputs.get(p.key);
-    if (v === undefined) return fail(makeIssue(owner, kind, 'runtime', `这里没有变量 ${p.name}`, `missing input ${p.key}`, nameLine(src, p.name), undefined, scope));
+    if (v === undefined) return fail(makeIssue(owner, kind, 'runtime', `这里没有变量 ${p.name}`, `missing input ${p.key}`, nameLine(src, p.name)));
     if (p.mode === 'array' && typeof v !== 'object') v = new Float64Array(inputs.n).fill(Number(v));
     else if (p.mode === 'scalar') v = frozenCopy(v);
     args.push(v);
@@ -1722,9 +1648,9 @@ export function runScript<K extends CellKind>(script: { kind: K; src: string; sc
     h.enter(owner);
     try {
       const bad = c.loop!(cells, target, h, put, ...args);
-      if (bad >= 0) issue = valueIssue(owner, kind, RUN.bad, cells[bad], scope);
+      if (bad >= 0) issue = valueIssue(owner, kind, RUN.bad, cells[bad]);
     } catch (e) {
-      issue = runtimeIssue(e, owner, kind, src, RUN.cell, scope);
+      issue = runtimeIssue(e, owner, kind, src, RUN.cell);
     } finally {
       h.exit();
     }

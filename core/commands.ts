@@ -26,7 +26,7 @@ import { checkSpeciesScripts } from './biome-scripts';
 import { namesNaturally } from './features';
 import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema } from './river-types';
 import { MAX_LAKE_TYPES, checkLakeTypeScripts, lakeTypeDirty, lakeTypeSchema } from './lake-types';
-import { LAGOON_BIT, MAX_ISLAND_TYPES, hasIslandScripts, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
+import { ISLAND_CODE_MASK, LAGOON_BIT, MAX_ISLAND_TYPES, islandCode, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
 import { typeIdSchema } from './type-id';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
@@ -37,8 +37,11 @@ import {
   chainSchema,
   combineStamps,
   islandSchema,
+  type LakeView,
   type StampResult,
+  centerCell,
   landStroke,
+  placeIsland,
   reliefStroke,
   resolveTerrain,
   restoreKeep,
@@ -63,7 +66,6 @@ import {
   type World,
   FREE_HEIGHT,
 } from './world';
-import { checkIslandScripts, islandOwner, issueNote, scriptedStamper, stampIsland } from './island-scripts';
 
 // 所有编辑都是可序列化的命令。命令只改“原因”，并且只保存明确的格编号，
 // 所以重放结果与当时界面上的推导状态无关（例外：generate_provinces 需要当时的水文与高程，引擎会先把推导算好）。
@@ -303,7 +305,7 @@ export interface UndoRecord {
   // 新增或删除的自定义场：撤销时恢复为 old（null 表示原来不存在）
   fields: { name: string; old: Float32Array | null }[];
   small: string;
-  // 这一步第一次有了岛的脚本定下的高度（causes.islandHeight）：撤销时去掉整个数组
+  // 这一步第一次有了湖里的岛定下的高度（causes.islandHeight）：撤销时去掉整个数组
   dropHeights?: true;
 }
 
@@ -314,7 +316,7 @@ function formatIssues(err: z.ZodError): string {
 export interface ApplyContext {
   // 需要推导结果的命令调用它，保证推导是最新的
   ensureDerived: () => Derived;
-  // 在批量命令里（第十五轮：带脚本的岛不能放进去，见 island-scripts.ts）
+  // 在批量命令里（第十五轮：湖里的岛不能放进去——批量里前面几条改的东西还没算进推导，重放时却算进了）
   inBatch?: boolean;
 }
 
@@ -492,7 +494,7 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
 
 const nextId = (world: World, prefix: string) => `${prefix}-${world.small.nextId++}`;
 
-// 放岛的增量加进原因；脚本定下的高度写进 causes.islandHeight（第一次用到时才建）
+// 放岛的增量加进原因；湖里的岛定下的高度写进 causes.islandHeight（第一次用到时才建）
 function putStamp(world: World, r: StampResult) {
   const { causes } = world;
   r.cells.forEach((i, k) => {
@@ -507,6 +509,15 @@ function putStamp(world: World, r: StampResult) {
     const h = r.heights![k];
     if (!Number.isNaN(h)) fixed[i] = h;
   });
+}
+
+// 湖里有没有这一种岛（定了高度、记着这一种的格）
+function hasLakeIsles(world: World, code: number): boolean {
+  const fixed = world.causes.islandHeight;
+  if (!fixed || !code) return false;
+  const types = world.causes.islandType;
+  for (let i = 0; i < fixed.length; i++) if (fixed[i] !== FREE_HEIGHT && (types[i] & ISLAND_CODE_MASK) === code) return true;
+  return false;
 }
 
 // 画笔中心七成半径以内的格（t ≤ 0.7：画陆地 / 海一定变成陆地、海，恢复原样完全恢复的那一圈）
@@ -733,10 +744,12 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     case 'add_island': {
       const spec = islandSchema.parse(cmd.island);
       checkIslandKind(world, spec.kind);
-      const scripted = hasIslandScripts(islandTypeById(small, spec.kind));
-      if (scripted && ctx.inBatch) throw new CommandError('带脚本的岛不能放进批量命令里，一个一个放');
-      const { stamp: r, issues } = stampIsland(world, spec, ctx.ensureDerived);
-      if (!r.footprint.length) throw new CommandError(scripted ? '这里放不下这种岛' : '这里放不下岛（可能已经是陆地）');
+      // 岛心在陆格上（湖面或干的陆地）：要看推导里的湖面。批量命令里推导不是最新的，不放
+      const c0 = centerCell(world.mesh, spec.x, spec.y);
+      if (causes.land[c0] && ctx.inBatch) throw new CommandError('批量命令里的岛只能放在海里（湖里的岛要单独放）');
+      const { stamp: r, lake } = placeIsland(world, spec, () => ctx.ensureDerived());
+      if (lake && !r.cells.length) throw new CommandError('湖太窄了，放不下岛（岛四周要留一圈湖面）');
+      if (!r.footprint.length) throw new CommandError('这里放不下岛（可能已经是陆地）');
       const classBefore = provinceLand(world);
       putStamp(world, r);
       applyTerrain(world, { classBefore });
@@ -744,28 +757,21 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const cellKm = world.mesh.spacing * world.kmPerUnit;
       const one = islandTypeById(small, spec.kind)?.shape === 'cell';
       const size = one ? `直径约 ${roundKm(cellKm * 0.5)} km` : spec.size < cellKm * 0.5 ? sizeText(world, spec.size) : `直径约 ${roundKm(spec.size * 2)} km`;
-      return { dirty: Dirty.Elevation, summary: `放了一个${islandTypeName(world, spec.kind)}（${size}）${issueNote(issues)}` };
+      return { dirty: Dirty.Elevation, summary: `${lake ? '在湖里' : ''}放了一个${islandTypeName(world, spec.kind)}（${size}）` };
     }
     case 'add_island_chain': {
       const spec = chainSchema.parse(cmd.chain);
       checkIslandKind(world, spec.kind);
-      const islands = chainIslands(world, spec);
-      const type = islandTypeById(small, spec.kind);
-      let r: StampResult;
-      let note = '';
-      let count = islands.length;
-      if (hasIslandScripts(type)) {
-        if (ctx.inBatch) throw new CommandError('带脚本的岛不能放进批量命令里，一个一个放');
-        const s = scriptedStamper(world, ctx.ensureDerived);
-        r = combineStamps(world, islands, s.stamp);
-        count -= s.refused();
-        if (!count || !r.footprint.length) throw new CommandError(s.refused() ? `「${islandOwner(type!)}」的脚本说这里放不了` : '这里放不下这种岛');
-        note = issueNote(s.issues());
-      } else r = combineStamps(world, islands);
+      // 岛心落在湖面上的岛按湖里的岛放（要看推导里的湖面，只在有岛心落在陆格上时才取）；
+      // 批量命令里推导不是最新的：岛心在陆格上的岛照旧不放
+      let view: LakeView | null | undefined;
+      const lakes = () => (view === undefined ? (view = ctx.inBatch ? null : ctx.ensureDerived()) : view);
+      const islands = chainIslands(world, spec, lakes);
+      const r = combineStamps(world, islands, lakes);
       const classBefore = provinceLand(world);
       putStamp(world, r);
       applyTerrain(world, { classBefore });
-      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${count} 个${islandTypeName(world, spec.kind)}${note}` };
+      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${islands.length - (r.skipped ?? 0)} 个${islandTypeName(world, spec.kind)}` };
     }
     case 'reroll_region': {
       const gen = small.terrain.gen;
@@ -1054,17 +1060,18 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'set_island_type': {
       const t = islandTypeSchema.parse(cmd.type);
-      // 脚本有语法错误时当场拒绝（运行时的错在放岛时才知道，那一段按没有脚本算）
-      checkIslandScripts(t);
       const list = islandTypesOf(small);
       const at = list.findIndex((x) => x.id === t.id);
       if (at < 0 && list.length >= MAX_ISLAND_TYPES) throw new CommandError(`岛的种类最多 ${MAX_ISLAND_TYPES} 种`);
       const before = at >= 0 ? list[at] : undefined;
       const classBefore = provinceLand(world);
       small.islandTypes = at >= 0 ? list.map((x, k) => (k === at ? t : x)) : [...list, t];
-      // 改了归陆地省还是海省：这种岛的格换到对的省份里
-      if (before && before.province !== t.province) refileProvinces(world, classBefore);
-      const dirty = islandTypeDirty(before, t) === 'names' ? Dirty.Names : Dirty.None;
+      // 改了归陆地省还是海省：这种岛的格换到对的省份里。湖里的这种岛（定了高度的格）省份按陆地算，陆海不变；
+      // 湖单独成省时它们要在湖省与陆地省之间换：至少重新起名一遍，引擎算好之后整理（见 engine.ts 的 fixLakeProvinces）
+      const moved = !!before && before.province !== t.province;
+      if (moved) refileProvinces(world, classBefore);
+      let dirty: Dirty = islandTypeDirty(before, t) === 'names' ? Dirty.Names : Dirty.None;
+      if (moved && dirty < Dirty.Names && hasLakeIsles(world, islandCode(small, t.id))) dirty = Dirty.Names;
       return { dirty, summary: `${before ? '修改了' : '新建了'}岛的种类「${t.name}」` };
     }
     case 'remove_island_type': {

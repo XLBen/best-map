@@ -108,7 +108,7 @@ describe('星球形态与河流类型、对周围的影响在同一个星球上'
     expect(replay.world.derived.features.map((f) => [f.key, f.name])).toEqual(fs.map((f) => [f.key, f.name]));
   });
 
-  it('从世界导出：星球形态、河流类型都带上，读回来一样；包里的脚本（布局、地形、match，岛的放在哪里、岛的样子）都列出来', () => {
+  it('从世界导出：星球形态、河流类型都带上，读回来一样；包里的脚本（布局、地形、match）都列出来', () => {
     const eng = planet();
     const out = packFromWorld(eng.world, { biomes: [] }, { name: '我的星球' });
     expect(out.planetForms).toEqual([badForm]);
@@ -116,8 +116,7 @@ describe('星球形态与河流类型、对周围的影响在同一个星球上'
     const back = readPack(JSON.stringify(out));
     expect(back.ok && back.pack).toEqual(out);
     const kinds = new Set(findScripts(out).map((s) => s.kind));
-    // 第十五轮：示例包里的湖心岛带着放在哪里（placement）、岛的样子（shape）
-    expect([...kinds].sort()).toEqual(['crust', 'match', 'placement', 'setup', 'shape']);
+    expect([...kinds].sort()).toEqual(['crust', 'match', 'setup']);
     // 世界文件里也是（打开别人的世界时问信任）
     const inDoc = new Set(findScripts(eng.toDoc()).map((s) => s.kind));
     for (const k of ['setup', 'crust', 'match', 'placement']) expect(inDoc.has(k as never), k).toBe(true);

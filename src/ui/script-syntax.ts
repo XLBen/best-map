@@ -369,7 +369,7 @@ function namesProblem(ast: Program, kind: ScriptKind, fields?: readonly string[]
     const blocked = blockedNameText(u.name) ?? EDITOR_BLOCKED[u.name];
     if (blocked) return { line: u.line, text: blocked, reason: 'name' };
     if (u.name === 'Math.random' || known.has(u.name)) continue;
-    return { line: u.line, text: unknownVariableText(u.name, kind, scope), reason: 'name' };
+    return { line: u.line, text: unknownVariableText(u.name, kind), reason: 'name' };
   }
   return null;
 }

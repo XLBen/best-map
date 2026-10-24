@@ -1,8 +1,6 @@
 import { z } from 'zod';
-// 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用别的模块，顶层直接读会碰上“初始化之前不能访问”
-import { scriptsSchema } from './script';
 import { typeIdSchema } from './type-id';
-import type { SmallState, World } from './world';
+import { FREE_HEIGHT, type SmallState, type World } from './world';
 
 // 岛的种类（第十四轮）：放岛、画岛链时选一种。内置四种（大陆岛、低平岛、珊瑚岛、小礁），用户可以新建自己的，
 // 两者用同一套说法：形状、颜色、岩石软硬、高低、归陆地省还是海省、起名的模板。
@@ -65,11 +63,6 @@ export const islandTypeSchema = z.object({
     .array(z.object({ p: z.string().min(1).max(40), w: z.number().positive().optional() }))
     .min(1)
     .max(20)
-    .optional(),
-  // 脚本（第十五轮，见 island-scripts.ts）：放在哪里（placement）、岛的样子（shape）。和形状、高低一样只在放岛的那一刻起作用
-  scripts: z
-    .lazy(() => scriptsSchema)
-    .refine((s) => Object.entries(s).every(([k, v]) => k === 'placement' || k === 'shape' || v === undefined), '岛的种类只能有“放在哪里”和“岛的样子”两种脚本')
     .optional(),
 });
 export type IslandType = z.output<typeof islandTypeSchema>;
@@ -135,12 +128,28 @@ export const ringCodes = (small: Pick<SmallState, 'islandTypes'>) => codeFlags(s
 // 归海省的编号（小礁一类）
 export const seaCodes = (small: Pick<SmallState, 'islandTypes'>) => codeFlags(small, (t) => t.province === 'sea');
 
-// 省份按格分陆海（第十四轮）：陆地格里归海省的岛（小礁一类）算海。省份的自动划分、修补、划省、合并、省界都按它
+// 省份按格分陆海（第十四轮）：陆地格里归海省的岛（小礁一类）算海。省份的自动划分、修补、划省、合并、省界都按它。
+// 湖里的岛（第十五轮，定了高度的格，见 terrain.ts 的 lakeIslandStamp）算陆地：归海省的种类放在湖里时跟着湖走——
+// 湖单独成省时算进那个湖的湖省（见 provinces.ts 的 lakeCells），湖并进陆地省时算进旁边的陆地省，不会在陆地中间冒出一个海省
 export function provinceLand(world: Pick<World, 'causes' | 'small'>): Uint8Array {
-  const { land, islandType } = world.causes;
+  const { land, islandType, islandHeight: fixed } = world.causes;
   const sea = seaCodes(world.small);
   const out = new Uint8Array(land.length);
-  for (let i = 0; i < land.length; i++) out[i] = land[i] === 1 && !sea[islandType[i] & ISLAND_CODE_MASK] ? 1 : 0;
+  for (let i = 0; i < land.length; i++) out[i] = land[i] === 1 && (!sea[islandType[i] & ISLAND_CODE_MASK] || (fixed !== undefined && fixed[i] !== FREE_HEIGHT)) ? 1 : 0;
+  return out;
+}
+
+// 湖里的归海省的岛（第十五轮）：定了高度、种类归海省的陆地格。没有时为 null
+export function lakeSeaIsles(world: Pick<World, 'causes' | 'small'>): Uint8Array | null {
+  const { land, islandType, islandHeight: fixed } = world.causes;
+  if (!fixed) return null;
+  const sea = seaCodes(world.small);
+  let out: Uint8Array | null = null;
+  for (let i = 0; i < land.length; i++) {
+    if (land[i] !== 1 || fixed[i] === FREE_HEIGHT || !sea[islandType[i] & ISLAND_CODE_MASK]) continue;
+    out ??= new Uint8Array(land.length);
+    out[i] = 1;
+  }
   return out;
 }
 
@@ -157,7 +166,7 @@ export function removeIslandCode(arr: Uint8Array, k: number): void {
 }
 
 // 改一种要从哪一层重算：只改颜色只重画；只改名字、起名模板只重新起名；改了归哪种省要整理省份（命令里做）；
-// 形状、高低、岩石、脚本只影响以后放的岛（什么都不重算）
+// 形状、高低、岩石只影响以后放的岛（什么都不重算）
 export function islandTypeDirty(before: IslandType | undefined, after: IslandType): 'none' | 'names' {
   if (!before) return 'none';
   return JSON.stringify([before.name, before.names ?? null]) === JSON.stringify([after.name, after.names ?? null]) ? 'none' : 'names';
@@ -197,14 +206,16 @@ export function landProvinceCells(world: Pick<World, 'mesh' | 'causes' | 'small'
   const hit = list.find((e) => e.key === key);
   if (hit) return hit.value;
   const n = mesh.n;
-  const pland = provinceLand(world);
   const lake = derived.lake;
   const owner = new Int32Array(n).fill(-1);
+  const land = causes.land;
+  const types = causes.islandType;
   // 一圈一圈的格放在一个数组里：[from, to) 是这一圈
   const ring = new Int32Array(n);
   let to = 0;
   for (let i = 0; i < n; i++) {
-    if (pland[i] && lake[i] !== 1) {
+    // 陆地省的格：不归海省的陆地，不是湖面（湖里的归海省的岛不算：湖单独成省时它在湖省里）
+    if (land[i] === 1 && !sea[types[i] & ISLAND_CODE_MASK] && lake[i] !== 1) {
       owner[i] = i;
       ring[to++] = i;
     }
@@ -252,9 +263,4 @@ export function landProvinceCells(world: Pick<World, 'mesh' | 'causes' | 'small'
   list.unshift({ key, value: owner });
   list.length = Math.min(list.length, 3);
   return owner;
-}
-
-// 有没有岛的脚本（放在哪里、岛的样子）。有时放岛要在 Worker 里按脚本算（见 island-scripts.ts），主线程只画轮廓
-export function hasIslandScripts(t: Pick<IslandType, 'scripts'> | undefined): boolean {
-  return !!(t?.scripts?.placement?.src.trim() || t?.scripts?.shape?.src.trim());
 }

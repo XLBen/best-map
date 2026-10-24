@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { MinHeap } from './heap';
-import { provinceLand } from './island-types';
+import { lakeSeaIsles, provinceLand } from './island-types';
 import { graphDistanceOwner, ringDistance } from './mesh';
 import { DEFAULT_PACK, generateName, hashString } from './names';
 import { mixSeed, mulberry32 } from './rng';
@@ -75,11 +75,21 @@ const KIND_OF_CLASS: ProvinceKind[] = ['sea', 'land', 'wasteland', 'lake'];
 export type ProvinceClass = 'sea' | 'land' | 'lake';
 export const classOfKind = (k: ProvinceKind): ProvinceClass => (k === 'sea' ? 'sea' : k === 'lake' ? 'lake' : 'land');
 
-// 湖面的格（自动划分、整理湖省用）：连成一片、至少 3 格的湖面（与 cellClasses 同一个规则）
+// 湖面的格（自动划分、整理湖省用）：连成一片、至少 3 格的湖面（与 cellClasses 同一个规则）。
+// 湖里的归海省的岛（第十五轮，小礁一类放在湖面上）跟着湖走：连成一片的这种岛格挨着这样的湖面时也算（算进那个湖的湖省）
 export function lakeCells(world: World, d: Derived): Uint8Array {
   const mask = new Uint8Array(world.mesh.n);
   const land = world.causes.land;
   for (const comp of components(world, (i) => land[i] === 1 && d.lake[i] === 1)) if (comp.length >= 3) for (const c of comp) mask[c] = 1;
+  const isles = lakeSeaIsles(world);
+  if (!isles) return mask;
+  const { mesh } = world;
+  const byLake = (c: number) => {
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) if (mask[mesh.adj[e]]) return true;
+    return false;
+  };
+  // 岛格的连通块互不相挨（连通块是最大的），先加进去的块不影响后面的块挨不挨湖面
+  for (const comp of components(world, (i) => isles[i] === 1 && d.lake[i] !== 1)) if (comp.some(byLake)) for (const c of comp) mask[c] = 1;
   return mask;
 }
 

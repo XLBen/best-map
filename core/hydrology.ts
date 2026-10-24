@@ -2,7 +2,7 @@ import { ContentMemo } from './climate';
 import { placedLakeAnchor, sinkMask } from './elevation';
 import { gradient } from './mesh';
 import { type Routing, route } from './routing';
-import type { Derived, World } from './world';
+import { type Derived, FREE_HEIGHT, type World } from './world';
 
 // 水文：径流（Budyko 曲线）→ 汇流 → 河流与湖泊。
 // 洼地按溢出口蓄水；干旱区入流不足以抵消湖面蒸发时成为内流湖，只占洼地的一部分。
@@ -32,13 +32,17 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const areaKm = new Float64Array(n);
   for (let i = 0; i < n; i++) areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
 
+  // 湖里的岛（第十五轮，定了高度的格，见 terrain.ts 的 lakeIslandStamp）永远是干的陆地：不算进湖
+  // （内流湖涨落、湖岸抬高时也不会淹掉、变成干盐湖）。没有往湖里放过岛时与以前逐值相同
+  const fixed = causes.islandHeight;
+  const wet = (i: number) => r.water[i] - elevation[i] >= 0.5 && (!fixed || fixed[i] === FREE_HEIGHT);
   // 放的湖认哪一格（湖心那一格不再是水面时取碗里最近的水面格，见 placedLakeAnchor）
-  const anchors = small.lakes.map((l) => placedLakeAnchor(world, l, (i) => land[i] === 1 && r.water[i] - elevation[i] >= 0.5));
+  const anchors = small.lakes.map((l) => placedLakeAnchor(world, l, (i) => land[i] === 1 && wet(i)));
   // 湖：填洼深度超过 3 m 的连通平水面
   const lakeId = new Int32Array(n).fill(-1);
   const lakes: { cells: number[]; outlet: number; area: number; perennial: boolean; evap: number }[] = [];
   for (let i = 0; i < n; i++) {
-    if (!land[i] || lakeId[i] >= 0 || r.water[i] - elevation[i] < 0.5) continue;
+    if (!land[i] || lakeId[i] >= 0 || !wet(i)) continue;
     const id = lakes.length;
     const cells = [i];
     lakeId[i] = id;
@@ -48,7 +52,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
       maxDepth = Math.max(maxDepth, r.water[c] - elevation[c]);
       for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
         const j = mesh.adj[e];
-        if (land[j] && lakeId[j] < 0 && Math.abs(r.water[j] - r.water[i]) < 1e-6 && r.water[j] - elevation[j] >= 0.5) {
+        if (land[j] && lakeId[j] < 0 && Math.abs(r.water[j] - r.water[i]) < 1e-6 && wet(j)) {
           lakeId[j] = id;
           cells.push(j);
         }

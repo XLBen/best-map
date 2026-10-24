@@ -3,7 +3,7 @@ import { digestWorld } from '../../tools/hash';
 import type { Command } from '../../core/commands';
 import { lakeArea } from '../../core/elevation';
 import { brushCells } from '../../core/select';
-import { type IslandSpec, chainIslands, islandStamp, landStroke, previewTerrain, reliefStroke } from '../../core/terrain';
+import { type IslandSpec, chainIslands, islandStamp, lakeIslandStamp, landStroke, previewTerrain, reliefStroke } from '../../core/terrain';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import { scissors, seamLayers } from '../../core/seams';
 import { groupPreview, provinceFlat, provinceGroups } from '../render/colors';
@@ -695,28 +695,43 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     expect(blocked.hint).toBe('这里已经是陆地');
   });
 
-  it('带脚本的岛（第十五轮）：主线程不运行脚本，悬停画出岛的范围（不按“只能放在海里”拦），松手照常发出放岛的命令', async () => {
-    const w0 = setup();
-    const isle = { id: 'lake_isle', name: '湖心岛', shape: 'round' as const, height: 'flat' as const, province: 'land' as const, scripts: { placement: { api: 1 as const, src: 'return 湖 === 1;' } } };
-    const w = { ...w0, small: { ...w0.small, islandTypes: [isle] } };
+  it('湖面上（第十五轮）：放岛悬停画出岛占的湖面格（白框，就是命令的结果），松手发出放岛的命令；岛链画过湖也画出来', async () => {
+    const eng = continents().clone();
+    const w0 = eng.world;
+    const inland = [...Array(w0.mesh.n).keys()].find((i) => w0.causes.land[i] && w0.derived.lake[i] !== 1 && w0.derived.continentality[i] > 0.6 && w0.derived.slope[i] < 5)!;
+    eng.exec({ op: 'add_lake', lake: { cell: inland, radius: 300, depth: 150, perennial: true } });
+    const w = eng.world;
     world.value = w;
-    setOptions({ islandKind: 'lake_isle' });
+    setOptions({ islandKind: 'low', islandKm: 150 });
     try {
-      const land = [...Array(w.mesh.n).keys()].find((i) => i > w.mesh.n * 0.3 && near(w, i, 6).every((j) => w.causes.land[j]))!;
       const t = islandTool();
-      t.move?.(at(w, land), false);
+      t.move?.(at(w, inland), false);
       const pv = t.preview();
-      expect(pv.hint).not.toBe('这里已经是陆地');
+      const want = lakeIslandStamp(w, { x: w.mesh.x[inland], y: w.mesh.y[inland], kind: 'low', size: 150, variant: options.value.islandVariant }, w.derived).cells;
+      expect(want.length).toBeGreaterThan(0);
       expect(pv.warn).toBeFalsy();
-      expect(pv.ghost ?? null).toBeNull();
-      expect(pv.layers[0].pattern).toBe('outline');
-      expect(pv.layers[0].cells).toContain(land);
-      t.down?.(at(w, land));
-      await t.up?.(at(w, land));
+      expect(pv.hint).toMatch(/^湖里的低平岛/);
+      expect(pv.layers[0]).toMatchObject({ cells: want, pattern: 'outline' });
+      t.down?.(at(w, inland));
+      vi.mocked(exec).mockClear();
+      await t.up?.(at(w, inland));
       const sent = vi.mocked(exec).mock.calls.at(-1)![0];
-      expect(sent.op === 'add_island' && sent.island.kind).toBe('lake_isle');
+      expect(sent.op === 'add_island' && sent.island.kind).toBe('low');
+      // 岛链从湖心画出去：湖里的岛画出占的格
+      const cellKm = w.mesh.spacing * w.kmPerUnit;
+      setOptions({ chainKind: 'low', chainKm: cellKm, chainDensity: 1 });
+      const c = chainTool();
+      const p0 = at(w, inland);
+      const d = (cellKm * 1.5) / w.kmPerUnit;
+      c.down?.({ ...p0, x: p0.x - d });
+      c.move?.({ ...p0, x: p0.x + d, sx: p0.sx + 200 }, true);
+      const cp = c.preview();
+      expect(cp.hint).toMatch(/^[1-9]\d* 个低平岛/);
+      expect(cp.layers[0]?.pattern).toBe('outline');
+      expect(cp.layers[0]!.cells.every((i) => w.causes.land[i] && w.derived.lake[i] === 1)).toBe(true);
+      c.cancel?.();
     } finally {
-      setOptions({ islandKind: 'continental' });
+      setOptions({ islandKind: 'continental', chainKind: 'continental' });
     }
   });
 

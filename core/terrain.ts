@@ -9,7 +9,7 @@ import { type Noise2, clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, 
 import { nearestCell } from './sphere';
 import { coastValueAt } from './subcell';
 import { CommandError } from './errors';
-import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, hasIslandScripts, islandCode, islandTypeById } from './island-types';
+import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, islandCode, islandTypeById } from './island-types';
 import type { World } from './world';
 
 // 地形“原因”的组合：
@@ -797,8 +797,10 @@ export interface StampResult {
   types: number[];
   // 岛的轮廓（预览用）：放岛后会是陆地的格
   footprint: number[];
-  // 岛的脚本定下的高度（m，与 cells 对齐；NaN 是没定）。只有带“岛的样子”脚本的岛才有（见 island-scripts.ts）
+  // 湖里的岛定下的高度（m，海拔，与 cells 对齐；NaN 是没定）。只有放在湖面上的岛才有（见 lakeIslandStamp）
   heights?: number[];
+  // 岛链里没放成的岛（岛心在干的陆地上、湖太窄），见 combineStamps
+  skipped?: number;
 }
 
 // 数值大小指海岸线的半径：轮廓平均落在这个距离上。岛心半径 R 与海岸线的比例按形状不同
@@ -843,7 +845,7 @@ function reefStamp(world: World, spec: IslandSpec, t: IslandType, code: number):
   return out;
 }
 
-// 岛的轮廓的几何（第十五轮从 islandStamp 里拆出来，岛的脚本也用它）：岛心附近每格相对岛心的位置（东、南，地图单位）
+// 岛的轮廓的几何（第十五轮从 islandStamp 里拆出来，湖里的岛也用它）：岛心附近每格相对岛心的位置（东、南，地图单位）
 // 与“按形状量的距离” dd（岛心半径 R 的倍数，噪声让边缘有湾有岬）。只列 dd 的原始距离 d ≤ 1.9 的格，按编号排
 export interface IslandGeometry {
   R: number;
@@ -925,7 +927,7 @@ export function islandGeometry(world: World, spec: IslandSpec, t: IslandType): I
   return geo;
 }
 
-// 岛的轮廓里一格本来的样子（没有岛的样子脚本时）：海岸值的目标与抬升。core 见 islandCore
+// 海里的岛的轮廓里一格的样子：海岸值的目标与抬升。core 见 islandCore
 export function islandCellTarget(t: IslandType, dd: number, core: number, geo: IslandGeometry, k: number): { target: number; lift: number } {
   // 平的岛内圈只比海岸高一点，起伏、高的岛高得多
   const bump = t.height === 'flat' ? 40 : 400;
@@ -960,7 +962,6 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   const { mesh, causes } = world;
   const ring = t.shape === 'ring';
   const rough = world.small.terrain.coastRoughness;
-  const sphere = mesh.kind === 'sphere' ? mesh : null;
   const geo = islandGeometry(world, spec, t);
   const { c0 } = geo;
   const core = islandCore(world);
@@ -995,8 +996,7 @@ export function islandStamp(world: World, spec: IslandSpec): StampResult {
   // 太小、一格陆地都没放出来：岛心那一格抬到岛的内圈高度（海岸值至少约 60 m）。
   // 岛心在地图外（岛链画出了地图边）时没有“岛心那一格”，不补：否则地图边上会多出一格一格的小岛
   const cellKm = mesh.spacing * world.kmPerUnit;
-  const onMap = sphere !== null || (spec.x >= 0 && spec.x <= mesh.width && spec.y >= 0 && spec.y <= mesh.height);
-  if (onMap && !out.footprint.length && spec.size < cellKm * 1.5) {
+  if (onMap(world, spec) && !out.footprint.length && spec.size < cellKm * 1.5) {
     const coast = coastNoiseField(mesh, coastSeed(world));
     if (!causes.land[c0] && !isLandValue(causes.landness[c0], coast[c0], rough)) {
       const need = Math.max(0, core - causes.landness[c0]);
@@ -1061,6 +1061,187 @@ export function footprintOf(world: World, r: { cells: number[]; landDelta: numbe
   }
   for (const [i, land] of landAfter(world, r.cells, r.landDelta, types)) if (land) out.push(i);
   return out.sort((a, b) => a - b);
+}
+
+// ---------- 湖里的岛（第十五轮） ----------
+// 湖面和海一样能放岛：每一种岛（内置的、自己的）都能点在湖面上，岛链也能画过湖。岛只占它岛心所在的那个湖：
+//   · 只抬这个湖（连成一片、湖面一样高的湖面格）里的格，湖岸、别的湖一格不动；岛四周留一圈湖面（挨着湖岸、地图边的湖格不抬），
+//     所以湖里的岛总是四周都是水、是一个有名字的岛（features.ts 的 lakeIslandInputs）；
+//   · 剩下的湖面要连成一片（环礁的潟湖、被岛隔开的一块湖面：从离得最近的地方打开一个口子），湖面高度和溢出口都不变；
+//   · 不改陆度、抬升、岩石（别的格的高程一格不变，湖照旧按溢出口蓄水），只记下这种岛（causes.islandType）与岛上每格的
+//     海拔（湖面 + 高出湖面多少，causes.islandHeight，高程算完后直接换上，见 elevation.ts）。
+// 高出湖面多少按这种岛的样子（形状、环礁的环、高低、大小）算，和海里同一种岛差不多：平的几米，起伏的几十到两三百米，
+// 高的中间几百到一千多米，环礁的环一两米，一格的小礁两米。只取决于推导里的湖面（放岛那一刻的，命令里用 ensureDerived），
+// 重放、撤销逐值相同。干盐湖（lake = 2）是陆地，不能放
+
+// 推导里的湖面（lake = 1 是湖面）与水面高度
+export interface LakeView {
+  lake: ArrayLike<number>;
+  water: ArrayLike<number>;
+}
+// 要用时才取湖面（命令里是 ensureDerived；批量命令里给 null：那时推导不是最新的，岛心在陆格上的岛不放）
+export type LakeSource = () => LakeView | null;
+
+const EMPTY_STAMP: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [] };
+
+// 岛心在不在地图上（一块地区的地图边外没有岛心那一格）
+function onMap(world: World, spec: { x: number; y: number }): boolean {
+  const { mesh } = world;
+  return mesh.kind === 'sphere' || (spec.x >= 0 && spec.x <= mesh.width && spec.y >= 0 && spec.y <= mesh.height);
+}
+
+// 同一个湖：从 c0 起连成一片的湖面格，水面与 c0 相差不到半米（内流湖的水面格之间最多差 0.5 m；挨着的两个湖一般差得多）
+const SAME_LAKE_M = 0.51;
+function lakeOf(world: World, c0: number, view: LakeView): number[] {
+  const { mesh, causes } = world;
+  const level = view.water[c0];
+  const seen = new Set<number>([c0]);
+  const out = [c0];
+  for (let h = 0; h < out.length; h++) {
+    const c = out[h];
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (seen.has(j) || !causes.land[j] || view.lake[j] !== 1 || Math.abs(view.water[j] - level) >= SAME_LAKE_M) continue;
+      seen.add(j);
+      out.push(j);
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
+// 一格高出湖面多少（m）：r 离岛心（0 岛心，1 岛的边上），按这种岛的高低；g 按岛的大小（100 km 为 1）
+function lakeIsleHeight(t: IslandType, dd: number, geo: IslandGeometry | null, k: number, sizeKm: number): number {
+  if (t.shape === 'cell') return 2;
+  if (t.shape === 'ring') return 1 + 3 * Math.max(0, 1 - Math.abs(dd - 0.8) / 0.16);
+  const u = Math.max(0, 1 - islandRadiusOf(t, dd));
+  const g = clamp(Math.sqrt(sizeKm / 100), 0.5, 1.6);
+  if (t.height === 'flat') return 2 + 10 * u;
+  if (t.height === 'high') return 5 + 900 * g * Math.pow(u, 1.4);
+  const n = geo && k >= 0 ? fbm(geo.shape, geo.dx[k] / geo.R + 1, geo.dy[k] / geo.R, 3, 3) : 0;
+  return 3 + 250 * g * Math.pow(u, 1.2) * Math.max(0.2, 0.6 + 0.4 * n);
+}
+
+// 剩下的湖面连成一片：被岛隔开的每一块从离得最近的地方（穿过最少的岛格）打开一个口子，口子上的格不抬。
+// 主块是最大的一块（一样大取最小格编号小的）；按块的最小格编号依次打开。0-1 广度优先：走岛格算一步，走湖面不算
+function keepLakeOpen(world: World, lake: number[], raised: Set<number>): void {
+  const { mesh } = world;
+  const inLake = new Set(lake);
+  for (;;) {
+    const part = new Map<number, number>();
+    const parts: number[][] = [];
+    for (const s of lake) {
+      if (raised.has(s) || part.has(s)) continue;
+      const id = parts.length;
+      const cells = [s];
+      part.set(s, id);
+      for (let h = 0; h < cells.length; h++) {
+        const c = cells[h];
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (inLake.has(j) && !raised.has(j) && !part.has(j)) {
+            part.set(j, id);
+            cells.push(j);
+          }
+        }
+      }
+      parts.push(cells);
+    }
+    if (parts.length <= 1) return;
+    let main = 0;
+    for (let p = 1; p < parts.length; p++) if (parts[p].length > parts[main].length) main = p;
+    const from = main === 0 ? 1 : 0;
+    // 从这一块出发，找到主块里的格为止。按代价一层一层走：走湖面不加代价（排进这一层），走岛格加一（排进下一层）
+    const dist = new Map<number, number>();
+    const prev = new Map<number, number>();
+    let layer = [...parts[from]].sort((a, b) => a - b);
+    for (const c of layer) dist.set(c, 0);
+    let next: number[] = [];
+    let cost = 0;
+    let hit = -1;
+    for (let q = 0; hit < 0; q++) {
+      if (q >= layer.length) {
+        if (!next.length) break;
+        layer = next;
+        next = [];
+        q = -1;
+        cost++;
+        continue;
+      }
+      const c = layer[q];
+      if (dist.get(c)! < cost) continue;
+      if (part.get(c) === main) {
+        hit = c;
+        break;
+      }
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!inLake.has(j)) continue;
+        const w = raised.has(j) ? 1 : 0;
+        if (dist.has(j) && dist.get(j)! <= cost + w) continue;
+        dist.set(j, cost + w);
+        prev.set(j, c);
+        (w ? next : layer).push(j);
+      }
+    }
+    if (hit < 0) return;
+    for (let c: number | undefined = hit; c !== undefined; c = prev.get(c)) raised.delete(c);
+  }
+}
+
+// 放在湖面上的一个岛（岛心那一格是湖面：view.lake[c0] === 1）。放不下（湖太窄，岛心附近没有不挨岸的湖面格）时 cells 为空
+export function lakeIslandStamp(world: World, spec: IslandSpec, view: LakeView): StampResult {
+  const { t, code } = typeOfSpec(world, spec.kind);
+  const { mesh } = world;
+  const c0 = centerCell(mesh, spec.x, spec.y);
+  if (view.lake[c0] !== 1 || !world.causes.land[c0]) return EMPTY_STAMP;
+  const lake = lakeOf(world, c0, view);
+  const inLake = new Set(lake);
+  // 不挨湖岸、地图边的湖面格才能抬（岛四周留一圈湖面）
+  const inner = (i: number) => {
+    if (!inLake.has(i) || mesh.boundary[i]) return false;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (!inLake.has(mesh.adj[e])) return false;
+    return true;
+  };
+  let level = -Infinity;
+  for (const i of lake) level = Math.max(level, view.water[i]);
+  const height = new Map<number, number>();
+  const geo = t.shape === 'cell' ? null : islandGeometry(world, spec, t);
+  if (geo) {
+    for (let k = 0; k < geo.cells.length; k++) {
+      const i = geo.cells[k];
+      const dd = geo.dd[k];
+      const up = t.shape === 'ring' ? Math.abs(dd - 0.8) < 0.16 : islandRadiusOf(t, dd) < 1;
+      if (up && inner(i)) height.set(i, lakeIsleHeight(t, dd, geo, k, spec.size));
+    }
+  }
+  // 一格的岛，或者太小、一格都没抬起来：只抬岛心那一格
+  if (!height.size && inner(c0)) {
+    const k = geo ? geo.cells.indexOf(c0) : -1;
+    height.set(c0, lakeIsleHeight(t, t.shape === 'ring' ? 0.8 : 0, geo, k, spec.size));
+  }
+  if (!height.size) return EMPTY_STAMP;
+  const raised = new Set(height.keys());
+  keepLakeOpen(world, lake, raised);
+  const cells = [...raised].sort((a, b) => a - b);
+  return {
+    cells,
+    landDelta: cells.map(() => 0),
+    upliftDelta: cells.map(() => 0),
+    erodDelta: cells.map(() => 0),
+    types: cells.map(() => code),
+    footprint: cells.slice(),
+    heights: cells.map((i) => Math.fround(level + Math.max(1, height.get(i)!))),
+  };
+}
+
+// 放一个岛（命令、预览共用）：岛心在海里按海里的岛（islandStamp，与以前逐值相同）；在湖面上按湖里的岛；
+// 在干的陆地上也按 islandStamp（与以前相同：只在挨着海时长出新的陆地）。lake：岛心在湖面上时为 true
+export function placeIsland(world: World, spec: IslandSpec, lakes: LakeSource): { stamp: StampResult; lake: boolean } {
+  const c0 = centerCell(world.mesh, spec.x, spec.y);
+  if (!world.causes.land[c0] || !onMap(world, spec)) return { stamp: islandStamp(world, spec), lake: false };
+  const view = lakes();
+  if (!view || view.lake[c0] !== 1) return { stamp: islandStamp(world, spec), lake: false };
+  return { stamp: lakeIslandStamp(world, spec, view), lake: true };
 }
 
 export const chainSchema = z.object({
@@ -1185,13 +1366,20 @@ function chainSlots(seedOf: (variant: number) => number, count: number, baseKm: 
 }
 
 // 岛链不并进原有的陆地（第十二轮修）：岛心离原来的陆地太近时把岛缩小到碰不到它（岛的轮廓按最长约 1.6 倍大小、再空一格），
-// 缩到比最小的岛还小、或岛心就在陆地上时不放这个岛
+// 缩到比最小的岛还小、或岛心就在陆地上时不放这个岛。岛心在湖面上（第十五轮，给了 lakes 时）：照样放，大小不变
 const CHAIN_REACH = 1.6;
-function avoidLand(world: World, islands: IslandSpec[], minKm: number): IslandSpec[] {
+function avoidLand(world: World, islands: IslandSpec[], minKm: number, lakes?: LakeSource): IslandSpec[] {
   const { mesh, causes, kmPerUnit } = world;
   const cellKm = mesh.spacing * kmPerUnit;
   const out: IslandSpec[] = [];
   for (const spec of islands) {
+    if (lakes) {
+      const c = centerCell(mesh, spec.x, spec.y);
+      if (causes.land[c]) {
+        if (onMap(world, spec) && lakes()?.lake[c] === 1) out.push(spec);
+        continue;
+      }
+    }
     const maxKm = spec.size * CHAIN_REACH + cellKm;
     const d = nearestLandKm(world, spec.x, spec.y, maxKm);
     if (d >= maxKm) {
@@ -1236,16 +1424,17 @@ function nearestLandKm(world: World, x: number, y: number, maxKm: number): numbe
 }
 
 // 岛链：沿折线放一串岛，大小按幂律（少数大岛、许多小岛），左右略有错落；排列按 variant 换（见 chainLayout）。
-// 带脚本的岛（第十五轮）：不躲开原来的陆地、不按长出的陆格数再缩放——哪里能放由“放在哪里”的脚本定（每个岛按它裁，见 island-scripts.ts）
-export function chainIslands(world: World, spec: ChainSpec): IslandSpec[] {
-  if (hasIslandScripts(islandTypeById(world.small, spec.kind))) return (world.mesh.kind === 'sphere' ? chainIslandsSphere : chainIslandsFlat)(world, spec, 1);
+// lakes（第十五轮）：岛心落在湖面上的岛照样放（大小不变，按湖里的岛放，见 lakeIslandStamp）；不给时、或岛心在干的陆地上时不放。
+// 只在有岛心落在陆格上时才取湖面（整条链都在海上时与以前逐值相同）
+export function chainIslands(world: World, spec: ChainSpec, lakes?: LakeSource): IslandSpec[] {
   const minKm = chainMinKm(world);
-  const raw = (s: ChainSpec, scale: number) => avoidLand(world, (world.mesh.kind === 'sphere' ? chainIslandsSphere : chainIslandsFlat)(world, s, scale), minKm);
+  const raw = (s: ChainSpec, scale: number) => avoidLand(world, (world.mesh.kind === 'sphere' ? chainIslandsSphere : chainIslandsFlat)(world, s, scale), minKm, lakes);
   const islands = raw(spec, 1);
   if (spec.variant <= 0) return islands;
   // 按面积之和缩放之后，小岛成陆的格数不与面积成比例、有的岛不放（离原有的陆地太近）：再按实际新长出的陆格数与第 0 种比一次，
-  // 差得多（±15% 以外）时整条链再缩放一次
-  const gained = (list: IslandSpec[]) => {
+  // 差得多（±15% 以外）时整条链再缩放一次（只数海里的岛：湖里的岛不长出新的陆格）
+  const gained = (all: IslandSpec[]) => {
+    const list = all.filter((s) => !world.causes.land[centerCell(world.mesh, s.x, s.y)]);
     if (!list.length) return 0;
     let c = 0;
     for (const i of combineStamps(world, list).footprint) if (!world.causes.land[i]) c++;
@@ -1343,15 +1532,33 @@ function chainIslandsSphere(world: World, spec: ChainSpec, scale: number): Islan
 
 
 // 多个岛依次叠加（后一个看见前一个的结果，海岸值与岩性都是），返回合并后的增量。
-// stamp：一个岛怎么放（带脚本的岛用 island-scripts.ts 的，见 commands.ts）。定下的高度后放的岛说了算
-export function combineStamps(world: World, specs: IslandSpec[], stamp: (world: World, spec: IslandSpec) => StampResult = islandStamp): StampResult {
-  const { causes } = world;
+// lakes（第十五轮）：岛心在陆格上的岛按湖里的岛放（岛心在湖面上，见 lakeIslandStamp；后一个看见前一个占掉的湖面），
+// 岛心在干的陆地上、湖太窄的不放（记进 skipped）。不给时每个岛都按海里的岛放（与以前逐值相同）。
+// 只在有岛心落在陆格上时才取湖面。定下的高度后放的岛说了算
+export function combineStamps(world: World, specs: IslandSpec[], lakes?: LakeSource): StampResult {
+  const { causes, mesh } = world;
   const saved = new Map<number, [number, number, number]>();
   const acc = new Map<number, { land: number; lift: number; erod: number; type: number; h: number }>();
   let fixed = false;
+  let skipped = 0;
+  // 这条命令里的湖面（湖里放了岛的格不再是湖面），第一次用到时才复制
+  let view: LakeView | null | undefined;
   try {
     for (const spec of specs) {
-      const r = stamp(world, spec);
+      let r: StampResult;
+      const c = lakes ? centerCell(mesh, spec.x, spec.y) : -1;
+      if (lakes && causes.land[c]) {
+        if (view === undefined) {
+          const v = lakes();
+          view = v && { lake: Uint8Array.from(v.lake), water: v.water };
+        }
+        r = view && view.lake[c] === 1 && onMap(world, spec) ? lakeIslandStamp(world, spec, view) : EMPTY_STAMP;
+        if (!r.cells.length) {
+          skipped++;
+          continue;
+        }
+        for (const i of r.cells) (view!.lake as Uint8Array)[i] = 0;
+      } else r = islandStamp(world, spec);
       r.cells.forEach((i, k) => {
         if (!saved.has(i)) saved.set(i, [causes.landness[i], causes.erod[i], causes.islandType[i]]);
         causes.landness[i] += r.landDelta[k];
@@ -1388,6 +1595,7 @@ export function combineStamps(world: World, specs: IslandSpec[], stamp: (world: 
     out.heights?.push(a.h);
   }
   out.footprint = footprintOf(world, out);
+  if (skipped) out.skipped = skipped;
   return out;
 }
 

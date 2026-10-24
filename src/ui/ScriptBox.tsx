@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { SCRIPT_HELPERS, type ScriptKind, type ScriptScope, type ScriptVariable, scriptVariablesFor } from '../../core/script';
+import { SCRIPT_HELPERS, type ScriptKind, type ScriptVariable, scriptVariablesFor } from '../../core/script';
 import { worldEpoch, worldState } from '../state';
 import { type ApplyMode, type ApplyResult, ScriptEdit, type ScriptProblem, isNote, problemCell, problemLine } from './script-commit';
-import { ISLAND_PLACEMENT_EXAMPLES, LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
+import { LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
 import { checkScript, loadAcorn } from './script-syntax';
 
 // 脚本框：等宽字的文本框，左边有行号；下面一行红字说哪里不对（“第 3 行：没有变量 tMeen（是不是 tMean？）”）；
 // “变量和例子…”列出能用的变量（中英文名都能用）、辅助函数和几段例子。
 // 打字停 600 毫秒、检查通过后真的用到地图上（见 script-commit.ts）；在主线程上只用 acorn 解析，从不运行脚本
 
-const GROUP_ORDER: ScriptVariable['group'][] = ['岛', '气候', '地形', '水', '位置', '改动', '颜色', '地形生成', '布局', '世界'];
+const GROUP_ORDER: ScriptVariable['group'][] = ['气候', '地形', '水', '位置', '改动', '颜色', '地形生成', '布局', '世界'];
 
 interface Props {
   kind: ScriptKind;
@@ -36,8 +36,8 @@ interface Props {
   focusSignal?: number;
   // 框里的文字变了（还没检查、提交的也算）：星球形态编辑器点按钮时要用框里现在写的
   onDraft?: (src: string) => void;
-  // match 是河流类型的还是湖泊类型的，或者是岛的种类的脚本（“变量和例子”只列那一种能用的）
-  scope?: ScriptScope;
+  // match 是河流类型的还是湖泊类型的（“变量和例子”只列那一种能用的）
+  scope?: 'river' | 'lake';
 }
 
 const lineCount = (s: string) => s.split(/\r\n|[\n\r\u2028\u2029]/).length;
@@ -168,17 +168,7 @@ export function ScriptBox(props: Props) {
           wrap="off"
           spellcheck={false}
           autocomplete="off"
-          placeholder={
-            kind === 'placement'
-              ? props.scope === 'island'
-                ? '// 比如：return 湖 === 1;'
-                : '// 比如：return 海拔 > 1000;'
-              : kind === 'color'
-                ? '// 比如：return [200, 80, 60];'
-                : kind === 'shape'
-                  ? '// 比如：return 水面高度 + 10;'
-                  : '// 写 return …'
-          }
+          placeholder={kind === 'placement' ? '// 比如：return 海拔 > 1000;' : kind === 'color' ? '// 比如：return [200, 80, 60];' : '// 写 return …'}
           onFocus={() => edit.focus()}
           onBlur={() => void edit.blur()}
           onInput={(e) => edit.input((e.target as HTMLTextAreaElement).value)}
@@ -214,9 +204,9 @@ export function ScriptBox(props: Props) {
 }
 
 // 变量和例子（点名字插到光标处，点例子换掉框里的）。replace：框里已经有东西了
-function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scope?: ScriptScope; replace: boolean; onInsert: (text: string, whole?: boolean) => void }) {
+function ScriptHelp({ kind, scope, replace, onInsert }: { kind: ScriptKind; scope?: 'river' | 'lake'; replace: boolean; onInsert: (text: string, whole?: boolean) => void }) {
   const vars = scriptVariablesFor(kind, scope);
-  const examples = kind === 'match' && scope === 'lake' ? LAKE_MATCH_EXAMPLES : kind === 'placement' && scope === 'island' ? ISLAND_PLACEMENT_EXAMPLES : SCRIPT_EXAMPLES[kind];
+  const examples = kind === 'match' && scope === 'lake' ? LAKE_MATCH_EXAMPLES : SCRIPT_EXAMPLES[kind];
   const groups = GROUP_ORDER.map((g) => [g, vars.filter((x) => x.group === g)] as const).filter(([, list]) => list.length);
   // 按钮不抢走框里的光标
   const keep = (e: Event) => e.preventDefault();
