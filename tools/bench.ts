@@ -64,6 +64,20 @@ function plainBench() {
   lap('paint terrain class (human)');
   eng.exec({ op: 'set_cell_resource', cells: land.slice(0, 120), resource: 'iron' });
   lap('paint resource (human)');
+  // 第二十二轮：生成人文（文化圈 + 人口）、人口与文化笔刷、撤销
+  eng.exec({ op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }] });
+  lap('generate human');
+  const peopled = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.popTotal![i] > 0).slice(1000, 1120);
+  eng.exec({ op: 'paint_culture', cells: peopled, culture: 'frankish', amount: 0.5 });
+  lap('paint culture (human)');
+  eng.exec({ op: 'paint_pop', cells: peopled, mode: 'value', dimension: 'religion', value: 'moon-faith', amount: 0.5 });
+  lap('paint religion (human)');
+  eng.exec({ op: 'paint_pop', cells: peopled, mode: 'count', factor: 1.5 });
+  lap('paint count (human)');
+  eng.undo();
+  lap('undo paint (human)');
+  eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'sea' });
+  lap('paint sea with people (repair)');
   const doc = eng.toDoc();
   Engine.fromDoc(doc, eng.world.mesh);
   lap(`fromDoc replay (${doc.commands.length} commands)`);
