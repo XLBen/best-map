@@ -251,7 +251,7 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
         {here && (
           <g pointer-events="none">
             <circle cx={here.x} cy={here.y} r={5} fill="none" stroke="#ff5" stroke-width={2} />
-            <text x={here.x + 7} y={here.y - 6} class="here">
+            <text x={here.x + 7} y={here.y - 6} class="cursor-mark">
               这里
             </text>
           </g>

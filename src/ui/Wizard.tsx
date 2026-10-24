@@ -110,7 +110,7 @@ function Thumb({ data, onPick, label }: { data: Uint8ClampedArray | null; onPick
     c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(data), THUMB_W, THUMB_H), 0, 0);
   }, [data]);
   return (
-    <button class={`thumb ${data ? '' : 'loading'}`} onClick={onPick} disabled={!data}>
+    <button class={`thumb ${data ? '' : 'pending'}`} onClick={onPick} disabled={!data}>
       <canvas ref={ref} width={THUMB_W} height={THUMB_H} />
       <span>{label}</span>
     </button>

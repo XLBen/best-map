@@ -138,15 +138,6 @@ h5 {
   color: var(--muted);
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
-}
 .seg {
   display: inline-flex;
 }
@@ -171,14 +162,6 @@ h5 {
   padding: 5px 4px;
 }
 
-.left {
-  width: 300px;
-  flex: none;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-  overflow-y: auto;
-  padding: 8px 10px 24px;
-}
 .card .how {
   font-size: 11.5px;
   color: var(--muted);
@@ -256,13 +239,6 @@ h5 {
   margin-top: 8px;
   cursor: pointer;
 }
-
-.center {
-  flex: 1;
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-}
 .map {
   position: absolute;
   inset: 0;
@@ -287,16 +263,6 @@ h5 {
   pointer-events: none;
   user-select: none;
   max-width: none;
-}
-
-.right {
-  width: 380px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border-left: 1px solid var(--line);
-  min-height: 0;
 }
 
 .inspector .place {
@@ -466,7 +432,7 @@ table.kv td {
   font-size: 10.5px;
   fill: var(--muted);
 }
-.chart .here {
+.chart .cursor-mark {
   font-size: 10px;
   fill: #ff5;
 }
@@ -611,7 +577,7 @@ ol.history li.undone {
   border-radius: 4px;
   background: #1a2a40;
 }
-.thumb.loading canvas {
+.thumb.pending canvas {
   animation: pulse 1.2s ease-in-out infinite;
 }
 /* 向导里星球形态的卡片：右上角一个小的“编辑…” */
@@ -692,15 +658,6 @@ ol.history li.undone {
   color: #c8ced6;
 }
 
-@media (max-width: 1100px) {
-  .right {
-    width: 320px;
-  }
-  .left {
-    width: 250px;
-  }
-}
-
 /* ---------- 整体：地图铺满全屏，界面浮在上面（Procreate 式） ---------- */
 :root {
   --glass: rgba(22, 25, 31, 0.84);
@@ -708,6 +665,7 @@ ol.history li.undone {
   --glass-line: rgba(255, 255, 255, 0.08);
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
   --radius: 12px;
+  --sheet-w: min(420px, calc(100% - 80px));
 }
 .app {
   position: fixed;
@@ -1083,8 +1041,7 @@ button.label-edit:hover:not(:disabled) {
   padding: 0;
   justify-content: center;
 }
-.bar-btn.warn,
-.warn-pill {
+.bar-btn.warn {
   background: #5a3418;
   border-color: var(--warn);
   color: #ffd29b;
@@ -1423,7 +1380,7 @@ kbd {
   top: 60px;
   right: 10px;
   bottom: 10px;
-  width: min(420px, calc(100% - 80px));
+  width: var(--sheet-w);
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
@@ -1475,10 +1432,10 @@ kbd {
 .cursor-hint.caution {
   border-color: var(--warn);
 }
-/* 右边抽屉开着时，底部条挪到剩下的地方中间 */
+/* 右边抽屉开着时，底部条挪到剩下的地方中间（抽屉宽 --sheet-w，右边留 10px） */
 .app.with-sheet .bottombar {
-  left: calc((100% - 380px) / 2);
-  max-width: calc(100% - 560px);
+  left: calc((100% - var(--sheet-w) - 10px) / 2);
+  max-width: calc(100% - var(--sheet-w) - 34px);
 }
 
 /* ---------- 资源包 ---------- */
