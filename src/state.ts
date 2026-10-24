@@ -59,6 +59,8 @@ export type ToolId =
   | 'island'
   | 'chain'
   | 'relief'
+  // 打碎（第十八轮）
+  | 'fragment'
   | 'reroll'
   | 'restore'
   // 气候：冷暖、干湿、擦掉冷暖干湿的改动、涂自定义场（有自定义场时才出现）
@@ -321,6 +323,11 @@ export interface ToolOptions {
   chainKm: number;
   chainDensity: number;
   chainVariant: number;
+  // 岛链里碎岛的比例（第十八轮，0–1）
+  chainFrag: number;
+  // 打碎（第十八轮）：裂成碎块还是只打碎海岸，力度 0.1–1
+  fragMode: 'blocks' | 'coast';
+  fragAmount: number;
   biome: string | null;
   biomeMode: 'natural' | 'force';
   // 自然融入时周围跟着变的范围（km）
@@ -360,6 +367,9 @@ export const options = signal<ToolOptions>({
   chainKm: 100,
   chainDensity: 1,
   chainVariant: 0,
+  chainFrag: 0,
+  fragMode: 'blocks',
+  fragAmount: 0.5,
   biome: null,
   biomeMode: 'natural',
   reachKm: 400,

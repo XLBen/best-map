@@ -5,11 +5,11 @@ import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, resolve
 import { formDigest } from './planet-form';
 import type { ScriptIssue } from './script';
 import { type Mesh, type SphereMesh, findCell } from './mesh';
-import { type Noise2, clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
+import { type Noise2, clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { nearestCell } from './sphere';
 import { coastValueAt } from './subcell';
 import { CommandError } from './errors';
-import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, islandCode, islandTypeById } from './island-types';
+import { DEFAULT_ISLAND_TYPE, type IslandShape, type IslandType, LAGOON_BIT, SHARDS_ISLAND_TYPE, islandCode, islandTypeById } from './island-types';
 import type { World } from './world';
 
 // 地形“原因”的组合：
@@ -741,12 +741,15 @@ function refKm(world: World): number {
 // 第十三轮：几种岛一样（以前 0.75 格、珊瑚岛 1.5 格）；一格大的环礁在这一格里画出环和潟湖（渲染按岛的种类）
 const ISLAND_MIN_CELLS = 0.4;
 
-// 可调的半径范围（km）：最小一格（见 ISLAND_MIN_CELLS），最大是地图高度的 20%。各种岛一样；一格的岛（小礁）不看大小
-export function islandSizeRangeKm(world: World, _kind?: string): [number, number] {
+// 可调的半径范围（km）：最小一格（见 ISLAND_MIN_CELLS），最大是地图高度的 20%。各种岛一样；一格的岛（小礁）不看大小。
+// 碎岛（第十八轮）最小到 0.15 格（比一格小得多的一小片）
+export function islandSizeRangeKm(world: World, kind?: string): [number, number] {
   const cellKm = world.mesh.spacing * world.kmPerUnit;
   const mapKm = refKm(world);
-  return [cellKm * ISLAND_MIN_CELLS, Math.max(cellKm * 3, mapKm * 0.2)];
+  const frag = kind !== undefined && islandTypeById(world.small, kind)?.shape === 'frag';
+  return [cellKm * (frag ? FRAG_MIN_CELLS : ISLAND_MIN_CELLS), Math.max(cellKm * 3, mapKm * 0.2)];
 }
+const FRAG_MIN_CELLS = 0.15;
 
 // 画笔、岛的大小写给人看（第十三轮：都写直径）：不到半格的半径只涂一格、只放一格陆地，写“一格 ≈ N km”
 export function sizeText(world: World, radiusKm: number): string {
@@ -801,14 +804,16 @@ export interface StampResult {
   heights?: number[];
   // 岛链里没放成的岛（岛心在干的陆地上、湖太窄），见 combineStamps
   skipped?: number;
+  // 碎岛（第十八轮）：这些格的破碎度抬到 value（0–255，只抬不降，与 cells 无关：碎岛不改陆度）
+  frag?: { cells: number[]; value: number[] };
 }
 
 // 数值大小指海岸线的半径：轮廓平均落在这个距离上。岛心半径 R 与海岸线的比例按形状不同
 // （地势在 R 以外再延伸约三分之一才入海；环礁的外缘在 R 以内一点）
-const SHORE: Record<IslandShape, number> = { round: 4 / 3, long: 4 / 3, rugged: 4 / 3, ring: 0.96, cell: 1 };
+const SHORE: Record<IslandShape, number> = { round: 4 / 3, long: 4 / 3, rugged: 4 / 3, ring: 0.96, cell: 1, frag: 1 };
 // 形状的种子（第十四轮：每种形状一个固定的数，不按种类在列表里的位置：去掉、加上一种岛，别的岛形状不变）。
 // 与以前的序号相同：圆 0（原来的火山岛）、不规则 1（大陆岛）、长条 2（低平岛）、环礁 3（珊瑚岛）
-const SHAPE_SEED: Record<IslandShape, number> = { round: 0, rugged: 1, long: 2, ring: 3, cell: 4 };
+const SHAPE_SEED: Record<IslandShape, number> = { round: 0, rugged: 1, long: 2, ring: 3, cell: 4, frag: 5 };
 
 // 小礁那一格的海岸值约 +95 m（250·tanh(100/250)）。四周深海约 −250 m，海岸线落在每条边离格心约 0.28 处，
 // 屏幕和导出都画成约半格宽的小岛（实测约占这一格面积的四分之一）
@@ -959,6 +964,7 @@ export const islandRadiusOf = (t: IslandType, dd: number) => dd / SHORE[t.shape]
 export function islandStamp(world: World, spec: IslandSpec): StampResult {
   const { t, code } = typeOfSpec(world, spec.kind);
   if (t.shape === 'cell') return reefStamp(world, spec, t, code);
+  if (t.shape === 'frag') return fragStamp(world, spec, null);
   const { mesh, causes } = world;
   const ring = t.shape === 'ring';
   const rough = world.small.terrain.coastRoughness;
@@ -1061,6 +1067,238 @@ export function footprintOf(world: World, r: { cells: number[]; landDelta: numbe
   }
   for (const [i, land] of landAfter(world, r.cells, r.landDelta, types)) if (land) out.push(i);
   return out.sort((a, b) => a - b);
+}
+
+// ---------- 碎岛（第十八轮） ----------
+// 放下去不把格变成陆地：只把圈里的海（岛心在湖面上时是这个湖的湖面）的破碎度抬高，画出一片比一格小的碎岛（见 subcell.ts 的 fragCoast）。
+// 圈的半径是大小（至少约 0.75 格，小的碎岛也碰得到岛心附近的几格）；离岛心一半半径以内最碎（255），往外渐渐降到约四成。
+// 只抬不降；不改陆度、抬升、岩石，也不记岛的种类（格还是海：碎岛归海省，一片起一个名字，见 features.ts）
+export function fragStamp(world: World, spec: IslandSpec, view: LakeView | null): StampResult {
+  const { mesh, causes } = world;
+  const out: StampResult = { cells: [], landDelta: [], upliftDelta: [], erodDelta: [], types: [], footprint: [], frag: { cells: [], value: [] } };
+  if (!onMap(world, spec)) return out;
+  const c0 = centerCell(mesh, spec.x, spec.y);
+  const lake = view && view.lake[c0] === 1 && causes.land[c0] ? new Set(lakeOf(world, c0, view)) : null;
+  const ok = (i: number) => (lake ? lake.has(i) : !causes.land[i]);
+  if (!ok(c0)) return out;
+  const reach = Math.max(spec.size / world.kmPerUnit, mesh.spacing * 0.75);
+  const dist = distFrom(world, spec.x, spec.y);
+  const old = causes.fragment;
+  const seen = new Set<number>([c0]);
+  const queue = [c0];
+  const found: number[] = [];
+  for (let h = 0; h < queue.length; h++) {
+    const c = queue[h];
+    if (dist(c) <= reach && ok(c)) found.push(c);
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (seen.has(j)) continue;
+      seen.add(j);
+      if (dist(j) <= reach + mesh.spacing) queue.push(j);
+    }
+  }
+  if (!found.includes(c0)) found.push(c0);
+  found.sort((a, b) => a - b);
+  for (const i of found) {
+    const u = i === c0 ? 0 : Math.min(1, dist(i) / reach);
+    const v = Math.round(255 * (1 - 0.6 * smoothstep(0.5, 1, u)));
+    if (old && old[i] >= v) continue;
+    out.frag!.cells.push(i);
+    out.frag!.value.push(v);
+  }
+  return out;
+}
+
+// 到 (x, y) 的距离（地图单位）：整个星球上是球面距离
+function distFrom(world: World, x: number, y: number): (i: number) => number {
+  const { mesh } = world;
+  if (mesh.kind !== 'sphere') return (i) => Math.hypot(mesh.x[i] - x, mesh.y[i] - y);
+  const c: V3 = toUnit(x, y);
+  return (i) => arc(c, [mesh.p[3 * i], mesh.p[3 * i + 1], mesh.p[3 * i + 2]]) / Math.PI;
+}
+
+// ---------- 打碎（第十八轮） ----------
+// 打碎笔刷（命令 fragment）。两种：
+//   · 裂成碎块（blocks）：圈里的陆地按一张固定的裂缝图裂开——裂缝图是按世界种子、格的位置定的一张“碎玻璃”：
+//     一层抖动过的格点（间距 = 碎块的大小）的 Voronoi，每一块是一个碎块，块与块之间的边是裂缝。离裂缝不到半宽的陆地格
+//     变成海（真的海峡：landness 像画海一样压到海岸噪声怎么调都还是海，河、生态跟着变），块里的陆地不动；
+//     碎块的大小随画笔（半径的 0.55 → 0.25 倍）与力度（越大越碎），至少 2.6 格；裂缝的半宽 0.8–1.4 格（越大越宽），
+//     画笔外圈（七成半径以外）渐渐收窄、断开，碎块连回圈外的陆地。裂开后孤零零的单格陆地也变成海（成了碎岛）。
+//     这一片的破碎度同时抬高：碎块上一点（边上碎一些），裂缝里多一点（水道里有碎岛、两岸支离破碎）；
+//   · 只打碎海岸（coast）：陆海都不动，只抬离海岸一两格以内的破碎度（力度大时两格）：海岸支离破碎，外面撒一圈碎岛。
+//     离岸远的海、内陆不碰。
+// 破碎度只抬不降；力度 0.1–1。结果只取决于世界的种子、格的位置与命令里的参数，重放逐值相同
+export type FragMode = 'blocks' | 'coast';
+export interface FragResult {
+  // landness 的增量（裂开的格）
+  cells: number[];
+  delta: number[];
+  // 将来的破碎度（0–255；只列变了的格）
+  frag: { cells: number[]; value: number[] };
+  // 裂开的格（变成海的陆地格，含孤零零的单格）
+  cracked: number[];
+}
+
+// 画笔的外圈渐变（与画陆地的 0.7 倍半径一致）：中间 1，边上降到 0
+const fragProfile = (t: number) => 1 - smoothstep(0.7, 1, t);
+
+// 碎块的大小（地图单位）：radiusKm 是画笔半径
+export function crackBlockSize(world: World, radiusKm: number, strength: number): number {
+  const s = clamp(strength, 0, 1);
+  return Math.max(2.6 * world.mesh.spacing, (radiusKm / world.kmPerUnit) * (0.55 - 0.3 * s));
+}
+
+// 裂缝图：格 i 离最近的裂缝（抖动格点的 Voronoi 的边）有多远（地图单位），与它在哪一块（最近的格点的哈希）。
+// 平面按 (x, y)；整个星球在单位球面的三维位置上取格点（间距 B·π），所以没有接缝、两极也一样
+export function crackAt(world: World, i: number, B: number, seed: number): { d: number; block: number } {
+  const { mesh } = world;
+  const sphere = mesh.kind === 'sphere';
+  const g = sphere ? B * Math.PI : B;
+  const px = sphere ? mesh.p[3 * i] : mesh.x[i];
+  const py = sphere ? mesh.p[3 * i + 1] : mesh.y[i];
+  const pz = sphere ? mesh.p[3 * i + 2] : 0;
+  const gx = Math.floor(px / g);
+  const gy = Math.floor(py / g);
+  const gz = Math.floor(pz / g);
+  const R = 2;
+  const pts: number[] = [];
+  const ids: number[] = [];
+  for (let dz = sphere ? -R : 0; dz <= (sphere ? R : 0); dz++) {
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const ix = gx + dx;
+        const iy = gy + dy;
+        const iz = gz + dz;
+        const h1 = mixSeed(seed, ix, iy, iz);
+        const h2 = mixSeed(h1, 7);
+        const h3 = mixSeed(h1, 11);
+        pts.push((ix + 0.1 + (0.8 * (h1 & 0xffff)) / 65536) * g, (iy + 0.1 + (0.8 * (h2 & 0xffff)) / 65536) * g, sphere ? (iz + 0.1 + (0.8 * (h3 & 0xffff)) / 65536) * g : 0);
+        ids.push(h1);
+      }
+    }
+  }
+  const m = ids.length;
+  let best = 0;
+  let bd = Infinity;
+  for (let k = 0; k < m; k++) {
+    const d = (pts[3 * k] - px) ** 2 + (pts[3 * k + 1] - py) ** 2 + (pts[3 * k + 2] - pz) ** 2;
+    if (d < bd) {
+      bd = d;
+      best = k;
+    }
+  }
+  // 到 Voronoi 的边的距离：对每个别的格点，到两点的垂直平分线（面）的距离，取最小
+  let edge = Infinity;
+  const ax = pts[3 * best];
+  const ay = pts[3 * best + 1];
+  const az = pts[3 * best + 2];
+  for (let k = 0; k < m; k++) {
+    if (k === best) continue;
+    const ex = pts[3 * k] - ax;
+    const ey = pts[3 * k + 1] - ay;
+    const ez = pts[3 * k + 2] - az;
+    const len = Math.sqrt(ex * ex + ey * ey + ez * ez);
+    const dk = (pts[3 * k] - px) ** 2 + (pts[3 * k + 1] - py) ** 2 + (pts[3 * k + 2] - pz) ** 2;
+    edge = Math.min(edge, (dk - bd) / (2 * len));
+  }
+  // 整个星球：三维的距离换回地图单位
+  return { d: sphere ? edge / Math.PI : edge, block: ids[best] };
+}
+
+// 裂缝的半宽（地图单位）
+export const crackHalfWidth = (world: World, strength: number) => world.mesh.spacing * (0.8 + 0.6 * clamp(strength, 0, 1));
+// 裂缝图的种子（世界的海岸种子）
+export const crackSeed = (world: World) => mixSeed(coastSeed(world), 1818);
+
+export function fragmentStroke(world: World, cells: number[], t: number[], strength: number, mode: FragMode, radiusKm: number): FragResult {
+  const { mesh, causes } = world;
+  const s = clamp(strength, 0, 1);
+  const out: FragResult = { cells: [], delta: [], frag: { cells: [], value: [] }, cracked: [] };
+  const old = causes.fragment;
+  const target = new Map<number, number>();
+  const raise = (i: number, f: number) => {
+    const v = Math.round(255 * clamp(f, 0, 1));
+    if (v > (target.get(i) ?? (old ? old[i] : 0))) target.set(i, v);
+  };
+  if (mode === 'coast') {
+    // 离海岸几步（陆海按 causes.land，湖面算陆地）：0 是挨着对岸的格
+    const rings = s < 0.55 ? 1 : 2;
+    const inBrush = new Map<number, number>();
+    cells.forEach((i, k) => inBrush.set(i, t[k]));
+    const step = new Map<number, number>();
+    let front: number[] = [];
+    for (const i of cells) {
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        if (causes.land[mesh.adj[e]] !== causes.land[i]) {
+          step.set(i, 0);
+          front.push(i);
+          break;
+        }
+      }
+    }
+    for (let r = 1; r <= rings && front.length; r++) {
+      const next: number[] = [];
+      for (const c of front) {
+        for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+          const j = mesh.adj[e];
+          if (step.has(j) || !inBrush.has(j)) continue;
+          step.set(j, r);
+          next.push(j);
+        }
+      }
+      front = next;
+    }
+    const fs = 0.3 + 0.6 * s;
+    for (const [i, r] of step) raise(i, fs * (1 - r / (rings + 1)) * fragProfile(inBrush.get(i)!) * (causes.land[i] ? 0.8 : 1));
+  } else {
+    const B = crackBlockSize(world, radiusKm, s);
+    const W = crackHalfWidth(world, s);
+    const seed = crackSeed(world);
+    const crack = new Set<number>();
+    const tOf = new Map<number, number>();
+    cells.forEach((i, k) => {
+      tOf.set(i, t[k]);
+      const prof = t[k] <= 0.7 ? 1 : clamp((1 - t[k]) / 0.3, 0, 1);
+      const c = crackAt(world, i, B, seed);
+      const near = c.d < W * prof;
+      if (near && causes.land[i]) crack.add(i);
+      // 破碎度：裂缝里、碎块的边上多一点，块里少一点
+      const edge = c.d < W + mesh.spacing;
+      raise(i, (near ? 0.3 + 0.35 * s : edge ? 0.25 + 0.35 * s : 0.12 + 0.3 * s) * fragProfile(t[k]));
+    });
+    // 裂开之后孤零零的单格陆地（四周都是海或裂缝）也变成海：成了碎岛
+    for (const i of cells) {
+      if (!causes.land[i] || crack.has(i)) continue;
+      let alone = true;
+      for (let e = mesh.off[i]; e < mesh.off[i + 1] && alone; e++) {
+        const j = mesh.adj[e];
+        if (causes.land[j] && !crack.has(j)) alone = false;
+      }
+      if (alone) crack.add(i);
+    }
+    const m = COAST_AMP * Math.max(world.small.terrain.coastRoughness, 0.2) + 60;
+    for (const i of [...crack].sort((a, b) => a - b)) {
+      // 像画海一样：landness 压到 −m（海岸噪声怎么调都还是海）
+      const d = Math.min(0, -m - causes.landness[i]);
+      out.cracked.push(i);
+      if (d !== 0) {
+        out.cells.push(i);
+        out.delta.push(d);
+      }
+      raise(i, (0.45 + 0.4 * s) * fragProfile(tOf.get(i)!));
+    }
+  }
+  for (const [i, v] of [...target].sort((a, b) => a[0] - b[0])) {
+    out.frag.cells.push(i);
+    out.frag.value.push(v);
+  }
+  return out;
+}
+
+// 恢复原样（第十八轮）：破碎度按画笔权重退回（中间全收回，边上渐变），剩下不到 4（约 1.5%）的零头归零
+export function restoredFragment(v: number, t: number): number {
+  const r = Math.round(v * restoreKeep(t));
+  return r < 4 ? 0 : r;
 }
 
 // ---------- 湖里的岛（第十五轮） ----------
@@ -1194,6 +1432,7 @@ export function lakeIslandStamp(world: World, spec: IslandSpec, view: LakeView):
   const { mesh } = world;
   const c0 = centerCell(mesh, spec.x, spec.y);
   if (view.lake[c0] !== 1 || !world.causes.land[c0]) return EMPTY_STAMP;
+  if (t.shape === 'frag') return fragStamp(world, spec, view);
   const lake = lakeOf(world, c0, view);
   const inLake = new Set(lake);
   // 不挨湖岸、地图边的湖面格才能抬（岛四周留一圈湖面）
@@ -1252,8 +1491,20 @@ export const chainSchema = z.object({
   // 0.5 稀疏，1 正常，2 密集
   density: z.number().min(0.2).max(3).default(1),
   variant: z.number().int().min(0).default(0),
+  // 碎岛的比例（第十八轮，0–1）：按链上的编号把这么多的岛换成碎岛（见 chainKind），不用随机；种类本身是碎岛时全是碎岛
+  fragRatio: z.number().min(0).max(1).optional(),
 });
 export type ChainSpec = z.output<typeof chainSchema>;
+
+// 链上第 k 个岛是不是碎岛：比例 r 的岛均匀地换（r = 0.5 时每隔一个，r = 1 全换）
+export const chainFragAt = (k: number, r: number) => r > 0 && Math.floor((k + 1) * r + 1e-9) > Math.floor(k * r + 1e-9);
+
+// 链上第 k 个岛的种类：种类本身是碎岛（形状“碎”）时总是它；否则按比例换成内置的碎岛
+function chainKind(world: World, spec: ChainSpec, k: number): string {
+  const r = spec.fragRatio ?? 0;
+  if (!r || islandTypeById(world.small, spec.kind)?.shape === 'frag') return spec.kind;
+  return chainFragAt(k, r) ? SHARDS_ISLAND_TYPE : spec.kind;
+}
 
 // 岛链里小一号的岛最小多大（km）：与放岛的最小值相同，一格（太小时岛心那一格成陆）
 function chainMinKm(world: World): number {
@@ -1478,7 +1729,7 @@ function chainIslandsFlat(world: World, spec: ChainSpec, scale: number): IslandS
     const off = slots[k].u * baseR * slots[k].spread;
     // 岛的形状与位置无关，岛链里每个岛要用不同的 variant（也避开单独放岛用的那些）
     const variant = 1_000_000 + spec.variant * 1000 + k;
-    out.push({ x: x0 + (x1 - x0) * t + nx * off, y: y0 + (y1 - y0) * t + ny * off, kind: spec.kind, size: slots[k].size, variant });
+    out.push({ x: x0 + (x1 - x0) * t + nx * off, y: y0 + (y1 - y0) * t + ny * off, kind: chainKind(world, spec, k), size: slots[k].size, variant });
   }
   return out;
 }
@@ -1525,7 +1776,7 @@ function chainIslandsSphere(world: World, spec: ChainSpec, scale: number): Islan
     const q: V3 = [at[0] + nx * off, at[1] + ny * off, at[2] + nz * off];
     const ql = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
     const [x, y] = fromUnit([q[0] / ql, q[1] / ql, q[2] / ql]);
-    out.push({ x, y, kind: spec.kind, size: slots[k].size, variant: 1_000_000 + spec.variant * 1000 + k });
+    out.push({ x, y, kind: chainKind(world, spec, k), size: slots[k].size, variant: 1_000_000 + spec.variant * 1000 + k });
   }
   return out;
 }
@@ -1539,6 +1790,8 @@ export function combineStamps(world: World, specs: IslandSpec[], lakes?: LakeSou
   const { causes, mesh } = world;
   const saved = new Map<number, [number, number, number]>();
   const acc = new Map<number, { land: number; lift: number; erod: number; type: number; h: number }>();
+  // 碎岛的破碎度：后放的与先放的取大的
+  const fragAcc = new Map<number, number>();
   let fixed = false;
   let skipped = 0;
   // 这条命令里的湖面（湖里放了岛的格不再是湖面），第一次用到时才复制
@@ -1553,12 +1806,13 @@ export function combineStamps(world: World, specs: IslandSpec[], lakes?: LakeSou
           view = v && { lake: Uint8Array.from(v.lake), water: v.water };
         }
         r = view && view.lake[c] === 1 && onMap(world, spec) ? lakeIslandStamp(world, spec, view) : EMPTY_STAMP;
-        if (!r.cells.length) {
+        if (!r.cells.length && !r.frag?.cells.length) {
           skipped++;
           continue;
         }
         for (const i of r.cells) (view!.lake as Uint8Array)[i] = 0;
       } else r = islandStamp(world, spec);
+      if (r.frag) r.frag.cells.forEach((i, k) => fragAcc.set(i, Math.max(fragAcc.get(i) ?? 0, r.frag!.value[k])));
       r.cells.forEach((i, k) => {
         if (!saved.has(i)) saved.set(i, [causes.landness[i], causes.erod[i], causes.islandType[i]]);
         causes.landness[i] += r.landDelta[k];
@@ -1596,6 +1850,10 @@ export function combineStamps(world: World, specs: IslandSpec[], lakes?: LakeSou
   }
   out.footprint = footprintOf(world, out);
   if (skipped) out.skipped = skipped;
+  if (fragAcc.size) {
+    const list = [...fragAcc].sort((a, b) => a[0] - b[0]);
+    out.frag = { cells: list.map((e) => e[0]), value: list.map((e) => e[1]) };
+  }
   return out;
 }
 

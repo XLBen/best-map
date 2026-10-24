@@ -14,6 +14,7 @@ import {
   centerCell,
   chainIslands,
   combineStamps,
+  fragmentStroke,
   islandSizeRangeKm,
   sizeText,
   islandStamp,
@@ -22,6 +23,7 @@ import {
   previewLand,
   reliefStroke,
   restoreStroke,
+  restoredFragment,
   roundKm as km,
   type TerrainPreview,
 } from '../../core/terrain';
@@ -524,6 +526,26 @@ function brushTool(cfg: BrushConfig): ToolHandler {
 
 // ---------- 地形 ----------
 
+// 画陆地 / 海之后这些格将来的破碎度（第十八轮，幽灵海岸用；与 paint_land 同一个规则）：画笔中心七成半径以内、陆海变了的格清零。
+// 没打碎过（或这些格都不碎）时为 undefined
+function fragCleared(w: World, cells: number[], t: number[], changed: number[]): GhostEdit['frag'] {
+  const f = w.causes.fragment;
+  if (!f) return undefined;
+  const out: number[] = [];
+  cells.forEach((i, k) => {
+    if (t[k] <= 0.7 && f[i]) out.push(i);
+  });
+  for (const i of changed) if (f[i]) out.push(i);
+  return out.length ? { cells: out, value: out.map(() => 0) } : undefined;
+}
+
+// 画陆地 / 海的幽灵海岸（含将来的破碎度）
+function landGhost(w: World, cells: number[], t: number[], mode: 'land' | 'sea'): { ghost: GhostEdit; gained: number[]; lost: number[] } {
+  const r = landStroke(w, cells, t, mode);
+  const p = previewLand(w, r.cells, r.delta);
+  return { ghost: { cells: r.cells, delta: r.delta, frag: fragCleared(w, cells, t, [...p.gained, ...p.lost]) }, gained: p.gained, lost: p.lost };
+}
+
 export function landTool(): ToolHandler {
   const modeOf = (shift: boolean) => {
     const m = options.value.landMode;
@@ -536,19 +558,15 @@ export function landTool(): ToolHandler {
     layers(w, s, shift) {
       const mode = modeOf(shift);
       if (memo?.w === w && memo.s === s && memo.v === s.rev && memo.mode === mode) return memo.out;
-      const r = landStroke(w, s.cells, s.ts, mode);
-      const p = previewLand(w, r.cells, r.delta);
-      const out = { layers: [], ghost: { cells: r.cells, delta: r.delta }, hint: mode === 'land' ? `陆地 +${p.gained.length} 格` : `陆地 −${p.lost.length} 格` };
+      const g = landGhost(w, s.cells, s.ts, mode);
+      const out = { layers: [], ghost: g.ghost, hint: mode === 'land' ? `陆地 +${g.gained.length} 格` : `陆地 −${g.lost.length} 格` };
       memo = { w, s, v: s.rev, mode, out };
       return out;
     },
     // 排队时按新的世界重算：画陆地还是画海按松手时的（与发出的命令相同；之后在底部条上换了也不跟着变）
     ghostAt(s, shift) {
       const mode = modeOf(shift);
-      return (w) => {
-        const r = landStroke(w, s.cells, s.ts, mode);
-        return { cells: r.cells, delta: r.delta };
-      };
+      return (w) => landGhost(w, s.cells, s.ts, mode).ghost;
     },
     commit: (_w, s, shift) => exec({ op: 'paint_land', cells: s.cells, t: s.ts, mode: modeOf(shift) }),
     // 0.7 倍半径以内一定变（细实线）；海岸平均落在 0.85 倍处（主圈），再往外只是零星几格
@@ -598,10 +616,9 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
     const key = `${worldId(w)}|${ringId}|${pts.length}|${mode}`;
     if (cache?.key === key) return cache;
     const r = lassoStroke(w, pts);
-    const st = landStroke(w, r.cells, r.t, mode);
-    const p = previewLand(w, st.cells, st.delta);
+    const g = landGhost(w, r.cells, r.t, mode);
     // 幽灵海岸跟着缓存走：同一个圈不必重算，松手后排队时照样用它
-    cache = { key, cells: r.cells, t: r.t, gained: p.gained, lost: p.lost, ghost: { cells: st.cells, delta: st.delta } };
+    cache = { key, cells: r.cells, t: r.t, gained: g.gained, lost: g.lost, ghost: g.ghost };
     return cache;
   };
   return {
@@ -642,10 +659,7 @@ function lassoTool(modeOf: (shift: boolean) => 'land' | 'sea'): ToolHandler {
       ring = null;
       const shapes: Shape[] = [{ kind: 'line', points: [...pts, pts[0]], color: 'rgba(255, 255, 255, 0.6)', width: 1.5 }];
       const at: Preview = { layers: [], shapes, hint: null, ghost: c.ghost };
-      const ghostAt = (now: World): GhostEdit => {
-        const st = landStroke(now, c.cells, c.t, mode);
-        return { cells: st.cells, delta: st.delta };
-      };
+      const ghostAt = (now: World): GhostEdit => landGhost(now, c.cells, c.t, mode).ghost;
       await trackEdit(at, exec({ op: 'paint_land', cells: c.cells, t: c.t, mode }), ghostFollows(at, w, ghostAt));
     },
     cancel() {
@@ -700,7 +714,7 @@ function oneLayer(layer: HighlightLayer | null): Backdrop | null {
 // 只涂得到改过的格（淡淡的白色）；地图上直接画出恢复后的海岸线
 export function restoreTool(): ToolHandler {
   // 擦的时候连看不出的零头一起擦掉（标出来的只是看得出的改动）
-  const edited = (w: World, i: number) => w.causes.landDelta[i] !== 0 || w.causes.upliftDelta[i] !== 0 || w.causes.erodDelta[i] !== 0;
+  const edited = (w: World, i: number) => w.causes.landDelta[i] !== 0 || w.causes.upliftDelta[i] !== 0 || w.causes.erodDelta[i] !== 0 || (w.causes.fragment?.[i] ?? 0) !== 0;
   let memo: { w: World; s: Stroke; v: number; out: ReturnType<BrushConfig['layers']> } | null = null;
   let back: { layer: HighlightLayer | null; shapes: Shape[]; out: Backdrop } | null = null;
   return brushTool({
@@ -717,9 +731,29 @@ export function restoreTool(): ToolHandler {
       if (memo?.w === w && memo.s === s && memo.v === s.rev) return memo.out;
       const r = restoreStroke(w, s.cells, s.ts);
       const p = previewLand(w, r.cells, r.delta);
+      // 破碎度按画笔权重退回（与 restore_terrain 相同）；中间那一圈、陆海变了的格清零
+      const f = w.causes.fragment;
+      const fc: number[] = [];
+      const fv: number[] = [];
+      if (f) {
+        const ts = s.ts;
+        s.cells.forEach((i, k) => {
+          const v = ts[k] <= 0.7 ? 0 : restoredFragment(f[i], ts[k]);
+          if (v !== f[i]) {
+            fc.push(i);
+            fv.push(v);
+          }
+        });
+        for (const i of [...p.gained, ...p.lost]) {
+          if (f[i]) {
+            fc.push(i);
+            fv.push(0);
+          }
+        }
+      }
       const out = {
         layers: [{ cells: s.cells, values: s.weights(), color: WHITE, alpha: 0.25 }],
-        ghost: { cells: r.cells, delta: r.delta },
+        ghost: { cells: r.cells, delta: r.delta, frag: fc.length ? { cells: fc, value: fv } : undefined },
         hint: !s.t.size ? '这里没改过' : p.gained.length || p.lost.length ? `陆地 +${p.gained.length} / −${p.lost.length} 格` : `恢复 ${s.t.size} 格`,
       };
       memo = { w, s, v: s.rev, out };
@@ -789,6 +823,35 @@ export function reliefTool(): ToolHandler {
   });
 }
 
+// 打碎（第十八轮）：按住涂。裂成碎块：圈里的陆地按固定的裂缝图裂开（裂开的格涂成蓝色）；只打碎海岸：只把海岸一两格以内打碎。
+// 涂到的格淡淡地标出（越碎越浓），手停一下就是松手后的样子（确切预览：碎岛、裂缝、新的海岸线都画出来）
+export function fragmentTool(): ToolHandler {
+  const cmdOf = (s: Stroke): Command => {
+    const o = options.value;
+    return { op: 'fragment', cells: s.cells, t: s.ts, strength: o.fragAmount, mode: o.fragMode, size: o.brushKm };
+  };
+  let memo: { w: World; s: Stroke; v: number; o: ToolOptions; out: ReturnType<BrushConfig['layers']> } | null = null;
+  return brushTool({
+    hint: () => ({ text: null }),
+    layers(w, s) {
+      const o = options.value;
+      if (memo?.w === w && memo.s === s && memo.v === s.rev && memo.o === o) return memo.out;
+      const r = fragmentStroke(w, s.cells, s.ts, o.fragAmount, o.fragMode, o.brushKm);
+      const layers: HighlightLayer[] = [{ cells: r.frag.cells, values: r.frag.value.map((v) => v / 255), color: [240, 220, 160], alpha: 0.45 }];
+      if (r.cracked.length) layers.push({ cells: r.cracked, color: [70, 130, 210], alpha: 0.7 });
+      const hint = o.fragMode === 'coast' ? (r.frag.cells.length ? `打碎海岸 ${r.frag.cells.length} 格` : '这里没有海岸') : r.cracked.length ? `裂开 ${r.cracked.length} 格陆地` : r.frag.cells.length ? `打碎 ${r.frag.cells.length} 格` : '这里已经这么碎了';
+      const out = { layers, hint };
+      memo = { w, s, v: s.rev, o, out };
+      return out;
+    },
+    exact: (_w, s) => (s.t.size ? cmdOf(s) : null),
+    exactHint: (_w, _s, _shift, r) => r.summary,
+    commit: (_w, s) => exec(cmdOf(s), '正在打碎…'),
+    // 0.7 倍半径以内裂得最开（细实线），往外到半径处渐渐收住
+    rings: [0.7, 1],
+  });
+}
+
 // 世界的编号：用来判断预览缓存是否过期
 const worldIds = new WeakMap<World, number>();
 let nextWorldId = 1;
@@ -836,14 +899,29 @@ export function islandTool(): ToolHandler {
     const diameter = km(w.mesh.spacing * w.kmPerUnit);
     let block: string | null = null;
     const shape: Shape[] = drag?.km ? [{ kind: 'line', points: [[drag.x, drag.y], [pointer.x, pointer.y]], color: 'rgba(255,255,255,0.85)', width: 1.5, dashed: true }] : [];
-    const label = reef ? `${name} · 一格（约 ${diameter} km）` : `${name} · ${sizeText(w, spec.size)}`;
+    // 碎岛（第十八轮）：一片比一格小的碎岛，格还是海（大小至少约 0.75 格的半径，碰得到岛心附近几格）
+    const shards = islandTypeById(w.small, spec.kind)?.shape === 'frag';
+    const label = reef ? `${name} · 一格（约 ${diameter} km）` : shards ? `${name} · ${km(Math.max(spec.size, w.mesh.spacing * w.kmPerUnit * 0.75) * 2)} km` : `${name} · ${sizeText(w, spec.size)}`;
     // 岛心那一格（与命令同一个算法）
     const c0 = centerCell(w.mesh, spec.x, spec.y);
     if (w.causes.land[c0] && w.derived.lake[c0] === 1) {
       // 湖面上：岛只占这个湖里不挨岸的湖面格（与命令同一个规则），确切的样子等 Worker（见 preview）
       const st = lakeIslandStamp(w, spec, w.derived);
+      // 碎岛：不占湖面格，只抬破碎度（地图上直接画出将来的碎岛）
+      const took = shards ? (st.frag?.cells ?? []) : st.cells;
       if (spec.kind === 'atoll' && w.derived.tMean[c0] < 20) block = `湖水太凉（${Math.round(w.derived.tMean[c0])} °C），珊瑚岛要 20 °C 以上`;
-      else if (!st.cells.length) block = '湖太窄了，放不下岛（岛四周要留一圈湖面）';
+      else if (!took.length) block = shards ? '这里已经这么碎了' : '湖太窄了，放不下岛（岛四周要留一圈湖面）';
+      if (shards) {
+        const preview: Preview = {
+          layers: block ? [{ cells: [c0], color: [230, 90, 70], alpha: 0.75 }] : [],
+          shapes: shape,
+          hint: block ?? `湖里的${label}`,
+          warn: !!block,
+          ghost: block ? null : { cells: [], delta: [], frag: st.frag },
+        };
+        cache = { key, preview, spec, block };
+        return cache;
+      }
       const preview: Preview = {
         layers: block ? [{ cells: st.cells.length ? st.cells : [c0], color: [230, 90, 70], alpha: 0.75 }] : [{ cells: st.cells, color: WHITE, pattern: 'outline' }],
         shapes: shape,
@@ -857,6 +935,20 @@ export function islandTool(): ToolHandler {
       block = `海水太凉（${Math.round(w.derived.tMean[center.cell])} °C），珊瑚岛要 20 °C 以上`;
     }
     const stamp = islandStamp(w, spec);
+    if (shards) {
+      // 碎岛：岛心在干的陆地上放不了；放得下时地图上直接画出将来的碎岛
+      if (w.causes.land[c0]) block = '碎岛要放在海里或湖里';
+      else if (!stamp.frag?.cells.length) block = '这里已经这么碎了';
+      const preview: Preview = {
+        layers: block ? [{ cells: [c0], color: [230, 90, 70], alpha: 0.75 }] : [],
+        shapes: shape,
+        hint: block ?? label,
+        warn: !!block,
+        ghost: block ? null : { cells: [], delta: [], frag: stamp.frag },
+      };
+      cache = { key, preview, spec, block };
+      return cache;
+    }
     const fresh = stamp.footprint.filter((c) => !w.causes.land[c]);
     if (!block && !fresh.length) block = '这里已经是陆地';
     // 放得下：地图上直接画出岛将来的海岸线（小礁也是，画出来约半格大）；放不下：轮廓涂红
@@ -927,8 +1019,9 @@ export function islandTool(): ToolHandler {
       }
       const shown: Preview = { layers: c.preview.layers, shapes: [], hint: null, ghost: c.preview.ghost };
       const ghostAt = (now: World): GhostEdit => {
-        const st = islandStamp(now, spec);
-        return { cells: st.cells, delta: st.landDelta };
+        const c1 = centerCell(now.mesh, spec.x, spec.y);
+        const st = now.causes.land[c1] && now.derived.lake[c1] === 1 ? lakeIslandStamp(now, spec, now.derived) : islandStamp(now, spec);
+        return { cells: st.cells, delta: st.landDelta, frag: st.frag };
       };
       try {
         await trackEdit(shown, exec(cmdOf(spec), '正在造岛…'), ghostFollows(shown, w, ghostAt));
@@ -989,7 +1082,9 @@ export function chainTool(): ToolHandler {
     // 岛链用自己的种类和大小（小一号的岛最小一格，太小时岛心那一格成陆）
     const kind = liveIslandKind(w, o.chainKind);
     const size = w ? Math.max(islandSizeRangeKm(w, kind)[0], o.chainKm) : o.chainKm;
-    return { points: use, kind, size, density: o.chainDensity, variant: o.chainVariant };
+    // 碎岛的比例（第十八轮）：0 时不写（与以前的命令相同）；种类本身是碎岛时用不上
+    const ratio = w && islandTypeById(w.small, kind)?.shape !== 'frag' ? Math.round(o.chainFrag * 20) / 20 : 0;
+    return { points: use, kind, size, density: o.chainDensity, variant: o.chainVariant, ...(ratio > 0 ? { fragRatio: ratio } : {}) };
   };
   // 一条岛链的预览（按世界与参数缓存）：与命令同一个规则（太小的岛岛心那一格成陆），预览就是结果
   const previewOf = (w: World, spec: ChainSpec): Preview => {
@@ -999,15 +1094,17 @@ export function chainTool(): ToolHandler {
       const stamp = combineStamps(w, islands, lakesOf(w));
       // 湖里的岛占的格（定了高度的格）
       const lake = stamp.heights ? stamp.cells.filter((_, k) => !Number.isNaN(stamp.heights![k])) : [];
+      const shards = islands.filter((x) => islandTypeById(w.small, x.kind)?.shape === 'frag').length;
+      const placed = islands.length - (stamp.skipped ?? 0);
       cache = {
         key,
         lake: lake.length > 0,
         preview: {
           layers: lake.length ? [{ cells: lake, color: WHITE, pattern: 'outline' }] : [],
           shapes: [{ kind: 'line', points: spec.points, dashed: true, color: 'rgba(255,255,255,0.8)' }],
-          hint: `${islands.length - (stamp.skipped ?? 0)} 个${islandTypeName(w, spec.kind)}`,
-          // 地图上直接画出岛链将来的海岸线
-          ghost: { cells: stamp.cells, delta: stamp.landDelta },
+          hint: shards && shards < islands.length ? `${placed} 个岛（其中 ${shards} 片碎岛）` : shards ? `${placed} 片${islandTypeName(w, islands[0].kind)}` : `${placed} 个${islandTypeName(w, spec.kind)}`,
+          // 地图上直接画出岛链将来的海岸线（与碎岛）
+          ghost: { cells: stamp.cells, delta: stamp.landDelta, frag: stamp.frag },
         },
       };
     }
@@ -1076,7 +1173,7 @@ export function chainTool(): ToolHandler {
       const at: Preview = { ...pv, hint: null };
       const ghostAt = (now: World): GhostEdit => {
         const st = combineStamps(now, chainIslands(now, chain, lakesOf(now)), lakesOf(now));
-        return { cells: st.cells, delta: st.landDelta };
+        return { cells: st.cells, delta: st.landDelta, frag: st.frag };
       };
       // 下一条岛链自动换一种排列
       setOptions({ chainVariant: chain.variant + 1 });

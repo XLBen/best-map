@@ -47,9 +47,11 @@ function fromFlags(has: Uint8Array): EditMask {
   return { cells, has };
 }
 
+// 打碎过（第十八轮）：破碎度至少这么多（0–255）才算改过
+const FRAG_EPS = 8;
 const terrainEdited = (w: World, i: number) => {
   const c = w.causes;
-  return Math.abs(c.landDelta[i]) >= TERRAIN_EPS.land || Math.abs(c.upliftDelta[i]) >= TERRAIN_EPS.uplift || Math.abs(c.erodDelta[i]) >= TERRAIN_EPS.erod;
+  return Math.abs(c.landDelta[i]) >= TERRAIN_EPS.land || Math.abs(c.upliftDelta[i]) >= TERRAIN_EPS.uplift || Math.abs(c.erodDelta[i]) >= TERRAIN_EPS.erod || (c.fragment?.[i] ?? 0) >= FRAG_EPS;
 };
 
 export const terrainMask = memo(
@@ -58,7 +60,7 @@ export const terrainMask = memo(
     for (let i = 0; i < w.mesh.n; i++) if (terrainEdited(w, i)) has[i] = 1;
     return fromFlags(has);
   },
-  (w) => [w.causes.landDelta, w.causes.upliftDelta, w.causes.erodDelta],
+  (w) => [w.causes.landDelta, w.causes.upliftDelta, w.causes.erodDelta, w.causes.fragment],
 );
 
 export const climateMask = memo(
@@ -182,6 +184,7 @@ export function terrainHere(w: World, cells: number[]): string {
   let landUp = false;
   let landDown = false;
   let erod = false;
+  let frag = false;
   // 抬升改了多少对应的高度变化：高度大致与（0.035 + 抬升）成正比，按这一格现在的高度估计
   let up = 0;
   let down = 0;
@@ -192,6 +195,7 @@ export function terrainHere(w: World, cells: number[]): string {
     if (c.landDelta[i] >= TERRAIN_EPS.land) landUp = true;
     if (c.landDelta[i] <= -TERRAIN_EPS.land) landDown = true;
     if (Math.abs(c.erodDelta[i]) >= TERRAIN_EPS.erod) erod = true;
+    if ((c.fragment?.[i] ?? 0) >= FRAG_EPS) frag = true;
     const d = c.upliftDelta[i];
     if (Math.abs(d) < TERRAIN_EPS.uplift) continue;
     const e = Math.max(0, w.derived.elevation[i]);
@@ -210,6 +214,7 @@ export function terrainHere(w: World, cells: number[]): string {
   if (upSeen) parts.push(`堆过山${meters(up) ? `（${meters(up)}）` : ''}`);
   if (downSeen) parts.push(`压低过${meters(down) ? `（${meters(down)}）` : ''}`);
   if (erod) parts.push('改过岩石软硬');
+  if (frag) parts.push('打碎过');
   return parts.length ? `这里：${parts.join('、')}` : '这里没改过';
 }
 

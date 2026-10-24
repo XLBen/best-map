@@ -380,7 +380,7 @@ export const FRAG_D_MIN = 20;
 export const FRAG_AMP = 200;
 export const FRAG_G = 3;
 // 碎岛噪声的频率（每格几个噪声单位）与偏移（与海岸细节的噪声错开）
-export const FRAG_FREQ = 2.7;
+export const FRAG_FREQ = 1.3;
 export const FRAG_OFF: readonly [number, number, number] = [31.7, -13.9, 7.3];
 
 // sv：插值的海岸值；det：海岸细节（weight · 幅度 · coastDetail）；fv：插值的破碎度（> 0）；weight：海岸细节的权重；n：fragNoise

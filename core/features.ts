@@ -417,7 +417,7 @@ function memoHas(mesh: Mesh, name: string, inputs: ArrayBufferView[]): boolean {
 // 之后的 detectFeatures 直接用上。已经记下、或者缓存关着时什么都不做。返回是否算了
 export function prepareFeatures(world: World): boolean {
   if (!featureMemo.on) return false;
-  const key = [world.causes.land, Float64Array.of(world.kmPerUnit)];
+  const key = [world.causes.land, Float64Array.of(world.kmPerUnit), world.causes.fragment ?? NO_FRAGMENT];
   if (memoHas(world.mesh, 'terrain', key)) return false;
   memoized(world.mesh, 'terrain', key, () => terrainInputs(world));
   return true;
@@ -455,7 +455,15 @@ function mapAreaOf(world: World): number {
   return mesh.kind === 'sphere' ? mesh.totalArea * kmPerUnit * kmPerUnit : mesh.width * mesh.height * kmPerUnit * kmPerUnit;
 }
 
-// 陆块、群岛、半岛、海峡、海湾、海与洋：只取决于陆海。dLand：陆地格离海岸的步数（盆地也用）
+// 没打碎过的世界：缓存的键里破碎度这一项（第十八轮）
+const NO_FRAGMENT = new Uint8Array(0);
+
+// 碎岛（第十八轮）：破碎度至少这么多（0–255，约 0.25：深海里也冒得出碎岛，见 subcell.ts 的 fragCoast）的海格算“有碎岛的格”；
+// 连成一片、至少 ISLET_MIN_CELLS 格的算一个列岛 / 群岛（挨着别的岛、碎岛三步海路以内的并在一起）
+export const ISLET_FRAG = 64;
+const ISLET_MIN_CELLS = 3;
+
+// 陆块、群岛、半岛、海峡、海湾、海与洋：只取决于陆海（与碎岛：破碎度）。dLand：陆地格离海岸的步数（盆地也用）
 function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
   const { mesh, kmPerUnit } = world;
   const n = mesh.n;
@@ -486,9 +494,25 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
     }
   });
 
-  // 群岛：相距不超过 3 步海路的岛连成一组，4 个以上为群岛
+  // 群岛：相距不超过 3 步海路的岛连成一组，4 个以上为群岛。
+  // 碎岛（第十八轮）：有碎岛的海格连成的每一片也当一个“岛”（编号接在陆块后面）参加分组；组里的碎岛格够 ISLET_MIN_CELLS 格
+  // 也算群岛（一片碎岛自己就起一个名字，挨着的岛、碎岛并在一起）。没有碎岛时与以前逐值相同
   {
-    const parent = masses.map((_, k) => k);
+    const frag = world.causes.fragment;
+    let isles: number[][] = [];
+    if (frag) {
+      const mask = new Uint8Array(n);
+      let any = false;
+      for (let i = 0; i < n; i++) {
+        if (!land[i] && frag[i] >= ISLET_FRAG) {
+          mask[i] = 1;
+          any = true;
+        }
+      }
+      if (any) isles = components(mesh, mask);
+    }
+    const M = masses.length;
+    const parent = [...masses.map((_, k) => k), ...isles.map((_, k) => M + k)];
     const find = (k: number): number => (parent[k] === k ? k : (parent[k] = find(parent[k])));
     const sea = new Uint8Array(n);
     for (let i = 0; i < n; i++) sea[i] = land[i] ? 0 : 1;
@@ -497,7 +521,17 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
     const q: number[] = [];
     const isIsland = new Uint8Array(masses.length);
     for (const k of islandIdx) isIsland[k] = 1;
+    const isleOf = new Int32Array(isles.length ? n : 0).fill(-1);
+    isles.forEach((cells, k) => {
+      for (const c of cells) isleOf[c] = M + k;
+    });
     for (let i = 0; i < n; i++) {
+      if (isles.length && isleOf[i] >= 0) {
+        owner[i] = isleOf[i];
+        dist[i] = 0;
+        q.push(i);
+        continue;
+      }
       if (!land[i] || !isIsland[massOf[i]]) continue;
       owner[i] = massOf[i];
       dist[i] = 0;
@@ -525,11 +559,25 @@ function terrainInputs(world: World): { list: AddInput[]; dLand: Int32Array } {
       g.push(k);
       groups.set(r, g);
     }
-    for (const g of groups.values()) {
-      if (g.length < 4) continue;
-      const cells = g.flatMap((k) => masses[k]);
-      const biggest = g.reduce((a, b) => (masses[a].length >= masses[b].length ? a : b));
-      put(list, 'archipelago', cells, 7 + Math.log10(areaOf(world, cells)), [], stableAnchor(masses[biggest]));
+    // 碎岛的片：并进它们所在的组（没有岛的组也建一个）
+    const isleGroups = new Map<number, number[]>();
+    isles.forEach((_, k) => {
+      const r = find(M + k);
+      const g = isleGroups.get(r) ?? [];
+      g.push(k);
+      isleGroups.set(r, g);
+      if (!groups.has(r)) groups.set(r, []);
+    });
+    for (const [r, g] of groups) {
+      const ig = isleGroups.get(r) ?? [];
+      const isleCells = ig.reduce((a, k) => a + isles[k].length, 0);
+      if (g.length < 4 && isleCells < ISLET_MIN_CELLS) continue;
+      const cells = [...g.flatMap((k) => masses[k]), ...ig.flatMap((k) => isles[k])];
+      // 名字记在最大的岛上（没有岛时在最大的一片碎岛上）：碎岛并进来，原来的群岛不改名
+      const anchor = g.length
+        ? stableAnchor(masses[g.reduce((a, b) => (masses[a].length >= masses[b].length ? a : b))])
+        : stableAnchor(isles[ig.reduce((a, b) => (isles[a].length >= isles[b].length ? a : b))]);
+      put(list, 'archipelago', cells, 7 + Math.log10(areaOf(world, cells)), [], anchor);
     }
   }
 
@@ -1290,7 +1338,7 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
 
   // 各段按它实际读的数组缓存（数值放进 Float64Array）；段的先后就是地物的先后
   const km = Float64Array.of(kmPerUnit);
-  const coast = memoized(mesh, 'terrain', [causes.land, km], () => terrainInputs(world));
+  const coast = memoized(mesh, 'terrain', [causes.land, km, causes.fragment ?? NO_FRAGMENT], () => terrainInputs(world));
   replay(coast.list);
   replay(memoized(mesh, 'lake', [d.lake, terrain, km], () => lakeInputs(world, d, terrain)));
   replay(memoized(mesh, 'lake-island', [causes.land, d.lake, km], () => lakeIslandInputs(world, d)));

@@ -36,6 +36,7 @@ import {
   chainIslands,
   chainSchema,
   combineStamps,
+  fragmentStroke,
   islandSchema,
   type LakeView,
   type StampResult,
@@ -45,6 +46,7 @@ import {
   reliefStroke,
   resolveTerrain,
   restoreKeep,
+  restoredFragment,
   restoredLandDelta,
   roundKm,
   sizeText,
@@ -118,6 +120,8 @@ const baseCommands = [
   z.object({ op: z.literal('paint_relief'), cells, t: strokeT, strength: z.number().min(-2).max(2) }),
   // 恢复原样：画到的地方，陆地、山、岩性的改动按画笔权重退回生成时的样子
   z.object({ op: z.literal('restore_terrain'), cells, t: strokeT }),
+  // 打碎（第十八轮，见 terrain.ts 的 fragmentStroke）：力度 0.1–1；blocks 裂成碎块，coast 只打碎海岸；size 是画笔半径（km，碎块的大小随它）
+  z.object({ op: z.literal('fragment'), cells, t: strokeT, strength: z.number().min(0.1).max(1), mode: z.enum(['blocks', 'coast']), size: z.number().positive() }),
   // 擦掉冷暖干湿的改动（同上）
   z.object({ op: z.literal('restore_climate'), cells, t: strokeT }),
   z.object({ op: z.literal('add_island'), island: islandSchema }),
@@ -293,7 +297,7 @@ export const Dirty = {
 } as const;
 export type Dirty = (typeof Dirty)[keyof typeof Dirty];
 
-type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | `field:${string}`;
+type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | 'fragment' | `field:${string}`;
 
 function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Int32Array | undefined {
   if (key.startsWith('field:')) return world.causes.fields[key.slice(6)];
@@ -308,6 +312,8 @@ export interface UndoRecord {
   small: string;
   // 这一步第一次有了湖里的岛定下的高度（causes.islandHeight）：撤销时去掉整个数组
   dropHeights?: true;
+  // 这一步第一次有了破碎度（causes.fragment，第十八轮）：撤销时去掉整个数组
+  dropFragment?: true;
 }
 
 function formatIssues(err: z.ZodError): string {
@@ -328,7 +334,8 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'add_island':
     case 'add_island_chain':
     case 'restore_terrain':
-      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight'];
+    case 'fragment':
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment'];
     case 'set_coast_style':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province'];
     case 'set_island_type':
@@ -383,6 +390,7 @@ export function applyCommand(
   const smallBefore = JSON.stringify(world.small);
   const fieldsBefore = { ...world.causes.fields };
   const heightsBefore = world.causes.islandHeight;
+  const fragmentBefore = world.causes.fragment;
   const idsBefore = new Set(Object.keys(world.small.provinces));
   let result: { dirty: Dirty; summary: string };
   try {
@@ -401,10 +409,12 @@ export function applyCommand(
     world.small = JSON.parse(smallBefore);
     world.causes.fields = fieldsBefore;
     if (!heightsBefore) delete world.causes.islandHeight;
+    if (!fragmentBefore) delete world.causes.fragment;
     throw e;
   }
   const undo: UndoRecord = { arrays: [], fields: [], small: smallBefore };
   if (!heightsBefore && world.causes.islandHeight) undo.dropHeights = true;
+  if (!fragmentBefore && world.causes.fragment) undo.dropFragment = true;
   keys.forEach((k, idx) => {
     const now = getArray(world, k)!;
     const old = before[idx];
@@ -414,7 +424,7 @@ export function applyCommand(
   });
   const names = new Set([...Object.keys(fieldsBefore), ...Object.keys(world.causes.fields)]);
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
-  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || JSON.stringify(world.small) !== smallBefore;
+  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || !!undo.dropFragment || JSON.stringify(world.small) !== smallBefore;
   const provinceNames: Record<string, string> = {};
   for (const [id, p] of Object.entries(world.small.provinces)) if (!idsBefore.has(id)) provinceNames[id] = p.name;
   return { ...result, undo, changed, provinceNames: Object.keys(provinceNames).length ? provinceNames : null };
@@ -446,6 +456,7 @@ export function revert(world: World, undo: UndoRecord) {
     for (let k = 0; k < a.idx.length; k++) arr[a.idx[k]] = a.old[k];
   }
   if (undo.dropHeights) delete world.causes.islandHeight;
+  if (undo.dropFragment) delete world.causes.fragment;
   world.small = JSON.parse(undo.small) as SmallState;
   // 陆海、抬升等组合值由增量与生成参数算出，撤销后重新组合
   resolveTerrain(world);
@@ -472,9 +483,12 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
   const before = causes.land.slice();
   const classBefore = opts.classBefore ?? provinceLand(world);
   const fixed = causes.islandHeight;
+  const frag = causes.fragment;
   if (opts.clear) {
     for (const i of opts.clear) causes.islandType[i] = 0;
     if (fixed) for (const i of opts.clear) fixed[i] = FREE_HEIGHT;
+    // 破碎度（第十八轮）：画成了整块的陆地、整片的海
+    if (frag) for (const i of opts.clear) frag[i] = 0;
   }
   resolveTerrain(world);
   let gained = 0;
@@ -485,6 +499,7 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
     else lost++;
     if (opts.clear && !(causes.islandType[i] & LAGOON_BIT)) causes.islandType[i] = 0;
     if (opts.clear && fixed) fixed[i] = FREE_HEIGHT;
+    if (opts.clear && frag) frag[i] = 0;
   }
   const after = provinceLand(world);
   let moved = false;
@@ -504,6 +519,11 @@ function putStamp(world: World, r: StampResult) {
     causes.erodDelta[i] += r.erodDelta[k];
     if (r.types[k]) causes.islandType[i] = r.types[k];
   });
+  // 碎岛的破碎度（第十八轮）：只抬不降，第一次用到时才建数组
+  if (r.frag?.cells.length) {
+    const f = (causes.fragment ??= new Uint8Array(world.mesh.n));
+    r.frag.cells.forEach((i, k) => (f[i] = Math.max(f[i], r.frag!.value[k])));
+  }
   if (!r.heights) return;
   const fixed = (causes.islandHeight ??= new Float32Array(world.mesh.n).fill(FREE_HEIGHT));
   r.cells.forEach((i, k) => {
@@ -666,6 +686,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.erodDelta.fill(0);
         causes.islandType.fill(0);
         causes.islandHeight?.fill(FREE_HEIGHT);
+        causes.fragment?.fill(0);
         causes.province.fill(-1);
         small.provinces = {};
         small.constraints = [];
@@ -702,6 +723,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (cmd.t.length !== cmd.cells.length) throw new CommandError('t 的长度必须与 cells 相同');
       const r = landStroke(world, cmd.cells, cmd.t, cmd.mode);
       r.cells.forEach((i, k) => (causes.landDelta[i] += r.delta[k]));
+      // 画到的地方成了整块的陆地、整片的海：破碎度在 applyTerrain 里随岛的种类一起清掉
       // 画笔中心（七成半径以内，一定变成陆地、海的那一圈）画到的岛成了普通的陆地、海
       const ch = applyTerrain(world, { clear: brushCore(cmd.cells, cmd.t) });
       return { dirty: Dirty.Elevation, summary: cmd.mode === 'land' ? `画陆地：新增 ${ch.gained} 格陆地` : `画海：${ch.lost} 格陆地变成海` };
@@ -724,10 +746,26 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.landDelta[i] = restoredLandDelta(causes.landDelta[i], cmd.t[k]);
         causes.upliftDelta[i] = snap(causes.upliftDelta[i] * keep, 1e-3);
         causes.erodDelta[i] = snap(causes.erodDelta[i] * keep, 1e-3);
+        if (causes.fragment) causes.fragment[i] = restoredFragment(causes.fragment[i], cmd.t[k]);
       });
       // 完全恢复的地方（画笔中心七成半径以内）不再是放的岛
       const ch = applyTerrain(world, { clear: brushCore(cmd.cells, cmd.t) });
       return { dirty: Dirty.Elevation, summary: ch.gained || ch.lost ? `恢复原样（陆地 +${ch.gained} / −${ch.lost} 格）` : '恢复原样' };
+    }
+    case 'fragment': {
+      checkCells(cmd.cells);
+      if (cmd.t.length !== cmd.cells.length) throw new CommandError('t 的长度必须与 cells 相同');
+      const r = fragmentStroke(world, cmd.cells, cmd.t, cmd.strength, cmd.mode, cmd.size);
+      if (r.frag.cells.length) {
+        const f = (causes.fragment ??= new Uint8Array(n));
+        r.frag.cells.forEach((i, k) => (f[i] = r.frag.value[k]));
+      }
+      if (!r.cells.length) {
+        return { dirty: Dirty.Vegetation, summary: cmd.mode === 'coast' ? `打碎海岸：${r.frag.cells.length} 格` : `打碎：${r.frag.cells.length} 格` };
+      }
+      r.cells.forEach((i, k) => (causes.landDelta[i] += r.delta[k]));
+      const ch = applyTerrain(world);
+      return { dirty: Dirty.Elevation, summary: `裂成碎块：${ch.lost} 格陆地裂开成海` };
     }
     case 'restore_climate': {
       checkCells(cmd.cells);
@@ -749,6 +787,17 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const c0 = centerCell(world.mesh, spec.x, spec.y);
       if (causes.land[c0] && ctx.inBatch) throw new CommandError('批量命令里的岛只能放在海里（湖里的岛要单独放）');
       const { stamp: r, lake } = placeIsland(world, spec, () => ctx.ensureDerived());
+      const shards = islandTypeById(small, spec.kind)?.shape === 'frag';
+      if (shards) {
+        // 碎岛（第十八轮）：不改陆海，只抬破碎度
+        if (!r.frag?.cells.length) {
+          const c = centerCell(world.mesh, spec.x, spec.y);
+          throw new CommandError(causes.land[c] && !lake ? '碎岛要放在海里或湖里' : '这里已经是这么碎的碎岛了');
+        }
+        putStamp(world, r);
+        const fragKm = Math.max(spec.size, world.mesh.spacing * world.kmPerUnit * 0.75);
+        return { dirty: Dirty.Vegetation, summary: `${lake ? '在湖里' : ''}放了一片${islandTypeName(world, spec.kind)}（直径约 ${roundKm(fragKm * 2)} km）` };
+      }
       if (lake && !r.cells.length) throw new CommandError('湖太窄了，放不下岛（岛四周要留一圈湖面）');
       if (!r.footprint.length) throw new CommandError('这里放不下岛（可能已经是陆地）');
       const classBefore = provinceLand(world);
@@ -771,8 +820,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       const r = combineStamps(world, islands, lakes);
       const classBefore = provinceLand(world);
       putStamp(world, r);
-      applyTerrain(world, { classBefore });
-      return { dirty: Dirty.Elevation, summary: `画了一条岛链：${islands.length - (r.skipped ?? 0)} 个${islandTypeName(world, spec.kind)}` };
+      // 全是碎岛（第十八轮）：陆海不变，只重认地物
+      const fragOnly = !r.cells.length;
+      if (!fragOnly) applyTerrain(world, { classBefore });
+      const placed = islands.length - (r.skipped ?? 0);
+      const shards = islands.filter((x) => islandTypeById(small, x.kind)?.shape === 'frag').length;
+      const what = shards && shards < islands.length ? `${placed} 个岛（其中 ${shards} 片碎岛）` : `${placed} 个${islandTypeName(world, spec.kind)}`;
+      return { dirty: fragOnly ? Dirty.Vegetation : Dirty.Elevation, summary: `画了一条岛链：${shards === islands.length && islandTypeById(small, spec.kind)?.shape !== 'frag' ? `${placed} 片碎岛` : what}` };
     }
     case 'reroll_region': {
       const gen = small.terrain.gen;

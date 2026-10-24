@@ -6,6 +6,7 @@ import {
   Droplet,
   Droplets,
   Eraser,
+  Hammer,
   LassoSelect,
   Leaf,
   Map as MapIcon,
@@ -30,7 +31,7 @@ import {
 } from 'lucide-preact';
 import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import { islandTypeById, liveIslandKind } from '../../../core/island-types';
-import { ChainTypePick, IslandTypePick, TerrainExtras } from '../panels/islandTypes';
+import { ChainFragSlider, ChainTypePick, IslandTypePick, TerrainExtras } from '../panels/islandTypes';
 import type { World } from '../../../core/world';
 import {
   type Category,
@@ -62,6 +63,7 @@ import {
   eraseTool,
   fieldTool,
   fmtFlow,
+  fragmentTool,
   growTool,
   islandTool,
   lakeTool,
@@ -120,14 +122,20 @@ const BRUSH: SliderDef = {
 
 const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
 
-// 各种岛的最小值相同（一格）；一格的岛（小礁）不用调大小
+// 岛的大小写成直径：碎岛（第十八轮）可以比一格小，直接写多少 km；别的岛不到半格写“一格 ≈ N km”
+const islandSizeText = (w: World, kind: string, v: number) => {
+  const r = Math.max(islandSizeRangeKm(w, kind)[0], v);
+  return islandTypeById(w.small, liveIslandKind(w, kind))?.shape === 'frag' ? `${fmtKm(r * 2)} km` : sizeText(w, r);
+};
+
+// 各种岛的最小值相同（一格，碎岛更小）；一格的岛（小礁）不用调大小
 const ISLAND: SliderDef = {
   key: 'islandKm',
   label: '直径',
   range: (w) => islandSizeRangeKm(w, options.value.islandKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v, w) => sizeText(w, Math.max(islandSizeRangeKm(w, options.value.islandKind)[0], v)),
+  format: (v, w) => islandSizeText(w, options.value.islandKind, v),
   enabled: (w) => islandTypeById(w.small, liveIslandKind(w, options.value.islandKind))?.shape !== 'cell',
 };
 
@@ -138,7 +146,7 @@ const CHAIN_SIZE: SliderDef = {
   range: (w) => islandSizeRangeKm(w, options.value.chainKind),
   scale: 'log',
   snap: snapRadiusKm,
-  format: (v, w) => sizeText(w, Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], v)),
+  format: (v, w) => islandSizeText(w, options.value.chainKind, v),
 };
 
 const LAKE: SliderDef = {
@@ -282,8 +290,8 @@ const defs: ToolDef[] = [
       // 用岛链自己的大小（第十二轮修正：以前误用了放岛的大小）
       format: (v, w) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], options.value.chainKm)) / v)} km`,
     },
-    // 每画一条岛链自动换一种排列（只用鼠标，没有“换个排列”按钮）
-    bar: () => [{ kind: 'custom', render: ChainTypePick }],
+    // 每画一条岛链自动换一种排列（只用鼠标，没有“换个排列”按钮）。碎岛的比例（第十八轮）在种类旁边
+    bar: () => [{ kind: 'custom', render: ChainTypePick }, { kind: 'custom', render: ChainFragSlider }],
     create: () => chainTool(),
   },
   {
@@ -306,6 +314,28 @@ const defs: ToolDef[] = [
       },
     ],
     create: () => reliefTool(),
+  },
+  {
+    // 第十八轮：打碎
+    id: 'fragment',
+    category: 'terrain',
+    icon: Hammer,
+    name: '打碎',
+    short: '打碎',
+    how: '按住涂：把完整的地形打碎。裂成碎块：陆地裂开成一块块，中间是海峡；只打碎海岸：海岸支离破碎，外面一圈碎岛。停一下先看结果',
+    size: BRUSH,
+    amount: { key: 'fragAmount', label: '力度', range: () => [0.1, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => percent(v, 1) },
+    bar: () => [
+      {
+        kind: 'choice',
+        key: 'fragMode',
+        options: [
+          { value: 'blocks', label: '裂成碎块', hint: '陆地裂开成一块块，块与块之间是海峡；力度越大块越小、海峡越宽' },
+          { value: 'coast', label: '只打碎海岸', hint: '内陆不动，海岸一两格以内支离破碎，外面撒一圈碎岛' },
+        ],
+      },
+    ],
+    create: () => fragmentTool(),
   },
   {
     id: 'reroll',
@@ -580,7 +610,7 @@ export const TOOL_DEFS = Object.fromEntries(defs.map((d) => [d.id, d])) as Recor
 // ---------- 类别 ----------
 
 export const CATEGORIES: CategoryDef[] = [
-  { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'reroll', 'restore'], extras: TerrainExtras },
+  { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'fragment', 'reroll', 'restore'], extras: TerrainExtras },
   { id: 'climate', icon: ThermometerSun, label: '气候', tools: ['temp', 'moist', 'unclimate', 'field'] },
   { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'erase', 'range'], extras: NatureExtras },
   { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'], extras: RiverExtras },

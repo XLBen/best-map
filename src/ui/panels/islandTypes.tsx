@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { ChevronDown, Plus, Trash2 } from 'lucide-preact';
 import { Fragment } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   BUILTIN_ISLAND_TYPES,
   ISLAND_HEIGHTS,
@@ -60,7 +60,37 @@ export const IslandTypePick = () => <TypePick which="island" />;
 // 画岛链工具条上的“岛：X ▾”（岛链有自己的选择，放岛时选了小礁不影响岛链）
 export const ChainTypePick = () => <TypePick which="chain" />;
 
-// 弹出的列表：内置的四种、自己的几种，最后一项“新建…”（新建一种、用上它，并打开它的设置）
+// 画岛链工具条上的“碎岛 0–100%”（第十八轮）：按链上的编号把这么多的岛换成碎岛（不随机），100% 全是碎岛。
+// 拖的时候正在画的岛链跟着变；种类本身是碎岛时用不上（全是碎岛），不显示
+export function ChainFragSlider() {
+  const w = world.value;
+  const start = useRef<number | null>(null);
+  if (!w || islandTypeById(w.small, liveIslandKind(w, options.value.chainKind))?.shape === 'frag') return null;
+  const v = options.value.chainFrag;
+  const snap = (p: number) => Math.round(Math.max(0, Math.min(1, p)) * 20) / 20;
+  return (
+    <DragSlider
+      label="碎岛"
+      pos={v}
+      text={`${Math.round(v * 100)}%`}
+      title="岛链里有多少换成碎岛（比一格还小、只是画出来的岛，归海省）：按顺序均匀地换，100% 全是碎岛"
+      onDraft={(p) => {
+        start.current ??= v;
+        setOptions({ chainFrag: snap(p) });
+      }}
+      onCommit={(p) => {
+        start.current = null;
+        setOptions({ chainFrag: snap(p) });
+      }}
+      onCancel={() => {
+        if (start.current !== null) setOptions({ chainFrag: start.current });
+        start.current = null;
+      }}
+    />
+  );
+}
+
+// 弹出的列表：内置的五种、自己的几种，最后一项“新建…”（新建一种、用上它，并打开它的设置）
 export function IslandTypeMenu({ which }: { which: Which }) {
   const w = world.value;
   if (!w) return null;
@@ -158,13 +188,17 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
       .map((p) => p.slice(0, 40));
     edit(t.id, (x) => ({ ...x, names: list.length ? list.map((p) => ({ p })) : undefined }));
   };
-  const flatOnly = t.shape === 'ring' || t.shape === 'cell';
+  const flatOnly = t.shape === 'ring' || t.shape === 'cell' || t.shape === 'frag';
+  // 碎岛（第十八轮）：格还是海，只是画出来（颜色按附近的地），总是归海省；岩石、高低用不上
+  const shards = t.shape === 'frag';
   const cc = colorChoice(t);
   return (
     <div class="river-type-editor">
       <div class="row">
         <input class="grow" value={name} maxLength={12} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
       </div>
+      {shards && <p class="muted small">碎岛的格还是海：颜色按附近的地，归海省，一片碎岛起一个列岛 / 群岛的名字。</p>}
+      {!shards && (
       <div class="row wrap">
         <span class="hs-label">颜色</span>
         <Seg<ColorChoice>
@@ -180,6 +214,8 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
         />
         {cc === 'own' && <input type="color" value={t.color} title="岛上的地的颜色" onChange={(e) => edit(t.id, (x) => ({ ...x, color: (e.target as HTMLInputElement).value }))} />}
       </div>
+      )}
+      {!shards && (
       <div class="row wrap">
         <span class="hs-label">省份</span>
         <Seg<'land' | 'sea'>
@@ -192,6 +228,7 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
           onChange={(v) => edit(t.id, (x) => ({ ...x, province: v }))}
         />
       </div>
+      )}
       <h5>以后放的岛</h5>
       <p class="muted small">形状、高低、岩石只用在以后放的岛上；颜色、省份、起名马上用到已经放的岛上。</p>
       <div class="row wrap">
@@ -214,13 +251,15 @@ function IslandTypeEditor({ t }: { t: IslandType }) {
           />
         </div>
       )}
+      {!shards && (
       <div class="row wrap">
         <label class="check">
           <input type="checkbox" checked={t.rock === undefined} onChange={() => edit(t.id, (x) => ({ ...x, rock: x.rock === undefined ? 1 : undefined }))} />
           岩石和周围一样
         </label>
       </div>
-      {t.rock !== undefined && (
+      )}
+      {!shards && t.rock !== undefined && (
         <div class="row">
           <DragSlider
             label="岩石"

@@ -31,6 +31,8 @@ const isLagoon = (w: Engine['world'], i: number) => !w.causes.land[i] && (w.caus
 describe('几种岛的岩性', () => {
   it('新长出的陆地按种类写可蚀性（低平岛软、珊瑚岛与小礁是珊瑚砂、大陆岛不变），并记下种类', () => {
     BUILTIN_ISLAND_TYPES.forEach((t, k) => {
+      // 碎岛（第十八轮）不长出陆地（见 shards.test.ts）
+      if (t.shape === 'frag') return;
       for (const cells of [0.4, 1, 4]) {
         const { w, fresh } = place(t.id, cells);
         expect(fresh.length, `${t.id} ${cells}`).toBeGreaterThan(0);
@@ -144,16 +146,20 @@ describe('几种岛的岩性', () => {
     expect(lithLayer(eng.world).every((v) => v === 0)).toBe(true);
   });
 
-  it('最小的岛一格，各种岛一样', () => {
+  it('最小的岛一格，各种岛一样（碎岛更小：0.15 格）', () => {
     const w = ocean().world;
     const lo = islandSizeRangeKm(w, 'continental')[0];
-    for (const t of BUILTIN_ISLAND_TYPES) expect(islandSizeRangeKm(w, t.id)[0]).toBe(lo);
+    for (const t of BUILTIN_ISLAND_TYPES) {
+      if (t.shape === 'frag') expect(islandSizeRangeKm(w, t.id)[0]).toBeCloseTo((lo * 0.15) / 0.4, 9);
+      else expect(islandSizeRangeKm(w, t.id)[0]).toBe(lo);
+    }
   });
 });
 
 describe('去掉了火山岛（第十四轮）', () => {
   it('没有火山岛这一种，放火山岛的命令报错；高程里不再有 volcanoes', () => {
-    expect(BUILTIN_ISLAND_TYPES.map((t) => t.id)).toEqual(['continental', 'low', 'atoll', 'reef']);
+    // 第十八轮在最后加了碎岛
+    expect(BUILTIN_ISLAND_TYPES.map((t) => t.id)).toEqual(['continental', 'low', 'atoll', 'reef', 'shards']);
     expect('volcanoes' in elevation).toBe(false);
     const eng = ocean();
     expect(() => eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: 100, variant: 0 } })).toThrow(/火山岛已经去掉了/);

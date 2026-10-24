@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { typeIdSchema } from './type-id';
 import { FREE_HEIGHT, type SmallState, type World } from './world';
 
-// 岛的种类（第十四轮）：放岛、画岛链时选一种。内置四种（大陆岛、低平岛、珊瑚岛、小礁），用户可以新建自己的，
+// 岛的种类（第十四轮）：放岛、画岛链时选一种。内置五种（大陆岛、低平岛、珊瑚岛、小礁，第十八轮加了碎岛），用户可以新建自己的，
 // 两者用同一套说法：形状、颜色、岩石软硬、高低、归陆地省还是海省、起名的模板。
 //   · 形状、高低、岩石只在放岛的那一刻起作用（改了以后只影响以后放的岛）；
 //   · 颜色、归哪种省、起名按每格记下的种类（causes.islandType）随时查，改了马上用到已经放的岛上。
@@ -12,7 +12,7 @@ import { FREE_HEIGHT, type SmallState, type World } from './world';
 export const LAGOON_BIT = 0x80;
 export const ISLAND_CODE_MASK = 0x7f;
 
-export const ISLAND_SHAPES = ['round', 'long', 'rugged', 'ring', 'cell'] as const;
+export const ISLAND_SHAPES = ['round', 'long', 'rugged', 'ring', 'cell', 'frag'] as const;
 export type IslandShape = (typeof ISLAND_SHAPES)[number];
 export const ISLAND_SHAPE_INFO: Record<IslandShape, { name: string; hint: string }> = {
   round: { name: '圆', hint: '接近圆形' },
@@ -20,6 +20,7 @@ export const ISLAND_SHAPE_INFO: Record<IslandShape, { name: string; hint: string
   rugged: { name: '不规则', hint: '有湾有岬，形状不规则' },
   ring: { name: '环礁', hint: '一圈陆地，中间是浅浅的潟湖' },
   cell: { name: '一格', hint: '只占一格，画出来约半格大，不看大小' },
+  frag: { name: '碎', hint: '一片比一格还小的碎岛：格还是海，只是画出来，归海省' },
 };
 
 // 高低：平（低矮平坦）、起伏（有丘陵）、高（中间隆起成山）。环礁、一格的岛总是平的
@@ -44,7 +45,7 @@ export const ISLAND_ROCK_RANGE: readonly [number, number] = [0.3, 5];
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
 
-const BUILTIN_IDS = ['continental', 'low', 'atoll', 'reef'] as const;
+const BUILTIN_IDS = ['continental', 'low', 'atoll', 'reef', 'shards'] as const;
 export type BuiltinIslandId = (typeof BUILTIN_IDS)[number];
 
 export const islandTypeSchema = z.object({
@@ -68,13 +69,17 @@ export const islandTypeSchema = z.object({
 export type IslandType = z.output<typeof islandTypeSchema>;
 export type IslandTypeInput = z.input<typeof islandTypeSchema>;
 
-// 内置的四种（与自己的用同一套说法）。编号 = 下标 + 1，不能改顺序
+// 内置的五种（与自己的用同一套说法）。编号 = 下标 + 1，不能改顺序（第十八轮在最后加了碎岛：自己的岛的编号往后挪了一个，存档按命令重放，不受影响）
 export const BUILTIN_ISLAND_TYPES: readonly (IslandType & { id: BuiltinIslandId; hint: string })[] = [
   { id: 'continental', name: '大陆岛', hint: '形状不规则，有丘陵', shape: 'rugged', height: 'hilly', province: 'land' },
   { id: 'low', name: '低平岛', hint: '平坦低矮，多沙洲和沼泽', shape: 'long', height: 'flat', color: 'marsh', rock: 3.2, province: 'land' },
   { id: 'atoll', name: '珊瑚岛', hint: '环形的白沙岛，中间是青绿色的浅潟湖', shape: 'ring', height: 'flat', color: 'coral', rock: 4.8, province: 'land' },
   { id: 'reef', name: '小礁', hint: '只占一格的白沙小岛，四周一圈浪花，算进旁边的海省', shape: 'cell', height: 'flat', color: 'coral', rock: 4.3, province: 'sea' },
+  // 第十八轮：一片比一格还小的碎岛（格还是海，只是画出来；归海省，一片碎岛起一个列岛 / 群岛的名字）
+  { id: 'shards', name: '碎岛', hint: '一片比一格还小的碎岛，格还是海，归海省，一片起一个名字', shape: 'frag', height: 'flat', province: 'sea' },
 ];
+// 岛链里的碎岛（chainSchema 的 fragRatio）用的种类
+export const SHARDS_ISLAND_TYPE: BuiltinIslandId = 'shards';
 export const BUILTIN_COUNT = BUILTIN_ISLAND_TYPES.length;
 export const DEFAULT_ISLAND_TYPE: BuiltinIslandId = 'continental';
 export const MAX_ISLAND_TYPES = 64;
