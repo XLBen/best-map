@@ -55,6 +55,16 @@ describe('用户自己的地名总是标出来', () => {
     expect(shown(features, '小湖')).toEqual(['小湖', '大森林']);
     expect(shown(features)).toEqual(['大森林']);
   });
+
+  it('第二十轮：地名显示中文 / 原文 / 两者（没有原文的照旧写中文）；换了就重新排', () => {
+    const features = [feature('卡尔维尔斯堡', 'forest', 1e6, 0.5, { importance: 9, orig: 'Karvilsburg' }), feature('青云岛', 'island', 1e6, 0.2, { importance: 8 })];
+    const text = (mode?: 'zh' | 'orig' | 'both') =>
+      placeLabels(ctx, cam, { ...state(features), nameMode: mode }, [0], 1000).placed.map((l) => l.chars.join(''));
+    expect(text()).toEqual(['卡尔维尔斯堡', '青云岛']);
+    expect(text('orig')).toEqual(['Karvilsburg', '青云岛']);
+    expect(text('both')).toEqual(['卡尔维尔斯堡 Karvilsburg', '青云岛']);
+    expect(text('zh')).toEqual(['卡尔维尔斯堡', '青云岛']);
+  });
 });
 
 // 测试里没有画布：Path2D 只记下画了哪些点

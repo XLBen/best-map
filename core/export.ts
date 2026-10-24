@@ -350,13 +350,15 @@ function copyCellRgb(out: Uint8Array, cellRgb: Uint8Array, cellOf: Int32Array) {
   }
 }
 
-// 地名表：重要的在前；CSV 字段里的逗号与引号按 RFC 4180 转义
+// 地名表：重要的在前；CSV 字段里的逗号与引号按 RFC 4180 转义。
+// 有名字带原文（第二十轮，音译式等地名风格）时在 name 后面多一列 orig；都没有时与以前一字不差
 export function featuresCsv(world: World, width: number, height: number): string {
   const { mesh } = world;
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = ['type,type_name,name,custom,area_km2,x_px,y_px,lat,lon,key'];
-  const lonSpan = (mesh.width * world.kmPerUnit) / 111.2;
   const features = world.derived.features.filter((f) => !f.hidden).sort((a, b) => b.importance - a.importance);
+  const withOrig = features.some((f) => f.orig);
+  const rows = [withOrig ? 'type,type_name,name,orig,custom,area_km2,x_px,y_px,lat,lon,key' : 'type,type_name,name,custom,area_km2,x_px,y_px,lat,lon,key'];
+  const lonSpan = (mesh.width * world.kmPerUnit) / 111.2;
   for (const f of features) {
     const lat = worldLatitude(world, f.y);
     // 整个星球：真实的经度；一块地区按赤道尺度把 x 换成相对地图中心的经度
@@ -366,6 +368,7 @@ export function featuresCsv(world: World, width: number, height: number): string
         f.type,
         esc(featureLabel(world, f)),
         esc(f.name),
+        ...(withOrig ? [esc(f.orig ?? '')] : []),
         f.custom ? 1 : 0,
         Math.round(f.areaKm2),
         Math.round((f.x / mesh.width) * width),

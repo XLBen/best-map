@@ -4,7 +4,7 @@ import { LABEL_REF_WIDTH, type LabelSize, exportFrame, planTiles, tileMargin, ti
 import { type Frame, type OverlayPaths, type OverlayState, type ProvinceLabel, drawOverlay, releaseRiverTile, riverLayerScene, riverLayerTile } from '../../render/overlay';
 import { type Proj, planeBounds } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
-import { exportProgress, imageExportCancel, labelGroups, mapStyle, overlays, season, showToast, world } from '../../state';
+import { exportProgress, imageExportCancel, labelGroups, mapStyle, nameMode, overlays, season, showToast, world } from '../../state';
 
 // 导出图片：当前画面（snapshotCanvas）与整张地图（exportFullMap）。都是干净的画面：只有地图本身，
 // 不带高亮、闪烁、工具的图形和预览、鼠标旁的话
@@ -28,6 +28,7 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     provinceLabels,
     features: overlays.value.labels ? w.derived.features : null,
     labelTypes: types,
+    nameMode: nameMode.value,
     kmPerUnit: w.kmPerUnit,
     hoverLabel: null,
     scaleBar: overlays.value.scale,

@@ -18,6 +18,7 @@ import {
   focusSpecies,
   hoverRiver,
   labelGroups,
+  nameMode,
   mapStyle,
   measure,
   mode,
@@ -426,6 +427,7 @@ export function MapView() {
         provinceLabels: cm.provinces && !clean ? labelsFor(w, preview.provinces) : layerProvinceLabels(),
         features: overlays.value.labels || (cm.labels && !clean) ? labelsShown(shown.derived.features, def.focus && !clean ? def.focus.hideLabel(w) : '') : null,
         labelTypes: types,
+        nameMode: nameMode.value,
         kmPerUnit: w.kmPerUnit,
         hoverLabel: cm.labels && !clean ? (view.hoverLabel ?? cm.labels()) : null,
         scaleBar: overlays.value.scale,
@@ -622,6 +624,7 @@ export function MapView() {
       void flash.value;
       void hoverRiver.value;
       void labelGroups.value;
+      void nameMode.value;
       void adjustPreview.value;
       void sliderActive.value;
       void openPanel.value;

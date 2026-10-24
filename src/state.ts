@@ -8,6 +8,7 @@ import type { ExportOptions } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { type PackedMesh, storedMeshKey, unpackMesh } from '../core/mesh-pack';
+import { DEFAULT_NAME_MODE, type NameMode } from '../core/name-display';
 import { previewWorldOf } from '../core/preview-world';
 import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from '../core/script';
 import { isRiverCell } from '../core/select';
@@ -182,6 +183,8 @@ export const selectedLake = signal<LakeRef | null>(null);
 // provinces、seaProvinces（第十三轮修）：省名、海域的省名，默认不显示；打开后屏幕上一直标着、导出的图里也有
 export type LabelGroup = 'land' | 'water' | 'relief' | 'nature' | 'provinces' | 'seaProvinces';
 export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 'relief', 'nature']));
+// 地名显示中文、原文还是两者（第二十轮，见 core/name-display.ts）：屏幕与导出的图片都按它
+export const nameMode = signal<NameMode>(DEFAULT_NAME_MODE);
 
 // 编辑后的变化：一句话汇总（带撤销、“换一个”）与几秒钟的高亮
 // action：提示条上的另一个按钮（比如新建了特有生态后的“编辑”）

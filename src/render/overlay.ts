@@ -1,5 +1,6 @@
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
 import { circle as geoCircle, wrapX } from '../../core/geo';
+import { type NameMode, nameText } from '../../core/name-display';
 import type { RiverStyle, RiverType } from '../../core/river-types';
 import { MAP_UNDER_SHORE, type PackedRivers, type RiverDraw, drawTypes, drawTypesKey, riverDraw, unpackRivers } from '../../core/river-pack';
 import { type RiverLine, guideShape, guidesSignature, traceRivers } from '../../core/rivers';
@@ -497,6 +498,8 @@ export interface OverlayState {
   // 地名标注；labelTypes 为 null 时显示全部类型
   features: GeoFeature[] | null;
   labelTypes: Set<FeatureType> | null;
+  // 地名显示中文、原文还是两者（第二十轮；省略为中文）
+  nameMode?: NameMode;
   kmPerUnit: number;
   // 鼠标悬停或选中的地名（高亮）
   hoverLabel: string | null;
@@ -1352,7 +1355,7 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
 // 版面的键里除了镜头位置的部分（移动中沿用排好的版面时比它）：投影的朝向变了（转动球）要重排
 function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera): string {
   const p = cam.proj;
-  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}${p ? `|${p.kind}|${p.lon0}|${p.lat0}` : ''}`;
+  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}|${st.nameMode ?? 'zh'}${p ? `|${p.kind}|${p.lon0}|${p.lat0}` : ''}`;
 }
 
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
@@ -1405,7 +1408,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     const fontPx = Math.round(Math.min(f.type === 'continent' || f.type === 'ocean' ? 30 : 20, base + grow));
     const font = `${style.italic ? 'italic ' : ''}${f.type === 'continent' || f.type === 'ocean' ? 600 : 500} ${fontPx}px system-ui, "PingFang SC", sans-serif`;
     ctx.font = font;
-    const text = f.type === 'peak' ? `▲ ${f.name}` : f.type === 'spot' ? `• ${f.name}` : f.name;
+    const label = nameText(f.name, f.orig, st.nameMode);
+    const text = f.type === 'peak' ? `▲ ${label}` : f.type === 'spot' ? `• ${label}` : label;
     const chars = [...text];
     const wide = f.type === 'range' || f.type === 'continent' || f.type === 'ocean' || f.type === 'region';
     const spacing = (f.type === 'region' ? 0.3 : style.spacing) * fontPx * (wide ? 2 : 1);
