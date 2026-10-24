@@ -10,7 +10,7 @@ import { groupPreview, provinceFlat, provinceGroups } from '../render/colors';
 import { busy, describeChange, exec, noteCost, options, previewProvinces, previewTerrainOnce, selectedProvince, setOptions, sliderActive, toast, world } from '../state';
 import { TOOL_DEFS } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
-import { barPreview, clearBarPreview, showProvinceCommand, showSplit } from './provincePreview';
+import { barPreview, clearBarPreview, provinceBar, showProvinceCommand, showSplit } from './provincePreview';
 import {
   type Pointer,
   chainTool,
@@ -453,7 +453,7 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     const w = eng.world;
     world.value = w;
     showSplit(w, id);
-    const pv = barPreview.value!;
+    const pv = provinceBar()!;
     expect(pv.layers[0].cells.length).toBeGreaterThan(0);
     const shown = groupPreview(w, pv.provinces, 'provinces');
     eng.exec({ op: 'split_province', id });
@@ -482,7 +482,7 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     showProvinceCommand(cmd);
     await new Promise((r) => setTimeout(r, 300));
     expect(previewProvinces).toHaveBeenCalledTimes(1);
-    const pv = barPreview.value!;
+    const pv = provinceBar()!;
     expect(pv.base).toBe(w);
     const shown = groupPreview(w, pv.provinces, 'provinces');
     eng.exec(cmd);

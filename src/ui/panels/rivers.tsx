@@ -9,12 +9,12 @@ import { type GuideIssue, continueCourse, guideFlow, isRiverCell } from '../../.
 import { roundKm as km } from '../../../core/terrain';
 import type { Guide, World } from '../../../core/world';
 import { type RiverRef, cancelPreviews, exec, flashCells, hoverRiver, openPanel, riverStyleOverride, selectedRiver, showToast, togglePanel, tool, world } from '../../state';
+import { clearBarPreview } from '../barPreview';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import {
   RIVER_END_HINTS,
   applyPatch,
-  clearRiverBarPreview,
   execAndSelect,
   flowEstimate,
   guideFeature,
@@ -146,7 +146,7 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
     if (!patch) {
       // 拖回了原来的大小：照原样画
       riverStyleOverride.value = null;
-      clearRiverBarPreview();
+      clearBarPreview();
       return;
     }
     riverStyleOverride.value = { id: g.id, hide: true };
@@ -154,7 +154,7 @@ function FlowSlider({ w, g }: { w: World; g: Guide }) {
   };
   const done = () => {
     riverStyleOverride.value = null;
-    clearRiverBarPreview();
+    clearBarPreview();
     setDraft(undefined);
   };
   const commit = async (p: number) => {
@@ -292,7 +292,7 @@ function ShareSlider({ w, g }: { w: World; g: Guide }) {
   const cmdFor = (v: number): Command => ({ op: 'update_guide', id: g.id, patch: { branch: { share: v } }, label: `${quoted(name)}分的水改成 ${Math.round(v * 100)}%` });
   const done = () => {
     riverStyleOverride.value = null;
-    clearRiverBarPreview();
+    clearBarPreview();
     setDraft(null);
   };
   return (
@@ -306,7 +306,7 @@ function ShareSlider({ w, g }: { w: World; g: Guide }) {
         setDraft(v);
         if (v === share) {
           riverStyleOverride.value = null;
-          clearRiverBarPreview();
+          clearBarPreview();
           return;
         }
         riverStyleOverride.value = { id: g.id, hide: true };
@@ -433,7 +433,7 @@ function NaturalRiverBar({ w, cell }: { w: World; cell: number }) {
         class={`bar-btn ${riverCutPick.value ? 'on' : ''}`}
         onClick={() => {
           riverCutPick.value = !riverCutPick.value;
-          if (!riverCutPick.value) clearRiverBarPreview();
+          if (!riverCutPick.value) clearBarPreview();
         }}
         title="点了以后在这条河上点一下选位置：那里往下的河没了（水在那里渗进地下），上游照旧；悬停时先看会变干的河段。也可以直接拖终点（实心圆）到想要的位置"
       >
@@ -457,7 +457,7 @@ export function RiverBar() {
   // 不然鼠标停在“从这里往下去掉”上时换走，回到画河时地图上还画着那个预览
   useEffect(
     () => () => {
-      clearRiverBarPreview();
+      clearBarPreview();
       riverCutPick.value = false;
       riverAddMode.value = null;
     },

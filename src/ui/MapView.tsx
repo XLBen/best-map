@@ -53,9 +53,9 @@ import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom, shapeFitsWidth
 import { TOOL_DEFS, category } from './defs/tools';
 import { pendingEdits, pendingPreview } from './pending';
 import { layerProvinceLabels as layerLabels } from './defs/layers';
-import { barPreview } from './provincePreview';
+import { barPreview } from './barPreview';
 import { lakeSizeDraft } from './lakeInfo';
-import { riverGlow, riverInfo } from './riverCourse';
+import { riverBarView, riverGlow, riverInfo } from './riverCourse';
 import { editLayers } from './edits';
 import { type Pointer, type Preview, type ProvincePreview, type ToolHandler, measureTool, rangePick, provinceCellAt, reliefLayers } from './tools';
 
@@ -443,13 +443,15 @@ export function MapView() {
       // （对半分开、重新划分）画在当前工具的预览下面。幽灵海岸几步合在一起；将来的世界用当前工具的确切预览，
       // 没有时用排队中最后一个有确切预览的（都是按当前世界算的，见 pending.ts）
       const queued = clean ? [] : pendingEdits.value.map((e) => pendingPreview(e, w));
-      const button = !clean && barPreview.value?.base === w ? barPreview.value : null;
+      // 底部条上改一条河的预览：按住地图画河时不画（画的是这一笔）
+      const bp = clean ? null : barPreview.value;
+      const button: Pick<Preview, 'layers' | 'shapes' | 'provinces'> | null = !bp ? null : bp.kind === 'river' ? (pressed ? null : riverBarView(w, bp, env.zoom())) : bp.base === w ? { layers: bp.layers, shapes: [], provinces: bp.provinces } : null;
       const preview: Preview =
         queued.length || button
           ? {
               ...own,
               layers: [...queued.flatMap((q) => q.layers), ...(button?.layers ?? []), ...own.layers],
-              shapes: [...queued.flatMap((q) => q.shapes), ...own.shapes],
+              shapes: [...queued.flatMap((q) => q.shapes), ...(button?.shapes ?? []), ...own.shapes],
               provinces: mergeProvinces([...queued.map((q) => q.provinces), button?.provinces, own.provinces]),
               ghost: mergeGhosts([...queued.map((q) => q.ghost), own.ghost]),
               world: own.world ?? [...queued].reverse().find((q) => q.world)?.world ?? null,
