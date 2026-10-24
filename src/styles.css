@@ -678,9 +678,14 @@ button.toggle {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   pointer-events: none;
   z-index: 10;
+}
+/* 窄屏放不下两组时，右边那组换到下一行、靠右 */
+.tb-group:last-child {
+  margin-left: auto;
 }
 .tb-group {
   pointer-events: auto;
@@ -690,7 +695,6 @@ button.toggle {
   padding: var(--sp-1);
   background: var(--glass);
   border-radius: var(--r-lg);
-  min-width: 0;
 }
 /* 顶栏的按钮、底部条的工具：同一种 */
 .tb-btn,

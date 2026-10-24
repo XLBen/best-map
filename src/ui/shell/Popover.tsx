@@ -13,6 +13,8 @@ interface Place {
   bottom?: number;
   arrow: number;
   width: number;
+  // 离窗口边留 8px（窄屏顶栏换成两行时往下开的空间更少）
+  maxHeight: number;
 }
 
 export function Popover({ id, title, width = 340, children }: { id: PanelId; title: string; width?: number; children: ComponentChildren }) {
@@ -24,13 +26,13 @@ export function Popover({ id, title, width = 340, children }: { id: PanelId; tit
       const w = Math.min(width, vw - 16);
       const anchor = document.querySelector(`[data-panel="${id}"]`);
       if (!anchor) {
-        setPos({ left: (vw - w) / 2, top: 64, arrow: w / 2, width: w });
+        setPos({ left: (vw - w) / 2, top: 64, arrow: w / 2, width: w, maxHeight: vh - 72 });
         return;
       }
       const r = anchor.getBoundingClientRect();
       const left = Math.max(8, Math.min(vw - w - 8, r.left + r.width / 2 - w / 2));
       const arrow = Math.max(16, Math.min(w - 16, r.left + r.width / 2 - left));
-      setPos(r.top > vh / 2 ? { left, bottom: vh - r.top + 10, arrow, width: w } : { left, top: r.bottom + 10, arrow, width: w });
+      setPos(r.top > vh / 2 ? { left, bottom: vh - r.top + 10, arrow, width: w, maxHeight: r.top - 18 } : { left, top: r.bottom + 10, arrow, width: w, maxHeight: vh - r.bottom - 18 });
     };
     place();
     window.addEventListener('resize', place);
@@ -41,7 +43,7 @@ export function Popover({ id, title, width = 340, children }: { id: PanelId; tit
   return (
     <div
       class={`popover ${up ? 'up' : ''}`}
-      style={{ left: `${pos.left}px`, width: `${pos.width}px`, ...(up ? { bottom: `${pos.bottom}px` } : { top: `${pos.top}px` }) }}
+      style={{ left: `${pos.left}px`, width: `${pos.width}px`, maxHeight: `${pos.maxHeight}px`, ...(up ? { bottom: `${pos.bottom}px` } : { top: `${pos.top}px` }) }}
     >
       <span class="popover-arrow" style={{ left: `${pos.arrow}px` }} />
       <div class="popover-head">
