@@ -57,11 +57,16 @@ export const DEFAULT_PROVINCE_RULES: ProvinceRules = provinceRulesSchema.parse({
 
 const SIZE_CELLS = { small: 20, medium: 40, large: 80 } as const;
 
-// 目标大小（格数）：按 4 万格标定，格数不同时等比缩放，所以省份的个数与网格精细度无关。
-// 整个星球不缩放：“中”约 40 格（第十七轮起新建的星球每格约 100 km，一省约 33 万 km²，类地星球约六百个陆地省；
-// 以前 10 万格的类地星球约 20 万 km²、九百个）
+// 目标大小（格数）：一块地区按 4 万格标定，格数不同时等比缩放，所以省份的个数与网格精细度无关。
+// 整个星球按面积定（第十七轮）：“中”约 20.4 万 km²（以前 10 万格的类地星球上的 40 格，那时的世界照旧一模一样），
+// 不管每格多大、星球多大，省的面积都一样（每格约 100 km 的类地星球上约 33 格，陆地省约九百个）
+// （world.ts 引用本文件，这里不从 world.ts 取值，免得循环引用：地球半径与 planetRadiusKm 的默认值相同）
+const EARTH_KM = 6371;
+const PLANET_CELL_KM2 = (4 * Math.PI * EARTH_KM * EARTH_KM) / 100000;
 export function provinceTargets(world: World, rules: ProvinceRules): { land: number; sea: number } {
-  const base = SIZE_CELLS[rules.size] * (world.mesh.kind === 'sphere' ? 1 : world.mesh.n / 40000);
+  const { mesh } = world;
+  const scale = mesh.kind === 'sphere' ? PLANET_CELL_KM2 / ((4 * Math.PI * (world.settings.radiusKm ?? EARTH_KM) ** 2) / mesh.n) : mesh.n / 40000;
+  const base = SIZE_CELLS[rules.size] * scale;
   return { land: Math.max(3, base), sea: Math.max(6, base * (rules.seaByDistance ? 2 : 4)) };
 }
 

@@ -187,7 +187,7 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
       'derived.discharge': 'c8c8cb649231acdf',
       'derived.dominant': 'b504c19310d6808e',
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
-      'causes.province': '9e2c9ef66446f75b',
+      'causes.province': '7f520fd3bbfec49c',
     };
     const eng = new Engine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
     const w = eng.world;

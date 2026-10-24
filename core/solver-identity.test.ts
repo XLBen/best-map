@@ -197,19 +197,19 @@ const RECORDED: Record<string, Record<string, Record<string, string>>> = {
   },
   planet: {
     forest: {
-      world: 'f5da8eb28d5ae859', corrT: '3c1b8f10322aa19d', corrP: 'dea1ffa116f7e973', corrF: '85284cd307d8e6fb', dominant: '825674fe213b6128',
+      world: '4f50f58b0a885f88', corrT: '3c1b8f10322aa19d', corrP: 'dea1ffa116f7e973', corrF: '85284cd307d8e6fb', dominant: '825674fe213b6128',
       share: 'd6b36847f680ed7c', tMean: '86dbc46d1370d9bd', precip: '5b291974b5c5aac0', conflicts: 'e5fc81d757c50eac', plans: 'af24491f2527f84f',
     },
     tundra: {
-      world: 'e2cac9ea07e45e26', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: '84e601ee755c8484',
+      world: '9126a642b6dad3ad', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: '84e601ee755c8484',
       share: 'e4ec5e234f389bcf', tMean: '8c90128a480d374b', precip: 'fc0f99b6415fdc1e', conflicts: '7d24fe321aea85dd', plans: '0d932eaa7efbb040',
     },
     edit: {
-      world: '24009af24030278a', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: 'd7fcf1af64209f14',
+      world: 'b85ccca678d2ad1f', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: 'd7fcf1af64209f14',
       share: '2749c8f8d823df07', tMean: '8c90128a480d374b', precip: '211d08601c7dfbad', conflicts: '7d24fe321aea85dd', plans: '0d932eaa7efbb040',
     },
     undo: {
-      world: 'e2cac9ea07e45e26', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: '84e601ee755c8484',
+      world: '9126a642b6dad3ad', corrT: '7f79337cb113b1eb', corrP: '7907161661752584', corrF: '85284cd307d8e6fb', dominant: '84e601ee755c8484',
       share: 'e4ec5e234f389bcf', tMean: '8c90128a480d374b', precip: 'fc0f99b6415fdc1e', conflicts: '7d24fe321aea85dd', plans: '0d932eaa7efbb040',
     },
   },
