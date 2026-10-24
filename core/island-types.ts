@@ -169,16 +169,25 @@ export function islandTint(t: IslandType | undefined): [number, number, number] 
 // 以前留在海省里；现在按这张表：每个水面格（海、湖）与归海省的岛（小礁）离它最近的“陆地省的格”（归陆地省的陆地、不是湖面），
 // 沿网格一圈圈往外找（同一圈里有几个时取格心离得最近的，一样近取编号小的）。陆地省的格是它自己；没有陆地时为 −1。
 // 屏幕（着色器的 provCell）、悬停与选省（display.ts 的 provinceCell）、导出（subcell.ts 的 rasterizeWorld）都用它
-const landCellCache = new WeakMap<object, { key: unknown[]; value: Int32Array }[]>();
+// 缓存按内容认（引擎在同一个线程里就地改数组时也不会拿到旧表）：只和陆地、岛的种类、湖面、哪几种归海省有关，
+// 和高程无关（堆山、河床改了高程不必重算）
+const landCellCache = new WeakMap<object, { key: string; value: Int32Array }[]>();
+function hashBytes(h: number, a: Uint8Array): number {
+  for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619);
+  return h >>> 0;
+}
 export function landProvinceCells(world: Pick<World, 'mesh' | 'causes' | 'small' | 'derived'>): Int32Array {
   const { mesh, causes, derived } = world;
   const sea = seaCodes(world.small);
   let sig = '';
   for (let k = 1; k < 128; k++) if (sea[k]) sig += `${k},`;
-  const key: unknown[] = [derived.elevation, derived.lake, causes.land, causes.islandType, sig];
+  let h = hashBytes(2166136261, causes.land);
+  h = hashBytes(h, causes.islandType);
+  h = hashBytes(h, derived.lake);
+  const key = `${h}|${sig}`;
   let list = landCellCache.get(mesh);
   if (!list) landCellCache.set(mesh, (list = []));
-  const hit = list.find((e) => e.key.every((v, k) => v === key[k]));
+  const hit = list.find((e) => e.key === key);
   if (hit) return hit.value;
   const n = mesh.n;
   const pland = provinceLand(world);

@@ -1038,7 +1038,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       // 这种岛变成大陆岛（潟湖照旧是潟湖），后面的编号往前挪
       removeIslandCode(causes.islandType, k);
       refileProvinces(world, classBefore);
-      return { dirty: Dirty.Names, summary: `删掉了岛的种类「${gone.name}」（这种岛变成大陆岛）` };
+      // 地物要重算：这种岛上的 itype: 标签要去掉（只重新起名会留着旧标签，同一个 id 再新建时名字就和重放不一样）
+      return { dirty: Dirty.Vegetation, summary: `删掉了岛的种类「${gone.name}」（这种岛变成大陆岛）` };
     }
     case 'add_field': {
       if (causes.fields[cmd.name]) throw new CommandError(`场 "${cmd.name}" 已存在`);

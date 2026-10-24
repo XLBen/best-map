@@ -289,4 +289,19 @@ describe('重放', () => {
     expect(again.world.causes.province).toEqual(eng.world.causes.province);
     expect(again.world.causes.land).toEqual(eng.world.causes.land);
   });
+
+  it('删掉一种岛再用同一个 id 新建、给它起名模板：已经放的岛名字与重放相同（不留旧的 itype: 标签）', () => {
+    const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+    eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
+    const t = { id: 'island-type-1', name: '黑沙岛', shape: 'round' as const, height: 'hilly' as const, province: 'land' as const };
+    eng.exec({ op: 'set_island_type', type: t });
+    eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'island-type-1', size: 80, variant: 1 } });
+    eng.exec({ op: 'remove_island_type', id: 'island-type-1' });
+    const islands = (e: Engine) => e.world.derived.features.filter((f) => f.type === 'island').map((f) => `${f.name}[${f.tags.join(',')}]`);
+    expect(islands(eng).join()).not.toContain('itype:');
+    eng.exec({ op: 'set_island_type', type: { ...t, name: '新的岛 1', shape: 'rugged' } });
+    eng.exec({ op: 'set_island_type', type: { ...t, name: '新的岛 1', shape: 'rugged', names: [{ p: '模板{__species}屿' }] } });
+    const again = Engine.fromDoc(eng.toDoc(), eng.world.mesh);
+    expect(islands(eng)).toEqual(islands(again));
+  });
 });
