@@ -4,7 +4,7 @@ import { findCell } from '../../../core/mesh';
 import { nearestCell } from '../../../core/sphere';
 import { EE_HALF_W, GLOBE_G, type Proj, rotateToAnchor, screenToPlane } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
-import { cursorHint, hoverCell, hoverProvinceCell, measure, openPanel, prefs, showToast, tool, world } from '../../state';
+import { cursorHint, hoverCell, hoverProvinceCell, measure, openPanel, pinCell, prefs, showToast, tool, world } from '../../state';
 import { clampPlanetCamera, maxZoom, minZoom, shapeFitsWidth } from '../camera';
 import { CATEGORY_DEFS, TOOL_DEFS, category } from '../defs/tools';
 import { type Pointer, type ToolHandler, provinceCellAt } from '../tools';
@@ -57,6 +57,8 @@ export function mapInput(
   // 拖着平移：按下的位置、那时的镜头；投影时另记那时的朝向，球形还记按下的那一点（拖着转时它跟着鼠标）
   let panning: { x: number; y: number; cx: number; cy: number; proj?: Proj; anchor?: [number, number] | null } | null = null;
   let clickStart: { sx: number; sy: number } | null = null;
+  // 右键按下的地方（第二十一轮）：没拖动就松开是钉住这一格（“这里”卡片停在这一格，可以改档案）
+  let rightStart: { sx: number; sy: number; cell: number } | null = null;
   let spaceDown = false;
 
   // 屏幕上的一点（CSS 像素，相对画布）在地图上的哪里；shown：那里画的是哪一格（悬停卡片、吸取、选省按它）
@@ -171,6 +173,7 @@ export function mapInput(
     view.pointer = p;
     view.lastPointer = p;
     if (e.button === 1 || e.button === 2 || spaceDown) {
+      rightStart = e.button === 2 && !spaceDown ? { sx: p.sx, sy: p.sy, cell: hereOf(p) } : null;
       startPan(p.sx, p.sy);
       return;
     }
@@ -227,6 +230,13 @@ export function mapInput(
     const p = pointerOf(e);
     if (panning) {
       panning = null;
+      const r = rightStart;
+      rightStart = null;
+      if (r && Math.hypot(p.sx - r.sx, p.sy - r.sy) <= 5) {
+        pinCell(r.cell);
+        requestDraw();
+        return;
+      }
       // 平移结束：整个星球的镜头绕回第一份（画面不变，但鼠标下的经度差了一整圈，画笔圈要跟着换到这一份上）
       clampPlanetCamera(world.value.mesh, o.renderer().camera, glCanvas.clientHeight, true, glCanvas.clientWidth);
       refreshPointer();

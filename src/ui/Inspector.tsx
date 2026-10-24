@@ -4,8 +4,9 @@ import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
 import { effectsAt } from '../../core/effects';
 import { type CellExplanation, explainCell } from '../../core/vegetation';
 import { type World, longitudeOf, worldLatitude } from '../../core/world';
-import { exec, hoverCell, hoverProvinceCell, options, world } from '../state';
-import { category } from './defs/tools';
+import { exec, hoverCell, hoverProvinceCell, options, pinnedCell, selectedProvince, world } from '../state';
+import { ArchiveBox } from './ArchiveBox';
+import { category, setTool } from './defs/tools';
 import { outsideRangeReason, outsideRangeText } from './biomeRange';
 
 // 检查器：用人话说清楚“这里是什么、为什么”，数字放在第二层
@@ -332,7 +333,17 @@ export function Inspector() {
       )}
       {pmeta && (
         <p class="hint">
-          省份：{pmeta.name}
+          省份：
+          <button
+            class="link-btn"
+            title="选中这个省份"
+            onClick={() => {
+              setTool('pselect');
+              selectedProvince.value = p;
+            }}
+          >
+            {pmeta.name}
+          </button>
           {provNote}
         </p>
       )}
@@ -347,6 +358,7 @@ export function Inspector() {
           )}
         </p>
       )}
+      <ArchiveBox w={w} cell={cell} pinned={pinnedCell.value === cell} />
       <Details w={w} cell={cell} />
     </div>
   );
@@ -378,8 +390,15 @@ export function hereLine(w: World, cell: number): string {
   return `${prefix}${river}${sp?.name ?? '什么都长不了'} · 年均 ${fmt(d.tMean[cell])} °C · 年降水 ${fmt(d.precip[cell])} mm`;
 }
 
-// 最后一次停在地图上的格（鼠标移到面板上时还看得到）
+// 最后一次停在地图上的格（鼠标移到面板上时还看得到）；钉住了一格时是那一格
 export function lastHoverCell(): number {
+  const pin = pinnedCell.value;
+  if (pin >= 0) {
+    void hoverCell.value;
+    lastCell = pin;
+    lastProvinceCell = pin;
+    return pin;
+  }
   if (hoverCell.value >= 0) {
     lastCell = hoverCell.value;
     lastProvinceCell = hoverProvinceCell.value;

@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronUp, Info } from 'lucide-preact';
+import { ChevronDown, ChevronUp, Info, PinOff } from 'lucide-preact';
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { hoverCell, openPanel, sheet, world } from '../../state';
+import { hereOpen, hoverCell, openPanel, pinnedCell, sheet, world } from '../../state';
 import { Inspector, hereLine, lastHoverCell } from '../Inspector';
 
 // 右下角“这里”：鼠标下的一行简介，点开是完整的“这里是什么、为什么”
@@ -33,7 +33,13 @@ function useAvoidPopover(ref: { current: HTMLElement | null }): number | null {
 
 export function HereCard() {
   const w = world.value;
-  const [open, setOpen] = useState(false);
+  const open = hereOpen.value;
+  const setOpen = (v: boolean) => {
+    hereOpen.value = v;
+    // 收起卡片：不再钉住
+    if (!v) pinnedCell.value = -1;
+  };
+  const pinned = pinnedCell.value >= 0;
   const ref = useRef<HTMLElement>(null);
   void hoverCell.value;
   void openPanel.value;
@@ -54,7 +60,12 @@ export function HereCard() {
   return (
     <div class="here open" ref={ref as never} style={style}>
       <div class="here-head">
-        <b>这里是什么</b>
+        <b class="grow">{pinned ? `钉住的格 #${pinnedCell.value}` : '这里是什么'}</b>
+        {pinned && (
+          <button class="icon-btn" onClick={() => (pinnedCell.value = -1)} title="取消钉住，跟着鼠标">
+            <PinOff />
+          </button>
+        )}
         <button class="icon-btn" onClick={() => setOpen(false)} title="关闭">
           <ChevronDown />
         </button>
