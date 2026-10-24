@@ -54,7 +54,7 @@ describe('改名与文字包', () => {
     eng.exec({ op: 'rename_feature', key: island.key, name: '我的岛' });
     expect(near(eng, 'island', 1.42, 0.5)!.name).toBe('我的岛');
     // 在别处放一个岛，地物整体重算
-    eng.exec({ op: 'add_island', island: { x: 0.6, y: 0.1, kind: 'volcanic', size: 370, variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 0.6, y: 0.1, kind: 'continental', size: 370, variant: 0 } });
     expect(near(eng, 'island', 1.42, 0.5)!.name).toBe('我的岛');
     // 恢复自动命名
     eng.exec({ op: 'rename_feature', key: island.key, name: '' });

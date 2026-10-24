@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MinHeap } from './heap';
+import { provinceLand } from './island-types';
 import { graphDistanceOwner, ringDistance } from './mesh';
 import { DEFAULT_PACK, generateName, hashString } from './names';
 import { mixSeed, mulberry32 } from './rng';
@@ -8,7 +9,7 @@ import type { Derived, ProvinceMeta, World } from './world';
 // 省份 = 格的聚类。自动划分用加权区域生长：跨河、跨山脊代价高，所以边界自然贴着河与山脊；不跨海岸。
 // 规则可配置：大小（小 · 中 · 大）、按地形调整大小、无人区、湖（单独成省 / 并进旁边的陆地省）、近海小远洋大。
 // 格分三类，省份不跨类：海、陆地（含无人区）、湖（湖单独成省时）。海永远不和陆地、湖同省；
-// 湖“并进陆地省”时湖面的格算陆地。
+// 湖“并进陆地省”时湖面的格算陆地。归海省的岛（小礁一类，见 island-types.ts）是陆地格，但算海：并进旁边的海省。
 // 划分结果是“原因”的一部分（用户可编辑）：
 //   · 默认固定种子，“换一种划分”才换；
 //   · 重新划分一片只动这一片，别处的省份编号与名字不变；
@@ -104,11 +105,11 @@ function components(world: World, mask: (i: number) => boolean): number[][] {
   return out;
 }
 
-function cellClasses(world: World, d: Derived, rules: ProvinceRules): Uint8Array {
-  const { mesh, causes } = world;
+function cellClasses(world: World, d: Derived, rules: ProvinceRules, pland: Uint8Array): Uint8Array {
+  const { mesh } = world;
   const n = mesh.n;
   const cls = new Uint8Array(n);
-  for (let i = 0; i < n; i++) cls[i] = causes.land[i] ? LAND : SEA;
+  for (let i = 0; i < n; i++) cls[i] = pland[i] ? LAND : SEA;
   const target = provinceTargets(world, rules);
   if (rules.lakeMode === 'separate') {
     const lake = lakeCells(world, d);
@@ -122,8 +123,8 @@ function cellClasses(world: World, d: Derived, rules: ProvinceRules): Uint8Array
 }
 
 // 每格的“疏密系数”：省份目标大小的倍数
-function densityFactors(world: World, d: Derived, rules: ProvinceRules, cls: Uint8Array): Float32Array {
-  const { mesh, causes, small } = world;
+function densityFactors(world: World, d: Derived, rules: ProvinceRules, cls: Uint8Array, land: Uint8Array): Float32Array {
+  const { mesh, small } = world;
   const n = mesh.n;
   const f = new Float32Array(n).fill(1);
   const thr = small.planet.riverThreshold;
@@ -131,15 +132,15 @@ function densityFactors(world: World, d: Derived, rules: ProvinceRules, cls: Uin
   if (rules.seaByDistance) {
     const coast: number[] = [];
     for (let i = 0; i < n; i++) {
-      if (causes.land[i]) continue;
+      if (land[i]) continue;
       for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        if (causes.land[mesh.adj[e]]) {
+        if (land[mesh.adj[e]]) {
           coast.push(i);
           break;
         }
       }
     }
-    coastDist = ringDistance(mesh, coast, Infinity, (j) => !causes.land[j]);
+    coastDist = ringDistance(mesh, coast, Infinity, (j) => !land[j]);
   }
   for (let i = 0; i < n; i++) {
     switch (cls[i]) {
@@ -157,7 +158,7 @@ function densityFactors(world: World, d: Derived, rules: ProvinceRules, cls: Uin
       default: {
         if (!rules.varied) break;
         let coastal = false;
-        for (let e = mesh.off[i]; e < mesh.off[i + 1] && !coastal; e++) if (!causes.land[mesh.adj[e]]) coastal = true;
+        for (let e = mesh.off[i]; e < mesh.off[i + 1] && !coastal; e++) if (!land[mesh.adj[e]]) coastal = true;
         const fertile = coastal || d.discharge[i] >= thr * 3 || (d.elevation[i] < 300 && d.moisture[i] > 0.5);
         if (d.elevation[i] > 1500 || d.slope[i] > 20) f[i] = 1.6;
         else if (d.moisture[i] < 0.25 || d.tMean[i] < -2) f[i] = 1.8;
@@ -184,8 +185,9 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
   const { mesh, causes, small } = world;
   const n = mesh.n;
   const province = causes.province;
-  const cls = cellClasses(world, d, rules);
-  const dens = densityFactors(world, d, rules, cls);
+  const pland = provinceLand(world);
+  const cls = cellClasses(world, d, rules, pland);
+  const dens = densityFactors(world, d, rules, cls, pland);
   const target = provinceTargets(world, rules);
   const baseOf = (i: number) => (cls[i] === SEA ? target.sea : target.land);
   const rand = mulberry32(mixSeed(rules.seed, 401, salt));
@@ -241,7 +243,7 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
   for (const s of seeds) {
     const id = small.nextProvince++;
     seedToProvince.set(s, id);
-    small.provinces[id] = { name: '', locked: false, land: causes.land[s] === 1, kind: KIND_OF_CLASS[cls[s]] };
+    small.provinces[id] = { name: '', locked: false, land: pland[s] === 1, kind: KIND_OF_CLASS[cls[s]] };
     fresh.push(id);
   }
   // 顺便记下每个新省份的格（按编号升序），下面算边界、并入都只走这些格
@@ -364,7 +366,8 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
   const province = causes.province;
   const sizes = provinceSizes(world);
   const targets = provinceTargets(world, small.provinceRules);
-  const classOf = (i: number): ProvinceClass => (!causes.land[i] ? 'sea' : lake?.[i] ? 'lake' : 'land');
+  const pland = provinceLand(world);
+  const classOf = (i: number): ProvinceClass => (!pland[i] ? 'sea' : lake?.[i] ? 'lake' : 'land');
   const target = (c: ProvinceClass) => (c === 'sea' ? targets.sea : targets.land);
   // 一格并入相邻的同类、未锁定、不太大的省份里最小的那个；并不进去返回 false
   const join = (i: number): boolean => {
@@ -435,7 +438,7 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
   let taken: Set<string> | null = null;
   for (let i = 0; i < n; i++) {
     if (province[i] >= 0) continue;
-    const land = causes.land[i] === 1;
+    const land = pland[i] === 1;
     const cls = classOf(i);
     const id = small.nextProvince++;
     const meta: ProvinceMeta = { name: '', locked: false, land, kind: cls };
@@ -468,11 +471,12 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
 // 变成陆地的格只并进陆地省；湖与陆地之间的整理由引擎在推导算好之后做（见 lakeProvinceFix）
 export function repairProvinces(world: World) {
   const { causes, small } = world;
+  const pland = provinceLand(world);
   for (let i = 0; i < causes.province.length; i++) {
     const p = causes.province[i];
     if (p < 0) continue;
     const meta = small.provinces[p];
-    if (!meta || meta.land !== (causes.land[i] === 1)) causes.province[i] = -1;
+    if (!meta || meta.land !== (pland[i] === 1)) causes.province[i] = -1;
   }
   fillUnassigned(world);
   dropEmptyProvinces(world);
@@ -508,10 +512,11 @@ export function lakeProvinceFix(world: World, d: Derived): ProvinceFix | null {
   const lake = separate ? lakeCells(world, d) : null;
   const before = province.slice();
   const metasBefore = new Set(Object.keys(small.provinces));
+  const pland = provinceLand(world);
   let moved = 0;
   for (let i = 0; i < n; i++) {
     const p = province[i];
-    if (p < 0 || !causes.land[i]) continue;
+    if (p < 0 || !pland[i]) continue;
     const meta = small.provinces[p];
     if (!meta || meta.locked) continue;
     const want: ProvinceClass = lake?.[i] ? 'lake' : 'land';

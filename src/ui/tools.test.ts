@@ -114,14 +114,14 @@ describe('岛链的“疏密”写出间距', () => {
     // 一片海（岛链不放到原有的陆地上，穿过大陆的线会少几个岛）
     const w = engineFor({ cells: 12000, seed: 1 }).world;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
-    setOptions({ chainKm: 3 * cellKm, chainKind: 'volcanic' });
+    setOptions({ chainKm: 3 * cellKm, chainKind: 'continental' });
     const def = TOOL_DEFS.chain.amount!;
     for (const v of [0.4, 1, 2.5]) {
       const text = def.format(v, w);
       expect(text).toMatch(/^(稀疏|正常|密集) \d+% · 间距约 \d+ km$/);
       const said = Number(text.match(/间距约 (\d+) km/)![1]);
       // 一条横贯地图的直线：沿线的岛距 = 全长 ÷ 岛数
-      const isl = chainIslands(w, { points: [[0.1 * w.mesh.width, 0.5 * w.mesh.height], [0.9 * w.mesh.width, 0.5 * w.mesh.height]], kind: 'volcanic', size: options.value.chainKm, density: v, variant: 0 });
+      const isl = chainIslands(w, { points: [[0.1 * w.mesh.width, 0.5 * w.mesh.height], [0.9 * w.mesh.width, 0.5 * w.mesh.height]], kind: 'continental', size: options.value.chainKm, density: v, variant: 0 });
       const real = (0.8 * w.mesh.width * w.kmPerUnit) / isl.length;
       expect(Math.abs(said - real) / real).toBeLessThan(0.1);
     }
@@ -298,7 +298,7 @@ describe('放岛、岛链、圈一片、放湖也能排队', () => {
     const chainAt = near(w, (i) => inMiddle(i) && open(i) && Math.hypot(w.mesh.x[i] - w.mesh.x[isle], w.mesh.y[i] - w.mesh.y[isle]) > 15 * s);
     const coast = near(w, (i) => inMiddle(i) && !w.causes.land[i] && brushCells(w, w.mesh.x[i], w.mesh.y[i], 2 * cellKm).cells.some((c) => w.causes.land[c]) && Math.hypot(w.mesh.x[i] - w.mesh.x[isle], w.mesh.y[i] - w.mesh.y[isle]) > 15 * s && Math.hypot(w.mesh.x[i] - w.mesh.x[chainAt], w.mesh.y[i] - w.mesh.y[chainAt]) > 15 * s);
     const lake = near(w, (i) => w.causes.land[i] === 1 && brushCells(w, w.mesh.x[i], w.mesh.y[i], 6 * cellKm).cells.every((c) => w.causes.land[c]));
-    const start = { islandKind: 'volcanic' as const, islandKm: 2 * cellKm, islandVariant: 3, chainKind: 'volcanic' as const, chainKm: 2 * cellKm, chainVariant: 1, chainDensity: 1, lakeKm: 1.5 * cellKm, landShape: 'lasso' as const, landMode: 'land' as const };
+    const start = { islandKind: 'continental' as const, islandKm: 2 * cellKm, islandVariant: 3, chainKind: 'continental' as const, chainKm: 2 * cellKm, chainVariant: 1, chainDensity: 1, lakeKm: 1.5 * cellKm, landShape: 'lasso' as const, landMode: 'land' as const };
     const gestures = (): Gesture[] => {
       const island = islandTool();
       const chain = chainTool();
@@ -626,7 +626,7 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     const w = continents().world;
     world.value = w;
     sliderActive.value = false;
-    setOptions({ brushKm: 3 * w.mesh.spacing * w.kmPerUnit, landMode: 'land', landShape: 'brush', islandKind: 'volcanic', islandKm: 2.5 * w.mesh.spacing * w.kmPerUnit });
+    setOptions({ brushKm: 3 * w.mesh.spacing * w.kmPerUnit, landMode: 'land', landShape: 'brush', islandKind: 'continental', islandKm: 2.5 * w.mesh.spacing * w.kmPerUnit });
     return w;
   };
 
@@ -668,7 +668,7 @@ describe('幽灵海岸：画的时候、悬停时画出将来的海岸线', () =
     if (sent.op !== 'paint_land') throw new Error('应当发出画陆地的命令');
     expect(sent.mode).toBe('land');
     const eng = continents();
-    const st = islandStamp(eng.world, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'volcanic', size: 3 * w.mesh.spacing * w.kmPerUnit, variant: 0 });
+    const st = islandStamp(eng.world, { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'continental', size: 3 * w.mesh.spacing * w.kmPerUnit, variant: 0 });
     eng.exec({ op: 'paint_land', cells: st.cells, t: st.cells.map(() => 0), mode: 'land' });
     const after = eng.world;
     const r = landStroke(after, sent.cells, sent.t, 'land');

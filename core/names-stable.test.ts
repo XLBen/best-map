@@ -167,7 +167,7 @@ describe('名字不乱跳', () => {
       const c = deep[Math.floor((deep.length * (k + 0.5)) / 6)];
       if (w.causes.land[c]) continue;
       const before = w.derived.features;
-      eng.exec({ op: 'add_island', island: { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'volcanic', size: 500, variant: k + 1 } });
+      eng.exec({ op: 'add_island', island: { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'continental', size: 500, variant: k + 1 } });
       expect(jumps(before, w.derived.features), `第 ${k} 个岛`).toEqual([]);
       placed++;
     }
@@ -229,7 +229,7 @@ describe('名字不乱跳', () => {
     const eng = worlds.region();
     const w = eng.world;
     const c = [...Array(w.mesh.n).keys()].find((i) => w.derived.elevation[i] < -3000 && i % 7 === 3)!;
-    const island = (variant: number) => ({ op: 'add_island' as const, island: { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'volcanic' as const, size: 400, variant } });
+    const island = (variant: number) => ({ op: 'add_island' as const, island: { x: w.mesh.x[c], y: w.mesh.y[c], kind: 'continental' as const, size: 400, variant } });
     eng.exec(island(1));
     const first = w.derived.features.find((f) => f.type === 'island' && f.cells.includes(c))!;
     eng.replaceLast(island(2));

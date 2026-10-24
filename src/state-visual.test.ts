@@ -29,6 +29,7 @@ function lightOf(w: World, species: World['small']['species']): LightSnapshot {
     small: { ...w.small, species },
     features: w.derived.features,
     province: w.causes.province,
+    islandType: w.causes.islandType,
     history: [{ summary: '改了外观', done: true }],
     canUndo: true,
     canRedo: false,

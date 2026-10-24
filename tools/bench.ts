@@ -136,7 +136,7 @@ function fantasyBench() {
     sea = i;
     break;
   }
-  eng.exec({ op: 'add_island', island: { x: w.mesh.x[sea], y: w.mesh.y[sea], kind: 'volcanic', size: 300, variant: 0 } });
+  eng.exec({ op: 'add_island', island: { x: w.mesh.x[sea], y: w.mesh.y[sea], kind: 'continental', size: 300, variant: 0 } });
   lap('island', 'island');
   stage('island');
 

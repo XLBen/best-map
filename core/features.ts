@@ -1,6 +1,7 @@
 import { type Mesh, findCell, gradient } from './mesh';
 import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
 import { type LakeType, majorityLakeType } from './lake-types';
+import { BUILTIN_COUNT, ISLAND_CODE_MASK, type IslandType, islandTypeOfCode } from './island-types';
 import { PLAIN_RIVER, type RiverType, majorityType } from './river-types';
 import { guideBody, guideLine } from './rivers';
 import { DEFAULT_SPECIES, type Species } from './species';
@@ -1261,6 +1262,9 @@ export function detectFeatures(world: World, d: Derived, terrain: Float32Array =
   if (d.riverType) for (const f of out) if (f.type === 'river') tagRiverType(world, d, f);
   // 带类型的湖（第九轮）：同上（没有湖泊类型时什么都不做）
   if (d.lakeType) for (const f of out) if (f.type === 'lake') tagLakeType(world, d, f);
+  // 放的岛（第十四轮）：岛的大半是一种自己的岛时标上它（没有自己的岛的种类时什么都不做）。
+  // 有没有起名模板在起名时再看：只改模板的一步只重新起名，不重算地物
+  if (world.small.islandTypes?.length) for (const f of out) if (f.type === 'island') tagIslandType(world, f);
   out.push(...regionFeatures(world, d, terrain), ...guideFeatures(world, d, terrain));
   assignNames(world, out);
   return out;
@@ -1310,6 +1314,32 @@ function namedLakeType(f: GeoFeature, types: ReadonlyMap<string, LakeType>): Lak
   if (f.type !== 'lake') return undefined;
   const tag = f.tags.find((t) => t.startsWith(LTYPE));
   const t = tag ? types.get(tag.slice(LTYPE.length)) : undefined;
+  return t?.names ? t : undefined;
+}
+
+// ---------- 放的岛（第十四轮） ----------
+
+// 岛的地物是哪一种放的岛：标签里写上 itype:类型 id（岛的格里超过一半是这一种自己的岛）。那种岛有起名模板时按模板起名，第二轮起名
+const ITYPE = 'itype:';
+function tagIslandType(world: World, f: GeoFeature): void {
+  const codes = world.causes.islandType;
+  const count = new Map<number, number>();
+  for (const c of f.cells) {
+    const k = codes[c] & ISLAND_CODE_MASK;
+    if (k) count.set(k, (count.get(k) ?? 0) + 1);
+  }
+  for (const [k, c] of count) {
+    if (c * 2 <= f.cells.length) continue;
+    const t = k > BUILTIN_COUNT ? islandTypeOfCode(world.small, k) : undefined;
+    if (t) f.tags = [...f.tags, `${ITYPE}${t.id}`];
+    return;
+  }
+}
+
+function namedIslandType(f: GeoFeature, types: ReadonlyMap<string, IslandType>): IslandType | undefined {
+  if (f.type !== 'island') return undefined;
+  const tag = f.tags.find((t) => t.startsWith(ITYPE));
+  const t = tag ? types.get(tag.slice(ITYPE.length)) : undefined;
   return t?.names ? t : undefined;
 }
 
@@ -1676,8 +1706,12 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   const riverTypes = new Map((world.small.riverTypes ?? []).map((t) => [t.id, t]));
   // 带类型、有起名模板的湖（第九轮）
   const lakeTypes = new Map((world.small.lakeTypes ?? []).map((t) => [t.id, t]));
-  const typed = (f: GeoFeature): RiverType | LakeType | undefined =>
-    (riverTypes.size ? namedRiverType(f, riverTypes) : undefined) ?? (lakeTypes.size ? namedLakeType(f, lakeTypes) : undefined);
+  // 放的岛的种类（第十四轮）
+  const islandTypes = new Map((world.small.islandTypes ?? []).map((t) => [t.id, t]));
+  const typed = (f: GeoFeature): RiverType | LakeType | IslandType | undefined =>
+    (riverTypes.size ? namedRiverType(f, riverTypes) : undefined) ??
+    (lakeTypes.size ? namedLakeType(f, lakeTypes) : undefined) ??
+    (islandTypes.size ? namedIslandType(f, islandTypes) : undefined);
   // 画的河（固定下来的自然河除外）
   const drawn = (f: GeoFeature) => f.guide !== undefined && !inherits(guides.get(f.guide));
   // 新种类的地名：在原有的地名都起好之后第二轮再起，不会抢走原有地物的名字、引起一串换名。
@@ -1695,7 +1729,7 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     ...second.filter(drawn).sort((a, b) => drawnAt.get(a.guide!)! - drawnAt.get(b.guide!)!),
   ];
   // 按河流类型的模板起名（种子里带上类型：同一条河换成别的类型，名字也换）
-  const typedName = (f: GeoFeature, t: RiverType | LakeType, key: string, salt: number) => {
+  const typedName = (f: GeoFeature, t: RiverType | LakeType | IslandType, key: string, salt: number) => {
     const own = t.names!;
     const p = withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, t.name, own);
     return generateName(p, OWN_TYPE, f.tags, hashString(`${seed}:${key}:${t.id}:${salt}`), taken);
@@ -1722,7 +1756,7 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   // 起名的办法：种子、文字包、换过几次（盐）、按哪个模板。哪一样变了，留着的名字就不再用
   const tag = packTag(world.small.wordPack);
   const ctxOf = (salt: number, how: string) => hashString(`${seed}|${tag}|${salt}|${how}`).toString(36);
-  const typeHow = (t: RiverType | LakeType) => `t:${hashString(JSON.stringify([t.id, t.name, t.names]))}`;
+  const typeHow = (t: RiverType | LakeType | IslandType) => `t:${hashString(JSON.stringify([t.id, t.name, t.names]))}`;
   const speciesHow = (sp: Species) => `s:${hashString(JSON.stringify([sp.id, sp.name, sp.terrain, sp.feature ?? null]))}`;
   // 每个地物怎么起名：用户起的名字（fixed），或者自动起名（gen，起名的办法 ctx）。区块没有 ctx（不留名字）
   // auto：改河时记下的自动名字（guide.autoName），照它叫，但不算用户起的名字

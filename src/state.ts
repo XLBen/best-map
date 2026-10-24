@@ -12,7 +12,7 @@ import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from
 import { isRiverCell } from '../core/select';
 import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
-import { type ChainKind, type IslandKind, type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
+import { type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
 import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { outsideRangeReason } from './ui/biomeRange';
 import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from './ui/shell/noticeTimer';
@@ -145,7 +145,21 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 // 顶栏按钮弹出的面板：同一时间只开一个。river：选中的河底部条上的“⋯”
 // rivertype：给新画的河、选中的河选是哪一种河（第三批的河流类型）
 // rivertype / laketype：选中的这条河、这个湖是哪一种；newrivertype / newlaketype：新画的河、新放的湖是哪一种
-export type PanelId = 'world' | 'actions' | 'adjust' | 'layers' | 'biome' | 'river' | 'rivertype' | 'newrivertype' | 'laketype' | 'newlaketype' | `cat:${Category}`;
+// islandtype / chaintype：放岛、画岛链用哪一种岛（第十四轮）
+export type PanelId =
+  | 'world'
+  | 'actions'
+  | 'adjust'
+  | 'layers'
+  | 'biome'
+  | 'river'
+  | 'rivertype'
+  | 'newrivertype'
+  | 'laketype'
+  | 'newlaketype'
+  | 'islandtype'
+  | 'chaintype'
+  | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
@@ -294,12 +308,13 @@ export interface ToolOptions {
   reliefMode: 'up' | 'down';
   // 堆山的力度（抬升量）
   reliefAmount: number;
-  islandKind: IslandKind;
+  // 放岛用哪一种岛（内置的或自己的岛的种类的 id，见 core/island-types.ts；种类被删了时按大陆岛，见 ui/panels/islandTypes.tsx 的 liveIslandKind）
+  islandKind: string;
   // 岛的海岸线半径（km）
   islandKm: number;
   islandVariant: number;
   // 岛链有自己的种类和大小（没有小礁），放岛时选小礁不影响岛链
-  chainKind: ChainKind;
+  chainKind: string;
   chainKm: number;
   chainDensity: number;
   chainVariant: number;
@@ -335,10 +350,10 @@ export const options = signal<ToolOptions>({
   landShape: 'brush',
   reliefMode: 'up',
   reliefAmount: 0.7,
-  islandKind: 'volcanic',
+  islandKind: 'continental',
   islandKm: 100,
   islandVariant: 0,
-  chainKind: 'volcanic',
+  chainKind: 'continental',
   chainKm: 100,
   chainDensity: 1,
   chainVariant: 0,
@@ -672,12 +687,20 @@ function meshWorker(): Worker | null {
   }
 }
 
-// 轻快照：推导数组沿用当前世界的（同一批数组对象，地图据此跳过重新着色）；省份没变时省份数组也沿用
+// 轻快照：推导数组沿用当前世界的（同一批数组对象，地图据此跳过重新着色）；省份、岛的种类没变时这两个数组也沿用
 function lightWorld(prev: World, s: LightSnapshot): World {
-  const old = prev.causes.province;
-  let same = old.length === s.province.length;
-  for (let i = 0; same && i < old.length; i++) if (old[i] !== s.province[i]) same = false;
-  return { ...prev, causes: same ? prev.causes : { ...prev.causes, province: s.province }, small: s.small, derived: { ...prev.derived, features: s.features } };
+  const same = (a: ArrayLike<number>, b: ArrayLike<number>) => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
+  const sameProvince = same(prev.causes.province, s.province);
+  const sameIsland = same(prev.causes.islandType, s.islandType);
+  const causes =
+    sameProvince && sameIsland
+      ? prev.causes
+      : { ...prev.causes, province: sameProvince ? prev.causes.province : s.province, islandType: sameIsland ? prev.causes.islandType : s.islandType };
+  return { ...prev, causes, small: s.small, derived: { ...prev.derived, features: s.features } };
 }
 
 function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {

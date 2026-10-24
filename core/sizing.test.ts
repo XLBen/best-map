@@ -8,8 +8,8 @@ import { buildMesh, findCell, ringDistance } from './mesh';
 import { planetSettings, settingsFor } from './presets';
 import { brushCells } from './select';
 import { buildSphereMesh } from './sphere';
+import { BUILTIN_ISLAND_TYPES } from './island-types';
 import {
-  ISLAND_KINDS,
   brushRangeKm,
   chainIslands,
   combineStamps,
@@ -31,8 +31,8 @@ import { type Settings, createWorld, settingsSchema } from './world';
 
 const mesh = buildMesh(40000, 2, 1);
 
-// 有形状的四种岛（小礁只占一格）：固定的哈希按这四种排
-const SHAPED_KINDS = ISLAND_KINDS.filter((k) => k !== 'reef');
+// 有形状的内置岛（小礁只占一格）。第十四轮去掉了火山岛
+const SHAPED_KINDS = BUILTIN_ISLAND_TYPES.filter((t) => t.shape !== 'cell').map((t) => t.id);
 
 function ocean(rough = 1) {
   const w = createWorld({ cells: mesh.n, seed: 1 }, mesh);
@@ -61,7 +61,7 @@ describe('岛的大小', () => {
         k++;
       }
     }
-    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.8], [1.0, 0.9], [1.7, 0.75]], kind: 'volcanic', size: 370, density: 1.4, variant: 2 } });
+    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.8], [1.0, 0.9], [1.7, 0.75]], kind: 'continental', size: 370, density: 1.4, variant: 2 } });
     eng.exec({ op: 'add_island_chain', chain: { points: [[0.2, 0.6], [0.9, 0.55]], kind: 'continental', size: 1660, density: 0.7, variant: 0 } });
     const w = eng.world;
     // 湖的格写死，以后改水文也不会挪到别处
@@ -73,7 +73,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: 'd09199cb', upliftDelta: '8217bfba', erodDelta: '28ca4e95', land: 'e6c11545', elevation: 'c000b59a', discharge: '2c4d7361' });
+    }).toEqual({ landDelta: '8e725bfc', upliftDelta: 'de566817', erodDelta: '9989d588', land: '1ad11545', elevation: '79dfd765', discharge: '12f31e2a' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -131,7 +131,7 @@ describe('岛的大小', () => {
     const w = eng.world;
     const before = w.causes.landDelta.slice();
     const r = (islandSizeRangeKm(w)[0] + islandSizeRangeKm(w)[1]) / 6;
-    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.3], [1.2, 0.5], [1.7, 0.8]], kind: 'volcanic', size: r, density: 1, variant: 0 } });
+    eng.exec({ op: 'add_island_chain', chain: { points: [[0.3, 0.3], [1.2, 0.5], [1.7, 0.8]], kind: 'continental', size: r, density: 1, variant: 0 } });
     eng.exec({ op: 'add_island', island: { x: 1.0, y: 0.8, kind: 'atoll', size: r, variant: 1 } });
     const land = hashArray(w.causes.land);
     const replay = Engine.fromDoc(eng.toDoc());
@@ -146,13 +146,13 @@ describe('岛的大小', () => {
     const eng = new Engine({ seed: 2, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true });
     const r = islandSizeRangeKm(eng.world)[1] / 4;
-    eng.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'volcanic', size: r, variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'continental', size: r, variant: 0 } });
     const steps = eng.history.length;
-    eng.replaceLast({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'volcanic', size: r, variant: 1 } });
+    eng.replaceLast({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'continental', size: r, variant: 1 } });
     expect(eng.history.length).toBe(steps);
     const other = new Engine({ seed: 2, cells: 12000 });
     other.exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true });
-    other.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'volcanic', size: r, variant: 1 } });
+    other.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'continental', size: r, variant: 1 } });
     expect(hashArray(eng.world.causes.land)).toBe(hashArray(other.world.causes.land));
     expect(hashArray(eng.world.derived.elevation)).toBe(hashArray(other.world.derived.elevation));
   });
@@ -177,7 +177,7 @@ describe('放岛只在岛的附近找格', () => {
     ] as const) {
       const cellKm = w.mesh.spacing * w.kmPerUnit;
       const parts: string[] = [];
-      for (const kind of ['volcanic', 'continental', 'low', 'atoll'] as const) {
+      for (const kind of ['continental', 'low', 'atoll'] as const) {
         for (const size of [1.5, 2, 5, 14]) {
           spots.forEach(([x, y], k) => {
             const s = islandStamp(w, { x, y, kind, size: cellKm * size, variant: k });
@@ -187,7 +187,7 @@ describe('放岛只在岛的附近找格', () => {
       }
       got[name] = `${hashString(parts.join('|')).toString(16)} ${parts.length}`;
     }
-    expect(got).toEqual({ 星球: '14fb83f3 64', 海洋: '234b8221 64', 群岛: '9c8af2ed 48' });
+    expect(got).toEqual({ 星球: '94099864 48', 海洋: '9b41f786 48', 群岛: '23383b55 36' });
   });
 });
 
@@ -206,7 +206,7 @@ describe('岛链的固定哈希', () => {
     ] as const) {
       const cellKm = w.mesh.spacing * w.kmPerUnit;
       for (const [label, mult] of [['0.99×1.5', 0.99 * 1.5], ['1.6', 1.6], ['3', 3]] as const) {
-        for (const kind of ['volcanic', 'continental'] as const) {
+        for (const kind of ['continental'] as const) {
           const islands = chainIslands(w, { points: pts.map(([x, y]) => [x, y] as [number, number]), kind, size: cellKm * mult, density: 1, variant: 1 });
           const r = combineStamps(w, islands);
           got[`${name}|${label}|${kind}`] = [hashArray(islands.map((s) => s.size)), hashArray(r.cells), hashArray(r.landDelta), hashArray(r.upliftDelta), r.footprint.length].join(' ');
@@ -215,17 +215,11 @@ describe('岛链的固定哈希', () => {
     }
     expect(got).toEqual({
       '地区|0.99×1.5|continental': '60cecec5 b5891995 d5536d25 1f5b5c5d 467',
-      '地区|0.99×1.5|volcanic': '60cecec5 33a5c7fd 77742a77 fc7f90db 455',
       '地区|1.6|continental': 'a0851fda 9e8bf34d e9e49f4e 5dd46468 499',
-      '地区|1.6|volcanic': 'a0851fda c72a7d25 849fecd2 f968503 475',
       '地区|3|continental': '35ccfc81 d2510db5 c74eb974 db1104f0 1023',
-      '地区|3|volcanic': '35ccfc81 678f1335 f401ab52 edc9a5a9 987',
       '星球|0.99×1.5|continental': 'b1a4fe49 5c1d7675 181ce244 1d6b4f9b 189',
-      '星球|0.99×1.5|volcanic': 'b1a4fe49 67ffa875 61730bbf 270999e3 188',
       '星球|1.6|continental': 'ef569565 2a4226b5 152c53b7 370c3e90 214',
-      '星球|1.6|volcanic': 'ef569565 53869655 2dea7aaa a3ece917 219',
       '星球|3|continental': 'fdc24236 f91098f5 f21c987f e883f700 424',
-      '星球|3|volcanic': 'fdc24236 b60ad3dd d9ae9e40 a6ebc10d 415',
     });
   });
 });
@@ -298,7 +292,7 @@ describe('第八轮：更小的岛、湖、画笔', () => {
     const cellKm = mesh.spacing * w.kmPerUnit;
     let single = 0;
     for (let v = 0; v < 40; v++) {
-      const spec = { x: 0.1 + ((v * 0.0437) % 1.8), y: 0.1 + ((v * 0.0721) % 0.8), kind: 'volcanic' as const, variant: v };
+      const spec = { x: 0.1 + ((v * 0.0437) % 1.8), y: 0.1 + ((v * 0.0721) % 0.8), kind: 'continental' as const, variant: v };
       // 0.4 格：常常只有岛心那一格
       const now = islandStamp(w, { ...spec, size: cellKm * 0.4 });
       expect(now.footprint.length).toBeGreaterThanOrEqual(1);
@@ -309,10 +303,10 @@ describe('第八轮：更小的岛、湖、画笔', () => {
     expect(single).toBeGreaterThan(0);
     // 岛心在地图外（岛链画出了地图边）：没有岛心那一格，不补
     for (const [x, y] of [[-cellKm / w.kmPerUnit, 0.5], [1, 1 + (3 * cellKm) / w.kmPerUnit]]) {
-      expect(islandStamp(w, { x, y, kind: 'volcanic', size: cellKm * 0.4, variant: 0 }).footprint).toEqual([]);
+      expect(islandStamp(w, { x, y, kind: 'continental', size: cellKm * 0.4, variant: 0 }).footprint).toEqual([]);
     }
     // 岛链（命令里的大小比滑块的最小值还小时）：每个岛都至少有一格陆地
-    const islands = chainIslands(w, { points: [[0.2, 0.3], [1.8, 0.7]], kind: 'volcanic', size: cellKm * 0.4, density: 1, variant: 0 });
+    const islands = chainIslands(w, { points: [[0.2, 0.3], [1.8, 0.7]], kind: 'continental', size: cellKm * 0.4, density: 1, variant: 0 });
     for (const isl of islands) expect(islandStamp(w, isl).footprint.length).toBeGreaterThanOrEqual(1);
     expect(combineStamps(w, islands).footprint.length).toBeGreaterThanOrEqual(islands.length / 2);
   });
@@ -358,14 +352,14 @@ describe('第八轮：更小的岛、湖、画笔', () => {
       const cellKm = w.mesh.spacing * w.kmPerUnit;
       const lake = lakeRangeKm(w)[0];
       const reach = reachRangeKm(w)[0];
-      const island = islandSizeRangeKm(w, 'volcanic')[0];
+      const island = islandSizeRangeKm(w, 'continental')[0];
       const brush = brushRangeKm(w)[0];
       const cmds: Command[] = [
         { op: 'add_lake', lake: { cell: 0, radius: lake, depth: 120, perennial: true } },
         { op: 'add_constraint', constraint: { cells: [0], species: 'forest', mode: 'constraint', ratio: 1, radius: reach, label: '' } },
-        { op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: island, variant: 0 } },
+        { op: 'add_island', island: { x: 1, y: 0.5, kind: 'continental', size: island, variant: 0 } },
         { op: 'add_island', island: { x: 1, y: 0.5, kind: 'reef', size: island, variant: 0 } },
-        { op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1, 0.5]], kind: 'volcanic', size: island, density: 1, variant: 0 } },
+        { op: 'add_island_chain', chain: { points: [[0.5, 0.5], [1, 0.5]], kind: 'continental', size: island, density: 1, variant: 0 } },
         { op: 'reroll_region', x: 1, y: 0.5, radius: Math.max(brush / w.kmPerUnit, w.mesh.spacing * 1.2), variant: 1 },
         // 画河的“大小”最小 1.0（正好是“河流多少”的门槛）
         { op: 'add_guide', guide: { cells: [0, 1], locked: true, spring: true, flow: 1 } },

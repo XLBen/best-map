@@ -12,7 +12,9 @@ function islands(humidity: number): { w: World; centers: number[] } {
   const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
   const centers = [0.6, 1.0, 1.4];
-  (['volcanic', 'continental', 'low'] as const).forEach((kind, k) => eng.exec({ op: 'add_island', island: { x: centers[k], y: 0.5, kind, size: 100, variant: 2 } }));
+  // 第十四轮去掉了火山岛：第一个换成自己选了暗色的岛（颜色在 CPU 上混进陆地的底色）
+  eng.exec({ op: 'set_island_type', type: { id: 'dark', name: '黑岛', shape: 'round', height: 'high', color: '#3d3a38' } });
+  (['dark', 'continental', 'low'] as const).forEach((kind, k) => eng.exec({ op: 'add_island', island: { x: centers[k], y: 0.5, kind, size: 100, variant: 2 } }));
   eng.exec({ op: 'set_planet', patch: { humidity } });
   return { w: eng.world, centers };
 }
@@ -22,7 +24,7 @@ describe('水深只来自水面格', () => {
     const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
     // 陡的小火山岛：陆地上千米、四周是深海
-    eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'volcanic', size: 30, variant: 1 } });
+    eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'continental', size: 30, variant: 1 } });
     const w = eng.world;
     const L = cellLayers(w, opts);
     const { mesh } = w;
@@ -52,7 +54,7 @@ describe('水深只来自水面格', () => {
   });
 });
 
-// 着色器里岩性那一段（LITH_LAND_GLSL）的 JS 版：按格算陆地的底色（不含晕渲、细节）
+// 着色器里岛的样子那一段（LITH_LAND_GLSL）的 JS 版：按格算陆地的底色（不含晕渲、细节；自己选的颜色已经在 smooth 里）
 type V3 = [number, number, number];
 const mix3 = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const sstep = (a: number, b: number, v: number) => {
@@ -61,10 +63,7 @@ const sstep = (a: number, b: number, v: number) => {
 };
 function landColor(col: V3, lith: number[], hh: number, sandy: number): V3 {
   const lowK = 1 - sstep(20, 160, hh);
-  const lum = col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114;
-  const b0 = mix3([lum, lum, lum], col, 0.55);
-  const basalt: V3 = [b0[0] * 0.38 + 0.06, b0[1] * 0.38 + 0.06, b0[2] * 0.38 + 0.07];
-  let c = mix3(col, basalt, lith[0] * 0.9);
+  let c = col;
   const soft = mix3([0.36, 0.5, 0.42], [0.9, 0.85, 0.68], sstep(0.15, 0.6, sandy));
   c = mix3(c, soft, lith[1] * lowK * 0.8);
   return c;
@@ -82,8 +81,8 @@ const dE = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 describe('几种岛大到两百公里也分得出', () => {
   it('JS 版与着色器用的是同样的数', () => {
-    expect(LITH_LAND_GLSL).toContain('mix(vec3(lum), col, 0.55) * 0.38 + vec3(0.06, 0.06, 0.07)');
-    expect(LITH_LAND_GLSL).toContain('col = mix(col, basalt, vLith.r * 0.9);');
+    // 第十四轮：没有玄武岩了
+    expect(LITH_LAND_GLSL).not.toContain('basalt');
     expect(LITH_LAND_GLSL).toContain('mix(vec3(0.36, 0.50, 0.42), vec3(0.90, 0.85, 0.68), smoothstep(0.15, 0.6, vLandCol.a))');
     expect(LITH_LAND_GLSL).toContain('col = mix(col, soft, vLith.g * lowK * 0.8);');
   });
@@ -92,7 +91,7 @@ describe('几种岛大到两百公里也分得出', () => {
     ['稀树草原', 0.6],
     ['森林', 1.6],
   ] as const) {
-    it(`${name}：火山岛、大陆岛、低平岛的平均颜色两两 ΔE ≥ 15`, () => {
+    it(`${name}：自己选了颜色的岛、大陆岛、低平岛的平均颜色两两 ΔE ≥ 15`, () => {
       const { w, centers } = islands(humidity);
       const L = cellLayers(w, opts);
       const lith = lithLayer(w);
@@ -109,8 +108,8 @@ describe('几种岛大到两百公里也分得出', () => {
         }
         return lab([sum[0] / n, sum[1] / n, sum[2] / n]);
       });
-      expect(dE(avg[0], avg[1]), '火山岛 / 大陆岛').toBeGreaterThanOrEqual(15);
-      expect(dE(avg[0], avg[2]), '火山岛 / 低平岛').toBeGreaterThanOrEqual(15);
+      expect(dE(avg[0], avg[1]), '黑岛 / 大陆岛').toBeGreaterThanOrEqual(15);
+      expect(dE(avg[0], avg[2]), '黑岛 / 低平岛').toBeGreaterThanOrEqual(15);
       expect(dE(avg[1], avg[2]), '大陆岛 / 低平岛').toBeGreaterThanOrEqual(15);
     });
   }

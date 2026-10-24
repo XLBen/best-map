@@ -229,19 +229,21 @@ function lightSnapshot(e: Engine): { snap: LightSnapshot; transfer: Transferable
   // 推导数组没变（主线程沿用）：下一份只带变了的数组的快照照样以这些数组为准，状态编号换成这一次的
   if (lastSent) lastSent.state = e.stateId;
   const province = w.causes.province.slice();
+  const islandType = w.causes.islandType.slice();
   return {
     snap: {
       light: true,
       small: w.small,
       features: w.derived.features,
       province,
+      islandType,
       history: e.history,
       canUndo: e.canUndo,
       canRedo: e.canRedo,
       timings: e.lastTimings,
       stateId: e.stateId,
     },
-    transfer: [province.buffer],
+    transfer: [province.buffer, islandType.buffer],
   };
 }
 

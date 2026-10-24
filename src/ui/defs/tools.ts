@@ -28,7 +28,9 @@ import {
   Type,
   Waypoints,
 } from 'lucide-preact';
-import { CHAIN_KINDS, ISLAND_KINDS, ISLAND_KIND_INFO, islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
+import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
+import { islandTypeById, liveIslandKind } from '../../../core/island-types';
+import { ChainTypePick, IslandTypePick, TerrainExtras } from '../panels/islandTypes';
 import type { World } from '../../../core/world';
 import {
   type Category,
@@ -117,7 +119,7 @@ const BRUSH: SliderDef = {
 
 const brushAs = (label: string): SliderDef => ({ ...BRUSH, label });
 
-// 四种岛的最小值相同（一格）；小礁只占一格，不用调大小
+// 各种岛的最小值相同（一格）；一格的岛（小礁）不用调大小
 const ISLAND: SliderDef = {
   key: 'islandKm',
   label: '直径',
@@ -125,7 +127,7 @@ const ISLAND: SliderDef = {
   scale: 'log',
   snap: snapRadiusKm,
   format: (v, w) => sizeText(w, Math.max(islandSizeRangeKm(w, options.value.islandKind)[0], v)),
-  enabled: () => options.value.islandKind !== 'reef',
+  enabled: (w) => islandTypeById(w.small, liveIslandKind(w, options.value.islandKind))?.shape !== 'cell',
 };
 
 // 岛链自己的大小：放岛时选了小礁、调了大小都不影响岛链
@@ -181,8 +183,6 @@ const CLIMATE_AMOUNT = (group: 'temp' | 'moist'): SliderDef => ({
 
 // ---------- 底部条上常用的几项 ----------
 
-const islandKinds = { kind: 'choice' as const, key: 'islandKind' as const, options: ISLAND_KINDS.map((k) => ({ value: k, label: ISLAND_KIND_INFO[k].name, hint: ISLAND_KIND_INFO[k].hint })) };
-const chainKinds = { kind: 'choice' as const, key: 'chainKind' as const, options: CHAIN_KINDS.map((k) => ({ value: k, label: ISLAND_KIND_INFO[k].name, hint: ISLAND_KIND_INFO[k].hint })) };
 const biomeModes = {
   kind: 'choice' as const,
   key: 'biomeMode' as const,
@@ -259,7 +259,7 @@ const defs: ToolDef[] = [
     how: '点一下放岛，按住往外拖直接拖出大小',
     size: ISLAND,
     // 每放一个岛自动换一个形状（只用鼠标，没有“换个形状”按钮）
-    bar: () => [islandKinds],
+    bar: () => [{ kind: 'custom', render: IslandTypePick }],
     create: () => islandTool(),
   },
   {
@@ -281,7 +281,7 @@ const defs: ToolDef[] = [
       format: (v, w) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], options.value.chainKm)) / v)} km`,
     },
     // 每画一条岛链自动换一种排列（只用鼠标，没有“换个排列”按钮）
-    bar: () => [chainKinds],
+    bar: () => [{ kind: 'custom', render: ChainTypePick }],
     create: () => chainTool(),
   },
   {
@@ -578,7 +578,7 @@ export const TOOL_DEFS = Object.fromEntries(defs.map((d) => [d.id, d])) as Recor
 // ---------- 类别 ----------
 
 export const CATEGORIES: CategoryDef[] = [
-  { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'reroll', 'restore'] },
+  { id: 'terrain', icon: Mountain, label: '地形', tools: ['land', 'island', 'chain', 'relief', 'reroll', 'restore'], extras: TerrainExtras },
   { id: 'climate', icon: ThermometerSun, label: '气候', tools: ['temp', 'moist', 'unclimate', 'field'] },
   { id: 'nature', icon: Leaf, label: '自然', tools: ['biome', 'grow', 'erase', 'range'], extras: NatureExtras },
   { id: 'water', icon: Droplets, label: '水系', tools: ['river', 'lake', 'unwater'], extras: RiverExtras },

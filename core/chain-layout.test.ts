@@ -7,7 +7,7 @@ import { engineFor } from './testing/fixtures';
 describe('岛链的排列', () => {
   const w = engineFor({ cells: 8000, seed: 1 }).world;
   const cellKm = w.mesh.spacing * w.kmPerUnit;
-  const spec = (variant: number): ChainSpec => ({ points: [[0.3, 0.6], [1.6, 0.6]], kind: 'volcanic', size: 2.5 * cellKm, density: 1, variant });
+  const spec = (variant: number): ChainSpec => ({ points: [[0.3, 0.6], [1.6, 0.6]], kind: 'continental', size: 2.5 * cellKm, density: 1, variant });
   // 沿线（横向）排好的位置与相邻的间距
   const layout = (variant: number) => {
     const xs = chainIslands(w, spec(variant))
@@ -69,12 +69,12 @@ describe('岛链不并进原有的岛', () => {
     const eng = engineFor({ cells: 8000, seed: 1 });
     const w = eng.world;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
-    eng.exec({ op: 'add_island', island: { x: 0.95, y: 0.6, kind: 'volcanic', size: 3 * cellKm, variant: 0 } });
+    eng.exec({ op: 'add_island', island: { x: 0.95, y: 0.6, kind: 'continental', size: 3 * cellKm, variant: 0 } });
     const before = Uint8Array.from(eng.world.causes.land);
     expect(before.some((v) => v === 1)).toBe(true);
     const gains: number[] = [];
     for (const variant of [0, 1, 2, 3, 4, 5, 6, 7, 8]) {
-      const chain: ChainSpec = { points: [[0.3, 0.6], [1.6, 0.6]], kind: 'volcanic', size: 2.5 * cellKm, density: 1, variant };
+      const chain: ChainSpec = { points: [[0.3, 0.6], [1.6, 0.6]], kind: 'continental', size: 2.5 * cellKm, density: 1, variant };
       const islands = chainIslands(eng.world, chain);
       expect(islands.length).toBeGreaterThan(2);
       const st = combineStamps(eng.world, islands);

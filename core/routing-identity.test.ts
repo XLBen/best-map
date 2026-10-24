@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
-import { type ElevationResult, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor, volcanoes } from './elevation';
+import { type ElevationResult, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor } from './elevation';
 import { MinHeap } from './heap';
 import { type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
@@ -629,8 +629,6 @@ function computeElevationOld(world: World): ElevationResult {
     h.set(tmp);
   }
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
-  // 第十三轮修：放的火山岛按大小缩放、挖火山口（照 elevation.ts 的写法）
-  volcanoes(world, elevation);
   // 第十二轮：海底、湖底的形状换成了新的（这里比的是陆上的求解，海底、湖底照 elevation.ts 的写法）
   seafloor(world, elevation);
   // 第十三轮修：并回陆地的小块海挖成湖（照 elevation.ts 的写法）

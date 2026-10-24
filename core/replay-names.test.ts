@@ -18,7 +18,7 @@ describe('重放后省名不变', () => {
       for (let i = 0; i < mesh.n && deep.length < 6; i += 331) if (d.elevation[i] < -3000) deep.push(i);
       deep.forEach((c, k) => {
         try {
-          eng.exec({ op: 'add_island', island: { x: mesh.x[c], y: mesh.y[c], kind: 'volcanic', size: 300, variant: k + 1 } });
+          eng.exec({ op: 'add_island', island: { x: mesh.x[c], y: mesh.y[c], kind: 'continental', size: 300, variant: k + 1 } });
         } catch {
           // 放不下（已经是陆地）就跳过
         }

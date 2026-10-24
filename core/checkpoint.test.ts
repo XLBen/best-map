@@ -49,7 +49,7 @@ describe('检查点', () => {
       // 存档多两步（检查点落后了）
       const more = build(kind);
       more.exec({ op: 'set_planet', patch: { humidity: 1.4 } });
-      more.exec({ op: 'add_island', island: { x: kind === 'planet' ? 1.995 : 0.4, y: 0.35, kind: 'volcanic', size: 300, variant: 1 } });
+      more.exec({ op: 'add_island', island: { x: kind === 'planet' ? 1.995 : 0.4, y: 0.35, kind: 'continental', size: 300, variant: 1 } });
       same(restore(more.toDoc()), replay(more.toDoc()));
 
       // 存档少两步（检查点之后撤销过）

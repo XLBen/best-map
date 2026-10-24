@@ -33,8 +33,8 @@ function script(kind: 'region' | 'planet') {
     snap();
     eng.redo();
     snap();
-    eng.exec({ op: 'add_island', island: { x: kind === 'planet' ? 1.99 : 0.5, y: 0.3, kind: 'volcanic', size: 300, variant: 1 } });
-    eng.replaceLast({ op: 'add_island', island: { x: kind === 'planet' ? 1.99 : 0.5, y: 0.3, kind: 'volcanic', size: 300, variant: 2 } });
+    eng.exec({ op: 'add_island', island: { x: kind === 'planet' ? 1.99 : 0.5, y: 0.3, kind: 'continental', size: 300, variant: 1 } });
+    eng.replaceLast({ op: 'add_island', island: { x: kind === 'planet' ? 1.99 : 0.5, y: 0.3, kind: 'continental', size: 300, variant: 2 } });
     snap();
     eng.undo();
     snap();

@@ -73,6 +73,8 @@ export interface LightSnapshot {
   small: SmallState;
   features: GeoFeature[];
   province: Int32Array;
+  // 每格的岛的种类（第十四轮：删掉一种岛时编号会挪，只重新起名的一步也要带上）
+  islandType: Uint8Array;
   history: { summary: string; done: boolean }[];
   canUndo: boolean;
   canRedo: boolean;

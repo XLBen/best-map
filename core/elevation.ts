@@ -3,7 +3,7 @@ import { HeapLite, type Mesh, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, accumulate } from './routing';
-import { ISLAND_ERODIBILITY, LAGOON_ERODIBILITY, pocketLakes, seabedFields } from './terrain';
+import { lagoonTest, pocketLakes, seabedFields } from './terrain';
 import type { World } from './world';
 
 // 高程 = 抬升与河流下切的稳态（stream power law，n = 1）：
@@ -250,69 +250,6 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   }
 }
 
-// 火山岛（第十三轮修）：放的火山岛（放岛改成正好是玄武岩 ISLAND_ERODIBILITY.volcanic 的陆格连成的一块）高度按大小定，
-// 不随地图的格距、山的高低变：“半径”（面积折成圆）R km 的火山岛最高约 VOLCANO_PEAK·√(R / 100) m（直径 200 km 约 2,600 m，
-// 最高 4,200 m），整块按比例缩放（沟谷照旧）。最高处挖一个火山口：半径约 R 的 0.16（至少最高的那一格），
-// 口里比口外一圈最低的地方低约峰高的一成二，所以四周一圈是口沿。半径不到 VOLCANO_CRATER_MIN 格的小火山岛不挖
-const VOLCANO_PEAK = 2600;
-const VOLCANO_MAX = 4200;
-const VOLCANO_CRATER_MIN = 3;
-export function volcanoes(world: World, elevation: Float32Array) {
-  const { mesh, causes, kmPerUnit } = world;
-  const n = mesh.n;
-  const basalt = ISLAND_ERODIBILITY.volcanic!;
-  // 放岛改过岩性（erodDelta ≠ 0）、正好是玄武岩的格：生成的地形里可蚀性也有 0.45 左右的，不能算
-  const isV = (i: number) => causes.land[i] === 1 && causes.erodDelta[i] !== 0 && Math.abs(causes.erod[i] - basalt) < 0.003;
-  const seen = new Uint8Array(n);
-  for (let s = 0; s < n; s++) {
-    if (seen[s] || !isV(s)) continue;
-    const cells = [s];
-    seen[s] = 1;
-    for (let k = 0; k < cells.length; k++) {
-      const c = cells[k];
-      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-        const j = mesh.adj[e];
-        if (!seen[j] && isV(j)) {
-          seen[j] = 1;
-          cells.push(j);
-        }
-      }
-    }
-    let area = 0;
-    let top = cells[0];
-    for (const c of cells) {
-      area += mesh.area[c] * kmPerUnit * kmPerUnit;
-      if (elevation[c] > elevation[top] || (elevation[c] === elevation[top] && c < top)) top = c;
-    }
-    const rKm = Math.sqrt(area / Math.PI);
-    const peak = Math.min(VOLCANO_MAX, VOLCANO_PEAK * Math.sqrt(rKm / 100));
-    const k = peak / Math.max(elevation[top], 2);
-    for (const c of cells) elevation[c] = Math.max(2, elevation[c] * k);
-    const rCells = rKm / (mesh.spacing * kmPerUnit);
-    if (rCells < VOLCANO_CRATER_MIN) continue;
-    // 火山口：离最高处 0.16·R 以内（沿网格量）的火山格
-    const rc = Math.max(0.16 * rCells, 0.5) * mesh.spacing;
-    const d = graphDistance(mesh, [top], rc * 1.5);
-    const inside = cells.filter((c) => d[c] <= rc);
-    if (!inside.includes(top)) inside.push(top);
-    const set = new Set(inside);
-    let rim = Infinity;
-    for (const c of inside) {
-      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-        const j = mesh.adj[e];
-        if (!set.has(j)) rim = Math.min(rim, causes.land[j] ? elevation[j] : 0);
-      }
-    }
-    if (!Number.isFinite(rim) || rim < 50) continue;
-    // 口底中间深、边上浅一点（碗形）；口沿很低时最多挖到它的一半，不挖到海平面以下
-    const depth = Math.min(peak * 0.12, rim * 0.5);
-    for (const c of inside) {
-      const t = Math.min(1, d[c] / rc);
-      elevation[c] = Math.min(elevation[c], rim - depth * (1 - 0.4 * t * t));
-    }
-  }
-}
-
 // 小块海挖成的湖有多深（m）：水文认湖要 3 m 以上
 const POCKET_DEPTH = 5;
 
@@ -344,7 +281,6 @@ function finishElevation(world: World, h: Float64Array, coastKm: Float64Array): 
   const scale = small.planet.mountainScale * RAW_TO_M;
   const elevation = new Float32Array(n);
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
-  volcanoes(world, elevation);
   // 海底：按离岸距离的大陆架 → 陆架坡折 → 陆坡 → 陆隆 → 深海（见 seafloor）
   seafloor(world, elevation);
   lagoonFloor(world, elevation);
@@ -811,20 +747,19 @@ export function seafloor(world: World, elevation: Float32Array) {
   }
 }
 
-// 珊瑚岛的潟湖（第十三轮）：可蚀性是珊瑚砂（≥ LAGOON_ERODIBILITY，只有放珊瑚岛时才这么软，见 terrain.ts 的 ISLAND_ERODIBILITY）的海格
+// 环礁的潟湖（第十三轮；第十四轮起按岛的种类认：记着环礁形状的种类的海格，见 terrain.ts 的 lagoonTest）
 // 是潟湖或环上的缺口，海底是浅浅的珊瑚砂：挨着陆地的约 −15 m，往里每格深 12 m，最深 −50 m（按格号带一点起伏）。
 // 在海底的剖面（seafloor）之后改，不进它的缓存
-export { LAGOON_ERODIBILITY };
 export function lagoonFloor(world: World, elevation: Float32Array) {
   const { mesh, causes } = world;
   const { off, adj } = mesh;
   const n = mesh.n;
   const land = causes.land;
-  const erod = causes.erod;
+  const isLagoon = lagoonTest(world);
   let step: Int32Array | null = null;
   const queue: number[] = [];
   for (let i = 0; i < n; i++) {
-    if (land[i] || erod[i] < LAGOON_ERODIBILITY) continue;
+    if (land[i] || !isLagoon(i)) continue;
     step ??= new Int32Array(n).fill(-1);
     for (let e = off[i]; e < off[i + 1]; e++) {
       if (land[adj[e]]) {
@@ -839,13 +774,13 @@ export function lagoonFloor(world: World, elevation: Float32Array) {
     const i = queue[h];
     for (let e = off[i]; e < off[i + 1]; e++) {
       const j = adj[e];
-      if (land[j] || step[j] >= 0 || erod[j] < LAGOON_ERODIBILITY) continue;
+      if (land[j] || step[j] >= 0 || !isLagoon(j)) continue;
       step[j] = step[i] + 1;
       queue.push(j);
     }
   }
   for (let i = 0; i < n; i++) {
-    if (land[i] || erod[i] < LAGOON_ERODIBILITY) continue;
+    if (land[i] || !isLagoon(i)) continue;
     // 和陆地不连着的（只有潟湖本身、很少见）按最深算
     const k = step[i] < 0 ? 3 : step[i];
     const jitter = ((Math.imul(i + 1, 0x9e3779b1) >>> 0) / 4294967296 - 0.5) * 6;

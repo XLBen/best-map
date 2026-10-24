@@ -487,7 +487,7 @@ function answerLast(): Request {
     return next as Species;
   });
   const small = { ...w.small, species };
-  const snap: LightSnapshot = { light: true, small, features: w.derived.features, province: w.causes.province.slice(), history: [], canUndo: true, canRedo: false, timings: { total: 0 }, stateId: ++nextState };
+  const snap: LightSnapshot = { light: true, small, features: w.derived.features, province: w.causes.province.slice(), islandType: w.causes.islandType.slice(), history: [], canUndo: true, canRedo: false, timings: { total: 0 }, stateId: ++nextState };
   fw.onmessage!({ data: { id: m.id, ok: true, summary: '修改了生态', snapshot: snap } });
   return m.req;
 }

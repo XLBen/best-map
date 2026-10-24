@@ -6,6 +6,7 @@ import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
 import type { LakeType } from './lake-types';
+import type { IslandType } from './island-types';
 import type { RiverType } from './river-types';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
@@ -201,6 +202,9 @@ export interface Causes {
   moistOffset: Float32Array;
   fields: Record<string, Float32Array>;
   province: Int32Array;
+  // 放的岛是哪一种（第十四轮，见 island-types.ts）：0 不是放的岛，否则是种类的编号。放岛、画岛链时写在新长出的陆地
+  // （环礁还有潟湖的海格）上；画陆地 / 海、恢复原样画到的地方清掉。颜色、潟湖、小礁归海省都按它
+  islandType: Uint8Array;
 }
 
 export interface TerrainState {
@@ -238,6 +242,8 @@ export interface SmallState {
   lakeTypes?: LakeType[];
   // 自然的湖选的类型：这一格所在的那片湖就是这一种（这一格不再是湖时不起作用）。后面的说了算
   lakeTyping?: { cell: number; type: string }[];
+  // 自己的岛的种类（第十四轮，见 island-types.ts）：第一次新建之前没有这一项
+  islandTypes?: IslandType[];
 }
 
 export interface Conflict {
@@ -377,6 +383,7 @@ function emptyCauses(n: number): Causes {
     moistOffset: new Float32Array(n),
     fields: {},
     province: new Int32Array(n).fill(-1),
+    islandType: new Uint8Array(n),
   };
 }
 
