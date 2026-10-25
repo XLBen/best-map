@@ -509,6 +509,8 @@ uniform float uCellPx;
 uniform float uProvScale;
 // 省界的浓淡（第二十三轮：人文图里省界淡一些，国界显眼）
 uniform float uProvAlpha;
+// 国界的浓淡（第二十五轮：文化等地图模式里 < 1，只画近处一圈）
+uniform float uCountryAlpha;
 // 生态的花纹与发光（每格的字节与调色板，见 colors.ts 的 fxLayers）
 uniform sampler2D uFx;
 uniform highp sampler2D uFxPal;
@@ -773,7 +775,7 @@ void main() {
           else kOut = 1.0;
         }
       }
-      float k = max(kIn * 0.82, kOut * 0.3) * (c0 >= 65535.5 ? 0.5 : 1.0) * mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx));
+      float k = max(kIn * 0.82, kOut * 0.3 * step(0.999, uCountryAlpha)) * uCountryAlpha * (c0 >= 65535.5 ? 0.5 : 1.0) * mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx));
       if (k > 0.0) col = mix(col, uStyle == 1 ? vec3(0.42, 0.14, 0.1) : vec3(0.16, 0.11, 0.1), k / sqrt(max(uPxScale, 1.0)));
     }
   }
@@ -1500,8 +1502,10 @@ export class Renderer {
   detail = 1;
   // 平涂是省份着色、高亮是省份工具的：切线附近也按换过的格取（否则按像素自己的格）
   flatByGroup = false;
-  // 省界的浓淡（0–1，人文图里淡一些）
+  // 省界的浓淡（0–1，国家、文化等地图模式里淡一些）
   provinceAlpha = 1;
+  // 国界的浓淡（第二十五轮：文化等地图模式里细而淡）
+  countryAlpha = 1;
   highlightByGroup = false;
   camera: Camera = { x: 1, y: 0.5, zoom: 500 };
   // 晕渲的夸张倍数（全图时）：真实的山坡很缓，不夸张就看不出起伏
@@ -2150,7 +2154,7 @@ export class Renderer {
     // 河的图层：停稳的那张（刚停下的那一帧就画好：照用移动中的那张的话，下一帧换上停稳的那张时要整张再合成一次，比画河慢得多）
     const river = this.riverLayer?.(false) ?? null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
-    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${riverKey}`;
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -2449,7 +2453,7 @@ export class Renderer {
     const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: sc.key }) ?? null) : null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
     if (!moving) {
-      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${riverKey}`;
+      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
       if (key === this.pComposeKey) return;
       this.pComposeKey = key;
     } else this.pComposeKey = '';
@@ -2751,6 +2755,7 @@ export class Renderer {
     gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), cellPx);
     gl.uniform1f(gl.getUniformLocation(pc, 'uProvScale'), this.provinceScale);
     gl.uniform1f(gl.getUniformLocation(pc, 'uProvAlpha'), this.provinceAlpha);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uCountryAlpha'), this.countryAlpha);
     gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
     gl.uniform1i(gl.getUniformLocation(pc, 'uStyle'), this.style === 'atlas' ? 1 : 0);

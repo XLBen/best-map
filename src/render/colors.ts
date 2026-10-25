@@ -123,7 +123,7 @@ export interface ColorOptions {
   season: Season;
   focusSpecies: string | null;
   borders: boolean;
-  // 国界（第二十三轮）：人文图、国家底图里画；省略为不画
+  // 国界（第二十三轮）：国家、文化等地图模式与“国家”一类的工具里画（浓淡在渲染器的 countryAlpha）；省略为不画
   countryBorders?: boolean;
 }
 

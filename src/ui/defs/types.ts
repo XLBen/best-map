@@ -66,8 +66,8 @@ export interface ToolSpec {
   hidden?(w: World): boolean;
   // Alt+点：吸取（取这里的生态、这里的省份）。返回取到了什么，用来提示
   pick?(w: World, cell: number): string | null;
-  // 地图上的光标：点选类的工具是手指；省略时是十字（styles.css 的 .map-overlay）
-  cursor?: 'pointer';
+  // 地图上的光标：点选类的工具是手指，指针是箭头；省略时是十字（styles.css 的 .map-overlay）
+  cursor?: 'pointer' | 'default';
   // 开着时底图换成这一层（地形类别、资源），换到别的工具时换回原来的（这期间在图层里换过就不动）。
   // 写成函数时跟着选项变（人口笔刷按模式）
   view?: ViewMode | (() => ViewMode);

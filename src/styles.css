@@ -685,7 +685,7 @@ button.toggle {
   z-index: 10;
 }
 /* 窄屏放不下两组时，右边那组换到下一行、靠右 */
-.tb-group:last-child {
+.tb-group + .tb-group {
   margin-left: auto;
 }
 .tb-group {
@@ -2056,10 +2056,11 @@ input.share-input {
 
 /* ---------- 国家（第二十三轮）：地理 / 人文的切换、旗帜、国家列表、档案的抽屉 ---------- */
 .map-kind {
-  position: absolute;
-  top: 60px;
-  right: 10px;
-  z-index: 9;
+  pointer-events: auto;
+  margin-left: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 2px;
   background: var(--glass);
   border: 1px solid var(--fill);
@@ -2068,8 +2069,28 @@ input.share-input {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
+/* 地图模式在顶栏里单独一行、靠右 */
+.topbar > .map-kind {
+  flex: 0 1 auto;
+  order: 3;
+  /* 换行用的空行也占一道间距：收回来 */
+  margin-top: calc(-1 * var(--sp-2));
+}
+.topbar::after {
+  content: '';
+  order: 2;
+  flex-basis: 100%;
+}
+.map-kind .seg {
+  display: flex;
+}
+.map-kind .seg button {
+  flex: none;
+  white-space: nowrap;
+}
 .app.with-sheet .map-kind {
-  right: calc(var(--sheet-w) + 20px);
+  margin-right: calc(var(--sheet-w) + 10px);
+  max-width: calc(100% - var(--sheet-w) - 10px);
 }
 .flag {
   flex: none;

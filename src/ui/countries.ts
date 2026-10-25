@@ -1,4 +1,3 @@
-import { effect } from '@preact/signals';
 import type { Command } from '../../core/commands';
 import {
   COUNTRY_KM2,
@@ -21,10 +20,9 @@ import {
 import { cellKm2 } from '../../core/human/space';
 import { type NameMode, nameLines } from '../../core/name-display';
 import type { CountryMeta, World } from '../../core/world';
-import { type MapKind, mapKind, mode, setPrefs, world, worldEpoch } from '../state';
 
 // 国家（第二十三轮）的界面逻辑：有没有国家、一格是哪国、按人口排的列表、各种命令、档案的改动、
-// “分裂 ↔ 统一”、地理图与人文图。不碰界面，测试直接调
+// “分裂 ↔ 统一”（地图模式见 map/modes.ts）。不碰界面，测试直接调
 
 type Small = World['small'];
 
@@ -240,28 +238,3 @@ export function estimateCountries(w: World, f: number, keepLocked = false): numb
   return Math.min(MAX_COUNTRIES, Math.max(area > 0 ? 1 : 0, Math.round(area / T))) + locked.size;
 }
 
-// ---------- 地理图 / 人文图 ----------
-
-// 人文图：有国家时才起作用（没有国家的世界两种一样）
-export const politicalOn = (w: Pick<World, 'small' | 'causes'> | null, k: MapKind = mapKind.value) => k === 'political' && !!w && hasCountries(w);
-
-// 换地理图、人文图：存进偏好；底图跟着换（人文图把地貌换成国家，地理图把国家换回地貌；别的底图不动）
-export function setMapKind(k: MapKind) {
-  mapKind.value = k;
-  setPrefs({ map: k });
-  const w = world.value;
-  if (k === 'political' && mode.value === 'terrain' && w && hasCountries(w)) mode.value = 'country';
-  if (k === 'geo' && mode.value === 'country') mode.value = 'terrain';
-}
-
-// 打开、新建了世界，或者刚生成了国家：人文图里底图是地貌时换成国家
-let seen: { epoch: number; had: boolean } = { epoch: -1, had: false };
-effect(() => {
-  const w = world.value;
-  const epoch = worldEpoch.value;
-  if (!w) return;
-  const has = hasCountries(w);
-  const fresh = epoch !== seen.epoch || (has && !seen.had);
-  seen = { epoch, had: has };
-  if (fresh && has && mapKind.peek() === 'political' && mode.peek() === 'terrain') mode.value = 'country';
-});

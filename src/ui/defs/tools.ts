@@ -42,6 +42,7 @@ import {
   Route,
   Landmark,
   MapPin,
+  MousePointer,
 } from 'lucide-preact';
 import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import { islandTypeById, liveIslandKind } from '../../../core/island-types';
@@ -116,6 +117,7 @@ import { capitalTool, countryMergeTool, countrySelectTool, newCountryTool, pickT
 import { CountryExtras, NEW_COUNTRY_SHAPES, NoCountryChip, SelectedCountryChip, TerritoryPick } from '../panels/countries';
 import { CityBar, CityPointChip, LandmarkChip, LandmarkPick, NoCityChip, PointChip, PointPick, RoadBar, SettlementExtras } from '../panels/settlements';
 import { cityTool, deleteSelected, landmarkTool, pointTool, roadTool } from '../tools/settlements';
+import { pointerTool } from '../tools/pointer';
 import { clearBarPreview } from '../barPreview';
 import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
 import {
@@ -827,6 +829,16 @@ const SPECS = {
     del: () => deleteSelected(['point']),
     create: (env) => pointTool(env.zoom),
   },
+  // ---------- 第二十五轮：指针 ----------
+  pointer: {
+    category: 'inspect',
+    icon: MousePointer,
+    name: '指针',
+    short: '指针',
+    how: '点击查看档案，不改地图',
+    cursor: 'default',
+    create: (env) => pointerTool(env.zoom),
+  },
 } satisfies Record<string, ToolSpec>;
 
 // 工具的 id：工具表里的键
@@ -840,6 +852,8 @@ export const TOOL_DEFS = Object.fromEntries(Object.entries(SPECS).map(([id, d]) 
 const toolsIn = (c: Category) => (Object.keys(TOOL_DEFS) as ToolId[]).filter((id) => TOOL_DEFS[id].category === c);
 
 export const CATEGORIES: CategoryDef[] = [
+  // 第二十五轮：指针（只看不改）。顶栏最左边单独一个按钮（V），没有底部条、没有“⋯”
+  { id: 'inspect', icon: MousePointer, label: '指针', tools: toolsIn('inspect') },
   { id: 'terrain', icon: Mountain, label: '地形', tools: toolsIn('terrain'), extras: TerrainExtras },
   { id: 'climate', icon: ThermometerSun, label: '气候', tools: toolsIn('climate') },
   { id: 'nature', icon: Leaf, label: '自然', tools: toolsIn('nature'), extras: NatureExtras, map: { highlights: failingHighlights } },
@@ -870,7 +884,7 @@ export const CATEGORIES: CategoryDef[] = [
   { id: 'culture', icon: UsersRound, label: '文化', tools: toolsIn('culture'), extras: CultureExtras },
   // 第二十三轮：国家（选国家、领土、新建、合并、首都）。没有国家时底部条上是“生成国家…”
   { id: 'countries', icon: Castle, label: '国家', tools: toolsIn('countries'), extras: CountryExtras, watch: () => selectedCountry.value },
-  // 第二十四轮：城市（城市、道路、地标、自定义点）。开着时地理图上也画城市、全部地标
+  // 第二十四轮：城市（城市、道路、地标、自定义点）。开着时任何模式里都画全部城市、地标
   { id: 'settlements', icon: Building2, label: '城市', tools: toolsIn('settlements'), extras: SettlementExtras, watch: () => selectedSettle.value },
 ];
 

@@ -65,8 +65,9 @@ export type ViewMode =
 
 export type Season = 'annual' | 'summer' | 'winter';
 
-// 工具分九类，顶栏右边一类一个按钮（第二十二轮加了“文化”，第二十三轮加了“国家”，第二十四轮加了“城市”）
-export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture' | 'countries' | 'settlements';
+// 工具分九类，顶栏右边一类一个按钮（第二十二轮加了“文化”，第二十三轮加了“国家”，第二十四轮加了“城市”）；
+// inspect（第二十五轮）只有指针，顶栏最左边单独一个按钮
+export type Category = 'inspect' | 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture' | 'countries' | 'settlements';
 
 // 工具的 id：由 ui/defs/tools.ts 的工具表推出来
 export type { ToolId };
@@ -248,9 +249,17 @@ export type WheelPref = 'auto' | 'zoom' | 'pan';
 // 整个星球用哪种投影看（第十三轮 G4）：等距圆柱（平铺图）、等面积（椭圆形）、球形（从太空看）。只是看的方式，不写进世界文件
 export type ProjectionPref = 'equirect' | 'equalEarth' | 'globe';
 const PREFS_KEY = 'map2.prefs';
-// 地理图还是人文图（第二十三轮）：人文图画国界、国名，自然的地名只留大的
-export type MapKind = 'geo' | 'political';
-// names：地名显示中文、原文还是两者（第二十轮）；map：地理图还是人文图（第二十三轮）
+// 地图模式（第二十五轮，像 EU4：地理、国家、文化、文化组、时代的每一维、人口；第二十三轮的“人文图”就是“国家”）。
+// 每种模式画什么见 ui/map/modes.ts 的表
+export type MapKind = 'geo' | 'country' | 'culture' | 'cultureGroup' | 'popDensity' | `dim:${string}`;
+// 存着的模式读回来：第二十三轮的 political 读作 country，不认识的是地理
+export function parseMapKind(v: unknown): MapKind {
+  if (v === 'political') return 'country';
+  if (v === 'country' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity') return v;
+  if (typeof v === 'string' && /^dim:[\w-]{1,64}$/.test(v)) return v as MapKind;
+  return 'geo';
+}
+// names：地名显示中文、原文还是两者（第二十轮）；map：地图模式（第二十五轮）
 export type Prefs = { wheel: WheelPref; projection: ProjectionPref; names: NameMode; map: MapKind };
 // 存着的偏好（JSON）读回来：不认识的值用默认的
 export function parsePrefs(raw: string | null): Prefs {
@@ -264,7 +273,7 @@ export function parsePrefs(raw: string | null): Prefs {
     wheel: p.wheel === 'zoom' || p.wheel === 'pan' ? p.wheel : 'auto',
     projection: p.projection === 'equalEarth' || p.projection === 'globe' ? p.projection : 'equirect',
     names: NAME_MODES.some((m) => m.id === p.names) ? (p.names as NameMode) : DEFAULT_NAME_MODE,
-    map: p.map === 'political' ? 'political' : 'geo',
+    map: parseMapKind(p.map),
   };
 }
 function readPrefs(): Prefs {
@@ -291,8 +300,6 @@ export function setNameMode(m: NameMode) {
   setPrefs({ names: m });
 }
 
-// 地理图 / 人文图（第二十三轮）：存在这个浏览器里，不写进世界。换的时候底图跟着换（见 ui/countries.ts 的 setMapKind）
-export const mapKind = signal<MapKind>(prefs.value.map);
 
 // 参考图（手绘草图）：铺在地图上照着画。只存在这个浏览器里（IndexedDB，不占自动保存的空间），不写进世界文件
 export interface Reference {

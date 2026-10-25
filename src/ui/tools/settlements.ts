@@ -3,8 +3,9 @@ import type { SettleInputs } from '../../../core/human/settlements';
 import type { World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
 import type { SettleMark } from '../../render/settle-draw';
-import { type SettleRef, exec, nameMode, options, overlays, selectedSettle, sheet, showToast, world } from '../../state';
-import { hasCountries, politicalOn } from '../countries';
+import { type SettleRef, exec, options, selectedSettle, sheet, showToast, world } from '../../state';
+import { modeDef, modeOf } from '../map/modes';
+import { shownMarks } from '../map/settle';
 import {
   addCityCommand,
   addLandmarkCommand,
@@ -14,6 +15,7 @@ import {
   cellPxOf,
   editRoadCommand,
   liveLandmarkType,
+  markKey,
   livePointType,
   moveCityCommand,
   moveLandmarkCommand,
@@ -22,9 +24,8 @@ import {
   pickRoad,
   refOfKey,
   removeCommand,
+  settleHoverText,
   settleLists,
-  settleMarks,
-  settleShow,
 } from '../settlements';
 import { EMPTY, type Pointer, type Preview, type ToolHandler, guard, isBusy, keepX } from './api';
 
@@ -32,14 +33,14 @@ import { EMPTY, type Pointer, type Preview, type ToolHandler, guard, isBusy, kee
 // 地标、自定义点（点击放、点选、拖动挪走）。选中的一样记在 state.ts 的 selectedSettle，Delete 删除
 
 // 鼠标离点多近算点中（屏幕像素）；拖多远算拖动
-const HIT_PX = 9;
+export const HIT_PX = 9;
 const MOVE_PX = 4;
 // 道路：离线多近算点中；控制点点中的范围；画的一笔起止离城市多近时接到城市上
 const ROAD_HIT_PX = 6;
 const HANDLE_PX = 8;
 const SNAP_PX = 12;
 
-const HOVER = 'rgba(255, 226, 120, 0.95)';
+export const HOVER = 'rgba(255, 226, 120, 0.95)';
 const SELECT = 'rgba(255, 210, 60, 1)';
 const GLOW = 'rgba(255, 226, 120, 0.55)';
 
@@ -63,16 +64,17 @@ export function deleteSelected(kinds: readonly SettleRef['kind'][]): boolean {
   return true;
 }
 
-// 编辑时地图上画着的点（与地图同一份：“城市”一类开着时城市、全部地标都画）
+// 编辑时地图上画着的点（与地图同一份：“城市”一类开着时城市、全部地标都画，选中的城市写名字）
 export function editMarks(w: World): SettleMark[] {
-  return settleMarks(w, nameMode.value, settleShow({ political: politicalOn(w), countries: hasCountries(w), editing: true, cities: overlays.value.cities, landmarks: overlays.value.landmarks }));
+  const r = selectedSettle.value;
+  return shownMarks(w, { mode: modeDef(modeOf(w)), editing: true, selected: r && (r.kind === 'city' || r.kind === 'point') ? markKey(r.kind, r.id) : null });
 }
 
-const ring = (x: number, y: number, rPx: number, zoom: number, color: string, width = 2): Shape => ({ kind: 'circle', x, y, r: rPx / zoom, color, width });
+export const ring = (x: number, y: number, rPx: number, zoom: number, color: string, width = 2): Shape => ({ kind: 'circle', x, y, r: rPx / zoom, color, width });
 const nextId = (w: World) => Math.max(1, w.small.nextSettlement ?? 1);
 
 // 选中的那一个画一个圈（城市、地标、点）
-function selectedRing(marks: readonly SettleMark[], zoom: number, kinds: readonly SettleRef['kind'][]): Shape[] {
+export function selectedRing(marks: readonly SettleMark[], zoom: number, kinds: readonly SettleRef['kind'][]): Shape[] {
   const r = selectedSettle.value;
   if (!r || !kinds.includes(r.kind)) return [];
   const m = marks.find((x) => refOfKey(x.key)?.kind === r.kind && refOfKey(x.key)?.id === r.id);
@@ -200,7 +202,8 @@ export function cityTool(zoom: () => number): ToolHandler {
     // 当作城市、没挂在城市上的点画成城市：城市工具里也能选、能拖
     accepts: (r) => r.kind === 'city' || r.kind === 'point',
     selectKinds: ['city', 'point'],
-    name: cityName,
+    // 城市写名字、等级、人口（第二十五轮：地图上不写名字的城市在这里看）
+    name: settleHoverText,
     placeHint(w, p) {
       const cell = cellOf(p);
       if (!w.causes.land[cell]) return { ...EMPTY, hint: '城市要在陆地上', warn: true };

@@ -2,7 +2,8 @@ import { worldCultures } from '../../core/human';
 import { popText } from './human';
 import { countryAt, countryOf, hasCountries } from './countries';
 import { settleHere } from './settlements';
-import { type GeoFeature, ISLET_FRAG } from '../../core/features';
+import { featuresAt } from './features-at';
+import { ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
 import { effectsAt } from '../../core/effects';
@@ -49,24 +50,6 @@ function windText(x: number, y: number): string {
   if (m < 0.05) return '无风';
   const k = (((Math.round(Math.atan2(y, -x) / (Math.PI / 4)) % 8) + 8) % 8) as number;
   return `${COMPASS[k]}风（${m < 0.35 ? '弱' : m < 0.75 ? '中' : '强'}）`;
-}
-
-// 每格属于哪些地理要素，按世界缓存
-const featureCache = new WeakMap<World, Map<number, GeoFeature[]>>();
-function featuresAt(w: World, cell: number): GeoFeature[] {
-  let m = featureCache.get(w);
-  if (!m) {
-    m = new Map();
-    for (const f of w.derived.features) {
-      for (const c of f.cells) {
-        const l = m.get(c);
-        if (l) l.push(f);
-        else m.set(c, [f]);
-      }
-    }
-    featureCache.set(w, m);
-  }
-  return m.get(cell) ?? [];
 }
 
 const WORDS: Record<string, [string, string]> = {

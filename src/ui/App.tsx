@@ -39,7 +39,6 @@ import { CultureMenu, PopTupleMenu, ValueMenu } from './panels/culture';
 import { TerritoryMenu } from './panels/countries';
 import { LandmarkMenu, PointMenu, RankMenu } from './panels/settlements';
 import { MapLegend } from './shell/MapLegend';
-import { MapKindSwitch } from './shell/MapKind';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
@@ -198,7 +197,6 @@ export function App() {
             <TopBar />
             {w && <ContextBar />}
             {w && <RulerButton />}
-            <MapKindSwitch />
             <MapLegend />
             <HereCard />
             <Sheet />

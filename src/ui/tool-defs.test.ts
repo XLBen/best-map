@@ -30,8 +30,9 @@ describe('工具表', () => {
     expect(new Set(listed).size).toBe(listed.length);
     // 每一类里的先后与第十九轮之前相同（底部工具条上的位置、数字键）；第二十一轮在地形、自然的最后加了地形类别、资源；
     // 第二十二轮加了“文化”一类（文化、人口、发源地）；第二十三轮加了“国家”一类（选国家、领土、新建、合并、首都）；
-    // 第二十四轮加了“城市”一类（城市、道路、地标、自定义点）
+    // 第二十四轮加了“城市”一类（城市、道路、地标、自定义点）；第二十五轮加了只有指针的 inspect
     expect(Object.fromEntries(CATEGORIES.map((c) => [c.id, c.tools]))).toEqual({
+      inspect: ['pointer'],
       terrain: ['land', 'island', 'chain', 'relief', 'fragment', 'reroll', 'restore', 'terrainClass'],
       climate: ['temp', 'moist', 'unclimate', 'field'],
       nature: ['biome', 'grow', 'erase', 'range', 'resource'],

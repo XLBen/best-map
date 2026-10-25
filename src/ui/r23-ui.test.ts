@@ -6,7 +6,7 @@ import { continents, snapshot } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { cellLayers, countryBorderGroups, humanFlat } from '../render/colors';
 import { countryLineText, layoutAlong, smoothPath } from '../render/overlay';
-import { askUser, exec, mapKind, mode, options, parsePrefs, prefs, selectedCountry, setOptions, sheet, world } from '../state';
+import { askUser, exec, mode, options, parsePrefs, prefs, selectedCountry, setOptions, sheet, world } from '../state';
 import { EMBLEM_NAMES, LAYOUT_NAMES, withEmblem, withLayout } from './CountryArchive';
 import {
   countryAt,
@@ -24,10 +24,8 @@ import {
   historyPatch,
   namePatch,
   patchCommand,
-  politicalOn,
   regenerateCountriesCommand,
   rulerPatch,
-  setMapKind,
   titlePreview,
   yearText,
 } from './countries';
@@ -37,7 +35,8 @@ import { newWorldCommands } from './forms';
 import { defaultChoice, generateCommand, regenerateWith } from './human';
 import { hereLine } from './Inspector';
 import { LEGEND_TOP, legendFor } from './legend';
-import { countryDraws, politicalFeatures } from './map/political';
+import { countryDraws } from './map/political';
+import { mapKind, modeFeatures, modeOf, setMapKind } from './map/modes';
 import { isTitleField, titleRows, titleValue } from './packs/fields';
 import { GOV_KINDS, repoKinds } from './packs/repo';
 import { type Pointer, capitalTool, chosenTerritory, countryLand, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from './tools';
@@ -345,20 +344,20 @@ describe('国家的档案', () => {
   });
 });
 
-describe('地理图与人文图', () => {
-  it('存在偏好里；人文图把地貌换成国家，地理图换回地貌；没有国家时人文图不起作用', () => {
+describe('地图模式里的国家（第二十三轮的地理图 / 人文图）', () => {
+  it('存在偏好里（旧的 political 读作国家）；国家模式把底图换成国家，地理换回地貌；没有国家时国家模式不起作用', () => {
     expect(parsePrefs(null).map).toBe('geo');
-    expect(parsePrefs(JSON.stringify({ map: 'political' })).map).toBe('political');
+    expect(parsePrefs(JSON.stringify({ map: 'political' })).map).toBe('country');
     expect(parsePrefs(JSON.stringify({ map: 'xx' })).map).toBe('geo');
     const w = nations().world;
     world.value = w;
     mode.value = 'terrain';
-    setMapKind('political');
-    expect(mapKind.value).toBe('political');
-    expect(prefs.value.map).toBe('political');
+    setMapKind('country');
+    expect(mapKind.value).toBe('country');
+    expect(prefs.value.map).toBe('country');
     expect(mode.value).toBe('country');
-    expect(politicalOn(w)).toBe(true);
-    expect(politicalOn(continents().world)).toBe(false);
+    expect(modeOf(w)).toBe('country');
+    expect(modeOf(continents().world)).toBe('geo');
     // 别的底图不动
     mode.value = 'temperature';
     setMapKind('geo');
@@ -366,15 +365,15 @@ describe('地理图与人文图', () => {
     mode.value = 'country';
     setMapKind('geo');
     expect(mode.value).toBe('terrain');
-    expect(politicalOn(w)).toBe(false);
+    expect(modeOf(w)).toBe('geo');
   });
 
-  it('人文图的地名：自然的只留海、湾、海峡、湖、山脉（自己的照旧）', () => {
+  it('国家模式的地名：自然的只留海、湾、海峡、湖、山脉（自己的照旧）', () => {
     const w = nations().world;
-    const kept = politicalFeatures(w.derived.features);
+    const kept = modeFeatures(w.derived.features, 'political');
     expect(kept.every((f) => ['ocean', 'sea', 'bay', 'strait', 'lake', 'range', 'region', 'spot'].includes(f.type) || f.custom)).toBe(true);
     expect(kept.length).toBeLessThan(w.derived.features.length);
-    expect(politicalFeatures(w.derived.features)).toBe(kept);
+    expect(modeFeatures(w.derived.features, 'political')).toBe(kept);
   });
 
   it('国名：每国一个，按中文 / 原文 / 两者（两者时两行，原文大写）；同样的输入同一个数组', () => {

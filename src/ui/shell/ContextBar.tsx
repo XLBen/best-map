@@ -83,6 +83,13 @@ export function ContextBar() {
   const sliders = [def.size, def.amount].filter((s): s is SliderDef => !!s && s.enabled?.(w) !== false);
   const items = def.bar?.(w) ?? [];
   const more: PanelId = `cat:${c}`;
+  // 指针（第二十五轮）没有底部条（量距离时照旧显示量出来的数）
+  if (c === 'inspect')
+    return measure.value ? (
+      <div class="bottombar">
+        <MeasureRow w={w} pts={measure.value} />
+      </div>
+    ) : null;
   return (
     <div class="bottombar">
       <div class="bb-row bb-tools">

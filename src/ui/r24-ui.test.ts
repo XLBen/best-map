@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Command } from '../../core/commands';
+import { type Command, popText } from '../../core/commands';
 import type { Engine } from '../../core/engine';
 import { cityList, landmarkList, roadHandles, roadPoints, rankFor, worldCityRanks } from '../../core/human';
 import { continents, snapshot } from '../../core/testing/fixtures';
@@ -15,7 +15,7 @@ import { SETTLE_KINDS, repoKinds } from './packs/repo';
 import {
   BIG_CITY_PX,
   MEDIUM_CITY_PX,
-  MINOR_ROAD_PX,
+  MINOR_ROAD_EDIT_PX,
   SMALL_CITY_PX,
   addPointCommand,
   attachFor,
@@ -44,9 +44,11 @@ import {
   settleLists,
   settleMarks,
   settleNamePatch,
+  type SettleShow,
   settleShow,
   textPatch,
 } from './settlements';
+import { modeDef } from './map/modes';
 import { type Pointer, cityTool, landmarkTool, pointTool, roadTool } from './tools';
 
 // 第二十四轮的界面：向导的“城市与道路”“地标”、“城市”一类的四个工具发出的命令、缩放分级与图标、地图上的字、档案的 patch、
@@ -79,6 +81,9 @@ const towns = (): Engine =>
     eng.exec(GEN);
     return eng;
   });
+
+// 画全部城市、地标、点
+const ALL: SettleShow = { cities: 'all', cityNames: 'capitals', landmarks: 'all', points: true };
 
 // 一格在屏幕上 20 像素：什么都画、都认
 const zoomOf = (w: World) => () => 20 / w.mesh.spacing;
@@ -139,7 +144,8 @@ describe('“城市”一类', () => {
     const c = cityList(w).find((x) => !x.point && !x.capital)!;
     t.move!(pointer(w, c.cell), false);
     expect(t.drags).toBe(true);
-    expect(t.preview().hint).toBe(c.name);
+    // 第二十五轮：名字、等级、人口
+    expect(t.preview().hint).toBe(`${c.name} · ${c.rank.name} · ${popText(c.population)} 人`);
     t.down!(pointer(w, c.cell));
     await t.up!(pointer(w, c.cell));
     expect(selectedSettle.value).toEqual({ kind: 'city', id: c.id });
@@ -289,7 +295,9 @@ describe('缩放分级与图标', () => {
     expect(cityIconPx(3, false)).toBe(BIG_CITY_PX);
     expect(cityIconPx(2, false)).toBe(MEDIUM_CITY_PX);
     expect(cityIconPx(1, false)).toBe(SMALL_CITY_PX);
-    for (const l of [1, 2, 3]) expect(cityNamePx(l, false)).toBeGreaterThanOrEqual(cityIconPx(l, false));
+    // 第二十五轮：不是首都的城市不写名字（选中的写，图标画出来就写）
+    for (const l of [1, 2, 3]) expect(cityNamePx(l, false)).toBe(Infinity);
+    for (const l of [1, 2, 3]) expect(cityNamePx(l, false, true)).toBe(cityIconPx(l, false));
     const ranks = worldCityRanks({});
     const small = rankFor(ranks, 0, 0);
     expect(cityShown({ rank: small, capital: false, secondCapital: false }, 1)).toBe(false);
@@ -315,16 +323,18 @@ describe('缩放分级与图标', () => {
     }
   });
 
-  it('地图上画哪些：人文图城市与全部地标；地理图只画自然的地标与自定义点；“城市”一类开着时都画；没有国家时城市照画', () => {
-    expect(settleShow({ political: true, countries: true, editing: false, cities: true, landmarks: true })).toEqual({ cities: true, landmarks: 'all', points: true });
-    expect(settleShow({ political: false, countries: true, editing: false, cities: true, landmarks: true })).toEqual({ cities: false, landmarks: 'natural', points: true });
-    expect(settleShow({ political: false, countries: true, editing: true, cities: true, landmarks: true })).toEqual({ cities: true, landmarks: 'all', points: true });
-    expect(settleShow({ political: false, countries: false, editing: false, cities: true, landmarks: false })).toEqual({ cities: true, landmarks: 'none', points: false });
+  it('地图上画哪些：国家模式城市与全部地标；地理模式只画自然的地标与自定义点；“城市”一类开着时都画；没有国家时城市照画', () => {
+    const country = modeDef('country');
+    const geo0 = modeDef('geo');
+    expect(settleShow({ mode: country, countries: true, editing: false, cities: true, landmarks: true })).toEqual({ cities: 'all', cityNames: 'capitals', landmarks: 'all', points: true });
+    expect(settleShow({ mode: geo0, countries: true, editing: false, cities: true, landmarks: true })).toEqual({ cities: 'none', cityNames: 'capitals', landmarks: 'natural', points: true });
+    expect(settleShow({ mode: geo0, countries: true, editing: true, cities: true, landmarks: true })).toEqual({ cities: 'all', cityNames: 'capitals', landmarks: 'all', points: true });
+    expect(settleShow({ mode: geo0, countries: false, editing: false, cities: true, landmarks: false })).toEqual({ cities: 'all', cityNames: 'capitals', landmarks: 'none', points: false });
     const w = towns().world;
-    const all = settleMarks(w, 'zh', { cities: true, landmarks: 'all', points: true });
+    const all = settleMarks(w, 'zh', ALL);
     // 同样的输入同一个数组
-    expect(settleMarks(w, 'zh', { cities: true, landmarks: 'all', points: true })).toBe(all);
-    const geo = settleMarks(w, 'zh', { cities: false, landmarks: 'natural', points: true });
+    expect(settleMarks(w, 'zh', ALL)).toBe(all);
+    const geo = settleMarks(w, 'zh', { cities: 'none', cityNames: 'capitals', landmarks: 'natural', points: true });
     expect(geo.every((m) => m.kind === 'landmark')).toBe(true);
     expect(geo.length).toBe(landmarkList(w).filter((l) => l.category === 'natural').length);
     // 重要的在前：首都与大城市在别的城市前面
@@ -338,7 +348,7 @@ describe('缩放分级与图标', () => {
 
   it('认鼠标下的：只认画着的（缩小时认不到村镇）；道路小路放大后才认', () => {
     const w = towns().world;
-    const marks = settleMarks(w, 'zh', { cities: true, landmarks: 'all', points: true });
+    const marks = settleMarks(w, 'zh', ALL);
     const dot = marks.find((m) => m.kind === 'city' && m.iconPx === SMALL_CITY_PX)!;
     expect(pickMark(w, marks, dot.x, dot.y, w.mesh.spacing * 0.2, SMALL_CITY_PX)?.key).toBe(dot.key);
     expect(pickMark(w, marks, dot.x, dot.y, w.mesh.spacing * 0.2, 1)?.key).not.toBe(dot.key);
@@ -346,7 +356,7 @@ describe('缩放分级与图标', () => {
     const minor = set.paths[set.minorIdx[0]];
     if (minor) {
       const p = minor.points[Math.floor(minor.points.length / 2)];
-      expect(pickRoad(w, p[0], p[1], w.mesh.spacing * 0.3, MINOR_ROAD_PX)?.kind).toBeDefined();
+      expect(pickRoad(w, p[0], p[1], w.mesh.spacing * 0.3, MINOR_ROAD_EDIT_PX)?.kind).toBeDefined();
     }
     // 同样的道路同一份
     expect(roadSet(w)).toBe(set);

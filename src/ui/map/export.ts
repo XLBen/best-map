@@ -4,8 +4,8 @@ import { LABEL_REF_WIDTH, type LabelSize, exportFrame, planTiles, tileMargin, ti
 import { type Frame, type OverlayPaths, type OverlayState, type ProvinceLabel, drawOverlay, peakLabels, releaseRiverTile, riverLayerScene, riverLayerTile } from '../../render/overlay';
 import { type Proj, planeBounds } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
-import { politicalOn } from '../countries';
-import { countryDraws, politicalFeatures } from './political';
+import { modeDef, modeFeatures, modeOf } from './modes';
+import { regionDraws } from './political';
 import { settleOverlay } from './settle';
 import { exportProgress, imageExportCancel, labelGroups, mapStyle, nameMode, overlays, season, showToast, world } from '../../state';
 
@@ -19,6 +19,8 @@ type ExportImage = (o: ExportImageOptions, progress: (p: number) => void, cancel
 export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLabel[]): OverlayState {
   const groups = labelGroups.value;
   const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
+  // 地图模式（第二十五轮）：按现在的模式写哪些地名、片区名，画哪些城市、地标
+  const md = modeDef(modeOf(w));
   return {
     // 河画在每一块里（renderTile）
     rivers: false,
@@ -29,11 +31,9 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     shapes: [],
     // 导出只看图层的设定（第十三轮修：以前省份类、地名类工具开着时导出的图里写满了省名，连海省也有）
     provinceLabels,
-    // 人文图（第二十三轮）：国名，自然的地名只留几类
-    features: overlays.value.labels ? (politicalOn(w) ? politicalFeatures(w.derived.features) : w.derived.features) : null,
-    countries: overlays.value.labels && politicalOn(w) ? countryDraws(w, nameMode.value) : null,
-    // 城市、道路、地标（第二十四轮）：按现在的地理图 / 人文图
-    ...settleOverlay(w, { political: politicalOn(w), editing: false }),
+    features: overlays.value.labels ? modeFeatures(w.derived.features, md.features) : null,
+    countries: overlays.value.labels && md.regions ? regionDraws(w, md.regions, nameMode.value) : null,
+    ...settleOverlay(w, { mode: md, editing: false }),
     labelTypes: types,
     peaks: overlays.value.peaks ? peakLabels(w) : null,
     nameMode: nameMode.value,

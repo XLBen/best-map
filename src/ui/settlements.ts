@@ -1,4 +1,4 @@
-import type { Command } from '../../core/commands';
+import { type Command, popText } from '../../core/commands';
 import { EXPORT_PARTS, type ExportPartId, exportPartAvailable } from '../../core/export';
 import {
   type CityInfo,
@@ -23,6 +23,7 @@ import type { World } from '../../core/world';
 import { CITY_ICONS, type CityIcon, LANDMARK_ICONS, POINT_ICONS, type RoadDraw, type SettleMark } from '../render/settle-draw';
 import type { SettleRef } from '../state';
 import { hasCountries } from './countries';
+import type { ModeDef } from './map/modes';
 
 // 城市、道路、地标、自定义点（第二十四轮）的界面逻辑：有没有、放大到多少画哪几级、地图上画的点与道路、
 // 工具认鼠标下的是哪一个、各种命令、档案的 patch、分开导出的列表。不碰界面，测试直接调
@@ -41,20 +42,19 @@ export const canGenerateCities = (w: Pick<World, 'small' | 'causes'>) => hasCoun
 
 // ---------- 放大到多少画哪几级（一格在屏幕上的像素数） ----------
 
-// 首都、陪都总画（名字一格 2.5 像素以上）；大城市（level ≥ 3）一格 2 像素以上（名字 4 像素以上）；
-// 城市（level 2）一格 5 像素以上（名字 7 像素以上）；村镇一格 10 像素以上（名字 14 像素以上）
+// 首都、陪都总画（名字一格 2.5 像素以上）；大城市（level ≥ 3）一格 2 像素以上；城市（level 2）一格 5 像素以上；村镇一格 10 像素以上。
+// 不是首都的城市在地图上只画图标、不写名字（第二十五轮）：鼠标停在图标上时提示里写，“城市”工具选中的照旧写
 export const CAPITAL_NAME_PX = 2.5;
 export const BIG_CITY_PX = 2;
-export const BIG_NAME_PX = 4;
 export const MEDIUM_CITY_PX = 5;
-export const MEDIUM_NAME_PX = 7;
 export const SMALL_CITY_PX = 10;
-export const SMALL_NAME_PX = 14;
+export const NO_NAME_PX = Infinity;
 // 地标：一格 4 像素以上画图标，9 像素以上写名字
 export const LANDMARK_ICON_PX = 4;
 export const LANDMARK_NAME_PX = 9;
-// 小路：一格 6 像素以上才画
-export const MINOR_ROAD_PX = 6;
+// 小路：一格 9 像素以上才画（第二十五轮，原来 6）；“城市 · 道路”工具开着时 6 像素以上
+export const MINOR_ROAD_PX = 9;
+export const MINOR_ROAD_EDIT_PX = 6;
 
 export const cellPxOf = (w: Pick<World, 'mesh'>, zoom: number) => w.mesh.spacing * zoom;
 
@@ -62,9 +62,10 @@ export function cityIconPx(level: number, capital: boolean): number {
   if (capital) return 0;
   return level >= 3 ? BIG_CITY_PX : level === 2 ? MEDIUM_CITY_PX : SMALL_CITY_PX;
 }
-export function cityNamePx(level: number, capital: boolean): number {
+// 名字：只有首都、陪都写（named：“城市”工具选中的也写，图标画出来就写）
+export function cityNamePx(level: number, capital: boolean, named = false): number {
   if (capital) return CAPITAL_NAME_PX;
-  return level >= 3 ? BIG_NAME_PX : level === 2 ? MEDIUM_NAME_PX : SMALL_NAME_PX;
+  return named ? cityIconPx(level, false) : NO_NAME_PX;
 }
 export const cityShown = (c: Pick<CityInfo, 'rank' | 'capital' | 'secondCapital'>, cellPx: number) => cellPx >= cityIconPx(c.rank.level, c.capital || c.secondCapital);
 
@@ -92,10 +93,12 @@ export function refOfKey(key: string): SettleRef | null {
   return kind === 'city' || kind === 'road' || kind === 'landmark' || kind === 'point' ? { kind, id: Number(id) } : null;
 }
 
-export function cityMark(c: CityInfo, nm: NameMode): SettleMark {
+// named：写名字（省略时首都、陪都写，别的不写）
+export function cityMark(c: CityInfo, nm: NameMode, named?: boolean): SettleMark {
   const capital = c.capital || c.secondCapital;
+  const key = markKey(c.point ? 'point' : 'city', c.id);
   return {
-    key: markKey(c.point ? 'point' : 'city', c.id),
+    key,
     kind: 'city',
     x: c.x,
     y: c.y,
@@ -106,7 +109,7 @@ export function cityMark(c: CityInfo, nm: NameMode): SettleMark {
     ...(capital || c.rank.level >= 3 ? { bold: true } : {}),
     textColor: CITY_TEXT,
     iconPx: cityIconPx(c.rank.level, capital),
-    namePx: cityNamePx(c.rank.level, capital),
+    namePx: named === false ? NO_NAME_PX : named ? cityIconPx(c.rank.level, capital) : cityNamePx(c.rank.level, capital),
     ...(capital ? { always: true } : {}),
   };
 }
@@ -197,42 +200,73 @@ export function settleHere(w: World, cell: number): string {
   return parts.map((x) => `${x} · `).join('');
 }
 
+// 鼠标停在城市、地标、点上时的一句话（第二十五轮：地图上不写名字的城市在这里看）：城市写名字、等级、人口
+export function settleHoverText(w: World, ref: SettleRef): string {
+  const lists = settleLists(w);
+  if (ref.kind === 'landmark') return lists.landmarks.find((l) => l.id === ref.id)?.name ?? '地标';
+  const c = lists.cities.find((x) => (ref.kind === 'point' ? !!x.point : !x.point) && x.id === ref.id);
+  if (!c) return ref.kind === 'point' ? (lists.points.find((p) => p.id === ref.id)?.name ?? '点') : '城市';
+  const role = c.capital ? '首都' : c.secondCapital ? '陪都' : '';
+  return [c.name, role, c.rank.name, `${popText(c.population)} 人`].filter(Boolean).join(' · ');
+}
+
 // 当作城市的点画成城市（挂着的城市画成陪都，没挂时这个点自己当一座城市），不另画点
 const pointDrawn = (p: PointInfo) => !p.actsAsCity;
 
-// 画哪些：cities 城市（与当作城市的点），landmarks 全部 / 只画自然的 / 不画，points 自定义点
+// 画哪些：cities 全部城市（与当作城市的点）/ 只画首都、陪都 / 不画；cityNames 写名字的（首都、陪都 / 都不写），
+// selected 另外写名字的那一座（“城市”工具选中的，标记的键）；landmarks 全部 / 只画自然的 / 不画；points 自定义点
 export interface SettleShow {
-  cities: boolean;
+  cities: 'all' | 'capitals' | 'none';
+  cityNames: 'capitals' | 'none';
+  selected?: string;
   landmarks: 'all' | 'natural' | 'none';
   points: boolean;
 }
+
+const capitalLike = (c: CityInfo) => c.capital || c.secondCapital;
 
 // 要画的点（重要的在前：首都与大城市、自定义点、别的城市、地标）。同样的输入给同一个数组（地名的版面不必重排）
 const markMemo: { lists: Lists; nm: NameMode; show: string; out: SettleMark[] }[] = [];
 export function settleMarks(w: World, nm: NameMode, show: SettleShow): SettleMark[] {
   const lists = settleLists(w);
-  const sk = `${show.cities}|${show.landmarks}|${show.points}`;
+  const sk = `${show.cities}|${show.cityNames}|${show.selected ?? ''}|${show.landmarks}|${show.points}`;
   const hit = markMemo.find((m) => m.lists === lists && m.nm === nm && m.show === sk);
   if (hit) return hit.out;
   const out: SettleMark[] = [];
-  // 城市不画时（地理图），当作城市、没挂在城市上的点照样画（它是自定义点）
-  const cities = show.cities ? lists.cities : show.points ? lists.cities.filter((c) => c.point) : [];
-  const major = cities.filter((c) => c.capital || c.secondCapital || c.rank.level >= 3);
-  const rest = cities.filter((c) => !(c.capital || c.secondCapital || c.rank.level >= 3));
-  for (const c of major) out.push(cityMark(c, nm));
+  // 城市不画时（地理图），当作城市、没挂在城市上的点照样画（它是自定义点）；只画首都时首都、陪都与这些点
+  const cities = lists.cities.filter((c) => (show.cities === 'all' ? true : show.cities === 'capitals' && capitalLike(c)) || (show.points && c.point));
+  const major = cities.filter((c) => capitalLike(c) || c.rank.level >= 3);
+  const rest = cities.filter((c) => !(capitalLike(c) || c.rank.level >= 3));
+  const mark = (c: CityInfo) => {
+    const key = markKey(c.point ? 'point' : 'city', c.id);
+    return cityMark(c, nm, key === show.selected ? true : capitalLike(c) && show.cityNames === 'capitals' ? undefined : false);
+  };
+  for (const c of major) out.push(mark(c));
   if (show.points) for (const p of lists.points) if (pointDrawn(p)) out.push(pointMark(p));
-  for (const c of rest) out.push(cityMark(c, nm));
+  for (const c of rest) out.push(mark(c));
   if (show.landmarks !== 'none') for (const l of lists.landmarks) if (show.landmarks === 'all' || l.category === 'natural') out.push(landmarkMark(l, nm));
   markMemo.unshift({ lists, nm, show: sk, out });
   markMemo.length = Math.min(markMemo.length, 4);
   return out;
 }
 
-// 地图上画什么（人文图：城市、全部地标；地理图：只画自然的地标，城市只在“城市”一类开着时、或世界里没有国家时画；自定义点两种图都画）
-export function settleShow(o: { political: boolean; countries: boolean; editing: boolean; cities: boolean; landmarks: boolean }): SettleShow {
+// 地图上画什么：按地图模式（map/modes.ts 的表）。editing：“城市”一类开着（城市、全部地标都画，选中的城市写名字）；
+// cities、landmarks：图层里的开关（自定义点跟着“地标”）
+export function settleShow(o: {
+  mode: Pick<ModeDef, 'cities' | 'cityNames' | 'landmarks'>;
+  countries: boolean;
+  editing: boolean;
+  cities: boolean;
+  landmarks: boolean;
+  selected?: string | null;
+}): SettleShow {
+  const m = o.mode;
+  const cities = !o.cities ? 'none' : o.editing ? 'all' : m.cities === 'geo' ? (o.countries ? 'none' : 'all') : m.cities;
   return {
-    cities: o.cities && (o.political || o.editing || !o.countries),
-    landmarks: !o.landmarks ? 'none' : o.political || o.editing ? 'all' : 'natural',
+    cities,
+    cityNames: o.editing ? 'capitals' : m.cityNames,
+    ...(o.editing && o.selected ? { selected: o.selected } : {}),
+    landmarks: !o.landmarks ? 'none' : o.editing ? 'all' : m.landmarks,
     points: o.landmarks,
   };
 }
@@ -240,7 +274,9 @@ export function settleShow(o: { political: boolean; countries: boolean; editing:
 // ---------- 道路 ----------
 
 export interface RoadSet {
+  // 平时的样子（细、半透明，小路放大到 9 像素一格才画）与“道路”工具开着时清楚的样子（同一组折线）
   draw: RoadDraw;
+  clear: RoadDraw;
   paths: RoadPath[];
   // draw 里每条折线是哪条路（paths 的下标）
   majorIdx: number[];
@@ -267,7 +303,7 @@ export function roadSet(w: World): RoadSet | null {
       minorIdx.push(k);
     }
   });
-  const v = { draw, paths, majorIdx, minorIdx };
+  const v = { draw, clear: { ...draw, minorPx: MINOR_ROAD_EDIT_PX, clear: true }, paths, majorIdx, minorIdx };
   roadMemo = { roads, mesh: w.mesh, v };
   return v;
 }
@@ -306,7 +342,7 @@ function segDist(px: number, py: number, ax: number, ay: number, bx: number, by:
   return Math.hypot(px - ax - t * vx, py - ay - t * vy);
 }
 
-// 鼠标下的道路（画着的：小路放大后才认）
+// 鼠标下的道路（“道路”工具里画着的：小路放大后才认）
 export function pickRoad(w: World, x: number, y: number, tol: number, cellPx: number): RoadPath | null {
   const set = roadSet(w);
   if (!set) return null;
@@ -328,7 +364,7 @@ export function pickRoad(w: World, x: number, y: number, tol: number, cellPx: nu
     }
   };
   set.draw.major.forEach((l, k) => test(l, set.majorIdx[k]));
-  if (cellPx >= MINOR_ROAD_PX) set.draw.minor.forEach((l, k) => test(l, set.minorIdx[k]));
+  if (cellPx >= MINOR_ROAD_EDIT_PX) set.draw.minor.forEach((l, k) => test(l, set.minorIdx[k]));
   return best;
 }
 

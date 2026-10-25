@@ -18,7 +18,6 @@ import {
   focusSpecies,
   hoverRiver,
   labelGroups,
-  mapKind,
   nameMode,
   mapStyle,
   measure,
@@ -27,6 +26,7 @@ import {
   options,
   overlays,
   pinnedCell,
+  selectedSettle,
   prefs,
   redrawTick,
   reference,
@@ -50,11 +50,16 @@ import { highlightLayers } from './map/highlights';
 import { type PointerState, mapInput } from './map/input';
 import { pendingEdits, pendingPreview } from './pending';
 import { riverGlow } from './riverCourse';
-import { hasCountries, politicalOn } from './countries';
-import { countryDraws, politicalFeatures } from './map/political';
+import { hasCountries } from './countries';
+import { type ModeDef, mapKind, modeDef, modeFeatures, modeOf } from './map/modes';
+import { regionDraws } from './map/political';
+import { markKey } from './settlements';
 import { settleOverlay } from './map/settle';
 import { onSettleImageLoad } from '../render/settle-draw';
 import { type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
+
+// 文化、文化组、每一维、人口模式里国界的浓淡（第二十五轮：细而淡，只留近处一圈）
+const FAINT_COUNTRY = 0.4;
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具（map/input.ts），工具给出预览。
 // 这里只把它们接起来：哪一类工具多画什么由 defs/tools.ts 声明（map/highlights.ts），导出图片在 map/export.ts，window 上的钩子在 map/debug.ts
@@ -407,8 +412,9 @@ export function MapView() {
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取；国家底图按同样的规则取格（海上的像素只取海格：领海淡淡的一圈）
       renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
       renderer.highlightByGroup = !!cm.provinces;
-      // 人文图（第二十三轮）：省界淡一些（省份类工具开着时照旧）
-      renderer.provinceAlpha = politicalOn(shown) && !cm.provinces && mode.value !== 'provinces' ? 0.45 : 1;
+      // 地图模式（第二十五轮，map/modes.ts 的表）：国家模式里省界淡一些，文化等模式里更淡（省份类工具开着时照旧）
+      const md = modeDef(modeOf(shown));
+      setBorderAlpha(md, !!cm.provinces);
       renderer.style = mapStyle.value;
       // 河由渲染器在合成一步里画（只画在陆地上，排在省界、高亮下面）：渲染器按这一帧是不是移动中取停稳或移动中的那张
       const shownRivers = shown === w ? paths : pathsOf(shown);
@@ -433,7 +439,6 @@ export function MapView() {
       const lift = barLift();
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
-      const political = politicalOn(shown);
       const ovArgs: OverlayArgs = [shown, shownRivers, renderer.camera, {
         rivers: false,
         wind: overlays.value.wind,
@@ -445,12 +450,12 @@ export function MapView() {
         provinceLabels: cm.provinces && !clean ? labelsFor(w, preview.provinces) : layerProvinceLabels(),
         features:
           overlays.value.labels || (cm.labels && !clean)
-            ? labelsShown(political && !(cm.labels && !clean) ? politicalFeatures(shown.derived.features) : shown.derived.features, def.focus && !clean ? def.focus.hideLabel(w) : '')
+            ? labelsShown(cm.labels && !clean ? shown.derived.features : modeFeatures(shown.derived.features, md.features), def.focus && !clean ? def.focus.hideLabel(w) : '')
             : null,
-        // 国名（第二十三轮）：人文图里、图层里开着地名时
-        countries: political && overlays.value.labels ? countryDraws(shown, nameMode.value) : null,
-        // 城市、道路、地标、自定义点（第二十四轮）：“城市”一类开着时地理图上也画城市、全部地标
-        ...settleOverlay(shown, { political, editing: cat.id === 'settlements' && !clean }),
+        // 片区名（国名、文化名……，按模式）：图层里开着地名时
+        countries: md.regions && overlays.value.labels ? regionDraws(shown, md.regions, nameMode.value) : null,
+        // 城市、道路、地标、自定义点（第二十四轮）：“城市”一类开着时都画、选中的城市写名字；“道路”工具开着时道路画得清楚
+        ...settleOverlay(shown, { mode: md, editing: cat.id === 'settlements' && !clean, selected: settleKey(), roadEdit: tool.value === 'road' && !clean }),
         labelTypes: types,
         peaks: overlays.value.peaks ? peakLabels(shown) : null,
         nameMode: nameMode.value,
@@ -540,16 +545,17 @@ export function MapView() {
     let colorOpts: ColorOptions | null = null;
     let fxKey: unknown[] = [];
     function applyColors(w: World) {
-      // 省界：图层里开着，并且开着省份类工具、省份着色或人文图（第二十三轮）
-      // 国界：有国家时人文图、国家底图、“国家”一类的工具里画
-      const political = politicalOn(w);
+      // 省界：图层里开着，并且开着省份类工具、省份着色或画省界的地图模式（国家、文化……）
+      // 国界：有国家时按地图模式（国家模式显眼，文化等模式淡），“国家”一类的工具里照旧显眼
+      const md = modeDef(modeOf(w));
       const o = {
         mode: mode.value,
         season: season.value,
         focusSpecies: focusSpecies.value,
-        borders: overlays.value.borders && (!!CATEGORY_DEFS[category.value].map?.provinces || mode.value === 'provinces' || political),
-        countryBorders: hasCountries(w) && (political || mode.value === 'country' || category.value === 'countries'),
+        borders: overlays.value.borders && (!!CATEGORY_DEFS[category.value].map?.provinces || mode.value === 'provinces' || md.provinces > 0),
+        countryBorders: hasCountries(w) && (md.countryBorders !== 'none' || category.value === 'countries'),
       };
+      renderer.countryAlpha = md.countryBorders === 'faint' && category.value !== 'countries' ? FAINT_COUNTRY : 1;
       colorOpts = o;
       const arrays: unknown[] = [];
       for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
@@ -604,6 +610,16 @@ export function MapView() {
       requestDraw();
     });
 
+    // 省界的浓淡：按地图模式（省份底图、省份类工具开着时照旧）
+    function setBorderAlpha(md: ModeDef, provinceTool: boolean) {
+      renderer.provinceAlpha = md.provinces > 0 && !provinceTool && mode.value !== 'provinces' ? md.provinces : 1;
+    }
+    // “城市”工具选中的城市：地图上照旧写名字
+    function settleKey(): string | null {
+      const r = selectedSettle.value;
+      return r && (r.kind === 'city' || r.kind === 'point') ? markKey(r.kind, r.id) : null;
+    }
+
     // 干净的画面（导出图片）用的渲染器状态：当前世界的着色、存着的花纹，不带高亮、省份预览、幽灵海岸
     function cleanState(w: World) {
       applyColors(w);
@@ -615,7 +631,7 @@ export function MapView() {
       applyGhost(w, null);
       renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
       renderer.highlightByGroup = !!CATEGORY_DEFS[category.value].map?.provinces;
-      renderer.provinceAlpha = politicalOn(w) && mode.value !== 'provinces' ? 0.45 : 1;
+      setBorderAlpha(modeDef(modeOf(w)), !!CATEGORY_DEFS[category.value].map?.provinces);
       renderer.style = mapStyle.value;
     }
 

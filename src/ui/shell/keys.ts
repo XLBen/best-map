@@ -105,6 +105,8 @@ export function onKeyDown(e: KeyboardEvent) {
   }
   const k = e.key.toLowerCase();
   if (k === 'f') mapApi.current?.fit();
+  // 指针（第二十五轮）
+  else if (k === 'v') setTool('pointer');
   else if (k === 'm') measure.value = measure.value ? null : [];
   else {
     const n = Number(e.key);

@@ -504,7 +504,8 @@ export interface OverlayState {
   nameMode?: NameMode;
   // 全部山峰（第二十一轮，图层里的“山峰”；见 peakLabels）：画成小三角，放大后标名字，排在别的地名之后；null 不画
   peaks?: GeoFeature[] | null;
-  // 国名（第二十三轮，人文图）：沿领土的中线弯着写、字距拉开，最先排（别的地名让它）；null 不画
+  // 片区名（第二十三轮的国名；第二十五轮也是文化、文化组、每一维的取值的名字，键是 'region:…'）：沿片区的中线弯着写、字距拉开，
+  // 最先排（别的地名让它）；null 不画
   countries?: CountryLabelDraw[] | null;
   // 城市、地标、自定义点（第二十四轮，见 settle-draw.ts）：图标与名字，排在国名之后、别的地名之前（重要的先排）；null 不画。
   // settleNames：写不写它们的名字（图层里的“地名”）。cellSize：一格多大（地图单位），按它在屏幕上的像素数决定画哪几级
@@ -1442,6 +1443,8 @@ export interface CountryLabelDraw {
 }
 
 export const COUNTRY_KEY = 'country:';
+// 片区名（第二十五轮：文化、文化组、每一维的取值）与国名同样排、同样不给点击命中
+export const REGION_KEY = 'region:';
 const COUNTRY_COLOR = { realistic: 'rgba(36, 28, 24, 0.8)', atlas: 'rgba(78, 34, 24, 0.82)' };
 const COUNTRY_HALO = 'rgba(255, 255, 255, 0.42)';
 const COUNTRY_FONT = '"Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif';
@@ -1799,7 +1802,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     }
   }
   // 点击命中只给真的地名（山峰不是地物，点了没有可改的名字；国名也不是地物）
-  const hits = pseudo.size || st.countries?.length || st.settlements?.length ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY) && !b.key.startsWith(COUNTRY_KEY) && !b.key.startsWith(SETTLE_KEY)) : boxes;
+  const hits = pseudo.size || st.countries?.length || st.settlements?.length ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY) && !b.key.startsWith(COUNTRY_KEY) && !b.key.startsWith(REGION_KEY) && !b.key.startsWith(SETTLE_KEY)) : boxes;
   const out = { key, base, cam: { ...cam }, features: st.features, peaks, countries: st.countries ?? null, settlements: st.settlements ?? null, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
   if (!exporting) layout = out;
   return out;

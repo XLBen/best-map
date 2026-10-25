@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
-import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapKind, mapStyle, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
+import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
-import { hasCountries, setMapKind } from '../countries';
 import { hasAnySettle } from '../settlements';
-import { MAP_KINDS, MAP_KIND_TITLES } from '../shell/MapKind';
+import { kindOfView } from '../map/modes';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
 const PROJECTIONS: [ProjectionPref, string][] = [
@@ -33,10 +32,12 @@ const OPACITY = linear(10, 100, 5);
 
 // “图层”：底图着色、画风、叠加在上面的东西、季节、参考图
 
-// 换底图。“某种生态的适宜程度”先定下看哪一种（没选过、选的那种没了时是第一种）
+// 换底图。“某种生态的适宜程度”先定下看哪一种（没选过、选的那种没了时是第一种）。
+// 地图模式跟着底图（第二十五轮：人文的底图各是一种模式，别的是地理），存进偏好
 export function showView(id: ViewMode) {
   if (id === 'suitability') focusSpecies.value = suitabilityFocus(world.value?.small.species ?? [], focusSpecies.value);
   mode.value = id;
+  setPrefs({ map: kindOfView(id) });
 }
 
 // 适宜程度底图下面：看哪一种生态
@@ -160,13 +161,6 @@ export function LayersPanel() {
   const hint = [...VIEWS, ...human].find((v) => v.id === mode.value)?.hint;
   return (
     <>
-      {hasCountries(w) && (
-        <section>
-          <h5>地图</h5>
-          <Seg value={mapKind.value} options={MAP_KINDS} titles={MAP_KIND_TITLES} onChange={setMapKind} wide />
-          <p class="hint">{mapKind.value === 'political' ? '国界、国名、城市、地标；自然的地名只留海、湖、山脉' : '地貌、自然的地名与道路'}</p>
-        </section>
-      )}
       <section>
         <h5>底图</h5>
         <div class="view-grid">{VIEWS.filter((v) => !v.more).map((v) => viewButton(v.id, v.label))}</div>
