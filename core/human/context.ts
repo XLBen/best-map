@@ -1,8 +1,9 @@
 import type { Derived, HumanHearth, World } from '../world';
 import type { Culture, CultureGroup, Era } from './era';
 import type { CellInputs } from './rules';
+import type { CountryPlan } from './countries';
 
-// 生成人文时各步共用的东西（第二十二轮，见 generate.ts）：文化圈 → [第二十三轮：国家] → 人口。
+// 生成人文时各步共用的东西（第二十二轮，见 generate.ts）：文化圈 → 国家（第二十三轮）→ 人口 → 国家的移民。
 // 每一步读前面几步放进来的、再放进自己的结果
 
 export interface GenGroup {
@@ -42,6 +43,8 @@ export interface GenContext {
   keep?: Uint8Array;
   // 人口一步的结果：每一份“生成权重”合多少人
   perWeight?: number;
+  // 国家（第二十三轮）：要不要生成、怎么生成（省略时没有国家）
+  countries?: CountryPlan;
 }
 
 // 生成的一步：按 id 排在别的步前后

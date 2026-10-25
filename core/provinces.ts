@@ -82,6 +82,16 @@ const KIND_OF_CLASS: ProvinceKind[] = ['sea', 'land', 'wasteland', 'lake'];
 export type ProvinceClass = 'sea' | 'land' | 'lake';
 export const classOfKind = (k: ProvinceKind): ProvinceClass => (k === 'sea' ? 'sea' : k === 'lake' ? 'lake' : 'land');
 
+// 国家（第二十三轮）：一个陆地省（陆地、无人区、湖省）只属于一个国家。每格的“国家键”：按格分是陆地的格是它的国家（−1 无主），
+// 按格分是海的格（海、归海省的岛）都是 −2（海省不跟着国界）。没有国家的世界为 null（什么都不变）
+export function countryKeys(world: World, pland: Uint8Array): Int32Array | null {
+  const c = world.causes.country;
+  if (!c || !world.small.countries) return null;
+  const out = new Int32Array(c.length);
+  for (let i = 0; i < c.length; i++) out[i] = pland[i] ? c[i] : -2;
+  return out;
+}
+
 // 湖面的格（自动划分、整理湖省用）：连成一片、至少 3 格的湖面（与 cellClasses 同一个规则）。
 // 湖里的归海省的岛（第十五轮，小礁一类放在湖面上）跟着湖走：连成一片的这种岛格挨着这样的湖面时也算（算进那个湖的湖省）
 export function lakeCells(world: World, d: Derived): Uint8Array {
@@ -209,6 +219,8 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
   const baseOf = (i: number) => (cls[i] === SEA ? target.sea : target.land);
   const rand = mulberry32(mixSeed(rules.seed, 401, salt));
   const riverQ = small.planet.riverThreshold;
+  // 不跨国界（第二十三轮）
+  const ck = countryKeys(world, pland);
 
   // 种子：随机顺序遍历，与已选种子相距不足 r 步（同类格里）的跳过（近似泊松盘）
   const cells: number[] = [];
@@ -233,7 +245,7 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
       for (const c of frontier) {
         for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
           const j = mesh.adj[e];
-          if (stamp[j] === seeds.length || !region[j] || cls[j] !== cls[s]) continue;
+          if (stamp[j] === seeds.length || !region[j] || cls[j] !== cls[s] || (ck && ck[j] !== ck[s])) continue;
           stamp[j] = seeds.length;
           blocked[j] = 1;
           next.push(j);
@@ -245,7 +257,7 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
 
   const isRiver = (i: number) => d.discharge[i] >= riverQ;
   const cost = (i: number, j: number, e: number) => {
-    if (!region[j] || cls[i] !== cls[j]) return Infinity;
+    if (!region[j] || cls[i] !== cls[j] || (ck && ck[i] !== ck[j])) return Infinity;
     let c = mesh.dist[e];
     if (cls[i] === LAND || cls[i] === WASTE) {
       const dh = Math.abs(d.elevation[j] - d.elevation[i]);
@@ -288,6 +300,7 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
     for (const i of own) {
       for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
         const p = province[mesh.adj[e]];
+        if (ck && ck[mesh.adj[e]] !== ck[i]) continue;
         if (p >= 0 && p !== id && freshSet.has(p) && small.provinces[p]?.kind === meta.kind) border.set(p, (border.get(p) ?? 0) + mesh.edgeLen[e]);
       }
     }
@@ -386,6 +399,8 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
   const pland = provinceLand(world);
   const classOf = (i: number): ProvinceClass => (!pland[i] ? 'sea' : lake?.[i] ? 'lake' : 'land');
   const target = (c: ProvinceClass) => (c === 'sea' ? targets.sea : targets.land);
+  // 同一个国家（第二十三轮；没有国家时都算）
+  const ck = countryKeys(world, pland);
   // 一格并入相邻的同类、未锁定、不太大的省份里最小的那个；并不进去返回 false
   const join = (i: number): boolean => {
     const cls = classOf(i);
@@ -393,7 +408,7 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
     let bestSize = Infinity;
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       const p = province[mesh.adj[e]];
-      if (p < 0) continue;
+      if (p < 0 || (ck && ck[mesh.adj[e]] !== ck[i])) continue;
       const meta = small.provinces[p];
       if (!meta || meta.locked || classOfKind(meta.kind) !== cls) continue;
       const sz = sizes.get(p) ?? 0;
@@ -467,7 +482,7 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
       const c = queue[h];
       for (let e = mesh.off[c]; e < mesh.off[c + 1] && count < target(cls); e++) {
         const j = mesh.adj[e];
-        if (province[j] < 0 && classOf(j) === cls) {
+        if (province[j] < 0 && classOf(j) === cls && (!ck || ck[j] === ck[i])) {
           province[j] = id;
           queue.push(j);
           count++;
@@ -497,6 +512,94 @@ export function repairProvinces(world: World) {
   }
   fillUnassigned(world);
   dropEmptyProvinces(world);
+}
+
+// 省份跟着国界切开（第二十三轮）：陆地省（陆地、无人区、湖省）里格数最多的那个国家（无主也算一个）留着这个省；
+// 别的国家在这个省里的格按连成的块，小块（不到目标大小的四分之一）并进挨着的、同一个国家、同一类、没锁定的省里接壤最长的那个，
+// 别的成新的省（编号接着往后，按格编号最小的先；新省按格起名，名字由命令记下）。锁定的省照样切（锁定只管自动重划）。
+// 只看原因，执行、重放都一样。返回新建的省。没有国家的世界什么都不做
+export function fitProvincesToCountries(world: World): number[] {
+  const { mesh, causes, small } = world;
+  const pland = provinceLand(world);
+  const ck = countryKeys(world, pland);
+  if (!ck) return [];
+  const province = causes.province;
+  const n = mesh.n;
+  // 每个陆地省里各国家的格数
+  const counts = new Map<number, Map<number, number>>();
+  for (let i = 0; i < n; i++) {
+    const p = province[i];
+    if (p < 0 || !pland[i] || !small.provinces[p]?.land) continue;
+    let m = counts.get(p);
+    if (!m) counts.set(p, (m = new Map()));
+    m.set(ck[i], (m.get(ck[i]) ?? 0) + 1);
+  }
+  const split = new Map<number, number>();
+  for (const [p, m] of counts) {
+    if (m.size < 2) continue;
+    let best = -3;
+    let bc = 0;
+    for (const [k, v] of m) if (v > bc || (v === bc && k < best)) {
+      bc = v;
+      best = k;
+    }
+    split.set(p, best);
+  }
+  if (!split.size) return [];
+  const target = provinceTargets(world, small.provinceRules).land;
+  const seen = new Uint8Array(n);
+  const fresh: number[] = [];
+  for (let s = 0; s < n; s++) {
+    const p = province[s];
+    if (seen[s] || p < 0 || !split.has(p) || ck[s] === split.get(p)) continue;
+    // 这一块：同一个省、同一个国家、连着的格
+    const key = ck[s];
+    const cells: number[] = [];
+    const stack = [s];
+    seen[s] = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      cells.push(i);
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!seen[j] && province[j] === p && ck[j] === key) {
+          seen[j] = 1;
+          stack.push(j);
+        }
+      }
+    }
+    cells.sort((a, b) => a - b);
+    const meta = small.provinces[p];
+    let into = -1;
+    if (cells.length < target * 0.25) {
+      const border = new Map<number, number>();
+      for (const i of cells) {
+        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+          const j = mesh.adj[e];
+          const q = province[j];
+          // 只并进只属于这个国家的省（还要切的省按它留下的国家算）
+          if (q < 0 || q === p || ck[j] !== key || (split.has(q) && split.get(q) !== key)) continue;
+          const mq = small.provinces[q];
+          if (!mq || mq.locked || !mq.land || classOfKind(mq.kind) !== classOfKind(meta.kind)) continue;
+          border.set(q, (border.get(q) ?? 0) + 1);
+        }
+      }
+      let bc = 0;
+      for (const [q, v] of border) if (v > bc || (v === bc && q < into)) {
+        bc = v;
+        into = q;
+      }
+    }
+    if (into < 0) {
+      into = small.nextProvince++;
+      small.provinces[into] = { name: '', locked: false, land: true, kind: meta.kind };
+      fresh.push(into);
+    }
+    for (const i of cells) province[i] = into;
+  }
+  dropEmptyProvinces(world);
+  nameProvinces(world, fresh);
+  return fresh;
 }
 
 function dropEmptyProvinces(world: World) {

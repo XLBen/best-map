@@ -5,6 +5,7 @@ import { cellInputs } from './rules';
 import { classifyTerrain, effectiveClasses, worldTerrainClasses } from './terrain-class';
 import { computeHabitability } from './habitability';
 import { computePopLayers } from './layers';
+import { computeCountryLayer } from './country-layers';
 
 // 人文的几层（第二十一轮）：只读自然的推导，不反向影响自然的部分。
 // 引擎在自然的推导（植被之后、地物识别之后）算好后算一遍（natural）；只画地形类别、资源、改它们的内容时（Dirty.Human）
@@ -55,6 +56,8 @@ export function computeHuman(world: World, d: Derived, natural = true): void {
   // 第二十二轮：宜居度（自然、地形类别变了才重算）与人口的几层（按原因从头算）
   d.habitability = computeHabitability(world, d, x, cls, classes, natural);
   computePopLayers(world, d);
+  // 第二十三轮：国家的一层（领土、领海）
+  computeCountryLayer(world, d);
 }
 
 // 每个省份里格数最多的地形类别、资源（没有资源的格不算；一格资源都没有时为 null）。导出的 provinces_summary.csv 用
@@ -163,3 +166,41 @@ export {
   valueLayer,
 } from './layers';
 export { majorityCulture } from './culture-style';
+// 第二十三轮：国家与政体
+export {
+  CATEGORY_NAMES,
+  type Faction,
+  type FactionDriver,
+  type Government,
+  type Title,
+  categoryName,
+  eraFactions,
+  eraGovernments,
+  factionById,
+  factionSchema,
+  governmentById,
+  governmentSchema,
+  pickTitle,
+  titled,
+  worldFactions,
+  worldGovernments,
+} from './government';
+export { COUNTRY_KM2, DEFAULT_YEARS, MAX_COUNTRIES, countryList, ensureGovContent, sizeFactor } from './countries';
+export { autoCapital, countryCells, type CountryPatch } from './country-edit';
+export {
+  type CountryLabel,
+  type CountryStats,
+  type FactionInfluence,
+  allCountryStats,
+  countryCodes,
+  countryColors,
+  countryFactions,
+  countryGroups,
+  countryLabels,
+  countryMapColors,
+  countryOverlords,
+  countryStats,
+  governmentInfo,
+  labelGeometry,
+} from './country-layers';
+export { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, LAYOUT_COLORS, flagSchema, flagSvg, makeFlag } from './flags';

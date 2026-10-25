@@ -218,7 +218,7 @@ function freeAnchor(cells: ArrayLike<number>, used: Set<number>, salt = 0): numb
 
 // 整个星球：地物可能跨过经度 ±180°。在经度上最大的空白处切开，把切口东边的格加 2（展开），
 // 再求质心与主轴，所以跨接缝的地物标注也落在地物上；一块地区返回 null（用原坐标）
-function unwrapped(mesh: Mesh, cells: ArrayLike<number>): Float64Array | null {
+export function unwrapped(mesh: Mesh, cells: ArrayLike<number>): Float64Array | null {
   if (mesh.kind !== 'sphere' || !cells.length) return null;
   const BINS = 720;
   const occ = new Uint8Array(BINS);
@@ -250,7 +250,7 @@ const wrapDelta = (d: number) => d - 2 * Math.round(d / 2);
 
 // 质心与主轴方向、长度；elong：主轴与次轴方向上散布的比（越大越狭长）。
 // xs：整个星球上展开后的经度坐标（与 cells 对齐）；结果的 x 绕回 [0, 2)
-function axis(mesh: Mesh, cells: ArrayLike<number>, xs: Float64Array | null = null): { x: number; y: number; angle: number; span: number; elong: number } {
+export function axis(mesh: Mesh, cells: ArrayLike<number>, xs: Float64Array | null = null): { x: number; y: number; angle: number; span: number; elong: number } {
   if (xs) {
     const r = axisOf(cells.length, (k) => xs[k], (k) => mesh.y[cells[k]]);
     r.x = wrapX(r.x);

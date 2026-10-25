@@ -11,6 +11,7 @@ import type { IslandType } from './island-types';
 import type { RiverType } from './river-types';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
+import type { FlagSpec } from './human/flags';
 import { DEFAULT_SPECIES, type Species } from './species';
 import { typeIdSchema } from './type-id';
 
@@ -252,6 +253,9 @@ export interface Causes {
   popShare?: Uint8Array;
   // 1 是用笔刷、档案改过的格（修补、保留手改的重新生成不动它）。第一次改时才建
   popManual?: Uint8Array;
+  // 国家的领土（第二十三轮，见 human/countries.ts）：每格归哪个国家（small.countries 的编号），−1 无主。
+  // 只记陆地（湖面也算）；海上的领海按时代的 seaClaimKm 推导（derived.country）。生成国家时才建，撤销到那之前时去掉
+  country?: Int32Array;
 }
 
 // 人文的生成（第二十二轮，见 human/generate.ts）：时代、种子、文化组与各占多少、总人口、发源地
@@ -274,6 +278,43 @@ export interface HumanState {
   hearths: HumanHearth[];
   // 下一个人口群体的编号
   nextGroup: number;
+  // 国家的生成参数（第二十三轮）：生成过国家才有。fragmentation 是“统一 ↔ 分裂”（0 统一、1 分裂，0.5 按时代的默认）
+  countryRules?: CountryRules;
+}
+export interface CountryRules {
+  fragmentation: number;
+  seed: number;
+}
+
+// 一个国家的档案（第二十三轮，见 human/countries.ts）。生成的都能改（set_country）；“快照”式的：统治者、年份、历史是生成时写下的文字，不模拟
+export interface CountryMeta {
+  id: number;
+  name: string;
+  orig?: string;
+  // 自己改过名字：换政体、主流文化时不再自动换名字
+  nameLocked?: true;
+  // 自动起的地名部分（国名 = 它 + 政体的称号；换政体时按它重写）
+  base: { zh: string; orig?: string };
+  color: string;
+  flag: FlagSpec;
+  // 首都（格）；capitalLocked 是挪过的（领土变了也不自动换，丢了时才换）
+  capitalCell?: number;
+  capitalLocked?: true;
+  government: string;
+  primaryCulture: string;
+  // 兼容的文化组（主流文化的组总在里面）
+  acceptedGroups: string[];
+  // 自己定的派系影响力（0–1）；没有时按人口构成自动算（country-layers.ts 的 countryFactions）
+  factions?: Record<string, number>;
+  // 宗主（附庸在地图上用宗主的浅色）、同盟、敌对（同盟、敌对两边都记）
+  overlord?: number;
+  allies: number[];
+  rivals: number[];
+  ruler: { name: string; orig?: string; title?: string };
+  founded: number;
+  history: string;
+  // 锁定：重新生成国家时领土、档案都不动
+  locked?: true;
 }
 // 一个人口群体：文化 + 时代每一维的取值（没有这一维的取值时不写）
 export interface PopTuple {
@@ -339,6 +380,9 @@ export interface SmallState {
   human?: HumanState;
   // 人口群体：编号 → 群体（causes.popGroup 里的编号）。生成过才有
   popGroups?: Record<string, PopTuple>;
+  // 国家（第二十三轮）：编号 → 档案；下一个编号。生成过国家才有
+  countries?: Record<string, CountryMeta>;
+  nextCountry?: number;
 }
 
 export interface Conflict {
@@ -443,11 +487,15 @@ export interface Derived {
   popValue?: Uint16Array;
   // 最近的文化（没有人的格、海也有：离它最近的有人的格占多数的文化）。地名跟着它
   cultureNear?: Uint16Array;
+  // 国家（第二十三轮，见 human/country-layers.ts）：每格的国家编号（countryList 的下标 + 1，0 无主），领海也有。只在有国家时才有
+  country?: Uint16Array;
 }
 
 // 人文的推导数组（第二十一轮）：不进金标准的哈希（tools/hash.ts 的 digestWorld），另有自己的测试。第二十二轮加了宜居度与人口的几层
 export const HUMAN_DERIVED = ['terrainClassAuto', 'terrainClass', 'resourceAuto', 'resource', 'peak', 'habitability'] as const;
 export const POP_DERIVED = ['popDensity', 'popCulture', 'popCultureGroup', 'popValue', 'cultureNear'] as const;
+// 第二十三轮：国家的一层（只在有国家时才有）
+export const COUNTRY_DERIVED = ['country'] as const;
 
 export interface World {
   settings: Settings;

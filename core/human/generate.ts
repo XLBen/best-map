@@ -2,9 +2,10 @@ import { CommandError } from '../errors';
 import { styleById } from '../name-styles';
 import { BUILTIN_STYLES } from '../packs/names';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
-import type { Derived, HumanHearth, HumanState, World } from '../world';
+import type { CountryRules, Derived, HumanHearth, HumanState, World } from '../world';
 import type { GenContext, GenGroup, HumanStage } from './context';
 import { culturesStage } from './cultures';
+import { type CountryPlan, clearCountries, countriesStage, countryMixStage } from './countries';
 import { type Era, cultureById, cultureGroupById, worldCultures } from './era';
 import { compactGroups } from './groups';
 import { compilePrefs, preferenceFactors } from './habitability';
@@ -13,7 +14,7 @@ import { cellInputs } from './rules';
 import { cellKm2 } from './space';
 import { worldTerrainClasses } from './terrain-class';
 
-// 生成人文（第二十二轮）：文化圈 → [第二十三轮：国家] → 人口，每一步是一个 HumanStage（见 context.ts）。
+// 生成人文（第二十二轮）：文化圈 → 国家（第二十三轮）→ 人口 → 国家的移民，每一步是一个 HumanStage（见 context.ts）。
 // 结果写进原因（causes.popTotal / popGroup / popShare）与 small.human、small.popGroups，像省份一样“生成一次、之后修补”。
 // 用到的时代、取值、文化组、文化、地名风格世界里没有时从内置的复制进来（世界打开不依赖仓库）
 
@@ -24,9 +25,12 @@ export interface HumanParams {
   totalPop?: number;
   // 省略时用世界的种子
   seed?: number;
+  // 国家（第二十三轮）：写了就生成国家（fragmentation 省略为 0.5，seed 省略为人文的种子）；省略时没有国家
+  countries?: Partial<CountryRules>;
 }
 
-const STAGES: HumanStage[] = [culturesStage, populationStage];
+// 第二十三轮：国家插在文化圈与人口之间，国家的移民在人口之后
+const STAGES: HumanStage[] = [culturesStage, countriesStage, populationStage, countryMixStage];
 
 // 加一步（第二十三轮的国家）：排在 before 之前或 after 之后（都省略时排在最后）；同一个 id 再登记一次是换掉
 export function registerHumanStage(stage: HumanStage, at: { before?: string; after?: string } = {}) {
@@ -91,7 +95,13 @@ export function ensureHumanContent(world: World, eraId: string, groupIds: readon
 }
 
 // 生成（或重新生成）。keepManual：手改过的格（causes.popManual）不动。返回生成的状态
-export function generateHuman(world: World, d: Derived, params: HumanParams, opts: { keepManual?: boolean; hearths?: HumanHearth[] } = {}): HumanState {
+// countryMode（第二十三轮，有 params.countries 时）：generate 重新长国家（keepLocked：锁定的留着，默认不留），keep 用现有的领土
+export function generateHuman(
+  world: World,
+  d: Derived,
+  params: HumanParams,
+  opts: { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean } = {},
+): HumanState {
   if (!params.groups.length) throw new CommandError('至少要有一个文化组');
   ensureHumanContent(
     world,
@@ -131,6 +141,11 @@ export function generateHuman(world: World, d: Derived, params: HumanParams, opt
     } else manual.fill(0);
   }
   const seed = (params.seed ?? WORLD_SEED(world)) >>> 0;
+  let countries: CountryPlan | undefined;
+  if (params.countries) {
+    const rules: CountryRules = { fragmentation: params.countries.fragmentation ?? 0.5, seed: (params.countries.seed ?? seed) >>> 0 };
+    countries = { mode: opts.countryMode ?? 'generate', rules, keepLocked: opts.keepLocked ?? false };
+  } else clearCountries(world);
   const ctx: GenContext = {
     world,
     d,
@@ -148,6 +163,7 @@ export function generateHuman(world: World, d: Derived, params: HumanParams, opt
     culturePref,
     hearths: opts.hearths ?? [],
     ...(keep ? { keep } : {}),
+    ...(countries ? { countries } : {}),
   };
   for (const stage of STAGES) stage.run(ctx);
   const state: HumanState = {
@@ -158,24 +174,29 @@ export function generateHuman(world: World, d: Derived, params: HumanParams, opt
     perWeight: ctx.perWeight ?? 0,
     hearths: ctx.hearths,
     nextGroup: 1,
+    ...(countries ? { countryRules: countries.rules } : {}),
   };
   small.human = state;
   compactGroups(small, world.causes);
   return state;
 }
 
-// 按世界里记着的参数重新生成（拖过的发源地留着）；patch 换掉其中几项
-export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanParams>, opts: { keepManual?: boolean } = {}): HumanState {
+// 按世界里记着的参数重新生成（拖过的发源地留着）；patch 换掉其中几项。
+// 国家（第二十三轮）：patch 写了 countries 时按它重新长（keepLocked 默认留着锁定的），没写时用现有的领土
+export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanParams>, opts: { keepManual?: boolean; keepLocked?: boolean } = {}): HumanState {
   const h = world.small.human;
   if (!h) throw new CommandError('还没有生成人文');
+  const fresh = patch.countries !== undefined;
+  const rules = fresh ? { ...h.countryRules, ...patch.countries } : h.countryRules;
   const params: HumanParams = {
     era: patch.era ?? h.era,
     groups: patch.groups ?? h.groups,
     totalPop: patch.totalPop ?? h.totalPop,
     seed: patch.seed ?? h.seed,
+    ...(rules ? { countries: rules } : {}),
   };
   // 换了时代、文化组时，不在新的组里的发源地不要了
   const ids = new Set(params.groups.map((g) => g.id));
   const hearths = h.hearths.filter((x) => x.locked && ids.has(x.group));
-  return generateHuman(world, d, params, { ...opts, hearths });
+  return generateHuman(world, d, params, { keepManual: opts.keepManual, hearths, countryMode: fresh ? 'generate' : 'keep', keepLocked: opts.keepLocked ?? true });
 }

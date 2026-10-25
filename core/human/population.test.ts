@@ -271,8 +271,8 @@ describe('生成人文', () => {
     expect(totalPop(p.world)).toBe(0);
   });
 
-  it('生成的步骤可以插一步（第二十三轮的国家）：排在人口之前，能改每格的权重', () => {
-    expect(humanStages()).toEqual(['cultures', 'population']);
+  it('生成的步骤可以插一步：排在人口之前，能改每格的权重（第二十三轮的国家就是这样插进来的）', () => {
+    expect(humanStages()).toEqual(['cultures', 'countries', 'population', 'country-mix']);
     let ran = 0;
     registerHumanStage(
       {
@@ -286,7 +286,7 @@ describe('生成人文', () => {
       { before: 'population' },
     );
     try {
-      expect(humanStages()).toEqual(['cultures', 'test-countries', 'population']);
+      expect(humanStages()).toEqual(['cultures', 'countries', 'test-countries', 'population', 'country-mix']);
       const eng = continents();
       eng.exec(GEN);
       expect(ran).toBe(1);
@@ -294,7 +294,7 @@ describe('生成人文', () => {
     } finally {
       unregisterHumanStage('test-countries');
     }
-    expect(humanStages()).toEqual(['cultures', 'population']);
+    expect(humanStages()).toEqual(['cultures', 'countries', 'population', 'country-mix']);
   });
 });
 

@@ -779,7 +779,9 @@ export class Engine {
     if (!provinceOnly(cmd)) throw new CommandError('这一步不是省份的改动，不能用省份预览');
     const d = this.update();
     const w = this.world;
-    const scratch: World = { ...w, causes: { ...w.causes, province: w.causes.province.slice() }, small: structuredClone(w.small) };
+    // 涂省、并省会让格跟着省份换国家（第二十三轮）：国家的数组也复制一份
+    const causes = { ...w.causes, province: w.causes.province.slice(), ...(w.causes.country ? { country: w.causes.country.slice() } : {}) };
+    const scratch: World = { ...w, causes, small: structuredClone(w.small) };
     const r = applyCommand(scratch, cmd, { ensureDerived: () => d });
     return { province: scratch.causes.province, provinces: scratch.small.provinces, seams: scratch.small.provinceSeams ?? null, summary: r.summary, changed: r.changed };
   }
