@@ -1,0 +1,59 @@
+{
+  "group": {
+    "id": "orcs",
+    "name": "兽人",
+    "color": "#3c5a0f",
+    "description": "荒原与干草原上的部落。",
+    "prefs": [
+      { "classes": ["steppe", "desert", "highlands"], "factor": 2.5 },
+      { "classes": ["grasslands"], "factor": 1.5 },
+      { "classes": ["forest", "jungle"], "factor": 0.6 }
+    ],
+    "eras": ["fantasy"]
+  },
+  "tendencies": {
+    "religion": [["storm-horn", 6], ["grey-warden", 1], ["trickster", 1]],
+    "race": [["orc", 8], ["goblin", 2]]
+  },
+  "cultures": [
+    {
+      "id": "greymane",
+      "group": "orcs",
+      "name": "灰鬃兽人",
+      "color": "#0f692d",
+      "nameStyle": "fantasy-orc",
+      "weight": 1.5,
+      "description": "干草原上的骑狼部落。"
+    },
+    {
+      "id": "redrock",
+      "group": "orcs",
+      "name": "赤岩兽人",
+      "color": "#69964b",
+      "nameStyle": "fantasy-orc",
+      "description": "红色荒原上的掠夺者。",
+      "tendencies": {
+        "religion": [["storm-horn", 5], ["elder-dragons", 2], ["grey-warden", 1]]
+      },
+      "prefs": [
+        { "classes": ["desert", "highlands"], "factor": 1.5 }
+      ]
+    },
+    {
+      "id": "bog-goblin",
+      "group": "orcs",
+      "name": "沼窟地精",
+      "color": "#96873c",
+      "nameStyle": "fantasy-orc",
+      "weight": 0.8,
+      "description": "沼泽与洞窟里的地精，人多而杂。",
+      "tendencies": {
+        "religion": [["trickster", 4], ["storm-horn", 2]],
+        "race": [["goblin", 8], ["orc", 1.5]]
+      },
+      "prefs": [
+        { "classes": ["marsh", "hills"], "factor": 1.6 }
+      ]
+    }
+  ]
+}

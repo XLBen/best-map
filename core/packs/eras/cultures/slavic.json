@@ -1,0 +1,57 @@
+{
+  "group": {
+    "id": "slavic",
+    "name": "东欧",
+    "color": "#964bb4",
+    "description": "东方大平原与森林里的村社民族。",
+    "prefs": [
+      { "tempMin": -8, "tempMax": 10, "factor": 2 },
+      { "classes": ["plains", "grasslands", "forest", "woods"], "factor": 1.4 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["dawn-church", 6], ["spirit-ways", 2], ["northern-gods", 1], ["sky-tengri", 0.5], ["secular", 2], ["moon-faith", 0.5], ["grey-warden", 3], ["grove-mother", 3], ["dawnlord", 2], ["storm-horn", 1]],
+    "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
+    "ideology": [["auth-nationalist", 4], ["auth-socialism", 3], ["liberal-conservative", 2], ["traditionalist", 2], ["rev-socialism", 1], ["ultranationalist", 1], ["sf-militarist", 3], ["sf-technocracy", 2], ["sf-supremacist", 2], ["sf-federalist", 1]],
+    "race": [["human", 8], ["half-elf", 1], ["halfling", 1], ["dwarf", 0.5]],
+    "species": [["terran", 7], ["augmented", 2], ["synthetic", 0.5]]
+  },
+  "cultures": [
+    {
+      "id": "zorya",
+      "group": "slavic",
+      "name": "佐里亚人",
+      "color": "#b45ac3",
+      "nameStyle": "slavic-east",
+      "weight": 1.5,
+      "description": "大平原上的农民，村社与教堂相依。"
+    },
+    {
+      "id": "bereg",
+      "group": "slavic",
+      "name": "贝列格人",
+      "color": "#960069",
+      "nameStyle": "slavic-east",
+      "description": "河岸与森林里的伐木人与商人。",
+      "prefs": [
+        { "river": true, "factor": 1.4 },
+        { "classes": ["forest"], "factor": 1.2 }
+      ]
+    },
+    {
+      "id": "gorav",
+      "group": "slavic",
+      "name": "戈拉夫人",
+      "color": "#b496e1",
+      "nameStyle": "slavic-east",
+      "weight": 0.7,
+      "description": "南方山地的牧民，村寨散在山谷里。",
+      "tendencies": {
+        "religion": [["dawn-church", 5], ["moon-faith", 2], ["spirit-ways", 2], ["secular", 1.5], ["grey-warden", 3], ["grove-mother", 3], ["dawnlord", 2], ["storm-horn", 1]]
+      },
+      "prefs": [
+        { "classes": ["hills", "mountains"], "factor": 1.5 }
+      ]
+    }
+  ]
+}

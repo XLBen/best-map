@@ -1,0 +1,46 @@
+{
+  "group": {
+    "id": "mesoamerica",
+    "name": "中美",
+    "color": "#005a5a",
+    "description": "炎热高原与雨林里的城邦民族。",
+    "prefs": [
+      { "tempMin": 18, "factor": 1.8 },
+      { "elevMin": 800, "elevMax": 3000, "factor": 1.6 },
+      { "classes": ["jungle", "highlands"], "factor": 1.4 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["feathered-god", 6], ["spirit-ways", 2], ["sun-faith", 5], ["ancestor-rites", 1], ["secular", 1], ["elder-dragons", 4], ["grey-warden", 3], ["dawnlord", 2]],
+    "nation": [["settler", 4], ["civic-nation", 3], ["regional", 2], ["ethnic-nation", 1]],
+    "ideology": [["social-democracy", 3], ["rev-socialism", 2], ["liberal-conservative", 2], ["auth-nationalist", 2], ["religious-democracy", 1.5], ["dem-socialism", 1.5], ["sf-free", 3], ["sf-ascension", 2], ["sf-corporate", 2]],
+    "race": [["human", 8], ["dragonborn", 1.5]],
+    "species": [["terran", 7], ["augmented", 2], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "xochitlan",
+      "group": "mesoamerica",
+      "name": "索奇特兰人",
+      "color": "#008796",
+      "nameStyle": "nahuatl",
+      "weight": 1.5,
+      "description": "高原湖泊周围的城邦之民。",
+      "prefs": [
+        { "lake": true, "factor": 1.5 },
+        { "classes": ["highlands"], "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "itzcala",
+      "group": "mesoamerica",
+      "name": "伊茨卡拉人",
+      "color": "#a57896",
+      "nameStyle": "nahuatl",
+      "description": "雨林里的阶梯神庙城邦。",
+      "prefs": [
+        { "classes": ["jungle"], "factor": 1.4 }
+      ]
+    }
+  ]
+}

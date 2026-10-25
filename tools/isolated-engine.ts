@@ -18,9 +18,12 @@ export async function bundleEngine(root: string, opts: { minify?: boolean } = {}
     logLevel: 'silent',
     mode: 'development',
     define: { 'process.env.NODE_ENV': JSON.stringify('development') },
+    // 内置的 JSON（地名风格、时代、文化）按一行字符串打进去，不逐项换行，data: 地址才不超长
+    json: { stringify: true },
     build: {
       write: false,
-      minify: opts.minify ?? false,
+      // 默认压缩：不压缩时内置内容一多，data: 地址就超过 Chrome 的 2 MB
+      minify: opts.minify ?? true,
       copyPublicDir: false,
       emptyOutDir: false,
       reportCompressedSize: false,

@@ -1,0 +1,68 @@
+{
+  "group": {
+    "id": "mediterranean",
+    "name": "地中海",
+    "color": "#f07800",
+    "description": "温暖内海沿岸的城邦与港口。",
+    "prefs": [
+      { "tempMin": 12, "tempMax": 22, "factor": 2 },
+      { "coast": true, "factor": 1.8 },
+      { "biomes": ["shrubland"], "factor": 1.5 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["city-pantheon", 5], ["river-gods", 1], ["sun-faith", 6], ["dawn-church", 1], ["moon-faith", 1], ["secular", 2], ["dawnlord", 3], ["silver-lady", 3], ["deep-tide", 2], ["arcane-eye", 2], ["grey-warden", 1]],
+    "nation": [["civic-nation", 4], ["ethnic-nation", 3], ["regional", 3]],
+    "ideology": [["social-democracy", 3], ["religious-democracy", 3], ["liberal-conservative", 2], ["rev-socialism", 1.5], ["anarchism", 1], ["auth-nationalist", 1.5], ["monarchist", 1], ["sf-federalist", 3], ["sf-corporate", 2], ["sf-psionic", 1.5], ["sf-free", 1]],
+    "race": [["human", 8], ["half-elf", 1.5], ["tiefling", 1], ["gnome", 0.5]],
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "veturia",
+      "group": "mediterranean",
+      "name": "维图里亚人",
+      "color": "#ffa500",
+      "nameStyle": "latin",
+      "weight": 1.5,
+      "description": "半岛上的古老城邦民族，以法律与道路闻名。"
+    },
+    {
+      "id": "selos",
+      "group": "mediterranean",
+      "name": "塞洛斯人",
+      "color": "#f09669",
+      "nameStyle": "greek",
+      "description": "群岛与海岸的航海城邦。",
+      "tendencies": {
+        "religion": [["city-pantheon", 5], ["dawn-church", 5], ["sun-faith", 1], ["secular", 1], ["dawnlord", 3], ["silver-lady", 3], ["deep-tide", 2], ["arcane-eye", 2], ["grey-warden", 1]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.4 },
+        { "classes": ["hills"], "factor": 1.2 }
+      ]
+    },
+    {
+      "id": "montevi",
+      "group": "mediterranean",
+      "name": "蒙特维人",
+      "color": "#ff784b",
+      "nameStyle": "it-italian",
+      "description": "山城与港口间的商人与工匠。"
+    },
+    {
+      "id": "estrella",
+      "group": "mediterranean",
+      "name": "埃斯特拉人",
+      "color": "#874b0f",
+      "nameStyle": "es-spanish",
+      "description": "干燥高原上的骑士与牧人。",
+      "tendencies": {
+        "religion": [["city-pantheon", 3], ["spirit-ways", 1], ["sun-faith", 6], ["moon-faith", 1.5], ["secular", 2], ["dawnlord", 3], ["silver-lady", 3], ["deep-tide", 2], ["arcane-eye", 2], ["grey-warden", 1]]
+      },
+      "prefs": [
+        { "classes": ["highlands", "hills"], "factor": 1.2 }
+      ]
+    }
+  ]
+}

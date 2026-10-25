@@ -1,0 +1,45 @@
+{
+  "group": {
+    "id": "nordic",
+    "name": "北欧",
+    "color": "#5ab4d2",
+    "description": "寒冷海岸与峡湾的航海民族。",
+    "prefs": [
+      { "tempMin": -10, "tempMax": 6, "factor": 2.2 },
+      { "coast": true, "factor": 1.6 },
+      { "classes": ["forest", "woods"], "factor": 1.3 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["northern-gods", 5], ["sun-faith", 4], ["spirit-ways", 1], ["secular", 5], ["storm-horn", 3], ["grey-warden", 3], ["deep-tide", 2], ["forge-father", 1]],
+    "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["cosmopolitan", 2]],
+    "ideology": [["social-democracy", 6], ["social-liberal", 2], ["green", 2], ["liberal-conservative", 2], ["dem-socialism", 1.5], ["sf-federalist", 3], ["sf-naturalist", 3], ["sf-technocracy", 2]],
+    "race": [["human", 8], ["dwarf", 1.5], ["half-elf", 0.5]],
+    "species": [["terran", 7], ["synthetic", 1.5], ["augmented", 1]]
+  },
+  "cultures": [
+    {
+      "id": "skarn",
+      "group": "nordic",
+      "name": "斯卡恩人",
+      "color": "#00c3d2",
+      "nameStyle": "nordic-norse",
+      "description": "峡湾里的渔民与航海者。",
+      "prefs": [
+        { "coast": true, "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "hrafn",
+      "group": "nordic",
+      "name": "赫拉芬人",
+      "color": "#005a78",
+      "nameStyle": "nordic-norse",
+      "description": "北方森林与湖区的农牧民。",
+      "prefs": [
+        { "classes": ["forest", "woods"], "factor": 1.3 },
+        { "lake": true, "factor": 1.3 }
+      ]
+    }
+  ]
+}

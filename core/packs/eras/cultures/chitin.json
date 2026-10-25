@@ -1,0 +1,42 @@
+{
+  "group": {
+    "id": "chitin",
+    "name": "甲巢诸族",
+    "color": "#ffb496",
+    "description": "群居的甲壳种族，巢城深入荒漠地下。",
+    "prefs": [
+      { "classes": ["desert", "steppe"], "factor": 3 },
+      { "tempMin": 16, "factor": 1.5 }
+    ],
+    "eras": ["scifi"]
+  },
+  "tendencies": {
+    "ideology": [["sf-collective", 3], ["sf-militarist", 3], ["sf-supremacist", 2]],
+    "species": [["chitin", 9], ["terran", 0.3]]
+  },
+  "cultures": [
+    {
+      "id": "kar-hive",
+      "group": "chitin",
+      "name": "卡尔巢",
+      "color": "#f0c3a5",
+      "nameStyle": "fantasy-orc",
+      "weight": 1.5,
+      "description": "以女王为中心的地下巢城。"
+    },
+    {
+      "id": "dune-swarm",
+      "group": "chitin",
+      "name": "沙丘群",
+      "color": "#c3965a",
+      "nameStyle": "fantasy-orc",
+      "description": "在沙海上游荡的甲壳族群。",
+      "tendencies": {
+        "ideology": [["sf-militarist", 3], ["sf-free", 2], ["sf-collective", 2]]
+      },
+      "prefs": [
+        { "classes": ["desert", "steppe"], "factor": 1.4 }
+      ]
+    }
+  ]
+}

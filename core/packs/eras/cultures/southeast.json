@@ -1,0 +1,51 @@
+{
+  "group": {
+    "id": "southeast",
+    "name": "东南亚",
+    "color": "#3ca578",
+    "description": "炎热多雨的半岛与群岛，稻田与港口相连。",
+    "prefs": [
+      { "tempMin": 22, "factor": 2 },
+      { "classes": ["jungle"], "factor": 1.5 },
+      { "coast": true, "factor": 1.6 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["awakening", 5], ["moon-faith", 3], ["many-gods", 1.5], ["spirit-ways", 2], ["sun-faith", 0.5], ["grove-mother", 3], ["deep-tide", 3], ["elder-dragons", 2]],
+    "nation": [["ethnic-nation", 3], ["civic-nation", 3], ["religious-community", 2], ["regional", 2]],
+    "ideology": [["auth-nationalist", 3], ["liberal-conservative", 2], ["market-liberal", 2], ["auth-socialism", 2], ["monarchist", 2], ["traditionalist", 1], ["sf-corporate", 4], ["sf-free", 2], ["sf-naturalist", 1]],
+    "race": [["human", 8], ["half-elf", 1], ["elf", 0.5]],
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "sumara",
+      "group": "southeast",
+      "name": "苏马拉人",
+      "color": "#3ca578",
+      "nameStyle": "malay",
+      "description": "群岛上的航海商人。",
+      "tendencies": {
+        "religion": [["moon-faith", 5], ["spirit-ways", 2], ["many-gods", 1.5], ["awakening", 1], ["grove-mother", 3], ["deep-tide", 3], ["elder-dragons", 2]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.5 }
+      ]
+    },
+    {
+      "id": "lansa",
+      "group": "southeast",
+      "name": "兰沙人",
+      "color": "#005a4b",
+      "nameStyle": "thai",
+      "description": "大河谷地里的稻农，寺院林立。",
+      "tendencies": {
+        "religion": [["awakening", 6], ["spirit-ways", 2], ["many-gods", 1], ["grove-mother", 3], ["deep-tide", 3], ["elder-dragons", 2]],
+        "ideology": [["monarchist", 3], ["auth-nationalist", 2], ["liberal-conservative", 2], ["traditionalist", 1], ["sf-corporate", 3], ["sf-naturalist", 2], ["sf-free", 1]]
+      },
+      "prefs": [
+        { "river": true, "factor": 1.5 }
+      ]
+    }
+  ]
+}

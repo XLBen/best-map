@@ -406,7 +406,7 @@ describe('仓库与“文化 ⋯”', () => {
     const cultures = repoRows(kindOf('culture')!, w, []);
     const groups = new Map(groupChoices(w.small).map((g) => [g.id, g.name]));
     const cs = repoSections(kindOf('culture')!, cultures, { dims, groups });
-    expect(cs.map((s) => s.label)).toEqual(expect.arrayContaining(['西方']));
+    expect(cs.map((s) => s.label)).toEqual(expect.arrayContaining(['西欧']));
     expect(cs.reduce((n, s) => n + s.rows.length, 0)).toBe(cultures.length);
     expect(repoSections(kindOf('era')!, repoRows(kindOf('era')!, w, []), { dims, groups })).toHaveLength(1);
   });

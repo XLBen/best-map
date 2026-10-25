@@ -1,0 +1,44 @@
+{
+  "era": {
+    "id": "fantasy",
+    "name": "奇幻",
+    "description": "剑与魔法的世界：精灵住在古林，矮人守着山中要塞，兽人在荒原上游荡，人类的王国在平原上。",
+    "color": "#8a5cc2",
+    "dimensions": [
+      { "id": "race", "label": "种族", "required": true },
+      { "id": "religion", "label": "宗教", "required": true }
+    ],
+    "popDensity": 2.4,
+    "sparsity": 1.6,
+    "urbanization": 0.1,
+    "unclaimed": { "minHabitability": 0.05, "nomads": 0.3 },
+    "seaClaimKm": 0,
+    "defaultGroups": [["western", 3], ["mediterranean", 1.5], ["elves", 2], ["dwarves", 1.5], ["orcs", 1.5], ["smallfolk", 1], ["seafolk", 1], ["emberkin", 1]],
+    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania", "elves", "dwarves", "orcs", "seafolk", "smallfolk", "emberkin"],
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea", "mithril", "mana-crystal", "dragonbone", "spiritwood", "star-iron"]
+  },
+  "values": [
+    { "id": "human", "dimension": "race", "name": "人类", "color": "#e1a578", "description": "寿命短而适应力强，遍布各地。", "eras": ["fantasy"] },
+    { "id": "elf", "dimension": "race", "name": "精灵", "color": "#4bb45a", "description": "长寿而优雅，偏爱古老的森林。", "eras": ["fantasy"], "prefs": [{ "classes": ["forest", "woods"], "factor": 2 }] },
+    { "id": "dwarf", "dimension": "race", "name": "矮人", "color": "#875a3c", "description": "矮壮坚韧的工匠，住在山中。", "eras": ["fantasy"], "prefs": [{ "classes": ["mountains", "hills", "highlands", "peaks"], "factor": 2.5 }] },
+    { "id": "halfling", "dimension": "race", "name": "半身人", "color": "#e1c34b", "description": "身材矮小、爱好安逸的农人。", "eras": ["fantasy"], "prefs": [{ "classes": ["plains", "grasslands", "hills"], "factor": 1.5 }] },
+    { "id": "orc", "dimension": "race", "name": "兽人", "color": "#5a782d", "description": "高大好战，住在荒原与干草原上。", "eras": ["fantasy"], "prefs": [{ "classes": ["steppe", "desert", "highlands"], "factor": 2 }] },
+    { "id": "gnome", "dimension": "race", "name": "侏儒", "color": "#d278c3", "description": "好奇的小个子，擅长机巧与幻术。", "eras": ["fantasy"], "prefs": [{ "classes": ["hills", "forest"], "factor": 1.5 }] },
+    { "id": "dragonborn", "dimension": "race", "name": "龙裔", "color": "#c33c2d", "description": "带着龙的血脉，鳞甲覆身，能喷吐火焰。", "eras": ["fantasy"], "prefs": [{ "classes": ["mountains", "desert", "highlands"], "factor": 1.5 }] },
+    { "id": "tiefling", "dimension": "race", "name": "提夫林", "color": "#872d69", "description": "带着异界的血统，生有角与尾。", "eras": ["fantasy"] },
+    { "id": "half-elf", "dimension": "race", "name": "半精灵", "color": "#87d2a5", "description": "人类与精灵的后代，两边都住得惯。", "eras": ["fantasy"], "prefs": [{ "classes": ["woods"], "factor": 1.3 }] },
+    { "id": "goblin", "dimension": "race", "name": "地精", "color": "#96b43c", "description": "矮小机灵、群居的穴居者。", "eras": ["fantasy"], "prefs": [{ "classes": ["marsh", "hills"], "factor": 1.5 }] },
+    { "id": "dawnlord", "dimension": "religion", "name": "晨光之主", "color": "#f0c33c", "description": "太阳、律法与誓约之神，骑士与法官供奉他。", "eras": ["fantasy"] },
+    { "id": "silver-lady", "dimension": "religion", "name": "银月女神", "color": "#87a5e1", "description": "月亮、旅途与夜色之神，受游侠与水手敬奉。", "eras": ["fantasy"] },
+    { "id": "grove-mother", "dimension": "religion", "name": "林母", "color": "#3c964b", "description": "森林与生长之母，德鲁伊守护她的圣林。", "eras": ["fantasy"], "prefs": [{ "classes": ["forest", "woods", "jungle"], "factor": 1.5 }] },
+    { "id": "forge-father", "dimension": "religion", "name": "炉父", "color": "#d2692d", "description": "锻造与矿脉之神，矮人在山心里为他点火。", "eras": ["fantasy"], "prefs": [{ "classes": ["mountains", "hills", "highlands"], "factor": 1.5 }] },
+    { "id": "storm-horn", "dimension": "religion", "name": "风暴之角", "color": "#694b87", "description": "风暴与战争之神，崇尚勇力。", "eras": ["fantasy"], "prefs": [{ "classes": ["steppe", "desert"], "factor": 1.3 }] },
+    { "id": "deep-tide", "dimension": "religion", "name": "深潮之主", "color": "#006996", "description": "大海之主，掌管风浪、航路与沉船。", "eras": ["fantasy"], "prefs": [{ "coast": true, "factor": 2 }] },
+    { "id": "grey-warden", "dimension": "religion", "name": "灰衣守门人", "color": "#878787", "description": "死亡与命运的守门人，送亡者过门。", "eras": ["fantasy"] },
+    { "id": "harvest-maid", "dimension": "religion", "name": "丰收女神", "color": "#c3a55a", "description": "田野、炉火与宴席的女神。", "eras": ["fantasy"], "prefs": [{ "classes": ["plains", "grasslands"], "factor": 1.3 }] },
+    { "id": "arcane-eye", "dimension": "religion", "name": "秘法之眼", "color": "#a54bd2", "description": "知识与魔法之神，法师与学者供奉。", "eras": ["fantasy"] },
+    { "id": "elder-dragons", "dimension": "religion", "name": "古龙崇拜", "color": "#b41e2d", "description": "敬奉古老的巨龙，以龙的血脉为荣。", "eras": ["fantasy"], "prefs": [{ "classes": ["mountains", "desert"], "factor": 1.3 }] },
+    { "id": "pact-lords", "dimension": "religion", "name": "契约诸君", "color": "#4b1e3c", "description": "与异界诸君订约换取力量，多数人视为邪道。", "eras": ["fantasy"] },
+    { "id": "trickster", "dimension": "religion", "name": "诡诈之神", "color": "#4bb4a5", "description": "运气与诡计之神，盗贼与赌徒供奉。", "eras": ["fantasy"] }
+  ]
+}
