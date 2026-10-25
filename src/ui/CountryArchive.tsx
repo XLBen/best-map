@@ -1,4 +1,5 @@
-import { Lock, LockOpen, ScanSearch, Trash2, X } from 'lucide-preact';
+import { signal } from '@preact/signals';
+import { Lock, LockOpen, Paintbrush, ScanSearch, SplitSquareHorizontal, Trash2, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
@@ -18,7 +19,7 @@ import {
   worldCultures,
 } from '../../core/human';
 import type { CountryMeta, World } from '../../core/world';
-import { askUser, exec, nameMode, selectedCountry, sheet, switchTool, world } from '../state';
+import { askUser, exec, nameMode, selectedCountry, setOptions, sheet, switchTool, world } from '../state';
 import { focusOn } from './camera';
 import { Slider } from './components/Slider';
 import { Toggle } from './components/Toggle';
@@ -26,8 +27,8 @@ import {
   cellsOf,
   factionPatch,
   flagColorPatch,
-  foundedPatch,
   governmentChoices,
+  mergeCommand,
   historyPatch,
   namePatch,
   patchCommand,
@@ -38,7 +39,6 @@ import {
   vassalsOf,
   withId,
   withoutId,
-  yearText,
 } from './countries';
 import { densityText, firstLine, popText, shareText } from './human';
 import { BLOC_KIND_OPTIONS, SUBJECT_OPTIONS, joinBlocCommand, joinNote, joinableBlocs, leaveBlocCommand, newBlocCommand, selectBloc, subjectCommand } from './blocs';
@@ -46,10 +46,13 @@ import { Flag, showCountry } from './panels/countries';
 import { CityList } from './panels/settlements';
 import { countryCityRows, hasAnySettle } from './settlements';
 import { selectSettle } from './tools/settlements';
+import { confirmMerge, selectCountry } from './tools/countries';
+import { Seg } from './common';
 
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
 // 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交。
-// 第二十六轮：头上写等级；外交里有从属的种类、所在的帝国、联邦、同盟（加入、退出、新建，见 blocs.ts）
+// 第二十六轮：头上写等级；外交里有从属的种类、所在的帝国、联邦、同盟（加入、退出、新建，见 blocs.ts）。
+// 第二十七轮：分成几页（概览 · 政治 · 人口与城市 · 关系 · 历史）；名字和原文一起改；领土的操作（涂领土、分成两半、并入别国、删除）放进概览
 
 const run = (cmd: Command | null, busy = '正在保存…') => (cmd ? exec(cmd, busy) : Promise.resolve(false));
 const patch = (id: number, p: CountryPatch | null) => run(p ? patchCommand(id, p) : null);
@@ -167,18 +170,49 @@ export function StackBar({ items }: { items: { name: string; color: string; shar
 
 // ---------- 几段 ----------
 
+// 名字与原文一起改（第二十七轮）：两个框是一组，焦点离开这一组（或回车）时一起提交，先改名字再改原文也不会丢；Esc 两个都回到原来的
+export function NamePair({ name, orig, onCommit, placeholder = '空着恢复自动' }: { name: string; orig: string; onCommit: (name: string, orig: string) => void; placeholder?: string }) {
+  const [n, setN] = useState(name);
+  const [o, setO] = useState(orig);
+  useEffect(() => setN(name), [name]);
+  useEffect(() => setO(orig), [orig]);
+  const commit = () => {
+    if (n !== name || o !== orig) onCommit(n, o);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      commit();
+      (e.target as HTMLInputElement).blur();
+    }
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      setN(name);
+      setO(orig);
+    }
+  };
+  return (
+    <div
+      class="name-pair"
+      onFocusOut={(e) => {
+        const to = e.relatedTarget as Node | null;
+        if (!to || !(e.currentTarget as HTMLElement).contains(to)) commit();
+      }}
+    >
+      <Line label="名字">
+        <input class="grow" value={n} maxLength={40} placeholder={placeholder} onInput={(e) => setN((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
+      </Line>
+      <Line label="原文">
+        <input class="grow" value={o} maxLength={80} placeholder="原文" onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
+      </Line>
+    </div>
+  );
+}
+
 function NameSection({ m }: { m: CountryMeta }) {
-  const [orig, setOrig] = useState(m.orig ?? '');
-  useEffect(() => setOrig(m.orig ?? ''), [m.id, m.orig]);
   return (
     <section>
       <h5>名字</h5>
-      <Line label="中文">
-        <TextField value={m.name} onCommit={(v) => void patch(m.id, namePatch(m, v, orig))} placeholder="空着恢复自动" />
-      </Line>
-      <Line label="原文">
-        <TextField value={m.orig ?? ''} maxLength={80} onCommit={(v) => (setOrig(v), void patch(m.id, namePatch(m, m.name, v)))} placeholder="原文" />
-      </Line>
+      <NamePair name={m.name} orig={m.orig ?? ''} onCommit={(n, o) => void patch(m.id, namePatch(m, n, o))} />
       <div class="row between">
         <span class="hint">{m.nameLocked ? '改过名字：换政体、文化时不变' : '按政体、主流文化自动起'}</span>
         {m.nameLocked && (
@@ -191,6 +225,26 @@ function NameSection({ m }: { m: CountryMeta }) {
   );
 }
 
+// 旗上第 k 种颜色是哪一块（与 flagSvg 的画法对应）
+export function flagPartName(layout: string, k: number): string {
+  const parts: Record<string, string[]> = {
+    'bicolor-h': ['上', '下'],
+    'bicolor-v': ['左', '右'],
+    'tricolor-h': ['上', '中', '下'],
+    'tricolor-v': ['左', '中', '右'],
+    cross: ['底色', '十字'],
+    nordic: ['底色', '十字'],
+    saltire: ['底色', '斜十字'],
+    canton: ['底色', '角'],
+    chevron: ['底色', '三角'],
+    quartered: ['底色', '另两格'],
+    border: ['底色', '边'],
+    diagonal: ['左上', '右下'],
+    stripes: ['底色', '条纹'],
+  };
+  return parts[layout]?.[k] ?? (k === 0 ? '底色' : `第 ${k + 1} 色`);
+}
+
 function FlagSection({ w, m }: { w: World; m: CountryMeta }) {
   const f = m.flag;
   const setFlag = (flag: FlagSpec | null) => void patch(m.id, { flag });
@@ -199,11 +253,20 @@ function FlagSection({ w, m }: { w: World; m: CountryMeta }) {
       <h5>旗帜</h5>
       <div class="flag-edit">
         <Flag m={m} w={90} h={60} />
+        {/* 每种颜色下面写是哪一块（第二十七轮） */}
         <div class="flag-colors">
           {f.colors.map((c, k) => (
-            <input type="color" value={c} title={k === 0 ? '底色' : `第 ${k + 1} 种颜色`} onChange={(e) => setFlag(flagColorPatch(f, k, (e.target as HTMLInputElement).value))} />
+            <label class="flag-color">
+              <input type="color" value={c} onChange={(e) => setFlag(flagColorPatch(f, k, (e.target as HTMLInputElement).value))} />
+              <span class="hint">{flagPartName(f.layout, k)}</span>
+            </label>
           ))}
-          {f.emblem && <input type="color" value={f.emblemColor ?? '#f4f1e8'} title="纹章的颜色" onChange={(e) => setFlag(flagColorPatch(f, -1, (e.target as HTMLInputElement).value))} />}
+          {f.emblem && (
+            <label class="flag-color">
+              <input type="color" value={f.emblemColor ?? '#f4f1e8'} onChange={(e) => setFlag(flagColorPatch(f, -1, (e.target as HTMLInputElement).value))} />
+              <span class="hint">纹章</span>
+            </label>
+          )}
         </div>
       </div>
       <Line label="样式">
@@ -243,8 +306,9 @@ function ColorCapital({ w, m }: { w: World; m: CountryMeta }) {
         <input type="color" value={m.color} onChange={(e) => void patch(m.id, { color: (e.target as HTMLInputElement).value })} />
         <span class="hint grow">{fed ? `地图上用“${fed.name}”的颜色` : overlord ? `地图上用“${overlord.name}”的浅色` : ''}</span>
       </Line>
+      {/* 第二十七轮：换首都在城市、格的档案里（没有单独的首都工具了） */}
       <Line label="首都">
-        <span class="grow">
+        <span class="grow" title="换首都：用指针点一座城市或一格，在它的档案里设为首都">
           {cap !== undefined ? cellName(w, cap).zh : '没有领土'}
           {cap !== undefined && !m.capitalLocked && <span class="hint">（自动）</span>}
         </span>
@@ -253,9 +317,6 @@ function ColorCapital({ w, m }: { w: World; m: CountryMeta }) {
             <ScanSearch />
           </button>
         )}
-        <button class="small" onClick={() => switchTool('capital')} title="在地图上点这一国的一格">
-          挪动
-        </button>
         {m.capitalLocked && (
           <button class="small" onClick={() => void run({ op: 'move_capital', id: m.id, cell: null })}>
             恢复自动
@@ -608,6 +669,44 @@ function RulerSection({ m }: { m: CountryMeta }) {
   );
 }
 
+// 年份（第二十七轮）：数字框加“公元前”开关，离开框、回车时提交
+export function YearField({ value, onCommit }: { value: number; onCommit: (year: number) => void }) {
+  const [v, setV] = useState(String(Math.abs(value)));
+  useEffect(() => setV(String(Math.abs(value))), [value]);
+  const bc = value < 0;
+  const commit = (text: string, before: boolean) => {
+    const n = Math.round(Number(text));
+    if (!text.trim() || !Number.isFinite(n) || n < 0 || n > 100000) {
+      setV(String(Math.abs(value)));
+      return;
+    }
+    onCommit(before ? -n : n);
+  };
+  return (
+    <span class="year-field grow">
+      <input
+        type="number"
+        min={0}
+        max={100000}
+        value={v}
+        onInput={(e) => setV((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            setV(String(Math.abs(value)));
+          }
+        }}
+        onBlur={() => v !== String(Math.abs(value)) && commit(v, bc)}
+      />
+      <span class="hint">年</span>
+      <Toggle on={bc} onChange={(on) => commit(v, on)}>
+        公元前
+      </Toggle>
+    </span>
+  );
+}
+
 // 历史：打字停下一秒、离开框时提交（快照：生成时写下，改名不跟着变）
 function HistorySection({ m }: { m: CountryMeta }) {
   const [text, setText] = useState(m.history);
@@ -627,8 +726,7 @@ function HistorySection({ m }: { m: CountryMeta }) {
     <section>
       <h5>建国与历史</h5>
       <Line label="建国">
-        <TextField value={String(m.founded)} maxLength={12} title={yearText(m.founded)} onCommit={(v) => void patch(m.id, foundedPatch(m, v))} />
-        <span class="hint">{yearText(m.founded)}</span>
+        <YearField value={m.founded} onCommit={(y) => void patch(m.id, y === m.founded ? null : { founded: y })} />
       </Line>
       <textarea
         class="arch-note-input"
@@ -646,7 +744,84 @@ function HistorySection({ m }: { m: CountryMeta }) {
   );
 }
 
+// 领土（第二十七轮）：涂领土（换到领土笔刷、涂给这一国）、分成两半、并入别国、删除
+function TerritorySection({ w, m, remove }: { w: World; m: CountryMeta; remove: () => void }) {
+  const others = Object.values(w.small.countries ?? {})
+    .filter((x) => x.id !== m.id)
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const cells = cellsOf(w, m.id);
+  const into = async (target: number) => {
+    if (!(await confirmMerge(w, target, m.id))) return;
+    if (await run(mergeCommand(target, m.id), '正在计算…')) selectCountry(target);
+  };
+  return (
+    <section>
+      <h5>领土</h5>
+      <div class="row wrap">
+        <button
+          class="small"
+          onClick={() => {
+            setOptions({ territory: m.id });
+            switchTool('territory');
+          }}
+          title="换到领土笔刷，涂给这一国"
+        >
+          <Paintbrush /> 涂领土
+        </button>
+        <button class="small" disabled={cells.length < 2} onClick={() => void run({ op: 'split_country', id: m.id }, '正在计算…')} title="领土对半分开，分出的一半成为新国家">
+          <SplitSquareHorizontal /> 分成两半
+        </button>
+        {others.length > 0 && (
+          <select
+            class="small"
+            value=""
+            title="这一国并进所选的国家"
+            onChange={(e) => {
+              const v = Number((e.target as HTMLSelectElement).value);
+              (e.target as HTMLSelectElement).value = '';
+              if (v) void into(v);
+            }}
+          >
+            <option value="">并入…</option>
+            {others.map((x) => (
+              <option value={x.id}>{x.name}</option>
+            ))}
+          </select>
+        )}
+        <button class="small danger" onClick={remove}>
+          <Trash2 /> 删除
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// 概览里的几个数（详细的在“人口与城市”）
+function Glance({ w, m }: { w: World; m: CountryMeta }) {
+  const st = statsOf(w).get(m.id);
+  if (!st) return null;
+  return (
+    <div class="stat-grid">
+      <span class="hint">人口</span>
+      <b>{popText(st.population)}</b>
+      <span class="hint">面积</span>
+      <b>{Math.round(st.areaKm2).toLocaleString()} km²</b>
+    </div>
+  );
+}
+
 // ---------- 抽屉 ----------
+
+// 页签（第二十七轮）：换了国家还停在同一页
+export type CountryTab = 'overview' | 'politics' | 'people' | 'relations' | 'history';
+export const COUNTRY_TABS: [CountryTab, string][] = [
+  ['overview', '概览'],
+  ['politics', '政治'],
+  ['people', '人口与城市'],
+  ['relations', '关系'],
+  ['history', '历史'],
+];
+export const countryTab = signal<CountryTab>('overview');
 
 export function CountryArchive() {
   const w = world.value;
@@ -668,6 +843,7 @@ export function CountryArchive() {
       sheet.value = null;
     }
   };
+  const tab = countryTab.value;
   return (
     <div class="country-archive" key={m.id}>
       <div class="row arch-head">
@@ -679,24 +855,36 @@ export function CountryArchive() {
         <button class="icon-btn" onClick={() => focusOn(cellsOf(w, m.id))} title="定位">
           <ScanSearch />
         </button>
-        <button class="icon-btn" onClick={() => void remove()} title="删除国家">
-          <Trash2 />
-        </button>
       </div>
       <Toggle on={!!m.locked} onChange={(locked) => void patch(m.id, { locked })} title="重新生成国家时领土、档案都不动">
         {m.locked ? <Lock /> : <LockOpen />} 锁定
       </Toggle>
-      <NameSection m={m} />
-      <FlagSection w={w} m={m} />
-      <ColorCapital w={w} m={m} />
-      <GovernmentSection w={w} m={m} />
-      <CultureSection w={w} m={m} />
-      <StatsSection w={w} m={m} />
-      <CitySection w={w} m={m} />
-      <FactionSection w={w} m={m} />
-      <DiplomacySection w={w} m={m} />
-      <RulerSection m={m} />
-      <HistorySection m={m} />
+      <Seg<CountryTab> value={tab} options={COUNTRY_TABS} onChange={(t) => (countryTab.value = t)} wide />
+      {tab === 'overview' && (
+        <>
+          <Glance w={w} m={m} />
+          <NameSection m={m} />
+          <ColorCapital w={w} m={m} />
+          <FlagSection w={w} m={m} />
+          <TerritorySection w={w} m={m} remove={() => void remove()} />
+        </>
+      )}
+      {tab === 'politics' && (
+        <>
+          <GovernmentSection w={w} m={m} />
+          <CultureSection w={w} m={m} />
+          <FactionSection w={w} m={m} />
+          <RulerSection m={m} />
+        </>
+      )}
+      {tab === 'people' && (
+        <>
+          <StatsSection w={w} m={m} />
+          <CitySection w={w} m={m} />
+        </>
+      )}
+      {tab === 'relations' && <DiplomacySection w={w} m={m} />}
+      {tab === 'history' && <HistorySection m={m} />}
     </div>
   );
 }

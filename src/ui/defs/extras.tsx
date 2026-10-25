@@ -12,7 +12,7 @@ export { NamesBar, NamesExtras } from '../panels/names';
 export { RiverBar, RiverExtras } from '../panels/rivers';
 export { NewRiverTypePick } from '../panels/riverTypes';
 export { LakeBar, NewLakeTypePick } from '../panels/lakes';
-export { ProvinceBar, ProvinceColorToggle, ProvinceExtras } from '../provincePanel';
+export { ProvinceBar, ProvinceColorToggle, ProvinceExtras, ProvincePick } from '../provincePanel';
 
 // 当前要涂的生态：点开是“自然 ⋯”（生态的色板只在那里）
 export function BiomeChip() {

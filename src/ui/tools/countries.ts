@@ -4,13 +4,13 @@ import type { CountryMeta, World } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
 import { askUser, exec, options, selectedCountry, setOptions, sheet, showToast, world } from '../../state';
-import { NO_COUNTRIES, capitalCommand, cellsOf, countryAt, countryOf, hasCountries, largestCountry, mergeCommand, newCountryCommand, territoryCommand } from '../countries';
+import { NO_COUNTRIES, cellsOf, countryAt, countryOf, hasCountries, largestCountry, mergeCommand, newCountryCommand, territoryCommand } from '../countries';
 import { type Backdrop, BLOCKED_RGB, EMPTY, type Pointer, type RGB, type ToolHandler, WHITE, aroundPole, guard, isBusy, worldId } from './api';
 import { brushTool } from './brush';
 import { POLE_HINT, POLE_TOAST, lassoAdd, lassoShapes } from './gestures';
 
 // “国家”一类的工具（第二十三轮）：选国家（点一下打开档案）、领土（paint_country）、新建国家（点一个省份或圈一片）、
-// 合并（先点一国，再点要并进来的）、首都（move_capital）。都只改陆地（湖面也算）；海上的领海由领土推出来
+// 合并（先点一国，再点要并进来的）。都只改陆地（湖面也算）；海上的领海由领土推出来
 
 // 能画领土的格：陆地（湖面也算）
 export const countryLand = (w: World, i: number) => w.causes.land[i] === 1;
@@ -28,7 +28,7 @@ export function selectCountry(id: number | null, open = true) {
   if (id === null && sheet.value === 'country') sheet.value = null;
 }
 
-// ---------- 首都与选中的国家：几个工具一直画着 ----------
+// ---------- 首都与选中的国家：几个工具一直画着（第二十七轮：首都在城市、格、国家的档案里改） ----------
 
 const STAR = Array.from({ length: 11 }, (_, k) => {
   const a = -Math.PI / 2 + (k * Math.PI) / 5;
@@ -319,58 +319,6 @@ export function countryMergeTool(zoom: () => number): ToolHandler {
       if (!id) return EMPTY;
       if (sel === null || sel === id || !countryOf(w, sel)) return { layers: [hoverLayer(w, id)], shapes: [], hint: sel === id ? `“${countryName(w, id)}” · 再点要并进来的` : countryName(w, id) };
       return { layers: [hoverLayer(w, id, rgbOf(countryOf(w, sel)), 0.65)], shapes: [], hint: `并进“${countryName(w, sel)}”` };
-    },
-  };
-}
-
-// ---------- 首都 ----------
-
-export function capitalTool(zoom: () => number): ToolHandler {
-  let pointer: Pointer | null = null;
-  return {
-    drags: false,
-    move(p) {
-      pointer = p;
-    },
-    leave() {
-      pointer = null;
-    },
-    async click(p) {
-      const w = world.value;
-      if (!w || p.cell < 0 || !hasCountries(w) || isBusy()) return;
-      const cell = cellOf(p);
-      const id = countryAt(w, cell);
-      const sel = selectedCountry.value;
-      const m = countryOf(w, sel);
-      // 没选国家、点的是别国：先选中那一国
-      if (!m || (id !== m.id && id)) {
-        if (id) selectCountry(id, false);
-        return;
-      }
-      if (p.shift) {
-        if (m.capitalLocked) await exec(capitalCommand(m.id, null), '正在计算…');
-        return;
-      }
-      if (id !== m.id || !countryLand(w, cell) || cell === m.capitalCell) return;
-      await exec(capitalCommand(m.id, cell), '正在计算…');
-    },
-    backdrop() {
-      const w = world.value;
-      return w ? backdropOf(w, zoom()) : null;
-    },
-    preview() {
-      const w = world.value;
-      if (!w || !pointer || pointer.cell < 0) return EMPTY;
-      if (!hasCountries(w)) return { ...EMPTY, hint: NO_COUNTRIES, warn: true };
-      const cell = cellOf(pointer);
-      const id = countryAt(w, cell);
-      const m = countryOf(w, selectedCountry.value);
-      if (!m) return { ...EMPTY, hint: id ? `选中“${countryName(w, id)}”` : '先点一个国家' };
-      if (id && id !== m.id) return { ...EMPTY, hint: `选中“${countryName(w, id)}”` };
-      if (id !== m.id || !countryLand(w, cell)) return { ...EMPTY, hint: `首都要在“${m.name}”的领土上`, warn: true };
-      if (pointer.shift) return { ...EMPTY, hint: m.capitalLocked ? '首都恢复自动' : '首都是自动的' };
-      if (cell === m.capitalCell) return { ...EMPTY, hint: `“${m.name}”的首都${m.capitalLocked ? '' : '（自动）'}` };
-      return { layers: [{ cells: [cell], color: [255, 225, 77], alpha: 0.8 }], shapes: [], hint: `首都挪到这里` };
     },
   };
 }

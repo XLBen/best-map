@@ -1,6 +1,6 @@
-import { helpOpen, measure, openPanel, redo, selectedFeature, selectedLake, selectedProvince, selectedRiver, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
+import { erasing, helpOpen, measure, openPanel, picking, provinceSet, redo, selectedFeature, selectedLake, selectedProvince, selectedRiver, sheet, tool, uiHidden, undo, wizardOpen, world } from '../../state';
 import { mapApi } from '../camera';
-import { TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
+import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
 import { packDialog, repo } from '../packs/store';
 import { closeFormEditor, formEditor } from '../form-store';
@@ -27,7 +27,7 @@ export function onKeyDown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') {
     // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 我的地图 → 说明 → 星球形态编辑器 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
-    // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 隐藏的界面 → 仓库（编辑器开着时先回到列表）→ 抽屉 → 选中的省份 / 地名 / 河
+    // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 吸管 → 隐藏的界面 → 仓库（编辑器开着时先回到列表）→ 抽屉 → 选中的省份 / 地名 / 河
     if (packDialog.value) packDialog.value = null;
     else if (mapsDialog.value) mapsDialog.value = false;
     else if (helpOpen.value) helpOpen.value = false;
@@ -43,9 +43,11 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (mapApi.current?.cancel()) return;
     else if (mapApi.current?.escape()) return;
     else if (measure.value) measure.value = measure.value.length ? [] : null;
+    else if (picking.value) picking.value = false;
     else if (uiHidden.value) uiHidden.value = false;
     else if (repo.value) repo.value = repo.value.edit ? { ...repo.value, edit: undefined } : null;
     else if (sheet.value) sheet.value = null;
+    else if (provinceSet.value.length) provinceSet.value = [];
     else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value || selectedLake.value) {
       selectedProvince.value = null;
       selectedFeature.value = null;
@@ -108,6 +110,19 @@ export function onKeyDown(e: KeyboardEvent) {
   // 指针（第二十五轮）
   else if (k === 'v') setTool('pointer');
   else if (k === 'm') measure.value = measure.value ? null : [];
+  // 第二十七轮：E 橡皮擦（开着时关上），I 吸管（下一次点击吸取）
+  else if (k === 'e') {
+    const modes = eraserModes(tool.value);
+    if (modes.length) {
+      erasing.value = erasing.value ? null : modes[0];
+      picking.value = false;
+    }
+  } else if (k === 'i') {
+    if (def.pick) {
+      picking.value = !picking.value;
+      if (picking.value) erasing.value = null;
+    }
+  }
   else {
     const n = Number(e.key);
     const list = toolsOf(category.value, world.value);

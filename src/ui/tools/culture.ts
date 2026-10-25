@@ -49,9 +49,16 @@ export function chosenValue(w: World): { dim: { id: string; label: string }; val
   return value ? { dim, value } : undefined;
 }
 
-// 改人数的倍数（Shift 反过来）
-export const factorOf = (shift: boolean) => (shift ? 1 / options.value.popFactor : options.value.popFactor);
-export const factorText = (f: number) => `×${Math.round(f * 100) / 100}`;
+// 改人数的倍数（第二十七轮：滑块是增减的比例，倍数 = 1 + 比例；Shift 反过来，+50% 反过来是 −33%）
+export const factorOf = (shift: boolean) => {
+  const f = 1 + options.value.popPercent;
+  return shift ? 1 / f : f;
+};
+// 增减的比例写成“+50%”“−30%”
+export const percentText = (p: number) => (Math.abs(p) < 0.005 ? '0%' : `${p > 0 ? '+' : '−'}${Math.round(Math.abs(p) * 100)}%`);
+export const factorText = (f: number) => percentText(f - 1);
+// 改成分、改一个维度的力度（第二十七轮：负值是往外推；Shift 反过来）
+export const amountOf = (shift: boolean) => (shift ? -options.value.popAmount : options.value.popAmount);
 
 // ---------- 命令 ----------
 
@@ -65,27 +72,29 @@ export function popCommand(w: World, cells: number[], t: number[], shift: boolea
   if (o.popMode === 'count') return { op: 'paint_pop', cells, t, mode: 'count', factor: Math.min(100, Math.max(0.01, factorOf(shift))) };
   if (o.popMode === 'share') {
     const g = chosenTuple(w);
-    return g ? { op: 'paint_pop', cells, t, mode: 'share', group: g, amount: o.popAmount } : null;
+    return g ? { op: 'paint_pop', cells, t, mode: 'share', group: g, amount: amountOf(shift) } : null;
   }
   const v = chosenValue(w);
-  return v ? { op: 'paint_pop', cells, t, mode: 'value', dimension: v.dim.id, value: v.value.id, amount: o.popAmount } : null;
+  return v ? { op: 'paint_pop', cells, t, mode: 'value', dimension: v.dim.id, value: v.value.id, amount: amountOf(shift) } : null;
 }
 
 // 这一笔说的是什么（预览旁的一句话）
 function popLabel(w: World, shift: boolean): string {
   const o = options.value;
   if (o.popMode === 'count') return `人数 ${factorText(factorOf(shift))}`;
+  const less = amountOf(shift) < 0;
   if (o.popMode === 'share') {
     const g = chosenTuple(w);
-    return g ? `人口“${groupInfo(w, 0, g).label}”` : '';
+    return g ? `人口“${groupInfo(w, 0, g).label}”${less ? '减少' : ''}` : '';
   }
   const v = chosenValue(w);
-  return v ? `${v.dim.label}改为“${v.value.name}”` : '';
+  return v ? (less ? `${v.dim.label}“${v.value.name}”减少` : `${v.dim.label}改为“${v.value.name}”`) : '';
 }
 
 function popColor(w: World, shift: boolean): RGB {
   const o = options.value;
-  if (o.popMode === 'count') return shift ? [120, 160, 230] : [240, 190, 90];
+  if (o.popMode === 'count') return factorOf(shift) < 1 ? [120, 160, 230] : [240, 190, 90];
+  if (amountOf(shift) < 0) return [120, 160, 230];
   if (o.popMode === 'share') {
     const g = chosenTuple(w);
     const c = g ? cultureById(w.small, g.culture) : undefined;

@@ -9,7 +9,7 @@ import { type SettleRef, exec, nameMode, selectedSettle, world } from '../state'
 import { focusOn } from './camera';
 import { Line, ShareRow, StackBar, TextField } from './CountryArchive';
 import { Toggle } from './components/Toggle';
-import { yearText } from './countries';
+import { capitalCommand, yearText } from './countries';
 import { popText, shareText } from './human';
 import { showCountry } from './panels/countries';
 import { CityGlyph } from './panels/settlements';
@@ -135,6 +135,17 @@ function CountryLink({ w, id }: { w: World; id: number | null }) {
   );
 }
 
+// 设为首都（第二十七轮）：城市在这一国的领土上、还不是首都时
+function CapitalButton({ w, country, cell, capital }: { w: World; country: number | null; cell: number; capital: boolean }) {
+  if (country === null || capital || !w.small.countries?.[country]) return null;
+  const own = w.causes.country?.[cell] === country;
+  return (
+    <button class="small" disabled={!own} onClick={() => void exec(capitalCommand(country, cell), '正在计算…')} title={own ? undefined : '城市不在这一国的领土上'}>
+      设为首都
+    </button>
+  );
+}
+
 // ---------- 城市 ----------
 
 function CityView({ w, id }: { w: World; id: number }) {
@@ -181,6 +192,7 @@ function CityView({ w, id }: { w: World; id: number }) {
         </Line>
         <Line label="国家">
           <CountryLink w={w} id={a.country} />
+          <CapitalButton w={w} country={a.country} cell={a.cell} capital={a.capital} />
         </Line>
         {countries.length > 0 && (
           <Line label="归属">

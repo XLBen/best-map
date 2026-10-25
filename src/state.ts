@@ -217,6 +217,12 @@ export const selectedFeature = signal<string | null>(null);
 export const focusName = signal<string | null>(null);
 // 省份：选中的省份
 export const selectedProvince = signal<number | null>(null);
+// 第二十七轮：⇧+点多选的省份（两个以上时底部条换成合并、划给某国、重新划分）
+export const provinceSet = signal<number[]>([]);
+// 第二十七轮：底部条第二行的吸管（下一次点地图是吸取，吸完回到原来的笔刷）与橡皮擦（auto 恢复自动、clear 清空，null 不擦）。
+// 换工具时都关上
+export const picking = signal(false);
+export const erasing = signal<'auto' | 'clear' | null>(null);
 // 国家（第二十三轮）：选中的国家（编号），档案的抽屉、首都、合并跟着它
 export const selectedCountry = signal<number | null>(null);
 // 集团（第二十六轮）：选中的帝国、联邦、同盟（编号），集团档案跟着它
@@ -422,10 +428,10 @@ export interface ToolOptions {
   popMode: 'share' | 'count' | 'value';
   // 改成分的群体（文化 + 每一维的取值；null 还没选：用这里最多的人）
   popTuple: { culture: string; values: Record<string, string> } | null;
-  // 改成分、改一个维度的力度（0–1）
+  // 改成分、改一个维度的力度（−1–1，第二十七轮：负值是往外推、这一类减少）
   popAmount: number;
-  // 改人数的倍数（Shift 反过来）
-  popFactor: number;
+  // 改人数：增减的比例（第二十七轮：−0.9–3，倍数 = 1 + popPercent；Shift 反过来）
+  popPercent: number;
   // 改一个维度：维度的 id、取值的 id（'' 还没选：用第一维、第一个取值）
   popDim: string;
   popValue: string;
@@ -478,7 +484,7 @@ export const options = signal<ToolOptions>({
   popMode: 'share',
   popTuple: null,
   popAmount: 0.4,
-  popFactor: 1.5,
+  popPercent: 0.5,
   popDim: '',
   popValue: '',
   territory: -1,

@@ -14,6 +14,7 @@ import {
   adjustPreviewWorld,
   cornerLift,
   cursorHint,
+  erasing,
   flash,
   focusSpecies,
   hoverRiver,
@@ -26,6 +27,7 @@ import {
   options,
   overlays,
   pinnedCell,
+  picking,
   selectedSettle,
   prefs,
   redrawTick,
@@ -42,7 +44,7 @@ import {
 } from '../state';
 import { barPreview } from './barPreview';
 import { MAP_INSETS, clampPlanetCamera, mapApi, maxZoom, minZoom } from './camera';
-import { CATEGORY_DEFS, TOOL_DEFS, category, watchTools } from './defs/tools';
+import { CATEGORY_DEFS, TOOL_DEFS, category, createTool, watchTools } from './defs/tools';
 import { layerProvinceLabels as layerLabels } from './defs/layers';
 import { type OverlayArgs, installMapHooks } from './map/debug';
 import { mapExporter } from './map/export';
@@ -135,6 +137,7 @@ function mergeGhosts(from: (GhostEdit | null | undefined)[]): GhostEdit | null {
 }
 
 const NO_PREVIEW: Preview = { layers: [], shapes: [], hint: null };
+const PICK_PREVIEW: Preview = { layers: [], shapes: [], hint: '点一下吸取' };
 
 // 钉住的格（“这里”卡片停在这一格）：一个黄圈
 function pinRing(w: World): Shape[] {
@@ -197,7 +200,7 @@ export function MapView() {
     const hitLabel = (sx: number, sy: number) => labelBoxes.find((b) => sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1)?.key ?? null;
     // 工具的像素容差、按像素定大小的图形按它算：投影时是相当于等距圆柱的缩放（投影正中的比例）
     const env = { zoom: () => effectiveZoom(renderer.camera), hitLabel };
-    let handler: ToolHandler = TOOL_DEFS[tool.value].create(env);
+    let handler: ToolHandler = createTool(tool.value, env);
     // 量距离时地图上的点击交给它，不交给当前工具
     const measurer = measureTool(env.zoom);
     const active = () => (measure.value ? measurer : handler);
@@ -366,7 +369,8 @@ export function MapView() {
       const cm = cat.map ?? {};
       // 量出来的线鼠标离开地图后也留着（看底部条上的数字时还在）；点了以后还在算、不排队的那一步（重画这一片）也留着
       const showPreview = !clean && (!!view.pointer || view.pressed || sliderActive.value || !!measure.value || !!active().keep?.());
-      const own: Preview = showPreview ? active().preview() : NO_PREVIEW;
+      // 吸管（第二十七轮）：下一次点击是吸取，鼠标旁写一声，不画笔刷的预览
+      const own: Preview = !showPreview ? NO_PREVIEW : picking.value && !measure.value ? PICK_PREVIEW : active().preview();
       // 工具选中时一直画着的东西（鼠标不在地图上也画）
       const back = clean ? null : (active().backdrop?.() ?? null);
       // 排队中的编辑（松手时的预览，直到结果换上，鼠标离开地图也留着）与底部条、“⋯”里按钮悬停的预览
@@ -659,10 +663,12 @@ export function MapView() {
 
     // 换工具：新的工具对象；其他会影响预览或叠加的状态变化时重画
     // 底部条按钮悬停时的预览由 setTool 清掉（defs/tools.ts）；鼠标不在地图上时新工具不预览（第十三轮修）
+    // 第二十七轮：开关橡皮擦也换一个工具对象
     const disposeTool = effect(() => {
       const id = tool.value;
+      void erasing.value;
       untracked(() => handler.cancel?.());
-      handler = TOOL_DEFS[id].create(env);
+      handler = untracked(() => createTool(id, env));
       if (view.lastPointer && view.pointer) handler.move?.(view.lastPointer, false);
       requestDraw();
     });
@@ -682,6 +688,7 @@ export function MapView() {
       void sliderActive.value;
       void openPanel.value;
       void measure.value;
+      void picking.value;
       void reference.value;
       void redrawTick.value;
       void visualOverrides.value;

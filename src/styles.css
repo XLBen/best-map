@@ -807,6 +807,27 @@ button.icon-btn {
   border-right: 1px solid var(--fill);
   white-space: nowrap;
 }
+/* 第二十七轮：省份的名字与原文一组、点色块选颜色、条上的下拉框 */
+.bar-pair {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+.swatch-pick {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+.swatch-pick input[type='color'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.bar-select {
+  max-width: 12em;
+}
 .bar-choice {
   display: inline-flex;
   align-items: center;
@@ -2136,6 +2157,29 @@ input.share-input {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-1);
+}
+/* 第二十七轮：旗的每种颜色下面写是哪一块 */
+.flag-color {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.flag-color .hint {
+  font-size: var(--fs-xs, 11px);
+}
+/* 年份：数字框、“年”、公元前的开关一行 */
+.year-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.year-field input[type='number'] {
+  width: 6em;
+}
+/* 国家档案的页签 */
+.country-archive > .seg.wide {
+  margin: var(--sp-2) 0;
 }
 .stack-bar {
   display: flex;

@@ -1,8 +1,8 @@
-import { Ellipsis, Ruler } from 'lucide-preact';
+import { Ellipsis, Eraser, Pipette, Ruler } from 'lucide-preact';
 import { roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
-import { type PanelId, measure, openPanel, options, setOptions, togglePanel, tool, world } from '../../state';
-import { CATEGORY_DEFS, TOOL_DEFS, category, setTool, toolsOf } from '../defs/tools';
+import { type PanelId, erasing, measure, openPanel, options, picking, setOptions, togglePanel, tool, world } from '../../state';
+import { BRUSH, CATEGORY_DEFS, TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
 import { Seg } from '../common';
@@ -43,6 +43,50 @@ function Item({ item }: { item: BarItem }) {
   return <R />;
 }
 
+// 第二十七轮：第二行末尾的吸管与橡皮擦（所有笔刷共用）。吸管点一下，下一次点地图是吸取，吸完回到原来的笔刷；
+// 橡皮擦开着时笔刷换成它（只剩直径），旁边选恢复自动还是清空（只有恢复自动时不显示）
+const ERASE_NAMES = { auto: '恢复自动', clear: '清空' } as const;
+const ERASE_HINTS = { auto: '去掉手改的，回到自动的样子', clear: '领土成无主地、人口清零、资源清成“没有”' } as const;
+
+function PickEraseRow() {
+  const id = tool.value;
+  const def = TOOL_DEFS[id];
+  const modes = eraserModes(id);
+  const on = erasing.value;
+  return (
+    <>
+      {def.pick && (
+        <button
+          class={`bar-btn icon ${picking.value ? 'on' : ''}`}
+          onClick={() => {
+            picking.value = !picking.value;
+            if (picking.value) erasing.value = null;
+          }}
+          title="吸管：点地图上一处，用那里的接着画（I；也可以按住 Alt 点）"
+        >
+          <Pipette />
+        </button>
+      )}
+      {modes.length > 0 && (
+        <button
+          class={`bar-btn icon ${on ? 'on' : ''}`}
+          onClick={() => {
+            erasing.value = on ? null : modes[0];
+            picking.value = false;
+          }}
+          title="橡皮擦（E）"
+        >
+          <Eraser />
+        </button>
+      )}
+      {on && modes.length > 1 && (
+        <Seg<'auto' | 'clear'> value={on} options={modes.map((k) => [k, ERASE_NAMES[k]])} titles={Object.fromEntries(modes.map((k) => [k, ERASE_HINTS[k]]))} onChange={(v) => (erasing.value = v)} />
+      )}
+      {on && modes.length === 1 && <span class="bar-note">{ERASE_NAMES[on]}</span>}
+    </>
+  );
+}
+
 // 步行：每天约 30 km
 const WALK_KM_PER_DAY = 30;
 
@@ -80,8 +124,10 @@ export function ContextBar() {
   const c = category.value;
   const cat = CATEGORY_DEFS[c];
   const def = TOOL_DEFS[tool.value];
-  const sliders = [def.size, def.amount].filter((s): s is SliderDef => !!s && s.enabled?.(w) !== false);
-  const items = def.bar?.(w) ?? [];
+  // 橡皮擦开着：只剩直径，这个工具自己的选项先收起来
+  const erase = erasing.value !== null && eraserModes(tool.value).includes(erasing.value);
+  const sliders = erase ? [BRUSH] : [def.size, def.amount].filter((s): s is SliderDef => !!s && s.enabled?.(w) !== false);
+  const items = erase ? [] : (def.bar?.(w) ?? []);
   const more: PanelId = `cat:${c}`;
   // 指针（第二十五轮）没有底部条（量距离时照旧显示量出来的数）
   if (c === 'inspect')
@@ -119,6 +165,7 @@ export function ContextBar() {
           {items.map((it) => (
             <Item item={it} />
           ))}
+          <PickEraseRow />
         </div>
       )}
     </div>

@@ -105,6 +105,13 @@ export function landTool(): ToolHandler {
   };
 }
 
+// 吸管（第二十七轮）：这里是陆地就画陆地，是海就画海
+export function pickLand(w: World, cell: number): string {
+  const land = w.causes.land[cell] === 1;
+  setOptions({ landMode: land ? 'land' : 'sea' });
+  return land ? '画陆地' : '画海';
+}
+
 // 圈一片：按住画一个圈，松手后圈里变成陆地（或海），边上和画笔一样是自然的海岸。
 // 预览与松手后提交的是同一个圈（每移动半格记一个点），地图上画出的将来的海岸线就是结果。
 // 前面的编辑还在算时也能圈（排队，松手时的预览留到结果换上）：命令只看圈住的格，与等着圈相同

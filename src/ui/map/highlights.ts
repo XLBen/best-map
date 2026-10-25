@@ -2,7 +2,7 @@ import { activeConflicts } from '../../../core/constraints';
 import type { World } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
-import { FLASH_MS, adjustPreview, adjustPreviewWorld, flash, overlays, riverStyleOverride, selectedFeature, selectedProvince, selectedRiver } from '../../state';
+import { FLASH_MS, adjustPreview, adjustPreviewWorld, flash, overlays, provinceSet, riverStyleOverride, selectedFeature, selectedProvince, selectedRiver } from '../../state';
 import { editLayers } from '../edits';
 import { riverGlow, riverInfo } from '../riverCourse';
 import { type Preview, reliefLayers } from '../tools';
@@ -38,12 +38,14 @@ function wasteLayer(w: World): HighlightLayer | null {
 export const provinceHighlights: CategoryHighlights = (w) => {
   const layers: HighlightLayer[] = [];
   const key: unknown[] = [];
-  if (selectedProvince.value !== null) {
-    const id = selectedProvince.value;
+  // 第二十七轮：⇧+点多选的省都亮
+  const ids = provinceSet.value.length ? provinceSet.value : selectedProvince.value !== null ? [selectedProvince.value] : [];
+  if (ids.length) {
+    const set = new Set(ids);
     const cells: number[] = [];
-    for (let i = 0; i < w.mesh.n; i++) if (w.causes.province[i] === id) cells.push(i);
+    for (let i = 0; i < w.mesh.n; i++) if (set.has(w.causes.province[i])) cells.push(i);
     layers.push({ cells, color: [255, 255, 255], alpha: 0.28 });
-    key.push(id);
+    key.push(ids.join(','));
   }
   const wl = wasteLayer(w);
   if (wl) layers.push(wl);

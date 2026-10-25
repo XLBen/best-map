@@ -15,3 +15,4 @@ export * from './tools/culture';
 export * from './tools/countries';
 export * from './tools/settlements';
 export * from './tools/pointer';
+export * from './tools/erasers';

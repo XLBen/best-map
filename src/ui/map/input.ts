@@ -4,7 +4,7 @@ import { findCell } from '../../../core/mesh';
 import { nearestCell } from '../../../core/sphere';
 import { EE_HALF_W, GLOBE_G, type Proj, rotateToAnchor, screenToPlane } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
-import { cursorHint, hoverCell, hoverProvinceCell, measure, openPanel, pinCell, prefs, showToast, tool, world } from '../../state';
+import { cursorHint, erasing, hoverCell, hoverProvinceCell, measure, openPanel, picking, pinCell, prefs, showToast, tool, world } from '../../state';
 import { clampPlanetCamera, maxZoom, minZoom, shapeFitsWidth } from '../camera';
 import { CATEGORY_DEFS, TOOL_DEFS, category } from '../defs/tools';
 import { type Pointer, type ToolHandler, provinceCellAt } from '../tools';
@@ -178,13 +178,16 @@ export function mapInput(
       return;
     }
     if (e.button !== 0) return;
-    // Alt+点：吸取（取这里的生态、这里的省份）
+    // Alt+点、底部条上的吸管（第二十七轮：点一下吸管，下一次点击是吸取）：吸取（取这里的生态、这里的省份）。
+    // 吸到了就回到画笔（橡皮擦关上），用吸到的接着画
     const def = TOOL_DEFS[tool.value];
-    if (e.altKey && def.pick && !measure.value) {
+    if ((e.altKey || picking.value) && def.pick && !measure.value) {
       // 吸取的是屏幕上这一点画的：省份按画出来的省（扭曲后的格、切线两边），生态按画成的陆地
       const cell = CATEGORY_DEFS[def.category].map?.provinces ? provinceCellAt(w, p) : hereOf(p);
       const got = cell >= 0 ? def.pick(w, cell) : null;
       showToast(got ? `已吸取“${got}”` : '这里没有可吸取的', !got);
+      picking.value = false;
+      if (got) erasing.value = null;
       requestDraw();
       return;
     }

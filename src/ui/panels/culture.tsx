@@ -35,7 +35,7 @@ import {
 } from '../human';
 import { openRepo } from '../packs/store';
 import { restyleProvincesCommand } from '../packs/styles';
-import { NO_HUMAN, chosenCulture, chosenTuple, chosenValue, hasHuman, hearthCommand, hearthMarks } from '../tools/culture';
+import { NO_HUMAN, chosenCulture, chosenTuple, chosenValue, hasHuman, hearthCommand, hearthMarks, percentText } from '../tools/culture';
 
 // “文化”一类（第二十二轮）：底部条上的选择（文化、群体、维度的取值、倍数），“文化 ⋯”里的生成人文、时代、文化组、总人口，
 // 与新建向导共用的“生成人文”的选择（HumanChoices）
@@ -188,14 +188,14 @@ export function ValueMenu() {
   );
 }
 
-// 改人数的倍数
+// 改人数：增减的比例（第二十七轮：−90% 到 +300%，Shift 反过来）
 export const FACTOR: SliderDef = {
-  key: 'popFactor',
-  label: '倍数',
-  range: () => [1.05, 10],
-  scale: 'log',
-  snap: (v) => (v < 2 ? Math.round(v * 20) / 20 : Math.round(v * 4) / 4),
-  format: (v) => `×${v}`,
+  key: 'popPercent',
+  label: '增减',
+  range: () => [-0.9, 3],
+  scale: 'linear',
+  snap: (v) => Math.round(v * 20) / 20,
+  format: (v) => percentText(v),
 };
 export function FactorSlider() {
   const w = world.value;

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
 import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, landmarkTypeById, resourceAt, typicalTuple, worldCultureGroups, worldCultures, worldResources, worldTerrainClasses } from '../../core/human';
 import type { World } from '../../core/world';
-import { exec } from '../state';
+import { exec, selectedProvince, switchTool } from '../state';
 import { SelectionActions } from './components/SelectionActions';
 import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellResourceCommand, cellTotalCommand, groupShareCommand, noteCommand, popRows, removeGroupCommand, renameCommand, rerollCommand } from './archive';
 import { densityText, popText, shareText } from './human';
@@ -44,8 +44,8 @@ function Line({ label, children }: { label: string; children: ComponentChildren 
 
 // ---------- 国家（第二十三轮） ----------
 
-// 这一格是哪国：点国名打开它的档案；海上写领海
-function CountryLine({ w, cell }: { w: World; cell: number }) {
+// 这一格是哪国：点国名打开它的档案；海上写领海。钉住时（第二十七轮）有主的陆地上可以在这里建首都（这一格没有城市时自动补一座）
+function CountryLine({ w, cell, pinned = false }: { w: World; cell: number; pinned?: boolean }) {
   if (!hasCountries(w)) return null;
   const m = countryOf(w, countryAt(w, cell));
   const land = !!w.causes.land[cell];
@@ -63,6 +63,34 @@ function CountryLine({ w, cell }: { w: World; cell: number }) {
         )}
         {m && !land && <span class="hint"> · 领海</span>}
         {m && m.capitalCell === cell && <span class="hint"> · 首都</span>}
+      </span>
+      {pinned && m && land && m.capitalCell !== cell && (
+        <button class="small" onClick={() => run({ op: 'move_capital', id: m.id, cell }, '正在计算…')}>
+          在这里建首都
+        </button>
+      )}
+    </Line>
+  );
+}
+
+// 这一格的省份（第二十七轮）：点名字换到“选省份”、选中它，在底部条上改名字、归属国、颜色、类型
+function ProvinceLine({ w, cell }: { w: World; cell: number }) {
+  const id = w.causes.province[cell];
+  const meta = id >= 0 ? w.small.provinces[id] : undefined;
+  if (!meta) return null;
+  return (
+    <Line label="省份">
+      <span class="grow">
+        <button
+          class="link"
+          onClick={() => {
+            switchTool('pselect');
+            selectedProvince.value = id;
+          }}
+          title="在底部条上改这个省"
+        >
+          {meta.name || `省份 ${id}`}
+        </button>
       </span>
     </Line>
   );
@@ -357,7 +385,8 @@ function Editable({ a, w }: { a: CellArchive; w: World }) {
       <div class="arch-actions">
         <SelectionActions reroll={() => run(rerollCommand(a), '正在起名…')} unlock={auto ? () => run(auto, '正在起名…') : undefined} />
       </div>
-      <CountryLine w={w} cell={a.cell} />
+      <CountryLine w={w} cell={a.cell} pinned />
+      <ProvinceLine w={w} cell={a.cell} />
       <SettleLines w={w} a={a} pinned />
       {a.peak && (
         <Line label="山峰">
