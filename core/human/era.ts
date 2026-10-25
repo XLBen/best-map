@@ -55,10 +55,15 @@ export const eraSchema = z.object({
   defaultGroups: weightedIdsSchema.optional(),
   // 只能用这些文化组（省略时不限）
   cultureGroups: z.array(typeIdSchema).max(64).optional(),
-  // 以后的轮次用：政体、派系、资源（id）
+  // 政体、派系（第二十三轮，见 human/government.ts）：这个时代能用的 id（省略时用世界里写了这个时代、或不限时代的）
   governments: z.array(typeIdSchema).max(64).optional(),
   factions: z.array(typeIdSchema).max(64).optional(),
+  // 资源（以后的轮次用）
   resources: z.array(typeIdSchema).max(128).optional(),
+  // 国家（第二十三轮）：“分裂 ↔ 统一”在正中时一个国家平均占多少 km² 能住人的陆地（省略为 COUNTRY_KM2）
+  countryKm2: z.number().min(1000).max(1e9).optional(),
+  // 年份的范围 [最早, 现在]：建国年份在这里面（省略为 [500, 1000]）
+  years: z.tuple([z.number().int().min(-100000).max(100000), z.number().int().min(-100000).max(100000)]).optional(),
 });
 export type Era = z.output<typeof eraSchema>;
 

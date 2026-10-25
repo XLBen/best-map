@@ -56,6 +56,8 @@ const ERA_FIELDS: readonly FieldDesc[] = [
   { key: 'governments', label: '政体', type: 'tags', optional: true },
   { key: 'factions', label: '派系', type: 'tags', optional: true },
   { key: 'resources', label: '资源', type: 'tags', optional: true },
+  { key: 'countryKm2', label: '国家大小', type: 'number', optional: true, min: 1000, max: 1e9, step: 10000, hint: 'km²；一个国家平均占的能住人的陆地' },
+  { key: 'years', label: '年份', type: 'json', optional: true, hint: '[最早, 现在]，建国年份在这里面' },
 ];
 
 const VALUE_FIELDS: readonly FieldDesc[] = [

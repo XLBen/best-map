@@ -28,9 +28,11 @@ describe('内容种类的登记表', () => {
       ['popValue', 'popValues', '人口维度的取值', '取值'],
       ['cultureGroup', 'cultureGroups', '文化组', '文化组'],
       ['culture', 'cultures', '文化', '文化'],
+      ['government', 'governments', '政体', '政体'],
+      ['faction', 'factions', '派系', '派系'],
       ['field', 'fields', '自定义场', '场'],
     ]);
-    expect(packSections().map((k) => k.id)).toEqual(['biome', 'riverType', 'lakeType', 'islandType', 'planetForm', 'nameStyle', 'terrainClass', 'resource', 'era', 'popValue', 'cultureGroup', 'culture']);
+    expect(packSections().map((k) => k.id)).toEqual(['biome', 'riverType', 'lakeType', 'islandType', 'planetForm', 'nameStyle', 'terrainClass', 'resource', 'era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']);
     expect(kindByPackKey('textPacks')?.id).toBe('nameStyle');
     // 每种都有编辑器的字段表
     for (const k of allKinds()) expect(k.fields.length, k.id).toBeGreaterThan(0);
