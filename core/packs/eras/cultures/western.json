@@ -15,7 +15,8 @@
     "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["regional", 1.5], ["imperial", 1], ["cosmopolitan", 2]],
     "ideology": [["social-democracy", 4], ["liberal-conservative", 4], ["social-liberal", 3], ["market-liberal", 2], ["green", 2], ["religious-democracy", 2], ["dem-socialism", 1], ["auth-nationalist", 1], ["sf-federalist", 4], ["sf-corporate", 3], ["sf-free", 2], ["sf-ascension", 1], ["sf-naturalist", 1]],
     "race": [["human", 8], ["halfling", 2], ["half-elf", 1.5], ["dwarf", 0.5], ["gnome", 0.5]],
-    "species": [["terran", 6], ["augmented", 2], ["synthetic", 2]]
+    "species": [["terran", 6], ["augmented", 2], ["synthetic", 2]],
+    "government": [["chiefdom", 3], ["tribal-confederation", 3], ["early-kingdom", 2], "city-state", ["classical-republic", 0.5], ["feudal-monarchy", 4], ["absolute-monarchy", 2], ["elective-monarchy", 1.5], ["merchant-republic", 1.5], ["noble-republic", 0.7], ["theocracy", 0.6], "empire", ["colonial-empire", 2], ["constitutional-monarchy", 3], ["parliamentary-republic", 3], ["presidential-republic", 1.5], ["federal-republic", 1.5], "revolutionary-state", ["military-junta", 0.5], ["socialist-republic", 0.3], ["one-party-state", 0.3], ["ultranationalist-state", 0.4], "technocracy", ["commune-federation", 0.4], ["free-city", 2], ["holy-order", 1.5], "magocracy", ["galactic-federation", 4], ["corporate-republic", 3], ["colony-council", 2], "stellar-empire", ["military-government", 0.6], ["psionic-theocracy", 0.3]]
   },
   "cultures": [
     {

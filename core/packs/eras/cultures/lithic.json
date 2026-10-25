@@ -12,7 +12,8 @@
   },
   "tendencies": {
     "ideology": [["sf-collective", 4], ["sf-technocracy", 2], ["sf-ascension", 1]],
-    "species": [["lithic", 9], ["synthetic", 1]]
+    "species": [["lithic", 9], ["synthetic", 1]],
+    "government": [["hive-collective", 15], ["technocracy", 3], ["colony-council", 0.5]]
   },
   "cultures": [
     {

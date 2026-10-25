@@ -16,7 +16,8 @@
     "nation": [["religious-community", 5], ["pan-group", 3], ["ethnic-nation", 2], ["imperial", 1.5]],
     "ideology": [["auth-nationalist", 4], ["theocratic", 3], ["monarchist", 3], ["traditionalist", 2], ["rev-socialism", 1], ["social-democracy", 0.5], ["sf-psionic", 3], ["sf-corporate", 2], ["sf-supremacist", 2], ["sf-federalist", 1]],
     "race": [["human", 8], ["tiefling", 2], ["dragonborn", 1.5]],
-    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]]
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]],
+    "government": [["god-king", 3], ["temple-state", 3], ["early-empire", 3], ["city-state", 1.5], "early-kingdom", ["nomad-confederation", 2], ["sultanate", 15], ["theocracy", 3], ["nomad-khanate", 2], ["empire", 1.5], "feudal-monarchy", ["merchant-republic", 0.3], ["absolute-monarchy", 3], "constitutional-monarchy", ["military-junta", 1.5], ["revolutionary-state", 0.5], ["theocratic-republic", 3], ["one-party-state", 2], "presidential-republic", ["ultranationalist-state", 0.5], "dragon-lordship", ["magocracy", 2], ["free-city", 1.5], "holy-order", ["psionic-theocracy", 3], ["corporate-republic", 2], ["stellar-empire", 1.5], "military-government", ["galactic-federation", 0.5]]
   },
   "cultures": [
     {
@@ -41,7 +42,8 @@
       "description": "高原上的古老王国之民，以诗歌与花园闻名。",
       "tendencies": {
         "religion": [["fire-temple", 5], ["moon-faith", 5], ["river-gods", 1], ["secular", 0.5], ["arcane-eye", 4], ["silver-lady", 3], ["elder-dragons", 2], ["pact-lords", 1]],
-        "nation": [["ethnic-nation", 3], ["religious-community", 4], ["imperial", 2]]
+        "nation": [["ethnic-nation", 3], ["religious-community", 4], ["imperial", 2]],
+        "government": [["god-king", 3], ["temple-state", 3], ["early-empire", 4], ["city-state", 1.5], "early-kingdom", ["nomad-confederation", 2], ["sultanate", 15], ["theocracy", 3], ["nomad-khanate", 2], ["empire", 3], "feudal-monarchy", ["merchant-republic", 0.3], ["absolute-monarchy", 3], "constitutional-monarchy", ["military-junta", 1.5], ["revolutionary-state", 0.5], ["theocratic-republic", 3], ["one-party-state", 2], "presidential-republic", ["ultranationalist-state", 0.5], "dragon-lordship", ["magocracy", 2], ["free-city", 1.5], "holy-order", ["psionic-theocracy", 3], ["corporate-republic", 2], ["stellar-empire", 1.5], "military-government", ["galactic-federation", 0.5]]
       },
       "prefs": [
         { "classes": ["highlands", "hills"], "factor": 1.5 }
@@ -57,7 +59,8 @@
       "description": "深入荒漠的游牧部落。",
       "tendencies": {
         "religion": [["moon-faith", 6], ["spirit-ways", 2], ["river-gods", 1], ["arcane-eye", 4], ["silver-lady", 3], ["elder-dragons", 2], ["pact-lords", 1]],
-        "nation": [["religious-community", 4], ["regional", 4], ["pan-group", 2]]
+        "nation": [["religious-community", 4], ["regional", 4], ["pan-group", 2]],
+        "government": [["god-king", 3], ["temple-state", 3], ["early-empire", 3], ["city-state", 1.5], "early-kingdom", ["nomad-confederation", 8], ["sultanate", 15], ["theocracy", 3], ["nomad-khanate", 12], ["empire", 1.5], "feudal-monarchy", ["merchant-republic", 0.3], ["absolute-monarchy", 3], "constitutional-monarchy", ["military-junta", 1.5], ["revolutionary-state", 0.5], ["theocratic-republic", 3], ["one-party-state", 2], "presidential-republic", ["ultranationalist-state", 0.5], "dragon-lordship", ["magocracy", 2], ["free-city", 1.5], "holy-order", ["psionic-theocracy", 3], ["corporate-republic", 2], ["stellar-empire", 1.5], "military-government", ["galactic-federation", 0.5], ["tribal-confederation", 3]]
       },
       "prefs": [
         { "classes": ["desert"], "factor": 2 },

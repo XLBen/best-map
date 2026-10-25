@@ -1,0 +1,252 @@
+{
+  "governments": [
+    {
+      "id": "constitutional-monarchy",
+      "name": "君主立宪制",
+      "category": ["monarchy", "democracy"],
+      "description": "君主依宪法在位，议会立法、内阁施政，王室多是国家的象征。",
+      "color": "#b0503c",
+      "title": {
+        "default": { "zh": "王国", "orig": "Kingdom of {name}" },
+        "frankish": { "zh": "王国", "orig": "Royaume de {name}" },
+        "teutonic": { "zh": "王国", "orig": "Königreich {name}" },
+        "zeven": { "zh": "王国", "orig": "Koninkrijk {name}" },
+        "montevi": { "zh": "王国", "orig": "Regno di {name}" },
+        "estrella": { "zh": "王国", "orig": "Reino de {name}" },
+        "nordic": { "zh": "王国", "orig": "Kongeriket {name}" },
+        "yamato": { "zh": "帝国", "orig": "{name} Empire" },
+        "eastern": { "zh": "国" },
+        "mideast": { "zh": "王国", "orig": "Mamlakat {name}" }
+      },
+      "rulerTitle": { "default": "国王", "yamato": "天皇", "eastern": "君主" },
+      "eras": ["industrial", "modern"],
+      "weight": 1.5,
+      "size": 1,
+      "expansion": 0.4,
+      "coastal": 0.2,
+      "urbanization": 1.4,
+      "cohesion": 0.25,
+      "vassals": 0.25,
+      "nomadic": 0,
+      "emblems": ["crown", "lion", "cross", "tower"],
+      "layouts": ["nordic", "cross", "tricolor-h", "canton"]
+    },
+    {
+      "id": "parliamentary-republic",
+      "name": "议会共和制",
+      "category": ["republic", "democracy"],
+      "description": "议会由选举产生，政府对议会负责，总统多是礼仪上的元首。",
+      "color": "#3a6ab0",
+      "title": {
+        "default": { "zh": "共和国", "orig": "Republic of {name}" },
+        "frankish": { "zh": "共和国", "orig": "République de {name}" },
+        "teutonic": { "zh": "共和国", "orig": "Republik {name}" },
+        "zeven": { "zh": "共和国", "orig": "Republiek {name}" },
+        "montevi": { "zh": "共和国", "orig": "Repubblica di {name}" },
+        "estrella": { "zh": "共和国", "orig": "República de {name}" },
+        "veturia": { "zh": "共和国", "orig": "Res Publica {name}" }
+      },
+      "rulerTitle": "总理",
+      "eras": ["industrial", "modern"],
+      "weight": 1.5,
+      "size": 0.8,
+      "expansion": 0.25,
+      "coastal": 0.2,
+      "urbanization": 1.4,
+      "cohesion": 0.25,
+      "vassals": 0.15,
+      "nomadic": 0,
+      "emblems": ["star", "circle", "tree"],
+      "layouts": ["tricolor-v", "tricolor-h", "bicolor-h"]
+    },
+    {
+      "id": "presidential-republic",
+      "name": "总统共和制",
+      "category": ["republic", "democracy"],
+      "description": "总统由选民选出，既是国家元首也是政府首脑，与议会分权制衡。",
+      "color": "#2a5a8a",
+      "title": {
+        "default": { "zh": "共和国", "orig": "Republic of {name}" },
+        "teutonic": { "zh": "共和国", "orig": "Republik {name}" },
+        "zeven": { "zh": "共和国", "orig": "Republiek {name}" },
+        "montevi": { "zh": "共和国", "orig": "Repubblica di {name}" },
+        "veturia": { "zh": "共和国", "orig": "Res Publica {name}" },
+        "estrella": { "zh": "共和国", "orig": "República de {name}" },
+        "frankish": { "zh": "共和国", "orig": "République de {name}" },
+        "mesoamerica": { "zh": "共和国", "orig": "República de {name}" },
+        "andes": { "zh": "共和国", "orig": "República de {name}" }
+      },
+      "rulerTitle": "总统",
+      "eras": ["industrial", "modern"],
+      "weight": 1.3,
+      "size": 1.2,
+      "expansion": 0.35,
+      "coastal": 0.15,
+      "urbanization": 1.3,
+      "cohesion": 0.2,
+      "vassals": 0.15,
+      "nomadic": 0,
+      "emblems": ["star", "eagle", "sun"],
+      "layouts": ["tricolor-v", "stripes", "canton", "bicolor-h"]
+    },
+    {
+      "id": "federal-republic",
+      "name": "联邦共和国",
+      "category": ["federation", "republic", "democracy"],
+      "description": "各州、各邦保留自己的议会与法律，联邦管外交、国防与货币，国土大而分散。",
+      "color": "#4a5ac0",
+      "title": {
+        "default": { "zh": "联邦", "orig": "Federation of {name}" },
+        "teutonic": { "zh": "联邦", "orig": "Bundesrepublik {name}" },
+        "estrella": { "zh": "联邦共和国", "orig": "República Federal de {name}" },
+        "mesoamerica": { "zh": "联邦共和国", "orig": "Estados Unidos de {name}" },
+        "southasia": { "zh": "联邦", "orig": "Union of {name}" }
+      },
+      "rulerTitle": { "default": "总统", "teutonic": "总理" },
+      "eras": ["industrial", "modern"],
+      "weight": 0.6,
+      "size": 3,
+      "expansion": 0.5,
+      "coastal": 0.1,
+      "urbanization": 1.2,
+      "cohesion": 0.15,
+      "vassals": 0.2,
+      "nomadic": 0.1,
+      "emblems": ["star", "eagle", "circle"],
+      "layouts": ["canton", "stripes", "tricolor-h"]
+    },
+    {
+      "id": "revolutionary-state",
+      "name": "革命政权",
+      "category": ["republic", "dictatorship"],
+      "description": "推翻旧王朝后由革命委员会掌权，以紧急状态治国，向邻国输出革命。",
+      "color": "#c03a2a",
+      "title": {
+        "default": { "zh": "共和国", "orig": "Republic of {name}" },
+        "teutonic": { "zh": "共和国", "orig": "Republik {name}" },
+        "zeven": { "zh": "共和国", "orig": "Republiek {name}" },
+        "montevi": { "zh": "共和国", "orig": "Repubblica di {name}" },
+        "estrella": { "zh": "共和国", "orig": "República de {name}" },
+        "veturia": { "zh": "共和国", "orig": "Res Publica {name}" },
+        "frankish": { "zh": "共和国", "orig": "République de {name}" },
+        "eastern": { "zh": "民国" }
+      },
+      "rulerTitle": { "default": "委员会主席" },
+      "eras": ["industrial"],
+      "weight": 0.4,
+      "size": 1.1,
+      "expansion": 0.6,
+      "coastal": 0.05,
+      "urbanization": 1.3,
+      "cohesion": 0.25,
+      "vassals": 0.3,
+      "nomadic": 0,
+      "emblems": ["star", "wheel", "sword"],
+      "layouts": ["tricolor-v", "plain", "canton"]
+    },
+    {
+      "id": "military-junta",
+      "name": "军政府",
+      "category": ["dictatorship"],
+      "description": "军官团发动政变后掌权，宪法与议会被中止，以维持秩序为名统治。",
+      "color": "#5a6a3a",
+      "title": {
+        "default": { "zh": "共和国", "orig": "Republic of {name}" },
+        "frankish": { "zh": "共和国", "orig": "République de {name}" },
+        "teutonic": { "zh": "共和国", "orig": "Republik {name}" },
+        "zeven": { "zh": "共和国", "orig": "Republiek {name}" },
+        "montevi": { "zh": "共和国", "orig": "Repubblica di {name}" },
+        "veturia": { "zh": "共和国", "orig": "Res Publica {name}" },
+        "estrella": { "zh": "共和国", "orig": "República de {name}" },
+        "mesoamerica": { "zh": "共和国", "orig": "República de {name}" },
+        "andes": { "zh": "共和国", "orig": "República de {name}" },
+        "eastern": { "zh": "国" }
+      },
+      "rulerTitle": "总司令",
+      "eras": ["industrial", "modern"],
+      "weight": 0.5,
+      "size": 1,
+      "expansion": 0.5,
+      "coastal": 0.1,
+      "urbanization": 1.1,
+      "cohesion": 0.25,
+      "vassals": 0.3,
+      "nomadic": 0.05,
+      "emblems": ["star", "sword", "eagle"],
+      "layouts": ["plain", "tricolor-h", "chevron"]
+    }
+  ],
+  "factions": [
+    {
+      "id": "conservatives",
+      "name": "保守派",
+      "color": "#3a4a8a",
+      "description": "维护王室、教会与旧有的等级，主张慢慢改、不要大改。",
+      "eras": ["industrial", "modern"],
+      "base": { "monarchy": 1.2, "empire": 1.2, "theocracy": 0.8, "dictatorship": 0.6, "republic": 0.5, "democracy": 0.6, "default": 0.5 },
+      "drivers": [
+        { "dimension": "nation", "value": "imperial", "weight": 1.2 },
+        { "dimension": "nation", "value": "regional", "weight": 0.5 },
+        { "dimension": "ideology", "value": "liberal-conservative", "weight": 3 },
+        { "dimension": "ideology", "value": "traditionalist", "weight": 3 },
+        { "dimension": "ideology", "value": "religious-democracy", "weight": 1.5 },
+        { "dimension": "ideology", "value": "monarchist", "weight": 1.5 }
+      ]
+    },
+    {
+      "id": "liberals",
+      "name": "自由派",
+      "color": "#d0a020",
+      "description": "主张宪法、议会、言论自由与自由贸易。",
+      "eras": ["industrial", "modern"],
+      "base": { "democracy": 1.2, "republic": 0.9, "federation": 0.8, "monarchy": 0.4, "dictatorship": 0.1, "default": 0.4 },
+      "drivers": [
+        { "dimension": "nation", "value": "civic-nation", "weight": 1.2 },
+        { "dimension": "nation", "value": "cosmopolitan", "weight": 1 },
+        { "dimension": "ideology", "value": "social-liberal", "weight": 3 },
+        { "dimension": "ideology", "value": "market-liberal", "weight": 3 },
+        { "coastal": true, "weight": 0.3 }
+      ]
+    },
+    {
+      "id": "radicals",
+      "name": "激进派",
+      "color": "#c03a3a",
+      "description": "要求普选、土地改革与工人的权利，也有人主张推翻君主。",
+      "eras": ["industrial"],
+      "base": { "dictatorship": 0.8, "republic": 0.6, "democracy": 0.5, "monarchy": 0.25, "default": 0.3 },
+      "drivers": [
+        { "dimension": "nation", "value": "ethnic-nation", "weight": 0.6 },
+        { "dimension": "nation", "value": "pan-group", "weight": 0.6 },
+        { "minority": true, "weight": 0.6 }
+      ]
+    },
+    {
+      "id": "army",
+      "name": "军方",
+      "color": "#5a6a3a",
+      "description": "军官团与总参谋部，重视国防、殖民地与秩序。",
+      "eras": ["industrial"],
+      "base": { "dictatorship": 1.8, "empire": 1, "monarchy": 0.6, "republic": 0.3, "democracy": 0.2, "default": 0.3 },
+      "drivers": [{ "minority": true, "weight": 0.4 }, { "dimension": "nation", "value": "imperial", "weight": 0.4 }]
+    },
+    {
+      "id": "church",
+      "name": "教会",
+      "color": "#9a6ac0",
+      "description": "各宗教的教会与学校，影响着婚姻、教育与乡村。",
+      "eras": ["industrial"],
+      "base": { "theocracy": 2, "monarchy": 0.5, "empire": 0.5, "republic": 0.25, "default": 0.3 },
+      "drivers": [{ "dimension": "nation", "value": "religious-community", "weight": 1.5 }, { "primary": true, "weight": 0.2 }]
+    },
+    {
+      "id": "industrialists",
+      "name": "工商界",
+      "color": "#3a8a7a",
+      "description": "工厂主、银行家与铁路公司，要的是市场、关税与港口。",
+      "eras": ["industrial"],
+      "base": { "republic": 1, "democracy": 0.9, "empire": 0.7, "monarchy": 0.5, "default": 0.4 },
+      "drivers": [{ "coastal": true, "weight": 1 }, { "dimension": "nation", "value": "civic-nation", "weight": 0.4 }]
+    }
+  ]
+}

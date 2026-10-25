@@ -14,7 +14,8 @@
     "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
     "ideology": [["auth-nationalist", 4], ["auth-socialism", 3], ["liberal-conservative", 2], ["traditionalist", 2], ["rev-socialism", 1], ["ultranationalist", 1], ["sf-militarist", 3], ["sf-technocracy", 2], ["sf-supremacist", 2], ["sf-federalist", 1]],
     "race": [["human", 8], ["half-elf", 1], ["halfling", 1], ["dwarf", 0.5]],
-    "species": [["terran", 7], ["augmented", 2], ["synthetic", 0.5]]
+    "species": [["terran", 7], ["augmented", 2], ["synthetic", 0.5]],
+    "government": [["tribal-confederation", 4], ["chiefdom", 3], "early-kingdom", ["feudal-monarchy", 3], ["elective-monarchy", 2], ["noble-republic", 3], ["absolute-monarchy", 2], "empire", ["merchant-republic", 0.5], ["theocracy", 0.3], ["revolutionary-state", 2], ["constitutional-monarchy", 0.8], ["military-junta", 0.5], ["parliamentary-republic", 0.5], ["socialist-republic", 3], ["one-party-state", 2], ["presidential-republic", 2], ["ultranationalist-state", 0.6], "holy-order", ["magocracy", 0.5], ["free-city", 0.5], ["military-government", 3], ["technocracy", 1.5], ["stellar-empire", 2], "galactic-federation"]
   },
   "cultures": [
     {

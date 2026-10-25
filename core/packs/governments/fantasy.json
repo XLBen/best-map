@@ -1,0 +1,229 @@
+{
+  "governments": [
+    {
+      "id": "elven-council",
+      "name": "精灵议会",
+      "category": ["oligarchy", "republic"],
+      "description": "长寿的古老家族各出一位长者，议会以共识决事，守护森林重于开疆。",
+      "color": "#3c8a5a",
+      "title": {
+        "default": { "zh": "议会国", "orig": "Council of {name}" },
+        "elves": { "zh": "{name}之境", "orig": "Realm of {name}" }
+      },
+      "rulerTitle": { "default": "议长", "elves": "长老" },
+      "eras": ["fantasy"],
+      "weight": 0.8,
+      "size": 1.1,
+      "expansion": 0.1,
+      "coastal": 0.1,
+      "urbanization": 0.7,
+      "cohesion": 0.6,
+      "vassals": 0.15,
+      "nomadic": 0.1,
+      "emblems": ["tree", "star", "moon"],
+      "layouts": ["border", "chevron", "plain"]
+    },
+    {
+      "id": "dwarven-hold",
+      "name": "氏族王国",
+      "category": ["monarchy", "tribal"],
+      "description": "各氏族奉一位山王，城堡与矿坑凿在山腹里，氏族长老议会掌管工坊与宝库。",
+      "color": "#8a6a4a",
+      "title": {
+        "default": { "zh": "氏族王国", "orig": "{name} Hold" },
+        "dwarves": { "zh": "氏族王国", "orig": "Hold of {name}" }
+      },
+      "rulerTitle": { "default": "族王", "dwarves": "山王" },
+      "eras": ["fantasy"],
+      "weight": 0.8,
+      "size": 0.75,
+      "expansion": 0.2,
+      "coastal": 0,
+      "urbanization": 1.8,
+      "cohesion": 0.65,
+      "vassals": 0.3,
+      "nomadic": 0.4,
+      "emblems": ["mountain", "crown", "tower"],
+      "layouts": ["border", "chevron", "quartered"]
+    },
+    {
+      "id": "orc-horde",
+      "name": "兽人部众",
+      "category": ["tribal", "nomadic"],
+      "description": "最强的战士夺得领导权，各部在他麾下劫掠四方，首领一死便可能四分五裂。",
+      "color": "#6a7a2a",
+      "title": {
+        "default": { "zh": "部众", "orig": "{name} Horde" },
+        "orcs": { "zh": "大部落", "orig": "{name} Horde" },
+        "bog-goblin": { "zh": "部落", "orig": "{name} Warren" },
+        "steppe": { "zh": "汗国", "orig": "{name} Horde" }
+      },
+      "rulerTitle": { "default": "首领", "orcs": "战酋", "bog-goblin": "头目", "steppe": "可汗" },
+      "eras": ["fantasy"],
+      "weight": 0.8,
+      "size": 1.8,
+      "expansion": 0.9,
+      "coastal": 0,
+      "urbanization": 0.4,
+      "cohesion": 0.2,
+      "vassals": 0.5,
+      "nomadic": 0.9,
+      "emblems": ["sword", "mountain", "sun"],
+      "layouts": ["plain", "saltire", "diagonal"]
+    },
+    {
+      "id": "magocracy",
+      "name": "法师统治",
+      "category": ["magocracy"],
+      "description": "法师议会统治城市与学院，施法的天赋决定地位，平民不得过问秘法。",
+      "color": "#8a5ad0",
+      "title": {
+        "default": { "zh": "法师国", "orig": "Magocracy of {name}" },
+        "cogwork": { "zh": "学院国", "orig": "Academy of {name}" },
+        "ashen": { "zh": "契约国", "orig": "Covenant of {name}" }
+      },
+      "rulerTitle": { "default": "大法师", "cogwork": "首席学士", "ashen": "契约主" },
+      "eras": ["fantasy"],
+      "weight": 0.5,
+      "size": 0.6,
+      "expansion": 0.3,
+      "coastal": 0.3,
+      "urbanization": 2,
+      "cohesion": 0.6,
+      "vassals": 0.25,
+      "nomadic": 0,
+      "emblems": ["star", "moon", "circle"],
+      "layouts": ["diagonal", "border", "plain"]
+    },
+    {
+      "id": "holy-order",
+      "name": "神权教团",
+      "category": ["theocracy"],
+      "description": "一座神殿的骑士团与祭司团共治领地，以护教与驱邪为名征战。",
+      "color": "#c9a227",
+      "title": {
+        "default": { "zh": "圣殿领", "orig": "Holy Order of {name}" },
+        "dwarves": { "zh": "炉殿领", "orig": "Forge Order of {name}" },
+        "elves": { "zh": "月殿领", "orig": "Moon Order of {name}" }
+      },
+      "rulerTitle": { "default": "大团长", "dwarves": "炉主", "elves": "月祭司" },
+      "eras": ["fantasy"],
+      "weight": 0.6,
+      "size": 0.7,
+      "expansion": 0.6,
+      "coastal": 0.05,
+      "urbanization": 1.2,
+      "cohesion": 0.45,
+      "vassals": 0.2,
+      "nomadic": 0,
+      "emblems": ["sun", "cross", "sword"],
+      "layouts": ["cross", "saltire", "border"]
+    },
+    {
+      "id": "free-city",
+      "name": "自由城邦",
+      "category": ["republic", "oligarchy"],
+      "description": "不受国王管辖的城市，由行会推举的议会治理，靠商路、港口与佣兵自保。",
+      "color": "#2f8a8a",
+      "title": {
+        "default": { "zh": "自由城", "orig": "Free City of {name}" },
+        "seafolk": { "zh": "自由港", "orig": "Free Port of {name}" },
+        "smallfolk": { "zh": "自由镇", "orig": "Free Town of {name}" }
+      },
+      "rulerTitle": { "default": "执政", "seafolk": "港主", "smallfolk": "镇长" },
+      "eras": ["fantasy"],
+      "weight": 1,
+      "size": 0.2,
+      "expansion": 0.05,
+      "coastal": 0.7,
+      "urbanization": 2.4,
+      "cohesion": 0.9,
+      "vassals": 0,
+      "nomadic": 0,
+      "emblems": ["tower", "wheel", "wave"],
+      "layouts": ["bicolor-h", "canton", "quartered"]
+    },
+    {
+      "id": "dragon-lordship",
+      "name": "龙主统治",
+      "category": ["monarchy", "empire"],
+      "description": "一头古龙或龙裔的血脉高踞王座，诸领主按时纳贡效忠，宝库就是国库。",
+      "color": "#b03a2a",
+      "title": {
+        "default": { "zh": "龙庭", "orig": "Dragon Throne of {name}" },
+        "emberkin": { "zh": "龙庭", "orig": "{name} Dragonthrone" }
+      },
+      "rulerTitle": "龙主",
+      "eras": ["fantasy"],
+      "weight": 0.3,
+      "size": 2,
+      "expansion": 0.8,
+      "coastal": 0.05,
+      "urbanization": 1.3,
+      "cohesion": 0.3,
+      "vassals": 0.7,
+      "nomadic": 0.3,
+      "emblems": ["sun", "crown", "mountain"],
+      "layouts": ["plain", "border", "diagonal"]
+    }
+  ],
+  "factions": [
+    {
+      "id": "mages",
+      "name": "法师",
+      "color": "#6a3ab0",
+      "description": "学院、法师塔与秘法会，掌握施法的知识。",
+      "eras": ["fantasy"],
+      "base": { "magocracy": 2.5, "oligarchy": 0.6, "republic": 0.4, "monarchy": 0.25, "tribal": 0.1, "default": 0.25 },
+      "drivers": [
+        { "dimension": "race", "value": "elf", "weight": 0.6 },
+        { "dimension": "race", "value": "gnome", "weight": 0.8 },
+        { "dimension": "race", "value": "tiefling", "weight": 0.6 },
+        { "dimension": "religion", "value": "arcane-eye", "weight": 1.2 }
+      ]
+    },
+    {
+      "id": "temples",
+      "name": "教团",
+      "color": "#c9a227",
+      "description": "神殿、修会与圣武士，照看信众也操练士兵。",
+      "eras": ["fantasy"],
+      "base": { "theocracy": 2.2, "monarchy": 0.45, "empire": 0.4, "tribal": 0.3, "default": 0.35 },
+      "drivers": [
+        { "dimension": "religion", "value": "dawnlord", "weight": 0.5 },
+        { "dimension": "religion", "value": "silver-lady", "weight": 0.4 },
+        { "dimension": "religion", "value": "forge-father", "weight": 0.4 },
+        { "dimension": "religion", "value": "harvest-maid", "weight": 0.4 },
+        { "minority": true, "weight": -0.2 }
+      ]
+    },
+    {
+      "id": "guilds",
+      "name": "公会",
+      "color": "#2f8a8a",
+      "description": "商人、工匠与冒险者的公会，管着集市、港口与委托。",
+      "eras": ["fantasy"],
+      "base": { "republic": 1.3, "oligarchy": 1, "monarchy": 0.35, "magocracy": 0.4, "default": 0.3 },
+      "drivers": [
+        { "coastal": true, "weight": 0.8 },
+        { "dimension": "race", "value": "halfling", "weight": 0.6 },
+        { "dimension": "race", "value": "dwarf", "weight": 0.4 },
+        { "dimension": "race", "value": "gnome", "weight": 0.4 }
+      ]
+    },
+    {
+      "id": "clan-elders",
+      "name": "氏族长老",
+      "color": "#7a6a3a",
+      "description": "各氏族、部落的长者与萨满，按古老的血缘与誓约说话。",
+      "eras": ["fantasy"],
+      "base": { "tribal": 1.8, "nomadic": 1.2, "oligarchy": 0.5, "monarchy": 0.3, "default": 0.25 },
+      "drivers": [
+        { "dimension": "race", "value": "orc", "weight": 0.8 },
+        { "dimension": "race", "value": "dwarf", "weight": 0.6 },
+        { "dimension": "race", "value": "goblin", "weight": 0.5 },
+        { "dimension": "race", "value": "dragonborn", "weight": 0.4 }
+      ]
+    }
+  ]
+}

@@ -14,7 +14,8 @@
     "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
     "ideology": [["auth-nationalist", 3], ["social-democracy", 2], ["religious-democracy", 2], ["traditionalist", 2], ["rev-socialism", 2], ["market-liberal", 1], ["sf-technocracy", 3], ["sf-psionic", 3], ["sf-federalist", 2]],
     "race": [["human", 8], ["dragonborn", 1], ["tiefling", 1]],
-    "species": [["terran", 7], ["augmented", 2], ["synthetic", 1]]
+    "species": [["terran", 7], ["augmented", 2], ["synthetic", 1]],
+    "government": [["early-kingdom", 3], ["temple-state", 1.5], ["classical-republic", 2], ["early-empire", 1.5], "god-king", "chiefdom", ["city-state", 0.5], ["feudal-monarchy", 3], ["sultanate", 6], ["empire", 2], "theocracy", ["merchant-republic", 0.5], "tribal-confederation", ["absolute-monarchy", 1.5], "constitutional-monarchy", ["parliamentary-republic", 3], ["federal-republic", 2.5], "presidential-republic", "one-party-state", "theocratic-republic", ["socialist-republic", 0.7], ["military-junta", 0.8], ["magocracy", 1.5], ["holy-order", 1.5], "free-city", ["dragon-lordship", 0.5], ["technocracy", 2], ["psionic-theocracy", 3], ["galactic-federation", 2], "corporate-republic", "stellar-empire"]
   },
   "cultures": [
     {

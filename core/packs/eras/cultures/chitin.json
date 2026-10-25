@@ -12,7 +12,8 @@
   },
   "tendencies": {
     "ideology": [["sf-collective", 3], ["sf-militarist", 3], ["sf-supremacist", 2]],
-    "species": [["chitin", 9], ["terran", 0.3]]
+    "species": [["chitin", 9], ["terran", 0.3]],
+    "government": [["hive-collective", 15], ["military-government", 3], "stellar-empire"]
   },
   "cultures": [
     {

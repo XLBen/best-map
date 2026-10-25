@@ -13,7 +13,8 @@
   },
   "tendencies": {
     "religion": [["storm-horn", 6], ["grey-warden", 1], ["trickster", 1]],
-    "race": [["orc", 8], ["goblin", 2]]
+    "race": [["orc", 8], ["goblin", 2]],
+    "government": [["orc-horde", 10], ["empire", 2], ["feudal-monarchy", 0.5], ["dragon-lordship", 0.5]]
   },
   "cultures": [
     {

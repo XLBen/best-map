@@ -13,7 +13,8 @@
   },
   "tendencies": {
     "religion": [["forge-father", 6], ["grey-warden", 2], ["dawnlord", 1]],
-    "race": [["dwarf", 9], ["gnome", 1.5]]
+    "race": [["dwarf", 9], ["gnome", 1.5]],
+    "government": [["dwarven-hold", 10], ["feudal-monarchy", 0.7], "holy-order", ["free-city", 0.5]]
   },
   "cultures": [
     {

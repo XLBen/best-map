@@ -1,0 +1,210 @@
+{
+  "governments": [
+    {
+      "id": "socialist-republic",
+      "name": "社会主义共和国",
+      "category": ["communist", "republic"],
+      "description": "一个先锋党领导国家，土地与大工业归公有，经济按计划运行。",
+      "color": "#b02a2a",
+      "title": {
+        "default": { "zh": "人民共和国", "orig": "People's Republic of {name}" },
+        "slavic": { "zh": "社会主义共和国", "orig": "Sotsialisticheskaya Respublika {name}" },
+        "eastern": { "zh": "人民共和国" }
+      },
+      "rulerTitle": "总书记",
+      "eras": ["modern"],
+      "weight": 1,
+      "size": 1.6,
+      "expansion": 0.55,
+      "coastal": 0.05,
+      "urbanization": 1.3,
+      "cohesion": 0.2,
+      "vassals": 0.35,
+      "nomadic": 0.05,
+      "emblems": ["star", "wheel", "sun"],
+      "layouts": ["plain", "canton", "bicolor-h"]
+    },
+    {
+      "id": "one-party-state",
+      "name": "一党制国家",
+      "category": ["dictatorship"],
+      "description": "执政党与国家机关合为一体，反对党被禁止，选举只是对执政党的确认。",
+      "color": "#8a4a2a",
+      "title": {
+        "default": { "zh": "共和国", "orig": "Republic of {name}" },
+        "frankish": { "zh": "共和国", "orig": "République de {name}" },
+        "teutonic": { "zh": "共和国", "orig": "Republik {name}" },
+        "zeven": { "zh": "共和国", "orig": "Republiek {name}" },
+        "montevi": { "zh": "共和国", "orig": "Repubblica di {name}" },
+        "veturia": { "zh": "共和国", "orig": "Res Publica {name}" },
+        "estrella": { "zh": "共和国", "orig": "República de {name}" },
+        "mideast": { "zh": "共和国", "orig": "Jumhuriyat {name}" },
+        "eastern": { "zh": "民国" }
+      },
+      "rulerTitle": "主席",
+      "eras": ["modern"],
+      "weight": 1,
+      "size": 1.1,
+      "expansion": 0.45,
+      "coastal": 0.1,
+      "urbanization": 1.2,
+      "cohesion": 0.25,
+      "vassals": 0.25,
+      "nomadic": 0.05,
+      "emblems": ["star", "eagle", "sun", "wheel"],
+      "layouts": ["tricolor-h", "tricolor-v", "plain"]
+    },
+    {
+      "id": "ultranationalist-state",
+      "name": "极端民族主义政权",
+      "category": ["fascist", "dictatorship"],
+      "description": "领袖与唯一的政党以民族复兴为号召，压制异见与少数民族，向外扩张。",
+      "color": "#6a5a50",
+      "title": {
+        "default": { "zh": "国", "orig": "{name} State" },
+        "teutonic": { "zh": "国", "orig": "{name}reich" },
+        "montevi": { "zh": "国", "orig": "Stato di {name}" },
+        "eastern": { "zh": "帝国" }
+      },
+      "rulerTitle": "领袖",
+      "eras": ["modern"],
+      "weight": 0.4,
+      "size": 1.4,
+      "expansion": 0.95,
+      "coastal": 0.1,
+      "urbanization": 1.2,
+      "cohesion": 0.2,
+      "vassals": 0.5,
+      "nomadic": 0,
+      "emblems": ["eagle", "sword", "wheel"],
+      "layouts": ["plain", "border", "saltire"]
+    },
+    {
+      "id": "theocratic-republic",
+      "name": "神权共和国",
+      "category": ["theocracy", "republic"],
+      "description": "有选举与议会，但宗教学者组成的委员会审查候选人与法律，最高领袖终身在任。",
+      "color": "#2e7a4e",
+      "title": {
+        "default": { "zh": "共和国", "orig": "Holy Republic of {name}" },
+        "mideast": { "zh": "教法共和国", "orig": "Jumhuriyat {name}" },
+        "southasia": { "zh": "圣法共和国", "orig": "Dharma Republic of {name}" }
+      },
+      "rulerTitle": "最高领袖",
+      "eras": ["modern"],
+      "weight": 0.4,
+      "size": 0.9,
+      "expansion": 0.45,
+      "coastal": 0.05,
+      "urbanization": 1.2,
+      "cohesion": 0.25,
+      "vassals": 0.2,
+      "nomadic": 0.05,
+      "emblems": ["moon", "sun", "star", "cross"],
+      "layouts": ["tricolor-h", "plain", "border"]
+    },
+    {
+      "id": "technocracy",
+      "name": "技术官僚制",
+      "category": ["oligarchy", "republic"],
+      "description": "政府由工程师、经济学家与专家委员会主持，按规划与数据施政，选举的作用有限。",
+      "color": "#2a8aa0",
+      "title": { "default": { "zh": "技治国", "orig": "Technate of {name}" } },
+      "rulerTitle": "首席执政",
+      "eras": ["modern", "scifi"],
+      "weight": 0.3,
+      "size": 0.7,
+      "expansion": 0.2,
+      "coastal": 0.4,
+      "urbanization": 2.2,
+      "cohesion": 0.4,
+      "vassals": 0.15,
+      "nomadic": 0,
+      "emblems": ["circle", "wheel", "star"],
+      "layouts": ["plain", "diagonal", "bicolor-v"]
+    },
+    {
+      "id": "commune-federation",
+      "name": "公社联盟",
+      "category": ["democracy", "federation"],
+      "description": "没有中央政府，各地的公社、工会与合作社自愿结盟，代表随时可以撤换。",
+      "color": "#1a1a1a",
+      "title": { "default": { "zh": "公社联盟", "orig": "Free Communes of {name}" }, "estrella": { "zh": "公社联盟", "orig": "Comunas Libres de {name}" } },
+      "rulerTitle": "联络书记",
+      "eras": ["modern"],
+      "weight": 0.15,
+      "size": 0.7,
+      "expansion": 0.15,
+      "coastal": 0.2,
+      "urbanization": 0.9,
+      "cohesion": 0.25,
+      "vassals": 0,
+      "nomadic": 0.05,
+      "emblems": ["star", "wheel", "circle"],
+      "layouts": ["diagonal", "bicolor-h", "plain"]
+    }
+  ],
+  "factions": [
+    {
+      "id": "revolutionary-left",
+      "name": "革命左翼",
+      "color": "#b02a2a",
+      "description": "无政府主义者与革命社会主义者，要推翻资本与国家的现有秩序。",
+      "eras": ["modern"],
+      "base": { "communist": 2.5, "dictatorship": 0.1, "democracy": 0.1, "default": 0.1 },
+      "drivers": [
+        { "dimension": "ideology", "value": "anarchism", "weight": 4 },
+        { "dimension": "ideology", "value": "rev-socialism", "weight": 4 },
+        { "dimension": "ideology", "value": "auth-socialism", "weight": 3.5 }
+      ]
+    },
+    {
+      "id": "social-democrats",
+      "name": "社会民主派",
+      "color": "#f0909a",
+      "description": "工会与左翼政党，要福利、公共服务与更平均的收入。",
+      "eras": ["modern"],
+      "base": { "democracy": 0.5, "republic": 0.2, "communist": 0.2, "default": 0.1 },
+      "drivers": [
+        { "dimension": "ideology", "value": "dem-socialism", "weight": 3.5 },
+        { "dimension": "ideology", "value": "social-democracy", "weight": 4 }
+      ]
+    },
+    {
+      "id": "greens",
+      "name": "绿色派",
+      "color": "#4a9a3a",
+      "description": "环保运动与地方自治的倡导者。",
+      "eras": ["modern"],
+      "base": { "democracy": 0.2, "federation": 0.2, "default": 0.05 },
+      "drivers": [{ "dimension": "ideology", "value": "green", "weight": 4 }, { "dimension": "ideology", "value": "anarchism", "weight": 0.5 }]
+    },
+    {
+      "id": "nationalists",
+      "name": "民族主义派",
+      "color": "#5a3a2a",
+      "description": "以民族、领土与国家强盛为先，常与军队、王室结盟。",
+      "eras": ["modern"],
+      "base": { "fascist": 2.5, "dictatorship": 1, "monarchy": 0.4, "republic": 0.2, "default": 0.15 },
+      "drivers": [
+        { "dimension": "ideology", "value": "auth-nationalist", "weight": 4 },
+        { "dimension": "ideology", "value": "ultranationalist", "weight": 4 },
+        { "dimension": "ideology", "value": "monarchist", "weight": 1.5 },
+        { "dimension": "nation", "value": "ethnic-nation", "weight": 0.6 }
+      ]
+    },
+    {
+      "id": "religious-bloc",
+      "name": "宗教派",
+      "color": "#2e7a4e",
+      "description": "以宗教团体为根基的政党，主张信仰进入法律与学校。",
+      "eras": ["modern"],
+      "base": { "theocracy": 2.5, "monarchy": 0.3, "default": 0.1 },
+      "drivers": [
+        { "dimension": "ideology", "value": "theocratic", "weight": 4 },
+        { "dimension": "ideology", "value": "religious-democracy", "weight": 2 },
+        { "dimension": "nation", "value": "religious-community", "weight": 1 }
+      ]
+    }
+  ]
+}

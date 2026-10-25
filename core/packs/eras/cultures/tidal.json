@@ -13,7 +13,8 @@
   },
   "tendencies": {
     "ideology": [["sf-naturalist", 3], ["sf-federalist", 2], ["sf-collective", 1]],
-    "species": [["tidal-kin", 9], ["terran", 0.5]]
+    "species": [["tidal-kin", 9], ["terran", 0.5]],
+    "government": [["galactic-federation", 3], ["colony-council", 2], "hive-collective", "psionic-theocracy"]
   },
   "cultures": [
     {

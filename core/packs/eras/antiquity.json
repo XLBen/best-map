@@ -14,6 +14,10 @@
     "seaClaimKm": 0,
     "defaultGroups": [["mediterranean", 3], ["mideast", 3], ["eastern", 3], ["southasia", 2], ["western", 1.5], ["steppe", 1.5]],
     "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
-    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "gems", "spices", "fur", "wine", "silk", "tea"]
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "gems", "spices", "fur", "wine", "silk", "tea"],
+    "governments": ["chiefdom", "city-state", "temple-state", "god-king", "early-kingdom", "classical-republic", "early-empire", "tribal-confederation", "nomad-confederation"],
+    "factions": ["priests", "warriors", "traders", "elders"],
+    "countryKm2": 450000,
+    "years": [-2500, 200]
   }
 }

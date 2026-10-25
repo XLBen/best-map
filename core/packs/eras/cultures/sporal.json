@@ -13,7 +13,8 @@
   },
   "tendencies": {
     "ideology": [["sf-collective", 5], ["sf-naturalist", 3]],
-    "species": [["sporal", 10]]
+    "species": [["sporal", 10]],
+    "government": [["hive-collective", 20], "psionic-theocracy", ["colony-council", 0.5]]
   },
   "cultures": [
     {

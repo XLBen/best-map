@@ -12,7 +12,8 @@
   },
   "tendencies": {
     "religion": [["harvest-maid", 5], ["trickster", 2], ["dawnlord", 1]],
-    "race": [["halfling", 8], ["human", 1], ["gnome", 1]]
+    "race": [["halfling", 8], ["human", 1], ["gnome", 1]],
+    "government": [["free-city", 5], "feudal-monarchy", "magocracy"]
   },
   "cultures": [
     {
@@ -33,7 +34,8 @@
       "description": "丘陵里的工匠与发明家。",
       "tendencies": {
         "religion": [["arcane-eye", 4], ["trickster", 2], ["forge-father", 1]],
-        "race": [["gnome", 8], ["halfling", 1], ["dwarf", 1]]
+        "race": [["gnome", 8], ["halfling", 1], ["dwarf", 1]],
+        "government": [["free-city", 5], "feudal-monarchy", ["magocracy", 5]]
       },
       "prefs": [
         { "classes": ["hills"], "factor": 1.4 }

@@ -14,7 +14,8 @@
     "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
     "ideology": [["dem-socialism", 3], ["social-democracy", 2], ["auth-nationalist", 2], ["rev-socialism", 2], ["liberal-conservative", 1.5], ["traditionalist", 1], ["sf-naturalist", 3], ["sf-federalist", 2], ["sf-ascension", 1]],
     "race": [["human", 8], ["dwarf", 1], ["gnome", 1]],
-    "species": [["terran", 7], ["augmented", 1], ["synthetic", 1]]
+    "species": [["terran", 7], ["augmented", 1], ["synthetic", 1]],
+    "government": [["god-king", 4], ["early-empire", 3], ["chiefdom", 2], "early-kingdom", ["empire", 4], "theocracy", "feudal-monarchy", "tribal-confederation", ["presidential-republic", 3], ["military-junta", 2], "revolutionary-state", ["federal-republic", 0.5], "socialist-republic", ["one-party-state", 0.7], ["parliamentary-republic", 0.7], "free-city", "holy-order", ["colony-council", 3], ["galactic-federation", 2], "technocracy"]
   },
   "cultures": [
     {

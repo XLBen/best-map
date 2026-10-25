@@ -15,7 +15,11 @@
     "seaClaimKm": 200,
     "defaultGroups": [["eastern", 3], ["western", 2], ["southasia", 2], ["tidal", 1.5], ["lithic", 1.5], ["sporal", 1.5], ["chitin", 1.5]],
     "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania", "tidal", "lithic", "sporal", "chitin"],
-    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"]
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"],
+    "governments": ["galactic-federation", "stellar-empire", "corporate-republic", "colony-council", "military-government", "hive-collective", "technocracy", "psionic-theocracy"],
+    "factions": ["federalists", "conglomerates", "academy", "fleet", "frontier", "psionics", "consensus"],
+    "countryKm2": 900000,
+    "years": [2150, 2600]
   },
   "values": [
     { "id": "terran", "dimension": "species", "name": "人类", "color": "#e1a578", "description": "从母星迁来的人类。", "eras": ["scifi"] },

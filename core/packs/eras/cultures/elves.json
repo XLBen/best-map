@@ -13,7 +13,8 @@
   },
   "tendencies": {
     "religion": [["grove-mother", 5], ["silver-lady", 3], ["arcane-eye", 2]],
-    "race": [["elf", 8], ["half-elf", 2], ["human", 0.5]]
+    "race": [["elf", 8], ["half-elf", 2], ["human", 0.5]],
+    "government": [["elven-council", 10], ["feudal-monarchy", 0.5], "magocracy", "holy-order", ["free-city", 0.3]]
   },
   "cultures": [
     {

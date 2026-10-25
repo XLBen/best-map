@@ -118,9 +118,9 @@ describe('内置的时代与文化：格式与引用', () => {
       expect(BUILTIN_CULTURE_GROUPS.map((g) => g.id), c.id).toContain(c.group);
       expect(STYLE_IDS, c.id).toContain(c.nameStyle);
       prefsOk(c.id, c.prefs);
-      // 倾向的键是维度，取值属于这一维
+      // 倾向的键是维度，取值属于这一维（政体的倾向 government 在 governments-builtin.test.ts 里查）
       for (const [dim, list] of Object.entries(c.tendencies ?? {}))
-        for (const [id] of weightedList(list)) {
+        for (const [id] of dim === 'government' ? [] : weightedList(list)) {
           const v = BUILTIN_POP_VALUES.find((x) => x.id === id);
           expect(v, `${c.id}: ${id}`).toBeDefined();
           expect(v!.dimension, `${c.id}: ${id}`).toBe(dim);

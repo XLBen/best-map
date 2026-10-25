@@ -12,7 +12,8 @@
   },
   "tendencies": {
     "religion": [["deep-tide", 6], ["silver-lady", 2], ["trickster", 1]],
-    "race": [["human", 5], ["half-elf", 3], ["elf", 1], ["tiefling", 0.5]]
+    "race": [["human", 5], ["half-elf", 3], ["elf", 1], ["tiefling", 0.5]],
+    "government": [["free-city", 6], ["feudal-monarchy", 1.5], "magocracy", ["holy-order", 0.5]]
   },
   "cultures": [
     {

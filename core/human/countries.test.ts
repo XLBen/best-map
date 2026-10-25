@@ -70,20 +70,28 @@ function countryDigest(w: World): Record<string, string> {
 }
 
 // 金标准（第二十三轮记下）：以后提速、重构，生成的国家必须逐值不变；有意改了生成的规则时重录
-// （按内置的中世纪与文化算：改了那些数据就要重录，同 population.test.ts；第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次）
+// （按内置的中世纪、文化、政体与派系算：改了那些数据就要重录，同 population.test.ts；
+//   第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次，第二十三轮 内容写全六个时代的政体、派系与文化的政体倾向后又重录一次）
 const RECORDED = {
-  region: { country: '5ef715f12c204381', countries: 'c2b3211721363266' },
-  planet: { country: 'f6cbab624ef1077c', countries: 'e2c22d95c8622ec2' },
+  region: { country: 'd8c310dbf6e358b5', countries: '03d9973612dd9f76' },
+  planet: { country: '509672a140b74ae4', countries: '227451225d1f1da9' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
+const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
+// 世界里复制进来的：内置的里中世纪列着的（按内置的先后）
+const medievalGovs = () => BUILTIN_GOVERNMENTS.filter((g) => MEDIEVAL.governments!.includes(g.id)).map((g) => g.id);
+const medievalFactions = () => BUILTIN_FACTIONS.filter((f) => MEDIEVAL.factions!.includes(f.id)).map((f) => f.id);
 
 describe('政体与派系', () => {
   it('内置的政体、派系合格；称号按文化、文化组换说法', () => {
-    expect(BUILTIN_GOVERNMENTS.map((g) => g.id)).toEqual(['feudal-monarchy', 'merchant-republic', 'theocracy', 'tribal-confederation', 'empire', 'city-state']);
-    expect(BUILTIN_FACTIONS.map((f) => f.id)).toEqual(['nobility', 'merchants', 'clergy']);
-    const feudal = BUILTIN_GOVERNMENTS[0];
+    // 中世纪示例原有的六种政体、三个派系留着 id
+    expect(medievalGovs()).toEqual(expect.arrayContaining(['feudal-monarchy', 'merchant-republic', 'theocracy', 'tribal-confederation', 'empire', 'city-state']));
+    expect(medievalFactions()).toEqual(expect.arrayContaining(['nobility', 'merchants', 'clergy']));
+    const feudal = BUILTIN_GOVERNMENTS.find((g) => g.id === 'feudal-monarchy')!;
     expect(pickTitle(feudal.title, { id: 'turkic', group: 'steppe' })).toEqual({ zh: '汗国', orig: '{name} Khanate' });
-    expect(pickTitle(feudal.title, { id: 'frankish', group: 'western' })).toEqual({ zh: '王国', orig: 'Kingdom of {name}' });
+    expect(pickTitle(feudal.title, { id: 'anglic', group: 'western' })).toEqual({ zh: '王国', orig: 'Kingdom of {name}' });
+    // 文化 id 先于文化组
+    expect(pickTitle(feudal.title, { id: 'frankish', group: 'western' })).toEqual({ zh: '王国', orig: 'Royaume de {name}' });
     expect(pickTitle('共和国', undefined)).toEqual({ zh: '共和国' });
     expect(pickTitle({ default: '王国', yamato: '幕府' }, { id: 'yamato', group: 'eastern' })).toEqual({ zh: '幕府' });
   });
@@ -100,8 +108,8 @@ describe('政体与派系', () => {
 describe('生成国家', () => {
   it('政体、派系复制进世界；每个国家有名字、颜色、旗帜、首都、政体、主流文化与兼容的文化组', () => {
     const w = nations().world;
-    expect(Object.keys(w.small.content?.government ?? {})).toEqual(BUILTIN_GOVERNMENTS.map((g) => g.id));
-    expect(Object.keys(w.small.content?.faction ?? {})).toEqual(BUILTIN_FACTIONS.map((f) => f.id));
+    expect(Object.keys(w.small.content?.government ?? {})).toEqual(medievalGovs());
+    expect(Object.keys(w.small.content?.faction ?? {})).toEqual(medievalFactions());
     expect(w.small.human?.countryRules).toEqual({ fragmentation: 0.5, seed: w.small.human!.seed });
     const list = countryList(w.small);
     expect(list.length).toBeGreaterThan(5);
@@ -118,8 +126,8 @@ describe('生成国家', () => {
       const c = w.small.content!.culture![m.primaryCulture] as { group: string };
       expect(m.acceptedGroups[0]).toBe(c.group);
       expect(m.ruler.name.length).toBeGreaterThan(0);
-      expect(m.founded).toBeGreaterThanOrEqual(500);
-      expect(m.founded).toBeLessThanOrEqual(1000);
+      expect(m.founded).toBeGreaterThanOrEqual(MEDIEVAL.years![0]);
+      expect(m.founded).toBeLessThanOrEqual(MEDIEVAL.years![1]);
       expect(m.history).toContain(m.name);
     }
     expect(names.size).toBe(list.length);
@@ -442,7 +450,9 @@ describe('改国家', () => {
     const m = list.find((x) => (w.small.content!.culture![x.primaryCulture] as { group: string }).group === 'western')!;
     eng.exec({ op: 'set_country', id: m.id, patch: { government: 'merchant-republic' } });
     expect(w.small.countries![m.id].name).toBe(`${m.base.zh}共和国`);
-    if (m.base.orig) expect(w.small.countries![m.id].orig).toBe(`Republic of ${m.base.orig}`);
+    // 原文按文化的语言（西欧的几个文化各有写法）
+    const rep = pickTitle(governmentById(w.small, 'merchant-republic')!.title, { id: m.primaryCulture, group: 'western' })!;
+    if (m.base.orig) expect(w.small.countries![m.id].orig).toBe(rep.orig!.replace('{name}', m.base.orig));
     eng.exec({ op: 'set_country', id: m.id, patch: { name: '大公国', orig: 'Grand Duchy' } });
     eng.exec({ op: 'set_country', id: m.id, patch: { government: 'feudal-monarchy' } });
     expect(w.small.countries![m.id].name).toBe('大公国');
@@ -477,7 +487,7 @@ describe('改国家', () => {
     expect(dist(colors[code]!, own)).toBeGreaterThan(0);
     // 派系
     const auto = countryFactions(w, m.id);
-    expect(auto.map((f) => f.id)).toEqual(['nobility', 'merchants', 'clergy']);
+    expect(auto.map((f) => f.id)).toEqual(MEDIEVAL.factions);
     expect(auto.reduce((a, f) => a + f.influence, 0)).toBeCloseTo(1, 2);
     eng.exec({ op: 'set_country', id: m.id, patch: { factions: { nobility: 0.2, merchants: 0.7, clergy: 0.1 } } });
     expect(countryFactions(w, m.id).find((f) => f.id === 'merchants')!.influence).toBe(0.7);

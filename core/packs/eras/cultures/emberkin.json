@@ -12,7 +12,8 @@
   },
   "tendencies": {
     "religion": [["elder-dragons", 5], ["dawnlord", 2], ["forge-father", 1]],
-    "race": [["dragonborn", 8], ["human", 1], ["tiefling", 1]]
+    "race": [["dragonborn", 8], ["human", 1], ["tiefling", 1]],
+    "government": [["dragon-lordship", 10], ["feudal-monarchy", 0.7], "magocracy", ["holy-order", 0.7], ["empire", 0.5]]
   },
   "cultures": [
     {
@@ -36,7 +37,8 @@
       "description": "带着古老契约的印记，聚居在荒漠边的城市。",
       "tendencies": {
         "religion": [["pact-lords", 3], ["trickster", 2], ["arcane-eye", 2], ["silver-lady", 1]],
-        "race": [["tiefling", 7], ["human", 3]]
+        "race": [["tiefling", 7], ["human", 3]],
+        "government": [["dragon-lordship", 2], ["feudal-monarchy", 0.7], ["magocracy", 6], ["holy-order", 0.7], ["empire", 0.5]]
       },
       "prefs": [
         { "river": true, "factor": 1.3 }

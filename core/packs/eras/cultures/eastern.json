@@ -14,7 +14,8 @@
     "nation": [["ethnic-nation", 5], ["civic-nation", 2], ["imperial", 2], ["pan-group", 1]],
     "ideology": [["liberal-conservative", 3], ["auth-socialism", 3], ["auth-nationalist", 2], ["market-liberal", 2], ["social-democracy", 1.5], ["traditionalist", 1], ["sf-technocracy", 4], ["sf-corporate", 3], ["sf-federalist", 1.5], ["sf-militarist", 1]],
     "race": [["human", 8], ["dragonborn", 1], ["half-elf", 1]],
-    "species": [["terran", 5], ["augmented", 3], ["synthetic", 2.5]]
+    "species": [["terran", 5], ["augmented", 3], ["synthetic", 2.5]],
+    "government": [["early-kingdom", 3], ["early-empire", 2.5], "god-king", ["chiefdom", 1.5], ["city-state", 0.5], ["tribal-confederation", 0.5], ["temple-state", 0.3], ["empire", 3], ["feudal-monarchy", 2], ["absolute-monarchy", 2], ["theocracy", 0.3], ["merchant-republic", 0.3], ["shogunate", 0.5], ["constitutional-monarchy", 2], ["revolutionary-state", 1.5], "military-junta", "parliamentary-republic", ["presidential-republic", 0.8], ["federal-republic", 0.3], ["socialist-republic", 3], ["one-party-state", 2], ["technocracy", 1.5], ["ultranationalist-state", 0.4], "free-city", "holy-order", ["magocracy", 1.5], "dragon-lordship", ["corporate-republic", 3], ["stellar-empire", 2], ["galactic-federation", 1.5], "military-government", "colony-council"]
   },
   "cultures": [
     {
@@ -38,7 +39,8 @@
       "description": "群岛上的渔耕民族，山海之间的小平原上人烟稠密。",
       "tendencies": {
         "religion": [["ancestor-rites", 4], ["awakening", 2.5], ["sky-way", 1], ["secular", 3], ["elder-dragons", 3], ["arcane-eye", 2], ["silver-lady", 2], ["grey-warden", 2], ["harvest-maid", 2]],
-        "nation": [["ethnic-nation", 5], ["imperial", 2], ["civic-nation", 2]]
+        "nation": [["ethnic-nation", 5], ["imperial", 2], ["civic-nation", 2]],
+        "government": [["early-kingdom", 3], ["early-empire", 2.5], "god-king", ["chiefdom", 1.5], ["city-state", 0.5], ["tribal-confederation", 0.5], ["temple-state", 0.3], ["empire", 1.5], ["feudal-monarchy", 2], ["absolute-monarchy", 2], ["theocracy", 0.3], ["merchant-republic", 0.3], ["shogunate", 8], ["constitutional-monarchy", 2], ["revolutionary-state", 1.5], "military-junta", "parliamentary-republic", ["presidential-republic", 0.8], ["federal-republic", 0.3], ["socialist-republic", 3], ["one-party-state", 2], ["technocracy", 1.5], ["ultranationalist-state", 0.4], "free-city", "holy-order", ["magocracy", 1.5], "dragon-lordship", ["corporate-republic", 3], ["stellar-empire", 2], ["galactic-federation", 1.5], "military-government", "colony-council"]
       },
       "prefs": [
         { "coast": true, "factor": 1.5 }

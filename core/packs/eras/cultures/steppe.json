@@ -15,7 +15,8 @@
     "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
     "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1], ["sf-free", 4], ["sf-militarist", 2], ["sf-supremacist", 1]],
     "race": [["human", 8], ["orc", 1.5], ["dragonborn", 0.5]],
-    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 0.5]]
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 0.5]],
+    "government": [["nomad-confederation", 15], ["tribal-confederation", 3], "chiefdom", ["early-kingdom", 0.5], ["nomad-khanate", 20], ["empire", 1.5], "feudal-monarchy", ["sultanate", 3], ["absolute-monarchy", 1.5], "revolutionary-state", "military-junta", "presidential-republic", ["one-party-state", 2], ["socialist-republic", 1.5], ["ultranationalist-state", 0.5], ["parliamentary-republic", 0.5], ["theocratic-republic", 0.5], ["orc-horde", 2], ["free-city", 0.3], ["military-government", 2], ["colony-council", 2], "stellar-empire", ["galactic-federation", 0.5]]
   },
   "cultures": [
     {
