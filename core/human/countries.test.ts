@@ -603,10 +603,11 @@ describe('给界面的', () => {
     const eng = nations();
     const opts = { width: 256, height: 128, seaLevelGray: 95, maxElevation: 6000 };
     const pkg = exportPackage(eng.world, eng.toDoc(), opts);
-    expect(pkg.files).toEqual(expect.arrayContaining(['countries.bmp', 'countries.csv']));
+    expect(pkg.files).toEqual(expect.arrayContaining(['countries.bmp', 'countries.csv', 'blocs.csv']));
     const files = unzipSync(pkg.zip);
     const csv = strFromU8(files['countries.csv']).trim().split('\n');
-    expect(csv[0]).toBe('id,name,orig,red,green,blue,government,culture,capital,population,area_km2,overlord');
+    // 第二十六轮：等级、从属的种类、所在的集团
+    expect(csv[0]).toBe('id,name,orig,red,green,blue,government,culture,capital,population,area_km2,overlord,tier,subject,blocs');
     expect(csv.length).toBe(1 + ids(eng.world).length);
     const summary = strFromU8(files['provinces_summary.csv']).split('\n');
     expect(summary[0].endsWith(',religion,country')).toBe(true);
@@ -614,6 +615,7 @@ describe('给界面的', () => {
     peopled.exec({ op: 'generate_human', era: 'medieval', groups: GROUPS });
     const plain = exportPackage(peopled.world, peopled.toDoc(), opts);
     expect(plain.files).not.toContain('countries.bmp');
+    expect(plain.files).not.toContain('blocs.csv');
     expect(strFromU8(unzipSync(plain.zip)['provinces_summary.csv']).split('\n')[0].endsWith(',religion')).toBe(true);
   });
 });

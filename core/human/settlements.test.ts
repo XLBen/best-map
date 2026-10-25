@@ -60,9 +60,9 @@ const settleDigest = (w: World) => ({
 const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 
 // 金标准（第二十四轮记下）：以后提速、重构，生成的城市、道路、地标必须逐值不变；有意改了规则、内置的内容时重录
-// 第二十六轮重录：国家的生成变了（等级、领土补齐、联邦），大城市的门槛 1% → 3% 并且每国有上限（大城市连大道、地标放在大城市旁）
+// 第二十六轮重录：国家的生成变了（等级、领土补齐、联邦），大城市的门槛 1% → 2% 并且每国有上限（大城市连大道、地标放在大城市旁）
 const RECORDED = {
-  region: { cities: 'd031f8e0d978e7a7', roads: '991833b51ed241ac', landmarks: '7faa1d0d6f57b110' },
+  region: { cities: 'd031f8e0d978e7a7', roads: '8b49c60369f844e4', landmarks: '7faa1d0d6f57b110' },
   planet: { cities: 'be811de445416fea', roads: 'de67f6de2afa75a7', landmarks: '6aee251e1389a89c' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
@@ -168,7 +168,7 @@ describe('城市', () => {
       expect(c.population).toBeGreaterThan(0);
       expect(c.share).toBeLessThan(0.2);
     }
-    // 几种等级都有；大的比小的少（第二十六轮：大城市要占本国人口的 3%，中世纪城市化率低，大城市很少，见下面的“每国的上限”）
+    // 几种等级都有；大的比小的少（第二十六轮：大城市要占本国人口的 2%，中世纪城市化率低，大城市不多，见下面的“每国的上限”）
     const n = (id: string) => list.filter((c) => c.rank.id === id).length;
     expect(n('medium')).toBeGreaterThan(0);
     expect(n('small')).toBeGreaterThan(0);

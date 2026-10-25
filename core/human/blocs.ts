@@ -111,9 +111,19 @@ const one = (t: TitleOne) => (typeof t === 'string' ? { zh: t } : t);
 const titleRand = (id: number) => mulberry32(mixSeed(hashString('bloc-title'), id))();
 const baseOf = (m: CountryMeta | undefined) => (m?.base?.zh ? m.base : { zh: m?.name ?? '' });
 
-// 自动的名字：盟主的地名 + 时代的称号（按集团的编号挑一个）。era 省略为世界的时代
-export function autoBlocName(world: Pick<World, 'small'>, b: Pick<Bloc, 'id' | 'kind' | 'leader'>, era: Pick<Era, 'relations'> | undefined = worldEra(world.small)): { zh: string; orig?: string } {
-  return titled(baseOf(world.small.countries?.[b.leader]), one(titleFor(era, b.kind, titleRand(b.id))));
+// 自动的名字：盟主的地名 + 时代的称号（按集团的编号挑一个）。era 省略为世界的时代。
+// 盟主的地名已经写在别的集团的名字里时（联邦的首府又是同盟的盟主：坦洛克联邦、坦洛克同盟），换成成员里下一个没用过的地名；
+// 都用过时照用盟主的。others：别的集团（省略为世界里的；生成时是这一次的）
+export function autoBlocName(
+  world: Pick<World, 'small'>,
+  b: Pick<Bloc, 'id' | 'kind' | 'leader'> & { members?: readonly number[] },
+  era: Pick<Era, 'relations'> | undefined = worldEra(world.small),
+  others: readonly Bloc[] = blocList(world.small),
+): { zh: string; orig?: string } {
+  const metas = world.small.countries ?? {};
+  const taken = (zh: string) => !!zh && others.some((o) => o.id !== b.id && o.name.includes(zh));
+  const pick = [b.leader, ...(b.members ?? []).filter((x) => x !== b.leader)].find((id) => metas[id] && !taken(baseOf(metas[id]).zh)) ?? b.leader;
+  return titled(baseOf(metas[pick]), one(titleFor(era, b.kind, titleRand(b.id))));
 }
 
 // ---------- 整理 ----------
@@ -321,7 +331,7 @@ function makeBlocs(ctx: GenContext) {
   const fresh = (m: CountryMeta) => !m.locked;
   // 生成时世界的时代还没换上：按这一次的时代起名
   const name = (b: Bloc) => {
-    const nm = autoBlocName(world, b, era);
+    const nm = autoBlocName(world, b, era, blocs);
     b.name = nm.zh;
     if (nm.orig) b.orig = nm.orig;
   };

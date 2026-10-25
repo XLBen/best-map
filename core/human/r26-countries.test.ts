@@ -330,9 +330,9 @@ describe('帝国、联邦、同盟', () => {
 });
 
 describe('大城市', () => {
-  it('门槛是占本国人口的 3%；每国最多城市数的六分之一（向下取整），按人口取前几座', () => {
+  it('门槛是占本国人口的 2%；每国最多城市数的六分之一（向下取整），按人口取前几座', () => {
     const big = BUILTIN_RANKS.find((r) => r.id === 'big')!;
-    expect(big.minShare).toBe(0.03);
+    expect(big.minShare).toBe(0.02);
     const w = moderns().world;
     const list = cityList(w);
     const by = new Map<number | null, typeof list>();

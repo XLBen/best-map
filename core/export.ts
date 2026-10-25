@@ -6,6 +6,7 @@ import { provinceHuman, worldResources, worldTerrainClasses } from './human';
 import { worldCultureGroups, worldCultures, worldDimensions } from './human/era';
 import { provincePopulation } from './human/layers';
 import { countryList } from './human/countries';
+import { blocList, blocsOf } from './human/blocs';
 import { allCountryStats } from './human/country-layers';
 import { CATEGORY_LABEL } from './human/resources';
 import { archiveJson, archiveMarkdown, citiesCsv, hasSettlements, landmarksCsv, pointsCsv, roadsCsv, roadsGeojson } from './human/archive';
@@ -385,7 +386,8 @@ export function exportPackage(
         : []),
       ...(hasCountries
         ? [
-            'countries.bmp + countries.csv：每格所属的国家（国家自己的颜色）；白色是无主的陆地，领海是国家的颜色与海的颜色各一半',
+            'countries.bmp + countries.csv：每格所属的国家（国家自己的颜色）；白色是无主的陆地，领海是国家的颜色与海的颜色各一半；countries.csv 有等级、从属的种类、宗主与所在的集团',
+            'blocs.csv：帝国、联邦、同盟（种类、名字、颜色、盟主、成员，编号是 countries.csv 的 id；没有时只有表头）',
             'provinces_summary.csv 的 country 列：省份所属国家的编号（countries.csv 的 id），无主为空',
           ]
         : []),
@@ -539,7 +541,8 @@ function provinceCountries(world: World): Map<number, number> {
 
 // 国家的图与表（第二十三轮）：countries.bmp（国家自己的颜色；海、湖用 terrain.bmp 的颜色，无主的陆地是白色，领海是国家的颜色与海各一半，
 // 归了国家的碎岛是国家的颜色）、
-// countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord）
+// countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord, tier, subject, blocs）、
+// blocs.csv（第二十六轮）
 function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: number, height: number): Record<string, Uint8Array> {
   const { mesh, derived: d, causes } = world;
   const list = countryList(world.small);
@@ -574,19 +577,43 @@ function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width:
   }
   return {
     'countries.bmp': encodeBmp24(out, width, height),
-    'countries.csv': strToU8(countriesCsv(world)),
+    ...countryTables(world),
   };
 }
 
-// countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord；capital 是格的编号）
+// 国家的表：countries.csv 与 blocs.csv（没有集团时只有表头）
+function countryTables(world: World): Record<string, Uint8Array> {
+  return { 'countries.csv': strToU8(countriesCsv(world)), 'blocs.csv': strToU8(blocsCsv(world)) };
+}
+
+const csvEsc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+
+// countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord；capital 是格的编号）。
+// 第二十六轮：tier 等级（自己建的国家为空）、subject 从属的种类（有宗主时；省略的是 vassal）、blocs 所在的集团（blocs.csv 的 id，分号隔开）
 export function countriesCsv(world: World): string {
   const stats = allCountryStats(world);
-  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const csv = ['id,name,orig,red,green,blue,government,culture,capital,population,area_km2,overlord'];
+  const csv = ['id,name,orig,red,green,blue,government,culture,capital,population,area_km2,overlord,tier,subject,blocs'];
   for (const m of countryList(world.small)) {
     const [r, g, b] = hexToRgb(m.color);
     const st = stats.get(m.id);
-    csv.push(`${m.id},${esc(m.name)},${esc(m.orig ?? '')},${r},${g},${b},${m.government},${m.primaryCulture},${m.capitalCell ?? ''},${Math.round(st?.population ?? 0)},${Math.round(st?.areaKm2 ?? 0)},${m.overlord ?? ''}`);
+    const subject = m.overlord !== undefined ? (m.subject ?? 'vassal') : '';
+    const blocs = blocsOf(world, m.id)
+      .map((x) => x.id)
+      .join(';');
+    csv.push(
+      `${m.id},${csvEsc(m.name)},${csvEsc(m.orig ?? '')},${r},${g},${b},${m.government},${m.primaryCulture},${m.capitalCell ?? ''},${Math.round(st?.population ?? 0)},${Math.round(st?.areaKm2 ?? 0)},${m.overlord ?? ''},${m.tier ?? ''},${subject},${blocs}`,
+    );
+  }
+  return `${csv.join('\n')}\n`;
+}
+
+// blocs.csv（第二十六轮：id, kind, name, orig, red, green, blue, leader, members；kind 是 empire / federation / alliance，
+// leader、members 是 countries.csv 的 id，成员分号隔开、盟主在前）
+export function blocsCsv(world: World): string {
+  const csv = ['id,kind,name,orig,red,green,blue,leader,members'];
+  for (const b of blocList(world.small)) {
+    const [r, g, bl] = hexToRgb(b.color);
+    csv.push(`${b.id},${b.kind},${csvEsc(b.name)},${csvEsc(b.orig ?? '')},${r},${g},${bl},${b.leader},${b.members.join(';')}`);
   }
   return `${csv.join('\n')}\n`;
 }
@@ -667,7 +694,7 @@ export const EXPORT_PARTS = [
   { id: 'roads-image', label: '道路图', files: ['roads.bmp'], image: true },
   { id: 'landmarks', label: '地标表', files: ['landmarks.csv'] },
   { id: 'points', label: '自定义点表', files: ['points.csv'] },
-  { id: 'countries', label: '国家表', files: ['countries.csv'] },
+  { id: 'countries', label: '国家表', files: ['countries.csv', 'blocs.csv'] },
   { id: 'features', label: '地名表', files: ['features.csv'] },
   { id: 'archive-md', label: '档案全文', files: ['archive.md'] },
   { id: 'archive-json', label: '人文数据', files: ['archive.json'] },
@@ -714,7 +741,7 @@ export function exportPart(world: World, id: ExportPartId, size: { width: number
     case 'points':
       return { 'points.csv': strToU8(pointsCsv(world)) };
     case 'countries':
-      return { 'countries.csv': strToU8(countriesCsv(world)) };
+      return countryTables(world);
     case 'features':
       return { 'features.csv': strToU8(featuresCsv(world, size.width, size.height)) };
     case 'archive-md':
