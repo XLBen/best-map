@@ -60,9 +60,10 @@ const settleDigest = (w: World) => ({
 const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 
 // 金标准（第二十四轮记下）：以后提速、重构，生成的城市、道路、地标必须逐值不变；有意改了规则、内置的内容时重录
+// 第二十六轮重录：国家的生成变了（等级、领土补齐、联邦），大城市的门槛 1% → 3% 并且每国有上限（大城市连大道、地标放在大城市旁）
 const RECORDED = {
-  region: { cities: 'f6ca1c3ba34e5c93', roads: '509b9ffe19c763a4', landmarks: '3730023fb1dc70e9' },
-  planet: { cities: '92c3ca488c6e92c3', roads: '505673467f524901', landmarks: 'b497a26132396074' },
+  region: { cities: 'd031f8e0d978e7a7', roads: '991833b51ed241ac', landmarks: '7faa1d0d6f57b110' },
+  planet: { cities: 'be811de445416fea', roads: 'de67f6de2afa75a7', landmarks: '6aee251e1389a89c' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 
@@ -133,7 +134,8 @@ describe('内置的内容', () => {
     const w = eng.world;
     const before = cityList(w).filter((c) => c.rank.id === 'big').length;
     const derived = w.derived;
-    eng.exec({ op: 'set_content', kind: 'cityRank', id: 'big', item: { ...BUILTIN_RANKS[1], minShare: 0 } });
+    // 第二十六轮：每国的上限也去掉（perCountry 1）
+    eng.exec({ op: 'set_content', kind: 'cityRank', id: 'big', item: { ...BUILTIN_RANKS[1], minShare: 0, perCountry: 1 } });
     expect(w.derived).toBe(derived);
     const after = cityList(w).filter((c) => c.rank.id === 'big').length;
     expect(after).toBeGreaterThan(before);
@@ -159,13 +161,15 @@ describe('城市', () => {
     const ranks = worldCityRanks(w.small);
     for (const c of list) {
       if (c.capital) continue;
-      expect(c.rank.id).toBe(rankFor(ranks, c.share, c.population).id);
+      const want = rankFor(ranks, c.share, c.population).id;
+      // 第二十六轮：大城市每国有上限，超出的降一级
+      if (want === 'big' && c.rank.id !== 'big') expect(c.rank.id).toBe(rankFor(ranks.filter((r) => r.id !== 'big'), c.share, c.population).id);
+      else expect(c.rank.id).toBe(want);
       expect(c.population).toBeGreaterThan(0);
       expect(c.share).toBeLessThan(0.2);
     }
-    // 几种等级都有；大的比小的少
+    // 几种等级都有；大的比小的少（第二十六轮：大城市要占本国人口的 3%，中世纪城市化率低，大城市很少，见下面的“每国的上限”）
     const n = (id: string) => list.filter((c) => c.rank.id === id).length;
-    expect(n('big')).toBeGreaterThan(0);
     expect(n('medium')).toBeGreaterThan(0);
     expect(n('small')).toBeGreaterThan(0);
     expect(n('big')).toBeLessThan(n('medium') + n('small'));

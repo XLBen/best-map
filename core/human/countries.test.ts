@@ -23,6 +23,8 @@ import {
   pickTitle,
   sizeFactor,
 } from './index';
+import { claimsStage } from './claims';
+import { humanStages, registerHumanStage, unregisterHumanStage } from './generate';
 import { readComp } from './groups';
 
 // 第二十三轮：国家与政体
@@ -71,10 +73,11 @@ function countryDigest(w: World): Record<string, string> {
 
 // 金标准（第二十三轮记下）：以后提速、重构，生成的国家必须逐值不变；有意改了生成的规则时重录
 // （按内置的中世纪、文化、政体与派系算：改了那些数据就要重录，同 population.test.ts；
-//   第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次，第二十三轮 内容写全六个时代的政体、派系与文化的政体倾向后又重录一次）
+//   第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次，第二十三轮 内容写全六个时代的政体、派系与文化的政体倾向后又重录一次；
+//   第二十六轮重录：国家有了等级与面积预算（两遍扩张）、各文化正好分完、不在小岛上立国、邦联、领土补齐、联邦切分、两层附庸与从属的种类）
 const RECORDED = {
-  region: { country: 'd8c310dbf6e358b5', countries: '7210b3c4ea96f507' },
-  planet: { country: '509672a140b74ae4', countries: '1de33edb20c9b5fe' },
+  region: { country: '36a045028e35e2ce', countries: '81c9effde2c4af03' },
+  planet: { country: 'd04deef0eb44aef1', countries: '7493a131549b72ba' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -147,7 +150,16 @@ describe('生成国家', () => {
   });
 
   it('只有陆地归国家（海是推导的领海）；宜居度低于下限的格只有游牧的政体能占', () => {
-    const w = nations().world;
+    // 第二十六轮：领土补齐（claims）会把被包围的、贴着国境的难住之地划进国家，这里只看扩张本身
+    unregisterHumanStage('claims');
+    let w: World;
+    try {
+      const eng = continents({ provinces: true });
+      eng.exec(GEN);
+      w = eng.world;
+    } finally {
+      registerHumanStage(claimsStage, { after: 'countries' });
+    }
     const era = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
     const minH = era.unclaimed.minHabitability;
     let owned = 0;
@@ -168,8 +180,9 @@ describe('生成国家', () => {
     }
     // 中世纪：宜居与稍差的地方大多有了国家
     expect(owned / land).toBeGreaterThan(0.6);
-    // seaClaimKm 为 0：海不归谁
-    for (let i = 0; i < w.mesh.n; i++) if (!w.causes.land[i]) expect(w.derived.country![i]).toBe(0);
+    // seaClaimKm 为 0：海不归谁（碎岛除外，第二十六轮）
+    for (let i = 0; i < w.mesh.n; i++) if (!w.causes.land[i] && !w.derived.countryIslet?.[i]) expect(w.derived.country![i]).toBe(0);
+    expect(humanStages()).toContain('claims');
   });
 
   it('“统一 ↔ 分裂”：分裂时国家多、统一时少', () => {
@@ -275,13 +288,15 @@ describe('生成国家', () => {
     expect(mixed).toBeGreaterThan(0);
   });
 
-  it('外交：附庸比宗主小，同盟、敌对两边都记、不同时有', () => {
+  it('外交：附庸比宗主小、最多两层，同盟、敌对两边都记、不同时有', () => {
     const w = nations().world;
     const stats = allCountryStats(w);
     for (const m of countryList(w.small)) {
       if (m.overlord !== undefined) {
         expect(stats.get(m.overlord)!.areaKm2).toBeGreaterThan(stats.get(m.id)!.areaKm2);
-        expect(w.small.countries![m.overlord].overlord).toBeUndefined();
+        // 第二十六轮：附庸也可以有自己的附庸（两层），再往上没有
+        const top = w.small.countries![m.overlord].overlord;
+        if (top !== undefined) expect(w.small.countries![top].overlord).toBeUndefined();
       }
       for (const a of m.allies) expect(w.small.countries![a].allies).toContain(m.id);
       for (const r of m.rivals) expect(w.small.countries![r].rivals).toContain(m.id);
@@ -563,7 +578,7 @@ describe('给界面的', () => {
     expect(g.length).toBe(w.mesh.n * 2);
     for (let i = 0; i < w.mesh.n; i++) {
       if (w.causes.land[i]) expect(g[2 * i]).toBe(w.derived.country![i]);
-      else expect(g[2 * i]).toBe(-1);
+      else if (!w.derived.countryIslet?.[i]) expect(g[2 * i]).toBe(-1);
     }
     const stats = allCountryStats(w);
     let sum = 0;

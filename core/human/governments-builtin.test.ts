@@ -215,7 +215,8 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         const g = governmentById(w.small, m.government) as Government;
         const c = cultureOf(w, m.primaryCulture);
         const t = pickTitle(g.title, c)!;
-        expect(m.name).toBe(titled(m.base, t).zh);
+        // 联邦的成员邦（第二十六轮）是地名 + 成员的称号，名字锁定
+        if (!m.nameLocked) expect(m.name).toBe(titled(m.base, t).zh);
         if (g.rulerTitle) expect(m.ruler.title).toBe(pickTitle(g.rulerTitle, c)!.zh);
         expect(m.founded).toBeGreaterThanOrEqual(era.years![0]);
         expect(m.founded).toBeLessThanOrEqual(era.years![1]);

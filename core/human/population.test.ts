@@ -276,7 +276,8 @@ describe('生成人文', () => {
   });
 
   it('生成的步骤可以插一步：排在人口之前，能改每格的权重（第二十三轮的国家就是这样插进来的）', () => {
-    expect(humanStages()).toEqual(['cultures', 'countries', 'population', 'country-mix']);
+    // 第二十六轮：国家之后有领土补齐（claims）与集团（blocs）两步
+    expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'population', 'country-mix']);
     let ran = 0;
     registerHumanStage(
       {
@@ -290,7 +291,7 @@ describe('生成人文', () => {
       { before: 'population' },
     );
     try {
-      expect(humanStages()).toEqual(['cultures', 'countries', 'test-countries', 'population', 'country-mix']);
+      expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'test-countries', 'population', 'country-mix']);
       const eng = continents();
       eng.exec(GEN);
       expect(ran).toBe(1);
@@ -298,7 +299,8 @@ describe('生成人文', () => {
     } finally {
       unregisterHumanStage('test-countries');
     }
-    expect(humanStages()).toEqual(['cultures', 'countries', 'population', 'country-mix']);
+    // 第二十六轮：国家之后有领土补齐（claims）与集团（blocs）两步
+    expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'population', 'country-mix']);
   });
 });
 

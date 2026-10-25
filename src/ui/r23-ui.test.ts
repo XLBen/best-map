@@ -97,9 +97,9 @@ describe('新建向导的“国家”', () => {
     const few = estimateCountries(w, 0)!;
     expect(many).toBeGreaterThan(few);
     expect(few).toBeGreaterThanOrEqual(1);
-    // 生成的个数与估的同一个算法（按文化分、整理时并掉小块，差一点）
+    // 第二十六轮：估计就是核心的 estimateCountryCount，与生成的个数相同（这个世界是“很分裂”生成的；各文化正好分完，中世纪没有联邦）
     const n = Object.keys(w.small.countries!).length;
-    expect(Math.abs(n - many) / many).toBeLessThan(0.25);
+    expect(many).toBe(n);
   });
 
   it('换时代重新生成人文时国家也重新长；没换时代时不写 countries', () => {
