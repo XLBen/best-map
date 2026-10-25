@@ -322,7 +322,7 @@ export function drawOverlayProjected(ctx: CanvasRenderingContext2D, world: World
       ctx.fillText(l.text, sx, sy);
     }
   }
-  const boxes = st.features || st.peaks?.length ? drawLabels(ctx, cam, st, [0], rz) : [];
+  const boxes = st.features || st.peaks?.length || st.countries?.length ? drawLabels(ctx, cam, st, [0], rz) : [];
   if (st.scaleBar) {
     const kmPerPx = kmPerPxAtCenter(cam, cw, ch, st.kmPerUnit);
     if (kmPerPx > 0) drawScaleBar(ctx, { x: 0, y: 0, zoom: 1 }, kmPerPx, st.cornerLift, f, '画面中心');

@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
-import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
+import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapKind, mapStyle, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
+import { hasCountries, setMapKind } from '../countries';
+import { MAP_KINDS, MAP_KIND_TITLES } from '../shell/MapKind';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
 const PROJECTIONS: [ProjectionPref, string][] = [
@@ -153,9 +155,17 @@ export function LayersPanel() {
       {label}
     </button>
   );
-  const hint = VIEWS.find((v) => v.id === mode.value)?.hint;
+  const human = humanViews(w);
+  const hint = [...VIEWS, ...human].find((v) => v.id === mode.value)?.hint;
   return (
     <>
+      {hasCountries(w) && (
+        <section>
+          <h5>地图</h5>
+          <Seg value={mapKind.value} options={MAP_KINDS} titles={MAP_KIND_TITLES} onChange={setMapKind} wide />
+          <p class="hint">{mapKind.value === 'political' ? '国界、国名；自然的地名只留海、湖、山脉' : '地貌与自然的地名'}</p>
+        </section>
+      )}
       <section>
         <h5>底图</h5>
         <div class="view-grid">{VIEWS.filter((v) => !v.more).map((v) => viewButton(v.id, v.label))}</div>
@@ -168,13 +178,13 @@ export function LayersPanel() {
             {fields.map((f) => viewButton(`field:${f}`, `场：${f}`))}
           </div>
         )}
-        {hint && <p class="hint">{hint}</p>}
+        {hint && VIEWS.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
         {mode.value === 'suitability' && <SuitabilityPick w={w} />}
       </section>
       <section>
         <h5>人文</h5>
         <div class="view-grid">
-          {humanViews(w).map((v) =>
+          {human.map((v) =>
             v.id === 'culture' ? (
               <button class={mode.value === 'culture' || mode.value === 'cultureGroup' ? 'on' : ''} onClick={() => showView(mode.value === 'cultureGroup' ? 'cultureGroup' : 'culture')}>
                 {v.label}
@@ -186,6 +196,7 @@ export function LayersPanel() {
         </div>
         {(mode.value === 'culture' || mode.value === 'cultureGroup') && <Seg value={mode.value} options={CULTURE_VIEWS} onChange={showView} wide />}
         {!w.small.human && <p class="hint">生成人文后有文化圈、人口密度</p>}
+        {hint && human.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
       </section>
       <section>
         <h5>画风</h5>

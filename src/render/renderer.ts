@@ -474,6 +474,9 @@ uniform sampler2D uIdTex;
 uniform sampler2D uFlat;
 uniform sampler2D uHighlight;
 uniform highp sampler2D uGroup;
+// 国界的分组（第二十三轮，colors.ts 的 countryBorderGroups）：陆地是国家的编号（无主 0），领海是编号 + 65536，不归谁的海 −1
+uniform highp sampler2D uCountry;
+uniform int uHasCountry;
 // 切线层（屏幕大小）与每段的数据（两边的分组值、代表格：gL, gR, repL, repR）
 uniform sampler2D uSeam;
 uniform highp sampler2D uSegData;
@@ -504,6 +507,8 @@ uniform int uHasHighlight;
 uniform float uCellPx;
 // 每个省大约几格宽（√ 省份格数的中位数）：省界按省的大小淡出
 uniform float uProvScale;
+// 省界的浓淡（第二十三轮：人文图里省界淡一些，国界显眼）
+uniform float uProvAlpha;
 // 生态的花纹与发光（每格的字节与调色板，见 colors.ts 的 fxLayers）
 uniform sampler2D uFx;
 uniform highp sampler2D uFxPal;
@@ -532,6 +537,9 @@ vec4 cellTex(sampler2D tex, int id) {
 }
 // 分组值：陆地省份 = 编号 + 1（> 0），海域省份 = −(编号 + 1)（< 0），未划分 = 0，地图外 = −1e9
 float groupOf(int id) { return id < 0 ? -1e9 : cellTex(uGroup, id).r; }
+float countryOf(int id) { return id < 0 ? -1e9 : cellTex(uCountry, id).r; }
+// 两边的国家不同、都不是不归谁的海、同是陆地或同是海（陆地与它的领海之间、海岸线上不画）
+bool countryEdge(float a, float b) { return a >= 0.0 && b >= 0.0 && a != b && (a >= 65535.5) == (b >= 65535.5); }
 // 切线附近按在线的哪一边换格（与 core/seams.ts 的 seamPixel 相同）：id 是像素按扭曲后的位置取的格，
 // uv 是像素没扭曲的位置（切线层按它找最近的段）
 int seamCell(int id, vec2 uv) {
@@ -745,7 +753,29 @@ void main() {
     // 缩小到省份只有十几像素宽时淡出（看省有多大，不看格有多大），否则全图视角下边界会密成一张网；
     // 格比一个像素还小时也淡出（扭曲后取到的格在像素之间乱跳，边界碎成噪点）
     float fade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);
-    if (bx || by) col = mix(col, uStyle == 1 ? vec3(0.45, 0.2, 0.15) : vec3(0.12, 0.1, 0.08), (g0 > 0.0 ? 0.55 : 0.15) * fade / uPxScale);
+    if (bx || by) col = mix(col, uStyle == 1 ? vec3(0.45, 0.2, 0.15) : vec3(0.12, 0.1, 0.08), (g0 > 0.0 ? 0.55 : 0.15) * fade * uProvAlpha / uPxScale);
+  }
+
+  // 国界（第二十三轮）：比省界粗、深——近处一圈（约 3 像素宽）浓，外面一圈淡；海上的国界淡一些
+  if (uHasCountry == 1 && pc >= 0) {
+    vec2 cx = vec2(uTexel.x, 0.0);
+    vec2 cy = vec2(0.0, uTexel.y);
+    float c0 = countryOf(pc);
+    if (c0 >= 0.0) {
+      float kIn = 0.0;
+      float kOut = 0.0;
+      for (int t = 0; t < 8; t++) {
+        float r = t < 4 ? 1.5 : 3.0;
+        int q = t - (t / 4) * 4;
+        vec2 o = (q == 0 ? cx : q == 1 ? -cx : q == 2 ? cy : -cy) * r;
+        if (countryEdge(c0, countryOf(provAt(vUv + o, uvW + o)))) {
+          if (t < 4) kIn = 1.0;
+          else kOut = 1.0;
+        }
+      }
+      float k = max(kIn * 0.82, kOut * 0.3) * (c0 >= 65535.5 ? 0.5 : 1.0) * mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx));
+      if (k > 0.0) col = mix(col, uStyle == 1 ? vec3(0.42, 0.14, 0.1) : vec3(0.16, 0.11, 0.1), k / sqrt(max(uPxScale, 1.0)));
+    }
   }
 
   // 高亮与轮廓
@@ -1132,6 +1162,8 @@ const FS_COMPOSE_PROJ = (() => {
   s = must(s, 'vec2 dy = vec2(0.0, uTexel.y * 1.5);', 'vec2 dy = uDY * 1.5;');
   s = must(s, 'vec2 hx = vec2(uTexel.x * 1.5, 0.0);', 'vec2 hx = uDX * 1.5;');
   s = must(s, 'vec2 hy = vec2(0.0, uTexel.y * 1.5);', 'vec2 hy = uDY * 1.5;');
+  s = must(s, 'vec2 cx = vec2(uTexel.x, 0.0);', 'vec2 cx = uDX;');
+  s = must(s, 'vec2 cy = vec2(0.0, uTexel.y);', 'vec2 cy = uDY;');
   // 河的图层画在场景那一块上（同样的范围、大小）：按场景上的位置取
   s = must(s, 'texture(uRiver, pW * uRiverXf.xy + uRiverXf.zw)', 'texture(uRiver, toScene(pW) * uRiverXf.xy + uRiverXf.zw)');
   s = must(s, 'oColor = vec4(col, 1.0);', 'oColor = projFinish(col);');
@@ -1222,6 +1254,8 @@ export interface CellLayers {
   group: Float32Array | null;
   // 剪刀切过的线（core/seams.ts）：切线附近按在线的哪一边换格；没有切线时为 null
   seams?: SeamLayers | null;
+  // 国界的分组（第二十三轮，colors.ts 的 countryBorderGroups）：每格两个值；省略、null 不画
+  countryGroup?: Float32Array | null;
   shade: number;
   rock: number;
   // 海面也是数据（第十四轮，海水温度底图）：着色器不给浅水加青绿、地图册画风不把海涂平，海面就是每格的颜色
@@ -1420,7 +1454,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell' | 'country', WebGLTexture>;
   // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取；投影时另给场景的那一块），null 不画河。现在上传着的是哪一张、哪个版本
   riverLayer: ((motion: boolean, scene?: RiverScene) => RiverTex | null) | null = null;
   // 等面积、球形投影（第十三轮 G4）：场景目标（用到时才分配）、现在的场景，与各层画的是哪个键（同停稳的那几个）
@@ -1455,6 +1489,7 @@ export class Renderer {
   private hasFlat = false;
   private hasGroup = false;
   private hasLandCell = false;
+  private hasCountry = false;
   private hasHighlight = false;
   private shade = 1;
   private rock = 1;
@@ -1465,6 +1500,8 @@ export class Renderer {
   detail = 1;
   // 平涂是省份着色、高亮是省份工具的：切线附近也按换过的格取（否则按像素自己的格）
   flatByGroup = false;
+  // 省界的浓淡（0–1，人文图里淡一些）
+  provinceAlpha = 1;
   highlightByGroup = false;
   camera: Camera = { x: 1, y: 0.5, zoom: 500 };
   // 晕渲的夸张倍数（全图时）：真实的山坡很缓，不夸张就看不出起伏
@@ -1525,7 +1562,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t(), country: t() };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1742,6 +1779,8 @@ export class Renderer {
     if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
     if (l.group) this.upload(this.tex.group, l.group, n, 2);
+    this.hasCountry = !!l.countryGroup;
+    if (l.countryGroup) this.upload(this.tex.country, l.countryGroup, n, 2);
     this.groupBase = this.groupShown = l.group;
     this.flatBase = this.flatShown = l.flat;
     this.seamsBase = l.group ? (l.seams ?? null) : null;
@@ -2111,7 +2150,7 @@ export class Renderer {
     // 河的图层：停稳的那张（刚停下的那一帧就画好：照用移动中的那张的话，下一帧换上停稳的那张时要整张再合成一次，比画河慢得多）
     const river = this.riverLayer?.(false) ?? null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
-    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${riverKey}`;
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${riverKey}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -2410,7 +2449,7 @@ export class Renderer {
     const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: sc.key }) ?? null) : null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
     if (!moving) {
-      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${riverKey}`;
+      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${riverKey}`;
       if (key === this.pComposeKey) return;
       this.pComposeKey = key;
     } else this.pComposeKey = '';
@@ -2711,6 +2750,7 @@ export class Renderer {
     gl.uniform1f(gl.getUniformLocation(pc, 'uRelief'), relief);
     gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), cellPx);
     gl.uniform1f(gl.getUniformLocation(pc, 'uProvScale'), this.provinceScale);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uProvAlpha'), this.provinceAlpha);
     gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
     gl.uniform1i(gl.getUniformLocation(pc, 'uStyle'), this.style === 'atlas' ? 1 : 0);
@@ -2724,6 +2764,8 @@ export class Renderer {
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFx'), hasFx ? 1 : 0);
     this.bindTex(pc, 'uTint', this.tex.tint, 10);
     this.bindTex(pc, 'uLandCell', this.tex.landCell, 14);
+    this.bindTex(pc, 'uCountry', this.tex.country, 13);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uHasCountry'), this.hasCountry ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasLandCell'), this.hasLandCell ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
     this.bindTex(pc, 'uCellCoast', this.tex.coast, 11);

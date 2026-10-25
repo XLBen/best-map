@@ -14,8 +14,8 @@ const enable = { op: 'set_content' as const, kind: 'nameStyle', id: germanic.id,
 
 describe('第二十轮的界面', () => {
   it('偏好：地名显示默认中文；存过的读回来；不认识的值、坏的 JSON 用默认的', () => {
-    expect(parsePrefs(null)).toEqual({ wheel: 'auto', projection: 'equirect', names: 'zh' });
-    expect(parsePrefs(JSON.stringify({ wheel: 'pan', names: 'both' }))).toEqual({ wheel: 'pan', projection: 'equirect', names: 'both' });
+    expect(parsePrefs(null)).toEqual({ wheel: 'auto', projection: 'equirect', names: 'zh', map: 'geo' });
+    expect(parsePrefs(JSON.stringify({ wheel: 'pan', names: 'both' }))).toEqual({ wheel: 'pan', projection: 'equirect', names: 'both', map: 'geo' });
     expect(parsePrefs(JSON.stringify({ names: 'latin' })).names).toBe('zh');
     expect(parsePrefs('{坏').names).toBe('zh');
   });

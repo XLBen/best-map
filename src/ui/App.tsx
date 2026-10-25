@@ -36,7 +36,9 @@ import { NewRiverTypeMenu, RiverTypeMenu } from './panels/riverTypes';
 import { FeatureStyleMenu } from './panels/names';
 import { ClassMenu, ResourceMenu } from './panels/human';
 import { CultureMenu, PopTupleMenu, ValueMenu } from './panels/culture';
+import { TerritoryMenu } from './panels/countries';
 import { MapLegend } from './shell/MapLegend';
+import { MapKindSwitch } from './shell/MapKind';
 import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
@@ -65,6 +67,7 @@ const TYPE_PANELS: Record<TypePanelId, { title: string; menu: ComponentType }> =
   culturepick: { title: '文化', menu: CultureMenu },
   poppick: { title: '人口群体', menu: PopTupleMenu },
   valuepick: { title: '取值', menu: ValueMenu },
+  countrypick: { title: '领土', menu: TerritoryMenu },
 };
 
 function PanelHost({ id }: { id: PanelId }) {
@@ -191,6 +194,7 @@ export function App() {
             <TopBar />
             {w && <ContextBar />}
             {w && <RulerButton />}
+            <MapKindSwitch />
             <MapLegend />
             <HereCard />
             <Sheet />

@@ -6,7 +6,7 @@ import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '.
 import type { LakeType } from '../../core/lake-types';
 import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
-import { classColors, humanColors, resourceColors, valueLayer, worldCultureGroups, worldCultures, worldDimensions, worldPopValues } from '../../core/human';
+import { classColors, countryMapColors, humanColors, resourceColors, valueLayer, worldCultureGroups, worldCultures, worldDimensions, worldPopValues } from '../../core/human';
 import { coastPatch } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
 import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landPixelCells, provinceLand, ringCodes } from '../../core/island-types';
@@ -123,6 +123,8 @@ export interface ColorOptions {
   season: Season;
   focusSpecies: string | null;
   borders: boolean;
+  // 国界（第二十三轮）：人文图、国家底图里画；省略为不画
+  countryBorders?: boolean;
 }
 
 // 与视图模式无关、只取决于世界的逐格数据，按世界缓存。
@@ -144,8 +146,10 @@ function snowAmount(world: World, season: Season, i: number): number {
 }
 // 地形类别、资源（第二十一轮）：底下是地貌（晕渲、露岩），上面按格平涂；不画生态的花纹（看得清数据）
 // 第二十二轮：文化圈（按文化、按文化组）与时代的每一维也是这样（没有人的陆地不着色，看得到地貌）
-export type HumanFlatMode = 'terrainClass' | 'resource' | 'culture' | 'cultureGroup' | `dim:${string}`;
-const humanMode = (mode: ViewMode): mode is HumanFlatMode => mode === 'terrainClass' || mode === 'resource' || mode === 'culture' || mode === 'cultureGroup' || mode.startsWith('dim:');
+// 第二十三轮：国家（附庸用宗主的浅色，领海淡淡地涂在海上）
+export type HumanFlatMode = 'terrainClass' | 'resource' | 'culture' | 'cultureGroup' | 'country' | `dim:${string}`;
+const humanMode = (mode: ViewMode): mode is HumanFlatMode =>
+  mode === 'terrainClass' || mode === 'resource' || mode === 'culture' || mode === 'cultureGroup' || mode === 'country' || mode.startsWith('dim:');
 const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
 
 function staticLayers(world: World): StaticLayers {
@@ -265,7 +269,8 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
       case 'terrainClass':
       case 'resource':
       case 'culture':
-      case 'cultureGroup': {
+      case 'cultureGroup':
+      case 'country': {
         // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖
         c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
         // 放的岛的种类选了颜色：岛上的地画成这个颜色（植被的颜色留一点；积雪照样盖上）
@@ -352,6 +357,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
   // 省界：剪刀切过的地方按切线画（切线附近按在线的哪一边分省，见 core/seams.ts）
   const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
   const group = o.borders || o.mode === 'provinces' ? provinceGroups(world, causes.province, seams) : null;
+  const countryGroup = o.countryBorders ? countryBorderGroups(world) : null;
   const st = staticLayers(world);
   // 对岸的颜色（fillOther）：着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
   const other = new Uint8Array(n * 4);
@@ -373,6 +379,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     flat,
     group,
     seams,
+    countryGroup,
     shade,
     rock,
     seaData: seaTemp,
@@ -386,6 +393,9 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
 export const NO_RESOURCE: RGB = [128, 124, 118];
 const HUMAN_ALPHA = 235;
 const NO_RESOURCE_ALPHA = 170;
+// 国家底图：陆上透一点地貌（晕渲照样有），领海淡淡的
+export const COUNTRY_ALPHA = 215;
+export const SEA_CLAIM_ALPHA = 70;
 
 // 地形类别、资源底图的平涂层：按编号取颜色（core/human 的 classColors、resourceColors），水面不着色
 // 文化圈、每一维（第二十二轮）：按 derived.popCulture / popCultureGroup / valueLayer 的编号取 humanColors，没有人的格不着色
@@ -401,6 +411,9 @@ export function humanFlat(world: World, mode: HumanFlatMode): Uint8Array {
   } else if (mode === 'culture' || mode === 'cultureGroup') {
     codes = mode === 'culture' ? d.popCulture : d.popCultureGroup;
     colors = humanColors(world, mode);
+  } else if (mode === 'country') {
+    codes = d.country;
+    colors = countryMapColors(world);
   } else {
     const dim = mode.slice(4);
     const k = worldDimensions(world.small).findIndex((x) => x.id === dim);
@@ -409,6 +422,12 @@ export function humanFlat(world: World, mode: HumanFlatMode): Uint8Array {
   }
   if (!codes) return flat;
   for (let i = 0; i < n; i++) {
+    if (mode === 'country' && !causes.land[i] && codes[i]) {
+      // 领海
+      const c = colors[codes[i]];
+      if (c) flat.set([c[0], c[1], c[2], SEA_CLAIM_ALPHA], i * 4);
+      continue;
+    }
     if (!causes.land[i] || d.lake[i] === 1) continue;
     const c = colors[codes[i]];
     const k = i * 4;
@@ -416,7 +435,7 @@ export function humanFlat(world: World, mode: HumanFlatMode): Uint8Array {
       flat[k] = c[0];
       flat[k + 1] = c[1];
       flat[k + 2] = c[2];
-      flat[k + 3] = HUMAN_ALPHA;
+      flat[k + 3] = mode === 'country' ? COUNTRY_ALPHA : HUMAN_ALPHA;
     } else if (mode === 'resource') {
       flat[k] = NO_RESOURCE[0];
       flat[k + 1] = NO_RESOURCE[1];
@@ -425,6 +444,20 @@ export function humanFlat(world: World, mode: HumanFlatMode): Uint8Array {
     }
   }
   return flat;
+}
+
+// 国界的分组（第二十三轮，渲染器的第二张分组纹理）：每格两个值（第二个总是 0）。陆地（湖面也算）是国家的编号（derived.country，
+// 无主 0），领海是编号 + 65536，不归谁的海是 −1。着色器只在同是陆地或同是海、编号不同的相邻像素之间画国界：
+// 海岸线上、陆地与它自己的领海之间不画（core 的 countryGroups 不分陆海，海岸上会多画一道，所以界面另算一份）
+export function countryBorderGroups(world: World): Float32Array {
+  const { mesh, causes, derived: d } = world;
+  const out = new Float32Array(mesh.n * 2);
+  const code = d.country;
+  for (let i = 0; i < mesh.n; i++) {
+    const c = code?.[i] ?? 0;
+    out[2 * i] = causes.land[i] ? c : c ? c + 65536 : -1;
+  }
+  return out;
 }
 
 // 放的岛自己选的颜色盖住植被颜色的多少
@@ -579,7 +612,9 @@ export function colorSignature(small: World['small']): string {
   const human = small.content?.terrainClass || small.content?.resource ? `|${classColors({ small }).join(';')}|${resourceColors({ small }).join(';')}` : '';
   // 文化、文化组、取值的颜色（第二十二轮）：有人文时才有
   const pop = small.human ? `|${[...worldCultures(small), ...worldCultureGroups(small), ...worldPopValues(small)].map((x) => x.color).join(';')}|${small.human.era}` : '';
-  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}${human}${pop}`;
+  // 国家的颜色（第二十三轮，地图上的：宗主变了附庸的颜色跟着变）：有国家时才有
+  const countries = small.countries ? `|${countryMapColors({ small }).join(';')}` : '';
+  return `${kinds.join(',')}|${seams.join(',')}|${colors.join(',')}|${small.terrain.coastRoughness}|${looks.join(',')}|${isles.join(',')}${human}${pop}${countries}`;
 }
 
 // ---------- 生态的花纹与发光（第三批） ----------

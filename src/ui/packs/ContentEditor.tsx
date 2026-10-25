@@ -7,7 +7,11 @@ import { Toggle } from '../components/Toggle';
 import {
   type EditorIssue,
   type Obj,
+  type TitleRow,
   addedValue,
+  isTitleField,
+  titleRows,
+  titleValue,
   defaultValue,
   isSparse,
   isObj,
@@ -102,6 +106,18 @@ const COMPLEX = new Set(['list', 'map', 'weighted', 'json', 'script']);
 function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
   const bad = issuesAt(issues, path).length > 0;
   const count = Array.isArray(value) ? value.length : isObj(value) ? Object.keys(value).length : 0;
+  // 称号（第二十三轮）：一行一种写法
+  if (isTitleField(f)) {
+    return (
+      <div class={`ed-group ${bad ? 'bad' : ''}`}>
+        <div class="ed-label" title={f.hint}>
+          {f.label}
+        </div>
+        <TitleEditor value={value} onChange={onChange} orig={f.key === 'title'} />
+        <Errors issues={issues} path={path} />
+      </div>
+    );
+  }
   if (COMPLEX.has(f.type) && !(f.type === 'json' && f.of)) {
     return (
       <details class={`ed-group ${bad ? 'bad' : ''}`} open={bad || count < 8}>
@@ -262,6 +278,38 @@ function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: un
     case 'json':
       return <JsonInput value={value} onChange={onChange} />;
   }
+}
+
+// 称号：一行一种（键：default、文化 id、文化组 id；中文；原文的写法，{name} 换成国名）。空着中文的行先留在框里，不存
+function TitleEditor({ value, onChange, orig }: { value: unknown; onChange: (v: unknown) => void; orig: boolean }) {
+  const [rows, setRows] = useState<TitleRow[]>(() => titleRows(value));
+  const key = JSON.stringify(value ?? null);
+  useEffect(() => {
+    if (JSON.stringify(titleValue(rows) ?? null) !== key) setRows(titleRows(value));
+  }, [key]);
+  const put = (next: TitleRow[]) => {
+    setRows(next);
+    onChange(titleValue(next));
+  };
+  const edit = (k: number, patch: Partial<TitleRow>) => put(rows.map((r, j) => (j === k ? { ...r, ...patch } : r)));
+  return (
+    <div class="ed-rows">
+      {rows.map((r, k) => (
+        <div class="ed-row">
+          <Draft text={r.key} placeholder="default" onCommit={(t) => edit(k, { key: t.trim() })} />
+          <Draft text={r.zh} placeholder="王国" onCommit={(t) => edit(k, { zh: t })} />
+          {orig && <Draft text={r.orig} placeholder="Kingdom of {name}" onCommit={(t) => edit(k, { orig: t })} />}
+          <button class="small icon ghost" title="删除" onClick={() => put(rows.filter((_, j) => j !== k))}>
+            <X />
+          </button>
+        </div>
+      ))}
+      <p class="hint">键写 default、文化或文化组的 id</p>
+      <button class="small" onClick={() => setRows([...rows, { key: rows.length ? '' : 'default', zh: '', orig: '' }])}>
+        <Plus /> 添加
+      </button>
+    </div>
+  );
 }
 
 // 带权重的一组：一行一项（字、权重，权重空着是 1）

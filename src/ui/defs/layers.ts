@@ -33,13 +33,15 @@ export const VIEWS: ViewDef[] = [
 
 // 人文的底图（第二十二轮，图层面板里单独一组）：宜居度总有；生成过人文时还有文化圈（按文化 / 按文化组，图层面板里一个按钮加一个切换）、
 // 时代的每一维（dim:维度 id：宗教、种族……，按世界的时代列出）、人口密度
+// 第二十三轮：有国家时最前面是“国家”
 export function humanViews(w: Pick<World, 'small'>): ViewDef[] {
-  return humanLayers(w).flatMap((l): ViewDef[] => {
+  const country: ViewDef[] = w.small.human?.countryRules && w.small.countries ? [{ id: 'country', label: '国家', hint: '附庸用宗主的浅色' }] : [];
+  return [...country, ...humanLayers(w).flatMap((l): ViewDef[] => {
     if (l.id === 'cultureGroup') return [];
     if (l.id === 'culture') return [{ id: 'culture', label: '文化圈' }];
     if (l.id === 'popDensity' || l.id === 'habitability') return [{ id: l.id, label: l.label }];
     return [{ id: `dim:${l.id}`, label: l.label }];
-  });
+  })];
 }
 
 // 文化圈按文化还是按文化组
@@ -51,6 +53,7 @@ export const CULTURE_VIEWS: [ViewMode, string][] = [
 // 这个世界里有没有这一层（人文的几层在没有人文的世界里没有，宜居度除外）
 export function viewAvailable(w: Pick<World, 'small'>, id: ViewMode): boolean {
   if (id === 'culture' || id === 'cultureGroup' || id === 'popDensity') return !!w.small.human;
+  if (id === 'country') return !!w.small.human?.countryRules && !!w.small.countries;
   if (id.startsWith('dim:')) return !!w.small.human && worldDimensions(w.small).some((d) => d.id === id.slice(4));
   return true;
 }

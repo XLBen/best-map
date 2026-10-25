@@ -58,13 +58,15 @@ export type ViewMode =
   | 'popDensity'
   | 'culture'
   | 'cultureGroup'
+  // 国家（第二十三轮）：国家的颜色平涂在地貌上（附庸用宗主的浅色），领海淡淡地涂
+  | 'country'
   | `dim:${string}`
   | `field:${string}`;
 
 export type Season = 'annual' | 'summer' | 'winter';
 
-// 工具分七类，顶栏右边一类一个按钮（第二十二轮加了“文化”）
-export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture';
+// 工具分八类，顶栏右边一类一个按钮（第二十二轮加了“文化”，第二十三轮加了“国家”）
+export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture' | 'countries';
 
 // 工具的 id：由 ui/defs/tools.ts 的工具表推出来
 export type { ToolId };
@@ -144,6 +146,7 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 // newrivertype / newlaketype 新画的河、新放的湖，islandtype / chaintype 放岛、画岛链用哪一种岛
 // classpick / resourcepick（第二十一轮）：画地形类别、资源用哪一种
 // culturepick / poppick / valuepick（第二十二轮）：文化笔刷的文化、人口笔刷“改成分”的群体、“改一个维度”的取值
+// countrypick（第二十三轮）：领土笔刷涂给哪个国家
 export type TypePanelId =
   | 'rivertype'
   | 'newrivertype'
@@ -156,14 +159,15 @@ export type TypePanelId =
   | 'resourcepick'
   | 'culturepick'
   | 'poppick'
-  | 'valuepick';
+  | 'valuepick'
+  | 'countrypick';
 export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
 }
-// 右边的抽屉：生态类型编辑要一边看地图一边调，所以不随点地图关上
-export const sheet = signal<'species' | null>(null);
+// 右边的抽屉：生态类型编辑要一边看地图一边调，所以不随点地图关上；国家的档案（第二十三轮）同样
+export const sheet = signal<'species' | 'country' | null>(null);
 // Tab：隐藏全部界面，只看地图
 export const uiHidden = signal(false);
 // 正在拖底部条上的滑块：地图在鼠标最后停的地方显示预览
@@ -204,6 +208,8 @@ export const selectedFeature = signal<string | null>(null);
 export const focusName = signal<string | null>(null);
 // 省份：选中的省份
 export const selectedProvince = signal<number | null>(null);
+// 国家（第二十三轮）：选中的国家（编号），档案的抽屉、首都、合并跟着它
+export const selectedCountry = signal<number | null>(null);
 // 河：一条画的河（河道 id），或一条自然的河（河上的一格）
 export type RiverRef = { kind: 'guide'; id: string } | { kind: 'natural'; cell: number };
 // 画河时点中的河（底部条换成这条河的设置）；河流列表里鼠标停着的那条（地图上亮一下，什么工具都一样）
@@ -230,8 +236,10 @@ export type WheelPref = 'auto' | 'zoom' | 'pan';
 // 整个星球用哪种投影看（第十三轮 G4）：等距圆柱（平铺图）、等面积（椭圆形）、球形（从太空看）。只是看的方式，不写进世界文件
 export type ProjectionPref = 'equirect' | 'equalEarth' | 'globe';
 const PREFS_KEY = 'map2.prefs';
-// names：地名显示中文、原文还是两者（第二十轮）
-export type Prefs = { wheel: WheelPref; projection: ProjectionPref; names: NameMode };
+// 地理图还是人文图（第二十三轮）：人文图画国界、国名，自然的地名只留大的
+export type MapKind = 'geo' | 'political';
+// names：地名显示中文、原文还是两者（第二十轮）；map：地理图还是人文图（第二十三轮）
+export type Prefs = { wheel: WheelPref; projection: ProjectionPref; names: NameMode; map: MapKind };
 // 存着的偏好（JSON）读回来：不认识的值用默认的
 export function parsePrefs(raw: string | null): Prefs {
   let p: Partial<Prefs> = {};
@@ -244,6 +252,7 @@ export function parsePrefs(raw: string | null): Prefs {
     wheel: p.wheel === 'zoom' || p.wheel === 'pan' ? p.wheel : 'auto',
     projection: p.projection === 'equalEarth' || p.projection === 'globe' ? p.projection : 'equirect',
     names: NAME_MODES.some((m) => m.id === p.names) ? (p.names as NameMode) : DEFAULT_NAME_MODE,
+    map: p.map === 'political' ? 'political' : 'geo',
   };
 }
 function readPrefs(): Prefs {
@@ -269,6 +278,9 @@ export function setNameMode(m: NameMode) {
   nameMode.value = m;
   setPrefs({ names: m });
 }
+
+// 地理图 / 人文图（第二十三轮）：存在这个浏览器里，不写进世界。换的时候底图跟着换（见 ui/countries.ts 的 setMapKind）
+export const mapKind = signal<MapKind>(prefs.value.map);
 
 // 参考图（手绘草图）：铺在地图上照着画。只存在这个浏览器里（IndexedDB，不占自动保存的空间），不写进世界文件
 export interface Reference {
@@ -393,6 +405,10 @@ export interface ToolOptions {
   // 改一个维度：维度的 id、取值的 id（'' 还没选：用第一维、第一个取值）
   popDim: string;
   popValue: string;
+  // 领土笔刷（第二十三轮）：涂给哪个国家（编号；0 是无主地，-1 还没选：用选中的国家或最大的那个）
+  territory: number;
+  // 新建国家：点一个省份，还是圈一片
+  newCountryShape: 'province' | 'lasso';
 }
 
 export const options = signal<ToolOptions>({
@@ -436,6 +452,8 @@ export const options = signal<ToolOptions>({
   popFactor: 1.5,
   popDim: '',
   popValue: '',
+  territory: -1,
+  newCountryShape: 'province',
 });
 
 export function setOptions(patch: Partial<ToolOptions>) {
@@ -799,6 +817,11 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   noteTimings(s.timings);
   // 选中的省份可能已被合并；关注的生态、要涂的生态可能已被撤销掉
   if (selectedProvince.value !== null && !s.small.provinces[selectedProvince.value]) selectedProvince.value = null;
+  // 选中的国家：被合并、删除、撤销掉了，或者换了世界
+  if (selectedCountry.value !== null && (fresh || !s.small.countries?.[selectedCountry.value])) {
+    selectedCountry.value = null;
+    if (sheet.value === 'country') sheet.value = null;
+  }
   // 选中的河：换了世界，画的河被删掉、撤销掉了，或者自然的河那一格不再是河
   const sel = selectedRiver.value;
   if (sel && (fresh || (sel.kind === 'guide' ? !next.small.guides.some((g) => g.id === sel.id) : !isRiverCell(next, next.derived, sel.cell)))) {

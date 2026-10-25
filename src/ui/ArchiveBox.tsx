@@ -8,6 +8,8 @@ import { exec } from '../state';
 import { SelectionActions } from './components/SelectionActions';
 import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellResourceCommand, cellTotalCommand, groupShareCommand, noteCommand, popRows, removeGroupCommand, renameCommand, rerollCommand } from './archive';
 import { densityText, popText, shareText } from './human';
+import { countryAt, countryOf, hasCountries } from './countries';
+import { selectCountry } from './tools/countries';
 
 // “这里”卡片里的档案（第二十一轮）：小地名、是山峰时的“xx峰 · 高度”、地形类别、资源、备注。
 // 钉住一格（右键点地图）时可以改；没钉住时只读，跟着鼠标
@@ -33,6 +35,32 @@ function Line({ label, children }: { label: string; children: ComponentChildren 
       <span class="arch-label">{label}</span>
       {children}
     </div>
+  );
+}
+
+// ---------- 国家（第二十三轮） ----------
+
+// 这一格是哪国：点国名打开它的档案；海上写领海
+function CountryLine({ w, cell }: { w: World; cell: number }) {
+  if (!hasCountries(w)) return null;
+  const m = countryOf(w, countryAt(w, cell));
+  const land = !!w.causes.land[cell];
+  if (!m && !land) return null;
+  return (
+    <Line label="国家">
+      {m && <span class="swatch" style={{ background: m.color }} />}
+      <span class="grow">
+        {m ? (
+          <button class="link" onClick={() => selectCountry(m.id)} title="打开档案">
+            {m.name}
+          </button>
+        ) : (
+          '无主地'
+        )}
+        {m && !land && <span class="hint"> · 领海</span>}
+        {m && m.capitalCell === cell && <span class="hint"> · 首都</span>}
+      </span>
+    </Line>
   );
 }
 
@@ -155,10 +183,11 @@ function PopEditable({ p, a, w }: { p: Pop; a: CellArchive; w: World }) {
   );
 }
 
-function ReadOnly({ a }: { a: CellArchive }) {
+function ReadOnly({ a, w }: { a: CellArchive; w: World }) {
   const resName = a.resource ? a.resource.name : a.resourceNone;
   return (
     <>
+      <CountryLine w={w} cell={a.cell} />
       <Line label="名字">
         <span class="grow">
           {a.name}
@@ -271,6 +300,7 @@ function Editable({ a, w }: { a: CellArchive; w: World }) {
       <div class="arch-actions">
         <SelectionActions reroll={() => run(rerollCommand(a), '正在起名…')} unlock={auto ? () => run(auto, '正在起名…') : undefined} />
       </div>
+      <CountryLine w={w} cell={a.cell} />
       {a.peak && (
         <Line label="山峰">
           <Mountain />
@@ -323,7 +353,7 @@ export function ArchiveBox({ w, cell, pinned }: { w: World; cell: number; pinned
   return (
     <section class="archive">
       <h5>档案</h5>
-      {pinned ? <Editable a={a} w={w} /> : <ReadOnly a={a} />}
+      {pinned ? <Editable a={a} w={w} /> : <ReadOnly a={a} w={w} />}
     </section>
   );
 }

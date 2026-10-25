@@ -209,3 +209,5 @@ export function repoSections(
 
 // 人文的四种：仓库里有“生成人文…”的入口
 export const HUMAN_KINDS: ReadonlySet<string> = new Set(['era', 'popValue', 'cultureGroup', 'culture']);
+// 第二十三轮的两种（政体、派系）：仓库里有“生成国家…”的入口
+export const GOV_KINDS: ReadonlySet<string> = new Set(['government', 'faction']);

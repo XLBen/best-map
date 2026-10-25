@@ -68,7 +68,8 @@ describe('新建向导的“人文”', () => {
     expect(c.groups).toEqual(eraGroups(era));
     expect(c.groups.length).toBeGreaterThan(0);
     const cmd = generateCommand(c)!;
-    expect(cmd).toEqual({ op: 'generate_human', era: era.id, groups: c.groups });
+    // 第二十三轮：默认同时生成国家（分裂 ↔ 统一在正中时不写，按时代）
+    expect(cmd).toEqual({ op: 'generate_human', era: era.id, groups: c.groups, countries: {} });
     expect('totalPop' in cmd).toBe(false);
     // 关掉、一个组都没勾：没有命令
     expect(generateCommand({ ...c, on: false })).toBeNull();
