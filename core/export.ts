@@ -5,6 +5,8 @@ import { featureLabel } from './features';
 import { provinceHuman, worldResources, worldTerrainClasses } from './human';
 import { worldCultureGroups, worldCultures, worldDimensions } from './human/era';
 import { provincePopulation } from './human/layers';
+import { countryList } from './human/countries';
+import { allCountryStats } from './human/country-layers';
 import { CATEGORY_LABEL } from './human/resources';
 import { summarizeProvinces } from './provinces';
 import { riverRibbon, traceRivers } from './rivers';
@@ -263,7 +265,9 @@ export function exportPackage(
   const people = world.small.human ? provincePopulation(world) : null;
   const dims = people ? worldDimensions(small).map((x) => x.id) : [];
   const popHead = people ? `,population,culture,culture_group${dims.map((x) => `,${x}`).join('')}` : '';
-  const csv = [`id,name,land,kind,terrain,species,cells,mean_elevation_m,terrain_class,resource${popHead}`];
+  // 第二十三轮：有国家时再加一列 country（省份所属国家的编号，无主为空）
+  const owner = small.countries && causes.country ? provinceCountries(world) : null;
+  const csv = [`id,name,land,kind,terrain,species,cells,mean_elevation_m,terrain_class,resource${popHead}${owner ? ',country' : ''}`];
   ids.forEach((pid, k) => {
     const [r, g, b] = provinceColor(pid);
     const s = provinces.get(pid)!;
@@ -272,7 +276,8 @@ export function exportPackage(
     def.push(`${k + 1};${r};${g};${b};${name};x`);
     const pp = people?.get(pid);
     const popCols = people ? `,${Math.round(pp?.population ?? 0)},${pp?.culture ?? ''},${pp?.cultureGroup ?? ''}${dims.map((_, q) => `,${pp?.values[q] ?? ''}`).join('')}` : '';
-    csv.push(`${pid},${name},${s.land ? 1 : 0},${s.kind},${s.terrain},${s.species ?? ''},${s.cells},${s.meanElevation.toFixed(0)},${h?.terrainClass ?? ''},${h?.resource ?? ''}${popCols}`);
+    const own = owner ? `,${owner.get(pid) ?? ''}` : '';
+    csv.push(`${pid},${name},${s.land ? 1 : 0},${s.kind},${s.terrain},${s.species ?? ''},${s.cells},${s.meanElevation.toFixed(0)},${h?.terrainClass ?? ''},${h?.resource ?? ''}${popCols}${own}`);
   });
   files['definition.csv'] = strToU8(`${def.join('\n')}\n`);
   files['provinces_summary.csv'] = strToU8(`${csv.join('\n')}\n`);
@@ -345,6 +350,9 @@ export function exportPackage(
   Object.assign(files, humanFiles(world, cellOf, raster.land, width, height));
   // 人口与文化（第二十二轮）：只在生成过人文时有
   if (world.small.human && derived.popCulture) Object.assign(files, populationFiles(world, cellOf, raster.land, width, height));
+  // 国家（第二十三轮）：只在有国家时有
+  const hasCountries = !!(small.countries && causes.country && derived.country);
+  if (hasCountries) Object.assign(files, countryFiles(world, cellOf, raster.land, width, height));
 
   files['world.json'] = strToU8(JSON.stringify(doc));
   files['README.txt'] = strToU8(
@@ -368,6 +376,12 @@ export function exportPackage(
             `population.png：8 位灰度的人口密度，按对数：0 没有人，255 ≈ ${POP_PNG_MAX} 人/km²（灰度 = 255 × log10(1 + 密度) / log10(1 + ${POP_PNG_MAX})）`,
             'cultures.bmp + cultures.csv：每格人口里占多数的文化，颜色与编号一一对应；白色是没有人的陆地',
             'provinces_summary.csv 最后几列：人口、人数最多的文化、文化组与每一维的取值',
+          ]
+        : []),
+      ...(hasCountries
+        ? [
+            'countries.bmp + countries.csv：每格所属的国家（国家自己的颜色）；白色是无主的陆地，领海是国家的颜色与海的颜色各一半',
+            'provinces_summary.csv 的 country 列：省份所属国家的编号（countries.csv 的 id），无主为空',
           ]
         : []),
       'world.json：完整的世界文件（设置 + 命令记录），可在编辑器中重新打开',
@@ -492,6 +506,67 @@ function populationFiles(world: World, cellOf: Int32Array, land: Uint8Array, wid
     'population.png': encodePng8Gray(gray, width, height),
     'cultures.bmp': encodeBmp24(out, width, height),
     'cultures.csv': strToU8(`${csv.join('\n')}\n`),
+  };
+}
+
+// 每个陆地省所属的国家（省份跟着国界，一个省一个国家；取省里第一个陆地格的）
+function provinceCountries(world: World): Map<number, number> {
+  const out = new Map<number, number>();
+  const seen = new Set<number>();
+  const { causes, small } = world;
+  const c = causes.country!;
+  for (let i = 0; i < c.length; i++) {
+    const p = causes.province[i];
+    if (p < 0 || seen.has(p) || !small.provinces[p]?.land || !causes.land[i]) continue;
+    seen.add(p);
+    if (c[i] >= 0) out.set(p, c[i]);
+  }
+  return out;
+}
+
+// 国家的图与表（第二十三轮）：countries.bmp（国家自己的颜色；海、湖用 terrain.bmp 的颜色，无主的陆地是白色，领海是国家的颜色与海各一半）、
+// countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord）
+function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: number, height: number): Record<string, Uint8Array> {
+  const { mesh, derived: d, causes } = world;
+  const list = countryList(world.small);
+  const sea = terrainColor('ocean');
+  const lake = terrainColor('lake');
+  const white: [number, number, number] = [255, 255, 255];
+  const codeRgb = list.map((m) => hexToRgb(m.color));
+  const code = d.country!;
+  const cellRgb = new Uint8Array(mesh.n * 3);
+  for (let i = 0; i < mesh.n; i++) {
+    const k = code[i];
+    let col: readonly number[];
+    if (!causes.land[i]) col = k ? codeRgb[k - 1].map((v, q) => Math.round((v + sea[q]) / 2)) : sea;
+    else if (d.lake[i] === 1) col = lake;
+    else col = k ? codeRgb[k - 1] : white;
+    cellRgb.set(col, i * 3);
+  }
+  const out = new Uint8Array(cellOf.length * 3);
+  for (let p = 0; p < cellOf.length; p++) {
+    const c = cellOf[p];
+    const q = p * 3;
+    // 画成陆地的碎岛落在海格里：按无主的陆地；画成水的陆地格按湖、海
+    if (land[p] && !causes.land[c]) out.set(white, q);
+    else if (!land[p] && causes.land[c]) out.set(d.lake[c] === 1 ? lake : sea, q);
+    else {
+      out[q] = cellRgb[c * 3];
+      out[q + 1] = cellRgb[c * 3 + 1];
+      out[q + 2] = cellRgb[c * 3 + 2];
+    }
+  }
+  const stats = allCountryStats(world);
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const csv = ['id,name,orig,red,green,blue,government,culture,capital,population,area_km2,overlord'];
+  for (const m of list) {
+    const [r, g, b] = hexToRgb(m.color);
+    const st = stats.get(m.id);
+    csv.push(`${m.id},${esc(m.name)},${esc(m.orig ?? '')},${r},${g},${b},${m.government},${m.primaryCulture},${m.capitalCell ?? ''},${Math.round(st?.population ?? 0)},${Math.round(st?.areaKm2 ?? 0)},${m.overlord ?? ''}`);
+  }
+  return {
+    'countries.bmp': encodeBmp24(out, width, height),
+    'countries.csv': strToU8(`${csv.join('\n')}\n`),
   };
 }
 
