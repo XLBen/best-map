@@ -39,7 +39,7 @@ import { countryDraws } from './map/political';
 import { mapKind, modeFeatures, modeOf, setMapKind } from './map/modes';
 import { isTitleField, titleRows, titleValue } from './packs/fields';
 import { GOV_KINDS, repoKinds } from './packs/repo';
-import { type Pointer, capitalTool, chosenTerritory, countryLand, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from './tools';
+import { type Pointer, chosenTerritory, countryLand, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from './tools';
 
 // 第二十三轮的界面：向导里的“国家”、“国家”一类的五个工具、国家的档案（set_country 的 patch）、地理图 / 人文图、国名、图例、仓库里的政体
 
@@ -113,10 +113,10 @@ describe('新建向导的“国家”', () => {
 });
 
 describe('“国家”一类', () => {
-  it('五个工具，都换上国家的底图；没有国家时也在', () => {
-    expect(CATEGORY_DEFS.countries).toMatchObject({ label: '国家', tools: ['cselect', 'territory', 'newCountry', 'cmerge', 'capital'] });
+  it('四个工具（第二十七轮去掉了首都），都换上国家的底图；没有国家时也在', () => {
+    expect(CATEGORY_DEFS.countries).toMatchObject({ label: '国家', tools: ['cselect', 'territory', 'newCountry', 'cmerge'] });
     expect(CATEGORY_DEFS.countries.extras).toBeTruthy();
-    expect(toolsOf('countries', continents().world)).toHaveLength(5);
+    expect(toolsOf('countries', continents().world)).toHaveLength(4);
     for (const id of CATEGORY_DEFS.countries.tools) expect(TOOL_DEFS[id].view).toBe('country');
     expect(TOOL_DEFS.territory.pick).toBeTypeOf('function');
     // 有国家时换成国家底图；没有时不换
@@ -238,28 +238,6 @@ describe('“国家”一类', () => {
     vi.mocked(askUser).mockResolvedValueOnce('cancel');
     await t.click!(pointer(w, cellsOf(w, b)[0]));
     expect(exec).not.toHaveBeenCalled();
-  });
-
-  it('首都：点选中国家的一格 move_capital；点别国是选中它；Shift+点击挪过的恢复自动', async () => {
-    const eng = nations();
-    const w = eng.world;
-    world.value = w;
-    const [a, b] = ids(w);
-    selectedCountry.value = a;
-    const m = w.small.countries![a];
-    const cell = cellsOf(w, a).find((i) => i !== m.capitalCell)!;
-    const t = capitalTool(() => 1);
-    t.move!(pointer(w, cell), false);
-    expect(t.preview().hint).toBe('首都挪到这里');
-    await t.click!(pointer(w, cell));
-    expect(lastCmd()).toEqual({ op: 'move_capital', id: a, cell });
-    await t.click!(pointer(w, cellsOf(w, b)[0]));
-    expect(selectedCountry.value).toBe(b);
-    eng.exec({ op: 'move_capital', id: b, cell: cellsOf(w, b).at(-1)! });
-    world.value = eng.world;
-    vi.mocked(exec).mockClear();
-    await t.click!(pointer(eng.world, cellsOf(eng.world, b)[0], true));
-    expect(lastCmd()).toEqual({ op: 'move_capital', id: b, cell: null });
   });
 });
 

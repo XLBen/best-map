@@ -136,6 +136,57 @@ export const waterMask = memo(
   (w) => [w.mesh, w.small.guides, w.small.lakes, w.derived.lake],
 );
 
+// ---------- 第二十七轮：别的笔刷的橡皮擦（“恢复自动”）能擦的格 ----------
+
+// 画过的地形类别、资源（0 是自动）
+export const classMask = memo(
+  (w) => fromFlags(Uint8Array.from(w.causes.terrainClass ?? new Uint8Array(w.mesh.n), (v) => (v ? 1 : 0))),
+  (w) => [w.mesh, w.causes.terrainClass],
+);
+export const resourceMask = memo(
+  (w) => fromFlags(Uint8Array.from(w.causes.resource ?? new Uint8Array(w.mesh.n), (v) => (v ? 1 : 0))),
+  (w) => [w.mesh, w.causes.resource],
+);
+// 涂过的自定义场（不是 0 的格）：按场名
+const fieldMemos = new Map<string, (w: World) => EditMask>();
+export function fieldMask(w: World, name: string): EditMask {
+  let f = fieldMemos.get(name);
+  if (!f) {
+    f = memo(
+      (x) => fromFlags(Uint8Array.from(x.causes.fields[name] ?? new Float32Array(x.mesh.n), (v) => (Math.abs(v) >= 0.005 ? 1 : 0))),
+      (x) => [x.mesh, x.causes.fields[name]],
+    );
+    fieldMemos.set(name, f);
+  }
+  return f(w);
+}
+// 手改过的人口（笔刷、档案）
+export const popMask = memo(
+  (w) => {
+    const has = new Uint8Array(w.mesh.n);
+    const m = w.causes.popManual;
+    if (m) for (let i = 0; i < m.length; i++) if (m[i] && w.causes.land[i]) has[i] = 1;
+    return fromFlags(has);
+  },
+  (w) => [w.mesh, w.causes.popManual, w.causes.land],
+);
+// 与生成时不同的领土（自动的那一国没了的按无主地算）
+export const countryMask = memo(
+  (w) => {
+    const has = new Uint8Array(w.mesh.n);
+    const { country, countryAuto, land } = w.causes;
+    const metas = w.small.countries;
+    if (country && countryAuto && metas)
+      for (let i = 0; i < has.length; i++) {
+        if (!land[i]) continue;
+        const a = countryAuto[i] >= 0 && metas[countryAuto[i]] ? countryAuto[i] : -1;
+        if (country[i] !== a) has[i] = 1;
+      }
+    return fromFlags(has);
+  },
+  (w) => [w.mesh, w.causes.country, w.causes.countryAuto, w.small.countries, w.causes.land],
+);
+
 // 橡皮擦选中时：能擦的格淡淡的白色斜线（同一个掩码给同一个图层对象，不必重新上传）
 const hatchLayers = new WeakMap<EditMask, HighlightLayer>();
 export function erasableLayer(m: EditMask): HighlightLayer | null {

@@ -2674,43 +2674,6 @@
   "toast": null
  },
  {
-  "name": "合并",
-  "preview": {
-   "hint": "不相邻：合并后分成两块",
-   "warn": false,
-   "caution": true,
-   "layers": [
-    [
-     3,
-     2765,
-     "40,197,193",
-     0.7,
-     null,
-     null
-    ]
-   ],
-   "shapes": [],
-   "ghost": null,
-   "provinces": [
-    3,
-    2765,
-    816
-   ]
-  },
-  "sent": [
-   {
-    "cmd": {
-     "op": "merge_province",
-     "from": 511,
-     "into": 272
-    },
-    "busy": "正在计算…",
-    "head": "undefined"
-   }
-  ],
-  "toast": null
- },
- {
   "name": "重新划分",
   "preview": {
    "hint": "重划 4 个省份",

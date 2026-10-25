@@ -1,13 +1,16 @@
 import { effect } from '@preact/signals';
-import { SplitSquareHorizontal, Waves } from 'lucide-preact';
+import { Merge, RefreshCw, SplitSquareHorizontal, Waves, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
-import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules } from '../../core/provinces';
+import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules, classOfKind, provinceSizeCells, provinceTargets } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
 import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
-import { type ViewMode, exec, mapKm, mode, openPanel, selectedProvince, world } from '../state';
+import { type ViewMode, exec, mapKm, mode, openPanel, provinceSet, selectedCountry, selectedProvince, world } from '../state';
+import { cellsOf, countryAt, countryRows, hasCountries, territoryCommand } from './countries';
+import { Slider } from './components/Slider';
+import { brushNew } from './tools/provinces';
 import { focusOn } from './camera';
 import { Seg } from './common';
 import { MenuItem, SelectionActions } from './components/SelectionActions';
@@ -50,49 +53,117 @@ function provinceOf(w: World, id: number) {
   return { meta, cells, lakeGone, hex: `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`, auto: !meta.color };
 }
 
-export function ProvinceBar() {
-  const w = world.value;
-  const id = selectedProvince.value;
-  const meta = w && id !== null ? w.small.provinces[id] : null;
-  const [name, setName] = useState(meta?.name ?? '');
+// 名字和原文（第二十七轮）：两个框一组，焦点离开这一组、回车时一起提交；Esc 回到原来的
+function ProvinceName({ id, name, orig }: { id: number; name: string; orig: string }) {
+  const [n, setN] = useState(name);
+  const [o, setO] = useState(orig);
   // Esc：放弃这次输入（不在失去焦点时提交）
   const cancelled = useRef(false);
-  useEffect(() => setName(meta?.name ?? ''), [id, meta?.name]);
-  // 按钮不见了（取消选择、换了工具）时鼠标移开的事件不会来：一并去掉按钮的预览
-  useEffect(() => clearBarPreview, []);
-  if (!w || id === null || !meta) return null;
-  const { cells, lakeGone, hex, auto } = provinceOf(w, id);
-  const area = Math.round((cells.length * mapKm(w).cell ** 2) / 100) * 100;
-  const rename = () => {
+  useEffect(() => setN(name), [id, name]);
+  useEffect(() => setO(orig), [id, orig]);
+  const commit = () => {
     if (cancelled.current) {
       cancelled.current = false;
       return;
     }
-    if (name.trim() && name.trim() !== meta.name) void exec({ op: 'set_province', id, name: name.trim() }, '正在改名…');
+    const nn = n.trim();
+    const oo = o.trim();
+    if (!nn || (nn === name && oo === orig)) return;
+    void exec({ op: 'set_province', id, name: nn, ...(oo ? { orig: oo } : {}) }, '正在改名…');
   };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
     if (e.key === 'Escape') {
       e.stopPropagation();
       cancelled.current = true;
-      setName(meta.name);
+      setN(name);
+      setO(orig);
       (e.target as HTMLInputElement).blur();
     }
   };
-  // 海省默认不着色（地图上看得到海本来的样子）；自己选了颜色才涂
+  return (
+    <span
+      class="bar-pair"
+      onFocusOut={(e) => {
+        const to = e.relatedTarget as Node | null;
+        if (!to || !(e.currentTarget as HTMLElement).contains(to)) commit();
+      }}
+    >
+      <input class="bar-input" value={n} onInput={(e) => setN((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
+      <input class="bar-input label-input" value={o} placeholder="原文" maxLength={80} onInput={(e) => setO((e.target as HTMLInputElement).value)} onKeyDown={onKey} />
+    </span>
+  );
+}
+
+// 省份归哪一国（第二十七轮）：整省的陆地一起划过去（paint_country）。陆地省、有国家时才有
+function ProvinceOwner({ w, cells }: { w: World; cells: number[] }) {
+  if (!hasCountries(w)) return null;
+  const land = cells.filter((i) => w.causes.land[i] === 1);
+  if (!land.length) return null;
+  const now = countryAt(w, land[0]);
+  const rows = countryRows(w);
+  return (
+    <span class="bar-choice">
+      <span class="bar-label">归属</span>
+      <select
+        class="bar-select"
+        value={String(now ?? 0)}
+        title="整省划给这一国"
+        onChange={(e) => {
+          const v = Number((e.target as HTMLSelectElement).value);
+          if (v !== (now ?? 0)) void exec(territoryCommand(land, v || null), '正在计算…');
+        }}
+      >
+        <option value="0">无主地</option>
+        {rows.map((r) => (
+          <option value={r.meta.id}>{r.meta.name}</option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+export function ProvinceBar() {
+  const w = world.value;
+  const id = selectedProvince.value;
+  const meta = w && id !== null ? w.small.provinces[id] : null;
+  // 按钮不见了（取消选择、换了工具）时鼠标移开的事件不会来：一并去掉按钮的预览
+  useEffect(() => clearBarPreview, []);
+  if (w && provinceSet.value.length > 1) return <ProvinceMulti w={w} ids={provinceSet.value} />;
+  if (!w || id === null || !meta) return null;
+  const { cells, lakeGone, hex, auto } = provinceOf(w, id);
+  const area = Math.round((cells.length * mapKm(w).cell ** 2) / 100) * 100;
+  // 第二十七轮：名字连同原文、颜色、类型、归属国都在条上（不常用的地名风格、定位还在“⋯”里）。
+  // 海省默认不着色（地图上看得到海本来的样子）；点色块自选颜色
   return (
     <>
-      <span class="swatch" style={{ background: !meta.land && auto ? 'transparent' : hex }} title={!meta.land && auto ? '海省默认不着色' : undefined} />
-      <input class="bar-input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={onKey} onBlur={rename} />
+      <label class="swatch-pick" title={auto ? (meta.land ? '自动配色，点了自选' : '海省默认不着色，点了自选') : '自选的颜色'}>
+        <span class="swatch" style={{ background: !meta.land && auto ? 'transparent' : hex }} />
+        <input
+          type="color"
+          value={hex}
+          onChange={(e) => {
+            const v = (e.target as HTMLInputElement).value.toLowerCase();
+            if (v !== meta.color) void exec({ op: 'set_province', id, color: v }, '正在修改…');
+          }}
+        />
+      </label>
+      <ProvinceName id={id} name={meta.name} orig={meta.orig ?? ''} />
       <span class="bar-label" title={`${cells.length} 格`}>
         约 {area.toLocaleString()} km²
       </span>
-      {meta.kind === 'wasteland' && <span class="bar-chip">无人区</span>}
+      {/* 类型：陆地省份只有“无人区”一个开关；湖省只由自动划分产生，底部条上只标出来 */}
+      {meta.land && meta.kind !== 'lake' && (
+        <Toggle on={meta.kind === 'wasteland'} onChange={(on) => void exec({ op: 'set_province', id, kind: on ? 'wasteland' : 'land' }, '正在修改…')} title={PROVINCE_KIND_INFO.wasteland.hint}>
+          无人区
+        </Toggle>
+      )}
       {meta.kind === 'lake' && (
         <span class="bar-chip" title={PROVINCE_KIND_INFO.lake.hint}>
           {lakeGone ? '湖省 · 已没有湖' : '湖省'}
         </span>
       )}
+      {meta.land && <ProvinceOwner w={w} cells={cells} />}
       <Toggle on={!!meta.locked} onChange={(on) => void exec({ op: 'set_province', id, locked: on }, '正在修改…')} title="重新划分时不动它">
         锁定
       </Toggle>
@@ -106,12 +177,133 @@ export function ProvinceBar() {
       >
         <SplitSquareHorizontal /> 对半分开
       </button>
-      <SelectionActions more="province" moreTitle="无人区、颜色、风格、定位" deselect={() => (selectedProvince.value = null)} />
+      <SelectionActions more="province" moreTitle="颜色恢复自动、地名风格、定位" deselect={() => (selectedProvince.value = null)} />
     </>
   );
 }
 
-// 选中的省底部条上的“⋯”：无人区、颜色、地名风格、改回陆地、在地图上看
+// ---------- 多选（第二十七轮：⇧+点） ----------
+
+// 几个省一起：合并（并进第一个选的）、整个划给某国、重新划分。陆地省与海省、湖省混着时不能合并
+export function provinceMultiCommands(w: World, ids: readonly number[]) {
+  const metas = ids.map((id) => w.small.provinces[id]).filter(Boolean);
+  const into = ids[0];
+  const first = w.small.provinces[into];
+  const same = !!first && metas.every((m) => m.land === first.land && classOfKind(m.kind) === classOfKind(first.kind));
+  const locked = metas.some((m) => m.locked);
+  const set = new Set(ids);
+  const cells: number[] = [];
+  for (let i = 0; i < w.mesh.n; i++) if (set.has(w.causes.province[i])) cells.push(i);
+  const merge: Command | null =
+    same && !locked && ids.length > 1 ? { op: 'batch', label: `合并 ${ids.length} 个省份`, commands: ids.slice(1).map((from) => ({ op: 'merge_province' as const, from, into })) } : null;
+  return { cells, merge, why: !same ? '陆地省份、海省、湖省不能合并' : locked ? '有省份已锁定' : null, land: cells.filter((i) => w.causes.land[i] === 1) };
+}
+
+function ProvinceMulti({ w, ids }: { w: World; ids: number[] }) {
+  const { cells, merge, why, land } = provinceMultiCommands(w, ids);
+  const rows = hasCountries(w) ? countryRows(w) : [];
+  const done = () => {
+    provinceSet.value = [];
+  };
+  return (
+    <>
+      <span class="bar-note">已选 {ids.length} 个省份</span>
+      <button
+        class="bar-btn"
+        disabled={!merge}
+        title={why ?? `并进“${w.small.provinces[ids[0]]?.name ?? ''}”`}
+        onClick={() => {
+          if (!merge) return;
+          void exec(merge, '正在计算…').then((ok) => {
+            if (!ok) return;
+            done();
+            selectedProvince.value = ids[0];
+          });
+        }}
+      >
+        <Merge /> 合并
+      </button>
+      {rows.length > 0 && land.length > 0 && (
+        <select
+          class="bar-select"
+          value=""
+          title="这几个省的陆地都划给这一国"
+          onChange={(e) => {
+            const v = (e.target as HTMLSelectElement).value;
+            (e.target as HTMLSelectElement).value = '';
+            if (v !== '') void exec(territoryCommand(land, Number(v) || null), '正在计算…');
+          }}
+        >
+          <option value="">划给…</option>
+          <option value="0">无主地</option>
+          {rows.map((r) => (
+            <option value={r.meta.id}>{r.meta.name}</option>
+          ))}
+        </select>
+      )}
+      <button
+        class="bar-btn"
+        onPointerEnter={() => showProvinceCommand({ op: 'regenerate_provinces', cells })}
+        onPointerLeave={clearBarPreview}
+        onClick={() =>
+          holdBarPreview(
+            exec({ op: 'regenerate_provinces', cells }, '正在划分…').then((ok) => {
+              if (ok) done();
+              return ok;
+            }),
+          )
+        }
+        title="这几个省重新划分"
+      >
+        <RefreshCw /> 重新划分
+      </button>
+      <button class="bar-btn icon" onClick={done} title="取消多选（Esc）">
+        <X />
+      </button>
+    </>
+  );
+}
+
+// 省份笔刷涂给谁（第二十七轮）：条上直接选一个省份，或“新省份”（涂出一个新的）；Alt+点击吸取
+export function ProvincePick() {
+  const w = world.value;
+  if (!w) return null;
+  const id = selectedProvince.value;
+  const list = Object.entries(w.small.provinces)
+    .filter(([, m]) => m.kind !== 'sea')
+    .map(([k, m]) => ({ id: Number(k), name: m.name || `省份 ${k}` }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const meta = id !== null && !brushNew.value ? w.small.provinces[id] : undefined;
+  const value = brushNew.value ? 'new' : meta ? String(id) : '';
+  return (
+    <span class="bar-choice">
+      <span class="bar-label">涂给</span>
+      {meta && <span class="swatch" style={{ background: `rgb(${provinceDisplayColor(w, id!).join(',')})` }} />}
+      <select
+        class="bar-select"
+        value={value}
+        title="Alt+点击地图吸取"
+        onChange={(e) => {
+          const v = (e.target as HTMLSelectElement).value;
+          if (v === 'new') brushNew.value = true;
+          else if (v) {
+            brushNew.value = false;
+            selectedProvince.value = Number(v);
+          }
+        }}
+      >
+        {!value && <option value="">选省份</option>}
+        <option value="new">新省份</option>
+        {meta?.kind === 'sea' && <option value={String(id)}>{meta.name || `省份 ${id}`}</option>}
+        {list.map((p) => (
+          <option value={String(p.id)}>{p.name}</option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+// 选中的省底部条上的“⋯”：颜色恢复自动、地名风格、改回陆地、在地图上看（第二十七轮：无人区、选颜色在条上）
 export function ProvinceMore() {
   const w = world.value;
   const id = selectedProvince.value;
@@ -119,16 +311,6 @@ export function ProvinceMore() {
   const { meta, cells, lakeGone, hex, auto } = provinceOf(w, id);
   return (
     <>
-      {/* 类型：陆地省份只有“无人区”一个开关；湖省只由自动划分产生，底部条上只标出来 */}
-      {meta.land && meta.kind !== 'lake' && (
-        <Toggle
-          on={meta.kind === 'wasteland'}
-          onChange={(on) => void exec({ op: 'set_province', id, kind: on ? 'wasteland' : 'land' }, '正在修改…')}
-          title={PROVINCE_KIND_INFO.wasteland.hint}
-        >
-          无人区
-        </Toggle>
-      )}
       {/* 颜色：自动（陆地省按编号配色，海省不着色）/ 自己选（导出的 provinces.bmp 照旧按编号，一一对应） */}
       <div class="row">
         <Toggle
@@ -213,10 +395,7 @@ function RulesBox({ w }: { w: World }) {
           .map((k) => `${PROVINCE_KIND_INFO[k].name} ${counts.get(k)} 个`)
           .join('，') || '没有省份'}
       </p>
-      <div class="row">
-        <span>省份大小</span>
-        <Seg value={draft.size} options={[['small', '小'], ['medium', '中'], ['large', '大']]} onChange={(v) => setDraft({ ...draft, size: v })} />
-      </div>
+      <SizeSlider w={w} value={provinceSizeCells(draft)} onChange={(v) => setDraft({ ...draft, sizeCells: v })} />
       {check('varied', '按地形调整大小')}
       {check('wasteland', '冰原、深漠、高山划成无人区')}
       <div class="row">
@@ -246,6 +425,65 @@ function RulesBox({ w }: { w: World }) {
       </div>
       <p class="hint">规则相同，划分相同；锁定的省份不变</p>
       <p class="hint">灰色斜线：无人区；蓝色字：湖省</p>
+    </section>
+  );
+}
+
+// ---------- 省份大小（第二十七轮） ----------
+
+// 目标大小（格数，按 4 万格的地区标定，见 core/provinces.ts 的 provinceSizeCells）：滑块按对数走
+const SIZE_LO = 8;
+const SIZE_HI = 200;
+const sizePos = (v: number) => Math.log(v / SIZE_LO) / Math.log(SIZE_HI / SIZE_LO);
+const sizeAt = (p: number) => Math.round(SIZE_LO * Math.pow(SIZE_HI / SIZE_LO, Math.max(0, Math.min(1, p))));
+// 陆地省大约多大（km²）
+export function provinceAreaText(w: World, rules: ProvinceRules, sizeCells: number): string {
+  const km2 = provinceTargets(w, { ...rules, sizeCells }).land * mapKm(w).cell ** 2;
+  return km2 >= 1e4 ? `约 ${(km2 / 1e4).toFixed(km2 >= 1e5 ? 0 : 1)} 万 km²` : `约 ${Math.round(km2 / 100) * 100} km²`;
+}
+
+function SizeSlider({ w, value, onChange }: { w: World; value: number; onChange: (v: number) => void }) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const v = draft ?? value;
+  return (
+    <Slider
+      label="省份大小"
+      stacked
+      pos={sizePos(v)}
+      text={provinceAreaText(w, w.small.provinceRules, v)}
+      changed={draft !== null}
+      onDraft={(p) => setDraft(sizeAt(p))}
+      onCommit={(p) => {
+        setDraft(null);
+        onChange(sizeAt(p));
+      }}
+      onCancel={() => setDraft(null)}
+    />
+  );
+}
+
+// 只重新划分一个国家（第二十七轮）：按滑块的大小，别处不动
+function CountrySizeBox({ w }: { w: World }) {
+  const rows = hasCountries(w) ? countryRows(w) : [];
+  const [id, setId] = useState<number>(selectedCountry.value ?? rows[0]?.meta.id ?? 0);
+  const [size, setSize] = useState(provinceSizeCells(w.small.provinceRules));
+  if (!rows.length) return null;
+  const m = w.small.countries?.[id] ? id : rows[0].meta.id;
+  const cmd: Command = { op: 'regenerate_provinces', cells: cellsOf(w, m), size };
+  return (
+    <section>
+      <h5>一个国家</h5>
+      <div class="row">
+        <select class="grow" value={String(m)} onChange={(e) => setId(Number((e.target as HTMLSelectElement).value))}>
+          {rows.map((r) => (
+            <option value={r.meta.id}>{r.meta.name}</option>
+          ))}
+        </select>
+      </div>
+      <SizeSlider w={w} value={size} onChange={setSize} />
+      <div class="row wrap">
+        <RegenButton cmd={cmd}>重新划分这一国</RegenButton>
+      </div>
     </section>
   );
 }
@@ -285,6 +523,7 @@ export function ProvinceExtras() {
   return w ? (
     <>
       <RulesBox w={w} />
+      <CountrySizeBox w={w} />
       <NamesBox w={w} />
     </>
   ) : null;

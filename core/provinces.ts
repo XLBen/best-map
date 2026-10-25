@@ -40,6 +40,8 @@ const ruleFields = {
   riverCost: z.number().min(0).max(20),
   ridgeCost: z.number().min(0).max(20),
   seed: z.number().int().min(0),
+  // 第二十七轮：省份大小的滑块（目标格数，按 4 万格的地区标定，同 SIZE_CELLS）。有它时不看 size
+  sizeCells: z.number().min(4).max(400),
 };
 export const provinceRulesSchema = z.object({
   size: ruleFields.size.default('medium'),
@@ -50,6 +52,7 @@ export const provinceRulesSchema = z.object({
   riverCost: ruleFields.riverCost.default(4),
   ridgeCost: ruleFields.ridgeCost.default(2),
   seed: ruleFields.seed.default(1),
+  sizeCells: ruleFields.sizeCells.optional(),
 });
 // 命令里的规则补丁：只含给出的项（zod 4 的 partial 会给带默认值的项补上默认值，盖掉原来的规则）
 export const provinceRulesPatchSchema = z.object(ruleFields).partial();
@@ -57,6 +60,8 @@ export type ProvinceRules = z.output<typeof provinceRulesSchema>;
 export const DEFAULT_PROVINCE_RULES: ProvinceRules = provinceRulesSchema.parse({});
 
 const SIZE_CELLS = { small: 20, medium: 40, large: 80 } as const;
+// 目标格数（按 4 万格的地区标定）：滑块定的，没有时按小、中、大
+export const provinceSizeCells = (rules: Pick<ProvinceRules, 'size' | 'sizeCells'>) => rules.sizeCells ?? SIZE_CELLS[rules.size];
 
 // 目标大小（格数）：一块地区按 4 万格标定，格数不同时等比缩放，所以省份的个数与网格精细度无关。
 // 整个星球按面积定（第十七轮）：“中”约 20.4 万 km²（以前 10 万格的类地星球上的 40 格，那时的世界照旧一模一样），
@@ -67,7 +72,7 @@ const PLANET_CELL_KM2 = (4 * Math.PI * EARTH_KM * EARTH_KM) / 100000;
 export function provinceTargets(world: World, rules: ProvinceRules): { land: number; sea: number } {
   const { mesh } = world;
   const scale = mesh.kind === 'sphere' ? PLANET_CELL_KM2 / ((4 * Math.PI * (world.settings.radiusKm ?? EARTH_KM) ** 2) / mesh.n) : mesh.n / 40000;
-  const base = SIZE_CELLS[rules.size] * scale;
+  const base = provinceSizeCells(rules) * scale;
   return { land: Math.max(3, base), sea: Math.max(6, base * (rules.seaByDistance ? 2 : 4)) };
 }
 
@@ -371,15 +376,16 @@ export function regenTargets(world: World, cells: number[]): number[] {
     .sort((a, b) => a - b);
 }
 
-// 只重新划分这些省份占的地方；新省份用新编号，别处不变
-export function regenerateProvinces(world: World, d: Derived, ids: number[]): number[] {
+// 只重新划分这些省份占的地方；新省份用新编号，别处不变。sizeCells（第二十七轮）：这一次按这个大小划（不改规则）
+export function regenerateProvinces(world: World, d: Derived, ids: number[], sizeCells?: number): number[] {
   const { mesh, causes, small } = world;
   const set = new Set(ids);
   const region = new Uint8Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) if (set.has(causes.province[i])) region[i] = 1;
   for (const id of ids) delete small.provinces[id];
   // 用当前的下一个编号做盐：同样的操作重放结果相同，再做一次又是新的划分
-  return partition(world, d, small.provinceRules, region, small.nextProvince + 1);
+  const rules = sizeCells === undefined ? small.provinceRules : { ...small.provinceRules, sizeCells };
+  return partition(world, d, rules, region, small.nextProvince + 1);
 }
 
 export function provinceSizes(world: World): Map<number, number> {

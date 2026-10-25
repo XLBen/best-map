@@ -318,6 +318,8 @@ export function applyPopFix(world: World, fix: PopFix) {
 export type PopBrush =
   | { mode: 'share'; group: PopTuple; amount: number }
   | { mode: 'count'; factor: number }
+  // 第二十七轮：这里没有人（橡皮擦的“清空”）
+  | { mode: 'clear' }
   | { mode: 'value'; dimension: string; value: string; amount: number }
   | { mode: 'culture'; culture: string; amount: number; typical?: boolean };
 
@@ -337,13 +339,18 @@ export function typicalTuple(world: Pick<World, 'small'>, culture: string): PopT
 }
 
 // 改一格的成分：share 这个群体的占比升高 a（其余按比例让出）；value 每个群体里 a 的人这一维换成 value；
-// culture 每个群体里 a 的人换成这个文化（typical：换成这个文化最典型的群体）。返回改了没有
-function recompose(world: World, table: GroupTable, i: number, b: Exclude<PopBrush, { mode: 'count' }>, a: number): boolean {
+// culture 每个群体里 a 的人换成这个文化（typical：换成这个文化最典型的群体）。返回改了没有。
+// 第二十七轮：a 为负是往外推（share、value）：这一群体、有这个取值的人里 |a| 换成别的（见 pushAway）
+function recompose(world: World, table: GroupTable, i: number, b: Exclude<PopBrush, { mode: 'count' | 'clear' }>, a: number): boolean {
   const c = world.causes;
   const comp = readComp(c, i);
-  if (!comp.length || !(c.popTotal![i] > 0) || a <= 0) return false;
+  if (!comp.length || !(c.popTotal![i] > 0) || a === 0 || (a < 0 && b.mode === 'culture')) return false;
   const out: Share[] = [];
-  if (b.mode === 'share') {
+  if (a < 0) {
+    const pushed = pushAway(world, table, comp, b as Extract<PopBrush, { mode: 'share' | 'value' }>, -a);
+    if (!pushed) return false;
+    out.push(...pushed);
+  } else if (b.mode === 'share') {
     const target = table.code(b.group);
     for (const x of comp) out.push({ code: x.code, s: x.s * (1 - a) });
     out.push({ code: target, s: a });
@@ -369,6 +376,48 @@ function recompose(world: World, table: GroupTable, i: number, b: Exclude<PopBru
   return false;
 }
 
+// 往外推（第二十七轮）：share 这个群体的人里 a 让给别的群体（按它们的占比分；只有这一个群体时推不动）；
+// value 有这个取值的人里 a 换成这一格里最常见的别的取值（没有时：这一维可以不写就去掉，否则换成这一维的第一个别的取值）。
+// 推不动时返回 null
+function pushAway(world: World, table: GroupTable, comp: readonly Share[], b: Extract<PopBrush, { mode: 'share' | 'value' }>, a: number): Share[] | null {
+  if (b.mode === 'share') {
+    const target = table.find(b.group);
+    const mine = comp.find((x) => x.code === target);
+    const rest = comp.filter((x) => x.code !== target);
+    const others = rest.reduce((sum, x) => sum + x.s, 0);
+    if (target === undefined || !mine || !(others > 0)) return null;
+    const moved = mine.s * a;
+    return [{ code: mine.code, s: mine.s - moved }, ...rest.map((x) => ({ code: x.code, s: x.s + (moved * x.s) / others }))];
+  }
+  const dim = worldDimensions(world.small).find((d) => d.id === b.dimension);
+  if (!dim) return null;
+  const tuple = (x: Share) => (x.code ? table.get(x.code) : undefined);
+  // 这一格里别的取值各占多少
+  const tally = new Map<string, number>();
+  for (const x of comp) {
+    const v = tuple(x)?.values[b.dimension];
+    if (v && v !== b.value) tally.set(v, (tally.get(v) ?? 0) + x.s);
+  }
+  let to: string | null = [...tally].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1))[0]?.[0] ?? null;
+  if (!to && dim.required) to = dimensionValues(world.small, dim.id).find((v) => v.id !== b.value)?.id ?? null;
+  if (!to && dim.required) return null;
+  const out: Share[] = [];
+  let moved = false;
+  for (const x of comp) {
+    const t = tuple(x);
+    if (!t || t.values[b.dimension] !== b.value) {
+      out.push(x);
+      continue;
+    }
+    const values = { ...t.values };
+    if (to) values[b.dimension] = to;
+    else delete values[b.dimension];
+    out.push({ code: x.code, s: x.s * (1 - a) }, { code: table.code({ culture: t.culture, values }), s: x.s * a });
+    moved = true;
+  }
+  return moved ? out : null;
+}
+
 // 画一笔人口：cells 与 t（画笔的权重 0–1，省略为 1）。只画干的陆地。返回改了的格数。
 // count：人数 × factor^t；没有人的格在 factor > 1 时按最近的有人的格的成分补上一些人（世界的平均密度 × 宜居度 × (factor − 1)）
 export function paintPop(world: World, d: Derived, cells: readonly number[], t: readonly number[] | undefined, b: PopBrush): number {
@@ -384,6 +433,13 @@ export function paintPop(world: World, d: Derived, cells: readonly number[], t: 
     if (!world.causes.land[i] || d.lake[i] === 1) return;
     const w = t ? t[q] : 1;
     if (!(w > 0)) return;
+    if (b.mode === 'clear') {
+      if (!(pop[i] > 0)) return;
+      clearCell(c, i);
+      manual[i] = 1;
+      changed++;
+      return;
+    }
     if (b.mode === 'count') {
       const before = pop[i];
       if (before > 0) pop[i] = Math.fround(before * Math.pow(b.factor, w));
@@ -407,7 +463,7 @@ export function paintPop(world: World, d: Derived, cells: readonly number[], t: 
       }
       return;
     }
-    if (recompose(world, table, i, b, Math.min(1, b.amount * w))) {
+    if (recompose(world, table, i, b, Math.max(-1, Math.min(1, b.amount * w)))) {
       manual[i] = 1;
       changed++;
     }

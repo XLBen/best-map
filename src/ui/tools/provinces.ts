@@ -1,17 +1,19 @@
 import { type DisplayCell, displayCellAt } from '../../../core/display';
 import { classOfKind, regenTargets } from '../../../core/provinces';
 import { type ProvinceSeam, scissors } from '../../../core/seams';
-import { type CutResult, provinceCells } from '../../../core/select';
+import type { CutResult } from '../../../core/select';
 import { type World, provinceColor, provinceDisplayColor } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
-import { exec, previewProvinces, selectedProvince, showToast, sliderActive, world } from '../../state';
+import { signal } from '@preact/signals';
+import { provinceLand } from '../../../core/island-types';
+import { exec, previewProvinces, provinceSet, selectedProvince, showToast, sliderActive, world } from '../../state';
 import { Settle } from '../exact';
-import { BLOCKED_RGB, EMPTY, type Pointer, type Preview, type ProvincePreview, type ToolHandler, isBusy, worldId } from './api';
+import { EMPTY, type Pointer, type Preview, type ProvincePreview, type ToolHandler, isBusy, worldId } from './api';
 import { type Stroke, brushTool } from './brush';
 import { groupCount } from './gestures';
 
-// 省份：选省、涂省、剪刀、合并、重新划分
+// 省份：选省（⇧+点多选，第二十七轮）、涂省（可以涂成新省份）、剪刀、重新划分。合并在多选后的底部条上
 
 const provinceName = (w: World, id: number) => w.small.provinces[id]?.name || `省份 ${id}`;
 
@@ -33,6 +35,14 @@ const provinceIdAt = (w: World, p: Pointer): number => {
   return c >= 0 ? w.causes.province[c] : -1;
 };
 
+// ⇧+点（第二十七轮）：加进多选、已选的去掉；先选着的那个算第一个
+export function toggleProvince(id: number) {
+  const now = provinceSet.value.length ? provinceSet.value : selectedProvince.value !== null ? [selectedProvince.value] : [];
+  const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id];
+  provinceSet.value = next.length > 1 ? next : [];
+  selectedProvince.value = next[0] ?? null;
+}
+
 export function provinceSelectTool(): ToolHandler {
   let pointer: Pointer | null = null;
   return {
@@ -44,6 +54,11 @@ export function provinceSelectTool(): ToolHandler {
       const w = world.value;
       if (!w || p.cell < 0) return;
       const id = provinceIdAt(w, p);
+      if (p.shift && id >= 0) {
+        toggleProvince(id);
+        return;
+      }
+      provinceSet.value = [];
       selectedProvince.value = id >= 0 ? id : null;
     },
     preview() {
@@ -51,6 +66,8 @@ export function provinceSelectTool(): ToolHandler {
       if (!w || !pointer || pointer.cell < 0) return EMPTY;
       const id = provinceIdAt(w, pointer);
       if (id < 0) return EMPTY;
+      const n = provinceSet.value.length;
+      if (pointer.shift) return { layers: [], shapes: [], hint: provinceSet.value.includes(id) ? `从多选里去掉“${provinceName(w, id)}”` : `加进多选 · ${Math.max(n, selectedProvince.value !== null ? 1 : 0) + 1} 个` };
       return { layers: [], shapes: [], hint: provinceName(w, id) };
     },
   };
@@ -74,8 +91,24 @@ function provincesNow(w: World) {
   return m;
 }
 
+// 省份笔刷涂成新省份（第二十七轮，assign_province 'new'）：底部条上选“新省份”时为 true，涂完一笔就选中新的那个、接着涂它
+export const brushNew = signal(false);
+// provinceLand 按世界缓存（每一笔每格都要问）
+const plandCache = new WeakMap<World, Uint8Array>();
+const plandOf = (w: World) => {
+  let a = plandCache.get(w);
+  if (!a) plandCache.set(w, (a = provinceLand(w)));
+  return a;
+};
+// 新省份只涂陆地（不是湖省、没锁定的格）
+const newLand = (w: World, i: number) => {
+  if (plandOf(w)[i] !== 1) return false;
+  const m = w.small.provinces[w.causes.province[i]];
+  return !m || (!m.locked && classOfKind(m.kind) === 'land');
+};
+
 export function provinceBrushTool(): ToolHandler {
-  const target = () => selectedProvince.value;
+  const target = () => (brushNew.value ? null : selectedProvince.value);
   // 涂到的格换成选中的省：地图上省界当场跟着变（按笔画、省缓存，同一个对象不必重新上传）。
   // 被涂掉一部分的省剩下的格比原来多断成了几块（会变成一省几块）：黄色提醒，照样能涂
   let prov: { key: string; s: Stroke; value: ProvincePreview; split: { id: number; parts: number } | null } | null = null;
@@ -106,10 +139,12 @@ export function provinceBrushTool(): ToolHandler {
     hint: () => {
       const w = world.value;
       const id = target();
-      if (!w || id === null || !w.small.provinces[id]) return { text: '先按住 Alt 点一个省份', warn: true };
+      if (brushNew.value) return { text: null };
+      if (!w || id === null || !w.small.provinces[id]) return { text: '先选一个省份，或 Alt+点击吸取', warn: true };
       return { text: null };
     },
     filter: (w, i) => {
+      if (brushNew.value) return newLand(w, i);
       const id = target();
       const meta = id !== null ? w.small.provinces[id] : null;
       if (!meta) return false;
@@ -120,6 +155,7 @@ export function provinceBrushTool(): ToolHandler {
       return (w.causes.land[i] === 1) === meta.land && other !== id && !om?.locked;
     },
     layers(w, s) {
+      if (brushNew.value) return { layers: [{ cells: s.cells, color: [255, 236, 140], alpha: 0.7 }], hint: s.t.size ? `新省份 · ${s.t.size} 格` : '这里不能涂新省份', warn: !s.t.size };
       const id = target()!;
       const { value, split } = provincesOf(w, s, id);
       return {
@@ -129,7 +165,17 @@ export function provinceBrushTool(): ToolHandler {
         provinces: value,
       };
     },
-    async commit(_w, s) {
+    async commit(w, s) {
+      if (brushNew.value) {
+        if (!s.t.size) return;
+        // 新的编号是涂之前的 nextProvince：涂完选中它，接着涂的是它
+        const next = w.small.nextProvince;
+        if (await exec({ op: 'assign_province', cells: s.cells, province: 'new' }, '正在计算…')) {
+          brushNew.value = false;
+          if (world.value?.small.provinces[next]) selectedProvince.value = next;
+        }
+        return;
+      }
       const id = target();
       if (id === null || !s.t.size) return;
       await exec({ op: 'assign_province', cells: s.cells, province: id }, '正在计算…');
@@ -226,83 +272,6 @@ export function provinceCutTool(zoom: () => number): ToolHandler {
       const w = world.value;
       if (!w || !pointer || !line || line.length < 2) return EMPTY;
       return cutNow(w, [...line, [pointer.x, pointer.y]]).view;
-    },
-  };
-}
-
-// 合并：悬停在邻省上时，两省之间的省界当场消失（省份预览），点了以后一直留到结果回来。
-// 锁定的省标红、点了也不合并；不相邻的两省照样能合并（黄色提醒：合并后是一省两块）
-export function provinceMergeTool(): ToolHandler {
-  let pointer: Pointer | null = null;
-  let cache: { key: string; view: Preview } | null = null;
-  let committing: Preview | null = null;
-  const view = (): Preview => {
-    const w = world.value;
-    if (!w || !pointer || pointer.cell < 0) return EMPTY;
-    const id = provinceIdAt(w, pointer);
-    const sel = selectedProvince.value;
-    if (id < 0) return EMPTY;
-    if (sel === null || sel === id || !w.small.provinces[sel]) return { layers: [], shapes: [], hint: provinceName(w, id) };
-    const meta = w.small.provinces[id];
-    const other = w.small.provinces[sel];
-    if (meta.land !== other.land) return { layers: [], shapes: [], hint: '陆地省份和海省不能合并', warn: true };
-    const key = `${worldId(w)}|${id}|${sel}`;
-    if (cache?.key !== key) {
-      const cells = provinceCells(w, id);
-      const locked = meta.locked ? id : other.locked ? sel : null;
-      if (locked !== null) {
-        // 合并不了的不画将来的省界（省界当场消失却并不成，就不是所见即所得）：这个省标红
-        cache = { key, view: { layers: [{ cells, color: BLOCKED_RGB, alpha: 0.45 }], shapes: [], hint: `“${provinceName(w, locked)}”已锁定`, warn: true } };
-      } else {
-        const apart = !cells.some((c) => {
-          for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1]; e++) if (w.causes.province[w.mesh.adj[e]] === sel) return true;
-          return false;
-        });
-        cache = {
-          key,
-          view: {
-            layers: [{ cells, color: provinceDisplayColor(w, sel), alpha: 0.7 }],
-            shapes: [],
-            hint: apart ? '不相邻：合并后分成两块' : `并进“${provinceName(w, sel)}”`,
-            caution: apart,
-            provinces: { cells, ids: cells.map(() => sel) },
-          },
-        };
-      }
-    }
-    return cache.view;
-  };
-  return {
-    drags: false,
-    move(p) {
-      pointer = p;
-    },
-    async click(p) {
-      const w = world.value;
-      if (!w || p.cell < 0 || isBusy()) return;
-      const id = provinceIdAt(w, p);
-      const sel = selectedProvince.value;
-      if (id < 0) return;
-      if (sel === null || sel === id || !w.small.provinces[sel]) {
-        selectedProvince.value = id;
-        return;
-      }
-      // 留住的预览就是点下去的这一处（与命令合并的是同一个省）；合并不了的（锁定、陆海不同）点了只说一声
-      pointer = p;
-      const v = view();
-      if (v.warn) {
-        showToast(v.hint ?? '不能合并', true);
-        return;
-      }
-      committing = v;
-      try {
-        if (await exec({ op: 'merge_province', from: id, into: sel }, '正在计算…')) selectedProvince.value = sel;
-      } finally {
-        committing = null;
-      }
-    },
-    preview() {
-      return committing ?? view();
     },
   };
 }

@@ -202,7 +202,7 @@ describe('“文化”一类', () => {
     world.value = w;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
     const c = inhabited(w)[0];
-    setOptions({ brushKm: 2 * cellKm, popAmount: 0.4, popFactor: 2 });
+    setOptions({ brushKm: 2 * cellKm, popAmount: 0.4, popPercent: 1 });
     const paint = async (shift = false) => {
       const t = popTool();
       const p = pointer(w, c, shift);

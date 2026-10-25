@@ -64,8 +64,11 @@ export interface ToolSpec {
   bar?(w: World): BarItem[];
   // 不出现在工具列表里（比如没有自定义场时的“涂自定义场”）；正在用时照样显示
   hidden?(w: World): boolean;
-  // Alt+点：吸取（取这里的生态、这里的省份）。返回取到了什么，用来提示
+  // Alt+点、底部条上的吸管（第二十七轮）：吸取（取这里的生态、这里的省份、这里的冷暖）。返回取到了什么，用来提示
   pick?(w: World, cell: number): string | null;
+  // 橡皮擦（第二十七轮）：底部条第二行的开关打开时换成这一支。auto 恢复自动（去掉手工的改动），
+  // clear 清空（只在有意义的地方有：领土清成无主地、人口清成 0、资源清成“没有”）
+  eraser?: { auto?: (env: ToolEnv) => ToolHandler; clear?: (env: ToolEnv) => ToolHandler };
   // 地图上的光标：点选类的工具是手指，指针是箭头；省略时是十字（styles.css 的 .map-overlay）
   cursor?: 'pointer' | 'default';
   // 开着时底图换成这一层（地形类别、资源），换到别的工具时换回原来的（这期间在图层里换过就不动）。

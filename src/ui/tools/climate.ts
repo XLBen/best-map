@@ -1,6 +1,6 @@
 import type { Command } from '../../../core/commands';
 import type { World } from '../../../core/world';
-import { type ToolOptions, exec, options, showToast, world } from '../../state';
+import { type ToolOptions, exec, options, setOptions, showToast, world } from '../../state';
 import { climateHere, climateMask, erasableLayer } from '../edits';
 import { type RGB, type ToolHandler, WHITE } from './api';
 import { type Stroke, brushTool, oneLayer, strengthValues } from './brush';
@@ -89,6 +89,25 @@ export function climateEraseTool(): ToolHandler {
       await exec({ op: 'restore_climate', cells: s.cells, t: s.ts }, '正在计算…');
     },
   });
+}
+
+// 吸管（第二十七轮）：冷暖、干湿取这一格改过多少（更冷还是更暖、力度），自定义场取这一格的值。没改过的格没有可吸的
+export function pickClimate(group: 'temp' | 'moist', w: World, cell: number): string | null {
+  const v = (group === 'temp' ? w.causes.tempOffset : w.causes.moistOffset)[cell];
+  const unit = group === 'temp' ? 4 : 0.5;
+  if (Math.abs(v) < (group === 'temp' ? 0.05 : 0.01)) return null;
+  const kind: ClimateKind = group === 'temp' ? (v > 0 ? 'warm' : 'cold') : v > 0 ? 'wet' : 'dry';
+  const amount = Math.min(CLIMATE_MAX, Math.max(0.25, Math.round((Math.abs(v) / unit) * 20) / 20));
+  setOptions(group === 'temp' ? { tempMode: kind as 'cold' | 'warm', tempAmount: amount } : { moistMode: kind as 'wet' | 'dry', moistAmount: amount });
+  return `${CLIMATE_INFO[kind].name} ${climateEffect(kind, amount).short}`;
+}
+export function pickField(w: World, cell: number): string | null {
+  const name = options.value.field;
+  const v = name ? w.causes.fields[name]?.[cell] : undefined;
+  if (v === undefined || Math.abs(v) < 0.005) return null;
+  const amount = Math.min(FIELD_MAX, Math.max(0.05, Math.round(Math.abs(v) * 100) / 100));
+  setOptions({ fieldMode: v > 0 ? 'add' : 'sub', fieldAmount: amount });
+  return `${name} ${v > 0 ? '+' : '−'}${amount.toFixed(2)}`;
 }
 
 // 自定义场：按住拖动增加或减少（中心多、边缘少），按住 Shift 反过来
