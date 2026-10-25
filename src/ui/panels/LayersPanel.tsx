@@ -164,7 +164,7 @@ export function LayersPanel() {
         <section>
           <h5>地图</h5>
           <Seg value={mapKind.value} options={MAP_KINDS} titles={MAP_KIND_TITLES} onChange={setMapKind} wide />
-          <p class="hint">{mapKind.value === 'political' ? '国界、国名；自然的地名只留海、湖、山脉' : '地貌与自然的地名'}</p>
+          <p class="hint">{mapKind.value === 'political' ? '国界、国名、城市、地标；自然的地名只留海、湖、山脉' : '地貌、自然的地名与道路'}</p>
         </section>
       )}
       <section>
