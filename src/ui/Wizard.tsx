@@ -272,7 +272,7 @@ export function Wizard() {
       <Toggle on={human.on} onChange={(on) => setHuman({ ...human, on })} disabled={creating}>
         生成人文
       </Toggle>
-      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} defaultPop={popDefault} disabled={creating} /> : <p class="hint">建好后可在“文化”里生成</p>}
+      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} defaultPop={popDefault} disabled={creating} countries /> : <p class="hint">建好后可在“文化”里生成</p>}
     </div>
   );
   const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? planetCells(PLANET_SIZES[psize].radiusKm) : CELLS);

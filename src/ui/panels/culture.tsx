@@ -5,6 +5,8 @@ import type { World } from '../../../core/world';
 import { askUser, exec, openPanel, options, setOptions, togglePanel, world } from '../../state';
 import { Seg } from '../common';
 import { OptionSlider, Slider } from '../components/Slider';
+import { Toggle } from '../components/Toggle';
+import { fragAt, fragPos, fragText } from '../countries';
 import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import type { SliderDef } from '../defs/types';
 import {
@@ -219,8 +221,53 @@ export function HearthBar() {
 
 // ---------- 生成人文的选择（向导、“文化 ⋯”共用） ----------
 
+// “国家”（第二十三轮）：生成国家、分裂 ↔ 统一。estimate：大约几个国家（有世界时才知道）
+export function CountryChoice({ choice, onChange, disabled, estimate }: { choice: HumanChoice; onChange: (c: HumanChoice) => void; disabled?: boolean; estimate?: (f: number) => number | null }) {
+  const c = choice.countries;
+  const [draft, setDraft] = useState<number | null>(null);
+  const f = draft ?? c.fragmentation;
+  const n = estimate?.(f);
+  const set = (patch: Partial<HumanChoice['countries']>) => onChange({ ...choice, countries: { ...c, ...patch } });
+  return (
+    <div class="human-countries">
+      <h5>国家</h5>
+      <Toggle on={c.on} disabled={disabled} onChange={(on) => set({ on })}>
+        生成国家
+      </Toggle>
+      {c.on && (
+        <Slider
+          stacked
+          label="分裂 ↔ 统一"
+          pos={fragPos(f)}
+          text={fragText(f)}
+          changed={c.fragmentation !== 0.5}
+          disabled={disabled}
+          title="往左小国多，往右大国少"
+          note={
+            <>
+              {n ? `约 ${n} 个国家` : '正中按时代'}
+              {c.fragmentation !== 0.5 && (
+                <button class="link" onClick={() => set({ fragmentation: 0.5 })}>
+                  恢复自动
+                </button>
+              )}
+            </>
+          }
+          onDraft={(p) => setDraft(fragAt(p))}
+          onCommit={(p) => {
+            setDraft(null);
+            set({ fragmentation: fragAt(p) });
+          }}
+          onCancel={() => setDraft(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // defaultPop：按时代的默认密度算的总人口（向导里是估的）
 // compact：弹出面板里（窄）：时代两列，组旁不写有几个文化
+// countries：带上“国家”（生成人文时；重新生成时不带）
 export function HumanChoices({
   choice,
   onChange,
@@ -228,6 +275,8 @@ export function HumanChoices({
   defaultPop,
   disabled,
   compact,
+  countries,
+  estimate,
 }: {
   choice: HumanChoice;
   onChange: (c: HumanChoice) => void;
@@ -235,6 +284,8 @@ export function HumanChoices({
   defaultPop: number;
   disabled?: boolean;
   compact?: boolean;
+  countries?: boolean;
+  estimate?: (f: number) => number | null;
 }) {
   const eras = eraChoices(small);
   const era = eras.find((e) => e.id === choice.era);
@@ -327,6 +378,7 @@ export function HumanChoices({
         }}
         onCancel={() => setDraft(null)}
       />
+      {countries && <CountryChoice choice={choice} onChange={onChange} disabled={disabled} estimate={estimate} />}
       {problem && <p class="hint warn">{problem}</p>}
     </div>
   );
@@ -361,7 +413,7 @@ function GenerateBox({ w, onDone }: { w: World; onDone: () => void }) {
   const cmd = generateCommand(choice, w.small);
   return (
     <>
-      <HumanChoices choice={choice} onChange={setChoice} small={w.small} defaultPop={def} compact />
+      <HumanChoices choice={choice} onChange={setChoice} small={w.small} defaultPop={def} compact countries />
       <button
         class="primary"
         disabled={!cmd}

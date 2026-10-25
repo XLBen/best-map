@@ -4,6 +4,8 @@ import { LABEL_REF_WIDTH, type LabelSize, exportFrame, planTiles, tileMargin, ti
 import { type Frame, type OverlayPaths, type OverlayState, type ProvinceLabel, drawOverlay, peakLabels, releaseRiverTile, riverLayerScene, riverLayerTile } from '../../render/overlay';
 import { type Proj, planeBounds } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
+import { politicalOn } from '../countries';
+import { countryDraws, politicalFeatures } from './political';
 import { exportProgress, imageExportCancel, labelGroups, mapStyle, nameMode, overlays, season, showToast, world } from '../../state';
 
 // 导出图片：当前画面（snapshotCanvas）与整张地图（exportFullMap）。都是干净的画面：只有地图本身，
@@ -26,7 +28,9 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     shapes: [],
     // 导出只看图层的设定（第十三轮修：以前省份类、地名类工具开着时导出的图里写满了省名，连海省也有）
     provinceLabels,
-    features: overlays.value.labels ? w.derived.features : null,
+    // 人文图（第二十三轮）：国名，自然的地名只留几类
+    features: overlays.value.labels ? (politicalOn(w) ? politicalFeatures(w.derived.features) : w.derived.features) : null,
+    countries: overlays.value.labels && politicalOn(w) ? countryDraws(w, nameMode.value) : null,
     labelTypes: types,
     peaks: overlays.value.peaks ? peakLabels(w) : null,
     nameMode: nameMode.value,

@@ -39,12 +39,14 @@ export const valueChoices = (small?: Small | null): PopValue[] => merged(BUILTIN
 // 一个文化组里有几个文化（向导的组旁写“3 个文化”）
 export const culturesIn = (small: Small | null | undefined, group: string) => cultureChoices(small).filter((c) => c.group === group);
 
-// 一份“生成人文”的选择。pop：总人口（null 按时代的默认密度）
+// 一份“生成人文”的选择。pop：总人口（null 按时代的默认密度）。
+// countries（第二十三轮）：同时生成国家，fragmentation 是“分裂 ↔ 统一”（0 统一、1 分裂、0.5 按时代）
 export interface HumanChoice {
   on: boolean;
   era: string;
   groups: { id: string; weight: number }[];
   pop: number | null;
+  countries: { on: boolean; fragmentation: number };
 }
 
 // 时代建议的文化组（defaultGroups 与 cultureGroups 里的）；都没写时为 null（不限）
@@ -69,9 +71,10 @@ export function eraGroups(era: Era | undefined, small?: Small | null): { id: str
 // 默认的选择：世界里已有人文时照它，否则第一个时代（内置的中世纪）
 export function defaultChoice(small?: Small | null, on = true): HumanChoice {
   const h = small?.human;
-  if (h) return { on, era: h.era, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null };
+  const countries = { on: true, fragmentation: h?.countryRules?.fragmentation ?? 0.5 };
+  if (h) return { on, era: h.era, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null, countries };
   const era = eraChoices(small)[0];
-  return { on, era: era?.id ?? '', groups: eraGroups(era, small), pop: null };
+  return { on, era: era?.id ?? '', groups: eraGroups(era, small), pop: null, countries };
 }
 
 // 换时代：文化组换成那个时代的默认，总人口回到自动
@@ -112,17 +115,25 @@ export function choiceProblem(c: HumanChoice, small?: Small | null): string | nu
 // 生成的命令（没打开、选得不对时 null）
 export function generateCommand(c: HumanChoice, small?: Small | null): Command | null {
   if (!c.on || choiceProblem(c, small)) return null;
-  return { op: 'generate_human', era: c.era, groups: c.groups.map((g) => ({ id: g.id, weight: g.weight })), ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}) };
+  return {
+    op: 'generate_human',
+    era: c.era,
+    groups: c.groups.map((g) => ({ id: g.id, weight: g.weight })),
+    ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}),
+    ...(c.countries.on ? { countries: c.countries.fragmentation !== 0.5 ? { fragmentation: c.countries.fragmentation } : {} } : {}),
+  };
 }
 
-// 已有人文时按新的选择重新生成（时代、文化组、总人口换掉，拖过的发源地留着）：选择与现在的一样时 null
+// 已有人文时按新的选择重新生成（时代、文化组、总人口换掉，拖过的发源地留着）：选择与现在的一样时 null。
+// 有国家、换了时代时国家也重新长（锁定的留着）；没换时代时领土不动
 export function regenerateWith(c: HumanChoice, small: Small): Command | null {
   const h = small.human;
   if (!h || choiceProblem(c, small)) return null;
   const groups = c.groups.map((g) => ({ id: g.id, weight: g.weight }));
   const same = c.era === h.era && JSON.stringify(groups) === JSON.stringify(h.groups.map((g) => ({ id: g.id, weight: g.weight })));
   if (same && c.pop === null) return null;
-  return { op: 'regenerate_human', era: c.era, groups, ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}), keepManual: c.era === h.era };
+  const countries = h.countryRules && c.era !== h.era ? { countries: {} } : {};
+  return { op: 'regenerate_human', era: c.era, groups, ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}), keepManual: c.era === h.era, ...countries };
 }
 
 // 向导里还没有世界：陆地面积按地图（或星球）的面积 × 陆地多少估（与建好后的默认总人口差不多）

@@ -34,6 +34,10 @@ import {
   Waypoints,
   Flag,
   Languages,
+  Castle,
+  MousePointerClick,
+  SquarePlus,
+  Star,
 } from 'lucide-preact';
 import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import { islandTypeById, liveIslandKind } from '../../../core/island-types';
@@ -45,6 +49,7 @@ import {
   type Category,
   type ViewMode,
   brushRange,
+  selectedCountry,
   cursorHint,
   lakeRange,
   measure,
@@ -102,6 +107,8 @@ import {
 import { ClassPick, ResourcePick } from '../panels/human';
 import { CultureExtras, CulturePick, FactorSlider, HearthBar, NoHumanChip, PopTuplePick, ValuePick } from '../panels/culture';
 import { cultureTool, hearthTool, pickCulture, pickPop, popTool } from '../tools/culture';
+import { capitalTool, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from '../tools/countries';
+import { CountryExtras, NEW_COUNTRY_SHAPES, NoCountryChip, SelectedCountryChip, TerritoryPick } from '../panels/countries';
 import { clearBarPreview } from '../barPreview';
 import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
 import {
@@ -713,6 +720,62 @@ const SPECS = {
     view: 'cultureGroup',
     create: (env) => hearthTool(env.zoom),
   },
+  // ---------- 第二十三轮：国家 ----------
+  cselect: {
+    category: 'countries',
+    icon: MousePointerClick,
+    name: '选国家',
+    short: '选择',
+    how: '点击国家，打开档案',
+    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: SelectedCountryChip }],
+    cursor: 'pointer',
+    view: 'country',
+    create: (env) => countrySelectTool(env.zoom),
+  },
+  territory: {
+    category: 'countries',
+    icon: Paintbrush,
+    name: '领土',
+    short: '领土',
+    how: '按住涂，改成这一国的领土；Alt+点击吸取',
+    size: BRUSH,
+    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: TerritoryPick }],
+    pick: pickTerritory,
+    view: 'country',
+    create: (env) => territoryTool(env.zoom),
+  },
+  newCountry: {
+    category: 'countries',
+    icon: SquarePlus,
+    name: '新建国家',
+    short: '新国家',
+    how: '点一个省份或圈一片，成为新国家',
+    bar: () => [{ kind: 'custom', render: NoCountryChip }, NEW_COUNTRY_SHAPES],
+    view: 'country',
+    create: (env) => newCountryTool(env.zoom),
+  },
+  cmerge: {
+    category: 'countries',
+    icon: Merge,
+    name: '合并国家',
+    short: '合并',
+    how: '先点一国，再点要并进来的',
+    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: SelectedCountryChip }],
+    cursor: 'pointer',
+    view: 'country',
+    create: (env) => countryMergeTool(env.zoom),
+  },
+  capital: {
+    category: 'countries',
+    icon: Star,
+    name: '首都',
+    short: '首都',
+    how: '点击选中国家的领土，首都挪到那里；Shift+点击恢复自动',
+    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: SelectedCountryChip }],
+    cursor: 'pointer',
+    view: 'country',
+    create: (env) => capitalTool(env.zoom),
+  },
 } satisfies Record<string, ToolSpec>;
 
 // 工具的 id：工具表里的键
@@ -754,6 +817,8 @@ export const CATEGORIES: CategoryDef[] = [
   },
   // 第二十二轮：文化（文化、人口笔刷，发源地）。没有人文时底部条上是“生成人文…”
   { id: 'culture', icon: UsersRound, label: '文化', tools: toolsIn('culture'), extras: CultureExtras },
+  // 第二十三轮：国家（选国家、领土、新建、合并、首都）。没有国家时底部条上是“生成国家…”
+  { id: 'countries', icon: Castle, label: '国家', tools: toolsIn('countries'), extras: CountryExtras, watch: () => selectedCountry.value },
 ];
 
 export const CATEGORY_DEFS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Category, CategoryDef>;

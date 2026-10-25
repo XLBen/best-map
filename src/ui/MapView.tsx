@@ -18,6 +18,7 @@ import {
   focusSpecies,
   hoverRiver,
   labelGroups,
+  mapKind,
   nameMode,
   mapStyle,
   measure,
@@ -49,6 +50,8 @@ import { highlightLayers } from './map/highlights';
 import { type PointerState, mapInput } from './map/input';
 import { pendingEdits, pendingPreview } from './pending';
 import { riverGlow } from './riverCourse';
+import { hasCountries, politicalOn } from './countries';
+import { countryDraws, politicalFeatures } from './map/political';
 import { type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具（map/input.ts），工具给出预览。
@@ -397,8 +400,8 @@ export function MapView() {
       applyGhost(shown, clean ? null : preview);
       // 工具选中的东西（画河时选中的河）、河流列表里鼠标停着的河：沿河一道淡黄的光，压在工具的图形下面
       const glow = clean ? [] : [...(def.focus?.glow(w) ?? []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : []), ...pinRing(w)];
-      // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取
-      renderer.flatByGroup = mode.value === 'provinces';
+      // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取；国家底图按同样的规则取格（海上的像素只取海格：领海淡淡的一圈）
+      renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
       renderer.highlightByGroup = !!cm.provinces;
       renderer.style = mapStyle.value;
       // 河由渲染器在合成一步里画（只画在陆地上，排在省界、高亮下面）：渲染器按这一帧是不是移动中取停稳或移动中的那张
@@ -424,6 +427,7 @@ export function MapView() {
       const lift = barLift();
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
+      const political = politicalOn(shown);
       const ovArgs: OverlayArgs = [shown, shownRivers, renderer.camera, {
         rivers: false,
         wind: overlays.value.wind,
@@ -433,7 +437,12 @@ export function MapView() {
         shapes: glow.length || back?.shapes.length ? [...(back?.shapes ?? []), ...glow, ...preview.shapes] : preview.shapes,
         // 省名：省份类工具打开时（不是导出）标出所有的省帮着选；别的时候、导出都按图层里的“省名”（第十三轮修）
         provinceLabels: cm.provinces && !clean ? labelsFor(w, preview.provinces) : layerProvinceLabels(),
-        features: overlays.value.labels || (cm.labels && !clean) ? labelsShown(shown.derived.features, def.focus && !clean ? def.focus.hideLabel(w) : '') : null,
+        features:
+          overlays.value.labels || (cm.labels && !clean)
+            ? labelsShown(political && !(cm.labels && !clean) ? politicalFeatures(shown.derived.features) : shown.derived.features, def.focus && !clean ? def.focus.hideLabel(w) : '')
+            : null,
+        // 国名（第二十三轮）：人文图里、图层里开着地名时
+        countries: political && overlays.value.labels ? countryDraws(shown, nameMode.value) : null,
         labelTypes: types,
         peaks: overlays.value.peaks ? peakLabels(shown) : null,
         nameMode: nameMode.value,
@@ -523,14 +532,22 @@ export function MapView() {
     let colorOpts: ColorOptions | null = null;
     let fxKey: unknown[] = [];
     function applyColors(w: World) {
-      // 省界：图层里开着，并且开着省份类工具或省份着色
-      const o = { mode: mode.value, season: season.value, focusSpecies: focusSpecies.value, borders: overlays.value.borders && (!!CATEGORY_DEFS[category.value].map?.provinces || mode.value === 'provinces') };
+      // 省界：图层里开着，并且开着省份类工具、省份着色或人文图（第二十三轮）
+      // 国界：有国家时人文图、国家底图、“国家”一类的工具里画
+      const political = politicalOn(w);
+      const o = {
+        mode: mode.value,
+        season: season.value,
+        focusSpecies: focusSpecies.value,
+        borders: overlays.value.borders && (!!CATEGORY_DEFS[category.value].map?.provinces || mode.value === 'provinces' || political),
+        countryBorders: hasCountries(w) && (political || mode.value === 'country' || category.value === 'countries'),
+      };
       colorOpts = o;
       const arrays: unknown[] = [];
       for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
       for (const v of Object.values(w.causes)) if (ArrayBuffer.isView(v)) arrays.push(v);
       arrays.push(...Object.values(w.derived.corrF), ...Object.values(w.causes.fields));
-      const key = [w.mesh, ...arrays, smallKey(w), o.mode, o.season, o.focusSpecies, o.borders];
+      const key = [w.mesh, ...arrays, smallKey(w), o.mode, o.season, o.focusSpecies, o.borders, o.countryBorders];
       if (sameKey(key, colorKey)) return;
       colorKey = key;
       let hit = colorCache.find((x) => sameKey(x.key, key));
@@ -588,7 +605,7 @@ export function MapView() {
       lastHighlightKey = [];
       applyGroupPreview(w, null);
       applyGhost(w, null);
-      renderer.flatByGroup = mode.value === 'provinces';
+      renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
       renderer.highlightByGroup = !!CATEGORY_DEFS[category.value].map?.provinces;
       renderer.style = mapStyle.value;
     }
@@ -635,6 +652,7 @@ export function MapView() {
       void hoverRiver.value;
       void labelGroups.value;
       void nameMode.value;
+      void mapKind.value;
       void adjustPreview.value;
       void sliderActive.value;
       void openPanel.value;

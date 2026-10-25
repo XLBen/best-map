@@ -1,5 +1,6 @@
 import { worldCultures } from '../../core/human';
 import { popText } from './human';
+import { countryAt, countryOf, hasCountries } from './countries';
 import { type GeoFeature, ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
@@ -377,6 +378,14 @@ function peopleHere(w: World, cell: number): string {
   return ` · ${c ? `${c.name} ` : ''}${popText(n)} 人`;
 }
 
+// 这一格是哪国（第二十三轮，有国家时）：陆地写国名或“无主地”，海上只写领海
+function countryHere(w: World, cell: number): string {
+  if (!hasCountries(w)) return '';
+  const m = countryOf(w, countryAt(w, cell));
+  if (!w.causes.land[cell]) return m ? `${m.name}领海 · ` : '';
+  return m ? `${m.name} · ` : '无主地 · ';
+}
+
 export function hereLine(w: World, cell: number): string {
   const d = w.derived;
   const feats = featuresAt(w, cell);
@@ -387,13 +396,13 @@ export function hereLine(w: World, cell: number): string {
     // 有碎岛的海格（第十八轮）：带上列岛 / 群岛的名字
     if ((w.causes.fragment?.[cell] ?? 0) >= ISLET_FRAG) {
       const isles = named(['archipelago']);
-      return `${isles?.name && !isles.hidden ? `${isles.name} · ` : ''}碎岛 · ${water?.name ? `${water.name} · ` : ''}${kind}`;
+      return `${isles?.name && !isles.hidden ? `${isles.name} · ` : ''}碎岛 · ${water?.name ? `${water.name} · ` : ''}${countryHere(w, cell)}${kind}`;
     }
-    return `${water?.name ? `${water.name} · ` : ''}${kind} · 水深约 ${fmt(-d.elevation[cell])} m`;
+    return `${water?.name ? `${water.name} · ` : ''}${countryHere(w, cell)}${kind} · 水深约 ${fmt(-d.elevation[cell])} m`;
   }
   const where = named(['island', 'continent', 'peninsula']);
   const region = feats.filter((f) => f.region && f.type !== 'spot').sort((a, b) => a.areaKm2 - b.areaKm2)[0];
-  const prefix = [where?.name, region?.name].filter(Boolean).map((s) => `${s} · `).join('');
+  const prefix = countryHere(w, cell) + [where?.name, region?.name].filter(Boolean).map((s) => `${s} · `).join('');
   if (d.lake[cell] === 1) return `${prefix}${named(['lake'])?.name ?? '湖'}`;
   // 在河上：带上河名（只有大河有名字）
   const river = d.discharge[cell] >= w.small.planet.riverThreshold ? `${named(['river'])?.name || '河边'} · ` : '';

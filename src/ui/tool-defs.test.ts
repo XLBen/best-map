@@ -29,7 +29,7 @@ describe('工具表', () => {
     expect([...listed].sort()).toEqual([...ids].sort());
     expect(new Set(listed).size).toBe(listed.length);
     // 每一类里的先后与第十九轮之前相同（底部工具条上的位置、数字键）；第二十一轮在地形、自然的最后加了地形类别、资源；
-    // 第二十二轮加了“文化”一类（文化、人口、发源地）
+    // 第二十二轮加了“文化”一类（文化、人口、发源地）；第二十三轮加了“国家”一类（选国家、领土、新建、合并、首都）
     expect(Object.fromEntries(CATEGORIES.map((c) => [c.id, c.tools]))).toEqual({
       terrain: ['land', 'island', 'chain', 'relief', 'fragment', 'reroll', 'restore', 'terrainClass'],
       climate: ['temp', 'moist', 'unclimate', 'field'],
@@ -38,12 +38,13 @@ describe('工具表', () => {
       provinces: ['pselect', 'pbrush', 'pcut', 'pmerge', 'pregen'],
       names: ['rename', 'area', 'spot'],
       culture: ['culture', 'pop', 'hearth'],
+      countries: ['cselect', 'territory', 'newCountry', 'cmerge', 'capital'],
     });
   });
 
   it('光标由工具表声明：点选类的工具是手指，其余是十字（不写）', () => {
     const pointer = (Object.keys(TOOL_DEFS) as ToolId[]).filter((id) => TOOL_DEFS[id].cursor === 'pointer');
-    expect(pointer.sort()).toEqual(['pmerge', 'pselect', 'range', 'rename', 'unwater']);
+    expect(pointer.sort()).toEqual(['capital', 'cmerge', 'cselect', 'pmerge', 'pselect', 'range', 'rename', 'unwater']);
   });
 });
 
