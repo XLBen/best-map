@@ -202,6 +202,8 @@ export {
   countryStats,
   governmentInfo,
   labelGeometry,
+  type RegionLabel,
+  regionLabels,
 } from './country-layers';
 export { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, LAYOUT_COLORS, flagSchema, flagSvg, makeFlag } from './flags';
 // 第二十四轮：城市、道路、地标、自定义点

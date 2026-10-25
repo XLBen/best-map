@@ -73,6 +73,8 @@ export const popValueSchema = z.object({
   // 属于哪一维（时代的 dimensions 里的 id）
   dimension: typeIdSchema,
   name: z.string().min(1).max(20),
+  // 原文（第二十五轮，可省略）：地图上按“中文 / 原文 / 两者”写片区名
+  orig: z.string().min(1).max(40).optional(),
   color: HEX,
   description: z.string().max(400).optional(),
   // 只在这些时代里有（省略时不限）
@@ -85,6 +87,8 @@ export type PopValue = z.output<typeof popValueSchema>;
 export const cultureGroupSchema = z.object({
   id: typeIdSchema,
   name: z.string().min(1).max(20),
+  // 原文（第二十五轮，可省略）：地图上按“中文 / 原文 / 两者”写片区名
+  orig: z.string().min(1).max(40).optional(),
   color: HEX,
   description: z.string().max(400).optional(),
   // 喜欢的地理：发源地按它挑，扩张时偏向这些地方，人口也更多住在这里
@@ -99,6 +103,8 @@ export const cultureSchema = z.object({
   // 文化组的 id
   group: typeIdSchema,
   name: z.string().min(1).max(20),
+  // 原文（第二十五轮，可省略）：地图上按“中文 / 原文 / 两者”写片区名
+  orig: z.string().min(1).max(40).optional(),
   color: HEX,
   // 地名风格的 id（core/packs/names/ 里的，或世界里启用的）
   nameStyle: typeIdSchema,

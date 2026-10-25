@@ -354,18 +354,33 @@ export interface CountryLabel {
   path: [number, number][];
 }
 
-// 每个国家的国名位置（按主体：领土里最大的一块连着的陆地）
-export function countryLabels(world: World): CountryLabel[] {
+// 一片的名字的位置（第二十五轮，片区名：国名、文化名、文化组名、各维的取值名都用它）：编号相同、连着的陆地格连成一片，
+// 每种编号取最大的一片；second 时第二大的一片够大（不小于最大的 second 倍，也不少于 minCells 格）时也标（海外的同一文化）。
+// part：0 是最大的一片，1 是第二片。按 ids 的先后给出；不在 ids 里的编号不连（省时间）
+export interface RegionLabel extends CountryLabel {
+  part: 0 | 1;
+}
+export interface RegionLabelOptions {
+  // 要标的编号（按这个先后给出）
+  ids: readonly number[];
+  // 少于这么多格的片不标（省略为 1）
+  minCells?: number;
+  // 第二片不小于最大一片的多少（省略：不标第二片）
+  second?: number;
+}
+export function regionLabels(world: World, codes: ArrayLike<number>, opts: RegionLabelOptions): RegionLabel[] {
   const { mesh, causes } = world;
-  const c = causes.country;
-  if (!c || !world.small.countries) return [];
   const n = mesh.n;
+  const wanted = new Set(opts.ids);
+  const minCells = Math.max(1, opts.minCells ?? 1);
   const seen = new Uint8Array(n);
   const main = new Map<number, number[]>();
+  const next = opts.second !== undefined ? new Map<number, number[]>() : null;
   const stack: number[] = [];
   for (let s = 0; s < n; s++) {
-    if (seen[s] || !causes.land[s] || c[s] < 0) continue;
-    const id = c[s];
+    if (seen[s] || !causes.land[s] || codes[s] < 0) continue;
+    const id = codes[s];
+    if (!wanted.has(id)) continue;
     const comp: number[] = [];
     seen[s] = 1;
     stack.push(s);
@@ -374,23 +389,41 @@ export function countryLabels(world: World): CountryLabel[] {
       comp.push(i);
       for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
         const j = mesh.adj[e];
-        if (!seen[j] && causes.land[j] && c[j] === id) {
+        if (!seen[j] && causes.land[j] && codes[j] === id) {
           seen[j] = 1;
           stack.push(j);
         }
       }
     }
     const cur = main.get(id);
-    if (!cur || comp.length > cur.length) main.set(id, comp);
+    if (!cur || comp.length > cur.length) {
+      main.set(id, comp);
+      if (cur && next) next.set(id, cur);
+    } else if (next) {
+      const nx = next.get(id);
+      if (!nx || comp.length > nx.length) next.set(id, comp);
+    }
   }
-  const out: CountryLabel[] = [];
-  for (const m of countryList(world.small)) {
-    const cells = main.get(m.id);
-    if (!cells) continue;
+  const out: RegionLabel[] = [];
+  for (const id of opts.ids) {
+    const cells = main.get(id);
+    if (!cells || cells.length < minCells) continue;
     cells.sort((a, b) => a - b);
-    out.push({ id: m.id, cells: cells.length, ...labelGeometry(world, cells) });
+    out.push({ id, cells: cells.length, ...labelGeometry(world, cells), part: 0 });
+    const more = next?.get(id);
+    if (more && more.length >= minCells && more.length >= cells.length * opts.second!) {
+      more.sort((a, b) => a - b);
+      out.push({ id, cells: more.length, ...labelGeometry(world, more), part: 1 });
+    }
   }
   return out;
+}
+
+// 每个国家的国名位置（按主体：领土里最大的一块连着的陆地）
+export function countryLabels(world: World): CountryLabel[] {
+  const c = world.causes.country;
+  if (!c || !world.small.countries) return [];
+  return regionLabels(world, c, { ids: countryList(world.small).map((m) => m.id) }).map(({ part: _part, ...l }) => l);
 }
 
 // 一块格的标注：主轴，再沿主轴用二次曲线拟合垂直方向的偏移（弯得太厉害时压平），取 5 个点

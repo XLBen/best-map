@@ -64,6 +64,7 @@ const VALUE_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'dimension', label: '维度', type: 'text', hint: '时代里维度的 id：religion……' },
   { key: 'name', label: '名字', type: 'text' },
+  { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'eras', label: '时代', type: 'tags', optional: true, hint: '空着时不限' },
@@ -73,6 +74,7 @@ const VALUE_FIELDS: readonly FieldDesc[] = [
 const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
+  { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'eras', label: '时代', type: 'tags', optional: true, hint: '空着时不限' },
@@ -83,6 +85,7 @@ const CULTURE_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'group', label: '文化组', type: 'text', hint: '文化组的 id' },
   { key: 'name', label: '名字', type: 'text' },
+  { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'nameStyle', label: '地名风格', type: 'text', hint: '地名风格的 id' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
