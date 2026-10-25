@@ -1,0 +1,10 @@
+[
+  { "id": "civic-nation", "dimension": "nation", "name": "公民国族", "color": "#4b87d2", "description": "以公民身份与共同的制度认同国家。", "eras": ["industrial", "modern"] },
+  { "id": "ethnic-nation", "dimension": "nation", "name": "本族认同", "color": "#c34b3c", "description": "认同以本族语言与祖先为纽带的民族。", "eras": ["industrial", "modern"] },
+  { "id": "imperial", "dimension": "nation", "name": "帝国认同", "color": "#875ab4", "description": "效忠王朝或帝国，不以民族为界。", "eras": ["industrial", "modern"] },
+  { "id": "pan-group", "dimension": "nation", "name": "泛族认同", "color": "#e1a52d", "description": "把整个文化圈看作一个大民族。", "eras": ["industrial", "modern"] },
+  { "id": "regional", "dimension": "nation", "name": "乡土认同", "color": "#5aa54b", "description": "先认同本乡本省，再认同国家。", "eras": ["industrial", "modern"], "prefs": [{ "classes": ["hills", "mountains", "highlands"], "factor": 1.5 }] },
+  { "id": "religious-community", "dimension": "nation", "name": "教门认同", "color": "#96693c", "description": "以共同的信仰为首要的认同。", "eras": ["industrial", "modern"] },
+  { "id": "settler", "dimension": "nation", "name": "新土认同", "color": "#3ca5a5", "description": "移居者的后代，认同新土地上的新民族。", "eras": ["industrial", "modern"], "prefs": [{ "coast": true, "factor": 1.3 }] },
+  { "id": "cosmopolitan", "dimension": "nation", "name": "世界公民", "color": "#b4b4b4", "description": "不以民族为首要认同，自视为世界的一员。", "eras": ["modern"], "prefs": [{ "coast": true, "factor": 1.3 }, { "river": true, "factor": 1.2 }] }
+]

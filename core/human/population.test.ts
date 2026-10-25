@@ -5,7 +5,7 @@ import { type Command, CommandError } from '../commands';
 import { Engine, passStats } from '../engine';
 import { exportPackage } from '../export';
 import { styleFor } from '../name-styles';
-import { BUILTIN_CULTURES, BUILTIN_ERAS } from '../packs/eras';
+import { BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
 import { continents, engineFor, snapshot } from '../testing/fixtures';
 import { HUMAN_DERIVED, POP_DERIVED, type World } from '../world';
 import {
@@ -63,10 +63,11 @@ const dry = (w: World, i: number) => w.causes.land[i] === 1 && w.derived.lake[i]
 const totalPop = (w: World) => w.causes.popTotal!.reduce((a, b) => a + b, 0);
 const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.causes.popTotal![i] > 0);
 
-// 人文的金标准（第二十二轮记下）：以后提速、重构，生成的人口、群体、发源地必须逐值不变；有意改了生成的规则时重录
+// 人文的金标准（第二十二轮记下；第二十二轮 内容：内置的中世纪示例换成正式的一套后重录）：以后提速、重构，生成的人口、群体、发源地必须逐值不变；
+// 有意改了生成的规则、内置的中世纪与西欧、东亚、草原三组的数据时重录
 const RECORDED = {
-  region: { popTotal: '9084d7038178c5a1', popGroup: '0620978a515c5474', popShare: '8fdd90cf255c6d41', human: '994f6c674c7f2025' },
-  planet: { popTotal: 'e2884bca35d2ab53', popGroup: '34ccebf74bc8bba1', popShare: 'f4866cd6cfeccbde', human: '5eb96b124561d4e8' },
+  region: { popTotal: 'f4db6bc3f38eda22', popGroup: 'fd0c31e2ede20b45', popShare: '64ec516483917b2b', human: '0e8cf9b78743a2c5' },
+  planet: { popTotal: 'd099aefd9f983f7d', popGroup: 'cdb3e4ff2757446d', popShare: '38e9926fc4b7ef86', human: 'e98c99789cccb261' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human) });
 
@@ -127,7 +128,7 @@ describe('生成人文', () => {
     expect(Object.keys(w.small.content?.cultureGroup ?? {})).toEqual(['western', 'eastern', 'steppe']);
     expect(worldCultures(w.small).map((c) => c.id)).toEqual(SAMPLE_CULTURES);
     for (const c of worldCultures(w.small)) if (c.nameStyle !== 'zh-default') expect(w.small.content?.nameStyle?.[c.nameStyle], c.id).toBeDefined();
-    expect(dimensionValues(w.small, 'religion').map((v) => v.id)).toEqual(['sun-faith', 'moon-faith', 'ancestor-rites', 'sky-way']);
+    expect(dimensionValues(w.small, 'religion').map((v) => v.id)).toEqual(BUILTIN_POP_VALUES.filter((v) => v.dimension === 'religion' && v.eras?.includes('medieval')).map((v) => v.id));
     expect(w.small.human!.totalPop).toBe(defaultTotalPop(w, w.derived, era));
     expect(Math.abs(totalPop(w) - w.small.human!.totalPop) / w.small.human!.totalPop).toBeLessThan(1e-4);
     expect(humanLayers(w).map((l) => l.id)).toEqual(['culture', 'cultureGroup', 'religion', 'popDensity', 'habitability']);
@@ -182,7 +183,7 @@ describe('生成人文', () => {
     expect(byCulture.get('huaxia')! / byCulture.get('yamato')!).toBeGreaterThan(1.4);
   });
 
-  it('发源地按喜欢的地理挑：草原的在草原、荒漠上，西方的在温带', () => {
+  it('发源地按喜欢的地理挑：草原的在草原、荒漠上，西欧的在温带', () => {
     const w = peopled().world;
     const hs = w.small.human!.hearths;
     expect(hs.filter((h) => !h.culture).map((h) => h.group).sort()).toEqual(['eastern', 'steppe', 'western']);
@@ -214,8 +215,11 @@ describe('生成人文', () => {
       }
     }
     expect(same / all).toBeGreaterThan(0.85);
-    // 四种宗教都有人信
-    expect(humanLegend(w, 'religion').length).toBe(4);
+    // 有好几种宗教，都是这几个文化的倾向里有的
+    const named = new Set(worldCultures(w.small).flatMap((c) => (c.tendencies?.religion ?? []).map((x) => (typeof x === 'string' ? x : x[0]))));
+    const legend = humanLegend(w, 'religion');
+    expect(legend.length).toBeGreaterThanOrEqual(4);
+    for (const x of legend) expect(named).toContain(x.id);
   });
 
   it('同样的世界、同样的参数逐值相同；重放、检查点一致；金标准', () => {
@@ -303,17 +307,17 @@ describe('发源地', () => {
     const eng = peopled();
     const w = eng.world;
     const west = w.small.human!.hearths.find((h) => h.group === 'western' && !h.culture)!;
-    // 东方的发源地附近的一格
+    // 东亚的发源地附近的一格
     const east = w.small.human!.hearths.find((h) => h.group === 'eastern' && !h.culture)!;
     const target = [...Array(w.mesh.n).keys()].find((i) => dry(w, i) && i !== east.cell && w.derived.popCultureGroup![i] === w.derived.popCultureGroup![east.cell] && Math.abs(w.mesh.x[i] - w.mesh.x[east.cell]) < 0.05)!;
-    expect(eng.exec({ op: 'move_hearth', group: 'western', cell: target })).toBe('挪动发源地“西方”');
+    expect(eng.exec({ op: 'move_hearth', group: 'western', cell: target })).toBe('挪动发源地“西欧”');
     const moved = w.small.human!.hearths.find((h) => h.group === 'western' && !h.culture)!;
     expect(moved).toEqual({ group: 'western', cell: target, locked: true });
     expect(worldCultures(w.small)[w.derived.popCulture![target] - 1]?.group).toBe('western');
     // 再重新生成：锁定的还在
     eng.exec({ op: 'regenerate_human', seed: 9 });
     expect(w.small.human!.hearths.find((h) => h.group === 'western' && !h.culture)).toEqual(moved);
-    expect(eng.exec({ op: 'move_hearth', group: 'western', cell: null })).toBe('发源地“西方”恢复自动');
+    expect(eng.exec({ op: 'move_hearth', group: 'western', cell: null })).toBe('发源地“西欧”恢复自动');
     expect(w.small.human!.hearths.find((h) => h.group === 'western' && !h.culture)!.locked).toBeUndefined();
     void west;
     expect(() => eng.exec({ op: 'move_hearth', culture: 'nobody', cell: target })).toThrow(CommandError);
@@ -330,16 +334,16 @@ describe('人口笔刷', () => {
     const w = eng.world;
     const cells = stroke(w);
     const totals = cells.map((i) => w.causes.popTotal![i]);
-    const group = { culture: 'arab', values: { religion: 'moon-faith' } };
-    expect(eng.exec({ op: 'paint_pop', cells, mode: 'share', group, amount: 0.6 })).toBe(`人口“阿拉伯 · 月轮教” · ${cells.length} 格`);
-    const code = Number(Object.entries(w.small.popGroups!).find(([, t]) => t.culture === 'arab' && t.values.religion === 'moon-faith')![0]);
+    const group = { culture: 'turkic', values: { religion: 'moon-faith' } };
+    expect(eng.exec({ op: 'paint_pop', cells, mode: 'share', group, amount: 0.6 })).toBe(`人口“库尔坦人 · 月轮教” · ${cells.length} 格`);
+    const code = Number(Object.entries(w.small.popGroups!).find(([, t]) => t.culture === 'turkic' && t.values.religion === 'moon-faith')![0]);
     cells.forEach((i, k) => {
       expect(w.causes.popTotal![i]).toBe(totals[k]);
       const share = readComp(w.causes, i).find((x) => x.code === code)?.s ?? 0;
       expect(share).toBeGreaterThan(0.55);
       expect(w.causes.popManual![i]).toBe(1);
       // 文化圈跟着人口里占多数的文化
-      expect(worldCultures(w.small)[w.derived.popCulture![i] - 1].id).toBe('arab');
+      expect(worldCultures(w.small)[w.derived.popCulture![i] - 1].id).toBe('turkic');
     });
     eng.undo();
     expect(w.causes.popManual).toBeUndefined();
@@ -387,7 +391,7 @@ describe('人口笔刷', () => {
     const w = eng.world;
     const cells = stroke(w, 500, 40);
     const religion0 = cells.map((i) => readComp(w.causes, i).map((x) => w.small.popGroups![x.code]?.values.religion));
-    expect(eng.exec({ op: 'paint_culture', cells, culture: 'teutonic', amount: 1 })).toMatch(/^文化“条顿” · \d+ 格$/);
+    expect(eng.exec({ op: 'paint_culture', cells, culture: 'teutonic', amount: 1 })).toMatch(/^文化“卡尔维人” · \d+ 格$/);
     cells.forEach((i, k) => {
       expect(worldCultures(w.small)[w.derived.popCulture![i] - 1].id).toBe('teutonic');
       const rel = readComp(w.causes, i).map((x) => w.small.popGroups![x.code]?.values.religion);
@@ -395,7 +399,7 @@ describe('人口笔刷', () => {
     });
     eng.exec({ op: 'paint_culture', cells, culture: 'yamato', amount: 1, typical: true });
     for (const i of cells) for (const x of readComp(w.causes, i)) if (x.code) expect(w.small.popGroups![x.code]).toEqual({ culture: 'yamato', values: { religion: 'ancestor-rites' } });
-    // 地名跟着文化：这一格的风格是大和的
+    // 地名跟着文化：这一格的风格是汐见人的
     expect(cellArchive(w, cells[0]).style).toBe('ja-kanji');
   });
 
@@ -451,13 +455,13 @@ describe('人口笔刷', () => {
     expect(pop.total).toBe(5000);
     expect(pop.manual).toBe(true);
     expect(pop.groups.map((g) => [g.label, Math.round(g.share * 100)])).toEqual([
-      ['华夏 · 天道', 50],
-      ['突厥 · 月轮教', 30],
+      ['华川人 · 天道', 50],
+      ['库尔坦人 · 月轮教', 30],
     ]);
     expect(pop.other).toBeCloseTo(0.2, 1);
     expect(pop.culture?.id).toBe('huaxia');
     const a = cellArchive(w, cell);
-    expect(a.population?.groups[0].values).toEqual([{ dimension: 'religion', label: '宗教', id: 'sky-way', name: '天道', color: '#4aa0a0' }]);
+    expect(a.population?.groups[0].values).toEqual([{ dimension: 'religion', label: '宗教', id: 'sky-way', name: '天道', color: BUILTIN_POP_VALUES.find((v) => v.id === 'sky-way')!.color }]);
     expect(a.habitability).toBeGreaterThan(0);
     expect(() => eng.exec({ op: 'set_cell_pop', cell, groups: [{ culture: 'huaxia', values: { religion: 'nope' }, share: 1 }] })).toThrow(CommandError);
     // 没有人文的世界没有人口这一栏
@@ -588,7 +592,7 @@ describe('仓库与导出', () => {
     const w = eng.world;
     const c = worldCultures(w.small).find((x) => x.id === 'frankish')!;
     const elevation = w.derived.elevation;
-    expect(eng.exec({ op: 'set_content', kind: 'culture', id: 'frankish', item: { ...c, color: '#000000' } })).toBe('修改文化“法兰克”');
+    expect(eng.exec({ op: 'set_content', kind: 'culture', id: 'frankish', item: { ...c, color: '#000000' } })).toBe('修改文化“瓦尔蒙人”');
     expect(w.derived.elevation).toBe(elevation);
     expect(humanLegend(w, 'culture').find((x) => x.id === 'frankish')!.color).toBe('#000000');
     const total = totalPop(w);

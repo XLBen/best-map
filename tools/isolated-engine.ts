@@ -30,6 +30,8 @@ async function bundleOnce(root: string, minify: boolean): Promise<string> {
     logLevel: 'silent',
     mode: 'development',
     define: { 'process.env.NODE_ENV': JSON.stringify('development') },
+    // 内置的 JSON（地名风格、时代、文化）按一行字符串打进去，不逐项换行，data: 地址才不超长
+    json: { stringify: true },
     build: {
       write: false,
       minify,

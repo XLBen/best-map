@@ -1,0 +1,42 @@
+{
+  "group": {
+    "id": "lithic",
+    "name": "晶岩诸族",
+    "color": "#9678b4",
+    "description": "以硅为骨的岩石种族，在高山里生长与沉睡。",
+    "prefs": [
+      { "classes": ["mountains", "hills", "highlands", "peaks"], "factor": 3 },
+      { "classes": ["desert"], "factor": 1.5 }
+    ],
+    "eras": ["scifi"]
+  },
+  "tendencies": {
+    "ideology": [["sf-collective", 4], ["sf-technocracy", 2], ["sf-ascension", 1]],
+    "species": [["lithic", 9], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "quartz-choir",
+      "group": "lithic",
+      "name": "石英合唱体",
+      "color": "#8769a5",
+      "nameStyle": "fantasy-dwarf",
+      "weight": 1.5,
+      "description": "共振相连的晶体群落，在高山上缓慢生长。"
+    },
+    {
+      "id": "basalt",
+      "group": "lithic",
+      "name": "玄武族",
+      "color": "#870fb4",
+      "nameStyle": "fantasy-dwarf",
+      "description": "荒漠熔岩原上的岩石种族。",
+      "tendencies": {
+        "ideology": [["sf-collective", 3], ["sf-militarist", 2], ["sf-technocracy", 1]]
+      },
+      "prefs": [
+        { "classes": ["desert", "highlands"], "factor": 1.5 }
+      ]
+    }
+  ]
+}

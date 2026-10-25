@@ -1,0 +1,38 @@
+{
+  "era": {
+    "id": "modern",
+    "name": "现代",
+    "description": "城市化的大众社会，几乎每一处能住的地方都有人。意识形态细分成一条光谱，近海都是领海。",
+    "color": "#3c7fb0",
+    "dimensions": [
+      { "id": "religion", "label": "宗教", "required": true },
+      { "id": "nation", "label": "民族认同", "required": true },
+      { "id": "ideology", "label": "意识形态", "required": true }
+    ],
+    "popDensity": 50,
+    "sparsity": 1.35,
+    "urbanization": 0.55,
+    "unclaimed": { "minHabitability": 0.01, "nomads": 0.8 },
+    "seaClaimKm": 120,
+    "defaultGroups": [["eastern", 4], ["southasia", 4], ["africa", 3], ["western", 2], ["mideast", 2], ["slavic", 1.5], ["mesoamerica", 1.5]],
+    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"]
+  },
+  "values": [
+    { "id": "anarchism", "dimension": "ideology", "name": "无政府主义", "color": "#2d2d2d", "description": "反对一切强制的权力，主张自愿的联合。", "eras": ["modern"] },
+    { "id": "rev-socialism", "dimension": "ideology", "name": "革命社会主义", "color": "#b41e1e", "description": "以革命推翻旧制度，建立劳动者的政权。", "eras": ["modern"] },
+    { "id": "auth-socialism", "dimension": "ideology", "name": "威权社会主义", "color": "#780f1e", "description": "一党领导下的计划经济与公有制。", "eras": ["modern"] },
+    { "id": "dem-socialism", "dimension": "ideology", "name": "民主社会主义", "color": "#ff6978", "description": "经民主选举逐步实现公有与平等。", "eras": ["modern"] },
+    { "id": "social-democracy", "dimension": "ideology", "name": "社会民主", "color": "#d28778", "description": "市场经济加上福利国家与工会。", "eras": ["modern"] },
+    { "id": "green", "dimension": "ideology", "name": "绿色政治", "color": "#4bb45a", "description": "以生态与可持续为先，主张基层民主。", "eras": ["modern"], "prefs": [{ "classes": ["forest", "woods"], "factor": 1.3 }] },
+    { "id": "social-liberal", "dimension": "ideology", "name": "社会自由", "color": "#f0c33c", "description": "个人自由与公民权利，也重机会平等。", "eras": ["modern"], "prefs": [{ "coast": true, "factor": 1.3 }] },
+    { "id": "market-liberal", "dimension": "ideology", "name": "市场自由", "color": "#d2e178", "description": "自由市场、低税与小政府。", "eras": ["modern"], "prefs": [{ "coast": true, "factor": 1.4 }] },
+    { "id": "liberal-conservative", "dimension": "ideology", "name": "自由保守", "color": "#4b78c3", "description": "守护既有制度，同时拥护市场与宪政。", "eras": ["modern"] },
+    { "id": "religious-democracy", "dimension": "ideology", "name": "宗教民主", "color": "#e1872d", "description": "以宗教伦理为本的议会政治与社会政策。", "eras": ["modern"] },
+    { "id": "traditionalist", "dimension": "ideology", "name": "传统保守", "color": "#0f2d69", "description": "守护传统的家庭、乡村与信仰。", "eras": ["modern"], "prefs": [{ "classes": ["hills", "mountains", "highlands"], "factor": 1.3 }] },
+    { "id": "monarchist", "dimension": "ideology", "name": "君主主义", "color": "#875ab4", "description": "拥护王室，以君主为国家的象征或主宰。", "eras": ["modern"] },
+    { "id": "auth-nationalist", "dimension": "ideology", "name": "威权民族", "color": "#785a2d", "description": "强人领导与民族复兴，压制反对派。", "eras": ["modern"] },
+    { "id": "ultranationalist", "dimension": "ideology", "name": "极端民族", "color": "#2d2d00", "description": "以民族为至上，主张对外扩张、排斥异族。", "eras": ["modern"] },
+    { "id": "theocratic", "dimension": "ideology", "name": "神权主义", "color": "#2d875a", "description": "以教法治国，由宗教领袖主政。", "eras": ["modern"], "prefs": [{ "classes": ["desert", "steppe"], "factor": 1.3 }] }
+  ]
+}

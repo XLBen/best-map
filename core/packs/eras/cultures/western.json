@@ -1,17 +1,75 @@
 {
   "group": {
     "id": "western",
-    "name": "西方",
-    "color": "#3f6fb5",
-    "description": "温带的平原与森林里的农耕民族。",
+    "name": "西欧",
+    "color": "#3c69b4",
+    "description": "温带平原与森林里的农耕民族，城镇与修院星罗棋布。",
     "prefs": [
       { "tempMin": -2, "tempMax": 16, "factor": 2 },
-      { "classes": ["plains", "woods", "forest"], "factor": 1.4 }
+      { "classes": ["plains", "woods", "forest"], "factor": 1.4 },
+      { "classes": ["steppe", "desert"], "factor": 0.7 }
     ]
   },
+  "tendencies": {
+    "religion": [["sun-faith", 6], ["city-pantheon", 2], ["northern-gods", 1.5], ["spirit-ways", 1.5], ["secular", 4], ["moon-faith", 0.5], ["dawnlord", 5], ["grey-warden", 2], ["harvest-maid", 2], ["silver-lady", 1.5], ["arcane-eye", 1]],
+    "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["regional", 1.5], ["imperial", 1], ["cosmopolitan", 2]],
+    "ideology": [["social-democracy", 4], ["liberal-conservative", 4], ["social-liberal", 3], ["market-liberal", 2], ["green", 2], ["religious-democracy", 2], ["dem-socialism", 1], ["auth-nationalist", 1], ["sf-federalist", 4], ["sf-corporate", 3], ["sf-free", 2], ["sf-ascension", 1], ["sf-naturalist", 1]],
+    "race": [["human", 8], ["halfling", 2], ["half-elf", 1.5], ["dwarf", 0.5], ["gnome", 0.5]],
+    "species": [["terran", 6], ["augmented", 2], ["synthetic", 2]]
+  },
   "cultures": [
-    { "id": "anglic", "group": "western", "name": "盎格鲁", "color": "#8a55b0", "nameStyle": "en-english", "tendencies": { "religion": [["sun-faith", 3], ["moon-faith", 1]] }, "prefs": [{ "coast": true, "factor": 1.3 }] },
-    { "id": "frankish", "group": "western", "name": "法兰克", "color": "#2e64c8", "nameStyle": "fr-french", "tendencies": { "religion": [["sun-faith", 4], ["moon-faith", 1]] } },
-    { "id": "teutonic", "group": "western", "name": "条顿", "color": "#7a7f8c", "nameStyle": "west-germanic", "tendencies": { "religion": [["sun-faith", 2], ["moon-faith", 2]] } }
+    {
+      "id": "anglic",
+      "group": "western",
+      "name": "梅尔顿人",
+      "color": "#3c69b4",
+      "nameStyle": "en-english",
+      "description": "海峡两岸的岛民，善航海与贸易。",
+      "tendencies": {
+        "religion": [["sun-faith", 6], ["city-pantheon", 1], ["northern-gods", 1.5], ["spirit-ways", 2], ["secular", 4], ["dawnlord", 5], ["grey-warden", 2], ["harvest-maid", 2], ["silver-lady", 1.5], ["arcane-eye", 1]],
+        "nation": [["civic-nation", 5], ["imperial", 2], ["ethnic-nation", 2], ["cosmopolitan", 2]]
+      },
+      "prefs": [
+        { "coast": true, "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "frankish",
+      "group": "western",
+      "name": "瓦尔蒙人",
+      "color": "#4b3ca5",
+      "nameStyle": "fr-french",
+      "weight": 1.2,
+      "description": "西部平原上的王国之民，以葡萄园与大教堂闻名。",
+      "tendencies": {
+        "nation": [["civic-nation", 6], ["ethnic-nation", 2], ["regional", 2], ["cosmopolitan", 2]]
+      }
+    },
+    {
+      "id": "teutonic",
+      "group": "western",
+      "name": "卡尔维人",
+      "color": "#69a5d2",
+      "nameStyle": "west-germanic",
+      "weight": 1.2,
+      "description": "中部森林与河谷里的诸侯之民，城市结成商盟。",
+      "tendencies": {
+        "religion": [["sun-faith", 5], ["northern-gods", 2], ["spirit-ways", 2], ["city-pantheon", 1], ["secular", 4], ["dawnlord", 5], ["grey-warden", 2], ["harvest-maid", 2], ["silver-lady", 1.5], ["arcane-eye", 1]],
+        "nation": [["ethnic-nation", 5], ["civic-nation", 3], ["regional", 2]]
+      }
+    },
+    {
+      "id": "zeven",
+      "group": "western",
+      "name": "泽芬人",
+      "color": "#693c78",
+      "nameStyle": "nl-dutch",
+      "weight": 0.6,
+      "description": "河口低地上的筑堤人，以运河与船队为生。",
+      "prefs": [
+        { "coast": true, "factor": 1.5 },
+        { "classes": ["plains", "marsh"], "factor": 1.3 }
+      ]
+    }
   ]
 }

@@ -1,0 +1,59 @@
+{
+  "group": {
+    "id": "southasia",
+    "name": "南亚",
+    "color": "#e15a96",
+    "description": "季风滋养的大河平原，神庙与集市密布。",
+    "prefs": [
+      { "tempMin": 20, "factor": 2.2 },
+      { "river": true, "factor": 1.6 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["many-gods", 6], ["awakening", 3], ["moon-faith", 1.5], ["spirit-ways", 1], ["secular", 0.5], ["arcane-eye", 3], ["elder-dragons", 2], ["grove-mother", 2], ["grey-warden", 2]],
+    "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
+    "ideology": [["auth-nationalist", 3], ["social-democracy", 2], ["religious-democracy", 2], ["traditionalist", 2], ["rev-socialism", 2], ["market-liberal", 1], ["sf-technocracy", 3], ["sf-psionic", 3], ["sf-federalist", 2]],
+    "race": [["human", 8], ["dragonborn", 1], ["tiefling", 1]],
+    "species": [["terran", 7], ["augmented", 2], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "sindhara",
+      "group": "southasia",
+      "name": "辛达拉人",
+      "color": "#ff5ab4",
+      "nameStyle": "indic",
+      "weight": 1.5,
+      "description": "北部大河平原上的农民与祭司。",
+      "prefs": [
+        { "river": true, "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "devapura",
+      "group": "southasia",
+      "name": "德瓦普拉人",
+      "color": "#b4004b",
+      "nameStyle": "indic",
+      "description": "中部高原上的王国之民。",
+      "tendencies": {
+        "religion": [["many-gods", 5], ["awakening", 4], ["moon-faith", 1], ["spirit-ways", 1.5], ["arcane-eye", 3], ["elder-dragons", 2], ["grove-mother", 2], ["grey-warden", 2]]
+      },
+      "prefs": [
+        { "classes": ["highlands", "hills"], "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "malanad",
+      "group": "southasia",
+      "name": "马拉纳德人",
+      "color": "#ffa5d2",
+      "nameStyle": "indic",
+      "weight": 0.8,
+      "description": "南方海岸的香料商人。",
+      "prefs": [
+        { "coast": true, "factor": 1.5 }
+      ]
+    }
+  ]
+}

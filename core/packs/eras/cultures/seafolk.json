@@ -1,0 +1,42 @@
+{
+  "group": {
+    "id": "seafolk",
+    "name": "海民",
+    "color": "#0078a5",
+    "description": "沿海与群岛上以船为家的民族。",
+    "prefs": [
+      { "coast": true, "factor": 4 },
+      { "coast": false, "factor": 0.3 }
+    ],
+    "eras": ["fantasy"]
+  },
+  "tendencies": {
+    "religion": [["deep-tide", 6], ["silver-lady", 2], ["trickster", 1]],
+    "race": [["human", 5], ["half-elf", 3], ["elf", 1], ["tiefling", 0.5]]
+  },
+  "cultures": [
+    {
+      "id": "tidesong",
+      "group": "seafolk",
+      "name": "潮歌人",
+      "color": "#00a5ff",
+      "nameStyle": "fantasy-seafolk",
+      "weight": 1.5,
+      "description": "以歌声领航的海上民族，船就是家。"
+    },
+    {
+      "id": "coral",
+      "group": "seafolk",
+      "name": "珊瑚海民",
+      "color": "#3c4b78",
+      "nameStyle": "fantasy-seafolk",
+      "description": "温暖礁海上的采珠人与渔民。",
+      "tendencies": {
+        "race": [["human", 4], ["half-elf", 2], ["elf", 2]]
+      },
+      "prefs": [
+        { "tempMin": 18, "factor": 1.5 }
+      ]
+    }
+  ]
+}

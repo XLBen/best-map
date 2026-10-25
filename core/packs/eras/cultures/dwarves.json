@@ -1,0 +1,43 @@
+{
+  "group": {
+    "id": "dwarves",
+    "name": "矮人",
+    "color": "#f0b4a5",
+    "description": "山中的要塞与矿坑。",
+    "prefs": [
+      { "classes": ["mountains", "hills", "highlands"], "factor": 3.5 },
+      { "classes": ["peaks"], "factor": 2 },
+      { "classes": ["plains", "grasslands", "marsh"], "factor": 0.5 }
+    ],
+    "eras": ["fantasy"]
+  },
+  "tendencies": {
+    "religion": [["forge-father", 6], ["grey-warden", 2], ["dawnlord", 1]],
+    "race": [["dwarf", 9], ["gnome", 1.5]]
+  },
+  "cultures": [
+    {
+      "id": "anvil",
+      "group": "dwarves",
+      "name": "铁砧矮人",
+      "color": "#f0b4a5",
+      "nameStyle": "fantasy-dwarf",
+      "weight": 1.5,
+      "description": "山心里的铁匠与矿工，要塞以石门封住。"
+    },
+    {
+      "id": "deeprock",
+      "group": "dwarves",
+      "name": "深岩矮人",
+      "color": "#c37869",
+      "nameStyle": "fantasy-dwarf",
+      "description": "最高山脉深处的古老氏族。",
+      "tendencies": {
+        "religion": [["forge-father", 5], ["grey-warden", 3]]
+      },
+      "prefs": [
+        { "classes": ["mountains", "peaks"], "factor": 1.5 }
+      ]
+    }
+  ]
+}

@@ -1,21 +1,19 @@
 {
   "era": {
     "id": "medieval",
-    "name": "中世纪",
+    "name": "中世纪与近世",
     "description": "封建领地与王国，宗教是人群的第二条分界线。宜居与稍差的地方大多住了人，草原、荒漠边缘有游牧民。",
     "color": "#a0703c",
-    "dimensions": [{ "id": "religion", "label": "宗教", "required": true }],
+    "dimensions": [
+      { "id": "religion", "label": "宗教", "required": true }
+    ],
     "popDensity": 2.7,
     "sparsity": 1.6,
     "urbanization": 0.1,
     "unclaimed": { "minHabitability": 0.05, "nomads": 0.35 },
     "seaClaimKm": 0,
-    "defaultGroups": [["western", 3], ["eastern", 3], ["steppe", 1.5]]
-  },
-  "values": [
-    { "id": "sun-faith", "dimension": "religion", "name": "日轮教", "color": "#e0a030", "description": "崇拜太阳与秩序的教会，有严密的教阶。" },
-    { "id": "moon-faith", "dimension": "religion", "name": "月轮教", "color": "#6a7fd0", "description": "以月相定历法的信仰，重苦修与朝圣。" },
-    { "id": "ancestor-rites", "dimension": "religion", "name": "祖灵信仰", "color": "#9a6a4a", "description": "祭祀祖先与地方神灵。", "prefs": [{ "classes": ["hills", "mountains", "forest"], "factor": 1.5 }] },
-    { "id": "sky-way", "dimension": "religion", "name": "天道", "color": "#4aa0a0", "description": "敬天法地，讲究礼与时序。", "prefs": [{ "river": true, "factor": 1.4 }] }
-  ]
+    "defaultGroups": [["western", 3], ["eastern", 3], ["mideast", 2], ["southasia", 2], ["slavic", 1.5], ["steppe", 1.5]],
+    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
+    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"]
+  }
 }

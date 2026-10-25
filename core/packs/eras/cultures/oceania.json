@@ -1,0 +1,42 @@
+{
+  "group": {
+    "id": "oceania",
+    "name": "大洋洲",
+    "color": "#d2b4f0",
+    "description": "散布在大洋群岛上的航海民族。",
+    "prefs": [
+      { "coast": true, "factor": 3 },
+      { "coast": false, "factor": 0.4 },
+      { "tempMin": 18, "factor": 1.6 }
+    ]
+  },
+  "tendencies": {
+    "religion": [["spirit-ways", 5], ["ancestor-rites", 3], ["sun-faith", 3], ["secular", 1], ["deep-tide", 5], ["silver-lady", 2], ["grove-mother", 1]],
+    "nation": [["ethnic-nation", 4], ["regional", 3], ["settler", 2], ["civic-nation", 1]],
+    "ideology": [["social-democracy", 3], ["liberal-conservative", 3], ["green", 2], ["traditionalist", 2], ["social-liberal", 1], ["sf-naturalist", 4], ["sf-free", 2], ["sf-federalist", 1]],
+    "race": [["human", 8], ["half-elf", 1]],
+    "species": [["terran", 7], ["augmented", 1], ["synthetic", 1]]
+  },
+  "cultures": [
+    {
+      "id": "waka",
+      "group": "oceania",
+      "name": "瓦卡人",
+      "color": "#d2c3f0",
+      "nameStyle": "polynesian",
+      "weight": 1.2,
+      "description": "驾双体船远航的岛民。"
+    },
+    {
+      "id": "ranui",
+      "group": "oceania",
+      "name": "拉努伊人",
+      "color": "#c369a5",
+      "nameStyle": "polynesian",
+      "description": "大岛上的农耕部族。",
+      "prefs": [
+        { "classes": ["plains", "hills", "woods"], "factor": 1.3 }
+      ]
+    }
+  ]
+}

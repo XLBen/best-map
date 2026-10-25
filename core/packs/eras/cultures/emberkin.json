@@ -1,0 +1,46 @@
+{
+  "group": {
+    "id": "emberkin",
+    "name": "炎裔",
+    "color": "#ff0000",
+    "description": "火山与荒漠边的龙裔与提夫林。",
+    "prefs": [
+      { "classes": ["desert", "highlands", "mountains"], "factor": 2.2 },
+      { "tempMin": 16, "factor": 1.6 }
+    ],
+    "eras": ["fantasy"]
+  },
+  "tendencies": {
+    "religion": [["elder-dragons", 5], ["dawnlord", 2], ["forge-father", 1]],
+    "race": [["dragonborn", 8], ["human", 1], ["tiefling", 1]]
+  },
+  "cultures": [
+    {
+      "id": "drakespine",
+      "group": "emberkin",
+      "name": "龙脊龙裔",
+      "color": "#ff004b",
+      "nameStyle": "persian",
+      "weight": 1.5,
+      "description": "火山山脉边的龙裔氏族，以荣誉与血脉为重。",
+      "prefs": [
+        { "classes": ["mountains", "highlands"], "factor": 1.3 }
+      ]
+    },
+    {
+      "id": "ashen",
+      "group": "emberkin",
+      "name": "余烬提夫林",
+      "color": "#ff5a00",
+      "nameStyle": "latin",
+      "description": "带着古老契约的印记，聚居在荒漠边的城市。",
+      "tendencies": {
+        "religion": [["pact-lords", 3], ["trickster", 2], ["arcane-eye", 2], ["silver-lady", 1]],
+        "race": [["tiefling", 7], ["human", 3]]
+      },
+      "prefs": [
+        { "river": true, "factor": 1.3 }
+      ]
+    }
+  ]
+}

@@ -1,17 +1,47 @@
 {
   "group": {
     "id": "steppe",
-    "name": "草原与荒漠",
-    "color": "#b5763a",
-    "description": "草原上的牧民与荒漠绿洲里的商旅民族。",
+    "name": "草原",
+    "color": "#d2a53c",
+    "description": "草原上的牧民与骑射部落，帐篷随季节迁移。",
     "prefs": [
       { "classes": ["steppe", "grasslands"], "factor": 3 },
-      { "classes": ["desert"], "factor": 1.8 },
-      { "classes": ["forest", "jungle", "marsh"], "factor": 0.5 }
+      { "classes": ["desert"], "factor": 1.5 },
+      { "classes": ["forest", "woods", "jungle", "marsh", "mountains"], "factor": 0.5 }
     ]
   },
+  "tendencies": {
+    "religion": [["sky-tengri", 5], ["moon-faith", 3], ["awakening", 1.5], ["spirit-ways", 1.5], ["secular", 1], ["storm-horn", 4], ["silver-lady", 2], ["elder-dragons", 1]],
+    "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
+    "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1], ["sf-free", 4], ["sf-militarist", 2], ["sf-supremacist", 1]],
+    "race": [["human", 8], ["orc", 1.5], ["dragonborn", 0.5]],
+    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 0.5]]
+  },
   "cultures": [
-    { "id": "turkic", "group": "steppe", "name": "突厥", "color": "#3c9a6a", "nameStyle": "turkic", "tendencies": { "religion": [["sky-way", 2], ["moon-faith", 2]] } },
-    { "id": "arab", "group": "steppe", "name": "阿拉伯", "color": "#8c5a2b", "nameStyle": "arabic", "tendencies": { "religion": [["moon-faith", 4], ["sun-faith", 1]] }, "prefs": [{ "classes": ["desert"], "factor": 1.6 }, { "river": true, "factor": 1.5 }] }
+    {
+      "id": "turkic",
+      "group": "steppe",
+      "name": "库尔坦人",
+      "color": "#d2a53c",
+      "nameStyle": "turkic",
+      "description": "草原西部的骑马部落，善骑射与长途贩运。",
+      "tendencies": {
+        "religion": [["sky-tengri", 3], ["moon-faith", 4], ["spirit-ways", 1], ["secular", 1], ["storm-horn", 4], ["silver-lady", 2], ["elder-dragons", 1]]
+      }
+    },
+    {
+      "id": "chagan",
+      "group": "steppe",
+      "name": "察甘人",
+      "color": "#788700",
+      "nameStyle": "turkic",
+      "description": "东方高寒草原的牧民，敬长生的苍天。",
+      "tendencies": {
+        "religion": [["sky-tengri", 6], ["awakening", 3], ["spirit-ways", 1.5], ["secular", 1], ["storm-horn", 4], ["silver-lady", 2], ["elder-dragons", 1]]
+      },
+      "prefs": [
+        { "tempMax": 6, "factor": 1.4 }
+      ]
+    }
   ]
 }
