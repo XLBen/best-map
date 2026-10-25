@@ -1,0 +1,6 @@
+[
+  { "id": "capital", "name": "首都", "icon": "star", "capital": true, "level": 4, "minShare": 0, "label": 1.35, "description": "国家的首都。" },
+  { "id": "big", "name": "大城市", "icon": "double-ring", "level": 3, "minShare": 0.01, "label": 1.15, "description": "占本国人口 1% 以上的城市。" },
+  { "id": "medium", "name": "城市", "icon": "circle", "level": 2, "minShare": 0.004, "label": 1, "description": "占本国人口 0.4% 以上的城市。" },
+  { "id": "small", "name": "村镇", "icon": "dot", "level": 1, "minShare": 0, "label": 0.8, "description": "小城镇与村落。" }
+]
