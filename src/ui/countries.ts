@@ -74,10 +74,11 @@ export function cellsOf(w: World, id: number): number[] {
   return m.get(id) ?? [];
 }
 
-// 全部国家的统计：按领土、人数、省份、各国的档案缓存一份（只换了名字、颜色时照用）
+// 全部国家的统计：按领土、人数、省份、各国的档案、城市缓存一份（只换了名字、颜色时照用）
 let statsMemo: { key: unknown[]; stats: Map<number, CountryStats> } | null = null;
 export function statsOf(w: World): Map<number, CountryStats> {
-  const key = [w.causes.country, w.derived.popDensity, w.causes.province, w.small.countries, w.small.popGroups];
+  // 城市数、首都与陪都（第二十四轮）跟着城市、自定义点、等级变
+  const key = [w.causes.country, w.derived.popDensity, w.causes.province, w.small.countries, w.small.popGroups, w.small.cities, w.small.points, w.small.content];
   if (statsMemo && statsMemo.key.every((k, i) => k === key[i])) return statsMemo.stats;
   const stats = hasCountries(w) ? allCountryStats(w) : new Map<number, CountryStats>();
   statsMemo = { key, stats };

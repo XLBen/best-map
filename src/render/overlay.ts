@@ -11,6 +11,7 @@ import { drawOverlayProjected } from './overlay-proj';
 import { type Proj, trueScale, worldToScreen as projWorldToScreen } from './projection';
 import type { Camera, RiverScene, RiverTex } from './renderer';
 import { drawCurrents, drawWind } from './wind';
+import { BoxIndex, type RoadDraw, type SettleMark, drawMark, drawRoads, iconScale, markRadius, nameSpots } from './settle-draw';
 
 // 2D 画布上的矢量叠加：河流、河道引导、湖标记、风向、画笔、箭头、预览路径、地名。
 // 海岸线、省份边界、选区轮廓在着色器里画（自然曲线）。
@@ -505,6 +506,13 @@ export interface OverlayState {
   peaks?: GeoFeature[] | null;
   // 国名（第二十三轮，人文图）：沿领土的中线弯着写、字距拉开，最先排（别的地名让它）；null 不画
   countries?: CountryLabelDraw[] | null;
+  // 城市、地标、自定义点（第二十四轮，见 settle-draw.ts）：图标与名字，排在国名之后、别的地名之前（重要的先排）；null 不画。
+  // settleNames：写不写它们的名字（图层里的“地名”）。cellSize：一格多大（地图单位），按它在屏幕上的像素数决定画哪几级
+  settlements?: SettleMark[] | null;
+  settleNames?: boolean;
+  cellSize?: number;
+  // 道路（第二十四轮）：画在地名、工具的图形下面；小路放大后才画
+  roads?: RoadDraw | null;
   kmPerUnit: number;
   // 鼠标悬停或选中的地名（高亮）
   hoverLabel: string | null;
@@ -1021,6 +1029,15 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
     else drawLatitude(ctx, world, cam, st.latitude, f);
   }
 
+  // 道路（第二十四轮）：工具的图形、地名下面
+  if (st.roads) {
+    const hw = cw / 2 / cam.zoom;
+    const hh = ch / 2 / cam.zoom;
+    drawRoads(ctx, st.roads, ks, setT, px * dpr, world.mesh.spacing * cam.zoom, st.style, { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh });
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }
+
   for (const k of ks) {
     setT(k);
     for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river, st.style);
@@ -1047,7 +1064,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
     }
   }
   // 导出整个星球：图就是一整圈（分界线可以在任何经度），每个地名只在中心落在图里的那一份上排
-  const boxes = st.features || st.peaks?.length || st.countries?.length ? drawLabels(ctx, cam, st, ks, rz) : [];
+  const boxes = hasLabels(st) ? drawLabels(ctx, cam, st, ks, rz) : [];
   if (st.scaleBar) {
     if (sphere) {
       // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
@@ -1344,6 +1361,73 @@ interface PlacedLabel {
   // 描边的颜色、粗细（国名淡一些）
   halo?: string;
   haloWidth?: number;
+  // 城市、地标、点的图标（第二十四轮）：画在 x、y（CSS 像素），没有字；markScale：缩得很小时小一些
+  mark?: SettleMark;
+  markScale?: number;
+}
+
+// 有没有要排的字（地名、山峰、国名、城市与地标）
+export const hasLabels = (st: OverlayState) => !!(st.features || st.peaks?.length || st.countries?.length || st.settlements?.length);
+
+// ---------- 城市、地标、自定义点（第二十四轮） ----------
+
+// 键的前缀：这些框不给点击命中（城市、地标的工具按地图上的距离认）
+export const SETTLE_KEY = 'settle:';
+const SETTLE_FONT = 'system-ui, "PingFang SC", sans-serif';
+
+// 排城市、地标、点（国名之后，按给的先后：首都、大城市在前）：一格在屏幕上够大才画；图标与已画的图标挤在一起时不画（首都、陪都照画），
+// 名字在图标的右、左、上、下找一处不和别的字、图标重叠的地方，找不到时不写。放好的框别的地名避让
+function placeSettlements(
+  ctx: CanvasRenderingContext2D,
+  st: OverlayState,
+  ks: number[],
+  toScreen: (x: number, y: number) => [number, number] | null,
+  zoomAt: (x: number, y: number) => number,
+  view: { cw: number; ch: number; mx: number; my: number; exporting: boolean },
+  placed: PlacedLabel[],
+  boxes: LabelBox[],
+) {
+  const marks = st.settlements ?? [];
+  const size = st.cellSize ?? 0;
+  const index = new BoxIndex();
+  for (const b of boxes) index.add(b);
+  const icons = new BoxIndex();
+  const names = st.settleNames !== false;
+  for (const m of marks) {
+    const cellPx = size * zoomAt(m.x, m.y);
+    if (cellPx < m.iconPx) continue;
+    const scale = iconScale(cellPx);
+    const r = markRadius(m, scale);
+    for (const k of ks) {
+      const at = toScreen(m.x + 2 * k, m.y);
+      if (!at) continue;
+      const [sx, sy] = at;
+      if (sx < -view.mx || sy < -view.my || sx > view.cw + view.mx || sy > view.ch + view.my) continue;
+      if (view.exporting && (sx < 0 || sx >= view.cw || sy < 0 || sy >= view.ch)) continue;
+      const ib = { key: m.key, x0: sx - r - 1, y0: sy - r - 1, x1: sx + r + 1, y1: sy + r + 1 };
+      if (!m.always && icons.hits(ib)) continue;
+      icons.add(ib);
+      index.add(ib);
+      boxes.push(ib);
+      placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale });
+      if (!names || !m.name || cellPx < m.namePx) continue;
+      const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${SETTLE_FONT}`;
+      const chars = [...m.name];
+      if (chars.some((c) => !glyphs.has(`${font}|${c}`))) ctx.font = font;
+      const widths = chars.map((c) => glyphWidth(ctx, font, c));
+      const total = widths.reduce((a, b) => a + b, 0);
+      const h = m.fontPx;
+      for (const [cx, cy] of nameSpots(sx, sy, r, total, h)) {
+        const nb = { key: m.key, x0: cx - total / 2 - 2, y0: cy - h / 2 - 1, x1: cx + total / 2 + 2, y1: cy + h / 2 + 1 };
+        if (view.exporting && (nb.x0 < 0 || nb.x1 > view.cw || nb.y0 < 0 || nb.y1 > view.ch)) continue;
+        if (index.hits(nb)) continue;
+        index.add(nb);
+        boxes.push(nb);
+        placed.push({ key: m.key, chars, widths, spacing: 0, total, font, color: m.textColor, x: cx, y: cy, angle: 0 });
+        break;
+      }
+    }
+  }
 }
 
 // ---------- 国名（第二十三轮） ----------
@@ -1550,6 +1634,7 @@ let layout: {
   features: GeoFeature[] | null;
   peaks: GeoFeature[] | null;
   countries: CountryLabelDraw[] | null;
+  settlements: SettleMark[] | null;
   placed: PlacedLabel[];
   boxes: LabelBox[];
   marks: [number, number][];
@@ -1572,7 +1657,7 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
 // 版面的键里除了镜头位置的部分（移动中沿用排好的版面时比它）：投影的朝向变了（转动球）要重排
 function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera): string {
   const p = cam.proj;
-  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}|${st.nameMode ?? 'zh'}${p ? `|${p.kind}|${p.lon0}|${p.lat0}` : ''}`;
+  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${p ? `|${p.kind}|${p.lon0}|${p.lat0}` : ''}`;
 }
 
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
@@ -1582,7 +1667,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const base = labelBase(cw, chh, st, cam);
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
   const peaks = st.peaks ?? null;
-  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null)) return layout;
+  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null) && layout.settlements === (st.settlements ?? null)) return layout;
   // 等面积、球形投影：地名的中心按投影算（球的背面不标），大小按那里的比例
   const proj = cam.proj;
   const toScreen = proj
@@ -1595,6 +1680,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const boxes: LabelBox[] = [];
   // 国名最先排（第二十三轮）
   if (st.countries?.length) placeCountries(ctx, st, ks, toScreen, { cw, ch: chh, mx, my, exporting }, placed, boxes);
+  // 城市、地标、自定义点（第二十四轮）：国名之后
+  if (st.settlements?.length) placeSettlements(ctx, st, ks, toScreen, (x, y) => (proj ? cam.zoom * trueScale(proj, x, y) : cam.zoom), { cw, ch: chh, mx, my, exporting }, placed, boxes);
   // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
   const mine = (f: GeoFeature) => !!f.region || f.custom || f.key === st.hoverLabel;
   const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
@@ -1712,8 +1799,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     }
   }
   // 点击命中只给真的地名（山峰不是地物，点了没有可改的名字；国名也不是地物）
-  const hits = pseudo.size || st.countries?.length ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY) && !b.key.startsWith(COUNTRY_KEY)) : boxes;
-  const out = { key, base, cam: { ...cam }, features: st.features, peaks, countries: st.countries ?? null, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
+  const hits = pseudo.size || st.countries?.length || st.settlements?.length ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY) && !b.key.startsWith(COUNTRY_KEY) && !b.key.startsWith(SETTLE_KEY)) : boxes;
+  const out = { key, base, cam: { ...cam }, features: st.features, peaks, countries: st.countries ?? null, settlements: st.settlements ?? null, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
   if (!exporting) layout = out;
   return out;
 }
@@ -1743,6 +1830,7 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     L.features === st.features &&
     L.peaks === (st.peaks ?? null) &&
     L.countries === (st.countries ?? null) &&
+    L.settlements === (st.settlements ?? null) &&
     (st.motionEpoch !== undefined
       ? // 同一次场景（开始动的第一帧场景就重画了：地名也在这一帧按带边距的范围重排）
         L.epoch === st.motionEpoch &&
@@ -1766,6 +1854,12 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
   for (const l of placed) {
     if (l.glyphs) {
       drawGlyphs(ctx, l, st.hoverLabel === l.key);
+      continue;
+    }
+    if (l.mark) {
+      drawMark(ctx, l.mark, l.x, l.y, l.markScale, !!st.frame);
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
       continue;
     }
     ctx.save();

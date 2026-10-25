@@ -52,6 +52,8 @@ import { pendingEdits, pendingPreview } from './pending';
 import { riverGlow } from './riverCourse';
 import { hasCountries, politicalOn } from './countries';
 import { countryDraws, politicalFeatures } from './map/political';
+import { settleOverlay } from './map/settle';
+import { onSettleImageLoad } from '../render/settle-draw';
 import { type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具（map/input.ts），工具给出预览。
@@ -201,6 +203,8 @@ export function MapView() {
     };
 
     const input = mapInput(view, { renderer: () => renderer, glCanvas, ovCanvas, active, requestDraw, hitLabel });
+    // 自定义点上传的小图解码好了：重画
+    onSettleImageLoad(requestDraw);
 
     const fit = () => {
       const w = world.value;
@@ -445,6 +449,8 @@ export function MapView() {
             : null,
         // 国名（第二十三轮）：人文图里、图层里开着地名时
         countries: political && overlays.value.labels ? countryDraws(shown, nameMode.value) : null,
+        // 城市、道路、地标、自定义点（第二十四轮）：“城市”一类开着时地理图上也画城市、全部地标
+        ...settleOverlay(shown, { political, editing: cat.id === 'settlements' && !clean }),
         labelTypes: types,
         peaks: overlays.value.peaks ? peakLabels(shown) : null,
         nameMode: nameMode.value,
@@ -729,6 +735,7 @@ export function MapView() {
       disposeProjection();
       resizeObs.disconnect();
       mapApi.current = null;
+      onSettleImageLoad(null);
       input.dispose();
     };
   }, []);

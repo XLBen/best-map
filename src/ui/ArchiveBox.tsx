@@ -2,7 +2,7 @@ import { Mountain, Plus, X } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
-import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, resourceAt, typicalTuple, worldCultureGroups, worldCultures, worldResources, worldTerrainClasses } from '../../core/human';
+import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, landmarkTypeById, resourceAt, typicalTuple, worldCultureGroups, worldCultures, worldResources, worldTerrainClasses } from '../../core/human';
 import type { World } from '../../core/world';
 import { exec } from '../state';
 import { SelectionActions } from './components/SelectionActions';
@@ -10,6 +10,10 @@ import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellRe
 import { densityText, popText, shareText } from './human';
 import { countryAt, countryOf, hasCountries } from './countries';
 import { selectCountry } from './tools/countries';
+import { CityGlyph } from './panels/settlements';
+import { selectSettle } from './tools/settlements';
+import { iconOf } from '../render/settle-draw';
+import { cityIconOf } from './settlements';
 
 // “这里”卡片里的档案（第二十一轮）：小地名、是山峰时的“xx峰 · 高度”、地形类别、资源、备注。
 // 钉住一格（右键点地图）时可以改；没钉住时只读，跟着鼠标
@@ -61,6 +65,58 @@ function CountryLine({ w, cell }: { w: World; cell: number }) {
         {m && m.capitalCell === cell && <span class="hint"> · 首都</span>}
       </span>
     </Line>
+  );
+}
+
+// ---------- 城市、地标、自定义点（第二十四轮） ----------
+
+// 这一格上的城市、地标、点：钉住时名字是按钮，点了打开档案
+function SettleLines({ w, a, pinned }: { w: World; a: CellArchive; pinned: boolean }) {
+  const name = (label: string, open: () => void) =>
+    pinned ? (
+      <button class="link" onClick={open} title="打开档案">
+        {label}
+      </button>
+    ) : (
+      label
+    );
+  const c = a.city;
+  return (
+    <>
+      {c && (
+        <Line label="城市">
+          <CityGlyph icon={cityIconOf({ icon: c.icon })} hollow={c.secondCapital && !c.capital} />
+          <span class="grow">
+            {name(c.name, () => selectSettle({ kind: 'city', id: c.id }))}
+            <span class="hint">
+              {' · '}
+              {c.capital ? '首都' : c.secondCapital ? '陪都' : c.rankName}
+              {c.population > 0 ? ` · 约 ${popText(c.population)}` : ''}
+            </span>
+          </span>
+        </Line>
+      )}
+      {a.landmarks?.map((l) => {
+        const I = iconOf(landmarkTypeById(w.small, l.type)?.icon ?? 'peak');
+        return (
+          <Line label="地标">
+            {I && <I />}
+            <span class="grow">
+              {name(l.name, () => selectSettle({ kind: 'landmark', id: l.id }))}
+              <span class="hint"> · {l.typeName}</span>
+            </span>
+          </Line>
+        );
+      })}
+      {a.points?.map((p) => (
+        <Line label="点">
+          <span class="grow">
+            {name(p.name, () => selectSettle({ kind: 'point', id: p.id }))}
+            <span class="hint"> · {p.typeName}</span>
+          </span>
+        </Line>
+      ))}
+    </>
   );
 }
 
@@ -188,6 +244,7 @@ function ReadOnly({ a, w }: { a: CellArchive; w: World }) {
   return (
     <>
       <CountryLine w={w} cell={a.cell} />
+      <SettleLines w={w} a={a} pinned={false} />
       <Line label="名字">
         <span class="grow">
           {a.name}
@@ -301,6 +358,7 @@ function Editable({ a, w }: { a: CellArchive; w: World }) {
         <SelectionActions reroll={() => run(rerollCommand(a), '正在起名…')} unlock={auto ? () => run(auto, '正在起名…') : undefined} />
       </div>
       <CountryLine w={w} cell={a.cell} />
+      <SettleLines w={w} a={a} pinned />
       {a.peak && (
         <Line label="山峰">
           <Mountain />

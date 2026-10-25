@@ -4,7 +4,7 @@ import { speciesOwner } from '../core/biome-scripts';
 import type { Command } from '../core/commands';
 import { checkDoc, isCurrentDoc } from '../core/doc-version';
 import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
-import type { ExportOptions } from '../core/export';
+import type { ExportOptions, ExportPartId } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { Mesh } from '../core/mesh';
 import { type PackedMesh, storedMeshKey, unpackMesh } from '../core/mesh-pack';
@@ -15,7 +15,7 @@ import { isRiverCell } from '../core/select';
 import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
 import { viewOf } from '../core/sphere';
 import { type TerrainPatch, type TerrainPreview, brushRangeKm, defaultIslandKm, lakeRangeKm, mapScaleKm, reachRangeKm, roundKm } from '../core/terrain';
-import { type Settings, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
+import { type Settings, type SmallState, type World, buildMeshFor, kmPerUnit, meshKey, settingsSchema } from '../core/world';
 import { outsideRangeReason } from './ui/biomeRange';
 import { scriptTrustText } from './ui/copy';
 import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from './ui/shell/noticeTimer';
@@ -65,8 +65,8 @@ export type ViewMode =
 
 export type Season = 'annual' | 'summer' | 'winter';
 
-// 工具分八类，顶栏右边一类一个按钮（第二十二轮加了“文化”，第二十三轮加了“国家”）
-export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture' | 'countries';
+// 工具分九类，顶栏右边一类一个按钮（第二十二轮加了“文化”，第二十三轮加了“国家”，第二十四轮加了“城市”）
+export type Category = 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture' | 'countries' | 'settlements';
 
 // 工具的 id：由 ui/defs/tools.ts 的工具表推出来
 export type { ToolId };
@@ -95,7 +95,8 @@ export const mode = signal<ViewMode>('terrain');
 export const season = signal<Season>('annual');
 export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
 // peaks（第二十一轮）：全部山峰画成小三角，放大后标名字
-export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false, edits: false, peaks: false });
+// roads、cities、landmarks（第二十四轮）：道路两种图都画；城市在人文图里画；地标在人文图里全画、地理图里只画自然的（自定义点两种图都画）
+export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false, edits: false, peaks: false, roads: true, cities: true, landmarks: true });
 export const hoverCell = signal<number>(-1);
 // 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
 // 与 hoverCell 一起设
@@ -147,6 +148,7 @@ function pruneVisualOverrides(species: readonly { id: string; visual?: Visual }[
 // classpick / resourcepick（第二十一轮）：画地形类别、资源用哪一种
 // culturepick / poppick / valuepick（第二十二轮）：文化笔刷的文化、人口笔刷“改成分”的群体、“改一个维度”的取值
 // countrypick（第二十三轮）：领土笔刷涂给哪个国家
+// cityrank / landmarkpick / pointpick（第二十四轮）：选中的城市的等级、放地标、放自定义点用哪一种
 export type TypePanelId =
   | 'rivertype'
   | 'newrivertype'
@@ -160,14 +162,17 @@ export type TypePanelId =
   | 'culturepick'
   | 'poppick'
   | 'valuepick'
-  | 'countrypick';
+  | 'countrypick'
+  | 'cityrank'
+  | 'landmarkpick'
+  | 'pointpick';
 export type PanelId = 'world' | 'more' | 'adjust' | 'layers' | 'river' | 'province' | TypePanelId | `cat:${Category}`;
 export const openPanel = signal<PanelId | null>(null);
 export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
 }
-// 右边的抽屉：生态类型编辑要一边看地图一边调，所以不随点地图关上；国家的档案（第二十三轮）同样
-export const sheet = signal<'species' | 'country' | null>(null);
+// 右边的抽屉：生态类型编辑要一边看地图一边调，所以不随点地图关上；国家的档案（第二十三轮）、城市、地标、自定义点的档案（第二十四轮）同样
+export const sheet = signal<'species' | 'country' | 'settle' | null>(null);
 // Tab：隐藏全部界面，只看地图
 export const uiHidden = signal(false);
 // 正在拖底部条上的滑块：地图在鼠标最后停的地方显示预览
@@ -210,6 +215,13 @@ export const focusName = signal<string | null>(null);
 export const selectedProvince = signal<number | null>(null);
 // 国家（第二十三轮）：选中的国家（编号），档案的抽屉、首都、合并跟着它
 export const selectedCountry = signal<number | null>(null);
+// 城市、道路、地标、自定义点（第二十四轮）：选中的一样（编号四种共用；当作城市、没挂在城市上的点是 point）
+export type SettleRef = { kind: 'city' | 'road' | 'landmark' | 'point'; id: number };
+export const selectedSettle = signal<SettleRef | null>(null);
+export function settleExists(small: Pick<SmallState, 'cities' | 'roads' | 'landmarks' | 'points'>, r: SettleRef): boolean {
+  const table = r.kind === 'city' ? small.cities : r.kind === 'road' ? small.roads : r.kind === 'landmark' ? small.landmarks : small.points;
+  return !!table?.[r.id];
+}
 // 河：一条画的河（河道 id），或一条自然的河（河上的一格）
 export type RiverRef = { kind: 'guide'; id: string } | { kind: 'natural'; cell: number };
 // 画河时点中的河（底部条换成这条河的设置）；河流列表里鼠标停着的那条（地图上亮一下，什么工具都一样）
@@ -409,6 +421,11 @@ export interface ToolOptions {
   territory: number;
   // 新建国家：点一个省份，还是圈一片
   newCountryShape: 'province' | 'lasso';
+  // 第二十四轮：新画的道路是大道还是小路；放地标、自定义点用哪一种；当作城市的点挂不挂在附近的城市上
+  roadKind: 'major' | 'minor';
+  landmarkType: string;
+  pointType: string;
+  pointAttach: boolean;
 }
 
 export const options = signal<ToolOptions>({
@@ -454,6 +471,10 @@ export const options = signal<ToolOptions>({
   popValue: '',
   territory: -1,
   newCountryShape: 'province',
+  roadKind: 'minor',
+  landmarkType: 'castle',
+  pointType: 'marker',
+  pointAttach: true,
 });
 
 export function setOptions(patch: Partial<ToolOptions>) {
@@ -821,6 +842,12 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   if (selectedCountry.value !== null && (fresh || !s.small.countries?.[selectedCountry.value])) {
     selectedCountry.value = null;
     if (sheet.value === 'country') sheet.value = null;
+  }
+  // 选中的城市、道路、地标、点：删掉、撤销掉了，或者换了世界
+  const ss = selectedSettle.value;
+  if (ss && (fresh || !settleExists(s.small, ss))) {
+    selectedSettle.value = null;
+    if (sheet.value === 'settle') sheet.value = null;
   }
   // 选中的河：换了世界，画的河被删掉、撤销掉了，或者自然的河那一格不再是河
   const sel = selectedRiver.value;
@@ -1528,7 +1555,8 @@ export function previewProvinces(cmd: Command): Promise<ProvincesPreview | null>
 
 // 导出：在单独的 Worker 里用主线程上的这一份世界生成（期间照样能看、能改地图），进度显示在顶部，可以取消
 export const exportProgress = signal<number | null>(null);
-let exporting: { worker: Worker; done: (zip: Uint8Array | null) => void } | null = null;
+// 正在导出的一件（游戏文件包或分开导出的一项）：取消时 done(null)
+let exporting: { worker: Worker; done: (v: null) => void } | null = null;
 
 export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null> {
   const w = world.value;
@@ -1557,14 +1585,51 @@ export async function exportZip(opts: ExportOptions): Promise<Uint8Array | null>
         return;
       }
       if (!r.ok) showToast(r.error, true);
-      else if (r.warnings?.length) showToast(r.warnings.join('；'), true);
-      job.done(r.ok ? r.zip : null);
+      else if ('warnings' in r && r.warnings?.length) showToast(r.warnings.join('；'), true);
+      job.done(r.ok && 'zip' in r ? r.zip : null);
     };
     worker.onerror = () => {
       showToast('导出失败', true);
       job.done(null);
     };
     const msg: ExportJob = { settings: w.settings, causes: w.causes, small: w.small, derived: w.derived, doc, opts };
+    worker.postMessage(msg);
+  });
+}
+
+// 分开导出的一项（第二十四轮，“导出”里的“单独导出”）：在导出 Worker 里写好这一项的文件（图要几秒）。取消、出错时为 null
+export async function exportPartFiles(id: ExportPartId, width: number): Promise<Record<string, Uint8Array> | null> {
+  const w = world.value;
+  const doc = await getDoc();
+  if (!w || !doc) return null;
+  cancelExport();
+  const worker = new Worker(new URL('./export-worker.ts', import.meta.url), { type: 'module' });
+  exportProgress.value = 0;
+  return new Promise((resolve) => {
+    const job = {
+      worker,
+      done: (files: Record<string, Uint8Array> | null) => {
+        worker.terminate();
+        if (exporting === job) {
+          exporting = null;
+          exportProgress.value = null;
+        }
+        resolve(files);
+      },
+    };
+    exporting = job;
+    worker.onmessage = (ev: MessageEvent<ExportReply>) => {
+      const r = ev.data;
+      if ('progress' in r) return;
+      if (!r.ok) showToast(r.error, true);
+      job.done(r.ok && 'files' in r ? r.files : null);
+    };
+    worker.onerror = () => {
+      showToast('导出失败', true);
+      job.done(null);
+    };
+    const height = Math.round((width * w.mesh.height) / w.mesh.width);
+    const msg: ExportJob = { settings: w.settings, causes: w.causes, small: w.small, derived: w.derived, doc, opts: { width, height, seaLevelGray: 95, maxElevation: 6000 }, part: { id, width, height } };
     worker.postMessage(msg);
   });
 }

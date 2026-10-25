@@ -39,6 +39,9 @@ import {
 } from './countries';
 import { densityText, firstLine, popText, shareText } from './human';
 import { Flag, showCountry } from './panels/countries';
+import { CityList } from './panels/settlements';
+import { countryCityRows, hasAnySettle } from './settlements';
+import { selectSettle } from './tools/settlements';
 
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
 // 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交
@@ -95,7 +98,7 @@ export function withEmblem(flag: FlagSpec, emblem: string): FlagSpec {
   return { ...flag, emblem: emblem as FlagSpec['emblem'], emblemColor: flag.emblemColor ?? '#f4f1e8' };
 }
 
-function Line({ label, children }: { label: string; children: ComponentChildren }) {
+export function Line({ label, children }: { label: string; children: ComponentChildren }) {
   return (
     <div class="arch-line">
       <span class="arch-label">{label}</span>
@@ -105,7 +108,7 @@ function Line({ label, children }: { label: string; children: ComponentChildren 
 }
 
 // 一个字的框：离开框、回车时提交；Esc 回到原来的
-function TextField({ value, onCommit, placeholder, maxLength = 40, class: cls = 'grow', title }: { value: string; onCommit: (v: string) => void; placeholder?: string; maxLength?: number; class?: string; title?: string }) {
+export function TextField({ value, onCommit, placeholder, maxLength = 40, class: cls = 'grow', title }: { value: string; onCommit: (v: string) => void; placeholder?: string; maxLength?: number; class?: string; title?: string }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   return (
@@ -131,7 +134,7 @@ function TextField({ value, onCommit, placeholder, maxLength = 40, class: cls = 
 }
 
 // 占比的一行（同格的档案里人口的样子）
-function ShareRow({ color, label, share, title, children }: { color: string; label: string; share: number; title?: string; children?: ComponentChildren }) {
+export function ShareRow({ color, label, share, title, children }: { color: string; label: string; share: number; title?: string; children?: ComponentChildren }) {
   return (
     <div class="share-row" title={title}>
       <span class="swatch" style={{ background: color }} />
@@ -145,7 +148,7 @@ function ShareRow({ color, label, share, title, children }: { color: string; lab
 }
 
 // 一整条的构成（文化、宗教……），鼠标停着写名字与占比
-function StackBar({ items }: { items: { name: string; color: string; share: number }[] }) {
+export function StackBar({ items }: { items: { name: string; color: string; share: number }[] }) {
   const rest = Math.max(0, 1 - items.reduce((a, x) => a + x.share, 0));
   return (
     <div class="stack-bar">
@@ -362,6 +365,31 @@ function StatsSection({ w, m }: { w: World; m: CountryMeta }) {
           {st.minorityShare > 0.005 && <p class="hint">不兼容的少数群体 {shareText(st.minorityShare)}</p>}
         </>
       )}
+    </section>
+  );
+}
+
+// 城市（第二十四轮）：首都、陪都，按人口排的城市（点一座打开它的档案）
+function CitySection({ w, m }: { w: World; m: CountryMeta }) {
+  if (!hasAnySettle(w)) return null;
+  const rows = countryCityRows(w, m.id);
+  const caps = rows.filter((c) => c.capital || c.secondCapital).sort((a, b) => Number(b.capital) - Number(a.capital));
+  return (
+    <section>
+      <h5>城市 · {rows.length} 座</h5>
+      {caps.length > 0 && (
+        <Line label="首都">
+          <span class="chips grow">
+            {caps.map((c) => (
+              <button class="link" onClick={() => selectSettle({ kind: c.point ? 'point' : 'city', id: c.id })} title={c.capital ? '首都' : '陪都'}>
+                {c.name}
+                {c.capital ? '' : '（陪都）'}
+              </button>
+            ))}
+          </span>
+        </Line>
+      )}
+      <CityList cities={rows} limit={12} />
     </section>
   );
 }
@@ -593,6 +621,7 @@ export function CountryArchive() {
       <GovernmentSection w={w} m={m} />
       <CultureSection w={w} m={m} />
       <StatsSection w={w} m={m} />
+      <CitySection w={w} m={m} />
       <FactionSection w={w} m={m} />
       <DiplomacySection w={w} m={m} />
       <RulerSection m={m} />

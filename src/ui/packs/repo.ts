@@ -211,3 +211,5 @@ export function repoSections(
 export const HUMAN_KINDS: ReadonlySet<string> = new Set(['era', 'popValue', 'cultureGroup', 'culture']);
 // 第二十三轮的两种（政体、派系）：仓库里有“生成国家…”的入口
 export const GOV_KINDS: ReadonlySet<string> = new Set(['government', 'faction']);
+// 第二十四轮的三种（城市等级、地标类型、点的类型）：仓库里有“生成城市… / 重新生成…”的入口
+export const SETTLE_KINDS: ReadonlySet<string> = new Set(['cityRank', 'landmarkType', 'pointType']);

@@ -97,7 +97,10 @@ export function onKeyDown(e: KeyboardEvent) {
       if (measure.value?.length) {
         e.preventDefault();
         measure.value = measure.value.slice(0, -1);
-      }
+      } else if (def.del?.()) e.preventDefault();
+      return;
+    case 'Delete':
+      if (def.del?.()) e.preventDefault();
       return;
   }
   const k = e.key.toLowerCase();

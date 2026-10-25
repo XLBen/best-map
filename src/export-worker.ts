@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { exportPackage } from '../core/export';
+import { exportPackage, exportPart } from '../core/export';
 import { buildMeshFor, kmPerUnit } from '../core/world';
 import type { ExportJob, ExportReply } from './protocol';
 
@@ -11,9 +11,15 @@ function post(msg: ExportReply, transfer: Transferable[] = []) {
 }
 
 self.onmessage = (ev: MessageEvent<ExportJob>) => {
-  const { settings, causes, small, derived, doc, opts } = ev.data;
+  const { settings, causes, small, derived, doc, opts, part } = ev.data;
   try {
     const world = { settings, mesh: buildMeshFor(settings), kmPerUnit: kmPerUnit(settings), causes, small, derived };
+    // 分开导出的一项（第二十四轮）
+    if (part) {
+      const files = exportPart(world, part.id, { width: part.width, height: part.height });
+      post({ ok: true, files }, Object.values(files).map((f) => f.buffer as ArrayBuffer));
+      return;
+    }
     const r = exportPackage(world, doc, opts, (progress) => post({ progress }));
     post({ ok: true, zip: r.zip, warnings: r.warnings }, [r.zip.buffer as ArrayBuffer]);
   } catch (e) {

@@ -11,7 +11,7 @@ export const MAP_KINDS: [Kind, string][] = [
 ];
 export const MAP_KIND_TITLES: Record<Kind, string> = {
   geo: '地貌与自然的地名',
-  political: '国界与国名',
+  political: '国界、国名、城市与地标',
 };
 
 export function MapKindSwitch() {

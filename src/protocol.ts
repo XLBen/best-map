@@ -1,6 +1,6 @@
 import type { Command } from '../core/commands';
 import type { DocTail, PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
-import type { ExportOptions } from '../core/export';
+import type { ExportOptions, ExportPartId } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
 import type { PreviewPatch } from '../core/preview-world';
 import type { PackedRivers } from '../core/river-pack';
@@ -90,10 +90,12 @@ export interface ExportJob {
   derived: Derived;
   doc: WorldDoc;
   opts: ExportOptions;
+  // 分开导出的一项（第二十四轮）：只写这一项的文件（表、档案全文、道路图），不打包
+  part?: { id: ExportPartId; width: number; height: number };
 }
 
 // warnings：导出时要告诉用户的话（比如极小的省在切线附近分不到像素）
-export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array; warnings?: string[] } | { ok: false; error: string };
+export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array; warnings?: string[] } | { ok: true; files: Record<string, Uint8Array> } | { ok: false; error: string };
 
 // 主线程保存的命令记录（Worker 卡住、崩了时用它恢复世界）：执行、撤销、重做、换一个、新建、打开的回复都带上
 // 上次回复以来变了的命令（engine.docTail）。epoch：Worker 里的引擎换一个（新建、打开）就加一，那时 from 为 0

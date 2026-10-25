@@ -13,3 +13,4 @@ export * from './tools/measure';
 export * from './tools/human';
 export * from './tools/culture';
 export * from './tools/countries';
+export * from './tools/settlements';
