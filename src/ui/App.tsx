@@ -37,6 +37,7 @@ import { FeatureStyleMenu } from './panels/names';
 import { ClassMenu, ResourceMenu } from './panels/human';
 import { CultureMenu, PopTupleMenu, ValueMenu } from './panels/culture';
 import { TerritoryMenu } from './panels/countries';
+import { LandmarkMenu, PointMenu, RankMenu } from './panels/settlements';
 import { MapLegend } from './shell/MapLegend';
 import { MapKindSwitch } from './shell/MapKind';
 import { ContextBar } from './shell/ContextBar';
@@ -68,6 +69,9 @@ const TYPE_PANELS: Record<TypePanelId, { title: string; menu: ComponentType }> =
   poppick: { title: '人口群体', menu: PopTupleMenu },
   valuepick: { title: '取值', menu: ValueMenu },
   countrypick: { title: '领土', menu: TerritoryMenu },
+  cityrank: { title: '城市等级', menu: RankMenu },
+  landmarkpick: { title: '地标的种类', menu: LandmarkMenu },
+  pointpick: { title: '点的种类', menu: PointMenu },
 };
 
 function PanelHost({ id }: { id: PanelId }) {

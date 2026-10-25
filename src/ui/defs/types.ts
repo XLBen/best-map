@@ -73,6 +73,8 @@ export interface ToolSpec {
   view?: ViewMode | (() => ViewMode);
   // 换到别的工具时清掉的东西（选中的河、湖，选生态的范围）
   onLeave?(): void;
+  // Delete 键（第二十四轮：删除选中的城市、道路、地标、点）：用掉了返回 true
+  del?(): boolean;
   // 地图跟着重画的状态（选中的河、湖……）：读一下就行
   watch?(): unknown;
   // 选中的东西在地图上的样子（画河时选中的河）：沿着它的光，它自己的地名先不标

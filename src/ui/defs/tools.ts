@@ -38,6 +38,10 @@ import {
   MousePointerClick,
   SquarePlus,
   Star,
+  Building2,
+  Route,
+  Landmark,
+  MapPin,
 } from 'lucide-preact';
 import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import { islandTypeById, liveIslandKind } from '../../../core/island-types';
@@ -50,6 +54,7 @@ import {
   type ViewMode,
   brushRange,
   selectedCountry,
+  selectedSettle,
   cursorHint,
   lakeRange,
   measure,
@@ -109,6 +114,8 @@ import { CultureExtras, CulturePick, FactorSlider, HearthBar, NoHumanChip, PopTu
 import { cultureTool, hearthTool, pickCulture, pickPop, popTool } from '../tools/culture';
 import { capitalTool, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from '../tools/countries';
 import { CountryExtras, NEW_COUNTRY_SHAPES, NoCountryChip, SelectedCountryChip, TerritoryPick } from '../panels/countries';
+import { CityBar, CityPointChip, LandmarkChip, LandmarkPick, NoCityChip, PointChip, PointPick, RoadBar, SettlementExtras } from '../panels/settlements';
+import { cityTool, deleteSelected, landmarkTool, pointTool, roadTool } from '../tools/settlements';
 import { clearBarPreview } from '../barPreview';
 import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
 import {
@@ -776,6 +783,50 @@ const SPECS = {
     view: 'country',
     create: (env) => capitalTool(env.zoom),
   },
+  // ---------- 第二十四轮：城市、道路、地标、自定义点 ----------
+  city: {
+    category: 'settlements',
+    icon: Building2,
+    name: '城市',
+    short: '城市',
+    how: '点空地新建城市，点城市打开档案，拖动挪走',
+    bar: () => [{ kind: 'custom', render: NoCityChip }, { kind: 'custom', render: CityBar }, { kind: 'custom', render: CityPointChip }],
+    cursor: 'pointer',
+    del: () => deleteSelected(['city', 'point']),
+    create: (env) => cityTool(env.zoom),
+  },
+  road: {
+    category: 'settlements',
+    icon: Route,
+    name: '道路',
+    short: '道路',
+    how: '按住画道路；点道路选中，拖控制点改走向',
+    bar: () => [{ kind: 'custom', render: RoadBar }],
+    del: () => deleteSelected(['road']),
+    create: (env) => roadTool(env.zoom),
+  },
+  landmark: {
+    category: 'settlements',
+    icon: Landmark,
+    name: '地标',
+    short: '地标',
+    how: '点击放地标，点地标打开档案，拖动挪走',
+    bar: () => [{ kind: 'custom', render: LandmarkPick }, { kind: 'custom', render: LandmarkChip }],
+    cursor: 'pointer',
+    del: () => deleteSelected(['landmark']),
+    create: (env) => landmarkTool(env.zoom),
+  },
+  point: {
+    category: 'settlements',
+    icon: MapPin,
+    name: '自定义点',
+    short: '点',
+    how: '点击放点，点它打开档案，拖动挪走',
+    bar: () => [{ kind: 'custom', render: PointPick }, { kind: 'custom', render: PointChip }],
+    cursor: 'pointer',
+    del: () => deleteSelected(['point']),
+    create: (env) => pointTool(env.zoom),
+  },
 } satisfies Record<string, ToolSpec>;
 
 // 工具的 id：工具表里的键
@@ -819,6 +870,8 @@ export const CATEGORIES: CategoryDef[] = [
   { id: 'culture', icon: UsersRound, label: '文化', tools: toolsIn('culture'), extras: CultureExtras },
   // 第二十三轮：国家（选国家、领土、新建、合并、首都）。没有国家时底部条上是“生成国家…”
   { id: 'countries', icon: Castle, label: '国家', tools: toolsIn('countries'), extras: CountryExtras, watch: () => selectedCountry.value },
+  // 第二十四轮：城市（城市、道路、地标、自定义点）。开着时地理图上也画城市、全部地标
+  { id: 'settlements', icon: Building2, label: '城市', tools: toolsIn('settlements'), extras: SettlementExtras, watch: () => selectedSettle.value },
 ];
 
 export const CATEGORY_DEFS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Category, CategoryDef>;

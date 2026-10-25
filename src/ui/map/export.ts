@@ -6,6 +6,7 @@ import { type Proj, planeBounds } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
 import { politicalOn } from '../countries';
 import { countryDraws, politicalFeatures } from './political';
+import { settleOverlay } from './settle';
 import { exportProgress, imageExportCancel, labelGroups, mapStyle, nameMode, overlays, season, showToast, world } from '../../state';
 
 // 导出图片：当前画面（snapshotCanvas）与整张地图（exportFullMap）。都是干净的画面：只有地图本身，
@@ -31,6 +32,8 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     // 人文图（第二十三轮）：国名，自然的地名只留几类
     features: overlays.value.labels ? (politicalOn(w) ? politicalFeatures(w.derived.features) : w.derived.features) : null,
     countries: overlays.value.labels && politicalOn(w) ? countryDraws(w, nameMode.value) : null,
+    // 城市、道路、地标（第二十四轮）：按现在的地理图 / 人文图
+    ...settleOverlay(w, { political: politicalOn(w), editing: false }),
     labelTypes: types,
     peaks: overlays.value.peaks ? peakLabels(w) : null,
     nameMode: nameMode.value,

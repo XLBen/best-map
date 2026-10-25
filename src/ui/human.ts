@@ -40,13 +40,15 @@ export const valueChoices = (small?: Small | null): PopValue[] => merged(BUILTIN
 export const culturesIn = (small: Small | null | undefined, group: string) => cultureChoices(small).filter((c) => c.group === group);
 
 // 一份“生成人文”的选择。pop：总人口（null 按时代的默认密度）。
-// countries（第二十三轮）：同时生成国家，fragmentation 是“分裂 ↔ 统一”（0 统一、1 分裂、0.5 按时代）
+// countries（第二十三轮）：同时生成国家，fragmentation 是“分裂 ↔ 统一”（0 统一、1 分裂、0.5 按时代）。
+// settlements（第二十四轮）：同时生成城市与道路（要有国家），landmarks：地标
 export interface HumanChoice {
   on: boolean;
   era: string;
   groups: { id: string; weight: number }[];
   pop: number | null;
   countries: { on: boolean; fragmentation: number };
+  settlements: { on: boolean; landmarks: boolean };
 }
 
 // 时代建议的文化组（defaultGroups 与 cultureGroups 里的）；都没写时为 null（不限）
@@ -72,9 +74,10 @@ export function eraGroups(era: Era | undefined, small?: Small | null): { id: str
 export function defaultChoice(small?: Small | null, on = true): HumanChoice {
   const h = small?.human;
   const countries = { on: true, fragmentation: h?.countryRules?.fragmentation ?? 0.5 };
-  if (h) return { on, era: h.era, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null, countries };
+  const settlements = { on: true, landmarks: small?.settlementRules?.landmarks ?? true };
+  if (h) return { on, era: h.era, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null, countries, settlements };
   const era = eraChoices(small)[0];
-  return { on, era: era?.id ?? '', groups: eraGroups(era, small), pop: null, countries };
+  return { on, era: era?.id ?? '', groups: eraGroups(era, small), pop: null, countries, settlements };
 }
 
 // 换时代：文化组换成那个时代的默认，总人口回到自动
@@ -121,6 +124,8 @@ export function generateCommand(c: HumanChoice, small?: Small | null): Command |
     groups: c.groups.map((g) => ({ id: g.id, weight: g.weight })),
     ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}),
     ...(c.countries.on ? { countries: c.countries.fragmentation !== 0.5 ? { fragmentation: c.countries.fragmentation } : {} } : {}),
+    // 城市与道路要有国家（第二十四轮）
+    ...(c.countries.on && c.settlements.on ? { settlements: c.settlements.landmarks ? {} : { landmarks: false } } : {}),
   };
 }
 

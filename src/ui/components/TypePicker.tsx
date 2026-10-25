@@ -1,4 +1,4 @@
-import { ChevronDown, Plus } from 'lucide-preact';
+import { ChevronDown, type LucideIcon, Plus } from 'lucide-preact';
 import { type PanelId, openPanel, togglePanel } from '../../state';
 
 // 选“哪一种”：底部条上的按钮（“新画的河：血河 ▾”“岛：珊瑚岛 ▾”）和点开的列表（最后一项“新建…”）。
@@ -14,6 +14,10 @@ export interface TypeChoice {
   meta?: string;
   // 分组（第二十二轮：文化按文化组列）：与上一行不同时先写一行小标题
   group?: string;
+  // 图标（第二十四轮：地标、自定义点的类型）
+  icon?: LucideIcon;
+  // 上传的小图（自定义点的类型）
+  image?: string;
   onPick: () => void;
 }
 
@@ -26,6 +30,7 @@ export function TypePicker({ items, onNew, newLabel, newTitle, note }: { items: 
           {it.group !== undefined && it.group !== items[k - 1]?.group && <h5 class="menu-group">{it.group}</h5>}
           <button key={`${it.group ?? ''}:${it.label}`} class={`item ${it.on ? 'on' : ''}`} title={it.hint} onClick={it.onPick}>
             {it.swatch !== undefined && <span class="swatch" style={{ background: it.swatch }} />}
+            {it.image ? <img class="type-img" src={it.image} alt="" /> : it.icon ? <it.icon /> : null}
             <span class="grow">{it.label}</span>
             {it.meta && <span class="hint">{it.meta}</span>}
           </button>
@@ -41,11 +46,12 @@ export function TypePicker({ items, onNew, newLabel, newTitle, note }: { items: 
 }
 
 // 底部条上的按钮：“前缀：色块 名字 ▾”。auto：现在是按规则判断出来的
-export function TypePickerButton({ panel, prefix, swatch, name, auto, title }: { panel: PanelId; prefix: string; swatch?: string; name: string; auto?: boolean; title: string }) {
+export function TypePickerButton({ panel, prefix, swatch, icon: I, name, auto, title }: { panel: PanelId; prefix: string; swatch?: string; icon?: LucideIcon; name: string; auto?: boolean; title: string }) {
   return (
     <button class={`bar-btn ${openPanel.value === panel ? 'open' : ''}`} data-panel={panel} onClick={() => togglePanel(panel)} title={title}>
       <span class="muted">{prefix}：</span>
-      {swatch !== undefined && <span class="swatch" style={{ background: swatch }} />} {name}
+      {swatch !== undefined && <span class="swatch" style={{ background: swatch }} />}
+      {I && <I />} {name}
       {auto ? <span class="hint">（自动）</span> : null}
       <ChevronDown />
     </button>

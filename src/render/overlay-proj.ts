@@ -1,7 +1,8 @@
 import { arcUnits, densify, circle as geoCircle } from '../../core/geo';
 import type { RiverLine } from '../../core/rivers';
 import type { World } from '../../core/world';
-import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
+import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
+import { ROAD_CASING, ROAD_COLOR, ROAD_DASH, ROAD_MINOR_COLOR, ROAD_SMOOTH_PX, ROAD_WIDTH, type RoadDraw } from './settle-draw';
 import { type Proj, type ProjCamera, effectiveZoom, inverse, screenToPlane, screenToWorld, trueScale, worldToScreen } from './projection';
 
 // 等面积、球形投影时的叠加层（第十三轮 G4）：点按投影算，线沿大圆加密后逐点投影（球的背面、等面积的左右两边断开）。
@@ -201,6 +202,43 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, P: Pr
   ctx.setLineDash([]);
 }
 
+// 道路（第二十四轮）：逐点投影（球的背面断开）；小路放大后才画，缩小时画没平滑的折线；
+// 头、中、尾三点都在背面或都在画面同一边之外的不画
+function drawRoadsProjected(ctx: CanvasRenderingContext2D, r: RoadDraw, P: Projector, cellPx: number, style: 'realistic' | 'atlas') {
+  ctx.save();
+  const m = 20;
+  const off = (q: [number, number] | null) => (!q ? 0 : q[0] < -m ? 1 : q[0] > P.cw + m ? 2 : q[1] < -m ? 3 : q[1] > P.ch + m ? 4 : -1);
+  const shown = (l: [number, number][]) => {
+    const s = [l[0], l[l.length >> 1], l[l.length - 1]].map((p) => off(P.at(p[0], p[1])));
+    return s.some((x) => x === -1) || !(s[0] === s[1] && s[1] === s[2]);
+  };
+  const stroke = (lines: [number, number][][]) => {
+    ctx.beginPath();
+    for (const l of lines) if (l.length > 1 && shown(l)) projPath(ctx, P, l, false, false);
+    ctx.stroke();
+  };
+  if (cellPx >= r.minorPx && r.minor.length) {
+    ctx.strokeStyle = ROAD_MINOR_COLOR[style];
+    ctx.lineWidth = ROAD_WIDTH.minor;
+    ctx.setLineDash(ROAD_DASH);
+    stroke(r.minor);
+  }
+  ctx.setLineDash([]);
+  const smooth = cellPx >= ROAD_SMOOTH_PX;
+  const major = smooth ? r.major : r.majorRaw;
+  if (major.length) {
+    if (smooth) {
+      ctx.strokeStyle = ROAD_CASING;
+      ctx.lineWidth = ROAD_WIDTH.casing;
+      stroke(major);
+    }
+    ctx.strokeStyle = ROAD_COLOR[style];
+    ctx.lineWidth = ROAD_WIDTH.major;
+    stroke(major);
+  }
+  ctx.restore();
+}
+
 function arrowHead(ctx: CanvasRenderingContext2D, from: [number, number], to: [number, number], hs: number, spread: number) {
   const a = Math.atan2(to[1] - from[1], to[0] - from[0]);
   ctx.setLineDash([]);
@@ -302,6 +340,7 @@ export function drawOverlayProjected(ctx: CanvasRenderingContext2D, world: World
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const river = { scale: riverScale(world, P.zoom), color: riverStroke(st.style) };
+  if (st.roads) drawRoadsProjected(ctx, st.roads, P, world.mesh.spacing * P.zoom, st.style);
   for (const sh of st.shapes) drawShape(ctx, world, sh, P, river, st.style);
   if (st.provinceLabels.length && rz > 900) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -322,7 +361,7 @@ export function drawOverlayProjected(ctx: CanvasRenderingContext2D, world: World
       ctx.fillText(l.text, sx, sy);
     }
   }
-  const boxes = st.features || st.peaks?.length || st.countries?.length ? drawLabels(ctx, cam, st, [0], rz) : [];
+  const boxes = hasLabels(st) ? drawLabels(ctx, cam, st, [0], rz) : [];
   if (st.scaleBar) {
     const kmPerPx = kmPerPxAtCenter(cam, cw, ch, st.kmPerUnit);
     if (kmPerPx > 0) drawScaleBar(ctx, { x: 0, y: 0, zoom: 1 }, kmPerPx, st.cornerLift, f, '画面中心');

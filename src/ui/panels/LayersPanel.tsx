@@ -8,6 +8,7 @@ import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
 import { hasCountries, setMapKind } from '../countries';
+import { hasAnySettle } from '../settlements';
 import { MAP_KINDS, MAP_KIND_TITLES } from '../shell/MapKind';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件
@@ -222,7 +223,7 @@ export function LayersPanel() {
       )}
       <section>
         <h5>显示</h5>
-        {OVERLAYS.filter((o) => !o.planetOnly || planet).map((o) => (
+        {OVERLAYS.filter((o) => (!o.planetOnly || planet) && (!o.settle || (w && hasAnySettle(w)))).map((o) => (
           <>
             <Toggle on={overlays.value[o.key]} onChange={(on) => (overlays.value = { ...overlays.value, [o.key]: on })} title={(planet && o.planetHint) || o.hint}>
               {(planet && o.planetLabel) || o.label}

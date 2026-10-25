@@ -1,5 +1,10 @@
-import { Plus, X } from 'lucide-preact';
-import { useEffect, useState } from 'preact/hooks';
+import { ImageUp, Plus, X } from 'lucide-preact';
+import { createContext } from 'preact';
+import { useContext, useEffect, useState } from 'preact/hooks';
+import { iconOf } from '../../render/settle-draw';
+import { CityGlyph } from '../panels/settlements';
+import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../settlements';
+import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
 import { FEATURE_INFO, type FeatureType } from '../../../core/features';
 import { Seg } from '../common';
@@ -103,8 +108,103 @@ function Errors({ issues, path }: { issues: readonly EditorIssue[]; path: Path }
 
 const COMPLEX = new Set(['list', 'map', 'weighted', 'json', 'script']);
 
+// 正在编辑的是哪一种内容（第二十四轮：城市等级、地标类型、点的类型的图标选内置的，点的类型能上传小图）
+export const EditorKind = createContext<string | null>(null);
+
+// 图标：一组内置的里选一个（旁边画出来）
+function IconSelect({ kindId, value, onChange, optional }: { kindId: string; value: unknown; onChange: (v: unknown) => void; optional?: boolean }) {
+  const keys = iconChoices(kindId) ?? [];
+  const v = typeof value === 'string' ? value : '';
+  const I = iconOf(v);
+  return (
+    <span class="row">
+      {kindId === 'cityRank' ? <CityGlyph icon={v} /> : I ? <I /> : null}
+      <select value={v} onChange={(e) => onChange((e.target as HTMLSelectElement).value || undefined)}>
+        {optional && <option value="">（不写）</option>}
+        {v && !keys.includes(v) && <option value={v}>{v}</option>}
+        {keys.map((k) => (
+          <option value={k}>
+            {ICON_LABELS[k] ?? k} · {k}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+// 读一张小图成 data: 地址；太大的位图缩到 64 像素见方再试
+async function readImage(file: File): Promise<string | null> {
+  const url = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+  if (url.length <= IMAGE_MAX_CHARS && isImageUrl(url)) return url;
+  if (file.type === 'image/svg+xml') return null;
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const k = 64 / Math.max(img.naturalWidth, img.naturalHeight, 1);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.naturalWidth * Math.min(1, k)));
+  c.height = Math.max(1, Math.round(img.naturalHeight * Math.min(1, k)));
+  c.getContext('2d')?.drawImage(img, 0, 0, c.width, c.height);
+  const small = c.toDataURL('image/png');
+  return small.length <= IMAGE_MAX_CHARS ? small : null;
+}
+
+// 点的类型的小图：上传（png、jpeg、webp、svg），删除
+function ImageField({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const v = typeof value === 'string' && isImageUrl(value) ? value : '';
+  return (
+    <span class="row">
+      {v && <img class="type-img" src={v} alt="" />}
+      <label class="file-button small">
+        <ImageUp /> {v ? '换一张' : '上传'}
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          hidden
+          onChange={async (e) => {
+            const input = e.target as HTMLInputElement;
+            const f = input.files?.[0];
+            input.value = '';
+            if (!f) return;
+            const url = await readImage(f).catch(() => null);
+            if (url) onChange(url);
+            else showToast('图片太大，换一张小的', true);
+          }}
+        />
+      </label>
+      {v && (
+        <button class="small" onClick={() => onChange(undefined)}>
+          删除
+        </button>
+      )}
+    </span>
+  );
+}
+
 function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
   const bad = issuesAt(issues, path).length > 0;
+  const kindId = useContext(EditorKind);
+  // 图标、小图（第二十四轮）：顶层的 icon、点的类型的 image
+  const icon = kindId && path.length === 1 && f.key === 'icon' && iconChoices(kindId);
+  const image = kindId === 'pointType' && path.length === 1 && f.key === 'image';
+  if (icon || image) {
+    return (
+      <div class="ed-field">
+        <span class="ed-label" title={f.hint}>
+          {f.label}
+        </span>
+        <div class="ed-control">
+          {icon ? <IconSelect kindId={kindId!} value={value} onChange={onChange} optional={f.optional} /> : <ImageField value={value} onChange={onChange} />}
+          <Errors issues={issues} path={path} />
+        </div>
+      </div>
+    );
+  }
   const count = Array.isArray(value) ? value.length : isObj(value) ? Object.keys(value).length : 0;
   // 称号（第二十三轮）：一行一种写法
   if (isTitleField(f)) {

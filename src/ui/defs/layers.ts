@@ -64,14 +64,17 @@ export function suitabilityFocus(species: readonly { id: string }[], cur: string
   return cur && species.some((s) => s.id === cur) ? cur : (species[0]?.id ?? null);
 }
 
-export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' | 'scale' | 'latitude' | 'edits' | 'peaks';
+export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' | 'scale' | 'latitude' | 'edits' | 'peaks' | 'roads' | 'cities' | 'landmarks';
 
-// planetLabel / planetHint：整个星球上的说法；planetOnly：只在整个星球上出现
-export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLabel?: string; planetHint?: string; planetOnly?: boolean }[] = [
+// planetLabel / planetHint：整个星球上的说法；planetOnly：只在整个星球上出现；settle：世界里有城市、道路、地标或自定义点时才出现（第二十四轮）
+export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLabel?: string; planetHint?: string; planetOnly?: boolean; settle?: boolean }[] = [
   { key: 'labels', label: '地名' },
   { key: 'rivers', label: '河流' },
   { key: 'borders', label: '省份边界', hint: '省份底图或省份工具里显示' },
   { key: 'peaks', label: '山峰', hint: '放大后标名字' },
+  { key: 'roads', label: '道路', hint: '放大后才画小路', settle: true },
+  { key: 'cities', label: '城市', hint: '人文图里显示；缩小时只有首都与大城市', settle: true },
+  { key: 'landmarks', label: '地标', hint: '含自定义点；地理图只显示自然的地标', settle: true },
   { key: 'wind', label: '风向' },
   { key: 'currents', label: '洋流', hint: '暖流偏橙、寒流偏蓝', planetOnly: true },
   { key: 'scale', label: '比例尺', hint: '左下角，导出的图片里也有' },

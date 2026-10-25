@@ -1,6 +1,6 @@
 import { Boxes, CircleHelp, CopyPlus, FileDown, FilePlus, FolderOpen, ImageDown, Library, PackageOpen, Save } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { type WheelPref, download, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
+import { type WheelPref, download, exportPartFiles, exportProgress, exportZip, helpOpen, openPanel, prefs, setPrefs, wizardOpen, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { type LabelSize, autoSeam, seamLongitude } from '../../render/export-plan';
@@ -11,6 +11,7 @@ import { HistoryPanel } from '../panels';
 import { openRepo } from '../packs/store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
+import { exportPartRows, hasAnySettle } from '../settlements';
 
 // “世界”：新建、我的地图、保存、打开文件、资源包、导出（世界文件、游戏文件包、图片都在这里）；“更多”：历史、偏好、上手说明
 
@@ -202,6 +203,37 @@ const WHEEL: [WheelPref, string][] = [
   ['pan', '平移'],
 ];
 
+// 单独导出（第二十四轮）：游戏文件包里的一项（城市表、道路、档案全文……），点一下只下载这一项的文件。图的宽度跟着游戏文件包选的
+const PART_TYPES: Record<string, string> = { csv: 'text/csv', geojson: 'application/geo+json', bmp: 'image/bmp', md: 'text/markdown', json: 'application/json' };
+function PartList({ w, width }: { w: World; width: number }) {
+  const rows = exportPartRows(w).filter((r) => r.available);
+  if (!rows.length) return null;
+  return (
+    <details class="part-box">
+      <summary>单独导出</summary>
+      <div class="list part-list">
+        {rows.map((r) => (
+          <button
+            class="item"
+            disabled={exportProgress.value !== null}
+            title={r.image ? `宽 ${width}` : undefined}
+            onClick={async () => {
+              const files = await exportPartFiles(r.id, width);
+              for (const [name, data] of Object.entries(files ?? {})) download(name, data, PART_TYPES[name.split('.').pop() ?? ''] ?? 'application/octet-stream');
+            }}
+          >
+            <FileDown />
+            <span class="grow item-text">
+              <span>{r.label}</span>
+              <span class="hint">{r.files.join('、')}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 // 导出：世界文件、游戏文件包、整张地图、当前画面
 function ExportSection() {
   const w = world.value;
@@ -264,7 +296,8 @@ function ExportSection() {
             ))}
           </select>
         </div>
-        <p class="hint">高度图、省份图、地形、河流、生态、地名表和世界文件</p>
+        <p class="hint">高度图、省份图、地形、河流、生态、地名表和世界文件{w.small.human || hasAnySettle(w) ? '，人文的图、表与档案全文' : ''}</p>
+        <PartList w={w} width={width} />
         <div class="row">
           <button disabled={exportProgress.value !== null} onClick={() => void saveFullPng()}>
             <ImageDown /> 整张地图（.png）

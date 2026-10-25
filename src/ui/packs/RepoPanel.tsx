@@ -32,12 +32,12 @@ import { scriptTrustText } from '../copy';
 import { category, setCategory, setTool } from '../defs/tools';
 import { createAndUse as createIslandType, islandSwatch, requestIslandTypeEditor } from '../panels/islandTypes';
 import { createAndUse as createWaterType } from '../panels/waterTypes';
-import { FieldsBox } from './ContentEditor';
+import { EditorKind, FieldsBox } from './ContentEditor';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
-import { GOV_KINDS, HUMAN_KINDS, REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, repoSections, restoreRowCommand, toggleCommand } from './repo';
+import { GOV_KINDS, HUMAN_KINDS, SETTLE_KINDS, REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, repoSections, restoreRowCommand, toggleCommand } from './repo';
 import { eraChoices, groupChoices } from '../human';
 import { isolationNote } from './Scripts';
-import { type RepoEdit, closeRepo, fileLabel, openPackImport, openPackList, packDialog, patchRepo, repo } from './store';
+import { type RepoEdit, closeRepo, fileLabel, openPackImport, openPackList, openRepo, packDialog, patchRepo, repo } from './store';
 import { missingCount, restyleOffer } from './styles';
 
 // 仓库（世界 → 仓库）：浮在地图左边，不挡地图。左边按类（地名风格、生态、河流类型……），右边是这一类的内容：
@@ -335,6 +335,17 @@ function newItem(kind: ContentKind) {
   if (item) patchRepo({ edit: { item, how: 'new' } });
 }
 
+// 从别处打开仓库的一类（第二十四轮：“城市 ⋯”里的“仓库…”）；create：同时新建一项（底部条上的“新类型…”）
+export function openRepoKind(kindId: string) {
+  openRepo({ kind: kindId, edit: undefined });
+}
+export function openNewItem(kindId: string) {
+  const kind = kindOf(kindId);
+  if (!kind) return;
+  openRepoKind(kindId);
+  newItem(kind);
+}
+
 // 这一种里已用的 id（世界里的、仓库里的）：新建、复制时避开
 function takenIds(kind: ContentKind): Set<string> {
   const w = world.value;
@@ -388,7 +399,9 @@ function EditorView({ kind, edit, w }: { kind: ContentKind; edit: RepoEdit; w: W
         <h3>{title}</h3>
         <button onClick={() => patchRepo({ edit: undefined })}>返回</button>
       </div>
-      <FieldsBox fields={kind.fields} value={item} onChange={set} issues={errors} />
+      <EditorKind.Provider value={kind.id}>
+        <FieldsBox fields={kind.fields} value={item} onChange={set} issues={errors} />
+      </EditorKind.Provider>
       {errors.length > 0 && (
         <div class="box pack-problems">
           <b class="small">要改</b>
@@ -518,6 +531,11 @@ function openHuman() {
   setCategory('culture');
   openPanel.value = 'cat:culture';
 }
+function openSettlements() {
+  closeRepo();
+  setCategory('settlements');
+  openPanel.value = 'cat:settlements';
+}
 function openCountries() {
   closeRepo();
   setCategory('countries');
@@ -602,6 +620,14 @@ export function RepoPanel() {
                   <span class="hint">{w.small.human ? '改了内容后重新生成才用到' : '还没有生成人文'}</span>
                   <button class="small" onClick={openHuman}>
                     {w.small.human ? '重新生成…' : '生成人文…'}
+                  </button>
+                </div>
+              )}
+              {SETTLE_KINDS.has(kind.id) && w && (
+                <div class="row between repo-restyle">
+                  <span class="hint">{w.small.settlementRules ? '改了以后重新生成才放到地图上' : '还没有生成城市'}</span>
+                  <button class="small" onClick={openSettlements}>
+                    {w.small.settlementRules ? '重新生成…' : '生成城市…'}
                   </button>
                 </div>
               )}

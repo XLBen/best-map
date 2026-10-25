@@ -1,6 +1,7 @@
 import { worldCultures } from '../../core/human';
 import { popText } from './human';
 import { countryAt, countryOf, hasCountries } from './countries';
+import { settleHere } from './settlements';
 import { type GeoFeature, ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
@@ -402,7 +403,8 @@ export function hereLine(w: World, cell: number): string {
   }
   const where = named(['island', 'continent', 'peninsula']);
   const region = feats.filter((f) => f.region && f.type !== 'spot').sort((a, b) => a.areaKm2 - b.areaKm2)[0];
-  const prefix = countryHere(w, cell) + [where?.name, region?.name].filter(Boolean).map((s) => `${s} · `).join('');
+  // 第二十四轮：这一格的城市、地标、点紧跟国名
+  const prefix = countryHere(w, cell) + settleHere(w, cell) + [where?.name, region?.name].filter(Boolean).map((s) => `${s} · `).join('');
   if (d.lake[cell] === 1) return `${prefix}${named(['lake'])?.name ?? '湖'}`;
   // 在河上：带上河名（只有大河有名字）
   const river = d.discharge[cell] >= w.small.planet.riverThreshold ? `${named(['river'])?.name || '河边'} · ` : '';

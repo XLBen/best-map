@@ -222,8 +222,22 @@ export function HearthBar() {
 // ---------- 生成人文的选择（向导、“文化 ⋯”共用） ----------
 
 // “国家”（第二十三轮）：生成国家、分裂 ↔ 统一。estimate：大约几个国家（有世界时才知道）
-export function CountryChoice({ choice, onChange, disabled, estimate }: { choice: HumanChoice; onChange: (c: HumanChoice) => void; disabled?: boolean; estimate?: (f: number) => number | null }) {
+// settlements（第二十四轮）：带上“生成城市与道路”“地标”（要有国家）
+export function CountryChoice({
+  choice,
+  onChange,
+  disabled,
+  estimate,
+  settlements = true,
+}: {
+  choice: HumanChoice;
+  onChange: (c: HumanChoice) => void;
+  disabled?: boolean;
+  estimate?: (f: number) => number | null;
+  settlements?: boolean;
+}) {
   const c = choice.countries;
+  const setS = (patch: Partial<HumanChoice['settlements']>) => onChange({ ...choice, settlements: { ...choice.settlements, ...patch } });
   const [draft, setDraft] = useState<number | null>(null);
   const f = draft ?? c.fragmentation;
   const n = estimate?.(f);
@@ -260,6 +274,17 @@ export function CountryChoice({ choice, onChange, disabled, estimate }: { choice
           }}
           onCancel={() => setDraft(null)}
         />
+      )}
+      {settlements && (
+        <>
+          <h5>城市</h5>
+          <Toggle on={c.on && choice.settlements.on} disabled={disabled || !c.on} title={c.on ? '按国家的人口放城市，按地形连道路' : '要先生成国家'} onChange={(on) => setS({ on })}>
+            生成城市与道路
+          </Toggle>
+          <Toggle on={c.on && choice.settlements.on && choice.settlements.landmarks} disabled={disabled || !c.on || !choice.settlements.on} title="名山、瀑布、神庙、城堡……" onChange={(landmarks) => setS({ landmarks })}>
+            地标
+          </Toggle>
+        </>
       )}
     </div>
   );
