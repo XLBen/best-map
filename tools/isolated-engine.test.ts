@@ -5,7 +5,7 @@ import { parse } from 'acorn';
 import { build } from 'vite';
 import { describe, expect, it } from 'vitest';
 import { DATA_URL_MAX, engineDataUrl } from '../src/engine-spawn';
-import { ENGINE_PATH, bundleEngine, devConnectSrc, isolatedEngine } from './isolated-engine';
+import { DATA_URL_LIMIT, ENGINE_PATH, bundleEngine, devConnectSrc, isolatedEngine } from './isolated-engine';
 
 // 打包的结果（隔离那一步）：计算 Worker 从 data: 地址开，加载不了别的模块，所以必须是一整个文件
 // （没有 import、export、动态 import()，也不用 import.meta）；页面带 CSP。开发时现打包的那份同样要求
@@ -69,6 +69,8 @@ describe('打包的结果', () => {
     expect(moduleLinks(code)).toEqual([]);
     expect(code).toContain('map2-isolation-probe');
     expect(engineDataUrl(code)!.length).toBeLessThan(DATA_URL_MAX);
+    // 太大时压缩用的上限与开 Worker 时的相同
+    expect(DATA_URL_LIMIT).toBe(DATA_URL_MAX);
   });
 
   it('开发时 CSP 里加上热更新的 WebSocket（只加本机地址、当前端口）', () => {

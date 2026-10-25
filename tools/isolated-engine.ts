@@ -3,15 +3,27 @@ import { type Plugin, type ViteDevServer, build } from 'vite';
 
 // 开发时也把计算 Worker 放进隔离的环境（隔离那一步）：打包好的程序里，主线程取 Vite 单独打包的引擎文件的文字，
 // 做成 data: 地址开 Worker（见 src/engine-spawn.ts）。开发服务器上的 Worker 文件引用着一个个模块，data: 地址
-// 开的 Worker 加载不了它们，所以这里提供 /__map2/engine.js：现打包成一整个文件（不引用别的模块、不压缩），
+// 开的 Worker 加载不了它们，所以这里提供 /__map2/engine.js：现打包成一整个文件（不引用别的模块；不压缩，太大时才压缩），
 // 结果留着，core/、src/ 下的文件一改就作废，下次要时重打。
 // 另外：开发时页面的 CSP 再加上开发服务器热更新用的 WebSocket（本机地址、当前端口）。按 CSP 3，connect-src 'self'
 // 本来就包括同一主机的 ws:，这里写明，免得有的浏览器不这样认；打包好的程序里没有这一条
 
 export const ENGINE_PATH = '/__map2/engine.js';
 
-// 把 src/worker.ts 连同它引用的全部模块打包成一个文件的文字
+// data: 地址最长多少：同 src/engine-spawn.ts 的 DATA_URL_MAX（这里不引用它：vite.config.ts 引用这个文件，
+// 引用 src/ 下的模块会让 Vite 加载配置时报警告；测试里查两边相同）
+export const DATA_URL_LIMIT = 1_800_000;
+const dataUrlLength = (code: string) => 'data:text/javascript;base64,'.length + Math.ceil(new TextEncoder().encode(code).length / 3) * 4;
+
+// 把 src/worker.ts 连同它引用的全部模块打包成一个文件的文字。minify 省略时先不压缩；
+// 太大、做成 data: 地址超长时（第二十三轮起内置的内容多了）再压缩一遍
 export async function bundleEngine(root: string, opts: { minify?: boolean } = {}): Promise<string> {
+  const code = await bundleOnce(root, opts.minify ?? false);
+  if (opts.minify !== undefined || dataUrlLength(code) <= DATA_URL_LIMIT) return code;
+  return bundleOnce(root, true);
+}
+
+async function bundleOnce(root: string, minify: boolean): Promise<string> {
   const out = await build({
     configFile: false,
     root,
@@ -20,7 +32,7 @@ export async function bundleEngine(root: string, opts: { minify?: boolean } = {}
     define: { 'process.env.NODE_ENV': JSON.stringify('development') },
     build: {
       write: false,
-      minify: opts.minify ?? false,
+      minify,
       copyPublicDir: false,
       emptyOutDir: false,
       reportCompressedSize: false,
