@@ -78,7 +78,8 @@ const ids = (w: World) => countryRows(w).map((r) => r.meta.id);
 describe('新建向导的“国家”', () => {
   it('默认同时生成国家；分裂 ↔ 统一在正中时不写；关掉时没有 countries', () => {
     const c = defaultChoice(null);
-    expect(c.countries).toEqual({ on: true, fragmentation: 0.5 });
+    // 第二十六轮：格局按时代（命令里不写）
+    expect(c.countries).toEqual({ on: true, fragmentation: 0.5, layout: 'era' });
     expect(generateCommand(c)).toMatchObject({ op: 'generate_human', countries: {} });
     expect(generateCommand({ ...c, countries: { on: true, fragmentation: 0.8 } })).toMatchObject({ countries: { fragmentation: 0.8 } });
     expect('countries' in generateCommand({ ...c, countries: { on: false, fragmentation: 0.8 } })!).toBe(false);

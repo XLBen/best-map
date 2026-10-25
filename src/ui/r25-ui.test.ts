@@ -95,7 +95,8 @@ describe('地图模式的表', () => {
     expect(mapModes(continents().world)).toEqual([]);
     expect(mapModes(peoples().world).map((m) => m.id)).toEqual(['geo', 'culture', 'cultureGroup', 'dim:religion', 'popDensity']);
     const b = mapModes(towns().world);
-    expect(b.map((m) => m.label)).toEqual(['地理', '国家', '文化', '文化组', '宗教', '人口']);
+    // 第二十六轮：这个世界里有帝国（中世纪的邦联），多一个“同盟”
+    expect(b.map((m) => m.label)).toEqual(['地理', '国家', '同盟', '文化', '文化组', '宗教', '人口']);
     for (const m of b) expect(m.title.length).toBeGreaterThan(0);
     // 世界里没有那一层时是地理
     expect(modeOf(peoples().world, 'country')).toBe('geo');
