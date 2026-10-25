@@ -60,22 +60,45 @@ export interface SettleMark {
 }
 
 // 道路：大道、小路各一组折线（地图坐标，已平滑；星球上沿路展开，x 可能超出 [0, 2)）。minorPx：一格至少这么多像素才画小路
-// majorRaw / minorRaw：没平滑的格心折线（缩小时画它，点少四倍）
+// majorRaw / minorRaw：没平滑的格心折线（缩小时画它，点少四倍）。clear：“道路”工具开着时的清楚的样子（第二十五轮）
 export interface RoadDraw {
   major: [number, number][][];
   minor: [number, number][][];
   majorRaw: [number, number][][];
   minorRaw: [number, number][][];
   minorPx: number;
+  clear?: boolean;
 }
 
-// 大道：浅色的衬边上一道深色的线（国家的颜色上、地貌上都看得清）；小路：深色的细虚线
+// 清楚的样子（第二十四轮，现在只在“道路”工具里）：大道是浅色的衬边上一道深色的线，小路是深色的细虚线
 export const ROAD_COLOR = { realistic: 'rgba(84, 38, 22, 0.92)', atlas: 'rgba(120, 36, 24, 0.92)' };
 export const ROAD_CASING = 'rgba(255, 248, 230, 0.6)';
 export const ROAD_MINOR_COLOR = { realistic: 'rgba(70, 36, 22, 0.8)', atlas: 'rgba(110, 34, 22, 0.8)' };
 // 线宽、虚线（屏幕像素）
 export const ROAD_WIDTH = { major: 1.6, casing: 3.4, minor: 1.1 };
 export const ROAD_DASH: [number, number] = [3.2, 2.6];
+// 平时（第二十五轮）：细、半透明、偏暗的中性色，没有衬边
+export const QUIET_ROAD_COLOR = { realistic: 'rgba(52, 44, 38, 0.45)', atlas: 'rgba(84, 46, 34, 0.45)' };
+export const QUIET_ROAD_MINOR_COLOR = { realistic: 'rgba(52, 44, 38, 0.3)', atlas: 'rgba(84, 46, 34, 0.3)' };
+export const QUIET_ROAD_WIDTH = { major: 0.9, minor: 0.6 };
+export const QUIET_ROAD_DASH: [number, number] = [2.4, 2.2];
+
+// 一组道路的画法：颜色、线宽、衬边（null 没有）、虚线（屏幕像素）
+export interface RoadStyle {
+  major: { color: string; width: number; casing: { color: string; width: number } | null };
+  minor: { color: string; width: number; dash: [number, number] };
+}
+export function roadStyle(r: Pick<RoadDraw, 'clear'>, style: 'realistic' | 'atlas'): RoadStyle {
+  if (r.clear)
+    return {
+      major: { color: ROAD_COLOR[style], width: ROAD_WIDTH.major, casing: { color: ROAD_CASING, width: ROAD_WIDTH.casing } },
+      minor: { color: ROAD_MINOR_COLOR[style], width: ROAD_WIDTH.minor, dash: ROAD_DASH },
+    };
+  return {
+    major: { color: QUIET_ROAD_COLOR[style], width: QUIET_ROAD_WIDTH.major, casing: null },
+    minor: { color: QUIET_ROAD_MINOR_COLOR[style], width: QUIET_ROAD_WIDTH.minor, dash: QUIET_ROAD_DASH },
+  };
+}
 
 // ---------- 图标 ----------
 
@@ -427,22 +450,23 @@ export function drawRoads(
   const each = (list: RoadChunk[], k: number, f: (p: Path2D) => void) => {
     for (const c of list) if (c.x1 + 2 * k >= view.x0 - pad && c.x0 + 2 * k <= view.x1 + pad && c.y1 >= view.y0 - pad && c.y0 <= view.y1 + pad) f(c.path);
   };
+  const rs = roadStyle(r, style);
   for (const k of ks) {
     setT(k);
     if (minor) {
-      ctx.strokeStyle = ROAD_MINOR_COLOR[style];
-      ctx.lineWidth = ROAD_WIDTH.minor * unit;
-      ctx.setLineDash([ROAD_DASH[0] * unit, ROAD_DASH[1] * unit]);
+      ctx.strokeStyle = rs.minor.color;
+      ctx.lineWidth = rs.minor.width * unit;
+      ctx.setLineDash([rs.minor.dash[0] * unit, rs.minor.dash[1] * unit]);
       each(minor, k, (p) => ctx.stroke(p));
     }
     ctx.setLineDash([]);
-    if (smooth) {
-      ctx.strokeStyle = ROAD_CASING;
-      ctx.lineWidth = ROAD_WIDTH.casing * unit;
+    if (smooth && rs.major.casing) {
+      ctx.strokeStyle = rs.major.casing.color;
+      ctx.lineWidth = rs.major.casing.width * unit;
       each(major, k, (p) => ctx.stroke(p));
     }
-    ctx.strokeStyle = ROAD_COLOR[style];
-    ctx.lineWidth = ROAD_WIDTH.major * unit;
+    ctx.strokeStyle = rs.major.color;
+    ctx.lineWidth = rs.major.width * unit;
     each(major, k, (p) => ctx.stroke(p));
   }
   ctx.restore();

@@ -2,7 +2,7 @@ import { arcUnits, densify, circle as geoCircle } from '../../core/geo';
 import type { RiverLine } from '../../core/rivers';
 import type { World } from '../../core/world';
 import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
-import { ROAD_CASING, ROAD_COLOR, ROAD_DASH, ROAD_MINOR_COLOR, ROAD_SMOOTH_PX, ROAD_WIDTH, type RoadDraw } from './settle-draw';
+import { ROAD_SMOOTH_PX, type RoadDraw, roadStyle } from './settle-draw';
 import { type Proj, type ProjCamera, effectiveZoom, inverse, screenToPlane, screenToWorld, trueScale, worldToScreen } from './projection';
 
 // 等面积、球形投影时的叠加层（第十三轮 G4）：点按投影算，线沿大圆加密后逐点投影（球的背面、等面积的左右两边断开）。
@@ -217,23 +217,24 @@ function drawRoadsProjected(ctx: CanvasRenderingContext2D, r: RoadDraw, P: Proje
     for (const l of lines) if (l.length > 1 && shown(l)) projPath(ctx, P, l, false, false);
     ctx.stroke();
   };
+  const rs = roadStyle(r, style);
   if (cellPx >= r.minorPx && r.minor.length) {
-    ctx.strokeStyle = ROAD_MINOR_COLOR[style];
-    ctx.lineWidth = ROAD_WIDTH.minor;
-    ctx.setLineDash(ROAD_DASH);
+    ctx.strokeStyle = rs.minor.color;
+    ctx.lineWidth = rs.minor.width;
+    ctx.setLineDash(rs.minor.dash);
     stroke(r.minor);
   }
   ctx.setLineDash([]);
   const smooth = cellPx >= ROAD_SMOOTH_PX;
   const major = smooth ? r.major : r.majorRaw;
   if (major.length) {
-    if (smooth) {
-      ctx.strokeStyle = ROAD_CASING;
-      ctx.lineWidth = ROAD_WIDTH.casing;
+    if (smooth && rs.major.casing) {
+      ctx.strokeStyle = rs.major.casing.color;
+      ctx.lineWidth = rs.major.casing.width;
       stroke(major);
     }
-    ctx.strokeStyle = ROAD_COLOR[style];
-    ctx.lineWidth = ROAD_WIDTH.major;
+    ctx.strokeStyle = rs.major.color;
+    ctx.lineWidth = rs.major.width;
     stroke(major);
   }
   ctx.restore();
