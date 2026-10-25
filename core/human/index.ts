@@ -226,3 +226,4 @@ export { type LandmarkInfo, detect as detectLandmarks, landmarkArchive, landmark
 export { type PointInfo, pointList } from './points';
 export { type SettlementCounts, type SettlementPlan, generateSettlements, settlementRules } from './settle-gen';
 export { settleInputs } from './settlements';
+export { archiveJson, archiveMarkdown, cellLatLon, citiesCsv, hasSettlements, landmarksCsv, pointsCsv, roadsCsv, roadsGeojson } from './archive';
