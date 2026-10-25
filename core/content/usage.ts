@@ -1,9 +1,6 @@
 import { ISLAND_CODE_MASK, islandCode, islandTypesOf } from '../island-types';
-import { lakeTypesOf } from '../lake-types';
-import { riverTypesOf } from '../river-types';
 import { classCode } from '../human/terrain-class';
 import { resourceCode } from '../human/resources';
-import type { Derived } from '../world';
 import { type ContentUsage, type ContentWorld, type UsageWorld, updateKind } from './registry';
 
 // 内容在世界里用在哪里（第二十八轮）：资源库里“移出本世界”之前查一遍，有在用的不让移出，写“有 N 处在用”，带一个定位。
@@ -182,43 +179,22 @@ function paintedUsage(arr: (w: W) => Uint8Array | undefined, code: (w: W, id: st
   };
 }
 
-// ---------- 以前的种类（界面里还按推导数） ----------
-
-function derivedCells(d: Partial<Derived> | undefined, key: 'riverType' | 'lakeType', code: number): number[] {
-  const a = d?.[key];
-  if (!a || !code) return [];
-  const out: number[] = [];
-  for (let i = 0; i < a.length; i++) if (a[i] === code) out.push(i);
-  return out;
-}
+// ---------- 以前的种类：只数手动指定的（按规则自动长出来、套上的不算，移出后那些地方自动换回别的） ----------
 
 function biomeUsage(w: W, id: string): ContentUsage | null {
   const painted = w.small.constraints.filter((c) => c.species === id);
-  const pc = painted.flatMap((c) => c.cells);
-  const k = w.small.species.findIndex((s) => s.id === id);
-  const dom = w.derived?.dominant;
-  const grown: number[] = [];
-  if (dom && k >= 0) for (let i = 0; i < dom.length; i++) if (dom[i] === k) grown.push(i);
-  return result([...part(grown.length, '格长着它'), ...part(painted.length, '处涂了它')], grown.length + painted.length, grown.length ? grown : pc);
+  return result(part(painted.length, '处涂了它'), painted.length, painted.flatMap((c) => c.cells));
 }
 
 function riverUsage(w: W, id: string): ContentUsage | null {
-  const k = riverTypesOf(w.small).findIndex((t) => t.id === id);
   const guides = w.small.guides.filter((g) => g.type === id);
-  const cells = derivedCells(w.derived, 'riverType', k + 1);
-  return result([...part(cells.length, '格的河是这一种'), ...part(guides.length, '条画的河选了它')], cells.length + guides.length, cells.length ? cells : guides.flatMap((g) => g.cells));
+  return result(part(guides.length, '条画的河选了它'), guides.length, guides.flatMap((g) => g.cells));
 }
 
 function lakeUsage(w: W, id: string): ContentUsage | null {
-  const k = lakeTypesOf(w.small).findIndex((t) => t.id === id);
   const lakes = w.small.lakes.filter((l) => l.type === id);
   const typed = (w.small.lakeTyping ?? []).filter((e) => e.type === id);
-  const cells = derivedCells(w.derived, 'lakeType', k + 1);
-  return result(
-    [...part(cells.length, '格的湖是这一种'), ...part(lakes.length + typed.length, '个湖选了它')],
-    cells.length + lakes.length + typed.length,
-    cells.length ? cells : [...lakes.map((l) => l.cell), ...typed.map((e) => e.cell)],
-  );
+  return result(part(lakes.length + typed.length, '个湖选了它'), lakes.length + typed.length, [...lakes.map((l) => l.cell), ...typed.map((e) => e.cell)]);
 }
 
 function islandUsage(w: W, id: string): ContentUsage | null {

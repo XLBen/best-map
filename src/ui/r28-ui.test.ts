@@ -121,18 +121,11 @@ describe('资源库：添加到本世界、移出本世界', () => {
     expect(w.small.riverTypes!.map((t) => t.id)).toEqual(['blood_river']);
     expect(blood().status.on).toBe(true);
     expect(addCommand(blood(), w)).toBeNull();
-    // 移出：在用（有自然的河是血河）时不能移出，写着用在哪里；没在用时能移出
-    const u = rowUsage(blood(), w);
-    const off = removeCommand(blood(), w);
-    if (u) {
-      expect(off).toBeNull();
-      expect(u.label).toMatch(/格的河是这一种/);
-      expect(u.cells!.length).toBeGreaterThan(0);
-    } else {
-      eng.exec(off!);
-      expect(w.small.riverTypes ?? []).toEqual([]);
-      eng.undo();
-    }
+    // 移出：按规则套上的河不算在用，能移出（那些河换回普通的河）；画的河选了它才算
+    expect(rowUsage(blood(), w)).toBeNull();
+    eng.exec(removeCommand(blood(), w)!);
+    expect(w.small.riverTypes ?? []).toEqual([]);
+    eng.undo();
     eng.undo();
     expect(w.small.riverTypes ?? []).toEqual([]);
   });
