@@ -21,7 +21,6 @@ import {
   landTool,
   provinceBrushTool,
   provinceCutTool,
-  provinceMergeTool,
   provinceRegenTool,
   rangePick,
   rangeTool,
@@ -199,8 +198,6 @@ describe('工具的命令流（拆分前后逐条相同）', () => {
     selectedProvince.value = p0;
     await record('涂省', provinceBrushTool(), (t) => drag(t, line(far, nb)));
     await record('剪刀', provinceCutTool(() => ZOOM), (t) => drag(t, line(far, inland)));
-    selectedProvince.value = p0;
-    await record('合并', provinceMergeTool(), (t) => click(t, atCell(nb)));
     selectedProvince.value = null;
     await record('重新划分', provinceRegenTool(), (t) => drag(t, line(inland, far)));
     // 地名

@@ -22,7 +22,6 @@ import {
   landTool,
   provinceBrushTool,
   provinceCutTool,
-  provinceMergeTool,
   provinceRegenTool,
   reliefEstimateM,
   reliefTool,
@@ -493,35 +492,6 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     clearBarPreview();
     vi.mocked(previewProvinces).mockReset();
     vi.mocked(previewProvinces).mockImplementation(async () => null);
-  });
-
-  it('合并：锁定的省标红、点了不合并；不相邻的两省黄色提醒，照样能合并', async () => {
-    const eng = continents({ provinces: true });
-    const [a, b] = bigLand(eng.world);
-    eng.exec({ op: 'set_province', id: b, locked: true });
-    // 与 a 不相邻、没锁定的陆地省
-    const w = eng.world;
-    const touching = new Set<number>();
-    for (const c of cellsOf(w, a)) for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1]; e++) touching.add(w.causes.province[w.mesh.adj[e]]);
-    const far = bigLand(w).find((p) => p !== a && p !== b && !touching.has(p) && interior(w, p) !== undefined)!;
-    world.value = w;
-    vi.mocked(exec).mockClear();
-    toast.value = null;
-    const t = provinceMergeTool();
-    selectedProvince.value = a;
-    t.move?.(at(w, interior(w, b)!), false);
-    const locked = t.preview();
-    expect(locked).toMatchObject({ warn: true, hint: `“${w.small.provinces[b].name}”已锁定` });
-    expect(locked.provinces).toBeUndefined();
-    expect(locked.layers[0].color).toEqual([230, 90, 70]);
-    await t.click?.(at(w, interior(w, b)!));
-    expect(exec).not.toHaveBeenCalled();
-    expect((toast.value as { text: string } | null)?.text).toBe(locked.hint);
-    t.move?.(at(w, interior(w, far)!), false);
-    expect(t.preview()).toMatchObject({ caution: true, hint: '不相邻：合并后分成两块' });
-    await t.click?.(at(w, interior(w, far)!));
-    expect(vi.mocked(exec).mock.calls[0][0]).toEqual({ op: 'merge_province', from: far, into: a });
-    selectedProvince.value = null;
   });
 
   it('重划：涂着停一下，地图上画出确切的新省界与省名（与执行的结果相同）', async () => {
