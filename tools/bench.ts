@@ -76,6 +76,20 @@ function plainBench() {
   lap('paint count (human)');
   eng.undo();
   lap('undo paint (human)');
+  // 第二十三轮：连同国家生成人文（与上面的 generate human 比，多出来的是国家的两步）、生成国家（另重分人口）、领土笔刷、撤销、改档案
+  eng.exec({ op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }], countries: {} });
+  lap(`generate human + countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
+  eng.exec({ op: 'regenerate_countries', fragmentation: 0.7 });
+  lap(`regenerate countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
+  const first = Number(Object.keys(eng.world.small.countries ?? {})[0]);
+  eng.exec({ op: 'paint_country', cells: peopled, country: first });
+  lap('paint country (human)');
+  eng.exec({ op: 'paint_country', cells: peopled.slice(0, 60), country: null });
+  lap('paint unclaimed (human)');
+  eng.undo();
+  lap('undo paint country');
+  eng.exec({ op: 'set_country', id: first, patch: { government: 'empire' } });
+  lap('set country');
   eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'sea' });
   lap('paint sea with people (repair)');
   const doc = eng.toDoc();
