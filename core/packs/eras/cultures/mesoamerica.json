@@ -7,7 +7,8 @@
     "prefs": [
       { "tempMin": 18, "factor": 1.8 },
       { "elevMin": 800, "elevMax": 3000, "factor": 1.6 },
-      { "classes": ["jungle", "highlands"], "factor": 1.4 }
+      { "classes": ["highlands"], "factor": 1.4 },
+      { "classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["jungle"], "factor": 1.4 }
     ]
   },
   "tendencies": {
@@ -40,7 +41,7 @@
       "nameStyle": "nahuatl",
       "description": "雨林里的阶梯神庙城邦。",
       "prefs": [
-        { "classes": ["jungle"], "factor": 1.4 }
+        { "terrain": ["jungle"], "factor": 1.4 }
       ]
     }
   ]

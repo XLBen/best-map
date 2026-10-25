@@ -8,58 +8,50 @@ import type { TerrainClass } from './terrain-class';
 //   宜居度 = 生态的宜居分 × 冷 × 水与海岸 × 地势 × 地形类别的倍数，最后截到 [0, 1]
 // - 生态的宜居分：生态写了 habitability 就用它；内置的生态按 BIOME_HABITABILITY；别的按生态的地形与最适合的气温估
 // - 冷：年均温 0 °C 以下渐渐变少，−15 °C 以下只剩一成
-// - 水：有河（流量够画成河）时先至少有 0.45（荒漠里的大河两岸也能住人），再 ×1.35–1.8（河越大越多）；挨着海 ×1.3，挨着湖 ×1.2
+// - 水：有河（流量够画成河）时先至少有 0.27–0.45（荒漠里的大河两岸也能住人；生态分越低越少），再 ×1.35–1.8（河越大越多）；挨着海 ×1.3，挨着湖 ×1.2
 // - 地势：海拔 1500 m 以上渐渐变少，5000 m 以上只剩 5%；坡度 ×1 / (1 + 坡度 / 30)
-// - 地形类别：类别写了 habitability 就用它，内置的按 CLASS_HABITABILITY
+// - 地形类别（只管起伏）：类别写了 habitability 就用它，内置的按 CLASS_HABITABILITY
 // 各个人口群体自己的偏好（矮人喜山）在这之上再乘（见 preferenceFactors）
 
-// 内置生态的宜居分
+// 内置生态的宜居分（第二十七轮：植被的那一份从地形类别挪到这里，森林、丛林、沼泽、荒漠……不再算两遍；
+// 数值是原来的生态分 × 原来植被类别的倍数，平地上的宜居度与以前差不多）
 export const BIOME_HABITABILITY: Readonly<Record<string, number>> = {
-  ice: 0.01,
-  tundra: 0.12,
-  taiga: 0.35,
-  temperate_forest: 0.8,
-  steppe: 0.65,
-  shrubland: 0.75,
-  subtropical_forest: 0.8,
-  savanna: 0.6,
-  dry_forest: 0.6,
-  monsoon_forest: 0.75,
-  rainforest: 0.35,
-  wetland: 0.3,
-  desert: 0.06,
+  ice: 0.002,
+  tundra: 0.1,
+  taiga: 0.31,
+  temperate_forest: 0.72,
+  steppe: 0.6,
+  shrubland: 0.71,
+  subtropical_forest: 0.68,
+  savanna: 0.57,
+  dry_forest: 0.54,
+  monsoon_forest: 0.53,
+  rainforest: 0.25,
+  wetland: 0.18,
+  desert: 0.042,
 };
 
 // 别的生态按地形估
 const TERRAIN_HABITABILITY: Readonly<Record<string, number>> = {
   plains: 0.8,
-  steppe: 0.6,
-  savanna: 0.55,
-  forest: 0.6,
-  hills: 0.6,
-  jungle: 0.4,
-  marsh: 0.3,
-  desert: 0.07,
-  arctic: 0.08,
+  steppe: 0.55,
+  savanna: 0.52,
+  forest: 0.54,
+  hills: 0.57,
+  jungle: 0.28,
+  marsh: 0.18,
+  desert: 0.05,
+  arctic: 0.065,
   mountains: 0.3,
 };
 
-// 内置的地形类别的倍数
+// 内置的地形类别的倍数：只按起伏（第二十七轮：植被的那一份挪进了生态分，起伏的几类略高一些，山地上的宜居度与以前差不多）
 export const CLASS_HABITABILITY: Readonly<Record<string, number>> = {
   plains: 1,
-  grasslands: 1,
-  steppe: 0.85,
-  hills: 0.85,
-  highlands: 0.75,
-  mountains: 0.45,
-  peaks: 0.08,
-  forest: 0.85,
-  woods: 0.95,
-  jungle: 0.7,
-  marsh: 0.6,
-  desert: 0.7,
-  tundra: 0.8,
-  glacier: 0.1,
+  hills: 0.92,
+  highlands: 0.82,
+  mountains: 0.5,
+  peaks: 0.09,
 };
 
 const DEFAULT_TERRAIN = new Map(DEFAULT_SPECIES.map((sp) => [sp.id, sp.terrain]));
@@ -90,6 +82,7 @@ export function computeHabitability(world: World, d: Derived, x: CellInputs, cls
   const prev = natural ? undefined : memo.get(d.habitability);
   if (prev && prev.cls === cls && prev.key === key && d.habitability.length === x.n) return d.habitability;
   const bio = species.map(biomeHabitability);
+  const riverFloor = bio.map((v) => 0.6 + 0.4 * Math.min(1, v / 0.6));
   const cf = [1, ...classes.map(classHabitability)];
   const thr = world.small.planet.riverThreshold;
   const out = new Float32Array(x.n);
@@ -102,7 +95,8 @@ export function computeHabitability(world: World, d: Derived, x: CellInputs, cls
     h *= cold;
     const f = x.flags[i];
     if (f & RIVER) {
-      h = Math.max(h, 0.45 * cold);
+      // 河边至少有的那一份按植被打折（第二十七轮：以前由植被的地形类别乘上去）：生态分 0.6 以上为 0.45，越低越少，最少六成
+      h = Math.max(h, 0.45 * cold * (b >= 0 ? riverFloor[b] : 1));
       const q = d.discharge[i] / thr;
       h *= 1.35 + 0.15 * Math.min(3, Math.log10(Math.max(1, q)));
     }

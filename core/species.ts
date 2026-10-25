@@ -150,6 +150,9 @@ export const speciesSchema = z.object({
   // ---------- 第二十二轮 ----------
   // 宜居度（0–1）：这种生态里住人有多合适。省略时按生态的地形与气候估一个（见 human/habitability.ts 的 biomeHabitability）
   habitability: z.number().min(0).max(1).optional(),
+  // ---------- 第二十七轮 ----------
+  // 通行难度的倍数（乘在地形类别的起伏上；平地的草原为 1）。省略时按生态估（见 human/terrain-class.ts 的 biomeMovement）
+  movement: z.number().min(0.1).max(20).optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;

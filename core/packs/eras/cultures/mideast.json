@@ -5,10 +5,13 @@
     "color": "#875a2d",
     "description": "大河与荒漠之间的绿洲、城市与商路。",
     "prefs": [
-      { "classes": ["desert", "steppe"], "factor": 2.2 },
+      { "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 2.2 },
+      { "terrain": ["desert"], "factor": 2.2 },
       { "river": true, "factor": 1.8 },
       { "tempMin": 14, "factor": 1.5 },
-      { "classes": ["forest", "woods", "jungle", "marsh"], "factor": 0.5 }
+      { "terrain": ["forest"], "factor": 0.5 },
+      { "terrain": ["jungle"], "factor": 0.5 },
+      { "terrain": ["marsh"], "factor": 0.5 }
     ]
   },
   "tendencies": {
@@ -29,7 +32,7 @@
       "weight": 1.5,
       "description": "荒漠与绿洲的商旅民族，驼队连起远方的城市。",
       "prefs": [
-        { "classes": ["desert"], "factor": 1.6 },
+        { "terrain": ["desert"], "factor": 1.6 },
         { "river": true, "factor": 1.5 }
       ]
     },
@@ -63,8 +66,8 @@
         "government": [["god-king", 3], ["temple-state", 3], ["early-empire", 3], ["city-state", 1.5], "early-kingdom", ["nomad-confederation", 8], ["sultanate", 15], ["theocracy", 3], ["nomad-khanate", 12], ["empire", 1.5], "feudal-monarchy", ["merchant-republic", 0.3], ["absolute-monarchy", 3], "constitutional-monarchy", ["military-junta", 1.5], ["revolutionary-state", 0.5], ["theocratic-republic", 3], ["one-party-state", 2], "presidential-republic", ["ultranationalist-state", 0.5], "dragon-lordship", ["magocracy", 2], ["free-city", 1.5], "holy-order", ["psionic-theocracy", 3], ["corporate-republic", 2], ["stellar-empire", 1.5], "military-government", ["galactic-federation", 0.5], ["tribal-confederation", 3]]
       },
       "prefs": [
-        { "classes": ["desert"], "factor": 2 },
-        { "classes": ["steppe"], "factor": 1.3 }
+        { "terrain": ["desert"], "factor": 2 },
+        { "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 1.3 }
       ]
     }
   ]

@@ -12,7 +12,6 @@ import {
   SLOTS,
   cellArchive,
   cellPopulation,
-  classAt,
   defaultTotalPop,
   dimensionValues,
   humanLayers,
@@ -64,10 +63,10 @@ const totalPop = (w: World) => w.causes.popTotal!.reduce((a, b) => a + b, 0);
 const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.causes.popTotal![i] > 0);
 
 // 人文的金标准（第二十二轮记下；第二十二轮 内容：内置的中世纪示例换成正式的一套后重录）：以后提速、重构，生成的人口、群体、发源地必须逐值不变；
-// 有意改了生成的规则、内置的中世纪与西欧、东亚、草原三组的数据时重录
+// 有意改了生成的规则、内置的中世纪与西欧、东亚、草原三组的数据时重录（第二十七轮重录：地形类别只管起伏，宜居度不再把植被算两遍，偏好按生态的地形）
 const RECORDED = {
-  region: { popTotal: 'f4db6bc3f38eda22', popGroup: 'fd0c31e2ede20b45', popShare: '64ec516483917b2b', human: '0e8cf9b78743a2c5' },
-  planet: { popTotal: 'd099aefd9f983f7d', popGroup: 'cdb3e4ff2757446d', popShare: '38e9926fc4b7ef86', human: 'e98c99789cccb261' },
+  region: { popTotal: '775959a1b32aa324', popGroup: '615e92255bebd8f9', popShare: 'a6bebbf6370e6d27', human: '0b1bb5c220bbca2a' },
+  planet: { popTotal: 'ed60b168f709c4e6', popGroup: 'c7d81a7e310ca928', popShare: 'db4a6def5def5d31', human: '8e8a40c4a27c3c41' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human) });
 
@@ -190,7 +189,8 @@ describe('生成人文', () => {
     expect(hs.filter((h) => h.culture).map((h) => h.culture)).toEqual(SAMPLE_CULTURES);
     for (const h of hs) expect(dry(w, h.cell), `${h.group}/${h.culture}`).toBe(true);
     const steppe = hs.find((h) => h.group === 'steppe' && !h.culture)!;
-    expect(['steppe', 'grasslands', 'desert']).toContain(classAt(w.small, w.derived.terrainClass[steppe.cell])?.id);
+    // 第二十七轮：草原、荒漠是生态的地形（地形类别只管起伏）
+    expect(['steppe', 'savanna', 'desert']).toContain(w.small.species[w.derived.dominant[steppe.cell]]?.terrain);
     const west = hs.find((h) => h.group === 'western' && !h.culture)!;
     expect(w.derived.tMean[west.cell]).toBeGreaterThanOrEqual(-2);
     expect(w.derived.tMean[west.cell]).toBeLessThanOrEqual(16);

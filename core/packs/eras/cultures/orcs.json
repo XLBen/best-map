@@ -5,9 +5,12 @@
     "color": "#3c5a0f",
     "description": "荒原与干草原上的部落。",
     "prefs": [
-      { "classes": ["steppe", "desert", "highlands"], "factor": 2.5 },
-      { "classes": ["grasslands"], "factor": 1.5 },
-      { "classes": ["forest", "jungle"], "factor": 0.6 }
+      { "classes": ["highlands"], "factor": 2.5 },
+      { "classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 2.5 },
+      { "classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["desert"], "factor": 2.5 },
+      { "terrain": ["steppe", "savanna"], "moistMin": 0.35, "factor": 1.5 },
+      { "terrain": ["forest"], "moistMin": 0.8, "factor": 0.6 },
+      { "terrain": ["jungle"], "factor": 0.6 }
     ],
     "eras": ["fantasy"]
   },
@@ -37,7 +40,8 @@
         "religion": [["storm-horn", 5], ["elder-dragons", 2], ["grey-warden", 1]]
       },
       "prefs": [
-        { "classes": ["desert", "highlands"], "factor": 1.5 }
+        { "classes": ["highlands"], "factor": 1.5 },
+        { "classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["desert"], "factor": 1.5 }
       ]
     },
     {
@@ -53,7 +57,8 @@
         "race": [["goblin", 8], ["orc", 1.5]]
       },
       "prefs": [
-        { "classes": ["marsh", "hills"], "factor": 1.6 }
+        { "classes": ["hills"], "factor": 1.6 },
+        { "classes": ["plains", "highlands", "mountains", "peaks"], "terrain": ["marsh"], "factor": 1.6 }
       ]
     }
   ]

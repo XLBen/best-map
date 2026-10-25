@@ -7,7 +7,7 @@
     "prefs": [
       { "tempMin": 20, "factor": 2 },
       { "terrain": ["savanna"], "factor": 2 },
-      { "classes": ["grasslands", "plains"], "factor": 1.2 }
+      { "classes": ["plains"], "terrain": ["steppe", "savanna"], "factor": 1.2 }
     ]
   },
   "tendencies": {
@@ -39,7 +39,7 @@
         "religion": [["ancestor-rites", 5], ["spirit-ways", 3], ["sun-faith", 3], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]]
       },
       "prefs": [
-        { "classes": ["grasslands", "steppe"], "factor": 1.4 }
+        { "terrain": ["steppe", "savanna"], "factor": 1.4 }
       ]
     },
     {

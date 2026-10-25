@@ -137,6 +137,7 @@ registerKind<Species>({
     { key: 'competition', label: '竞争力', type: 'number', min: 0, max: 100, step: 0.5 },
     { key: 'natural', label: '自然生成', type: 'bool', optional: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
+    { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
     { key: 'tolerances', label: '耐受条件', type: 'json' },
     { key: 'visual', label: '样子', type: 'json', optional: true },
     { key: 'effects', label: '对周围的影响', type: 'json', optional: true },

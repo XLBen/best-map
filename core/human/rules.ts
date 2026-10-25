@@ -30,7 +30,7 @@ export const cellRuleSchema = z.object({
   terrain: z.array(z.string().max(30)).max(32).optional(),
   // 生态的 id
   biomes: z.array(typeIdSchema).max(64).optional(),
-  // 地形类别的 id（只用于资源：地形类别的规则里不能写）
+  // 地形类别的 id（只管起伏：plains、hills、highlands、mountains、peaks 与自己加的；资源、偏好用，地形类别的规则里不能写）
   classes: z.array(typeIdSchema).max(64).optional(),
   // 挨着海（true）/ 不挨着海（false）
   coast: z.boolean().optional(),
@@ -59,7 +59,7 @@ export const RULE_FIELDS: readonly FieldDesc[] = [
   { key: 'river', label: '有河', type: 'bool', optional: true },
   { key: 'lake', label: '挨着湖', type: 'bool', optional: true },
 ];
-export const RESOURCE_RULE_FIELDS: readonly FieldDesc[] = [{ key: 'classes', label: '地形类别', type: 'tags', optional: true, hint: '地形类别的 id' }, ...RULE_FIELDS];
+export const RESOURCE_RULE_FIELDS: readonly FieldDesc[] = [{ key: 'classes', label: '地形类别', type: 'tags', optional: true, hint: 'plains、hills、highlands、mountains、peaks（只管起伏；植被写“生态的地形”）' }, ...RULE_FIELDS];
 
 // 每格的输入：一次算好，规则只查表
 export interface CellInputs {

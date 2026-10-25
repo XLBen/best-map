@@ -7,7 +7,7 @@ import { RIVER } from './rules';
 import { type SettleInputs, cellKm, cityAt, computeCityTable, nextSettlementId } from './settlements';
 import { isMajorRank } from './settle-content';
 import { distKm } from './space';
-import { worldTerrainClasses } from './terrain-class';
+import { cellMovement, minMovement } from './terrain-class';
 
 // 道路（第二十四轮）：一串相邻的陆地格。自动的按地形类别的通行难度连城市：
 //   1. 大道：每块陆地上的首都与大城市先按直线距离连成 Gabriel 图，取最小生成树，再补上绕得太远的几条（环路），
@@ -33,19 +33,19 @@ const HEURISTIC = 0.55;
 export function roadCosts(S: SettleInputs): Float32Array {
   const { world, x, cls } = S;
   const { mesh } = world;
-  const move = [1, ...worldTerrainClasses(world.small).map((c) => c.movement ?? 1)];
+  const move = cellMovement(world.small, x, cls);
   const km = world.kmPerUnit;
   const elev = x.elevation;
   const out = new Float32Array(mesh.adj.length).fill(Infinity);
   for (let i = 0; i < mesh.n; i++) {
     if (!x.dry[i]) continue;
     const ri = (x.flags[i] & RIVER) !== 0;
-    const mi = move[cls[i]] ?? 1;
+    const mi = move[i];
     for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
       const j = mesh.adj[e];
       if (!x.dry[j]) continue;
       const rj = (x.flags[j] & RIVER) !== 0;
-      let f = ((mi + (move[cls[j]] ?? 1)) / 2) * (1 + Math.abs(elev[j] - elev[i]) / 300);
+      let f = ((mi + move[j]) / 2) * (1 + Math.abs(elev[j] - elev[i]) / 300);
       if (rj && !ri) f *= 2.2;
       else if (ri && rj) f *= 0.85;
       out[e] = mesh.dist[e] * km * f;
@@ -55,11 +55,7 @@ export function roadCosts(S: SettleInputs): Float32Array {
 }
 
 // 最便宜的通行难度（A* 的估计用）
-function minMove(world: World): number {
-  let m = 1;
-  for (const c of worldTerrainClasses(world.small)) m = Math.min(m, c.movement ?? 1);
-  return m;
-}
+const minMove = (world: World): number => minMovement(world.small);
 
 // 每格在哪条路上：1 大道、2 小路（都有时大道）、0 不在
 export function roadMask(world: World, roads: Iterable<RoadMeta>): Uint8Array {

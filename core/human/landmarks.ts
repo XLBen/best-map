@@ -94,8 +94,8 @@ export function detect(S: SettleInputs, detector: LandmarkDetector): Candidate[]
       break;
     }
     case 'oasis': {
-      const desert = worldTerrainClasses(world.small).findIndex((c) => c.id === 'desert') + 1;
-      const isDesert = (i: number) => (desert > 0 && S.cls[i] === desert) || world.small.species[d.dominant[i]]?.terrain === 'desert';
+      // 第二十七轮：荒漠是生态的事（地形类别只管起伏）
+      const isDesert = (i: number) => world.small.species[d.dominant[i]]?.terrain === 'desert';
       for (let i = 0; i < mesh.n; i++) {
         if (!x.dry[i] || !(x.flags[i] & (RIVER | LAKE)) || !isDesert(i)) continue;
         let k = 0;
@@ -159,6 +159,8 @@ function placeIn(P: PlaceCtx, place: LandmarkPlace, cells: readonly number[], co
   const mine = P.cities.filter((c) => !c.point && (country === null || c.country === country));
   const classIds = worldTerrainClasses(small).map((c) => c.id);
   const clsIs = (i: number, ids: string[]) => ids.includes(classIds[cls[i] - 1] ?? '');
+  // 生态的地形（荒漠、森林……）
+  const terrainIs = (i: number, ts: string[]) => ts.includes(small.species[d.dominant[i]]?.terrain ?? '');
   switch (place) {
     case 'capital': {
       const cap = mine.find((c) => c.capital) ?? mine[0];
@@ -204,9 +206,9 @@ function placeIn(P: PlaceCtx, place: LandmarkPlace, cells: readonly number[], co
       );
     }
     case 'desert':
-      return pickWeighted(free.filter((i) => clsIs(i, ['desert']) || small.species[d.dominant[i]]?.terrain === 'desert'), () => 1, rand);
+      return pickWeighted(free.filter((i) => terrainIs(i, ['desert'])), () => 1, rand);
     case 'forest':
-      return pickWeighted(free.filter((i) => clsIs(i, ['forest', 'woods', 'jungle'])), () => 1, rand);
+      return pickWeighted(free.filter((i) => terrainIs(i, ['forest', 'jungle'])), () => 1, rand);
     case 'border': {
       const terr = causes.country;
       if (!terr || country === null) return undefined;

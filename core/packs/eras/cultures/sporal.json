@@ -5,8 +5,9 @@
     "color": "#2de178",
     "description": "菌丝相连的孢生种族，整片林子是一个意识。",
     "prefs": [
-      { "classes": ["jungle", "marsh"], "factor": 3 },
-      { "classes": ["forest"], "factor": 1.5 },
+      { "terrain": ["jungle"], "factor": 3 },
+      { "terrain": ["marsh"], "factor": 3 },
+      { "terrain": ["forest"], "moistMin": 0.8, "factor": 1.5 },
       { "tempMin": 14, "factor": 1.5 }
     ],
     "eras": ["scifi"]
@@ -37,7 +38,8 @@
         "ideology": [["sf-naturalist", 4], ["sf-collective", 2], ["sf-psionic", 1]]
       },
       "prefs": [
-        { "classes": ["forest", "marsh"], "factor": 1.4 }
+        { "terrain": ["forest"], "moistMin": 0.8, "factor": 1.4 },
+        { "terrain": ["marsh"], "factor": 1.4 }
       ]
     }
   ]

@@ -5,9 +5,10 @@
     "color": "#1ee178",
     "description": "古老森林里长寿的精灵。",
     "prefs": [
-      { "classes": ["forest", "woods"], "factor": 3 },
-      { "classes": ["jungle"], "factor": 1.5 },
-      { "classes": ["desert", "steppe"], "factor": 0.4 }
+      { "terrain": ["forest"], "factor": 3 },
+      { "terrain": ["jungle"], "factor": 1.5 },
+      { "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 0.4 },
+      { "terrain": ["desert"], "factor": 0.4 }
     ],
     "eras": ["fantasy"]
   },

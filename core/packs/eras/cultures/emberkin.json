@@ -5,7 +5,8 @@
     "color": "#ff0000",
     "description": "火山与荒漠边的龙裔与提夫林。",
     "prefs": [
-      { "classes": ["desert", "highlands", "mountains"], "factor": 2.2 },
+      { "classes": ["highlands", "mountains"], "factor": 2.2 },
+      { "classes": ["plains", "hills", "peaks"], "terrain": ["desert"], "factor": 2.2 },
       { "tempMin": 16, "factor": 1.6 }
     ],
     "eras": ["fantasy"]

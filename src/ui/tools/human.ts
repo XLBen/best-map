@@ -1,6 +1,6 @@
 import type { Command } from '../../../core/commands';
 import { hexToRgb } from '../../../core/export';
-import { RESOURCE_NONE, classAt, resourceAt, worldResources, worldTerrainClasses } from '../../../core/human';
+import { RESOURCE_NONE, classAt, resourceAt, terrainLabel, worldResources, worldTerrainClasses } from '../../../core/human';
 import type { World } from '../../../core/world';
 import { NO_RESOURCE } from '../../render/colors';
 import { exec, options, setOptions, world } from '../../state';
@@ -37,7 +37,7 @@ export const resourceCommand = (cells: number[], id: string | null): Command => 
 function classHere(w: World, cell: number): string | null {
   if (cell < 0 || !dryLand(w, cell)) return null;
   const c = classAt(w.small, w.derived.terrainClass[cell]);
-  return c ? `这里：${c.name}${w.causes.terrainClass?.[cell] ? '' : '（自动）'}` : null;
+  return c ? `这里：${terrainLabel(w, cell) ?? c.name}${w.causes.terrainClass?.[cell] ? '' : '（自动）'}` : null;
 }
 function resourceHere(w: World, cell: number): string | null {
   if (cell < 0 || !dryLand(w, cell)) return null;

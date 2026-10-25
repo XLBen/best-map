@@ -7,7 +7,7 @@
     "prefs": [
       { "tempMin": -10, "tempMax": 6, "factor": 2.2 },
       { "coast": true, "factor": 1.6 },
-      { "classes": ["forest", "woods"], "factor": 1.3 }
+      { "terrain": ["forest"], "factor": 1.3 }
     ]
   },
   "tendencies": {
@@ -38,7 +38,7 @@
       "nameStyle": "nordic-norse",
       "description": "北方森林与湖区的农牧民。",
       "prefs": [
-        { "classes": ["forest", "woods"], "factor": 1.3 },
+        { "terrain": ["forest"], "factor": 1.3 },
         { "lake": true, "factor": 1.3 }
       ]
     }

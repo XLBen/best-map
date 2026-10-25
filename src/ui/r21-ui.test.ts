@@ -66,12 +66,14 @@ describe('底图与图例', () => {
     expect(legendFor(w, 'dominant')!.items.length).toBeGreaterThan(1);
     expect(legendFor(w, 'terrain')).toBeNull();
     expect(legendFor(w, 'provinces')).toBeNull();
-    // 同一份数组：同一个结果；画了一片冰川，图例跟着变
+    // 同一份数组：同一个结果；画了一片山峰，图例跟着变
     expect(legendFor(w, 'terrainClass')).toBe(tc);
     const cells = dry(w).slice(0, 40);
-    eng.exec({ op: 'set_cell_class', cells, class: 'glacier' });
+    eng.exec({ op: 'set_cell_class', cells, class: 'peaks' });
     const after = legendFor(eng.world, 'terrainClass')!;
-    expect(after.items.find((it) => it.label === '冰川')!.count).toBeGreaterThanOrEqual(40);
+    expect(after.items.find((it) => it.label === '山峰')!.count).toBeGreaterThanOrEqual(40);
+    // 第二十七轮：只有起伏的 5 种
+    expect(after.items.map((it) => it.label).sort()).toEqual(['丘陵', '山地', '山峰', '平原', '高原'].sort());
   });
 
   it('山峰图层：全部山峰当作地名排（键带前缀、不是地物），同一个世界给同一份', () => {
@@ -110,7 +112,7 @@ describe('画地形类别、资源', () => {
     world.value = w;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
     const c = dry(w).find((i) => brushCells(w, w.mesh.x[i], w.mesh.y[i], 2 * cellKm).cells.some((j) => !w.causes.land[j]))!;
-    setOptions({ brushKm: 2 * cellKm, terrainClass: 'marsh', resource: 'none' });
+    setOptions({ brushKm: 2 * cellKm, terrainClass: 'highlands', resource: 'none' });
     const paint = async (t: ReturnType<typeof terrainClassTool>) => {
       const p = pointer(w, c);
       t.move?.(p, false);
@@ -119,7 +121,7 @@ describe('画地形类别、资源', () => {
       return vi.mocked(exec).mock.calls.at(-1)![0] as Command & { cells: number[] };
     };
     const a = await paint(terrainClassTool());
-    expect(a).toMatchObject({ op: 'set_cell_class', class: 'marsh' });
+    expect(a).toMatchObject({ op: 'set_cell_class', class: 'highlands' });
     expect(a.cells.length).toBeGreaterThan(0);
     expect(a.cells.every((i) => dryLand(w, i))).toBe(true);
     expect((await paint(resourceTool())) as Command).toMatchObject({ op: 'set_cell_resource', resource: 'none' });
@@ -191,12 +193,14 @@ describe('格的档案', () => {
   it('地形类别、资源：一格的命令；画过的显示画的，自动的那一种照样算得出', () => {
     const eng = continents();
     const cell = dry(eng.world)[5];
-    expect(cellClassCommand(cell, 'desert')).toEqual({ op: 'set_cell_class', cells: [cell], class: 'desert' });
+    expect(cellClassCommand(cell, 'hills')).toEqual({ op: 'set_cell_class', cells: [cell], class: 'hills' });
     expect(cellResourceCommand(cell, null)).toEqual({ op: 'set_cell_resource', cells: [cell], resource: null });
     const auto = cellArchive(eng.world, cell).terrainClass!.id;
-    eng.exec(cellClassCommand(cell, auto === 'desert' ? 'marsh' : 'desert'));
+    eng.exec(cellClassCommand(cell, auto === 'hills' ? 'highlands' : 'hills'));
     const a = cellArchive(eng.world, cell);
     expect(a.terrainClass).toMatchObject({ auto: false, autoId: auto });
+    // 地形一行写“起伏 · 生态”
+    expect(a.terrainLabel).toBe(`${a.terrainClass!.name} · ${a.biome!.name}`);
     eng.exec(cellResourceCommand(cell, 'gold'));
     expect(cellArchive(eng.world, cell)).toMatchObject({ resource: { id: 'gold' }, resourceAuto: false });
   });

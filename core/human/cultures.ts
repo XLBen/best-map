@@ -4,7 +4,7 @@ import type { HumanHearth, World } from '../world';
 import type { GenContext, HumanStage } from './context';
 import { RIVER } from './rules';
 import { cellKm2, distKm, growByBudget, noiseAt } from './space';
-import { worldTerrainClasses } from './terrain-class';
+import { cellMovement } from './terrain-class';
 
 // 文化圈（第二十二轮）：先给每个文化组按喜欢的地理挑发源地，从发源地按代价往外扩（山、河、海峡难走；跨海贵但能过），
 // 各组的地盘按权重定大小（宜居的面积按权重分）；再在每个组的地盘里同样给组里的文化分地盘。
@@ -15,11 +15,11 @@ const AREA_PER_HEARTH = 25e6;
 // 发源地之间至少隔开多远：√(陆地面积 / 发源地个数) 的这么多倍
 const SPACING = 0.6;
 
-// 走一条边的代价（km × 难走的倍数）：陆上按地形类别的通行难度、高低差、过河；进湖 ×3；下海 ×8、海上 ×4、上岸 ×2
+// 走一条边的代价（km × 难走的倍数）：陆上按通行难度（地形类别的起伏 × 生态的植被）、高低差、过河；进湖 ×3；下海 ×8、海上 ×4、上岸 ×2
 export function edgeCosts(ctx: Pick<GenContext, 'world' | 'x' | 'cls'>): Float32Array {
   const { world, x, cls } = ctx;
   const { mesh, causes } = world;
-  const move = [1, ...worldTerrainClasses(world.small).map((c) => c.movement ?? 1)];
+  const move = cellMovement(world.small, x, cls);
   const km = world.kmPerUnit;
   const out = new Float32Array(mesh.adj.length);
   const elev = x.elevation;
@@ -30,7 +30,7 @@ export function edgeCosts(ctx: Pick<GenContext, 'world' | 'x' | 'cls'>): Float32
       const j = mesh.adj[e];
       let mv: number;
       if (x.dry[j]) {
-        mv = move[cls[j]] ?? 1;
+        mv = move[j];
         if (di) {
           mv *= 1 + Math.abs(elev[j] - elev[i]) / 600;
           if (((x.flags[j] & RIVER) !== 0) !== ri) mv *= 1.5;
