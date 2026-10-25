@@ -1,7 +1,7 @@
 import { type Command, popText } from '../../core/commands';
 import { type CultureGroup, type Era, type PopValue, type Culture, weightedList, worldCultureGroups, worldCultures, worldEra, worldEras, worldPopValues } from '../../core/human';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../../core/packs/eras';
-import type { World } from '../../core/world';
+import type { CountryLayout, World } from '../../core/world';
 
 // 人文（第二十二轮）的界面逻辑：新建向导的“人文”一步与“文化 ⋯”里的“生成人文”共用的选择（时代、文化组与各占多少、总人口），
 // 人数、密度的写法。不碰界面，测试直接调。内置的时代、文化组每次都从 core/packs/eras 读：加了新的时代、文化组自动出现
@@ -40,14 +40,14 @@ export const valueChoices = (small?: Small | null): PopValue[] => merged(BUILTIN
 export const culturesIn = (small: Small | null | undefined, group: string) => cultureChoices(small).filter((c) => c.group === group);
 
 // 一份“生成人文”的选择。pop：总人口（null 按时代的默认密度）。
-// countries（第二十三轮）：同时生成国家，fragmentation 是“分裂 ↔ 统一”（0 统一、1 分裂、0.5 按时代）。
+// countries（第二十三轮）：同时生成国家，fragmentation 是“分裂 ↔ 统一”（0 统一、1 分裂、0.5 按时代），layout 是格局（第二十六轮）。
 // settlements（第二十四轮）：同时生成城市与道路（要有国家），landmarks：地标
 export interface HumanChoice {
   on: boolean;
   era: string;
   groups: { id: string; weight: number }[];
   pop: number | null;
-  countries: { on: boolean; fragmentation: number };
+  countries: { on: boolean; fragmentation: number; layout?: CountryLayout };
   settlements: { on: boolean; landmarks: boolean };
 }
 
@@ -73,7 +73,7 @@ export function eraGroups(era: Era | undefined, small?: Small | null): { id: str
 // 默认的选择：世界里已有人文时照它，否则第一个时代（内置的中世纪）
 export function defaultChoice(small?: Small | null, on = true): HumanChoice {
   const h = small?.human;
-  const countries = { on: true, fragmentation: h?.countryRules?.fragmentation ?? 0.5 };
+  const countries = { on: true, fragmentation: h?.countryRules?.fragmentation ?? 0.5, layout: h?.countryRules?.layout ?? ('era' as CountryLayout) };
   const settlements = { on: true, landmarks: small?.settlementRules?.landmarks ?? true };
   if (h) return { on, era: h.era, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null, countries, settlements };
   const era = eraChoices(small)[0];
@@ -123,7 +123,9 @@ export function generateCommand(c: HumanChoice, small?: Small | null): Command |
     era: c.era,
     groups: c.groups.map((g) => ({ id: g.id, weight: g.weight })),
     ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}),
-    ...(c.countries.on ? { countries: c.countries.fragmentation !== 0.5 ? { fragmentation: c.countries.fragmentation } : {} } : {}),
+    ...(c.countries.on
+      ? { countries: { ...(c.countries.fragmentation !== 0.5 ? { fragmentation: c.countries.fragmentation } : {}), ...(c.countries.layout && c.countries.layout !== 'era' ? { layout: c.countries.layout } : {}) } }
+      : {}),
     // 城市与道路要有国家（第二十四轮）
     ...(c.countries.on && c.settlements.on ? { settlements: c.settlements.landmarks ? {} : { landmarks: false } } : {}),
   };

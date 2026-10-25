@@ -60,6 +60,8 @@ export type ViewMode =
   | 'cultureGroup'
   // 国家（第二十三轮）：国家的颜色平涂在地貌上（附庸用宗主的浅色），领海淡淡地涂
   | 'country'
+  // 同盟（第二十六轮）：帝国、联邦、同盟各一种颜色，不在集团里的国家灰色
+  | 'bloc'
   | `dim:${string}`
   | `field:${string}`;
 
@@ -173,7 +175,8 @@ export function togglePanel(id: PanelId) {
   openPanel.value = openPanel.value === id ? null : id;
 }
 // 右边的抽屉：生态类型编辑要一边看地图一边调，所以不随点地图关上；国家的档案（第二十三轮）、城市、地标、自定义点的档案（第二十四轮）同样
-export const sheet = signal<'species' | 'country' | 'settle' | null>(null);
+// 第二十六轮：集团（帝国、联邦、同盟）的档案
+export const sheet = signal<'species' | 'country' | 'settle' | 'bloc' | null>(null);
 // Tab：隐藏全部界面，只看地图
 export const uiHidden = signal(false);
 // 正在拖底部条上的滑块：地图在鼠标最后停的地方显示预览
@@ -216,6 +219,8 @@ export const focusName = signal<string | null>(null);
 export const selectedProvince = signal<number | null>(null);
 // 国家（第二十三轮）：选中的国家（编号），档案的抽屉、首都、合并跟着它
 export const selectedCountry = signal<number | null>(null);
+// 集团（第二十六轮）：选中的帝国、联邦、同盟（编号），集团档案跟着它
+export const selectedBloc = signal<number | null>(null);
 // 城市、道路、地标、自定义点（第二十四轮）：选中的一样（编号四种共用；当作城市、没挂在城市上的点是 point）
 export type SettleRef = { kind: 'city' | 'road' | 'landmark' | 'point'; id: number };
 export const selectedSettle = signal<SettleRef | null>(null);
@@ -251,11 +256,11 @@ export type ProjectionPref = 'equirect' | 'equalEarth' | 'globe';
 const PREFS_KEY = 'map2.prefs';
 // 地图模式（第二十五轮，像 EU4：地理、国家、文化、文化组、时代的每一维、人口；第二十三轮的“人文图”就是“国家”）。
 // 每种模式画什么见 ui/map/modes.ts 的表
-export type MapKind = 'geo' | 'country' | 'culture' | 'cultureGroup' | 'popDensity' | `dim:${string}`;
+export type MapKind = 'geo' | 'country' | 'bloc' | 'culture' | 'cultureGroup' | 'popDensity' | `dim:${string}`;
 // 存着的模式读回来：第二十三轮的 political 读作 country，不认识的是地理
 export function parseMapKind(v: unknown): MapKind {
   if (v === 'political') return 'country';
-  if (v === 'country' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity') return v;
+  if (v === 'country' || v === 'bloc' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity') return v;
   if (typeof v === 'string' && /^dim:[\w-]{1,64}$/.test(v)) return v as MapKind;
   return 'geo';
 }
@@ -849,6 +854,11 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   if (selectedCountry.value !== null && (fresh || !s.small.countries?.[selectedCountry.value])) {
     selectedCountry.value = null;
     if (sheet.value === 'country') sheet.value = null;
+  }
+  // 选中的集团：删掉、撤销掉了，或者换了世界
+  if (selectedBloc.value !== null && (fresh || !s.small.blocs?.some((b) => b.id === selectedBloc.value))) {
+    selectedBloc.value = null;
+    if (sheet.value === 'bloc') sheet.value = null;
   }
   // 选中的城市、道路、地标、点：删掉、撤销掉了，或者换了世界
   const ss = selectedSettle.value;

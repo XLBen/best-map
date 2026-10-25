@@ -1,12 +1,14 @@
 import { useState } from 'preact/hooks';
-import { flagSvg } from '../../../core/human';
-import type { CountryMeta, World } from '../../../core/world';
+import { LAYOUT_NAMES, SUBJECT_NAMES, flagSvg } from '../../../core/human';
+import type { CountryLayout, CountryMeta, World } from '../../../core/world';
 import { askUser, exec, openPanel, selectedCountry, setOptions, sheet, switchTool, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
 import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import {
+  COUNTRY_LAYOUTS,
+  LAYOUT_HINTS,
   NO_COUNTRIES,
   cellsOf,
   countryRows,
@@ -14,8 +16,10 @@ import {
   fragAt,
   fragPos,
   fragText,
+  fragTitle,
   generateCountriesCommand,
   hasCountries,
+  layoutOf,
   regenerateCountriesCommand,
 } from '../countries';
 import { popText } from '../human';
@@ -110,7 +114,7 @@ export function CountryList({ w, onPick }: { w: World; onPick?: () => void }) {
       {rows.map((r) => (
         <button
           class={`item country-row ${r.meta.id === sel ? 'on' : ''}`}
-          title={r.overlord ? `“${r.overlord.name}”的附庸` : r.government}
+          title={r.overlord ? `“${r.overlord.name}”的${SUBJECT_NAMES[r.meta.subject ?? 'vassal']}` : r.government}
           onClick={() => {
             showCountry(w, r.meta.id);
             onPick?.();
@@ -120,7 +124,7 @@ export function CountryList({ w, onPick }: { w: World; onPick?: () => void }) {
           <Flag m={r.meta} w={21} h={14} />
           <span class="grow item-text">
             <span class="ellipsis">{r.meta.name}</span>
-            <span class="hint ellipsis">{r.overlord ? `附庸 · ${r.government}` : r.government}</span>
+            <span class="hint ellipsis">{r.overlord ? `${SUBJECT_NAMES[r.meta.subject ?? 'vassal']} · ${r.government}` : r.government}</span>
           </span>
           <span class="hint">{popText(r.stats?.population ?? 0)}</span>
         </button>
@@ -141,7 +145,7 @@ function FragSlider({ w, value, onChange, keepLocked }: { w: World; value: numbe
       label="分裂 ↔ 统一"
       pos={fragPos(f)}
       text={fragText(f)}
-      title="往左小国多，往右大国少"
+      title={fragTitle(w.small.human?.era, w.small)}
       note={n ? `约 ${n} 个国家` : undefined}
       onDraft={(p) => setDraft(fragAt(p))}
       onCommit={(p) => {
@@ -153,13 +157,31 @@ function FragSlider({ w, value, onChange, keepLocked }: { w: World; value: numbe
   );
 }
 
+// 格局（第二十六轮）：国家大小怎么分布。“国家 ⋯”与生成人文（向导、“文化 ⋯”）共用
+export function LayoutPick({ value, onChange, disabled }: { value: CountryLayout; onChange: (v: CountryLayout) => void; disabled?: boolean }) {
+  return (
+    <div class="row" title={LAYOUT_HINTS[value]}>
+      <span class="grow">格局</span>
+      <select value={value} disabled={disabled} onChange={(e) => onChange((e.target as HTMLSelectElement).value as CountryLayout)}>
+        {COUNTRY_LAYOUTS.map((l) => (
+          <option value={l} title={LAYOUT_HINTS[l]}>
+            {LAYOUT_NAMES[l]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function GenerateCountries({ w }: { w: World }) {
   const [f, setF] = useState(0.5);
+  const [layout, setLayout] = useState<CountryLayout>('era');
   return (
     <section>
       <h5>生成国家</h5>
       <FragSlider w={w} value={f} onChange={setF} />
-      <button class="primary" onClick={() => void exec(generateCountriesCommand(f), '正在生成…')}>
+      <LayoutPick value={layout} onChange={setLayout} />
+      <button class="primary" onClick={() => void exec(generateCountriesCommand(f, layout), '正在生成…')}>
         生成
       </button>
     </section>
@@ -169,6 +191,7 @@ function GenerateCountries({ w }: { w: World }) {
 function CountryTools({ w }: { w: World }) {
   const [f, setF] = useState(w.small.human?.countryRules?.fragmentation ?? 0.5);
   const [keep, setKeep] = useState(true);
+  const [layout, setLayout] = useState<CountryLayout>(layoutOf(w));
   const locked = Object.values(w.small.countries ?? {}).filter((m) => m.locked).length;
   return (
     <>
@@ -179,13 +202,14 @@ function CountryTools({ w }: { w: World }) {
       <section>
         <h5>重新生成</h5>
         <FragSlider w={w} value={f} onChange={setF} keepLocked={keep} />
+        <LayoutPick value={layout} onChange={setLayout} />
         {locked > 0 && (
           <Toggle on={keep} onChange={setKeep}>
             锁定的不动 · {locked} 个
           </Toggle>
         )}
         <div class="row wrap">
-          <button onClick={() => void exec(regenerateCountriesCommand(w, f, keep), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
+          <button onClick={() => void exec(regenerateCountriesCommand(w, f, keep, layout), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
             重新生成
           </button>
           <button

@@ -6,7 +6,8 @@ import { askUser, exec, openPanel, options, setOptions, togglePanel, world } fro
 import { Seg } from '../common';
 import { OptionSlider, Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { fragAt, fragPos, fragText } from '../countries';
+import { fragAt, fragPos, fragText, fragTitle } from '../countries';
+import { LayoutPick } from './countries';
 import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import type { SliderDef } from '../defs/types';
 import {
@@ -221,7 +222,7 @@ export function HearthBar() {
 
 // ---------- 生成人文的选择（向导、“文化 ⋯”共用） ----------
 
-// “国家”（第二十三轮）：生成国家、分裂 ↔ 统一。estimate：大约几个国家（有世界时才知道）
+// “国家”（第二十三轮）：生成国家、分裂 ↔ 统一、格局（第二十六轮）。estimate：大约几个国家（有世界时才知道）
 // settlements（第二十四轮）：带上“生成城市与道路”“地标”（要有国家）
 export function CountryChoice({
   choice,
@@ -256,7 +257,7 @@ export function CountryChoice({
           text={fragText(f)}
           changed={c.fragmentation !== 0.5}
           disabled={disabled}
-          title="往左小国多，往右大国少"
+          title={fragTitle(choice.era, world.value?.small)}
           note={
             <>
               {n ? `约 ${n} 个国家` : '正中按时代'}
@@ -275,6 +276,7 @@ export function CountryChoice({
           onCancel={() => setDraft(null)}
         />
       )}
+      {c.on && <LayoutPick value={c.layout ?? 'era'} disabled={disabled} onChange={(layout) => set({ layout })} />}
       {settlements && (
         <>
           <h5>城市</h5>

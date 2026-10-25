@@ -14,9 +14,11 @@ import {
   pickTitle,
   titled,
   worldEra,
+  worldEras,
 } from '../../core/human';
+import { BUILTIN_ERAS } from '../../core/packs/eras';
 import { type NameMode, nameLines } from '../../core/name-display';
-import type { CountryMeta, World } from '../../core/world';
+import { COUNTRY_LAYOUTS, type CountryLayout, type CountryMeta, type World } from '../../core/world';
 
 // 国家（第二十三轮）的界面逻辑：有没有国家、一格是哪国、按人口排的列表、各种命令、档案的改动、
 // “分裂 ↔ 统一”（地图模式见 map/modes.ts）。不碰界面，测试直接调
@@ -130,14 +132,28 @@ export const mergeCommand = (a: number, b: number): Command => ({ op: 'merge_cou
 export const capitalCommand = (id: number, cell: number | null): Command => ({ op: 'move_capital', id, cell });
 export const patchCommand = (id: number, patch: CountryPatch): Command => ({ op: 'set_country', id, patch });
 
-// 生成、重新生成国家（“分裂 ↔ 统一”在正中时不写，用默认）
-export function generateCountriesCommand(fragmentation: number): Command {
-  return { op: 'generate_countries', ...(fragmentation !== 0.5 ? { fragmentation } : {}) };
+// 生成、重新生成国家（“分裂 ↔ 统一”在正中时不写，用默认）。格局（第二十六轮）：按时代时不写；重新生成时与现在的不同才写
+export function generateCountriesCommand(fragmentation: number, layout: CountryLayout = 'era'): Command {
+  return { op: 'generate_countries', ...(fragmentation !== 0.5 ? { fragmentation } : {}), ...(layout !== 'era' ? { layout } : {}) };
 }
-export function regenerateCountriesCommand(w: World, fragmentation: number, keepLocked: boolean): Command {
+export function regenerateCountriesCommand(w: World, fragmentation: number, keepLocked: boolean, layout: CountryLayout = layoutOf(w)): Command {
   const cur = w.small.human?.countryRules?.fragmentation ?? 0.5;
-  return { op: 'regenerate_countries', ...(fragmentation !== cur ? { fragmentation } : {}), ...(keepLocked ? {} : { keepLocked: false }) };
+  return { op: 'regenerate_countries', ...(fragmentation !== cur ? { fragmentation } : {}), ...(layout !== layoutOf(w) ? { layout } : {}), ...(keepLocked ? {} : { keepLocked: false }) };
 }
+
+// ---------- 格局（第二十六轮） ----------
+
+// 现在的格局（没写是按时代）
+export const layoutOf = (w: Pick<World, 'small'>): CountryLayout => w.small.human?.countryRules?.layout ?? 'era';
+export { COUNTRY_LAYOUTS };
+// 悬停的说明
+export const LAYOUT_HINTS: Record<CountryLayout, string> = {
+  era: '各种大小的国家按时代的比例',
+  mixed: '大国、中等国家、小国、城邦都有',
+  petty: '小国、城邦为主，几乎没有大国',
+  unified: '大国、帝国占了大半',
+  powers: '几个大国并立，中间夹着小国',
+};
 
 // ---------- 档案的改动（都是 set_country 的 patch；没变时 null） ----------
 
@@ -218,7 +234,14 @@ export function fragText(f: number): string {
   return '很统一';
 }
 
-// 大约几个国家（第二十六轮：核心的 estimateCountryCount，与生成的第一步同一个算法；锁定的国家的地方不算、另外算上）
+// 滑块悬停的说明：时代会生成联邦（第二十六轮）时说一句，估计里没有联邦切出来的成员邦
+export const fragTitle = (eraId: string | undefined, small?: Small | null): string => {
+  const era = eraId ? (small ? worldEras(small) : []).find((e) => e.id === eraId) ?? BUILTIN_ERAS.find((e) => e.id === eraId) : undefined;
+  return `往左小国多，往右大国少${(era?.relations?.federation ?? 0) > 0 ? '；联邦的成员邦另算' : ''}`;
+};
+
+// 大约几个国家（第二十六轮：核心的 estimateCountryCount，与生成的第一步同一个算法；锁定的国家的地方不算、另外算上；
+// 联邦切出来的成员邦不算在里面，所以写“约”）
 export function estimateCountries(w: World, f: number, keepLocked = false): number | null {
   const era = worldEra(w.small);
   if (!era || !w.derived.habitability) return null;

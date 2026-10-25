@@ -5,7 +5,7 @@ import { PATTERNS } from '../../core/species';
 import { fromUnit } from '../../core/geo';
 import { viewOf } from '../../core/sphere';
 import { FRAG_AMP, FRAG_D_MAX, FRAG_D_MIN, FRAG_FREQ, FRAG_G, FRAG_OFF } from '../../core/subcell';
-import type { GhostLayers } from './colors';
+import { COUNTRY_ALPHA, FEDERATION_GROUP, type GhostLayers, ISLET_FLAT, SEA_CLAIM_ALPHA } from './colors';
 import { GLOBE_G, PROJ_GLSL, type Proj, effectiveZoom, planeBounds, sceneNeed, screenToWorld as projScreenToWorld, worldToScreen as projWorldToScreen } from './projection';
 
 // WebGL2 渲染：
@@ -474,7 +474,8 @@ uniform sampler2D uIdTex;
 uniform sampler2D uFlat;
 uniform sampler2D uHighlight;
 uniform highp sampler2D uGroup;
-// 国界的分组（第二十三轮，colors.ts 的 countryBorderGroups）：陆地是国家的编号（无主 0），领海是编号 + 65536，不归谁的海 −1
+// 国界的分组（第二十三轮，colors.ts 的 countryBorderGroups）：陆地是国家的编号（无主 0），领海是编号 + 65536，不归谁的海 −1；
+// g 是集团的分组（第二十六轮）：帝国的编号、联邦的编号 + FEDERATION_GROUP，别的陆地 0，海 −1
 uniform highp sampler2D uCountry;
 uniform int uHasCountry;
 // 切线层（屏幕大小）与每段的数据（两边的分组值、代表格：gL, gR, repL, repR）
@@ -540,6 +541,7 @@ vec4 cellTex(sampler2D tex, int id) {
 // 分组值：陆地省份 = 编号 + 1（> 0），海域省份 = −(编号 + 1)（< 0），未划分 = 0，地图外 = −1e9
 float groupOf(int id) { return id < 0 ? -1e9 : cellTex(uGroup, id).r; }
 float countryOf(int id) { return id < 0 ? -1e9 : cellTex(uCountry, id).r; }
+vec2 countryPair(int id) { return id < 0 ? vec2(-1e9) : cellTex(uCountry, id).rg; }
 // 两边的国家不同、都不是不归谁的海、同是陆地或同是海（陆地与它的领海之间、海岸线上不画）
 bool countryEdge(float a, float b) { return a >= 0.0 && b >= 0.0 && a != b && (a >= 65535.5) == (b >= 65535.5); }
 // 切线附近按在线的哪一边换格（与 core/seams.ts 的 seamPixel 相同）：id 是像素按扭曲后的位置取的格，
@@ -627,6 +629,9 @@ void main() {
   vec4 fc = vec4(0.0);
   if (uHasFlat == 1 && idF >= 0) {
     fc = cellTex(uFlat, idF);
+    // 归了国家的碎岛（第二十六轮，colors.ts 的 ISLET_FLAT）：陆地像素涂满国家色，水面照旧是海或领海
+    float fa = fc.a * 255.0;
+    if (fa > ${glsl(ISLET_FLAT - 0.5)} && fa < ${glsl(ISLET_FLAT + 1.5)}) fc.a = land ? ${glsl(COUNTRY_ALPHA / 255)} : fa > ${glsl(ISLET_FLAT + 0.5)} ? ${glsl(SEA_CLAIM_ALPHA / 255)} : 0.0;
     col = mix(col, fc.rgb, fc.a);
   }
   ${FX_BEGIN}
@@ -762,7 +767,11 @@ void main() {
   if (uHasCountry == 1 && pc >= 0) {
     vec2 cx = vec2(uTexel.x, 0.0);
     vec2 cy = vec2(0.0, uTexel.y);
-    float c0 = countryOf(pc);
+    vec2 p0 = countryPair(pc);
+    float c0 = p0.x;
+    float b0 = p0.y;
+    vec3 lineCol = uStyle == 1 ? vec3(0.42, 0.14, 0.1) : vec3(0.16, 0.11, 0.1);
+    float zoomK = mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx)) / sqrt(max(uPxScale, 1.0));
     if (c0 >= 0.0) {
       float kIn = 0.0;
       float kOut = 0.0;
@@ -770,13 +779,31 @@ void main() {
         float r = t < 4 ? 1.5 : 3.0;
         int q = t - (t / 4) * 4;
         vec2 o = (q == 0 ? cx : q == 1 ? -cx : q == 2 ? cy : -cy) * r;
-        if (countryEdge(c0, countryOf(provAt(vUv + o, uvW + o)))) {
-          if (t < 4) kIn = 1.0;
-          else kOut = 1.0;
+        vec2 pn = countryPair(provAt(vUv + o, uvW + o));
+        if (countryEdge(c0, pn.x)) {
+          // 同一个联邦的成员之间（第二十六轮）：细而淡，没有外面那一圈
+          bool fed = b0 >= ${glsl(FEDERATION_GROUP - 0.5)} && pn.y == b0;
+          if (t < 4) kIn = max(kIn, fed ? 0.4 : 1.0);
+          else if (!fed) kOut = 1.0;
         }
       }
-      float k = max(kIn * 0.82, kOut * 0.3 * step(0.999, uCountryAlpha)) * uCountryAlpha * (c0 >= 65535.5 ? 0.5 : 1.0) * mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx));
-      if (k > 0.0) col = mix(col, uStyle == 1 ? vec3(0.42, 0.14, 0.1) : vec3(0.16, 0.11, 0.1), k / sqrt(max(uPxScale, 1.0)));
+      float k = max(kIn * 0.82, kOut * 0.3 * step(0.999, uCountryAlpha)) * uCountryAlpha * (c0 >= 65535.5 ? 0.5 : 1.0) * zoomK;
+      if (k > 0.0) col = mix(col, lineCol, k);
+    }
+    // 帝国的外沿（第二十六轮）：帝国里面、离边界 3.5–5 像素的一道细线，和国界一起像一道双线；海岸上、成员之间不画
+    if (b0 >= 0.5 && b0 < ${glsl(FEDERATION_GROUP - 0.5)}) {
+      bool rimFar = false;
+      bool rimNear = false;
+      for (int t = 0; t < 8; t++) {
+        int q = t - (t / 4) * 4;
+        vec2 o = (q == 0 ? cx : q == 1 ? -cx : q == 2 ? cy : -cy) * (t < 4 ? 3.5 : 5.0);
+        float bn = countryPair(provAt(vUv + o, uvW + o)).y;
+        if (bn >= 0.0 && bn != b0) {
+          if (t < 4) rimNear = true;
+          else rimFar = true;
+        }
+      }
+      if (rimFar && !rimNear) col = mix(col, lineCol, 0.6 * uCountryAlpha * zoomK);
     }
   }
 

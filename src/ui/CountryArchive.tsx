@@ -3,11 +3,14 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
 import {
+  BLOC_NAMES,
   type CountryPatch,
   FLAG_EMBLEMS,
   FLAG_LAYOUTS,
   type FlagSpec,
   LAYOUT_COLORS,
+  TIER_NAMES,
+  blocsOf,
   categoryName,
   cellName,
   countryFactions,
@@ -38,13 +41,15 @@ import {
   yearText,
 } from './countries';
 import { densityText, firstLine, popText, shareText } from './human';
+import { BLOC_KIND_OPTIONS, SUBJECT_OPTIONS, joinBlocCommand, joinNote, joinableBlocs, leaveBlocCommand, newBlocCommand, selectBloc, subjectCommand } from './blocs';
 import { Flag, showCountry } from './panels/countries';
 import { CityList } from './panels/settlements';
 import { countryCityRows, hasAnySettle } from './settlements';
 import { selectSettle } from './tools/settlements';
 
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
-// 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交
+// 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交。
+// 第二十六轮：头上写等级；外交里有从属的种类、所在的帝国、联邦、同盟（加入、退出、新建，见 blocs.ts）
 
 const run = (cmd: Command | null, busy = '正在保存…') => (cmd ? exec(cmd, busy) : Promise.resolve(false));
 const patch = (id: number, p: CountryPatch | null) => run(p ? patchCommand(id, p) : null);
@@ -230,12 +235,13 @@ function FlagSection({ w, m }: { w: World; m: CountryMeta }) {
 
 function ColorCapital({ w, m }: { w: World; m: CountryMeta }) {
   const overlord = m.overlord !== undefined ? w.small.countries?.[m.overlord] : undefined;
+  const fed = blocsOf(w, m.id).find((b) => b.kind === 'federation');
   const cap = m.capitalCell;
   return (
     <section>
       <Line label="颜色">
         <input type="color" value={m.color} onChange={(e) => void patch(m.id, { color: (e.target as HTMLInputElement).value })} />
-        <span class="hint grow">{overlord ? `地图上用“${overlord.name}”的浅色` : ''}</span>
+        <span class="hint grow">{fed ? `地图上用“${fed.name}”的颜色` : overlord ? `地图上用“${overlord.name}”的浅色` : ''}</span>
       </Line>
       <Line label="首都">
         <span class="grow">
@@ -474,6 +480,57 @@ function CountryChips({ w, ids, others, onChange, label }: { w: World; ids: numb
   );
 }
 
+// 所在的帝国、联邦、同盟：点名字打开集团的档案，× 退出；下拉框加入一个，或以这一国为盟主新建
+function BlocLine({ w, m }: { w: World; m: CountryMeta }) {
+  const mine = blocsOf(w, m.id);
+  const free = joinableBlocs(w, m.id);
+  return (
+    <Line label="集团">
+      <span class="chips grow">
+        {mine.map((b) => (
+          <span class="chip static">
+            <span class="swatch" style={{ background: b.color }} />
+            <button class="link" onClick={() => selectBloc(b.id)} title={BLOC_NAMES[b.kind]}>
+              {b.name}
+            </button>
+            <button class="icon-btn" onClick={() => void run(leaveBlocCommand(b, m.id))} title="退出">
+              <X />
+            </button>
+          </span>
+        ))}
+        {!mine.length && <span class="hint">无</span>}
+        <select
+          class="chip-add"
+          value=""
+          onChange={(e) => {
+            const v = (e.target as HTMLSelectElement).value;
+            const [op, x] = v.split(':');
+            const b = op === 'join' ? free.find((y) => y.id === Number(x)) : undefined;
+            if (b) void run(joinBlocCommand(b, m.id));
+            else if (op === 'new') void run(newBlocCommand(x as (typeof BLOC_KIND_OPTIONS)[number][0], m.id));
+          }}
+        >
+          <option value="">{free.length ? '加入、新建' : '新建'}</option>
+          {free.length > 0 && (
+            <optgroup label="加入">
+              {free.map((b) => (
+                <option value={`join:${b.id}`} title={joinNote(w, b, m.id)}>
+                  {b.name}（{BLOC_NAMES[b.kind]}）
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="新建">
+            {BLOC_KIND_OPTIONS.map(([k, label]) => (
+              <option value={`new:${k}`}>{label}</option>
+            ))}
+          </optgroup>
+        </select>
+      </span>
+    </Line>
+  );
+}
+
 function DiplomacySection({ w, m }: { w: World; m: CountryMeta }) {
   const metas = w.small.countries ?? {};
   const others = Object.values(metas)
@@ -501,6 +558,19 @@ function DiplomacySection({ w, m }: { w: World; m: CountryMeta }) {
             ))}
         </select>
       </Line>
+      <Line label="从属">
+        <select
+          class="grow"
+          value={m.subject ?? 'vassal'}
+          disabled={!overlord}
+          title={overlord ? undefined : '先选宗主'}
+          onChange={(e) => void run(subjectCommand(m, (e.target as HTMLSelectElement).value as (typeof SUBJECT_OPTIONS)[number][0]))}
+        >
+          {SUBJECT_OPTIONS.map(([k, label]) => (
+            <option value={k}>{label}</option>
+          ))}
+        </select>
+      </Line>
       <Line label="附庸">
         <span class="chips grow">
           {vassals.map((v) => (
@@ -514,6 +584,7 @@ function DiplomacySection({ w, m }: { w: World; m: CountryMeta }) {
           {!vassals.length && <span class="hint">无</span>}
         </span>
       </Line>
+      <BlocLine w={w} m={m} />
       <CountryChips w={w} label="同盟" ids={m.allies} others={others.filter((x) => !m.rivals.includes(x.id))} onChange={(allies) => void patch(m.id, { allies })} />
       <CountryChips w={w} label="敌对" ids={m.rivals} others={others.filter((x) => !m.allies.includes(x.id))} onChange={(rivals) => void patch(m.id, { rivals })} />
     </section>
@@ -603,7 +674,7 @@ export function CountryArchive() {
         <Flag m={m} w={36} h={24} />
         <span class="grow item-text">
           <b>{m.name}</b>
-          {m.orig && <span class="hint">{m.orig}</span>}
+          <span class="hint">{[TIER_NAMES[m.tier ?? 'medium'], m.orig].filter(Boolean).join(' · ')}</span>
         </span>
         <button class="icon-btn" onClick={() => focusOn(cellsOf(w, m.id))} title="定位">
           <ScanSearch />

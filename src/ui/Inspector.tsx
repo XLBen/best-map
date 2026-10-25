@@ -362,11 +362,11 @@ function peopleHere(w: World, cell: number): string {
   return ` · ${c ? `${c.name} ` : ''}${popText(n)} 人`;
 }
 
-// 这一格是哪国（第二十三轮，有国家时）：陆地写国名或“无主地”，海上只写领海
+// 这一格是哪国（第二十三轮，有国家时）：陆地写国名或“无主地”，海上只写领海；归了国家的碎岛（第二十六轮）写国名
 function countryHere(w: World, cell: number): string {
   if (!hasCountries(w)) return '';
   const m = countryOf(w, countryAt(w, cell));
-  if (!w.causes.land[cell]) return m ? `${m.name}领海 · ` : '';
+  if (!w.causes.land[cell]) return m ? (w.derived.countryIslet?.[cell] ? `${m.name} · ` : `${m.name}领海 · `) : '';
   return m ? `${m.name} · ` : '无主地 · ';
 }
 

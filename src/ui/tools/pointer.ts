@@ -1,7 +1,8 @@
 import { dimensionValues, valueLayer, worldCultureGroups, worldCultures, worldDimensions } from '../../../core/human';
 import type { World } from '../../../core/world';
 import type { SettleMark } from '../../render/settle-draw';
-import { pinCell, selectedSettle, world } from '../../state';
+import { pinCell, selectedCountry, selectedSettle, world } from '../../state';
+import { blocAt, blocHereText, selectBloc } from '../blocs';
 import { countryAt, countryOf } from '../countries';
 import { featuresAt } from '../features-at';
 import { type MapKind, mapKind, modeDef, modeOf } from '../map/modes';
@@ -12,6 +13,7 @@ import { selectCountry } from './countries';
 import { HIT_PX, HOVER, ring, selectSettle, selectedRing } from './settlements';
 
 // 指针（第二十五轮）：只看、不改。点城市、地标、点打开它的档案；国家模式里点国家打开国家档案并钉住这一格；
+// 同盟模式（第二十六轮）里点到集团打开集团的档案，不在集团里的国家打开国家档案；
 // 别的地方钉住这一格（右下角“这里”的档案）。鼠标旁一句话写这里是什么，跟着地图模式
 
 const cellOf = (p: Pointer) => p.shown?.here ?? p.cell;
@@ -28,6 +30,7 @@ export function pointerText(w: World, cell: number, kind: MapKind = modeOf(w, ma
     const id = countryAt(w, cell);
     return id !== null ? (countryOf(w, id)?.name ?? null) : land ? '无主地' : null;
   }
+  if (kind === 'bloc') return blocHereText(w, cell);
   if (kind === 'culture' || kind === 'cultureGroup') {
     const code = (kind === 'culture' ? d.popCulture : d.popCultureGroup)?.[cell] ?? 0;
     const items = kind === 'culture' ? worldCultures(w.small) : worldCultureGroups(w.small);
@@ -81,6 +84,15 @@ export function pointerTool(zoom: () => number): ToolHandler {
       if (modeOf(w) === 'country') {
         const id = countryAt(w, cell);
         if (id !== null) selectCountry(id);
+      }
+      // 同盟模式里点到集团：打开集团的档案；不在集团里的国家打开国家档案
+      if (modeOf(w) === 'bloc') {
+        const b = blocAt(w, cell);
+        const id = countryAt(w, cell);
+        if (b) {
+          selectedCountry.value = id;
+          selectBloc(b.id);
+        } else if (id !== null) selectCountry(id);
       }
       // 3. 钉住这一格：右下角“这里”的档案
       pinCell(cell);

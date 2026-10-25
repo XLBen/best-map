@@ -1,15 +1,17 @@
-import { RESOURCE_NONE, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../core/human';
+import { RESOURCE_NONE, blocList, blocOf, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../core/human';
+import { shownBloc } from './blocs';
 import { countryRows } from './countries';
 import { speciesColor } from '../../core/species';
 import type { World } from '../../core/world';
-import { NO_RESOURCE, densityRgb, habitRgb } from '../render/colors';
+import { NO_BLOC, NO_RESOURCE, densityRgb, habitRgb } from '../render/colors';
 import type { ViewMode } from '../state';
 import type { LegendItem } from './components/Legend';
 
 // 图例（第二十一轮）：按格着色、一格一类的底图（地形类别、资源、生态分区）列出世界里有的几类，按格数从多到少。
 // 以后的文化、国家底图也用它：给出 {color, label, count?} 就行。
 // 第二十二轮：文化圈、文化组、时代的每一维按人数（count 是人数：右边的百分比是占总人口多少）；宜居度、人口密度是色带上的几档
-// 第二十三轮：国家按人口列前 LEGEND_TOP 个（颜色是地图上的：附庸是宗主的浅色），其余合成“其他”；没有人时按格数
+// 第二十三轮：国家按人口列前 LEGEND_TOP 个（颜色是地图上的：附庸是宗主的浅色），其余合成“其他”；没有人时按格数。
+// 第二十六轮：联邦（地图上一种颜色）合成一行写联邦的名字；同盟模式按集团列，不在集团里的合成一行灰色
 
 export interface LegendData {
   title: string;
@@ -42,11 +44,51 @@ function countryLegend(w: World): LegendData | null {
   const colorOf = new Map(codes.map((m, k) => [m?.id ?? -1, colors[k]]));
   const anyPop = rows.some((r) => (r.stats?.population ?? 0) > 0);
   const count = (r: (typeof rows)[number]) => (anyPop ? (r.stats?.population ?? 0) : (r.stats?.cells ?? 0));
-  const sorted = anyPop ? rows : [...rows].sort((a, b) => count(b) - count(a));
-  const items: LegendItem[] = sorted.slice(0, LEGEND_TOP).map((r) => ({ color: hex(colorOf.get(r.meta.id) ?? [153, 153, 153]), label: r.meta.name, count: count(r) }));
-  const rest = sorted.slice(LEGEND_TOP).reduce((a, r) => a + count(r), 0);
+  // 联邦的成员邦合成一行（在盟主的位置上）
+  const units: LegendItem[] = [];
+  const fedRow = new Map<number, LegendItem>();
+  for (const r of rows) {
+    const fed = blocOf(w, r.meta.id, 'federation');
+    if (!fed) {
+      units.push({ color: hex(colorOf.get(r.meta.id) ?? [153, 153, 153]), label: r.meta.name, count: count(r) });
+      continue;
+    }
+    const it = fedRow.get(fed.id);
+    if (it) it.count = (it.count ?? 0) + count(r);
+    else {
+      const x = { color: hex(colorOf.get(r.meta.id) ?? [153, 153, 153]), label: fed.name, count: count(r) };
+      fedRow.set(fed.id, x);
+      units.push(x);
+    }
+  }
+  const sorted = [...units].sort(byCount);
+  const items = sorted.slice(0, LEGEND_TOP);
+  const rest = sorted.slice(LEGEND_TOP).reduce((a, r) => a + (r.count ?? 0), 0);
   if (sorted.length > LEGEND_TOP) items.push({ color: 'transparent', label: `其他 ${sorted.length - LEGEND_TOP} 国`, count: rest });
   return { title: '国家', items };
+}
+
+// 同盟模式：每个集团一行（人数是成员的总和），不在集团里的国家合成一行
+function blocLegend(w: World): LegendData | null {
+  const rows = countryRows(w);
+  if (!rows.length || !blocList(w.small).length) return null;
+  const anyPop = rows.some((r) => (r.stats?.population ?? 0) > 0);
+  const count = (r: (typeof rows)[number]) => (anyPop ? (r.stats?.population ?? 0) : (r.stats?.cells ?? 0));
+  const byBloc = new Map<number, LegendItem>();
+  let none = 0;
+  for (const r of rows) {
+    const b = shownBloc(w, r.meta.id);
+    if (!b) {
+      none += count(r);
+      continue;
+    }
+    const it = byBloc.get(b.id);
+    if (it) it.count = (it.count ?? 0) + count(r);
+    else byBloc.set(b.id, { color: b.color, label: b.name, count: count(r) });
+  }
+  const items = [...byBloc.values()].sort(byCount);
+  if (none > 0) items.push({ color: hex(NO_BLOC), label: '不在其中', count: none });
+  return { title: '同盟', items };
 }
 
 function compute(w: World, mode: ViewMode): LegendData | null {
@@ -76,6 +118,8 @@ function compute(w: World, mode: ViewMode): LegendData | null {
     }
     case 'country':
       return countryLegend(w);
+    case 'bloc':
+      return blocLegend(w);
     case 'habitability':
       return { title: '宜居度', items: HABIT_STEPS.map(([v, label]) => ({ color: hex(habitRgb(v)), label })) };
     case 'popDensity':
@@ -130,6 +174,7 @@ function layerArray(w: World, mode: ViewMode): object | null | undefined {
     case 'popDensity':
       return d.popDensity;
     case 'country':
+    case 'bloc':
       return d.country;
   }
   if (mode.startsWith('dim:')) {
@@ -161,7 +206,11 @@ export function legendFor(w: World, mode: ViewMode): LegendData | null {
   // 人口的几层：只改人数时 popCulture 不变（按人口密度的数组认），名字、颜色在文化、取值里
   const pop = mode === 'culture' || mode === 'cultureGroup' || mode.startsWith('dim:') ? `|${popKey(w)}|${JSON.stringify([w.small.content?.culture, w.small.content?.cultureGroup, w.small.content?.popValue, w.small.human?.era])}` : '';
   // 国家：人数、名字、颜色、宗主（领土没变时 derived.country 照用同一个数组）
-  const cty = mode === 'country' ? `|${popKey(w)}|${Object.values(w.small.countries ?? {}).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(',')}|${w.causes.popTotal ? '' : 'nopop'}` : '';
+  // 第二十六轮：集团（联邦合成一行、同盟模式）：set_bloc 只改它
+  const cty =
+    mode === 'country' || mode === 'bloc'
+      ? `|${popKey(w)}|${Object.values(w.small.countries ?? {}).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(',')}|${w.causes.popTotal ? '' : 'nopop'}|${JSON.stringify(w.small.blocs ?? null)}`
+      : '';
   const key = `${mode}${cty}|${JSON.stringify(w.small.content?.terrainClass ?? null)}|${JSON.stringify(w.small.content?.resource ?? null)}|${w.small.species.map((s) => `${s.name}:${speciesColor(s)}`).join(',')}${pop}`;
   if (!m.has(key)) m.set(key, compute(w, mode));
   return m.get(key)!;

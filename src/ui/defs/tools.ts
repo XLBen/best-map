@@ -988,7 +988,8 @@ effect(() => {
   if (!w) return;
   if (!viewAvailable(w, mode.value)) {
     // 是工具换上的那一层：回到换之前的底图，人文又有了时再换上
-    const back = viewBefore && mode.value === viewBefore.set ? viewBefore.mode : 'terrain';
+    // 同盟模式里删掉了最后一个集团：回到国家
+    const back = viewBefore && mode.value === viewBefore.set ? viewBefore.mode : mode.value === 'bloc' ? 'country' : 'terrain';
     viewBefore = null;
     mode.value = viewAvailable(w, back) ? back : 'terrain';
   }

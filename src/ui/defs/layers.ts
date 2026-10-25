@@ -36,6 +36,8 @@ export const VIEWS: ViewDef[] = [
 // 第二十三轮：有国家时最前面是“国家”
 export function humanViews(w: Pick<World, 'small'>): ViewDef[] {
   const country: ViewDef[] = w.small.human?.countryRules && w.small.countries ? [{ id: 'country', label: '国家', hint: '附庸用宗主的浅色' }] : [];
+  // 第二十六轮：有帝国、联邦、同盟时多一个“同盟”
+  if (country.length && w.small.blocs?.length) country.push({ id: 'bloc', label: '同盟', hint: '灰色是不在其中的国家' });
   return [...country, ...humanLayers(w).flatMap((l): ViewDef[] => {
     if (l.id === 'cultureGroup') return [];
     if (l.id === 'culture') return [{ id: 'culture', label: '文化圈' }];
@@ -54,6 +56,7 @@ export const CULTURE_VIEWS: [ViewMode, string][] = [
 export function viewAvailable(w: Pick<World, 'small'>, id: ViewMode): boolean {
   if (id === 'culture' || id === 'cultureGroup' || id === 'popDensity') return !!w.small.human;
   if (id === 'country') return !!w.small.human?.countryRules && !!w.small.countries;
+  if (id === 'bloc') return !!w.small.human?.countryRules && !!w.small.countries && !!w.small.blocs?.length;
   if (id.startsWith('dim:')) return !!w.small.human && worldDimensions(w.small).some((d) => d.id === id.slice(4));
   return true;
 }

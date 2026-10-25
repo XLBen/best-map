@@ -410,7 +410,7 @@ export function MapView() {
       // 工具选中的东西（画河时选中的河）、河流列表里鼠标停着的河：沿河一道淡黄的光，压在工具的图形下面
       const glow = clean ? [] : [...(def.focus?.glow(w) ?? []), ...(hoverRiver.value ? riverGlow(w, hoverRiver.value) : []), ...pinRing(w)];
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取；国家底图按同样的规则取格（海上的像素只取海格：领海淡淡的一圈）
-      renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
+      renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country' || mode.value === 'bloc';
       renderer.highlightByGroup = !!cm.provinces;
       // 地图模式（第二十五轮，map/modes.ts 的表）：国家模式里省界淡一些，文化等模式里更淡（省份类工具开着时照旧）
       const md = modeDef(modeOf(shown));
@@ -629,7 +629,7 @@ export function MapView() {
       lastHighlightKey = [];
       applyGroupPreview(w, null);
       applyGhost(w, null);
-      renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
+      renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country' || mode.value === 'bloc';
       renderer.highlightByGroup = !!CATEGORY_DEFS[category.value].map?.provinces;
       setBorderAlpha(modeDef(modeOf(w)), !!CATEGORY_DEFS[category.value].map?.provinces);
       renderer.style = mapStyle.value;
