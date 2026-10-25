@@ -17,6 +17,8 @@ const url = `http://localhost:${port}/`;
 const win = process.platform === 'win32';
 // 页面的标题，用来认出端口上开着的是不是这个地图
 const TITLE = '<title>架空世界编辑器</title>';
+// 装依赖第一次失败时改用的国内镜像
+const MIRROR = 'https://registry.npmmirror.com';
 
 function stop(msg) {
   console.error(`\n${msg}\n`);
@@ -123,8 +125,11 @@ if (state === 'other') {
 
 if (needInstall()) {
   console.log('第一次启动：正在安装需要的组件（要联网，大约一两分钟）…');
-  if (!(await run('npm', ['install', '--no-audit', '--no-fund']))) {
-    stop('安装失败。检查网络后再双击启动试一次。');
+  const args = ['install', '--no-audit', '--no-fund'];
+  if (!(await run('npm', args))) {
+    // 国内连 npm 官方源常常很慢或连不上：换国内镜像再试一次
+    console.log('安装没有成功，换国内镜像（npmmirror）再试一次…');
+    if (!(await run('npm', [...args, `--registry=${MIRROR}`]))) stop('安装失败。检查网络后再双击启动试一次。');
   }
 }
 
