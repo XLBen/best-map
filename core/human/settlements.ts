@@ -757,9 +757,12 @@ function tableCultures(world: World, t: CityTable): Map<string, number>[] {
   return out;
 }
 
-export function cityArchive(world: World, id: number): CityArchive | undefined {
-  const t = cityTable(world);
-  const k = t.list.findIndex((c) => c.id === id && !c.point);
+// t：城市表（一次写很多座城市的档案时先算好传进来）
+const indexMemo = new WeakMap<CityTable, Map<number, number>>();
+export function cityArchive(world: World, id: number, t: CityTable = cityTable(world)): CityArchive | undefined {
+  let idx = indexMemo.get(t);
+  if (!idx) indexMemo.set(t, (idx = new Map(t.list.map((c, q) => [c, q] as const).filter(([c]) => !c.point).map(([c, q]) => [c.id, q]))));
+  const k = idx.get(id) ?? -1;
   if (k < 0) return undefined;
   const c = t.list[k];
   const { small, causes, derived: d, mesh } = world;

@@ -7,7 +7,7 @@ import { cellName, peakFeatureAt } from './cells';
 import { cultureById, worldCultures, worldEra } from './era';
 import { governmentById, pickTitle } from './government';
 import { COAST, LAKE, RIVER } from './rules';
-import { type SettleInputs, cellKm, cityTable, computeCityTable, nearestLand, nextSettlementId } from './settlements';
+import { type CityTable, type SettleInputs, cellKm, cityTable, computeCityTable, nearestLand, nextSettlementId } from './settlements';
 import type { LandmarkDetector, LandmarkPlace, LandmarkType } from './settle-types';
 import { landmarkTypeById, worldLandmarkTypes } from './settle-content';
 import { distKm } from './space';
@@ -258,6 +258,10 @@ export function generateLandmarks(S: SettleInputs, rules: SettlementRules, fresh
     occupied.add(cell);
   };
   const scaled = (count: number) => Math.round((count * dry.length) / PER_LAND_CELLS);
+  // 每个国家的干的陆地
+  const terr = world.causes.country;
+  const cellsOf = new Map<number, number[]>();
+  if (terr) for (const i of dry) if (terr[i] >= 0) (cellsOf.get(terr[i]) ?? cellsOf.set(terr[i], []).get(terr[i])!).push(i);
   const era = worldEra(small)?.id;
   for (const type of worldLandmarkTypes(small)) {
     if (type.manual || type.count <= 0) continue;
@@ -287,7 +291,6 @@ export function generateLandmarks(S: SettleInputs, rules: SettlementRules, fresh
       }
       continue;
     }
-    const terr = world.causes.country;
     for (const m of Object.values(small.countries ?? {}).sort((a, b) => a.id - b.id)) {
       const culture = cultureById(small, m.primaryCulture);
       if (type.cultureGroups?.length && (!culture || !type.cultureGroups.includes(culture.group))) continue;
@@ -296,7 +299,7 @@ export function generateLandmarks(S: SettleInputs, rules: SettlementRules, fresh
       const rand = mulberry32(mixSeed(seed, hashString(`landmark:${type.id}`), m.id));
       const whole = Math.floor(type.count);
       const k = whole + (rand() < type.count - whole ? 1 : 0);
-      const cells = terr ? dry.filter((i) => terr[i] === m.id) : [];
+      const cells = cellsOf.get(m.id) ?? [];
       for (let q = 0; q < k; q++) {
         if (rand() > type.chance) continue;
         const c = placeIn(P, type.place, cells, m.id, rand);
@@ -326,7 +329,7 @@ function featureAt(world: World, type: string, cell: number, near = false): GeoF
 const fname = (f: GeoFeature | undefined): Name | undefined => (f && f.name ? { zh: f.name, ...(f.orig ? { orig: f.orig } : {}) } : undefined);
 
 // 名字里的一个词：{city} {country} {river} {range} {peak} {lake} {place} {culture}
-function token(world: World, key: string, cell: number): Name {
+function token(world: World, key: string, cell: number, table?: CityTable): Name {
   const place = (): Name => {
     const n = cellName(world, cell);
     return { zh: n.zh, ...(n.orig ? { orig: n.orig } : {}) };
@@ -345,7 +348,7 @@ function token(world: World, key: string, cell: number): Name {
     case 'city': {
       let best: Name | undefined;
       let bd = Infinity;
-      for (const c of cityTable(world).list) {
+      for (const c of (table ?? cityTable(world)).list) {
         const dd = distKm(world, c.cell, cell);
         if (dd < bd) {
           bd = dd;
@@ -372,11 +375,11 @@ function token(world: World, key: string, cell: number): Name {
 const TOKEN = /\{(\w+)\}/g;
 
 // 按写法起名（写法里的词换成当地的名字；原文：写法有原文、用到的词都有原文时才有）
-function fill(world: World, pattern: { zh: string; orig?: string }, cell: number): Name {
+function fill(world: World, pattern: { zh: string; orig?: string }, cell: number, table?: CityTable): Name {
   const cache = new Map<string, Name>();
   const get = (k: string) => {
     let v = cache.get(k);
-    if (!v) cache.set(k, (v = token(world, k, cell)));
+    if (!v) cache.set(k, (v = token(world, k, cell, table)));
     return v;
   };
   const zh = pattern.zh.replace(TOKEN, (_, k: string) => get(k).zh);
@@ -399,11 +402,12 @@ function localCulture(world: World, cell: number) {
   return m ? cultureById(world.small, m.primaryCulture) : undefined;
 }
 
-export function landmarkName(world: World, l: LandmarkMeta): Name & { custom: boolean } {
+// table：城市表（一次起很多个名字时先算好传进来）
+export function landmarkName(world: World, l: LandmarkMeta, table?: CityTable): Name & { custom: boolean } {
   if (l.name) return { zh: l.name, ...(l.orig ? { orig: l.orig } : {}), custom: true };
   const type = landmarkTypeById(world.small, l.type);
   const pattern = pickTitle(type?.label, localCulture(world, l.cell)) ?? { zh: type?.name ?? l.type };
-  const n = fill(world, pattern, l.cell);
+  const n = fill(world, pattern, l.cell, table);
   return { ...n, custom: false };
 }
 
@@ -431,11 +435,12 @@ export interface LandmarkInfo {
 
 export function landmarkList(world: World): LandmarkInfo[] {
   const { mesh, small, causes, derived: d } = world;
+  const table = small.landmarks && Object.keys(small.landmarks).length ? cityTable(world) : undefined;
   return Object.values(small.landmarks ?? {})
     .sort((a, b) => a.id - b.id)
     .map((l) => {
       const t = landmarkTypeById(small, l.type);
-      const n = landmarkName(world, l);
+      const n = landmarkName(world, l, table);
       const c = causes.country?.[l.cell] ?? -1;
       const desc = l.description ?? t?.description;
       return {

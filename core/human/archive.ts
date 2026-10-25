@@ -33,9 +33,10 @@ export const hasSettlements = (world: Pick<World, 'small'>): boolean => {
 // cities.csv：id, name, orig, rank, capital（1 首都、2 陪都）, country, country_name, population, share, cell, lat, lon, province, founded, auto
 export function citiesCsv(world: World): string {
   const rows: (string | number)[][] = [['id', 'name', 'orig', 'rank', 'capital', 'country', 'country_name', 'population', 'share', 'cell', 'lat', 'lon', 'province', 'founded', 'auto']];
-  for (const c of cityTable(world).list) {
+  const t = cityTable(world);
+  for (const c of t.list) {
     if (c.point) continue;
-    const a = cityArchive(world, c.id)!;
+    const a = cityArchive(world, c.id, t)!;
     const [lat, lon] = ll(world, c.x, c.y);
     rows.push([c.id, c.name, c.orig ?? '', c.rank.id, c.capital ? 1 : c.secondCapital ? 2 : 0, c.country ?? '', a.countryName ?? '', Math.round(c.population), Number(c.share.toFixed(5)), c.cell, lat, lon, a.province >= 0 ? a.province : '', a.founded, c.auto ? 1 : 0]);
   }
@@ -145,7 +146,7 @@ export function archiveMarkdown(world: World): string {
   if (cities.length) {
     out.push('## 城市', '');
     for (const c of cities) {
-      const a = cityArchive(world, c.id)!;
+      const a = cityArchive(world, c.id, table)!;
       const role = c.capital ? '首都' : c.secondCapital ? '陪都' : c.rank.name;
       out.push(`### ${c.name}${c.orig ? `（${c.orig}）` : ''}`, '');
       out.push(`- ${role}${a.countryName ? ` · ${a.countryName}` : ''}`);
@@ -185,9 +186,8 @@ export function archiveJson(world: World): string {
   const era = worldEra(small);
   const pop = populationSummary(world);
   const stats = allCountryStats(world);
-  const cities: CityArchive[] = cityTable(world)
-    .list.filter((c) => !c.point)
-    .map((c) => cityArchive(world, c.id)!);
+  const table = cityTable(world);
+  const cities: CityArchive[] = table.list.filter((c) => !c.point).map((c) => cityArchive(world, c.id, table)!);
   const data = {
     format: 'map2-archive',
     version: 1,
