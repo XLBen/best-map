@@ -75,10 +75,10 @@ describe('吸管', () => {
     const w = eng.world;
     world.value = w;
     setOptions({ field: 'mana' });
-    const brushes: ToolId[] = ['land', 'biome', 'grow', 'terrainClass', 'temp', 'moist', 'field', 'resource', 'pbrush', 'culture', 'pop', 'territory'];
+    const brushes: ToolId[] = ['land', 'biome', 'terrainClass', 'temp', 'moist', 'field', 'resource', 'pbrush', 'culture', 'pop', 'territory'];
     for (const id of brushes) expect([id, TOOL_DEFS[id].pick?.(w, c) ?? null]).not.toEqual([id, null]);
-    expect(TOOL_DEFS.relief.pick).toBeUndefined();
-    expect(TOOL_DEFS.fragment.pick).toBeUndefined();
+    // 起伏、打碎没有能吸的值；拖动扩张拖的是鼠标下的那一片
+    for (const id of ['relief', 'fragment', 'grow'] as const) expect(TOOL_DEFS[id].pick).toBeUndefined();
     // 冷暖、干湿、自定义场：数量滑块取这一格改过多少
     TOOL_DEFS.temp.pick!(w, c);
     expect(options.value).toMatchObject({ tempMode: 'cold', tempAmount: 0.5 });

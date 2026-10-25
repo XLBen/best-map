@@ -44,9 +44,9 @@ function Item({ item }: { item: BarItem }) {
 }
 
 // 第二十七轮：第二行末尾的吸管与橡皮擦（所有笔刷共用）。吸管点一下，下一次点地图是吸取，吸完回到原来的笔刷；
-// 橡皮擦开着时笔刷换成它（只剩直径），旁边选恢复自动还是清空（只有恢复自动时不显示）
+// 橡皮擦开着时笔刷换成它（只剩直径），旁边选恢复自动还是清空（只有恢复自动时只写这几个字）
 const ERASE_NAMES = { auto: '恢复自动', clear: '清空' } as const;
-const ERASE_HINTS = { auto: '去掉手改的，回到自动的样子', clear: '领土成无主地、人口清零、资源清成“没有”' } as const;
+const CLEAR_HINTS: Partial<Record<string, string>> = { territory: '涂成无主地', pop: '这里没有人', culture: '这里没有人', resource: '这里没有资源' };
 
 function PickEraseRow() {
   const id = tool.value;
@@ -80,7 +80,7 @@ function PickEraseRow() {
         </button>
       )}
       {on && modes.length > 1 && (
-        <Seg<'auto' | 'clear'> value={on} options={modes.map((k) => [k, ERASE_NAMES[k]])} titles={Object.fromEntries(modes.map((k) => [k, ERASE_HINTS[k]]))} onChange={(v) => (erasing.value = v)} />
+        <Seg<'auto' | 'clear'> value={on} options={modes.map((k) => [k, ERASE_NAMES[k]])} titles={{ auto: '去掉手改的，回到自动的样子', clear: CLEAR_HINTS[id] }} onChange={(v) => (erasing.value = v)} />
       )}
       {on && modes.length === 1 && <span class="bar-note">{ERASE_NAMES[on]}</span>}
     </>

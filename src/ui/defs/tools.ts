@@ -420,7 +420,7 @@ const SPECS = {
     size: BRUSH,
     amount: REACH,
     bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }],
-    pick: pickSpecies,
+    // 拖的是鼠标下的那一片生态：没有要吸的
     eraser: NATURE_ERASER,
     create: () => growTool(),
   },
