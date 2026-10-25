@@ -43,6 +43,11 @@ import { clearCountries } from './human/countries';
 import { flagSchema } from './human/flags';
 import { HEX } from './human/terrain-class';
 import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, removeCountry, repairCountries, setCountry, splitCountry, tidyCountries } from './human/country-edit';
+import { addCity, cityName, cityOf, clearCities, generateCities, moveCityCell, removeCity, repairCities, setCity, settleInputs, tidyCities } from './human/settlements';
+import { addRoad, editRoad, generateRoads, repairRoads, rerouteCity, roadKm, roadOf, setRoad } from './human/roads';
+import { addLandmark, generateLandmarks, landmarkName, landmarkOf, moveLandmark, repairLandmarks, setLandmark } from './human/landmarks';
+import { addPoint, movePoint, pointOf, removePoint, setPoint } from './human/points';
+import { generateSettlements, removeSettlements, settlementRules } from './human/settle-gen';
 import { CommandError } from './errors';
 import { type Species, speciesSchema } from './species';
 import {
@@ -123,6 +128,32 @@ const countryPatchSchema = z
     locked: z.boolean().optional(),
   })
   .strict();
+// 城市、道路、地标、自定义点（第二十四轮）
+const settleId = z.number().int().min(1);
+const settlementsInput = z.object({ seed: seedSchema.optional(), roads: z.boolean().optional(), landmarks: z.boolean().optional() }).strict();
+const nullableText = (max: number) => z.string().max(max).nullable().optional();
+const cityPatchSchema = z
+  .object({
+    // '' 是恢复自动；orig 跟着 name；reroll 换一个自动的名字
+    name: z.string().max(40).optional(),
+    orig: z.string().max(80).optional(),
+    reroll: z.literal(true).optional(),
+    // null 是恢复自动
+    rank: typeIdSchema.nullable().optional(),
+    country: countryId.nullable().optional(),
+    founded: z.number().int().min(-100000).max(100000).nullable().optional(),
+    description: nullableText(2000),
+    notes: nullableText(2000),
+    locked: z.boolean().optional(),
+  })
+  .strict();
+const roadPatchSchema = z.object({ kind: typeIdSchema.optional(), name: nullableText(40), note: nullableText(2000) }).strict();
+const landmarkPatchSchema = z
+  .object({ type: typeIdSchema.optional(), name: z.string().max(40).optional(), orig: z.string().max(80).optional(), description: nullableText(2000), locked: z.boolean().optional() })
+  .strict();
+const pointPatchSchema = z.object({ type: typeIdSchema.optional(), name: z.string().max(40).optional(), note: nullableText(2000), attachedCity: settleId.nullable().optional() }).strict();
+const mapXY = z.number().min(-10).max(10);
+
 const fieldName = z.string().regex(/^[\w-]+$/, '场名只能包含字母、数字、下划线和连字符');
 const paintField = z.union([z.enum(['erodDelta', 'tempOffset', 'moistOffset']), z.string().regex(/^field:[\w-]+$/)]);
 // 画笔落点：每格到画笔中心的归一化距离（0 中心，1 边缘），与 cells 对齐
@@ -326,7 +357,16 @@ const baseCommands = [
   // ---------- 人文（第二十二轮，见 human/generate.ts、human/population.ts） ----------
   // 生成：时代、文化组与权重（cultures 只用组里的这几个文化）、总人口（省略时按时代的默认密度）、种子（省略时用世界的）
   // countries（第二十三轮）：写了就同时生成国家（fragmentation 省略为 0.5，seed 省略为人文的种子）
-  z.object({ op: z.literal('generate_human'), era: typeIdSchema, groups: humanGroups, totalPop: popCount.optional(), seed: seedSchema.optional(), countries: countryRulesInput.optional() }),
+  // settlements（第二十四轮）：写了就在最后一起放城市、道路、地标（seed 省略为人文的种子，roads、landmarks 省略为 true）
+  z.object({
+    op: z.literal('generate_human'),
+    era: typeIdSchema,
+    groups: humanGroups,
+    totalPop: popCount.optional(),
+    seed: seedSchema.optional(),
+    countries: countryRulesInput.optional(),
+    settlements: settlementsInput.optional(),
+  }),
   // 按记着的参数重新生成（拖过的发源地留着）；写了的几项换掉。keepManual：手改过的格不动（省略为 true）。
   // 有国家时用现有的领土（只按它调人口）；写了 countries 时国家也重新长（锁定的留着）
   z.object({
@@ -402,6 +442,46 @@ const baseCommands = [
   z.object({ op: z.literal('remove_country'), id: countryId }),
   // 挪首都（这个国家的陆地上的一格）；null 恢复自动
   z.object({ op: z.literal('move_capital'), id: countryId, cell: z.number().int().min(0).nullable() }),
+  // ---------- 城市、道路、地标、自定义点（第二十四轮，见 human/settlements.ts、roads.ts、landmarks.ts、points.ts） ----------
+  // 一起生成（全部换掉）/ 重新生成（锁定的、自己放的、画的留着）；写了的几项换掉记着的参数
+  z.object({ op: z.literal('generate_settlements'), seed: seedSchema.optional(), roads: z.boolean().optional(), landmarks: z.boolean().optional() }),
+  z.object({ op: z.literal('regenerate_settlements'), seed: seedSchema.optional(), roads: z.boolean().optional(), landmarks: z.boolean().optional() }),
+  // 去掉几种（城市连同道路）
+  z.object({ op: z.literal('remove_settlements'), cities: z.boolean().optional(), roads: z.boolean().optional(), landmarks: z.boolean().optional(), points: z.boolean().optional() }),
+  // 城市：生成（全部换掉）/ 重新生成（自己放的留着；keepLocked 省略为 true：锁定的也留着）；有道路时自动的道路跟着重连
+  z.object({ op: z.literal('generate_cities'), seed: seedSchema.optional() }),
+  z.object({ op: z.literal('regenerate_cities'), seed: seedSchema.optional(), keepLocked: z.boolean().optional() }),
+  z.object({ op: z.literal('add_city'), cell: z.number().int().min(0), name: z.string().max(40).optional(), orig: z.string().max(80).optional(), rank: typeIdSchema.optional() }),
+  z.object({ op: z.literal('remove_city'), id: settleId }),
+  z.object({ op: z.literal('move_city'), id: settleId, cell: z.number().int().min(0) }),
+  z.object({ op: z.literal('set_city'), id: settleId, patch: cityPatchSchema }),
+  // 道路：生成（全部换掉）/ 重新生成（画的、改过的留着）；画（一串相邻的陆地格）、改走向（cells 换掉 [from, to] 那一段，省略时整条）、删除、改种类
+  z.object({ op: z.literal('generate_roads') }),
+  z.object({ op: z.literal('regenerate_roads') }),
+  z.object({ op: z.literal('add_road'), cells, kind: typeIdSchema.optional(), name: z.string().max(40).optional() }),
+  z.object({ op: z.literal('edit_road'), id: settleId, cells, from: z.number().int().min(0).optional(), to: z.number().int().min(0).optional() }),
+  z.object({ op: z.literal('remove_road'), id: settleId }),
+  z.object({ op: z.literal('set_road'), id: settleId, patch: roadPatchSchema }),
+  // 地标：重新生成（keepManual 省略为 true：自己放的、锁定的留着）
+  z.object({ op: z.literal('generate_landmarks'), keepManual: z.boolean().optional() }),
+  z.object({ op: z.literal('add_landmark'), type: typeIdSchema, cell: z.number().int().min(0), name: z.string().max(40).optional(), orig: z.string().max(80).optional(), description: z.string().max(2000).optional() }),
+  z.object({ op: z.literal('remove_landmark'), id: settleId }),
+  z.object({ op: z.literal('move_landmark'), id: settleId, cell: z.number().int().min(0) }),
+  z.object({ op: z.literal('set_landmark'), id: settleId, patch: landmarkPatchSchema }),
+  // 自定义点：x、y 是精确的位置（地图坐标，省略时在格心）；attachedCity 省略时“当作城市”的类型挂上这一格的城市
+  z.object({
+    op: z.literal('add_point'),
+    type: typeIdSchema,
+    cell: z.number().int().min(0),
+    x: mapXY.optional(),
+    y: mapXY.optional(),
+    name: z.string().max(40).optional(),
+    note: z.string().max(2000).optional(),
+    attachedCity: settleId.nullable().optional(),
+  }),
+  z.object({ op: z.literal('remove_point'), id: settleId }),
+  z.object({ op: z.literal('move_point'), id: settleId, cell: z.number().int().min(0), x: mapXY.optional(), y: mapXY.optional() }),
+  z.object({ op: z.literal('set_point'), id: settleId, patch: pointPatchSchema }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。
@@ -629,6 +709,8 @@ export function applyCommand(
   let result: { dirty: Dirty; summary: string };
   try {
     result = run(world, cmd, ctx);
+    // 第二十四轮：有城市时每步之后整理（首都格上有城市、挂着连着的城市还在）
+    if (world.small.cities) tidyCities(world);
     if (stored) {
       for (const [id, name] of Object.entries(stored)) {
         const p = world.small.provinces[Number(id)];
@@ -758,6 +840,12 @@ function applyTerrain(world: World, opts: { classBefore?: Uint8Array; clear?: nu
   }
   // 国家（第二十三轮）：变成海的格不再归哪国，新陆地归挨着的国家（在修补省份之前：省份跟着国家）
   if (gained || lost) repairCountries(world, before);
+  // 城市、道路、地标（第二十四轮）：变成海的格上的删掉（锁定的挪到最近的陆地），道路断开
+  if (lost) {
+    repairCities(world);
+    repairRoads(world);
+    repairLandmarks(world);
+  }
   const after = provinceLand(world);
   let moved = false;
   for (let i = 0; i < after.length && !moved; i++) if (after[i] !== classBefore[i]) moved = true;
@@ -783,8 +871,10 @@ function clearPop(world: World) {
   c.popGroup?.fill(0);
   c.popShare?.fill(0);
   c.popManual?.fill(0);
-  // 国家跟着人文一起去掉（第二十三轮）
+  // 国家跟着人文一起去掉（第二十三轮）；城市、道路也是（第二十四轮；地标、自定义点留着）
   clearCountries(world);
+  clearCities(world);
+  if (!world.small.landmarks) delete world.small.settlementRules;
   delete world.small.human;
   delete world.small.popGroups;
 }
@@ -794,6 +884,16 @@ function afterCountries(world: World) {
   tidyCountries(world);
   fitProvincesToCountries(world);
 }
+
+// 城市、地标的名字（历史里写）
+const cityLabel = (world: World, id: number) => {
+  const c = world.small.cities?.[id];
+  return `“${c ? cityName(world, c).zh || id : id}”`;
+};
+const landmarkLabel = (world: World, id: number) => {
+  const l = world.small.landmarks?.[id];
+  return `“${l ? landmarkName(world, l).zh || id : id}”`;
+};
 
 const countryLabel = (world: World, id: number) => `“${world.small.countries?.[id]?.name || id}”`;
 
@@ -1039,6 +1139,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         causes.terrainClass?.fill(0);
         causes.resource?.fill(0);
         clearPop(world);
+        removeSettlements(world, { cities: true, roads: true, landmarks: true, points: true });
         causes.province.fill(-1);
         delete small.cells;
         small.provinces = {};
@@ -1832,10 +1933,17 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'generate_human': {
       const d = ctx.ensureDerived();
-      const h = generateHuman(world, d, { era: cmd.era, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed, ...(cmd.countries ? { countries: cmd.countries } : {}) });
+      const h = generateHuman(world, d, {
+        era: cmd.era,
+        groups: cmd.groups,
+        totalPop: cmd.totalPop,
+        seed: cmd.seed,
+        ...(cmd.countries ? { countries: cmd.countries } : {}),
+        ...(cmd.settlements ? { settlements: cmd.settlements } : {}),
+      });
       afterCountries(world);
       const era = worldEra(small);
-      const k = small.countries ? ` · ${Object.keys(small.countries).length} 个国家` : '';
+      const k = (small.countries ? ` · ${Object.keys(small.countries).length} 个国家` : '') + (cmd.settlements && small.cities ? ` · ${Object.keys(small.cities).length} 座城市` : '');
       return { dirty: Dirty.Human, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}` };
     }
     case 'regenerate_human': {
@@ -1981,6 +2089,133 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       for (const g of cmd.groups ?? []) checkTuple(small, g);
       setCellPop(world, cmd.cell, cmd.total, cmd.groups);
       return { dirty: Dirty.Human, summary: cmd.total !== undefined && !cmd.groups ? `人口改为 ${popText(cmd.total)}` : '修改人口' };
+    }
+    // ---------- 城市、道路、地标、自定义点（第二十四轮） ----------
+    case 'generate_settlements':
+    case 'regenerate_settlements': {
+      const d = ctx.ensureDerived();
+      const fresh = cmd.op === 'generate_settlements';
+      const patch = { ...(cmd.seed !== undefined ? { seed: cmd.seed } : {}), ...(cmd.roads !== undefined ? { roads: cmd.roads } : {}), ...(cmd.landmarks !== undefined ? { landmarks: cmd.landmarks } : {}) };
+      const k = generateSettlements(world, d, { rules: settlementRules(world, patch), fresh });
+      const parts = [small.human ? `${k.cities} 座城市` : '', k.roads ? `${k.roads} 条道路` : '', k.landmarks ? `${k.landmarks} 个地标` : ''].filter(Boolean);
+      return { dirty: Dirty.None, summary: `${fresh ? '生成' : '重新生成'}城市与地标${parts.length ? ` · ${parts.join(' · ')}` : ''}` };
+    }
+    case 'remove_settlements': {
+      removeSettlements(world, { cities: cmd.cities, roads: cmd.roads, landmarks: cmd.landmarks, points: cmd.points });
+      const names = [cmd.cities ? '城市' : '', cmd.cities || cmd.roads ? '道路' : '', cmd.landmarks ? '地标' : '', cmd.points ? '自定义点' : ''].filter(Boolean);
+      return { dirty: Dirty.None, summary: `删除${names.join('、') || '城市与地标'}` };
+    }
+    case 'generate_cities':
+    case 'regenerate_cities': {
+      if (!small.human || !causes.popTotal) throw new CommandError('还没有生成人文');
+      const S = settleInputs(world, ctx.ensureDerived());
+      const rules = settlementRules(world, cmd.seed !== undefined ? { seed: cmd.seed } : {});
+      const fresh = cmd.op === 'generate_cities';
+      // 重新生成：自己放的留着；keepLocked 时锁定的也留着
+      if (!fresh && cmd.keepLocked === false && small.cities) {
+        for (const c of Object.values(small.cities)) if (c.auto && c.locked) delete small.cities[c.id];
+      }
+      generateCities(S, rules, fresh);
+      tidyCities(world);
+      // 有道路时自动的道路跟着重连（画的留着）
+      if (rules.roads && (fresh || small.roads)) generateRoads(S, rules, false);
+      small.settlementRules = { ...rules };
+      return { dirty: Dirty.None, summary: `${fresh ? '生成' : '重新生成'}城市 · ${Object.keys(small.cities ?? {}).length} 座` };
+    }
+    case 'add_city': {
+      checkCells([cmd.cell]);
+      const id = addCity(world, cmd.cell, { name: cmd.name, orig: cmd.orig, rank: cmd.rank });
+      return { dirty: Dirty.None, summary: `新建城市${cityLabel(world, id)}` };
+    }
+    case 'remove_city': {
+      const name = cityLabel(world, cmd.id);
+      removeCity(world, cmd.id);
+      return { dirty: Dirty.None, summary: `删除城市${name}` };
+    }
+    case 'move_city': {
+      checkCells([cmd.cell]);
+      const c = cityOf(world, cmd.id);
+      if (c.cell !== cmd.cell) {
+        moveCityCell(world, cmd.id, cmd.cell);
+        if (small.roads) rerouteCity(settleInputs(world, ctx.ensureDerived()), cmd.id);
+      }
+      return { dirty: Dirty.None, summary: `挪动城市${cityLabel(world, cmd.id)}` };
+    }
+    case 'set_city': {
+      cityOf(world, cmd.id);
+      const what = setCity(world, cmd.id, cmd.patch);
+      return { dirty: Dirty.None, summary: `城市${cityLabel(world, cmd.id)} · ${what.join('、') || '修改'}` };
+    }
+    case 'generate_roads':
+    case 'regenerate_roads': {
+      const d = ctx.ensureDerived();
+      const rules = settlementRules(world, { roads: true });
+      const k = generateRoads(settleInputs(world, d), rules, cmd.op === 'generate_roads');
+      small.settlementRules = rules;
+      return { dirty: Dirty.None, summary: `${cmd.op === 'generate_roads' ? '生成' : '重新生成'}道路 · ${k} 条` };
+    }
+    case 'add_road': {
+      const id = addRoad(world, cmd.cells, cmd.kind ?? 'minor', cmd.name);
+      return { dirty: Dirty.None, summary: `画道路 · 约 ${Math.round(roadKm(world, small.roads![id].cells))} km` };
+    }
+    case 'edit_road': {
+      editRoad(world, cmd.id, cmd.cells, cmd.from, cmd.to);
+      return { dirty: Dirty.None, summary: `改道路 · 约 ${Math.round(roadKm(world, roadOf(world, cmd.id).cells))} km` };
+    }
+    case 'remove_road': {
+      roadOf(world, cmd.id);
+      delete small.roads![cmd.id];
+      return { dirty: Dirty.None, summary: '删除道路' };
+    }
+    case 'set_road': {
+      const what = setRoad(world, cmd.id, cmd.patch);
+      return { dirty: Dirty.None, summary: `道路 · ${what.join('、') || '修改'}` };
+    }
+    case 'generate_landmarks': {
+      const d = ctx.ensureDerived();
+      const rules = settlementRules(world, { landmarks: true });
+      const k = generateLandmarks(settleInputs(world, d), rules, cmd.keepManual === false);
+      small.settlementRules = rules;
+      return { dirty: Dirty.None, summary: `生成地标 · ${k} 个` };
+    }
+    case 'add_landmark': {
+      checkCells([cmd.cell]);
+      const id = addLandmark(world, cmd.type, cmd.cell, { name: cmd.name, orig: cmd.orig, description: cmd.description });
+      return { dirty: Dirty.None, summary: `新建地标${landmarkLabel(world, id)}` };
+    }
+    case 'remove_landmark': {
+      landmarkOf(world, cmd.id);
+      const name = landmarkLabel(world, cmd.id);
+      delete small.landmarks![cmd.id];
+      return { dirty: Dirty.None, summary: `删除地标${name}` };
+    }
+    case 'move_landmark': {
+      checkCells([cmd.cell]);
+      moveLandmark(world, cmd.id, cmd.cell);
+      return { dirty: Dirty.None, summary: `挪动地标${landmarkLabel(world, cmd.id)}` };
+    }
+    case 'set_landmark': {
+      const what = setLandmark(world, cmd.id, cmd.patch);
+      return { dirty: Dirty.None, summary: `地标${landmarkLabel(world, cmd.id)} · ${what.join('、') || '修改'}` };
+    }
+    case 'add_point': {
+      checkCells([cmd.cell]);
+      const id = addPoint(world, { type: cmd.type, cell: cmd.cell, x: cmd.x, y: cmd.y, name: cmd.name, note: cmd.note, attachedCity: cmd.attachedCity });
+      return { dirty: Dirty.None, summary: `新建点“${small.points![id].name}”` };
+    }
+    case 'remove_point': {
+      const name = pointOf(world, cmd.id).name;
+      removePoint(world, cmd.id);
+      return { dirty: Dirty.None, summary: `删除点“${name}”` };
+    }
+    case 'move_point': {
+      checkCells([cmd.cell]);
+      movePoint(world, cmd.id, cmd.cell, cmd.x, cmd.y);
+      return { dirty: Dirty.None, summary: `挪动点“${pointOf(world, cmd.id).name}”` };
+    }
+    case 'set_point': {
+      const what = setPoint(world, cmd.id, cmd.patch);
+      return { dirty: Dirty.None, summary: `点“${pointOf(world, cmd.id).name}” · ${what.join('、') || '修改'}` };
     }
     case 'set_province': {
       const meta = small.provinces[cmd.id];

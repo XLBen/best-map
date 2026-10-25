@@ -5,6 +5,9 @@ import { type CellMeta, type World, longitudeOf, worldLatitude } from '../world'
 import { CATEGORY_LABEL, type Resource, type ResourceCategory, resourceAt } from './resources';
 import { classAt, type TerrainClass } from './terrain-class';
 import { type CellPopulation, cellPopulation } from './layers';
+import { cityTable } from './settlements';
+import { landmarkName } from './landmarks';
+import { landmarkTypeById, pointTypeById } from './settle-content';
 
 // 格的档案（第二十一轮）：悬停卡片展开后看、改的那些——小地名（不上地图，按当地的地名风格起）、地形类别、资源、
 // 是山峰时的“xx峰 · 高度”、备注。自己写的存在 small.cells（命令 set_cell），别的都按推导现算
@@ -84,6 +87,10 @@ export interface CellArchive {
   habitability: number;
   // 人口与成分（第二十二轮）：生成过人文时才有（海上也有，人数为 0）
   population?: CellPopulation;
+  // 这一格上的城市、地标、自定义点（第二十四轮）：有时才有
+  city?: { id: number; name: string; orig?: string; rank: string; rankName: string; icon: string; capital: boolean; secondCapital: boolean; population: number };
+  landmarks?: { id: number; type: string; typeName: string; name: string; orig?: string }[];
+  points?: { id: number; type: string; typeName: string; name: string }[];
 }
 
 // 一格的档案（界面直接用）
@@ -126,6 +133,18 @@ export function cellArchive(world: World, cell: number): CellArchive {
   };
   const pop = cellPopulation(world, cell);
   if (pop) out.population = pop;
+  if (small.cities) {
+    const c = cityTable(world).list.find((x) => x.cell === cell && !x.point);
+    if (c) out.city = { id: c.id, name: c.name, ...(c.orig ? { orig: c.orig } : {}), rank: c.rank.id, rankName: c.rank.name, icon: c.rank.icon, capital: c.capital, secondCapital: c.secondCapital, population: c.population };
+  }
+  const ls = Object.values(small.landmarks ?? {}).filter((l) => l.cell === cell).sort((a, b) => a.id - b.id);
+  if (ls.length)
+    out.landmarks = ls.map((l) => {
+      const n = landmarkName(world, l);
+      return { id: l.id, type: l.type, typeName: landmarkTypeById(small, l.type)?.name ?? l.type, name: n.zh, ...(n.orig ? { orig: n.orig } : {}) };
+    });
+  const ps = Object.values(small.points ?? {}).filter((p) => p.cell === cell).sort((a, b) => a.id - b.id);
+  if (ps.length) out.points = ps.map((p) => ({ id: p.id, type: p.type, typeName: pointTypeById(small, p.type)?.name ?? p.type, name: p.name }));
   if (surface === 'land') {
     if (tc) out.terrainClass = { id: tc.id, name: tc.name, color: tc.color, auto: !causes.terrainClass?.[cell], ...(auto ? { autoId: auto.id } : {}) };
     if (r) out.resource = { id: r.id, name: r.name, color: r.color, ...(r.icon ? { icon: r.icon } : {}), category: r.category, categoryLabel: CATEGORY_LABEL[r.category] };

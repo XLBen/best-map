@@ -6,6 +6,7 @@ import { cultureById, cultureGroupById, dimensionValues, worldDimensions, worldE
 import { type Faction, categoryName, eraFactions, governmentById } from './government';
 import { SLOTS } from './groups';
 import { cellKm2 } from './space';
+import { countryCities } from './settlements';
 
 // 国家的推导与给界面的（第二十三轮）：
 //   derived.country：每格的国家编号（countryList 的下标 + 1，0 无主），陆地按 causes.country，海按时代的 seaClaimKm（离谁家的海岸近、
@@ -160,6 +161,9 @@ export interface CountryStats {
   primaryShare: number;
   minorityShare: number;
   coastalShare: number;
+  // 城市（第二十四轮）：城市的个数、首都与陪都（城市的编号，首都在前；没有城市时为空）
+  cities: number;
+  capitals: number[];
 }
 
 // 全部国家的统计（一遍算完）
@@ -228,6 +232,7 @@ export function allCountryStats(world: World): Map<number, CountryStats> {
     }
     a.other += Math.max(0, p - known);
   }
+  const towns = countryCities(world);
   for (const [id, a] of acc) {
     const total = a.pop;
     const share = (v: number) => (total > 0 ? v / total : 0);
@@ -267,6 +272,8 @@ export function allCountryStats(world: World): Map<number, CountryStats> {
       primaryShare: share(a.primary),
       minorityShare: share(a.minority),
       coastalShare: share(a.coastal),
+      cities: towns.get(id)?.cities ?? 0,
+      capitals: towns.get(id)?.capitals ?? [],
     });
   }
   return out;

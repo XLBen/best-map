@@ -316,6 +316,76 @@ export interface CountryMeta {
   // 锁定：重新生成国家时领土、档案都不动
   locked?: true;
 }
+// 城市（第二十四轮，见 human/settlements.ts）。名字、等级、所属、人口、建城年份、简介没写时都按世界现算（自动起名、按占本国人口的比例定等级……）
+export interface CityMeta {
+  id: number;
+  cell: number;
+  // 自动放的（重新生成时换掉）；自己放的没有这一项，重新生成时留着
+  auto?: true;
+  // 自己起的名字（没有时按当地的地名风格起）与原文；换一个的盐
+  name?: string;
+  orig?: string;
+  salt?: number;
+  // 自己定的等级（cityRank 的 id；没有时按占本国人口的比例）
+  rank?: string;
+  // 自己定的所属国家（没有时按所在格的领土）
+  country?: number;
+  // 档案：建城年份、简介、备注（没写时年份、简介自动）
+  founded?: number;
+  description?: string;
+  notes?: string;
+  // 锁定：重新生成时不动；所在的格变成海时挪到最近的陆地
+  locked?: true;
+}
+
+// 道路（第二十四轮，见 human/roads.ts）：一串相邻的格（陆地）。kind 是 major（大道）、minor（小路）或自己写的种类
+export interface RoadMeta {
+  id: number;
+  kind: string;
+  cells: number[];
+  // 自动连的（重新生成时换掉）；画的、改过的没有这一项
+  auto?: true;
+  // 两头连着的城市（没有时是接到路网上的一点）
+  from?: number;
+  to?: number;
+  name?: string;
+  note?: string;
+}
+
+// 地标（第二十四轮，见 human/landmarks.ts）：自然的（名山、火山、瀑布、峡谷……）与人造的（神庙、长城……），类型是 landmarkType 的 id
+export interface LandmarkMeta {
+  id: number;
+  type: string;
+  cell: number;
+  auto?: true;
+  // 自己起的名字（没有时按类型的写法自动起）
+  name?: string;
+  orig?: string;
+  salt?: number;
+  description?: string;
+  locked?: true;
+}
+
+// 自定义点（第二十四轮，见 human/points.ts）：类型是 pointType 的 id；x、y 是精确的位置（地图坐标，省略时在格心）。
+// 类型“当作城市”时挂在一座城市上（attachedCity），那座城市在档案里也算首都等
+export interface PointMeta {
+  id: number;
+  type: string;
+  cell: number;
+  x?: number;
+  y?: number;
+  name: string;
+  note?: string;
+  attachedCity?: number;
+}
+
+// 城市、道路、地标的生成参数（第二十四轮）：生成过才有；重新生成人文、国家时按它重新放自动的（锁定的、自己放的留着）
+export interface SettlementRules {
+  seed: number;
+  roads: boolean;
+  landmarks: boolean;
+}
+
 // 一个人口群体：文化 + 时代每一维的取值（没有这一维的取值时不写）
 export interface PopTuple {
   culture: string;
@@ -383,6 +453,13 @@ export interface SmallState {
   // 国家（第二十三轮）：编号 → 档案；下一个编号。生成过国家才有
   countries?: Record<string, CountryMeta>;
   nextCountry?: number;
+  // 城市、道路、地标、自定义点（第二十四轮）：编号 → 档案；下一个编号（几种共用）；生成的参数。用到时才有
+  cities?: Record<string, CityMeta>;
+  roads?: Record<string, RoadMeta>;
+  landmarks?: Record<string, LandmarkMeta>;
+  points?: Record<string, PointMeta>;
+  nextSettlement?: number;
+  settlementRules?: SettlementRules;
 }
 
 export interface Conflict {
