@@ -34,7 +34,7 @@ import { createAndUse as createIslandType, islandSwatch, requestIslandTypeEditor
 import { createAndUse as createWaterType } from '../panels/waterTypes';
 import { FieldsBox } from './ContentEditor';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
-import { HUMAN_KINDS, REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, repoSections, restoreRowCommand, toggleCommand } from './repo';
+import { GOV_KINDS, HUMAN_KINDS, REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, repoSections, restoreRowCommand, toggleCommand } from './repo';
 import { eraChoices, groupChoices } from '../human';
 import { isolationNote } from './Scripts';
 import { type RepoEdit, closeRepo, fileLabel, openPackImport, openPackList, packDialog, patchRepo, repo } from './store';
@@ -518,6 +518,11 @@ function openHuman() {
   setCategory('culture');
   openPanel.value = 'cat:culture';
 }
+function openCountries() {
+  closeRepo();
+  setCategory('countries');
+  openPanel.value = 'cat:countries';
+}
 
 // ---------- 整个仓库 ----------
 
@@ -597,6 +602,14 @@ export function RepoPanel() {
                   <span class="hint">{w.small.human ? '改了内容后重新生成才用到' : '还没有生成人文'}</span>
                   <button class="small" onClick={openHuman}>
                     {w.small.human ? '重新生成…' : '生成人文…'}
+                  </button>
+                </div>
+              )}
+              {GOV_KINDS.has(kind.id) && w && (
+                <div class="row between repo-restyle">
+                  <span class="hint">{w.small.human?.countryRules ? '改了内容后重新生成才用到' : '还没有生成国家'}</span>
+                  <button class="small" onClick={openCountries}>
+                    {w.small.human?.countryRules ? '重新生成…' : '生成国家…'}
                   </button>
                 </div>
               )}

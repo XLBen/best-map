@@ -1441,6 +1441,42 @@ function offsetLine(pts: readonly [number, number][], d: number): [number, numbe
 // 国名的字：两者时第二行（原文）、写原文时的那一行拉丁字母写成大写
 export const countryLineText = (lines: readonly string[]) => lines.map((t, q) => (q > 0 || LATIN.test(t) ? t.toUpperCase() : t));
 
+// 一个国名的中线（展开跨接缝的、平滑过的）与每个字在 1 像素字号时的宽：按国名对象缓存（排版时不再设字体、量字，
+// 设一次字体要解析一遍字体名，一百多个国名每次重排都设会慢几十毫秒）
+interface CountryMetrics {
+  curve: [number, number][];
+  lenU: number;
+  first: string[];
+  w1: number[];
+  second: string[] | null;
+  w2: number[];
+}
+const metricsCache = new WeakMap<CountryLabelDraw, CountryMetrics>();
+function countryMetrics(ctx: CanvasRenderingContext2D, c: CountryLabelDraw): CountryMetrics {
+  let m = metricsCache.get(c);
+  if (m) return m;
+  // 展开跨接缝的中线（星球：相邻两点的 x 差不超过 1）
+  const base: [number, number][] = [];
+  for (const [x, y] of c.path) {
+    const prev = base[base.length - 1];
+    base.push([prev ? x + 2 * Math.round((prev[0] - x) / 2) : x, y]);
+  }
+  let lenU = 0;
+  for (let k = 1; k < base.length; k++) lenU += Math.hypot(base[k][0] - base[k - 1][0], base[k][1] - base[k - 1][1]);
+  const lines = countryLineText(c.lines);
+  const measure = (text: string, weight: number) => {
+    const font = `${weight} 100px ${COUNTRY_FONT}`;
+    const chars = [...text];
+    if (chars.some((ch) => !glyphs.has(`${font}|${ch}`))) ctx.font = font;
+    return { chars, w: chars.map((ch) => glyphWidth(ctx, font, ch) / 100) };
+  };
+  const a = measure(lines[0], 600);
+  const b = lines[1] ? measure(lines[1], 500) : null;
+  m = { curve: smoothPath(base), lenU, first: a.chars, w1: a.w, second: b?.chars ?? null, w2: b?.w ?? [] };
+  metricsCache.set(c, m);
+  return m;
+}
+
 // 排国名（最先排，大的先排）：放不下、和已排的国名重叠的不标。放好的字一个字一个框，别的地名按它们避让
 function placeCountries(
   ctx: CanvasRenderingContext2D,
@@ -1454,17 +1490,8 @@ function placeCountries(
   const list = [...(st.countries ?? [])].sort((a, b) => b.area - a.area);
   const color = COUNTRY_COLOR[st.style];
   for (const c of list) {
-    // 展开跨接缝的中线（星球：相邻两点的 x 差不超过 1）
-    const base: [number, number][] = [];
-    for (const [x, y] of c.path) {
-      const prev = base[base.length - 1];
-      base.push([prev ? x + 2 * Math.round((prev[0] - x) / 2) : x, y]);
-    }
-    let lenU = 0;
-    for (let k = 1; k < base.length; k++) lenU += Math.hypot(base[k][0] - base[k - 1][0], base[k][1] - base[k - 1][1]);
+    const { curve, lenU, first, w1, second, w2 } = countryMetrics(ctx, c);
     if (!(lenU > 0)) continue;
-    const curve = smoothPath(base);
-    const lines = countryLineText(c.lines);
     for (const k of ks) {
       const pts: [number, number][] = [];
       let ok = true;
@@ -1484,15 +1511,10 @@ function placeCountries(
       if (view.exporting && (mid[0] < 0 || mid[0] >= view.cw)) continue;
       // 领土在屏幕上有多粗：面积 ÷ 中线的长度
       const thick = (c.area / lenU) * (L / lenU);
-      const first = [...lines[0]];
-      const font100 = `600 100px ${COUNTRY_FONT}`;
-      ctx.font = font100;
-      const w1 = first.map((ch) => glyphWidth(ctx, font100, ch) / 100);
       const sum1 = w1.reduce((a, b) => a + b, 0);
-      const fit = Math.min(COUNTRY_MAX_PX, thick * 0.42, (L * 0.8) / Math.max(sum1, 0.5));
+      const fit = Math.min(COUNTRY_MAX_PX, thick * 0.36, (L * 0.8) / Math.max(sum1, 0.5));
       if (fit < COUNTRY_MIN_PX) continue;
       const fontPx = Math.floor(fit);
-      const second = lines[1] ? [...lines[1]] : null;
       const px2 = second ? Math.max(COUNTRY_MIN_PX - 1, Math.round(fontPx * 0.45)) : 0;
       // 两行时第一行往上挪半行
       const l1 = layoutAlong(first, w1, offsetLine(pts, second ? -(px2 * 0.55 + 1) : 0), fontPx, fontPx * 1.8);
@@ -1504,8 +1526,6 @@ function placeCountries(
       const marks = l1.glyphs.map((g) => ({ x: g.x, y: g.y, r: fontPx * 0.55 }));
       if (second) {
         const font2 = `500 ${px2}px ${COUNTRY_FONT}`;
-        ctx.font = font2;
-        const w2 = second.map((ch) => glyphWidth(ctx, font2, ch) / px2);
         const l2 = layoutAlong(second, w2, offsetLine(pts, fontPx * 0.55 + 1), px2, px2 * 1.2);
         if (l2) {
           items.push({ key: c.key, chars: second, widths: w2.map((x) => x * px2), spacing: 0, total: l2.total, font: font2, color, x: 0, y: 0, angle: 0, glyphs: l2.glyphs, halo: COUNTRY_HALO, haloWidth: 2 });

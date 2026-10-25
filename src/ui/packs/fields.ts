@@ -207,3 +207,31 @@ export function copyItem(kind: ContentKind, item: unknown, taken: ReadonlySet<st
   const name = itemName(kind, item);
   return { ...src, id, ...(typeof src.name === 'string' ? { name: `${name.slice(0, 40)} ${k}` } : {}) };
 }
+
+// ---------- 称号（第二十三轮：政体的国家称号、统治者称号） ----------
+// 写法有三种（一个字符串、{zh, orig}、按文化换说法的表），编辑器里一律是一行一种：键（default、文化 id、文化组 id）、中文、原文。
+// 只有 default 一行时存回最简单的写法。登记表里这两个字段是 json，界面按 key 认出来换成这种编辑器
+
+export interface TitleRow {
+  key: string;
+  zh: string;
+  orig: string;
+}
+
+export const isTitleField = (f: Pick<FieldDesc, 'type' | 'key' | 'of'>) => f.type === 'json' && !f.of && (f.key === 'title' || f.key === 'rulerTitle');
+
+export function titleRows(v: unknown): TitleRow[] {
+  const one = (key: string, x: unknown): TitleRow => (typeof x === 'string' ? { key, zh: x, orig: '' } : isObj(x) ? { key, zh: String(x.zh ?? ''), orig: String(x.orig ?? '') } : { key, zh: '', orig: '' });
+  if (v === undefined || v === null) return [];
+  if (typeof v === 'string' || (isObj(v) && 'zh' in v)) return [one('default', v)];
+  return isObj(v) ? Object.entries(v).map(([k, x]) => one(k, x)) : [];
+}
+
+// 空着中文、空着键的行去掉；一行都没有时 undefined
+export function titleValue(rows: readonly TitleRow[]): unknown {
+  const ok = rows.filter((r) => r.zh.trim() && r.key.trim());
+  const one = (r: TitleRow) => (r.orig.trim() ? { zh: r.zh.trim(), orig: r.orig.trim() } : r.zh.trim());
+  if (!ok.length) return undefined;
+  if (ok.length === 1 && ok[0].key.trim() === 'default') return one(ok[0]);
+  return Object.fromEntries(ok.map((r) => [r.key.trim(), one(r)]));
+}

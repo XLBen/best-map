@@ -403,6 +403,8 @@ export function MapView() {
       // 剪刀切线附近：省份着色、省份工具的高亮也按切线换过的格取；国家底图按同样的规则取格（海上的像素只取海格：领海淡淡的一圈）
       renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
       renderer.highlightByGroup = !!cm.provinces;
+      // 人文图（第二十三轮）：省界淡一些（省份类工具开着时照旧）
+      renderer.provinceAlpha = politicalOn(shown) && !cm.provinces && mode.value !== 'provinces' ? 0.45 : 1;
       renderer.style = mapStyle.value;
       // 河由渲染器在合成一步里画（只画在陆地上，排在省界、高亮下面）：渲染器按这一帧是不是移动中取停稳或移动中的那张
       const shownRivers = shown === w ? paths : pathsOf(shown);
@@ -607,6 +609,7 @@ export function MapView() {
       applyGhost(w, null);
       renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country';
       renderer.highlightByGroup = !!CATEGORY_DEFS[category.value].map?.provinces;
+      renderer.provinceAlpha = politicalOn(w) && mode.value !== 'provinces' ? 0.45 : 1;
       renderer.style = mapStyle.value;
     }
 
