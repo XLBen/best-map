@@ -59,11 +59,14 @@ function needInstall() {
   return statSync(join(root, 'package-lock.json')).mtimeMs > statSync(stamp).mtimeMs;
 }
 
-// 端口上的情况：'map'（地图已经开着）、'other'（被别的程序占了）、'free'
+// 端口上的情况：'map'（地图已经开着）、'other'（被别的程序占了）、'free'；dev：开着的是开发服务器（热更新，不会旧）
+let dev = false;
 async function probe() {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    return (await res.text()).includes(TITLE) ? 'map' : 'other';
+    const html = await res.text();
+    dev = html.includes('/@vite/client');
+    return html.includes(TITLE) ? 'map' : 'other';
   } catch {
     return 'free';
   }
@@ -107,14 +110,15 @@ if (!nodeOk()) {
 
 const state = await probe();
 if (state === 'map') {
-  // 开着的是打包好的程序、代码在它打包之后又更新过（比如拉了新代码）：开着的还是旧版本，提醒一句
+  // 开着的是打包好的程序、代码在它打包之后又更新过（比如拉了新代码）：开着的还是旧版本，提醒一句。
+  // 没有记号（npm run build 重新打包时会清掉 dist）也说不准是哪个版本，同样提醒
   let stale = false;
   try {
-    stale = existsSync(STAMP) && readFileSync(STAMP, 'utf8').trim() !== sourceHash();
+    stale = !dev && (!existsSync(STAMP) || readFileSync(STAMP, 'utf8').trim() !== sourceHash());
   } catch {
     // 读不了就不提醒
   }
-  if (stale) console.log('地图已经开着，但代码更新过：关掉之前那个窗口再双击一次就是新版本');
+  if (stale) console.log('地图已经开着，但可能是旧版本（代码更新过）：关掉之前那个黑色窗口，再双击一次就会重新打包、打开新版本');
   console.log(`地图已经开着，正在打开浏览器：${url}`);
   openBrowser();
   process.exit(0);
