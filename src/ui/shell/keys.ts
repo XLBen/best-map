@@ -27,7 +27,7 @@ export function onKeyDown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') {
     // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 我的地图 → 说明 → 星球形态编辑器 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
-    // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 吸管 → 隐藏的界面 → 仓库（编辑器开着时先回到列表）→ 抽屉 → 选中的省份 / 地名 / 河
+    // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 吸管 → 隐藏的界面 → 资源库（编辑器开着时先回到列表）→ 抽屉 → 选中的省份 / 地名 / 河
     if (packDialog.value) packDialog.value = null;
     else if (mapsDialog.value) mapsDialog.value = false;
     else if (helpOpen.value) helpOpen.value = false;

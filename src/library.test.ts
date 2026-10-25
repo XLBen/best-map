@@ -4,7 +4,7 @@ import { type ResourcePack, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
-import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removePack, saveForm, saveItem } from './library';
+import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removeItem, removePack, saveForm, saveItem } from './library';
 import { BUILTIN_STYLES, NAME_STYLES_PACK, NAME_STYLES_PACK_ID } from '../core/packs/names';
 import { PACK_MAX } from '../core/packs';
 import { TWIN_CONTINENTS } from '../core/packs/fantasy-forms';
@@ -225,7 +225,7 @@ describe('自己做的星球形态存进资源库', () => {
   });
 });
 
-describe('仓库的编辑器存进“我的资源”（第二十轮）', () => {
+describe('资源库的编辑器存进“我的资源”（第二十轮）', () => {
   it('地名风格存进“我的资源”：同一个 id 换成新的；从世界导出替换“我的资源”时它留着', async () => {
     const style = { ...BUILTIN_STYLES.find((s) => s.id === 'west-germanic')!, id: 'my-g', name: '我的日耳曼' };
     const a = await saveItem('nameStyles', style);
@@ -239,6 +239,21 @@ describe('仓库的编辑器存进“我的资源”（第二十轮）', () => {
     const bad = await saveItem('nameStyles', { ...style, id: 'bad', kind: 'nope' });
     expect(bad.ok).toBe(false);
     expect((await saveItem('nope', style)).ok).toBe(false);
+  });
+
+  it('从库里删除（第二十八轮）：只删“我的资源”里的一项，别的留着；删到空时整个包删掉；内置的、装上的资源包删不了', async () => {
+    const style = { ...BUILTIN_STYLES.find((s) => s.id === 'west-germanic')!, id: 'my-g', name: '我的日耳曼' };
+    await saveItem('nameStyles', style);
+    await saveItem('nameStyles', { ...style, id: 'my-h', name: '我的另一种' });
+    const key = library.value.find((e) => e.mine)!.key;
+    expect(await removeItem(key, 'nameStyles', 'my-g')).toEqual({ ok: true });
+    expect(library.value.find((e) => e.key === key)!.pack.nameStyles!.map((s) => s.id)).toEqual(['my-h']);
+    expect((await removeItem(key, 'nameStyles', 'nope')).ok).toBe(false);
+    expect(await removeItem(key, 'nameStyles', 'my-h')).toEqual({ ok: true });
+    expect(library.value.some((e) => e.key === key)).toBe(false);
+    expect((await removeItem(NAME_STYLES_PACK_ID, 'nameStyles', BUILTIN_STYLES[0].id)).ok).toBe(false);
+    const other = await installPack(userPack('别人的', { nameStyles: [style] }));
+    expect((await removeItem(other.entry.key, 'nameStyles', 'my-g')).ok).toBe(false);
   });
 
   it('地名风格示例是内置的：在最前面、默认信任、删不掉', async () => {

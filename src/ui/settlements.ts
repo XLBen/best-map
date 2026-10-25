@@ -503,7 +503,7 @@ export function exportPartRows(w: World): ExportPartRow[] {
   return EXPORT_PARTS.map((p) => ({ id: p.id, label: p.label, files: p.files, image: 'image' in p && !!p.image, available: exportPartAvailable(w, p.id) }));
 }
 
-// ---------- 仓库：图标的选法、上传的小图 ----------
+// ---------- 资源库：图标的选法、上传的小图 ----------
 
 export const ICON_LABELS: Record<string, string> = {
   star: '星',

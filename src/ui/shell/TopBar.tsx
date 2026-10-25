@@ -43,7 +43,7 @@ export function TopBar() {
   return (
     <div class="topbar">
       <div class="tb-group">
-        <PanelButton panel="world" icon={Globe} label="世界" title={`新建、保存、打开、仓库、导出\n${mapStatus()}`} />
+        <PanelButton panel="world" icon={Globe} label="世界" title={`新建、保存、打开、资源库、导出\n${mapStatus()}`} />
         <PanelButton panel="more" icon={CircleEllipsis} label="更多" disabled={!w} title="历史、偏好、上手说明" />
         <PanelButton panel="adjust" icon={WandSparkles} label="调整" disabled={!w} title="冷暖干湿、四季、河流多少" />
         <span class="tb-sep" />

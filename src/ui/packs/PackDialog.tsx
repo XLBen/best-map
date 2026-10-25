@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import {
   type PackItem,
-  packSection,
   type ResourcePack,
   endemicCount,
-  exportableBiomes,
   packFileName,
   packFromWorld,
   packItems,
@@ -14,6 +12,7 @@ import {
   sameItem,
 } from '../../../core/packs';
 import { FANTASY_PACK } from '../../../core/packs/fantasy';
+import { type ContentKind, itemId } from '../../../core/content/registry';
 import { PATTERN_LABEL } from '../../../core/species';
 import type { FoundScript } from '../../../core/script';
 import { type LibraryEntry, inLibrary, installPack, keepSavedForms, library, removePack } from '../../library';
@@ -23,14 +22,14 @@ import { askUser, download, knowIsolation, showToast, world } from '../../state'
 import { repoKinds } from './repo';
 import { type DialogView, openRepo, packDialog } from './store';
 
-// 仓库角落“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、导入文件（解析、检查、信任，不运行任何脚本）、
-// 从这个世界存进仓库。用到世界在仓库里一项一项开关（RepoPanel）
+// 资源库角落“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、从文件导入（解析、检查、信任，不运行任何脚本）、
+// 从本世界存进资源库（第二十八轮：每一种内容都能勾，人文的也在）。添加到本世界在资源库里一项一项点（RepoPanel）
 
 const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
-// 在仓库里看这个包：选上它有内容的第一类，只列它的
+// 在资源库里看这个包：选上它有内容的第一类，只列它的
 function showInRepo(key: string, pack: ResourcePack) {
   const kind = repoKinds().find((k) => packItems(pack, k.pack.key).length)?.id;
   openRepo({ entry: key, ...(kind ? { kind } : {}) });
@@ -63,52 +62,31 @@ function ItemChips({ items }: { items: { name: string; color?: string; title?: s
 
 const itemName = (x: PackItem) => (typeof x.name === 'string' && x.name) || x.id;
 
-// 资源包里有什么：生态（色块、花纹）、河流类型、星球形态、文字包、自定义场
+// 一项的色块（岛的颜色可能是“沙”这样的字）
+const colorOf = (x: PackItem): string | undefined => (typeof x.color === 'string' && x.color.startsWith('#') ? x.color : undefined);
+
+// 资源包里有什么：每一种一行小标题和几个名字（生态写花纹），自定义场
 function PackContents({ pack }: { pack: ResourcePack }) {
   return (
     <div>
-      {!!pack.biomes?.length && (
-        <>
-          <h5>生态 {pack.biomes.length}</h5>
-          <ItemChips
-            items={pack.biomes.map((b) => ({
-              name: b.name || b.id,
-              color: b.color,
-              title: b.visual && b.visual.pattern !== 'none' ? `花纹：${PATTERN_LABEL[b.visual.pattern]}` : undefined,
-            }))}
-          />
-        </>
-      )}
-      {!!pack.riverTypes?.length && (
-        <>
-          <h5>河流类型 {pack.riverTypes.length}</h5>
-          <ItemChips items={pack.riverTypes.map((r) => ({ name: itemName(r), color: r.color }))} />
-        </>
-      )}
-      {!!pack.lakeTypes?.length && (
-        <>
-          <h5>湖泊类型 {pack.lakeTypes.length}</h5>
-          <ItemChips items={pack.lakeTypes.map((r) => ({ name: itemName(r), color: r.color }))} />
-        </>
-      )}
-      {!!pack.islandTypes?.length && (
-        <>
-          <h5>岛的种类 {pack.islandTypes.length}</h5>
-          <ItemChips items={pack.islandTypes.map((r) => ({ name: itemName(r), color: typeof r.color === 'string' && r.color.startsWith('#') ? r.color : undefined }))} />
-        </>
-      )}
-      {!!pack.planetForms?.length && (
-        <>
-          <h5>星球形态 {pack.planetForms.length}</h5>
-          <ItemChips items={pack.planetForms.map((f) => ({ name: itemName(f) }))} />
-        </>
-      )}
-      {!!pack.nameStyles?.length && (
-        <>
-          <h5>地名风格 {pack.nameStyles.length}</h5>
-          <ItemChips items={pack.nameStyles.map((t) => ({ name: t.name }))} />
-        </>
-      )}
+      {repoKinds().map((k) => {
+        const items = packItems<PackItem>(pack, k.pack.key);
+        if (!items.length) return null;
+        return (
+          <>
+            <h5>
+              {k.label} {items.length}
+            </h5>
+            <ItemChips
+              items={items.map((x) => ({
+                name: itemName(x),
+                color: colorOf(x),
+                title: k.id === 'biome' && x.visual && (x.visual as { pattern?: string }).pattern && (x.visual as { pattern: string }).pattern !== 'none' ? `花纹：${PATTERN_LABEL[(x.visual as { pattern: keyof typeof PATTERN_LABEL }).pattern]}` : undefined,
+              }))}
+            />
+          </>
+        );
+      })}
       {!!pack.fields?.length && <p class="hint">用到的自定义场：{pack.fields.join('、')}</p>}
     </div>
   );
@@ -151,7 +129,7 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
         )}
       </div>
       <div class="row">
-        <button class="primary" onClick={() => showInRepo(e.key, e.pack)} title="在仓库里一项一项启用">
+        <button class="primary" onClick={() => showInRepo(e.key, e.pack)} title="在资源库里一项一项添加到本世界">
           查看
         </button>
         <button onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
@@ -193,7 +171,7 @@ function PacksView() {
         <h2>资源包</h2>
         <button onClick={close}>关闭</button>
       </div>
-      <p class="hint">仓库里的内容按包存着。删除包不影响用过它的世界。</p>
+      <p class="hint">资源库里的内容按包存着。删除包不影响用过它的世界。</p>
       {groups.map(([title, entries]) =>
         entries.length ? (
           <>
@@ -245,10 +223,10 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   if (installed || sameItem(p, FANTASY_PACK)) {
     return (
       <>
-        <h2>{installed ? '已安装' : '已在仓库里'}</h2>
-        <p>{installed ? `“${p.name}”已在仓库里。` : `“${p.name}”是内置的。`}</p>
+        <h2>{installed ? '已安装' : '已在资源库里'}</h2>
+        <p>{installed ? `“${p.name}”已在资源库里。` : `“${p.name}”是内置的。`}</p>
         <div class="row">
-          <button class="primary" onClick={() => showInRepo(installed ?? '', p)} title="在仓库里一项一项启用">
+          <button class="primary" onClick={() => showInRepo(installed ?? '', p)} title="在资源库里一项一项添加到本世界">
             查看
           </button>
           <button onClick={close}>关闭</button>
@@ -271,14 +249,14 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   const ask = !!untrusted?.length;
   return (
     <>
-      <h2>导入资源包</h2>
+      <h2>从文件导入</h2>
       <p>
         <b>{p.name}</b>
         {p.author && <span class="muted">　作者：{p.author}</span>}
       </p>
       {p.description && <p class="hint">{p.description}</p>}
-      {read.legacy === 'biomes' && <p class="hint">旧版的生态文件，装进仓库后可以用</p>}
-      {read.legacy === 'wordPack' && <p class="hint">地名风格，装进仓库后可以用</p>}
+      {read.legacy === 'biomes' && <p class="hint">旧版的生态文件，装进资源库后可以用</p>}
+      {read.legacy === 'wordPack' && <p class="hint">地名风格，装进资源库后可以用</p>}
       <PackContents pack={p} />
       <Problems list={problems} />
       {ask && <TrustBlock scripts={scripts} />}
@@ -288,7 +266,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
           <ScriptList scripts={scripts} />
         </details>
       )}
-      {replaces && <p class="hint">会替换仓库里的“{replaces.pack.name}”</p>}
+      {replaces && <p class="hint">会替换资源库里的“{replaces.pack.name}”</p>}
       <div class="row between">
         <span />
         <span class="row">
@@ -304,18 +282,32 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
 
 // ---------- 导出 ----------
 
+// 本世界里能导出的（每一种按登记表的 fromWorld：不是内置原样的；人文的几种也在），按资源库的分类先后
+export function exportSections(w: PackWorldLike): { kind: ContentKind; items: PackItem[] }[] {
+  return repoKinds()
+    .map((kind) => ({ kind, items: (kind.pack.fromWorld?.(w) ?? []) as PackItem[] }))
+    .filter((x) => x.items.length > 0);
+}
+type PackWorldLike = Parameters<typeof packFromWorld>[0];
+
+// 勾了哪些：每一种的 id（去掉的记在 off 里：“段名:id”）
+export function exportPicks(sections: readonly { kind: ContentKind; items: readonly PackItem[] }[], off: ReadonlySet<string>, wordPack: boolean): Record<string, string[] | boolean> {
+  const picks: Record<string, string[] | boolean> = { wordPack };
+  for (const { kind, items } of sections) picks[kind.pack.key] = items.map((x) => itemId(kind, x)).filter((id) => !off.has(`${kind.pack.key}:${id}`));
+  // 没有能导出的种类也写上空的（packFromWorld 省略的段取全部）
+  for (const k of repoKinds()) if (!(k.pack.key in picks)) picks[k.pack.key] = [];
+  return picks;
+}
+
+// 做出来的包里有没有内容
+export const packEmpty = (pack: ResourcePack): boolean => repoKinds().every((k) => !packItems(pack, k.pack.key).length);
+
 function ExportView() {
   const w = world.value;
   const [name, setName] = useState('我的资源');
   const [author, setAuthor] = useState('');
   const [desc, setDesc] = useState('');
-  const biomes = useMemo(() => (w ? exportableBiomes(w) : []), [w]);
-  const fromWorld = (key: string): PackItem[] => (w ? ((packSection(key)?.pack.fromWorld?.(w) ?? []) as PackItem[]) : []);
-  const rivers = useMemo(() => fromWorld('riverTypes'), [w]);
-  const lakes = useMemo(() => fromWorld('lakeTypes'), [w]);
-  const isles = useMemo(() => fromWorld('islandTypes'), [w]);
-  const forms = useMemo(() => fromWorld('planetForms'), [w]);
-  const styles = useMemo(() => fromWorld('nameStyles'), [w]);
+  const sections = useMemo(() => (w ? exportSections(w) : []), [w]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [words, setWords] = useState(false);
   if (!w) return null;
@@ -325,23 +317,9 @@ function ExportView() {
     else next.add(key);
     setOff(next);
   };
-  const on = (sec: string, id: string) => !off.has(`${sec}:${id}`);
-  const make = () =>
-    packFromWorld(
-      w,
-      {
-        biomes: biomes.filter((b) => on('b', b.id)).map((b) => b.id),
-        riverTypes: rivers.filter((r) => on('r', r.id)).map((r) => r.id),
-        lakeTypes: lakes.filter((r) => on('l', r.id)).map((r) => r.id),
-        islandTypes: isles.filter((r) => on('i', r.id)).map((r) => r.id),
-        planetForms: forms.filter((f) => on('f', f.id)).map((f) => f.id),
-        nameStyles: styles.filter((s) => on('s', s.id)).map((s) => s.id),
-        wordPack: words,
-      },
-      { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined },
-    );
+  const make = () => packFromWorld(w, exportPicks(sections, off, words), { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined });
   const preview = make();
-  const empty = !preview.biomes && !preview.riverTypes && !preview.lakeTypes && !preview.islandTypes && !preview.planetForms && !preview.nameStyles;
+  const empty = packEmpty(preview);
   const endemic = endemicCount(w);
   // 普通函数（不是组件）：每次重画不会把勾选框换成新的
   const check = (k: string, label: string, color?: string) => (
@@ -362,12 +340,12 @@ function ExportView() {
     // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），
     // 自己写的、信任过的包里的本来就信任了；没信任过的，以后用到世界时照样先问
     const r = await installPack(stored, { mine: true });
-    showToast(r.ok ? `“${preview.name}”已存进仓库` : '存不进浏览器：只在这次打开的页面里');
+    showToast(r.ok ? `“${preview.name}”已存进资源库` : '存不进浏览器：只在这次打开的页面里');
     close();
   };
   return (
     <>
-      <h2>从世界存进仓库</h2>
+      <h2>从本世界存进资源库</h2>
       <div class="grid2">
         <label>
           <span class="hint">名字</span>
@@ -383,35 +361,20 @@ function ExportView() {
         <textarea rows={2} maxLength={2000} value={desc} onInput={(e) => setDesc((e.target as HTMLTextAreaElement).value)} />
       </label>
       <h5>带上哪些</h5>
-      {biomes.map((b) => (
-        check(`b:${b.id}`, b.name || b.id, b.color)
-      ))}
-      {rivers.map((r) => (
-        check(`r:${r.id}`, `河流类型：${itemName(r)}`, r.color)
-      ))}
-      {lakes.map((r) => (
-        check(`l:${r.id}`, `湖泊类型：${itemName(r)}`, r.color)
-      ))}
-      {isles.map((r) => (
-        check(`i:${r.id}`, `岛的种类：${itemName(r)}`, typeof r.color === 'string' && r.color.startsWith('#') ? r.color : undefined)
-      ))}
-      {forms.map((f) => (
-        check(`f:${f.id}`, `星球形态：${itemName(f)}`)
-      ))}
-      {styles.map((s) => (
-        check(`s:${s.id}`, `地名风格：${itemName(s)}`)
-      ))}
+      {sections.map(({ kind, items }) =>
+        items.map((x) => check(`${kind.pack.key}:${itemId(kind, x)}`, kind.id === 'biome' ? itemName(x) : `${kind.label}：${itemName(x)}`, colorOf(x))),
+      )}
       {w.small.wordPack && (
         <label class="check">
           <input type="checkbox" checked={words} onChange={() => setWords(!words)} />
           <span>文字包“{w.small.wordPack.name}”</span>
         </label>
       )}
-      {!biomes.length && !rivers.length && !lakes.length && !isles.length && !forms.length && !styles.length && <p class="hint">没有自己做的内容</p>}
+      {!sections.length && <p class="hint">没有自己做的、改过的内容</p>}
       {endemic > 0 && <p class="hint">只长在某处的生态不带</p>}
       {replaces && (
         <p class="hint">
-          会替换仓库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `编辑器存的 ${keptForms} 项保留。`}
+          会替换资源库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `编辑器存的 ${keptForms} 项保留。`}
         </p>
       )}
       <div class="row between">
@@ -419,7 +382,7 @@ function ExportView() {
         <span class="row">
           <button onClick={close}>取消</button>
           <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
-            存进仓库
+            存进资源库
           </button>
           <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
             导出文件

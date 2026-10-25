@@ -11,6 +11,7 @@ import { DEFAULT_SPECIES, type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, type Renames, registerKind } from './registry';
+import { registerUsage } from './usage';
 import { ITEM_ID, biomeFields, biomeLakes, biomeRivers, fieldRefs, naturalOff, rewriteRiverRefs, sameItem, stableJson, templateLists } from './refs';
 
 // 现有的内容种类登记进登记表（第二十轮）：生态、河 / 湖 / 岛的种类、星球形态、地名风格、自定义场。
@@ -475,3 +476,7 @@ registerKind<string>({
   fields: [{ key: '', label: '名字', type: 'text' }],
   pack: { key: 'fields', max: 64, listed: false, checked: true },
 });
+
+// ---------- 用在哪里（第二十八轮，见 usage.ts）：全部登记完之后挂上 ----------
+
+registerUsage();

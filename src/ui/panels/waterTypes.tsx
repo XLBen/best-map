@@ -1,11 +1,9 @@
 import { speciesColor } from '../../../core/species';
-import { Plus, Trash2 } from 'lucide-preact';
+import { Library, Plus, Trash2 } from 'lucide-preact';
 import { Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
 import { LAKE_STYLES, LAKE_STYLE_LABEL } from '../../../core/lake-types';
-import { FANTASY_LAKE_TYPES } from '../../../core/packs/fantasy-lakes';
-import { FANTASY_RIVER_TYPES } from '../../../core/packs/fantasy-rivers';
 import { RIVER_STYLES, RIVER_STYLE_LABEL } from '../../../core/river-types';
 import { SCRIPT_API } from '../../../core/script';
 import { type WaterType, bankRadiusKm, waterTypeOwner } from '../../../core/water-types';
@@ -25,7 +23,7 @@ import {
 } from '../../state';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { LIBRARY_LABEL, TypePicker, TypePickerButton, openLibraryFor } from '../components/TypePicker';
 import { noteScriptCommitted, showCell } from '../editor-hooks';
 import { ScriptBox } from '../ScriptBox';
 import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from '../script-commit';
@@ -51,7 +49,8 @@ interface KindDef {
   set(t: WaterType): Command;
   remove(id: string): Command;
   busy: string;
-  samples: readonly WaterType[];
+  // 资源库里的种类（第二十八轮：血河、晶川……这些示例在资源库里，从那里添加到本世界）
+  library: 'riverType' | 'lakeType';
   idPrefix: string;
   matchLabel: string;
   matchHint: string;
@@ -71,7 +70,7 @@ const KINDS: Record<WaterKind, KindDef> = {
     set: (t) => ({ op: 'set_river_type', type: t as never }),
     remove: (id) => ({ op: 'remove_river_type', id }),
     busy: '正在计算…',
-    samples: FANTASY_RIVER_TYPES,
+    library: 'riverType',
     idPrefix: 'river-type',
     matchLabel: '哪些自然的河是这一种',
     matchHint: '每条河算一次，返回真就是这一种',
@@ -89,7 +88,7 @@ const KINDS: Record<WaterKind, KindDef> = {
     set: (t) => ({ op: 'set_lake_type', type: t as never }),
     remove: (id) => ({ op: 'remove_lake_type', id }),
     busy: '正在计算…',
-    samples: FANTASY_LAKE_TYPES,
+    library: 'lakeType',
     idPrefix: 'lake-type',
     matchLabel: '哪些自然的湖是这一种',
     matchHint: '每个湖算一次，返回真就是这一种',
@@ -150,6 +149,7 @@ export function TypeMenu({ kind, items, onNew, note }: { kind: WaterKind; items:
       onNew={onNew}
       newLabel="新建类型…"
       newTitle={`新建一种${def.noun}并用上`}
+      library={def.library}
       note={note}
     />
   );
@@ -489,11 +489,10 @@ function NameBox({ value, onCommit }: { value: string; onCommit: (v: string) => 
   );
 }
 
-// 一栏：这一类的列表、新建、示例
+// 一栏：这一类的列表、新建、从资源库添加（血河这些示例在资源库里）
 function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open: string | null; setOpen: (id: string | null) => void }) {
   const def = KINDS[kind];
   const types = def.list(w);
-  const samples = def.samples.filter((x) => !types.some((t) => t.id === x.id));
   const add = async (t: WaterType) => {
     const ok = await exec(def.set(t), def.busy);
     if (ok) setOpen(t.id);
@@ -523,11 +522,9 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
         <button class="small" onClick={() => void add(newWaterType(w, kind))}>
           <Plus /> 新建
         </button>
-        {samples.map((x) => (
-          <button key={x.id} class="small" title={`加上示例“${x.name}”`} onClick={() => void add(structuredClone(x))}>
-            <TypeSwatch kind={kind} t={x} /> {x.name}
-          </button>
-        ))}
+        <button class="small" title={`资源库里的${def.title}（奇幻的示例都在那里）`} onClick={() => openLibraryFor(def.library)}>
+          <Library /> {LIBRARY_LABEL}
+        </button>
       </div>
     </>
   );

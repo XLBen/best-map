@@ -16,7 +16,6 @@ import { Seg } from './common';
 import { MenuItem, SelectionActions } from './components/SelectionActions';
 import { Toggle } from './components/Toggle';
 import { TypePicker } from './components/TypePicker';
-import { openRepo } from './packs/store';
 import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 
@@ -357,12 +356,7 @@ function ProvinceStyle({ w, id }: { w: World; id: number }) {
           { label: `自动（${defaultStyleName(w.small)}）`, on: !own, hint: '按世界默认', onPick: () => pick(null) },
           ...styleChoices(w.small).map((c) => ({ label: c.name, on: own === c.id, onPick: () => pick(c.id) })),
         ]}
-        onNew={() => {
-          openPanel.value = null;
-          openRepo({ kind: 'nameStyle' });
-        }}
-        newLabel="仓库…"
-        newTitle="启用更多地名风格"
+        library="nameStyle"
       />
     </section>
   );

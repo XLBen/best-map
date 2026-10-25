@@ -565,7 +565,7 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openRepo({ kind: 'biome', filter: 'builtin', entry: FANTASY_PACK_ID })} title="水晶丛林、死亡森林……在仓库里启用">
+        <button onClick={() => openRepo({ kind: 'biome', filter: 'builtin', entry: FANTASY_PACK_ID })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
           示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>

@@ -123,7 +123,7 @@ addTrustedSource(async () => {
 
 // ---------- 自己做的内容：存进“我的资源” ----------
 
-// 形态编辑器、仓库的编辑器的“存进仓库”：存进“我的资源”这个包（没有就新建；包里原来的别的内容都留着），
+// 形态编辑器、资源库的编辑器的“存进资源库”：存进“我的资源”这个包（没有就新建；包里原来的别的内容都留着），
 // 同一个 id 的换成新的。key 是资源包里的段名（planetForms、nameStyles……）。
 // 里面的脚本由编辑器记为信任（是自己写的、或者打开编辑器时信任过的），这里不管
 export const MY_PACK_NAME = '我的资源';
@@ -137,12 +137,43 @@ export async function saveItem(key: string, item: unknown): Promise<SaveForm> {
   const own = itemId(kind, item);
   const list = ((pack[kind.pack.key] as unknown[] | undefined) ?? []).filter((x) => itemId(kind, x) !== own);
   // 超过上限的包读不回来（整个“我的资源”就不见了）：先拦下
-  if (list.length >= kind.pack.max) return { ok: false, error: `“${MY_PACK_NAME}”里的${kind.label}已满 ${kind.pack.max} 个，先在仓库里整理` };
+  if (list.length >= kind.pack.max) return { ok: false, error: `“${MY_PACK_NAME}”里的${kind.label}已满 ${kind.pack.max} 个，先在资源库里整理` };
   pack[kind.pack.key] = [...list, structuredClone(item)];
   const r = parsePack(pack);
   if (!r.ok) return { ok: false, error: r.errors[0] };
   const { entry, ok } = await installPack(r.pack, { mine: true });
   return { ok: true, entry, stored: ok };
+}
+
+// 从资源库里删掉一项（第二十八轮：资源库里“从库里删除”）：只删“我的”包里的（内置的、装上的资源包不能一项一项删）。
+// 包里没别的内容了就整个删掉。用过它的世界不受影响
+export async function removeItem(entryKey: string, key: string, id: string): Promise<{ ok: boolean; error?: string }> {
+  const kind = kindByPackKey(key);
+  const cur = (await refreshLibrary()).find((e) => e.key === entryKey);
+  if (!kind || !cur) return { ok: false, error: '资源库里没有这一项' };
+  if (cur.builtin || !cur.mine) return { ok: false, error: '只有自己的内容能从资源库里删掉' };
+  const list = (cur.pack[kind.pack.key] as unknown[] | undefined) ?? [];
+  const rest = list.filter((x) => itemId(kind, x) !== id);
+  if (rest.length === list.length) return { ok: false, error: '资源库里没有这一项' };
+  const pack: ResourcePack = structuredClone(cur.pack);
+  if (rest.length) pack[kind.pack.key] = rest;
+  else delete pack[kind.pack.key];
+  const left = allKinds().some((k) => ((pack[k.pack.key] as unknown[] | undefined) ?? []).length > 0);
+  if (!left) {
+    await removePack(entryKey);
+    return { ok: true };
+  }
+  const r = parsePack(pack);
+  if (!r.ok) return { ok: false, error: r.errors[0] };
+  const rec: Stored = { key: entryKey, pack: r.pack, installedAt: cur.installedAt, mine: true };
+  try {
+    await idbTx(['packs'], 'readwrite', (s) => s.put(rec, entryKey));
+    memory.delete(entryKey);
+  } catch {
+    memory.set(entryKey, rec);
+  }
+  await refreshLibrary();
+  return { ok: true };
 }
 
 export const saveForm = (form: PlanetForm): Promise<SaveForm> => saveItem('planetForms', form as unknown as PackItem);

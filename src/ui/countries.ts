@@ -9,6 +9,7 @@ import {
   countryCodes,
   cultureById,
   eraGovernments,
+  worldGovernments,
   estimateCountryCount,
   makeFlag,
   pickTitle,
@@ -107,11 +108,13 @@ export function governmentName(small: Small, id: string): string {
   return g?.name ?? id;
 }
 
-// 这个时代能用的政体（档案里的选择）：时代的，再加上这个国家现在的（换了时代、停用了的照样列出）
+// 档案里能选的政体：这个时代的在前，再是本世界里别的（第二十八轮：从资源库添加的照样能选），这个国家现在的总在
 export function governmentChoices(w: World, current?: string): Government[] {
   const list = eraGovernments(w.small, worldEra(w.small));
+  const rest = worldGovernments(w.small).filter((g) => !list.some((x) => x.id === g.id));
+  const all = [...list, ...rest];
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;
-  return cur && !list.some((g) => g.id === cur.id) ? [cur, ...list] : list;
+  return cur && !all.some((g) => g.id === cur.id) ? [cur, ...all] : all;
 }
 
 // 换成这个政体后的国名（改过名字的不变）

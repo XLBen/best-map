@@ -255,7 +255,7 @@ export function Wizard() {
   // 新建：gen、name 是这个世界的生成参数和叫法；cells 是格数
   const create = async (gen: WorldgenInput, name: string, seed: number, cells: Parameters<typeof settingsOf>[0]): Promise<boolean> => {
     setCreating(true);
-    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain), generateCommand(human)));
+    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain), generateCommand(human, null, library.value)));
     setCreating(false);
     if (ok) {
       wizardOpen.value = false;
@@ -264,7 +264,7 @@ export function Wizard() {
     return ok;
   };
   // 总人口的默认：时代的默认密度 × 估的陆地面积
-  const era = eraChoices(null).find((e) => e.id === human.era);
+  const era = eraChoices(null, library.value).find((e) => e.id === human.era);
   const landKm2 = estimateLandKm2({ globe: kind === 'planet', radiusKm: PLANET_SIZES[psize].radiusKm, mapKm: MAP_SIZES[size].km, landFraction: terrain.landFraction ?? terrainBase.landFraction });
   const popDefault = Math.round((era?.popDensity ?? 1) * landKm2);
   const humanBox = (

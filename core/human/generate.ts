@@ -11,6 +11,7 @@ import { culturesStage } from './cultures';
 import { type CountryPlan, clearCountries, countriesStage, countryMixStage } from './countries';
 import { type Era, cultureById, cultureGroupById, worldCultures } from './era';
 import { compactGroups } from './groups';
+import { pruneHumanContent } from './prune';
 import { compilePrefs, preferenceFactors } from './habitability';
 import { ensurePopArrays, populationStage } from './population';
 import { cellInputs } from './rules';
@@ -21,7 +22,8 @@ import { clearCities } from './settlements';
 
 // 生成人文（第二十二轮）：文化圈 → 国家（第二十三轮）→ 领土补齐 → 帝国、联邦、同盟（第二十六轮）→ 人口 → 国家的移民，每一步是一个 HumanStage（见 context.ts）。
 // 结果写进原因（causes.popTotal / popGroup / popShare）与 small.human、small.popGroups，像省份一样“生成一次、之后修补”。
-// 用到的时代、取值、文化组、文化、地名风格世界里没有时从内置的复制进来（世界打开不依赖仓库）
+// 用到的时代、取值、文化组、文化、地名风格世界里没有时从内置的复制进来（世界打开不依赖资源库），
+// 生成完只留用到的（第二十八轮，见 prune.ts）
 
 export interface HumanParams {
   era: string;
@@ -202,6 +204,8 @@ export function generateHuman(
     clearCities(world);
     if (!small.landmarks) delete small.settlementRules;
   }
+  // 第二十八轮：没用到的内置时代、取值、文化组、文化（和它们的地名风格）移出世界
+  pruneHumanContent(world);
   return state;
 }
 

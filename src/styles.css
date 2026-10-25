@@ -1131,7 +1131,7 @@ ol.history li.undone {
   z-index: 15;
 }
 
-/* 仓库（packs/RepoPanel.tsx）：浮在地图左边，不挡地图。左边按类，右边是这一类的内容（一行一项）或编辑器 */
+/* 资源库（packs/RepoPanel.tsx）：浮在地图左边，不挡地图。左边按类，右边是这一类的内容（一行一项）或编辑器 */
 .repo {
   position: absolute;
   top: 60px;
@@ -1228,6 +1228,29 @@ ol.history li.undone {
 .repo-card-side .check {
   font-size: var(--fs-sm);
 }
+.repo-card-side button {
+  white-space: nowrap;
+}
+/* 第二十八轮：来源、在本世界两个小标签；在用的一行（带定位）；编辑、存进资源库、导出、删除一排小按钮 */
+.repo-card .tag {
+  color: var(--muted);
+  margin-left: var(--sp-1);
+}
+.repo-card .tag.on {
+  color: var(--ok);
+}
+.repo-card .tag.mod {
+  color: var(--warn);
+}
+.repo-usage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.repo-card-tools {
+  gap: 2px;
+}
 .repo-restyle {
   flex: none;
   border-top: 1px solid var(--fill);
@@ -1241,7 +1264,7 @@ ol.history li.undone {
 .repo-foot p {
   margin: 0;
 }
-/* 角落的“⋯”：导入文件、从世界存进仓库、资源包 */
+/* 角落的“⋯”：导入文件、从世界存进资源库、资源包 */
 .repo-corner {
   position: relative;
 }
@@ -2008,7 +2031,7 @@ button.map-thumb {
   margin-bottom: var(--sp-2);
 }
 
-/* 仓库卡片上的说明：一行 */
+/* 资源库卡片上的说明：一行 */
 .pack-desc.one-line {
   white-space: nowrap;
   overflow: hidden;

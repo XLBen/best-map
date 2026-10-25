@@ -2,7 +2,7 @@ import { type ContentKind, type ContentWorld, type FieldDesc, itemId, itemName }
 import { itemErrors } from '../../../core/packs';
 import { SCRIPT_API } from '../../../core/script';
 
-// 通用编辑器（仓库里的“编辑”“新建”）的逻辑：按登记表的字段表（FieldDesc）显示哪些、改一个字段、新建与复制、
+// 通用编辑器（资源库里的“编辑”“新建”）的逻辑：按登记表的字段表（FieldDesc）显示哪些、改一个字段、新建与复制、
 // 检查（格式、启用前的检查、不挡启用的提醒）。界面在 ContentEditor.tsx
 
 export type Obj = Record<string, unknown>;

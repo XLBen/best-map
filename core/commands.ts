@@ -5,7 +5,7 @@ import { PLANET_TYPES } from './presets';
 import { packProblems, wordPackSchema } from './names';
 import { DEFAULT_STYLE, styleById } from './name-styles';
 import './content/kinds';
-import { type DirtyLevel, itemId, itemName, kindOf } from './content/registry';
+import { type DirtyLevel, itemId, itemName, kindOf, usageOf } from './content/registry';
 import {
   PROVINCE_KIND_INFO,
   renameProvince,
@@ -973,6 +973,11 @@ function setContent(world: World, kindId: string, id: string, raw: Record<string
   if (raw === null) {
     if (before === undefined) throw new CommandError(`世界里没有${kind.label} "${id}"`);
     delete store[id];
+    // 第二十八轮：在用的不能移出世界（总在的内置项去掉改过的那一份是换回内置的，不算移出）。
+    // 画过的格会跟着整理的种类（地形类别、资源：画成它的格恢复自动，见 afterSet）引擎照旧让移出，只在资源库里拦
+    const gone = !kind.alwaysOn?.(id) && !kind.afterSet;
+    const used = gone ? usageOf(kind, { small, causes: world.causes }, id) : null;
+    if (used) throw new CommandError(`${kind.label}“${itemName(kind, before)}”还在用（${used.label}），先把用到它的地方改掉`);
   } else {
     const r = kind.schema.safeParse(raw);
     if (!r.success) throw new CommandError(`${kind.label}无效：${formatIssues(r.error)}`);

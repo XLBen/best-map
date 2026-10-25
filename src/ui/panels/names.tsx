@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, defaultFeatureLabel, featureLabel, overrideKeyOf } from '../../../core/features';
 import { DEFAULT_STYLE, worldStyleId } from '../../../core/name-styles';
-import { openRepo } from '../packs/store';
 import { defaultStyleName, featureStyleCommand, missingCount, restyleOffer, styleChoices, styleNameOf } from '../packs/styles';
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
 import { exec, focusName, labelGroups, openPanel, selectedFeature, world } from '../../state';
@@ -267,12 +266,7 @@ export function FeatureStyleMenu() {
         { label: `自动（${defaultStyleName(w.small)}）`, on: !f.style, hint: '按世界默认', onPick: () => pick(null) },
         ...styleChoices(w.small).map((c) => ({ label: c.name, on: f.style === c.id, onPick: () => pick(c.id) })),
       ]}
-      onNew={() => {
-        openPanel.value = null;
-        openRepo({ kind: 'nameStyle' });
-      }}
-      newLabel="仓库…"
-      newTitle="启用更多地名风格"
+      library="nameStyle"
     />
   );
 }
@@ -293,9 +287,7 @@ function StyleBox({ w }: { w: World }) {
             if (c.id !== def) void exec({ op: 'set_name_style', id: c.id === DEFAULT_STYLE ? null : c.id }, '正在起名…');
           },
         }))}
-        onNew={() => openRepo({ kind: 'nameStyle' })}
-        newLabel="仓库…"
-        newTitle="启用、编辑地名风格"
+        library="nameStyle"
         note="世界默认的风格。选中地名可以单独换。"
       />
       {w.small.wordPack && (

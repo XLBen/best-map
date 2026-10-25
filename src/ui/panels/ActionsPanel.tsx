@@ -100,8 +100,8 @@ export function WorldMenu() {
       >
         <Boxes />
         <span class="grow item-text">
-          <b>仓库…</b>
-          <span class="hint">地名风格、生态、水体类型、岛、星球形态</span>
+          <b>资源库…</b>
+          <span class="hint">添加到本世界、移出、存进资源库、导出：地名风格、生态、水体类型、岛、文化……</span>
         </span>
       </button>
       <ExportSection />

@@ -4,7 +4,7 @@ import type { World } from '../world';
 
 // 内容种类的登记表（第二十轮）：一种内容（地名风格、生态、河流类型……以后的文化、时代、政体、资源……）在这里登记一次，
 // 就同时有了：格式（schema）、在世界里放在哪里、启用 / 停用的命令、重算到哪一层、资源包文件里的一段（数、列表的一行、
-// 检查、撞 id 改名、从世界导出）、仓库里的分类和内置的几项、通用编辑器的字段表。
+// 检查、撞 id 改名、从世界导出）、资源库里的分类和内置的几项、通用编辑器的字段表。
 //
 // 两种放法：
 //   - 新的种类（store: 'content'）放在 small.content[种类 id]: Record<id, 一项>，命令是通用的 set_content {kind, id, item | null}，
@@ -63,6 +63,16 @@ export interface FieldDesc {
 
 export type ContentWorld = Pick<World, 'small' | 'causes'>;
 
+// 查“用在哪里”时的世界（第二十八轮）：引擎只给原因与小状态；界面还给推导（生态长在哪里、哪些河是这一种）
+export type UsageWorld = ContentWorld & { derived?: Partial<World['derived']> };
+
+// 一项内容在世界里用在哪里：几处（格、国家、城市……加起来）、一句话、定位用的格（可能没有：时代、政体按国家时给领土）
+export interface ContentUsage {
+  count: number;
+  label: string;
+  cells?: number[];
+}
+
 // 资源包里一段（packs.ts 用）
 export interface PackSpec<T> {
   // 文件里的段名（“riverTypes”）与读旧文件时也认的别名（“textPacks”）
@@ -116,7 +126,7 @@ export interface PackContext {
 export interface ContentKind<T = unknown> {
   // 种类的 id（命令、small.content 里用）：'nameStyle'
   id: string;
-  // 全称（仓库的分类、出错的位置）：'地名风格'
+  // 全称（资源库的分类、出错的位置）：'地名风格'
   label: string;
   // 简称（列表里的一行：“河流 4”）
   short: string;
@@ -132,7 +142,7 @@ export interface ContentKind<T = unknown> {
   store?: 'content';
   // 世界里已有（启用）的项
   inWorld(world: ContentWorld): readonly T[];
-  // 内置的项（仓库里总在；内置的生态本来就在世界里）
+  // 内置的项（资源库里总在；内置的生态本来就在世界里）
   builtin?(): readonly T[];
   // 启用（新建或整份换掉）、停用的命令。没有 enable 的种类只能列出来
   enable?(item: T, world: ContentWorld): Command;
@@ -148,6 +158,8 @@ export interface ContentKind<T = unknown> {
   afterSet?(world: ContentWorld, before: readonly string[]): void;
   // 内置的、总在世界里的项（不用启用、不能停用，像内置中文）：开关不能动的原因；不是时为 undefined
   alwaysOn?(id: string): string | undefined;
+  // 用在哪里（第二十八轮，见 usage.ts）：没有在用时为 null。有在用的不能移出世界（set_content 停用时引擎也查）
+  usage?(world: UsageWorld, id: string): ContentUsage | null;
   // 通用编辑器的字段表
   fields: readonly FieldDesc[];
   // 新建一项时的样子（编辑器的“新建”）
@@ -230,4 +242,9 @@ export function disableCommand(kind: ContentKind, id: string, world: ContentWorl
 // 这一项在世界里启用了没有
 export function isEnabled(kind: ContentKind, world: ContentWorld, id: string): boolean {
   return kind.inWorld(world).some((x) => itemId(kind, x) === id);
+}
+
+// 一项在世界里用在哪里（种类没有钩子、没在用时 null）
+export function usageOf(kind: ContentKind, world: UsageWorld, id: string): ContentUsage | null {
+  return kind.usage?.(world, id) ?? null;
 }

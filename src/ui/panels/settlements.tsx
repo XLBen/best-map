@@ -138,7 +138,8 @@ export function RankMenu() {
         openNewItem('cityRank');
       }}
       newLabel="新的等级…"
-      newTitle="在仓库里新建一种城市等级"
+      newTitle="在资源库里新建一种城市等级"
+      library="cityRank"
     />
   );
 }
@@ -208,7 +209,8 @@ export function LandmarkMenu() {
         openNewItem('landmarkType');
       }}
       newLabel="新类型…"
-      newTitle="在仓库里新建一种地标类型"
+      newTitle="在资源库里新建一种地标类型"
+      library="landmarkType"
     />
   );
 }
@@ -258,7 +260,8 @@ export function PointMenu() {
         openNewItem('pointType');
       }}
       newLabel="新类型…"
-      newTitle="在仓库里新建一种点的类型，可以上传小图"
+      newTitle="在资源库里新建一种点的类型，可以上传小图"
+      library="pointType"
     />
   );
 }
@@ -420,7 +423,7 @@ export function SettlementExtras() {
       <RemoveBox w={w} />
       <section class="row wrap">
         <button class="small" onClick={() => openRepoKind('cityRank')}>
-          仓库…
+          资源库…
         </button>
       </section>
     </>

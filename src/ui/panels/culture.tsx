@@ -8,11 +8,13 @@ import { OptionSlider, Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { fragAt, fragPos, fragText, fragTitle } from '../countries';
 import { LayoutPick } from './countries';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { LibraryLink, TypePicker, TypePickerButton } from '../components/TypePicker';
 import type { SliderDef } from '../defs/types';
 import {
+  type ChoiceScope,
   type HumanChoice,
   WEIGHT_RANGE,
+  choiceLists,
   chooseEra,
   choiceProblem,
   culturesIn,
@@ -21,7 +23,6 @@ import {
   eraChoices,
   firstLine,
   generateCommand,
-  groupChoices,
   groupShares,
   popAt,
   popPos,
@@ -34,6 +35,7 @@ import {
   toggleGroup,
 } from '../human';
 import { openRepo } from '../packs/store';
+import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';
 import { NO_HUMAN, chosenCulture, chosenTuple, chosenValue, hasHuman, hearthCommand, hearthMarks, percentText } from '../tools/culture';
 
@@ -79,9 +81,7 @@ export function CultureMenu() {
   return (
     <TypePicker
       items={list.map((c) => ({ label: c.name, swatch: c.color, group: groups.get(c.group) ?? c.group, on: c.id === cur, hint: c.description, onPick: () => pick({ culture: c.id }) }))}
-      onNew={toRepo('culture')}
-      newLabel="仓库…"
-      newTitle="新建、编辑文化"
+      library="culture"
     />
   );
 }
@@ -155,6 +155,7 @@ export function PopTupleMenu() {
         );
       })}
       <p class="hint">Alt+点击地图吸取</p>
+      <LibraryLink kind="culture" />
     </div>
   );
 }
@@ -180,9 +181,7 @@ export function ValueMenu() {
       )}
       <TypePicker
         items={dimensionValues(w.small, cur.dim.id).map((v) => ({ label: v.name, swatch: v.color, on: v.id === cur.value.id, hint: v.description, onPick: () => pick({ popDim: cur.dim.id, popValue: v.id }) }))}
-        onNew={toRepo('popValue')}
-        newLabel="仓库…"
-        newTitle={`新建、编辑${cur.dim.label}`}
+        library="popValue"
       />
     </>
   );
@@ -295,6 +294,8 @@ export function CountryChoice({
 // defaultPop：按时代的默认密度算的总人口（向导里是估的）
 // compact：弹出面板里（窄）：时代两列，组旁不写有几个文化
 // countries：带上“国家”（生成人文时；重新生成时不带）
+// scope（第二十八轮）：library 列资源库里的全部（新建向导、第一次生成：选了就添加到本世界），world 只列本世界的，
+// 下面有“从资源库添加…”（重新生成）
 export function HumanChoices({
   choice,
   onChange,
@@ -304,6 +305,7 @@ export function HumanChoices({
   compact,
   countries,
   estimate,
+  scope = 'library',
 }: {
   choice: HumanChoice;
   onChange: (c: HumanChoice) => void;
@@ -313,11 +315,14 @@ export function HumanChoices({
   compact?: boolean;
   countries?: boolean;
   estimate?: (f: number) => number | null;
+  scope?: ChoiceScope;
 }) {
-  const eras = eraChoices(small);
-  const era = eras.find((e) => e.id === choice.era);
+  const lib = library.value;
+  const lists = choiceLists(small, scope, lib);
+  const eras = lists.eras;
+  const era = eraChoices(small, lib).find((e) => e.id === choice.era);
   const suggested = suggestedGroups(era);
-  const all = groupChoices(small);
+  const all = lists.groups;
   const shown = suggested ? all.filter((g) => suggested.has(g.id)) : all;
   const rest = suggested ? all.filter((g) => !suggested.has(g.id)) : [];
   const [more, setMore] = useState(rest.some((g) => choice.groups.some((x) => x.id === g.id)));
@@ -328,7 +333,7 @@ export function HumanChoices({
   const landKm2 = defaultPop / Math.max(1e-9, era?.popDensity ?? 1);
   const groupRow = (g: (typeof all)[number]) => {
     const sel = choice.groups.find((x) => x.id === g.id);
-    const n = culturesIn(small, g.id).length;
+    const n = culturesIn(small, g.id, lib).length;
     return (
       <div class="human-group">
         <label class="check" title={compact ? `${g.description ? `${g.description}\n` : ''}${n} 个文化` : g.description}>
@@ -350,13 +355,13 @@ export function HumanChoices({
       </div>
     );
   };
-  const problem = choiceProblem(choice, small);
+  const problem = choiceProblem(choice, small, lib);
   return (
     <div class="human-choices">
       <h5>时代</h5>
       <div class={`cards ${compact ? '' : 'three'}`}>
         {eras.map((e) => (
-          <button class={`card ${choice.era === e.id ? 'on' : ''}`} disabled={disabled} onClick={() => onChange(chooseEra(choice, e.id, small))}>
+          <button class={`card ${choice.era === e.id ? 'on' : ''}`} disabled={disabled} onClick={() => onChange(chooseEra(choice, e.id, small, lists))}>
             <b>
               {e.color && <span class="swatch" style={{ background: e.color }} />}
               {e.name}
@@ -365,9 +370,11 @@ export function HumanChoices({
           </button>
         ))}
       </div>
+      {scope === 'world' && <LibraryLink kind="era" title="资源库里别的时代，添加到本世界后就能换" />}
       {era && <p class="hint">人口分{['文化', ...era.dimensions.map((d) => d.label)].join('、')}</p>}
       <h5>文化组</h5>
       <div class="human-groups">{shown.map(groupRow)}</div>
+      {scope === 'world' && <LibraryLink kind="cultureGroup" title="资源库里别的文化组，添加到本世界后就能选" />}
       {rest.length > 0 && (
         <>
           <button class="link-btn" onClick={() => setMore(!more)}>
@@ -435,9 +442,10 @@ function RestyleOffer({ w }: { w: World }) {
 
 function GenerateBox({ w, onDone }: { w: World; onDone: () => void }) {
   const [choice, setChoice] = useState<HumanChoice>(() => defaultChoice(w.small));
-  const era = eraChoices(w.small).find((e) => e.id === choice.era);
+  const lib = library.value;
+  const era = eraChoices(w.small, lib).find((e) => e.id === choice.era);
   const def = era ? defaultTotalPop(w, w.derived, era) : 0;
-  const cmd = generateCommand(choice, w.small);
+  const cmd = generateCommand(choice, w.small, lib);
   return (
     <>
       <HumanChoices choice={choice} onChange={setChoice} small={w.small} defaultPop={def} compact countries />
@@ -471,7 +479,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
     const cmd = regenerateWith(edit, w.small);
     return (
       <>
-        <HumanChoices choice={edit} onChange={setEdit} small={w.small} defaultPop={def} compact />
+        <HumanChoices choice={edit} onChange={setEdit} small={w.small} defaultPop={def} compact scope="world" />
         {edit.era !== w.small.human!.era && manual && <p class="hint">换了时代，手改过的格也重新生成</p>}
         <div class="row">
           <button
@@ -553,7 +561,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
       </section>
       <section class="row wrap">
         <button class="small" onClick={toRepo('culture')}>
-          仓库…
+          资源库…
         </button>
       </section>
     </>

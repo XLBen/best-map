@@ -1,22 +1,27 @@
 import type { Command } from '../../../core/commands';
-import { type ContentKind, disableCommand as kindDisable, itemId, itemName } from '../../../core/content/registry';
+import { type ContentKind, type ContentUsage, type UsageWorld, disableCommand as kindDisable, itemId, itemName, usageOf } from '../../../core/content/registry';
 import { DEFAULT_STYLE, styleProblems, worldStyleId, type NameStyle } from '../../../core/name-styles';
-import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack, canApply, packItems, packSections, planPack, sameItem } from '../../../core/packs';
+import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack, canApply, packIdFor, packItems, packSections, planPack, sameItem } from '../../../core/packs';
 import type { LibraryEntry } from '../../library';
 
-// 仓库（世界 → 仓库）的逻辑：每一种内容在仓库里有哪些（内置的、我的、导入的，世界里有、仓库里没有的），
-// 每一项在这个世界里启用了没有、开关是哪条命令（一整步，可以撤销），地名风格的“默认”。不碰界面，测试直接调
+// 资源库（第二十八轮以前叫资源库）的逻辑：每一种内容在资源库里有哪些（内置的、资源包里的、我的，本世界里有、资源库里没有的），
+// 每一项在不在本世界、添加到本世界 / 移出本世界是哪条命令（一整步，可以撤销），在用的不能移出（用在哪里、定位），
+// 地名风格的“默认”，单独一项导出成文件。不碰界面，测试直接调
 
 export type RepoSource = 'builtin' | 'mine' | 'imported' | 'world';
-export type RepoFilter = 'all' | 'builtin' | 'mine' | 'imported' | 'on';
+export type RepoFilter = 'all' | 'builtin' | 'mine' | 'imported' | 'on' | 'off';
 
 export const REPO_FILTERS: [RepoFilter, string][] = [
   ['all', '全部'],
+  ['on', '本世界'],
+  ['off', '不在本世界'],
   ['builtin', '内置'],
+  ['imported', '资源包'],
   ['mine', '我的'],
-  ['imported', '导入的'],
-  ['on', '在用'],
 ];
+
+// 卡片上写的来源
+export const SOURCE_LABEL: Record<RepoSource, string> = { builtin: '内置', imported: '资源包', mine: '我的', world: '本世界做的' };
 
 // 左边的分类：列出来的几种（自定义场跟着别的自动加，不列），地名风格在最前
 export function repoKinds(): ContentKind[] {
@@ -95,7 +100,7 @@ function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: P
   return { on: false, ...(add && add.id !== id ? { rename: add.name } : {}) };
 }
 
-// 一种内容在仓库里的全部（内置在前，之后是我的、导入的，最后是世界里有、仓库里没有的）
+// 一种内容在资源库里的全部（内置在前，之后是我的、导入的，最后是世界里有、资源库里没有的）
 export function repoRows(kind: ContentKind, world: PackWorld | null, lib: readonly LibraryEntry[]): RepoRow[] {
   const rows: RepoRow[] = [];
   const push = (item: unknown, source: RepoSource, pack: ResourcePack, from: string, entry?: string, own = false) => {
@@ -114,7 +119,7 @@ export function repoRows(kind: ContentKind, world: PackWorld | null, lib: readon
     }
   }
   for (const e of lib.filter((x) => !x.builtin)) for (const x of packItems(e.pack, kind.pack.key)) push(x, e.mine ? 'mine' : 'imported', e.pack, e.pack.name, e.key);
-  // 世界里有、仓库里没有的（这个世界里做的、别人的世界带来的）
+  // 世界里有、资源库里没有的（这个世界里做的、别人的世界带来的）
   if (world) {
     const covered = new Set(rows.flatMap((r) => (r.status.on && r.status.worldId ? [r.status.worldId] : [])));
     const items = kind.inWorld(world).filter((x) => !covered.has(itemId(kind, x)) && !isZh(kind, itemId(kind, x)));
@@ -129,7 +134,7 @@ export function filterRows(rows: readonly RepoRow[], filter: RepoFilter, query =
   const q = query.trim().toLowerCase();
   return rows.filter(
     (r) =>
-      (filter === 'all' || (filter === 'on' ? r.status.on : r.source === filter)) &&
+      (filter === 'all' || (filter === 'on' ? r.status.on : filter === 'off' ? !r.status.on : r.source === filter)) &&
       (!entry || r.entry === entry) &&
       (!q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.from.toLowerCase().includes(q)),
   );
@@ -140,15 +145,62 @@ const quoted = (r: RepoRow) => `${r.kind.label}“${r.name}”`;
 // 启用：按资源包的规则（先加用到的自定义场；同 id 不同内容的改名加上）。一整步
 export function enableRowCommand(row: RepoRow, world: PackWorld): Command {
   const plan = planPack(world, row.pack, { [row.kind.pack.key]: [row.id], defaultStyle: null });
-  return { ...plan.command, label: `启用${quoted(row)}` };
+  return { ...plan.command, label: `添加到本世界：${quoted(row)}` };
 }
 
 // 停用：世界里的那一项。停用的是世界默认的地名风格时，世界默认一起换回内置中文
 export function disableRowCommand(row: RepoRow, world: PackWorld): Command {
   const id = row.status.worldId ?? row.id;
   const off = kindDisable(row.kind, id, world);
-  if (row.status.isDefault) return { op: 'batch', label: `停用${quoted(row)}`, commands: [{ op: 'set_name_style', id: null }, off] };
+  if (row.status.isDefault) return { op: 'batch', label: `移出本世界：${quoted(row)}`, commands: [{ op: 'set_name_style', id: null }, off] };
   return off;
+}
+
+// ---------- 添加到本世界、移出本世界（第二十八轮） ----------
+
+// 用在哪里：只看在本世界里的那一项（世界换了重算；同一个世界里按种类和 id 记着）
+const usageCache = new WeakMap<object, Map<string, ContentUsage | null>>();
+export function rowUsage(row: RepoRow, world: UsageWorld | null): ContentUsage | null {
+  if (!world || !row.status.on || row.status.always) return null;
+  const id = row.status.worldId ?? row.id;
+  let m = usageCache.get(world);
+  if (!m) usageCache.set(world, (m = new Map()));
+  const key = `${row.kind.id}:${id}`;
+  if (!m.has(key)) m.set(key, usageOf(row.kind, world, id));
+  return m.get(key) ?? null;
+}
+
+// 添加到本世界：不在本世界、开关能动时
+export function addCommand(row: RepoRow, world: PackWorld): Command | null {
+  if (row.status.on || row.status.locked) return null;
+  return enableRowCommand(row, world);
+}
+
+// 移出本世界：在本世界、开关能动、没有在用时（在用的先把用到它的地方改掉）
+export function removeCommand(row: RepoRow, world: UsageWorld): Command | null {
+  if (!row.status.on || row.status.locked || row.status.always) return null;
+  if (rowUsage(row, world)) return null;
+  const cmd = disableRowCommand(row, world);
+  return cmd.op === 'batch' ? cmd : { op: 'batch', label: `移出本世界：${quoted(row)}`, commands: [cmd] };
+}
+
+// 存进资源库的样子（只有本世界做的、改过的一项：资源库里还没有这一份）。不是时 null
+export function saveableItem(row: RepoRow): unknown | null {
+  if (row.source !== 'world') return null;
+  return row.kind.pack.exportItem ? row.kind.pack.exportItem(row.item) : structuredClone(row.item);
+}
+
+// 从资源库里删掉：只有“我的”能删
+export const canDeleteFromLibrary = (row: RepoRow): boolean => row.source === 'mine' && !!row.entry;
+
+// 单独一项导出成资源包文件：生态带上用到的自定义场；本世界里的按导出的样子
+export function itemPack(row: RepoRow): ResourcePack {
+  const k = row.kind;
+  const item = row.source === 'world' && k.pack.exportItem ? k.pack.exportItem(row.item) : structuredClone(row.item);
+  const pack: ResourcePack = { format: PACK_FORMAT, version: PACK_VERSION, id: packIdFor(`${k.id}-${row.name}`), name: row.name, [k.pack.key]: [item] };
+  const fields = k.pack.fieldsOf?.(item) ?? [];
+  if (fields.length) pack.fields = [...new Set(fields)];
+  return pack;
 }
 
 // 恢复：总在的内置项改过时，去掉世界里改过的那一份（换回内置的）。没改过时 null
@@ -207,9 +259,9 @@ export function repoSections(
   return [...out.entries()].map(([k, list]) => ({ label: labels.get(k) ?? (k || '其他'), rows: list }));
 }
 
-// 人文的四种：仓库里有“生成人文…”的入口
+// 人文的四种：资源库里有“生成人文…”的入口
 export const HUMAN_KINDS: ReadonlySet<string> = new Set(['era', 'popValue', 'cultureGroup', 'culture']);
-// 第二十三轮的两种（政体、派系）：仓库里有“生成国家…”的入口
+// 第二十三轮的两种（政体、派系）：资源库里有“生成国家…”的入口
 export const GOV_KINDS: ReadonlySet<string> = new Set(['government', 'faction']);
-// 第二十四轮的三种（城市等级、地标类型、点的类型）：仓库里有“生成城市… / 重新生成…”的入口
+// 第二十四轮的三种（城市等级、地标类型、点的类型）：资源库里有“生成城市… / 重新生成…”的入口
 export const SETTLE_KINDS: ReadonlySet<string> = new Set(['cityRank', 'landmarkType', 'pointType']);

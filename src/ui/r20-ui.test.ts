@@ -20,7 +20,7 @@ describe('第二十轮的界面', () => {
     expect(parsePrefs('{坏').names).toBe('zh');
   });
 
-  it('风格的选法：世界里启用的几种；地物换风格写在落到它上面的改名上；停用后提示有几处', () => {
+  it('风格的选法：世界里启用的几种；地物换风格写在落到它上面的改名上；有地名在用时不能移出（第二十八轮）', () => {
     const eng = continents();
     expect(styleChoices(eng.world.small).map((c) => c.id)).toEqual(['zh-default']);
     eng.exec(enable);
@@ -30,8 +30,10 @@ describe('第二十轮的界面', () => {
     const after = eng.world.derived.features.find((f) => f.key === isle.key)!;
     expect([after.style, !!after.orig]).toEqual(['west-germanic', true]);
     expect(missingCount(eng.world.small)).toBe(0);
+    expect(() => eng.exec({ op: 'set_content', kind: 'nameStyle', id: germanic.id, item: null })).toThrow(/还在用（1 个地名）/);
+    eng.exec(featureStyleCommand(eng.world, eng.world.derived.features.find((f) => f.key === isle.key)!, null));
     eng.exec({ op: 'set_content', kind: 'nameStyle', id: germanic.id, item: null });
-    expect(missingCount(eng.world.small)).toBe(1);
+    expect(missingCount(eng.world.small)).toBe(0);
   });
 
   it('按世界默认重起省名：锁定的、自己选了风格的不动；一步，可以撤销', () => {

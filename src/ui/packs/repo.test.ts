@@ -10,7 +10,7 @@ import type { LibraryEntry } from '../../library';
 import { defaultStyleCommand, enabledCount, filterRows, repoKinds, repoRows, toggleCommand } from './repo';
 import { blankItem, copyItem, defaultValue, editorIssues, isObj, newKey, parseTags, pathLabel, renameKey, setField, shownFields, tagsText, weightedRows, weightedValue } from './fields';
 
-// 仓库（第二十轮）：每一种内容在仓库里有哪些、在这个世界里启用了没有、开关与“默认”是哪条命令；通用编辑器的字段表
+// 资源库（第二十轮）：每一种内容在资源库里有哪些、在这个世界里启用了没有、开关与“默认”是哪条命令；通用编辑器的字段表
 
 const entry = (key: string, pack: ResourcePack, extra: Partial<LibraryEntry> = {}): LibraryEntry => ({ key, pack, builtin: false, mine: false, installedAt: 1, ...extra });
 const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_PACK, { builtin: true, installedAt: 0 })];
@@ -19,7 +19,7 @@ const biomeKind = kindOf('biome')!;
 const germanic = BUILTIN_STYLES.find((s) => s.id === 'west-germanic')!;
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
 
-describe('仓库：列表与开关', () => {
+describe('资源库：列表与开关', () => {
   it('左边的分类：地名风格在最前，自定义场不列', () => {
     const ids = repoKinds().map((k) => k.id);
     expect(ids[0]).toBe('nameStyle');
@@ -40,7 +40,7 @@ describe('仓库：列表与开关', () => {
     expect(row().status).toEqual({ on: false });
     // 启用
     const on = toggleCommand(row(), w)!;
-    expect(on).toMatchObject({ op: 'batch', label: '启用地名风格“西欧·日耳曼”' });
+    expect(on).toMatchObject({ op: 'batch', label: '添加到本世界：地名风格“西欧·日耳曼”' });
     eng.exec(on);
     expect(row().status).toEqual({ on: true, worldId: 'west-germanic', isDefault: false });
     expect(enabledCount(styleKind, w)).toBe(2);

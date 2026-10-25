@@ -1,17 +1,18 @@
-import { Ellipsis, Pencil, Plus, X } from 'lucide-preact';
+import { Download, Ellipsis, LocateFixed, Pencil, Plus, Save, Trash2, X } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
 import { type ContentKind, enableCommand, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { hexToRgb } from '../../../core/export';
 import type { IslandType } from '../../../core/island-types';
-import { PACK_MAX_CHARS, readPack } from '../../../core/packs';
+import { PACK_MAX_CHARS, packFileName, readPack } from '../../../core/packs';
 import type { World } from '../../../core/world';
-import { library, saveItem } from '../../library';
+import { library, removeItem, saveItem } from '../../library';
 import type { HighlightLayer } from '../../render/colors';
 import {
   adjustPreviewWorld,
   askUser,
   cancelWorldPreview,
+  download,
   exactDelay,
   exec,
   execAdjust,
@@ -27,23 +28,47 @@ import {
 } from '../../state';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { Seg } from '../common';
-import { Toggle } from '../components/Toggle';
+import { focusOn } from '../camera';
 import { scriptTrustText } from '../copy';
 import { category, setCategory, setTool } from '../defs/tools';
 import { createAndUse as createIslandType, islandSwatch, requestIslandTypeEditor } from '../panels/islandTypes';
 import { createAndUse as createWaterType } from '../panels/waterTypes';
 import { EditorKind, FieldsBox } from './ContentEditor';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
-import { GOV_KINDS, HUMAN_KINDS, SETTLE_KINDS, REPO_FILTERS, type RepoRow, defaultStyleCommand, editStart, enabledCount, filterRows, repoKinds, repoRows, repoSections, restoreRowCommand, toggleCommand } from './repo';
+import {
+  GOV_KINDS,
+  HUMAN_KINDS,
+  SETTLE_KINDS,
+  REPO_FILTERS,
+  SOURCE_LABEL,
+  type RepoRow,
+  addCommand,
+  canDeleteFromLibrary,
+  defaultStyleCommand,
+  editStart,
+  enabledCount,
+  filterRows,
+  itemPack,
+  removeCommand,
+  repoKinds,
+  repoRows,
+  repoSections,
+  restoreRowCommand,
+  rowUsage,
+  saveableItem,
+} from './repo';
 import { eraChoices, groupChoices } from '../human';
 import { isolationNote } from './Scripts';
-import { type RepoEdit, closeRepo, fileLabel, openPackImport, openPackList, openRepo, packDialog, patchRepo, repo } from './store';
+import { type RepoEdit, type RepoState, closeRepo, fileLabel, openPackImport, openPackList, openRepo, packDialog, patchRepo, repo } from './store';
 import { missingCount, restyleOffer } from './styles';
 
-// 仓库（世界 → 仓库）：浮在地图左边，不挡地图。左边按类（地名风格、生态、河流类型……），右边是这一类的内容：
-// 内置的、我的、导入的、只在这个世界的。每一项一个开关“用在这个世界”（一整步，可以撤销），地名风格还有“默认”。
-// 鼠标停在一项上，地图上先画出开关之后的样子（在 Worker 里的世界副本上执行同一条命令）。
-// “编辑”：生态、河、湖、岛的种类打开各自的编辑器，地名风格（和以后的种类）用通用编辑器。导入、导出在角落的“⋯”里
+// 资源库（第二十八轮以前叫资源库；世界 → 资源库…，工具里的“从资源库添加…”）：浮在地图左边，不挡地图。
+// 左边按类（地名风格、生态、河流类型……），右边是这一类的内容：内置的、资源包里的、我的、本世界做的。
+// 做法照 Blender 素材库的“追加”：资源库里是全部，世界里只放添加进来的，工具里只列本世界的。
+// 每一项写着来源、在不在本世界；“添加到本世界”“移出本世界”（一整步，可以撤销；在用的不能移出，写用在哪里、能定位），
+// “存进资源库”（本世界做的）、“导出文件”（单独这一项）、“从库里删除”（只有我的），地名风格还有“默认”。
+// 鼠标停在一项上，地图上先画出添加、移出之后的样子（在 Worker 里的世界副本上执行同一条命令）。
+// “编辑”：生态、河、湖、岛的种类打开各自的编辑器，别的用通用编辑器。从文件导入、从本世界存进资源库在角落的“⋯”里
 
 const WHITE: [number, number, number] = [255, 255, 255];
 const fmt = (n: number) => n.toLocaleString('en-US');
@@ -103,7 +128,7 @@ function sampleLine(row: RepoRow): string {
 type Hover = { key: string; cmd: Command; action: 'on' | 'off' | 'default'; nameOnly: boolean; names: boolean };
 type Note = { key: string; text: string; warn?: boolean } | null;
 
-const ACTION_TEXT = { on: '启用后', off: '停用后', default: '设为默认后' } as const;
+const ACTION_TEXT = { on: '添加后', off: '移出后', default: '设为默认后' } as const;
 
 function usePreview(w: World | null) {
   const [hover, setHover] = useState<Hover | null>(null);
@@ -131,11 +156,11 @@ function usePreview(w: World | null) {
       const untrusted = await untrustedScripts(cmd);
       if (!live) return;
       if (untrusted.length) {
-        setNote({ key, text: '有没信任过的脚本，启用时先问' });
+        setNote({ key, text: '有没信任过的脚本，添加时先问' });
         return;
       }
       if (hover.nameOnly) {
-        setNote({ key, text: action === 'on' ? '启用后可在“地名”里选用' : '停用后，用它的地方按世界默认' });
+        setNote({ key, text: action === 'on' ? '添加后可在“地名”里选用' : '移出后不再列在“地名”里' });
         return;
       }
       setNote({ key, text: '正在计算…' });
@@ -169,7 +194,7 @@ function usePreview(w: World | null) {
       const text = hover.names
         ? action === 'default'
           ? '地名按这种风格重起'
-          : '停用后地名按内置中文重起'
+          : '移出后地名按内置中文重起'
         : isNew.some(Boolean)
             ? grown
               ? `${ACTION_TEXT[action]} ${fmt(grown)} 格变成新生态`
@@ -184,7 +209,7 @@ function usePreview(w: World | null) {
       clearTimeout(t);
     };
   }, [hover?.key, w]);
-  // 关上仓库：去掉地图上的预览
+  // 关上资源库：去掉地图上的预览
   useEffect(() => drop, []);
   const settle = () => {
     keep.current = true;
@@ -195,12 +220,46 @@ function usePreview(w: World | null) {
 
 // ---------- 一项 ----------
 
+// 存进资源库（“我的资源”）
+async function saveRow(row: RepoRow) {
+  const item = saveableItem(row);
+  if (item === null) return;
+  const r = await saveItem(row.kind.pack.key, item);
+  if (!r.ok) showToast(r.error, true);
+  else showToast(r.stored ? `“${row.name}”已存进资源库（我的资源）` : '存不进浏览器：只在这次打开的页面里', !r.stored);
+}
+
+// 单独这一项导出成文件
+const exportRow = (row: RepoRow) => {
+  const pack = itemPack(row);
+  download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
+};
+
+// 从资源库里删掉（只有我的；先问）
+async function deleteRow(row: RepoRow) {
+  if (!canDeleteFromLibrary(row)) return;
+  const v = await askUser({
+    title: `从资源库删除“${row.name}”`,
+    text: '用过它的世界不受影响（世界里有自己的一份）。',
+    choices: [
+      { value: 'delete', label: '删除', primary: true },
+      { value: 'cancel', label: '取消' },
+    ],
+  });
+  if (v !== 'delete') return;
+  const r = await removeItem(row.entry!, row.kind.pack.key, row.id);
+  showToast(r.ok ? `“${row.name}”已从资源库删除` : (r.error ?? '删不了'), !r.ok);
+}
+
 function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHover: (h: Hover | null) => void; onRun: () => void }) {
   const st = row.status;
-  const toggle = w ? toggleCommand(row, w) : null;
+  const add = w ? addCommand(row, w) : null;
+  const remove = w ? removeCommand(row, w) : null;
+  const usage = w ? rowUsage(row, w) : null;
   const restore = w ? restoreRowCommand(row, w) : null;
   const def = w ? defaultStyleCommand(row, w) : null;
   const style = row.kind.id === 'nameStyle';
+  const main = st.on ? remove : add;
   // 点过之后鼠标移开之前不再预览（不然地图上会先画出“再点一下”的样子）
   const [armed, setArmed] = useState(true);
   // 鼠标停着的时候这一项没了（换了类、筛掉了、打开了编辑器）：移开的事件不会来，一并去掉预览
@@ -223,12 +282,15 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
   const sample = style ? sampleLine(row) : '';
   const desc = (row.item as { description?: unknown; hint?: unknown }).description ?? (row.item as { hint?: unknown }).hint;
   const canEdit = DEDICATED.has(row.kind.id) ? st.on : row.kind.id !== 'planetForm' && row.kind.fields.length > 0;
+  const saveable = saveableItem(row) !== null;
+  // 来源旁的小字：资源包写包名（内置的示例包也写）
+  const from = row.source === 'builtin' ? (row.from !== '内置' ? row.from : '') : row.source === 'world' ? '' : row.from;
   return (
     <div
       class={`repo-card ${st.on ? 'on' : ''}`}
       onPointerEnter={() => {
         hovering.current = true;
-        onHover(hoverOf(toggle, st.on ? 'off' : 'on'));
+        onHover(hoverOf(main, st.on ? 'off' : 'on'));
       }}
       onPointerLeave={() => {
         hovering.current = false;
@@ -239,8 +301,9 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
       {swatch && <span class="swatch big" style={{ background: swatch }} />}
       <div class="grow repo-card-text">
         <div>
-          <b>{row.name}</b>
-          <span class="hint">　{row.from}</span>
+          <b>{row.name}</b> <span class="tag">{SOURCE_LABEL[row.source]}</span>
+          {st.on && <span class="tag on">在本世界</span>}
+          {from && <span class="hint">　{from}</span>}
         </div>
         {typeof desc === 'string' && desc && (
           <div class="hint pack-desc one-line" title={desc}>
@@ -248,13 +311,23 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
           </div>
         )}
         {sample && <div class="small repo-sample">{sample}</div>}
-        {!st.on && st.rename && <div class="hint">世界里已有另一份，启用后叫“{st.rename}”</div>}
+        {!st.on && st.rename && <div class="hint">本世界里已有另一份，添加后叫“{st.rename}”</div>}
         {st.locked && !st.on && <div class="hint">{st.locked}</div>}
+        {usage && (
+          <div class="hint repo-usage">
+            有 {usage.count.toLocaleString('en-US')} 处在用：{usage.label}
+            {usage.cells?.length ? (
+              <button class="small ghost" title="在地图上看用到它的地方" onClick={() => focusOn(usage.cells!)}>
+                <LocateFixed /> 定位
+              </button>
+            ) : null}
+          </div>
+        )}
       </div>
       <div class="repo-card-side">
         {st.always ? (
           <span class="row">
-            {st.modified ? <span class="tag">已修改</span> : <span class="hint" title={st.locked}>内置·常开</span>}
+            {st.modified ? <span class="tag mod">已修改</span> : <span class="hint" title={st.locked}>内置·常在</span>}
             {restore && (
               <button
                 class="small"
@@ -267,22 +340,41 @@ function Card({ row, w, onHover, onRun }: { row: RepoRow; w: World | null; onHov
               </button>
             )}
           </span>
+        ) : st.on ? (
+          <button class="small" disabled={!remove} title={usage ? `有 ${usage.count} 处在用，先把用到它的地方改掉` : st.locked} onClick={() => void run(remove, '正在移出…')}>
+            移出本世界
+          </button>
         ) : (
-          <Toggle on={st.on} disabled={!toggle} title={st.locked} onChange={() => void run(toggle, st.on ? '正在停用…' : '正在启用…')}>
-            用在这个世界
-          </Toggle>
+          <button class="small primary" disabled={!add} title={st.locked} onClick={() => void run(add, '正在添加…')}>
+            添加到本世界
+          </button>
         )}
         {style && (
-          <label class="check" title="世界默认的地名风格" onPointerEnter={() => onHover(hoverOf(def, 'default'))} onPointerLeave={() => onHover(hoverOf(toggle, st.on ? 'off' : 'on'))}>
+          <label class="check" title="世界默认的地名风格" onPointerEnter={() => onHover(hoverOf(def, 'default'))} onPointerLeave={() => onHover(hoverOf(main, st.on ? 'off' : 'on'))}>
             <input type="radio" name="default-style" checked={!!st.isDefault} disabled={!def && !st.isDefault} onChange={() => void run(def, '正在起名…')} />
             默认
           </label>
         )}
-        {canEdit && (
-          <button class="small" title={row.source === 'builtin' && !st.on && !st.always ? '复制一份改' : undefined} onClick={() => editRow(row)}>
-            <Pencil /> 编辑
+        <span class="row repo-card-tools">
+          {canEdit && (
+            <button class="small" title={row.source === 'builtin' && !st.on && !st.always ? '复制一份改' : '编辑'} onClick={() => editRow(row)}>
+              <Pencil /> 编辑
+            </button>
+          )}
+          {saveable && (
+            <button class="small icon" title="存进资源库（我的资源），别的世界也能用" onClick={() => void saveRow(row)}>
+              <Save />
+            </button>
+          )}
+          <button class="small icon" title="单独这一项导出成文件" onClick={() => exportRow(row)}>
+            <Download />
           </button>
-        )}
+          {canDeleteFromLibrary(row) && (
+            <button class="small icon danger" title="从资源库里删掉（用过它的世界不受影响）" onClick={() => void deleteRow(row)}>
+              <Trash2 />
+            </button>
+          )}
+        </span>
       </div>
     </div>
   );
@@ -335,9 +427,9 @@ function newItem(kind: ContentKind) {
   if (item) patchRepo({ edit: { item, how: 'new' } });
 }
 
-// 从别处打开仓库的一类（第二十四轮：“城市 ⋯”里的“仓库…”）；create：同时新建一项（底部条上的“新类型…”）
-export function openRepoKind(kindId: string) {
-  openRepo({ kind: kindId, edit: undefined });
+// 从别处打开资源库的一类（“城市 ⋯”里的“资源库…”，工具里的“从资源库添加…”）；create：同时新建一项（底部条上的“新类型…”）
+export function openRepoKind(kindId: string, filter?: RepoState['filter']) {
+  openRepo({ kind: kindId, edit: undefined, ...(filter ? { filter } : {}) });
 }
 export function openNewItem(kindId: string) {
   const kind = kindOf(kindId);
@@ -346,7 +438,7 @@ export function openNewItem(kindId: string) {
   newItem(kind);
 }
 
-// 这一种里已用的 id（世界里的、仓库里的）：新建、复制时避开
+// 这一种里已用的 id（世界里的、资源库里的）：新建、复制时避开
 function takenIds(kind: ContentKind): Set<string> {
   const w = world.value;
   return new Set(repoRows(kind, w, library.value).map((r) => r.id).concat(w ? kind.inWorld(w).map((x) => itemId(kind, x)) : []));
@@ -378,7 +470,7 @@ function EditorView({ kind, edit, w }: { kind: ContentKind; edit: RepoEdit; w: W
     try {
       const r = await saveItem(kind.pack.key, item);
       if (!r.ok) showToast(r.error, true);
-      else showToast(r.stored ? `“${name}”已存进“我的资源”` : '存不进浏览器：只在这次打开的页面里', !r.stored);
+      else showToast(r.stored ? `“${name}”已存进资源库（我的资源）` : '存不进浏览器：只在这次打开的页面里', !r.stored);
     } finally {
       setWorking(false);
     }
@@ -440,11 +532,11 @@ function EditorView({ kind, edit, w }: { kind: ContentKind; edit: RepoEdit; w: W
           复制
         </button>
         <span class="row">
-          <button disabled={!ok || working} onClick={() => void save()} title="存进“我的资源”">
-            存进仓库
+          <button disabled={!ok || working} onClick={() => void save()} title="存进资源库的“我的资源”，别的世界也能用">
+            存进资源库
           </button>
-          <button class="primary" disabled={!ok || working || !w} onClick={() => void apply()} title={edit.worldId ? '换掉世界里的这一项' : '启用这一项'}>
-            用到世界
+          <button class="primary" disabled={!ok || working || !w} onClick={() => void apply()} title={edit.worldId ? '换掉本世界里的这一项' : '添加到本世界'}>
+            用到本世界
           </button>
         </span>
       </div>
@@ -475,13 +567,13 @@ function CornerMenu({ w }: { w: World | null }) {
   }, [open]);
   return (
     <div class="repo-corner" ref={box}>
-      <button class={`icon-btn ${open ? 'open' : ''}`} title="导入、导出" onClick={() => setOpen(!open)}>
+      <button class={`icon-btn ${open ? 'open' : ''}`} title="从文件导入、从本世界存进资源库、资源包" onClick={() => setOpen(!open)}>
         <Ellipsis />
       </button>
       {open && (
         <div class="repo-menu menu">
           <label class="item file-item">
-            <span class="grow">导入文件…</span>
+            <span class="grow">从文件导入…</span>
             <input
               type="file"
               accept=".json,application/json"
@@ -501,7 +593,7 @@ function CornerMenu({ w }: { w: World | null }) {
               packDialog.value = { view: 'export' };
             }}
           >
-            <span class="grow">从世界存进仓库…</span>
+            <span class="grow">从本世界存进资源库…</span>
           </button>
           <button
             class="item"
@@ -542,7 +634,7 @@ function openCountries() {
   openPanel.value = 'cat:countries';
 }
 
-// ---------- 整个仓库 ----------
+// ---------- 整个资源库 ----------
 
 export function RepoPanel() {
   const st = repo.value;
@@ -561,7 +653,7 @@ export function RepoPanel() {
   return (
     <div class="repo">
       <div class="popover-head">
-        <b>仓库</b>
+        <b>资源库</b>
         <span class="row">
           <CornerMenu w={w} />
           <button class="icon-btn" onClick={closeRepo} title="关闭">
@@ -602,7 +694,8 @@ export function RepoPanel() {
                   </span>
                 )}
                 {kind.pack.note && <p class="hint">{kind.pack.note}</p>}
-                {missing > 0 && <p class="hint warn">{missing} 处用的风格已停用，按世界默认起名</p>}
+                {st.filter === 'off' && <p class="hint">添加到本世界后，工具里就能选</p>}
+                {missing > 0 && <p class="hint warn">{missing} 处用的风格已移出本世界，按世界默认起名</p>}
               </div>
               <div class="repo-list">
                 {repoSections(kind, shown, sectionNames(w)).map((sec) => (

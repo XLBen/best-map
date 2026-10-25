@@ -589,7 +589,7 @@ describe('改地形以后的修补', () => {
 });
 
 describe('仓库与导出', () => {
-  it('改一个文化的颜色只重算人文的几层；停用了的文化的人照旧在，图层上认不出', () => {
+  it('改一个文化的颜色只重算人文的几层；有人的文化不能移出世界（第二十八轮）', () => {
     const eng = peopled();
     const w = eng.world;
     const c = worldCultures(w.small).find((x) => x.id === 'frankish')!;
@@ -598,9 +598,9 @@ describe('仓库与导出', () => {
     expect(w.derived.elevation).toBe(elevation);
     expect(humanLegend(w, 'culture').find((x) => x.id === 'frankish')!.color).toBe('#000000');
     const total = totalPop(w);
-    eng.exec({ op: 'set_content', kind: 'culture', id: 'frankish', item: null });
+    expect(() => eng.exec({ op: 'set_content', kind: 'culture', id: 'frankish', item: null })).toThrow(/瓦尔蒙人”还在用（\d+ 格有这种文化的人/);
     expect(totalPop(w)).toBe(total);
-    expect(humanLegend(w, 'culture').some((x) => x.id === 'frankish')).toBe(false);
+    expect(humanLegend(w, 'culture').some((x) => x.id === 'frankish')).toBe(true);
   });
 
   it('导出 population.png、cultures.bmp、cultures.csv，provinces_summary.csv 多几列；没有人文时没有', () => {
