@@ -503,6 +503,8 @@ export interface OverlayState {
   nameMode?: NameMode;
   // 全部山峰（第二十一轮，图层里的“山峰”；见 peakLabels）：画成小三角，放大后标名字，排在别的地名之后；null 不画
   peaks?: GeoFeature[] | null;
+  // 国名（第二十三轮，人文图）：沿领土的中线弯着写、字距拉开，最先排（别的地名让它）；null 不画
+  countries?: CountryLabelDraw[] | null;
   kmPerUnit: number;
   // 鼠标悬停或选中的地名（高亮）
   hoverLabel: string | null;
@@ -1045,7 +1047,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
     }
   }
   // 导出整个星球：图就是一整圈（分界线可以在任何经度），每个地名只在中心落在图里的那一份上排
-  const boxes = st.features || st.peaks?.length ? drawLabels(ctx, cam, st, ks, rz) : [];
+  const boxes = st.features || st.peaks?.length || st.countries?.length ? drawLabels(ctx, cam, st, ks, rz) : [];
   if (st.scaleBar) {
     if (sphere) {
       // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
@@ -1337,11 +1339,202 @@ interface PlacedLabel {
   x: number;
   y: number;
   angle: number;
+  // 国名：每个字自己的位置与方向（CSS 像素、弧度），沿弯的中线排；有它时不看 x、y、angle
+  glyphs?: { x: number; y: number; a: number }[];
+  // 描边的颜色、粗细（国名淡一些）
+  halo?: string;
+  haloWidth?: number;
 }
+
+// ---------- 国名（第二十三轮） ----------
+
+// 一个国名：key（'country:编号'）、一两行字（两者时中文一行、原文一行）、中线（5 个点，地图坐标，从左到右；
+// 星球上首尾的 x 可能跨过接缝）、主体的大小（地图单位²，按屏幕上的面积：平铺图上已除以纬度的余弦）
+export interface CountryLabelDraw {
+  key: string;
+  lines: string[];
+  path: [number, number][];
+  area: number;
+}
+
+export const COUNTRY_KEY = 'country:';
+const COUNTRY_COLOR = { realistic: 'rgba(36, 28, 24, 0.8)', atlas: 'rgba(78, 34, 24, 0.82)' };
+const COUNTRY_HALO = 'rgba(255, 255, 255, 0.42)';
+const COUNTRY_FONT = '"Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif';
+// 国名的字号：不到这么大不标，最大这么大（CSS 像素）
+export const COUNTRY_MIN_PX = 10;
+export const COUNTRY_MAX_PX = 64;
+// 原文（拉丁字母）写成大写
+const LATIN = /^[\x00-ɏ\s'’.-]+$/;
+
+// 过 5 个点的平滑曲线（Catmull-Rom）上每段取 4 个点
+export function smoothPath(pts: readonly [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  const P = (k: number) => pts[Math.max(0, Math.min(pts.length - 1, k))];
+  for (let k = 0; k < pts.length - 1; k++) {
+    const p0 = P(k - 1);
+    const p1 = P(k);
+    const p2 = P(k + 1);
+    const p3 = P(k + 2);
+    for (let j = 0; j < 4; j++) {
+      const t = j / 4;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// 沿折线走到 s 处：位置与方向
+function along(pts: readonly [number, number][], cum: readonly number[], s: number): { x: number; y: number; a: number } {
+  let k = 1;
+  while (k < pts.length - 1 && cum[k] < s) k++;
+  const [ax, ay] = pts[k - 1];
+  const [bx, by] = pts[k];
+  const seg = cum[k] - cum[k - 1] || 1;
+  const t = Math.max(0, Math.min(1, (s - cum[k - 1]) / seg));
+  return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t, a: Math.atan2(by - ay, bx - ax) };
+}
+
+// 一行字排在屏幕上的一条折线上（像 EU4：字距拉开，铺满中线的八成；字距最多 maxGap）。
+// widths1：每个字在 1 像素字号时的宽。放不下时 null
+export function layoutAlong(
+  chars: readonly string[],
+  widths1: readonly number[],
+  pts: readonly [number, number][],
+  fontPx: number,
+  maxGap: number,
+): { glyphs: { x: number; y: number; a: number }[]; gap: number; total: number } | null {
+  const cum = [0];
+  for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const L = cum[cum.length - 1];
+  const W = widths1.reduce((a, b) => a + b, 0) * fontPx;
+  const n = chars.length;
+  const avail = L * 0.8;
+  if (!(L > 0) || W > avail * 1.05) return null;
+  const gap = n > 1 ? Math.max(0, Math.min(maxGap, (avail - W) / (n - 1))) : 0;
+  const total = W + gap * (n - 1);
+  let s = (L - total) / 2;
+  const glyphs = chars.map((_, k) => {
+    const w = widths1[k] * fontPx;
+    const g = along(pts, cum, s + w / 2);
+    s += w + gap;
+    return g;
+  });
+  return { glyphs, gap, total };
+}
+
+// 一条折线往法线方向挪 d 像素（屏幕上 y 向下：正的往下）
+function offsetLine(pts: readonly [number, number][], d: number): [number, number][] {
+  if (d === 0) return [...pts];
+  return pts.map((p, q) => {
+    const a = pts[Math.max(0, q - 1)];
+    const b = pts[Math.min(pts.length - 1, q + 1)];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [p[0] - ((b[1] - a[1]) / len) * d, p[1] + ((b[0] - a[0]) / len) * d];
+  });
+}
+
+// 国名的字：两者时第二行（原文）、写原文时的那一行拉丁字母写成大写
+export const countryLineText = (lines: readonly string[]) => lines.map((t, q) => (q > 0 || LATIN.test(t) ? t.toUpperCase() : t));
+
+// 排国名（最先排，大的先排）：放不下、和已排的国名重叠的不标。放好的字一个字一个框，别的地名按它们避让
+function placeCountries(
+  ctx: CanvasRenderingContext2D,
+  st: OverlayState,
+  ks: number[],
+  toScreen: (x: number, y: number) => [number, number] | null,
+  view: { cw: number; ch: number; mx: number; my: number; exporting: boolean },
+  placed: PlacedLabel[],
+  boxes: LabelBox[],
+) {
+  const list = [...(st.countries ?? [])].sort((a, b) => b.area - a.area);
+  const color = COUNTRY_COLOR[st.style];
+  for (const c of list) {
+    // 展开跨接缝的中线（星球：相邻两点的 x 差不超过 1）
+    const base: [number, number][] = [];
+    for (const [x, y] of c.path) {
+      const prev = base[base.length - 1];
+      base.push([prev ? x + 2 * Math.round((prev[0] - x) / 2) : x, y]);
+    }
+    let lenU = 0;
+    for (let k = 1; k < base.length; k++) lenU += Math.hypot(base[k][0] - base[k - 1][0], base[k][1] - base[k - 1][1]);
+    if (!(lenU > 0)) continue;
+    const curve = smoothPath(base);
+    const lines = countryLineText(c.lines);
+    for (const k of ks) {
+      const pts: [number, number][] = [];
+      let ok = true;
+      for (const [x, y] of curve) {
+        const p = toScreen(x + 2 * k, y);
+        if (!p) {
+          ok = false;
+          break;
+        }
+        pts.push(p);
+      }
+      if (!ok) continue;
+      let L = 0;
+      for (let q = 1; q < pts.length; q++) L += Math.hypot(pts[q][0] - pts[q - 1][0], pts[q][1] - pts[q - 1][1]);
+      const mid = pts[Math.floor(pts.length / 2)];
+      if (L < 30 || mid[0] < -view.mx - L / 2 || mid[0] > view.cw + view.mx + L / 2 || mid[1] < -view.my - L / 2 || mid[1] > view.ch + view.my + L / 2) continue;
+      if (view.exporting && (mid[0] < 0 || mid[0] >= view.cw)) continue;
+      // 领土在屏幕上有多粗：面积 ÷ 中线的长度
+      const thick = (c.area / lenU) * (L / lenU);
+      const first = [...lines[0]];
+      const font100 = `600 100px ${COUNTRY_FONT}`;
+      ctx.font = font100;
+      const w1 = first.map((ch) => glyphWidth(ctx, font100, ch) / 100);
+      const sum1 = w1.reduce((a, b) => a + b, 0);
+      const fit = Math.min(COUNTRY_MAX_PX, thick * 0.42, (L * 0.8) / Math.max(sum1, 0.5));
+      if (fit < COUNTRY_MIN_PX) continue;
+      const fontPx = Math.floor(fit);
+      const second = lines[1] ? [...lines[1]] : null;
+      const px2 = second ? Math.max(COUNTRY_MIN_PX - 1, Math.round(fontPx * 0.45)) : 0;
+      // 两行时第一行往上挪半行
+      const l1 = layoutAlong(first, w1, offsetLine(pts, second ? -(px2 * 0.55 + 1) : 0), fontPx, fontPx * 1.8);
+      if (!l1) continue;
+      const font1 = `600 ${fontPx}px ${COUNTRY_FONT}`;
+      const items: PlacedLabel[] = [
+        { key: c.key, chars: first, widths: w1.map((x) => x * fontPx), spacing: 0, total: l1.total, font: font1, color, x: 0, y: 0, angle: 0, glyphs: l1.glyphs, halo: COUNTRY_HALO, haloWidth: Math.max(2, fontPx * 0.12) },
+      ];
+      const marks = l1.glyphs.map((g) => ({ x: g.x, y: g.y, r: fontPx * 0.55 }));
+      if (second) {
+        const font2 = `500 ${px2}px ${COUNTRY_FONT}`;
+        ctx.font = font2;
+        const w2 = second.map((ch) => glyphWidth(ctx, font2, ch) / px2);
+        const l2 = layoutAlong(second, w2, offsetLine(pts, fontPx * 0.55 + 1), px2, px2 * 1.2);
+        if (l2) {
+          items.push({ key: c.key, chars: second, widths: w2.map((x) => x * px2), spacing: 0, total: l2.total, font: font2, color, x: 0, y: 0, angle: 0, glyphs: l2.glyphs, halo: COUNTRY_HALO, haloWidth: 2 });
+          for (const g of l2.glyphs) marks.push({ x: g.x, y: g.y, r: px2 * 0.55 });
+        }
+      }
+      const own = marks.map((g) => ({ key: c.key, x0: g.x - g.r, y0: g.y - g.r, x1: g.x + g.r, y1: g.y + g.r }));
+      if (own.some((b) => boxes.some((o) => o.x0 < b.x1 && o.x1 > b.x0 && o.y0 < b.y1 && o.y1 > b.y0))) continue;
+      boxes.push(...own);
+      placed.push(...items);
+    }
+  }
+}
+
 // key：整个键；base：键里除了镜头的部分（移动中沿用排好的版面时比它）；cam：排的时候的镜头；
 // epoch：移动中排的那一次渲染器的 motionEpoch（停稳时排的为 undefined）
 // marks：没标名字的山峰的小三角（CSS 像素）
-let layout: { key: string; base: string; cam: Camera; features: GeoFeature[] | null; peaks: GeoFeature[] | null; placed: PlacedLabel[]; boxes: LabelBox[]; marks: [number, number][]; epoch?: number } | null = null;
+let layout: {
+  key: string;
+  base: string;
+  cam: Camera;
+  features: GeoFeature[] | null;
+  peaks: GeoFeature[] | null;
+  countries: CountryLabelDraw[] | null;
+  placed: PlacedLabel[];
+  boxes: LabelBox[];
+  marks: [number, number][];
+  epoch?: number;
+} | null = null;
 
 // 每个字的宽度按字体缓存：平移、缩放的每一帧不必再量（字体加载完成后清空重量）
 const glyphs = new Map<string, number>();
@@ -1369,7 +1562,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const base = labelBase(cw, chh, st, cam);
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
   const peaks = st.peaks ?? null;
-  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks) return layout;
+  if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null)) return layout;
   // 等面积、球形投影：地名的中心按投影算（球的背面不标），大小按那里的比例
   const proj = cam.proj;
   const toScreen = proj
@@ -1380,6 +1573,8 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const my = 40 + (st.motion && !exporting ? MOTION_LAYER_MARGIN * chh : 0);
   const placed: PlacedLabel[] = [];
   const boxes: LabelBox[] = [];
+  // 国名最先排（第二十三轮）
+  if (st.countries?.length) placeCountries(ctx, st, ks, toScreen, { cw, ch: chh, mx, my, exporting }, placed, boxes);
   // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
   const mine = (f: GeoFeature) => !!f.region || f.custom || f.key === st.hoverLabel;
   const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
@@ -1496,9 +1691,9 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       grid.set(g, [...(grid.get(g) ?? []), [x, y]]);
     }
   }
-  // 点击命中只给真的地名（山峰不是地物，点了没有可改的名字）
-  const hits = pseudo.size ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY)) : boxes;
-  const out = { key, base, cam: { ...cam }, features: st.features, peaks, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
+  // 点击命中只给真的地名（山峰不是地物，点了没有可改的名字；国名也不是地物）
+  const hits = pseudo.size || st.countries?.length ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY) && !b.key.startsWith(COUNTRY_KEY)) : boxes;
+  const out = { key, base, cam: { ...cam }, features: st.features, peaks, countries: st.countries ?? null, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
   if (!exporting) layout = out;
   return out;
 }
@@ -1527,6 +1722,7 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     L.base === base &&
     L.features === st.features &&
     L.peaks === (st.peaks ?? null) &&
+    L.countries === (st.countries ?? null) &&
     (st.motionEpoch !== undefined
       ? // 同一次场景（开始动的第一帧场景就重画了：地名也在这一帧按带边距的范围重排）
         L.epoch === st.motionEpoch &&
@@ -1548,6 +1744,10 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
   ctx.lineWidth = 3;
   ctx.lineJoin = 'round';
   for (const l of placed) {
+    if (l.glyphs) {
+      drawGlyphs(ctx, l, st.hoverLabel === l.key);
+      continue;
+    }
     ctx.save();
     ctx.translate(l.x, l.y);
     ctx.rotate(l.angle);
@@ -1583,6 +1783,26 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     ctx.fill();
   }
   return boxes;
+}
+
+// 国名：每个字按自己的位置、方向画；先描边、再填字（同地名）
+function drawGlyphs(ctx: CanvasRenderingContext2D, l: PlacedLabel, hover: boolean) {
+  const g = l.glyphs!;
+  ctx.font = l.font;
+  ctx.lineWidth = l.haloWidth ?? 3;
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass === 0) ctx.strokeStyle = hover ? 'rgba(255, 236, 140, 0.95)' : (l.halo ?? 'rgba(255, 255, 255, 0.72)');
+    else ctx.fillStyle = l.color;
+    l.chars.forEach((c, k) => {
+      ctx.save();
+      ctx.translate(g[k].x, g[k].y);
+      ctx.rotate(g[k].a);
+      if (pass === 0) ctx.strokeText(c, -l.widths[k] / 2, 0);
+      else ctx.fillText(c, -l.widths[k] / 2, 0);
+      ctx.restore();
+    });
+  }
+  ctx.lineWidth = 3;
 }
 
 // 图层里的“山峰”（第二十一轮）：全部山峰（core/human 的 peakMarks）当作地名排，键是 PEAK_KEY + 格。
