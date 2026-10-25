@@ -435,7 +435,7 @@ function CountryChips({ w, ids, others, onChange, label }: { w: World; ids: numb
               if (v) onChange(withId(ids, v));
             }}
           >
-            <option value="">加一国…</option>
+            <option value="">加一国</option>
             {free.map((x) => (
               <option value={x.id}>{x.name}</option>
             ))}
