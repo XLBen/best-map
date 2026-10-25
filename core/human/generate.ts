@@ -2,7 +2,7 @@ import { CommandError } from '../errors';
 import { styleById } from '../name-styles';
 import { BUILTIN_STYLES } from '../packs/names';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
-import type { CountryRules, Derived, HumanHearth, HumanState, World } from '../world';
+import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, World } from '../world';
 import type { GenContext, GenGroup, HumanStage } from './context';
 import { culturesStage } from './cultures';
 import { type CountryPlan, clearCountries, countriesStage, countryMixStage } from './countries';
@@ -13,6 +13,8 @@ import { ensurePopArrays, populationStage } from './population';
 import { cellInputs } from './rules';
 import { cellKm2 } from './space';
 import { worldTerrainClasses } from './terrain-class';
+import { generateSettlements, settlementRules } from './settle-gen';
+import { clearCities } from './settlements';
 
 // 生成人文（第二十二轮）：文化圈 → 国家（第二十三轮）→ 人口 → 国家的移民，每一步是一个 HumanStage（见 context.ts）。
 // 结果写进原因（causes.popTotal / popGroup / popShare）与 small.human、small.popGroups，像省份一样“生成一次、之后修补”。
@@ -27,6 +29,9 @@ export interface HumanParams {
   seed?: number;
   // 国家（第二十三轮）：写了就生成国家（fragmentation 省略为 0.5，seed 省略为人文的种子）；省略时没有国家
   countries?: Partial<CountryRules>;
+  // 城市、道路、地标（第二十四轮）：写了就在最后一步一起生成（seed 省略为人文的种子，roads、landmarks 省略为 true）；
+  // 省略时没有城市与道路（已有的去掉；地标、自定义点留着）
+  settlements?: Partial<SettlementRules>;
 }
 
 // 第二十三轮：国家插在文化圈与人口之间，国家的移民在人口之后
@@ -100,7 +105,7 @@ export function generateHuman(
   world: World,
   d: Derived,
   params: HumanParams,
-  opts: { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean } = {},
+  opts: { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean; regenerate?: boolean } = {},
 ): HumanState {
   if (!params.groups.length) throw new CommandError('至少要有一个文化组');
   ensureHumanContent(
@@ -178,6 +183,15 @@ export function generateHuman(
   };
   small.human = state;
   compactGroups(small, world.causes);
+  // 第二十四轮：城市、道路、地标（时代、人口、国家都定了之后）。重新生成时只换自动的（锁定的、自己放的留着）
+  if (params.settlements) {
+    const p = params.settlements;
+    const rules = opts.regenerate ? settlementRules(world, p) : { seed: (p.seed ?? seed) >>> 0, roads: p.roads ?? true, landmarks: p.landmarks ?? true };
+    generateSettlements(world, d, { rules, fresh: !opts.regenerate });
+  } else if (!opts.regenerate) {
+    clearCities(world);
+    if (!small.landmarks) delete small.settlementRules;
+  }
   return state;
 }
 
@@ -194,9 +208,10 @@ export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanPa
     totalPop: patch.totalPop ?? h.totalPop,
     seed: patch.seed ?? h.seed,
     ...(rules ? { countries: rules } : {}),
+    ...(world.small.settlementRules ? { settlements: world.small.settlementRules } : {}),
   };
   // 换了时代、文化组时，不在新的组里的发源地不要了
   const ids = new Set(params.groups.map((g) => g.id));
   const hearths = h.hearths.filter((x) => x.locked && ids.has(x.group));
-  return generateHuman(world, d, params, { keepManual: opts.keepManual, hearths, countryMode: fresh ? 'generate' : 'keep', keepLocked: opts.keepLocked ?? true });
+  return generateHuman(world, d, params, { keepManual: opts.keepManual, hearths, countryMode: fresh ? 'generate' : 'keep', keepLocked: opts.keepLocked ?? true, regenerate: true });
 }

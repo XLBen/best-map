@@ -1,0 +1,11 @@
+[
+  { "id": "marker", "name": "标记", "icon": "pin", "color": "#d94a3d" },
+  { "id": "second-capital", "name": "陪都", "icon": "star-outline", "color": "#c9a227", "description": "第二个首都：挂着的城市在档案里也算首都。", "actsAsCity": { "capital": true } },
+  { "id": "fortress", "name": "要塞", "icon": "fort", "color": "#6b6f76" },
+  { "id": "battlefield", "name": "古战场", "icon": "swords", "color": "#8a3b2e" },
+  { "id": "port", "name": "港口", "icon": "anchor", "color": "#2f6fa8" },
+  { "id": "mine", "name": "矿场", "icon": "pick", "color": "#7d5a3c" },
+  { "id": "shrine", "name": "圣地", "icon": "shrine", "color": "#9b59b6" },
+  { "id": "camp", "name": "营地", "icon": "tent", "color": "#5e8c4a" },
+  { "id": "treasure", "name": "宝藏", "icon": "chest", "color": "#d4a017" }
+]

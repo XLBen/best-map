@@ -3,6 +3,12 @@
 //   npx tsx tools/bench.ts --globe --pack fantasy [--json]：整个星球 + 奇幻示例包，按用户平时的操作逐步计时
 //     （新建、用资源包、画陆地、堆山、放岛、冷暖、自然融入的生态、湿度滑块、画河的预览与执行、撤销 6 次、重做、
 //     打开（整段重放）、从检查点恢复）。--json 最后一行打出 { 步骤: 毫秒 }，tools/bench-median.mjs 取几次的中位数
+import { cityList, settleInputs } from '../core/human';
+import { generateCities } from '../core/human/settlements';
+import { generateRoads } from '../core/human/roads';
+import { generateLandmarks } from '../core/human/landmarks';
+import { settlementRules } from '../core/human/settle-gen';
+import { archiveMarkdown } from '../core/human/archive';
 import { Engine } from '../core/engine';
 import { applyPackCommands } from '../core/packs';
 import { PLANET_SIZES, planetCells } from '../core/presets';
@@ -90,6 +96,47 @@ function plainBench() {
   lap('undo paint country');
   eng.exec({ op: 'set_country', id: first, patch: { government: 'empire' } });
   lap('set country');
+  // 第二十四轮：城市、道路、地标（分开计时）、档案与列表、编辑、撤销
+  {
+    const S = settleInputs(eng.world, eng.world.derived);
+    const next = eng.world.small.nextSettlement;
+    const rules = settlementRules(eng.world);
+    let t = performance.now();
+    generateCities(S, rules, true);
+    const tc = performance.now() - t;
+    t = performance.now();
+    generateRoads(S, rules, true);
+    const tr = performance.now() - t;
+    t = performance.now();
+    generateLandmarks(S, rules, true);
+    const tl = performance.now() - t;
+    console.log(`  cities ${tc.toFixed(0)} ms (${Object.keys(eng.world.small.cities ?? {}).length}), roads ${tr.toFixed(0)} ms (${Object.keys(eng.world.small.roads ?? {}).length}), landmarks ${tl.toFixed(0)} ms (${Object.keys(eng.world.small.landmarks ?? {}).length})`);
+    delete eng.world.small.cities;
+    delete eng.world.small.roads;
+    delete eng.world.small.landmarks;
+    // 直接调的不走命令：编号退回去，重放才一样
+    if (next === undefined) delete eng.world.small.nextSettlement;
+    else eng.world.small.nextSettlement = next;
+  }
+  lap('(settlements by step)');
+  eng.exec({ op: 'generate_settlements' });
+  lap(`generate settlements (${Object.keys(eng.world.small.cities ?? {}).length} cities, ${Object.keys(eng.world.small.roads ?? {}).length} roads)`);
+  cityList(eng.world);
+  lap('city table (first)');
+  cityList(eng.world);
+  lap('city table (cached)');
+  const someCity = cityList(eng.world).find((c) => !c.capital)!;
+  eng.exec({ op: 'set_city', id: someCity.id, patch: { rank: 'big' } });
+  lap('set city');
+  const freeCell = [...Array(eng.world.mesh.n).keys()].find((i) => eng.world.causes.popTotal![i] > 0 && !cityList(eng.world).some((c) => c.cell === i))!;
+  eng.exec({ op: 'move_city', id: someCity.id, cell: freeCell });
+  lap('move city (reroute roads)');
+  eng.undo();
+  lap('undo move city');
+  eng.exec({ op: 'regenerate_roads' });
+  lap('regenerate roads');
+  archiveMarkdown(eng.world);
+  lap('archive.md');
   eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'sea' });
   lap('paint sea with people (repair)');
   const doc = eng.toDoc();

@@ -4,6 +4,7 @@ import { sameItem } from '../content/refs';
 import { CATEGORY_LABEL, FANTASY_RESOURCES, GENERAL_RESOURCES, RESOURCE_CATEGORIES, RESOURCE_NONE, type Resource, isGeneralResource, resourceSchema, worldResources } from './resources';
 import { registerPopKinds } from './pop-kinds';
 import { registerGovKinds } from './gov-kinds';
+import { registerSettleKinds } from './settle-kinds';
 import { RESOURCE_RULE_FIELDS, RULE_FIELDS } from './rules';
 import { BUILTIN_CLASSES, type TerrainClass, checkTerrainClass, isBuiltinClass, remapCodes, terrainClassItems, terrainClassSchema, worldTerrainClasses } from './terrain-class';
 
@@ -115,4 +116,6 @@ export function registerHumanKinds(): void {
   registerPopKinds();
   // 第二十三轮：政体、派系
   registerGovKinds();
+  // 第二十四轮：城市等级、地标类型、自定义点的类型
+  registerSettleKinds();
 }

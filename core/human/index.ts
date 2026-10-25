@@ -204,3 +204,26 @@ export {
   labelGeometry,
 } from './country-layers';
 export { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, LAYOUT_COLORS, flagSchema, flagSvg, makeFlag } from './flags';
+// 第二十四轮：城市、道路、地标、自定义点
+export { type CityRank, LANDMARK_DETECTORS, LANDMARK_PLACES, type LandmarkDetector, type LandmarkPlace, type LandmarkType, type PointType, cityRankSchema, landmarkTypeSchema, pointTypeSchema } from './settle-types';
+export { capitalRank, cityRankById, isMajorRank, landmarkTypeById, pointTypeById, rankFor, worldCityRanks, worldLandmarkTypes, worldPointTypes } from './settle-content';
+export { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS } from '../packs/settlements';
+export {
+  type CityArchive,
+  type CityInfo,
+  type CityTable,
+  MAX_CITIES,
+  cityArchive,
+  cityAt,
+  cityList,
+  cityName,
+  cityTable,
+  countryCities,
+  hasCities,
+} from './settlements';
+export { type RoadPath, ROAD_KINDS, dragRoadHandle, roadHandles, roadKm, roadPaths, roadPoints, routeRoad, smoothRoad, spliceRoad, traceRoad } from './roads';
+export { type LandmarkInfo, detect as detectLandmarks, landmarkArchive, landmarkList, landmarkName } from './landmarks';
+export { type PointInfo, pointList } from './points';
+export { type SettlementCounts, type SettlementPlan, generateSettlements, settlementRules } from './settle-gen';
+export { settleInputs } from './settlements';
+export { archiveJson, archiveMarkdown, cellLatLon, citiesCsv, hasSettlements, landmarksCsv, pointsCsv, roadsCsv, roadsGeojson } from './archive';
