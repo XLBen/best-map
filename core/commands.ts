@@ -36,12 +36,13 @@ import { typeIdSchema } from './type-id';
 import { classAt, classCode } from './human/terrain-class';
 import { RESOURCE_NONE, resourceAt, resourceCode } from './human/resources';
 import { generateHuman, regenerateHuman } from './human/generate';
-import { cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from './human/era';
+import { SUBJECT_KINDS, cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from './human/era';
 import { type PopBrush, type PopFix, applyPopFix, paintPop, scalePop, setCellPop } from './human/population';
 import { groupInfo } from './human/layers';
-import { clearCountries } from './human/countries';
+import { MAX_COUNTRIES, clearCountries } from './human/countries';
 import { flagSchema } from './human/flags';
 import { HEX } from './human/terrain-class';
+import { BLOC_NAMES, blocById, setBloc } from './human/blocs';
 import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, removeCountry, repairCountries, setCountry, splitCountry, tidyCountries } from './human/country-edit';
 import { addCity, cityName, cityOf, clearCities, generateCities, moveCityCell, removeCity, repairCities, setCity, settleInputs, tidyCities } from './human/settlements';
 import { addRoad, editRoad, generateRoads, repairRoads, rerouteCity, roadKm, roadOf, setRoad } from './human/roads';
@@ -76,6 +77,7 @@ import { type NameCarry, REGION_KIND_INFO, applyNameCarry } from './features';
 import type { Mesh } from './mesh';
 import { cutPathAtCell, ownsCell } from './rivers';
 import {
+  COUNTRY_LAYOUTS,
   REGION_KINDS,
   constraintSchema,
   type Derived,
@@ -105,7 +107,9 @@ const popTupleSchema = z.object({ culture: typeIdSchema, values: z.record(typeId
 // 国家（第二十三轮）
 const countryId = z.number().int().min(1);
 const fragmentation = z.number().min(0).max(1);
-const countryRulesInput = z.object({ fragmentation: fragmentation.optional(), seed: seedSchema.optional() }).strict();
+// 第二十六轮：格局（国家大小怎么分布，'era' 按时代）
+const layoutSchema = z.enum(COUNTRY_LAYOUTS);
+const countryRulesInput = z.object({ fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional() }).strict();
 const countryPatchSchema = z
   .object({
     // '' 是恢复自动；orig 跟着 name
@@ -120,12 +124,27 @@ const countryPatchSchema = z
     // null 是恢复自动（按人口构成算）
     factions: z.record(typeIdSchema, z.number().min(0).max(1)).nullable().optional(),
     overlord: countryId.nullable().optional(),
+    // 从属的种类（第二十六轮）；null 是恢复默认（附庸）
+    subject: z.enum(SUBJECT_KINDS).nullable().optional(),
     allies: z.array(countryId).max(64).optional(),
     rivals: z.array(countryId).max(64).optional(),
     ruler: z.object({ name: z.string().min(1).max(40), orig: z.string().max(80).optional(), title: z.string().max(16).optional() }).optional(),
     founded: z.number().int().min(-100000).max(100000).optional(),
     history: z.string().max(4000).optional(),
     locked: z.boolean().optional(),
+  })
+  .strict();
+// 帝国、联邦、同盟（第二十六轮）
+const blocId = z.number().int().min(1);
+const blocPatchSchema = z
+  .object({
+    kind: z.enum(['empire', 'federation', 'alliance']).optional(),
+    // '' 是恢复自动；orig 跟着 name
+    name: z.string().max(40).optional(),
+    orig: z.string().max(80).optional(),
+    leader: countryId.optional(),
+    members: z.array(countryId).max(MAX_COUNTRIES).optional(),
+    color: HEX.optional(),
   })
   .strict();
 // 城市、道路、地标、自定义点（第二十四轮）
@@ -415,9 +434,10 @@ const baseCommands = [
   }),
   // ---------- 国家（第二十三轮，见 human/countries.ts、human/country-edit.ts） ----------
   // 生成国家（已有时整个换掉）：人口按国家重新分（手改过的格不动）
-  z.object({ op: z.literal('generate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional() }),
+  // layout（第二十六轮）：格局，省略或 'era' 按时代
+  z.object({ op: z.literal('generate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional() }),
   // 重新生成国家：写了的几项换掉；keepLocked 省略为 true（锁定的国家不动）
-  z.object({ op: z.literal('regenerate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), keepLocked: z.boolean().optional() }),
+  z.object({ op: z.literal('regenerate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional(), keepLocked: z.boolean().optional() }),
   // 去掉国家（人口不动）
   z.object({ op: z.literal('remove_countries') }),
   // 领土笔刷：这些格（只画陆地）归 country，null 是无主
@@ -442,6 +462,8 @@ const baseCommands = [
   z.object({ op: z.literal('remove_country'), id: countryId }),
   // 挪首都（这个国家的陆地上的一格）；null 恢复自动
   z.object({ op: z.literal('move_capital'), id: countryId, cell: z.number().int().min(0).nullable() }),
+  // 帝国、联邦、同盟（第二十六轮，见 human/blocs.ts）：id 省略是新建（patch 写 kind 与 members），patch 为 null 是删除，别的是改
+  z.object({ op: z.literal('set_bloc'), id: blocId.optional(), patch: blocPatchSchema.nullable() }),
   // ---------- 城市、道路、地标、自定义点（第二十四轮，见 human/settlements.ts、roads.ts、landmarks.ts、points.ts） ----------
   // 一起生成（全部换掉）/ 重新生成（锁定的、自己放的、画的留着）；写了的几项换掉记着的参数
   z.object({ op: z.literal('generate_settlements'), seed: seedSchema.optional(), roads: z.boolean().optional(), landmarks: z.boolean().optional() }),
@@ -1959,7 +1981,11 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       if (!h) throw new CommandError('还没有生成人文');
       if (cmd.op === 'regenerate_countries' && !h.countryRules) throw new CommandError('还没有生成国家');
       const d = ctx.ensureDerived();
-      const rules = { ...(cmd.fragmentation !== undefined ? { fragmentation: cmd.fragmentation } : {}), ...(cmd.seed !== undefined ? { seed: cmd.seed } : {}) };
+      const rules = {
+        ...(cmd.fragmentation !== undefined ? { fragmentation: cmd.fragmentation } : {}),
+        ...(cmd.seed !== undefined ? { seed: cmd.seed } : {}),
+        ...(cmd.layout !== undefined ? { layout: cmd.layout } : {}),
+      };
       // 生成：整个换掉（参数从默认起）；重新生成：按记着的参数，锁定的留着
       if (cmd.op === 'generate_countries') delete h.countryRules;
       regenerateHuman(world, d, { countries: rules }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
@@ -2010,6 +2036,15 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       removeCountry(world, cmd.id);
       afterCountries(world);
       return { dirty: Dirty.Human, summary: `删除国家${name}` };
+    }
+    case 'set_bloc': {
+      const before = cmd.id !== undefined ? blocById(small, cmd.id) : undefined;
+      const label = before ? `${BLOC_NAMES[before.kind]}“${before.name}”` : '';
+      const { id, what } = setBloc(world, cmd.id, cmd.patch);
+      const b = blocById(small, id);
+      if (cmd.patch === null) return { dirty: Dirty.Human, summary: `删除${label}` };
+      if (cmd.id === undefined) return { dirty: Dirty.Human, summary: `新建${b ? `${BLOC_NAMES[b.kind]}“${b.name}”` : '集团'} · ${b?.members.length ?? 0} 国` };
+      return { dirty: Dirty.Human, summary: `${b ? `${BLOC_NAMES[b.kind]}“${b.name}”` : label} · ${what.join('、') || '修改'}` };
     }
     case 'move_capital': {
       if (cmd.cell !== null) checkCells([cmd.cell]);

@@ -1,6 +1,7 @@
-import { axis, unwrapped } from '../features';
+import { ISLET_FRAG, axis, unwrapped } from '../features';
 import { HeapLite } from '../mesh';
 import type { CountryMeta, Derived, World } from '../world';
+import { federationColorOf } from './blocs';
 import { countryList } from './countries';
 import { cultureById, cultureGroupById, dimensionValues, worldDimensions, worldEra } from './era';
 import { type Faction, categoryName, eraFactions, governmentById } from './government';
@@ -10,7 +11,8 @@ import { countryCities } from './settlements';
 
 // 国家的推导与给界面的（第二十三轮）：
 //   derived.country：每格的国家编号（countryList 的下标 + 1，0 无主），陆地按 causes.country，海按时代的 seaClaimKm（离谁家的海岸近、
-//     不超过这么远的海归谁；离无主的海岸近的不归谁）；
+//     不超过这么远的海归谁；离无主的海岸近的不归谁）；碎岛（第二十六轮：破碎度够 ISLET_FRAG 的海格）归 ISLET_STEPS 格海路以内
+//     最近的有主海岸的国家，derived.countryIslet 记下哪些格是这样来的（着色器、导出只把它的陆地像素涂成国家色）；
 //   countryGroups：画国界的分组（与省份的 provinceGroups 同样每格两个值，给渲染器的第二张分组纹理）；
 //   countryColors / countryMapColors：编号 → 颜色（地图上附庸用宗主的浅色）；
 //   countryStats / countryFactions / countryLabel：档案的统计、派系的影响力、沿领土排的国名
@@ -24,8 +26,12 @@ const rgb = (hex: string): [number, number, number] => {
 interface LayerMemo {
   country: Int32Array;
   land: Uint8Array;
+  // 破碎度（没打碎过为 null）
+  frag: Uint8Array | null;
   key: string;
 }
+// 碎岛最多隔几格海归一个国家
+export const ISLET_STEPS = 3;
 const memo = new WeakMap<Uint16Array, LayerMemo>();
 
 function sameArr(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
@@ -40,20 +46,80 @@ export function computeCountryLayer(world: World, d: Derived) {
   const c = causes.country;
   if (!c || !small.countries) {
     delete d.country;
+    delete d.countryIslet;
     return;
   }
   const list = countryList(small);
   const claim = worldEra(small)?.seaClaimKm ?? 0;
   const key = `${list.map((m) => m.id).join(',')}|${claim}`;
+  const frag = causes.fragment ?? null;
   const prev = d.country ? memo.get(d.country) : undefined;
-  if (prev && prev.key === key && sameArr(prev.country, c) && sameArr(prev.land, causes.land)) return;
+  const sameFrag = (a: Uint8Array | null) => (a && frag ? sameArr(a, frag) : a === frag);
+  if (prev && prev.key === key && sameArr(prev.country, c) && sameArr(prev.land, causes.land) && sameFrag(prev.frag) && !!d.countryIslet) return;
   const n = mesh.n;
   const code = new Map(list.map((m, k) => [m.id, k + 1]));
   const out = new Uint16Array(n);
   for (let i = 0; i < n; i++) if (causes.land[i] && c[i] >= 0) out[i] = code.get(c[i]) ?? 0;
   if (claim > 0) territorialSea(world, out, claim);
+  const islet = new Uint8Array(n);
+  if (frag) isletOwners(world, out, frag, islet);
   d.country = prev && sameArr(d.country!, out) ? d.country : out;
-  memo.set(d.country!, { country: c.slice(), land: causes.land.slice(), key });
+  d.countryIslet = prev && d.countryIslet && sameArr(d.countryIslet, islet) ? d.countryIslet : islet;
+  memo.set(d.country!, { country: c.slice(), land: causes.land.slice(), frag: frag ? frag.slice() : null, key });
+}
+
+// 碎岛：从有主的陆地挨着的海格出发（挨着几国时取挨着的格最多的那一国），在海里按步数走 ISLET_STEPS 格，
+// 碎岛格归先到的那一国（同一步先到的按编号小的）。水面是不是领海按原来的（2 是领海也是这一国的）
+function isletOwners(world: World, out: Uint16Array, frag: Uint8Array, islet: Uint8Array) {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const own = new Int32Array(n);
+  // 第几步到的（0 是起点）
+  const at = new Int32Array(n).fill(-1);
+  let frontier: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (land[i]) continue;
+    let best = 0;
+    let bc = 0;
+    const seen: [number, number][] = [];
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (!land[j] || !out[j]) continue;
+      const hit = seen.find((x) => x[0] === out[j]);
+      if (hit) hit[1]++;
+      else seen.push([out[j], 1]);
+    }
+    for (const [k, v] of seen) if (v > bc || (v === bc && k < best)) {
+      bc = v;
+      best = k;
+    }
+    if (best) {
+      own[i] = best;
+      at[i] = 0;
+      frontier.push(i);
+    }
+  }
+  for (let step = 1; step < ISLET_STEPS && frontier.length; step++) {
+    const next: number[] = [];
+    for (const i of frontier) {
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        const j = mesh.adj[e];
+        if (land[j]) continue;
+        if (at[j] < 0) {
+          at[j] = step;
+          own[j] = own[i];
+          next.push(j);
+        } else if (at[j] === step && own[i] < own[j]) own[j] = own[i];
+      }
+    }
+    frontier = next;
+  }
+  for (let i = 0; i < n; i++) {
+    if (land[i] || frag[i] < ISLET_FRAG || !own[i]) continue;
+    islet[i] = out[i] === own[i] ? 2 : 1;
+    out[i] = own[i];
+  }
 }
 
 // 领海：从海岸往外按 km 走，离谁家的海岸近归谁（无主的海岸也算一家，它近的海不归谁）
@@ -108,18 +174,21 @@ export function countryColors(world: Pick<World, 'small'>): ([number, number, nu
 }
 
 // 地图上的颜色：附庸用宗主（一层层往上找到最上面的）的浅色——往白色挪 1 − (1 − lighten)^层数（默认 lighten 0.45，
-// 附庸的附庸更浅），再掺两成自己的颜色（同一个宗主的几个附庸也分得开）。不是附庸的用自己的颜色
-export function countryMapColors(world: Pick<World, 'small'>, lighten = 0.45): ([number, number, number] | null)[] {
+// 附庸的附庸更浅），再掺两成自己的颜色（同一个宗主的几个附庸也分得开）。不是附庸的用自己的颜色。
+// 第二十六轮：联邦的成员邦用联邦的颜色（federations 省略为 true；宗主是成员邦时也按联邦的颜色变浅）
+export function countryMapColors(world: Pick<World, 'small'>, lighten = 0.45, federations = true): ([number, number, number] | null)[] {
   const metas = world.small.countries ?? {};
+  const fed = federations ? federationColorOf(world.small) : new Map<number, string>();
+  const colorOf = (m: CountryMeta) => fed.get(m.id) ?? m.color;
   return countryCodes(world).map((m) => {
     if (!m) return null;
     let top = m;
     let depth = 0;
     for (; top.overlord !== undefined && metas[top.overlord] && depth < 600; depth++) top = metas[top.overlord];
-    if (!depth) return rgb(m.color);
+    if (!depth) return rgb(colorOf(m));
     const f = 1 - Math.pow(1 - lighten, depth);
-    const own = rgb(m.color);
-    return rgb(top.color).map((v, q) => Math.round(0.8 * (v + (255 - v) * f) + 0.2 * own[q])) as [number, number, number];
+    const own = rgb(colorOf(m));
+    return rgb(colorOf(top)).map((v, q) => Math.round(0.8 * (v + (255 - v) * f) + 0.2 * own[q])) as [number, number, number];
   });
 }
 

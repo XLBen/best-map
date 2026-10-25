@@ -8,7 +8,7 @@ import { HEX } from './terrain-class';
 
 const tag = z.string().min(1).max(16);
 
-// 城市等级：占本国人口的比例够 minShare（且人数够 minPop）的里 level 最大的；首都用写了 capital 的那一级
+// 城市等级：占本国人口的比例够 minShare（且人数够 minPop）的里 level 最大的（写了 perCountry 的每国有上限）；首都用写了 capital 的那一级
 export const cityRankSchema = z.object({
   id: typeIdSchema,
   name: z.string().min(1).max(20),
@@ -23,6 +23,8 @@ export const cityRankSchema = z.object({
   // 占本国人口的比例下限（0–1）与人数下限
   minShare: z.number().min(0).max(1).default(0),
   minPop: z.number().min(0).max(1e10).optional(),
+  // 每国最多几座（第二十六轮）：这个国家的城市数 × perCountry（向下取整），按人口取前几座，别的降到够得上的下一级（省略时不限）
+  perCountry: z.number().min(0).max(1).optional(),
   // 标注的字号倍数（1 是普通城市）
   label: z.number().min(0.3).max(4).default(1),
   // 大道连这一级（省略时：首都与 level 不小于 3 的连大道）

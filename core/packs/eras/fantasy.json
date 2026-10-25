@@ -11,7 +11,7 @@
     "popDensity": 2.4,
     "sparsity": 1.6,
     "urbanization": 0.1,
-    "unclaimed": { "minHabitability": 0.05, "nomads": 0.3 },
+    "unclaimed": { "minHabitability": 0.05, "nomads": 0.3, "bandKm": 80 },
     "seaClaimKm": 0,
     "defaultGroups": [["western", 3], ["mediterranean", 1.5], ["elves", 2], ["dwarves", 1.5], ["orcs", 1.5], ["smallfolk", 1], ["seafolk", 1], ["emberkin", 1]],
     "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania", "elves", "dwarves", "orcs", "seafolk", "smallfolk", "emberkin"],
@@ -19,7 +19,17 @@
     "governments": ["feudal-monarchy", "empire", "elven-council", "dwarven-hold", "orc-horde", "magocracy", "holy-order", "free-city", "dragon-lordship"],
     "factions": ["nobility", "mages", "temples", "guilds", "clan-elders"],
     "countryKm2": 1300000,
-    "years": [200, 1200]
+    "years": [200, 1200],
+    "tiers": { "city": 1, "small": 2.5, "medium": 2, "large": 1, "empire": 0.4 },
+    "relations": {
+      "confederation": 0.6,
+      "alliances": 1,
+      "subjects": { "vassal": 3, "tributary": 1 },
+      "titles": {
+        "empire": [{ "zh": "帝国", "orig": "{name} Empire" }, { "zh": "{name}诸王国", "orig": "Realms of {name}" }],
+        "alliance": [{ "zh": "{name}盟约", "orig": "{name} Covenant" }]
+      }
+    }
   },
   "values": [
     { "id": "human", "dimension": "race", "name": "人类", "color": "#e1a578", "description": "寿命短而适应力强，遍布各地。", "eras": ["fantasy"] },

@@ -11,7 +11,7 @@
     "popDensity": 9,
     "sparsity": 1.45,
     "urbanization": 0.2,
-    "unclaimed": { "minHabitability": 0.03, "nomads": 0.5 },
+    "unclaimed": { "minHabitability": 0.03, "nomads": 0.5, "bandKm": 300 },
     "seaClaimKm": 40,
     "defaultGroups": [["western", 3], ["eastern", 3], ["southasia", 3], ["slavic", 2], ["mediterranean", 2], ["mideast", 1.5], ["nordic", 1]],
     "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
@@ -19,6 +19,17 @@
     "governments": ["constitutional-monarchy", "absolute-monarchy", "parliamentary-republic", "presidential-republic", "federal-republic", "empire", "colonial-empire", "revolutionary-state", "military-junta", "theocracy"],
     "factions": ["conservatives", "liberals", "radicals", "army", "church", "industrialists"],
     "countryKm2": 1200000,
-    "years": [1750, 1914]
+    "years": [1750, 1914],
+    "tiers": { "city": 0.3, "small": 2, "medium": 2, "large": 1.5, "empire": 0.6 },
+    "relations": {
+      "federation": 0.7,
+      "alliances": 2,
+      "subjects": { "protectorate": 2, "dominion": 2, "vassal": 0.5 },
+      "titles": {
+        "federation": [{ "zh": "联邦", "orig": "Federation of {name}" }, { "zh": "合众国", "orig": "United States of {name}" }],
+        "alliance": [{ "zh": "同盟", "orig": "{name} Alliance" }, { "zh": "{name}协约", "orig": "{name} Entente" }],
+        "member": [{ "zh": "州", "orig": "State of {name}" }]
+      }
+    }
   }
 }

@@ -185,7 +185,44 @@ export {
   worldFactions,
   worldGovernments,
 } from './government';
-export { COUNTRY_KM2, DEFAULT_YEARS, MAX_COUNTRIES, countryList, ensureGovContent, sizeFactor, yearText } from './countries';
+export {
+  COUNTRY_KM2,
+  COUNTRY_TIERS,
+  DEFAULT_TIERS,
+  DEFAULT_YEARS,
+  LAYOUT_NAMES,
+  LAYOUT_TIERS,
+  MAX_COUNTRIES,
+  SUBJECT_NAMES,
+  TIER_NAMES,
+  averageCountryKm2,
+  countryList,
+  ensureGovContent,
+  estimateCountryCount,
+  plannedCountries,
+  sizeFactor,
+  tierWeights,
+  yearText,
+} from './countries';
+// 第二十六轮：帝国、联邦、同盟
+export {
+  ALLIANCE_COLORS,
+  BLOC_KINDS,
+  BLOC_NAMES,
+  type BlocPatch,
+  autoBlocName,
+  blocBorderGroups,
+  blocById,
+  blocCells,
+  blocList,
+  blocMapColors,
+  blocOf,
+  blocsOf,
+  federationColorOf,
+  nextBlocId,
+} from './blocs';
+export { SMALL_GAP } from './claims';
+export { COUNTRY_TIER_IDS, type CountryTier, SUBJECT_KINDS, type SubjectKind, type TierWeights } from './era';
 export { autoCapital, countryCells, type CountryPatch } from './country-edit';
 export {
   type CountryLabel,
@@ -202,6 +239,7 @@ export {
   countryStats,
   governmentInfo,
   labelGeometry,
+  ISLET_STEPS,
   type RegionLabel,
   regionLabels,
 } from './country-layers';

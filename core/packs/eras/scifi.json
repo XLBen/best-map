@@ -19,7 +19,18 @@
     "governments": ["galactic-federation", "stellar-empire", "corporate-republic", "colony-council", "military-government", "hive-collective", "technocracy", "psionic-theocracy"],
     "factions": ["federalists", "conglomerates", "academy", "fleet", "frontier", "psionics", "consensus"],
     "countryKm2": 900000,
-    "years": [2150, 2600]
+    "years": [2150, 2600],
+    "tiers": { "city": 0.5, "small": 2, "medium": 2, "large": 1.5, "empire": 0.5 },
+    "relations": {
+      "federation": 1,
+      "alliances": 2,
+      "subjects": { "protectorate": 2, "dominion": 1, "vassal": 1 },
+      "titles": {
+        "federation": [{ "zh": "星际联邦", "orig": "{name} Stellar Federation" }, { "zh": "联合体", "orig": "{name} Union" }],
+        "alliance": [{ "zh": "{name}协定", "orig": "{name} Accord" }, { "zh": "{name}星区联盟", "orig": "{name} Sector Alliance" }],
+        "member": [{ "zh": "殖民区", "orig": "{name} Colony" }]
+      }
+    }
   },
   "values": [
     { "id": "terran", "dimension": "species", "name": "人类", "color": "#e1a578", "description": "从母星迁来的人类。", "eras": ["scifi"] },

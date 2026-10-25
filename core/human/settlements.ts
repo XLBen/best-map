@@ -251,6 +251,8 @@ export function computeCityTable(world: World): CityTable {
     const urban = u * covered;
     for (const q of qs) cityPop[q] = sw > 0 ? Math.min(0.95 * catchPop[q], (urban * weight[q]) / sw) : 0;
   }
+  // 等级按比例、人数定的（不是首都、陪都，点没指定等级）：perCountry 的上限只管这些
+  const byShare = new Uint8Array(sources.length);
   const list: CityInfo[] = sources.map((s, q) => {
     const meta = s.meta;
     const cap = isCapital(s);
@@ -261,6 +263,7 @@ export function computeCityTable(world: World): CityTable {
     const share = total > 0 ? cityPop[q] / total : 0;
     const pointRank = (at?.rank ?? pt?.rank) ? cityRankById(small, (at?.rank ?? pt?.rank)!) : undefined;
     const autoRank = cap ? capR : (pointRank ?? (second ? capR : rankFor(ranks, share, cityPop[q])));
+    if (!cap && !pointRank && !second) byShare[q] = 1;
     const own = meta?.rank ? cityRankById(small, meta.rank) : undefined;
     const name = meta ? cityName(world, meta) : { zh: small.points![s.id].name, custom: true };
     return {
@@ -285,6 +288,26 @@ export function computeCityTable(world: World): CityTable {
       locked: !!meta?.locked,
     };
   });
+  // 第二十六轮：写了 perCountry 的等级（大城市）每国最多“城市数 × perCountry”座，按人口取前几座，别的降到够得上的下一级
+  const limited = ranks.filter((r) => r.perCountry !== undefined && !r.capital).sort((a, b) => b.level - a.level);
+  if (limited.length) {
+    for (const qs of group.values()) {
+      const banned = new Set<string>();
+      for (const r of limited) {
+        banned.add(r.id);
+        const max = Math.floor(qs.length * r.perCountry! + 1e-9);
+        const hit = qs.filter((q) => byShare[q] && list[q].autoRank === r).sort((a, b) => list[b].population - list[a].population || list[a].id - list[b].id);
+        if (hit.length <= max) continue;
+        const rest = ranks.filter((x) => !banned.has(x.id));
+        for (const q of hit.slice(max)) {
+          const c = list[q];
+          const nr = rankFor(rest.length ? rest : ranks, c.share, c.population);
+          c.autoRank = nr;
+          if (c.rankAuto) c.rank = nr;
+        }
+      }
+    }
+  }
   // 重名的（自动起的）换一个：重要的先占
   const order = list.map((_, q) => q).sort((a, b) => cmpInfo(list[a], list[b]));
   const used = new Set<string>();

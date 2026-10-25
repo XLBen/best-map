@@ -11,6 +11,7 @@ import type { IslandType } from './island-types';
 import type { RiverType } from './river-types';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
+import type { CountryTier, SubjectKind } from './human/era';
 import type { FlagSpec } from './human/flags';
 import { DEFAULT_SPECIES, type Species } from './species';
 import { typeIdSchema } from './type-id';
@@ -284,6 +285,26 @@ export interface HumanState {
 export interface CountryRules {
   fragmentation: number;
   seed: number;
+  // 格局（第二十六轮）：国家大小怎么分布。省略（或 'era'）按时代的 tiers；mixed 混合、petty 诸侯林立、unified 大一统、powers 列强并立
+  layout?: CountryLayout;
+}
+export const COUNTRY_LAYOUTS = ['era', 'mixed', 'petty', 'unified', 'powers'] as const;
+export type CountryLayout = (typeof COUNTRY_LAYOUTS)[number];
+
+// 国家之间的集团（第二十六轮，见 human/blocs.ts）：帝国（邦联：成员各自一色，外沿一道帝国的边线）、
+// 联邦（成员邦在地图上是一种颜色）、军事同盟。一个国家最多在一个帝国或联邦里、一个同盟里
+export type BlocKind = 'empire' | 'federation' | 'alliance';
+export interface Bloc {
+  id: number;
+  kind: BlocKind;
+  name: string;
+  orig?: string;
+  // 自己改过名字：换盟主时不再自动换名字
+  nameLocked?: true;
+  // 盟主（皇帝国、联邦的首府所在的成员、同盟的领头国）：总在 members 里
+  leader: number;
+  members: number[];
+  color: string;
 }
 
 // 一个国家的档案（第二十三轮，见 human/countries.ts）。生成的都能改（set_country）；“快照”式的：统治者、年份、历史是生成时写下的文字，不模拟
@@ -308,6 +329,8 @@ export interface CountryMeta {
   factions?: Record<string, number>;
   // 宗主（附庸在地图上用宗主的浅色）、同盟、敌对（同盟、敌对两边都记）
   overlord?: number;
+  // 从属的种类（第二十六轮，有 overlord 时才有意义；省略为 vassal）
+  subject?: SubjectKind;
   allies: number[];
   rivals: number[];
   ruler: { name: string; orig?: string; title?: string };
@@ -315,6 +338,8 @@ export interface CountryMeta {
   history: string;
   // 锁定：重新生成国家时领土、档案都不动
   locked?: true;
+  // 等级（第二十六轮，生成时定的面积档次；自己建的没有，算 medium）
+  tier?: CountryTier;
 }
 // 城市（第二十四轮，见 human/settlements.ts）。名字、等级、所属、人口、建城年份、简介没写时都按世界现算（自动起名、按占本国人口的比例定等级……）
 export interface CityMeta {
@@ -453,6 +478,8 @@ export interface SmallState {
   // 国家（第二十三轮）：编号 → 档案；下一个编号。生成过国家才有
   countries?: Record<string, CountryMeta>;
   nextCountry?: number;
+  // 帝国、联邦、同盟（第二十六轮）：生成或建过才有
+  blocs?: Bloc[];
   // 城市、道路、地标、自定义点（第二十四轮）：编号 → 档案；下一个编号（几种共用）；生成的参数。用到时才有
   cities?: Record<string, CityMeta>;
   roads?: Record<string, RoadMeta>;
@@ -566,13 +593,15 @@ export interface Derived {
   cultureNear?: Uint16Array;
   // 国家（第二十三轮，见 human/country-layers.ts）：每格的国家编号（countryList 的下标 + 1，0 无主），领海也有。只在有国家时才有
   country?: Uint16Array;
+  // 碎岛归谁（第二十六轮）：1 是这一格的碎岛按最近的国家给了编号（country 里），水面照旧是海；2 是水面也是这一国的领海。只在有国家时才有
+  countryIslet?: Uint8Array;
 }
 
 // 人文的推导数组（第二十一轮）：不进金标准的哈希（tools/hash.ts 的 digestWorld），另有自己的测试。第二十二轮加了宜居度与人口的几层
 export const HUMAN_DERIVED = ['terrainClassAuto', 'terrainClass', 'resourceAuto', 'resource', 'peak', 'habitability'] as const;
 export const POP_DERIVED = ['popDensity', 'popCulture', 'popCultureGroup', 'popValue', 'cultureNear'] as const;
 // 第二十三轮：国家的一层（只在有国家时才有）
-export const COUNTRY_DERIVED = ['country'] as const;
+export const COUNTRY_DERIVED = ['country', 'countryIslet'] as const;
 
 export interface World {
   settings: Settings;

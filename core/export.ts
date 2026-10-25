@@ -537,7 +537,8 @@ function provinceCountries(world: World): Map<number, number> {
   return out;
 }
 
-// 国家的图与表（第二十三轮）：countries.bmp（国家自己的颜色；海、湖用 terrain.bmp 的颜色，无主的陆地是白色，领海是国家的颜色与海各一半）、
+// 国家的图与表（第二十三轮）：countries.bmp（国家自己的颜色；海、湖用 terrain.bmp 的颜色，无主的陆地是白色，领海是国家的颜色与海各一半，
+// 归了国家的碎岛是国家的颜色）、
 // countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord）
 function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: number, height: number): Record<string, Uint8Array> {
   const { mesh, derived: d, causes } = world;
@@ -547,11 +548,13 @@ function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width:
   const white: [number, number, number] = [255, 255, 255];
   const codeRgb = list.map((m) => hexToRgb(m.color));
   const code = d.country!;
+  const islet = d.countryIslet;
   const cellRgb = new Uint8Array(mesh.n * 3);
   for (let i = 0; i < mesh.n; i++) {
     const k = code[i];
     let col: readonly number[];
-    if (!causes.land[i]) col = k ? codeRgb[k - 1].map((v, q) => Math.round((v + sea[q]) / 2)) : sea;
+    // 碎岛归了国家（第二十六轮）的海格：水面只有也是领海时才掺国家的颜色
+    if (!causes.land[i]) col = k && islet?.[i] !== 1 ? codeRgb[k - 1].map((v, q) => Math.round((v + sea[q]) / 2)) : sea;
     else if (d.lake[i] === 1) col = lake;
     else col = k ? codeRgb[k - 1] : white;
     cellRgb.set(col, i * 3);
@@ -560,8 +563,8 @@ function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width:
   for (let p = 0; p < cellOf.length; p++) {
     const c = cellOf[p];
     const q = p * 3;
-    // 画成陆地的碎岛落在海格里：按无主的陆地；画成水的陆地格按湖、海
-    if (land[p] && !causes.land[c]) out.set(white, q);
+    // 画成陆地的碎岛落在海格里：归了国家时是国家的颜色（第二十六轮），否则按无主的陆地；画成水的陆地格按湖、海
+    if (land[p] && !causes.land[c]) out.set(islet?.[c] && code[c] ? codeRgb[code[c] - 1] : white, q);
     else if (!land[p] && causes.land[c]) out.set(d.lake[c] === 1 ? lake : sea, q);
     else {
       out[q] = cellRgb[c * 3];

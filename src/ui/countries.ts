@@ -1,23 +1,20 @@
 import type { Command } from '../../core/commands';
 import {
-  COUNTRY_KM2,
   type CountryPatch,
   type CountryStats,
   type FactionInfluence,
   type FlagSpec,
   type Government,
-  MAX_COUNTRIES,
   allCountryStats,
   countryCodes,
   cultureById,
   eraGovernments,
+  estimateCountryCount,
   makeFlag,
   pickTitle,
-  sizeFactor,
   titled,
   worldEra,
 } from '../../core/human';
-import { cellKm2 } from '../../core/human/space';
 import { type NameMode, nameLines } from '../../core/name-display';
 import type { CountryMeta, World } from '../../core/world';
 
@@ -221,20 +218,10 @@ export function fragText(f: number): string {
   return '很统一';
 }
 
-// 大约几个国家（与生成的第一步同一个算法：能住人的干陆地面积 ÷ 时代的国家面积 × 倍数；锁定的国家的地方不算）
+// 大约几个国家（第二十六轮：核心的 estimateCountryCount，与生成的第一步同一个算法；锁定的国家的地方不算、另外算上）
 export function estimateCountries(w: World, f: number, keepLocked = false): number | null {
   const era = worldEra(w.small);
-  const hab = w.derived.habitability;
-  if (!era || !hab) return null;
-  const minH = era.unclaimed.minHabitability;
-  const locked = new Set(keepLocked ? Object.values(w.small.countries ?? {}).filter((m) => m.locked).map((m) => m.id) : []);
-  let area = 0;
-  for (let i = 0; i < w.mesh.n; i++) {
-    if (!w.causes.land[i] || w.derived.lake[i] === 1 || hab[i] < minH) continue;
-    if (locked.size && locked.has(w.causes.country?.[i] ?? -1)) continue;
-    area += cellKm2(w, i);
-  }
-  const T = (era.countryKm2 ?? COUNTRY_KM2) * sizeFactor(f);
-  return Math.min(MAX_COUNTRIES, Math.max(area > 0 ? 1 : 0, Math.round(area / T))) + locked.size;
+  if (!era || !w.derived.habitability) return null;
+  return estimateCountryCount(w, w.derived, era, f, keepLocked);
 }
 

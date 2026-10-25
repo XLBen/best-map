@@ -12,7 +12,7 @@ import { HEX } from './terrain-class';
 
 // 称号的一种写法：只写中文（“王国”），或中文加原文的写法（{name} 换成国名的原文：“Kingdom of {name}”）。
 // 中文里写了 {name} 时换成国名（“大{name}朝”），没写时接在国名后面
-const titleOne = z.union([
+export const titleOne = z.union([
   z.string().min(1).max(16),
   z
     .object({ zh: z.string().min(1).max(16), orig: z.string().max(60).optional() })

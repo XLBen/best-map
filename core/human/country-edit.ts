@@ -2,8 +2,9 @@ import { CommandError } from '../errors';
 import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
+import { joinBlocsOf, mergeBlocMembers, tidyBlocs } from './blocs';
 import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
-import { type Culture, cultureById, worldCultures, worldEra } from './era';
+import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, governmentById } from './government';
 import { SLOTS } from './groups';
@@ -58,7 +59,7 @@ export function autoCapital(world: World, cells: readonly number[]): number | un
   return best;
 }
 
-// 整理：首都不在领土里了换一个自动的（挪过的不再锁定）；外交里指向没了的国家、自己的去掉；同盟、敌对两边都有
+// 整理：首都不在领土里了换一个自动的（挪过的不再锁定）；外交里指向没了的国家、自己的去掉；同盟、敌对两边都有；集团跟着整理
 export function tidyCountries(world: World) {
   const { small, causes } = world;
   const metas = small.countries;
@@ -78,6 +79,8 @@ export function tidyCountries(world: World) {
   const has = (id: number) => !!metas[id];
   for (const m of Object.values(metas)) {
     if (m.overlord !== undefined && (!has(m.overlord) || m.overlord === m.id)) delete m.overlord;
+    // 第二十六轮：没有宗主时也没有从属的种类
+    if (m.overlord === undefined) delete m.subject;
     m.allies = m.allies.filter((x) => has(x) && x !== m.id);
     m.rivals = m.rivals.filter((x) => has(x) && x !== m.id && !m.allies.includes(x));
   }
@@ -85,6 +88,8 @@ export function tidyCountries(world: World) {
     for (const a of m.allies) if (!metas[a].allies.includes(m.id)) metas[a].allies.push(m.id);
     for (const r of m.rivals) if (!metas[r].rivals.includes(m.id)) metas[r].rivals.push(m.id);
   }
+  // 集团（第二十六轮）：去掉没了的成员、盟主不在了换一个、空的去掉
+  tidyBlocs(world);
 }
 
 // 画领土：这些格（只画陆地，湖面也算）归 id，null 是无主。返回改了的格数
@@ -206,6 +211,8 @@ export function mergeCountries(world: World, a: number, b: number) {
   }
   if (ma.overlord === a) delete ma.overlord;
   for (const g of mb.acceptedGroups) if (!ma.acceptedGroups.includes(g)) ma.acceptedGroups.push(g);
+  // 集团里的 b 换成 a（之后 tidyCountries 整理）
+  mergeBlocMembers(world, a, b);
 }
 
 // 拆分：cells（这个国家里的格）成一个新国家；不写时按离得最远的两格分成两半，没有首都的那一半成新国家。返回新国家的编号
@@ -225,6 +232,9 @@ export function splitCountry(world: World, id: number, cells?: readonly number[]
   const fresh = newCountry(world, { cells: part, culture: m.primaryCulture, government: m.government });
   const nm = world.small.countries![fresh];
   nm.acceptedGroups = [...m.acceptedGroups];
+  if (m.tier) nm.tier = m.tier;
+  // 拆出的国家跟着进原来的国家所在的集团
+  joinBlocsOf(world, id, fresh);
   return fresh;
 }
 
@@ -299,6 +309,8 @@ export interface CountryPatch {
   acceptedGroups?: string[];
   factions?: Record<string, number> | null;
   overlord?: number | null;
+  // 从属的种类（第二十六轮）：null 是恢复默认（附庸）；要有宗主
+  subject?: SubjectKind | null;
   allies?: number[];
   rivals?: number[];
   ruler?: { name: string; orig?: string; title?: string };
@@ -385,6 +397,15 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
       m.overlord = p.overlord;
     }
     what.push(p.overlord === null ? '不再是附庸' : '宗主');
+  }
+  if (p.overlord === null) delete m.subject;
+  if (p.subject !== undefined) {
+    if (p.subject === null) delete m.subject;
+    else {
+      if (m.overlord === undefined) throw new CommandError('先选宗主');
+      m.subject = p.subject;
+    }
+    what.push('从属');
   }
   const relink = (key: 'allies' | 'rivals', list: number[]) => {
     for (const x of list) if (x === id) throw new CommandError('不能和自己结盟或敌对');

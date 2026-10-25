@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { contentItems } from '../content/registry';
 import { typeIdSchema } from '../type-id';
 import type { SmallState } from '../world';
+import { titleOne } from './government';
 import { cellRuleSchema } from './rules';
 import { HEX } from './terrain-class';
 
@@ -33,6 +34,41 @@ export const dimensionSchema = z.object({
 });
 export type Dimension = z.output<typeof dimensionSchema>;
 
+// 国家的等级（第二十六轮）：城邦、小国、中等、大国、帝国
+export const COUNTRY_TIER_IDS = ['city', 'small', 'medium', 'large', 'empire'] as const;
+export type CountryTier = (typeof COUNTRY_TIER_IDS)[number];
+const tierWeightsSchema = z.object(Object.fromEntries(COUNTRY_TIER_IDS.map((t) => [t, z.number().min(0).max(100).optional()])) as Record<CountryTier, z.ZodOptional<z.ZodNumber>>).strict();
+export type TierWeights = Partial<Record<CountryTier, number>>;
+
+// 从属的种类（第二十六轮，CountryMeta.subject）：附庸、保护国、自治领、朝贡国
+export const SUBJECT_KINDS = ['vassal', 'protectorate', 'dominion', 'tributary'] as const;
+export type SubjectKind = (typeof SUBJECT_KINDS)[number];
+
+// 时代的国家关系（第二十六轮）。几个“多少个”都可以写小数：整数部分是几个，小数部分是再多一个的可能
+const relationsSchema = z
+  .object({
+    // 邦联：几片诸侯林立的地方（在一个文化组的地区里撒很多城邦、小国），并成帝国
+    confederation: z.number().min(0).max(4).optional(),
+    // 联邦：几个大国按地区分成 4–12 个成员邦
+    federation: z.number().min(0).max(4).optional(),
+    // 军事同盟：在已有的同盟关系上聚成几个集团
+    alliances: z.number().min(0).max(6).optional(),
+    // 附庸的从属种类各占多少（省略时都是 vassal）
+    subjects: z.object(Object.fromEntries(SUBJECT_KINDS.map((k) => [k, z.number().min(0).max(100).optional()])) as Record<SubjectKind, z.ZodOptional<z.ZodNumber>>).strict().optional(),
+    // 称号：帝国、联邦、同盟的名字（盟主的地名 + 称号，写法同政体的称号；按种子挑一个），联邦成员邦的称号
+    titles: z
+      .object({
+        empire: z.array(titleOne).max(16).optional(),
+        federation: z.array(titleOne).max(16).optional(),
+        alliance: z.array(titleOne).max(16).optional(),
+        member: z.array(titleOne).max(16).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type EraRelations = z.output<typeof relationsSchema>;
+
 export const eraSchema = z.object({
   id: typeIdSchema,
   name: z.string().min(1).max(20),
@@ -48,7 +84,10 @@ export const eraSchema = z.object({
   urbanization: z.number().min(0).max(1).default(0.1),
   // 无主地：宜居度低于 minHabitability 的格人口乘以 nomads（0 没人住，1 照常；游牧民可以住恶劣的地方）。
   // 第二十三轮国家也按它留无主地
-  unclaimed: z.object({ minHabitability: z.number().min(0).max(1), nomads: z.number().min(0).max(1) }).default({ minHabitability: 0.05, nomads: 0.3 }),
+  // 第二十六轮 bandKm：生成国家后从国境往外把这么宽（km）的一圈无主地划进最近的国家（省略为 0：不划；深处仍然无主）
+  unclaimed: z
+    .object({ minHabitability: z.number().min(0).max(1), nomads: z.number().min(0).max(1), bandKm: z.number().min(0).max(5000).optional() })
+    .default({ minHabitability: 0.05, nomads: 0.3 }),
   // 海域归属（第二十三轮）：离岸多少 km 以内的海算领海；0 是海不归任何国家
   seaClaimKm: z.number().min(0).max(2000).default(0),
   // 默认选的文化组与各占多少（新建向导用）
@@ -64,6 +103,10 @@ export const eraSchema = z.object({
   countryKm2: z.number().min(1000).max(1e9).optional(),
   // 年份的范围 [最早, 现在]：建国年份在这里面（省略为 [500, 1000]）
   years: z.tuple([z.number().int().min(-100000).max(100000), z.number().int().min(-100000).max(100000)]).optional(),
+  // 国家的等级（第二十六轮，见 countries.ts 的 COUNTRY_TIERS）：城邦、小国、中等、大国、帝国各占多少（省略为 DEFAULT_TIERS）
+  tiers: tierWeightsSchema.optional(),
+  // 国家关系（第二十六轮，见 blocs.ts）：省略时没有帝国、联邦、同盟，附庸都是 vassal
+  relations: relationsSchema.optional(),
 });
 export type Era = z.output<typeof eraSchema>;
 

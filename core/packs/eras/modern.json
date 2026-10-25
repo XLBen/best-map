@@ -20,7 +20,18 @@
     "governments": ["parliamentary-republic", "presidential-republic", "federal-republic", "constitutional-monarchy", "socialist-republic", "one-party-state", "military-junta", "ultranationalist-state", "theocratic-republic", "technocracy", "commune-federation"],
     "factions": ["revolutionary-left", "social-democrats", "greens", "liberals", "conservatives", "nationalists", "religious-bloc"],
     "countryKm2": 600000,
-    "years": [1900, 2020]
+    "years": [1900, 2020],
+    "tiers": { "city": 0.3, "small": 2.5, "medium": 2.5, "large": 1.5, "empire": 0.3 },
+    "relations": {
+      "federation": 1,
+      "alliances": 3,
+      "subjects": { "protectorate": 2, "dominion": 1 },
+      "titles": {
+        "federation": [{ "zh": "联邦", "orig": "Federation of {name}" }, { "zh": "联邦共和国", "orig": "Federal Republic of {name}" }, { "zh": "合众国", "orig": "United States of {name}" }],
+        "alliance": [{ "zh": "{name}条约组织", "orig": "{name} Treaty Organization" }, { "zh": "{name}公约", "orig": "{name} Pact" }, { "zh": "{name}联盟", "orig": "{name} League" }],
+        "member": [{ "zh": "州", "orig": "State of {name}" }]
+      }
+    }
   },
   "values": [
     { "id": "anarchism", "dimension": "ideology", "name": "无政府主义", "color": "#2d2d2d", "description": "反对一切强制的权力，主张自愿的联合。", "eras": ["modern"] },

@@ -10,7 +10,7 @@
     "popDensity": 0.9,
     "sparsity": 2.6,
     "urbanization": 0.05,
-    "unclaimed": { "minHabitability": 0.25, "nomads": 0.05 },
+    "unclaimed": { "minHabitability": 0.25, "nomads": 0.05, "bandKm": 30 },
     "seaClaimKm": 0,
     "defaultGroups": [["mediterranean", 3], ["mideast", 3], ["eastern", 3], ["southasia", 2], ["western", 1.5], ["steppe", 1.5]],
     "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
@@ -18,6 +18,8 @@
     "governments": ["chiefdom", "city-state", "temple-state", "god-king", "early-kingdom", "classical-republic", "early-empire", "tribal-confederation", "nomad-confederation"],
     "factions": ["priests", "warriors", "traders", "elders"],
     "countryKm2": 450000,
-    "years": [-2500, 200]
+    "years": [-2500, 200],
+    "tiers": { "city": 3, "small": 3, "medium": 2, "large": 0.8, "empire": 0.3 },
+    "relations": { "subjects": { "tributary": 3, "vassal": 1 } }
   }
 }
