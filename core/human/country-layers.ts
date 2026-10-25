@@ -106,15 +106,19 @@ export function countryColors(world: Pick<World, 'small'>): ([number, number, nu
   return countryCodes(world).map((m) => (m ? rgb(m.color) : null));
 }
 
-// 地图上的颜色：附庸用宗主（一层层往上找到最上面的）的颜色，往白色挪 lighten（默认 0.45）
+// 地图上的颜色：附庸用宗主（一层层往上找到最上面的）的浅色——往白色挪 1 − (1 − lighten)^层数（默认 lighten 0.45，
+// 附庸的附庸更浅），再掺两成自己的颜色（同一个宗主的几个附庸也分得开）。不是附庸的用自己的颜色
 export function countryMapColors(world: Pick<World, 'small'>, lighten = 0.45): ([number, number, number] | null)[] {
   const metas = world.small.countries ?? {};
   return countryCodes(world).map((m) => {
     if (!m) return null;
     let top = m;
-    for (let k = 0; top.overlord !== undefined && metas[top.overlord] && k < 600; k++) top = metas[top.overlord];
-    const c = rgb(top.color);
-    return top === m ? c : (c.map((v) => Math.round(v + (255 - v) * lighten)) as [number, number, number]);
+    let depth = 0;
+    for (; top.overlord !== undefined && metas[top.overlord] && depth < 600; depth++) top = metas[top.overlord];
+    if (!depth) return rgb(m.color);
+    const f = 1 - Math.pow(1 - lighten, depth);
+    const own = rgb(m.color);
+    return rgb(top.color).map((v, q) => Math.round(0.8 * (v + (255 - v) * f) + 0.2 * own[q])) as [number, number, number];
   });
 }
 
@@ -443,14 +447,14 @@ export function labelGeometry(world: World, cells: readonly number[]): Omit<Coun
   // 弯得太厉害时压平：两端的偏移不超过半长的 0.35
   const bend = Math.abs(p) * half * half;
   if (bend > 0.35 * half && bend > 0) p *= (0.35 * half) / bend;
-  const path: [number, number][] = [];
+  let path: [number, number][] = [];
   for (let k = 0; k < 5; k++) {
     const t = -half + (k * half) / 2;
     const s = p * t * t + q * t + r;
-    let x = cx + t * ux - s * uy;
-    const y = cy + t * uy + s * ux;
-    if (xs) x -= 2 * Math.floor(x / 2);
-    path.push([x, y]);
+    path.push([cx + t * ux - s * uy, cy + t * uy + s * ux]);
   }
+  // 从左到右（近乎竖着时弯曲会让两端左右颠倒）：按展开的坐标比，比完再绕回
+  if (path[0][0] > path[4][0]) path.reverse();
+  if (xs) path = path.map(([x, y]) => [x - 2 * Math.floor(x / 2), y]);
   return { x: a.x, y: a.y, angle: a.angle, span: a.span, elong: a.elong, path };
 }

@@ -11,6 +11,7 @@ import type { World } from '../world';
 import {
   allCountryStats,
   countryCells,
+  countryColors,
   countryFactions,
   countryGroups,
   countryLabels,
@@ -69,10 +70,10 @@ function countryDigest(w: World): Record<string, string> {
 }
 
 // 金标准（第二十三轮记下）：以后提速、重构，生成的国家必须逐值不变；有意改了生成的规则时重录
-// （按内置的中世纪示例与文化算：改了那些数据就要重录，同 population.test.ts）
+// （按内置的中世纪与文化算：改了那些数据就要重录，同 population.test.ts；第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次）
 const RECORDED = {
-  region: { country: 'da04ad5849ec34e0', countries: '4abbf0d0538481be' },
-  planet: { country: '495622fca9689672', countries: '74710656cf730a24' },
+  region: { country: '5ef715f12c204381', countries: 'c2b3211721363266' },
+  planet: { country: 'f6cbab624ef1077c', countries: 'e2c22d95c8622ec2' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 
@@ -312,6 +313,18 @@ describe('生成国家', () => {
     expect(w.small.countries![id]?.locked).toBeUndefined();
   });
 
+  it('每个内置的时代都生成得出国家（时代没列政体时借用别的时代的）', () => {
+    for (const era of BUILTIN_ERAS) {
+      const eng = continents();
+      const groups = (era.defaultGroups ?? []).map((g) => (typeof g === 'string' ? { id: g, weight: 1 } : { id: g[0], weight: g[1] }));
+      eng.exec({ op: 'generate_human', era: era.id, groups, countries: {} });
+      const w = eng.world;
+      expect(ids(w).length, era.id).toBeGreaterThan(0);
+      for (const m of countryList(w.small)) expect(governmentById(w.small, m.government), era.id).toBeDefined();
+      expect(countryFactions(w, ids(w)[0]).length, era.id).toBeGreaterThan(0);
+    }
+  });
+
   it('没有人文时不能生成国家', () => {
     const eng = continents();
     expect(() => eng.exec({ op: 'generate_countries' })).toThrow(CommandError);
@@ -447,14 +460,21 @@ describe('改国家', () => {
     expect(w.small.countries![o.id].allies).not.toContain(m.id);
     expect(w.small.countries![o.id].rivals).toContain(m.id);
     expect(w.small.countries![m.id].allies).not.toContain(o.id);
+    // m 自己不是附庸：o 成为 m 的附庸
+    eng.exec({ op: 'set_country', id: m.id, patch: { overlord: null } });
     eng.exec({ op: 'set_country', id: o.id, patch: { overlord: m.id } });
     expect(() => eng.exec({ op: 'set_country', id: m.id, patch: { overlord: o.id } })).toThrow('宗主不能是自己或自己的附庸');
     // 附庸在地图上用宗主的浅色
     const colors = countryMapColors(w);
     const code = countryList(w.small).findIndex((x) => x.id === o.id) + 1;
     const top = countryList(w.small).findIndex((x) => x.id === m.id) + 1;
-    expect(colors[code]![0]).toBeGreaterThanOrEqual(colors[top]![0]);
+    const own = countryColors(w)[code]!;
+    const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     expect(colors[code]).not.toEqual(colors[top]);
+    expect(colors[top]).toEqual(countryColors(w)[top]);
+    expect(dist(colors[code]!, colors[top]!)).toBeGreaterThan(10);
+    // 宗主的浅色：比起自己的颜色更像宗主的
+    expect(dist(colors[code]!, own)).toBeGreaterThan(0);
     // 派系
     const auto = countryFactions(w, m.id);
     expect(auto.map((f) => f.id)).toEqual(['nobility', 'merchants', 'clergy']);

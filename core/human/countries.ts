@@ -55,10 +55,14 @@ export function ensureGovContent(world: World, era: Era) {
   };
   const pickFor = <T extends { id: string; eras?: string[] }>(ids: readonly string[] | undefined, builtin: readonly T[]): T[] =>
     ids?.length ? builtin.filter((x) => ids.includes(x.id)) : builtin.filter((x) => x.eras?.includes(era.id));
+  // 时代还没有自己的（世界里、内置的都没有）时，复制全部内置的
+  const has = <T extends { eras?: string[] }>(store: unknown) => Object.values((store ?? {}) as Record<string, T>).some((x) => !x.eras || x.eras.includes(era.id));
   let govs = pickFor(era.governments, BUILTIN_GOVERNMENTS);
-  if (!govs.length && !eraGovernments({ content }, era).length) govs = [...BUILTIN_GOVERNMENTS];
+  if (!govs.length && !has(content.government)) govs = [...BUILTIN_GOVERNMENTS];
   for (const g of govs) add('government', g);
-  for (const f of pickFor(era.factions, BUILTIN_FACTIONS)) add('faction', f);
+  let facs = pickFor(era.factions, BUILTIN_FACTIONS);
+  if (!facs.length && !has(content.faction)) facs = [...BUILTIN_FACTIONS];
+  for (const f of facs) add('faction', f);
   if (content.government !== small.content?.government || content.faction !== small.content?.faction) small.content = content;
 }
 

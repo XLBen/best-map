@@ -128,17 +128,20 @@ export const worldFactions = (small: GovSmall): readonly Faction[] => listOf<Fac
 export const governmentById = (small: GovSmall, id: string): Government | undefined => contentItems<Government>(small, 'government')[id];
 export const factionById = (small: GovSmall, id: string): Faction | undefined => contentItems<Faction>(small, 'faction')[id];
 
-// 这个时代能用的政体、派系：时代写了的（世界里有的）；没写时是世界里写了这个时代或不限时代的
-export function eraGovernments(small: GovSmall, era: Pick<Era, 'id' | 'governments'> | undefined): Government[] {
-  const all = worldGovernments(small);
-  if (era?.governments?.length) return era.governments.map((id) => governmentById(small, id)).filter((g): g is Government => !!g);
-  return all.filter((g) => !g.eras || !era || g.eras.includes(era.id));
+// 这个时代能用的政体、派系：时代写了的（世界里有的）；没写时是世界里写了这个时代或不限时代的；
+// 再没有时是世界里全部的（时代还没有自己的政体、派系时，借用别的时代的）
+function forEra<T extends { id: string; eras?: string[] }>(all: readonly T[], ids: readonly string[] | undefined, era: { id: string } | undefined, byId: (id: string) => T | undefined): T[] {
+  if (ids?.length) {
+    const listed = ids.map(byId).filter((x): x is T => !!x);
+    if (listed.length) return listed;
+  }
+  const own = all.filter((x) => !x.eras || !era || x.eras.includes(era.id));
+  return own.length ? own : [...all];
 }
-export function eraFactions(small: GovSmall, era: Pick<Era, 'id' | 'factions'> | undefined): Faction[] {
-  const all = worldFactions(small);
-  if (era?.factions?.length) return era.factions.map((id) => factionById(small, id)).filter((f): f is Faction => !!f);
-  return all.filter((f) => !f.eras || !era || f.eras.includes(era.id));
-}
+export const eraGovernments = (small: GovSmall, era: Pick<Era, 'id' | 'governments'> | undefined): Government[] =>
+  forEra(worldGovernments(small), era?.governments, era, (id) => governmentById(small, id));
+export const eraFactions = (small: GovSmall, era: Pick<Era, 'id' | 'factions'> | undefined): Faction[] =>
+  forEra(worldFactions(small), era?.factions, era, (id) => factionById(small, id));
 
 // 称号按文化取一种写法：文化 id → 文化组 id → default → 第一个
 export function pickTitle(t: Title | undefined, culture: Pick<Culture, 'id' | 'group'> | undefined): { zh: string; orig?: string } | undefined {
