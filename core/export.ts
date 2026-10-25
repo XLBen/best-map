@@ -8,9 +8,11 @@ import { provincePopulation } from './human/layers';
 import { countryList } from './human/countries';
 import { allCountryStats } from './human/country-layers';
 import { CATEGORY_LABEL } from './human/resources';
+import { archiveJson, archiveMarkdown, citiesCsv, hasSettlements, landmarksCsv, pointsCsv, roadsCsv, roadsGeojson } from './human/archive';
 import { summarizeProvinces } from './provinces';
 import { riverRibbon, traceRivers } from './rivers';
 import { findCell } from './mesh';
+import { wrapDelta } from './geo';
 import { exportProvinceCells } from './seams';
 import { rasterizeWorld } from './subcell';
 import { type World, longitudeOf, provinceColor, worldLatitude } from './world';
@@ -353,6 +355,9 @@ export function exportPackage(
   // 国家（第二十三轮）：只在有国家时有
   const hasCountries = !!(small.countries && causes.country && derived.country);
   if (hasCountries) Object.assign(files, countryFiles(world, cellOf, raster.land, width, height));
+  // 城市、道路、地标、自定义点与档案全文（第二十四轮）：只在有它们时有
+  const settle = hasSettlements(world);
+  if (settle) Object.assign(files, settlementFiles(world, raster.land, width, height));
 
   files['world.json'] = strToU8(JSON.stringify(doc));
   files['README.txt'] = strToU8(
@@ -382,6 +387,14 @@ export function exportPackage(
         ? [
             'countries.bmp + countries.csv：每格所属的国家（国家自己的颜色）；白色是无主的陆地，领海是国家的颜色与海的颜色各一半',
             'provinces_summary.csv 的 country 列：省份所属国家的编号（countries.csv 的 id），无主为空',
+          ]
+        : []),
+      ...(settle
+        ? [
+            'cities.csv：城市（等级、首都、所属国家、人口与占本国的比例、格、经纬度）；roads.csv + roads.geojson：道路（大道、小路，经过的格与经纬度折线）',
+            'roads.bmp：道路图，白色陆地、粉色海洋，大道红色、小路橙色',
+            'landmarks.csv：地标（自然的、人造的）；points.csv：自定义点',
+            'archive.md：档案全文（国家、城市、地标、自定义点）；archive.json：全部人文数据',
           ]
         : []),
       'world.json：完整的世界文件（设置 + 命令记录），可在编辑器中重新打开',
@@ -556,18 +569,156 @@ function countryFiles(world: World, cellOf: Int32Array, land: Uint8Array, width:
       out[q + 2] = cellRgb[c * 3 + 2];
     }
   }
+  return {
+    'countries.bmp': encodeBmp24(out, width, height),
+    'countries.csv': strToU8(countriesCsv(world)),
+  };
+}
+
+// countries.csv（id, name, orig, red, green, blue, government, culture, capital, population, area_km2, overlord；capital 是格的编号）
+export function countriesCsv(world: World): string {
   const stats = allCountryStats(world);
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const csv = ['id,name,orig,red,green,blue,government,culture,capital,population,area_km2,overlord'];
-  for (const m of list) {
+  for (const m of countryList(world.small)) {
     const [r, g, b] = hexToRgb(m.color);
     const st = stats.get(m.id);
     csv.push(`${m.id},${esc(m.name)},${esc(m.orig ?? '')},${r},${g},${b},${m.government},${m.primaryCulture},${m.capitalCell ?? ''},${Math.round(st?.population ?? 0)},${Math.round(st?.areaKm2 ?? 0)},${m.overlord ?? ''}`);
   }
+  return `${csv.join('\n')}\n`;
+}
+
+// 城市、道路、地标、自定义点的表、道路图与档案全文（第二十四轮）
+function settlementFiles(world: World, land: Uint8Array, width: number, height: number): Record<string, Uint8Array> {
   return {
-    'countries.bmp': encodeBmp24(out, width, height),
-    'countries.csv': strToU8(`${csv.join('\n')}\n`),
+    'cities.csv': strToU8(citiesCsv(world)),
+    'roads.csv': strToU8(roadsCsv(world)),
+    'roads.geojson': strToU8(roadsGeojson(world)),
+    'roads.bmp': encodeBmp24(roadsImage(world, land, width, height), width, height),
+    'landmarks.csv': strToU8(landmarksCsv(world)),
+    'points.csv': strToU8(pointsCsv(world)),
+    'archive.md': strToU8(archiveMarkdown(world)),
+    'archive.json': strToU8(archiveJson(world)),
   };
+}
+
+// 道路图：白色陆地、粉色海洋（同 rivers.bmp），大道红色（宽一些）、小路橙色，按格心连成的折线
+export function roadsImage(world: World, land: Uint8Array, width: number, height: number): Uint8Array {
+  const { mesh } = world;
+  const rgb = new Uint8Array(width * height * 3);
+  for (let p = 0; p < width * height; p++) {
+    rgb[p * 3] = 255;
+    rgb[p * 3 + 1] = land[p] ? 255 : 0;
+    rgb[p * 3 + 2] = land[p] ? 255 : 128;
+  }
+  const sphere = mesh.kind === 'sphere';
+  const sx = width / mesh.width;
+  const sy = height / mesh.height;
+  const scale = Math.max(1, width / 2048);
+  const roads = Object.values(world.small.roads ?? {}).sort((a, b) => (a.kind === 'major' ? 1 : 0) - (b.kind === 'major' ? 1 : 0) || a.id - b.id);
+  for (const r of roads) {
+    const major = r.kind === 'major';
+    const col = major ? [200, 30, 30] : [230, 140, 40];
+    const rad = (major ? 1.2 : 0.6) * scale;
+    const ri = Math.ceil(rad);
+    const r2 = rad * rad + 0.25;
+    let px0 = mesh.x[r.cells[0]];
+    for (let k = 0; k + 1 < r.cells.length; k++) {
+      const a = r.cells[k];
+      const b = r.cells[k + 1];
+      const ax = px0;
+      const bx = sphere ? ax + wrapDelta(mesh.x[b] - ax) : mesh.x[b];
+      px0 = bx;
+      const x0 = ax * sx;
+      const y0 = mesh.y[a] * sy;
+      const x1 = bx * sx;
+      const y1 = mesh.y[b] * sy;
+      const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2) + 1;
+      for (let st = 0; st <= steps; st++) {
+        const t = st / steps;
+        const fx = Math.floor(x0 + (x1 - x0) * t);
+        const fy = Math.floor(y0 + (y1 - y0) * t);
+        for (let oy = -ri; oy <= ri; oy++) {
+          for (let ox = -ri; ox <= ri; ox++) {
+            if (ox * ox + oy * oy > r2) continue;
+            let x = fx + ox;
+            const y = fy + oy;
+            if (sphere) x = ((x % width) + width) % width;
+            if (x < 0 || y < 0 || x >= width || y >= height) continue;
+            const q = (y * width + x) * 3;
+            rgb[q] = col[0];
+            rgb[q + 1] = col[1];
+            rgb[q + 2] = col[2];
+          }
+        }
+      }
+    }
+  }
+  return rgb;
+}
+
+// 分开导出的一项（第二十四轮，界面的“导出 ⋯”用）：表、档案全文按世界现写；图要宽高（按格栅格化，不含格以下的海岸细节）
+export const EXPORT_PARTS = [
+  { id: 'cities', label: '城市表', files: ['cities.csv'] },
+  { id: 'roads', label: '道路', files: ['roads.csv', 'roads.geojson'] },
+  { id: 'roads-image', label: '道路图', files: ['roads.bmp'], image: true },
+  { id: 'landmarks', label: '地标表', files: ['landmarks.csv'] },
+  { id: 'points', label: '自定义点表', files: ['points.csv'] },
+  { id: 'countries', label: '国家表', files: ['countries.csv'] },
+  { id: 'features', label: '地名表', files: ['features.csv'] },
+  { id: 'archive-md', label: '档案全文', files: ['archive.md'] },
+  { id: 'archive-json', label: '人文数据', files: ['archive.json'] },
+] as const;
+export type ExportPartId = (typeof EXPORT_PARTS)[number]['id'];
+
+// 这一项在这个世界里有没有内容
+export function exportPartAvailable(world: World, id: ExportPartId): boolean {
+  const s = world.small;
+  switch (id) {
+    case 'cities':
+      return !!s.cities && Object.keys(s.cities).length > 0;
+    case 'roads':
+    case 'roads-image':
+      return !!s.roads && Object.keys(s.roads).length > 0;
+    case 'landmarks':
+      return !!s.landmarks && Object.keys(s.landmarks).length > 0;
+    case 'points':
+      return !!s.points && Object.keys(s.points).length > 0;
+    case 'countries':
+      return !!s.countries && Object.keys(s.countries).length > 0;
+    case 'features':
+      return true;
+    case 'archive-md':
+    case 'archive-json':
+      return !!s.human || hasSettlements(world);
+  }
+}
+
+export function exportPart(world: World, id: ExportPartId, size: { width: number; height: number } = { width: 4096, height: Math.round((4096 * world.mesh.height) / world.mesh.width) }): Record<string, Uint8Array> {
+  switch (id) {
+    case 'cities':
+      return { 'cities.csv': strToU8(citiesCsv(world)) };
+    case 'roads':
+      return { 'roads.csv': strToU8(roadsCsv(world)), 'roads.geojson': strToU8(roadsGeojson(world)) };
+    case 'roads-image': {
+      const cells = rasterizeCells(world, size.width, size.height);
+      const land = new Uint8Array(cells.length);
+      for (let p = 0; p < cells.length; p++) land[p] = world.causes.land[cells[p]];
+      return { 'roads.bmp': encodeBmp24(roadsImage(world, land, size.width, size.height), size.width, size.height) };
+    }
+    case 'landmarks':
+      return { 'landmarks.csv': strToU8(landmarksCsv(world)) };
+    case 'points':
+      return { 'points.csv': strToU8(pointsCsv(world)) };
+    case 'countries':
+      return { 'countries.csv': strToU8(countriesCsv(world)) };
+    case 'features':
+      return { 'features.csv': strToU8(featuresCsv(world, size.width, size.height)) };
+    case 'archive-md':
+      return { 'archive.md': strToU8(archiveMarkdown(world)) };
+    case 'archive-json':
+      return { 'archive.json': strToU8(archiveJson(world)) };
+  }
 }
 
 // 逐像素按格抄颜色：out[p] = cellRgb[cellOf[p]]（各三个字节）
