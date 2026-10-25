@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { type GenName, hasType, styleFor, styleName } from '../name-styles';
 import { type CellMeta, type World, longitudeOf, worldLatitude } from '../world';
 import { CATEGORY_LABEL, type Resource, type ResourceCategory, resourceAt } from './resources';
-import { classAt, type TerrainClass } from './terrain-class';
+import { classAt, type TerrainClass, terrainLabel } from './terrain-class';
 import { type CellPopulation, cellPopulation } from './layers';
 import { cityTable } from './settlements';
 import { landmarkName } from './landmarks';
@@ -77,6 +77,8 @@ export interface CellArchive {
   biome?: { id: string; name: string };
   // 生效的地形类别（auto：没画过；autoId 是自动的那一种）
   terrainClass?: { id: string; name: string; color: string; auto: boolean; autoId?: string };
+  // 地形一行：“丘陵 · 温带阔叶林”（起伏的类别 · 生态，第二十七轮）
+  terrainLabel?: string;
   // 生效的资源；没有时 resource 为空、none 写“无矿”（地形类别写了“有没有矿”时）或“无”，auto 是没画过
   resource?: { id: string; name: string; color: string; icon?: string; category: ResourceCategory; categoryLabel: string };
   resourceAuto: boolean;
@@ -147,6 +149,8 @@ export function cellArchive(world: World, cell: number): CellArchive {
   if (ps.length) out.points = ps.map((p) => ({ id: p.id, type: p.type, typeName: pointTypeById(small, p.type)?.name ?? p.type, name: p.name }));
   if (surface === 'land') {
     if (tc) out.terrainClass = { id: tc.id, name: tc.name, color: tc.color, auto: !causes.terrainClass?.[cell], ...(auto ? { autoId: auto.id } : {}) };
+    const label = terrainLabel(world, cell);
+    if (label) out.terrainLabel = label;
     if (r) out.resource = { id: r.id, name: r.name, color: r.color, ...(r.icon ? { icon: r.icon } : {}), category: r.category, categoryLabel: CATEGORY_LABEL[r.category] };
     else out.resourceNone = tc?.ore ? '无矿' : '无';
     if (d.peak[cell] || pf) out.peak = { name: name.zh, ...(name.orig ? { orig: name.orig } : {}), elevation: Math.round(d.elevation[cell]), ...(feature ? { feature } : {}) };

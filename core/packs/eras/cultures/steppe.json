@@ -5,9 +5,12 @@
     "color": "#d2a53c",
     "description": "草原上的牧民与骑射部落，帐篷随季节迁移。",
     "prefs": [
-      { "classes": ["steppe", "grasslands"], "factor": 3 },
-      { "classes": ["desert"], "factor": 1.5 },
-      { "classes": ["forest", "woods", "jungle", "marsh", "mountains"], "factor": 0.5 }
+      { "terrain": ["steppe", "savanna"], "factor": 3 },
+      { "terrain": ["desert"], "factor": 1.5 },
+      { "classes": ["mountains"], "factor": 0.5 },
+      { "classes": ["plains", "hills", "highlands", "peaks"], "terrain": ["forest"], "factor": 0.5 },
+      { "classes": ["plains", "hills", "highlands", "peaks"], "terrain": ["jungle"], "factor": 0.5 },
+      { "classes": ["plains", "hills", "highlands", "peaks"], "terrain": ["marsh"], "factor": 0.5 }
     ]
   },
   "tendencies": {

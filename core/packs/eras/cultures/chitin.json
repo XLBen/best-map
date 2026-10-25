@@ -5,7 +5,8 @@
     "color": "#ffb496",
     "description": "群居的甲壳种族，巢城深入荒漠地下。",
     "prefs": [
-      { "classes": ["desert", "steppe"], "factor": 3 },
+      { "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 3 },
+      { "terrain": ["desert"], "factor": 3 },
       { "tempMin": 16, "factor": 1.5 }
     ],
     "eras": ["scifi"]
@@ -36,7 +37,8 @@
         "ideology": [["sf-militarist", 3], ["sf-free", 2], ["sf-collective", 2]]
       },
       "prefs": [
-        { "classes": ["desert", "steppe"], "factor": 1.4 }
+        { "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 1.4 },
+        { "terrain": ["desert"], "factor": 1.4 }
       ]
     }
   ]

@@ -813,21 +813,27 @@ export interface ProvinceSummary {
   meanElevation: number;
 }
 
-// 省份地形：格内主导类型的多数；山地、丘陵按海拔与坡度另判；无人区、湖、海各有类别
-export function summarizeProvinces(world: World, d: Derived): Map<number, ProvinceSummary> {
+// 省份地形：格内各格导出地形（cellTerrain：每格的 paradoxTerrain，见 human/terrain-class.ts，海 'ocean'、湖 'lake'）的多数
+// （一样多时字母在前的）；无人区、湖、海各有类别。主导类型按格数
+export function summarizeProvinces(world: World, d: Derived, cellTerrain: readonly string[]): Map<number, ProvinceSummary> {
   const { mesh, causes, small } = world;
   const out = new Map<number, ProvinceSummary>();
   const counts = new Map<number, Map<number, number>>();
+  const terrains = new Map<number, Map<string, number>>();
   const elev = new Map<number, number>();
-  const slope = new Map<number, number>();
   for (let i = 0; i < mesh.n; i++) {
     const p = causes.province[i];
     if (p < 0) continue;
     let m = counts.get(p);
     if (!m) counts.set(p, (m = new Map()));
     m.set(d.dominant[i], (m.get(d.dominant[i]) ?? 0) + 1);
+    const t = cellTerrain[i];
+    if (t !== 'ocean' && t !== 'lake') {
+      let tm = terrains.get(p);
+      if (!tm) terrains.set(p, (tm = new Map()));
+      tm.set(t, (tm.get(t) ?? 0) + 1);
+    }
     elev.set(p, (elev.get(p) ?? 0) + Math.max(0, d.elevation[i]));
-    slope.set(p, (slope.get(p) ?? 0) + d.slope[i]);
   }
   for (const [p, m] of counts) {
     const meta = small.provinces[p] ?? { name: '', locked: false, land: false, kind: 'sea' as const };
@@ -842,13 +848,18 @@ export function summarizeProvinces(world: World, d: Derived): Map<number, Provin
       }
     }
     const meanE = (elev.get(p) ?? 0) / total;
-    const meanS = (slope.get(p) ?? 0) / total;
     const sp = best >= 0 ? small.species[best] : null;
-    let terrain = meta.land ? (sp?.terrain ?? 'plains') : 'ocean';
+    let top = '';
+    let tc = 0;
+    for (const [t, c] of terrains.get(p) ?? []) {
+      if (c > tc || (c === tc && t < top)) {
+        tc = c;
+        top = t;
+      }
+    }
+    let terrain = meta.land ? top || (sp?.terrain ?? 'plains') : 'ocean';
     if (meta.kind === 'lake') terrain = 'lake';
     else if (meta.kind === 'wasteland') terrain = 'wasteland';
-    else if (meta.land && (meanE > 2200 || meanS > 25)) terrain = 'mountains';
-    else if (meta.land && (meanE > 900 || meanS > 12) && terrain !== 'arctic') terrain = 'hills';
     out.set(p, { id: p, name: meta.name, land: meta.land, kind: meta.kind, locked: meta.locked, cells: total, species: sp?.id ?? null, terrain, meanElevation: meanE });
   }
   return out;

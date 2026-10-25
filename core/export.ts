@@ -3,6 +3,7 @@ import { strToU8, zipSync, zlibSync } from 'fflate';
 import type { WorldDoc } from './engine';
 import { featureLabel } from './features';
 import { provinceHuman, worldResources, worldTerrainClasses } from './human';
+import { cellParadoxTerrain, paradoxTerrain } from './human/terrain-class';
 import { worldCultureGroups, worldCultures, worldDimensions } from './human/era';
 import { provincePopulation } from './human/layers';
 import { countryList } from './human/countries';
@@ -42,8 +43,10 @@ export const TERRAIN_COLORS: Record<string, [number, number, number]> = {
   jungle: [20, 80, 30],
   savanna: [190, 180, 70],
   hills: [140, 120, 80],
+  highlands: [170, 150, 110],
   mountains: [100, 90, 90],
   marsh: [80, 120, 100],
+  glacier: [250, 252, 255],
 };
 
 function terrainColor(terrain: string): [number, number, number] {
@@ -249,7 +252,9 @@ export function exportPackage(
   onProgress?.(0.75);
 
   // 省份：每格的颜色先算好（无省份为黑），逐像素只抄三个字节
-  const provinces = summarizeProvinces(world, derived);
+  // 每格导出的地形（terrain.bmp、省份汇总共用）
+  const cellTerrain = cellParadoxTerrain(world);
+  const provinces = summarizeProvinces(world, derived, cellTerrain);
   const ids = [...provinces.keys()].sort((a, b) => a - b);
   const provRgb = new Uint8Array(mesh.n * 3);
   for (let i = 0; i < mesh.n; i++) {
@@ -288,18 +293,19 @@ export function exportPackage(
   // 地名：类型、名字、面积、中心（导出图片上的像素坐标与经纬度）
   files['features.csv'] = strToU8(featuresCsv(world, width, height));
 
-  // 地形：逐像素按格的主导类型（山地按海拔另判），湖与海单列。
-  // 每格主导类型的地形颜色与植被颜色先算好；固定颜色依次是海、湖、山地、丘陵（地形）与海、湖（植被）
+  // 地形：逐像素按格（第二十七轮：与 terrain_class.bmp、省份汇总同一个 paradoxTerrain——起伏的类别优先，平原按生态），湖与海单列。
+  // 每格的地形颜色与植被颜色先算好；固定颜色依次是海、湖、画成陆地的海格（按兜底的类别）（地形）与海、湖（植被）
   const kindRgb = new Uint8Array(mesh.n * 3);
   const vegRgb = new Uint8Array(mesh.n * 3);
   for (let i = 0; i < mesh.n; i++) {
     const s = derived.dominant[i];
     const sp = s >= 0 ? small.species[s] : null;
-    kindRgb.set(terrainColor(sp?.terrain ?? 'desert'), i * 3);
+    kindRgb.set(terrainColor(cellTerrain[i]), i * 3);
     vegRgb.set(sp ? hexToRgb(speciesColor(sp)) : [200, 200, 200], i * 3);
   }
   const fixed = new Uint8Array(18);
-  ['ocean', 'lake', 'mountains', 'hills'].forEach((t, k) => fixed.set(terrainColor(t), k * 3));
+  const fallbackClass = worldTerrainClasses(small).find((c) => c.fallback);
+  ['ocean', 'lake', paradoxTerrain(fallbackClass, undefined, 0, 0)].forEach((t, k) => fixed.set(terrainColor(t), k * 3));
   fixed.set([30, 60, 110, 60, 110, 170], 12);
   const terrainRgb = new Uint8Array(n * 3);
   const biomeRgb = new Uint8Array(n * 3);
@@ -316,8 +322,7 @@ export function exportPackage(
       to = 3;
       bo = 15;
     } else {
-      if (elev[p] > 2400) to = 6;
-      else if (elev[p] > 1100 && derived.slope[c] > 10) to = 9;
+      if (!causes.land[c]) to = 6;
       else {
         tc = kindRgb;
         to = c * 3;
@@ -372,10 +377,10 @@ export function exportPackage(
       `provinces.bmp + definition.csv：${ids.length} 个省份，颜色一一对应`,
       'provinces_summary.csv：每个省份的名称、陆海、类型（陆地 / 无人区 / 湖 / 海域）、地形类别、主导类型、格数、平均海拔',
       'features.csv：自动识别的地名（大陆、岛、海、湾、河、山脉……）：类型、名字、面积、中心在图上的像素坐标与经纬度',
-      'terrain.bmp：通用地形类别着色（不是游戏的索引调色板，需按游戏的 terrain 定义重新映射）',
+      'terrain.bmp：通用地形着色（丘陵、高原、山地按地形类别，平原按植被；不是游戏的索引调色板，需按游戏的 terrain 定义重新映射）',
       'biomes.bmp：按类型颜色着色的植被图',
       'rivers.bmp：24 位，需转为游戏要求的 8 位索引调色板',
-      'terrain_class.bmp + terrain_classes.csv：每格的地形类别（平原、丘陵、山地……），颜色与编号一一对应',
+      'terrain_class.bmp + terrain_classes.csv：每格的地形类别（平原、丘陵、高原、山地、山峰），颜色与编号一一对应；terrain 一列是导出的地形（平原按植被）',
       'resources.bmp + resources.csv：每格的资源，白色是没有资源的陆地',
       ...(world.small.human && derived.popCulture
         ? [
@@ -455,7 +460,8 @@ function humanFiles(world: World, cellOf: Int32Array, land: Uint8Array, width: n
   const classCsv = ['code,id,name,red,green,blue,terrain,cells'];
   classes.forEach((c, k) => {
     const [r, g, b] = hexToRgb(c.exportColor ?? c.color);
-    classCsv.push(`${k + 1},${c.id},${esc(c.name)},${r},${g},${b},${c.terrain ?? ''},${classCells[k + 1]}`);
+    // 导出的地形：起伏的类别是自己的（hills、mountains……）；平原按每格的植被，写成 plains
+    classCsv.push(`${k + 1},${c.id},${esc(c.name)},${r},${g},${b},${paradoxTerrain(c, undefined, 0, 0)},${classCells[k + 1]}`);
   });
   const resCsv = ['code,id,name,category,red,green,blue,cells'];
   resources.forEach((x, k) => {

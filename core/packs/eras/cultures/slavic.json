@@ -6,7 +6,7 @@
     "description": "东方大平原与森林里的村社民族。",
     "prefs": [
       { "tempMin": -8, "tempMax": 10, "factor": 2 },
-      { "classes": ["plains", "grasslands", "forest", "woods"], "factor": 1.4 }
+      { "classes": ["plains"], "terrain": ["steppe", "savanna", "forest"], "factor": 1.4 }
     ]
   },
   "tendencies": {
@@ -36,7 +36,7 @@
       "description": "河岸与森林里的伐木人与商人。",
       "prefs": [
         { "river": true, "factor": 1.4 },
-        { "classes": ["forest"], "factor": 1.2 }
+        { "terrain": ["forest"], "moistMin": 0.8, "factor": 1.2 }
       ]
     },
     {

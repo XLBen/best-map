@@ -36,7 +36,8 @@
       "nameStyle": "polynesian",
       "description": "大岛上的农耕部族。",
       "prefs": [
-        { "classes": ["plains", "hills", "woods"], "factor": 1.3 }
+        { "classes": ["plains"], "terrain": ["steppe", "savanna", "forest"], "factor": 1.3 },
+        { "classes": ["hills"], "factor": 1.3 }
       ]
     }
   ]

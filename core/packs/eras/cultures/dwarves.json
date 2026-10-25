@@ -7,7 +7,7 @@
     "prefs": [
       { "classes": ["mountains", "hills", "highlands"], "factor": 3.5 },
       { "classes": ["peaks"], "factor": 2 },
-      { "classes": ["plains", "grasslands", "marsh"], "factor": 0.5 }
+      { "classes": ["plains"], "terrain": ["steppe", "savanna", "marsh"], "factor": 0.5 }
     ],
     "eras": ["fantasy"]
   },

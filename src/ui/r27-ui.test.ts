@@ -264,9 +264,10 @@ describe('首都', () => {
   it('城市档案“设为首都”、格的档案“在这里建首都”都是 move_capital；没有城市的格补上一座', () => {
     const { eng } = edited();
     const w = eng.world;
-    const id = Number(Object.keys(w.small.countries!)[0]);
-    const m = w.small.countries![id];
-    const city = Object.values(w.small.cities ?? {}).find((x) => x.cell !== m.capitalCell && w.causes.country![x.cell] === id);
+    // 有不止一座城市的国家
+    const other = (cid: number) => Object.values(w.small.cities ?? {}).find((x) => x.cell !== w.small.countries![cid].capitalCell && w.causes.country![x.cell] === cid);
+    const id = Object.keys(w.small.countries!).map(Number).find((cid) => other(cid))!;
+    const city = other(id);
     expect(city).toBeTruthy();
     eng.exec({ op: 'move_capital', id, cell: city!.cell });
     expect(eng.world.small.countries![id]).toMatchObject({ capitalCell: city!.cell, capitalLocked: true });

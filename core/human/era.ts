@@ -12,7 +12,8 @@ import { HEX } from './terrain-class';
 // 内置的一套在 core/packs/eras/（时代与取值）、core/packs/cultures/（文化组与文化）；用到世界时复制进来（generate_human 自动补上缺的）
 
 // 宜居度的偏好（矮人喜山）：按格的条件（与地形类别的规则同一种写法，见 rules.ts）加一个倍数。
-// 写了的几项都满足时宜居度乘以 factor；几条都满足时连乘。条件可以写 classes（地形类别）
+// 写了的几项都满足时宜居度乘以 factor；几条都满足时连乘。条件可以写 classes（地形类别，只管起伏：平原、丘陵、高原、山地、山峰）；
+// 森林、荒漠、草原……写生态的地形（terrain）或生态（biomes）
 export const preferenceSchema = cellRuleSchema.extend({
   factor: z.number().min(0).max(20),
 });

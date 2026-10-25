@@ -76,10 +76,11 @@ function countryDigest(w: World): Record<string, string> {
 //   第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次，第二十三轮 内容写全六个时代的政体、派系与文化的政体倾向后又重录一次；
 //   第二十六轮重录：国家有了等级与面积预算（两遍扩张）、各文化正好分完、不在小岛上立国、邦联、领土补齐、联邦切分、两层附庸与从属的种类；
 //   第二十六轮又重录一次：按文化 × 陆块分、预算的上限、第二遍有上限并拉平快慢、下海按政体、别的陆块上没人的地方不要、邦联的一片只归成员、
-//   补齐的围住按海岸、贴着国境的一圈要冰川）
+//   补齐的围住按海岸、贴着国境的一圈要冰川；
+//   第二十七轮重录：地形类别只管起伏，通行难度 = 起伏 × 植被，宜居度、偏好按生态）
 const RECORDED = {
-  region: { country: 'e7bed7d233553c57', countries: 'c5ce37a55850ace4' },
-  planet: { country: 'e1fa7fd20946f98c', countries: '28dd13a88fa568c5' },
+  region: { country: 'd8c1b8c07692dc95', countries: 'd0da242f699a5c0b' },
+  planet: { country: '5a98260b7cf38063', countries: 'dc432649a5dd6dcc' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

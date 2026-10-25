@@ -6,7 +6,7 @@
     "description": "炎热多雨的半岛与群岛，稻田与港口相连。",
     "prefs": [
       { "tempMin": 22, "factor": 2 },
-      { "classes": ["jungle"], "factor": 1.5 },
+      { "terrain": ["jungle"], "factor": 1.5 },
       { "coast": true, "factor": 1.6 }
     ]
   },

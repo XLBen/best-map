@@ -33,7 +33,7 @@ import { MAX_RIVER_TYPES, checkRiverTypeScripts, riverTypeDirty, riverTypeSchema
 import { MAX_LAKE_TYPES, checkLakeTypeScripts, lakeTypeDirty, lakeTypeSchema } from './lake-types';
 import { ISLAND_CODE_MASK, LAGOON_BIT, MAX_ISLAND_TYPES, islandCode, islandTypeById, islandTypeDirty, islandTypeSchema, islandTypesOf, provinceLand, removeIslandCode } from './island-types';
 import { typeIdSchema } from './type-id';
-import { classAt, classCode } from './human/terrain-class';
+import { RETIRED_CLASSES, classAt, classCode } from './human/terrain-class';
 import { RESOURCE_NONE, resourceAt, resourceCode } from './human/resources';
 import { generateHuman, regenerateHuman } from './human/generate';
 import { SUBJECT_KINDS, cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from './human/era';
@@ -1055,8 +1055,10 @@ function speciesChange(before: Species, after: Species): { dirty: Dirty; what: s
   // 加上、去掉地名设定（feature）时，自然长成的那些片要不要成为自己的地物也跟着变（features.ts 的 namesNaturally）：
   // 地物要重新识别，不只是重新起名
   if (changed.every((k) => NAME_KEYS.has(k)) && namesNaturally(before) === namesNaturally(after)) return { dirty: Dirty.Names, what };
-  // 只改宜居度（第二十二轮）：长什么不变，只重算人文的几层
-  if (changed.every((k) => k === 'habitability' || NAME_KEYS.has(k)) && namesNaturally(before) === namesNaturally(after)) return { dirty: Dirty.Human, what: only('habitability') ? ' · 宜居度' : what };
+  // 只改宜居度（第二十二轮）、通行难度（第二十七轮）：长什么不变，只重算人文的几层
+  const human = (k: string) => k === 'habitability' || k === 'movement';
+  if (changed.every((k) => human(k) || NAME_KEYS.has(k)) && namesNaturally(before) === namesNaturally(after))
+    return { dirty: Dirty.Human, what: only('habitability') ? ' · 宜居度' : only('movement') ? ' · 通行难度' : what };
   return { dirty: Dirty.Solve, what };
 }
 
@@ -1904,8 +1906,10 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     }
     case 'set_cell_class': {
       checkCells(cmd.cells);
-      const code = cmd.class === null ? 0 : classCode(small, cmd.class);
-      if (cmd.class !== null && !code) throw new CommandError(`世界里没有地形类别 "${cmd.class}"`);
+      // 第二十七轮以前的植被类别（森林、沙漠……现在是生态）：世界里没有同 id 的类别时恢复自动
+      const retired = cmd.class !== null && RETIRED_CLASSES.has(cmd.class) && !classCode(small, cmd.class);
+      const code = cmd.class === null || retired ? 0 : classCode(small, cmd.class);
+      if (cmd.class !== null && !retired && !code) throw new CommandError(`世界里没有地形类别 "${cmd.class}"`);
       const land = cmd.cells.filter((i) => causes.land[i]);
       if (land.length && (code || causes.terrainClass)) {
         const arr = (causes.terrainClass ??= new Uint8Array(n));

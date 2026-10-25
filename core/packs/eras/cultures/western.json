@@ -6,8 +6,9 @@
     "description": "温带平原与森林里的农耕民族，城镇与修院星罗棋布。",
     "prefs": [
       { "tempMin": -2, "tempMax": 16, "factor": 2 },
-      { "classes": ["plains", "woods", "forest"], "factor": 1.4 },
-      { "classes": ["steppe", "desert"], "factor": 0.7 }
+      { "classes": ["plains"], "terrain": ["steppe", "savanna", "forest"], "factor": 1.4 },
+      { "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 0.7 },
+      { "terrain": ["desert"], "factor": 0.7 }
     ]
   },
   "tendencies": {
@@ -69,7 +70,7 @@
       "description": "河口低地上的筑堤人，以运河与船队为生。",
       "prefs": [
         { "coast": true, "factor": 1.5 },
-        { "classes": ["plains", "marsh"], "factor": 1.3 }
+        { "classes": ["plains"], "terrain": ["steppe", "savanna", "marsh"], "factor": 1.3 }
       ]
     }
   ]

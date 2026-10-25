@@ -7,7 +7,7 @@ import type { CityMeta, Derived, PointMeta, SettlementRules, World } from '../wo
 import { type CellInputs, COAST, LAKE, RIVER, cellInputs } from './rules';
 import { worldEra } from './era';
 import { governmentById } from './government';
-import { classAt } from './terrain-class';
+import { classAt, terrainLabel } from './terrain-class';
 import { cellKm2, noiseAt } from './space';
 import { capitalRank, cityRankById, isMajorRank, pointTypeById, rankFor, worldCityRanks } from './settle-content';
 import type { CityRank } from './settle-types';
@@ -824,7 +824,7 @@ export function cityArchive(world: World, id: number, t: CityTable = cityTable(w
     descriptionAuto: meta.description === undefined,
     ...(meta.notes ? { notes: meta.notes } : {}),
     elevation: Math.round(d.elevation[c.cell]),
-    ...(classAt(small, d.terrainClass[c.cell]) ? { terrainClass: classAt(small, d.terrainClass[c.cell])!.name } : {}),
+    ...(terrainLabel(world, c.cell) ? { terrainClass: terrainLabel(world, c.cell)! } : {}),
     province: pid,
     ...(pid >= 0 && small.provinces[pid] ? { provinceName: small.provinces[pid].name } : {}),
     roads,

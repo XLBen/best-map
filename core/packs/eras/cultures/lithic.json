@@ -6,7 +6,7 @@
     "description": "以硅为骨的岩石种族，在高山里生长与沉睡。",
     "prefs": [
       { "classes": ["mountains", "hills", "highlands", "peaks"], "factor": 3 },
-      { "classes": ["desert"], "factor": 1.5 }
+      { "terrain": ["desert"], "factor": 1.5 }
     ],
     "eras": ["scifi"]
   },
@@ -36,7 +36,8 @@
         "ideology": [["sf-collective", 3], ["sf-militarist", 2], ["sf-technocracy", 1]]
       },
       "prefs": [
-        { "classes": ["desert", "highlands"], "factor": 1.5 }
+        { "classes": ["highlands"], "factor": 1.5 },
+        { "classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["desert"], "factor": 1.5 }
       ]
     }
   ]

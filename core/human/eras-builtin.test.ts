@@ -89,6 +89,29 @@ describe('内置的时代与文化：格式与引用', () => {
     }
   });
 
+  it('所有内置的内容（时代、取值、文化组、文化、资源）里的条件只引用有的地形类别、生态与生态的地形（第二十七轮）', () => {
+    const found: string[] = [];
+    const walk = (owner: string, v: unknown) => {
+      if (Array.isArray(v)) v.forEach((x) => walk(owner, x));
+      else if (v && typeof v === 'object') {
+        const o = v as Record<string, unknown>;
+        if (Array.isArray(o.classes)) for (const c of o.classes) (CLASS_IDS.has(c) ? null : found.push(`${owner}: 类别 ${c}`));
+        if (Array.isArray(o.biomes)) for (const b of o.biomes) (BIOME_IDS.has(b) ? null : found.push(`${owner}: 生态 ${b}`));
+        if (Array.isArray(o.terrain)) for (const t of o.terrain) (TERRAIN_TAGS.has(t) ? null : found.push(`${owner}: 地形 ${t}`));
+        for (const [k, x] of Object.entries(o)) if (typeof x === 'object') walk(`${owner}.${k}`, x);
+      }
+    };
+    for (const e of BUILTIN_ERAS) walk(`时代 ${e.id}`, e);
+    for (const v of BUILTIN_POP_VALUES) walk(`取值 ${v.id}`, v);
+    for (const g of BUILTIN_CULTURE_GROUPS) walk(`文化组 ${g.id}`, g);
+    for (const c of BUILTIN_CULTURES) walk(`文化 ${c.id}`, c);
+    for (const r of [...GENERAL_RESOURCES, ...FANTASY_RESOURCES]) walk(`资源 ${r.id}`, r);
+    expect(found).toEqual([]);
+    // 内置的地形类别只有起伏的 5 种，规则里不按类别
+    expect([...CLASS_IDS]).toEqual(['plains', 'hills', 'highlands', 'mountains', 'peaks']);
+    for (const c of BUILTIN_CLASSES) for (const r of c.rules) expect(r.classes ?? r.terrain ?? r.biomes, c.id).toBeUndefined();
+  });
+
   it('取值的时代、文化组的时代、文化的组与地名风格、偏好里的地形类别与生态都认得', () => {
     const eraIds = new Set(BUILTIN_ERAS.map((e) => e.id));
     const dims = new Set(BUILTIN_ERAS.flatMap((e) => e.dimensions.map((d) => d.id)));
@@ -203,6 +226,8 @@ function shareWhere(w: World, groups: readonly string[] | null, test: (i: number
   return hit / all;
 }
 const isClass = (w: World, ids: string[]) => (i: number) => ids.includes(classAt(w.small, w.derived.terrainClass[i])?.id ?? '');
+// 生态的地形（第二十七轮：森林、荒漠、草原是生态的事）
+const isTerrain = (w: World, ts: string[]) => (i: number) => ts.includes(w.small.species[w.derived.dominant[i]]?.terrain ?? '');
 const isCoast = (w: World) => (i: number) => {
   for (let e = w.mesh.off[i]; e < w.mesh.off[i + 1]; e++) if (!w.causes.land[w.mesh.adj[e]]) return true;
   return false;
@@ -287,10 +312,10 @@ describe('每个时代按默认生成人文', () => {
     const medieval = peopled(BUILTIN_ERAS.find((e) => e.id === 'medieval')!).world;
     const rel = (w: World, groups: string[], test: (i: number) => boolean) => shareWhere(w, groups, test) / shareWhere(w, null, test);
     expect(rel(fantasy, ['dwarves'], isClass(fantasy, ['hills', 'mountains', 'highlands', 'peaks']))).toBeGreaterThan(1.5);
-    expect(rel(fantasy, ['elves'], isClass(fantasy, ['forest', 'woods', 'jungle']))).toBeGreaterThan(1.2);
-    expect(rel(fantasy, ['orcs'], isClass(fantasy, ['steppe', 'desert', 'highlands', 'grasslands']))).toBeGreaterThan(1.5);
+    expect(rel(fantasy, ['elves'], isTerrain(fantasy, ['forest', 'jungle']))).toBeGreaterThan(1.2);
+    expect(rel(fantasy, ['orcs'], (i) => isTerrain(fantasy, ['steppe', 'savanna', 'desert'])(i) || isClass(fantasy, ['highlands'])(i))).toBeGreaterThan(1.5);
     expect(rel(fantasy, ['seafolk'], isCoast(fantasy))).toBeGreaterThan(2);
-    expect(rel(medieval, ['steppe'], isClass(medieval, ['steppe', 'grasslands', 'desert']))).toBeGreaterThan(1.3);
+    expect(rel(medieval, ['steppe'], isTerrain(medieval, ['steppe', 'savanna', 'desert']))).toBeGreaterThan(1.3);
     // 种族按偏好：矮人在山地的比例高于在别处
     const dwarfShare = (test: (i: number) => boolean) => {
       let all = 0;

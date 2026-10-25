@@ -290,7 +290,7 @@ function ReadOnly({ a, w }: { a: CellArchive; w: World }) {
         <Line label="地形">
           <span class="swatch" style={{ background: a.terrainClass.color }} />
           <span class="grow">
-            {a.terrainClass.name}
+            {a.terrainLabel ?? a.terrainClass.name}
             {a.terrainClass.auto && <span class="hint">（自动）</span>}
           </span>
         </Line>
@@ -405,6 +405,7 @@ function Editable({ a, w }: { a: CellArchive; w: World }) {
               <option value={c.id}>{c.name}</option>
             ))}
           </select>
+          {a.biome && <span class="hint" title="植被看生态（在生态笔刷里改）">· {a.biome.name}</span>}
         </Line>
       )}
       {a.surface === 'land' && (

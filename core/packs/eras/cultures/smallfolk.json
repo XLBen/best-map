@@ -5,7 +5,8 @@
     "color": "#d2d200",
     "description": "丘陵与田野间的半身人与侏儒。",
     "prefs": [
-      { "classes": ["plains", "grasslands", "hills"], "factor": 2 },
+      { "classes": ["plains"], "terrain": ["steppe", "savanna"], "factor": 2 },
+      { "classes": ["hills"], "factor": 2 },
       { "tempMin": 4, "tempMax": 18, "factor": 1.8 }
     ],
     "eras": ["fantasy"]

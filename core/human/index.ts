@@ -121,7 +121,20 @@ export {
   resourceSchema,
   worldResources,
 } from './resources';
-export { BUILTIN_CLASSES, type TerrainClass, classAt, classCode, terrainClassSchema, worldTerrainClasses } from './terrain-class';
+export {
+  BIOME_MOVEMENT,
+  BUILTIN_CLASSES,
+  type TerrainClass,
+  biomeMovement,
+  cellMovement,
+  cellParadoxTerrain,
+  classAt,
+  classCode,
+  paradoxTerrain,
+  terrainClassSchema,
+  terrainLabel,
+  worldTerrainClasses,
+} from './terrain-class';
 export { type CellRule, cellRuleSchema } from './rules';
 // 第二十二轮：时代、文化、人口
 export {
