@@ -73,8 +73,8 @@ function countryDigest(w: World): Record<string, string> {
 // （按内置的中世纪、文化、政体与派系算：改了那些数据就要重录，同 population.test.ts；
 //   第二十二轮的内容换成 6 个时代、23 个文化组后重录过一次，第二十三轮 内容写全六个时代的政体、派系与文化的政体倾向后又重录一次）
 const RECORDED = {
-  region: { country: 'd8c310dbf6e358b5', countries: '03d9973612dd9f76' },
-  planet: { country: '509672a140b74ae4', countries: '227451225d1f1da9' },
+  region: { country: 'd8c310dbf6e358b5', countries: '7210b3c4ea96f507' },
+  planet: { country: '509672a140b74ae4', countries: '1de33edb20c9b5fe' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

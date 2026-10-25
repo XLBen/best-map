@@ -2,7 +2,7 @@ import { CommandError } from '../errors';
 import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
-import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry } from './countries';
+import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
 import { type Culture, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, governmentById } from './government';
@@ -183,7 +183,7 @@ export function newCountry(world: World, opts: NewCountryOpts): number {
     else delete meta.orig;
     meta.nameLocked = true;
   }
-  meta.history = `${meta.founded} 年，${culture.name}人建立${meta.name}。`;
+  meta.history = `${yearText(meta.founded)}，${culture.name}建立${meta.name}。`;
   paintCountry(world, cells, id);
   const cap = autoCapital(world, cells);
   if (cap !== undefined) meta.capitalCell = cap;

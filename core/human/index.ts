@@ -185,7 +185,7 @@ export {
   worldFactions,
   worldGovernments,
 } from './government';
-export { COUNTRY_KM2, DEFAULT_YEARS, MAX_COUNTRIES, countryList, ensureGovContent, sizeFactor } from './countries';
+export { COUNTRY_KM2, DEFAULT_YEARS, MAX_COUNTRIES, countryList, ensureGovContent, sizeFactor, yearText } from './countries';
 export { autoCapital, countryCells, type CountryPatch } from './country-edit';
 export {
   type CountryLabel,

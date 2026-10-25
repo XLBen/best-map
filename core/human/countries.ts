@@ -33,6 +33,8 @@ export const DEFAULT_YEARS: [number, number] = [500, 1000];
 export const MAX_COUNTRIES = 512;
 // 宜居度低到这里的格（冰盖）谁都不占
 const NOBODY = 0.002;
+// 时代的宜居度下限不超过这个时，没长到的陆地也分给最近的国家（住满）
+const FILL_ALL_HAB = 0.02;
 
 // 生成国家要的参数：generate 新长（keepLocked：锁定的留着），keep 用现有的领土（只调人口）
 export interface CountryPlan {
@@ -162,15 +164,18 @@ export function foundedYear(era: Pick<Era, 'years'> | undefined, rand: () => num
   return Math.round(Math.max(a, b) - Math.pow(rand(), 1.6) * Math.abs(b - a));
 }
 
+// 年份的写法：公元前写“前 1500 年”
+export const yearText = (y: number): string => (y < 0 ? `前 ${-y} 年` : `${y} 年`);
+
 // 历史（快照，克制的几句）：哪一年谁建立的、附庸、扩张、结盟与不和
 export function historyText(world: World, meta: CountryMeta, extra: { minorities?: string[] } = {}): string {
   const small = world.small;
   const culture = cultureById(small, meta.primaryCulture);
   const gov = governmentById(small, meta.government);
   const name = (id: number) => small.countries?.[id]?.name;
-  const parts = [`${meta.founded} 年，${culture?.name ?? meta.primaryCulture}人建立${meta.name}。`];
+  const parts = [`${yearText(meta.founded)}，${culture?.name ?? meta.primaryCulture}建立${meta.name}。`];
   if (meta.overlord !== undefined && name(meta.overlord)) parts.push(`后来成为${name(meta.overlord)}的附庸。`);
-  else if ((gov?.expansion ?? 0) >= 0.6 && extra.minorities?.length) parts.push(`此后向外扩张，境内也住着${extra.minorities.slice(0, 3).join('、')}人。`);
+  else if ((gov?.expansion ?? 0) >= 0.6 && extra.minorities?.length) parts.push(`此后向外扩张，境内也住着${extra.minorities.slice(0, 3).join('、')}。`);
   else if ((gov?.coastal ?? 0) >= 0.6) parts.push('靠海上的贸易立国。');
   const allies = meta.allies.map(name).filter(Boolean);
   const rivals = meta.rivals.map(name).filter(Boolean);
@@ -402,6 +407,24 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
       dist[j] = nd;
       owner[j] = o;
       grow.push(j, nd);
+    }
+  }
+  // 时代要“住满”（宜居度下限很低，如现代）：上面没长到的陆地归最近的国家（只走陆地，不限远近与宜居度）
+  if (minH <= FILL_ALL_HAB) {
+    const fill = new HeapLite(n);
+    for (let i = 0; i < n; i++) if (owner[i] >= 0 && land[i]) fill.push(i, dist[i]);
+    while (fill.size) {
+      const i = fill.pop();
+      const di = fill.lastKey;
+      if (di > dist[i]) continue;
+      for (let e = off[i], end = off[i + 1]; e < end; e++) {
+        const j = adj[e];
+        if (!land[j] || owner[j] !== -1) continue;
+        const nd = di + edge[e];
+        dist[j] = nd;
+        owner[j] = owner[i];
+        fill.push(j, nd);
+      }
     }
   }
   // 海不归国家；锁定的国家的格还原

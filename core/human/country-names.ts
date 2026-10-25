@@ -8,7 +8,8 @@ import { mixSeed, mulberry32 } from '../rng';
 
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // 模板式的 region 里不适合接称号的结尾
-const BAD_TAIL = ['地区', '之地', '地方', '道', '一带'];
+// 以“国”结尾的地名接上称号会成“X国王国”
+const BAD_TAIL = ['地区', '之地', '地方', '道', '一带', '国'];
 
 // 国名的地名部分（taken 里已有的中文名字避开）
 export function countryBase(style: StyleBody, seed: number, taken?: Set<string>): GenName {
