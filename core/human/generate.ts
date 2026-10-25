@@ -4,6 +4,7 @@ import { BUILTIN_STYLES } from '../packs/names';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
 import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, World } from '../world';
 import type { GenContext, GenGroup, HumanStage } from './context';
+import { snapshotCountries, snapshotPop } from './auto';
 import { blocsStage } from './blocs';
 import { claimsStage } from './claims';
 import { culturesStage } from './cultures';
@@ -188,7 +189,10 @@ export function generateHuman(
     ...(countries ? { countryRules: countries.rules } : {}),
   };
   small.human = state;
-  compactGroups(small, world.causes);
+  // 第二十七轮：自动的结果存一份（橡皮擦的“恢复自动”），快照里的群体编号跟着一起整理
+  const autoGroups = snapshotPop(world, keep);
+  snapshotCountries(world, !!countries && countries.mode === 'generate');
+  compactGroups(small, world.causes, autoGroups ? [autoGroups] : []);
   // 第二十四轮：城市、道路、地标（时代、人口、国家都定了之后）。重新生成时只换自动的（锁定的、自己放的留着）
   if (params.settlements) {
     const p = params.settlements;

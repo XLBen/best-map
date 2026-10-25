@@ -257,6 +257,13 @@ export interface Causes {
   // 国家的领土（第二十三轮，见 human/countries.ts）：每格归哪个国家（small.countries 的编号），−1 无主。
   // 只记陆地（湖面也算）；海上的领海按时代的 seaClaimKm 推导（derived.country）。生成国家时才建，撤销到那之前时去掉
   country?: Int32Array;
+  // ---------- 自动的结果（第二十七轮，见 human/auto.ts）：生成人文、国家时存一份，橡皮擦的“恢复自动”从这里取 ----------
+  // 生成时的领土（同 country）
+  countryAuto?: Int32Array;
+  // 生成时的人数与成分（同 popTotal、popGroup、popShare）
+  popAutoTotal?: Float32Array;
+  popAutoGroup?: Uint16Array;
+  popAutoShare?: Uint8Array;
 }
 
 // 人文的生成（第二十二轮，见 human/generate.ts）：时代、种子、文化组与各占多少、总人口、发源地

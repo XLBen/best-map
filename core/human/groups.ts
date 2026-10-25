@@ -49,6 +49,10 @@ export class GroupTable {
     }
     return c;
   }
+  // 已有的群体的编号（没有时不新给）
+  find(t: PopTuple): number | undefined {
+    return this.byKey.get(tupleKey(t));
+  }
   commit() {
     if (!this.dirty) return;
     this.small.popGroups = this.groups;
@@ -128,22 +132,24 @@ export function clearCell(c: PopCauses, i: number) {
   }
 }
 
-// 用到的群体按第一次出现的格重新编号（1 起），去掉没用到的：生成之后整理一遍
-export function compactGroups(small: Pick<SmallState, 'popGroups' | 'human'>, c: PopCauses) {
-  const g = c.popGroup!;
+// 用到的群体按第一次出现的格重新编号（1 起），去掉没用到的：生成之后整理一遍。
+// extra（第二十七轮）：别的也记着群体编号的数组（自动的结果的快照，见 auto.ts），排在 popGroup 之后一起重新编号
+export function compactGroups(small: Pick<SmallState, 'popGroups' | 'human'>, c: PopCauses, extra: readonly Uint16Array[] = []) {
   const old = small.popGroups ?? {};
   const map = new Map<number, number>();
   const out: Record<string, PopTuple> = {};
-  for (let k = 0; k < g.length; k++) {
-    const v = g[k];
-    if (!v) continue;
-    let nv = map.get(v);
-    if (nv === undefined) {
-      nv = map.size + 1;
-      map.set(v, nv);
-      out[nv] = old[v];
+  for (const g of [c.popGroup!, ...extra]) {
+    for (let k = 0; k < g.length; k++) {
+      const v = g[k];
+      if (!v) continue;
+      let nv = map.get(v);
+      if (nv === undefined) {
+        nv = map.size + 1;
+        map.set(v, nv);
+        out[nv] = old[v];
+      }
+      g[k] = nv;
     }
-    g[k] = nv;
   }
   small.popGroups = out;
   if (small.human) small.human.nextGroup = map.size + 1;

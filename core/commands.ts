@@ -39,6 +39,7 @@ import { generateHuman, regenerateHuman } from './human/generate';
 import { SUBJECT_KINDS, cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from './human/era';
 import { type PopBrush, type PopFix, applyPopFix, paintPop, scalePop, setCellPop } from './human/population';
 import { groupInfo } from './human/layers';
+import { clearAuto, restoreCountry, restorePop } from './human/auto';
 import { MAX_COUNTRIES, clearCountries } from './human/countries';
 import { flagSchema } from './human/flags';
 import { HEX } from './human/terrain-class';
@@ -287,8 +288,9 @@ const baseCommands = [
   z.object({ op: z.literal('remove_field'), name: fieldName }),
   // 自动划分省份：规则与当前规则合并（省略的项沿用），锁定的省份不动
   z.object({ op: z.literal('generate_provinces'), rules: provinceRulesPatchSchema.default({}) }),
-  // 只重新划分被这些格盖住一半以上的省份；别处的省份编号、名字不变
-  z.object({ op: z.literal('regenerate_provinces'), cells }),
+  // 只重新划分被这些格盖住一半以上的省份；别处的省份编号、名字不变。
+  // size（第二十七轮，“省份大小”滑块）：这一次的目标大小（格数，按 4 万格的地区标定，见 provinces.ts 的 provinceSizeCells），不改规则
+  z.object({ op: z.literal('regenerate_provinces'), cells, size: z.number().min(4).max(400).optional() }),
   z.object({ op: z.literal('assign_province'), cells, province: z.union([z.number().int().min(0), z.literal('new')]) }),
   z.object({ op: z.literal('merge_province'), from: z.number().int(), into: z.number().int() }),
   z.object({ op: z.literal('split_province'), id: z.number().int() }),
@@ -411,20 +413,23 @@ const baseCommands = [
   // 总人口按比例改
   z.object({ op: z.literal('set_pop_total'), total: popCount }),
   // 人口笔刷：share 这个群体的占比升高 amount（人数不变）；count 人数 × factor（Shift 反过来由界面给小于 1 的 factor）；
-  // value 每个群体里 amount 的人这一维换成 value（传教、改宗）。t 是画笔的权重（省略为 1）
+  // value 每个群体里 amount 的人这一维换成 value（传教、改宗）。t 是画笔的权重（省略为 1）。
+  // 第二十七轮：amount 为负是往外推（这一群体、这一个取值的占比减少）；clear 是这里没有人（橡皮擦的“清空”）
   z.object({
     op: z.literal('paint_pop'),
     cells,
     t: strokeT.optional(),
-    mode: z.enum(['share', 'count', 'value']),
+    mode: z.enum(['share', 'count', 'value', 'clear']),
     group: popTupleSchema.optional(),
-    amount: z.number().min(0).max(1).optional(),
+    amount: z.number().min(-1).max(1).optional(),
     factor: z.number().min(0.01).max(100).optional(),
     dimension: typeIdSchema.optional(),
     value: typeIdSchema.optional(),
   }),
   // 文化笔刷：每个群体里 amount 的人换成这个文化（其余维度不变；typical 时换成这个文化最典型的群体）
   z.object({ op: z.literal('paint_culture'), cells, t: strokeT.optional(), culture: typeIdSchema, amount: z.number().min(0).max(1), typical: z.boolean().optional() }),
+  // 橡皮擦的“恢复自动”（第二十七轮，见 human/auto.ts）：这些格里手改过的人口回到生成时的样子
+  z.object({ op: z.literal('restore_pop'), cells }),
   // 档案里改一格的人口：总人数、各群体的占比（0–1，不到 1 的是“其他”）
   z.object({
     op: z.literal('set_cell_pop'),
@@ -442,6 +447,8 @@ const baseCommands = [
   z.object({ op: z.literal('remove_countries') }),
   // 领土笔刷：这些格（只画陆地）归 country，null 是无主
   z.object({ op: z.literal('paint_country'), cells, country: countryId.nullable() }),
+  // 橡皮擦的“恢复自动”（第二十七轮）：这些格（陆地）的领土回到生成国家时的样子
+  z.object({ op: z.literal('restore_country'), cells }),
   // 新建国家：这些格（可以不写）归它；名字、文化、政体、颜色、旗帜不写时自动
   z.object({
     op: z.literal('new_country'),
@@ -584,11 +591,13 @@ export type Dirty = (typeof Dirty)[keyof typeof Dirty];
 type ArrayKey = 'landDelta' | 'upliftDelta' | 'erodDelta' | 'tempOffset' | 'moistOffset' | 'province' | 'islandType' | 'islandHeight' | 'fragment' | HumanArray | `field:${string}`;
 
 // 人文的原因数组（第二十一轮）：第一次画时才建，撤销到那之前时去掉（UndoRecord.dropArrays）。第二十二轮加了人口的四个
-// 第二十三轮加了国家的领土 country
-type HumanArray = 'terrainClass' | 'resource' | PopArray | 'country';
+// 第二十三轮加了国家的领土 country；第二十七轮加了自动的结果（生成时的领土、人口，见 human/auto.ts）
+type HumanArray = 'terrainClass' | 'resource' | PopArray | 'country' | AutoArray;
 type PopArray = 'popTotal' | 'popGroup' | 'popShare' | 'popManual';
+type AutoArray = 'countryAuto' | 'popAutoTotal' | 'popAutoGroup' | 'popAutoShare';
 const POP_ARRAYS: readonly PopArray[] = ['popTotal', 'popGroup', 'popShare', 'popManual'];
-const HUMAN_ARRAYS: readonly HumanArray[] = ['terrainClass', 'resource', ...POP_ARRAYS, 'country'];
+const AUTO_ARRAYS: readonly AutoArray[] = ['countryAuto', 'popAutoTotal', 'popAutoGroup', 'popAutoShare'];
+const HUMAN_ARRAYS: readonly HumanArray[] = ['terrainClass', 'resource', ...POP_ARRAYS, 'country', ...AUTO_ARRAYS];
 
 function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array | Uint16Array | Int32Array | undefined {
   if (key.startsWith('field:')) return world.causes.fields[key.slice(6)];
@@ -623,21 +632,23 @@ export interface ApplyContext {
 function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   switch (cmd.op) {
     case 'set_worldgen':
-      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'terrainClass', 'resource', ...POP_ARRAYS, 'country'];
+      return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'terrainClass', 'resource', ...POP_ARRAYS, 'country', ...AUTO_ARRAYS];
     case 'generate_human':
     case 'regenerate_human':
     case 'move_hearth':
     case 'remove_human':
     case 'generate_countries':
     case 'regenerate_countries':
-      return [...POP_ARRAYS, 'country', 'province'];
+      return [...POP_ARRAYS, 'country', 'province', ...AUTO_ARRAYS];
     case 'set_pop_total':
     case 'paint_pop':
     case 'paint_culture':
     case 'set_cell_pop':
+    case 'restore_pop':
       return [...POP_ARRAYS];
     case 'remove_countries':
     case 'paint_country':
+    case 'restore_country':
     case 'new_country':
     case 'merge_countries':
     case 'split_country':
@@ -893,6 +904,7 @@ function clearPop(world: World) {
   c.popGroup?.fill(0);
   c.popShare?.fill(0);
   c.popManual?.fill(0);
+  clearAuto(world);
   // 国家跟着人文一起去掉（第二十三轮）；城市、道路也是（第二十四轮；地标、自定义点留着）
   clearCountries(world);
   clearCities(world);
@@ -1650,7 +1662,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       // 碰到重新划分的省的切线不要了（看划分前的省份）
       const regen = new Set(ids);
       dropSeams(world, (p) => regen.has(p));
-      const fresh = regenerateProvinces(world, d, ids);
+      const fresh = regenerateProvinces(world, d, ids, cmd.size);
       fitProvincesToCountries(world);
       return { dirty: Dirty.None, summary: `重新划分 · ${ids.length} → ${fresh.length} 个省份` };
     }
@@ -2005,6 +2017,13 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       afterCountries(world);
       return { dirty: Dirty.Human, summary: cmd.country === null ? `无主地 · ${k} 格` : `领土${countryLabel(world, cmd.country)} · ${k} 格` };
     }
+    case 'restore_country': {
+      checkCells(cmd.cells);
+      if (!small.countries) throw new CommandError('还没有国家');
+      const k = restoreCountry(world, cmd.cells);
+      afterCountries(world);
+      return { dirty: Dirty.Human, summary: `领土恢复自动 · ${k} 格` };
+    }
     case 'new_country': {
       if (cmd.cells) checkCells(cmd.cells);
       const id = newCountry(world, { cells: cmd.cells, name: cmd.name, orig: cmd.orig, culture: cmd.culture, government: cmd.government, color: cmd.color, flag: cmd.flag });
@@ -2095,6 +2114,9 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         if (!c) throw new CommandError(`世界里没有文化 "${cmd.culture}"`);
         brush = { mode: 'culture', culture: cmd.culture, amount: cmd.amount, ...(cmd.typical ? { typical: true } : {}) };
         what = `文化“${c.name}”`;
+      } else if (cmd.mode === 'clear') {
+        brush = { mode: 'clear' };
+        what = '清空人口';
       } else if (cmd.mode === 'count') {
         if (cmd.factor === undefined) throw new CommandError('改人数要写 factor');
         brush = { mode: 'count', factor: cmd.factor };
@@ -2103,7 +2125,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         if (!cmd.group || cmd.amount === undefined) throw new CommandError('改成分要写 group 与 amount');
         checkTuple(small, cmd.group);
         brush = { mode: 'share', group: cmd.group, amount: cmd.amount };
-        what = `人口“${groupInfo(world, 0, cmd.group).label}”`;
+        what = `人口“${groupInfo(world, 0, cmd.group).label}”${cmd.amount < 0 ? '减少' : ''}`;
       } else {
         if (!cmd.dimension || !cmd.value || cmd.amount === undefined) throw new CommandError('改一个维度要写 dimension、value 与 amount');
         const dim = worldDimensions(small).find((x) => x.id === cmd.dimension);
@@ -2111,11 +2133,17 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
         const v = dimensionValues(small, dim.id).find((x) => x.id === cmd.value);
         if (!v) throw new CommandError(`${dim.label}没有 "${cmd.value}"`);
         brush = { mode: 'value', dimension: dim.id, value: v.id, amount: cmd.amount };
-        what = `${dim.label}改为“${v.name}”`;
+        what = cmd.amount < 0 ? `${dim.label}“${v.name}”减少` : `${dim.label}改为“${v.name}”`;
       }
       const d = ctx.ensureDerived();
       const k = paintPop(world, d, cmd.cells, cmd.t, brush);
       return { dirty: Dirty.Human, summary: `${what} · ${k} 格` };
+    }
+    case 'restore_pop': {
+      checkCells(cmd.cells);
+      if (!small.human) throw new CommandError('还没有生成人文');
+      const k = restorePop(world, cmd.cells);
+      return { dirty: Dirty.Human, summary: `人口恢复自动 · ${k} 格` };
     }
     case 'set_cell_pop': {
       checkCells([cmd.cell]);
