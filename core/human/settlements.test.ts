@@ -60,10 +60,11 @@ const settleDigest = (w: World) => ({
 const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 
 // 金标准（第二十四轮记下）：以后提速、重构，生成的城市、道路、地标必须逐值不变；有意改了规则、内置的内容时重录
-// 第二十六轮重录：国家的生成变了（等级、领土补齐、联邦），大城市的门槛 1% → 2% 并且每国有上限（大城市连大道、地标放在大城市旁）
+// 第二十六轮重录：国家的生成变了（等级、领土补齐、联邦），大城市的门槛 1% → 2% 并且每国有上限（大城市连大道、地标放在大城市旁）；
+// 第二十六轮又重录一次：国家的领土又变了（见 countries.test.ts）
 const RECORDED = {
-  region: { cities: 'd031f8e0d978e7a7', roads: '8b49c60369f844e4', landmarks: '7faa1d0d6f57b110' },
-  planet: { cities: 'be811de445416fea', roads: 'de67f6de2afa75a7', landmarks: '6aee251e1389a89c' },
+  region: { cities: '1c88803e4e0231df', roads: '6106825d019937fb', landmarks: '9b6218c8ec69bb8c' },
+  planet: { cities: '59272a86d45260d2', roads: 'a5ac5c0a868afc2e', landmarks: '7f0b323b447b404f' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 

@@ -195,6 +195,53 @@ describe('国家的等级与格局', () => {
     expect(w.small.human!.countryRules!.layout).toBeUndefined();
   });
 
+  it('中世纪“混合”：最大的国不到陆地的四分之一，留着一些无主地；不占隔海、没什么人的陆块；帝国是认得出的一片', () => {
+    const eng = nations();
+    eng.exec({ op: 'regenerate_countries', layout: 'mixed' });
+    const w = eng.world;
+    const { mesh, causes } = w;
+    const pop = causes.popTotal!;
+    const comp = new Int32Array(mesh.n).fill(-1);
+    for (let s = 0, k = 0; s < mesh.n; s++) {
+      if (!causes.land[s] || comp[s] >= 0) continue;
+      const st = [s];
+      comp[s] = k;
+      while (st.length) {
+        const i = st.pop()!;
+        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+          const j = mesh.adj[e];
+          if (!causes.land[j] || comp[j] >= 0) continue;
+          comp[j] = k;
+          st.push(j);
+        }
+      }
+      k++;
+    }
+    const st = allCountryStats(w);
+    let land = 0;
+    for (let i = 0; i < mesh.n; i++) if (dry(w, i)) land++;
+    for (const m of countryList(w.small)) {
+      expect(countryCells(w, m.id).filter((i) => dry(w, i)).length / land, m.name).toBeLessThan(0.25);
+      // 不在首都的陆块上、超过 8 格的一片：人口至少占本国的 5%
+      const by = new Map<number, { cells: number; pop: number }>();
+      for (const i of countryCells(w, m.id)) {
+        const b = by.get(comp[i]) ?? { cells: 0, pop: 0 };
+        b.cells++;
+        b.pop += pop[i];
+        by.set(comp[i], b);
+      }
+      for (const [k, b] of by) if (k !== comp[m.capitalCell!] && b.cells > SMALL_GAP) expect(b.pop, m.name).toBeGreaterThanOrEqual(0.05 * st.get(m.id)!.population);
+    }
+    const share = ownedShare(w);
+    expect(share).toBeGreaterThan(0.7);
+    expect(share).toBeLessThan(0.92);
+    const empire = blocList(w.small).find((b) => b.kind === 'empire')!;
+    expect(empire.members.length).toBeGreaterThanOrEqual(5);
+    const area = empire.members.reduce((a, id) => a + st.get(id)!.areaKm2, 0);
+    const areas = countryList(w.small).map((m) => st.get(m.id)!.areaKm2);
+    expect(area).toBeGreaterThan(areas.reduce((a, v) => a + v, 0) / areas.length);
+  });
+
   it('界面估计的个数就是生成的个数（中世纪没有联邦）', () => {
     const w = nations().world;
     const era = worldEra(w.small)!;

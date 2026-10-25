@@ -1,23 +1,27 @@
 import { HeapLite } from '../mesh';
 import type { GenContext, HumanStage } from './context';
-import { NOBODY, countryPopScale } from './countries';
+import { countryPopScale } from './countries';
 import { ISLET_STEPS } from './country-layers';
 
 // 领土补齐（第二十六轮）：国家一步之后、人口之前（generate.ts 里排在 countries 后面）。
 // 只在重新长国家时运行（ctx.countries.mode === 'generate'），只把无主的陆地写进 causes.country；锁定的国家当作一个邻国算，但不往里加。
 // 按顺序做三件事：
-//   1. 无主的陆地连成的一块（湖不算）：四周的陆地邻格都属于同一国时整块归它（海岸不算缺口）；挨着两国以上的不填；
+//   1. 无主的陆地连成的一块（湖不算）：四周的陆地邻格都属于同一国时整块归它（海岸不算缺口；但大块的国界不到海岸的 ENCLOSED_COAST 倍时
+//      ——半岛的尖、地峡那一边——不算被围住）；挨着两国以上的不填；
 //   2. 不超过 SMALL_GAP 格、挨着国家的无主小块：归共享边界最长的邻国；四周是海的这么小的岛归 ISLET_STEPS 格海路以内最近的国家；
-//   3. 贴着国境的一圈：从各国往外在陆地上走，时代的 unclaimed.bandKm 以内的无主格归最近的国家（冰盖不要）；深处仍然无主。
+//   3. 贴着国境的一圈：从各国往外在陆地上走，时代的 unclaimed.bandKm 以内的无主格归最近的国家（山、荒漠、冰川也要：国与国之间的山脊归两边）；
+//      远处（极地的冰盖、大漠的深处）仍然无主。
 // 最后没有主的湖归湖岸上最多的那一国，再重算首都一带的人口倍数（ctx.popScale）。
 // 之后手画的无主地不会被补上：这一步只在生成时有（不在命令之后的整理里）
 
 export const SMALL_GAP = 8;
+// 只挨着一国的无主块：与这一国共享的边数至少是海岸边数的几倍才整块归它
+export const ENCLOSED_COAST = 0.5;
 
 function claimLand(ctx: GenContext) {
   const plan = ctx.countries;
   if (!plan || plan.mode !== 'generate') return;
-  const { world, d, hab, era } = ctx;
+  const { world, d, era } = ctx;
   const { mesh, causes, small } = world;
   const country = causes.country;
   const metas = small.countries;
@@ -36,8 +40,9 @@ function claimLand(ctx: GenContext) {
   for (let s = 0; s < n; s++) {
     if (seen[s] || !free(s)) continue;
     const cells: number[] = [];
-    // 邻国 → 共享的边数
+    // 邻国 → 共享的边数；挨着海的边数
     const border = new Map<number, number>();
+    let coast = 0;
     seen[s] = 1;
     stack.push(s);
     while (stack.length) {
@@ -45,7 +50,10 @@ function claimLand(ctx: GenContext) {
       cells.push(i);
       for (let e = off[i]; e < off[i + 1]; e++) {
         const j = adj[e];
-        if (!land[j]) continue;
+        if (!land[j]) {
+          coast++;
+          continue;
+        }
         if (free(j)) {
           if (!seen[j]) {
             seen[j] = 1;
@@ -58,8 +66,11 @@ function claimLand(ctx: GenContext) {
     if (!border.size) {
       // 四周是海的小岛：ISLET_STEPS 格海路以内最近的国家（同碎岛）
       if (cells.length <= SMALL_GAP) to = nearestOverSea(world, cells, locked);
-    } else if (border.size === 1) to = border.keys().next().value!;
-    else if (cells.length <= SMALL_GAP) {
+    } else if (border.size === 1) {
+      // 只挨着一国：国界比海岸短得多的一大块（半岛的尖、隔着一道窄的地峡的地方）不算被围住，留给贴着国境的一圈
+      const [id, v] = border.entries().next().value!;
+      if (cells.length <= SMALL_GAP || v >= ENCLOSED_COAST * coast) to = id;
+    } else if (cells.length <= SMALL_GAP) {
       let bc = 0;
       for (const [id, v] of border) if (!locked.has(id) && (v > bc || (v === bc && id < to))) {
         bc = v;
@@ -94,7 +105,7 @@ function claimLand(ctx: GenContext) {
       if (di > dist[i]) continue;
       for (let e = off[i]; e < off[i + 1]; e++) {
         const j = adj[e];
-        if (!free(j) || hab[j] < NOBODY) continue;
+        if (!free(j)) continue;
         const nd = di + mesh.dist[e] * km;
         if (nd > band || nd >= dist[j]) continue;
         dist[j] = nd;
