@@ -152,7 +152,7 @@ export type Response =
       noop?: boolean;
       // 这一步移出世界的内容（第二十九轮，exec 的回复里带；没有时不写）
       removed?: RemovedItem[];
-      // 缺了内容跳过的步骤（第三十轮，exec 的回复里带；没有时不写）：“没有城市等级：没有放城市和道路”……
+      // 缺了内容跳过的步骤（第三十轮，exec、新建 init 的回复里带；没有时不写）：“没有城市等级：没有放城市和道路”……
       skipped?: string[];
       // 确切预览没算完就被取消了（没有 preview、world）
       cancelled?: boolean;

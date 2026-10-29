@@ -15,10 +15,10 @@ import {
   pickTitle,
   titled,
   worldEra,
-  worldEras,
 } from '../../core/human';
-import { BUILTIN_ERAS } from '../../core/packs/eras';
-import { BUILTIN_GOVERNMENTS } from '../../core/packs/governments';
+import type { Era } from '../../core/human';
+import type { LibraryEntry } from '../library';
+import { addFromLibrary, itemsInPacks } from './packChoice';
 import { type NameMode, nameLines } from '../../core/name-display';
 import { COUNTRY_LAYOUTS, type CountryLayout, type CountryMeta, type World } from '../../core/world';
 
@@ -109,21 +109,37 @@ export function governmentName(small: Small, id: string): string {
   return g?.name ?? id;
 }
 
-// 档案里能选的政体：本世界里的（第三十轮：时代包里别的政体在资源库里，选之前先添加到本世界），这个国家现在的总在
-export function governmentChoices(w: World, current?: string): Government[] {
+// 档案里能选的政体：本世界里的（时代的在前），加上世界用的包里本世界没有的（生成后没用到的清理掉了；第三十轮：选它时先从
+// 资源库加进本世界，path 是它在资源库里的小包）。这个国家现在的总在
+export interface GovChoice {
+  gov: Government;
+  path?: string[];
+}
+export function governmentChoices(w: World, current?: string, lib: readonly LibraryEntry[] = []): GovChoice[] {
   const era = worldEra(w.small);
   const list = eraGovernments(w.small, era);
   const rest = worldGovernments(w.small).filter((g) => !list.some((x) => x.id === g.id));
-  const all = [...list, ...rest];
+  const all: GovChoice[] = [...list, ...rest].map((gov) => ({ gov }));
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;
-  return cur && !all.some((g) => g.id === cur.id) ? [cur, ...all] : all;
+  if (cur && !all.some((g) => g.gov.id === cur.id)) all.unshift({ gov: cur });
+  for (const x of itemsInPacks<Government>(w.small.human?.packs ?? [], lib, 'governments')) {
+    if (!all.some((g) => g.gov.id === x.item.id)) all.push({ gov: x.item, path: x.path });
+  }
+  return all;
+}
+
+// 换成这个政体的命令：本世界没有的先从资源库加进来（一整步）
+export function governmentCommand(w: World, m: CountryMeta, g: GovChoice, lib: readonly LibraryEntry[] = []): Command | null {
+  if (g.gov.id === m.government && !g.path) return null;
+  if (!g.path) return patchCommand(m.id, { government: g.gov.id });
+  const add = addFromLibrary(w.small, lib, 'governments', g.gov.id, g.path);
+  return { op: 'batch', label: `政体换成“${g.gov.name}”`, commands: [...add.commands, patchCommand(m.id, { government: add.id })] };
 }
 
 // 换成这个政体后的国名（改过名字的不变）
-export function titlePreview(w: World, m: CountryMeta, govId: string): string {
+export function titlePreview(w: World, m: CountryMeta, gov: Government): string {
   if (m.nameLocked) return m.name;
-  const g = (w.small.content?.government?.[govId] as Government | undefined) ?? BUILTIN_GOVERNMENTS.find((x) => x.id === govId);
-  return titled(m.base, pickTitle(g?.title, cultureById(w.small, m.primaryCulture))).zh;
+  return titled(m.base, pickTitle(gov.title, cultureById(w.small, m.primaryCulture))).zh;
 }
 
 // 国名在地图上怎么写（中文 / 原文 / 两者：两者时中文一行、原文一行）
@@ -240,10 +256,7 @@ export function fragText(f: number): string {
 }
 
 // 滑块悬停的说明：时代会生成联邦（第二十六轮）时说一句，估计里没有联邦切出来的成员邦
-export const fragTitle = (eraId: string | undefined, small?: Small | null): string => {
-  const era = eraId ? (small ? worldEras(small) : []).find((e) => e.id === eraId) ?? BUILTIN_ERAS.find((e) => e.id === eraId) : undefined;
-  return `往左小国多，往右大国少${(era?.relations?.federation ?? 0) > 0 ? '；联邦的成员邦另算' : ''}`;
-};
+export const fragTitle = (era: Pick<Era, 'relations'> | undefined): string => `往左小国多，往右大国少${(era?.relations?.federation ?? 0) > 0 ? '；联邦的成员邦另算' : ''}`;
 
 // 大约几个国家（第二十六轮：核心的 estimateCountryCount，与生成的第一步同一个算法；锁定的国家的地方不算、另外算上；
 // 联邦切出来的成员邦不算在里面，所以写“约”）

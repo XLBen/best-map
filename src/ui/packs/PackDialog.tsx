@@ -11,7 +11,6 @@ import {
   packSummary,
   sameItem,
 } from '../../../core/packs';
-import { builtinPacks } from '../../../core/packs/builtin-tree';
 import { type ContentKind, itemId } from '../../../core/content/registry';
 import { PATTERN_LABEL } from '../../../core/species';
 import type { FoundScript } from '../../../core/script';
@@ -217,7 +216,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   const p = read.pack;
   const replaces = inLibrary(p);
   // 就是内置的大包（比如导出过又导入）：资源库里本来就有，不再装一份
-  if (installed || builtinPacks().some((b) => sameItem(p, b))) {
+  if (installed || library.value.some((b) => b.builtin && sameItem(p, b.pack))) {
     return (
       <>
         <ModalHead title={installed ? '已安装' : '已在资源库里'} onClose={close} />

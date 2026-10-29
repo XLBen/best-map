@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
-import { countryFactions, countryMapColors, countryStats } from '../../core/human';
+import { type Government, countryFactions, countryMapColors, countryStats } from '../../core/human';
 import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { cellLayers, countryBorderGroups, humanFlat } from '../render/colors';
@@ -108,7 +108,7 @@ describe('新建向导的“国家”', () => {
     const w = nations().world;
     const same = lastOf(regenerateWith({ ...defaultChoice(w.small), pop: 1e8 }, w.small)!);
     expect('countries' in same).toBe(false);
-    const other = lastOf(regenerateWith({ ...defaultChoice(w.small), era: 'antiquity' }, w.small)!);
+    const other = lastOf(regenerateWith({ ...defaultChoice(w.small), packs: [['antiquity']] }, w.small)!);
     expect(other).toMatchObject({ op: 'regenerate_human', packs: [['antiquity']], countries: {} });
   });
 });
@@ -255,7 +255,7 @@ describe('国家的档案', () => {
     expect(n).toMatchObject({ name: '新国', nameLocked: true });
     expect(namePatch(n, '', '')).toEqual({ name: '' });
     // 换政体后的国名（改过名字的不变）
-    const gov = Object.keys(w.small.content!.government!).find((g) => g !== m.government)!;
+    const gov = Object.values(w.small.content!.government!).find((g) => (g as Government).id !== m.government) as Government;
     expect(titlePreview(w, m, gov)).not.toBe('');
     expect(titlePreview(eng.world, n, gov)).toBe('新国');
   });

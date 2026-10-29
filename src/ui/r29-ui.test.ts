@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
 import { splitWorldContent } from '../../core/compact';
 import { kindOf } from '../../core/content/registry';
-import { worldCultures, worldEras } from '../../core/human';
+import { worldCultures } from '../../core/human';
 
 import { DEFAULT_STYLE } from '../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type ResourcePack, findPack, packItems } from '../../core/packs';
@@ -17,7 +17,8 @@ import { world } from '../state';
 import { importBiomeFile } from './ClimateChart';
 import { originGroups } from './components/TypePicker';
 import { formChoices } from './forms';
-import { LOOSE_GROUP, WORLD_GROUP, choiceGroup, groupByPack, importCommands } from './human';
+import { LOOSE_GROUP, groupByPack } from './human';
+import { humanImportCommands, packGroups, packLabel } from './packChoice';
 import { ResourceMenu } from './panels/human';
 import { type TreeNode, addCommand, filterTree, packAddCommand, packRemoveRefs, packTree, removeCommand, rowUsage, treeRows } from './packs/repo';
 import { packDialog, repo } from './packs/store';
@@ -67,7 +68,7 @@ describe('资源库两栏：packTree', () => {
     const t = packTree(continents().world, [...BUILTIN, mine]);
     expect(t.library.map((n) => n.path[0])).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'common', '我的资源']);
     const base = find(t.library, `l:${BASE_PATH.join('/')}`)!;
-    expect(base.base).toBeUndefined();
+    expect(Object.keys(base)).not.toContain('base');
     // 新世界里基础的都在：没有能加的
     expect(packAddCommand(base, continents().world)).toBeNull();
     expect(base.on).toBe(base.count);
@@ -187,24 +188,14 @@ describe('选择器、向导按包分组', () => {
     expect(originGroups([{ label: 'a', on: false, group: 'g', id: 'x', onPick: () => {} }], 'culture', eng.world, BUILTIN)[0].group).toBe('g');
   });
 
-  it('向导：时代按包分（内置的合成一组），文化组按内置的树的大包；我的包里的另一组', () => {
-    const era = { ...BUILTIN_ERAS[0], id: 'my-era', name: '我的时代' };
-    const mine = entry('我的资源', pack('我的资源', { eras: [era] } as Partial<ResourcePack>), { mine: true });
-    const lib = [...BUILTIN, mine];
-    const eras = [...BUILTIN_ERAS, era];
-    const secs = groupByPack(eras, (e) => choiceGroup('era', e, null, lib, 'library', true));
-    expect(secs.map((s) => [s.label, s.items.length])).toEqual([
-      ['内置', BUILTIN_ERAS.length],
-      ['我的资源', 1],
-    ]);
-    // 文化组：时代默认带的在那个时代的大包里，其余在“通用”
-    const labels = new Set(BUILTIN_CULTURE_GROUPS.map((g) => choiceGroup('cultureGroup', g, null, lib, 'library')));
-    expect(labels).toContain(topName('medieval'));
-    expect([...labels].every((l) => builtinPacks().some((p) => p.name === l))).toBe(true);
-    // 重新生成（本世界）：按记着的来源；本世界做的是离群、放最后
-    const w = peopled().world;
-    expect(choiceGroup('era', worldEras(w.small)[0], w.small, lib, 'world', true)).toBe('内置');
-    expect(groupByPack(['a', 'b', 'c'], (x) => (x === 'a' ? LOOSE_GROUP : x === 'b' ? WORLD_GROUP : 'P')).map((s) => s.label)).toEqual(['P', LOOSE_GROUP, WORLD_GROUP]);
+  it('向导（第三十轮）：文化组按勾着的包分段（时代包、通用 ▸ 文化）；“离群”放最后', () => {
+    const groups = packGroups([['medieval'], ['common', 'cultures']], BUILTIN);
+    const labels = [...new Set(groups.map((g) => packLabel(BUILTIN, g.pack)))];
+    expect(labels).toEqual([topName('medieval'), `${topName('common')} ▸ 文化`]);
+    // 时代包里的组带默认的权重，通用的没有
+    expect(groups.filter((g) => g.pack[0] === 'medieval').every((g) => (g.weight ?? 0) > 0)).toBe(true);
+    expect(groups.filter((g) => g.pack[0] === 'common').every((g) => g.weight === undefined)).toBe(true);
+    expect(groupByPack(['a', 'b', 'c'], (x) => (x === 'a' ? LOOSE_GROUP : 'P')).map((s) => s.label)).toEqual(['P', LOOSE_GROUP]);
   });
 
   it('向导的星球形态：内置的在“奇幻 ▸ 星球形态”里也列得出来，按包分', () => {
@@ -231,7 +222,7 @@ describe('选择器、向导按包分组', () => {
       ],
     } as Partial<ResourcePack>);
     const lib = [...BUILTIN, entry('lib', p, { mine: true })];
-    const cmds = importCommands({ era: 'my-era', groups: [{ id: 'my-group', weight: 1 }] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
+    const cmds = humanImportCommands({ packs: [['lib']], groups: [{ id: 'my-group', weight: 1 }] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
     // 第三十轮：一个 batch（core/packs/import.ts）；只有一项的种类不排先后
     expect(cmds.map((c) => [c.kind, c.id, c.from])).toEqual([
       ['nameStyle', 'my-style', ['lib', 'g']],

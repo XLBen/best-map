@@ -286,8 +286,6 @@ export interface TreeNode {
   // 资源库一栏：资源库里的键、这一层的包（整包添加用）
   entry?: string;
   node?: PackNode;
-  // 只显示、不能添加、移出的包（第二十九轮的“通用 ▸ 基础”；第三十轮起没有这样的包）
-  base?: boolean;
   // 本世界一栏的“离群”：本世界自己做的、来源不在资源库里的
   loose?: boolean;
   children: TreeNode[];
@@ -318,13 +316,12 @@ function finish(n: TreeNode): TreeNode {
 // 资源库里的一层（没有这几种的项时 null）
 function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: readonly ContentKind[], world: PackWorld | null, ctx: Ctx): TreeNode | null {
   const path = [e.key, ...rel];
-  // 第三十轮：“通用 ▸ 基础”也是普通的包，能添加、移出
-  const base = false;
+  // 第三十轮：“通用 ▸ 基础”也是普通的包，能整包添加、移出没用到的（第二十九轮它只显示）
   const rows: RepoRow[] = [];
   for (const k of kinds) {
     for (const x of ownItems(node, k.pack.key)) {
       const id = itemId(k, x);
-      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusOf(k, x, node, world, base, ctx) });
+      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusOf(k, x, node, world, false, ctx) });
     }
   }
   const children = subPacks(node)
@@ -332,7 +329,7 @@ function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: read
     .filter((c): c is TreeNode => c !== null);
   if (!rows.length && !children.length) return null;
   const desc = typeof node.description === 'string' ? node.description : undefined;
-  return { key: `l:${path.join('/')}`, name: node.name, ...(desc ? { description: desc } : {}), path, entry: e.key, node, ...(base ? { base: true } : {}), children, rows, count: 0, on: 0 };
+  return { key: `l:${path.join('/')}`, name: node.name, ...(desc ? { description: desc } : {}), path, entry: e.key, node, children, rows, count: 0, on: 0 };
 }
 
 // 本世界里的一项（都在本世界；星球形态不能移出。第三十轮起基础的内容也能移出）
@@ -444,7 +441,7 @@ export function filterTree(nodes: readonly TreeNode[], query: string, hideOn = f
 
 // 整包添加到本世界（资源库一栏的一个包或小包，只加列着的、还不在本世界的）：一整步，记上来源。没有能加的时 null
 export function packAddCommand(n: TreeNode, world: PackWorld): Command | null {
-  if (!n.node || n.base) return null;
+  if (!n.node) return null;
   const picks: Record<string, string[]> = {};
   for (const r of treeRows(n)) {
     if (r.status.on || r.status.locked) continue;
@@ -462,7 +459,6 @@ const TIDY_OPS = new Set(['biome', 'riverType', 'lakeType']);
 
 // 本世界一栏的一个包“移出没用到的”：子树里能移出的项（在不在用、移出后地图变不变由 planTidy 判断）
 export function packRemoveRefs(n: TreeNode): ContentRef[] {
-  if (n.base) return [];
   return treeRows(n)
     .filter((r) => r.status.on && !r.status.locked && !r.status.always && !r.status.isDefault && (r.kind.store === 'content' || TIDY_OPS.has(r.kind.id)))
     .map((r) => ({ kind: r.kind.id, id: r.status.worldId ?? r.id }));

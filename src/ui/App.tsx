@@ -47,6 +47,7 @@ import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
 import { ScriptBanner } from './shell/ScriptBanner';
+import { SkippedBanner } from './shell/SkippedBanner';
 import { Sheet } from './shell/Sheet';
 import { TopBar } from './shell/TopBar';
 import { newWorldContentCommands } from '../../core/packs/import';
@@ -209,6 +210,7 @@ export function App() {
         {hidden && <div class="hidden-hint">按 Tab 显示界面</div>}
         <div class="notices">
           <ScriptBanner />
+          <SkippedBanner />
           <Notice />
         </div>
         <CursorHint />

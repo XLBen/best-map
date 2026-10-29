@@ -1017,6 +1017,24 @@ button.legend-head {
   border-color: var(--danger);
   padding-right: var(--sp-3);
 }
+/* 缺了内容跳过的步骤（第三十轮）：一行说明 + 按钮，“详情”时下面列出各条 */
+.notice.skipped-note {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+.skipped-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.skipped-list {
+  margin: 0 0 var(--sp-1);
+  padding-left: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
 .notice-text {
   white-space: nowrap;
   overflow: hidden;
@@ -2231,6 +2249,45 @@ input.share-input {
   margin-left: var(--sp-1);
 }
 .wizard-human {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+/* 勾选资源包（第三十轮：新建向导的“内容”、生成人文）：资源库的树一行一项，勾选框、名字、灰色的种类，右边“规则” */
+.pack-tree {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: var(--sp-1);
+}
+.pack-row span.repo-twist {
+  flex: none;
+  width: 18px;
+}
+.pack-row label.pack-check {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin: 0;
+  cursor: pointer;
+}
+.pack-row label.pack-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.pack-row .pack-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pack-row.covered .pack-name {
+  color: var(--muted);
+}
+.pack-row .tag {
+  margin-left: 0;
+}
+.wizard-content {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);

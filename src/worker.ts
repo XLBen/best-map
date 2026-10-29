@@ -391,10 +391,15 @@ async function handle(id: number, req: Request) {
         useSafeMode(req.safe);
         useStore(req.build, safeMode ? null : req.store);
         const e = new Engine(req.settings, meshFor(req.settings));
-        for (const cmd of req.commands ?? []) e.exec(cmd);
+        // 第三十轮：新建时缺了内容跳过的步骤（没勾基础、自然、地名……）也回给界面，说一次
+        const skipped: string[] = [];
+        for (const cmd of req.commands ?? []) {
+          e.exec(cmd);
+          for (const x of e.lastSkipped) if (!skipped.includes(x)) skipped.push(x);
+        }
         e.update();
         useEngine(e);
-        withSnap('新世界', false, true);
+        withSnap('新世界', false, true, undefined, skipped);
         return;
       }
       case 'load': {

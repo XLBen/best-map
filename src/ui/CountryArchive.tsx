@@ -20,6 +20,7 @@ import {
 } from '../../core/human';
 import type { CountryMeta, World } from '../../core/world';
 import { askUser, exec, nameMode, selectedCountry, setOptions, sheet, switchTool, world } from '../state';
+import { library } from '../library';
 import { focusOn } from './camera';
 import { Slider } from './components/Slider';
 import { Toggle } from './components/Toggle';
@@ -28,6 +29,7 @@ import {
   factionPatch,
   flagColorPatch,
   governmentChoices,
+  governmentCommand,
   mergeCommand,
   historyPatch,
   namePatch,
@@ -329,21 +331,28 @@ function ColorCapital({ w, m }: { w: World; m: CountryMeta }) {
 }
 
 function GovernmentSection({ w, m }: { w: World; m: CountryMeta }) {
-  const list = governmentChoices(w, m.government);
+  const lib = library.value;
+  const list = governmentChoices(w, m.government, lib);
   return (
     <section>
       <h5>政体</h5>
       <div class="list gov-list">
-        {list.map((g) => {
-          const next = titlePreview(w, m, g.id);
+        {list.map((c) => {
+          const g = c.gov;
+          const next = titlePreview(w, m, g);
+          const on = g.id === m.government && !c.path;
           return (
-            <button class={`item ${g.id === m.government ? 'on' : ''}`} title={`${g.description ?? ''}${!m.nameLocked && g.id !== m.government ? `\n国名改为“${next}”` : ''}`} onClick={() => g.id !== m.government && void patch(m.id, { government: g.id })}>
+            <button
+              class={`item ${on ? 'on' : ''}`}
+              title={`${g.description ?? ''}${!m.nameLocked && !on ? `\n国名改为“${next}”` : ''}${c.path ? '\n本世界还没有：选它时从资源库添加' : ''}`}
+              onClick={() => void run(governmentCommand(w, m, c, lib))}
+            >
               {g.color && <span class="swatch" style={{ background: g.color }} />}
               <span class="grow item-text">
                 <span>{g.name}</span>
                 <span class="hint ellipsis">{firstLine(g.description) || g.category.map(categoryName).join('、')}</span>
               </span>
-              {g.id !== m.government && !m.nameLocked && <span class="hint ellipsis gov-title">{next}</span>}
+              {!on && !m.nameLocked && <span class="hint ellipsis gov-title">{next}</span>}
             </button>
           );
         })}

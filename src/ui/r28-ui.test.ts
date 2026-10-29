@@ -11,7 +11,9 @@ import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { world } from '../state';
 import { LIBRARY_LABEL, type TypeChoice, openLibraryFor } from './components/TypePicker';
-import { choiceLists, chooseEra, defaultChoice, generateCommand, importCommands } from './human';
+import { defaultChoice, generateCommand } from './human';
+import { humanImportCommands, packGroups, togglePack } from './packChoice';
+import { defaultsOf, eraOf } from '../../core/testing/eras';
 import { exportPicks, exportSections, packEmpty } from './packs/PackDialog';
 import { REPO_FILTERS, addCommand, canDeleteFromLibrary, filterRows, itemPack, removeCommand, repoRows, rowUsage, saveableItem } from './packs/repo';
 import { repo } from './packs/store';
@@ -69,18 +71,12 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect([isle.library, !!isle.onNew]).toEqual(['islandType', true]);
   });
 
-  it('生成人文的选择：向导、第一次生成列资源库里的全部；重新生成只列本世界的', () => {
+  it('生成人文的选择（第三十轮）：文化组列勾选的包里的；重新生成默认是世界用的包与文化组', () => {
     const w = peopled().world;
-    const lib = choiceLists(null, 'library');
-    expect(lib.eras.map((e) => e.id)).toEqual(BUILTIN_ERAS.map((e) => e.id));
-    expect(lib.groups.length).toBe(BUILTIN_CULTURE_GROUPS.length);
-    const own = choiceLists(w.small, 'world');
-    expect(own.eras.map((e) => e.id)).toEqual(worldEras(w.small).map((e) => e.id));
-    expect(own.eras.map((e) => e.id)).toEqual(['medieval']);
-    expect(own.groups.map((g) => g.id).sort()).toEqual(['eastern', 'western']);
-    // 本世界只列着的组里换时代：默认的组只从列着的里挑
-    const c = chooseEra({ ...defaultChoice(w.small), era: 'x' }, 'medieval', w.small, own);
-    expect(c.groups.every((g) => own.groups.some((x) => x.id === g.id))).toBe(true);
+    expect(packGroups([['medieval']], []).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
+    const c = defaultChoice(w.small);
+    expect(c.packs).toEqual(w.small.human!.packs);
+    expect(c.groups.map((g) => g.id).sort()).toEqual(['eastern', 'western']);
   });
 
   it('向导选了资源包里的时代、文化组：生成之前先添加到本世界（文化组带上包里的文化和地名风格），一整步', () => {
@@ -89,10 +85,10 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     const style = { ...NAME_STYLES_SAMPLE.nameStyles![0], id: 'my-style', name: '我的风格' };
     const culture = { id: 'my-culture', group: 'my-group', name: '我的人', color: '#335577', nameStyle: 'my-style' };
     const lib = [...LIB, entry('mine', pack('mine', { eras: [era], cultureGroups: [group], cultures: [culture], nameStyles: [style] } as Partial<ResourcePack>), { mine: true })];
-    expect(choiceLists(null, 'library', lib).eras.some((e) => e.id === 'my-era')).toBe(true);
-    const choice = { ...defaultChoice(null), era: 'my-era', groups: [{ id: 'my-group', weight: 1 }] };
-    // 第三十轮：时代所在的包里生成要用的内容一次加进来（core/packs/import.ts），生成的命令带上这个包
-    const imports = importCommands(choice, null, lib);
+    // 第三十轮：勾上这个包（没写权重时包里的组都勾上），它是规则包；生成要用的内容一次加进来，生成的命令带上这个包
+    const choice = togglePack({ ...defaultChoice(null, true, lib), packs: [], groups: [] }, ['mine'], true, lib);
+    expect(choice.groups).toEqual([{ id: 'my-group', weight: 1 }]);
+    const imports = humanImportCommands(choice, null, lib);
     const inner = imports.flatMap((x) => (x.op === 'batch' ? x.commands : [x]));
     expect(inner.map((x) => (x as { kind: string }).kind)).toEqual(['nameStyle', 'era', 'cultureGroup', 'culture']);
     const cmd = generateCommand(choice, null, lib)!;
@@ -102,7 +98,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect(worldEras(eng.world.small).map((e) => e.id)).toEqual(['my-era']);
     expect(worldCultures(eng.world.small).map((c) => c.id)).toEqual(['my-culture']);
     // 内置的时代也要先加（第三十轮：生成只读世界里的内容）
-    expect(importCommands(defaultChoice(null), null, lib).length).toBe(1);
+    expect(humanImportCommands(defaultChoice(null, true, lib), null, lib).length).toBe(1);
   });
 });
 

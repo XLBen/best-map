@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { WORLD_TYPES, WORLD_TYPE_INFO, type WorldgenInput, type WorldType } from '../../core/generate';
 import { type PlanetForm, hasFormScripts } from '../../core/planet-form';
 import { CLIMATE_BELT_NOTE } from './copy';
@@ -27,14 +27,16 @@ import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts,
 import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
-import { DEFAULT_PLANET, type FormChoice, blankForm, formChoices, formGen, formSource, isBuiltinPlanet, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
+import { DEFAULT_PLANET, type FormChoice, blankForm, formChoices, formGen, formSource, formsInPacks, isBuiltinPlanet, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
 import { RES, fromPos, toPos } from './panels/AdjustPanel';
 import { ModalHead, Seg } from './common';
 import { Slider } from './components/Slider';
 import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
 import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
-import { type HumanChoice, defaultChoice, eraChoices, estimateLandKm2, generateCommand, groupByPack } from './human';
+import { type HumanChoice, choiceEra, defaultChoice, estimateLandKm2, generateCommand, groupByPack } from './human';
+import { PackChecklist } from './components/PackChecklist';
+import { packLabel, splitPacks, worldContentCommands } from './packChoice';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
@@ -43,7 +45,11 @@ import { type HumanChoice, defaultChoice, eraChoices, estimateLandKm2, generateC
 // 缩略图与成品的大格局一致（生成器的随机都按地图上的位置取，与格数无关）。
 // 地图本来就跨好几个气候带：第 3 步只是把它放在星球上的某个纬度。
 // “地形”（第十四轮从“调整”挪过来）：陆地多少、岛多少、山多高、海岸曲折、最高的山；不动就是这种世界本来的样子。
-// “人文”（第二十二轮）：要不要生成人文，时代、文化组与各占多少、总人口（按地图的面积 × 陆地多少估，建好后按真的陆地面积）。缩略图不画人文
+// “内容”（第三十轮）：资源库的包按树勾选（默认基础、自然、中文地名、星球形态、中世纪与近世），合起来用；规则与维度取第一个
+// 时代包的。不带时代的包在新建的那一步里加进世界（缩略图也按它们画），时代包在生成人文时加。星球形态只列勾选的包里的，
+// 别的包里的收在“其他包里的形态”里。
+// “人文”（第二十二轮）：要不要生成人文，文化组（勾选的包里的）与各占多少、总人口（按地图的面积 × 陆地多少估，建好后按真的
+// 陆地面积）。缩略图不画人文
 
 const THUMB_W = 240;
 const THUMB_H = 120;
@@ -182,18 +188,27 @@ export function Wizard() {
   const [creating, setCreating] = useState(false);
   // 地形：只记动过的几项
   const [terrain, setTerrain] = useState<WizardTerrain>({});
-  // 人文：默认生成（内置的第一个时代与它的文化组）
-  const [human, setHuman] = useState<HumanChoice>(() => defaultChoice(null, true));
+  // 内容与人文：勾选的包（默认基础、自然、中文地名、星球形态、中世纪与近世）、生成人文（时代包默认带的文化组）
+  const [human, setHuman] = useState<HumanChoice>(() => defaultChoice(null, true, library.value));
+  // 别的包里的星球形态：展开着
+  const [moreForms, setMoreForms] = useState(false);
   const request = useRef(0);
   const savedAt = !world.value ? autosaved.value : null;
 
   const seeds = Array.from({ length: COUNT }, (_, k) => (base + k * 7919) % 0xffffffff);
   // 星球形态：内置的示例与资源库里装的（打开向导时再读一遍资源库）
-  const choices = formChoices(library.value);
-  // 第三十轮：第一排的星球是“通用 ▸ 星球形态”里的普通形态（以前写死的 PLANET_TYPES），下面是别的形态
-  const presets = choices.filter(isBuiltinPlanet);
-  const others = choices.filter((c) => !isBuiltinPlanet(c));
-  const chosen = choices.find((c) => c.key === ptype) ?? presets[0];
+  const lib = library.value;
+  const choices = formChoices(lib);
+  // 第三十轮：星球形态只列勾选的包里的（“通用 ▸ 星球形态”是以前写死的 PLANET_TYPES），别的包里的收着
+  const { shown, rest } = formsInPacks(choices, human.packs);
+  const chosen = choices.find((c) => c.key === ptype) ?? shown[0] ?? choices[0];
+  const showRest = moreForms || !shown.length || rest.some((c) => c.key === ptype);
+  // 新建那一步里加的内容（不带时代的包）；缩略图按它画（文化不影响缩略图，不按选的文化组筛）
+  const otherKey = JSON.stringify(splitPacks(human.packs, lib).other);
+  const thumbContent = useMemo(() => {
+    const cmds = worldContentCommands(human, lib, false);
+    return { cmds, key: JSON.stringify(cmds) };
+  }, [otherKey, lib]);
   const baseGen = (seed: number): WorldgenInput => (kind === 'planet' ? (chosen ? formGen(seed, chosen.form) : { seed, type: 'continents' }) : { seed, type });
   const genOf = (seed: number): WorldgenInput => withTerrain(baseGen(seed), terrain);
   // 这种世界不动滑块时的地形（陆地多少、岛多少按世界类型、星球形态）
@@ -232,13 +247,13 @@ export function Wizard() {
     // 一张一张要：画好一张显示一张；选项又变了就不再要这一组剩下的
     const timer = setTimeout(async () => {
       for (let k = 0; k < COUNT && request.current === id; k++) {
-        const t = await thumbnail(settingsOf(4000), genOf(seeds[k]), THUMB_W, THUMB_H);
+        const t = await thumbnail(settingsOf(4000), genOf(seeds[k]), THUMB_W, THUMB_H, thumbContent.cmds);
         if (!t || request.current !== id) return;
         setThumbs((prev) => prev.map((p, j) => (j === k ? t : p)));
       }
     }, 120);
     return () => clearTimeout(timer);
-  }, [kind, ptype, formKey, psize, type, size, center, base, terrainKey, wizardOpen.value]);
+  }, [kind, ptype, formKey, psize, type, size, center, base, terrainKey, thumbContent.key, wizardOpen.value]);
 
   if (!wizardOpen.value) return null;
 
@@ -255,7 +270,7 @@ export function Wizard() {
   // 新建：gen、name 是这个世界的生成参数和叫法；cells 是格数
   const create = async (gen: WorldgenInput, name: string, seed: number, cells: Parameters<typeof settingsOf>[0]): Promise<boolean> => {
     setCreating(true);
-    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain), generateCommand(human, null, library.value)));
+    const ok = await newWorld(settingsOf(cells), newWorldCommands(gen, name, seed, terrainCommands(terrain), generateCommand(human, null, lib), worldContentCommands(human, lib, human.on)));
     setCreating(false);
     if (ok) {
       wizardOpen.value = false;
@@ -264,7 +279,7 @@ export function Wizard() {
     return ok;
   };
   // 总人口的默认：时代的默认密度 × 估的陆地面积
-  const era = eraChoices(null, library.value).find((e) => e.id === human.era);
+  const era = choiceEra(human, lib);
   const landKm2 = estimateLandKm2({ globe: kind === 'planet', radiusKm: PLANET_SIZES[psize].radiusKm, mapKm: MAP_SIZES[size].km, landFraction: terrain.landFraction ?? terrainBase.landFraction });
   const popDefault = Math.round((era?.popDensity ?? 1) * landKm2);
   const humanBox = (
@@ -272,7 +287,13 @@ export function Wizard() {
       <Toggle on={human.on} onChange={(on) => setHuman({ ...human, on })} disabled={creating}>
         生成人文
       </Toggle>
-      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} defaultPop={popDefault} disabled={creating} countries /> : <p class="hint">建好后可在“文化”里生成</p>}
+      {human.on ? <HumanChoices choice={human} onChange={setHuman} small={null} defaultPop={popDefault} disabled={creating} countries packs={false} /> : <p class="hint">建好后可在“文化”里生成</p>}
+    </div>
+  );
+  const contentBox = (
+    <div class="wizard-content">
+      <p class="hint">勾上要用的资源包，合起来用。基础、自然、地名没勾时，用到它们的那一步跳过。</p>
+      <PackChecklist choice={human} onChange={setHuman} lib={lib} disabled={creating} />
     </div>
   );
   const pick = (seed: number) => void create(genOf(seed), nameOf(), seed, kind === 'planet' ? planetCells(PLANET_SIZES[psize].radiusKm) : CELLS);
@@ -298,6 +319,46 @@ export function Wizard() {
       // 形态里有自己的陆地多少、岛多少：向导“地形”里只带上山多高、海岸曲折、最高的山
       onCreate: (f, seed) => create(withTerrain(formGen(seed, f), { mountains: terrain.mountains }), f.name, seed, planetCells(PLANET_SIZES[psize].radiusKm)),
     });
+  };
+
+  // 星球形态的卡片，按包分段（“通用 ▸ 星球形态”的是简单的卡片，别的带“编辑…”）；newCard：最后一段后面放“新建…”
+  const formSections = (list: readonly FormChoice[], last = !showRest || !rest.length) => {
+    const secs = groupByPack(list, (c) => packLabel(lib, c.path));
+    return secs.map((sec, k) => (
+      <>
+        {(secs.length > 1 || list === rest) && <h6 class="choice-group">{sec.label}</h6>}
+        <div class="cards three">
+          {sec.items.map((c) =>
+            isBuiltinPlanet(c) ? (
+              <button class={`card ${ptype === c.key ? 'on' : ''}`} onClick={() => setPtype(c.key)} disabled={creating}>
+                <b>{c.form.name}</b>
+                <span class="hint">{c.form.hint}</span>
+              </button>
+            ) : (
+              <div class="form-card">
+                <button class={`card ${ptype === c.key ? 'on' : ''}`} onClick={() => void chooseForm(c)} disabled={creating}>
+                  <b>
+                    {c.form.name}
+                    {hasFormScripts(c.form) && <span class="tag">脚本</span>}
+                  </b>
+                  <span class="hint">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
+                  {!c.builtin && <span class="hint">{formSource(c)}</span>}
+                </button>
+                <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改名字、滑块、脚本">
+                  编辑…
+                </button>
+              </div>
+            ),
+          )}
+          {last && k === secs.length - 1 && (
+            <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
+              <b>新建…</b>
+              <span class="hint">从一种星球改起，可写脚本</span>
+            </button>
+          )}
+        </div>
+      </>
+    ));
   };
 
   return (
@@ -361,49 +422,22 @@ export function Wizard() {
             </div>
             <h5>4. 地形</h5>
             <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
-            <h5>5. 人文</h5>
+            <h5>5. 内容</h5>
+            {contentBox}
+            <h5>6. 人文</h5>
             {humanBox}
           </>
         ) : (
           <>
             <h5>1. 选一种星球</h5>
-            <div class="cards three">
-              {presets.map((t) => (
-                <button class={`card ${ptype === t.key ? 'on' : ''}`} onClick={() => setPtype(t.key)}>
-                  <b>{t.form.name}</b>
-                  <span class="hint">{t.form.hint}</span>
-                </button>
-              ))}
-            </div>
-            <h5>星球形态</h5>
-            {groupByPack(others, (c) => c.pack).map((sec, k, secs) => (
-              <>
-                {secs.length > 1 && <h6 class="choice-group">{sec.label}</h6>}
-                <div class="cards three">
-                  {sec.items.map((c) => (
-                    <div class="form-card">
-                      <button class={`card ${ptype === c.key ? 'on' : ''}`} onClick={() => void chooseForm(c)} disabled={creating}>
-                        <b>
-                          {c.form.name}
-                          {hasFormScripts(c.form) && <span class="tag">脚本</span>}
-                        </b>
-                        <span class="hint">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
-                        {!c.builtin && <span class="hint">{formSource(c)}</span>}
-                      </button>
-                      <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改名字、滑块、脚本">
-                        编辑…
-                      </button>
-                    </div>
-                  ))}
-                  {k === secs.length - 1 && (
-                    <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
-                      <b>新建…</b>
-                      <span class="hint">从一种星球改起，可写脚本</span>
-                    </button>
-                  )}
-                </div>
-              </>
-            ))}
+            {formSections(shown)}
+            {!shown.length && <p class="hint">勾选的包里没有星球形态，下面是别的包里的</p>}
+            {rest.length > 0 && shown.length > 0 && (
+              <button class="link-btn" onClick={() => setMoreForms(!showRest)}>
+                {showRest ? '收起' : `其他包里的形态（${rest.length}）`}
+              </button>
+            )}
+            {showRest && rest.length > 0 && formSections(rest, true)}
             {!choices.length && (
               <div class="cards three">
                 <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
@@ -427,12 +461,14 @@ export function Wizard() {
             </div>
             <h5>3. 地形</h5>
             <TerrainBox defaults={terrainBase} value={terrain} onChange={setTerrain} />
-            <h5>4. 人文</h5>
+            <h5>4. 内容</h5>
+            {contentBox}
+            <h5>5. 人文</h5>
             {humanBox}
           </>
         )}
         <div class="row between">
-          <h5>{kind === 'region' ? 6 : 5}. 挑一张开始</h5>
+          <h5>{kind === 'region' ? 7 : 6}. 挑一张开始</h5>
           <button onClick={() => setBase(randomBase())} disabled={creating}>
             换一组
           </button>

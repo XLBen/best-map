@@ -464,8 +464,8 @@ function NodeRow({ n, depth, ctx }: { n: TreeNode; depth: number; ctx: TreeCtx }
   const open = ctx.searching || ctx.open.has(n.key);
   const lib = side === 'library';
   const { run, enter, leave } = useRun(ctx);
-  const canAdd = lib && !!w && !n.base && n.count > n.on;
-  const removable = !lib && !!w && !n.base && packRemoveRefs(n).length > 0;
+  const canAdd = lib && !!w && n.count > n.on;
+  const removable = !lib && !!w && packRemoveRefs(n).length > 0;
   // 整包添加的命令：鼠标停在按钮上、点下去时才算（一棵树上几十个包，不必每次都算）
   const addCmd = () => (w ? packAddCommand(n, w) : null);
   return (
@@ -479,7 +479,6 @@ function NodeRow({ n, depth, ctx }: { n: TreeNode; depth: number; ctx: TreeCtx }
         </button>
         <span class="hint repo-count">{lib && n.on ? `${n.on}/${n.count}` : n.count}</span>
         <span class="repo-actions">
-          {n.base && <span class="hint">总在</span>}
           {canAdd && (
             <button
               class="small"

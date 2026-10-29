@@ -26,7 +26,8 @@ import { Slider, linear } from './components/Slider';
 import { Toggle } from './components/Toggle';
 import { paintWith, setTool } from './defs/tools';
 import { rangePick } from './tools';
-import { readPack } from '../../core/packs';
+import { packItems, readPack } from '../../core/packs';
+import { library } from '../library';
 import { fileLabel, openPackImport, openRepo } from './packs/store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
 
@@ -511,6 +512,12 @@ function SpeciesWhere({ sp }: { sp: Species }) {
 
 const PALETTE = ['#8a6fb0', '#c0607a', '#4f9fb0', '#b08a3a', '#6aa050', '#d07a40', '#5a70c0', '#a05a9a'];
 
+// “示例生态…”打开资源库里第一个有本世界没有的生态的包（第三十轮：从资源库读，不写死是哪个包；都在本世界时看全部）
+function biomePackEntry(w: World): string | undefined {
+  const have = new Set(w.small.species.map((s) => s.id));
+  return library.value.find((e) => packItems<{ id: string }>(e.pack, 'biomes').some((b) => !have.has(b.id)))?.key;
+}
+
 export function SpeciesPanel() {
   const w = world.value;
   const shares = useMemo(() => {
@@ -552,7 +559,7 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openRepo({ kind: 'biome', entry: 'fantasy' })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
+        <button onClick={() => openRepo({ kind: 'biome', filter: 'off', entry: biomePackEntry(w) })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
           示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>

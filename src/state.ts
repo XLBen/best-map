@@ -88,6 +88,12 @@ const timings = signal<Timings>({ total: 0 });
 // 正在算的带提示的请求（执行、撤销、新建、打开…）的提示；后台的预览、自动保存不算
 export const busy = signal<string | null>(null);
 export const toast = signal<{ text: string; error: boolean } | null>(null);
+// 缺了内容跳过的步骤（第三十轮）：顶上的横幅说一次，关掉、点“从资源库添加…”、新建或打开别的世界时去掉
+export const skippedNote = signal<{ id: number; notes: string[] } | null>(null);
+let skippedId = 0;
+export function noteSkipped(notes: readonly string[] | undefined) {
+  if (notes?.length) skippedNote.value = { id: ++skippedId, notes: [...notes] };
+}
 
 export const tool = signal<ToolId>('land');
 // 换工具：defs/tools.ts 的 setTool 登记进来（换工具时要清掉的东西都在那里）。面板、工具里换工具都走它，不直接写 tool
@@ -1220,6 +1226,7 @@ const SAFE_CHOSEN = '打开时选了不运行脚本';
 // 新建、打开完：标上是不是安全模式；正常打开时整理信任列表（当前世界的留着）
 function afterOpen(r: Response, scripts: FoundScript[]) {
   const safe = r.ok && r.safe === true;
+  if (r.ok) noteSkipped(r.skipped);
   safeMode.value = safe ? { reason: engineHost().safeReason ?? SAFE_CHOSEN } : null;
   if (!safe) void tidyTrusted(scripts);
 }
@@ -1244,6 +1251,7 @@ async function open(req: Extract<Request, { kind: 'init' | 'load' }>, label: str
     if (d === 'safe') safe = SAFE_CHOSEN;
   }
   changeNote.value = null;
+  skippedNote.value = null;
   if (req.kind === 'init') flash.value = null;
   const marked = safe === null && scripts.length > 0;
   if (marked) await markLoading(scripts.map((s) => s.hash));
@@ -1401,14 +1409,15 @@ export async function exec(cmd: Command, label = '正在计算…', action?: Not
   // 改动前的世界：排在前面的笔画已经算完、换上了，所以在回复到达时取
   const before = world.value;
   if (r.ok && r.noop) {
-    showToast(r.skipped?.length ? r.skipped.join('；') : '没有变化');
+    if (r.skipped?.length) noteSkipped(r.skipped);
+    else showToast('没有变化');
     return true;
   }
   const ok = await handle(r);
   // 第二十九轮：这一步移出世界的内容里自己做的、改过的存进资源库“来自《世界名》”
   if (ok && r.ok && r.removed?.length) void keepRemoved(r.removed);
-  // 第三十轮：缺了内容跳过的步骤说一次（界面以后另做“从资源库添加…”）
-  if (ok && r.ok && r.skipped?.length) showToast(r.skipped.join('；'));
+  // 第三十轮：缺了内容跳过的步骤在顶上说一次（带“从资源库添加…”）
+  if (ok && r.ok) noteSkipped(r.skipped);
   if (ok && r.ok) {
     trustOwn(cmd);
     const said = typeof head === 'function' ? (world.value ? head(world.value, r.summary ?? '') : null) : head;

@@ -1,6 +1,6 @@
 import type { Command } from '../../core/commands';
 import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../core/generate';
-import { itemKey, packIdFor, packItems, sameItem } from '../../core/packs';
+import { itemKey, ownItems, packIdFor, sameItem, walkPacks } from '../../core/packs';
 import { LAYOUT_R, planetProfile } from '../../core/planet-gen';
 import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
 import { planetKindName } from '../../core/presets';
@@ -19,6 +19,8 @@ export interface FormChoice {
   form: PlanetForm;
   // 来自哪个包（“奇幻生态示例”“我的资源”……）
   pack: string;
+  // 在资源库里的哪个小包（第三十轮：向导里只列勾选的包里的）
+  path: string[];
   builtin: boolean;
   // 在“我的资源”这个包里（形态编辑器存进去的）：编辑它改的就是它本身。
   // 别的自己导出的包里的不算：编辑那些是一份副本，存进“我的资源”，原来的包不变
@@ -43,12 +45,14 @@ export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
   const myKey = packIdFor(MY_PACK_NAME);
   for (const e of entries) {
     // 第二十九轮：资源包可以分小包（内置的星球形态在“奇幻 ▸ 星球形态”里）
-    for (const form of packItems<PlanetForm>(e.pack, 'planetForms')) {
-      const k = formKey(form);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push({ key: `${e.key}:${form.id}`, form, pack: e.pack.name, builtin: e.builtin, mine: e.mine && e.key === myKey });
-    }
+    walkPacks(e.pack, (n, rel) => {
+      for (const form of ownItems<PlanetForm>(n, 'planetForms')) {
+        const k = formKey(form);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({ key: `${e.key}:${form.id}`, form, pack: e.pack.name, path: [e.key, ...rel], builtin: e.builtin, mine: e.mine && e.key === myKey });
+      }
+    });
   }
   choicesMemo.set(entries, out);
   return out;
@@ -74,6 +78,12 @@ export function planetNameOf(gen: Pick<Worldgen, 'type' | 'islands'>): string {
 export const DEFAULT_PLANET = `${FORMS_PATH[0]}:continents`;
 // “通用 ▸ 星球形态”里的（向导第一排的卡片）
 export const isBuiltinPlanet = (c: FormChoice): boolean => c.builtin && c.key.startsWith(`${FORMS_PATH[0]}:`);
+
+// 向导里列的形态（第三十轮）：勾选的包里的（shown），别的包里的另列（rest，收着）；勾选的包里一个都没有时 shown 为空
+export function formsInPacks(choices: readonly FormChoice[], packs: readonly (readonly string[])[]): { shown: FormChoice[]; rest: FormChoice[] } {
+  const inPacks = (c: FormChoice) => packs.some((p) => p.length <= c.path.length && p.every((x, k) => c.path[k] === x));
+  return { shown: choices.filter(inPacks), rest: choices.filter((c) => !inPacks(c)) };
+}
 
 // 形态编辑器“从哪种星球改起”的六种
 export const FORM_BASES: readonly WorldType[] = ['continents', 'continent', 'fragmented', 'archipelago', 'inland_sea', 'ocean'];
