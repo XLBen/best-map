@@ -12,6 +12,7 @@ import type { Mesh } from '../core/mesh';
 import { type PackedMesh, storedMeshKey, unpackMesh } from '../core/mesh-pack';
 import { DEFAULT_NAME_MODE, NAME_MODES, type NameMode } from '../core/name-display';
 import { previewWorldOf } from '../core/preview-world';
+import { newWorldContentCommands } from '../core/packs/import';
 import { type FoundScript, type ScriptIssue, type ScriptKind, findScripts } from '../core/script';
 import { isRiverCell } from '../core/select';
 import { SPECIES_SCRIPT_KINDS, type Visual } from '../core/species';
@@ -1400,12 +1401,14 @@ export async function exec(cmd: Command, label = '正在计算…', action?: Not
   // 改动前的世界：排在前面的笔画已经算完、换上了，所以在回复到达时取
   const before = world.value;
   if (r.ok && r.noop) {
-    showToast('没有变化');
+    showToast(r.skipped?.length ? r.skipped.join('；') : '没有变化');
     return true;
   }
   const ok = await handle(r);
   // 第二十九轮：这一步移出世界的内容里自己做的、改过的存进资源库“来自《世界名》”
   if (ok && r.ok && r.removed?.length) void keepRemoved(r.removed);
+  // 第三十轮：缺了内容跳过的步骤说一次（界面以后另做“从资源库添加…”）
+  if (ok && r.ok && r.skipped?.length) showToast(r.skipped.join('；'));
   if (ok && r.ok) {
     trustOwn(cmd);
     const said = typeof head === 'function' ? (world.value ? head(world.value, r.summary ?? '') : null) : head;
@@ -1752,8 +1755,9 @@ function scratchCall(req: Request): Promise<Response> {
   return new Promise<Response>((resolve) => scratch!.send(req, resolve));
 }
 
-export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput, width: number, height: number): Promise<Uint8ClampedArray | null> {
-  const req: Request = { kind: 'thumb', settings, gen, width, height };
+// content：生成之前加进去的内容（第三十轮：Worker 里没有内置的生态，省略时是新世界默认勾上的基础、自然、中文地名）
+export async function thumbnail(settings: Partial<Settings>, gen: WorldgenInput, width: number, height: number, content: Command[] = newWorldContentCommands()): Promise<Uint8ClampedArray | null> {
+  const req: Request = { kind: 'thumb', settings, gen, width, height, content };
   const r = findScripts([settings, gen]).length ? await scratchCall(req) : await call(req, null);
   if (!r.ok) {
     showToast(r.error, true);
@@ -1771,7 +1775,7 @@ export async function formThumbnail(
   width: number,
   height: number,
 ): Promise<{ thumb: Uint8ClampedArray; issues: ScriptIssue[] } | { error: string; stopped?: boolean }> {
-  const r = await call({ kind: 'thumb', settings, gen, width, height }, null);
+  const r = await call({ kind: 'thumb', settings, gen, width, height, content: newWorldContentCommands() }, null);
   if (!r.ok) return { error: r.error, ...(r.id === CANCELLED ? { stopped: true } : {}) };
   return r.thumb ? { thumb: r.thumb, issues: r.issues ?? [] } : { error: '缩略图生成失败' };
 }

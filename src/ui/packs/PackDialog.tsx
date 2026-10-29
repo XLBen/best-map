@@ -11,7 +11,7 @@ import {
   packSummary,
   sameItem,
 } from '../../../core/packs';
-import { FANTASY_PACK } from '../../../core/packs/fantasy';
+import { builtinPacks } from '../../../core/packs/builtin-tree';
 import { type ContentKind, itemId } from '../../../core/content/registry';
 import { PATTERN_LABEL } from '../../../core/species';
 import type { FoundScript } from '../../../core/script';
@@ -216,8 +216,8 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   }
   const p = read.pack;
   const replaces = inLibrary(p);
-  // 就是内置的示例包（比如导出过又导入）：资源库里本来就有，不再装一份
-  if (installed || sameItem(p, FANTASY_PACK)) {
+  // 就是内置的大包（比如导出过又导入）：资源库里本来就有，不再装一份
+  if (installed || builtinPacks().some((b) => sameItem(p, b))) {
     return (
       <>
         <ModalHead title={installed ? '已安装' : '已在资源库里'} onClose={close} />
@@ -303,7 +303,6 @@ function ExportView() {
   const [desc, setDesc] = useState('');
   const sections = useMemo(() => (w ? exportSections(w) : []), [w]);
   const [off, setOff] = useState<Set<string>>(new Set());
-  const [words, setWords] = useState(false);
   if (!w) return null;
   const toggle = (key: string) => {
     const next = new Set(off);
@@ -311,7 +310,7 @@ function ExportView() {
     else next.add(key);
     setOff(next);
   };
-  const make = () => packFromWorld(w, exportPicks(sections, off, words), { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined });
+  const make = () => packFromWorld(w, exportPicks(sections, off, false), { name: name.trim() || '我的资源', author: author.trim() || undefined, description: desc.trim() || undefined });
   const preview = make();
   const empty = packEmpty(preview);
   const endemic = endemicCount(w);
@@ -357,12 +356,6 @@ function ExportView() {
       <h5>带上哪些</h5>
       {sections.map(({ kind, items }) =>
         items.map((x) => check(`${kind.pack.key}:${itemId(kind, x)}`, kind.id === 'biome' ? itemName(x) : `${kind.label}：${itemName(x)}`, colorOf(x))),
-      )}
-      {w.small.wordPack && (
-        <label class="check">
-          <input type="checkbox" checked={words} onChange={() => setWords(!words)} />
-          <span>文字包“{w.small.wordPack.name}”</span>
-        </label>
       )}
       {!sections.length && <p class="hint">没有自己做的、改过的内容</p>}
       {endemic > 0 && <p class="hint">只长在某处的生态不带</p>}

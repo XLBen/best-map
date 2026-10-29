@@ -3,11 +3,12 @@ import { coastalStroke, digestWorld } from '../tools/hash';
 import { Engine, type WorldDoc } from './engine';
 import { encodePath } from './rivers';
 import { isRiverCell, planCourse } from './select';
+import { seededEngine } from './testing/fixtures';
 
 // 检查点：从检查点恢复（再撤掉、补上与存档不同的那几步）与从头重放逐值一致，之后的编辑、撤销、重做也一致
 
 function build(kind: 'region' | 'planet') {
-  const eng = new Engine(kind === 'planet' ? { seed: 3, cells: 5000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 3, cells: 5000 });
+  const eng = seededEngine(kind === 'planet' ? { seed: 3, cells: 5000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 3, cells: 5000 });
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
   const cells = coastalStroke(eng.world, 0.3, 4);

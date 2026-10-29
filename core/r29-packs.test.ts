@@ -1,32 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import type { Command } from './commands';
+
 import { compactDoc, compactWorldDoc, splitWorldContent } from './compact';
-import { allKinds, itemId, kindOf, usageOf } from './content/registry';
+import { allKinds, builtinOf, itemId, kindOf, usageOf } from './content/registry';
 import { strictWorld } from './content/usage';
 import { unusedContent } from './content/unused';
 import { Engine } from './engine';
 import { digest, worldDigest } from './digest';
-import { BUILTIN_ISLAND_TYPES } from './island-types';
+
 import { addToPack, findPack, ownItems, packItems, packPaths, packProblems, parsePack, planPack, readPack, type ResourcePack, subPacks } from './packs';
 import { BASE_PATH, builtinItem, builtinItems, builtinOrigin, builtinPacks, isBuiltinSame, originOf } from './packs/builtin-tree';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from './packs/eras';
-import { buildBaseTree, indexTree } from './packs/builtin-base';
-import { FANTASY_PACK } from './packs/fantasy';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, ERA_PACKS, VALUE_ERAS } from './packs/eras';
+import { BUILTIN_PLANET_FORMS } from './packs/planet-forms';
+
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS } from './packs/governments';
 import { BUILTIN_STYLES } from './packs/names';
-import { DEFAULT_SPECIES } from './species';
-import { continents, snapshot } from './testing/fixtures';
-import { mapDiff } from './tidy';
 
-// 第二十九轮的核心：资源包的树、内容的来源、生成后只留用到的、整理本世界、压缩世界文件、打开时拆开
+import { continents, snapshot, humanExec, FANTASY_PACK, type HumanCommand } from './testing/fixtures';
+import { mapDiff } from './tidy';
+import { BUILTIN_ISLAND_TYPES } from './packs/base';
+import { DEFAULT_SPECIES } from './packs/nature';
+
+// 第二十九轮的核心：资源包的树、内容的来源、生成后只留用到的、整理本世界、压缩世界文件、打开时拆开。
+// 第三十轮：生成只读世界里的内容（测试里 humanExec 先把时代包加进世界），清理不论是不是内置原样
 
 const top = (id: string) => builtinPacks().find((p) => p.id === id)!;
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {} };
 const peopled = () =>
   snapshot('r29:peopled', () => {
     const e = continents();
-    e.exec(GEN);
+    humanExec(e, GEN);
     return e;
   });
 
@@ -34,7 +37,7 @@ describe('内置资源包的树', () => {
   it('每一个内置项至少在一个包里：政体、派系、取值、生态、河湖、资源、星球形态、文化组、文化、地名风格……一项不漏', () => {
     const missing: string[] = [];
     const has = (kind: string, id: string) => !!builtinItem(kind, id)?.paths.length;
-    for (const k of allKinds()) for (const x of k.builtin?.() ?? []) if (!has(k.id, itemId(k, x))) missing.push(`${k.id}:${itemId(k, x)}`);
+    for (const k of allKinds()) for (const x of builtinOf(k.id)) if (!has(k.id, itemId(k, x))) missing.push(`${k.id}:${itemId(k, x)}`);
     for (const k of allKinds()) for (const x of packItems(FANTASY_PACK, k.pack.key)) if (!has(k.id, itemId(k, x))) missing.push(`fantasy ${k.id}:${itemId(k, x)}`);
     for (const t of BUILTIN_ISLAND_TYPES) if (!has('islandType', t.id)) missing.push(`island:${t.id}`);
     expect(missing).toEqual([]);
@@ -48,7 +51,7 @@ describe('内置资源包的树', () => {
     expect(count('nameStyle')).toBe(BUILTIN_STYLES.length);
     expect(count('biome')).toBe(DEFAULT_SPECIES.length + packItems(FANTASY_PACK, 'biomes').length);
     expect(count('riverType')).toBe(FANTASY_RIVER_TYPES.length);
-    expect(count('planetForm')).toBe(packItems(FANTASY_PACK, 'planetForms').length);
+    expect(count('planetForm')).toBe(packItems(FANTASY_PACK, 'planetForms').length + BUILTIN_PLANET_FORMS.length);
   });
 
   it('大包：每个内置时代一个，加上通用；每个时代包里有这个时代的全部政体、派系、取值', () => {
@@ -57,15 +60,15 @@ describe('内置资源包的树', () => {
       const p = top(era.id);
       expect(ownItems(findPack(p, ['era'])!, 'eras')).toEqual([era]);
       const govs = packItems<{ id: string }>(findPack(p, ['governments'])!, 'governments').map((g) => g.id);
-      for (const id of era.governments ?? []) expect(govs).toContain(id);
+      for (const id of ERA_PACKS.get(era.id)!.governments) expect(govs).toContain(id);
       const facs = packItems<{ id: string }>(findPack(p, ['factions'])!, 'factions').map((f) => f.id);
-      for (const id of era.factions ?? []) expect(facs).toContain(id);
+      for (const id of ERA_PACKS.get(era.id)!.factions) expect(facs).toContain(id);
       for (const d of era.dimensions) {
-        const want = BUILTIN_POP_VALUES.filter((v) => v.dimension === d.id && (!v.eras || v.eras.includes(era.id))).map((v) => v.id);
+        const want = BUILTIN_POP_VALUES.filter((v) => v.dimension === d.id && (!VALUE_ERAS.get(v.id) || VALUE_ERAS.get(v.id)!.includes(era.id))).map((v) => v.id);
         expect(ownItems<{ id: string }>(findPack(p, [d.id])!, 'popValues').map((v) => v.id)).toEqual(want);
       }
       // 默认带的文化组每组一个小包：组、文化、地名风格
-      for (const [g] of era.defaultGroups ?? []) {
+      for (const [g] of ERA_PACKS.get(era.id)!.cultures) {
         const node = findPack(p, ['cultures', String(g)])!;
         expect(ownItems<{ id: string }>(node, 'cultureGroups').map((x) => x.id)).toEqual([g]);
         expect(ownItems<{ id: string }>(node, 'cultures').map((c) => c.id)).toEqual(BUILTIN_CULTURES.filter((c) => c.group === g).map((c) => c.id));
@@ -80,22 +83,15 @@ describe('内置资源包的树', () => {
     expect(builtinItem('government', 'empire')!.paths.map((p) => p[0])).toEqual(['medieval', 'industrial', 'fantasy']);
     // 奇幻另有生态、河、湖、资源、星球形态
     expect(subPacks(top('fantasy')).map((x) => x.id)).toEqual(expect.arrayContaining(['biomes', 'rivers', 'lakes', 'resources', 'forms']));
-    // 通用：基础、自然、地名（按地区）、文化（没有时代默认带的组）
+    // 通用：基础、自然、地名（中文、按地区）、星球形态、文化（没有时代默认带的组）
     const common = top('common');
-    expect(subPacks(common).map((x) => x.id)).toEqual(['base', 'nature', 'names', 'cultures']);
+    expect(subPacks(common).map((x) => x.id)).toEqual(['base', 'nature', 'names', 'forms', 'cultures']);
     expect(packItems(findPack(common, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);
     expect(subPacks(findPack(common, ['names'])!).length).toBeGreaterThan(5);
     const rest = packItems<{ id: string }>(findPack(common, ['cultures'])!, 'cultureGroups').map((g) => g.id);
-    const byEra = new Set(BUILTIN_ERAS.flatMap((e) => (e.defaultGroups ?? []).map(([g]) => g)));
+    const byEra = new Set(BUILTIN_ERAS.flatMap((e) => ERA_PACKS.get(e.id)!.cultures.map(([g]) => g)));
     expect(rest.sort()).toEqual(BUILTIN_CULTURE_GROUPS.map((g) => g.id).filter((g) => !byEra.has(g)).sort());
     expect(builtinOrigin('islandType', 'atoll')).toEqual([...BASE_PATH]);
-  });
-
-  it('树的主干（计算 Worker 里用的）与完整的树里各项的路径一样；完整的树只多奇幻的生态、河、湖、星球形态、场', () => {
-    const base = indexTree(buildBaseTree());
-    for (const b of base.values()) expect(builtinItem(b.kind, b.id)!.paths, `${b.kind}:${b.id}`).toEqual(b.paths);
-    const extra = new Set(builtinItems().filter((b) => !base.has(`${b.kind}\u0000${b.id}`)).map((b) => b.kind));
-    expect([...extra].sort()).toEqual(['biome', 'field', 'lakeType', 'planetForm', 'riverType']);
   });
 
   it('内置的大包能写成文件、读回来、检查（没有问题）', () => {
@@ -157,7 +153,7 @@ describe('嵌套的资源包', () => {
       ['tree', 'b', 'c'],
     ]);
     eng.exec(plan.command);
-    expect(eng.world.small.origin?.nameStyle).toEqual({ s1: ['tree', 'a'], s2: ['tree', 'b', 'c'] });
+    expect(eng.world.small.origin?.nameStyle).toMatchObject({ s1: ['tree', 'a'], s2: ['tree', 'b', 'c'] });
     // 用一个小包时给它的完整路径
     const sub = planPack(continents().world, findPack(nested, ['b', 'c'])!, { nameStyles: ['s2'] }, { path: ['tree', 'b', 'c'] });
     expect((sub.command.commands[0] as { from?: string[] }).from).toEqual(['tree', 'b', 'c']);
@@ -187,7 +183,7 @@ describe('来源（small.origin）', () => {
     const w = eng.world;
     const gov = BUILTIN_GOVERNMENTS[0] as unknown as Record<string, unknown>;
     eng.exec({ op: 'set_content', kind: 'government', id: gov.id as string, item: gov, from: ['antiquity', 'governments'] });
-    expect(w.small.origin).toEqual({ government: { [gov.id as string]: ['antiquity', 'governments'] } });
+    expect(w.small.origin?.government).toEqual({ [gov.id as string]: ['antiquity', 'governments'] });
     // 改一项没写 from：来源照旧
     eng.exec({ op: 'set_content', kind: 'government', id: gov.id as string, item: { ...gov, name: '改过' } });
     expect(w.small.origin?.government?.[gov.id as string]).toEqual(['antiquity', 'governments']);
@@ -204,15 +200,17 @@ describe('来源（small.origin）', () => {
     const before = structuredClone(w.small.origin);
     eng.exec({ op: 'set_content', kind: 'government', id: gov.id as string, item: null });
     eng.exec({ op: 'remove_river_type', id: FANTASY_RIVER_TYPES[0].id });
-    expect(w.small.origin).toBeUndefined();
+    expect(w.small.origin?.government).toBeUndefined();
+    expect(w.small.origin?.riverType).toBeUndefined();
     eng.undo();
     eng.undo();
     expect(w.small.origin).toEqual(before);
-    // 没记来源、与内置的一模一样的按内置的树（新世界自带的生态）
+    // 新世界从“通用 ▸ 自然”加进来的生态记着来源
     expect(originOf(w.small, 'biome', DEFAULT_SPECIES[0].id, DEFAULT_SPECIES[0])).toEqual(['common', 'nature']);
+    expect(w.small.origin?.biome?.[DEFAULT_SPECIES[0].id]).toEqual(['common', 'nature']);
   });
 
-  it('生成人文时从内置复制进来的记它在时代包里的位置', () => {
+  it('生成人文之前从时代包加进来的记它在时代包里的位置', () => {
     const w = peopled().world;
     const gov = Object.values(w.small.countries!)[0].government;
     expect(w.small.origin?.government?.[gov]?.[0]).toBe('medieval');
@@ -249,37 +247,39 @@ describe('生成后只留用到的', () => {
     expect(Object.keys(eng.world.small.content!.government!).sort()).toEqual([...all].sort());
   });
 
-  it('自己做的、改过的不在生成时收掉；生成时报出移出的项（都是内置原样）', () => {
+  it('第三十轮：自己做的、改过的没用到也收掉（报在移出的项里，界面存进资源库）；内置原样的由界面判断', () => {
     const eng = continents();
-    const gov = { ...BUILTIN_GOVERNMENTS.find((g) => g.id === 'theocracy')!, id: 'r29-mine', name: '我的政体', eras: ['nope'] } as unknown as Record<string, unknown>;
+    const gov = { ...BUILTIN_GOVERNMENTS.find((g) => g.id === 'theocracy')!, id: 'r29-mine', name: '我的政体' } as unknown as Record<string, unknown>;
     eng.exec({ op: 'set_content', kind: 'government', id: 'r29-mine', item: gov });
-    eng.exec(GEN);
-    expect(eng.world.small.content!.government!['r29-mine']).toBeDefined();
-    // 生成时带进来又收掉的（没人信的宗教、没国家用的政体）报在 lastRemoved 里？它们是这一步带进来的，进出都在这一步里，不算移出
-    expect(eng.lastRemoved).toEqual([]);
-    // 换时代：旧时代那一套没人用了，移出并报出来
-    eng.exec({ op: 'regenerate_human', era: 'industrial', countries: {} });
-    const gone = eng.lastRemoved.filter((r) => r.kind === 'government');
+    humanExec(eng, GEN);
+    expect(eng.world.small.content!.government!['r29-mine']).toBeUndefined();
+    const mine = eng.lastRemoved.find((r) => r.id === 'r29-mine')!;
+    expect(isBuiltinSame(mine.kind, mine.item)).toBe(false);
+    // 带进来又收掉的（没国家用的政体）也报着：都是内置原样
+    expect(eng.lastRemoved.filter((r) => r.id !== 'r29-mine').every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
+    // 换时代：旧时代那一套没人用了，移出并报出来，来源是中世纪
+    humanExec(eng, { op: 'regenerate_human', era: 'industrial', countries: {} });
+    const gone = eng.lastRemoved.filter((r) => r.kind === 'government' && r.origin?.[0] === 'medieval');
     expect(gone.length).toBeGreaterThan(0);
-    expect(gone.every((r) => r.builtinSame)).toBe(true);
-    expect(gone.every((r) => r.origin?.[0] === 'medieval')).toBe(true);
-    expect(eng.world.small.content!.government!['r29-mine']).toBeDefined();
+    expect(gone.every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
   });
 
   it('清理掉的再生成时复制回来、排回原来的位置：再生成一次与第一次一模一样', () => {
     const eng = peopled();
     const first = { pop: digest(eng.world.causes.popGroup!), country: digest(eng.world.causes.country!), content: JSON.stringify(eng.world.small.content) };
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     expect({ pop: digest(eng.world.causes.popGroup!), country: digest(eng.world.causes.country!), content: JSON.stringify(eng.world.small.content) }).toEqual(first);
   });
 
-  it('国家档案换成收掉了的时代政体：从内置的复制回来，记下来源', () => {
+  it('国家档案换成收掉了的时代政体：先从资源库加回来（记下来源），引擎不再自己复制', () => {
     const eng = peopled();
     const w = eng.world;
-    const all = BUILTIN_ERAS.find((e) => e.id === 'medieval')!.governments!;
+    const all = ERA_PACKS.get('medieval')!.governments;
     const idle = all.find((g) => !w.small.content!.government![g])!;
     const id = Object.values(w.small.countries!)[0].id;
-    eng.exec({ op: 'set_country', id, patch: { government: idle } });
+    expect(() => eng.exec({ op: 'set_country', id, patch: { government: idle } })).toThrow(/先从资源库添加/);
+    const item = BUILTIN_GOVERNMENTS.find((g) => g.id === idle)! as unknown as Record<string, unknown>;
+    eng.exec({ op: 'batch', commands: [{ op: 'set_content', kind: 'government', id: idle, item, from: ['medieval', 'governments'] }, { op: 'set_country', id, patch: { government: idle } }] });
     expect(w.small.countries![id].government).toBe(idle);
     expect(w.small.origin?.government?.[idle]).toEqual(['medieval', 'governments']);
   });
@@ -287,20 +287,22 @@ describe('生成后只留用到的', () => {
   it('点名的文化：只带点名的那几个进来', () => {
     const eng = continents();
     const first = BUILTIN_CULTURES.find((c) => c.group === 'western')!;
-    eng.exec({ op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 1, cultures: [first.id] }] });
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 1, cultures: [first.id] }] });
     expect(Object.keys(eng.world.small.content!.culture!)).toEqual([first.id]);
   });
 
-  it('自己做的时代没写政体：只借最像的内置时代的那一套，不再带进全部内置的', () => {
+  it('自己做的时代（世界里只有它一个时代）：规则用它；政体只用世界里的，没有时不生成国家，加了包里的政体就有', () => {
     const eng = continents();
     const era = { ...BUILTIN_ERAS.find((e) => e.id === 'medieval')!, id: 'r29-era', name: '我的时代' } as Record<string, unknown>;
-    delete era.governments;
-    delete era.factions;
     eng.exec({ op: 'set_content', kind: 'era', id: 'r29-era', item: era });
-    eng.exec({ op: 'generate_human', era: 'r29-era', groups: [{ id: 'western', weight: 1 }], countries: {} });
+    humanExec(eng, { op: 'generate_human', era: 'r29-era', groups: [{ id: 'western', weight: 1 }], countries: {} });
+    expect(eng.world.small.human!.era).toBe('r29-era');
+    expect(eng.world.small.countries).toBeUndefined();
+    expect(eng.lastSkipped).toContain('没有政体：没有生成国家');
+    humanExec(eng, { op: 'generate_human', packs: [['r29-era'], ['medieval', 'governments'], ['medieval', 'factions']], groups: [{ id: 'western', weight: 1 }], countries: {} });
+    expect(eng.world.small.human!.era).toBe('r29-era');
     const govs = Object.keys(eng.world.small.content!.government!);
-    const medieval = BUILTIN_ERAS.find((e) => e.id === 'medieval')!.governments!;
-    expect(govs.every((g) => medieval.includes(g))).toBe(true);
+    expect(govs.every((g) => ERA_PACKS.get('medieval')!.governments.includes(g))).toBe(true);
     expect(Object.keys(eng.world.small.countries!).length).toBeGreaterThan(0);
   });
 
@@ -313,8 +315,8 @@ describe('生成后只留用到的', () => {
     expect(w.small.content?.faction).toBeUndefined();
     expect(eng.lastRemoved.map((r) => r.kind)).toEqual(expect.arrayContaining(['government', 'faction']));
     eng.exec({ op: 'remove_human' });
-    expect(w.small.content).toBeUndefined();
-    expect(w.small.origin).toBeUndefined();
+    for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeUndefined();
+    for (const k of ['era', 'popValue', 'cultureGroup', 'culture']) expect(w.small.origin?.[k], k).toBeUndefined();
     eng.undo();
     eng.undo();
     expect(JSON.stringify(w.small.content)).toBe(before);
@@ -346,11 +348,12 @@ describe('整理本世界（tidy_content）', () => {
     expect(eng.world.small.riverTypes ?? []).toEqual([]);
     expect(eng.world.causes.fields.r29_field).toBeUndefined();
     expect(eng.world.small.content!.government!['r29-gov']).toBeUndefined();
-    // 报出来的：自己做的不是内置原样；普通生态、关着自然生成的冥河（就是奇幻包加进世界时的样子）是
+    // 报出来的：自己做的不是内置原样；普通生态、关着自然生成的冥河（就是奇幻包加进世界时的样子）是（界面按内置的树判断）
     const removed = eng.lastRemoved;
-    expect(removed.find((r) => r.id === 'r29-gov')!.builtinSame).toBe(false);
-    expect(removed.find((r) => r.id === 'styx')!.builtinSame).toBe(true);
-    for (const id of idle) expect(removed.find((r) => r.id === id)!.builtinSame).toBe(true);
+    const same = (id: string) => isBuiltinSame(removed.find((r) => r.id === id)!.kind, removed.find((r) => r.id === id)!.item);
+    expect(same('r29-gov')).toBe(false);
+    expect(same('styx')).toBe(true);
+    for (const id of idle) expect(same(id)).toBe(true);
     expect(plan.removed.map((r) => r.id).sort()).toEqual(removed.map((r) => r.id).sort());
     // 一步撤销；重放一样
     expect(Engine.fromDoc(eng.toDoc(), eng.world.mesh).world.small.species.map((s) => s.id)).toEqual(eng.world.small.species.map((s) => s.id));
@@ -399,8 +402,10 @@ describe('压缩世界文件', () => {
     expect(ops).not.toContain('styx');
     expect(ops).not.toContain('r29_f');
     expect(ops).not.toContain('r29-gov');
-    expect(r.doc.commands[r.doc.commands.length - 1].op).toBe('tidy_content');
-    expect(r.dropped).toBe(4);
+    // 第三十轮：新世界加的生态里在这个世界没长的也是“加了没用上”的，从加内容的那一步里去掉（不再留给末尾的整理）
+    expect(r.dropped).toBeGreaterThanOrEqual(4);
+    const idle = unusedContent(eng.world).filter((x) => x.kind === 'biome').map((x) => x.id);
+    for (const id of idle) expect(ops).not.toContain(`"id":"${id}"`);
     expect(r.removed.map((x) => x.id)).toEqual(expect.arrayContaining(['r29-gov', 'r29_f']));
     // 重放：与原来的 + 整理一模一样
     const target = Engine.fromDoc(doc, eng.world.mesh);
@@ -431,8 +436,9 @@ describe('压缩世界文件', () => {
     eng.exec({ op: 'set_river_type', type: { ...river, name: '改名' } });
     eng.exec({ op: 'remove_river_type', id: 'styx' });
     const r = compactWorldDoc(eng.toDoc(), { mesh: eng.world.mesh });
-    expect(r.dropped).toBe(0);
+    // 只去掉新世界加的、没长的生态；冥河的三条都留着
     expect(r.doc.commands.filter((c) => c.op === 'set_river_type').length).toBe(2);
+    expect(r.doc.commands.filter((c) => c.op === 'remove_river_type').length).toBe(1);
   });
 });
 

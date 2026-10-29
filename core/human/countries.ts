@@ -1,9 +1,6 @@
 import { HeapLite } from '../mesh';
 import { styleById, worldStyleId } from '../name-styles';
 import { hashString } from '../names';
-import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS } from '../packs/governments';
-import { BUILTIN_ERAS } from '../packs/eras';
-import { builtinOrder, recordBuiltinOrigins } from '../packs/builtin-base';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryLayout, CountryMeta, CountryRules, Derived, PopTuple, World } from '../world';
 import type { GenContext, HumanStage } from './context';
@@ -53,59 +50,6 @@ export interface CountryPlan {
 
 // “统一 ↔ 分裂”：fragmentation 0（统一）时国家平均大 8 倍，1（分裂）时小 8 倍
 export const sizeFactor = (fragmentation: number): number => Math.pow(8, 1 - 2 * fragmentation);
-
-// 政体、派系：世界里没有时从内置的复制进来（时代写了的；没写时是写了这个时代的）。
-// 时代一个都没有（自己做的时代没写，世界里也没有它能用的）时：第二十九轮起不再复制全部内置的 46 种政体、30 种派系，
-// 只复制最像的内置时代的那一套（nearestEra：按维度认），没用上的由 prune.ts 收掉。复制进来的记下来源（small.origin）
-export function ensureGovContent(world: World, era: Era) {
-  const small = world.small;
-  const content = { ...(small.content ?? {}) };
-  const brought: [string, string][] = [];
-  const add = (kind: string, item: { id: string }) => {
-    const store = (content[kind] ?? {}) as Record<string, unknown>;
-    if (store[item.id]) return;
-    content[kind] = { ...store, [item.id]: structuredClone(item) };
-    brought.push([kind, item.id]);
-  };
-  const pickFor = <T extends { id: string; eras?: string[] }>(ids: readonly string[] | undefined, builtin: readonly T[], eraId: string): T[] =>
-    ids?.length ? builtin.filter((x) => ids.includes(x.id)) : builtin.filter((x) => x.eras?.includes(eraId));
-  const has = <T extends { eras?: string[] }>(store: unknown) => Object.values((store ?? {}) as Record<string, T>).some((x) => !x.eras || x.eras.includes(era.id));
-  const near = nearestEra(era);
-  let govs = pickFor(era.governments, BUILTIN_GOVERNMENTS, era.id);
-  if (!govs.length && !has(content.government) && near) govs = pickFor(near.governments, BUILTIN_GOVERNMENTS, near.id);
-  for (const g of govs) add('government', g);
-  let facs = pickFor(era.factions, BUILTIN_FACTIONS, era.id);
-  if (!facs.length && !has(content.faction) && near) facs = pickFor(near.factions, BUILTIN_FACTIONS, near.id);
-  for (const f of facs) add('faction', f);
-  if (brought.length) {
-    if (content.government) content.government = builtinOrder(content.government as Record<string, unknown>, BUILTIN_GOVERNMENTS);
-    if (content.faction) content.faction = builtinOrder(content.faction as Record<string, unknown>, BUILTIN_FACTIONS);
-  }
-  if (content.government !== small.content?.government || content.faction !== small.content?.faction) small.content = content;
-  recordBuiltinOrigins(small, brought, near && !era.governments?.length ? near.id : era.id);
-}
-
-// 国家档案里换成（或新建国家用）一种世界里还没有的内置政体（第二十九轮：生成后没人用的政体收掉了，档案里照样能选时代的那一套）：
-// 从内置的复制进来，记下来源。世界里已有、或内置里也没有时不动
-export function bringGovernment(world: World, id: string): void {
-  const small = world.small;
-  if (small.content?.government?.[id]) return;
-  const g = BUILTIN_GOVERNMENTS.find((x) => x.id === id);
-  if (!g) return;
-  const store = builtinOrder({ ...(small.content?.government ?? {}), [id]: structuredClone(g) } as Record<string, unknown>, BUILTIN_GOVERNMENTS);
-  small.content = { ...small.content, government: store };
-  recordBuiltinOrigins(small, [['government', id]], small.human?.era ?? '');
-}
-
-// 最像的内置时代（自己做的时代没写政体、派系时借它的）：同 id 的；否则按维度——有物种的是科幻、有种族的是奇幻、
-// 有意识形态的是现代、有民族认同的是近现代，都没有时是中世纪
-export function nearestEra(era: Pick<Era, 'id' | 'dimensions'>): Era | undefined {
-  const same = BUILTIN_ERAS.find((e) => e.id === era.id);
-  if (same) return same;
-  const dims = new Set(era.dimensions.map((d) => d.id));
-  const id = dims.has('species') ? 'scifi' : dims.has('race') ? 'fantasy' : dims.has('ideology') ? 'modern' : dims.has('nation') ? 'industrial' : 'medieval';
-  return BUILTIN_ERAS.find((e) => e.id === id);
-}
 
 export function ensureCountryArray(world: World): Int32Array {
   return (world.causes.country ??= new Int32Array(world.mesh.n).fill(-1));
@@ -435,7 +379,12 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
   const minH = era.unclaimed.minHabitability;
   const govs = eraGovernments(small, era);
   if (!govs.length) {
+    // 第三十轮：世界里一个政体都没有时不生成国家（留着锁定的；一个都没有时与没生成过一样）
     small.nextCountry = next;
+    if (!kept.length) {
+      delete small.countries;
+      delete small.nextCountry;
+    }
     return;
   }
 
@@ -1209,7 +1158,7 @@ export function countryPopScale(ctx: Pick<GenContext, 'world' | 'x'>): Float32Ar
 function placeCountries(ctx: GenContext) {
   const plan = ctx.countries;
   if (!plan) return;
-  ensureGovContent(ctx.world, ctx.era);
+  // 第三十轮：政体、派系只用世界里的（界面先从时代包加进来）；世界里一个政体都没有时不生成国家（见 growCountries）
   if (plan.mode === 'generate') growCountries(ctx, plan);
   else keepCountries(ctx);
   ctx.popScale = countryPopScale(ctx);

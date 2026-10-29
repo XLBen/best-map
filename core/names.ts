@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import zhPack from './packs/names/zh-default.json';
 import { mixSeed, mulberry32 } from './rng';
 
-// 文字包：按地貌类型给出命名模板与词表，用户可以导入、导出、替换。
+// 文字包：按地貌类型给出命名模板与词表（就是模板式的地名风格，见 name-styles.ts；内置的中文在 packs/names/zh-default.json）。
 //   lists：词表，名字 → 若干字或词
 //   types：每种地貌的模板；模板里的 {词表名} 换成该词表中的一项
 //   byTag：地物带有某个情境标签（寒、热、干、湿、高、火山、大、小……）时优先用的模板
@@ -21,8 +20,6 @@ export const wordPackSchema = z.object({
   types: z.record(z.string(), typeSchema),
 });
 export type WordPack = z.output<typeof wordPackSchema>;
-
-export const DEFAULT_PACK: WordPack = wordPackSchema.parse(zhPack);
 
 // 起名时才放进去的词表：{__species} 是涂出来的生态区的生态名字（features.ts 的 speciesFeature）
 const INJECTED_LISTS = new Set(['__species']);

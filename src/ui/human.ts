@@ -1,13 +1,16 @@
 import { type Command, popText } from '../../core/commands';
-import { type CultureGroup, type Era, type PopValue, type Culture, weightedList, worldCultureGroups, worldCultures, worldEra, worldEras, worldPopValues } from '../../core/human';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../../core/packs/eras';
+import { type CultureGroup, type Era, type PopValue, type Culture, worldCultureGroups, worldCultures, worldEra, worldEras, worldPopValues } from '../../core/human';
 import type { CountryLayout, World } from '../../core/world';
-import { findPack, ownItems, packItems, packPaths } from '../../core/packs';
+import { builtinOf } from '../../core/content/registry';
+import { type PackNode, type PackWorld, ownItems, packItems, subPacks, walkPacks } from '../../core/packs';
 import { builtinOrigin, builtinPacks, isBuiltinSame, originOf } from '../../core/packs/builtin-tree';
+import { type PackRoot, packImportCommands } from '../../core/packs/import';
 import type { LibraryEntry } from '../library';
 
 // 人文（第二十二轮）的界面逻辑：新建向导的“人文”一步与“文化 ⋯”里的“生成人文”共用的选择（时代、文化组与各占多少、总人口），
-// 人数、密度的写法。不碰界面，测试直接调。内置的时代、文化组每次都从 core/packs/eras 读：加了新的时代、文化组自动出现
+// 人数、密度的写法。不碰界面，测试直接调。内置的时代、文化组从内置的树读（core/packs/builtin-tree.ts）。
+// 第三十轮（核心）：时代就是资源包，生成之前把要用的内容加进世界（core/packs/import.ts 的 packImportCommands），
+// generate_human 带上用的包。这里只做了让它照旧能用的最少改动（时代 → 它所在的大包），勾选几个包的界面另做
 
 export { popText };
 
@@ -44,10 +47,36 @@ const withLibrary = <T extends { id: string }>(builtin: readonly T[], lib: reado
 
 // 能选的时代、文化组、文化、取值：资源库（内置的 + 资源包、我的资源里的，lib 省略时只有内置的）+ 世界里有的（没有世界时只有资源库的）。
 // 新建向导、第一次生成人文用它（选了资源库里的就添加到本世界，见 importCommands）；重新生成只列本世界的（worldLists）
-export const eraChoices = (small?: Small | null, lib: readonly LibraryEntry[] = []): Era[] => merged(withLibrary(BUILTIN_ERAS, lib, 'eras'), small ? worldEras(small) : []);
-export const groupChoices = (small?: Small | null, lib: readonly LibraryEntry[] = []): CultureGroup[] => merged(withLibrary(BUILTIN_CULTURE_GROUPS, lib, 'cultureGroups'), small ? worldCultureGroups(small) : []);
-export const cultureChoices = (small?: Small | null, lib: readonly LibraryEntry[] = []): Culture[] => merged(withLibrary(BUILTIN_CULTURES, lib, 'cultures'), small ? worldCultures(small) : []);
-export const valueChoices = (small?: Small | null): PopValue[] => merged(BUILTIN_POP_VALUES, small ? worldPopValues(small) : []);
+export const eraChoices = (small?: Small | null, lib: readonly LibraryEntry[] = []): Era[] => merged(withLibrary(builtinOf<Era>('era'), lib, 'eras'), small ? worldEras(small) : []);
+export const groupChoices = (small?: Small | null, lib: readonly LibraryEntry[] = []): CultureGroup[] => merged(withLibrary(builtinOf<CultureGroup>('cultureGroup'), lib, 'cultureGroups'), small ? worldCultureGroups(small) : []);
+export const cultureChoices = (small?: Small | null, lib: readonly LibraryEntry[] = []): Culture[] => merged(withLibrary(builtinOf<Culture>('culture'), lib, 'cultures'), small ? worldCultures(small) : []);
+export const valueChoices = (small?: Small | null): PopValue[] => merged(builtinOf<PopValue>('popValue'), small ? worldPopValues(small) : []);
+
+// 资源库的包（内置的大包在前，再是装上的、我的）
+const rootsOf = (lib: readonly LibraryEntry[]): PackRoot[] => [...builtinPacks().map((p) => ({ key: p.id, pack: p as PackNode })), ...lib.filter((e) => !e.builtin).map((e) => ({ key: e.key, pack: e.pack as PackNode }))];
+
+// 时代所在的大包（资源库里第一个有它的；都没有时用世界里记着的来源的大包，再没有时 null）
+export function eraPack(eraId: string, lib: readonly LibraryEntry[] = [], small?: Small | null): string[] | null {
+  for (const r of rootsOf(lib)) if (packItems<Era>(r.pack, 'eras').some((e) => e.id === eraId)) return [r.key];
+  const rec = small?.origin?.era?.[eraId];
+  return rec?.length ? [rec[0]] : null;
+}
+
+// 时代包里默认带的文化组与权重（时代包的“文化”小包，第三十轮：以前是时代项里的 defaultGroups）
+export function eraPackGroups(eraId: string, lib: readonly LibraryEntry[] = []): { id: string; weight: number }[] {
+  const at = eraPack(eraId, lib);
+  const root = at && rootsOf(lib).find((r) => r.key === at[0]);
+  if (!root) return [];
+  const out: { id: string; weight: number }[] = [];
+  walkPacks(root.pack, (n) => {
+    if (n.id !== 'cultures') return;
+    for (const c of subPacks(n)) {
+      const g = ownItems<CultureGroup>(c, 'cultureGroups')[0];
+      if (g && !out.some((x) => x.id === g.id)) out.push({ id: g.id, weight: typeof c.weight === 'number' ? c.weight : 1 });
+    }
+  });
+  return out;
+}
 
 // 生成人文的选择里列哪些（第二十八轮）：library 是资源库里的全部（新建向导、第一次生成），world 只列本世界的（重新生成；
 // 别的从资源库添加）
@@ -60,63 +89,26 @@ export function choiceLists(small: Small | null | undefined, scope: ChoiceScope,
 // 一个文化组里有几个文化（向导的组旁写“3 个文化”）
 export const culturesIn = (small: Small | null | undefined, group: string, lib: readonly LibraryEntry[] = []) => cultureChoices(small, lib).filter((c) => c.group === group);
 
-// 选了资源库里（资源包、我的资源）、本世界还没有的时代、文化组：生成之前先添加到本世界，记上来源（第二十九轮）。只带用得上的：
-//   时代：时代本身和它的维度的取值（同一个包里、写了这个时代或没写时代的；内置的取值生成时自己带进来）；
-//   文化组：组、组里的文化（生成时这一组的文化都会用上）和这些文化的地名风格，都从组所在的那个小包里拿（老的不分小包的包是整个包）。
-// 政体、派系、没用到的取值由生成时按需带进来、生成后清理（它们一直在资源包里）。内置的不用：生成时自动复制进来
+// 生成之前把要用的内容加进本世界（第三十轮：时代所在的大包里的时代、取值、政体、派系、地标，选的文化组与它们的文化、
+// 地名风格；见 core/packs/import.ts），每条带 from
 export function importCommands(c: Pick<HumanChoice, 'era' | 'groups'>, small: Small | null | undefined, lib: readonly LibraryEntry[]): Command[] {
-  const out: Command[] = [];
-  const has = (kind: string, id: string) => !!small?.content?.[kind]?.[id];
-  const set = (kind: string, item: { id: string }, from?: string[]) => {
-    if (has(kind, item.id) || out.some((x) => x.op === 'set_content' && x.kind === kind && x.id === item.id)) return;
-    out.push({ op: 'set_content', kind, id: item.id, item: structuredClone(item) as unknown as Record<string, unknown>, ...(from ? { from } : {}) });
-  };
-  // 一项在资源库里的哪个包（不看内置的：内置的生成时自己带）
-  const where = (key: string, id: string) => {
-    for (const e of lib) {
-      if (e.builtin) continue;
-      const p = packPaths(e.pack, key, id)[0];
-      if (p) return { e, rel: p, node: findPack(e.pack, p)! };
-    }
-    return undefined;
-  };
-  const pathOf = (e: LibraryEntry, key: string, id: string, within: string[] = []) => {
-    const node = findPack(e.pack, within);
-    const p = node ? packPaths(node, key, id)[0] : undefined;
-    return [e.key, ...within, ...(p ?? packPaths(e.pack, key, id)[0] ?? [])];
-  };
-  if (!has('era', c.era) && !BUILTIN_ERAS.some((e) => e.id === c.era)) {
-    const at = where('eras', c.era);
-    const era = at && ownItems<Era>(at.node, 'eras').find((x) => x.id === c.era);
-    if (at && era) {
-      set('era', era, [at.e.key, ...at.rel]);
-      const dims = new Set(era.dimensions.map((d) => d.id));
-      for (const v of packItems<PopValue>(at.e.pack, 'popValues')) {
-        if (!dims.has(v.dimension) || (v.eras && !v.eras.includes(era.id)) || BUILTIN_POP_VALUES.some((b) => b.id === v.id)) continue;
-        set('popValue', v, pathOf(at.e, 'popValues', v.id));
-      }
-    }
-  }
-  for (const g of c.groups) {
-    if (has('cultureGroup', g.id) || BUILTIN_CULTURE_GROUPS.some((x) => x.id === g.id)) continue;
-    const at = where('cultureGroups', g.id);
-    if (!at) continue;
-    set('cultureGroup', ownItems<CultureGroup>(at.node, 'cultureGroups').find((x) => x.id === g.id)!, [at.e.key, ...at.rel]);
-    // 组所在的小包里的文化（那里没有时整个包里找）
-    const near = packItems<Culture>(at.node, 'cultures').filter((cu) => cu.group === g.id);
-    const scope = near.length ? at.node : at.e.pack;
-    const within = near.length ? at.rel : [];
-    const styles = new Map(packItems<{ id: string }>(scope, 'nameStyles').map((x) => [x.id, x]));
-    for (const cu of packItems<Culture>(scope, 'cultures')) {
-      if (cu.group !== g.id || has('culture', cu.id)) continue;
-      set('culture', cu, pathOf(at.e, 'cultures', cu.id, within));
-      const st = styles.get(cu.nameStyle);
-      if (st) set('nameStyle', st, pathOf(at.e, 'nameStyles', st.id, within));
-    }
-  }
-  // 地名风格先加（文化引用它），再是时代、取值、文化组、文化
-  const isStyle = (x: Command) => x.op === 'set_content' && x.kind === 'nameStyle';
-  return [...out.filter(isStyle), ...out.filter((x) => !isStyle(x))];
+  const packs = eraPack(c.era, lib, small);
+  if (!packs) return [];
+  const world = small ? ({ small, causes: { fields: {} } } as unknown as PackWorld) : undefined;
+  return packImportCommands(rootsOf(lib), { packs: [packs], groups: c.groups.map((g) => g.id) }, world);
+}
+
+const REGEN_LABELS: Partial<Record<Command['op'], string>> = { generate_human: '生成人文', regenerate_human: '重新生成人文', generate_countries: '生成国家', regenerate_countries: '重新生成国家' };
+
+// 重新生成人文、生成国家之前（第三十轮）：生成后没用到的政体、派系、取值清理掉了，再生成之前把世界用的包再加一遍
+// （世界里有的跳过，先后排回包里的），与第一次生成看到的一样。没有人文时原样
+export function withPackImports(cmd: Command, small: Small, lib: readonly LibraryEntry[] = []): Command {
+  const h = small.human;
+  if (!h) return cmd;
+  const world = { small, causes: { fields: {} } } as unknown as PackWorld;
+  const imports = packImportCommands(rootsOf(lib), { packs: h.packs, groups: h.groups.map((g) => g.id) }, world);
+  const label = cmd.op === 'batch' ? cmd.label : REGEN_LABELS[cmd.op];
+  return imports.length ? { op: 'batch', ...(label ? { label } : {}), commands: [...imports, cmd] } : cmd;
 }
 
 // ---------- 按资源包分组（第二十九轮：向导、重新生成里的时代、文化组） ----------
@@ -173,23 +165,19 @@ export interface HumanChoice {
   settlements: { on: boolean; landmarks: boolean };
 }
 
-// 时代建议的文化组（defaultGroups 与 cultureGroups 里的）；都没写时为 null（不限）
-export function suggestedGroups(era: Era | undefined): Set<string> | null {
+// 时代建议的文化组（时代包的“文化”小包里的）；没有时为 null（不限）
+export function suggestedGroups(era: Era | undefined, lib: readonly LibraryEntry[] = []): Set<string> | null {
   if (!era) return null;
-  const ids = [...weightedList(era.defaultGroups).map(([id]) => id), ...(era.cultureGroups ?? [])];
+  const ids = eraPackGroups(era.id, lib).map((g) => g.id);
   return ids.length ? new Set(ids) : null;
 }
 
-// 这个时代默认勾的文化组：defaultGroups（认得的），没写时是能用的文化组各 1，再没有时是前三个。
+// 这个时代默认勾的文化组：时代包的“文化”小包里的（认得的，权重按小包的 weight），没有时是前三个。
 // known：能选的文化组（省略时是内置的 + 世界里的）
-export function eraGroups(era: Era | undefined, small?: Small | null, known0?: readonly { id: string }[]): { id: string; weight: number }[] {
-  const known = new Set((known0 ?? groupChoices(small)).map((g) => g.id));
-  const def = weightedList(era?.defaultGroups)
-    .filter(([id, w]) => known.has(id) && w > 0)
-    .map(([id, weight]) => ({ id, weight }));
+export function eraGroups(era: Era | undefined, small?: Small | null, known0?: readonly { id: string }[], lib: readonly LibraryEntry[] = []): { id: string; weight: number }[] {
+  const known = new Set((known0 ?? groupChoices(small, lib)).map((g) => g.id));
+  const def = era ? eraPackGroups(era.id, lib).filter((g) => known.has(g.id) && g.weight > 0) : [];
   if (def.length) return def;
-  const allowed = (era?.cultureGroups ?? []).filter((id) => known.has(id)).map((id) => ({ id, weight: 1 }));
-  if (allowed.length) return allowed;
   return [...known].slice(0, 3).map((id) => ({ id, weight: 1 }));
 }
 
@@ -242,14 +230,14 @@ export function choiceProblem(c: HumanChoice, small?: Small | null, lib: readonl
 export function generateCommand(c: HumanChoice, small?: Small | null, lib: readonly LibraryEntry[] = []): Command | null {
   if (!c.on || choiceProblem(c, small, lib)) return null;
   const imports = importCommands(c, small, lib);
-  const gen = generateOnly(c);
+  const gen = generateOnly(c, eraPack(c.era, lib, small));
   return imports.length ? { op: 'batch', label: '生成人文', commands: [...imports, gen] } : gen;
 }
 
-function generateOnly(c: HumanChoice): Command {
+function generateOnly(c: HumanChoice, pack: string[] | null): Command {
   return {
     op: 'generate_human',
-    era: c.era,
+    packs: pack ? [pack] : [],
     groups: c.groups.map((g) => ({ id: g.id, weight: g.weight })),
     ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}),
     ...(c.countries.on
@@ -262,14 +250,17 @@ function generateOnly(c: HumanChoice): Command {
 
 // 已有人文时按新的选择重新生成（时代、文化组、总人口换掉，拖过的发源地留着）：选择与现在的一样时 null。
 // 有国家、换了时代时国家也重新长（锁定的留着）；没换时代时领土不动
-export function regenerateWith(c: HumanChoice, small: Small): Command | null {
+export function regenerateWith(c: HumanChoice, small: Small, lib: readonly LibraryEntry[] = []): Command | null {
   const h = small.human;
   if (!h || choiceProblem(c, small)) return null;
   const groups = c.groups.map((g) => ({ id: g.id, weight: g.weight }));
   const same = c.era === h.era && JSON.stringify(groups) === JSON.stringify(h.groups.map((g) => ({ id: g.id, weight: g.weight })));
   if (same && c.pop === null) return null;
   const countries = h.countryRules && c.era !== h.era ? { countries: {} } : {};
-  return { op: 'regenerate_human', era: c.era, groups, ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}), keepManual: c.era === h.era, ...countries };
+  const pack = eraPack(c.era, lib, small);
+  const regen: Command = { op: 'regenerate_human', packs: pack ? [pack] : h.packs, groups, ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}), keepManual: c.era === h.era, ...countries };
+  const imports = importCommands(c, small, lib);
+  return imports.length ? { op: 'batch', label: '重新生成人文', commands: [...imports, regen] } : regen;
 }
 
 // 向导里还没有世界：陆地面积按地图（或星球）的面积 × 陆地多少估（与建好后的默认总人口差不多）

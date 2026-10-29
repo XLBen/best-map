@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { Engine, passStats } from './engine';
 import { applyPackCommands, packFromWorld, readPack } from './packs';
-import { FANTASY_PACK } from './packs/fantasy';
+
 import { TWIN_CONTINENTS } from './packs/fantasy-forms';
 import type { PlanetForm } from './planet-form';
 import type { RiverType } from './river-types';
 import { findScripts } from './script';
-import { continents, engineFor, meshFor, snapshot } from './testing/fixtures';
+import { continents, engineFor, meshFor, snapshot, FANTASY_PACK } from './testing/fixtures';
 
 // 两支合在一起以后：星球形态（布局、地形脚本）与河流类型（match 脚本）、生态和河对周围的影响、
 // 自带地名设定的生态自然长成的一片，放在同一个星球上：
@@ -67,7 +67,7 @@ describe('星球形态与河流类型、对周围的影响在同一个星球上'
   it('从检查点恢复后改河流类型：问题、推导与从头重放的逐值相同；撤销回到原样', () => {
     const eng = planet();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(5);
+    expect(doc.version).toBe(6);
     const mesh = meshFor(settings);
     const replay = Engine.fromDoc(doc, mesh);
     expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));

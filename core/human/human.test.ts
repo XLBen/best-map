@@ -7,29 +7,8 @@ import { TERRAIN_COLORS, exportPackage } from '../export';
 import { BUILTIN_STYLES } from '../packs/names';
 import { continents, engineFor } from '../testing/fixtures';
 import { HUMAN_DERIVED, type World } from '../world';
-import {
-  BIOME_MOVEMENT,
-  BUILTIN_CLASSES,
-  CATEGORY_LABEL,
-  FANTASY_RESOURCES,
-  GENERAL_RESOURCES,
-  PEAK_MIN,
-  RESOURCE_NONE,
-  biomeMovement,
-  cellArchive,
-  cellMovement,
-  cellName,
-  cellParadoxTerrain,
-  paradoxTerrain,
-  classAt,
-  classCode,
-  peakCells,
-  peakMarks,
-  resourceAt,
-  resourceCode,
-  worldResources,
-  worldTerrainClasses,
-} from './index';
+import { CATEGORY_LABEL, PEAK_MIN, RESOURCE_NONE, biomeMovement, cellArchive, cellMovement, cellName, cellParadoxTerrain, paradoxTerrain, classAt, classCode, peakCells, peakMarks, resourceAt, resourceCode, worldResources, worldTerrainClasses } from './index';
+import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../packs/base';
 
 // 第二十一轮：地形类别、资源、山峰、格的档案
 
@@ -127,7 +106,8 @@ describe('地形类别：自动规则', () => {
     const hillForest = at('hills', 'taiga');
     expect(move[hillForest!]).toBeCloseTo(1.5 * biomeMovement(w.small.species.find((s) => s.id === 'taiga')!), 5);
     expect(move[hillForest!]).toBeGreaterThan(move[at('plains', 'taiga')!]);
-    for (const sp of w.small.species) expect(biomeMovement(sp), sp.id).toBe(BIOME_MOVEMENT[sp.id]);
+    // 第三十轮：通行倍数写在生态自己身上（与以前的 BIOME_MOVEMENT 表相同，见 r30-era-packs.test.ts）
+    for (const sp of w.small.species) expect(biomeMovement(sp), sp.id).toBe(sp.movement);
     // 生态写了 movement 就用它
     expect(biomeMovement({ ...w.small.species[0], movement: 7 })).toBe(7);
   });
@@ -247,14 +227,15 @@ describe('地形类别：画', () => {
     // 撤销：编号、画的格都回来
     eng.undo();
     expect(classAt(w.small, w.derived.terrainClass[cells[0]])!.id).toBe('volcanic');
-    // 改内置的平原（换颜色）：编号不变，停用就换回内置的
+    // 改内置的平原（换颜色）：编号不变
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'plains', item: { ...BUILTIN_CLASSES[0], color: '#ffffff' } });
     expect(worldTerrainClasses(w.small)[0].color).toBe('#ffffff');
     expect(codeOf(w, 'volcanic')).toBe(n + 1);
+    // 第三十轮：内置的也是普通内容，停用了就不在世界里（后面的编号往前挪），从资源库能加回来
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'plains', item: null });
-    expect(worldTerrainClasses(w.small)[0]).toBe(BUILTIN_CLASSES[0]);
-    // 内置的不能停用（世界里没有这一项）；规则里不能按地形类别
-    expect(() => eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'hills', item: null })).toThrow(CommandError);
+    expect(worldTerrainClasses(w.small).some((c) => c.id === 'plains')).toBe(false);
+    expect(codeOf(w, 'volcanic')).toBe(n);
+    // 规则里不能按地形类别
     expect(() => eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'x', item: { ...b, id: 'x', rules: [{ classes: ['hills'] }] } })).toThrow(/不能按地形类别/);
   });
 
@@ -306,8 +287,8 @@ describe('资源', () => {
       }
       expect(wet).toBe(true);
     }
-    // 奇幻的默认不在
-    expect(worldResources(w.small)).toBe(GENERAL_RESOURCES);
+    // 奇幻的默认不在（新世界从“通用 ▸ 基础”加进来的是通用的一套）
+    expect(worldResources(w.small)).toEqual(GENERAL_RESOURCES);
   });
 
   it('换一个世界种子分布就换；按地图上的位置，与成片的大小有关', () => {
@@ -358,7 +339,9 @@ describe('资源', () => {
     eng.exec({ op: 'set_content', kind: 'resource', id: 'mithril', item: null });
     for (const i of some.slice(0, 3)) expect(w.causes.resource![i]).toBe(0);
     for (const i of some.slice(3)) expect(w.causes.resource![i]).toBe(RESOURCE_NONE);
-    expect(() => eng.exec({ op: 'set_content', kind: 'resource', id: 'iron', item: null })).toThrow(CommandError);
+    // 第三十轮：通用的也是普通内容，能停用（画成它的格恢复自动）
+    eng.exec({ op: 'set_content', kind: 'resource', id: 'iron', item: null });
+    expect(resourceCode(w.small, 'iron')).toBe(0);
   });
 });
 
@@ -545,12 +528,12 @@ describe('导出与没用到的世界', () => {
     expect(paradoxTerrain(undefined, 'forest', 100, 1)).toBe('forest');
   });
 
-  it('没用到这些的世界：原因、小数据里没有新的项', () => {
+  it('没用到这些的世界：原因、小数据里没有新的项（小数据里只有新建时从资源包加的内容）', () => {
     const w = continents({ provinces: true }).world;
     expect(w.causes.terrainClass).toBeUndefined();
     expect(w.causes.resource).toBeUndefined();
     expect(w.small.cells).toBeUndefined();
-    expect(w.small.content).toBeUndefined();
+    expect(Object.keys(w.small.content!).sort()).toEqual(['cityRank', 'landmarkType', 'nameStyle', 'pointType', 'resource', 'terrainClass']);
   });
 
   it('新建世界清掉画的类别、资源、格的档案', () => {

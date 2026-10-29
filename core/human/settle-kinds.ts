@@ -1,19 +1,12 @@
 import type { z } from 'zod';
-import { type FieldDesc, contentItems, registerKind } from '../content/registry';
-import { sameItem } from '../content/refs';
-import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS } from '../packs/settlements';
-import { isBuiltinLandmarkType, isBuiltinPointType, isBuiltinRank, worldCityRanks, worldLandmarkTypes, worldPointTypes } from './settle-content';
+import { type FieldDesc, notBuiltin, registerKind } from '../content/registry';
+import { worldCityRanks, worldLandmarkTypes, worldPointTypes } from './settle-content';
 import { type CityRank, LANDMARK_DETECTORS, LANDMARK_PLACES, type LandmarkType, type PointType, cityRankSchema, landmarkTypeSchema, pointTypeSchema } from './settle-types';
 
 // 第二十四轮的三种内容登记进登记表：城市等级、地标类型、自定义点的类型（都放在 small.content，命令是 set_content）。
-// 内置的总在世界里（不用启用、不能停用）：small.content 里同 id 的一项是改过的那一份，停用它就换回内置的。
+// 第三十轮起内置的也是普通内容（“通用 ▸ 基础”，时代自己的地标在时代包里），和别的一样加进、移出世界。
 // 城市、地标的名字、等级都是现算的，改了这几种不用重算推导（dirty 是 none）
 
-const changed = <T extends { id: string }>(items: Record<string, T>, builtin: readonly T[]): T[] =>
-  Object.values(items).filter((x) => {
-    const b = builtin.find((y) => y.id === x.id);
-    return !b || !sameItem(b, x);
-  });
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);
 
 const RANK_FIELDS: readonly FieldDesc[] = [
@@ -46,7 +39,6 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'detector', label: '怎么找', type: 'enum', optional: true, options: LANDMARK_DETECTORS.map((d) => ({ value: d, label: d })), when: { key: 'category', is: 'natural' } },
-  { key: 'eras', label: '时代', type: 'tags', optional: true, hint: '空着时不限' },
   { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, hint: '空着时不限' },
   { key: 'governments', label: '政体的类别', type: 'tags', optional: true, hint: '空着时不限' },
   { key: 'place', label: '放在哪', type: 'enum', options: LANDMARK_PLACES.map((p) => ({ value: p, label: p })) },
@@ -95,9 +87,7 @@ export function registerSettleKinds(): void {
     maxInWorld: 32,
     schema: cityRankSchema as unknown as z.ZodType<CityRank>,
     inWorld: (w) => worldCityRanks(w.small),
-    builtin: () => BUILTIN_RANKS,
     dirty: () => 'none',
-    alwaysOn: (id) => (isBuiltinRank(id) ? '内置的城市等级总在' : undefined),
     blank: () => ({ id: 'my-rank', name: '新等级', icon: 'circle', level: 2, minShare: 0.01, label: 1 }),
     fields: RANK_FIELDS,
     pack: {
@@ -106,7 +96,7 @@ export function registerSettleKinds(): void {
       listed: true,
       checked: true,
       withId: (r, id, from) => (id === from ? r : { ...r, id, name: renamed(r.name, id, from) }),
-      fromWorld: (w) => changed(contentItems<CityRank>(w.small, 'cityRank'), BUILTIN_RANKS).map((r) => structuredClone(r)),
+      fromWorld: (w) => notBuiltin('cityRank', worldCityRanks(w.small)).map((r) => structuredClone(r)),
       exportItem: (r) => structuredClone(r),
     },
   });
@@ -120,9 +110,7 @@ export function registerSettleKinds(): void {
     maxInWorld: 128,
     schema: landmarkTypeSchema as unknown as z.ZodType<LandmarkType>,
     inWorld: (w) => worldLandmarkTypes(w.small),
-    builtin: () => BUILTIN_LANDMARK_TYPES,
     dirty: () => 'none',
-    alwaysOn: (id) => (isBuiltinLandmarkType(id) ? '内置的地标类型总在' : undefined),
     blank: () => ({ id: 'my-landmark', name: '新地标', category: 'manmade', icon: 'monument', place: 'capital', per: 'country', count: 1, chance: 1, label: '{city}纪念碑' }),
     fields: LANDMARK_FIELDS,
     pack: {
@@ -131,7 +119,7 @@ export function registerSettleKinds(): void {
       listed: true,
       checked: true,
       withId: (t, id, from) => (id === from ? t : { ...t, id, name: renamed(t.name, id, from) }),
-      fromWorld: (w) => changed(contentItems<LandmarkType>(w.small, 'landmarkType'), BUILTIN_LANDMARK_TYPES).map((t) => structuredClone(t)),
+      fromWorld: (w) => notBuiltin('landmarkType', worldLandmarkTypes(w.small)).map((t) => structuredClone(t)),
       exportItem: (t) => structuredClone(t),
     },
   });
@@ -145,9 +133,7 @@ export function registerSettleKinds(): void {
     maxInWorld: 128,
     schema: pointTypeSchema as unknown as z.ZodType<PointType>,
     inWorld: (w) => worldPointTypes(w.small),
-    builtin: () => BUILTIN_POINT_TYPES,
     dirty: () => 'none',
-    alwaysOn: (id) => (isBuiltinPointType(id) ? '内置的点的类型总在' : undefined),
     blank: () => ({ id: 'my-point', name: '新的点', icon: 'pin', color: '#d94a3d' }),
     fields: POINT_FIELDS,
     pack: {
@@ -156,7 +142,7 @@ export function registerSettleKinds(): void {
       listed: true,
       checked: true,
       withId: (t, id, from) => (id === from ? t : { ...t, id, name: renamed(t.name, id, from) }),
-      fromWorld: (w) => changed(contentItems<PointType>(w.small, 'pointType'), BUILTIN_POINT_TYPES).map((t) => structuredClone(t)),
+      fromWorld: (w) => notBuiltin('pointType', worldPointTypes(w.small)).map((t) => structuredClone(t)),
       exportItem: (t) => structuredClone(t),
     },
   });

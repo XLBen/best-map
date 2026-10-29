@@ -2,17 +2,15 @@ import { z } from 'zod';
 import { type IslandType, ISLAND_HEIGHTS, ISLAND_LOOKS, ISLAND_SHAPES, islandTypeSchema, islandTypesOf } from '../island-types';
 import { type LakeType, lakeTypeSchema, lakeTypesOf } from '../lake-types';
 import { FEATURE_INFO, type FeatureType } from '../features';
-import { DEFAULT_STYLE, type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
-import { DEFAULT_PACK } from '../names';
-import { BUILTIN_STYLES } from '../packs/names';
+import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
-import { DEFAULT_SPECIES, type Species, speciesSchema } from '../species';
+import { type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
-import { type ContentWorld, type FieldDesc, type PackContext, type Renames, registerKind } from './registry';
+import { type ContentWorld, type FieldDesc, type PackContext, type Renames, builtinOf, isBuiltinCopy, registerKind } from './registry';
 import { registerUsage } from './usage';
-import { ITEM_ID, biomeFields, biomeLakes, biomeRivers, fieldRefs, naturalOff, rewriteRiverRefs, sameItem, stableJson, templateLists } from './refs';
+import { ITEM_ID, biomeFields, biomeLakes, biomeRivers, fieldRefs, naturalOff, rewriteRiverRefs, stableJson, templateLists } from './refs';
 
 // 现有的内容种类登记进登记表（第二十轮）：生态、河 / 湖 / 岛的种类、星球形态、地名风格、自定义场。
 // 以前的种类在世界里的放法、命令都不变（登记表只是适配），资源包文件的格式不变。
@@ -109,8 +107,7 @@ function biomeWithId(sp: Species, id: string, from: string): Species {
 // 世界里能导出的生态：不是内置的原样（内置的改过也算），也不是只在这个世界的某处长的
 // （从起源地扩散、只长在某个岛上、圈的范围里：格的编号换个世界没有意义）
 export function exportableBiomes(world: ContentWorld): Species[] {
-  const builtin = new Map(DEFAULT_SPECIES.map((s) => [s.id, s]));
-  return world.small.species.filter((s) => !s.dispersal && !s.range && !(builtin.has(s.id) && sameItem(builtin.get(s.id), s)));
+  return world.small.species.filter((s) => !s.dispersal && !s.range && !isBuiltinCopy('biome', s));
 }
 
 // 写明“自然生成”（没写的在世界里是开着的；包里没写的加进别的世界时是关着的），换个世界照样
@@ -126,7 +123,6 @@ registerKind<Species>({
   order: 20,
   schema: speciesSchema as unknown as z.ZodType<Species>,
   inWorld: (w) => w.small.species,
-  builtin: () => DEFAULT_SPECIES,
   enable: (sp, w) => (w.small.species.some((x) => x.id === sp.id) ? { op: 'update_species', id: sp.id, patch: sp as unknown as Record<string, unknown> } : { op: 'add_species', species: sp }),
   disable: (id) => ({ op: 'remove_species', id }),
   fields: [
@@ -160,7 +156,7 @@ registerKind<Species>({
     problems: (biomes, ctx) => {
       const problems: string[] = [];
       if (biomes.length > SPECIES_SOFT_CAP) problems.push(`生态有 ${biomes.length} 种（超过 ${SPECIES_SOFT_CAP}）：界面会挤，计算会变慢`);
-      const known = new Set([...ctx.ids('biomes'), ...DEFAULT_SPECIES.map((b) => b.id)]);
+      const known = new Set([...ctx.ids('biomes'), ...builtinOf<Species>('biome').map((b) => b.id)]);
       const rivers = ctx.ids('riverTypes');
       const lakes = ctx.ids('lakeTypes');
       for (const b of biomes) {
@@ -217,7 +213,7 @@ registerKind<RiverType>({
     withId: waterTypeWithId,
     finalize: waterFinalize,
     fieldsOf: (t) => fieldRefs(t).filter((f) => ITEM_ID.test(f)),
-    // 世界里的河流类型都是用户加的（没有内置的），全部能导出
+    // 世界里的河流类型全部能导出（与内置的一模一样的也带上：从世界存成文件时带着它用的河）
     fromWorld: (w) => riverTypesOf(w.small).map((t) => structuredClone(t)),
     exportItem: (t) => naturalOn(structuredClone(t)),
     problems: waterProblems('河流类型'),
@@ -275,8 +271,8 @@ registerKind<IslandType>({
     listed: true,
     checked: true,
     withId: (t, id, from) => (id === from ? t : { ...t, id, name: numbered(t.name, id, from) ?? t.name }),
-    // 内置的几种不在 small.islandTypes 里：世界里的都是用户加的，全部能导出
-    fromWorld: (w) => islandTypesOf(w.small).map((t) => structuredClone(t)),
+    // 第三十轮起内置的五种也在 small.islandTypes 里：与内置的一模一样的不导出
+    fromWorld: (w) => islandTypesOf(w.small).filter((t) => !isBuiltinCopy('islandType', t)).map((t) => structuredClone(t)),
     exportItem: (t) => structuredClone(t),
     problems: (items, ctx) => items.flatMap((t) => badLists(`岛的种类“${t.name || t.id}”`, t.names, ctx.lists)),
   },
@@ -322,11 +318,6 @@ registerKind<PlanetForm>({
 
 // ---------- 地名风格（第二十轮，见 name-styles.ts） ----------
 
-// 内置中文风格（small.wordPack 换过时是它）按地名风格的样子
-export function zhDefaultStyle(small: Pick<ContentWorld['small'], 'wordPack'>): NameStyle {
-  return { ...(small.wordPack ?? DEFAULT_PACK), id: DEFAULT_STYLE, kind: 'template' };
-}
-
 // 旧的文字包（textPacks 里的、单独的文字包文件）：补上 kind，id 不合规时换成合规的
 function readStyle(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
@@ -368,16 +359,14 @@ registerKind<NameStyle>({
   store: 'content',
   maxInWorld: 64,
   schema: nameStyleSchema as unknown as z.ZodType<NameStyle>,
-  // 内置中文总在世界里（放在 small.wordPack，见 name-styles.ts 的 styleById）
-  inWorld: (w) => [zhDefaultStyle(w.small), ...Object.values(worldStyles(w.small))],
-  builtin: () => BUILTIN_STYLES,
+  // 第三十轮起中文·默认也是普通内容（“通用 ▸ 地名 ▸ 中文”）
+  inWorld: (w) => Object.values(worldStyles(w.small)),
   // 改的是世界默认、或者有地物、省份在用的风格时重新起名
   dirty: (before, after, w) => {
     const id = (after ?? before)!.id;
     return styleInUse(w.small, id) ? 'names' : 'none';
   },
   check: (style) => {
-    if (style.id === DEFAULT_STYLE) throw new CommandError('内置中文不能换掉，复制一份改');
     const problems = styleProblems(style);
     if (problems.length) throw new CommandError(`地名风格有问题：${problems.slice(0, 3).join('；')}`);
   },
@@ -450,7 +439,7 @@ registerKind<NameStyle>({
     checked: true,
     read: readStyle,
     withId: (s, id, from) => (id === from ? s : { ...s, id, name: `${s.name} ${id.slice(from.length + 1) || id}` }),
-    fromWorld: (w) => Object.values(worldStyles(w.small)).map((s) => structuredClone(s)),
+    fromWorld: (w) => Object.values(worldStyles(w.small)).filter((s) => !isBuiltinCopy('nameStyle', s)).map((s) => structuredClone(s)),
     exportItem: (s) => structuredClone(s),
     problems: (items) => items.flatMap((s) => [...styleProblems(s), ...styleNotes(s)].map((p) => `地名风格“${s.name}”：${p}`)),
   },

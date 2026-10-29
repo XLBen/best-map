@@ -1,11 +1,11 @@
 import { type Mesh, findCell, gradient } from './mesh';
-import { DEFAULT_PACK, type WordPack, hashString } from './names';
-import { type GenName, type ResolvedStyle, type StyleBody, hasType, isPhonetic, styleFor, styleName, templateName, templateOf } from './name-styles';
+import { type WordPack, hashString } from './names';
+import { type GenName, type ResolvedStyle, type StyleBody, chineseTemplate, hasType, isPhonetic, styleFor, styleName, templateName, templateOf } from './name-styles';
 import { type LakeType, majorityLakeType } from './lake-types';
-import { BUILTIN_COUNT, ISLAND_CODE_MASK, type IslandType, islandTypeOfCode } from './island-types';
+import { ISLAND_CODE_MASK, type IslandType, islandTypeOfCode } from './island-types';
 import { PLAIN_RIVER, type RiverType, majorityType } from './river-types';
 import { guideBody, guideLine } from './rivers';
-import { DEFAULT_SPECIES, type Species } from './species';
+import { BIOME_GROUPS, type Species } from './species';
 import type { Derived, Guide, RegionKind, SmallState, World } from './world';
 
 // 地理要素识别：在格图上找出大陆、岛、群岛、半岛、海、洋、湾、海峡、湖、大河、山脉、主峰、
@@ -928,12 +928,13 @@ function reliefInputs(world: World, d: Derived, dLand: Int32Array, elevation: Ar
   return withLabels(mesh, list);
 }
 
-const BIOMES = ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const;
+const BIOMES = BIOME_GROUPS;
 type BiomeGroup = (typeof BIOMES)[number];
 
-// 一种生态属于哪一大类：冰盖是冰原，其余按导出用的地形类别；草原、稀树草原、灌丛等都不是（''）
+// 一种生态属于哪一大类：生态写了 group 就是它（第三十轮：内置的生态都写了，以前冰盖按 id 认），没写的按导出用的地形类别；
+// 草原、稀树草原、灌丛等都不是（''）
 function speciesGroup(sp: Species): BiomeGroup | '' {
-  if (sp.id === 'ice') return 'icecap';
+  if (sp.group) return sp.group;
   if (sp.terrain === 'desert') return 'desert';
   if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
   if (sp.terrain === 'arctic') return 'tundra';
@@ -951,10 +952,8 @@ function biomesOf(world: World, d: Derived): Uint8Array {
   return biome;
 }
 
-const BUILTIN_SPECIES = new Set(DEFAULT_SPECIES.map((sp) => sp.id));
-
 // 涂出来的一片生态按哪种地物识别、叫什么、怎么起名，只在这里定（生态以后自带地名设定时也接在这里）：
-// - 内置且有大类的生态（针叶林、热带雨林、荒漠……）：沿用大类的类型和模板，热带的（jungle）带“热”，模板里有雨林；
+// - 写了大类（group）的生态（内置的针叶林、热带雨林、荒漠……）：沿用大类的类型和模板，热带的（jungle）带“热”，模板里有雨林；
 // - 其余（温带草原、稀树草原、地中海灌木、自定义的生态）：类型是“生态区”，
 //   模板先找文字包里的 biome.<id>，再找 biome，文字包里都没有（导入的旧文字包）时用内置包的模板和词表。
 // 类型名（地名表、底部条）就是生态的名字；模板里的 {__species} 换成它。
@@ -962,24 +961,24 @@ const BUILTIN_SPECIES = new Set(DEFAULT_SPECIES.map((sp) => sp.id));
 // 文字包里没有模板用到的词表时用内置包的）。地物的种类、锚点不看这些，所以只改地名设定时只要重新起名
 // 地名风格是音译式时（第二十轮）：生态自带的模板是中文的，用内置中文包；别的按风格里的 biome.<id>、大类、biome 起名，
 // 生态的名字由 species 带进去（中文的写法里写 {__species}）
-function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (style: StyleBody) => { pack: StyleBody; type: string; species?: string } } {
-  const group = speciesGroup(sp);
-  const type: FeatureType = group && BUILTIN_SPECIES.has(sp.id) ? group : 'biome';
+function speciesFeature(sp: Species): { type: FeatureType; label: string; tags: string[]; naming: (style: StyleBody, zh: WordPack) => { pack: StyleBody; type: string; species?: string } } {
+  const type: FeatureType = sp.group ?? 'biome';
   const label = sp.feature?.label ?? (sp.name || FEATURE_INFO[type].label);
   const own = sp.feature?.names;
-  const naming = (style: StyleBody): { pack: StyleBody; type: string; species?: string } => {
-    const pack = templateOf(style);
-    if (own) return { pack: withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, label, own), type: OWN_TYPE };
+  // zh：世界里的中文模板（name-styles.ts 的 chineseTemplate；风格是音译式、模板里缺词表时用它）
+  const naming = (style: StyleBody, zh: WordPack): { pack: StyleBody; type: string; species?: string } => {
+    const pack = isPhonetic(style) ? zh : style;
+    if (own) return { pack: withOwnNames(hasLists(pack, own) ? pack : zh, label, own), type: OWN_TYPE };
     if (isPhonetic(style)) {
       const t = style.types[`biome.${sp.id}`] ? `biome.${sp.id}` : type !== 'biome' && style.types[type] ? type : 'biome';
       return { pack: style, type: t, species: label };
     }
     if (type !== 'biome') return { pack: withSpecies(pack, label), type };
-    for (const p of [pack, DEFAULT_PACK]) {
+    for (const p of [pack, zh]) {
       const t = p.types[`biome.${sp.id}`] ? `biome.${sp.id}` : p.types.biome ? 'biome' : '';
       if (t) return { pack: withSpecies(p, label), type: t };
     }
-    return { pack: withSpecies(DEFAULT_PACK, label), type: 'biome' };
+    return { pack: withSpecies(zh, label), type: 'biome' };
   };
   return { type, label, tags: sp.terrain === 'jungle' ? ['hot'] : [], naming };
 }
@@ -1451,8 +1450,9 @@ function tagIslandType(world: World, f: GeoFeature): void {
   }
   for (const [k, c] of count) {
     if (c * 2 <= f.cells.length) continue;
-    const t = k > BUILTIN_COUNT ? islandTypeOfCode(world.small, k) : undefined;
-    if (t) f.tags = [...f.tags, `${ITYPE}${t.id}`];
+    // 第三十轮：内置的几种也在世界里了，只给有起名模板的那种打标签（起名只看这个标签；内置的几种没有模板，与以前一样不打）
+    const t = islandTypeOfCode(world.small, k);
+    if (t?.names) f.tags = [...f.tags, `${ITYPE}${t.id}`];
     return;
   }
 }
@@ -1859,8 +1859,8 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
   // 按河流类型的模板起名（种子里带上类型：同一条河换成别的类型，名字也换）。模板是中文的：风格是音译式时用内置中文包的词表
   const typedName = (f: GeoFeature, t: RiverType | LakeType | IslandType, key: string, salt: number, rs: ResolvedStyle): GenName => {
     const own = t.names!;
-    const pack = templateOf(rs.style);
-    const p = withOwnNames(hasLists(pack, own) ? pack : DEFAULT_PACK, t.name, own);
+    const pack = templateOf(rs.style, world.small);
+    const p = withOwnNames(hasLists(pack, own) ? pack : chineseTemplate(world.small), t.name, own);
     return templateName(p, OWN_TYPE, f.tags, hashString(`${seed}:${key}:${t.id}:${salt}${rs.suffix}`), taken);
   };
   // 改过的名字落到哪个地物上：先找锚点相同的，再按上面的先后找包含原锚点的；每条只用一次
@@ -1931,7 +1931,7 @@ export function assignNames(world: World, features: GeoFeature[]): Map<GeoFeatur
     if (rt) return { gen: () => typedName(f, rt, f.key, salt, rs), ctx: ctxOf(rs, salt, typeHow(rt)) };
     if (sp) {
       // 涂出来的生态区、自然长成的自带地名的一片：模板按生态定，种子里带上生态（同一片格涂成别的生态，名字也换）
-      const how = speciesFeature(sp).naming(rs.style);
+      const how = speciesFeature(sp).naming(rs.style, chineseTemplate(world.small));
       return {
         gen: () => styleName(how.pack, how.type, f.tags, hashString(`${seed}:${f.key}:${sp.id}:${salt}${rs.suffix}`), taken, how.species),
         ctx: ctxOf(rs, salt, speciesHow(sp)),

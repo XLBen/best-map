@@ -109,13 +109,10 @@ export function governmentName(small: Small, id: string): string {
   return g?.name ?? id;
 }
 
-// 档案里能选的政体：这个时代的在前，再是本世界里别的（第二十八轮：从资源库添加的照样能选），这个国家现在的总在
+// 档案里能选的政体：本世界里的（第三十轮：时代包里别的政体在资源库里，选之前先添加到本世界），这个国家现在的总在
 export function governmentChoices(w: World, current?: string): Government[] {
-  // 第二十九轮：时代列着的、生成后没人用收掉了的内置政体照样列出来（选了由 set_country 从内置的复制回来）
   const era = worldEra(w.small);
-  const own = (id: string) => (w.small.content?.government?.[id] as Government | undefined) ?? BUILTIN_GOVERNMENTS.find((g) => g.id === id);
-  const listed = (era?.governments ?? []).map(own).filter((g): g is Government => !!g);
-  const list = listed.length ? listed : eraGovernments(w.small, era);
+  const list = eraGovernments(w.small, era);
   const rest = worldGovernments(w.small).filter((g) => !list.some((x) => x.id === g.id));
   const all = [...list, ...rest];
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashArray } from '../tools/hash';
 import { Engine } from './engine';
-import { continents as sharedContinents } from './testing/fixtures';
+import { continents as sharedContinents, seededEngine } from './testing/fixtures';
 import { findCell } from './mesh';
 import { hashString } from './names';
 import { isRiverCell, lassoBandKm, lassoStroke, planRiver, traceRiver } from './select';
@@ -37,7 +37,7 @@ describe('画的河逐值不变', () => {
   it('有泉水、不带大小的画河，横穿一片的河，不带泉水的河道', () => {
     // 第九轮去掉旧存档兼容时重录（画的河都只挖河床，不再下切山谷）；之后的优化必须逐值不变
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
-    const eng = new Engine({ seed: 6, cells: 12000 });
+    const eng = seededEngine({ seed: 6, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
     const w = eng.world;
     const thr = w.small.planet.riverThreshold;
@@ -254,7 +254,7 @@ describe('画河：河的大小', () => {
 
 describe('圈一片', () => {
   it('预览新增的陆地就是结果；圈里离边远的格全是陆地；新增的格都在圈和过渡带里', () => {
-    const eng = new Engine({ cells: 12000, seed: 1 });
+    const eng = seededEngine({ cells: 12000, seed: 1 });
     eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'ocean' }, reset: true });
     const w = eng.world;
     const { width, height } = w.mesh;

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { OROGRAPHIC_KM, smoothPasses, windDeflectPasses } from './climate';
-import { Engine } from './engine';
+
 import { PLANET_CELL_KM, PLANET_SIZES, type PlanetSize, planetCells, planetSettings } from './presets';
 import { buildSphereMesh } from './sphere';
 import { sizeText } from './terrain';
-import { meshFor } from './testing/fixtures';
+import { meshFor, seededEngine } from './testing/fixtures';
 import { createWorld, settingsSchema } from './world';
 
 // 第十七轮：新建的整个星球每格约 100 km，格数随半径
@@ -45,7 +45,7 @@ describe('星球的格子', () => {
 
   it('小星球（1.78 万格）上新建的世界有河、湖、省份和地名', () => {
     const settings = planetSettings('small');
-    const eng = new Engine(settings, meshFor(settings));
+    const eng = seededEngine(settings, meshFor(settings));
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
     const w = eng.world;

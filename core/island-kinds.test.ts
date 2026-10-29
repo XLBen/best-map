@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { lithLayer } from '../src/render/colors';
 import * as elevation from './elevation';
 import { Engine } from './engine';
-import { BUILTIN_ISLAND_TYPES, LAGOON_BIT } from './island-types';
-import { DEFAULT_SPECIES, OLD_DEFAULT_COLORS, speciesColor } from './species';
+import { LAGOON_BIT } from './island-types';
+import { OLD_DEFAULT_COLORS, speciesColor } from './species';
 import { islandSizeRangeKm, islandStamp } from './terrain';
+import { seededEngine } from './testing/fixtures';
+import { BUILTIN_ISLAND_TYPES } from './packs/base';
+import { DEFAULT_SPECIES } from './packs/nature';
 
 // 第十三轮：几种岛各有岩性（可蚀性），小到一两格也看得出来；珊瑚岛有真浅的潟湖；新的生态配色。
 // 第十四轮：去掉了火山岛；岛的样子、潟湖按每格记下的岛的种类（causes.islandType），不再按可蚀性认
 
 function ocean(): Engine {
-  const eng = new Engine({ seed: 4, cells: 12000 });
+  const eng = seededEngine({ seed: 4, cells: 12000 });
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
   return eng;
 }
@@ -136,7 +139,7 @@ describe('几种岛的岩性', () => {
   });
 
   it('涂了很硬、很软的岩石的陆地画面不变（岛的样子只按种类）', () => {
-    const eng = new Engine({ seed: 4, cells: 12000 });
+    const eng = seededEngine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     const w = eng.world;
     const land: number[] = [];
@@ -221,7 +224,7 @@ describe('生态的新配色', () => {
 describe('放岛只添陆地', () => {
   it('珊瑚岛贴着别的岛放：原来的陆地一格不少（潟湖只压原来是海的格）', () => {
     for (const kind of ['low', 'continental'] as const) {
-      const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+      const eng = seededEngine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
       eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
       eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind, size: 60, variant: 1 } });
       const before = eng.world.causes.land.slice();

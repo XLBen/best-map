@@ -7,6 +7,7 @@ import type { Species } from './species';
 import { isConnected } from './provinces';
 import { isVegetated } from './vegetation';
 import { latitudeOf } from './world';
+import { seededEngine } from './testing/fixtures';
 
 const small = { cells: 6000, seed: 2 };
 
@@ -14,7 +15,7 @@ const small = { cells: 6000, seed: 2 };
 const landCmd = (cells: number[]) => ({ op: 'paint_land' as const, cells, t: cells.map(() => 0), mode: 'land' as const });
 
 function randomEngine() {
-  const eng = new Engine(small);
+  const eng = seededEngine(small);
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents', landFraction: 0.4 }, reset: true });
   return eng;
 }
@@ -64,7 +65,7 @@ describe('高程与水文', () => {
 
 describe('气候', () => {
   it('赤道比极地暖', () => {
-    const eng = new Engine({ ...small, latNorth: 85, latSouth: -5 });
+    const eng = seededEngine({ ...small, latNorth: 85, latSouth: -5 });
     eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.3 }, reset: true });
     const { world } = eng;
     let eq = 0;
@@ -85,7 +86,7 @@ describe('气候', () => {
   });
 
   it('垂直于西风的山脉：背风侧比迎风侧干', () => {
-    const eng = new Engine({ cells: 8000, seed: 3, latNorth: 60, latSouth: 30 });
+    const eng = seededEngine({ cells: 8000, seed: 3, latNorth: 60, latSouth: 30 });
     const { world } = eng;
     const cells: number[] = [];
     const uplift: number[] = [];
@@ -119,7 +120,7 @@ describe('气候', () => {
 describe('植被：A 能活在 a、b 气候，B 只在 a，C 只在 b', () => {
   // 用一个自定义场表示“气候类别”：0 = a，1 = b
   const setup = (compA: number, compB: number, k: number) => {
-    const eng = new Engine({ cells: 3000, seed: 5 });
+    const eng = seededEngine({ cells: 3000, seed: 5 });
     const { world } = eng;
     const all = Array.from({ length: world.mesh.n }, (_, i) => i);
     const half = all.filter((i) => world.mesh.x[i] < 1);
@@ -173,7 +174,7 @@ describe('植被：A 能活在 a、b 气候，B 只在 a，C 只在 b', () => {
 
 describe('约束求解', () => {
   it('把一片荒漠设为稀树草原：反推变湿，修正随距离衰减，下游流量随之重算', () => {
-    const eng = new Engine({ cells: 6000, seed: 7, latNorth: 30, latSouth: -10 });
+    const eng = seededEngine({ cells: 6000, seed: 7, latNorth: 30, latSouth: -10 });
     const { world } = eng;
     eng.exec({ op: 'set_worldgen', params: { seed: 11, type: 'continents', landFraction: 0.45 }, reset: true });
     const d = world.derived;
@@ -212,7 +213,7 @@ describe('约束求解', () => {
   });
 
   it('不可能的约束进入冲突面板，并给出原因', () => {
-    const eng = new Engine({ cells: 4000, seed: 8, latNorth: 10, latSouth: -10 });
+    const eng = seededEngine({ cells: 4000, seed: 8, latNorth: 10, latSouth: -10 });
     const { world } = eng;
     const all = Array.from({ length: world.mesh.n }, (_, i) => i);
     eng.exec(landCmd(all.filter((i) => world.mesh.x[i] > 0.5 && world.mesh.x[i] < 1.5)));

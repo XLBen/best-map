@@ -5,8 +5,8 @@ import { ORIGIN_OPS } from './content/origin';
 import './content/kinds';
 import { type ContentKind, type PackContext, type Renames, allKinds, itemId, itemName, kindByPackKey, kindOf, registryVersion } from './content/registry';
 import { ITEM_ID, sameItem, stableJson } from './content/refs';
-import { DEFAULT_STYLE, type NameStyle } from './name-styles';
-import { DEFAULT_PACK } from './names';
+import { DEFAULT_STYLE, type NameStyle, worldStyleId, worldStyles } from './name-styles';
+import { BUILTIN_STYLES } from './packs/names';
 import type { PlanetForm } from './planet-form';
 import { type FoundScript, findScripts } from './script';
 import type { Species } from './species';
@@ -63,7 +63,7 @@ export function packSections(): ContentKind[] {
 // ---------- 格式 ----------
 
 const META_KEYS = ['format', 'version', 'id', 'name', 'author', 'description'] as const;
-const NODE_META = ['id', 'name', 'description'] as const;
+const NODE_META = ['id', 'name', 'description', 'weight'] as const;
 
 // 包最多套几层（资源包 ▸ 小包 ▸ 小包）、一层最多几个小包
 export const PACK_DEPTH = 2;
@@ -85,6 +85,8 @@ function nodeSchema(depth: number): z.ZodType {
     id: z.string().min(1).max(64),
     name: z.string().min(1).max(60),
     description: z.string().max(2000).optional(),
+    // 第三十轮：时代包里文化组的小包默认的权重（新建向导里默认勾上这一组时的权重）
+    weight: z.number().min(0).max(1000).optional(),
     ...sectionShape(),
   };
   if (depth < PACK_DEPTH) shape.packs = z.array(z.unknown()).max(PACK_MAX_SUBPACKS).optional();
@@ -116,6 +118,8 @@ export interface PackNode {
   id: string;
   name: string;
   description?: string;
+  // 文化组的小包默认的权重（第三十轮，时代包的“文化 ▸ 组”）
+  weight?: number;
   packs?: PackNode[];
   [section: string]: unknown;
 }
@@ -403,9 +407,11 @@ export function packProblems(pack: PackNode): string[] {
       }
     });
   }
-  // 模板式起名能用的词表：内置中文的、包里模板式风格的，加上起名时才放进去的 __species
+  // 模板式起名能用的词表：内置中文的（新世界默认带着它）、包里模板式风格的，加上起名时才放进去的 __species
   const styles = packItems<NameStyle>(pack, 'nameStyles');
-  const lists = new Set([...Object.keys(DEFAULT_PACK.lists), ...styles.flatMap((s) => (s.kind === 'template' ? Object.keys(s.lists) : [])), '__species']);
+  const zh = BUILTIN_STYLES.find((s) => s.id === DEFAULT_STYLE);
+  const zhLists = zh?.kind === 'template' ? Object.keys(zh.lists) : [];
+  const lists = new Set([...zhLists, ...styles.flatMap((s) => (s.kind === 'template' ? Object.keys(s.lists) : [])), '__species']);
   const ctx: PackContext = {
     ids: (key) => {
       const k = kindByPackKey(key);
@@ -475,6 +481,10 @@ export interface PackPlan {
 // 用的是一个小包时界面给它的完整路径（[“medieval”, “governments”]）
 export interface PlanOptions {
   path?: readonly string[];
+  // 第三十轮：一项的来源由调用方给（packImportCommands 把几个包合成一个时，每项按它原来所在的包）；没给的照上面算
+  origin?: (key: string, id: string) => readonly string[] | undefined;
+  // 命令的标签（省略为“用上资源包“名字””）
+  label?: string;
 }
 
 // 给包里的一类项定下用到世界时的 id：没有冲突的照旧；世界里有一模一样的跳过（引用指向世界里那一项）；
@@ -532,7 +542,10 @@ function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames): unkno
 export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opts: PlanOptions = {}): PackPlan {
   const kinds = applicable();
   const root = [...(opts.path ?? [pack.id])];
-  const originOf = (k: ContentKind, id: string): string[] => [...root, ...(packPaths(pack, k.pack.key, id)[0] ?? [])];
+  const originOf = (k: ContentKind, id: string): string[] => {
+    const given = opts.origin?.(k.pack.key, id);
+    return given ? [...given] : [...root, ...(packPaths(pack, k.pack.key, id)[0] ?? [])];
+  };
   const picked = new Map<ContentKind, unknown[]>();
   const inWorld = new Map<ContentKind, readonly unknown[]>();
   for (const k of kinds) {
@@ -591,16 +604,16 @@ export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opt
 
   // 世界默认的地名风格：包里的这一种（改了名的按新 id）；世界里已经是它时不换
   const styleIds = renames.nameStyles;
-  const wanted = picks.defaultStyle ? (styleIds?.get(picks.defaultStyle) ?? (picks.defaultStyle === DEFAULT_STYLE ? DEFAULT_STYLE : undefined)) : undefined;
-  const defaultStyle = wanted && wanted !== (world.small.nameStyle ?? DEFAULT_STYLE) ? wanted : null;
+  const wanted = picks.defaultStyle ? (styleIds?.get(picks.defaultStyle) ?? (worldStyles(world.small)[picks.defaultStyle] ? picks.defaultStyle : undefined)) : undefined;
+  const defaultStyle = wanted && wanted !== worldStyleId(world.small) ? wanted : null;
 
   const fieldKind = kindOf('field');
   const commands: Command[] = [
-    ...fields.map((name): Command => withFrom(fieldKind?.enable ? fieldKind.enable(name, world) : { op: 'add_field', name }, root)),
+    ...fields.map((name): Command => withFrom(fieldKind?.enable ? fieldKind.enable(name, world) : { op: 'add_field', name }, [...(opts.origin?.('fields', name) ?? root)])),
     ...itemCmds,
     ...(defaultStyle ? [{ op: 'set_name_style', id: defaultStyle } as Command] : []),
   ];
-  return { command: { op: 'batch', label: `用上资源包“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
+  return { command: { op: 'batch', label: opts.label ?? `用上资源包“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
 }
 
 // 命令带上来源（能记来源的命令才带：启用一项内容的几种，见 commands.ts 的 ORIGIN_OPS）
@@ -643,7 +656,7 @@ export function endemicCount(world: PackWorld): number {
   return world.small.species.filter((s) => !!s.dispersal || !!s.range).length;
 }
 
-// 按段名给要导出的 id（省略的段取全部能导出的）；wordPack：带上世界在用的旧文字包（换过内置中文时）
+// 按段名给要导出的 id（省略的段取全部能导出的）。wordPack（第三十轮起没有用：世界里不再有旧的文字包，界面照旧传）
 export interface WorldPicks {
   biomes?: readonly string[];
   riverTypes?: readonly string[];
@@ -746,8 +759,6 @@ function flatPackFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta):
     const ids = picks[k.pack.key];
     const chosen = Array.isArray(ids) ? all.filter((x) => ids.includes(itemId(k, x))) : all;
     const items = chosen.map((x) => (k.pack.exportItem ? k.pack.exportItem(x) : x));
-    // 旧的文字包（换过内置中文时）：按模板式的地名风格带上
-    if (k.pack.key === 'nameStyles' && picks.wordPack && world.small.wordPack) items.push({ ...structuredClone(world.small.wordPack), kind: 'template' });
     // 自定义场只跟着生态（与以前一样）
     if (k.pack.key === 'biomes') for (const x of items) for (const f of k.pack.fieldsOf?.(x) ?? []) fields.add(f);
     if (items.length) sections.push([k.pack.key, items]);

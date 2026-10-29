@@ -13,11 +13,6 @@
     "urbanization": 0.2,
     "unclaimed": { "minHabitability": 0.03, "nomads": 0.5, "bandKm": 300 },
     "seaClaimKm": 40,
-    "defaultGroups": [["western", 3], ["eastern", 3], ["southasia", 3], ["slavic", 2], ["mediterranean", 2], ["mideast", 1.5], ["nordic", 1]],
-    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
-    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"],
-    "governments": ["constitutional-monarchy", "absolute-monarchy", "parliamentary-republic", "presidential-republic", "federal-republic", "empire", "colonial-empire", "revolutionary-state", "military-junta", "theocracy"],
-    "factions": ["conservatives", "liberals", "radicals", "army", "church", "industrialists"],
     "countryKm2": 1200000,
     "years": [1750, 1914],
     "tiers": { "city": 0.3, "small": 2, "medium": 2, "large": 1.5, "empire": 0.6 },
@@ -31,5 +26,10 @@
         "member": [{ "zh": "州", "orig": "State of {name}" }]
       }
     }
+  },
+  "pack": {
+    "governments": ["constitutional-monarchy", "absolute-monarchy", "parliamentary-republic", "presidential-republic", "federal-republic", "empire", "colonial-empire", "revolutionary-state", "military-junta", "theocracy"],
+    "factions": ["conservatives", "liberals", "radicals", "army", "church", "industrialists"],
+    "cultures": [["western", 3], ["eastern", 3], ["southasia", 3], ["slavic", 2], ["mediterranean", 2], ["mideast", 1.5], ["nordic", 1]]
   }
 }

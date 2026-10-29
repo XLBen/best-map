@@ -47,7 +47,8 @@ export type Request =
   // 要一份完整的快照（主线程拼不起只带变了的数组的快照时）
   | { kind: 'snapshot' }
   // 新建向导：用少量格子快速生成一张缩略图（一张一张要，画好一张显示一张）
-  | { kind: 'thumb'; settings: Partial<Settings>; gen: WorldgenInput; width: number; height: number }
+  // content（第三十轮）：生成之前先执行的命令（新世界默认加的生态、基础……；计算 Worker 里没有内置的内容）
+  | { kind: 'thumb'; settings: Partial<Settings>; gen: WorldgenInput; width: number; height: number; content?: Command[] }
   // 整理本世界的计划（第二十九轮）：在世界的副本上试，世界不变。only：只考虑这几项（资源库里一个包“移出没用到的”）
   | { kind: 'planTidy'; only?: ContentRef[] };
 
@@ -151,6 +152,8 @@ export type Response =
       noop?: boolean;
       // 这一步移出世界的内容（第二十九轮，exec 的回复里带；没有时不写）
       removed?: RemovedItem[];
+      // 缺了内容跳过的步骤（第三十轮，exec 的回复里带；没有时不写）：“没有城市等级：没有放城市和道路”……
+      skipped?: string[];
       // 确切预览没算完就被取消了（没有 preview、world）
       cancelled?: boolean;
       snapshot?: Snapshot | LightSnapshot;

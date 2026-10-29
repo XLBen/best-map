@@ -1,12 +1,14 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_SPECIES } from '../packs/nature';
+import { eraValues } from '../packs/builtin-tree';
 import { digest, digestWorld } from '../../tools/hash';
 import { type Command, CommandError } from '../commands';
 import { Engine, passStats } from '../engine';
 import { exportPackage } from '../export';
 import { styleFor } from '../name-styles';
 import { BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
-import { continents, engineFor, snapshot } from '../testing/fixtures';
+import { continents, engineFor, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import { HUMAN_DERIVED, POP_DERIVED, type World } from '../world';
 import {
   SLOTS,
@@ -25,7 +27,6 @@ import {
 } from './index';
 import { majorityCulture } from './culture-style';
 import { computePopLayers } from './layers';
-import { BIOME_HABITABILITY } from './habitability';
 
 // 第二十二轮：时代、宜居度、文化圈、人口、跟着文化的地名
 
@@ -34,7 +35,7 @@ const GROUPS = [
   { id: 'eastern', weight: 3 },
   { id: 'steppe', weight: 1.5 },
 ];
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: GROUPS };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS };
 // 用到的三个组的内置文化（按组的先后）
 const SAMPLE_CULTURES = GROUPS.flatMap((g) => BUILTIN_CULTURES.filter((c) => c.group === g.id).map((c) => c.id));
 
@@ -42,7 +43,7 @@ const SAMPLE_CULTURES = GROUPS.flatMap((g) => BUILTIN_CULTURES.filter((c) => c.g
 const peopled = (): Engine =>
   snapshot('peopled', () => {
     const eng = continents();
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 
@@ -68,7 +69,12 @@ const RECORDED = {
   region: { popTotal: '775959a1b32aa324', popGroup: '615e92255bebd8f9', popShare: 'a6bebbf6370e6d27', human: '0b1bb5c220bbca2a' },
   planet: { popTotal: 'ed60b168f709c4e6', popGroup: 'c7d81a7e310ca928', popShare: 'db4a6def5def5d31', human: '8e8a40c4a27c3c41' },
 };
-const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human) });
+// 第三十轮：small.human 多了用的资源包（packs），金标准记的是没有它的样子（别的一样）
+const humanState = (w: World) => {
+  const { packs: _, ...h } = w.small.human!;
+  return h;
+};
+const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(humanState(w)) });
 
 describe('宜居度', () => {
   it('水面为 0，陆地在 0–1；冰盖、荒漠很低，河边、海边高；没有人文的世界也有', () => {
@@ -100,7 +106,8 @@ describe('宜居度', () => {
     }
     expect(riverN).toBeGreaterThan(5);
     expect(river / riverN).toBeGreaterThan(inland / inlandN);
-    expect(BIOME_HABITABILITY.desert).toBeLessThan(BIOME_HABITABILITY.temperate_forest);
+    const hab = (id: string) => DEFAULT_SPECIES.find((s) => s.id === id)!.habitability!;
+    expect(hab('desert')).toBeLessThan(hab('temperate_forest'));
   });
 
   it('生态写了宜居度就用它，只重算人文的几层；地形类别的倍数也算进去', () => {
@@ -127,10 +134,10 @@ describe('生成人文', () => {
     expect(Object.keys(w.small.content?.cultureGroup ?? {})).toEqual(['western', 'eastern', 'steppe']);
     expect(worldCultures(w.small).map((c) => c.id)).toEqual(SAMPLE_CULTURES);
     for (const c of worldCultures(w.small)) if (c.nameStyle !== 'zh-default') expect(w.small.content?.nameStyle?.[c.nameStyle], c.id).toBeDefined();
-    // 第二十九轮：时代的取值复制进来，生成后只留有人的（按内置的先后）
+    // 第二十九轮：时代的取值加进来，生成后只留有人的（按时代包里的先后）
     const religions = dimensionValues(w.small, 'religion').map((v) => v.id);
     expect(religions.length).toBeGreaterThan(0);
-    expect(religions).toEqual(BUILTIN_POP_VALUES.filter((v) => v.dimension === 'religion' && v.eras?.includes('medieval') && religions.includes(v.id)).map((v) => v.id));
+    expect(religions).toEqual(eraValues({ id: 'medieval' }, 'religion').filter((v) => religions.includes(v.id)).map((v) => v.id));
     expect(w.small.human!.totalPop).toBe(defaultTotalPop(w, w.derived, era));
     expect(Math.abs(totalPop(w) - w.small.human!.totalPop) / w.small.human!.totalPop).toBeLessThan(1e-4);
     expect(humanLayers(w).map((l) => l.id)).toEqual(['culture', 'cultureGroup', 'religion', 'popDensity', 'habitability']);
@@ -228,7 +235,7 @@ describe('生成人文', () => {
   it('同样的世界、同样的参数逐值相同；重放、检查点一致；金标准', () => {
     const a = peopled();
     const b = continents();
-    b.exec(GEN);
+    humanExec(b, GEN);
     expect(popDigest(b.world)).toEqual(popDigest(a.world));
     const doc = a.toDoc();
     expect(popDigest(Engine.fromDoc(doc, a.world.mesh).world)).toEqual(popDigest(a.world));
@@ -240,7 +247,7 @@ describe('生成人文', () => {
   it('整个星球上也一样', () => {
     const eng = engineFor({ seed: 3, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     const w = eng.world;
     expect(Math.abs(totalPop(w) - w.small.human!.totalPop) / w.small.human!.totalPop).toBeLessThan(1e-4);
     const again = Engine.fromDoc(eng.toDoc(), w.mesh);
@@ -252,25 +259,31 @@ describe('生成人文', () => {
     const eng = continents();
     const before = digestWorld(eng.world);
     const human0 = Object.fromEntries(HUMAN_DERIVED.map((k) => [k, digest(eng.world.derived[k])]));
-    eng.exec({ ...GEN, seed: 77, totalPop: 1e6 } as Command);
+    humanExec(eng, { ...GEN, seed: 77, totalPop: 1e6 } as Command);
     expect(totalPop(eng.world)).toBeCloseTo(1e6, -1);
     expect(genDigest(eng.world)).not.toEqual(genDigest(peopled().world));
+    eng.undo();
+    // 第三十轮：生成之前加进来的时代包内容是单独的一步，再撤一步
     eng.undo();
     const w = eng.world;
     expect(w.small.human).toBeUndefined();
     expect(w.small.popGroups).toBeUndefined();
-    expect(w.small.content).toBeUndefined();
+    expect(w.small.content?.era).toBeUndefined();
     expect(w.causes.popTotal).toBeUndefined();
     expect(w.derived.popCulture).toBeUndefined();
     expect(digestWorld(w)).toEqual(before);
     expect(Object.fromEntries(HUMAN_DERIVED.map((k) => [k, digest(w.derived[k])]))).toEqual(human0);
   });
 
-  it('不认识的时代、文化组报错；去掉人文', () => {
+  it('不认识的时代、文化组：不生成，写明缺什么（第三十轮：不报错）；去掉人文', () => {
     const eng = continents();
-    expect(() => eng.exec({ ...GEN, era: 'stone' } as Command)).toThrow(CommandError);
-    expect(() => eng.exec({ ...GEN, groups: [{ id: 'martian', weight: 1 }] } as Command)).toThrow(CommandError);
-    expect(eng.world.small.content).toBeUndefined();
+    humanExec(eng, { ...GEN, era: 'stone' } as Command);
+    expect(eng.world.small.human).toBeUndefined();
+    expect(eng.lastSkipped[0]).toMatch(/^没有时代/);
+    humanExec(eng, { ...GEN, groups: [{ id: 'martian', weight: 1 }] } as Command);
+    expect(eng.world.small.human).toBeUndefined();
+    expect(eng.lastSkipped[0]).toMatch(/^没有文化/);
+    expect(eng.world.small.content?.era?.stone).toBeUndefined();
     const p = peopled();
     expect(p.exec({ op: 'remove_human' })).toBe('删除人文');
     expect(p.world.small.human).toBeUndefined();
@@ -296,7 +309,7 @@ describe('生成人文', () => {
     try {
       expect(humanStages()).toEqual(['cultures', 'countries', 'claims', 'blocs', 'test-countries', 'population', 'country-mix']);
       const eng = continents();
-      eng.exec(GEN);
+      humanExec(eng, GEN);
       expect(ran).toBe(1);
       expect(genDigest(eng.world)).toEqual(genDigest(peopled().world));
     } finally {
@@ -320,7 +333,7 @@ describe('发源地', () => {
     expect(moved).toEqual({ group: 'western', cell: target, locked: true });
     expect(worldCultures(w.small)[w.derived.popCulture![target] - 1]?.group).toBe('western');
     // 再重新生成：锁定的还在
-    eng.exec({ op: 'regenerate_human', seed: 9 });
+    humanExec(eng, { op: 'regenerate_human', seed: 9 });
     expect(w.small.human!.hearths.find((h) => h.group === 'western' && !h.culture)).toEqual(moved);
     expect(eng.exec({ op: 'move_hearth', group: 'western', cell: null })).toBe('发源地“西欧”恢复自动');
     expect(w.small.human!.hearths.find((h) => h.group === 'western' && !h.culture)!.locked).toBeUndefined();
@@ -580,9 +593,9 @@ describe('改地形以后的修补', () => {
     const cells = peopledCells(w).slice(10, 20);
     eng.exec({ op: 'paint_pop', cells, mode: 'count', factor: 2 });
     const painted = cells.map((i) => w.causes.popTotal![i]);
-    eng.exec({ op: 'regenerate_human', seed: 3 });
+    humanExec(eng, { op: 'regenerate_human', seed: 3 });
     cells.forEach((i, k) => expect(w.causes.popTotal![i]).toBe(painted[k]));
-    eng.exec({ op: 'regenerate_human', keepManual: false });
+    humanExec(eng, { op: 'regenerate_human', keepManual: false });
     expect(w.causes.popManual!.every((v) => v === 0)).toBe(true);
     eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents', landFraction: 0.4 }, reset: true });
     expect(w.small.human).toBeUndefined();

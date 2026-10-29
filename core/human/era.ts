@@ -9,7 +9,9 @@ import { HEX } from './terrain-class';
 // 第二十二轮：时代、人口维度的取值、文化组、文化——四种内容（都放在 small.content，命令是 set_content）。
 // 一个世界一个时代（small.human.era）。人口的维度：文化总是第一维（不写在时代里），时代再列别的维度（宗教、种族、民族认同、意识形态……）；
 // 每一维的取值是“人口维度的取值”（popValue），按 dimension 归到某一维。文化组 → 文化两层，同组即兼容。
-// 内置的一套在 core/packs/eras/（时代与取值）、core/packs/cultures/（文化组与文化）；用到世界时复制进来（generate_human 自动补上缺的）
+// 第三十轮：时代就是资源包——时代包里有一个时代项（只是规则：维度、人口密度、无主地、领海、国家大小、城市化、关系、年代），
+// 政体、派系、文化、取值、资源、地标在包的小包里（以前写在时代项里的几张列表去掉了）。内置的在 core/packs/eras/ 与 builtin-tree.ts；
+// 生成只读世界里的（界面先把勾选的包加进世界）。取值、文化组、政体、派系不再写“只在哪些时代”：在不在世界里就是能不能用
 
 // 宜居度的偏好（矮人喜山）：按格的条件（与地形类别的规则同一种写法，见 rules.ts）加一个倍数。
 // 写了的几项都满足时宜居度乘以 factor；几条都满足时连乘。条件可以写 classes（地形类别，只管起伏：平原、丘陵、高原、山地、山峰）；
@@ -91,15 +93,6 @@ export const eraSchema = z.object({
     .default({ minHabitability: 0.05, nomads: 0.3 }),
   // 海域归属（第二十三轮）：离岸多少 km 以内的海算领海；0 是海不归任何国家
   seaClaimKm: z.number().min(0).max(2000).default(0),
-  // 默认选的文化组与各占多少（新建向导用）
-  defaultGroups: weightedIdsSchema.optional(),
-  // 只能用这些文化组（省略时不限）
-  cultureGroups: z.array(typeIdSchema).max(64).optional(),
-  // 政体、派系（第二十三轮，见 human/government.ts）：这个时代能用的 id（省略时用世界里写了这个时代、或不限时代的）
-  governments: z.array(typeIdSchema).max(64).optional(),
-  factions: z.array(typeIdSchema).max(64).optional(),
-  // 资源（以后的轮次用）
-  resources: z.array(typeIdSchema).max(128).optional(),
   // 国家（第二十三轮）：“分裂 ↔ 统一”在正中时一个国家平均占多少 km² 能住人的陆地（省略为 COUNTRY_KM2）
   countryKm2: z.number().min(1000).max(1e9).optional(),
   // 年份的范围 [最早, 现在]：建国年份在这里面（省略为 [500, 1000]）
@@ -121,8 +114,6 @@ export const popValueSchema = z.object({
   orig: z.string().min(1).max(40).optional(),
   color: HEX,
   description: z.string().max(400).optional(),
-  // 只在这些时代里有（省略时不限）
-  eras: z.array(typeIdSchema).max(16).optional(),
   // 有这一取值的人在哪里更多：宜居度的偏好（矮人 × 山地）。只影响一格里的成分，不影响总人数
   prefs,
 });
@@ -137,8 +128,6 @@ export const cultureGroupSchema = z.object({
   description: z.string().max(400).optional(),
   // 喜欢的地理：发源地按它挑，扩张时偏向这些地方，人口也更多住在这里
   prefs,
-  // 只在这些时代里有（省略时不限）
-  eras: z.array(typeIdSchema).max(16).optional(),
 });
 export type CultureGroup = z.output<typeof cultureGroupSchema>;
 
@@ -190,16 +179,14 @@ export function worldEra(small: HumanSmall): Era | undefined {
 // 世界的时代的维度（文化之外的；没有时代时为空）
 export const worldDimensions = (small: HumanSmall): readonly Dimension[] => worldEra(small)?.dimensions ?? [];
 
-// 一维的取值（世界里启用的、属于这一维、不限时代或包括世界的时代）；编号 = 下标 + 1。eraId 省略时是世界的时代
+// 一维的取值（世界里启用的、属于这一维）；编号 = 下标 + 1。第三十轮起不再按时代筛：世界里有的就能用
 const dimCache = new WeakMap<object, Map<string, PopValue[]>>();
-export function dimensionValues(small: HumanSmall, dim: string, eraId?: string): readonly PopValue[] {
+export function dimensionValues(small: HumanSmall, dim: string, _eraId?: string): readonly PopValue[] {
   const all = worldPopValues(small);
-  const era = eraId ?? small.human?.era;
   let m = dimCache.get(all);
   if (!m) dimCache.set(all, (m = new Map()));
-  const key = `${dim}|${era ?? ''}`;
-  let l = m.get(key);
-  if (!l) m.set(key, (l = all.filter((v) => v.dimension === dim && (!v.eras || !era || v.eras.includes(era)))));
+  let l = m.get(dim);
+  if (!l) m.set(dim, (l = all.filter((v) => v.dimension === dim)));
   return l;
 }
 

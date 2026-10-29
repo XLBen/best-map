@@ -1,33 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../../tools/hash';
-import type { Command } from '../commands';
+
 import { Engine } from '../engine';
 import { ISLET_FRAG } from '../features';
 import { BUILTIN_ERAS } from '../packs/eras';
 import { brushCells } from '../select';
-import { continents, snapshot } from '../testing/fixtures';
+import { continents, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import type { World } from '../world';
 import { SMALL_GAP, claimsStage } from './claims';
 import type { GenContext } from './context';
 import { worldEra } from './era';
-import {
-  BUILTIN_RANKS,
-  ISLET_STEPS,
-  allCountryStats,
-  blocBorderGroups,
-  blocList,
-  blocMapColors,
-  blocOf,
-  cityList,
-  countryCells,
-  countryColors,
-  countryList,
-  countryMapColors,
-  estimateCountryCount,
-  federationColorOf,
-  nextBlocId,
-} from './index';
+import { ISLET_STEPS, allCountryStats, blocBorderGroups, blocList, blocMapColors, blocOf, cityList, countryCells, countryColors, countryList, countryMapColors, estimateCountryCount, federationColorOf, nextBlocId } from './index';
 import { cellInputs } from './rules';
+import { BUILTIN_RANKS } from '../packs/settlements';
 
 // 第二十六轮：国家——领土补齐、等级与格局、帝国 / 联邦 / 同盟、从属的种类、大城市的上限
 
@@ -36,18 +21,18 @@ const GROUPS = [
   { id: 'eastern', weight: 3 },
   { id: 'steppe', weight: 1.5 },
 ];
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
 
 const nations = (): Engine =>
   snapshot('nations', () => {
     const eng = continents({ provinces: true });
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 const moderns = (): Engine =>
   snapshot('r26-modern', () => {
     const eng = continents({ provinces: true });
-    eng.exec({ op: 'generate_human', era: 'modern', groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
+    humanExec(eng, { op: 'generate_human', era: 'modern', groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
     return eng;
   });
 
@@ -112,7 +97,7 @@ describe('领土补齐', () => {
       const eng = nations();
       const era = structuredClone(BUILTIN_ERAS.find((e) => e.id === 'antiquity')!);
       eng.exec({ op: 'set_content', kind: 'era', id: 'medieval', item: { ...era, id: 'medieval', unclaimed: { ...era.unclaimed, bandKm: band } } });
-      eng.exec({ op: 'regenerate_countries' });
+      humanExec(eng, { op: 'regenerate_countries' });
       return ownedShare(eng.world);
     };
     const s0 = share(0);
@@ -132,7 +117,7 @@ describe('领土补齐', () => {
     const hole = near(w, inner, 2.2);
     eng.exec({ op: 'paint_country', cells: hole, country: null });
     eng.exec({ op: 'set_country', id: countryList(w.small)[0].id, patch: { history: '改一句' } });
-    eng.exec({ op: 'regenerate_human' });
+    humanExec(eng, { op: 'regenerate_human' });
     for (const i of hole) expect(w.causes.country![i]).toBe(-1);
   });
 
@@ -184,20 +169,20 @@ describe('国家的等级与格局', () => {
 
   it('“混合”格局里有很大的国家也有很小的国家；格局记在 countryRules 里', () => {
     const eng = nations();
-    eng.exec({ op: 'regenerate_countries', layout: 'mixed' });
+    humanExec(eng, { op: 'regenerate_countries', layout: 'mixed' });
     const w = eng.world;
     expect(w.small.human!.countryRules!.layout).toBe('mixed');
     const r = cv(w);
     expect(r.max).toBeGreaterThan(2.5);
     expect(r.min).toBeLessThan(0.25);
     // 'era' 不记
-    eng.exec({ op: 'regenerate_countries', layout: 'era' });
+    humanExec(eng, { op: 'regenerate_countries', layout: 'era' });
     expect(w.small.human!.countryRules!.layout).toBeUndefined();
   });
 
   it('中世纪“混合”：最大的国不到陆地的四分之一，留着一些无主地；不占隔海、没什么人的陆块；帝国是认得出的一片', () => {
     const eng = nations();
-    eng.exec({ op: 'regenerate_countries', layout: 'mixed' });
+    humanExec(eng, { op: 'regenerate_countries', layout: 'mixed' });
     const w = eng.world;
     const { mesh, causes } = w;
     const pop = causes.popTotal!;
@@ -247,7 +232,7 @@ describe('国家的等级与格局', () => {
     const era = worldEra(w.small)!;
     expect(estimateCountryCount(w, w.derived, era, 0.5)).toBe(countryList(w.small).length);
     const eng = nations();
-    eng.exec({ op: 'regenerate_countries', fragmentation: 0.8 });
+    humanExec(eng, { op: 'regenerate_countries', fragmentation: 0.8 });
     expect(estimateCountryCount(eng.world, eng.world.derived, era, 0.8)).toBe(countryList(eng.world.small).length);
   });
 });

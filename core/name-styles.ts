@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { FeatureOverride, GeoFeature } from './features';
-import { DEFAULT_PACK, type WordPack, generateName, hashString, packProblems as templateListProblems, wordPackSchema } from './names';
+import { type WordPack, generateName, hashString, packProblems as templateListProblems, wordPackSchema } from './names';
 import { mixSeed, mulberry32 } from './rng';
 import { typeIdSchema } from './type-id';
 import { type Cells, type CultureWorld, cultureStyleId } from './human/culture-style';
@@ -14,7 +14,8 @@ import type { SmallState } from './world';
 // 起出来的名字是 {zh, orig}：zh 上地图、进 taken 避免重名；orig 是原文（模板式没有读音表时没有）。
 // 同一个种子、同一份风格，名字一字不差。
 
-// 内置中文风格的 id：世界没选别的时用它（它的内容是 small.wordPack，没有时是内置的中文包）
+// 内置中文风格的 id（第三十轮起是普通内容，在“通用 ▸ 地名 ▸ 中文”里，新建时默认加进来）。
+// 生态、河湖、岛的种类自带的中文起名模板在世界默认的风格是音译式时用它（见 templateOf）
 export const DEFAULT_STYLE = 'zh-default';
 
 // 带权重的一项：'k' 或 ['k', 3]（省略的权重为 1）
@@ -73,8 +74,11 @@ export const nameStyleSchema = z.discriminatedUnion('kind', [templateStyleSchema
 export type TemplateStyle = z.output<typeof templateStyleSchema>;
 export type PhoneticStyle = z.output<typeof phoneticStyleSchema>;
 export type NameStyle = TemplateStyle | PhoneticStyle;
-// 起名用的风格：内置中文与旧的文字包没有 kind（按模板式）
+// 起名用的风格（模板式的旧写法没有 kind，按模板式）
 export type StyleBody = (WordPack & { kind?: 'template'; readings?: Record<string, string> }) | PhoneticStyle;
+
+// 世界里一种地名风格都没有时（第三十轮）：什么都起不出来（名字是空的），界面照常
+export const NO_STYLE: TemplateStyle = { id: 'none', name: '不起名', kind: 'template', lists: {}, types: {} };
 
 export interface GenName {
   zh: string;
@@ -88,9 +92,18 @@ export function hasType(style: StyleBody, type: string): boolean {
   return !!style.types[type];
 }
 
-// 模板式风格本身（音译式的模板、词表不能给生态、河湖类型自带的中文模板用：退回内置的中文）
-export function templateOf(style: StyleBody): WordPack & { readings?: Record<string, string> } {
-  return isPhonetic(style) ? DEFAULT_PACK : style;
+// 模板式风格本身（音译式的模板、词表不能给生态、河湖类型自带的中文模板用：退回世界里的中文——中文·默认，
+// 没有时世界里第一种模板式的风格，都没有时什么都起不出来）
+export function templateOf(style: StyleBody, small: Pick<Partial<SmallState>, 'content'>): WordPack & { readings?: Record<string, string> } {
+  return isPhonetic(style) ? chineseTemplate(small) : style;
+}
+
+// 世界里的中文模板（见 templateOf）
+export function chineseTemplate(small: Pick<Partial<SmallState>, 'content'>): TemplateStyle {
+  const styles = worldStyles(small);
+  const zh = styles[DEFAULT_STYLE];
+  if (zh?.kind === 'template') return zh;
+  return Object.values(styles).find((s): s is TemplateStyle => s.kind === 'template') ?? NO_STYLE;
 }
 
 // ---------- 模板式 ----------
@@ -359,23 +372,25 @@ export function styleNotes(style: NameStyle): string[] {
 
 // ---------- 世界里的风格 ----------
 
-type StyleSmall = Pick<SmallState, 'wordPack' | 'featureNames' | 'provinces'> & Partial<Pick<SmallState, 'content' | 'nameStyle' | 'human'>>;
+type StyleSmall = Pick<SmallState, 'featureNames' | 'provinces'> & Partial<Pick<SmallState, 'content' | 'nameStyle' | 'human'>>;
 
-// 世界里启用的风格（不含内置中文）
+// 世界里启用的风格（第三十轮起中文·默认也在这里）
 export function worldStyles(small: Pick<Partial<SmallState>, 'content'>): Record<string, NameStyle> {
   return small.content?.nameStyle ?? {};
 }
 
-// 按 id 找世界里的风格：内置中文是 small.wordPack（旧的文字包），没有时是内置的中文包
-export function styleById(small: StyleSmall, id: string): StyleBody | undefined {
-  if (id === DEFAULT_STYLE) return small.wordPack ?? DEFAULT_PACK;
+// 按 id 找世界里的风格
+export function styleById(small: Pick<Partial<SmallState>, 'content'>, id: string): StyleBody | undefined {
   return worldStyles(small)[id];
 }
 
-// 世界默认的风格 id（选的那种不在世界里时退回内置中文）
-export function worldStyleId(small: StyleSmall): string {
+// 世界默认的风格 id：选了的（set_name_style，还在世界里时）；没选时是世界里第一种（新建时默认加进来的中文·默认）；
+// 一种都没有时为 ''（不起名）
+export function worldStyleId(small: Pick<Partial<SmallState>, 'content' | 'nameStyle'>): string {
   const id = small.nameStyle;
-  return id && styleById(small, id) ? id : DEFAULT_STYLE;
+  if (id && styleById(small, id)) return id;
+  for (const k in worldStyles(small)) return k;
+  return '';
 }
 
 // 一处地方的风格：用哪一种、起名的种子要加什么、起名的办法的标识（留着的名字按它判断还能不能用）
@@ -384,7 +399,7 @@ export interface ResolvedStyle {
   style: StyleBody;
   // 不是世界默认的风格时，种子后面加上 “:风格 id”（只用默认风格的世界名字一个不变）
   suffix: string;
-  // 起名的办法里的风格标识：内置中文是旧的文字包标识（没有文字包时为 '-'），别的是内容的哈希
+  // 起名的办法里的风格标识：内容的哈希（没有风格时为 '-'）
   tag: string;
 }
 
@@ -426,7 +441,8 @@ function targetCells(world: StyleWorld, target: StyleTarget): Cells {
   return target.feature.cells ?? world.derived?.features?.find((f) => f.key === target.feature.key)?.cells ?? [];
 }
 
-// 一处地方用哪种风格：自己选的 → 当地占多数的文化的风格（第二十二轮，见 human/culture-style.ts）→ 世界默认 → 内置中文。
+// 一处地方用哪种风格：自己选的 → 当地占多数的文化的风格（第二十二轮，见 human/culture-style.ts）→ 世界默认；
+// 世界里一种风格都没有时是 NO_STYLE（id 为 ''，名字是空的）。
 // 选的风格不在世界里了（停用了）时跳过它。一格按它所在的省份自己选的风格，没有时按这一格的文化
 export function styleFor(world: StyleWorld, target?: StyleTarget): ResolvedStyle {
   const small = world.small;
@@ -440,9 +456,9 @@ export function styleFor(world: StyleWorld, target?: StyleTarget): ResolvedStyle
     if (c && styleById(small, c)) id = c;
   }
   id ??= def;
-  const style = styleById(small, id)!;
-  const tag = id === DEFAULT_STYLE ? (small.wordPack ? contentTag(small.wordPack) : '-') : contentTag(style);
-  return { id, style, suffix: id === def ? '' : `:${id}`, tag };
+  const style = id ? styleById(small, id) : undefined;
+  if (!style) return { id: '', style: NO_STYLE, suffix: '', tag: '-' };
+  return { id, style, suffix: id === def ? '' : `:${id}`, tag: contentTag(style) };
 }
 
 // 世界里指向不存在的风格的地方（停用了还在用）：起名时按世界默认，这里列出来给界面提示
@@ -457,7 +473,7 @@ export function missingStyles(small: StyleSmall): { where: string; id: string }[
 
 // 风格是不是在用：世界默认、某个地物或省份选了它
 export function styleInUse(small: StyleSmall, id: string): boolean {
-  if ((small.nameStyle ?? DEFAULT_STYLE) === id) return true;
+  if (worldStyleId(small) === id) return true;
   for (const ov of Object.values(small.featureNames)) if (ov.style === id) return true;
   for (const p of Object.values(small.provinces)) if (p.style === id) return true;
   return false;

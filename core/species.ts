@@ -110,6 +110,9 @@ export const rangeSchema = z.discriminatedUnion('kind', [
 ]);
 export type SpeciesRange = z.output<typeof rangeSchema>;
 
+// 生态的大类（第三十轮，speciesSchema 的 group）：涂出来的一片按这一类的地物识别、起名
+export const BIOME_GROUPS = ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const;
+
 // 生态能有的两种脚本
 export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
 
@@ -153,6 +156,10 @@ export const speciesSchema = z.object({
   // ---------- 第二十七轮 ----------
   // 通行难度的倍数（乘在地形类别的起伏上；平地的草原为 1）。省略时按生态估（见 human/terrain-class.ts 的 biomeMovement）
   movement: z.number().min(0.1).max(20).optional(),
+  // ---------- 第三十轮 ----------
+  // 大类（地物“荒漠、森林、苔原、冰原、湿地”）：涂出来的一片按这一类的地物识别、起名。省略时按地形归大片的地区，
+  // 自己的一片按“生态区”起名（见 features.ts 的 speciesFeature）
+  group: z.enum(BIOME_GROUPS).optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;
@@ -239,30 +246,6 @@ export function advancedTolerances(sp: Species): Tolerance[] {
   return sp.tolerances.filter((t) => t.field !== 'tMean' && t.field !== 'moisture' && !conds.some((c) => sameTol(t, c)));
 }
 
-const make = (id: string, name: string, color: string, terrain: string, competition: number, r: Rect, conds: ConditionId[] = []): Species => {
-  let sp: Species = { id, name, color, terrain, competition, tolerances: rectTolerances(r) };
-  for (const c of conds) sp = withCondition(sp, c, true);
-  return sp;
-};
-
-// 一套接近地球的默认生态（年均温与湿润程度的分区接近 Whittaker 生物群系图），供架空世界在此基础上修改或替换。
-// 第十三轮换了配色：相邻的生态更容易分开（CIEDE2000 最近的相邻一对从约 4 到约 9），仍是自然的颜色
-export const DEFAULT_SPECIES: Species[] = [
-  make('ice', '冰盖', '#eef3f7', 'arctic', 8, { t0: -40, t1: -17, m0: 0, m1: 50 }),
-  make('tundra', '苔原', '#a8ab8e', 'arctic', 3, { t0: -17, t1: -9, m0: 0.12, m1: 50 }),
-  make('taiga', '针叶林', '#3d6a52', 'forest', 3, { t0: -9, t1: 3, m0: 0.55, m1: 50 }),
-  make('temperate_forest', '温带阔叶林', '#8aac5a', 'forest', 3, { t0: 3, t1: 14, m0: 0.9, m1: 50 }),
-  make('steppe', '温带草原', '#c9c27c', 'steppe', 2, { t0: -6, t1: 16, m0: 0.25, m1: 0.6 }),
-  make('shrubland', '地中海灌木', '#a08c58', 'hills', 3.5, { t0: 12, t1: 20, m0: 0.3, m1: 0.9 }, ['winterRain']),
-  make('subtropical_forest', '亚热带常绿林', '#3c8c58', 'forest', 3, { t0: 14, t1: 21, m0: 1.0, m1: 50 }),
-  make('savanna', '稀树草原', '#d2ad56', 'savanna', 3, { t0: 20, t1: 40, m0: 0.3, m1: 0.72 }),
-  make('dry_forest', '热带干燥林', '#959a3e', 'forest', 3, { t0: 20, t1: 40, m0: 0.72, m1: 1.4 }),
-  make('monsoon_forest', '热带季雨林', '#55a02c', 'jungle', 3.2, { t0: 20, t1: 40, m0: 0.9, m1: 2.5 }, ['summerRain']),
-  make('rainforest', '热带雨林', '#1d6633', 'jungle', 4, { t0: 22, t1: 40, m0: 1.4, m1: 50 }),
-  make('wetland', '沼泽湿地', '#4c8c86', 'marsh', 6, { t0: -2, t1: 40, m0: 0.5, m1: 50 }, ['wetland', 'flat']),
-  make('desert', '荒漠', '#efd8a8', 'desert', 1, { t0: -6, t1: 40, m0: 0, m1: 0.15 }),
-];
-
 // 第十三轮以前的默认颜色（按 id）：存档、检查点里的世界还是这些颜色时，画的时候换成新的默认颜色（speciesColor），
 // 用户自己改过的颜色不动
 export const OLD_DEFAULT_COLORS: Readonly<Record<string, string>> = {
@@ -279,7 +262,23 @@ export const OLD_DEFAULT_COLORS: Readonly<Record<string, string>> = {
   wetland: '#5c8a7a',
   desert: '#e3d3a0',
 };
-const NEW_DEFAULT_COLORS = new Map(DEFAULT_SPECIES.map((sp) => [sp.id, sp.color]));
+// 第十三轮的默认颜色（内置的生态，见 packs/nature.ts；第三十轮生态挪进资源包后这里只留颜色）
+const NEW_DEFAULT_COLORS = new Map(
+  Object.entries({
+    tundra: '#a8ab8e',
+    taiga: '#3d6a52',
+    temperate_forest: '#8aac5a',
+    steppe: '#c9c27c',
+    shrubland: '#a08c58',
+    subtropical_forest: '#3c8c58',
+    savanna: '#d2ad56',
+    dry_forest: '#959a3e',
+    monsoon_forest: '#55a02c',
+    rainforest: '#1d6633',
+    wetland: '#4c8c86',
+    desert: '#efd8a8',
+  }),
+);
 
 // 画在地图上、色块里的生态颜色：还是旧的默认颜色时换成新的默认颜色
 export function speciesColor(sp: Pick<Species, 'id' | 'color'>): string {

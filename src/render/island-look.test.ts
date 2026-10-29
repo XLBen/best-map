@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { Engine } from '../../core/engine';
+
 import type { World } from '../../core/world';
 import { type ColorOptions, cellLayers, lithLayer, shoreElevation } from './colors';
 import { LITH_LAND_GLSL, packElevation } from './renderer';
+import { seededEngine } from '../../core/testing/fixtures';
 
 // 第十三轮修：陡的小岛四周不再有一圈多边形的浅水（水深只来自水面格）；几种岛大到两百公里也一眼分得出
 
 const opts: ColorOptions = { mode: 'terrain', season: 'annual', focusSpecies: null, borders: false };
 
 function islands(humidity: number): { w: World; centers: number[] } {
-  const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+  const eng = seededEngine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
   const centers = [0.6, 1.0, 1.4];
   // 第十四轮去掉了火山岛：第一个换成自己选了暗色的岛（颜色在 CPU 上混进陆地的底色）
@@ -21,7 +22,7 @@ function islands(humidity: number): { w: World; centers: number[] } {
 
 describe('水深只来自水面格', () => {
   it('陆地格的“水面高程”是挨着它的水面格里最浅的（至多 −2 m），水面格是自己的高程', () => {
-    const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+    const eng = seededEngine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
     // 陡的小火山岛：陆地上千米、四周是深海
     eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'continental', size: 30, variant: 1 } });

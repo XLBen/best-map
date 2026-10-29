@@ -3,11 +3,12 @@ import { digestWorld } from '../../tools/hash';
 import { Engine } from '../../core/engine';
 import { WORLD_TYPES } from '../../core/generate';
 import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack } from '../../core/packs';
-import { FANTASY_PACK } from '../../core/packs/fantasy';
+
 import { FANTASY_FORMS, POLAR_CONTINENTS, RING_SEA, TWIN_CONTINENTS } from '../../core/packs/fantasy-forms';
 import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
 import { planetProfile } from '../../core/planet-gen';
-import { engineFor } from '../../core/testing/fixtures';
+import { engineFor, FANTASY_PACK } from '../../core/testing/fixtures';
+import { builtinPacks } from '../../core/packs/builtin-tree';
 import { type LibraryEntry, MY_PACK_NAME } from '../library';
 import {
   FORM_KNOBS,
@@ -82,15 +83,18 @@ describe('列出来的形态', () => {
 
 describe('向导新建', () => {
   it('历史里的名字：整个星球用星球的叫法（不是生成器的“几块大陆”），形态用形态的名字，一块地区用世界类型', () => {
-    const choices = formChoices([BUILTIN]);
-    expect(wizardWorldName('planet', 'continents', choices, 'archipelago')).toBe('像地球');
-    expect(wizardWorldName('planet', 'ocean_islands', choices, 'archipelago')).toBe('海洋星球');
+    // 第三十轮：以前写死的六种星球是“通用 ▸ 星球形态”里的形态（键是 common:id）
+    const common = entry('common', builtinPacks().find((p) => p.id === 'common')!, { builtin: true, installedAt: 0 });
+    const choices = formChoices([BUILTIN, common]);
+    expect(wizardWorldName('planet', 'common:continents', choices, 'archipelago')).toBe('像地球');
+    expect(wizardWorldName('planet', 'common:ocean_islands', choices, 'archipelago')).toBe('海洋星球');
     expect(wizardWorldName('planet', 'fantasy:polar_continents', choices, 'archipelago')).toBe('极地大陆');
     expect(wizardWorldName('region', 'fantasy:polar_continents', choices, 'archipelago')).toBe('群岛之海');
   });
 
   it('用形态新建：一步“新世界：双子大陆”，生成参数带着形态', () => {
-    const eng = engineFor(globe);
+    // 新建的命令里带着新世界默认加的内容：从空的引擎开始
+    const eng = engineFor(globe, { bare: true });
     for (const cmd of newWorldCommands({ seed: 7, type: 'continents', form: TWIN_CONTINENTS }, '双子大陆', 7)) eng.exec(cmd);
     expect(eng.history.map((h) => h.summary)[0]).toBe('新世界“双子大陆”');
     expect(eng.world.small.terrain.gen!.form).toEqual(TWIN_CONTINENTS);

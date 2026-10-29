@@ -87,9 +87,10 @@ describe('内置的地名风格：每一种', () => {
     }
   });
 
-  it('没选风格的世界用内置中文', () => {
+  it('没选风格的世界用世界里第一种（新世界默认加进来的中文·默认）；一种都没有时不起名', () => {
     expect(DEFAULT_STYLE).toBe('zh-default');
     expect(BUILTIN_STYLES[0].id).toBe(DEFAULT_STYLE);
-    expect(styleFor({ small: { featureNames: {}, provinces: {} } as never }).id).toBe(DEFAULT_STYLE);
+    expect(styleFor({ small: { featureNames: {}, provinces: {}, content: { nameStyle: { [DEFAULT_STYLE]: BUILTIN_STYLES[0] } } } as never }).id).toBe(DEFAULT_STYLE);
+    expect(styleFor({ small: { featureNames: {}, provinces: {} } as never }).id).toBe('');
   });
 });

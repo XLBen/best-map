@@ -3,7 +3,7 @@ import { coastalStroke, digestWorld } from '../tools/hash';
 import { Engine } from './engine';
 import { encodePath } from './rivers';
 import { isRiverCell, planCourse, riverStem, stemPath } from './select';
-import { continents } from './testing/fixtures';
+import { continents, seededEngine } from './testing/fixtures';
 
 // 新起的省名记在命令里：重新打开（重放）后省名与当时一字不差。以前起名用的是重放时还没算到这一步的推导，
 // 801 个省里会有 7–19 个名字不同
@@ -11,7 +11,7 @@ import { continents } from './testing/fixtures';
 describe('重放后省名不变', () => {
   for (const kind of ['region', 'planet'] as const) {
     it(kind, () => {
-      const eng = new Engine(kind === 'planet' ? { seed: 1, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 3, cells: 12000 });
+      const eng = seededEngine(kind === 'planet' ? { seed: 1, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 3, cells: 12000 });
       eng.exec({ op: 'set_worldgen', params: { seed: kind === 'planet' ? 1 : 3, type: 'continents' }, reset: true });
       const { mesh, derived: d } = eng.world;
       const deep: number[] = [];

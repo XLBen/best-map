@@ -14,11 +14,6 @@
     "urbanization": 0.55,
     "unclaimed": { "minHabitability": 0.01, "nomads": 0.8 },
     "seaClaimKm": 120,
-    "defaultGroups": [["eastern", 4], ["southasia", 4], ["africa", 3], ["western", 2], ["mideast", 2], ["slavic", 1.5], ["mesoamerica", 1.5]],
-    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
-    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"],
-    "governments": ["parliamentary-republic", "presidential-republic", "federal-republic", "constitutional-monarchy", "socialist-republic", "one-party-state", "military-junta", "ultranationalist-state", "theocratic-republic", "technocracy", "commune-federation"],
-    "factions": ["revolutionary-left", "social-democrats", "greens", "liberals", "conservatives", "nationalists", "religious-bloc"],
     "countryKm2": 600000,
     "years": [1900, 2020],
     "tiers": { "city": 0.3, "small": 2.5, "medium": 2.5, "large": 1.5, "empire": 0.3 },
@@ -32,6 +27,11 @@
         "member": [{ "zh": "州", "orig": "State of {name}" }]
       }
     }
+  },
+  "pack": {
+    "governments": ["parliamentary-republic", "presidential-republic", "federal-republic", "constitutional-monarchy", "socialist-republic", "one-party-state", "military-junta", "ultranationalist-state", "theocratic-republic", "technocracy", "commune-federation"],
+    "factions": ["revolutionary-left", "social-democrats", "greens", "liberals", "conservatives", "nationalists", "religious-bloc"],
+    "cultures": [["eastern", 4], ["southasia", 4], ["africa", 3], ["western", 2], ["mideast", 2], ["slavic", 1.5], ["mesoamerica", 1.5]]
   },
   "values": [
     { "id": "anarchism", "dimension": "ideology", "name": "无政府主义", "color": "#2d2d2d", "description": "反对一切强制的权力，主张自愿的联合。", "eras": ["modern"] },

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../../tools/hash';
-import type { Command } from '../commands';
+
 import { Engine } from '../engine';
-import { continents, snapshot } from '../testing/fixtures';
+import { continents, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import type { World } from '../world';
 import { SLOTS, readComp, worldDimensions, dimensionValues } from './index';
 
@@ -12,12 +12,12 @@ const GROUPS = [
   { id: 'western', weight: 3 },
   { id: 'eastern', weight: 3 },
 ];
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
 
 const nations = (): Engine =>
   snapshot('r27-nations', () => {
     const eng = continents({ provinces: true });
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 
@@ -95,7 +95,7 @@ describe('第二十七轮：自动的结果', () => {
     const cells = peopled(w0, 10);
     const autoT = cells.map((i) => w0.causes.popTotal![i]);
     eng.exec({ op: 'paint_pop', cells, mode: 'count', factor: 2 });
-    eng.exec({ op: 'regenerate_human', keepManual: true });
+    humanExec(eng, { op: 'regenerate_human', keepManual: true });
     const w = eng.world;
     // 群体重新编号后，快照里的编号仍然指向原来的群体
     for (const i of cells) for (let k = 0; k < SLOTS; k++) if (w.causes.popAutoGroup![i * SLOTS + k]) expect(w.small.popGroups![w.causes.popAutoGroup![i * SLOTS + k]]).toBeTruthy();

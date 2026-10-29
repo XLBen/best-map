@@ -3,13 +3,13 @@ import type { Command } from '../../core/commands';
 import { splitWorldContent } from '../../core/compact';
 import { kindOf } from '../../core/content/registry';
 import { worldCultures, worldEras } from '../../core/human';
-import { FANTASY_RESOURCES, GENERAL_RESOURCES } from '../../core/human/resources';
+
 import { DEFAULT_STYLE } from '../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type ResourcePack, findPack, packItems } from '../../core/packs';
 import { BASE_PATH, builtinPacks } from '../../core/packs/builtin-tree';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_ERAS } from '../../core/packs/eras';
-import { DEFAULT_SPECIES } from '../../core/species';
-import { continents, snapshot } from '../../core/testing/fixtures';
+
+import { continents, snapshot, type HumanCommand, humanExec } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { compactJob, onlyBuiltinScripts } from '../compact-job';
 import { type LibraryEntry, keepInLibrary, library, refreshLibrary, removeItem, worldPackName, worthKeeping } from '../library';
@@ -22,6 +22,8 @@ import { ResourceMenu } from './panels/human';
 import { type TreeNode, addCommand, filterTree, packAddCommand, packRemoveRefs, packTree, removeCommand, rowUsage, treeRows } from './packs/repo';
 import { packDialog, repo } from './packs/store';
 import { tidyLines, tidyText } from './packs/tidy';
+import { FANTASY_RESOURCES, GENERAL_RESOURCES } from '../../core/packs/base';
+import { DEFAULT_SPECIES } from '../../core/packs/nature';
 
 // 第二十九轮的界面：资源库两栏（本世界按来源的包分组、离群在最后；资源库是包的树，整包添加记上来源，单项添加、移出，种类筛选），
 // 选择器、向导按包分组，拿掉的自己做的存进“来自《世界名》”（不重复存），打开世界文件时拆开，导出时压缩，旧的生态文件只进资源库，
@@ -32,11 +34,11 @@ const BUILTIN: LibraryEntry[] = builtinPacks().map((p) => entry(p.id, p, { built
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
 const topName = (id: string) => builtinPacks().find((p) => p.id === id)!.name;
 
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r29-ui:peopled', () => {
     const e = continents();
-    e.exec(GEN);
+    humanExec(e, GEN);
     return e;
   });
 
@@ -60,13 +62,15 @@ afterEach(() => {
 });
 
 describe('资源库两栏：packTree', () => {
-  it('资源库一栏：内置的大包按时代的先后、通用在最后，之后是我的、装上的；通用 ▸ 基础只显示', () => {
+  it('资源库一栏：内置的大包按时代的先后、通用在最后，之后是我的、装上的；通用 ▸ 基础是普通的包（第三十轮）', () => {
     const mine = entry('我的资源', pack('我的资源', { cultures: [myCulture] } as Partial<ResourcePack>), { mine: true });
     const t = packTree(continents().world, [...BUILTIN, mine]);
     expect(t.library.map((n) => n.path[0])).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'common', '我的资源']);
     const base = find(t.library, `l:${BASE_PATH.join('/')}`)!;
-    expect(base.base).toBe(true);
+    expect(base.base).toBeUndefined();
+    // 新世界里基础的都在：没有能加的
     expect(packAddCommand(base, continents().world)).toBeNull();
+    expect(base.on).toBe(base.count);
     // 中世纪 ▸ 政体：13 种，一种都还不在本世界
     const gov = find(t.library, 'l:medieval/governments')!;
     expect([gov.name, gov.count, gov.on]).toEqual(['政体', 13, 0]);
@@ -88,10 +92,10 @@ describe('资源库两栏：packTree', () => {
     const cultures = worldCultures(eng.world.small).filter((c) => c.id !== 'my-c');
     const listed = treeRows(t.world.find((n) => n.path[0] === 'medieval')!).filter((r) => r.kind.id === 'culture');
     expect(listed.map((r) => r.id).sort()).toEqual(cultures.map((c) => c.id).sort());
-    // 新世界自带的 13 种生态在“通用 ▸ 自然”，总在的基础内容在“通用 ▸ 基础”
+    // 新世界加的 13 种生态在“通用 ▸ 自然”，基础内容在“通用 ▸ 基础”
     const w0 = packTree(continents().world, BUILTIN);
     expect(find(w0.world, 'w:common/nature')!.rows.map((r) => r.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
-    expect(find(w0.world, `w:${BASE_PATH.join('/')}`)!.base).toBe(true);
+    expect(find(w0.world, `w:${BASE_PATH.join('/')}`)!.rows.length).toBeGreaterThan(0);
   });
 
   it('种类筛选：只列那一种；搜索：名字对上的项和它们所在的包', () => {
@@ -206,7 +210,8 @@ describe('选择器、向导按包分组', () => {
   it('向导的星球形态：内置的在“奇幻 ▸ 星球形态”里也列得出来，按包分', () => {
     const list = formChoices(BUILTIN);
     expect(list.length).toBeGreaterThan(0);
-    expect(new Set(list.map((c) => c.pack))).toEqual(new Set([topName('fantasy')]));
+    // 第三十轮：以前写死的六种星球在“通用 ▸ 星球形态”里
+    expect(new Set(list.map((c) => c.pack))).toEqual(new Set([topName('fantasy'), topName('common')]));
   });
 
   it('选了资源包里的时代、文化组：只带时代和它的维度的取值、组所在小包里的文化和地名风格，记上来源', () => {
@@ -226,7 +231,8 @@ describe('选择器、向导按包分组', () => {
       ],
     } as Partial<ResourcePack>);
     const lib = [...BUILTIN, entry('lib', p, { mine: true })];
-    const cmds = importCommands({ era: 'my-era', groups: [{ id: 'my-group', weight: 1 }] }, null, lib) as (Command & { kind: string; id: string; from?: string[] })[];
+    const cmds = importCommands({ era: 'my-era', groups: [{ id: 'my-group', weight: 1 }] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
+    // 第三十轮：一个 batch（core/packs/import.ts）；只有一项的种类不排先后
     expect(cmds.map((c) => [c.kind, c.id, c.from])).toEqual([
       ['nameStyle', 'my-style', ['lib', 'g']],
       ['era', 'my-era', ['lib', 'era']],
@@ -243,7 +249,7 @@ describe('拿掉的不丢', () => {
     eng.exec(addMine);
     eng.exec({ op: 'set_content', kind: 'culture', id: 'my-c', item: null });
     const removed = eng.lastRemoved;
-    expect(removed.map((r) => [r.kind, r.id, r.builtinSame])).toEqual([['culture', 'my-c', false]]);
+    expect(removed.map((r) => [r.kind, r.id])).toEqual([['culture', 'my-c']]);
     const name = '移出测试';
     expect(await keepInLibrary(name, removed)).toMatchObject({ saved: 1 });
     const e = library.value.find((x) => x.key === worldPackName(name))!;

@@ -33,11 +33,10 @@ describe('世界里的地名风格', () => {
     eng.exec(enable(germanic));
     expect(eng.history.filter((h) => h.done).at(-1)!.summary).toMatch(/^启用地名风格“西欧·日耳曼”/);
     expect(names(eng)).toEqual(before);
-    expect(Object.keys(eng.world.small.content!.nameStyle!)).toEqual(['west-germanic']);
+    expect(Object.keys(eng.world.small.content!.nameStyle!)).toEqual(['zh-default', 'west-germanic']);
     eng.exec({ op: 'set_content', kind: 'nameStyle', id: 'west-germanic', item: null });
     expect(JSON.stringify(eng.world.small)).toBe(small);
-    // 内置中文不能换掉；格式不对、id 对不上的拒绝
-    expect(() => eng.exec({ op: 'set_content', kind: 'nameStyle', id: 'zh-default', item: { ...germanic, id: 'zh-default' } })).toThrow(/内置中文不能换掉/);
+    // 格式不对、id 对不上的拒绝（第三十轮：中文·默认是普通内容，能换内容）
     expect(() => eng.exec({ op: 'set_content', kind: 'nameStyle', id: 'x', item: { ...germanic } })).toThrow(/id 与命令里的不同/);
     expect(() => eng.exec({ op: 'set_content', kind: 'nameStyle', id: 'x', item: { id: 'x', kind: 'phonetic' } })).toThrow(/地名风格无效/);
     expect(() => eng.exec({ op: 'set_content', kind: 'nope', id: 'x', item: { id: 'x' } })).toThrow(/不认识的内容种类/);

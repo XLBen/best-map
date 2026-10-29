@@ -503,6 +503,13 @@ export function placeCities(S: SettleInputs, plan: CityPlan): number {
 
 // 生成 / 重新生成城市（命令、生成人文的一步共用）：fresh 时全部换掉，否则锁定的、自己放的留着
 export function generateCities(S: SettleInputs, rules: SettlementRules, fresh: boolean): number {
+  // 第三十轮：世界里没有城市等级时不放城市（自动的去掉，自己放的留着；见 content/missing.ts）
+  if (!worldCityRanks(S.world.small).length) {
+    const cities = S.world.small.cities;
+    if (cities) for (const c of Object.values(cities)) if (c.auto && (fresh || !c.locked)) delete cities[c.id];
+    if (cities && !Object.keys(cities).length) delete S.world.small.cities;
+    return Object.keys(S.world.small.cities ?? {}).length;
+  }
   placeCities(S, { rules, keep: (c) => !fresh && (!c.auto || !!c.locked) });
   return Object.keys(S.world.small.cities ?? {}).length;
 }

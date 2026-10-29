@@ -6,7 +6,7 @@ import { blocsCsv, countriesCsv, exportPart } from '../../core/export';
 import { ISLET_FRAG } from '../../core/features';
 import { autoBlocName, blocById, blocCells, blocList, blocOf, blocsOf, countryList } from '../../core/human';
 import { brushCells } from '../../core/select';
-import { continents, snapshot } from '../../core/testing/fixtures';
+import { continents, snapshot, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { Bloc, World } from '../../core/world';
 import { COUNTRY_ALPHA, FEDERATION_GROUP, ISLET_FLAT, NO_BLOC, SEA_CLAIM_ALPHA, colorSignature, countryBorderGroups, humanFlat } from '../render/colors';
 import { exec, mode, parsePrefs, selectedBloc, selectedCountry, setPrefs, sheet, world } from '../state';
@@ -56,13 +56,13 @@ const GROUPS = [
 const nations = (): Engine =>
   snapshot('nations', () => {
     const eng = continents({ provinces: true });
-    eng.exec({ op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
     return eng;
   });
 const moderns = (): Engine =>
   snapshot('r26-modern', () => {
     const eng = continents({ provinces: true });
-    eng.exec({ op: 'generate_human', era: 'modern', groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
+    humanExec(eng, { op: 'generate_human', era: 'modern', groups: GROUPS, countries: {}, settlements: { roads: false, landmarks: false } });
     return eng;
   });
 // 删掉全部集团
@@ -308,8 +308,8 @@ describe('格局', () => {
 
   it('生成人文：格局写进 countries（按时代时不写）', () => {
     const c = defaultChoice(null);
-    expect((generateCommand(c) as Extract<Command, { op: 'generate_human' }>).countries).toEqual({});
-    const mixed = generateCommand({ ...c, countries: { ...c.countries, layout: 'mixed' } }) as Extract<Command, { op: 'generate_human' }>;
+    expect((lastOf(generateCommand(c)!) as Extract<Command, { op: 'generate_human' }>).countries).toEqual({});
+    const mixed = lastOf(generateCommand({ ...c, countries: { ...c.countries, layout: 'mixed' } })!) as Extract<Command, { op: 'generate_human' }>;
     expect(mixed.countries).toEqual({ layout: 'mixed' });
   });
 

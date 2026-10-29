@@ -1,32 +1,15 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { digest, digestWorld } from '../../tools/hash';
-import { type Command, CommandError } from '../commands';
+import { CommandError } from '../commands';
 import { Engine } from '../engine';
 import { EXPORT_PARTS, exportPackage, exportPart, exportPartAvailable } from '../export';
-import { continents, engineFor, snapshot } from '../testing/fixtures';
+import { continents, engineFor, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import type { World } from '../world';
-import {
-  BUILTIN_LANDMARK_TYPES,
-  BUILTIN_POINT_TYPES,
-  BUILTIN_RANKS,
-  allCountryStats,
-  cellArchive,
-  cityArchive,
-  cityList,
-  detectLandmarks,
-  dragRoadHandle,
-  landmarkList,
-  pointList,
-  rankFor,
-  roadHandles,
-  roadPaths,
-  settleInputs,
-  traceRoad,
-  worldCityRanks,
-} from './index';
+import { allCountryStats, cellArchive, cityArchive, cityList, detectLandmarks, dragRoadHandle, landmarkList, pointList, rankFor, roadHandles, roadPaths, settleInputs, traceRoad, worldCityRanks } from './index';
 import { RIVER } from './rules';
 import { roadCosts } from './roads';
+import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS } from '../packs/settlements';
 
 // 第二十四轮：城市、道路、地标、自定义点、导出
 
@@ -35,13 +18,13 @@ const GROUPS = [
   { id: 'eastern', weight: 3 },
   { id: 'steppe', weight: 1.5 },
 ];
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {}, settlements: {} };
 
 // 有省份、人文、国家、城市、道路、地标的大陆世界（1.2 万格的地区）
 const settled = (): Engine =>
   snapshot('settled', () => {
     const eng = continents({ provinces: true });
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 
@@ -109,7 +92,7 @@ function pieces(w: World): Int32Array {
 }
 
 describe('内置的内容', () => {
-  it('城市等级四种总在；地标类型、点的类型合格、不重复', () => {
+  it('城市等级四种（新世界从“通用 ▸ 基础”加进来）；地标类型、点的类型合格、不重复', () => {
     expect(BUILTIN_RANKS.map((r) => [r.id, r.icon])).toEqual([
       ['capital', 'star'],
       ['big', 'double-ring'],
@@ -117,7 +100,7 @@ describe('内置的内容', () => {
       ['small', 'dot'],
     ]);
     const w = continents().world;
-    expect(worldCityRanks(w.small)).toBe(BUILTIN_RANKS);
+    expect(worldCityRanks(w.small)).toEqual(BUILTIN_RANKS);
     for (const list of [BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES]) expect(new Set(list.map((x) => x.id)).size).toBe(list.length);
     for (const t of BUILTIN_LANDMARK_TYPES) {
       if (t.category === 'natural') expect(t.detector, t.id).toBeTruthy();
@@ -130,7 +113,7 @@ describe('内置的内容', () => {
     expect(rankFor(BUILTIN_RANKS, 0.0001, 10).id).toBe('small');
   });
 
-  it('改一种等级的门槛：城市的等级跟着变，不重算推导；停用换回内置的', () => {
+  it('改一种等级的门槛：城市的等级跟着变，不重算推导；改回去就回来', () => {
     const eng = settled();
     const w = eng.world;
     const before = cityList(w).filter((c) => c.rank.id === 'big').length;
@@ -141,7 +124,8 @@ describe('内置的内容', () => {
     const after = cityList(w).filter((c) => c.rank.id === 'big').length;
     expect(after).toBeGreaterThan(before);
     for (const c of cityList(w)) if (!c.capital && !c.secondCapital && c.rankAuto) expect(c.rank.id).toBe('big');
-    eng.exec({ op: 'set_content', kind: 'cityRank', id: 'big', item: null });
+    // 第三十轮：内置的也是普通内容，改回内置的那一份
+    eng.exec({ op: 'set_content', kind: 'cityRank', id: 'big', item: BUILTIN_RANKS[1] as unknown as Record<string, unknown> });
     expect(cityList(w).filter((c) => c.rank.id === 'big').length).toBe(before);
   });
 });
@@ -190,7 +174,7 @@ describe('城市', () => {
   it('城市化率高的时代城市多', () => {
     const count = (era: string) => {
       const eng = continents({ provinces: true });
-      eng.exec({ op: 'generate_human', era, groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: { roads: false, landmarks: false } });
+      humanExec(eng, { op: 'generate_human', era, groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: { roads: false, landmarks: false } });
       return cityIds(eng.world).length;
     };
     const ancient = count('antiquity');
@@ -203,7 +187,7 @@ describe('城市', () => {
   it('同样的参数同样的结果；重放、检查点一致；撤销后与没生成过一样', () => {
     const a = settled();
     const b = continents({ provinces: true });
-    b.exec(GEN);
+    humanExec(b, GEN);
     expect(settleDigest(b.world)).toEqual(settleDigest(a.world));
     const doc = a.toDoc();
     expect(settleDigest(Engine.fromDoc(doc, a.world.mesh).world)).toEqual(settleDigest(a.world));
@@ -211,7 +195,8 @@ describe('城市', () => {
     expect(settleDigest(Engine.fromCheckpoint(cp, doc, a.world.mesh)!.world)).toEqual(settleDigest(a.world));
     const plain = continents({ provinces: true });
     const before = digestWorld(plain.world);
-    plain.exec(GEN);
+    humanExec(plain, GEN);
+    plain.undo();
     plain.undo();
     expect(plain.world.small.cities).toBeUndefined();
     expect(plain.world.small.roads).toBeUndefined();
@@ -221,13 +206,13 @@ describe('城市', () => {
 
   it('没写 settlements 时没有城市与道路（第二十三轮的世界不变）；换种子换一个样子', () => {
     const a = continents({ provinces: true });
-    a.exec({ op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(a, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
     for (const k of ['cities', 'roads', 'landmarks', 'points', 'settlementRules', 'nextSettlement'] as const) expect(a.world.small[k]).toBeUndefined();
     const eng = settled();
     eng.exec({ op: 'regenerate_settlements', seed: 99 });
     expect(digest(eng.world.small.cities)).not.toEqual(digest(settled().world.small.cities));
     // 再不带 settlements 生成人文：城市、道路去掉
-    eng.exec({ op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
     expect(eng.world.small.cities).toBeUndefined();
     expect(eng.world.small.roads).toBeUndefined();
   });
@@ -235,7 +220,7 @@ describe('城市', () => {
   it('整个星球上也一样', () => {
     const eng = engineFor({ seed: 3, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     const w = eng.world;
     expect(cityIds(w).length).toBeGreaterThan(10);
     const again = Engine.fromDoc(eng.toDoc(), w.mesh);
@@ -320,7 +305,7 @@ describe('城市', () => {
     expect(w.small.cities![mine]?.cell).toBe(cell);
     expect(w.small.roads![road]?.cells).toEqual([a, b]);
     // 重新生成人文：自动的跟着换，锁定的留着
-    eng.exec({ op: 'regenerate_human', seed: 11 });
+    humanExec(eng, { op: 'regenerate_human', seed: 11 });
     expect(w.small.cities![some.id]?.cell).toBe(some.cell);
     expect(w.small.roads![road]).toBeTruthy();
     eng.exec({ op: 'generate_cities' });
@@ -633,7 +618,7 @@ describe('导出', () => {
 
   it('没有城市、道路、地标、点的世界：包里的文件与以前一样', () => {
     const eng = continents({ provinces: true });
-    eng.exec({ op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
     const opts = { width: 256, height: 128, seaLevelGray: 95, maxElevation: 6000 };
     const pkg = exportPackage(eng.world, eng.toDoc(), opts);
     for (const f of ['cities.csv', 'roads.csv', 'roads.geojson', 'roads.bmp', 'landmarks.csv', 'points.csv', 'archive.md', 'archive.json']) expect(pkg.files).not.toContain(f);

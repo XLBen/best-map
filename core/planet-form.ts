@@ -110,7 +110,7 @@ export function sameForm(a: PlanetForm | undefined, b: PlanetForm | undefined): 
 }
 
 // set_worldgen 里检查形态：只能用在整个星球上；type 与 base 相同；脚本的语法（出错时抛 ScriptError，说明第几行）。
-// 安全模式下也检查语法（只是解析，不运行）。typeName：星球类型的中文名（presets.ts 的 PLANET_TYPES、generate.ts 的 WORLD_TYPE_INFO，
+// 安全模式下也检查语法（只是解析，不运行）。typeName：星球类型的中文名（presets.ts 的 planetKindName、generate.ts 的 WORLD_TYPE_INFO，
 // 本文件不能引用 generate.ts）
 export function checkForm(form: PlanetForm, type: WorldType, globe: boolean, typeName: (t: WorldType) => string = (t) => t): void {
   if (!globe) throw new CommandError('星球形态只能用在整个星球上');

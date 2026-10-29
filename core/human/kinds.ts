@@ -1,22 +1,14 @@
 import type { z } from 'zod';
-import { type FieldDesc, contentItems, registerKind } from '../content/registry';
-import { sameItem } from '../content/refs';
-import { CATEGORY_LABEL, FANTASY_RESOURCES, GENERAL_RESOURCES, RESOURCE_CATEGORIES, RESOURCE_NONE, type Resource, isGeneralResource, resourceSchema, worldResources } from './resources';
+import { type FieldDesc, notBuiltin, registerKind } from '../content/registry';
+import { CATEGORY_LABEL, RESOURCE_CATEGORIES, RESOURCE_NONE, type Resource, resourceSchema, worldResources } from './resources';
 import { registerPopKinds } from './pop-kinds';
 import { registerGovKinds } from './gov-kinds';
 import { registerSettleKinds } from './settle-kinds';
 import { RESOURCE_RULE_FIELDS, RULE_FIELDS } from './rules';
-import { BUILTIN_CLASSES, type TerrainClass, checkTerrainClass, isBuiltinClass, remapCodes, terrainClassItems, terrainClassSchema, worldTerrainClasses } from './terrain-class';
+import { type TerrainClass, checkTerrainClass, remapCodes, terrainClassSchema, worldTerrainClasses } from './terrain-class';
 
 // 第二十一轮的两种内容登记进登记表：地形类别、资源（都放在 small.content，命令是 set_content）。
-// 内置的地形类别、通用资源总在世界里（不用启用）：small.content 里同 id 的一项是改过的那一份，停用它就换回内置的
-
-// 世界里改过、加的项（不含没改过的内置项）
-const changed = <T extends { id: string }>(items: Record<string, T>, builtin: readonly T[]): T[] =>
-  Object.values(items).filter((x) => {
-    const b = builtin.find((y) => y.id === x.id);
-    return !b || !sameItem(b, x);
-  });
+// 第三十轮起内置的也是普通内容（“通用 ▸ 基础”），和别的一样加进、移出世界
 
 // 撞 id 改名：名字带上编号
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);
@@ -50,8 +42,6 @@ const RESOURCE_FIELDS: readonly FieldDesc[] = [
   { key: 'cluster', label: '成片大小', type: 'number', min: 10, max: 5000, step: 10, hint: 'km' },
 ];
 
-const ALL_RESOURCES = [...GENERAL_RESOURCES, ...FANTASY_RESOURCES];
-
 // 由 content/kinds.ts 在地名风格之后调用（登记的先后就是仓库里的先后）
 export function registerHumanKinds(): void {
   registerKind<TerrainClass>({
@@ -63,13 +53,11 @@ export function registerHumanKinds(): void {
     maxInWorld: 64,
     schema: terrainClassSchema as unknown as z.ZodType<TerrainClass>,
     inWorld: (w) => worldTerrainClasses(w.small),
-    builtin: () => BUILTIN_CLASSES,
     dirty: () => 'human',
     check: (c) => checkTerrainClass(c),
     arrays: ['terrainClass'],
-    // 停用了新加的一种：画成它的格恢复自动，后面的编号往前挪
+    // 停用了一种：画成它的格恢复自动，后面的编号往前挪
     afterSet: (w, before) => remapCodes(w.causes.terrainClass, before, worldTerrainClasses(w.small).map((c) => c.id)),
-    alwaysOn: (id) => (isBuiltinClass(id) ? '内置的地形类别总在' : undefined),
     blank: () => ({ id: 'my-class', name: '新类别', color: '#999999', priority: 10, rules: [{ elevMin: 500 }] }),
     fields: CLASS_FIELDS,
     pack: {
@@ -78,7 +66,7 @@ export function registerHumanKinds(): void {
       listed: true,
       checked: true,
       withId: (c, id, from) => (id === from ? c : { ...c, id, name: renamed(c.name, id, from) }),
-      fromWorld: (w) => changed(terrainClassItems(w.small), BUILTIN_CLASSES).map((c) => structuredClone(c)),
+      fromWorld: (w) => notBuiltin('terrainClass', worldTerrainClasses(w.small)).map((c) => structuredClone(c)),
       exportItem: (c) => structuredClone(c),
       problems: (items) => items.flatMap((c) => ((c.rules ?? []).some((r) => r.classes?.length) ? [`地形类别“${c.name}”的规则里按地形类别：不起作用`] : [])),
     },
@@ -90,15 +78,13 @@ export function registerHumanKinds(): void {
     short: '资源',
     order: 36,
     store: 'content',
-    // 加上内置的通用一套不超过 254 种（255 留给“明确没有”）
+    // 不超过 254 种（255 留给“明确没有”）
     maxInWorld: 128,
     schema: resourceSchema as unknown as z.ZodType<Resource>,
     inWorld: (w) => worldResources(w.small),
-    builtin: () => ALL_RESOURCES,
     dirty: () => 'human',
     arrays: ['resource'],
     afterSet: (w, before) => remapCodes(w.causes.resource, before, worldResources(w.small).map((r) => r.id), (v) => v === RESOURCE_NONE),
-    alwaysOn: (id) => (isGeneralResource(id) ? '内置的通用资源总在' : undefined),
     blank: () => ({ id: 'my-resource', name: '新资源', color: '#999999', category: 'ore', rules: [{ classes: ['mountains'] }], rarity: 0.1, weight: 1, cluster: 300 }),
     fields: RESOURCE_FIELDS,
     pack: {
@@ -108,7 +94,7 @@ export function registerHumanKinds(): void {
       checked: true,
       // 种子用原来的：改了名分布不变
       withId: (r, id, from) => (id === from ? r : { ...r, id, name: renamed(r.name, id, from), seedKey: r.seedKey ?? from }),
-      fromWorld: (w) => changed(contentItems<Resource>(w.small, 'resource'), ALL_RESOURCES).map((r) => structuredClone(r)),
+      fromWorld: (w) => notBuiltin('resource', worldResources(w.small)).map((r) => structuredClone(r)),
       exportItem: (r) => structuredClone(r),
     },
   });

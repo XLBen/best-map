@@ -21,6 +21,7 @@ import {
   warpOffset3,
 } from './subcell';
 import { renderThumbnail } from './thumbnail';
+import { seededEngine } from './testing/fixtures';
 
 // 导出的栅格化（subcell.ts）、导出文件（export.ts）、缩略图（thumbnail.ts）提速后结果逐位不变。
 // 下面记下的摘要由提速前的代码（提交 c6f1444 的这三个文件）跑同一个 digests() 得到；
@@ -45,6 +46,7 @@ import { renderThumbnail } from './thumbnail';
 // provinces_summary.csv（最后加了地形类别、资源两列）；别的文件逐位不变
 // 第二十七轮：地形类别只管起伏，terrain.bmp、省份汇总的 terrain、terrain_classes.csv 都按 paradoxTerrain（起伏优先，平原按生态），
 // 资源的规则按生态的地形写：重录 terrain.bmp、terrain_class.bmp、terrain_classes.csv、resources.*、provinces_summary.csv 与 README.txt
+// 第三十轮：只重录 world.json（四个）：文件的版本是 6，命令里多了新建时从资源包加内容的那一步；图片、表格一个不变
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -59,14 +61,14 @@ function digest(a: ArrayBufferView): string {
 }
 
 function region(): Engine {
-  const eng = new Engine({ seed: 3, cells: 6000 });
+  const eng = seededEngine({ seed: 3, cells: 6000 });
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
   return eng;
 }
 
 function planet(): Engine {
-  const eng = new Engine({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+  const eng = seededEngine({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
   return eng;
@@ -144,7 +146,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 terrain.bmp': 'fa1bff765793aff4',
   'planet 256x128 terrain_class.bmp': '7bcca28731fd0e89',
   'planet 256x128 terrain_classes.csv': 'f2ee80e5b85a4ff7',
-  'planet 256x128 world.json': '97a1f83188bfeed1',
+  'planet 256x128 world.json': '730e8c673cc534bb',
   'planet 300x150 README.txt': '0d24832c28fe8fa8',
   'planet 300x150 biomes.bmp': 'b457f20350618be5',
   'planet 300x150 cell': '0bc269dba62ce0fb',
@@ -163,7 +165,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 terrain.bmp': '14228caea6bda01a',
   'planet 300x150 terrain_class.bmp': '624a47caa60f54cc',
   'planet 300x150 terrain_classes.csv': 'f2ee80e5b85a4ff7',
-  'planet 300x150 world.json': '97a1f83188bfeed1',
+  'planet 300x150 world.json': '730e8c673cc534bb',
   'planet functions': 'ecb4ac7af1985234',
   'planet thumbnail': '6706a4e4e3854180',
   'region 256x128 README.txt': '470b3205d4ca298b',
@@ -184,7 +186,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 terrain.bmp': 'e3ff3ef51ddc4bbb',
   'region 256x128 terrain_class.bmp': 'f0e71ae95d77a963',
   'region 256x128 terrain_classes.csv': 'b43c370355a8a4df',
-  'region 256x128 world.json': '22e33075333b73b7',
+  'region 256x128 world.json': '5e3650356f3c3cc9',
   'region 300x150 README.txt': '5e8bc580c465645e',
   'region 300x150 biomes.bmp': '4591adaff22873fd',
   'region 300x150 cell': '66765fa68ed95ba6',
@@ -203,7 +205,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 terrain.bmp': '734e125690f20444',
   'region 300x150 terrain_class.bmp': '961e49a6dbd94d6e',
   'region 300x150 terrain_classes.csv': 'b43c370355a8a4df',
-  'region 300x150 world.json': '22e33075333b73b7',
+  'region 300x150 world.json': '5e3650356f3c3cc9',
   'region functions': 'ec0eb23ceb75674c',
   'region thumbnail': 'c971e53c79dc1b7a',
 };

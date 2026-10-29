@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import { kindOf } from '../../core/content/registry';
-import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES, cellArchive, classAt, peakCells, peakMarks, resourceAt } from '../../core/human';
+import { cellArchive, classAt, peakCells, peakMarks, resourceAt } from '../../core/human';
 import { brushCells } from '../../core/select';
 import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
@@ -12,9 +12,10 @@ import { autoNameCommand, cellClassCommand, cellResourceCommand, noteCommand, re
 import { TOOL_DEFS, setTool } from './defs/tools';
 import { legendFor } from './legend';
 import { addedValue, isSparse, sparseSplit } from './packs/fields';
-import { editStart, repoRows, restoreRowCommand, toggleCommand } from './packs/repo';
+import { editStart, repoRows, toggleCommand } from './packs/repo';
 import { RULE_FIELDS } from '../../core/human/rules';
 import { type Pointer, dryLand, resourceTool, terrainClassTool } from './tools';
+import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../../core/packs/base';
 
 // 第二十一轮的界面：地形类别、资源的底图与图例，山峰图层，两支画笔，格的档案，仓库里总在的内置项
 
@@ -206,37 +207,32 @@ describe('格的档案', () => {
   });
 });
 
-describe('仓库：总在的内置项', () => {
+describe('仓库：基础的内容（第三十轮起是普通内容）', () => {
   const classKind = kindOf('terrainClass')!;
   const resKind = kindOf('resource')!;
 
-  it('内置的地形类别：常开、没有开关；改过时写“已修改”，恢复是一步；编辑的是世界里那一份', () => {
+  it('内置的地形类别：新世界从“通用 ▸ 基础”加进来，开着、能移出；编辑的是世界里那一份', () => {
     const eng = continents();
     const row = () => repoRows(classKind, eng.world, []).find((r) => r.id === 'mountains')!;
-    expect(row().status).toMatchObject({ on: true, always: true });
-    expect(row().status.modified).toBeUndefined();
-    expect(toggleCommand(row(), eng.world)).toBeNull();
-    expect(restoreRowCommand(row(), eng.world)).toBeNull();
-    expect(editStart(row(), eng.world)).toBe(row().item);
+    expect(row().status).toMatchObject({ on: true, worldId: 'mountains' });
+    expect(row().status.always).toBeUndefined();
+    expect(editStart(row(), eng.world)).toEqual(row().item);
     const changed = { ...BUILTIN_CLASSES.find((c) => c.id === 'mountains')!, color: '#123456' };
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'mountains', item: changed });
-    expect(row().status).toMatchObject({ on: true, always: true, modified: true });
-    // 改过的那一份不另列一行
-    expect(repoRows(classKind, eng.world, []).filter((r) => r.id === 'mountains').length).toBe(1);
-    expect((editStart(row(), eng.world) as { color: string }).color).toBe('#123456');
-    const cmd = restoreRowCommand(row(), eng.world)!;
-    expect(cmd).toEqual({ op: 'batch', label: '恢复地形类别“山地”', commands: [{ op: 'set_content', kind: 'terrainClass', id: 'mountains', item: null }] });
-    eng.exec(cmd);
-    expect(row().status.modified).toBeUndefined();
+    // 改过的那一份另列一行（这个世界里的）
+    expect(repoRows(classKind, eng.world, []).some((r) => r.source === 'world' && r.id === 'mountains' && (r.item as { color: string }).color === '#123456')).toBe(true);
+    eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'mountains', item: null });
+    expect(row().status.on).toBe(false);
+    eng.exec(toggleCommand(row(), eng.world)!);
+    expect(row().status.on).toBe(true);
   });
 
-  it('资源：通用的常开；奇幻的可以启用、停用', () => {
+  it('资源：通用的新世界里开着；奇幻的可以启用、停用', () => {
     const eng = continents();
     const rows = repoRows(resKind, eng.world, []);
-    for (const r of GENERAL_RESOURCES) expect(rows.find((x) => x.id === r.id)!.status.always).toBe(true);
+    for (const r of GENERAL_RESOURCES) expect(rows.find((x) => x.id === r.id)!.status.on).toBe(true);
     const row = () => repoRows(resKind, eng.world, []).find((r) => r.id === 'mithril')!;
     expect(row().status).toMatchObject({ on: false });
-    expect(row().status.always).toBeUndefined();
     eng.exec(toggleCommand(row(), eng.world)!);
     expect(row().status.on).toBe(true);
     eng.exec(toggleCommand(row(), eng.world)!);

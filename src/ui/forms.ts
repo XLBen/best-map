@@ -3,7 +3,9 @@ import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } fr
 import { itemKey, packIdFor, packItems, sameItem } from '../../core/packs';
 import { LAYOUT_R, planetProfile } from '../../core/planet-gen';
 import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
-import { PLANET_TYPES } from '../../core/presets';
+import { planetKindName } from '../../core/presets';
+import { FORMS_PATH } from '../../core/packs/builtin-tree';
+import { newWorldContentCommands } from '../../core/packs/import';
 import { type LibraryEntry, MY_PACK_NAME } from '../library';
 
 // 星球形态的界面要用的几样（不碰界面和 Worker，测试里直接用）：
@@ -57,17 +59,21 @@ export function formSource(c: FormChoice): string {
   return c.builtin ? '' : c.mine ? MY_PACK_NAME : `来自“${c.pack}”`;
 }
 
-// 一种星球的叫法：与向导里的卡片相同（像地球、一块超大陆……）；向导里没有的（内海）用生成器的名字
+// 一种星球的叫法（像地球、一块超大陆……；内海、空白星球）：生成器的种类的说法（core/presets.ts 的 planetKindName）
 export function planetTypeName(type: WorldType): string {
-  return PLANET_TYPES.find((p) => p.type === type && p.islands === undefined)?.name ?? WORLD_TYPE_INFO[type].name;
+  return planetKindName(type);
 }
 
 // 世界的生成参数是哪种星球：与 planetTypeName 相同，只是海洋星球、空白星球是同一种生成器，按岛多少分
-// （向导里的海洋星球是“空白海洋 + 岛 0.7”）
+// （“通用 ▸ 星球形态”里的海洋星球是“空白海洋 + 岛 0.7”）
 export function planetNameOf(gen: Pick<Worldgen, 'type' | 'islands'>): string {
-  if (gen.type === 'ocean' && (gen.islands ?? 0) > 0) return PLANET_TYPES.find((p) => p.key === 'ocean_islands')!.name;
-  return planetTypeName(gen.type);
+  return planetKindName(gen.type, gen.islands);
 }
+
+// 向导默认选的星球（第三十轮：“通用 ▸ 星球形态”里的“像地球”，资源库里的键 + 形态的 id）
+export const DEFAULT_PLANET = `${FORMS_PATH[0]}:continents`;
+// “通用 ▸ 星球形态”里的（向导第一排的卡片）
+export const isBuiltinPlanet = (c: FormChoice): boolean => c.builtin && c.key.startsWith(`${FORMS_PATH[0]}:`);
 
 // 形态编辑器“从哪种星球改起”的六种
 export const FORM_BASES: readonly WorldType[] = ['continents', 'continent', 'fragmented', 'archipelago', 'inland_sea', 'ocean'];
@@ -89,15 +95,17 @@ export function genWithForm(gen: Worldgen, form: PlanetForm | null): Worldgen {
 export function wizardWorldName(kind: 'region' | 'planet', ptype: string, choices: readonly FormChoice[], type: WorldType): string {
   if (kind === 'region') return WORLD_TYPE_INFO[type].name;
   const form = choices.find((c) => c.key === ptype)?.form;
-  return form?.name ?? (PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0]).name;
+  return form?.name ?? planetKindName('continents');
 }
 
 // 向导新建的命令：生成（标签“新世界：X”，山挡风默认就是打开的），生成人文，再划分省份。
 // before：向导“地形”里动过的海岸曲折、最高的山（见 wizardTerrain.ts），在生成之前设好，同在这一步里。
-// human（第二十二轮）：向导“人文”里的 generate_human（关着时 null）。排在划分省份之前：省名按当地的文化起
-export function newWorldCommands(gen: WorldgenInput, name: string, seed: number, before: Command[] = [], human: Command | null = null): Command[] {
+// human（第二十二轮）：向导“人文”里的 generate_human（关着时 null）。排在划分省份之前：省名按当地的文化起。
+// content（第三十轮）：新世界要加的内容（默认是基础、自然、中文地名，见 core/packs/import.ts），也在第一步里、生成之前
+export function newWorldCommands(gen: WorldgenInput, name: string, seed: number, before: Command[] = [], human: Command | null = null, content: Command[] = newWorldContentCommands()): Command[] {
+  const seedContent = content.flatMap((c) => (c.op === 'batch' ? c.commands : [c]));
   return [
-    { op: 'batch', label: `新世界“${name}”`, commands: [...before, { op: 'set_worldgen', params: gen, reset: true }] },
+    { op: 'batch', label: `新世界“${name}”`, commands: [...seedContent, ...before, { op: 'set_worldgen', params: gen, reset: true }] },
     ...(human ? [human] : []),
     { op: 'generate_provinces', rules: { seed } },
   ];

@@ -8,7 +8,7 @@ import { findCell } from './mesh';
 import { SEAM_BAND, applySeams, exportProvinceCells, scissors, seamLayers, seamPick } from './seams';
 import { provinceCells } from './select';
 import { rasterizeWorld } from './subcell';
-import { snapshot } from './testing/fixtures';
+import { snapshot, seededEngine } from './testing/fixtures';
 import type { World } from './world';
 
 // 第八轮：剪刀切出的边就是画的线。切线附近的像素按“在线的哪一边”分省，屏幕（着色器）与导出（provinces.bmp）同一条规则；
@@ -20,14 +20,14 @@ type Pt = [number, number];
 // 一块地区（6000 格）与一个整个星球（6000 格），都划好了省份（与 raster-identity 的两个世界相同）
 const region = () =>
   snapshot('seams:region', () => {
-    const eng = new Engine({ seed: 3, cells: 6000 });
+    const eng = seededEngine({ seed: 3, cells: 6000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
     return eng;
   });
 const planet = () =>
   snapshot('seams:planet', () => {
-    const eng = new Engine({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    const eng = seededEngine({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
     return eng;
@@ -454,7 +454,7 @@ describe('剪刀切线', () => {
     expect(digestWorld(eng.world)).toEqual(after);
     // 存档：重放结果逐值相同
     const doc = eng.toDoc();
-    expect(doc.version).toBe(5);
+    expect(doc.version).toBe(6);
     expect(digestWorld(Engine.fromDoc(doc, eng.world.mesh).world)).toEqual(after);
     // 重新划分切开的省：碰到它的切线不要了
     const regen = eng.clone();

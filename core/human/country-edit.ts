@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
 import { joinBlocsOf, mergeBlocMembers, tidyBlocs } from './blocs';
-import { bringGovernment, countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
+import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
 import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, governmentById } from './government';
@@ -156,9 +156,8 @@ export function newCountry(world: World, opts: NewCountryOpts): number {
   const culture = opts.culture ? cultureById(small, opts.culture) : majorityCultureOf(world, cells);
   if (opts.culture && !culture) throw new CommandError(`世界里没有文化 "${opts.culture}"`);
   if (!culture) throw new CommandError('世界里没有文化');
-  if (opts.government) bringGovernment(world, opts.government);
   const gov = opts.government ? governmentById(small, opts.government) : commonGovernment(world);
-  if (opts.government && !gov) throw new CommandError(`世界里没有政体 "${opts.government}"`);
+  if (opts.government && !gov) throw new CommandError(`世界里没有政体 "${opts.government}"：先从资源库添加它`);
   if (!gov) throw new CommandError('世界里没有政体');
   const id = Math.max(1, small.nextCountry ?? 1);
   small.nextCountry = id + 1;
@@ -327,8 +326,8 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
   const what: string[] = [];
   const seed = seedOf(world);
   if (p.government !== undefined) {
-    bringGovernment(world, p.government);
-    if (!governmentById(small, p.government)) throw new CommandError(`世界里没有政体 "${p.government}"`);
+    // 第三十轮：世界里没有的政体由界面先从资源库加进来（set_content，带 from），引擎不再从内置的复制
+    if (!governmentById(small, p.government)) throw new CommandError(`世界里没有政体 "${p.government}"：先从资源库添加它`);
     m.government = p.government;
     what.push('政体');
   }

@@ -1,14 +1,15 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { lakeArea } from './elevation';
-import { Engine } from './engine';
-import { continents as sharedContinents } from './testing/fixtures';
+
+import { continents as sharedContinents, seededEngine } from './testing/fixtures';
 import { exportPackage } from './export';
 import { provinceSizes } from './provinces';
 import { isRiverCell, planRiver, provinceCells } from './select';
-import { DEFAULT_SPECIES, speciesRect, withRect } from './species';
+import { speciesRect, withRect } from './species';
 import { isVegetated } from './vegetation';
 import type { World } from './world';
+import { DEFAULT_SPECIES } from './packs/nature';
 
 // 第二轮迭代的编辑规则：省份可配置且稳定、地名不乱跳、画河与放湖所见即所得、
 // 涂生态“涂到的就是”、导出地名表（只长在某个岛上的生态见 biome-range.test.ts）
@@ -156,7 +157,7 @@ describe('省份：自动划分也稳定', () => {
 
 describe('地名不乱跳', () => {
   it('在海里放一个岛：只要没盖住这片海的锚点，海名不变', () => {
-    const eng = new Engine({ cells: 12000, seed: 1, latNorth: 30, latSouth: 0 });
+    const eng = seededEngine({ cells: 12000, seed: 1, latNorth: 30, latSouth: 0 });
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true });
     const w = eng.world;
     const seas = w.derived.features.filter((f) => f.type === 'sea' || f.type === 'ocean').sort((a, b) => b.cells.length - a.cells.length);

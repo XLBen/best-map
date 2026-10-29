@@ -45,7 +45,7 @@ describe('新建向导的“地形”', () => {
 
   it('动过的几项进了建出来的世界，是一步“新世界：X”', () => {
     const t = { landFraction: 0.3, islands: 0.2, mountains: 1.5, coast: 1.6, mountainScale: 9000 };
-    const eng = engineFor(region);
+    const eng = engineFor(region, { bare: true });
     for (const cmd of newWorldCommands(withTerrain({ seed: 3, type: 'archipelago' }, t), '群岛之海', 3, terrainCommands(t))) eng.exec(cmd);
     const w = eng.world;
     expect(eng.history.map((h) => h.summary)).toEqual(['新世界“群岛之海”', expect.any(String)]);

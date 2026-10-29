@@ -22,7 +22,8 @@ import {
   layoutOf,
   regenerateCountriesCommand,
 } from '../countries';
-import { popText } from '../human';
+import { popText, withPackImports } from '../human';
+import { library } from '../../library';
 import { hasHuman } from '../tools/culture';
 import { chosenTerritory, selectCountry } from '../tools/countries';
 
@@ -181,7 +182,7 @@ function GenerateCountries({ w }: { w: World }) {
       <h5>生成国家</h5>
       <FragSlider w={w} value={f} onChange={setF} />
       <LayoutPick value={layout} onChange={setLayout} />
-      <button class="primary" onClick={() => void exec(generateCountriesCommand(f, layout), '正在生成…')}>
+      <button class="primary" onClick={() => void exec(withPackImports(generateCountriesCommand(f, layout), w.small, library.value), '正在生成…')}>
         生成
       </button>
     </section>
@@ -209,7 +210,7 @@ function CountryTools({ w }: { w: World }) {
           </Toggle>
         )}
         <div class="row wrap">
-          <button onClick={() => void exec(regenerateCountriesCommand(w, f, keep, layout), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
+          <button onClick={() => void exec(withPackImports(regenerateCountriesCommand(w, f, keep, layout), w.small, library.value), '正在生成…')} title="人口按新的国家重新分，手改过的格不动">
             重新生成
           </button>
           <button

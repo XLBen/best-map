@@ -1,16 +1,13 @@
+import { recordedOrigin } from '../content/origin';
 import { CommandError } from '../errors';
-import { builtinOrder, recordBuiltinOrigins } from '../packs/builtin-base';
-import { styleById } from '../name-styles';
-import { BUILTIN_STYLES } from '../packs/names';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
-import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, World } from '../world';
+import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, SmallState, World } from '../world';
 import type { GenContext, GenGroup, HumanStage } from './context';
 import { snapshotCountries, snapshotPop } from './auto';
 import { blocsStage } from './blocs';
 import { claimsStage } from './claims';
 import { culturesStage } from './cultures';
 import { type CountryPlan, clearCountries, countriesStage, countryMixStage } from './countries';
-import { type Era, cultureById, cultureGroupById, worldCultures } from './era';
+import { type Era, cultureById, cultureGroupById, worldCultures, worldEras } from './era';
 import { compactGroups } from './groups';
 import { pruneHumanContent } from './prune';
 import { compilePrefs, preferenceFactors } from './habitability';
@@ -23,11 +20,14 @@ import { clearCities } from './settlements';
 
 // 生成人文（第二十二轮）：文化圈 → 国家（第二十三轮）→ 领土补齐 → 帝国、联邦、同盟（第二十六轮）→ 人口 → 国家的移民，每一步是一个 HumanStage（见 context.ts）。
 // 结果写进原因（causes.popTotal / popGroup / popShare）与 small.human、small.popGroups，像省份一样“生成一次、之后修补”。
-// 用到的时代、取值、文化组、文化、地名风格世界里没有时从内置的复制进来（世界打开不依赖资源库），
-// 生成完只留用到的（第二十八轮，见 prune.ts）
+// 第三十轮：生成只读世界里的内容——时代、取值、文化组、文化、地名风格、政体、派系都由界面先从资源包加进世界
+// （core/packs/import.ts 的 packImportCommands：planPack，带 from），这里不再从代码里的内置常量复制。
+// 规则（时代）取 packs 里第一个带时代的包的那个时代；缺了什么就跳过用到它的那一步，结果里写明（见 content/missing.ts）。
+// 生成完只留用到的（第二十八轮，见 prune.ts；第三十轮起不论是不是内置原样）
 
 export interface HumanParams {
-  era: string;
+  // 用的资源包（资源库里的路径，按勾选的先后）：规则取第一个带时代的包（见 ruleEra）
+  packs: string[][];
   groups: { id: string; weight: number; cultures?: string[] }[];
   // 总人口（省略时按时代的默认密度 × 陆地面积）
   totalPop?: number;
@@ -76,57 +76,39 @@ export function defaultTotalPop(world: World, d: Derived, era: Pick<Era, 'popDen
   return Math.round(era.popDensity * dryLandKm2(world, d));
 }
 
-// 时代、取值、文化组、文化、地名风格：世界里没有的从内置的复制进来（同 id 已经在世界里的不动）。
-// 第二十九轮：groups 写了 cultures 的组只复制点名的文化（别的不带进来）；没写的组世界里一个都没有时复制整组（生成时都用上，
-// 没人的由 prune.ts 收掉）。复制进来的记下它在内置的树里的位置（small.origin，优先这个时代的大包，见 packs/builtin-tree.ts）
-export function ensureHumanContent(world: World, eraId: string, groups: readonly (string | { id: string; cultures?: readonly string[] })[]) {
+// 规则用的时代（第三十轮）：packs 里第一个带时代的包——世界里来源（small.origin）在这个包下面的时代；
+// 都对不上时是世界里第一个时代（自己做的时代没有来源）；世界里一个时代都没有时 undefined（不生成人文）
+const under = (path: readonly string[] | undefined, pack: readonly string[]) => !!path && pack.length <= path.length && pack.every((x, k) => path[k] === x);
+export function ruleEra(small: Pick<SmallState, 'content' | 'origin'>, packs: readonly (readonly string[])[]): Era | undefined {
+  const eras = worldEras(small);
+  for (const p of packs) {
+    const hit = eras.find((e) => under(recordedOrigin(small, 'era', e.id), p));
+    if (hit) return hit;
+  }
+  return eras[0];
+}
+
+// 生成要用的文化组（世界里有的、组里有文化的；点名的文化只留世界里有的）
+function usableGroups(world: World, groups: HumanParams['groups']): HumanParams['groups'] {
   const small = world.small;
-  const content = { ...(small.content ?? {}) };
-  const brought: [string, string][] = [];
-  const add = (kind: string, id: string, item: unknown) => {
-    const store = (content[kind] ?? {}) as Record<string, unknown>;
-    if (store[id]) return;
-    content[kind] = { ...store, [id]: structuredClone(item) };
-    brought.push([kind, id]);
-  };
-  const era = (content.era as Record<string, Era> | undefined)?.[eraId] ?? BUILTIN_ERAS.find((e) => e.id === eraId);
-  if (!era) throw new CommandError(`没有时代 "${eraId}"`);
-  add('era', eraId, era);
-  const dims = new Set(era.dimensions.map((x) => x.id));
-  for (const v of BUILTIN_POP_VALUES) if (dims.has(v.dimension) && (!v.eras || v.eras.includes(eraId))) add('popValue', v.id, v);
-  const groupIds: string[] = [];
-  for (const entry of groups) {
-    const g = typeof entry === 'string' ? entry : entry.id;
-    const named = typeof entry === 'string' ? undefined : entry.cultures?.length ? entry.cultures : undefined;
-    groupIds.push(g);
-    const own = (content.cultureGroup as Record<string, unknown> | undefined)?.[g];
-    const b = BUILTIN_CULTURE_GROUPS.find((x) => x.id === g);
-    if (!own && !b) throw new CommandError(`没有文化组 "${g}"`);
-    if (!own) add('cultureGroup', g, b);
-    if (named) {
-      // 点名的文化：世界里没有的从内置的复制（内置里也没有的由生成时报错）
-      for (const id of named) {
-        const c = BUILTIN_CULTURES.find((x) => x.id === id);
-        if (c) add('culture', id, c);
-      }
+  const out: HumanParams['groups'] = [];
+  for (const g of groups) {
+    if (!cultureGroupById(small, g.id)) continue;
+    if (g.cultures?.length) {
+      const named = g.cultures.filter((id) => cultureById(small, id));
+      if (named.length) out.push({ ...g, cultures: named });
       continue;
     }
-    // 世界里这一组一个文化都没有时，内置的这一组的文化都放进来
-    const has = Object.values((content.culture ?? {}) as Record<string, { group: string }>).some((c) => c.group === g);
-    if (!has) for (const c of BUILTIN_CULTURES) if (c.group === g) add('culture', c.id, c);
+    if (worldCultures(small).some((c) => c.group === g.id)) out.push(g);
   }
-  if (content.popValue) content.popValue = builtinOrder(content.popValue as Record<string, unknown>, BUILTIN_POP_VALUES);
-  small.content = content;
-  // 文化用的地名风格
-  for (const c of worldCultures(small)) {
-    if (!groupIds.includes(c.group) || styleById(small, c.nameStyle)) continue;
-    const s = BUILTIN_STYLES.find((x) => x.id === c.nameStyle);
-    if (s) {
-      small.content = { ...small.content, nameStyle: { ...(small.content?.nameStyle ?? {}), [s.id]: structuredClone(s) } };
-      brought.push(['nameStyle', s.id]);
-    }
-  }
-  recordBuiltinOrigins(small, brought, eraId);
+  return out;
+}
+
+// 生成人文之前：缺了时代、文化（选的文化组世界里都没有，或组里没有文化）时不生成，写明缺什么
+export function humanBlockers(world: World, params: Pick<HumanParams, 'packs' | 'groups'>): string[] {
+  if (!ruleEra(world.small, params.packs)) return ['没有时代：没有生成人文（先从资源库添加一个时代包）'];
+  if (!usableGroups(world, params.groups).length) return ['没有文化：没有生成人口（选的文化组世界里没有，或组里没有文化）'];
+  return [];
 }
 
 // 生成（或重新生成）。keepManual：手改过的格（causes.popManual）不动。返回生成的状态
@@ -137,15 +119,16 @@ export function generateHuman(
   params: HumanParams,
   opts: { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean; regenerate?: boolean } = {},
 ): HumanState {
-  if (!params.groups.length) throw new CommandError('至少要有一个文化组');
-  ensureHumanContent(world, params.era, params.groups);
   const small = world.small;
-  const era = (small.content!.era as Record<string, Era>)[params.era];
+  const era = ruleEra(small, params.packs);
+  if (!era) throw new CommandError('世界里没有时代');
+  const used = usableGroups(world, params.groups);
+  if (!used.length) throw new CommandError('世界里没有选的文化组的文化');
   const classes = worldTerrainClasses(small);
   const classIds = classes.map((c) => c.id);
   const x = cellInputs(world, d);
   const cls = d.terrainClass;
-  const groups: GenGroup[] = params.groups.map((p) => {
+  const groups: GenGroup[] = used.map((p) => {
     const group = cultureGroupById(small, p.id)!;
     const list = p.cultures?.length ? p.cultures.map((id) => cultureById(small, id)) : worldCultures(small).filter((c) => c.group === p.id);
     const cultures = list.map((c, k) => {
@@ -199,9 +182,10 @@ export function generateHuman(
   };
   for (const stage of STAGES) stage.run(ctx);
   const state: HumanState = {
+    packs: params.packs.map((p) => [...p]),
     era: era.id,
     seed,
-    groups: params.groups.map((g) => ({ id: g.id, weight: g.weight, ...(g.cultures?.length ? { cultures: [...g.cultures] } : {}) })),
+    groups: used.map((g) => ({ id: g.id, weight: g.weight, ...(g.cultures?.length ? { cultures: [...g.cultures] } : {}) })),
     totalPop: ctx.totalPop,
     perWeight: ctx.perWeight ?? 0,
     hearths: ctx.hearths,
@@ -222,7 +206,7 @@ export function generateHuman(
     clearCities(world);
     if (!small.landmarks) delete small.settlementRules;
   }
-  // 第二十八轮：没用到的内置时代、取值、文化组、文化（和它们的地名风格）移出世界
+  // 第二十八轮：没用到的时代、取值、文化组、文化（和它们的地名风格）、政体、派系移出世界
   pruneHumanContent(world);
   return state;
 }
@@ -235,7 +219,7 @@ export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanPa
   const fresh = patch.countries !== undefined;
   const rules = fresh ? { ...h.countryRules, ...patch.countries } : h.countryRules;
   const params: HumanParams = {
-    era: patch.era ?? h.era,
+    packs: patch.packs ?? h.packs,
     groups: patch.groups ?? h.groups,
     totalPop: patch.totalPop ?? h.totalPop,
     seed: patch.seed ?? h.seed,

@@ -10,9 +10,9 @@ import { generateLandmarks } from '../core/human/landmarks';
 import { settlementRules } from '../core/human/settle-gen';
 import { archiveMarkdown } from '../core/human/archive';
 import { Engine } from '../core/engine';
-import { applyPackCommands } from '../core/packs';
 import { PLANET_SIZES, planetCells } from '../core/presets';
-import { FANTASY_PACK } from '../core/packs/fantasy';
+import { builtinPacks } from '../core/packs/builtin-tree';
+import { newWorldContentCommands, packImportCommands } from '../core/packs/import';
 import { coastalStroke, digest } from './hash';
 let t = performance.now();
 const results: Record<string, number> = {};
@@ -41,7 +41,7 @@ function plainBench() {
       : { seed: 3, cells: Number(cellsArg ?? 40000) },
   );
   lap('mesh');
-  eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
+  eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
   lap('generate+pipeline');
   console.log(eng.lastTimings);
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
@@ -71,7 +71,8 @@ function plainBench() {
   eng.exec({ op: 'set_cell_resource', cells: land.slice(0, 120), resource: 'iron' });
   lap('paint resource (human)');
   // 第二十二轮：生成人文（文化圈 + 人口）、人口与文化笔刷、撤销
-  eng.exec({ op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }] });
+  for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: ['western', 'eastern', 'steppe'] }, eng.world)) eng.exec(c);
+  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }] });
   lap('generate human');
   const peopled = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.popTotal![i] > 0).slice(1000, 1120);
   eng.exec({ op: 'paint_culture', cells: peopled, culture: 'frankish', amount: 0.5 });
@@ -83,7 +84,9 @@ function plainBench() {
   eng.undo();
   lap('undo paint (human)');
   // 第二十三轮：连同国家生成人文（与上面的 generate human 比，多出来的是国家的两步）、生成国家（另重分人口）、领土笔刷、撤销、改档案
-  eng.exec({ op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }], countries: {} });
+  // 第三十轮：生成后没用到的政体、派系清理掉了，再生成之前再加一遍
+  for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: ['western', 'eastern', 'steppe'] }, eng.world)) eng.exec(c);
+  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }], countries: {} });
   lap(`generate human + countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
   eng.exec({ op: 'regenerate_countries', fragmentation: 0.7 });
   lap(`regenerate countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
@@ -168,9 +171,10 @@ function inland(eng: Engine, f: number): number {
 function fantasyBench() {
   const eng = new Engine({ seed: 3, cells: Number(cellsArg ?? EARTH_CELLS), globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
   lap('mesh', 'mesh');
-  eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
+  eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
   lap('new world', 'newWorld');
-  eng.exec(applyPackCommands(eng.world, FANTASY_PACK));
+  // 第三十轮：以前的“奇幻生态示例”是内置的树“奇幻”里的生态、河、湖几个小包
+  for (const c of packImportCommands(builtinPacks(), { packs: [['fantasy', 'biomes'], ['fantasy', 'rivers'], ['fantasy', 'lakes']] }, eng.world)) eng.exec(c);
   lap('apply fantasy pack', 'pack');
   const w = eng.world;
   const stage = (label: string) => {

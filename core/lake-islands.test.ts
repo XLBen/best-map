@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import type { Command } from './commands';
 import { Engine } from './engine';
-import { BUILTIN_COUNT, islandCode, provinceLand } from './island-types';
+import { islandCode, provinceLand } from './island-types';
+import { BUILTIN_ISLAND_TYPES } from './packs/base';
+
+// 内置的五种岛（新世界默认加进来，编号 1–5；自己的接着往后）
+const BUILTIN_COUNT = BUILTIN_ISLAND_TYPES.length;
 import { previewWorldOf } from './preview-world';
 import { rasterizeWorld } from './subcell';
 import { type IslandSpec, centerCell, chainIslands, combineStamps, lakeIslandStamp } from './terrain';

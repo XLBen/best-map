@@ -81,17 +81,21 @@ export const TYPE_DEFAULTS: Record<WorldType, { size: MapSize; zone: ClimateZone
 
 // —— 整个星球 ——
 
-// 星球的类型：生成器的类型 + 岛多少（海洋星球 = 空白海洋里只有火山岛露出海面）
-export const PLANET_TYPES = [
-  { key: 'continents', name: '像地球', hint: '几块大小不一的大陆，许多岛', type: 'continents', islands: undefined },
-  { key: 'continent', name: '一块超大陆', hint: '一块巨大的大陆，周围是大洋', type: 'continent', islands: undefined },
-  { key: 'fragmented', name: '破碎大陆', hint: '许多中小块陆地和浅海', type: 'fragmented', islands: undefined },
-  { key: 'archipelago', name: '群岛星球', hint: '几乎全是海，散布着群岛', type: 'archipelago', islands: undefined },
-  { key: 'ocean_islands', name: '海洋星球', hint: '一片大洋，只有火山岛露出海面', type: 'ocean', islands: 0.7 },
-  { key: 'blank', name: '空白星球', hint: '全是海，自己来画', type: 'ocean', islands: undefined },
-] as const satisfies readonly { key: string; name: string; hint: string; type: WorldType; islands: number | undefined }[];
-// 向导里选的星球：PLANET_TYPES 里的一种（key），或者一个星球形态（资源库里的键，见 src/ui/forms.ts），所以是字符串
-export type PlanetTypeKey = (typeof PLANET_TYPES)[number]['key'];
+// 整个星球的生成器种类叫什么（历史里的“新世界“像地球””、形态的“从哪种星球改起”）。这是算法的说法，不是内容：
+// 向导里选的星球是“通用 ▸ 星球形态”里的形态（第三十轮，见 packs/planet-forms.ts；以前写死在这里的 PLANET_TYPES）。
+// 海洋星球与空白星球是同一种生成器（ocean），按岛多少分
+const PLANET_KIND_NAMES: Record<WorldType, string> = {
+  continents: '像地球',
+  continent: '一块超大陆',
+  fragmented: '破碎大陆',
+  archipelago: '群岛星球',
+  inland_sea: '内海',
+  ocean: '空白星球',
+};
+export function planetKindName(type: WorldType, islands?: number): string {
+  return type === 'ocean' && (islands ?? 0) > 0 ? '海洋星球' : PLANET_KIND_NAMES[type];
+}
+// 向导里选的星球：一个星球形态（资源库里的键，见 src/ui/forms.ts），所以是字符串
 export type PlanetType = string;
 
 // 星球的大小：只改变 km，不改变布局（同一颗星球放大缩小）

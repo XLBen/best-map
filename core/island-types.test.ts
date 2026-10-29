@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { cellLayers } from '../src/render/colors';
 import { displayCellAt, displayCoast } from './display';
 import { Engine } from './engine';
-import { BUILTIN_COUNT, LAGOON_BIT, MAX_ISLAND_TYPES, landProvinceCells, provinceLand } from './island-types';
+import { LAGOON_BIT, MAX_ISLAND_TYPES, landProvinceCells, provinceLand } from './island-types';
+import { BUILTIN_ISLAND_TYPES } from './packs/base';
+
+// 内置的五种岛（新世界默认加进来，编号 1–5；自己的接着往后）
+const BUILTIN_COUNT = BUILTIN_ISLAND_TYPES.length;
 import { applyPackCommands, packFromWorld, parsePack } from './packs';
 import { rasterizeWorld } from './subcell';
-import { continents } from './testing/fixtures';
+import { continents, seededEngine } from './testing/fixtures';
 import type { World } from './world';
 
 // 第十四轮：岛的种类（内置的与自己的）、小礁归海省、破碎的陆地归陆地省
 
 function ocean(): Engine {
-  const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+  const eng = seededEngine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
   return eng;
 }
@@ -70,28 +74,30 @@ describe('自己的岛的种类', () => {
     }
     // 地形不变（潟湖照旧浅）
     expect(eng.world.derived.elevation).toEqual(elev);
-    expect(eng.world.small.islandTypes?.map((t) => t.id)).toEqual(['black']);
+    expect(eng.world.small.islandTypes?.slice(BUILTIN_COUNT).map((t) => t.id)).toEqual(['black']);
     eng.undo();
     expect(eng.world.causes.islandType).toEqual(types);
-    expect(eng.world.small.islandTypes?.map((t) => t.id)).toEqual(['ring', 'black']);
+    expect(eng.world.small.islandTypes?.slice(BUILTIN_COUNT).map((t) => t.id)).toEqual(['ring', 'black']);
   });
 
-  it('不能用内置的 id；最多 64 种；找不到的种类放不了', () => {
+  it('内置的 id 是改世界里的那一种（第三十轮：内置的也是普通内容）；最多 64 种；找不到的种类放不了', () => {
     const eng = ocean();
-    expect(() => eng.exec({ op: 'set_island_type', type: { ...black, id: 'reef' } })).toThrow();
+    eng.exec({ op: 'set_island_type', type: { ...black, id: 'reef' } });
+    expect(eng.world.small.islandTypes!.findIndex((t) => t.id === 'reef')).toBe(3);
     expect(() => eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'nope', size: 80 } })).toThrow('没有“nope”这种岛');
-    const many = Array.from({ length: MAX_ISLAND_TYPES }, (_, k) => ({ op: 'set_island_type' as const, type: { ...black, id: `t${k}`, name: `岛${k}` } }));
+    const many = Array.from({ length: MAX_ISLAND_TYPES - BUILTIN_COUNT }, (_, k) => ({ op: 'set_island_type' as const, type: { ...black, id: `t${k}`, name: `岛${k}` } }));
     eng.exec({ op: 'batch', commands: many });
     expect(() => eng.exec({ op: 'set_island_type', type: { ...black, id: 'one-more' } })).toThrow('最多');
   });
 
-  it('起名模板：岛的大半是这一种时按它起名；以后才加的模板只重新起名就用上', () => {
+  it('起名模板：岛的大半是这一种时按它起名；以后才加的模板也用上（第三十轮：只有带模板的种类打 itype: 标签，加模板时重算地物）', () => {
     const eng = ocean();
     eng.exec({ op: 'set_island_type', type: black });
     eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'black', size: 80, variant: 1 } });
     const isl = () => eng.world.derived.features.find((f) => f.type === 'island' && f.cells.some((c) => eng.world.causes.islandType[c]));
-    expect(isl()?.tags).toContain('itype:black');
+    expect(isl()?.tags.some((t) => t.startsWith('itype:'))).toBe(false);
     eng.exec({ op: 'set_island_type', type: { ...black, names: [{ p: '黑石屿' }] } });
+    expect(isl()?.tags).toContain('itype:black');
     expect(isl()?.name).toBe('黑石屿');
   });
 
@@ -291,7 +297,7 @@ describe('重放', () => {
   });
 
   it('删掉一种岛再用同一个 id 新建、给它起名模板：已经放的岛名字与重放相同（不留旧的 itype: 标签）', () => {
-    const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+    const eng = seededEngine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
     const t = { id: 'island-type-1', name: '黑沙岛', shape: 'round' as const, height: 'hilly' as const, province: 'land' as const };
     eng.exec({ op: 'set_island_type', type: t });

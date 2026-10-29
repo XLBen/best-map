@@ -3,11 +3,11 @@ import { digestWorld } from '../tools/hash';
 import { Engine } from './engine';
 import { type GeoFeature, assignNames } from './features';
 import { ringDistance } from './mesh';
-import { DEFAULT_PACK, type WordPack } from './names';
+import { type WordPack } from './names';
 import { encodePath } from './rivers';
 import { isRiverCell, planCourse, riverStem, stemPath } from './select';
 import { fantasyBiomeCommands } from './packs/fantasy-biomes';
-import { continents, engineFor, snapshot } from './testing/fixtures';
+import { continents, engineFor, snapshot, ZH_STYLE, wordPackCommand } from './testing/fixtures';
 
 // 第九轮：名字不乱跳。浏览器里在整个星球 + 奇幻生态上找到的几种情形：
 // - 在开阔的海上画一大块陆地：洋的锚点格被涂掉，洋改了名；远处的森林、一条山脉也改了名，新出来的山脉拿走了老山脉的名字；
@@ -152,15 +152,15 @@ describe('名字不乱跳', () => {
     // 岛只有 12 个名字可选（别的照内置的包），岛有六到九个：常常撞名。新放的岛与原有的岛连成一个大岛时，
     // 以前大岛先挑走别的岛的名字（“戊岛”），那个岛只好换一个；河的名字也因为撞名、先后变了而跳
     const pack: WordPack = {
-      ...DEFAULT_PACK,
+      ...ZH_STYLE,
       id: 'few',
       name: '少字',
-      lists: { ...DEFAULT_PACK.lists, few: [...'甲乙丙丁戊己庚辛壬癸子丑'] },
-      types: { ...DEFAULT_PACK.types, island: { patterns: [{ p: '{few}岛' }] } },
+      lists: { ...ZH_STYLE.lists, few: [...'甲乙丙丁戊己庚辛壬癸子丑'] },
+      types: { ...ZH_STYLE.types, island: { patterns: [{ p: '{few}岛' }] } },
     };
     const eng = continents();
     const w = eng.world;
-    eng.exec({ op: 'set_word_pack', pack });
+    eng.exec(wordPackCommand(pack));
     const deep = [...Array(w.mesh.n).keys()].filter((c) => w.derived.elevation[c] < -3000);
     let placed = 0;
     for (let k = 0; k < 6; k++) {
@@ -220,7 +220,7 @@ describe('名字不乱跳', () => {
     expect(w.derived.features.find((f) => f.key === rest.key)!.name).toBe(sea.name);
     // 换文字包：留着的名字不再用，名字全按新的包
     const pack: WordPack = { id: 'p', name: '包', lists: { a: [...'甲乙丙丁戊己庚辛壬癸'] }, types: { sea: { patterns: [{ p: '{a}{a}海' }] }, ocean: { patterns: [{ p: '{a}{a}洋' }] } } };
-    eng.exec({ op: 'set_word_pack', pack });
+    eng.exec(wordPackCommand(pack));
     expect(w.derived.features.find((f) => f.key === rest.key)!.name).toMatch(/^[甲乙丙丁戊己庚辛壬癸]{2}[海洋]$/);
     expectReplay(eng);
   });
@@ -257,7 +257,7 @@ describe('名字不乱跳', () => {
     const copies = base.world.derived.features.map((f) => ({ ...f }));
     const ctx = assignNames(base.world, copies).get(copies[base.world.derived.features.indexOf(river)])!.ctx!;
     const doc = base.toDoc();
-    doc.commands.push({ op: 'set_word_pack', pack: null, nameCarry: { keep: { [river.key]: { name: '测试河', ctx } } } });
+    doc.commands.push({ op: 'set_name_style', id: null, nameCarry: { keep: { [river.key]: { name: '测试河', ctx } } } });
     const eng = Engine.fromDoc(doc, base.world.mesh);
     const w = eng.world;
     expect(w.derived.features.find((f) => f.key === river.key)!.name).toBe('测试河');

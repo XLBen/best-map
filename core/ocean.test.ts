@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Engine } from './engine';
+import { seededEngine } from './testing/fixtures';
 
 // 简化的洋流：一块副热带大陆两侧的暖流、寒流、上涌，南半球与反向自转时方向镜像，强弱滑块
 
@@ -9,7 +10,7 @@ const lonOf = (x: number) => 180 * (x - 1);
 
 // 一块 60° 宽的大陆；south = true 时放在南半球
 function continent(opts: { south?: boolean; rotation?: 1 | -1; currents?: number } = {}) {
-  const eng = new Engine(globe);
+  const eng = seededEngine(globe);
   const m = eng.world.mesh;
   const cells: number[] = [];
   for (let i = 0; i < m.n; i++) {
@@ -99,7 +100,7 @@ describe('洋流', () => {
   });
 
   it('全是海的星球：没有东西差别，海温几乎不偏离', () => {
-    const aqua = new Engine(globe);
+    const aqua = seededEngine(globe);
     aqua.update();
     let mx = 0;
     for (const v of aqua.world.derived.sstAnom) mx = Math.max(mx, Math.abs(v));

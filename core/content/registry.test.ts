@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { type ResourcePack, packCounts, packFromWorld, packProblems, packSection, packSections, packSummary, parsePack, planPack, readPack } from '../packs';
-import { FANTASY_PACK } from '../packs/fantasy';
-import { BUILTIN_STYLES, NAME_STYLES_PACK } from '../packs/names';
-import { continents } from '../testing/fixtures';
+
+import { BUILTIN_STYLES } from '../packs/names';
+import { continents, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../testing/fixtures';
 import { allKinds, contentItems, disableCommand, enableCommand, isEnabled, kindByPackKey, kindOf, registerKind, unregisterKind } from './registry';
 
 // 第二十轮：内容种类的登记表。登记一次，资源包的段、数、列表的一行、检查、用到世界、导出都跟着有；
@@ -46,8 +46,10 @@ describe('内容种类的登记表', () => {
     const w = eng.world;
     // 每种放一点进世界
     eng.exec(planPack(w, FANTASY_PACK, { biomes: ['holy_land'], riverTypes: ['blood_river'], lakeTypes: ['blood_pool'] }).command);
+    // 第三十轮：与内置的树里一模一样的生态、地名风格不导出（它们在资源库里），这里放改过的
+    eng.exec({ op: 'update_species', id: 'holy_land', patch: { color: '#123456' } });
     eng.exec({ op: 'set_island_type', type: { id: 'black_sand', name: '黑沙岛', shape: 'round', height: 'flat' } });
-    eng.exec({ op: 'set_content', kind: 'nameStyle', id: 'west-germanic', item: BUILTIN_STYLES[1] as unknown as Record<string, unknown> });
+    eng.exec({ op: 'set_content', kind: 'nameStyle', id: 'my-germanic', item: { ...BUILTIN_STYLES[1], id: 'my-germanic', name: '我的日耳曼' } as unknown as Record<string, unknown> });
     const out = packFromWorld(w, {}, { name: '全部' });
     expect(Object.keys(out)).toEqual(['format', 'version', 'id', 'name', 'fields', 'biomes', 'riverTypes', 'lakeTypes', 'islandTypes', 'nameStyles']);
     const back = readPack(JSON.stringify(out));
@@ -56,14 +58,14 @@ describe('内容种类的登记表', () => {
     expect(packCounts(out)).toMatchObject({ biomes: 1, riverTypes: 1, lakeTypes: 1, islandTypes: 1, planetForms: 0, nameStyles: 1, fields: 1 });
     // 用到另一个世界：每一种都加上；再用一次全部跳过
     const other = continents();
-    const plan = planPack(other.world, out, { biomes: ['holy_land'], riverTypes: ['blood_river'], lakeTypes: ['blood_pool'], islandTypes: ['black_sand'], nameStyles: ['west-germanic'] });
+    const plan = planPack(other.world, out, { biomes: ['holy_land'], riverTypes: ['blood_river'], lakeTypes: ['blood_pool'], islandTypes: ['black_sand'], nameStyles: ['my-germanic'] });
     expect(plan.command.commands.map((c) => c.op)).toEqual(['add_field', 'set_river_type', 'set_lake_type', 'set_island_type', 'add_species', 'set_content']);
     other.exec(plan.command);
-    const again = planPack(other.world, out, { biomes: ['holy_land'], riverTypes: ['blood_river'], lakeTypes: ['blood_pool'], islandTypes: ['black_sand'], nameStyles: ['west-germanic'] });
+    const again = planPack(other.world, out, { biomes: ['holy_land'], riverTypes: ['blood_river'], lakeTypes: ['blood_pool'], islandTypes: ['black_sand'], nameStyles: ['my-germanic'] });
     expect(again.command.commands).toEqual([]);
     expect(again.skipped.map((s) => s.section)).toEqual(['biomes', 'riverTypes', 'lakeTypes', 'islandTypes', 'nameStyles']);
     // 内置的示例包也读得回来
-    for (const p of [FANTASY_PACK, NAME_STYLES_PACK]) {
+    for (const p of [FANTASY_PACK, NAME_STYLES_SAMPLE]) {
       const r = readPack(JSON.stringify(p));
       expect(r.ok && r.pack, p.id).toEqual(p);
       expect(packProblems(p), p.id).toEqual([]);
@@ -100,11 +102,11 @@ describe('内容种类的登记表', () => {
     const kind = kindOf('testThing')!;
     expect(isEnabled(kind, eng.world, 'a')).toBe(true);
     eng.exec(disableCommand(kind, 'a', eng.world));
-    expect(eng.world.small.content).toBeUndefined();
+    expect(eng.world.small.content?.testThing).toBeUndefined();
     eng.exec(enableCommand(kind, { id: 'a', name: '甲', size: 3 }, eng.world));
     expect(contentItems(eng.world.small, 'testThing')).toEqual({ a: { id: 'a', name: '甲', size: 3 } });
     eng.undo();
-    expect(eng.world.small.content).toBeUndefined();
+    expect(eng.world.small.content?.testThing).toBeUndefined();
     unregisterKind('testThing');
     expect(parsePack(p).ok).toBe(false);
   });

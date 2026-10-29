@@ -35,6 +35,7 @@ import {
   shareText,
   suggestedGroups,
   toggleGroup,
+  withPackImports,
 } from '../human';
 import { openRepo } from '../packs/store';
 import { library } from '../../library';
@@ -494,7 +495,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
     if (cmd && (await exec(cmd, busy))) onDone();
   };
   if (edit) {
-    const cmd = regenerateWith(edit, w.small);
+    const cmd = regenerateWith(edit, w.small, library.value);
     return (
       <>
         <HumanChoices choice={edit} onChange={setEdit} small={w.small} defaultPop={def} compact scope="world" />
@@ -557,7 +558,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
         />
       </section>
       <section class="row wrap">
-        <button onClick={() => void run({ op: 'regenerate_human' })} title="拖过的发源地、手改过的格不动">
+        <button onClick={() => void run(withPackImports({ op: 'regenerate_human' }, w.small, library.value))} title="拖过的发源地、手改过的格不动">
           重新生成
         </button>
         <button onClick={() => setEdit(defaultChoice(w.small))}>换时代、文化组…</button>

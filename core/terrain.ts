@@ -697,10 +697,16 @@ export function previewLand(world: World, cells: number[], delta: number[]): { g
 // 放岛时按这种岛的形状、高低、岩石长出陆地，并在新长出的陆地（环礁还有潟湖的海格）上记下种类（causes.islandType）。
 // 第十四轮去掉了火山岛（以后另做地标）
 
-// 这一种岛（找不到时报错）与它的编号
+// 世界里一种岛都没有时放的普通的岛（第三十轮）：同大陆岛的说法，编号 0
+const PLAIN_ISLAND: IslandType = { id: DEFAULT_ISLAND_TYPE, name: '岛', shape: 'rugged', height: 'hilly', province: 'land' };
+
+// 这一种岛与它的编号：世界里没有岛的种类时是普通的岛；有、但没有这一种时报错
 function typeOfSpec(world: World, kind: string): { t: IslandType; code: number } {
   const t = islandTypeById(world.small, kind);
-  if (!t) throw new CommandError(kind === 'volcanic' ? '没有火山岛了，换一种岛' : `没有“${kind}”这种岛`);
+  if (!t) {
+    if (!world.small.islandTypes?.length) return { t: PLAIN_ISLAND, code: 0 };
+    throw new CommandError(kind === 'volcanic' ? '没有火山岛了，换一种岛' : `没有“${kind}”这种岛`);
+  }
   return { t, code: islandCode(world.small, kind) };
 }
 
@@ -1520,7 +1526,7 @@ export const chainFragAt = (k: number, r: number) => r > 0 && Math.floor((k + 1)
 // 链上第 k 个岛的种类：种类本身是碎岛（形状“碎”）时总是它；否则按比例换成内置的碎岛
 function chainKind(world: World, spec: ChainSpec, k: number): string {
   const r = spec.fragRatio ?? 0;
-  if (!r || islandTypeById(world.small, spec.kind)?.shape === 'frag') return spec.kind;
+  if (!r || islandTypeById(world.small, spec.kind)?.shape === 'frag' || !islandTypeById(world.small, SHARDS_ISLAND_TYPE)) return spec.kind;
   return chainFragAt(k, r) ? SHARDS_ISLAND_TYPE : spec.kind;
 }
 

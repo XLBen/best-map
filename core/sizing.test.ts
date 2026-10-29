@@ -8,7 +8,7 @@ import { buildMesh, findCell, ringDistance } from './mesh';
 import { planetSettings, settingsFor } from './presets';
 import { brushCells } from './select';
 import { buildSphereMesh } from './sphere';
-import { BUILTIN_ISLAND_TYPES } from './island-types';
+
 import {
   brushRangeKm,
   chainIslands,
@@ -23,8 +23,9 @@ import {
   reachRangeKm,
   resolveTerrain,
 } from './terrain';
-import { continents, meshFor } from './testing/fixtures';
-import { type Settings, createWorld, settingsSchema } from './world';
+import { continents, meshFor, seededEngine, seededWorld } from './testing/fixtures';
+import { type Settings, settingsSchema } from './world';
+import { BUILTIN_ISLAND_TYPES } from './packs/base';
 
 // 第三轮：岛的大小连续可调；“调整”面板拖滑块时的预览就是松手后的结果
 // 第八轮：岛、湖、画笔的最小值更小；小礁。第九轮：岛的大小只收 km 数，湖、岛链只有新的下限
@@ -35,7 +36,7 @@ const mesh = buildMesh(40000, 2, 1);
 const SHAPED_KINDS = BUILTIN_ISLAND_TYPES.filter((t) => t.shape !== 'cell' && t.shape !== 'frag').map((t) => t.id);
 
 function ocean(rough = 1) {
-  const w = createWorld({ cells: mesh.n, seed: 1 }, mesh);
+  const w = seededWorld({ cells: mesh.n, seed: 1 }, mesh);
   w.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
   w.small.terrain.coastRoughness = rough;
   resolveTerrain(w);
@@ -48,7 +49,7 @@ describe('岛的大小', () => {
     // 第十二轮修：岛链不并进原有的岛（太近时缩小、岛心在陆地上的不放），有意改变结果，重录
     // 第十三轮：每种岛有岩性（erodDelta，多记一项）、火山岛抬升减半并有火山口、珊瑚岛的潟湖两头都改、最小的岛一格，有意改变结果，重录
     // 第十三轮修：珊瑚岛的潟湖不再压低原来的陆地、放岛的轮廓按小块海并回陆地的规则算、火山岛的高度按大小定，重录
-    const eng = new Engine({ seed: 4, cells: 12000 });
+    const eng = seededEngine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
     for (const kind of SHAPED_KINDS) {
@@ -126,7 +127,7 @@ describe('岛的大小', () => {
   });
 
   it('数值大小的岛链：确定、可撤销、按世界文件重放结果相同', () => {
-    const eng = new Engine({ seed: 2, cells: 12000 });
+    const eng = seededEngine({ seed: 2, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true });
     const w = eng.world;
     const before = w.causes.landDelta.slice();
@@ -143,14 +144,14 @@ describe('岛的大小', () => {
   });
 
   it('换掉最后一步（replaceLast）只留一步历史，结果与撤销后重放相同', () => {
-    const eng = new Engine({ seed: 2, cells: 12000 });
+    const eng = seededEngine({ seed: 2, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true });
     const r = islandSizeRangeKm(eng.world)[1] / 4;
     eng.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'continental', size: r, variant: 0 } });
     const steps = eng.history.length;
     eng.replaceLast({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'continental', size: r, variant: 1 } });
     expect(eng.history.length).toBe(steps);
-    const other = new Engine({ seed: 2, cells: 12000 });
+    const other = seededEngine({ seed: 2, cells: 12000 });
     other.exec({ op: 'set_worldgen', params: { seed: 2, type: 'ocean' }, reset: true });
     other.exec({ op: 'add_island', island: { x: 0.8, y: 0.5, kind: 'continental', size: r, variant: 1 } });
     expect(hashArray(eng.world.causes.land)).toBe(hashArray(other.world.causes.land));
@@ -163,10 +164,10 @@ describe('放岛只在岛的附近找格', () => {
     // 原来按第八轮改动前（全图扫描）的代码记下；第九轮去掉“小 · 中 · 大”三档时重录；
     // 第十三轮火山岛的抬升、珊瑚岛的潟湖（两头都改、环与潟湖里的海格也进 cells）改了，重录
     // 第十三轮修：潟湖不再压低原来的陆地、轮廓按小块海并回陆地的规则算，重录
-    const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
+    const planet = seededWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'archipelago', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
-    const land = createWorld({ cells: mesh.n, seed: 1 }, mesh);
+    const land = seededWorld({ cells: mesh.n, seed: 1 }, mesh);
     land.small.terrain.gen = { seed: 2, type: 'archipelago', mountains: 1, rerolls: [] };
     resolveTerrain(land);
     const got: Record<string, string> = {};
@@ -196,7 +197,7 @@ describe('岛链的固定哈希', () => {
     // 底数 0.99 × 1.5 格、1.6 格、3 格；一块地区与整个星球。第九轮去掉旧存档兼容时重录（原来按旧岛链的 1.5 格下限）
     // 第十二轮修：第 1 种起按第 0 种的面积之和缩放岛的大小（换个排列时陆地一样多），重录
     // 第十三轮：小一号的岛最小 0.4 格（以前 0.75 格，0.99×1.5 一档的大小变了）、火山岛的抬升减半，重录
-    const planet = createWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
+    const planet = seededWorld({ cells: 3000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, buildSphereMesh(3000, 1));
     planet.small.terrain.gen = { seed: 1, type: 'ocean', mountains: 1, rerolls: [] };
     resolveTerrain(planet);
     const got: Record<string, string> = {};
@@ -234,7 +235,7 @@ describe('调整：拖滑块时的预览就是松手后的结果', () => {
   ];
   for (const [label, patch] of cases) {
     it(label, () => {
-      const eng = new Engine({ seed: 3, cells: 12000 });
+      const eng = seededEngine({ seed: 3, cells: 12000 });
       eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
       // 先手画一笔，确认用户的编辑也算在预览里
       const w = eng.world;
@@ -348,7 +349,7 @@ describe('第八轮：更小的岛、湖、画笔', () => {
       worlds.push([`类地 · ${cells}`, planetSettings('earth', cells)]);
     }
     for (const [name, s] of worlds) {
-      const w = createWorld(settingsSchema.parse(s), meshFor(s));
+      const w = seededWorld(settingsSchema.parse(s), meshFor(s));
       const cellKm = w.mesh.spacing * w.kmPerUnit;
       const lake = lakeRangeKm(w)[0];
       const reach = reachRangeKm(w)[0];

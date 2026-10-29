@@ -1,28 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../../tools/hash';
 import { Engine } from '../engine';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, ERA_PACKS, VALUE_ERAS } from '../packs/eras';
+import { eraValues } from '../packs/builtin-tree';
 import { BUILTIN_STYLES } from '../packs/names';
-import { DEFAULT_SPECIES } from '../species';
-import { continents, engineFor } from '../testing/fixtures';
+
+import { continents, engineFor, humanExec } from '../testing/fixtures';
 import type { World } from '../world';
 import { type Culture, type CultureGroup, type Era, cultureGroupSchema, cultureSchema, eraSchema, popValueSchema, weightedList } from './era';
 import { dryLandKm2 } from './generate';
 import { readComp } from './groups';
 import { humanLegend } from './layers';
-import { FANTASY_RESOURCES, GENERAL_RESOURCES } from './resources';
-import { BUILTIN_CLASSES, classAt } from './terrain-class';
+
+import { classAt } from './terrain-class';
 import { worldCultures, worldDimensions } from './era';
+import { DEFAULT_SPECIES } from '../packs/nature';
+import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../packs/base';
 
 // 第二十二轮 内容：内置的 6 个时代、维度的取值、文化组、文化——格式、引用、倾向写全、颜色分得开；
 // 每个时代按默认生成人文：不出错、总人口按默认密度、各组住在喜欢的地方、各维成片、确定性、地名跟着文化
 
-// 一个文化组能用在哪些时代：时代的 cultureGroups 里有它（省略时不限），组的 eras 里有这个时代（省略时不限）
-const allowed = (era: Era, g: CultureGroup) => (!era.cultureGroups || era.cultureGroups.includes(g.id)) && (!g.eras || g.eras.includes(era.id));
+// 一个文化组能用在哪些时代（第三十轮：时代包里默认带的组）：只在奇幻、科幻的包里的（精灵、异星种族……）只用在那个时代，
+// 地球上的组（历史上的时代带的、“通用 ▸ 文化”里的）哪个时代都能用
+const HISTORY = ['antiquity', 'medieval', 'industrial', 'modern'];
+const inPack = (era: Era, g: CultureGroup) => ERA_PACKS.get(era.id)!.cultures.some(([id]) => id === g.id);
+const earthly = (g: CultureGroup) => BUILTIN_ERAS.every((e) => !inPack(e, g)) || BUILTIN_ERAS.some((e) => HISTORY.includes(e.id) && inPack(e, g));
+const allowed = (era: Era, g: CultureGroup) => earthly(g) || inPack(era, g);
 const groupOf = (c: Culture) => BUILTIN_CULTURE_GROUPS.find((g) => g.id === c.group)!;
 const erasOf = (g: CultureGroup) => BUILTIN_ERAS.filter((e) => allowed(e, g));
-const valuesOf = (era: Era, dim: string) => BUILTIN_POP_VALUES.filter((v) => v.dimension === dim && (!v.eras || v.eras.includes(era.id)));
-const defaults = (era: Era) => weightedList(era.defaultGroups).map(([id, weight]) => ({ id, weight }));
+const valuesOf = (era: Era, dim: string) => eraValues(era, dim);
+const defaults = (era: Era) => weightedList(ERA_PACKS.get(era.id)!.cultures).map(([id, weight]) => ({ id, weight }));
 
 const CLASS_IDS = new Set(BUILTIN_CLASSES.map((c) => c.id));
 const BIOME_IDS = new Set(DEFAULT_SPECIES.map((s) => s.id));
@@ -81,11 +88,10 @@ describe('内置的时代与文化：格式与引用', () => {
         expect(valuesOf(era, dim.id).length, `${era.id}/${dim.id}`).toBeGreaterThanOrEqual(2);
         expect(valuesOf(era, dim.id).length, `${era.id}/${dim.id}`).toBeLessThanOrEqual(16);
       }
-      for (const id of era.cultureGroups ?? []) expect(BUILTIN_CULTURE_GROUPS.some((g) => g.id === id && allowed(era, g)), `${era.id}: ${id}`).toBe(true);
       const def = defaults(era);
       expect(def.length, era.id).toBeGreaterThanOrEqual(3);
       for (const { id } of def) expect(BUILTIN_CULTURE_GROUPS.some((g) => g.id === id && allowed(era, g)), `${era.id}: ${id}`).toBe(true);
-      for (const r of era.resources ?? []) expect(RESOURCE_IDS, `${era.id}: ${r}`).toContain(r);
+      for (const r of ERA_PACKS.get(era.id)!.resources ?? []) expect(RESOURCE_IDS, `${era.id}: ${r}`).toContain(r);
     }
   });
 
@@ -124,14 +130,14 @@ describe('内置的时代与文化：格式与引用', () => {
     };
     for (const v of BUILTIN_POP_VALUES) {
       expect(dims, v.id).toContain(v.dimension);
-      expect(v.eras?.length, `${v.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
-      for (const e of v.eras ?? []) expect(eraIds, v.id).toContain(e);
+      const eras = VALUE_ERAS.get(v.id) ?? [];
+      expect(eras.length, `${v.id} 写明放进哪几个时代的包`).toBeGreaterThan(0);
+      for (const e of eras) expect(eraIds, v.id).toContain(e);
       // 取值属于的那一维在它的每个时代里都有
-      for (const e of v.eras ?? []) expect(BUILTIN_ERAS.find((x) => x.id === e)!.dimensions.map((d) => d.id), v.id).toContain(v.dimension);
+      for (const e of eras) expect(BUILTIN_ERAS.find((x) => x.id === e)!.dimensions.map((d) => d.id), v.id).toContain(v.dimension);
       prefsOk(v.id, v.prefs);
     }
     for (const g of BUILTIN_CULTURE_GROUPS) {
-      for (const e of g.eras ?? []) expect(eraIds, g.id).toContain(e);
       expect(erasOf(g).length, `${g.id} 至少能用在一个时代`).toBeGreaterThan(0);
       expect(BUILTIN_CULTURES.filter((c) => c.group === g.id).length, g.id).toBeGreaterThanOrEqual(1);
       expect(g.prefs?.length, g.id).toBeGreaterThan(0);
@@ -148,7 +154,7 @@ describe('内置的时代与文化：格式与引用', () => {
           expect(v, `${c.id}: ${id}`).toBeDefined();
           expect(v!.dimension, `${c.id}: ${id}`).toBe(dim);
           // 写了的取值至少在这个文化能用的一个时代里有
-          expect(erasOf(groupOf(c)).some((e) => !v!.eras || v!.eras.includes(e.id)), `${c.id}: ${id}`).toBe(true);
+          expect(erasOf(groupOf(c)).some((e) => VALUE_ERAS.get(v!.id)?.includes(e.id)), `${c.id}: ${id}`).toBe(true);
         }
     }
   });
@@ -205,7 +211,7 @@ function peopled(era: Era): Engine {
   let e = generated.get(era.id);
   if (!e) {
     e = continents();
-    e.exec({ op: 'generate_human', era: era.id, groups: defaults(era) });
+    humanExec(e, { op: 'generate_human', era: era.id, groups: defaults(era) });
     generated.set(era.id, e);
   }
   return e;
@@ -338,7 +344,7 @@ describe('每个时代按默认生成人文', () => {
     for (const era of BUILTIN_ERAS) {
       const a = peopled(era).world;
       const b = continents();
-      b.exec({ op: 'generate_human', era: era.id, groups: defaults(era) });
+      humanExec(b, { op: 'generate_human', era: era.id, groups: defaults(era) });
       expect(digest(b.world.causes.popGroup!), era.id).toBe(digest(a.causes.popGroup!));
       expect(digest(b.world.causes.popTotal!), era.id).toBe(digest(a.causes.popTotal!));
       expect(b.world.small.popGroups, era.id).toEqual(a.small.popGroups);
@@ -347,7 +353,7 @@ describe('每个时代按默认生成人文', () => {
     globe.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     for (const era of BUILTIN_ERAS) {
       const g = globe.clone();
-      g.exec({ op: 'generate_human', era: era.id, groups: defaults(era) });
+      humanExec(g, { op: 'generate_human', era: era.id, groups: defaults(era) });
       const w = g.world;
       let total = 0;
       for (let i = 0; i < w.mesh.n; i++) total += w.causes.popTotal![i];

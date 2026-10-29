@@ -1,14 +1,12 @@
 import { z } from 'zod';
 import { WORLD_TYPE_INFO, type Worldgen, worldgenSchema } from './generate';
 import { checkForm, sameForm } from './planet-form';
-import { PLANET_TYPES } from './presets';
-import { packProblems, wordPackSchema } from './names';
-import { DEFAULT_STYLE, styleById } from './name-styles';
+import { planetKindName } from './presets';
+import { styleById, worldStyleId } from './name-styles';
 import './content/kinds';
 import { type DirtyLevel, allKinds, itemId, itemName, kindOf, usageOf } from './content/registry';
 import { originSchema, originTarget, recordedOrigin, setOrigin, tidyOrigins } from './content/origin';
 import { type ContentRef, refName, removeCommand, unusedContent } from './content/unused';
-import { isBuiltinSame } from './packs/builtin-base';
 import { dropBroughtContent } from './human/prune';
 import {
   PROVINCE_KIND_INFO,
@@ -39,7 +37,9 @@ import { ISLAND_CODE_MASK, LAGOON_BIT, MAX_ISLAND_TYPES, islandCode, islandTypeB
 import { typeIdSchema } from './type-id';
 import { RETIRED_CLASSES, classAt, classCode } from './human/terrain-class';
 import { RESOURCE_NONE, resourceAt, resourceCode } from './human/resources';
-import { generateHuman, regenerateHuman } from './human/generate';
+import { generateHuman, humanBlockers, regenerateHuman } from './human/generate';
+import { type MissingScope, missingNotes } from './content/missing';
+import { worldCityRanks, worldLandmarkTypes } from './human/settle-content';
 import { SUBJECT_KINDS, cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from './human/era';
 import { type PopBrush, type PopFix, applyPopFix, paintPop, scalePop, setCellPop } from './human/population';
 import { groupInfo } from './human/layers';
@@ -106,8 +106,9 @@ const popCount = z.number().min(0).max(1e13);
 const seedSchema = z.number().int().min(0).max(0xffffffff);
 const humanGroups = z
   .array(z.object({ id: typeIdSchema, weight: z.number().min(0).max(1000), cultures: z.array(typeIdSchema).max(64).optional() }))
-  .min(1)
   .max(32);
+// 生成人文用的资源包（第三十轮）：资源库里的路径，按勾选的先后；规则取第一个带时代的包
+const humanPacks = z.array(originSchema).max(32);
 const popTupleSchema = z.object({ culture: typeIdSchema, values: z.record(typeIdSchema, typeIdSchema) });
 // 国家（第二十三轮）
 const countryId = z.number().int().min(1);
@@ -334,14 +335,15 @@ const baseCommands = [
     hidden: z.boolean().optional(),
   }),
   z.object({ op: z.literal('reroll_feature'), key: z.string().regex(/^\w+:\d+$/) }),
-  // 旧的文字包：换掉内置中文风格的内容（null 换回内置的）。新的做法是地名风格（set_content、set_name_style）
-  z.object({ op: z.literal('set_word_pack'), pack: wordPackSchema.nullable() }),
   // 启用、修改、停用一项内容（第二十轮，见 content/registry.ts）：item 为 null 是停用。只用于存在 small.content 里的种类
   z.object({ op: z.literal('set_content'), kind: typeIdSchema, id: typeIdSchema, item: z.record(z.string(), z.unknown()).nullable(), from: originSchema.optional() }),
+  // 排一排一种内容在世界里的先后（第三十轮，见 packs/import.ts）：ids 里列着的（世界里有的）按 ids 的先后排进它们占着的位置，
+  // 没列的不动。从资源包加回来的项排回包里的先后（取值、政体、派系、文化的先后会影响挑哪一个）
+  z.object({ op: z.literal('order_content'), kind: typeIdSchema, ids: z.array(typeIdSchema).max(4096) }),
   // 整理本世界（第二十九轮，见 content/unused.ts、tidy.ts）：一步移出这些没用到的内容（种类、id）；省略 items 时移出按规则判断的全部
   // （界面先用 planTidy 在副本上试过、地图不变的才写进 items）。不在世界里的跳过，在用的报错
   z.object({ op: z.literal('tidy_content'), items: z.array(z.object({ kind: typeIdSchema, id: z.string().min(1).max(64) })).max(4096).optional() }),
-  // 世界默认的地名风格（第二十轮）：null 换回内置中文
+  // 世界默认的地名风格（第二十轮）：null 是不选（第三十轮起按世界里的第一种）
   z.object({ op: z.literal('set_name_style'), id: typeIdSchema.nullable() }),
   // 一个地物的地名风格（第二十轮）：key 是地物的键（“类型:锚点格”“guide:id”“region:id”）；null 换回世界默认
   z.object({ op: z.literal('set_feature_style'), key: z.string().regex(/^\w+:\S+$/).max(60), style: typeIdSchema.nullable() }),
@@ -384,12 +386,13 @@ const baseCommands = [
     note: z.string().max(2000).nullable().optional(),
   }),
   // ---------- 人文（第二十二轮，见 human/generate.ts、human/population.ts） ----------
-  // 生成：时代、文化组与权重（cultures 只用组里的这几个文化）、总人口（省略时按时代的默认密度）、种子（省略时用世界的）
+  // 生成：资源包（第三十轮：规则取第一个带时代的包；内容都要先加进世界）、文化组与权重（cultures 只用组里的这几个文化）、
+  // 总人口（省略时按时代的默认密度）、种子（省略时用世界的）。缺了时代、文化时不生成，结果里写明（skipped）
   // countries（第二十三轮）：写了就同时生成国家（fragmentation 省略为 0.5，seed 省略为人文的种子）
   // settlements（第二十四轮）：写了就在最后一起放城市、道路、地标（seed 省略为人文的种子，roads、landmarks 省略为 true）
   z.object({
     op: z.literal('generate_human'),
-    era: typeIdSchema,
+    packs: humanPacks,
     groups: humanGroups,
     totalPop: popCount.optional(),
     seed: seedSchema.optional(),
@@ -400,7 +403,7 @@ const baseCommands = [
   // 有国家时用现有的领土（只按它调人口）；写了 countries 时国家也重新长（锁定的留着）
   z.object({
     op: z.literal('regenerate_human'),
-    era: typeIdSchema.optional(),
+    packs: humanPacks.optional(),
     groups: humanGroups.optional(),
     totalPop: popCount.optional(),
     seed: seedSchema.optional(),
@@ -448,9 +451,9 @@ const baseCommands = [
   // ---------- 国家（第二十三轮，见 human/countries.ts、human/country-edit.ts） ----------
   // 生成国家（已有时整个换掉）：人口按国家重新分（手改过的格不动）
   // layout（第二十六轮）：格局，省略或 'era' 按时代
-  z.object({ op: z.literal('generate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional() }),
+  z.object({ op: z.literal('generate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional(), packs: humanPacks.optional(), groups: humanGroups.optional() }),
   // 重新生成国家：写了的几项换掉；keepLocked 省略为 true（锁定的国家不动）
-  z.object({ op: z.literal('regenerate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional(), keepLocked: z.boolean().optional() }),
+  z.object({ op: z.literal('regenerate_countries'), fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional(), keepLocked: z.boolean().optional(), packs: humanPacks.optional(), groups: humanGroups.optional() }),
   // 去掉国家（人口不动）
   z.object({ op: z.literal('remove_countries') }),
   // 领土笔刷：这些格（只画陆地）归 country，null 是无主
@@ -675,6 +678,7 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'set_cell_resource':
       return ['resource'];
     case 'set_content':
+    case 'order_content':
       return [...(kindOf(cmd.kind)?.arrays ?? [])];
     // 整理本世界：移出的种类里有画格的（地形类别、资源）才有数组；自定义场按场的记法单独记
     case 'tidy_content':
@@ -710,18 +714,18 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
 }
 
 // 这一步移出世界的一项内容（第二十九轮）：生成人文后的清理、整理本世界、资源库里的移出……凡是拿掉的都列出来，
-// 界面拿它把自己做的、改过的存进资源库（“来自《世界名》”；与内置的一模一样的本来就在内置的包里，不另存）。
+// 界面拿它把自己做的、改过的存进资源库（“来自《世界名》”；与内置的一模一样的本来就在内置的包里，不另存——
+// 第三十轮起计算 Worker 里没有内置数据，是不是内置原样由界面按内置的树判断）。
 // item 是移出之前的样子，origin 是它记着的来源（没有时是本世界自己做的）
 export interface RemovedItem {
   kind: string;
   id: string;
   name: string;
   item: unknown;
-  builtinSame: boolean;
   origin?: string[];
 }
 
-// 世界里的各项内容（按种类、id）：放在 small.content 的种类按 small.content 里的（总在的内置项不在里面），
+// 世界里的各项内容（按种类、id）：放在 small.content 的种类按 small.content 里的，
 // 以前的种类按原来的放法。星球形态不算（换形态不是移出）
 function contentSnapshot(world: World): Map<string, Map<string, unknown>> {
   const out = new Map<string, Map<string, unknown>>();
@@ -744,7 +748,7 @@ function contentDiff(world: World, before: Map<string, Map<string, unknown>>, or
     for (const [id, item] of was) {
       if (now.has(id)) continue;
       const origin = originBefore ? recordedOrigin({ origin: originBefore }, kind, id) : undefined;
-      removed.push({ kind, id, name: itemName(k, item), item: structuredClone(item), builtinSame: isBuiltinSame(kind, item), ...(origin ? { origin: [...origin] } : {}) });
+      removed.push({ kind, id, name: itemName(k, item), item: structuredClone(item), ...(origin ? { origin: [...origin] } : {}) });
     }
     for (const id of now.keys()) if (!was.has(id)) added.push({ kind, id });
   }
@@ -768,6 +772,8 @@ export function applyCommand(
   // 第二十九轮：这一步移出、新加的内容
   removed: RemovedItem[];
   added: ContentRef[];
+  // 第三十轮：缺了内容跳过的步骤（“没有城市等级：没有放城市和道路”……），界面显示一次
+  skipped: string[];
 } {
   const { provinceNames: stored, provinceOrig: storedOrig, nameCarry: carryInput, provinceFix: fixInput, popFix: popInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
@@ -797,7 +803,7 @@ export function applyCommand(
   const idsBefore = new Set(Object.keys(world.small.provinces));
   const contentBefore = contentSnapshot(world);
   const originBefore = world.small.origin;
-  let result: { dirty: Dirty; summary: string };
+  let result: RunResult;
   try {
     result = run(world, cmd, ctx);
     // 第二十四轮：有城市时每步之后整理（首都格上有城市、挂着连着的城市还在）
@@ -853,6 +859,7 @@ export function applyCommand(
   const { removed, added } = contentDiff(world, contentBefore, originBefore);
   return {
     ...result,
+    skipped: result.skipped ?? [],
     undo,
     changed,
     removed,
@@ -902,8 +909,7 @@ function worldgenName(params: Worldgen, globe: boolean): string {
   if (params.form) return params.form.name;
   if (globe) {
     // 海洋星球与空白星球同是 ocean：有没有露出海面的火山岛
-    const t = PLANET_TYPES.find((p) => p.type === params.type && (p.type !== 'ocean' || (p.islands !== undefined) === (params.islands !== undefined && params.islands > 0)));
-    if (t) return t.name;
+    return planetKindName(params.type, params.islands);
   }
   return WORLD_TYPE_INFO[params.type].name;
 }
@@ -1016,9 +1022,9 @@ const DIRTY_OF: Record<DirtyLevel, Dirty> = {
   elevation: Dirty.Elevation,
 };
 
-// 历史里地名风格的名字
+// 历史里地名风格的名字（'' 是一种都没有）
 function styleLabel(small: SmallState, id: string): string {
-  if (id === DEFAULT_STYLE) return '中文·默认';
+  if (!id) return '不起名';
   const s = styleById(small, id);
   return s && 'name' in s ? s.name : id;
 }
@@ -1036,9 +1042,9 @@ function setContent(world: World, kindId: string, id: string, raw: Record<string
   if (raw === null) {
     if (before === undefined) throw new CommandError(`世界里没有${kind.label} "${id}"`);
     delete store[id];
-    // 第二十八轮：在用的不能移出世界（总在的内置项去掉改过的那一份是换回内置的，不算移出）。
+    // 第二十八轮：在用的不能移出世界。
     // 画过的格会跟着整理的种类（地形类别、资源：画成它的格恢复自动，见 afterSet）引擎照旧让移出，只在资源库里拦
-    const gone = !kind.alwaysOn?.(id) && !kind.afterSet;
+    const gone = !kind.afterSet;
     const used = gone ? usageOf(kind, { small, causes: world.causes }, id) : null;
     if (used) throw new CommandError(`${kind.label}“${itemName(kind, before)}”还在用（${used.label}），先把用到它的地方改掉`);
   } else {
@@ -1060,6 +1066,28 @@ function setContent(world: World, kindId: string, id: string, raw: Record<string
   const name = itemName(kind, after ?? before);
   const what = raw === null ? '停用' : before === undefined ? '启用' : '修改';
   return { dirty: DIRTY_OF[level], summary: `${what}${kind.label}“${name}”` };
+}
+
+// 排一种内容的先后（order_content）：列着的按列的先后排进它们占着的位置，别的不动。编号跟着先后的种类（地形类别、资源）
+// 画过的格按 id 换编号（afterSet）
+function orderContent(world: World, kindId: string, ids: readonly string[]): { dirty: Dirty; summary: string } {
+  const kind = kindOf(kindId);
+  if (!kind || kind.store !== 'content') throw new CommandError(`不认识的内容种类 "${kindId}"`);
+  const small = world.small;
+  const store = small.content?.[kindId];
+  const summary = `排${kind.label}的先后`;
+  if (!store) return { dirty: Dirty.None, summary };
+  const keys = Object.keys(store);
+  const rank = new Map(ids.map((id, k) => [id, k]));
+  const slots = keys.filter((k) => rank.has(k)).sort((a, b) => rank.get(a)! - rank.get(b)!);
+  let at = 0;
+  const order = keys.map((k) => (rank.has(k) ? slots[at++] : k));
+  if (order.every((k, i) => k === keys[i])) return { dirty: Dirty.None, summary };
+  const idsBefore = kind.afterSet ? kind.inWorld(world).map((x) => itemId(kind, x)) : [];
+  small.content = { ...small.content, [kindId]: Object.fromEntries(order.map((k) => [k, store[k]])) };
+  kind.afterSet?.(world, idsBefore);
+  const first = store[slots[0]];
+  return { dirty: DIRTY_OF[kind.dirty?.(first, first, world) ?? 'none'], summary };
 }
 
 // 放岛的增量加进原因；湖里的岛定下的高度写进 causes.islandHeight（第一次用到时才建）
@@ -1215,7 +1243,10 @@ function newProvince(world: World, cells: number[]): number {
 }
 
 // 执行一条命令（批量里的每一条也经过这里）。带 from 的启用命令执行完记下来源（第二十九轮，见 content/origin.ts）
-function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; summary: string } {
+// 一条命令的结果：重算到哪一层、历史里的说明；skipped（第三十轮）是缺了内容跳过的步骤（见 content/missing.ts）
+type RunResult = { dirty: Dirty; summary: string; skipped?: string[] };
+
+function run(world: World, cmd: Command, ctx: ApplyContext): RunResult {
   const r = runOp(world, cmd, ctx);
   const from = (cmd as { from?: string[] }).from;
   const target = from ? originTarget(cmd) : null;
@@ -1232,7 +1263,6 @@ function tidyContent(world: World, items: readonly ContentRef[] | undefined, ctx
     const k = kindOf(ref.kind);
     if (!k) throw new CommandError(`不认识的内容种类 "${ref.kind}"`);
     if (!k.inWorld(world).some((x) => itemId(k, x) === ref.id)) continue;
-    if (k.alwaysOn?.(ref.id)) continue;
     names.push(refName(world, ref));
     dirty = Math.max(dirty, runOp(world, removeCommand(ref), ctx).dirty) as Dirty;
   }
@@ -1240,7 +1270,7 @@ function tidyContent(world: World, items: readonly ContentRef[] | undefined, ctx
   return { dirty, summary: names.length ? `整理本世界 · 移出${names.slice(0, 3).map((x) => `“${x}”`).join('、')}${more}` : '整理本世界 · 没有要移出的' };
 }
 
-function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; summary: string } {
+function runOp(world: World, cmd: Command, ctx: ApplyContext): RunResult {
   const { causes, small, mesh } = world;
   const n = mesh.n;
   const checkCells = (list: number[]) => {
@@ -1250,9 +1280,14 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
   switch (cmd.op) {
     case 'batch': {
       let dirty: Dirty = Dirty.None;
+      const skipped: string[] = [];
       const inner = { ...ctx, inBatch: true };
-      for (const c of cmd.commands) dirty = Math.max(dirty, run(world, c, inner).dirty) as Dirty;
-      return { dirty, summary: cmd.label ?? `批量 · ${cmd.commands.length} 条` };
+      for (const c of cmd.commands) {
+        const r = run(world, c, inner);
+        dirty = Math.max(dirty, r.dirty) as Dirty;
+        for (const x of r.skipped ?? []) if (!skipped.includes(x)) skipped.push(x);
+      }
+      return { dirty, summary: cmd.label ?? `批量 · ${cmd.commands.length} 条`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'tidy_content':
       return tidyContent(world, cmd.items, ctx);
@@ -1260,7 +1295,7 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       const params = worldgenSchema.parse(cmd.params);
       // 星球形态：只能用在整个星球上，type 要与形态的 base 相同；脚本有语法错误时当场拒绝
       // （运行时出错不拒绝：那一部分按没有脚本算，见 planet-gen.ts）
-      if (params.form) checkForm(params.form, params.type, world.settings.globe === true, (t) => PLANET_TYPES.find((p) => p.type === t)?.name ?? WORLD_TYPE_INFO[t].name);
+      if (params.form) checkForm(params.form, params.type, world.settings.globe === true, (t) => planetKindName(t, t === 'ocean' ? 1 : undefined));
       if (cmd.reset) {
         causes.landDelta.fill(0);
         causes.upliftDelta.fill(0);
@@ -1284,7 +1319,10 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       small.terrain.gen = params;
       applyTerrain(world);
       const name = worldgenName(params, world.settings.globe === true);
-      if (cmd.reset || !prev) return { dirty: Dirty.Elevation, summary: `新世界“${name}”` };
+      if (cmd.reset || !prev) {
+        const skipped = missingNotes(small, ['world']);
+        return { dirty: Dirty.Elevation, summary: `新世界“${name}”`, ...(skipped.length ? { skipped } : {}) };
+      }
       const what = [
         prev.landFraction !== params.landFraction ? '陆地多少' : '',
         prev.islands !== params.islands ? '岛多少' : '',
@@ -1714,6 +1752,8 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       const moved = !!before && before.province !== t.province;
       if (moved) refileProvinces(world, classBefore);
       let dirty: Dirty = islandTypeDirty(before, t) === 'names' ? Dirty.Names : Dirty.None;
+      // 第三十轮：只有带起名模板的种类的岛打 itype: 标签（features.ts 的 tagIslandType），加上、去掉模板时地物要重算
+      if (before && !!before.names !== !!t.names) dirty = Dirty.Vegetation;
       if (moved && dirty < Dirty.Names && hasLakeIsles(world, islandCode(small, t.id))) dirty = Dirty.Names;
       return { dirty, summary: `${before ? '修改' : '新建'}岛的种类“${t.name}”` };
     }
@@ -1724,9 +1764,9 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       const gone = list[k];
       const classBefore = provinceLand(world);
       small.islandTypes = list.filter((x) => x.id !== cmd.id);
+      // 这种岛变成大陆岛（世界里没有大陆岛时是普通的岛；潟湖照旧是潟湖），后面的编号往前挪
+      removeIslandCode(causes.islandType, k, small.islandTypes);
       if (!small.islandTypes.length) delete small.islandTypes;
-      // 这种岛变成大陆岛（潟湖照旧是潟湖），后面的编号往前挪
-      removeIslandCode(causes.islandType, k);
       refileProvinces(world, classBefore);
       // 地物要重算：这种岛上的 itype: 标签要去掉（只重新起名会留着旧标签，同一个 id 再新建时名字就和重放不一样）
       return { dirty: Dirty.Vegetation, summary: `删除岛的种类“${gone.name}”` };
@@ -1973,21 +2013,15 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       const what = r.kind === 'spot' ? '地名' : REGION_KIND_INFO[r.kind].label;
       return { dirty: Dirty.Names, summary: r.name ? `删除${what}“${r.name}”` : `删除${what}` };
     }
-    case 'set_word_pack': {
-      if (cmd.pack) {
-        const problems = packProblems(cmd.pack);
-        if (problems.length) throw new CommandError(`文字包有问题：${problems.slice(0, 3).join('；')}`);
-      }
-      small.wordPack = cmd.pack;
-      return { dirty: Dirty.Names, summary: cmd.pack ? `换用文字包“${cmd.pack.name}”` : '文字包恢复自动' };
-    }
     case 'set_content':
       return setContent(world, cmd.kind, cmd.id, cmd.item);
+    case 'order_content':
+      return orderContent(world, cmd.kind, cmd.ids);
     case 'set_name_style': {
       if (cmd.id !== null && !styleById(small, cmd.id)) throw new CommandError(`世界里没有地名风格 "${cmd.id}"`);
-      if (cmd.id === null || cmd.id === DEFAULT_STYLE) delete small.nameStyle;
+      if (cmd.id === null) delete small.nameStyle;
       else small.nameStyle = cmd.id;
-      return { dirty: Dirty.Names, summary: `地名风格改为“${styleLabel(small, cmd.id ?? DEFAULT_STYLE)}”` };
+      return { dirty: Dirty.Names, summary: `地名风格改为“${styleLabel(small, worldStyleId(small))}”` };
     }
     case 'set_feature_style': {
       if (cmd.style !== null && !styleById(small, cmd.style)) throw new CommandError(`世界里没有地名风格 "${cmd.style}"`);
@@ -2067,8 +2101,15 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
     }
     case 'generate_human': {
       const d = ctx.ensureDerived();
+      const scopes: MissingScope[] = ['world', ...(cmd.countries ? (['countries'] as const) : []), ...(cmd.settlements ? (['settlements'] as const) : [])];
+      // 第三十轮：缺了时代、文化时不生成（已有的人文去掉：生成是整个换掉），写明缺什么
+      const blockers = humanBlockers(world, cmd);
+      if (blockers.length) {
+        if (small.human) clearPop(world);
+        return { dirty: Dirty.Human, summary: '没有生成人文', skipped: [...blockers, ...missingNotes(small, ['world'])] };
+      }
       const h = generateHuman(world, d, {
-        era: cmd.era,
+        packs: cmd.packs,
         groups: cmd.groups,
         totalPop: cmd.totalPop,
         seed: cmd.seed,
@@ -2078,20 +2119,28 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       afterCountries(world);
       const era = worldEra(small);
       const k = (small.countries ? ` · ${Object.keys(small.countries).length} 个国家` : '') + (cmd.settlements && small.cities ? ` · ${Object.keys(small.cities).length} 座城市` : '');
-      return { dirty: Dirty.Human, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}` };
+      const skipped = missingNotes(small, scopes);
+      return { dirty: Dirty.Human, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'regenerate_human': {
+      const h = small.human;
+      if (!h) throw new CommandError('还没有生成人文');
+      const blockers = humanBlockers(world, { packs: cmd.packs ?? h.packs, groups: cmd.groups ?? h.groups });
+      if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
-      const patch = { era: cmd.era, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed, countries: cmd.countries };
+      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed, countries: cmd.countries };
       regenerateHuman(world, d, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { keepManual: cmd.keepManual ?? true });
       afterCountries(world);
-      return { dirty: Dirty.Human, summary: '重新生成人文' };
+      const skipped = missingNotes(small, ['world', ...(small.human?.countryRules ? (['countries'] as const) : [])]);
+      return { dirty: Dirty.Human, summary: '重新生成人文', ...(skipped.length ? { skipped } : {}) };
     }
     case 'generate_countries':
     case 'regenerate_countries': {
       const h = small.human;
       if (!h) throw new CommandError('还没有生成人文');
       if (cmd.op === 'regenerate_countries' && !h.countryRules) throw new CommandError('还没有生成国家');
+      const blockers = humanBlockers(world, { packs: cmd.packs ?? h.packs, groups: cmd.groups ?? h.groups });
+      if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
       const rules = {
         ...(cmd.fragmentation !== undefined ? { fragmentation: cmd.fragmentation } : {}),
@@ -2100,10 +2149,12 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       };
       // 生成：整个换掉（参数从默认起）；重新生成：按记着的参数，锁定的留着
       if (cmd.op === 'generate_countries') delete h.countryRules;
-      regenerateHuman(world, d, { countries: rules }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
+      const more = { ...(cmd.packs ? { packs: cmd.packs } : {}), ...(cmd.groups ? { groups: cmd.groups } : {}) };
+      regenerateHuman(world, d, { countries: rules, ...more }, { keepManual: true, keepLocked: cmd.op === 'regenerate_countries' ? (cmd.keepLocked ?? true) : false });
       afterCountries(world);
       const k = Object.keys(small.countries ?? {}).length;
-      return { dirty: Dirty.Human, summary: `${cmd.op === 'generate_countries' ? '生成' : '重新生成'}国家 · ${k} 个` };
+      const skipped = missingNotes(small, ['countries']);
+      return { dirty: Dirty.Human, summary: `${cmd.op === 'generate_countries' ? '生成' : '重新生成'}国家 · ${k} 个`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'remove_countries': {
       if (!small.countries) throw new CommandError('还没有生成国家');
@@ -2265,7 +2316,8 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       const patch = { ...(cmd.seed !== undefined ? { seed: cmd.seed } : {}), ...(cmd.roads !== undefined ? { roads: cmd.roads } : {}), ...(cmd.landmarks !== undefined ? { landmarks: cmd.landmarks } : {}) };
       const k = generateSettlements(world, d, { rules: settlementRules(world, patch), fresh });
       const parts = [small.human ? `${k.cities} 座城市` : '', k.roads ? `${k.roads} 条道路` : '', k.landmarks ? `${k.landmarks} 个地标` : ''].filter(Boolean);
-      return { dirty: Dirty.None, summary: `${fresh ? '生成' : '重新生成'}城市与地标${parts.length ? ` · ${parts.join(' · ')}` : ''}` };
+      const skipped = missingNotes(small, ['settlements']);
+      return { dirty: Dirty.None, summary: `${fresh ? '生成' : '重新生成'}城市与地标${parts.length ? ` · ${parts.join(' · ')}` : ''}`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'remove_settlements': {
       removeSettlements(world, { cities: cmd.cities, roads: cmd.roads, landmarks: cmd.landmarks, points: cmd.points });
@@ -2287,7 +2339,8 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       // 有道路时自动的道路跟着重连（画的留着）
       if (rules.roads && (fresh || small.roads)) generateRoads(S, rules, false);
       small.settlementRules = { ...rules };
-      return { dirty: Dirty.None, summary: `${fresh ? '生成' : '重新生成'}城市 · ${Object.keys(small.cities ?? {}).length} 座` };
+      const skipped = worldCityRanks(small).length ? [] : ['没有城市等级：没有放城市和道路'];
+      return { dirty: Dirty.None, summary: `${fresh ? '生成' : '重新生成'}城市 · ${Object.keys(small.cities ?? {}).length} 座`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'add_city': {
       checkCells([cmd.cell]);
@@ -2343,7 +2396,8 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; s
       const rules = settlementRules(world, { landmarks: true });
       const k = generateLandmarks(settleInputs(world, d), rules, cmd.keepManual === false);
       small.settlementRules = rules;
-      return { dirty: Dirty.None, summary: `生成地标 · ${k} 个` };
+      const skipped = worldLandmarkTypes(small).length ? [] : ['没有地标类型：没有放地标'];
+      return { dirty: Dirty.None, summary: `生成地标 · ${k} 个`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'add_landmark': {
       checkCells([cmd.cell]);

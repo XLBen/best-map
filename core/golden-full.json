@@ -62,7 +62,7 @@
   "derived.sstAnom": "8b2058c7c73ea31e",
   "derived.features": "45e005671c7b91b6",
   "derived.conflicts": "2f0543f529846d2b",
-  "small": "ceaf35e0fe5bef84"
+  "small": "84350081ac4c0769"
  },
  "planet": {
   "mesh.x": "edbabd66920764cd",
@@ -130,6 +130,6 @@
   "derived.sstAnom": "1bd54a07de2fbf9a",
   "derived.features": "3762dda5d255e9b7",
   "derived.conflicts": "36ba3cb0feea00ec",
-  "small": "c9e2e1ea1994a259"
+  "small": "428c012d15323c47"
  }
 }

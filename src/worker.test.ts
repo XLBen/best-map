@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../core/commands';
 import type { Checkpoint, WorldDoc } from '../core/engine';
+import { newWorldContentCommands } from '../core/packs/import';
 import type { CheckpointPut } from './checkpoint-store';
 import type { CheckpointReady, MirrorLog, Request, Response, Snapshot } from './protocol';
 
@@ -54,10 +55,12 @@ const until = async (ok: () => boolean) => {
 };
 
 const settings = { cells: 1500, seed: 4 };
+// 第三十轮：新世界默认加的内容（生态、基础、中文地名）由主线程给，与 set_worldgen 在同一步里
 const commands: Command[] = [
   {
     op: 'batch',
     commands: [
+      ...newWorldContentCommands().flatMap((c) => (c.op === 'batch' ? c.commands : [c])),
       { op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true },
       { op: 'set_planet', patch: { terrainWind: 1 } },
     ],
@@ -336,6 +339,6 @@ describe('整理本世界的计划、移出的内容（第二十九轮）', () =
     const sp = { id: 'mine', name: '我的', color: '#123456', terrain: 'plains', competition: 3, tolerances: [], natural: false };
     await send({ kind: 'exec', cmd: { op: 'add_species', species: sp } as Command });
     const r = await send({ kind: 'exec', cmd: { op: 'remove_species', id: 'mine' } });
-    expect(r.removed?.map((x) => [x.kind, x.id, x.builtinSame])).toEqual([['biome', 'mine', false]]);
+    expect(r.removed?.map((x) => [x.kind, x.id])).toEqual([['biome', 'mine']]);
   });
 });

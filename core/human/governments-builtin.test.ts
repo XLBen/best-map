@@ -2,23 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { digest } from '../../tools/hash';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS } from '../packs/governments';
-import { continents } from '../testing/fixtures';
+import { continents, humanExec } from '../testing/fixtures';
+import { defaultsOf, eraOf, erasOfCulture, factionsOf, govEras, govsOf } from '../testing/eras';
+import { ERA_PACKS, VALUE_ERAS } from '../packs/eras';
+
+const govIds = (era: { id: string }) => ERA_PACKS.get(era.id)!.governments;
+const facIds = (era: { id: string }) => ERA_PACKS.get(era.id)!.factions;
 import type { World } from '../world';
 import { countryFactions, countryList } from './index';
-import { type Culture, type CultureGroup, type Era, weightedList } from './era';
+import { type Culture, weightedList } from './era';
 import { FLAG_EMBLEMS, FLAG_LAYOUTS } from './flags';
 import { CATEGORY_NAMES, type Government, type Title, factionSchema, governmentById, governmentSchema, pickTitle, titled } from './government';
 
 // 第二十三轮 内容：内置的政体与派系（六个时代各一个文件）——格式、引用、称号的说法、文化的政体倾向；
 // 每个时代按默认生成国家：用的是这个时代自己的政体与派系、称号按文化换说法、无主地与国家多少合时代、确定性
 
-const eraOf = (id: string) => BUILTIN_ERAS.find((e) => e.id === id)!;
-const govsOf = (era: Era) => era.governments!.map((id) => BUILTIN_GOVERNMENTS.find((g) => g.id === id)!);
-const factionsOf = (era: Era) => era.factions!.map((id) => BUILTIN_FACTIONS.find((f) => f.id === id)!);
-const allowed = (era: Era, g: CultureGroup) => (!era.cultureGroups || era.cultureGroups.includes(g.id)) && (!g.eras || g.eras.includes(era.id));
-const groupOf = (c: Culture) => BUILTIN_CULTURE_GROUPS.find((g) => g.id === c.group)!;
-const erasOfCulture = (c: Culture) => BUILTIN_ERAS.filter((e) => allowed(e, groupOf(c)));
-const defaults = (era: Era) => weightedList(era.defaultGroups).map(([id, weight]) => ({ id, weight }));
+const defaults = defaultsOf;
 const CULTURE_IDS = new Set(BUILTIN_CULTURES.map((c) => c.id));
 const GROUP_IDS = new Set(BUILTIN_CULTURE_GROUPS.map((g) => g.id));
 
@@ -73,14 +72,14 @@ describe('内置的政体与派系：格式与引用', () => {
       for (const c of g.category) expect(CATEGORY_NAMES, `${g.id}: ${c}`).toHaveProperty(c);
       descOk(g);
       expect(g.color, g.id).toBeDefined();
-      expect(g.eras?.length, `${g.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
+      expect(govEras(g.id)?.length, `${g.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
       expect(g.weight, g.id).toBeGreaterThan(0);
       for (const e of g.emblems ?? []) expect(FLAG_EMBLEMS, g.id).toContain(e);
       for (const l of g.layouts ?? []) expect(FLAG_LAYOUTS, g.id).toContain(l);
     }
     for (const f of BUILTIN_FACTIONS) {
       descOk(f);
-      expect(f.eras?.length, `${f.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
+      expect(govEras(f.id)?.length, `${f.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
       for (const k of Object.keys(f.base)) if (k !== 'default') expect(CATEGORY_NAMES, `${f.id}: ${k}`).toHaveProperty(k);
     }
   });
@@ -116,24 +115,24 @@ describe('内置的政体与派系：格式与引用', () => {
 
   it('每个时代列着 5 种以上政体、3 个以上派系（都是写了这个时代的内置项），还有 countryKm2 与 years；每个内置项都有时代在用', () => {
     for (const era of BUILTIN_ERAS) {
-      expect(era.governments?.length, era.id).toBeGreaterThanOrEqual(5);
-      expect(era.factions?.length, era.id).toBeGreaterThanOrEqual(3);
-      expect(new Set(era.governments).size, era.id).toBe(era.governments!.length);
-      expect(new Set(era.factions).size, era.id).toBe(era.factions!.length);
-      for (const g of govsOf(era)) expect(g?.eras, `${era.id}`).toContain(era.id);
-      for (const f of factionsOf(era)) expect(f?.eras, `${era.id}`).toContain(era.id);
+      expect(govIds(era).length, era.id).toBeGreaterThanOrEqual(5);
+      expect(facIds(era).length, era.id).toBeGreaterThanOrEqual(3);
+      expect(new Set(govIds(era)).size, era.id).toBe(govIds(era).length);
+      expect(new Set(facIds(era)).size, era.id).toBe(facIds(era).length);
+      for (const g of govsOf(era)) expect(govEras(g.id), `${era.id}`).toContain(era.id);
+      for (const f of factionsOf(era)) expect(govEras(f.id), `${era.id}`).toContain(era.id);
       expect(era.countryKm2, era.id).toBeGreaterThan(0);
       expect(era.years![0], era.id).toBeLessThan(era.years![1]);
       // 同一个时代的政体、派系：名字不重复，颜色分得开
-      expect(new Set(govsOf(era).map((g) => g.name)).size, era.id).toBe(era.governments!.length);
-      expect(new Set(factionsOf(era).map((f) => f.name)).size, era.id).toBe(era.factions!.length);
+      expect(new Set(govsOf(era).map((g) => g.name)).size, era.id).toBe(govIds(era).length);
+      expect(new Set(factionsOf(era).map((f) => f.name)).size, era.id).toBe(facIds(era).length);
       const cg = closest(govsOf(era));
       expect(cg.d, `${era.id} 政体 ${cg.pair}`).toBeGreaterThan(12);
       const cf = closest(factionsOf(era));
       expect(cf.d, `${era.id} 派系 ${cf.pair}`).toBeGreaterThan(18);
     }
-    for (const g of BUILTIN_GOVERNMENTS) for (const e of g.eras!) expect(eraOf(e)?.governments, `${g.id}: ${e}`).toContain(g.id);
-    for (const f of BUILTIN_FACTIONS) for (const e of f.eras!) expect(eraOf(e)?.factions, `${f.id}: ${e}`).toContain(f.id);
+    for (const g of BUILTIN_GOVERNMENTS) for (const e of govEras(g.id)!) expect(govIds(eraOf(e)), `${g.id}: ${e}`).toContain(g.id);
+    for (const f of BUILTIN_FACTIONS) for (const e of govEras(f.id)!) expect(facIds(eraOf(e)), `${f.id}: ${e}`).toContain(f.id);
     // 国家的平均大小：青铜与古典小国林立，现代比中世纪小
     expect(eraOf('antiquity').countryKm2!).toBeLessThan(eraOf('medieval').countryKm2!);
     expect(eraOf('modern').countryKm2!).toBeLessThan(eraOf('medieval').countryKm2!);
@@ -146,7 +145,7 @@ describe('内置的政体与派系：格式与引用', () => {
           const v = BUILTIN_POP_VALUES.find((x) => x.id === d.value);
           expect(v, `${f.id}: ${d.value}`).toBeDefined();
           expect(v!.dimension, `${f.id}: ${d.value}`).toBe(d.dimension);
-          expect(f.eras!.some((e) => (!v!.eras || v!.eras.includes(e)) && eraOf(e).dimensions.some((x) => x.id === d.dimension)), `${f.id}: ${d.value}`).toBe(true);
+          expect(govEras(f.id)!.some((e) => (VALUE_ERAS.get(v!.id) ?? []).includes(e) && eraOf(e).dimensions.some((x) => x.id === d.dimension)), `${f.id}: ${d.value}`).toBe(true);
         }
         if (d.culture) expect(CULTURE_IDS, f.id).toContain(d.culture);
         if (d.cultureGroup) expect(GROUP_IDS, f.id).toContain(d.cultureGroup);
@@ -162,12 +161,12 @@ describe('内置的政体与派系：格式与引用', () => {
         const g = BUILTIN_GOVERNMENTS.find((x) => x.id === id);
         expect(g, `${c.id}: ${id}`).toBeDefined();
         expect(w, `${c.id}: ${id}`).toBeGreaterThan(0);
-        expect(eras.some((e) => e.governments!.includes(id)), `${c.id}: ${id}`).toBe(true);
+        expect(eras.some((e) => govIds(e).includes(id)), `${c.id}: ${id}`).toBe(true);
       }
       expect(new Set(list.map(([id]) => id)).size, c.id).toBe(list.length);
       // 写了某个时代的政体时至少写两种（不然这个时代的国家全是同一种）
       for (const e of eras) {
-        const own = list.filter(([id]) => e.governments!.includes(id));
+        const own = list.filter(([id]) => govIds(e).includes(id));
         if (own.length) expect(own.length, `${c.id} / ${e.id}`).toBeGreaterThanOrEqual(2);
       }
     }
@@ -181,7 +180,7 @@ function generate(eraId: string): World {
   let w = generated.get(eraId);
   if (!w) {
     const eng = continents();
-    eng.exec({ op: 'generate_human', era: eraId, groups: defaults(eraOf(eraId)), countries: {} });
+    humanExec(eng, { op: 'generate_human', era: eraId, groups: defaults(eraOf(eraId)), countries: {} });
     generated.set(eraId, (w = eng.world));
   }
   return w;
@@ -207,12 +206,12 @@ describe('内置的政体与派系：每个时代生成国家', () => {
       expect(list.length, era.id).toBeGreaterThan(5);
       // 世界里复制进来的政体、派系是时代列着的；第二十九轮起没有国家用的政体生成后收掉（派系各国都按时代的自动算，全留着）
       const govs = Object.keys(w.small.content!.government!);
-      expect(govs.every((g) => era.governments!.includes(g))).toBe(true);
+      expect(govs.every((g) => govIds(era).includes(g))).toBe(true);
       expect(govs.sort()).toEqual([...new Set(list.map((m) => m.government))].sort());
-      expect(Object.keys(w.small.content!.faction!).sort()).toEqual([...era.factions!].sort());
+      expect(Object.keys(w.small.content!.faction!).sort()).toEqual([...facIds(era)].sort());
       const used = new Set<string>();
       for (const m of list) {
-        expect(era.governments, m.name).toContain(m.government);
+        expect(govIds(era), m.name).toContain(m.government);
         used.add(m.government);
         const g = governmentById(w.small, m.government) as Government;
         const c = cultureOf(w, m.primaryCulture);
@@ -223,7 +222,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         expect(m.founded).toBeGreaterThanOrEqual(era.years![0]);
         expect(m.founded).toBeLessThanOrEqual(era.years![1]);
         const fs = countryFactions(w, m.id);
-        expect(fs.map((f) => f.id)).toEqual(era.factions);
+        expect(fs.map((f) => f.id)).toEqual(facIds(era));
         expect(fs.reduce((a, f) => a + f.influence, 0)).toBeCloseTo(1, 2);
       }
       // 不止一两种政体
@@ -249,7 +248,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         let w = generate(eraId);
         if (seed) {
           const eng = continents();
-          eng.exec({ op: 'generate_human', era: eraId, groups: defaults(eraOf(eraId)), countries: { seed } });
+          humanExec(eng, { op: 'generate_human', era: eraId, groups: defaults(eraOf(eraId)), countries: { seed } });
           w = eng.world;
         }
         const mine = countryList(w.small).filter((m) => groups.includes(cultureOf(w, m.primaryCulture).group));
@@ -270,7 +269,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
   it('同样的参数同样的结果', () => {
     for (const id of ['antiquity', 'scifi']) {
       const eng = continents();
-      eng.exec({ op: 'generate_human', era: id, groups: defaults(eraOf(id)), countries: {} });
+      humanExec(eng, { op: 'generate_human', era: id, groups: defaults(eraOf(id)), countries: {} });
       const a = generate(id);
       expect(digest(eng.world.causes.country)).toBe(digest(a.causes.country));
       expect(digest(eng.world.small.countries)).toBe(digest(a.small.countries));

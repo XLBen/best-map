@@ -7,7 +7,6 @@ import { dimensionValues, worldCultureGroups, worldCultures, worldDimensions } f
 import { worldResources } from './human/resources';
 import { worldTerrainClasses } from './human/terrain-class';
 import { lakeTypesOf } from './lake-types';
-import { isBuiltinSame } from './packs/builtin-base';
 import { riverTypesOf } from './river-types';
 import type { World } from './world';
 
@@ -142,7 +141,7 @@ export function planTidy(engine: Engine, opts: { only?: readonly ContentRef[] } 
 
 function inUse(world: World, ref: ContentRef): boolean {
   const k = kindOf(ref.kind);
-  return !k || !!k.alwaysOn?.(ref.id) || !!usageOf(k, strictWorld(world), ref.id);
+  return !k || !!usageOf(k, strictWorld(world), ref.id);
 }
 
 function findItem(world: World, ref: ContentRef): unknown {
@@ -161,5 +160,5 @@ function nameOf(world: World, ref: ContentRef): string {
 function removedItem(world: World, ref: ContentRef): RemovedItem {
   const item = findItem(world, ref);
   const origin = world.small.origin?.[ref.kind]?.[ref.id];
-  return { kind: ref.kind, id: ref.id, name: nameOf(world, ref), item: structuredClone(item), builtinSame: item !== undefined && isBuiltinSame(ref.kind, item), ...(origin ? { origin: [...origin] } : {}) };
+  return { kind: ref.kind, id: ref.id, name: nameOf(world, ref), item: structuredClone(item), ...(origin ? { origin: [...origin] } : {}) };
 }

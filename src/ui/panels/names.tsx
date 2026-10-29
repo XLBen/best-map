@@ -2,7 +2,7 @@ import { Spline } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GuidePatch } from '../../../core/commands';
 import { FEATURE_INFO, type GeoFeature, REGION_KIND_INFO, defaultFeatureLabel, featureLabel, overrideKeyOf } from '../../../core/features';
-import { DEFAULT_STYLE, worldStyleId } from '../../../core/name-styles';
+import { worldStyleId } from '../../../core/name-styles';
 import { defaultStyleName, featureStyleCommand, missingCount, restyleOffer, styleChoices, styleNameOf } from '../packs/styles';
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
 import { exec, focusName, labelGroups, openPanel, selectedFeature, world } from '../../state';
@@ -285,20 +285,12 @@ function StyleBox({ w }: { w: World }) {
           label: c.name,
           on: c.id === def,
           onPick: () => {
-            if (c.id !== def) void exec({ op: 'set_name_style', id: c.id === DEFAULT_STYLE ? null : c.id }, '正在起名…');
+            if (c.id !== def) void exec({ op: 'set_name_style', id: c.id }, '正在起名…');
           },
         }))}
         library="nameStyle"
         note="世界默认的风格。选中地名可以单独换。"
       />
-      {w.small.wordPack && (
-        <div class="row between">
-          <span class="hint">内置中文换成了文字包“{w.small.wordPack.name}”</span>
-          <button class="small" onClick={() => void exec({ op: 'set_word_pack', pack: null }, '正在起名…')}>
-            恢复自动
-          </button>
-        </div>
-      )}
       {missing > 0 && <p class="hint warn">{missing} 处用的风格已停用，按世界默认起名</p>}
       {restyle && (
         <div class="row between">

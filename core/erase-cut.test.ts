@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Engine } from './engine';
-import { continents as sharedContinents } from './testing/fixtures';
+import { continents as sharedContinents, seededEngine } from './testing/fixtures';
 import { findCell, graphDistance } from './mesh';
 import { brushCells, cutProvinces, provinceCells } from './select';
 import { previewLand, restoreStroke } from './terrain';
@@ -257,7 +257,7 @@ describe('地图在星球上的位置', () => {
 
 describe('调整整个世界', () => {
   it('改一项星球参数，不会把别的几项重置回默认值', () => {
-    const eng = new Engine({ seed: 1, cells: 4000 });
+    const eng = seededEngine({ seed: 1, cells: 4000 });
     eng.exec({ op: 'set_planet', patch: { tilt: 30 } });
     expect(eng.history[eng.history.length - 1].summary).toBe('调整 · 四季分明');
     eng.exec({ op: 'set_planet', patch: { solar: 1.1 } });

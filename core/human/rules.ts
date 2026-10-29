@@ -137,8 +137,13 @@ export function compileRule(rule: CellRule, biomes: readonly { id: string; terra
   }
   let cls: Uint8Array | null = null;
   if (rule.classes && classIds) {
-    cls = new Uint8Array(classIds.length + 1);
-    classIds.forEach((id, k) => (cls![k + 1] = rule.classes!.includes(id) ? 1 : 0));
+    if (!classIds.length) {
+      // 第三十轮：世界里没有地形类别时每格都按平地（plains）算：写了平地的条件都满足，别的都不满足
+      if (!rule.classes.includes('plains')) cls = new Uint8Array(1);
+    } else {
+      cls = new Uint8Array(classIds.length + 1);
+      classIds.forEach((id, k) => (cls![k + 1] = rule.classes!.includes(id) ? 1 : 0));
+    }
   }
   let need = 0;
   let not = 0;

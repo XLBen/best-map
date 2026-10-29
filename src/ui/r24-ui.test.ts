@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type Command, popText } from '../../core/commands';
+import { BUILTIN_RANKS } from '../../core/packs/settlements';
 import type { Engine } from '../../core/engine';
-import { cityList, landmarkList, roadHandles, roadPoints, rankFor, worldCityRanks } from '../../core/human';
-import { continents, snapshot } from '../../core/testing/fixtures';
+import { cityList, landmarkList, roadHandles, roadPoints, rankFor } from '../../core/human';
+import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { type OverlayState, SETTLE_KEY, placeLabels } from '../render/overlay';
 import { BoxIndex, CITY_ICONS, LANDMARK_ICONS, POINT_ICONS, iconPathData, iconScale, markRadius, nameSpots } from '../render/settle-draw';
@@ -65,7 +66,7 @@ afterEach(() => {
   vi.mocked(askUser).mockClear();
 });
 
-const GEN: Command = {
+const GEN: HumanCommand = {
   op: 'generate_human',
   era: 'medieval',
   groups: [
@@ -78,7 +79,7 @@ const GEN: Command = {
 const towns = (): Engine =>
   snapshot('ui:towns', () => {
     const eng = continents();
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 
@@ -106,11 +107,11 @@ describe('新建向导的“城市与道路”“地标”', () => {
   it('默认都生成（settlements: {}）；关掉地标写 landmarks: false；关掉城市或国家时没有 settlements', () => {
     const c = defaultChoice(null);
     expect(c.settlements).toEqual({ on: true, landmarks: true });
-    expect(generateCommand(c)).toMatchObject({ countries: {}, settlements: {} });
-    expect(generateCommand({ ...c, settlements: { on: true, landmarks: false } })).toMatchObject({ settlements: { landmarks: false } });
-    expect('settlements' in generateCommand({ ...c, settlements: { on: false, landmarks: true } })!).toBe(false);
+    expect(lastOf(generateCommand(c)!)).toMatchObject({ countries: {}, settlements: {} });
+    expect(lastOf(generateCommand({ ...c, settlements: { on: true, landmarks: false } })!)).toMatchObject({ settlements: { landmarks: false } });
+    expect('settlements' in lastOf(generateCommand({ ...c, settlements: { on: false, landmarks: true } })!)).toBe(false);
     // 城市要有国家
-    expect('settlements' in generateCommand({ ...c, countries: { on: false, fragmentation: 0.5 } })!).toBe(false);
+    expect('settlements' in lastOf(generateCommand({ ...c, countries: { on: false, fragmentation: 0.5 } })!)).toBe(false);
   });
 });
 
@@ -298,7 +299,7 @@ describe('缩放分级与图标', () => {
     // 第二十五轮：不是首都的城市不写名字（选中的写，图标画出来就写）
     for (const l of [1, 2, 3]) expect(cityNamePx(l, false)).toBe(Infinity);
     for (const l of [1, 2, 3]) expect(cityNamePx(l, false, true)).toBe(cityIconPx(l, false));
-    const ranks = worldCityRanks({});
+    const ranks = BUILTIN_RANKS;
     const small = rankFor(ranks, 0, 0);
     expect(cityShown({ rank: small, capital: false, secondCapital: false }, 1)).toBe(false);
     expect(cityShown({ rank: small, capital: false, secondCapital: true }, 1)).toBe(true);
@@ -306,7 +307,7 @@ describe('缩放分级与图标', () => {
   });
 
   it('图标：首都星、大城市双圈、城市大圆、村镇点；不认识的画大圆；缩得很小时图标小一些', () => {
-    expect(worldCityRanks({}).map((r) => cityIconOf(r))).toEqual(['star', 'double-ring', 'circle', 'dot']);
+    expect(BUILTIN_RANKS.map((r) => cityIconOf(r))).toEqual(['star', 'double-ring', 'circle', 'dot']);
     expect(cityIconOf({ icon: 'castle' })).toBe('circle');
     expect(markRadius({ kind: 'city', icon: 'star' })).toBeGreaterThan(markRadius({ kind: 'city', icon: 'double-ring' }));
     expect(markRadius({ kind: 'city', icon: 'circle' })).toBeGreaterThan(markRadius({ kind: 'city', icon: 'dot' }));

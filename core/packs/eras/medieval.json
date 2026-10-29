@@ -12,11 +12,6 @@
     "urbanization": 0.1,
     "unclaimed": { "minHabitability": 0.05, "nomads": 0.35, "bandKm": 80 },
     "seaClaimKm": 0,
-    "defaultGroups": [["western", 3], ["eastern", 3], ["mideast", 2], ["southasia", 2], ["slavic", 1.5], ["steppe", 1.5]],
-    "cultureGroups": ["western", "eastern", "steppe", "nordic", "slavic", "mediterranean", "mideast", "southasia", "southeast", "africa", "mesoamerica", "andes", "oceania"],
-    "resources": ["grain", "livestock", "fish", "wood", "salt", "stone", "iron", "copper", "tin", "gold", "silver", "coal", "gems", "spices", "fur", "wine", "silk", "tea"],
-    "governments": ["feudal-monarchy", "absolute-monarchy", "elective-monarchy", "merchant-republic", "noble-republic", "theocracy", "tribal-confederation", "empire", "city-state", "nomad-khanate", "sultanate", "shogunate", "colonial-empire"],
-    "factions": ["nobility", "merchants", "clergy", "soldiery"],
     "countryKm2": 1500000,
     "years": [600, 1700],
     "tiers": { "city": 1, "small": 3, "medium": 2.5, "large": 1.2, "empire": 0.3 },
@@ -27,5 +22,10 @@
         "empire": [{ "zh": "神圣{name}帝国", "orig": "Holy {name} Empire" }, { "zh": "帝国", "orig": "{name} Empire" }]
       }
     }
+  },
+  "pack": {
+    "governments": ["feudal-monarchy", "absolute-monarchy", "elective-monarchy", "merchant-republic", "noble-republic", "theocracy", "tribal-confederation", "empire", "city-state", "nomad-khanate", "sultanate", "shogunate", "colonial-empire"],
+    "factions": ["nobility", "merchants", "clergy", "soldiery"],
+    "cultures": [["western", 3], ["eastern", 3], ["mideast", 2], ["southasia", 2], ["slavic", 1.5], ["steppe", 1.5]]
   }
 }

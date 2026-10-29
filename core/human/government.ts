@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { contentItems } from '../content/registry';
 import { typeIdSchema } from '../type-id';
 import type { SmallState } from '../world';
-import type { Culture, Era } from './era';
+import type { Culture } from './era';
 import { HEX } from './terrain-class';
 
 // 第二十三轮：政体与派系——两种内容（都放在 small.content，命令是 set_content）。
@@ -36,8 +36,6 @@ export const governmentSchema = z.object({
   // 国家的称号与统治者的称号
   title: titleSchema,
   rulerTitle: titleSchema.optional(),
-  // 只在这些时代里有（省略时不限）
-  eras: z.array(typeIdSchema).max(16).optional(),
   // 被选中的多少（省略为 1）：时代里的政体按它挑
   weight: z.number().min(0).max(100).optional(),
   // ---- 生成的倾向 ----
@@ -84,7 +82,6 @@ export const factionSchema = z.object({
   name: z.string().min(1).max(20),
   color: HEX,
   description: z.string().max(400).optional(),
-  eras: z.array(typeIdSchema).max(16).optional(),
   // 基础的影响力：政体的类别 → 多少（几个类别都有时取平均；一个都没有时用 default，再没有为 0）
   base: z.record(tag, z.number().min(0).max(10)),
   drivers: z.array(factionDriverSchema).max(16).optional(),
@@ -128,20 +125,10 @@ export const worldFactions = (small: GovSmall): readonly Faction[] => listOf<Fac
 export const governmentById = (small: GovSmall, id: string): Government | undefined => contentItems<Government>(small, 'government')[id];
 export const factionById = (small: GovSmall, id: string): Faction | undefined => contentItems<Faction>(small, 'faction')[id];
 
-// 这个时代能用的政体、派系：时代写了的（世界里有的）；没写时是世界里写了这个时代或不限时代的；
-// 再没有时是世界里全部的（时代还没有自己的政体、派系时，借用别的时代的）
-function forEra<T extends { id: string; eras?: string[] }>(all: readonly T[], ids: readonly string[] | undefined, era: { id: string } | undefined, byId: (id: string) => T | undefined): T[] {
-  if (ids?.length) {
-    const listed = ids.map(byId).filter((x): x is T => !!x);
-    if (listed.length) return listed;
-  }
-  const own = all.filter((x) => !x.eras || !era || x.eras.includes(era.id));
-  return own.length ? own : [...all];
-}
-export const eraGovernments = (small: GovSmall, era: Pick<Era, 'id' | 'governments'> | undefined): Government[] =>
-  forEra(worldGovernments(small), era?.governments, era, (id) => governmentById(small, id));
-export const eraFactions = (small: GovSmall, era: Pick<Era, 'id' | 'factions'> | undefined): Faction[] =>
-  forEra(worldFactions(small), era?.factions, era, (id) => factionById(small, id));
+// 这个时代能用的政体、派系（第三十轮）：世界里的全部（按加进世界的先后）。时代包的“政体”“派系”小包由界面加进世界，
+// 不再按时代项里的列表、政体自己写的时代筛
+export const eraGovernments = (small: GovSmall, _era?: unknown): Government[] => [...worldGovernments(small)];
+export const eraFactions = (small: GovSmall, _era?: unknown): Faction[] => [...worldFactions(small)];
 
 // 称号按文化取一种写法：文化 id → 文化组 id → default → 第一个
 export function pickTitle(t: Title | undefined, culture: Pick<Culture, 'id' | 'group'> | undefined): { zh: string; orig?: string } | undefined {

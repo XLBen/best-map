@@ -142,8 +142,6 @@ export interface ContentKind<T = unknown> {
   store?: 'content';
   // 世界里已有（启用）的项
   inWorld(world: ContentWorld): readonly T[];
-  // 内置的项（资源库里总在；内置的生态本来就在世界里）
-  builtin?(): readonly T[];
   // 启用（新建或整份换掉）、停用的命令。没有 enable 的种类只能列出来
   enable?(item: T, world: ContentWorld): Command;
   disable?(id: string, world: ContentWorld): Command;
@@ -156,8 +154,6 @@ export interface ContentKind<T = unknown> {
   // （停用一种地形类别后，画成它的格按 id 换编号）。before 是改之前世界里这一种的全部 id（按编号的先后）
   arrays?: readonly ('terrainClass' | 'resource')[];
   afterSet?(world: ContentWorld, before: readonly string[]): void;
-  // 内置的、总在世界里的项（不用启用、不能停用，像内置中文）：开关不能动的原因；不是时为 undefined
-  alwaysOn?(id: string): string | undefined;
   // 用在哪里（第二十八轮，见 usage.ts）：没有在用时为 null。有在用的不能移出世界（set_content 停用时引擎也查）
   usage?(world: UsageWorld, id: string): ContentUsage | null;
   // 通用编辑器的字段表
@@ -243,6 +239,27 @@ export function disableCommand(kind: ContentKind, id: string, world: ContentWorl
 export function isEnabled(kind: ContentKind, world: ContentWorld, id: string): boolean {
   return kind.inWorld(world).some((x) => itemId(kind, x) === id);
 }
+
+// ---------- 内置的内容（第三十轮） ----------
+// 内置的项都在内置资源包的树里（packs/builtin-tree.ts），只在主线程：树载入时接上这里（useBuiltinSource）。
+// 计算 Worker 里没有内置数据，这里查到的都是“没有”（生成、清理只看世界里的内容，“是不是内置原样”由界面判断）
+
+export interface BuiltinSource {
+  // 一种内容的全部内置项（按树的先后）
+  items(kind: string): readonly unknown[];
+  // 一项与内置的一模一样
+  same(kind: string, item: unknown): boolean;
+}
+let builtinSource: BuiltinSource | null = null;
+export function useBuiltinSource(src: BuiltinSource | null): void {
+  builtinSource = src;
+}
+// 一种内容的内置项（资源库里列着的；没接上树时为空）
+export const builtinOf = <T = unknown>(kind: string): readonly T[] => (builtinSource?.items(kind) ?? []) as readonly T[];
+// 与内置的一模一样（没接上树时都不是）
+export const isBuiltinCopy = (kind: string, item: unknown): boolean => builtinSource?.same(kind, item) ?? false;
+// 世界里改过、加的项（与内置的一模一样的不算；导出、存进资源库用）
+export const notBuiltin = <T>(kind: string, items: readonly T[]): T[] => items.filter((x) => !isBuiltinCopy(kind, x));
 
 // 一项在世界里用在哪里（种类没有钩子、没在用时 null）
 export function usageOf(kind: ContentKind, world: UsageWorld, id: string): ContentUsage | null {

@@ -1,27 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_NAME_MODE, nameLines, nameText } from './name-display';
-import {
-  DEFAULT_STYLE,
-  type NameStyle,
-  type PhoneticStyle,
-  forbidden,
-  makeRoot,
-  missingStyles,
-  nameStyleSchema,
-  phoneticName,
-  readOrig,
-  sampleNames,
-  styleFor,
-  styleName,
-  styleNotes,
-  styleProblems,
-  templateName,
-  transliterate,
-} from './name-styles';
-import { DEFAULT_PACK, generateName, hashString } from './names';
-import { BUILTIN_STYLES, NAME_STYLES_PACK } from './packs/names';
+import { DEFAULT_STYLE, type NameStyle, type PhoneticStyle, forbidden, makeRoot, missingStyles, nameStyleSchema, phoneticName, readOrig, sampleNames, styleFor, styleName, styleNotes, styleProblems, templateName, transliterate, NO_STYLE, worldStyleId } from './name-styles';
+import { generateName, hashString } from './names';
+import { BUILTIN_STYLES } from './packs/names';
 import { mulberry32 } from './rng';
 import type { SmallState } from './world';
+import { NAME_STYLES_SAMPLE, ZH_STYLE } from './testing/fixtures';
 
 // 第二十轮：地名风格的两种写法（模板式、音译式）、音译表、读音表、确定性、一处地方用哪种风格、显示中文 / 原文 / 两者
 
@@ -37,9 +21,10 @@ describe('内置的地名风格', () => {
       expect(styleNotes(s), s.id).toEqual([]);
       expect(nameStyleSchema.parse(JSON.parse(JSON.stringify(s)))).toEqual(s);
     }
-    const { kind: _, ...zh } = BUILTIN_STYLES[0] as NameStyle & { kind: string };
-    expect(zh).toEqual(DEFAULT_PACK);
-    expect(NAME_STYLES_PACK.nameStyles!.map((s) => s.id)).toEqual(BUILTIN_STYLES.slice(1).map((s) => s.id));
+    // 中文·默认（第三十轮起是普通内容，测试里的 ZH_STYLE 就是它；文件就是以前的内置文字包，见 packs/names/zh-default.json）
+    expect(BUILTIN_STYLES[0]).toBe(ZH_STYLE);
+    expect(ZH_STYLE.kind).toBe('template');
+    expect(NAME_STYLES_SAMPLE.nameStyles!.map((s) => s.id)).toEqual(BUILTIN_STYLES.slice(1).map((s) => s.id));
   });
 
   it('每种地物都起得出名字；音译式与带读音表的都有原文', () => {
@@ -62,7 +47,7 @@ describe('模板式', () => {
       const seed = hashString(`t:${k}`);
       const taken1 = new Set<string>();
       const taken2 = new Set<string>();
-      expect(templateName(DEFAULT_PACK, 'island', ['cold'], seed, taken1)).toEqual({ zh: generateName(DEFAULT_PACK, 'island', ['cold'], seed, taken2) });
+      expect(templateName(ZH_STYLE, 'island', ['cold'], seed, taken1)).toEqual({ zh: generateName(ZH_STYLE, 'island', ['cold'], seed, taken2) });
       expect([...taken1]).toEqual([...taken2]);
     }
   });
@@ -143,17 +128,25 @@ describe('音译式', () => {
 });
 
 describe('一处地方用哪种风格（styleFor）', () => {
-  const small = (extra: Partial<SmallState> = {}) => ({ wordPack: null, featureNames: {}, provinces: {}, ...extra }) as unknown as SmallState;
-  const content = { nameStyle: { 'west-germanic': germanic } };
+  // 第三十轮：中文·默认也是世界里的普通内容（新建时默认加进来）
+  const zh = { 'zh-default': ZH_STYLE };
+  const small = (extra: Partial<SmallState> = {}) => ({ featureNames: {}, provinces: {}, content: { nameStyle: zh }, ...extra }) as unknown as SmallState;
+  const content = { nameStyle: { ...zh, 'west-germanic': germanic } };
 
-  it('什么都没选：内置中文，种子不加、标识与以前的文字包一样', () => {
+  it('什么都没选：世界里第一种（中文·默认），种子不加；一种都没有时不起名', () => {
     const r = styleFor({ small: small() }, { feature: { key: 'island:3' } });
-    expect([r.id, r.suffix, r.tag, r.style]).toEqual([DEFAULT_STYLE, '', '-', DEFAULT_PACK]);
-    // 换过内置中文（旧的文字包）：内容是它，标识是它的哈希
-    const wp = { ...DEFAULT_PACK, id: 'mine' };
-    const r2 = styleFor({ small: small({ wordPack: wp }) });
+    expect([r.id, r.suffix, r.style]).toEqual([DEFAULT_STYLE, '', ZH_STYLE]);
+    expect(r.tag).not.toBe('-');
+    // 换了中文·默认的内容：内容是它，标识跟着变
+    const wp = { ...ZH_STYLE, lists: { ...ZH_STYLE.lists, extra: ['甲'] } };
+    const r2 = styleFor({ small: small({ content: { nameStyle: { 'zh-default': wp } } }) });
     expect([r2.id, r2.style, r2.suffix]).toEqual([DEFAULT_STYLE, wp, '']);
-    expect(r2.tag).not.toBe('-');
+    expect(r2.tag).not.toBe(r.tag);
+    // 一种都没有：NO_STYLE，名字是空的
+    const none = styleFor({ small: small({ content: {} }) });
+    expect([none.id, none.style, none.suffix, none.tag]).toEqual(['', NO_STYLE, '', '-']);
+    expect(worldStyleId(small({ content: {} }))).toBe('');
+    expect(styleName(NO_STYLE, 'island', [], 1).zh).toBe('');
   });
 
   it('世界默认 → 自己选的；选的不在世界里时按世界默认', () => {
@@ -167,7 +160,7 @@ describe('一处地方用哪种风格（styleFor）', () => {
     expect(styleFor(w, { province: 7 })).toMatchObject({ id: 'zh-default', suffix: ':zh-default' });
     expect(styleFor(w, { province: 8 })).toMatchObject({ id: 'west-germanic', suffix: '' });
     expect(missingStyles(s)).toEqual([{ where: 'island:4', id: 'gone' }]);
-    // 世界默认的风格停用了：退回内置中文，并列出来
+    // 世界默认的风格停用了：退回世界里第一种（中文·默认），并列出来
     const gone = small({ nameStyle: 'west-germanic' });
     expect(styleFor({ small: gone }).id).toBe(DEFAULT_STYLE);
     expect(missingStyles(gone)).toEqual([{ where: 'world', id: 'west-germanic' }]);

@@ -6,7 +6,7 @@ import { Engine } from './engine';
 import { computeHydrology, routeMemo } from './hydrology';
 import { PLANET_SWEEPS, computeClimateSphere, sphereLayers, sphereMemo } from './planet-climate';
 import { incrementalDistance } from './script';
-import { meshFor } from './testing/fixtures';
+import { meshFor, seededEngine } from './testing/fixtures';
 import { type Derived, type World, emptyDerived } from './world';
 
 // 气候里只取决于地形的部分、汇流按内容缓存：用缓存与从头算（关掉缓存）逐值相同。
@@ -52,8 +52,8 @@ describe('用缓存与从头算逐值相同（各类修改、撤销与重做）'
     it(kind, () => {
       const settings = settingsOf(kind);
       const mesh = meshFor(settings);
-      const a = new Engine(settings, mesh);
-      const b = new Engine(settings, mesh);
+      const a = seededEngine(settings, mesh);
+      const b = seededEngine(settings, mesh);
       // 不留撤销缓存：撤销、重做也要重算（用上缓存里较早的那一份）
       a.undoCache = 0;
       b.undoCache = 0;
@@ -104,7 +104,7 @@ describe('用缓存与从头算逐值相同（各类修改、撤销与重做）'
 // 函数层面：只改一项输入，看地形部分的缓存是否命中，结果是否与从头算相同
 function climateCase(kind: 'region' | 'planet') {
   const settings = settingsOf(kind);
-  const eng = new Engine(settings, meshFor(settings));
+  const eng = seededEngine(settings, meshFor(settings));
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   const w = eng.world;
   const elevation = w.derived.elevation.slice();
@@ -230,7 +230,7 @@ describe('气候地形部分的缓存：键完整', () => {
 describe('汇流的缓存：键完整', () => {
   it('高程、海陆、画的河改了就重算，只改气候时复用', () => {
     const settings = settingsOf('region');
-    const eng = new Engine(settings, meshFor(settings));
+    const eng = seededEngine(settings, meshFor(settings));
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     const w = eng.world;
     const elevation = w.derived.elevation.slice();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { Engine } from './engine';
 import { sampledBaseMemo } from './terrain';
-import { meshFor } from './testing/fixtures';
+import { meshFor, seededEngine } from './testing/fixtures';
 
 // 生成器结果按网格、按采样的键缓存（换了一个世界也用）：与重新采样逐值相同。
 // 同一个种子、不同的陆地多少（模型的参数换成这个世界的）、重画过的、打开存档（重放）都比一遍
@@ -24,7 +24,7 @@ describe('生成器结果跨世界复用与重新采样逐值相同', () => {
     it(label, () => {
       const mesh = meshFor(settings);
       const build = (steps: (e: Engine) => void) => {
-        const e = new Engine(settings, mesh);
+        const e = seededEngine(settings, mesh);
         steps(e);
         return e;
       };

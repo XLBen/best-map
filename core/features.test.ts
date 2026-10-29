@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Engine } from './engine';
 import { type GeoFeature, featureLabel } from './features';
 import { findCell, graphDistance, ringDistance } from './mesh';
-import { DEFAULT_PACK, type WordPack, generateName, hashString } from './names';
-import { continents, engineFor, snapshot } from './testing/fixtures';
+import { type WordPack, generateName, hashString } from './names';
+import { continents, engineFor, snapshot, seededEngine, ZH_STYLE, wordPackCommand } from './testing/fixtures';
 import { featuresCsv } from './export';
 
 // 人工构造的地图：一块带半岛和海湾的大陆，东边两个岛之间隔着一道窄海峡
 function handmade() {
-  const eng = new Engine({ cells: 12000, seed: 2, latNorth: 50, latSouth: 30 });
+  const eng = seededEngine({ cells: 12000, seed: 2, latNorth: 50, latSouth: 30 });
   const { mesh } = eng.world;
   const inside = (x: number, y: number) => {
     const main = x > 0.3 && x < 1.0 && y > 0.25 && y < 0.75 && !(x > 0.8 && y > 0.42 && y < 0.58);
@@ -79,19 +79,19 @@ describe('改名与文字包', () => {
       id: 'test',
       name: '测试包',
       lists: { a: ['甲'], b: ['乙'] },
-      types: Object.fromEntries(Object.keys(DEFAULT_PACK.types).map((t) => [t, { patterns: [{ p: '{a}{b}' }] }])),
+      types: Object.fromEntries(Object.keys(ZH_STYLE.types).map((t) => [t, { patterns: [{ p: '{a}{b}' }] }])),
     };
-    eng.exec({ op: 'set_word_pack', pack });
+    eng.exec(wordPackCommand(pack));
     expect(eng.world.derived.features.some((f) => f.name.startsWith('甲乙'))).toBe(true);
     const bad = { ...pack, types: { island: { patterns: [{ p: '{没有}岛' }] } } };
-    expect(() => eng.exec({ op: 'set_word_pack', pack: bad })).toThrow(/不存在的词表/);
+    expect(() => eng.exec(wordPackCommand(bad))).toThrow(/不存在的词表/);
   });
 
   it('情境标签：寒冷的岛优先用寒冷的字', () => {
     let cold = 0;
     for (let s = 0; s < 60; s++) {
-      const name = generateName(DEFAULT_PACK, 'island', ['cold'], s);
-      if (DEFAULT_PACK.lists.cold.some((c) => name.includes(c))) cold++;
+      const name = generateName(ZH_STYLE, 'island', ['cold'], s);
+      if (ZH_STYLE.lists.cold.some((c) => name.includes(c))) cold++;
     }
     expect(cold).toBeGreaterThan(25);
   });
@@ -189,7 +189,7 @@ describe('涂出来的生态区有自己的名字', () => {
     };
     const eng = continents();
     const w = eng.world;
-    eng.exec({ op: 'set_word_pack', pack });
+    eng.exec(wordPackCommand(pack));
     const before = new Map(w.derived.features.map((f) => [f.key, f.name]));
     // 离所有五大类生态 4 格以上的空地上涂三片雨林：原有的地物一个都不变，只多出涂的这几片
     const grouped = (c: number) => ['forest', 'jungle', 'desert', 'arctic', 'marsh'].includes(w.small.species[w.derived.dominant[c]]?.terrain ?? '');
@@ -284,10 +284,10 @@ describe('涂出来的生态区有自己的名字', () => {
     expect(g.name).toMatch(/草原|牧野/);
     // 文字包里没有生态区的模板：用内置的模板和词表
     const pack: WordPack = { id: 'mini', name: '小包', lists: { a: ['甲'] }, types: { island: { patterns: [{ p: '{a}岛' }] } } };
-    eng.exec({ op: 'set_word_pack', pack });
+    eng.exec(wordPackCommand(pack));
     expect(paintedFeatures(eng).find((x) => x.species === 'crystal')!.name).toContain('水晶丛林');
     // 模板里可以用 {__species}
-    eng.exec({ op: 'set_word_pack', pack: { ...pack, types: { ...pack.types, biome: { patterns: [{ p: '{a}{__species}' }] } } } });
+    eng.exec(wordPackCommand({ ...pack, types: { ...pack.types, biome: { patterns: [{ p: '{a}{__species}' }] } } }));
     expect(paintedFeatures(eng).find((x) => x.species === 'crystal')!.name).toBe('甲水晶丛林');
   });
 

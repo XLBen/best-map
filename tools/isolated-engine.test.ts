@@ -48,6 +48,9 @@ describe('打包的结果', () => {
     const engine = asset(/^assets\/worker-[\w-]+\.js$/);
     expect(moduleLinks(engine)).toEqual([]);
     expect(engineDataUrl(engine)!.length).toBeLessThan(DATA_URL_MAX);
+    // 第三十轮：内置的内容（时代、政体、文化、地名风格……）只在主线程，计算 Worker 里没有（对照：主线程的程序里有）
+    for (const mark of ['feudal-monarchy', '中世纪与近世']) expect(engine, mark).not.toContain(mark);
+    expect(asset(/^assets\/index-[\w-]+\.js$/)).toContain('中世纪与近世');
     // 里面没有 IndexedDB 的读写（只有自查时试开一个库）。压缩后的字符串可能用反引号
     expect(engine).toContain('map2-isolation-probe');
     expect(engine).not.toMatch(/[`'"]readwrite[`'"]/);
@@ -67,6 +70,7 @@ describe('打包的结果', () => {
   it('开发时现打包的引擎：同样是一整个文件，做成 data: 地址不超长', async () => {
     const code = await bundleEngine(root);
     expect(moduleLinks(code)).toEqual([]);
+    expect(code).not.toContain('feudal-monarchy');
     expect(code).toContain('map2-isolation-probe');
     expect(engineDataUrl(code)!.length).toBeLessThan(DATA_URL_MAX);
     // 太大时压缩用的上限与开 Worker 时的相同

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { coastalStroke } from '../tools/hash';
 import { Engine } from './engine';
 import { type GeoFeature, detectFeatures, featureMemo } from './features';
+import { seededEngine } from './testing/fixtures';
 
 // 地物识别按地形缓存各段的输入：每一步编辑之后，引擎里（用了缓存）的地物与不用缓存从头识别的逐值相同
 
@@ -33,7 +34,7 @@ describe('地物识别的缓存与从头识别逐值一致', () => {
   for (const kind of ['region', 'planet'] as const) {
     it(kind, () => {
       const settings = kind === 'planet' ? { seed: 2, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 2, cells: 6000 };
-      const eng = new Engine(settings);
+      const eng = seededEngine(settings);
       const w = eng.world;
       const land = () => [...Array(w.mesh.n).keys()].filter((i) => eng.world.causes.land[i]);
       eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Engine } from './engine';
+
 import { type WorldType } from './generate';
 import { buildMesh } from './mesh';
 import { terrainStats } from './stats';
 import { chainIslands, combineStamps, islandStamp, landStroke, previewLand, resolveTerrain, strokeProfile } from './terrain';
 import { createWorld } from './world';
+import { seededEngine } from './testing/fixtures';
 
 const fine = buildMesh(40000, 2, 1);
 const coarse = buildMesh(4000, 2, 1);
@@ -155,7 +156,7 @@ describe('可预期：画笔与放岛所见即所得', () => {
 
 describe('可预期：编辑只影响局部', () => {
   it('在一块大陆上画陆地，不相连的其他大陆上高程逐值不变', () => {
-    const eng = new Engine({ cells: 20000, seed: 1 });
+    const eng = seededEngine({ cells: 20000, seed: 1 });
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
     const w = eng.world;
     const n = w.mesh.n;
@@ -200,7 +201,7 @@ describe('可预期：编辑只影响局部', () => {
   });
 
   it('地形编辑撤销后逐值复原', () => {
-    const eng = new Engine({ cells: 8000, seed: 1 });
+    const eng = seededEngine({ cells: 8000, seed: 1 });
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'archipelago' }, reset: true });
     const w = eng.world;
     const land = w.causes.land.slice();
@@ -214,7 +215,7 @@ describe('可预期：编辑只影响局部', () => {
   });
 
   it('滑块：只调参数时保留手工编辑', () => {
-    const eng = new Engine({ cells: 8000, seed: 1 });
+    const eng = seededEngine({ cells: 8000, seed: 1 });
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents' }, reset: true });
     eng.exec({ op: 'add_island', island: { x: 1.0, y: 0.5, kind: 'continental', size: 1000, variant: 0 } });
     const delta = Float32Array.from(eng.world.causes.landDelta);

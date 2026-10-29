@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { Engine, passStats } from './engine';
-import { FANTASY_PACK } from './packs/fantasy';
+
 import { type LakeType, PLAIN_LAKE, lakeBank, lakeParts, matchRunStats } from './lake-types';
 import { graphDistance } from './mesh';
 import { applyPackCommands, packFromWorld, readPack } from './packs';
 import { arrayInputs, runScript } from './script';
-import { continents } from './testing/fixtures';
+import { continents, FANTASY_PACK } from './testing/fixtures';
 import type { World } from './world';
 
 // 湖泊类型（第九轮）：每个湖一种（放的湖、自然的湖选的，每个湖一次的 match）、湖岸场、颜色只重画、起名、资源包、重放

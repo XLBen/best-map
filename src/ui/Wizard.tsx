@@ -10,7 +10,6 @@ import {
   type MapSize,
   PLANET_CELL_KM,
   PLANET_SIZES,
-  PLANET_TYPES,
   type PlanetSize,
   type PlanetType,
   TYPE_DEFAULTS,
@@ -28,7 +27,7 @@ import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts,
 import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
-import { type FormChoice, blankForm, formChoices, formGen, formSource, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
+import { DEFAULT_PLANET, type FormChoice, blankForm, formChoices, formGen, formSource, isBuiltinPlanet, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
 import { RES, fromPos, toPos } from './panels/AdjustPanel';
 import { ModalHead, Seg } from './common';
 import { Slider } from './components/Slider';
@@ -172,7 +171,7 @@ const randomBase = () => Math.floor(Math.random() * 1e6);
 
 export function Wizard() {
   const [kind, setKind] = useState<'region' | 'planet'>('region');
-  const [ptype, setPtype] = useState<PlanetType>('continents');
+  const [ptype, setPtype] = useState<PlanetType>(DEFAULT_PLANET);
   const [psize, setPsize] = useState<PlanetSize>('earth');
   const [type, setType] = useState<WorldType>('archipelago');
   const [size, setSize] = useState<MapSize>(TYPE_DEFAULTS.archipelago.size);
@@ -191,10 +190,11 @@ export function Wizard() {
   const seeds = Array.from({ length: COUNT }, (_, k) => (base + k * 7919) % 0xffffffff);
   // 星球形态：内置的示例与资源库里装的（打开向导时再读一遍资源库）
   const choices = formChoices(library.value);
-  const chosen = choices.find((c) => c.key === ptype);
-  const planet = PLANET_TYPES.find((t) => t.key === ptype) ?? PLANET_TYPES[0];
-  const baseGen = (seed: number): WorldgenInput =>
-    kind === 'planet' ? (chosen ? formGen(seed, chosen.form) : { seed, type: planet.type, islands: planet.islands }) : { seed, type };
+  // 第三十轮：第一排的星球是“通用 ▸ 星球形态”里的普通形态（以前写死的 PLANET_TYPES），下面是别的形态
+  const presets = choices.filter(isBuiltinPlanet);
+  const others = choices.filter((c) => !isBuiltinPlanet(c));
+  const chosen = choices.find((c) => c.key === ptype) ?? presets[0];
+  const baseGen = (seed: number): WorldgenInput => (kind === 'planet' ? (chosen ? formGen(seed, chosen.form) : { seed, type: 'continents' }) : { seed, type });
   const genOf = (seed: number): WorldgenInput => withTerrain(baseGen(seed), terrain);
   // 这种世界不动滑块时的地形（陆地多少、岛多少按世界类型、星球形态）
   const terrainBase = terrainDefaults(baseGen(0), kind === 'planet');
@@ -222,7 +222,7 @@ export function Wizard() {
   }, [wizardOpen.value]);
   // 选着的形态不在资源库里了（删掉了）：换回“像地球”
   useEffect(() => {
-    if (!chosen && !PLANET_TYPES.some((t) => t.key === ptype)) setPtype('continents');
+    if (!choices.some((c) => c.key === ptype)) setPtype(DEFAULT_PLANET);
   }, [chosen, ptype]);
 
   useEffect(() => {
@@ -368,15 +368,15 @@ export function Wizard() {
           <>
             <h5>1. 选一种星球</h5>
             <div class="cards three">
-              {PLANET_TYPES.map((t) => (
+              {presets.map((t) => (
                 <button class={`card ${ptype === t.key ? 'on' : ''}`} onClick={() => setPtype(t.key)}>
-                  <b>{t.name}</b>
-                  <span class="hint">{t.hint}</span>
+                  <b>{t.form.name}</b>
+                  <span class="hint">{t.form.hint}</span>
                 </button>
               ))}
             </div>
             <h5>星球形态</h5>
-            {groupByPack(choices, (c) => c.pack).map((sec, k, secs) => (
+            {groupByPack(others, (c) => c.pack).map((sec, k, secs) => (
               <>
                 {secs.length > 1 && <h6 class="choice-group">{sec.label}</h6>}
                 <div class="cards three">

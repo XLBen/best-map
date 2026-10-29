@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PACK } from '../core/names';
+
 import { type ResourcePack, findPack, packItems, readPack } from '../core/packs';
-import { FANTASY_PACK } from '../core/packs/fantasy';
+
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
 import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removeItem, removePack, saveForm, saveItem } from './library';
-import { BUILTIN_STYLES, NAME_STYLES_PACK } from '../core/packs/names';
+import { BUILTIN_STYLES } from '../core/packs/names';
 import { builtinPacks } from '../core/packs/builtin-tree';
 import { PACK_MAX } from '../core/packs';
 import { TWIN_CONTINENTS } from '../core/packs/fantasy-forms';
 import type { PlanetForm } from '../core/planet-form';
 import { forgetTrustCache, trustScripts, untrustedScripts } from './trust';
+import { FANTASY_PACK, ZH_STYLE } from '../core/testing/fixtures';
 
 // 内置的树的大包（第二十九轮）
 const TREE_KEYS = ['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'common'];
@@ -142,7 +143,7 @@ describe('资源库', () => {
   });
 
   it('旧的文字包文件（名字比资源包允许的长）装进去后照样列得出来', async () => {
-    const r = readPack(JSON.stringify({ ...DEFAULT_PACK, id: 'long', name: '很长的文字包名字'.repeat(10) }));
+    const r = readPack(JSON.stringify({ ...ZH_STYLE, id: 'long', name: '很长的文字包名字'.repeat(10) }));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     await installPack(r.pack);
@@ -266,7 +267,8 @@ describe('资源库的编辑器存进“我的资源”（第二十轮）', () =
     const e = list.find((x) => x.key === 'common')!;
     expect(e.builtin).toBe(true);
     expect(packItems<{ id: string }>(e.pack, 'nameStyles').map((s) => s.id).sort()).toEqual(BUILTIN_STYLES.map((s) => s.id).sort());
-    expect(packItems<{ id: string }>(findPack(e.pack, ['names'])!, 'nameStyles').map((s) => s.id).sort()).toEqual(NAME_STYLES_PACK.nameStyles!.map((s) => s.id).sort());
+    // 第三十轮：中文·默认也在“通用 ▸ 地名”里（“中文”这个小包）
+    expect(packItems<{ id: string }>(findPack(e.pack, ['names'])!, 'nameStyles').map((s) => s.id).sort()).toEqual(BUILTIN_STYLES.map((s) => s.id).sort());
     await removePack('common');
     expect(library.value.map((x) => x.key)).toContain('common');
     expect((await installPack(userPack('common'))).entry.key).toBe('common-2');
@@ -314,7 +316,7 @@ describe('信任的脚本', () => {
   });
 
   it('文字包带不进脚本（只认词表和模板）；河流类型、星球形态里的脚本导入时照样列出来问', async () => {
-    const words = readPack(JSON.stringify({ ...DEFAULT_PACK, id: 'w', name: '带脚本的文字包', scripts: { placement: { api: 1, src: 'return 0.61;' } } }));
+    const words = readPack(JSON.stringify({ ...ZH_STYLE, id: 'w', name: '带脚本的文字包', scripts: { placement: { api: 1, src: 'return 0.61;' } } }));
     expect(words.ok && words.legacy).toBe('wordPack');
     expect(words.ok && findScripts(words.pack)).toEqual([]);
     const other = readPack(

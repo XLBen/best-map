@@ -448,7 +448,8 @@ describe('命令', () => {
     }
     expect(err).toBeInstanceOf(ScriptError);
     expect((err as ScriptError).message).toContain('“双子大陆”的布局脚本');
-    expect(eng.history).toEqual([]);
+    // 新世界默认加的内容那一步之后什么都没进历史
+    expect(eng.history.length).toBe(1);
     expect(eng.world.small.terrain.gen).toBeNull();
   });
 
@@ -481,7 +482,7 @@ describe('命令', () => {
     eng.undo();
     eng.redo();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(5);
+    expect(doc.version).toBe(6);
     const mesh = meshFor(settings);
     const replay = Engine.fromDoc(doc, mesh);
     expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));
@@ -494,8 +495,8 @@ describe('命令', () => {
     expect(digestWorld(restored.world)).toEqual(digestWorld(replay.world));
     expect(replay.world.derived.scriptIssues).toEqual(eng.world.derived.scriptIssues);
     expect(restored.world.derived.scriptIssues).toEqual(replay.world.derived.scriptIssues);
-    // 一路撤销回到第一步之后
-    while (eng.history.filter((h) => h.done).length > 1) eng.undo();
+    // 一路撤销回到第一步之后（第三十轮：之前还有新世界默认加内容的那一步）
+    while (eng.history.filter((h) => h.done).length > 2) eng.undo();
     expect(digestWorld(eng.world)).toEqual(first);
   });
 

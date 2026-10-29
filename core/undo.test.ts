@@ -3,6 +3,7 @@ import type { Command } from './commands';
 import { Engine } from './engine';
 import { encodePath } from './rivers';
 import { planCourse, riverStem } from './select';
+import { seededEngine } from './testing/fixtures';
 
 // 撤销只从被撤掉的那一步影响到的那一层重算（改名不重算高程、气候）：
 // 每撤一步，推导都要与把剩下的命令从头重放、完整重算的结果逐值一致
@@ -20,7 +21,7 @@ function fingerprint(e: Engine): string {
 
 describe('撤销从受影响的那一层重算', () => {
   it('各种命令逐个撤销：每一步都与从头重放的结果一致', () => {
-    const eng = new Engine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
+    const eng = seededEngine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
     eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 2 } });
     const w = eng.world;
@@ -62,7 +63,7 @@ describe('撤销从受影响的那一层重算', () => {
   });
 
   it('画的河（第八轮）：只挖河床、改大小、在终点消失、重画、没有折线的河道、删掉，逐个撤销都与从头重放一致', () => {
-    const eng = new Engine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
+    const eng = seededEngine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
     eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
     const w = eng.world;
     const { mesh } = w;
@@ -104,7 +105,7 @@ describe('撤销从受影响的那一层重算', () => {
   });
 
   it('只改名字的撤销不重算地形与气候', () => {
-    const eng = new Engine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
+    const eng = seededEngine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
     eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
     const f = eng.world.derived.features.find((x) => x.type === 'continent')!;
     eng.exec({ op: 'rename_feature', key: f.key, name: '试验洲' });

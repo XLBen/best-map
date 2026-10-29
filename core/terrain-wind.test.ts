@@ -4,7 +4,7 @@ import { deflectWind, smoothPass, windDeflectPasses } from './climate';
 import type { Command } from './commands';
 import { Engine } from './engine';
 import { gradient } from './mesh';
-import { engineFor, meshFor } from './testing/fixtures';
+import { engineFor, meshFor, seededEngine } from './testing/fixtures';
 import { type World, worldLatitude } from './world';
 
 // 山挡风：高山让风拐弯。新世界默认是 1；为 0 时风直接翻过山（下面记着固定的哈希）；
@@ -20,7 +20,7 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第十三轮：参考操作里放的岛有了岩性（高程变了，气候往后跟着变），与山挡风无关，tS、pS、discharge、dominant 重录
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
     const FROZEN = { tS: '493021bb', pS: '514f6329', discharge: '88d29ef0', dominant: '97a98605', corrT: 'b905fbf1', province: '96066e05' };
-    const eng = new Engine({ seed: 3, cells: 40000 });
+    const eng = seededEngine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });

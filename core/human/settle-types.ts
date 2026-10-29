@@ -49,8 +49,8 @@ export const landmarkTypeSchema = z.object({
   description: z.string().max(400).optional(),
   // 自然的：用哪个检测器
   detector: z.enum(LANDMARK_DETECTORS).optional(),
-  // 人造的：只在这些时代、文化组（国家的主流文化的组）、政体的类别里有（省略时不限）
-  eras: z.array(typeIdSchema).max(16).optional(),
+  // 人造的：只在这些文化组（国家的主流文化的组）、政体的类别里有（省略时不限）。第三十轮去掉了“只在哪些时代”：
+  // 时代自己的地标在时代包里（packs/builtin-tree.ts），世界里有就能放
   cultureGroups: z.array(typeIdSchema).max(32).optional(),
   governments: z.array(tag).max(16).optional(),
   place: z.enum(LANDMARK_PLACES).default('any'),

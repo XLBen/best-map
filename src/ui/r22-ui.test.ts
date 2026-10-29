@@ -4,7 +4,7 @@ import { kindOf } from '../../core/content/registry';
 import type { Engine } from '../../core/engine';
 import { BUILTIN_CULTURES, BUILTIN_ERAS } from '../../core/packs/eras';
 import { cellArchive, dimensionValues, humanLegend, readComp, worldCultures, worldDimensions } from '../../core/human';
-import { continents, snapshot } from '../../core/testing/fixtures';
+import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { cellLayers, colorSignature, humanFlat } from '../render/colors';
 import { exec, mode, options, setOptions, world } from '../state';
@@ -48,11 +48,11 @@ const GROUPS = [
   { id: 'eastern', weight: 3 },
   { id: 'steppe', weight: 1.5 },
 ];
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: GROUPS };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS };
 const peopled = (): Engine =>
   snapshot('ui:peopled', () => {
     const eng = continents();
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 
@@ -67,15 +67,16 @@ describe('新建向导的“人文”', () => {
     expect(c).toMatchObject({ on: true, era: era.id, pop: null });
     expect(c.groups).toEqual(eraGroups(era));
     expect(c.groups.length).toBeGreaterThan(0);
-    const cmd = generateCommand(c)!;
+    // 第三十轮：先把时代包的内容加进世界，再生成（一整步）；生成的命令带上时代所在的大包
+    const cmd = lastOf(generateCommand(c)!);
     // 第二十三轮：默认同时生成国家（分裂 ↔ 统一在正中时不写，按时代）；第二十四轮：默认同时生成城市、道路、地标
-    expect(cmd).toEqual({ op: 'generate_human', era: era.id, groups: c.groups, countries: {}, settlements: {} });
+    expect(cmd).toEqual({ op: 'generate_human', packs: [[era.id]], groups: c.groups, countries: {}, settlements: {} });
     expect('totalPop' in cmd).toBe(false);
     // 关掉、一个组都没勾：没有命令
     expect(generateCommand({ ...c, on: false })).toBeNull();
     expect(generateCommand(c.groups.reduce((x, g) => toggleGroup(x, g.id, false), c))).toBeNull();
     // 动了总人口：写进命令（取整）
-    expect(generateCommand({ ...c, pop: 123456789.4 })).toMatchObject({ totalPop: 123456789 });
+    expect(lastOf(generateCommand({ ...c, pop: 123456789.4 })!)).toMatchObject({ totalPop: 123456789 });
   });
 
   it('内置的时代、文化组都列出来（加了新的自动出现）；换时代时文化组换成那个时代的默认、总人口回到自动', () => {
@@ -106,20 +107,20 @@ describe('新建向导的“人文”', () => {
 
   it('新建的命令：新世界 → 生成人文 → 划分省份；关着时没有人文这一步', () => {
     const gen = { seed: 3, type: 'continents' as const };
-    const cmds = newWorldCommands(gen, '像地球', 3, [], GEN);
+    const cmds = newWorldCommands(gen, '像地球', 3, [], GEN as Command);
     expect(cmds.map((c) => c.op)).toEqual(['batch', 'generate_human', 'generate_provinces']);
     expect(newWorldCommands(gen, '像地球', 3).map((c) => c.op)).toEqual(['batch', 'generate_provinces']);
   });
 
   it('人文排在划分省份之前：省名按当地文化的风格起（有原文）；倒过来时省名还是中文', () => {
     const a = continents();
-    a.exec(GEN);
+    humanExec(a, GEN);
     a.exec({ op: 'generate_provinces', rules: { seed: 5 } });
     const named = Object.values(a.world.small.provinces).filter((p) => p.land);
     expect(named.filter((p) => p.orig).length).toBeGreaterThan(named.length / 2);
     const b = continents();
     b.exec({ op: 'generate_provinces', rules: { seed: 5 } });
-    b.exec(GEN);
+    humanExec(b, GEN);
     expect(Object.values(b.world.small.provinces).filter((p) => p.orig).length).toBe(0);
   });
 });
@@ -166,7 +167,7 @@ describe('“文化”一类', () => {
     eng.exec({ op: 'remove_human' });
     world.value = eng.clone().world;
     expect(mode.value).toBe('elevation');
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     world.value = eng.clone().world;
     expect(mode.value).toBe('cultureGroup');
     setTool('land');
@@ -419,7 +420,7 @@ describe('仓库与“文化 ⋯”', () => {
     expect(c.groups).toEqual(GROUPS);
     expect(regenerateWith(c, w.small)).toBeNull();
     const less = toggleGroup(c, 'steppe', false);
-    expect(regenerateWith(less, w.small)).toEqual({ op: 'regenerate_human', era: 'medieval', groups: GROUPS.slice(0, 2), keepManual: true });
+    expect(lastOf(regenerateWith(less, w.small)!)).toEqual({ op: 'regenerate_human', packs: [['medieval']], groups: GROUPS.slice(0, 2), keepManual: true });
     const eng = peopled();
     eng.exec(regenerateWith(less, w.small)!);
     expect(eng.world.small.human!.groups.map((g) => g.id)).toEqual(['western', 'eastern']);

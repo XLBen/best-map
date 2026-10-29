@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { Engine } from './engine';
 import { POCKET_MAX, landStroke, previewLand } from './terrain';
 import type { World } from './world';
+import { seededEngine } from './testing/fixtures';
 
 // 第十三轮修：陆地围住的小块“海”（不挨地图边、不超过 POCKET_MAX 格）并回陆地，三格以上的挖成湖；
 // 河流进湖、从出口接着流向大海，不再被两三格的“内海”整条吞掉
 
 function island(): Engine {
-  const eng = new Engine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
+  const eng = seededEngine({ seed: 4, cells: 12000, latNorth: 18, latSouth: 8 });
   eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'ocean' }, reset: true });
   eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'continental', size: 160, variant: 1 } });
   return eng;

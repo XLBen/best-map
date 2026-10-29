@@ -379,11 +379,11 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
 async function handle(id: number, req: Request) {
   try {
     // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）
-    const withSnap = (summary?: string, light = false, fresh = false, removed?: RemovedItem[]) => {
+    const withSnap = (summary?: string, light = false, fresh = false, removed?: RemovedItem[], skipped?: string[]) => {
       const deep = engine!.takeRecomputed();
       const { snap, transfer } = light && deep <= Dirty.Names ? lightSnapshot(engine!) : snapshot(engine!);
       const log = logOf(engine!);
-      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}), ...(removed?.length ? { removed } : {}) }, transfer);
+      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}), ...(removed?.length ? { removed } : {}), ...(skipped?.length ? { skipped } : {}) }, transfer);
       reported = log.ids;
     };
     switch (req.kind) {
@@ -418,9 +418,11 @@ async function handle(id: number, req: Request) {
       case 'exec': {
         const summary = engine!.exec(req.cmd);
         // 什么都没改（比如在陆地上画陆地）：世界不变，不发快照（命令记录也没变）
-        if (engine!.lastNoop) reply({ id, ok: true, summary, noop: true });
+        // 第三十轮：缺了内容跳过的步骤也回给界面（显示一次）
+        const skipped = engine!.lastSkipped;
+        if (engine!.lastNoop) reply({ id, ok: true, summary, noop: true, ...(skipped.length ? { skipped } : {}) });
         // 第二十九轮：这一步移出世界的内容一起回给界面（存进资源库“来自《世界名》”）
-        else withSnap(summary, true, false, engine!.lastRemoved);
+        else withSnap(summary, true, false, engine!.lastRemoved, skipped);
         return;
       }
       case 'undo':
@@ -506,7 +508,8 @@ async function handle(id: number, req: Request) {
         const settings = { ...req.settings, cells: 4000 };
         const e = new Engine(settings, meshFor(settings));
         e.features = false;
-        e.exec({ op: 'set_worldgen', params: req.gen, reset: true });
+        // 第三十轮：生态等内容由主线程给（Worker 里没有内置的内容），与 set_worldgen 一起执行
+        e.exec({ op: 'batch', commands: [...(req.content ?? []), { op: 'set_worldgen', params: req.gen, reset: true }] });
         const thumb = renderThumbnail(e.world, req.width, req.height);
         // 星球形态的脚本出的错（形态编辑器写在缩略图下面）：只在有形态时带上
         const issues = req.gen.form ? planetFormIssues(e.world) : undefined;

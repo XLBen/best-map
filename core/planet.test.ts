@@ -9,6 +9,7 @@ import type { SphereMesh } from './mesh';
 import { buildSphereMesh, nearestCell } from './sphere';
 import { islandStamp, previewLand, resolveTerrain } from './terrain';
 import { type World, createWorld } from './world';
+import { seededEngine } from './testing/fixtures';
 
 // 整个星球的生成：缩略图与成品一致、接缝和高纬度没有变形、全是陆地也能算、重放逐值一致
 
@@ -118,7 +119,7 @@ describe('生成整个星球', () => {
   });
 
   it('全是陆地的星球也能算完（没有海可流时最低处是终点），没有 NaN', () => {
-    const eng = new Engine(globe(4000));
+    const eng = seededEngine(globe(4000));
     const all = [...Array(eng.world.mesh.n).keys()];
     eng.exec({ op: 'paint_land', cells: all, t: all.map(() => 0), mode: 'land' });
     const d = eng.world.derived;
@@ -130,7 +131,7 @@ describe('生成整个星球', () => {
   });
 
   it('像地球的星球：识别出几块大陆；存档重放逐值一致', () => {
-    const eng = new Engine(globe(20000));
+    const eng = seededEngine(globe(20000));
     eng.exec({ op: 'set_worldgen', params: { seed: 1, type: 'continents' }, reset: true });
     eng.exec({ op: 'add_island', island: { x: 1.9995, y: 0.4, kind: 'continental', size: 500, variant: 1 } });
     const w = eng.world;
@@ -141,14 +142,14 @@ describe('生成整个星球', () => {
     expect(onLand / continents.length).toBeGreaterThanOrEqual(0.66);
     expect(continents.every((f) => f.x >= 0 && f.x < 2)).toBe(true);
     const doc = eng.toDoc();
-    expect(doc.version).toBe(5);
+    expect(doc.version).toBe(6);
     const replay = Engine.fromDoc(doc, w.mesh);
     for (const k of ['elevation', 'tMean', 'precip', 'discharge'] as const) expect(hashArray(replay.world.derived[k])).toBe(hashArray(w.derived[k]));
     expect(replay.world.derived.features.map((f) => f.name)).toEqual(w.derived.features.map((f) => f.name));
   });
 
   it('缩略图、导出：左右两边接得上；地名表里是真实的经纬度', () => {
-    const eng = new Engine(globe(8000));
+    const eng = seededEngine(globe(8000));
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     const W = 240;
     const H = 120;
@@ -181,7 +182,7 @@ describe('生成整个星球', () => {
 
   it('副本共用生成器的结果：在副本上画陆地、重画一片（跨接缝），与新世界上执行逐值相同', () => {
     const make = () => {
-      const eng = new Engine(globe(3000), meshOf(3000));
+      const eng = seededEngine(globe(3000), meshOf(3000));
       eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
       return eng;
     };
@@ -204,7 +205,7 @@ describe('生成整个星球', () => {
 
   it('先预览再执行 = 直接执行（采用预览），撤销后回到原样：整体冷暖、冷暖画笔、画陆地', () => {
     const make = () => {
-      const eng = new Engine(globe(3000), meshOf(3000));
+      const eng = seededEngine(globe(3000), meshOf(3000));
       eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
       return eng;
     };

@@ -2,18 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { kindOf } from '../../../core/content/registry';
 import { DEFAULT_STYLE, type NameStyle, worldStyleId } from '../../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type ResourcePack } from '../../../core/packs';
-import { FANTASY_PACK } from '../../../core/packs/fantasy';
-import { BUILTIN_STYLES, NAME_STYLES_PACK } from '../../../core/packs/names';
-import { DEFAULT_SPECIES } from '../../../core/species';
-import { continents } from '../../../core/testing/fixtures';
+
+import { BUILTIN_STYLES } from '../../../core/packs/names';
+
+import { continents, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../../../core/testing/fixtures';
 import type { LibraryEntry } from '../../library';
 import { defaultStyleCommand, enabledCount, filterRows, repoKinds, repoRows, toggleCommand } from './repo';
 import { blankItem, copyItem, defaultValue, editorIssues, isObj, newKey, parseTags, pathLabel, renameKey, setField, shownFields, tagsText, weightedRows, weightedValue } from './fields';
+import { DEFAULT_SPECIES } from '../../../core/packs/nature';
 
 // 资源库（第二十轮）：每一种内容在资源库里有哪些、在这个世界里启用了没有、开关与“默认”是哪条命令；通用编辑器的字段表
 
 const entry = (key: string, pack: ResourcePack, extra: Partial<LibraryEntry> = {}): LibraryEntry => ({ key, pack, builtin: false, mine: false, installedAt: 1, ...extra });
-const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_PACK, { builtin: true, installedAt: 0 })];
+const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_SAMPLE, { builtin: true, installedAt: 0 })];
 const styleKind = kindOf('nameStyle')!;
 const biomeKind = kindOf('biome')!;
 const germanic = BUILTIN_STYLES.find((s) => s.id === 'west-germanic')!;
@@ -27,15 +28,14 @@ describe('资源库：列表与开关', () => {
     expect(ids).not.toContain('field');
   });
 
-  it('地名风格：内置的只列一次；内置中文总在、是默认；启用、设为默认、停用默认都是一步，可以撤销', () => {
+  it('地名风格：内置的只列一次；中文·默认在世界里、是默认（第三十轮：普通内容，能移出）；启用、设为默认、停用默认都是一步，可以撤销', () => {
     const eng = continents();
     const w = eng.world;
     let rows = repoRows(styleKind, w, LIB);
-    expect(rows.filter((r) => r.source === 'builtin').map((r) => r.id)).toEqual(BUILTIN_STYLES.map((s) => s.id));
+    expect(rows.filter((r) => r.source === 'builtin').map((r) => r.id).sort()).toEqual(BUILTIN_STYLES.map((s) => s.id).sort());
     const zh = rows.find((r) => r.id === DEFAULT_STYLE)!;
     expect(zh.status).toMatchObject({ on: true, isDefault: true });
-    expect(zh.status.locked).toBeTruthy();
-    expect(toggleCommand(zh, w)).toBeNull();
+    expect(zh.status.locked).toBeUndefined();
     const row = () => repoRows(styleKind, eng.world, LIB).find((r) => r.id === 'west-germanic')!;
     expect(row().status).toEqual({ on: false });
     // 启用
@@ -82,7 +82,7 @@ describe('资源库：列表与开关', () => {
     const rows = repoRows(biomeKind, w, LIB);
     const builtin = rows.filter((r) => r.source === 'builtin');
     expect(builtin.filter((r) => r.status.on).map((r) => r.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
-    const crystal = builtin.find((r) => r.entry === 'fantasy' && !r.status.on)!;
+    const crystal = builtin.find((r) => !r.status.on)!;
     expect(crystal).toBeDefined();
     eng.exec(toggleCommand(crystal, w)!);
     const again = repoRows(biomeKind, w, LIB).find((r) => r.key === crystal.key)!;
@@ -141,7 +141,6 @@ describe('通用编辑器的字段表', () => {
     expect(editorIssues(styleKind, styleKind.blank!())).toEqual({ errors: [], notes: [] });
     const bad = { ...(styleKind.blank!() as object), types: { island: { patterns: [{ p: '{zz}岛' }] } } };
     expect(editorIssues(styleKind, bad).errors[0].message).toMatch(/\{zz\}/);
-    expect(editorIssues(styleKind, { ...(styleKind.blank!() as object), id: DEFAULT_STYLE }).errors[0].message).toMatch(/内置中文/);
     const noP = { ...(styleKind.blank!() as object), types: { island: { patterns: [{ w: 2 }] } } };
     const e = editorIssues(styleKind, noP).errors[0];
     expect(e.where).toBe('各类地物 · island · 模板 · 第 1 个 · 写法');

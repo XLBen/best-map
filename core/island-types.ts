@@ -6,8 +6,10 @@ import { FREE_HEIGHT, type SmallState, type World } from './world';
 // 两者用同一套说法：形状、颜色、岩石软硬、高低、归陆地省还是海省、起名的模板。
 //   · 形状、高低、岩石只在放岛的那一刻起作用（改了以后只影响以后放的岛）；
 //   · 颜色、归哪种省、起名按每格记下的种类（causes.islandType）随时查，改了马上用到已经放的岛上。
-// 每格记的是种类的编号：0 不是放的岛；内置的是 1–4（BUILTIN_ISLAND_TYPES 的下标 + 1），
-// 自己的是 BUILTIN_COUNT + 1 + 在 small.islandTypes 里的下标。删掉一种时，这种岛变成大陆岛、后面的编号往前挪（见 removeIslandCode）。
+// 每格记的是种类的编号：0 不是放的岛（或放的是普通的岛），否则是 small.islandTypes 里的下标 + 1。第三十轮起内置的五种也是
+// 普通内容（在“通用 ▸ 基础”里，新建时按大陆岛、低平岛、珊瑚岛、小礁、碎岛的先后加进来，编号与以前固定的 1–5 相同）。
+// 删掉一种时，这种岛变成大陆岛（世界里没有大陆岛时是普通的岛）、后面的编号往前挪（见 removeIslandCode）。
+// 世界里一种岛都没有时，放的岛都是普通的岛（形状不规则、有丘陵、归陆地省，编号 0）
 // 环礁潟湖的海格另加 LAGOON_BIT：潟湖就是潟湖（海底挖浅、四周的小块海不并回陆地），以后改了、删了这种岛也不变
 export const LAGOON_BIT = 0x80;
 export const ISLAND_CODE_MASK = 0x7f;
@@ -45,12 +47,11 @@ export const ISLAND_ROCK_RANGE: readonly [number, number] = [0.3, 5];
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
 
-const BUILTIN_IDS = ['continental', 'low', 'atoll', 'reef', 'shards'] as const;
-export type BuiltinIslandId = (typeof BUILTIN_IDS)[number];
-
 export const islandTypeSchema = z.object({
-  id: typeIdSchema.refine((id) => !(BUILTIN_IDS as readonly string[]).includes(id), 'id 与内置的岛重复，换一个'),
+  id: typeIdSchema,
   name: z.string().min(1).max(12),
+  // 一句话说明（第三十轮：内置的几种也是普通内容，说明跟着它进世界）
+  hint: z.string().max(60).optional(),
   shape: z.enum(ISLAND_SHAPES).default('rugged'),
   height: z.enum(ISLAND_HEIGHTS).default('hilly'),
   // 不写：和周围的地一样
@@ -69,19 +70,10 @@ export const islandTypeSchema = z.object({
 export type IslandType = z.output<typeof islandTypeSchema>;
 export type IslandTypeInput = z.input<typeof islandTypeSchema>;
 
-// 内置的五种（与自己的用同一套说法）。编号 = 下标 + 1，不能改顺序（第十八轮在最后加了碎岛：自己的岛的编号往后挪了一个，存档按命令重放，不受影响）
-export const BUILTIN_ISLAND_TYPES: readonly (IslandType & { id: BuiltinIslandId; hint: string })[] = [
-  { id: 'continental', name: '大陆岛', hint: '形状不规则，有丘陵', shape: 'rugged', height: 'hilly', province: 'land' },
-  { id: 'low', name: '低平岛', hint: '平坦低矮，多沙洲和沼泽', shape: 'long', height: 'flat', color: 'marsh', rock: 3.2, province: 'land' },
-  { id: 'atoll', name: '珊瑚岛', hint: '环形白沙岛，中间是青绿的浅潟湖', shape: 'ring', height: 'flat', color: 'coral', rock: 4.8, province: 'land' },
-  { id: 'reef', name: '小礁', hint: '一格的白沙小岛，归海省', shape: 'cell', height: 'flat', color: 'coral', rock: 4.3, province: 'sea' },
-  // 第十八轮：一片比一格还小的碎岛（格还是海，只是画出来；归海省，一片碎岛起一个列岛 / 群岛的名字）
-  { id: 'shards', name: '碎岛', hint: '比一格还小的碎岛，归海省', shape: 'frag', height: 'flat', province: 'sea' },
-];
-// 岛链里的碎岛（chainSchema 的 fragRatio）用的种类
-export const SHARDS_ISLAND_TYPE: BuiltinIslandId = 'shards';
-export const BUILTIN_COUNT = BUILTIN_ISLAND_TYPES.length;
-export const DEFAULT_ISLAND_TYPE: BuiltinIslandId = 'continental';
+// 岛链里的碎岛（chainSchema 的 fragRatio）用的种类（世界里没有时岛链不换碎岛）
+export const SHARDS_ISLAND_TYPE = 'shards';
+// 默认的种类（放岛、岛链省略种类时；删掉一种岛时那种岛变成它）
+export const DEFAULT_ISLAND_TYPE = 'continental';
 export const MAX_ISLAND_TYPES = 64;
 
 // 界面的选项里记的种类还在不在（被删掉了、换了世界时按大陆岛）
@@ -89,33 +81,21 @@ export function liveIslandKind(w: Pick<World, 'small'> | null, id: string): stri
   return w && islandTypeById(w.small, id) ? id : DEFAULT_ISLAND_TYPE;
 }
 
-export const isBuiltinIsland = (id: string): id is BuiltinIslandId => (BUILTIN_IDS as readonly string[]).includes(id);
-
-// 世界里自己的岛的种类
+// 世界里的岛的种类（按编号排：编号 = 下标 + 1）
 export const islandTypesOf = (small: Pick<SmallState, 'islandTypes'>): readonly IslandType[] => small.islandTypes ?? [];
-
-// 全部种类，按编号排（编号 = 下标 + 1）
-export function allIslandTypes(small: Pick<SmallState, 'islandTypes'>): readonly IslandType[] {
-  const own = islandTypesOf(small);
-  return own.length ? [...BUILTIN_ISLAND_TYPES, ...own] : BUILTIN_ISLAND_TYPES;
-}
+export const allIslandTypes = islandTypesOf;
 
 export function islandTypeById(small: Pick<SmallState, 'islandTypes'>, id: string): IslandType | undefined {
-  return BUILTIN_ISLAND_TYPES.find((t) => t.id === id) ?? islandTypesOf(small).find((t) => t.id === id);
+  return islandTypesOf(small).find((t) => t.id === id);
 }
 
 // 种类的编号（找不到为 0）
 export function islandCode(small: Pick<SmallState, 'islandTypes'>, id: string): number {
-  const b = BUILTIN_IDS.indexOf(id as BuiltinIslandId);
-  if (b >= 0) return b + 1;
-  const k = islandTypesOf(small).findIndex((t) => t.id === id);
-  return k >= 0 ? BUILTIN_COUNT + 1 + k : 0;
+  return islandTypesOf(small).findIndex((t) => t.id === id) + 1;
 }
 
 export function islandTypeOfCode(small: Pick<SmallState, 'islandTypes'>, code: number): IslandType | undefined {
-  if (code <= 0) return undefined;
-  if (code <= BUILTIN_COUNT) return BUILTIN_ISLAND_TYPES[code - 1];
-  return islandTypesOf(small)[code - BUILTIN_COUNT - 1];
+  return code > 0 ? islandTypesOf(small)[code - 1] : undefined;
 }
 
 // 按编号查的表（下标是编号，0 是“不是放的岛”）：f(种类) 为真的编号为 1
@@ -158,10 +138,11 @@ export function lakeSeaIsles(world: Pick<World, 'causes' | 'small'>): Uint8Array
   return out;
 }
 
-// 删掉自定义的第 k 种（编号 BUILTIN_COUNT + 1 + k）：这种岛变成大陆岛，后面的编号往前挪一个
-export function removeIslandCode(arr: Uint8Array, k: number): void {
-  const gone = BUILTIN_COUNT + 1 + k;
-  const fallback = BUILTIN_IDS.indexOf(DEFAULT_ISLAND_TYPE) + 1;
+// 删掉世界里的第 k 种（编号 k + 1）：这种岛变成大陆岛（after 是删掉之后的列表，里面没有大陆岛时是 0：普通的岛），
+// 后面的编号往前挪一个
+export function removeIslandCode(arr: Uint8Array, k: number, after: readonly IslandType[]): void {
+  const gone = k + 1;
+  const fallback = after.findIndex((t) => t.id === DEFAULT_ISLAND_TYPE) + 1;
   for (let i = 0; i < arr.length; i++) {
     const c = arr[i] & ISLAND_CODE_MASK;
     const bit = arr[i] & LAGOON_BIT;

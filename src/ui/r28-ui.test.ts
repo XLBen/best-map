@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VNode } from 'preact';
-import type { Command } from '../../core/commands';
+
 import { kindOf } from '../../core/content/registry';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_ERAS } from '../../core/packs/eras';
-import { FANTASY_PACK } from '../../core/packs/fantasy';
-import { NAME_STYLES_PACK } from '../../core/packs/names';
+
 import { PACK_FORMAT, PACK_VERSION, type ResourcePack, packFromWorld, packItems, planPack, readPack } from '../../core/packs';
 import { worldCultureGroups, worldCultures, worldEras, worldResources } from '../../core/human';
-import { continents, snapshot } from '../../core/testing/fixtures';
+import { continents, snapshot, FANTASY_PACK, NAME_STYLES_SAMPLE, type HumanCommand, humanExec } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { world } from '../state';
@@ -25,14 +24,14 @@ import { PointMenu } from './panels/settlements';
 // 写着用在哪里、能定位）、存进资源库、单独一项导出再导入；生成人文的选择（向导列资源库，重新生成只列本世界）；导出带上人文的几种
 
 const entry = (key: string, pack: ResourcePack, extra: Partial<LibraryEntry> = {}): LibraryEntry => ({ key, pack, builtin: false, mine: false, installedAt: 1, ...extra });
-const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_PACK, { builtin: true, installedAt: 0 })];
+const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_SAMPLE, { builtin: true, installedAt: 0 })];
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
 
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r28-ui:peopled', () => {
     const e = continents();
-    e.exec(GEN);
+    humanExec(e, GEN);
     return e;
   });
 
@@ -87,21 +86,23 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
   it('向导选了资源包里的时代、文化组：生成之前先添加到本世界（文化组带上包里的文化和地名风格），一整步', () => {
     const era = { ...BUILTIN_ERAS[0], id: 'my-era', name: '我的时代' };
     const group = { ...BUILTIN_CULTURE_GROUPS[0], id: 'my-group', name: '我的组' };
-    const style = { ...NAME_STYLES_PACK.nameStyles![0], id: 'my-style', name: '我的风格' };
+    const style = { ...NAME_STYLES_SAMPLE.nameStyles![0], id: 'my-style', name: '我的风格' };
     const culture = { id: 'my-culture', group: 'my-group', name: '我的人', color: '#335577', nameStyle: 'my-style' };
     const lib = [...LIB, entry('mine', pack('mine', { eras: [era], cultureGroups: [group], cultures: [culture], nameStyles: [style] } as Partial<ResourcePack>), { mine: true })];
     expect(choiceLists(null, 'library', lib).eras.some((e) => e.id === 'my-era')).toBe(true);
     const choice = { ...defaultChoice(null), era: 'my-era', groups: [{ id: 'my-group', weight: 1 }] };
+    // 第三十轮：时代所在的包里生成要用的内容一次加进来（core/packs/import.ts），生成的命令带上这个包
     const imports = importCommands(choice, null, lib);
-    expect(imports.map((x) => (x as { kind: string }).kind)).toEqual(['nameStyle', 'era', 'cultureGroup', 'culture']);
+    const inner = imports.flatMap((x) => (x.op === 'batch' ? x.commands : [x]));
+    expect(inner.map((x) => (x as { kind: string }).kind)).toEqual(['nameStyle', 'era', 'cultureGroup', 'culture']);
     const cmd = generateCommand(choice, null, lib)!;
-    expect(cmd).toMatchObject({ op: 'batch', commands: [...imports.map(() => ({ op: 'set_content' })), { op: 'generate_human', era: 'my-era' }] });
+    expect(cmd).toMatchObject({ op: 'batch', commands: [...imports.map(() => ({ op: 'batch' })), { op: 'generate_human', packs: [['mine']] }] });
     const eng = continents();
     eng.exec(cmd);
     expect(worldEras(eng.world.small).map((e) => e.id)).toEqual(['my-era']);
     expect(worldCultures(eng.world.small).map((c) => c.id)).toEqual(['my-culture']);
-    // 内置的不用先加（生成时自动复制进来）
-    expect(importCommands(defaultChoice(null), null, lib)).toEqual([]);
+    // 内置的时代也要先加（第三十轮：生成只读世界里的内容）
+    expect(importCommands(defaultChoice(null), null, lib).length).toBe(1);
   });
 });
 
@@ -148,10 +149,10 @@ describe('资源库：添加到本世界、移出本世界', () => {
     expect(off).toMatchObject({ op: 'batch', label: `移出本世界：文化“${row.name}”`, commands: [{ op: 'set_content', kind: 'culture', id: idle.id, item: null }] });
     eng.exec(off);
     expect(worldCultures(w.small).some((c) => c.id === idle.id)).toBe(false);
-    // 内置的地形类别总在：没有移出
-    const cls = repoRows(kindOf('terrainClass')!, w, LIB).find((r) => r.status.always)!;
-    expect(removeCommand(cls, w)).toBeNull();
+    // 第三十轮：内置的地形类别也是普通内容，没画过的能移出
+    const cls = repoRows(kindOf('terrainClass')!, w, LIB).find((r) => r.status.on)!;
     expect(rowUsage(cls, w)).toBeNull();
+    expect(removeCommand(cls, w)).not.toBeNull();
   });
 
   it('本世界做的能存进资源库；只有我的能从库里删', () => {
@@ -185,7 +186,7 @@ describe('资源库：添加到本世界、移出本世界', () => {
     eng.exec(planPack(eng.world, read.pack, { riverTypes: ['blood_river'] }).command);
     expect(eng.world.small.riverTypes!.map((t) => t.name)).toEqual(['血河']);
     // 生态带上用到的自定义场
-    const holy = repoRows(kindOf('biome')!, continents().world, LIB).find((r) => r.entry === 'fantasy' && itemPack(r).fields?.length)!;
+    const holy = repoRows(kindOf('biome')!, continents().world, LIB).find((r) => itemPack(r).fields?.length)!;
     expect(holy).toBeDefined();
     expect(readPack(JSON.stringify(itemPack(holy)), 'x').ok).toBe(true);
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Command } from '../commands';
-import { continents, engineFor, snapshot } from '../testing/fixtures';
+
+import { continents, engineFor, snapshot, type HumanCommand, humanExec } from '../testing/fixtures';
 import type { World } from '../world';
 import { countryList } from './countries';
 import { type CountryLabel, countryLabels, labelGeometry, regionLabels } from './country-layers';
@@ -46,7 +46,7 @@ function oldCountryLabels(world: World): CountryLabel[] {
   return out;
 }
 
-const GEN: Command = {
+const GEN: HumanCommand = {
   op: 'generate_human',
   era: 'medieval',
   groups: [
@@ -59,7 +59,7 @@ const GEN: Command = {
 const nations = () =>
   snapshot('region:nations', () => {
     const eng = continents();
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 
@@ -71,7 +71,7 @@ describe('片区名的位置', () => {
     expect(JSON.stringify(now)).toBe(JSON.stringify(oldCountryLabels(w)));
     const eng = engineFor({ seed: 3, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     expect(JSON.stringify(countryLabels(eng.world))).toBe(JSON.stringify(oldCountryLabels(eng.world)));
   });
 

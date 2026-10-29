@@ -49,6 +49,7 @@ import { RulerButton } from './shell/Ruler';
 import { ScriptBanner } from './shell/ScriptBanner';
 import { Sheet } from './shell/Sheet';
 import { TopBar } from './shell/TopBar';
+import { newWorldContentCommands } from '../../core/packs/import';
 import { Wizard } from './Wizard';
 
 // 整体：地图铺满全屏，界面浮在上面——顶栏、底部工具条、顶部提示条、右下角“这里”
@@ -150,6 +151,7 @@ export function App() {
   useEffect(() => {
     if (location.hash === '#demo') {
       void newWorld(settingsFor('region', 'tropical', 40000), [
+        ...newWorldContentCommands(),
         { op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true },
         { op: 'generate_provinces', rules: { seed: 3 } },
       ]);

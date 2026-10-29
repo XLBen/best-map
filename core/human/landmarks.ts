@@ -4,7 +4,7 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { LandmarkMeta, SettlementRules, World } from '../world';
 import { cellName, peakFeatureAt } from './cells';
-import { cultureById, worldCultures, worldEra } from './era';
+import { cultureById, worldCultures } from './era';
 import { governmentById, pickTitle } from './government';
 import { COAST, LAKE, RIVER } from './rules';
 import { type CityTable, type SettleInputs, cellKm, cityTable, computeCityTable, nearestLand, nextSettlementId } from './settlements';
@@ -264,7 +264,6 @@ export function generateLandmarks(S: SettleInputs, rules: SettlementRules, fresh
   const terr = world.causes.country;
   const cellsOf = new Map<number, number[]>();
   if (terr) for (const i of dry) if (terr[i] >= 0) (cellsOf.get(terr[i]) ?? cellsOf.set(terr[i], []).get(terr[i])!).push(i);
-  const era = worldEra(small)?.id;
   for (const type of worldLandmarkTypes(small)) {
     if (type.manual || type.count <= 0) continue;
     if (type.category === 'natural') {
@@ -281,8 +280,8 @@ export function generateLandmarks(S: SettleInputs, rules: SettlementRules, fresh
       }
       continue;
     }
-    // 人造的由时代、文化定：没有人文时不放
-    if (!small.human || (type.eras?.length && (!era || !type.eras.includes(era)))) continue;
+    // 人造的由文化定（第三十轮：时代自己的地标在时代包里，世界里有就能放）：没有人文时不放
+    if (!small.human) continue;
     if (type.per === 'world') {
       const rand = mulberry32(mixSeed(seed, hashString(`landmark:${type.id}`), 0));
       const want = Math.max(type.count > 0 ? 1 : 0, scaled(type.count));

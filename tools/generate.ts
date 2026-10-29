@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { unzipSync } from 'fflate';
 import { Engine } from '../core/engine';
+import { newWorldContentCommands } from '../core/packs/import';
 import { exportPackage } from '../core/export';
 
 const args = new Map<string, string>();
@@ -17,7 +18,7 @@ const eng = new Engine({ cells: num('cells', 40000), seed, latNorth: num('north'
 const params: Record<string, unknown> = { seed, type: args.get('type') ?? 'continents', mountains: num('mountains', 1) };
 if (args.has('land')) params.landFraction = num('land', 0.3);
 if (args.has('islands')) params.islands = num('islands', 0.5);
-eng.exec({ op: 'set_worldgen', params: params as { seed: number }, reset: true });
+eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: params as { seed: number }, reset: true }] });
 eng.exec({ op: 'generate_provinces', rules: { seed } });
 const r = exportPackage(eng.world, eng.toDoc(), { width, height: Math.round(width / eng.world.settings.aspect), seaLevelGray: 95, maxElevation: 6000 });
 mkdirSync(out, { recursive: true });

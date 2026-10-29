@@ -110,8 +110,6 @@ export { PEAK_MIN, peakList } from './peaks';
 export const peakCells = (world: Pick<World, 'derived'>): Int32Array => peakList(world.derived.peak, world.derived.elevation);
 export {
   CATEGORY_LABEL,
-  FANTASY_RESOURCES,
-  GENERAL_RESOURCES,
   RESOURCE_CATEGORIES,
   RESOURCE_NONE,
   type Resource,
@@ -122,8 +120,6 @@ export {
   worldResources,
 } from './resources';
 export {
-  BIOME_MOVEMENT,
-  BUILTIN_CLASSES,
   type TerrainClass,
   biomeMovement,
   cellMovement,
@@ -161,8 +157,8 @@ export {
   worldEras,
   worldPopValues,
 } from './era';
-export { BIOME_HABITABILITY, CLASS_HABITABILITY, biomeHabitability, classHabitability } from './habitability';
-export { type HumanParams, defaultTotalPop, dryLandKm2, ensureHumanContent, generateHuman, humanStages, regenerateHuman, registerHumanStage, unregisterHumanStage } from './generate';
+export { biomeHabitability, classHabitability } from './habitability';
+export { type HumanParams, defaultTotalPop, dryLandKm2, generateHuman, humanBlockers, humanStages, regenerateHuman, registerHumanStage, ruleEra, unregisterHumanStage } from './generate';
 export { type GenContext, type GenGroup, type HumanStage } from './context';
 export { SLOTS, type Share, readComp } from './groups';
 export { type PopBrush, type PopFix, typicalTuple } from './population';
@@ -210,7 +206,6 @@ export {
   TIER_NAMES,
   averageCountryKm2,
   countryList,
-  ensureGovContent,
   estimateCountryCount,
   plannedCountries,
   sizeFactor,
@@ -260,7 +255,6 @@ export { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, LAYOUT_COLORS, flagSchema, f
 // 第二十四轮：城市、道路、地标、自定义点
 export { type CityRank, LANDMARK_DETECTORS, LANDMARK_PLACES, type LandmarkDetector, type LandmarkPlace, type LandmarkType, type PointType, cityRankSchema, landmarkTypeSchema, pointTypeSchema } from './settle-types';
 export { capitalRank, cityRankById, isMajorRank, landmarkTypeById, pointTypeById, rankFor, worldCityRanks, worldLandmarkTypes, worldPointTypes } from './settle-content';
-export { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS } from '../packs/settlements';
 export {
   type CityArchive,
   type CityInfo,

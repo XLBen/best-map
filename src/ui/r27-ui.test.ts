@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
 import { brushCells } from '../../core/select';
-import { continents, snapshot } from '../../core/testing/fixtures';
+import { continents, snapshot, type HumanCommand, humanExec } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { worldResources, worldTerrainClasses } from '../../core/human';
 import { erasing, exec, options, picking, provinceSet, selectedCountry, selectedProvince, setOptions, world } from '../state';
@@ -30,13 +30,13 @@ afterEach(() => {
   vi.mocked(exec).mockClear();
 });
 
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: { fragmentation: 1 }, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: { fragmentation: 1 }, settlements: {} };
 
 // 有人文、国家、省份、城市的世界：中间一块地方各种都手改过（冷暖、生态、类别、资源、自定义场、人口、领土、地势），橡皮擦都有东西可擦
 const edited = (): { eng: Engine; c: number; ring: number[] } => {
   const eng = snapshot('r27:edited', () => {
     const e = continents({ provinces: true });
-    e.exec(GEN);
+    humanExec(e, GEN);
     return e;
   });
   const w = eng.world;

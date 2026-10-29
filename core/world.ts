@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { FeatureOverride, GeoFeature, KeptName } from './features';
 import type { Worldgen } from './generate';
-import type { WordPack } from './names';
 import type { NameStyle } from './name-styles';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
@@ -13,7 +12,7 @@ import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
 import type { CountryTier, SubjectKind } from './human/era';
 import type { FlagSpec } from './human/flags';
-import { DEFAULT_SPECIES, type Species } from './species';
+import type { Species } from './species';
 import { typeIdSchema } from './type-id';
 
 // 世界的三类数据：
@@ -276,6 +275,10 @@ export interface HumanHearth {
   locked?: true;
 }
 export interface HumanState {
+  // 生成时用的资源包（第三十轮，按勾选的先后；每个是资源库里的路径 [大包, 小包……]）。规则（时代）取第一个带时代的包，
+  // 维度也只用它的；别的包提供政体、派系、文化、取值……（都已经由界面加进世界，生成只读世界里的内容）
+  packs: string[][];
+  // 规则用的时代（small.content.era 里的 id）：生成时按 packs 定下
   era: string;
   seed: number;
   // 文化组与权重；cultures 是只用组里的这几个文化（省略时用世界里这一组的全部）
@@ -444,8 +447,6 @@ export interface TerrainState {
 
 export interface SmallState {
   terrain: TerrainState;
-  // 自定义文字包；null 用内置的中文包
-  wordPack: WordPack | null;
   // 地理要素的手工命名与重抽：键为“类型:锚点格”
   featureNames: Record<string, FeatureOverride>;
   // 留着的名字（第九轮）：键为“类型:锚点格”。编辑之后锚点挪了、名字被新地物抢了的地物照旧叫原来的名字，
@@ -724,10 +725,10 @@ export function emptyDerived(n: number, speciesCount: number): Derived {
 function defaultSmall(): SmallState {
   return {
     terrain: { gen: null, coastRoughness: 1 },
-    wordPack: null,
     featureNames: {},
     planet: planetSchema.parse({}),
-    species: structuredClone(DEFAULT_SPECIES),
+    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是“通用 ▸ 自然”的 13 种）
+    species: [],
     constraints: [],
     guides: [],
     lakes: [],

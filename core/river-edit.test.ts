@@ -21,9 +21,9 @@ import {
 } from './river-edit';
 import { decodePath, encodePath, traceRivers } from './rivers';
 import { applyPackCommands } from './packs';
-import { FANTASY_PACK } from './packs/fantasy';
+
 import { type CoursePlan, isRiverCell, planCourse, riverStem } from './select';
-import { continents } from './testing/fixtures';
+import { continents, FANTASY_PACK } from './testing/fixtures';
 import type { Guide, World } from './world';
 
 // 第十一轮：在原来的河上直接改。每种改法之后还是同一条河（同一个 id、名字、大小、类型），河道数不变，

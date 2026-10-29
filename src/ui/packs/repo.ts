@@ -1,8 +1,8 @@
 import type { Command } from '../../../core/commands';
-import { type ContentKind, type ContentUsage, type UsageWorld, disableCommand as kindDisable, itemId, itemName, kindOf, usageOf } from '../../../core/content/registry';
-import { DEFAULT_STYLE, styleProblems, worldStyleId, type NameStyle } from '../../../core/name-styles';
+import { type ContentKind, type ContentUsage, type UsageWorld, builtinOf, disableCommand as kindDisable, itemId, itemName, kindOf, usageOf } from '../../../core/content/registry';
+import { styleProblems, worldStyleId, type NameStyle } from '../../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, packItems, packSections, planPack, sameItem, subPacks, walkPacks, findPack } from '../../../core/packs';
-import { BASE_PATH, originOf } from '../../../core/packs/builtin-tree';
+import { originOf } from '../../../core/packs/builtin-tree';
 import type { ContentRef } from '../../../core/content/unused';
 import type { LibraryEntry } from '../../library';
 
@@ -42,7 +42,7 @@ export interface RepoStatus {
   rename?: string;
   // 地名风格：是世界默认
   isDefault?: boolean;
-  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：没有开关，写“内置·常开”
+  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：没有开关，写“内置·常开”。第三十轮起没有总在的项，不再有这两个
   always?: boolean;
   // 总在的内置项在这个世界里改过（small.content 里同 id 的一份）：可以恢复
   modified?: boolean;
@@ -69,8 +69,6 @@ export interface RepoRow {
 
 const wrap = (kind: ContentKind, items: readonly unknown[], id: string, name: string): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name, [kind.pack.key]: [...items] });
 
-const isZh = (kind: ContentKind, id: string) => kind.id === 'nameStyle' && id === DEFAULT_STYLE;
-
 // 一次列表里共用的：每一种在世界里的项（列一棵树要查上千项，kind.inWorld 不必每项都算一遍）
 type Ctx = Map<string, readonly unknown[]>;
 function inWorldOf(kind: ContentKind, world: PackWorld, ctx?: Ctx): readonly unknown[] {
@@ -91,15 +89,9 @@ function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackW
     return { on, ...(on ? { worldId: id } : {}), locked: kind.pack.note ?? '不能启用' };
   }
   const isDefault = (wid: string) => (kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === wid } : {});
-  if (isZh(kind, id)) return { on: true, worldId: DEFAULT_STYLE, locked: '内置中文总在', ...isDefault(DEFAULT_STYLE) };
-  // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：开关不能动；世界里那一份改过时写“已修改”
-  const always = kind.alwaysOn?.(id);
-  if (always && builtin) {
-    const cur = inWorld.find((x) => itemId(kind, x) === id);
-    return { on: true, worldId: id, locked: always, always: true, ...(cur && !sameItem(cur, item) ? { modified: true } : {}) };
-  }
-  if (always && inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item))) return { on: true, worldId: id, locked: always };
-  // 世界里有一模一样的（内置的生态本来就在世界里）
+  // 第三十轮：基础的内容（地形类别、通用资源、中文·默认……）也是普通内容，不再“总在”
+  void builtin;
+  // 世界里有一模一样的
   if (inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item))) return { on: true, worldId: id, ...isDefault(id) };
   if (kind.id === 'nameStyle') {
     const bad = styleProblems(item as NameStyle);
@@ -122,8 +114,8 @@ export function repoRows(kind: ContentKind, world: PackWorld | null, lib: readon
     const id = itemId(kind, item);
     rows.push({ kind, key: `${source}:${entry ?? ''}:${id}`, id, name: itemName(kind, item), item, source, pack, from, ...(entry ? { entry } : {}), status: statusOf(kind, item, pack, world, own) });
   };
-  // 内置：登记表里的、内置示例包里的（同一项只列一次）
-  const own = kind.builtin?.() ?? [];
+  // 内置：内置的树里的（同一项只列一次）
+  const own = builtinOf(kind.id);
   const ownPack = wrap(kind, own, `builtin-${kind.id}`, '内置');
   for (const x of own) push(x, 'builtin', ownPack, '内置', undefined, true);
   for (const e of lib.filter((x) => x.builtin)) {
@@ -137,7 +129,7 @@ export function repoRows(kind: ContentKind, world: PackWorld | null, lib: readon
   // 世界里有、资源库里没有的（这个世界里做的、别人的世界带来的）
   if (world) {
     const covered = new Set(rows.flatMap((r) => (r.status.on && r.status.worldId ? [r.status.worldId] : [])));
-    const items = kind.inWorld(world).filter((x) => !covered.has(itemId(kind, x)) && !isZh(kind, itemId(kind, x)));
+    const items = kind.inWorld(world).filter((x) => !covered.has(itemId(kind, x)));
     const pack = wrap(kind, items, `world-${kind.id}`, '这个世界');
     for (const x of items) push(x, 'world', pack, '这个世界');
   }
@@ -241,7 +233,7 @@ export function defaultStyleCommand(row: RepoRow, world: PackWorld): Command | n
   if (row.kind.id !== 'nameStyle' || row.status.isDefault) return null;
   if (row.status.on) {
     const id = row.status.worldId ?? row.id;
-    return { op: 'set_name_style', id: id === DEFAULT_STYLE ? null : id };
+    return { op: 'set_name_style', id };
   }
   if (row.status.locked) return null;
   const plan = planPack(world, row.pack, { nameStyles: [row.id], defaultStyle: row.id }, row.path ? { path: row.path } : {});
@@ -294,7 +286,7 @@ export interface TreeNode {
   // 资源库一栏：资源库里的键、这一层的包（整包添加用）
   entry?: string;
   node?: PackNode;
-  // 通用 ▸ 基础（总在）：只显示，不能添加、移出
+  // 只显示、不能添加、移出的包（第二十九轮的“通用 ▸ 基础”；第三十轮起没有这样的包）
   base?: boolean;
   // 本世界一栏的“离群”：本世界自己做的、来源不在资源库里的
   loose?: boolean;
@@ -326,7 +318,8 @@ function finish(n: TreeNode): TreeNode {
 // 资源库里的一层（没有这几种的项时 null）
 function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: readonly ContentKind[], world: PackWorld | null, ctx: Ctx): TreeNode | null {
   const path = [e.key, ...rel];
-  const base = e.builtin && samePath(path, BASE_PATH);
+  // 第三十轮：“通用 ▸ 基础”也是普通的包，能添加、移出
+  const base = false;
   const rows: RepoRow[] = [];
   for (const k of kinds) {
     for (const x of ownItems(node, k.pack.key)) {
@@ -342,17 +335,11 @@ function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: read
   return { key: `l:${path.join('/')}`, name: node.name, ...(desc ? { description: desc } : {}), path, entry: e.key, node, ...(base ? { base: true } : {}), children, rows, count: 0, on: 0 };
 }
 
-// 本世界里的一项（都在本世界；总在的内置项、内置中文、星球形态不能移出）
+// 本世界里的一项（都在本世界；星球形态不能移出。第三十轮起基础的内容也能移出）
 function worldStatus(kind: ContentKind, item: unknown, world: PackWorld): RepoStatus {
   const id = itemId(kind, item);
   const def = kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === id } : {};
   if (!canApply(kind)) return { on: true, worldId: id, locked: kind.pack.note ?? '不能移出' };
-  if (isZh(kind, id)) return { on: true, worldId: id, locked: '内置中文总在', ...def };
-  const always = kind.alwaysOn?.(id);
-  if (always) {
-    const b = kind.builtin?.().find((x) => itemId(kind, x) === id);
-    return { on: true, worldId: id, locked: always, always: true, ...(b !== undefined && !sameItem(b, item) ? { modified: true } : {}) };
-  }
   return { on: true, worldId: id, ...def };
 }
 
@@ -386,7 +373,7 @@ function worldTree(world: PackWorld, lib: readonly LibraryEntry[], kinds: readon
       let next = cur.children.find((c) => samePath(c.path, sub));
       if (!next) {
         const name = (e && findPack(e.pack, sub.slice(1))?.name) || sub[d];
-        next = { key: `w:${sub.join('/')}`, name, path: sub, ...(e && samePath(sub, BASE_PATH) && e.builtin ? { base: true } : {}), children: [], rows: [], count: 0, on: 0 };
+        next = { key: `w:${sub.join('/')}`, name, path: sub, children: [], rows: [], count: 0, on: 0 };
         cur.children.push(next);
       }
       cur = next;

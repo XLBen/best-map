@@ -5,11 +5,11 @@ import { type Command, Dirty, truncateGuide } from './commands';
 import { Engine } from './engine';
 import { exportPackage } from './export';
 import { findCell } from './mesh';
-import { DEFAULT_PACK, generateName, hashString } from './names';
+import { generateName, hashString } from './names';
 import { displayCoast, displayCoastAt } from './display';
 import { type RiverLine, decodePath, encodePath, guideBody, guideLine, snapOnto, traceRivers } from './rivers';
 import { type CoursePlan, isRiverCell, planCourse, riverStem, stemPath } from './select';
-import { continents, engineFor } from './testing/fixtures';
+import { continents, engineFor, ZH_STYLE } from './testing/fixtures';
 import type { Guide, World } from './world';
 
 // 第八轮第二批：画的河怎么画、叫什么。画的河照存下的折线画（屏幕、PNG、rivers.bmp 同一套），
@@ -337,7 +337,7 @@ describe('画的河的名字', () => {
     expect(fb.importance).toBeGreaterThan(fa.importance);
     // 找一对盐：两条河自动起的第一个名字相同（后画的那条更重要）
     const seed = w.small.terrain.gen?.seed ?? w.settings.seed;
-    const first = (f: typeof fa, salt: number) => generateName(DEFAULT_PACK, 'river', f.tags, hashString(`${seed}:${f.key}:${salt}`));
+    const first = (f: typeof fa, salt: number) => generateName(ZH_STYLE, 'river', f.tags, hashString(`${seed}:${f.key}:${salt}`));
     const bNames = new Map<string, number>();
     for (let s = 0; s < 300; s++) if (!bNames.has(first(fb, s))) bNames.set(first(fb, s), s);
     // 不是别的（先起名的）地物已经用了的名字

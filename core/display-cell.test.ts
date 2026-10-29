@@ -5,7 +5,7 @@ import { findCell } from './mesh';
 import { traceRivers } from './rivers';
 import { applySeams, scissors, seamLayers, seamPick } from './seams';
 import { rasterizeWorld } from './subcell';
-import { continents, snapshot } from './testing/fixtures';
+import { continents, snapshot, seededEngine } from './testing/fixtures';
 import type { World } from './world';
 
 // 第八轮第四批：悬停卡片“这里”、Alt 吸取、选省、合并读的是屏幕上画出来的那一格。
@@ -96,7 +96,7 @@ describe('屏幕上画出来的那一格', () => {
 
   it('整个星球（小网格）：跨经度接缝、两极也一致', () => {
     const eng = snapshot('display:planet', () => {
-      const e = new Engine({ cells: 2500, seed: 2, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+      const e = seededEngine({ cells: 2500, seed: 2, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
       e.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
       e.exec({ op: 'generate_provinces', rules: { seed: 2 } });
       return e;

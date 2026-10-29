@@ -1,4 +1,4 @@
-import { DEFAULT_SPECIES, type Species, speciesRect } from '../species';
+import { type Species, speciesRect } from '../species';
 import type { Derived, World } from '../world';
 import type { Preference } from './era';
 import { COAST, type CellInputs, type CompiledRule, LAKE, RIVER, compileRule, ruleMatches } from './rules';
@@ -6,30 +6,12 @@ import type { TerrainClass } from './terrain-class';
 
 // 宜居度（第二十二轮）：每格 0–1，人口按它分。推导出来的（自然改了就重算），只看干的陆地，水面为 0。
 //   宜居度 = 生态的宜居分 × 冷 × 水与海岸 × 地势 × 地形类别的倍数，最后截到 [0, 1]
-// - 生态的宜居分：生态写了 habitability 就用它；内置的生态按 BIOME_HABITABILITY；别的按生态的地形与最适合的气温估
+// - 生态的宜居分：生态写了 habitability 就用它（第三十轮起内置的生态都写了，与以前的 BIOME_HABITABILITY 表逐个相同）；没写的按生态的地形与最适合的气温估
 // - 冷：年均温 0 °C 以下渐渐变少，−15 °C 以下只剩一成
 // - 水：有河（流量够画成河）时先至少有 0.27–0.45（荒漠里的大河两岸也能住人；生态分越低越少），再 ×1.35–1.8（河越大越多）；挨着海 ×1.3，挨着湖 ×1.2
 // - 地势：海拔 1500 m 以上渐渐变少，5000 m 以上只剩 5%；坡度 ×1 / (1 + 坡度 / 30)
-// - 地形类别（只管起伏）：类别写了 habitability 就用它，内置的按 CLASS_HABITABILITY
+// - 地形类别（只管起伏）：类别写了 habitability 就用它（内置的都写了，与以前的 CLASS_HABITABILITY 相同），没写的为 1
 // 各个人口群体自己的偏好（矮人喜山）在这之上再乘（见 preferenceFactors）
-
-// 内置生态的宜居分（第二十七轮：植被的那一份从地形类别挪到这里，森林、丛林、沼泽、荒漠……不再算两遍；
-// 数值是原来的生态分 × 原来植被类别的倍数，平地上的宜居度与以前差不多）
-export const BIOME_HABITABILITY: Readonly<Record<string, number>> = {
-  ice: 0.002,
-  tundra: 0.1,
-  taiga: 0.31,
-  temperate_forest: 0.72,
-  steppe: 0.6,
-  shrubland: 0.71,
-  subtropical_forest: 0.68,
-  savanna: 0.57,
-  dry_forest: 0.54,
-  monsoon_forest: 0.53,
-  rainforest: 0.25,
-  wetland: 0.18,
-  desert: 0.042,
-};
 
 // 别的生态按地形估
 const TERRAIN_HABITABILITY: Readonly<Record<string, number>> = {
@@ -45,22 +27,9 @@ const TERRAIN_HABITABILITY: Readonly<Record<string, number>> = {
   mountains: 0.3,
 };
 
-// 内置的地形类别的倍数：只按起伏（第二十七轮：植被的那一份挪进了生态分，起伏的几类略高一些，山地上的宜居度与以前差不多）
-export const CLASS_HABITABILITY: Readonly<Record<string, number>> = {
-  plains: 1,
-  hills: 0.92,
-  highlands: 0.82,
-  mountains: 0.5,
-  peaks: 0.09,
-};
-
-const DEFAULT_TERRAIN = new Map(DEFAULT_SPECIES.map((sp) => [sp.id, sp.terrain]));
-
 // 一种生态的宜居分（0–1）
 export function biomeHabitability(sp: Species): number {
   if (sp.habitability !== undefined) return sp.habitability;
-  const builtin = BIOME_HABITABILITY[sp.id];
-  if (builtin !== undefined && DEFAULT_TERRAIN.get(sp.id) === sp.terrain) return builtin;
   let v = TERRAIN_HABITABILITY[sp.terrain] ?? 0.5;
   const r = speciesRect(sp);
   const t = (Math.max(r.t0, -30) + Math.min(r.t1, 35)) / 2;
@@ -70,7 +39,7 @@ export function biomeHabitability(sp: Species): number {
 }
 
 // 一种地形类别的倍数
-export const classHabitability = (c: TerrainClass | undefined): number => (c ? (c.habitability ?? CLASS_HABITABILITY[c.id] ?? 1) : 1);
+export const classHabitability = (c: TerrainClass | undefined): number => c?.habitability ?? 1;
 
 // 按什么算的（数组 → 标识）：只画了别的人文（人口、资源）时照用上一份
 const memo = new WeakMap<Float32Array, { cls: Uint8Array; key: string }>();

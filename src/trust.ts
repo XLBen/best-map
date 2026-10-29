@@ -1,6 +1,4 @@
-import { FANTASY_BIOMES } from '../core/packs/fantasy-biomes';
-import { FANTASY_FORMS } from '../core/packs/fantasy-forms';
-import { FANTASY_RIVER_TYPES } from '../core/packs/fantasy-rivers';
+import { builtinPacks } from '../core/packs/builtin-tree';
 import { type FoundScript, findScripts } from '../core/script';
 import { kvDelete, kvGet, kvPut } from './idb';
 
@@ -54,9 +52,10 @@ export function uniqueScripts(list: readonly FoundScript[]): FoundScript[] {
   });
 }
 
-// 总是信任的脚本：内置的示例生态、河流类型、星球形态；资源库（library.ts）在这里登记自己的：f 返回任意 JSON
+// 总是信任的脚本：内置的树里的（示例生态、河流类型、星球形态）；资源库（library.ts）在这里登记自己的：f 返回任意 JSON
 // （资源包、生态列表……，可以先等一等，比如先把存着的资源库读进来），里面的脚本都算。哪一处出错就跳过那一处
-const sources: (() => unknown)[] = [() => FANTASY_BIOMES, () => FANTASY_RIVER_TYPES, () => FANTASY_FORMS];
+// 第三十轮：内置的都在内置的树里（奇幻的生态、河、湖、星球形态……），整棵树算一处来源
+const sources: (() => unknown)[] = [() => builtinPacks()];
 export function addTrustedSource(f: () => unknown): void {
   sources.push(f);
 }

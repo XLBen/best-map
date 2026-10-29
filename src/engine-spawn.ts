@@ -12,6 +12,7 @@ import type { WorkerLike } from './sandbox';
 
 // data: 地址最长多少（字符）。Chrome 收的地址最长 2 MB（2,097,152 个字符），留些余地。
 // 第二十九轮从 1,800,000 放宽到 1,900,000：压缩后的引擎已经到 1,816,132（第二十八轮是 1,789,928），余地还有约 19 万字符
+// 第三十轮内置的内容不再打进计算 Worker：打包好的程序里约 93 万，开发时现打包的不压缩也只有约 162 万
 export const DATA_URL_MAX = 1_900_000;
 // 等 data: 的 Worker 打招呼最多多久（毫秒）
 export const HELLO_MS = 5000;

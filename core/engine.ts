@@ -121,6 +121,8 @@ export class Engine {
   lastNoop = false;
   // 最近一次 exec 移出世界的内容（第二十九轮，见 commands.ts 的 RemovedItem）：界面拿它把自己做的、改过的存进资源库
   lastRemoved: RemovedItem[] = [];
+  // 最近一次 exec 缺了内容跳过的步骤（第三十轮，见 content/missing.ts）：界面显示一次
+  lastSkipped: string[] = [];
   // 识别地物（起名）。向导的缩略图用不着，关掉省时间
   features = true;
   // 最近一次确切预览算好的副本：紧接着执行同一条命令时直接采用，不再重算（画河改道松手时）。
@@ -205,6 +207,7 @@ export class Engine {
     const r = applyCommand(this.world, cmd, { ensureDerived: () => this.update() });
     this.lastNoop = skipNoop && !r.changed;
     this.lastRemoved = r.removed;
+    this.lastSkipped = r.skipped;
     if (this.lastNoop) return { summary: r.summary, changed: false, removed: [], added: [] };
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
     // 新起的省名记进命令（存档、重做时照用）。

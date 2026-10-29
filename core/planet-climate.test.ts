@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { coastalStroke, digestWorld } from '../tools/hash';
-import { Engine } from './engine';
+
 import type { SphereMesh } from './mesh';
 import { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './planet-climate';
+import { seededEngine } from './testing/fixtures';
 
 // 整个星球的气候：没有接缝（不会在某个经度出现一条干带）、转动不变、输运图规整、迭代收敛
 
@@ -12,7 +13,7 @@ const lonOf = (x: number) => 180 * (x - 1);
 
 describe('整个星球的气候', () => {
   it('全是海的星球：同一纬度带里每个经度扇区的降水几乎一样（包括接缝两边）', () => {
-    const eng = new Engine(globe(20000));
+    const eng = seededEngine(globe(20000));
     eng.update();
     const { mesh } = eng.world;
     const d = eng.world.derived;
@@ -34,7 +35,7 @@ describe('整个星球的气候', () => {
 
   it('同样形状的大陆放在不同经度：各纬度带的气候一样（转动不变）', () => {
     const stats = [0, 137, 251].map((lon0) => {
-      const eng = new Engine(globe(20000));
+      const eng = seededEngine(globe(20000));
       const { mesh } = eng.world;
       const cells: number[] = [];
       for (let i = 0; i < mesh.n; i++) {
@@ -69,7 +70,7 @@ describe('整个星球的气候', () => {
   });
 
   it('输运图：没有互相指向的两格；只有跨接缝、顺着风带的边滞后；两极几乎无风', () => {
-    const eng = new Engine(globe(20000));
+    const eng = seededEngine(globe(20000));
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
     const mesh = eng.world.mesh as SphereMesh;
     const d = eng.world.derived;
@@ -98,7 +99,7 @@ describe('整个星球的气候', () => {
 
   it('山挡风打开：先偏转再乘极地衰减，两极照样几乎无风；拐过的风建的输运图照样规整', () => {
     const run = (terrainWind: number | null) => {
-      const eng = new Engine(globe(20000));
+      const eng = seededEngine(globe(20000));
       if (terrainWind !== null) eng.exec({ op: 'set_planet', patch: { terrainWind } });
       eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
       return eng.world;
@@ -137,7 +138,7 @@ describe('整个星球的气候', () => {
 
   it('扫描遍数加到三倍，结果几乎不变（已经收敛）', () => {
     const run = () => {
-      const eng = new Engine(globe(12000));
+      const eng = seededEngine(globe(12000));
       eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
       return eng.world.derived;
     };
@@ -189,7 +190,7 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
       'causes.province': '7f520fd3bbfec49c',
     };
-    const eng = new Engine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
+    const eng = seededEngine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
     const w = eng.world;
     eng.exec({ op: 'set_planet', patch: { terrainWind: 0 } });
     eng.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });

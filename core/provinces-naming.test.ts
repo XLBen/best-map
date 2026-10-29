@@ -4,6 +4,7 @@ import { fillUnassigned, nameNewProvince, provinceSizes, provinceTargets, repair
 import { mulberry32 } from './rng';
 import { resolveTerrain } from './terrain';
 import type { World } from './world';
+import { seededEngine } from './testing/fixtures';
 
 // 补省与起名走的是只看变化处的写法，结果必须与最直白的写法逐值相同：
 // 并入时一遍遍按编号整体重扫，每个新省份扫全图收集它的格、重新收集已用的名字
@@ -127,6 +128,12 @@ function blobs(w: World, seed: number, count: number, r: number): number[] {
   return out;
 }
 
+// 换掉世界默认的地名风格（直接改小状态，与以前直接换 small.wordPack 一样）
+function useStyle(w: World, pack: { id: string; name: string; lists: Record<string, string[]>; types: Record<string, unknown> }) {
+  w.small.content = { ...w.small.content, nameStyle: { ...(w.small.content?.nameStyle ?? {}), [pack.id]: { ...pack, kind: 'template' } as never } };
+  w.small.nameStyle = pack.id;
+}
+
 // 只有几种组合的文字包：名字经常撞，检验“已用的名字”逐个加入与重新收集一致
 const tinyPack = {
   id: 'tiny',
@@ -139,7 +146,7 @@ const worlds: [string, () => Engine][] = [
   [
     '一块地区',
     () => {
-      const eng = new Engine({ seed: 2, cells: 5000 });
+      const eng = seededEngine({ seed: 2, cells: 5000 });
       eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
       eng.exec({ op: 'generate_provinces', rules: { seed: 4, size: 'small' } });
       return eng;
@@ -148,7 +155,7 @@ const worlds: [string, () => Engine][] = [
   [
     '整个星球',
     () => {
-      const eng = new Engine({ seed: 6, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+      const eng = seededEngine({ seed: 6, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
       eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'archipelago' }, reset: true });
       eng.exec({ op: 'generate_provinces', rules: { seed: 6 } });
       return eng;
@@ -199,7 +206,7 @@ describe.each(worlds)('补省与起名与直白写法逐值相同：%s', (_, mak
       () => {
         const rand = mulberry32(9);
         for (const meta of Object.values(w.small.provinces)) if (rand() < 0.3) meta.locked = true;
-        w.small.wordPack = tinyPack;
+        useStyle(w, tinyPack);
         for (const c of blobs(w, 7, 8, 6)) w.causes.province[c] = -1;
       },
       fillUnassigned,
@@ -212,7 +219,7 @@ describe.each(worlds)('补省与起名与直白写法逐值相同：%s', (_, mak
     compare(
       w,
       () => {
-        w.small.wordPack = { id: 'empty', name: 'empty', lists: {}, types: {} };
+        useStyle(w, { id: 'empty', name: 'empty', lists: {}, types: {} });
         for (const c of blobs(w, 11, 10, 5)) w.causes.province[c] = -1;
       },
       fillUnassigned,

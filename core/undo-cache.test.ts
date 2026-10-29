@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { coastalStroke, digestWorld } from '../tools/hash';
 import { Engine } from './engine';
+import { seededEngine } from './testing/fixtures';
 
 // 撤销缓存：撤销、重做、“换一个”时直接换回存着的推导，结果必须与重算逐值一致；
 // 什么都没改的命令不重算、不进历史
@@ -8,7 +9,7 @@ import { Engine } from './engine';
 function script(kind: 'region' | 'planet') {
   const settings = kind === 'planet' ? { seed: 2, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 2, cells: 6000 };
   return (cache: number) => {
-    const eng = new Engine(settings);
+    const eng = seededEngine(settings);
     eng.undoCache = cache;
     const w = eng.world;
     const states: Record<string, string>[] = [];
@@ -67,7 +68,7 @@ describe('撤销缓存与重算逐值一致', () => {
   }
 
   it('撤销、重做直接换回，不重算', () => {
-    const eng = new Engine({ seed: 4, cells: 4000 });
+    const eng = seededEngine({ seed: 4, cells: 4000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     const t0 = eng.lastTimings;
     const e0 = eng.world.derived.elevation.slice();
@@ -82,7 +83,7 @@ describe('撤销缓存与重算逐值一致', () => {
   });
 
   it('什么都没改的命令：不重算、不进历史、不清掉重做', () => {
-    const eng = new Engine({ seed: 4, cells: 4000 });
+    const eng = seededEngine({ seed: 4, cells: 4000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
     const land = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.land[i]);
     eng.exec({ op: 'paint', field: 'tempOffset', cells: land.slice(0, 50), value: 1, mode: 'add' });
@@ -95,14 +96,15 @@ describe('撤销缓存与重算逐值一致', () => {
     expect(eng.lastTimings).toBe(t);
     expect(digestWorld(eng.world)).toEqual(before);
     expect(eng.canRedo).toBe(true);
-    expect(eng.history.filter((h) => h.done).length).toBe(1);
+    // 新世界默认加内容的那一步 + 上面留下的一步
+    expect(eng.history.filter((h) => h.done).length).toBe(2);
   });
 });
 
 describe('画河改道：松手时直接采用确切预览', () => {
   it('采用的结果与直接执行逐值一致，撤销也一致', () => {
     const make = () => {
-      const eng = new Engine({ seed: 6, cells: 5000 });
+      const eng = seededEngine({ seed: 6, cells: 5000 });
       eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
       return eng;
     };

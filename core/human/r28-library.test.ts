@@ -6,18 +6,19 @@ import { Engine } from '../engine';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
 import { FANTASY_BIOMES } from '../packs/fantasy-biomes';
 import { FANTASY_RIVER_TYPES } from '../packs/fantasy-rivers';
-import { DEFAULT_SPECIES } from '../species';
-import { continents, snapshot } from '../testing/fixtures';
+
+import { continents, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import type { World } from '../world';
 import { worldCultureGroups, worldCultures, worldEras } from './era';
+import { DEFAULT_SPECIES } from '../packs/nature';
 
 // 第二十八轮的核心：新世界只带用得上的内容；生成人文后只留用到的文化；在用的内容不能移出世界（引擎也拦）
 
-const GEN: Command = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r28:peopled', () => {
     const e = continents();
-    e.exec(GEN);
+    humanExec(e, GEN);
     return e;
   });
 
@@ -39,8 +40,8 @@ describe('新世界只带用得上的', () => {
     expect(w.small.riverTypes ?? []).toEqual([]);
     expect(w.small.lakeTypes ?? []).toEqual([]);
     expect(FANTASY_RIVER_TYPES.some((t) => t.id === 'blood_river')).toBe(true);
-    // 人文的内容一样都没有（生成时才复制进来）
-    expect(w.small.content).toBeUndefined();
+    // 人文的内容一样都没有（第三十轮：生成之前才从时代包加进来）
+    for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeUndefined();
   });
 
   it('生成人文后只留用到的：一个时代、选的两个文化组、有人或被引用的文化', () => {
@@ -61,27 +62,30 @@ describe('新世界只带用得上的', () => {
     expect(values.length).toBeLessThan(BUILTIN_POP_VALUES.length);
   });
 
-  it('重新生成换了时代：旧的时代移出，新的时代、文化组从内置的复制进来；撤销回到原样；重放结果一样', () => {
+  it('重新生成换了时代：旧的时代移出，新的时代、文化组从时代包加进来；撤销回到原样；重放结果一样', () => {
     const eng = peopled();
     const w = eng.world;
     const before = JSON.stringify(w.small.content);
-    eng.exec({ op: 'regenerate_human', era: 'antiquity', groups: [{ id: 'western', weight: 1 }], keepManual: false, countries: {} });
+    humanExec(eng, { op: 'regenerate_human', era: 'antiquity', groups: [{ id: 'western', weight: 1 }], keepManual: false, countries: {} });
     expect(worldEras(w.small).map((e) => e.id)).toEqual(['antiquity']);
     // 换了时代、国家重新长：东方的文化没人了，一起移出
     expect(worldCultureGroups(w.small).map((g) => g.id)).toEqual(['western']);
     expect(worldCultures(w.small).every((c) => c.group === 'western')).toBe(true);
     const replay = Engine.fromDoc(eng.toDoc(), w.mesh).world;
     expect(JSON.stringify(replay.small.content)).toBe(JSON.stringify(w.small.content));
+    // 加内容、重新生成是两步
+    eng.undo();
     eng.undo();
     expect(JSON.stringify(w.small.content)).toBe(before);
   });
 
-  it('自己改过的文化没人也留着（随时能从资源库加回来的只有与内置一模一样的）', () => {
+  it('第三十轮：自己改过的文化没人也移出（报在移出的项里，界面存进资源库）', () => {
     const eng = continents();
     const zeven = BUILTIN_CULTURES.find((c) => c.group === 'western')!;
     eng.exec({ op: 'set_content', kind: 'culture', id: 'my-lonely', item: { ...zeven, id: 'my-lonely', name: '孤人', group: 'nordic' } });
-    eng.exec(GEN);
-    expect(worldCultures(eng.world.small).some((c) => c.id === 'my-lonely')).toBe(true);
+    humanExec(eng, GEN);
+    expect(worldCultures(eng.world.small).some((c) => c.id === 'my-lonely')).toBe(false);
+    expect(eng.lastRemoved.some((r) => r.id === 'my-lonely')).toBe(true);
     // 内置的、没人的文化不在
     expect(worldCultures(eng.world.small).filter((c) => c.id !== 'my-lonely').every((c) => culturesWithPeople(eng.world).has(c.id) || Object.values(eng.world.small.countries ?? {}).some((x) => x.primaryCulture === c.id))).toBe(true);
   });
@@ -120,7 +124,7 @@ describe('在用的内容不能移出世界', () => {
     eng.exec({ op: 'remove_human' });
     expect(usageOf(kindOf('culture')!, strictWorld(w), culture)).toBeNull();
     expect(worldCultures(w.small).some((c) => c.id === culture)).toBe(false);
-    expect(w.small.content).toBeUndefined();
+    for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeUndefined();
   });
 
   it('自己的点的类型：放了点就不能移出，删掉点以后能', () => {
@@ -135,7 +139,7 @@ describe('在用的内容不能移出世界', () => {
     const id = Number(Object.keys(w.small.points!)[0]);
     eng.exec({ op: 'remove_point', id });
     eng.exec({ op: 'set_content', kind: 'pointType', id: 'r28-shrine', item: null });
-    expect(w.small.content?.pointType).toBeUndefined();
+    expect(w.small.content?.pointType?.['r28-shrine']).toBeUndefined();
   });
 
   it('画过的地形类别、资源：资源库里算在用；引擎照旧让移出（画的格恢复自动）', () => {

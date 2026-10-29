@@ -1,6 +1,6 @@
 import type { PlanetForm } from '../planet-form';
 
-// 内置示例包里的三个星球形态（以后并进 core/packs/fantasy.ts 的内置资源包）。
+// “奇幻 ▸ 星球形态”的三个星球形态（内置资源包的树见 builtin-tree.ts）。
 // 一个只用脚本布局（双子大陆）、一个完全不写代码（环形内海）、一个布局加地形两段脚本（极地大陆），
 // 写形态的人可以照着改。seedKey 固定：改了 id，噪声与随机数也不变
 

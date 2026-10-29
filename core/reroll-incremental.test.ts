@@ -6,6 +6,7 @@ import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
 import { ensureBase, previewTerrain, sortedOrder } from './terrain';
 import { type World, createWorld } from './world';
+import { seededEngine } from './testing/fixtures';
 
 // 重画一片（以及撤销、重做）只重算重画圈里的格；海平面的排序用基数排序。
 // 两者都必须与从头整张重算逐位相同
@@ -85,7 +86,7 @@ describe('海平面排序', () => {
 
 describe('重画、撤销之后没写的陆地比例取默认值', () => {
   it('新世界 → 陆地比例 0.4 → 重画一片 → 撤销两次：每一步都与按文档重新打开的相同', () => {
-    const eng = new Engine({ seed: 2, cells: 3000 });
+    const eng = seededEngine({ seed: 2, cells: 3000 });
     const same = (tag: string) => {
       const a = digestWorld(eng.world);
       const b = digestWorld(Engine.fromDoc(eng.toDoc()).world);

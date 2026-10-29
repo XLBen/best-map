@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Command } from '../../core/commands';
+
 import type { Engine } from '../../core/engine';
 import { cityList, worldCultures } from '../../core/human';
-import { continents, snapshot } from '../../core/testing/fixtures';
+import { continents, snapshot, humanExec, type HumanCommand } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { QUIET_ROAD_WIDTH, ROAD_WIDTH, roadStyle } from '../render/settle-draw';
 import { exec, hereOpen, mode, nameMode, parsePrefs, pinnedCell, prefs, selectedCountry, selectedSettle, setPrefs, sheet, tool, world } from '../state';
@@ -34,7 +34,7 @@ afterEach(() => {
   vi.mocked(exec).mockClear();
 });
 
-const GEN: Command = {
+const GEN: HumanCommand = {
   op: 'generate_human',
   era: 'medieval',
   groups: [
@@ -48,14 +48,14 @@ const GEN: Command = {
 const towns = (): Engine =>
   snapshot('r25:towns', () => {
     const eng = continents();
-    eng.exec(GEN);
+    humanExec(eng, GEN);
     return eng;
   });
 // 有人文、没有国家
 const peoples = (): Engine =>
   snapshot('r25:peoples', () => {
     const eng = continents();
-    eng.exec({ op: 'generate_human', era: 'medieval', groups: GEN.op === 'generate_human' ? GEN.groups : [] });
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GEN.op === 'generate_human' ? GEN.groups : [] });
     return eng;
   });
 

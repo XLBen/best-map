@@ -10,7 +10,7 @@ import { fragLand, rasterizeWorld } from './subcell';
 import { worldRivers } from './river-pack';
 import { chainFragAt, chainIslands, crackAt, crackBlockSize, crackHalfWidth, crackSeed, fragmentStroke, islandStamp } from './terrain';
 import { previewWorldOf } from './preview-world';
-import { continents } from './testing/fixtures';
+import { continents, seededEngine } from './testing/fixtures';
 import type { World } from './world';
 
 // 第十八轮：破碎地形——打碎笔刷（裂成碎块 / 只打碎海岸）、碎岛（比一格小、只是画出来的，格还是海）、岛链里的碎岛
@@ -447,7 +447,7 @@ describe('屏幕（CPU 版本）与导出逐像素一致', () => {
   });
 
   it('整个星球（小网格）：打碎、碎岛在球面上也一致', () => {
-    const eng = new Engine({ cells: 2500, seed: 2, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    const eng = seededEngine({ cells: 2500, seed: 2, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
     const w = eng.world;
     const c = coastCell(w, 1.0, 0.45);
@@ -539,7 +539,7 @@ describe('预览与颜色', () => {
 // 优化检查查出的（第十八轮）：只改破碎度的一步之后，河口要重新描；引擎就地改破碎度时显示用的缓存不能拿旧的
 describe('破碎度改了，河与显示的缓存跟着变', () => {
   const setup = () => {
-    const e = new Engine({ seed: 3, cells: 6000 });
+    const e = seededEngine({ seed: 3, cells: 6000 });
     e.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', landFraction: 0.4 }, reset: true });
     const { mesh } = e.world;
     const coast: number[] = [];
@@ -561,7 +561,7 @@ describe('破碎度改了，河与显示的缓存跟着变', () => {
   };
 
   it('只打碎海岸之后，描出的河是新描的（不用旧的河）', () => {
-    const e = new Engine({ seed: 3, cells: 6000 });
+    const e = seededEngine({ seed: 3, cells: 6000 });
     e.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', landFraction: 0.4 }, reset: true });
     const w = e.world;
     const { mesh } = w;
@@ -578,7 +578,7 @@ describe('破碎度改了，河与显示的缓存跟着变', () => {
     e.exec({ op: 'fragment', cells: b.cells, t: b.t, strength: 1, mode: 'coast', size: 4 * km });
     const live = Array.from(worldRivers(e.world).pts);
     // 先描别的世界把缓存挤掉，再描同一个世界：就是从头描的
-    worldRivers(new Engine({ seed: 9, cells: 1000 }).world);
+    worldRivers(seededEngine({ seed: 9, cells: 1000 }).world);
     const fresh = Array.from(worldRivers(e.world).pts);
     expect(live).toEqual(fresh);
   });

@@ -13,7 +13,7 @@ export interface StyleChoice {
 
 // 世界里启用的风格（内置中文在前）
 export function styleChoices(small: World['small']): StyleChoice[] {
-  return [{ id: DEFAULT_STYLE, name: '中文·默认' }, ...Object.values(worldStyles(small)).map((s) => ({ id: s.id, name: s.name }))];
+  return Object.values(worldStyles(small)).map((s) => ({ id: s.id, name: s.name }));
 }
 
 export const styleNameOf = (small: World['small'], id: string): string => styleChoices(small).find((c) => c.id === id)?.name ?? id;
