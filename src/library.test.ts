@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PACK } from '../core/names';
-import { type ResourcePack, readPack } from '../core/packs';
+import { type ResourcePack, findPack, packItems, readPack } from '../core/packs';
 import { FANTASY_PACK } from '../core/packs/fantasy';
 import { findScripts } from '../core/script';
 import { openDb } from './idb';
 import { MY_PACK_NAME, inLibrary, installPack, keepSavedForms, library, refreshLibrary, removeItem, removePack, saveForm, saveItem } from './library';
-import { BUILTIN_STYLES, NAME_STYLES_PACK, NAME_STYLES_PACK_ID } from '../core/packs/names';
+import { BUILTIN_STYLES, NAME_STYLES_PACK } from '../core/packs/names';
+import { builtinPacks } from '../core/packs/builtin-tree';
 import { PACK_MAX } from '../core/packs';
 import { TWIN_CONTINENTS } from '../core/packs/fantasy-forms';
 import type { PlanetForm } from '../core/planet-form';
 import { forgetTrustCache, trustScripts, untrustedScripts } from './trust';
+
+// 内置的树的大包（第二十九轮）
+const TREE_KEYS = ['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'common'];
 
 // 资源库与信任的脚本：IndexedDB 换成一个只在内存里的小替身（够这里用的几个操作）
 
@@ -116,21 +120,22 @@ describe('资源库', () => {
   });
 
   it('内置示例包总在最前面、删不掉；装、替换、删除只动资源库', async () => {
-    expect((await refreshLibrary()).map((e) => [e.key, e.builtin])).toEqual([['fantasy', true], ['name-styles', true]]);
+    // 第二十九轮：内置的是一棵树，每个时代一个大包，加上“通用”
+    expect((await refreshLibrary()).map((e) => [e.key, e.builtin])).toEqual(TREE_KEYS.map((k) => [k, true]));
     await installPack(userPack('a'));
     await installPack(userPack('mine', { name: '我的' }), { mine: true });
     // 我的资源排在导入的前面
-    expect(library.value.map((e) => e.key)).toEqual(['fantasy', 'name-styles', 'mine', 'a']);
+    expect(library.value.map((e) => e.key)).toEqual([...TREE_KEYS, 'mine', 'a']);
     // 同一个 id 再装：替换
     await installPack(userPack('a', { name: '新的 a' }));
     expect(library.value.filter((e) => e.key === 'a').map((e) => e.pack.name)).toEqual(['新的 a']);
     // 与内置同 id 的另存一份，不盖住内置的
     const clash = await installPack(userPack('fantasy', { name: '冒名' }));
     expect(clash.entry.key).toBe('fantasy-2');
-    expect(library.value[0].pack).toBe(FANTASY_PACK);
+    expect(library.value.find((e) => e.key === 'fantasy')!.pack).toBe(builtinPacks().find((p) => p.id === 'fantasy'));
     await removePack('fantasy');
     await removePack('a');
-    expect(library.value.map((e) => e.key)).toEqual(['fantasy', 'name-styles', 'mine', 'fantasy-2']);
+    expect(library.value.map((e) => e.key)).toEqual([...TREE_KEYS, 'mine', 'fantasy-2']);
     // 存着的坏数据不列出来
     idb.data.get('packs')!.set('bad', { key: 'bad', pack: { format: 'map2-pack', version: 1 }, installedAt: 1 });
     expect((await refreshLibrary()).map((e) => e.key)).not.toContain('bad');
@@ -251,18 +256,20 @@ describe('资源库的编辑器存进“我的资源”（第二十轮）', () =
     expect((await removeItem(key, 'nameStyles', 'nope')).ok).toBe(false);
     expect(await removeItem(key, 'nameStyles', 'my-h')).toEqual({ ok: true });
     expect(library.value.some((e) => e.key === key)).toBe(false);
-    expect((await removeItem(NAME_STYLES_PACK_ID, 'nameStyles', BUILTIN_STYLES[0].id)).ok).toBe(false);
+    expect((await removeItem('common', 'nameStyles', BUILTIN_STYLES[1].id)).ok).toBe(false);
     const other = await installPack(userPack('别人的', { nameStyles: [style] }));
     expect((await removeItem(other.entry.key, 'nameStyles', 'my-g')).ok).toBe(false);
   });
 
-  it('地名风格示例是内置的：在最前面、默认信任、删不掉', async () => {
+  it('地名风格示例在内置的“通用 ▸ 地名”里：默认信任、删不掉', async () => {
     const list = await refreshLibrary();
-    const e = list.find((x) => x.key === NAME_STYLES_PACK_ID)!;
-    expect([e.builtin, e.pack]).toEqual([true, NAME_STYLES_PACK]);
-    await removePack(NAME_STYLES_PACK_ID);
-    expect(library.value.map((x) => x.key)).toContain(NAME_STYLES_PACK_ID);
-    expect((await installPack(userPack(NAME_STYLES_PACK_ID))).entry.key).toBe(`${NAME_STYLES_PACK_ID}-2`);
+    const e = list.find((x) => x.key === 'common')!;
+    expect(e.builtin).toBe(true);
+    expect(packItems<{ id: string }>(e.pack, 'nameStyles').map((s) => s.id).sort()).toEqual(BUILTIN_STYLES.map((s) => s.id).sort());
+    expect(packItems<{ id: string }>(findPack(e.pack, ['names'])!, 'nameStyles').map((s) => s.id).sort()).toEqual(NAME_STYLES_PACK.nameStyles!.map((s) => s.id).sort());
+    await removePack('common');
+    expect(library.value.map((x) => x.key)).toContain('common');
+    expect((await installPack(userPack('common'))).entry.key).toBe('common-2');
   });
 });
 
@@ -339,7 +346,7 @@ describe('信任的脚本', () => {
     vi.resetModules();
     const lib = await import('./library');
     const tr = await import('./trust');
-    expect(lib.library.value.map((e) => e.key)).toEqual(['fantasy', 'name-styles']);
+    expect(lib.library.value.map((e) => e.key)).toEqual(TREE_KEYS);
     expect(await tr.untrustedScripts(theirs)).toEqual([]);
     expect((await tr.untrustedScripts(mine)).length).toBe(1);
   });

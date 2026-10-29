@@ -474,6 +474,9 @@ export interface SmallState {
   islandTypes?: IslandType[];
   // 启用的内容（第二十轮，见 content/registry.ts）：第一次启用之前没有这一项
   content?: ContentStore;
+  // 内容来自资源库的哪个包（第二十九轮，见 content/origin.ts）：种类 → id → 包的路径（[资源包, 小包, ……]）。
+  // 本世界自己做的没有（“离群”）；移出世界时一起去掉。第一次记之前没有这一项
+  origin?: Record<string, Record<string, string[]>>;
   // 世界默认的地名风格（第二十轮）：没有这一项是内置中文（zh-default）
   nameStyle?: string;
   // 格的档案（第二十一轮）：格的编号 → 自己写的小地名、备注。第一次写之前没有这一项

@@ -127,7 +127,10 @@ describe('生成人文', () => {
     expect(Object.keys(w.small.content?.cultureGroup ?? {})).toEqual(['western', 'eastern', 'steppe']);
     expect(worldCultures(w.small).map((c) => c.id)).toEqual(SAMPLE_CULTURES);
     for (const c of worldCultures(w.small)) if (c.nameStyle !== 'zh-default') expect(w.small.content?.nameStyle?.[c.nameStyle], c.id).toBeDefined();
-    expect(dimensionValues(w.small, 'religion').map((v) => v.id)).toEqual(BUILTIN_POP_VALUES.filter((v) => v.dimension === 'religion' && v.eras?.includes('medieval')).map((v) => v.id));
+    // 第二十九轮：时代的取值复制进来，生成后只留有人的（按内置的先后）
+    const religions = dimensionValues(w.small, 'religion').map((v) => v.id);
+    expect(religions.length).toBeGreaterThan(0);
+    expect(religions).toEqual(BUILTIN_POP_VALUES.filter((v) => v.dimension === 'religion' && v.eras?.includes('medieval') && religions.includes(v.id)).map((v) => v.id));
     expect(w.small.human!.totalPop).toBe(defaultTotalPop(w, w.derived, era));
     expect(Math.abs(totalPop(w) - w.small.human!.totalPop) / w.small.human!.totalPop).toBeLessThan(1e-4);
     expect(humanLayers(w).map((l) => l.id)).toEqual(['culture', 'cultureGroup', 'religion', 'popDensity', 'habitability']);

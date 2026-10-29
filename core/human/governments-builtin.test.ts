@@ -205,8 +205,10 @@ describe('内置的政体与派系：每个时代生成国家', () => {
       const w = generate(era.id);
       const list = countryList(w.small);
       expect(list.length, era.id).toBeGreaterThan(5);
-      // 世界里复制进来的政体、派系就是时代列着的
-      expect(Object.keys(w.small.content!.government!).sort()).toEqual([...era.governments!].sort());
+      // 世界里复制进来的政体、派系是时代列着的；第二十九轮起没有国家用的政体生成后收掉（派系各国都按时代的自动算，全留着）
+      const govs = Object.keys(w.small.content!.government!);
+      expect(govs.every((g) => era.governments!.includes(g))).toBe(true);
+      expect(govs.sort()).toEqual([...new Set(list.map((m) => m.government))].sort());
       expect(Object.keys(w.small.content!.faction!).sort()).toEqual([...era.factions!].sort());
       const used = new Set<string>();
       for (const m of list) {

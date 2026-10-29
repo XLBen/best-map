@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
 import { joinBlocsOf, mergeBlocMembers, tidyBlocs } from './blocs';
-import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
+import { bringGovernment, countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
 import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, governmentById } from './government';
@@ -156,6 +156,7 @@ export function newCountry(world: World, opts: NewCountryOpts): number {
   const culture = opts.culture ? cultureById(small, opts.culture) : majorityCultureOf(world, cells);
   if (opts.culture && !culture) throw new CommandError(`世界里没有文化 "${opts.culture}"`);
   if (!culture) throw new CommandError('世界里没有文化');
+  if (opts.government) bringGovernment(world, opts.government);
   const gov = opts.government ? governmentById(small, opts.government) : commonGovernment(world);
   if (opts.government && !gov) throw new CommandError(`世界里没有政体 "${opts.government}"`);
   if (!gov) throw new CommandError('世界里没有政体');
@@ -326,6 +327,7 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
   const what: string[] = [];
   const seed = seedOf(world);
   if (p.government !== undefined) {
+    bringGovernment(world, p.government);
     if (!governmentById(small, p.government)) throw new CommandError(`世界里没有政体 "${p.government}"`);
     m.government = p.government;
     what.push('政体');

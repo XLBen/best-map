@@ -1,6 +1,8 @@
 import { ISLAND_CODE_MASK, islandCode, islandTypesOf } from '../island-types';
 import { classCode } from '../human/terrain-class';
 import { resourceCode } from '../human/resources';
+import { worldEra } from '../human/era';
+import { eraFactions } from '../human/government';
 import { type ContentUsage, type ContentWorld, type UsageWorld, updateKind } from './registry';
 
 // 内容在世界里用在哪里（第二十八轮）：资源库里“移出本世界”之前查一遍，有在用的不让移出，写“有 N 处在用”，带一个定位。
@@ -135,9 +137,12 @@ function governmentUsage(w: W, id: string): ContentUsage | null {
   return result(part(ctry.length, '个国家的政体'), ctry.length, countryCells(w, ctry.map((c) => c.id)));
 }
 
+// 派系：国家写了它的影响力；没写的国家按时代的派系自动算（第二十九轮：时代的派系对这些国家也算在用）
 function factionUsage(w: W, id: string): ContentUsage | null {
-  const ctry = countries(w).filter((c) => c.factions && c.factions[id] !== undefined);
-  return result(part(ctry.length, '个国家写了它的影响力'), ctry.length, countryCells(w, ctry.map((c) => c.id)));
+  const era = worldEra(w.small);
+  const auto = !!era && eraFactions(w.small, era).some((f) => f.id === id);
+  const ctry = countries(w).filter((c) => (c.factions ? c.factions[id] !== undefined : auto));
+  return result(part(ctry.length, '个国家有它的影响力'), ctry.length, countryCells(w, ctry.map((c) => c.id)));
 }
 
 function styleUsage(w: W, id: string): ContentUsage | null {

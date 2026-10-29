@@ -53,10 +53,11 @@ describe('新世界只带用得上的', () => {
     // 别的组的文化不在
     expect(worldCultures(w.small).every((c) => c.group === 'western' || c.group === 'eastern')).toBe(true);
     expect(BUILTIN_CULTURE_GROUPS.length).toBeGreaterThan(2);
-    // 取值：有人的，或者这个时代每一维能用的
+    // 取值：这个时代的维度里有人的（第二十九轮起没人的也去掉）
     const dims = new Set(BUILTIN_ERAS.find((e) => e.id === 'medieval')!.dimensions.map((d) => d.id));
-    const values = Object.values((w.small.content?.popValue ?? {}) as Record<string, { dimension: string }>);
+    const values = Object.values((w.small.content?.popValue ?? {}) as Record<string, { id: string; dimension: string }>);
     expect(values.every((v) => dims.has(v.dimension))).toBe(true);
+    expect(values.every((v) => usageOf(kindOf('popValue')!, strictWorld(w), v.id))).toBe(true);
     expect(values.length).toBeLessThan(BUILTIN_POP_VALUES.length);
   });
 
@@ -106,17 +107,20 @@ describe('在用的内容不能移出世界', () => {
     expect(gu.label).toMatch(/个国家的政体/);
     expect(gu.cells!.length).toBeGreaterThan(0);
     expect(() => eng.exec({ op: 'set_content', kind: 'government', id: gov, item: null })).toThrow(/还在用/);
-    // 没人用的政体照样能移出
-    const idle = Object.keys(w.small.content!.government!).find((id) => !usageOf(kindOf('government')!, strictWorld(w), id));
-    expect(idle).toBeDefined();
-    eng.exec({ op: 'set_content', kind: 'government', id: idle!, item: null });
-    expect(w.small.content!.government![idle!]).toBeUndefined();
-    // 删掉人文以后，文化就没人用了
+    // 第二十九轮：生成后没有国家用的政体已经收掉了；自己加进来的、没人用的政体照样能移出
+    expect(Object.keys(w.small.content!.government!).every((id) => usageOf(kindOf('government')!, strictWorld(w), id))).toBe(true);
+    const spare = { ...(w.small.content!.government![gov] as object), id: 'r28-spare', name: '闲置' } as Record<string, unknown>;
+    eng.exec({ op: 'set_content', kind: 'government', id: 'r28-spare', item: spare });
+    expect(usageOf(kindOf('government')!, strictWorld(w), 'r28-spare')).toBeNull();
+    eng.exec({ op: 'set_content', kind: 'government', id: 'r28-spare', item: null });
+    expect(w.small.content!.government!['r28-spare']).toBeUndefined();
+    // 删掉人文以后，文化就没人用了；第二十九轮起生成时带进来的（与内置一模一样的）一起移出
     eng.exec({ op: 'remove_countries' } as Command);
+    expect(w.small.content?.government).toBeUndefined();
     eng.exec({ op: 'remove_human' });
     expect(usageOf(kindOf('culture')!, strictWorld(w), culture)).toBeNull();
-    eng.exec({ op: 'set_content', kind: 'culture', id: culture, item: null });
     expect(worldCultures(w.small).some((c) => c.id === culture)).toBe(false);
+    expect(w.small.content).toBeUndefined();
   });
 
   it('自己的点的类型：放了点就不能移出，删掉点以后能', () => {

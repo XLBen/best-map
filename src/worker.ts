@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { Dirty } from '../core/commands';
+import { Dirty, type RemovedItem } from '../core/commands';
 import { previewWorldOf } from '../core/preview-world';
 import { riverBuffers, worldRivers } from '../core/river-pack';
 import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
@@ -379,11 +379,11 @@ self.onmessage = (ev: MessageEvent<{ id: number; req: Request }>) => {
 async function handle(id: number, req: Request) {
   try {
     // light：这一步只重算了名字（或什么都没重算）时发轻快照。fresh：新建、打开（带上是不是安全模式）
-    const withSnap = (summary?: string, light = false, fresh = false) => {
+    const withSnap = (summary?: string, light = false, fresh = false, removed?: RemovedItem[]) => {
       const deep = engine!.takeRecomputed();
       const { snap, transfer } = light && deep <= Dirty.Names ? lightSnapshot(engine!) : snapshot(engine!);
       const log = logOf(engine!);
-      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}) }, transfer);
+      reply({ id, ok: true, summary, snapshot: snap, log, ...(fresh ? { safe: safeMode } : {}), ...(removed?.length ? { removed } : {}) }, transfer);
       reported = log.ids;
     };
     switch (req.kind) {
@@ -419,7 +419,8 @@ async function handle(id: number, req: Request) {
         const summary = engine!.exec(req.cmd);
         // 什么都没改（比如在陆地上画陆地）：世界不变，不发快照（命令记录也没变）
         if (engine!.lastNoop) reply({ id, ok: true, summary, noop: true });
-        else withSnap(summary, true);
+        // 第二十九轮：这一步移出世界的内容一起回给界面（存进资源库“来自《世界名》”）
+        else withSnap(summary, true, false, engine!.lastRemoved);
         return;
       }
       case 'undo':

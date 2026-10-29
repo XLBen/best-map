@@ -10,8 +10,9 @@ import type { WorkerLike } from './sandbox';
 // 多等一会儿，还不行就当作崩了，交给 EngineHost 处理（恢复、安全模式）。
 // 对 EngineHost 来说它就是一个 Worker：发的请求先排着，换了 Worker 也照样送到
 
-// data: 地址最长多少（字符）。Chrome 收的地址最长 2 MB，留些余地
-export const DATA_URL_MAX = 1_800_000;
+// data: 地址最长多少（字符）。Chrome 收的地址最长 2 MB（2,097,152 个字符），留些余地。
+// 第二十九轮从 1,800,000 放宽到 1,900,000：压缩后的引擎已经到 1,816,132（第二十八轮是 1,789,928），余地还有约 19 万字符
+export const DATA_URL_MAX = 1_900_000;
 // 等 data: 的 Worker 打招呼最多多久（毫秒）
 export const HELLO_MS = 5000;
 // 这个页面里已经隔离运行过时多等一会儿（一时忙不过来，不是不支持）

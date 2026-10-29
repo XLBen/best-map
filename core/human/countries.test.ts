@@ -114,7 +114,9 @@ describe('政体与派系', () => {
 describe('生成国家', () => {
   it('政体、派系复制进世界；每个国家有名字、颜色、旗帜、首都、政体、主流文化与兼容的文化组', () => {
     const w = nations().world;
-    expect(Object.keys(w.small.content?.government ?? {})).toEqual(medievalGovs());
+    // 第二十九轮：没有国家用的政体生成后收掉（按内置的先后）；派系各国都按时代的自动算，全留着
+    const usedGovs = new Set(countryList(w.small).map((m) => m.government));
+    expect(Object.keys(w.small.content?.government ?? {})).toEqual(medievalGovs().filter((g) => usedGovs.has(g)));
     expect(Object.keys(w.small.content?.faction ?? {})).toEqual(medievalFactions());
     expect(w.small.human?.countryRules).toEqual({ fragmentation: 0.5, seed: w.small.human!.seed });
     const list = countryList(w.small);

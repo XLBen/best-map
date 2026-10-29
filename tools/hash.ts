@@ -1,4 +1,5 @@
 // 打印各层数据的哈希，用于核对不同环境下结果是否逐值一致（Node 与浏览器跑同一段代码，比对输出）
+import { digest } from '../core/digest';
 import { Engine } from '../core/engine';
 import { hashString } from '../core/names';
 import { HUMAN_DERIVED } from '../core/world';
@@ -43,22 +44,8 @@ export function referenceHashes(): Record<string, string> {
   };
 }
 
-// 更强的哈希：按字节、两条独立的通道（FNV-1a 与乘法混合），64 位十六进制。类型数组按原生字节，
-// 其他值先 JSON 序列化（双精度数的 JSON 是精确的往返表示）
-export function digest(v: unknown): string {
-  let bytes: Uint8Array;
-  if (ArrayBuffer.isView(v)) bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-  else bytes = new TextEncoder().encode(JSON.stringify(v) ?? 'undefined');
-  let h1 = 0x811c9dc5;
-  let h2 = 0x9e3779b9;
-  for (let i = 0; i < bytes.length; i++) {
-    h1 = Math.imul(h1 ^ bytes[i], 0x01000193);
-    h2 = Math.imul(h2 ^ bytes[i], 0x5bd1e995);
-    h2 ^= h2 >>> 15;
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 0x85ebca6b) ^ bytes.length;
-  return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
-}
+// 更强的哈希（第二十九轮挪到 core/digest.ts：压缩世界文件时核对也用它），这里照旧导出
+export { digest };
 
 // 一个世界的全部状态：网格、原因、推导的每一个类型数组，地物（名字、位置、标签、面积），省份等小数据。
 // 人文的推导数组（第二十一轮：地形类别、资源、山峰，world.ts 的 HUMAN_DERIVED）不算在这里：金标准记下时还没有它们，
