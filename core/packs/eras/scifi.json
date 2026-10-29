@@ -6,7 +6,7 @@
     "color": "#2fa5a0",
     "dimensions": [
       { "id": "species", "label": "物种", "required": true },
-      { "id": "ideology", "label": "派系", "required": true }
+      { "id": "ideology", "label": "阵营", "required": true }
     ],
     "popDensity": 20,
     "sparsity": 1.3,
