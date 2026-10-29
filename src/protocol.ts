@@ -1,4 +1,4 @@
-import type { Command } from '../core/commands';
+import type { Command, RemovedItem } from '../core/commands';
 import type { DocTail, PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions, ExportPartId } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
@@ -137,6 +137,8 @@ export type Response =
       safe?: boolean;
       // 命令什么都没改：没有快照，也没有进历史
       noop?: boolean;
+      // 这一步移出世界的内容（第二十九轮，exec 的回复里带；没有时不写）
+      removed?: RemovedItem[];
       // 确切预览没算完就被取消了（没有 preview、world）
       cancelled?: boolean;
       snapshot?: Snapshot | LightSnapshot;

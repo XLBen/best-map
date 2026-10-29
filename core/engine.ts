@@ -1,6 +1,8 @@
 import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
-import { type Command, CommandError, Dirty, type UndoRecord, addArrayUndo, applyCommand, revert } from './commands';
+import { type Command, CommandError, Dirty, type RemovedItem, type UndoRecord, addArrayUndo, applyCommand, revert } from './commands';
+import type { ContentRef } from './content/unused';
+import { type TidyPlan, planTidy } from './tidy';
 import { lakeProvinceFix } from './provinces';
 import { activeConflicts, checkConstraints, type SolveResult, solveConstraints } from './constraints';
 import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
@@ -117,6 +119,8 @@ export class Engine {
   private recomputed: Dirty = Dirty.None;
   // 最近一次 exec 什么都没改（比如在陆地上画陆地）：不重算、不进历史
   lastNoop = false;
+  // 最近一次 exec 移出世界的内容（第二十九轮，见 commands.ts 的 RemovedItem）：界面拿它把自己做的、改过的存进资源库
+  lastRemoved: RemovedItem[] = [];
   // 识别地物（起名）。向导的缩略图用不着，关掉省时间
   features = true;
   // 最近一次确切预览算好的副本：紧接着执行同一条命令时直接采用，不再重算（画河改道松手时）。
@@ -197,10 +201,11 @@ export class Engine {
 
   // skipNoop：什么都没改的命令不记进历史（重放存档时照旧记，历史与文件一一对应）。
   // changed：命令有没有改动原因或小数据
-  private applyOnly(cmd: Command, skipNoop = false): { summary: string; changed: boolean } {
+  private applyOnly(cmd: Command, skipNoop = false): { summary: string; changed: boolean; removed: RemovedItem[]; added: ContentRef[] } {
     const r = applyCommand(this.world, cmd, { ensureDerived: () => this.update() });
     this.lastNoop = skipNoop && !r.changed;
-    if (this.lastNoop) return { summary: r.summary, changed: false };
+    this.lastRemoved = r.removed;
+    if (this.lastNoop) return { summary: r.summary, changed: false, removed: [], added: [] };
     const dirty = Math.max(r.dirty, this.speciesChanged() ? Dirty.Solve : Dirty.None) as Dirty;
     // 新起的省名记进命令（存档、重做时照用）。
     // 安全模式（脚本不运行）下推导与正常时不同，这一步新起的省可能少几个：命令里已经记着的名字一个不丢，
@@ -217,7 +222,7 @@ export class Engine {
     }
     this.done.push({ id: ++this.seq, cmd: recorded, undo: r.undo, summary: r.summary, dirty });
     this.dirty = Math.max(this.dirty, dirty) as Dirty;
-    return { summary: r.summary, changed: r.changed };
+    return { summary: r.summary, changed: r.changed, removed: r.removed, added: r.added };
   }
 
   // ---------- 撤销缓存：最近几步的推导结果 ----------
@@ -666,6 +671,11 @@ export class Engine {
     return d;
   }
 
+  // 整理本世界的计划（第二十九轮，见 tidy.ts）：在副本上试过、地图不变的才移出。执行 plan.command 就是整理
+  planTidy(opts: Parameters<typeof planTidy>[1] = {}): TidyPlan {
+    return planTidy(this, opts);
+  }
+
   toDoc(): WorldDoc {
     const commands = this.done.map((h) => h.cmd);
     return { format: 'map2-world', version: DOC_VERSION, settings: this.world.settings, commands };
@@ -713,6 +723,7 @@ export class Engine {
     e.seq = Math.max(0, ...cp.done.map((h) => h.id));
     e.recomputed = Dirty.Elevation;
     e.lastNoop = false;
+    e.lastRemoved = [];
     e.lastPreview = null;
     e.features = true;
     e.lastTimings = cp.timings;
@@ -729,13 +740,15 @@ export class Engine {
     return e;
   }
 
-  static fromDoc(doc: WorldDoc, mesh?: Mesh): Engine {
+  // onStep（第二十九轮，压缩世界文件用，见 compact.ts）：每条命令之后告诉调用方这一步移出、新加了哪些内容
+  static fromDoc(doc: WorldDoc, mesh?: Mesh, opts: { onStep?: (k: number, step: { removed: RemovedItem[]; added: ContentRef[] }) => void } = {}): Engine {
     checkDoc(doc);
     const settings = settingsSchema.parse(doc.settings);
     const engine = new Engine(settings, mesh);
     doc.commands.forEach((cmd, k) => {
       try {
-        engine.applyOnly(cmd);
+        const r = engine.applyOnly(cmd);
+        opts.onStep?.(k, r);
       } catch (e) {
         throw new CommandError(`第 ${k + 1} 条命令失败：${(e as Error).message}`);
       }
@@ -815,6 +828,7 @@ export class Engine {
     this.install({ derived: p.copy.world.derived, base: p.copy.base, solve: p.copy.solve, timings: p.copy.lastTimings });
     this.recomputed = Math.max(this.recomputed, step.dirty) as Dirty;
     this.lastNoop = false;
+    this.lastRemoved = p.copy.lastRemoved;
     return step.summary;
   }
 
@@ -847,6 +861,7 @@ export class Engine {
     e.sharedDerived = false;
     e.recomputed = Dirty.None;
     e.lastNoop = false;
+    e.lastRemoved = [];
     e.lastPreview = null;
     e.features = this.features;
     e.lastTimings = this.lastTimings;

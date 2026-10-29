@@ -266,9 +266,9 @@ describe('开计算 Worker', () => {
     const bin = atob(url.slice('data:text/javascript;base64,'.length));
     expect(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)))).toBe(code);
     expect(engineDataUrl('x'.repeat(1_300_000))).not.toBeNull();
-    expect(engineDataUrl('x'.repeat(1_400_000))).toBeNull();
+    expect(engineDataUrl('x'.repeat(1_450_000))).toBeNull();
     // 中文按 UTF-8 的字节算（一个字三个字节）
-    expect(engineDataUrl('名'.repeat(450_000))).toBeNull();
+    expect(engineDataUrl('名'.repeat(480_000))).toBeNull();
   });
 
   it('招呼：只认 {kind:"hello"}，isolated 只认 true', () => {

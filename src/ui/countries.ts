@@ -18,6 +18,7 @@ import {
   worldEras,
 } from '../../core/human';
 import { BUILTIN_ERAS } from '../../core/packs/eras';
+import { BUILTIN_GOVERNMENTS } from '../../core/packs/governments';
 import { type NameMode, nameLines } from '../../core/name-display';
 import { COUNTRY_LAYOUTS, type CountryLayout, type CountryMeta, type World } from '../../core/world';
 
@@ -110,7 +111,11 @@ export function governmentName(small: Small, id: string): string {
 
 // 档案里能选的政体：这个时代的在前，再是本世界里别的（第二十八轮：从资源库添加的照样能选），这个国家现在的总在
 export function governmentChoices(w: World, current?: string): Government[] {
-  const list = eraGovernments(w.small, worldEra(w.small));
+  // 第二十九轮：时代列着的、生成后没人用收掉了的内置政体照样列出来（选了由 set_country 从内置的复制回来）
+  const era = worldEra(w.small);
+  const own = (id: string) => (w.small.content?.government?.[id] as Government | undefined) ?? BUILTIN_GOVERNMENTS.find((g) => g.id === id);
+  const listed = (era?.governments ?? []).map(own).filter((g): g is Government => !!g);
+  const list = listed.length ? listed : eraGovernments(w.small, era);
   const rest = worldGovernments(w.small).filter((g) => !list.some((x) => x.id === g.id));
   const all = [...list, ...rest];
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;
@@ -120,7 +125,7 @@ export function governmentChoices(w: World, current?: string): Government[] {
 // 换成这个政体后的国名（改过名字的不变）
 export function titlePreview(w: World, m: CountryMeta, govId: string): string {
   if (m.nameLocked) return m.name;
-  const g = w.small.content?.government?.[govId] as Government | undefined;
+  const g = (w.small.content?.government?.[govId] as Government | undefined) ?? BUILTIN_GOVERNMENTS.find((x) => x.id === govId);
   return titled(m.base, pickTitle(g?.title, cultureById(w.small, m.primaryCulture))).zh;
 }
 

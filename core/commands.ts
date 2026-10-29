@@ -5,7 +5,11 @@ import { PLANET_TYPES } from './presets';
 import { packProblems, wordPackSchema } from './names';
 import { DEFAULT_STYLE, styleById } from './name-styles';
 import './content/kinds';
-import { type DirtyLevel, itemId, itemName, kindOf, usageOf } from './content/registry';
+import { type DirtyLevel, allKinds, itemId, itemName, kindOf, usageOf } from './content/registry';
+import { originSchema, originTarget, recordedOrigin, setOrigin, tidyOrigins } from './content/origin';
+import { type ContentRef, refName, removeCommand, unusedContent } from './content/unused';
+import { isBuiltinSame } from './packs/builtin-base';
+import { dropBroughtContent } from './human/prune';
 import {
   PROVINCE_KIND_INFO,
   renameProvince,
@@ -239,8 +243,9 @@ const baseCommands = [
     mode: z.enum(['set', 'add', 'max', 'min']).default('set'),
   }),
   z.object({ op: z.literal('set_planet'), patch: planetPatchSchema }),
-  z.object({ op: z.literal('add_species'), species: speciesSchema }),
-  z.object({ op: z.literal('update_species'), id: z.string(), patch: z.record(z.string(), z.unknown()) }),
+  // from（第二十九轮，见 content/origin.ts）：这一项来自资源库的哪个包，记进 small.origin（启用一项的几种命令都能带）
+  z.object({ op: z.literal('add_species'), species: speciesSchema, from: originSchema.optional() }),
+  z.object({ op: z.literal('update_species'), id: z.string(), patch: z.record(z.string(), z.unknown()), from: originSchema.optional() }),
   z.object({ op: z.literal('remove_species'), id: z.string() }),
   z.object({ op: z.literal('add_constraint'), constraint: constraintSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
   z.object({ op: z.literal('update_constraint'), id: z.string(), patch: z.record(z.string(), z.unknown()) }),
@@ -284,7 +289,7 @@ const baseCommands = [
     drop: z.array(z.number().int().min(0)).max(1000).optional(),
     label: z.string().max(200).optional(),
   }),
-  z.object({ op: z.literal('add_field'), name: fieldName }),
+  z.object({ op: z.literal('add_field'), name: fieldName, from: originSchema.optional() }),
   z.object({ op: z.literal('remove_field'), name: fieldName }),
   // 自动划分省份：规则与当前规则合并（省略的项沿用），锁定的省份不动
   z.object({ op: z.literal('generate_provinces'), rules: provinceRulesPatchSchema.default({}) }),
@@ -332,7 +337,10 @@ const baseCommands = [
   // 旧的文字包：换掉内置中文风格的内容（null 换回内置的）。新的做法是地名风格（set_content、set_name_style）
   z.object({ op: z.literal('set_word_pack'), pack: wordPackSchema.nullable() }),
   // 启用、修改、停用一项内容（第二十轮，见 content/registry.ts）：item 为 null 是停用。只用于存在 small.content 里的种类
-  z.object({ op: z.literal('set_content'), kind: typeIdSchema, id: typeIdSchema, item: z.record(z.string(), z.unknown()).nullable() }),
+  z.object({ op: z.literal('set_content'), kind: typeIdSchema, id: typeIdSchema, item: z.record(z.string(), z.unknown()).nullable(), from: originSchema.optional() }),
+  // 整理本世界（第二十九轮，见 content/unused.ts、tidy.ts）：一步移出这些没用到的内容（种类、id）；省略 items 时移出按规则判断的全部
+  // （界面先用 planTidy 在副本上试过、地图不变的才写进 items）。不在世界里的跳过，在用的报错
+  z.object({ op: z.literal('tidy_content'), items: z.array(z.object({ kind: typeIdSchema, id: z.string().min(1).max(64) })).max(4096).optional() }),
   // 世界默认的地名风格（第二十轮）：null 换回内置中文
   z.object({ op: z.literal('set_name_style'), id: typeIdSchema.nullable() }),
   // 一个地物的地名风格（第二十轮）：key 是地物的键（“类型:锚点格”“guide:id”“region:id”）；null 换回世界默认
@@ -352,13 +360,13 @@ const baseCommands = [
   }),
   z.object({ op: z.literal('remove_region'), id: z.string() }),
   // 河流类型（第三批）：新建或整份换掉（按 id）；删掉时画的河上选的这一种也去掉
-  z.object({ op: z.literal('set_river_type'), type: riverTypeSchema }),
+  z.object({ op: z.literal('set_river_type'), type: riverTypeSchema, from: originSchema.optional() }),
   z.object({ op: z.literal('remove_river_type'), id: z.string() }),
   // 湖泊类型（第九轮）：同河流类型；删掉时放的湖、自然的湖上选的这一种也去掉
-  z.object({ op: z.literal('set_lake_type'), type: lakeTypeSchema }),
+  z.object({ op: z.literal('set_lake_type'), type: lakeTypeSchema, from: originSchema.optional() }),
   z.object({ op: z.literal('remove_lake_type'), id: z.string() }),
   // 岛的种类（第十四轮，见 island-types.ts）：新建或整份换掉（按 id）；删掉时这种岛变成大陆岛
-  z.object({ op: z.literal('set_island_type'), type: islandTypeSchema }),
+  z.object({ op: z.literal('set_island_type'), type: islandTypeSchema, from: originSchema.optional() }),
   z.object({ op: z.literal('remove_island_type'), id: z.string() }),
   // 画地形类别（第二十一轮，见 human/terrain-class.ts）：这些格（只画陆地格）的类别换成 class，null 恢复自动。只改类别、不改高度
   z.object({ op: z.literal('set_cell_class'), cells, class: typeIdSchema.nullable() }),
@@ -668,6 +676,9 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
       return ['resource'];
     case 'set_content':
       return [...(kindOf(cmd.kind)?.arrays ?? [])];
+    // 整理本世界：移出的种类里有画格的（地形类别、资源）才有数组；自定义场按场的记法单独记
+    case 'tidy_content':
+      return [...new Set((cmd.items ?? []).flatMap((x) => kindOf(x.kind)?.arrays ?? []))];
     case 'set_coast_style':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'country'];
     case 'set_island_type':
@@ -698,6 +709,48 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   }
 }
 
+// 这一步移出世界的一项内容（第二十九轮）：生成人文后的清理、整理本世界、资源库里的移出……凡是拿掉的都列出来，
+// 界面拿它把自己做的、改过的存进资源库（“来自《世界名》”；与内置的一模一样的本来就在内置的包里，不另存）。
+// item 是移出之前的样子，origin 是它记着的来源（没有时是本世界自己做的）
+export interface RemovedItem {
+  kind: string;
+  id: string;
+  name: string;
+  item: unknown;
+  builtinSame: boolean;
+  origin?: string[];
+}
+
+// 世界里的各项内容（按种类、id）：放在 small.content 的种类按 small.content 里的（总在的内置项不在里面），
+// 以前的种类按原来的放法。星球形态不算（换形态不是移出）
+function contentSnapshot(world: World): Map<string, Map<string, unknown>> {
+  const out = new Map<string, Map<string, unknown>>();
+  for (const k of allKinds()) {
+    if (k.id === 'planetForm') continue;
+    const list = k.store === 'content' ? Object.values(world.small.content?.[k.id] ?? {}) : k.inWorld(world);
+    out.set(k.id, new Map(list.map((x) => [itemId(k, x), x])));
+  }
+  return out;
+}
+
+// 前后两份比较：移出的项、新加的项（按种类的登记先后，同一种按世界里的先后）
+function contentDiff(world: World, before: Map<string, Map<string, unknown>>, originBefore: SmallState['origin']): { removed: RemovedItem[]; added: ContentRef[] } {
+  const after = contentSnapshot(world);
+  const removed: RemovedItem[] = [];
+  const added: ContentRef[] = [];
+  for (const [kind, was] of before) {
+    const now = after.get(kind)!;
+    const k = kindOf(kind)!;
+    for (const [id, item] of was) {
+      if (now.has(id)) continue;
+      const origin = originBefore ? recordedOrigin({ origin: originBefore }, kind, id) : undefined;
+      removed.push({ kind, id, name: itemName(k, item), item: structuredClone(item), builtinSame: isBuiltinSame(kind, item), ...(origin ? { origin: [...origin] } : {}) });
+    }
+    for (const id of now.keys()) if (!was.has(id)) added.push({ kind, id });
+  }
+  return { removed, added };
+}
+
 // changed：命令有没有改动原因或小数据（没改动时推导也不会变）。
 // provinceNames：这一步新起的省名。起名要看推导（河、山、冷暖），重放时推导还没算到这一步，起出来的名字可能
 // 与当时不同，所以记进命令；命令里记着的就照用（没有记的：这一步没有新起的省名）
@@ -712,6 +765,9 @@ export function applyCommand(
   changed: boolean;
   provinceNames: Record<string, string> | null;
   provinceOrig: Record<string, string> | null;
+  // 第二十九轮：这一步移出、新加的内容
+  removed: RemovedItem[];
+  added: ContentRef[];
 } {
   const { provinceNames: stored, provinceOrig: storedOrig, nameCarry: carryInput, provinceFix: fixInput, popFix: popInput, ...raw } = input;
   const carry = carryInput === undefined ? undefined : nameCarrySchema.safeParse(carryInput);
@@ -739,6 +795,8 @@ export function applyCommand(
   const fragmentBefore = world.causes.fragment;
   const humanBefore = HUMAN_ARRAYS.filter((k) => world.causes[k]);
   const idsBefore = new Set(Object.keys(world.small.provinces));
+  const contentBefore = contentSnapshot(world);
+  const originBefore = world.small.origin;
   let result: { dirty: Dirty; summary: string };
   try {
     result = run(world, cmd, ctx);
@@ -758,6 +816,8 @@ export function applyCommand(
     if (nameCarry) applyNameCarry(world.small, nameCarry);
     if (provinceFix) applyProvinceFix(world, provinceFix);
     if (popFix) applyPopFix(world, popFix);
+    // 第二十九轮：不在世界里了的项，来源一起去掉
+    tidyOrigins(world);
   } catch (e) {
     // 失败时恢复，保证命令要么完整生效要么不生效
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
@@ -790,10 +850,13 @@ export function applyCommand(
     provinceNames[id] = p.name;
     if (p.orig) provinceOrig[id] = p.orig;
   }
+  const { removed, added } = contentDiff(world, contentBefore, originBefore);
   return {
     ...result,
     undo,
     changed,
+    removed,
+    added,
     provinceNames: Object.keys(provinceNames).length ? provinceNames : null,
     provinceOrig: Object.keys(provinceOrig).length ? provinceOrig : null,
   };
@@ -1151,7 +1214,33 @@ function newProvince(world: World, cells: number[]): number {
   return id;
 }
 
+// 执行一条命令（批量里的每一条也经过这里）。带 from 的启用命令执行完记下来源（第二十九轮，见 content/origin.ts）
 function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; summary: string } {
+  const r = runOp(world, cmd, ctx);
+  const from = (cmd as { from?: string[] }).from;
+  const target = from ? originTarget(cmd) : null;
+  if (target) setOrigin(world.small, target.kind, target.id, from!);
+  return r;
+}
+
+// 整理本世界（tidy_content）：逐项用“移出”的那条命令（与资源库里移出一样：生态、河湖的种类、场照旧的删法，其余 set_content）
+function tidyContent(world: World, items: readonly ContentRef[] | undefined, ctx: ApplyContext): { dirty: Dirty; summary: string } {
+  const list = items ?? unusedContent({ small: world.small, causes: world.causes, derived: ctx.ensureDerived() });
+  let dirty: Dirty = Dirty.None;
+  const names: string[] = [];
+  for (const ref of list) {
+    const k = kindOf(ref.kind);
+    if (!k) throw new CommandError(`不认识的内容种类 "${ref.kind}"`);
+    if (!k.inWorld(world).some((x) => itemId(k, x) === ref.id)) continue;
+    if (k.alwaysOn?.(ref.id)) continue;
+    names.push(refName(world, ref));
+    dirty = Math.max(dirty, runOp(world, removeCommand(ref), ctx).dirty) as Dirty;
+  }
+  const more = names.length > 3 ? ` 等 ${names.length} 项` : '';
+  return { dirty, summary: names.length ? `整理本世界 · 移出${names.slice(0, 3).map((x) => `“${x}”`).join('、')}${more}` : '整理本世界 · 没有要移出的' };
+}
+
+function runOp(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; summary: string } {
   const { causes, small, mesh } = world;
   const n = mesh.n;
   const checkCells = (list: number[]) => {
@@ -1165,6 +1254,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
       for (const c of cmd.commands) dirty = Math.max(dirty, run(world, c, inner).dirty) as Dirty;
       return { dirty, summary: cmd.label ?? `批量 · ${cmd.commands.length} 条` };
     }
+    case 'tidy_content':
+      return tidyContent(world, cmd.items, ctx);
     case 'set_worldgen': {
       const params = worldgenSchema.parse(cmd.params);
       // 星球形态：只能用在整个星球上，type 要与形态的 base 相同；脚本有语法错误时当场拒绝
@@ -2017,6 +2108,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     case 'remove_countries': {
       if (!small.countries) throw new CommandError('还没有生成国家');
       clearCountries(world);
+      // 第二十九轮：生成国家时带进来的政体、派系（与内置的一模一样的）一起移出
+      dropBroughtContent(world);
       return { dirty: Dirty.Human, summary: '删除国家' };
     }
     case 'paint_country': {
@@ -2104,6 +2197,8 @@ function run(world: World, cmd: Command, ctx: ApplyContext): { dirty: Dirty; sum
     case 'remove_human': {
       if (!small.human) throw new CommandError('还没有生成人文');
       clearPop(world);
+      // 第二十九轮：生成人文时带进来的时代、取值、文化组、文化、地名风格、政体、派系（与内置的一模一样的）一起移出
+      dropBroughtContent(world);
       return { dirty: Dirty.Human, summary: '删除人文' };
     }
     case 'set_pop_total': {

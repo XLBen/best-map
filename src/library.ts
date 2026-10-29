@@ -1,14 +1,15 @@
 import { signal } from '@preact/signals';
 import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack, packIdFor, parsePack } from '../core/packs';
 import type { PlanetForm } from '../core/planet-form';
-import { FANTASY_PACK, FANTASY_PACK_ID } from '../core/packs/fantasy';
-import { NAME_STYLES_PACK, NAME_STYLES_PACK_ID } from '../core/packs/names';
+import { builtinPacks } from '../core/packs/builtin-tree';
 import { allKinds, itemId, kindByPackKey } from '../core/content/registry';
 import { idbAll, idbTx } from './idb';
 import { addTrustedSource } from './trust';
 
 // 资源库：装好的资源包（IndexedDB 的 packs 表）。信任过的脚本在 trust.ts（kv 的 trustedScripts）。
-// 内置的示例包（奇幻、地名风格示例）总在列表最前面、默认信任，不能删；“我的资源”是从自己的世界里导出、存进来的。
+// 内置的包总在列表最前面、默认信任，不能删；“我的资源”是从自己的世界里导出、存进来的。
+// 第二十九轮：内置的是一棵树（core/packs/builtin-tree.ts）：每个时代一个大包（时代、取值、政体、派系、文化），加上“通用”
+// （基础、自然、地名、文化）；以前的“奇幻生态示例”在“奇幻”大包里，“地名风格示例”在“通用 ▸ 地名”里
 // 删掉资源库里的包不影响已经用过它的世界：世界自带用到的全部内容（都在命令里）。
 // 浏览器不让存（隐私模式、存储被关）时照样能用，只是关掉页面就没了
 
@@ -29,10 +30,7 @@ interface Stored {
   mine?: boolean;
 }
 
-const BUILTINS: readonly LibraryEntry[] = [
-  { key: FANTASY_PACK_ID, pack: FANTASY_PACK, builtin: true, mine: false, installedAt: 0 },
-  { key: NAME_STYLES_PACK_ID, pack: NAME_STYLES_PACK, builtin: true, mine: false, installedAt: 0 },
-];
+const BUILTINS: readonly LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
 const isBuiltinKey = (key: string) => BUILTINS.some((b) => b.key === key);
 
 // 列表：内置的在前，之后是我的资源、导入的（各按装进来的先后）

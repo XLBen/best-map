@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import zhCN from 'zod/v4/locales/zh-CN.js';
 import type { Command } from './commands';
+import { ORIGIN_OPS } from './content/origin';
 import './content/kinds';
-import { type ContentKind, type PackContext, type Renames, allKinds, itemId, kindByPackKey, kindOf, registryVersion } from './content/registry';
+import { type ContentKind, type PackContext, type Renames, allKinds, itemId, itemName, kindByPackKey, kindOf, registryVersion } from './content/registry';
 import { ITEM_ID, sameItem, stableJson } from './content/refs';
 import { DEFAULT_STYLE, type NameStyle } from './name-styles';
 import { DEFAULT_PACK } from './names';
@@ -22,6 +23,11 @@ import type { World } from './world';
 // 用到世界是一整步（一个 batch，可撤销）：先加用到的自定义场，再加各项；世界里已有一模一样的项跳过，
 // 同 id 不同内容的改名为 “id-2”，包里对它的引用（侵占的目标、river('x')）一起改；噪声种子用固定的 seedKey，改名不改花纹。
 // 世界自带它用到的全部内容（都在命令里），别人没有这个包也能打开。
+//
+// 第二十九轮：包可以嵌套——packs 是小包的列表，小包和资源包一样有各段（没有 format、version、author），自己还能再分小包，
+// 最多两层（资源包 ▸ 小包 ▸ 小包）。同一项可以出现在几个小包里（内置的树里几个时代共用的政体就是这样，引用同一份）。
+// 列出、检查、用到世界都按整棵树：packItems 给出全部小包里的项（同一个 id 只算先出现的那一个），ownItems 只给这一层的。
+// 用到世界时每一项记下来自哪个小包（命令里的 from，世界里的 small.origin，见 content/origin.ts）。旧文件没有 packs，照旧读
 
 export const PACK_FORMAT = 'map2-pack';
 export const PACK_VERSION = 1;
@@ -57,6 +63,35 @@ export function packSections(): ContentKind[] {
 // ---------- 格式 ----------
 
 const META_KEYS = ['format', 'version', 'id', 'name', 'author', 'description'] as const;
+const NODE_META = ['id', 'name', 'description'] as const;
+
+// 包最多套几层（资源包 ▸ 小包 ▸ 小包）、一层最多几个小包
+export const PACK_DEPTH = 2;
+export const PACK_MAX_SUBPACKS = 64;
+
+// 各段先按“列表”收下（parsePack 里按登记的格式逐项再查）
+function sectionShape(): Record<string, z.ZodType> {
+  const shape: Record<string, z.ZodType> = {};
+  for (const k of allKinds()) for (const key of [k.pack.key, ...(k.pack.aliases ?? [])]) shape[key] = z.array(z.unknown()).max(k.pack.max).optional();
+  return shape;
+}
+
+// 小包的结构（严格）：depth 是它在第几层（1 是资源包下面的一层）；到了最深一层不能再有 packs
+const nodeCache = new Map<number, { version: number; schema: z.ZodType }>();
+function nodeSchema(depth: number): z.ZodType {
+  const hit = nodeCache.get(depth);
+  if (hit?.version === registryVersion()) return hit.schema;
+  const shape: Record<string, z.ZodType> = {
+    id: z.string().min(1).max(64),
+    name: z.string().min(1).max(60),
+    description: z.string().max(2000).optional(),
+    ...sectionShape(),
+  };
+  if (depth < PACK_DEPTH) shape.packs = z.array(z.unknown()).max(PACK_MAX_SUBPACKS).optional();
+  const schema = z.strictObject(shape);
+  nodeCache.set(depth, { version: registryVersion(), schema });
+  return schema;
+}
 
 // 顶层的结构（严格）：各段先按“列表”收下，在 parsePack 里按登记的格式逐项再查。登记表变了重新建
 let topCache: { version: number; schema: z.ZodType } | null = null;
@@ -69,13 +104,23 @@ function topSchema(): z.ZodType {
     name: z.string().min(1).max(60),
     author: z.string().max(60).optional(),
     description: z.string().max(2000).optional(),
+    packs: z.array(z.unknown()).max(PACK_MAX_SUBPACKS).optional(),
+    ...sectionShape(),
   };
-  for (const k of allKinds()) for (const key of [k.pack.key, ...(k.pack.aliases ?? [])]) shape[key] = z.array(z.unknown()).max(k.pack.max).optional();
   topCache = { version: registryVersion(), schema: z.strictObject(shape) };
   return topCache.schema;
 }
 
-export interface ResourcePack {
+// 资源包或其中的一个小包（第二十九轮）：都有 id、名字和各段，还能再分小包
+export interface PackNode {
+  id: string;
+  name: string;
+  description?: string;
+  packs?: PackNode[];
+  [section: string]: unknown;
+}
+
+export interface ResourcePack extends PackNode {
   format: typeof PACK_FORMAT;
   version: typeof PACK_VERSION;
   id: string;
@@ -93,10 +138,51 @@ export interface ResourcePack {
   [section: string]: unknown;
 }
 
-// 包里一段的项（没有时是空的）
-export function packItems<T = unknown>(pack: ResourcePack, key: string): T[] {
-  const v = pack[key];
+// 这一层自己的一段（不含小包里的；没有时是空的）
+export function ownItems<T = unknown>(node: PackNode, key: string): T[] {
+  const v = node[key];
   return Array.isArray(v) ? (v as T[]) : [];
+}
+
+// 这一层的小包
+export const subPacks = (node: PackNode): PackNode[] => (Array.isArray(node.packs) ? node.packs : []);
+
+// 按先后走一遍整棵树（先这一层，再各个小包）：path 是从 node 往下的小包 id（node 自己是 []）
+export function walkPacks(node: PackNode, fn: (n: PackNode, path: string[]) => void, path: string[] = []): void {
+  fn(node, path);
+  for (const c of subPacks(node)) walkPacks(c, fn, [...path, c.id]);
+}
+
+// 按路径找小包（[] 是 node 自己）
+export function findPack(node: PackNode, path: readonly string[]): PackNode | undefined {
+  let cur: PackNode | undefined = node;
+  for (const id of path) cur = cur && subPacks(cur).find((c) => c.id === id);
+  return cur;
+}
+
+// 包里一段的项：整棵树里的（同一个 id 只算先出现的那一个；几个小包共用的是同一项）
+export function packItems<T = unknown>(pack: PackNode, key: string): T[] {
+  if (!subPacks(pack).length) return ownItems<T>(pack, key);
+  const kind = kindByPackKey(key);
+  const seen = new Set<string>();
+  const out: T[] = [];
+  walkPacks(pack, (n) => {
+    for (const x of ownItems<T>(n, key)) {
+      const id = kind ? itemId(kind, x) : JSON.stringify(x);
+      if (!seen.has(id) && !!seen.add(id)) out.push(x);
+    }
+  });
+  return out;
+}
+
+// 一项在包里的哪几个小包（从 pack 往下的路径，[] 是 pack 自己那一层），按先后
+export function packPaths(pack: PackNode, key: string, id: string): string[][] {
+  const kind = kindByPackKey(key);
+  const out: string[][] = [];
+  walkPacks(pack, (n, path) => {
+    if (ownItems(n, key).some((x) => (kind ? itemId(kind, x) : x) === id)) out.push(path);
+  });
+  return out;
 }
 
 // 出错说明：顶层多出来的部分说“不认识的部分”，类型不对、缺项用中文说，其余用 zod 的中文
@@ -148,14 +234,8 @@ export function itemErrors(kind: ContentKind, item: unknown): { path: PropertyKe
 
 export type PackParse = { ok: true; pack: ResourcePack } | { ok: false; errors: string[] };
 
-// 校验一个资源包（已经是 JSON 值）。只解析、检查，不运行脚本。别名里的项（旧的 textPacks）读进那一种的段里
-export function parsePack(json: unknown): PackParse {
-  const top = topSchema().safeParse(json, { error: packErrorMap });
-  if (!top.success) return { ok: false, errors: issuesText(top.error.issues, json) };
-  const data = top.data as Record<string, unknown>;
-  const pack = {} as ResourcePack;
-  for (const k of META_KEYS) if (data[k] !== undefined) (pack as Record<string, unknown>)[k] = data[k];
-  const errors: string[] = [];
+// 一层的各段按登记的格式逐项查，查过的放进 out。别名里的项（旧的 textPacks）读进那一种的段里
+function parseSections(data: Record<string, unknown>, json: unknown, out: PackNode, errors: string[], prefix: string) {
   for (const kind of allKinds()) {
     let any = false;
     const parsed: unknown[] = [];
@@ -167,11 +247,45 @@ export function parsePack(json: unknown): PackParse {
         const item = kind.pack.read ? kind.pack.read(raw, key === kind.pack.key ? undefined : key) : raw;
         const r = kind.schema.safeParse(item, { error: packErrorMap });
         if (r.success) parsed.push(r.data);
-        else errors.push(...issuesText(r.error.issues, json, [key, k]));
+        else errors.push(...issuesText(r.error.issues, json, [key, k]).map((e) => prefix + e));
       });
     }
-    if (any) pack[kind.pack.key] = parsed;
+    if (any) out[kind.pack.key] = parsed;
   }
+}
+
+// 小包们（第二十九轮）：每个按小包的格式查，再查它的各段、它的小包。出错的位置前面写上是哪个小包
+function parseChildren(list: unknown[] | undefined, depth: number, out: PackNode, errors: string[], prefix: string) {
+  if (!list) return;
+  const packs: PackNode[] = [];
+  list.forEach((raw, k) => {
+    const label = raw && typeof raw === 'object' && typeof (raw as { name?: unknown }).name === 'string' ? `“${(raw as { name: string }).name}”` : `第 ${k + 1} 个`;
+    const at = `${prefix}小包${label}里的`;
+    const r = nodeSchema(depth).safeParse(raw, { error: packErrorMap });
+    if (!r.success) {
+      errors.push(...issuesText(r.error.issues, raw).map((e) => `${prefix}小包${label}：${e}`));
+      return;
+    }
+    const data = r.data as Record<string, unknown>;
+    const node = {} as PackNode;
+    for (const m of NODE_META) if (data[m] !== undefined) (node as Record<string, unknown>)[m] = data[m];
+    parseSections(data, raw, node, errors, at);
+    parseChildren(data.packs as unknown[] | undefined, depth + 1, node, errors, at);
+    packs.push(node);
+  });
+  out.packs = packs;
+}
+
+// 校验一个资源包（已经是 JSON 值）。只解析、检查，不运行脚本。小包（packs）一层层照样查
+export function parsePack(json: unknown): PackParse {
+  const top = topSchema().safeParse(json, { error: packErrorMap });
+  if (!top.success) return { ok: false, errors: issuesText(top.error.issues, json) };
+  const data = top.data as Record<string, unknown>;
+  const pack = {} as ResourcePack;
+  for (const k of META_KEYS) if (data[k] !== undefined) (pack as Record<string, unknown>)[k] = data[k];
+  const errors: string[] = [];
+  parseSections(data, json, pack, errors, '');
+  parseChildren(data.packs as unknown[] | undefined, 1, pack, errors, '');
   return errors.length ? { ok: false, errors } : { ok: true, pack };
 }
 
@@ -215,12 +329,12 @@ export function readPack(text: string, name = '生态'): PackRead {
 // ---------- 内容 ----------
 
 // 每段有几项（按段名）
-export function packCounts(pack: ResourcePack): Record<string, number> {
+export function packCounts(pack: PackNode): Record<string, number> {
   return Object.fromEntries(allKinds().map((k) => [k.pack.key, packItems(pack, k.pack.key).length]));
 }
 
 // 列表里的一行：“生态 5 · 河流 4 · 星球 3”（数从数据来，没有的不写）
-export function packSummary(pack: ResourcePack): string {
+export function packSummary(pack: PackNode): string {
   const parts: string[] = [];
   for (const k of packSections()) {
     const n = packItems(pack, k.pack.key).length;
@@ -267,17 +381,27 @@ export { exportableBiomes } from './content/kinds';
 // ---------- 检查 ----------
 
 // 包里的问题（不挡导入，列出来给用户看）：重复的 id、指向不存在的东西的引用、地名风格里不存在的词表、生态太多……
-export function packProblems(pack: ResourcePack): string[] {
+export function packProblems(pack: PackNode): string[] {
   const problems: string[] = [];
   const kinds = allKinds();
   for (const k of kinds) {
     if (!k.pack.listed) continue;
-    const seen = new Set<string>();
-    for (const x of packItems(pack, k.pack.key)) {
-      const id = itemId(k, x);
-      if (seen.has(id)) problems.push(`有两个${k.label}的 id 都是 ${id}`);
-      seen.add(id);
-    }
+    // 同一层里重复的 id；不同的小包里同一个 id 内容不同（一样的是共用的一项，不算）
+    const across = new Map<string, unknown>();
+    const told = new Set<string>();
+    walkPacks(pack, (n) => {
+      const seen = new Set<string>();
+      for (const x of ownItems(n, k.pack.key)) {
+        const id = itemId(k, x);
+        const there = across.get(id);
+        if ((seen.has(id) || (there !== undefined && !sameItem(there, x))) && !told.has(id)) {
+          told.add(id);
+          problems.push(`有两个${k.label}的 id 都是 ${id}`);
+        }
+        seen.add(id);
+        if (there === undefined) across.set(id, x);
+      }
+    });
   }
   // 模板式起名能用的词表：内置中文的、包里模板式风格的，加上起名时才放进去的 __species
   const styles = packItems<NameStyle>(pack, 'nameStyles');
@@ -287,7 +411,7 @@ export function packProblems(pack: ResourcePack): string[] {
       const k = kindByPackKey(key);
       return new Set(k ? packItems(pack, key).map((x) => itemId(k, x)) : []);
     },
-    fields: new Set(pack.fields ?? []),
+    fields: new Set(packItems<string>(pack, 'fields')),
     lists,
   };
   for (const k of kinds) if (k.pack.problems) problems.push(...k.pack.problems(packItems(pack, k.pack.key), ctx));
@@ -323,7 +447,7 @@ const applicable = () =>
     .sort((a, b) => a.order - b.order);
 
 // 默认勾选：能用的几段按各自的规则（省略时全勾）；地名风格勾上但不换世界默认
-export function defaultPicks(pack: ResourcePack): PackPicks {
+export function defaultPicks(pack: PackNode): PackPicks {
   const picks: PackPicks = { defaultStyle: null };
   for (const k of packSections()) {
     if (!canApply(k)) continue;
@@ -345,6 +469,12 @@ export interface PackPlan {
   fields: string[];
   // 用了之后世界默认的地名风格（世界里已经是它时为 null）
   defaultStyle: string | null;
+}
+
+// 用到世界的选项（第二十九轮）：path 是这个包在资源库里的路径（记进世界的 small.origin；省略时是 [包的 id]）。
+// 用的是一个小包时界面给它的完整路径（[“medieval”, “governments”]）
+export interface PlanOptions {
+  path?: readonly string[];
 }
 
 // 给包里的一类项定下用到世界时的 id：没有冲突的照旧；世界里有一模一样的跳过（引用指向世界里那一项）；
@@ -397,9 +527,12 @@ function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames): unkno
   return p.finalize ? p.finalize(out, r) : out;
 }
 
-// 资源包用到世界的计划：一整步（batch，标签“用上资源包“X””）
-export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks): PackPlan {
+// 资源包用到世界的计划：一整步（batch，标签“用上资源包“X””）。pack 可以是资源包里的一个小包。
+// 每条命令带上 from：这一项来自哪个小包（path + 它在 pack 里第一次出现的小包），世界里记进 small.origin
+export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opts: PlanOptions = {}): PackPlan {
   const kinds = applicable();
+  const root = [...(opts.path ?? [pack.id])];
+  const originOf = (k: ContentKind, id: string): string[] => [...root, ...(packPaths(pack, k.pack.key, id)[0] ?? [])];
   const picked = new Map<ContentKind, unknown[]>();
   const inWorld = new Map<ContentKind, readonly unknown[]>();
   for (const k of kinds) {
@@ -442,7 +575,8 @@ export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks)
         continue;
       }
       const item = finalItem(k, x, id, renames);
-      cmds.push(k.enable ? k.enable(item, world) : { op: 'set_content', kind: k.id, id, item: item as Record<string, unknown> });
+      const cmd: Command = k.enable ? k.enable(item, world) : { op: 'set_content', kind: k.id, id, item: item as Record<string, unknown> };
+      cmds.push(withFrom(cmd, originOf(k, from)));
       // 名字是加进世界后的（改了名的带编号）
       added.push({ section: k.pack.key, from, id, name: nameOf(k, item) || id });
       newFields.push(...(k.pack.fieldsOf?.(item) ?? []));
@@ -462,11 +596,16 @@ export function planPack(world: PackWorld, pack: ResourcePack, picks: PackPicks)
 
   const fieldKind = kindOf('field');
   const commands: Command[] = [
-    ...fields.map((name): Command => (fieldKind?.enable ? fieldKind.enable(name, world) : { op: 'add_field', name })),
+    ...fields.map((name): Command => withFrom(fieldKind?.enable ? fieldKind.enable(name, world) : { op: 'add_field', name }, root)),
     ...itemCmds,
     ...(defaultStyle ? [{ op: 'set_name_style', id: defaultStyle } as Command] : []),
   ];
   return { command: { op: 'batch', label: `用上资源包“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
+}
+
+// 命令带上来源（能记来源的命令才带：启用一项内容的几种，见 commands.ts 的 ORIGIN_OPS）
+function withFrom(cmd: Command, from: string[]): Command {
+  return ORIGIN_OPS.has(cmd.op) ? ({ ...cmd, from } as Command) : cmd;
 }
 
 function nameOf(kind: ContentKind, item: unknown): string {
@@ -493,8 +632,8 @@ export function newBiomeCells(plan: PackPlan, after: Pick<World, 'small' | 'deri
 }
 
 // 资源包用到世界的命令：一整步（只加东西，不删、不改世界里已有的）
-export function applyPackCommands(world: PackWorld, pack: ResourcePack, picks: PackPicks = defaultPicks(pack)): Extract<Command, { op: 'batch' }> {
-  return planPack(world, pack, picks).command;
+export function applyPackCommands(world: PackWorld, pack: PackNode, picks: PackPicks = defaultPicks(pack), opts: PlanOptions = {}): Extract<Command, { op: 'batch' }> {
+  return planPack(world, pack, picks, opts).command;
 }
 
 // ---------- 从世界导出 ----------
@@ -523,8 +662,80 @@ export interface PackMeta {
   description?: string;
 }
 
-// 把世界里勾选的项做成资源包。省略 picks 里的某一段时取全部能导出的；没有内容的段不写
-export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta): ResourcePack {
+// 把世界里勾选的项做成资源包。省略 picks 里的某一段时取全部能导出的；没有内容的段不写。
+// byKind（第二十九轮）：按种类分小包（“来自《世界名》”就是这样：生态、河流、政体……各一个小包），自定义场跟着生态的小包
+export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta & { byKind?: boolean }): ResourcePack {
+  const flat = flatPackFromWorld(world, picks, meta);
+  return meta.byKind ? nestByKind(flat) : flat;
+}
+
+// 一层的包按种类分成小包（小包的 id 是段名，名字是种类的全称）；已经分过的照旧
+export function nestByKind(pack: ResourcePack): ResourcePack {
+  const out: ResourcePack = { format: PACK_FORMAT, version: PACK_VERSION, id: pack.id, name: pack.name };
+  for (const m of ['author', 'description'] as const) if (pack[m]) out[m] = pack[m];
+  const packs: PackNode[] = [...subPacks(pack)];
+  for (const k of packSections()) {
+    const items = ownItems(pack, k.pack.key);
+    if (!items.length) continue;
+    const node: PackNode = { id: k.pack.key, name: k.label, [k.pack.key]: items };
+    if (k.pack.key === 'biomes' && ownItems(pack, 'fields').length) node.fields = ownItems(pack, 'fields');
+    const at = packs.findIndex((x) => x.id === node.id);
+    if (at >= 0) packs[at] = { ...packs[at], [k.pack.key]: [...ownItems(packs[at], k.pack.key), ...items] };
+    else packs.push(node);
+  }
+  if (packs.length) out.packs = packs;
+  return out;
+}
+
+// 把几项存进一个按种类分小包的包里（第二十九轮，界面把移出世界的、打开的世界文件里自己做的存进“来自《世界名》”用）：
+// 一模一样的不重复存；同 id 内容不同的换成新的（同一个世界后来改过）；一个小包满了的不存（列在 full 里）。
+// 生态用到的自定义场一起写进生态的小包。返回新的包（原来的不动）
+export function addToPack(pack: ResourcePack, items: readonly { kind: string; item: unknown }[]): { pack: ResourcePack; added: number; replaced: number; same: number; full: string[] } {
+  const out = nestByKind(structuredClone(pack));
+  const packs = [...subPacks(out)];
+  let added = 0;
+  let replaced = 0;
+  let same = 0;
+  const full: string[] = [];
+  for (const { kind, item } of items) {
+    const k = kindOf(kind);
+    if (!k || !k.pack.listed) continue;
+    const key = k.pack.key;
+    let at = packs.findIndex((x) => x.id === key);
+    if (at < 0) {
+      packs.push({ id: key, name: k.label });
+      at = packs.length - 1;
+    }
+    const node = packs[at];
+    const list = [...ownItems(node, key)];
+    const id = itemId(k, item);
+    const there = list.findIndex((x) => itemId(k, x) === id);
+    const put = k.pack.exportItem ? k.pack.exportItem(structuredClone(item)) : structuredClone(item);
+    let next: PackNode = node;
+    if (there >= 0 && sameItem(list[there], put)) {
+      same++;
+      continue;
+    }
+    if (there >= 0) {
+      list[there] = put;
+      replaced++;
+    } else if (list.length >= k.pack.max) {
+      full.push(`${k.label}“${itemName(k, item)}”`);
+      continue;
+    } else {
+      list.push(put);
+      added++;
+    }
+    next = { ...node, [key]: list };
+    const fields = k.pack.fieldsOf?.(put) ?? [];
+    if (fields.length) next.fields = [...new Set([...ownItems<string>(next, 'fields'), ...fields])];
+    packs[at] = next;
+  }
+  if (packs.length) out.packs = packs;
+  return { pack: out, added, replaced, same, full };
+}
+
+function flatPackFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta): ResourcePack {
   const pack: ResourcePack = { format: PACK_FORMAT, version: PACK_VERSION, id: meta.id ?? packIdFor(meta.name), name: meta.name };
   if (meta.author) pack.author = meta.author;
   if (meta.description) pack.description = meta.description;

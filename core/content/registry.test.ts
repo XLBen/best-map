@@ -95,7 +95,7 @@ describe('内容种类的登记表', () => {
     // 用到世界：通用的 set_content；撤销回到没有 content
     const eng = continents();
     const plan = planPack(eng.world, p, { things: ['a'] });
-    expect(plan.command.commands).toEqual([{ op: 'set_content', kind: 'testThing', id: 'a', item: { id: 'a', name: '甲', size: 2 } }]);
+    expect(plan.command.commands).toEqual([{ op: 'set_content', kind: 'testThing', id: 'a', item: { id: 'a', name: '甲', size: 2 }, from: ['p'] }]);
     eng.exec(plan.command);
     const kind = kindOf('testThing')!;
     expect(isEnabled(kind, eng.world, 'a')).toBe(true);

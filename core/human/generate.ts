@@ -1,4 +1,5 @@
 import { CommandError } from '../errors';
+import { builtinOrder, recordBuiltinOrigins } from '../packs/builtin-base';
 import { styleById } from '../name-styles';
 import { BUILTIN_STYLES } from '../packs/names';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
@@ -75,36 +76,57 @@ export function defaultTotalPop(world: World, d: Derived, era: Pick<Era, 'popDen
   return Math.round(era.popDensity * dryLandKm2(world, d));
 }
 
-// 时代、取值、文化组、文化、地名风格：世界里没有的从内置的复制进来（同 id 已经在世界里的不动）
-export function ensureHumanContent(world: World, eraId: string, groupIds: readonly string[]) {
+// 时代、取值、文化组、文化、地名风格：世界里没有的从内置的复制进来（同 id 已经在世界里的不动）。
+// 第二十九轮：groups 写了 cultures 的组只复制点名的文化（别的不带进来）；没写的组世界里一个都没有时复制整组（生成时都用上，
+// 没人的由 prune.ts 收掉）。复制进来的记下它在内置的树里的位置（small.origin，优先这个时代的大包，见 packs/builtin-tree.ts）
+export function ensureHumanContent(world: World, eraId: string, groups: readonly (string | { id: string; cultures?: readonly string[] })[]) {
   const small = world.small;
   const content = { ...(small.content ?? {}) };
+  const brought: [string, string][] = [];
   const add = (kind: string, id: string, item: unknown) => {
     const store = (content[kind] ?? {}) as Record<string, unknown>;
     if (store[id]) return;
     content[kind] = { ...store, [id]: structuredClone(item) };
+    brought.push([kind, id]);
   };
   const era = (content.era as Record<string, Era> | undefined)?.[eraId] ?? BUILTIN_ERAS.find((e) => e.id === eraId);
   if (!era) throw new CommandError(`没有时代 "${eraId}"`);
   add('era', eraId, era);
   const dims = new Set(era.dimensions.map((x) => x.id));
   for (const v of BUILTIN_POP_VALUES) if (dims.has(v.dimension) && (!v.eras || v.eras.includes(eraId))) add('popValue', v.id, v);
-  for (const g of groupIds) {
+  const groupIds: string[] = [];
+  for (const entry of groups) {
+    const g = typeof entry === 'string' ? entry : entry.id;
+    const named = typeof entry === 'string' ? undefined : entry.cultures?.length ? entry.cultures : undefined;
+    groupIds.push(g);
     const own = (content.cultureGroup as Record<string, unknown> | undefined)?.[g];
     const b = BUILTIN_CULTURE_GROUPS.find((x) => x.id === g);
     if (!own && !b) throw new CommandError(`没有文化组 "${g}"`);
     if (!own) add('cultureGroup', g, b);
+    if (named) {
+      // 点名的文化：世界里没有的从内置的复制（内置里也没有的由生成时报错）
+      for (const id of named) {
+        const c = BUILTIN_CULTURES.find((x) => x.id === id);
+        if (c) add('culture', id, c);
+      }
+      continue;
+    }
     // 世界里这一组一个文化都没有时，内置的这一组的文化都放进来
     const has = Object.values((content.culture ?? {}) as Record<string, { group: string }>).some((c) => c.group === g);
     if (!has) for (const c of BUILTIN_CULTURES) if (c.group === g) add('culture', c.id, c);
   }
+  if (content.popValue) content.popValue = builtinOrder(content.popValue as Record<string, unknown>, BUILTIN_POP_VALUES);
   small.content = content;
   // 文化用的地名风格
   for (const c of worldCultures(small)) {
     if (!groupIds.includes(c.group) || styleById(small, c.nameStyle)) continue;
     const s = BUILTIN_STYLES.find((x) => x.id === c.nameStyle);
-    if (s) small.content = { ...small.content, nameStyle: { ...(small.content?.nameStyle ?? {}), [s.id]: structuredClone(s) } };
+    if (s) {
+      small.content = { ...small.content, nameStyle: { ...(small.content?.nameStyle ?? {}), [s.id]: structuredClone(s) } };
+      brought.push(['nameStyle', s.id]);
+    }
   }
+  recordBuiltinOrigins(small, brought, eraId);
 }
 
 // 生成（或重新生成）。keepManual：手改过的格（causes.popManual）不动。返回生成的状态
@@ -116,11 +138,7 @@ export function generateHuman(
   opts: { keepManual?: boolean; hearths?: HumanHearth[]; countryMode?: CountryPlan['mode']; keepLocked?: boolean; regenerate?: boolean } = {},
 ): HumanState {
   if (!params.groups.length) throw new CommandError('至少要有一个文化组');
-  ensureHumanContent(
-    world,
-    params.era,
-    params.groups.map((g) => g.id),
-  );
+  ensureHumanContent(world, params.era, params.groups);
   const small = world.small;
   const era = (small.content!.era as Record<string, Era>)[params.era];
   const classes = worldTerrainClasses(small);

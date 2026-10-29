@@ -12,7 +12,7 @@ export const ENGINE_PATH = '/__map2/engine.js';
 
 // data: 地址最长多少：同 src/engine-spawn.ts 的 DATA_URL_MAX（这里不引用它：vite.config.ts 引用这个文件，
 // 引用 src/ 下的模块会让 Vite 加载配置时报警告；测试里查两边相同）
-export const DATA_URL_LIMIT = 1_800_000;
+export const DATA_URL_LIMIT = 1_900_000;
 const dataUrlLength = (code: string) => 'data:text/javascript;base64,'.length + Math.ceil(new TextEncoder().encode(code).length / 3) * 4;
 
 // 把 src/worker.ts 连同它引用的全部模块打包成一个文件的文字。minify 省略时先不压缩；

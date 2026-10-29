@@ -201,7 +201,8 @@ describe('资源包用到世界', () => {
       ...FANTASY_PACK.lakeTypes!.map(() => 'set_lake_type'),
       ...FANTASY_BIOMES.map(() => 'add_species'),
     ]);
-    expect(cmd.commands[0]).toEqual({ op: 'add_field', name: 'holy' });
+    // 第二十九轮：每条都带上来源（资源包的 id）
+    expect(cmd.commands[0]).toEqual({ op: 'add_field', name: 'holy', from: ['fantasy'] });
     // 只挑一种：只加它，它不用的场不加
     const one = planPack(w, FANTASY_PACK, { biomes: ['crystal_jungle'], riverTypes: [], lakeTypes: [] });
     expect(one.command.commands.map((c) => c.op)).toEqual(['add_species']);
