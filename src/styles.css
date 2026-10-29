@@ -30,6 +30,9 @@
   --h-sm: 28px;
   --h-md: 32px;
 
+  /* 档案里“名字 · 值”的左边一栏：各段同一宽，上下对得齐（第二十九轮） */
+  --label-w: 44px;
+
   /* 灰阶：从最深的底到字 */
   --field: #12151a;
   --bg: #15181d;
@@ -109,7 +112,7 @@ button,
 }
 button:hover:not(:disabled),
 .file-button:hover,
-.item:hover:not(.big) {
+.item:hover {
   background-image: linear-gradient(var(--hover), var(--hover));
 }
 button:disabled {
@@ -171,6 +174,11 @@ textarea:focus {
   outline: none;
   border-color: var(--accent-line);
 }
+/* 和小按钮排在一行的下拉框（“并入…”）：一样高 */
+select.small {
+  min-height: 24px;
+  padding: 0 var(--sp-1);
+}
 input[type='color'] {
   width: 32px;
   height: var(--h-sm);
@@ -209,7 +217,7 @@ summary {
   color: var(--muted);
 }
 
-/* 标题：弹窗、问话、“这里”的地名一种；面板里的小标题一种（h5） */
+/* 标题：弹窗、问话、“这里”的地名一种；面板里的小标题一种（h5：小号灰字，分组用，不加线） */
 h2,
 h3 {
   margin: 0 0 var(--sp-1);
@@ -219,7 +227,8 @@ h3 {
 h5 {
   margin: var(--sp-3) 0 var(--sp-1);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1.4;
   color: var(--muted);
 }
 p {
@@ -535,16 +544,17 @@ button.toggle {
   color: var(--ok);
 }
 
-/* ---------- 列表行：菜单、地名、河、湖、涂过的地方、资源包、我的地图都是这一种 ---------- */
+/* ---------- 列表行：菜单、地名、河、湖、涂过的地方、国家、城市都是这一种 ---------- */
+/* 一行一项、高 --h-sm：图标或色块、名字、灰色的说明，右边是数或小按钮（第二十九轮） */
 .menu {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 .list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   max-height: 340px;
   overflow-y: auto;
   margin-top: var(--sp-1);
@@ -555,9 +565,9 @@ button.toggle {
   justify-content: flex-start;
   gap: var(--sp-2);
   width: 100%;
-  min-height: var(--h-md);
+  min-height: var(--h-sm);
   margin: 0;
-  padding: var(--sp-1) var(--sp-2);
+  padding: 2px var(--sp-2);
   background-color: transparent;
   border-radius: var(--r-sm);
   text-align: left;
@@ -573,22 +583,83 @@ button.toggle {
 .item-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.35;
+  min-width: 0;
+  line-height: 1.3;
+}
+.menu .item-text > b,
+.list .item-text > b {
+  font-weight: 500;
+}
+/* 菜单（世界）：说明在名字下面，只占一行 */
+.menu .item-text > .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 列表（国家、城市、政体、单独导出）：名字和灰色的说明排在同一行，放不下时说明先省略 */
+.list .item-text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.list .item-text > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list .item-text > :first-child {
+  flex: 0 1 auto;
+}
+.list .item-text > .hint {
+  flex: 1 1 0;
 }
 .item input[type='file'] {
   display: none;
 }
-/* 弹窗里带缩略图、几行字和按钮的大行（资源包、我的地图）：不亮，行与行之间一条线 */
-.item.big {
-  align-items: flex-start;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  border-radius: 0;
-  border-bottom: 1px solid var(--line);
-  cursor: default;
+/* 菜单里的小标题与行里的字对齐 */
+.menu h5.menu-group,
+.menu > section > h5 {
+  padding: 0 var(--sp-2);
 }
-.item.big .row {
-  margin: 0;
+/* 弹窗里的一行（我的地图、资源包）：缩略图或色块、名字与一行灰字，右边几个小按钮；鼠标停着时淡淡亮一下，不加线 */
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+}
+.file-row:hover {
+  background: var(--hover);
+}
+.file-info {
+  flex: 1 1 160px;
+  min-width: 0;
+  line-height: 1.35;
+}
+.file-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.file-name > b {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-name .tag {
+  margin-left: 0;
+}
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-left: auto;
 }
 
 /* ---------- 盒子 ---------- */
@@ -933,8 +1004,8 @@ button.legend-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  min-height: 36px;
-  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  min-height: var(--h-md);
+  padding: 2px 2px 2px var(--sp-3);
   background: var(--glass-strong);
   border-radius: var(--r-lg);
 }
@@ -1005,15 +1076,17 @@ button.here {
   max-height: 55vh;
   background: var(--glass-strong);
 }
+/* 标题栏与弹出面板的一样薄 */
 .here-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--sp-2) var(--sp-2) 2px var(--sp-3);
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-1) 0 var(--sp-3);
 }
 .here-body {
   overflow-y: auto;
-  padding: 0 var(--sp-3) var(--sp-3);
+  padding: var(--sp-1) var(--sp-3) var(--sp-3);
 }
 @media (max-width: 1300px) {
   .here:not(.open) .here-line {
@@ -1071,32 +1144,38 @@ button.here {
   border-right: 1px solid var(--fill);
   border-bottom: 1px solid var(--fill);
 }
+/* 标题栏：一行名字、右边一个小的关上，薄薄的（弹出面板、右边的抽屉、资源库） */
 .popover-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-4);
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-1) 0 var(--sp-3);
 }
 .popover-head b {
   font-size: var(--fs-md);
   font-weight: 600;
 }
+.popover-head .icon-btn,
+.here-head .icon-btn {
+  width: 24px;
+  min-height: 24px;
+}
 .popover-body,
 .sheet-body {
   overflow-y: auto;
-  padding: 2px var(--sp-4) var(--sp-4);
+  padding: var(--sp-1) var(--sp-3) var(--sp-3);
 }
-/* 面板里一段一段之间一条线 */
+/* 面板里一段一段：靠小标题和留白分开，不画线 */
 .popover-body > section + section,
 .extras section + section,
 .menu > section {
-  border-top: 1px solid var(--fill);
   margin-top: var(--sp-3);
 }
 .popover-body h5:first-child,
 .popover-body section > h5:first-child,
 .popover-body section > .row:first-child > h5 {
-  margin-top: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 .map-status {
   margin: 0 var(--sp-2) var(--sp-1);
@@ -1540,33 +1619,40 @@ table.kv {
   border-collapse: collapse;
   font-size: var(--fs-sm);
 }
+/* 名字一栏只占要的宽，值一栏对齐 */
 table.kv th {
+  width: 1%;
   text-align: left;
   color: var(--muted);
   font-weight: normal;
-  padding: 1px var(--sp-2) 1px 0;
+  padding: 2px var(--sp-3) 2px 0;
   white-space: nowrap;
+  vertical-align: baseline;
 }
 table.kv td {
-  padding: 1px var(--sp-2) 1px 0;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+  vertical-align: baseline;
 }
 .inspector .place {
   color: var(--muted);
   margin: 2px 0;
 }
 
-/* “这里”卡片里的档案（第二十一轮） */
+/* “这里”卡片里的档案（第二十一轮）：与上面的说明之间只留白 */
 .archive {
-  margin: var(--sp-2) 0;
-  padding-top: var(--sp-2);
-  border-top: 1px solid var(--fill);
+  margin: var(--sp-3) 0 var(--sp-2);
 }
+/* 档案的一行：左边灰色的名字（--label-w 一栏），右边是值或框；“这里”卡片和抽屉里都是这一种 */
 .arch-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-height: var(--h-sm);
   font-size: var(--fs-sm);
+}
+.arch-line + .arch-line {
+  margin-top: 2px;
 }
 .arch-line select,
 .arch-line input {
@@ -1574,7 +1660,7 @@ table.kv td {
 }
 .arch-label {
   flex: none;
-  width: 2.6em;
+  width: var(--label-w);
   color: var(--muted);
 }
 input.arch-orig {
@@ -1583,7 +1669,7 @@ input.arch-orig {
 .arch-actions {
   display: flex;
   gap: var(--sp-1);
-  margin: 2px 0 var(--sp-1) calc(2.6em + 6px);
+  margin: 2px 0 var(--sp-1) calc(var(--label-w) + var(--sp-2));
 }
 .arch-note {
   margin: var(--sp-1) 0;
@@ -1594,6 +1680,13 @@ textarea.arch-note-input {
   margin-top: var(--sp-1);
   min-height: 44px;
   font-size: var(--fs-sm);
+}
+
+/* 生态类型的抽屉：选中的那一种的设置，与上面的色板、按钮之间一条细线（不再套一层底色的框） */
+.species-details {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--fill);
 }
 
 /* 气候图（生态类型编辑器） */
@@ -1648,11 +1741,37 @@ textarea.arch-note-input {
 .modal {
   width: 860px;
   max-width: 100%;
-  padding: var(--sp-4) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-lg);
+}
+/* 弹窗三段：标题栏（名字、右边一个小的关上）、内容、底下一排按钮（靠右，主要的在最右边） */
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: var(--h-sm);
+  margin: 0 calc(-1 * var(--sp-2)) var(--sp-2) 0;
+}
+.modal-head h2 {
+  margin: 0;
+}
+.modal-foot,
+.ask-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+/* 弹窗里的字段：灰色的名字在框的上面一行 */
+.modal label:not(.check):not(.inline) > .hint:first-child {
+  display: block;
+  margin-bottom: 2px;
 }
 .modal.help,
 .modal.maps {
@@ -1863,28 +1982,23 @@ button.thumb {
   white-space: pre;
   tab-size: 2;
 }
-.ask-actions {
-  display: flex;
-  gap: var(--sp-2);
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
 input.ask-input {
   width: 100%;
-  min-height: var(--h-md);
-  margin: var(--sp-1) 0 var(--sp-3);
-  font-size: var(--fs-lg);
+  margin: var(--sp-1) 0 0;
 }
 
-/* 我的地图 */
+/* 我的地图：一行一张，左边小缩略图 */
 .maps-empty {
   padding: 24px 0;
   text-align: center;
 }
+.maps-list {
+  margin-top: var(--sp-2);
+}
 button.map-thumb {
   flex: none;
-  width: 160px;
-  height: 90px;
+  width: 96px;
+  height: 54px;
   padding: 0;
   overflow: hidden;
   background-color: var(--field);
@@ -1895,21 +2009,10 @@ button.map-thumb {
   object-fit: cover;
   display: block;
 }
-.map-info {
-  flex: 1;
-  min-width: 0;
-}
-.map-info > b {
-  font-size: var(--fs-lg);
-  overflow-wrap: anywhere;
-}
-.map-actions {
-  margin-top: var(--sp-2);
-}
 @media (max-width: 520px) {
   button.map-thumb {
-    width: 96px;
-    height: 60px;
+    width: 72px;
+    height: 40px;
   }
 }
 
@@ -2158,14 +2261,17 @@ input.share-input {
 .country-row .item-text {
   min-width: 0;
 }
+/* 档案的一段一段（国家、城市、地标、点、集团）：靠小标题和留白分开，不画线 */
 .country-archive section {
-  border-top: 1px solid var(--fill);
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-1);
+  margin-top: var(--sp-4);
+}
+.country-archive section > h5:first-child,
+.country-archive section > .row:first-child > h5 {
+  margin-top: 0;
 }
 .arch-head {
   gap: var(--sp-2);
-  margin: var(--sp-2) 0;
+  margin: var(--sp-1) 0 var(--sp-2);
 }
 .arch-head .item-text {
   min-width: 0;
@@ -2219,9 +2325,10 @@ input.share-input {
 .stack-bar > .stack-rest {
   background: var(--faint);
 }
+/* 几个数：两对一行，名字一栏与档案的行同宽 */
 .stat-grid {
   display: grid;
-  grid-template-columns: auto 1fr auto 1fr;
+  grid-template-columns: var(--label-w) minmax(0, 1fr) var(--label-w) minmax(0, 1fr);
   gap: 2px var(--sp-2);
   align-items: baseline;
   font-size: var(--fs-sm);

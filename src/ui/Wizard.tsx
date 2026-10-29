@@ -30,7 +30,7 @@ import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
 import { type FormChoice, blankForm, formChoices, formGen, formSource, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
 import { RES, fromPos, toPos } from './panels/AdjustPanel';
-import { Seg } from './common';
+import { ModalHead, Seg } from './common';
 import { Slider } from './components/Slider';
 import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
 import { Toggle } from './components/Toggle';
@@ -303,14 +303,7 @@ export function Wizard() {
   return (
     <div class="modal-backdrop">
       <div class="modal wizard">
-        <div class="row between">
-          <h2>新建世界</h2>
-          {world.value && (
-            <button onClick={() => (wizardOpen.value = false)} disabled={creating}>
-              取消
-            </button>
-          )}
-        </div>
+        <ModalHead title="新建世界" onClose={world.value ? () => (wizardOpen.value = false) : undefined} closeTitle="取消" disabled={creating} />
         {savedAt !== null && (
           <div class="box resume">
             <span>上次的世界已自动保存（{new Date(savedAt).toLocaleString()}）</span>

@@ -7,7 +7,7 @@ import { trustScripts } from '../trust';
 import { type FormEditorState, closeFormEditor, formEditor } from './form-store';
 import { FORM_BASES, FORM_KNOBS, type FormScriptKind, finalForm, formGen, formProblem, knobText, planetTypeName, withCrustMode, withScript } from './forms';
 import { ScriptBox } from './ScriptBox';
-import { Seg } from './common';
+import { ModalHead, Seg } from './common';
 import { Slider, linear } from './components/Slider';
 import { type ScriptProblem, normScript, problemLine, problemOfIssue } from './script-commit';
 import { checkScript } from './script-syntax';
@@ -178,9 +178,7 @@ function Editor({ st }: { st: FormEditorState }) {
   return (
     <div class="modal-backdrop">
       <div class="modal form-editor">
-        <div class="row between">
-          <h2>{st.original ? '编辑星球形态' : '新建星球形态'}</h2>
-        </div>
+        <ModalHead title={st.original ? '编辑星球形态' : '新建星球形态'} />
         {st.original && !st.mine && <p class="hint">改的是副本，“{st.original.name}”不变</p>}
         <div class="form-grid">
           <div class="form-fields">
@@ -271,19 +269,16 @@ function Editor({ st }: { st: FormEditorState }) {
         </div>
         {msg && <p class="script-problem small">{msg}</p>}
         {problem && !shapeProblem && <p class="script-problem small">{problem}</p>}
-        <div class="row between">
-          <span />
-          <span class="row">
-            <button onClick={closeFormEditor} disabled={busy}>
-              取消
-            </button>
-            <button onClick={() => void save()} disabled={busy || broken} title="存进“我的资源”，新建和调整时可选">
-              存进资源库
-            </button>
-            <button class="primary" onClick={() => void create()} disabled={busy || broken}>
-              用它新建
-            </button>
-          </span>
+        <div class="modal-foot">
+          <button onClick={closeFormEditor} disabled={busy}>
+            取消
+          </button>
+          <button onClick={() => void save()} disabled={busy || broken} title="存进“我的资源”，新建和调整时可选">
+            存进资源库
+          </button>
+          <button class="primary" onClick={() => void create()} disabled={busy || broken}>
+            用它新建
+          </button>
         </div>
       </div>
     </div>

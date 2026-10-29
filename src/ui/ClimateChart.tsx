@@ -351,7 +351,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
   const rain = conds.has('summerRain') ? 'summerRain' : conds.has('winterRain') ? 'winterRain' : null;
   const rename = () => name.trim() && name.trim() !== sp.name && void exec({ op: 'update_species', id: sp.id, patch: { name: name.trim() } });
   return (
-    <div class="box">
+    <div class="species-details">
       <div class="row">
         <input type="color" value={speciesColor(sp)} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { color: (e.target as HTMLInputElement).value } })} />
         <input class="grow" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={rename} onKeyDown={(e) => e.key === 'Enter' && rename()} />

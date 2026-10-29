@@ -18,6 +18,7 @@ import type { FoundScript } from '../../../core/script';
 import { type LibraryEntry, inLibrary, installPack, keepSavedForms, library, removePack } from '../../library';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
+import { ModalHead } from '../common';
 import { askUser, download, knowIsolation, showToast, world } from '../../state';
 import { repoKinds } from './repo';
 import { type DialogView, openRepo, packDialog } from './store';
@@ -111,33 +112,33 @@ function Problems({ list }: { list: string[] }) {
 
 function LibraryRow({ e }: { e: LibraryEntry }) {
   return (
-    <div class="item big">
+    <div class="file-row">
       <Swatches pack={e.pack} />
-      <div class="grow">
-        <div>
+      <div class="file-info">
+        <div class="file-name">
           <b>
             {e.pack.name}
             {e.builtin ? '（内置）' : ''}
           </b>
-          <span class="muted">　{packSummary(e.pack)}</span>
+          <span class="hint ellipsis">{packSummary(e.pack)}</span>
         </div>
         {(e.pack.author || e.pack.description) && (
-          <div class="hint pack-desc">
+          <div class="hint pack-desc one-line" title={e.pack.description}>
             {e.pack.author ? `${e.pack.author}　` : ''}
             {e.pack.description ?? ''}
           </div>
         )}
       </div>
-      <div class="row">
-        <button class="primary" onClick={() => showInRepo(e.key, e.pack)} title="在资源库里一项一项添加到本世界">
+      <div class="file-actions">
+        <button class="small primary" onClick={() => showInRepo(e.key, e.pack)} title="在资源库里一项一项添加到本世界">
           查看
         </button>
-        <button onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
+        <button class="small" onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
           导出
         </button>
         {!e.builtin && (
           <button
-            class="danger"
+            class="small danger"
             onClick={async () => {
               const v = await askUser({
                 title: `删除“${e.pack.name}”`,
@@ -167,10 +168,7 @@ function PacksView() {
   ];
   return (
     <>
-      <div class="row between">
-        <h2>资源包</h2>
-        <button onClick={close}>关闭</button>
-      </div>
+      <ModalHead title="资源包" onClose={close} />
       <p class="hint">资源库里的内容按包存着。删除包不影响用过它的世界。</p>
       {groups.map(([title, entries]) =>
         entries.length ? (
@@ -203,7 +201,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   if (!read.ok) {
     return (
       <>
-        <h2>导入资源包</h2>
+        <ModalHead title="导入资源包" onClose={close} />
         <p class="warn">读不了“{file}”：</p>
         <ul class="small">
           {read.errors.slice(0, 8).map((e) => (
@@ -211,7 +209,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
           ))}
           {read.errors.length > 8 && <li>还有 {read.errors.length - 8} 处…</li>}
         </ul>
-        <div class="row">
+        <div class="modal-foot">
           <button onClick={close}>关闭</button>
         </div>
       </>
@@ -223,13 +221,13 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   if (installed || sameItem(p, FANTASY_PACK)) {
     return (
       <>
-        <h2>{installed ? '已安装' : '已在资源库里'}</h2>
+        <ModalHead title={installed ? '已安装' : '已在资源库里'} onClose={close} />
         <p>{installed ? `“${p.name}”已在资源库里。` : `“${p.name}”是内置的。`}</p>
-        <div class="row">
+        <div class="modal-foot">
+          <button onClick={close}>关闭</button>
           <button class="primary" onClick={() => showInRepo(installed ?? '', p)} title="在资源库里一项一项添加到本世界">
             查看
           </button>
-          <button onClick={close}>关闭</button>
         </div>
       </>
     );
@@ -249,7 +247,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
   const ask = !!untrusted?.length;
   return (
     <>
-      <h2>从文件导入</h2>
+      <ModalHead title="从文件导入" onClose={close} closeTitle="取消" />
       <p>
         <b>{p.name}</b>
         {p.author && <span class="muted">　作者：{p.author}</span>}
@@ -267,14 +265,11 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         </details>
       )}
       {replaces && <p class="hint">会替换资源库里的“{replaces.pack.name}”</p>}
-      <div class="row between">
-        <span />
-        <span class="row">
-          <button onClick={close}>取消</button>
-          <button class="primary" disabled={untrusted === null || working} onClick={() => void install()}>
-            {ask ? '信任并安装' : '安装'}
-          </button>
-        </span>
+      <div class="modal-foot">
+        <button onClick={close}>取消</button>
+        <button class="primary" disabled={untrusted === null || working} onClick={() => void install()}>
+          {ask ? '信任并安装' : '安装'}
+        </button>
       </div>
     </>
   );
@@ -345,7 +340,7 @@ function ExportView() {
   };
   return (
     <>
-      <h2>从本世界存进资源库</h2>
+      <ModalHead title="从本世界存进资源库" onClose={close} closeTitle="取消" />
       <div class="grid2">
         <label>
           <span class="hint">名字</span>
@@ -377,17 +372,14 @@ function ExportView() {
           会替换资源库里的“{replaces.pack.name}”，换个名字则另存。{keptForms > 0 && `编辑器存的 ${keptForms} 项保留。`}
         </p>
       )}
-      <div class="row between">
-        <span />
-        <span class="row">
-          <button onClick={close}>取消</button>
-          <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
-            存进资源库
-          </button>
-          <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
-            导出文件
-          </button>
-        </span>
+      <div class="modal-foot">
+        <button onClick={close}>取消</button>
+        <button disabled={empty} onClick={() => void save()} title="存进“我的资源”，可用到别的世界">
+          存进资源库
+        </button>
+        <button class="primary" disabled={empty} onClick={() => exportFile(preview)} title="存成文件，可以发给别人">
+          导出文件
+        </button>
       </div>
     </>
   );

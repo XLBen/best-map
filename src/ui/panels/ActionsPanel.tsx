@@ -93,6 +93,7 @@ export function WorldMenu() {
       </label>
       <button
         class="item"
+        title="添加到本世界、移出、存进资源库、导出：地名风格、生态、水体类型、岛、文化……"
         onClick={() => {
           close();
           openRepo();

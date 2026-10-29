@@ -1,5 +1,6 @@
 import { helpOpen } from '../state';
 import { CLIMATE_BELT_NOTE } from './copy';
+import { ModalHead } from './common';
 
 // “更多 → 上手说明”：7 步上手（第一次建好世界后也会自动打开一次）。每条一件事；工具按钮的悬停里已经写着的不再写
 
@@ -116,10 +117,7 @@ export function Help() {
   return (
     <div class="modal-backdrop" onClick={() => (helpOpen.value = false)}>
       <div class="modal help" onClick={(e) => e.stopPropagation()}>
-        <div class="row between">
-          <h2>上手说明</h2>
-          <button onClick={() => (helpOpen.value = false)}>关闭</button>
-        </div>
+        <ModalHead title="上手说明" onClose={() => (helpOpen.value = false)} />
         <ol class="steps">
           {STEPS.map(([title, items]) => (
             <li>

@@ -1,3 +1,5 @@
+import { X } from 'lucide-preact';
+
 // 几个面板共用的小部件
 
 // 分段选择：全界面的“几个里选一个”只有这一种（底部条上工具的模式也是它）。
@@ -31,6 +33,20 @@ export function Seg<T extends string | number>({
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// 弹窗的标题栏（第二十九轮）：名字，右边一个小的关上（onClose 没有时不画，比如还没有世界时的新建向导）
+export function ModalHead({ title, onClose, closeTitle = '关闭', disabled = false }: { title: string; onClose?: () => void; closeTitle?: string; disabled?: boolean }) {
+  return (
+    <div class="modal-head">
+      <h2>{title}</h2>
+      {onClose && (
+        <button class="icon-btn" onClick={onClose} title={closeTitle} disabled={disabled}>
+          <X />
+        </button>
+      )}
     </div>
   );
 }
