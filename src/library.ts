@@ -1,8 +1,8 @@
 import { signal } from '@preact/signals';
-import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack, packIdFor, parsePack } from '../core/packs';
+import { PACK_FORMAT, PACK_VERSION, type PackItem, type PackNode, type ResourcePack, addToPack, packIdFor, packItems, parsePack, sameItem, subPacks, walkPacks } from '../core/packs';
 import type { PlanetForm } from '../core/planet-form';
-import { builtinPacks } from '../core/packs/builtin-tree';
-import { allKinds, itemId, kindByPackKey } from '../core/content/registry';
+import { builtinPacks, isBuiltinSame } from '../core/packs/builtin-tree';
+import { allKinds, itemId, kindByPackKey, kindOf } from '../core/content/registry';
 import { idbAll, idbTx } from './idb';
 import { addTrustedSource } from './trust';
 
@@ -144,20 +144,33 @@ export async function saveItem(key: string, item: unknown): Promise<SaveForm> {
 }
 
 // 从资源库里删掉一项（第二十八轮：资源库里“从库里删除”）：只删“我的”包里的（内置的、装上的资源包不能一项一项删）。
+// 第二十九轮：包可以分小包（“来自《世界名》”按种类分）：每一层里同 id 的都删掉，空了的小包去掉。
 // 包里没别的内容了就整个删掉。用过它的世界不受影响
 export async function removeItem(entryKey: string, key: string, id: string): Promise<{ ok: boolean; error?: string }> {
   const kind = kindByPackKey(key);
   const cur = (await refreshLibrary()).find((e) => e.key === entryKey);
   if (!kind || !cur) return { ok: false, error: '资源库里没有这一项' };
   if (cur.builtin || !cur.mine) return { ok: false, error: '只有自己的内容能从资源库里删掉' };
-  const list = (cur.pack[kind.pack.key] as unknown[] | undefined) ?? [];
-  const rest = list.filter((x) => itemId(kind, x) !== id);
-  if (rest.length === list.length) return { ok: false, error: '资源库里没有这一项' };
-  const pack: ResourcePack = structuredClone(cur.pack);
-  if (rest.length) pack[kind.pack.key] = rest;
-  else delete pack[kind.pack.key];
-  const left = allKinds().some((k) => ((pack[k.pack.key] as unknown[] | undefined) ?? []).length > 0);
-  if (!left) {
+  let found = false;
+  // 一层：去掉这一段里同 id 的、去掉空了的小包；这一层什么都不剩时 null
+  const strip = (node: PackNode, top: boolean): PackNode | null => {
+    const out: PackNode = { ...node };
+    const list = Array.isArray(node[key]) ? (node[key] as unknown[]) : [];
+    const rest = list.filter((x) => itemId(kind, x) !== id);
+    if (rest.length !== list.length) found = true;
+    if (rest.length) out[key] = rest;
+    else delete out[key];
+    const kids = subPacks(node)
+      .map((c) => strip(c, false))
+      .filter((c): c is PackNode => c !== null);
+    if (kids.length) out.packs = kids;
+    else delete out.packs;
+    if (!top && !kids.length && !allKinds().some((k) => Array.isArray(out[k.pack.key]) && (out[k.pack.key] as unknown[]).length)) return null;
+    return out;
+  };
+  const pack = strip(structuredClone(cur.pack), true) as ResourcePack;
+  if (!found) return { ok: false, error: '资源库里没有这一项' };
+  if (!packCount(pack)) {
     await removePack(entryKey);
     return { ok: true };
   }
@@ -172,6 +185,61 @@ export async function removeItem(entryKey: string, key: string, id: string): Pro
   }
   await refreshLibrary();
   return { ok: true };
+}
+
+// 整棵树里有几项（各种内容）
+function packCount(pack: PackNode): number {
+  let n = 0;
+  walkPacks(pack, (node) => {
+    for (const k of allKinds()) if (Array.isArray(node[k.pack.key])) n += (node[k.pack.key] as unknown[]).length;
+  });
+  return n;
+}
+
+// ---------- 拿掉的不丢（第二十九轮）：移出世界的、打开的世界文件里自己做的，存进“来自《世界名》” ----------
+
+// 这个世界的包的名字
+export const worldPackName = (world: string) => `来自《${world.trim() || '新世界'}》`;
+
+// 资源库里已经有一模一样的（任何一个包里，内置的也算）
+export function inLibraryAlready(kind: string, item: unknown, list: readonly LibraryEntry[] = library.value): boolean {
+  const k = kindOf(kind);
+  if (!k) return false;
+  const put = k.pack.exportItem ? k.pack.exportItem(structuredClone(item)) : item;
+  const id = itemId(k, put);
+  return list.some((e) => packItems(e.pack, k.pack.key).some((x) => itemId(k, x) === id && sameItem(x, put)));
+}
+
+// 要存的：资源库能放的种类里，不是内置原样（用完整的树再看一遍：计算 Worker 里认不出奇幻的那几样）、资源库里也还没有一模一样的
+export function worthKeeping(items: readonly { kind: string; item: unknown; builtinSame?: boolean }[], list: readonly LibraryEntry[] = library.value): { kind: string; item: unknown }[] {
+  const out: { kind: string; item: unknown }[] = [];
+  for (const x of items) {
+    const k = kindOf(x.kind);
+    if (!k?.pack.listed || x.item === undefined || x.builtinSame || isBuiltinSame(x.kind, x.item)) continue;
+    if (inLibraryAlready(x.kind, x.item, list)) continue;
+    if (out.some((y) => y.kind === x.kind && itemId(k, y.item) === itemId(k, x.item))) continue;
+    out.push({ kind: x.kind, item: x.item });
+  }
+  return out;
+}
+
+// 存进“来自《世界名》”（按种类分小包；一模一样的不重复存，同 id 内容不同的换成新的）。返回新存进去的项数
+export async function keepInLibrary(world: string, items: readonly { kind: string; item: unknown; builtinSame?: boolean }[]): Promise<{ saved: number; stored: boolean; full: string[] }> {
+  // 先按手上的资源库筛一遍（多数时候移出的都是内置原样的，不必读存储）
+  if (!worthKeeping(items).length) return { saved: 0, stored: true, full: [] };
+  const list = await refreshLibrary();
+  const want = worthKeeping(items, list);
+  if (!want.length) return { saved: 0, stored: true, full: [] };
+  const name = worldPackName(world);
+  const id = packIdFor(name);
+  const cur = list.find((e) => !e.builtin && e.key === id);
+  const base: ResourcePack = cur ? cur.pack : { format: PACK_FORMAT, version: PACK_VERSION, id, name };
+  const r = addToPack(base, want);
+  if (!r.added && !r.replaced) return { saved: 0, stored: true, full: r.full };
+  const parsed = parsePack(r.pack);
+  if (!parsed.ok) return { saved: 0, stored: false, full: r.full };
+  const { ok } = await installPack(parsed.pack, { mine: true });
+  return { saved: r.added + r.replaced, stored: ok, full: r.full };
 }
 
 export const saveForm = (form: PlanetForm): Promise<SaveForm> => saveItem('planetForms', form as unknown as PackItem);

@@ -20,7 +20,7 @@ import { isVegetated, landmassCells } from '../../core/vegetation';
 import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
 import { X } from 'lucide-preact';
-import { adjustPreviewNote, askUser, confirmImport, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
+import { adjustPreviewNote, askUser, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
 import { Seg } from './common';
 import { Slider, linear } from './components/Slider';
 import { Toggle } from './components/Toggle';
@@ -30,6 +30,17 @@ import { readPack } from '../../core/packs';
 import { FANTASY_PACK_ID } from '../../core/packs/fantasy';
 import { fileLabel, openPackImport, openRepo } from './packs/store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
+
+// 导入生态文件：和资源包走同一条路（只解析、检查，带脚本的先问信任），只装进资源库（第二十九轮：以前的生态文件也不再整套换掉世界里的生态），
+// 在资源库里一项一项添加到本世界
+export function importBiomeFile(text: string, file: string) {
+  const read = readPack(text, fileLabel(file));
+  if (!read.ok) {
+    showToast(`导入失败：${read.errors.slice(0, 2).join('；')}`, true);
+    return;
+  }
+  openPackImport(read, file);
+}
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
 // 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风。
@@ -527,29 +538,6 @@ export function SpeciesPanel() {
     const sp = withRect(base, { t0: 5, t1: 18, m0: 0.6, m1: 1.6 });
     if (await exec({ op: 'add_species', species: sp })) focusSpecies.value = id;
   };
-  // 导入：和资源包走同一条路（只解析、检查，带脚本的先问信任）。以前导出的生态文件照旧是整套换掉；
-  // 选的是资源包（或文字包）时打开资源包的导入
-  const importJson = (file: File) => {
-    void file.text().then(async (text) => {
-      const read = readPack(text, fileLabel(file.name));
-      if (!read.ok) {
-        showToast(`导入失败：${read.errors.slice(0, 2).join('；')}`, true);
-        return;
-      }
-      if (read.legacy !== 'biomes') {
-        openPackImport(read, file.name);
-        return;
-      }
-      const list = read.pack.biomes ?? [];
-      // 带着没见过的脚本：先问（信任了才导入；安全模式下脚本不运行，不问）
-      if (!(await confirmImport(read.pack))) return;
-      await exec({
-        op: 'batch',
-        label: `导入 ${list.length} 种生态`,
-        commands: [...w.small.species.map((s) => ({ op: 'remove_species' as const, id: s.id })), ...list.map((s) => ({ op: 'add_species' as const, species: s }))],
-      });
-    });
-  };
   return (
     <div>
       <p class="hint">色块是最适合的冷暖干湿：拖动移动，拖边改大小，拖到图边为“不限”。灰点是陆地，黄圈是指针所在。</p>
@@ -565,7 +553,7 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openRepo({ kind: 'biome', filter: 'builtin', entry: FANTASY_PACK_ID })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
+        <button onClick={() => openRepo({ kind: 'biome', entry: FANTASY_PACK_ID })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
           示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>
@@ -576,7 +564,7 @@ export function SpeciesPanel() {
             accept="application/json"
             onChange={(e) => {
               const f = (e.target as HTMLInputElement).files?.[0];
-              if (f) importJson(f);
+              if (f) void f.text().then((text) => importBiomeFile(text, f.name));
               (e.target as HTMLInputElement).value = '';
             }}
           />

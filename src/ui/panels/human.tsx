@@ -36,7 +36,7 @@ export function ClassMenu() {
     <TypePicker
       items={[
         { label: '恢复自动', on: !cur, hint: '去掉画过的类别', onPick: () => pick({ terrainClass: '' }) },
-        ...worldTerrainClasses(w.small).map((c) => ({ label: c.name, swatch: c.color, on: c.id === cur, hint: c.description, onPick: () => pick({ terrainClass: c.id }) })),
+        ...worldTerrainClasses(w.small).map((c) => ({ id: c.id, label: c.name, swatch: c.color, on: c.id === cur, hint: c.description, onPick: () => pick({ terrainClass: c.id }) })),
       ]}
       library="terrainClass"
     />
@@ -52,7 +52,7 @@ export function ResourceMenu() {
       items={[
         { label: '恢复自动', on: !cur, hint: '去掉画过的资源', onPick: () => pick({ resource: '' }) },
         { label: '无', on: cur === 'none', hint: '这里没有资源', onPick: () => pick({ resource: 'none' }) },
-        ...worldResources(w.small).map((r) => ({ label: r.name, swatch: r.color, meta: CATEGORY_LABEL[r.category], on: r.id === cur, hint: r.description, onPick: () => pick({ resource: r.id }) })),
+        ...worldResources(w.small).map((r) => ({ id: r.id, label: r.name, swatch: r.color, meta: CATEGORY_LABEL[r.category], on: r.id === cur, hint: r.description, onPick: () => pick({ resource: r.id }) })),
       ]}
       library="resource"
     />

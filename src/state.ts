@@ -1,7 +1,9 @@
 import type { ToolId } from './ui/defs/tools';
 import { batch, signal } from '@preact/signals';
 import { speciesOwner } from '../core/biome-scripts';
-import type { Command } from '../core/commands';
+import type { Command, RemovedItem } from '../core/commands';
+import type { ContentRef } from '../core/content/unused';
+import type { TidyPlan } from '../core/tidy';
 import { checkDoc, isCurrentDoc } from '../core/doc-version';
 import type { PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions, ExportPartId } from '../core/export';
@@ -25,8 +27,9 @@ import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
 import type { MeshRequest } from './mesh-worker';
 import { type RiverStyleOverride, seedRivers } from './render/overlay';
 import { idbTx, openDb } from './idb';
-import { THUMB_EVERY_MS, activeLink, idbMapStore, isQuotaError, mapLink, mapSavedState, overwriteMap, thumbHook } from './maps';
-import type { ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
+import { THUMB_EVERY_MS, activeLink, defaultMapName, fileHint, idbMapStore, isQuotaError, mapLink, mapSavedState, overwriteMap, thumbHook } from './maps';
+import { keepInLibrary } from './library';
+import type { CompactReply, ExportJob, ExportReply, LightSnapshot, Request, Response, Snapshot } from './protocol';
 import type { HighlightLayer } from './render/colors';
 import { CANCELLED, EngineHost, type WorkerLike } from './sandbox';
 import { clearLoading, markLoading, readLoading, tidyTrusted, trustScripts, uniqueScripts, untrustedScripts } from './trust';
@@ -1008,6 +1011,13 @@ export function flashCells(cells: number[]) {
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
 }
 
+// 只有一句话、可能带一个按钮的提示（不是编辑之后的：打开的世界文件里有没用到的内容……）
+export function showNotice(head: string, action?: NoteAction) {
+  const id = ++noteId;
+  changeNote.value = { id, head, detail: '', undoable: false, action };
+  noteTimer.start(action ? NOTE_ACTION_MS : NOTE_MS);
+}
+
 // quiet：不闪变了的格（改河：拖的时候地图上已经是改完的样子，松手后再闪一圈反而像出了别的变化）
 function noteChange(head: string, before: World | null, undoable = true, action?: NoteAction, quiet = false) {
   const after = world.value;
@@ -1088,6 +1098,8 @@ export interface Ask {
   text?: string;
   // 列出的脚本（谁的、哪一种、源码）
   scripts?: FoundScript[];
+  // 列出的几行（整理本世界：移出哪些、留着哪些）：名字和灰色的一句
+  lines?: { label: string; hint?: string }[];
   choices: AskChoice[];
   // 带一个输入框（起名字）：框里一开始的字。回车等于点主要的按钮
   input?: string;
@@ -1392,6 +1404,8 @@ export async function exec(cmd: Command, label = '正在计算…', action?: Not
     return true;
   }
   const ok = await handle(r);
+  // 第二十九轮：这一步移出世界的内容里自己做的、改过的存进资源库“来自《世界名》”
+  if (ok && r.ok && r.removed?.length) void keepRemoved(r.removed);
   if (ok && r.ok) {
     trustOwn(cmd);
     const said = typeof head === 'function' ? (world.value ? head(world.value, r.summary ?? '') : null) : head;
@@ -1664,6 +1678,66 @@ export function cancelExport() {
 
 // 导出整张地图（.png，ui/map/export.ts 的 exportFullMap）正在画时登记的取消：顶部提示条上的“取消”也停它
 export const imageExportCancel: { current: (() => void) | null } = { current: null };
+
+// ---------- 拿掉的不丢、整理、压缩（第二十九轮） ----------
+
+// 世界的叫法（存进资源库的“来自《世界名》”）：连着的“我的地图”的名字，打开的文件名，或最大的一块陆地的名字
+export function worldName(): string {
+  const link = activeLink(mapLink.value, worldEpoch.value);
+  if (link) return link.name;
+  const hint = fileHint.value;
+  if (hint && hint.epoch === worldEpoch.value && hint.name) return hint.name;
+  return defaultMapName(world.value?.derived.features ?? [], []);
+}
+
+// 移出世界的内容：自己做的、改过的存进资源库（内置原样的本来就在资源包里；一模一样的不重复存）。存了几项
+export async function keepRemoved(items: readonly RemovedItem[], name = worldName()): Promise<number> {
+  try {
+    const r = await keepInLibrary(name, items);
+    if (r.saved) showToast(`${r.saved} 项存进了资源库`);
+    if (r.full.length) showToast(`资源库里放不下：${r.full.slice(0, 2).join('、')}`, true);
+    return r.saved;
+  } catch {
+    return 0;
+  }
+}
+
+// 整理本世界的计划（在 Worker 里的副本上试，世界不变）。only：只考虑这几项。出错时 null
+export async function planTidy(only?: ContentRef[], label: string | null = '正在检查…'): Promise<TidyPlan | null> {
+  const r = await call({ kind: 'planTidy', ...(only ? { only } : {}) }, label);
+  return r.ok ? (r.tidy ?? null) : null;
+}
+
+// 压缩要写出去的世界文件（导出、存进“我的地图”）：在导出 Worker 里重放两遍，核对过的才用，不然用原来的。
+// 当前打开的世界不变。压缩时末尾的整理移出的、自己做的内容存进资源库
+const COMPACTING = '正在整理世界文件…';
+export async function compactForSave(doc: WorldDoc): Promise<WorldDoc> {
+  if (typeof Worker === 'undefined') return doc;
+  const prev = busy.value;
+  busy.value = COMPACTING;
+  try {
+    const reply = await new Promise<CompactReply>((resolve) => {
+      const worker = new Worker(new URL('./export-worker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (ev: MessageEvent<CompactReply>) => {
+        worker.terminate();
+        resolve(ev.data);
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        resolve({ ok: false, error: '压缩失败' });
+      };
+      worker.postMessage({ compact: doc });
+    });
+    if (!reply.ok || !('compacted' in reply)) return doc;
+    const c = reply.compacted;
+    if (c.removed.length) void keepRemoved(c.removed);
+    return c.verified ? c.doc : doc;
+  } catch {
+    return doc;
+  } finally {
+    if (busy.value === COMPACTING) busy.value = prev;
+  }
+}
 
 export async function getDoc(): Promise<WorldDoc | null> {
   const r = await call({ kind: 'doc' }, null);

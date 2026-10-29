@@ -131,7 +131,7 @@ export function RankMenu() {
     <TypePicker
       items={[
         { label: `自动：${c.autoRank.name}`, on: c.rankAuto, hint: '按占本国人口的比例', onPick: () => pick(null) },
-        ...rankChoices(w).map((r) => ({ label: r.name, on: !c.rankAuto && c.rank.id === r.id, hint: r.description, meta: r.capital ? '首都用' : undefined, onPick: () => pick(r.id) })),
+        ...rankChoices(w).map((r) => ({ id: r.id, label: r.name, on: !c.rankAuto && c.rank.id === r.id, hint: r.description, meta: r.capital ? '首都用' : undefined, onPick: () => pick(r.id) })),
       ]}
       onNew={() => {
         openPanel.value = null;
@@ -244,6 +244,7 @@ export function PointMenu() {
   return (
     <TypePicker
       items={pointChoices(w).map((t) => ({
+        id: t.id,
         label: t.name,
         swatch: t.color,
         ...(t.image ? { image: t.image } : { icon: iconOf(t.icon ?? 'pin') }),

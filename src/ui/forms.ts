@@ -1,6 +1,6 @@
 import type { Command } from '../../core/commands';
 import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../core/generate';
-import { itemKey, packForms, packIdFor, sameItem } from '../../core/packs';
+import { itemKey, packIdFor, packItems, sameItem } from '../../core/packs';
 import { LAYOUT_R, planetProfile } from '../../core/planet-gen';
 import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
 import { PLANET_TYPES } from '../../core/presets';
@@ -40,7 +40,8 @@ export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
   const seen = new Set<string>();
   const myKey = packIdFor(MY_PACK_NAME);
   for (const e of entries) {
-    for (const form of packForms(e.pack)) {
+    // 第二十九轮：资源包可以分小包（内置的星球形态在“奇幻 ▸ 星球形态”里）
+    for (const form of packItems<PlanetForm>(e.pack, 'planetForms')) {
       const k = formKey(form);
       if (seen.has(k)) continue;
       seen.add(k);

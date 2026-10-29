@@ -324,3 +324,18 @@ describe('快照只带变了的数组', () => {
     expect(unpackRivers(pv.rivers!).draws).not.toBeNull();
   });
 });
+
+describe('整理本世界的计划、移出的内容（第二十九轮）', () => {
+  it('planTidy 在副本上算，世界不变；only 只看那几项；exec 的回复带着这一步移出的内容', async () => {
+    await send({ kind: 'init', settings, commands });
+    const before = (await send({ kind: 'doc' })).doc!.commands.length;
+    const all = await send({ kind: 'planTidy' });
+    expect(all.tidy).toMatchObject({ removed: expect.any(Array), kept: expect.any(Array) });
+    expect((await send({ kind: 'planTidy', only: [] })).tidy!.command).toBeNull();
+    expect((await send({ kind: 'doc' })).doc!.commands.length).toBe(before);
+    const sp = { id: 'mine', name: '我的', color: '#123456', terrain: 'plains', competition: 3, tolerances: [], natural: false };
+    await send({ kind: 'exec', cmd: { op: 'add_species', species: sp } as Command });
+    const r = await send({ kind: 'exec', cmd: { op: 'remove_species', id: 'mine' } });
+    expect(r.removed?.map((x) => [x.kind, x.id, x.builtinSame])).toEqual([['biome', 'mine', false]]);
+  });
+});

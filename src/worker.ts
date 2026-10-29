@@ -498,6 +498,10 @@ async function handle(id: number, req: Request) {
         writeCheckpoint(true);
         reply({ id, ok: true });
         return;
+      case 'planTidy':
+        // 第二十九轮：整理本世界的计划（在引擎的副本上试，世界不变）
+        reply({ id, ok: true, tidy: engine!.planTidy(req.only ? { only: req.only } : {}) });
+        return;
       case 'thumb': {
         const settings = { ...req.settings, cells: 4000 };
         const e = new Engine(settings, meshFor(settings));

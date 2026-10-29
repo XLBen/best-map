@@ -30,10 +30,9 @@ const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
-// 在资源库里看这个包：选上它有内容的第一类，只列它的
-function showInRepo(key: string, pack: ResourcePack) {
-  const kind = repoKinds().find((k) => packItems(pack, k.pack.key).length)?.id;
-  openRepo({ entry: key, ...(kind ? { kind } : {}) });
+// 在资源库里看这个包：资源库一栏只列它（展开着），种类是全部
+function showInRepo(key: string, _pack: ResourcePack) {
+  openRepo({ entry: key, kind: 'all', filter: 'all', query: '' });
 }
 
 // 颜色小方块（最多几个）

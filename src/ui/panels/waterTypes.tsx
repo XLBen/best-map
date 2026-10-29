@@ -139,6 +139,7 @@ export function TypeMenu({ kind, items, onNew, note }: { kind: WaterKind; items:
   return (
     <TypePicker
       items={items.map((it) => ({
+        ...(it.t ? { id: it.t.id } : {}),
         label: it.label,
         on: it.on,
         hint: it.hint,

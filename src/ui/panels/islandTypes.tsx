@@ -97,6 +97,7 @@ export function IslandTypeMenu({ which }: { which: Which }) {
   return (
     <TypePicker
       items={allIslandTypes(w.small).map((t) => ({
+        id: t.id,
         label: t.name,
         swatch: islandSwatch(t),
         on: cur === t.id,

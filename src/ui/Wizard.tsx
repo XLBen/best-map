@@ -35,7 +35,7 @@ import { Slider } from './components/Slider';
 import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
 import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
-import { type HumanChoice, defaultChoice, eraChoices, estimateLandKm2, generateCommand } from './human';
+import { type HumanChoice, defaultChoice, eraChoices, estimateLandKm2, generateCommand, groupByPack } from './human';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
@@ -376,27 +376,42 @@ export function Wizard() {
               ))}
             </div>
             <h5>星球形态</h5>
-            <div class="cards three">
-              {choices.map((c) => (
-                <div class="form-card">
-                  <button class={`card ${ptype === c.key ? 'on' : ''}`} onClick={() => void chooseForm(c)} disabled={creating}>
-                    <b>
-                      {c.form.name}
-                      {hasFormScripts(c.form) && <span class="tag">脚本</span>}
-                    </b>
-                    <span class="hint">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
-                    {!c.builtin && <span class="hint">{formSource(c)}</span>}
-                  </button>
-                  <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改名字、滑块、脚本">
-                    编辑…
-                  </button>
+            {groupByPack(choices, (c) => c.pack).map((sec, k, secs) => (
+              <>
+                {secs.length > 1 && <h6 class="choice-group">{sec.label}</h6>}
+                <div class="cards three">
+                  {sec.items.map((c) => (
+                    <div class="form-card">
+                      <button class={`card ${ptype === c.key ? 'on' : ''}`} onClick={() => void chooseForm(c)} disabled={creating}>
+                        <b>
+                          {c.form.name}
+                          {hasFormScripts(c.form) && <span class="tag">脚本</span>}
+                        </b>
+                        <span class="hint">{c.form.hint ?? `从“${planetTypeName(c.form.base)}”改起`}</span>
+                        {!c.builtin && <span class="hint">{formSource(c)}</span>}
+                      </button>
+                      <button class="small ghost form-edit" onClick={() => void editForm(c)} disabled={creating} title="改名字、滑块、脚本">
+                        编辑…
+                      </button>
+                    </div>
+                  ))}
+                  {k === secs.length - 1 && (
+                    <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
+                      <b>新建…</b>
+                      <span class="hint">从一种星球改起，可写脚本</span>
+                    </button>
+                  )}
                 </div>
-              ))}
-              <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
-                <b>新建…</b>
-                <span class="hint">从一种星球改起，可写脚本</span>
-              </button>
-            </div>
+              </>
+            ))}
+            {!choices.length && (
+              <div class="cards three">
+                <button class="card dashed" onClick={() => void editForm(null)} disabled={creating}>
+                  <b>新建…</b>
+                  <span class="hint">从一种星球改起，可写脚本</span>
+                </button>
+              </div>
+            )}
             {safeMode.value && chosen && hasFormScripts(chosen.form) && <p class="hint">安全模式：缩略图不含脚本的效果</p>}
             <h5>2. 多大</h5>
             <div class="cards three">

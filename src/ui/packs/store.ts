@@ -4,7 +4,8 @@ import { refreshLibrary } from '../../library';
 import type { Obj } from './fields';
 import type { RepoFilter } from './repo';
 
-// 资源库的界面状态：浮在地图左边的资源库（按类列出内容、开关、编辑），和角落“⋯”里打开的弹窗（导入文件、从世界存进资源库、资源包）。
+// 资源库的界面状态：浮在地图左边的资源库（第二十九轮：两栏，本世界 | 资源库，都按资源包分组；顶上筛种类、搜索），
+// 和角落“⋯”里打开的弹窗（导入文件、从世界存进资源库、资源包）。
 // 都是点了才开（世界菜单的“资源库…”、生态抽屉的“示例生态…”、地名里的“资源库…”、导入文件），不会自己弹出来
 
 // 编辑器：改的是哪一项（新建、复制的没有 origin；改的是世界里的一项时 worldId 是它在世界里的 id）
@@ -12,14 +13,17 @@ export interface RepoEdit {
   item: Obj;
   how: 'new' | 'copy' | 'edit';
   worldId?: string;
+  // 哪一种（第二十九轮：种类筛成“全部”时也能编辑；省略时按 RepoState.kind）
+  kind?: string;
 }
 
 export interface RepoState {
-  // 左边选着的一类（登记表里的 id）
+  // 筛的种类（登记表里的 id；'all' 是全部种类）
   kind: string;
+  // 'off'：资源库一栏只列不在本世界的（工具里的“从资源库添加…”）；别的值都列全部
   filter: RepoFilter;
   query: string;
-  // 只看一个包（资源库里的键：刚导入的包“用到世界”）
+  // 资源库一栏只看一个包（资源库里的键：刚导入的包、生态抽屉的“示例生态…”），展开着
   entry?: string;
   edit?: RepoEdit;
 }
@@ -29,7 +33,7 @@ export const repo = signal<RepoState | null>(null);
 export function openRepo(st: Partial<RepoState> = {}) {
   void refreshLibrary();
   packDialog.value = null;
-  repo.value = { kind: repo.value?.kind ?? 'nameStyle', filter: 'all', query: '', ...st };
+  repo.value = { kind: repo.value?.kind ?? 'all', filter: 'all', query: '', ...st };
 }
 
 export const closeRepo = () => (repo.value = null);

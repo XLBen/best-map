@@ -1,4 +1,7 @@
 import type { Command, RemovedItem } from '../core/commands';
+import type { ContentRef } from '../core/content/unused';
+import type { TidyPlan } from '../core/tidy';
+import type { CompactResult } from '../core/compact';
 import type { DocTail, PreviewResult, ProvincesPreview, Timings, WorldDoc } from '../core/engine';
 import type { ExportOptions, ExportPartId } from '../core/export';
 import type { WorldgenInput } from '../core/generate';
@@ -44,7 +47,9 @@ export type Request =
   // 要一份完整的快照（主线程拼不起只带变了的数组的快照时）
   | { kind: 'snapshot' }
   // 新建向导：用少量格子快速生成一张缩略图（一张一张要，画好一张显示一张）
-  | { kind: 'thumb'; settings: Partial<Settings>; gen: WorldgenInput; width: number; height: number };
+  | { kind: 'thumb'; settings: Partial<Settings>; gen: WorldgenInput; width: number; height: number }
+  // 整理本世界的计划（第二十九轮）：在世界的副本上试，世界不变。only：只考虑这几项（资源库里一个包“移出没用到的”）
+  | { kind: 'planTidy'; only?: ContentRef[] };
 
 export interface Snapshot {
   settings: Settings;
@@ -93,6 +98,13 @@ export interface ExportJob {
   // 分开导出的一项（第二十四轮）：只写这一项的文件（表、档案全文、道路图），不打包
   part?: { id: ExportPartId; width: number; height: number };
 }
+
+// 导出 Worker 的另一件事（第二十九轮）：压缩世界文件（导出世界、存进“我的地图”时）。要重放两遍，不放在计算 Worker 里。
+// 这个 Worker 不隔离：世界里有不是内置的脚本时不压缩（回 skipped），原样写出去
+export interface CompactJob {
+  compact: WorldDoc;
+}
+export type CompactReply = { ok: true; compacted: Pick<CompactResult, 'doc' | 'changed' | 'verified' | 'dropped' | 'removed' | 'kept'> } | { ok: true; skipped: string } | { ok: false; error: string };
 
 // warnings：导出时要告诉用户的话（比如极小的省在切线附近分不到像素）
 export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array; warnings?: string[] } | { ok: true; files: Record<string, Uint8Array> } | { ok: false; error: string };
@@ -152,6 +164,8 @@ export type Response =
       doc?: WorldDoc;
       tail?: DocTail;
       thumb?: Uint8ClampedArray;
+      // 整理本世界的计划（planTidy 的回复）
+      tidy?: TidyPlan;
       // 缩略图里星球形态的脚本出的错（thumb 的回复里，有形态时才有）
       issues?: ScriptIssue[];
     }

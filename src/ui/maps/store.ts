@@ -21,7 +21,10 @@ import {
   thumbHook,
   uniqueName,
 } from '../../maps';
-import { askText, askUser, autosaveNow, download, getDoc, history, loadDoc, noteThumb, showToast, world, worldEpoch, worldState } from '../../state';
+import { splitWorldContent } from '../../../core/compact';
+import { keepInLibrary } from '../../library';
+import { askText, askUser, autosaveNow, compactForSave, download, getDoc, history, loadDoc, noteThumb, planTidy, showNotice, showToast, world, worldEpoch, worldState } from '../../state';
+import { tidyWorld } from '../packs/tidy';
 
 // “我的地图”的界面这边：保存（⌘S）、另存为、打开、改名、导出、删掉，换世界之前问“先保存吗”。
 // 存进浏览器失败（隐私模式、存储被关、满了）时改成下载世界文件，并说清楚
@@ -79,6 +82,12 @@ function makeThumb(): string | null {
 }
 if (typeof window !== 'undefined') thumbHook.make = makeThumb;
 
+// 写出去的世界文件（存进“我的地图”、导出）：压缩过的（第二十九轮：加了又移出的、没用上的内容去掉，末尾补整理；核对不上用原来的）
+async function savedDoc(): Promise<WorldDoc | null> {
+  const doc = await getDoc();
+  return doc ? compactForSave(doc) : null;
+}
+
 const doneSteps = () => history.value.reduce((n, h) => n + (h.done ? 1 : 0), 0);
 
 // 存不进浏览器：下载世界文件，说清楚为什么
@@ -120,7 +129,7 @@ async function saveNew(title: string, initial: string): Promise<boolean> {
   if (name === null) return false;
   const epoch = worldEpoch.value;
   const state = worldState.value;
-  const doc = await getDoc();
+  const doc = await savedDoc();
   if (!doc || epoch !== worldEpoch.value) return false;
   const thumb = makeThumb();
   try {
@@ -156,7 +165,7 @@ export async function saveMap(): Promise<boolean> {
   if (!link) return saveNew('保存到“我的地图”', await defaultName());
   const epoch = worldEpoch.value;
   const state = worldState.value;
-  const doc = await getDoc();
+  const doc = await savedDoc();
   if (!doc || epoch !== worldEpoch.value) return false;
   const thumb = makeThumb();
   try {
@@ -257,7 +266,7 @@ export async function exportSaved(e: MapEntry): Promise<void> {
   try {
     const doc = await store.doc(e.id);
     if (doc) {
-      download(fileNameOf(e.name), JSON.stringify(doc), 'application/json');
+      download(fileNameOf(e.name), JSON.stringify(await compactForSave(doc)), 'application/json');
       return;
     }
   } catch {
@@ -291,7 +300,7 @@ export async function deleteSaved(e: MapEntry): Promise<void> {
 
 // 导出世界文件（.json）：连着地图时用地图的名字当文件名
 export async function exportCurrent(): Promise<void> {
-  const doc = await getDoc();
+  const doc = await savedDoc();
   if (doc) download(fileNameOf(currentMap.value?.name ?? 'world'), JSON.stringify(doc), 'application/json');
 }
 
@@ -305,5 +314,23 @@ export async function openFile(f: File): Promise<void> {
     return;
   }
   if (!(await beforeLeave())) return;
-  if (await loadDoc(doc)) fileHint.value = { name: nameFromFile(f.name), epoch: worldEpoch.value };
+  if (!(await loadDoc(doc))) return;
+  fileHint.value = { name: nameFromFile(f.name), epoch: worldEpoch.value };
+  await splitOpened(nameFromFile(f.name));
+}
+
+// 打开世界文件之后（第二十九轮）：文件里自己做的内容存进资源库“来自《文件名》”（一模一样的不重复存）；
+// 有没用到的内容时提示一次，点了整理
+export async function splitOpened(name: string): Promise<void> {
+  const w = world.value;
+  if (!w) return;
+  const epoch = worldEpoch.value;
+  const items = splitWorldContent(w);
+  if (items.length) {
+    const r = await keepInLibrary(name, items);
+    if (r.saved) showToast(`${r.saved} 项存进了资源库`);
+  }
+  const plan = await planTidy(undefined, null);
+  if (!plan?.command || epoch !== worldEpoch.value) return;
+  showNotice(`有 ${plan.removed.length} 项没用到，可以整理`, { label: '整理…', run: () => void tidyWorld() });
 }

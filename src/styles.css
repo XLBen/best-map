@@ -1210,14 +1210,15 @@ ol.history li.undone {
   z-index: 15;
 }
 
-/* 资源库（packs/RepoPanel.tsx）：浮在地图左边，不挡地图。左边按类，右边是这一类的内容（一行一项）或编辑器 */
+/* 资源库（packs/RepoPanel.tsx，第二十九轮）：浮在地图左边，不挡地图。顶上筛种类、搜索；两栏“本世界 | 资源库”，
+   都是按资源包分组的树，一行一项（约 28 px）：名字、灰色的数或种类、右边小按钮；点开一项在它下面展开 */
 .repo {
   position: absolute;
   top: 60px;
   left: 10px;
   /* 让出底部的工具条 */
   bottom: 84px;
-  width: min(680px, calc(100% - 20px));
+  width: min(880px, calc(100% - 20px));
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
@@ -1228,122 +1229,156 @@ ol.history li.undone {
   margin: 0;
   gap: 2px;
 }
-.repo-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  gap: var(--sp-2);
-  padding: 0 var(--sp-2) 0 var(--sp-2);
-}
-.repo-kinds {
-  flex: 0 0 120px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-}
-.repo-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  padding-right: var(--sp-1);
-}
 .repo-tools {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2);
 }
 .repo-tools input[type='search'] {
+  min-width: 0;
   min-height: var(--h-sm);
   padding: 0 var(--sp-2);
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
 }
-.repo-tools .chip {
-  margin: var(--sp-1) 0;
+.repo-kind-select {
+  flex: none;
+  max-width: 140px;
+}
+.repo-notes {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-2);
+}
+.repo-notes .chip {
   padding-right: 0;
 }
-.repo-list {
+.repo-cols {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-3);
+  padding: 0 var(--sp-3);
+}
+.repo-col {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  min-height: 0;
+  min-width: 0;
+}
+.repo h5.repo-col-head {
+  flex: none;
+  margin: 0 0 2px;
+}
+.repo-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   padding-bottom: var(--sp-2);
 }
-/* 一项：名字、来自哪里、示例；右边是开关、默认、编辑。鼠标停着时地图上先画出开关之后的样子 */
-.repo-card {
+/* 树的一行：包（▸ 名字 数）或一项（色块 名字 种类），右边几个小按钮 */
+.repo-row {
   display: flex;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  padding: var(--sp-2);
-  border-radius: var(--r-md);
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  padding-right: var(--sp-1);
+  border-radius: var(--r-sm);
 }
-.repo-card:hover {
+.repo-row:hover,
+.repo-item.open {
   background-image: linear-gradient(var(--hover), var(--hover));
 }
-.repo-card .swatch.big {
-  margin-top: 3px;
+.repo-row button.repo-twist {
+  flex: none;
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
 }
-.repo-card-text {
-  line-height: 1.4;
-}
-.repo-sample {
-  color: var(--text);
+.repo-row button.repo-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  justify-content: flex-start;
+  background: transparent;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.repo-card-side {
+.repo-row button.repo-name:hover:not(:disabled) {
+  background-image: none;
+}
+.repo-node .repo-name {
+  font-weight: 500;
+}
+.repo-node.loose .repo-name {
+  color: var(--muted);
+}
+.repo-row > .hint {
+  flex: none;
+  white-space: nowrap;
+}
+.repo-actions {
   flex: none;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
+  margin-left: auto;
 }
-.repo-card-side button.toggle {
-  width: auto;
-  white-space: nowrap;
+/* 资源库一栏里已在本世界的：打勾、变暗 */
+.repo-item.on .repo-name,
+.repo-item.on .swatch {
+  opacity: 0.55;
 }
-.repo-card-side .check {
-  font-size: var(--fs-sm);
-}
-.repo-card-side button {
-  white-space: nowrap;
-}
-/* 第二十八轮：来源、在本世界两个小标签；在用的一行（带定位）；编辑、存进资源库、导出、删除一排小按钮 */
-.repo-card .tag {
-  color: var(--muted);
-  margin-left: var(--sp-1);
-}
-.repo-card .tag.on {
+.repo-check {
+  display: inline-flex;
+  padding: 0 var(--sp-1);
   color: var(--ok);
 }
-.repo-card .tag.mod {
-  color: var(--warn);
+.repo-detail {
+  padding-top: 2px;
+  padding-bottom: var(--sp-2);
+  padding-right: var(--sp-1);
 }
-.repo-usage {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-1);
+.repo-detail p {
+  margin: 0 0 var(--sp-1);
 }
-.repo-card-tools {
+.repo-sample {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-detail-actions {
   gap: 2px;
+}
+.repo-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-3);
 }
 .repo-restyle {
   flex: none;
-  border-top: 1px solid var(--fill);
-  padding-top: var(--sp-1);
+  padding: var(--sp-1) var(--sp-3) 0;
 }
 .repo-foot {
   flex: 0 0 auto;
-  padding: var(--sp-1) var(--sp-4) var(--sp-2);
-  border-top: 1px solid var(--fill);
+  padding: var(--sp-1) var(--sp-3) var(--sp-2);
 }
 .repo-foot p {
   margin: 0;
 }
-/* 角落的“⋯”：导入文件、从世界存进资源库、资源包 */
+/* 角落的“⋯”：导入文件、从世界存进资源库、整理本世界、资源包 */
 .repo-corner {
   position: relative;
 }
@@ -1362,18 +1397,16 @@ ol.history li.undone {
 .repo-menu .file-item input {
   display: none;
 }
-@media (max-width: 560px) {
-  .repo-body {
-    flex-direction: column;
+/* 窄屏：两栏上下排，整个一起滚 */
+@media (max-width: 720px) {
+  .repo-cols {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+    align-content: start;
   }
-  .repo-kinds {
+  .repo-tree {
     flex: none;
-    flex-direction: row;
-    overflow-x: auto;
-  }
-  .repo-kinds .item {
-    width: auto;
-    flex: none;
+    overflow: visible;
   }
 }
 
@@ -1960,6 +1993,15 @@ button.thumb {
 }
 
 /* 问一句的对话框（信任脚本吗、用安全模式打开吗、起个名字），资源包里的脚本 */
+/* 问话里列的几行（整理本世界：移出哪些、留着哪些） */
+.ask-lines {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: var(--sp-2) 0;
+}
+.ask-lines .item-text {
+  min-height: 24px;
+}
 .ask-scripts {
   max-height: 50vh;
   overflow-y: auto;
@@ -2193,13 +2235,17 @@ input.share-input {
   flex-direction: column;
   gap: var(--sp-1);
 }
+/* 按资源包分的组（第二十九轮：向导、重新生成里的时代、文化组、星球形态）：小号灰字 */
+h6.choice-group {
+  margin: var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
 .menu h5.menu-group {
   margin: var(--sp-2) 0 2px;
 }
 
-.repo-list h5.repo-section {
-  margin: var(--sp-2) 0 2px;
-}
 
 /* ---------- 国家（第二十三轮）：地理 / 人文的切换、旗帜、国家列表、档案的抽屉 ---------- */
 .map-kind {

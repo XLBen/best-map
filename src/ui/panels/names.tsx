@@ -264,7 +264,7 @@ export function FeatureStyleMenu() {
     <TypePicker
       items={[
         { label: `自动（${defaultStyleName(w.small)}）`, on: !f.style, hint: '按世界默认', onPick: () => pick(null) },
-        ...styleChoices(w.small).map((c) => ({ label: c.name, on: f.style === c.id, onPick: () => pick(c.id) })),
+        ...styleChoices(w.small).map((c) => ({ id: c.id, label: c.name, on: f.style === c.id, onPick: () => pick(c.id) })),
       ]}
       library="nameStyle"
     />
@@ -281,6 +281,7 @@ function StyleBox({ w }: { w: World }) {
       <h5>地名风格</h5>
       <TypePicker
         items={styleChoices(w.small).map((c) => ({
+          id: c.id,
           label: c.name,
           on: c.id === def,
           onPick: () => {

@@ -1,7 +1,9 @@
 import type { Command } from '../../../core/commands';
-import { type ContentKind, type ContentUsage, type UsageWorld, disableCommand as kindDisable, itemId, itemName, usageOf } from '../../../core/content/registry';
+import { type ContentKind, type ContentUsage, type UsageWorld, disableCommand as kindDisable, itemId, itemName, kindOf, usageOf } from '../../../core/content/registry';
 import { DEFAULT_STYLE, styleProblems, worldStyleId, type NameStyle } from '../../../core/name-styles';
-import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack, canApply, packIdFor, packItems, packSections, planPack, sameItem } from '../../../core/packs';
+import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, packItems, packSections, planPack, sameItem, subPacks, walkPacks, findPack } from '../../../core/packs';
+import { BASE_PATH, originOf } from '../../../core/packs/builtin-tree';
+import type { ContentRef } from '../../../core/content/unused';
 import type { LibraryEntry } from '../../library';
 
 // 资源库（第二十八轮以前叫资源库）的逻辑：每一种内容在资源库里有哪些（内置的、资源包里的、我的，本世界里有、资源库里没有的），
@@ -54,12 +56,14 @@ export interface RepoRow {
   name: string;
   item: unknown;
   source: RepoSource;
-  // 它所在的包（启用时按资源包的规则加进世界：先加用到的自定义场，同 id 不同内容的改名）
-  pack: ResourcePack;
+  // 它所在的包（启用时按资源包的规则加进世界：先加用到的自定义场，同 id 不同内容的改名）；可以是资源包里的一个小包
+  pack: PackNode;
   // 来自哪里（小字）
   from: string;
   // 资源库里的键（内置、我的、导入的）
   entry?: string;
+  // 第二十九轮：在资源库的树里的位置 [资源库的键, 小包…]（添加到本世界时记进 small.origin）；本世界一栏里是记着的来源
+  path?: string[];
   status: RepoStatus;
 }
 
@@ -67,12 +71,21 @@ const wrap = (kind: ContentKind, items: readonly unknown[], id: string, name: st
 
 const isZh = (kind: ContentKind, id: string) => kind.id === 'nameStyle' && id === DEFAULT_STYLE;
 
+// 一次列表里共用的：每一种在世界里的项（列一棵树要查上千项，kind.inWorld 不必每项都算一遍）
+type Ctx = Map<string, readonly unknown[]>;
+function inWorldOf(kind: ContentKind, world: PackWorld, ctx?: Ctx): readonly unknown[] {
+  if (!ctx) return kind.inWorld(world);
+  let v = ctx.get(kind.id);
+  if (!v) ctx.set(kind.id, (v = kind.inWorld(world)));
+  return v;
+}
+
 // 一项在这个世界里的状态
 // builtin：登记表里的内置项（不是资源库里的包）
-function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: PackWorld | null, builtin = false): RepoStatus {
+function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackWorld | null, builtin = false, ctx?: Ctx): RepoStatus {
   const id = itemId(kind, item);
   if (!world) return { on: false, locked: '先新建或打开世界' };
-  const inWorld = kind.inWorld(world);
+  const inWorld = inWorldOf(kind, world, ctx);
   if (!canApply(kind)) {
     const on = inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item));
     return { on, ...(on ? { worldId: id } : {}), locked: kind.pack.note ?? '不能启用' };
@@ -92,6 +105,8 @@ function statusOf(kind: ContentKind, item: unknown, pack: ResourcePack, world: P
     const bad = styleProblems(item as NameStyle);
     if (bad.length) return { on: false, locked: bad[0] };
   }
+  // 世界里没有同 id 的：加进来时不改名，就是不在本世界（不必按资源包的规则算一遍）
+  if (!inWorld.some((x) => itemId(kind, x) === id)) return { on: false };
   // 按资源包的规则：加进世界时的样子（没写“自然生成”的关掉……）与世界里的一样就是启用着
   const plan = planPack(world, pack, { [kind.pack.key]: [id], defaultStyle: null });
   const skip = plan.skipped.find((x) => x.section === kind.pack.key && x.from === id);
@@ -144,7 +159,7 @@ const quoted = (r: RepoRow) => `${r.kind.label}“${r.name}”`;
 
 // 启用：按资源包的规则（先加用到的自定义场；同 id 不同内容的改名加上）。一整步
 export function enableRowCommand(row: RepoRow, world: PackWorld): Command {
-  const plan = planPack(world, row.pack, { [row.kind.pack.key]: [row.id], defaultStyle: null });
+  const plan = planPack(world, row.pack, { [row.kind.pack.key]: [row.id], defaultStyle: null }, row.path ? { path: row.path } : {});
   return { ...plan.command, label: `添加到本世界：${quoted(row)}` };
 }
 
@@ -229,7 +244,7 @@ export function defaultStyleCommand(row: RepoRow, world: PackWorld): Command | n
     return { op: 'set_name_style', id: id === DEFAULT_STYLE ? null : id };
   }
   if (row.status.locked) return null;
-  const plan = planPack(world, row.pack, { nameStyles: [row.id], defaultStyle: row.id });
+  const plan = planPack(world, row.pack, { nameStyles: [row.id], defaultStyle: row.id }, row.path ? { path: row.path } : {});
   return { ...plan.command, label: `地名风格改为“${row.name}”` };
 }
 
@@ -265,3 +280,203 @@ export const HUMAN_KINDS: ReadonlySet<string> = new Set(['era', 'popValue', 'cul
 export const GOV_KINDS: ReadonlySet<string> = new Set(['government', 'faction']);
 // 第二十四轮的三种（城市等级、地标类型、点的类型）：资源库里有“生成城市… / 重新生成…”的入口
 export const SETTLE_KINDS: ReadonlySet<string> = new Set(['cityRank', 'landmarkType', 'pointType']);
+
+// ---------- 两棵树（第二十九轮）：左边本世界按来源的包分组，右边资源库按包 ----------
+
+// 树的一个节点：一个资源包或其中的小包（本世界一栏里是来源的包；没有来源的归“离群”）
+export interface TreeNode {
+  // 列表里唯一的键
+  key: string;
+  name: string;
+  description?: string;
+  // 完整的路径：[资源库的键, 小包…]（本世界一栏是来源；离群的是 []）
+  path: string[];
+  // 资源库一栏：资源库里的键、这一层的包（整包添加用）
+  entry?: string;
+  node?: PackNode;
+  // 通用 ▸ 基础（总在）：只显示，不能添加、移出
+  base?: boolean;
+  // 本世界一栏的“离群”：本世界自己做的、来源不在资源库里的
+  loose?: boolean;
+  children: TreeNode[];
+  // 直接在这一层的项
+  rows: RepoRow[];
+  // 整棵子树里的项数、其中在本世界的
+  count: number;
+  on: number;
+}
+
+export interface PackTree {
+  world: TreeNode[];
+  library: TreeNode[];
+}
+
+export const LOOSE_NAME = '离群';
+
+const samePath = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, k) => x === b[k]);
+const sourceOf = (e: LibraryEntry): RepoSource => (e.builtin ? 'builtin' : e.mine ? 'mine' : 'imported');
+
+function finish(n: TreeNode): TreeNode {
+  for (const c of n.children) finish(c);
+  n.count = n.rows.length + n.children.reduce((a, c) => a + c.count, 0);
+  n.on = n.rows.filter((r) => r.status.on).length + n.children.reduce((a, c) => a + c.on, 0);
+  return n;
+}
+
+// 资源库里的一层（没有这几种的项时 null）
+function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: readonly ContentKind[], world: PackWorld | null, ctx: Ctx): TreeNode | null {
+  const path = [e.key, ...rel];
+  const base = e.builtin && samePath(path, BASE_PATH);
+  const rows: RepoRow[] = [];
+  for (const k of kinds) {
+    for (const x of ownItems(node, k.pack.key)) {
+      const id = itemId(k, x);
+      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusOf(k, x, node, world, base, ctx) });
+    }
+  }
+  const children = subPacks(node)
+    .map((c) => libraryNode(e, c, [...rel, c.id], kinds, world, ctx))
+    .filter((c): c is TreeNode => c !== null);
+  if (!rows.length && !children.length) return null;
+  const desc = typeof node.description === 'string' ? node.description : undefined;
+  return { key: `l:${path.join('/')}`, name: node.name, ...(desc ? { description: desc } : {}), path, entry: e.key, node, ...(base ? { base: true } : {}), children, rows, count: 0, on: 0 };
+}
+
+// 本世界里的一项（都在本世界；总在的内置项、内置中文、星球形态不能移出）
+function worldStatus(kind: ContentKind, item: unknown, world: PackWorld): RepoStatus {
+  const id = itemId(kind, item);
+  const def = kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === id } : {};
+  if (!canApply(kind)) return { on: true, worldId: id, locked: kind.pack.note ?? '不能移出' };
+  if (isZh(kind, id)) return { on: true, worldId: id, locked: '内置中文总在', ...def };
+  const always = kind.alwaysOn?.(id);
+  if (always) {
+    const b = kind.builtin?.().find((x) => itemId(kind, x) === id);
+    return { on: true, worldId: id, locked: always, always: true, ...(b !== undefined && !sameItem(b, item) ? { modified: true } : {}) };
+  }
+  return { on: true, worldId: id, ...def };
+}
+
+// 本世界一栏的树：按来源的包分组（大包 ▸ 小包），先后照资源库；离群的放最后
+function worldTree(world: PackWorld, lib: readonly LibraryEntry[], kinds: readonly ContentKind[]): TreeNode[] {
+  const entryAt = new Map(lib.map((e, k) => [e.key, k]));
+  // 每个资源库里的包里各小包的先后
+  const order = new Map<string, Map<string, number>>();
+  const orderIn = (e: LibraryEntry) => {
+    let m = order.get(e.key);
+    if (!m) {
+      m = new Map();
+      const mm = m;
+      walkPacks(e.pack, (_n, p) => mm.set(p.join('/'), mm.size));
+      order.set(e.key, m);
+    }
+    return m;
+  };
+  const tops = new Map<string, TreeNode>();
+  const loose: TreeNode = { key: 'w:', name: LOOSE_NAME, path: [], loose: true, children: [], rows: [], count: 0, on: 0 };
+  const nodeAt = (path: readonly string[]): TreeNode => {
+    let top = tops.get(path[0]);
+    const e = lib.find((x) => x.key === path[0]);
+    if (!top) {
+      top = { key: `w:${path[0]}`, name: e?.pack.name ?? path[0], path: [path[0]], ...(e ? { entry: e.key } : {}), children: [], rows: [], count: 0, on: 0 };
+      tops.set(path[0], top);
+    }
+    let cur = top;
+    for (let d = 1; d < path.length; d++) {
+      const sub = path.slice(0, d + 1);
+      let next = cur.children.find((c) => samePath(c.path, sub));
+      if (!next) {
+        const name = (e && findPack(e.pack, sub.slice(1))?.name) || sub[d];
+        next = { key: `w:${sub.join('/')}`, name, path: sub, ...(e && samePath(sub, BASE_PATH) && e.builtin ? { base: true } : {}), children: [], rows: [], count: 0, on: 0 };
+        cur.children.push(next);
+      }
+      cur = next;
+    }
+    return cur;
+  };
+  for (const k of kinds) {
+    for (const x of k.inWorld(world)) {
+      const id = itemId(k, x);
+      const origin = originOf(world.small, k.id, id, x);
+      const row: RepoRow = {
+        kind: k,
+        key: `w:${k.id}:${id}`,
+        id,
+        name: itemName(k, x),
+        item: x,
+        source: 'world',
+        pack: wrap(k, [x], `world-${k.id}`, '这个世界'),
+        from: '',
+        ...(origin ? { path: origin } : {}),
+        status: worldStatus(k, x, world),
+      };
+      (origin?.length ? nodeAt(origin) : loose).rows.push(row);
+    }
+  }
+  const sortKids = (n: TreeNode, e: LibraryEntry | undefined) => {
+    if (e) {
+      const m = orderIn(e);
+      const at = (c: TreeNode) => m.get(c.path.slice(1).join('/')) ?? Infinity;
+      n.children.sort((a, b) => at(a) - at(b));
+    }
+    for (const c of n.children) sortKids(c, e);
+  };
+  const list = [...tops.values()].sort((a, b) => (entryAt.get(a.path[0]) ?? Infinity) - (entryAt.get(b.path[0]) ?? Infinity));
+  for (const t of list) sortKids(t, lib.find((x) => x.key === t.path[0]));
+  if (loose.rows.length) list.push(loose);
+  return list.map(finish);
+}
+
+// 两棵树：kind 是种类的 id（省略或 'all' 时是全部种类）。资源库一栏：内置的、我的、装上的，各是一棵树（共用的项在几个包里都列）
+export function packTree(world: PackWorld | null, lib: readonly LibraryEntry[], kind?: string): PackTree {
+  const k = kind && kind !== 'all' ? kindOf(kind) : undefined;
+  const kinds = k ? [k] : repoKinds();
+  const ctx: Ctx = new Map();
+  const library = lib.map((e) => libraryNode(e, e.pack, [], kinds, world, ctx)).filter((n): n is TreeNode => n !== null).map(finish);
+  return { world: world ? worldTree(world, lib, kinds) : [], library };
+}
+
+// 整棵子树里的项（按先后）
+export function treeRows(n: TreeNode): RepoRow[] {
+  return [...n.rows, ...n.children.flatMap(treeRows)];
+}
+
+// 搜索：名字、id 里有这几个字的项，和它们所在的包（包的名字对上时整个包都留着）
+export function filterTree(nodes: readonly TreeNode[], query: string, hideOn = false): TreeNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q && !hideOn) return [...nodes];
+  const keep = (r: RepoRow) => !(hideOn && r.status.on) && (!q || r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  const walk = (n: TreeNode): TreeNode | null => {
+    const whole = !!q && n.name.toLowerCase().includes(q);
+    const rows = n.rows.filter((r) => (whole && !(hideOn && r.status.on)) || keep(r));
+    const children = n.children.map(walk).filter((c): c is TreeNode => c !== null);
+    if (!rows.length && !children.length) return null;
+    return finish({ ...n, rows, children });
+  };
+  return nodes.map(walk).filter((n): n is TreeNode => n !== null);
+}
+
+// 整包添加到本世界（资源库一栏的一个包或小包，只加列着的、还不在本世界的）：一整步，记上来源。没有能加的时 null
+export function packAddCommand(n: TreeNode, world: PackWorld): Command | null {
+  if (!n.node || n.base) return null;
+  const picks: Record<string, string[]> = {};
+  for (const r of treeRows(n)) {
+    if (r.status.on || r.status.locked) continue;
+    const key = r.kind.pack.key;
+    (picks[key] ??= []).includes(r.id) || picks[key].push(r.id);
+  }
+  if (!Object.keys(picks).length) return null;
+  const plan = planPack(world, n.node, { ...picks, defaultStyle: null }, { path: n.path });
+  if (!plan.command.commands.length) return null;
+  return { ...plan.command, label: `添加到本世界：“${n.name}”` };
+}
+
+// 整理时能移出的几种（tidy_content 逐项用“移出”的那条命令：放在 small.content 的，和生态、河湖的种类）
+const TIDY_OPS = new Set(['biome', 'riverType', 'lakeType']);
+
+// 本世界一栏的一个包“移出没用到的”：子树里能移出的项（在不在用、移出后地图变不变由 planTidy 判断）
+export function packRemoveRefs(n: TreeNode): ContentRef[] {
+  if (n.base) return [];
+  return treeRows(n)
+    .filter((r) => r.status.on && !r.status.locked && !r.status.always && !r.status.isDefault && (r.kind.store === 'content' || TIDY_OPS.has(r.kind.id)))
+    .map((r) => ({ kind: r.kind.id, id: r.status.worldId ?? r.id }));
+}

@@ -14,8 +14,10 @@ import {
   type ChoiceScope,
   type HumanChoice,
   WEIGHT_RANGE,
+  choiceGroup,
   choiceLists,
   chooseEra,
+  groupByPack,
   choiceProblem,
   culturesIn,
   defaultChoice,
@@ -180,7 +182,7 @@ export function ValueMenu() {
         <Seg<string> value={cur.dim.id} options={dims.map((d) => [d.id, d.label])} onChange={(id) => setOptions({ popDim: id, popValue: '' })} wide />
       )}
       <TypePicker
-        items={dimensionValues(w.small, cur.dim.id).map((v) => ({ label: v.name, swatch: v.color, on: v.id === cur.value.id, hint: v.description, onPick: () => pick({ popDim: cur.dim.id, popValue: v.id }) }))}
+        items={dimensionValues(w.small, cur.dim.id).map((v) => ({ id: v.id, label: v.name, swatch: v.color, on: v.id === cur.value.id, hint: v.description, onPick: () => pick({ popDim: cur.dim.id, popValue: v.id }) }))}
         library="popValue"
       />
     </>
@@ -356,24 +358,40 @@ export function HumanChoices({
     );
   };
   const problem = choiceProblem(choice, small, lib);
+  // 第二十九轮：时代、文化组按资源包分组（内置的时代各是一个大包，合成一组“内置”）；只有一组时不写小标题
+  const eraSections = groupByPack(eras, (e) => choiceGroup('era', e, small, lib, scope, true));
+  const groupSections = (list: typeof all) => {
+    const secs = groupByPack(list, (g) => choiceGroup('cultureGroup', g, small, lib, scope));
+    return secs.map((sec) => (
+      <>
+        {secs.length > 1 && <h6 class="choice-group">{sec.label}</h6>}
+        <div class="human-groups">{sec.items.map(groupRow)}</div>
+      </>
+    ));
+  };
   return (
     <div class="human-choices">
       <h5>时代</h5>
-      <div class={`cards ${compact ? '' : 'three'}`}>
-        {eras.map((e) => (
-          <button class={`card ${choice.era === e.id ? 'on' : ''}`} disabled={disabled} onClick={() => onChange(chooseEra(choice, e.id, small, lists))}>
-            <b>
-              {e.color && <span class="swatch" style={{ background: e.color }} />}
-              {e.name}
-            </b>
-            <span class="hint">{firstLine(e.description) || `文化${e.dimensions.map((d) => ` · ${d.label}`).join('')}`}</span>
-          </button>
-        ))}
-      </div>
+      {eraSections.map((sec) => (
+        <>
+          {eraSections.length > 1 && <h6 class="choice-group">{sec.label}</h6>}
+          <div class={`cards ${compact ? '' : 'three'}`}>
+            {sec.items.map((e) => (
+              <button class={`card ${choice.era === e.id ? 'on' : ''}`} disabled={disabled} onClick={() => onChange(chooseEra(choice, e.id, small, lists))}>
+                <b>
+                  {e.color && <span class="swatch" style={{ background: e.color }} />}
+                  {e.name}
+                </b>
+                <span class="hint">{firstLine(e.description) || `文化${e.dimensions.map((d) => ` · ${d.label}`).join('')}`}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ))}
       {scope === 'world' && <LibraryLink kind="era" title="资源库里别的时代，添加到本世界后就能换" />}
       {era && <p class="hint">人口分{['文化', ...era.dimensions.map((d) => d.label)].join('、')}</p>}
       <h5>文化组</h5>
-      <div class="human-groups">{shown.map(groupRow)}</div>
+      {groupSections(shown)}
       {scope === 'world' && <LibraryLink kind="cultureGroup" title="资源库里别的文化组，添加到本世界后就能选" />}
       {rest.length > 0 && (
         <>
@@ -383,7 +401,7 @@ export function HumanChoices({
           {more && (
             <>
               <p class="hint">这个时代少见</p>
-              <div class="human-groups">{rest.map(groupRow)}</div>
+              {groupSections(rest)}
             </>
           )}
         </>

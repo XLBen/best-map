@@ -37,6 +37,16 @@ export function AskDialog() {
       <div class="modal ask" onClick={(e) => e.stopPropagation()}>
         <h3>{a.title}</h3>
         {a.text && <p class="muted">{a.text}</p>}
+        {!!a.lines?.length && (
+          <div class="ask-lines list">
+            {a.lines.map((l) => (
+              <div class="item-text">
+                <span>{l.label}</span>
+                {l.hint && <span class="hint">{l.hint}</span>}
+              </div>
+            ))}
+          </div>
+        )}
         {a.input !== undefined && <input ref={input} class="ask-input" type="text" maxLength={60} />}
         {!!a.scripts?.length && a.choices.some((c) => c.value === 'run') && <p class="hint">{isolationNote()}</p>}
         {a.scripts && a.scripts.length > 0 && (

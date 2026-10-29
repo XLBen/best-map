@@ -354,7 +354,7 @@ function ProvinceStyle({ w, id }: { w: World; id: number }) {
       <TypePicker
         items={[
           { label: `自动（${defaultStyleName(w.small)}）`, on: !own, hint: '按世界默认', onPick: () => pick(null) },
-          ...styleChoices(w.small).map((c) => ({ label: c.name, on: own === c.id, onPick: () => pick(c.id) })),
+          ...styleChoices(w.small).map((c) => ({ id: c.id, label: c.name, on: own === c.id, onPick: () => pick(c.id) })),
         ]}
         library="nameStyle"
       />
