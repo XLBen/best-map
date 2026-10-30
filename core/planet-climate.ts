@@ -43,7 +43,7 @@ function pixelCells(mesh: SphereMesh): Int32Array {
 // 高斯模糊：σ ≈ 0.46 × 1500 km，与平面世界里 (1500 km / 格距)² / 2 轮格上扩散的宽度相同
 function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit: number): Float64Array {
   const list = fracCache.get(mesh) ?? [];
-  for (const c of list) if (c.kmPerUnit === kmPerUnit && c.land.length === land.length && c.land.every((v, i) => v === land[i])) return c.result;
+  for (const c of list) if (c.kmPerUnit === kmPerUnit && sameU8(c.land, land)) return c.result;
   const px = pixelCells(mesh);
   const grid = new Float64Array(ROWS * COLS);
   for (let k = 0; k < grid.length; k++) grid[k] = land[px[k]];
@@ -52,31 +52,46 @@ function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit: numbe
   const pxKm = kmPerUnit / ROWS;
   const tmp = new Float64Array(ROWS * COLS);
   // 东西方向：首尾相接，核宽随 cos 纬度变宽；宽到超过一圈时就是整行平均
-  for (let r = 0; r < ROWS; r++) {
-    const cosLat = Math.sin(((r + 0.5) / ROWS) * Math.PI);
-    const s = sigmaKm / (pxKm * Math.max(cosLat, 1e-3));
-    if (s > COLS / 2) {
-      let m = 0;
-      for (let c = 0; c < COLS; c++) m += grid[r * COLS + c];
-      m /= COLS;
-      for (let c = 0; c < COLS; c++) tmp[r * COLS + c] = m;
-      continue;
-    }
-    const rad = Math.ceil(3 * s);
-    const w: number[] = [];
-    let wsum = 0;
-    for (let d = -rad; d <= rad; d++) {
-      const v = Math.exp(-(d * d) / (2 * s * s));
-      w.push(v);
-      wsum += v;
-    }
-    for (let c = 0; c < COLS; c++) {
-      let acc = 0;
-      for (let d = -rad; d <= rad; d++) acc += w[d + rad] * grid[r * COLS + ((((c + d) % COLS) + COLS) % COLS)];
-      tmp[r * COLS + c] = acc / wsum;
-    }
-  }
+  for (let r = 0; r < ROWS; r++) blurRow(grid, tmp, r, sigmaKm, pxKm);
   // 南北方向：两端截断（按实际参与的权重归一）
+  const blurred = blurColumns(tmp, sigmaKm, pxKm);
+  // 双线性插值回到格上
+  const out = sampleGrid(mesh, blurred);
+  list.unshift({ land: land.slice(), kmPerUnit, result: out });
+  // 每个网格留两份（预览用的副本不会把正在用的挤掉）
+  fracCache.set(mesh, list.slice(0, 2));
+  return out;
+}
+
+// 第三十二轮（提速）：landFractionSphere、sphereLand 里的几段循环拆成小函数（很快就被编译优化），原样照搬，结果逐值相同。
+// 东西方向的一行
+function blurRow(grid: Float64Array, tmp: Float64Array, r: number, sigmaKm: number, pxKm: number) {
+  const cosLat = Math.sin(((r + 0.5) / ROWS) * Math.PI);
+  const s = sigmaKm / (pxKm * Math.max(cosLat, 1e-3));
+  if (s > COLS / 2) {
+    let m = 0;
+    for (let c = 0; c < COLS; c++) m += grid[r * COLS + c];
+    m /= COLS;
+    for (let c = 0; c < COLS; c++) tmp[r * COLS + c] = m;
+    return;
+  }
+  const rad = Math.ceil(3 * s);
+  const w: number[] = [];
+  let wsum = 0;
+  for (let d = -rad; d <= rad; d++) {
+    const v = Math.exp(-(d * d) / (2 * s * s));
+    w.push(v);
+    wsum += v;
+  }
+  for (let c = 0; c < COLS; c++) {
+    let acc = 0;
+    for (let d = -rad; d <= rad; d++) acc += w[d + rad] * grid[r * COLS + ((((c + d) % COLS) + COLS) % COLS)];
+    tmp[r * COLS + c] = acc / wsum;
+  }
+}
+
+// 南北方向
+function blurColumns(tmp: Float64Array, sigmaKm: number, pxKm: number): Float64Array {
   const s = sigmaKm / pxKm;
   const rad = Math.ceil(3 * s);
   const blurred = new Float64Array(ROWS * COLS);
@@ -94,7 +109,11 @@ function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit: numbe
       blurred[r * COLS + c] = acc / wsum;
     }
   }
-  // 双线性插值回到格上
+  return blurred;
+}
+
+// 双线性插值回到格上
+function sampleGrid(mesh: SphereMesh, blurred: Float64Array): Float64Array {
   const n = mesh.n;
   const out = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -110,9 +129,6 @@ function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit: numbe
     const b = (r0 + 1) * COLS;
     out[i] = (blurred[a + ca] * (1 - tx) + blurred[a + cb] * tx) * (1 - ty) + (blurred[b + ca] * (1 - tx) + blurred[b + cb] * tx) * ty;
   }
-  list.unshift({ land: land.slice(), kmPerUnit, result: out });
-  // 每个网格留两份（预览用的副本不会把正在用的挤掉）
-  fracCache.set(mesh, list.slice(0, 2));
   return out;
 }
 
@@ -309,34 +325,7 @@ function sphereLand(world: World, mesh: SphereMesh, st: SphereStatic): SphereLan
   const winds = [new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n)];
   // 山挡风打开时：两季还没乘极地衰减的风（双精度），先偏转、再乘衰减（偏转不会漏到极点上）
   const raw = deflect ? SEASONS.map((): [Float64Array, Float64Array] => [new Float64Array(n), new Float64Array(n)]) : null;
-  for (let si = 0; si < 2; si++) {
-    const wx = winds[2 * si];
-    const wy = winds[2 * si + 1];
-    const u0 = st.u0[si];
-    const v0 = st.v0[si];
-    const kf = st.kf[si];
-    const rs = raw ? raw[si] : null;
-    for (let i = 0; i < n; i++) {
-      let u = u0[i];
-      let v = v0[i];
-      const k = kf[i];
-      u += k * lfE[i];
-      v += k * lfS[i];
-      const mag = Math.hypot(u, v);
-      const lim = 1.3;
-      if (mag > lim) {
-        u *= lim / mag;
-        v *= lim / mag;
-      }
-      const t = st.taper[i];
-      wx[i] = u * t;
-      wy[i] = v * t;
-      if (rs) {
-        rs[0][i] = u;
-        rs[1][i] = v;
-      }
-    }
-  }
+  for (let si = 0; si < 2; si++) seasonWinds(n, st.u0[si], st.v0[si], st.kf[si], st.taper, lfE, lfS, winds[2 * si], winds[2 * si + 1], raw ? raw[si][0] : null, raw ? raw[si][1] : null);
   const marineInit = new Float64Array(n);
   const decay = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -373,16 +362,7 @@ function sphereLand(world: World, mesh: SphereMesh, st: SphereStatic): SphereLan
   }
   // 海面温度的饱和水汽量；洋流：海上直接改变海温
   const satSea = [new Float64Array(n), new Float64Array(n)];
-  for (let i = 0; i < n; i++) {
-    let oS = st.tAnn[i] + st.kSeason[0][i] * 0.3;
-    let oW = st.tAnn[i] + st.kSeason[1][i] * 0.3;
-    if (sst && !land[i]) {
-      oS += sst[i];
-      oW += sst[i];
-    }
-    satSea[0][i] = saturation(oS);
-    satSea[1][i] = saturation(oW);
-  }
+  seaSaturation(n, land, st.tAnn, st.kSeason[0], st.kSeason[1], sst, satSea[0], satSea[1]);
   const lw: SphereLand = { land: land.slice(), params, winds, raw, marineInit, decay, sst, currentX, currentY, sstInit, ring, satSea };
   if (sphereLayers.on) landCache.set(st, [lw, ...list].slice(0, 2));
   return lw;
@@ -516,22 +496,7 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
     // 海风：吹离岸风的海岸也受海的影响（沿岸约 150 km 内和邻格平均）
     const passes = st.breeze;
     const ring = lw.ring;
-    for (const A of anomaly) {
-      for (let pass = 0; pass < passes; pass++) {
-        const next = Float64Array.from(A);
-        for (let i = 0; i < n; i++) {
-          if (!land[i] || ring[i] < 0) continue;
-          let s = 0;
-          let m = 0;
-          for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-            s += A[mesh.adj[e]];
-            m++;
-          }
-          next[i] = 0.5 * A[i] + (0.5 * s) / Math.max(1, m);
-        }
-        A.set(next);
-      }
-    }
+    for (const A of anomaly) for (let pass = 0; pass < passes; pass++) breezePass(mesh, land, ring, A);
   } else {
     out.currentX.fill(0);
     out.currentY.fill(0);
@@ -563,16 +528,7 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
   const cur = dSST && anomaly ? [new Float64Array(n), new Float64Array(n)] : null;
   for (let si = 0; si < 2; si++) {
     const [wx, wy] = winds[si];
-    for (let i = 0; i < n; i++) {
-      lee[si][i] = 1;
-      if (land[i]) {
-        const wm = Math.hypot(wx[i], wy[i]) || 1;
-        const up = (wx[i] * hx[i] + wy[i] * hy[i]) / wm;
-        if (up < 0) lee[si][i] = Math.exp(up / 1.5);
-      }
-      // 冷水海岸空气稳定（多雾少雨），暖流上空对流更强
-      if (cur && dSST && anomaly) cur[si][i] = clamp(1 + 0.06 * (land[i] ? anomaly[si][i] : dSST[i]), 0.5, 1.25);
-    }
+    leeAndCurrents(n, land, wx, wy, hx, hy, lee[si], cur && dSST && anomaly ? cur[si] : null, dSST, anomaly ? anomaly[si] : null);
   }
 
   // 只留输运要用的入流表（frac、lagged 不再用到）
@@ -616,56 +572,92 @@ export function computeClimateSphere(world: World, elevation: Float32Array, out:
     const fall = new Float64Array(n);
     const lim = new Float64Array(n);
     const evap = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
-      // 不在背风处 lee 为 1，乘上去数值不变
-      let r = ((rain[i] * warmth) / 1800) * lee[i];
-      if (cur) r *= cur[i];
-      fall[i] = 1 - Math.exp(-r * dKm[i]);
-      if (land[i]) {
-        lim[i] = planet.humidity * saturation(T[i]) * 1.1;
-        evap[i] = smoothstep(0, 25, T[i]);
-      } else lim[i] = planet.humidity * satSea[i];
-    }
-    const { order, koff, src, w, den } = tr.flows[si];
+    rainSetup(n, land, T, rain, lee, cur, satSea, dKm, planet.humidity, fall, lim, evap);
     const removed = new Float64Array(n);
     // 水汽，初值：陆上为饱和量的一半，海上为海面饱和量
     const moist = new Float64Array(n);
     for (let i = 0; i < n; i++) moist[i] = land[i] ? 0.5 * lim[i] : lim[i];
-    for (let s = 0; s < PLANET_SWEEPS.wind; s++) {
-      for (let k = 0; k < n; k++) {
-        const i = order[k];
-        let num = 0;
-        for (let q = koff[k]; q < koff[k + 1]; q++) num += moist[src[q]] * w[q];
-        // 辐散中心是下沉气流：相对湿度约一半
-        let m = den[k] > 1e-9 ? num / den[k] : land[i] ? (0.5 * lim[i]) / 1.1 : 0.5 * lim[i];
-        let p = m * fall[i];
-        m -= p;
-        if (land[i]) {
-          const cap = lim[i];
-          if (m > cap) {
-            const excess = (m - cap) * e150[i];
-            p += excess;
-            m -= excess;
-          }
-          m += p * 0.6 * evap[i];
-        } else {
-          const sat = lim[i];
-          if (m > sat * 1.1) {
-            const excess = (m - sat * 1.1) * e150[i];
-            p += excess;
-            m -= excess;
-          }
-          m += (sat - m) * e900[i];
-        }
-        removed[i] = p / dKm[i];
-        moist[i] = Math.max(0, m);
-      }
-    }
+    moistureSweeps(tr.flows[si], land, fall, lim, evap, e150, e900, dKm, moist, removed);
     const off = causes.moistOffset;
     for (let i = 0; i < n; i++) P[i] = removed[i] * 1.7e6 * Math.exp(off[i]);
   }
   return base;
+}
+
+// 第三十二轮（提速）：computeClimateSphere 里两段逐格的循环拆成小函数（很快就被编译优化），原样照搬，结果逐值相同。
+// 每格降落的比例、饱和量、蒸散回补的比例
+function rainSetup(
+  n: number,
+  land: Uint8Array,
+  T: Float32Array,
+  rain: Float64Array,
+  lee: Float64Array,
+  cur: Float64Array | null,
+  satSea: Float64Array,
+  dKm: Float64Array,
+  humidity: number,
+  fall: Float64Array,
+  lim: Float64Array,
+  evap: Float64Array,
+) {
+  for (let i = 0; i < n; i++) {
+    const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
+    // 不在背风处 lee 为 1，乘上去数值不变
+    let r = ((rain[i] * warmth) / 1800) * lee[i];
+    if (cur) r *= cur[i];
+    fall[i] = 1 - Math.exp(-r * dKm[i]);
+    if (land[i]) {
+      lim[i] = humidity * saturation(T[i]) * 1.1;
+      evap[i] = smoothstep(0, 25, T[i]);
+    } else lim[i] = humidity * satSea[i];
+  }
+}
+
+// 水汽沿风输运固定遍数，removed：每格降下的（除以格距）
+function moistureSweeps(
+  f: Inflow,
+  land: Uint8Array,
+  fall: Float64Array,
+  lim: Float64Array,
+  evap: Float64Array,
+  e150: Float64Array,
+  e900: Float64Array,
+  dKm: Float64Array,
+  moist: Float64Array,
+  removed: Float64Array,
+) {
+  const n = land.length;
+  const { order, koff, src, w, den } = f;
+  for (let s = 0; s < PLANET_SWEEPS.wind; s++) {
+    for (let k = 0; k < n; k++) {
+      const i = order[k];
+      let num = 0;
+      for (let q = koff[k]; q < koff[k + 1]; q++) num += moist[src[q]] * w[q];
+      // 辐散中心是下沉气流：相对湿度约一半
+      let m = den[k] > 1e-9 ? num / den[k] : land[i] ? (0.5 * lim[i]) / 1.1 : 0.5 * lim[i];
+      let p = m * fall[i];
+      m -= p;
+      if (land[i]) {
+        const cap = lim[i];
+        if (m > cap) {
+          const excess = (m - cap) * e150[i];
+          p += excess;
+          m -= excess;
+        }
+        m += p * 0.6 * evap[i];
+      } else {
+        const sat = lim[i];
+        if (m > sat * 1.1) {
+          const excess = (m - sat * 1.1) * e150[i];
+          p += excess;
+          m -= excess;
+        }
+        m += (sat - m) * e900[i];
+      }
+      removed[i] = p / dKm[i];
+      moist[i] = Math.max(0, m);
+    }
+  }
 }
 
 // 示踪量的稳态输运（与按格回调的通用写法逐值相同）：沿拓扑序扫描固定遍数，每格取上风各格的加权平均再乘上本格的衰减；
@@ -684,4 +676,96 @@ function landSweeps(f: Inflow, land: Uint8Array, init: Float64Array, decay: Floa
     }
   }
   return out;
+}
+
+// 海风（sphereTerrain 里拆出来的一遍，原样照搬）：沿岸 ring 以内的陆格与邻格平均
+function breezePass(mesh: SphereMesh, land: Uint8Array, ring: Int32Array, A: Float64Array) {
+  const n = mesh.n;
+  const next = Float64Array.from(A);
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || ring[i] < 0) continue;
+    let s = 0;
+    let m = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      s += A[mesh.adj[e]];
+      m++;
+    }
+    next[i] = 0.5 * A[i] + (0.5 * s) / Math.max(1, m);
+  }
+  A.set(next);
+}
+
+// 一季的背风（不在背风处为 1）与洋流对降水的影响（sphereTerrain 里拆出来的，原样照搬；没有洋流时 cur 为 null）
+function leeAndCurrents(
+  n: number,
+  land: Uint8Array,
+  wx: Float32Array,
+  wy: Float32Array,
+  hx: Float64Array,
+  hy: Float64Array,
+  lee: Float64Array,
+  cur: Float64Array | null,
+  dSST: Float64Array | null,
+  anomaly: Float64Array | null,
+) {
+  for (let i = 0; i < n; i++) {
+    lee[i] = 1;
+    if (land[i]) {
+      const wm = Math.hypot(wx[i], wy[i]) || 1;
+      const up = (wx[i] * hx[i] + wy[i] * hy[i]) / wm;
+      if (up < 0) lee[i] = Math.exp(up / 1.5);
+    }
+    // 冷水海岸空气稳定（多雾少雨），暖流上空对流更强
+    if (cur && dSST && anomaly) cur[i] = clamp(1 + 0.06 * (land[i] ? anomaly[i] : dSST[i]), 0.5, 1.25);
+  }
+}
+
+// 一季偏转前的风（sphereLand 里拆出来的，原样照搬）：背景风加季风、限幅、乘极地衰减；rx、ry：没乘衰减的（山挡风开着时）
+function seasonWinds(
+  n: number,
+  u0: Float64Array,
+  v0: Float64Array,
+  kf: Float64Array,
+  taper: Float64Array,
+  lfE: Float64Array,
+  lfS: Float64Array,
+  wx: Float32Array,
+  wy: Float32Array,
+  rx: Float64Array | null,
+  ry: Float64Array | null,
+) {
+  for (let i = 0; i < n; i++) {
+    let u = u0[i];
+    let v = v0[i];
+    const k = kf[i];
+    u += k * lfE[i];
+    v += k * lfS[i];
+    const mag = Math.hypot(u, v);
+    const lim = 1.3;
+    if (mag > lim) {
+      u *= lim / mag;
+      v *= lim / mag;
+    }
+    const t = taper[i];
+    wx[i] = u * t;
+    wy[i] = v * t;
+    if (rx && ry) {
+      rx[i] = u;
+      ry[i] = v;
+    }
+  }
+}
+
+// 两季海面温度的饱和水汽量（sphereLand 里拆出来的，原样照搬）
+function seaSaturation(n: number, land: Uint8Array, tAnn: Float64Array, kS: Float64Array, kW: Float64Array, sst: Float64Array | null, outS: Float64Array, outW: Float64Array) {
+  for (let i = 0; i < n; i++) {
+    let oS = tAnn[i] + kS[i] * 0.3;
+    let oW = tAnn[i] + kW[i] * 0.3;
+    if (sst && !land[i]) {
+      oS += sst[i];
+      oW += sst[i];
+    }
+    outS[i] = saturation(oS);
+    outW[i] = saturation(oW);
+  }
 }

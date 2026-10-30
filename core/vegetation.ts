@@ -6,7 +6,7 @@ import { riverBank, riverProvider } from './river-types';
 import { planetFormIssues } from './terrain';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
 import { worldLatitude, type Derived, type World } from './world';
-import { type Species, trapezoid } from './species';
+import { type Species, type Tolerance, trapezoid } from './species';
 
 // 植被：每种类型的适宜度 = 各耐受曲线之积；得分 = 适宜度 × 竞争力 × 可达；
 // 份额 ∝ 得分^k（k 为锐度），主导类型 = 份额最大者。
@@ -219,12 +219,8 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   for (const sp of species) {
     for (const t of sp.tolerances) {
       if (values.has(t.field)) continue;
-      const get = fieldGetter(world, d, t.field);
       const arr = new Float64Array(n);
-      for (let q = 0; q < count; q++) {
-        const i = vegCells[q];
-        arr[i] = get(i);
-      }
+      fillField(fieldGetter(world, d, t.field), vegCells, count, arr);
       values.set(t.field, arr);
     }
   }
@@ -249,13 +245,7 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
     const p = place ? place.slot[s] : -1;
     const placeF = place ? place.placeF : null;
     const P = place ? place.P : 0;
-    for (let q = 0; q < count; q++) {
-      const i = vegCells[q];
-      let v = 1;
-      for (let k = 0; k < K && v > 0; k++) v *= trapezoid(tols[k], fields[k][i]);
-      if (p >= 0 && v > 0) v *= placeF![i * P + p];
-      suit[i * S + s] = v;
-    }
+    suitability(vegCells, count, tols, fields, K, p, placeF, P, suit, S, s);
     if (sp.dispersal) {
       const disp = sp.dispersal;
       const limit = disp.range / world.kmPerUnit;
@@ -279,6 +269,52 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   const share = d.share;
   const dominant = d.dominant;
   d.overridden.fill(0);
+  vegShares(n, S, veg, suit, reach, comp, k, invade, share, dominant);
+
+  // 硬覆盖：直接改结果，标为例外
+  for (const c of small.constraints) {
+    if (c.mode !== 'override') continue;
+    const s = species.findIndex((sp) => sp.id === c.species);
+    if (s < 0) continue;
+    for (const i of c.cells) {
+      if (i >= n || !veg[i]) continue;
+      for (let t = 0; t < S; t++) share[i * S + t] = t === s ? 1 : 0;
+      dominant[i] = s;
+      d.overridden[i] = 1;
+    }
+  }
+
+  // 颜色脚本（第三批）：按最后的份额算每格的颜色，写进 d.look（没有颜色脚本时为 undefined）
+  if (opts.look !== false) computeLook(world, d, issues, sessionOf);
+  run.session?.finish();
+  // 没有问题时为 undefined（与 placeF 一样只在曾经有过时才赋值：从来没有脚本的世界里没有这个键）
+  if (issues.length) d.scriptIssues = issues;
+  else if (d.scriptIssues !== undefined) d.scriptIssues = undefined;
+}
+
+// 第三十二轮（提速）：computeVegetation 里的几段逐格的循环拆成小函数（小函数里的循环很快就被编译优化；
+// 写在大函数里时，前几次常常还没编译好就算完了），原样照搬，结果逐值相同
+// 一个场在能长植被的格上的值
+function fillField(get: FieldGetter, vegCells: Int32Array, count: number, arr: Float64Array) {
+  for (let q = 0; q < count; q++) {
+    const i = vegCells[q];
+    arr[i] = get(i);
+  }
+}
+
+// 一种生态在能长植被的格上的适宜度（耐受曲线相乘，再乘上长在哪里的脚本的系数）
+function suitability(vegCells: Int32Array, count: number, tols: readonly Tolerance[], fields: Float64Array[], K: number, p: number, placeF: Float32Array | null, P: number, suit: Float32Array, S: number, s: number) {
+  for (let q = 0; q < count; q++) {
+    const i = vegCells[q];
+    let v = 1;
+    for (let k = 0; k < K && v > 0; k++) v *= trapezoid(tols[k], fields[k][i]);
+    if (p >= 0 && v > 0) v *= placeF![i * P + p];
+    suit[i * S + s] = v;
+  }
+}
+
+// 每格各生态的份额与主导生态（侵占：按目标的适宜度提高得分）
+function vegShares(n: number, S: number, veg: Uint8Array, suit: Float32Array, reach: Uint8Array, comp: number[], k: number, invade: InvadeTable | null, share: Float32Array, dominant: Int16Array) {
   for (let i = 0; i < n; i++) {
     if (!veg[i]) {
       dominant[i] = -1;
@@ -314,26 +350,6 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
     if (total > 0) for (let s = 0; s < S; s++) share[i * S + s] /= total;
     dominant[i] = best;
   }
-
-  // 硬覆盖：直接改结果，标为例外
-  for (const c of small.constraints) {
-    if (c.mode !== 'override') continue;
-    const s = species.findIndex((sp) => sp.id === c.species);
-    if (s < 0) continue;
-    for (const i of c.cells) {
-      if (i >= n || !veg[i]) continue;
-      for (let t = 0; t < S; t++) share[i * S + t] = t === s ? 1 : 0;
-      dominant[i] = s;
-      d.overridden[i] = 1;
-    }
-  }
-
-  // 颜色脚本（第三批）：按最后的份额算每格的颜色，写进 d.look（没有颜色脚本时为 undefined）
-  if (opts.look !== false) computeLook(world, d, issues, sessionOf);
-  run.session?.finish();
-  // 没有问题时为 undefined（与 placeF 一样只在曾经有过时才赋值：从来没有脚本的世界里没有这个键）
-  if (issues.length) d.scriptIssues = issues;
-  else if (d.scriptIssues !== undefined) d.scriptIssues = undefined;
 }
 
 // 第十二轮：不计水体类型的一遍植被的主导生态（河、湖类型“只在这些生态里出现”、脚本里的 biome() 用它）。

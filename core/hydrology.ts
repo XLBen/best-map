@@ -17,6 +17,29 @@ const MIN_WET_CELLS = 3;
 // 汇流只取决于高程、海陆、画的河强制的方向和在哪里消失：只改气候、河流门槛时（以及约束求解的每一轮）原样复用，结果只读
 export const routeMemo = new ContentMemo<Routing>();
 
+// 坡度（m/km，双精度，海格 0）：只取决于高程、海陆与比例尺（第三十二轮提速：只改气候、画河、放河的类型时
+// 高程不变，原样复用；结果只读）。d.slope 是它的单精度；地形湿度指数按双精度的算（与以前逐值相同）
+export const slopeMemo = new ContentMemo<Float64Array>();
+function slopeField(world: World, elevation: Float32Array): Float64Array {
+  const { mesh, causes, kmPerUnit } = world;
+  const land = causes.land;
+  const hit = slopeMemo.find(mesh, [elevation, land], [kmPerUnit]);
+  if (hit) return hit;
+  const n = mesh.n;
+  const hPos = new Float64Array(n);
+  for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
+  const geo = gradGeo(mesh);
+  const g = new Float64Array(2);
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
+    gradientAt(mesh, geo, hPos, i, g);
+    out[i] = Math.hypot(g[0], g[1]) / kmPerUnit;
+  }
+  slopeMemo.keep(mesh, [elevation.slice(), land.slice()], [kmPerUnit], out);
+  return out;
+}
+
 // 每格的面积（km²）：只取决于网格与比例尺，按网格缓存一份（第三十一轮；只读）
 const areaCache = new WeakMap<Mesh, { kmPerUnit: number; areaKm: Float64Array }>();
 export function cellAreaKm(mesh: Mesh, kmPerUnit: number): Float64Array {
@@ -56,31 +79,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const anchored = anchors.length ? new Uint8Array(n) : null;
   if (anchored) for (const a of anchors) if (a >= 0) anchored[a] = 1;
   // 湖：填洼深度超过 3 m 的连通平水面
-  const lakeId = new Int32Array(n).fill(-1);
-  const lakes: { cells: number[]; outlet: number; area: number; perennial: boolean; evap: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    if (!land[i] || lakeId[i] >= 0 || !wet(i)) continue;
-    const id = lakes.length;
-    const cells = [i];
-    lakeId[i] = id;
-    let maxDepth = 0;
-    for (let h = 0; h < cells.length; h++) {
-      const c = cells[h];
-      maxDepth = Math.max(maxDepth, r.water[c] - elevation[c]);
-      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-        const j = mesh.adj[e];
-        if (land[j] && lakeId[j] < 0 && Math.abs(r.water[j] - r.water[i]) < 1e-6 && wet(j)) {
-          lakeId[j] = id;
-          cells.push(j);
-        }
-      }
-    }
-    lakes.push({ cells, outlet: -1, area: 0, perennial: false, evap: 0 });
-    // 太浅的不算湖；只有一两格的自然洼地多半是高程平滑留下的小坑，也不算（水照常流过），
-    // 否则荒漠里会有零星的蓝点。用户放的湖照旧
-    const tiny = cells.length < 3 && !(anchored && cells.some((c) => anchored[c]));
-    if (maxDepth < 3 || tiny) for (const c of cells) lakeId[c] = -2 - id;
-  }
+  const { lakeId, lakes } = findLakes(mesh, land, r.water, elevation, fixed, anchored);
   small.lakes.forEach((spec, k) => {
     const id = lakeId[anchors[k]];
     if (id >= 0 && spec.perennial) lakes[id].perennial = true;
@@ -88,34 +87,10 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   // 陆地围住的小块海挖成的湖（见 terrain.ts 的 pocketLakes）常年蓄满（第三十二轮）：它本来是海，湖底常在海平面以下；
   // 旁边的洼地挖低了以后，干旱时只剩湖底的一小片水，水面就到了海平面以下
   for (const cells of pocketLakes(world)) for (const c of cells) if (lakeId[c] >= 0) lakes[lakeId[c]].perennial = true;
-  for (let id = 0; id < lakes.length; id++) {
-    const L = lakes[id];
-    if (lakeId[L.cells[0]] !== id) continue;
-    for (const c of L.cells) {
-      L.area += areaKm[c];
-      // 湖面蒸发约等于潜在蒸散（mm/年）→ m³/s
-      L.evap += (d.pet[c] * 1e-3 * areaKm[c] * 1e6) / SEC_PER_YEAR;
-      const rc = r.receiver[c];
-      if (rc < 0 || lakeId[rc] !== id) L.outlet = c;
-    }
-  }
+  lakeBudgets(lakes, lakeId, areaKm, d.pet, r.receiver);
 
   // 本地产流（m³/s）
-  const local = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    if (!land[i]) continue;
-    const P = d.precip[i];
-    let R: number;
-    if (lakeId[i] >= 0) R = P;
-    else if (d.tWarm[i] < 0) R = P * 0.9;
-    else {
-      const phi = d.pet[i] / Math.max(P, 1e-6);
-      const w = 2.6;
-      const et = P * (1 + phi - Math.pow(1 + Math.pow(phi, w), 1 / w));
-      R = Math.max(0, P - et);
-    }
-    local[i] = (R * 1e-3 * areaKm[i] * 1e6) / SEC_PER_YEAR;
-  }
+  const local = localRunoff(n, land, lakeId, d.precip, d.tWarm, d.pet, areaKm);
   // 画的河：源头的泉水让整条河从源头起就可见（沿河道往下的流量都不低于它）；
   // 选了更大的河，多出来的水沿路线平均加进来（末端那格除外），河越往下越宽
   for (const g of small.guides) {
@@ -130,25 +105,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const Q = new Float64Array(n);
   const A = new Float64Array(n);
   const lakeFill = new Float64Array(lakes.length).fill(1);
-  for (let k = 0; k < r.count; k++) {
-    const i = r.order[k];
-    Q[i] = local[i];
-    A[i] = areaKm[i];
-  }
-  for (let k = r.count - 1; k >= 0; k--) {
-    const i = r.order[k];
-    const id = lakeId[i];
-    if (id >= 0 && lakes[id].outlet === i && !lakes[id].perennial) {
-      const loss = lakes[id].evap;
-      if (Q[i] < loss) lakeFill[id] = Q[i] / loss;
-      Q[i] = Math.max(0, Q[i] - loss);
-    }
-    const j = r.receiver[i];
-    if (j >= 0 && land[j]) {
-      Q[j] += Q[i];
-      A[j] += A[i];
-    }
-  }
+  accumulateFlow(r, land, local, areaKm, lakeId, lakes, Q, A, lakeFill);
 
   splitFlows(world, r, land, Q);
 
@@ -196,11 +153,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     for (const c of L.cells) if (!d.lake[c]) d.lake[c] = 2;
   }
 
-  for (let i = 0; i < n; i++) {
-    d.discharge[i] = land[i] ? Q[i] : 0;
-    d.drainArea[i] = land[i] ? A[i] : 0;
-    d.receiver[i] = land[i] ? r.receiver[i] : -1;
-  }
+  writeFlow(n, land, Q, A, r.receiver, d.discharge, d.drainArea, d.receiver);
   // 画的河（有折线的河道）整条都是河：水不够的格按最小的河的水量补上（只补这一格，不往下游加），
   // 所以画出来的线一路都在，预览里画的就是松手后的。最后一格汇入别的河时本来就是河（补不补一样）；
   // 那条河后来没了时，这一格就是这条河自己的。没有画的河时什么都不做（逐值照旧）
@@ -220,29 +173,146 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   }
   // 流域：沿下游方向找到出海口
   d.basin.fill(-1);
+  basinsOf(r, land, d.basin);
+  // 坡度（m/km）与地形湿度指数 ln(a / tanβ)
+  writeSlope(n, land, slopeField(world, elevation), A, areaKm, d.slope, d.wetness);
+}
+
+// 第三十二轮（提速）：computeHydrology 里一段段逐格的循环拆成小函数（小函数里的循环很快就被编译优化；
+// 整段写在一个大函数里时，一段段循环常常还没编译好就走完了），每段原样照搬，结果逐值相同
+interface LakeBasin {
+  cells: number[];
+  outlet: number;
+  area: number;
+  perennial: boolean;
+  evap: number;
+}
+
+// 水面比地面高出 0.5 m 以上、不是湖里的岛定了高度的格（第三十二轮提速：写成模块里的函数，不是每次新建的闭包：
+// 编译优化过的循环里调用的总是同一个函数，不会因为“换了一个函数”退回去）
+function isWet(water: Float64Array, elevation: Float32Array, fixed: Float32Array | undefined, i: number): boolean {
+  return water[i] - elevation[i] >= 0.5 && (!fixed || fixed[i] === FREE_HEIGHT);
+}
+
+// 湖：填洼深度超过 3 m 的连通平水面（lakeId：湖的编号；太浅、太小的记成 −2 − 编号）
+function findLakes(mesh: Mesh, land: Uint8Array, water: Float64Array, elevation: Float32Array, fixed: Float32Array | undefined, anchored: Uint8Array | null): { lakeId: Int32Array; lakes: LakeBasin[] } {
+  const n = mesh.n;
+  const lakeId = new Int32Array(n).fill(-1);
+  const lakes: LakeBasin[] = [];
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || lakeId[i] >= 0 || !isWet(water, elevation, fixed, i)) continue;
+    const id = lakes.length;
+    const cells = [i];
+    lakeId[i] = id;
+    let maxDepth = 0;
+    for (let h = 0; h < cells.length; h++) {
+      const c = cells[h];
+      maxDepth = Math.max(maxDepth, water[c] - elevation[c]);
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (land[j] && lakeId[j] < 0 && Math.abs(water[j] - water[i]) < 1e-6 && isWet(water, elevation, fixed, j)) {
+          lakeId[j] = id;
+          cells.push(j);
+        }
+      }
+    }
+    lakes.push({ cells, outlet: -1, area: 0, perennial: false, evap: 0 });
+    // 太浅的不算湖；只有一两格的自然洼地多半是高程平滑留下的小坑，也不算（水照常流过），
+    // 否则荒漠里会有零星的蓝点。用户放的湖照旧
+    const tiny = cells.length < 3 && !(anchored && cells.some((c) => anchored[c]));
+    if (maxDepth < 3 || tiny) for (const c of cells) lakeId[c] = -2 - id;
+  }
+  return { lakeId, lakes };
+}
+
+// 每个湖的面积、湖面蒸发（m³/s）与出口
+function lakeBudgets(lakes: LakeBasin[], lakeId: Int32Array, areaKm: Float64Array, pet: Float32Array, receiver: Int32Array) {
+  for (let id = 0; id < lakes.length; id++) {
+    const L = lakes[id];
+    if (lakeId[L.cells[0]] !== id) continue;
+    for (const c of L.cells) {
+      L.area += areaKm[c];
+      // 湖面蒸发约等于潜在蒸散（mm/年）→ m³/s
+      L.evap += (pet[c] * 1e-3 * areaKm[c] * 1e6) / SEC_PER_YEAR;
+      const rc = receiver[c];
+      if (rc < 0 || lakeId[rc] !== id) L.outlet = c;
+    }
+  }
+}
+
+// 本地产流（m³/s）：Budyko 曲线
+function localRunoff(n: number, land: Uint8Array, lakeId: Int32Array, precip: Float32Array, tWarm: Float32Array, pet: Float32Array, areaKm: Float64Array): Float64Array {
+  const local = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
+    const P = precip[i];
+    let R: number;
+    if (lakeId[i] >= 0) R = P;
+    else if (tWarm[i] < 0) R = P * 0.9;
+    else {
+      const phi = pet[i] / Math.max(P, 1e-6);
+      const w = 2.6;
+      const et = P * (1 + phi - Math.pow(1 + Math.pow(phi, w), 1 / w));
+      R = Math.max(0, P - et);
+    }
+    local[i] = (R * 1e-3 * areaKm[i] * 1e6) / SEC_PER_YEAR;
+  }
+  return local;
+}
+
+// 沿下游累加流量与汇水面积；湖的出口减去湖面蒸发（内流湖：入流不够时记下蓄满的比例）
+function accumulateFlow(r: Routing, land: Uint8Array, local: Float64Array, areaKm: Float64Array, lakeId: Int32Array, lakes: LakeBasin[], Q: Float64Array, A: Float64Array, lakeFill: Float64Array) {
+  for (let k = 0; k < r.count; k++) {
+    const i = r.order[k];
+    Q[i] = local[i];
+    A[i] = areaKm[i];
+  }
+  for (let k = r.count - 1; k >= 0; k--) {
+    const i = r.order[k];
+    const id = lakeId[i];
+    if (id >= 0 && lakes[id].outlet === i && !lakes[id].perennial) {
+      const loss = lakes[id].evap;
+      if (Q[i] < loss) lakeFill[id] = Q[i] / loss;
+      Q[i] = Math.max(0, Q[i] - loss);
+    }
+    const j = r.receiver[i];
+    if (j >= 0 && land[j]) {
+      Q[j] += Q[i];
+      A[j] += A[i];
+    }
+  }
+}
+
+function writeFlow(n: number, land: Uint8Array, Q: Float64Array, A: Float64Array, receiver: Int32Array, discharge: Float32Array, drainArea: Float32Array, outReceiver: Int32Array) {
+  for (let i = 0; i < n; i++) {
+    discharge[i] = land[i] ? Q[i] : 0;
+    drainArea[i] = land[i] ? A[i] : 0;
+    outReceiver[i] = land[i] ? receiver[i] : -1;
+  }
+}
+
+function basinsOf(r: Routing, land: Uint8Array, basin: Int32Array) {
   for (let k = 0; k < r.count; k++) {
     const i = r.order[k];
     const j = r.receiver[i];
-    d.basin[i] = j >= 0 && land[j] ? d.basin[j] : i;
+    basin[i] = j >= 0 && land[j] ? basin[j] : i;
   }
-  // 坡度（m/km）与地形湿度指数 ln(a / tanβ)
-  const hPos = new Float64Array(n);
-  for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
-  const geo = gradGeo(mesh);
-  const g = new Float64Array(2);
+}
+
+// 坡度（单精度）与地形湿度指数（按双精度的坡度）
+function writeSlope(n: number, land: Uint8Array, slope: Float64Array, A: Float64Array, areaKm: Float64Array, outSlope: Float32Array, wetness: Float32Array) {
   for (let i = 0; i < n; i++) {
     if (!land[i]) {
-      d.slope[i] = 0;
-      d.wetness[i] = 0;
+      outSlope[i] = 0;
+      wetness[i] = 0;
       continue;
     }
-    gradientAt(mesh, geo, hPos, i, g);
-    const s = Math.hypot(g[0], g[1]) / kmPerUnit;
-    d.slope[i] = s;
+    const s = slope[i];
+    outSlope[i] = s;
     // 单位宽度汇水面积（m）：面积 / 格宽
     const width = Math.sqrt(areaKm[i]) * 1000;
     const a = (A[i] * 1e6) / width;
-    d.wetness[i] = Math.log(a / Math.max(s / 1000, 1e-5));
+    wetness[i] = Math.log(a / Math.max(s / 1000, 1e-5));
   }
 }
 
@@ -268,6 +338,11 @@ function splitFlows(world: World, r: Routing, land: Uint8Array, Q: Float64Array)
   }
 }
 
+// 自然湖的洼地里的格（陆格、湖面或干湖底、不是放的湖）：同 isWet，写成模块里的函数
+function inLakeBasin(land: Uint8Array, lake: Uint8Array, userLake: Uint8Array | null, i: number): boolean {
+  return land[i] === 1 && lake[i] !== 0 && !userLake?.[i];
+}
+
 // ---------- 自然湖的湖底（第十二轮） ----------
 // 自然的湖是填洼填出来的：水面平，湖底就是洼地本来的地形，常常只有几米深、一片平。这里在水文算完之后
 // 把洼地的底按离岸的距离往下修成真实的样子：岸边浅、往里变深，最深处随洼地的面积（约 12 m × 面积^0.3，
@@ -284,9 +359,8 @@ export function shapeLakeBeds(world: World, d: Derived, userLake: Uint8Array | n
   const queue = new Int32Array(n);
   const dist = new Float64Array(n).fill(Infinity);
   const cellKm = mesh.spacing * kmPerUnit;
-  const inBasin = (i: number) => land[i] === 1 && d.lake[i] !== 0 && !userLake?.[i];
   for (let s = 0; s < n; s++) {
-    if (seen[s] || !inBasin(s)) continue;
+    if (seen[s] || !inLakeBasin(land, d.lake, userLake, s)) continue;
     // 一片洼地：相连的湖格与干湖底格
     let len = 0;
     queue[len++] = s;
@@ -299,7 +373,7 @@ export function shapeLakeBeds(world: World, d: Derived, userLake: Uint8Array | n
       ref = Math.max(ref, d.elevation[c]);
       for (let e = off[c]; e < off[c + 1]; e++) {
         const j = adj[e];
-        if (!seen[j] && inBasin(j)) {
+        if (!seen[j] && inLakeBasin(land, d.lake, userLake, j)) {
           seen[j] = 1;
           queue[len++] = j;
         }
@@ -311,7 +385,7 @@ export function shapeLakeBeds(world: World, d: Derived, userLake: Uint8Array | n
     for (const c of cells) {
       for (let e = off[c]; e < off[c + 1]; e++) {
         const j = adj[e];
-        if (!inBasin(j)) {
+        if (!inLakeBasin(land, d.lake, userLake, j)) {
           dist[c] = 0;
           order.push(c);
           break;
@@ -322,7 +396,7 @@ export function shapeLakeBeds(world: World, d: Derived, userLake: Uint8Array | n
       const c = order[q];
       for (let e = off[c]; e < off[c + 1]; e++) {
         const j = adj[e];
-        if (!inBasin(j)) continue;
+        if (!inLakeBasin(land, d.lake, userLake, j)) continue;
         const nd = dist[c] + mesh.dist[e] * kmPerUnit;
         if (nd < dist[j]) {
           dist[j] = nd;

@@ -454,61 +454,96 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   const lamA = new Float64Array(n).fill(-1);
   const lamL = new Float64Array(n).fill(-1);
   const edge = mesh.boundary;
+  const st: SolveState = { u, K, A, T, fade, lastA, powA, lam, lamA, lamL, areaReg, kmPerUnit };
   let r = router.route(h);
   for (let it = 0; it < ITERATIONS; it++) {
     if (it > 0) r = router.route(h);
     accumulate(r, areaKm, A);
-    for (let k = 0; k < r.count; k++) {
-      const i = r.order[k];
-      const j = r.receiver[i];
-      // 下游是陆格：它的高；挨海：0；地图边上（地区，没有下游）：0.8·T
-      const baseH = j >= 0 ? (land[j] ? h[j] : 0) : edge[i] ? EDGE_BASE * Math.max(0, T[i]) * fade[i] : 0;
-      // 到下游的距离；没有下游或下游不是邻格时取格距
-      const e = r.edge[i];
-      const L = e >= 0 ? mesh.dist[e] * kmPerUnit : kmPerUnit * mesh.spacing;
-      if (A[i] !== lastA[i]) {
-        lastA[i] = A[i];
-        powA[i] = Math.pow(A[i] + areaReg, M);
-      }
-      let hi = baseH + (u[i] * L) / (K[i] * powA[i]);
-      // 基准面作软底：往上补到 T 的一部分（小溪几乎补满，留在高原面上；大河补得少，切出峡谷）
-      const gap = T[i] - hi;
-      if (gap > 0 && fade[i] > 0) {
-        if (A[i] !== lamA[i] || L !== lamL[i]) {
-          lamA[i] = A[i];
-          lamL[i] = L;
-          lam[i] = fade[i] * (1 - Math.exp(-L / (KNICK_KM * Math.sqrt(A[i] / 1e4))));
-        }
-        hi += gap * lam[i];
-      }
-      h[i] = hi;
-    }
+    solvePass(mesh, r, land, edge, st, h);
   }
 
   // 坡面过程：轻度扩散，削掉单格尖峰
   const tmp = Float64Array.from(h);
   for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < n; i++) {
-      if (!todo[i]) continue;
-      let s = 0;
-      let w = 0;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        const j = mesh.adj[e];
-        const wt = mesh.edgeLen[e] / mesh.dist[e];
-        s += wt * (land[j] ? h[j] : 0);
-        w += wt;
-      }
-      tmp[i] = h[i] + 0.2 * (s / w - h[i]);
-    }
+    diffusePass(mesh, todo, land, h, tmp);
     h.set(tmp);
   }
 
   carvePits(world, todo, r, u, areaKm, pitM, fade, h);
 }
 
+// 第三十二轮（提速）：solveLand 每一轮沿河往上求高、坡面扩散的一遍拆成小函数（很快就被编译优化；
+// 写在大函数里时，前几次求解常常还没编译好就算完了），原样照搬，结果逐值相同
+interface SolveState {
+  u: Float64Array;
+  K: Float64Array;
+  A: Float64Array;
+  T: Float64Array;
+  fade: Float64Array;
+  lastA: Float64Array;
+  powA: Float64Array;
+  lam: Float64Array;
+  lamA: Float64Array;
+  lamL: Float64Array;
+  areaReg: number;
+  kmPerUnit: number;
+}
+
+// 一轮：按这一轮的流向，从出口往上游逐格求高
+function solvePass(mesh: Mesh, r: Routing, land: Uint8Array, edge: Uint8Array, st: SolveState, h: Float64Array) {
+  const { u, K, A, T, fade, lastA, powA, lam, lamA, lamL, areaReg, kmPerUnit } = st;
+  for (let k = 0; k < r.count; k++) {
+    const i = r.order[k];
+    const j = r.receiver[i];
+    // 下游是陆格：它的高；挨海：0；地图边上（地区，没有下游）：0.8·T
+    const baseH = j >= 0 ? (land[j] ? h[j] : 0) : edge[i] ? EDGE_BASE * Math.max(0, T[i]) * fade[i] : 0;
+    // 到下游的距离；没有下游或下游不是邻格时取格距
+    const e = r.edge[i];
+    const L = e >= 0 ? mesh.dist[e] * kmPerUnit : kmPerUnit * mesh.spacing;
+    if (A[i] !== lastA[i]) {
+      lastA[i] = A[i];
+      powA[i] = Math.pow(A[i] + areaReg, M);
+    }
+    let hi = baseH + (u[i] * L) / (K[i] * powA[i]);
+    // 基准面作软底：往上补到 T 的一部分（小溪几乎补满，留在高原面上；大河补得少，切出峡谷）
+    const gap = T[i] - hi;
+    if (gap > 0 && fade[i] > 0) {
+      if (A[i] !== lamA[i] || L !== lamL[i]) {
+        lamA[i] = A[i];
+        lamL[i] = L;
+        lam[i] = fade[i] * (1 - Math.exp(-L / (KNICK_KM * Math.sqrt(A[i] / 1e4))));
+      }
+      hi += gap * lam[i];
+    }
+    h[i] = hi;
+  }
+}
+
+// 坡面扩散的一遍（读 h、写 tmp）
+function diffusePass(mesh: Mesh, todo: Uint8Array, land: Uint8Array, h: Float64Array, tmp: Float64Array) {
+  const n = mesh.n;
+  for (let i = 0; i < n; i++) {
+    if (!todo[i]) continue;
+    let s = 0;
+    let w = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      const wt = mesh.edgeLen[e] / mesh.dist[e];
+      s += wt * (land[j] ? h[j] : 0);
+      w += wt;
+    }
+    tmp[i] = h[i] + 0.2 * (s / w - h[i]);
+  }
+}
+
 // 洼地场超过这么多（米）的格连成一片洼地
 const PIT_MIN_M = 30;
 const PIT_MIN_CELLS = 3;
+
+// 洼地里的格（要算的陆格、洼地场超过 PIT_MIN_M）：写成模块里的函数，不是每次新建的闭包（第三十二轮提速）
+function inPit(todo: Uint8Array, pitM: Float32Array, i: number): boolean {
+  return todo[i] === 1 && pitM[i] > PIT_MIN_M;
+}
 
 // 挖洼地（第三十二轮）：一片洼地（洼地场超过 PIT_MIN_M 的格连成的块）按四周最低的岸取平底，
 // 再按流进这片洼地的沙（抬升 × 面积，沿最后一轮的流向累加：外面流进来的加上洼地里自己的）与它的容积（深 × 面积）的比 f
@@ -532,12 +567,11 @@ export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64
   }
   const S = new Float64Array(n);
   accumulate(r, sed, S);
-  const inPit = (i: number) => todo[i] === 1 && pitM[i] > PIT_MIN_M;
   const seen = new Uint8Array(n);
   const queue: number[] = [];
   for (let k = 0; k < count; k++) {
     const s0 = order[k];
-    if (seen[s0] || !inPit(s0)) continue;
+    if (seen[s0] || !inPit(todo, pitM, s0)) continue;
     queue.length = 0;
     queue.push(s0);
     seen[s0] = 1;
@@ -547,7 +581,7 @@ export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64
       const c = queue[q];
       for (let e = off[c]; e < off[c + 1]; e++) {
         const j = adj[e];
-        if (inPit(j)) {
+        if (inPit(todo, pitM, j)) {
           if (!seen[j]) {
             seen[j] = 1;
             queue.push(j);
@@ -566,7 +600,7 @@ export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64
       volume += pitM[c] * areaKm[c];
       for (let e = off[c]; e < off[c + 1]; e++) {
         const j = adj[e];
-        if (todo[j] && !inPit(j) && r.receiver[j] === c) supply += S[j];
+        if (todo[j] && !inPit(todo, pitM, j) && r.receiver[j] === c) supply += S[j];
       }
     }
     const f = Math.min(1, (supply * SED_FILL) / volume);

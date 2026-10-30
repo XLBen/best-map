@@ -616,15 +616,7 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
     edges.push(Int32Array.from(list));
     edgeW.push(ew);
   }
-  const flows = flow.map((f, si): Inflow => {
-    const den = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      let s = edgeW[si][i];
-      for (let p = f.koff[i]; p < f.koff[i + 1]; p++) s += f.w[p];
-      den[i] = s;
-    }
-    return { order: f.order, koff: f.koff, src: f.src, w: f.w, den };
-  });
+  const flows = flow.map((f, si): Inflow => ({ order: f.order, koff: f.koff, src: f.src, w: f.w, den: inflowDen(n, f.koff, f.w, edgeW[si]) }));
 
   // 大陆度：海洋气团示踪量随风深入陆地后衰减
   const decay = geo.decay;
@@ -638,19 +630,7 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   // 降水里只取决于地形的部分：只取决于纬度的那一份（rain）在上面的分层缓存里，这里是背风的抑制
   const rain = st.rain;
   const lee = [new Float64Array(n), new Float64Array(n)];
-  for (let si = 0; si < 2; si++) {
-    const [wx, wy] = winds[si];
-    const ls = lee[si];
-    for (let i = 0; i < n; i++) {
-      ls[i] = 1;
-      if (land[i]) {
-        const wm = Math.hypot(wx[i], wy[i]) || 1;
-        const up = (wx[i] * hx[i] + wy[i] * hy[i]) / wm;
-        // 背风下沉气流抑制降水
-        if (up < 0) ls[i] = Math.exp(up / 1.5);
-      }
-    }
-  }
+  for (let si = 0; si < 2; si++) leeOf(n, land, winds[si][0], winds[si][1], hx, hy, lee[si]);
   const { e150, e900 } = geo;
 
   const t: PlaneTerrain = { lat, written: written.map((a) => a.slice()), flows, edges, edgeW, dKm: spacingKm, e150, e900, rain, lee };
@@ -728,15 +708,7 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
   const [kS, kW] = sun.kSeason;
   const tAnnOf = sun.tAnn;
   const cont = out.continentality;
-  const tOff = causes.tempOffset;
-  for (let i = 0; i < n; i++) {
-    const tAnn = tAnnOf[i];
-    const amp = land[i] ? 0.3 + 0.7 * cont[i] : 0.3;
-    const lapse = land[i] ? (planet.lapse * Math.max(0, elevation[i])) / 1000 : 0;
-    const off = tOff[i];
-    base.tS[i] = tAnn + kS[i] * amp - lapse + off;
-    base.tW[i] = tAnn + kW[i] * amp - lapse + off;
-  }
+  planeTemps(n, land, tAnnOf, kS, kW, cont, elevation, planet.lapse, causes.tempOffset, base.tS, base.tW);
 
   // 降水：每格的降落比例、饱和量先算好（与逐遍现算的值相同），输运时每遍只做加权平均与逐格的收支
   for (let si = 0; si < 2; si++) {
@@ -748,17 +720,7 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
     const fall = new Float64Array(n);
     const lim = new Float64Array(n);
     const evap = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
-      // 不在背风处 lee 为 1，乘上去数值不变
-      const r = ((rain[i] * warmth) / 1800) * lee[i];
-      fall[i] = 1 - Math.exp(-r * dKm[i]);
-      // 陆上：抬升冷却后的饱和量、蒸散回补的比例；海上：海面饱和量
-      if (land[i]) {
-        lim[i] = planet.humidity * saturation(T[i]) * 1.1;
-        evap[i] = smoothstep(0, 25, T[i]);
-      } else lim[i] = planet.humidity * satO[i];
-    }
+    planeRainSetup(n, land, T, rain, lee, satO, dKm, planet.humidity, fall, lim, evap);
     // 图外来流：图外是海时取当地海面饱和量
     const num0 = new Float64Array(n);
     for (const i of tr.edges[si]) num0[i] = tr.edgeW[si][i] * (planet.humidity * satO[i]);
@@ -768,6 +730,59 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
     for (let i = 0; i < n; i++) P[i] = removed[i] * 1.7e6 * Math.exp(off[i]);
   }
   return base;
+}
+
+// 第三十二轮（提速）：planeTerrain、computeClimate 里几段逐格的循环拆成小函数（小函数里的循环很快就被编译优化；
+// 写在大函数里时，前几次常常还没编译好就算完了），原样照搬，结果逐值相同。
+// 每格入流的权重之和（加上图外来流的权重）
+function inflowDen(n: number, koff: Int32Array, w: Float64Array, edgeW: Float64Array): Float64Array {
+  const den = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = edgeW[i];
+    for (let p = koff[i]; p < koff[i + 1]; p++) s += w[p];
+    den[i] = s;
+  }
+  return den;
+}
+
+// 一季的背风抑制（不在背风处为 1）
+function leeOf(n: number, land: Uint8Array, wx: Float32Array, wy: Float32Array, hx: Float64Array, hy: Float64Array, ls: Float64Array) {
+  for (let i = 0; i < n; i++) {
+    ls[i] = 1;
+    if (land[i]) {
+      const wm = Math.hypot(wx[i], wy[i]) || 1;
+      const up = (wx[i] * hx[i] + wy[i] * hy[i]) / wm;
+      // 背风下沉气流抑制降水
+      if (up < 0) ls[i] = Math.exp(up / 1.5);
+    }
+  }
+}
+
+// 两季温度（年均、季节振幅按大陆度、直减率、冷暖微调）
+function planeTemps(n: number, land: Uint8Array, tAnnOf: Float64Array, kS: Float64Array, kW: Float64Array, cont: Float32Array, elevation: Float32Array, lapseRate: number, tOff: Float32Array, tS: Float32Array, tW: Float32Array) {
+  for (let i = 0; i < n; i++) {
+    const tAnn = tAnnOf[i];
+    const amp = land[i] ? 0.3 + 0.7 * cont[i] : 0.3;
+    const lapse = land[i] ? (lapseRate * Math.max(0, elevation[i])) / 1000 : 0;
+    const off = tOff[i];
+    tS[i] = tAnn + kS[i] * amp - lapse + off;
+    tW[i] = tAnn + kW[i] * amp - lapse + off;
+  }
+}
+
+// 每格降落的比例、饱和量、蒸散回补的比例
+function planeRainSetup(n: number, land: Uint8Array, T: Float32Array, rain: Float64Array, lee: Float64Array, satO: Float64Array, dKm: Float64Array, humidity: number, fall: Float64Array, lim: Float64Array, evap: Float64Array) {
+  for (let i = 0; i < n; i++) {
+    const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
+    // 不在背风处 lee 为 1，乘上去数值不变
+    const r = ((rain[i] * warmth) / 1800) * lee[i];
+    fall[i] = 1 - Math.exp(-r * dKm[i]);
+    // 陆上：抬升冷却后的饱和量、蒸散回补的比例；海上：海面饱和量
+    if (land[i]) {
+      lim[i] = humidity * saturation(T[i]) * 1.1;
+      evap[i] = smoothstep(0, 25, T[i]);
+    } else lim[i] = humidity * satO[i];
+  }
 }
 
 // 稳态输运：in_i = Σ_j out_j · frac(j→i) + 图外来流，out_i = 本格的收支(in_i)。
