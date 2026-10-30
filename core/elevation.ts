@@ -88,6 +88,8 @@ interface ElevationMemoEntry {
 const elevMemo = new WeakMap<Mesh, ElevationMemoEntry[]>();
 // 测试用：on = false 时不读也不写缓存；reused、computed：复用、重算的陆块数
 export const elevationMemo = { on: true, reused: 0, computed: 0 };
+// 计时（tools/bench.ts 用，累加的毫秒）：认陆块与比对记忆、求解、收尾（换成米、海底、湖）
+export const elevationLaps = { scan: 0, solve: 0, finish: 0 };
 
 const bitsOf = (a: Float32Array) => new Uint32Array(a.buffer, a.byteOffset, a.length);
 
@@ -110,6 +112,7 @@ export function computeElevation(world: World): ElevationResult {
   const n = mesh.n;
   const land = causes.land;
   const seed = world.settings.seed;
+  const t0 = performance.now();
   const { fu, fk, fs } = noiseFactors(mesh, seed);
   const upBits = bitsOf(causes.uplift);
   const erBits = bitsOf(causes.erod);
@@ -154,13 +157,20 @@ export function computeElevation(world: World): ElevationResult {
       }
     }
   }
+  const t1 = performance.now();
   // 缓存关掉时照旧总是走一遍（没有陆地也路由 12 轮），与原来的每一步相同
   if (todoCount > 0 || !elevationMemo.on) solveLand(world, todo, fu, fk, fs, h, coastKm);
   if (elevationMemo.on) {
     const entry: ElevationMemoEntry = { seed, kmPerUnit, land: land.slice(), uplift: upBits.slice(), erod: erBits.slice(), h: h.slice(), coastKm: coastKm.slice() };
     elevMemo.set(mesh, [entry, ...(elevMemo.get(mesh) ?? [])].slice(0, 2));
   }
-  return finishElevation(world, h, coastKm);
+  const t2 = performance.now();
+  const out = finishElevation(world, h, coastKm);
+  const t3 = performance.now();
+  elevationLaps.scan += t1 - t0;
+  elevationLaps.solve += t2 - t1;
+  elevationLaps.finish += t3 - t2;
+  return out;
 }
 
 // 只算 todo 里的陆块（若干个完整的陆块）：写进 h（扩散后的）与 coastKm，别的格不动

@@ -84,6 +84,8 @@ interface SampledBase {
 const sampledCache = new WeakMap<Mesh, SampledBase[]>();
 // 测试用：on = false 时不读也不写
 export const sampledBaseMemo = { on: true, hits: 0 };
+// 计时（tools/bench.ts 用，累加的毫秒）：生成器采样（新建、重画一片、缓存没有时重新采样）
+export const terrainLaps = { sample: 0 };
 const coastCache = new WeakMap<Mesh, Map<number, Float32Array>>();
 
 export function coastSeed(world: World): number {
@@ -139,6 +141,7 @@ export function ensureBase(world: World): BaseCache {
   const { sampleKey, shapeKey } = baseKeys(world);
   let cache = baseCache.get(world);
   if (!cache || cache.key !== sampleKey) {
+    const ts = performance.now();
     const old = cache;
     let model: GenModel | PlanetModel | null;
     let components: BaseComponents | null;
@@ -182,6 +185,7 @@ export function ensureBase(world: World): BaseCache {
       seaLevel: 0,
     };
     baseCache.set(world, cache);
+    terrainLaps.sample += performance.now() - ts;
   }
   const comp = cache.components;
   if (!gen || !comp || !cache.model) {
