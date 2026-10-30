@@ -485,9 +485,13 @@ describe('剪刀切线', () => {
     // 整张图重新划分：切线都不要了
     eng.exec({ op: 'generate_provinces', rules: {} });
     expect(eng.world.small.provinceSeams).toBeUndefined();
-    // 线没有把省份分开：命令拒绝，什么都不变
+    // 线没有把省份分开：命令拒绝，什么都不变（第三十三轮：在一个省的中间画，周围两圈都是同一个省）
     const s = eng.world.mesh.spacing;
-    expect(() => eng.exec({ op: 'cut_province', line: [[w0.mesh.x[center], w0.mesh.y[center]], [w0.mesh.x[center] + 0.1 * s, w0.mesh.y[center]]] })).toThrow('线没有把省份分开');
+    const wn = eng.world;
+    const prov = wn.causes.province;
+    const ring = (i: number) => [...Array.from(wn.mesh.adj.subarray(wn.mesh.off[i], wn.mesh.off[i + 1]))];
+    const deep = [...Array(wn.mesh.n).keys()].find((i) => wn.causes.land[i] && ring(i).every((j) => prov[j] === prov[i] && ring(j).every((k) => prov[k] === prov[i])))!;
+    expect(() => eng.exec({ op: 'cut_province', line: [[wn.mesh.x[deep], wn.mesh.y[deep]], [wn.mesh.x[deep] + 0.1 * s, wn.mesh.y[deep]]] })).toThrow('线没有把省份分开');
   });
 
   it('剪刀的预览就是结果', () => {

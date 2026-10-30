@@ -410,6 +410,43 @@ export function plateauShare(s: StatsInput, landKm: number, minM = 2500, maxReli
   return landKm ? km / landKm : 0;
 }
 
+// 低平地（第三十三轮）：低于 maxM、平坦（与陆上邻格的高差按距离折合到每 100 km，平均不到 maxRelief 米）的陆地占陆地面积的比例
+export function lowFlatShare(s: StatsInput, landKm: number, maxM = 200, maxRelief = 50): number {
+  const { n, land, elevation, off, adj, distKm, areaKm } = s;
+  let km = 0;
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || elevation[i] >= maxM) continue;
+    let sum = 0;
+    let count = 0;
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
+      if (!land[j]) continue;
+      sum += (Math.abs(elevation[j] - elevation[i]) / distKm[e]) * 100;
+      count++;
+    }
+    if (count && sum / count < maxRelief) km += areaKm[i];
+  }
+  return landKm ? km / landKm : 0;
+}
+
+// 大干流两旁（第三十三轮）：汇水面积 ≥ minKm、低于 maxM 的干流格（不是湖面），它的陆上邻格里不是河的那些（不是湖面、
+// 汇水面积不到 riverKm：支流、同一条河的上下游不算）比它高多少（m，低的算 0）的平均。冲积平原上两旁几乎一样高
+export function trunkRise(s: StatsInput, d: Drainage, minKm = 1e5, maxM = 300, riverKm = 2e4): number {
+  const { n, land, lake, elevation, off, adj } = s;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || lake[i] === 1 || d.drainKm[i] < minKm || elevation[i] >= maxM) continue;
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
+      if (!land[j] || lake[j] === 1 || d.drainKm[j] >= riverKm) continue;
+      sum += Math.max(0, elevation[j] - elevation[i]);
+      count++;
+    }
+  }
+  return count ? sum / count : NaN;
+}
+
 // 前 k 个流域里每个陆格的汇水面积
 function inTop(s: StatsInput, d: Drainage, k: number): number[] {
   const top = new Set(d.basins.slice(0, k).map((b) => b.outlet));
@@ -444,6 +481,10 @@ export interface RealismStats {
   lakeShare: number;
   lakeSizeK: number;
   plateau: number;
+  // 第三十三轮：低平地占比（200 m 以下、与邻格的起伏平均每 100 km 不到 50 m）、
+  // 低处（300 m 以下）的大干流（A ≥ 10 万 km²）两旁不是河的格平均高出多少（m）
+  lowFlat: number;
+  trunkRise: number;
   coastDim: number;
 }
 
@@ -488,6 +529,8 @@ export function realismStats(s: StatsInput, coastDim = NaN): RealismStats {
     lakeShare: d.landKm ? lakeKm.reduce((a, b) => a + b, 0) / d.landKm : 0,
     lakeSizeK: fitPowerLaw(lakeKm.map((a) => a / cell)),
     plateau: plateauShare(s, d.landKm),
+    lowFlat: lowFlatShare(s, d.landKm),
+    trunkRise: trunkRise(s, d),
     coastDim,
   };
 }
@@ -512,6 +555,8 @@ export const EARTH_REFERENCE: Record<keyof RealismStats, string> = {
   lakeShare: '2–4%',
   lakeSizeK: '≈1 (0.8–1.2)',
   plateau: '≈2%',
+  lowFlat: '—',
+  trunkRise: '< 30',
   coastDim: '≈1.2 (1.02–1.5)',
 };
 

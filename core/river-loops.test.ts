@@ -51,7 +51,8 @@ function hook(w: World, c: number, off: number): Pt[] {
 describe('重叠分析', () => {
   it('在终点消失、终点又回到自己旁边（一个圈）：不让画，说清楚为什么', () => {
     const w = continents().world;
-    const c = inland(w, 9);
+    // 第三十三轮：地形有了平原、三角洲，第一个内陆格旁边画开的钩子的终点落在了一条河上，换第五个
+    const c = inland(w, 9, 4);
     const plan = planCourse(w, w.derived, hook(w, c, 1.1), { endOnLand: 'sink' });
     expect(plan.blocked).toBe(SINK_LOOP);
     // 画开一点（终点离出发那段 2.5 格）就能画

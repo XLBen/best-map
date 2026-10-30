@@ -482,7 +482,7 @@ describe('命令', () => {
     eng.undo();
     eng.redo();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(7);
+    expect(doc.version).toBe(8);
     const mesh = meshFor(settings);
     const replay = Engine.fromDoc(doc, mesh);
     expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));

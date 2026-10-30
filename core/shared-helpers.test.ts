@@ -162,6 +162,8 @@ describe('smoothCourse：河道与抽出前逐位相同', () => {
     const byHead = new Map(old.map((l) => [`${l.points[0][0]},${l.points[0][1]}`, l]));
     let whole = 0;
     for (const l of now) {
+      // 三角洲分出去的几股（第三十三轮）只是画法，抽出前没有
+      if (l.branch !== undefined) continue;
       const o = byHead.get(`${l.points[0][0]},${l.points[0][1]}`);
       expect(o).toBeDefined();
       if (!l.mouth && !o!.points.length) continue;

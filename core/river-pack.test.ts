@@ -24,7 +24,7 @@ function sameLines(a: RiverLine[], b: RiverLine[]) {
     expect(l.cells).toEqual(o.cells);
     expect(l.mul ? bytes(l.mul) : null).toEqual(o.mul ? bytes(o.mul) : null);
     expect(l.type).toEqual(o.type);
-    expect([l.head, l.mouth, l.into, l.guide, l.joins]).toEqual([o.head, o.mouth, o.into, o.guide, o.joins]);
+    expect([l.head, l.mouth, l.into, l.guide, l.joins, l.branch]).toEqual([o.head, o.mouth, o.into, o.guide, o.joins, o.branch]);
   });
 }
 

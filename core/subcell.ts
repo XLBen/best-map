@@ -2,6 +2,7 @@ import type { Delaunay } from 'd3-delaunay';
 import { type Mesh, type PlaneMesh, findCell, gradient } from './mesh';
 import { type SphereView, viewOf } from './sphere';
 import { landPixelCells } from './island-types';
+import { deltaBulge } from './delta';
 import { COAST_AMP, coastNoiseField, coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -336,6 +337,14 @@ export function coastValues(world: World): Float32Array {
   const amp = COAST_AMP * world.small.terrain.coastRoughness;
   const s = new Float32Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) s[i] = coastValueAt(causes.landness[i], coast[i], amp, causes.land[i] !== 0);
+  return s;
+}
+
+// 画出来的每格海岸值（第三十三轮）：coastValues 再加上三角洲向海凸出的那一点（core/delta.ts 的 deltaBulge，按推导认三角洲）。
+// 地形层、悬停、导出、河口找岸线都用这一份；幽灵海岸（coastPatch）照旧只按成因算改动的那几格
+export function shownCoastValues(world: World): Float32Array {
+  const s = coastValues(world);
+  deltaBulge(world, s);
   return s;
 }
 
@@ -966,7 +975,7 @@ const PROGRESS_ROWS = 16;
 // onProgress（可选）：每隔几行报一次完成的比例（0–1），不影响结果
 export function rasterizeWorld(world: World, width: number, height: number, onProgress?: (fraction: number) => void): Raster {
   const { mesh, causes, derived } = world;
-  const s = coastValues(world);
+  const s = shownCoastValues(world);
   const grad = new Float32Array(mesh.n * 2);
   {
     const h = new Float64Array(mesh.n);

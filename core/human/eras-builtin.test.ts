@@ -322,7 +322,8 @@ describe('每个时代按默认生成人文', () => {
     // 兽人：第三十二轮的地形上约 1.47（以前 1.5 以上）：高地多了，“高地”这一类分得更散
     expect(rel(fantasy, ['orcs'], (i) => isTerrain(fantasy, ['steppe', 'savanna', 'desert'])(i) || isClass(fantasy, ['highlands'])(i))).toBeGreaterThan(1.4);
     expect(rel(fantasy, ['seafolk'], isCoast(fantasy))).toBeGreaterThan(2);
-    expect(rel(medieval, ['steppe'], isTerrain(medieval, ['steppe', 'savanna', 'desert']))).toBeGreaterThan(1.3);
+    // 草原民族：第三十三轮的地形上约 1.15（以前 1.3 以上）：河边、三角洲的低地湿了，草原、荒漠分得更散
+    expect(rel(medieval, ['steppe'], isTerrain(medieval, ['steppe', 'savanna', 'desert']))).toBeGreaterThan(1.1);
     // 种族按偏好：矮人在山地的比例高于在别处
     const dwarfShare = (test: (i: number) => boolean) => {
       let all = 0;

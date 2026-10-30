@@ -2,30 +2,77 @@
 // 新建一个世界（与向导新建相同：先加基础、自然、中文地名，“几块大陆”），算 core/stats.ts 的统计，再加上要看生成器的两项：
 // 裂谷湖的长宽比、分水岭不对称
 import { Engine } from '../core/engine';
+import { plainStats } from '../core/plains';
+import { traceRivers } from '../core/rivers';
 import { newWorldContentCommands } from '../core/packs/import';
 import { type RealismStats, components, drainage, elongation, median, realismStats, statsInput } from '../core/stats';
 import { ensureBase } from '../core/terrain';
 import type { Settings, World } from '../core/world';
 
+// 新建时做了几个冲积扇（第三十三轮，plains.ts 的计数：新建的世界每块陆地都求解一遍）
+const fansOf = new WeakMap<World, number>();
 export function realismWorld(settings: Partial<Settings>, seed: number): World {
   const eng = new Engine({ ...settings, seed });
+  const before = plainStats.fans;
   eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed, type: 'continents' }, reset: true }] });
+  fansOf.set(eng.world, plainStats.fans - before);
   return eng.world;
 }
 
-export type RealismRow = RealismStats & { riftLakes: number; riftRatio: number; divideShare: number; divideCoast: number };
+export type RealismRow = RealismStats & { riftLakes: number; riftRatio: number; divideShare: number; divideCoast: number; deltaShare: number; deltaRivers: number; fans: number; wetland: number };
 
-export const REALISM_ROW_REF: Record<'riftLakes' | 'riftRatio' | 'divideShare' | 'divideCoast', string> = {
+export const REALISM_ROW_REF: Record<'riftLakes' | 'riftRatio' | 'divideShare' | 'divideCoast' | 'deltaShare' | 'deltaRivers' | 'fans' | 'wetland', string> = {
   riftLakes: '—',
   riftRatio: '> 4（坦噶尼喀 13）',
   divideShare: '≥ 65%（南美约 85%）',
   divideCoast: '—',
+  deltaShare: '30–80%（计划）',
+  deltaRivers: '—',
+  fans: '—',
+  wetland: '≈6%',
 };
 
 export function realismRow(world: World, coastDim = NaN): RealismRow {
   const rl = riftLakes(world);
   const dv = divideAsymmetry(world);
-  return { ...realismStats(statsInput(world), coastDim), riftLakes: rl.count, riftRatio: rl.ratio, divideShare: dv.share, divideCoast: dv.coast };
+  const dl = deltaShare(world);
+  return { ...realismStats(statsInput(world), coastDim), riftLakes: rl.count, riftRatio: rl.ratio, divideShare: dv.share, divideCoast: dv.coast, deltaShare: dl.share, deltaRivers: dl.rivers, fans: fansOf.get(world) ?? NaN, wetland: wetlandShare(world) };
+}
+
+// 分汊（第三十三轮）：入海的大河（河口那一格的汇水面积 > 20 万 km²，按水文的流向）里，画出来有分出去的几股的占多少。
+// 返回比例与这样的大河的条数
+export function deltaShare(world: World, minKm = 2e5): { share: number; rivers: number } {
+  const { mesh, causes, derived: d } = world;
+  const big = new Set<number>();
+  for (let i = 0; i < mesh.n; i++) {
+    if (!causes.land[i] || d.lake[i] === 1 || d.drainArea[i] <= minKm) continue;
+    const r = d.receiver[i];
+    if (r >= 0 && !causes.land[r]) big.add(i);
+  }
+  if (!big.size) return { share: NaN, rivers: 0 };
+  const lines = traceRivers(world);
+  const branched = new Set<number>();
+  for (const l of lines) {
+    if (l.branch === undefined) continue;
+    const M = lines[l.branch];
+    const c = M.cells?.[M.cells.length - 1];
+    if (c !== undefined && big.has(c)) branched.add(c);
+  }
+  return { share: branched.size / big.size, rivers: big.size };
+}
+
+// 沼泽湿地（生态 wetland）占陆地的比例（第三十三轮：低湿的三角洲平原、河漫滩按已有的规则长成湿地）
+export function wetlandShare(world: World): number {
+  const { mesh, causes, derived: d, small } = world;
+  const k = small.species.findIndex((sp) => sp.id === 'wetland');
+  let land = 0;
+  let wet = 0;
+  for (let i = 0; i < mesh.n; i++) {
+    if (!causes.land[i]) continue;
+    land++;
+    if (k >= 0 && d.dominant[i] === k) wet++;
+  }
+  return land ? wet / land : 0;
 }
 
 // 裂谷湖（第三十二轮）：湖面（lake = 1）连成的块里，一半以上的格在生成器的裂谷洼地上（rift > 30 m）、至少 5 格的

@@ -209,7 +209,8 @@ describe('拖控制点：只改那一小段', () => {
     const dir: Pt = [P[0][0] - P[1][0], P[0][1] - P[1][1]];
     const l = Math.hypot(...dir);
     let up: RiverEdit | null = null;
-    for (const r of [2, 1.5, 3]) {
+    // 第三十三轮：地形变了，挪 2、1.5、3 格都碰上别的河，多试几个距离
+    for (const r of [2, 1.5, 3, 1, 2.5, 4]) {
       const e = dragHandle(w, w.derived, T, H, 0, [P[0][0] + (dir[0] / l) * r * spacing(w), P[0][1] + (dir[1] / l) * r * spacing(w)], opts(w));
       if (ok(e) && !e.plan.crossings.length) {
         up = e;

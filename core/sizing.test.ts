@@ -50,6 +50,7 @@ describe('岛的大小', () => {
     // 第十三轮：每种岛有岩性（erodDelta，多记一项）、火山岛抬升减半并有火山口、珊瑚岛的潟湖两头都改、最小的岛一格，有意改变结果，重录
     // 第十三轮修：珊瑚岛的潟湖不再压低原来的陆地、放岛的轮廓按小块海并回陆地的规则算、火山岛的高度按大小定，重录
     // 第三十二轮：岛的岩性按生成的岩性（多了地盾、盆地、缝合线的条纹）算增量，高程有了大格局，重录 erodDelta、elevation、discharge
+    // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
     const eng = seededEngine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
@@ -75,7 +76,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: '8e725bfc', upliftDelta: 'de566817', erodDelta: 'e5e4e01b', land: '1ad11545', elevation: '74e6bdf0', discharge: '199b1889' });
+    }).toEqual({ landDelta: '8e725bfc', upliftDelta: 'de566817', erodDelta: 'e5e4e01b', land: '1ad11545', elevation: '58dc1a0c', discharge: '50b2887d' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {

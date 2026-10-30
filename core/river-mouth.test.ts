@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { displayCoast, displayCoastAt, shoreCrossing } from './display';
 import { type RiverLine, TURN_CHORD, maxTurn, riverRibbon, riverWidth, seawardNormal, traceRivers } from './rivers';
-import { pointIsLand } from './subcell';
-import { coastValues } from './subcell';
+import { pointIsLand, shownCoastValues } from './subcell';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 import type { World } from './world';
 
@@ -31,7 +30,8 @@ describe('shoreCrossing：画面上的岸线', () => {
   it('与 pointIsLand（导出、悬停用的陆海判定）一致：岸线前一点是陆地、后一点是海（不靠湖的地方两者是同一个场）', () => {
     const w = continents().world;
     const { mesh, causes, derived: d } = w;
-    const s = coastValues(w);
+    // 画出来的海岸值（第三十三轮：含三角洲向海凸出的那一点）
+    const s = shownCoastValues(w);
     let tried = 0;
     for (let i = 0; i < mesh.n && tried < 60; i++) {
       if (!causes.land[i] || d.lake[i]) continue;
@@ -389,9 +389,9 @@ describe('河口沿岸线的法向进水、挤在一起的河口（第十三轮�
     expect(s.stubs).toBe(0);
     expect(s.turn).toBeLessThanOrEqual(60.5);
     expect(s.merged).toBeGreaterThan(0);
-    // 第三十二轮的地形上（画法没变，只是碰上了这样的岸线）：有一处并进别的河的角度约 39°（以前 36° 以内），
-    // 有一对河口挨得近、没挪开（已知限制，见开发说明“已知限制”）
-    expect(s.joinAngle).toBeLessThan(40);
+    // 第三十三轮：并进去的角度照测试的量法（往回走到 0.3 格以外的那个点、大河上离汇合处最近的点往下的一段）在 mergeMouth 里也查，
+    // 第三十二轮放宽到 40° 的那一处收回到 36° 以内。还有一对河口挨得近（约 0.49 格）、没挪开（已知限制，见开发说明“已知限制”）
+    expect(s.joinAngle).toBeLessThan(36);
     expect(s.backward).toBe(0);
     expect(s.crowded).toBeLessThanOrEqual(1);
   });

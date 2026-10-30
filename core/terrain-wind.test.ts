@@ -20,7 +20,8 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第十三轮：参考操作里放的岛有了岩性（高程变了，气候往后跟着变），与山挡风无关，tS、pS、discharge、dominant 重录
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
     // 第三十二轮：地形有了大格局（高程变了，气候往后跟着变），重录全部
-    const FROZEN = { tS: '25c9df2c', pS: 'c22c1509', discharge: 'c97e9afd', dominant: 'be178605', corrT: '3ec1a4d2', province: 'f7223e05' };
+    // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
+    const FROZEN = { tS: 'ac8695b7', pS: 'f09dcda2', discharge: 'b578b9ef', dominant: '52378605', corrT: 'a3157b88', province: 'b8748605' };
     const eng = seededEngine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);

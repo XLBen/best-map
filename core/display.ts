@@ -2,7 +2,7 @@ import { wrapX } from './geo';
 import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
-import { bytesHash, coastDetail, coastDetail3, coastDetailAmp, coastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
+import { bytesHash, coastDetail, coastDetail3, coastDetailAmp, shownCoastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
 import { landPixelCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
@@ -29,12 +29,13 @@ export interface DisplayCoast {
 const displayCache = new WeakMap<Float32Array, { inputs: unknown[]; value: DisplayCoast }[]>();
 export function displayCoast(world: World): DisplayCoast {
   const { derived: d, causes } = world;
-  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment && bytesHash(2166136261, causes.fragment)];
+  // 三角洲向海凸出（第三十三轮）按流向、汇水面积、“最高的山”认
+  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment && bytesHash(2166136261, causes.fragment), d.receiver, d.drainArea, world.small.planet.mountainScale];
   let list = displayCache.get(d.elevation);
   if (!list) displayCache.set(d.elevation, (list = []));
   const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
   if (hit) return hit.value;
-  const coast = coastValues(world);
+  const coast = shownCoastValues(world);
   const elevation = d.elevation.slice();
   for (let i = 0; i < world.mesh.n; i++) {
     if (!isLakeCell(world, i)) continue;
@@ -172,16 +173,18 @@ export interface DisplayCell {
   water: boolean;
 }
 
-// 海岸值按陆度数组缓存（同一个世界只算一次；只改了名字、省份的轻快照沿用同一个数组）
-const coastCache = new WeakMap<Float32Array, { land: Uint8Array; rough: number; seed: number; s: Float32Array }>();
+// 海岸值按陆度数组缓存（同一个世界只算一次；只改了名字、省份的轻快照沿用同一个数组）。
+// 三角洲向海凸出（第三十三轮）另按高程、流向、汇水面积、湖面、“最高的山”认
+const coastCache = new WeakMap<Float32Array, { land: Uint8Array; rough: number; seed: number; derived: unknown[]; s: Float32Array }>();
 function coastOf(world: World): Float32Array {
-  const { causes } = world;
+  const { causes, derived: d } = world;
   const rough = world.small.terrain.coastRoughness;
   const seed = coastSeed(world);
+  const derived: unknown[] = [d.elevation, d.receiver, d.drainArea, d.lake, world.small.planet.mountainScale];
   const c = coastCache.get(causes.landness);
-  if (c && c.land === causes.land && c.rough === rough && c.seed === seed) return c.s;
-  const s = coastValues(world);
-  coastCache.set(causes.landness, { land: causes.land, rough, seed, s });
+  if (c && c.land === causes.land && c.rough === rough && c.seed === seed && c.derived.every((a, k) => a === derived[k])) return c.s;
+  const s = shownCoastValues(world);
+  coastCache.set(causes.landness, { land: causes.land, rough, seed, derived, s });
   return s;
 }
 

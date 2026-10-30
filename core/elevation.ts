@@ -3,6 +3,7 @@ import { HeapLite, type Mesh, gradGeo, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, type Routing, accumulate } from './routing';
+import { applyPlains } from './plains';
 import { lagoonTest, pocketLakes, reliefFields, seabedFields } from './terrain';
 import { FREE_HEIGHT, type World, latitudeOf } from './world';
 
@@ -470,7 +471,12 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   }
 
   carvePits(world, todo, r, u, areaKm, pitM, fade, h);
+  // 平原与河口（第三十三轮）：冲积平原、冲积扇、三角洲平原，按最后一轮的流向与汇水面积一遍过
+  if (plainsOn.on) applyPlains({ mesh, todo, land, up, areaKm, r, A, kmPerUnit, mToRaw: M_TO_RAW, pitM }, h);
 }
+
+// 测试用：关掉平原与河口（第三十三轮以前的求解）
+export const plainsOn = { on: true };
 
 // 第三十二轮（提速）：solveLand 每一轮沿河往上求高、坡面扩散的一遍拆成小函数（很快就被编译优化；
 // 写在大函数里时，前几次求解常常还没编译好就算完了），原样照搬，结果逐值相同

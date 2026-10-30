@@ -1,3 +1,4 @@
+import { DELTA_DRAW, deltaMouths } from './delta';
 import { type DisplayCoast, displayCoast, displayCoastAt, shoreCrossing } from './display';
 import { wrapDelta, wrapX } from './geo';
 import { type Mesh, findCell } from './mesh';
@@ -31,8 +32,11 @@ export interface RiverLine {
   // 汇入别的河（最后一点画在那条河的线上）：那条河在 traceRivers 结果里的下标
   into?: number;
   // 别的河汇进来的地方：在这条线上的位置（第 k 段上 t 处记作 k + t）。画带子时这几处前后约半格不加细小的弯曲，
-  // 支流的最后一点就落在画出来的中线上
+  // 支流的最后一点就落在画出来的中线上（三角洲分出去的一股从哪里分出去也记在这里）
   joins?: number[];
+  // 三角洲分出去的一股（第三十三轮，只是画法）：从哪条河（traceRivers 结果里的下标）分出去。
+  // 它的格都是那条河的河口那一格：点它选中那条河
+  branch?: number;
 }
 
 // 支流从这一点接着画（画的河流到了别的河都不经过的地方：从它的线上接出去）
@@ -235,7 +239,7 @@ export function traceRivers(world: World): RiverLine[] {
   };
   for (let i = 0; i < raws.length; i++) finish(i, 0);
   const tidy = tidyMouths(world, lines, coastField(), deferred, before);
-  if (!course) return tidy;
+  if (!course) return withBranches(world, coastField(), tidy);
   lines.length = 0;
   lines.push(...tidy);
   for (const line of lines) course.own(line);
@@ -247,7 +251,7 @@ export function traceRivers(world: World): RiverLine[] {
   const index = new Map(all.map((l, k) => [l, k]));
   for (const [raw, c] of courseJoin) raw.line!.into = index.get(c.line);
   for (const [line, target] of course.intos) line.into = index.get(target);
-  return all;
+  return withBranches(world, coastField(), all);
 }
 
 // 画的河在 traceRivers 里的那部分：按存下的折线画成几段（只画看得见是河的格：入海、入湖的那一点也画，
@@ -700,25 +704,9 @@ function mouthShore(world: World, f: DisplayCoast, end: readonly [number, number
 export function maxTurn(P: readonly (readonly [number, number])[], chord: number, from = 0): number {
   if (P.length < 2 || !(chord > 0)) return 0;
   const h = chord / 4;
-  // 取样点放在反复用的数组里（每个河口都要量几次）
+  // 取样点放在反复用的数组里（每个河口都要量几次；不在这里新建闭包）
   let n = 0;
-  const push = (x: number, y: number, s: number) => {
-    if (n >= turnX.length) {
-      const grow = (a: Float64Array) => {
-        const b = new Float64Array(a.length * 2);
-        b.set(a);
-        return b;
-      };
-      turnX = grow(turnX);
-      turnY = grow(turnY);
-      turnS = grow(turnS);
-    }
-    turnX[n] = x;
-    turnY[n] = y;
-    turnS[n] = s;
-    n++;
-  };
-  push(P[0][0], P[0][1], 0);
+  n = pushTurn(n, P[0][0], P[0][1], 0);
   let acc = 0;
   let next = h;
   for (let k = 0; k + 1 < P.length; k++) {
@@ -728,12 +716,12 @@ export function maxTurn(P: readonly (readonly [number, number])[], chord: number
     if (l <= 0) continue;
     while (next <= acc + l) {
       const t = (next - acc) / l;
-      push(P[k][0] + dx * t, P[k][1] + dy * t, next);
+      n = pushTurn(n, P[k][0] + dx * t, P[k][1] + dy * t, next);
       next += h;
     }
     acc += l;
   }
-  if (acc - turnS[n - 1] > 1e-3 * h) push(P[P.length - 1][0], P[P.length - 1][1], acc);
+  if (acc - turnS[n - 1] > 1e-3 * h) n = pushTurn(n, P[P.length - 1][0], P[P.length - 1][1], acc);
   let worst = 0;
   for (let i = 4; i + 4 < n; i++) {
     if (turnS[i] < from) continue;
@@ -749,6 +737,25 @@ export function maxTurn(P: readonly (readonly [number, number])[], chord: number
 let turnX = new Float64Array(256);
 let turnY = new Float64Array(256);
 let turnS = new Float64Array(256);
+
+// maxTurn 的取样点放进反复用的数组（不够时加倍），返回新的个数
+function pushTurn(n: number, x: number, y: number, s: number): number {
+  if (n >= turnX.length) {
+    turnX = growF64(turnX);
+    turnY = growF64(turnY);
+    turnS = growF64(turnS);
+  }
+  turnX[n] = x;
+  turnY[n] = y;
+  turnS[n] = s;
+  return n + 1;
+}
+
+function growF64(a: Float64Array): Float64Array<ArrayBuffer> {
+  const b = new Float64Array(a.length * 2);
+  b.set(a);
+  return b;
+}
 
 // 从 A（方向 ta）到 B（到 B 时的方向 tb，都是单位向量）的三次 Hermite 曲线，每隔约 step 取一点（不含 A，含 B）
 // sa、sb：两头的切向量再乘的倍数（默认按两点的距离；起点的小一点少鼓出去，终点的大一点早一点顺着终点的方向）
@@ -1025,8 +1032,9 @@ function tidyMouths(world: World, lines: RiverLine[], field: DisplayCoast, defer
   const rank = new Int32Array(lines.length);
   mouths.forEach((i, r) => (rank[i] = r));
   const moved = new Set<number>();
-  // 有小河并进来的
+  // 有小河并进来的；并进来的小河
   const hosts = new Set<number>();
+  const merged = new Set<RiverLine>();
   // 挨着的河口（5×5 个桶里；挪开的河口离原来的位置不到两格）：e 到比 si 大的、还在入海的河口最近多远（地图单位）
   const around = (e: readonly [number, number], f: (j: number) => boolean) => {
     const gx = Math.floor(X(e[0]) / sp);
@@ -1063,6 +1071,8 @@ function tidyMouths(world: World, lines: RiverLine[], field: DisplayCoast, defer
       if (!ho || ho.k + ho.t < same - 1) continue;
       const hn = snapOnto(X.points, e[0], e[1], Math.max(0, same - 2), X.points.length - 1, sphere);
       if (!hn || hn.d > 0.5 * sp) return false;
+      // 在岸边并进来的小河（mergeMouth 并的）：挪过以后并进去的角度也不超过 JOIN_ANGLE（第三十三轮）
+      if (merged.has(T) && !joinsSmoothly(T.points, hn.p, X.points, sp, sphere)) return false;
       ends.push({ l: T, p: hn.p, pos: hn.k + hn.t });
     }
     if (ends.length !== moving) return false;
@@ -1089,6 +1099,7 @@ function tidyMouths(world: World, lines: RiverLine[], field: DisplayCoast, defer
         continue;
       }
       if (mergeMouth(world, field, B, S, off)) {
+        merged.add(S);
         delete S.mouth;
         S.into = bi;
         hosts.add(bi);
@@ -1172,12 +1183,15 @@ function segCross(p1: readonly [number, number], p2: readonly [number, number], 
 // 以 c 为圆心、半径 R 的圆与画面上的岸线相交的地方（在水面一侧），按方向离 prefer（单位向量）由近到远排，
 // 只要相差不到 135° 的（窄海湾里大河的河口在湾头时，那一侧只有往湾里去的两岸）
 function shoreOnCircle(world: World, f: DisplayCoast, c: readonly [number, number], R: number, prefer: readonly [number, number], hint: number): Pt[] {
+  return byPrefer(circleShores(world, f, c, R, hint), prefer);
+}
+
+// 圆与岸线的交点（在水面一侧，按取样的先后）：hi 是交点的角度
+function circleShores(world: World, f: DisplayCoast, c: readonly [number, number], R: number, hint: number): { hi: number; p: Pt }[] {
   const N = 32;
-  const at = (a: number): Pt => [c[0] + R * Math.cos(a), c[1] + R * Math.sin(a)];
   const land: boolean[] = [];
-  for (let i = 0; i < N; i++) land.push(landAt(world, f, at((2 * Math.PI * i) / N), hint));
-  const a0 = Math.atan2(prefer[1], prefer[0]);
-  const found: { p: Pt; da: number }[] = [];
+  for (let i = 0; i < N; i++) land.push(landAt(world, f, onCircle(c, R, (2 * Math.PI * i) / N), hint));
+  const out: { hi: number; p: Pt }[] = [];
   for (let i = 0; i < N; i++) {
     const j = (i + 1) % N;
     if (land[i] === land[j]) continue;
@@ -1186,11 +1200,23 @@ function shoreOnCircle(world: World, f: DisplayCoast, c: readonly [number, numbe
     let hi = (2 * Math.PI * (land[i] ? i + 1 : i)) / N;
     for (let it = 0; it < 8; it++) {
       const m = (lo + hi) / 2;
-      if (landAt(world, f, at(m), hint)) lo = m;
+      if (landAt(world, f, onCircle(c, R, m), hint)) lo = m;
       else hi = m;
     }
-    const da = Math.abs(Math.atan2(Math.sin(hi - a0), Math.cos(hi - a0)));
-    if (da < (3 * Math.PI) / 4) found.push({ p: at(hi), da });
+    out.push({ hi, p: onCircle(c, R, hi) });
+  }
+  return out;
+}
+
+const onCircle = (c: readonly [number, number], R: number, a: number): Pt => [c[0] + R * Math.cos(a), c[1] + R * Math.sin(a)];
+
+// 交点按方向离 prefer 由近到远排，只要相差不到 135° 的
+function byPrefer(list: { hi: number; p: Pt }[], prefer: readonly [number, number]): Pt[] {
+  const a0 = Math.atan2(prefer[1], prefer[0]);
+  const found: { p: Pt; da: number }[] = [];
+  for (const x of list) {
+    const da = Math.abs(Math.atan2(Math.sin(x.hi - a0), Math.cos(x.hi - a0)));
+    if (da < (3 * Math.PI) / 4) found.push({ p: x.p, da });
   }
   return found.sort((a, b) => a.da - b.da).map((x) => x.p);
 }
@@ -1281,6 +1307,33 @@ function shiftMouth(world: World, f: DisplayCoast, B: RiverLine, S: RiverLine, o
 // 只在接得顺时并：并进去的角度（最后约 0.3 格的方向与 B 的方向）不到 35°、一路不往回拐（每一小段都顺着 B 往前）、不急转，
 // 接出来的一段在陆地上。
 // off：B 的点挪到 S 那一份要加的
+// 小河 P 的最后一点换成 e（在大河 M 上）以后，最后一段弦（从末尾往回走到累计 0.3 格以外的那个点）与 M 在那里的方向
+// （离 e 最近的点往下的一段）差不到 JOIN_ANGLE。sphere：整个星球（M 的点与 e 可以差整圈）
+function joinsSmoothly(P: readonly (readonly [number, number])[], e: readonly [number, number], M: readonly (readonly [number, number])[], sp: number, sphere: boolean): boolean {
+  const Q = [...P.slice(0, -1), e];
+  let k = Q.length - 1;
+  for (let s = 0; k > 0 && s < 0.3 * sp; k--) s += Math.hypot(Q[k][0] - Q[k - 1][0], Q[k][1] - Q[k - 1][1]);
+  const cx = e[0] - Q[k][0];
+  const cy = e[1] - Q[k][1];
+  const zl = Math.hypot(cx, cy);
+  if (zl < 1e-9) return false;
+  const md = nearestDir(M, e, sphere);
+  return (cx * md[0] + cy * md[1]) / zl >= Math.cos((JOIN_ANGLE * Math.PI) / 180);
+}
+
+// 线上离 p 最近的那个点往下的一段的方向（单位向量；最后一点取最后一段）。sphere：东西按整圈取最近的一份
+function nearestDir(P: readonly (readonly [number, number])[], p: readonly [number, number], sphere: boolean): Pt {
+  let best = 0;
+  let bd = Infinity;
+  for (let k = 0; k + 1 < P.length; k++) {
+    const raw = P[k][0] - p[0];
+    const d = Math.hypot(sphere ? raw - 2 * Math.round(raw / 2) : raw, P[k][1] - p[1]);
+    if (d < bd) [bd, best] = [d, k];
+  }
+  const l = Math.hypot(P[best + 1][0] - P[best][0], P[best + 1][1] - P[best][1]) || 1;
+  return [(P[best + 1][0] - P[best][0]) / l, (P[best + 1][1] - P[best][1]) / l];
+}
+
 function mergeMouth(world: World, f: DisplayCoast, B: RiverLine, S: RiverLine, off: number): boolean {
   const sp = world.mesh.spacing;
   const M = B.points;
@@ -1320,6 +1373,9 @@ function mergeMouth(world: World, f: DisplayCoast, B: RiverLine, S: RiverLine, o
         const Z = backAlong([A, ...q], 0.3 * sp).p;
         const zl = Math.hypot(Jp[0] - Z[0], Jp[1] - Z[1]);
         if (zl < 1e-9 || ((Jp[0] - Z[0]) * md[0] + (Jp[1] - Z[1]) * md[1]) / zl < cosJoin) continue;
+        // 第三十三轮：也按接好以后的整条线量（往回走到离汇合处 0.3 格以外的那个点，接出来的一段不到 0.3 格时含原来的线），
+        // 与 B 上离汇合处最近的那个点往下的一段比（汇合处在 B 的弯点附近时两段的方向差得多）
+        if (!joinsSmoothly([...O.slice(0, k + 1), ...q], Jp, M, sp, world.mesh.kind === 'sphere')) continue;
         let ok = true;
         for (let j = 0; j < q.length && ok; j++) {
           const a = j > 0 ? q[j - 1] : A;
@@ -1354,6 +1410,251 @@ function mergeMouth(world: World, f: DisplayCoast, B: RiverLine, S: RiverLine, o
     }
   }
   return false;
+}
+
+// ---------- 三角洲的分汊（第三十三轮，只改画法） ----------
+// 三角洲的河口（core/delta.ts 的 deltaMouths：大河、河口压成了三角洲平原）、流量至少是门槛的 8 倍的自然的河，
+// 在河口往回约 1.6–2.4 格处分出 1–4 股（连主流 2–5 股，流量每翻一倍多一股），各自沿岸线的法向入海：
+// 河口落在岸线上离主流的河口约 0.8、1.5 格（左右交替）的地方（shoreOnCircle），用三次 Hermite 曲线从分汊处顺着主流的方向弯过去
+// （hermite，终点沿 seawardNormal）。每一股都要在陆地上、不急转、不与别的河相交、离别的河口至少 0.6 格，不然不画这一股。
+// 主流留 40–60% 的水（按河口那格定），其余的平分给分出去的几股；主流在分汊以后画细一些（粗细倍数）。
+// 分出去的线的格都是主流河口那一格（点它选中主流），branch 记着主流的下标，入海（mouth），不是源头
+const BRANCH_BACK = [1.6, 2.4];
+const BRANCH_RADII = [0.8, 0.8, 1.5, 1.5];
+const BRANCH_MAX = 4;
+// 分出去的一股最后六成离主流至少这么远（格）：两条带子不贴在一起
+const BRANCH_GAP = 0.3;
+
+function withBranches(world: World, f: DisplayCoast, lines: RiverLine[]): RiverLine[] {
+  const mouths = deltaMouths(world);
+  if (!mouths.length) return lines;
+  const at = new Set(mouths);
+  const thr = world.small.planet.riverThreshold;
+  const out: RiverLine[] = [];
+  // 已有的河口（各股的河口离它们至少 MOUTH_SEP 格）
+  const ends = new PointGrid(MOUTH_SEP * world.mesh.spacing);
+  for (const l of lines) if (l.mouth && l.points.length) ends.add(l.points[l.points.length - 1]);
+  // 每条线的外接框（找附近的线、可能相交的线时先按框筛：框不挨着的一定没有点在附近、一定不相交）
+  const boxes = lines.map(boxOfPts);
+  const made: Box[] = [];
+  lines.forEach((M, mi) => {
+    if (M.guide !== undefined || !M.mouth || !M.cells?.length || M.points.length < 3) return;
+    const c = M.cells[M.cells.length - 1];
+    if (!at.has(c)) return;
+    const q = M.flow[M.flow.length - 1];
+    if (!(q >= DELTA_DRAW.FLOW * thr)) return;
+    const want = Math.min(BRANCH_MAX, 1 + Math.floor(Math.log2(q / (DELTA_DRAW.FLOW * thr))));
+    const got = branchesOf(world, f, lines, boxes, M, mi, c, want, ends, out, made);
+    for (const b of got) {
+      out.push(b);
+      made.push(boxOfPts(b));
+    }
+  });
+  return out.length ? [...lines, ...out] : lines;
+}
+
+type Box = [number, number, number, number];
+function boxOfPts(l: { points: readonly (readonly [number, number])[] }): Box {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const p of l.points) {
+    if (p[0] < x0) x0 = p[0];
+    if (p[0] > x1) x1 = p[0];
+    if (p[1] < y0) y0 = p[1];
+    if (p[1] > y1) y1 = p[1];
+  }
+  return [x0, x1, y0, y1];
+}
+const boxesMeet = (a: Box, b: Box) => a[0] <= b[1] && b[0] <= a[1] && a[2] <= b[3] && b[2] <= a[3];
+
+// 一条河的几股：成了的（至少一股）才改主流（分汊处记进 joins，之后变细）
+function branchesOf(world: World, f: DisplayCoast, lines: RiverLine[], boxes: Box[], M: RiverLine, mi: number, c: number, want: number, ends: PointGrid, made: RiverLine[], madeBoxes: Box[]): RiverLine[] {
+  const sp = world.mesh.spacing;
+  const P = M.points;
+  const E = P[P.length - 1];
+  const nE = seawardNormal(world, f, E, c);
+  if (!nE) return [];
+  const tangent: Pt = [-nE[1], nE[0]];
+  const total = lineLength(P);
+  // 各股河口的候选（只取决于主流的河口，两种分汊的位置共用）与那里岸线的法向
+  // （同一个半径的圆只找一次交点，左右两侧共用）
+  const cands: (Pt | undefined)[] = new Array(BRANCH_RADII.length);
+  const circles = new Map<number, { hi: number; p: Pt }[]>();
+  const normals = new Map<Pt, Pt | null>();
+  const candOf = (b: number, prefer: Pt) => {
+    if (!(b in cands)) {
+      const R = BRANCH_RADII[b];
+      if (!circles.has(R)) circles.set(R, circleShores(world, f, E, R * sp, c));
+      cands[b] = byPrefer(circles.get(R)!, prefer)[0];
+    }
+    return cands[b];
+  };
+  for (const back of BRANCH_BACK) {
+    if (back * sp > 0.6 * total) continue;
+    const S = backAlong(P, back * sp);
+    const tS = dirAt(P, Math.min(P.length - 1, S.k + 1));
+    const got: { pts: Pt[]; end: Pt }[] = [];
+    const taken: Pt[] = [];
+    for (let b = 0; b < BRANCH_RADII.length && got.length < want; b++) {
+      const side = b % 2 === 0 ? 1 : -1;
+      const prefer: Pt = [tangent[0] * side, tangent[1] * side];
+      const T0 = candOf(b, prefer);
+      for (const T of T0 ? [T0] : []) {
+        // 只要在 prefer 那一侧（与河口的法向夹角不到 100°）
+        const vx = T[0] - E[0];
+        const vy = T[1] - E[1];
+        if (vx * prefer[0] + vy * prefer[1] <= 0.2 * Math.hypot(vx, vy)) continue;
+        if (ends.near(T) || nearAny(taken, T, MOUTH_SEP * sp)) continue;
+        if (!normals.has(T)) normals.set(T, seawardNormal(world, f, T, c));
+        const pts = branchPath(world, f, lines, boxes, M, S, tS, T, normals.get(T)!, c, got.map((g) => g.pts), made, madeBoxes);
+        if (!pts) continue;
+        got.push({ pts, end: T });
+        taken.push(T);
+      }
+    }
+    if (!got.length) continue;
+    // 主流：分汊以后的水只剩 share，画细一些
+    const share = 0.4 + 0.2 * unitHash(c);
+    const q = M.flow[M.flow.length - 1];
+    const each = (1 - share) / got.length;
+    const k0 = S.k + 1;
+    const ratio = riverWidth(q * share, world.small.planet.riverThreshold) / riverWidth(q, world.small.planet.riverThreshold);
+    const mul = M.mul ? M.mul.slice() : M.points.map(() => 1);
+    for (let k = k0; k < P.length; k++) {
+      M.flow[k] *= share;
+      mul[k] *= ratio;
+    }
+    M.mul = mul;
+    markJoin(M, S.k + S.t);
+    for (const g of got) ends.add(g.end);
+    return got.map((g) => {
+      const points: Pt[] = [[S.p[0], S.p[1]], ...g.pts];
+      const line: RiverLine = { points, flow: points.map(() => q * each), cells: points.map(() => c), mouth: true, branch: mi };
+      if (M.type) {
+        const t = M.type[M.type.length - 1];
+        line.type = points.map(() => t);
+      }
+      return line;
+    });
+  }
+  return [];
+}
+
+// 一股的线（不含分汊那一点）：在陆地上、不急转、不与别的线相交、离主流够远，不然 null
+function branchPath(
+  world: World,
+  f: DisplayCoast,
+  lines: RiverLine[],
+  boxes: Box[],
+  M: RiverLine,
+  S: { k: number; t: number; p: Pt },
+  tS: Pt,
+  T: Pt,
+  n: Pt | null,
+  hint: number,
+  others: Pt[][],
+  made: RiverLine[],
+  madeBoxes: Box[],
+): Pt[] | null {
+  const sp = world.mesh.spacing;
+  if (!n) return null;
+  const L = Math.hypot(T[0] - S.p[0], T[1] - S.p[1]);
+  if (L < 0.5 * sp) return null;
+  // 最后一小段沿法向的直线，之前从主流的方向弯过来（与 mouthLeg 相同）
+  const straight = Math.min(0.35 * sp, 0.4 * L);
+  const Q: Pt = [T[0] - n[0] * straight, T[1] - n[1] * straight];
+  const pts = hermite(S.p, tS, Q, n, sp / 8);
+  const ns = Math.max(1, Math.ceil(straight / (sp / 8)));
+  for (let j = 1; j <= ns; j++) pts.push(j === ns ? [T[0], T[1]] : [Q[0] + (T[0] - Q[0]) * (j / ns), Q[1] + (T[1] - Q[1]) * (j / ns)]);
+  // 几样检查都要过（与先后无关）：先查只算几何的，最后才查每一点在不在陆地上（要找格、插值，最费时）
+  const P = M.points;
+  if (maxTurn([...before(P, S.k, sp), S.p, ...pts], TURN_CHORD * sp) > MOUTH_MAX_TURN) return null;
+  // 最后六成离主流（分汊以后的那段）够远
+  const tail: Pt[] = [S.p, ...P.slice(S.k + 1)];
+  const from = Math.floor(pts.length * 0.4);
+  for (let j = from; j < pts.length; j++) {
+    const h = snapOnto(tail, pts[j][0], pts[j][1], 0, tail.length - 1, world.mesh.kind === 'sphere');
+    if (h && h.d < BRANCH_GAP * sp) return null;
+  }
+  // 不与别的线（主流分汊以后的那段、已经分出去的几股、别的河）相交
+  const line: Pt[] = [S.p, ...pts];
+  if (polylinesCross(line, tail)) return null;
+  for (const o of others) if (polylinesCross(line, [S.p, ...o])) return null;
+  const own = boxOfPts({ points: line });
+  for (let k = 0; k < made.length; k++) if (boxesMeet(own, madeBoxes[k]) && polylinesCross(line, made[k].points)) return null;
+  // 附近的线（有一点在这一股外扩一格的框里）：框不挨着的一定没有
+  const near: Box = [own[0] - sp, own[1] + sp, own[2] - sp, own[3] + sp];
+  for (let k = 0; k < lines.length; k++) {
+    const o = lines[k];
+    if (o === M || !boxesMeet(near, boxes[k])) continue;
+    const Q2 = o.points;
+    let hit = false;
+    for (const p of Q2) if (p[0] >= near[0] && p[0] <= near[1] && p[1] >= near[2] && p[1] <= near[3]) hit = true;
+    if (hit && polylinesCross(line, Q2)) return null;
+  }
+  for (let j = 0; j + 1 < pts.length; j++) if (!landAt(world, f, pts[j], hint)) return null;
+  return pts;
+}
+
+// 两条折线有没有相交的段（segCross）：模块里的函数，不是每次新建的闭包。
+// B 的一段的外接框不挨着 A 的外接框时一定不相交，跳过（结果与逐段都比相同）
+function polylinesCross(A: readonly (readonly [number, number])[], B: readonly (readonly [number, number])[]): boolean {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const p of A) {
+    if (p[0] < x0) x0 = p[0];
+    if (p[0] > x1) x1 = p[0];
+    if (p[1] < y0) y0 = p[1];
+    if (p[1] > y1) y1 = p[1];
+  }
+  for (let b = 0; b + 1 < B.length; b++) {
+    const p = B[b];
+    const q = B[b + 1];
+    if (Math.max(p[0], q[0]) < x0 || Math.min(p[0], q[0]) > x1 || Math.max(p[1], q[1]) < y0 || Math.min(p[1], q[1]) > y1) continue;
+    for (let a = 0; a + 1 < A.length; a++) if (segCross(A[a], A[a + 1], p, q)) return true;
+  }
+  return false;
+}
+
+// 一组点按边长 r 的方格分桶：离 p 不到 r 的点只在 p 所在的格与周围八格里（与逐个比相同）
+class PointGrid {
+  private cells = new Map<string, Pt[]>();
+  constructor(private r: number) {}
+  add(p: Pt) {
+    const k = `${Math.floor(p[0] / this.r)},${Math.floor(p[1] / this.r)}`;
+    const b = this.cells.get(k);
+    if (b) b.push(p);
+    else this.cells.set(k, [p]);
+  }
+  near(p: Pt): boolean {
+    const gx = Math.floor(p[0] / this.r);
+    const gy = Math.floor(p[1] / this.r);
+    for (let a = -1; a <= 1; a++)
+      for (let b = -1; b <= 1; b++) {
+        const list = this.cells.get(`${gx + a},${gy + b}`);
+        if (list && nearAny(list, p, this.r)) return true;
+      }
+    return false;
+  }
+}
+
+// 离 p 不到 r 的点有没有
+function nearAny(list: readonly Pt[], p: Pt, r: number): boolean {
+  for (const e of list) if (Math.hypot(e[0] - p[0], e[1] - p[1]) < r) return true;
+  return false;
+}
+
+// 一格编号的 0–1 散列（主流留多少水）
+function unitHash(c: number): number {
+  let h = Math.imul(c ^ 0x9e3779b9, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 
 // 河道的样子：中间点加轻微的曲流，再做三遍 Chaikin 平滑。pts 是沿河的点（格心、入海口），

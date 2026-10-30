@@ -69,6 +69,12 @@ const ROWS: { key: keyof Row; label: string; fmt: (v: number) => string }[] = [
   { key: 'divideCoast', label: '同上，另一边占海岸', fmt: pct },
   { key: 'riftLakes', label: '裂谷湖的个数', fmt: (v) => v.toFixed(0) },
   { key: 'riftRatio', label: '裂谷湖长宽比中位数', fmt: (v) => v.toFixed(1) },
+  { key: 'lowFlat', label: '低平地（200 m 以下、起伏小）', fmt: pct },
+  { key: 'trunkRise', label: '低处大干流两旁高出 m', fmt: (v) => v.toFixed(1) },
+  { key: 'deltaShare', label: '入海大河（> 20 万 km²）有分汊', fmt: pct },
+  { key: 'deltaRivers', label: '这样的大河条数', fmt: (v) => v.toFixed(0) },
+  { key: 'fans', label: '冲积扇的个数', fmt: (v) => v.toFixed(0) },
+  { key: 'wetland', label: '沼泽湿地 / 陆地', fmt: pct },
   { key: 'coastDim', label: '海岸盒维数', fmt: (v) => v.toFixed(3) },
 ];
 

@@ -258,9 +258,13 @@ describe('生成后只留用到的', () => {
     // 带进来又收掉的（没国家用的政体）也报着：都是内置原样
     expect(eng.lastRemoved.filter((r) => r.id !== 'r29-mine').every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
     // 换时代：旧时代那一套没人用了，移出并报出来，来源是中世纪
+    // （工业时代还没有自己的政体，借用中世纪的：新的国家还用着的留下）。第三十三轮的地形上新的国家把六种都用上了，
+    // 所以查“没人用的都移出、还在的都有国家用”，不再要求一定有移出的
+    const govs = Object.keys(eng.world.small.content!.government ?? {});
     humanExec(eng, { op: 'regenerate_human', era: 'industrial', countries: {} });
     const gone = eng.lastRemoved.filter((r) => r.kind === 'government' && r.origin?.[0] === 'medieval');
-    expect(gone.length).toBeGreaterThan(0);
+    const used = new Set(Object.values(eng.world.small.countries ?? {}).map((c) => c.government));
+    for (const id of govs) expect(gone.some((r) => r.id === id) !== used.has(id), id).toBe(true);
     expect(gone.every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
   });
 

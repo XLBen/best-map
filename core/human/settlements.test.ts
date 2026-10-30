@@ -46,9 +46,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第二十六轮重录：国家的生成变了（等级、领土补齐、联邦），大城市的门槛 1% → 2% 并且每国有上限（大城市连大道、地标放在大城市旁）；
 // 第二十六轮又重录一次：国家的领土又变了（见 countries.test.ts）；第二十七轮重录：地形类别只管起伏（通行难度、人口、国家都跟着变）
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
+// 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { cities: 'd42d4aba8ee3adf5', roads: 'd34cf6252312db69', landmarks: '5b43147c0c3c3529' },
-  planet: { cities: '485d56cf244a3de2', roads: '86ec41c47a9f4ef0', landmarks: '0aac8ff9eae2ec1b' },
+  region: { cities: '55ff9bd874105b10', roads: 'f974635456a5614f', landmarks: 'a94f7560c2aba5f4' },
+  planet: { cities: '2d0a9b592cdbc7e1', roads: '1172d80c9817de4f', landmarks: 'e26d029e69576d75' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 

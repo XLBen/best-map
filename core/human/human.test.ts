@@ -24,9 +24,10 @@ function humanDigest(w: World): Record<string, string> {
 
 const autoDigest = (w: World) => ({ classes: digest(w.derived.terrainClassAuto), resources: digest(w.derived.resourceAuto), peaks: digest(w.derived.peak) });
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
+// 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { classes: '032e78a98d864be4', resources: '54672009644f1e24', peaks: 'c0d15985a2043082' },
-  planet: { classes: 'd37e59b2a097d840', resources: 'e679cff81a910fa2', peaks: '335569a00999870e' },
+  region: { classes: 'c89d22a5bce3bb47', resources: '7653815b3a2f0a7b', peaks: 'c0d15985a2043082' },
+  planet: { classes: 'd8dec41ad5309aed', resources: '54ab0629bc669c0e', peaks: '239d21e3fa48ad94' },
 };
 
 const planet = () => {

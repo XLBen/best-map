@@ -3,7 +3,7 @@ import { type GhostEdit, cellLayers, editGhost, ghostLayers } from '../src/rende
 import type { Command } from './commands';
 import type { Engine } from './engine';
 import { brushCells } from './select';
-import { coastPatch, coastValueAt, coastValues, rasterizeWorld } from './subcell';
+import { coastPatch, coastValueAt, coastValues, rasterizeWorld, shownCoastValues } from './subcell';
 import {
   COAST_AMP,
   type ChainSpec,
@@ -206,10 +206,13 @@ describe('幽灵海岸与渲染一致', () => {
         const elevation = g.elevation.slice();
         for (let i = 0; i < mesh.n; i++) if (isLake(w, i)) elevation[i] = w.derived.elevation[i];
         const gw: World = { ...w, causes: { ...w.causes, landness, land }, derived: { ...w.derived, elevation } };
-        // 交给着色器的海岸值就是这个世界的（湖面另画）
+        // 交给着色器的海岸值：改动的格是这个世界的，别的格是现在画面上的（第三十三轮：含三角洲向海凸出的那一点，
+        // 幽灵海岸只按成因算改动的那几格）；湖面另画
         const sg = coastValues(gw);
+        const shown = shownCoastValues(w);
+        const inPatch = new Set(lp.cells);
         let bad = 0;
-        for (let i = 0; i < mesh.n; i++) if (!isLake(w, i) && !Object.is(g.coast[i], sg[i])) bad++;
+        for (let i = 0; i < mesh.n; i++) if (!isLake(w, i) && !Object.is(g.coast[i], inPatch.has(i) ? sg[i] : shown[i])) bad++;
         expect(bad).toBe(0);
         const after = eng.clone();
         after.exec(cmd);

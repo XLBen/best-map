@@ -66,9 +66,10 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 人文的金标准（第二十二轮记下；第二十二轮 内容：内置的中世纪示例换成正式的一套后重录）：以后提速、重构，生成的人口、群体、发源地必须逐值不变；
 // 有意改了生成的规则、内置的中世纪与西欧、东亚、草原三组的数据时重录（第二十七轮重录：地形类别只管起伏，宜居度不再把植被算两遍，偏好按生态的地形）
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
+// 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { popTotal: 'b35b7bc41dde9459', popGroup: 'c926fde557578507', popShare: '39bc413525973f15', human: '265fedaf643bc6a9' },
-  planet: { popTotal: '5056e535e8cdb13c', popGroup: '8bc27a2964b7c3f5', popShare: '49e3c04879cb03da', human: 'eca64d4c61221b96' },
+  region: { popTotal: '4950ab64b5ffda97', popGroup: 'c90cdabc77aa4b76', popShare: 'cbb69b1bd29a108d', human: '8745a6e30a7e6a4b' },
+  planet: { popTotal: '798cf3230e2a4445', popGroup: '2e0e95f0d0c8b161', popShare: 'b909541d6b3a8268', human: 'cb4ec6a03b59cf71' },
 };
 // 第三十轮：small.human 多了用的资源包（packs），金标准记的是没有它的样子（别的一样）
 const humanState = (w: World) => {

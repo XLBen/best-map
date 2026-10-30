@@ -230,7 +230,8 @@ describe('涂出来的生态区有自己的名字', () => {
     expect(rim.length).toBeGreaterThan(20);
     const all = continents();
     for (const k of [0, 1, 2, 3]) {
-      const cells = nearest(base, open, rim[Math.floor((rim.length * k) / 4)], 40);
+      // 第三十三轮：地形变了，第 1/4 处往外涂的 40 格里有 5 格算进了旁边另一片林，几个位置都往后挪半档
+      const cells = nearest(base, open, rim[Math.floor((rim.length * (k + 0.5)) / 4)], 40);
       const eng = continents();
       paint(eng, cells, sp);
       paint(all, cells, sp);
@@ -337,15 +338,16 @@ describe('涂出来的生态区有自己的名字', () => {
 // 这一轮之前的程序算出的“key=名字”（没涂过生态的世界：识别、锚点、起名都不能变，只有标注位置可以变）。
 // 第九轮去掉旧存档兼容时重录（山挡风默认打开，气候、河、地名都跟着变）
 // 第三十二轮重录（地形有了大格局：高原、洼地里的湖、长河，地物与名字跟着变）
+// 第三十三轮重录（平原与河口：高程、河、湿地跟着变）
 // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
 describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
-    expect(kv(continents())).toBe('416bfed2');
-    expect(kv(planet())).toBe('8cb2353d');
+    expect(kv(continents())).toBe('d5afe7a9');
+    expect(kv(planet())).toBe('83bc8762');
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
-    expect(kv(islands)).toBe('c12d786c');
+    expect(kv(islands)).toBe('de1ab9f1');
   });
 });
 

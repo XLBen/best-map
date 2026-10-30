@@ -104,7 +104,8 @@ describe('自带地名设定的生态自然长成的一片有自己的地名', (
     const dist = graphDistance(w.mesh, crystal.length ? crystal : natural.flatMap((f) => Array.from(f.cells)));
     const far = [...Array(w.mesh.n).keys()].filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1 && w.derived.dominant[c] >= 0 && dist[c] >= 0.15);
     expect(far.length).toBeGreaterThan(40);
-    const d0 = graphDistance(w.mesh, [far[Math.floor(far.length / 2)]]);
+    // 第三十三轮：地形变了，在正中涂的那片对周围的影响让旁边一小片自然长成的林没了，改在三分之一处涂
+    const d0 = graphDistance(w.mesh, [far[Math.floor(far.length / 3)]]);
     const patch = [...far].sort((a, b) => d0[a] - d0[b] || a - b).slice(0, 40);
     eng.exec({ op: 'add_constraint', constraint: { cells: patch, species: 'crystal_jungle', mode: 'override', ratio: 1, radius: 300 } });
     const painted = own(eng).filter((f) => Array.from(f.cells).some((c) => patch.includes(c)));

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
 import { type ElevationResult, SOLVE, carvePits, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor, windwardFactor } from './elevation';
 import { MinHeap } from './heap';
+import { applyPlains } from './plains';
 import { type Mesh, gradGeo, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
@@ -644,6 +645,13 @@ function computeElevationOld(world: World): ElevationResult {
     h.set(tmp);
   }
   carvePits(world, land, r as unknown as Routing, u, areaKm, pitM, fade, h);
+  // 第三十三轮：平原与河口（照 elevation.ts 的写法，用 plains.ts 的 applyPlains；到下游的边按下游找）
+  const edge = new Int32Array(n).fill(-1);
+  for (let i = 0; i < n; i++) {
+    const j = r.receiver[i];
+    if (j >= 0) for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (mesh.adj[e] === j) edge[i] = e;
+  }
+  applyPlains({ mesh, todo: land, land, up: causes.uplift, areaKm, r: { ...r, edge } as unknown as Routing, A, kmPerUnit, mToRaw: SOLVE.M_TO_RAW, pitM }, h);
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
   // 第十二轮：海底、湖底的形状换成了新的（这里比的是陆上的求解，海底、湖底照 elevation.ts 的写法）
   seafloor(world, elevation);

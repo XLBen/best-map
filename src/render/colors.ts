@@ -20,7 +20,7 @@ import {
   worldDimensions,
   worldPopValues,
 } from '../../core/human';
-import { coastPatch } from '../../core/subcell';
+import { coastPatch, coastValues } from '../../core/subcell';
 import { COAST_AMP, type TerrainPreview, landPatch } from '../../core/terrain';
 import { ISLAND_CODE_MASK, allIslandTypes, codeFlags, islandTint, landPixelCells, provinceLand, ringCodes } from '../../core/island-types';
 import { type World, provinceColor, provinceDisplayColor } from '../../core/world';
@@ -921,14 +921,18 @@ export function editGhost(world: World, base: CellLayers, edit: GhostEdit): Ghos
   return out;
 }
 
-// 整份将来的海岸（调整滑块、重画这一片）→ 补丁：海岸值与现在不同的格。原来的湖还是陆地时照旧画成湖面
+// 整份将来的海岸（调整滑块、重画这一片）→ 补丁：海岸值与现在不同的格。原来的湖还是陆地时照旧画成湖面。
+// 第三十三轮：现在画面上的海岸值含三角洲向海凸出的那一点（core/delta.ts），将来的（previewTerrain）只按成因算：
+// 按成因与现在一样的格不换（凸出的那一点照旧画着）
 export function terrainGhost(world: World, base: CellLayers, t: TerrainPreview): GhostPatch {
   const n = world.mesh.n;
   const gained = new Set(t.gained);
   const lost = new Set(t.lost);
+  const now = coastValues(world);
   const cells: number[] = [];
   for (let i = 0; i < n; i++) {
     const land = gained.has(i) || (world.causes.land[i] === 1 && !lost.has(i));
+    if (Object.is(Math.fround(t.coast[i]), now[i]) && land === (world.causes.land[i] === 1)) continue;
     const c = land && isLake(world, i) ? lakeCoast(t.coast[i]) : t.coast[i];
     if (!Object.is(Math.fround(c), base.coast[i])) cells.push(i);
   }

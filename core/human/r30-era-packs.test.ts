@@ -28,6 +28,7 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 
 // 与第二十九轮的代码同样的设置下生成的摘要（r29-digests.json 是用第二十九轮的代码记下的：同一块大陆、同样的时代与文化组，
 // 生成人文 + 国家 + 城市地标；再“重新生成国家”一遍）。第三十二轮地形变了（大格局），用第三十二轮的代码重录一次：
+// 第三十三轮（平原与河口，高程变了）再重录一次。
 // R29_RECORD=1 npx vitest run core/human/r30-era-packs.test.ts（只在有意改变结果时）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;

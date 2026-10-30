@@ -70,7 +70,7 @@ export interface PackedRibbons {
   tag: Uint8Array;
 }
 
-// meta：点数、标记（见下）、汇入哪一条（−1 没有）、画的河道（guides 的下标，−1 自然的河）、别的河汇进来几处
+// meta：点数、标记（见下）、汇入哪一条（−1 没有；三角洲分出去的一股是从哪一条分出去，标记里有 BRANCH）、画的河道（guides 的下标，−1 自然的河）、别的河汇进来几处
 const META = 5;
 const HAS_CELLS = 1;
 const HAS_MUL = 2;
@@ -79,6 +79,7 @@ const SOURCE = 8;
 const LAKE = 16;
 const MOUTH = 32;
 const DRAW_TYPE = 64;
+const BRANCH = 128;
 
 export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDraw[], drawKey?: { thr: number; spacing: number; types: string }): PackedRivers {
   let np = 0;
@@ -108,6 +109,7 @@ export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDr
     if (l.head === 'lake') flags |= LAKE;
     if (l.mouth) flags |= MOUTH;
     if (draws?.[i].type) flags |= DRAW_TYPE;
+    if (l.branch !== undefined) flags |= BRANCH;
     let g = -1;
     if (l.guide !== undefined) {
       g = gi.get(l.guide) ?? -1;
@@ -117,7 +119,7 @@ export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDr
         guides.push(l.guide);
       }
     }
-    meta.set([m, flags, l.into ?? -1, g, l.joins?.length ?? 0], i * META);
+    meta.set([m, flags, l.branch ?? l.into ?? -1, g, l.joins?.length ?? 0], i * META);
     for (let k = 0; k < m; k++) {
       pts[2 * (o + k)] = l.points[k][0];
       pts[2 * (o + k) + 1] = l.points[k][1];
@@ -205,7 +207,10 @@ export function unpackRivers(p: PackedRivers): { lines: RiverLine[]; draws: Rive
     if (flags & SOURCE) line.head = 'source';
     if (flags & LAKE) line.head = 'lake';
     if (flags & MOUTH) line.mouth = true;
-    if (into >= 0) line.into = into;
+    if (into >= 0) {
+      if (flags & BRANCH) line.branch = into;
+      else line.into = into;
+    }
     if (nj > 0) line.joins = Array.from(p.joins.subarray(oj, oj + nj));
     lines.push(line);
     o += m;

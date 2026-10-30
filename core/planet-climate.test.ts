@@ -169,6 +169,7 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
     // 第十三轮：参考操作里放的岛有了岩性（火山岛抬升减半、可蚀性变了，岛上的高程、降水往后跟着变），与山挡风无关，这九项重录
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
     // 第三十二轮：地形有了大格局，重录全部（重画一片不挪海平面，海陆也略变）
+    // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
     const FROZEN: Record<string, string> = {
       'derived.windSX': '4c79144d98f4841c',
       'derived.windSY': '028df01f31f37c05',
@@ -177,19 +178,19 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
       'derived.continentality': 'b40f043cc6f3b80d',
       'derived.currentX': '53ab081e600225d0',
       'derived.currentY': '915cc4b45ba4f6cd',
-      'derived.sstAnom': '46e8f2f3e3a6f6e1',
-      'derived.tS': '666e6bdbf8e70165',
-      'derived.tW': 'b46082331ddcd349',
-      'derived.pS': '9223d02480de8389',
-      'derived.pW': '76c6d6432e700b4e',
-      'derived.precip': '346a725bc0533b81',
-      'derived.moisture': '1fe3c2c5dc6613ac',
-      'derived.corrT': '8cfcbc67492f0fce',
-      'derived.corrP': '53c7e7c6ecbdc206',
-      'derived.discharge': 'd5205b17d7344439',
-      'derived.dominant': '01c413c57c9dc0ab',
+      'derived.sstAnom': '05ad87cb196966d4',
+      'derived.tS': 'ae905fdc404e1468',
+      'derived.tW': '582a039a38a6e0b3',
+      'derived.pS': '54fdb15c61d40f42',
+      'derived.pW': '9ff057df58be9ccf',
+      'derived.precip': 'ebcc4fef49db188f',
+      'derived.moisture': 'f78a5f0538a94a44',
+      'derived.corrT': 'e68ee46360e349a5',
+      'derived.corrP': '89911d42c62264ee',
+      'derived.discharge': '6443b6f3e08c52d1',
+      'derived.dominant': '692417e68fb6f34d',
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
-      'causes.province': '3e7eaaee84e31356',
+      'causes.province': '08df0ba64e606d8f',
     };
     const eng = seededEngine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
     const w = eng.world;

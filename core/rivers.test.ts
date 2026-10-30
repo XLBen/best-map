@@ -66,8 +66,8 @@ describe('画的河逐值不变', () => {
       lake: hashArray(d.lake),
       features: hashString(d.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16),
     };
-    // 第三十二轮重录（地形有了大格局：高程、河网、湖都变了）
-    expect(got).toEqual({ guides: '8,17,4', elevation: '12208160', discharge: 'b0e304cf', receiver: '8b8f8b45', lake: '68e11545', features: 'e129270a' });
+    // 第三十二轮重录（地形有了大格局：高程、河网、湖都变了）；第三十三轮重录（平原与河口：高程、河网都变了）
+    expect(got).toEqual({ guides: '18,41,4', elevation: '14a3aea2', discharge: 'c89a57dd', receiver: '5cec2045', lake: '83f11545', features: '7e6e68f0' });
   });
 });
 
