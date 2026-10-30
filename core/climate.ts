@@ -1,4 +1,4 @@
-import { type Mesh, gradient, ringDistance } from './mesh';
+import { type Mesh, gradientField, ringDistance } from './mesh';
 import { clamp, smoothstep } from './rng';
 import { type Derived, type World, worldLatitude } from './world';
 
@@ -407,6 +407,127 @@ export const planeMemo = new ContentMemo<PlaneTerrain>(60000);
 const SEASONS = [1, -1] as const;
 const itczOf = (sigma: number, tilt: number) => sigma * 0.35 * tilt;
 
+// ---------- 分层缓存（第三十一轮，与星球的 sphereStatic / sphereLand 同一个做法）----------
+// 抬山、改岩性、放湖时海陆、纬度都不变：格距、背景风带、季风、降水里只取决于纬度的部分、偏转前的风都照用。
+// 数值与逐格现算的完全相同（同样的运算、同样的先后），只是不再每次都算。planeLayers.on = false 时每次现算（测试用）
+export const planeLayers = { on: true };
+
+// 只取决于网格与比例尺：每格的平均格距（km）与按它算的几个比例
+interface PlaneGeo {
+  kmPerUnit: number;
+  spacingKm: Float64Array;
+  decay: Float64Array;
+  e150: Float64Array;
+  e900: Float64Array;
+}
+const geoCache = new WeakMap<Mesh, PlaneGeo>();
+function planeGeo(mesh: Mesh, kmPerUnit: number): PlaneGeo {
+  const hit = geoCache.get(mesh);
+  if (planeLayers.on && hit && hit.kmPerUnit === kmPerUnit) return hit;
+  const n = mesh.n;
+  const spacingKm = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) s += mesh.dist[e];
+    spacingKm[i] = (s / Math.max(1, mesh.off[i + 1] - mesh.off[i])) * kmPerUnit;
+  }
+  const decay = new Float64Array(n);
+  const e150 = new Float64Array(n);
+  const e900 = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    decay[i] = Math.exp(-spacingKm[i] / 1500);
+    e150[i] = 1 - Math.exp(-spacingKm[i] / 150);
+    e900[i] = 1 - Math.exp(-spacingKm[i] / 900);
+  }
+  const g = { kmPerUnit, spacingKm, decay, e150, e900 };
+  if (planeLayers.on) geoCache.set(mesh, g);
+  return g;
+}
+
+// 只取决于各格纬度、倾角、自转、比例尺：两季的背景风（纬向、经向）、季风的系数、降水里只取决于纬度的部分
+interface PlaneStatic {
+  lat: Float64Array;
+  params: number[];
+  u0: Float64Array[];
+  v0: Float64Array[];
+  kf: Float64Array[];
+  rain: Float64Array[];
+}
+const planeStaticCache = new WeakMap<Mesh, PlaneStatic>();
+function planeStatic(mesh: Mesh, lat: Float64Array, tilt: number, rotation: number, kmPerUnit: number): PlaneStatic {
+  const params = [tilt, rotation, kmPerUnit];
+  const hit = planeStaticCache.get(mesh);
+  if (planeLayers.on && hit && hit.params.every((v, k) => Object.is(v, params[k])) && sameBytes(hit.lat, lat)) return hit;
+  const n = mesh.n;
+  const u0 = [new Float64Array(n), new Float64Array(n)];
+  const v0 = [new Float64Array(n), new Float64Array(n)];
+  const kf = [new Float64Array(n), new Float64Array(n)];
+  const rain = [new Float64Array(n), new Float64Array(n)];
+  const L = 1500 / kmPerUnit;
+  SEASONS.forEach((sigma, si) => {
+    const phiC = itczOf(sigma, tilt);
+    for (let i = 0; i < n; i++) {
+      const d = lat[i] - phiC;
+      const ad = Math.min(90, Math.abs(d));
+      u0[si][i] = -Math.cos((Math.PI * ad) / 45) * rotation * (ad < 22.5 ? 0.8 : 1);
+      const toward = ad < 67.5 ? 0.3 * Math.sin((2 * Math.PI * ad) / 45) : 0.25;
+      v0[si][i] = d > 0 ? toward : -toward;
+      // 季风：夏半球风吹向大陆，冬半球吹离大陆
+      const summer = Math.sign(lat[i]) === sigma;
+      const g = Math.exp(-(((Math.abs(lat[i]) - 22) / 12) ** 2));
+      kf[si][i] = (summer ? 1.1 : -0.25) * g * L;
+      // 降水里只取决于纬度的部分（辐合 × 副高下沉 × 风暴带）
+      const ar = Math.abs(d);
+      const conv = 1 + 1.6 * Math.exp(-((d / 9) ** 2));
+      const subs = 1 - 0.75 * Math.exp(-(((ar - 27) / 9) ** 2));
+      const storm = 1 + 0.45 * Math.exp(-(((ar - 52) / 11) ** 2));
+      rain[si][i] = conv * subs * storm;
+    }
+  });
+  const st = { lat: lat.slice(), params, u0, v0, kf, rain };
+  if (planeLayers.on) planeStaticCache.set(mesh, st);
+  return st;
+}
+
+// 只取决于海陆（加上上面那一层）：偏转前的两季的风（写进推导的 Float32，windSX、windSY、windWX、windWY 的顺序）。
+// 按陆地占比的那份数组认（陆地占比按海陆缓存，同样的海陆是同一个数组）；留两份（撤销一笔改海陆时还能用上）
+const planeWindCache = new WeakMap<PlaneStatic, { landFrac: Float64Array; winds: Float32Array[] }[]>();
+function planeWinds(mesh: Mesh, st: PlaneStatic, landFrac: Float64Array): Float32Array[] {
+  const list = planeWindCache.get(st) ?? [];
+  const hit = planeLayers.on ? list.find((c) => c.landFrac === landFrac) : undefined;
+  if (hit) return hit.winds;
+  const n = mesh.n;
+  // 陆地占比的梯度，两个季节共用
+  const lfX = new Float64Array(n);
+  const lfY = new Float64Array(n);
+  gradientField(mesh, landFrac, lfX, lfY);
+  const winds = [new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+  for (let si = 0; si < 2; si++) {
+    const wx = winds[2 * si];
+    const wy = winds[2 * si + 1];
+    const u0 = st.u0[si];
+    const v0 = st.v0[si];
+    const kf = st.kf[si];
+    for (let i = 0; i < n; i++) {
+      let u = u0[i];
+      let v = v0[i];
+      const k = kf[i];
+      u += k * lfX[i];
+      v += k * lfY[i];
+      const mag = Math.hypot(u, v);
+      const lim = 1.3;
+      if (mag > lim) {
+        u *= lim / mag;
+        v *= lim / mag;
+      }
+      wx[i] = u;
+      wy[i] = v;
+    }
+  }
+  if (planeLayers.on) planeWindCache.set(st, [{ landFrac, winds }, ...list].slice(0, 2));
+  return winds;
+}
+
 function planeTerrain(world: World, elevation: Float32Array, out: Derived): PlaneTerrain {
   const { mesh, causes, small, kmPerUnit } = world;
   const n = mesh.n;
@@ -424,22 +545,13 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
     return hit;
   }
   const aux = meshAux(mesh);
-  const spacingKm = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    let s = 0;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) s += mesh.dist[e];
-    spacingKm[i] = (s / Math.max(1, mesh.off[i + 1] - mesh.off[i])) * kmPerUnit;
-  }
+  const geo = planeGeo(mesh, kmPerUnit);
+  const spacingKm = geo.spacingKm;
+  const st = planeStatic(mesh, lat, planet.tilt, planet.rotation, kmPerUnit);
 
-  // 大尺度陆地占比（约 1500 km 平滑），季风用；梯度两个季节共用
+  // 大尺度陆地占比（约 1500 km 平滑），季风用
   const landFrac = landFraction(mesh, land, kmPerUnit);
-  const lfX = new Float64Array(n);
-  const lfY = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const [gx, gy] = gradient(mesh, landFrac, i);
-    lfX[i] = gx;
-    lfY[i] = gy;
-  }
+  const baseWinds = planeWinds(mesh, st, landFrac);
 
   // 高程梯度（m/km），陆地用于地形抬升判断。先平滑到约 200 km 尺度：
   // 地形雨看的是山体整体的迎风背风，不是单格尺度的谷与脊，否则会出现逐格交替的条纹
@@ -457,45 +569,21 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
       next = t;
     }
   }
+  gradientField(mesh, hPos, hx, hy);
   for (let i = 0; i < n; i++) {
-    const [gx, gy] = gradient(mesh, hPos, i);
-    hx[i] = gx / kmPerUnit;
-    hy[i] = gy / kmPerUnit;
+    hx[i] = hx[i] / kmPerUnit;
+    hy[i] = hy[i] / kmPerUnit;
   }
 
   const winds: [Float32Array, Float32Array][] = [
     [out.windSX, out.windSY],
     [out.windWX, out.windWY],
   ];
-  SEASONS.forEach((sigma, si) => {
-    const [wx, wy] = winds[si];
-    const phiC = itczOf(sigma, planet.tilt);
-    for (let i = 0; i < n; i++) {
-      const d = lat[i] - phiC;
-      const ad = Math.min(90, Math.abs(d));
-      const uZonal = -Math.cos((Math.PI * ad) / 45) * planet.rotation * (ad < 22.5 ? 0.8 : 1);
-      const toward = ad < 67.5 ? 0.3 * Math.sin((2 * Math.PI * ad) / 45) : 0.25;
-      let u = uZonal;
-      let v = d > 0 ? toward : -toward;
-      // 季风：夏半球风吹向大陆，冬半球吹离大陆
-      const gx = lfX[i];
-      const gy = lfY[i];
-      const L = 1500 / kmPerUnit;
-      const summer = Math.sign(lat[i]) === sigma;
-      const g = Math.exp(-(((Math.abs(lat[i]) - 22) / 12) ** 2));
-      const k = (summer ? 1.1 : -0.25) * g * L;
-      u += k * gx;
-      v += k * gy;
-      const mag = Math.hypot(u, v);
-      const lim = 1.3;
-      if (mag > lim) {
-        u *= lim / mag;
-        v *= lim / mag;
-      }
-      wx[i] = u;
-      wy[i] = v;
-    }
-  });
+  // 背景风带 + 季风（偏转前，按海陆缓存）
+  out.windSX.set(baseWinds[0]);
+  out.windSY.set(baseWinds[1]);
+  out.windWX.set(baseWinds[2]);
+  out.windWY.set(baseWinds[3]);
   // 山挡风：为 0 时整段跳过（与没有这一步逐值相同）。图边来流、背风、大陆度、输运都跟着拐过的风走
   if (terrainWind > 0) {
     const delta = deflectWind(mesh, lat, hPos, hx, hy, terrainWind, planet.rotation, windDeflectPasses(mesh.spacing * kmPerUnit), [winds[0], winds[1]]);
@@ -539,8 +627,7 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   });
 
   // 大陆度：海洋气团示踪量随风深入陆地后衰减
-  const decay = new Float64Array(n);
-  for (let i = 0; i < n; i++) decay[i] = Math.exp(-spacingKm[i] / 1500);
+  const decay = geo.decay;
   const marine = new Float64Array(n);
   for (let si = 0; si < 2; si++) {
     const m = marineSweeps(flows[si], aux.orders, edges[si], edgeW[si], land, decay);
@@ -548,49 +635,82 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   }
   for (let i = 0; i < n; i++) out.continentality[i] = land[i] ? 1 - marine[i] : 0;
 
-  // 降水里只取决于地形的部分
-  const rain = [new Float64Array(n), new Float64Array(n)];
+  // 降水里只取决于地形的部分：只取决于纬度的那一份（rain）在上面的分层缓存里，这里是背风的抑制
+  const rain = st.rain;
   const lee = [new Float64Array(n), new Float64Array(n)];
   for (let si = 0; si < 2; si++) {
     const [wx, wy] = winds[si];
-    const phiC = itczOf(SEASONS[si], planet.tilt);
+    const ls = lee[si];
     for (let i = 0; i < n; i++) {
-      const d = lat[i] - phiC;
-      const ad = Math.abs(d);
-      const conv = 1 + 1.6 * Math.exp(-((d / 9) ** 2));
-      const subs = 1 - 0.75 * Math.exp(-(((ad - 27) / 9) ** 2));
-      const storm = 1 + 0.45 * Math.exp(-(((ad - 52) / 11) ** 2));
-      rain[si][i] = conv * subs * storm;
-      lee[si][i] = 1;
+      ls[i] = 1;
       if (land[i]) {
         const wm = Math.hypot(wx[i], wy[i]) || 1;
         const up = (wx[i] * hx[i] + wy[i] * hy[i]) / wm;
         // 背风下沉气流抑制降水
-        if (up < 0) lee[si][i] = Math.exp(up / 1.5);
+        if (up < 0) ls[i] = Math.exp(up / 1.5);
       }
     }
   }
-  const e150 = new Float64Array(n);
-  const e900 = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    e150[i] = 1 - Math.exp(-spacingKm[i] / 150);
-    e900[i] = 1 - Math.exp(-spacingKm[i] / 900);
-  }
+  const { e150, e900 } = geo;
 
   const t: PlaneTerrain = { lat, written: written.map((a) => a.slice()), flows, edges, edgeW, dKm: spacingKm, e150, e900, rain, lee };
   planeMemo.keep(mesh, [land.slice(), elevation.slice(), lat], params, t);
   return t;
 }
 
-// 空闲预热（第三十一轮，见 engine.ts 的 warmSteps）：只取决于网格与海陆的几样（网格的邻接反查与扫描顺序、大尺度的陆地占比）
-// 先算好放进缓存，打开后的第一笔不用等。与 computeClimate 里用到时现算的是同一份。返回是否算了
+// 空闲预热（第三十一轮，见 engine.ts 的 warmSteps）：只取决于网格、纬度与海陆的几样（网格的邻接反查与扫描顺序、
+// 边的方向、格距、背景风带与日照、大尺度的陆地占比与偏转前的风）先算好放进缓存，打开后的第一笔不用等。
+// 与 computeClimate 里用到时现算的是同一份。返回是否算了
 export function prepareClimatePlane(world: World): boolean {
-  const { mesh, causes, kmPerUnit } = world;
+  const { mesh, causes, kmPerUnit, small } = world;
   const fresh = !cache.has(mesh) || !(landFracCache.get(mesh) ?? []).some((c) => c.kmPerUnit === kmPerUnit && c.land.length === causes.land.length && c.land.every((v, i) => v === causes.land[i]));
   if (!fresh) return false;
   meshAux(mesh);
-  landFraction(mesh, causes.land, kmPerUnit);
+  edgeDirs(mesh);
+  const lat = new Float64Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
+  planeGeo(mesh, kmPerUnit);
+  planeSun(mesh, lat, small.planet.tilt, small.planet.solar);
+  planeWinds(mesh, planeStatic(mesh, lat, small.planet.tilt, small.planet.rotation, kmPerUnit), landFraction(mesh, causes.land, kmPerUnit));
   return true;
+}
+
+// 温度里只取决于各格纬度、倾角、日照的部分（第三十一轮按网格缓存一份，与逐格现算的相同）：
+// 年均辐射平衡温度、两季的振幅项 k·(q季 − q年)（高纬的季节振幅更大：极昼极夜）、海面温度与它的饱和水汽量（湿度之前）
+interface PlaneSun {
+  lat: Float64Array;
+  params: number[];
+  tAnn: Float64Array;
+  kSeason: Float64Array[];
+  oceanT: Float64Array[];
+  satOcean: Float64Array[];
+}
+const sunCache = new WeakMap<Mesh, PlaneSun>();
+function planeSun(mesh: Mesh, lat: Float64Array, tilt: number, solar: number): PlaneSun {
+  const params = [tilt, solar];
+  const hit = sunCache.get(mesh);
+  if (planeLayers.on && hit && hit.params.every((v, k) => Object.is(v, params[k])) && sameBytes(hit.lat, lat)) return hit;
+  const n = mesh.n;
+  const ins = insolationTable(tilt, solar);
+  const tAnn = new Float64Array(n);
+  const kSeason = [new Float64Array(n), new Float64Array(n)];
+  const oceanT = [new Float64Array(n), new Float64Array(n)];
+  const satOcean = [new Float64Array(n), new Float64Array(n)];
+  for (let i = 0; i < n; i++) {
+    const q = ins(lat[i]);
+    const t = radiativeTemp(q.ann);
+    const k = 0.09 * (1 + (0.4 * Math.abs(lat[i])) / 90);
+    tAnn[i] = t;
+    kSeason[0][i] = k * (q.s - q.ann);
+    kSeason[1][i] = k * (q.w - q.ann);
+    oceanT[0][i] = t + kSeason[0][i] * 0.3;
+    oceanT[1][i] = t + kSeason[1][i] * 0.3;
+    satOcean[0][i] = saturation(oceanT[0][i]);
+    satOcean[1][i] = saturation(oceanT[1][i]);
+  }
+  const sun = { lat: lat.slice(), params, tAnn, kSeason, oceanT, satOcean };
+  if (planeLayers.on) sunCache.set(mesh, sun);
+  return sun;
 }
 
 export function computeClimate(world: World, elevation: Float32Array, out: Derived): ClimateBase {
@@ -598,26 +718,24 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
   const n = mesh.n;
   const planet = small.planet;
   const land = causes.land;
-  const ins = insolationTable(planet.tilt, planet.solar);
   const { orders } = meshAux(mesh);
   const tr = planeTerrain(world, elevation, out);
   const { lat, dKm } = tr;
+  const sun = planeSun(mesh, lat, planet.tilt, planet.solar);
 
   // 温度
   const base: ClimateBase = { tS: new Float32Array(n), tW: new Float32Array(n), pS: new Float32Array(n), pW: new Float32Array(n) };
-  const oceanT: Float64Array[] = [new Float64Array(n), new Float64Array(n)];
+  const [kS, kW] = sun.kSeason;
+  const tAnnOf = sun.tAnn;
+  const cont = out.continentality;
+  const tOff = causes.tempOffset;
   for (let i = 0; i < n; i++) {
-    const q = ins(lat[i]);
-    const tAnn = radiativeTemp(q.ann);
-    const amp = land[i] ? 0.3 + 0.7 * out.continentality[i] : 0.3;
+    const tAnn = tAnnOf[i];
+    const amp = land[i] ? 0.3 + 0.7 * cont[i] : 0.3;
     const lapse = land[i] ? (planet.lapse * Math.max(0, elevation[i])) / 1000 : 0;
-    const off = causes.tempOffset[i];
-    // 高纬的季节振幅更大（极昼极夜）
-    const k = 0.09 * (1 + (0.4 * Math.abs(lat[i])) / 90);
-    base.tS[i] = tAnn + k * (q.s - q.ann) * amp - lapse + off;
-    base.tW[i] = tAnn + k * (q.w - q.ann) * amp - lapse + off;
-    oceanT[0][i] = tAnn + k * (q.s - q.ann) * 0.3;
-    oceanT[1][i] = tAnn + k * (q.w - q.ann) * 0.3;
+    const off = tOff[i];
+    base.tS[i] = tAnn + kS[i] * amp - lapse + off;
+    base.tW[i] = tAnn + kW[i] * amp - lapse + off;
   }
 
   // 降水：每格的降落比例、饱和量先算好（与逐遍现算的值相同），输运时每遍只做加权平均与逐格的收支
@@ -626,6 +744,7 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
     const P = si === 0 ? base.pS : base.pW;
     const rain = tr.rain[si];
     const lee = tr.lee[si];
+    const satO = sun.satOcean[si];
     const fall = new Float64Array(n);
     const lim = new Float64Array(n);
     const evap = new Float64Array(n);
@@ -638,11 +757,11 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
       if (land[i]) {
         lim[i] = planet.humidity * saturation(T[i]) * 1.1;
         evap[i] = smoothstep(0, 25, T[i]);
-      } else lim[i] = planet.humidity * saturation(oceanT[si][i]);
+      } else lim[i] = planet.humidity * satO[i];
     }
     // 图外来流：图外是海时取当地海面饱和量
     const num0 = new Float64Array(n);
-    for (const i of tr.edges[si]) num0[i] = tr.edgeW[si][i] * (planet.humidity * saturation(oceanT[si][i]));
+    for (const i of tr.edges[si]) num0[i] = tr.edgeW[si][i] * (planet.humidity * satO[i]);
     const removed = new Float64Array(n);
     moistSweeps(tr, si, orders, num0, land, fall, lim, evap, removed);
     const off = causes.moistOffset;
@@ -815,76 +934,99 @@ export interface PlaneFlow extends Flow {
   w: Float64Array;
 }
 
+// 每条邻接项 e（i→adj[e]）的单位方向（地图单位）：只取决于网格（第三十一轮按网格缓存；与逐边现算的是同一个值）
+const edgeDirCache = new WeakMap<Mesh, { ex: Float64Array; ey: Float64Array }>();
+function edgeDirs(mesh: Mesh): { ex: Float64Array; ey: Float64Array } {
+  let d = edgeDirCache.get(mesh);
+  if (d) return d;
+  const E = mesh.adj.length;
+  const ex = new Float64Array(E);
+  const ey = new Float64Array(E);
+  for (let i = 0; i < mesh.n; i++) {
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      ex[e] = (mesh.x[j] - mesh.x[i]) / mesh.dist[e];
+      ey[e] = (mesh.y[j] - mesh.y[i]) / mesh.dist[e];
+    }
+  }
+  d = { ex, ey };
+  edgeDirCache.set(mesh, d);
+  return d;
+}
+
 function buildFlow(mesh: Mesh, wx: Float32Array, wy: Float32Array): PlaneFlow {
-  const n = mesh.n;
-  const frac = new Float64Array(mesh.adj.length);
+  const { n, off, adj, edgeLen, boundary, inwardX, inwardY } = mesh;
+  const E = adj.length;
+  const { ex, ey } = edgeDirs(mesh);
+  const frac = new Float64Array(E);
   const diffuse = 0.15;
   const dots = new Float64Array(32);
   const calm = new Uint8Array(n);
+  // 参与排序的边（有风的格把水汽送往下风的邻格）与每格的入度：在算权重的同时记下（第三十一轮，与之后另扫一遍相同）
+  const em = new Uint8Array(E);
+  const indeg = new Int32Array(n);
   for (let i = 0; i < n; i++) {
-    const a = mesh.off[i];
-    const b = mesh.off[i + 1];
+    const a = off[i];
+    const b = off[i + 1];
     const mag = Math.hypot(wx[i], wy[i]);
     const ux = mag > 1e-6 ? wx[i] / mag : 0;
     const uy = mag > 1e-6 ? wy[i] / mag : 0;
     let sum = 0;
     let fwdLen = 0;
     for (let e = a; e < b; e++) {
-      const j = mesh.adj[e];
-      const ex = (mesh.x[j] - mesh.x[i]) / mesh.dist[e];
-      const ey = (mesh.y[j] - mesh.y[i]) / mesh.dist[e];
-      const dot = ux * ex + uy * ey;
+      const dot = ux * ex[e] + uy * ey[e];
       dots[e - a] = dot;
       if (dot > 0) {
-        frac[e] = dot * dot * mesh.edgeLen[e];
+        frac[e] = dot * dot * edgeLen[e];
         sum += frac[e];
-        fwdLen += mesh.edgeLen[e];
+        fwdLen += edgeLen[e];
       } else frac[e] = 0;
     }
     if (sum <= 0) {
       // 无风：均匀分给所有邻居（这些边不参与排序，否则会和邻居互成环）。
       // 无风带是下沉气流，空气偏干：只传出六成，两格之间来回传递的环因此不会越积越多
       let total = 0;
-      for (let e = a; e < b; e++) total += mesh.edgeLen[e];
-      for (let e = a; e < b; e++) frac[e] = (0.6 * mesh.edgeLen[e]) / total;
+      for (let e = a; e < b; e++) total += edgeLen[e];
+      for (let e = a; e < b; e++) frac[e] = (0.6 * edgeLen[e]) / total;
       calm[i] = 1;
       continue;
     }
     // 贴图边的格：吹向图外的部分流失
-    const lostShare = mesh.boundary[i] ? Math.max(0, -(ux * mesh.inwardX[i] + uy * mesh.inwardY[i])) * 0.5 : 0;
+    const lostShare = boundary[i] ? Math.max(0, -(ux * inwardX[i] + uy * inwardY[i])) * 0.5 : 0;
     const keep = 1 - lostShare;
     // 侧向扩散只给下风一侧的邻居：不回流，按拓扑序扫描一遍即可推进
     for (let e = a; e < b; e++) {
       if (dots[e - a] <= 0) continue;
-      frac[e] = keep * ((1 - diffuse) * (frac[e] / sum) + (diffuse * mesh.edgeLen[e]) / fwdLen);
+      const f = keep * ((1 - diffuse) * (frac[e] / sum) + (diffuse * edgeLen[e]) / fwdLen);
+      frac[e] = f;
+      // Kahn 拓扑排序：边 i→j 当 i 有风且把水汽送往下风的 j
+      if (f > 0) {
+        em[e] = 1;
+        indeg[adj[e]]++;
+      }
     }
   }
 
-  // Kahn 拓扑排序：边 i→j 当 i 有风且把水汽送往下风的 j
-  const em = new Uint8Array(mesh.adj.length);
-  for (let i = 0; i < n; i++) {
-    if (calm[i]) continue;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (frac[e] > 0) em[e] = 1;
-  }
-  const order = kahnOrder(mesh, em);
+  const order = kahnOrder(mesh, em, indeg);
   // 只保留顺着拓扑序往下游的输送：风弱、风向杂乱的地方格与格会互相指向，
   // 水汽在环里来回累积会算出离谱的降水（格越小越严重）。去掉逆序的边后输送图无环，
   // 水汽顺风走一遍；流进死角的那部分视为随上升气流带走
   const pos = new Int32Array(n);
   for (let k = 0; k < n; k++) pos[order[k]] = k;
   for (let i = 0; i < n; i++) {
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (frac[e] > 0 && pos[mesh.adj[e]] < pos[i]) frac[e] = 0;
+    const pi = pos[i];
+    for (let e = off[i], end = off[i + 1]; e < end; e++) if (frac[e] > 0 && pos[adj[e]] < pi) frac[e] = 0;
   }
   const { rev } = meshAux(mesh);
   const koff = new Int32Array(n + 1);
-  const src = new Int32Array(mesh.adj.length);
-  const w = new Float64Array(mesh.adj.length);
+  const src = new Int32Array(E);
+  const w = new Float64Array(E);
   let p = 0;
   for (let i = 0; i < n; i++) {
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
       const f = frac[rev[e]];
       if (f <= 0) continue;
-      src[p] = mesh.adj[e];
+      src[p] = adj[e];
       w[p++] = f;
     }
     koff[i + 1] = p;
@@ -895,11 +1037,15 @@ function buildFlow(mesh: Mesh, wx: Float32Array, wy: Float32Array): PlaneFlow {
 // Kahn 拓扑排序（球面的 sphere-flow.ts 也用）：em[e] = 1 的边 i→adj[e] 参与排序。
 // 风场里有环时，放入剩余入度最小的格（打断环的代价最小）。待放的格按入度分桶、桶内先进先出，
 // 出桶顺序与按（入度，入堆先后）出堆的最小堆完全相同；桶里允许过期项，取出时跳过
-export function kahnOrder(mesh: Mesh, em: Uint8Array): Int32Array {
+// given：调用方在标 em 的同时数好的每格入度（第三十一轮，省掉再扫一遍所有的边；这里会就地改它）
+export function kahnOrder(mesh: Mesh, em: Uint8Array, given?: Int32Array): Int32Array {
   const n = mesh.n;
   const { off, adj } = mesh;
-  const indeg = new Int32Array(n);
-  for (let i = 0; i < n; i++) for (let e = off[i]; e < off[i + 1]; e++) if (em[e]) indeg[adj[e]]++;
+  let indeg = given;
+  if (!indeg) {
+    indeg = new Int32Array(n);
+    for (let i = 0; i < n; i++) for (let e = off[i]; e < off[i + 1]; e++) if (em[e]) indeg[adj[e]]++;
+  }
   // 入度只减不增，每格进桶 k 至多一次，且只在初始入度 ≥ k 时：按这个上限给每个桶分一段
   let maxD = 0;
   for (let i = 0; i < n; i++) if (indeg[i] > maxD) maxD = indeg[i];

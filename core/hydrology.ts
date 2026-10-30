@@ -1,6 +1,6 @@
 import { ContentMemo } from './climate';
 import { placedLakeAnchor, sinkMask } from './elevation';
-import { gradient } from './mesh';
+import { type Mesh, gradGeo, gradientAt } from './mesh';
 import { type Routing, route } from './routing';
 import { type Derived, FREE_HEIGHT, type World } from './world';
 
@@ -12,6 +12,17 @@ const SEC_PER_YEAR = 3.156e7;
 
 // 汇流只取决于高程、海陆、画的河强制的方向和在哪里消失：只改气候、河流门槛时（以及约束求解的每一轮）原样复用，结果只读
 export const routeMemo = new ContentMemo<Routing>();
+
+// 每格的面积（km²）：只取决于网格与比例尺，按网格缓存一份（第三十一轮；只读）
+const areaCache = new WeakMap<Mesh, { kmPerUnit: number; areaKm: Float64Array }>();
+export function cellAreaKm(mesh: Mesh, kmPerUnit: number): Float64Array {
+  const hit = areaCache.get(mesh);
+  if (hit && hit.kmPerUnit === kmPerUnit) return hit.areaKm;
+  const areaKm = new Float64Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
+  areaCache.set(mesh, { kmPerUnit, areaKm });
+  return areaKm;
+}
 
 export function computeHydrology(world: World, elevation: Float32Array, d: Derived) {
   const { mesh, causes, small, kmPerUnit } = world;
@@ -29,8 +40,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     routeMemo.keep(mesh, [elevation.slice(), land.slice(), forced, terminal], [], r);
   }
 
-  const areaKm = new Float64Array(n);
-  for (let i = 0; i < n; i++) areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
+  const areaKm = cellAreaKm(mesh, kmPerUnit);
 
   // 湖里的岛（第十五轮，定了高度的格，见 terrain.ts 的 lakeIslandStamp）永远是干的陆地：不算进湖
   // （内流湖涨落、湖岸抬高时也不会淹掉、变成干盐湖）。没有往湖里放过岛时与以前逐值相同
@@ -38,6 +48,9 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const wet = (i: number) => r.water[i] - elevation[i] >= 0.5 && (!fixed || fixed[i] === FREE_HEIGHT);
   // 放的湖认哪一格（湖心那一格不再是水面时取碗里最近的水面格，见 placedLakeAnchor）
   const anchors = small.lakes.map((l) => placedLakeAnchor(world, l, (i) => land[i] === 1 && wet(i)));
+  // 放的湖认的格（标记表，第三十一轮：以前对每个小湖在格表里逐个找）
+  const anchored = anchors.length ? new Uint8Array(n) : null;
+  if (anchored) for (const a of anchors) if (a >= 0) anchored[a] = 1;
   // 湖：填洼深度超过 3 m 的连通平水面
   const lakeId = new Int32Array(n).fill(-1);
   const lakes: { cells: number[]; outlet: number; area: number; perennial: boolean; evap: number }[] = [];
@@ -61,7 +74,7 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     lakes.push({ cells, outlet: -1, area: 0, perennial: false, evap: 0 });
     // 太浅的不算湖；只有一两格的自然洼地多半是高程平滑留下的小坑，也不算（水照常流过），
     // 否则荒漠里会有零星的蓝点。用户放的湖照旧
-    const tiny = cells.length < 3 && !anchors.some((a) => cells.includes(a));
+    const tiny = cells.length < 3 && !(anchored && cells.some((c) => anchored[c]));
     if (maxDepth < 3 || tiny) for (const c of cells) lakeId[c] = -2 - id;
   }
   small.lakes.forEach((spec, k) => {
@@ -192,14 +205,16 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   // 坡度（m/km）与地形湿度指数 ln(a / tanβ)
   const hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
+  const geo = gradGeo(mesh);
+  const g = new Float64Array(2);
   for (let i = 0; i < n; i++) {
     if (!land[i]) {
       d.slope[i] = 0;
       d.wetness[i] = 0;
       continue;
     }
-    const [gx, gy] = gradient(mesh, hPos, i);
-    const s = Math.hypot(gx, gy) / kmPerUnit;
+    gradientAt(mesh, geo, hPos, i, g);
+    const s = Math.hypot(g[0], g[1]) / kmPerUnit;
     d.slope[i] = s;
     // 单位宽度汇水面积（m）：面积 / 格宽
     const width = Math.sqrt(areaKm[i]) * 1000;

@@ -67,80 +67,88 @@ export interface FlowOptions {
 
 export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: ArrayLike<number>, o: FlowOptions): SphereFlow {
   const { rev, dirE, dirS, seam } = sphereAux(mesh);
-  const n = mesh.n;
-  const E = mesh.adj.length;
+  const { n, off, adj, edgeLen, x } = mesh;
+  const E = adj.length;
   const frac = new Float64Array(E);
   const diffuse = 0.15;
   const calm = new Uint8Array(n);
   const mask = o.mask;
   for (let i = 0; i < n; i++) {
     if (mask && !mask[i]) continue;
-    const a = mesh.off[i];
-    const b = mesh.off[i + 1];
+    const a = off[i];
+    const b = off[i + 1];
     const mag = Math.hypot(wx[i], wy[i]);
     const ux = mag > 1e-6 ? wx[i] / mag : 0;
     const uy = mag > 1e-6 ? wy[i] / mag : 0;
     let sum = 0;
     let fwdLen = 0;
     for (let e = a; e < b; e++) {
-      if (mask && !mask[mesh.adj[e]]) continue;
+      if (mask && !mask[adj[e]]) continue;
       const dot = ux * dirE[e] + uy * dirS[e];
       if (dot > 0) {
-        frac[e] = dot * dot * mesh.edgeLen[e];
-        sum += frac[e];
-        fwdLen += mesh.edgeLen[e];
+        const f = dot * dot * edgeLen[e];
+        frac[e] = f;
+        sum += f;
+        fwdLen += edgeLen[e];
       }
     }
     if (sum <= 0) {
       let total = 0;
-      for (let e = a; e < b; e++) if (!mask || mask[mesh.adj[e]]) total += mesh.edgeLen[e];
-      for (let e = a; e < b; e++) frac[e] = !mask || mask[mesh.adj[e]] ? (0.6 * mesh.edgeLen[e]) / (total || 1) : 0;
+      for (let e = a; e < b; e++) if (!mask || mask[adj[e]]) total += edgeLen[e];
+      for (let e = a; e < b; e++) frac[e] = !mask || mask[adj[e]] ? (0.6 * edgeLen[e]) / (total || 1) : 0;
       calm[i] = 1;
       continue;
     }
     for (let e = a; e < b; e++) {
       if (frac[e] <= 0) continue;
-      frac[e] = (1 - diffuse) * (frac[e] / sum) + (diffuse * mesh.edgeLen[e]) / fwdLen;
+      frac[e] = (1 - diffuse) * (frac[e] / sum) + (diffuse * edgeLen[e]) / fwdLen;
     }
   }
   // 相互指向的两格只保留较强的一边（与处理顺序无关）
   for (let i = 0; i < n; i++) {
     if (calm[i]) continue;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      const j = mesh.adj[e];
-      const f = rev[e];
-      if (calm[j] || frac[e] <= 0 || frac[f] <= 0) continue;
-      if (frac[e] < frac[f] || (frac[e] === frac[f] && i > j)) frac[e] = 0;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const fe = frac[e];
+      if (fe <= 0) continue;
+      const j = adj[e];
+      const ff = frac[rev[e]];
+      if (calm[j] || ff <= 0) continue;
+      if (fe < ff || (fe === ff && i > j)) frac[e] = 0;
     }
   }
+  // 滞后边（seam：跨过接缝、顺着风带的），参与排序的边与每格的入度：一遍扫完（第三十一轮，与分开扫几遍相同）
   const lagged = new Uint8Array(E);
-  if (o.lag === 'seam') {
-    for (let i = 0; i < n; i++) {
-      if (calm[i]) continue;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        if (!seam[e] || frac[e] <= 0) continue;
-        const j = mesh.adj[e];
-        if (calm[j]) continue;
-        // 向东跨过接缝时 x 从近 2 变成近 0（风速只在接缝上的边才要算）
-        const s = mesh.x[j] < mesh.x[i] ? 1 : -1;
-        const mi = Math.hypot(wx[i], wy[i]);
-        const mj = Math.hypot(wx[j], wy[j]);
-        if ((s * wx[i]) / mi > 0.3 && (s * wx[j]) / mj > 0.3) lagged[e] = 1;
-      }
-    }
-  }
   const em = new Uint8Array(E);
+  const indeg = new Int32Array(n);
+  const seamLag = o.lag === 'seam';
   for (let i = 0; i < n; i++) {
     if (calm[i]) continue;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (frac[e] > 0 && !lagged[e]) em[e] = 1;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      if (frac[e] <= 0) continue;
+      const j = adj[e];
+      if (seamLag && seam[e] && !calm[j]) {
+        // 向东跨过接缝时 x 从近 2 变成近 0（风速只在接缝上的边才要算）
+        const s = x[j] < x[i] ? 1 : -1;
+        const mi = Math.hypot(wx[i], wy[i]);
+        const mj = Math.hypot(wx[j], wy[j]);
+        if ((s * wx[i]) / mi > 0.3 && (s * wx[j]) / mj > 0.3) {
+          lagged[e] = 1;
+          continue;
+        }
+      }
+      em[e] = 1;
+      indeg[j]++;
+    }
   }
-  const order = kahnOrder(mesh, em);
+  const order = kahnOrder(mesh, em, indeg);
   const pos = new Int32Array(n);
   for (let k = 0; k < n; k++) pos[order[k]] = k;
+  const lagAll = o.lag === 'all';
   for (let i = 0; i < n; i++) {
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      if (frac[e] <= 0 || pos[mesh.adj[e]] >= pos[i]) continue;
-      if (o.lag === 'all') lagged[e] = 1;
+    const pi = pos[i];
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      if (frac[e] <= 0 || pos[adj[e]] >= pi) continue;
+      if (lagAll) lagged[e] = 1;
       else if (!lagged[e]) frac[e] = 0;
     }
   }
@@ -152,10 +160,10 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
   for (let k = 0; k < n; k++) {
     const i = order[k];
     let s = 0;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
       const f = frac[rev[e]];
       if (f <= 0) continue;
-      src[p] = mesh.adj[e];
+      src[p] = adj[e];
       w[p++] = f;
       s += f;
     }

@@ -602,6 +602,97 @@ export function gradient(mesh: Mesh, f: ArrayLike<number>, i: number): [number, 
   return [(syy * bx - sxy * by) / det, (sxx * by - sxy * bx) / det];
 }
 
+// 梯度的最小二乘里只取决于网格的部分（第三十一轮按网格缓存）：每条邻接项的 w·dx、w·dy，每格的 sxx、sxy、syy 与 det。
+// 累加的先后、每一步的运算与 gradient 里的完全相同（w·dx·df 就是 (w·dx)·df），所以 gradientAt / gradientField 与它逐值相同
+export interface GradGeo {
+  wdx: Float64Array;
+  wdy: Float64Array;
+  sxx: Float64Array;
+  sxy: Float64Array;
+  syy: Float64Array;
+  det: Float64Array;
+}
+const gradCache = new WeakMap<Mesh, GradGeo>();
+export function gradGeo(mesh: Mesh): GradGeo {
+  let g = gradCache.get(mesh);
+  if (g) return g;
+  const n = mesh.n;
+  const E = mesh.adj.length;
+  const wdx = new Float64Array(E);
+  const wdy = new Float64Array(E);
+  const sxx = new Float64Array(n);
+  const sxy = new Float64Array(n);
+  const syy = new Float64Array(n);
+  const det = new Float64Array(n);
+  const sphere = mesh.kind === 'sphere' ? mesh : null;
+  for (let i = 0; i < n; i++) {
+    let xx = 0;
+    let xy = 0;
+    let yy = 0;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      let dx: number;
+      let dy: number;
+      if (sphere) {
+        dx = sphere.edx[e];
+        dy = sphere.edy[e];
+      } else {
+        const j = mesh.adj[e];
+        dx = mesh.x[j] - mesh.x[i];
+        dy = mesh.y[j] - mesh.y[i];
+      }
+      const w = 1 / (dx * dx + dy * dy);
+      wdx[e] = w * dx;
+      wdy[e] = w * dy;
+      xx += w * dx * dx;
+      xy += w * dx * dy;
+      yy += w * dy * dy;
+    }
+    sxx[i] = xx;
+    sxy[i] = xy;
+    syy[i] = yy;
+    det[i] = xx * yy - xy * xy;
+  }
+  g = { wdx, wdy, sxx, sxy, syy, det };
+  gradCache.set(mesh, g);
+  return g;
+}
+
+// 同 gradient（逐值相同），不分配数组：结果写进 out[0]、out[1]
+export function gradientAt(mesh: Mesh, g: GradGeo, f: ArrayLike<number>, i: number, out: Float64Array) {
+  const { off, adj } = mesh;
+  const { wdx, wdy } = g;
+  const fi = f[i];
+  let bx = 0;
+  let by = 0;
+  for (let e = off[i], end = off[i + 1]; e < end; e++) {
+    const df = f[adj[e]] - fi;
+    bx += wdx[e] * df;
+    by += wdy[e] * df;
+  }
+  const det = g.det[i];
+  if (Math.abs(det) < 1e-30) {
+    out[0] = 0;
+    out[1] = 0;
+    return;
+  }
+  const sxx = g.sxx[i];
+  const sxy = g.sxy[i];
+  const syy = g.syy[i];
+  out[0] = (syy * bx - sxy * by) / det;
+  out[1] = (sxx * by - sxy * bx) / det;
+}
+
+// 每格的梯度（同 gradient，逐值相同）写进 gx、gy
+export function gradientField(mesh: Mesh, f: ArrayLike<number>, gx: Float64Array, gy: Float64Array) {
+  const g = gradGeo(mesh);
+  const out = new Float64Array(2);
+  for (let i = 0; i < mesh.n; i++) {
+    gradientAt(mesh, g, f, i, out);
+    gx[i] = out[0];
+    gy[i] = out[1];
+  }
+}
+
 // 球面上的梯度：同样的最小二乘，邻格位移取本格切平面里的（东、南）分量
 function gradientSphere(mesh: SphereMesh, f: ArrayLike<number>, i: number): [number, number] {
   let sxx = 0;

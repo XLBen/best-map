@@ -1,5 +1,5 @@
 import { type ClimateBase, ContentMemo, OROGRAPHIC_KM, deflectWind, insolationTable, radiativeTemp, saturation, smoothPass, smoothPasses, windDeflectPasses } from './climate';
-import { type SphereMesh, gradient, ringDistance } from './mesh';
+import { type SphereMesh, gradientField, ringDistance } from './mesh';
 import { computeOcean } from './ocean';
 import { PLANET_SWEEPS, type SphereFlow, buildFlowSphere } from './sphere-flow';
 import { clamp, smoothstep } from './rng';
@@ -305,11 +305,7 @@ function sphereLand(world: World, mesh: SphereMesh, st: SphereStatic): SphereLan
   // 陆地占比的梯度（东、南分量，每地图单位）：季风用，两个季节共用
   const lfE = new Float64Array(n);
   const lfS = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const [gx, gy] = gradient(mesh, landFrac, i);
-    lfE[i] = gx;
-    lfS[i] = gy;
-  }
+  gradientField(mesh, landFrac, lfE, lfS);
   const winds = [new Float32Array(n), new Float32Array(n), new Float32Array(n), new Float32Array(n)];
   // 山挡风打开时：两季还没乘极地衰减的风（双精度），先偏转、再乘衰减（偏转不会漏到极点上）
   const raw = deflect ? SEASONS.map((): [Float64Array, Float64Array] => [new Float64Array(n), new Float64Array(n)]) : null;
@@ -465,10 +461,10 @@ function sphereTerrain(world: World, elevation: Float32Array, out: Derived): Sph
       next = t;
     }
   }
+  gradientField(mesh, hPos, hx, hy);
   for (let i = 0; i < n; i++) {
-    const [gx, gy] = gradient(mesh, hPos, i);
-    hx[i] = gx / kmPerUnit;
-    hy[i] = gy / kmPerUnit;
+    hx[i] = hx[i] / kmPerUnit;
+    hy[i] = hy[i] / kmPerUnit;
   }
 
   const winds: [Float32Array, Float32Array][] = [

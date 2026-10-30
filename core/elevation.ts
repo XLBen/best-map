@@ -86,8 +86,9 @@ interface ElevationMemoEntry {
   coastKm: Float64Array;
 }
 const elevMemo = new WeakMap<Mesh, ElevationMemoEntry[]>();
-// 测试用：on = false 时不读也不写缓存；reused、computed：复用、重算的陆块数
-export const elevationMemo = { on: true, reused: 0, computed: 0 };
+// 测试用：on = false 时不读也不写缓存；reused、computed：逐块比过后复用、重算的陆块数（快路上没动过的陆块不逐块比，不计进 reused）；
+// fast = false 时不走快路（每块陆地逐块比，第三十一轮以前的做法；结果相同）
+export const elevationMemo = { on: true, fast: true, reused: 0, computed: 0 };
 // 计时（tools/bench.ts 用，累加的毫秒）：认陆块与比对记忆、求解、收尾（换成米、海底、湖）
 export const elevationLaps = { scan: 0, solve: 0, finish: 0 };
 
@@ -123,7 +124,8 @@ export function computeElevation(world: World): ElevationResult {
   const todo = new Uint8Array(n);
   const entries = elevationMemo.on ? (elevMemo.get(mesh) ?? []).filter((e) => e.seed === seed && e.kmPerUnit === kmPerUnit) : [];
   let todoCount = 0;
-  {
+  if (entries.length && elevationMemo.fast) todoCount = fromMemo(world, upBits, erBits, entries, h, coastKm, todo);
+  else {
     const seen = new Uint8Array(n);
     const queue = new Int32Array(n);
     for (let s = 0; s < n; s++) {
@@ -237,6 +239,71 @@ function sameValues(a: Uint8Array | Uint32Array, b: Uint8Array | Uint32Array): b
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+// 记忆的快路（第三十一轮）：先整份照用最近的一份（entries[0]），再只看与它不同的格（海陆不同，或陆格的抬升、岩性按位不同）
+// 碰到的陆块：一块陆地与 entries[0] 逐块比（sameComponent）不相同，当且仅当它的格或挨着它的海格里有这样的格。
+// 所以没碰到的陆块就是逐块比时会用 entries[0] 的那些（值相同），只有碰到的陆块再与别的几份逐块比、比不上的重算。
+// 现在是海、那一份里是陆地的格退回海的初值（h 0、离海 1e5）。不用把整个地图的陆块都找一遍、逐格比一遍。
+// 返回要重算的陆格数（todo 里标好）
+function fromMemo(world: World, upBits: Uint32Array, erBits: Uint32Array, entries: ElevationMemoEntry[], h: Float64Array, coastKm: Float64Array, todo: Uint8Array): number {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  const e0 = entries[0];
+  h.set(e0.h);
+  coastKm.set(e0.coastKm);
+  // 要找的陆块的起点：与 e0 不同的陆格，与 e0 不同的海格挨着的陆格
+  const seeds: number[] = [];
+  const l0 = e0.land;
+  const u0 = e0.uplift;
+  const r0 = e0.erod;
+  for (let i = 0; i < n; i++) {
+    if (land[i]) {
+      if (l0[i] !== 1 || u0[i] !== upBits[i] || r0[i] !== erBits[i]) seeds.push(i);
+    } else if (l0[i]) {
+      h[i] = 0;
+      coastKm[i] = 1e5;
+      for (let e = off[i]; e < off[i + 1]; e++) if (land[adj[e]]) seeds.push(adj[e]);
+    }
+  }
+  if (!seeds.length) return 0;
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  const rest = entries.slice(1);
+  let todoCount = 0;
+  for (const s of seeds) {
+    if (seen[s]) continue;
+    let len = 0;
+    queue[len++] = s;
+    seen[s] = 1;
+    for (let q = 0; q < len; q++) {
+      const c = queue[q];
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (land[j] && !seen[j]) {
+          seen[j] = 1;
+          queue[len++] = j;
+        }
+      }
+    }
+    const cells = queue.subarray(0, len);
+    const hit = rest.find((e) => sameComponent(mesh, land, upBits, erBits, cells, e));
+    if (hit) {
+      elevationMemo.reused++;
+      for (let k = 0; k < len; k++) {
+        const c = cells[k];
+        h[c] = hit.h[c];
+        coastKm[c] = hit.coastKm[c];
+      }
+    } else {
+      elevationMemo.computed++;
+      for (let k = 0; k < len; k++) todo[cells[k]] = 1;
+      todoCount += len;
+    }
+  }
+  return todoCount;
 }
 
 // 只算 todo 里的陆块（若干个完整的陆块）：写进 h（扩散后的）与 coastKm，别的格不动
