@@ -28,7 +28,8 @@ function fillUnassignedPlain(world: World) {
         const p = province[mesh.adj[e]];
         if (p < 0) continue;
         const meta = small.provinces[p];
-        if (!meta || meta.locked || meta.land !== land) continue;
+        // 湖省不并（第十二轮起的写法；第三十二轮这个世界上有了自然的湖省才碰到）
+        if (!meta || meta.locked || meta.land !== land || meta.kind === 'lake') continue;
         const sz = sizes.get(p) ?? 0;
         if (sz < target(land) * 1.5 && sz < bestSize) {
           best = p;

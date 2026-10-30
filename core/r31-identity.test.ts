@@ -9,7 +9,8 @@ import { seededEngine } from './testing/fixtures';
 // 第三十一轮的提速（气候：地区的分层缓存、边的方向与梯度的几何按网格缓存、输运图少扫几遍；水文：面积按网格缓存、
 // 放的湖的标记表；高程记忆的快路）与以前的代码逐值相同：一组加工（各种会碰到这些缓存的键的改动）每一步之后整个世界的哈希，
 // 与 r31-digests.json 里第三十一轮之前的代码（1421485）记下的相同。分层缓存关掉（每次现算）时也相同。
-// 重新记录（只在旧的代码上做）：R31_RECORD=1 npx vitest run core/r31-identity.test.ts
+// 重新记录（只在旧的代码上做）：R31_RECORD=1 npx vitest run core/r31-identity.test.ts。
+// 第三十二轮地形变了（大格局），用第三十二轮的代码重录过一次：之后的提速与第三十二轮逐值相同
 
 const FILE = new URL('./r31-digests.json', import.meta.url);
 const record = !!process.env.R31_RECORD;

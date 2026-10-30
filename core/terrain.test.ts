@@ -32,7 +32,8 @@ describe('生成的地形符合真实世界的分布规律', () => {
     expect(Math.max(...stats.map((s) => s.largestShare))).toBeLessThan(0.7);
     const rough = stats.reduce((a, s) => a + s.coastRoughness, 0) / stats.length;
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地，少了它们的海岸，均值从约 8.45 降到约 8.35
-    expect(rough).toBeGreaterThanOrEqual(5.6 * 1.48);
+    // 第三十二轮：大陆上的裂谷多半不再下陷成窄海（成了裂谷湖），海岸短了一些，约 7.85
+    expect(rough).toBeGreaterThanOrEqual(5.6 * 1.38);
     const k = median(stats.map((s) => s.powerLawK).filter(Number.isFinite));
     expect(k).toBeGreaterThan(0.4);
     expect(k).toBeLessThan(1.2);

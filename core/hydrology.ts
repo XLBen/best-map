@@ -1,7 +1,9 @@
 import { ContentMemo } from './climate';
+import { MinHeap } from './heap';
 import { placedLakeAnchor, sinkMask } from './elevation';
 import { type Mesh, gradGeo, gradientAt } from './mesh';
 import { type Routing, route } from './routing';
+import { pocketLakes } from './terrain';
 import { type Derived, FREE_HEIGHT, type World } from './world';
 
 // 水文：径流（Budyko 曲线）→ 汇流 → 河流与湖泊。
@@ -9,6 +11,8 @@ import { type Derived, FREE_HEIGHT, type World } from './world';
 // 水文从不手绘：手工意图通过河道引导（改汇流方向）和湖（挖洼地）表达，结果始终与高程、气候一致。
 
 const SEC_PER_YEAR = 3.156e7;
+// 内流湖至少淹这么多格（洼地本身不止这么多格时）：画成水面的湖都有自己的湖省（省份只给三格以上的湖，见 provinces.ts 的 lakeCells）
+const MIN_WET_CELLS = 3;
 
 // 汇流只取决于高程、海陆、画的河强制的方向和在哪里消失：只改气候、河流门槛时（以及约束求解的每一轮）原样复用，结果只读
 export const routeMemo = new ContentMemo<Routing>();
@@ -81,6 +85,9 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
     const id = lakeId[anchors[k]];
     if (id >= 0 && spec.perennial) lakes[id].perennial = true;
   });
+  // 陆地围住的小块海挖成的湖（见 terrain.ts 的 pocketLakes）常年蓄满（第三十二轮）：它本来是海，湖底常在海平面以下；
+  // 旁边的洼地挖低了以后，干旱时只剩湖底的一小片水，水面就到了海平面以下
+  for (const cells of pocketLakes(world)) for (const c of cells) if (lakeId[c] >= 0) lakes[lakeId[c]].perennial = true;
   for (let id = 0; id < lakes.length; id++) {
     const L = lakes[id];
     if (lakeId[L.cells[0]] !== id) continue;
@@ -157,18 +164,34 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
       }
       continue;
     }
-    // 内流湖：只淹到蒸发与入流平衡的面积，从最低处起
-    const sorted = [...L.cells].sort((a, b) => elevation[a] - elevation[b]);
+    // 内流湖：只淹到蒸发与入流平衡的面积，从最低处起连成一片地涨（第三十二轮：以前按高低在整个洼地里挑格，
+    // 洼地底下几米的起伏会让湖碎成一格一格的；现在从最低的格起，每次淹挨着湖面的最低的格）
+    let low = L.cells[0];
+    for (const c of L.cells) if (elevation[c] < elevation[low]) low = c;
     const target = L.area * lakeFill[id];
     let acc = 0;
-    let level = elevation[sorted[0]];
-    for (const c of sorted) {
-      if (acc >= target) break;
+    let level = elevation[low];
+    let wetCells = 0;
+    const front = new MinHeap(16);
+    const queued = new Set<number>([low]);
+    front.push(low, elevation[low]);
+    const flooded: number[] = [];
+    while (front.size && (acc < target || wetCells < MIN_WET_CELLS)) {
+      const c = front.pop();
       acc += areaKm[c];
+      wetCells++;
       level = elevation[c];
       d.lake[c] = 1;
+      flooded.push(c);
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (lakeId[j] === id && !queued.has(j)) {
+          queued.add(j);
+          front.push(j, elevation[j]);
+        }
+      }
     }
-    for (const c of sorted) if (d.lake[c]) d.water[c] = Math.max(level, elevation[c] + 0.5);
+    for (const c of flooded) d.water[c] = Math.max(level, elevation[c] + 0.5);
     // 洼地里没被水淹的部分是干盐湖
     for (const c of L.cells) if (!d.lake[c]) d.lake[c] = 2;
   }

@@ -320,7 +320,7 @@ describe('重放、撤销、检查点', () => {
     expect(w.derived.effT).toBeInstanceOf(Float32Array);
     const after = digestWorld(w);
     const doc = JSON.parse(JSON.stringify(eng.toDoc()));
-    expect(doc.version).toBe(6);
+    expect(doc.version).toBe(7);
     expect(digestWorld(Engine.fromDoc(doc, w.mesh).world)).toEqual(after);
     const cp = structuredClone(eng.toCheckpoint());
     const shorter = { ...doc, commands: doc.commands.slice(0, -2) };

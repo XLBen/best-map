@@ -1,4 +1,4 @@
-import { placedLakeCell } from '../../core/elevation';
+import { UPLIFT_FLOOR, placedLakeCell } from '../../core/elevation';
 import type { World } from '../../core/world';
 import type { HighlightLayer } from '../render/colors';
 
@@ -236,7 +236,7 @@ export function terrainHere(w: World, cells: number[]): string {
   let landDown = false;
   let erod = false;
   let frag = false;
-  // 抬升改了多少对应的高度变化：高度大致与（0.035 + 抬升）成正比，按这一格现在的高度估计
+  // 抬升改了多少对应的高度变化：高度大致与（UPLIFT_FLOOR + 抬升）成正比，按这一格现在的高度估计
   let up = 0;
   let down = 0;
   let upSeen = false;
@@ -250,7 +250,7 @@ export function terrainHere(w: World, cells: number[]): string {
     const d = c.upliftDelta[i];
     if (Math.abs(d) < TERRAIN_EPS.uplift) continue;
     const e = Math.max(0, w.derived.elevation[i]);
-    const dm = (e * d) / (0.035 + c.uplift[i]);
+    const dm = (e * d) / (UPLIFT_FLOOR + c.uplift[i]);
     if (d > 0) {
       upSeen = true;
       up = Math.max(up, dm);

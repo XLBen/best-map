@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { DOC_VERSION } from './doc-version';
 import { describe, expect, it } from 'vitest';
 import { groupPreview, provinceFlat, provinceGroups } from '../src/render/colors';
 import { digestWorld } from '../tools/hash';
@@ -222,7 +223,7 @@ describe('剪刀切线', () => {
     const { mesh } = w0;
     const s = mesh.spacing;
     const center = inland(w0, (i) => mesh.x[i] > 0.3 && mesh.x[i] < 1.7 && mesh.y[i] > 0.2 && mesh.y[i] < 0.8);
-    const A = bigProvince(eng, center, 7);
+    const A = bigProvince(eng, center, 9);
     const cx = mesh.x[center];
     const cy = mesh.y[center];
     const W = 1024;
@@ -408,8 +409,22 @@ describe('剪刀切线', () => {
     const w0 = eng.world;
     const center = inland(w0, (i) => w0.mesh.x[i] > 0.3 && w0.mesh.x[i] < 1.7 && w0.mesh.y[i] > 0.2 && w0.mesh.y[i] < 0.8);
     const A = bigProvince(eng, center, 7);
-    // 这一刀还切开了旁边的一个省：每个切开的省各记一条切线
-    eng.exec({ op: 'cut_province', line: scissors(eng.world, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.5, 0.3)).line });
+    // 这一刀还切开了旁边的一个省：每个切开的省各记一条切线（第三十二轮：按地形找一个方向、长度，让线先切 A、再伸进旁边的省）
+    const tries = [0.3, 0.3 + Math.PI, 1.1, 1.1 + Math.PI, 2, 2 + Math.PI].flatMap((ang) => [8, 10, 12, 14, 16, 18].map((l) => wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], l, 1.5, ang)));
+    const lit = (e: Engine) => {
+      const L = seamLayers(e.world, e.world.causes.province, e.world.small.provinceSeams)!;
+      const on = (e.world.small.provinceSeams ?? []).map(() => 0);
+      for (let q = 0; q < L.segs.count; q++) if (L.gL[q] !== L.gR[q]) on[L.segs.seam[q]]++;
+      return on;
+    };
+    const stroke = tries.find((t) => {
+      const sc = scissors(eng.world, t).seams;
+      if (sc.length < 2 || sc[0].provinces[0] !== A) return false;
+      const e = eng.clone();
+      e.exec({ op: 'cut_province', line: scissors(e.world, t).line });
+      return lit(e).every((n) => n > 0);
+    })!;
+    eng.exec({ op: 'cut_province', line: scissors(eng.world, stroke).line });
     const w = eng.world;
     const seams = w.small.provinceSeams!;
     expect(seams.length).toBeGreaterThanOrEqual(2);
@@ -440,7 +455,7 @@ describe('剪刀切线', () => {
     const eng = region().clone();
     const w0 = eng.world;
     const center = inland(w0, (i) => w0.mesh.x[i] > 0.3 && w0.mesh.x[i] < 1.7 && w0.mesh.y[i] > 0.2 && w0.mesh.y[i] < 0.8);
-    const A = bigProvince(eng, center, 7);
+    const A = bigProvince(eng, center, 9);
     const before = digestWorld(eng.world);
     const { line } = scissors(eng.world, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.5, 1.1));
     eng.exec({ op: 'cut_province', line });
@@ -454,7 +469,7 @@ describe('剪刀切线', () => {
     expect(digestWorld(eng.world)).toEqual(after);
     // 存档：重放结果逐值相同
     const doc = eng.toDoc();
-    expect(doc.version).toBe(6);
+    expect(doc.version).toBe(DOC_VERSION);
     expect(digestWorld(Engine.fromDoc(doc, eng.world.mesh).world)).toEqual(after);
     // 重新划分切开的省：碰到它的切线不要了
     const regen = eng.clone();

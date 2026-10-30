@@ -49,6 +49,7 @@ describe('岛的大小', () => {
     // 第十二轮修：岛链不并进原有的岛（太近时缩小、岛心在陆地上的不放），有意改变结果，重录
     // 第十三轮：每种岛有岩性（erodDelta，多记一项）、火山岛抬升减半并有火山口、珊瑚岛的潟湖两头都改、最小的岛一格，有意改变结果，重录
     // 第十三轮修：珊瑚岛的潟湖不再压低原来的陆地、放岛的轮廓按小块海并回陆地的规则算、火山岛的高度按大小定，重录
+    // 第三十二轮：岛的岩性按生成的岩性（多了地盾、盆地、缝合线的条纹）算增量，高程有了大格局，重录 erodDelta、elevation、discharge
     const eng = seededEngine({ seed: 4, cells: 12000 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
@@ -74,7 +75,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: '8e725bfc', upliftDelta: 'de566817', erodDelta: '9989d588', land: '1ad11545', elevation: '79dfd765', discharge: '12f31e2a' });
+    }).toEqual({ landDelta: '8e725bfc', upliftDelta: 'de566817', erodDelta: 'e5e4e01b', land: '1ad11545', elevation: '74e6bdf0', discharge: '199b1889' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -323,6 +324,8 @@ describe('第八轮：更小的岛、湖、画笔', () => {
     const inland = [...Array(m.n).keys()]
       .filter((c) => m.x[c] > 0.2 && m.x[c] < 1.8 && m.y[c] > 0.2 && m.y[c] < 0.8)
       .filter((c) => [...ringDistance(m, [c], 3)].every((d, i) => d < 0 || w.causes.land[i]))
+      // 邻格都离它半格以上（格不规则：偶尔有挨得很近的两格，半格的湖就淹两格；第三十二轮海陆略变，挑到过这样的格）
+      .filter((c) => [...Array(m.off[c + 1] - m.off[c]).keys()].every((k) => m.dist[m.off[c] + k] > m.spacing * 0.5))
       .slice(0, 5);
     expect(inland.length).toBe(5);
     for (const c of inland) {

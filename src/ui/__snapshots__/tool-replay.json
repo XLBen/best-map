@@ -847,7 +847,7 @@
  {
   "name": "堆山",
   "preview": {
-   "hint": "堆山 约 +1,200 m",
+   "hint": "堆山 约 +850 m",
    "warn": false,
    "caution": false,
    "layers": [
@@ -969,7 +969,7 @@
  {
   "name": "压低（Shift）",
   "preview": {
-   "hint": "压低 约 −200 m",
+   "hint": "压低 约 −350 m",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2570,14 +2570,14 @@
  {
   "name": "涂省",
   "preview": {
-   "hint": "苍榆 +10 格",
+   "hint": "静溪 +10 格",
    "warn": false,
    "caution": false,
    "layers": [
     [
      10,
      13402,
-     "40,197,193",
+     "241,76,16",
      0.8,
      null,
      null
@@ -2590,7 +2590,7 @@
    "provinces": [
     10,
     13402,
-    2720
+    2710
    ]
   },
   "sent": [
@@ -2609,7 +2609,7 @@
       922,
       777
      ],
-     "province": 272
+     "province": 271
     },
     "busy": "正在计算…",
     "head": "undefined"
@@ -2627,15 +2627,15 @@
     [
      7,
      12523,
-     "210,83,188",
+     "142,33,68",
      0.45,
      null,
      null
     ],
     [
-     6,
-     13225,
-     "9,205,109",
+     2,
+     4603,
+     "197,154,245",
      0.45,
      null,
      null
@@ -2647,9 +2647,9 @@
    ],
    "ghost": null,
    "provinces": [
-    13,
-    25748,
-    8261
+    9,
+    17126,
+    5789
    ]
   },
   "sent": [
@@ -2676,7 +2676,7 @@
  {
   "name": "重新划分",
   "preview": {
-   "hint": "重划 4 个省份",
+   "hint": "重划 3 个省份",
    "warn": false,
    "caution": false,
    "layers": [
@@ -2689,8 +2689,8 @@
      null
     ],
     [
-     57,
-     130184,
+     37,
+     83314,
      "255,220,90",
      0.6,
      null,

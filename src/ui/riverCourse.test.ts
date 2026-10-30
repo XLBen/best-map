@@ -99,6 +99,8 @@ function quietStroke(w: World, endOnLand: 'sink' | 'flow' = 'sink'): { stroke: P
   for (let c = 0; c < mesh.n; c += 7) {
     if (!w.causes.land[c] || d.lake[c] === 1 || isRiverCell(w, d, c) || d.elevation[c] < 300) continue;
     if (riverAt(w, mesh.x[c], mesh.y[c], (SNAP_PX + 4) / zoomOf(w))) continue;
+    // 离地图边远一点（第三十二轮：地图边上也有高地了，顺地势从那里一下就流出地图）
+    if (Math.min(mesh.x[c], mesh.width - mesh.x[c], mesh.y[c], mesh.height - mesh.y[c]) < 8 * mesh.spacing) continue;
     const stroke = line(w, at(w, c), [mesh.x[c] + 4 * mesh.spacing, mesh.y[c] + 1.5 * mesh.spacing]);
     const plan = planCourse(w, d, stroke, { endOnLand, px: 1 / zoomOf(w) });
     if (plan.blocked || plan.crossings.length || plan.reroute || plan.merge || plan.cells.length < 4 || plan.uphill >= 20) continue;

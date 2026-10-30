@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../tools/hash';
-import { type ElevationResult, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor } from './elevation';
+import { type ElevationResult, SOLVE, carvePits, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor, windwardFactor } from './elevation';
 import { MinHeap } from './heap';
-import { type Mesh, graphDistance } from './mesh';
+import { type Mesh, gradGeo, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
-import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32 } from './rng';
+import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, type Routing, route } from './routing';
+import { reliefFields } from './terrain';
 import { engineFor, meshFor } from './testing/fixtures';
 import type { Guide, LakeSpec, World } from './world';
 
@@ -239,8 +240,10 @@ describe('高程与原来的写法逐值一致', () => {
 });
 
 // ---- 以下是 402e638 的原样拷贝（只改了名字），不要改它 ----
-// 唯一的例外（第九轮去掉旧存档兼容）：computeElevationOld 里画的河不再强制汇流、不再让岩性变软
-// （画的河都只挖河床，高程求解不看它们），湖的最小半径从一格半改成半格。其余一字未动
+// 例外（第九轮去掉旧存档兼容）：computeElevationOld 里画的河不再强制汇流、不再让岩性变软
+// （画的河都只挖河床，高程求解不看它们），湖的最小半径从一格半改成半格。
+// 例外（第三十二轮，有意改变了求解）：computeElevationOld 跟着加上大格局——基础抬升与抬升的倍数、迎风、初值的缓坡与基准面、
+// 软底、地图边的基准面、挖洼地（照 elevation.ts 的写法，常数、迎风、挖洼地用它导出的）。路由（这里比的东西）一字未动
 
 // core/heap.ts
 class OldHeap {
@@ -577,35 +580,47 @@ function computeElevationOld(world: World): ElevationResult {
   // 汇水面积加一个按地图面积取的常数：源头格的面积随格数变化，不加的话格越密山越高
   // 整个星球按布局尺度（半圈经线的一半）算，和同样格距的地区地图相当
   const areaReg = sphere ? (mesh.totalArea * (kmPerUnit / 2) * (kmPerUnit / 2)) / 20000 : (mesh.width * mesh.height * kmPerUnit * kmPerUnit) / 20000;
+  const rel = reliefFields(world);
+  const T = new Float64Array(n);
+  const pitM = rel ? rel.pit : new Float32Array(n);
+  const fade = new Float64Array(n);
+  const geo = gradGeo(mesh);
   for (let i = 0; i < n; i++) {
+    if (!land[i]) continue;
     // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
-    u[i] = (0.035 + causes.uplift[i]) * fu[i];
-    K[i] = causes.erod[i] * fk[i];
+    u[i] = (SOLVE.BASE_UPLIFT + SOLVE.UPLIFT_SCALE * causes.uplift[i]) * fu[i];
+    K[i] = causes.erod[i] * fk[i] * windwardFactor(world, geo, i);
     areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
+    T[i] = (rel ? rel.T[i] : 0) * SOLVE.M_TO_RAW;
+    fade[i] = smoothstep(0, SOLVE.COAST_FADE_KM, coastKm[i]);
   }
 
   // 初始高程：按离海距离给一个缓坡加噪声（固定初值，结果只取决于原因）
   const h = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     if (!land[i]) continue;
-    h[i] = coastKm[i] * 0.002 * (0.3 + u[i]) + 0.05 * (1 + fs[i]);
+    h[i] = coastKm[i] * SOLVE.INIT_SLOPE * (0.3 + u[i]) + 0.05 * (1 + fs[i]) + SOLVE.INIT_T * T[i] * fade[i];
   }
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
   const active = land;
   const A = new Float64Array(n);
+  let r = routeOld(mesh, h, active, new Int32Array(n).fill(-1));
   for (let it = 0; it < ITERATIONS_OLD; it++) {
-    const r = routeOld(mesh, h, active, new Int32Array(n).fill(-1));
+    if (it > 0) r = routeOld(mesh, h, active, new Int32Array(n).fill(-1));
     accumulateOld(r, areaKm, A);
     for (let k = 0; k < r.count; k++) {
       const i = r.order[k];
       const j = r.receiver[i];
-      const baseH = j >= 0 && land[j] ? h[j] : 0;
+      const baseH = j >= 0 ? (land[j] ? h[j] : 0) : mesh.boundary[i] ? SOLVE.EDGE_BASE * Math.max(0, T[i]) * fade[i] : 0;
       let L = kmPerUnit * mesh.spacing;
       if (j >= 0) {
         for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (mesh.adj[e] === j) L = mesh.dist[e] * kmPerUnit;
       }
-      h[i] = baseH + (u[i] * L) / (K[i] * Math.pow(A[i] + areaReg, M_OLD));
+      let hi = baseH + (u[i] * L) / (K[i] * Math.pow(A[i] + areaReg, M_OLD));
+      const gap = T[i] - hi;
+      if (gap > 0 && fade[i] > 0) hi += gap * (fade[i] * (1 - Math.exp(-L / (SOLVE.KNICK_KM * Math.sqrt(A[i] / 1e4)))));
+      h[i] = hi;
     }
   }
 
@@ -628,6 +643,7 @@ function computeElevationOld(world: World): ElevationResult {
     }
     h.set(tmp);
   }
+  carvePits(world, land, r as unknown as Routing, u, areaKm, pitM, fade, h);
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
   // 第十二轮：海底、湖底的形状换成了新的（这里比的是陆上的求解，海底、湖底照 elevation.ts 的写法）
   seafloor(world, elevation);

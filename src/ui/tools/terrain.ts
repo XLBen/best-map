@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
 import type { Command } from '../../../core/commands';
+import { SOLVE, UPLIFT_FLOOR } from '../../../core/elevation';
 import { wrapX } from '../../../core/geo';
 import { lassoStroke } from '../../../core/select';
 import {
@@ -263,12 +264,13 @@ export function reliefEstimateM(w: World, cells: number[], delta: number[], stre
     for (const i of cells) u += w.causes.uplift[i];
     u /= Math.max(1, cells.length);
     const s = Math.max(0, Math.min(strength, 2 - u));
-    return 0.2 * w.small.planet.mountainScale * Math.pow(s, 0.9) * Math.pow(rc, 0.75);
+    // 抬升到高度的倍数（第三十二轮起是 SOLVE.UPLIFT_SCALE，原来是 1）
+    return 0.2 * SOLVE.UPLIFT_SCALE * w.small.planet.mountainScale * Math.pow(s, 0.9) * Math.pow(rc, 0.75);
   }
   let drop = 0;
   cells.forEach((i, k) => {
     const u = w.causes.uplift[i];
-    drop = Math.max(drop, (Math.max(0, w.derived.elevation[i]) * Math.min(u, -delta[k])) / (0.035 + u));
+    drop = Math.max(drop, (Math.max(0, w.derived.elevation[i]) * Math.min(u, -delta[k])) / (UPLIFT_FLOOR + u));
   });
   return -drop * Math.min(1.1, 0.65 * Math.pow(rc, 0.4));
 }

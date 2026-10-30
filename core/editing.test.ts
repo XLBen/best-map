@@ -176,6 +176,8 @@ describe('地名不乱跳', () => {
       eng.exec({ op: 'add_island', island: { x: w.mesh.x[spot], y: w.mesh.y[spot], kind: 'continental', size: 370, variant: 0 } });
       if (w.causes.land[anchor]) continue;
       const again = w.derived.features.find((f) => f.type === sea.type && f.cells.includes(anchor));
+      // 岛把这片海隔小了、成了另一种（大洋 → 海）：不是同一种地物了，不算（第三十二轮的地形上碰到过）
+      if (!again && w.derived.features.some((f) => (f.type === 'sea' || f.type === 'ocean') && f.cells.includes(anchor))) continue;
       expect(again?.name).toBe(name);
       checked++;
     }

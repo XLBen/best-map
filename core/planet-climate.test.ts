@@ -168,27 +168,28 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
     // 加山挡风之前记下的 core/golden-full.json（planet）里风、洋流、气候往后的几项
     // 第十三轮：参考操作里放的岛有了岩性（火山岛抬升减半、可蚀性变了，岛上的高程、降水往后跟着变），与山挡风无关，这九项重录
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
+    // 第三十二轮：地形有了大格局，重录全部（重画一片不挪海平面，海陆也略变）
     const FROZEN: Record<string, string> = {
-      'derived.windSX': '303a18977f80e85d',
-      'derived.windSY': 'd076fbc65b95245e',
-      'derived.windWX': '5a7d370d302c3b81',
-      'derived.windWY': '82f21701a2944a89',
-      'derived.continentality': '9aada6e07020e955',
-      'derived.currentX': 'f0961155fa632e8d',
-      'derived.currentY': 'ae2591d51603d7ec',
-      'derived.sstAnom': '451edb342df34269',
-      'derived.tS': '0b2779ada54cb633',
-      'derived.tW': '92ccc9c6361104a5',
-      'derived.pS': 'd5fa6009e382af88',
-      'derived.pW': '1eeb28ca148c16e3',
-      'derived.precip': 'a9ef83d05948f120',
-      'derived.moisture': '87a2480e0161666e',
-      'derived.corrT': 'c2ca788e568363b1',
-      'derived.corrP': '1c164b7619290e5f',
-      'derived.discharge': 'c8c8cb649231acdf',
-      'derived.dominant': 'b504c19310d6808e',
+      'derived.windSX': '4c79144d98f4841c',
+      'derived.windSY': '028df01f31f37c05',
+      'derived.windWX': '69c16335931fc9b4',
+      'derived.windWY': 'f6deb95bfc1dab6a',
+      'derived.continentality': 'b40f043cc6f3b80d',
+      'derived.currentX': '53ab081e600225d0',
+      'derived.currentY': '915cc4b45ba4f6cd',
+      'derived.sstAnom': '46e8f2f3e3a6f6e1',
+      'derived.tS': '666e6bdbf8e70165',
+      'derived.tW': 'b46082331ddcd349',
+      'derived.pS': '9223d02480de8389',
+      'derived.pW': '76c6d6432e700b4e',
+      'derived.precip': '346a725bc0533b81',
+      'derived.moisture': '1fe3c2c5dc6613ac',
+      'derived.corrT': '8cfcbc67492f0fce',
+      'derived.corrP': '53c7e7c6ecbdc206',
+      'derived.discharge': 'd5205b17d7344439',
+      'derived.dominant': '01c413c57c9dc0ab',
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
-      'causes.province': '7f520fd3bbfec49c',
+      'causes.province': '3e7eaaee84e31356',
     };
     const eng = seededEngine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
     const w = eng.world;

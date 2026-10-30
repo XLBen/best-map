@@ -127,7 +127,8 @@ const depthIn = (eng: Engine, f: GeoFeature) => {
 // 共用的大陆世界里：全是一种生态的森林里最大的一片（针叶林），和锚点不在边上的森林里最大的一片
 const base = continents();
 const forests = base.world.derived.features.filter((f) => f.type === 'forest');
-const pure = forests.find((f) => Array.from(f.cells).every((c) => speciesAt(base, c) === speciesAt(base, f.anchor)))!;
+// （第三十二轮：取最大的那片；以前第一片就够大，现在第一片只比涂的 60 格大一点，涂完剩下的太小、不成地物）
+const pure = forests.filter((f) => Array.from(f.cells).every((c) => speciesAt(base, c) === speciesAt(base, f.anchor))).sort((a, b) => b.cells.length - a.cells.length)[0];
 const deep = forests.find((f) => depthIn(base, f)[f.anchor] >= 1 && f.cells.length >= 150)!;
 // 6000 格的小星球（几个测试共用，每次给副本）
 const planet = () =>
@@ -146,7 +147,9 @@ describe('涂出来的生态区有自己的名字', () => {
     // 森林里离锚点最远的一头涂 60 格温带阔叶林
     const d = graphDistance(eng.world.mesh, [pure.anchor]);
     const far = [...pure.cells].sort((a, b) => d[b] - d[a] || a - b)[0];
-    const cells = nearest(eng, pure.cells, far, 60);
+    // 涂 60 格（森林小时涂三分之一：第三十二轮这个世界上最大的纯针叶林只有约 90 格，涂掉 60 格后剩下的锚点挪了）
+    const k = Math.min(60, Math.floor(pure.cells.length / 3));
+    const cells = nearest(eng, pure.cells, far, k);
     paint(eng, cells, 'temperate_forest');
     const [f, ...rest] = paintedFeatures(eng);
     expect(rest).toEqual([]);
@@ -158,7 +161,7 @@ describe('涂出来的生态区有自己的名字', () => {
     const old = byKey(eng, pure.key)!;
     expect(old.name).toBe(pure.name);
     expect(Array.from(old.cells).some((c) => cells.includes(c))).toBe(false);
-    expect(old.cells.length).toBe(pure.cells.length - 60);
+    expect(old.cells.length).toBe(pure.cells.length - k);
     expect(labelInside(eng, f)).toBe(true);
     expect(labelInside(eng, old)).toBe(true);
     // 涂出来的标注先放
@@ -333,15 +336,16 @@ describe('涂出来的生态区有自己的名字', () => {
 
 // 这一轮之前的程序算出的“key=名字”（没涂过生态的世界：识别、锚点、起名都不能变，只有标注位置可以变）。
 // 第九轮去掉旧存档兼容时重录（山挡风默认打开，气候、河、地名都跟着变）
+// 第三十二轮重录（地形有了大格局：高原、洼地里的湖、长河，地物与名字跟着变）
 // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
 describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
-    expect(kv(continents())).toBe('ea72bd4b');
-    expect(kv(planet())).toBe('594997ff');
+    expect(kv(continents())).toBe('416bfed2');
+    expect(kv(planet())).toBe('8cb2353d');
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
-    expect(kv(islands)).toBe('b00d2f79');
+    expect(kv(islands)).toBe('c12d786c');
   });
 });
 

@@ -14,7 +14,8 @@ import { SEA_HUES, type World, seaProvinceDefaultColor } from './world';
 function inlandLow(w: World): number {
   const { mesh, causes } = w;
   const all = [...Array(mesh.n).keys()];
-  const far = graphDistance(mesh, all.filter((i) => !causes.land[i]), Infinity);
+  // 离海、离自然的湖与干湖底都远（第三十二轮：内陆的低处多半是洼地，本来就有湖）
+  const far = graphDistance(mesh, all.filter((i) => !causes.land[i] || w.derived.lake[i] !== 0), Infinity);
   const edge = graphDistance(mesh, all.filter((i) => mesh.boundary[i]), Infinity);
   let best = -1;
   for (const i of all) {

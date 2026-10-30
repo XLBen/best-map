@@ -98,7 +98,7 @@ const species = (id: string, src: string): Species =>
   withRect({ id, name: `生态${id}`, color: '#336699', terrain: 'plains', competition: 2, tolerances: [], scripts: { placement: script(src) } }, { t0: -40, t1: 40, m0: 0, m1: 50 });
 const docWith = (...list: Species[]): WorldDoc => ({
   format: 'map2-world',
-  version: 6,
+  version: 7,
   settings: eng.world.settings,
   commands: [...eng.toDoc().commands, ...list.map((sp): Command => ({ op: 'add_species', species: sp }))],
 });

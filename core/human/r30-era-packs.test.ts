@@ -18,7 +18,8 @@ import { eraGovernments } from './government';
 import { BUILTIN_CLASSES, GENERAL_RESOURCES } from '../packs/base';
 import { engineFor, importPacks, meshFor, seedCommands } from '../testing/fixtures';
 import type { World } from '../world';
-import old from './r29-digests.json';
+import { writeFileSync } from 'node:fs';
+import saved from './r29-digests.json';
 
 // 第三十轮：时代就是资源包，生成只读世界里的内容（见 packs/import.ts、human/generate.ts、content/missing.ts）
 
@@ -26,7 +27,14 @@ const LIB = builtinPacks();
 const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 
 // 与第二十九轮的代码同样的设置下生成的摘要（r29-digests.json 是用第二十九轮的代码记下的：同一块大陆、同样的时代与文化组，
-// 生成人文 + 国家 + 城市地标；再“重新生成国家”一遍）
+// 生成人文 + 国家 + 城市地标；再“重新生成国家”一遍）。第三十二轮地形变了（大格局），用第三十二轮的代码重录一次：
+// R29_RECORD=1 npx vitest run core/human/r30-era-packs.test.ts（只在有意改变结果时）
+const record = !!process.env.R29_RECORD;
+const old: Record<string, unknown> = record ? {} : saved;
+const check = (got: unknown, key: string) => {
+  if (record) old[key] = got;
+  else expect(got, key).toEqual(old[key]);
+};
 const SCENES = [
   { id: 'medieval', era: 'medieval', groups: [['western', 3], ['eastern', 3], ['mideast', 2], ['southasia', 2], ['slavic', 1.5], ['steppe', 1.5]], countries: true, settlements: true },
   { id: 'antiquity', era: 'antiquity', groups: [['mediterranean', 3], ['mideast', 3], ['eastern', 3]], countries: true, settlements: false },
@@ -90,20 +98,21 @@ describe('生成只读世界里的内容', () => {
 
   it('生成人文的结果与第二十九轮同样的设置一样（时代、文化、人口、国家、城市地标、地名的摘要逐个相同；清理过再生成国家也一样）', () => {
     const base = world();
-    expect(humanDigest(base.world)).toEqual(old.nature);
+    check(humanDigest(base.world), 'nature');
     for (const sc of SCENES) {
       const e = base.clone();
       const groups = groupsOf(sc.groups);
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
       e.exec({ op: 'generate_human', packs: [[sc.era]], groups, ...(sc.countries ? { countries: {} } : {}), ...(sc.settlements ? { settlements: {} } : {}) });
-      expect(humanDigest(e.world), sc.id).toEqual((old as Record<string, unknown>)[sc.id]);
+      check(humanDigest(e.world), sc.id);
       expect(e.world.small.human?.packs).toEqual([[sc.era]]);
       if (!sc.countries) continue;
       // 生成后没用到的政体清理掉了：重新生成之前再加一遍（排回包里的先后），结果与第二十九轮一样
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
       e.exec({ op: 'regenerate_countries', seed: 9 });
-      expect(humanDigest(e.world), `${sc.id}:again`).toEqual((old as Record<string, unknown>)[`${sc.id}:again`]);
+      check(humanDigest(e.world), `${sc.id}:again`);
     }
+    if (record) writeFileSync(new URL('./r29-digests.json', import.meta.url), `${JSON.stringify(old, null, 1)}\n`);
   });
 
   it('加进来的每一项记着来源（时代包里的小包）；生成后只留用到的', () => {

@@ -410,6 +410,14 @@ export function plateauShare(s: StatsInput, landKm: number, minM = 2500, maxReli
   return landKm ? km / landKm : 0;
 }
 
+// 前 k 个流域里每个陆格的汇水面积
+function inTop(s: StatsInput, d: Drainage, k: number): number[] {
+  const top = new Set(d.basins.slice(0, k).map((b) => b.outlet));
+  const out: number[] = [];
+  for (let i = 0; i < s.n; i++) if (s.land[i] && top.has(d.outlet[i])) out.push(d.drainKm[i]);
+  return out;
+}
+
 // 和地球比的一组统计（第三十一轮）。coastDim：海岸线的盒维数（要先栅格化，见 tools/realism-report.ts），不给时 NaN
 export interface RealismStats {
   landShare: number;
@@ -429,6 +437,8 @@ export interface RealismStats {
   lOverSqrtA: number;
   // 汇水面积的超越概率指数（10 格到最大流域的 1/20）
   exceedance: number;
+  // 同一个指数只数前十个流域里的格（第三十二轮：地球的 0.43–0.45 是在大流域里量的，整个陆地还算上沿海的许多小流域）
+  exceedanceBasins: number;
   endorheic: number;
   lakes: number;
   lakeShare: number;
@@ -472,6 +482,7 @@ export function realismStats(s: StatsInput, coastDim = NaN): RealismStats {
     hack: hackExponent(top, 20 * cell),
     lOverSqrtA: median(top.slice(0, 10).filter((b) => b.areaKm > 0).map((b) => b.lengthKm / Math.sqrt(b.areaKm))),
     exceedance: exceedanceExponent(drains, 10 * cell, Math.max(20 * cell, (top[0]?.areaKm ?? 0) / 20)),
+    exceedanceBasins: exceedanceExponent(inTop(s, d, 10), 10 * cell, Math.max(20 * cell, (top[0]?.areaKm ?? 0) / 20)),
     endorheic: endorheicShare(s, d),
     lakes: lakeKm.length,
     lakeShare: d.landKm ? lakeKm.reduce((a, b) => a + b, 0) / d.landKm : 0,
@@ -495,6 +506,7 @@ export const EARTH_REFERENCE: Record<keyof RealismStats, string> = {
   hack: '0.5–0.6',
   lOverSqrtA: '≈3 (2.4–3.7)',
   exceedance: '0.43–0.45',
+  exceedanceBasins: '0.43–0.45',
   endorheic: '≈18%',
   lakes: '—',
   lakeShare: '2–4%',
@@ -502,3 +514,34 @@ export const EARTH_REFERENCE: Record<keyof RealismStats, string> = {
   plateau: '≈2%',
   coastDim: '≈1.2 (1.02–1.5)',
 };
+
+// 一片格的长宽比（第三十二轮，裂谷湖用）：按面积加权的二阶矩的两个主轴，每格再算上自己（当成面积为 a 的方格，a/12）。
+// 长 L、宽 W 的矩形得 L/W。xs、ys：格心（km，平面），areas：每格的面积（km²）
+export function elongation(xs: ArrayLike<number>, ys: ArrayLike<number>, areas: ArrayLike<number>): number {
+  let A = 0;
+  let mx = 0;
+  let my = 0;
+  for (let k = 0; k < xs.length; k++) {
+    A += areas[k];
+    mx += areas[k] * xs[k];
+    my += areas[k] * ys[k];
+  }
+  if (!(A > 0)) return NaN;
+  mx /= A;
+  my /= A;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  for (let k = 0; k < xs.length; k++) {
+    const dx = xs[k] - mx;
+    const dy = ys[k] - my;
+    sxx += areas[k] * (dx * dx + areas[k] / 12);
+    syy += areas[k] * (dy * dy + areas[k] / 12);
+    sxy += areas[k] * dx * dy;
+  }
+  const tr = (sxx + syy) / 2;
+  const det = Math.sqrt(Math.max(0, ((sxx - syy) / 2) ** 2 + sxy * sxy));
+  const l1 = tr + det;
+  const l2 = tr - det;
+  return l2 > 0 ? Math.sqrt(l1 / l2) : NaN;
+}

@@ -1,6 +1,7 @@
-import { type BaseComponents, type Resample, type Reroll, type WorldType, type Worldgen, type WorldgenInput, copyComponents, oceanFloor, worldgenSchema } from './generate';
+import { type BaseComponents, type Resample, type Reroll, type WorldType, type Worldgen, type WorldgenInput, copyComponents, emptyBaseComponents, oceanFloor, worldgenSchema } from './generate';
 import type { SphereMesh } from './mesh';
 import { type PlanetForm, mergeProfile } from './planet-form';
+import { type ReliefInput, type ReliefOut, RIFT_W, type TectonicRaster, type TectonicSample, buildTectonics, cachedTectonics, reliefAt, sampleTectonics } from './relief';
 import { type Noise3, clamp, fbm3, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { type ScriptIssue, arrayInputs, runScript, runSetup, scriptsEnabled } from './script';
 import { tangentBasis, toUnit } from './sphere';
@@ -109,6 +110,23 @@ interface Block {
   v: V3;
   r: number;
   e: number;
+  // 属于哪一块（半岛的瓣算它的母块；第三十二轮：缝合线只在不同的块之间）。建好模型时填
+  fam?: number;
+}
+
+// 块内的老缝合线（第三十二轮）：块的局部坐标（长轴、短轴）里一条直线
+interface SutureLine {
+  block: number;
+  cos: number;
+  sin: number;
+  off: number;
+}
+
+// 带陡崖的穹隆（第三十二轮）
+interface SwellSpot {
+  c: V3;
+  r: number;
+  h: number;
 }
 
 export interface PlanetCone {
@@ -134,6 +152,10 @@ interface NoiseSet3 {
   hills: Noise3;
   erod: Noise3;
   cone: Noise3;
+  // 第三十二轮：大格局的低频噪声
+  big: Noise3;
+  plat: Noise3;
+  sag: Noise3;
 }
 
 function noiseSet3(seed: number, variant: number): NoiseSet3 {
@@ -153,6 +175,9 @@ function noiseSet3(seed: number, variant: number): NoiseSet3 {
     cone: n(12),
     warpE: n(13),
     warpF: n(14),
+    big: n(15),
+    plat: n(16),
+    sag: n(17),
   };
 }
 
@@ -174,6 +199,10 @@ export interface PlanetModel {
   fixedCones: number;
   // 星球形态的布局脚本这次出的问题（没有形态时为 undefined）。普通的 JSON，只给界面看
   issues: ScriptIssue[] | undefined;
+  // 第三十二轮：块内的缝合线、穹隆；板块的栅格（第一次采样时建，按种子、类型、形态缓存）
+  sutures: SutureLine[];
+  swells: SwellSpot[];
+  tect?: TectonicRaster;
 }
 
 const range = (rand: () => number, [a, b]: [number, number]) => a + (b - a) * rand();
@@ -307,8 +336,25 @@ export function buildPlanetModel(input: WorldgenInput): PlanetModel {
       const lr = b.r * (0.22 + 0.22 * randL());
       const e = 1.8 + 1.4 * randL();
       const { p, t } = walk(b.c, tangentAt(b.c, a), dist);
-      blocks.push(makeBlock(p, t, lr, e));
+      blocks.push({ ...makeBlock(p, t, lr, e), fam: parents.indexOf(b) });
     }
+  }
+  parents.forEach((b, k) => (b.fam = k));
+  // 第三十二轮：块内的老缝合线（较大的块里 0–1 条）、带陡崖的穹隆（另一串随机数，前面的格局不变）
+  const randS = mulberry32(mixSeed(seed, 105, 0x3d));
+  const sutures: SutureLine[] = [];
+  parents.forEach((b, k) => {
+    if (b.r < 0.15 || randS() < 0.4) return;
+    const a = randS() * Math.PI;
+    sutures.push({ block: k, cos: Math.cos(a), sin: Math.sin(a), off: (randS() - 0.5) * 0.8 });
+  });
+  const swells: SwellSpot[] = [];
+  const bigOnes = parents.filter((b) => b.r >= 0.1);
+  const swellCount = bigOnes.length ? 2 + Math.floor(randS() * Math.min(5, 1 + bigOnes.length / 2)) : 0;
+  for (let k = 0; k < swellCount; k++) {
+    const b = bigOnes[Math.floor(randS() * bigOnes.length)];
+    const { p } = walk(b.c, tangentAt(b.c, randS() * Math.PI * 2), b.r * 0.6 * Math.sqrt(randS()));
+    swells.push({ c: p, r: 0.06 + 0.07 * randS(), h: 700 + 700 * randS() });
   }
 
   const model: PlanetModel = {
@@ -325,6 +371,8 @@ export function buildPlanetModel(input: WorldgenInput): PlanetModel {
     replace: form?.crustMode === 'replace' && form.scripts?.crust !== undefined,
     fixedCones: 0,
     issues,
+    sutures,
+    swells,
   };
   // 布局脚本加的岛排在最前（rank −1），clearIslands() 之后不要原来的火山锥
   const natural = setup && !setup.natural ? [] : buildCones(model);
@@ -468,6 +516,95 @@ function blockField(m: PlanetModel, qx: number, qy: number, qz: number): number 
   }
   return c;
 }
+
+// 大陆场与缝合线（第三十二轮，与 generate.ts 的 blockPair 同一个意思）：s1 与 blockField 逐值相同
+interface BlockPair {
+  s1: number;
+  s2: number;
+  inner: number;
+  innerS: number;
+}
+const BP: BlockPair = { s1: -1, s2: -1, inner: 1, innerS: -1 };
+function blockPair(m: PlanetModel, qx: number, qy: number, qz: number, out: BlockPair) {
+  let s1 = -1;
+  let f1 = -1;
+  let s2 = -1;
+  for (const b of m.blocks) {
+    const dx = qx - b.c[0];
+    const dy = qy - b.c[1];
+    const dz = qz - b.c[2];
+    const du = dx * b.u[0] + dy * b.u[1] + dz * b.u[2];
+    const dv = dx * b.v[0] + dy * b.v[1] + dz * b.v[2];
+    const dn = dx * b.n[0] + dy * b.n[1] + dz * b.n[2];
+    const s = 1 - Math.sqrt((du * du) / b.e + dv * dv * b.e + dn * dn) / b.r;
+    const f = b.fam ?? -2;
+    if (s > s1) {
+      if (f !== f1) s2 = s1;
+      s1 = s;
+      f1 = f;
+    } else if (f !== f1 && s > s2) s2 = s;
+  }
+  out.s1 = s1;
+  out.s2 = s2;
+  out.inner = 1;
+  out.innerS = -1;
+  for (const l of m.sutures) {
+    const b = m.blocks[l.block];
+    const dx = qx - b.c[0];
+    const dy = qy - b.c[1];
+    const dz = qz - b.c[2];
+    const du = dx * b.u[0] + dy * b.u[1] + dz * b.u[2];
+    const dv = dx * b.v[0] + dy * b.v[1] + dz * b.v[2];
+    const d = Math.abs(du * l.cos + dv * l.sin - l.off * b.r);
+    if (d < out.inner) {
+      out.inner = d;
+      const dn = dx * b.n[0] + dy * b.n[1] + dz * b.n[2];
+      out.innerS = 1 - Math.sqrt((du * du) / b.e + dv * dv * b.e + dn * dn) / b.r;
+    }
+  }
+}
+
+// 板块的栅格（第三十二轮，见 relief.ts）：等距圆柱 512 × 256，铺在球面的方向上（东西相接）
+const TW = 512;
+const TH = 256;
+function tectonicsOf(m: PlanetModel): TectonicRaster {
+  if (m.tect) return m.tect;
+  const form = m.params.form;
+  const key = `globe:${m.params.seed}:${m.params.type}:${form ? JSON.stringify(form) : ''}`;
+  m.tect = cachedTectonics(key, () => {
+    const pos = new Float64Array(TW * TH * 3);
+    const plate = new Uint8Array(TW * TH);
+    for (let y = 0; y < TH; y++) {
+      const lat = Math.PI / 2 - ((y + 0.5) / TH) * Math.PI;
+      for (let x = 0; x < TW; x++) {
+        const lon = ((x + 0.5) / TW) * 2 * Math.PI - Math.PI;
+        const k = y * TW + x;
+        const X = Math.cos(lat) * Math.cos(lon) * LAYOUT_R;
+        const Y = Math.cos(lat) * Math.sin(lon) * LAYOUT_R;
+        const Z = Math.sin(lat) * LAYOUT_R;
+        pos[3 * k] = X;
+        pos[3 * k + 1] = Y;
+        pos[3 * k + 2] = Z;
+        plate[k] = nearestPlate(m, X, Y, Z);
+      }
+    }
+    return buildTectonics(TW, TH, true, 3, pos, plate, (k, a, b) => {
+      const X = pos[3 * k];
+      const Y = pos[3 * k + 1];
+      const Z = pos[3 * k + 2];
+      const pi = pairInfo(m, a, b, power(m.plates[a], X, Y, Z), power(m.plates[b], X, Y, Z), X, Y, Z);
+      const n = pi.n;
+      const ca = blockField(m, X - 0.04 * n[0], Y - 0.04 * n[1], Z - 0.04 * n[2]);
+      const cb = blockField(m, X + 0.04 * n[0], Y + 0.04 * n[1], Z + 0.04 * n[2]);
+      const upper = Math.abs(ca - cb) > 0.06 ? (ca > cb ? a : b) : m.plates[a].density < m.plates[b].density ? a : b;
+      return { conv: pi.conv, upper, lower: upper === a ? b : a, coll: ca > 0.02 && cb > 0.02, cont: ca > 0.02 || cb > 0.02 };
+    });
+  });
+  return m.tect;
+}
+const TS: TectonicSample = { dist: 0, up: 0, low: 0, conv: 0, coll: 0 };
+const RI: ReliefInput = { c: 0, contW: 0, t: TS, widthMod: 1, nBase: 0, nPlat: 0, nPlatW: 0, nEsc: 0, nSag: 0, nRift: 0, swellR: 9, swellH: 0, riftAxis: 0, shoulder: 0, plates: true };
+const RO: ReliefOut = { T: 0, Tp: 0, pit: 0, rift: 0, erodMul: 1 };
 
 function warp(ns: NoiseSet3, x: number, y: number, z: number): V3 {
   let qx = x + 0.16 * fbm3(ns.warpA, x, y, z, 1.2, 4);
@@ -649,14 +786,7 @@ function buildCones(m: PlanetModel): PlanetCone[] {
   return [...cones, ...satellites].sort((p, q) => p.rank - q.rank);
 }
 
-const emptyComponents = (n: number): BaseComponents => ({
-  b0: new Float32Array(n),
-  mountB: new Float32Array(n),
-  mountU: new Float32Array(n),
-  hillU: new Float32Array(n),
-  erod: new Float32Array(n),
-  sea: new Float32Array(n),
-});
+const emptyComponents = emptyBaseComponents;
 
 // 换了重画、种子与类型不变：板块、大陆块、火山锥、噪声只取决于种子与类型，照用，只换参数
 export function withPlanetParams(m: PlanetModel, input: WorldgenInput): PlanetModel {
@@ -709,6 +839,7 @@ export function samplePlanetRange(m: PlanetModel, mesh: SphereMesh, out: BaseCom
 // 一格：原来的噪声，再按顺序叠上覆盖它的各次重画
 function sampleCell(m: PlanetModel, rerolls: PlacedReroll[], px: number, py: number, pz: number, out: BaseComponents, i: number, tmp: BaseComponents) {
   sampleInto(m, m.noise, px * LAYOUT_R, py * LAYOUT_R, pz * LAYOUT_R, out, i);
+  out.seaB0[i] = out.b0[i];
   // 重画这一片：球面上的圆（半径是地图单位，即弧长 / π）里换一套噪声，边缘羽化
   for (const r of rerolls) {
     const d = rerollDist(r, px, py, pz);
@@ -725,6 +856,10 @@ function sampleCell(m: PlanetModel, rerolls: PlacedReroll[], px: number, py: num
     out.mountU[i] += (tmp.mountU[0] - out.mountU[i]) * w;
     out.hillU[i] += (tmp.hillU[0] - out.hillU[i]) * w;
     out.sea[i] += (tmp.sea[0] - out.sea[i]) * w;
+    out.T[i] += (tmp.T[0] - out.T[i]) * w;
+    out.Tp[i] += (tmp.Tp[0] - out.Tp[i]) * w;
+    out.pit[i] += (tmp.pit[0] - out.pit[i]) * w;
+    out.rift[i] += (tmp.rift[0] - out.rift[i]) * w;
   }
 }
 
@@ -739,8 +874,13 @@ interface CellSample {
   c: number;
   // 洋底的目标深度（见 generate.ts 的 oceanFloor）；地形脚本不改它
   sea: number;
+  // 第三十二轮：基准面、高原、洼地（见 relief.ts）；地形脚本还不能改它们
+  T: number;
+  Tp: number;
+  pit: number;
+  rift: number;
 }
-const S: CellSample = { B: 0, mountB: 0, mountU: 0, hillU: 0, erod: 0, c: 0, sea: 0 };
+const S: CellSample = { B: 0, mountB: 0, mountU: 0, hillU: 0, erod: 0, c: 0, sea: 0, T: 0, Tp: 0, pit: 0, rift: 0 };
 
 function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: number, out: BaseComponents, i: number) {
   sampleRaw(m, ns, x, y, z, S, true);
@@ -750,6 +890,10 @@ function sampleInto(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numb
   out.hillU[i] = S.hillU;
   out.erod[i] = S.erod;
   out.sea[i] = S.sea;
+  out.T[i] = S.T;
+  out.Tp[i] = S.Tp;
+  out.pit[i] = S.pit;
+  out.rift[i] = S.rift;
 }
 
 // 造山带对地壳高度的贡献（“山多高”= 1 时）。地形脚本改了山的强弱后按同一个式子重算
@@ -760,7 +904,9 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
   const prof = m.profile;
   const t = m.tuning;
   const [qx, qy, qz] = warp(ns, x, y, z);
-  let c = m.blocks.length ? blockField(m, qx, qy, qz) : -1;
+  // 与 blockField 逐值相同的大陆场，顺带缝合线（第三十二轮）
+  if (m.blocks.length) blockPair(m, qx, qy, qz, BP);
+  let c = m.blocks.length ? BP.s1 : -1;
   if (m.blocks.length) {
     const f = 1 / Math.max(0.1, m.meanR);
     c += 0.42 * fbm3(ns.block, qx, qy, qz, 1.5 * f, 4, 0.55) + 0.18 * fbm3(ns.hills, qx + 9.1, qy - 4.3, qz, 6 * f, 4, 0.62);
@@ -794,6 +940,9 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
   let mm = 0;
   // 到最近的离散边界的距离（按扩张速度缩放）：洋壳的年龄
   let age = 1;
+  // 裂谷轴（窄）、裂谷肩（两侧）：离交界很近，按 bd
+  let riftAxis = 0;
+  let shoulder = 0;
   // 星球形态的 crustMode 'replace'：不算板块边界（山带、洋中脊、海沟、裂谷都没有）
   if (plates) {
     const a = nearestPlate(m, px, py, pz);
@@ -812,6 +961,8 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
         const div = Math.min(1, -conv);
         ridge = Math.max(ridge, div * Math.exp(-((bd / 0.04) ** 2)));
         rift = Math.max(rift, div * Math.exp(-((bd / 0.025) ** 2)));
+        riftAxis = Math.max(riftAxis, div * Math.exp(-((bd / RIFT_W) ** 2)));
+        shoulder = Math.max(shoulder, div * Math.exp(-(((bd - 0.042) / 0.018) ** 2)));
         age = Math.min(age, bd / (0.45 + 0.55 * div));
         continue;
       }
@@ -827,12 +978,65 @@ function sampleRaw(m: PlanetModel, ns: NoiseSet3, x: number, y: number, z: numbe
     }
   }
   B += t.ridgeH * ridge * oceanW - t.riftH * rift * contW - t.trenchH * trench * oceanW;
-  const mountU = mm * (0.3 + 0.7 * seg) * (0.55 + 0.6 * ridged);
+  const mountU0 = mm * (0.3 + 0.7 * seg) * (0.55 + 0.6 * ridged);
+  // 老山（第三十二轮）：两块相接处与块内的缝合线上低矮的抬升（放在丘陵里：不改地壳高度、不改海陆）；沿缝合线的岩性条纹。
+  // 算板块时才有（crustMode 'replace' 的地形完全由脚本决定）
+  let suture = 0;
+  let stripe = 0;
+  if (plates && m.blocks.length) {
+    const gap = BP.s1 - BP.s2;
+    const pair = smoothstep(0.0, 0.08, BP.s2);
+    const inner = smoothstep(0.1, 0.3, BP.innerS);
+    const pz2 = pair * Math.exp(-((gap / 0.07) ** 2));
+    const iz2 = inner * Math.exp(-((BP.inner / 0.05) ** 2));
+    suture = Math.max(pair * Math.exp(-((gap / 0.035) ** 2)), inner * Math.exp(-((BP.inner / 0.025) ** 2)));
+    stripe = Math.max(pz2, iz2) * Math.sin(((pz2 >= iz2 ? gap : BP.inner) / 0.022) * Math.PI * 2);
+  }
+  // 老山的抬升放在丘陵里（不改造山带、不改地壳高度，地形脚本照原样返回时与没有脚本逐位相同）
+  const oldU = 0.22 * suture * ridged * contW;
+  // 大格局：基准面、高原、洼地、岩性的倍数（板块来的几项在 replace 时是 0）
+  if (plates) {
+    const pl = Math.hypot(px, py, pz) || 1;
+    const lat = Math.asin(Math.max(-1, Math.min(1, pz / pl)));
+    const lon = Math.atan2(py, px);
+    sampleTectonics(tectonicsOf(m), ((lon + Math.PI) / (2 * Math.PI)) * TW - 0.5, ((Math.PI / 2 - lat) / Math.PI) * TH - 0.5, TS);
+  }
+  let swellR = 9;
+  let swellH = 0;
+  if (m.swells.length) {
+    const wob = 1 + 0.25 * fbm3(ns.plat, qx - 3.3, qy + 8.8, qz, 6, 2);
+    for (const sp of m.swells) {
+      const r = (Math.hypot(qx - sp.c[0], qy - sp.c[1], qz - sp.c[2]) * wob) / sp.r;
+      if (r < swellR) {
+        swellR = r;
+        swellH = sp.h;
+      }
+    }
+  }
+  RI.c = c;
+  RI.contW = contW;
+  RI.widthMod = widthMod;
+  RI.nBase = fbm3(ns.big, qx, qy, qz, 2.2, 3);
+  RI.nPlat = fbm3(ns.plat, qx, qy, qz, 3, 2);
+  RI.nPlatW = fbm3(ns.plat, qx + 5.3, qy - 2.1, qz, 2, 2);
+  RI.nEsc = fbm3(ns.big, qx - 7.7, qy + 3.3, qz, 3, 2);
+  RI.nSag = fbm3(ns.sag, qx, qy, qz, 2.6, 3);
+  RI.nRift = fbm3(ns.sag, qx + 4.4, qy - 6.6, qz, 3.5, 2);
+  RI.swellR = swellR;
+  RI.swellH = swellH;
+  RI.riftAxis = riftAxis * contW;
+  RI.shoulder = shoulder;
+  RI.plates = plates;
+  reliefAt(RI, RO);
   s.B = B;
-  s.mountB = mountBOf(mountU, c);
-  s.mountU = mountU;
-  s.hillU = t.hills * Math.max(0, fbm3(ns.hills, qx, qy, qz, 6, 4)) * contW;
-  s.erod = clamp(1 + 0.45 * fbm3(ns.erod, x + 7.7, y - 3.1, z + 1.9, 6, 3), 0.4, 1.8);
+  s.mountB = mountBOf(mountU0, c);
+  s.mountU = mountU0;
+  s.hillU = t.hills * Math.max(0, fbm3(ns.hills, qx, qy, qz, 6, 4)) * contW + oldU;
+  s.erod = clamp((1 + 0.45 * fbm3(ns.erod, x + 7.7, y - 3.1, z + 1.9, 6, 3)) * RO.erodMul * (1 + 0.45 * stripe), 0.4, 1.8);
+  s.T = RO.T;
+  s.Tp = RO.Tp;
+  s.pit = RO.pit;
+  s.rift = RO.rift;
   s.c = c;
   s.sea = oceanFloor(age, trench, t.ridgeH, t.trenchH, fbm3(ns.ocean, qx - 4.1, qy + 2.3, qz + 1.1, 3, 4), fbm3(ns.ocean, qx + 6.2, qy - 8.4, qz - 0.7, 24, 3));
 }
@@ -871,6 +1075,10 @@ interface RawPass {
   erod: Float64Array;
   c: Float64Array;
   sea: Float64Array;
+  T: Float64Array;
+  Tp: Float64Array;
+  pit: Float64Array;
+  rift: Float64Array;
 }
 
 // 界面看的问题最多留几条（同一句话只留一条）
@@ -900,6 +1108,10 @@ function sampleCells(m: PlanetModel, ns: NoiseSet3, mesh: SphereMesh, cells: Int
     raw.erod[i] = S.erod;
     raw.c[i] = S.c;
     raw.sea[i] = S.sea;
+    raw.T[i] = S.T;
+    raw.Tp[i] = S.Tp;
+    raw.pit[i] = S.pit;
+    raw.rift[i] = S.rift;
   }
 }
 
@@ -967,7 +1179,19 @@ function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Res
     todo.push(i);
   }
   const cells = Int32Array.from(todo);
-  const raw: RawPass = { B: new Float64Array(n), mountB: new Float64Array(n), mountU: new Float64Array(n), hillU: new Float64Array(n), erod: new Float64Array(n), c: new Float64Array(n), sea: new Float64Array(n) };
+  const raw: RawPass = {
+    B: new Float64Array(n),
+    mountB: new Float64Array(n),
+    mountU: new Float64Array(n),
+    hillU: new Float64Array(n),
+    erod: new Float64Array(n),
+    c: new Float64Array(n),
+    sea: new Float64Array(n),
+    T: new Float64Array(n),
+    Tp: new Float64Array(n),
+    pit: new Float64Array(n),
+    rift: new Float64Array(n),
+  };
   const pass: (ScriptIssue | null)[] = [];
   const first = crustPass(m, m.noise, 0, mesh, cells, raw, src, prev?.pass[0]);
   if (first === 'redo') return sampleWithCrust(m, mesh, src);
@@ -979,6 +1203,11 @@ function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Res
     out.hillU[i] = raw.hillU[i];
     out.erod[i] = raw.erod[i];
     out.sea[i] = raw.sea[i];
+    out.T[i] = raw.T[i];
+    out.Tp[i] = raw.Tp[i];
+    out.pit[i] = raw.pit[i];
+    out.rift[i] = raw.rift[i];
+    out.seaB0[i] = out.b0[i];
   }
   // 重画这一片：一次一次地叠（每格叠的顺序与逐格写法相同），圈边羽化
   for (let k = 0; k < rerolls.length; k++) {
@@ -1014,6 +1243,10 @@ function sampleWithCrust(m: PlanetModel, mesh: SphereMesh, src: string, re?: Res
       out.mountU[i] += (Math.fround(raw.mountU[i]) - out.mountU[i]) * w;
       out.hillU[i] += (Math.fround(raw.hillU[i]) - out.hillU[i]) * w;
       out.sea[i] += (Math.fround(raw.sea[i]) - out.sea[i]) * w;
+      out.T[i] += (Math.fround(raw.T[i]) - out.T[i]) * w;
+      out.Tp[i] += (Math.fround(raw.Tp[i]) - out.Tp[i]) * w;
+      out.pit[i] += (Math.fround(raw.pit[i]) - out.pit[i]) * w;
+      out.rift[i] += (Math.fround(raw.rift[i]) - out.rift[i]) * w;
     }
   }
   // 给界面看的问题：按遍的顺序，同一句话只留一条

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import type { Command } from './commands';
 import { Engine } from './engine';
+import { graphDistance } from './mesh';
 import { islandCode, provinceLand } from './island-types';
 import { BUILTIN_ISLAND_TYPES } from './packs/base';
 
@@ -21,7 +22,9 @@ const all = (w: World) => [...Array(w.mesh.n).keys()];
 function withLake(provinces = false): { eng: Engine; c: number } {
   const eng = continents({ provinces });
   const w = eng.world;
-  const inland = all(w).find((i) => w.causes.land[i] && w.derived.lake[i] !== 1 && w.derived.continentality[i] > 0.6 && w.derived.slope[i] < 5)!;
+  // 不在自然的湖、干湖底旁边（第三十二轮：内陆有了洼地里的湖）
+  const dry = (i: number) => w.derived.lake[i] === 0 && [...Array(w.mesh.off[i + 1] - w.mesh.off[i]).keys()].every((k) => w.derived.lake[w.mesh.adj[w.mesh.off[i] + k]] === 0);
+  const inland = all(w).find((i) => w.causes.land[i] && dry(i) && w.derived.continentality[i] > 0.6 && w.derived.slope[i] < 5)!;
   eng.exec({ op: 'add_lake', lake: { cell: inland, radius: 300, depth: 150, perennial: true } });
   return { eng, c: inland };
 }
@@ -246,7 +249,13 @@ describe('湖里的岛', () => {
     const steps = eng.history.length;
     eng.exec({ op: 'add_island_chain', chain: { points: [[w.mesh.x[c] - 0.1, w.mesh.y[c]], [w.mesh.x[c] + 0.1, w.mesh.y[c] + 0.05]], kind: 'low', size: 50, density: 1, variant: 1 } });
     expect(heights(w).length).toBeGreaterThan(0);
-    eng.exec({ op: 'add_island', island: at(w, c, 'tall', 60) });
+    // 放在湖里离岸（岛链放下的岛也算岸）最远的地方（第三十二轮：岛链正好压在湖心附近，湖心放不下了）
+    const water = lakeAt(w, c);
+    const inWater = new Set(water);
+    const shore = water.filter((i) => [...Array(w.mesh.off[i + 1] - w.mesh.off[i]).keys()].some((k) => !inWater.has(w.mesh.adj[w.mesh.off[i] + k])));
+    const fromShore = graphDistance(w.mesh, shore, Infinity, (_i, j, e) => (inWater.has(j) ? w.mesh.dist[e] : Infinity));
+    const mid = water.reduce((b, i) => (fromShore[i] > fromShore[b] ? i : b), water[0]);
+    eng.exec({ op: 'add_island', island: at(w, mid, 'tall', 60) });
     expect(eng.history.length).toBe(steps + 2);
     const after = dig(w);
     const doc = JSON.parse(JSON.stringify(eng.toDoc()));

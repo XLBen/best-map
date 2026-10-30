@@ -44,11 +44,11 @@ interface BaseCache {
   components: BaseComponents | null;
   // 按火山锥个数缓存几份（拖“岛多少”时来回切换不用重算）
   cones: Map<number, ConeField>;
-  // 留两份，最近用的在前：拖“海岸破碎度”时世界本身（旧值）与预览（新值）交替要用
-  sea: SeaOrder[];
   landness: Float32Array;
   uplift: Float32Array;
   erod: Float32Array;
+  // 基准面（第三十二轮）：T + “山多高” × Tp（米），见 reliefFields
+  T: Float32Array;
   seaLevel: number;
   // 海底后处理要用的两个场（见 seabedFields）：按分量、火山锥、海平面缓存一份
   seabed?: { components: BaseComponents; cones: ConeField; seaLevel: number; fields: SeabedFields };
@@ -87,6 +87,10 @@ export const sampledBaseMemo = { on: true, hits: 0 };
 // 计时（tools/bench.ts 用，累加的毫秒）：生成器采样（新建、重画一片、缓存没有时重新采样）
 export const terrainLaps = { sample: 0 };
 const coastCache = new WeakMap<Mesh, Map<number, Float32Array>>();
+// 海平面分位数要用的排序，按不含重画的地壳高度（分量的 seaB0，同一个模型的各份分量共用一个数组）缓存：
+// 重画一片、撤销、重做都不再重排（第三十二轮：重画一片不挪海平面）。留两份，最近用的在前：
+// 拖“海岸破碎度”时世界本身（旧值）与预览（新值）交替要用
+const seaOrders = new WeakMap<Float32Array, SeaOrder[]>();
 
 export function coastSeed(world: World): number {
   return world.small.terrain.gen?.seed ?? world.settings.seed;
@@ -178,10 +182,10 @@ export function ensureBase(world: World): BaseCache {
       model,
       components,
       cones,
-      sea: [],
       landness: new Float32Array(n),
       uplift: new Float32Array(n),
       erod: new Float32Array(n),
+      T: new Float32Array(n),
       seaLevel: 0,
     };
     baseCache.set(world, cache);
@@ -192,10 +196,11 @@ export function ensureBase(world: World): BaseCache {
     cache.landness.fill(-3000);
     cache.uplift.fill(0);
     cache.erod.fill(1);
+    cache.T.fill(0);
     cache.seaLevel = 0;
     return cache;
   }
-  cache.seaLevel = composeBase(world, cache, composeParams(world, cache, {}), cache.landness, cache.uplift);
+  cache.seaLevel = composeBase(world, cache, composeParams(world, cache, {}), cache.landness, cache.uplift, cache.T);
   cache.erod.set(comp.erod);
   return cache;
 }
@@ -258,6 +263,22 @@ export function seabedFields(world: World): SeabedFields | null {
   const fields = { ocean, shelf };
   cache.seabed = { components: comp, cones, seaLevel: cache.seaLevel, fields };
   return fields;
+}
+
+// 大格局（第三十二轮，见 relief.ts）：每格的基准面 T（米，含“山多高”× 高原）与洼地 pit（米）。高程的求解用（elevation.ts）。
+// 没有生成器（空白世界）时为 null：没有基准面与洼地。只读
+export function reliefFields(world: World): { T: Float32Array; pit: Float32Array } | null {
+  const cache = ensureBase(world);
+  if (!world.small.terrain.gen || !cache.components || !cache.model) return null;
+  return { T: cache.T, pit: cache.components.pit };
+}
+
+// 洼地（米）：只读缓存里这个世界的分量（水文用，不重新组合；缓存不是这个世界的就先 ensureBase）。没有生成器时为 null
+export function pitField(world: World): Float32Array | null {
+  if (!world.small.terrain.gen) return null;
+  const cache = baseCache.get(world);
+  if (cache && cache.key === baseKeys(world).sampleKey) return cache.components?.pit ?? null;
+  return ensureBase(world).components?.pit ?? null;
 }
 
 // 星球形态的脚本这次出的问题（布局脚本、地形脚本；出错的那一部分已按没有脚本算）。没有形态、没有问题时为空。
@@ -359,18 +380,20 @@ export function sortedOrder(v: Float64Array): Int32Array {
   return src;
 }
 
-// 海平面：按面积加权的分位数，只看地壳本身（不含造山带与火山锥），所以“岛多少”“山多高”不会挪动别处的海岸
+// 海平面：按面积加权的分位数，只看地壳本身（不含造山带与火山锥），所以“岛多少”“山多高”不会挪动别处的海岸。
+// 第三十二轮起按不含重画的地壳高度（seaB0）：重画一片不挪海平面，圈外的海岸、陆地一格不变（只重算圈里碰到的陆块）
 function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough: number): number {
   const { mesh } = world;
   const n = mesh.n;
-  let s = cache.sea.find((e) => e.rough === rough);
+  const comp = cache.components!;
+  let list = seaOrders.get(comp.seaB0) ?? [];
+  let s = list.find((e) => e.rough === rough);
   if (!s) {
-    const comp = cache.components!;
     const coast = coastNoiseField(mesh, world.small.terrain.gen!.seed);
     const eff = new Float64Array(n);
     let max = -Infinity;
     for (let i = 0; i < n; i++) {
-      eff[i] = comp.b0[i] + COAST_AMP * rough * coast[i];
+      eff[i] = comp.seaB0[i] + COAST_AMP * rough * coast[i];
       max = Math.max(max, eff[i]);
     }
     const order = sortedOrder(eff);
@@ -386,7 +409,10 @@ function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough
     s = { rough, eff, order, cum, total, max };
   }
   // 最近用的放前面，只留两份
-  if (cache.sea[0] !== s) cache.sea = [s, ...cache.sea.filter((e) => e !== s)].slice(0, 2);
+  if (list[0] !== s) {
+    list = [s, ...list.filter((e) => e !== s)].slice(0, 2);
+    seaOrders.set(comp.seaB0, list);
+  }
   let seaLevel: number;
   if (landFraction <= 0) seaLevel = s.max + 1;
   else {
@@ -409,7 +435,7 @@ function seaLevelFor(world: World, cache: BaseCache, landFraction: number, rough
 }
 
 // 按参数组合基础的 landness 与抬升（写进 outL / outU，返回海平面）。生成世界与“调整”的预览共用
-function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Float32Array, outU: Float32Array): number {
+function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Float32Array, outU: Float32Array, outT?: Float32Array): number {
   const comp = cache.components!;
   const model = cache.model!;
   // 星球形态的布局脚本加的岛排在最前，总是露出来；“岛多少”只增减其余的火山锥（没有形态时 fixed 为 0，与以前相同）
@@ -422,6 +448,8 @@ function composeBase(world: World, cache: BaseCache, p: ComposeParams, outL: Flo
     outL[i] = comp.b0[i] - seaLevel + mountains * comp.mountB[i] + coneB[i];
     outU[i] = clamp(mountains * (0.95 * comp.mountU[i] + comp.hillU[i]) + coneU[i], 0, 1.6);
   }
+  // 基准面：“山多高”只缩放高原
+  if (outT) for (let i = 0; i < world.mesh.n; i++) outT[i] = comp.T[i] + mountains * comp.Tp[i];
   return seaLevel;
 }
 
@@ -547,14 +575,14 @@ export function previewTerrain(world: World, patch: TerrainPatch): TerrainPrevie
   let cache = ensureBase(world);
   const gen = world.small.terrain.gen;
   if (gen && cache.model && cache.components && patch.reroll) {
-    // 与 ensureBase 里重画变了时同一条路：模型换参数、只重算新的重画圈、火山锥照用、海平面重新排序。
+    // 与 ensureBase 里重画变了时同一条路：模型换参数、只重算新的重画圈、火山锥照用、海平面不变。
     // 用一份临时的缓存，世界的缓存不动
     const r = patch.reroll;
     const next = { ...gen, rerolls: [...gen.rerolls, { x: r.x, y: r.y, radius: r.radius, variant: r.variant }] };
     const model = cache.model.kind === 'planet' ? withPlanetParams(cache.model, next) : withParams(cache.model, next);
     const re = { from: cache.components, changed: [r] };
     const components = model.kind === 'planet' ? samplePlanetComponents(model, mesh as SphereMesh, re) : sampleComponents(model, mesh, re);
-    cache = { ...cache, model, components, sea: [] };
+    cache = { ...cache, model, components };
   }
   const L = new Float32Array(n);
   const U = new Float32Array(n);

@@ -19,7 +19,8 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第九轮去掉旧存档兼容时重录（放岛只收 km 数，岛的形状变了）；之后的优化必须逐值不变
     // 第十三轮：参考操作里放的岛有了岩性（高程变了，气候往后跟着变），与山挡风无关，tS、pS、discharge、dominant 重录
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
-    const FROZEN = { tS: '493021bb', pS: '514f6329', discharge: '88d29ef0', dominant: '97a98605', corrT: 'b905fbf1', province: '96066e05' };
+    // 第三十二轮：地形有了大格局（高程变了，气候往后跟着变），重录全部
+    const FROZEN = { tS: '25c9df2c', pS: 'c22c1509', discharge: 'c97e9afd', dominant: 'be178605', corrT: '3ec1a4d2', province: 'f7223e05' };
     const eng = seededEngine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
@@ -69,13 +70,13 @@ describe('山挡风打开', () => {
     const a = off.derived;
     const b = on.derived;
     const windward = inBand(0.62, 0.76);
-    // 风的南分量变小 = 往北拐
-    expect(mean(windward, (i) => b.windSY[i] - a.windSY[i])).toBeLessThan(-0.08);
+    // 风的南分量变小 = 往北拐（第三十二轮：山矮了约三成——抬升到高度乘 0.72，迎风坡更易蚀——拐得少一些，−0.08 → −0.05，平均拐 10° → 8°）
+    expect(mean(windward, (i) => b.windSY[i] - a.windSY[i])).toBeLessThan(-0.05);
     const turn = (i: number) => {
       const t = Math.atan2(b.windSY[i], b.windSX[i]) - Math.atan2(a.windSY[i], a.windSX[i]);
       return (Math.abs(Math.atan2(Math.sin(t), Math.cos(t))) * 180) / Math.PI;
     };
-    expect(mean(windward, turn)).toBeGreaterThanOrEqual(10);
+    expect(mean(windward, turn)).toBeGreaterThanOrEqual(8);
     // 离山 300 km 以外的西边：变化不到 0.02，实际上逐位相同
     const far = inBand(0.35, 0.45);
     expect(mean(far, (i) => Math.hypot(b.windSX[i] - a.windSX[i], b.windSY[i] - a.windSY[i]))).toBeLessThan(0.02);

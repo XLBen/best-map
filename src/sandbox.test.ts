@@ -76,8 +76,8 @@ class FakeWorker implements WorkerLike {
 
 const settings = settingsSchema.parse({ cells: 2000, seed: 1 });
 const cmd = (humidity: number): Command => ({ op: 'set_planet', patch: { humidity } });
-const log = (epoch: number, from: number, commands: Command[], ids: number[]): MirrorLog => ({ format: 'map2-world', version: 6, settings, epoch, from, commands, ids });
-const docOf = (commands: Command[]): WorldDoc => ({ format: 'map2-world', version: 6, settings, commands });
+const log = (epoch: number, from: number, commands: Command[], ids: number[]): MirrorLog => ({ format: 'map2-world', version: 7, settings, epoch, from, commands, ids });
+const docOf = (commands: Command[]): WorldDoc => ({ format: 'map2-world', version: 7, settings, commands });
 
 function setup(opts?: HostOptions) {
   FakeWorker.all = [];

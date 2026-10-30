@@ -44,16 +44,23 @@ const relief = (w: World) =>
     .map((f) => `${f.key}=${f.name}`)
     .join('|');
 
-// 横穿最大的山脉（过它的最高峰，垂直于山脉的走向），两头各伸出 6 格：在这个世界上一头入海
+// 横穿最大的山脉（过它的最高峰，垂直于山脉的走向），两头各伸出 6 格：一头入海。
+// 第三十二轮：最大的山脉挨着地图边、横穿过去流出了地图，按大小取第一条横穿过去入海的
 function acrossRange(w: World): { stroke: Pt[]; peak: number } {
   const { mesh, derived: d } = w;
-  const range = d.features.filter((f) => f.type === 'range').sort((a, b) => b.cells.length - a.cells.length)[0];
-  let peak = range.cells[0];
-  for (const c of range.cells) if (d.elevation[c] > d.elevation[peak]) peak = c;
-  const ang = range.angle + Math.PI / 2;
-  const L = 6 * mesh.spacing;
-  const [x, y] = at(w, peak);
-  return { stroke: line([x - Math.cos(ang) * L, y - Math.sin(ang) * L], [x + Math.cos(ang) * L, y + Math.sin(ang) * L]), peak };
+  const ranges = d.features.filter((f) => f.type === 'range').sort((a, b) => b.cells.length - a.cells.length);
+  let first: { stroke: Pt[]; peak: number } | null = null;
+  for (const range of ranges) {
+    let peak = range.cells[0];
+    for (const c of range.cells) if (d.elevation[c] > d.elevation[peak]) peak = c;
+    const ang = range.angle + Math.PI / 2;
+    const L = 6 * mesh.spacing;
+    const [x, y] = at(w, peak);
+    const r = { stroke: line([x - Math.cos(ang) * L, y - Math.sin(ang) * L], [x + Math.cos(ang) * L, y + Math.sin(ang) * L]), peak };
+    first ??= r;
+    if (planCourse(w, d, r.stroke, { endOnLand: 'flow' }).end === 'sea') return r;
+  }
+  return first!;
 }
 
 // 从低处往高处画：起点比终点低至少 minUp 米，终点在陆地上（不是河、湖）；找不到时返回 null
@@ -248,9 +255,11 @@ describe('只挖河床', () => {
   it('在这里消失：终点以下的水少了；去掉“消失”水又流下去；撤销还原', () => {
     const eng = continents();
     const w = eng.world;
-    // 横穿山脉入海的那条河，在入海前两格消失（顺坡而下，终点在陆地上）
+    // 横穿山脉入海的那条河，在入海前两格消失（顺坡而下，终点在陆地上；第三十二轮：终点不挨海，挨海时再往前一格）
     const plan = planCourse(w, w.derived, acrossRange(w).stroke, { endOnLand: 'flow' });
-    const cells = plan.cells.slice(0, -2);
+    let cells = plan.cells.slice(0, -2);
+    const bySea = (c: number) => [...Array(w.mesh.off[c + 1] - w.mesh.off[c]).keys()].some((k) => !w.causes.land[w.mesh.adj[w.mesh.off[c] + k]]);
+    while (cells.length > 3 && bySea(cells[cells.length - 1])) cells = cells.slice(0, -1);
     eng.exec({ op: 'add_guide', guide: { id: 'river-s', cells, locked: true, spring: true, flow: 2, name: '', end: 'sink' } });
     expect(followed(w, cells)).toBe(true);
     const sink = cells[cells.length - 1];
@@ -373,7 +382,21 @@ describe('流进湖、汇入', () => {
       const eng = base.clone();
       eng.exec({ op: 'add_lake', lake: { cell: C, radius: 30, depth: 200, perennial: true } });
       const w = eng.world;
-      const lake = [...Array(mesh.n).keys()].filter((i) => w.derived.lake[i] === 1).join(',');
+      // 放的这个湖的湖面（连着 C 的湖面格；别处的内流湖会因为多了画的河的泉水涨一点，不看它们：第三十二轮有了洼地里的湖）
+      const lakeOf = (ww: World) => {
+        const out = [C];
+        const seen = new Set(out);
+        for (let q = 0; q < out.length; q++)
+          for (let e = mesh.off[out[q]]; e < mesh.off[out[q] + 1]; e++) {
+            const j = mesh.adj[e];
+            if (!seen.has(j) && ww.derived.lake[j] === 1) {
+              seen.add(j);
+              out.push(j);
+            }
+          }
+        return out.sort((x, y) => x - y).join(',');
+      };
+      const lake = lakeOf(w);
       for (let a = 0; a < 8 && checked < 4; a++) {
         const R = 7 * mesh.spacing;
         const plan = planCourse(w, w.derived, line([mesh.x[C] + Math.cos(a * 0.8) * R, mesh.y[C] + Math.sin(a * 0.8) * R], at(w, C)), { endOnLand: 'flow' });
@@ -381,7 +404,7 @@ describe('流进湖、汇入', () => {
         const e = eng.clone();
         e.exec(courseCmd(plan));
         expect(followed(e.world, plan.cells)).toBe(true);
-        expect([...Array(mesh.n).keys()].filter((i) => e.world.derived.lake[i] === 1).join(',')).toBe(lake);
+        expect(lakeOf(e.world)).toBe(lake);
         // 河道上最后一格陆地仍比湖面高
         const body = plan.cells.slice(0, -1);
         const end = plan.cells[plan.cells.length - 1];
@@ -432,6 +455,8 @@ describe('流进湖、汇入', () => {
     for (const f of w0.derived.features.filter((x) => x.type === 'river')) {
       const stem = riverStem(w0, w0.derived, f.anchor).cells.filter((c) => w0.causes.land[c]);
       if (stem.length < 16) continue;
+      // 流过湖的河不要（第三十二轮有了洼地里的湖：横穿湖面不算横穿河）
+      if (stem.some((c) => w0.derived.lake[c] !== 0)) continue;
       for (const side of [1, -1]) {
         for (const i of [stem.length - 3, stem.length - 5]) {
           const x = stem[i];
@@ -452,7 +477,9 @@ describe('流进湖、汇入', () => {
           const r = spliceCourse(w, w.derived, w.small.guides[0], [...line(along(0.12), M, 30), ...line(M, along(0.5), 30).slice(1)], { endOnLand: 'sink', tol: 0.5 * mesh.spacing });
           if (!('blocked' in r)) {
             // 没有横穿 R：照常改，水照着走
-            if (r.patch.cells!.some((c) => stem.includes(c))) throw new Error('横穿了 J 下游的河却没有拦下');
+            // （J 自己是 G 汇入的那一格，不算）
+            const below = stem.slice(stem.indexOf(J) + 1);
+            if (r.patch.cells!.some((c) => below.includes(c))) throw new Error('横穿了 J 下游的河却没有拦下');
             continue;
           }
           if (r.blocked === '这样水会绕成圈') checked++;
@@ -585,7 +612,8 @@ describe('画的线就是河道', () => {
     for (let i = 0; i < mesh.n && !plan; i += 3) {
       if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
       const p = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 2.5 * mesh.spacing, mesh.y[i]], 10), { endOnLand: 'flow' });
-      if (!p.blocked && !p.reroute && !p.crossings.length && p.cells.length - p.drawn >= 12 && p.end === 'sea') plan = p;
+      // 顺地势流下去 10 格以上入海（第三十二轮：河网连得更密，流下去不远就汇进别的河，12 格以上的找不到了）
+      if (!p.blocked && !p.reroute && !p.crossings.length && p.cells.length - p.drawn >= 10 && p.end === 'sea') plan = p;
     }
     expect(plan).not.toBeNull();
     // 一条新画的（只有一小段折线），一条没有折线的
@@ -597,9 +625,9 @@ describe('画的线就是河道', () => {
       e.exec({ op: 'add_guide', guide: g });
       const ew = e.world;
       const P0 = guidePoints(ew, g);
-      // 改流下去的那段的中间：从第 drawn+3 格到第 drawn+8 格绕一下
-      const ka = plan!.drawn + 3;
-      const kb = plan!.drawn + 8;
+      // 改流下去的那段的中间：从第 drawn+2 格到第 drawn+6 格绕一下（第三十二轮：流下去的那段短了，以前 +3 到 +8）
+      const ka = plan!.drawn + 2;
+      const kb = plan!.drawn + 6;
       const [a, b] = [at(ew, plan!.cells[ka]), at(ew, plan!.cells[kb])];
       const nx = -(b[1] - a[1]);
       const ny = b[0] - a[0];
@@ -775,6 +803,8 @@ describe('续画（第九轮 B）：接着别的河画，河不消失', () => {
       if (!w0.causes.land[c] || d.lake[c] === 1 || isRiverCell(w0, d, c) || d.elevation[c] < 300) continue;
       const p = planCourse(w0, d, line(at(w0, c), [mesh.x[c] + 4 * mesh.spacing, mesh.y[c] + 1.5 * mesh.spacing]), { endOnLand: 'sink' });
       if (p.blocked || p.end !== 'sink' || p.crossings.length || p.reroute || p.merge || p.cells.length < 4 || p.uphill >= 20) continue;
+      // 离地图边远一点（第三十二轮：地图边上也有高地了；边上的格是出口，往外接画不出几格）
+      if (p.cells.some((x) => Math.min(mesh.y[x], mesh.height - mesh.y[x], mesh.x[x], mesh.width - mesh.x[x]) < 8 * mesh.spacing)) continue;
       const eng = base.clone();
       eng.exec(courseCmd(p, { id: 'river-a' }));
       const w = eng.world;
@@ -844,6 +874,8 @@ describe('续画（第九轮 B）：接着别的河画，河不消失', () => {
       const { mesh, derived: d } = w0;
       for (let c = 0, found = 0; c < mesh.n && found < 6; c += 11) {
         if (!w0.causes.land[c] || d.lake[c] === 1 || isRiverCell(w0, d, c) || d.elevation[c] < 300) continue;
+        // 星球上离极点远一点（等距圆柱的坐标在极点附近拉得很宽，画的线不是直的；第三十二轮极地也有高地了）
+        if (mesh.kind === 'sphere' && Math.abs(mesh.y[c] - 0.5) > 0.36) continue;
         const ang = (c % 7) * 0.9;
         const p = planCourse(w0, d, line(at(w0, c), [mesh.x[c] + 4 * mesh.spacing * Math.cos(ang), mesh.y[c] + 4 * mesh.spacing * Math.sin(ang)]), { endOnLand: 'sink' });
         if (p.blocked || p.end !== 'sink' || p.crossings.length || p.reroute || p.merge || p.cells.length < 4) continue;
@@ -894,9 +926,16 @@ describe('续画（第九轮 B）：接着别的河画，河不消失', () => {
       });
     }
     expect(fwd).not.toBeNull();
-    // 多画进海里一点，再倒过来
+    // 画到第一次进海为止（画得长时后面可能又上了岛），多画进海里一点，再倒过来
+    const inSea = fwd!.findIndex(([px, py]) => {
+      const c = findCell(w.mesh, px, py);
+      return !w.causes.land[c] || w.derived.lake[c] === 1;
+    });
+    if (inSea > 0) fwd = fwd!.slice(0, inSea + 1);
     const sea = fwd![fwd!.length - 1];
-    const back = [...fwd!, [sea[0] + (sea[0] - fwd![0][0]) * 0.1, sea[1] + (sea[1] - fwd![0][1]) * 0.1] as Pt].reverse();
+    // （多出半格：画得长时多 10% 会越过海峡碰到对岸）
+    const over = (0.5 * w.mesh.spacing) / Math.hypot(sea[0] - fwd![0][0], sea[1] - fwd![0][1]);
+    const back = [...fwd!, [sea[0] + (sea[0] - fwd![0][0]) * over, sea[1] + (sea[1] - fwd![0][1]) * over] as Pt].reverse();
     const x = extendCourse(w, w.derived, back, { endOnLand: 'sink' });
     if (!x || 'blocked' in x) throw new Error(x ? x.blocked : '没当作接长');
     expect(x.guide.id).toBe('river-a');

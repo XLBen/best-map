@@ -322,7 +322,8 @@ describe('画的河的名字', () => {
       for (let i = skip; i < mesh.n; i += 53) {
         if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
         const plan = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 12 * mesh.spacing, mesh.y[i] + 3 * mesh.spacing]), { endOnLand: 'flow' });
-        if (plan.blocked || plan.crossings.length || plan.reroute || plan.end === 'river') continue;
+        // 流进海（第三十二轮：流进湖、流出地图的河的大小不只看画的河自己的水）
+        if (plan.blocked || plan.crossings.length || plan.reroute || plan.end !== 'sea') continue;
         eng.exec(courseCmd(plan, { id, flow }));
         return;
       }

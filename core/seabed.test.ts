@@ -396,7 +396,8 @@ describe('湖底', () => {
     const { mesh, causes } = w;
     const far = graphDistance(
       mesh,
-      [...Array(mesh.n).keys()].filter((i) => !causes.land[i]),
+      // 离海、离自然的湖与干湖底都远（第三十二轮：内陆的低处多半是洼地，本来就有湖）
+      [...Array(mesh.n).keys()].filter((i) => !causes.land[i] || w.derived.lake[i] !== 0),
       Infinity,
     );
     // 离图边也远（贴着图边的洼地会从图边流走，成不了湖）

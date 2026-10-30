@@ -852,7 +852,9 @@ export function applyCommand(
   const provinceNames: Record<string, string> = {};
   const provinceOrig: Record<string, string> = {};
   for (const [id, p] of Object.entries(world.small.provinces)) {
-    if (idsBefore.has(id)) continue;
+    // 记下的湖与陆地的整理（provinceFix）加的省份不算这一步新起的：执行时它们是推导算好之后才加的，不在 provinceNames 里
+    // （第三十二轮：新建的世界一开始就有湖省时，重放出来的命令多了这几个名字）
+    if (idsBefore.has(id) || (provinceFix && id in provinceFix.add)) continue;
     provinceNames[id] = p.name;
     if (p.orig) provinceOrig[id] = p.orig;
   }

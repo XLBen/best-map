@@ -58,7 +58,9 @@ describe('自带地名设定的生态自然长成的一片有自己的地名', (
     // 用缓存的与从头识别的逐值相同
     featureMemo.on = false;
     try {
-      expect(json(detectFeatures(w, w.derived))).toBe(json(w.derived.features));
+      // 按没挖河床、没修湖底的地形识别（与引擎相同；推导里的高程修过湖底，第三十二轮湖多了，盆地会差一两格）
+      const terrain = (eng as unknown as { base: { terrain: Float32Array } }).base.terrain;
+      expect(json(detectFeatures(w, w.derived, terrain))).toBe(json(w.derived.features));
     } finally {
       featureMemo.on = true;
     }
@@ -111,7 +113,8 @@ describe('自带地名设定的生态自然长成的一片有自己的地名', (
     expect(featureLabel(w, painted[0])).toBe('晶林');
     // 涂出来的标注先放（重要度高一点），自然长成的那几片还在
     const rest = own(eng).filter((f) => f !== painted[0]);
-    expect(keyName(rest)).toEqual(keyName(natural));
+    // 名字都还在（第三十二轮：洼地里的湖跟着气候涨落，涂的生态对周围的影响会让远处一片的锚点挪一格，地物的键跟着变，名字不变）
+    expect(rest.map((f) => f.name).sort()).toEqual(natural.map((f) => f.name).sort());
     for (const f of rest) if (f.cells.length === painted[0].cells.length) expect(painted[0].importance).toBeGreaterThan(f.importance);
   });
 });

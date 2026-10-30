@@ -78,9 +78,10 @@ function countryDigest(w: World): Record<string, string> {
 //   第二十六轮又重录一次：按文化 × 陆块分、预算的上限、第二遍有上限并拉平快慢、下海按政体、别的陆块上没人的地方不要、邦联的一片只归成员、
 //   补齐的围住按海岸、贴着国境的一圈要冰川；
 //   第二十七轮重录：地形类别只管起伏，通行难度 = 起伏 × 植被，宜居度、偏好按生态）
+// 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 const RECORDED = {
-  region: { country: 'd8c1b8c07692dc95', countries: 'd0da242f699a5c0b' },
-  planet: { country: '5a98260b7cf38063', countries: 'dc432649a5dd6dcc' },
+  region: { country: '6ed8546e28a411fa', countries: 'f35915c182eea345' },
+  planet: { country: 'f7a56b8ad8d19144', countries: '32efd797f9b504b2' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

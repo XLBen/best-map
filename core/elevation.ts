@@ -1,10 +1,10 @@
 import { MinHeap } from './heap';
-import { HeapLite, type Mesh, graphDistance } from './mesh';
+import { HeapLite, type Mesh, gradGeo, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
-import { Router, accumulate } from './routing';
-import { lagoonTest, pocketLakes, seabedFields } from './terrain';
-import { FREE_HEIGHT, type World } from './world';
+import { Router, type Routing, accumulate } from './routing';
+import { lagoonTest, pocketLakes, reliefFields, seabedFields } from './terrain';
+import { FREE_HEIGHT, type World, latitudeOf } from './world';
 
 // 高程 = 抬升与河流下切的稳态（stream power law，n = 1）：
 //   dh/dt = U − K·A^m·S = 0  ⇒  沿河道 h_i = h_下游 + U_i·L / (K_i·A_i^m)
@@ -14,6 +14,29 @@ const M = 0.45;
 // 原始单位到米的换算：抬升 1.0、约 600 km 宽的山带峰高约为 mountainScale
 const RAW_TO_M = 1 / 3.4;
 const ITERATIONS = 12;
+// 第三十二轮：基准面 T、洼地 pit 是米（按默认的“最高的山”6000 m），求解时换成原始单位（“最高的山”照旧只是缩放）
+const M_TO_RAW = 3.4 / 6000;
+// 基础抬升（让平原也有起伏）与抬升的倍数：第三十二轮有了基准面（大陆倾斜、高原都垫在下面），
+// 从 0.035 与 1 降下来，高度分布照旧像地球（200 m 以下约 1/4，2000 m 以上约 1/10）
+const BASE_UPLIFT = 0.012;
+const UPLIFT_SCALE = 0.72;
+// 高度大致与（UPLIFT_FLOOR + 抬升）成正比（界面按它估计堆山堆高了多少，见 src/ui/edits.ts）
+export const UPLIFT_FLOOR = BASE_UPLIFT / UPLIFT_SCALE;
+// 初始高程按离海距离的缓坡（每 km）：第三十二轮以前是 0.002，固定的 12 轮一开始就把水引向最近的海岸、河往四面放射；
+// 现在小得多，一开始按基准面（大陆倾斜）汇流
+const INIT_SLOPE = 0.0001;
+// 初始高程加上这么多基准面
+const INIT_T = 0.9;
+// 基准面作软底：每格往上补到 T 的比例 1 − exp(−L / (KNICK_KM · √(A / 1e4)))（大河切出峡谷、小溪留在高原面上），
+// 离海 COAST_FADE_KM 以内逐渐减弱
+const KNICK_KM = 40;
+const COAST_FADE_KM = 80;
+// 地图边上（地区）的出口：基准面是 0.8·T，不再当海
+const EDGE_BASE = 0.8;
+// 挖洼地：上游来沙（抬升 × 面积，km²）× SED_FILL 与洼地容积（深 m × 面积 km²）的比 f，挖 pit·(1 − f)
+const SED_FILL = 10;
+// 迎风一侧更易蚀（按新建时的纬度定盛行风）：可蚀性最多 × (1 + WINDWARD)
+const WINDWARD = 0.35;
 
 export interface ElevationResult {
   elevation: Float32Array;
@@ -79,9 +102,14 @@ function noiseFactors(mesh: Mesh, seed: number): NoiseFactors {
 interface ElevationMemoEntry {
   seed: number;
   kmPerUnit: number;
+  // 新建时的纬度（迎风的一侧按它定）
+  wind: string;
   land: Uint8Array;
   uplift: Uint32Array;
   erod: Uint32Array;
+  // 基准面、洼地（第三十二轮，按位）
+  T: Uint32Array;
+  pit: Uint32Array;
   h: Float64Array;
   coastKm: Float64Array;
 }
@@ -94,12 +122,33 @@ export const elevationLaps = { scan: 0, solve: 0, finish: 0 };
 
 const bitsOf = (a: Float32Array) => new Uint32Array(a.buffer, a.byteOffset, a.length);
 
-// 陆块 cells（land 的一个连通块）在 e 里是同一块、抬升与岩性逐位相同
-function sameComponent(mesh: Mesh, land: Uint8Array, uplift: Uint32Array, erod: Uint32Array, cells: Int32Array, e: ElevationMemoEntry): boolean {
+// 求解的输入（按位）：海陆、抬升、岩性、基准面、洼地
+interface SolveInputs {
+  land: Uint8Array;
+  uplift: Uint32Array;
+  erod: Uint32Array;
+  T: Uint32Array;
+  pit: Uint32Array;
+}
+
+// 迎风的键：地区按新建时的纬度范围，整个星球固定
+const windKey = (world: World) => (world.settings.globe ? 'globe' : `${world.settings.latNorth},${world.settings.latSouth}`);
+
+// 基准面、洼地（米）：没有生成器时全是 0
+function reliefInputs(world: World): { T: Float32Array; pit: Float32Array } {
+  const rel = reliefFields(world);
+  if (rel) return rel;
+  const zero = new Float32Array(world.mesh.n);
+  return { T: zero, pit: zero };
+}
+
+// 陆块 cells（land 的一个连通块）在 e 里是同一块、抬升、岩性、基准面、洼地逐位相同
+function sameComponent(mesh: Mesh, x: SolveInputs, cells: Int32Array, e: ElevationMemoEntry): boolean {
   const { off, adj } = mesh;
+  const { land, uplift, erod, T, pit } = x;
   for (let k = 0; k < cells.length; k++) {
     const c = cells[k];
-    if (e.land[c] !== 1 || e.uplift[c] !== uplift[c] || e.erod[c] !== erod[c]) return false;
+    if (e.land[c] !== 1 || e.uplift[c] !== uplift[c] || e.erod[c] !== erod[c] || e.T[c] !== T[c] || e.pit[c] !== pit[c]) return false;
     for (let q = off[c]; q < off[c + 1]; q++) {
       const j = adj[q];
       if (!land[j] && e.land[j]) return false;
@@ -115,16 +164,17 @@ export function computeElevation(world: World): ElevationResult {
   const seed = world.settings.seed;
   const t0 = performance.now();
   const { fu, fk, fs } = noiseFactors(mesh, seed);
-  const upBits = bitsOf(causes.uplift);
-  const erBits = bitsOf(causes.erod);
+  const rel = reliefInputs(world);
+  const x: SolveInputs = { land, uplift: bitsOf(causes.uplift), erod: bitsOf(causes.erod), T: bitsOf(rel.T), pit: bitsOf(rel.pit) };
+  const wind = windKey(world);
 
   // 要算的陆格（todo = 1）；能复用的陆块直接写进 h、coastKm
   const h = new Float64Array(n);
   const coastKm = new Float64Array(n).fill(1e5);
   const todo = new Uint8Array(n);
-  const entries = elevationMemo.on ? (elevMemo.get(mesh) ?? []).filter((e) => e.seed === seed && e.kmPerUnit === kmPerUnit) : [];
+  const entries = elevationMemo.on ? (elevMemo.get(mesh) ?? []).filter((e) => e.seed === seed && e.kmPerUnit === kmPerUnit && e.wind === wind) : [];
   let todoCount = 0;
-  if (entries.length && elevationMemo.fast) todoCount = fromMemo(world, upBits, erBits, entries, h, coastKm, todo);
+  if (entries.length && elevationMemo.fast) todoCount = fromMemo(world, x, entries, h, coastKm, todo);
   else {
     const seen = new Uint8Array(n);
     const queue = new Int32Array(n);
@@ -144,7 +194,7 @@ export function computeElevation(world: World): ElevationResult {
         }
       }
       const cells = queue.subarray(0, len);
-      const hit = entries.find((e) => sameComponent(mesh, land, upBits, erBits, cells, e));
+      const hit = entries.find((e) => sameComponent(mesh, x, cells, e));
       if (hit) {
         elevationMemo.reused++;
         for (let k = 0; k < len; k++) {
@@ -161,9 +211,9 @@ export function computeElevation(world: World): ElevationResult {
   }
   const t1 = performance.now();
   // 缓存关掉时照旧总是走一遍（没有陆地也路由 12 轮），与原来的每一步相同
-  if (todoCount > 0 || !elevationMemo.on) solveLand(world, todo, fu, fk, fs, h, coastKm);
+  if (todoCount > 0 || !elevationMemo.on) solveLand(world, todo, fu, fk, fs, rel.T, rel.pit, h, coastKm);
   if (elevationMemo.on) {
-    const entry: ElevationMemoEntry = { seed, kmPerUnit, land: land.slice(), uplift: upBits.slice(), erod: erBits.slice(), h: h.slice(), coastKm: coastKm.slice() };
+    const entry: ElevationMemoEntry = { seed, kmPerUnit, wind, land: land.slice(), uplift: x.uplift.slice(), erod: x.erod.slice(), T: x.T.slice(), pit: x.pit.slice(), h: h.slice(), coastKm: coastKm.slice() };
     elevMemo.set(mesh, [entry, ...(elevMemo.get(mesh) ?? [])].slice(0, 2));
   }
   const t2 = performance.now();
@@ -187,8 +237,14 @@ export function* warmElevationSteps(world: World, cells = 0): Generator<void> {
   const land = causes.land.slice();
   const upBits = bitsOf(causes.uplift).slice();
   const erBits = bitsOf(causes.erod).slice();
+  const rel = reliefInputs(world);
+  const T = rel.T.slice();
+  const pit = rel.pit.slice();
+  const tBits = bitsOf(T);
+  const pBits = bitsOf(pit);
+  const wind = windKey(world);
   const list = elevMemo.get(mesh) ?? [];
-  if (list.some((e) => e.seed === seed && e.kmPerUnit === kmPerUnit && sameValues(e.land, land) && sameValues(e.uplift, upBits) && sameValues(e.erod, erBits))) return;
+  if (list.some((e) => e.seed === seed && e.kmPerUnit === kmPerUnit && e.wind === wind && sameValues(e.land, land) && sameValues(e.uplift, upBits) && sameValues(e.erod, erBits) && sameValues(e.T, tBits) && sameValues(e.pit, pBits))) return;
   const frozen: World = { ...world, causes: { ...causes, land, uplift: new Float32Array(upBits.buffer), erod: new Float32Array(erBits.buffer) } };
   const { fu, fk, fs } = noiseFactors(mesh, seed);
   yield;
@@ -219,14 +275,14 @@ export function* warmElevationSteps(world: World, cells = 0): Generator<void> {
     for (let k = 0; k < len; k++) todo[queue[k]] = 1;
     count += len;
     if (count >= chunk) {
-      solveLand(frozen, todo, fu, fk, fs, h, coastKm);
+      solveLand(frozen, todo, fu, fk, fs, T, pit, h, coastKm);
       todo = new Uint8Array(n);
       count = 0;
       yield;
     }
   }
-  if (count > 0) solveLand(frozen, todo, fu, fk, fs, h, coastKm);
-  const entry: ElevationMemoEntry = { seed, kmPerUnit, land, uplift: upBits, erod: erBits, h, coastKm };
+  if (count > 0) solveLand(frozen, todo, fu, fk, fs, T, pit, h, coastKm);
+  const entry: ElevationMemoEntry = { seed, kmPerUnit, wind, land, uplift: upBits, erod: erBits, T: tBits, pit: pBits, h, coastKm };
   elevMemo.set(mesh, [entry, ...(elevMemo.get(mesh) ?? [])].slice(0, 2));
   yield;
   // 海底（收尾里最慢的一段）也有按内容的记忆：按现在的世界算一遍，写进一个用完就丢的数组
@@ -246,10 +302,10 @@ function sameValues(a: Uint8Array | Uint32Array, b: Uint8Array | Uint32Array): b
 // 所以没碰到的陆块就是逐块比时会用 entries[0] 的那些（值相同），只有碰到的陆块再与别的几份逐块比、比不上的重算。
 // 现在是海、那一份里是陆地的格退回海的初值（h 0、离海 1e5）。不用把整个地图的陆块都找一遍、逐格比一遍。
 // 返回要重算的陆格数（todo 里标好）
-function fromMemo(world: World, upBits: Uint32Array, erBits: Uint32Array, entries: ElevationMemoEntry[], h: Float64Array, coastKm: Float64Array, todo: Uint8Array): number {
-  const { mesh, causes } = world;
+function fromMemo(world: World, x: SolveInputs, entries: ElevationMemoEntry[], h: Float64Array, coastKm: Float64Array, todo: Uint8Array): number {
+  const { mesh } = world;
   const n = mesh.n;
-  const land = causes.land;
+  const { land, uplift: upBits, erod: erBits, T, pit } = x;
   const { off, adj } = mesh;
   const e0 = entries[0];
   h.set(e0.h);
@@ -259,9 +315,11 @@ function fromMemo(world: World, upBits: Uint32Array, erBits: Uint32Array, entrie
   const l0 = e0.land;
   const u0 = e0.uplift;
   const r0 = e0.erod;
+  const T0 = e0.T;
+  const p0 = e0.pit;
   for (let i = 0; i < n; i++) {
     if (land[i]) {
-      if (l0[i] !== 1 || u0[i] !== upBits[i] || r0[i] !== erBits[i]) seeds.push(i);
+      if (l0[i] !== 1 || u0[i] !== upBits[i] || r0[i] !== erBits[i] || T0[i] !== T[i] || p0[i] !== pit[i]) seeds.push(i);
     } else if (l0[i]) {
       h[i] = 0;
       coastKm[i] = 1e5;
@@ -289,7 +347,7 @@ function fromMemo(world: World, upBits: Uint32Array, erBits: Uint32Array, entrie
       }
     }
     const cells = queue.subarray(0, len);
-    const hit = rest.find((e) => sameComponent(mesh, land, upBits, erBits, cells, e));
+    const hit = rest.find((e) => sameComponent(mesh, x, cells, e));
     if (hit) {
       elevationMemo.reused++;
       for (let k = 0; k < len; k++) {
@@ -306,8 +364,36 @@ function fromMemo(world: World, upBits: Uint32Array, erBits: Uint32Array, entrie
   return todoCount;
 }
 
-// 只算 todo 里的陆块（若干个完整的陆块）：写进 h（扩散后的）与 coastKm，别的格不动
-function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64Array, fs: Float64Array, h: Float64Array, coastKm: Float64Array) {
+// 迎风（第三十二轮）：按新建时的纬度定的盛行风往东（+1）还是往西（−1）吹：信风带、极地往西，西风带往东
+function windEast(latDeg: number): number {
+  const a = Math.abs(latDeg);
+  return 2 * smoothstep(25, 35, a) * (1 - smoothstep(55, 65, a)) - 1;
+}
+
+// 可蚀性的迎风倍数（1 到 1 + WINDWARD）：抬升沿盛行风的方向变高（山的迎风坡）的格更易蚀，分水岭被推向背风一侧。
+// 只看陆上的邻格（一块陆地的结果只取决于它自己）；只要东西方向的分量（与 gradientAt 同一个最小二乘，南北取 0 的近似）。
+// 纬度是新建时的（地区按 settings 的南北边，不看之后挪的纬度；整个星球按格的位置）
+export function windwardFactor(world: World, geo: ReturnType<typeof gradGeo>, i: number): number {
+  const { mesh, causes } = world;
+  const land = causes.land;
+  const up = causes.uplift;
+  let bx = 0;
+  for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+    const j = mesh.adj[e];
+    if (land[j]) bx += geo.wdx[e] * (up[j] - up[i]);
+  }
+  if (bx === 0 || Math.abs(geo.det[i]) < 1e-30) return 1;
+  const gx = (geo.syy[i] * bx) / geo.det[i];
+  const lat = mesh.kind === 'sphere' ? (Math.asin(Math.max(-1, Math.min(1, mesh.p[3 * i + 2]))) * 180) / Math.PI : latitudeOf(world.settings, mesh.y[i]);
+  return 1 + WINDWARD * Math.max(0, Math.min(1, (gx * windEast(lat)) / 8));
+}
+
+// 求解的几个常数（routing-identity 测试里照旧写法的那一份要用）
+export const SOLVE = { BASE_UPLIFT, UPLIFT_SCALE, INIT_SLOPE, INIT_T, KNICK_KM, COAST_FADE_KM, EDGE_BASE, M_TO_RAW };
+
+// 只算 todo 里的陆块（若干个完整的陆块）：写进 h（扩散后的）与 coastKm，别的格不动。
+// T、pit：基准面、洼地（米，第三十二轮）
+function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64Array, fs: Float64Array, Tm: Float32Array, pitM: Float32Array, h: Float64Array, coastKm: Float64Array) {
   const { mesh, causes, kmPerUnit } = world;
   const n = mesh.n;
   const land = causes.land;
@@ -333,19 +419,26 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   // 汇水面积加一个按地图面积取的常数：源头格的面积随格数变化，不加的话格越密山越高
   // 整个星球按布局尺度（半圈经线的一半）算，和同样格距的地区地图相当
   const areaReg = sphere ? (mesh.totalArea * (kmPerUnit / 2) * (kmPerUnit / 2)) / 20000 : (mesh.width * mesh.height * kmPerUnit * kmPerUnit) / 20000;
+  // 基准面（原始单位）与离海的减弱
+  const T = new Float64Array(n);
+  const fade = new Float64Array(n);
+  const geo = gradGeo(mesh);
+  const up = causes.uplift;
   for (let i = 0; i < n; i++) {
     if (!todo[i]) continue;
     // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
-    u[i] = (0.035 + causes.uplift[i]) * fu[i];
-    K[i] = causes.erod[i] * fk[i];
+    u[i] = (BASE_UPLIFT + UPLIFT_SCALE * up[i]) * fu[i];
+    K[i] = causes.erod[i] * fk[i] * windwardFactor(world, geo, i);
     areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
+    T[i] = Tm[i] * M_TO_RAW;
+    fade[i] = smoothstep(0, COAST_FADE_KM, coastKm[i]);
   }
   // 画的河不改地形的求解：求解之后再挖河床（carveBeds），周围的山不动
 
-  // 初始高程：按离海距离给一个缓坡加噪声（固定初值，结果只取决于原因）
+  // 初始高程：按离海距离给一个缓坡加噪声，再加上大半个基准面（固定的 12 轮一开始就按大陆倾斜汇流；固定初值，结果只取决于原因）
   for (let i = 0; i < n; i++) {
     if (!todo[i]) continue;
-    h[i] = coastKm[i] * 0.002 * (0.3 + u[i]) + 0.05 * (1 + fs[i]);
+    h[i] = coastKm[i] * INIT_SLOPE * (0.3 + u[i]) + 0.05 * (1 + fs[i]) + INIT_T * T[i] * fade[i];
   }
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
@@ -356,13 +449,20 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   // A^m 很费时：汇水面积与上一轮完全相同的格（源头格每轮都是）沿用上一轮的值
   const lastA = new Float64Array(n).fill(-1);
   const powA = new Float64Array(n);
+  // 软底补的比例 1 − exp(−L / (KNICK_KM·√(A/1e4)))：汇水面积、到下游的距离与上一轮相同时沿用（与 A^m 一样）
+  const lam = new Float64Array(n);
+  const lamA = new Float64Array(n).fill(-1);
+  const lamL = new Float64Array(n).fill(-1);
+  const edge = mesh.boundary;
+  let r = router.route(h);
   for (let it = 0; it < ITERATIONS; it++) {
-    const r = router.route(h);
+    if (it > 0) r = router.route(h);
     accumulate(r, areaKm, A);
     for (let k = 0; k < r.count; k++) {
       const i = r.order[k];
       const j = r.receiver[i];
-      const baseH = j >= 0 && land[j] ? h[j] : 0;
+      // 下游是陆格：它的高；挨海：0；地图边上（地区，没有下游）：0.8·T
+      const baseH = j >= 0 ? (land[j] ? h[j] : 0) : edge[i] ? EDGE_BASE * Math.max(0, T[i]) * fade[i] : 0;
       // 到下游的距离；没有下游或下游不是邻格时取格距
       const e = r.edge[i];
       const L = e >= 0 ? mesh.dist[e] * kmPerUnit : kmPerUnit * mesh.spacing;
@@ -370,7 +470,18 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
         lastA[i] = A[i];
         powA[i] = Math.pow(A[i] + areaReg, M);
       }
-      h[i] = baseH + (u[i] * L) / (K[i] * powA[i]);
+      let hi = baseH + (u[i] * L) / (K[i] * powA[i]);
+      // 基准面作软底：往上补到 T 的一部分（小溪几乎补满，留在高原面上；大河补得少，切出峡谷）
+      const gap = T[i] - hi;
+      if (gap > 0 && fade[i] > 0) {
+        if (A[i] !== lamA[i] || L !== lamL[i]) {
+          lamA[i] = A[i];
+          lamL[i] = L;
+          lam[i] = fade[i] * (1 - Math.exp(-L / (KNICK_KM * Math.sqrt(A[i] / 1e4))));
+        }
+        hi += gap * lam[i];
+      }
+      h[i] = hi;
     }
   }
 
@@ -390,6 +501,79 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
       tmp[i] = h[i] + 0.2 * (s / w - h[i]);
     }
     h.set(tmp);
+  }
+
+  carvePits(world, todo, r, u, areaKm, pitM, fade, h);
+}
+
+// 洼地场超过这么多（米）的格连成一片洼地
+const PIT_MIN_M = 30;
+const PIT_MIN_CELLS = 3;
+
+// 挖洼地（第三十二轮）：一片洼地（洼地场超过 PIT_MIN_M 的格连成的块）按四周最低的岸取平底，
+// 再按流进这片洼地的沙（抬升 × 面积，沿最后一轮的流向累加：外面流进来的加上洼地里自己的）与它的容积（深 × 面积）的比 f
+// 往下挖 pit·(1 − f)：山上来的沙填满的成了平原（平到岸的高度），孤立的留成平底的洼地；
+// 水文按气候定它是湖、内流湖还是干盐湖。
+// 挨着海的洼地不取平底（岸是海），只往下挖。只动 todo 里的格，结果只取决于这块陆地
+export function carvePits(world: World, todo: Uint8Array, r: Routing, u: Float64Array, areaKm: Float64Array, pitM: Float32Array, fade: Float64Array, h: Float64Array) {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  const { off, adj } = mesh;
+  // 只看路由排到的格（就是 todo 里的格）：一片洼地的结果与别的洼地、先后都无关
+  const { order, count } = r;
+  let any = false;
+  for (let k = 0; k < count && !any; k++) if (pitM[order[k]] > PIT_MIN_M) any = true;
+  if (!any) return;
+  const sed = new Float64Array(n);
+  for (let k = 0; k < count; k++) {
+    const i = order[k];
+    sed[i] = u[i] * areaKm[i];
+  }
+  const S = new Float64Array(n);
+  accumulate(r, sed, S);
+  const inPit = (i: number) => todo[i] === 1 && pitM[i] > PIT_MIN_M;
+  const seen = new Uint8Array(n);
+  const queue: number[] = [];
+  for (let k = 0; k < count; k++) {
+    const s0 = order[k];
+    if (seen[s0] || !inPit(s0)) continue;
+    queue.length = 0;
+    queue.push(s0);
+    seen[s0] = 1;
+    let rim = Infinity;
+    let coastal = false;
+    for (let q = 0; q < queue.length; q++) {
+      const c = queue[q];
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (inPit(j)) {
+          if (!seen[j]) {
+            seen[j] = 1;
+            queue.push(j);
+          }
+        } else if (!land[j]) coastal = true;
+        else rim = Math.min(rim, h[j]);
+      }
+    }
+    // 只擦到一两格的不挖（不留一格一格的小坑）
+    if (queue.length < PIT_MIN_CELLS) continue;
+    // 流进来的沙与容积
+    let supply = 0;
+    let volume = 0;
+    for (const c of queue) {
+      supply += sed[c];
+      volume += pitM[c] * areaKm[c];
+      for (let e = off[c]; e < off[c + 1]; e++) {
+        const j = adj[e];
+        if (todo[j] && !inPit(j) && r.receiver[j] === c) supply += S[j];
+      }
+    }
+    const f = Math.min(1, (supply * SED_FILL) / volume);
+    for (const c of queue) {
+      const depth = pitM[c] * M_TO_RAW * (1 - f) * fade[c];
+      h[c] = coastal || !Number.isFinite(rim) ? h[c] - depth : Math.min(h[c], rim - depth);
+    }
   }
 }
 

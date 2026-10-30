@@ -67,7 +67,7 @@ describe('星球形态与河流类型、对周围的影响在同一个星球上'
   it('从检查点恢复后改河流类型：问题、推导与从头重放的逐值相同；撤销回到原样', () => {
     const eng = planet();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(6);
+    expect(doc.version).toBe(7);
     const mesh = meshFor(settings);
     const replay = Engine.fromDoc(doc, mesh);
     expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));
