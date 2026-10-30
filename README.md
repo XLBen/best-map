@@ -46,7 +46,7 @@
 ```bash
 npm install
 npm run dev        # 开发服务器，默认 http://localhost:5173（.claude/launch.json 里用 5191）
-npm test           # 全部测试（155 个文件、1592 个；含 40 秒左右的“和地球比”慢测试）
+npm test           # 全部测试（156 个文件、1612 个；含两分钟左右的“和地球比”慢测试）
 npm run test:fast  # 改代码时常跑的那部分（跳过最慢的几个文件）
 npm run golden     # 只跑金标准：提速、重构后结果必须逐值不变
 npm run build      # 查类型后打包
