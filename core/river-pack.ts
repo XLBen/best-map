@@ -280,21 +280,38 @@ function copyPacked(p: PackedRivers): PackedRivers {
 // 描河读的东西的内容摘要：几样推导数组、陆海与陆地程度（按字节），门槛、河道的内容、海岸破碎度与种子、河流类型的粗细
 function riversKey(world: World, types: string): string {
   const { derived: d, causes, small, mesh } = world;
-  let a = 0x811c9dc5;
-  let b = 0x9e3779b9;
-  const mix = (v: number) => {
+  // 两路散列放在反复用的数组里，逐个数组按 32 位字、剩下的按字节混进去（模块里的函数，第三十三轮提速：以前每个数都调一次闭包）
+  keyState[0] = 0x811c9dc5;
+  keyState[1] = 0x9e3779b9;
+  for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness, causes.fragment]) mixArray(keyState, x);
+  return [world.settings.seed, mesh.n, mesh.spacing, small.planet.riverThreshold, guidesSignature(small.guides), small.terrain.coastRoughness, coastSeed(world), types, keyState[0] >>> 0, keyState[1] >>> 0].join('|');
+}
+const keyState = new Int32Array(2);
+
+function mixArray(st: Int32Array, x: ArrayBufferView | undefined): void {
+  if (!x) {
+    mixOne(st, -1);
+    return;
+  }
+  mixOne(st, x.byteLength);
+  const n4 = x.byteLength >> 2;
+  mixWords(st, new Int32Array(x.buffer, x.byteOffset, n4));
+  mixWords(st, new Uint8Array(x.buffer, x.byteOffset + n4 * 4, x.byteLength - n4 * 4));
+}
+
+function mixWords(st: Int32Array, w: Int32Array | Uint8Array): void {
+  let a = st[0];
+  let b = st[1];
+  for (let i = 0; i < w.length; i++) {
+    const v = w[i];
     a = Math.imul(a ^ v, 0x01000193);
     b = Math.imul(b ^ v, 0x5bd1e995) ^ (b >>> 15);
-  };
-  const arr = (x: ArrayBufferView | undefined) => {
-    if (!x) return mix(-1);
-    mix(x.byteLength);
-    const n4 = x.byteLength >> 2;
-    const w = new Int32Array(x.buffer, x.byteOffset, n4);
-    for (let i = 0; i < n4; i++) mix(w[i]);
-    const u = new Uint8Array(x.buffer, x.byteOffset + n4 * 4, x.byteLength - n4 * 4);
-    for (let i = 0; i < u.length; i++) mix(u[i]);
-  };
-  for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness, causes.fragment]) arr(x);
-  return [world.settings.seed, mesh.n, mesh.spacing, small.planet.riverThreshold, guidesSignature(small.guides), small.terrain.coastRoughness, coastSeed(world), types, a >>> 0, b >>> 0].join('|');
+  }
+  st[0] = a;
+  st[1] = b;
+}
+
+function mixOne(st: Int32Array, v: number): void {
+  st[0] = Math.imul(st[0] ^ v, 0x01000193);
+  st[1] = Math.imul(st[1] ^ v, 0x5bd1e995) ^ (st[1] >>> 15);
 }

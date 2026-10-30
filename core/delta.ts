@@ -56,37 +56,72 @@ export function deltaBulge(world: World, s: Float32Array): void {
   if (!mouths.length) return;
   const { mesh, causes } = world;
   const land = causes.land;
-  const { off, adj, dist } = mesh;
   const sp = mesh.spacing;
   const R = DELTA_DRAW.BULGE_R * sp;
-  const raise = new Map<number, number>();
+  // 每格抬到多少、按河口走到的距离：放在按格的数组里（第三十三轮提速：以前是 Map；按格的戳记分清这一次有没有走到，
+  // 走的先后、取的值与以前一样）
+  const n = mesh.n;
+  if (bulgeBuf.dist.length < n) bulgeBuf = { dist: new Float64Array(n), seen: new Int32Array(n), raise: new Float64Array(n), raised: new Int32Array(n), stamp: 0 };
+  const B = bulgeBuf;
+  if (B.stamp > 0x3fffffff) {
+    B.seen.fill(0);
+    B.raised.fill(0);
+    B.stamp = 0;
+  }
+  const raiseStamp = ++B.stamp;
+  const touched: number[] = [];
   for (const m of mouths) {
     // 河口附近的海格：从河口那格沿海格走（按边长），R 以内
-    const seen = new Map<number, number>([[m, 0]]);
-    const queue = [m];
-    for (let q = 0; q < queue.length; q++) {
-      const c = queue[q];
-      const dc = seen.get(c)!;
-      for (let e = off[c]; e < off[c + 1]; e++) {
-        const j = adj[e];
-        if (land[j]) continue;
-        const dj = dc + dist[e];
-        if (dj > R) continue;
-        const old = seen.get(j);
-        if (old !== undefined && old <= dj) continue;
-        seen.set(j, dj);
-        queue.push(j);
-      }
-    }
-    for (const [j, dj] of seen) {
+    const st = ++B.stamp;
+    const order = bulgeWalk(mesh, land, m, R, B.dist, B.seen, st);
+    for (const j of order) {
       if (j === m) continue;
+      const dj = B.dist[j];
       const w = 1 - smooth((dj / sp - DELTA_DRAW.BULGE_FULL) / (DELTA_DRAW.BULGE_R - DELTA_DRAW.BULGE_FULL));
       if (w <= 0) continue;
       const v = bulgeValue(mesh, land, s, j, Math.min(DELTA_DRAW.BULGE_SHIFT, deltaCells(world, m)) * w);
-      if (v > (raise.get(j) ?? -Infinity)) raise.set(j, v);
+      const cur = B.raised[j] === raiseStamp ? B.raise[j] : -Infinity;
+      if (!(v > cur)) continue;
+      if (B.raised[j] !== raiseStamp) {
+        B.raised[j] = raiseStamp;
+        touched.push(j);
+      }
+      B.raise[j] = v;
     }
   }
-  for (const [j, v] of raise) if (v > s[j]) s[j] = v;
+  for (const j of touched) if (B.raise[j] > s[j]) s[j] = B.raise[j];
+}
+
+let bulgeBuf = { dist: new Float64Array(0), seen: new Int32Array(0), raise: new Float64Array(0), raised: new Int32Array(0), stamp: 0 };
+
+// 从河口 m 沿海格走（按边长），R 以内：与以前的 Map 写法同样的队列与松弛（走到更近的再进队），
+// 返回走到的格（每格一次，按第一次走到的先后）；距离在 dist 里（seen 为 st 的格）
+function bulgeWalk(mesh: World['mesh'], land: Uint8Array, m: number, R: number, dist: Float64Array, seen: Int32Array, st: number): number[] {
+  const { off, adj } = mesh;
+  const ed = mesh.dist;
+  dist[m] = 0;
+  seen[m] = st;
+  const order = [m];
+  const queue = [m];
+  for (let q = 0; q < queue.length; q++) {
+    const c = queue[q];
+    const dc = dist[c];
+    for (let e = off[c]; e < off[c + 1]; e++) {
+      const j = adj[e];
+      if (land[j]) continue;
+      const dj = dc + ed[e];
+      if (dj > R) continue;
+      if (seen[j] === st) {
+        if (dist[j] <= dj) continue;
+      } else {
+        seen[j] = st;
+        order.push(j);
+      }
+      dist[j] = dj;
+      queue.push(j);
+    }
+  }
+  return order;
 }
 
 const smooth = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));

@@ -1,3 +1,4 @@
+import { coastReads } from './coast-memo';
 import { wrapX } from './geo';
 import { findCell } from './mesh';
 import { viewOf } from './sphere';
@@ -60,6 +61,8 @@ export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: numb
   const loc = locate(mesh, px, y, hint);
   const [a, b, c] = loc.i;
   const [wa, wb, wc] = loc.w;
+  // 描河时记下读到的格（core/coast-memo.ts）
+  if (coastReads.on) coastReads.cells.push(a, b, c);
   const sv = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
   const h = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
   const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
@@ -127,6 +130,8 @@ export function shoreCrossing(
         h = r.nearest;
         return r.v;
       };
+  // 沿边走时读的是这两格（描河时记下，core/coast-memo.ts）；不沿边时 displayCoastAt 自己记
+  if (onEdge && coastReads.on) coastReads.cells.push(edge![0], edge![1]);
   if (at(0) <= 0) return null;
   const samples = steps?.samples ?? CROSS_SAMPLES;
   const bisect = steps?.bisect ?? CROSS_BISECT;

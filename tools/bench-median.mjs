@@ -25,8 +25,9 @@ const flag = (name) => {
 const runs = Number(own.find((a, k) => /^\d+$/.test(a) && !own[k - 1]?.startsWith('--'))) || 3;
 const showAll = own.includes('--all');
 
-// 加工：门槛是不比旧的慢 5% 以上（开发说明“速度”、计划的第六条）
-const EDITS = ['relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief'];
+// 加工：门槛是不比旧的慢 5% 以上（开发说明“速度”、计划的第六条）。
+// rivers、coast：加工各步之后 Worker 描河并打包、主线程算海岸场的时间加起来（第三十三轮提速）
+const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief'];
 
 function runOnce(dir) {
   const out = execFileSync(process.execPath, [join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(dir, 'tools', 'bench.ts'), ...benchArgs, '--json'], {

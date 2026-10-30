@@ -333,11 +333,33 @@ const COAST_SQUASH = 250;
 
 export function coastValues(world: World): Float32Array {
   const { mesh, causes } = world;
-  const coast = coastNoiseField(mesh, coastSeed(world));
+  const seed = coastSeed(world);
+  const coast = coastNoiseField(mesh, seed);
   const amp = COAST_AMP * world.small.terrain.coastRoughness;
+  // 上一次的结果（第三十三轮提速）：网格、种子、幅度相同时只重算陆地程度或陆海变了的格（逐格同一个算式，结果逐位相同）。
+  // 每改一笔 Worker 描河、主线程画地形层都要算一遍，只改气候时一格都不用重算。比的是上一次的输入的副本（数组可能被就地改过）
+  const c = lastCoast;
+  if (c && c.mesh === mesh && c.seed === seed && c.amp === amp) {
+    coastValuesUpdate(c.landness, c.land, c.s, causes.landness, causes.land, coast, amp, mesh.n);
+    return c.s.slice();
+  }
   const s = new Float32Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) s[i] = coastValueAt(causes.landness[i], coast[i], amp, causes.land[i] !== 0);
+  lastCoast = { mesh, seed, amp, landness: Float32Array.from(causes.landness), land: Uint8Array.from(causes.land), s: s.slice() };
   return s;
+}
+let lastCoast: { mesh: Mesh; seed: number; amp: number; landness: Float32Array; land: Uint8Array; s: Float32Array } | null = null;
+
+// 陆地程度或陆海与记下的不同的格重算海岸值，记下的输入跟着更新（模块里的函数：逐格的循环很快被编译）
+function coastValuesUpdate(oldL: Float32Array, oldLand: Uint8Array, s: Float32Array, landness: ArrayLike<number>, land: ArrayLike<number>, coast: Float32Array, amp: number, n: number): void {
+  for (let i = 0; i < n; i++) {
+    const l = landness[i];
+    const a = land[i];
+    if (Object.is(l, oldL[i]) && a === oldLand[i]) continue;
+    s[i] = coastValueAt(l, coast[i], amp, a !== 0);
+    oldL[i] = l;
+    oldLand[i] = a;
+  }
 }
 
 // 画出来的每格海岸值（第三十三轮）：coastValues 再加上三角洲向海凸出的那一点（core/delta.ts 的 deltaBulge，按推导认三角洲）。

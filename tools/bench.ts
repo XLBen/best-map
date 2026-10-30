@@ -9,6 +9,8 @@
 //   npx tsx tools/bench.ts --globe --pack fantasy [--json] [--hash]：整个星球 + 奇幻示例包，按用户平时的操作逐步计时
 //     （新建、用资源包、画陆地、堆山、放岛、冷暖、自然融入的生态、湿度滑块、画河的预览与执行、撤销 6 次、重做、
 //     打开（整段重放）、从检查点恢复）
+//   每一步之后另计 Worker 接着做的：描河并打包（core/river-pack.ts 的 worldRivers，键“步骤.rivers”）与主线程地形层的海岸场
+//     （core/display.ts 的 displayCoast，键“步骤.coast”）；加工各步（抬山到重做）的这两样另加起来记成 rivers、coast 两步（第三十三轮提速）。
 //   --json 最后一行打出 { 步骤: 毫秒 }；键里带“.”的是这一步的某个阶段，带“#”的是计数（不是毫秒）。
 //   tools/bench-median.mjs 取几次的中位数、对照两个提交（见开发说明“速度”）
 //
@@ -16,6 +18,8 @@
 // 用 * as 取、没有时跳过
 import * as Elev from '../core/elevation';
 import * as Terr from '../core/terrain';
+import * as RiverPack from '../core/river-pack';
+import * as Display from '../core/display';
 import { Engine } from '../core/engine';
 import type { Command } from '../core/commands';
 import { packMesh, unpackMesh } from '../core/mesh-pack';
@@ -46,6 +50,11 @@ type Laps = { sample?: number; scan?: number; solve?: number; finish?: number };
 const elevLaps = (Elev as unknown as { elevationLaps?: Laps }).elevationLaps;
 const terrLaps = (Terr as unknown as { terrainLaps?: Laps }).terrainLaps;
 const memo = Elev.elevationMemo;
+// 描河并打包、海岸场（旧的提交上没有时跳过）
+const worldRivers = (RiverPack as unknown as { worldRivers?: (w: Engine['world']) => unknown }).worldRivers;
+const displayCoast = (Display as unknown as { displayCoast?: (w: Engine['world']) => unknown }).displayCoast;
+// 加工各步（抬山到重做）：它们的 .rivers、.coast 加起来记成 rivers、coast
+const EDIT_STEPS = new Set(['relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo']);
 
 
 // 一个新的网格对象（与原来的逐值相同）：按网格的缓存全是空的，像刷新页面后从浏览器里读出存着的网格
@@ -147,6 +156,26 @@ function measure(eng: Engine, key: string, label: string, run: () => void, stage
     d.forEach((v, j) => (results[`${key}.elev.${['scan', 'solve', 'finish'][j]}`] = Math.round(v)));
     if (d.some((v) => v > 0)) parts.push(`elev scan/solve/finish ${d.map((v) => Math.round(v)).join('/')}`);
   }
+  // Worker 在每一步之后描河并打包（src/worker.ts 的 snapshot → worldRivers：读的东西没变时用上一次的）；
+  // 主线程按新的高程数组重算地形层的海岸场（src/render/colors.ts → displayCoast：高程换一份副本，像收到的新数组）
+  if (worldRivers) {
+    const a = performance.now();
+    worldRivers(eng.world);
+    const v = performance.now() - a;
+    results[`${key}.rivers`] = Math.round(v);
+    parts.push(`rivers ${Math.round(v)}`);
+    if (EDIT_STEPS.has(key)) results.rivers = (results.rivers ?? 0) + v;
+  }
+  if (displayCoast) {
+    const w = eng.world;
+    const copy = { ...w, derived: { ...w.derived, elevation: w.derived.elevation.slice() } };
+    const a = performance.now();
+    displayCoast(copy);
+    const v = performance.now() - a;
+    results[`${key}.coast`] = Math.round(v);
+    parts.push(`coast ${Math.round(v)}`);
+    if (EDIT_STEPS.has(key)) results.coast = (results.coast ?? 0) + v;
+  }
   results[`${key}#landmasses`] = memo.computed - c0;
   results[`${key}#lakes`] = eng.world.derived.features.filter((f) => f.type === 'lake').length;
   results[`${key}#mouths`] = mouths(eng);
@@ -197,6 +226,14 @@ function plainBench() {
 
   for (let k = 1; k <= 6; k++) measure(eng, `undo${k}`, `undo ${k}`, () => eng.undo(), false);
   measure(eng, 'redo', 'redo', () => eng.redo(), false);
+  if (results.rivers !== undefined) {
+    results.rivers = Math.round(results.rivers);
+    if (!json) console.log('rivers (edits, summed)'.padEnd(28), String(results.rivers).padStart(5), 'ms');
+  }
+  if (results.coast !== undefined) {
+    results.coast = Math.round(results.coast);
+    if (!json) console.log('coast (edits, summed)'.padEnd(28), String(results.coast).padStart(5), 'ms');
+  }
   while (eng.canRedo) eng.redo();
   t = performance.now();
 

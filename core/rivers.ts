@@ -1,3 +1,4 @@
+import { MISS, coastReads, keyAdd, keyAddPts, keyStart, memoActive, memoBegin, memoEnd, memoGet, memoMissStart, memoPeek, memoPut } from './coast-memo';
 import { DELTA_DRAW, deltaMouths } from './delta';
 import { type DisplayCoast, displayCoast, displayCoastAt, shoreCrossing } from './display';
 import { wrapDelta, wrapX } from './geo';
@@ -50,6 +51,16 @@ interface Lead {
 const WALK_SHORE = { samples: 12, bisect: 9 };
 
 export function traceRivers(world: World): RiverLine[] {
+  // 按画面海岸场的几样查询跨几次描河记下来（core/coast-memo.ts；结果逐位不变）
+  memoBegin(world.mesh, world.small.terrain.coastRoughness);
+  try {
+    return traceRiversRaw(world);
+  } finally {
+    memoEnd();
+  }
+}
+
+function traceRiversRaw(world: World): RiverLine[] {
   const { mesh, derived: d, causes, small } = world;
   const n = mesh.n;
   const thr = small.planet.riverThreshold;
@@ -89,9 +100,9 @@ export function traceRivers(world: World): RiverLine[] {
   }
   // 画到岸线：从 a 往 b（水里）走到画面上的岸线，找不到时（a 在画面上已是水面）退回两点的中点
   // 一格长的线：等分 12 个点、二分 9 次（准到千分之一格的六分之一）
-  const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r], WALK_SHORE)?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   let field: DisplayCoast | null = null;
   const coastField = () => (field ??= displayCoast(world));
+  const shore = (a: [number, number], b: [number, number], c: number, r: number): [number, number] => walkShore(world, coastField(), a, b, c, r);
   // 沿河的点（平滑之前）。汇入自然的河的线等那条河画好了再定最后一点（画到它平滑后的线上）、再平滑
   interface Raw {
     pts: [number, number][];
@@ -625,17 +636,89 @@ type Pt = [number, number];
 // 画面上的这一点是不是陆地（只要正负）
 const landAt = (world: World, f: DisplayCoast, q: readonly [number, number], hint: number) => displayCoastAt(world, f, q[0], q[1], hint, true).v > 0;
 
+// ---- 跨几次描河记下来的查询（core/coast-memo.ts）：键是全部参数，结果复制一份。不在描河里（memoActive 为假）时照常算 ----
+const Q_WALK = 1;
+const Q_CIRCLE = 2;
+const Q_NORMAL = 3;
+const Q_LAND = 4;
+const Q_MOUTH = 5;
+const Q_ALONG = 6;
+const Q_CROSS = 7;
+const copyPt = (p: readonly [number, number] | null): Pt | null => (p ? [p[0], p[1]] : null);
+
+// walk 里入海、入湖的那一点：从 a 往 b（水里）走到画面上的岸线（a、b 是相邻两格 c、r 的格心），找不到时退回两点的中点
+function walkShore(world: World, f: DisplayCoast, a: [number, number], b: [number, number], c: number, r: number): [number, number] {
+  if (!memoActive()) return walkShoreRaw(world, a, b, c, r);
+  keyStart(Q_WALK);
+  keyAddPts([a, b], 0, 2);
+  keyAdd(c);
+  keyAdd(r);
+  const m = memoGet(f);
+  if (m !== MISS) return copyPt(m as Pt)!;
+  const p = walkShoreRaw(world, a, b, c, r);
+  memoPut(f, copyPt(p));
+  return p;
+}
+const walkShoreRaw = (world: World, a: [number, number], b: [number, number], c: number, r: number): [number, number] => shoreCrossing(world, a, b, c, [c, r], WALK_SHORE)?.p ?? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
+// pts 的前 n 个点都在画面上的陆地上
+function allLand(world: World, f: DisplayCoast, pts: readonly (readonly [number, number])[], n: number, hint: number): boolean {
+  if (!memoActive()) return allLandRaw(world, f, pts, n, hint);
+  keyStart(Q_LAND);
+  keyAdd(hint);
+  keyAddPts(pts, 0, n);
+  const m = memoGet(f);
+  if (m !== MISS) return m as boolean;
+  const v = allLandRaw(world, f, pts, n, hint);
+  memoPut(f, v);
+  return v;
+}
+function allLandRaw(world: World, f: DisplayCoast, pts: readonly (readonly [number, number])[], n: number, hint: number): boolean {
+  for (let j = 0; j < n; j++) if (!landAt(world, f, pts[j], hint)) return false;
+  return true;
+}
+
+// 从 a 往 b 走到画面上的岸线（shoreCrossing，不沿边）
+function shoreCross(world: World, f: DisplayCoast, a: readonly [number, number], b: readonly [number, number], hint: number, steps: { samples: number; bisect: number }): { p: Pt; t: number } | null {
+  if (!memoActive()) return shoreCrossing(world, a, b, hint, undefined, steps);
+  keyStart(Q_CROSS);
+  keyAddPts([a, b], 0, 2);
+  keyAdd(hint);
+  keyAdd(steps.samples);
+  keyAdd(steps.bisect);
+  const m = memoGet(f);
+  if (m !== MISS) {
+    const v = m as { p: Pt; t: number } | null;
+    return v && { p: [v.p[0], v.p[1]], t: v.t };
+  }
+  const v = shoreCrossing(world, a, b, hint, undefined, steps);
+  memoPut(f, v && { p: [v.p[0], v.p[1]], t: v.t });
+  return v;
+}
+
 // 海岸场三角形内插的那部分（不加格以下的海岸细节）：量岸线的法向用（量的是约一格见方的岸线走向，细节的小弯本来就不算）
 function coastSmooth(world: World, f: DisplayCoast, x: number, y: number, hint: number): { v: number; nearest: number } {
   const { mesh } = world;
   const loc = locate(mesh, mesh.kind === 'sphere' ? wrapX(x) : x, y, hint);
   const [a, b, c] = loc.i;
   const [wa, wb, wc] = loc.w;
+  if (coastReads.on) coastReads.cells.push(a, b, c);
   return { v: f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc, nearest: loc.nearest };
 }
 
 // 一点处岸线朝水面的法向（单位向量）：一圈点的海岸场（三角形内插的那部分）加权求和（离岸线约半格以内的一圈，近似梯度的反方向）
 export function seawardNormal(world: World, f: DisplayCoast, p: readonly [number, number], hint = 0): [number, number] | null {
+  if (!memoActive()) return seawardNormalRaw(world, f, p, hint);
+  keyStart(Q_NORMAL);
+  keyAddPts([p], 0, 1);
+  keyAdd(hint);
+  const m = memoGet(f);
+  if (m !== MISS) return copyPt(m as Pt | null);
+  const v = seawardNormalRaw(world, f, p, hint);
+  memoPut(f, copyPt(v));
+  return v;
+}
+function seawardNormalRaw(world: World, f: DisplayCoast, p: readonly [number, number], hint: number): [number, number] | null {
   const r = NORMAL_R * world.mesh.spacing;
   let gx = 0;
   let gy = 0;
@@ -657,6 +740,17 @@ export function seawardNormal(world: World, f: DisplayCoast, p: readonly [number
 
 // 从 q 附近沿方向 dir 走到画面上的岸线：从岸上（往回 0.6 格，不在陆地上时 0.25 格）走到水面。找不到时为 null
 function shoreAlong(world: World, f: DisplayCoast, q: readonly [number, number], dir: readonly [number, number], hint: number): Pt | null {
+  if (!memoActive()) return shoreAlongRaw(world, f, q, dir, hint);
+  keyStart(Q_ALONG);
+  keyAddPts([q, dir], 0, 2);
+  keyAdd(hint);
+  const m = memoGet(f);
+  if (m !== MISS) return copyPt(m as Pt | null);
+  const v = shoreAlongRaw(world, f, q, dir, hint);
+  memoPut(f, copyPt(v));
+  return v;
+}
+function shoreAlongRaw(world: World, f: DisplayCoast, q: readonly [number, number], dir: readonly [number, number], hint: number): Pt | null {
   const sp = world.mesh.spacing;
   let from: Pt = [q[0] - dir[0] * 0.6 * sp, q[1] - dir[1] * 0.6 * sp];
   if (!landAt(world, f, from, hint)) from = [q[0] - dir[0] * 0.25 * sp, q[1] - dir[1] * 0.25 * sp];
@@ -672,11 +766,27 @@ interface MouthShore {
 }
 const shoreMemo = new WeakMap<DisplayCoast, Map<string, MouthShore | null>>();
 function mouthShore(world: World, f: DisplayCoast, end: readonly [number, number], hint: number): MouthShore | null {
+  if (memoActive()) {
+    keyStart(Q_MOUTH);
+    keyAddPts([end], 0, 1);
+    keyAdd(hint);
+    const m = memoGet(f);
+    if (m !== MISS) return copyShore(m as MouthShore | null);
+    const v = mouthShoreRaw(world, f, end, hint);
+    memoPut(f, copyShore(v));
+    return v;
+  }
   let memo = shoreMemo.get(f);
   if (!memo) shoreMemo.set(f, (memo = new Map()));
   const key = `${end[0]},${end[1]},${hint}`;
   const hit = memo.get(key);
   if (hit !== undefined) return hit;
+  const res = mouthShoreRaw(world, f, end, hint);
+  memo.set(key, res);
+  return res;
+}
+const copyShore = (v: MouthShore | null): MouthShore | null => v && { n: [v.n[0], v.n[1]], p: [v.p[0], v.p[1]] };
+function mouthShoreRaw(world: World, f: DisplayCoast, end: readonly [number, number], hint: number): MouthShore | null {
   const sp = world.mesh.spacing;
   let res: MouthShore | null = null;
   const n0 = seawardNormal(world, f, end, hint);
@@ -695,7 +805,6 @@ function mouthShore(world: World, f: DisplayCoast, end: readonly [number, number
       e = p;
     }
   }
-  memo.set(key, res);
   return res;
 }
 
@@ -838,7 +947,7 @@ function mouthLeg(world: World, f: DisplayCoast, line: RiverLine, keep: number, 
   const pts = hermite(A, t, Q, d, sp / 8);
   const ns = Math.max(1, Math.ceil(straight / (sp / 8)));
   for (let j = 1; j <= ns; j++) pts.push(j === ns ? [end[0], end[1]] : [Q[0] + (end[0] - Q[0]) * (j / ns), Q[1] + (end[1] - Q[1]) * (j / ns)]);
-  for (let j = 0; j + 1 < pts.length; j++) if (!landAt(world, f, pts[j], hint)) return null;
+  if (!allLand(world, f, pts, pts.length - 1, hint)) return null;
   if (checkTurn && maxTurn([...before(P, k, sp), ...pts], TURN_CHORD * sp) > MOUTH_MAX_TURN) return null;
   return { k, pts };
 }
@@ -919,7 +1028,7 @@ function normalMouth(world: World, f: DisplayCoast, line: RiverLine, keep: numbe
     for (const deg of [0, 20, -20, 40, -40, 60, -60]) {
       const a = (deg * Math.PI) / 180;
       const dir: Pt = [ta[0] * Math.cos(a) - ta[1] * Math.sin(a), ta[0] * Math.sin(a) + ta[1] * Math.cos(a)];
-      const hit = shoreCrossing(world, A.p, [A.p[0] + dir[0] * 2 * sp, A.p[1] + dir[1] * 2 * sp], hint, undefined, SHORE_STEPS);
+      const hit = shoreCross(world, f, A.p, [A.p[0] + dir[0] * 2 * sp, A.p[1] + dir[1] * 2 * sp], hint, SHORE_STEPS);
       if (hit && hit.t < bd) {
         bd = hit.t;
         best = hit.p;
@@ -1171,14 +1280,15 @@ function forwardJoin(A: readonly [number, number], t: readonly [number, number],
 }
 
 // 线段 p1p2 与 q1q2 相交
+// （第三十三轮提速：叉积是模块里的函数，不在每次调用里新建闭包；分汊的检查每次描河要调几十万次）
 function segCross(p1: readonly [number, number], p2: readonly [number, number], q1: readonly [number, number], q2: readonly [number, number]): boolean {
-  const o = (a: readonly [number, number], b: readonly [number, number], c: readonly [number, number]) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-  const d1 = o(q1, q2, p1);
-  const d2 = o(q1, q2, p2);
-  const d3 = o(p1, p2, q1);
-  const d4 = o(p1, p2, q2);
+  const d1 = orient(q1, q2, p1);
+  const d2 = orient(q1, q2, p2);
+  const d3 = orient(p1, p2, q1);
+  const d4 = orient(p1, p2, q2);
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
+const orient = (a: readonly [number, number], b: readonly [number, number], c: readonly [number, number]) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 
 // 以 c 为圆心、半径 R 的圆与画面上的岸线相交的地方（在水面一侧），按方向离 prefer（单位向量）由近到远排，
 // 只要相差不到 135° 的（窄海湾里大河的河口在湾头时，那一侧只有往湾里去的两岸）
@@ -1188,6 +1298,19 @@ function shoreOnCircle(world: World, f: DisplayCoast, c: readonly [number, numbe
 
 // 圆与岸线的交点（在水面一侧，按取样的先后）：hi 是交点的角度
 function circleShores(world: World, f: DisplayCoast, c: readonly [number, number], R: number, hint: number): { hi: number; p: Pt }[] {
+  if (!memoActive()) return circleShoresRaw(world, f, c, R, hint);
+  keyStart(Q_CIRCLE);
+  keyAddPts([c], 0, 1);
+  keyAdd(R);
+  keyAdd(hint);
+  const m = memoGet(f);
+  if (m !== MISS) return copyCircle(m as { hi: number; p: Pt }[]);
+  const v = circleShoresRaw(world, f, c, R, hint);
+  memoPut(f, copyCircle(v));
+  return v;
+}
+const copyCircle = (v: readonly { hi: number; p: Pt }[]) => v.map((x) => ({ hi: x.hi, p: [x.p[0], x.p[1]] as Pt }));
+function circleShoresRaw(world: World, f: DisplayCoast, c: readonly [number, number], R: number, hint: number): { hi: number; p: Pt }[] {
   const N = 32;
   const land: boolean[] = [];
   for (let i = 0; i < N; i++) land.push(landAt(world, f, onCircle(c, R, (2 * Math.PI * i) / N), hint));
@@ -1297,7 +1420,7 @@ function shiftMouth(world: World, f: DisplayCoast, B: RiverLine, S: RiverLine, o
   for (const deg of [0, 20, -20, 40, -40, 60, -60]) {
     const a = (deg * Math.PI) / 180;
     const dir: Pt = [ta[0] * Math.cos(a) - ta[1] * Math.sin(a), ta[0] * Math.sin(a) + ta[1] * Math.cos(a)];
-    const hit = shoreCrossing(world, A.p, [A.p[0] + dir[0] * 2 * sp, A.p[1] + dir[1] * 2 * sp], hs, undefined, SHORE_STEPS);
+    const hit = shoreCross(world, f, A.p, [A.p[0] + dir[0] * 2 * sp, A.p[1] + dir[1] * 2 * sp], hs, SHORE_STEPS);
     if (hit && tryAt(dir, hit.p)) return true;
   }
   return false;
@@ -1470,12 +1593,86 @@ function boxOfPts(l: { points: readonly (readonly [number, number])[] }): Box {
 const boxesMeet = (a: Box, b: Box) => a[0] <= b[1] && b[0] <= a[1] && a[2] <= b[3] && b[2] <= a[3];
 
 // 一条河的几股：成了的（至少一股）才改主流（分汊处记进 joins，之后变细）
+// 分汊的几何（在哪一处分、成了哪几股）跨几次描河记下来（第三十三轮提速）：它只取决于主流的点、河口那格、想分几股、
+// 画面上的海岸场（记下读到的格，见 core/coast-memo.ts）与几样“问别处”的答案——已有的河口在不在附近、附近别的河的线与这一股相不相交、
+// 这一次已经分出去的几股与它相不相交。问过的都记在 log 里，下一次描河时照样再问一遍（按那时的 ends、lines、made），
+// 答得都一样才用记下的（算的过程一样，结果就逐位相同）。流量、粗细、joins 每次照常改
+const Q_BRANCH = 8;
+interface BranchAsk {
+  // 0：ends.near(p[0])；1：附近别的河的线与 p 相交；2：这一次已经分出去的几股与 p 相交
+  kind: number;
+  p: Pt[];
+  r: boolean;
+}
+interface BranchPlan {
+  // 在 BRANCH_BACK 的第几个分汊处分（−1 不分）
+  back: number;
+  got: { pts: Pt[]; end: Pt }[];
+  log: BranchAsk[];
+}
+
 function branchesOf(world: World, f: DisplayCoast, lines: RiverLine[], boxes: Box[], M: RiverLine, mi: number, c: number, want: number, ends: PointGrid, made: RiverLine[], madeBoxes: Box[]): RiverLine[] {
+  const sp = world.mesh.spacing;
+  const P = M.points;
+  let plan: BranchPlan;
+  if (memoActive()) {
+    keyStart(Q_BRANCH);
+    keyAdd(c);
+    keyAdd(want);
+    keyAddPts(P, 0, P.length);
+    const m = memoPeek(f);
+    if (m !== MISS && planHolds(m as BranchPlan, lines, boxes, M, ends, made, madeBoxes, sp)) plan = m as BranchPlan;
+    else {
+      memoMissStart();
+      plan = planBranches(world, f, lines, boxes, M, c, want, ends, made, madeBoxes, []);
+      memoPut(f, plan);
+    }
+  } else plan = planBranches(world, f, lines, boxes, M, c, want, ends, made, madeBoxes, null);
+  if (plan.back < 0) return [];
+  const S = backAlong(P, BRANCH_BACK[plan.back] * sp);
+  const got = plan.got.map((g) => ({ pts: g.pts.map((p) => [p[0], p[1]] as Pt), end: [g.end[0], g.end[1]] as Pt }));
+  // 主流：分汊以后的水只剩 share，画细一些
+  const share = 0.4 + 0.2 * unitHash(c);
+  const q = M.flow[M.flow.length - 1];
+  const each = (1 - share) / got.length;
+  const k0 = S.k + 1;
+  const ratio = riverWidth(q * share, world.small.planet.riverThreshold) / riverWidth(q, world.small.planet.riverThreshold);
+  const mul = M.mul ? M.mul.slice() : M.points.map(() => 1);
+  for (let k = k0; k < P.length; k++) {
+    M.flow[k] *= share;
+    mul[k] *= ratio;
+  }
+  M.mul = mul;
+  markJoin(M, S.k + S.t);
+  for (const g of got) ends.add(g.end);
+  return got.map((g) => {
+    const points: Pt[] = [[S.p[0], S.p[1]], ...g.pts];
+    const line: RiverLine = { points, flow: points.map(() => q * each), cells: points.map(() => c), mouth: true, branch: mi };
+    if (M.type) {
+      const t = M.type[M.type.length - 1];
+      line.type = points.map(() => t);
+    }
+    return line;
+  });
+}
+
+// 记下的分汊：按现在的已有河口、别的河、已经分出去的几股再问一遍，答得都与记下的一样
+function planHolds(plan: BranchPlan, lines: RiverLine[], boxes: Box[], M: RiverLine, ends: PointGrid, made: RiverLine[], madeBoxes: Box[], sp: number): boolean {
+  for (const a of plan.log) {
+    const r = a.kind === 0 ? ends.near(a.p[0]) : a.kind === 1 ? crossesNearLines(a.p, lines, boxes, M, sp) : crossesMade(a.p, made, madeBoxes);
+    if (r !== a.r) return false;
+  }
+  return true;
+}
+
+// 分汊的几何：在哪一处分、成了哪几股（log 不为 null 时记下问别处的答案）
+function planBranches(world: World, f: DisplayCoast, lines: RiverLine[], boxes: Box[], M: RiverLine, c: number, want: number, ends: PointGrid, made: RiverLine[], madeBoxes: Box[], log: BranchAsk[] | null): BranchPlan {
+  const none: BranchPlan = { back: -1, got: [], log: log ?? [] };
   const sp = world.mesh.spacing;
   const P = M.points;
   const E = P[P.length - 1];
   const nE = seawardNormal(world, f, E, c);
-  if (!nE) return [];
+  if (!nE) return none;
   const tangent: Pt = [-nE[1], nE[0]];
   const total = lineLength(P);
   // 各股河口的候选（只取决于主流的河口，两种分汊的位置共用）与那里岸线的法向
@@ -1483,15 +1680,8 @@ function branchesOf(world: World, f: DisplayCoast, lines: RiverLine[], boxes: Bo
   const cands: (Pt | undefined)[] = new Array(BRANCH_RADII.length);
   const circles = new Map<number, { hi: number; p: Pt }[]>();
   const normals = new Map<Pt, Pt | null>();
-  const candOf = (b: number, prefer: Pt) => {
-    if (!(b in cands)) {
-      const R = BRANCH_RADII[b];
-      if (!circles.has(R)) circles.set(R, circleShores(world, f, E, R * sp, c));
-      cands[b] = byPrefer(circles.get(R)!, prefer)[0];
-    }
-    return cands[b];
-  };
-  for (const back of BRANCH_BACK) {
+  for (let bi = 0; bi < BRANCH_BACK.length; bi++) {
+    const back = BRANCH_BACK[bi];
     if (back * sp > 0.6 * total) continue;
     const S = backAlong(P, back * sp);
     const tS = dirAt(P, Math.min(P.length - 1, S.k + 1));
@@ -1500,46 +1690,30 @@ function branchesOf(world: World, f: DisplayCoast, lines: RiverLine[], boxes: Bo
     for (let b = 0; b < BRANCH_RADII.length && got.length < want; b++) {
       const side = b % 2 === 0 ? 1 : -1;
       const prefer: Pt = [tangent[0] * side, tangent[1] * side];
-      const T0 = candOf(b, prefer);
-      for (const T of T0 ? [T0] : []) {
-        // 只要在 prefer 那一侧（与河口的法向夹角不到 100°）
-        const vx = T[0] - E[0];
-        const vy = T[1] - E[1];
-        if (vx * prefer[0] + vy * prefer[1] <= 0.2 * Math.hypot(vx, vy)) continue;
-        if (ends.near(T) || nearAny(taken, T, MOUTH_SEP * sp)) continue;
-        if (!normals.has(T)) normals.set(T, seawardNormal(world, f, T, c));
-        const pts = branchPath(world, f, lines, boxes, M, S, tS, T, normals.get(T)!, c, got.map((g) => g.pts), made, madeBoxes);
-        if (!pts) continue;
-        got.push({ pts, end: T });
-        taken.push(T);
+      if (!(b in cands)) {
+        const R = BRANCH_RADII[b];
+        if (!circles.has(R)) circles.set(R, circleShores(world, f, E, R * sp, c));
+        cands[b] = byPrefer(circles.get(R)!, prefer)[0];
       }
+      const T = cands[b];
+      if (!T) continue;
+      // 只要在 prefer 那一侧（与河口的法向夹角不到 100°）
+      const vx = T[0] - E[0];
+      const vy = T[1] - E[1];
+      if (vx * prefer[0] + vy * prefer[1] <= 0.2 * Math.hypot(vx, vy)) continue;
+      const near = ends.near(T);
+      log?.push({ kind: 0, p: [T], r: near });
+      if (near || nearAny(taken, T, MOUTH_SEP * sp)) continue;
+      if (!normals.has(T)) normals.set(T, seawardNormal(world, f, T, c));
+      const pts = branchPath(world, f, lines, boxes, M, S, tS, T, normals.get(T)!, c, got.map((g) => g.pts), made, madeBoxes, log);
+      if (!pts) continue;
+      got.push({ pts, end: T });
+      taken.push(T);
     }
     if (!got.length) continue;
-    // 主流：分汊以后的水只剩 share，画细一些
-    const share = 0.4 + 0.2 * unitHash(c);
-    const q = M.flow[M.flow.length - 1];
-    const each = (1 - share) / got.length;
-    const k0 = S.k + 1;
-    const ratio = riverWidth(q * share, world.small.planet.riverThreshold) / riverWidth(q, world.small.planet.riverThreshold);
-    const mul = M.mul ? M.mul.slice() : M.points.map(() => 1);
-    for (let k = k0; k < P.length; k++) {
-      M.flow[k] *= share;
-      mul[k] *= ratio;
-    }
-    M.mul = mul;
-    markJoin(M, S.k + S.t);
-    for (const g of got) ends.add(g.end);
-    return got.map((g) => {
-      const points: Pt[] = [[S.p[0], S.p[1]], ...g.pts];
-      const line: RiverLine = { points, flow: points.map(() => q * each), cells: points.map(() => c), mouth: true, branch: mi };
-      if (M.type) {
-        const t = M.type[M.type.length - 1];
-        line.type = points.map(() => t);
-      }
-      return line;
-    });
+    return { back: bi, got, log: log ?? [] };
   }
-  return [];
+  return none;
 }
 
 // 一股的线（不含分汊那一点）：在陆地上、不急转、不与别的线相交、离主流够远，不然 null
@@ -1557,6 +1731,7 @@ function branchPath(
   others: Pt[][],
   made: RiverLine[],
   madeBoxes: Box[],
+  log: BranchAsk[] | null,
 ): Pt[] | null {
   const sp = world.mesh.spacing;
   if (!n) return null;
@@ -1582,9 +1757,26 @@ function branchPath(
   const line: Pt[] = [S.p, ...pts];
   if (polylinesCross(line, tail)) return null;
   for (const o of others) if (polylinesCross(line, [S.p, ...o])) return null;
+  const crossMade = crossesMade(line, made, madeBoxes);
+  log?.push({ kind: 2, p: line, r: crossMade });
+  if (crossMade) return null;
+  const crossNear = crossesNearLines(line, lines, boxes, M, sp);
+  log?.push({ kind: 1, p: line, r: crossNear });
+  if (crossNear) return null;
+  if (!allLand(world, f, pts, pts.length - 1, hint)) return null;
+  return pts;
+}
+
+// 一股（line）与这一次已经分出去的几股相不相交
+function crossesMade(line: readonly Pt[], made: RiverLine[], madeBoxes: Box[]): boolean {
   const own = boxOfPts({ points: line });
-  for (let k = 0; k < made.length; k++) if (boxesMeet(own, madeBoxes[k]) && polylinesCross(line, made[k].points)) return null;
-  // 附近的线（有一点在这一股外扩一格的框里）：框不挨着的一定没有
+  for (let k = 0; k < made.length; k++) if (boxesMeet(own, madeBoxes[k]) && polylinesCross(line, made[k].points)) return true;
+  return false;
+}
+
+// 一股（line）与附近别的河（不算主流 M；有一点在这一股外扩一格的框里）的线相不相交：框不挨着的一定没有
+function crossesNearLines(line: readonly Pt[], lines: RiverLine[], boxes: Box[], M: RiverLine, sp: number): boolean {
+  const own = boxOfPts({ points: line });
   const near: Box = [own[0] - sp, own[1] + sp, own[2] - sp, own[3] + sp];
   for (let k = 0; k < lines.length; k++) {
     const o = lines[k];
@@ -1592,10 +1784,9 @@ function branchPath(
     const Q2 = o.points;
     let hit = false;
     for (const p of Q2) if (p[0] >= near[0] && p[0] <= near[1] && p[1] >= near[2] && p[1] <= near[3]) hit = true;
-    if (hit && polylinesCross(line, Q2)) return null;
+    if (hit && polylinesCross(line, Q2)) return true;
   }
-  for (let j = 0; j + 1 < pts.length; j++) if (!landAt(world, f, pts[j], hint)) return null;
-  return pts;
+  return false;
 }
 
 // 两条折线有没有相交的段（segCross）：模块里的函数，不是每次新建的闭包。
@@ -1777,8 +1968,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
     const [bx, by] = Q[Q.length - 1];
     const l = Math.hypot(bx - ax, by - ay) || 1;
     const more: [number, number] = [bx + ((bx - ax) / l) * under, by + ((by - ay) / l) * under];
-    const last = <T>(a: T[]) => [...a, a[a.length - 1]];
-    line = { ...line, points: [...Q, more], flow: last(line.flow), ...(line.mul ? { mul: last(line.mul) } : {}), ...(line.type ? { type: last(line.type) } : {}), ...(line.cells ? { cells: last(line.cells) } : {}) };
+    line = { ...line, points: [...Q, more], flow: withLast(line.flow), ...(line.mul ? { mul: withLast(line.mul) } : {}), ...(line.type ? { type: withLast(line.type) } : {}), ...(line.cells ? { cells: withLast(line.cells) } : {}) };
   }
   const P = line.points;
   const m = P.length;
@@ -1795,19 +1985,10 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   const w = new Float64Array(count);
   const mul = new Float64Array(count);
   const src = new Uint32Array(count);
-  const mulOf = (k: number) => (line.mul ? line.mul[k] : 1) * (mulAt ? mulAt(k) : 1);
-  let o = 0;
-  const put = (k: number, t: number) => {
-    const k1 = Math.min(m - 1, k + 1);
-    x[o] = P[k][0] + (P[k1][0] - P[k][0]) * t;
-    y[o] = P[k][1] + (P[k1][1] - P[k][1]) * t;
-    w[o] = riverWidth(line.flow[k] + (line.flow[k1] - line.flow[k]) * t, thr);
-    mul[o] = mulOf(k) + (mulOf(k1) - mulOf(k)) * t;
-    src[o] = Math.min(k, Math.max(0, m - 2));
-    o++;
-  };
-  put(0, 0);
-  for (let k = 0; k + 1 < m; k++) for (let j = 1; j <= parts[k]; j++) put(k, j / parts[k]);
+  // 每个河线点的粗细倍数先算好（第三十三轮提速：以前每个加密的点算四遍；值与先后不变）
+  const mk = new Float64Array(m);
+  for (let k = 0; k < m; k++) mk[k] = (line.mul ? line.mul[k] : 1) * (mulAt ? mulAt(k) : 1);
+  densify(P, line.flow, mk, parts, thr, x, y, w, mul, src);
   // 2. 沿河的长度
   const s = new Float64Array(count);
   for (let i = 1; i < count; i++) s[i] = s[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]);
@@ -1815,16 +1996,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   // 岸线在哪里（往水里多画的那段之前）
   const Ls = L - under;
   // 3. 宽度：往下游只增不减，再沿河来回各平滑一遍（约半格；只增不减的数列平滑后仍只增不减）
-  for (let i = 1; i < count; i++) if (w[i] < w[i - 1]) w[i] = w[i - 1];
-  const lam = WIDTH_SMOOTH * spacing;
-  for (let i = 1; i < count; i++) {
-    const a = 1 - Math.exp(-(s[i] - s[i - 1]) / lam);
-    w[i] = w[i - 1] + (w[i] - w[i - 1]) * a;
-  }
-  for (let i = count - 2; i >= 0; i--) {
-    const a = 1 - Math.exp(-(s[i + 1] - s[i]) / lam);
-    w[i] = w[i + 1] + (w[i] - w[i + 1]) * a;
-  }
+  smoothWidth(w, s, count, WIDTH_SMOOTH * spacing);
   // 4. 源头收尖、河口张开（从湖里流出来的短河从湖岸起收细），乘上粗细
   const outlet = line.head === 'lake' && L > 0 ? 1 - smooth01((L / spacing - OUTLET_SHORT) / OUTLET_FADE) : 0;
   const hw = new Float32Array(count);
@@ -1841,18 +2013,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   //    拖粗细不改中线
   const nx = new Float32Array(count);
   const ny = new Float32Array(count);
-  const normals = () => {
-    for (let i = 0; i < count; i++) {
-      const a = Math.max(0, i - 1);
-      const b = Math.min(count - 1, i + 1);
-      const tx = x[b] - x[a];
-      const ty = y[b] - y[a];
-      const l = Math.hypot(tx, ty) || 1;
-      nx[i] = -ty / l;
-      ny[i] = tx / l;
-    }
-  };
-  normals();
+  ribbonNormals(x, y, nx, ny, count);
   if (count > 2) {
     const q = MEANDER_FREQ / spacing;
     // 别的河汇进来的地方前后半格也渐渐不弯：支流的最后一点在原来那条线上，也就落在画出来的中线上（见 RiverLine.joins）
@@ -1869,9 +2030,8 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
         const i1 = Math.min(count - 1, i0 + 1);
         const sj = s[i0] + (s[i1] - s[i0]) * (f - Math.floor(f));
         const reach = 0.5 * spacing + step;
-        const at = (i: number) => (damp![i] = Math.min(damp![i], smooth01((Math.abs(s[i] - sj) - step) / (0.5 * spacing))));
-        for (let i = i0; i >= 0 && sj - s[i] < reach; i--) at(i);
-        for (let i = i1; i < count && s[i] - sj < reach; i++) at(i);
+        for (let i = i0; i >= 0 && sj - s[i] < reach; i--) damp[i] = Math.min(damp[i], smooth01((Math.abs(s[i] - sj) - step) / (0.5 * spacing)));
+        for (let i = i1; i < count && s[i] - sj < reach; i++) damp[i] = Math.min(damp[i], smooth01((Math.abs(s[i] - sj) - step) / (0.5 * spacing)));
       }
     }
     for (let i = 1; i < count - 1; i++) {
@@ -1882,7 +2042,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
       x[i] += nx[i] * off;
       y[i] += ny[i] * off;
     }
-    normals();
+    ribbonNormals(x, y, nx, ny, count);
   }
   let x0 = Infinity;
   let y0 = Infinity;
@@ -1895,6 +2055,52 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
     if (y[i] > y1) y1 = y[i];
   }
   return { x, y, s, nx, ny, hw, src, x0, y0, x1, y1, maxHw };
+}
+
+// 带子的左手单位法向：每一点按前后两点的方向（模块里的函数：以前是 riverRibbon 里的闭包，几样数组都成了闭包里的变量，整个函数都慢）
+function ribbonNormals(x: Float64Array, y: Float64Array, nx: Float32Array, ny: Float32Array, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const a = Math.max(0, i - 1);
+    const b = Math.min(count - 1, i + 1);
+    const tx = x[b] - x[a];
+    const ty = y[b] - y[a];
+    const l = Math.hypot(tx, ty) || 1;
+    nx[i] = -ty / l;
+    ny[i] = tx / l;
+  }
+}
+
+const withLast = <T>(a: T[]): T[] => [...a, a[a.length - 1]];
+
+// 带子第 1 步：每段等分 parts[k] 份，逐点插值中线、按流量的宽、粗细倍数（mk：每个河线点的），记下来自第几段。
+// 模块里的函数（不是每条河新建的闭包），算式与先后同以前的 put
+function densify(P: readonly (readonly [number, number])[], flow: readonly number[], mk: Float64Array, parts: Uint32Array, thr: number, x: Float64Array, y: Float64Array, w: Float64Array, mul: Float64Array, src: Uint32Array): void {
+  const m = P.length;
+  putAt(P, flow, mk, thr, x, y, w, mul, src, 0, 0, 0);
+  let o = 1;
+  for (let k = 0; k + 1 < m; k++) for (let j = 1; j <= parts[k]; j++) putAt(P, flow, mk, thr, x, y, w, mul, src, o++, k, j / parts[k]);
+}
+function putAt(P: readonly (readonly [number, number])[], flow: readonly number[], mk: Float64Array, thr: number, x: Float64Array, y: Float64Array, w: Float64Array, mul: Float64Array, src: Uint32Array, o: number, k: number, t: number): void {
+  const m = P.length;
+  const k1 = Math.min(m - 1, k + 1);
+  x[o] = P[k][0] + (P[k1][0] - P[k][0]) * t;
+  y[o] = P[k][1] + (P[k1][1] - P[k][1]) * t;
+  w[o] = riverWidth(flow[k] + (flow[k1] - flow[k]) * t, thr);
+  mul[o] = mk[k] + (mk[k1] - mk[k]) * t;
+  src[o] = Math.min(k, Math.max(0, m - 2));
+}
+
+// 带子第 3 步：宽度往下游只增不减，再沿河来回各平滑一遍（lam：平滑的长度）。
+// 来回两遍用的是同一对相邻点的 1 − exp(−Δs / lam)，只算一遍（第三十三轮提速，值不变）
+function smoothWidth(w: Float64Array, s: Float64Array, count: number, lam: number): void {
+  for (let i = 1; i < count; i++) if (w[i] < w[i - 1]) w[i] = w[i - 1];
+  const A = new Float64Array(count);
+  for (let i = 1; i < count; i++) {
+    const a = 1 - Math.exp(-(s[i] - s[i - 1]) / lam);
+    A[i] = a;
+    w[i] = w[i - 1] + (w[i] - w[i - 1]) * a;
+  }
+  for (let i = count - 2; i >= 0; i--) w[i] = w[i + 1] + (w[i] - w[i + 1]) * A[i + 1];
 }
 
 // ---------- 画的河道折线（第八轮：自定义走向） ----------
