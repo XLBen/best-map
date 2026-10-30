@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, emptyBaseComponents, resolvedParams, sampleComponentRange, sampleComponents, withParams } from './generate';
 import { type V3, arc, fromUnit, localOffset, slerp, toUnit, wrapX } from './geo';
 import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, resolvedPlanetParams, samplePlanetComponents, samplePlanetRange, withPlanetParams } from './planet-gen';
-import { formDigest } from './planet-form';
-import type { ScriptIssue } from './script';
+import { formDigest, hasFormScripts } from './planet-form';
+import { type ScriptIssue, scriptsEnabled } from './script';
 import { type Mesh, type SphereMesh, findCell } from './mesh';
 import { type Noise2, clamp, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { nearestCell } from './sphere';
@@ -207,19 +207,18 @@ export function ensureBase(world: World): BaseCache {
 export function* warmTerrainSteps(world: World, cells = 8000): Generator<void> {
   const { mesh } = world;
   const gen = world.small.terrain.gen;
+  // 星球形态带脚本（布局、地形）时不预热：脚本只在用户的操作里跑（看门狗、“正在运行脚本”的提示都按操作来），留给第一笔
+  if (hasFormScripts(gen?.form) && scriptsEnabled()) return;
   const { sampleKey, shapeKey } = baseKeys(world);
   if (gen && sampledBaseMemo.on && baseCache.get(world)?.key !== sampleKey && !sampledCache.get(mesh)?.some((s) => s.key === sampleKey)) {
     const model = mesh.kind === 'sphere' ? buildPlanetModel(gen) : buildModel(gen, mesh.width, mesh.height);
     yield;
-    let components: BaseComponents = emptyBaseComponents(mesh.n);
+    const components: BaseComponents = emptyBaseComponents(mesh.n);
     for (let from = 0; from < mesh.n; from += cells) {
       const to = Math.min(mesh.n, from + cells);
       if (model.kind === 'planet') {
-        if (!samplePlanetRange(model, mesh as SphereMesh, components, from, to)) {
-          // 地形脚本按整个星球跑：一次采完
-          components = samplePlanetComponents(model, mesh as SphereMesh);
-          break;
-        }
+        // 有地形脚本时（上面已经不预热了；安全模式下脚本不运行，照常分段）
+        if (!samplePlanetRange(model, mesh as SphereMesh, components, from, to)) return;
       } else sampleComponentRange(model, mesh, components, from, to);
       yield;
     }

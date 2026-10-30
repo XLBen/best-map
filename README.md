@@ -46,13 +46,15 @@
 ```bash
 npm install
 npm run dev        # 开发服务器，默认 http://localhost:5173（.claude/launch.json 里用 5191）
-npm test           # 全部测试（145 个文件、1523 个）
+npm test           # 全部测试（149 个文件、1546 个）
 npm run test:fast  # 改代码时常跑的那部分（跳过最慢的几个文件）
 npm run golden     # 只跑金标准：提速、重构后结果必须逐值不变
 npm run build      # 查类型后打包
 npx tsx tools/generate.ts --seed 3 --out out/seed3   # 命令行批量生成并导出
 npx tsx tools/hash.ts                                 # 各层结果的哈希，核对 Node 与浏览器是否逐值一致
-npx tsx tools/bench.ts --globe                        # 整个星球（新建的类地星球，6.26 万格）各步的耗时
+npx tsx tools/bench.ts --globe                        # 整个星球（新建的类地星球，6.26 万格）加工各步的耗时
+node tools/bench-median.mjs 5 --against main -- --globe   # 与 main 对照，五次的中位数
+npx tsx tools/realism-report.ts                       # 和地球比：高度、流域、河长、内流区、湖、海岸
 ```
 
 更多见 [开发说明](docs/开发说明.md)。
