@@ -408,6 +408,26 @@ export function prepareClimateSphere(world: World, elevation: Float32Array): boo
   return true;
 }
 
+// 空闲预热（第三十一轮，见 engine.ts 的 warmSteps）：同 prepareClimateSphere，分三段（只取决于纬度的一层、大尺度的陆地占比、
+// 只取决于海陆的一层：洋流在这里）。放进缓存的与用到时现算的是同一份
+export function* warmClimateSphereSteps(world: World, elevation: Float32Array): Generator<void> {
+  if (!sphereLayers.on) return;
+  const { causes, small, kmPerUnit } = world;
+  const mesh = world.mesh as SphereMesh;
+  const n = mesh.n;
+  const planet = small.planet;
+  const lat = new Float64Array(n);
+  for (let i = 0; i < n; i++) lat[i] = worldLatitude(world, mesh.y[i]);
+  const params = [planet.tilt, planet.rotation, planet.solar, planet.currents, kmPerUnit, PLANET_SWEEPS.wind, PLANET_SWEEPS.ocean, planet.terrainWind];
+  if (sphereMemo.peek(mesh, [causes.land, elevation, lat], params)) return;
+  const st = sphereStatic(world, mesh, lat);
+  yield;
+  landFractionSphere(mesh, causes.land, kmPerUnit);
+  yield;
+  sphereLand(world, mesh, st);
+  yield;
+}
+
 function sphereTerrain(world: World, elevation: Float32Array, out: Derived): SphereTerrain {
   const { causes, small, kmPerUnit } = world;
   const mesh = world.mesh as SphereMesh;

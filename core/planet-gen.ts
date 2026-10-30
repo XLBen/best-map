@@ -695,6 +695,17 @@ export function samplePlanetComponents(m: PlanetModel, mesh: SphereMesh, re?: Re
   return out;
 }
 
+// 空闲预热（第三十一轮，见 terrain.ts 的 warmTerrainSteps）：从头采样的一段格 [from, to)，写进 out（新建的空分量）。
+// 每格与 samplePlanetComponents 不带 re 时的那一格是同一个调用（临时的分量每次用前整个写过），分段与一次采完逐值相同。
+// 有地形脚本时不能分段（脚本按整个星球跑），返回 false、什么都不做
+export function samplePlanetRange(m: PlanetModel, mesh: SphereMesh, out: BaseComponents, from: number, to: number): boolean {
+  if (m.params.form?.scripts?.crust && scriptsEnabled()) return false;
+  const rerolls = placed(m.params.rerolls);
+  const tmp = emptyComponents(1);
+  for (let i = from; i < to; i++) sampleCell(m, rerolls, mesh.p[3 * i], mesh.p[3 * i + 1], mesh.p[3 * i + 2], out, i, tmp);
+  return true;
+}
+
 // 一格：原来的噪声，再按顺序叠上覆盖它的各次重画
 function sampleCell(m: PlanetModel, rerolls: PlacedReroll[], px: number, py: number, pz: number, out: BaseComponents, i: number, tmp: BaseComponents) {
   sampleInto(m, m.noise, px * LAYOUT_R, py * LAYOUT_R, pz * LAYOUT_R, out, i);

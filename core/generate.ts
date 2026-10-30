@@ -452,6 +452,22 @@ export function sampleComponents(m: GenModel, mesh: Mesh, re?: Resample): BaseCo
   return out;
 }
 
+// 空闲预热（第三十一轮，见 terrain.ts 的 warmTerrainSteps）：从头采样的一段格 [from, to)，写进 out（新建的空分量）。
+// 每格与 sampleComponents 不带 re 时的那一格是同一个调用，分几段采完与一次采完逐值相同
+export function sampleComponentRange(m: GenModel, mesh: Mesh, out: BaseComponents, from: number, to: number) {
+  const rerolls = m.params.rerolls;
+  for (let i = from; i < to; i++) sampleCell(m, rerolls, mesh.x[i], mesh.y[i], out, i);
+}
+
+export const emptyBaseComponents = (n: number): BaseComponents => ({
+  b0: new Float32Array(n),
+  mountB: new Float32Array(n),
+  mountU: new Float32Array(n),
+  hillU: new Float32Array(n),
+  erod: new Float32Array(n),
+  sea: new Float32Array(n),
+});
+
 // 一格：原来的噪声，再按顺序叠上覆盖它的各次重画
 function sampleCell(m: GenModel, rerolls: Reroll[], x: number, y: number, out: BaseComponents, i: number) {
   sampleInto(m, m.noise, x, y, out, i);

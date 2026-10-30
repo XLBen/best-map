@@ -1,12 +1,12 @@
-import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate } from './climate';
+import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate, prepareClimatePlane } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
 import { type Command, CommandError, Dirty, type RemovedItem, type UndoRecord, addArrayUndo, applyCommand, revert } from './commands';
 import type { ContentRef } from './content/unused';
 import { type TidyPlan, planTidy } from './tidy';
 import { lakeProvinceFix } from './provinces';
 import { activeConflicts, checkConstraints, type SolveResult, solveConstraints } from './constraints';
-import { computeClimateSphere, prepareClimateSphere } from './planet-climate';
-import { carveBeds, computeElevation, userLakeMask } from './elevation';
+import { computeClimateSphere, prepareClimateSphere, warmClimateSphereSteps } from './planet-climate';
+import { carveBeds, computeElevation, userLakeMask, warmElevationSteps } from './elevation';
 import { type GeoFeature, assignNames, applyNameCarry, carryNames, detectFeatures, guideFeatures, mergeNameCarry, prepareFeatures, regionFeatures } from './features';
 import { computeEffects } from './effects';
 import { computeHydrology, shapeLakeBeds } from './hydrology';
@@ -18,7 +18,7 @@ import { needsBaseBiomes } from './water-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
 import { baseBiomes, computeVegetation, finishLook, isVegetated } from './vegetation';
-import { resolveTerrain, shareTerrainBase } from './terrain';
+import { resolveTerrain, shareTerrainBase, warmTerrainSteps } from './terrain';
 import { computeHuman } from './human';
 import { SLOTS } from './human/groups';
 import { applyPopFix, populationFix } from './human/population';
@@ -672,6 +672,28 @@ export class Engine {
     this.lastTimings = timings;
     this.dirty = Dirty.None;
     return d;
+  }
+
+  // 空闲预热（第三十一轮）：打开（从检查点恢复）以后，Worker 空闲时一段一段地做（段与段之间 yield，Worker 在那里让出线程，
+  // 收到请求就停下、空闲了再从头来：做过的几样一查就跳过）。只往按内容的缓存里放东西，世界、推导、历史都不动，所以结果不变：
+  //   生成器的采样（terrain.ts 的 warmTerrainSteps）→ 高程的记忆（elevation.ts 的 warmElevationSteps）→
+  //   气候里只取决于网格、纬度、海陆的几层（星球的 warmClimateSphereSteps；地区的 prepareClimatePlane）→ 地物各段的缓存。
+  // 从检查点恢复的世界这些缓存都是空的（网格是新的），不预热时打开后的第一笔要多等 0.6–1.5 秒
+  *warmSteps(): Generator<void> {
+    const w = this.world;
+    yield* warmTerrainSteps(w);
+    yield* warmElevationSteps(w);
+    const terrain = this.base?.terrain;
+    if (terrain) {
+      if (w.mesh.kind === 'sphere') yield* warmClimateSphereSteps(w, terrain);
+      else if (prepareClimatePlane(w)) yield;
+    }
+    if (this.features && terrain && this.dirty === Dirty.None) {
+      if (prepareFeatures(w)) yield;
+      // 其余几段（湖、河、山、生态区）按现在的推导认一遍，记进地物的缓存；认出来的地物不用（推导里已经有）
+      detectFeatures(w, w.derived, terrain);
+      yield;
+    }
   }
 
   // 整理本世界的计划（第二十九轮，见 tidy.ts）：在副本上试过、地图不变的才移出。执行 plan.command 就是整理

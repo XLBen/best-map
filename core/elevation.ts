@@ -173,6 +173,72 @@ export function computeElevation(world: World): ElevationResult {
   return out;
 }
 
+// 空闲预热（第三十一轮，Worker 打开世界后空闲时，见 engine.ts 的 warmSteps）：按现在的海陆、抬升、岩性分段求解，
+// 放进记忆（与 computeElevation 从头算时放进去的逐值相同：一块陆地的结果只取决于它自己，分几段算与一次算完相同）。
+// 之后的第一笔只重算改到的陆块。记忆里已经有这一份时什么都不做。cells：每段至少多少个陆格（按整块陆地分段）。
+// 开始时把海陆、抬升、岩性复制一份，各段都按这一份算（预热中途世界变了也不会拼出不一致的一份）
+export function* warmElevationSteps(world: World, cells = 0): Generator<void> {
+  if (!elevationMemo.on) return;
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const seed = world.settings.seed;
+  const land = causes.land.slice();
+  const upBits = bitsOf(causes.uplift).slice();
+  const erBits = bitsOf(causes.erod).slice();
+  const list = elevMemo.get(mesh) ?? [];
+  if (list.some((e) => e.seed === seed && e.kmPerUnit === kmPerUnit && sameValues(e.land, land) && sameValues(e.uplift, upBits) && sameValues(e.erod, erBits))) return;
+  const frozen: World = { ...world, causes: { ...causes, land, uplift: new Float32Array(upBits.buffer), erod: new Float32Array(erBits.buffer) } };
+  const { fu, fk, fs } = noiseFactors(mesh, seed);
+  yield;
+  let landCells = 0;
+  for (let i = 0; i < n; i++) landCells += land[i];
+  const chunk = Math.max(cells, 2000, Math.ceil(landCells / 4));
+  const h = new Float64Array(n);
+  const coastKm = new Float64Array(n).fill(1e5);
+  const seen = new Uint8Array(n);
+  const queue = new Int32Array(n);
+  let todo = new Uint8Array(n);
+  let count = 0;
+  for (let s = 0; s < n; s++) {
+    if (!land[s] || seen[s]) continue;
+    let len = 0;
+    queue[len++] = s;
+    seen[s] = 1;
+    for (let q = 0; q < len; q++) {
+      const c = queue[q];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (land[j] && !seen[j]) {
+          seen[j] = 1;
+          queue[len++] = j;
+        }
+      }
+    }
+    for (let k = 0; k < len; k++) todo[queue[k]] = 1;
+    count += len;
+    if (count >= chunk) {
+      solveLand(frozen, todo, fu, fk, fs, h, coastKm);
+      todo = new Uint8Array(n);
+      count = 0;
+      yield;
+    }
+  }
+  if (count > 0) solveLand(frozen, todo, fu, fk, fs, h, coastKm);
+  const entry: ElevationMemoEntry = { seed, kmPerUnit, land, uplift: upBits, erod: erBits, h, coastKm };
+  elevMemo.set(mesh, [entry, ...(elevMemo.get(mesh) ?? [])].slice(0, 2));
+  yield;
+  // 海底（收尾里最慢的一段）也有按内容的记忆：按现在的世界算一遍，写进一个用完就丢的数组
+  seafloor(world, new Float32Array(n));
+  yield;
+}
+
+// 整数数组逐个相同（抬升、岩性比的是 Float32 的位）
+function sameValues(a: Uint8Array | Uint32Array, b: Uint8Array | Uint32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 // 只算 todo 里的陆块（若干个完整的陆块）：写进 h（扩散后的）与 coastKm，别的格不动
 function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64Array, fs: Float64Array, h: Float64Array, coastKm: Float64Array) {
   const { mesh, causes, kmPerUnit } = world;

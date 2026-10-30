@@ -582,6 +582,17 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   return t;
 }
 
+// 空闲预热（第三十一轮，见 engine.ts 的 warmSteps）：只取决于网格与海陆的几样（网格的邻接反查与扫描顺序、大尺度的陆地占比）
+// 先算好放进缓存，打开后的第一笔不用等。与 computeClimate 里用到时现算的是同一份。返回是否算了
+export function prepareClimatePlane(world: World): boolean {
+  const { mesh, causes, kmPerUnit } = world;
+  const fresh = !cache.has(mesh) || !(landFracCache.get(mesh) ?? []).some((c) => c.kmPerUnit === kmPerUnit && c.land.length === causes.land.length && c.land.every((v, i) => v === causes.land[i]));
+  if (!fresh) return false;
+  meshAux(mesh);
+  landFraction(mesh, causes.land, kmPerUnit);
+  return true;
+}
+
 export function computeClimate(world: World, elevation: Float32Array, out: Derived): ClimateBase {
   const { mesh, causes, small } = world;
   const n = mesh.n;

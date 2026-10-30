@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, resolvedParams, sampleComponents, withParams } from './generate';
+import { type BaseComponents, type GenModel, type Reroll, buildModel, coneFields, emptyBaseComponents, resolvedParams, sampleComponentRange, sampleComponents, withParams } from './generate';
 import { type V3, arc, fromUnit, localOffset, slerp, toUnit, wrapX } from './geo';
-import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, resolvedPlanetParams, samplePlanetComponents, withPlanetParams } from './planet-gen';
+import { LAYOUT_R, type PlanetModel, buildPlanetModel, planetConeFields, resolvedPlanetParams, samplePlanetComponents, samplePlanetRange, withPlanetParams } from './planet-gen';
 import { formDigest } from './planet-form';
 import type { ScriptIssue } from './script';
 import { type Mesh, type SphereMesh, findCell } from './mesh';
@@ -198,6 +198,41 @@ export function ensureBase(world: World): BaseCache {
   cache.seaLevel = composeBase(world, cache, composeParams(world, cache, {}), cache.landness, cache.uplift);
   cache.erod.set(comp.erod);
   return cache;
+}
+
+// 空闲预热（第三十一轮，Worker 打开世界后空闲时，见 engine.ts 的 warmSteps）：分段把生成器的采样放进按网格的缓存
+// （sampledCache），再让这个世界的缓存命中它（ensureBase），连同海岸噪声、海底的场。之后的第一笔不用再采样整个地图。
+// 分段采的分量与一次采完逐值相同（generate.ts 的 sampleComponentRange、planet-gen.ts 的 samplePlanetRange），
+// 放进缓存的与 ensureBase 自己采样后放进去的是同一份东西，所以结果不变。cells：每段多少格
+export function* warmTerrainSteps(world: World, cells = 8000): Generator<void> {
+  const { mesh } = world;
+  const gen = world.small.terrain.gen;
+  const { sampleKey, shapeKey } = baseKeys(world);
+  if (gen && sampledBaseMemo.on && baseCache.get(world)?.key !== sampleKey && !sampledCache.get(mesh)?.some((s) => s.key === sampleKey)) {
+    const model = mesh.kind === 'sphere' ? buildPlanetModel(gen) : buildModel(gen, mesh.width, mesh.height);
+    yield;
+    let components: BaseComponents = emptyBaseComponents(mesh.n);
+    for (let from = 0; from < mesh.n; from += cells) {
+      const to = Math.min(mesh.n, from + cells);
+      if (model.kind === 'planet') {
+        if (!samplePlanetRange(model, mesh as SphereMesh, components, from, to)) {
+          // 地形脚本按整个星球跑：一次采完
+          components = samplePlanetComponents(model, mesh as SphereMesh);
+          break;
+        }
+      } else sampleComponentRange(model, mesh, components, from, to);
+      yield;
+    }
+    // 别的世界、预览在这期间放进了同一个键（不会，Worker 收到请求就停下预热；保险起见）就不再放
+    if (!sampledCache.get(mesh)?.some((s) => s.key === sampleKey)) {
+      const list = sampledCache.get(mesh) ?? [];
+      sampledCache.set(mesh, [{ key: sampleKey, shapeKey, model, components, cones: new Map() }, ...list].slice(0, 2));
+    }
+  }
+  // 海底的场（顺带让这个世界的缓存命中上面的采样：seabedFields 先 ensureBase）、海岸噪声
+  seabedFields(world);
+  coastNoiseField(mesh, coastSeed(world));
+  yield;
 }
 
 // 海底后处理要用的场（见 SeabedFields）；没有生成器（空白世界）时为 null：洋底一律按远洋算。

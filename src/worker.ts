@@ -3,7 +3,7 @@ import { Dirty, type RemovedItem } from '../core/commands';
 import { previewWorldOf } from '../core/preview-world';
 import { riverBuffers, worldRivers } from '../core/river-pack';
 import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
-import { planetFormIssues, previewTerrain, resolveTerrain } from '../core/terrain';
+import { planetFormIssues, previewTerrain } from '../core/terrain';
 import { renderThumbnail } from '../core/thumbnail';
 import type { Mesh } from '../core/mesh';
 import { type PackedMesh, unpackMesh } from '../core/mesh-pack';
@@ -334,9 +334,67 @@ let chain: Promise<void> = probeIsolation(self).then(
   (isolated) => post({ kind: 'hello', isolated }),
   () => post({ kind: 'hello', isolated: false }),
 );
-// 一件出了错（比如后台补写检查点时重算出错）不能让后面的都不再处理
+// 一件出了错（比如后台补写检查点时重算出错）不能让后面的都不再处理。
+// 排进来一件就停下空闲预热（见下面），全部做完、空着的时候再接着预热
+let inFlight = 0;
 function queue(run: () => Promise<void>) {
-  chain = chain.then(run).catch(() => undefined);
+  inFlight++;
+  stopWarm();
+  chain = chain
+    .then(run)
+    .catch(() => undefined)
+    .finally(() => {
+      if (--inFlight === 0) scheduleWarm();
+    });
+}
+
+// ---------- 空闲预热（第三十一轮，见 engine.ts 的 warmSteps） ----------
+// 新建、打开以后，没有请求的时候一段一段地把按内容的缓存填上（生成器的采样、高程的记忆、气候与地物只取决于海陆的几层），
+// 从检查点恢复的世界打开后的第一笔就不用多等 0.6–1.5 秒。每段之间让出线程；收到请求就停下（丢掉这一轮），
+// 请求都做完了再从头来一轮（做过的几样一查就跳过），一整轮做完才算预热好。只往缓存里放东西，世界与结果不变
+const WARM_DELAY_MS = 60;
+let warmFor: Engine | null = null;
+let warmRun: { steps: Generator<void>; timer: ReturnType<typeof setTimeout> | null } | null = null;
+function wantWarm(e: Engine) {
+  warmFor = e;
+}
+function stopWarm() {
+  const run = warmRun;
+  if (!run) return;
+  warmRun = null;
+  if (run.timer) clearTimeout(run.timer);
+  try {
+    run.steps.return(undefined);
+  } catch {
+    // 停不下来（不会）：丢掉就是
+  }
+}
+function scheduleWarm() {
+  if (warmRun || !warmFor || warmFor !== engine || inFlight > 0) return;
+  const e = warmFor;
+  const run: { steps: Generator<void>; timer: ReturnType<typeof setTimeout> | null } = { steps: e.warmSteps(), timer: null };
+  warmRun = run;
+  const tick = () => {
+    run.timer = null;
+    if (warmRun !== run) return;
+    if (engine !== e || inFlight > 0) {
+      stopWarm();
+      return;
+    }
+    let done = true;
+    try {
+      done = !!run.steps.next().done;
+    } catch {
+      // 预热出错不影响什么（只是没有预热好）：不再试
+    }
+    if (done) {
+      warmRun = null;
+      if (warmFor === e) warmFor = null;
+      return;
+    }
+    run.timer = setTimeout(tick, 0);
+  };
+  run.timer = setTimeout(tick, WARM_DELAY_MS);
 }
 
 // 收到了还没算完的确切预览（排着的和正在算的；分阶段算，阶段之间让出线程，见 previewWorld）：新来的请求要它们停下时
@@ -400,6 +458,7 @@ async function handle(id: number, req: Request) {
         e.update();
         useEngine(e);
         withSnap('新世界', false, true, undefined, skipped);
+        wantWarm(e);
         return;
       }
       case 'load': {
@@ -411,13 +470,9 @@ async function handle(id: number, req: Request) {
         const restored = restore(got.cp, req.doc, mesh);
         useEngine(restored ?? Engine.fromDoc(req.doc, mesh));
         withSnap('已打开世界文件', false, true);
-        if (restored) {
-          ckKey = restored.stepIds().join(',');
-          // 恢复的世界还没有地形底图的缓存：先发快照让地图显示出来，再在后台补上（下一次改地形就不必等）
-          queue(async () => {
-            if (engine === restored) resolveTerrain(restored.world);
-          });
-        }
+        if (restored) ckKey = restored.stepIds().join(',');
+        // 恢复的世界还没有任何缓存（网格是新的）：先发快照让地图显示出来，再在空闲时预热（下一次改地形就不必等）
+        wantWarm(engine!);
         return;
       }
       case 'exec': {

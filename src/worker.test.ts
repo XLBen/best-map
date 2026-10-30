@@ -141,6 +141,31 @@ describe('计算 Worker 的约定', () => {
     st.close();
   });
 
+  it('打开以后空闲时预热（第三十一轮），收到请求就停下、做完再接着：之后执行的结果与重放的逐值相同', async () => {
+    const st = storeEnd();
+    st.ch.port1.postMessage({ cp: structuredClone(written!.cp) });
+    await send({ kind: 'load', doc: doc!, build: 'b1', store: st.port });
+    // 紧接着来的请求：预热还没开始或做到一半，停下
+    const land = Array.from((replayed!.causes.land as Uint8Array).entries())
+      .filter(([, v]) => v)
+      .map(([i]) => i);
+    const hill = land.slice(100, 130);
+    const relief: Command = { op: 'paint_relief', cells: hill, t: hill.map(() => 0), strength: 0.5 };
+    await send({ kind: 'exec', cmd: relief });
+    // 空闲一会儿（预热一段一段地做完）
+    await new Promise((r) => setTimeout(r, 400));
+    const more: Command = { op: 'paint', field: 'erodDelta', cells: land.slice(300, 330), value: 0.3, mode: 'add' };
+    await send({ kind: 'exec', cmd: more });
+    const snap = (await send({ kind: 'snapshot' })).snapshot as Snapshot;
+    const { Engine } = await import('../core/engine');
+    const ref = Engine.fromDoc({ ...doc!, commands: [...doc!.commands, relief, more] });
+    for (const [k, v] of Object.entries(ref.world.derived)) {
+      if (!ArrayBuffer.isView(v)) continue;
+      expect(Array.from(snap.derived[k as keyof Snapshot['derived']] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
+    }
+    st.close();
+  });
+
   it('收到 null、安全模式：照旧重放（安全模式下也不写检查点）', async () => {
     const st = storeEnd();
     st.ch.port1.postMessage({ cp: null });
