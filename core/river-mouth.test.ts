@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { displayCoast, displayCoastAt, shoreCrossing } from './display';
 import { type RiverLine, TURN_CHORD, maxTurn, riverRibbon, riverWidth, seawardNormal, traceRivers } from './rivers';
 import { pointIsLand, shownCoastValues } from './subcell';
+import { coastStyle } from './coast-style';
 import { continents, engineFor, snapshot } from './testing/fixtures';
 import type { World } from './world';
 
@@ -87,7 +88,20 @@ function checkEnds(w: World) {
       // 顺着最后一段的方向（沿岸线法向进水的一段、挪开的河口），或者从河口那格往它流进的水面那格（照原样画的河口）
       const p = l.points[n - 1];
       const c = l.cells![n - 1];
-      expect(onShore(p, l.points[n - 2], p) || onShore(p, centre(c, p[0]), centre(d.receiver[c], p[0]))).toBe(true);
+      // 峡湾海岸（第三十四轮）：岸线弯弯曲曲，最后一段可能比 tol 还短、格心到水面格之间先碰到刻出来的海湾；只要求河口在岸线上
+      // （周围一圈 8 个点里有陆地也有水面）
+      const fj = (coastStyle(w)?.fjord[c] ?? 0) > 0;
+      const ring = () => {
+        let landN = 0;
+        let waterN = 0;
+        for (let k = 0; k < 8; k++) {
+          const v = field(w, p[0] + tol * Math.cos((k * Math.PI) / 4), p[1] + tol * Math.sin((k * Math.PI) / 4));
+          if (v > 0) landN++;
+          else waterN++;
+        }
+        return landN > 0 && waterN > 0;
+      };
+      expect(onShore(p, l.points[n - 2], p) || onShore(p, centre(c, p[0]), centre(d.receiver[c], p[0])) || (fj && ring())).toBe(true);
     }
     if (l.head === 'lake') {
       lakeHeads++;

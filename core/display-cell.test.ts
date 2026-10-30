@@ -143,6 +143,8 @@ describe('水面的像素只取水面格', () => {
         const d = displayCellAt(w, x, y, hint);
         hint = d.cell;
         if (!d.water) continue;
+        // 小湖群（第三十四轮）：画成水面、格还是陆地（不是湖面格）的像素，像碎岛反过来，不进省份（−1）；不算在这里
+        if (d.land && !(causes.land[d.here] === 1 && w.derived.lake[d.here] === 1)) continue;
         water++;
         const old = seamPick(L, w, x, y, d.cell);
         if (old >= 0 && coast[old] > 0) before++;

@@ -56,7 +56,7 @@ const sameIds = (a: readonly number[], b: readonly number[]) => a.length === b.l
 
 // 现在的世界文件版本（core/doc-version.ts 的 DOC_VERSION；存储 Worker 只按类型引用 core，所以写成字面量，
 // satisfies 保证与那边一致）
-const CURRENT_VERSION = 8 satisfies WorldDoc['version'];
+const CURRENT_VERSION = 9 satisfies WorldDoc['version'];
 
 // 存着的检查点能不能交给打开 doc 的计算 Worker（旧版本的世界一律不用：第九轮起不再兼容旧存档）
 export function checkpointFits(saved: unknown, build: string, doc: WorldDoc): saved is SavedCheckpoint {

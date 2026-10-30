@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PLANET_SIZES, planetCells, planetSettings, settingsFor } from '../core/presets';
-import { type RealismRow, realismRow, realismWorld } from './realism';
+import { type RealismRow, coastRaster, realismRow, realismWorld } from './realism';
 
-// 和地球比的区间（第三十二、三十三轮，慢测试：不进 test:fast）。6 个种子 × {半个星球的区域、类地星球}，按平均值查计划里的区间。
+// 和地球比的区间（第三十二到三十四轮，慢测试：不进 test:fast）。6 个种子 × {半个星球的区域、类地星球}，按平均值查计划里的区间。
 // 汇水面积超越指数、前十流域的 L/√A 还没到地球的区间（见开发说明“大格局与长河”）：L/√A 查比第三十一轮好，
 // 超越指数查只数前十个流域的那一种不超出地球区间的上沿太多
 
@@ -24,7 +24,10 @@ const band = (v: number, lo: number, hi: number) => {
 
 describe('和地球比（6 个种子的平均）', () => {
   it('半个星球的区域', () => {
-    const m = means(SEEDS.map((seed) => realismRow(realismWorld(settingsFor('hemisphere', 'temperate', 40000), seed))));
+    const m = means(SEEDS.map((seed) => {
+      const w = realismWorld(settingsFor('hemisphere', 'temperate', 40000), seed);
+      return realismRow(w, coastRaster(w, 2048));
+    }));
     band(m.below200, 0.22, 0.32);
     band(m.above2000, 0.07, 0.15);
     band(m.longestPerDiameter, 0.8, 1.4);
@@ -39,12 +42,24 @@ describe('和地球比（6 个种子的平均）', () => {
     expect(m.trunkRise).toBeLessThan(60);
     band(m.deltaShare, 0.3, 0.8);
     expect(m.fans).toBeGreaterThan(0);
-  }, 120_000);
+    // 第三十四轮：冰川低地里湖面 3–12%、别处 < 2%，冰川区的湖大小幂律指数 0.8–1.2；峡湾海岸的盒维数 ≥ 1.25、沙坝海岸 ≤ 1.1，
+    // 沙坝海岸占海岸 5–15%
+    band(m.glacialLakeShare, 0.03, 0.12);
+    expect(m.otherLakeShare).toBeLessThan(0.02);
+    band(m.glacialLakeK, 0.8, 1.2);
+    expect(m.fjordDim).toBeGreaterThanOrEqual(1.25);
+    expect(m.barrierDim).toBeLessThanOrEqual(1.1);
+    band(m.barrierShare, 0.05, 0.15);
+  }, 240_000);
 
   it('类地星球', () => {
     const settings = planetSettings('earth');
     expect(settings.cells).toBe(planetCells(PLANET_SIZES.earth.radiusKm));
-    const m = means(SEEDS.map((seed) => realismRow(realismWorld(settings, seed))));
+    const m = means(SEEDS.map((seed) => {
+      const w = realismWorld(settings, seed);
+      // 星球 2048 像素宽时一格只有五六个像素，刻出来的海湾不到两个像素宽，峡湾的盒维数量不出来（约 1.25）：用 4096
+      return realismRow(w, coastRaster(w, 4096));
+    }));
     band(m.below200, 0.22, 0.32);
     band(m.above2000, 0.07, 0.15);
     expect(m.basinTop1).toBeGreaterThanOrEqual(0.03);
@@ -61,5 +76,13 @@ describe('和地球比（6 个种子的平均）', () => {
     expect(m.trunkRise).toBeLessThan(75);
     band(m.deltaShare, 0.3, 0.8);
     expect(m.fans).toBeGreaterThan(0);
-  }, 240_000);
+    // 第三十四轮：冰川低地里湖面 3–12%、别处 < 2%，冰川区的湖大小幂律指数 0.8–1.2；峡湾海岸的盒维数 ≥ 1.25、沙坝海岸 ≤ 1.1，
+    // 沙坝海岸占海岸 5–15%
+    band(m.glacialLakeShare, 0.03, 0.12);
+    expect(m.otherLakeShare).toBeLessThan(0.02);
+    band(m.glacialLakeK, 0.8, 1.2);
+    expect(m.fjordDim).toBeGreaterThanOrEqual(1.25);
+    expect(m.barrierDim).toBeLessThanOrEqual(1.1);
+    band(m.barrierShare, 0.05, 0.15);
+  }, 480_000);
 });

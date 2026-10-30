@@ -454,8 +454,26 @@ describe('选中的河：控制点', () => {
     selectedRiver.value = { kind: 'guide', id: g.id };
     const T = targetOf(w, { kind: 'guide', id: g.id })!;
     const H = handlesOf(T, zoomOf(w));
-    const P = T.points[H[1]];
-    const to: Pt = [P[0], P[1] + 0.6 * w.mesh.spacing];
+    // 第三十四轮：地形变了以后画的这条河拐得急，把第二个弯点往南拖 0.6 格会碰到河自己：挑第一个拖开后不碰到的弯点、方向
+    let P: Pt = T.points[H[1]];
+    let to: Pt = [P[0], P[1] + 0.6 * w.mesh.spacing];
+    let found = false;
+    for (const h of H.slice(1, -1)) {
+      for (const [dx, dy] of [[0, 0.6], [0, -0.6], [0.6, 0], [-0.6, 0]]) {
+        if (found) break;
+        const p0 = T.points[h];
+        const p1: Pt = [p0[0] + dx * w.mesh.spacing, p0[1] + dy * w.mesh.spacing];
+        t.down?.(ptr(w, p0));
+        for (const q of line(w, p0, p1).slice(1)) t.move?.(ptr(w, q), true);
+        const hint = t.preview().hint ?? '';
+        t.escape?.();
+        if (!hint.includes('碰到')) {
+          P = p0;
+          to = p1;
+          found = true;
+        }
+      }
+    }
     vi.mocked(previewWorld).mockImplementation(async (cmd) => {
       const pv = eng.clone().previewWorld(cmd);
       return { result: pv.result, world: previewWorldOf(w, pv.patch), base: w };
@@ -866,7 +884,14 @@ describe('连着改：终点 → 源头 → 终点', () => {
       // 终点往回拖（缩短）；源头往外挪一点；再拖终点（在原来终点的地方起笔：按“最后一个点”认）
       const P = T.points;
       const first = dragTo(end, P[Math.floor(P.length * 0.8)]);
-      await dragTo(src, [src[0] + 0.6 * s, src[1] + 0.6 * s]);
+      // 第三十四轮：地形变了，源头往东南挪 0.6 格落在别的河上：挑第一个不落在河上、湖上的方向
+      const moved = ([[0.6, 0.6], [-0.6, 0.6], [0.6, -0.6], [-0.6, -0.6]] as const)
+        .map(([dx, dy]): Pt => [src[0] + dx * s, src[1] + dy * s])
+        .find((q) => {
+          const c = findCell(w.mesh, ...q);
+          return w.causes.land[c] === 1 && w.derived.lake[c] !== 1 && !isRiverCell(w, w.derived, c);
+        })!;
+      await dragTo(src, moved);
       await dragTo(end, P[Math.floor(P.length * 0.7)]);
       release();
       await first;

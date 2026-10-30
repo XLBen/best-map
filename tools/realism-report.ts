@@ -5,10 +5,8 @@
 // 每轮跑一次，与开发说明“和地球比”里记下的上一轮对照
 import { writeFileSync } from 'node:fs';
 import { PLANET_SIZES, planetCells, planetSettings, settingsFor } from '../core/presets';
-import { EARTH_REFERENCE, boxCountDimension, coastPixels } from '../core/stats';
-import { rasterizeWorld } from '../core/subcell';
-import type { World } from '../core/world';
-import { REALISM_ROW_REF, type RealismRow, realismRow, realismWorld } from './realism';
+import { EARTH_REFERENCE } from '../core/stats';
+import { REALISM_ROW_REF, type RealismRow, coastRaster, realismRow, realismWorld } from './realism';
 
 const argv = process.argv.slice(2);
 const opt = (name: string) => {
@@ -27,19 +25,7 @@ const regionCells = Number(opt('--cells') ?? 40000);
 const rasterW = Number(opt('--raster') ?? 2048);
 const jsonOut = opt('--json');
 
-// 海岸线的盒维数：栅格化（与导出、屏幕相同的格以下的海岸），格子 2–64 像素。
-// 整个星球只数南北纬 60° 以内的行（等距圆柱的高纬被拉宽）
-function coastDimension(world: World): number {
-  if (!rasterW) return NaN;
-  const w = rasterW;
-  const h = w / 2;
-  const r = rasterizeWorld(world, w, h);
-  const globe = world.mesh.kind === 'sphere';
-  const coast = coastPixels(r.land, w, h, globe);
-  const rows: [number, number] = globe ? [Math.round(h / 6), Math.round((h * 5) / 6)] : [0, h];
-  return boxCountDimension(coast, w, h, [2, 4, 8, 16, 32, 64], rows);
-}
-
+// 海岸线：栅格化（与导出、屏幕相同的格以下的海岸）一次，算整条海岸与峡湾、沙坝海岸的盒维数（tools/realism.ts 的 coastRaster）
 const configs = [
   { key: 'region', name: `半个星球的区域（${regionCells} 格，温带）`, settings: () => settingsFor('hemisphere', 'temperate', regionCells) },
   { key: 'planet', name: `类地星球（${planetCells(PLANET_SIZES.earth.radiusKm)} 格）`, settings: () => planetSettings('earth') },
@@ -76,6 +62,14 @@ const ROWS: { key: keyof Row; label: string; fmt: (v: number) => string }[] = [
   { key: 'fans', label: '冲积扇的个数', fmt: (v) => v.toFixed(0) },
   { key: 'wetland', label: '沼泽湿地 / 陆地', fmt: pct },
   { key: 'coastDim', label: '海岸盒维数', fmt: (v) => v.toFixed(3) },
+  { key: 'glacialLakeShare', label: '冰川低地里湖面的比例', fmt: pct },
+  { key: 'otherLakeShare', label: '别处的陆地里湖面的比例', fmt: pct },
+  { key: 'glacialLakes', label: '冰川区的湖的个数', fmt: (v) => v.toFixed(0) },
+  { key: 'glacialLakeK', label: '冰川区的湖大小幂律指数', fmt: (v) => v.toFixed(2) },
+  { key: 'fjordShare', label: '峡湾海岸占海岸像素', fmt: pct },
+  { key: 'fjordDim', label: '峡湾海岸的盒维数', fmt: (v) => v.toFixed(3) },
+  { key: 'barrierShare', label: '沙坝海岸占海岸像素', fmt: pct },
+  { key: 'barrierDim', label: '沙坝海岸的盒维数', fmt: (v) => v.toFixed(3) },
 ];
 
 function pct(v: number): string {
@@ -89,7 +83,7 @@ for (const c of configs) {
   for (const seed of seeds) {
     const t0 = performance.now();
     const world = realismWorld(c.settings(), seed);
-    const st: Row = realismRow(world, coastDimension(world));
+    const st: Row = realismRow(world, rasterW ? coastRaster(world, rasterW) : undefined);
     out[c.key][seed] = st;
     process.stderr.write(`${c.key} seed ${seed}: ${Math.round(performance.now() - t0)} ms\n`);
   }

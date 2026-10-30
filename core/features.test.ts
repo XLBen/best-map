@@ -343,11 +343,11 @@ describe('涂出来的生态区有自己的名字', () => {
 describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
-    expect(kv(continents())).toBe('d5afe7a9');
-    expect(kv(planet())).toBe('83bc8762');
+    expect(kv(continents())).toBe('a79dea87');
+    expect(kv(planet())).toBe('7cf28ee0');
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
-    expect(kv(islands)).toBe('de1ab9f1');
+    expect(kv(islands)).toBe('5b0ebf44');
   });
 });
 

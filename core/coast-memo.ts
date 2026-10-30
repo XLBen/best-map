@@ -7,7 +7,7 @@ import type { Mesh } from './mesh';
 // 三角洲分汊的候选河口（圆与岸线的交点）、一段线在不在陆地上。这些查询的结果只取决于：
 //   · 查询的参数（点的坐标、找三角形的起点 hint 等，都放进键里）；
 //   · 网格与海岸破碎度（换了就全部作废）；
-//   · 查询时读到的那几格的海岸场（coast、elevation、frag 三样）。
+//   · 查询时读到的那几格的海岸场（coast、elevation、frag 三样，第三十四轮起再加海岸类型的两个数 style）。
 // 查询时读到哪几格由 core/display.ts 的 coastReads 记下来（displayCoastAt 每次找到的三角形、shoreCrossing 沿边走时的两格，
 // rivers.ts 的 coastSmooth 也记）。下一次描河再问同一个键时，这几格的三样都没变就直接用上一次的结果——与重新算逐位相同
 // （同样的参数、同样读到的值，算出来就一样）。只改气候时海岸场几乎不变，改地形时只有改动附近的几格变了。
@@ -122,12 +122,17 @@ function keyEquals(a: Int32Array): boolean {
 // 两个数逐位相同（0 与 −0 不同）
 const same = (a: number, b: number) => a === b && (a !== 0 || 1 / a === 1 / b);
 
+// 每格记 VALS 个数：coast、elevation、frag，与海岸类型的两个数（第三十四轮，DisplayCoast 的 style；没有时 0）
+const VALS = 5;
 function valid(e: Entry, f: DisplayCoast): boolean {
   const { cells, vals } = e;
   const frag = f.frag;
+  const st = f.style;
   for (let j = 0; j < cells.length; j++) {
     const c = cells[j];
-    if (!same(vals[3 * j], f.coast[c]) || !same(vals[3 * j + 1], f.elevation[c]) || !same(vals[3 * j + 2], frag ? frag[c] : 0)) return false;
+    const o = VALS * j;
+    if (!same(vals[o], f.coast[c]) || !same(vals[o + 1], f.elevation[c]) || !same(vals[o + 2], frag ? frag[c] : 0)) return false;
+    if (!same(vals[o + 3], st ? st[2 * c] : 0) || !same(vals[o + 4], st ? st[2 * c + 1] : 0)) return false;
   }
   return true;
 }
@@ -187,13 +192,17 @@ export function memoPut(f: DisplayCoast, value: unknown): void {
     uniq.push(c);
   }
   const cells = Int32Array.from(uniq);
-  const vals = new Float64Array(3 * cells.length);
+  const vals = new Float64Array(VALS * cells.length);
   const frag = f.frag;
+  const st = f.style;
   for (let j = 0; j < cells.length; j++) {
     const c = cells[j];
-    vals[3 * j] = f.coast[c];
-    vals[3 * j + 1] = f.elevation[c];
-    vals[3 * j + 2] = frag ? frag[c] : 0;
+    const o = VALS * j;
+    vals[o] = f.coast[c];
+    vals[o + 1] = f.elevation[c];
+    vals[o + 2] = frag ? frag[c] : 0;
+    vals[o + 3] = st ? st[2 * c] : 0;
+    vals[o + 4] = st ? st[2 * c + 1] : 0;
   }
   // 外面一层没在记：读到的格不用再留着
   if (!p.on) {

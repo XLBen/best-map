@@ -7,6 +7,7 @@ import type { Engine } from './engine';
 import type { Mesh } from './mesh';
 import { packMesh, unpackMesh } from './mesh-pack';
 import { PLAINS, plainStats } from './plains';
+import { glacialOn } from './glacial';
 import { settingsFor } from './presets';
 import { traceRivers } from './rivers';
 import { drainage, lowFlatShare, statsInput, trunkRise } from './stats';
@@ -152,12 +153,19 @@ for (const [label, settings] of SETTINGS) {
 
 describe('冲积平原', () => {
   const settings = settingsFor('hemisphere', 'temperate', 20000);
+  // 第三十四轮：这里只看平原，冰川刻蚀关掉（冰川区的湖改了一些大河旁边的格，与平原无关）
   const build = (on: boolean) =>
     withPlains(on, () =>
       withMemo(false, () => {
-        const e = seededEngine({ ...settings, seed: 3 });
-        e.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
-        return e.world;
+        const saved = glacialOn.on;
+        glacialOn.on = false;
+        try {
+          const e = seededEngine({ ...settings, seed: 3 });
+          e.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
+          return e.world;
+        } finally {
+          glacialOn.on = saved;
+        }
       }),
     );
   const off = build(false);

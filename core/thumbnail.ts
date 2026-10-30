@@ -101,6 +101,12 @@ export function renderThumbnail(world: World, width: number, height: number): Ui
           cg *= 0.72;
           cb *= 0.72;
         }
+        // 小湖群（第三十四轮）：画成湖的颜色
+        if (r.lakeDot[p]) {
+          cr = 70;
+          cg = 125;
+          cb = 175;
+        }
       }
       out[p * 4] = cr;
       out[p * 4 + 1] = cg;

@@ -522,12 +522,13 @@ describe('改河的边角', () => {
     // 另一条画的河 B，源头挪到 A 的中间：不让
     let B: Guide | null = null;
     const PA = guideTarget(w, A).points;
-    for (const f of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+    // 第三十四轮：地形变了（A 在冰川区的湖群旁边），离 A 2.5–9 格的那几处都流进湖、出了地图：再试 A 上别的几处、近一点的
+    for (const [f, d0, d1] of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.45, 0.55, 0.35, 0.65].flatMap((f) => [[f, 2.5, 9], [f, 2, 5], [f, 1.5, 4]])) {
       for (const side of [1, -1]) {
         if (B) break;
         const a = pointAt(PA, f);
         const n = normalAt(PA, f);
-        const p = planCourse(w, w.derived, line([a[0] + side * n[0] * 2.5 * s, a[1] + side * n[1] * 2.5 * s], [a[0] + side * n[0] * 9 * s, a[1] + side * n[1] * 9 * s]), {
+        const p = planCourse(w, w.derived, line([a[0] + side * n[0] * d0 * s, a[1] + side * n[1] * d0 * s], [a[0] + side * n[0] * d1 * s, a[1] + side * n[1] * d1 * s]), {
           endOnLand: 'sink',
           px: s / 20,
         });

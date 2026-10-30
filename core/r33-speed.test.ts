@@ -120,7 +120,9 @@ describe('地图上的河（带子）与以前的写法逐位相同', () => {
       let weighted = 0;
       // 随点变的粗细倍数（河流类型的粗细）
       const typeMul = (k: number) => 1 + 0.5 * ((k * 7) % 3);
-      for (const line of lines) {
+      for (const ln of lines) {
+        // 溺谷的河口（第三十四轮）喇叭口另画：以前的写法没有它，比的是去掉 ria 的同一条线
+        const line: RiverLine = ln.ria ? { ...ln, ria: undefined } : ln;
         if (line.joins?.length) joined++;
         if (line.mul) weighted++;
         // 地图上的画法（河口多画进水里）、导出的画法（不多画）、再乘随点变的粗细

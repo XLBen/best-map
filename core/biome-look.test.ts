@@ -215,8 +215,8 @@ describe('缩略图里的生态外观', () => {
     let off = 0;
     for (let p = 0; p < W * H; p++) {
       const c = r.cell[p];
-      // 海、湖不变
-      if (!r.land[p] || w.derived.lake[c] === 1) {
+      // 海、湖不变（第三十四轮：小湖群画成湖的颜色，也不变）
+      if (!r.land[p] || w.derived.lake[c] === 1 || r.lakeDot[p]) {
         for (let k = 0; k < 4; k++) off = Math.max(off, Math.abs(tinted[p * 4 + k] - plain[p * 4 + k]));
         continue;
       }
@@ -243,7 +243,7 @@ describe('缩略图里的生态外观', () => {
     let bad = 0;
     for (let p = 0; p < W * H; p++) {
       const c = r.cell[p];
-      if (!r.land[p] || w.derived.lake[c] === 1) continue;
+      if (!r.land[p] || w.derived.lake[c] === 1 || r.lakeDot[p]) continue;
       const add = 255 * (Math.round(255 * w.derived.share[c * S + s]) / 255) * GLOW_GAIN;
       // 海岸线上的像素整体乘 0.72（发光也一起乘），其他像素直接加
       for (let k = 0; k < 3; k++) {

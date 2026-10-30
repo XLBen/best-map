@@ -48,7 +48,7 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { cities: '55ff9bd874105b10', roads: 'f974635456a5614f', landmarks: 'a94f7560c2aba5f4' },
+  region: { cities: 'a96513a641200bc7', roads: '614e9894bb4aadb8', landmarks: '948b87f5474d9c75' },
   planet: { cities: '2d0a9b592cdbc7e1', roads: '1172d80c9817de4f', landmarks: 'e26d029e69576d75' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });

@@ -24,7 +24,7 @@ import {
 const region = { seed: 1, cells: 40000, aspect: 2, latNorth: 60, latSouth: 20 };
 const doc = (commands: number, settings: Partial<WorldDoc['settings']> = {}): WorldDoc => ({
   format: 'map2-world',
-  version: 8,
+  version: 9,
   settings: { ...region, ...settings },
   commands: Array.from({ length: commands }, (_, k) => ({ op: 'set_name', key: `k${k}`, name: `n${k}` }) as unknown as WorldDoc['commands'][number]),
 });

@@ -273,6 +273,18 @@ export function reliefFields(world: World): { T: Float32Array; pit: Float32Array
   return { T: cache.T, pit: cache.components.pit };
 }
 
+// 生成器的分量（只读）：先找这个世界的缓存，再找按网格缓存的采样（同一个键），都没有时才 ensureBase（第三十四轮，海岸类型用：
+// 画面上每算一次海岸场都要问一次，世界的浅副本也问，不能每次都重新组合）。没有生成器时为 null
+export function baseComponentsOf(world: World): BaseComponents | null {
+  if (!world.small.terrain.gen) return null;
+  const key = baseKeys(world).sampleKey;
+  const cache = baseCache.get(world);
+  if (cache && cache.key === key) return cache.components;
+  const s = sampledCache.get(world.mesh)?.find((e) => e.key === key);
+  if (s) return s.components;
+  return ensureBase(world).components;
+}
+
 // 洼地（米）：只读缓存里这个世界的分量（水文用，不重新组合；缓存不是这个世界的就先 ensureBase）。没有生成器时为 null
 export function pitField(world: World): Float32Array | null {
   if (!world.small.terrain.gen) return null;

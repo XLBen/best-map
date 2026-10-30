@@ -1,6 +1,7 @@
 import { MISS, coastReads, keyAdd, keyAddPts, keyStart, memoActive, memoBegin, memoEnd, memoGet, memoMissStart, memoPeek, memoPut } from './coast-memo';
 import { DELTA_DRAW, deltaMouths } from './delta';
-import { type DisplayCoast, displayCoast, displayCoastAt, shoreCrossing } from './display';
+import { type DisplayCoast, displayCoast, displayCoastAt, riverQueries, shoreCrossing } from './display';
+import { coastStyle } from './coast-style';
 import { wrapDelta, wrapX } from './geo';
 import { type Mesh, findCell } from './mesh';
 import { locate, vnoise } from './subcell';
@@ -38,6 +39,8 @@ export interface RiverLine {
   // 三角洲分出去的一股（第三十三轮，只是画法）：从哪条河（traceRivers 结果里的下标）分出去。
   // 它的格都是那条河的河口那一格：点它选中那条河
   branch?: number;
+  // 溺谷（第三十四轮，只是画法）：入海的河口在溺谷海岸上（core/coast-style.ts 的 ria），河口的喇叭口画得更宽、更长
+  ria?: boolean;
 }
 
 // 支流从这一点接着画（画的河流到了别的河都不经过的地方：从它的线上接出去）
@@ -50,12 +53,31 @@ interface Lead {
 
 const WALK_SHORE = { samples: 12, bisect: 9 };
 
+// 溺谷（第三十四轮）：入海的自然的河（不是三角洲分出去的一股），河口那一格的溺谷权重过半的，标上 ria（画的时候喇叭口更宽、更长）
+function markRias(world: World, lines: RiverLine[]): RiverLine[] {
+  const style = coastStyle(world);
+  if (!style) return lines;
+  const { causes, derived: d } = world;
+  for (const l of lines) {
+    if (!l.mouth || l.branch !== undefined || l.guide !== undefined || !l.cells?.length) continue;
+    const c = l.cells[l.cells.length - 1];
+    const r = d.receiver[c];
+    const toSea = !causes.land[c] || (d.lake[c] !== 1 && r >= 0 && !causes.land[r]);
+    if (toSea && style.ria[c] >= 0.5) l.ria = true;
+  }
+  return lines;
+}
+
 export function traceRivers(world: World): RiverLine[] {
   // 按画面海岸场的几样查询跨几次描河记下来（core/coast-memo.ts；结果逐位不变）
   memoBegin(world.mesh, world.small.terrain.coastRoughness);
+  // 描河不画小湖群（第三十四轮，见 core/display.ts 的 riverQueries）
+  const was = riverQueries.on;
+  riverQueries.on = true;
   try {
-    return traceRiversRaw(world);
+    return markRias(world, traceRiversRaw(world));
   } finally {
+    riverQueries.on = was;
     memoEnd();
   }
 }
@@ -1945,6 +1967,9 @@ const TAPER_LEN = 1.25;
 const TAPER_MIN = 0.15;
 const FLARE_LEN = 0.6;
 const FLARE = 0.3;
+// 溺谷的河口（第三十四轮）：最后 RIA_LEN 格渐渐张开到 1 + RIA_FLARE 倍
+const RIA_LEN = 1.5;
+const RIA_FLARE = 1.6;
 // 从湖里流出来的短河（不到 2 格；2–4 格之间渐渐不收）：从湖岸起收细，湖岸处约四成宽，到全长的七成是全宽。
 // 不然一个小湖流出来一两格就入海、入别的湖的河画成一块平头的方块
 const OUTLET_MIN = 0.4;
@@ -2009,7 +2034,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   // 4. 源头收尖、河口张开（从湖里流出来的短河从湖岸起收细），乘上粗细
   const outlet = line.head === 'lake' && L > 0 ? 1 - smooth01((L / spacing - OUTLET_SHORT) / OUTLET_FADE) : 0;
   const hw = new Float32Array(count);
-  const maxHw = halfWidths(hw, w, mul, s, count, line.head === 'source', outlet, !!line.mouth, L, Ls, spacing);
+  const maxHw = halfWidths(hw, w, mul, s, count, line.head === 'source', outlet, !!line.mouth, L, Ls, spacing, line.mouth && line.ria ? 1 : 0);
   // 5. 细小的弯曲：沿原来那条线的法向错开（按位置取噪声，结果确定）；两头半格之内渐渐不弯，水多（按流量的宽）的河弯得少，
   //    拖粗细不改中线
   const nx = new Float32Array(count);
@@ -2051,13 +2076,16 @@ function cumLength(x: Float64Array, y: Float64Array, s: Float64Array, count: num
 }
 
 // 第 4 步：源头收尖、湖口收细、河口张开，乘上粗细；返回最宽处的半宽
-function halfWidths(hw: Float32Array, w: Float64Array, mul: Float64Array, s: Float64Array, count: number, source: boolean, outlet: number, mouth: boolean, L: number, Ls: number, spacing: number): number {
+function halfWidths(hw: Float32Array, w: Float64Array, mul: Float64Array, s: Float64Array, count: number, source: boolean, outlet: number, mouth: boolean, L: number, Ls: number, spacing: number, ria: number): number {
   let maxHw = 0;
+  // 溺谷（ria = 1）：喇叭口更长、更宽
+  const flareLen = ria ? RIA_LEN : FLARE_LEN;
+  const flare = ria ? RIA_FLARE : FLARE;
   for (let i = 0; i < count; i++) {
     let f = mul[i];
     if (source) f *= TAPER_MIN + (1 - TAPER_MIN) * smooth01(s[i] / (TAPER_LEN * spacing));
     if (outlet > 0) f *= 1 - outlet * (1 - OUTLET_MIN) * (1 - smooth01(s[i] / (0.7 * L)));
-    if (mouth) f *= 1 + FLARE * smooth01((s[i] - (Ls - FLARE_LEN * spacing)) / (FLARE_LEN * spacing));
+    if (mouth) f *= 1 + flare * smooth01((s[i] - (Ls - flareLen * spacing)) / (flareLen * spacing));
     hw[i] = (w[i] * f) / 2;
     if (hw[i] > maxHw) maxHw = hw[i];
   }

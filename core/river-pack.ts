@@ -80,6 +80,8 @@ const LAKE = 16;
 const MOUTH = 32;
 const DRAW_TYPE = 64;
 const BRANCH = 128;
+// 溺谷的河口（第三十四轮）
+const RIA = 256;
 
 export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDraw[], drawKey?: { thr: number; spacing: number; types: string }): PackedRivers {
   let np = 0;
@@ -110,6 +112,7 @@ export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDr
     if (l.mouth) flags |= MOUTH;
     if (draws?.[i].type) flags |= DRAW_TYPE;
     if (l.branch !== undefined) flags |= BRANCH;
+    if (l.ria) flags |= RIA;
     let g = -1;
     if (l.guide !== undefined) {
       g = gi.get(l.guide) ?? -1;
@@ -207,6 +210,7 @@ export function unpackRivers(p: PackedRivers): { lines: RiverLine[]; draws: Rive
     if (flags & SOURCE) line.head = 'source';
     if (flags & LAKE) line.head = 'lake';
     if (flags & MOUTH) line.mouth = true;
+    if (flags & RIA) line.ria = true;
     if (into >= 0) {
       if (flags & BRANCH) line.branch = into;
       else line.into = into;

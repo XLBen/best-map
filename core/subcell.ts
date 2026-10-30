@@ -3,6 +3,8 @@ import { type Mesh, type PlaneMesh, findCell, gradient } from './mesh';
 import { type SphereView, viewOf } from './sphere';
 import { landPixelCells } from './island-types';
 import { deltaBulge } from './delta';
+import { displayCoast } from './display';
+import { LOOK, barrierBump, barrierDetail, barrierIsle, fjordCut, landStyle, speckApply, speckK, speckW, styleAt } from './coast-style';
 import { COAST_AMP, coastNoiseField, coastSeed } from './terrain';
 import type { World } from './world';
 
@@ -476,6 +478,97 @@ export function fragLand(world: World): Float32Array | null {
   return value;
 }
 
+// ---------- 海岸类型与小湖群的画法（第三十四轮，core/coast-style.ts；着色器里有一份同样的实现）----------
+// st：这一点插值的 [峡湾, 方向 x, 方向 y, 小湖群, 沙坝, |海岸值|]（styleAt）。s：海岸场（已含海岸细节、破碎），sv：插值的海岸值，h：插值的高程（m）。
+// display：画面上的海岸场（湖面算水，含小湖群）；按陆海判（湖面算陆地）的那一套不画小湖群。x 在整个星球上已绕回 [0, 2)
+export function styledCoast(sphere: boolean, x: number, y: number, sp: number, s: number, sv: number, h: number, st: Float64Array, display: boolean): number {
+  const L = LOOK;
+  // 峡湾只刻陆地（水面上刻了也还是水面，不必取噪声）
+  if (st[0] > 0 && s > 0) s = fjordCut(s, sv, st[0], sphere ? fjordNoise3(x, y, sp, sv, st[1], st[2]) : fjordNoise(x, y, sp, sv, st[1], st[2]));
+  if (st[4] > 0) {
+    const bump = barrierBump(s, st[5]);
+    if (bump > 0) s = barrierIsle(s, st[4], sphere ? sphereNoise(x, y, sp, L.BAR_FREQ, L.BAR_OFF) : planeNoise(x, y, sp, L.BAR_FREQ, L.BAR_OFF), bump, st[5]);
+  }
+  if (display && st[3] > 0) {
+    const w = speckW(s, st[3], h);
+    if (w > 0) {
+      const k = speckK(w, sphere ? sphereNoise(x, y, sp, L.SPK_FREQ, L.SPK_OFF) : planeNoise(x, y, sp, L.SPK_FREQ, L.SPK_OFF));
+      if (k > 0) s = speckApply(s, k);
+    }
+  }
+  return s;
+}
+
+// 小湖群画成水面的程度（导出的栅格标出这些像素）：与 styledCoast 里的同一个算式
+export function speckAt(sphere: boolean, x: number, y: number, sp: number, s: number, h: number, spk: number): number {
+  const L = LOOK;
+  const w = speckW(s, spk, h);
+  if (w <= 0) return 0;
+  return speckK(w, sphere ? sphereNoise(x, y, sp, L.SPK_FREQ, L.SPK_OFF) : planeNoise(x, y, sp, L.SPK_FREQ, L.SPK_OFF));
+}
+
+// 这一点的画法会不会改变海岸场的正负（只看正负的捷径不能走）：峡湾只把岸边的陆地刻成水、沙坝只把水面冒成陆地、小湖群只在低地的陆地上
+// display：画面上的那一套（画小湖群）；a：海岸细节最多能改多少（这一点的海岸场在 sv ± a 之间）。
+// 按各自的算式取上下界：峡湾最多刻 权重 × FJ_AMP × reach（只刻陆地）；沙坝只在 −(MID ± HALF)·R 之间冒（只冒水面）；
+// 小湖群只在海岸场 > SPK_S0、高程在 SPK_LOW0 与 SPK_H0 + SPK_H1 之间
+export function styleMayFlip(st: Float64Array, sv: number, h: number, display: boolean, a: number): boolean {
+  const L = LOOK;
+  if (sv > 0) {
+    if (st[0] > 0 && sv - a <= st[0] * L.FJ_AMP * Math.max(0, 1 - sv / L.FJ_REACH)) return true;
+    return display && st[3] > 0 && sv + a > L.SPK_S0 && h > L.SPK_LOW0 && h < L.SPK_H0 + L.SPK_H1;
+  }
+  if (st[4] <= 0) return false;
+  const R = Math.max(st[5], L.BAR_RMIN);
+  return sv + a > -(L.BAR_MID + L.BAR_HALF) * R && sv - a < -(L.BAR_MID - L.BAR_HALF) * R;
+}
+
+// 峡湾的噪声：沿“往内陆”的方向把这一点挪回岸线（插值的海岸值每格约 FJ_K）再取，噪声沿这个方向几乎不变：一道道窄长的海湾顺着坡向
+function fjordNoise(x: number, y: number, sp: number, sv: number, dx: number, dy: number): number {
+  const L = LOOK;
+  const l = Math.hypot(dx, dy);
+  const ux = l > 1e-6 ? dx / l : 1;
+  const uy = l > 1e-6 ? dy / l : 0;
+  const back = (sv * sp) / L.FJ_K;
+  return fbmSub(((x - ux * back) / sp) * L.FJ_FREQ + L.FJ_OFF[0], ((y - uy * back) / sp) * L.FJ_FREQ + L.FJ_OFF[1], 2);
+}
+
+// 整个星球：方向是（东、南）分量，换成这一点的三维方向；在球面上取（与着色器相同）
+function fjordNoise3(x: number, y: number, sp: number, sv: number, dx: number, dy: number): number {
+  const L = LOOK;
+  const lon = Math.PI * (x - 1);
+  const colat = Math.PI * Math.min(1, Math.max(0, y));
+  const cl = Math.cos(lon);
+  const sl = Math.sin(lon);
+  const cc = Math.cos(colat);
+  const sc = Math.sin(colat);
+  let d0 = dx * -sl + dy * cc * cl;
+  let d1 = dx * cl + dy * cc * sl;
+  let d2 = dy * -sc;
+  const l = Math.hypot(d0, d1, d2);
+  if (l > 1e-6) {
+    d0 /= l;
+    d1 /= l;
+    d2 /= l;
+  } else {
+    d0 = -sl;
+    d1 = cl;
+    d2 = 0;
+  }
+  const back = (sv * Math.PI * sp) / L.FJ_K;
+  const k = noiseK(sp) * L.FJ_FREQ;
+  return fbmSub3((sc * cl - d0 * back) * k + L.FJ_OFF[0], (sc * sl - d1 * back) * k + L.FJ_OFF[1], (cc - d2 * back) * k + L.FJ_OFF[2], 2);
+}
+
+function planeNoise(x: number, y: number, sp: number, freq: number, off: readonly [number, number, number]): number {
+  return fbmSub((x / sp) * freq + off[0], (y / sp) * freq + off[1], 2);
+}
+
+function sphereNoise(x: number, y: number, sp: number, freq: number, off: readonly [number, number, number]): number {
+  const [px, py, pz] = sphereOf(x, y);
+  const k = noiseK(sp) * freq;
+  return fbmSub3(px * k + off[0], py * k + off[1], pz * k + off[2], 2);
+}
+
 // ---------- 点所在的三角形 ----------
 // 结果写进 li / lw（三个角与重心坐标），返回最近的格：逐像素调用时不新建对象和闭包
 const li = new Int32Array(3);
@@ -577,6 +670,8 @@ export function locate(mesh: Mesh, x: number, y: number, hint: number): { i: [nu
   return { i: [li[0], li[1], li[2]], w: [lw[0], lw[1], lw[2]], nearest };
 }
 
+const stPt = new Float64Array(6);
+
 // 一个点是陆地还是海：与着色器的判定相同
 // frag（可选）：每格的破碎度（fragValues），省略时按没打碎算
 export function pointIsLand(world: World, s: Float32Array, elevation: Float32Array, x: number, y: number, hint: number, frag: Float32Array | null = null): { land: boolean; nearest: number; height: number } {
@@ -587,10 +682,14 @@ export function pointIsLand(world: World, s: Float32Array, elevation: Float32Arr
   const h = elevation[a] * wa + elevation[b] * wb + elevation[c] * wc;
   const wmax = Math.max(wa, wb, wc);
   const weight = Math.min(1, (1 - wmax) * 2.2);
-  const det = weight * coastDetailAmp(world, Math.max(0, h)) * coastDetail(x, y, world.mesh.spacing);
+  // 海岸类型（第三十四轮）：沙坝海岸压平海岸细节，峡湾、沙坝改海岸场（按陆海判，不画小湖群）
+  const style = landStyle(world);
+  if (style) styleAt(style, s, a, b, c, wa, wb, wc, stPt);
+  const det = weight * coastDetailAmp(world, Math.max(0, h)) * (style ? barrierDetail(stPt[4]) : 1) * coastDetail(x, y, world.mesh.spacing);
   let total = sv + det;
   const fv = frag ? frag[a] * wa + frag[b] * wb + frag[c] * wc : 0;
   if (fv > 0) total = fragCoast(sv, det, fv, Math.min(1, Math.max(0, (1 - wmax) * 2.2)), world.mesh.kind === 'sphere' ? fragNoise3(x, y, world.mesh.spacing) : fragNoise(x, y, world.mesh.spacing));
+  if (style) total = styledCoast(world.mesh.kind === 'sphere', world.mesh.kind === 'sphere' ? x - 2 * Math.floor(x / 2) : x, y, world.mesh.spacing, total, sv, h, stPt, false);
   return { land: total > 0, nearest: loc.nearest, height: h };
 }
 
@@ -989,6 +1088,8 @@ export interface Raster {
   elevation: Float32Array;
   // 分类数据（省份、生态）取的格：坐标扭曲后的最近格，且陆海类别与像素一致
   cell: Int32Array;
+  // 画成小湖群的水面的陆地像素（第三十四轮：格还是陆地，导出按湖画）；没有小湖群的世界里全是 0
+  lakeDot: Uint8Array;
 }
 
 // 每隔这么多行报一次进度
@@ -1010,7 +1111,14 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
       grad[2 * i + 1] = gy;
     }
   }
-  const out: Raster = { width, height, land: new Uint8Array(width * height), elevation: new Float32Array(width * height), cell: new Int32Array(width * height) };
+  const out: Raster = { width, height, land: new Uint8Array(width * height), elevation: new Float32Array(width * height), cell: new Int32Array(width * height), lakeDot: new Uint8Array(width * height) };
+  // 海岸类型（第三十四轮）：没有生成器时为 null，逐像素照旧
+  const packed = landStyle(world);
+  const st = new Float64Array(6);
+  // 画面上的海岸场（小湖群按它判）
+  const fd = packed ? displayCoast(world) : null;
+  const stw = new Float64Array(6);
+  const sp = mesh.spacing;
   const outLand = out.land;
   const outElev = out.elevation;
   const outCell = out.cell;
@@ -1044,10 +1152,28 @@ export function rasterizeWorld(world: World, width: number, height: number, onPr
       const sv = s[a] * wa + s[b] * wb + s[c] * wc;
       const h = elev[a] * wa + elev[b] * wb + elev[c] * wc;
       const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
-      const det = weight * coastDetailAmp(world, Math.max(0, h)) * noise.coast(px);
+      if (packed) styleAt(packed, s, a, b, c, wa, wb, wc, st);
+      const det = weight * coastDetailAmp(world, Math.max(0, h)) * (packed ? barrierDetail(st[4]) : 1) * noise.coast(px);
       // 破碎的地方（fv > 0）按 fragCoast；别处与以前逐位相同
       const fv = frag ? frag[a] * wa + frag[b] * wb + frag[c] * wc : 0;
-      const total = fv > 0 ? fragCoast(sv, det, fv, weight, noise.frag(px)) : sv + det;
+      let total = fv > 0 ? fragCoast(sv, det, fv, weight, noise.frag(px)) : sv + det;
+      // 峡湾、沙坝（第三十四轮）；小湖群只标出来（格还是陆地）
+      if (packed) {
+        total = styledCoast(sphere, x, y, sp, total, sv, h, st, false);
+        // 小湖群按画面上的海岸场判（湖面取负、湖的高程取负的水深，与屏幕、悬停相同）：只在冰盖到过的陆地像素上算
+        if (total > 0 && st[3] > 0 && fd) {
+          const fc = fd.coast;
+          const fe = fd.elevation;
+          const hw = fe[a] * wa + fe[b] * wb + fe[c] * wc;
+          const svw = fc[a] * wa + fc[b] * wb + fc[c] * wc;
+          styleAt(fd.style!, fc, a, b, c, wa, wb, wc, stw);
+          const detw = weight * coastDetailAmp(world, Math.max(0, hw)) * barrierDetail(stw[4]) * noise.coast(px);
+          const fvw = fd.frag ? fd.frag[a] * wa + fd.frag[b] * wb + fd.frag[c] * wc : 0;
+          let sw = fvw > 0 ? fragCoast(svw, detw, fvw, weight, noise.frag(px)) : svw + detw;
+          sw = styledCoast(sphere, x, y, sp, sw, svw, hw, stw, false);
+          if (sw > 0 && stw[3] > 0 && speckApply(sw, speckAt(sphere, x, y, sp, sw, hw, stw[3])) <= 0) out.lakeDot[py * width + px] = 1;
+        }
+      }
       const land = total > 0;
       const gx = grad[2 * a] * wa + grad[2 * b] * wb + grad[2 * c] * wc;
       const gy = grad[2 * a + 1] * wa + grad[2 * b + 1] * wb + grad[2 * c + 1] * wc;

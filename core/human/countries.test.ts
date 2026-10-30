@@ -81,7 +81,7 @@ function countryDigest(w: World): Record<string, string> {
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { country: '81abfb9c2562c4e0', countries: '481c7ea70753a981' },
+  region: { country: 'fba9edf84a5ad911', countries: '19ce6d4d8b391d41' },
   planet: { country: 'c5b5dec5d2c02589', countries: '287865ed026f9a65' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });

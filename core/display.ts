@@ -3,7 +3,8 @@ import { wrapX } from './geo';
 import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
-import { bytesHash, coastDetail, coastDetail3, coastDetailAmp, shownCoastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, warpOffset, warpOffset3 } from './subcell';
+import { bytesHash, coastDetail, coastDetail3, coastDetailAmp, shownCoastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, styleMayFlip, styledCoast, warpOffset, warpOffset3 } from './subcell';
+import { barrierDetail, landStyle, styleAt, withoutLakeBarriers } from './coast-style';
 import { landPixelCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
@@ -24,6 +25,8 @@ export interface DisplayCoast {
   elevation: Float32Array;
   // 每格的破碎度（0–1，第十八轮；湖面格照样有：湖里也能放碎岛）。没打碎过时为 null
   frag: Float32Array | null;
+  // 海岸类型与小湖群（第三十四轮，每格两个数，见 core/coast-style.ts 的 packed；湖面格没有沙坝）。没有生成器时为 null
+  style: Float32Array | null;
 }
 
 // 按高程数组缓存，另比湖、水面、陆海、陆地程度、海岸破碎度、海岸的种子、破碎度（当前世界与预览世界各留一份）
@@ -31,23 +34,33 @@ const displayCache = new WeakMap<Float32Array, { inputs: unknown[]; value: Displ
 export function displayCoast(world: World): DisplayCoast {
   const { derived: d, causes } = world;
   // 三角洲向海凸出（第三十三轮）按流向、汇水面积、“最高的山”认
-  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment && bytesHash(2166136261, causes.fragment), d.receiver, d.drainArea, world.small.planet.mountainScale];
+  // 海岸类型（第三十四轮）只取决于陆海与生成器的分量：改了哪一样高程都是新的数组（重画一片也是），键里另加重画的记录。
+  // 不在命中前算 landStyle（描河时 shoreCrossing 每次都来问，命中要快）
+  const inputs: unknown[] = [d.lake, d.water, causes.land, causes.landness, world.small.terrain.coastRoughness, coastSeed(world), causes.fragment && bytesHash(2166136261, causes.fragment), d.receiver, d.drainArea, world.small.planet.mountainScale, world.small.terrain.gen?.rerolls];
   let list = displayCache.get(d.elevation);
   if (!list) displayCache.set(d.elevation, (list = []));
   const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
   if (hit) return hit.value;
   const coast = shownCoastValues(world);
   const elevation = d.elevation.slice();
+  const ls = landStyle(world);
+  // 湖里不画沙坝（第三十四轮）：顺带记下有沙坝权重的湖格，有的话换一份去掉它们的（core/coast-style.ts 的 withoutLakeBarriers）
+  const lakeBar: number[] = [];
   for (let i = 0; i < world.mesh.n; i++) {
     if (!isLakeCell(world, i)) continue;
     coast[i] = lakeCoast(coast[i]);
     elevation[i] = -lakeDepth(world, i);
+    if (ls && ls[2 * i + 1] !== 0) lakeBar.push(i);
   }
-  const value = { coast, elevation, frag: fragValues(world, false) };
+  const value = { coast, elevation, frag: fragValues(world, false), style: ls && withoutLakeBarriers(ls, lakeBar) };
   list.unshift({ inputs, value });
   list.length = Math.min(list.length, 2);
   return value;
 }
+
+// 描河时（core/rivers.ts 的 traceRivers）不画小湖群（第三十四轮）：河口在海岸、湖岸上，小湖群只在离岸远、高出海平面的低地上；
+// 一段线在不在陆地上（分汊的几股）只看真正的水面。小湖群在冰川低地上到处都有，算进来时只看正负的捷径几乎都走不了，描一遍河慢一两成
+export const riverQueries = { on: false };
 
 // 画面上一点的海岸场（> 0 画成陆地，湖、海 < 0）：与地形层的着色器同一个算式（三角形内插值 + 格以下的海岸细节，
 // 整个星球上细节在球面上取）。hint：附近的格；返回值与离它最近的格（下一次的 hint）。
@@ -66,14 +79,23 @@ export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: numb
   const sv = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
   const h = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
   const weight = Math.min(1, Math.max(0, (1 - Math.max(wa, wb, wc)) * 2.2));
-  const amp = weight * coastDetailAmp(world, Math.max(0, h));
+  let amp = weight * coastDetailAmp(world, Math.max(0, h));
   // 破碎的地方（第十八轮）：不走只看正负的捷径
   const fv = f.frag ? f.frag[a] * wa + f.frag[b] * wb + f.frag[c] * wc : 0;
-  if (signOnly && fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX) return { v: sv, nearest: loc.nearest };
+  // 海岸类型与小湖群（第三十四轮）：可能改变正负的地方也不走捷径
+  const style = f.style;
+  if (style) {
+    styleAt(style, f.coast, a, b, c, wa, wb, wc, stAt);
+    amp *= barrierDetail(stAt[4]);
+  }
+  const speck = !riverQueries.on;
+  if (signOnly && fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX && !(style && styleMayFlip(stAt, sv, h, speck, amp * DETAIL_MAX))) return { v: sv, nearest: loc.nearest };
   const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
-  if (fv > 0) return { v: fragCoast(sv, amp * detail, fv, weight, sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)), nearest: loc.nearest };
-  return { v: sv + amp * detail, nearest: loc.nearest };
+  let v = fv > 0 ? fragCoast(sv, amp * detail, fv, weight, sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)) : sv + amp * detail;
+  if (style) v = styledCoast(sphere, px, y, sp, v, sv, h, stAt, speck);
+  return { v, nearest: loc.nearest };
 }
+const stAt = new Float64Array(6);
 
 // 两格的格心 a、b 之间是不是画面三角网的一条边（一块地区的格与网格的相邻相同；整个星球按显示的三角网：
 // 接缝外的影子点要正好落在 b 上，两极那一行的影子点不算）
@@ -91,6 +113,7 @@ function displayEdge(world: World, c: number, r: number, a: readonly [number, nu
 // 从陆上的一点 a 往水里的一点 b 走，画出来的岸线在哪里（第一次走到水面的地方）：先等分取 12 个点，再在跨过岸线的那一小段里二分。
 // a 在画面上不是陆地、一路都没走到水面时为 null。整个星球上 x 可以展开（结果与 a 在同一份上）
 const CROSS_SAMPLES = 12;
+const stEdge = new Float64Array(6);
 const CROSS_BISECT = 12;
 // edge（可选）：a、b 是相邻两格 [c, r] 的格心（河口那格与它流进的水面那格）。这条边在画面的三角网里时，线上每一点的重心坐标
 // 就是 (1 − t, t, 0)，不必一点点找三角形（逐点找要慢几倍）；不在时（整个星球两极附近）照常找。
@@ -116,14 +139,21 @@ export function shoreCrossing(
         const [c, r] = edge!;
         const sv = f.coast[c] * (1 - t) + f.coast[r] * t;
         const weight = Math.min(1, Math.max(0, (1 - Math.max(1 - t, t)) * 2.2));
-        const amp = weight * coastDetailAmp(world, Math.max(0, f.elevation[c] * (1 - t) + f.elevation[r] * t));
+        const hh = f.elevation[c] * (1 - t) + f.elevation[r] * t;
+        let amp = weight * coastDetailAmp(world, Math.max(0, hh));
         const fv = f.frag ? f.frag[c] * (1 - t) + f.frag[r] * t : 0;
-        if (fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX) return sv;
+        // 海岸类型与小湖群（第三十四轮，与 displayCoastAt 相同）
+        const style = f.style;
+        if (style) {
+          styleAt(style, f.coast, c, r, r, 1 - t, t, 0, stEdge);
+          amp *= barrierDetail(stEdge[4]);
+        }
+        if (fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX && !(style && styleMayFlip(stEdge, sv, hh, !riverQueries.on, amp * DETAIL_MAX))) return sv;
         const x = ax + dx * t;
         const y = ay + dy * t;
         const det = amp * (sphere ? coastDetail3(wrapX(x), y, mesh.spacing) : coastDetail(x, y, mesh.spacing));
-        if (fv > 0) return fragCoast(sv, det, fv, weight, sphere ? fragNoise3(wrapX(x), y, mesh.spacing) : fragNoise(x, y, mesh.spacing));
-        return sv + det;
+        const v = fv > 0 ? fragCoast(sv, det, fv, weight, sphere ? fragNoise3(wrapX(x), y, mesh.spacing) : fragNoise(x, y, mesh.spacing)) : sv + det;
+        return style ? styledCoast(sphere, sphere ? wrapX(x) : x, y, mesh.spacing, v, sv, hh, stEdge, !riverQueries.on) : v;
       }
     : (t: number) => {
         const r = displayCoastAt(world, f, ax + dx * t, ay + dy * t, h, true);
@@ -163,6 +193,8 @@ export function shoreCrossing(
 // 悬停卡片、吸取生态、点地名要说的是这一点画成的陆地或海，用 here（与这一点同类的格：同类时就是 cell，
 // 不同类时按导出的规则换成最近的同类邻格）。
 // 悬停卡片“这里”、Alt 吸取、选省、合并、点地名都用它：说的、取的就是屏幕上画出来的那一格
+
+const stCell = new Float64Array(6);
 
 export interface DisplayCell {
   // 扭曲后的最近格（着色器的 id：生态的平涂、按格着色的视图画的是它）
@@ -225,16 +257,30 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   // 破碎的地方（第十八轮）：碎岛的噪声只在要用时取
   let fn = Number.NaN;
   const fragN = () => (Number.isNaN(fn) ? (fn = sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)) : fn);
-  const det = weight * coastDetailAmp(world, Math.max(0, h)) * detail;
+  // 海岸类型（第三十四轮）：峡湾、沙坝按陆海判也算（小湖群只在画面的海岸场里）
+  const cs = landStyle(world);
+  if (cs) styleAt(cs, s, a, b, c, wa, wb, wc, stCell);
+  const det = weight * coastDetailAmp(world, Math.max(0, h)) * (cs ? barrierDetail(stCell[4]) : 1) * detail;
   const fv = fl ? fl[a] * wa + fl[b] * wb + fl[c] * wc : 0;
-  const land = (fv > 0 ? fragCoast(sv, det, fv, weight, fragN()) : sv + det) > 0;
+  let sl = fv > 0 ? fragCoast(sv, det, fv, weight, fragN()) : sv + det;
+  if (cs) sl = styledCoast(sphere, px, y, sp, sl, sv, h, stCell, false);
+  const land = sl > 0;
   // 画成水面（海、湖）还是陆地：画面上的海岸场（湖面取负，与地形层、着色器的 land 相同）
   const f = displayCoast(world);
   const sw = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
   const hw = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
-  const detW = weight * coastDetailAmp(world, Math.max(0, hw)) * detail;
+  if (f.style) styleAt(f.style, f.coast, a, b, c, wa, wb, wc, stCell);
+  const detW = weight * coastDetailAmp(world, Math.max(0, hw)) * (f.style ? barrierDetail(stCell[4]) : 1) * detail;
   const fw = f.frag ? f.frag[a] * wa + f.frag[b] * wb + f.frag[c] * wc : 0;
-  const water = (fw > 0 ? fragCoast(sw, detW, fw, weight, fragN()) : sw + detW) <= 0;
+  let swv = fw > 0 ? fragCoast(sw, detW, fw, weight, fragN()) : sw + detW;
+  // 小湖群（第三十四轮）：没画小湖群时是陆地、画了是水面的点不归哪个省（与合成着色器相同）
+  let speck = false;
+  if (f.style) {
+    const pre = styledCoast(sphere, px, y, sp, swv, sw, hw, stCell, false);
+    swv = styledCoast(sphere, px, y, sp, swv, sw, hw, stCell, true);
+    speck = pre > 0 && swv <= 0;
+  }
+  const water = swv <= 0;
   // 扭曲后的最近格（整个星球：南北夹在两极以内，与着色器相同）
   const [wx, wy] = sphere ? warpOffset3(px, y, sp) : warpOffset(px, y, sp);
   const qy = sphere ? Math.min(1, Math.max(0, y + wy)) : y + wy;
@@ -242,7 +288,7 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   // 碎岛（破碎的海格里画成陆地的像素）就是那一格（与导出相同）
   const isle = land && causes.land[cell] !== 1 && !!fl && fl[cell] > 0;
   const here = (causes.land[cell] === 1) === land || isle ? cell : sameKindNear(world, land, cell, loc.nearest, px, y);
-  return { cell, land, water, here, province: provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water, f.frag) };
+  return { cell, land, water, here, province: speck ? -1 : provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water, f.frag) };
 }
 
 // 省份按哪一格（第十三轮；与着色器的 provCell 同一条规则）：扭曲后的格按剪刀切线换过；这一点画成水面（海、湖）而那一格是陆地格时

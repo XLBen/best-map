@@ -423,7 +423,8 @@ describe('流进湖、汇入', () => {
     for (let i = 0; i < mesh.n && !plan; i += 11) {
       if (!w.causes.land[i] || w.derived.continentality[i] < 0.5 || isRiverCell(w, w.derived, i)) continue;
       const p = planCourse(w, w.derived, line(at(w, i), [mesh.x[i] + 16 * mesh.spacing, mesh.y[i] - 3 * mesh.spacing]), { endOnLand: 'flow' });
-      if (!p.blocked && !p.reroute && p.crossings.length && p.crossings[0].guide === null && p.crossings[0].from > 2) plan = p;
+      // 第三十四轮：穿过的河至少两倍门槛的水（地形变了以后第一个找到的穿过的是一条刚够门槛的小河，汇入后从下游才认得出汇合处）
+      if (!p.blocked && !p.reroute && p.crossings.length && p.crossings[0].guide === null && p.crossings[0].from > 2 && w.derived.discharge[p.cells[p.crossings[0].from]] >= 2 * w.small.planet.riverThreshold) plan = p;
     }
     expect(plan).not.toBeNull();
     const k = plan!.crossings[0].from;

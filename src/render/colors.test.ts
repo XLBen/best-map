@@ -405,7 +405,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
       expect(river, name).toBeLessThan(main.indexOf('if (uHasGroup == 1 && pc >= 0) {'));
       expect(river, name).toBeLessThan(main.indexOf('if (uHasHighlight == 1 && id >= 0) {'));
       // 省份：像素自己的格、省界与轮廓的相邻像素都过 provCell（水面的像素不取陆地格）
-      expect(main, name).toContain('int pc = provCell(seamCell(id, vUv), vUv, land);');
+      expect(main, name).toContain('int pc = hs.g < -10000.0 ? -1 : provCell(seamCell(id, vUv), vUv, land);');
       expect(main, name).toContain('float gx = groupOf(provAt(vUv + dx, uvW + dx));');
       expect(main, name).toContain('int idH = byGroup ? pc : id;');
       expect(main, name).toContain('hlByte(byGroup ? provAt(vUv + hx, uvW + hx)');

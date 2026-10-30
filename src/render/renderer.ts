@@ -5,6 +5,7 @@ import { PATTERNS } from '../../core/species';
 import { fromUnit } from '../../core/geo';
 import { viewOf } from '../../core/sphere';
 import { FRAG_AMP, FRAG_D_MAX, FRAG_D_MIN, FRAG_FREQ, FRAG_G, FRAG_OFF } from '../../core/subcell';
+import { LOOK } from '../../core/coast-style';
 import { COUNTRY_ALPHA, FEDERATION_GROUP, type GhostLayers, ISLET_FLAT, SEA_CLAIM_ALPHA } from './colors';
 import { GLOBE_G, PROJ_GLSL, type Proj, effectiveZoom, planeBounds, sceneNeed, screenToWorld as projScreenToWorld, worldToScreen as projWorldToScreen } from './projection';
 
@@ -56,6 +57,9 @@ float fbmSub(vec2 p, int oct) {
 }
 `;
 
+// 小湖群的水面在地形层的高度纹理里的海岸场（第三十四轮）：合成着色器认它（不进省份）
+export const SPECK_MARK = -20000;
+
 // 数 → GLSL 的浮点字面量（整数也带小数点）
 const glsl = (v: number) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
 
@@ -79,6 +83,97 @@ float fragSeaDepth(float h, float fv) {
 `;
 const FRAG_N2 = `fbmSub(vWorld / uSpacing * ${glsl(FRAG_FREQ)} + vec2(${glsl(FRAG_OFF[0])}, ${glsl(FRAG_OFF[1])}), 3)`;
 const FRAG_N3 = `fbmSub3(P * (uNoiseK * ${glsl(FRAG_FREQ)}) + vec3(${FRAG_OFF.map(glsl).join(', ')}), 3)`;
+
+// 海岸类型与小湖群（第三十四轮）：与 core/coast-style.ts 的 barrierDetail、fjordCut、barrierIsle、speckK、speckApply 同一个算式
+// （测试里把这一段换成 JS 与它比）。峡湾的权重与方向、小湖群、沙坝在海岸值纹理的 b、a（顶点着色器拆开，见 VS_CELL）；
+// 权重为 0 的地方整段跳过
+export const STYLE_GLSL = `
+float styleWeight(float wmax) {
+  return min(1.0, max(0.0, (1.0 - wmax) * ${glsl(LOOK.STYLE_CENTER)}));
+}
+float sm01(float t) {
+  float u = min(1.0, max(0.0, t));
+  return u * u * (3.0 - 2.0 * u);
+}
+float barrierDetail(float bw) {
+  return 1.0 - ${glsl(LOOK.BAR_SMOOTH)} * bw;
+}
+float fjordCut(float s, float sv, float fj, float n) {
+  float line = 1.0 - sm01((abs(n) - ${glsl(LOOK.FJ_W0)}) / ${glsl(LOOK.FJ_W1)});
+  float reach = max(0.0, 1.0 - max(sv, 0.0) / ${glsl(LOOK.FJ_REACH)});
+  return s - fj * ${glsl(LOOK.FJ_AMP)} * line * reach;
+}
+float barrierBump(float s, float r) {
+  float R = max(r, ${glsl(LOOK.BAR_RMIN)});
+  return max(0.0, 1.0 - abs(s + ${glsl(LOOK.BAR_MID)} * R) / (${glsl(LOOK.BAR_HALF)} * R));
+}
+float barrierIsle(float s, float bw, float n, float bump, float r) {
+  return s + bw * sm01((n - ${glsl(LOOK.BAR_GAP)}) / ${glsl(LOOK.BAR_GAP_W)}) * ${glsl(LOOK.BAR_LIFT)} * max(r, ${glsl(LOOK.BAR_RMIN)}) * bump;
+}
+float speckW(float s, float spk, float h) {
+  return spk * (1.0 - sm01((h - ${glsl(LOOK.SPK_H0)}) / ${glsl(LOOK.SPK_H1)})) * sm01((s - ${glsl(LOOK.SPK_S0)}) / ${glsl(LOOK.SPK_S1)}) * sm01((h - ${glsl(LOOK.SPK_LOW0)}) / ${glsl(LOOK.SPK_LOW1)});
+}
+float speckK(float w, float n) {
+  return sm01((n - (${glsl(LOOK.SPK_T)} + (1.0 - w) * ${glsl(LOOK.SPK_TW)})) / ${glsl(LOOK.SPK_W)});
+}
+float speckApply(float s, float k) {
+  return s - k * (s + ${glsl(LOOK.SPK_DEPTH)});
+}
+float lagoonK(float s0, float bw, float r) {
+  float R = max(r, ${glsl(LOOK.BAR_RMIN)});
+  return bw * sm01((s0 + ${glsl(LOOK.LAG_OUT)} * R) / (${glsl(LOOK.LAG_W)} * R));
+}
+`;
+const STYLE_DIR_GLSL = `
+vec2 fjordDir(vec2 d) {
+  float l = length(d);
+  return l > 1e-6 ? d / l : vec2(1.0, 0.0);
+}
+`;
+const STYLE_DIR3_GLSL = `
+vec3 fjordDir3(vec2 d, vec2 world) {
+  float lon = PI * (world.x - 1.0);
+  float colat = PI * clamp(world.y, 0.0, 1.0);
+  vec3 E = vec3(-sin(lon), cos(lon), 0.0);
+  vec3 S = vec3(cos(colat) * cos(lon), cos(colat) * sin(lon), -sin(colat));
+  vec3 D = d.x * E + d.y * S;
+  float l = length(D);
+  return l > 1e-6 ? D / l : E;
+}
+`;
+const vec2Of = (o: readonly number[]) => `vec2(${glsl(o[0])}, ${glsl(o[1])})`;
+const vec3Of = (o: readonly number[]) => `vec3(${o.map(glsl).join(', ')})`;
+export const STYLE_N2 = {
+  fjord: `fbmSub((vWorld - fjordDir(vFjDir) * (vCoast * uSpacing / ${glsl(LOOK.FJ_K)})) / uSpacing * ${glsl(LOOK.FJ_FREQ)} + ${vec2Of(LOOK.FJ_OFF)}, 2)`,
+  bar: `fbmSub(vWorld / uSpacing * ${glsl(LOOK.BAR_FREQ)} + ${vec2Of(LOOK.BAR_OFF)}, 2)`,
+  speck: `fbmSub(vWorld / uSpacing * ${glsl(LOOK.SPK_FREQ)} + ${vec2Of(LOOK.SPK_OFF)}, 2)`,
+};
+export const STYLE_N3 = {
+  fjord: `fbmSub3((P - fjordDir3(vFjDir, vWorld) * (vCoast * PI * uSpacing / ${glsl(LOOK.FJ_K)})) * (uNoiseK * ${glsl(LOOK.FJ_FREQ)}) + ${vec3Of(LOOK.FJ_OFF)}, 2)`,
+  bar: `fbmSub3(P * (uNoiseK * ${glsl(LOOK.BAR_FREQ)}) + ${vec3Of(LOOK.BAR_OFF)}, 2)`,
+  speck: `fbmSub3(P * (uNoiseK * ${glsl(LOOK.SPK_FREQ)}) + ${vec3Of(LOOK.SPK_OFF)}, 2)`,
+};
+// 地形层的主函数里：海岸场算完（含破碎）之后依次刻峡湾、冒沙坝、画小湖群；sBase 是之前的（潟湖的颜色按它）
+export const styleMain = (n: { fjord: string; bar: string; speck: string }) => `  float sBase = s;
+  float wst = styleWeight(wmax);
+  if (vFjord > 0.0 && s > 0.0) s = fjordCut(s, vCoast, vFjord * wst, ${n.fjord});
+  if (vBar > 0.0) {
+    float bump = barrierBump(s, vCoastAbs);
+    if (bump > 0.0) s = barrierIsle(s, vBar * wst, ${n.bar}, bump, vCoastAbs);
+  }
+  float lakeDot = 0.0;
+  if (vSpeck > 0.0) {
+    float spw = speckW(s, vSpeck * wst, h);
+    if (spw > 0.0) {
+      lakeDot = speckK(spw, ${n.speck});
+      if (lakeDot > 0.0) s = speckApply(s, lakeDot);
+    }
+  }
+`;
+// 水面一侧：沙坝后面的潟湖（偏青绿的浅水）、小湖群（湖的颜色）
+const STYLE_SEA_GLSL = `
+    if (vBar > 0.0 && uSeaData == 0) col = mix(col, vec3(0.42, 0.66, 0.62), 0.6 * lagoonK(sBase, vBar * wst, vCoastAbs));
+    if (lakeDot > 0.0) col = mix(col, vec3(0.27, 0.49, 0.69), min(1.0, 1.5 * lakeDot));`;
 
 // 合成着色器里生态的花纹、发光那几段的首尾标记。这几段在个别显卡、驱动上编译不过时，去掉它们再编译一次（compileCompose）：
 // 地图照常画，只是没有花纹、发光，不会整张地图都出不来
@@ -212,6 +307,15 @@ out float vSeaElev;
 out float vCoast;
 // 破碎度（第十八轮，海岸值纹理的 g）
 out float vFrag;
+// 海岸类型与小湖群（第三十四轮，海岸值纹理的 b、a）：峡湾的权重与方向（平面按地图坐标、星球按东、南）、小湖群、沙坝
+// 打包成两个插值量（少几个插值的槽：缩小看时三角形多，每多一个槽地形层就慢一截）：vStyle = (峡湾, 方向, 小湖群)，vStyle2 = (沙坝, |海岸值|)
+out vec4 vStyle;
+out vec2 vStyle2;
+float vFjord;
+vec2 vFjDir;
+float vSpeck;
+float vBar;
+float vCoastAbs;
 out vec2 vGrad;
 out vec2 vSeaGrad;
 out vec2 vWorld;
@@ -222,9 +326,26 @@ void main() {
   ivec2 t = ivec2(c % ${TEX_W}, c / ${TEX_W});
   vec4 col = texelFetch(uColor, t, 0);
   vec4 other = texelFetch(uOther, t, 0);
-  vec2 cf = texelFetch(uCoast, t, 0).rg;
+  vec4 cf = texelFetch(uCoast, t, 0);
   vCoast = cf.r;
   vFrag = cf.g;
+  // b：峡湾（权重 × 255 + 256 × 方向的余弦 + 65536 × 正弦，都量化成 0–255）或负的小湖群（× 255），见 core/coast-style.ts 的 decodeStyleB
+  if (cf.b > 0.5) {
+    float sq = floor(cf.b / 65536.0);
+    float rest = cf.b - 65536.0 * sq;
+    float cq = floor(rest / 256.0);
+    vFjord = (rest - 256.0 * cq) / 255.0;
+    vFjDir = vec2(cq, sq) / 127.5 - 1.0;
+    vSpeck = 0.0;
+  } else {
+    vFjord = 0.0;
+    vFjDir = vec2(0.0);
+    vSpeck = -cf.b / 255.0;
+  }
+  vBar = cf.a;
+  vCoastAbs = abs(cf.r);
+  vStyle = vec4(vFjord, vFjDir, vSpeck);
+  vStyle2 = vec2(vBar, vCoastAbs);
   // 陆地格：陆色是自己、水色是对岸的；水面格反过来。像素再按陆海选一个，颜色不跨海岸互相渗
   bool isLand = vCoast > 0.0;
   vLandCol = isLand ? col : other;
@@ -269,6 +390,13 @@ in float vElev;
 in float vSeaElev;
 in float vCoast;
 in float vFrag;
+in vec4 vStyle;
+in vec2 vStyle2;
+float vFjord;
+vec2 vFjDir;
+float vSpeck;
+float vBar;
+float vCoastAbs;
 in vec2 vGrad;
 in vec2 vSeaGrad;
 in vec2 vWorld;
@@ -288,6 +416,8 @@ layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oHeight;
 ${NOISE_GLSL}
 ${FRAG_GLSL}
+${STYLE_GLSL}
+${STYLE_DIR_GLSL}
 // 分形噪声：屏幕上不到两像素的那几层淡掉（全图时不闪）。pxPerUnit：p 的一个单位合多少像素。
 // 淡到正好为 0 之后的各层都是 0（波长只会越来越短），不必再算
 float fbmFade(vec2 p, int oct, float pxPerUnit) {
@@ -320,16 +450,17 @@ float landDetailAt(vec2 world, vec2 dir, float relief, float h, float cellPx) {
   return uDetail * (gully + bumps);
 }
 void main() {
+  vFjord = vStyle.x; vFjDir = vStyle.yz; vSpeck = vStyle.w; vBar = vStyle2.x; vCoastAbs = vStyle2.y;
   float h = vElev;
   // 格以下的海岸：重心权重在格中心为 0，格的陆海与模拟一致（与导出逐位一致，不淡出）
   float wmax = max(vBary.x, max(vBary.y, vBary.z));
   float weight = clamp((1.0 - wmax) * 2.2, 0.0, 1.0);
   float rugged = clamp(max(h, 0.0) / 1200.0, 0.0, 1.0);
   float amp = uCoastAmp * (0.55 + 0.9 * rugged);
-  float det = weight * amp * fbmSub(vWorld / uSpacing * 2.1, 4);
+  float det = weight * amp * barrierDetail(vBar) * fbmSub(vWorld / uSpacing * 2.1, 4);
   float s = vCoast + det;
   if (vFrag > 0.0) s = fragCoast(vCoast, det, vFrag, weight, ${FRAG_N2});
-  bool land = s > 0.0;
+${styleMain(STYLE_N2)}  bool land = s > 0.0;
   float cellPx = uSpacing / uPixel;
   float gm = length(vGrad);
   float relief = gm * uSpacing;
@@ -375,11 +506,13 @@ void main() {
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7));
     ${LITH_SEA_GLSL}
+    ${STYLE_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
     slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
   }
   oColor = vec4(col, coastLine);
-  oHeight = vec4(hh, s, slope);
+  // 小湖群的水面（第三十四轮）：海岸场写成 SPECK_MARK（合成里认出来，不进省份、不再找附近的水面格）
+  oHeight = vec4(hh, lakeDot > 0.0 && s <= 0.0 ? ${glsl(SPECK_MARK)} : s, slope);
 }`;
 
 const VS_QUAD = `#version 300 es
@@ -591,8 +724,9 @@ int provCell(int idG, vec2 uv, bool landPx) {
 }
 // 画面上另一点（省界、轮廓看的相邻像素）的省份格：陆海按那一点自己的场景像素
 int provAt(vec2 uv, vec2 uvW) {
-  bool l = texture(uSceneHeight, uv * uSceneXf.xy + uSceneXf.zw).g > 0.0;
-  return provCell(seamCell(idAt(uvW), uv), uv, l);
+  float g = texture(uSceneHeight, uv * uSceneXf.xy + uSceneXf.zw).g;
+  if (g < ${glsl(SPECK_MARK / 2)}) return -1;
+  return provCell(seamCell(idAt(uvW), uv), uv, g > 0.0);
 }
 // 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors）：0 没有，1–127 平涂，128 只描边，129–255 斜线
 float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
@@ -624,7 +758,8 @@ void main() {
   int id = idAt(uvW);
 
   // 省界、省份着色、省份的高亮用切线换过、水面只取水面格的格（provCell）
-  int pc = provCell(seamCell(id, vUv), vUv, land);
+  // 小湖群的水面（第三十四轮，地形层写成 SPECK_MARK）：画成水、格还是陆地，不归哪个省（像碎岛反过来；也省得一圈圈找水面格）
+  int pc = hs.g < ${glsl(SPECK_MARK / 2)} ? -1 : provCell(seamCell(id, vUv), vUv, land);
   int idF = uFlatByGroup == 1 ? pc : id;
   vec4 fc = vec4(0.0);
   if (uHasFlat == 1 && idF >= 0) {
@@ -910,7 +1045,11 @@ const POLAR_VS = (body: string) => `float pa = 3.14159265358979 * (aPos.x - 1.0)
   gl_Position = vec4(polarPos * uView.xy + uView.zw, 0.0, 1.0);`;
 const VS_CELL_POLAR = must(
   must(
-    must(must(VS_CELL, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform float uPole;\nout vec2 vPolar;'), 'out vec2 vGrad;\nout vec2 vSeaGrad;', 'out vec2 vGradP;\nout vec2 vSeaGradP;'),
+    must(
+      must(must(VS_CELL, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform float uPole;\nout vec2 vPolar;'), 'out vec2 vGrad;\nout vec2 vSeaGrad;', 'out vec2 vGradP;\nout vec2 vSeaGradP;'),
+      '  vStyle = vec4(vFjord, vFjDir, vSpeck);',
+      '  vStyle = vec4(vFjord, vFjDir, vSpeck);\n  vec2 fjDirW = vFjDir;',
+    ),
     '  vGrad = texelFetch(uGrad, t, 0).rg;\n  vSeaGrad = texelFetch(uSeaGrad, t, 0).rg;\n',
     '',
   ),
@@ -921,7 +1060,8 @@ const VS_CELL_POLAR = must(
   vec2 g0 = texelFetch(uGrad, t, 0).rg;
   vec2 g1 = texelFetch(uSeaGrad, t, 0).rg;
   vGradP = g0.x * pE + g0.y * pS;
-  vSeaGradP = g1.x * pE + g1.y * pS;`),
+  vSeaGradP = g1.x * pE + g1.y * pS;
+  vStyle.yz = fjDirW.x * pE + fjDirW.y * pS;`),
 );
 const VS_ID_POLAR = must(must(VS_ID, 'uniform vec4 uView;', 'uniform vec4 uView;\nuniform float uPole;'), '  gl_Position = vec4(aPos * uView.xy + uView.zw, 0.0, 1.0);', POLAR_VS(''));
 const VS_SEAM_POLAR = must(
@@ -940,6 +1080,13 @@ in float vElev;
 in float vSeaElev;
 in float vCoast;
 in float vFrag;
+in vec4 vStyle;
+in vec2 vStyle2;
+float vFjord;
+vec2 vFjDir;
+float vSpeck;
+float vBar;
+float vCoastAbs;
 in vec2 vGrad;
 in vec2 vSeaGrad;
 in vec2 vWorld;
@@ -961,6 +1108,8 @@ layout(location = 1) out vec4 oHeight;
 ${NOISE_GLSL}
 ${SPHERE_GLSL}
 ${FRAG_GLSL}
+${STYLE_GLSL}
+${STYLE_DIR3_GLSL}
 float fbmFade3(vec3 p, int oct, float pxPerUnit) {
   float s = 0.0; float amp = 0.5; float wl = pxPerUnit;
   for (int k = 0; k < 6; k++) {
@@ -1002,6 +1151,7 @@ float landDetailAt3(vec3 P, vec3 D, float relief, float h, float cellPx) {
   return uDetail * (gully + bumps);
 }
 void main() {
+  vFjord = vStyle.x; vFjDir = vStyle.yz; vSpeck = vStyle.w; vBar = vStyle2.x; vCoastAbs = vStyle2.y;
   // 上下超出两极的部分不画
   if (vWorld.y < 0.0 || vWorld.y > 1.0) discard;
   float h = vElev;
@@ -1010,10 +1160,10 @@ void main() {
   float weight = clamp((1.0 - wmax) * 2.2, 0.0, 1.0);
   float rugged = clamp(max(h, 0.0) / 1200.0, 0.0, 1.0);
   float amp = uCoastAmp * (0.55 + 0.9 * rugged);
-  float det = weight * amp * fbmSub3(P * uNoiseK * 2.1, 4);
+  float det = weight * amp * barrierDetail(vBar) * fbmSub3(P * uNoiseK * 2.1, 4);
   float s = vCoast + det;
   if (vFrag > 0.0) s = fragCoast(vCoast, det, vFrag, weight, ${FRAG_N3});
-  bool land = s > 0.0;
+${styleMain(STYLE_N3)}  bool land = s > 0.0;
   float cellPx = uSpacing / uPixel;
   float gm = length(vGrad);
   float relief = gm * uSpacing;
@@ -1058,17 +1208,23 @@ void main() {
     vec3 shallow = mix(vec3(0.30, 0.50, 0.56), vec3(0.24, 0.62, 0.66), vSeaCol.a);
     col = mix(col, shallow, (1.0 - smoothstep(4.0, 70.0, depth)) * (uSeaData == 1 ? 0.0 : 0.7));
     ${LITH_SEA_GLSL}
+    ${STYLE_SEA_GLSL}
     // 海底的坡：按水深的坡度（每格一份，在三角形内插值），比陆上缓得多（合成里只轻轻晕渲）
     slope = vSeaGrad / uMetersPerUnit * ${glsl(SEA_RELIEF)};
   }
   oColor = vec4(col, coastLine);
-  oHeight = vec4(hh, s, slope);
+  // 小湖群的水面（第三十四轮）：海岸场写成 SPECK_MARK（合成里认出来，不进省份、不再找附近的水面格）
+  oHeight = vec4(hh, lakeDot > 0.0 && s <= 0.0 ? ${glsl(SPECK_MARK)} : s, slope);
 }`;
 
 // 极地的场景的地形层：世界坐标按这一点在极地平面上的位置算回来（不按顶点的世界坐标插值：跨过接缝、极点的三角形会乱），
 // 坡度从平面上的方向换回这一点的东、南
 const FS_TERRAIN_POLAR = must(
-  must(FS_TERRAIN_PLANET, 'in vec2 vGrad;\nin vec2 vSeaGrad;\nin vec2 vWorld;', 'in vec2 vPolar;\nin vec2 vGradP;\nin vec2 vSeaGradP;\nuniform float uPole;\nvec2 vGrad;\nvec2 vSeaGrad;\nvec2 vWorld;'),
+  must(
+    must(FS_TERRAIN_PLANET, 'in vec2 vGrad;\nin vec2 vSeaGrad;\nin vec2 vWorld;', 'in vec2 vPolar;\nin vec2 vGradP;\nin vec2 vSeaGradP;\nuniform float uPole;\nvec2 vGrad;\nvec2 vSeaGrad;\nvec2 vWorld;'),
+    '  vFjord = vStyle.x; vFjDir = vStyle.yz; vSpeck = vStyle.w; vBar = vStyle2.x; vCoastAbs = vStyle2.y;',
+    '  vFjord = vStyle.x; vFjDir = vec2(dot(vStyle.yz, pE), dot(vStyle.yz, pS)); vSpeck = vStyle.w; vBar = vStyle2.x; vCoastAbs = vStyle2.y;',
+  ),
   'void main() {\n',
   `void main() {
   float pr = length(vPolar);
@@ -1254,8 +1410,19 @@ export function packElevation(out: Float32Array, elevation: Float32Array, coast:
   }
 }
 
-// 海岸值纹理的一格（第十八轮起两个通道）：r 海岸值，g 破碎度（0–1，没有时 0）
-export function packCoast(out: Float32Array, coast: Float32Array, frag: Float32Array | null | undefined, from: number, to: number) {
+// 海岸值纹理的一格（第十八轮起两个通道，第三十四轮起四个：RGBA32F）：r 海岸值，g 破碎度（0–1，没有时 0），
+// b、a 海岸类型与小湖群（core/display.ts 的 DisplayCoast.style、core/coast-style.ts 的 packed：b 峡湾或负的小湖群，a 沙坝；没有时 0）
+export function packCoast(out: Float32Array, coast: Float32Array, frag: Float32Array | null | undefined, style: Float32Array | null | undefined, from: number, to: number) {
+  for (let i = from; i < to; i++) {
+    out[4 * i] = coast[i];
+    out[4 * i + 1] = frag ? frag[i] : 0;
+    out[4 * i + 2] = style ? style[2 * i] : 0;
+    out[4 * i + 3] = style ? style[2 * i + 1] : 0;
+  }
+}
+
+// 合成着色器的海岸值纹理（两个通道）：r 海岸值，g 破碎度
+export function packCellCoast(out: Float32Array, coast: Float32Array, frag: Float32Array | null | undefined, from: number, to: number) {
   for (let i = from; i < to; i++) {
     out[2 * i] = coast[i];
     out[2 * i + 1] = frag ? frag[i] : 0;
@@ -1274,6 +1441,8 @@ export interface CellLayers {
   coast: Float32Array;
   // 每格的破碎度（0–1，第十八轮，core/display.ts 的 displayCoast）；没打碎过时为 null
   frag?: Float32Array | null;
+  // 海岸类型与小湖群（第三十四轮，core/display.ts 的 displayCoast 的 style，每格两个数）；省略、null 时没有
+  style?: Float32Array | null;
   grad: Float32Array;
   // 海底的坡度（每格两个值，地图坐标；陆地、湖为 0）：海的晕渲。省略时没有
   seaGrad?: Float32Array;
@@ -1483,7 +1652,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell' | 'country', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'cellCoast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell' | 'country', WebGLTexture>;
   // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取；投影时另给场景的那一块），null 不画河。现在上传着的是哪一张、哪个版本
   riverLayer: ((motion: boolean, scene?: RiverScene) => RiverTex | null) | null = null;
   // 等面积、球形投影（第十三轮 G4）：场景目标（用到时才分配）、现在的场景，与各层画的是哪个键（同停稳的那几个）
@@ -1593,7 +1762,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t(), country: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), cellCoast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t(), country: t() };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1773,7 +1942,8 @@ export class Renderer {
       const padded = new Float32Array(TEX_W * rows * channels);
       padded.set(data.subarray(0, n * channels));
       if (channels === 1) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, TEX_W, rows, 0, gl.RED, gl.FLOAT, padded);
-      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, TEX_W, rows, 0, gl.RG, gl.FLOAT, padded);
+      else if (channels === 2) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, TEX_W, rows, 0, gl.RG, gl.FLOAT, padded);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, TEX_W, rows, 0, gl.RGBA, gl.FLOAT, padded);
     } else {
       const padded = new Uint8Array(TEX_W * rows * 4);
       padded.set(data.subarray(0, n * 4));
@@ -1787,6 +1957,9 @@ export class Renderer {
   // 海岸值纹理（海岸值、破碎度）的打包：同上
   private coastPack = new Float32Array(0);
   private coastGhost: Float32Array | null = null;
+  // 合成着色器读的海岸值、破碎度（两个通道）：同上
+  private cellCoastPack = new Float32Array(0);
+  private cellCoastGhost: Float32Array | null = null;
 
   setLayers(l: CellLayers) {
     const n = this.mesh?.n ?? 0;
@@ -1797,10 +1970,15 @@ export class Renderer {
     packElevation(this.elevPack, l.elevation, l.coast, l.shore ?? null, 0, n);
     this.elevGhost = null;
     this.upload(this.tex.elev, this.elevPack, n, 2);
-    this.coastPack = new Float32Array(n * 2);
-    packCoast(this.coastPack, l.coast, l.frag, 0, n);
+    this.coastPack = new Float32Array(n * 4);
+    packCoast(this.coastPack, l.coast, l.frag, l.style, 0, n);
     this.coastGhost = null;
-    this.upload(this.tex.coast, this.coastPack, n, 2);
+    this.upload(this.tex.coast, this.coastPack, n, 4);
+    // 合成着色器只读海岸值、破碎度（provCell 一个像素要查十几次）：另一张两个通道的（RGBA32F 的那张读起来多一倍的带宽，合成慢约三成）
+    this.cellCoastPack = new Float32Array(n * 2);
+    packCellCoast(this.cellCoastPack, l.coast, l.frag, 0, n);
+    this.cellCoastGhost = null;
+    this.upload(this.tex.cellCoast, this.cellCoastPack, n, 2);
     this.upload(this.tex.grad, l.grad, n, 2);
     this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
     this.upload(this.tex.lith, l.lith ?? new Uint8Array(n * 4), n, 4);
@@ -1865,7 +2043,7 @@ export class Renderer {
     const rows = [...new Set([...this.ghostRows, ...now])].sort((a, b) => a - b);
     const amp = g?.coastAmp ?? null;
     if (!rows.length && amp === this.ghostAmp) return;
-    const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, frag: base.frag ?? null, flat: base.flat, group: base.group };
+    const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, frag: base.frag ?? null, flat: base.flat, group: base.group, style: base.style ?? null };
     this.uploadRows(this.tex.color, src.smooth, rows, 4);
     this.uploadRows(this.tex.other, src.other, rows, 4);
     // 高程与水面的高程按行打包（陆海按这一份的海岸值分）
@@ -1873,8 +2051,12 @@ export class Renderer {
     for (const r of rows) packElevation(this.elevGhost, src.elevation, src.coast, base.shore ?? null, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
     this.uploadRows(this.tex.elev, this.elevGhost, rows, 2);
     if (!this.coastGhost) this.coastGhost = this.coastPack.slice();
-    for (const r of rows) packCoast(this.coastGhost, src.coast, src.frag, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
-    this.uploadRows(this.tex.coast, this.coastGhost, rows, 2);
+    // 海岸类型（第三十四轮）：幽灵里峡湾按将来的陆海重算过（colors.ts 的 GhostBuffer）
+    for (const r of rows) packCoast(this.coastGhost, src.coast, src.frag, src.style, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
+    this.uploadRows(this.tex.coast, this.coastGhost, rows, 4);
+    if (!this.cellCoastGhost) this.cellCoastGhost = this.cellCoastPack.slice();
+    for (const r of rows) packCellCoast(this.cellCoastGhost, src.coast, src.frag, r * TEX_W, Math.min(src.coast.length, (r + 1) * TEX_W));
+    this.uploadRows(this.tex.cellCoast, this.cellCoastGhost, rows, 2);
     // 平涂、分组：显示着的是底子或上一次的幽灵时才换
     if (this.groupBase && src.group && (this.groupShown === this.groupBase || this.groupShown === this.ghostGroup)) {
       this.uploadRows(this.tex.group, src.group, rows, 2);
@@ -1925,7 +2107,7 @@ export class Renderer {
       }
       if (channels === 1) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RED, gl.FLOAT, src);
       else if (channels === 2) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RG, gl.FLOAT, src);
-      else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, TEX_W, r1 - r, gl.RGBA, data instanceof Float32Array ? gl.FLOAT : gl.UNSIGNED_BYTE, src);
     }
   }
 
@@ -2800,7 +2982,7 @@ export class Renderer {
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasCountry'), this.hasCountry ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasLandCell'), this.hasLandCell ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
-    this.bindTex(pc, 'uCellCoast', this.tex.coast, 11);
+    this.bindTex(pc, 'uCellCoast', this.tex.cellCoast, 11);
     this.bindTex(pc, 'uRiver', this.tex.river, 12);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasRiver'), river ? 1 : 0);
     if (river && pj) {

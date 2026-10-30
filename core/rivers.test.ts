@@ -67,7 +67,7 @@ describe('画的河逐值不变', () => {
       features: hashString(d.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16),
     };
     // 第三十二轮重录（地形有了大格局：高程、河网、湖都变了）；第三十三轮重录（平原与河口：高程、河网都变了）
-    expect(got).toEqual({ guides: '18,41,4', elevation: '14a3aea2', discharge: 'c89a57dd', receiver: '5cec2045', lake: '83f11545', features: '7e6e68f0' });
+    expect(got).toEqual({ guides: '18,41,4', elevation: '924f0053', discharge: 'f7f40b7f', receiver: 'aad6de45', lake: '34011545', features: '88f65f9f' });
   });
 });
 
@@ -149,12 +149,16 @@ describe('画河：从河上拖出来是改道', () => {
     const w = eng.world;
     const d = w.derived;
     let found: { x: number; plan: ReturnType<typeof planRiver>; q0: number } | null = null;
-    for (const x of bigRivers(w, 6, 10)) {
-      for (const sign of [1, -1] as const) {
-        const a = aside(w, x, 4, sign);
-        if (isWater(w, a)) continue;
-        const plan = planRiver(w, d, [x, a]);
-        if (plan.reroute && plan.end && !plan.blocked && !plan.same && plan.dried.length >= 3) found = { x, plan, q0: d.discharge[x] };
+    // 第三十四轮：地形变了（冰川区的湖群），离入海口 10 格以上的大河旁 4 格没有这样的改道了：再试离入海口近一些的、离河 3、5 格
+    for (const [k, minCourse] of [[4, 10], [4, 6], [4, 0], [3, 0], [5, 0]] as const) {
+      for (const x of bigRivers(w, 6, minCourse)) {
+        for (const sign of [1, -1] as const) {
+          const a = aside(w, x, k, sign);
+          if (isWater(w, a)) continue;
+          const plan = planRiver(w, d, [x, a]);
+          if (plan.reroute && plan.end && !plan.blocked && !plan.same && plan.dried.length >= 3) found = { x, plan, q0: d.discharge[x] };
+          if (found) break;
+        }
         if (found) break;
       }
       if (found) break;

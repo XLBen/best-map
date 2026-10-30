@@ -68,7 +68,7 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { popTotal: '4950ab64b5ffda97', popGroup: 'c90cdabc77aa4b76', popShare: 'cbb69b1bd29a108d', human: '8745a6e30a7e6a4b' },
+  region: { popTotal: '79de433c63921bfa', popGroup: '981bc7d4788f99e7', popShare: 'ba049379d3ee5ee2', human: 'ef8846ca1a3e3a3a' },
   planet: { popTotal: '798cf3230e2a4445', popGroup: '2e0e95f0d0c8b161', popShare: 'b909541d6b3a8268', human: 'cb4ec6a03b59cf71' },
 };
 // 第三十轮：small.human 多了用的资源包（packs），金标准记的是没有它的样子（别的一样）

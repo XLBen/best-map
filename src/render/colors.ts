@@ -6,6 +6,7 @@ import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '.
 import type { LakeType } from '../../core/lake-types';
 import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
+import { coastStyle, gatedB } from '../../core/coast-style';
 import {
   blocBorderGroups,
   blocCells,
@@ -144,7 +145,7 @@ export interface ColorOptions {
 // 湖在画面上是水面：海岸值取负（有岸线、有格以下的岸线细节）、高程取负的水深（浅水边）、坡度为 0
 // 按用到的数组缓存：高程、湖、水面、陆海、陆地程度（只改了名字、省份的轻快照沿用同一批数组）。
 // 预览世界只换变了的数组：整体干湿的预览高程不变、湖变了，不能只看高程，否则会画出旧的湖
-type StaticLayers = { coast: Float32Array; frag: Float32Array | null; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
+type StaticLayers = { coast: Float32Array; frag: Float32Array | null; style: Float32Array | null; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
 const staticCache = new WeakMap<Float32Array, { inputs: unknown[]; value: StaticLayers }[]>();
 
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
@@ -166,7 +167,7 @@ const humanMode = (mode: ViewMode): mode is HumanFlatMode =>
 const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
 
 function staticLayers(world: World): StaticLayers {
-  const inputs: unknown[] = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness, world.causes.fragment];
+  const inputs: unknown[] = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness, world.causes.fragment, world.small.terrain.gen?.rerolls];
   let list = staticCache.get(world.derived.elevation);
   if (!list) staticCache.set(world.derived.elevation, (list = []));
   const hit = list.find((e) => e.inputs.every((a, k) => a === inputs[k]));
@@ -181,7 +182,7 @@ function staticLayers(world: World): StaticLayers {
 function computeStatic(world: World): StaticLayers {
   const { mesh, derived: d, causes } = world;
   // 海岸值与高程（湖面取负）：与河口找岸线用的是同一份（core/display.ts 的 displayCoast）
-  const { coast, elevation, frag } = displayCoast(world);
+  const { coast, elevation, frag, style } = displayCoast(world);
   const grad = new Float32Array(mesh.n * 2);
   const h = new Float64Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) {
@@ -204,7 +205,7 @@ function computeStatic(world: World): StaticLayers {
     seaGrad[2 * i] = gx;
     seaGrad[2 * i + 1] = gy;
   }
-  return { coast, frag, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
+  return { coast, frag, style, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
 }
 
 // 水面的高程（第十三轮修，地形层画水深、浅水用）：水面格（海岸值 ≤ 0，含湖）是自己的高程；
@@ -388,6 +389,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     shore: st.shore,
     coast: st.coast,
     frag: st.frag,
+    style: st.style,
     grad: st.grad,
     seaGrad: st.seaGrad,
     flat,
@@ -955,6 +957,8 @@ export interface GhostLayers {
   frag: Float32Array | null;
   flat: Uint8Array | null;
   group: Float32Array | null;
+  // 海岸类型与小湖群（第三十四轮，每格两个数，见 core/coast-style.ts）：峡湾按将来的陆海重算了改动的格与邻格；底子没有时为 null
+  style: Float32Array | null;
   // 现在与底子不同的格（升序）：上传时只传这些格（与上一次不同的格）所在的行
   cells: Int32Array;
   // 将来的海岸细节幅度（海岸曲折的滑块）；没有时照旧
@@ -972,6 +976,7 @@ export class GhostBuffer {
   frag: Float32Array | null;
   readonly flat: Uint8Array | null;
   readonly group: Float32Array | null;
+  readonly style: Float32Array | null;
   // 上次写过的格
   private written: number[] = [];
   private mark: Uint8Array;
@@ -987,6 +992,7 @@ export class GhostBuffer {
     this.frag = base.frag ? base.frag.slice() : null;
     this.flat = base.flat ? base.flat.slice() : null;
     this.group = base.group ? base.group.slice() : null;
+    this.style = base.style ? base.style.slice() : null;
     this.mark = new Uint8Array(base.coast.length);
   }
 
@@ -1006,11 +1012,15 @@ export class GhostBuffer {
         this.group[2 * i] = base.group![2 * i];
         this.group[2 * i + 1] = base.group![2 * i + 1];
       }
+      if (this.style) {
+        this.style[2 * i] = base.style![2 * i];
+        this.style[2 * i + 1] = base.style![2 * i + 1];
+      }
     }
     this.written = [];
     if (patch) this.write(world, patch);
     const cells = Int32Array.from(this.written).sort();
-    return { smooth: this.smooth, other: this.other, elevation: this.elevation, coast: this.coast, frag: this.frag, flat: this.flat, group: this.group, cells, coastAmp };
+    return { smooth: this.smooth, other: this.other, elevation: this.elevation, coast: this.coast, frag: this.frag, flat: this.flat, group: this.group, style: this.style, cells, coastAmp };
   }
 
   private touch(i: number) {
@@ -1126,6 +1136,30 @@ export class GhostBuffer {
     const alt = frag ? { frag, rgba: fragColors(world, this.mode, 'annual', smooth, coast, frag, redo) } : null;
     for (const i of redo) fillOther(mesh, smooth, coast, this.other, i, alt);
     for (const i of redo) this.touch(i);
+    // 海岸类型（第三十四轮）：峡湾只在挨着海的陆格上，按将来的陆海重算改动的格与邻格；将来是湖面的格不画沙坝
+    const cs = this.style ? coastStyle(world) : null;
+    if (cs && this.style) {
+      const land = world.causes.land.slice();
+      const lakeNow = new Map<number, boolean>();
+      for (let k = 0; k < p.cells.length; k++) {
+        land[p.cells[k]] = p.land[k];
+        lakeNow.set(p.cells[k], p.lake?.[k] === 1);
+      }
+      const around = new Set<number>();
+      for (const i of p.cells) {
+        around.add(i);
+        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) around.add(mesh.adj[e]);
+      }
+      for (const i of around) {
+        const b = gatedB(cs, mesh, i, land);
+        const lake = lakeNow.get(i) ?? isLake(world, i);
+        const a = land[i] && lake ? 0 : cs.packed[2 * i + 1];
+        if (b === this.style[2 * i] && a === this.style[2 * i + 1]) continue;
+        this.style[2 * i] = b;
+        this.style[2 * i + 1] = a;
+        this.touch(i);
+      }
+    }
   }
 }
 

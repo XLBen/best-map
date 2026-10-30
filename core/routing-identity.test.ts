@@ -3,6 +3,7 @@ import { digest } from '../tools/hash';
 import { type ElevationResult, SOLVE, carvePits, carvePocketLakes, computeElevation, elevationMemo, lakeBedShape, seafloor, windwardFactor } from './elevation';
 import { MinHeap } from './heap';
 import { applyPlains } from './plains';
+import { glacialField, glacialScour } from './glacial';
 import { type Mesh, gradGeo, graphDistance } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
@@ -652,6 +653,8 @@ function computeElevationOld(world: World): ElevationResult {
     if (j >= 0) for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (mesh.adj[e] === j) edge[i] = e;
   }
   applyPlains({ mesh, todo: land, land, up: causes.uplift, areaKm, r: { ...r, edge } as unknown as Routing, A, kmPerUnit, mToRaw: SOLVE.M_TO_RAW, pitM }, h);
+  // 第三十四轮：冰川刻蚀（照 elevation.ts 的写法，用 glacial.ts 的 glacialScour）
+  glacialScour(glacialField(world), mesh, land, land, coastKm, kmPerUnit, SOLVE.M_TO_RAW, h);
   for (let i = 0; i < n; i++) if (land[i]) elevation[i] = Math.max(2, h[i] * scale);
   // 第十二轮：海底、湖底的形状换成了新的（这里比的是陆上的求解，海底、湖底照 elevation.ts 的写法）
   seafloor(world, elevation);
