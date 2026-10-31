@@ -1,4 +1,4 @@
-import { type Mesh, findCell, gradient } from './mesh';
+import { type Mesh, findCell, gradGeo, gradientAt } from './mesh';
 import { type WordPack, hashString } from './names';
 import { type GenName, type ResolvedStyle, type StyleBody, chineseTemplate, hasType, isPhonetic, styleFor, styleName, templateName, templateOf } from './name-styles';
 import { type LakeType, majorityLakeType } from './lake-types';
@@ -129,50 +129,65 @@ export interface FeatureOverride {
 
 // ---------- 格图工具 ----------
 
+// 第三十五轮（提速）：连通块、步数距离的队列换成类型化数组、循环放进小函数（走的先后不变，结果逐值相同）
 function components(mesh: Mesh, mask: Uint8Array): number[][] {
   const seen = new Uint8Array(mesh.n);
   const out: number[][] = [];
+  const q = new Int32Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) {
     if (!mask[i] || seen[i]) continue;
-    const q = [i];
-    seen[i] = 1;
-    for (let h = 0; h < q.length; h++) {
-      const c = q[h];
-      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-        const j = mesh.adj[e];
-        if (mask[j] && !seen[j]) {
-          seen[j] = 1;
-          q.push(j);
-        }
-      }
-    }
-    out.push(q);
+    const len = floodComponent(mesh.off, mesh.adj, mask, seen, q, i);
+    out.push(Array.from(q.subarray(0, len)));
   }
   return out;
 }
 
-// 在 allowed 内从 sources 出发的步数距离（不可达为 -1）
-function steps(mesh: Mesh, sources: number[], allowed: Uint8Array, max = Infinity): Int32Array {
-  const d = new Int32Array(mesh.n).fill(-1);
-  const q: number[] = [];
-  for (const s of sources) {
-    if (d[s] < 0) {
-      d[s] = 0;
-      q.push(s);
-    }
-  }
-  for (let h = 0; h < q.length; h++) {
+// 从 s 起走 mask 里的连通块（宽度优先，格写进 q），返回格数
+function floodComponent(off: Int32Array, adj: Int32Array, mask: Uint8Array, seen: Uint8Array, q: Int32Array, s: number): number {
+  let t = 0;
+  q[t++] = s;
+  seen[s] = 1;
+  for (let h = 0; h < t; h++) {
     const c = q[h];
-    if (d[c] >= max) continue;
-    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-      const j = mesh.adj[e];
-      if (allowed[j] && d[j] < 0) {
-        d[j] = d[c] + 1;
-        q.push(j);
+    for (let e = off[c]; e < off[c + 1]; e++) {
+      const j = adj[e];
+      if (mask[j] && !seen[j]) {
+        seen[j] = 1;
+        q[t++] = j;
       }
     }
   }
+  return t;
+}
+
+// 在 allowed 内从 sources 出发的步数距离（不可达为 -1）
+function steps(mesh: Mesh, sources: ArrayLike<number>, allowed: Uint8Array, max = Infinity): Int32Array {
+  const d = new Int32Array(mesh.n).fill(-1);
+  const q = new Int32Array(mesh.n);
+  let t = 0;
+  for (let k = 0; k < sources.length; k++) {
+    const s = sources[k];
+    if (d[s] < 0) {
+      d[s] = 0;
+      q[t++] = s;
+    }
+  }
+  stepsFrom(mesh.off, mesh.adj, allowed, max, d, q, t);
   return d;
+}
+
+function stepsFrom(off: Int32Array, adj: Int32Array, allowed: Uint8Array, max: number, d: Int32Array, q: Int32Array, t: number) {
+  for (let h = 0; h < t; h++) {
+    const c = q[h];
+    if (d[c] >= max) continue;
+    for (let e = off[c]; e < off[c + 1]; e++) {
+      const j = adj[e];
+      if (allowed[j] && d[j] < 0) {
+        d[j] = d[c] + 1;
+        q[t++] = j;
+      }
+    }
+  }
 }
 
 // 锚点（决定名字）：要素里“优先级”最高的格。每格的优先级是固定的随机数，
@@ -694,74 +709,43 @@ function bayInputs(world: World, list: AddInput[], seaMask: Uint8Array, dSea: In
 }
 
 function seaInputs(world: World, list: AddInput[], seaMask: Uint8Array, dSea: Int32Array, mapKm2: number) {
-  const { mesh, kmPerUnit } = world;
+  const { mesh } = world;
   const n = mesh.n;
   const land = world.causes.land;
   const globe = mesh.kind === 'sphere';
-  const seaCells: number[] = [];
-  for (let i = 0; i < n; i++) if (!land[i]) seaCells.push(i);
-  if (seaCells.length) {
-    let seaKm2 = 0;
-    for (const c of seaCells) seaKm2 += mesh.area[c] * kmPerUnit * kmPerUnit;
+  // 第三十五轮（提速）：格表、队列换成类型化数组，逐格的几段放进小函数（先后不变，结果逐值相同）
+  const seaBuf = new Int32Array(n);
+  const ns = seaCellsOf(n, land, seaBuf);
+  const seaCells = seaBuf.subarray(0, ns);
+  if (ns) {
+    const seaKm2 = areaOf(world, seaCells);
     // 整个星球按面积比例分区（星球大小不影响分法）
     const k = globe ? Math.max(3, Math.min(18, Math.round((seaKm2 / mapKm2) * 22))) : Math.max(1, Math.min(12, Math.round(seaCells.length / 2600)));
     const spacing = Math.max(4, Math.round(Math.sqrt(seaCells.length / k) * 0.8));
     // 候选种子按离岸从远到近、同距离按编号排（计数排序）；离岸不到 1 步的不当种子
-    let maxD = 0;
-    for (const c of seaCells) maxD = Math.max(maxD, dSea[c]);
-    const at = new Int32Array(maxD + 1);
-    for (const c of seaCells) if (dSea[c] >= 1) at[maxD - dSea[c] + 1]++;
-    for (let b = 1; b <= maxD; b++) at[b] += at[b - 1];
-    const order = new Int32Array(at[maxD]);
-    for (const c of seaCells) if (dSea[c] >= 1) order[at[maxD - dSea[c]]++] = c;
+    const order = farFirst(seaCells, dSea);
     // 每个种子 spacing 步海路以内的格不再当种子：只走到 spacing 步，走过的格按种子的序号标记（不必每次清空）
     const blocked = new Uint8Array(n);
     const stamp = new Int32Array(n);
     const dist = new Int32Array(n);
     const q = new Int32Array(n);
     const seeds: number[] = [];
-    for (const c of order) {
-      if (seeds.length >= Math.ceil(k * 1.5)) break;
+    const most = Math.ceil(k * 1.5);
+    for (let o = 0; o < order.length; o++) {
+      const c = order[o];
+      if (seeds.length >= most) break;
       if (blocked[c]) continue;
       seeds.push(c);
-      const s = seeds.length;
-      stamp[c] = s;
-      dist[c] = 0;
-      blocked[c] = 1;
-      q[0] = c;
-      for (let h = 0, t = 1; h < t; h++) {
-        const x = q[h];
-        if (dist[x] >= spacing) continue;
-        for (let e = mesh.off[x]; e < mesh.off[x + 1]; e++) {
-          const j = mesh.adj[e];
-          if (seaMask[j] && stamp[j] !== s) {
-            stamp[j] = s;
-            dist[j] = dist[x] + 1;
-            blocked[j] = 1;
-            q[t++] = j;
-          }
-        }
-      }
+      blockAround(mesh.off, mesh.adj, seaMask, spacing, seeds.length, c, blocked, stamp, dist, q);
     }
     // 多源 BFS 分区
     const owner = new Int32Array(n).fill(-1);
-    const queue: number[] = [];
-    seeds.forEach((s, idx) => {
-      owner[s] = idx;
-      queue.push(s);
-    });
-    for (let h = 0; h < queue.length; h++) {
-      const c = queue[h];
-      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
-        const j = mesh.adj[e];
-        if (!land[j] && owner[j] < 0) {
-          owner[j] = owner[c];
-          queue.push(j);
-        }
-      }
-    }
+    seaOwners(mesh.off, mesh.adj, land, seeds, owner, q);
     const regions: number[][] = seeds.map(() => []);
-    for (const c of seaCells) if (owner[c] >= 0) regions[owner[c]].push(c);
+    for (let r = 0; r < ns; r++) {
+      const c = seaCells[r];
+      if (owner[c] >= 0) regions[owner[c]].push(c);
+    }
     const totalSea = seaCells.length;
     regions.forEach((cells) => {
       if (cells.length < 12) return;
@@ -771,6 +755,71 @@ function seaInputs(world: World, list: AddInput[], seaMask: Uint8Array, dSea: In
       const ocean = globe ? areaOf(world, cells) > mapKm2 * 0.035 && meanD > 6 : cells.length > totalSea * 0.18 && meanD > 6;
       put(list, ocean ? 'ocean' : 'sea', cells, (ocean ? 9.5 : 7.5) + Math.log10(areaOf(world, cells)));
     });
+  }
+}
+
+// 海格（按编号，写进 out），返回个数
+function seaCellsOf(n: number, land: Uint8Array, out: Int32Array): number {
+  let m = 0;
+  for (let i = 0; i < n; i++) if (!land[i]) out[m++] = i;
+  return m;
+}
+
+// 离岸 1 步以上的海格，按离岸从远到近、同距离按编号（计数排序）
+function farFirst(seaCells: Int32Array, dSea: Int32Array): Int32Array {
+  let maxD = 0;
+  for (let k = 0; k < seaCells.length; k++) maxD = Math.max(maxD, dSea[seaCells[k]]);
+  const at = new Int32Array(maxD + 1);
+  for (let k = 0; k < seaCells.length; k++) {
+    const c = seaCells[k];
+    if (dSea[c] >= 1) at[maxD - dSea[c] + 1]++;
+  }
+  for (let b = 1; b <= maxD; b++) at[b] += at[b - 1];
+  const order = new Int32Array(at[maxD]);
+  for (let k = 0; k < seaCells.length; k++) {
+    const c = seaCells[k];
+    if (dSea[c] >= 1) order[at[maxD - dSea[c]]++] = c;
+  }
+  return order;
+}
+
+// 第 s 个种子 c：spacing 步海路以内的格标成不再当种子（走过的格标上 s）
+function blockAround(off: Int32Array, adj: Int32Array, seaMask: Uint8Array, spacing: number, s: number, c: number, blocked: Uint8Array, stamp: Int32Array, dist: Int32Array, q: Int32Array) {
+  stamp[c] = s;
+  dist[c] = 0;
+  blocked[c] = 1;
+  q[0] = c;
+  for (let h = 0, t = 1; h < t; h++) {
+    const x = q[h];
+    if (dist[x] >= spacing) continue;
+    for (let e = off[x]; e < off[x + 1]; e++) {
+      const j = adj[e];
+      if (seaMask[j] && stamp[j] !== s) {
+        stamp[j] = s;
+        dist[j] = dist[x] + 1;
+        blocked[j] = 1;
+        q[t++] = j;
+      }
+    }
+  }
+}
+
+// 从种子起多源宽度优先，海格归先到的种子
+function seaOwners(off: Int32Array, adj: Int32Array, land: Uint8Array, seeds: number[], owner: Int32Array, q: Int32Array) {
+  let t = 0;
+  for (let idx = 0; idx < seeds.length; idx++) {
+    owner[seeds[idx]] = idx;
+    q[t++] = seeds[idx];
+  }
+  for (let h = 0; h < t; h++) {
+    const c = q[h];
+    for (let e = off[c]; e < off[c + 1]; e++) {
+      const j = adj[e];
+      if (!land[j] && owner[j] < 0) {
+        owner[j] = owner[c];
+        q[t++] = j;
+      }
+    }
   }
 }
 
@@ -923,12 +972,18 @@ function slopeOf(world: World, elevation: ArrayLike<number>): Float32Array {
   const hPos = new Float64Array(n);
   for (let i = 0; i < n; i++) hPos[i] = land[i] ? elevation[i] : 0;
   const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    if (!land[i]) continue;
-    const [gx, gy] = gradient(mesh, hPos, i);
-    out[i] = Math.hypot(gx, gy) / kmPerUnit;
-  }
+  landSlopes(mesh, gradGeo(mesh), hPos, land, kmPerUnit, out);
   return out;
+}
+
+// 第三十五轮（提速）：陆格的坡度按 gradientAt（与 gradient 逐值相同，不每格分配数组），循环放在小函数里
+function landSlopes(mesh: Mesh, g: ReturnType<typeof gradGeo>, hPos: Float64Array, land: Uint8Array, kmPerUnit: number, out: Float32Array) {
+  const v = new Float64Array(2);
+  for (let i = 0; i < mesh.n; i++) {
+    if (!land[i]) continue;
+    gradientAt(mesh, g, hPos, i, v);
+    out[i] = Math.hypot(v[0], v[1]) / kmPerUnit;
+  }
 }
 
 // 没挖河床的地形的坡度：没有画的河时就是水文算好的那份（两者逐值相同），有的话按地形另算（按内容缓存）
@@ -1058,6 +1113,43 @@ function biomesOf(world: World, d: Derived): Uint8Array {
   const biome = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (land[i] && d.dominant[i] >= 0) biome[i] = kindOf[d.dominant[i]];
   return biome;
+}
+
+// 每个大类（1..K）的连通块：大类在前、同一类里按块里编号最小的格（就是以前每类一遍 components 的先后），
+// 块里的格按宽度优先走到的先后（只走同一类的格，与按那一类的格表走的相同）
+function biomeGroups(mesh: Mesh, biome: Uint8Array, K: number): { k: number; cells: number[] }[] {
+  const n = mesh.n;
+  const seen = new Uint8Array(n);
+  const q = new Int32Array(n);
+  const byK: { k: number; cells: number[] }[][] = [];
+  for (let k = 0; k < K; k++) byK.push([]);
+  for (let i = 0; i < n; i++) {
+    const b = biome[i];
+    if (b < 1 || b > K || seen[i]) continue;
+    const len = floodSame(mesh.off, mesh.adj, biome, b, seen, q, i);
+    byK[b - 1].push({ k: b - 1, cells: Array.from(q.subarray(0, len)) });
+  }
+  const out: { k: number; cells: number[] }[] = [];
+  for (let k = 0; k < K; k++) for (const g of byK[k]) out.push(g);
+  return out;
+}
+
+// 从 s 起走同一类（biome 为 b）的连通块（宽度优先，格写进 q），返回格数
+function floodSame(off: Int32Array, adj: Int32Array, biome: Uint8Array, b: number, seen: Uint8Array, q: Int32Array, s: number): number {
+  let t = 0;
+  q[t++] = s;
+  seen[s] = 1;
+  for (let h = 0; h < t; h++) {
+    const c = q[h];
+    for (let e = off[c]; e < off[c + 1]; e++) {
+      const j = adj[e];
+      if (biome[j] === b && !seen[j]) {
+        seen[j] = 1;
+        q[t++] = j;
+      }
+    }
+  }
+  return t;
 }
 
 // 涂出来的一片生态按哪种地物识别、叫什么、怎么起名，只在这里定（生态以后自带地名设定时也接在这里）：
@@ -1200,17 +1292,11 @@ function natureInputs(world: World, biome: Uint8Array, paint: Paint | null, own:
   const { mesh } = world;
   const n = mesh.n;
   const list: AddInput[] = [];
-  // 各大类的连通块；gOf：每格属于第几块
-  const groups: { k: number; cells: number[] }[] = [];
+  // 各大类的连通块；gOf：每格属于第几块（第三十五轮提速：各大类一遍走完，再按大类排好；
+  // 每一类的块与块里格的先后与以前一类一遍 components 的相同）
+  const groups = biomeGroups(mesh, biome, BIOMES.length);
   const gOf = new Int32Array(n).fill(-1);
-  for (let k = 0; k < BIOMES.length; k++) {
-    const mask = new Uint8Array(n);
-    for (let i = 0; i < n; i++) mask[i] = biome[i] === k + 1 ? 1 : 0;
-    for (const cells of components(mesh, mask)) {
-      for (const c of cells) gOf[c] = groups.length;
-      groups.push({ k, cells });
-    }
-  }
+  for (let g = 0; g < groups.length; g++) for (const c of groups[g].cells) gOf[c] = g;
   const painted = paint?.painted;
   // 涂出来的生态区（下标 → 格）与它们占的格；每块的锚点取值范围（没涂过的块就是它自己）
   const regions: { s: number; cells: number[] }[] = [];

@@ -44,41 +44,72 @@ export const classHabitability = (c: TerrainClass | undefined): number => c?.hab
 // 按什么算的（数组 → 标识）：只画了别的人文（人口、资源）时照用上一份
 const memo = new WeakMap<Float32Array, { cls: Uint8Array; key: string }>();
 
-// cls：生效的地形类别（编号 = 下标 + 1）
-export function computeHabitability(world: World, d: Derived, x: CellInputs, cls: Uint8Array, classes: readonly TerrainClass[], natural: boolean): Float32Array {
+// 宜居度按什么算（生态、类别的宜居分与河的门槛）：同样的键、同样的每格输入，结果一样
+export function habitabilityKey(world: World, classes: readonly TerrainClass[]): string {
+  return `${JSON.stringify(world.small.species.map((sp) => [sp.id, sp.terrain, sp.habitability ?? null]))}|${JSON.stringify(classes.map((c) => c.habitability ?? null))}|${world.small.planet.riverThreshold}`;
+}
+
+// cls：生效的地形类别（编号 = 下标 + 1）。
+// base（第三十五轮提速）：上一次按同样的键算出的结果与这一次要重算的格（输入、类别变了的格与流量变了的有河的格，
+// 见 human/cell-memo.ts）：别的格照抄 base.out，与整个重算逐值相同
+export function computeHabitability(world: World, d: Derived, x: CellInputs, cls: Uint8Array, classes: readonly TerrainClass[], natural: boolean, base?: { out: Float32Array; cells: Int32Array }): Float32Array {
   const species = world.small.species;
-  const key = `${JSON.stringify(species.map((sp) => [sp.id, sp.terrain, sp.habitability ?? null]))}|${JSON.stringify(classes.map((c) => c.habitability ?? null))}|${world.small.planet.riverThreshold}`;
+  const key = habitabilityKey(world, classes);
   const prev = natural ? undefined : memo.get(d.habitability);
   if (prev && prev.cls === cls && prev.key === key && d.habitability.length === x.n) return d.habitability;
   const bio = species.map(biomeHabitability);
-  const riverFloor = bio.map((v) => 0.6 + 0.4 * Math.min(1, v / 0.6));
-  const cf = [1, ...classes.map(classHabitability)];
-  const thr = world.small.planet.riverThreshold;
-  const out = new Float32Array(x.n);
-  for (let i = 0; i < x.n; i++) {
-    if (!x.dry[i]) continue;
-    const b = x.biome[i];
-    let h = b >= 0 ? bio[b] : 0;
-    const t = x.temp[i];
-    const cold = t >= 0 ? 1 : Math.max(0.1, 1 + t / 15);
-    h *= cold;
-    const f = x.flags[i];
-    if (f & RIVER) {
-      // 河边至少有的那一份按植被打折（第二十七轮：以前由植被的地形类别乘上去）：生态分 0.6 以上为 0.45，越低越少，最少六成
-      h = Math.max(h, 0.45 * cold * (b >= 0 ? riverFloor[b] : 1));
-      const q = d.discharge[i] / thr;
-      h *= 1.35 + 0.15 * Math.min(3, Math.log10(Math.max(1, q)));
+  const h: HabTables = { bio: Float64Array.from(bio), riverFloor: Float64Array.from(bio, (v) => 0.6 + 0.4 * Math.min(1, v / 0.6)), cf: Float64Array.from([1, ...classes.map(classHabitability)]), thr: world.small.planet.riverThreshold };
+  let out: Float32Array;
+  if (base) {
+    out = base.out.slice();
+    const cells = base.cells;
+    for (let k = 0; k < cells.length; k++) {
+      const i = cells[k];
+      out[i] = x.dry[i] ? habAt(h, x, cls, d.discharge, i) : 0;
     }
-    if (f & COAST) h *= 1.3;
-    if (f & LAKE) h *= 1.2;
-    const e = x.elevation[i];
-    if (e > 1500) h *= e >= 5000 ? 0.05 : 1 - (0.95 * (e - 1500)) / 3500;
-    h /= 1 + x.slope[i] / 30;
-    h *= cf[cls[i]] ?? 1;
-    out[i] = h > 1 ? 1 : h;
+  } else {
+    out = new Float32Array(x.n);
+    habAll(h, x, cls, d.discharge, out);
   }
   memo.set(out, { cls, key });
   return out;
+}
+
+// 生态的宜居分、河边至少有的那一份、类别的倍数（下标 0 是水面 / 没有类别：1）、河的门槛
+interface HabTables {
+  bio: Float64Array;
+  riverFloor: Float64Array;
+  cf: Float64Array;
+  thr: number;
+}
+
+// 整张图（第三十五轮提速：逐格的循环放在小函数里）
+function habAll(h: HabTables, x: CellInputs, cls: Uint8Array, discharge: Float32Array, out: Float32Array) {
+  for (let i = 0; i < x.n; i++) if (x.dry[i]) out[i] = habAt(h, x, cls, discharge, i);
+}
+
+// 一格（干的陆地）的宜居度
+function habAt(t: HabTables, x: CellInputs, cls: Uint8Array, discharge: Float32Array, i: number): number {
+  const b = x.biome[i];
+  let h = b >= 0 ? t.bio[b] : 0;
+  const temp = x.temp[i];
+  const cold = temp >= 0 ? 1 : Math.max(0.1, 1 + temp / 15);
+  h *= cold;
+  const f = x.flags[i];
+  if (f & RIVER) {
+    // 河边至少有的那一份按植被打折（第二十七轮：以前由植被的地形类别乘上去）：生态分 0.6 以上为 0.45，越低越少，最少六成
+    h = Math.max(h, 0.45 * cold * (b >= 0 ? t.riverFloor[b] : 1));
+    const q = discharge[i] / t.thr;
+    h *= 1.35 + 0.15 * Math.min(3, Math.log10(Math.max(1, q)));
+  }
+  if (f & COAST) h *= 1.3;
+  if (f & LAKE) h *= 1.2;
+  const e = x.elevation[i];
+  if (e > 1500) h *= e >= 5000 ? 0.05 : 1 - (0.95 * (e - 1500)) / 3500;
+  h /= 1 + x.slope[i] / 30;
+  const c = cls[i];
+  h *= c < t.cf.length ? t.cf[c] : 1;
+  return h > 1 ? 1 : h;
 }
 
 // ---------- 偏好 ----------

@@ -1,11 +1,12 @@
 import type { Derived, World } from '../world';
 import { findPeaks, peakList } from './peaks';
-import { distributeResources, effectiveResources, worldResources } from './resources';
-import { cellInputs } from './rules';
-import { classifyTerrain, effectiveClasses, worldTerrainClasses } from './terrain-class';
-import { computeHabitability } from './habitability';
+import { type Resource, distributeResources, effectiveResources, worldResources } from './resources';
+import { type CellInputs, cellInputs } from './rules';
+import { type TerrainClass, classifyTerrain, effectiveClasses, worldTerrainClasses } from './terrain-class';
+import { computeHabitability, habitabilityKey } from './habitability';
 import { computePopLayers } from './layers';
 import { computeCountryLayer } from './country-layers';
+import { cellMemoOf, changedInputs, humanCellMemo, setCellMemo, snapInputs, withClassChanges, withRiverChanges } from './cell-memo';
 
 // 人文的几层（第二十一轮）：只读自然的推导，不反向影响自然的部分。
 // 引擎在自然的推导（植被之后、地物识别之后）算好后算一遍（natural）；只画地形类别、资源、改它们的内容时（Dirty.Human）
@@ -28,13 +29,17 @@ export function computeHuman(world: World, d: Derived, natural = true): void {
   const classes = worldTerrainClasses(world.small);
   const species = JSON.stringify(world.small.species.map((sp) => [sp.id, sp.terrain]));
   const classKey = `${species}|${JSON.stringify(classes)}`;
-  const reuse = !natural && classMemo.get(d.terrainClassAuto) === classKey;
+  const resources = worldResources(world.small);
+  const resKey = `${classKey}|${world.small.terrain.gen?.seed ?? world.settings.seed}|${JSON.stringify(resources)}`;
+  if (natural) {
+    naturalHuman(world, d, x, classes, classKey, resources, resKey);
+    return;
+  }
+  const reuse = classMemo.get(d.terrainClassAuto) === classKey;
   const auto = reuse ? d.terrainClassAuto : classifyTerrain(x, classes, world.small.species);
   if (!reuse) classMemo.set(auto, classKey);
   const cls = effectiveClasses(auto, world.causes.terrainClass, x.dry, classes.length);
-  const resources = worldResources(world.small);
-  const resKey = `${classKey}|${world.small.terrain.gen?.seed ?? world.settings.seed}|${JSON.stringify(resources)}`;
-  const prev = natural ? undefined : resourceMemo.get(d.resourceAuto);
+  const prev = resourceMemo.get(d.resourceAuto);
   let rAuto: Uint8Array;
   if (prev && prev.key === resKey && sameBytes(prev.cls, cls)) rAuto = d.resourceAuto;
   else {
@@ -54,9 +59,58 @@ export function computeHuman(world: World, d: Derived, natural = true): void {
   d.resource = effectiveResources(rAuto, world.causes.resource, x.dry, resources.length);
   d.peak = findPeaks(world.mesh, d.elevation, x.dry, cls, classes);
   // 第二十二轮：宜居度（自然、地形类别变了才重算）与人口的几层（按原因从头算）
-  d.habitability = computeHabitability(world, d, x, cls, classes, natural);
+  d.habitability = computeHabitability(world, d, x, cls, classes, false);
   computePopLayers(world, d);
   // 第二十三轮：国家的一层（领土、领海）
+  computeCountryLayer(world, d);
+}
+
+// 自然的推导重算以后（引擎的整个重算）：自动的类别、资源与宜居度每次都重算。第三十五轮（提速）：同一个网格上
+// 上一次按同样的规则算过时只重算输入变了的格（human/cell-memo.ts），别的格照抄上一次的结果，与整个重算逐值相同
+function naturalHuman(world: World, d: Derived, x: CellInputs, classes: readonly TerrainClass[], classKey: string, resources: readonly Resource[], resKey: string): void {
+  const mesh = world.mesh;
+  const last = cellMemoOf(mesh);
+  const changed = last ? changedInputs(last.snap, x) : null;
+  let auto: Uint8Array;
+  if (last && changed && last.classKey === classKey) {
+    auto = changed.length ? classifyTerrain(x, classes, world.small.species, { out: last.auto, cells: changed }) : last.auto;
+    humanCellMemo.partial++;
+    humanCellMemo.lastChanged = changed.length;
+  } else {
+    auto = classifyTerrain(x, classes, world.small.species);
+    humanCellMemo.full++;
+  }
+  classMemo.set(auto, classKey);
+  const cls = effectiveClasses(auto, world.causes.terrainClass, x.dry, classes.length);
+  // 输入或生效的类别变了的格
+  const touched = last && changed ? withClassChanges(changed, cls, last.cls) : null;
+  // 资源的噪声按比例尺取（km）：记下的键带上它
+  const cellKey = `${resKey}|${world.kmPerUnit}`;
+  const todo = last && touched && last.resKey === cellKey ? touched : null;
+  const rAuto =
+    last && todo && !todo.length
+      ? last.rAuto
+      : distributeResources(
+          world,
+          x,
+          cls,
+          resources,
+          classes.map((c) => c.id),
+          last && todo ? { out: last.rAuto, cells: todo } : undefined,
+        );
+  resourceMemo.set(rAuto, { key: resKey, cls });
+  d.terrainClassAuto = auto;
+  d.terrainClass = cls;
+  d.resourceAuto = rAuto;
+  d.resource = effectiveResources(rAuto, world.causes.resource, x.dry, resources.length);
+  d.peak = findPeaks(mesh, d.elevation, x.dry, cls, classes);
+  // 宜居度另看流量（有河的格）：再加上有河、流量（按位）变了的格
+  const habKey = habitabilityKey(world, classes);
+  const habTodo = last && touched && last.habKey === habKey ? withRiverChanges(touched, x, d.discharge, last.discharge) : null;
+  d.habitability = last && habTodo && !habTodo.length ? last.hab : computeHabitability(world, d, x, cls, classes, true, last && habTodo ? { out: last.hab, cells: habTodo } : undefined);
+  const snap = snapInputs(x);
+  if (snap) setCellMemo(mesh, { snap, classKey, auto, resKey: cellKey, cls, rAuto, habKey, hab: d.habitability, discharge: d.discharge.slice() });
+  computePopLayers(world, d);
   computeCountryLayer(world, d);
 }
 

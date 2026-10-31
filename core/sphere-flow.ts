@@ -70,11 +70,36 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
   const { n, off, adj, edgeLen, x } = mesh;
   const E = adj.length;
   const frac = new Float64Array(E);
-  const diffuse = 0.15;
   const calm = new Uint8Array(n);
-  const mask = o.mask;
+  const mask = o.mask ?? null;
+  // 第三十五轮（提速）：一段段逐格的循环放进小函数（原样照搬，结果逐值相同；见开发说明“还没编译好的代码”）
+  if (mask) flowFracMasked(n, off, adj, edgeLen, dirE, dirS, wx, wy, mask, frac, calm);
+  else flowFrac(n, off, edgeLen, dirE, dirS, wx, wy, frac, calm);
+  // 相互指向的两格只保留较强的一边（与处理顺序无关）
+  keepStronger(n, off, adj, rev, calm, frac);
+  // 滞后边（seam：跨过接缝、顺着风带的），参与排序的边与每格的入度：一遍扫完（第三十一轮，与分开扫几遍相同）
+  const lagged = new Uint8Array(E);
+  const em = new Uint8Array(E);
+  const indeg = new Int32Array(n);
+  markEdges(n, off, adj, seam, x, wx, wy, o.lag === 'seam', calm, frac, lagged, em, indeg);
+  const order = kahnOrder(mesh, em, indeg);
+  const pos = new Int32Array(n);
+  for (let k = 0; k < n; k++) pos[order[k]] = k;
+  cutBackward(n, off, adj, pos, o.lag === 'all', frac, lagged);
+  const koff = new Int32Array(n + 1);
+  const src = new Int32Array(E);
+  const w = new Float64Array(E);
+  const den = new Float64Array(n);
+  const p = inflowTable(n, off, adj, rev, order, frac, koff, src, w, den);
+  return { frac, order, lagged, koff, src: src.slice(0, p), w: w.slice(0, p), den };
+}
+
+const DIFFUSE = 0.15;
+
+// 每条边的输送比例（没有 mask：所有格都参与）
+function flowFrac(n: number, off: Int32Array, edgeLen: Float64Array, dirE: Float64Array, dirS: Float64Array, wx: ArrayLike<number>, wy: ArrayLike<number>, frac: Float64Array, calm: Uint8Array) {
+  const diffuse = DIFFUSE;
   for (let i = 0; i < n; i++) {
-    if (mask && !mask[i]) continue;
     const a = off[i];
     const b = off[i + 1];
     const mag = Math.hypot(wx[i], wy[i]);
@@ -83,7 +108,6 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
     let sum = 0;
     let fwdLen = 0;
     for (let e = a; e < b; e++) {
-      if (mask && !mask[adj[e]]) continue;
       const dot = ux * dirE[e] + uy * dirS[e];
       if (dot > 0) {
         const f = dot * dot * edgeLen[e];
@@ -94,8 +118,8 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
     }
     if (sum <= 0) {
       let total = 0;
-      for (let e = a; e < b; e++) if (!mask || mask[adj[e]]) total += edgeLen[e];
-      for (let e = a; e < b; e++) frac[e] = !mask || mask[adj[e]] ? (0.6 * edgeLen[e]) / (total || 1) : 0;
+      for (let e = a; e < b; e++) total += edgeLen[e];
+      for (let e = a; e < b; e++) frac[e] = (0.6 * edgeLen[e]) / (total || 1);
       calm[i] = 1;
       continue;
     }
@@ -104,7 +128,46 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
       frac[e] = (1 - diffuse) * (frac[e] / sum) + (diffuse * edgeLen[e]) / fwdLen;
     }
   }
-  // 相互指向的两格只保留较强的一边（与处理顺序无关）
+}
+
+// 同上，只有 mask = 1 的格参与（洋流只在海上）
+function flowFracMasked(n: number, off: Int32Array, adj: Int32Array, edgeLen: Float64Array, dirE: Float64Array, dirS: Float64Array, wx: ArrayLike<number>, wy: ArrayLike<number>, mask: Uint8Array, frac: Float64Array, calm: Uint8Array) {
+  const diffuse = DIFFUSE;
+  for (let i = 0; i < n; i++) {
+    if (!mask[i]) continue;
+    const a = off[i];
+    const b = off[i + 1];
+    const mag = Math.hypot(wx[i], wy[i]);
+    const ux = mag > 1e-6 ? wx[i] / mag : 0;
+    const uy = mag > 1e-6 ? wy[i] / mag : 0;
+    let sum = 0;
+    let fwdLen = 0;
+    for (let e = a; e < b; e++) {
+      if (!mask[adj[e]]) continue;
+      const dot = ux * dirE[e] + uy * dirS[e];
+      if (dot > 0) {
+        const f = dot * dot * edgeLen[e];
+        frac[e] = f;
+        sum += f;
+        fwdLen += edgeLen[e];
+      }
+    }
+    if (sum <= 0) {
+      let total = 0;
+      for (let e = a; e < b; e++) if (mask[adj[e]]) total += edgeLen[e];
+      for (let e = a; e < b; e++) frac[e] = mask[adj[e]] ? (0.6 * edgeLen[e]) / (total || 1) : 0;
+      calm[i] = 1;
+      continue;
+    }
+    for (let e = a; e < b; e++) {
+      if (frac[e] <= 0) continue;
+      frac[e] = (1 - diffuse) * (frac[e] / sum) + (diffuse * edgeLen[e]) / fwdLen;
+    }
+  }
+}
+
+// 相互指向的两格只保留较强的一边（与处理顺序无关）
+function keepStronger(n: number, off: Int32Array, adj: Int32Array, rev: Int32Array, calm: Uint8Array, frac: Float64Array) {
   for (let i = 0; i < n; i++) {
     if (calm[i]) continue;
     for (let e = off[i], end = off[i + 1]; e < end; e++) {
@@ -116,11 +179,10 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
       if (fe < ff || (fe === ff && i > j)) frac[e] = 0;
     }
   }
-  // 滞后边（seam：跨过接缝、顺着风带的），参与排序的边与每格的入度：一遍扫完（第三十一轮，与分开扫几遍相同）
-  const lagged = new Uint8Array(E);
-  const em = new Uint8Array(E);
-  const indeg = new Int32Array(n);
-  const seamLag = o.lag === 'seam';
+}
+
+// 滞后边、参与排序的边与每格的入度
+function markEdges(n: number, off: Int32Array, adj: Int32Array, seam: Uint8Array, x: Float64Array, wx: ArrayLike<number>, wy: ArrayLike<number>, seamLag: boolean, calm: Uint8Array, frac: Float64Array, lagged: Uint8Array, em: Uint8Array, indeg: Int32Array) {
   for (let i = 0; i < n; i++) {
     if (calm[i]) continue;
     for (let e = off[i], end = off[i + 1]; e < end; e++) {
@@ -140,10 +202,10 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
       indeg[j]++;
     }
   }
-  const order = kahnOrder(mesh, em, indeg);
-  const pos = new Int32Array(n);
-  for (let k = 0; k < n; k++) pos[order[k]] = k;
-  const lagAll = o.lag === 'all';
+}
+
+// 逆着拓扑序的边：lagAll 时都滞后（洋流），否则不是滞后边的去掉
+function cutBackward(n: number, off: Int32Array, adj: Int32Array, pos: Int32Array, lagAll: boolean, frac: Float64Array, lagged: Uint8Array) {
   for (let i = 0; i < n; i++) {
     const pi = pos[i];
     for (let e = off[i], end = off[i + 1]; e < end; e++) {
@@ -152,10 +214,10 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
       else if (!lagged[e]) frac[e] = 0;
     }
   }
-  const koff = new Int32Array(n + 1);
-  const src = new Int32Array(E);
-  const w = new Float64Array(E);
-  const den = new Float64Array(n);
+}
+
+// 入流表（按拓扑序的位置）：返回边数
+function inflowTable(n: number, off: Int32Array, adj: Int32Array, rev: Int32Array, order: Int32Array, frac: Float64Array, koff: Int32Array, src: Int32Array, w: Float64Array, den: Float64Array): number {
   let p = 0;
   for (let k = 0; k < n; k++) {
     const i = order[k];
@@ -170,5 +232,5 @@ export function buildFlowSphere(mesh: SphereMesh, wx: ArrayLike<number>, wy: Arr
     den[k] = s;
     koff[k + 1] = p;
   }
-  return { frac, order, lagged, koff, src: src.slice(0, p), w: w.slice(0, p), den };
+  return p;
 }

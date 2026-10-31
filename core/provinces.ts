@@ -388,10 +388,39 @@ export function regenerateProvinces(world: World, d: Derived, ids: number[], siz
   return partition(world, d, rules, region, small.nextProvince + 1);
 }
 
+// 第三十五轮（提速）：先按编号数在类型化数组里（编号一直往上加，不会比格数大太多；太大时照旧逐格放进 Map），
+// 再按每个编号第一次出现的先后放进 Map：键、值与插入的先后都与逐格 set 的 Map 相同
 export function provinceSizes(world: World): Map<number, number> {
+  const prov = world.causes.province;
+  const max = maxOf(prov);
+  if (max > 4 * prov.length + 1024) {
+    const sizes = new Map<number, number>();
+    for (const p of prov) if (p >= 0) sizes.set(p, (sizes.get(p) ?? 0) + 1);
+    return sizes;
+  }
+  const count = new Int32Array(max + 1);
+  const order = new Int32Array(max + 1);
+  const m = countIds(prov, count, order);
   const sizes = new Map<number, number>();
-  for (const p of world.causes.province) if (p >= 0) sizes.set(p, (sizes.get(p) ?? 0) + 1);
+  for (let k = 0; k < m; k++) sizes.set(order[k], count[order[k]]);
   return sizes;
+}
+
+function maxOf(a: Int32Array): number {
+  let max = -1;
+  for (let i = 0; i < a.length; i++) if (a[i] > max) max = a[i];
+  return max;
+}
+
+// 每个编号的格数；order：编号第一次出现的先后，返回个数
+function countIds(prov: Int32Array, count: Int32Array, order: Int32Array): number {
+  let m = 0;
+  for (let i = 0; i < prov.length; i++) {
+    const p = prov[i];
+    if (p < 0) continue;
+    if (count[p]++ === 0) order[m++] = p;
+  }
+  return m;
 }
 
 // 未归属的格：先就近并入同类、未锁定且不太大的相邻省份，剩下的成片区域各自生长为新省份。
@@ -510,14 +539,35 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
 export function repairProvinces(world: World) {
   const { causes, small } = world;
   const pland = provinceLand(world);
-  for (let i = 0; i < causes.province.length; i++) {
-    const p = causes.province[i];
-    if (p < 0) continue;
-    const meta = small.provinces[p];
-    if (!meta || meta.land !== (pland[i] === 1)) causes.province[i] = -1;
+  // 第三十五轮（提速）：每个编号的省份是陆地省（1）、海省（0）还是没有了（2，陆海不是真假时也算：一定对不上）先查一次（编号太大时照旧逐格查）
+  const max = maxOf(causes.province);
+  if (max > 4 * causes.province.length + 1024) {
+    for (let i = 0; i < causes.province.length; i++) {
+      const p = causes.province[i];
+      if (p < 0) continue;
+      const meta = small.provinces[p];
+      if (!meta || meta.land !== (pland[i] === 1)) causes.province[i] = -1;
+    }
+  } else {
+    const kind = new Uint8Array(max + 1).fill(2);
+    for (let p = 0; p <= max; p++) {
+      const meta = small.provinces[p];
+      if (meta) kind[p] = meta.land === true ? 1 : meta.land === false ? 0 : 2;
+    }
+    dropMismatched(causes.province, pland, kind);
   }
   fillUnassigned(world);
   dropEmptyProvinces(world);
+}
+
+// 省份没有了、或者省份的陆海与这一格的不同：这一格先不归哪个省
+function dropMismatched(province: Int32Array, pland: Uint8Array, kind: Uint8Array) {
+  for (let i = 0; i < province.length; i++) {
+    const p = province[i];
+    if (p < 0) continue;
+    const k = kind[p];
+    if (k === 2 || (k === 1) !== (pland[i] === 1)) province[i] = -1;
+  }
 }
 
 // 省份跟着国界切开（第二十三轮）：陆地省（陆地、无人区、湖省）里格数最多的那个国家（无主也算一个）留着这个省；

@@ -1,5 +1,5 @@
 import { MinHeap } from './heap';
-import { HeapLite, type Mesh, gradGeo, graphDistance } from './mesh';
+import { HeapLite, type Mesh, gradGeo, graphDistance, graphDistanceSame } from './mesh';
 import { LAYOUT_R } from './planet-gen';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed, mulberry32, smoothstep } from './rng';
 import { Router, type Routing, accumulate } from './routing';
@@ -402,18 +402,11 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   const sphere = mesh.kind === 'sphere' ? mesh : null;
 
   // 海岸距离：从挨海的陆格出发只走陆格（陆上的距离与海上互不影响，海上的用不到）
-  const coastCells: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (!todo[i]) continue;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      if (land[mesh.adj[e]] !== land[i]) {
-        coastCells.push(i);
-        break;
-      }
-    }
-  }
-  const coast = graphDistance(mesh, coastCells, Infinity, (i, j, e) => (land[i] === land[j] ? mesh.dist[e] : Infinity));
-  for (let i = 0; i < n; i++) if (todo[i]) coastKm[i] = Number.isFinite(coast[i]) ? coast[i] * kmPerUnit : 1e5;
+  // 第三十五轮（提速）：逐格的几段放进小函数（原样照搬）；海岸距离用专门的函数，
+  // 与传闭包 (i, j, e) => (land[i] === land[j] ? mesh.dist[e] : Infinity) 逐值相同
+  const coastBuf = new Int32Array(n);
+  const coast = graphDistanceSame(mesh, coastBuf.subarray(0, todoCoast(n, mesh.off, mesh.adj, todo, land, coastBuf)), Infinity, land);
+  coastKmOf(n, todo, coast, kmPerUnit, coastKm);
 
   const u = new Float64Array(n);
   const K = new Float64Array(n);
@@ -426,22 +419,11 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   const fade = new Float64Array(n);
   const geo = gradGeo(mesh);
   const up = causes.uplift;
-  for (let i = 0; i < n; i++) {
-    if (!todo[i]) continue;
-    // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
-    u[i] = (BASE_UPLIFT + UPLIFT_SCALE * up[i]) * fu[i];
-    K[i] = causes.erod[i] * fk[i] * windwardFactor(world, geo, i);
-    areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
-    T[i] = Tm[i] * M_TO_RAW;
-    fade[i] = smoothstep(0, COAST_FADE_KM, coastKm[i]);
-  }
+  for (let i = 0; i < n; i++) if (todo[i]) solveInputs(world, geo, i, fu, fk, Tm, coastKm, u, K, areaKm, T, fade);
   // 画的河不改地形的求解：求解之后再挖河床（carveBeds），周围的山不动
 
   // 初始高程：按离海距离给一个缓坡加噪声，再加上大半个基准面（固定的 12 轮一开始就按大陆倾斜汇流；固定初值，结果只取决于原因）
-  for (let i = 0; i < n; i++) {
-    if (!todo[i]) continue;
-    h[i] = coastKm[i] * INIT_SLOPE * (0.3 + u[i]) + 0.05 * (1 + fs[i]) + INIT_T * T[i] * fade[i];
-  }
+  initHeights(n, todo, coastKm, u, fs, T, fade, h);
 
   // 固定轮数：每个流域的计算只取决于它自己，在一处编辑不会因为“全局收敛轮数”变化而改动远处的地形
   // 活动格与强制方向各轮相同：路由的出口、缓冲区只建一次
@@ -476,6 +458,46 @@ function solveLand(world: World, todo: Uint8Array, fu: Float64Array, fk: Float64
   if (plainsOn.on) applyPlains({ mesh, todo, land, up, areaKm, r, A, kmPerUnit, mToRaw: M_TO_RAW, pitM }, h);
   // 冰川刻蚀（第三十四轮）：新建时纬度高、低于 250–800 m 的陆地挖 8–68 m 的小洼（core/glacial.ts），水文蓄成湖群
   glacialScour(glacialField(world), mesh, todo, land, coastKm, kmPerUnit, M_TO_RAW, h);
+}
+
+// 第三十五轮（提速）：solveLand 开头几段逐格的循环（原样照搬，结果逐值相同）。
+// 挨海的要算的陆格（按编号，写进 out），返回个数
+function todoCoast(n: number, off: Int32Array, adj: Int32Array, todo: Uint8Array, land: Uint8Array, out: Int32Array): number {
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    if (!todo[i]) continue;
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      if (land[adj[e]] !== land[i]) {
+        out[m++] = i;
+        break;
+      }
+    }
+  }
+  return m;
+}
+
+// 离海岸的 km（走不到海的为 1e5）
+function coastKmOf(n: number, todo: Uint8Array, coast: Float64Array, kmPerUnit: number, coastKm: Float64Array) {
+  for (let i = 0; i < n; i++) if (todo[i]) coastKm[i] = Number.isFinite(coast[i]) ? coast[i] * kmPerUnit : 1e5;
+}
+
+// 一格的求解输入：抬升、可蚀性（含迎风）、面积、基准面、离海的减弱
+function solveInputs(world: World, geo: ReturnType<typeof gradGeo>, i: number, fu: Float64Array, fk: Float64Array, Tm: Float32Array, coastKm: Float64Array, u: Float64Array, K: Float64Array, areaKm: Float64Array, T: Float64Array, fade: Float64Array) {
+  const { mesh, causes, kmPerUnit } = world;
+  // 基础抬升让平原也有起伏；噪声打破对称，使河网各不相同
+  u[i] = (BASE_UPLIFT + UPLIFT_SCALE * causes.uplift[i]) * fu[i];
+  K[i] = causes.erod[i] * fk[i] * windwardFactor(world, geo, i);
+  areaKm[i] = mesh.area[i] * kmPerUnit * kmPerUnit;
+  T[i] = Tm[i] * M_TO_RAW;
+  fade[i] = smoothstep(0, COAST_FADE_KM, coastKm[i]);
+}
+
+// 初始高程
+function initHeights(n: number, todo: Uint8Array, coastKm: Float64Array, u: Float64Array, fs: Float64Array, T: Float64Array, fade: Float64Array, h: Float64Array) {
+  for (let i = 0; i < n; i++) {
+    if (!todo[i]) continue;
+    h[i] = coastKm[i] * INIT_SLOPE * (0.3 + u[i]) + 0.05 * (1 + fs[i]) + INIT_T * T[i] * fade[i];
+  }
 }
 
 // 测试用：关掉平原与河口（第三十三轮以前的求解）
@@ -778,7 +800,7 @@ interface SeafloorMemoEntry {
 }
 const seafloorMemo = new WeakMap<Mesh, SeafloorMemoEntry[]>();
 // 测试用：on = false 时不读也不写缓存；reused：直接用上一次的结果，partial：只重算改动附近，computed：整个重算
-export const seafloorStats = { on: true, reused: 0, partial: 0, computed: 0 };
+export const seafloorStats = { on: true, reused: 0, partial: 0, computed: 0, coast: 0 };
 
 // 生成器的两个场按内容比（重新打开的世界是另一份数组，内容相同）
 function sameFields(a: { ocean: Float32Array; shelf: Float32Array } | null, b: { ocean: Float32Array; shelf: Float32Array } | null): boolean {
@@ -885,36 +907,48 @@ export function seafloor(world: World, elevation: Float32Array) {
   // 宽的大陆架就是淹在水下的陆壳，陆架坡折在陆壳的边上
   const toOcean = oceanSteps(world, fields, Math.ceil(SHELF_MAX_KM / cellKm), base, flips);
 
+  // 陆海与上一次相同（只有岸边的属性、landness 变了，比如海岸上堆山）：离岸距离与最近的岸边格照用，
+  // 只重算属性变了的岸边格管着的格（再往外三圈平滑）与 landness 变了的海格（第三十五轮提速）
+  if (base && flips && !flips.length && seafloorSameLand.on) {
+    const r = sameLandSeafloor(world, fields, base, up, size, toOcean, cellKm, riseKm);
+    for (let i = 0; i < n; i++) if (!land[i]) elevation[i] = r.z[i];
+    seafloorStats.coast++;
+    if (seafloorStats.on) {
+      const entry: SeafloorMemoEntry = {
+        seed,
+        kmPerUnit,
+        fields,
+        lsize,
+        land: land.slice(),
+        landness: causes.landness.slice(),
+        landDelta: causes.landDelta.slice(),
+        uplift: causes.uplift.slice(),
+        up,
+        size,
+        toOcean,
+        dist: base.dist,
+        owner: base.owner,
+        W: r.W,
+        A: r.A,
+        z: r.z,
+      };
+      seafloorMemo.set(mesh, [entry, ...(seafloorMemo.get(mesh) ?? [])].slice(0, 2));
+    }
+    return;
+  }
+
   // 只重算改动附近：从上一次（同样的生成器场）的结果改起。改动 = 陆海变了的格、landness 变了的海格、
   // 属性（抬升、陆块大小、离洋壳）变了的海格；要重算的是离它们 limit 加十格以内的格（平滑三圈也够，只会多算，不会少算）
   let region: Uint8Array | null = null;
   let rlist: Int32Array | null = null;
+  // 第三十五轮（提速）：逐格的几段放进小函数（原样照搬，结果逐值相同）；“第 k 个要重算的格”以前是两种闭包，现在是一张格表
   if (base) {
-    const seeds: number[] = [];
-    const landness = causes.landness;
-    const landDelta = causes.landDelta;
-    const bLand = base.land;
-    const bLandness = base.landness;
-    const bLandDelta = base.landDelta;
-    const bUp = base.up;
-    const bSize = base.size;
-    const bTo = base.toOcean;
-    for (let i = 0; i < n; i++) {
-      if (land[i] !== bLand[i]) seeds.push(i);
-      else if (!land[i]) {
-        if (landness[i] !== bLandness[i] || landDelta[i] !== bLandDelta[i] || up[i] !== bUp[i] || size[i] !== bSize[i] || toOcean[i] !== bTo[i]) seeds.push(i);
-      }
-    }
-    if (seeds.length * 16 < n) {
-      const reach = graphDistance(mesh, seeds, limit + 10 * mesh.spacing);
+    const seedBuf = new Int32Array(n);
+    const ns = changedSeas(n, land, causes.landness, causes.landDelta, up, size, toOcean, base, seedBuf);
+    if (ns * 16 < n) {
+      const reach = graphDistance(mesh, seedBuf.subarray(0, ns), limit + 10 * mesh.spacing);
       region = new Uint8Array(n);
-      let count = 0;
-      for (let i = 0; i < n; i++) {
-        if (reach[i] < Infinity) {
-          region[i] = 1;
-          count++;
-        }
-      }
+      const count = reached(n, reach, region);
       // 改动太大（要重算的格超过一半）：整个重算更快
       if (count * 2 > n) region = null;
       else {
@@ -925,19 +959,10 @@ export function seafloor(world: World, elevation: Float32Array) {
   }
   // 要重算的格（按编号从小到大）：只重算改动附近时是重算区里的格，否则是所有格
   const todo = rlist ? rlist.length : n;
-  const at = rlist ? (k: number) => rlist![k] : (k: number) => k;
+  const list = rlist ?? allCells(n);
   // 岸边的海格（挨着陆地）：Dijkstra 的起点
-  const sources: number[] = [];
-  for (let k = 0; k < todo; k++) {
-    const i = at(k);
-    if (land[i]) continue;
-    for (let e = off[i], end = off[i + 1]; e < end; e++) {
-      if (land[adj[e]]) {
-        sources.push(i);
-        break;
-      }
-    }
-  }
+  const srcBuf = new Int32Array(todo);
+  const sources = srcBuf.subarray(0, shoreSeas(list, todo, off, adj, land, srcBuf));
   const prev = region ? base : undefined;
 
   // 只走海格的图距离与最近的岸边格（Dijkstra，走到 limit 为止；距离相同时取编号小的岸边格）
@@ -966,60 +991,25 @@ export function seafloor(world: World, elevation: Float32Array) {
       rim.sort((a, b) => a - b);
       for (const i of rim) heap.push(i, dist[i]);
     }
-    for (const s of sources) {
+    for (let k = 0; k < sources.length; k++) {
+      const s = sources[k];
       dist[s] = 0;
       owner[s] = s;
       heap.push(s, 0);
     }
-    while (heap.size) {
-      const i = heap.pop();
-      const di = heap.lastKey;
-      if (di > dist[i]) continue;
-      const oi = owner[i];
-      for (let e = off[i], end = off[i + 1]; e < end; e++) {
-        const j = adj[e];
-        if (land[j] || (region && !region[j])) continue;
-        const nd = di + md[e];
-        if (nd > limit) continue;
-        if (nd < dist[j]) {
-          dist[j] = nd;
-          owner[j] = oi;
-          heap.push(j, nd);
-        } else if (nd === dist[j] && oi < owner[j]) owner[j] = oi;
-      }
-    }
+    if (region) seaDijkstraIn(off, adj, md, land, region, limit, dist, owner, heap);
+    else seaDijkstra(off, adj, md, land, limit, dist, owner, heap);
   }
 
   const noise = seaNoise(mesh, seed);
+  const ctx: SeaCtx = { up, size, toOcean, fields, noise, cellKm, kmPerUnit, riseKm, landness: causes.landness, landDelta: causes.landDelta };
   // 每个海格的大陆架宽度 W、活动程度 A：先按最近的岸边格取，再在海上平滑几遍（岸边格换了的地方不留台阶）
   const Ws: Float32Array[] = [];
   const As: Float32Array[] = [];
   const W0 = prev ? prev.W[0].slice() : new Float32Array(n);
   const A0 = prev ? prev.A[0].slice() : new Float32Array(n);
-  const cells: number[] = [];
-  for (let k = 0; k < todo; k++) {
-    const i = at(k);
-    const o = owner[i];
-    if (o < 0) {
-      W0[i] = 0;
-      A0[i] = 0;
-      continue;
-    }
-    cells.push(i);
-    const act = smoothstep(0.35, 1, up[o]);
-    const wBase = SHELF_KM * Math.exp(0.8 * noise.w[i]);
-    // 岛架：按陆块大小（洋壳上的小岛只有几 km），沿岸宽窄不一（×0.5–×1.6，按这一格的位置，小岛的岛架不是一个圆）；
-    // 陆架：一直到洋壳（至少有一半的 wBase）
-    const wIsland = (SHELF_MIN_KM + (wBase - SHELF_MIN_KM) * 0.85 * size[o]) * Math.min(1.6, Math.max(0.5, Math.exp(2.2 * noise.i[i])));
-    let wCont = 0;
-    if (fields && fields.shelf[o] > 0) {
-      const t = toOcean[o];
-      const toCrust = t < 0 ? SHELF_MAX_KM : t * cellKm;
-      wCont = fields.shelf[o] * Math.min(SHELF_MAX_KM, Math.max(0.5 * wBase, toCrust * (0.85 + 0.15 * noise.w[i])));
-    }
-    W0[i] = Math.max(SHELF_MIN_KM, Math.max(wIsland, wCont) * (1 - 0.75 * act));
-    A0[i] = act;
-  }
+  const cells = new Int32Array(todo);
+  const nc = shelfStart(ctx, list, todo, owner, W0, A0, cells);
   Ws.push(W0);
   As.push(A0);
   // 坡折深度只取决于这一格的噪声，本来就是平滑的；宽度与活动程度按岸边格取，要平滑
@@ -1038,21 +1028,7 @@ export function seafloor(world: World, elevation: Float32Array) {
         }
       }
     }
-    for (let k = 0; k < cells.length; k++) {
-      const i = cells[k];
-      let sw = 0;
-      let sa = 0;
-      let m = 0;
-      for (let e = off[i], end = off[i + 1]; e < end; e++) {
-        const j = adj[e];
-        if (owner[j] < 0) continue;
-        sw += Wp[j];
-        sa += Ap[j];
-        m++;
-      }
-      W2[i] = m ? 0.5 * Wp[i] + (0.5 * sw) / m : Wp[i];
-      A2[i] = m ? 0.5 * Ap[i] + (0.5 * sa) / m : Ap[i];
-    }
+    smoothShelf(off, adj, owner, cells, nc, Wp, Ap, W2, A2);
     Ws.push(W2);
     As.push(A2);
   }
@@ -1060,42 +1036,7 @@ export function seafloor(world: World, elevation: Float32Array) {
   const A = As[SMOOTH_PASSES];
 
   const z = prev ? prev.z.slice() : new Float32Array(n);
-  for (let k = 0; k < todo; k++) {
-    const i = at(k);
-    if (land[i]) {
-      z[i] = 0;
-      continue;
-    }
-    // 洋底的目标深度：陆壳上（淹没的大陆）按地壳本身的高度，画成海的陆地是一个海盆；洋壳上取生成器的洋底
-    const shelfW = fields ? smoothstep(0.3, 0.7, fields.shelf[i]) : 0;
-    const ocean = fields ? fields.ocean[i] : -4800 + 260 * noise.b[i];
-    const crust = causes.landness[i] - causes.landDelta[i];
-    // 淹没的陆壳离岸远了（大陆架以外）：陆缘台地，约 −400 到 −1600 m（像西兰洲、罗科尔海台）；
-    // 画成海的陆地（原来在海面以上）：约 −1100 m 的海盆
-    const tCont = -(400 + 1300 * (1 - Math.exp(Math.min(0, crust) / 600))) - 700 * smoothstep(-150, 150, crust) - 150 * noise.w[i];
-    const T = shelfW * tCont + (1 - shelfW) * ocean;
-    let h: number;
-    if (owner[i] < 0) h = T;
-    else {
-      const dk = dist[i] * kmPerUnit + 0.5 * cellKm;
-      const w = W[i];
-      // 陆架坡折的深度（负数）
-      const b = -(BREAK_M + 45 * noise.b[i]);
-      // 架上的起伏：岸边几乎没有，往外到几十米
-      const N = 22 * noise.s[i];
-      if (dk <= w) {
-        const u = dk / w;
-        h = -(2 + (-b - 2) * Math.pow(u, 0.85)) + N * u;
-      } else {
-        const x = dk - w;
-        const S = Math.max((90 - 40 * A[i]) * (0.85 + 0.3 * (0.5 + 0.5 * noise.b[i])), 1.2 * cellKm);
-        // 陆坡（S 以内降到六成）+ 陆隆（riseKm 以内慢慢降完）
-        const G = 0.6 * smoothstep(0, S, x) + 0.4 * smoothstep(0, riseKm, x);
-        h = b + (T - b) * G + N * (1 - G);
-      }
-    }
-    z[i] = Math.max(-11000, Math.min(-1, h));
-  }
+  depthsOf(ctx, list, todo, land, owner, dist, W, A, z);
   for (let i = 0; i < n; i++) if (!land[i]) elevation[i] = z[i];
   if (region) seafloorStats.partial++;
   else seafloorStats.computed++;
@@ -1120,6 +1061,310 @@ export function seafloor(world: World, elevation: Float32Array) {
     };
     seafloorMemo.set(mesh, [entry, ...(seafloorMemo.get(mesh) ?? [])].slice(0, 2));
   }
+}
+
+// 海底剖面逐格要读的东西（第三十五轮提速：逐格的几段放进小函数，两条路共用）
+interface SeaCtx {
+  up: Float32Array;
+  size: Float32Array;
+  toOcean: Int32Array;
+  fields: ReturnType<typeof seabedFields>;
+  noise: SeaNoise;
+  cellKm: number;
+  kmPerUnit: number;
+  riseKm: number;
+  landness: Float32Array;
+  landDelta: Float32Array;
+}
+
+// 海格 i（最近的岸边格 o）平滑之前的大陆架宽度 W 与活动程度 A
+function shelfAt(c: SeaCtx, i: number, o: number, W0: Float32Array, A0: Float32Array) {
+  const { noise, fields } = c;
+  const act = smoothstep(0.35, 1, c.up[o]);
+  const wBase = SHELF_KM * Math.exp(0.8 * noise.w[i]);
+  // 岛架：按陆块大小（洋壳上的小岛只有几 km），沿岸宽窄不一（×0.5–×1.6，按这一格的位置，小岛的岛架不是一个圆）；
+  // 陆架：一直到洋壳（至少有一半的 wBase）
+  const wIsland = (SHELF_MIN_KM + (wBase - SHELF_MIN_KM) * 0.85 * c.size[o]) * Math.min(1.6, Math.max(0.5, Math.exp(2.2 * noise.i[i])));
+  let wCont = 0;
+  if (fields && fields.shelf[o] > 0) {
+    const t = c.toOcean[o];
+    const toCrust = t < 0 ? SHELF_MAX_KM : t * c.cellKm;
+    wCont = fields.shelf[o] * Math.min(SHELF_MAX_KM, Math.max(0.5 * wBase, toCrust * (0.85 + 0.15 * noise.w[i])));
+  }
+  W0[i] = Math.max(SHELF_MIN_KM, Math.max(wIsland, wCont) * (1 - 0.75 * act));
+  A0[i] = act;
+}
+
+// 平滑一遍（cells[0, count) 里的格，读 Wp、Ap，写 W2、A2）
+function smoothShelf(off: Int32Array, adj: Int32Array, owner: Int32Array, cells: Int32Array, count: number, Wp: Float32Array, Ap: Float32Array, W2: Float32Array, A2: Float32Array) {
+  for (let k = 0; k < count; k++) {
+    const i = cells[k];
+    let sw = 0;
+    let sa = 0;
+    let m = 0;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (owner[j] < 0) continue;
+      sw += Wp[j];
+      sa += Ap[j];
+      m++;
+    }
+    W2[i] = m ? 0.5 * Wp[i] + (0.5 * sw) / m : Wp[i];
+    A2[i] = m ? 0.5 * Ap[i] + (0.5 * sa) / m : Ap[i];
+  }
+}
+
+// 海格 i 的深度（m）
+function seaDepth(c: SeaCtx, i: number, owner: Int32Array, dist: Float64Array, W: Float32Array, A: Float32Array): number {
+  const { noise, fields, cellKm, riseKm } = c;
+  // 洋底的目标深度：陆壳上（淹没的大陆）按地壳本身的高度，画成海的陆地是一个海盆；洋壳上取生成器的洋底
+  const shelfW = fields ? smoothstep(0.3, 0.7, fields.shelf[i]) : 0;
+  const ocean = fields ? fields.ocean[i] : -4800 + 260 * noise.b[i];
+  const crust = c.landness[i] - c.landDelta[i];
+  // 淹没的陆壳离岸远了（大陆架以外）：陆缘台地，约 −400 到 −1600 m（像西兰洲、罗科尔海台）；
+  // 画成海的陆地（原来在海面以上）：约 −1100 m 的海盆
+  const tCont = -(400 + 1300 * (1 - Math.exp(Math.min(0, crust) / 600))) - 700 * smoothstep(-150, 150, crust) - 150 * noise.w[i];
+  const T = shelfW * tCont + (1 - shelfW) * ocean;
+  let h: number;
+  if (owner[i] < 0) h = T;
+  else {
+    const dk = dist[i] * c.kmPerUnit + 0.5 * cellKm;
+    const w = W[i];
+    // 陆架坡折的深度（负数）
+    const b = -(BREAK_M + 45 * noise.b[i]);
+    // 架上的起伏：岸边几乎没有，往外到几十米
+    const N = 22 * noise.s[i];
+    if (dk <= w) {
+      const u = dk / w;
+      h = -(2 + (-b - 2) * Math.pow(u, 0.85)) + N * u;
+    } else {
+      const x = dk - w;
+      const S = Math.max((90 - 40 * A[i]) * (0.85 + 0.3 * (0.5 + 0.5 * noise.b[i])), 1.2 * cellKm);
+      // 陆坡（S 以内降到六成）+ 陆隆（riseKm 以内慢慢降完）
+      const G = 0.6 * smoothstep(0, S, x) + 0.4 * smoothstep(0, riseKm, x);
+      h = b + (T - b) * G + N * (1 - G);
+    }
+  }
+  return Math.max(-11000, Math.min(-1, h));
+}
+
+// 第三十五轮（提速）：seafloor 里几段逐格的循环（原样照搬）。
+// 与 base 比陆海变了的格、属性或 landness 变了的海格（按编号，写进 out），返回个数
+function changedSeas(n: number, land: Uint8Array, landness: Float32Array, landDelta: Float32Array, up: Float32Array, size: Float32Array, toOcean: Int32Array, base: SeafloorMemoEntry, out: Int32Array): number {
+  const bLand = base.land;
+  const bLandness = base.landness;
+  const bLandDelta = base.landDelta;
+  const bUp = base.up;
+  const bSize = base.size;
+  const bTo = base.toOcean;
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    if (land[i] !== bLand[i]) out[m++] = i;
+    else if (!land[i]) {
+      if (landness[i] !== bLandness[i] || landDelta[i] !== bLandDelta[i] || up[i] !== bUp[i] || size[i] !== bSize[i] || toOcean[i] !== bTo[i]) out[m++] = i;
+    }
+  }
+  return m;
+}
+
+// 走得到的格标进 region，返回个数
+function reached(n: number, reach: Float64Array, region: Uint8Array): number {
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    if (reach[i] < Infinity) {
+      region[i] = 1;
+      count++;
+    }
+  }
+  return count;
+}
+
+// 0, 1, …, n − 1
+function allCells(n: number): Int32Array {
+  const a = new Int32Array(n);
+  for (let i = 0; i < n; i++) a[i] = i;
+  return a;
+}
+
+// list 的前 todo 格里挨着陆地的海格（写进 out），返回个数
+function shoreSeas(list: Int32Array, todo: number, off: Int32Array, adj: Int32Array, land: Uint8Array, out: Int32Array): number {
+  let m = 0;
+  for (let k = 0; k < todo; k++) {
+    const i = list[k];
+    if (land[i]) continue;
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      if (land[adj[e]]) {
+        out[m++] = i;
+        break;
+      }
+    }
+  }
+  return m;
+}
+
+// 只走海格的 Dijkstra（走到 limit 为止；距离相同时取编号小的岸边格）
+function seaDijkstra(off: Int32Array, adj: Int32Array, md: Float64Array, land: Uint8Array, limit: number, dist: Float64Array, owner: Int32Array, heap: HeapLite) {
+  while (heap.size) {
+    const i = heap.pop();
+    const di = heap.lastKey;
+    if (di > dist[i]) continue;
+    const oi = owner[i];
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (land[j]) continue;
+      const nd = di + md[e];
+      if (nd > limit) continue;
+      if (nd < dist[j]) {
+        dist[j] = nd;
+        owner[j] = oi;
+        heap.push(j, nd);
+      } else if (nd === dist[j] && oi < owner[j]) owner[j] = oi;
+    }
+  }
+}
+
+// 同上，只在重算区里走
+function seaDijkstraIn(off: Int32Array, adj: Int32Array, md: Float64Array, land: Uint8Array, region: Uint8Array, limit: number, dist: Float64Array, owner: Int32Array, heap: HeapLite) {
+  while (heap.size) {
+    const i = heap.pop();
+    const di = heap.lastKey;
+    if (di > dist[i]) continue;
+    const oi = owner[i];
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (land[j] || !region[j]) continue;
+      const nd = di + md[e];
+      if (nd > limit) continue;
+      if (nd < dist[j]) {
+        dist[j] = nd;
+        owner[j] = oi;
+        heap.push(j, nd);
+      } else if (nd === dist[j] && oi < owner[j]) owner[j] = oi;
+    }
+  }
+}
+
+// 平滑之前的 W、A（list 的前 todo 格；没走到的格为 0），有岸边格的格写进 cells，返回个数
+function shelfStart(ctx: SeaCtx, list: Int32Array, todo: number, owner: Int32Array, W0: Float32Array, A0: Float32Array, cells: Int32Array): number {
+  let nc = 0;
+  for (let k = 0; k < todo; k++) {
+    const i = list[k];
+    const o = owner[i];
+    if (o < 0) {
+      W0[i] = 0;
+      A0[i] = 0;
+      continue;
+    }
+    cells[nc++] = i;
+    shelfAt(ctx, i, o, W0, A0);
+  }
+  return nc;
+}
+
+// 深度（list 的前 todo 格；陆格为 0）
+function depthsOf(ctx: SeaCtx, list: Int32Array, todo: number, land: Uint8Array, owner: Int32Array, dist: Float64Array, W: Float32Array, A: Float32Array, z: Float32Array) {
+  for (let k = 0; k < todo; k++) {
+    const i = list[k];
+    z[i] = land[i] ? 0 : seaDepth(ctx, i, owner, dist, W, A);
+  }
+}
+
+// 测试用：false 时陆海不变也走原来的路（只重算改动附近）
+export const seafloorSameLand = { on: true };
+
+// 陆海与 base 相同（第三十五轮提速）：离岸距离、最近的岸边格只取决于陆海，照用 base 的。
+// 平滑之前的 W、A 只取决于最近的岸边格的属性（up、size、toOcean）与这一格的噪声：只重算属性变了的岸边格管着的格；
+// 第 p 遍平滑只重算第 p − 1 遍重算过的格与它们挨着的格（都只在有岸边格的格里）；深度只重算 W、A 重算过的格与 landness 变了的海格。
+// 别的格的输入与 base 逐位相同，照抄 base 的结果，与整个重算逐位相同（seabed 测试的“海岸上堆山”、r35-speed）
+function sameLandSeafloor(world: World, fields: ReturnType<typeof seabedFields>, base: SeafloorMemoEntry, up: Float32Array, size: Float32Array, toOcean: Int32Array, cellKm: number, riseKm: number): { W: Float32Array[]; A: Float32Array[]; z: Float32Array } {
+  const { mesh, causes, kmPerUnit } = world;
+  const n = mesh.n;
+  const { off, adj } = mesh;
+  const land = causes.land;
+  const owner = base.owner;
+  const dist = base.dist;
+  const ctx: SeaCtx = { up, size, toOcean, fields, noise: seaNoise(mesh, world.settings.seed), cellKm, kmPerUnit, riseKm, landness: causes.landness, landDelta: causes.landDelta };
+  // 属性变了的岸边格
+  const bad = new Uint8Array(n);
+  let anyBad = false;
+  for (let i = 0; i < n; i++) {
+    if (up[i] !== base.up[i] || size[i] !== base.size[i] || toOcean[i] !== base.toOcean[i]) {
+      bad[i] = 1;
+      anyBad = true;
+    }
+  }
+  const mark = new Uint8Array(n);
+  let cells = new Int32Array(0);
+  let count = 0;
+  const W: Float32Array[] = [base.W[0]];
+  const A: Float32Array[] = [base.A[0]];
+  if (anyBad) {
+    cells = new Int32Array(n);
+    count = ownedBy(owner, bad, n, mark, cells);
+    const W0 = base.W[0].slice();
+    const A0 = base.A[0].slice();
+    for (let k = 0; k < count; k++) shelfAt(ctx, cells[k], owner[cells[k]], W0, A0);
+    W[0] = W0;
+    A[0] = A0;
+  }
+  for (let pass = 1; pass <= SMOOTH_PASSES; pass++) {
+    if (!count) {
+      W.push(base.W[pass]);
+      A.push(base.A[pass]);
+      continue;
+    }
+    count = growOwned(off, adj, owner, mark, cells, count);
+    const W2 = base.W[pass].slice();
+    const A2 = base.A[pass].slice();
+    smoothShelf(off, adj, owner, cells, count, W[pass - 1], A[pass - 1], W2, A2);
+    W.push(W2);
+    A.push(A2);
+  }
+  // 深度：W、A 重算过的格，加上 landness、landDelta（按位）变了的海格
+  const z = base.z.slice();
+  const Wf = W[SMOOTH_PASSES];
+  const Af = A[SMOOTH_PASSES];
+  for (let k = 0; k < count; k++) {
+    const i = cells[k];
+    z[i] = seaDepth(ctx, i, owner, dist, Wf, Af);
+  }
+  const lb = bitsOf(causes.landness);
+  const db = bitsOf(causes.landDelta);
+  const blb = bitsOf(base.landness);
+  const bdb = bitsOf(base.landDelta);
+  for (let i = 0; i < n; i++) {
+    if (land[i] || mark[i]) continue;
+    if (lb[i] !== blb[i] || db[i] !== bdb[i]) z[i] = seaDepth(ctx, i, owner, dist, Wf, Af);
+  }
+  return { W, A, z };
+}
+
+// 最近的岸边格属性变了的格（按编号），标进 mark，写进 cells，返回个数
+function ownedBy(owner: Int32Array, bad: Uint8Array, n: number, mark: Uint8Array, cells: Int32Array): number {
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const o = owner[i];
+    if (o >= 0 && bad[o]) {
+      mark[i] = 1;
+      cells[m++] = i;
+    }
+  }
+  return m;
+}
+
+// 再加上挨着的、有岸边格的格（标进 mark，接在 cells 后面），返回新的个数
+function growOwned(off: Int32Array, adj: Int32Array, owner: Int32Array, mark: Uint8Array, cells: Int32Array, count: number): number {
+  let m = count;
+  for (let k = 0; k < count; k++) {
+    const i = cells[k];
+    for (let e = off[i], end = off[i + 1]; e < end; e++) {
+      const j = adj[e];
+      if (mark[j] || owner[j] < 0) continue;
+      mark[j] = 1;
+      cells[m++] = j;
+    }
+  }
+  return m;
 }
 
 // 环礁的潟湖（第十三轮；第十四轮起按岛的种类认：记着环礁形状的种类的海格，见 terrain.ts 的 lagoonTest）

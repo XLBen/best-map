@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { FieldDesc } from '../content/registry';
 import { typeIdSchema } from '../type-id';
+import type { Mesh } from '../mesh';
 import { type Derived, type World, worldLatitude } from '../world';
 
 // 按格的条件（第二十一轮）：地形类别的自动规则、资源的分布规则共用一种写法。
@@ -89,19 +90,37 @@ export function cellInputs(world: World, d: Derived): CellInputs {
   const flags = new Uint8Array(n);
   const lat = new Float32Array(n);
   const thr = world.small.planet.riverThreshold;
+  inputFlags(n, mesh.off, mesh.adj, causes.land, d.lake, d.discharge, thr, absLatitudes(world), dry, flags, lat);
+  return { n, dry, elevation: d.elevation, slope: d.slope, temp: d.tMean, moisture: d.moisture, wetness: d.wetness, lat, biome: d.dominant, flags };
+}
+
+// 每格纬度的绝对值（Float32，与逐格按 worldLatitude 现算的相同）：只取决于网格、建世界时的纬度与挪过的度数，按网格记一份（第三十五轮提速）
+const latCache = new WeakMap<Mesh, { key: string; lat: Float32Array }>();
+function absLatitudes(world: World): Float32Array {
+  const { mesh, settings } = world;
+  const key = settings.globe ? 'globe' : `${settings.latNorth}|${settings.latSouth}|${world.small.planet.latShift}`;
+  const hit = latCache.get(mesh);
+  if (hit && hit.key === key) return hit.lat;
+  const lat = new Float32Array(mesh.n);
+  for (let i = 0; i < mesh.n; i++) lat[i] = Math.abs(worldLatitude(world, mesh.y[i]));
+  latCache.set(mesh, { key, lat });
+  return lat;
+}
+
+// 干的陆地、挨海 / 有河 / 挨湖的标记与纬度（第三十五轮提速：逐格的循环放在小函数里）
+function inputFlags(n: number, off: Int32Array, adj: Int32Array, land: Uint8Array, lake: Uint8Array, discharge: Float32Array, thr: number, absLat: Float32Array, dry: Uint8Array, flags: Uint8Array, lat: Float32Array) {
   for (let i = 0; i < n; i++) {
-    if (!causes.land[i] || d.lake[i] === 1) continue;
+    if (!land[i] || lake[i] === 1) continue;
     dry[i] = 1;
-    let f = d.discharge[i] >= thr ? RIVER : 0;
-    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-      const j = mesh.adj[e];
-      if (!causes.land[j]) f |= COAST;
-      else if (d.lake[j] === 1) f |= LAKE;
+    let f = discharge[i] >= thr ? RIVER : 0;
+    for (let e = off[i]; e < off[i + 1]; e++) {
+      const j = adj[e];
+      if (!land[j]) f |= COAST;
+      else if (lake[j] === 1) f |= LAKE;
     }
     flags[i] = f;
-    lat[i] = Math.abs(worldLatitude(world, mesh.y[i]));
+    lat[i] = absLat[i];
   }
-  return { n, dry, elevation: d.elevation, slope: d.slope, temp: d.tMean, moisture: d.moisture, wetness: d.wetness, lat, biome: d.dominant, flags };
 }
 
 // 编译好的规则：范围换成数，生态、地形类别换成按下标查的表（null 是不限）

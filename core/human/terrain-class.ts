@@ -4,7 +4,7 @@ import { CommandError } from '../errors';
 import type { Species } from '../species';
 import { typeIdSchema } from '../type-id';
 import type { SmallState, World } from '../world';
-import { type CellInputs, cellRuleSchema, compileRule, ruleMatches } from './rules';
+import { type CellInputs, type CompiledRule, cellRuleSchema, compileRule, ruleMatches } from './rules';
 
 // 地形类别（第二十一轮）：平原、丘陵、高原、山地、山峰，每格一种，只是一层分类，不改高度。
 // 第二十七轮起只管起伏：植被（森林、沙漠、沼泽……）是生态的事，格的档案写成“丘陵 · 温带阔叶林”。
@@ -78,7 +78,9 @@ export function classAt(small: ClassSmall, code: number): TerrainClass | undefin
 }
 
 // 自动分类：每格取规则满足的类别里优先级最大的（一样大时排在前面的），都不满足时取写了“兜底”的那一类；水面为 0
-export function classifyTerrain(x: CellInputs, list: readonly TerrainClass[], biomes: readonly { id: string; terrain: string }[]): Uint8Array {
+// base（第三十五轮提速）：上一次按同样的类别、规则算出的结果与这一次要重算的格（输入变了的格，见 human/cell-memo.ts）：
+// 别的格照抄 base.out（每格的结果只取决于这一格的输入），与整个重算逐值相同
+export function classifyTerrain(x: CellInputs, list: readonly TerrainClass[], biomes: readonly { id: string; terrain: string }[], base?: { out: Uint8Array; cells: Int32Array }): Uint8Array {
   const order = list
     .map((c, k) => {
       const rules = (c.rules ?? []).map((r) => compileRule(r, biomes));
@@ -96,27 +98,42 @@ export function classifyTerrain(x: CellInputs, list: readonly TerrainClass[], bi
     .filter((c) => c.rules.length);
   order.sort((a, b) => b.p - a.p || a.code - b.code);
   const fallback = list.findIndex((c) => c.fallback) + 1;
-  const out = new Uint8Array(x.n);
-  for (let i = 0; i < x.n; i++) {
-    if (!x.dry[i]) continue;
-    out[i] = fallback;
-    const bi = x.biome[i];
-    for (const c of order) {
-      if (c.any && (bi < 0 || !c.any[bi])) continue;
-      let hit = false;
-      for (const r of c.rules) {
-        if (ruleMatches(r, x, i)) {
-          hit = true;
-          break;
-        }
-      }
-      if (hit) {
-        out[i] = c.code;
-        break;
-      }
+  if (base) {
+    const out = base.out.slice();
+    const cells = base.cells;
+    for (let k = 0; k < cells.length; k++) {
+      const i = cells[k];
+      out[i] = x.dry[i] ? classOf(order, fallback, x, i) : 0;
     }
+    return out;
   }
+  const out = new Uint8Array(x.n);
+  classifyAll(order, fallback, x, out);
   return out;
+}
+
+interface ClassEntry {
+  code: number;
+  p: number;
+  rules: CompiledRule[];
+  any: Uint8Array | null;
+}
+
+// 整张图（第三十五轮提速：逐格的循环放在小函数里，见开发说明“还没编译好的代码”）
+function classifyAll(order: readonly ClassEntry[], fallback: number, x: CellInputs, out: Uint8Array) {
+  for (let i = 0; i < x.n; i++) if (x.dry[i]) out[i] = classOf(order, fallback, x, i);
+}
+
+// 一格（干的陆地）的类别：规则满足的类别里排在最前的，都不满足时是兜底的
+function classOf(order: readonly ClassEntry[], fallback: number, x: CellInputs, i: number): number {
+  const bi = x.biome[i];
+  for (let q = 0; q < order.length; q++) {
+    const c = order[q];
+    if (c.any && (bi < 0 || !c.any[bi])) continue;
+    const rules = c.rules;
+    for (let k = 0; k < rules.length; k++) if (ruleMatches(rules[k], x, i)) return c.code;
+  }
+  return fallback;
 }
 
 // 生效的类别：画过的格用画的（类别还在时），别的用自动的；水面为 0

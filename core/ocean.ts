@@ -1,4 +1,4 @@
-import { type SphereMesh, gradGeo, gradientAt, graphDistance } from './mesh';
+import { type SphereMesh, gradGeo, gradientAt, graphDistanceAvoid } from './mesh';
 import { clamp, smoothstep } from './rng';
 import { PLANET_SWEEPS, buildFlowSphere } from './sphere-flow';
 import type { World } from './world';
@@ -97,7 +97,7 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
   // 1. 挡海流的陆地：够大的陆块，再做一次闭运算（填掉一格宽的海峡）
   const steer = steerMask(mesh, land, kmPerUnit);
   const ocean = new Uint8Array(n);
-  for (let i = 0; i < n; i++) ocean[i] = land[i] ? 0 : 1;
+  seaMaskOf(n, land, ocean);
 
   // 2. 经纬格上每行的海岸距离
   const { cols, rows, cells } = pixels(mesh);
@@ -124,16 +124,12 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
 
   // 6. 海面温度：平衡温度顺着海流输送
   const teq = new Float64Array(n);
-  for (let i = 0; i < n; i++) teq[i] = inp.tAnn[i] + dUp[i];
+  addInto(n, inp.tAnn, dUp, teq);
   const flowC = buildFlowSphere(mesh, cE, cS, { lag: 'all', mask: ocean });
   // 稳态输运的专用写法：陆地格一直是 teq，不用扫；海上每格回到平衡的比例先算好，
   // 每遍按输运图的入流表（上游来源与权重）只做加权平均
   const fac = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    if (!ocean[i]) continue;
-    const lambda = 1500 * Math.sqrt(clamp(Math.hypot(cE[i], cS[i]) / 0.5, 0.5, 2));
-    fac[i] = 1 - Math.exp(-inp.spacingKm[i] / lambda);
-  }
+  relaxFactors(n, ocean, cE, cS, inp.spacingKm, fac);
   const sst = Float64Array.from(teq);
   sstSweeps(n, ocean, flowC, teq, fac, sst);
   // 去掉每条纬度带的平均偏离：按纬度的平衡温度是按地球的实测拟合的，已经含有洋流的平均作用，
@@ -144,6 +140,24 @@ export function computeOcean(world: World, inp: OceanInputs): OceanResult {
   list.unshift({ key, land: land.slice(), result });
   resultCache.set(mesh, list.slice(0, 2));
   return result;
+}
+
+// 第三十五轮（提速）：computeOcean 里剩下的几段逐格循环放进小函数（原样照搬，结果逐值相同）
+function seaMaskOf(n: number, land: Uint8Array, ocean: Uint8Array) {
+  for (let i = 0; i < n; i++) ocean[i] = land[i] ? 0 : 1;
+}
+
+function addInto(n: number, a: Float64Array, b: Float64Array, out: Float64Array) {
+  for (let i = 0; i < n; i++) out[i] = a[i] + b[i];
+}
+
+// 海上每格回到平衡的比例
+function relaxFactors(n: number, ocean: Uint8Array, cE: Float64Array, cS: Float64Array, spacingKm: Float64Array, fac: Float64Array) {
+  for (let i = 0; i < n; i++) {
+    if (!ocean[i]) continue;
+    const lambda = 1500 * Math.sqrt(clamp(Math.hypot(cE[i], cS[i]) / 0.5, 0.5, 2));
+    fac[i] = 1 - Math.exp(-spacingKm[i] / lambda);
+  }
 }
 
 // 逐格相同（与 every 逐格比相同）
@@ -331,23 +345,39 @@ function upwelling(mesh: SphereMesh, inp: OceanInputs, ocean: Uint8Array, steer:
   // 离挡流陆地的距离（km，300 km 以内）与指向海里的方向
   const coastSeeds: number[] = [];
   for (let i = 0; i < n; i++) if (steer[i]) coastSeeds.push(i);
-  const dc = graphDistance(mesh, coastSeeds, 300 / kmPerUnit, (_a, b, e) => (steer[b] ? Infinity : mesh.dist[e]));
+  // 第三十五轮（提速）：专门的函数，与传闭包 (_a, b, e) => (steer[b] ? Infinity : mesh.dist[e]) 逐值相同
+  const dc = graphDistanceAvoid(mesh, coastSeeds, 300 / kmPerUnit, steer);
+  const sm = smoothSteer(mesh, steer);
+  upwellCells(mesh, gradGeo(mesh), inp, ocean, dc, sm, dE, dW, open, cols, rows, rot, kmPerUnit, dUp);
+  return dUp;
+}
+
+// 第三十五轮（提速）：上涌的两段逐格的循环放进小函数（原样照搬，结果逐值相同）。
+// 挡流的陆地（0 / 1）与邻格平均两遍（每格都写，所以每遍不必先复制一份）
+function smoothSteer(mesh: SphereMesh, steer: Uint8Array): Float64Array {
+  const n = mesh.n;
+  const { off, adj } = mesh;
   const sm = new Float64Array(n);
   for (let i = 0; i < n; i++) sm[i] = steer[i];
+  const next = new Float64Array(n);
   for (let pass = 0; pass < 2; pass++) {
-    const next = Float64Array.from(sm);
     for (let i = 0; i < n; i++) {
       let s = sm[i];
       let m = 1;
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        s += sm[mesh.adj[e]];
+      for (let e = off[i]; e < off[i + 1]; e++) {
+        s += sm[adj[e]];
         m++;
       }
       next[i] = s / m;
     }
     sm.set(next);
   }
-  const geo = gradGeo(mesh);
+  return sm;
+}
+
+// 每个海格的上涌（写进 dUp）
+function upwellCells(mesh: SphereMesh, geo: ReturnType<typeof gradGeo>, inp: OceanInputs, ocean: Uint8Array, dc: Float64Array, sm: Float64Array, dE: Float64Array, dW: Float64Array, open: Uint8Array, cols: number, rows: number, rot: number, kmPerUnit: number, dUp: Float64Array) {
+  const n = mesh.n;
   const g = new Float64Array(2);
   for (let i = 0; i < n; i++) {
     if (!ocean[i]) continue;
@@ -382,7 +412,6 @@ function upwelling(mesh: SphereMesh, inp: OceanInputs, ocean: Uint8Array, steer:
       dUp[i] -= 3 * U;
     }
   }
-  return dUp;
 }
 
 // 6. 海面温度的稳态输运（写进 sst，初值是平衡温度）

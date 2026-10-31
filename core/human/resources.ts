@@ -4,7 +4,7 @@ import { mixSeed, mulberry32, noise2, noise3 } from '../rng';
 import { typeIdSchema } from '../type-id';
 import type { Mesh } from '../mesh';
 import type { SmallState, World } from '../world';
-import { type CellInputs, cellRuleSchema, compileRule, ruleMatches } from './rules';
+import { type CellInputs, type CompiledRule, cellRuleSchema, compileRule, ruleMatches } from './rules';
 import { HEX } from './terrain-class';
 
 // 资源（第二十一轮）：每格最多一种（粮食、木材、铁、金……），也可以没有。按分布规则（地形类别、生态、海拔、海岸、河……）
@@ -115,7 +115,9 @@ function fieldOf(mesh: Mesh, key: string): Float32Array {
 }
 
 // 自动放资源：每格在能长的资源里取“权重 × 高出门槛多少”最大的那种，都不够门槛时没有。cls 是生效的地形类别
-export function distributeResources(world: World, x: CellInputs, cls: Uint8Array, list: readonly Resource[], classIds: readonly string[]): Uint8Array {
+// base（第三十五轮提速）：上一次按同样的资源、类别、种子算出的结果与这一次要重算的格（输入或类别变了的格，见 human/cell-memo.ts）：
+// 别的格照抄 base.out（每格的结果只取决于这一格的输入、类别与噪声），与整个重算逐值相同
+export function distributeResources(world: World, x: CellInputs, cls: Uint8Array, list: readonly Resource[], classIds: readonly string[], base?: { out: Uint8Array; cells: Int32Array }): Uint8Array {
   const { mesh } = world;
   const sphere = mesh.kind === 'sphere';
   const dim = sphere ? 3 : 2;
@@ -149,46 +151,85 @@ export function distributeResources(world: World, x: CellInputs, cls: Uint8Array
       };
     })
     .filter((r) => r.rules.length && r.w > 0 && r.t < Infinity);
-  const out = new Uint8Array(x.n);
-  if (!items.length) return out;
+  if (!items.length) return new Uint8Array(x.n);
   // 地图上的位置（km）：平面是 (x, y) × km/单位，球面是单位向量 × 半径
   const km = world.kmPerUnit;
-  const radius = km / Math.PI;
-  const p = sphere ? mesh.p : null;
-  for (let i = 0; i < x.n; i++) {
-    if (!x.dry[i]) continue;
-    let best = 0;
-    let score = 0;
-    const c = cls[i];
-    for (const r of items) {
-      if (r.anyCls && !r.anyCls[c]) continue;
-      let ok = false;
-      for (const rule of r.rules) {
-        if (ruleMatches(rule, x, i, c)) {
-          ok = true;
-          break;
-        }
-      }
-      if (!ok) continue;
-      let v = r.field[i];
-      if (v !== v) {
-        v = p
-          ? value3(r.s1, r.s2, p[3 * i] * radius * r.f, p[3 * i + 1] * radius * r.f, p[3 * i + 2] * radius * r.f)
-          : value2(r.s1, r.s2, mesh.x[i] * km * r.f, mesh.y[i] * km * r.f);
-        // 按记下的（单精度）取值比较：第一次算与之后查表结果一样
-        r.field[i] = v;
-        v = r.field[i];
-      }
-      if (v <= r.t) continue;
-      const s = r.w * (v - r.t);
-      if (s > score) {
-        score = s;
-        best = r.code;
+  const at: ResourcePlace = { p: sphere ? mesh.p : null, mx: mesh.x, my: mesh.y, km, radius: km / Math.PI };
+  if (base) {
+    const out = base.out.slice();
+    const cells = base.cells;
+    for (let k = 0; k < cells.length; k++) {
+      const i = cells[k];
+      out[i] = x.dry[i] ? resourceOf(items, at, x, cls, i) : 0;
+    }
+    return out;
+  }
+  const out = new Uint8Array(x.n);
+  distributeAll(items, at, x, cls, out);
+  return out;
+}
+
+interface ResourceItem {
+  code: number;
+  rules: CompiledRule[];
+  anyCls: Uint8Array | null;
+  t: number;
+  w: number;
+  f: number;
+  s1: number;
+  s2: number;
+  field: Float32Array;
+}
+
+// 噪声取在地图上的哪一点（km）：平面是 (x, y) × km/单位，球面是单位向量 × 半径
+interface ResourcePlace {
+  p: Float64Array | null;
+  mx: Float64Array;
+  my: Float64Array;
+  km: number;
+  radius: number;
+}
+
+// 整张图（第三十五轮提速：逐格的循环放在小函数里，见开发说明“还没编译好的代码”）
+function distributeAll(items: readonly ResourceItem[], at: ResourcePlace, x: CellInputs, cls: Uint8Array, out: Uint8Array) {
+  for (let i = 0; i < x.n; i++) if (x.dry[i]) out[i] = resourceOf(items, at, x, cls, i);
+}
+
+// 一格（干的陆地）的资源：能长的资源里“权重 × 高出门槛多少”最大的那种（一样大时排在前面的），都不够门槛时 0
+function resourceOf(items: readonly ResourceItem[], at: ResourcePlace, x: CellInputs, cls: Uint8Array, i: number): number {
+  let best = 0;
+  let score = 0;
+  const c = cls[i];
+  for (let q = 0; q < items.length; q++) {
+    const r = items[q];
+    if (r.anyCls && !r.anyCls[c]) continue;
+    const rules = r.rules;
+    let ok = false;
+    for (let k = 0; k < rules.length; k++) {
+      if (ruleMatches(rules[k], x, i, c)) {
+        ok = true;
+        break;
       }
     }
-    out[i] = best;
+    if (!ok) continue;
+    let v = r.field[i];
+    if (v !== v) {
+      const p = at.p;
+      v = p
+        ? value3(r.s1, r.s2, p[3 * i] * at.radius * r.f, p[3 * i + 1] * at.radius * r.f, p[3 * i + 2] * at.radius * r.f)
+        : value2(r.s1, r.s2, at.mx[i] * at.km * r.f, at.my[i] * at.km * r.f);
+      // 按记下的（单精度）取值比较：第一次算与之后查表结果一样
+      r.field[i] = v;
+      v = r.field[i];
+    }
+    if (v <= r.t) continue;
+    const s = r.w * (v - r.t);
+    if (s > score) {
+      score = s;
+      best = r.code;
+    }
   }
-  return out;
+  return best;
 }
 
 // 生效的资源：画过的格用画的（255 是明确没有，资源还在时），别的用自动的
