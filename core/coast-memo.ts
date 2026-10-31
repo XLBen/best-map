@@ -123,6 +123,12 @@ function keyEquals(a: Int32Array): boolean {
 // 两个数逐位相同（0 与 −0 不同）
 const same = (a: number, b: number) => a === b && (a !== 0 || 1 / a === 1 / b);
 
+// 海岸类型的 b 去掉峡湾的表号（core/coast-style.ts 的 packStyle：1 + 256 × 表号 + 小湖群，没有表时 −小湖群）：表号只是峡湾纹理里的位置，
+// 表的内容比摘要 fjord.sig；重新生成一片时谷网一带多了、少了几格，后面的格的表号都挪一位，不能因此让记下的查询都作废（第三十六轮（续））
+function styleKey(b: number): number {
+  return b > 0.5 ? 1 + ((b - 1) % 256) : b;
+}
+
 // 每格记 VALS 个数：coast、elevation、frag，与海岸类型的两个数（第三十四轮，DisplayCoast 的 style；没有时 0）、峡湾表的摘要（第三十六轮）
 const VALS = 6;
 function valid(e: Entry, f: DisplayCoast): boolean {
@@ -134,7 +140,7 @@ function valid(e: Entry, f: DisplayCoast): boolean {
     const c = cells[j];
     const o = VALS * j;
     if (!same(vals[o], f.coast[c]) || !same(vals[o + 1], f.elevation[c]) || !same(vals[o + 2], frag ? frag[c] : 0)) return false;
-    if (!same(vals[o + 3], st ? st[2 * c] : 0) || !same(vals[o + 4], st ? st[2 * c + 1] : 0) || vals[o + 5] !== (sig ? sig[c] : 0)) return false;
+    if (!same(vals[o + 3], st ? styleKey(st[2 * c]) : 0) || !same(vals[o + 4], st ? st[2 * c + 1] : 0) || vals[o + 5] !== (sig ? sig[c] : 0)) return false;
   }
   return true;
 }
@@ -205,7 +211,7 @@ export function memoPut(f: DisplayCoast, value: unknown): void {
     vals[o] = f.coast[c];
     vals[o + 1] = f.elevation[c];
     vals[o + 2] = frag ? frag[c] : 0;
-    vals[o + 3] = st ? st[2 * c] : 0;
+    vals[o + 3] = st ? styleKey(st[2 * c]) : 0;
     vals[o + 4] = st ? st[2 * c + 1] : 0;
   }
   // 外面一层没在记：读到的格不用再留着

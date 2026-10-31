@@ -91,8 +91,8 @@ describe('和地球比（6 个种子的平均）', () => {
     band(m.glacialLakeShare, 0.03, 0.12);
     expect(m.otherLakeShare).toBeLessThan(0.02);
     band(m.glacialLakeK, 0.8, 1.2);
-    // 第三十六轮：峡湾是一条条宽十来 km 的带子（星球上一格约 100 km），4096 像素宽时一个像素约 10 km，大多数峡湾不到一个像素宽，
-    // 盒维数只量得到岸线的起伏、岛礁（约 1.18；区域 2048 像素宽、一个像素约 9 km 时量得到，≥ 1.25）
+    // 第三十六轮：峡湾是一条条宽几 km 的带子（第三十六轮（续）起按 km，2–9 km），4096 像素宽时一个像素约 10 km，峡湾不到一个像素宽，
+    // 盒维数只量得到岸线的起伏、岛礁（区域上峡湾海岸占的多，按 2048 像素量 ≥ 1.25；星球放宽到 1.15）
     expect(m.fjordDim).toBeGreaterThanOrEqual(1.15);
     expect(m.barrierDim).toBeLessThanOrEqual(1.1);
     band(m.barrierShare, 0.05, 0.15);

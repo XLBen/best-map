@@ -20,6 +20,7 @@ import * as Elev from '../core/elevation';
 import * as Terr from '../core/terrain';
 import * as RiverPack from '../core/river-pack';
 import * as Display from '../core/display';
+import * as CoastStyle from '../core/coast-style';
 import { Engine } from '../core/engine';
 import type { Command } from '../core/commands';
 import { packMesh, unpackMesh } from '../core/mesh-pack';
@@ -54,7 +55,7 @@ const memo = Elev.elevationMemo;
 const worldRivers = (RiverPack as unknown as { worldRivers?: (w: Engine['world']) => unknown }).worldRivers;
 const displayCoast = (Display as unknown as { displayCoast?: (w: Engine['world']) => unknown }).displayCoast;
 // 加工各步（抬山到重做）：它们的 .rivers、.coast 加起来记成 rivers、coast
-const EDIT_STEPS = new Set(['relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo']);
+const EDIT_STEPS = new Set(['relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo']);
 
 
 // 一个新的网格对象（与原来的逐值相同）：按网格的缓存全是空的，像刷新页面后从浏览器里读出存着的网格
@@ -212,6 +213,9 @@ function plainBench() {
   // 重新生成一片
   const rr = inland(eng, 0.5);
   measure(eng, 'reroll', 'reroll area', () => eng.exec({ op: 'reroll_region', x: w.mesh.x[rr], y: w.mesh.y[rr], radius: 0.08, variant: 1 }));
+  // 第三十六轮：冰川峡湾海岸上重新生成一片（峡湾权重最大的海岸陆格；没有海岸类型的旧提交上跳过）
+  const fc = fjordCoastCell(w);
+  if (fc >= 0) measure(eng, 'rerollFjord', 'reroll area (fjord coast)', () => eng.exec({ op: 'reroll_region', x: w.mesh.x[fc], y: w.mesh.y[fc], radius: 0.05, variant: 2 }));
   // 画河（固定走向、带泉水）
   const path = riverPath(eng, inland(eng, 0.7), 20);
   measure(eng, 'river', 'draw river (guide)', () => eng.exec({ op: 'add_guide', guide: { cells: path, locked: true, spring: true, flow: 4, name: '' } }));
@@ -278,6 +282,22 @@ function plainBench() {
   if (process.argv.includes('--human')) humanBench(eng);
   if (process.argv.includes('--hash')) printHashes(eng);
   if (json) console.log(JSON.stringify(results));
+}
+
+// 峡湾权重最大的海岸陆格（挨着海的陆格；core/coast-style.ts 的 fjord）；没有时 −1
+function fjordCoastCell(w: Engine['world']): number {
+  const cs = (CoastStyle as unknown as { coastStyle?: (w: Engine['world']) => { fjord: Float32Array } | null }).coastStyle;
+  const st = cs ? cs(w) : null;
+  if (!st) return -1;
+  const { mesh } = w;
+  let best = -1;
+  for (let i = 0; i < mesh.n; i++) {
+    if (!w.causes.land[i] || st.fjord[i] < 0.5) continue;
+    let coast = false;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1] && !coast; e++) if (!w.causes.land[mesh.adj[e]]) coast = true;
+    if (coast && (best < 0 || st.fjord[i] > st.fjord[best])) best = i;
+  }
+  return best;
 }
 
 // --long：约 200 条混合命令的文档（按固定的种子挑，结果确定），计整段重放与从检查点恢复。

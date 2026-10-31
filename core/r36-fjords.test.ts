@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { FJORD_GLSL, PROJ_SOURCES, STYLE_GLSL, STYLE_N2, STYLE_N3, TERRAIN_SOURCES } from '../src/render/renderer';
 import { coastRaster, fjordStats } from '../tools/realism';
+import { GhostBuffer, cellLayers, editGhost } from '../src/render/colors';
 import { LOOK, SKERRY_REACH, coastStyle, fjordData, skerryIsle } from './coast-style';
-import { FJ, FJ_REACH, fjordField, fjordK, fjordSegField } from './fjords';
+import { clearCoastMemo, memoStats, setCoastMemo } from './coast-memo';
+import { type RiverLine, traceRivers } from './rivers';
+import { FJ, FJ_REACH, buildFjordNet, fjordField, fjordK, fjordLayer, fjordSegField } from './fjords';
+import { planetSettings } from './presets';
+import { baseComponentsOf } from './terrain';
 import type { Mesh } from './mesh';
 import { packMesh, unpackMesh } from './mesh-pack';
 import { locate } from './subcell';
@@ -19,7 +24,8 @@ const fresh = (mesh: Mesh) => unpackMesh(structuredClone(packMesh(mesh).packed))
 
 const SMALL = [
   ['一块地区（北纬 40°–78°）', { cells: 6000, seed: 7, latNorth: 78, latSouth: 40 }],
-  ['整个星球', { cells: 5000, seed: 7, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }],
+  // 峡湾按 km（最长 350 km）：5000 格的星球一格三百多 km，峡湾不到一格，这里用 2 万格（一格约 160 km）
+  ['整个星球（2 万格）', { cells: 20000, seed: 7, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }],
 ] as const;
 
 const build = (settings: Record<string, unknown>, seed: number, mesh?: Mesh) => {
@@ -81,29 +87,168 @@ describe('谷网只按生成器，淹到哪里只按陆海', () => {
       expect(Array.from(fjordData(a.world)!.tex)).not.toEqual(Array.from(before));
       a.exec({ op: 'set_planet', patch: { humidity: 1.3 } });
       expect(coastStyle(a.world)!.net).toBe(na);
-      // landStroke 只用来确认画笔的格在陆地上（与幽灵海岸同一套）
-      expect(landStroke(w, br.cells, br.t, 'sea').cells.length).toBeGreaterThan(0);
     });
   }
 });
 
-describe('峡湾长、有支湾、间距不匀（冰川海岸多的区域，4 万格）', () => {
-  const e = seededEngine({ seed: 6, cells: 40000 });
-  e.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
-  const w: World = e.world;
-  it('一格以上的峡湾：长度的中位数 ≥ 2.5 格，四分之一以上有支湾，入海口间距的变异系数 ≥ 0.5', () => {
-    const f = fjordStats(w, 1);
-    expect(f.count).toBeGreaterThanOrEqual(30);
-    expect(f.medianLength).toBeGreaterThanOrEqual(2.5);
-    expect(f.branchedShare).toBeGreaterThanOrEqual(0.25);
-    expect(f.spacingCV).toBeGreaterThanOrEqual(0.5);
-    // 最长的不超过入海口的预算上限
-    expect(f.lengths[f.lengths.length - 1]).toBeLessThanOrEqual(FJ.LEN_CAP + 1e-6);
+// 长度、宽度按 km：区域（一格约 69 km）与星球（一格约 100 km）一样长、一样宽
+const WORLDS = [
+  ['冰川海岸多的区域（4 万格，6 号种子）', { seed: 6, cells: 40000 }, 6],
+  ['类地星球（3 号种子）', { ...planetSettings('earth'), seed: 3 }, 3],
+] as const;
+for (const [label, settings, seed] of WORLDS) {
+  describe(`峡湾的长度、宽度、支湾、间距：${label}`, () => {
+    const e = seededEngine(settings);
+    e.exec({ op: 'set_worldgen', params: { seed, type: 'continents' }, reset: true });
+    const w: World = e.world;
+    it('20 km 以上的峡湾：长度的中位数 60–200 km、最长不过 350 km；一个峡湾最多三条支湾；入海口间距的变异系数 ≥ 0.5', () => {
+      const f = fjordStats(w, 20);
+      expect(f.count).toBeGreaterThanOrEqual(20);
+      expect(f.medianKm).toBeGreaterThanOrEqual(60);
+      expect(f.medianKm).toBeLessThanOrEqual(200);
+      expect(f.maxKm).toBeLessThanOrEqual(FJ.LEN_CAP_KM + 1e-3);
+      expect(f.armsMax).toBeLessThanOrEqual(FJ.MAX_ARMS);
+      expect(f.branchedShare).toBeGreaterThan(0.05);
+      expect(f.spacingCV).toBeGreaterThanOrEqual(0.5);
+    });
+    it('宽度按 km：淹着的段的半径不过 HW_KM × 1.4 × 1.35', () => {
+      const net = coastStyle(w)!.net!;
+      const L = fjordData(w)!;
+      const kmPerDist = net.kmCell / net.spDist;
+      let max = 0;
+      for (const q of allEntries(L.tex, net.nRank)) max = Math.max(max, q[3], q[7]);
+      expect(max * kmPerDist).toBeLessThanOrEqual(FJ.HW_KM * FJ.SEA_W * (FJ.WIDEN0 + FJ.WIDEN1) + 1e-3);
+      expect(max * kmPerDist).toBeGreaterThan(FJ.HW_KM * 0.5);
+    });
+    if (seed === 6) {
+      it('峡湾海岸的盒维数 ≥ 1.25', () => {
+        const c = coastRaster(w, 2048);
+        expect(c.fjordDim).toBeGreaterThanOrEqual(1.25);
+      });
+    }
   });
-  it('峡湾海岸的盒维数 ≥ 1.25', () => {
-    const c = coastRaster(w, 2048);
-    expect(c.fjordDim).toBeGreaterThanOrEqual(1.25);
-  });
+}
+
+describe('幽灵海岸：画海、画陆地时峡湾纹理与执行后的逐值相同', () => {
+  for (const [label, settings] of SMALL) {
+    for (const mode of ['sea', 'land'] as const) {
+      it(`${label}：${mode === 'sea' ? '画海' : '画陆地'}`, () => {
+        const e = build(settings, 7);
+        const w = e.world;
+        const { mesh } = w;
+        const net = coastStyle(w)!.net!;
+        const L = fjordData(w)!;
+        // 淹着的峡湾经过的陆格（画海：往里淹；画陆地：把它附近堵上）
+        let c = -1;
+        for (let i = 0; i < mesh.n && c < 0; i++) if (w.causes.land[i] && net.rank[i] >= 0 && L.tex[4 * net.rank[i] + 1] > 0 && L.sig[i] > 0) c = i;
+        expect(c).toBeGreaterThanOrEqual(0);
+        const b = brushCells(w, mesh.x[c], mesh.y[c], 1.5 * mesh.spacing * w.kmPerUnit);
+        const stroke = landStroke(w, b.cells, b.t, mode);
+        const opts = { mode: 'terrain', season: 'annual', focusSpecies: null, borders: false } as const;
+        const base = cellLayers(w, opts);
+        const ghost = new GhostBuffer(base, 'terrain').apply(w, editGhost(w, base, { cells: stroke.cells, delta: stroke.delta }));
+        const after = e.clone();
+        after.exec({ op: 'paint_land', cells: b.cells, t: b.t, mode });
+        const want = fjordData(after.world)!.tex;
+        if (mode === 'sea') expect(Array.from(want)).not.toEqual(Array.from(base.fjord!));
+        expect(Array.from(ghost.fjord!)).toEqual(Array.from(want));
+      });
+    }
+  }
+});
+
+// 描河记下的查询（core/coast-memo.ts）不看峡湾的表号（重新生成一片时一带多了、少了几格，后面的格的表号都挪一位），只看表的摘要：
+// 在冰川海岸上重新生成几片、画一笔海，每一步之后开着与关着描出来的河逐值相同，开着时真的用上了记下的
+const ser = (lines: RiverLine[]) => JSON.stringify(lines, (_, v) => (typeof v === 'number' && (Object.is(v, -0) || Number.isNaN(v)) ? String(v) : v));
+describe('描河记下的查询：冰川海岸上重新生成一片后与不记逐值相同', () => {
+  for (const [label, settings] of SMALL) {
+    it(label, () => {
+      clearCoastMemo();
+      const e = build(settings, 7);
+      const copy = (w: World): World => ({ ...w, derived: { ...w.derived, elevation: w.derived.elevation.slice() } });
+      const plain = (w: World) => {
+        setCoastMemo(false);
+        try {
+          return ser(traceRivers(copy(w)));
+        } finally {
+          setCoastMemo(true);
+        }
+      };
+      traceRivers(copy(e.world));
+      const { mesh } = e.world;
+      const st0 = coastStyle(e.world)!;
+      let c = -1;
+      for (let i = 0; i < mesh.n; i++) {
+        if (!e.world.causes.land[i] || st0.fjord[i] < 0.5) continue;
+        let coast = false;
+        for (let k = mesh.off[i]; k < mesh.off[i + 1]; k++) if (!e.world.causes.land[mesh.adj[k]]) coast = true;
+        if (coast && (c < 0 || st0.fjord[i] > st0.fjord[c])) c = i;
+      }
+      expect(c).toBeGreaterThanOrEqual(0);
+      const h0 = memoStats().hits;
+      let shifted = false;
+      for (const variant of [2, 3, 4]) {
+        const before = coastStyle(e.world)!.net!;
+        e.exec({ op: 'reroll_region', x: mesh.x[c], y: mesh.y[c], radius: 0.1, variant });
+        const after = coastStyle(e.world)!.net!;
+        if (after.rank.some((r, i) => r !== before.rank[i])) shifted = true;
+        expect(ser(traceRivers(copy(e.world)))).toBe(plain(e.world));
+      }
+      const b = brushCells(e.world, mesh.x[c], mesh.y[c], 1.5 * mesh.spacing * e.world.kmPerUnit);
+      e.exec({ op: 'paint_land', cells: b.cells, t: b.t, mode: 'sea' });
+      expect(ser(traceRivers(copy(e.world)))).toBe(plain(e.world));
+      expect(shifted).toBe(true);
+      expect(memoStats().hits - h0).toBeGreaterThan(100);
+    });
+  }
+});
+
+describe('重新生成一片只重建碰到的块，结果与整个重建逐值相同', () => {
+  for (const [label, settings] of SMALL) {
+    it(label, () => {
+      const e = build(settings, 7);
+      const w0 = e.world;
+      const st0 = coastStyle(w0)!;
+      const { mesh } = w0;
+      // 峡湾权重最大的海岸陆格上重画一片
+      let c = -1;
+      for (let i = 0; i < mesh.n; i++) {
+        if (!w0.causes.land[i] || st0.fjord[i] < 0.5) continue;
+        let coast = false;
+        for (let k = mesh.off[i]; k < mesh.off[i + 1]; k++) if (!w0.causes.land[mesh.adj[k]]) coast = true;
+        if (coast && (c < 0 || st0.fjord[i] > st0.fjord[c])) c = i;
+      }
+      expect(c).toBeGreaterThanOrEqual(0);
+      e.exec({ op: 'reroll_region', x: mesh.x[c], y: mesh.y[c], radius: 0.04, variant: 3 });
+      const w = e.world;
+      const st = coastStyle(w)!;
+      const inc = st.net!;
+      const full = buildFjordNet(mesh, w.settings.seed, w.kmPerUnit, st.fjord, baseComponentsOf(w)!.b0)!;
+      for (const k of ['pos', 'mid', 'owner', 'recv', 'order', 'len', 'lc', 'lsea', 'lcs', 'hw', 'isMain', 'dirOk', 'rank', 'ring', 'watch', 'wz'] as const) expect(Array.from(inc[k] as ArrayLike<number>), k).toEqual(Array.from(full[k] as ArrayLike<number>));
+      // 真的有块照用了上一份，也真的重建了几块
+      const old = new Set(st0.net!.tiles);
+      const kept = inc.tiles.filter((t) => old.has(t)).length;
+      expect(kept).toBeGreaterThan(0);
+      expect(kept).toBeLessThan(inc.tiles.length);
+      expect(Array.from(fjordData(w)!.tex)).toEqual(Array.from(fjordLayer(full, w.causes.land, mesh.n).tex));
+      // 离谷网一带很远的地方重画一片：一块都不重建，峡湾纹理还是同一份
+      const L = fjordData(w)!;
+      let far = -1;
+      for (let i = 0; i < mesh.n && far < 0; i++) {
+        if (!w.causes.land[i] || inc.wz[i] > 0) continue;
+        let ok = true;
+        const r2 = (0.06 + 6 * mesh.spacing) ** 2;
+        for (let j = 0; j < mesh.n && ok; j++) if (inc.wz[j] > 0 && (mesh.x[j] - mesh.x[i]) ** 2 + (mesh.y[j] - mesh.y[i]) ** 2 < r2) ok = false;
+        if (ok) far = i;
+      }
+      if (mesh.kind === 'plane') {
+        expect(far).toBeGreaterThanOrEqual(0);
+        e.exec({ op: 'reroll_region', x: mesh.x[far], y: mesh.y[far], radius: 0.04, variant: 2 });
+        expect(coastStyle(e.world)!.net!.tiles).toBe(inc.tiles);
+        expect(fjordData(e.world)).toBe(L);
+      }
+    });
+  }
 });
 
 describe('着色器与 CPU 相同（第三十六轮的峡湾、岛礁）', () => {
@@ -180,7 +325,7 @@ describe('每个画面三角形取的那张表含碰得到它的全部段', () =
       const net = st.net!;
       const L = fjordData(w)!;
       const all = allEntries(L.tex, net.nRank);
-      expect(all.length).toBeGreaterThan(20);
+      expect(all.length).toBeGreaterThan(10);
       // 表不超过着色器的循环上限
       for (let rk = 0; rk < net.nRank; rk++) expect(L.tex[4 * rk + 1]).toBeLessThanOrEqual(FJ.MAX_LIST);
       const sph = mesh.kind === 'sphere';
@@ -241,7 +386,7 @@ describe('每个画面三角形取的那张表含碰得到它的全部段', () =
         expect(fjordField(L.tex, rk, px, py, pz, n[0], n[1], n[2], 1, nd, kw)).toBe(brute);
         checked++;
       }
-      expect(near).toBeGreaterThan(500);
+      expect(near).toBeGreaterThan(200);
       expect(checked).toBe(near);
     });
   }

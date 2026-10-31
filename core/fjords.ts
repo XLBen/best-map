@@ -1,19 +1,24 @@
 import { MinHeap } from './heap';
 import { type Mesh, gradGeo, gradientAt } from './mesh';
-import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
+import { type Noise2, type Noise3, fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
 import { tangentBasis, viewOf } from './sphere';
 
 // ---------- 峡湾（第三十六轮） ----------
 // 第三十四轮的峡湾是一排排一样长、一样斜的短槽（噪声的零线沿坡向拉长，深入约一格）。真的峡湾是被淹的冰川谷：
 // 少而长（主峡湾深入几格）、分汊（支谷从两旁接进来）、顺着谷弯曲、间距不匀，岸外是一片岛礁。这里：
 //   1. 谷网（新建时定、按生成器）：冰川海岸一带（coast-style 的峡湾权重往外推两圈后 > ZONE 的格，陆、海都算）每格撒 NPC 个点，
-//      点与本格、邻格的点连成图（连线不贴近格心）；按“谷底高度”V（地壳高度 b0 + 坡度 + 每格一两个起伏的噪声）从这一带的边上往里漫
-//      （priority flood），每个点流向漫到它的那个点：一棵棵树（谷网），汇水多的是主谷，支谷从两旁接进来。点沿主谷平滑几遍，
-//      每段的中点取 Catmull–Rom 曲线上的（画成两小段，弯一点）。只取决于网格、种子、生成器的分量与新建时的纬度，陆海改了谷网不变；
-//   2. 哪一段淹成峡湾（按陆海，谷里的点所在的格的陆海变了才重算，几千到一两万个点走一遍）：陆上的点流进海里的点时，
-//      入海口的预算是 LEN × 权重 × 地点的倍数（低频噪声：有的地方长、有的地方短）× 汇水因子（汇水不到 ACC_MOUTH 个点的不淹），
-//      最多 LEN_CAP 格；往上游每走一段减去这段的长度，主谷一路减下去，支谷再与自己的上限（汇水不到 ACC_SIDE 的没有）取小。
-//      预算还是正的点淹着，淹着的点的下游一定淹着（连着海）；预算在一段中间用完时淹到那里为止（圆头的峡湾头、短短的支湾）；
+//      点与本格、邻格的点连成图（连线不贴近格心，最长 LINK 格与 LINK_KM 取小）；按“谷底高度”V（地壳高度 b0 + 坡度 + 噪声）
+//      从这一带的边上往里漫（priority flood），每个点流向漫到它的那个点：一棵棵树（谷网），汇水多的是主谷。点沿主谷平滑，
+//      每段的中点取 Catmull–Rom 曲线上的（画成两小段，弯一点）。谷网按块建（平面约 TILE_KM 见方，星球按单位球上的立方格子），
+//      谷不过块的边：一块只取决于这一块与邻格的生成器分量、网格、种子；重新生成一片时只重建峡湾权重、地壳高度变了的格碰到的块，
+//      结果与整张重建逐值相同。陆海改了谷网不变；
+//   2. 哪一段淹成峡湾（按陆海，几千到一两万个点走一遍）：都按 km，与格多大无关。陆上的点流进海里的点时，入海口的预算是
+//      LEN_KM × 权重 × 地点的倍数（低频噪声）× 汇水因子（汇水面积不到 ACC_MOUTH_KM2 的不淹），最多 LEN_CAP_KM（约 350 km）；
+//      主湾往上游每走一段减去这段的长度；支湾每个峡湾最多 MAX_ARMS 条（离入海口近的先），汇水面积至少 ACC_SIDE_KM2、
+//      与主湾的夹角至少 ARM_ANGLE 度，长度不过汇合处主湾剩下的 ARM_FRAC 倍。往上游跑偏（与地壳往上的方向夹角超过 DIR_MAX）
+//      的段、离入海口 COAST_KM 以外贴着海岸走（离海不到 COAST_K × 走过的长度）的段不淹：峡湾往内陆走、不顺着海岸走，
+//      一个峡湾只在离岸约 350 km 的一带里，再往里的段不进表。预算在一段中间用完时淹到那里为止（圆头的峡湾头、短短的支湾）。
+//      半宽按 km（HW_KM，汇水大的宽，越往入海口越宽）；
 //   3. 画法（着色器与 CPU 同一个算式，fjordSegField）：淹着的每一小段是一条带，半宽 r 从入海口往里先宽后窄；
 //      海岸场取 min(s, (d' − r') · K)，K 很大（离带子 EDGE 格以内就涨到 SMAX），带子以外一点都不改；
 //      d' 是中线按海岸细节的噪声往一侧挪了 LAT × r 以后的距离，r' = r × 格心的权重 ×（1 + WOB × (2|nd| − WOB_C)）：岸弯弯曲曲、宽窄有变化。
@@ -33,46 +38,63 @@ export const FJ = {
   NPC: 4,
   R0: 0.3,
   R1: 0.16,
-  // 两点相连的最长距离（格）、连线离两头的格心至少多远（格）
+  // 两点相连的最长距离（LINK 格与 LINK_KM 取小：格大时谷不走一步一大段的直线）、连线离两头的格心至少多远（格）
   LINK: 0.9,
+  LINK_KM: 62,
   CENTER_GAP: 0.2,
   // 谷底高度的噪声：频率（每格）、幅度（地壳高度每格的变化 × V_NOISE + V_NOISE0 m）
   V_FREQ: 0.6,
   V_NOISE: 0.9,
   V_NOISE0: 60,
-  // 汇水（点数）至少 ACC_MIN 才算谷；ACC1 个点时长度、宽度的汇水因子（√(汇水 / ACC1)）满
+  // 汇水（点数）至少 ACC_MIN 才算谷；汇水面积 ACC1_KM2 时长度、宽度的汇水因子（√(面积 / ACC1_KM2)）满
   ACC_MIN: 2,
-  ACC1: 20,
-  // 支谷汇水不到 ACC_SIDE 个点的不淹（不然满是一根根小刺）；直接流进海里的谷汇水不到 ACC_MOUTH 个点的不淹（一个个小缺口）
-  ACC_SIDE: 8,
-  ACC_MOUTH: 8,
-  // 入海口的预算：LEN 格 × 权重 × 地点的倍数（LEN_M0 + 2 × LEN_M1 × 噪声，噪声频率 LEN_FREQ 每格，夹在 M_MIN 到 M_MAX）× 汇水因子，
-  // 最多 LEN_CAP 格
-  LEN: 9,
+  ACC1_KM2: 20000,
+  // 直接流进海里的谷汇水面积不到 ACC_MOUTH_KM2 的不淹（一个个小缺口；峡湾是大谷）
+  ACC_MOUTH_KM2: 8000,
+  // 入海口的预算（km）：LEN_KM × 权重 × 地点的倍数（LEN_M0 + 2 × LEN_M1 × 噪声，噪声频率 LEN_FREQ 每格，夹在 M_MIN 到 M_MAX）
+  // × 汇水因子，最多 LEN_CAP_KM（地球上最长的峡湾斯科斯比松约 350 km）。都按 km：与格多大无关
+  LEN_KM: 450,
   LEN_M0: 0.85,
   LEN_M1: 0.75,
   LEN_FREQ: 0.25,
   M_MIN: 0.35,
   M_MAX: 1.2,
-  LEN_CAP: 7,
-  // 支谷的上限再乘 SIDE0 + SIDE1 × 随机
-  SIDE0: 0.3,
-  SIDE1: 0.45,
-  // 半宽（格）：HW × (HW_A + (1 − HW_A) × 汇水因子)；离头 TAPER 格以内收窄到 TAPER_MIN；海里的点 × SEA_W；
-  // 越往外（预算越多）越宽：× (WIDEN0 + WIDEN1 × min(1, 预算 / LEN))
-  HW: 0.065,
+  LEN_CAP_KM: 350,
+  // 支湾：一个峡湾最多 MAX_ARMS 条（离入海口近的先）；汇水面积至少 ACC_SIDE_KM2、与主湾的夹角至少 ARM_ANGLE 度；
+  // 长度不过汇合处主湾剩下的 ARM_FRAC 倍，再 × (SIDE0 + SIDE1 × 随机)
+  MAX_ARMS: 3,
+  ACC_SIDE_KM2: 8000,
+  ARM_ANGLE: 35,
+  ARM_FRAC: 0.55,
+  SIDE0: 0.4,
+  SIDE1: 0.5,
+  // 往上游的方向与地壳高度往上的方向夹角超过 DIR_MAX 度的段不淹（峡湾往内陆走，不顺着海岸走）；坡缓到每 km 不到 DIR_FLAT_KM m 时不管
+  DIR_MAX: 60,
+  DIR_FLAT_KM: 0.2,
+  // 离入海口 COAST_KM 以外，离海不到 COAST_K × 从入海口走过的长度的点不淹
+  COAST_KM: 60,
+  COAST_K: 0.6,
+  // 半宽（km）：HW_KM × (HW_A + (1 − HW_A) × 汇水因子)；离头 TAPER_KM 以内收窄到 TAPER_MIN；
+  // 越往外越宽：× (WIDEN0 + WIDEN1 × min(1, 预算 / WIDEN_KM))；海里的点 × SEA_W
+  HW_KM: 3.4,
   HW_A: 0.5,
-  TAPER: 0.8,
+  TAPER_KM: 60,
   TAPER_MIN: 0.65,
+  WIDEN0: 0.75,
+  WIDEN1: 0.6,
+  WIDEN_KM: 250,
+  SEA_W: 1.4,
   // 入海口往海里延长 MOUTH 格
   MOUTH: 0.4,
   // 沿主谷平滑几遍
-  SMOOTH: 4,
+  SMOOTH: 1,
   // 预算在一段中间用完时，头上的半径是下游那头的 HEAD 倍（圆头）
   HEAD: 0.6,
-  WIDEN0: 0.75,
-  WIDEN1: 0.6,
-  SEA_W: 1.4,
+  // 谷网按块建（重新生成一片时只重建碰到的块）：块约 TILE_KM 见方（星球按单位球上的立方格子）；谷不过块的边
+  TILE_KM: 900,
+  // 有表的格：谷网一带往外 RANK_RINGS 圈（两极附近 RANK_RINGS_POLAR 圈）
+  RANK_RINGS: 4,
+  RANK_RINGS_POLAR: 8,
   // 岸弯弯曲曲：中线按海岸细节的噪声 nd 往一侧挪 LAT × 半径，半径 × (1 + WOB × (2|nd| − WOB_C))
   LAT: 1.6,
   WOB: 0.35,
@@ -90,40 +112,66 @@ export const FJ = {
   DEPTH_MAX: 900,
 };
 
-// 谷网（只取决于网格、种子、生成器的分量与新建时的纬度）
+// 一块的谷网（只取决于这一块与邻格的生成器分量、网格、种子）
+interface TileNet {
+  key: number;
+  n: number;
+  pos: Float64Array;
+  mid: Float64Array;
+  owner: Int32Array;
+  // 下游的点（块里的编号，−1：出口）
+  recv: Int32Array;
+  order: Int32Array;
+  // 到下游的点的长度（km）
+  len: Float32Array;
+  // 入海口的预算（km；直接流进海里时）、海里的预算（km）、支湾的上限（km，不是支湾时 −1）、半宽（格）
+  lc: Float32Array;
+  lsea: Float32Array;
+  lcs: Float32Array;
+  hw: Float32Array;
+  // 主支（下游的点的主支是自己）、往上游的方向没跑偏
+  isMain: Uint8Array;
+  dirOk: Uint8Array;
+  // 每段碰得到的格（用到时才算，按块留着）
+  cands: (Int32Array | null)[];
+}
+
+// 谷网（只取决于网格、种子、生成器的分量与新建时的纬度）：各块拼起来
 export interface FjordNet {
+  tiles: TileNet[];
   // 点数（含不在谷里的）
   n: number;
-  // 平滑后的位置（平面 z = 0；星球单位向量）
   pos: Float64Array;
-  // 每段（u → recv[u]）的中点：Catmull–Rom 曲线上（上游接主支、下游接下游的下游）
   mid: Float64Array;
-  // 所在的格（判海、陆）
   owner: Int32Array;
-  // 下游的点（−1：出口）
   recv: Int32Array;
-  // 谷里的点，从下游到上游（漫的先后）
+  // 谷里的点，从下游到上游（各块依次）
   order: Int32Array;
-  // 到下游的点的长度（格）
   len: Float32Array;
-  // 自己的上限（格；下游是陆上的点、自己是支谷时用 lcs）、海里的预算（格）、半宽（格）
   lc: Float32Array;
-  lcs: Float32Array;
   lsea: Float32Array;
+  lcs: Float32Array;
   hw: Float32Array;
-  // 每段（上游的点 u → recv[u]）碰得到的格（CSR，按 u 编号）
-  candOff: Int32Array;
-  cand: Int32Array;
+  isMain: Uint8Array;
+  dirOk: Uint8Array;
+  // 每个点在哪一块、块里的编号（算碰得到的格时写回那一块）
+  nodeTile: Int32Array;
+  nodeLocal: Int32Array;
+  cands: (Int32Array | null)[];
   // 每格的表号（−1 没有）、有表的格数
   rank: Int32Array;
   nRank: number;
+  // 每格离谷网一带几圈（有表的格 0 到 RANK_RINGS_POLAR，−1 没有表）：重画一片时只在一带变了的格附近重算
+  ring: Int8Array;
   // 谷里的点所在的格（陆海只看这些格）
   watch: Int32Array;
   // 往外推了两圈的峡湾权重（谷网的一带）
   wz: Float32Array;
-  // 一格的距离单位（平面：格距；星球：π × 格距 弧度）
+  // 一格的距离单位（平面：格距；星球：π × 格距 弧度）、一格多少 km
   spDist: number;
+  kmCell: number;
   sph: boolean;
+  mesh: Mesh;
 }
 
 const sm01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
@@ -313,96 +361,172 @@ function lap(name: string): void {
 }
 const gOut = new Float64Array(2);
 
-// fj：每格的峡湾权重（coast-style 的 fjord）；b0：地壳高度。没有一格在谷网里时 null
-export function buildFjordNet(mesh: Mesh, seed: number, fj: Float32Array, b0: Float32Array): FjordNet | null {
+// 每格在哪一块（只看格心的位置）：平面按 TILE_KM 见方的格子，星球按单位球上 TILE_KM 的立方格子。按网格与比例尺缓存
+const tileCache = new WeakMap<Mesh, { km: number; tile: Float64Array; cells: Map<number, Int32Array> }>();
+// 每块的全部格（升序）
+function tileInfo(mesh: Mesh, kmPerUnit: number): { tile: Float64Array; cells: Map<number, Int32Array> } {
+  const c = tileCache.get(mesh);
+  if (c && c.km === kmPerUnit) return c;
+  const tile = new Float64Array(mesh.n);
+  if (mesh.kind === 'sphere') {
+    const s = kmPerUnit / Math.PI / FJ.TILE_KM;
+    for (let i = 0; i < mesh.n; i++) {
+      const ix = Math.floor(mesh.p[3 * i] * s) + 512;
+      const iy = Math.floor(mesh.p[3 * i + 1] * s) + 512;
+      const iz = Math.floor(mesh.p[3 * i + 2] * s) + 512;
+      tile[i] = (ix * 1024 + iy) * 1024 + iz;
+    }
+  } else {
+    const s = kmPerUnit / FJ.TILE_KM;
+    for (let i = 0; i < mesh.n; i++) tile[i] = (Math.floor(mesh.x[i] * s) + 512) * 1024 + Math.floor(mesh.y[i] * s) + 512;
+  }
+  const lists = new Map<number, number[]>();
+  for (let i = 0; i < mesh.n; i++) {
+    let l = lists.get(tile[i]);
+    if (!l) lists.set(tile[i], (l = []));
+    l.push(i);
+  }
+  const cells = new Map<number, Int32Array>();
+  for (const [k, l] of lists) cells.set(k, Int32Array.from(l));
+  const out = { km: kmPerUnit, tile, cells };
+  tileCache.set(mesh, out);
+  return out;
+}
+
+// 一块里谷网一带的格（升序）
+function zoneCellsOf(all: Int32Array, wz: Float32Array): Int32Array {
+  let k = 0;
+  for (let q = 0; q < all.length; q++) if (wz[all[q]] > FJ.ZONE) k++;
+  const out = new Int32Array(k);
+  k = 0;
+  for (let q = 0; q < all.length; q++) if (wz[all[q]] > FJ.ZONE) out[k++] = all[q];
+  return out;
+}
+
+// 建块、找碰得到的格时共用的缓冲（按网格）：local 是格在这一块里的编号（−1 不在，用完还原）
+interface Scratch {
+  local: Int32Array;
+  mark: Int32Array;
+  stamp: Int32Array;
+  pstamp: Int32Array;
+  tick: number;
+}
+const scratchCache = new WeakMap<Mesh, Scratch>();
+function scratchOf(mesh: Mesh): Scratch {
+  let s = scratchCache.get(mesh);
+  if (!s) {
+    s = { local: new Int32Array(mesh.n).fill(-1), mark: new Int32Array(mesh.n).fill(-1), stamp: new Int32Array(mesh.n), pstamp: new Int32Array(mesh.n), tick: 0 };
+    scratchCache.set(mesh, s);
+  }
+  return s;
+}
+
+interface Ctx {
+  mesh: Mesh;
+  seed: number;
+  sph: boolean;
+  sp: number;
+  spDist: number;
+  kmCell: number;
+  wz: Float32Array;
+  b0: Float32Array;
+  tile: Float64Array;
+  geo: ReturnType<typeof gradGeo>;
+}
+
+// fj：每格的峡湾权重（coast-style 的 fjord）；b0：地壳高度；kmPerUnit：比例尺。没有一格在谷网里时 null。
+// prev、dirty（重画一片）：只重建有 dirty 的格的块，别的块照用 prev 的（每块只取决于这一块与邻格的输入，结果与整个重建逐值相同）。
+// dirty 要盖住峡湾权重变了的格往外三圈、地壳高度变了的格往外一圈（推两圈的一带、坡度、边上的点与邻格的权重）
+export function buildFjordNet(mesh: Mesh, seed: number, kmPerUnit: number, fj: Float32Array, b0: Float32Array, prev: FjordNet | null = null, dirty: Uint8Array | null = null): FjordNet | null {
   const n = mesh.n;
   const sph = mesh.kind === 'sphere';
   const sp = mesh.spacing;
   const spDist = sph ? Math.PI * sp : sp;
-  // 谷网的一带：峡湾权重往外推两圈（每圈 × GROW），谷能伸进海里（入海口不被岸边一两格堵住）
   lapT = performance.now();
-  const wz = growZone(mesh, fj);
-  lap('grow');
-  const zoneIdx = new Int32Array(n).fill(-1);
-  const zone: number[] = [];
-  for (let i = 0; i < n; i++) {
-    if (wz[i] > FJ.ZONE) {
-      zoneIdx[i] = zone.length;
-      zone.push(i);
-    }
+  // 谷网的一带：峡湾权重往外推两圈（每圈 × GROW），谷能伸进海里（入海口不被岸边一两格堵住）
+  let wz: Float32Array;
+  if (prev && dirty) {
+    // 推两圈的权重只在 dirty 的格里重算（每格只取决于两圈以内的峡湾权重）
+    wz = prev.wz.slice();
+    for (let i = 0; i < n; i++) if (dirty[i]) wz[i] = grownAt(mesh, fj, i);
+  } else wz = growZone(mesh, fj);
+  const info = tileInfo(mesh, kmPerUnit);
+  const tile = info.tile;
+  // 要（重）建的块：整个重建时是全部的块；重画一片时是有 dirty 的格的块（谷网一带只在 dirty 的格里变，别的块的格不变）
+  const old = new Map<number, TileNet>();
+  if (prev) for (const t of prev.tiles) old.set(t.key, t);
+  const redo = new Set<number>();
+  if (prev && dirty) {
+    for (let i = 0; i < n; i++) if (dirty[i]) redo.add(tile[i]);
+  } else for (const k of info.cells.keys()) redo.add(k);
+  const fresh = new Map<number, Int32Array>();
+  for (const k of redo) {
+    const z = zoneCellsOf(info.cells.get(k)!, wz);
+    if (z.length) fresh.set(k, z);
   }
-  if (!zone.length) return null;
+  // 要重建的块前后都不在谷网一带里：谷网不变（只换推两圈的权重，那些格都不到 ZONE；块、表号、碰得到的格都照用）
+  if (prev && dirty && !fresh.size && !hasAny(old, redo)) {
+    lap('grow');
+    return { ...prev, wz };
+  }
+  const keySet = new Set<number>(fresh.keys());
+  for (const k of old.keys()) if (!redo.has(k)) keySet.add(k);
+  lap('grow');
+  if (!keySet.size) return null;
+  const keys = [...keySet].sort((a, b) => a - b);
+  const ctx: Ctx = { mesh, seed, sph, sp, spDist, kmCell: sp * kmPerUnit, wz, b0, tile, geo: gradGeo(mesh) };
+  const tiles: TileNet[] = [];
+  for (const k of keys) {
+    const z = fresh.get(k);
+    tiles.push(z ? buildTile(ctx, k, z) : old.get(k)!);
+  }
+  lap('tiles');
+  // 一带变了的格（只在 dirty 的格里）：有表的格只在它们附近重算（一个都没有时表号照用上一份）
+  let flips: number[] | null = null;
+  if (prev && dirty) {
+    flips = [];
+    for (let i = 0; i < n; i++) if (dirty[i] && wz[i] > FJ.ZONE !== prev.wz[i] > FJ.ZONE) flips.push(i);
+  }
+  const net = assemble(ctx, tiles, prev, flips);
+  lap('assemble');
+  return net;
+}
+
+function hasAny(m: Map<number, unknown>, keys: Set<number>): boolean {
+  for (const k of keys) if (m.has(k)) return true;
+  return false;
+}
+
+// 一块：撒点、连线、漫、汇水、平滑、中点、长度与预算、两个标记
+function buildTile(ctx: Ctx, key: number, cells: Int32Array): TileNet {
+  const { mesh, seed, sph, spDist, kmCell, tile } = ctx;
+  const sc = scratchOf(mesh);
+  const local = sc.local;
+  for (let z = 0; z < cells.length; z++) local[cells[z]] = z;
   const NPC = FJ.NPC;
-  const N = zone.length * NPC;
+  const N = cells.length * NPC;
   const pos = new Float64Array(3 * N);
   const V = new Float64Array(N);
   const owner = new Int32Array(N);
-  const geo = gradGeo(mesh);
+  // 每格往上的方向（三维，每格的高差 m）
+  const up = new Float64Array(3 * cells.length);
   const vn2 = sph ? null : gradientNoise(mixSeed(seed, 3602));
   const vn3 = sph ? gradientNoise3(mixSeed(seed, 3602)) : null;
-  // 撒点：每格 NPC 个，绕格心一圈（起始角随机、每个再抖一点），离格心 R0 + R1 × 随机 格
-  for (let z = 0; z < zone.length; z++) {
-    const c = zone[z];
-    gradientAt(mesh, geo, b0, c, gOut);
-    const gx = gOut[0];
-    const gy = gOut[1];
-    const slope = Math.hypot(gx, gy) * sp;
-    const amp = FJ.V_NOISE * slope + FJ.V_NOISE0;
-    const th0 = 2 * Math.PI * hash01(seed, 3601, c, 99);
-    for (let k = 0; k < NPC; k++) {
-      const u = z * NPC + k;
-      const th = th0 + (2 * Math.PI * (k + 0.6 * (hash01(seed, 3601, c, k) - 0.5))) / NPC;
-      const rho = (FJ.R0 + FJ.R1 * hash01(seed, 3603, c, k)) * sp;
-      const dx = rho * Math.cos(th);
-      const dy = rho * Math.sin(th);
-      let nz: number;
-      if (sph) {
-        const m = mesh as Extract<Mesh, { kind: 'sphere' }>;
-        const px = m.p[3 * c];
-        const py = m.p[3 * c + 1];
-        const pz = m.p[3 * c + 2];
-        const [ex, ey, ez, sx, sy, sz] = tangentBasis(px, py, pz);
-        // 切平面里的位移（地图单位 × π = 弧度）
-        let qx = px + Math.PI * (dx * ex + dy * sx);
-        let qy = py + Math.PI * (dx * ey + dy * sy);
-        let qz = pz + Math.PI * (dx * ez + dy * sz);
-        const l = Math.sqrt(qx * qx + qy * qy + qz * qz);
-        qx /= l;
-        qy /= l;
-        qz /= l;
-        pos[3 * u] = qx;
-        pos[3 * u + 1] = qy;
-        pos[3 * u + 2] = qz;
-        nz = fbm3(vn3!, qx / spDist, qy / spDist, qz / spDist, FJ.V_FREQ, 2);
-      } else {
-        const x = mesh.x[c] + dx;
-        const y = mesh.y[c] + dy;
-        pos[3 * u] = x;
-        pos[3 * u + 1] = y;
-        pos[3 * u + 2] = 0;
-        nz = fbm(vn2!, x / sp, y / sp, FJ.V_FREQ, 2);
-      }
-      V[u] = b0[c] + gx * dx + gy * dy + amp * nz;
-      owner[u] = nearestOwner(mesh, c, pos, u);
-    }
-  }
-  lap('place');
-  // 连线：本格与邻格（都在谷网里）的点，LINK 格以内、离两头的格心都至少 CENTER_GAP 格
-  // 要看的格心：c 与 j，j ≠ c 时再加两格共同的邻格（别的格心离这样的连线都远）
+  for (let z = 0; z < cells.length; z++) placeCell(ctx, cells[z], z, pos, V, owner, up, vn2, vn3);
+  // 连线：本格与同一块里的邻格的点，LINK 格以内、离要看的格心都至少 CENTER_GAP 格
   const linkOff = new Int32Array(N + 1);
   const links: number[] = [];
   const per: number[][] = [];
   for (let k = 0; k < NPC; k++) per.push([]);
   const centers = new Float64Array(3 * 16);
-  const nbMark = new Int32Array(n).fill(-1);
-  for (let z = 0; z < zone.length; z++) {
-    const c = zone[z];
+  for (let z = 0; z < cells.length; z++) {
+    const c = cells[z];
     for (let k = 0; k < NPC; k++) per[k].length = 0;
     for (let e = mesh.off[c] - 1; e < mesh.off[c + 1]; e++) {
       const j = e < mesh.off[c] ? c : mesh.adj[e];
-      if (zoneIdx[j] < 0) continue;
-      const nc = linkCenters(mesh, c, j, nbMark, centers);
-      for (let k = 0; k < NPC; k++) addLinks(zoneIdx, pos, z * NPC + k, j, centers, nc, spDist, per[k]);
+      if (local[j] < 0 || tile[j] !== key) continue;
+      const nc = linkCenters(mesh, c, j, sc.mark, centers);
+      for (let k = 0; k < NPC; k++) addLinks(local, pos, z * NPC + k, j, centers, nc, spDist, kmCell, per[k]);
     }
     for (let k = 0; k < NPC; k++) {
       const u = z * NPC + k;
@@ -411,44 +535,44 @@ export function buildFjordNet(mesh: Mesh, seed: number, fj: Float32Array, b0: Fl
     }
   }
   const link = Int32Array.from(links);
-  lap('link');
-  // 从这一带的边上往里漫：边上的格（有不在谷网里的邻格）的点先进堆，按谷底高度
+  // 从边上往里漫：有不在这一块谷网一带里的邻格的格的点先进堆，按谷底高度
   const recv = new Int32Array(N).fill(-1);
   const seen = new Uint8Array(N);
-  const key = new Float64Array(N);
+  const keyV = new Float64Array(N);
   const popOrder = new Int32Array(N);
   const heap = new MinHeap(N);
-  for (let z = 0; z < zone.length; z++) {
-    const c = zone[z];
+  for (let z = 0; z < cells.length; z++) {
+    const c = cells[z];
     let edge = false;
-    for (let e = mesh.off[c]; e < mesh.off[c + 1] && !edge; e++) if (zoneIdx[mesh.adj[e]] < 0) edge = true;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1] && !edge; e++) {
+      const j = mesh.adj[e];
+      if (local[j] < 0 || tile[j] !== key) edge = true;
+    }
     if (!edge) continue;
     for (let k = 0; k < NPC; k++) {
       const u = z * NPC + k;
       seen[u] = 1;
-      key[u] = V[u];
+      keyV[u] = V[u];
       heap.push(u, V[u]);
     }
   }
-  let popped = flood(heap, link, linkOff, V, key, seen, recv, popOrder, 0);
-  // 没有边的一片（整片都在谷网里，几乎不会有）：从最低的点开始
+  let popped = flood(heap, link, linkOff, V, keyV, seen, recv, popOrder, 0);
   for (let u = 0; u < N && popped < N; u++) {
     if (seen[u]) continue;
     let lo = u;
     for (let w = u; w < N; w++) if (!seen[w] && V[w] < V[lo]) lo = w;
     seen[lo] = 1;
-    key[lo] = V[lo];
+    keyV[lo] = V[lo];
     heap.push(lo, V[lo]);
-    popped = flood(heap, link, linkOff, V, key, seen, recv, popOrder, popped);
+    popped = flood(heap, link, linkOff, V, keyV, seen, recv, popOrder, popped);
   }
-  lap('flood');
-  // 汇水（点数）：从上游往下游加
+  for (let z = 0; z < cells.length; z++) local[cells[z]] = -1;
+  // 汇水、主支、谷里的点
   const acc = new Float32Array(N).fill(1);
   for (let q = N - 1; q >= 0; q--) {
     const u = popOrder[q];
     if (recv[u] >= 0) acc[recv[u]] += acc[u];
   }
-  // 主支：汇水最多的上游点
   const main = new Int32Array(N).fill(-1);
   for (let q = 0; q < N; q++) {
     const u = popOrder[q];
@@ -457,16 +581,133 @@ export function buildFjordNet(mesh: Mesh, seed: number, fj: Float32Array, b0: Fl
     const m = main[v];
     if (m < 0 || acc[u] > acc[m] || (acc[u] === acc[m] && u < m)) main[v] = u;
   }
-  // 谷里的点（汇水够的），从下游到上游
   const ord: number[] = [];
   for (let q = 0; q < N; q++) {
     const u = popOrder[q];
     if (acc[u] >= FJ.ACC_MIN) ord.push(u);
   }
   const order = Int32Array.from(ord);
-  // 沿主谷平滑两遍（下游的点与主支的平均，挪一半）
   smoothNet(mesh, pos, owner, order, recv, main, sph, FJ.SMOOTH, spDist);
-  // 每段的中点（Catmull–Rom：(−P0 + 9 P1 + 9 P2 − P3) / 16，P0 是 u 的主支（没有时 u 往外延），P3 是 v 的下游（没有时 v 往外延））
+  const mid = midpoints(pos, order, recv, main, sph, N);
+  const t: TileNet = {
+    key,
+    n: N,
+    pos,
+    mid,
+    owner,
+    recv,
+    order,
+    len: new Float32Array(N),
+    lc: new Float32Array(N),
+    lsea: new Float32Array(N),
+    lcs: new Float32Array(N).fill(-1),
+    hw: new Float32Array(N),
+    isMain: new Uint8Array(N),
+    dirOk: new Uint8Array(N),
+    cands: new Array<Int32Array | null>(N).fill(null),
+  };
+  const ln2 = sph ? null : gradientNoise(mixSeed(seed, 3604));
+  const ln3 = sph ? gradientNoise3(mixSeed(seed, 3604)) : null;
+  for (let q = 0; q < order.length; q++) nodeBudget(ctx, t, cells, acc, main, up, order[q], ln2, ln3);
+  return t;
+}
+
+// 撒点：格 c（块里第 z 格）的 NPC 个点，绕格心一圈（起始角随机、每个再抖一点），离格心 R0 + R1 × 随机 格；谷底高度；往上的方向
+function placeCell(ctx: Ctx, c: number, z: number, pos: Float64Array, V: Float64Array, owner: Int32Array, up: Float64Array, vn2: Noise2 | null, vn3: Noise3 | null): void {
+  const { mesh, seed, sph, sp, spDist, b0, geo } = ctx;
+  const NPC = FJ.NPC;
+  gradientAt(mesh, geo, b0, c, gOut);
+  const gx = gOut[0];
+  const gy = gOut[1];
+  const slope = Math.hypot(gx, gy) * sp;
+  const amp = FJ.V_NOISE * slope + FJ.V_NOISE0;
+  const th0 = 2 * Math.PI * hash01(seed, 3601, c, 99);
+  let ex = 1;
+  let ey = 0;
+  let ez = 0;
+  let sx = 0;
+  let sy = 1;
+  let sz = 0;
+  if (mesh.kind === 'sphere') [ex, ey, ez, sx, sy, sz] = tangentBasis(mesh.p[3 * c], mesh.p[3 * c + 1], mesh.p[3 * c + 2]);
+  up[3 * z] = (gx * ex + gy * sx) * sp;
+  up[3 * z + 1] = (gx * ey + gy * sy) * sp;
+  up[3 * z + 2] = (gx * ez + gy * sz) * sp;
+  for (let k = 0; k < NPC; k++) {
+    const u = z * NPC + k;
+    const th = th0 + (2 * Math.PI * (k + 0.6 * (hash01(seed, 3601, c, k) - 0.5))) / NPC;
+    const rho = (FJ.R0 + FJ.R1 * hash01(seed, 3603, c, k)) * sp;
+    const dx = rho * Math.cos(th);
+    const dy = rho * Math.sin(th);
+    let nz: number;
+    if (mesh.kind === 'sphere') {
+      let qx = mesh.p[3 * c] + Math.PI * (dx * ex + dy * sx);
+      let qy = mesh.p[3 * c + 1] + Math.PI * (dx * ey + dy * sy);
+      let qz = mesh.p[3 * c + 2] + Math.PI * (dx * ez + dy * sz);
+      const l = Math.sqrt(qx * qx + qy * qy + qz * qz);
+      qx /= l;
+      qy /= l;
+      qz /= l;
+      pos[3 * u] = qx;
+      pos[3 * u + 1] = qy;
+      pos[3 * u + 2] = qz;
+      nz = fbm3(vn3!, qx / spDist, qy / spDist, qz / spDist, FJ.V_FREQ, 2);
+    } else {
+      const x = mesh.x[c] + dx;
+      const y = mesh.y[c] + dy;
+      pos[3 * u] = x;
+      pos[3 * u + 1] = y;
+      pos[3 * u + 2] = 0;
+      nz = fbm(vn2!, x / sp, y / sp, FJ.V_FREQ, 2);
+    }
+    V[u] = b0[c] + gx * dx + gy * dy + amp * nz;
+    owner[u] = nearestOwner(mesh, c, pos, u);
+  }
+  void sph;
+}
+
+// 一个点的长度（km）、预算、半宽与两个标记
+function nodeBudget(ctx: Ctx, t: TileNet, cells: Int32Array, acc: Float32Array, main: Int32Array, up: Float64Array, u: number, ln2: Noise2 | null, ln3: Noise3 | null): void {
+  const { mesh, seed, sph, sp, spDist, kmCell, wz } = ctx;
+  const { pos, recv } = t;
+  const v = recv[u];
+  const z = Math.floor(u / FJ.NPC);
+  const c = cells[z];
+  if (v >= 0) t.len[u] = (dist3(pos, u, v) / spDist) * kmCell;
+  const x = pos[3 * u];
+  const y = pos[3 * u + 1];
+  const zz = pos[3 * u + 2];
+  const m = Math.min(FJ.M_MAX, Math.max(FJ.M_MIN, FJ.LEN_M0 + FJ.LEN_M1 * (sph ? fbm3(ln3!, x / spDist, y / spDist, zz / spDist, FJ.LEN_FREQ, 2) : fbm(ln2!, x / sp, y / sp, FJ.LEN_FREQ, 2)) * 2));
+  // 汇水按 km²（一个点约 0.866 格距² / NPC）：格多大都一样
+  const area = acc[u] * ((0.866 * kmCell * kmCell) / FJ.NPC);
+  const af = Math.sqrt(Math.min(1, area / FJ.ACC1_KM2));
+  let wm = wz[c];
+  for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) if (wz[mesh.adj[e]] > wm) wm = wz[mesh.adj[e]];
+  t.lsea[u] = Math.min(FJ.LEN_CAP_KM, FJ.LEN_KM * wm * m);
+  t.lc[u] = area < FJ.ACC_MOUTH_KM2 ? 0 : Math.min(FJ.LEN_CAP_KM, FJ.LEN_KM * wz[c] * m * af);
+  t.hw[u] = (FJ.HW_KM * (FJ.HW_A + (1 - FJ.HW_A) * af)) / kmCell;
+  if (v < 0) return;
+  t.isMain[u] = main[v] === u ? 1 : 0;
+  // 往上游的方向与往上的方向的夹角
+  const dx = x - pos[3 * v];
+  const dy = y - pos[3 * v + 1];
+  const dz = zz - pos[3 * v + 2];
+  const gl = Math.hypot(up[3 * z], up[3 * z + 1], up[3 * z + 2]);
+  const dl = Math.hypot(dx, dy, dz);
+  t.dirOk[u] = gl < FJ.DIR_FLAT_KM * kmCell || dx * up[3 * z] + dy * up[3 * z + 1] + dz * up[3 * z + 2] >= COS_DIR * gl * dl ? 1 : 0;
+  // 支湾：汇水够、与汇合处往上游的主支夹角够大
+  if (t.isMain[u] || area < FJ.ACC_SIDE_KM2) return;
+  const mm = main[v];
+  const mx = pos[3 * mm] - pos[3 * v];
+  const my = pos[3 * mm + 1] - pos[3 * v + 1];
+  const mz = pos[3 * mm + 2] - pos[3 * v + 2];
+  const ml = Math.hypot(mx, my, mz);
+  if (dx * mx + dy * my + dz * mz <= COS_ARM * dl * ml) t.lcs[u] = FJ.LEN_KM * wz[c] * m * af * (FJ.SIDE0 + FJ.SIDE1 * hash01(seed, 3605, c, u % FJ.NPC));
+}
+const COS_DIR = Math.cos((FJ.DIR_MAX * Math.PI) / 180);
+const COS_ARM = Math.cos((FJ.ARM_ANGLE * Math.PI) / 180);
+
+// 每段的中点（Catmull–Rom：(−P0 + 9 P1 + 9 P2 − P3) / 16，P0 是 u 的主支（没有时 u 往外延），P3 是 v 的下游（没有时 v 往外延））
+function midpoints(pos: Float64Array, order: Int32Array, recv: Int32Array, main: Int32Array, sph: boolean, N: number): Float64Array {
   const mid = new Float64Array(3 * N);
   for (let q = 0; q < order.length; q++) {
     const u = order[q];
@@ -488,71 +729,231 @@ export function buildFjordNet(mesh: Mesh, seed: number, fj: Float32Array, b0: Fl
       mid[3 * u + 2] /= l;
     }
   }
-  // 长度、上限、预算、半宽
-  const len = new Float32Array(N);
-  const lc = new Float32Array(N);
-  const lcs = new Float32Array(N);
-  const lsea = new Float32Array(N);
-  const hw = new Float32Array(N);
-  const ln2 = sph ? null : gradientNoise(mixSeed(seed, 3604));
-  const ln3 = sph ? gradientNoise3(mixSeed(seed, 3604)) : null;
-  for (let q = 0; q < order.length; q++) {
-    const u = order[q];
-    const v = recv[u];
-    if (v >= 0) len[u] = dist3(pos, u, v) / spDist;
-    const x = pos[3 * u];
-    const y = pos[3 * u + 1];
-    const z = pos[3 * u + 2];
-    const m = FJ.LEN_M0 + FJ.LEN_M1 * (sph ? fbm3(ln3!, x / spDist, y / spDist, z / spDist, FJ.LEN_FREQ, 2) : fbm(ln2!, x / sp, y / sp, FJ.LEN_FREQ, 2)) * 2;
-    const c = zone[Math.floor(u / NPC)];
-    const base = FJ.LEN * wz[c] * Math.min(FJ.M_MAX, Math.max(FJ.M_MIN, m));
-    const af = Math.sqrt(Math.min(1, acc[u] / FJ.ACC1));
-    const isSide = v >= 0 && main[v] !== u;
-    const side = !isSide ? 1 : acc[u] < FJ.ACC_SIDE ? 0 : FJ.SIDE0 + FJ.SIDE1 * hash01(seed, 3605, u, 0);
-    // 海里的预算按这一格与邻格里最大的权重（往外推的几圈权重打了折，入海口在那里时峡湾不该因此变短）
-    let wm = wz[c];
-    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) if (wz[mesh.adj[e]] > wm) wm = wz[mesh.adj[e]];
-    lsea[u] = Math.min(FJ.LEN_CAP, FJ.LEN * wm * Math.min(FJ.M_MAX, Math.max(FJ.M_MIN, m)));
-    // 直接流进海里的谷汇水不到 ACC_MOUTH 个点的不淹（一个个小缺口；峡湾是大谷）
-    lc[u] = acc[u] < FJ.ACC_MOUTH ? 0 : base * af;
-    // 主谷往上游不再另设上限（预算从入海口一路减下来）；支谷 × side
-    lcs[u] = isSide ? base * af * side : Infinity;
-    hw[u] = FJ.HW * (FJ.HW_A + (1 - FJ.HW_A) * af);
+  return mid;
+}
+
+// 各块拼成一份：点的编号接起来；有表的格是谷网一带往外 RANK_RINGS 圈（两极附近 RANK_RINGS_POLAR 圈），按格编号排表号
+function assemble(ctx: Ctx, tiles: TileNet[], prev: FjordNet | null, flips: number[] | null): FjordNet {
+  const { mesh, wz } = ctx;
+  const n = mesh.n;
+  let N = 0;
+  let No = 0;
+  for (const t of tiles) {
+    N += t.n;
+    No += t.order.length;
   }
-  lap('smooth');
-  // 每段碰得到的格
-  const star = starRadius(mesh);
-  const stars = starTris(mesh);
-  const candOff = new Int32Array(N + 1);
-  const cand: number[] = [];
-  const stamp = new Int32Array(n).fill(-1);
-  const pstamp = new Int32Array(n).fill(-1);
-  const rank = new Int32Array(n).fill(-1);
-  const inNet = new Uint8Array(N);
-  for (let q = 0; q < order.length; q++) inNet[order[q]] = 1;
-  const queue: number[] = [];
-  for (let u = 0; u < N; u++) {
-    const v = recv[u];
-    if (inNet[u] && v >= 0 && inNet[v]) {
-      const rInf = Math.max(hw[u], hw[v]) * FJ.SEA_W * FJ_REACH + FJ.EDGE;
-      candidates(stars, mesh, star, pos, mid, u, v, owner[u], owner[v], rInf, spDist, Math.min(FJ.MOUTH / Math.max(len[u], 1e-6), 4), sph, stamp, pstamp, queue, cand, rank);
+  const net: FjordNet = {
+    tiles,
+    n: N,
+    pos: new Float64Array(3 * N),
+    mid: new Float64Array(3 * N),
+    owner: new Int32Array(N),
+    recv: new Int32Array(N),
+    order: new Int32Array(No),
+    len: new Float32Array(N),
+    lc: new Float32Array(N),
+    lsea: new Float32Array(N),
+    lcs: new Float32Array(N),
+    hw: new Float32Array(N),
+    isMain: new Uint8Array(N),
+    dirOk: new Uint8Array(N),
+    nodeTile: new Int32Array(N),
+    nodeLocal: new Int32Array(N),
+    cands: new Array<Int32Array | null>(N),
+    rank: new Int32Array(0),
+    nRank: 0,
+    ring: new Int8Array(0),
+    watch: new Int32Array(0),
+    wz,
+    spDist: ctx.spDist,
+    kmCell: ctx.kmCell,
+    sph: ctx.sph,
+    mesh,
+  };
+  let off = 0;
+  let oo = 0;
+  for (let ti = 0; ti < tiles.length; ti++) {
+    const t = tiles[ti];
+    net.pos.set(t.pos, 3 * off);
+    net.mid.set(t.mid, 3 * off);
+    net.owner.set(t.owner, off);
+    net.len.set(t.len, off);
+    net.lc.set(t.lc, off);
+    net.lsea.set(t.lsea, off);
+    net.lcs.set(t.lcs, off);
+    net.hw.set(t.hw, off);
+    net.isMain.set(t.isMain, off);
+    net.dirOk.set(t.dirOk, off);
+    for (let u = 0; u < t.n; u++) {
+      net.recv[off + u] = t.recv[u] >= 0 ? t.recv[u] + off : -1;
+      net.nodeTile[off + u] = ti;
+      net.nodeLocal[off + u] = u;
+      net.cands[off + u] = t.cands[u];
     }
-    candOff[u + 1] = cand.length;
+    for (let q = 0; q < t.order.length; q++) net.order[oo++] = t.order[q] + off;
+    off += t.n;
   }
-  lap('cand');
-  // 表号按格编号
-  let nRank = 0;
-  for (let i = 0; i < n; i++) if (rank[i] >= 0) rank[i] = nRank++;
+  // 有表的格：整个重建时从头数；重画一片时一带一格都没变就照用上一份，不然只在变了的格附近重算圈数（ringsNear）
+  if (prev && flips && !flips.length) {
+    net.ring = prev.ring;
+    net.rank = prev.rank;
+    net.nRank = prev.nRank;
+  } else {
+    let same = false;
+    if (prev && flips) {
+      net.ring = prev.ring.slice();
+      same = ringsNear(mesh, wz, net.ring, flips);
+    } else {
+      net.ring = new Int8Array(n).fill(-1);
+      ringsAll(mesh, wz, net.ring);
+    }
+    if (same) {
+      // 有表的格还是那些（只是圈数变了）：表号照用
+      net.rank = prev!.rank;
+      net.nRank = prev!.nRank;
+    } else {
+      net.rank = new Int32Array(n).fill(-1);
+      let k = 0;
+      for (let i = 0; i < n; i++) if (net.ring[i] >= 0) net.rank[i] = k++;
+      net.nRank = k;
+    }
+  }
+  // 陆海只看这些格：谷里的点所在的格与它们两圈以内的格（离海多远看两圈）
   const watchSet = new Uint8Array(n);
   const watch: number[] = [];
-  for (let q = 0; q < order.length; q++) {
-    const o = owner[order[q]];
-    if (!watchSet[o]) {
-      watchSet[o] = 1;
-      watch.push(o);
+  for (let q = 0; q < net.order.length; q++) {
+    const o = net.owner[net.order[q]];
+    if (watchSet[o]) continue;
+    watchSet[o] = 1;
+    watch.push(o);
+  }
+  ringsOut(mesh, watch, 2, watchSet);
+  net.watch = Int32Array.from(watch);
+  return net;
+}
+
+// 每格离谷网一带几圈（ring 先全是 −1）：一带往外 RANK_RINGS 圈，两极附近的格往外推到 RANK_RINGS_POLAR 圈
+function ringsAll(mesh: Mesh, wz: Float32Array, ring: Int8Array): void {
+  let front: number[] = [];
+  for (let i = 0; i < mesh.n; i++) {
+    if (!(wz[i] > FJ.ZONE)) continue;
+    ring[i] = 0;
+    front.push(i);
+  }
+  for (let r = 1; r <= FJ.RANK_RINGS_POLAR && front.length; r++) {
+    const next: number[] = [];
+    for (const c of front) {
+      if (r > FJ.RANK_RINGS && !polarCell(mesh, c)) continue;
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (ring[j] >= 0) continue;
+        ring[j] = r;
+        next.push(j);
+      }
+    }
+    front = next;
+  }
+}
+
+// 一带只在 flips 这几格变了：一格离一带几圈只看它 RANK_RINGS_POLAR 圈以内的格，所以只有离 flips 这么多圈以内的格（A）可能变。
+// A 里重算：A 里一带的格是 0；A 外挨着 A 的有表的格按原来的圈数往 A 里推（同 ringsAll，按圈数从小到大）。
+// 返回有表的格是不是还是那些
+function ringsNear(mesh: Mesh, wz: Float32Array, ring: Int8Array, flips: number[]): boolean {
+  const inA = new Uint8Array(mesh.n);
+  const A = flips.slice();
+  for (const c of A) inA[c] = 1;
+  ringsOut(mesh, A, FJ.RANK_RINGS_POLAR, inA);
+  const R = FJ.RANK_RINGS_POLAR;
+  const buckets: number[][] = [];
+  for (let r = 0; r <= R; r++) buckets.push([]);
+  const had = new Uint8Array(A.length);
+  for (let q = 0; q < A.length; q++) {
+    const c = A[q];
+    had[q] = ring[c] >= 0 ? 1 : 0;
+    ring[c] = wz[c] > FJ.ZONE ? 0 : -1;
+  }
+  const seen = new Uint8Array(mesh.n);
+  for (const c of A) {
+    if (ring[c] === 0) buckets[0].push(c);
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (inA[j] || seen[j] || ring[j] < 0) continue;
+      seen[j] = 1;
+      buckets[ring[j]].push(j);
     }
   }
-  return { n: N, pos, owner, recv, order, len, lc, lcs, lsea, hw, candOff, cand: Int32Array.from(cand), rank, nRank, watch: Int32Array.from(watch), wz, spDist, sph, mid };
+  for (let r = 0; r < R; r++) {
+    const b = buckets[r];
+    for (let q = 0; q < b.length; q++) {
+      const c = b[q];
+      if (r >= FJ.RANK_RINGS && !polarCell(mesh, c)) continue;
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (!inA[j] || ring[j] >= 0) continue;
+        ring[j] = r + 1;
+        buckets[r + 1].push(j);
+      }
+    }
+  }
+  for (let q = 0; q < A.length; q++) if ((ring[A[q]] >= 0 ? 1 : 0) !== had[q]) return false;
+  return true;
+}
+
+// list 里的格往外 rings 圈加进 list（mark 标着已在的）
+function ringsOut(mesh: Mesh, list: number[], rings: number, mark: Uint8Array): void {
+  let from = 0;
+  for (let r = 0; r < rings; r++) {
+    const to = list.length;
+    for (let q = from; q < to; q++) {
+      const c = list[q];
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (mark[j]) continue;
+        mark[j] = 1;
+        list.push(j);
+      }
+    }
+    from = to;
+  }
+}
+
+function polarCell(mesh: Mesh, c: number): boolean {
+  return mesh.kind === 'sphere' && Math.abs(mesh.p[3 * c + 2]) > 0.95;
+}
+
+// 段 u → recv[u] 碰得到的格（画面三角形的最后一个顶点的格；只按网格与谷网的几何，用到时才算，写回那一块，块重用时照用）
+export function candOf(net: FjordNet, u: number): Int32Array {
+  const have = net.cands[u];
+  if (have) return have;
+  const { mesh } = net;
+  const v = net.recv[u];
+  const sc = scratchOf(mesh);
+  const out: number[] = [];
+  const rInf = Math.max(net.hw[u], net.hw[v]) * FJ.SEA_W * FJ_REACH + FJ.EDGE;
+  const ext = Math.min((FJ.MOUTH * net.kmCell) / Math.max(net.len[u], 1e-6), 4);
+  sc.tick++;
+  candidates(starTris(mesh), mesh, starRadius(mesh), net.pos, net.mid, u, v, net.owner[u], net.owner[v], rInf, net.spDist, ext, net.sph, sc.stamp, sc.pstamp, sc.tick, queueBuf, out);
+  const c = Int32Array.from(out);
+  net.cands[u] = c;
+  net.tiles[net.nodeTile[u]].cands[net.nodeLocal[u]] = c;
+  return c;
+}
+const queueBuf: number[] = [];
+
+// 一格推两圈后的权重：两圈以内 GROW^圈数 × 峡湾权重的最大（与 growZone 推两遍相同）
+function grownAt(mesh: Mesh, fj: Float32Array, i: number): number {
+  let m = fj[i];
+  for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+    const j = mesh.adj[e];
+    // 与推两遍（每遍存成 float32）逐位相同
+    const a = Math.fround(FJ.GROW * fj[j]);
+    if (a > m) m = a;
+    for (let f = mesh.off[j]; f < mesh.off[j + 1]; f++) {
+      const b = Math.fround(FJ.GROW * Math.fround(FJ.GROW * fj[mesh.adj[f]]));
+      if (b > m) m = b;
+    }
+  }
+  return m;
 }
 
 // 峡湾权重往外推 GROW_RINGS 圈，每圈乘 GROW
@@ -621,9 +1022,9 @@ function linkCenters(mesh: Mesh, c: number, j: number, mark: Int32Array, out: Fl
 }
 
 // 点 u 与格 j 的各点相连：LINK 格以内、连线离要看的格心都至少 CENTER_GAP 格（格心附近不刻：styleWeight）
-function addLinks(zoneIdx: Int32Array, pos: Float64Array, u: number, j: number, centers: Float64Array, nc: number, spDist: number, out: number[]): void {
-  const base = zoneIdx[j] * FJ.NPC;
-  const lim = FJ.LINK * spDist;
+function addLinks(local: Int32Array, pos: Float64Array, u: number, j: number, centers: Float64Array, nc: number, spDist: number, kmCell: number, out: number[]): void {
+  const base = local[j] * FJ.NPC;
+  const lim = Math.min(FJ.LINK, FJ.LINK_KM / kmCell) * spDist;
   const gap = FJ.CENTER_GAP * spDist;
   const ux = pos[3 * u];
   const uy = pos[3 * u + 1];
@@ -711,29 +1112,28 @@ function smoothNet(mesh: Mesh, pos: Float64Array, owner: Int32Array, order: Int3
 // 段 u–v 碰得到的格：从两头所在的格往外找，离段不到（星形半径 + rInf）的格（rank 先记 0 表示有表）
 // ext：下游那头往外延长这一段的几倍（入海口，见 writeEntry）
 // 格 c 的星形里离段（u → 中点 → v）不到 半径 + rInf 的三角形：它们的“最后一个顶点的格”收这一段（每段每格只收一次）
-function nearStar(stars: Stars, c: number, ux: number, uy: number, uz: number, mx: number, my: number, mz: number, vx: number, vy: number, vz: number, rInf: number, spDist: number, u: number, pstamp: Int32Array, out: number[], rank: Int32Array): void {
+function nearStar(stars: Stars, c: number, ux: number, uy: number, uz: number, mx: number, my: number, mz: number, vx: number, vy: number, vz: number, rInf: number, spDist: number, tick: number, pstamp: Int32Array, out: number[]): void {
   const { off, tri, cen, rad, prov } = stars;
   for (let k = off[c]; k < off[c + 1]; k++) {
     const t = tri[k];
     const p = prov[t];
-    if (pstamp[p] === u) continue;
+    if (pstamp[p] === tick) continue;
     const px = cen[3 * t];
     const py = cen[3 * t + 1];
     const pz = cen[3 * t + 2];
     const d = Math.min(segDist(px, py, pz, ux, uy, uz, mx, my, mz), segDist(px, py, pz, mx, my, mz, vx, vy, vz)) / spDist;
     if (d > rad[t] + rInf) continue;
-    pstamp[p] = u;
+    pstamp[p] = tick;
     out.push(p);
-    rank[p] = 0;
   }
 }
 
-function candidates(stars: Stars, mesh: Mesh, star: Float32Array, pos: Float64Array, mid: Float64Array, u: number, v: number, ou: number, ov: number, rInf: number, spDist: number, ext: number, sph: boolean, stamp: Int32Array, pstamp: Int32Array, queue: number[], out: number[], rank: Int32Array): void {
+function candidates(stars: Stars, mesh: Mesh, star: Float32Array, pos: Float64Array, mid: Float64Array, u: number, v: number, ou: number, ov: number, rInf: number, spDist: number, ext: number, sph: boolean, stamp: Int32Array, pstamp: Int32Array, tick: number, queue: number[], out: number[]): void {
   queue.length = 0;
   queue.push(ou);
-  stamp[ou] = u;
-  if (stamp[ov] !== u) {
-    stamp[ov] = u;
+  stamp[ou] = tick;
+  if (stamp[ov] !== tick) {
+    stamp[ov] = tick;
     queue.push(ov);
   }
   const ux = pos[3 * u];
@@ -750,12 +1150,12 @@ function candidates(stars: Stars, mesh: Mesh, star: Float32Array, pos: Float64Ar
     const c = queue[h];
     cellPos(mesh, c, P3, 0);
     const d = Math.min(segDist(P3[0], P3[1], P3[2], ux, uy, uz, mx, my, mz), segDist(P3[0], P3[1], P3[2], mx, my, mz, vx, vy, vz)) / spDist;
-    if (d <= star[c] + rInf) nearStar(stars, c, ux, uy, uz, mx, my, mz, vx, vy, vz, rInf, spDist, u, pstamp, out, rank);
+    if (d <= star[c] + rInf) nearStar(stars, c, ux, uy, uz, mx, my, mz, vx, vy, vz, rInf, spDist, tick, pstamp, out);
     if (d > star[c] + rInf + 1) continue;
     for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
       const j = mesh.adj[e];
-      if (stamp[j] === u) continue;
-      stamp[j] = u;
+      if (stamp[j] === tick) continue;
+      stamp[j] = tick;
       queue.push(j);
     }
   }
@@ -789,18 +1189,19 @@ const TEX_W = 1024;
 // land：每格的陆海（湖面算陆地）。按 net.order 从下游往上游走一遍
 export function fjordLayer(net: FjordNet, land: ArrayLike<number>, nCells: number): FjordLayer {
   const N = net.n;
-  const B = new Float32Array(N).fill(-1);
-  const r = new Float32Array(N);
-  const mouth = new Int32Array(N).fill(-1);
-  budgets(net, land, B, r, mouth);
-  // 每格的段数
+  const w = budgets(net, land);
+  // 每格的段数（每段两小段）
   const count = new Int32Array(net.nRank);
+  const wet = new Uint8Array(N);
   let entries = 0;
-  for (let u = 0; u < N; u++) {
-    if (!wetEdge(net, land, B, u)) continue;
-    for (let k = net.candOff[u]; k < net.candOff[u + 1]; k++) {
-      const rk = net.rank[net.cand[k]];
-      if (count[rk] + 2 <= FJ.MAX_LIST) {
+  for (let q = 0; q < net.order.length; q++) {
+    const u = net.order[q];
+    if (!wetEdge(net, land, w, u)) continue;
+    wet[u] = 1;
+    const cs = candOf(net, u);
+    for (let k = 0; k < cs.length; k++) {
+      const rk = net.rank[cs[k]];
+      if (rk >= 0 && count[rk] + 2 <= FJ.MAX_LIST) {
         count[rk] += 2;
         entries += 2;
       }
@@ -816,14 +1217,16 @@ export function fjordLayer(net: FjordNet, land: ArrayLike<number>, nCells: numbe
     tex[4 * rk + 1] = count[rk];
     at += 3 * count[rk];
   }
-  for (let u = 0; u < N; u++) {
-    if (!wetEdge(net, land, B, u)) continue;
-    for (let k = net.candOff[u]; k < net.candOff[u + 1]; k++) {
-      const rk = net.rank[net.cand[k]];
-      if (fill[rk] >= count[rk]) continue;
+  for (let q = 0; q < net.order.length; q++) {
+    const u = net.order[q];
+    if (!wet[u]) continue;
+    const cs = net.cands[u]!;
+    for (let k = 0; k < cs.length; k++) {
+      const rk = net.rank[cs[k]];
+      if (rk < 0 || fill[rk] >= count[rk]) continue;
       const o = 4 * (tex[4 * rk] + 3 * fill[rk]);
       fill[rk] += 2;
-      writeEntry(net, land, B, r, mouth, u, tex, o);
+      writeEntry(net, land, w, u, tex, o);
     }
   }
   // 每格的表的摘要（FNV，按位）
@@ -840,65 +1243,130 @@ export function fjordLayer(net: FjordNet, land: ArrayLike<number>, nCells: numbe
   return { tex, sig };
 }
 
-// 每个点的预算（> 0 淹着）（统计用：tools/realism.ts 的 fjordStats）
-export function fjordBudgets(net: FjordNet, land: ArrayLike<number>): Float32Array {
-  const B = new Float32Array(net.n).fill(-1);
-  budgets(net, land, B, new Float32Array(net.n), new Int32Array(net.n).fill(-1));
-  return B;
+// 按陆海走一遍的结果：B 预算（km，> 0 淹着）、r 半径（距离单位）、mouth 入海口的海格、cap 这一段用的上限（km：入海口的、支湾的，
+// 主湾 Infinity，不淹 0）、sys 属于哪个峡湾（入海口那个点）、path 从入海口往上游走过的长度（km）、arms 每个峡湾的支湾数
+export interface FjordWet {
+  B: Float32Array;
+  r: Float32Array;
+  mouth: Int32Array;
+  cap: Float32Array;
+  sys: Int32Array;
+  path: Float32Array;
+  arms: Int32Array;
 }
 
-// 预算：海里的点 lsea；陆上的点 min(下游的, 自己的上限) − 这段长；半径按预算收窄
-function budgets(net: FjordNet, land: ArrayLike<number>, B: Float32Array, r: Float32Array, mouth: Int32Array): void {
-  const { order, recv, owner, len, lc, lcs, lsea, hw, spDist } = net;
-  for (let q = 0; q < order.length; q++) {
-    const u = order[q];
-    const o = owner[u];
-    if (!land[o]) {
-      B[u] = lsea[u];
-      r[u] = hw[u] * FJ.SEA_W * spDist;
-      mouth[u] = o;
-      continue;
-    }
-    const v = recv[u];
-    if (v < 0 || B[v] <= 0) continue;
-    const b = Math.min(B[v], land[owner[v]] ? lcs[u] : lc[u]) - len[u];
-    B[u] = b;
-    if (b > 0) {
-      r[u] = hw[u] * (FJ.TAPER_MIN + (1 - FJ.TAPER_MIN) * sm01(b / FJ.TAPER)) * (FJ.WIDEN0 + FJ.WIDEN1 * Math.min(1, b / FJ.LEN)) * spDist;
-      mouth[u] = mouth[v];
-    } else B[u] = b;
+// 预算：海里的点 lsea；陆上的点流进海里时按入海口的上限（lc），主湾往上游一路减下去，支湾（每个峡湾最多 MAX_ARMS 条，离入海口近的先）
+// 不过汇合处主湾剩下的 ARM_FRAC 倍与自己的上限；往上游跑偏的段不淹。半径按预算先宽后窄
+export function budgets(net: FjordNet, land: ArrayLike<number>): FjordWet {
+  const N = net.n;
+  const w: FjordWet = { B: new Float32Array(N).fill(-1), r: new Float32Array(N), mouth: new Int32Array(N).fill(-1), cap: new Float32Array(N), sys: new Int32Array(N).fill(-1), path: new Float32Array(N), arms: new Int32Array(N) };
+  const { order } = net;
+  for (let q = 0; q < order.length; q++) budgetAt(net, land, w, order[q]);
+  return w;
+}
+
+function budgetAt(net: FjordNet, land: ArrayLike<number>, w: FjordWet, u: number): void {
+  const { recv, owner, len, lc, lcs, lsea, hw, spDist, isMain, dirOk } = net;
+  const { B } = w;
+  const o = owner[u];
+  if (!land[o]) {
+    B[u] = lsea[u];
+    w.r[u] = hw[u] * FJ.SEA_W * spDist;
+    w.mouth[u] = o;
+    return;
   }
+  const v = recv[u];
+  if (v < 0 || B[v] <= 0) return;
+  let cap = 0;
+  let sys = w.sys[v];
+  if (!land[owner[v]]) {
+    cap = lc[u];
+    sys = u;
+  } else if (isMain[u]) cap = Infinity;
+  else if (lcs[u] > 0 && w.arms[sys] < FJ.MAX_ARMS) {
+    cap = Math.min(lcs[u], FJ.ARM_FRAC * B[v]);
+    if (Math.min(B[v], cap) > FJ.STUB_MIN * len[u]) w.arms[sys]++;
+    else cap = 0;
+  }
+  if (!dirOk[u]) cap = 0;
+  // 离入海口 COAST_KM 以外，离海（附近两圈里海格的格心）不到 COAST_K × 走过的长度的不淹：峡湾往内陆走，不顺着海岸走
+  else if (cap > 0 && land[owner[v]]) {
+    const p = w.path[v] + len[u];
+    if (p > FJ.COAST_KM && seaDistKm(net, land, o, u, FJ.COAST_K * p) < FJ.COAST_K * p) cap = 0;
+  }
+  w.cap[u] = cap;
+  w.sys[u] = sys;
+  const b = Math.min(B[v], cap) - len[u];
+  B[u] = b;
+  if (b <= 0) return;
+  w.r[u] = hw[u] * (FJ.TAPER_MIN + (1 - FJ.TAPER_MIN) * sm01(b / FJ.TAPER_KM)) * (FJ.WIDEN0 + FJ.WIDEN1 * Math.min(1, b / FJ.WIDEN_KM)) * spDist;
+  w.mouth[u] = w.mouth[v];
+  w.path[u] = (land[owner[v]] ? w.path[v] : 0) + len[u];
 }
 
-// 段 u → recv[u] 画不画：u 是陆上的点，且 u 淹着，或 recv[u] 淹着且预算在这段中间用完（剩下的够 STUB_MIN）
-function wetEdge(net: FjordNet, land: ArrayLike<number>, B: Float32Array, u: number): boolean {
+// 点 u 到格 c 与它两圈以内的海格的格心最近的距离（km）；找到比 enough 还近的就停
+function seaDistKm(net: FjordNet, land: ArrayLike<number>, c: number, u: number, enough: number): number {
+  const { mesh, pos, spDist, kmCell } = net;
+  let best = Infinity;
+  for (let e = mesh.off[c] - 1; e < mesh.off[c + 1] && best >= enough; e++) {
+    const j = e < mesh.off[c] ? c : mesh.adj[e];
+    for (let f = mesh.off[j] - 1; f < mesh.off[j + 1]; f++) {
+      const k = f < mesh.off[j] ? j : mesh.adj[f];
+      if (land[k]) continue;
+      cellPos(mesh, k, P3, 0);
+      const d = (Math.hypot(pos[3 * u] - P3[0], pos[3 * u + 1] - P3[1], pos[3 * u + 2] - P3[2]) / spDist) * kmCell;
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+// 段 u → recv[u] 画不画：u 是陆上的点，且 u 淹着，或 recv[u] 淹着、这一段有上限且预算在这段中间用完（剩下的够 STUB_MIN）
+function wetEdge(net: FjordNet, land: ArrayLike<number>, w: FjordWet, u: number): boolean {
   const v = net.recv[u];
-  if (v < 0 || net.candOff[u + 1] === net.candOff[u]) return false;
+  if (v < 0) return false;
   // 海里的点往下游的段不画（刻海面没有用；入海口那一段往海里延长了，穿过岸外的岛礁）
   if (!land[net.owner[u]]) return false;
-  if (B[u] > 0) return true;
-  if (B[v] <= 0) return false;
-  return stubOf(net, land, B, u, v) > FJ.STUB_MIN;
+  if (w.B[u] > 0) return true;
+  if (w.B[v] <= 0 || w.cap[u] <= 0) return false;
+  return stubOf(net, w, u, v) > FJ.STUB_MIN;
 }
 
 // 预算在段 u → v 中间用完时淹到的比例
-function stubOf(net: FjordNet, land: ArrayLike<number>, B: Float32Array, u: number, v: number): number {
-  return Math.min(B[v], land[net.owner[v]] ? net.lcs[u] : net.lc[u]) / net.len[u];
+function stubOf(net: FjordNet, w: FjordWet, u: number, v: number): number {
+  return Math.min(w.B[v], w.cap[u]) / net.len[u];
+}
+
+// 一个个峡湾（统计用：tools/realism.ts 的 fjordStats）：入海口那个点、最长的一条往上游的长度（km，含头上淹到一半的）、支湾数
+export function fjordSystems(net: FjordNet, land: ArrayLike<number>): { mouth: number; lengthKm: number; arms: number }[] {
+  const w = budgets(net, land);
+  const longest = new Map<number, number>();
+  for (const u of net.order) {
+    const s = w.sys[u];
+    if (s < 0 || !land[net.owner[u]]) continue;
+    const v = net.recv[u];
+    let L = -1;
+    if (w.B[u] > 0) L = w.path[u];
+    else if (v >= 0 && w.B[v] > 0 && w.cap[u] > 0 && stubOf(net, w, u, v) > FJ.STUB_MIN) L = (land[net.owner[v]] ? w.path[v] : 0) + Math.min(w.B[v], w.cap[u]);
+    if (L > (longest.get(s) ?? -1)) longest.set(s, L);
+  }
+  return [...longest.entries()].sort((a, b) => a[0] - b[0]).map(([m, L]) => ({ mouth: m, lengthKm: L, arms: w.arms[m] }));
 }
 
 // 一段写成两小段（中点在 Catmull–Rom 曲线上，弯一点）：下游那头 A → 中点 M → 上游那头 U
-function writeEntry(net: FjordNet, land: ArrayLike<number>, B: Float32Array, r: Float32Array, mouth: Int32Array, u: number, tex: Float32Array, o: number): void {
+function writeEntry(net: FjordNet, land: ArrayLike<number>, w: FjordWet, u: number, tex: Float32Array, o: number): void {
   const { pos, recv, mid } = net;
+  const { B, r } = w;
   const v = recv[u];
   // 上游那头（u，没淹到时只到预算用完的地方，圆头）
   let t = 1;
   let ru = r[u];
   if (B[u] <= 0) {
-    t = Math.min(1, stubOf(net, land, B, u, v));
+    t = Math.min(1, stubOf(net, w, u, v));
     ru = FJ.HEAD * r[v];
   }
   // 陆上的点流进海里的点：下游那头往海里延长 MOUTH 格（海里的点所在的格是海，那一点却可能还画成陆地：峡湾一直通到水面）
-  if (B[u] > 0 && land[net.owner[u]] && !land[net.owner[v]]) extend(pos, u, v, Math.min(FJ.MOUTH / Math.max(net.len[u], 1e-6), 4), net.sph, P3, 0);
+  if (B[u] > 0 && !land[net.owner[v]]) extend(pos, u, v, Math.min((FJ.MOUTH * net.kmCell) / Math.max(net.len[u], 1e-6), 4), net.sph, P3, 0);
   else {
     P3[0] = pos[3 * v];
     P3[1] = pos[3 * v + 1];
@@ -928,7 +1396,7 @@ function writeEntry(net: FjordNet, land: ArrayLike<number>, B: Float32Array, r: 
     }
   }
   const rm = 0.5 * (r[v] + ru);
-  const m = mouth[v];
+  const m = w.mouth[v];
   tex[o] = P3[0];
   tex[o + 1] = P3[1];
   tex[o + 2] = P3[2];

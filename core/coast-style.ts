@@ -119,10 +119,27 @@ export function coastStyle(world: World): CoastStyle | null {
   const list = cache.get(mesh) ?? [];
   const hit = list.find((e) => e.comp === comp && e.key === key);
   if (hit) return hit.style;
+  // 撤销、重做回到前几步时分量常是新的对象、内容相同：三样输入逐值相同就照用那一份（第三十六轮（续）：不重建谷网、不重算峡湾纹理）
+  const same = list.find((e) => e.key === key && sameInputs(e.comp, comp));
+  if (same) {
+    cache.set(mesh, [{ key, comp, style: same.style }, ...list.filter((e) => e !== same)].slice(0, 3));
+    return same.style;
+  }
   const prev = list.find((e) => e.key === key);
   const style = prev ? updateStyle(world, comp, prev.comp, prev.style) : computeStyle(world, comp, null);
   cache.set(mesh, [{ key, comp, style }, ...list.filter((e) => e !== hit)].slice(0, 3));
   return style;
+}
+
+// 海岸类型的三样输入（造山带、丘陵的抬升，地壳高度）逐值相同
+function sameInputs(a: BaseComponents, b: BaseComponents): boolean {
+  return sameArr(a.b0, b.b0) && sameArr(a.mountU, b.mountU) && sameArr(a.hillU, b.hillU);
+}
+function sameArr(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // 这个世界的海岸类型已经在缓存里（预热时用：已有时不让出）
@@ -132,7 +149,7 @@ export function coastStyleCached(world: World): boolean {
   if (!comp) return true;
   const key = glacialKey(world);
   const hit = (cache.get(world.mesh) ?? []).find((e) => e.comp === comp && e.key === key);
-  return !!hit && (!hit.style.net || !!wetCache.get(hit.style.net)?.out);
+  return !!hit && (!hit.style.net || !!wetCache.get(hit.style.net.tiles)?.length);
 }
 
 // 整份算
@@ -140,7 +157,7 @@ function computeStyle(world: World, comp: BaseComponents, cells: Int32Array | nu
   const n = world.mesh.n;
   const style: CoastStyle = { packed: new Float32Array(2 * n), net: null, fjord: new Float32Array(n), barrier: new Float32Array(n), ria: new Float32Array(n), speck: new Float32Array(n) };
   styleCells(world, comp, style, cells);
-  style.net = buildFjordNet(world.mesh, world.settings.seed, style.fjord, comp.b0);
+  style.net = buildFjordNet(world.mesh, world.settings.seed, world.kmPerUnit, style.fjord, comp.b0);
   packStyle(style, world.mesh.n);
   return style;
 }
@@ -188,17 +205,48 @@ function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, ol
   const cells: number[] = [];
   for (let i = 0; i < n; i++) if (mark[i]) cells.push(i);
   styleCells(world, comp, style, Int32Array.from(cells));
-  // 谷网：峡湾权重或谷网里的格的地壳高度变了才重建（只看重算的格）
-  let redo = false;
+  // 谷网：只重建输入变了的块（core/fjords.ts 的 buildFjordNet）：峡湾权重变了的格往外三圈、地壳高度变了的格往外一圈。
+  // 地壳高度只在谷网一带的格与它们的邻格上用到（谷底高度、坡度）：一带以外改的不算（一带只在峡湾权重变了的格附近变，那些格已经算进去了）
+  const fjCh: number[] = [];
+  const b0Ch: number[] = [];
+  const wz = old.net ? old.net.wz : null;
   for (const i of cells) {
-    if (style.fjord[i] !== old.fjord[i] || ((style.fjord[i] > FJ.ZONE || old.fjord[i] > FJ.ZONE) && comp.b0[i] !== was.b0[i])) {
-      redo = true;
-      break;
-    }
+    if (style.fjord[i] !== old.fjord[i]) fjCh.push(i);
+    if (wz && comp.b0[i] !== was.b0[i] && nearZone(mesh, wz, i)) b0Ch.push(i);
   }
-  if (redo) style.net = buildFjordNet(mesh, world.settings.seed, style.fjord, comp.b0);
+  if (fjCh.length || b0Ch.length) {
+    const dirty = new Uint8Array(n);
+    dilate(mesh, fjCh, 3, dirty);
+    dilate(mesh, b0Ch, 1, dirty);
+    style.net = buildFjordNet(mesh, world.settings.seed, world.kmPerUnit, style.fjord, comp.b0, old.net, dirty);
+  }
   packStyle(style, n);
   return style;
+}
+
+// 格 i 或它的邻格在谷网一带里（推两圈的权重 > ZONE）
+function nearZone(mesh: Mesh, wz: Float32Array, i: number): boolean {
+  if (wz[i] > FJ.ZONE) return true;
+  for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (wz[mesh.adj[e]] > FJ.ZONE) return true;
+  return false;
+}
+
+// seeds 往外 rings 圈的格在 out 里标 1
+function dilate(mesh: Mesh, seeds: number[], rings: number, out: Uint8Array): void {
+  let front = seeds;
+  for (const i of front) out[i] = 1;
+  for (let r = 0; r < rings && front.length; r++) {
+    const next: number[] = [];
+    for (const c of front) {
+      for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+        const j = mesh.adj[e];
+        if (out[j]) continue;
+        out[j] = 1;
+        next.push(j);
+      }
+    }
+    front = next;
+  }
 }
 
 // 算 cells 这些格（null：全部）的权重
@@ -238,12 +286,15 @@ export function landStyle(world: World): Float32Array | null {
   return style ? style.packed : null;
 }
 
-// 按陆海淹到哪里的峡湾纹理（core/fjords.ts）。只看谷网里的点所在的格的陆海：都没变时还是上一份（同一个对象）
+// 按陆海淹到哪里的峡湾纹理（core/fjords.ts）。只看谷网里的点所在的格与两圈以内的陆海：都没变时还是上一份（同一个对象）。
+// 按谷网的块的数组记（谷网没变、只换了推两圈的权重时是同一个数组，见 buildFjordNet），每份谷网记最近 WET_KEEP 种陆海
+// （撤销、重做回到前几步的陆海时不重算）
 interface Wet {
   landAt: Uint8Array;
-  out: FjordLayer | null;
+  out: FjordLayer;
 }
-const wetCache = new WeakMap<FjordNet, Wet>();
+const WET_KEEP = 3;
+const wetCache = new WeakMap<object, Wet[]>();
 export function fjordData(world: World): FjordLayer | null {
   const style = coastStyle(world);
   const net = style?.net;
@@ -252,15 +303,19 @@ export function fjordData(world: World): FjordLayer | null {
 }
 
 export function fjordDataFor(net: FjordNet, land: ArrayLike<number>, n: number): FjordLayer {
-  let w = wetCache.get(net);
-  if (!w) {
-    w = { landAt: new Uint8Array(net.watch.length), out: null };
-    wetCache.set(net, w);
+  let list = wetCache.get(net.tiles);
+  if (!list) wetCache.set(net.tiles, (list = []));
+  for (let q = 0; q < list.length; q++) {
+    const w = list[q];
+    if (!sameAt(net.watch, w.landAt, land)) continue;
+    if (q > 0) list.unshift(...list.splice(q, 1));
+    return w.out;
   }
-  if (w.out && sameAt(net.watch, w.landAt, land)) return w.out;
   const out = fjordLayer(net, land, n);
-  for (let k = 0; k < net.watch.length; k++) w.landAt[k] = land[net.watch[k]];
-  w.out = out;
+  const landAt = new Uint8Array(net.watch.length);
+  for (let k = 0; k < net.watch.length; k++) landAt[k] = land[net.watch[k]];
+  list.unshift({ landAt, out });
+  if (list.length > WET_KEEP) list.length = WET_KEEP;
   return out;
 }
 
@@ -364,7 +419,7 @@ export const LOOK = {
   SK_H: 25,
   SK_RMIN: 40,
   // 峡湾海岸的海岸细节放大 1 + SK_ROUGH × 权重
-  SK_ROUGH: 1.6,
+  SK_ROUGH: 2.2,
   SK_ROUGH_K: 2,
   // 沙坝：离岸多远按三角形三个角的 |海岸值| 的插值 R（至少 BAR_RMIN）量：水面一侧海岸场在 −BAR_MID·R 附近（±BAR_HALF·R）冒出来，
   // 冒 BAR_LIFT·R（岸线到水面格的格心大约四成半处，一格的两三成；各处的海岸值相差很大，按固定的值量时有的贴着岸、有的在一格多以外）；

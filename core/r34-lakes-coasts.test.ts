@@ -343,8 +343,9 @@ describe('峡湾按将来的陆海：幽灵海岸画陆地、画海时与执行�
         }
         expect(bad).toBe(0);
         // 第三十六轮：峡湾淹到哪里随陆海变（core/fjords.ts），幽灵里按将来的陆海重算，与执行后的一样
+        // （第三十六轮起峡湾按 km，5000 格的星球一格三百多 km，峡湾不到一格，这里不一定变；2 万格的星球在 r36-fjords 里查）
         const wantFj = fjordData(after.world)!.tex;
-        expect(Array.from(wantFj)).not.toEqual(Array.from(base.fjord!));
+        if (w.mesh.kind !== 'sphere') expect(Array.from(wantFj)).not.toEqual(Array.from(base.fjord!));
         expect(Array.from(ghost.fjord!)).toEqual(Array.from(wantFj));
       });
     }
