@@ -6,7 +6,8 @@ import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '.
 import type { LakeType } from '../../core/lake-types';
 import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
-import { coastStyle, gatedB } from '../../core/coast-style';
+import { coastStyle } from '../../core/coast-style';
+import { type FjordNet, fjordLayer } from '../../core/fjords';
 import {
   blocBorderGroups,
   blocCells,
@@ -145,7 +146,7 @@ export interface ColorOptions {
 // 湖在画面上是水面：海岸值取负（有岸线、有格以下的岸线细节）、高程取负的水深（浅水边）、坡度为 0
 // 按用到的数组缓存：高程、湖、水面、陆海、陆地程度（只改了名字、省份的轻快照沿用同一批数组）。
 // 预览世界只换变了的数组：整体干湿的预览高程不变、湖变了，不能只看高程，否则会画出旧的湖
-type StaticLayers = { coast: Float32Array; frag: Float32Array | null; style: Float32Array | null; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
+type StaticLayers = { coast: Float32Array; frag: Float32Array | null; style: Float32Array | null; fjord: Float32Array | null; grad: Float32Array; seaGrad: Float32Array; elevation: Float32Array; shore: Float32Array };
 const staticCache = new WeakMap<Float32Array, { inputs: unknown[]; value: StaticLayers }[]>();
 
 const isLake = (world: World, i: number) => world.causes.land[i] === 1 && world.derived.lake[i] === 1;
@@ -182,7 +183,7 @@ function staticLayers(world: World): StaticLayers {
 function computeStatic(world: World): StaticLayers {
   const { mesh, derived: d, causes } = world;
   // 海岸值与高程（湖面取负）：与河口找岸线用的是同一份（core/display.ts 的 displayCoast）
-  const { coast, elevation, frag, style } = displayCoast(world);
+  const { coast, elevation, frag, style, fjord } = displayCoast(world);
   const grad = new Float32Array(mesh.n * 2);
   const h = new Float64Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) {
@@ -205,7 +206,7 @@ function computeStatic(world: World): StaticLayers {
     seaGrad[2 * i] = gx;
     seaGrad[2 * i + 1] = gy;
   }
-  return { coast, frag, style, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
+  return { coast, frag, style, fjord: fjord ? fjord.tex : null, grad, seaGrad, elevation, shore: shoreElevation(world.mesh, coast, elevation) };
 }
 
 // 水面的高程（第十三轮修，地形层画水深、浅水用）：水面格（海岸值 ≤ 0，含湖）是自己的高程；
@@ -390,6 +391,7 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     coast: st.coast,
     frag: st.frag,
     style: st.style,
+    fjord: st.fjord,
     grad: st.grad,
     seaGrad: st.seaGrad,
     flat,
@@ -957,8 +959,10 @@ export interface GhostLayers {
   frag: Float32Array | null;
   flat: Uint8Array | null;
   group: Float32Array | null;
-  // 海岸类型与小湖群（第三十四轮，每格两个数，见 core/coast-style.ts）：峡湾按将来的陆海重算了改动的格与邻格；底子没有时为 null
+  // 海岸类型与小湖群（第三十四轮，每格两个数，见 core/coast-style.ts）：湖面格不画沙坝、岛礁；底子没有时为 null
   style: Float32Array | null;
+  // 峡湾（第三十六轮，core/fjords.ts 的 fjordLayer 的 tex）：按将来的陆海重算；与底子相同时就是底子的那一份，没有峡湾时 null
+  fjord?: Float32Array | null;
   // 现在与底子不同的格（升序）：上传时只传这些格（与上一次不同的格）所在的行
   cells: Int32Array;
   // 将来的海岸细节幅度（海岸曲折的滑块）；没有时照旧
@@ -977,6 +981,11 @@ export class GhostBuffer {
   readonly flat: Uint8Array | null;
   readonly group: Float32Array | null;
   readonly style: Float32Array | null;
+  // 峡湾（第三十六轮）：这一次按将来的陆海算的（与底子相同时是底子的那一份）
+  private fjord: Float32Array | null | undefined;
+  // 上一次算峡湾时谷网里的点所在的格的陆海（都没变时不重算）
+  private fjLand: Uint8Array | null = null;
+  private fjOut: Float32Array | null = null;
   // 上次写过的格
   private written: number[] = [];
   private mark: Uint8Array;
@@ -1018,9 +1027,28 @@ export class GhostBuffer {
       }
     }
     this.written = [];
+    this.fjord = base.fjord ?? null;
     if (patch) this.write(world, patch);
     const cells = Int32Array.from(this.written).sort();
-    return { smooth: this.smooth, other: this.other, elevation: this.elevation, coast: this.coast, frag: this.frag, flat: this.flat, group: this.group, style: this.style, cells, coastAmp };
+    return { smooth: this.smooth, other: this.other, elevation: this.elevation, coast: this.coast, frag: this.frag, flat: this.flat, group: this.group, style: this.style, fjord: this.fjord, cells, coastAmp };
+  }
+
+  // 按将来的陆海的峡湾：谷网里的点所在的格的陆海与底子相同时就是底子的那一份，与上一次相同时是上一次的
+  private fjordFor(net: FjordNet, land: Uint8Array, now: Uint8Array, n: number): Float32Array | null {
+    const w = net.watch;
+    const base = this.base.fjord ?? null;
+    let same = true;
+    for (let k = 0; k < w.length && same; k++) if (land[w[k]] !== now[w[k]]) same = false;
+    if (same) return base;
+    if (this.fjLand && this.fjOut) {
+      let again = true;
+      for (let k = 0; k < w.length && again; k++) if (land[w[k]] !== this.fjLand[k]) again = false;
+      if (again) return this.fjOut;
+    }
+    const fl = this.fjLand ?? (this.fjLand = new Uint8Array(w.length));
+    for (let k = 0; k < w.length; k++) fl[k] = land[w[k]];
+    this.fjOut = fjordLayer(net, land, n).tex;
+    return this.fjOut;
   }
 
   private touch(i: number) {
@@ -1136,29 +1164,20 @@ export class GhostBuffer {
     const alt = frag ? { frag, rgba: fragColors(world, this.mode, 'annual', smooth, coast, frag, redo) } : null;
     for (const i of redo) fillOther(mesh, smooth, coast, this.other, i, alt);
     for (const i of redo) this.touch(i);
-    // 海岸类型（第三十四轮）：峡湾只在挨着海的陆格上，按将来的陆海重算改动的格与邻格；将来是湖面的格不画沙坝
+    // 海岸类型（第三十四轮）：将来是湖面的格不画沙坝、岛礁；峡湾（第三十六轮）按将来的陆海重算淹到哪里（core/fjords.ts）
     const cs = this.style ? coastStyle(world) : null;
     if (cs && this.style) {
       const land = world.causes.land.slice();
-      const lakeNow = new Map<number, boolean>();
       for (let k = 0; k < p.cells.length; k++) {
-        land[p.cells[k]] = p.land[k];
-        lakeNow.set(p.cells[k], p.lake?.[k] === 1);
-      }
-      const around = new Set<number>();
-      for (const i of p.cells) {
-        around.add(i);
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) around.add(mesh.adj[e]);
-      }
-      for (const i of around) {
-        const b = gatedB(cs, mesh, i, land);
-        const lake = lakeNow.get(i) ?? isLake(world, i);
-        const a = land[i] && lake ? 0 : cs.packed[2 * i + 1];
-        if (b === this.style[2 * i] && a === this.style[2 * i + 1]) continue;
-        this.style[2 * i] = b;
+        const i = p.cells[k];
+        land[i] = p.land[k];
+        const a = p.land[k] && p.lake?.[k] === 1 ? 0 : cs.packed[2 * i + 1];
+        if (cs.packed[2 * i] === this.style[2 * i] && a === this.style[2 * i + 1]) continue;
+        this.style[2 * i] = cs.packed[2 * i];
         this.style[2 * i + 1] = a;
         this.touch(i);
       }
+      if (cs.net) this.fjord = this.fjordFor(cs.net, land, world.causes.land, world.mesh.n);
     }
   }
 }

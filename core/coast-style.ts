@@ -1,6 +1,7 @@
 import type { BaseComponents } from './generate';
 import { creationLat, glacialField, glacialKey } from './glacial';
-import { type Mesh, gradGeo, gradientAt } from './mesh';
+import type { Mesh } from './mesh';
+import { type FjordLayer, type FjordNet, FJ, buildFjordNet, fjordLayer } from './fjords';
 import { fbm, fbm3, gradientNoise, gradientNoise3, mixSeed } from './rng';
 import { baseComponentsOf } from './terrain';
 import type { World } from './world';
@@ -9,14 +10,16 @@ import type { World } from './world';
 // 每格的几种海岸的权重（0–1），格子层级、只按生成器的分量与新建时的纬度定（不看陆海、陆地程度、改过的抬升）：
 // 画陆地、放岛时幽灵海岸照旧准确（权重不变），改气候、堆山都不改它——海岸的样子是新建时定下的。
 //   · 峡湾：冰盖到过（core/glacial.ts 的强度）、近处有高山（生成器造山带与丘陵的抬升，自己与一圈邻格取最大）。
-//     画法：沿“往内陆”的方向（地壳高度的坡向）刻出窄长的海湾，深入约一格（着色器、core/display.ts、导出同一个算式）；
+//     画法（第三十六轮，core/fjords.ts）：这一带撒点连成谷网，按陆海淹掉连着海的一段，画成一条条带子（着色器、core/display.ts、导出同一个算式）；
+//     海里离岸不远的地方冒出一片片岛礁；
 //   · 沙坝海岸：纬度 < 60°、低抬升（被动大陆边缘）、陆壳上（宽大陆架），再按很低频的噪声只取约四成的岸段。
 //     画法：海岸细节压平，岸外一条带缺口的细沙坝，后面是潟湖；
 //   · 溺谷：没被冰盖刮过、丘陵海岸（中等抬升）、不是沙坝，约一半的岸段。只在描河里放宽河口的喇叭口（core/rivers.ts）；
 //   · 三角洲：第三十三轮按推导认（core/delta.ts），这里不另算；
 //   · 小湖群（不是海岸，借同一张纹理）：冰盖到过的低地上，格以下的噪声的峰画成水面（格还是陆地）。
-// 着色器的海岸值纹理第三十四轮起是四个通道（RGBA32F）：r 海岸值、g 破碎度、b 峡湾（整数：权重 × 255 + 256 × 方向的余弦 + 65536 × 正弦）或
-// 负的小湖群权重（× 255）、a 沙坝。b、a 就是这里的 packed
+// 着色器的海岸值纹理第三十四轮起是四个通道（RGBA32F）：r 海岸值、g 破碎度、b 小湖群与峡湾的表号（第三十六轮：有表的格是整数
+// 1 + 256 × 表号 + 小湖群权重 × 255，没有表的格是负的小湖群权重 × 255）、a 沙坝（> 0）或岛礁（第三十六轮，负的峡湾权重）。b、a 就是这里的 packed。
+// 峡湾的表（按陆海）在另一张纹理里（core/fjords.ts 的 fjordLayer）
 
 export const STYLE = {
   // 峡湾：造山带与丘陵的抬升（自己与一圈邻格的最大）从 FJ_UP0 到 FJ_UP1 渐满，再乘冰盖的强度
@@ -42,9 +45,11 @@ export const STYLE = {
 };
 
 export interface CoastStyle {
-  // 每格两个数（着色器海岸值纹理的 b、a）：b 峡湾（round(权重 × 255) + 256 × 方向的余弦 + 65536 × 正弦，余弦、正弦量化成 0–255）
-  // 或 −round(小湖群 × 255)，a 沙坝
+  // 每格两个数（着色器海岸值纹理的 b、a）：b 有峡湾表的格 1 + 256 × 表号 + round(小湖群 × 255)，别的格 −round(小湖群 × 255)；
+  // a 沙坝（> 0）或 −峡湾权重（岛礁；两样不会同时有：沙坝要低抬升、峡湾要高抬升）
   packed: Float32Array;
+  // 谷网（第三十六轮，core/fjords.ts）；没有峡湾时为 null
+  net: FjordNet | null;
   fjord: Float32Array;
   barrier: Float32Array;
   ria: Float32Array;
@@ -127,15 +132,29 @@ export function coastStyleCached(world: World): boolean {
   if (!comp) return true;
   const key = glacialKey(world);
   const hit = (cache.get(world.mesh) ?? []).find((e) => e.comp === comp && e.key === key);
-  return !!hit && !!gatedCache.get(hit.style)?.out;
+  return !!hit && (!hit.style.net || !!wetCache.get(hit.style.net)?.out);
 }
 
 // 整份算
 function computeStyle(world: World, comp: BaseComponents, cells: Int32Array | null): CoastStyle {
   const n = world.mesh.n;
-  const style: CoastStyle = { packed: new Float32Array(2 * n), fjord: new Float32Array(n), barrier: new Float32Array(n), ria: new Float32Array(n), speck: new Float32Array(n) };
+  const style: CoastStyle = { packed: new Float32Array(2 * n), net: null, fjord: new Float32Array(n), barrier: new Float32Array(n), ria: new Float32Array(n), speck: new Float32Array(n) };
   styleCells(world, comp, style, cells);
+  style.net = buildFjordNet(world.mesh, world.settings.seed, style.fjord, comp.b0);
+  packStyle(style, world.mesh.n);
   return style;
+}
+
+// b、a（表号要等谷网建好）
+function packStyle(st: CoastStyle, n: number): void {
+  const rank = st.net ? st.net.rank : null;
+  for (let i = 0; i < n; i++) {
+    const g = Math.round(st.speck[i] * 255);
+    const rk = rank ? rank[i] : -1;
+    st.packed[2 * i] = rk >= 0 ? 1 + 256 * rk + g : -g;
+    const bar = st.barrier[i];
+    st.packed[2 * i + 1] = bar > 0 ? bar : st.fjord[i] > 0 ? -st.fjord[i] : 0;
+  }
 }
 
 // 分量换了：三样输入（造山带、丘陵的抬升，地壳高度）逐格比，变了的格与两圈邻格重算（抬升取一圈邻格的最大、方向按一圈邻格的坡度）；
@@ -151,7 +170,7 @@ function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, ol
       front.push(i);
     }
   }
-  const style: CoastStyle = { packed: old.packed.slice(), fjord: old.fjord.slice(), barrier: old.barrier.slice(), ria: old.ria.slice(), speck: old.speck.slice() };
+  const style: CoastStyle = { packed: old.packed.slice(), net: old.net, fjord: old.fjord.slice(), barrier: old.barrier.slice(), ria: old.ria.slice(), speck: old.speck.slice() };
   if (!front.length) return style;
   for (let ring = 0; ring < 2; ring++) {
     const next: number[] = [];
@@ -169,10 +188,18 @@ function updateStyle(world: World, comp: BaseComponents, was: BaseComponents, ol
   const cells: number[] = [];
   for (let i = 0; i < n; i++) if (mark[i]) cells.push(i);
   styleCells(world, comp, style, Int32Array.from(cells));
+  // 谷网：峡湾权重或谷网里的格的地壳高度变了才重建（只看重算的格）
+  let redo = false;
+  for (const i of cells) {
+    if (style.fjord[i] !== old.fjord[i] || ((style.fjord[i] > FJ.ZONE || old.fjord[i] > FJ.ZONE) && comp.b0[i] !== was.b0[i])) {
+      redo = true;
+      break;
+    }
+  }
+  if (redo) style.net = buildFjordNet(mesh, world.settings.seed, style.fjord, comp.b0);
+  packStyle(style, n);
   return style;
 }
-
-const gOut = new Float64Array(2);
 
 // 算 cells 这些格（null：全部）的权重
 function styleCells(world: World, comp: BaseComponents, st: CoastStyle, cells: Int32Array | null): void {
@@ -180,7 +207,6 @@ function styleCells(world: World, comp: BaseComponents, st: CoastStyle, cells: I
   const S = STYLE;
   const gl = glacialField(world);
   const seg = segNoise(world);
-  const geo = gradGeo(mesh);
   const { mountU, hillU, b0 } = comp;
   const count = cells ? cells.length : mesh.n;
   for (let k = 0; k < count; k++) {
@@ -201,84 +227,46 @@ function styleCells(world: World, comp: BaseComponents, st: CoastStyle, cells: I
     st.barrier[i] = bar;
     st.ria[i] = ria;
     st.speck[i] = g;
-    const fq = Math.round(fj * 255);
-    let b: number;
-    if (fq > 0) {
-      gradientAt(mesh, geo, b0, i, gOut);
-      // 方向的余弦、正弦各量化成 0–255（顶点着色器拆开时不用三角函数）
-      const ang = Math.atan2(gOut[1], gOut[0]);
-      b = fq + 256 * Math.round((Math.cos(ang) + 1) * 127.5) + 65536 * Math.round((Math.sin(ang) + 1) * 127.5);
-    } else b = -Math.round(g * 255);
-    st.packed[2 * i] = b;
-    st.packed[2 * i + 1] = bar;
   }
 }
 
-// ---------- 按陆海定的一份：峡湾只在海边 ----------
-// 生成器定的峡湾权重不看陆海；画的时候陆地格只在挨着海时留着峡湾，不挨海的陆格换回小湖群的权重（离海远、海岸值又不高的内陆——
-// 低地、湖边——不会被刻出一道道水）。所以一个点有没有峡湾只看它的三角形的三个角挨不挨海：幽灵海岸按将来的陆海重算改动的格与邻格
-// （src/render/colors.ts 的 GhostBuffer），照旧准确。湖面算陆地（湖岸不刻峡湾）
-export function gatedB(style: CoastStyle, mesh: Mesh, i: number, land: ArrayLike<number>): number {
-  const b = style.packed[2 * i];
-  if (b <= 0.5 || !land[i]) return b;
-  for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) if (!land[mesh.adj[e]]) return b;
-  return -Math.round(style.speck[i] * 255);
-}
-
-// 按陆海定的 packed（按陆海判的那一套：导出、悬停的陆海用）。只看峡湾格与它们的邻格的陆海：都没变时还是上一份（同一个数组）
-interface Gated {
-  fj: Int32Array;
-  watch: Int32Array;
-  landAt: Uint8Array;
-  out: Float32Array | null;
-}
-const gatedCache = new WeakMap<CoastStyle, Gated>();
+// ---------- 按陆海定的一份：峡湾淹到哪里（第三十六轮） ----------
+// 每格的 b、a 不随陆海变（表号是谷网的、不看陆海），按陆海判的那一套（导出、悬停的陆海）与画面用的都是 packed。
+// 第三十四轮的“峡湾只在挨着海的陆格上”换成谷网按陆海淹到哪里（core/fjords.ts 的 fjordLayer）
 export function landStyle(world: World): Float32Array | null {
   const style = coastStyle(world);
-  if (!style) return null;
-  const { mesh } = world;
-  const land = world.causes.land;
-  let g = gatedCache.get(style);
-  if (!g) {
-    const fj: number[] = [];
-    const mark = new Uint8Array(mesh.n);
-    const watch: number[] = [];
-    for (let i = 0; i < mesh.n; i++) {
-      if (style.packed[2 * i] <= 0.5) continue;
-      fj.push(i);
-      if (!mark[i]) {
-        mark[i] = 1;
-        watch.push(i);
-      }
-      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-        const j = mesh.adj[e];
-        if (!mark[j]) {
-          mark[j] = 1;
-          watch.push(j);
-        }
-      }
-    }
-    g = { fj: Int32Array.from(fj), watch: Int32Array.from(watch), landAt: new Uint8Array(watch.length), out: null };
-    gatedCache.set(style, g);
+  return style ? style.packed : null;
+}
+
+// 按陆海淹到哪里的峡湾纹理（core/fjords.ts）。只看谷网里的点所在的格的陆海：都没变时还是上一份（同一个对象）
+interface Wet {
+  landAt: Uint8Array;
+  out: FjordLayer | null;
+}
+const wetCache = new WeakMap<FjordNet, Wet>();
+export function fjordData(world: World): FjordLayer | null {
+  const style = coastStyle(world);
+  const net = style?.net;
+  if (!net) return null;
+  return fjordDataFor(net, world.causes.land, world.mesh.n);
+}
+
+export function fjordDataFor(net: FjordNet, land: ArrayLike<number>, n: number): FjordLayer {
+  let w = wetCache.get(net);
+  if (!w) {
+    w = { landAt: new Uint8Array(net.watch.length), out: null };
+    wetCache.set(net, w);
   }
-  if (g.out && sameAt(g.watch, g.landAt, land)) return g.out;
-  const out = style.packed.slice();
-  gateFjords(style, mesh, g.fj, land, out);
-  for (let k = 0; k < g.watch.length; k++) g.landAt[k] = land[g.watch[k]];
-  g.out = out;
+  if (w.out && sameAt(net.watch, w.landAt, land)) return w.out;
+  const out = fjordLayer(net, land, n);
+  for (let k = 0; k < net.watch.length; k++) w.landAt[k] = land[net.watch[k]];
+  w.out = out;
   return out;
 }
 
 function sameAt(cells: Int32Array, at: Uint8Array, a: ArrayLike<number>): boolean {
   for (let k = 0; k < cells.length; k++) if (a[cells[k]] !== at[k]) return false;
   return true;
-}
-
-function gateFjords(style: CoastStyle, mesh: Mesh, fj: Int32Array, land: ArrayLike<number>, out: Float32Array): void {
-  for (let k = 0; k < fj.length; k++) {
-    const i = fj[k];
-    out[2 * i] = gatedB(style, mesh, i, land);
-  }
 }
 
 // 画面上的一份（core/display.ts 的 DisplayCoast.style、着色器）：再把湖面格的沙坝去掉（湖里不画沙坝）。
@@ -306,43 +294,45 @@ export function displayStyle(world: World): Float32Array | null {
 
 // ---------- 画法（着色器里有一份同样的算式：src/render/renderer.ts 的 STYLE_GLSL，测试把它换成 JS 逐个比）----------
 
-// 每格的 b 拆开：峡湾的权重与方向（单位向量，平面世界按地图坐标、星球按东、南），小湖群的权重
+// 每格的 b 拆开：峡湾的表号（−1 没有）、小湖群的权重
 export function decodeStyleB(b: number, out: Float64Array, o: number): void {
   if (b > 0.5) {
-    const sq = Math.floor(b / 65536);
-    const rest = b - 65536 * sq;
-    const cq = Math.floor(rest / 256);
-    out[o] = (rest - 256 * cq) / 255;
-    out[o + 1] = cq / 127.5 - 1;
-    out[o + 2] = sq / 127.5 - 1;
-    out[o + 3] = 0;
+    const q = b - 1;
+    const rk = Math.floor(q / 256);
+    out[o] = rk;
+    out[o + 1] = (q - 256 * rk) / 255;
   } else {
-    out[o] = 0;
-    out[o + 1] = 0;
-    out[o + 2] = 0;
-    out[o + 3] = -b / 255;
+    out[o] = -1;
+    out[o + 1] = -b / 255;
   }
 }
 
-// 一点（三角形的三个角与重心坐标）的权重，写进 out：[峡湾, 方向 x, 方向 y, 小湖群, 沙坝, 三个角的 |海岸值| 的插值]
-// （与着色器的顶点着色器拆开再插值相同）。coast：这一套海岸场的每格海岸值（沙坝离岸多远按它）
-const dec = new Float64Array(4);
-export function styleAt(packed: Float32Array, coast: Float32Array, a: number, b: number, c: number, wa: number, wb: number, wc: number, out: Float64Array): void {
-  out[0] = out[1] = out[2] = out[3] = out[4] = 0;
-  // 三个角都没有（多数地方）：不必拆（|海岸值| 只给沙坝用，沙坝的权重是 0）
-  if (packed[2 * a] === 0 && packed[2 * a + 1] === 0 && packed[2 * b] === 0 && packed[2 * b + 1] === 0 && packed[2 * c] === 0 && packed[2 * c + 1] === 0) {
+// 一点（三角形的三个角与重心坐标）的权重，写进 out：[峡湾的表号（−1 没有）, 格心的权重, 0, 小湖群, 沙坝,
+// 三个角的 |海岸值| 的插值, 岛礁]（与着色器的顶点着色器拆开再插值相同）。prov：这个三角形的最后一个顶点的格（着色器的 flat 取它的表号；
+// 它的表含碰得到这个三角形的全部段，见 core/fjords.ts）。coast：这一套海岸场的每格海岸值（沙坝、岛礁离岸多远按它）
+const dec = new Float64Array(2);
+export function styleAt(packed: Float32Array, coast: Float32Array, a: number, b: number, c: number, wa: number, wb: number, wc: number, out: Float64Array, prov: number): void {
+  out[0] = -1;
+  out[1] = out[2] = out[3] = out[4] = out[6] = 0;
+  // 三个角都没有（多数地方）：不必拆（|海岸值| 只给沙坝、岛礁用，它们的权重是 0）
+  if (packed[2 * a] === 0 && packed[2 * a + 1] === 0 && packed[2 * b] === 0 && packed[2 * b + 1] === 0 && packed[2 * c] === 0 && packed[2 * c + 1] === 0 && packed[2 * prov] === 0) {
     out[5] = 0;
     return;
   }
+  const pa = packed[2 * prov];
+  if (pa > 0.5) out[0] = Math.floor((pa - 1) / 256);
   addCorner(packed, a, wa, out);
   addCorner(packed, b, wb, out);
   addCorner(packed, c, wc, out);
   out[5] = Math.abs(coast[a]) * wa + Math.abs(coast[b]) * wb + Math.abs(coast[c]) * wc;
   // 格心附近渐渐不画（格心的陆海与这一格一致：河的起点、河口、点选都按格心）
   const k = styleWeight(Math.max(wa, wb, wc));
-  out[0] *= k;
+  out[1] = k;
+  // 岛礁的权重不乘 k 的一份（峡湾海岸的海岸细节按它放大，与沙坝压平一样不看格心）
+  out[2] = out[6];
   out[3] *= k;
   out[4] *= k;
+  out[6] *= k;
 }
 
 // 海岸类型、小湖群在格心为 0、离格心不远就是 1 的权重（wmax：重心坐标里最大的那个；着色器里同一个算式）
@@ -351,11 +341,10 @@ export function styleWeight(wmax: number): number {
 }
 function addCorner(packed: Float32Array, i: number, w: number, out: Float64Array): void {
   decodeStyleB(packed[2 * i], dec, 0);
-  out[0] += w * dec[0];
-  out[1] += w * dec[1];
-  out[2] += w * dec[2];
-  out[3] += w * dec[3];
-  out[4] += w * packed[2 * i + 1];
+  out[3] += w * dec[1];
+  const a = packed[2 * i + 1];
+  if (a > 0) out[4] += w * a;
+  else out[6] -= w * a;
 }
 
 // 这几样画法的常数（着色器里同一组）
@@ -364,15 +353,19 @@ export const LOOK = {
   STYLE_CENTER: 6,
   // 沙坝海岸的海岸细节压到 1 − BAR_SMOOTH
   BAR_SMOOTH: 0.8,
-  // 峡湾：沿“往内陆”方向把这一点挪回岸线（海岸值每格约 FJ_K）取噪声，频率每格 FJ_FREQ，|噪声| < FJ_W0 时满、到 FJ_W0 + FJ_W1 没有；
-  // 刻的深浅 FJ_AMP，插值的海岸值到 FJ_REACH 时刻不动了（深入约一格）
-  FJ_K: 350,
-  FJ_FREQ: 3.4,
-  FJ_OFF: [53.1, -21.7, 8.9] as const,
-  FJ_W0: 0.03,
-  FJ_W1: 0.12,
-  FJ_AMP: 520,
-  FJ_REACH: 900,
+  // 岛礁（第三十六轮，峡湾海岸的海里）：每格 SK_FREQ 的噪声超过门槛 SK_T0 + SK_T1 × 离岸（海岸场 ÷ R，R 是三个角的 |海岸值| 的插值，至少 SK_RMIN）
+  // + (1 − 权重) × SK_TK 的地方冒出来（渐变 SK_W），冒到 SK_H
+  SK_FREQ: 2.6,
+  SK_OFF: [-23.9, 7.7, 15.3] as const,
+  SK_T0: 0.05,
+  SK_T1: 0.4,
+  SK_TK: 0.25,
+  SK_W: 0.05,
+  SK_H: 25,
+  SK_RMIN: 40,
+  // 峡湾海岸的海岸细节放大 1 + SK_ROUGH × 权重
+  SK_ROUGH: 1.6,
+  SK_ROUGH_K: 2,
   // 沙坝：离岸多远按三角形三个角的 |海岸值| 的插值 R（至少 BAR_RMIN）量：水面一侧海岸场在 −BAR_MID·R 附近（±BAR_HALF·R）冒出来，
   // 冒 BAR_LIFT·R（岸线到水面格的格心大约四成半处，一格的两三成；各处的海岸值相差很大，按固定的值量时有的贴着岸、有的在一格多以外）；
   // 全是水面格的三角形里 R 就是 −s，冒不出来。缺口的噪声（每格 BAR_FREQ）在 BAR_GAP 以下渐渐是缺口
@@ -407,15 +400,21 @@ export const LOOK = {
 export function barrierDetail(bw: number): number {
   return 1 - LOOK.BAR_SMOOTH * bw;
 }
-
-// 峡湾：s 这一点的海岸场，sv 插值的海岸值，fj 峡湾的权重，n 沿方向挪回岸线后取的噪声
-export function fjordCut(s: number, sv: number, fj: number, n: number): number {
-  const L = LOOK;
-  const t = Math.min(1, Math.max(0, (Math.abs(n) - L.FJ_W0) / L.FJ_W1));
-  const line = 1 - t * t * (3 - 2 * t);
-  const reach = Math.max(0, 1 - Math.max(sv, 0) / L.FJ_REACH);
-  return s - fj * L.FJ_AMP * line * reach;
+// 海岸细节的倍数：沙坝海岸压平，峡湾海岸（第三十六轮，岛礁的权重 sk）放大 1 + SK_ROUGH × min(1, SK_ROUGH_K × sk)（岸更曲折）。sk = 0 时与 barrierDetail 逐位相同
+export function styleDetail(bw: number, sk: number): number {
+  return barrierDetail(bw) * (1 + LOOK.SK_ROUGH * Math.min(1, LOOK.SK_ROUGH_K * sk));
 }
+
+// 岛礁（第三十六轮）：水面的一点（s ≤ 0）冒出来的程度按噪声 n 与离岸（−s ÷ R），k 权重，r 三个角的 |海岸值| 的插值
+export function skerryIsle(s: number, k: number, n: number, r: number): number {
+  const L = LOOK;
+  const R = Math.max(r, L.SK_RMIN);
+  const t = Math.min(1, Math.max(0, (n - (L.SK_T0 + (L.SK_T1 * -s) / R + (1 - k) * L.SK_TK)) / L.SK_W));
+  const c = t * t * (3 - 2 * t);
+  return s + c * (L.SK_H - s);
+}
+// 冒得出来的最远处（−s ÷ R）：噪声最大 0.75（两层）
+export const SKERRY_REACH = (0.75 - LOOK.SK_T0) / LOOK.SK_T1;
 
 // 沙坝：水面一侧离岸线一段（海岸场在 −BAR_MID·R 附近）的程度（0 时不冒、不必取噪声）。r 三个角的 |海岸值| 的插值
 export function barrierBump(s: number, r: number): number {

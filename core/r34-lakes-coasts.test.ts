@@ -3,7 +3,7 @@ import { STYLE_GLSL, STYLE_N2, STYLE_N3, TERRAIN_SOURCES, PROJ_SOURCES } from '.
 import { GhostBuffer, cellLayers, editGhost } from '../src/render/colors';
 import { digestWorld } from '../tools/hash';
 import { glacialLakes } from '../tools/realism';
-import { LOOK, barrierBump, barrierDetail, barrierIsle, coastStyle, decodeStyleB, displayStyle, fjordCut, speckApply, speckK, speckW, styleWeight } from './coast-style';
+import { LOOK, barrierBump, barrierDetail, barrierIsle, coastStyle, decodeStyleB, displayStyle, fjordData, speckApply, speckK, speckW, styleWeight } from './coast-style';
 import type { Command } from './commands';
 import { displayCellAt } from './display';
 import { computeElevation, elevationMemo } from './elevation';
@@ -202,7 +202,8 @@ function transliterate(src: string): Record<string, (...a: number[]) => number> 
 
 describe('着色器与 CPU 相同（第三十四轮的海岸类型、小湖群）', () => {
   const g = transliterate(STYLE_GLSL);
-  it('barrierDetail、fjordCut、barrierIsle、speckK、speckApply：随机几千组输入一致', () => {
+  // 峡湾第三十六轮换了画法（core/fjords.ts，r36-fjords.test.ts 查）
+  it('barrierDetail、barrierIsle、speckK、speckApply：随机几千组输入一致', () => {
     let seed = 11;
     const rnd = () => {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -210,14 +211,12 @@ describe('着色器与 CPU 相同（第三十四轮的海岸类型、小湖群�
     };
     for (let k = 0; k < 5000; k++) {
       const s = (rnd() * 2 - 1) * 260;
-      const sv = (rnd() * 2 - 1) * 250;
       const w = k % 7 === 0 ? 0 : rnd();
       const n = (rnd() * 2 - 1) * 0.8;
       const r = rnd() * 260;
       const h = rnd() * 900 - 100;
       expect(g.barrierDetail(w)).toBeCloseTo(barrierDetail(w), 6);
       expect(g.styleWeight(w)).toBeCloseTo(styleWeight(w), 6);
-      expect(g.fjordCut(s, sv, w, n)).toBeCloseTo(fjordCut(s, sv, w, n), 3);
       const bump = barrierBump(s, r);
       expect(g.barrierBump(s, r)).toBeCloseTo(bump, 5);
       expect(g.barrierIsle(s, w, n, bump, r)).toBeCloseTo(barrierIsle(s, w, n, bump, r), 3);
@@ -226,13 +225,12 @@ describe('着色器与 CPU 相同（第三十四轮的海岸类型、小湖群�
       const kk = speckK(w, n);
       expect(g.speckApply(s, kk)).toBeCloseTo(speckApply(s, kk), 4);
       // 权重为 0 时什么都不改（与第三十三轮的画法相同）
-      expect(fjordCut(s, sv, 0, n)).toBe(s);
       expect(barrierIsle(s, 0, n, bump, r)).toBe(s);
       expect(speckW(s, 0, h)).toBe(0);
     }
   });
 
-  it('地形着色器（平面、星球、极地）在海岸场算完之后依次刻峡湾、冒沙坝、画小湖群，噪声的频率、偏移与 CPU 相同', () => {
+  it('地形着色器（平面、星球、极地）在海岸场算完之后依次冒岛礁、刻峡湾、冒沙坝、画小湖群，噪声的频率、偏移与 CPU 相同', () => {
     const sources = [
       [TERRAIN_SOURCES.plane, STYLE_N2],
       [TERRAIN_SOURCES.planet, STYLE_N3],
@@ -240,31 +238,29 @@ describe('着色器与 CPU 相同（第三十四轮的海岸类型、小湖群�
     ] as const;
     for (const [src, n] of sources) {
       expect(src).toContain('float wst = styleWeight(wmax);');
-      expect(src).toContain(`if (vFjord > 0.0 && s > 0.0) s = fjordCut(s, vCoast, vFjord * wst, ${n.fjord});`);
+      expect(src).toContain(`float fjf = fjordField(${n.fjP}, ${n.fjN}, vFjRank, vCoast > 0.0 ? wst : 1.0, nd, ${n.fjK});`);
       expect(src).toContain(`if (bump > 0.0) s = barrierIsle(s, vBar * wst, ${n.bar}, bump, vCoastAbs);`);
       expect(src).toContain('float spw = speckW(s, vSpeck * wst, h);');
       expect(src).toContain(`lakeDot = speckK(spw, ${n.speck});`);
       expect(src).toContain('barrierDetail(vBar)');
     }
-    expect(STYLE_N2.fjord).toContain(`/ ${LOOK.FJ_K}.0)) / uSpacing * ${LOOK.FJ_FREQ} + vec2(${LOOK.FJ_OFF[0]}, ${LOOK.FJ_OFF[1]})`);
+    expect(STYLE_N2.skerry).toContain(`/ uSpacing * ${LOOK.SK_FREQ} + vec2(${LOOK.SK_OFF[0]}, ${LOOK.SK_OFF[1]})`);
     expect(STYLE_N3.speck).toContain(`(uNoiseK * ${LOOK.SPK_FREQ}.0) + vec3(${LOOK.SPK_OFF.join(', ')})`);
-    // 顶点着色器把海岸值纹理的 b、a 拆开（core/coast-style.ts 的 decodeStyleB），极地的场景另把峡湾的方向换到极地平面上
+    // 顶点着色器把海岸值纹理的 b、a 拆开（core/coast-style.ts 的 decodeStyleB；第三十六轮：b 是表号与小湖群，a 是沙坝或负的岛礁）
     for (const vs of [PROJ_SOURCES.polarCellVs]) {
       expect(vs).toContain('vec4 cf = texelFetch(uCoast, t, 0);');
-      expect(vs).toContain('vFjord = (rest - 256.0 * cq) / 255.0;');
-      expect(vs).toContain('vFjDir = vec2(cq, sq) / 127.5 - 1.0;');
+      expect(vs).toContain('vSpeck = (q - 256.0 * rk) / 255.0;');
+      expect(vs).toContain('vFjRank = int(rk + 0.5);');
       expect(vs).toContain('vSpeck = -cf.b / 255.0;');
-      expect(vs).toContain('vBar = cf.a;');
-      expect(vs).toContain('vStyle.yz = fjDirW.x * pE + fjDirW.y * pS;');
+      expect(vs).toContain('vBar = max(cf.a, 0.0);');
+      expect(vs).toContain('vSkerry = max(-cf.a, 0.0);');
     }
-    expect(PROJ_SOURCES.polarTerrainFs).toContain('vFjDir = vec2(dot(vStyle.yz, pE), dot(vStyle.yz, pS));');
-    const out = new Float64Array(4);
-    decodeStyleB(200 + 256 * 128 + 65536 * 255, out, 0);
-    expect(out[0]).toBeCloseTo(200 / 255, 9);
-    expect(out[1]).toBeCloseTo(128 / 127.5 - 1, 9);
-    expect(out[2]).toBeCloseTo(1, 9);
+    const out = new Float64Array(2);
+    decodeStyleB(1 + 256 * 1234 + 200, out, 0);
+    expect(out[0]).toBe(1234);
+    expect(out[1]).toBeCloseTo(200 / 255, 9);
     decodeStyleB(-128, out, 0);
-    expect([out[0], out[3]]).toEqual([0, 128 / 255]);
+    expect([out[0], out[1]]).toEqual([-1, 128 / 255]);
   });
 });
 
@@ -340,15 +336,16 @@ describe('峡湾按将来的陆海：幽灵海岸画陆地、画海时与执行�
         const after = e.clone();
         after.exec({ op: 'paint_land', cells: b.cells, t: b.t, mode });
         const want = displayStyle(after.world)!;
-        let changed = 0;
         let bad = 0;
         for (let i = 0; i < mesh.n; i++) {
-          if (want[2 * i] !== base.style![2 * i]) changed++;
           // 湖随结果变（幽灵里湖照旧）：湖格的沙坝不比
           if (ghost.style![2 * i] !== want[2 * i]) bad++;
         }
-        expect(changed).toBeGreaterThan(0);
         expect(bad).toBe(0);
+        // 第三十六轮：峡湾淹到哪里随陆海变（core/fjords.ts），幽灵里按将来的陆海重算，与执行后的一样
+        const wantFj = fjordData(after.world)!.tex;
+        expect(Array.from(wantFj)).not.toEqual(Array.from(base.fjord!));
+        expect(Array.from(ghost.fjord!)).toEqual(Array.from(wantFj));
       });
     }
   }

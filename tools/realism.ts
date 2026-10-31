@@ -7,6 +7,7 @@ import { traceRivers } from '../core/rivers';
 import { newWorldContentCommands } from '../core/packs/import';
 import { type RealismStats, boxCountDimension, coastPixels, components, drainage, elongation, landShape, median, realismStats, sizePowerLaw, statsInput } from '../core/stats';
 import { coastStyle } from '../core/coast-style';
+import { fjordBudgets } from '../core/fjords';
 import { glacialField } from '../core/glacial';
 import { type Raster, rasterizeWorld } from '../core/subcell';
 import { COAST_AMP, coastNoiseField, coastSeed, ensureBase } from '../core/terrain';
@@ -24,7 +25,7 @@ export function realismWorld(settings: Partial<Settings>, seed: number): World {
   return eng.world;
 }
 
-type RowExtra = 'riftLakes' | 'riftRatio' | 'divideShare' | 'divideCoast' | 'deltaShare' | 'deltaRivers' | 'fans' | 'wetland' | 'glacialLakeShare' | 'otherLakeShare' | 'glacialLakeK' | 'glacialLakes' | 'fjordDim' | 'barrierDim' | 'barrierShare' | 'fjordShare' | 'hull' | 'peninsula' | 'isthmus' | 'isthmi' | 'rifts' | 'riftMatch';
+type RowExtra = 'riftLakes' | 'riftRatio' | 'divideShare' | 'divideCoast' | 'deltaShare' | 'deltaRivers' | 'fans' | 'wetland' | 'glacialLakeShare' | 'otherLakeShare' | 'glacialLakeK' | 'glacialLakes' | 'fjordDim' | 'barrierDim' | 'barrierShare' | 'fjordShare' | 'fjords' | 'fjordLength' | 'fjordBranched' | 'fjordSpacingCV' | 'hull' | 'peninsula' | 'isthmus' | 'isthmi' | 'rifts' | 'riftMatch';
 export type RealismRow = RealismStats & Record<RowExtra, number>;
 
 export const REALISM_ROW_REF: Record<RowExtra, string> = {
@@ -44,6 +45,10 @@ export const REALISM_ROW_REF: Record<RowExtra, string> = {
   barrierDim: '≤ 1.1（计划）',
   barrierShare: '5–15%（计划）',
   fjordShare: '—',
+  fjords: '—',
+  fjordLength: '主峡湾 50–200 km（松恩峡湾 ≈ 200 km）',
+  fjordBranched: '—',
+  fjordSpacingCV: '—',
   hull: '0.2–0.5（计划；非洲约 0.2、欧亚约 0.4）',
   peninsula: '—',
   isthmus: '≥ 40% 的种子（计划）',
@@ -77,10 +82,17 @@ export function realismRow(world: World, coast?: CoastRasterStats): RealismRow {
     barrierDim: coast?.barrierDim ?? NaN,
     barrierShare: coast?.barrierShare ?? NaN,
     fjordShare: coast?.fjordShare ?? NaN,
+    ...fjordRow(world),
     hull: sh.hull,
     peninsula: sh.peninsula,
     ...outlineStats(world),
   };
+}
+
+// 峡湾（第三十六轮）：一格以上的峡湾的个数、长度的中位数（格）、有支湾的比例、入海口间距的变异系数
+function fjordRow(world: World): { fjords: number; fjordLength: number; fjordBranched: number; fjordSpacingCV: number } {
+  const f = fjordStats(world, 1);
+  return { fjords: f.count, fjordLength: f.medianLength, fjordBranched: f.branchedShare, fjordSpacingCV: f.spacingCV };
 }
 
 // 冰川湖（第三十四轮）：冰川低地（冰盖强度 ≥ 0.5、地面——湖格用水面——低于刮的高度上限，按“最高的山”缩放）里湖面占的比例、
@@ -162,6 +174,77 @@ export function coastRaster(world: World, w: number, r: Raster = rasterizeWorld(
     barrierShare: total ? nb / total : NaN,
     fjordShare: total ? nf / total : NaN,
   };
+}
+
+// 峡湾（第三十六轮，core/fjords.ts）：一个入海口（陆上淹着的点流进海里的点）往上游淹着的点连成的一个峡湾。
+// length：从入海口往上游最长的一条（格，含头上淹到一半的那段）；branched：有一个淹着的点有两个以上淹着的上游点（有支湾）；
+// spacingCV：入海口到最近的另一个入海口的距离（格）的变异系数（间距不匀时大）。lengths 升序
+export interface FjordStats {
+  count: number;
+  lengths: number[];
+  medianLength: number;
+  longShare: number;
+  branchedShare: number;
+  spacingCV: number;
+}
+export function fjordStats(world: World, minLen = 0): FjordStats {
+  const st = coastStyle(world);
+  const net = st?.net;
+  const empty = { count: 0, lengths: [], medianLength: NaN, longShare: NaN, branchedShare: NaN, spacingCV: NaN };
+  if (!net) return empty;
+  const land = world.causes.land;
+  const B = fjordBudgets(net, land);
+  const kids: number[][] = [];
+  for (let u = 0; u < net.n; u++) kids.push([]);
+  for (const u of net.order) if (net.recv[u] >= 0) kids[net.recv[u]].push(u);
+  const mouths: number[] = [];
+  for (const u of net.order) {
+    const v = net.recv[u];
+    if (v >= 0 && land[net.owner[u]] && !land[net.owner[v]] && B[u] > 0) mouths.push(u);
+  }
+  const lens: number[] = [];
+  let branched = 0;
+  const keep: number[] = [];
+  for (const m of mouths) {
+    // 往上游：最长的一条（深度优先，带着走过的长度）
+    let best = 0;
+    let br = false;
+    const stack: [number, number][] = [[m, net.len[m]]];
+    while (stack.length) {
+      const [u, d] = stack.pop()!;
+      let wet = 0;
+      let tip = 0;
+      for (const k of kids[u]) {
+        if (!land[net.owner[k]]) continue;
+        if (B[k] > 0) {
+          wet++;
+          stack.push([k, d + net.len[k]]);
+        } else if (land[net.owner[k]]) tip = Math.max(tip, Math.min(B[u], net.lcs[k]) / net.len[k] > 0.05 ? Math.min(B[u], net.lcs[k]) : 0);
+      }
+      if (wet >= 2) br = true;
+      best = Math.max(best, d + tip);
+    }
+    if (best < minLen) continue;
+    keep.push(m);
+    lens.push(best);
+    if (br) branched++;
+  }
+  if (!lens.length) return empty;
+  // 入海口之间的距离（格）
+  const near: number[] = [];
+  for (const a of keep) {
+    let dm = Infinity;
+    for (const b of keep) {
+      if (a === b) continue;
+      const d = Math.hypot(net.pos[3 * a] - net.pos[3 * b], net.pos[3 * a + 1] - net.pos[3 * b + 1], net.pos[3 * a + 2] - net.pos[3 * b + 2]) / net.spDist;
+      if (d < dm) dm = d;
+    }
+    if (dm < Infinity) near.push(dm);
+  }
+  const mean = near.reduce((a, b) => a + b, 0) / Math.max(1, near.length);
+  const sd = Math.sqrt(near.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, near.length));
+  lens.sort((a, b) => a - b);
+  return { count: lens.length, lengths: lens, medianLength: median(lens), longShare: lens.filter((l) => l >= 2).length / lens.length, branchedShare: branched / lens.length, spacingCV: near.length ? sd / mean : NaN };
 }
 
 // 分汊（第三十三轮）：入海的大河（河口那一格的汇水面积 > 20 万 km²，按水文的流向）里，画出来有分出去的几股的占多少。

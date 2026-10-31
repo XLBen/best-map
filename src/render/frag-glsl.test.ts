@@ -52,7 +52,7 @@ describe('着色器里的破碎度与 CPU 版本相同', () => {
     for (const src of [TERRAIN_SOURCES.plane, TERRAIN_SOURCES.planet, PROJ_SOURCES.polarTerrainFs]) {
       expect(src).toContain('float s = vCoast + det;');
       expect(src).toContain('if (vFrag > 0.0) hh = max(hh, fragIsleHeight(s));');
-      expect(src).toContain('(vFrag > 0.0 ? fragSeaDepth(vSeaElev, vFrag) : vSeaElev)');
+      expect(src).toContain('(vFrag > 0.0 ? fragSeaDepth(seaE, vFrag) : seaE)');
     }
     // 顶点着色器把海岸值纹理的 g 交给 vFrag
     expect(PROJ_SOURCES.polarCellVs).toContain('vFrag = cf.g;');

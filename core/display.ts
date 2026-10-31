@@ -4,7 +4,8 @@ import { findCell } from './mesh';
 import { viewOf } from './sphere';
 import { type SeamLayers, seamLayers, seamPick } from './seams';
 import { bytesHash, coastDetail, coastDetail3, coastDetailAmp, shownCoastValues, fragCoast, fragLand, fragNoise, fragNoise3, fragValues, locate, nearestSeaCell, styleMayFlip, styledCoast, warpOffset, warpOffset3 } from './subcell';
-import { barrierDetail, landStyle, styleAt, withoutLakeBarriers } from './coast-style';
+import { fjordData, landStyle, styleAt, styleDetail, withoutLakeBarriers } from './coast-style';
+import { type FjordLayer, provOnEdge } from './fjords';
 import { landPixelCells } from './island-types';
 import { coastSeed } from './terrain';
 import type { World } from './world';
@@ -25,8 +26,10 @@ export interface DisplayCoast {
   elevation: Float32Array;
   // 每格的破碎度（0–1，第十八轮；湖面格照样有：湖里也能放碎岛）。没打碎过时为 null
   frag: Float32Array | null;
-  // 海岸类型与小湖群（第三十四轮，每格两个数，见 core/coast-style.ts 的 packed；湖面格没有沙坝）。没有生成器时为 null
+  // 海岸类型与小湖群（第三十四轮，每格两个数，见 core/coast-style.ts 的 packed；湖面格没有沙坝、岛礁）。没有生成器时为 null
   style: Float32Array | null;
+  // 按陆海淹到哪里的峡湾（第三十六轮，core/fjords.ts 的 fjordLayer；湖面算陆地）。没有峡湾时为 null
+  fjord: FjordLayer | null;
 }
 
 // 按高程数组缓存，另比湖、水面、陆海、陆地程度、海岸破碎度、海岸的种子、破碎度（当前世界与预览世界各留一份）
@@ -52,7 +55,7 @@ export function displayCoast(world: World): DisplayCoast {
     elevation[i] = -lakeDepth(world, i);
     if (ls && ls[2 * i + 1] !== 0) lakeBar.push(i);
   }
-  const value = { coast, elevation, frag: fragValues(world, false), style: ls && withoutLakeBarriers(ls, lakeBar) };
+  const value = { coast, elevation, frag: fragValues(world, false), style: ls && withoutLakeBarriers(ls, lakeBar), fjord: ls ? fjordData(world) : null };
   list.unshift({ inputs, value });
   list.length = Math.min(list.length, 2);
   return value;
@@ -85,17 +88,17 @@ export function displayCoastAt(world: World, f: DisplayCoast, x: number, y: numb
   // 海岸类型与小湖群（第三十四轮）：可能改变正负的地方也不走捷径
   const style = f.style;
   if (style) {
-    styleAt(style, f.coast, a, b, c, wa, wb, wc, stAt);
-    amp *= barrierDetail(stAt[4]);
+    styleAt(style, f.coast, a, b, c, wa, wb, wc, stAt, loc.prov);
+    amp *= styleDetail(stAt[4], stAt[2]);
   }
   const speck = !riverQueries.on;
-  if (signOnly && fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX && !(style && styleMayFlip(stAt, sv, h, speck, amp * DETAIL_MAX))) return { v: sv, nearest: loc.nearest };
+  if (signOnly && fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX && !(style && styleMayFlip(sphere, px, y, sp, stAt, sv, h, speck, amp * DETAIL_MAX, f.fjord))) return { v: sv, nearest: loc.nearest };
   const detail = sphere ? coastDetail3(px, y, sp) : coastDetail(px, y, sp);
   let v = fv > 0 ? fragCoast(sv, amp * detail, fv, weight, sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)) : sv + amp * detail;
-  if (style) v = styledCoast(sphere, px, y, sp, v, sv, h, stAt, speck);
+  if (style) v = styledCoast(sphere, px, y, sp, v, sv, h, stAt, speck, detail, f.fjord);
   return { v, nearest: loc.nearest };
 }
-const stAt = new Float64Array(6);
+const stAt = new Float64Array(7);
 
 // 两格的格心 a、b 之间是不是画面三角网的一条边（一块地区的格与网格的相邻相同；整个星球按显示的三角网：
 // 接缝外的影子点要正好落在 b 上，两极那一行的影子点不算）
@@ -113,7 +116,7 @@ function displayEdge(world: World, c: number, r: number, a: readonly [number, nu
 // 从陆上的一点 a 往水里的一点 b 走，画出来的岸线在哪里（第一次走到水面的地方）：先等分取 12 个点，再在跨过岸线的那一小段里二分。
 // a 在画面上不是陆地、一路都没走到水面时为 null。整个星球上 x 可以展开（结果与 a 在同一份上）
 const CROSS_SAMPLES = 12;
-const stEdge = new Float64Array(6);
+const stEdge = new Float64Array(7);
 const CROSS_BISECT = 12;
 // edge（可选）：a、b 是相邻两格 [c, r] 的格心（河口那格与它流进的水面那格）。这条边在画面的三角网里时，线上每一点的重心坐标
 // 就是 (1 − t, t, 0)，不必一点点找三角形（逐点找要慢几倍）；不在时（整个星球两极附近）照常找。
@@ -134,6 +137,8 @@ export function shoreCrossing(
   const dy = b[1] - ay;
   let h = hint;
   const onEdge = edge && displayEdge(world, edge[0], edge[1], a, b);
+  // 沿边走时峡湾的表按以这条边为边的一个画面三角形取（第三十六轮，core/fjords.ts）
+  const edgeProv = onEdge && f.style ? provOnEdge(mesh, edge![0], edge![1]) : -1;
   const at = onEdge
     ? (t: number) => {
         const [c, r] = edge!;
@@ -145,15 +150,17 @@ export function shoreCrossing(
         // 海岸类型与小湖群（第三十四轮，与 displayCoastAt 相同）
         const style = f.style;
         if (style) {
-          styleAt(style, f.coast, c, r, r, 1 - t, t, 0, stEdge);
-          amp *= barrierDetail(stEdge[4]);
+          styleAt(style, f.coast, c, r, r, 1 - t, t, 0, stEdge, edgeProv);
+          amp *= styleDetail(stEdge[4], stEdge[2]);
         }
-        if (fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX && !(style && styleMayFlip(stEdge, sv, hh, !riverQueries.on, amp * DETAIL_MAX))) return sv;
         const x = ax + dx * t;
         const y = ay + dy * t;
-        const det = amp * (sphere ? coastDetail3(wrapX(x), y, mesh.spacing) : coastDetail(x, y, mesh.spacing));
-        const v = fv > 0 ? fragCoast(sv, det, fv, weight, sphere ? fragNoise3(wrapX(x), y, mesh.spacing) : fragNoise(x, y, mesh.spacing)) : sv + det;
-        return style ? styledCoast(sphere, sphere ? wrapX(x) : x, y, mesh.spacing, v, sv, hh, stEdge, !riverQueries.on) : v;
+        const xw = sphere ? wrapX(x) : x;
+        if (fv <= 0 && Math.abs(sv) > amp * DETAIL_MAX && !(style && styleMayFlip(sphere, xw, y, mesh.spacing, stEdge, sv, hh, !riverQueries.on, amp * DETAIL_MAX, f.fjord))) return sv;
+        const nd = sphere ? coastDetail3(xw, y, mesh.spacing) : coastDetail(x, y, mesh.spacing);
+        const det = amp * nd;
+        const v = fv > 0 ? fragCoast(sv, det, fv, weight, sphere ? fragNoise3(xw, y, mesh.spacing) : fragNoise(x, y, mesh.spacing)) : sv + det;
+        return style ? styledCoast(sphere, xw, y, mesh.spacing, v, sv, hh, stEdge, !riverQueries.on, nd, f.fjord) : v;
       }
     : (t: number) => {
         const r = displayCoastAt(world, f, ax + dx * t, ay + dy * t, h, true);
@@ -161,7 +168,11 @@ export function shoreCrossing(
         return r.v;
       };
   // 沿边走时读的是这两格（描河时记下，core/coast-memo.ts）；不沿边时 displayCoastAt 自己记
-  if (onEdge && coastReads.on) coastReads.cells.push(edge![0], edge![1]);
+  if (onEdge && coastReads.on) {
+    coastReads.cells.push(edge![0], edge![1]);
+    // 峡湾的表按以这条边为边的三角形的最后一个顶点取（可能是第三格）
+    if (edgeProv >= 0) coastReads.cells.push(edgeProv);
+  }
   if (at(0) <= 0) return null;
   const samples = steps?.samples ?? CROSS_SAMPLES;
   const bisect = steps?.bisect ?? CROSS_BISECT;
@@ -194,7 +205,7 @@ export function shoreCrossing(
 // 不同类时按导出的规则换成最近的同类邻格）。
 // 悬停卡片“这里”、Alt 吸取、选省、合并、点地名都用它：说的、取的就是屏幕上画出来的那一格
 
-const stCell = new Float64Array(6);
+const stCell = new Float64Array(7);
 
 export interface DisplayCell {
   // 扭曲后的最近格（着色器的 id：生态的平涂、按格着色的视图画的是它）
@@ -261,25 +272,25 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   const fragN = () => (Number.isNaN(fn) ? (fn = sphere ? fragNoise3(px, y, sp) : fragNoise(px, y, sp)) : fn);
   // 海岸类型（第三十四轮）：峡湾、沙坝按陆海判也算（小湖群只在画面的海岸场里）
   const cs = landStyle(world);
-  if (cs) styleAt(cs, s, a, b, c, wa, wb, wc, stCell);
-  const det = weight * coastDetailAmp(world, Math.max(0, h)) * (cs ? barrierDetail(stCell[4]) : 1) * detail;
+  if (cs) styleAt(cs, s, a, b, c, wa, wb, wc, stCell, loc.prov);
+  const det = weight * coastDetailAmp(world, Math.max(0, h)) * (cs ? styleDetail(stCell[4], stCell[2]) : 1) * detail;
   const fv = fl ? fl[a] * wa + fl[b] * wb + fl[c] * wc : 0;
   let sl = fv > 0 ? fragCoast(sv, det, fv, weight, fragN()) : sv + det;
-  if (cs) sl = styledCoast(sphere, px, y, sp, sl, sv, h, stCell, false);
+  if (cs) sl = styledCoast(sphere, px, y, sp, sl, sv, h, stCell, false, detail, fjordData(world));
   const land = sl > 0;
   // 画成水面（海、湖）还是陆地：画面上的海岸场（湖面取负，与地形层、着色器的 land 相同）
   const f = displayCoast(world);
   const sw = f.coast[a] * wa + f.coast[b] * wb + f.coast[c] * wc;
   const hw = f.elevation[a] * wa + f.elevation[b] * wb + f.elevation[c] * wc;
-  if (f.style) styleAt(f.style, f.coast, a, b, c, wa, wb, wc, stCell);
-  const detW = weight * coastDetailAmp(world, Math.max(0, hw)) * (f.style ? barrierDetail(stCell[4]) : 1) * detail;
+  if (f.style) styleAt(f.style, f.coast, a, b, c, wa, wb, wc, stCell, loc.prov);
+  const detW = weight * coastDetailAmp(world, Math.max(0, hw)) * (f.style ? styleDetail(stCell[4], stCell[2]) : 1) * detail;
   const fw = f.frag ? f.frag[a] * wa + f.frag[b] * wb + f.frag[c] * wc : 0;
   let swv = fw > 0 ? fragCoast(sw, detW, fw, weight, fragN()) : sw + detW;
   // 小湖群（第三十四轮）：没画小湖群时是陆地、画了是水面的点不归哪个省（与合成着色器相同）
   let speck = false;
   if (f.style) {
-    const pre = styledCoast(sphere, px, y, sp, swv, sw, hw, stCell, false);
-    swv = styledCoast(sphere, px, y, sp, swv, sw, hw, stCell, true);
+    const pre = styledCoast(sphere, px, y, sp, swv, sw, hw, stCell, false, detail, f.fjord);
+    swv = styledCoast(sphere, px, y, sp, swv, sw, hw, stCell, true, detail, f.fjord);
     speck = pre > 0 && swv <= 0;
   }
   const water = swv <= 0;

@@ -1,4 +1,4 @@
-import { coastStyleCached, landStyle } from './coast-style';
+import { coastStyleCached, fjordData, landStyle } from './coast-style';
 import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate, prepareClimatePlane } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
 import { type Command, CommandError, Dirty, type RemovedItem, type UndoRecord, addArrayUndo, applyCommand, revert } from './commands';
@@ -684,9 +684,10 @@ export class Engine {
     const w = this.world;
     yield* warmTerrainSteps(w);
     yield* warmElevationSteps(w);
-    // 海岸类型（第三十四轮：岸段的噪声与每格的权重按网格缓存，新网格上第一次约 20–40 ms；描河、地形层都要用）
+    // 海岸类型（第三十四轮：岸段的噪声与每格的权重按网格缓存，新网格上第一次约 20–40 ms；描河、地形层都要用）与峡湾的谷网（第三十六轮）
     if (!coastStyleCached(w)) {
       landStyle(w);
+      fjordData(w);
       yield;
     }
     const terrain = this.base?.terrain;
