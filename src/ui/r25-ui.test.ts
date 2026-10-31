@@ -9,6 +9,7 @@ import { exec, hereOpen, mode, nameMode, parsePrefs, pinnedCell, prefs, selected
 import { countryAt } from './countries';
 import { humanViews } from './defs/layers';
 import { CATEGORY_DEFS, TOOL_DEFS, category, setTool } from './defs/tools';
+import { highlightLayers } from './map/highlights';
 import { kindOfView, mapKind, mapModes, modeDef, modeFeatures, modeOf, setMapKind } from './map/modes';
 import { REGION_KEY, countryDraws, regionDraws } from './map/political';
 import { settleOverlay, shownMarks } from './map/settle';
@@ -268,6 +269,33 @@ describe('指针', () => {
     expect(pinnedCell.value).toBe(own);
     // 不发命令
     expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('鼠标下的格、钉住的格描出边（同一格沿用同一个图层）；停在城市上不描格', () => {
+    const w = towns().world;
+    world.value = w;
+    setMapKind('country');
+    const t = pointerTool(zoomOf(w));
+    const own = emptyLand(w, true);
+    t.move!(pointer(w, own), false);
+    const a = t.preview().layers;
+    expect(a).toEqual([{ cells: [own], color: [255, 255, 255], pattern: 'outline' }]);
+    t.move!(pointer(w, own), false);
+    expect(t.preview().layers).toBe(a);
+    // 画出来的格（扭曲后的格、格以下的海岸）与 cell 不同时描画出来的那一格
+    const other = own === 0 ? 1 : 0;
+    t.move!({ ...pointer(w, own), shown: { here: other } as Pointer['shown'] }, false);
+    expect(t.preview().layers[0].cells).toEqual([other]);
+    const c = cityList(w).find((x) => x.capital && !x.point)!;
+    t.move!(pointer(w, c.cell), false);
+    expect(t.preview().layers).toEqual([]);
+    // 钉住的格：任何工具下都描边，压在最下面
+    const empty = { layers: [], shapes: [], hint: null };
+    expect(highlightLayers(w, w, empty, [], 'inspect').layers).toEqual([]);
+    pinnedCell.value = own;
+    const pinned = highlightLayers(w, w, empty, [], 'inspect');
+    expect(pinned.layers).toEqual([{ cells: [own], color: [255, 255, 255], pattern: 'outline' }]);
+    expect(highlightLayers(w, w, empty, [], 'inspect').key).toEqual(pinned.key);
   });
 
   it('悬停的一句话跟着模式：国家、文化、宗教、人口、地名', () => {

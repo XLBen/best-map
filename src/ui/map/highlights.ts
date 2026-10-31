@@ -2,7 +2,7 @@ import { activeConflicts } from '../../../core/constraints';
 import type { World } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
-import { FLASH_MS, adjustPreview, adjustPreviewWorld, flash, overlays, provinceSet, riverStyleOverride, selectedFeature, selectedProvince, selectedRiver } from '../../state';
+import { FLASH_MS, adjustPreview, adjustPreviewWorld, flash, overlays, pinnedCell, provinceSet, riverStyleOverride, selectedFeature, selectedProvince, selectedRiver } from '../../state';
 import { editLayers } from '../edits';
 import { riverGlow, riverInfo } from '../riverCourse';
 import { type Preview, reliefLayers } from '../tools';
@@ -74,6 +74,23 @@ export const selectedRiverFocus = {
   },
 };
 
+// 一格的轮廓（只描边，画的是扭曲后的格，与地图上这一格的样子相同）：同一格沿用同一个图层对象，不必重新上传
+export function cellOutline(): (cell: number) => HighlightLayer[] {
+  let last: { cell: number; layers: HighlightLayer[] } | null = null;
+  return (cell) => {
+    if (cell < 0) return [];
+    if (last?.cell !== cell) last = { cell, layers: [{ cells: [cell], color: [255, 255, 255], pattern: 'outline' }] };
+    return last.layers;
+  };
+}
+
+// 钉住的格（“这里”卡片停在这一格）：描出这一格的边，压在别的高亮下面
+const pinOutline = cellOutline();
+function pinLayers(w: World): HighlightLayer[] {
+  const c = pinnedCell.value;
+  return pinOutline(c < w.mesh.n ? c : -1);
+}
+
 // shown：画出来的世界（确切预览、调整面板预览的将来的世界，或当前世界）：没涂成的格按它画
 // back：工具选中时一直画着的图层（橡皮擦能擦的格、重画过的范围），画在预览下面；category：这一类多画的
 export function highlightLayers(w: World, shown: World, preview: Preview, back: HighlightLayer[], category: unknown, more?: CategoryHighlights): { layers: HighlightLayer[]; key: unknown[] } {
@@ -81,11 +98,12 @@ export function highlightLayers(w: World, shown: World, preview: Preview, back: 
   // 图层里的“我改过的地方”：四种改动分色（任何工具下都能打开）。压在工具的描边之上、
   // 别的高亮之下：只描边的格一盖就没了颜色，而描边本来就画在有高亮与没有高亮的格之间，盖上以后照样在
   const edits = overlays.value.edits ? editLayers(w) : [];
-  layers.push(...back.filter((l) => l.pattern === 'outline'), ...edits);
+  const pin = pinLayers(w);
+  layers.push(...pin, ...back.filter((l) => l.pattern === 'outline'), ...edits);
   // 工具一直画着的其余图层（橡皮擦能擦的格的白斜线）：放在没涂成的红斜线、选中、闪烁之下，免得把它们盖掉
   layers.push(...back.filter((l) => l.pattern !== 'outline'));
   // 按每个图层对象比较：工具沿用同一个图层时不必重新上传
-  const key: unknown[] = [w, shown, category, ...edits, '|', ...back, '|', ...preview.layers];
+  const key: unknown[] = [w, shown, category, ...pin, '|', ...edits, '|', ...back, '|', ...preview.layers];
   if (more) {
     const h = more(w, shown);
     layers.push(...h.layers);

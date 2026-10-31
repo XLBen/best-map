@@ -2,6 +2,7 @@ import { dimensionValues, valueLayer, worldCultureGroups, worldCultures, worldDi
 import type { World } from '../../../core/world';
 import type { SettleMark } from '../../render/settle-draw';
 import { pinCell, selectedCountry, selectedSettle, world } from '../../state';
+import { cellOutline } from '../map/highlights';
 import { blocAt, blocHereText, selectBloc } from '../blocs';
 import { countryAt, countryOf } from '../countries';
 import { featuresAt } from '../features-at';
@@ -14,7 +15,7 @@ import { HIT_PX, HOVER, ring, selectSettle, selectedRing } from './settlements';
 
 // 指针（第二十五轮）：只看、不改。点城市、地标、点打开它的档案；国家模式里点国家打开国家档案并钉住这一格；
 // 同盟模式（第二十六轮）里点到集团打开集团的档案，不在集团里的国家打开国家档案；
-// 别的地方钉住这一格（右下角“这里”的档案）。鼠标旁一句话写这里是什么，跟着地图模式
+// 别的地方钉住这一格（右下角“这里”的档案）。鼠标旁一句话写这里是什么，跟着地图模式；鼠标下的格描出边（钉住的格也描边，见 map/highlights.ts）
 
 const cellOf = (p: Pointer) => p.shown?.here ?? p.cell;
 
@@ -57,6 +58,7 @@ export function pointerText(w: World, cell: number, kind: MapKind = modeOf(w, ma
 export function pointerTool(zoom: () => number): ToolHandler {
   let pointer: Pointer | null = null;
   let hot: SettleMark | null = null;
+  const outline = cellOutline();
   const find = (w: World, p: Pointer) => pickMark(w, marksOf(w), p.x, p.y, HIT_PX / zoom(), cellPxOf(w, zoom()));
   return {
     drags: false,
@@ -109,7 +111,8 @@ export function pointerTool(zoom: () => number): ToolHandler {
         const ref = refOfKey(hot.key);
         return { layers: [], shapes: [ring(hot.x, hot.y, 11, zoom(), HOVER)], hint: ref ? settleHoverText(w, ref) : null };
       }
-      return { ...EMPTY, hint: pointerText(w, cellOf(pointer)) };
+      const cell = cellOf(pointer);
+      return { layers: outline(cell), shapes: [], hint: pointerText(w, cell) };
     },
   };
 }
