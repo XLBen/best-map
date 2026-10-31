@@ -5,7 +5,7 @@ import { cityList, worldCultures } from '../../core/human';
 import { continents, snapshot, humanExec, type HumanCommand } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { QUIET_ROAD_WIDTH, ROAD_WIDTH, roadStyle } from '../render/settle-draw';
-import { exec, hereOpen, mode, nameMode, parsePrefs, pinnedCell, prefs, selectedCountry, selectedSettle, setPrefs, sheet, tool, world } from '../state';
+import { exec, hereOpen, mode, nameMode, parsePrefs, pinCell, pinnedCell, pinnedPart, prefs, selectedCountry, selectedSettle, setPrefs, sheet, tool, world } from '../state';
 import { countryAt } from './countries';
 import { humanViews } from './defs/layers';
 import { CATEGORY_DEFS, TOOL_DEFS, category, setTool } from './defs/tools';
@@ -29,6 +29,7 @@ afterEach(() => {
   selectedSettle.value = null;
   sheet.value = null;
   pinnedCell.value = -1;
+  pinnedPart.value = null;
   hereOpen.value = false;
   nameMode.value = 'zh';
   setPrefs({ map: 'geo' });
@@ -271,30 +272,45 @@ describe('指针', () => {
     expect(exec).not.toHaveBeenCalled();
   });
 
-  it('鼠标下的格、钉住的格描出边（同一格沿用同一个图层）；停在城市上不描格', () => {
+  it('鼠标下的格、钉住的格描出边（第三十七轮：描格的格与陆水，交给渲染器、不走高亮）；停在城市上不描格', async () => {
     const w = towns().world;
     world.value = w;
     setMapKind('country');
     const t = pointerTool(zoomOf(w));
     const own = emptyLand(w, true);
     t.move!(pointer(w, own), false);
-    const a = t.preview().layers;
-    expect(a).toEqual([{ cells: [own], color: [255, 255, 255], pattern: 'outline' }]);
-    t.move!(pointer(w, own), false);
-    expect(t.preview().layers).toBe(a);
-    // 画出来的格（扭曲后的格、格以下的海岸）与 cell 不同时描画出来的那一格
+    // 没有 shown（手造的点）：鼠标下的格，按格的陆海
+    expect(t.preview().layers).toEqual([]);
+    expect(t.preview().focus).toEqual({ cell: own, land: true });
+    // 画出来的陆水（core/display.ts 的 focus）与 here 不同时描 focus：水面那一部分
     const other = own === 0 ? 1 : 0;
-    t.move!({ ...pointer(w, own), shown: { here: other } as Pointer['shown'] }, false);
-    expect(t.preview().layers[0].cells).toEqual([other]);
+    const shown = { here: own, focus: { cell: other, land: false } } as Pointer['shown'];
+    t.move!({ ...pointer(w, own), shown }, false);
+    expect(t.preview().focus).toEqual({ cell: other, land: false });
+    // 点一下钉住描格的格，记下是水面
+    await t.click!({ ...pointer(w, own), shown });
+    expect(pinnedCell.value).toBe(other);
+    expect(pinnedPart.value).toBe('water');
+    // 没有描格的格（离水面格太远的峡湾水面）：不描，钉住 here、不记陆水
+    const none = { here: own, focus: { cell: -1, land: false } } as Pointer['shown'];
+    t.move!({ ...pointer(w, own), shown: none }, false);
+    expect(t.preview().focus).toBeNull();
+    await t.click!({ ...pointer(w, own), shown: none });
+    expect(pinnedCell.value).toBe(own);
+    expect(pinnedPart.value).toBeNull();
+    // 停在城市上不描格
     const c = cityList(w).find((x) => x.capital && !x.point)!;
     t.move!(pointer(w, c.cell), false);
     expect(t.preview().layers).toEqual([]);
-    // 钉住的格：任何工具下都描边，压在最下面
+    expect(t.preview().focus).toBeUndefined();
+    // 钉住的格不再是高亮的图层（MapView 交给 renderer.setFocus，任何工具下都描）；取消钉住时陆水一起清掉
     const empty = { layers: [], shapes: [], hint: null };
-    expect(highlightLayers(w, w, empty, [], 'inspect').layers).toEqual([]);
-    pinnedCell.value = own;
+    pinCell(own, 'land');
+    expect(pinnedPart.value).toBe('land');
     const pinned = highlightLayers(w, w, empty, [], 'inspect');
-    expect(pinned.layers).toEqual([{ cells: [own], color: [255, 255, 255], pattern: 'outline' }]);
+    expect(pinned.layers).toEqual([]);
+    pinCell(-1);
+    expect(pinnedPart.value).toBeNull();
     expect(highlightLayers(w, w, empty, [], 'inspect').key).toEqual(pinned.key);
   });
 

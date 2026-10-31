@@ -1,4 +1,5 @@
 import { GLOW_GAIN, GLOW_GAIN_ATLAS, PATTERN_DETAIL, SEED_STEP, SPARKLE, SPARKLE3 } from '../../core/biome-look';
+import type { CellFocus } from '../../core/display';
 import type { Mesh } from '../../core/mesh';
 import type { SeamLayers } from '../../core/seams';
 import { PATTERNS } from '../../core/species';
@@ -663,6 +664,51 @@ void main() {
   oSeam = vec4(float(id & 255), float((id >> 8) & 255), float((id >> 16) & 255), left ? 255.0 : 0.0) / 255.0;
 }`;
 
+// 省份按哪一格（provCell）与描格的格（focusCell，第三十七轮）是同一条规则，只差取到的格按不按剪刀切线换（pick）
+const provRule = (name: string, pick: (c: string) => string) => `int ${name}(int idG, vec2 uv, bool landPx) {
+  if (idG < 0 || waterCell(idG) != landPx) return idG;
+  // 碎岛（破碎的水面格里画成陆地的像素）归那一格：海省（湖里的归湖），第十八轮
+  if (landPx && fragCell(idG)) return idG;
+  int c = ${pick('idAt(uv)')};
+  if (c >= 0 && waterCell(c) != landPx) return c;
+  for (int ring = 1; ring <= 2; ring++) {
+    vec2 r = ((landPx ? 0.3 : 0.6) * float(ring) * uCellPx) * uTexel;
+    for (int k = 0; k < 8; k++) {
+      float a = float(k) * 0.7853982;
+      c = ${pick('idAt(uv + vec2(cos(a), sin(a)) * r)')};
+      if (c >= 0 && waterCell(c) != landPx) return c;
+    }
+  }
+  return landPx ? landCellOf(idG) : -1;
+}`;
+const PROV_CELL = provRule('provCell', (c) => `seamCell(${c}, uv)`);
+// 描格的格（第三十七轮；core/display.ts 的 DisplayCell.focus 是同一条规则）：省份的规则不按剪刀切线换格（focusCell），
+// 小湖群的像素（地形层写成 SPECK_MARK）算它扭曲后那一格的陆地。返回 格号 · 2 + 陆 1 / 水 0（与 uFocus 比），没有格时 −1。
+// 陆海按这一点自己的场景像素（描边看的相邻像素各按各的）
+export const FOCUS_GLSL = `${provRule('focusCell', (c) => c)}
+int focusAt(vec2 uv, vec2 uvW) {
+  float g = texture(uSceneHeight, uv * uSceneXf.xy + uSceneXf.zw).g;
+  int id = idAt(uvW);
+  if (id < 0) return -1;
+  if (g < ${glsl(SPECK_MARK / 2)}) return id * 2 + 1;
+  bool landPx = g > 0.0;
+  int c = focusCell(id, uv, landPx);
+  return c < 0 ? -1 : c * 2 + (landPx ? 1 : 0);
+}
+// 这一点离描格的格心够不够近（c：格心与半径，地图单位）：远处的像素不必算 focusAt。
+// 整个星球（uFocusSphere = 1）按球面上的弦长量（地图单位的 1 合 π 弧度；东西绕回、两极的格都对）
+vec3 focusSphere(vec2 w) {
+  float lon = 3.14159265 * (w.x - 1.0);
+  float colat = 3.14159265 * clamp(w.y, 0.0, 1.0);
+  return vec3(sin(colat) * cos(lon), sin(colat) * sin(lon), cos(colat));
+}
+bool nearFocus(vec2 p, vec3 c) {
+  if (uFocusSphere > 0.5) return length(focusSphere(p) - focusSphere(c.xy)) < 3.14159265 * c.z;
+  vec2 d = p - c.xy;
+  return dot(d, d) < c.z * c.z;
+}
+`;
+
 const FS_COMPOSE = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -726,6 +772,11 @@ uniform vec4 uRiverXf;
 // 画成陆地的像素落在水面格里、附近又找不到陆地格时归哪一格的省（colors.ts 的 landCellLayer，格号 + 1 写在 rgb）
 uniform sampler2D uLandCell;
 uniform int uHasLandCell;
+// 描格（第三十七轮，renderer.setFocus）：鼠标下的格与钉住的格（格号 · 2 + 陆 1 / 水 0，−1 不描），各自的格心与半径（地图单位）；
+// uFocusSphere：整个星球 1（按球面量远近），一块地区 0
+uniform ivec2 uFocus;
+uniform vec3 uFocusC[2];
+uniform float uFocusSphere;
 out vec4 oColor;
 ${NOISE_GLSL}
 // 场景上的位置夹在场景之内（停稳时与画面相同；移动中、导出的一块块场景四周多画了一圈，扭曲后伸出画面的取到那一圈）
@@ -771,29 +822,14 @@ int landCellOf(int id) {
   int v = int(c.r + 0.5) + int(c.g + 0.5) * 256 + int(c.b + 0.5) * 65536 - 1;
   return v >= 0 ? v : id;
 }
-int provCell(int idG, vec2 uv, bool landPx) {
-  if (idG < 0 || waterCell(idG) != landPx) return idG;
-  // 碎岛（破碎的水面格里画成陆地的像素）归那一格：海省（湖里的归湖），第十八轮
-  if (landPx && fragCell(idG)) return idG;
-  int c = seamCell(idAt(uv), uv);
-  if (c >= 0 && waterCell(c) != landPx) return c;
-  for (int ring = 1; ring <= 2; ring++) {
-    vec2 r = ((landPx ? 0.3 : 0.6) * float(ring) * uCellPx) * uTexel;
-    for (int k = 0; k < 8; k++) {
-      float a = float(k) * 0.7853982;
-      c = seamCell(idAt(uv + vec2(cos(a), sin(a)) * r), uv);
-      if (c >= 0 && waterCell(c) != landPx) return c;
-    }
-  }
-  return landPx ? landCellOf(idG) : -1;
-}
+${PROV_CELL}
 // 画面上另一点（省界、轮廓看的相邻像素）的省份格：陆海按那一点自己的场景像素
 int provAt(vec2 uv, vec2 uvW) {
   float g = texture(uSceneHeight, uv * uSceneXf.xy + uSceneXf.zw).g;
   if (g < ${glsl(SPECK_MARK / 2)}) return -1;
   return provCell(seamCell(idAt(uvW), uv), uv, g > 0.0);
 }
-// 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors）：0 没有，1–127 平涂，128 只描边，129–255 斜线
+${FOCUS_GLSL}// 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors）：0 没有，1–127 平涂，128 只描边，129–255 斜线
 float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
 // 平涂、斜线的不透明度；只描边的是 0
 float hlAlpha(float A) { return A > 128.5 ? (A - 128.0) / 127.0 : A < 127.5 ? A / 127.0 : 0.0; }
@@ -1032,6 +1068,35 @@ void main() {
       bool lineOnly = abs(A0 - 128.0) < 0.5 || abs(Ax - 128.0) < 0.5 || abs(Ay - 128.0) < 0.5;
       float oa = max(a0, max(hlAlpha(Ax), hlAlpha(Ay)));
       col = mix(col, vec3(1.0), (lineOnly ? 0.75 : 0.9 * min(1.0, oa / 0.18)) / uPxScale);
+    }
+  }
+  // 描格（第三十七轮）：鼠标下的格、钉住的格描出这一格画成陆地（或水面）的那一部分（focusAt：陆海、湖岸、碎岛、峡湾跟着画面）。
+  // 先按到格心的距离排除远处的像素（只有格附近的像素多算五次 focusAt）。线居中约 2 像素：里面一道白、外面一道深色的衬边
+  // （浅色的平原、雪地上也看得清）；按 uPxScale 淡一些，与高亮的轮廓一样
+  if (id >= 0 && (uFocus.x >= 0 || uFocus.y >= 0)) {
+    bool nh = uFocus.x >= 0 && nearFocus(world, uFocusC[0]);
+    bool np = uFocus.y >= 0 && nearFocus(world, uFocusC[1]);
+    if (nh || np) {
+      vec2 ex = vec2(uTexel.x, 0.0);
+      vec2 ey = vec2(0.0, uTexel.y);
+      int f0 = focusAt(vUv, uvW);
+      int fE = focusAt(vUv + ex, uvW + ex);
+      int fW = focusAt(vUv - ex, uvW - ex);
+      int fN = focusAt(vUv + ey, uvW + ey);
+      int fS = focusAt(vUv - ey, uvW - ey);
+      bool inner = false;
+      bool outer = false;
+      for (int slot = 0; slot < 2; slot++) {
+        if (!(slot == 0 ? nh : np)) continue;
+        int k = slot == 0 ? uFocus.x : uFocus.y;
+        bool in0 = f0 == k;
+        if ((fE == k) != in0 || (fW == k) != in0 || (fN == k) != in0 || (fS == k) != in0) {
+          if (in0) inner = true;
+          else outer = true;
+        }
+      }
+      if (outer) col = mix(col, vec3(0.05, 0.06, 0.08), 0.42 / uPxScale);
+      if (inner) col = mix(col, vec3(1.0), 0.9 / uPxScale);
     }
   }
   if (id < 0) col = vec3(0.08, 0.1, 0.14);
@@ -1404,7 +1469,7 @@ const PROJ_PROLOGUE = `  // 投影（第十三轮 G4）：画面上的位置 →
 const FS_COMPOSE_PROJ = (() => {
   let s = FS_COMPOSE_PLANET;
   // 场景上的位置：画面上的位置 × uSceneXf → 世界坐标的 toScene
-  s = mustAll(s, /(\(vUv \+ o[12]\)|\buv\b|\bvUv\b) \* uSceneXf\.xy \+ uSceneXf\.zw/g, 'toScene($1)', 6);
+  s = mustAll(s, /(\(vUv \+ o[12]\)|\buv\b|\bvUv\b) \* uSceneXf\.xy \+ uSceneXf\.zw/g, 'toScene($1)', 7);
   // 这个像素的位置换成世界坐标（pW）；画面上的位置只在开头算投影时用
   s = s.replace(/\bvUv\b/g, 'pW');
   s = must(s, 'in vec2 pW;', 'in vec2 vUv;\nvec2 pW;\nvec2 uDX;\nvec2 uDY;\nvec2 uPlane;\nfloat uRho;\nfloat uEdge;');
@@ -1420,6 +1485,8 @@ const FS_COMPOSE_PROJ = (() => {
   s = must(s, 'vec2 hy = vec2(0.0, uTexel.y * 1.5);', 'vec2 hy = uDY * 1.5;');
   s = must(s, 'vec2 cx = vec2(uTexel.x, 0.0);', 'vec2 cx = uDX;');
   s = must(s, 'vec2 cy = vec2(0.0, uTexel.y);', 'vec2 cy = uDY;');
+  s = must(s, 'vec2 ex = vec2(uTexel.x, 0.0);', 'vec2 ex = uDX;');
+  s = must(s, 'vec2 ey = vec2(0.0, uTexel.y);', 'vec2 ey = uDY;');
   // 河的图层画在场景那一块上（同样的范围、大小）：按场景上的位置取
   s = must(s, 'texture(uRiver, pW * uRiverXf.xy + uRiverXf.zw)', 'texture(uRiver, toScene(pW) * uRiverXf.xy + uRiverXf.zw)');
   s = must(s, 'oColor = vec4(col, 1.0);', 'oColor = projFinish(col);');
@@ -1542,6 +1609,8 @@ export interface CellLayers {
 }
 
 export type MapStyle = 'realistic' | 'atlas';
+// 描格（第三十七轮）：离格心几格以内的像素才算 focusAt（描出的范围一块地区不过约 1.9 格，星球两极附近约 2.9 格，core/display-cell.test.ts 查）
+export const FOCUS_REACH = 3.2;
 
 // 河的图层（第十三轮，overlay.ts 的 riverLayer 画的）：一张预乘之前的 RGBA 画布，合成时只混进画成陆地的像素。
 // version 变了才重新上传；toUv：地图单位 → 这张图上的位置（0–1，v 向上），u = x·a + b，v = y·c + d
@@ -1784,6 +1853,9 @@ export class Renderer {
   // 场景（编号层、地形层）与合成画面的版本：没变就不重画
   private layersVersion = 0;
   private highlightVersion = 0;
+  // 描格（第三十七轮，setFocus）：鼠标下的格、钉住的格与它们的键
+  private focus: [CellFocus | null, CellFocus | null] = [null, null];
+  private focusKey = '|';
   private meshVersion = 0;
   // 停稳的编号层、地形层画的是哪个键：编号层只看网格、画布、镜头；地形层另看图层、细节、海岸幅度
   private idKey = '';
@@ -2305,6 +2377,17 @@ export class Renderer {
     if (h) this.upload(this.tex.highlight, h, this.mesh?.n ?? 0, 4);
   }
 
+  // 描格（第三十七轮）：鼠标下的格与钉住的格，各描出画成陆地（land）或水面的那一部分（合成着色器的 focusAt）。
+  // null 不描。只在变了时重画（focusKey 在合成的键里）
+  setFocus(hover: CellFocus | null, pinned: CellFocus | null) {
+    const n = this.mesh?.n ?? 0;
+    const ok = (f: CellFocus | null) => (f && f.cell >= 0 && f.cell < n ? f : null);
+    const h = ok(hover);
+    const p = ok(pinned);
+    this.focus = [h, p];
+    this.focusKey = `${h ? `${h.cell}${h.land ? 'L' : 'W'}` : ''}|${p ? `${p.cell}${p.land ? 'L' : 'W'}` : ''}`;
+  }
+
   // 地图单位 → 裁剪空间（停稳：与画布一样大的目标）
   private viewUniform(): V4 {
     const w = this.canvas.width;
@@ -2452,7 +2535,7 @@ export class Renderer {
     // 河的图层：停稳的那张（刚停下的那一帧就画好：照用移动中的那张的话，下一帧换上停稳的那张时要整张再合成一次，比画河慢得多）
     const river = this.riverLayer?.(false) ?? null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
-    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -2751,7 +2834,7 @@ export class Renderer {
     const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: sc.key }) ?? null) : null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
     if (!moving) {
-      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
+      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
       if (key === this.pComposeKey) return;
       this.pComposeKey = key;
     } else this.pComposeKey = '';
@@ -3062,6 +3145,19 @@ export class Renderer {
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFlat'), this.hasFlat ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasGroup'), this.hasGroup ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasHighlight'), this.hasHighlight ? 1 : 0);
+    // 描格（第三十七轮）：格号 · 2 + 陆 1 / 水 0；格心与半径（2.5 格以外的像素不算）
+    const focus = this.focus.map((f) => (f && f.cell < mesh.n ? f : null));
+    const fk = focus.map((f) => (f ? f.cell * 2 + (f.land ? 1 : 0) : -1));
+    gl.uniform2i(gl.getUniformLocation(pc, 'uFocus'), fk[0], fk[1]);
+    const fc = new Float32Array(6);
+    focus.forEach((f, k) => {
+      if (!f) return;
+      fc[3 * k] = mesh.x[f.cell];
+      fc[3 * k + 1] = mesh.y[f.cell];
+      fc[3 * k + 2] = FOCUS_REACH * mesh.spacing;
+    });
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uFocusC'), fc);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uFocusSphere'), this.planet ? 1 : 0);
     const hasFx = !!(this.fxShown.fx && this.fxShown.palette);
     this.bindTex(pc, 'uFx', this.tex.fx, 8);
     this.bindTex(pc, 'uFxPal', this.tex.fxPal, 9);

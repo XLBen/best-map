@@ -422,5 +422,36 @@ describe('生态的颜色脚本、花纹与发光', () => {
     expect(PROVINCE_RING).toEqual({ n: 8, radii: [0.6, 1.2] });
     expect(PROVINCE_LAND_RING).toEqual({ n: 8, radii: [0.3, 0.6] });
   });
+
+  it('第三十七轮：描格不走高亮纹理，按 focusAt（省份的规则去掉切线、小湖群算陆地）描在高亮之上；只算格心附近的像素', async () => {
+    const { COMPOSE_SOURCES, PROJ_SOURCES, FOCUS_GLSL } = await import('./renderer');
+    const all = { ...COMPOSE_SOURCES, proj: PROJ_SOURCES.compose };
+    for (const [name, src] of Object.entries(all)) {
+      // focusCell 与 provCell 同一个模子，只是不按切线换格
+      const fc = src.slice(src.indexOf('int focusCell('), src.indexOf('int focusAt('));
+      expect(fc, name).not.toContain('seamCell');
+      expect(fc, name).toContain('c = idAt(uv + vec2(cos(a), sin(a)) * r);');
+      expect(fc, name).toContain('return landPx ? landCellOf(idG) : -1;');
+      expect(src, name).toContain('if (g < -10000.0) return id * 2 + 1;');
+      for (const u of ['uniform ivec2 uFocus;', 'uniform vec3 uFocusC[2];', 'uniform float uFocusSphere;']) expect(src, name).toContain(u);
+      const main = src.slice(src.indexOf('void main() {'));
+      const focus = main.indexOf('if (id >= 0 && (uFocus.x >= 0 || uFocus.y >= 0)) {');
+      // 画在高亮之后、地图外的背景之前；先按到格心的远近排除，中心与上下左右四个像素各按自己的场景像素判
+      expect(focus, name).toBeGreaterThan(main.indexOf('if (uHasHighlight == 1 && id >= 0) {'));
+      expect(focus, name).toBeLessThan(main.indexOf('if (id < 0) col = vec3(0.08, 0.1, 0.14);'));
+      expect(main, name).toContain('bool nh = uFocus.x >= 0 && nearFocus(world, uFocusC[0]);');
+      expect(main, name).toContain('int fE = focusAt(');
+      expect(main, name).toContain('if (inner) col = mix(col, vec3(1.0), 0.9 / uPxScale);');
+      // 高亮的轮廓照旧（别的工具的描格）
+      expect(main, name).toContain('bool lineOnly = abs(A0 - 128.0) < 0.5');
+    }
+    // 平面、星球用画面的一个像素；投影用世界坐标上的一个像素
+    expect(COMPOSE_SOURCES.plane).toContain('vec2 ex = vec2(uTexel.x, 0.0);');
+    expect(PROJ_SOURCES.compose).toContain('vec2 ex = uDX;');
+    expect(PROJ_SOURCES.compose).toContain('vec2 ey = uDY;');
+    expect(PROJ_SOURCES.compose).toContain('float g = texture(uSceneHeight, toScene(uv)).g;');
+    expect(COMPOSE_SOURCES.plane).toContain(FOCUS_GLSL);
+    expect(COMPOSE_SOURCES.planet).toContain(FOCUS_GLSL);
+  });
 });
 

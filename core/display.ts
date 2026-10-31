@@ -221,6 +221,14 @@ export interface DisplayCell {
   water: boolean;
   // 小湖群（第三十四轮）画出来的水面：没画小湖群时是陆地（不归哪个省，province 为 −1）
   speck: boolean;
+  // 描格的格（第三十七轮，指针描边、钉住的格）：省份的规则（provinceCell）不按剪刀切线换格，小湖群的点算它那一格（cell）的陆地；
+  // land 是这一点画成陆地还是水面（湖面算水面）。描出的是这一格画成同一种（陆或水）的全部像素；附近没有水面格的水面上 cell 为 −1
+  focus: CellFocus;
+}
+
+export interface CellFocus {
+  cell: number;
+  land: boolean;
 }
 
 // 海岸值按陆度数组缓存（同一个世界只算一次；只改了名字、省份的轻快照沿用同一个数组）。
@@ -301,7 +309,11 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   // 碎岛（破碎的海格里画成陆地的像素）就是那一格（与导出相同）
   const isle = land && causes.land[cell] !== 1 && !!fl && fl[cell] > 0;
   const here = (causes.land[cell] === 1) === land || isle ? cell : sameKindNear(world, land, cell, loc.nearest, px, y);
-  return { cell, land, water, here, province: speck ? -1 : provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water, f.frag), speck };
+  const L = seamsOf(world);
+  const province = speck ? -1 : provinceCell(world, f.coast, L, px, y, cell, loc.nearest, water, f.frag);
+  // 描格的格（第三十七轮，与合成着色器的 focusAt 相同）：没有切线时就是省份格
+  const focus: CellFocus = speck ? { cell, land: true } : { cell: L ? provinceCell(world, f.coast, null, px, y, cell, loc.nearest, water, f.frag) : province, land: !water };
+  return { cell, land, water, here, province, speck, focus };
 }
 
 // 省份按哪一格（第十三轮；与着色器的 provCell 同一条规则）：扭曲后的格按剪刀切线换过；这一点画成水面（海、湖）而那一格是陆地格时

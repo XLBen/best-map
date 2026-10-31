@@ -1,6 +1,6 @@
 import { effect, untracked } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
-import { displayCellAt } from '../../core/display';
+import { type CellFocus, displayCellAt } from '../../core/display';
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
@@ -27,6 +27,7 @@ import {
   options,
   overlays,
   pinnedCell,
+  pinnedPart,
   picking,
   selectedSettle,
   prefs,
@@ -391,6 +392,8 @@ export function MapView() {
       applyColors(shown);
       applyFx(shown, clean);
       applyTint(shown);
+      // 描格（第三十七轮）：指针下的格（指针工具给的 preview.focus）与钉住的格（任何工具下），按画面上的陆海描边；导出的干净画面不画
+      renderer.setFocus(clean ? null : (preview.focus ?? null), clean ? null : pinnedFocus(w));
       if (clean) {
         renderer.setHighlight(null);
         lastHighlightKey = [];
@@ -617,11 +620,19 @@ export function MapView() {
       return r && (r.kind === 'city' || r.kind === 'point') ? markKey(r.kind, r.id) : null;
     }
 
-    // 干净的画面（导出图片）用的渲染器状态：当前世界的着色、存着的花纹，不带高亮、省份预览、幽灵海岸
+    // 钉住的格（第三十七轮）：钉住时记下的陆或水那一部分；没记下（钉住的点没有描格的格）不描
+    function pinnedFocus(w: World): CellFocus | null {
+      const c = pinnedCell.value;
+      const part = pinnedPart.value;
+      return c >= 0 && c < w.mesh.n && part ? { cell: c, land: part === 'land' } : null;
+    }
+
+    // 干净的画面（导出图片）用的渲染器状态：当前世界的着色、存着的花纹，不带高亮、描格、省份预览、幽灵海岸
     function cleanState(w: World) {
       applyColors(w);
       applyFx(w, true);
       applyTint(w);
+      renderer.setFocus(null, null);
       renderer.setHighlight(null);
       lastHighlightKey = [];
       applyGroupPreview(w, null);
@@ -668,6 +679,7 @@ export function MapView() {
     const disposeRedraw = effect(() => {
       void options.value;
       void pinnedCell.value;
+      void pinnedPart.value;
       void overlays.value;
       void season.value;
       void mapStyle.value;

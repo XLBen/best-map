@@ -7,7 +7,7 @@ import type { Renderer } from '../../render/renderer';
 import { cursorHint, erasing, hoverCell, hoverProvinceCell, measure, openPanel, picking, pinCell, prefs, showToast, tool, world } from '../../state';
 import { clampPlanetCamera, maxZoom, minZoom, shapeFitsWidth } from '../camera';
 import { CATEGORY_DEFS, TOOL_DEFS, category } from '../defs/tools';
-import { type Pointer, type ToolHandler, provinceCellAt } from '../tools';
+import { type Pointer, type ToolHandler, pinTarget, provinceCellAt } from '../tools';
 
 // 地图上的指针：拖着平移、滚轮与触控板缩放平移、Safari 的捏合、空格键拖地图；其余的按下、移动、松手、单击交给当前工具。
 // 鼠标在哪里（pointer、lastPointer）、按没按着（pressed）与地图视图共用（view）
@@ -58,7 +58,7 @@ export function mapInput(
   let panning: { x: number; y: number; cx: number; cy: number; proj?: Proj; anchor?: [number, number] | null } | null = null;
   let clickStart: { sx: number; sy: number } | null = null;
   // 右键按下的地方（第二十一轮）：没拖动就松开是钉住这一格（“这里”卡片停在这一格，可以改档案）
-  let rightStart: { sx: number; sy: number; cell: number } | null = null;
+  let rightStart: { sx: number; sy: number; pin: { cell: number; part: 'land' | 'water' | null } } | null = null;
   let spaceDown = false;
 
   // 屏幕上的一点（CSS 像素，相对画布）在地图上的哪里；shown：那里画的是哪一格（悬停卡片、吸取、选省按它）
@@ -173,7 +173,8 @@ export function mapInput(
     view.pointer = p;
     view.lastPointer = p;
     if (e.button === 1 || e.button === 2 || spaceDown) {
-      rightStart = e.button === 2 && !spaceDown ? { sx: p.sx, sy: p.sy, cell: hereOf(p) } : null;
+      // 钉住的是描格的格（第三十七轮：与指针点一下相同，记下是陆还是水）
+      rightStart = e.button === 2 && !spaceDown ? { sx: p.sx, sy: p.sy, pin: pinTarget(w, p) } : null;
       startPan(p.sx, p.sy);
       return;
     }
@@ -236,7 +237,7 @@ export function mapInput(
       const r = rightStart;
       rightStart = null;
       if (r && Math.hypot(p.sx - r.sx, p.sy - r.sy) <= 5) {
-        pinCell(r.cell);
+        pinCell(r.pin.cell, r.pin.part);
         requestDraw();
         return;
       }

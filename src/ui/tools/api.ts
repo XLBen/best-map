@@ -3,7 +3,7 @@ import { arcUnits, wrapX } from '../../../core/geo';
 import type { ProvinceSeam } from '../../../core/seams';
 import { ringWinding } from '../../../core/select';
 import type { ProvinceMeta, World } from '../../../core/world';
-import type { DisplayCell } from '../../../core/display';
+import type { CellFocus, DisplayCell } from '../../../core/display';
 import type { GhostEdit, HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
 import { busy, onlyEditsPending, showToast } from '../../state';
@@ -45,6 +45,23 @@ export interface Preview {
   terrain?: TerrainPreview | null;
   // 确切预览算出的将来的世界：地图按它画生态颜色、雪、河、地名、风和没涂成的格（工具、悬停卡片照旧看当前世界）
   world?: World | null;
+  // 描格（第三十七轮，指针）：鼠标下这一格画成陆地或水面的那一部分，地图按画面上的陆海描边（renderer.setFocus）
+  focus?: CellFocus | null;
+}
+
+// 描格的格（第三十七轮）：屏幕上这一点画成的陆地或水面那一部分（core/display.ts 的 DisplayCell.focus）。
+// 没有 shown 时（地图外、手造的点）就是鼠标下的格，陆海按格（湖算水面）
+export function focusOf(w: World, p: Pointer): CellFocus {
+  if (p.shown?.focus) return p.shown.focus;
+  return { cell: p.cell, land: p.cell >= 0 && w.causes.land[p.cell] === 1 && w.derived.lake[p.cell] !== 1 };
+}
+
+// 点一下（指针）、右键钉住的格（第三十七轮）：描格的格，记下钉住的是陆还是水（描那一部分的边）。
+// 这一点没有描格的格（离水面格太远的峡湾水面）时钉住“这里”那一格，不描边
+export function pinTarget(w: World, p: Pointer): { cell: number; part: 'land' | 'water' | null } {
+  const f = focusOf(w, p);
+  if (f.cell >= 0) return { cell: f.cell, part: f.land ? 'land' : 'water' };
+  return { cell: p.shown?.here ?? p.cell, part: null };
 }
 
 export interface ProvincePreview {

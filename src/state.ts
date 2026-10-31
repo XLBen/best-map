@@ -215,9 +215,12 @@ export const measure = signal<[number, number][] | null>(null);
 // “这里”卡片（第二十一轮）：展开着没有；钉住的格（右键点地图上的一格，卡片停在那一格，-1 没钉）
 export const hereOpen = signal(false);
 export const pinnedCell = signal(-1);
-export function pinCell(cell: number) {
+// 钉住的是那一格画成陆地还是水面的部分（第三十七轮：地图上描出这一部分的边，见 renderer.setFocus）；null 不描
+export const pinnedPart = signal<'land' | 'water' | null>(null);
+export function pinCell(cell: number, part: 'land' | 'water' | null = null) {
   batch(() => {
     pinnedCell.value = cell;
+    pinnedPart.value = cell >= 0 ? part : null;
     if (cell >= 0) hereOpen.value = true;
   });
 }
@@ -849,6 +852,7 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
       worldEpoch.value++;
       measure.value = null;
       pinnedCell.value = -1;
+      pinnedPart.value = null;
       if (visualOverrides.value.size) visualOverrides.value = new Map();
     } else pruneVisualOverrides(next.small.species);
     world.value = next;
@@ -899,7 +903,7 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   if (hov && (fresh || (hov.kind === 'guide' && !next.small.guides.some((g) => g.id === hov.id)))) hoverRiver.value = null;
   if (focusSpecies.value && !s.small.species.some((x) => x.id === focusSpecies.value)) focusSpecies.value = null;
   // 钉住的格：换了大小的网格（打开别的世界之外，撤销到新建之前……）就不钉了
-  if (pinnedCell.value >= next.mesh.n) pinnedCell.value = -1;
+  if (pinnedCell.value >= next.mesh.n) pinCell(-1);
   if (options.value.biome && !s.small.species.some((x) => x.id === options.value.biome)) setOptions({ biome: null });
   // 新世界：画笔、岛、湖的大小跟着地图尺度走
   if (!before || before.mesh !== mesh || before.kmPerUnit !== next.kmPerUnit) setOptions(sizesFor(next));

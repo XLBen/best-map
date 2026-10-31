@@ -2,20 +2,20 @@ import { dimensionValues, valueLayer, worldCultureGroups, worldCultures, worldDi
 import type { World } from '../../../core/world';
 import type { SettleMark } from '../../render/settle-draw';
 import { pinCell, selectedCountry, selectedSettle, world } from '../../state';
-import { cellOutline } from '../map/highlights';
 import { blocAt, blocHereText, selectBloc } from '../blocs';
 import { countryAt, countryOf } from '../countries';
 import { featuresAt } from '../features-at';
 import { type MapKind, mapKind, modeDef, modeOf } from '../map/modes';
 import { shownMarks } from '../map/settle';
 import { cellPxOf, pickMark, refOfKey, settleHoverText } from '../settlements';
-import { EMPTY, type Pointer, type ToolHandler } from './api';
+import { EMPTY, type Pointer, type ToolHandler, focusOf, pinTarget } from './api';
 import { selectCountry } from './countries';
 import { HIT_PX, HOVER, ring, selectSettle, selectedRing } from './settlements';
 
 // 指针（第二十五轮）：只看、不改。点城市、地标、点打开它的档案；国家模式里点国家打开国家档案并钉住这一格；
 // 同盟模式（第二十六轮）里点到集团打开集团的档案，不在集团里的国家打开国家档案；
-// 别的地方钉住这一格（右下角“这里”的档案）。鼠标旁一句话写这里是什么，跟着地图模式；鼠标下的格描出边（钉住的格也描边，见 map/highlights.ts）
+// 别的地方钉住这一格（右下角“这里”的档案）。鼠标旁一句话写这里是什么，跟着地图模式；鼠标下的格描出边（第三十七轮：描这一格画成陆地
+// 或水面的那一部分，跟着画面上的海岸、湖岸、碎岛，见 Preview.focus；钉住的格也描边，MapView 交给 renderer.setFocus）
 
 const cellOf = (p: Pointer) => p.shown?.here ?? p.cell;
 
@@ -58,7 +58,6 @@ export function pointerText(w: World, cell: number, kind: MapKind = modeOf(w, ma
 export function pointerTool(zoom: () => number): ToolHandler {
   let pointer: Pointer | null = null;
   let hot: SettleMark | null = null;
-  const outline = cellOutline();
   const find = (w: World, p: Pointer) => pickMark(w, marksOf(w), p.x, p.y, HIT_PX / zoom(), cellPxOf(w, zoom()));
   return {
     drags: false,
@@ -96,8 +95,9 @@ export function pointerTool(zoom: () => number): ToolHandler {
           selectBloc(b.id);
         } else if (id !== null) selectCountry(id);
       }
-      // 3. 钉住这一格：右下角“这里”的档案
-      pinCell(cell);
+      // 3. 钉住这一格：右下角“这里”的档案（钉住描格的格，记下是陆还是水）
+      const pin = pinTarget(w, p);
+      pinCell(pin.cell, pin.part);
     },
     backdrop() {
       const w = world.value;
@@ -112,7 +112,8 @@ export function pointerTool(zoom: () => number): ToolHandler {
         return { layers: [], shapes: [ring(hot.x, hot.y, 11, zoom(), HOVER)], hint: ref ? settleHoverText(w, ref) : null };
       }
       const cell = cellOf(pointer);
-      return { layers: outline(cell), shapes: [], hint: pointerText(w, cell) };
+      const f = focusOf(w, pointer);
+      return { layers: [], shapes: [], hint: pointerText(w, cell), focus: f.cell >= 0 ? f : null };
     },
   };
 }
