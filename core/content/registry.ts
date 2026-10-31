@@ -59,6 +59,8 @@ export interface FieldDesc {
   value?: FieldDesc;
   // 只在同一层的另一个字段是某个值时才有（地名风格的模板式 / 音译式）
   when?: { key: string; is: string };
+  // 新加这个字段（或换了 when 指的字段、它露出来）时的值（第三十八轮，画风；省略时按类型，见界面的 defaultValue）
+  default?: unknown;
 }
 
 export type ContentWorld = Pick<World, 'small' | 'causes'>;

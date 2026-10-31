@@ -16,6 +16,7 @@ import { settleOverlay, shownMarks } from './map/settle';
 import { showView } from './panels/LayersPanel';
 import { CAPITAL_NAME_PX, MINOR_ROAD_EDIT_PX, MINOR_ROAD_PX, markKey, roadSet, settleHoverText, settleMarks, settleShow } from './settlements';
 import { onKeyDown } from './shell/keys';
+import { BUILTIN_MAP_STYLES } from '../../core/packs/map-styles';
 import { type Pointer, pointerText, pointerTool } from './tools';
 
 // 第二十五轮的界面：地图模式（表、偏好、按钮、与底图同步）、片区名、城市名只写首都、指针、道路减淡
@@ -341,13 +342,14 @@ describe('指针', () => {
 
 describe('道路', () => {
   it('平时细、半透明、没有衬边，小路一格 9 像素才画；“道路”工具里照旧清楚、6 像素', () => {
-    const quiet = roadStyle({}, 'realistic');
+    const [REALISTIC, ATLAS] = BUILTIN_MAP_STYLES;
+    const quiet = roadStyle({}, REALISTIC);
     expect(quiet.major).toMatchObject({ width: QUIET_ROAD_WIDTH.major, casing: null });
     expect(quiet.major.width).toBeCloseTo(0.9);
     expect(quiet.minor.width).toBeCloseTo(0.6);
     expect(quiet.major.color).toMatch(/0\.45\)$/);
     expect(quiet.minor.color).toMatch(/0\.3\)$/);
-    const clear = roadStyle({ clear: true }, 'atlas');
+    const clear = roadStyle({ clear: true }, ATLAS);
     expect(clear.major.width).toBe(ROAD_WIDTH.major);
     expect(clear.major.casing).not.toBeNull();
     expect(MINOR_ROAD_PX).toBe(9);

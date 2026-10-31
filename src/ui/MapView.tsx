@@ -2,6 +2,7 @@ import { effect, untracked } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { type CellFocus, displayCellAt } from '../../core/display';
 import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
+import { worldMapStyle } from '../../core/map-style';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
@@ -20,7 +21,6 @@ import {
   hoverRiver,
   labelGroups,
   nameMode,
-  mapStyle,
   measure,
   mode,
   openPanel,
@@ -415,10 +415,11 @@ export function MapView() {
       // 地图模式（第二十五轮，map/modes.ts 的表）：国家模式里省界淡一些，文化等模式里更淡（省份类工具开着时照旧）
       const md = modeDef(modeOf(shown));
       setBorderAlpha(md, !!cm.provinces);
-      renderer.style = mapStyle.value;
+      // 画风（第三十八轮）：画出来的世界选的那一种（资源库里改着画风时预览世界里是改好的）
+      const style = worldMapStyle(shown.small);
+      renderer.style = style;
       // 河由渲染器在合成一步里画（只画在陆地上，排在省界、高亮下面）：渲染器按这一帧是不是移动中取停稳或移动中的那张
       const shownRivers = shown === w ? paths : pathsOf(shown);
-      const style = mapStyle.value;
       renderer.riverLayer = overlays.value.rivers
         ? (motion, scene) => (scene ? riverLayerScene(shown, shownRivers, scene, style) : riverLayer(shown, shownRivers, renderer.camera, { style, motion, motionEpoch: renderer.motionEpoch }, glCanvas))
         : null;
@@ -444,7 +445,7 @@ export function MapView() {
         wind: overlays.value.wind,
         markers: !!cm.markers && !clean,
         season: season.value,
-        style: mapStyle.value,
+        style,
         shapes: glow.length || back?.shapes.length ? [...(back?.shapes ?? []), ...glow, ...preview.shapes] : preview.shapes,
         // 省名：省份类工具打开时（不是导出）标出所有的省帮着选；别的时候、导出都按图层里的“省名”（第十三轮修）
         provinceLabels: cm.provinces && !clean ? labelsFor(w, preview.provinces) : layerProvinceLabels(),
@@ -594,13 +595,14 @@ export function MapView() {
       const f = on ? fxLayers(w, colorOpts, ov) : null;
       renderer.setFx(on ? (f?.fx ?? null) : (baseLayers.fx ?? null), on ? (f?.palette ?? null) : (baseLayers.fxPalette ?? null));
     }
-    // 湖泊类型的颜色（第九轮）：按画出来的世界、地图风格、视图模式；没有带类型的湖时为 null
+    // 湖泊类型的颜色（第九轮）：按画出来的世界、画风（河湖的种类用哪一种颜色）、视图模式；没有带类型的湖时为 null
     let tintKey: unknown[] = [];
     function applyTint(w: World) {
-      const key = [w.mesh, w.derived.lakeType, w.derived.lake, w.causes.land, lakeTypesSignature(w.small.lakeTypes), mapStyle.value, mode.value];
+      const style = worldMapStyle(w.small);
+      const key = [w.mesh, w.derived.lakeType, w.derived.lake, w.causes.land, lakeTypesSignature(w.small.lakeTypes), style.typeColors, mode.value];
       if (sameKey(key, tintKey)) return;
       tintKey = key;
-      renderer.setTint(lakeTintLayer(w, { mode: mode.value }, mapStyle.value));
+      renderer.setTint(lakeTintLayer(w, { mode: mode.value }, style));
     }
     // 着色的选项变了、调整面板的预览世界到了：重画
     const disposeColors = effect(() => {
@@ -640,7 +642,7 @@ export function MapView() {
       renderer.flatByGroup = mode.value === 'provinces' || mode.value === 'country' || mode.value === 'bloc';
       renderer.highlightByGroup = !!CATEGORY_DEFS[category.value].map?.provinces;
       setBorderAlpha(modeDef(modeOf(w)), !!CATEGORY_DEFS[category.value].map?.provinces);
-      renderer.style = mapStyle.value;
+      renderer.style = worldMapStyle(w.small);
     }
 
     // 工具选中的东西自己的地名（key）先不标：画河时选中的河不盖住它的控制点、“+”。同样的输入给同一个数组
@@ -682,7 +684,6 @@ export function MapView() {
       void pinnedPart.value;
       void overlays.value;
       void season.value;
-      void mapStyle.value;
       void category.value;
       void flash.value;
       void hoverRiver.value;

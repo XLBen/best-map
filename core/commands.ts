@@ -3,6 +3,7 @@ import { WORLD_TYPE_INFO, type Worldgen, worldgenSchema } from './generate';
 import { checkForm, sameForm } from './planet-form';
 import { planetKindName } from './presets';
 import { styleById, worldStyleId } from './name-styles';
+import { worldMapStyleId, worldMapStyles } from './map-style';
 import './content/kinds';
 import { type DirtyLevel, allKinds, itemId, itemName, kindOf, usageOf } from './content/registry';
 import { originSchema, originTarget, recordedOrigin, setOrigin, tidyOrigins } from './content/origin';
@@ -345,6 +346,8 @@ const baseCommands = [
   z.object({ op: z.literal('tidy_content'), items: z.array(z.object({ kind: typeIdSchema, id: z.string().min(1).max(64) })).max(4096).optional() }),
   // 世界默认的地名风格（第二十轮）：null 是不选（第三十轮起按世界里的第一种）
   z.object({ op: z.literal('set_name_style'), id: typeIdSchema.nullable() }),
+  // 世界的画风（第三十八轮，见 map-style.ts）：只能选世界里有的；null 是不选（按世界里的第一种）。只是画法，不重算
+  z.object({ op: z.literal('set_map_style'), id: typeIdSchema.nullable() }),
   // 一个地物的地名风格（第二十轮）：key 是地物的键（“类型:锚点格”“guide:id”“region:id”）；null 换回世界默认
   z.object({ op: z.literal('set_feature_style'), key: z.string().regex(/^\w+:\S+$/).max(60), style: typeIdSchema.nullable() }),
   // 用户的地名：圈一块（cells）或放一个点（kind = spot，at 为位置）；name 为空时按文字包自动起名
@@ -2024,6 +2027,14 @@ function runOp(world: World, cmd: Command, ctx: ApplyContext): RunResult {
       if (cmd.id === null) delete small.nameStyle;
       else small.nameStyle = cmd.id;
       return { dirty: Dirty.Names, summary: `地名风格改为“${styleLabel(small, worldStyleId(small))}”` };
+    }
+    case 'set_map_style': {
+      const styles = worldMapStyles(small);
+      if (cmd.id !== null && !styles[cmd.id]) throw new CommandError(`世界里没有画风 "${cmd.id}"`);
+      if (cmd.id === null) delete small.mapStyle;
+      else small.mapStyle = cmd.id;
+      const now = styles[worldMapStyleId(small)];
+      return { dirty: Dirty.None, summary: `画风改为“${now?.name ?? '写实'}”` };
     }
     case 'set_feature_style': {
       if (cmd.style !== null && !styleById(small, cmd.style)) throw new CommandError(`世界里没有地名风格 "${cmd.style}"`);

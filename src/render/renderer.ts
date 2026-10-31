@@ -1,4 +1,5 @@
-import { GLOW_GAIN, GLOW_GAIN_ATLAS, PATTERN_DETAIL, SEED_STEP, SPARKLE, SPARKLE3 } from '../../core/biome-look';
+import { PATTERN_DETAIL, SEED_STEP, SPARKLE, SPARKLE3 } from '../../core/biome-look';
+import { FALLBACK_MAP_STYLE, type MapStyle, mapStyleKey, styleRgba } from '../../core/map-style';
 import type { CellFocus } from '../../core/display';
 import type { Mesh } from '../../core/mesh';
 import type { SeamLayers } from '../../core/seams';
@@ -743,8 +744,25 @@ uniform float uSpacing;
 uniform float uRelief;
 uniform float uShade;
 uniform float uRock;
-uniform int uStyle;
-// 海面也是数据（海水温度底图）：地图册画风也不把海涂平
+// 画风（第三十八轮，core/map-style.ts；值见 styleUniforms）：陆地的底色（a 是比例，0 不混）；山影着色（1）时暗处、亮处各乘一种颜色
+uniform vec4 uLandTint;
+uniform int uShadeTint;
+uniform vec3 uShadeDark;
+uniform vec3 uShadeLight;
+// 海：按水深分层（1）时四层的颜色、第二到四层从多深起（m）、等深线（a 是浓淡）；海的明暗、分层的海的明暗（x + y · 明暗）
+uniform int uSeaTiers;
+uniform vec3 uSeaTier[4];
+uniform vec3 uSeaDepth;
+uniform vec4 uIsobath;
+uniform vec2 uSeaShade;
+uniform vec2 uTierShade;
+// 生态发光的强弱
+uniform float uGlowGain;
+// 海岸线（a 是浓淡）、省界、国界的颜色
+uniform vec4 uCoastLine;
+uniform vec3 uProvLine;
+uniform vec3 uCountryLine;
+// 海面也是数据（海水温度底图）：分层的画风也不把海涂平
 uniform int uSeaData;
 uniform int uHasFlat;
 uniform int uHasGroup;
@@ -888,54 +906,49 @@ void main() {
     float steep = 1.0 - n.z;
     col = mix(col, vec3(0.52, 0.48, 0.44), smoothstep(0.25, 0.6, steep) * uRock);
   }
-  if (uStyle == 1) {
-    // 地图册：羊皮纸底色、暖色晕渲、平涂的海
-    if (land) {
-      col = mix(col, vec3(0.93, 0.87, 0.72), 0.30);
-      col *= mix(vec3(0.62, 0.52, 0.42), vec3(1.04, 1.02, 0.98), clamp(shade - 0.3, 0.0, 1.0));
-    } else if (uSeaData == 1) {
-      // 海面也是数据（海水温度）：不涂平，与写实风格一样
-      col *= mix(1.0, 0.86 + 0.14 * shade, uShade);
-    } else {
-      // 按水深分层（0–200、200–1000、1000–3000、3000 m 以下），层与层之间一道淡淡的等深线；海底的坡轻轻晕渲
-      float depth = -h;
-      // 放大到一格有好几个像素时，按三角形线性插值的水深画出的等深线是折线（第十二轮修）：分层与等深线按约 0.6 格半径的两圈
-      // 共 16 点的平均水深画，折角化开成圆滑的曲线；一格不到 3 像素时照旧（看不出折角），3–8 像素之间渐渐换过去
-      float smoothK = smoothstep(3.0, 8.0, uCellPx);
-      if (smoothK > 0.0) {
-        float r = 0.6 * uCellPx;
-        float sum = max(depth, 0.0);
-        float wsum = 1.0;
-        for (int k = 0; k < 8; k++) {
-          float a = float(k) * 0.7853982;
-          vec2 o1 = vec2(cos(a), sin(a)) * r * uTexel;
-          vec2 o2 = vec2(cos(a + 0.3926991), sin(a + 0.3926991)) * (0.5 * r) * uTexel;
-          sum += 0.6 * max(-texture(uSceneHeight, (vUv + o1) * uSceneXf.xy + uSceneXf.zw).r, 0.0);
-          sum += max(-texture(uSceneHeight, (vUv + o2) * uSceneXf.xy + uSceneXf.zw).r, 0.0);
-          wsum += 1.6;
-        }
-        depth = mix(depth, sum / wsum, smoothK);
-      }
-      float fw = max(fwidth(depth), 1e-3);
-      col = vec3(0.80, 0.88, 0.89);
-      col = mix(col, vec3(0.73, 0.83, 0.86), smoothstep(200.0 - fw, 200.0 + fw, depth));
-      col = mix(col, vec3(0.66, 0.77, 0.82), smoothstep(1000.0 - fw, 1000.0 + fw, depth));
-      col = mix(col, vec3(0.59, 0.71, 0.78), smoothstep(3000.0 - fw, 3000.0 + fw, depth));
-      float iso = 0.0;
-      for (int k = 0; k < 3; k++) {
-        float T = k == 0 ? 200.0 : k == 1 ? 1000.0 : 3000.0;
-        iso = max(iso, 1.0 - smoothstep(0.5, 1.5, abs(depth - T) / fw));
-      }
-      col = mix(col, vec3(0.45, 0.58, 0.66), 0.35 * iso);
-      // 平涂的海盖掉了前面的省份着色：再涂一次（海省默认不着色、A 为 0；用户给海省选了颜色时与写实风格一样涂上；
-      // 湖省、湖所在的省照样涂）。水面的像素只取水面格（provCell），不会涂上陆上省的颜色
-      col = mix(col, fc.rgb, fc.a);
-      col *= mix(1.0, 0.94 + 0.06 * shade, uShade);
-    }
-  } else if (land) {
-    col *= mix(1.0, shade, uShade);
+  if (land) {
+    // 陆地：混上画风的底色（地图册的羊皮纸）；山影平常（按“晕渲”明暗）或着色（地图册的暖色晕渲：暗处、亮处各乘一种颜色，不看“晕渲”）
+    if (uLandTint.a > 0.0) col = mix(col, uLandTint.rgb, uLandTint.a);
+    if (uShadeTint == 1) col *= mix(uShadeDark, uShadeLight, clamp(shade - 0.3, 0.0, 1.0));
+    else col *= mix(1.0, shade, uShade);
+  } else if (uSeaTiers == 0 || uSeaData == 1) {
+    // 海底的坡轻轻晕渲（海面是数据——海水温度——时分层的画风也这样画，不涂平）
+    col *= mix(1.0, uSeaShade.x + uSeaShade.y * shade, uShade);
   } else {
-    col *= mix(1.0, 0.86 + 0.14 * shade, uShade);
+    // 按水深分层（地图册：0–200、200–1000、1000–3000、3000 m 以下），层与层之间一道淡淡的等深线；海底的坡轻轻晕渲
+    float depth = -h;
+    // 放大到一格有好几个像素时，按三角形线性插值的水深画出的等深线是折线（第十二轮修）：分层与等深线按约 0.6 格半径的两圈
+    // 共 16 点的平均水深画，折角化开成圆滑的曲线；一格不到 3 像素时照旧（看不出折角），3–8 像素之间渐渐换过去
+    float smoothK = smoothstep(3.0, 8.0, uCellPx);
+    if (smoothK > 0.0) {
+      float r = 0.6 * uCellPx;
+      float sum = max(depth, 0.0);
+      float wsum = 1.0;
+      for (int k = 0; k < 8; k++) {
+        float a = float(k) * 0.7853982;
+        vec2 o1 = vec2(cos(a), sin(a)) * r * uTexel;
+        vec2 o2 = vec2(cos(a + 0.3926991), sin(a + 0.3926991)) * (0.5 * r) * uTexel;
+        sum += 0.6 * max(-texture(uSceneHeight, (vUv + o1) * uSceneXf.xy + uSceneXf.zw).r, 0.0);
+        sum += max(-texture(uSceneHeight, (vUv + o2) * uSceneXf.xy + uSceneXf.zw).r, 0.0);
+        wsum += 1.6;
+      }
+      depth = mix(depth, sum / wsum, smoothK);
+    }
+    float fw = max(fwidth(depth), 1e-3);
+    col = uSeaTier[0];
+    col = mix(col, uSeaTier[1], smoothstep(uSeaDepth.x - fw, uSeaDepth.x + fw, depth));
+    col = mix(col, uSeaTier[2], smoothstep(uSeaDepth.y - fw, uSeaDepth.y + fw, depth));
+    col = mix(col, uSeaTier[3], smoothstep(uSeaDepth.z - fw, uSeaDepth.z + fw, depth));
+    float iso = 0.0;
+    for (int k = 0; k < 3; k++) {
+      float T = k == 0 ? uSeaDepth.x : k == 1 ? uSeaDepth.y : uSeaDepth.z;
+      iso = max(iso, 1.0 - smoothstep(0.5, 1.5, abs(depth - T) / fw));
+    }
+    col = mix(col, uIsobath.rgb, uIsobath.a * iso);
+    // 平涂的海盖掉了前面的省份着色：再涂一次（海省默认不着色、A 为 0；用户给海省选了颜色时与按明暗画的海一样涂上；
+    // 湖省、湖所在的省照样涂）。水面的像素只取水面格（provCell），不会涂上陆上省的颜色
+    col = mix(col, fc.rgb, fc.a);
+    col *= mix(1.0, uTierShade.x + uTierShade.y * shade, uShade);
   }
   // 湖泊类型：A 的低两位是水面的画法（1 染色、2 干湖底那样的盐壳），再两位是陆上的（1 湖岸的光晕、2 干涸湖底的盐壳），
   // 16 是发光（湖面亮一些）。盐壳是干湖底的颜色与类型的颜色各一半
@@ -971,7 +984,7 @@ void main() {
   ${FX_BEGIN}
   // 生态的发光：加在晕渲之后（背光的坡上照样亮）
   int glowSlot = int(fx.a + 0.5) - 1;
-  if (glowSlot >= 0 && fx.b > 0.5) col += texelFetch(uFxPal, ivec2(1, glowSlot), 0).rgb * (fx.b / 255.0) * (uStyle == 1 ? ${glsl(GLOW_GAIN_ATLAS)} : ${glsl(GLOW_GAIN)});
+  if (glowSlot >= 0 && fx.b > 0.5) col += texelFetch(uFxPal, ivec2(1, glowSlot), 0).rgb * (fx.b / 255.0) * uGlowGain;
   ${FX_END}
 
   // 河：画在平涂、晕渲之后，海岸线、省界、高亮之前；只画在画成陆地的像素上（海面、湖面上不画，河口正好停在岸线）
@@ -981,7 +994,7 @@ void main() {
   }
 
   // 海岸线：地形层画好的抗锯齿细线
-  col = mix(col, uStyle == 1 ? vec3(0.35, 0.27, 0.2) : vec3(0.18, 0.22, 0.24), base.a * (uStyle == 1 ? 0.8 : 0.4) / sqrt(max(uScenePx, 1.0)));
+  col = mix(col, uCoastLine.rgb, base.a * uCoastLine.a / sqrt(max(uScenePx, 1.0)));
 
   // 分组边界（省份）：扭曲坐标下相邻像素的分组不同
   if (uHasGroup == 1 && pc >= 0) {
@@ -996,7 +1009,7 @@ void main() {
     // 缩小到省份只有十几像素宽时淡出（看省有多大，不看格有多大），否则全图视角下边界会密成一张网；
     // 格比一个像素还小时也淡出（扭曲后取到的格在像素之间乱跳，边界碎成噪点）
     float fade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);
-    if (bx || by) col = mix(col, uStyle == 1 ? vec3(0.45, 0.2, 0.15) : vec3(0.12, 0.1, 0.08), (g0 > 0.0 ? 0.55 : 0.15) * fade * uProvAlpha / uPxScale);
+    if (bx || by) col = mix(col, uProvLine, (g0 > 0.0 ? 0.55 : 0.15) * fade * uProvAlpha / uPxScale);
   }
 
   // 国界（第二十三轮）：比省界粗、深——近处一圈（约 3 像素宽）浓，外面一圈淡；海上的国界淡一些
@@ -1006,7 +1019,7 @@ void main() {
     vec2 p0 = countryPair(pc);
     float c0 = p0.x;
     float b0 = p0.y;
-    vec3 lineCol = uStyle == 1 ? vec3(0.42, 0.14, 0.1) : vec3(0.16, 0.11, 0.1);
+    vec3 lineCol = uCountryLine;
     float zoomK = mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx)) / sqrt(max(uPxScale, 1.0));
     if (c0 >= 0.0) {
       float kIn = 0.0;
@@ -1608,7 +1621,56 @@ export interface CellLayers {
   fxPalette?: Float32Array | null;
 }
 
-export type MapStyle = 'realistic' | 'atlas';
+export type { MapStyle } from '../../core/map-style';
+
+// 画风（第三十八轮）在合成着色器里的 uniform：颜色按 r / 255 上传（float32 与第三十七轮写在着色器里的常数逐位相同，测试查）。
+// 按画风对象记住，每帧只上传
+export interface StyleUniforms {
+  landTint: Float32Array;
+  shadeTint: number;
+  shadeDark: Float32Array;
+  shadeLight: Float32Array;
+  seaTiers: number;
+  seaTier: Float32Array;
+  seaDepth: Float32Array;
+  isobath: Float32Array;
+  seaShade: Float32Array;
+  tierShade: Float32Array;
+  glowGain: number;
+  coastLine: Float32Array;
+  provLine: Float32Array;
+  countryLine: Float32Array;
+}
+const styleUniformCache = new WeakMap<object, StyleUniforms>();
+const unitRgb = (c: string): number[] => {
+  const v = styleRgba(c) ?? [0, 0, 0, 1];
+  return [v[0] / 255, v[1] / 255, v[2] / 255];
+};
+// 明暗 x + y · shade：y 是“海的明暗”，x = 1 − y（在 JS 里按双精度减，与以前写的 0.86、0.94 一样）
+const shadePair = (k: number) => new Float32Array([1 - k, k]);
+export function styleUniforms(style: MapStyle): StyleUniforms {
+  let u = styleUniformCache.get(style);
+  if (!u) {
+    u = {
+      landTint: new Float32Array([...unitRgb(style.landTint), style.landTintAmount]),
+      shadeTint: style.landShade === 'tinted' ? 1 : 0,
+      shadeDark: new Float32Array(unitRgb(style.shadeDark)),
+      shadeLight: new Float32Array(unitRgb(style.shadeLight)),
+      seaTiers: style.sea === 'tiers' ? 1 : 0,
+      seaTier: new Float32Array([style.tier1, style.tier2, style.tier3, style.tier4].flatMap(unitRgb)),
+      seaDepth: new Float32Array([style.depth2, style.depth3, style.depth4]),
+      isobath: new Float32Array([...unitRgb(style.isobath), style.isobathAmount]),
+      seaShade: shadePair(style.seaShade),
+      tierShade: shadePair(style.tierShade),
+      glowGain: style.glow,
+      coastLine: new Float32Array([...unitRgb(style.coastLine), style.coastAmount]),
+      provLine: new Float32Array(unitRgb(style.provinceLine)),
+      countryLine: new Float32Array(unitRgb(style.countryLine)),
+    };
+    styleUniformCache.set(style, u);
+  }
+  return u;
+}
 // 描格（第三十七轮）：离格心几格以内的像素才算 focusAt（描出的范围一块地区不过约 1.9 格，星球两极附近约 2.9 格，core/display-cell.test.ts 查）
 export const FOCUS_REACH = 3.2;
 
@@ -1836,7 +1898,8 @@ export class Renderer {
   // 海面也是数据（海水温度底图）：见 CellLayers.seaData
   private seaData = false;
   private coastAmp = 180;
-  style: MapStyle = 'realistic';
+  // 画风（第三十八轮）：世界在用的那一种（core/map-style.ts 的 worldMapStyle）
+  style: MapStyle = FALLBACK_MAP_STYLE;
   detail = 1;
   // 平涂是省份着色、高亮是省份工具的：切线附近也按换过的格取（否则按像素自己的格）
   flatByGroup = false;
@@ -2535,7 +2598,7 @@ export class Renderer {
     // 河的图层：停稳的那张（刚停下的那一帧就画好：照用移动中的那张的话，下一帧换上停稳的那张时要整张再合成一次，比画河慢得多）
     const river = this.riverLayer?.(false) ?? null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
-    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${mapStyleKey(this.style)}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
     // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
     if (composeKey === this.composeKey) return;
     gl.disable(gl.BLEND);
@@ -2834,7 +2897,7 @@ export class Renderer {
     const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: sc.key }) ?? null) : null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
     if (!moving) {
-      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${this.style}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
+      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${mapStyleKey(this.style)}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
       if (key === this.pComposeKey) return;
       this.pComposeKey = key;
     } else this.pComposeKey = '';
@@ -3140,7 +3203,21 @@ export class Renderer {
     gl.uniform1f(gl.getUniformLocation(pc, 'uCountryAlpha'), this.countryAlpha);
     gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
     gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uStyle'), this.style === 'atlas' ? 1 : 0);
+    const su = styleUniforms(this.style);
+    gl.uniform4fv(gl.getUniformLocation(pc, 'uLandTint'), su.landTint);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uShadeTint'), su.shadeTint);
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uShadeDark'), su.shadeDark);
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uShadeLight'), su.shadeLight);
+    gl.uniform1i(gl.getUniformLocation(pc, 'uSeaTiers'), su.seaTiers);
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uSeaTier'), su.seaTier);
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uSeaDepth'), su.seaDepth);
+    gl.uniform4fv(gl.getUniformLocation(pc, 'uIsobath'), su.isobath);
+    gl.uniform2fv(gl.getUniformLocation(pc, 'uSeaShade'), su.seaShade);
+    gl.uniform2fv(gl.getUniformLocation(pc, 'uTierShade'), su.tierShade);
+    gl.uniform1f(gl.getUniformLocation(pc, 'uGlowGain'), su.glowGain);
+    gl.uniform4fv(gl.getUniformLocation(pc, 'uCoastLine'), su.coastLine);
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uProvLine'), su.provLine);
+    gl.uniform3fv(gl.getUniformLocation(pc, 'uCountryLine'), su.countryLine);
     gl.uniform1i(gl.getUniformLocation(pc, 'uSeaData'), this.seaData ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasFlat'), this.hasFlat ? 1 : 0);
     gl.uniform1i(gl.getUniformLocation(pc, 'uHasGroup'), this.hasGroup ? 1 : 0);

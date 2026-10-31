@@ -4,6 +4,7 @@ import { type LakeType, lakeTypeSchema, lakeTypesOf } from '../lake-types';
 import { FEATURE_INFO, type FeatureType } from '../features';
 import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
 import { type PlanetForm, planetFormSchema } from '../planet-form';
+import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
 import { type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
@@ -60,7 +61,7 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'atlasColor', label: '地图集颜色', type: 'color', optional: true },
+  { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '画风选了“另一种颜色”时用（地图册）；空着时同颜色' },
   { key: 'natural', label: '自然生成', type: 'bool', optional: true },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true },
   {
@@ -448,6 +449,98 @@ registerKind<NameStyle>({
 // ---------- 地形类别、资源（第二十一轮，见 human/kinds.ts） ----------
 
 registerHumanKinds();
+
+// ---------- 画风（第三十八轮，见 map-style.ts） ----------
+
+const TIERS = { key: 'sea', is: 'tiers' } as const;
+const TINTED = { key: 'landShade', is: 'tinted' } as const;
+const STYLE_HINT = '#rrggbb，或 rgb(r, g, b)、rgba(r, g, b, a)';
+const withDefaults = (fields: FieldDesc[]): FieldDesc[] => fields.map((f) => (f.key in DEFAULT_LOOK ? { ...f, default: DEFAULT_LOOK[f.key as keyof typeof DEFAULT_LOOK] } : f));
+
+registerKind<MapStyle>({
+  id: 'mapStyle',
+  label: '画风',
+  short: '画风',
+  order: 45,
+  store: 'content',
+  maxInWorld: 32,
+  schema: mapStyleSchema as unknown as z.ZodType<MapStyle>,
+  inWorld: (w) => Object.values(worldMapStyles(w.small)),
+  // 只是画法：改了、加了、停用了都不重算（地图按世界选的画风重画）
+  dirty: () => 'none',
+  blank: () => mapStyleSchema.parse({ id: 'my-map-style', name: '新画风' }),
+  // 换了“海”“山影”以后新露出来的几项从默认的画法（写实）补上
+  fields: withDefaults([
+    { key: 'id', label: 'id', type: 'text' },
+    { key: 'name', label: '名字', type: 'text' },
+    { key: 'description', label: '说明', type: 'longtext', optional: true },
+    { key: 'landTint', label: '陆地底色', type: 'color', hint: STYLE_HINT },
+    { key: 'landTintAmount', label: '底色的比例', type: 'number', min: 0, max: 1, step: 0.05, hint: '0 不混底色' },
+    {
+      key: 'landShade',
+      label: '山影',
+      type: 'enum',
+      options: [
+        { value: 'plain', label: '平常' },
+        { value: 'tinted', label: '着色' },
+      ],
+      hint: '平常：按“晕渲”明暗；着色：暗处、亮处各乘一种颜色',
+    },
+    { key: 'shadeDark', label: '山影的暗色', type: 'color', when: TINTED },
+    { key: 'shadeLight', label: '山影的亮色', type: 'color', when: TINTED, hint: '可以超过 255（rgb 里写，最多 510），亮处更亮' },
+    {
+      key: 'sea',
+      label: '海',
+      type: 'enum',
+      options: [
+        { value: 'shade', label: '明暗' },
+        { value: 'tiers', label: '按水深分层' },
+      ],
+      hint: '海面是数据（海水温度）时都按明暗画',
+    },
+    { key: 'seaShade', label: '海的明暗', type: 'number', min: 0, max: 1, step: 0.01, hint: '海底的坡画出多少明暗（0 平的）' },
+    { key: 'tier1', label: '第一层（浅海）', type: 'color', when: TIERS },
+    { key: 'depth2', label: '第二层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
+    { key: 'tier2', label: '第二层', type: 'color', when: TIERS },
+    { key: 'depth3', label: '第三层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
+    { key: 'tier3', label: '第三层', type: 'color', when: TIERS },
+    { key: 'depth4', label: '第四层从多深起（m）', type: 'number', min: 1, max: 20000, step: 10, when: TIERS },
+    { key: 'tier4', label: '第四层（深海）', type: 'color', when: TIERS },
+    { key: 'isobath', label: '等深线', type: 'color', when: TIERS },
+    { key: 'isobathAmount', label: '等深线的浓淡', type: 'number', min: 0, max: 1, step: 0.05, when: TIERS },
+    { key: 'tierShade', label: '分层的海的明暗', type: 'number', min: 0, max: 1, step: 0.01, when: TIERS },
+    { key: 'glow', label: '生态发光', type: 'number', min: 0, max: 2, step: 0.05 },
+    { key: 'coastLine', label: '海岸线', type: 'color' },
+    { key: 'coastAmount', label: '海岸线的浓淡', type: 'number', min: 0, max: 1, step: 0.05 },
+    { key: 'provinceLine', label: '省界', type: 'color' },
+    { key: 'countryLine', label: '国界', type: 'color' },
+    { key: 'river', label: '河', type: 'color', hint: STYLE_HINT },
+    { key: 'riverBank', label: '河岸', type: 'color' },
+    { key: 'road', label: '大道（道路工具里）', type: 'color' },
+    { key: 'roadMinor', label: '小路（道路工具里）', type: 'color' },
+    { key: 'quietRoad', label: '大道', type: 'color' },
+    { key: 'quietRoadMinor', label: '小路', type: 'color' },
+    { key: 'countryLabel', label: '国名', type: 'color' },
+    {
+      key: 'typeColors',
+      label: '河湖的种类用',
+      type: 'enum',
+      options: [
+        { value: 'color', label: '颜色' },
+        { value: 'atlasColor', label: '另一种颜色' },
+      ],
+    },
+  ]),
+  pack: {
+    key: 'mapStyles',
+    max: 32,
+    listed: true,
+    checked: true,
+    withId: (s, id, from) => (id === from ? s : { ...s, id, name: `${s.name} ${id.slice(from.length + 1) || id}`.slice(0, 24) }),
+    fromWorld: (w) => Object.values(worldMapStyles(w.small)).filter((s) => !isBuiltinCopy('mapStyle', s)).map((s) => structuredClone(s)),
+    exportItem: (s) => structuredClone(s),
+  },
+});
 
 // ---------- 自定义场 ----------
 

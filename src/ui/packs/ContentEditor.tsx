@@ -14,7 +14,10 @@ import {
   type Obj,
   type TitleRow,
   addedValue,
+  colorHex,
   isTitleField,
+  plainHex,
+  withHex,
   titleRows,
   titleValue,
   defaultValue,
@@ -333,7 +336,13 @@ function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: un
         </Toggle>
       );
     case 'color':
-      return <input type="color" value={typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : '#888888'} onChange={(e) => onChange((e.target as HTMLInputElement).value)} />;
+      // 画风的颜色可以是 rgb()、rgba()（第三十八轮）：取色器显示最近的颜色、留着不透明度，旁边一个框照字改
+      return (
+        <span class="row">
+          <input type="color" value={colorHex(value)} onChange={(e) => onChange(withHex(value, (e.target as HTMLInputElement).value))} />
+          {!plainHex(value) && <Draft text={String(value)} onCommit={(t) => onChange(t.trim() || undefined)} />}
+        </span>
+      );
     case 'enum': {
       const opts = (f.options ?? []).map((o): [string, string] => [o.value, o.label]);
       if (opts.length <= 4) return <Seg value={typeof value === 'string' ? value : ''} options={opts} onChange={(v) => onChange(v)} />;

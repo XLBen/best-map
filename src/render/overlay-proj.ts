@@ -1,4 +1,5 @@
 import { arcUnits, densify, circle as geoCircle } from '../../core/geo';
+import type { MapStyle } from '../../core/map-style';
 import type { RiverLine } from '../../core/rivers';
 import type { World } from '../../core/world';
 import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
@@ -154,7 +155,7 @@ function drawGraticule(ctx: CanvasRenderingContext2D, P: Projector, f: Frame) {
 }
 
 // 工具的图形。river：地图上的河现在的宽度系数与颜色
-function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, P: Projector, river: { scale: number; color: string }, style: 'realistic' | 'atlas') {
+function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, P: Projector, river: { scale: number; color: string }, style: MapStyle) {
   if (sh.kind === 'river') {
     drawRiverShape(ctx, world, sh, P, river, style);
     return;
@@ -204,7 +205,7 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, P: Pr
 
 // 道路（第二十四轮）：逐点投影（球的背面断开）；小路放大后才画，缩小时画没平滑的折线；
 // 头、中、尾三点都在背面或都在画面同一边之外的不画
-function drawRoadsProjected(ctx: CanvasRenderingContext2D, r: RoadDraw, P: Projector, cellPx: number, style: 'realistic' | 'atlas') {
+function drawRoadsProjected(ctx: CanvasRenderingContext2D, r: RoadDraw, P: Projector, cellPx: number, style: MapStyle) {
   ctx.save();
   const m = 20;
   const off = (q: [number, number] | null) => (!q ? 0 : q[0] < -m ? 1 : q[0] > P.cw + m ? 2 : q[1] < -m ? 3 : q[1] > P.ch + m ? 4 : -1);
@@ -252,7 +253,7 @@ function arrowHead(ctx: CanvasRenderingContext2D, from: [number, number], to: [n
 }
 
 // 预览的河：沿中线按宽度（与地图上的河同样按流量分档、随缩放变宽）描，宽度相同的一段一笔
-function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, P: Projector, river: { scale: number; color: string }, style: 'realistic' | 'atlas') {
+function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, P: Projector, river: { scale: number; color: string }, style: MapStyle) {
   const pts = sh.points;
   const flow = sh.flow;
   if (!pts || !flow || pts.length < 2) return;

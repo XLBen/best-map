@@ -4,6 +4,7 @@ import type { Command } from '../../../core/commands';
 import { type ContentKind, enableCommand, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { hexToRgb } from '../../../core/export';
 import type { IslandType } from '../../../core/island-types';
+import { type MapStyle, styleRgba } from '../../../core/map-style';
 import { PACK_MAX_CHARS, packFileName, readPack } from '../../../core/packs';
 import type { World } from '../../../core/world';
 import { library, removeItem, saveItem } from '../../library';
@@ -100,8 +101,20 @@ async function runTrusted(cmd: Command, busy: string): Promise<boolean> {
   return execAdjust(cmd, busy);
 }
 
+// 画风的色块（第三十八轮）：左上是陆地（平常的陆地色混上底色），右下是海（分层的海取第二层，不然取平常的海色）
+const PLAIN_LAND = [157, 176, 122];
+const PLAIN_SEA = '#4f7fa8';
+function mapStyleSwatch(s: MapStyle): string {
+  const t = styleRgba(s.landTint);
+  const k = t ? s.landTintAmount : 0;
+  const land = PLAIN_LAND.map((v, i) => Math.round(v + ((t?.[i] ?? v) - v) * k));
+  const sea = s.sea === 'tiers' ? s.tier2 : PLAIN_SEA;
+  return `linear-gradient(135deg, rgb(${land.join(', ')}) 50%, ${sea} 50%)`;
+}
+
 function swatchOf(row: RepoRow): string | null {
   if (row.kind.id === 'islandType') return islandSwatch(row.item as IslandType);
+  if (row.kind.id === 'mapStyle') return mapStyleSwatch(row.item as MapStyle);
   const c = (row.item as { color?: unknown }).color;
   return typeof c === 'string' && c.startsWith('#') ? c : null;
 }
@@ -336,7 +349,7 @@ function ItemRow({ row, depth, ctx }: { row: RepoRow; depth: number; ctx: TreeCt
           {row.name}
         </button>
         {ctx.allKinds && <span class="hint repo-kind">{row.kind.short}</span>}
-        {st.isDefault && <span class="hint">默认</span>}
+        {st.isDefault && <span class="hint">{row.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
         <span class="repo-actions">
           {lib ? (
             st.on ? (

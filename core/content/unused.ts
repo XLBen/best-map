@@ -1,5 +1,6 @@
 import type { Command } from '../commands';
 import { lakeTypesOf } from '../lake-types';
+import { worldMapStyleId, worldMapStyles } from '../map-style';
 import { riverTypesOf } from '../river-types';
 import type { World } from '../world';
 import { fieldRefs } from './refs';
@@ -10,7 +11,8 @@ import { strictWorld } from './usage';
 //   生态：没有一格以它为主，也没涂过它（世界里一格长生态的陆地都没有时一种都不算：还没到长生态的时候）；
 //   河、湖的种类：没画、没选，也没被规则自动套上（推导里没有一格是这一种）；
 //   自定义场：哪一项内容都没写到它，也没画过（场里有不是 0 的格）；
-//   政体、派系、人口维度的取值：没有国家用、没有人（现在的人口与自动的快照），与资源库里“移出”时查的一样（usage.ts）。
+//   政体、派系、人口维度的取值：没有国家用、没有人（现在的人口与自动的快照），与资源库里“移出”时查的一样（usage.ts）；
+//   画风（第三十八轮）：世界在用的那一种（选的，没选时第一种）以外的。
 // 只按这些判断，不看移出之后地图变不变：那一步在 tidy.ts 的 planTidy（在世界的副本上真的移出、重算、逐值比较）。
 // 结果按种类、再按世界里的先后，同一个世界总是一样
 
@@ -20,7 +22,7 @@ export interface ContentRef {
 }
 
 // 整理时会看的种类（按移出的先后：先移用到场的内容，最后是场）
-export const TIDY_KINDS = ['government', 'faction', 'popValue', 'biome', 'riverType', 'lakeType', 'field'] as const;
+export const TIDY_KINDS = ['government', 'faction', 'popValue', 'mapStyle', 'biome', 'riverType', 'lakeType', 'field'] as const;
 
 type TidyWorld = ContentWorld & Pick<World, 'derived'>;
 
@@ -53,6 +55,9 @@ export function unusedContent(world: TidyWorld): ContentRef[] {
     const k = kindOf(kind)!;
     for (const id of Object.keys(contentItems(small, kind))) if (!usageOf(k, strict, id)) out.push({ kind, id });
   }
+  // 画风：只留世界在用的那一种
+  const style = worldMapStyleId(small);
+  for (const id of Object.keys(worldMapStyles(small))) if (id !== style) out.push({ kind: 'mapStyle', id });
   // 生态：没有一格以它为主（下标）、没涂过
   const dom = usedCodes(derived.dominant, small.species.length);
   if (dom.some((x) => x)) {

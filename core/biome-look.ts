@@ -265,9 +265,8 @@ export const patternFade = (p: Pattern, pxPerUnit: number) => smoothstep(1.5, 5.
 export const SEED_STEP: [number, number, number] = [13.37, 7.91, 5.53];
 export const patternSeed = (sp: Species) => hashString(sp.seedKey ?? sp.id) & 255;
 
-// 发光加在晕渲之后：写实风格亮一些，地图册（羊皮纸）淡一些
+// 发光加在晕渲之后（缩略图按它；地图上按画风的“生态发光”，第三十八轮，写实与它相同、地图册 0.3）
 export const GLOW_GAIN = 0.6;
-export const GLOW_GAIN_ATLAS = 0.3;
 
 // 一种生态画在地图上的外观（补上默认值）：第二种颜色默认是基础色调暗 40%，明显程度 0.6，大小 0.5 格，
 // 发光的颜色默认是基础色与白色各半。颜色都是 0–255

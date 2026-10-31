@@ -7,7 +7,8 @@ import type { Renderer } from '../../render/renderer';
 import { modeDef, modeFeatures, modeOf } from './modes';
 import { regionDraws } from './political';
 import { settleOverlay } from './settle';
-import { exportProgress, imageExportCancel, labelGroups, mapStyle, nameMode, overlays, season, showToast, world } from '../../state';
+import { exportProgress, imageExportCancel, labelGroups, nameMode, overlays, season, showToast, world } from '../../state';
+import { worldMapStyle } from '../../../core/map-style';
 
 // 导出图片：当前画面（snapshotCanvas）与整张地图（exportFullMap）。都是干净的画面：只有地图本身，
 // 不带高亮、闪烁、工具的图形和预览、鼠标旁的话
@@ -27,7 +28,7 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     wind: overlays.value.wind,
     markers: false,
     season: season.value,
-    style: mapStyle.value,
+    style: worldMapStyle(w.small),
     shapes: [],
     // 导出只看图层的设定（第十三轮修：以前省份类、地名类工具开着时导出的图里写满了省名，连海省也有）
     provinceLabels,
@@ -94,7 +95,7 @@ export function mapExporter(host: ExportHost) {
         const t = tiles[i];
         const tv = tileView(fr, t.x, t.y, T, m);
         // 这一块的河（只画在陆地上，与屏幕上一样由渲染器合成）
-        const river = overlays.value.rivers ? riverLayerTile(w, paths, { x: tv.cx, y: tv.cy, zoom: fr.cam.zoom }, mapStyle.value, T, fr.dpr) : null;
+        const river = overlays.value.rivers ? riverLayerTile(w, paths, { x: tv.cx, y: tv.cy, zoom: fr.cam.zoom }, worldMapStyle(w.small), T, fr.dpr) : null;
         const px = renderer.renderTile(w.kmPerUnit, tv, T, fr.cam.zoom, fr.dpr, river);
         const img = new ImageData(t.w, t.h);
         if (t.w === T) img.data.set(px.subarray(0, T * t.h * 4));
@@ -137,7 +138,7 @@ export function mapExporter(host: ExportHost) {
     state.busy = true;
     try {
       host.cleanState(w);
-      const style = mapStyle.value;
+      const style = worldMapStyle(w.small);
       const ex = renderer.beginProjectedExport(w.kmPerUnit, cam, W, H, dpr, overlays.value.rivers ? (s) => riverLayerScene(w, paths, s, style, true) : null);
       progress(0.2);
       for (let i = 0; i < tiles.length; i++) {

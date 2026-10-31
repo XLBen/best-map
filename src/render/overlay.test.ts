@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { FeatureType, GeoFeature } from '../../core/features';
+import { FALLBACK_MAP_STYLE } from '../../core/map-style';
 import { previewWorldOf } from '../../core/preview-world';
 import { encodePath, traceRivers } from '../../core/rivers';
 import { planCourse } from '../../core/select';
@@ -119,7 +120,7 @@ const riverState = (w: World): OverlayState =>
     wind: false,
     markers: false,
     season: 'annual',
-    style: 'realistic',
+    style: FALLBACK_MAP_STYLE,
     shapes: [],
     provinceLabels: [],
     features: null,

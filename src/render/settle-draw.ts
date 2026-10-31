@@ -30,6 +30,7 @@ import {
   WavesArrowDown,
   WavesVertical,
 } from 'lucide-preact';
+import type { MapStyle } from '../../core/map-style';
 
 // 城市、道路、地标、自定义点在地图上的画法（第二十四轮）：图标（像 EU4 的胜利点——首都是星、大城市双圈、城市大圆、村镇一个点；
 // 地标、自定义点是小圆牌上的图标）、名字的排版（与国名、地名一起避让），道路的折线。屏幕与导出整张地图共用；
@@ -70,16 +71,13 @@ export interface RoadDraw {
   clear?: boolean;
 }
 
-// 清楚的样子（第二十四轮，现在只在“道路”工具里）：大道是浅色的衬边上一道深色的线，小路是深色的细虚线
-export const ROAD_COLOR = { realistic: 'rgba(84, 38, 22, 0.92)', atlas: 'rgba(120, 36, 24, 0.92)' };
+// 清楚的样子（第二十四轮，现在只在“道路”工具里）：大道是浅色的衬边上一道深色的线，小路是深色的细虚线。
+// 颜色按画风（第三十八轮，core/map-style.ts 的 road、roadMinor；平时的是 quietRoad、quietRoadMinor）
 export const ROAD_CASING = 'rgba(255, 248, 230, 0.6)';
-export const ROAD_MINOR_COLOR = { realistic: 'rgba(70, 36, 22, 0.8)', atlas: 'rgba(110, 34, 22, 0.8)' };
 // 线宽、虚线（屏幕像素）
 export const ROAD_WIDTH = { major: 1.6, casing: 3.4, minor: 1.1 };
 export const ROAD_DASH: [number, number] = [3.2, 2.6];
 // 平时（第二十五轮）：细、半透明、偏暗的中性色，没有衬边
-export const QUIET_ROAD_COLOR = { realistic: 'rgba(52, 44, 38, 0.45)', atlas: 'rgba(84, 46, 34, 0.45)' };
-export const QUIET_ROAD_MINOR_COLOR = { realistic: 'rgba(52, 44, 38, 0.3)', atlas: 'rgba(84, 46, 34, 0.3)' };
 export const QUIET_ROAD_WIDTH = { major: 0.9, minor: 0.6 };
 export const QUIET_ROAD_DASH: [number, number] = [2.4, 2.2];
 
@@ -88,15 +86,15 @@ export interface RoadStyle {
   major: { color: string; width: number; casing: { color: string; width: number } | null };
   minor: { color: string; width: number; dash: [number, number] };
 }
-export function roadStyle(r: Pick<RoadDraw, 'clear'>, style: 'realistic' | 'atlas'): RoadStyle {
+export function roadStyle(r: Pick<RoadDraw, 'clear'>, style: Pick<MapStyle, 'road' | 'roadMinor' | 'quietRoad' | 'quietRoadMinor'>): RoadStyle {
   if (r.clear)
     return {
-      major: { color: ROAD_COLOR[style], width: ROAD_WIDTH.major, casing: { color: ROAD_CASING, width: ROAD_WIDTH.casing } },
-      minor: { color: ROAD_MINOR_COLOR[style], width: ROAD_WIDTH.minor, dash: ROAD_DASH },
+      major: { color: style.road, width: ROAD_WIDTH.major, casing: { color: ROAD_CASING, width: ROAD_WIDTH.casing } },
+      minor: { color: style.roadMinor, width: ROAD_WIDTH.minor, dash: ROAD_DASH },
     };
   return {
-    major: { color: QUIET_ROAD_COLOR[style], width: QUIET_ROAD_WIDTH.major, casing: null },
-    minor: { color: QUIET_ROAD_MINOR_COLOR[style], width: QUIET_ROAD_WIDTH.minor, dash: QUIET_ROAD_DASH },
+    major: { color: style.quietRoad, width: QUIET_ROAD_WIDTH.major, casing: null },
+    minor: { color: style.quietRoadMinor, width: QUIET_ROAD_WIDTH.minor, dash: QUIET_ROAD_DASH },
   };
 }
 
@@ -436,7 +434,7 @@ export function drawRoads(
   setT: (k: number) => void,
   unit: number,
   cellPx: number,
-  style: 'realistic' | 'atlas',
+  style: MapStyle,
   view: { x0: number; y0: number; x1: number; y1: number },
 ) {
   const smooth = cellPx >= ROAD_SMOOTH_PX;

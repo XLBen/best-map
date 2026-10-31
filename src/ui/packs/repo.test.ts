@@ -8,7 +8,7 @@ import { BUILTIN_STYLES } from '../../../core/packs/names';
 import { continents, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../../../core/testing/fixtures';
 import type { LibraryEntry } from '../../library';
 import { defaultStyleCommand, enabledCount, filterRows, repoKinds, repoRows, toggleCommand } from './repo';
-import { blankItem, copyItem, defaultValue, editorIssues, isObj, newKey, parseTags, pathLabel, renameKey, setField, shownFields, tagsText, weightedRows, weightedValue } from './fields';
+import { blankItem, colorHex, copyItem, defaultValue, editorIssues, isObj, newKey, plainHex, withHex, parseTags, pathLabel, renameKey, setField, shownFields, tagsText, weightedRows, weightedValue } from './fields';
 import { DEFAULT_SPECIES } from '../../../core/packs/nature';
 
 // 资源库（第二十轮）：每一种内容在资源库里有哪些、在这个世界里启用了没有、开关与“默认”是哪条命令；通用编辑器的字段表
@@ -174,5 +174,45 @@ describe('通用编辑器的字段表', () => {
     const c = copyItem(styleKind, germanic, taken);
     expect([c.id, c.name]).toEqual(['west-germanic-3', '西欧·日耳曼 3']);
     expect(isObj(c.types) && c.types !== germanic.types).toBe(true);
+  });
+});
+
+describe('画风（第三十八轮）', () => {
+  const mapKind = kindOf('mapStyle')!;
+
+  it('在用的那一种写“在用”；移出它时一起不选（一步）；内置的两种只列一次', () => {
+    const eng = continents();
+    const rows = () => repoRows(mapKind, eng.world, LIB);
+    expect(rows().filter((r) => r.source === 'builtin').map((r) => r.id)).toEqual(['realistic', 'atlas']);
+    expect(rows().find((r) => r.id === 'realistic')!.status).toMatchObject({ on: true, isDefault: true });
+    expect(rows().find((r) => r.id === 'atlas')!.status).toMatchObject({ on: true, isDefault: false });
+    eng.exec({ op: 'set_map_style', id: 'atlas' });
+    const atlas = rows().find((r) => r.id === 'atlas')!;
+    expect(atlas.status.isDefault).toBe(true);
+    const off = toggleCommand(atlas, eng.world)!;
+    expect(off).toMatchObject({ op: 'batch', commands: [{ op: 'set_map_style', id: null }, { op: 'set_content', kind: 'mapStyle', id: 'atlas', item: null }] });
+    eng.exec(off);
+    expect(eng.world.small.mapStyle).toBeUndefined();
+    expect(repoRows(mapKind, eng.world, LIB).find((r) => r.id === 'realistic')!.status.isDefault).toBe(true);
+    eng.undo();
+    expect(eng.world.small.mapStyle).toBe('atlas');
+  });
+
+  it('编辑器：换成分层的海时露出来的几项从写实补上；颜色控件认 rgb()、留着不透明度', () => {
+    const realistic = repoRows(mapKind, continents().world, LIB).find((r) => r.id === 'realistic')!.item as Record<string, unknown>;
+    const copy = copyItem(mapKind, realistic, new Set(['realistic', 'atlas']));
+    expect(copy).toMatchObject({ id: 'realistic-2', name: '写实 2' });
+    const { tier1: _t, isobath: _i, ...bare } = copy;
+    const tiers = setField(mapKind.fields, { ...bare, sea: 'shade' }, 'sea', 'tiers');
+    expect(tiers).toMatchObject({ sea: 'tiers', tier1: 'rgb(204, 224.4, 226.95)', isobath: 'rgb(114.75, 147.9, 168.3)' });
+    expect(editorIssues(mapKind, tiers).errors).toEqual([]);
+    expect(shownFields(mapKind.fields, tiers).map((f) => f.key)).toContain('tier4');
+    expect(shownFields(mapKind.fields, copy).map((f) => f.key)).not.toContain('tier4');
+    expect(colorHex('rgb(237.15, 221.85, 183.6)')).toBe('#eddeb8');
+    expect(colorHex('rgb(265.2, 260.1, 249.9)')).toBe('#fffffa');
+    expect(withHex('rgba(52, 104, 168, 0.92)', '#102030')).toBe('rgba(16, 32, 48, 0.92)');
+    expect(withHex('rgb(1, 2, 3)', '#102030')).toBe('#102030');
+    expect([plainHex('#102030'), plainHex('rgb(1, 2, 3)')]).toEqual([true, false]);
+    expect(editorIssues(mapKind, { ...copy, sea: 'tiers', tier2: 'blue' }).errors.map((e) => e.where)).toEqual(['第二层']);
   });
 });

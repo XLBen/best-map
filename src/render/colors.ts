@@ -4,6 +4,7 @@ import { gradient } from '../../core/mesh';
 import type { ProvinceKind } from '../../core/provinces';
 import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '../../core/seams';
 import type { LakeType } from '../../core/lake-types';
+import { type MapStyle, typeColor } from '../../core/map-style';
 import { type Visual, speciesColor } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
 import { coastStyle } from '../../core/coast-style';
@@ -682,7 +683,7 @@ export function fxLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'>,
 }
 
 // ---------- 湖泊类型的颜色（第九轮） ----------
-// 每格一个 RGBA 字节：RGB 是这种湖的颜色（地图集风格用 atlasColor），A 的低两位是水面的画法（1 染色、2 像干湖底那样的盐壳），
+// 每格一个 RGBA 字节：RGB 是这种湖的颜色（画风选了另一种颜色时用 atlasColor），A 的低两位是水面的画法（1 染色、2 像干湖底那样的盐壳），
 // 再两位是陆上的（1 湖岸的光晕、2 干涸湖底的盐壳），16 是发光（湖面亮一些）。湖岸那一圈陆地格也带上水面的画法：
 // 湖岸线在格以下（不是格的边），落在岸边那格里的水面像素也要染上。
 // 只在地形类的着色里画；世界里没有湖泊类型（或者一个带类型的湖都没有）时为 null（着色器整段跳过，画面与以前逐像素相同）
@@ -692,9 +693,9 @@ export const LAKE_LAND_GLOW = 4;
 const LAKE_LAND_CRUST = 8;
 export const LAKE_GLOW = 16;
 
-// 一种湖画出来的颜色（地图集风格用 atlasColor）
-export function lakeTypeColor(t: Pick<LakeType, 'color' | 'atlasColor'>, style: 'realistic' | 'atlas'): string {
-  return style === 'atlas' ? (t.atlasColor ?? t.color) : t.color;
+// 一种湖画出来的颜色（画风选了另一种颜色时用 atlasColor，第三十八轮）
+export function lakeTypeColor(t: Pick<LakeType, 'color' | 'atlasColor'>, style: Pick<MapStyle, 'typeColors'>): string {
+  return typeColor(t, style);
 }
 
 // 湖泊类型里影响画法的几项（没有时为 ''）
@@ -702,7 +703,7 @@ export function lakeTypesSignature(types: readonly LakeType[] | undefined): stri
   return types?.length ? JSON.stringify(types.map((t) => [t.id, t.color, t.atlasColor ?? '', t.style ?? 'solid'])) : '';
 }
 
-export function lakeTintLayer(world: World, o: Pick<ColorOptions, 'mode'>, style: 'realistic' | 'atlas'): Uint8Array | null {
+export function lakeTintLayer(world: World, o: Pick<ColorOptions, 'mode'>, style: Pick<MapStyle, 'typeColors'>): Uint8Array | null {
   const types = world.small.lakeTypes;
   const lt = world.derived.lakeType;
   if (!types?.length || !lt || !terrainLikeMode(o.mode)) return null;

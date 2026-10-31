@@ -2,6 +2,7 @@ import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/feat
 import { circle as geoCircle, wrapX } from '../../core/geo';
 import { type NameMode, nameText } from '../../core/name-display';
 import type { RiverStyle, RiverType } from '../../core/river-types';
+import { type MapStyle, mapStyleKey, typeColor } from '../../core/map-style';
 import { MAP_UNDER_SHORE, type PackedRivers, type RiverDraw, drawTypes, drawTypesKey, riverDraw, unpackRivers } from '../../core/river-pack';
 import { type RiverLine, guideShape, guidesSignature, traceRivers } from '../../core/rivers';
 import { coastSeed } from '../../core/terrain';
@@ -39,16 +40,15 @@ export function riverScale(world: World, zoom: number): number {
   return Math.max(0.7, Math.min(4, refZoom(world, zoom) / 1400));
 }
 
-// 河的颜色
-export function riverStroke(style: 'realistic' | 'atlas'): string {
-  return style === 'atlas' ? 'rgba(70, 110, 150, 0.95)' : 'rgba(52, 104, 168, 0.92)';
+// 河的颜色（第三十八轮起按画风，core/map-style.ts）
+export function riverStroke(style: Pick<MapStyle, 'river'>): string {
+  return style.river;
 }
-// 两岸的细线（压在河面下面，露出外侧的一半）
-const BANK_COLOR = { realistic: 'rgba(24, 52, 88, 0.55)', atlas: 'rgba(48, 70, 92, 0.55)' };
+// 两岸的细线（压在河面下面，露出外侧的一半）：画风的 riverBank
 
-// 一种河流类型画出来的颜色（地图集风格用 atlasColor）
-export function riverTypeColor(t: Pick<RiverType, 'color' | 'atlasColor'>, style: 'realistic' | 'atlas'): string {
-  return style === 'atlas' ? (t.atlasColor ?? t.color) : t.color;
+// 一种河流类型画出来的颜色（画风选了另一种颜色时用 atlasColor）
+export function riverTypeColor(t: Pick<RiverType, 'color' | 'atlasColor'>, style: Pick<MapStyle, 'typeColors'>): string {
+  return typeColor(t, style);
 }
 
 // 按河流类型的画法沿中线描一条（虚线、双线、发光：整条河一笔，lw 是线宽，单位与路径相同）：
@@ -186,11 +186,11 @@ function addRiverPaint(
 }
 
 // 描出 paint：两岸的细线、细的河、同色的带子（一次填）、虚线 / 双线 / 发光的河。unit：一个 CSS 像素合多少地图单位
-function strokeRiverPaint(ctx: CanvasRenderingContext2D, paint: RiverPaint, unit: number, style: 'realistic' | 'atlas', dpr: number) {
+function strokeRiverPaint(ctx: CanvasRenderingContext2D, paint: RiverPaint, unit: number, style: MapStyle, dpr: number) {
   ctx.lineJoin = 'round';
   if (paint.banks) {
     ctx.lineCap = 'butt';
-    ctx.strokeStyle = BANK_COLOR[style];
+    ctx.strokeStyle = style.riverBank;
     ctx.lineWidth = 1.1 * unit;
     ctx.stroke(paint.banks);
   }
@@ -219,9 +219,9 @@ interface LowZoomStrokes {
   styled: { path: Path2D; color: string; w: number; style: RiverStyle }[];
 }
 const lowZoomCaches = new WeakMap<OverlayPaths, { key: string; types: unknown; v: LowZoomStrokes }[]>();
-function lowZoomStrokes(paths: OverlayPaths, cellPx: number, spacing: number, style: 'realistic' | 'atlas', colorOf: (t: number) => { color: string; style: RiverStyle }, types: unknown): LowZoomStrokes {
+function lowZoomStrokes(paths: OverlayPaths, cellPx: number, spacing: number, style: MapStyle, colorOf: (t: number) => { color: string; style: RiverStyle }, types: unknown): LowZoomStrokes {
   const lod = cellPx < 2 ? 0.5 : cellPx < 4 ? 0.25 : 0.125;
-  const key = `${lod}|${style}`;
+  const key = `${lod}|${mapStyleKey(style)}`;
   let list = lowZoomCaches.get(paths);
   if (!list) lowZoomCaches.set(paths, (list = []));
   const hit = list.find((e) => e.key === key && e.types === types);
@@ -269,7 +269,7 @@ function lowZoomStrokes(paths: OverlayPaths, cellPx: number, spacing: number, st
 }
 
 // 一种河的颜色与画法：0 是普通的河（color），k + 1 是第 k 种河流类型
-function typeColors(types: readonly RiverType[], style: 'realistic' | 'atlas', plain: string): (t: number) => { color: string; style: RiverStyle } {
+function typeColors(types: readonly RiverType[], style: MapStyle, plain: string): (t: number) => { color: string; style: RiverStyle } {
   return (t) => {
     const spec = t > 0 ? types[t - 1] : undefined;
     return spec ? { color: riverTypeColor(spec, style), style: spec.style ?? 'solid' } : { color: plain, style: 'solid' };
@@ -494,7 +494,7 @@ export interface OverlayState {
   // 画过的河与湖的标记（水模式）
   markers: boolean;
   season: 'annual' | 'summer' | 'winter';
-  style: 'realistic' | 'atlas';
+  style: MapStyle;
   shapes: Shape[];
   provinceLabels: ProvinceLabel[];
   // 地名标注；labelTypes 为 null 时显示全部类型
@@ -653,7 +653,7 @@ function drawBack(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContex
 }
 
 // 河，画进 ctx：画布是 cw × ch 个 CSS 像素、每个 CSS 像素 dev 个像素，镜头在画布中间。河只加画布上看得见的那几条（按外接框裁）
-function drawRivers(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, style: 'realistic' | 'atlas', cw: number, ch: number, dev: number) {
+function drawRivers(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, style: MapStyle, cw: number, ch: number, dev: number) {
   const z = cam.zoom * dev;
   const sphere = world.mesh.kind === 'sphere';
   const ks = sphere ? copiesFor(cam, cw) : [0];
@@ -677,7 +677,7 @@ function drawRiversWith(
   setT: (k: number) => void,
   view: [number, number, number, number],
   sphere: boolean,
-  style: 'realistic' | 'atlas',
+  style: MapStyle,
   dev: number,
 ) {
   // 每条河按看得见的副本各加一份（坐标里平移 2），同色的带子一次填
@@ -708,7 +708,7 @@ function drawRiversWith(
 
 // 底层的键（镜头另比）：画出来的路径、湖标记、选项、河流类型的画法
 function backKey(world: World, paths: OverlayPaths, st: OverlayState): unknown[] {
-  return [paths, world.small.lakes, world.mesh, st.rivers, st.markers, st.style, world.small.riverTypes, world.small.planet.riverThreshold];
+  return [paths, world.small.lakes, world.mesh, st.rivers, st.markers, mapStyleKey(st.style), world.small.riverTypes, world.small.planet.riverThreshold];
 }
 
 // 把底层贴到叠加层上（ctx 已清空、变换是单位矩阵）
@@ -806,7 +806,7 @@ function riverCache(old: RiverCache | null, W: number, H: number): RiverCache {
   return { canvas: L.canvas, ctx: L.ctx, key: [], cam: { x: 0, y: 0, zoom: 1 }, cw: 0, ch: 0, dev: 0, soft: L.soft, version: -1 };
 }
 
-function paintRivers(L: RiverCache, world: World, paths: OverlayPaths, cam: Camera, style: 'realistic' | 'atlas', cw: number, ch: number, dev: number, key: unknown[]) {
+function paintRivers(L: RiverCache, world: World, paths: OverlayPaths, cam: Camera, style: MapStyle, cw: number, ch: number, dev: number, key: unknown[]) {
   L.ctx.setTransform(1, 0, 0, 1, 0, 0);
   L.ctx.clearRect(0, 0, L.canvas.width, L.canvas.height);
   drawRivers(L.ctx, world, paths, cam, style, cw, ch, dev);
@@ -828,14 +828,14 @@ function riverTex(L: RiverCache): RiverTex {
   return { source: L.canvas, version: L.version, toUv: [z / W, ((L.cw / 2 - c.x * c.zoom) * L.dev) / W, -z / H, 1 - ((L.ch / 2 - c.y * c.zoom) * L.dev) / H] };
 }
 
-const riverKey = (world: World, paths: OverlayPaths, style: string): unknown[] => [paths, world.mesh, style, world.small.riverTypes, world.small.planet.riverThreshold];
+const riverKey = (world: World, paths: OverlayPaths, style: MapStyle): unknown[] => [paths, world.mesh, mapStyleKey(style), world.small.riverTypes, world.small.planet.riverThreshold];
 
 // 屏幕上的河。screen：地图的画布（像素数与 CSS 大小）；motion：渲染器这一帧按移动中的画法画（或刚停下的那一帧）
 export function riverLayer(
   world: World,
   paths: OverlayPaths,
   cam: Camera,
-  st: { style: 'realistic' | 'atlas'; motion?: boolean; motionEpoch?: number },
+  st: { style: MapStyle; motion?: boolean; motionEpoch?: number },
   screen: { width: number; height: number; clientWidth: number; clientHeight: number },
 ): RiverTex {
   const cw = screen.clientWidth || 1;
@@ -862,7 +862,7 @@ export function riverLayer(
 }
 
 // 导出整张地图的一块：T × T 像素、每个 CSS 像素 dpr 个像素，镜头 cam 在这一块的中间（export-plan.ts 的 tileView 的 cx、cy）
-export function riverLayerTile(world: World, paths: OverlayPaths, cam: Camera, style: 'realistic' | 'atlas', T: number, dpr: number): RiverTex {
+export function riverLayerTile(world: World, paths: OverlayPaths, cam: Camera, style: MapStyle, T: number, dpr: number): RiverTex {
   const L = (riverTile = riverCache(riverTile, T, T));
   paintRivers(L, world, paths, cam, style, T / dpr, T / dpr, dpr, riverKey(world, paths, style));
   return riverTex(L);
@@ -870,7 +870,7 @@ export function riverLayerTile(world: World, paths: OverlayPaths, cam: Camera, s
 
 // 等面积、球形投影（第十三轮 G4）：河画在渲染器的场景那一块等距圆柱上（东西、南北的密度可以不同），合成时按投影取。
 // 场景没变就不重画；exporting：导出用另一张画布（不挤掉屏幕上的那一张）
-export function riverLayerScene(world: World, paths: OverlayPaths, sc: RiverScene, style: 'realistic' | 'atlas', exporting = false): RiverTex {
+export function riverLayerScene(world: World, paths: OverlayPaths, sc: RiverScene, style: MapStyle, exporting = false): RiverTex {
   const L = exporting ? (riverTile = riverCache(riverTile, sc.W, sc.H)) : (riverRest = riverCache(riverRest, sc.W, sc.H));
   const key = [...riverKey(world, paths, style), sc.key, sc.dpr];
   if (exporting || !samePathsKey(key, L.key)) {
@@ -904,7 +904,7 @@ export function riverLayerScene(world: World, paths: OverlayPaths, sc: RiverScen
 
 // 极地的场景（以极点为中心的等距方位投影）上的河：逐点换到那个平面上（像素），两岸按换过去的中线在像素里算，
 // 宽度与平面的河一样（按流量分档、随缩放变宽，CSS 像素）。虚线、双线、发光的河在这里按实线画
-function drawRiversPolar(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, sc: RiverScene, style: 'realistic' | 'atlas', zoom: number) {
+function drawRiversPolar(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, world: World, paths: OverlayPaths, sc: RiverScene, style: MapStyle, zoom: number) {
   const pole = sc.pole as 1 | -1;
   const scale = riverScale(world, zoom);
   const colorOf = typeColors(world.small.riverTypes ?? [], style, riverStroke(style));
@@ -1234,7 +1234,7 @@ export function drawScaleBar(ctx: CanvasRenderingContext2D, cam: Camera, kmPerUn
 }
 
 // unit：一个屏幕像素合多少地图单位；river：地图上的河现在的宽度系数与颜色（river 图形照它画）
-function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: 'realistic' | 'atlas') {
+function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: MapStyle) {
   if (sh.kind === 'river') {
     drawRiverShape(ctx, world, sh, unit, river, style);
     return;
@@ -1291,7 +1291,7 @@ function drawShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit:
 
 // 预览的河：与地图上的河同一套画法（带子、宽度、颜色，见 riverDraw）。带子按图形的点数组缓存（光、预览的图形沿用同一个数组时不重算）
 const shapeDraws = new WeakMap<object, { key: string; d: RiverDraw }>();
-function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: 'realistic' | 'atlas') {
+function drawRiverShape(ctx: CanvasRenderingContext2D, world: World, sh: Shape, unit: number, river: { scale: number; color: string }, style: MapStyle) {
   const pts = sh.points;
   const flow = sh.flow;
   if (!pts || !flow || pts.length < 2) return;
@@ -1445,7 +1445,7 @@ export interface CountryLabelDraw {
 export const COUNTRY_KEY = 'country:';
 // 片区名（第二十五轮：文化、文化组、每一维的取值）与国名同样排、同样不给点击命中
 export const REGION_KEY = 'region:';
-const COUNTRY_COLOR = { realistic: 'rgba(36, 28, 24, 0.8)', atlas: 'rgba(78, 34, 24, 0.82)' };
+// 国名的颜色：画风的 countryLabel（第三十八轮）
 const COUNTRY_HALO = 'rgba(255, 255, 255, 0.42)';
 const COUNTRY_FONT = '"Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif';
 // 国名的字号：不到这么大不标，最大这么大（CSS 像素）
@@ -1575,7 +1575,7 @@ function placeCountries(
   boxes: LabelBox[],
 ) {
   const list = [...(st.countries ?? [])].sort((a, b) => b.area - a.area);
-  const color = COUNTRY_COLOR[st.style];
+  const color = st.style.countryLabel;
   for (const c of list) {
     const { curve, lenU, first, w1, second, w2 } = countryMetrics(ctx, c);
     if (!(lenU > 0)) continue;

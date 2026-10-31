@@ -1,6 +1,7 @@
 import { type ContentKind, type ContentWorld, type FieldDesc, itemId, itemName } from '../../../core/content/registry';
 import { itemErrors } from '../../../core/packs';
 import { SCRIPT_API } from '../../../core/script';
+import { styleRgba } from '../../../core/map-style';
 
 // 通用编辑器（资源库里的“编辑”“新建”）的逻辑：按登记表的字段表（FieldDesc）显示哪些、改一个字段、新建与复制、
 // 检查（格式、启用前的检查、不挡启用的提醒）。界面在 ContentEditor.tsx
@@ -28,6 +29,7 @@ export const addedValue = (f: FieldDesc): unknown => (f.type === 'bool' ? true :
 
 // 新加一个字段（或列表里新加一项）时的样子
 export function defaultValue(f: FieldDesc): unknown {
+  if (f.default !== undefined) return structuredClone(f.default);
   switch (f.type) {
     case 'text':
     case 'longtext':
@@ -95,6 +97,22 @@ export function newKey(obj: Obj, base = 'new'): string {
 }
 
 // ---------- 几种写法的转换 ----------
+
+// 颜色（第三十八轮：画风的颜色还可以写成 rgb()、rgba()，见 core/map-style.ts）：取色器上显示最近的 #rrggbb（超过 255 的按 255）
+const hex2 = (v: number) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0');
+export function colorHex(v: unknown): string {
+  const c = typeof v === 'string' ? styleRgba(v) : null;
+  return c ? `#${hex2(c[0])}${hex2(c[1])}${hex2(c[2])}` : '#888888';
+}
+// 取色器选了一种颜色：原来带不透明度的（rgba、#rrggbbaa）留着不透明度，别的写成 #rrggbb
+export function withHex(old: unknown, hex: string): string {
+  const c = typeof old === 'string' ? styleRgba(old) : null;
+  if (!c || c[3] >= 1) return hex;
+  const v = parseInt(hex.slice(1), 16);
+  return `rgba(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}, ${c[3]})`;
+}
+// 不是 #rrggbb 的写法（编辑器里另给一个框照字写）
+export const plainHex = (v: unknown): boolean => typeof v !== 'string' || /^#[0-9a-f]{6}$/i.test(v);
 
 // 一组字：用空格、逗号、顿号隔开
 export const tagsText = (v: unknown): string => (Array.isArray(v) ? v.map(String).join(' ') : '');

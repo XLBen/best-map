@@ -480,6 +480,8 @@ export interface SmallState {
   origin?: Record<string, Record<string, string[]>>;
   // 世界默认的地名风格（第二十轮）：没有这一项是内置中文（zh-default）
   nameStyle?: string;
+  // 世界选的画风（第三十八轮，见 map-style.ts）：没有这一项、选的不在了时按世界里第一种画风
+  mapStyle?: string;
   // 格的档案（第二十一轮）：格的编号 → 自己写的小地名、备注。第一次写之前没有这一项
   cells?: Record<string, CellMeta>;
   // 人文（第二十二轮）：生成过才有

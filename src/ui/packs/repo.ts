@@ -1,6 +1,7 @@
 import type { Command } from '../../../core/commands';
 import { type ContentKind, type ContentUsage, type UsageWorld, builtinOf, disableCommand as kindDisable, itemId, itemName, kindOf, usageOf } from '../../../core/content/registry';
 import { styleProblems, worldStyleId, type NameStyle } from '../../../core/name-styles';
+import { worldMapStyleId } from '../../../core/map-style';
 import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, packItems, packSections, planPack, sameItem, subPacks, walkPacks, findPack } from '../../../core/packs';
 import { originOf } from '../../../core/packs/builtin-tree';
 import type { ContentRef } from '../../../core/content/unused';
@@ -40,7 +41,7 @@ export interface RepoStatus {
   locked?: string;
   // 启用后叫什么（世界里已有同 id 的另一份，这一份改名加上）
   rename?: string;
-  // 地名风格：是世界默认
+  // 地名风格：是世界默认；画风（第三十八轮）：是世界在用的
   isDefault?: boolean;
   // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：没有开关，写“内置·常开”。第三十轮起没有总在的项，不再有这两个
   always?: boolean;
@@ -78,6 +79,13 @@ function inWorldOf(kind: ContentKind, world: PackWorld, ctx?: Ctx): readonly unk
   return v;
 }
 
+// 世界默认的地名风格、世界在用的画风（第三十八轮）
+function defaultMark(kind: ContentKind, world: PackWorld, id: string): Pick<RepoStatus, 'isDefault'> {
+  if (kind.id === 'nameStyle') return { isDefault: worldStyleId(world.small) === id };
+  if (kind.id === 'mapStyle') return { isDefault: worldMapStyleId(world.small) === id };
+  return {};
+}
+
 // 一项在这个世界里的状态
 // builtin：登记表里的内置项（不是资源库里的包）
 function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackWorld | null, builtin = false, ctx?: Ctx): RepoStatus {
@@ -88,7 +96,7 @@ function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackW
     const on = inWorld.some((x) => itemId(kind, x) === id && sameItem(x, item));
     return { on, ...(on ? { worldId: id } : {}), locked: kind.pack.note ?? '不能启用' };
   }
-  const isDefault = (wid: string) => (kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === wid } : {});
+  const isDefault = (wid: string) => defaultMark(kind, world, wid);
   // 第三十轮：基础的内容（地形类别、通用资源、中文·默认……）也是普通内容，不再“总在”
   void builtin;
   // 世界里有一模一样的
@@ -155,11 +163,15 @@ export function enableRowCommand(row: RepoRow, world: PackWorld): Command {
   return { ...plan.command, label: `添加到本世界：${quoted(row)}` };
 }
 
-// 停用：世界里的那一项。停用的是世界默认的地名风格时，世界默认一起换回内置中文
+// 停用：世界里的那一项。停用的是世界默认的地名风格时，世界默认一起换回内置中文；
+// 停用的是世界在用的画风时（第三十八轮）一起不选（按剩下的第一种画）
 export function disableRowCommand(row: RepoRow, world: PackWorld): Command {
   const id = row.status.worldId ?? row.id;
   const off = kindDisable(row.kind, id, world);
-  if (row.status.isDefault) return { op: 'batch', label: `移出本世界：${quoted(row)}`, commands: [{ op: 'set_name_style', id: null }, off] };
+  if (row.status.isDefault) {
+    const unset: Command = row.kind.id === 'mapStyle' ? { op: 'set_map_style', id: null } : { op: 'set_name_style', id: null };
+    return { op: 'batch', label: `移出本世界：${quoted(row)}`, commands: [unset, off] };
+  }
   return off;
 }
 
@@ -335,7 +347,7 @@ function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: read
 // 本世界里的一项（都在本世界；星球形态不能移出。第三十轮起基础的内容也能移出）
 function worldStatus(kind: ContentKind, item: unknown, world: PackWorld): RepoStatus {
   const id = itemId(kind, item);
-  const def = kind.id === 'nameStyle' ? { isDefault: worldStyleId(world.small) === id } : {};
+  const def = defaultMark(kind, world, id);
   if (!canApply(kind)) return { on: true, worldId: id, locked: kind.pack.note ?? '不能移出' };
   return { on: true, worldId: id, ...def };
 }

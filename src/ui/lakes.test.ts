@@ -6,6 +6,9 @@ import { LAKE_GLOW, LAKE_LAND_GLOW, LAKE_WATER_CRUST, LAKE_WATER_TINT, lakeTintL
 import { setOptions } from '../state';
 import { chosenLakeType, lakeInfo, lakeList, lakeRefAt, lakeTypeChoiceCommand, lakeTypeOfLake } from './lakeInfo';
 import { newWaterType } from './panels/waterTypes';
+import { BUILTIN_MAP_STYLES } from '../../core/packs/map-styles';
+
+const [REALISTIC, ATLAS] = BUILTIN_MAP_STYLES;
 
 // 湖（第九轮）：点中的是哪个湖、给它选类型的命令、新放的湖带的类型、湖的颜色
 
@@ -131,28 +134,28 @@ describe('湖的列表（lakeList）', () => {
 });
 
 describe('湖的颜色（lakeTintLayer）', () => {
-  it('没有湖泊类型时为 null；有类型的湖面染上它的颜色，地图集用 atlasColor；画法写进 alpha', () => {
+  it('没有湖泊类型时为 null；有类型的湖面染上它的颜色，地图册用另一种颜色 atlasColor；画法写进 alpha', () => {
     const { eng, w, cells } = setup();
-    expect(lakeTintLayer(w, { mode: 'terrain' }, 'realistic')).toBeNull();
+    expect(lakeTintLayer(w, { mode: 'terrain' }, REALISTIC)).toBeNull();
     eng.exec({ op: 'set_lake_type', type: blood });
     // 有类型但一个湖都不是：也是 null
-    expect(lakeTintLayer(w, { mode: 'terrain' }, 'realistic')).toBeNull();
+    expect(lakeTintLayer(w, { mode: 'terrain' }, REALISTIC)).toBeNull();
     eng.exec({ op: 'update_lake', id: 'L0', patch: { type: blood.id } });
-    const out = lakeTintLayer(w, { mode: 'terrain' }, 'realistic')!;
+    const out = lakeTintLayer(w, { mode: 'terrain' }, REALISTIC)!;
     expect(rgbAt(out, cells[0])).toEqual([0x9b, 0x1b, 0x1b]);
     expect(out[cells[0] * 4 + 3] & 3).toBe(LAKE_WATER_TINT);
     // 别的湖不染
     expect(out[cells[1] * 4 + 3]).toBe(0);
-    const atlas = lakeTintLayer(w, { mode: 'terrain' }, 'atlas')!;
+    const atlas = lakeTintLayer(w, { mode: 'terrain' }, ATLAS)!;
     expect(rgbAt(atlas, cells[0])).toEqual([0xa3, 0x30, 0x2a]);
-    expect(lakeTypeColor(blood, 'atlas')).toBe('#a3302a');
+    expect(lakeTypeColor(blood, ATLAS)).toBe('#a3302a');
     // 数据底图（气温……）不画
-    expect(lakeTintLayer(w, { mode: 'temperature' }, 'realistic')).toBeNull();
+    expect(lakeTintLayer(w, { mode: 'temperature' }, REALISTIC)).toBeNull();
     // 干湖底的画法：水面是盐壳；发光：湖面发光，湖岸一圈光晕
     eng.exec({ op: 'set_lake_type', type: { ...blood, style: 'playa' } });
-    expect(lakeTintLayer(w, { mode: 'terrain' }, 'realistic')![cells[0] * 4 + 3] & 3).toBe(LAKE_WATER_CRUST);
+    expect(lakeTintLayer(w, { mode: 'terrain' }, REALISTIC)![cells[0] * 4 + 3] & 3).toBe(LAKE_WATER_CRUST);
     eng.exec({ op: 'set_lake_type', type: { ...blood, style: 'glow' } });
-    const glow = lakeTintLayer(w, { mode: 'terrain' }, 'realistic')!;
+    const glow = lakeTintLayer(w, { mode: 'terrain' }, REALISTIC)!;
     expect(glow[cells[0] * 4 + 3] & LAKE_GLOW).toBe(LAKE_GLOW);
     const lake = new Set(lakeInfo(w, { kind: 'placed', id: 'L0' })!.cells);
     let halo = 0;
@@ -164,7 +167,7 @@ describe('湖的颜色（lakeTintLayer）', () => {
     const { eng, w } = setup();
     eng.exec({ op: 'set_lake_type', type: blood });
     eng.exec({ op: 'update_lake', id: 'L0', patch: { type: blood.id } });
-    const out = lakeTintLayer(w as World, { mode: 'terrain' }, 'realistic')!;
+    const out = lakeTintLayer(w as World, { mode: 'terrain' }, REALISTIC)!;
     const lt = w.derived.lakeType!;
     for (let i = 0; i < w.mesh.n; i++) {
       if (lt[i] || !(out[i * 4 + 3] & 3)) continue;

@@ -106,7 +106,6 @@ export function registerToolSwitch(f: (id: ToolId) => void) {
 }
 export const mode = signal<ViewMode>('terrain');
 export const season = signal<Season>('annual');
-export const mapStyle = signal<'realistic' | 'atlas'>('realistic');
 // peaks（第二十一轮）：全部山峰画成小三角，放大后标名字
 // roads、cities、landmarks（第二十四轮）：道路两种图都画；城市在人文图里画；地标在人文图里全画、地理图里只画自然的（自定义点两种图都画）
 export const overlays = signal({ rivers: true, borders: true, wind: false, currents: false, labels: true, scale: true, latitude: false, edits: false, peaks: false, roads: true, cities: true, landmarks: true });

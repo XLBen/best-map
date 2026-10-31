@@ -384,12 +384,23 @@ describe('生态的颜色脚本、花纹与发光', () => {
     expect(withoutFx(COMPOSE_SOURCES.planet)).toContain('vec3 Pf = sphereOf(world) * uNoiseK * 0.9;');
   });
 
-  it('地图册的海：平涂的海之后再涂一次省份着色（海省选了颜色时与写实风格一样看得到）', async () => {
-    const { COMPOSE_SOURCES } = await import('./renderer');
-    for (const [name, src] of Object.entries(COMPOSE_SOURCES)) {
-      const atlasSea = src.slice(src.indexOf('if (uStyle == 1) {'), src.indexOf('} else if (land) {'));
-      expect(atlasSea, name).toContain('col = vec3(0.80, 0.88, 0.89);');
-      expect(atlasSea.indexOf('col = mix(col, fc.rgb, fc.a);'), name).toBeGreaterThan(atlasSea.indexOf('col = vec3(0.80, 0.88, 0.89);'));
+  it('画风（第三十八轮）：着色器里不再分写实、地图册，全按画风的 uniform；分层的海之后再涂一次省份着色（海省选了颜色时看得到）', async () => {
+    const { COMPOSE_SOURCES, PROJ_SOURCES } = await import('./renderer');
+    const all = { ...COMPOSE_SOURCES, proj: PROJ_SOURCES.compose };
+    for (const [name, src] of Object.entries(all)) {
+      expect(src, name).not.toContain('uStyle');
+      for (const u of ['vec4 uLandTint;', 'int uShadeTint;', 'vec3 uShadeDark;', 'vec3 uShadeLight;', 'int uSeaTiers;', 'vec3 uSeaTier[4];', 'vec3 uSeaDepth;', 'vec4 uIsobath;', 'vec2 uSeaShade;', 'vec2 uTierShade;', 'float uGlowGain;', 'vec4 uCoastLine;', 'vec3 uProvLine;', 'vec3 uCountryLine;'])
+        expect(src, `${name} ${u}`).toContain(`uniform ${u}`);
+      // 以前写死的颜色一个不剩
+      for (const lit of ['vec3(0.93, 0.87, 0.72)', 'vec3(0.62, 0.52, 0.42)', 'vec3(0.80, 0.88, 0.89)', 'vec3(0.45, 0.58, 0.66)', 'vec3(0.35, 0.27, 0.2)', 'vec3(0.18, 0.22, 0.24)', 'vec3(0.45, 0.2, 0.15)', 'vec3(0.12, 0.1, 0.08)', 'vec3(0.42, 0.14, 0.1)', 'vec3(0.16, 0.11, 0.1)', '0.86 + 0.14', '0.94 + 0.06'])
+        expect(src, `${name} ${lit}`).not.toContain(lit);
+      const tiers = src.slice(src.indexOf('} else if (uSeaTiers == 0 || uSeaData == 1) {'), src.indexOf('// 湖泊类型：A 的低两位'));
+      expect(tiers, name).toContain('col *= mix(1.0, uSeaShade.x + uSeaShade.y * shade, uShade);');
+      expect(tiers, name).toContain('col = uSeaTier[0];');
+      expect(tiers.indexOf('col = mix(col, fc.rgb, fc.a);'), name).toBeGreaterThan(tiers.indexOf('col = uSeaTier[0];'));
+      expect(tiers.indexOf('col *= mix(1.0, uTierShade.x + uTierShade.y * shade, uShade);'), name).toBeGreaterThan(tiers.indexOf('col = mix(col, fc.rgb, fc.a);'));
+      expect(src, name).toContain('col = mix(col, uCoastLine.rgb, base.a * uCoastLine.a / sqrt(max(uScenePx, 1.0)));');
+      expect(src, name).toContain('* (fx.b / 255.0) * uGlowGain;');
     }
   });
 

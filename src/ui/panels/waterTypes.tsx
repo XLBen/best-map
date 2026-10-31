@@ -6,6 +6,7 @@ import type { Command } from '../../../core/commands';
 import { LAKE_STYLES, LAKE_STYLE_LABEL } from '../../../core/lake-types';
 import { RIVER_STYLES, RIVER_STYLE_LABEL } from '../../../core/river-types';
 import { SCRIPT_API } from '../../../core/script';
+import { FALLBACK_MAP_STYLE, type MapStyle } from '../../../core/map-style';
 import { type WaterType, bankRadiusKm, waterTypeOwner } from '../../../core/water-types';
 import type { World } from '../../../core/world';
 import {
@@ -97,12 +98,12 @@ const KINDS: Record<WaterKind, KindDef> = {
   },
 };
 
-// 一种画出来的颜色（地图集风格用 atlasColor）
-const typeColor = (kind: WaterKind, t: WaterType, style: 'realistic' | 'atlas' = 'realistic') =>
+// 一种画出来的颜色（列表里的色块照旧按默认的画法——写实——画；画风选了另一种颜色时用 atlasColor）
+const typeColor = (kind: WaterKind, t: WaterType, style: MapStyle = FALLBACK_MAP_STYLE) =>
   kind === 'lake' ? lakeTypeColor(t, style) : riverTypeColor(t, style);
 
 // 普通的河、湖的颜色（列表里的色块）
-const PLAIN_COLOR: Record<WaterKind, string> = { river: riverStroke('realistic'), lake: 'rgb(70, 125, 175)' };
+const PLAIN_COLOR: Record<WaterKind, string> = { river: riverStroke(FALLBACK_MAP_STYLE), lake: 'rgb(70, 125, 175)' };
 
 function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }) {
   return <span class="swatch" style={{ background: t ? typeColor(kind, t) : PLAIN_COLOR[kind] }} />;

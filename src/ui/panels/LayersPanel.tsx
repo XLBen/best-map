@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
-import { type ProjectionPref, type ViewMode, focusSpecies, labelGroups, mapStyle, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
+import { worldMapStyleId, worldMapStyles } from '../../../core/map-style';
+import { type ProjectionPref, type ViewMode, exec, focusSpecies, labelGroups, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
@@ -26,6 +27,32 @@ const PROJECTION_HINTS: Record<ProjectionPref, string> = {
   equalEarth: '面积按真实比例，两极不拉宽。',
   globe: '拖动转动，越往边上挤得越紧。',
 };
+
+// 画风（第三十八轮）：世界里的画风（资源库“通用 ▸ 画风”里的，可以复制了改），选了记在世界里（可以撤销、跟着世界存盘）。
+// 四种以内用分段按钮，多了用下拉
+function MapStyleSection({ w }: { w: World }) {
+  const styles = Object.values(worldMapStyles(w.small));
+  const cur = worldMapStyleId(w.small);
+  const pick = (id: string) => {
+    if (id && id !== cur) void exec({ op: 'set_map_style', id }, '正在换画风…');
+  };
+  return (
+    <section>
+      <h5>画风</h5>
+      {!styles.length ? (
+        <p class="hint">世界里没有画风，按写实画。在资源库“通用 ▸ 画风”里添加</p>
+      ) : styles.length <= 4 ? (
+        <Seg value={cur} options={styles.map((s): [string, string] => [s.id, s.name])} titles={Object.fromEntries(styles.map((s) => [s.id, s.description ?? s.name]))} onChange={pick} wide />
+      ) : (
+        <select value={cur} onChange={(e) => pick((e.target as HTMLSelectElement).value)}>
+          {styles.map((s) => (
+            <option value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      )}
+    </section>
+  );
+}
 
 // 参考图的浓淡：10%–100%，每格 5%
 const OPACITY = linear(10, 100, 5);
@@ -193,18 +220,7 @@ export function LayersPanel() {
         {!w.small.human && <p class="hint">生成人文后有文化圈、人口密度</p>}
         {hint && human.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
       </section>
-      <section>
-        <h5>画风</h5>
-        <Seg
-          value={mapStyle.value}
-          options={[
-            ['realistic', '写实'],
-            ['atlas', '地图册'],
-          ]}
-          onChange={(v) => (mapStyle.value = v)}
-          wide
-        />
-      </section>
+      <MapStyleSection w={w} />
       {planet && (
         <section>
           <h5>投影</h5>
