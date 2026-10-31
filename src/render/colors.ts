@@ -166,7 +166,7 @@ function snowAmount(world: World, season: Season, i: number): number {
 export type HumanFlatMode = 'terrainClass' | 'resource' | 'culture' | 'cultureGroup' | 'country' | 'bloc' | `dim:${string}`;
 const humanMode = (mode: ViewMode): mode is HumanFlatMode =>
   mode === 'terrainClass' || mode === 'resource' || mode === 'culture' || mode === 'cultureGroup' || mode === 'country' || mode === 'bloc' || mode.startsWith('dim:');
-const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
+export const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
 
 function staticLayers(world: World): StaticLayers {
   const inputs: unknown[] = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness, world.causes.fragment, world.small.terrain.gen?.rerolls];
@@ -230,11 +230,45 @@ export function shoreElevation(mesh: World['mesh'], coast: Float32Array, elevati
   return out;
 }
 
+// ---------- 底子与每种模式的一层（第三十九轮） ----------
+// 以前每次换模式都整份重算 cellLayers、整份重新上传、地形层整张重画。拆成两部分：
+//   底子（baseLayers）：地形层读的平滑层、对岸的颜色、岩性、静态层（高程、海岸值、坡度、峡湾……），与晕渲、露岩的强弱。
+//     地形类与人文的模式（地貌、主导生态、省份、地形类别、资源、文化、文化组、每一维、国家、同盟）共用一份，
+//     只看季节（积雪）；别的数据底图各一份（季节只进用得上它的几种：气温、降水、海水温度；关注的物种只进“适宜程度”）。
+//   每种模式的一层（modeLayers）：合成着色器读的平涂、省份的分组与切线、国界的分组、花纹与发光、landCell
+//   （离边界远的格由渲染器在空闲时按这一层算，见 near.ts）。
+// MapView 按 baseKey、modeKey 各缓存几份；渲染器按对象是不是同一个来上传，底子没变时不重画地形层
+export type BaseLayers = Pick<CellLayers, 'smooth' | 'other' | 'elevation' | 'shore' | 'coast' | 'frag' | 'style' | 'fjord' | 'grad' | 'seaGrad' | 'shade' | 'rock' | 'seaData' | 'coastAmp' | 'lith'>;
+export type ModeLayers = Pick<CellLayers, 'flat' | 'group' | 'seams' | 'countryGroup' | 'fx' | 'fxPalette' | 'landCell'>;
+
+// 平滑层的颜色按季节变的几种数据底图
+const SEASONAL_DATA = new Set<ViewMode>(['temperature', 'precip', 'seaTemp']);
+
+// 底子的键：同一个键的模式（同一个世界里）底子逐值相同
+export function baseKey(o: Pick<ColorOptions, 'mode' | 'season' | 'focusSpecies'>): string {
+  if (terrainLikeMode(o.mode)) return `terrain|${o.season}`;
+  if (SEASONAL_DATA.has(o.mode)) return `${o.mode}|${o.season}`;
+  if (o.mode === 'suitability') return `suitability|${o.focusSpecies ?? ''}`;
+  return o.mode;
+}
+
+// 每种模式的一层的键：平涂（按模式）、花纹（地形、主导生态、省份按季节）、省界（开没开）、国界（开没开，国家模式另带集团）
+export function modeKey(o: ColorOptions): string {
+  const flat = o.mode === 'dominant' || o.mode === 'provinces' || humanMode(o.mode) ? o.mode : '';
+  const fx = terrainLikeMode(o.mode) && !humanMode(o.mode) ? o.season : '';
+  const groups = o.borders || o.mode === 'provinces' ? 'g' : '';
+  const country = o.countryBorders ? (o.mode === 'country' ? 'cb' : 'c') : '';
+  return `${flat}|${fx}|${groups}|${country}`;
+}
+
 export function cellLayers(world: World, o: ColorOptions): CellLayers {
+  return { ...baseLayers(world, o), ...modeLayers(world, o) };
+}
+
+export function baseLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season' | 'focusSpecies'>): BaseLayers {
   const { mesh, causes, derived: d, small } = world;
   const n = mesh.n;
   const smooth = new Uint8Array(n * 4);
-  let flat: Uint8Array | null = null;
   let shade = 1;
   let rock = 0;
   const S = small.species.length;
@@ -278,113 +312,88 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     // alpha：地表的“沙质”程度（越干越沙），决定海边有没有沙滩
     const sandy = Math.round(255 * Math.min(1, Math.max(0, 1 - d.moisture[i] / 0.8)));
     let c: RGB;
-    switch (o.mode) {
-      case 'terrain':
-      case 'dominant':
-      case 'provinces':
-      case 'terrainClass':
-      case 'resource':
-      case 'culture':
-      case 'cultureGroup':
-      case 'country':
-      case 'bloc': {
-        // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖
-        c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
-        // 放的岛的种类选了颜色：岛上的地画成这个颜色（植被的颜色留一点；积雪照样盖上）
-        const code = causes.islandType[i] & ISLAND_CODE_MASK;
-        const tint = anyTint && code ? tints[code - 1] : null;
-        if (tint) c = [c[0] + (tint[0] - c[0]) * ISLAND_TINT, c[1] + (tint[1] - c[1]) * ISLAND_TINT, c[2] + (tint[2] - c[2]) * ISLAND_TINT];
-        if (d.lake[i] === 2) c = playaColor;
-        const k = snowAmount(world, o.season, i);
-        if (k > 0) c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
-        break;
-      }
-      case 'elevation':
-        c = ramp(HYPSO, d.elevation[i]);
-        break;
-      case 'uplift':
-        c = ramp(UNIT, causes.uplift[i] / 1.3);
-        break;
-      case 'temperature':
-        c = ramp(TEMP, seasonal(d.tMean, d.tS, d.tW, i));
-        shade = 0.4;
-        break;
-      case 'precip':
-        c = ramp(PRECIP, seasonal(d.precip, d.pS, d.pW, i, true));
-        shade = 0.4;
-        break;
-      case 'moisture':
-        c = ramp(MOIST, d.moisture[i]);
-        shade = 0.4;
-        break;
-      case 'wetness':
-        c = ramp(UNIT, (d.wetness[i] - 12) / 14);
-        shade = 0.3;
-        break;
-      case 'continentality':
-        c = ramp(UNIT, d.continentality[i]);
-        shade = 0.3;
-        break;
-      case 'corrT':
-        c = ramp(DIVERGE, (d.corrT[i] + causes.tempOffset[i]) / 10);
-        shade = 0.4;
-        break;
-      case 'corrP':
-        c = ramp(DIVERGE, -(d.corrP[i] + causes.moistOffset[i]) / 1.5);
-        shade = 0.4;
-        break;
-      case 'suitability': {
-        const s = small.species.findIndex((sp) => sp.id === o.focusSpecies);
-        c = s >= 0 ? ramp(UNIT, d.suit[i * S + s]) : [80, 80, 80];
-        shade = 0.4;
-        break;
-      }
-      case 'habitability':
-        c = ramp(HABIT, d.habitability?.[i] ?? 0);
-        shade = 0.4;
-        break;
-      case 'popDensity':
-        c = ramp(DENSITY, densityLevel(d.popDensity?.[i] ?? 0));
-        shade = 0.4;
-        break;
-      default: {
-        if (o.mode.startsWith('dim:')) {
-          // 时代的一维：底下是地貌（同文化圈）
-          c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
-        } else if (o.mode.startsWith('field:')) {
-          const name = o.mode.slice(6);
-          const v = (causes.fields[name]?.[i] ?? 0) + (d.corrF[name]?.[i] ?? 0);
-          c = ramp(UNIT, v);
+    if (terrainLike) {
+      // 地貌、主导生态、省份与人文的底图（地形类别、资源、文化、文化组、每一维、国家、同盟）：
+      // 植被按份额混色（有颜色脚本时用它算好的 d.look），积雪按季节覆盖。第三十九轮：每一维也走这里（以前少了岛的颜色、干湖、雪）
+      c = d.look && d.look[i * 4 + 3] ? [d.look[i * 4], d.look[i * 4 + 1], d.look[i * 4 + 2]] : blendRgb(d.share, i, speciesRgb);
+      // 放的岛的种类选了颜色：岛上的地画成这个颜色（植被的颜色留一点；积雪照样盖上）
+      const code = causes.islandType[i] & ISLAND_CODE_MASK;
+      const tint = anyTint && code ? tints[code - 1] : null;
+      if (tint) c = [c[0] + (tint[0] - c[0]) * ISLAND_TINT, c[1] + (tint[1] - c[1]) * ISLAND_TINT, c[2] + (tint[2] - c[2]) * ISLAND_TINT];
+      if (d.lake[i] === 2) c = playaColor;
+      const k = snowAmount(world, o.season, i);
+      if (k > 0) c = [c[0] + (245 - c[0]) * k, c[1] + (248 - c[1]) * k, c[2] + (250 - c[2]) * k];
+    } else {
+      switch (o.mode) {
+        case 'elevation':
+          c = ramp(HYPSO, d.elevation[i]);
+          break;
+        case 'uplift':
+          c = ramp(UNIT, causes.uplift[i] / 1.3);
+          break;
+        case 'temperature':
+          c = ramp(TEMP, seasonal(d.tMean, d.tS, d.tW, i));
           shade = 0.4;
-        } else c = [128, 128, 128];
+          break;
+        case 'precip':
+          c = ramp(PRECIP, seasonal(d.precip, d.pS, d.pW, i, true));
+          shade = 0.4;
+          break;
+        case 'moisture':
+          c = ramp(MOIST, d.moisture[i]);
+          shade = 0.4;
+          break;
+        case 'wetness':
+          c = ramp(UNIT, (d.wetness[i] - 12) / 14);
+          shade = 0.3;
+          break;
+        case 'continentality':
+          c = ramp(UNIT, d.continentality[i]);
+          shade = 0.3;
+          break;
+        case 'corrT':
+          c = ramp(DIVERGE, (d.corrT[i] + causes.tempOffset[i]) / 10);
+          shade = 0.4;
+          break;
+        case 'corrP':
+          c = ramp(DIVERGE, -(d.corrP[i] + causes.moistOffset[i]) / 1.5);
+          shade = 0.4;
+          break;
+        case 'suitability': {
+          const s = small.species.findIndex((sp) => sp.id === o.focusSpecies);
+          c = s >= 0 ? ramp(UNIT, d.suit[i * S + s]) : [80, 80, 80];
+          shade = 0.4;
+          break;
+        }
+        case 'habitability':
+          c = ramp(HABIT, d.habitability?.[i] ?? 0);
+          shade = 0.4;
+          break;
+        case 'popDensity':
+          c = ramp(DENSITY, densityLevel(d.popDensity?.[i] ?? 0));
+          shade = 0.4;
+          break;
+        default: {
+          if (o.mode.startsWith('field:')) {
+            const name = o.mode.slice(6);
+            const v = (causes.fields[name]?.[i] ?? 0) + (d.corrF[name]?.[i] ?? 0);
+            c = ramp(UNIT, v);
+            shade = 0.4;
+          } else c = [128, 128, 128];
+        }
       }
     }
     put(smooth, i, c, sandy);
   }
 
-  if (o.mode === 'dominant') {
-    flat = new Uint8Array(n * 4);
-    for (let i = 0; i < n; i++) {
-      const s = d.dominant[i];
-      if (s >= 0) put(flat, i, speciesRgb[s], d.overridden[i] ? 255 : 220);
-    }
-  } else if (o.mode === 'provinces') flat = provinceFlat(world, causes.province);
-  else if (humanMode(o.mode)) flat = humanFlat(world, o.mode);
-
-  // 省界：剪刀切过的地方按切线画（切线附近按在线的哪一边分省，见 core/seams.ts）
-  const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
-  const group = o.borders || o.mode === 'provinces' ? provinceGroups(world, causes.province, seams) : null;
-  const countryGroup = o.countryBorders ? countryBorderGroups(world, o.mode === 'country') : null;
   const st = staticLayers(world);
   // 对岸的颜色（fillOther）：着色器里陆地像素只用陆色、水面像素只用水色，海岸两边的颜色不再互相渗
   const other = new Uint8Array(n * 4);
   // 破碎的格（第十八轮）：没有对岸时，碎岛、裂缝画成什么颜色（见 fragColors）
   const alt = st.frag ? { frag: st.frag, rgba: fragColors(world, o.mode, o.season, smooth, st.coast, st.frag) } : null;
   for (let i = 0; i < n; i++) fillOther(mesh, smooth, st.coast, other, i, alt);
-  const fx = fxLayers(world, o);
   return {
     lith: terrainLike ? lithLayer(world) : null,
-    landCell: group ? landCellLayer(world) : null,
     smooth,
     other,
     elevation: st.elevation,
@@ -395,14 +404,45 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
     fjord: st.fjord,
     grad: st.grad,
     seaGrad: st.seaGrad,
-    flat,
-    group,
-    seams,
-    countryGroup,
     shade,
     rock,
     seaData: seaTemp,
     coastAmp: COAST_AMP * small.terrain.coastRoughness,
+  };
+}
+
+export function modeLayers(world: World, o: ColorOptions): ModeLayers {
+  const { causes, small } = world;
+  let flat: Uint8Array | null = null;
+  if (o.mode === 'dominant') {
+    const { derived: d, mesh } = world;
+    const n = mesh.n;
+    const speciesRgb = small.species.map((s) => hexToRgb(speciesColor(s)));
+    flat = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const s = d.dominant[i];
+      if (s < 0) continue;
+      const c = speciesRgb[s];
+      flat[i * 4] = c[0];
+      flat[i * 4 + 1] = c[1];
+      flat[i * 4 + 2] = c[2];
+      flat[i * 4 + 3] = d.overridden[i] ? 255 : 220;
+    }
+  } else if (o.mode === 'provinces') flat = provinceFlat(world, causes.province);
+  else if (humanMode(o.mode)) flat = humanFlat(world, o.mode);
+
+  // 省界：剪刀切过的地方按切线画（切线附近按在线的哪一边分省，见 core/seams.ts）
+  const seams = o.borders || o.mode === 'provinces' ? seamLayers(world, causes.province, small.provinceSeams) : null;
+  const group = o.borders || o.mode === 'provinces' ? provinceGroups(world, causes.province, seams) : null;
+  const countryGroup = o.countryBorders ? countryBorderGroups(world, o.mode === 'country') : null;
+  const landCell = group ? landCellLayer(world) : null;
+  const fx = fxLayers(world, o);
+  return {
+    landCell,
+    flat,
+    group,
+    seams,
+    countryGroup,
     fx: fx?.fx ?? null,
     fxPalette: fx?.palette ?? null,
   };
@@ -1204,3 +1244,6 @@ function fillOther(mesh: World['mesh'], smooth: Uint8Array, coast: Float32Array,
 export function ghostLayers(world: World, base: CellLayers, patch: GhostPatch, mode: ViewMode, coastAmp?: number): GhostLayers {
   return new GhostBuffer(base, mode).apply(world, patch, coastAmp);
 }
+
+// 测试用（src/render/r39-layers.test.ts 里留着的第三十八轮的 cellLayers 要用）：几张色带与内部的几个函数
+export const COLORS_INTERNALS = { humanMode, ramp, SEA, HYPSO, TEMP, PRECIP, MOIST, DIVERGE, HABIT, DENSITY, UNIT, warmth, snowAmount, staticLayers, fillOther, ISLAND_TINT };

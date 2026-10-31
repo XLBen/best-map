@@ -6,10 +6,11 @@ import { worldMapStyle } from '../../core/map-style';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
-import { type ColorOptions, type GhostEdit, GhostBuffer, cellLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, provinceScale, terrainGhost } from '../render/colors';
+import { type BaseLayers, type ColorOptions, type GhostEdit, GhostBuffer, type ModeLayers, baseKey, baseLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, modeKey, modeLayers, provinceScale, terrainGhost, terrainLikeMode } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, peakLabels, riverLayer, riverLayerScene, riverPathsKey, samePathsKey } from '../render/overlay';
 import { convertCamera, effectiveZoom } from '../render/projection';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
+import { Perf, perfEnabled } from '../render/perf';
 import {
   adjustPreview,
   adjustPreviewWorld,
@@ -63,6 +64,23 @@ import { type Preview, type ProvincePreview, type ToolHandler, measureTool } fro
 
 // 文化、文化组、每一维、人口模式里国界的浓淡（第二十五轮：细而淡，只留近处一圈）
 const FAINT_COUNTRY = 0.4;
+// 着色的缓存（第三十九轮）：每个世界最多留几份底子、几份模式的那一层
+const BASE_CACHE = 6;
+const MODE_CACHE = 10;
+
+// 一个按插入先后淘汰的小缓存：取到的挪到最后，满了扔掉最前面的
+function lruGet<K, V>(m: Map<K, V>, k: K, make: () => V, cap: number): V {
+  let v = m.get(k);
+  if (v !== undefined) {
+    m.delete(k);
+    m.set(k, v);
+    return v;
+  }
+  v = make();
+  m.set(k, v);
+  while (m.size > cap) m.delete(m.keys().next().value as K);
+  return v;
+}
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具（map/input.ts），工具给出预览。
 // 这里只把它们接起来：哪一类工具多画什么由 defs/tools.ts 声明（map/highlights.ts），导出图片在 map/export.ts，window 上的钩子在 map/debug.ts
@@ -157,6 +175,13 @@ export function MapView() {
       return;
     }
     const ctx = ovCanvas.getContext('2d')!;
+    // 测速（第三十九轮，render/perf.ts）：网址带 ?perf 时每帧记下 GPU 各遍与主线程几步的毫秒数，挂在 window.__perf 上
+    const perf = perfEnabled() ? new Perf() : null;
+    if (perf) {
+      perf.attach(glCanvas.getContext('webgl2')!);
+      renderer.perf = perf;
+      (window as unknown as { __perf?: Perf }).__perf = perf;
+    }
     let paths: OverlayPaths | null = null;
     // 河流路径按 riverPathsKey 缓存（流量数组、河道的内容、拖粗细时的临时样子）：只改了名字、省份时
     // （轻快照沿用同一批推导数组）不必重新描河，改了一条画的河的粗细时会重描
@@ -234,7 +259,7 @@ export function MapView() {
 
     // 幽灵海岸：工具（连同排队中的笔画）给的 landness 增量、“调整”滑块与重画这一片给的整份海岸值 → 将来真实的海岸线。
     // 输入变了才重算（每帧最多一次）；持久的缓冲只改到补丁格，只上传改到的行。世界换了就按新世界重算
-    let baseLayers: CellLayers | null = null;
+    let layersShown: CellLayers | null = null;
     let ghostBuf: GhostBuffer | null = null;
     let ghostKey: unknown[] = [];
     // 省份预览（setGroupPreview）显示着时分组、平涂听它的；它去掉时换回的是底子，幽灵改过的那几格的分组、平涂也没了：
@@ -242,40 +267,41 @@ export function MapView() {
     function applyGhost(w: World, pv: Preview | null) {
       const terrain = pv ? (pv.terrain ?? adjustPreview.value) : null;
       const edit = terrain ? null : (pv?.ghost ?? null);
-      const key = [w, baseLayers, terrain, edit, !!pv?.provinces];
+      const key = [w, layersShown, terrain, edit, !!pv?.provinces];
       if (key.length === ghostKey.length && key.every((k, i) => k === ghostKey[i])) return;
       ghostKey = key;
-      if (!baseLayers || (!terrain && !edit && !ghostBuf)) return;
-      ghostBuf ??= new GhostBuffer(baseLayers, mode.value);
-      const patch = terrain ? terrainGhost(w, baseLayers, terrain) : edit ? editGhost(w, baseLayers, edit) : null;
+      if (!layersShown || (!terrain && !edit && !ghostBuf)) return;
+      ghostBuf ??= new GhostBuffer(layersShown, mode.value);
+      const patch = terrain ? terrainGhost(w, layersShown, terrain) : edit ? editGhost(w, layersShown, edit) : null;
       renderer.setGhost(ghostBuf.apply(w, patch, terrain && terrain.rough !== w.small.terrain.coastRoughness ? COAST_AMP * terrain.rough : undefined));
     }
 
-    // 参考图：盖在整张地图的范围上（保持比例时放在中间），跟着镜头走
+    // 参考图：盖在整张地图的范围上（保持比例时放在中间），跟着镜头走。样式与上一帧相同时不写（第三十九轮：每帧重写 cssText 会让浏览器重新算样式）
     let refUrl = '';
+    let imgCss = '';
+    let tileCss = '';
     function placeReference(w: World) {
       const img = refImg.current;
       const tile = refTile.current;
       const r = reference.value;
       if (!img || !tile) return;
+      const css = referenceCss(w, img, r);
+      if (css.img !== imgCss) img.style.cssText = imgCss = css.img;
+      if (css.tile !== tileCss) tile.style.cssText = tileCss = css.tile;
+    }
+    function referenceCss(w: World, img: HTMLImageElement, r: typeof reference.value): { img: string; tile: string } {
+      const none = 'display:none';
       // 等面积、球形投影时不铺参考图（图层里有说明）
-      if (!r || !r.visible || (w.mesh.kind === 'sphere' && renderer.camera.proj)) {
-        img.style.display = 'none';
-        tile.style.display = 'none';
-        return;
-      }
+      if (!r || !r.visible || (w.mesh.kind === 'sphere' && renderer.camera.proj)) return { img: none, tile: none };
       if (w.mesh.kind === 'sphere') {
         // 整个星球：草图按 2:1 铺满一整圈，左右重复，跟着平铺的副本走
-        img.style.display = 'none';
         const cam = renderer.camera;
         const W = 2 * cam.zoom;
         const H = cam.zoom;
         const x = (0 - cam.x) * cam.zoom + glCanvas.clientWidth / 2;
         const y = (0 - cam.y) * cam.zoom + glCanvas.clientHeight / 2;
-        tile.style.cssText = `display:block;left:0;top:${y}px;width:100%;height:${H}px;opacity:${r.opacity};background-image:url("${r.url}");background-size:${W}px ${H}px;background-repeat:repeat-x;background-position:${x}px 0`;
-        return;
+        return { img: none, tile: `display:block;left:0;top:${y}px;width:100%;height:${H}px;opacity:${r.opacity};background-image:url("${r.url}");background-size:${W}px ${H}px;background-repeat:repeat-x;background-position:${x}px 0` };
       }
-      tile.style.display = 'none';
       if (refUrl !== r.url) {
         refUrl = r.url;
         img.onload = requestDraw;
@@ -296,7 +322,7 @@ export function MapView() {
           W = H * ar;
         }
       }
-      img.style.cssText = `display:block;left:${x}px;top:${y}px;width:${W}px;height:${H}px;opacity:${r.opacity}`;
+      return { img: `display:block;left:${x}px;top:${y}px;width:${W}px;height:${H}px;opacity:${r.opacity}`, tile: none };
     }
 
     // 底部条要把左下角的比例尺抬多高：量一次缓存着，底部条或窗口变了大小时作废（不在每帧查 DOM、量位置）。
@@ -349,6 +375,12 @@ export function MapView() {
       if (!w || !paths) return;
       // 正在导出整张地图：渲染器的图层是导出用的干净的那一份，屏幕先不画（导出完了重画）
       if (exporter.state.busy && !clean) return;
+      const t0 = perf ? (perf.frame(), performance.now()) : 0;
+      drawFrame(w, paths, clean);
+      if (perf) perf.cpu('draw', performance.now() - t0);
+    }
+    // 一帧（clean 见上；paths：这一帧的河流路径）
+    function drawFrame(w: World, paths: OverlayPaths, clean: boolean) {
       placeReference(w);
       // 拖左侧滑块时：鼠标不在地图上，也在最后停的地方（没有就在画面中间）显示预览
       if (sliderActive.value && !view.pointer && !view.pressed && !view.lastPointer) {
@@ -389,7 +421,9 @@ export function MapView() {
       // 生态颜色、雪、河、地名、风、没涂成的格按它画；工具、悬停卡片照旧看当前世界
       const ap = adjustPreviewWorld.value;
       const shown = clean ? w : (preview.world ?? (ap && ap.base === w ? ap.world : null) ?? w);
+      const tc = perf ? performance.now() : 0;
       applyColors(shown);
+      if (perf) perf.cpu('colors', performance.now() - tc);
       applyFx(shown, clean);
       applyTint(shown);
       // 描格（第三十七轮）：指针下的格（指针工具给的 preview.focus）与钉住的格（任何工具下），按画面上的陆海描边；导出的干净画面不画
@@ -473,7 +507,9 @@ export function MapView() {
         exact: clean,
       }];
       lastOverlay = ovArgs;
+      const to = perf ? performance.now() : 0;
       labelBoxes = drawOverlay(ctx, ...ovArgs);
+      if (perf) perf.cpu('overlay', performance.now() - to);
       if (clean) return;
       // 鼠标旁的一句话（拖滑块时一般由滑块上的数说明，这里不显示；画笔在鼠标最后停的地方预览涂一下时，写在那里）
       const at = sliderActive.value ? (preview.sliderHint ? view.lastPointer : null) : view.pointer;
@@ -528,9 +564,12 @@ export function MapView() {
 
     // 着色：视图模式、季节、关注的类型、边界，按画出来的世界（预览的将来的世界或当前世界，在 draw 里做）。
     // 着色用到的数组都没变（只改了名字的轻快照；预览世界里没变的数组沿用当前世界的同一个对象）就不重新着色、不重画地形。
-    // 最近的两份着色留着：预览出现、消失时来回切换不必重算
+    // 第三十九轮：底子（baseLayers，按 baseKey：地形类与人文的模式共用一份）与每种模式的一层（modeLayers，按 modeKey）各缓存几份，
+    // 拼成的图层也按这两个键记住（同一个对象：渲染器按对象是不是同一个来上传，底子没变时不重画地形层）。
+    // 按世界（用到的数组、小数据的签名）分开存，最近两个世界留着：预览出现、消失时来回切换不必重算
+    type ColorEntry = { key: unknown[]; base: Map<string, BaseLayers>; modes: Map<string, ModeLayers>; merged: Map<string, CellLayers> };
     let colorKey: unknown[] = [];
-    const colorCache: { key: unknown[]; layers: ReturnType<typeof cellLayers> }[] = [];
+    const colorCache: ColorEntry[] = [];
     const sameKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
     // 小数据里着色用到的部分（colors.ts 的 colorSignature，含生态的外观）：每帧都要比，按小数据对象缓存
     const smallKeys = new WeakMap<World['small'], string>();
@@ -562,18 +601,26 @@ export function MapView() {
       for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
       for (const v of Object.values(w.causes)) if (ArrayBuffer.isView(v)) arrays.push(v);
       arrays.push(...Object.values(w.derived.corrF), ...Object.values(w.causes.fields));
-      const key = [w.mesh, ...arrays, smallKey(w), o.mode, o.season, o.focusSpecies, o.borders, o.countryBorders];
+      const wkey = [w.mesh, ...arrays, smallKey(w)];
+      // 季节只进用得上它的模式的键，关注的物种只进“适宜程度”的，省界、国界、工具类别只进模式的那一层的
+      const bk = baseKey(o);
+      const mk = modeKey(o);
+      const key = [...wkey, bk, mk];
       if (sameKey(key, colorKey)) return;
       colorKey = key;
-      let hit = colorCache.find((x) => sameKey(x.key, key));
-      if (!hit) {
-        hit = { key, layers: cellLayers(w, o) };
-        colorCache.unshift(hit);
+      let entry = colorCache.find((x) => sameKey(x.key, wkey));
+      if (!entry) {
+        entry = { key: wkey, base: new Map(), modes: new Map(), merged: new Map() };
+        colorCache.unshift(entry);
         colorCache.length = Math.min(colorCache.length, 2);
       }
+      const e = entry;
+      const t0 = perf ? performance.now() : 0;
+      const layers = lruGet(e.merged, `${bk}#${mk}`, () => ({ ...lruGet(e.base, bk, () => baseLayers(w, o), BASE_CACHE), ...lruGet(e.modes, mk, () => modeLayers(w, o), MODE_CACHE) }), BASE_CACHE * 2);
+      if (perf) perf.cpu('cellLayers', performance.now() - t0);
       renderer.setMesh(w.mesh);
-      baseLayers = hit.layers;
-      renderer.setLayers(hit.layers);
+      layersShown = layers;
+      renderer.setLayers(layers);
       lastHighlightKey = [];
       groupKey = [];
       // 幽灵海岸跟着新的底子重来
@@ -586,20 +633,21 @@ export function MapView() {
     // 拖花纹、发光滑块时的外观覆盖（state.ts 的 setSpeciesVisualOverride）：主线程上按覆盖的外观重算每格的花纹（几毫秒），
     // 不等引擎。画出来的世界里没有被覆盖的生态时用着色里的那一份；导出图片的干净画面只画世界里存着的样子
     function applyFx(w: World, clean: boolean) {
-      if (!baseLayers || !colorOpts) return;
+      if (!layersShown || !colorOpts) return;
       const ov = visualOverrides.value;
       const on = !clean && ov.size > 0 && w.small.species.some((sp) => ov.has(sp.id));
-      const key = [baseLayers, on ? ov : null, on ? w : null];
+      const key = [layersShown, on ? ov : null, on ? w : null];
       if (sameKey(key, fxKey)) return;
       fxKey = key;
       const f = on ? fxLayers(w, colorOpts, ov) : null;
-      renderer.setFx(on ? (f?.fx ?? null) : (baseLayers.fx ?? null), on ? (f?.palette ?? null) : (baseLayers.fxPalette ?? null));
+      renderer.setFx(on ? (f?.fx ?? null) : (layersShown.fx ?? null), on ? (f?.palette ?? null) : (layersShown.fxPalette ?? null));
     }
-    // 湖泊类型的颜色（第九轮）：按画出来的世界、画风（河湖的种类用哪一种颜色）、视图模式；没有带类型的湖时为 null
+    // 湖泊类型的颜色（第九轮）：按画出来的世界、画风（河湖的种类用哪一种颜色）、是不是地形类的模式（第三十九轮：不按具体的模式）；
+    // 没有带类型的湖时为 null
     let tintKey: unknown[] = [];
     function applyTint(w: World) {
       const style = worldMapStyle(w.small);
-      const key = [w.mesh, w.derived.lakeType, w.derived.lake, w.causes.land, lakeTypesSignature(w.small.lakeTypes), style.typeColors, mode.value];
+      const key = [w.mesh, w.derived.lakeType, w.derived.lake, w.causes.land, lakeTypesSignature(w.small.lakeTypes), style.typeColors, terrainLikeMode(mode.value)];
       if (sameKey(key, tintKey)) return;
       tintKey = key;
       renderer.setTint(lakeTintLayer(w, { mode: mode.value }, style));

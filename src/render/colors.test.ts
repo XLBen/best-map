@@ -413,10 +413,10 @@ describe('生态的颜色脚本、花纹与发光', () => {
       expect(river, name).toBeGreaterThan(main.indexOf('if (uHasTint == 1 && id >= 0) {'));
       expect(river, name).toBeGreaterThan(main.indexOf('col = mix(col, fc.rgb, fc.a);'));
       expect(river, name).toBeLessThan(main.indexOf('// 海岸线：'));
-      expect(river, name).toBeLessThan(main.indexOf('if (uHasGroup == 1 && pc >= 0) {'));
+      expect(river, name).toBeLessThan(main.indexOf('if (provLines && pc >= 0'));
       expect(river, name).toBeLessThan(main.indexOf('if (uHasHighlight == 1 && id >= 0) {'));
       // 省份：像素自己的格、省界与轮廓的相邻像素都过 provCell（水面的像素不取陆地格）
-      expect(main, name).toContain('int pc = hs.g < -10000.0 ? -1 : provCell(seamCell(id, vUv), vUv, land);');
+      expect(main, name).toContain('int pc = !needPc || hs.g < -10000.0 ? -1 : provCell(seamCell(id, vUv), vUv, land);');
       expect(main, name).toContain('float gx = groupOf(provAt(vUv + dx, uvW + dx));');
       expect(main, name).toContain('int idH = byGroup ? pc : id;');
       expect(main, name).toContain('hlByte(byGroup ? provAt(vUv + hx, uvW + hx)');
@@ -463,6 +463,35 @@ describe('生态的颜色脚本、花纹与发光', () => {
     expect(PROJ_SOURCES.compose).toContain('float g = texture(uSceneHeight, toScene(uv)).g;');
     expect(COMPOSE_SOURCES.plane).toContain(FOCUS_GLSL);
     expect(COMPOSE_SOURCES.planet).toContain(FOCUS_GLSL);
+  });
+
+  it('第三十九轮：合成里先判断再跳过——省份格用得上才算，省界淡出为 0 时、国界外面一圈看不出时、离边界远时不取相邻像素', async () => {
+    const { COMPOSE_SOURCES, PROJ_SOURCES } = await import('./renderer');
+    const all = { ...COMPOSE_SOURCES, proj: PROJ_SOURCES.compose };
+    for (const [name, src] of Object.entries(all)) {
+      const main = src.slice(src.indexOf('void main() {'));
+      // 省份格：省份着色、省界（淡出不为 0）、国界、按省份的高亮才用
+      expect(main, name).toContain('bool needPc = uFlatByGroup == 1 || provLines || uHasCountry == 1 || (uHasHighlight == 1 && uHighlightByGroup == 1);');
+      expect(main, name).toContain('bool provLines = uHasGroup == 1 && provFade * uProvAlpha > 0.0;');
+      expect(main.indexOf('float provFade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);'), name).toBeLessThan(main.indexOf('int pc = '));
+      expect(main, name).toContain('* provFade * uProvAlpha / uPxScale);');
+      // 国界：近处一圈碰到国界（kIn ≥ 0.4，浓淡 ≥ 0.328 > 0.3）就不看外面一圈；国界淡时（< 0.999）也不看
+      expect(main, name).toContain('if (kIn == 0.0 && outer) {');
+      expect(main, name).toContain('bool outer = uCountryAlpha >= 0.999;');
+      expect(main, name).toContain('float k = max(kIn * 0.82, kOut * 0.3 * step(0.999, uCountryAlpha)) * uCountryAlpha * (c0 >= 65535.5 ? 0.5 : 1.0) * zoomK;');
+      // 帝国的外沿：近处碰到就不画、远处碰到就画，都早停
+      expect(main, name).toContain('if (rimNear || rimFar) break;');
+      // 离边界远的格：只在省份格就是扭曲后的格时读；三处各按自己的环的半径
+      expect(main, name).toContain('ivec3 nearH = uNearOn == 1 && pc >= 0 && pc == id ? ivec3(cellTex(uNear, id).rgb * 255.0 + 0.5) : ivec3(0);');
+      expect(main, name).toContain('!nearSkip(nearH.r, nearA + 1.5 * nearPx(), nearW + 1.5 * nearPx())');
+      expect(main, name).toContain('!nearSkip(nearH.g, nearA + cR, nearW + cR)');
+      expect(main, name).toContain('!nearSkip(nearH.b, nearA + rR, nearW + rR)');
+      for (const u of ['uniform sampler2D uNear;', 'uniform int uNearOn;', 'uniform float uNearRho[13];']) expect(src, `${name} ${u}`).toContain(u);
+    }
+    // 投影：画面一个像素按这个像素自己的投影，编号层的纹素按场景的密度
+    expect(PROJ_SOURCES.compose).toContain('float nearPx() { return max(length(uDX), length(uDY)); }');
+    expect(PROJ_SOURCES.compose).toContain('float nearSlack() { return 0.71 / min(uSceneZ.x, uSceneZ.y); }');
+    expect(COMPOSE_SOURCES.plane).toContain('float nearSlack() { return 0.71 * nearPx() * uScenePx / uPxScale; }');
   });
 });
 

@@ -10,6 +10,8 @@ import { FRAG_AMP, FRAG_D_MAX, FRAG_D_MIN, FRAG_FREQ, FRAG_G, FRAG_OFF } from '.
 import { LOOK, SKERRY_REACH } from '../../core/coast-style';
 import { FJ } from '../../core/fjords';
 import { COUNTRY_ALPHA, FEDERATION_GROUP, type GhostLayers, ISLET_FLAT, SEA_CLAIM_ALPHA } from './colors';
+import { NEAR_MAX, nearLayerSteps, nearRhoStep } from './near';
+import type { Perf } from './perf';
 import { GLOBE_G, PROJ_GLSL, type Proj, effectiveZoom, planeBounds, sceneNeed, screenToWorld as projScreenToWorld, worldToScreen as projWorldToScreen } from './projection';
 
 // WebGL2 渲染：
@@ -795,6 +797,11 @@ uniform int uHasLandCell;
 uniform ivec2 uFocus;
 uniform vec3 uFocusC[2];
 uniform float uFocusSphere;
+// 离边界远的格（第三十九轮，near.ts 的 nearLayer）：每格 r、g、b 是省份、国家、集团往外几步之内没有会与它连成线的格（低四位数全部的格，高四位只数水面格）；
+// uNearRho[h]：隔 h 步的格离得最近有多远（地图单位）；uNearOn 为 0 时不跳过（省份预览、幽灵海岸、极地的场景、ρ 还没算好）
+uniform sampler2D uNear;
+uniform int uNearOn;
+uniform float uNearRho[${NEAR_MAX + 1}];
 out vec4 oColor;
 ${NOISE_GLSL}
 // 场景上的位置夹在场景之内（停稳时与画面相同；移动中、导出的一块块场景四周多画了一圈，扭曲后伸出画面的取到那一圈）
@@ -851,6 +858,17 @@ ${FOCUS_GLSL}// 高亮的 alpha 字节（编码见 colors.ts 的 highlightColors
 float hlByte(int id) { return id < 0 ? 0.0 : cellTex(uHighlight, id).a * 255.0; }
 // 平涂、斜线的不透明度；只描边的是 0
 float hlAlpha(float A) { return A > 128.5 ? (A - 128.0) / 127.0 : A < 127.5 ? A / 127.0 : 0.0; }
+// 离边界远的像素不取环上的点（第三十九轮，near.ts 的保证）：取样离 P（扭曲后的位置）最远多少（地图单位）比隔 h 步的格还近时，
+// 取到的格都画不出线。nearPx：画面一个像素合多少地图单位；nearSlack：编号层一个纹素取整最多差多远
+float nearPx() { return uSpacing / uCellPx; }
+float nearSlack() { return 0.71 * nearPx() * uScenePx / uPxScale; }
+// h 的低四位：往外几步之内没有会连成线的格；高四位：只数水面格（画成水面的取样往外 1.2 格找的只有水面格）。
+// rA：取样离 P 最远多少（扭曲后的格、landCellOf、画成陆地时往外 0.6 格找的陆地格）；rW：画成水面时往外 1.2 格找的水面格
+bool nearSkip(int h, float rA, float rW) {
+  int ha = h & 15;
+  int hw = h >> 4;
+  return ha > 0 && rA < uNearRho[min(ha, ${NEAR_MAX})] && rW < uNearRho[min(hw, ${NEAR_MAX})];
+}
 ${FX_BEGIN}${PATTERN_GLSL}${FX_END}
 void main() {
   vec2 sUv = vUv * uSceneXf.xy + uSceneXf.zw;
@@ -876,9 +894,18 @@ void main() {
   vec2 uvW = ((world + w) * uView.xy + uView.zw) * 0.5 + 0.5;
   int id = idAt(uvW);
 
-  // 省界、省份着色、省份的高亮用切线换过、水面只取水面格的格（provCell）
+  // 省界的淡出（缩小到省份只有十几像素宽时、格比一个像素还小时）：先算好，为 0 时不取相邻像素（第三十九轮）
+  float provFade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);
+  bool provLines = uHasGroup == 1 && provFade * uProvAlpha > 0.0;
+  // 省界、省份着色、省份的高亮用切线换过、水面只取水面格的格（provCell）；只在用得上时算（第三十九轮：地貌等模式里不算）
   // 小湖群的水面（第三十四轮，地形层写成 SPECK_MARK）：画成水、格还是陆地，不归哪个省（像碎岛反过来；也省得一圈圈找水面格）
-  int pc = hs.g < ${glsl(SPECK_MARK / 2)} ? -1 : provCell(seamCell(id, vUv), vUv, land);
+  bool needPc = uFlatByGroup == 1 || provLines || uHasCountry == 1 || (uHasHighlight == 1 && uHighlightByGroup == 1);
+  int pc = !needPc || hs.g < ${glsl(SPECK_MARK / 2)} ? -1 : provCell(seamCell(id, vUv), vUv, land);
+  // 离边界远的格（第三十九轮）：像素的省份格就是它扭曲后的格时（陆海与格相同、没有切线换格）才看，读这一格往外几步没有会连成线的格；
+  // 环上的取样离 P 最远是 nearA（扭曲后的格、往外 0.6 格找的陆地格）、nearW（往外 1.2 格找的水面格）再加环的半径
+  ivec3 nearH = uNearOn == 1 && pc >= 0 && pc == id ? ivec3(cellTex(uNear, id).rgb * 255.0 + 0.5) : ivec3(0);
+  float nearA = length(w) + 0.6 * uSpacing + 2.0 * nearSlack();
+  float nearW = nearA + 0.6 * uSpacing;
   int idF = uFlatByGroup == 1 ? pc : id;
   vec4 fc = vec4(0.0);
   if (uHasFlat == 1 && idF >= 0) {
@@ -996,8 +1023,8 @@ void main() {
   // 海岸线：地形层画好的抗锯齿细线
   col = mix(col, uCoastLine.rgb, base.a * uCoastLine.a / sqrt(max(uScenePx, 1.0)));
 
-  // 分组边界（省份）：扭曲坐标下相邻像素的分组不同
-  if (uHasGroup == 1 && pc >= 0) {
+  // 分组边界（省份）：扭曲坐标下相邻像素的分组不同。淡出为 0、离省界远的像素不取相邻像素（第三十九轮）
+  if (provLines && pc >= 0 && !nearSkip(nearH.r, nearA + 1.5 * nearPx(), nearW + 1.5 * nearPx())) {
     vec2 dx = vec2(uTexel.x * 1.5, 0.0);
     vec2 dy = vec2(0.0, uTexel.y * 1.5);
     float g0 = groupOf(pc);
@@ -1007,9 +1034,8 @@ void main() {
     bool bx = gx > -1e8 && gx != g0 && (gx > 0.0) == (g0 > 0.0);
     bool by = gy > -1e8 && gy != g0 && (gy > 0.0) == (g0 > 0.0);
     // 缩小到省份只有十几像素宽时淡出（看省有多大，不看格有多大），否则全图视角下边界会密成一张网；
-    // 格比一个像素还小时也淡出（扭曲后取到的格在像素之间乱跳，边界碎成噪点）
-    float fade = smoothstep(6.0, 16.0, uCellPx * uProvScale) * smoothstep(0.7, 1.4, uCellPx);
-    if (bx || by) col = mix(col, uProvLine, (g0 > 0.0 ? 0.55 : 0.15) * fade * uProvAlpha / uPxScale);
+    // 格比一个像素还小时也淡出（扭曲后取到的格在像素之间乱跳，边界碎成噪点）：provFade
+    if (bx || by) col = mix(col, uProvLine, (g0 > 0.0 ? 0.55 : 0.15) * provFade * uProvAlpha / uPxScale);
   }
 
   // 国界（第二十三轮）：比省界粗、深——近处一圈（约 3 像素宽）浓，外面一圈淡；海上的国界淡一些
@@ -1021,26 +1047,44 @@ void main() {
     float b0 = p0.y;
     vec3 lineCol = uCountryLine;
     float zoomK = mix(0.55, 1.0, smoothstep(0.6, 1.5, uCellPx)) / sqrt(max(uPxScale, 1.0));
-    if (c0 >= 0.0) {
+    // 外面一圈只在国界不淡（uCountryAlpha ≥ 0.999）时画；离国界远的像素不取（第三十九轮）
+    bool outer = uCountryAlpha >= 0.999;
+    float cR = (outer ? 3.0 : 1.5) * nearPx();
+    if (c0 >= 0.0 && uCountryAlpha > 0.0 && !nearSkip(nearH.g, nearA + cR, nearW + cR)) {
       float kIn = 0.0;
       float kOut = 0.0;
-      for (int t = 0; t < 8; t++) {
-        float r = t < 4 ? 1.5 : 3.0;
-        int q = t - (t / 4) * 4;
+      for (int t = 0; t < 4; t++) {
+        float r = 1.5;
+        int q = t;
         vec2 o = (q == 0 ? cx : q == 1 ? -cx : q == 2 ? cy : -cy) * r;
         vec2 pn = countryPair(provAt(vUv + o, uvW + o));
         if (countryEdge(c0, pn.x)) {
           // 同一个联邦的成员之间（第二十六轮）：细而淡，没有外面那一圈
           bool fed = b0 >= ${glsl(FEDERATION_GROUP - 0.5)} && pn.y == b0;
-          if (t < 4) kIn = max(kIn, fed ? 0.4 : 1.0);
-          else if (!fed) kOut = 1.0;
+          kIn = max(kIn, fed ? 0.4 : 1.0);
+          if (kIn >= 1.0) break;
+        }
+      }
+      // 外面一圈只在近处一圈没碰到国界时看得出（kIn ≥ 0.4 时 kIn · 0.82 ≥ 0.328，比外面一圈的 0.3 浓）：碰到了就不取（第三十九轮）
+      if (kIn == 0.0 && outer) {
+        for (int t = 4; t < 8; t++) {
+          float r = 3.0;
+          int q = t - 4;
+          vec2 o = (q == 0 ? cx : q == 1 ? -cx : q == 2 ? cy : -cy) * r;
+          vec2 pn = countryPair(provAt(vUv + o, uvW + o));
+          if (countryEdge(c0, pn.x) && !(b0 >= ${glsl(FEDERATION_GROUP - 0.5)} && pn.y == b0)) {
+            kOut = 1.0;
+            break;
+          }
         }
       }
       float k = max(kIn * 0.82, kOut * 0.3 * step(0.999, uCountryAlpha)) * uCountryAlpha * (c0 >= 65535.5 ? 0.5 : 1.0) * zoomK;
       if (k > 0.0) col = mix(col, lineCol, k);
     }
-    // 帝国的外沿（第二十六轮）：帝国里面、离边界 3.5–5 像素的一道细线，和国界一起像一道双线；海岸上、成员之间不画
-    if (b0 >= 0.5 && b0 < ${glsl(FEDERATION_GROUP - 0.5)}) {
+    // 帝国的外沿（第二十六轮）：帝国里面、离边界 3.5–5 像素的一道细线，和国界一起像一道双线；海岸上、成员之间不画。
+    // 近处一圈碰到别的集团就不画、远处一圈碰到一点就画：都可以早停；离集团的边界远的像素不取（第三十九轮）
+    float rR = 5.0 * nearPx();
+    if (b0 >= 0.5 && b0 < ${glsl(FEDERATION_GROUP - 0.5)} && !nearSkip(nearH.b, nearA + rR, nearW + rR)) {
       bool rimFar = false;
       bool rimNear = false;
       for (int t = 0; t < 8; t++) {
@@ -1051,6 +1095,7 @@ void main() {
           if (t < 4) rimNear = true;
           else rimFar = true;
         }
+        if (rimNear || rimFar) break;
       }
       if (rimFar && !rimNear) col = mix(col, lineCol, 0.6 * uCountryAlpha * zoomK);
     }
@@ -1503,6 +1548,10 @@ const FS_COMPOSE_PROJ = (() => {
   // 河的图层画在场景那一块上（同样的范围、大小）：按场景上的位置取
   s = must(s, 'texture(uRiver, pW * uRiverXf.xy + uRiverXf.zw)', 'texture(uRiver, toScene(pW) * uRiverXf.xy + uRiverXf.zw)');
   s = must(s, 'oColor = vec4(col, 1.0);', 'oColor = projFinish(col);');
+  // 离边界远的格（第三十九轮）：画面一个像素合多少地图单位按这个像素自己的投影（uDX、uDY），编号层的纹素按场景的密度
+  // （只在等距圆柱、整圈的场景里用：极地的场景、不到一整圈的场景经度绕回时不连续，渲染器不开 uNearOn）
+  s = must(s, 'float nearPx() { return uSpacing / uCellPx; }', 'float nearPx() { return max(length(uDX), length(uDY)); }');
+  s = must(s, 'float nearSlack() { return 0.71 * nearPx() * uScenePx / uPxScale; }', 'float nearSlack() { return 0.71 / min(uSceneZ.x, uSceneZ.y); }');
   s = must(s, 'void main() {\n', `void main() {\n${PROJ_PROLOGUE}`);
   return s;
 })();
@@ -1619,6 +1668,8 @@ export interface CellLayers {
   // 生态的花纹与发光（colors.ts 的 fxLayers）：每格 RGBA 字节与 256 行 × 3 纹素的调色板；没有时为 null（整段跳过）
   fx?: Uint8Array | null;
   fxPalette?: Float32Array | null;
+  // 离边界远的格（第三十九轮，near.ts 的 nearLayer）：每格 RGBA 字节，r、g、b 是省份、国家、集团往外几步之内没有会与它连成线的格；省略、null 时不跳过
+  near?: Uint8Array | null;
 }
 
 export type { MapStyle } from '../../core/map-style';
@@ -1856,7 +1907,7 @@ export class Renderer {
   private triCount = 0;
   private fanVao: WebGLVertexArrayObject | null = null;
   private fanCount = 0;
-  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'cellCoast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell' | 'country' | 'fj', WebGLTexture>;
+  private tex: Record<'color' | 'other' | 'elev' | 'coast' | 'cellCoast' | 'grad' | 'seaGrad' | 'flat' | 'highlight' | 'group' | 'segData' | 'fx' | 'fxPal' | 'tint' | 'river' | 'lith' | 'landCell' | 'country' | 'fj' | 'near', WebGLTexture>;
   // 河的图层：每帧问一次（参数：这一帧是不是按移动中的样子取；投影时另给场景的那一块），null 不画河。现在上传着的是哪一张、哪个版本
   riverLayer: ((motion: boolean, scene?: RiverScene) => RiverTex | null) | null = null;
   // 等面积、球形投影（第十三轮 G4）：场景目标（用到时才分配）、现在的场景，与各层画的是哪个键（同停稳的那几个）
@@ -1959,6 +2010,24 @@ export class Renderer {
   // 湖泊类型的颜色（colors.ts 的 lakeTintLayer）：没有时为 null（着色器整段跳过）
   private tintShown: Uint8Array | null = null;
   private tintVersion = 0;
+  // uniform 的位置按程序记住（第三十九轮：以前每合成一次调约 70 次 getUniformLocation）
+  private locs = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
+  // 每张逐格的纹理现在传上去的是哪几个数组（setLayers 按对象是不是同一个来上传，第三十九轮）；
+  // 幽灵海岸、省份预览只改了几行的记成 null（下一次 setLayers 整张重传）
+  private shownDeps: Record<string, unknown[] | null> = {};
+  // 只有合成读的那几层（平涂、分组、国界、花纹、landCell、离边界远的格、晕渲的强弱）的版本：进合成的键，不重画地形层
+  private modeVersion = 0;
+  // 离边界远的格（第三十九轮，near.ts）：传上去的那一份（null 没有），与这张网格的 ρ（空闲时算，没算好时 null）
+  private nearShown: Uint8Array | null = null;
+  private nearRho: Float32Array | null = null;
+  private rhoTimer: ReturnType<typeof setTimeout> | null = null;
+  // 按图层对象记住算过的离边界远的格（同一个对象：MapView 按模式缓存着拼好的图层），与还没算的那一次
+  private nearMemo = new WeakMap<CellLayers, Uint8Array>();
+  private nearTimer: ReturnType<typeof setTimeout> | null = null;
+  // 描格（第三十七轮）那一遍（第三十九轮）：画布上现在描的是哪一个键、描在哪几块（停稳的与投影的各一份）
+  private focusDrawn = { key: '', rects: [] as Rect[] };
+  // 测速（第三十九轮，perf.ts；网址带 ?perf 时 MapView 给）
+  perf: Perf | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -1970,7 +2039,7 @@ export class Renderer {
     this.progCompose = compileCompose(gl, FS_COMPOSE);
     this.progSeam = compile(gl, VS_SEAM, FS_SEAM);
     const t = () => this.makeTex();
-    this.tex = { color: t(), other: t(), elev: t(), coast: t(), cellCoast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t(), country: t(), fj: t() };
+    this.tex = { color: t(), other: t(), elev: t(), coast: t(), cellCoast: t(), grad: t(), seaGrad: t(), flat: t(), highlight: t(), group: t(), segData: t(), fx: t(), fxPal: t(), tint: t(), river: this.makeTex(true), lith: t(), landCell: t(), country: t(), fj: t(), near: t() };
     this.rest = this.makeTarget();
     this.moving = this.makeTarget();
     this.out = { fbo: gl.createFramebuffer()!, tex: this.makeTex(), w: 0, h: 0 };
@@ -1982,9 +2051,11 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     gl.bindTexture(gl.TEXTURE_2D, this.tex.fxPal);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4));
-    // 河的图层也先放一个空纹素
-    gl.bindTexture(gl.TEXTURE_2D, this.tex.river);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    // 河的图层、离边界远的格也先放一个空纹素
+    for (const t of [this.tex.river, this.tex.near]) {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    }
     // 切线：长方形的四个角（每个顶点一个），与每段的实例数据：10 个数（aSeg 4、aNb 4、aEnds 2）
     this.seamVao = gl.createVertexArray()!;
     gl.bindVertexArray(this.seamVao);
@@ -2008,6 +2079,25 @@ export class Renderer {
     gl.bindVertexArray(null);
   }
 
+  private loc(p: WebGLProgram, name: string): WebGLUniformLocation | null {
+    let m = this.locs.get(p);
+    if (!m) this.locs.set(p, (m = new Map()));
+    let l = m.get(name);
+    if (l === undefined) {
+      l = this.gl.getUniformLocation(p, name);
+      m.set(name, l);
+    }
+    return l;
+  }
+
+  // 这张纹理传上去的还是不是这几个数组；不是时记下新的，返回 true（调用方去上传）
+  private fresh(slot: string, ...deps: unknown[]): boolean {
+    const was = this.shownDeps[slot];
+    if (was && was.length === deps.length && was.every((d, k) => d === deps[k])) return false;
+    this.shownDeps[slot] = deps;
+    return true;
+  }
+
   private makeTex(linear = false): WebGLTexture {
     const gl = this.gl;
     const t = gl.createTexture()!;
@@ -2026,6 +2116,11 @@ export class Renderer {
     this.layersVersion++;
     this.meshVersion++;
     this.dirtyCells = 'full';
+    // 换了网格：逐格的纹理都要重传（格数变了），离边界远的格按新网格的 ρ（空闲时算）
+    this.shownDeps = {};
+    this.fjShown = undefined;
+    this.nearRho = null;
+    this.scheduleRho(mesh);
     this.planet = mesh.kind === 'sphere';
     if (mesh.kind === 'sphere') {
       this.setSphereMesh(mesh);
@@ -2153,6 +2248,75 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, TEX_W, d.length / (4 * TEX_W), 0, gl.RGBA, gl.FLOAT, d);
   }
 
+  // ρ（near.ts 的 nearRho）在空闲时一小段一小段地算（类地星球约 0.6 秒）；算好之前合成照算环上的点（结果一样，只是慢）
+  private scheduleRho(mesh: Mesh) {
+    if (this.rhoTimer) clearTimeout(this.rhoTimer);
+    const step = () => {
+      this.rhoTimer = null;
+      if (this.mesh !== mesh) return;
+      const r = nearRhoStep(mesh, 6);
+      if (!r) {
+        this.rhoTimer = setTimeout(step, 16);
+        return;
+      }
+      // 着色器里按 float32 比：往小里收一点，取整、舍入不会让保证的距离变远
+      this.nearRho = Float32Array.from(r, (v) => (v > 0 ? v * (1 - 1e-4) : v));
+    };
+    this.rhoTimer = setTimeout(step, 50);
+  }
+
+  // 离边界远的格（near.ts 的 nearLayer：地区约 15–25 毫秒、星球约 30–55 毫秒）不在换图层的那一帧里算：图层停下 40 毫秒后在空闲时
+  // 分几步算（每步几毫秒，步与步之间让出线程），算好时图层还是那一份才用上（之前照取环上的点，画出来一样）。编辑时图层每一笔都换，算不上也不耽误
+  private scheduleNear(l: CellLayers) {
+    if (this.nearTimer) clearTimeout(this.nearTimer);
+    const mesh = this.mesh;
+    let job: ReturnType<typeof nearLayerSteps> | null = null;
+    let k = 0;
+    const step = () => {
+      this.nearTimer = null;
+      if (this.base !== l || this.mesh !== mesh || !mesh) return;
+      const t = performance.now();
+      job ??= nearLayerSteps(mesh, l.group, l.countryGroup, l.coast, l.landCell);
+      if (k < job.steps.length) job.steps[k++]();
+      this.perf?.cpu('near', performance.now() - t);
+      if (k < job.steps.length) {
+        this.nearTimer = setTimeout(step, 0);
+        return;
+      }
+      this.nearMemo.set(l, job.out);
+      this.useNear(l);
+    };
+    this.nearTimer = setTimeout(step, 40);
+  }
+  private useNear(l: CellLayers) {
+    const mesh = this.mesh;
+    if (!mesh || (!l.group && !l.countryGroup)) return;
+    let near = this.nearMemo.get(l);
+    if (!near) {
+      const job = nearLayerSteps(mesh, l.group, l.countryGroup, l.coast, l.landCell);
+      for (const st of job.steps) st();
+      near = job.out;
+      this.nearMemo.set(l, near);
+    }
+    if (this.fresh('near', near)) this.upload(this.tex.near, near, mesh.n, 4);
+    this.nearShown = near;
+  }
+
+  // 测试、导出：现在就把 ρ 与这一份图层的离边界远的格算完
+  prepareNear() {
+    if (this.mesh && !this.nearRho) {
+      if (this.rhoTimer) clearTimeout(this.rhoTimer);
+      this.rhoTimer = null;
+      const r = nearRhoStep(this.mesh, Infinity)!;
+      this.nearRho = Float32Array.from(r, (v) => (v > 0 ? v * (1 - 1e-4) : v));
+    }
+    if (this.base && !this.nearShown) {
+      if (this.nearTimer) clearTimeout(this.nearTimer);
+      this.nearTimer = null;
+      this.useNear(this.base);
+    }
+  }
+
   private upload(tex: WebGLTexture, data: Uint8Array | Float32Array, n: number, channels: 1 | 2 | 4) {
     const gl = this.gl;
     const rows = Math.ceil(n / TEX_W);
@@ -2181,54 +2345,107 @@ export class Renderer {
   private cellCoastPack = new Float32Array(0);
   private cellCoastGhost: Float32Array | null = null;
 
+  // 换图层（第三十九轮）：按对象是不是同一个来上传（换模式时底子多半没变）；地形层读的变了才加 layersVersion（重画地形层），
+  // 只有合成读的变了只加 modeVersion（只重新合成）。幽灵海岸、省份预览在这之后都没了，调用方要重新给
   setLayers(l: CellLayers) {
     const n = this.mesh?.n ?? 0;
-    this.layersVersion++;
-    this.upload(this.tex.color, l.smooth, n, 4);
-    this.upload(this.tex.other, l.other, n, 4);
-    this.elevPack = new Float32Array(n * 2);
-    packElevation(this.elevPack, l.elevation, l.coast, l.shore ?? null, 0, n);
+    let terrain = false;
+    let mode = false;
+    if (this.fresh('color', l.smooth)) {
+      this.upload(this.tex.color, l.smooth, n, 4);
+      terrain = true;
+    }
+    if (this.fresh('other', l.other)) {
+      this.upload(this.tex.other, l.other, n, 4);
+      terrain = true;
+    }
+    if (this.fresh('elev', l.elevation, l.coast, l.shore)) {
+      this.elevPack = new Float32Array(n * 2);
+      packElevation(this.elevPack, l.elevation, l.coast, l.shore ?? null, 0, n);
+      this.upload(this.tex.elev, this.elevPack, n, 2);
+      terrain = true;
+    }
     this.elevGhost = null;
-    this.upload(this.tex.elev, this.elevPack, n, 2);
-    this.coastPack = new Float32Array(n * 4);
-    packCoast(this.coastPack, l.coast, l.frag, l.style, 0, n);
+    if (this.fresh('coast', l.coast, l.frag, l.style)) {
+      this.coastPack = new Float32Array(n * 4);
+      packCoast(this.coastPack, l.coast, l.frag, l.style, 0, n);
+      this.upload(this.tex.coast, this.coastPack, n, 4);
+      terrain = true;
+    }
     this.coastGhost = null;
-    this.upload(this.tex.coast, this.coastPack, n, 4);
     // 合成着色器只读海岸值、破碎度（provCell 一个像素要查十几次）：另一张两个通道的（RGBA32F 的那张读起来多一倍的带宽，合成慢约三成）
-    this.cellCoastPack = new Float32Array(n * 2);
-    packCellCoast(this.cellCoastPack, l.coast, l.frag, 0, n);
+    if (this.fresh('cellCoast', l.coast, l.frag)) {
+      this.cellCoastPack = new Float32Array(n * 2);
+      packCellCoast(this.cellCoastPack, l.coast, l.frag, 0, n);
+      this.upload(this.tex.cellCoast, this.cellCoastPack, n, 2);
+      mode = true;
+    }
     this.cellCoastGhost = null;
-    this.upload(this.tex.cellCoast, this.cellCoastPack, n, 2);
-    this.fjShown = undefined;
+    // 峡湾的纹理自己记着传上去的是哪一份（幽灵海岸也换它）
+    const fj = this.fjShown;
     this.uploadFj(l.fjord ?? null);
-    this.upload(this.tex.grad, l.grad, n, 2);
-    this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
-    this.upload(this.tex.lith, l.lith ?? new Uint8Array(n * 4), n, 4);
+    if (this.fjShown !== fj) terrain = true;
+    if (this.fresh('grad', l.grad)) {
+      this.upload(this.tex.grad, l.grad, n, 2);
+      terrain = true;
+    }
+    if (this.fresh('seaGrad', l.seaGrad ?? null)) {
+      this.upload(this.tex.seaGrad, l.seaGrad ?? new Float32Array(n * 2), n, 2);
+      terrain = true;
+    }
+    if (this.fresh('lith', l.lith ?? null)) {
+      this.upload(this.tex.lith, l.lith ?? new Uint8Array(n * 4), n, 4);
+      terrain = true;
+    }
+    if (this.fresh('landCell', l.landCell ?? null)) {
+      if (l.landCell) this.upload(this.tex.landCell, l.landCell, n, 4);
+      mode = true;
+    }
+    if (this.fresh('flat', l.flat)) {
+      if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
+      mode = true;
+    }
+    if (this.fresh('group', l.group)) {
+      if (l.group) this.upload(this.tex.group, l.group, n, 2);
+      mode = true;
+    }
+    if (this.fresh('country', l.countryGroup ?? null)) {
+      if (l.countryGroup) this.upload(this.tex.country, l.countryGroup, n, 2);
+      mode = true;
+    }
+    // 离边界远的格：算过的照用，没算过的空闲时算（只决定跳不跳过，画出来一样：不进合成的键）
+    const near = l.near ?? this.nearMemo.get(l) ?? null;
+    if (near && this.fresh('near', near)) this.upload(this.tex.near, near, n, 4);
+    this.nearShown = near;
+    if (!near && (l.group || l.countryGroup)) this.scheduleNear(l);
     this.hasLandCell = !!l.landCell;
-    if (l.landCell) this.upload(this.tex.landCell, l.landCell, n, 4);
     this.hasFlat = !!l.flat;
-    if (l.flat) this.upload(this.tex.flat, l.flat, n, 4);
     this.hasGroup = !!l.group;
-    if (l.group) this.upload(this.tex.group, l.group, n, 2);
     this.hasCountry = !!l.countryGroup;
-    if (l.countryGroup) this.upload(this.tex.country, l.countryGroup, n, 2);
     this.groupBase = this.groupShown = l.group;
     this.flatBase = this.flatShown = l.flat;
     this.seamsBase = l.group ? (l.seams ?? null) : null;
     this.showSeams(this.seamsBase);
+    // 露岩（地形层的饱和度也看它）、海面是数据（地形层也看它）变了要重画地形层；晕渲的强弱只在合成里
+    if (l.rock !== this.rock || !!l.seaData !== this.seaData) terrain = true;
+    if (l.shade !== this.shade) mode = true;
     this.shade = l.shade;
     this.rock = l.rock;
     this.seaData = !!l.seaData;
     this.coastAmp = l.coastAmp;
     this.base = l;
-    this.dirtyCells = 'full';
+    if (terrain) {
+      this.layersVersion++;
+      this.dirtyCells = 'full';
+    }
+    if (mode) this.modeVersion++;
     this.ghostCells = [];
     this.ghostRows = [];
     this.ghostAmp = null;
     this.ghostGroup = null;
     this.ghostFlat = null;
+    // 花纹与发光：与现在显示的是同一份时不重传（调用方的外观覆盖随后照样给）
     this.fxBase = { fx: l.fx ?? null, palette: l.fxPalette ?? null };
-    this.fxShown = { fx: null, palette: null };
     this.setFx(this.fxBase.fx, this.fxBase.palette);
   }
 
@@ -2268,6 +2485,8 @@ export class Renderer {
     // 峡湾（第三十六轮）：幽灵里按将来的陆海重算过（colors.ts 的 GhostBuffer），与上一次的不同才上传
     this.uploadFj(g?.fjord !== undefined ? g.fjord : (base.fjord ?? null));
     const src = g ?? { smooth: base.smooth, other: base.other, elevation: base.elevation, coast: base.coast, frag: base.frag ?? null, flat: base.flat, group: base.group, style: base.style ?? null };
+    // 这几张只改了几行：与哪个数组都对不上了（下一次 setLayers 整张重传）
+    for (const k of ['color', 'other', 'elev', 'coast', 'cellCoast']) this.shownDeps[k] = null;
     this.uploadRows(this.tex.color, src.smooth, rows, 4);
     this.uploadRows(this.tex.other, src.other, rows, 4);
     // 高程与水面的高程按行打包（陆海按这一份的海岸值分）
@@ -2285,11 +2504,13 @@ export class Renderer {
     if (this.groupBase && src.group && (this.groupShown === this.groupBase || this.groupShown === this.ghostGroup)) {
       this.uploadRows(this.tex.group, src.group, rows, 2);
       this.groupShown = g ? src.group : this.groupBase;
+      this.shownDeps.group = null;
       this.groupVersion++;
     }
     if (this.flatBase && src.flat && (this.flatShown === this.flatBase || this.flatShown === this.ghostFlat)) {
       this.uploadRows(this.tex.flat, src.flat, rows, 4);
       this.flatShown = g ? src.flat : this.flatBase;
+      this.shownDeps.flat = null;
       this.groupVersion++;
     }
     this.ghostGroup = g?.group ?? null;
@@ -2345,9 +2566,11 @@ export class Renderer {
     if (group === this.groupShown && flat === this.flatShown && seams === this.seamsShown) return;
     this.uploadChanged(this.tex.group, this.groupShown, group, 2);
     this.groupShown = group;
+    this.shownDeps.group = null;
     if (flat && this.flatShown && flat !== this.flatShown) {
       this.uploadChanged(this.tex.flat, this.flatShown, flat, 4);
       this.flatShown = flat;
+      this.shownDeps.flat = null;
     }
     this.showSeams(seams);
     this.groupVersion++;
@@ -2441,7 +2664,7 @@ export class Renderer {
   }
 
   // 描格（第三十七轮）：鼠标下的格与钉住的格，各描出画成陆地（land）或水面的那一部分（合成着色器的 focusAt）。
-  // null 不描。只在变了时重画（focusKey 在合成的键里）
+  // null 不描。第三十九轮：focusKey 不在合成的键里，变了时只在新旧两处的那几块里重新合成（见 composeFocus）
   setFocus(hover: CellFocus | null, pinned: CellFocus | null) {
     const n = this.mesh?.n ?? 0;
     const ok = (f: CellFocus | null) => (f && f.cell >= 0 && f.cell < n ? f : null);
@@ -2598,9 +2821,18 @@ export class Renderer {
     // 河的图层：停稳的那张（刚停下的那一帧就画好：照用移动中的那张的话，下一帧换上停稳的那张时要整张再合成一次，比画河慢得多）
     const river = this.riverLayer?.(false) ?? null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
-    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${mapStyleKey(this.style)}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
-    // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画
-    if (composeKey === this.composeKey) return;
+    // 描格不在键里（第三十九轮）：鼠标跨格时只重画描格那几块（composeFocus）
+    const composeKey = `${terrainKey}|${seamKey}|${this.highlightVersion}|${this.groupVersion}|${this.modeVersion}|${this.fxVersion}|${this.tintVersion}|${mapStyleKey(this.style)}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
+    const cellPx = mesh.spacing * cam.zoom * dpr;
+    // 画面没有任何变化：画布保留着上一帧（preserveDrawingBuffer），什么都不用画；只有描格变了时只补那几块
+    if (composeKey === this.composeKey) {
+      if (this.focusKey !== this.focusDrawn.key) {
+        gl.disable(gl.BLEND);
+        gl.viewport(0, 0, w, h);
+        this.composeFocus(this.focusRects(view, w, h, null), (rects) => this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], cellPx, 1, 1, relief, hasSeams, this.useRiver(river), null, rects));
+      } else this.perf?.note('compose:none');
+      return;
+    }
     gl.disable(gl.BLEND);
     gl.viewport(0, 0, w, h);
     if (idKey !== this.idKey) {
@@ -2612,6 +2844,7 @@ export class Renderer {
       this.terrainKey = terrainKey;
       this.terrainStatic = terrainStatic;
       this.dirtyCells = new Set();
+      this.perf?.note(rects ? 'terrain:rects' : 'terrain:full');
       this.drawTerrain(t, view, 1 / (cam.zoom * dpr), copy0, copies, coastAmp, kmPerUnit, rects);
     }
     if (hasSeams && seamKey !== this.seamKey) {
@@ -2619,7 +2852,105 @@ export class Renderer {
       this.drawSeams(t, view, cam.x, halfW);
     }
     this.composeKey = composeKey;
-    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], mesh.spacing * cam.zoom * dpr, 1, 1, relief, hasSeams, this.useRiver(river));
+    this.perf?.note('compose:full');
+    this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], cellPx, 1, 1, relief, hasSeams, this.useRiver(river));
+    this.focusDrawn = { key: this.focusKey, rects: this.focusRects(view, w, h, null) };
+  }
+
+  // 描格那一遍（第三十九轮）：画布上别处与上一次整张合成的相同，只有新旧描格的几块要重画。在这几块里（scissor）照原样再合成一次：
+  // 同一个着色器、同样的输入（描格的 uniform 换成新的），每个像素的结果与整张重画逐字节相同（tools/compose-ab.mjs 在无头 Chrome 里对照）
+  private composeFocus(rects: Rect[], draw: (rects: Rect[]) => void) {
+    const all = mergeRects([...this.focusDrawn.rects, ...rects]);
+    this.focusDrawn = { key: this.focusKey, rects };
+    if (!all.length) return;
+    this.perf?.note('compose:focus');
+    draw(all);
+  }
+
+  // 描格的格（鼠标下的、钉住的）离格心 FOCUS_REACH 格以内的像素（着色器的 nearFocus）在画面上的几块（设备像素，GL 的 y 向上；
+  // 四周多留几个像素，边落在偶数上：2×2 一组的像素整组都在里面，fwidth 与整张画时相同）。pj：投影
+  private focusRects(view: V4, w: number, h: number, pj: ProjCompose | null): Rect[] {
+    const mesh = this.mesh;
+    const out: Rect[] = [];
+    if (!mesh) return out;
+    const r = FOCUS_REACH * mesh.spacing;
+    for (const f of this.focus) {
+      if (!f || f.cell >= mesh.n) continue;
+      const cx = mesh.x[f.cell];
+      const cy = mesh.y[f.cell];
+      if (pj) {
+        out.push(...this.projFocusRects(cx, cy, r, w, h));
+        continue;
+      }
+      const px = (x: number) => (x * view[0] + view[2] + 1) * 0.5 * w;
+      const py = (y: number) => (y * view[1] + view[3] + 1) * 0.5 * h;
+      if (!this.planet) {
+        out.push(...pixelRect(px(cx - r), px(cx + r), py(cy + r), py(cy - r), w, h));
+        continue;
+      }
+      // 整个星球：按球面上的弦长（着色器的 nearFocus：弦长 < π · r）→ 角半径 θ；包着极点时整行，否则经度最多差 asin(sin θ / sin 余纬)。
+      // 南北在地图之外（y < 0、> 1）的像素没有格，不描
+      const th = 2 * Math.asin(Math.min(1, (Math.PI * r) / 2));
+      const y0 = Math.max(0, cy - th / Math.PI);
+      const y1 = Math.min(1, cy + th / Math.PI);
+      const s = Math.sin(Math.PI * cy);
+      const pole = y0 <= 0 || y1 >= 1 || Math.sin(th) >= s;
+      if (pole) {
+        out.push(...pixelRect(0, w, py(y1), py(y0), w, h));
+        continue;
+      }
+      const dx = (Math.asin(Math.sin(th) / s) / Math.PI) * 1.01 + 1e-6;
+      // 每一份副本（左右相隔 2）
+      const left = (-1 - view[2]) / view[0];
+      const right = (1 - view[2]) / view[0];
+      for (let k = Math.ceil((left - cx - dx) / 2); k <= Math.floor((right - cx + dx) / 2) && out.length < 16; k++) {
+        out.push(...pixelRect(px(cx + 2 * k - dx), px(cx + 2 * k + dx), py(y1), py(y0), w, h));
+      }
+    }
+    return out;
+  }
+
+  // 投影：沿球面上的那一圈（角半径略大一点）取 64 个点投到画面上，外接矩形再加相邻两点的间距；
+  // 有点在球的背面、跨过等面积投影的边（相邻两点在画面上隔得很远）时整张
+  private projFocusRects(cx: number, cy: number, r: number, w: number, h: number): Rect[] {
+    const th = 2 * Math.asin(Math.min(1, (Math.PI * r) / 2)) * 1.02;
+    const full: Rect[] = [[0, 0, w, h]];
+    if (th >= Math.PI / 2) return full;
+    const lon = Math.PI * (cx - 1);
+    const colat = Math.PI * Math.min(1, Math.max(0, cy));
+    const C = [Math.sin(colat) * Math.cos(lon), Math.sin(colat) * Math.sin(lon), Math.cos(colat)];
+    // 切平面里的两个方向（极点上随便取一个东）
+    const E = Math.sin(colat) > 1e-9 ? [-Math.sin(lon), Math.cos(lon), 0] : [0, 1, 0];
+    const N = [C[1] * E[2] - C[2] * E[1], C[2] * E[0] - C[0] * E[2], C[0] * E[1] - C[1] * E[0]];
+    const cw = this.canvas.clientWidth || 1;
+    const ch = this.canvas.clientHeight || 1;
+    const dpr = w / cw;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    let gap = 0;
+    let prev: [number, number] | null = null;
+    const K = 64;
+    for (let k = 0; k <= K; k++) {
+      const a = (2 * Math.PI * k) / K;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const P = [0, 1, 2].map((i) => Math.cos(th) * C[i] + Math.sin(th) * (ca * E[i] + sa * N[i]));
+      const x = 1 + Math.atan2(P[1], P[0]) / Math.PI;
+      const y = Math.acos(Math.max(-1, Math.min(1, P[2]))) / Math.PI;
+      const sp = projWorldToScreen(this.camera, cw, ch, x, y);
+      if (!sp || !Number.isFinite(sp[0]) || !Number.isFinite(sp[1])) return full;
+      const q: [number, number] = [sp[0] * dpr, h - sp[1] * dpr];
+      if (prev) gap = Math.max(gap, Math.hypot(q[0] - prev[0], q[1] - prev[1]));
+      prev = q;
+      x0 = Math.min(x0, q[0]);
+      x1 = Math.max(x1, q[0]);
+      y0 = Math.min(y0, q[1]);
+      y1 = Math.max(y1, q[1]);
+    }
+    if (gap > Math.min(w, h) / 4) return full;
+    return pixelRect(x0 - gap, x1 + gap, y0 - gap, y1 + gap, w, h);
   }
 
   // 移动中的画法：场景按 MOTION_SCALE 的分辨率、四周各多画 MOTION_MARGIN 画在另一组目标上；镜头还在边距之内、
@@ -2896,10 +3227,24 @@ export class Renderer {
     const relief = this.reliefAt(effectiveZoom(cam));
     const river = sc ? (this.riverLayer?.(moving, { x0: sc.x0, y0: sc.y0, zx: sc.zx, zy: sc.zy, W: sc.W, H: sc.H, dpr, pole: sc.pole, key: sc.key }) ?? null) : null;
     const riverKey = river ? `${river.version}|${river.toUv.join(',')}` : '';
+    const pj: ProjCompose | null = sc ? { proj, scene: sc, planePx: z1, outside: PROJ_BG } : null;
     if (!moving) {
-      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.focusKey}|${this.groupVersion}|${this.fxVersion}|${this.tintVersion}|${mapStyleKey(this.style)}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
-      if (key === this.pComposeKey) return;
+      // 描格不在键里（第三十九轮）：变了时只重画那几块
+      const key = `${this.pTerrainKey}|${this.pSeamKey}|${sc?.key}|${w}x${h}|${dpr}|${cam.x}|${cam.y}|${cam.zoom}|${proj.kind}|${proj.lon0}|${proj.lat0}|${this.highlightVersion}|${this.groupVersion}|${this.modeVersion}|${this.fxVersion}|${this.tintVersion}|${mapStyleKey(this.style)}|${relief}|${this.flatByGroup}|${this.highlightByGroup}|${this.provinceScale}|${this.provinceAlpha}|${this.countryAlpha}|${riverKey}`;
+      if (key === this.pComposeKey) {
+        if (this.focusKey !== this.focusDrawn.key) {
+          if (!pj) {
+            this.focusDrawn = { key: this.focusKey, rects: [] };
+            return;
+          }
+          gl.disable(gl.BLEND);
+          gl.viewport(0, 0, w, h);
+          this.composeFocus(this.focusRects(view, w, h, pj), (rects) => this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], 0, 1, 1, relief, hasSeams, this.useRiver(river), pj, rects));
+        } else this.perf?.note('compose:none');
+        return;
+      }
       this.pComposeKey = key;
+      this.perf?.note('compose:full');
     } else this.pComposeKey = '';
     if (!sc) {
       // 画面上没有地图（镜头在投影外面）：只有背景
@@ -2907,9 +3252,10 @@ export class Renderer {
       gl.viewport(0, 0, w, h);
       gl.clearColor(PROJ_BG[0], PROJ_BG[1], PROJ_BG[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
+      this.focusDrawn = { key: this.focusKey, rects: [] };
       return;
     }
-    const pj: ProjCompose = { proj, scene: sc, planePx: z1, outside: PROJ_BG };
+    if (!pj) return;
     if (moving) {
       if (this.out.w !== ow || this.out.h !== oh) {
         this.out.w = ow;
@@ -2929,6 +3275,7 @@ export class Renderer {
     }
     gl.viewport(0, 0, w, h);
     this.compose(null, t, view, [1, 1, 0, 0], [1 / w, 1 / h], 0, 1, 1, relief, hasSeams, this.useRiver(river), pj);
+    this.focusDrawn = { key: this.focusKey, rects: this.focusRects(view, w, h, pj) };
   }
 
   // 导出整张地图（投影）：先按整张图要的密度画一块场景（整圈），再一块块合成。cam 是虚拟镜头（CSS 像素），
@@ -3060,8 +3407,8 @@ export class Renderer {
       const g = this.polarGeometry(pole);
       const prog = this.polarPrograms().id;
       gl.useProgram(prog);
-      gl.uniform4fv(gl.getUniformLocation(prog, 'uView'), view);
-      gl.uniform1f(gl.getUniformLocation(prog, 'uPole'), pole);
+      gl.uniform4fv(this.loc(prog, 'uView'), view);
+      gl.uniform1f(this.loc(prog, 'uPole'), pole);
       gl.bindVertexArray(g.fan);
       gl.drawArrays(gl.TRIANGLES, 0, g.fanCount);
       return;
@@ -3069,11 +3416,11 @@ export class Renderer {
     const pp = this.planet ? this.planetProgs : null;
     const pid = pp ? pp.id : this.progId;
     gl.useProgram(pid);
-    gl.uniform4fv(gl.getUniformLocation(pid, 'uView'), view);
+    gl.uniform4fv(this.loc(pid, 'uView'), view);
     // 编号层的顶点着色器（VS_ID）不读纹理：不必绑，也不会与写入目标形成反馈环
     gl.bindVertexArray(this.fanVao);
     if (pp) {
-      gl.uniform1i(gl.getUniformLocation(pid, 'uCopy0'), copy0);
+      gl.uniform1i(this.loc(pid, 'uCopy0'), copy0);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, this.fanCount, copies);
     } else gl.drawArrays(gl.TRIANGLES, 0, this.fanCount);
   }
@@ -3088,12 +3435,12 @@ export class Renderer {
     const pp = this.planet ? this.planetProgs : null;
     const pt = pole ? this.polarPrograms().terrain : pp ? pp.terrain : this.progTerrain;
     gl.useProgram(pt);
-    gl.uniform4fv(gl.getUniformLocation(pt, 'uView'), view);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uSpacing'), mesh.spacing);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uCoastAmp'), coastAmp);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uDetail'), this.detail);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uPixel'), pixel);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uMetersPerUnit'), kmPerUnit * 1000);
+    gl.uniform4fv(this.loc(pt, 'uView'), view);
+    gl.uniform1f(this.loc(pt, 'uSpacing'), mesh.spacing);
+    gl.uniform1f(this.loc(pt, 'uCoastAmp'), coastAmp);
+    gl.uniform1f(this.loc(pt, 'uDetail'), this.detail);
+    gl.uniform1f(this.loc(pt, 'uPixel'), pixel);
+    gl.uniform1f(this.loc(pt, 'uMetersPerUnit'), kmPerUnit * 1000);
     this.bindTex(pt, 'uColor', this.tex.color, 0);
     this.bindTex(pt, 'uElev', this.tex.elev, 1);
     this.bindTex(pt, 'uCoast', this.tex.coast, 2);
@@ -3102,15 +3449,16 @@ export class Renderer {
     this.bindTex(pt, 'uSeaGrad', this.tex.seaGrad, 5);
     this.bindTex(pt, 'uLith', this.tex.lith, 6);
     this.bindTex(pt, 'uFj', this.tex.fj, 7);
-    gl.uniform1f(gl.getUniformLocation(pt, 'uSat'), this.rock ? 1.1 : 1);
-    gl.uniform1i(gl.getUniformLocation(pt, 'uSeaData'), this.seaData ? 1 : 0);
+    gl.uniform1f(this.loc(pt, 'uSat'), this.rock ? 1.1 : 1);
+    gl.uniform1i(this.loc(pt, 'uSeaData'), this.seaData ? 1 : 0);
     const polar = pole ? this.polarGeometry(pole) : null;
     gl.bindVertexArray(polar ? polar.tri : this.triVao);
     if (pp) {
-      gl.uniform1i(gl.getUniformLocation(pt, 'uCopy0'), copy0);
-      gl.uniform1f(gl.getUniformLocation(pt, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
+      gl.uniform1i(this.loc(pt, 'uCopy0'), copy0);
+      gl.uniform1f(this.loc(pt, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
     }
-    if (polar) gl.uniform1f(gl.getUniformLocation(pt, 'uPole'), pole);
+    if (polar) gl.uniform1f(this.loc(pt, 'uPole'), pole);
+    this.perf?.gpuBegin('terrain');
     if (rects) gl.enable(gl.SCISSOR_TEST);
     for (const r of rects ?? [null]) {
       if (r) gl.scissor(r[0], r[1], r[2], r[3]);
@@ -3121,6 +3469,7 @@ export class Renderer {
       else gl.drawArrays(gl.TRIANGLES, 0, this.triCount);
     }
     gl.disable(gl.SCISSOR_TEST);
+    this.perf?.gpuEnd('terrain');
   }
 
   // 3. 切线层：每段画一个长方形，片元算到段的距离与在哪一边，近的胜（深度测试 LESS，同样近时先画的段号小的胜）
@@ -3135,9 +3484,9 @@ export class Renderer {
     gl.depthMask(true);
     const ps = pole ? this.polarPrograms().seam : this.progSeam;
     gl.useProgram(ps);
-    gl.uniform4fv(gl.getUniformLocation(ps, 'uView'), view);
-    gl.uniform1f(gl.getUniformLocation(ps, 'uBand'), this.seamBand);
-    if (pole) gl.uniform1f(gl.getUniformLocation(ps, 'uPole'), pole);
+    gl.uniform4fv(this.loc(ps, 'uView'), view);
+    gl.uniform1f(this.loc(ps, 'uBand'), this.seamBand);
+    if (pole) gl.uniform1f(this.loc(ps, 'uPole'), pole);
     gl.bindVertexArray(this.seamVao);
     // 整个星球：线（经度展开后可能超出 [0, 2)）在屏幕上看得见的那几份（极地的场景只要一份）
     let k0 = 0;
@@ -3147,7 +3496,7 @@ export class Renderer {
       k1 = Math.min(k0 + 6, Math.floor((camX + halfW - this.seamX[0] + this.seamBand) / 2));
     }
     for (let k = k0; k <= k1; k++) {
-      gl.uniform1f(gl.getUniformLocation(ps, 'uShift'), 2 * k);
+      gl.uniform1f(this.loc(ps, 'uShift'), 2 * k);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.seamCount);
     }
     gl.disable(gl.DEPTH_TEST);
@@ -3157,7 +3506,8 @@ export class Renderer {
   // cellPx：一格合画面几个像素；pxScale：画面一个像素合几个屏幕像素；scenePx：场景一个像素合几个屏幕像素
   // river：已上传的河的图层（null 不画）
   // pj：等面积、球形投影（view 是投影平面 → 画面，场景 t 是 pj.scene 那一块等距圆柱）
-  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean, river: RiverTex | null, pj: ProjCompose | null = null) {
+  // rects：只画这几块（描格那一遍，第三十九轮）；null 整张
+  private compose(fb: WebGLFramebuffer | null, t: SceneTarget, view: V4, xf: V4, texel: [number, number], cellPx: number, pxScale: number, scenePx: number, relief: number, hasSeams: boolean, river: RiverTex | null, pj: ProjCompose | null = null, rects: Rect[] | null = null) {
     const gl = this.gl;
     const mesh = this.mesh!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
@@ -3168,17 +3518,17 @@ export class Renderer {
     if (pj) {
       const p = pj.proj;
       const S = pj.scene;
-      gl.uniform1i(gl.getUniformLocation(pc, 'uProj'), p.kind === 'globe' ? 2 : 1);
-      gl.uniform4f(gl.getUniformLocation(pc, 'uProjP'), p.lon0, Math.sin(p.lat0), Math.cos(p.lat0), 0);
-      gl.uniform2f(gl.getUniformLocation(pc, 'uPx'), texel[0], texel[1]);
-      gl.uniform2f(gl.getUniformLocation(pc, 'uSceneZ'), S.zx, S.zy);
-      gl.uniform4fv(gl.getUniformLocation(pc, 'uSceneView'), S.view);
-      gl.uniform1f(gl.getUniformLocation(pc, 'uSceneX0'), S.x0);
-      gl.uniform1f(gl.getUniformLocation(pc, 'uScenePole'), S.pole);
-      gl.uniform4fv(gl.getUniformLocation(pc, 'uOutside'), pj.outside);
-      gl.uniform1f(gl.getUniformLocation(pc, 'uPlanePx'), pj.planePx);
+      gl.uniform1i(this.loc(pc, 'uProj'), p.kind === 'globe' ? 2 : 1);
+      gl.uniform4f(this.loc(pc, 'uProjP'), p.lon0, Math.sin(p.lat0), Math.cos(p.lat0), 0);
+      gl.uniform2f(this.loc(pc, 'uPx'), texel[0], texel[1]);
+      gl.uniform2f(this.loc(pc, 'uSceneZ'), S.zx, S.zy);
+      gl.uniform4fv(this.loc(pc, 'uSceneView'), S.view);
+      gl.uniform1f(this.loc(pc, 'uSceneX0'), S.x0);
+      gl.uniform1f(this.loc(pc, 'uScenePole'), S.pole);
+      gl.uniform4fv(this.loc(pc, 'uOutside'), pj.outside);
+      gl.uniform1f(this.loc(pc, 'uPlanePx'), pj.planePx);
     }
-    if (pp) gl.uniform1f(gl.getUniformLocation(pc, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
+    if (pp) gl.uniform1f(this.loc(pc, 'uNoiseK'), 1 / (Math.PI * mesh.spacing));
     this.bindTex(pc, 'uSceneColor', t.color, 0);
     this.bindTex(pc, 'uSceneHeight', t.height, 1);
     this.bindTex(pc, 'uIdTex', t.id, 2);
@@ -3187,45 +3537,45 @@ export class Renderer {
     this.bindTex(pc, 'uGroup', this.tex.group, 5);
     this.bindTex(pc, 'uSeam', t.seam, 6);
     this.bindTex(pc, 'uSegData', this.tex.segData, 7);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasSeams'), hasSeams ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uFlatByGroup'), this.flatByGroup ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHighlightByGroup'), this.highlightByGroup ? 1 : 0);
-    gl.uniform2f(gl.getUniformLocation(pc, 'uTexel'), texel[0], texel[1]);
-    gl.uniform4fv(gl.getUniformLocation(pc, 'uView'), view);
-    gl.uniform4fv(gl.getUniformLocation(pc, 'uSceneXf'), xf);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uPxScale'), pxScale);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uScenePx'), scenePx);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uSpacing'), mesh.spacing);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uRelief'), relief);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uCellPx'), cellPx);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uProvScale'), this.provinceScale);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uProvAlpha'), this.provinceAlpha);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uCountryAlpha'), this.countryAlpha);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uShade'), this.shade);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uRock'), this.rock);
+    gl.uniform1i(this.loc(pc, 'uHasSeams'), hasSeams ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uFlatByGroup'), this.flatByGroup ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHighlightByGroup'), this.highlightByGroup ? 1 : 0);
+    gl.uniform2f(this.loc(pc, 'uTexel'), texel[0], texel[1]);
+    gl.uniform4fv(this.loc(pc, 'uView'), view);
+    gl.uniform4fv(this.loc(pc, 'uSceneXf'), xf);
+    gl.uniform1f(this.loc(pc, 'uPxScale'), pxScale);
+    gl.uniform1f(this.loc(pc, 'uScenePx'), scenePx);
+    gl.uniform1f(this.loc(pc, 'uSpacing'), mesh.spacing);
+    gl.uniform1f(this.loc(pc, 'uRelief'), relief);
+    gl.uniform1f(this.loc(pc, 'uCellPx'), cellPx);
+    gl.uniform1f(this.loc(pc, 'uProvScale'), this.provinceScale);
+    gl.uniform1f(this.loc(pc, 'uProvAlpha'), this.provinceAlpha);
+    gl.uniform1f(this.loc(pc, 'uCountryAlpha'), this.countryAlpha);
+    gl.uniform1f(this.loc(pc, 'uShade'), this.shade);
+    gl.uniform1f(this.loc(pc, 'uRock'), this.rock);
     const su = styleUniforms(this.style);
-    gl.uniform4fv(gl.getUniformLocation(pc, 'uLandTint'), su.landTint);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uShadeTint'), su.shadeTint);
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uShadeDark'), su.shadeDark);
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uShadeLight'), su.shadeLight);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uSeaTiers'), su.seaTiers);
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uSeaTier'), su.seaTier);
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uSeaDepth'), su.seaDepth);
-    gl.uniform4fv(gl.getUniformLocation(pc, 'uIsobath'), su.isobath);
-    gl.uniform2fv(gl.getUniformLocation(pc, 'uSeaShade'), su.seaShade);
-    gl.uniform2fv(gl.getUniformLocation(pc, 'uTierShade'), su.tierShade);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uGlowGain'), su.glowGain);
-    gl.uniform4fv(gl.getUniformLocation(pc, 'uCoastLine'), su.coastLine);
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uProvLine'), su.provLine);
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uCountryLine'), su.countryLine);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uSeaData'), this.seaData ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasFlat'), this.hasFlat ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasGroup'), this.hasGroup ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasHighlight'), this.hasHighlight ? 1 : 0);
+    gl.uniform4fv(this.loc(pc, 'uLandTint'), su.landTint);
+    gl.uniform1i(this.loc(pc, 'uShadeTint'), su.shadeTint);
+    gl.uniform3fv(this.loc(pc, 'uShadeDark'), su.shadeDark);
+    gl.uniform3fv(this.loc(pc, 'uShadeLight'), su.shadeLight);
+    gl.uniform1i(this.loc(pc, 'uSeaTiers'), su.seaTiers);
+    gl.uniform3fv(this.loc(pc, 'uSeaTier'), su.seaTier);
+    gl.uniform3fv(this.loc(pc, 'uSeaDepth'), su.seaDepth);
+    gl.uniform4fv(this.loc(pc, 'uIsobath'), su.isobath);
+    gl.uniform2fv(this.loc(pc, 'uSeaShade'), su.seaShade);
+    gl.uniform2fv(this.loc(pc, 'uTierShade'), su.tierShade);
+    gl.uniform1f(this.loc(pc, 'uGlowGain'), su.glowGain);
+    gl.uniform4fv(this.loc(pc, 'uCoastLine'), su.coastLine);
+    gl.uniform3fv(this.loc(pc, 'uProvLine'), su.provLine);
+    gl.uniform3fv(this.loc(pc, 'uCountryLine'), su.countryLine);
+    gl.uniform1i(this.loc(pc, 'uSeaData'), this.seaData ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasFlat'), this.hasFlat ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasGroup'), this.hasGroup ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasHighlight'), this.hasHighlight ? 1 : 0);
     // 描格（第三十七轮）：格号 · 2 + 陆 1 / 水 0；格心与半径（2.5 格以外的像素不算）
     const focus = this.focus.map((f) => (f && f.cell < mesh.n ? f : null));
     const fk = focus.map((f) => (f ? f.cell * 2 + (f.land ? 1 : 0) : -1));
-    gl.uniform2i(gl.getUniformLocation(pc, 'uFocus'), fk[0], fk[1]);
+    gl.uniform2i(this.loc(pc, 'uFocus'), fk[0], fk[1]);
     const fc = new Float32Array(6);
     focus.forEach((f, k) => {
       if (!f) return;
@@ -3233,31 +3583,46 @@ export class Renderer {
       fc[3 * k + 1] = mesh.y[f.cell];
       fc[3 * k + 2] = FOCUS_REACH * mesh.spacing;
     });
-    gl.uniform3fv(gl.getUniformLocation(pc, 'uFocusC'), fc);
-    gl.uniform1f(gl.getUniformLocation(pc, 'uFocusSphere'), this.planet ? 1 : 0);
+    gl.uniform3fv(this.loc(pc, 'uFocusC'), fc);
+    gl.uniform1f(this.loc(pc, 'uFocusSphere'), this.planet ? 1 : 0);
     const hasFx = !!(this.fxShown.fx && this.fxShown.palette);
     this.bindTex(pc, 'uFx', this.tex.fx, 8);
     this.bindTex(pc, 'uFxPal', this.tex.fxPal, 9);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasFx'), hasFx ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasFx'), hasFx ? 1 : 0);
     this.bindTex(pc, 'uTint', this.tex.tint, 10);
     this.bindTex(pc, 'uLandCell', this.tex.landCell, 14);
     this.bindTex(pc, 'uCountry', this.tex.country, 13);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasCountry'), this.hasCountry ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasLandCell'), this.hasLandCell ? 1 : 0);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasTint'), this.tintShown ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasCountry'), this.hasCountry ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasLandCell'), this.hasLandCell ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasTint'), this.tintShown ? 1 : 0);
     this.bindTex(pc, 'uCellCoast', this.tex.cellCoast, 11);
     this.bindTex(pc, 'uRiver', this.tex.river, 12);
-    gl.uniform1i(gl.getUniformLocation(pc, 'uHasRiver'), river ? 1 : 0);
+    gl.uniform1i(this.loc(pc, 'uHasRiver'), river ? 1 : 0);
     if (river && pj) {
       // 投影：河的图层画在场景那一块上（同样的范围、大小），按场景上的位置取
-      gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), 1, 1, 0, 0);
+      gl.uniform4f(this.loc(pc, 'uRiverXf'), 1, 1, 0, 0);
     } else if (river) {
       // 画面上的位置（0–1）→ 地图单位 → 河的那张图上的位置（双精度在这里算好，着色器里只乘加一次）
       const [a, b, c, d] = river.toUv;
-      gl.uniform4f(gl.getUniformLocation(pc, 'uRiverXf'), (2 * a) / view[0], (2 * c) / view[1], ((-1 - view[2]) / view[0]) * a + b, ((-1 - view[3]) / view[1]) * c + d);
+      gl.uniform4f(this.loc(pc, 'uRiverXf'), (2 * a) / view[0], (2 * c) / view[1], ((-1 - view[2]) / view[0]) * a + b, ((-1 - view[3]) / view[1]) * c + d);
     }
+    // 离边界远的格（第三十九轮）：图层、ρ 都有，显示的分组就是那一份（没有省份预览、幽灵海岸），投影时只在等距圆柱、整圈的场景里
+    const nearOn = !!(this.nearShown && this.nearRho && this.groupShown === this.groupBase && this.seamsShown === this.seamsBase && !this.ghostRows.length && (!pj || (!pj.scene.pole && pj.scene.full)));
+    this.bindTex(pc, 'uNear', this.tex.near, 15);
+    gl.uniform1i(this.loc(pc, 'uNearOn'), nearOn ? 1 : 0);
+    if (nearOn) gl.uniform1fv(this.loc(pc, 'uNearRho'), this.nearRho!);
     gl.bindVertexArray(null);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const label = rects ? 'focus' : 'compose';
+    this.perf?.gpuBegin(label);
+    if (rects) {
+      gl.enable(gl.SCISSOR_TEST);
+      for (const r of rects) {
+        gl.scissor(r[0], r[1], r[2], r[3]);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      gl.disable(gl.SCISSOR_TEST);
+    } else gl.drawArrays(gl.TRIANGLES, 0, 3);
+    this.perf?.gpuEnd(label);
   }
 
   // 幽灵海岸改了的这几格：地形层要重画的几块（设备像素，GL 的 y 向上，四周多 2 像素）。
@@ -3312,7 +3677,7 @@ export class Renderer {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i(gl.getUniformLocation(prog, name), unit);
+    gl.uniform1i(this.loc(prog, name), unit);
   }
 
   // 屏幕坐标（CSS 像素，相对画布）→ 地图单位
@@ -3357,4 +3722,36 @@ export class Renderer {
       zoom,
     };
   }
+}
+
+// 一块地图（设备像素的范围，GL 的 y 向上）→ 画面上的一块：四周多 3 个像素，边落在偶数上，夹在画面之内；空的不要
+function pixelRect(x0: number, x1: number, y0: number, y1: number, w: number, h: number): Rect[] {
+  const l = Math.max(0, 2 * Math.floor((Math.min(x0, x1) - 3) / 2));
+  const r = Math.min(w, 2 * Math.ceil((Math.max(x0, x1) + 3) / 2));
+  const b = Math.max(0, 2 * Math.floor((Math.min(y0, y1) - 3) / 2));
+  const t = Math.min(h, 2 * Math.ceil((Math.max(y0, y1) + 3) / 2));
+  return r > l && t > b ? [[l, b, r - l, t - b]] : [];
+}
+
+// 几块合并：两块的外接矩形不比两块加起来大时合成一块（鼠标跨到旁边一格时新旧两块大半重叠）
+function mergeRects(list: Rect[]): Rect[] {
+  const out = list.slice();
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (let i = 0; i < out.length && !merged; i++) {
+      for (let j = i + 1; j < out.length && !merged; j++) {
+        const a = out[i];
+        const b = out[j];
+        const l = Math.min(a[0], b[0]);
+        const bt = Math.min(a[1], b[1]);
+        const r = Math.max(a[0] + a[2], b[0] + b[2]);
+        const t = Math.max(a[1] + a[3], b[1] + b[3]);
+        if ((r - l) * (t - bt) > a[2] * a[3] + b[2] * b[3]) continue;
+        out[i] = [l, bt, r - l, t - bt];
+        out.splice(j, 1);
+        merged = true;
+      }
+    }
+  }
+  return out;
 }
