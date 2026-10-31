@@ -153,73 +153,73 @@ function run(kind: 'region' | 'planet'): Record<string, Record<string, string>> 
 const RECORDED: Record<string, Record<string, Record<string, string>>> = {
   region: {
     forest: {
-      world: '208cb04201174dc2', corrT: 'd3357954584596e4', corrP: '61c7464091c797a8', corrF: '85284cd307d8e6fb', dominant: 'f0fec132cfcfd068',
-      share: '2005527b08887c87', tMean: '28169666575b5442', precip: '07d28cf849b2f8c1', conflicts: '53e1bd998cee1b84', plans: '2abf95d60b628ee6',
+      world: '1d5e92ac94fa3770', corrT: '3da0e19ae817b168', corrP: 'c3ddf45ea9410cc2', corrF: '85284cd307d8e6fb', dominant: '46a8d52b312d814e',
+      share: '79a91e01092c703a', tMean: '040e1f78c5e224fc', precip: '4abffb5f9c51d51d', conflicts: '845a425c7b5b1dea', plans: 'd315b9e5b38709d8',
     },
     'tundra-warm': {
-      world: '127c156402fb7351', corrT: 'b21c3f19c4ddfee1', corrP: '1d4d3ccccefa1dfd', corrF: '85284cd307d8e6fb', dominant: 'e91622af4874ee9d',
-      share: '7fc72ab7a2e4b3ef', tMean: 'd68798e71e3da368', precip: 'b908b3df078eb449', conflicts: '3c24227cc64a5db3', plans: '4c57a74d62dd373f',
+      world: '37e7ad42463a8f4f', corrT: '8309a48da39c1121', corrP: 'e792005220513b58', corrF: '85284cd307d8e6fb', dominant: '546468ca2b00d9ae',
+      share: '0f77aab23a6631db', tMean: '6d936c0a470951f6', precip: '5c9d14ba7d0d5a01', conflicts: '0fd6721bc960364d', plans: '4cb4dd86037d3629',
     },
     'tundra-cool': {
-      world: 'd6560b6e87a7cac8', corrT: '95bc7b14b364dec5', corrP: 'cadc82a634396c19', corrF: '85284cd307d8e6fb', dominant: '881cf0bc42f45762',
-      share: '4e6f472a0b85309e', tMean: '8388fdb2d84f2010', precip: '96c61ec672319c51', conflicts: '08c3db1e0c3acd6a', plans: '043ae0e7f6c934ce',
+      world: 'bfe25e240527951f', corrT: 'f51046e9ad678e41', corrP: '2c8f49a34bd8a72c', corrF: '85284cd307d8e6fb', dominant: '5cf95bf2dc256a65',
+      share: '3d6d4eba96a4d79e', tMean: '8674e60372494327', precip: 'fdf2a84f7a7ca3f8', conflicts: 'f48c82bab083db58', plans: 'f22e8878d4e099d2',
     },
     desert: {
-      world: '5c4ada50954180ee', corrT: '6c87b329511be774', corrP: '5b33572d305c5115', corrF: '85284cd307d8e6fb', dominant: '74ed527b0435a0b1',
-      share: '9c795e5a0c7efe2f', tMean: '20ee25ed6759c076', precip: '547d1b7cd9011b9e', conflicts: 'e2b7639a6a42c334', plans: 'fdbb904462e5d0d5',
+      world: '7064043eac2114c7', corrT: '8082e52b46ac9528', corrP: 'cd49d5d71587c6ad', corrF: '85284cd307d8e6fb', dominant: '8e556e92a83d28dc',
+      share: '6e58d3de48e102f6', tMean: '102afbe5c114b443', precip: 'c63e30f82ef1d57a', conflicts: 'b0bea91bc0a0ccae', plans: 'f8c070ed08358ee3',
     },
     override: {
-      world: '2c997e75376fb010', corrT: '7ae46a3552dbed56', corrP: '7c5c8f450d33a179', corrF: '85284cd307d8e6fb', dominant: '518709e84f151eb8',
-      share: 'd5d73f280fcd8be7', tMean: 'bffb8fcf3618b971', precip: 'f400a76502ae7c83', conflicts: '0d592cea38347ef5', plans: '7423e0f9f6c274bc',
+      world: 'f054aabfb48dd1c1', corrT: '22635673f9066b69', corrP: 'ac7c731ee302bcca', corrF: '85284cd307d8e6fb', dominant: 'd332c741c20ab5ee',
+      share: '4254f9491c9adb07', tMean: '477ca2cbe7306d6d', precip: 'ff147ebb37956960', conflicts: '89ae6888797a4296', plans: '72f764c37dbd7ea4',
     },
     species: {
-      world: 'e90e75ac23d99361', corrT: '2ce90815d8cfb02a', corrP: '7c5c8f450d33a179', corrF: '85284cd307d8e6fb', dominant: '518709e84f151eb8',
-      share: '709309271fca7e2f', tMean: '0bac2e2a6f00fcf7', precip: 'f400a76502ae7c83', conflicts: 'bcf238a7e32d4cac', plans: '8e8636c408385fd9',
+      world: '4ac6bd960100d7b6', corrT: '949317a164d6c59a', corrP: 'b6c433d5ee39bf32', corrF: '85284cd307d8e6fb', dominant: 'd332c741c20ab5ee',
+      share: '9e8c897e3f103dc8', tMean: '56a3bc58677201ce', precip: '4dba1127bcb7f276', conflicts: '89ae6888797a4296', plans: '511e1d8fb91a4479',
     },
     glow: {
-      world: '3583d79705b5c4bd', corrT: '931de7355c61eae5', corrP: '39c2cb6459a96626', corrF: 'ce07696c37a2ccea', dominant: '1a474d66d16264ee',
-      share: '97ee7de3e0d0d0cf', tMean: '466f3cf2aa994461', precip: 'aaaafb50e4eea75e', conflicts: '47449fa8e8389667', plans: 'da3ec1c7eb2f33f8',
+      world: '190345c9b291ddd0', corrT: '0acbc486423f3164', corrP: 'bed23d7ad24ebf3f', corrF: '25e503c966a83770', dominant: '5609080e3ca58ab7',
+      share: '12b67ad8d53a4763', tMean: 'b504a65eb80bb397', precip: 'a7b634f79ab300a1', conflicts: '83660887a7c84ebb', plans: 'ecc82bc7ab3e05c6',
     },
     wetland: {
-      world: '6c0a955d467f7fc6', corrT: '56e757d3562f2961', corrP: 'd220a487b4202abf', corrF: 'd08e4569c48add8f', dominant: '2b31dd65a4b3ba8c',
-      share: '024b8b16fd69db0d', tMean: '7d9a8e9ccc93fa3e', precip: 'f734e768fada77b2', conflicts: '0ac6a50459babc86', plans: '8e12eea5420f9cb9',
+      world: 'd160477740d33822', corrT: 'f5829f8c4f90df32', corrP: 'c40bca833873cb0c', corrF: '66027f15f69faf6e', dominant: '6d3bc3b2dfc2a420',
+      share: 'c8ec0e3310facea4', tMean: 'edb1b4535b9cd31c', precip: '73e2b0d8995bd28a', conflicts: 'b4f3131da7b9dfbb', plans: '0987108db28edbe3',
     },
     rain: {
-      world: '18b20da7e281bcba', corrT: 'a620b5493144a092', corrP: 'b930492b363dab68', corrF: '8e9cb664e3f4252c', dominant: '630485075e8e987d',
-      share: 'a30e36fa97be6886', tMean: '9662f8591a658f2b', precip: '9726c8ef1d00bf78', conflicts: '6e7e1d48c8d44aea', plans: '09aaa9bc863709f6',
+      world: 'a4cf2dcda8a88859', corrT: '785c4f01a119bb50', corrP: 'd681fd3e645f957f', corrF: '0507e9179dd3229c', dominant: 'ec4b028a564123e7',
+      share: 'd2401468184cff35', tMean: 'c2774229455085a2', precip: '1ddd02f40d8dcb32', conflicts: 'fba9fdbe403a2ac9', plans: '2e277b91684e12ae',
     },
     odd: {
-      world: 'a253bc95308e0ad5', corrT: '8b48ff67190519bf', corrP: '27b1b0d6e2de1694', corrF: '208835b9c9939f6e', dominant: '1881aaf555352bc2',
-      share: '38994f0771ec272b', tMean: 'f145d31c2319c2ef', precip: 'b8b1cc09cc07093e', conflicts: 'cc35a85025fa0a41', plans: 'f631f422c55fbc9e',
+      world: '3b549ad8719cf5b9', corrT: '7c1d166c1bef3368', corrP: '094f570f0b128b93', corrF: 'b19f2a5b36120a75', dominant: '71782b3b7868e375',
+      share: '5dd053b99424a2f0', tMean: '983cc66e63ea34b0', precip: 'bbe19b9fbfa60840', conflicts: '2b0321459b96f929', plans: 'f8edfd77fcb48748',
     },
     edit: {
-      world: '912ae79000efdac5', corrT: '7e17f7e81ba6d2b9', corrP: '96d63bf7ff763a36', corrF: '208835b9c9939f6e', dominant: '6bc2a92d99b84f12',
-      share: '9c5c87226b215ff1', tMean: '09f5d59b79055038', precip: 'f5a1751cf08b2a88', conflicts: 'a0679299ffe28c17', plans: '30d60c185bfcb193',
+      world: '696159d38b1f0f45', corrT: '7e1584e20d997592', corrP: 'c67c421b2104ce40', corrF: 'b19f2a5b36120a75', dominant: 'be00b84d036fb773',
+      share: '0c979b9049aab364', tMean: '09103ac7b86781a9', precip: '6eb40564360c0961', conflicts: '297cf08ae23b8474', plans: '3b2af578d2cec40f',
     },
     undo: {
-      world: '81d3be476f236bd5', corrT: 'd552714e3eb26253', corrP: 'fddd83150ec409de', corrF: 'ff090978045007e0', dominant: '8e1d9aa4161ae279',
-      share: '8fdd3122def4498e', tMean: '2a70b370a3a3154a', precip: 'd3c265c387ad60ae', conflicts: '37a4bec3204fcf73', plans: 'e7f1cc6bf846b85c',
+      world: '94ba3d8b2b02e554', corrT: 'ee915e3f0e2b89d9', corrP: '84a8406b81b69629', corrF: 'b19f2a5b36120a75', dominant: '576c2be0426888ec',
+      share: '62c8d95d9b49f6c3', tMean: '6163f661e439678b', precip: '09d6f6ae5e54115a', conflicts: 'cb32e4129a4a9a34', plans: '2704e4b7d052ad9c',
     },
     replay: {
-      world: '81d3be476f236bd5',
+      world: '94ba3d8b2b02e554',
     },
   },
   planet: {
     forest: {
-      world: 'aa0d824c063c4fc8', corrT: '3895dd181e3f6062', corrP: 'dbbaaa0979262823', corrF: '85284cd307d8e6fb', dominant: '0642f5273cb8f178',
-      share: '5dbcc8c6810206ef', tMean: 'e2c63ffebab5e098', precip: 'c9fdc1e7bca5afe8', conflicts: 'e141914ab8e60179', plans: '5bee5d8056770be8',
+      world: 'a7b76b1605176ed0', corrT: '0cf0db79ec385454', corrP: 'b7fb778aaab57217', corrF: '85284cd307d8e6fb', dominant: '129d1e976d2fc1cb',
+      share: '9e0f6191f3d6f6f4', tMean: '74464b2daba27f3e', precip: '0e9173096c2948bb', conflicts: '93b46778fff1f807', plans: 'c9f7083b1d5c00a5',
     },
     tundra: {
-      world: 'fb643a54fa0a2d88', corrT: '388b96f51db69ef9', corrP: '666ab5e4ce20746c', corrF: '85284cd307d8e6fb', dominant: 'b8e5db964918af6d',
-      share: '13aaa5f8a935539e', tMean: '8505ef2d37e2164f', precip: '5d50eeaa64138f45', conflicts: '71912374dab09249', plans: '23e1204df0e13209',
+      world: 'dbb7915171bf0beb', corrT: 'ac2c61460e97f603', corrP: 'e7cda5f251f73544', corrF: '85284cd307d8e6fb', dominant: '676547ffdd5c46a3',
+      share: 'da2547510367b721', tMean: '720dc812c26d3e7e', precip: '94ac239d8a540f9b', conflicts: 'f586c2e3e14c0049', plans: '968999bd8099e807',
     },
     edit: {
-      world: '06d4c2f2e5f63a89', corrT: 'd86bbc0d2dcf7594', corrP: 'f9349618bc03e000', corrF: '85284cd307d8e6fb', dominant: 'bbe2c94deab6fd12',
-      share: '6f64ec758ca26ffa', tMean: '808daa66bca2ba21', precip: 'bc076742d81178bd', conflicts: '865bd8404447f2db', plans: '2020ec8845a59e00',
+      world: '5a2c9879519329f1', corrT: '00cb2d327d70e8c3', corrP: 'e7cda5f251f73544', corrF: '85284cd307d8e6fb', dominant: '4c48260277d0c234',
+      share: '30bef2ebebf2b054', tMean: 'c1198c7c79941447', precip: '9d4494636bd92b79', conflicts: 'f586c2e3e14c0049', plans: '2abaf3bf5aa6f532',
     },
     undo: {
-      world: 'fb643a54fa0a2d88', corrT: '388b96f51db69ef9', corrP: '666ab5e4ce20746c', corrF: '85284cd307d8e6fb', dominant: 'b8e5db964918af6d',
-      share: '13aaa5f8a935539e', tMean: '8505ef2d37e2164f', precip: '5d50eeaa64138f45', conflicts: '71912374dab09249', plans: '23e1204df0e13209',
+      world: 'dbb7915171bf0beb', corrT: 'ac2c61460e97f603', corrP: 'e7cda5f251f73544', corrF: '85284cd307d8e6fb', dominant: '676547ffdd5c46a3',
+      share: 'da2547510367b721', tMean: '720dc812c26d3e7e', precip: '94ac239d8a540f9b', conflicts: 'f586c2e3e14c0049', plans: '968999bd8099e807',
     },
   },
 };

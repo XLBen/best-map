@@ -268,6 +268,8 @@ export interface ReliefInput {
   shoulder: number;
   // 算不算板块（星球形态的 crustMode 'replace' 时为 false：板块来的几项都是 0）
   plates: boolean;
+  // 第三十五轮：裂开的海岸往里一带（0–0.5）：被动边缘的大陡崖的分段、“离活动边缘多远”至少这么多（见 outline.ts 的 escNear）
+  esc: number;
 }
 
 export interface ReliefOut {
@@ -321,7 +323,7 @@ export function reliefAt(p: ReliefInput, o: ReliefOut) {
   const dC = p.plates ? t.dist : 10;
   // 内陆程度、离活动边缘多远（被动）
   const inner = smoothstep(0.1, 0.4, c);
-  const passive = smoothstep(0.18, 0.45, dC);
+  const passive = Math.max(smoothstep(0.18, 0.45, dC), p.esc);
   // 低起伏的隆起与盆地
   const Tbase = BASE_H * p.nBase;
   // 带陡崖的穹隆：顶上平、边上陡
@@ -344,7 +346,7 @@ export function reliefAt(p: ReliefInput, o: ReliefOut) {
     trough = -TROUGH_H * cv * (t.low * Math.exp(-(((dC - lowC) / 0.035) ** 2)) + t.up * Math.exp(-(((dC - upC) / 0.035) ** 2)));
   }
   // 被动边缘的大陡崖：离海岸不远的一道台阶（分段），台阶上是向内陆缓降的边缘隆起（内陆是盆地，河往内陆流）
-  const Tesc = ESC_H * passive * smoothstep(0.07, 0.12, c) * (1 - 0.7 * smoothstep(0.12, 0.4, c)) * smoothstep(-0.15, 0.2, p.nEsc);
+  const Tesc = ESC_H * passive * smoothstep(0.07, 0.12, c) * (1 - 0.7 * smoothstep(0.12, 0.4, c)) * Math.max(smoothstep(-0.15, 0.2, p.nEsc), p.esc);
   // 裂谷肩
   const Tsh = p.plates ? SHOULDER_H * p.shoulder : 0;
   // 离海岸越近越低（海岸都是低的，只有活动边缘的山带高）：倾斜、穹隆、隆起从海岸往内陆渐渐抬起

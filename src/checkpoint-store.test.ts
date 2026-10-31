@@ -10,7 +10,7 @@ import { collectBuffers } from './transfer';
 
 const settings = settingsSchema.parse({ cells: 2000, seed: 1 });
 const cmd = (humidity: number): Command => ({ op: 'set_planet', patch: { humidity } });
-const docOf = (commands: Command[], s: unknown = settings): WorldDoc => ({ format: 'map2-world', version: 9, settings: s as WorldDoc['settings'], commands });
+const docOf = (commands: Command[], s: unknown = settings): WorldDoc => ({ format: 'map2-world', version: 10, settings: s as WorldDoc['settings'], commands });
 const saved = (commands: Command[], build = 'b1', s: unknown = settings) => ({
   build,
   cp: { settings: s, done: commands.map((c, k) => ({ id: k + 1, cmd: c, summary: '', dirty: 0, undo: {} })), causes: { h: new Float32Array(4) } },

@@ -5,11 +5,13 @@ import { Engine } from '../core/engine';
 import { plainStats } from '../core/plains';
 import { traceRivers } from '../core/rivers';
 import { newWorldContentCommands } from '../core/packs/import';
-import { type RealismStats, boxCountDimension, coastPixels, components, drainage, elongation, median, realismStats, sizePowerLaw, statsInput } from '../core/stats';
+import { type RealismStats, boxCountDimension, coastPixels, components, drainage, elongation, landShape, median, realismStats, sizePowerLaw, statsInput } from '../core/stats';
 import { coastStyle } from '../core/coast-style';
 import { glacialField } from '../core/glacial';
 import { type Raster, rasterizeWorld } from '../core/subcell';
-import { ensureBase } from '../core/terrain';
+import { COAST_AMP, coastNoiseField, coastSeed, ensureBase } from '../core/terrain';
+import { isthmusNear, riftFrames, warpedAt } from '../core/generate';
+import { LAYOUT_R, isthmusNearPlanet, riftFramesPlanet, warpedAtPlanet } from '../core/planet-gen';
 import type { Settings, World } from '../core/world';
 
 // 新建时做了几个冲积扇（第三十三轮，plains.ts 的计数：新建的世界每块陆地都求解一遍）
@@ -22,7 +24,7 @@ export function realismWorld(settings: Partial<Settings>, seed: number): World {
   return eng.world;
 }
 
-type RowExtra = 'riftLakes' | 'riftRatio' | 'divideShare' | 'divideCoast' | 'deltaShare' | 'deltaRivers' | 'fans' | 'wetland' | 'glacialLakeShare' | 'otherLakeShare' | 'glacialLakeK' | 'glacialLakes' | 'fjordDim' | 'barrierDim' | 'barrierShare' | 'fjordShare';
+type RowExtra = 'riftLakes' | 'riftRatio' | 'divideShare' | 'divideCoast' | 'deltaShare' | 'deltaRivers' | 'fans' | 'wetland' | 'glacialLakeShare' | 'otherLakeShare' | 'glacialLakeK' | 'glacialLakes' | 'fjordDim' | 'barrierDim' | 'barrierShare' | 'fjordShare' | 'hull' | 'peninsula' | 'isthmus' | 'isthmi' | 'rifts' | 'riftMatch';
 export type RealismRow = RealismStats & Record<RowExtra, number>;
 
 export const REALISM_ROW_REF: Record<RowExtra, string> = {
@@ -42,6 +44,12 @@ export const REALISM_ROW_REF: Record<RowExtra, string> = {
   barrierDim: '≤ 1.1（计划）',
   barrierShare: '5–15%（计划）',
   fjordShare: '—',
+  hull: '0.2–0.5（计划；非洲约 0.2、欧亚约 0.4）',
+  peninsula: '—',
+  isthmus: '≥ 40% 的种子（计划）',
+  isthmi: '—',
+  rifts: '—',
+  riftMatch: '< 0.15（计划）',
 };
 
 // coast：海岸线的几样（要先栅格化，见 coastRaster）；不给时 NaN
@@ -50,6 +58,7 @@ export function realismRow(world: World, coast?: CoastRasterStats): RealismRow {
   const dv = divideAsymmetry(world);
   const dl = deltaShare(world);
   const gl = glacialLakes(world);
+  const sh = landShape(world);
   return {
     ...realismStats(statsInput(world), coast?.dim ?? NaN),
     riftLakes: rl.count,
@@ -68,6 +77,9 @@ export function realismRow(world: World, coast?: CoastRasterStats): RealismRow {
     barrierDim: coast?.barrierDim ?? NaN,
     barrierShare: coast?.barrierShare ?? NaN,
     fjordShare: coast?.fjordShare ?? NaN,
+    hull: sh.hull,
+    peninsula: sh.peninsula,
+    ...outlineStats(world),
   };
 }
 
@@ -284,3 +296,106 @@ export function divideAsymmetry(world: World): { share: number; coast: number; c
 }
 
 
+
+// 大陆轮廓（第三十五轮）：生成器的地峡、裂开的大陆块（tools/realism-report.ts 与慢测试用）。
+//   isthmus：有没有一处地峡留下来了（1 / 0）；isthmi：留下来的个数——扭曲后离地峡中线不到 0.3 个半宽的格（至少 3 格）九成以上是陆地；
+//   rifts：量得出两岸的裂开的个数；riftMatch：两岸还原漂移后的平均距离 ÷ D（每处裂开的平均，见 riftCoastMatch）
+export function outlineStats(world: World): { isthmus: number; isthmi: number; rifts: number; riftMatch: number } {
+  const model = ensureBase(world).model;
+  if (!model) return { isthmus: NaN, isthmi: NaN, rifts: NaN, riftMatch: NaN };
+  const { mesh, causes } = world;
+  const nI = model.isthmi.length;
+  const tot = new Int32Array(nI);
+  const land = new Int32Array(nI);
+  if (nI) {
+    for (let i = 0; i < mesh.n; i++) {
+      const near =
+        model.kind === 'planet'
+          ? isthmusNearPlanet(model, warpedAtPlanet(model, mesh.kind === 'sphere' ? mesh.p[3 * i] : 0, mesh.kind === 'sphere' ? mesh.p[3 * i + 1] : 0, mesh.kind === 'sphere' ? mesh.p[3 * i + 2] : 0))
+          : isthmusNear(model, ...warpedAt(model, mesh.x[i], mesh.y[i]));
+      for (let k = 0; k < nI; k++) {
+        if (near[k] >= 0.3) continue;
+        tot[k]++;
+        land[k] += causes.land[i];
+      }
+    }
+  }
+  let kept = 0;
+  for (let k = 0; k < nI; k++) if (tot[k] >= 3 && land[k] >= 0.9 * tot[k]) kept++;
+  const match = riftCoastMatch(world);
+  return { isthmus: kept > 0 ? 1 : 0, isthmi: kept, rifts: match.length, riftMatch: match.length ? match.reduce((a, b) => a + b, 0) / match.length : NaN };
+}
+
+// 两岸还原漂移后对不对得上：海岸线（陆格与海格之间的边上按陆度——含海岸噪声——插值的过零点）上的点，
+// 按漂移前的位置分到裂开的哪一半；只要裂开出来的海岸：漂移前在这一族块里面（场 ≥ 0.25，原来多半是陆地的地方）、离切口不到 0.012
+// （约一两格：海岸在切口上的那些；块原来的海岸碰到切口时两半各往自己那边去，不是裂开的海岸），
+// 只比两半沿裂谷线都有海岸的那一段（一半漂出地图、一边是海湾时另一边没有可比的）。两半各至少 10 个点时，
+// 每点到另一半最近的点的平均距离（两个方向再平均）÷ D
+export function riftCoastMatch(world: World): number[] {
+  const model = ensureBase(world).model;
+  if (!model || !model.rifts.length) return [];
+  const { mesh, causes } = world;
+  const coast = coastNoiseField(mesh, coastSeed(world));
+  const amp = COAST_AMP * world.small.terrain.coastRoughness;
+  const le = (i: number) => causes.landness[i] + amp * coast[i];
+  // 每处裂开的两半：漂移前的位置与沿裂谷线的位置
+  const sides = model.rifts.map(() => [[] as { p: number[]; a: number }[], [] as { p: number[]; a: number }[]]);
+  const along = (k: number, p: number[]) => {
+    if (model.kind === 'planet') {
+      const r = model.rifts[k];
+      return (p[0] - r.c[0]) * r.t[0] + (p[1] - r.c[1]) * r.t[1] + (p[2] - r.c[2]) * r.t[2];
+    }
+    const r = model.rifts[k];
+    return (p[0] - r.ox) * r.tx + (p[1] - r.oy) * r.ty;
+  };
+  for (let i = 0; i < mesh.n; i++) {
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (j < i || causes.land[i] === causes.land[j]) continue;
+      const a = le(i);
+      const b = le(j);
+      const t = a === b ? 0.5 : Math.max(0, Math.min(1, a / (a - b)));
+      let frames: [number, number, number[], number, number, number][];
+      if (mesh.kind === 'sphere' && model.kind === 'planet') {
+        const p = [0, 1, 2].map((c) => mesh.p[3 * i + c] + t * (mesh.p[3 * j + c] - mesh.p[3 * i + c]));
+        const L = Math.hypot(p[0], p[1], p[2]);
+        // 扭曲有沿半径的分量（转动不改它），漂移前的位置按方向比（投回球面）
+        frames = riftFramesPlanet(model, p[0] / L, p[1] / L, p[2] / L).map(([k, sg, P, x, f, u]) => {
+          const r = Math.hypot(P[0], P[1], P[2]) / LAYOUT_R;
+          return [k, sg, [P[0] / r, P[1] / r, P[2] / r], x, f, u];
+        });
+      } else if (model.kind !== 'planet') {
+        frames = riftFrames(model, mesh.x[i] + t * (mesh.x[j] - mesh.x[i]), mesh.y[i] + t * (mesh.y[j] - mesh.y[i])).map(([k, sg, px, py, x, f, u]) => [k, sg, [px, py], x, f, u]);
+      } else continue;
+      for (const [k, sg, P, x, f] of frames) {
+        if (f < 0.25 || Math.abs(x) > 0.012) continue;
+        sides[k][sg > 0 ? 0 : 1].push({ p: P, a: along(k, P) });
+      }
+    }
+  }
+  const nn = (from: { p: number[] }[], to: { p: number[] }[]) => {
+    let sum = 0;
+    for (const { p } of from) {
+      let best = Infinity;
+      for (const { p: q } of to) {
+        let d = 0;
+        for (let c = 0; c < p.length; c++) d += (p[c] - q[c]) ** 2;
+        if (d < best) best = d;
+      }
+      sum += Math.sqrt(best);
+    }
+    return sum / from.length;
+  };
+  const out: number[] = [];
+  model.rifts.forEach((r, k) => {
+    const [A0, B0] = sides[k];
+    if (!A0.length || !B0.length) return;
+    const lo = Math.max(Math.min(...A0.map((q) => q.a)), Math.min(...B0.map((q) => q.a)));
+    const hi = Math.min(Math.max(...A0.map((q) => q.a)), Math.max(...B0.map((q) => q.a)));
+    const A = A0.filter((q) => q.a >= lo && q.a <= hi);
+    const B = B0.filter((q) => q.a >= lo && q.a <= hi);
+    if (A.length < 10 || B.length < 10) return;
+    out.push((nn(A, B) + nn(B, A)) / 2 / r.D);
+  });
+  return out;
+}

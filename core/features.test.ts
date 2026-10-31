@@ -129,7 +129,8 @@ const base = continents();
 const forests = base.world.derived.features.filter((f) => f.type === 'forest');
 // （第三十二轮：取最大的那片；以前第一片就够大，现在第一片只比涂的 60 格大一点，涂完剩下的太小、不成地物）
 const pure = forests.filter((f) => Array.from(f.cells).every((c) => speciesAt(base, c) === speciesAt(base, f.anchor))).sort((a, b) => b.cells.length - a.cells.length)[0];
-const deep = forests.find((f) => depthIn(base, f)[f.anchor] >= 1 && f.cells.length >= 150)!;
+// （第三十五轮：大陆轮廓变了，锚点不在边上的森林最大的一片只有 103 格：100 格以上就行）
+const deep = forests.find((f) => depthIn(base, f)[f.anchor] >= 1 && f.cells.length >= 100)!;
 // 6000 格的小星球（几个测试共用，每次给副本）
 const planet = () =>
   snapshot('features:planet', () => {
@@ -199,11 +200,12 @@ describe('涂出来的生态区有自己的名字', () => {
     const far = ringDistance(w.mesh, [...Array(w.mesh.n).keys()].filter(grouped), 4);
     const open = [...Array(w.mesh.n).keys()].filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1 && w.derived.dominant[c] >= 0 && far[c] < 0);
     // 三片互相离得够远（不连成一片）：按空地的 1/6、3/6、5/6 处取，太近的换下一个位置；每片 14 格
-    // （第十三轮修：小块内海并回陆地后空地少了，原来每片 25 格、按位置取时有两片连成了一片）
+    // （第十三轮修：小块内海并回陆地后空地少了，原来每片 25 格、按位置取时有两片连成了一片；
+    // 第三十五轮：大陆轮廓变了，隔 6 个格距的两片又连成了一片，改成隔 9 个）
     const seeds: number[] = [];
     for (const f of [1 / 6, 3 / 6, 5 / 6, 0.05, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.95]) {
       const c = open[Math.floor(open.length * f)];
-      if (seeds.every((t) => graphDistance(w.mesh, [t])[c] > 6 * w.mesh.spacing)) seeds.push(c);
+      if (seeds.every((t) => graphDistance(w.mesh, [t])[c] > 9 * w.mesh.spacing)) seeds.push(c);
       if (seeds.length === 3) break;
     }
     for (const c of seeds) paint(eng, nearest(eng, open, c, 14), 'rainforest');
@@ -230,8 +232,9 @@ describe('涂出来的生态区有自己的名字', () => {
     expect(rim.length).toBeGreaterThan(20);
     const all = continents();
     for (const k of [0, 1, 2, 3]) {
-      // 第三十三轮：地形变了，第 1/4 处往外涂的 40 格里有 5 格算进了旁边另一片林，几个位置都往后挪半档
-      const cells = nearest(base, open, rim[Math.floor((rim.length * (k + 0.5)) / 4)], 40);
+      // 第三十三轮：地形变了，第 1/4 处往外涂的 40 格里有 5 格算进了旁边另一片林，几个位置都往后挪半档；
+      // 第三十五轮：大陆轮廓变了，往外涂的 40 格又有几格算进了别处，挪到每段的 3/4 处
+      const cells = nearest(base, open, rim[Math.floor((rim.length * (k + 0.75)) / 4)], 40);
       const eng = continents();
       paint(eng, cells, sp);
       paint(all, cells, sp);
@@ -248,22 +251,28 @@ describe('涂出来的生态区有自己的名字', () => {
   it('在森林中间涂沙漠：森林名字不变（锚点在涂的洞里也不变）', () => {
     const depth = depthIn(base, deep);
     const eng = continents();
-    // 锚点周围、不挨着森林边的 30 格：涂完四周还是这片森林
-    const cells = nearest(
-      eng,
-      Array.from(deep.cells).filter((c) => depth[c] >= 1),
-      deep.anchor,
-      30,
-    );
+    // 锚点周围、不挨着森林边的 30 格：涂完四周还是这片森林。
+    // 第三十五轮：地形变了，离锚点最近的 30 格（离边一格以上）不连成一片，有 4 格孤零零的不算进沙漠：从锚点起按邻接一圈圈取
+    // （锚点所在的那一片只有 26 格时就涂 26 格）
+    const inside = new Set(Array.from(deep.cells).filter((c) => depth[c] >= 1));
+    const cells = [deep.anchor];
+    for (let h = 0; h < cells.length && cells.length < 30; h++) {
+      const { mesh } = eng.world;
+      for (let e = mesh.off[cells[h]]; e < mesh.off[cells[h] + 1] && cells.length < 30; e++) {
+        const j = mesh.adj[e];
+        if (inside.has(j) && !cells.includes(j)) cells.push(j);
+      }
+    }
     expect(cells).toContain(deep.anchor);
+    expect(cells.length).toBeGreaterThanOrEqual(20);
     paint(eng, cells, 'desert');
     const f = byKey(eng, deep.key)!;
     expect(f.name).toBe(deep.name);
-    expect(f.cells.length).toBe(deep.cells.length - 30);
+    expect(f.cells.length).toBe(deep.cells.length - cells.length);
     expect(labelInside(eng, f)).toBe(true);
     const [desert] = paintedFeatures(eng);
     expect([desert.type, desert.species, featureLabel(eng.world, desert)]).toEqual(['desert', 'desert', '荒漠']);
-    expect(desert.cells.length).toBe(30);
+    expect(desert.cells.length).toBe(cells.length);
     expect(labelInside(eng, desert)).toBe(true);
   });
 
@@ -274,14 +283,18 @@ describe('涂出来的生态区有自己的名字', () => {
     const never = { field: 'tMean', min: 90, optLow: 95, optHigh: 98, max: 99 };
     eng.exec({ op: 'add_species', species: { id: 'crystal', name: '水晶丛林', terrain: 'plains', color: '#88ccee', competition: 1, tolerances: [never] } });
     const veg = [...Array(w.mesh.n).keys()].filter((c) => w.causes.land[c] && w.derived.lake[c] !== 1 && w.derived.dominant[c] >= 0);
-    const steppe = veg.find((c) => speciesAt(eng, c) === 'steppe')!;
+    // 第三十五轮：地形变了，第一个草原格挨着湖，涂的 20 格里有一格与别的不连着：取中间的那个草原格
+    const steppes = veg.filter((c) => speciesAt(eng, c) === 'steppe');
+    const steppe = steppes[steppes.length >> 1];
     paint(eng, nearest(eng, veg, steppe, 20), 'crystal');
     const f = paintedFeatures(eng)[0];
     expect([f.type, f.species, featureLabel(w, f), f.cells.length]).toEqual(['biome', 'crystal', '水晶丛林', 20]);
     expect(f.name).toContain('水晶丛林');
     expect(labelInside(eng, f)).toBe(true);
     // 内置的温带草原：类型名是“温带草原”，名字按草原的模板
-    const grass = nearest(eng, veg, veg[Math.floor(veg.length / 2)], 25);
+    // 第三十五轮：地形变了，中间那一格就在刚涂的水晶丛林旁边，涂草原把它盖掉了：离开刚涂的地方
+    const crystalAt = new Set(f.cells);
+    const grass = nearest(eng, veg.filter((c) => !crystalAt.has(c)), veg[Math.floor(veg.length / 4)], 25);
     paint(eng, grass, 'steppe');
     const g = paintedFeatures(eng).find((x) => x.species === 'steppe')!;
     expect([g.type, featureLabel(w, g)]).toEqual(['biome', '温带草原']);
@@ -339,15 +352,16 @@ describe('涂出来的生态区有自己的名字', () => {
 // 第九轮去掉旧存档兼容时重录（山挡风默认打开，气候、河、地名都跟着变）
 // 第三十二轮重录（地形有了大格局：高原、洼地里的湖、长河，地物与名字跟着变）
 // 第三十三轮重录（平原与河口：高程、河、湿地跟着变）
+// 第三十五轮重录（大陆轮廓：海陆变了，地物与名字跟着变）
 // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
 describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
-    expect(kv(continents())).toBe('a79dea87');
-    expect(kv(planet())).toBe('7cf28ee0');
+    expect(kv(continents())).toBe('61975b73');
+    expect(kv(planet())).toBe('20dd0526');
     const islands = engineFor({ seed: 2, cells: 6000 });
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
-    expect(kv(islands)).toBe('5b0ebf44');
+    expect(kv(islands)).toBe('708c881b');
   });
 });
 

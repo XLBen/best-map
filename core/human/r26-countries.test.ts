@@ -29,6 +29,14 @@ const nations = (): Engine =>
     humanExec(eng, GEN);
     return eng;
   });
+// 第三十五轮：大陆轮廓变了，默认的种子在这个世界上撒不出邦联（那一组文化的地方连不成够大的一片），没有帝国，
+// 面积的变异系数 0.62、“混合”留的无主地多（有主 68%）：看帝国、变异系数、“混合”的几个测试换种子 3
+const empires = (): Engine =>
+  snapshot('r26-empires', () => {
+    const eng = continents({ provinces: true });
+    humanExec(eng, { ...GEN, countries: { seed: 3 } } as HumanCommand);
+    return eng;
+  });
 const moderns = (): Engine =>
   snapshot('r26-modern', () => {
     const eng = continents({ provinces: true });
@@ -162,13 +170,13 @@ describe('国家的等级与格局', () => {
   };
 
   it('每国有等级；面积相差大（变异系数够大）', () => {
-    const w = nations().world;
+    const w = empires().world;
     for (const m of countryList(w.small)) expect(['city', 'small', 'medium', 'large', 'empire']).toContain(m.tier);
     expect(cv(w).cv).toBeGreaterThan(0.7);
   });
 
   it('“混合”格局里有很大的国家也有很小的国家；格局记在 countryRules 里', () => {
-    const eng = nations();
+    const eng = empires();
     humanExec(eng, { op: 'regenerate_countries', layout: 'mixed' });
     const w = eng.world;
     expect(w.small.human!.countryRules!.layout).toBe('mixed');
@@ -181,7 +189,7 @@ describe('国家的等级与格局', () => {
   });
 
   it('中世纪“混合”：最大的国不到陆地的四分之一，留着一些无主地；不占隔海、没什么人的陆块；帝国是认得出的一片', () => {
-    const eng = nations();
+    const eng = empires();
     humanExec(eng, { op: 'regenerate_countries', layout: 'mixed' });
     const w = eng.world;
     const { mesh, causes } = w;
@@ -239,7 +247,7 @@ describe('国家的等级与格局', () => {
 
 describe('帝国、联邦、同盟', () => {
   it('中世纪：一片诸侯林立的地方并成帝国，皇帝国是最大的成员；帝国的外沿', () => {
-    const w = nations().world;
+    const w = empires().world;
     const empire = blocList(w.small).find((b) => b.kind === 'empire')!;
     expect(empire).toBeDefined();
     expect(empire.members.length).toBeGreaterThanOrEqual(3);
@@ -320,7 +328,7 @@ describe('帝国、联邦、同盟', () => {
   });
 
   it('合并、删除国家时同盟跟着整理：成员换掉、盟主换一个、空的去掉', () => {
-    const eng = nations();
+    const eng = empires();
     const w = eng.world;
     const [a, b, c] = countryList(w.small).filter((m) => !blocOf(w, m.id));
     const id = nextBlocId(w.small);

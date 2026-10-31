@@ -208,6 +208,8 @@ export interface DisplayCell {
   province: number;
   // 这一点画成水面（海、湖；湖面在 land 里算陆地）
   water: boolean;
+  // 小湖群（第三十四轮）画出来的水面：没画小湖群时是陆地（不归哪个省，province 为 −1）
+  speck: boolean;
 }
 
 // 海岸值按陆度数组缓存（同一个世界只算一次；只改了名字、省份的轻快照沿用同一个数组）。
@@ -288,7 +290,7 @@ export function displayCellAt(world: World, x: number, y: number, hint = 0): Dis
   // 碎岛（破碎的海格里画成陆地的像素）就是那一格（与导出相同）
   const isle = land && causes.land[cell] !== 1 && !!fl && fl[cell] > 0;
   const here = (causes.land[cell] === 1) === land || isle ? cell : sameKindNear(world, land, cell, loc.nearest, px, y);
-  return { cell, land, water, here, province: speck ? -1 : provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water, f.frag) };
+  return { cell, land, water, here, province: speck ? -1 : provinceCell(world, f.coast, seamsOf(world), px, y, cell, loc.nearest, water, f.frag), speck };
 }
 
 // 省份按哪一格（第十三轮；与着色器的 provCell 同一条规则）：扭曲后的格按剪刀切线换过；这一点画成水面（海、湖）而那一格是陆地格时

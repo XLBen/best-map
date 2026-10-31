@@ -26,8 +26,8 @@ const autoDigest = (w: World) => ({ classes: digest(w.derived.terrainClassAuto),
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { classes: '0828eb5ad675320c', resources: 'dbc26c8918304f8e', peaks: 'c0d15985a2043082' },
-  planet: { classes: 'd8dec41ad5309aed', resources: '54ab0629bc669c0e', peaks: '239d21e3fa48ad94' },
+  region: { classes: '90d63b51331db1bd', resources: '576a359e7ab00588', peaks: 'a638ddc660d55eb4' },
+  planet: { classes: '638d8eb12c518db4', resources: 'df15a27f21141d7b', peaks: '25d1d1eeb6845f9e' },
 };
 
 const planet = () => {
@@ -274,9 +274,14 @@ describe('资源', () => {
     expect(count.get('iron') ?? 0).toBeGreaterThan(count.get('gold') ?? 0);
     expect(count.get('livestock') ?? 0).toBeGreaterThan(count.get('gems') ?? 0);
     const mountains = dry.filter((i) => ['mountains', 'peaks'].includes(classAt(w.small, d.terrainClass[i])!.id));
+    // 第三十五轮：地形变了，有一格挨着海的山地（800 m 以下）按“海边的鱼”的规则有鱼：挨着水的山地也可以有鱼
+    const byWater = (i: number) => {
+      for (let e = w.mesh.off[i]; e < w.mesh.off[i + 1]; e++) if (!w.causes.land[w.mesh.adj[e]] || d.lake[w.mesh.adj[e]] === 1) return true;
+      return false;
+    };
     for (const i of mountains) {
       const r = resourceAt(w.small, d.resource[i]);
-      if (r) expect(['ore', 'luxury'], r.id).toContain(r.category);
+      if (r) expect(byWater(i) ? ['ore', 'luxury', 'fish'] : ['ore', 'luxury'], r.id).toContain(r.category);
     }
     // 鱼只在挨着水的地方
     const fish = resourceCode(w.small, 'fish');

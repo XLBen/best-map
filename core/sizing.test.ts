@@ -76,7 +76,7 @@ describe('岛的大小', () => {
       land: hashArray(w.causes.land),
       elevation: hashArray(w.derived.elevation),
       discharge: hashArray(w.derived.discharge),
-    }).toEqual({ landDelta: '8e725bfc', upliftDelta: 'de566817', erodDelta: 'e5e4e01b', land: '1ad11545', elevation: '41a9d746', discharge: '5371c85f' });
+    }).toEqual({ landDelta: 'd6f872c2', upliftDelta: '50efbc9e', erodDelta: '3136d33e', land: 'de411545', elevation: 'd1266a', discharge: 'fe175631' });
   });
 
   it('数值大小是海岸线的半径：放出来的岛平均就这么大', () => {
@@ -190,7 +190,7 @@ describe('放岛只在岛的附近找格', () => {
       }
       got[name] = `${hashString(parts.join('|')).toString(16)} ${parts.length}`;
     }
-    expect(got).toEqual({ 星球: '94099864 48', 海洋: '9b41f786 48', 群岛: '23383b55 36' });
+    expect(got).toEqual({ 星球: '34690850 48', 海洋: '9b41f786 48', 群岛: '6a2c53e 36' });
   });
 });
 

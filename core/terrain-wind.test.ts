@@ -21,7 +21,7 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
     // 第三十二轮：地形有了大格局（高程变了，气候往后跟着变），重录全部
     // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
-    const FROZEN = { tS: 'ba38ee2f', pS: '14c290d1', discharge: '8a0852fe', dominant: 'd1a78605', corrT: 'a6748ee2', province: '6bcfb605' };
+    const FROZEN = { tS: '97928795', pS: '3793bf38', discharge: 'f212a8ed', dominant: 'd7198605', corrT: '95748d5d', province: '2197e605' };
     const eng = seededEngine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);

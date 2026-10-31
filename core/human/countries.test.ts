@@ -81,8 +81,8 @@ function countryDigest(w: World): Record<string, string> {
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 const RECORDED = {
-  region: { country: 'fba9edf84a5ad911', countries: '19ce6d4d8b391d41' },
-  planet: { country: 'c5b5dec5d2c02589', countries: '287865ed026f9a65' },
+  region: { country: '70de5aab70843a22', countries: 'b5e794a9e4b6e727' },
+  planet: { country: 'c0a55bfc983f7ad9', countries: '17a660490f92bfc6' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -384,7 +384,8 @@ describe('省份跟着国界', () => {
     expect(spanning(w)).toBe(0);
     // 把 a 的几格涂进 b 的一个省：这几格成了 b 的
     const pb = w.causes.province[countryCells(w, b.id)[0]];
-    const fromA = countryCells(w, a.id).slice(0, 5);
+    // 第三十五轮：地形变了，a 的头几格里有湖面格（湖属于湖省，不能划进陆地省）：只取干的陆地
+    const fromA = countryCells(w, a.id).filter((i) => w.derived.lake[i] !== 1).slice(0, 5);
     eng.exec({ op: 'assign_province', cells: fromA, province: pb });
     for (const i of fromA) expect(w.causes.country![i]).toBe(b.id);
     expect(spanning(w)).toBe(0);
@@ -563,7 +564,9 @@ describe('改地形以后', () => {
     const eng = nations();
     const w = eng.world;
     const coastal = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && w.causes.country![i] >= 0 && [...w.mesh.adj.subarray(w.mesh.off[i], w.mesh.off[i + 1])].some((j) => !w.causes.land[j]));
-    const c0 = coastal[Math.floor(coastal.length / 2)];
+    // 第三十五轮：地形变了，挑到的海岸挨着一片无主地（重新长出来的陆地连上无主地，成了大块的无主地，不补）：挑周围 4 格以内的陆地都有主的
+    const owned = (c: number) => [...Array(w.mesh.n).keys()].every((i) => !w.causes.land[i] || w.causes.country![i] >= 0 || Math.hypot(w.mesh.x[i] - w.mesh.x[c], w.mesh.y[i] - w.mesh.y[c]) >= w.mesh.spacing * 4);
+    const c0 = [...coastal.slice(coastal.length >> 1), ...coastal.slice(0, coastal.length >> 1)].find(owned)!;
     const owner = w.causes.country![c0];
     const disc = [...Array(w.mesh.n).keys()].filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[c0], w.mesh.y[i] - w.mesh.y[c0]) < w.mesh.spacing * 2.5);
     const before = w.causes.country!.slice();

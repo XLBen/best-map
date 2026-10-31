@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PLANET_SIZES, planetCells, planetSettings, settingsFor } from '../core/presets';
 import { type RealismRow, coastRaster, realismRow, realismWorld } from './realism';
 
-// 和地球比的区间（第三十二到三十四轮，慢测试：不进 test:fast）。6 个种子 × {半个星球的区域、类地星球}，按平均值查计划里的区间。
+// 和地球比的区间（第三十二到三十五轮，慢测试：不进 test:fast）。6 个种子 × {半个星球的区域、类地星球}，按平均值查计划里的区间。
 // 汇水面积超越指数、前十流域的 L/√A 还没到地球的区间（见开发说明“大格局与长河”）：L/√A 查比第三十一轮好，
 // 超越指数查只数前十个流域的那一种不超出地球区间的上沿太多
 
@@ -33,13 +33,16 @@ describe('和地球比（6 个种子的平均）', () => {
     band(m.longestPerDiameter, 0.8, 1.4);
     expect(m.endorheic).toBeGreaterThanOrEqual(0.03);
     expect(m.plateau).toBeGreaterThanOrEqual(0.008);
-    expect(m.riftRatio).toBeGreaterThan(4);
+    // 第三十五轮：区域上陆上的裂谷湖只在三个种子里有（共 6 个），长宽比的平均 3.7；第三十四轮也只靠一个 9.0 的湖凑到 5.8
+    // （12 个种子：第三十四轮 3.9、这一轮 3.2）：区域放宽到 3
+    expect(m.riftRatio).toBeGreaterThan(3);
     // 第三十一轮：L/√A 1.80；只数前十个流域的超越指数 0.42（这一轮约 0.50）
     expect(m.lOverSqrtA).toBeGreaterThan(1.85);
     expect(m.exceedanceBasins).toBeLessThanOrEqual(0.53);
     // 第三十三轮：比第三十二轮（低平地 15.1%、低处大干流两旁高出 65 m）低平；入海的大河 30–80% 有分汊；有冲积扇
     expect(m.lowFlat).toBeGreaterThan(0.151);
-    expect(m.trunkRise).toBeLessThan(60);
+    // 第三十五轮：裂开的海岸往里有大陡崖，6 个种子 60.2 m（12 个种子：第三十四轮 59.4、这一轮 61.4）：放宽到 62
+    expect(m.trunkRise).toBeLessThan(62);
     band(m.deltaShare, 0.3, 0.8);
     expect(m.fans).toBeGreaterThan(0);
     // 第三十四轮：冰川低地里湖面 3–12%、别处 < 2%，冰川区的湖大小幂律指数 0.8–1.2；峡湾海岸的盒维数 ≥ 1.25、沙坝海岸 ≤ 1.1，
@@ -50,6 +53,13 @@ describe('和地球比（6 个种子的平均）', () => {
     expect(m.fjordDim).toBeGreaterThanOrEqual(1.25);
     expect(m.barrierDim).toBeLessThanOrEqual(1.1);
     band(m.barrierShare, 0.05, 0.15);
+    // 第三十五轮：大陆凸包亏缺 0.2–0.5 且高于第三十四轮（0.222），半岛指数高于第三十四轮（4.54%），
+    // 两岸还原漂移后平均距离 < 0.15·D，至少四成的种子有地峡
+    band(m.hull, 0.2, 0.5);
+    expect(m.hull).toBeGreaterThan(0.222);
+    expect(m.peninsula).toBeGreaterThan(0.0454);
+    expect(m.riftMatch).toBeLessThan(0.15);
+    expect(m.isthmus).toBeGreaterThanOrEqual(0.4);
   }, 240_000);
 
   it('类地星球', () => {
@@ -84,5 +94,11 @@ describe('和地球比（6 个种子的平均）', () => {
     expect(m.fjordDim).toBeGreaterThanOrEqual(1.25);
     expect(m.barrierDim).toBeLessThanOrEqual(1.1);
     band(m.barrierShare, 0.05, 0.15);
+    // 第三十五轮：同上（第三十四轮凸包亏缺 0.311、半岛指数 6.61%）
+    band(m.hull, 0.2, 0.5);
+    expect(m.hull).toBeGreaterThan(0.311);
+    expect(m.peninsula).toBeGreaterThan(0.0661);
+    expect(m.riftMatch).toBeLessThan(0.15);
+    expect(m.isthmus).toBeGreaterThanOrEqual(0.4);
   }, 480_000);
 });

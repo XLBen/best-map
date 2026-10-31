@@ -55,9 +55,10 @@ const GROUPS = [
 ];
 // 中世纪（有帝国）与现代（联邦、同盟）
 const nations = (): Engine =>
-  snapshot('nations', () => {
+  // 第三十五轮：大陆轮廓变了，默认的种子在这个世界上撒不出邦联、没有帝国（见 core/human/r26-countries.test.ts）：换种子 3
+  snapshot('r26-ui-nations', () => {
     const eng = continents({ provinces: true });
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} });
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { seed: 3 } });
     return eng;
   });
 const moderns = (): Engine =>

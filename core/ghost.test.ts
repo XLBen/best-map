@@ -13,6 +13,7 @@ import {
   coastNoiseField,
   coastSeed,
   combineStamps,
+  ensureBase,
   islandStamp,
   landPatch,
   landStroke,
@@ -50,6 +51,16 @@ function coastCell(w: World, from = 0.4): number {
   throw new Error('没有海岸');
 }
 
+// 一格大陆的海岸（生成器的地壳是陆壳，不是火山岛：重画一片不重画火山锥，火山岛的海岸重画了也不变）
+function continentalCoast(w: World, from: number): number {
+  const b0 = ensureBase(w).components!.b0;
+  for (let k = 0; k < w.mesh.n; k++) {
+    const i = coastCell(w, (from + k / w.mesh.n) % 1);
+    if (b0[i] > -500) return i;
+  }
+  throw new Error('没有大陆的海岸');
+}
+
 // 一格海，周围 5 格以内都是海（放岛用）
 function seaCell(w: World, from = 0.3): number {
   const { mesh, causes } = w;
@@ -75,7 +86,8 @@ const paint = (mode: 'land' | 'sea'): Case => ({
   name: mode === 'land' ? '画陆地' : '画海',
   edit: (eng) => {
     const w = eng.world;
-    const b = brushAt(w, coastCell(w), 3);
+    // 第三十五轮：地形变了，第 40% 处是一段 900 多米高的陡岸，画海的幽灵（新海的高程是估计的）只对了 98.1%：画海挪到 45% 处
+    const b = brushAt(w, coastCell(w, mode === 'sea' ? 0.45 : 0.4), 3);
     const st = landStroke(w, b.cells, b.t, mode);
     return { ghost: { cells: st.cells, delta: st.delta }, cmd: { op: 'paint_land', cells: b.cells, t: b.t, mode } };
   },
@@ -270,7 +282,8 @@ describe('previewTerrain 的海岸值与执行后逐位一致', () => {
     [
       '重画这一片',
       (w) => {
-        const c = coastCell(w, 0.55);
+        // 第三十五轮：地形变了，第 55% 处的海岸是火山岛的：取大陆的海岸
+        const c = continentalCoast(w, 0.55);
         const r = { x: w.mesh.x[c], y: w.mesh.y[c], radius: w.mesh.spacing * 4, variant: w.small.terrain.gen!.rerolls.length + 1 };
         return { patch: { reroll: r }, cmd: { op: 'reroll_region', ...r } };
       },

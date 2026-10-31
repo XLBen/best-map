@@ -590,3 +590,148 @@ export function elongation(xs: ArrayLike<number>, ys: ArrayLike<number>, areas: 
   const l2 = tr - det;
   return l2 > 0 ? Math.sqrt(l1 / l2) : NaN;
 }
+
+// 大陆轮廓（第三十五轮）：大陆（面积 ≥ 陆地 3%、至少 100 格的陆块）的凸包亏缺与半岛指数，都按面积加权。
+//   hull：1 − 面积 / 凸包面积。凸包按格心（星球投到陆块中心的切平面上，心射投影：大圆是直线，凸不凸与球面上相同；
+//         面积也按同一个投影），再向外扩半个格距（格心连成的凸包比格的多边形连成的小一圈）。地球：非洲约 0.2、欧亚约 0.4
+//   peninsula：形态学的开运算（先往里缩 R 步、再往外长 R 步，按网格的步数）去掉的那部分占大陆的比例——
+//         比约 2R 步还窄的半岛、地峡、细长的岬。地图边不算海（不从地图边往里缩）
+export interface LandShape {
+  hull: number;
+  peninsula: number;
+  continents: number;
+}
+export function landShape(world: World, R = 3): LandShape {
+  const { mesh, causes } = world;
+  const n = mesh.n;
+  const land = causes.land;
+  let total = 0;
+  for (let i = 0; i < n; i++) if (land[i]) total += mesh.area[i];
+  const conts = components(mesh, (i) => land[i] === 1).filter((c) => c.length >= 100 && c.reduce((a, k) => a + mesh.area[k], 0) >= 0.03 * total);
+  // 到海的步数（挨着海的陆格是 1）
+  const dist = new Int32Array(n).fill(-1);
+  const q: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (land[i]) continue;
+    dist[i] = 0;
+    q.push(i);
+  }
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h];
+    if (dist[c] > R) continue;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (dist[j] < 0) {
+        dist[j] = dist[c] + 1;
+        q.push(j);
+      }
+    }
+  }
+  // 开运算：缩剩下的（离海超过 R 步）再往外长 R 步（只在陆地上）
+  const grown = new Int32Array(n).fill(-1);
+  const g: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (!land[i] || (dist[i] >= 0 && dist[i] <= R)) continue;
+    grown[i] = 0;
+    g.push(i);
+  }
+  for (let h = 0; h < g.length; h++) {
+    const c = g[h];
+    if (grown[c] >= R) continue;
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      if (land[j] && grown[j] < 0) {
+        grown[j] = grown[c] + 1;
+        g.push(j);
+      }
+    }
+  }
+  let hullW = 0;
+  let narrow = 0;
+  let area = 0;
+  for (const c of conts) {
+    let a = 0;
+    for (const k of c) {
+      a += mesh.area[k];
+      if (grown[k] < 0) narrow += mesh.area[k];
+    }
+    area += a;
+    hullW += a * hullDeficiency(mesh, c);
+  }
+  return { hull: area ? hullW / area : NaN, peninsula: area ? narrow / area : NaN, continents: conts.length };
+}
+
+// 一块陆地的凸包亏缺（见 landShape）
+function hullDeficiency(mesh: World['mesh'], cells: number[]): number {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  let a = 0;
+  if (mesh.kind === 'sphere') {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (const k of cells) {
+      cx += mesh.p[3 * k];
+      cy += mesh.p[3 * k + 1];
+      cz += mesh.p[3 * k + 2];
+    }
+    const L = Math.hypot(cx, cy, cz) || 1;
+    const nx = cx / L;
+    const ny = cy / L;
+    const nz = cz / L;
+    const ex = Math.abs(nz) < 0.9 ? [-ny, nx, 0] : [0, -nz, ny];
+    const el = Math.hypot(ex[0], ex[1], ex[2]);
+    const e1 = [ex[0] / el, ex[1] / el, ex[2] / el];
+    const e2 = [ny * e1[2] - nz * e1[1], nz * e1[0] - nx * e1[2], nx * e1[1] - ny * e1[0]];
+    for (const k of cells) {
+      const px = mesh.p[3 * k];
+      const py = mesh.p[3 * k + 1];
+      const pz = mesh.p[3 * k + 2];
+      const d = px * nx + py * ny + pz * nz;
+      // 离中心超过约 78° 的格心投不准，不算（这么大的陆块很少）
+      if (d < 0.2) continue;
+      xs.push((px * e1[0] + py * e1[1] + pz * e1[2]) / d);
+      ys.push((px * e2[0] + py * e2[1] + pz * e2[2]) / d);
+      // 面积（单位球的立体角 = area·π²）按心射投影放大 1/d³
+      a += (mesh.area[k] * Math.PI * Math.PI) / (d * d * d);
+    }
+  } else {
+    for (const k of cells) {
+      xs.push(mesh.x[k]);
+      ys.push(mesh.y[k]);
+      a += mesh.area[k];
+    }
+  }
+  if (xs.length < 3) return NaN;
+  const h = 1.07 * Math.sqrt(a / xs.length);
+  const { area: ha, perimeter } = convexHull(xs, ys);
+  const hull = ha + (perimeter * h) / 2 + (Math.PI * h * h) / 4;
+  return hull > 0 ? Math.max(0, 1 - a / hull) : NaN;
+}
+
+// 平面上一组点的凸包（单调链）的面积与周长
+export function convexHull(xs: number[], ys: number[]): { area: number; perimeter: number } {
+  const idx = xs.map((_, k) => k).sort((p, q) => xs[p] - xs[q] || ys[p] - ys[q]);
+  const cross = (o: number, a: number, b: number) => (xs[a] - xs[o]) * (ys[b] - ys[o]) - (ys[a] - ys[o]) * (xs[b] - xs[o]);
+  const lower: number[] = [];
+  for (const k of idx) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], k) <= 0) lower.pop();
+    lower.push(k);
+  }
+  const upper: number[] = [];
+  for (let t = idx.length - 1; t >= 0; t--) {
+    const k = idx[t];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], k) <= 0) upper.pop();
+    upper.push(k);
+  }
+  const hull = [...lower.slice(0, -1), ...upper.slice(0, -1)];
+  let area = 0;
+  let perimeter = 0;
+  for (let t = 0; t < hull.length; t++) {
+    const a = hull[t];
+    const b = hull[(t + 1) % hull.length];
+    area += xs[a] * ys[b] - xs[b] * ys[a];
+    perimeter += Math.hypot(xs[b] - xs[a], ys[b] - ys[a]);
+  }
+  return { area: Math.abs(area) / 2, perimeter };
+}

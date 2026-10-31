@@ -267,7 +267,9 @@ describe('“文化”一类', () => {
     const zoom = () => 1 / w.mesh.spacing;
     const t = hearthTool(zoom);
     expect(t.backdrop!()!.shapes.length).toBe(marks.length * 2);
-    const m = marks[0];
+    // 第三十五轮：地形变了，第一个文化组的发源地与组里一个文化的发源地挨在一起，悬停先找到那个文化：挑一个附近没有别的圈的
+    const apart = (a: number, b: number) => Math.hypot(w.mesh.x[a] - w.mesh.x[b], w.mesh.y[a] - w.mesh.y[b]) > 4 * w.mesh.spacing;
+    const m = marks.find((x) => !x.culture && marks.every((o) => o === x || apart(o.cell, x.cell))) ?? marks[0];
     const to = dry(w).find((i) => i !== m.cell && Math.abs(w.mesh.x[i] - w.mesh.x[m.cell]) > 5 * w.mesh.spacing)!;
     t.move!(pointer(w, m.cell), false);
     expect(t.drags).toBe(true);

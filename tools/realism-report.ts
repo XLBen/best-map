@@ -2,7 +2,7 @@
 // 列出 core/stats.ts 的 realismStats 与地球的参考值。
 //   npx tsx tools/realism-report.ts [--seeds 1-6] [--only region|planet] [--cells 40000] [--raster 2048] [--json 文件]
 //   --raster 0：不算海岸线的盒维数（省掉栅格化，快一半）
-// 每轮跑一次，与开发说明“和地球比”里记下的上一轮对照
+// 每轮跑一次，与开发说明“和地球比”里记下的上一轮对照。第三十五轮加了大陆轮廓的几行（凸包亏缺、半岛指数、地峡、裂开的两岸）
 import { writeFileSync } from 'node:fs';
 import { PLANET_SIZES, planetCells, planetSettings, settingsFor } from '../core/presets';
 import { EARTH_REFERENCE } from '../core/stats';
@@ -70,6 +70,12 @@ const ROWS: { key: keyof Row; label: string; fmt: (v: number) => string }[] = [
   { key: 'fjordDim', label: '峡湾海岸的盒维数', fmt: (v) => v.toFixed(3) },
   { key: 'barrierShare', label: '沙坝海岸占海岸像素', fmt: pct },
   { key: 'barrierDim', label: '沙坝海岸的盒维数', fmt: (v) => v.toFixed(3) },
+  { key: 'hull', label: '大陆凸包亏缺', fmt: (v) => v.toFixed(3) },
+  { key: 'peninsula', label: '半岛指数（开运算去掉的）', fmt: (v) => `${(v * 100).toFixed(2)}%` },
+  { key: 'isthmus', label: '有地峡的种子', fmt: pct },
+  { key: 'isthmi', label: '留下来的地峡', fmt: (v) => v.toFixed(0) },
+  { key: 'rifts', label: '量得出两岸的裂开', fmt: (v) => v.toFixed(0) },
+  { key: 'riftMatch', label: '两岸还原漂移后的平均距离 ÷ D', fmt: (v) => v.toFixed(3) },
 ];
 
 function pct(v: number): string {

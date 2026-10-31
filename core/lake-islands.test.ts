@@ -160,7 +160,16 @@ describe('湖里的岛', () => {
     const { eng, c } = withLake();
     const w = eng.world;
     // 从湖心往外画到海里
-    const sea = all(w).filter((i) => !w.causes.land[i] && !w.mesh.boundary[i]);
+    // 第三十五轮：地形变了，从湖往离它最近的海格画出去的岛链落在海里的岛一个都没有（那一格在窄海、海湾里）：只要开阔的海（四周两圈都是海）
+    const open = (i: number) => {
+      for (let e = w.mesh.off[i]; e < w.mesh.off[i + 1]; e++) {
+        const j = w.mesh.adj[e];
+        if (w.causes.land[j]) return false;
+        for (let f = w.mesh.off[j]; f < w.mesh.off[j + 1]; f++) if (w.causes.land[w.mesh.adj[f]]) return false;
+      }
+      return true;
+    };
+    const sea = all(w).filter((i) => !w.causes.land[i] && !w.mesh.boundary[i] && open(i));
     const far = sea.reduce((b, i) => (Math.hypot(w.mesh.x[i] - w.mesh.x[c], w.mesh.y[i] - w.mesh.y[c]) < Math.hypot(w.mesh.x[b] - w.mesh.x[c], w.mesh.y[b] - w.mesh.y[c]) ? i : b));
     const chain = { points: [[w.mesh.x[c], w.mesh.y[c]], [w.mesh.x[far] + (w.mesh.x[far] - w.mesh.x[c]) * 0.8, w.mesh.y[far] + (w.mesh.y[far] - w.mesh.y[c]) * 0.8]] as [number, number][], kind: 'low', size: 60, density: 1.5, variant: 0 };
     const lakes = () => w.derived;

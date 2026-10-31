@@ -152,7 +152,8 @@ describe('省份的颜色', () => {
     const eng = continents({ provinces: true });
     const w = eng.world;
     const sea = [...Array(w.mesh.n).keys()].find((i) => !w.causes.land[i])!;
-    const land = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && w.derived.lake[i] !== 1)!;
+    // 第三十五轮：地形变了，第一格陆地在荒地省里（荒地的颜色掺灰）：取普通陆地省的格
+    const land = [...Array(w.mesh.n).keys()].find((i) => w.causes.land[i] && w.derived.lake[i] !== 1 && w.small.provinces[w.causes.province[i]]?.kind === 'land')!;
     const seaProv = w.causes.province[sea];
     const landProv = w.causes.province[land];
     let flat = provinceFlat(w, w.causes.province);

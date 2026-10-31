@@ -106,14 +106,14 @@ export class RoadSearch {
     return out.reverse();
   }
 
-  // a 到 b 代价最小（近似）的一串格；走不到时为 null
-  astar(a: number, b: number): number[] | null {
+  // a 到 b 代价最小（近似）的一串格；走不到时为 null。wide：不限在两头之间的椭圆里（绕很远的路，比如绕过一道海湾、走地峡）
+  astar(a: number, b: number, wide = false): number[] | null {
     if (a === b) return [a];
     const { world } = this;
     const { mesh } = world;
     const tag = ++this.tag;
     const D = distKm(world, a, b);
-    const reach = CORRIDOR * D + 4 * cellKm(world);
+    const reach = wide ? Infinity : CORRIDOR * D + 4 * cellKm(world);
     const heap = this.heap;
     heap.size = 0;
     this.g[a] = 0;
@@ -350,7 +350,9 @@ export function generateRoads(S: SettleInputs, _rules: SettlementRules, fresh: b
     );
     // 短的先走（后走的可以沿着已有的道路）
     for (const [a, b] of links) {
-      const path = search.astar(major[a].cell, major[b].cell);
+      // 第三十五轮：同一块陆地上的两座城市在椭圆里走不到（中间隔着海湾，要绕过地峡、裂开的海湾的尽头）时不限范围再找一次，
+      // 否则这块陆地上的路网断成两半（小路各自接到最近的路上）
+      const path = search.astar(major[a].cell, major[b].cell) ?? search.astar(major[a].cell, major[b].cell, true);
       if (path) commit(B, path, 'major', cityId(major[a]), cityId(major[b]));
     }
     for (const c of major) if (search.on[c.cell]) net[c.cell] = 1;

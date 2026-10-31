@@ -679,7 +679,8 @@ describe('名字与汇合处', () => {
     const s = m.spacing;
     const { name, key, cell } = namedRiver(w);
     const stem = riverStem(w, d, cell).cells;
-    for (const X of stem.slice(Math.floor(stem.length / 4), Math.floor(stem.length / 2))) {
+    // 第三十五轮：地形变了，这条河只有 19 格，第 1/4 处汇入时上游只剩 4 格（短得不成地物）：汇合处以上至少留 6 格
+    for (const X of stem.slice(Math.max(6, Math.floor(stem.length / 4)), Math.max(7, Math.floor(stem.length / 2)))) {
       for (let a = 0; a < 8; a++) {
         const ang = (a * Math.PI) / 4;
         const p = planCourse(w, d, line([m.x[X] + 5 * s * Math.cos(ang), m.y[X] + 5 * s * Math.sin(ang)], at(w, X)), { endOnLand: 'flow', px: s / 20 });

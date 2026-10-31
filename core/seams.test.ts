@@ -18,11 +18,12 @@ import type { World } from './world';
 
 type Pt = [number, number];
 
-// 一块地区（6000 格）与一个整个星球（6000 格），都划好了省份（与 raster-identity 的两个世界相同）
+// 一块地区（6000 格）与一个整个星球（6000 格），都划好了省份（以前与 raster-identity 的两个世界相同；第三十五轮：大陆轮廓变了，
+// 种子 3 的那块大陆裂开了，离海、湖最远的地方只有 6 格，切线伸到省外碰到别的省：地区换成种子 8，内陆有 11 格）
 const region = () =>
   snapshot('seams:region', () => {
     const eng = seededEngine({ seed: 3, cells: 6000 });
-    eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
+    eng.exec({ op: 'set_worldgen', params: { seed: 8, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
     return eng;
   });
@@ -34,13 +35,13 @@ const planet = () =>
     return eng;
   });
 
-// 离海最远的陆地格（按格数），keep 限定候选
+// 离海最远的陆地格（按格数），keep 限定候选。第三十五轮：湖也算水（地形变了，离海最远的地方挨着湖，大省、切线碰到湖面格）
 function inland(w: World, keep: (i: number) => boolean): number {
   const { mesh, causes } = w;
   const dist = new Int32Array(mesh.n).fill(-1);
   const queue: number[] = [];
   for (let i = 0; i < mesh.n; i++) {
-    if (causes.land[i]) continue;
+    if (causes.land[i] && w.derived.lake[i] !== 1) continue;
     dist[i] = 0;
     queue.push(i);
   }
@@ -68,6 +69,20 @@ function bigProvince(eng: Engine, center: number, r: number): number {
   for (let i = 0; i < mesh.n; i++) {
     if (w.causes.land[i] && w.derived.lake[i] !== 1 && w.causes.province[i] !== id && Math.hypot(dx(i), mesh.y[i] - mesh.y[center]) < r * mesh.spacing) cells.push(i);
   }
+  // 第三十五轮：挨着这一圈、只剩几格（≤ 12）的小省一起涂进来（地形变了，圈边上剩下几个四到九格的小省，切线延长到省外时切到它们）
+  const size = new Map<number, number>();
+  for (let i = 0; i < mesh.n; i++) size.set(w.causes.province[i], (size.get(w.causes.province[i]) ?? 0) + 1);
+  const inDisc = new Set(cells);
+  const touched = new Map<number, number>();
+  for (const c of cells) {
+    for (let e = mesh.off[c]; e < mesh.off[c + 1]; e++) {
+      const j = mesh.adj[e];
+      const p = w.causes.province[j];
+      if (inDisc.has(j) || p === id || p < 0 || !w.causes.land[j] || w.derived.lake[j] === 1) continue;
+      touched.set(p, (size.get(p) ?? 0) - [...inDisc].filter((x) => w.causes.province[x] === p).length);
+    }
+  }
+  for (const [p, left] of touched) if (left <= 12) for (let i = 0; i < mesh.n; i++) if (w.causes.province[i] === p && !inDisc.has(i)) cells.push(i);
   eng.exec({ op: 'assign_province', cells, province: id });
   return id;
 }
@@ -346,8 +361,8 @@ describe('剪刀切线', () => {
     // 两刀交叉：最近的段在两条线之间换来换去
     for (const angle of [0.4, 2.0]) eng.exec({ op: 'cut_province', line: scissors(eng.world, wavy(eng.world, w0.mesh.x[center], w0.mesh.y[center], 8, 1.2, angle)).line });
     const w = eng.world;
-    // 第二刀切开了第一刀切出来的两块：每个切开的省一条切线，一共三条
-    expect(w.small.provinceSeams).toHaveLength(3);
+    // 第二刀切开了第一刀切出来的两块：每个切开的省一条切线，至少三条（第三十五轮：地形变了，剪刀延长到省外时还切开了旁边的一个省，四条）
+    expect(w.small.provinceSeams!.length).toBeGreaterThanOrEqual(3);
     const W = 512;
     const H = 256;
     const raster = rasterizeWorld(w, W, H);

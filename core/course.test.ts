@@ -401,6 +401,8 @@ describe('流进湖、汇入', () => {
         const R = 7 * mesh.spacing;
         const plan = planCourse(w, w.derived, line([mesh.x[C] + Math.cos(a * 0.8) * R, mesh.y[C] + Math.sin(a * 0.8) * R], at(w, C)), { endOnLand: 'flow' });
         if (plan.blocked || plan.end !== 'lake' || plan.crossings.length || plan.reroute || plan.uphill < 30) continue;
+        // 第三十五轮：地形变了，有一条画的河最后一格是挨着湖的干盐湖底（−66 m 的洼地，不是河挖的）：不挑经过别的湖、湖底的
+        if (plan.cells.slice(0, -1).some((c) => w.derived.lake[c] !== 0)) continue;
         const e = eng.clone();
         e.exec(courseCmd(plan));
         expect(followed(e.world, plan.cells)).toBe(true);
@@ -544,8 +546,13 @@ describe('画的线就是河道', () => {
   it('从河口往上画：倒过来，河从内陆流到海里；多画进海里的部分丢掉', () => {
     const eng = continents();
     const w = eng.world;
-    const { stroke } = acrossRange(w);
-    const forward = planCourse(w, w.derived, stroke, { endOnLand: 'flow' });
+    let { stroke } = acrossRange(w);
+    let forward = planCourse(w, w.derived, stroke, { endOnLand: 'flow' });
+    // 第三十五轮：地形变了，横过山脉的那一笔是从下游往上游画的（倒过来了）：反过来画
+    if (forward.reversed) {
+      stroke = [...stroke].reverse();
+      forward = planCourse(w, w.derived, stroke, { endOnLand: 'flow' });
+    }
     // 从入海的那格（海上）画起，画回内陆的起点
     const sea = forward.cells[forward.cells.length - 1];
     expect(w.causes.land[sea]).toBe(0);

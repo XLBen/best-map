@@ -776,8 +776,8 @@ describe('复测后补的', () => {
       if (L.guide !== undefined || !L.cells || L.points.length < 2) continue;
       const tail = L.cells[L.cells.length - 1];
       const own = L.cells[L.cells.length - 2];
-      // 小支流（门槛的 1–2 倍）汇进大河（10 倍以上）的那一点
-      if (!isRiverCell(w, d, own) || d.discharge[own] > 2 * thr || d.discharge[tail] < 10 * thr) continue;
+      // 小支流（门槛的 1–2 倍）汇进大河（10 倍以上）的那一点（第三十五轮：地形变了，这个世界里没有这样的汇合了：放到 1–3 倍、8 倍以上）
+      if (!isRiverCell(w, d, own) || d.discharge[own] > 3 * thr || d.discharge[tail] < 8 * thr) continue;
       const [x, y] = L.points[L.points.length - 1];
       // 拉近、拉远（一格 20、3 个屏幕像素）都一样
       for (const px of [20, 3]) {
