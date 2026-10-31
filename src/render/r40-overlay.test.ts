@@ -320,17 +320,11 @@ for (const name of ['fill', 'stroke', 'fillText', 'strokeText', 'fillRect', 'str
   };
 }
 
-describe('叠加层的静态那一层：贴缓存画出来的命令与直接画相同', () => {
+describe('叠加层的静态那一层：什么都没变时不画，别的帧与每帧照原样画的命令相同', () => {
   for (const [name, make] of WORLDS) {
     it(name, () => {
       const w = make();
       const paths = buildPaths(w);
-      const layers: RecCtx[] = [];
-      overlayDebug.layerCanvas = (W, H) => {
-        const c = new RecCtx(W, H, `layer${layers.length}`);
-        layers.push(c);
-        return { canvas: c.canvas, ctx: c as unknown as CanvasRenderingContext2D };
-      };
       try {
         const sp = w.mesh.spacing;
         const cams: Camera[] = w.mesh.kind === 'sphere' ? [{ x: 1.2, y: 0.4, zoom: 10 / sp }, { x: 1, y: 0.5, zoom: 700, proj: { kind: 'globe', lon0: 0.4, lat0: 0.3 } }] : [{ x: w.mesh.width * 0.5, y: w.mesh.height * 0.5, zoom: 10 / sp }];
@@ -347,38 +341,28 @@ describe('叠加层的静态那一层：贴缓存画出来的命令与直接画�
               { x: cam.x + 2 * sp, y: cam.y + sp, text: '湖省', kind: 'lake' },
             ],
           });
-          // 直接画（每帧原样画）
+          // A：每帧照原样画；B：屏幕上的画法
           const A = new RecCtx(1000, 700, 'A');
           const B = new RecCtx(1000, 700, 'B');
-          // 第一帧之后画布上留下的 textBaseline 变了（新画布是 alphabetic）：第二帧还是直接画，之后才贴缓存
-          const frames: Shape[][] = [sh(0, 2), sh(0, 2), sh(1, 2), sh(1, 3), sh(1, 3), []];
-          // 叠加层上的内容：贴上去的离屏画布换成它的内容
-          const expand = (c: RecCtx): Op[] => c.ops.flatMap((o) => (o[0] === 'drawImage' && typeof o[1] === 'string' && o[1].startsWith('canvas:layer') ? expand(layers.find((l) => `canvas:${l.canvas.tag}` === o[1])!) : [o]));
-          const calls = () => B.calls + layers.reduce((a, l) => a + l.calls, 0);
+          // 第一帧之后画布上留下的 textBaseline 变了（新画布是 alphabetic，它在键里）：第二帧照原样画，第三帧起才跳过
+          const frames: { shapes: Shape[]; hover?: string }[] = [{ shapes: sh(0, 2) }, { shapes: sh(0, 2) }, { shapes: sh(0, 2) }, { shapes: sh(1, 2) }, { shapes: sh(1, 2) }, { shapes: sh(1, 2), hover: 'country:1' }, { shapes: [] }, { shapes: [] }];
+          const skips = [2, 4, 7];
           for (let k = 0; k < frames.length; k++) {
-            const s = { ...st, shapes: frames[k] };
+            const s = { ...st, shapes: frames[k].shapes, hoverLabel: frames[k].hover ?? null };
             overlayDebug.noStatic = true;
             const boxesA = drawOverlay(A as unknown as CanvasRenderingContext2D, w, paths, cam, s);
             overlayDebug.noStatic = false;
-            const before = calls();
+            const before = B.calls;
             const boxesB = drawOverlay(B as unknown as CanvasRenderingContext2D, w, paths, cam, s);
             expect(boxesB).toEqual(boxesA);
-            if (k === 4) {
-              // 图形没变：什么都不画
-              expect(calls()).toBe(before);
-            }
+            // 什么都没变：一笔不画（画布上的就是这一帧）；别的帧画了
+            if (skips.includes(k)) expect(B.calls).toBe(before);
+            else expect(B.calls).toBeGreaterThan(before);
             expect(A.ops.length).toBeGreaterThan(20);
-            expect(firstDiff(expand(B), A.ops)).toBeNull();
-            // 头两帧直接画，之后贴两张离屏画布
-            const pasted = B.ops.filter((o) => o[0] === 'drawImage' && typeof o[1] === 'string' && o[1].startsWith('canvas:layer')).map((o) => o[1]);
-            // 图形没了的那一帧（最后一帧）也直接画
-            expect(pasted).toEqual(k <= 1 || k === frames.length - 1 ? [] : ['canvas:layer0', 'canvas:layer1']);
+            expect(firstDiff(B.ops, A.ops)).toBeNull();
           }
-          // 换镜头前：静态的那一层下一次照原样直接画
-          layers.length = 0;
         }
       } finally {
-        overlayDebug.layerCanvas = null;
         overlayDebug.noStatic = false;
       }
     });

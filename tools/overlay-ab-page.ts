@@ -179,27 +179,41 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean }) {
         let same = 0;
         for (let i = 0; i < pa.length; i++) if (pa[i] !== pb[i]) same++;
         differ += same;
-        const shapes = [{ kind: 'circle', x: cam0.x + 1.5 * sp, y: cam0.y, r: 4 * sp, dashed: true, geodesic: sphere }];
-        // 按显卡画（同屏幕上的叠加层与离屏画布；软件画的画布贴显卡画的离屏画布要先读回来、转一次预乘，不是屏幕上的样子）
-        const ea = canvas();
-        const eb = canvas();
-        for (const s of [st, st, { ...st, shapes }]) {
-          oldS.O.drawOverlay(ea, w, paths, cam0 as never, s as never);
-          newS.O.drawOverlay(eb, w, paths, cam0 as never, s as never);
+        // 一串帧（直接画两帧、只有图形变了的三帧、图形没变的一帧（新的不画）、图形没了的一帧），每帧画完读回整张、与旧的逐字节比。
+        // 按显卡画（同屏幕上的叠加层与离屏画布）与按软件画（离屏画布也按软件画）各一遍
+        const sh = (x: number, r: number) => [{ kind: 'circle', x: cam0.x + x * sp, y: cam0.y, r: r * sp, dashed: true, geodesic: sphere }, { kind: 'line', points: [[cam0.x, cam0.y], [cam0.x + 6 * sp, cam0.y + 3 * sp]], color: 'rgba(255, 225, 77, 0.95)', width: 2 }];
+        const seq = [st, st, { ...st, shapes: sh(1.5, 4) }, { ...st, shapes: sh(2.5, 4) }, { ...st, shapes: sh(2.5, 6) }, { ...st, shapes: sh(2.5, 6) }, st];
+        const frameDiff: number[] = [];
+        const notes: string[] = [];
+        for (const softMode of [false, true]) {
+          newS.O.overlayDebug.softLayers = softMode;
+          const ea = canvas(softMode);
+          const eb = canvas(softMode);
+          let bytes = 0;
+          const per: number[] = [];
+          const hist: [Uint8ClampedArray, Uint8ClampedArray][] = [];
+          for (const s of seq) {
+            oldS.O.drawOverlay(ea, w, paths, cam0 as never, s as never);
+            newS.O.drawOverlay(eb, w, paths, cam0 as never, s as never);
+            const qa = px(ea);
+            const qb = px(eb);
+            hist.push([qa, qb]);
+            let k = 0;
+            for (let i = 0; i < qa.length; i++) if (qa[i] !== qb[i]) k++;
+            per.push(k);
+            bytes += k;
+          }
+          const d = (x: Uint8ClampedArray, y: Uint8ClampedArray) => x.reduce((n, v, i) => n + (v !== y[i] ? 1 : 0), 0);
+          // 旧的自己：同样的输入（第二帧与最后一帧）重画一遍，读回来相不相同（按显卡画时 SwiftShader 上不一定相同）
+          if (bytes) notes.push(`${softMode ? '软件' : '显卡'}：每帧 ${per.join(' ')}，旧的同样的输入重画一遍自己差 ${d(hist[6][0], hist[1][0])}`);
+          frameDiff.push(bytes);
+          ea.canvas.remove();
+          eb.canvas.remove();
+          newS.O.overlayDebug.softLayers = false;
         }
-        const qa = px(ea);
-        const qb = px(eb);
-        // 叠在中灰的底上（叠加层盖在地图上）以后的差：getImageData 给的是没乘透明度的颜色，很淡的像素颜色本来就不准
-        let n = 0;
-        let max = 0;
-        const over = (q: Uint8ClampedArray, i: number, c: number) => Math.round((q[i + c] * q[i + 3] + 128 * (255 - q[i + 3])) / 255);
-        for (let i = 0; i < qa.length; i += 4) {
-          let d = 0;
-          for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(over(qa, i, c) - over(qb, i, c)));
-          if (d) (n++, (max = Math.max(max, d)));
-        }
-        for (const c of [co, cn, da, db, ea, eb]) c.canvas.remove();
-        log(`${label}\n  主线程：${main}\n  连光栅化（软件画）：${soft}\n  排地名 ${f1(median(lay.o))} → ${f1(median(lay.n))}；直接画与旧的不同 ${same} 字节；贴缓存的一帧（叠在中灰上）与旧的不同 ${n} 像素、最大差 ${max}`);
+        differ += frameDiff[0] + frameDiff[1];
+        for (const c of [co, cn, da, db]) c.canvas.remove();
+        log(`${label}\n  主线程：${main}\n  连光栅化（软件画）：${soft}\n  排地名 ${f1(median(lay.o))} → ${f1(median(lay.n))}；直接画与旧的不同 ${same} 字节；一串帧（含只有图形变了、什么都不画的帧）与旧的不同 ${frameDiff[1]} 字节（按软件画）/ ${frameDiff[0]} 字节（按显卡画）${notes.length ? `（${notes.join('；')}）` : ''}`);
       }
     }
     if (Object.keys(w.small.countries ?? {}).length) selectBench(oldS, newS, w, N);

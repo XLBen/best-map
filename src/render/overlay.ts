@@ -546,11 +546,8 @@ export interface Frame {
 }
 
 // 画布的大小（CSS 像素）与每个 CSS 像素几个像素：导出时按给的虚拟窗口，否则按屏幕上的画布
-// 第四十轮：画进屏幕的静态那一层（离屏画布没有 CSS 大小）时按叠加层的（frameOverride）
-let frameOverride: Frame | null = null;
 function frameOf(ctx: { canvas: { clientWidth: number; clientHeight: number } }, st?: { frame?: Frame }): Frame {
   if (st?.frame) return st.frame;
-  if (frameOverride) return frameOverride;
   const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   return { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight, dpr };
 }
@@ -605,12 +602,8 @@ let restLayer: BackLayer | null = null;
 let motionLayer: BackLayer | null = null;
 
 // 开发用（src/render/bench.ts 的 overlayBench）：底层改用软件画的画布，测速时能同步量到画它花的时间
-// noStatic：屏幕上不用静态的那一层（每帧照原样直接画，测速用）；layerCanvas：静态那一层的离屏画布换成给的（测试用假画布）
-export const overlayDebug: {
-  softLayers: boolean;
-  noStatic: boolean;
-  layerCanvas: ((w: number, h: number) => { canvas: { width: number; height: number }; ctx: CanvasRenderingContext2D }) | null;
-} = { softLayers: false, noStatic: false, layerCanvas: null };
+// noStatic：屏幕上什么都没变时也照原样直接画（测速、对照用）
+export const overlayDebug: { softLayers: boolean; noStatic: boolean } = { softLayers: false, noStatic: false };
 
 function makeLayer(w: number, h: number, dpr: number): BackLayer {
   const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
@@ -1006,10 +999,8 @@ export function releaseRiverTile() {
 }
 
 // st.rivers：河画在叠加层上（测试、测速用；屏幕与导出的地图上河由渲染器合成，见 riverLayer，MapView 这里给 false）
-// 第四十轮：屏幕上分成三段画——底下（河与标记、风、洋流、经纬、道路）、工具的图形、上面（省名、地名、比例尺）。底下、上面两段只随
-// 静态的键变（staticKey：世界、路径、镜头、画布、除了图形以外的选项……）；键没变、图形也没变时什么都不画（画布上就是上一帧）；
-// 只有图形变了时把两段各画进一张离屏画布（第一次用到时画），贴底下、画图形、贴上面。键变了的那一帧照原样直接画。
-// 移动中、导出照原样直接画（见 drawScreen）
+// 第四十轮：分成三段（overlayParts：底下、工具的图形、上面）；屏幕上静态的键（staticKey：世界、路径、镜头、画布、除了图形以外的选项……）
+// 与图形都没变时什么都不画（画布上就是上一帧），别的时候照原样直接画（见 drawScreen）。移动中、导出照原样直接画
 export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState): LabelBox[] {
   const canvas = ctx.canvas;
   const f = frameOf(ctx, st);
@@ -1224,82 +1215,27 @@ function sameShape(a: Shape, b: Shape): boolean {
   return true;
 }
 
-// 测速（第三十九轮的 ?perf）：MapView 交过来；记 overlayStatic（直接画、画进两张离屏画布）、overlayDynamic（贴两张、画图形）、
-// layout（排地名），notes 里记 overlay:skip / overlay:composite / overlay:direct / overlay:motion
+// 测速（第三十九轮的 ?perf）：MapView 交过来；记 overlayStatic（静态的变了、直接画）、overlayDynamic（只有图形变了、直接画）、
+// layout（排地名），notes 里记 overlay:skip / overlay:shapes / overlay:direct / overlay:motion
 let perf: Perf | null = null;
 export function setOverlayPerf(p: Perf | null) {
   perf = p;
 }
 
-// 一张画布的静态那一层的缓存（按画布对象记：测速另画到别的画布上、测试的假画布互不影响）
-interface StaticLayer {
-  canvas: HTMLCanvasElement | OffscreenCanvas;
-  ctx: CanvasRenderingContext2D;
-  ready: boolean;
-  // 画上面那一段时叠加层上的几项状态（overStart）；画完时离屏画布的状态（贴完照它留在叠加层上）
-  start: string;
-  end: CtxState | null;
-}
+// 一张画布上一次画的是什么（按画布对象记：测速另画到别的画布上、测试的假画布互不影响）
 interface ScreenCache {
   key: unknown[] | null;
   shapes: readonly Shape[] | null;
   boxes: LabelBox[];
-  under: StaticLayer | null;
-  over: StaticLayer | null;
 }
 const screens = new WeakMap<object, ScreenCache>();
 
-// 画布的状态里接着往下画时会用到的几项（第四十轮：贴缓存的那一帧把画到那里时的状态照原样留在叠加层上，下一帧照原样接着画）
-const STATE_PROPS = ['textBaseline', 'textAlign', 'font', 'lineJoin', 'lineCap', 'lineWidth', 'miterLimit', 'fillStyle', 'strokeStyle', 'globalAlpha'] as const;
-type CtxState = { props: unknown[]; transform: DOMMatrix | null; dash: number[] | null };
-function readState(ctx: CanvasRenderingContext2D): CtxState {
-  const c = ctx as unknown as Record<string, unknown>;
-  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
-  const d = typeof ctx.getLineDash === 'function' ? ctx.getLineDash() : null;
-  return { props: STATE_PROPS.map((k) => c[k]), transform: t && typeof t === 'object' ? t : null, dash: Array.isArray(d) ? d : null };
-}
-function applyState(ctx: CanvasRenderingContext2D, s: CtxState) {
-  const c = ctx as unknown as Record<string, unknown>;
-  STATE_PROPS.forEach((k, i) => {
-    if (s.props[i] !== undefined && c[k] !== s.props[i]) c[k] = s.props[i];
-  });
-  if (s.transform) ctx.setTransform(s.transform);
-  if (s.dash) ctx.setLineDash(s.dash);
-}
-// 上面那一段开始时读到的、不是这一段自己设的：省名的 textBaseline（从经纬网或上一帧留下）、lineJoin、lineCap
-const overStart = (ctx: CanvasRenderingContext2D) => `${ctx.textBaseline}|${ctx.lineJoin}|${ctx.lineCap}`;
-
-// 离屏画布（测试里换成假的：overlayDebug.layerCanvas）
-function staticLayer(old: StaticLayer | null, W: number, H: number): StaticLayer {
-  if (old && old.canvas.width === W && old.canvas.height === H) return old;
-  const made = overlayDebug.layerCanvas?.(W, H);
-  if (made) return { canvas: made.canvas as HTMLCanvasElement, ctx: made.ctx, ready: false, start: '', end: null };
-  const L = makeLayer(W, H, 1);
-  return { canvas: L.canvas, ctx: L.ctx as CanvasRenderingContext2D, ready: false, start: '', end: null };
-}
-
-// 画 under 或 over 进离屏画布：清空，照叠加层上这时的状态，画（画布的 CSS 大小、每个 CSS 像素几个像素按叠加层的 f）
-function paintLayer<T>(L: StaticLayer, from: CanvasRenderingContext2D, f: Frame, draw: (c: CanvasRenderingContext2D) => T): T {
-  const c = L.ctx;
-  const s = readState(from);
-  c.setTransform(1, 0, 0, 1, 0, 0);
-  c.clearRect(0, 0, L.canvas.width, L.canvas.height);
-  applyState(c, s);
-  const prev = frameOverride;
-  frameOverride = f;
-  try {
-    return draw(c);
-  } finally {
-    frameOverride = prev;
-    L.end = readState(c);
-    L.ready = true;
-  }
-}
-
+// 屏幕上（停稳）：静态的键与图形都与上一次画的相同时什么都不画（画布上就是这一帧，逐像素相同）；否则照原样直接画。
+// 不把哪一段画进离屏画布再贴回来：无头 Chrome 里量过，贴回的那几帧与直接画的读回来不逐字节相同（见开发说明）
 function drawScreen(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, f: Frame): LabelBox[] {
   const canvas = ctx.canvas;
   let sc = screens.get(canvas);
-  if (!sc) screens.set(canvas, (sc = { key: null, shapes: null, boxes: [], under: null, over: null }));
+  if (!sc) screens.set(canvas, (sc = { key: null, shapes: null, boxes: [] }));
   const t0 = perf ? performance.now() : 0;
   // 移动中：照原样直接画（底层的河、地名按移动中的画法）；停下后的第一帧也直接画
   if (st.motion || overlayDebug.noStatic) {
@@ -1310,63 +1246,21 @@ function drawScreen(ctx: CanvasRenderingContext2D, world: World, paths: OverlayP
   }
   // 省名不设 textBaseline，照用画布上已有的（经纬网设的，或上一帧的地名、比例尺留下的）：它进键
   const key = staticKey(world, paths, cam, st, f, canvas, ctx.textBaseline);
-  if (sc.key && samePathsKey(key, sc.key)) {
-    // 什么都没变：画布上就是这一帧
-    if (sameShapes(st.shapes, sc.shapes)) {
-      perf?.note('overlay:skip');
-      return sc.boxes;
-    }
-    // 图形没了（鼠标离开、画笔停了以后）：照原样直接画一次，画布回到与原来逐像素相同（两张离屏画布照留着）。
-    // 贴缓存的那几帧在半透明的字边上与直接画差一点（8 位的预乘透明度分两次混合），只在有图形的那几帧
-    if (!st.shapes.length) {
-      sc.shapes = st.shapes;
-      sc.boxes = drawDirect(ctx, world, paths, cam, st, f);
-      if (perf) (perf.note('overlay:direct'), perf.cpu('overlayStatic', performance.now() - t0));
-      return sc.boxes;
-    }
-    // 只有图形变了：贴底下、画图形、贴上面
-    sc.shapes = st.shapes;
-    const W = canvas.width;
-    const H = canvas.height;
-    let ts = 0;
-    const parts = overlayParts(world, paths, cam, st, f);
-    const under = (sc.under = staticLayer(sc.under, W, H));
-    if (!under.ready) {
-      const t = perf ? performance.now() : 0;
-      paintLayer(under, ctx, f, (c) => parts.under(c));
-      if (perf) ts += performance.now() - t;
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    ctx.drawImage(under.canvas, 0, 0);
-    applyState(ctx, under.end!);
-    parts.shapes(ctx);
-    const over = (sc.over = staticLayer(sc.over, W, H));
-    const start = overStart(ctx);
-    if (!over.ready || over.start !== start) {
-      const t = perf ? performance.now() : 0;
-      sc.boxes = paintLayer(over, ctx, f, (c) => parts.over(c));
-      over.start = start;
-      if (perf) ts += performance.now() - t;
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(over.canvas, 0, 0);
-    applyState(ctx, over.end!);
-    if (perf) {
-      perf.note('overlay:composite');
-      if (ts) perf.cpu('overlayStatic', ts);
-      perf.cpu('overlayDynamic', performance.now() - t0 - ts);
-    }
+  const same = !!sc.key && samePathsKey(key, sc.key);
+  // 什么都没变：画布上就是这一帧
+  if (same && sameShapes(st.shapes, sc.shapes)) {
+    perf?.note('overlay:skip');
     return sc.boxes;
   }
-  // 静态的变了：照原样直接画，两张离屏画布等用到时再画
   const boxes = drawDirect(ctx, world, paths, cam, st, f);
   sc.key = key;
   sc.shapes = st.shapes;
   sc.boxes = boxes;
-  if (sc.under) sc.under.ready = false;
-  if (sc.over) sc.over.ready = false;
-  if (perf) (perf.note('overlay:direct'), perf.cpu('overlayStatic', performance.now() - t0));
+  if (perf) {
+    // 只有图形变了（画笔圈、悬停的圈跟着鼠标）记 overlayDynamic，静态的变了记 overlayStatic
+    perf.note(same ? 'overlay:shapes' : 'overlay:direct');
+    perf.cpu(same ? 'overlayDynamic' : 'overlayStatic', performance.now() - t0);
+  }
   return boxes;
 }
 
