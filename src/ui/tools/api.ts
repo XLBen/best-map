@@ -93,6 +93,9 @@ export interface ToolHandler {
   escape?(): boolean;
   enter?(): boolean;
   preview(): Preview;
+  // 鼠标移动（没按着）时 preview() 只随这个键变（第四十轮）：在 move(p) 之后调，两次的键相同（逐项 ===）时地图不重画，
+  // 只把鼠标旁的那句话挪到新的位置。键要包括 preview() 用到的鼠标的一切（格、画面上的格、悬停的点……）；没有时每次移动都重画
+  moveKey?(p: Pointer): readonly unknown[] | undefined;
   // 工具选中时一直画着的东西（鼠标不在地图上也画）：橡皮擦能擦的格、重画过的范围……
   // 画在预览下面。同样的输入给同一个图层对象（地图不必重新上传）
   backdrop?(): Backdrop | null;

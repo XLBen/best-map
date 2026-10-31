@@ -8,7 +8,7 @@ import { focusOn } from './camera';
 import { Line, TextField } from './CountryArchive';
 import { BLOC_KIND_OPTIONS, blocCellsOf, blocCommand, blocMembers, blocNamePatch, removeBlocCommand, selectBloc } from './blocs';
 import { Seg } from './common';
-import { withId, withoutId } from './countries';
+import { countriesByName, withId, withoutId } from './countries';
 import { showCountry } from './panels/countries';
 
 // 集团的档案（第二十六轮）：帝国、联邦、同盟。名字与原文、种类、盟主、成员、颜色、删除。改的都是 set_bloc
@@ -45,9 +45,7 @@ function NameLines({ b }: { b: Bloc }) {
 
 function Members({ w, b }: { w: World; b: Bloc }) {
   const members = blocMembers(w, b);
-  const others = Object.values(w.small.countries ?? {})
-    .filter((m) => !b.members.includes(m.id))
-    .sort((a, c) => a.name.localeCompare(c.name, 'zh'));
+  const others = countriesByName(w).filter((m) => !b.members.includes(m.id));
   const set = (ids: number[]) => void run(blocCommand(b.id, { members: ids }));
   return (
     <section>

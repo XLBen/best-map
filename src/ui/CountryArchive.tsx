@@ -26,6 +26,7 @@ import { Slider } from './components/Slider';
 import { Toggle } from './components/Toggle';
 import {
   cellsOf,
+  countriesByName,
   factionPatch,
   flagColorPatch,
   governmentChoices,
@@ -476,6 +477,8 @@ function CitySection({ w, m }: { w: World; m: CountryMeta }) {
 function FactionSection({ w, m }: { w: World; m: CountryMeta }) {
   const list = countryFactions(w, m.id, statsOf(w).get(m.id));
   const [draft, setDraft] = useState<{ id: string; v: number } | null>(null);
+  // 换了国家：拖到一半的不留（第四十轮：抽屉不再按国家整个重建）
+  useEffect(() => setDraft(null), [m.id]);
   if (!list.length) return null;
   const shown = draft ? Object.entries(factionPatch(list, draft.id, draft.v)).map(([id, influence]) => ({ ...list.find((f) => f.id === id)!, influence })) : list;
   return (
@@ -606,9 +609,7 @@ function BlocLine({ w, m }: { w: World; m: CountryMeta }) {
 
 function DiplomacySection({ w, m }: { w: World; m: CountryMeta }) {
   const metas = w.small.countries ?? {};
-  const others = Object.values(metas)
-    .filter((x) => x.id !== m.id)
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const others = countriesByName(w).filter((x) => x.id !== m.id);
   // 宗主不能是自己的附庸（一层层往下）
   const below = new Set<number>();
   const walk = (id: number) => {
@@ -758,9 +759,7 @@ function HistorySection({ m }: { m: CountryMeta }) {
 
 // 领土（第二十七轮）：涂领土（换到领土笔刷、涂给这一国）、分成两半、并入别国、删除
 function TerritorySection({ w, m, remove }: { w: World; m: CountryMeta; remove: () => void }) {
-  const others = Object.values(w.small.countries ?? {})
-    .filter((x) => x.id !== m.id)
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const others = countriesByName(w).filter((x) => x.id !== m.id);
   const cells = cellsOf(w, m.id);
   const into = async (target: number) => {
     if (!(await confirmMerge(w, target, m.id))) return;
@@ -857,7 +856,7 @@ export function CountryArchive() {
   };
   const tab = countryTab.value;
   return (
-    <div class="country-archive" key={m.id}>
+    <div class="country-archive">
       <div class="row arch-head">
         <Flag m={m} w={36} h={24} />
         <span class="grow item-text">
@@ -896,7 +895,8 @@ export function CountryArchive() {
         </>
       )}
       {tab === 'relations' && <DiplomacySection w={w} m={m} />}
-      {tab === 'history' && <HistorySection m={m} />}
+      {/* 历史按国家重建（第四十轮：只这一段）：没提交的字在卸下时写进原来那一国 */}
+      {tab === 'history' && <HistorySection key={m.id} m={m} />}
     </div>
   );
 }

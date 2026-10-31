@@ -7,7 +7,7 @@ import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
 import type { ProvinceMeta, World } from '../../core/world';
 import { type BaseLayers, type ColorOptions, type GhostEdit, GhostBuffer, type ModeLayers, baseKey, baseLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, modeKey, modeLayers, provinceScale, terrainGhost, terrainLikeMode } from '../render/colors';
-import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, peakLabels, riverLayer, riverLayerScene, riverPathsKey, samePathsKey } from '../render/overlay';
+import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, peakLabels, riverLayer, riverLayerScene, resetOverlayCache, riverPathsKey, samePathsKey, setOverlayPerf } from '../render/overlay';
 import { convertCamera, effectiveZoom } from '../render/projection';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
 import { Perf, perfEnabled } from '../render/perf';
@@ -180,6 +180,7 @@ export function MapView() {
     if (perf) {
       perf.attach(glCanvas.getContext('webgl2')!);
       renderer.perf = perf;
+      setOverlayPerf(perf);
       (window as unknown as { __perf?: Perf }).__perf = perf;
     }
     let paths: OverlayPaths | null = null;
@@ -229,9 +230,20 @@ export function MapView() {
       frame = requestAnimationFrame(() => draw());
     };
 
-    const input = mapInput(view, { renderer: () => renderer, glCanvas, ovCanvas, active, requestDraw, hitLabel });
+    // 鼠标在同一格里动、预览没变（第四十轮，map/input.ts）：不重画，只把鼠标旁的那句话挪过去（与 drawFrame 算的相同：同一句话、新的位置）
+    const hintAt = (p: { sx: number; sy: number }) => {
+      const cur = cursorHint.value;
+      if (cur && (cur.x !== p.sx || cur.y !== p.sy)) cursorHint.value = { ...cur, x: p.sx, y: p.sy };
+    };
+    const input = mapInput(view, { renderer: () => renderer, glCanvas, ovCanvas, active, requestDraw, hitLabel, hintAt });
     // 自定义点上传的小图解码好了：重画
     onSettleImageLoad(requestDraw);
+    // 2D 画布的上下文丢了又恢复（画布是空的）：叠加层的静态那一层作废、重画（第四十轮）
+    const onRestored = () => {
+      resetOverlayCache(ovCanvas);
+      requestDraw();
+    };
+    ovCanvas.addEventListener('contextrestored', onRestored);
 
     const fit = () => {
       const w = world.value;
@@ -488,7 +500,8 @@ export function MapView() {
             ? labelsShown(cm.labels && !clean ? shown.derived.features : modeFeatures(shown.derived.features, md.features), def.focus && !clean ? def.focus.hideLabel(w) : '')
             : null,
         // 片区名（国名、文化名……，按模式）：图层里开着地名时
-        countries: md.regions && overlays.value.labels ? regionDraws(shown, md.regions, nameMode.value) : null,
+        // 第四十轮：第一次切到这个模式时片区的几何空闲时算（这一帧先不写片区名，算好了重画）；导出的干净画面当场算
+        countries: md.regions && overlays.value.labels ? (clean ? regionDraws(shown, md.regions, nameMode.value) : regionDraws(shown, md.regions, nameMode.value, requestDraw)) : null,
         // 城市、道路、地标、自定义点（第二十四轮）：“城市”一类开着时都画、选中的城市写名字；“道路”工具开着时道路画得清楚
         ...settleOverlay(shown, { mode: md, editing: cat.id === 'settlements' && !clean, selected: settleKey(), roadEdit: tool.value === 'road' && !clean }),
         labelTypes: types,
@@ -505,6 +518,8 @@ export function MapView() {
         motion: moving || settling,
         motionEpoch: renderer.motionEpoch,
         exact: clean,
+        // 风、洋流的流线新露出来的块空闲时算，算好了重画（第四十轮）；导出的干净画面当场算
+        lazy: clean ? undefined : requestDraw,
       }];
       lastOverlay = ovArgs;
       const to = perf ? performance.now() : 0;
@@ -813,6 +828,8 @@ export function MapView() {
       resizeObs.disconnect();
       mapApi.current = null;
       onSettleImageLoad(null);
+      ovCanvas.removeEventListener('contextrestored', onRestored);
+      if (perf) setOverlayPerf(null);
       input.dispose();
     };
   }, []);

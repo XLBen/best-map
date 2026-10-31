@@ -112,9 +112,11 @@ export const categoryName = (c: string): string => CATEGORY_NAMES[c] ?? c;
 type GovSmall = Pick<Partial<SmallState>, 'content' | 'human'>;
 
 const listCache = new WeakMap<object, unknown[]>();
+// 没有这一种时给同一个空数组（第四十轮）
+const EMPTY: readonly never[] = [];
 function listOf<T>(small: GovSmall, kind: string): readonly T[] {
   const own = small.content?.[kind];
-  if (!own) return [];
+  if (!own) return EMPTY;
   let l = listCache.get(own) as T[] | undefined;
   if (!l) listCache.set(own, (l = Object.values(own) as T[]));
   return l;

@@ -20,6 +20,101 @@ const TILE = 12;
 // 按风场数组缓存（只改了名字、省份的轻快照沿用同一个数组）
 const cache = new WeakMap<Float32Array, Map<string, Line[]>>();
 
+// ---------- 块的缓存与空闲时算（第四十轮） ----------
+// 每个场最多留 TILE_CAP 块，最近用到的留着（取到的挪到最后，满了扔最前面的）：缩放来回多次时不再一直涨。
+// 屏幕上（OverlayState.lazy）新露出来的块不在这一帧里算：排进队，空闲时一块块地算（每段约 SLICE_MS 毫秒），全算好了 epoch 加一、
+// 调 lazy 重画（叠加层的静态那一层按 windEpoch 认）。算法、随机数与当场算的逐点相同
+export const TILE_CAP = 384;
+const SLICE_MS = 6;
+let epoch = 0;
+export const windEpoch = () => epoch;
+type Job = { m: Map<string, Line[]>; key: string; run: () => Line[] };
+const queue: Job[] = [];
+const waiting = new Set<() => void>();
+let scheduled = false;
+
+function store(m: Map<string, Line[]>, key: string, v: Line[]) {
+  m.set(key, v);
+  while (m.size > TILE_CAP) m.delete(m.keys().next().value as string);
+}
+
+// 一块：缓存里有就挪到最后、给它；没有时当场算（lazy 为空），或排进队、给 null
+function tile(m: Map<string, Line[]>, key: string, run: () => Line[], lazy: (() => void) | undefined): Line[] | null {
+  const hit = m.get(key);
+  if (hit) {
+    m.delete(key);
+    m.set(key, hit);
+    return hit;
+  }
+  if (!lazy) {
+    const v = run();
+    store(m, key, v);
+    return v;
+  }
+  if (lazy === NO_QUEUE) return null;
+  waiting.add(lazy);
+  if (!queue.some((j) => j.m === m && j.key === key)) queue.push({ m, key, run });
+  schedule();
+  return null;
+}
+
+type Idle = (cb: () => void, o?: { timeout: number }) => number;
+function schedule() {
+  if (scheduled || !queue.length) return;
+  scheduled = true;
+  const ric = (globalThis as { requestIdleCallback?: Idle }).requestIdleCallback;
+  if (ric) ric(() => drain(), { timeout: 200 });
+  else setTimeout(drain, 0);
+}
+
+// 算一段（约 SLICE_MS 毫秒，至少一块）；队空了通知重画
+function drain() {
+  scheduled = false;
+  const t0 = performance.now();
+  while (queue.length) {
+    const j = queue.shift()!;
+    if (!j.m.has(j.key)) store(j.m, j.key, j.run());
+    if (performance.now() - t0 > SLICE_MS) break;
+  }
+  if (queue.length) {
+    schedule();
+    return;
+  }
+  epoch++;
+  const fs = [...waiting];
+  waiting.clear();
+  for (const f of fs) f();
+}
+
+// 测试用：排着的块当场算完（不等空闲）
+export function flushWindQueue() {
+  while (queue.length) drain();
+}
+// 测试用：一个场缓存着几块
+export const windTilesCached = (field: Float32Array) => (cache.get(field)?.size ?? 0) + (sphereCache.get(field)?.size ?? 0);
+
+// 上一次画全了的疏密档（按场、季节或“洋流”）：新的一档还在空闲时算的时候先画它（看得见的块都在缓存里的话）
+const lastLevel = new WeakMap<Float32Array, Map<string, number>>();
+// 看得见的几块（want 档；缺的按 lazy 排进队）。缺块时：上一次画全了的那一档看得见的块都在缓存里就画它，否则只画算好了的块
+function pickLevel<T>(field: Float32Array, tag: string, want: number, at: (level: number, lazy: (() => void) | undefined) => { out: T[]; full: boolean }, lazy: (() => void) | undefined): T[] {
+  const cur = at(want, lazy);
+  let lv = lastLevel.get(field);
+  if (!lv) lastLevel.set(field, (lv = new Map()));
+  if (cur.full) {
+    lv.set(tag, want);
+    return cur.out;
+  }
+  const prev = lv.get(tag);
+  if (prev !== undefined && prev !== want) {
+    // 只看缓存（缺的不排队）
+    const old = at(prev, NO_QUEUE);
+    if (old.full) return old.out;
+  }
+  return cur.out;
+}
+// 只看缓存、不排队也不当场算
+const NO_QUEUE = () => {};
+
 // 一点的风：所在格与相邻格按距离加权，平滑地插值；“全年”取冬夏平均
 function windAt(world: World, season: WindSeason, x: number, y: number, hint: number): [number, number, number] {
   const { mesh, derived: d } = world;
@@ -41,12 +136,14 @@ function windAt(world: World, season: WindSeason, x: number, y: number, hint: nu
   return [u / wsum, v / wsum, c];
 }
 
-function tileLines(world: World, season: WindSeason, level: number, tx: number, ty: number): Line[] {
+function tileLines(world: World, season: WindSeason, level: number, tx: number, ty: number, lazy?: () => void): Line[] | null {
   const key = `${season}|${level}|${tx}|${ty}`;
   let m = cache.get(world.derived.windSX);
   if (!m) cache.set(world.derived.windSX, (m = new Map()));
-  const hit = m.get(key);
-  if (hit) return hit;
+  return tile(m, key, () => computeTile(world, season, level, tx, ty), lazy);
+}
+
+function computeTile(world: World, season: WindSeason, level: number, tx: number, ty: number): Line[] {
   const { mesh } = world;
   const sep = mesh.width / 2 ** level;
   const x0 = tx * TILE * sep;
@@ -124,7 +221,6 @@ function tileLines(world: World, season: WindSeason, level: number, tx: number, 
       lines.push({ pts, speed: speedSum / count });
     }
   }
-  m.set(key, lines);
   return lines;
 }
 
@@ -133,24 +229,34 @@ function tileLines(world: World, season: WindSeason, level: number, tx: number, 
 type Size = { cw: number; ch: number };
 const sizeOf = (ctx: CanvasRenderingContext2D, size?: Size): Size => size ?? { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight };
 
-export function drawWind(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size) {
+// lazy（第四十轮，屏幕上）：新的块空闲时算，算好之前先画上一次画全了的那一档（看得见的块都在缓存里时），否则只画算好了的块
+export function drawWind(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size, lazy?: () => void) {
   if (world.mesh.kind === 'sphere') {
-    drawWindSphere(ctx, world, cam, season, unitPx, size);
+    drawWindSphere(ctx, world, cam, season, unitPx, size, lazy);
     return;
   }
   const { mesh } = world;
-  const level = Math.max(3, Math.min(12, Math.round(Math.log2((mesh.width * cam.zoom) / 44))));
-  const sep = mesh.width / 2 ** level;
-  const span = TILE * sep;
   const { cw, ch } = sizeOf(ctx, size);
-  const halfW = cw / 2 / cam.zoom;
-  const halfH = ch / 2 / cam.zoom;
-  const tx0 = Math.max(0, Math.floor((cam.x - halfW) / span));
-  const tx1 = Math.min(Math.ceil(mesh.width / span) - 1, Math.floor((cam.x + halfW) / span));
-  const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
-  const ty1 = Math.min(Math.ceil(mesh.height / span) - 1, Math.floor((cam.y + halfH) / span));
-  const lines: Line[] = [];
-  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) lines.push(...tileLines(world, season, level, tx, ty));
+  const at = (level: number, q: (() => void) | undefined) => {
+    const span = TILE * (mesh.width / 2 ** level);
+    const halfW = cw / 2 / cam.zoom;
+    const halfH = ch / 2 / cam.zoom;
+    const tx0 = Math.max(0, Math.floor((cam.x - halfW) / span));
+    const tx1 = Math.min(Math.ceil(mesh.width / span) - 1, Math.floor((cam.x + halfW) / span));
+    const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
+    const ty1 = Math.min(Math.ceil(mesh.height / span) - 1, Math.floor((cam.y + halfH) / span));
+    const out: Line[] = [];
+    let full = true;
+    for (let tx = tx0; tx <= tx1; tx++)
+      for (let ty = ty0; ty <= ty1; ty++) {
+        const t = tileLines(world, season, level, tx, ty, q);
+        if (t) out.push(...t);
+        else full = false;
+      }
+    return { out, full };
+  };
+  const want = Math.max(3, Math.min(12, Math.round(Math.log2((mesh.width * cam.zoom) / 44))));
+  const lines = pickLevel(world.derived.windSX, season, want, at, lazy);
   if (!lines.length) return;
   const halo = new Path2D();
   // 三档风速 × 三段（尾、中、头）
@@ -233,12 +339,14 @@ function fieldAt(world: World, field: Field, x: number, y: number, hint: number)
   return [u / wsum, v / wsum, c];
 }
 
-function tileLinesSphere(world: World, field: Field, tag: string, level: number, txm: number, ty: number, nT: number): Line[] {
+function tileLinesSphere(world: World, field: Field, tag: string, level: number, txm: number, ty: number, nT: number, lazy?: () => void): Line[] | null {
   const key = `${tag}|${level}|${txm}|${ty}`;
   let m = sphereCache.get(field.key);
   if (!m) sphereCache.set(field.key, (m = new Map()));
-  const hit = m.get(key);
-  if (hit) return hit;
+  return tile(m, key, () => computeTileSphere(world, field, tag, level, txm, ty, nT), lazy);
+}
+
+function computeTileSphere(world: World, field: Field, tag: string, level: number, txm: number, ty: number, nT: number): Line[] {
   const span = 2 / nT;
   const sep = span / TILE;
   const x0 = txm * span;
@@ -316,29 +424,37 @@ function tileLinesSphere(world: World, field: Field, tag: string, level: number,
       lines.push({ pts, speed: speedSum / count });
     }
   }
-  m.set(key, lines);
   return lines;
 }
 
 // 星球上看得见的瓦片（经度方向不截断，按一整圈取模），每条线连同它所在副本的平移量
-function visibleLines(world: World, field: Field, tag: string, cam: Camera, ctx: CanvasRenderingContext2D, size?: Size): { line: Line; dx: number }[] {
-  const level = Math.max(4, Math.min(12, Math.round(Math.log2((2 * cam.zoom) / 44))));
-  const nT = Math.max(1, Math.round(2 ** level / TILE));
-  const span = 2 / nT;
+// lazy：同平面的 drawWind（缺块时先画上一次画全了的那一档，否则只画算好了的块）
+function visibleLines(world: World, field: Field, tag: string, cam: Camera, ctx: CanvasRenderingContext2D, size?: Size, lazy?: () => void): { line: Line; dx: number }[] {
   const { cw, ch } = sizeOf(ctx, size);
-  const halfW = cw / 2 / cam.zoom;
-  const halfH = ch / 2 / cam.zoom;
-  const tx0 = Math.floor((cam.x - halfW) / span);
-  const tx1 = Math.floor((cam.x + halfW) / span);
-  const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
-  const ty1 = Math.min(Math.ceil(1 / span) - 1, Math.floor((cam.y + halfH) / span));
-  const out: { line: Line; dx: number }[] = [];
-  for (let tx = tx0; tx <= tx1 && tx - tx0 < 4 * nT; tx++) {
-    const txm = ((tx % nT) + nT) % nT;
-    const dx = 2 * Math.floor(tx / nT);
-    for (let ty = ty0; ty <= ty1; ty++) for (const line of tileLinesSphere(world, field, tag, level, txm, ty, nT)) out.push({ line, dx });
-  }
-  return out;
+  const at = (level: number, q: (() => void) | undefined) => {
+    const nT = Math.max(1, Math.round(2 ** level / TILE));
+    const span = 2 / nT;
+    const halfW = cw / 2 / cam.zoom;
+    const halfH = ch / 2 / cam.zoom;
+    const tx0 = Math.floor((cam.x - halfW) / span);
+    const tx1 = Math.floor((cam.x + halfW) / span);
+    const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
+    const ty1 = Math.min(Math.ceil(1 / span) - 1, Math.floor((cam.y + halfH) / span));
+    const out: { line: Line; dx: number }[] = [];
+    let full = true;
+    for (let tx = tx0; tx <= tx1 && tx - tx0 < 4 * nT; tx++) {
+      const txm = ((tx % nT) + nT) % nT;
+      const dx = 2 * Math.floor(tx / nT);
+      for (let ty = ty0; ty <= ty1; ty++) {
+        const t = tileLinesSphere(world, field, tag, level, txm, ty, nT, q);
+        if (t) for (const line of t) out.push({ line, dx });
+        else full = false;
+      }
+    }
+    return { out, full };
+  };
+  const want = Math.max(4, Math.min(12, Math.round(Math.log2((2 * cam.zoom) / 44))));
+  return pickLevel(field.key, tag, want, at, lazy);
 }
 
 // 按样式分组描线：尾细头粗，末端小箭头（与平面世界的风相同的画法）
@@ -387,24 +503,24 @@ function strokeLines(ctx: CanvasRenderingContext2D, lines: { line: Line; dx: num
   ctx.restore();
 }
 
-function drawWindSphere(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size) {
+function drawWindSphere(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size, lazy?: () => void) {
   const d = world.derived;
   const field: Field = {
     key: d.windSX,
     vec: (i) =>
       season === 'summer' ? [d.windSX[i], d.windSY[i]] : season === 'winter' ? [d.windWX[i], d.windWY[i]] : [(d.windSX[i] + d.windWX[i]) / 2, (d.windSY[i] + d.windWY[i]) / 2],
   };
-  const lines = visibleLines(world, field, season, cam, ctx, size).map(({ line, dx }) => ({ line, dx, band: line.speed < 0.35 ? 0 : line.speed < 0.75 ? 1 : 2, color: 0 }));
+  const lines = visibleLines(world, field, season, cam, ctx, size, lazy).map(({ line, dx }) => ({ line, dx, band: line.speed < 0.35 ? 0 : line.speed < 0.75 ? 1 : 2, color: 0 }));
   strokeLines(ctx, lines, [['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0.85)']], unitPx, 'rgba(10, 16, 24, 0.28)');
 }
 
 // 洋流：只在海上，暖流（海温偏高）偏橙、寒流（偏低）偏蓝，其余白色；流得越快越不透明
-export function drawCurrents(ctx: CanvasRenderingContext2D, world: World, cam: Camera, unitPx: number, size?: Size) {
+export function drawCurrents(ctx: CanvasRenderingContext2D, world: World, cam: Camera, unitPx: number, size?: Size, lazy?: () => void) {
   const d = world.derived;
   const land = world.causes.land;
   const field: Field = { key: d.currentX, vec: (i) => [d.currentX[i], d.currentY[i]], stop: (i) => land[i] === 1 };
   const { mesh } = world;
-  const lines = visibleLines(world, field, 'currents', cam, ctx, size).map(({ line, dx }) => {
+  const lines = visibleLines(world, field, 'currents', cam, ctx, size, lazy).map(({ line, dx }) => {
     const [mx, my] = line.pts[Math.floor(line.pts.length / 2)];
     const c = findCell(mesh, mx, my);
     const a = d.sstAnom[c];

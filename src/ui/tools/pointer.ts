@@ -1,3 +1,4 @@
+import { batch } from '@preact/signals';
 import { dimensionValues, valueLayer, worldCultureGroups, worldCultures, worldDimensions } from '../../../core/human';
 import type { World } from '../../../core/world';
 import type { SettleMark } from '../../render/settle-draw';
@@ -70,34 +71,16 @@ export function pointerTool(zoom: () => number): ToolHandler {
       pointer = null;
       hot = null;
     },
-    click(p) {
+    // preview 只看：在不在地图上、鼠标下的城市（hot）、“这里”的格、描格的格
+    moveKey(p) {
       const w = world.value;
-      if (!w || p.cell < 0) return;
-      // 1. 城市、地标、点：打开它的档案
-      const m = find(w, p);
-      const ref = m && refOfKey(m.key);
-      if (ref) {
-        selectSettle(ref);
-        return;
-      }
-      const cell = cellOf(p);
-      // 2. 国家模式里点到国家：打开国家档案，同时钉住这一格
-      if (modeOf(w) === 'country') {
-        const id = countryAt(w, cell);
-        if (id !== null) selectCountry(id);
-      }
-      // 同盟模式里点到集团：打开集团的档案；不在集团里的国家打开国家档案
-      if (modeOf(w) === 'bloc') {
-        const b = blocAt(w, cell);
-        const id = countryAt(w, cell);
-        if (b) {
-          selectedCountry.value = id;
-          selectBloc(b.id);
-        } else if (id !== null) selectCountry(id);
-      }
-      // 3. 钉住这一格：右下角“这里”的档案（钉住描格的格，记下是陆还是水）
-      const pin = pinTarget(w, p);
-      pinCell(pin.cell, pin.part);
+      if (!w) return undefined;
+      const f = p.cell >= 0 ? focusOf(w, p) : null;
+      return [p.cell < 0, hot?.key ?? null, cellOf(p), f?.cell ?? -1, f?.land ?? null];
+    },
+    // 第四十轮：选国家、选集团、钉住这一格几次写信号合成一次（档案、地图只重画一次）
+    click(p) {
+      batch(() => clickAt(p));
     },
     backdrop() {
       const w = world.value;
@@ -116,4 +99,33 @@ export function pointerTool(zoom: () => number): ToolHandler {
       return { layers: [], shapes: [], hint: pointerText(w, cell), focus: f.cell >= 0 ? f : null };
     },
   };
+  function clickAt(p: Pointer) {
+    const w = world.value;
+    if (!w || p.cell < 0) return;
+    // 1. 城市、地标、点：打开它的档案
+    const m = find(w, p);
+    const ref = m && refOfKey(m.key);
+    if (ref) {
+      selectSettle(ref);
+      return;
+    }
+    const cell = cellOf(p);
+    // 2. 国家模式里点到国家：打开国家档案，同时钉住这一格
+    if (modeOf(w) === 'country') {
+      const id = countryAt(w, cell);
+      if (id !== null) selectCountry(id);
+    }
+    // 同盟模式里点到集团：打开集团的档案；不在集团里的国家打开国家档案
+    if (modeOf(w) === 'bloc') {
+      const b = blocAt(w, cell);
+      const id = countryAt(w, cell);
+      if (b) {
+        selectedCountry.value = id;
+        selectBloc(b.id);
+      } else if (id !== null) selectCountry(id);
+    }
+    // 3. 钉住这一格：右下角“这里”的档案（钉住描格的格，记下是陆还是水）
+    const pin = pinTarget(w, p);
+    pinCell(pin.cell, pin.part);
+  }
 }

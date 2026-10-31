@@ -1,3 +1,4 @@
+import { memo } from 'preact/compat';
 import { useState } from 'preact/hooks';
 import { LAYOUT_NAMES, SUBJECT_NAMES, flagSvg, worldEra } from '../../../core/human';
 import type { CountryLayout, CountryMeta, World } from '../../../core/world';
@@ -10,6 +11,7 @@ import {
   COUNTRY_LAYOUTS,
   LAYOUT_HINTS,
   NO_COUNTRIES,
+  type CountryRow,
   cellsOf,
   countryRows,
   estimateCountries,
@@ -29,9 +31,18 @@ import { chosenTerritory, selectCountry } from '../tools/countries';
 
 // “国家”一类（第二十三轮）：底部条上的选择（领土涂给谁、选中的国家）、“国家 ⋯”（生成、重新生成、删除、按人口排的国家列表）
 
-// 一面小旗（flagSvg 是内容生成的 SVG 字符串）
+// 一面小旗（flagSvg 是内容生成的 SVG 字符串）。第四十轮：按旗的对象与大小缓存字符串（列表每次重画不再每行重新生成）
+const flagCache = new WeakMap<object, Map<string, string>>();
+export function flagHtml(flag: CountryMeta['flag'], w: number, h: number): string {
+  let m = flagCache.get(flag);
+  if (!m) flagCache.set(flag, (m = new Map()));
+  const k = `${w}x${h}`;
+  let s = m.get(k);
+  if (s === undefined) m.set(k, (s = flagSvg(flag, w, h)));
+  return s;
+}
 export function Flag({ m, w = 30, h = 20 }: { m: Pick<CountryMeta, 'flag'>; w?: number; h?: number }) {
-  return <span class="flag" style={{ width: `${w}px`, height: `${h}px` }} dangerouslySetInnerHTML={{ __html: flagSvg(m.flag, w, h) }} />;
+  return <span class="flag" style={{ width: `${w}px`, height: `${h}px` }} dangerouslySetInnerHTML={{ __html: flagHtml(m.flag, w, h) }} />;
 }
 
 // 选中、定位一国
@@ -106,29 +117,38 @@ export function SelectedCountryChip() {
 
 // ---------- 列表 ----------
 
+// 列表的一行：档案、统计、政体名、宗主、选没选中都没变时不重画（第四十轮：选一国时一百多行只重画选中、取消选中的两行）。
+// 点的时候按当时的世界（pick 不进比较：每次都是同样的做法）
+const CountryRowItem = memo(
+  function CountryRowItem({ r, on, pick }: { r: CountryRow; on: boolean; pick: (id: number) => void }) {
+    return (
+      <button class={`item country-row ${on ? 'on' : ''}`} title={r.overlord ? `“${r.overlord.name}”的${SUBJECT_NAMES[r.meta.subject ?? 'vassal']}` : r.government} onClick={() => pick(r.meta.id)}>
+        <span class="swatch" style={{ background: r.meta.color }} />
+        <Flag m={r.meta} w={21} h={14} />
+        <span class="grow item-text">
+          <span class="ellipsis">{r.meta.name}</span>
+          <span class="hint ellipsis">{r.overlord ? `${SUBJECT_NAMES[r.meta.subject ?? 'vassal']} · ${r.government}` : r.government}</span>
+        </span>
+        <span class="hint">{popText(r.stats?.population ?? 0)}</span>
+      </button>
+    );
+  },
+  (a, b) => a.on === b.on && a.r.meta === b.r.meta && a.r.stats === b.r.stats && a.r.government === b.r.government && a.r.overlord === b.r.overlord,
+);
+
 export function CountryList({ w, onPick }: { w: World; onPick?: () => void }) {
   const rows = countryRows(w);
   const sel = selectedCountry.value;
   if (!rows.length) return <p class="hint">没有国家</p>;
+  const pick = (id: number) => {
+    const cur = world.value;
+    if (cur) showCountry(cur, id);
+    onPick?.();
+  };
   return (
     <div class="list country-list">
       {rows.map((r) => (
-        <button
-          class={`item country-row ${r.meta.id === sel ? 'on' : ''}`}
-          title={r.overlord ? `“${r.overlord.name}”的${SUBJECT_NAMES[r.meta.subject ?? 'vassal']}` : r.government}
-          onClick={() => {
-            showCountry(w, r.meta.id);
-            onPick?.();
-          }}
-        >
-          <span class="swatch" style={{ background: r.meta.color }} />
-          <Flag m={r.meta} w={21} h={14} />
-          <span class="grow item-text">
-            <span class="ellipsis">{r.meta.name}</span>
-            <span class="hint ellipsis">{r.overlord ? `${SUBJECT_NAMES[r.meta.subject ?? 'vassal']} · ${r.government}` : r.government}</span>
-          </span>
-          <span class="hint">{popText(r.stats?.population ?? 0)}</span>
-        </button>
+        <CountryRowItem key={r.meta.id} r={r} on={r.meta.id === sel} pick={pick} />
       ))}
     </div>
   );

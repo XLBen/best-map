@@ -1,8 +1,9 @@
+import { batch } from '@preact/signals';
 import type { Command } from '../../core/commands';
 import { BLOC_KINDS, BLOC_NAMES, type BlocPatch, SUBJECT_NAMES, type SubjectKind, blocList, blocsOf } from '../../core/human';
 import type { Bloc, BlocKind, CountryMeta, World } from '../../core/world';
 import { selectedBloc, sheet } from '../state';
-import { cellsOf, countryAt, countryOf, patchCommand, withId, withoutId } from './countries';
+import { ZH, cellsOf, countryAt, countryOf, patchCommand, withId, withoutId } from './countries';
 import { BLOC_REGION_KINDS } from './map/political';
 
 // 帝国、联邦、同盟（第二十六轮）的界面逻辑：选中、各种 set_bloc 命令、档案的改动、国家档案里的从属与所在的集团、同盟模式里一格是什么。
@@ -12,10 +13,13 @@ export const BLOC_KIND_OPTIONS: [BlocKind, string][] = BLOC_KINDS.map((k) => [k,
 export const SUBJECT_OPTIONS = Object.entries(SUBJECT_NAMES) as [SubjectKind, string][];
 
 // 选中、打开集团的档案
+// 第四十轮：几次写信号合成一次（档案、地图只重画一次）
 export function selectBloc(id: number | null, open = true) {
-  selectedBloc.value = id;
-  if (id !== null && open) sheet.value = 'bloc';
-  if (id === null && sheet.value === 'bloc') sheet.value = null;
+  batch(() => {
+    selectedBloc.value = id;
+    if (id !== null && open) sheet.value = 'bloc';
+    if (id === null && sheet.value === 'bloc') sheet.value = null;
+  });
 }
 
 // ---------- 命令 ----------
@@ -49,7 +53,7 @@ export function blocNamePatch(b: Bloc, name: string, orig: string): BlocPatch | 
 export const joinableBlocs = (w: Pick<World, 'small'>, id: number): Bloc[] =>
   blocList(w.small)
     .filter((b) => !b.members.includes(id))
-    .sort((a, b) => BLOC_KINDS.indexOf(a.kind) - BLOC_KINDS.indexOf(b.kind) || a.name.localeCompare(b.name, 'zh'));
+    .sort((a, b) => BLOC_KINDS.indexOf(a.kind) - BLOC_KINDS.indexOf(b.kind) || ZH.compare(a.name, b.name));
 
 // 加入一个帝国或联邦时会退出原来的那一个（同一类只能在一个里）
 export function joinNote(w: Pick<World, 'small'>, b: Bloc, id: number): string | undefined {

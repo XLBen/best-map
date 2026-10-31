@@ -205,6 +205,9 @@ function iconPaths(key: string): Path2D[] | null {
 // 上传的小图：解码好了才画（解码完通知地图重画）
 const images = new Map<string, HTMLImageElement>();
 let onImage: (() => void) | null = null;
+// 解码好了几张小图（第四十轮：叠加层的静态那一层按它认要不要重画）
+let imagesLoaded = 0;
+export const settleImageEpoch = () => imagesLoaded;
 export function onSettleImageLoad(f: (() => void) | null) {
   onImage = f;
 }
@@ -213,7 +216,10 @@ function imageOf(src: string): HTMLImageElement | null {
   let img = images.get(src);
   if (!img) {
     img = new Image();
-    img.onload = () => onImage?.();
+    img.onload = () => {
+      imagesLoaded++;
+      onImage?.();
+    };
     img.src = src;
     images.set(src, img);
   }
@@ -481,23 +487,50 @@ export interface Box {
   y1: number;
 }
 
-// 按格子分的框：只查附近的几格
+// 按格子分的框：只查附近的几格。结果与把框放进一个数组、逐个比（o.x0 < b.x1 && o.x1 > b.x0 && o.y0 < b.y1 && o.y1 > b.y0）相同：
+// 两个框重叠时必有一点同在两框里，那一点所在的格两框都占着。坐标不是有限数、或一个框跨的格太多（第四十轮：不在格子里循环太久）的，
+// 放进 wide 逐个比；查的框是这样的时逐个比全部
+const BOX_SPAN = 64;
 export class BoxIndex {
   private cells = new Map<number, Box[]>();
+  private wide: Box[] = [];
+  private all: Box[] = [];
   constructor(private size = 48) {}
-  private *keys(b: Box) {
+  // 框占的格的范围；不能按格子查时 null
+  private range(b: Box): [number, number, number, number] | null {
     const s = this.size;
-    for (let gx = Math.floor(b.x0 / s); gx <= Math.floor(b.x1 / s); gx++) for (let gy = Math.floor(b.y0 / s); gy <= Math.floor(b.y1 / s); gy++) yield gx * 100003 + gy;
+    const gx0 = Math.floor(b.x0 / s);
+    const gx1 = Math.floor(b.x1 / s);
+    const gy0 = Math.floor(b.y0 / s);
+    const gy1 = Math.floor(b.y1 / s);
+    if (!Number.isFinite(gx0) || !Number.isFinite(gx1) || !Number.isFinite(gy0) || !Number.isFinite(gy1) || gx1 - gx0 > BOX_SPAN || gy1 - gy0 > BOX_SPAN) return null;
+    return [gx0, gx1, gy0, gy1];
   }
   add(b: Box) {
-    for (const k of this.keys(b)) {
-      const l = this.cells.get(k);
-      if (l) l.push(b);
-      else this.cells.set(k, [b]);
+    this.all.push(b);
+    const r = this.range(b);
+    if (!r) {
+      this.wide.push(b);
+      return;
     }
+    for (let gx = r[0]; gx <= r[1]; gx++)
+      for (let gy = r[2]; gy <= r[3]; gy++) {
+        const k = gx * 100003 + gy;
+        const l = this.cells.get(k);
+        if (l) l.push(b);
+        else this.cells.set(k, [b]);
+      }
   }
   hits(b: Box): boolean {
-    for (const k of this.keys(b)) for (const o of this.cells.get(k) ?? []) if (o.x0 < b.x1 && o.x1 > b.x0 && o.y0 < b.y1 && o.y1 > b.y0) return true;
+    const over = (o: Box) => o.x0 < b.x1 && o.x1 > b.x0 && o.y0 < b.y1 && o.y1 > b.y0;
+    const r = this.range(b);
+    if (!r) return this.all.some(over);
+    for (const o of this.wide) if (over(o)) return true;
+    for (let gx = r[0]; gx <= r[1]; gx++)
+      for (let gy = r[2]; gy <= r[3]; gy++) {
+        const l = this.cells.get(gx * 100003 + gy);
+        if (l) for (const o of l) if (over(o)) return true;
+      }
     return false;
   }
 }

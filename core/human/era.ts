@@ -157,9 +157,11 @@ type HumanSmall = Pick<Partial<SmallState>, 'content' | 'human'>;
 
 // 世界里启用的（按启用的先后；编号 = 下标 + 1，0 是没有）。同一个对象的列表缓存着：small.content 每次改都是新对象
 const listCache = new WeakMap<object, unknown[]>();
+// 没有这一种时给同一个空数组（第四十轮：按列表对象认的缓存——片区名、着色——不会每次都错过）
+const EMPTY: readonly never[] = [];
 function listOf<T>(small: HumanSmall, kind: string): readonly T[] {
   const own = small.content?.[kind];
-  if (!own) return [];
+  if (!own) return EMPTY;
   let l = listCache.get(own) as T[] | undefined;
   if (!l) listCache.set(own, (l = Object.values(own) as T[]));
   return l;

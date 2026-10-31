@@ -239,8 +239,38 @@ export function factionPatch(list: readonly FactionInfluence[], id: string, valu
 export const withId = (list: readonly number[], id: number) => (list.includes(id) ? [...list] : [...list, id]);
 export const withoutId = (list: readonly number[], id: number) => list.filter((x) => x !== id);
 
-// 附庸（宗主是它的）
-export const vassalsOf = (w: Pick<World, 'small'>, id: number): CountryMeta[] => Object.values(w.small.countries ?? {}).filter((m) => m.overlord === id);
+// 附庸（宗主是它的）。第四十轮：按国家的对象建一次“宗主 → 附庸”（顺序同 Object.values），不再每次扫一遍全部国家
+const NO_VASSALS: CountryMeta[] = [];
+const vassalMaps = new WeakMap<object, Map<number, CountryMeta[]>>();
+export function vassalsOf(w: Pick<World, 'small'>, id: number): CountryMeta[] {
+  const metas = w.small.countries;
+  if (!metas) return NO_VASSALS;
+  let m = vassalMaps.get(metas);
+  if (!m) {
+    m = new Map();
+    for (const c of Object.values(metas)) {
+      if (c.overlord === undefined) continue;
+      const l = m.get(c.overlord);
+      if (l) l.push(c);
+      else m.set(c.overlord, [c]);
+    }
+    vassalMaps.set(metas, m);
+  }
+  // 给一份副本：调用方可以随意改
+  return [...(m.get(id) ?? NO_VASSALS)];
+}
+
+// 中文排序（第四十轮：同一个 Intl.Collator，与 localeCompare(…, 'zh') 的结果相同，不必每次比较都按语言建一次）
+export const ZH = new Intl.Collator('zh');
+// 按名字排好的国家（按国家的对象缓存）
+const byName = new WeakMap<object, readonly CountryMeta[]>();
+export function countriesByName(w: Pick<World, 'small'>): readonly CountryMeta[] {
+  const metas = w.small.countries;
+  if (!metas) return NO_VASSALS;
+  let l = byName.get(metas);
+  if (!l) byName.set(metas, (l = Object.values(metas).sort((a, b) => ZH.compare(a.name, b.name))));
+  return l;
+}
 
 // ---------- 分裂 ↔ 统一 ----------
 

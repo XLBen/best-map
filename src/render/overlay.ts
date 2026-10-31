@@ -8,11 +8,12 @@ import { type RiverLine, guideShape, guidesSignature, traceRivers } from '../../
 import { coastSeed } from '../../core/terrain';
 import { cellName, peakMarks } from '../../core/human';
 import type { World } from '../../core/world';
-import { drawOverlayProjected } from './overlay-proj';
-import { type Proj, trueScale, worldToScreen as projWorldToScreen } from './projection';
+import { projectedParts } from './overlay-proj';
+import type { Perf } from './perf';
+import { type Proj, screenToWorld as projScreenToWorld, trueScale, worldToScreen as projWorldToScreen } from './projection';
 import type { Camera, RiverScene, RiverTex } from './renderer';
-import { drawCurrents, drawWind } from './wind';
-import { BoxIndex, type RoadDraw, type SettleMark, drawMark, drawRoads, iconScale, markRadius, nameSpots } from './settle-draw';
+import { drawCurrents, drawWind, windEpoch } from './wind';
+import { BoxIndex, type RoadDraw, type SettleMark, drawMark, drawRoads, iconScale, markRadius, nameSpots, settleImageEpoch } from './settle-draw';
 
 // 2D 画布上的矢量叠加：河流、河道引导、湖标记、风向、画笔、箭头、预览路径、地名。
 // 海岸线、省份边界、选区轮廓在着色器里画（自然曲线）。
@@ -530,6 +531,9 @@ export interface OverlayState {
   motionEpoch?: number;
   // 导出图片：底层的河直接画（不贴缓存），与原来逐像素相同
   exact?: boolean;
+  // 风、洋流的流线（第四十轮）：新露出来的块不在这一帧里算，空闲时一段段地算，算好了调它（MapView 给 requestDraw）；
+  // 没给时（导出、测试）当场算
+  lazy?: () => void;
   // 导出整张地图（.png）：画在一张离屏的大画布上，按这个虚拟窗口（cw × ch 个 CSS 像素，每个 CSS 像素 dpr 个像素）画，
   // 不清空画布（直接画在底图上）、不用也不动屏幕上的缓存；地名排整张图、不伸出图外，整个星球只排一份
   frame?: Frame;
@@ -542,8 +546,11 @@ export interface Frame {
 }
 
 // 画布的大小（CSS 像素）与每个 CSS 像素几个像素：导出时按给的虚拟窗口，否则按屏幕上的画布
+// 第四十轮：画进屏幕的静态那一层（离屏画布没有 CSS 大小）时按叠加层的（frameOverride）
+let frameOverride: Frame | null = null;
 function frameOf(ctx: { canvas: { clientWidth: number; clientHeight: number } }, st?: { frame?: Frame }): Frame {
   if (st?.frame) return st.frame;
+  if (frameOverride) return frameOverride;
   const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   return { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight, dpr };
 }
@@ -598,7 +605,12 @@ let restLayer: BackLayer | null = null;
 let motionLayer: BackLayer | null = null;
 
 // 开发用（src/render/bench.ts 的 overlayBench）：底层改用软件画的画布，测速时能同步量到画它花的时间
-export const overlayDebug = { softLayers: false };
+// noStatic：屏幕上不用静态的那一层（每帧照原样直接画，测速用）；layerCanvas：静态那一层的离屏画布换成给的（测试用假画布）
+export const overlayDebug: {
+  softLayers: boolean;
+  noStatic: boolean;
+  layerCanvas: ((w: number, h: number) => { canvas: { width: number; height: number }; ctx: CanvasRenderingContext2D }) | null;
+} = { softLayers: false, noStatic: false, layerCanvas: null };
 
 function makeLayer(w: number, h: number, dpr: number): BackLayer {
   const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
@@ -994,6 +1006,10 @@ export function releaseRiverTile() {
 }
 
 // st.rivers：河画在叠加层上（测试、测速用；屏幕与导出的地图上河由渲染器合成，见 riverLayer，MapView 这里给 false）
+// 第四十轮：屏幕上分成三段画——底下（河与标记、风、洋流、经纬、道路）、工具的图形、上面（省名、地名、比例尺）。底下、上面两段只随
+// 静态的键变（staticKey：世界、路径、镜头、画布、除了图形以外的选项……）；键没变、图形也没变时什么都不画（画布上就是上一帧）；
+// 只有图形变了时把两段各画进一张离屏画布（第一次用到时画），贴底下、画图形、贴上面。键变了的那一帧照原样直接画。
+// 移动中、导出照原样直接画（见 drawScreen）
 export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState): LabelBox[] {
   const canvas = ctx.canvas;
   const f = frameOf(ctx, st);
@@ -1002,79 +1018,361 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, world: World, paths: 
     canvas.width = Math.round(cw * dpr);
     canvas.height = Math.round(ch * dpr);
   }
+  if (st.frame) return drawDirect(ctx, world, paths, cam, st, f);
+  return drawScreen(ctx, world, paths, cam, st, f);
+}
+
+// 叠加层的三段：under（底下）、shapes（工具的图形）、over（上面，返回排好的地名的框）。三段依次画在同一张画布上就是原来的 drawOverlay
+export interface OverlayParts {
+  under(ctx: CanvasRenderingContext2D): void;
+  shapes(ctx: CanvasRenderingContext2D): void;
+  over(ctx: CanvasRenderingContext2D): LabelBox[];
+}
+
+// 直接画（原来的做法）：清空，三段依次画
+function drawDirect(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, f: Frame): LabelBox[] {
+  const canvas = ctx.canvas;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (!st.frame) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const parts = overlayParts(world, paths, cam, st, f);
+  parts.under(ctx);
+  parts.shapes(ctx);
+  return parts.over(ctx);
+}
+
+export function overlayParts(world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, f: Frame): OverlayParts {
   // 等面积、球形投影（第十三轮 G4）：另画（点按投影算，线加密后逐点投影）
-  if (cam.proj && world.mesh.kind === 'sphere') return drawOverlayProjected(ctx, world, paths, cam as Camera & { proj: Proj }, st, f);
+  if (cam.proj && world.mesh.kind === 'sphere') return projectedParts(world, paths, cam as Camera & { proj: Proj }, st, f);
+  const { cw, ch, dpr } = f;
   const z = cam.zoom * dpr;
   const sphere = world.mesh.kind === 'sphere';
   // 整个星球：每一份看得见的副本各画一遍（一块地区只有 k = 0）
   const ks = sphere ? copiesFor(cam, cw) : [0];
   // 地图单位 → 设备像素（第 k 份副本向右平移 2k）
-  const setT = (k: number) => ctx.setTransform(z, 0, 0, z, (cw / 2 - (cam.x - 2 * k) * cam.zoom) * dpr, (ch / 2 - cam.y * cam.zoom) * dpr);
+  const setT = (ctx: CanvasRenderingContext2D, k: number) => ctx.setTransform(z, 0, 0, z, (cw / 2 - (cam.x - 2 * k) * cam.zoom) * dpr, (ch / 2 - cam.y * cam.zoom) * dpr);
   const px = 1 / z;
   const rz = refZoom(world, cam.zoom);
-
   const scale = riverScale(world, cam.zoom);
   const river = { scale, color: riverStroke(st.style) };
-  // 河、河道标记、湖标记（缓存着的底层）
-  pasteBack(ctx, world, paths, cam, st);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  setT(0);
-
-  if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr, f);
-  if (st.currents && sphere) drawCurrents(ctx, world, cam, px * dpr, f);
-  if (st.latitude) {
-    if (sphere) drawGraticule(ctx, cam, ks, f, !!st.frame);
-    else drawLatitude(ctx, world, cam, st.latitude, f);
-  }
-
-  // 道路（第二十四轮）：工具的图形、地名下面
-  if (st.roads) {
-    const hw = cw / 2 / cam.zoom;
-    const hh = ch / 2 / cam.zoom;
-    drawRoads(ctx, st.roads, ks, setT, px * dpr, world.mesh.spacing * cam.zoom, st.style, { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh });
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-  }
-
-  for (const k of ks) {
-    setT(k);
-    for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river, st.style);
-  }
-
-  if (st.provinceLabels.length && rz > 900) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = `${11 * dpr}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(20,20,20,0.85)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 3 * dpr;
-    for (const k of ks) {
-      for (const l of st.provinceLabels) {
-        const sx = ((l.x + 2 * k - cam.x) * cam.zoom + cw / 2) * dpr;
-        const sy = ((l.y - cam.y) * cam.zoom + ch / 2) * dpr;
-        if (sx < -50 || sy < -20 || sx > cw * dpr + 50 || sy > ch * dpr + 20) continue;
-        // 导出整张地图：每个省名只标中心落在图里的那一份（分界线附近不标两遍）
-        if (st.frame && (sx < 0 || sx >= cw * dpr)) continue;
-        ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
-        ctx.strokeText(l.text, sx, sy);
-        ctx.fillText(l.text, sx, sy);
+  return {
+    under(ctx) {
+      // 河、河道标记、湖标记（缓存着的底层）
+      pasteBack(ctx, world, paths, cam, st);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      setT(ctx, 0);
+      if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr, f, st.lazy);
+      if (st.currents && sphere) drawCurrents(ctx, world, cam, px * dpr, f, st.lazy);
+      if (st.latitude) {
+        if (sphere) drawGraticule(ctx, cam, ks, f, !!st.frame);
+        else drawLatitude(ctx, world, cam, st.latitude, f);
       }
+      // 道路（第二十四轮）：工具的图形、地名下面
+      if (st.roads) {
+        const hw = cw / 2 / cam.zoom;
+        const hh = ch / 2 / cam.zoom;
+        drawRoads(ctx, st.roads, ks, (k) => setT(ctx, k), px * dpr, world.mesh.spacing * cam.zoom, st.style, { x0: cam.x - hw, x1: cam.x + hw, y0: cam.y - hh, y1: cam.y + hh });
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+      }
+    },
+    shapes(ctx) {
+      for (const k of ks) {
+        setT(ctx, k);
+        for (const sh of st.shapes) drawShape(ctx, world, sh, px * dpr, river, st.style);
+      }
+    },
+    over(ctx) {
+      if (st.provinceLabels.length && rz > 900) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.font = `${11 * dpr}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(20,20,20,0.85)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 3 * dpr;
+        for (const k of ks) {
+          for (const l of st.provinceLabels) {
+            const sx = ((l.x + 2 * k - cam.x) * cam.zoom + cw / 2) * dpr;
+            const sy = ((l.y - cam.y) * cam.zoom + ch / 2) * dpr;
+            if (sx < -50 || sy < -20 || sx > cw * dpr + 50 || sy > ch * dpr + 20) continue;
+            // 导出整张地图：每个省名只标中心落在图里的那一份（分界线附近不标两遍）
+            if (st.frame && (sx < 0 || sx >= cw * dpr)) continue;
+            ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
+            ctx.strokeText(l.text, sx, sy);
+            ctx.fillText(l.text, sx, sy);
+          }
+        }
+      }
+      // 导出整个星球：图就是一整圈（分界线可以在任何经度），每个地名只在中心落在图里的那一份上排
+      const boxes = hasLabels(st) ? drawLabels(ctx, cam, st, ks, rz) : [];
+      if (st.scaleBar) {
+        if (sphere) {
+          // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
+          const lat = Math.max(-85, Math.min(85, 90 - 180 * cam.y));
+          const where = Math.abs(lat) < 2 ? '赤道' : `${lat > 0 ? '北' : '南'}纬 ${Math.round(Math.abs(lat))}°`;
+          drawScaleBar(ctx, cam, st.kmPerUnit * Math.cos((lat * Math.PI) / 180), st.cornerLift, f, where);
+        } else drawScaleBar(ctx, cam, st.kmPerUnit, st.cornerLift, f);
+      }
+      return boxes;
+    },
+  };
+}
+
+// ---------- 屏幕上的静态那一层（第四十轮） ----------
+
+// 叠加层的选项哪些进静态的键：static 进键；shapes 是每次比的图形；internal 是画法自己的（移动中、导出，不进键、另看）。
+// 新加一项选项时这张表不写全编译不过
+const FIELD_KIND: { [K in keyof Required<OverlayState>]: 'static' | 'shapes' | 'internal' } = {
+  rivers: 'static',
+  wind: 'static',
+  markers: 'static',
+  season: 'static',
+  style: 'static',
+  shapes: 'shapes',
+  provinceLabels: 'static',
+  features: 'static',
+  labelTypes: 'static',
+  nameMode: 'static',
+  peaks: 'static',
+  countries: 'static',
+  settlements: 'static',
+  settleNames: 'static',
+  cellSize: 'static',
+  roads: 'static',
+  kmPerUnit: 'static',
+  hoverLabel: 'static',
+  scaleBar: 'static',
+  cornerLift: 'static',
+  latitude: 'static',
+  currents: 'static',
+  motion: 'internal',
+  motionEpoch: 'internal',
+  exact: 'static',
+  frame: 'internal',
+  lazy: 'internal',
+};
+export const overlayFieldKinds = FIELD_KIND;
+const STATIC_FIELDS = (Object.keys(FIELD_KIND) as (keyof OverlayState)[]).filter((k) => FIELD_KIND[k] === 'static');
+
+// 每帧新建、内容相同的几样换成上一次的同一个值：省名的数组（按元素逐个比）、地名的类型（Set，按内容）、纬度、画风（按 mapStyleKey）
+let lastProvinceLabels: readonly ProvinceLabel[] = [];
+function sameRef<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function fieldKey(k: keyof OverlayState, v: unknown): unknown {
+  if (v instanceof Set) return [...v].sort().join(',');
+  if (k === 'provinceLabels') {
+    const l = v as ProvinceLabel[];
+    if (!sameRef(l, lastProvinceLabels)) lastProvinceLabels = l;
+    return lastProvinceLabels;
+  }
+  if (k === 'latitude') return v ? `${(v as { north: number }).north}|${(v as { south: number }).south}` : null;
+  if (k === 'style') return mapStyleKey(v as MapStyle);
+  return v;
+}
+
+// 字体加载完成（字宽、字形变了）：静态的那一层要重画
+let fontEpoch = 0;
+if (typeof document !== 'undefined') document.fonts?.addEventListener?.('loadingdone', () => fontEpoch++);
+
+// 静态的键：世界、路径、镜头、画布的大小、开始时画布上的 textBaseline（省名照用上一帧留下的，见 drawScreen）、
+// 选项里 static 的那些，字体、小图、风与洋流的流线（空闲时算好了几块）
+export function staticKey(world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, f: Frame, canvas: { width: number; height: number }, baseline: unknown): unknown[] {
+  const p = cam.proj;
+  const key: unknown[] = [world, paths, cam.x, cam.y, cam.zoom, p?.kind, p?.lon0, p?.lat0, f.cw, f.ch, f.dpr, canvas.width, canvas.height, baseline, fontEpoch, settleImageEpoch(), windEpoch()];
+  for (const k of STATIC_FIELDS) key.push(fieldKey(k, st[k]));
+  return key;
+}
+
+// 两份工具的图形画出来一样（每帧都是新的对象：按每一项比）
+export function sameShapes(a: readonly Shape[], b: readonly Shape[] | null): boolean {
+  if (!b) return false;
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!sameShape(a[i], b[i])) return false;
+  return true;
+}
+const sameNums = (a: ArrayLike<number> | undefined, b: ArrayLike<number> | undefined) => {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
+function sameShape(a: Shape, b: Shape): boolean {
+  if (a === b) return true;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof Shape)[]);
+  for (const k of keys) {
+    const x = a[k];
+    const y = b[k];
+    if (x === y) continue;
+    if (k === 'points') {
+      const p = x as [number, number][] | undefined;
+      const q = y as [number, number][] | undefined;
+      if (!p || !q || p.length !== q.length) return false;
+      for (let i = 0; i < p.length; i++) if (p[i] !== q[i] && (p[i][0] !== q[i][0] || p[i][1] !== q[i][1])) return false;
+      continue;
     }
+    if (k === 'cells' || k === 'flow' || k === 'mul') {
+      if (!sameNums(x as number[] | undefined, y as number[] | undefined)) return false;
+      continue;
+    }
+    return false;
   }
-  // 导出整个星球：图就是一整圈（分界线可以在任何经度），每个地名只在中心落在图里的那一份上排
-  const boxes = hasLabels(st) ? drawLabels(ctx, cam, st, ks, rz) : [];
-  if (st.scaleBar) {
-    if (sphere) {
-      // 平铺图上东西方向的比例随纬度变：取画面中心那条纬线上的比例，并写明是哪条纬线
-      const lat = Math.max(-85, Math.min(85, 90 - 180 * cam.y));
-      const where = Math.abs(lat) < 2 ? '赤道' : `${lat > 0 ? '北' : '南'}纬 ${Math.round(Math.abs(lat))}°`;
-      drawScaleBar(ctx, cam, st.kmPerUnit * Math.cos((lat * Math.PI) / 180), st.cornerLift, f, where);
-    } else drawScaleBar(ctx, cam, st.kmPerUnit, st.cornerLift, f);
+  return true;
+}
+
+// 测速（第三十九轮的 ?perf）：MapView 交过来；记 overlayStatic（直接画、画进两张离屏画布）、overlayDynamic（贴两张、画图形）、
+// layout（排地名），notes 里记 overlay:skip / overlay:composite / overlay:direct / overlay:motion
+let perf: Perf | null = null;
+export function setOverlayPerf(p: Perf | null) {
+  perf = p;
+}
+
+// 一张画布的静态那一层的缓存（按画布对象记：测速另画到别的画布上、测试的假画布互不影响）
+interface StaticLayer {
+  canvas: HTMLCanvasElement | OffscreenCanvas;
+  ctx: CanvasRenderingContext2D;
+  ready: boolean;
+  // 画上面那一段时叠加层上的几项状态（overStart）；画完时离屏画布的状态（贴完照它留在叠加层上）
+  start: string;
+  end: CtxState | null;
+}
+interface ScreenCache {
+  key: unknown[] | null;
+  shapes: readonly Shape[] | null;
+  boxes: LabelBox[];
+  under: StaticLayer | null;
+  over: StaticLayer | null;
+}
+const screens = new WeakMap<object, ScreenCache>();
+
+// 画布的状态里接着往下画时会用到的几项（第四十轮：贴缓存的那一帧把画到那里时的状态照原样留在叠加层上，下一帧照原样接着画）
+const STATE_PROPS = ['textBaseline', 'textAlign', 'font', 'lineJoin', 'lineCap', 'lineWidth', 'miterLimit', 'fillStyle', 'strokeStyle', 'globalAlpha'] as const;
+type CtxState = { props: unknown[]; transform: DOMMatrix | null; dash: number[] | null };
+function readState(ctx: CanvasRenderingContext2D): CtxState {
+  const c = ctx as unknown as Record<string, unknown>;
+  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  const d = typeof ctx.getLineDash === 'function' ? ctx.getLineDash() : null;
+  return { props: STATE_PROPS.map((k) => c[k]), transform: t && typeof t === 'object' ? t : null, dash: Array.isArray(d) ? d : null };
+}
+function applyState(ctx: CanvasRenderingContext2D, s: CtxState) {
+  const c = ctx as unknown as Record<string, unknown>;
+  STATE_PROPS.forEach((k, i) => {
+    if (s.props[i] !== undefined && c[k] !== s.props[i]) c[k] = s.props[i];
+  });
+  if (s.transform) ctx.setTransform(s.transform);
+  if (s.dash) ctx.setLineDash(s.dash);
+}
+// 上面那一段开始时读到的、不是这一段自己设的：省名的 textBaseline（从经纬网或上一帧留下）、lineJoin、lineCap
+const overStart = (ctx: CanvasRenderingContext2D) => `${ctx.textBaseline}|${ctx.lineJoin}|${ctx.lineCap}`;
+
+// 离屏画布（测试里换成假的：overlayDebug.layerCanvas）
+function staticLayer(old: StaticLayer | null, W: number, H: number): StaticLayer {
+  if (old && old.canvas.width === W && old.canvas.height === H) return old;
+  const made = overlayDebug.layerCanvas?.(W, H);
+  if (made) return { canvas: made.canvas as HTMLCanvasElement, ctx: made.ctx, ready: false, start: '', end: null };
+  const L = makeLayer(W, H, 1);
+  return { canvas: L.canvas, ctx: L.ctx as CanvasRenderingContext2D, ready: false, start: '', end: null };
+}
+
+// 画 under 或 over 进离屏画布：清空，照叠加层上这时的状态，画（画布的 CSS 大小、每个 CSS 像素几个像素按叠加层的 f）
+function paintLayer<T>(L: StaticLayer, from: CanvasRenderingContext2D, f: Frame, draw: (c: CanvasRenderingContext2D) => T): T {
+  const c = L.ctx;
+  const s = readState(from);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, L.canvas.width, L.canvas.height);
+  applyState(c, s);
+  const prev = frameOverride;
+  frameOverride = f;
+  try {
+    return draw(c);
+  } finally {
+    frameOverride = prev;
+    L.end = readState(c);
+    L.ready = true;
   }
+}
+
+function drawScreen(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Camera, st: OverlayState, f: Frame): LabelBox[] {
+  const canvas = ctx.canvas;
+  let sc = screens.get(canvas);
+  if (!sc) screens.set(canvas, (sc = { key: null, shapes: null, boxes: [], under: null, over: null }));
+  const t0 = perf ? performance.now() : 0;
+  // 移动中：照原样直接画（底层的河、地名按移动中的画法）；停下后的第一帧也直接画
+  if (st.motion || overlayDebug.noStatic) {
+    sc.key = null;
+    const boxes = drawDirect(ctx, world, paths, cam, st, f);
+    if (perf) (perf.note('overlay:motion'), perf.cpu('overlayStatic', performance.now() - t0));
+    return boxes;
+  }
+  // 省名不设 textBaseline，照用画布上已有的（经纬网设的，或上一帧的地名、比例尺留下的）：它进键
+  const key = staticKey(world, paths, cam, st, f, canvas, ctx.textBaseline);
+  if (sc.key && samePathsKey(key, sc.key)) {
+    // 什么都没变：画布上就是这一帧
+    if (sameShapes(st.shapes, sc.shapes)) {
+      perf?.note('overlay:skip');
+      return sc.boxes;
+    }
+    // 图形没了（鼠标离开、画笔停了以后）：照原样直接画一次，画布回到与原来逐像素相同（两张离屏画布照留着）。
+    // 贴缓存的那几帧在半透明的字边上与直接画差一点（8 位的预乘透明度分两次混合），只在有图形的那几帧
+    if (!st.shapes.length) {
+      sc.shapes = st.shapes;
+      sc.boxes = drawDirect(ctx, world, paths, cam, st, f);
+      if (perf) (perf.note('overlay:direct'), perf.cpu('overlayStatic', performance.now() - t0));
+      return sc.boxes;
+    }
+    // 只有图形变了：贴底下、画图形、贴上面
+    sc.shapes = st.shapes;
+    const W = canvas.width;
+    const H = canvas.height;
+    let ts = 0;
+    const parts = overlayParts(world, paths, cam, st, f);
+    const under = (sc.under = staticLayer(sc.under, W, H));
+    if (!under.ready) {
+      const t = perf ? performance.now() : 0;
+      paintLayer(under, ctx, f, (c) => parts.under(c));
+      if (perf) ts += performance.now() - t;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(under.canvas, 0, 0);
+    applyState(ctx, under.end!);
+    parts.shapes(ctx);
+    const over = (sc.over = staticLayer(sc.over, W, H));
+    const start = overStart(ctx);
+    if (!over.ready || over.start !== start) {
+      const t = perf ? performance.now() : 0;
+      sc.boxes = paintLayer(over, ctx, f, (c) => parts.over(c));
+      over.start = start;
+      if (perf) ts += performance.now() - t;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(over.canvas, 0, 0);
+    applyState(ctx, over.end!);
+    if (perf) {
+      perf.note('overlay:composite');
+      if (ts) perf.cpu('overlayStatic', ts);
+      perf.cpu('overlayDynamic', performance.now() - t0 - ts);
+    }
+    return sc.boxes;
+  }
+  // 静态的变了：照原样直接画，两张离屏画布等用到时再画
+  const boxes = drawDirect(ctx, world, paths, cam, st, f);
+  sc.key = key;
+  sc.shapes = st.shapes;
+  sc.boxes = boxes;
+  if (sc.under) sc.under.ready = false;
+  if (sc.over) sc.over.ready = false;
+  if (perf) (perf.note('overlay:direct'), perf.cpu('overlayStatic', performance.now() - t0));
   return boxes;
+}
+
+// 屏幕上的静态那一层作废（2D 画布的上下文丢了又恢复时：画布是空的）
+export function resetOverlayCache(canvas: object) {
+  screens.delete(canvas);
 }
 
 // 整个星球的经纬网：经线、纬线的间隔随缩放变（每条线之间至少约 60 像素），回归线、极圈用虚线并写上名字
@@ -1365,7 +1663,12 @@ interface PlacedLabel {
   // 城市、地标、点的图标（第二十四轮）：画在 x、y（CSS 像素），没有字；markScale：缩得很小时小一些
   mark?: SettleMark;
   markScale?: number;
+  // 投影时（第四十轮）：地名、图标的锚点（地图坐标）与排的时候它在屏幕上的位置；国名每个字落在地图上的点（转球的手势里按它重新投影）
+  anchor?: Anchor;
+  glyphAnchors?: ([number, number] | null)[];
 }
+// [地图 x, 地图 y, 排的时候屏幕 x, 屏幕 y]
+type Anchor = [number, number, number, number];
 
 // 有没有要排的字（地名、山峰、国名、城市与地标）
 export const hasLabels = (st: OverlayState) => !!(st.features || st.peaks?.length || st.countries?.length || st.settlements?.length);
@@ -1384,14 +1687,13 @@ function placeSettlements(
   ks: number[],
   toScreen: (x: number, y: number) => [number, number] | null,
   zoomAt: (x: number, y: number) => number,
-  view: { cw: number; ch: number; mx: number; my: number; exporting: boolean },
+  view: { cw: number; ch: number; mx: number; my: number; exporting: boolean; anchors?: boolean },
   placed: PlacedLabel[],
   boxes: LabelBox[],
+  index: BoxIndex,
 ) {
   const marks = st.settlements ?? [];
   const size = st.cellSize ?? 0;
-  const index = new BoxIndex();
-  for (const b of boxes) index.add(b);
   const icons = new BoxIndex();
   const names = st.settleNames !== false;
   for (const m of marks) {
@@ -1410,7 +1712,8 @@ function placeSettlements(
       icons.add(ib);
       index.add(ib);
       boxes.push(ib);
-      placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale });
+      const anchor: Anchor | undefined = view.anchors ? [m.x + 2 * k, m.y, sx, sy] : undefined;
+      placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale, ...(anchor ? { anchor } : {}) });
       if (!names || !m.name || cellPx < m.namePx) continue;
       const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${SETTLE_FONT}`;
       const chars = [...m.name];
@@ -1424,7 +1727,7 @@ function placeSettlements(
         if (index.hits(nb)) continue;
         index.add(nb);
         boxes.push(nb);
-        placed.push({ key: m.key, chars, widths, spacing: 0, total, font, color: m.textColor, x: cx, y: cy, angle: 0 });
+        placed.push({ key: m.key, chars, widths, spacing: 0, total, font, color: m.textColor, x: cx, y: cy, angle: 0, ...(anchor ? { anchor } : {}) });
         break;
       }
     }
@@ -1573,6 +1876,7 @@ function placeCountries(
   view: { cw: number; ch: number; mx: number; my: number; exporting: boolean },
   placed: PlacedLabel[],
   boxes: LabelBox[],
+  index: BoxIndex,
 ) {
   const list = [...(st.countries ?? [])].sort((a, b) => b.area - a.area);
   const color = st.style.countryLabel;
@@ -1620,8 +1924,10 @@ function placeCountries(
         }
       }
       const own = marks.map((g) => ({ key: c.key, x0: g.x - g.r, y0: g.y - g.r, x1: g.x + g.r, y1: g.y + g.r }));
-      if (own.some((b) => boxes.some((o) => o.x0 < b.x1 && o.x1 > b.x0 && o.y0 < b.y1 && o.y1 > b.y0))) continue;
+      // 第四十轮：按格子查（BoxIndex，与逐个比相同）
+      if (own.some((b) => index.hits(b))) continue;
       boxes.push(...own);
+      for (const b of own) index.add(b);
       placed.push(...items);
     }
   }
@@ -1633,6 +1939,8 @@ function placeCountries(
 let layout: {
   key: string;
   base: string;
+  // 键里除了镜头、投影的朝向的部分（转球的手势里比它）
+  baseNP: string;
   cam: Camera;
   features: GeoFeature[] | null;
   peaks: GeoFeature[] | null;
@@ -1641,8 +1949,19 @@ let layout: {
   placed: PlacedLabel[];
   boxes: LabelBox[];
   marks: [number, number][];
+  markAnchors: [number, number][] | null;
   epoch?: number;
+  // 移动中排的：第几次手势（停稳的那一帧加一）；停稳时排的为 -1
+  gesture: number;
 } | null = null;
+// 停稳画过一次地名加一：转球时同一次手势里沿用移动中排好的版面（见 drawLabels）
+let gesture = 0;
+
+// 屏幕上一点落在地图上的哪里（投影；不在投影上时 null）
+function worldAt(cam: Camera, cw: number, ch: number, sx: number, sy: number): [number, number] | null {
+  const w = projScreenToWorld(cam as Camera & { proj: Proj }, cw, ch, sx, sy);
+  return w.inside ? [w.x, w.y] : null;
+}
 
 // 每个字的宽度按字体缓存：平移、缩放的每一帧不必再量（字体加载完成后清空重量）
 const glyphs = new Map<string, number>();
@@ -1658,9 +1977,24 @@ function glyphWidth(ctx: CanvasRenderingContext2D, font: string, c: string): num
 }
 
 // 版面的键里除了镜头位置的部分（移动中沿用排好的版面时比它）：投影的朝向变了（转动球）要重排
-function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera): string {
+// 第四十轮：悬停的地名只在排版用得上它时进键（layoutHover）；proj 为 false 时不带投影的朝向（转球的一次手势里沿用排好的版面时比它）
+function labelBase(cw: number, chh: number, st: OverlayState, cam: Camera, proj = true): string {
   const p = cam.proj;
-  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${st.hoverLabel ?? ''}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${p ? `|${p.kind}|${p.lon0}|${p.lat0}` : ''}`;
+  return `${cw}|${chh}|${st.kmPerUnit}|${st.labelTypes ? [...st.labelTypes].join(',') : '*'}|${layoutHover(st)}|${st.nameMode ?? 'zh'}|${st.settleNames === false ? 0 : 1}|${st.cellSize ?? 0}${p ? `|${p.kind}${proj ? `|${p.lon0}|${p.lat0}` : ''}` : ''}`;
+}
+
+// 悬停、选中的地名在排版里的作用（placeLabels：它算“用户自己的”，最先放、一定标，删掉的也标）：只有它是一个地名或山峰、
+// 并且不是本来就“用户自己的”或是删掉的时才有作用；别的时候（悬停的是国名、城市，或圈的地区、放的地名……）排出来与没有悬停相同，
+// 不进键（悬停的样子只是描边的颜色，由静态那一层按 hoverLabel 重画）
+let hoverMemo: { key: string; features: unknown; peaks: unknown; out: string } | null = null;
+function layoutHover(st: OverlayState): string {
+  const h = st.hoverLabel;
+  if (!h) return '';
+  if (hoverMemo && hoverMemo.key === h && hoverMemo.features === st.features && hoverMemo.peaks === st.peaks) return hoverMemo.out;
+  const hits = (list: readonly GeoFeature[] | null | undefined) => list?.some((f) => f.key === h && (f.hidden || !(f.region || f.custom))) ?? false;
+  const out = hits(st.features) || hits(st.peaks) ? h : '';
+  hoverMemo = { key: h, features: st.features, peaks: st.peaks, out };
+  return out;
 }
 
 // 哪些地名标出来、放在哪里（按布局缓存；导出给测试用）
@@ -1671,6 +2005,7 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const key = `${cam.x}|${cam.y}|${cam.zoom}|${ks.join(',')}|${base}|${st.motion ? 'm' : ''}`;
   const peaks = st.peaks ?? null;
   if (!exporting && layout && layout.key === key && layout.features === st.features && layout.peaks === peaks && layout.countries === (st.countries ?? null) && layout.settlements === (st.settlements ?? null)) return layout;
+  const t0 = perf ? performance.now() : 0;
   // 等面积、球形投影：地名的中心按投影算（球的背面不标），大小按那里的比例
   const proj = cam.proj;
   const toScreen = proj
@@ -1681,10 +2016,12 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
   const my = 40 + (st.motion && !exporting ? MOTION_LAYER_MARGIN * chh : 0);
   const placed: PlacedLabel[] = [];
   const boxes: LabelBox[] = [];
+  // 放好的框按格子记下（第四十轮：避让按格子查，与逐个比相同；boxes 与 index 里始终是同一批框）
+  const index = new BoxIndex();
   // 国名最先排（第二十三轮）
-  if (st.countries?.length) placeCountries(ctx, st, ks, toScreen, { cw, ch: chh, mx, my, exporting }, placed, boxes);
+  if (st.countries?.length) placeCountries(ctx, st, ks, toScreen, { cw, ch: chh, mx, my, exporting }, placed, boxes, index);
   // 城市、地标、自定义点（第二十四轮）：国名之后
-  if (st.settlements?.length) placeSettlements(ctx, st, ks, toScreen, (x, y) => (proj ? cam.zoom * trueScale(proj, x, y) : cam.zoom), { cw, ch: chh, mx, my, exporting }, placed, boxes);
+  if (st.settlements?.length) placeSettlements(ctx, st, ks, toScreen, (x, y) => (proj ? cam.zoom * trueScale(proj, x, y) : cam.zoom), { cw, ch: chh, mx, my, exporting, anchors: !!proj }, placed, boxes, index);
   // 用户自己的地名（圈的地区、放的地名、改过的名字）和悬停、选中的那个：总是标出来，最先放（避让时别的让它）
   const mine = (f: GeoFeature) => !!f.region || f.custom || f.key === st.hoverLabel;
   const features = [...(st.features ?? [])].sort((a, b) => Number(mine(b)) - Number(mine(a)) || b.importance - a.importance);
@@ -1726,10 +2063,11 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
     const grow = minPx > 0 ? Math.max(0, Math.log2(Math.max(1, sizePx / minPx))) * 2.6 : 0;
     const fontPx = Math.round(Math.min(f.type === 'continent' || f.type === 'ocean' ? 30 : 20, base + grow));
     const font = `${style.italic ? 'italic ' : ''}${f.type === 'continent' || f.type === 'ocean' ? 600 : 500} ${fontPx}px system-ui, "PingFang SC", sans-serif`;
-    ctx.font = font;
     const label = nameText(f.name, f.orig, st.nameMode);
     const text = f.type === 'peak' ? `▲ ${label}` : f.type === 'spot' ? `• ${label}` : label;
     const chars = [...text];
+    // 第四十轮：只在要量字（字宽缓存里没有）时设字体（设一次要解析一遍字体名；画的时候每个地名自己设）
+    if (chars.some((c) => !glyphs.has(`${font}|${c}`))) ctx.font = font;
     const wide = f.type === 'range' || f.type === 'continent' || f.type === 'ocean' || f.type === 'region';
     const spacing = (f.type === 'region' ? 0.3 : style.spacing) * fontPx * (wide ? 2 : 1);
     const widths = chars.map((c) => glyphWidth(ctx, font, c));
@@ -1772,14 +2110,17 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
         sy = Math.max(hh, Math.min(chh - hh, sy));
       }
       const box = { key: f.key, x0: sx - hw, y0: sy - hh, x1: sx + hw, y1: sy + hh };
-      if (boxes.some((b) => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0)) continue;
+      if (index.hits(box)) continue;
       boxes.push(box);
-      placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom && !isPeak ? '#7a1f5c' : style.color, x: sx, y: sy, angle });
+      index.add(box);
+      placed.push({ key: f.key, chars, widths, spacing, total, font, color: f.custom && !isPeak ? '#7a1f5c' : style.color, x: sx, y: sy, angle, ...(proj ? { anchor: [f.x, f.y, x0, y0] as Anchor } : {}) });
       if (isPeak) named.add(f);
     }
   }
   // 没标名字的山峰：画一个小三角（与已标的地名、别的三角隔开 PEAK_GAP 像素以上才画，高的先画）
   const marks: [number, number][] = [];
+  // 投影时每个三角的地图坐标（转球的一次手势里按它重新投影，见 drawLabels）
+  const markAnchors: [number, number][] = [];
   // 按 PEAK_GAP 分格记下画了的三角：只看相邻的九格
   const grid = new Map<string, [number, number][]>();
   const near = (x: number, y: number) => {
@@ -1795,17 +2136,79 @@ export function placeLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Over
       if (!at) continue;
       const [x, y] = at;
       if (x < -mx || y < -my || x > cw + mx || y > chh + my || (exporting && (x < 0 || x >= cw))) continue;
-      if (near(x, y) || boxes.some((b) => b.x0 < x + 4 && b.x1 > x - 4 && b.y0 < y + 4 && b.y1 > y - 4)) continue;
+      if (near(x, y) || index.hits({ key: '', x0: x - 4, y0: y - 4, x1: x + 4, y1: y + 4 })) continue;
       marks.push([x, y]);
+      if (proj) markAnchors.push([f.x + 2 * k, f.y]);
       const g = `${Math.floor(x / PEAK_GAP)},${Math.floor(y / PEAK_GAP)}`;
-      grid.set(g, [...(grid.get(g) ?? []), [x, y]]);
+      const cell = grid.get(g);
+      if (cell) cell.push([x, y]);
+      else grid.set(g, [[x, y]]);
     }
   }
   // 点击命中只给真的地名（山峰不是地物，点了没有可改的名字；国名也不是地物）
   const hits = pseudo.size || st.countries?.length || st.settlements?.length ? boxes.filter((b) => !b.key.startsWith(PEAK_KEY) && !b.key.startsWith(COUNTRY_KEY) && !b.key.startsWith(REGION_KEY) && !b.key.startsWith(SETTLE_KEY)) : boxes;
-  const out = { key, base, cam: { ...cam }, features: st.features, peaks, countries: st.countries ?? null, settlements: st.settlements ?? null, placed, boxes: hits, marks, epoch: st.motion ? st.motionEpoch : undefined };
+  // 投影：国名的每个字记下它落在地图上的哪一点（转球时按它重新投影）
+  if (proj) for (const l of placed) if (l.glyphs) l.glyphAnchors = l.glyphs.map((g) => worldAt(cam, cw, chh, g.x, g.y));
+  const out = {
+    key,
+    base,
+    baseNP: labelBase(cw, chh, st, cam, false),
+    cam: { ...cam },
+    features: st.features,
+    peaks,
+    countries: st.countries ?? null,
+    settlements: st.settlements ?? null,
+    placed,
+    boxes: hits,
+    marks,
+    markAnchors: proj ? markAnchors : null,
+    epoch: st.motion ? st.motionEpoch : undefined,
+    gesture: st.motion ? gesture : -1,
+  };
   if (!exporting) layout = out;
+  if (perf) perf.cpu('layout', performance.now() - t0);
   return out;
+}
+
+// 投影的手势里沿用的版面按现在的镜头重新投影（见 drawLabels）：地名、图标挪到锚点现在的位置，国名的字逐个投影，
+// 转到背面（或出了投影）的不画；点击用的框跟着它的地名挪
+function reprojected(L: NonNullable<typeof layout>, cam: Camera, cw: number, ch: number): { placed: PlacedLabel[]; boxes: LabelBox[]; marks: [number, number][] } {
+  const at = (x: number, y: number) => projWorldToScreen(cam, cw, ch, x, y);
+  const placed: PlacedLabel[] = [];
+  const shift = new Map<string, [number, number]>();
+  for (const l of L.placed) {
+    if (l.glyphs) {
+      const ga = l.glyphAnchors;
+      if (!ga) continue;
+      const glyphs: { x: number; y: number; a: number }[] = [];
+      for (let k = 0; k < l.glyphs.length; k++) {
+        const a = ga[k];
+        const p = a && at(a[0], a[1]);
+        if (!p) break;
+        glyphs.push({ x: p[0], y: p[1], a: l.glyphs[k].a });
+      }
+      if (glyphs.length === l.glyphs.length) placed.push({ ...l, glyphs });
+      continue;
+    }
+    if (!l.anchor) continue;
+    const p = at(l.anchor[0], l.anchor[1]);
+    if (!p) continue;
+    const dx = p[0] - l.anchor[2];
+    const dy = p[1] - l.anchor[3];
+    placed.push({ ...l, x: l.x + dx, y: l.y + dy });
+    if (!shift.has(l.key)) shift.set(l.key, [dx, dy]);
+  }
+  const boxes: LabelBox[] = [];
+  for (const b of L.boxes) {
+    const d = shift.get(b.key);
+    if (d) boxes.push({ key: b.key, x0: b.x0 + d[0], y0: b.y0 + d[1], x1: b.x1 + d[0], y1: b.y1 + d[1] });
+  }
+  const marks: [number, number][] = [];
+  for (const [x, y] of L.markAnchors ?? []) {
+    const p = at(x, y);
+    if (p) marks.push(p);
+  }
+  return { placed, boxes, marks };
 }
 
 // 移动中：沿用排好的版面，整体挪一挪、缩一缩；渲染器重画移动中的场景时（motionEpoch 变了）在同一帧重排。
@@ -1847,7 +2250,27 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
     placed = L.placed;
     marks = L.marks;
     boxes = L.boxes.map((b) => ({ key: b.key, x0: b.x0 * r + ox, y0: b.y0 * r + oy, x1: b.x1 * r + ox, y1: b.y1 * r + oy }));
+  } else if (
+    // 第四十轮：等面积、球形投影转动、缩放的一次手势里（移动中，还没停稳过）沿用这次手势第一帧排好的版面，每个地名、图标、
+    // 国名的每个字按记下的地图上的点重新投影（转到背面的不画）；停稳的那一帧照原样重排
+    st.motion &&
+    !st.frame &&
+    cam.proj &&
+    L &&
+    L.markAnchors &&
+    L.gesture === gesture &&
+    L.baseNP === labelBase(cw, chh, st, cam, false) &&
+    L.features === st.features &&
+    L.peaks === (st.peaks ?? null) &&
+    L.countries === (st.countries ?? null) &&
+    L.settlements === (st.settlements ?? null) &&
+    zr < MOTION_LAYER_ZOOM &&
+    zr > 1 / MOTION_LAYER_ZOOM
+  ) {
+    ({ placed, boxes, marks } = reprojected(L, cam, cw, chh));
   } else ({ placed, boxes, marks } = placeLabels(ctx, cam, st, ks, rz));
+  // 停稳画了一次：之后的移动是新的一次手势
+  if (!st.motion && !st.frame) gesture++;
   if (r === 1 && ox === 0 && oy === 0) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   else ctx.setTransform(dpr * r, 0, 0, dpr * r, dpr * ox, dpr * oy);
   ctx.textBaseline = 'middle';

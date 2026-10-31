@@ -2,7 +2,7 @@ import { arcUnits, densify, circle as geoCircle } from '../../core/geo';
 import type { MapStyle } from '../../core/map-style';
 import type { RiverLine } from '../../core/rivers';
 import type { World } from '../../core/world';
-import { type Frame, type LabelBox, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
+import { type Frame, type OverlayParts, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
 import { ROAD_SMOOTH_PX, type RoadDraw, roadStyle } from './settle-draw';
 import { type Proj, type ProjCamera, effectiveZoom, inverse, screenToPlane, screenToWorld, trueScale, worldToScreen } from './projection';
 
@@ -329,45 +329,54 @@ export function kmPerPxAtCenter(cam: Cam, cw: number, ch: number, kmPerUnit: num
   return ((arcUnits(c.x, c.y, r.x, r.y) + arcUnits(c.x, c.y, d.x, d.y)) / 2) * kmPerUnit;
 }
 
-export function drawOverlayProjected(ctx: CanvasRenderingContext2D, world: World, paths: OverlayPaths, cam: Cam, st: OverlayState, f: Frame): LabelBox[] {
+// 三段（第四十轮，见 overlay.ts 的 OverlayParts）：底下（河道与湖的标记、经纬网、道路）、工具的图形、上面（省名、地名、比例尺）
+export function projectedParts(world: World, paths: OverlayPaths, cam: Cam, st: OverlayState, f: Frame): OverlayParts {
   const { cw, ch, dpr } = f;
   const P = projector(cam, cw, ch);
   const rz = refZoom(world, P.zoom);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (st.markers) drawMarkers(ctx, world, paths, P);
-  if (st.latitude) drawGraticule(ctx, P, f);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
   const river = { scale: riverScale(world, P.zoom), color: riverStroke(st.style) };
-  if (st.roads) drawRoadsProjected(ctx, st.roads, P, world.mesh.spacing * P.zoom, st.style);
-  for (const sh of st.shapes) drawShape(ctx, world, sh, P, river, st.style);
-  if (st.provinceLabels.length && rz > 900) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = `${11 * dpr}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 3 * dpr;
-    for (const l of st.provinceLabels) {
-      const s = P.at(l.x, l.y);
-      if (!s) continue;
-      // 球形的边上（斜着看、挤在一起）不标
-      if (cam.proj.kind === 'globe' && trueScale(cam.proj, l.x, l.y) < 0.35 * Math.PI * 0.5) continue;
-      const sx = s[0] * dpr;
-      const sy = s[1] * dpr;
-      if (sx < -50 || sy < -20 || sx > cw * dpr + 50 || sy > ch * dpr + 20) continue;
-      ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
-      ctx.strokeText(l.text, sx, sy);
-      ctx.fillText(l.text, sx, sy);
-    }
-  }
-  const boxes = hasLabels(st) ? drawLabels(ctx, cam, st, [0], rz) : [];
-  if (st.scaleBar) {
-    const kmPerPx = kmPerPxAtCenter(cam, cw, ch, st.kmPerUnit);
-    if (kmPerPx > 0) drawScaleBar(ctx, { x: 0, y: 0, zoom: 1 }, kmPerPx, st.cornerLift, f, '画面中心');
-  }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  return boxes;
+  return {
+    under(ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (st.markers) drawMarkers(ctx, world, paths, P);
+      if (st.latitude) drawGraticule(ctx, P, f);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (st.roads) drawRoadsProjected(ctx, st.roads, P, world.mesh.spacing * P.zoom, st.style);
+    },
+    shapes(ctx) {
+      for (const sh of st.shapes) drawShape(ctx, world, sh, P, river, st.style);
+    },
+    over(ctx) {
+      if (st.provinceLabels.length && rz > 900) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.font = `${11 * dpr}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 3 * dpr;
+        for (const l of st.provinceLabels) {
+          const s = P.at(l.x, l.y);
+          if (!s) continue;
+          // 球形的边上（斜着看、挤在一起）不标
+          if (cam.proj.kind === 'globe' && trueScale(cam.proj, l.x, l.y) < 0.35 * Math.PI * 0.5) continue;
+          const sx = s[0] * dpr;
+          const sy = s[1] * dpr;
+          if (sx < -50 || sy < -20 || sx > cw * dpr + 50 || sy > ch * dpr + 20) continue;
+          ctx.fillStyle = (l.kind && PROVINCE_LABEL_COLOR[l.kind]) || 'rgba(20,20,20,0.85)';
+          ctx.strokeText(l.text, sx, sy);
+          ctx.fillText(l.text, sx, sy);
+        }
+      }
+      const boxes = hasLabels(st) ? drawLabels(ctx, cam, st, [0], rz) : [];
+      if (st.scaleBar) {
+        const kmPerPx = kmPerPxAtCenter(cam, cw, ch, st.kmPerUnit);
+        if (kmPerPx > 0) drawScaleBar(ctx, { x: 0, y: 0, zoom: 1 }, kmPerPx, st.cornerLift, f, '画面中心');
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      return boxes;
+    },
+  };
 }

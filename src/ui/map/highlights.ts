@@ -35,17 +35,23 @@ function wasteLayer(w: World): HighlightLayer | null {
 }
 
 // 省份：选中的省淡淡地亮；无人区画灰色斜线，压在选中高亮之上（选中的省改成无人区时当场看得见）
+let picked: { ids: string; province: Int32Array; layer: HighlightLayer } | null = null;
 export const provinceHighlights: CategoryHighlights = (w) => {
   const layers: HighlightLayer[] = [];
   const key: unknown[] = [];
   // 第二十七轮：⇧+点多选的省都亮
   const ids = provinceSet.value.length ? provinceSet.value : selectedProvince.value !== null ? [selectedProvince.value] : [];
   if (ids.length) {
-    const set = new Set(ids);
-    const cells: number[] = [];
-    for (let i = 0; i < w.mesh.n; i++) if (set.has(w.causes.province[i])) cells.push(i);
-    layers.push({ cells, color: [255, 255, 255], alpha: 0.28 });
-    key.push(ids.join(','));
+    const sel = ids.join(',');
+    // 第四十轮：选中的省的格按选中的省与省份数组记下（每帧不再扫一遍全部格）
+    if (!picked || picked.ids !== sel || picked.province !== w.causes.province) {
+      const set = new Set(ids);
+      const cells: number[] = [];
+      for (let i = 0; i < w.mesh.n; i++) if (set.has(w.causes.province[i])) cells.push(i);
+      picked = { ids: sel, province: w.causes.province, layer: { cells, color: [255, 255, 255], alpha: 0.28 } };
+    }
+    layers.push(picked.layer);
+    key.push(sel);
   }
   const wl = wasteLayer(w);
   if (wl) layers.push(wl);
@@ -54,11 +60,16 @@ export const provinceHighlights: CategoryHighlights = (w) => {
 };
 
 // 地名：选中的地名淡黄
+// 第四十轮：按选中的地名与地名数组记下（每帧不再找一遍、复制一遍格）
+let featMemo: { sel: string; features: unknown; layers: HighlightLayer[] } | null = null;
 export const featureHighlights: CategoryHighlights = (w) => {
   const sel = selectedFeature.value;
   if (!sel) return { layers: [], key: [] };
-  const f = w.derived.features.find((x) => x.key === sel);
-  return { layers: f ? [{ cells: Array.from(f.cells), color: [255, 230, 120], alpha: 0.35 }] : [], key: [sel] };
+  if (!featMemo || featMemo.sel !== sel || featMemo.features !== w.derived.features) {
+    const f = w.derived.features.find((x) => x.key === sel);
+    featMemo = { sel, features: w.derived.features, layers: f ? [{ cells: Array.from(f.cells), color: [255, 230, 120], alpha: 0.35 }] : [] };
+  }
+  return { layers: featMemo.layers, key: [sel] };
 };
 
 // 画河时选中的河：沿河一道淡黄的光（正在改这条河、原来的样子先不画时不亮），它自己的地名先不标（不盖住它的控制点、“+”）

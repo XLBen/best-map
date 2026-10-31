@@ -9,7 +9,7 @@ import { type SettleRef, exec, nameMode, selectedSettle, world } from '../state'
 import { focusOn } from './camera';
 import { Line, ShareRow, StackBar, TextField } from './CountryArchive';
 import { Toggle } from './components/Toggle';
-import { capitalCommand, yearText } from './countries';
+import { capitalCommand, countriesByName, yearText } from './countries';
 import { popText, shareText } from './human';
 import { showCountry } from './panels/countries';
 import { CityGlyph } from './panels/settlements';
@@ -153,7 +153,7 @@ function CityView({ w, id }: { w: World; id: number }) {
   if (!a) return <p class="hint">没有这座城市</p>;
   const meta = w.small.cities![id];
   const patch = (p: Extract<Command, { op: 'set_city' }>['patch'] | null) => run(p ? cityPatchCommand(id, p) : null);
-  const countries = Object.values(w.small.countries ?? {}).sort((x, y) => x.name.localeCompare(y.name, 'zh'));
+  const countries = countriesByName(w);
   const hosts = settleLists(w).points.filter((p) => p.attachedCity === id);
   return (
     <div class="country-archive settle-archive" key={`city:${id}`}>

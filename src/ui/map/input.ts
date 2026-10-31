@@ -4,7 +4,7 @@ import { findCell } from '../../../core/mesh';
 import { nearestCell } from '../../../core/sphere';
 import { EE_HALF_W, GLOBE_G, type Proj, rotateToAnchor, screenToPlane } from '../../render/projection';
 import type { Renderer } from '../../render/renderer';
-import { cursorHint, erasing, hoverCell, hoverProvinceCell, measure, openPanel, picking, pinCell, prefs, showToast, tool, world } from '../../state';
+import { cursorHint, erasing, hoverCell, hoverProvinceCell, measure, openPanel, picking, pinCell, prefs, showToast, sliderActive, tool, world } from '../../state';
 import { clampPlanetCamera, maxZoom, minZoom, shapeFitsWidth } from '../camera';
 import { CATEGORY_DEFS, TOOL_DEFS, category } from '../defs/tools';
 import { type Pointer, type ToolHandler, pinTarget, provinceCellAt } from '../tools';
@@ -51,9 +51,25 @@ function looksLikeTrackpad(e: WheelEvent): boolean {
 
 export function mapInput(
   view: PointerState,
-  o: { renderer: () => Renderer; glCanvas: HTMLCanvasElement; ovCanvas: HTMLCanvasElement; active: () => ToolHandler; requestDraw: () => void; hitLabel: (sx: number, sy: number) => string | null },
+  o: {
+    renderer: () => Renderer;
+    glCanvas: HTMLCanvasElement;
+    ovCanvas: HTMLCanvasElement;
+    active: () => ToolHandler;
+    requestDraw: () => void;
+    hitLabel: (sx: number, sy: number) => string | null;
+    // 鼠标动了、地图不必重画时（预览没变）：鼠标旁的那句话挪到这里
+    hintAt?: (p: Pointer) => void;
+  },
 ): MapInput {
-  const { glCanvas, ovCanvas, active, requestDraw } = o;
+  const { glCanvas, ovCanvas, active } = o;
+  // 第四十轮：上一次移动时工具的预览键（ToolHandler.moveKey）与鼠标下的地名。下一次移动的键、地名都一样时预览不变，不重画；
+  // 别的手势（按下、松手、离开、缩放、镜头动了重新算鼠标）之后作废
+  let moved: { h: ToolHandler; key: readonly unknown[]; label: string | null } | null = null;
+  const requestDraw = () => {
+    moved = null;
+    o.requestDraw();
+  };
   // 拖着平移：按下的位置、那时的镜头；投影时另记那时的朝向，球形还记按下的那一点（拖着转时它跟着鼠标）
   let panning: { x: number; y: number; cx: number; cy: number; proj?: Proj; anchor?: [number, number] | null } | null = null;
   let clickStart: { sx: number; sy: number } | null = null;
@@ -92,6 +108,7 @@ export function mapInput(
   // 镜头动了而鼠标没动（触控板平移、+ / − 缩放、捏合、看全图、换了世界、窗口变了大小）：按鼠标在屏幕上的位置
   // 重新算它指着地图的哪里，画笔圈、悬停的格跟着手。拖着平移时鼠标下始终是同一点，不必算
   function refreshPointer() {
+    moved = null;
     if (!view.pointer || panning) return;
     const p = pointerAt(view.pointer.sx, view.pointer.sy, view.pointer.shift, view.pointer.alt);
     view.pointer = p;
@@ -225,8 +242,17 @@ export function mapInput(
     }
     setHover(p);
     if (CATEGORY_DEFS[category.value].map?.labels) view.hoverLabel = o.hitLabel(p.sx, p.sy);
-    active().move?.(p, view.pressed);
+    const h = active();
+    h.move?.(p, view.pressed);
+    // 预览只随工具给的键变（第四十轮）：同一格里移动、键与鼠标下的地名都没变时不重画，只挪鼠标旁的那句话。
+    // 按着、拖滑块时照旧每次重画
+    const key = !view.pressed && !sliderActive.value ? h.moveKey?.(p) : undefined;
+    if (key && moved && moved.h === h && moved.label === view.hoverLabel && key.length === moved.key.length && key.every((k, i) => k === moved!.key[i])) {
+      o.hintAt?.(p);
+      return;
+    }
     requestDraw();
+    if (key) moved = { h, key, label: view.hoverLabel };
   };
 
   const onUp = async (e: PointerEvent) => {

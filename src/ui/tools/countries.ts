@@ -1,3 +1,4 @@
+import { batch } from '@preact/signals';
 import { hexToRgb } from '../../../core/export';
 import { ringCells } from '../../../core/select';
 import type { CountryMeta, World } from '../../../core/world';
@@ -22,10 +23,13 @@ export const countryName = (w: World, id: number | null) => (id ? (countryOf(w, 
 const rgbOf = (m: CountryMeta | undefined): RGB => (m ? hexToRgb(m.color) : WHITE);
 
 // 选中国家并打开档案
+// 第四十轮：几次写信号合成一次（档案、地图只重画一次）
 export function selectCountry(id: number | null, open = true) {
-  selectedCountry.value = id;
-  if (id !== null && open) sheet.value = 'country';
-  if (id === null && sheet.value === 'country') sheet.value = null;
+  batch(() => {
+    selectedCountry.value = id;
+    if (id !== null && open) sheet.value = 'country';
+    if (id === null && sheet.value === 'country') sheet.value = null;
+  });
 }
 
 // ---------- 首都与选中的国家：几个工具一直画着（第二十七轮：首都在城市、格、国家的档案里改） ----------
@@ -87,6 +91,8 @@ export function countrySelectTool(zoom: () => number): ToolHandler {
     leave() {
       pointer = null;
     },
+    // preview 只看鼠标下画的是哪一格（第四十轮）
+    moveKey: (p) => [p.cell < 0, cellOf(p)],
     click(p) {
       const w = world.value;
       if (!w || p.cell < 0 || !hasCountries(w)) return;
@@ -293,6 +299,7 @@ export function countryMergeTool(zoom: () => number): ToolHandler {
     leave() {
       pointer = null;
     },
+    moveKey: (p) => [p.cell < 0, cellOf(p)],
     async click(p) {
       const w = world.value;
       if (!w || p.cell < 0 || !hasCountries(w) || isBusy()) return;

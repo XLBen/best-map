@@ -50,6 +50,11 @@ export function provinceSelectTool(): ToolHandler {
     move(p) {
       pointer = p;
     },
+    // preview 只看鼠标下画出来的省与 ⇧（第四十轮）
+    moveKey(p) {
+      const w = world.value;
+      return w ? [p.cell < 0, p.cell < 0 ? -1 : provinceIdAt(w, p), p.shift] : undefined;
+    },
     click(p) {
       const w = world.value;
       if (!w || p.cell < 0) return;
