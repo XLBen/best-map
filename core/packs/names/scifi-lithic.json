@@ -1,0 +1,56 @@
+{
+  "id": "scifi-lithic",
+  "name": "科幻·晶岩",
+  "description": "自造的晶岩语：kr、gr、thr 这类磨擦的辅音丛，只用 o、u、a 三个暗元音，名字长，结尾多 -rd、-nd、-rk；音译用克、隆、托、杜这类厚重的字，如 Tarandorund → 塔兰多伦德、Krudondubak → 克鲁东杜巴克。",
+  "kind": "phonetic",
+  "syllables": {
+    "onsets": [["k", 1.5], ["g", 1.5], ["d", 1.5], ["t", 1], ["th", 1], ["m", 1], ["n", 0.8], ["r", 1], ["b", 0.8], ["l", 0.6], ["kr", 0.25], ["gr", 0.25], ["dr", 0.25], ["thr", 0.2]],
+    "nuclei": [["o", 3], ["u", 3], ["a", 2.5]],
+    "codas": [["", 4], ["r", 1], ["n", 1.4], ["m", 0.3], ["l", 0.4]],
+    "first": [["kr", 1.5], ["gr", 1.5], ["thr", 1], ["dr", 1], ["br", 0.8], ["tr", 0.6], ["k", 1], ["g", 1], ["d", 1], ["t", 0.8], ["b", 0.6], ["m", 0.6], ["n", 0.3], ["", 0.6]],
+    "last": [["rd", 1], ["nd", 1.2], ["rn", 0.8], ["rk", 1], ["rg", 0.6], ["k", 1.2], ["m", 0.8], ["n", 0.8], ["r", 1], ["", 0.3]]
+  },
+  "length": [[2, 3], [3, 5], [4, 0.8]],
+  "lists": {
+    "vault": [["athrom", 2], ["orund", 2], ["umak", 1.5], ["okrad", 1], ["ardum", 1], ["ulgor", 0.8], ["agrum", 0.8]]
+  },
+  "forbid": ["aa", "oo", "uu", "ao", "oa", "au", "ua", "uo", "ou", "rr", "nn", "mm", "ll", "kk", "gg", "dd", "tt", "bb", "thth", "lr", "rl", "nr", "mr", "nl", "ml", "ln", "mn", "nm", "nb", "mk", "mg", "md", "mt", "mth", "lthr", "rkr", "rgr", "rdr", "rbr", "rtr", "rthr", "lkr", "lgr", "ldr", "nthr", "mthr", "mkr", "mgr", "mdr", "dkr", "dgr", "ddr", "dthr", "kkr", "kgr", "kdr", "kthr", "gkr", "ggr", "gdr", "gthr", "nkr", "ngr", "mbr", "kg", "gk", "kd", "dk", "gd", "dg", "kt", "tk", "dt", "td", "gt", "tg", "kb", "bk", "gb", "bg", "db", "bd", "kth", "gth", "dth", "rnd", "rnk", "rnr", "ndr", "rdk", "rdg", "ndk", "ndg", "rkt", "rgt", "ngd", "ngk", "nun", "drug", "drunk", "turd", "dork", "dung", "thug", "kondom", "condom", "kaka", "^bum", "bastard", "dumb", "gondor", "mordor", "durota", "krogan", "^gorn", "bantha", "gundark", "mandalor", "^grond$", "thral", "toronto", "ankara", "^montana", "^tobago", "^durban", "^kandahar", "^madrid", "^bogota", "^trondheim", "random", "tomtom", "^a$", "^o$", "^u$", "fuck", "shit", "slut", "whor", "cunt", "piss", "dick", "cock", "nigg", "fag"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}adur", "zh": "{name}"},{"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "{root}odrom", "zh": "{root}岛", "w": 2},{"p": "{root}", "zh": "{root}岛"}]},
+    "archipelago": {"patterns": [{"p": "{root}ombar", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}okrath", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Thalgorun {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Thal {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}ubak", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}uthrak", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}morn", "zh": "{root}湖", "w": 2},{"p": "Morn {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}ugrun", "zh": "{root}河", "w": 2},{"p": "{root}", "zh": "{root}河"}]},
+    "range": {"patterns": [{"p": "{root} Throndak", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}othul", "zh": "{root}峰", "w": 2},{"p": "Thul {root}", "zh": "{root}峰"}], "byTag": {"volcanic": [{"p": "{root}urath", "zh": "{root}火山"}]}},
+    "plateau": {"patterns": [{"p": "{root}abur", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}olom", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}ukan", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}akat", "zh": "{root}荒漠"}]},
+    "forest": {"patterns": [{"p": "{root}orum", "zh": "{root}石林"}]},
+    "tundra": {"patterns": [{"p": "{root}ukrom", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}urnak", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}ulgor", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root}{vault}", "zh": "{name}", "w": 3},{"p": "{root}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}ubak", "zh": "{name}"}], "river": [{"p": "{root}ugrun", "zh": "{name}"}], "mountain": [{"p": "{root}othul", "zh": "{name}"},{"p": "{root}{vault}", "zh": "{name}"}], "sea": [{"p": "Thal {root}", "zh": "{root}海"}], "waste": [{"p": "{root}akat", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}adur", "zh": "{name}"},{"p": "{root}{vault}", "zh": "{name}", "w": 2}]},
+    "spot": {"patterns": [{"p": "{root}{vault}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}okrath", "zh": "{root}角"}], "river": [{"p": "{root}ugrun", "zh": "{name}"}], "mountain": [{"p": "{root}ordak", "zh": "{root}山口"}], "sea": [{"p": "{root}odrom", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "a": "阿", "o": "奥", "u": "乌", "ka": "卡", "ko": "科", "ku": "库", "ga": "加", "go": "戈",
+    "gu": "古", "da": "达", "do": "多", "du": "杜", "ta": "塔", "to": "托", "tu": "图", "tha": "萨",
+    "tho": "索", "thu": "苏", "ba": "巴", "bo": "博", "bu": "布", "ma": "马", "mo": "莫", "mu": "穆",
+    "na": "纳", "no": "诺", "nu": "努", "ra": "拉", "ro": "罗", "ru": "鲁", "la": "腊", "lo": "洛",
+    "lu": "卢", "an": "安", "on": "翁", "un": "温", "kan": "坎", "kon": "孔", "kun": "昆", "gan": "甘",
+    "gon": "贡", "gun": "衮", "dan": "丹", "don": "东", "dun": "敦", "tan": "坦", "ton": "通", "tun": "屯",
+    "than": "桑", "thon": "松", "thun": "孙", "ban": "班", "bon": "邦", "bun": "本", "man": "曼", "mon": "蒙",
+    "mun": "孟", "nan": "南", "non": "农", "ran": "兰", "ron": "隆", "run": "伦", "lan": "岚", "lon": "龙",
+    "lun": "仑", "r": "尔", "k": "克", "d": "德", "n": "恩", "m": "姆", "g": "格", "l": "尔",
+    "t": "特", "b": "布", "th": "斯", "h": "赫", "rn": "恩"
+  }
+}

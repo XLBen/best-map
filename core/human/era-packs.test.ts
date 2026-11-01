@@ -42,7 +42,7 @@ const SCENES = [
   { id: 'antiquity', era: 'antiquity', groups: [['latin', 3], ['levantine', 3], ['chinese', 3]], countries: true, settlements: false },
   { id: 'industrial', era: 'industrial', groups: [['germanic', 3], ['chinese', 3], ['east-slavic', 2]], countries: true, settlements: true },
   { id: 'modern', era: 'modern', groups: [['chinese', 4], ['hindustani', 4], ['kongo', 3], ['germanic', 2]], countries: true, settlements: true },
-  { id: 'fantasy', era: 'fantasy', groups: [['germanic', 3], ['elves', 2], ['dwarves', 1.5], ['orcs', 1.5]], countries: true, settlements: true },
+  { id: 'fantasy', era: 'fantasy', groups: [['germanic', 3], ['elven', 2], ['dwarven', 1.5], ['orcish', 1.5]], countries: true, settlements: true },
   { id: 'scifi', era: 'scifi', groups: [['chinese', 3], ['tidal', 1.5], ['lithic', 1.5]], countries: true, settlements: false },
   // 北欧不是中世纪默认带的组：在“通用 ▸ 文化”里（packImportCommands 在资源库里找）
   { id: 'medieval-pop', era: 'medieval', groups: [['germanic', 1], ['scandinavian', 2]], countries: false, settlements: false },
@@ -141,7 +141,7 @@ describe('生成只读世界里的内容', () => {
 describe('几个包合起来生成', () => {
   const combo = (packs: string[][]) => {
     const eng = world();
-    const groups = ['germanic', 'elves'];
+    const groups = ['germanic', 'elven'];
     importPacks(eng, { packs, groups });
     eng.exec({ op: 'generate_human', packs, groups: groups.map((id) => ({ id, weight: 1 })), countries: {} });
     return eng;
@@ -154,7 +154,7 @@ describe('几个包合起来生成', () => {
     expect(worldEra(small)!.id).toBe('medieval');
     expect(worldDimensions(small).map((d) => d.id)).toEqual(['religion']);
     // 只带了规则包的时代项；取值只带中世纪的维度（宗教）的，奇幻的种族不带
-    const plan = packImportPlan(LIB, { packs: [['medieval'], ['fantasy']], groups: ['germanic', 'elves'] });
+    const plan = packImportPlan(LIB, { packs: [['medieval'], ['fantasy']], groups: ['germanic', 'elven'] });
     expect(plan.era).toEqual({ id: 'medieval', path: ['medieval', 'era'] });
     const fresh = world();
     for (const c of plan.commands) fresh.exec(c);
@@ -164,7 +164,7 @@ describe('几个包合起来生成', () => {
     const govs = eraGovernments(fresh.world.small).map((g) => g.id);
     const want = [...new Set([...ERA_PACKS.get('medieval')!.governments, ...ERA_PACKS.get('fantasy')!.governments])];
     expect(govs).toEqual(want);
-    expect(Object.keys(fresh.world.small.content!.cultureGroup!)).toEqual(['germanic', 'elves']);
+    expect(Object.keys(fresh.world.small.content!.cultureGroup!)).toEqual(['germanic', 'elven']);
     // 时代包里奇幻的生态、河湖、资源不带（要单独勾那几个小包）
     expect(fresh.world.small.species.length).toBe(DEFAULT_SPECIES.length);
     expect(fresh.world.small.riverTypes).toBeUndefined();

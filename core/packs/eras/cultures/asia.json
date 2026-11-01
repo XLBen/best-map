@@ -276,8 +276,7 @@
             ["presidential-republic", 1.5],
             ["military-junta", 1],
             ["parliamentary-republic", 1]
-          ],
-          "species": [["terran", 5], ["augmented", 3], ["synthetic", 2.5]]
+          ]
         },
         "eraTendencies": {
           "antiquity": {
@@ -285,18 +284,7 @@
             "government": [["despotic-monarchy", 3], ["divine-kingship", 1], ["tribal-kingdom", 1]]
           },
           "industrial": {"religion": [["confucian", 6], ["mahayana", 4], ["sunni", 0.3], ["protestant", 0.1]]},
-          "modern": {"religion": [["confucian", 6], ["mahayana", 4], ["sunni", 0.3], ["protestant", 0.1], ["irreligious", 6]]},
-          "scifi": {
-            "ideology": [["sf-technocracy", 4], ["sf-corporate", 3], ["sf-federalist", 1.5], ["sf-militarist", 1]],
-            "government": [
-              ["technocracy", 1.5],
-              ["corporate-republic", 3],
-              ["stellar-empire", 2],
-              ["galactic-federation", 1.5],
-              "military-government",
-              "colony-council"
-            ]
-          }
+          "modern": {"religion": [["confucian", 6], ["mahayana", 4], ["sunni", 0.3], ["protestant", 0.1], ["irreligious", 6]]}
         },
         "prefs": [
           {"tempMin": 12, "tempMax": 24, "factor": 2},
@@ -923,8 +911,7 @@
             ["presidential-republic", 1],
             ["socialist-republic", 0.5],
             ["one-party-state", 0.5]
-          ],
-          "species": [["terran", 7], ["augmented", 2], ["synthetic", 1]]
+          ]
         },
         "eraTendencies": {
           "antiquity": {
@@ -938,11 +925,7 @@
             ]
           },
           "industrial": {"religion": [["hindu", 6], ["sunni", 3], ["sikh", 0.5]]},
-          "modern": {"religion": [["hindu", 6], ["sunni", 3], ["sikh", 0.5], ["irreligious", 0.5]]},
-          "scifi": {
-            "ideology": [["sf-technocracy", 3], ["sf-psionic", 3], ["sf-federalist", 2]],
-            "government": [["technocracy", 2], ["psionic-theocracy", 3], ["galactic-federation", 2], "corporate-republic", "stellar-empire"]
-          }
+          "modern": {"religion": [["hindu", 6], ["sunni", 3], ["sikh", 0.5], ["irreligious", 0.5]]}
         },
         "prefs": [
           {"tempMin": 18, "factor": 1.6},

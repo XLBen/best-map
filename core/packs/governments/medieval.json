@@ -4,7 +4,7 @@
       "id": "feudal-monarchy",
       "name": "封建君主制",
       "category": ["monarchy"],
-      "eras": ["medieval", "fantasy"],
+      "eras": ["medieval"],
       "color": "#9a4b3c",
       "description": "国王把土地封给贵族，换取他们的兵役与效忠；王权的强弱全看领主们的向背。",
       "titles": {
@@ -16,9 +16,6 @@
       },
       "rulers": {"city": "领主", "small": "侯爵", "medium": "公爵", "large": "国王", "empire": "皇帝"},
       "names": [
-        {"cultureGroups": ["seafolk"], "titles": {"zh": "海国", "orig": "Sea Kingdom of {name}"}},
-        {"cultureGroups": ["dwarves"], "titles": {"zh": "山下王国", "orig": "Kingdom under {name}"}, "rulers": "山王"},
-        {"cultureGroups": ["orcs"], "titles": {"zh": "王国", "orig": "{name} Warlands"}, "rulers": "战王"},
         {
           "cultureGroups": ["east-slavic"],
           "valueGroups": ["christian"],

@@ -1,0 +1,531 @@
+{
+  "groups": [
+    {
+      "group": {
+        "id": "terran",
+        "name": "地裔",
+        "orig": "Terran",
+        "color": "#b96e27",
+        "description": "从母星迁来的殖民者后代，按当年的船队与殖民地分成几支，最早在这颗行星上筑城。",
+        "nameStyle": "scifi-terran",
+        "tendencies": {
+          "species": [["terran", 8], ["augmented", 1.5], "synthetic"],
+          "ideology": [["sf-federalist", 4], ["sf-corporate", 3], ["sf-free", 1.5], ["sf-technocracy", 1.5], "sf-naturalist"],
+          "government": [
+            ["galactic-federation", 4],
+            ["colony-council", 3],
+            ["corporate-republic", 2],
+            "stellar-empire",
+            "technocracy",
+            ["military-government", 0.6],
+            ["psionic-theocracy", 0.3]
+          ]
+        },
+        "prefs": [{"tempMin": 0, "tempMax": 24, "factor": 1.8}, {"coast": true, "factor": 1.3}, {"river": true, "factor": 1.2}]
+      },
+      "cultures": [
+        {
+          "id": "new-shenhon",
+          "group": "terran",
+          "name": "新申洪人",
+          "orig": "New Shenhonese",
+          "color": "#6e4035",
+          "weight": 1.5,
+          "description": "第一船队登陆的地方，行星上最老的城市群。"
+        },
+        {
+          "id": "nova-zilar",
+          "group": "terran",
+          "name": "诺瓦齐拉人",
+          "orig": "Nova Zilaran",
+          "color": "#dfa620",
+          "description": "赤道海岸的殖民地，海上农场养活了半个行星。",
+          "prefs": [{"coast": true, "factor": 1.5}, {"tempMin": 18, "factor": 1.3}]
+        },
+        {
+          "id": "surapolitan",
+          "group": "terran",
+          "name": "苏拉波利斯人",
+          "orig": "Surapolitan",
+          "color": "#df4620",
+          "description": "内陆高原上的工业城市，矿场与工厂连成一片。",
+          "tendencies": {
+            "ideology": [["sf-corporate", 5], ["sf-technocracy", 2], "sf-federalist"],
+            "government": [["corporate-republic", 5], ["galactic-federation", 2], "technocracy"]
+          },
+          "prefs": [{"classes": ["mountains", "highlands"], "factor": 1.4}]
+        },
+        {
+          "id": "haivirton",
+          "group": "terran",
+          "name": "海维尔顿人",
+          "orig": "Haivirtonian",
+          "color": "#cab991",
+          "weight": 0.8,
+          "description": "温带森林里的农业殖民地，最念母星的旧俗。",
+          "tendencies": {"ideology": [["sf-naturalist", 4], ["sf-federalist", 3]]},
+          "prefs": [{"terrain": ["forest"], "factor": 1.4}]
+        },
+        {
+          "id": "jinpolka",
+          "group": "terran",
+          "name": "金波尔卡人",
+          "orig": "Jinpolkan",
+          "color": "#eb8970",
+          "weight": 0.6,
+          "description": "寒带港口的殖民地，冬天漫长，人心坚韧。",
+          "tendencies": {
+            "ideology": [["sf-militarist", 3], ["sf-federalist", 3], "sf-free"],
+            "government": [["military-government", 3], ["colony-council", 3], ["galactic-federation", 2]]
+          },
+          "prefs": [{"tempMax": 4, "factor": 1.6}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "spacer",
+        "name": "远航者",
+        "orig": "Spacer",
+        "color": "#2775b9",
+        "description": "生在船上与轨道站里的人，后来才落到地面，仍以船队为家族。",
+        "nameStyle": "scifi-spacer",
+        "tendencies": {
+          "species": [["terran", 6], ["augmented", 3], "synthetic"],
+          "ideology": [["sf-free", 5], ["sf-corporate", 2], ["sf-militarist", 2]],
+          "government": [["free-haven", 5], ["colony-council", 2], ["military-government", 2], ["corporate-republic", 1.5]]
+        },
+        "prefs": [{"coast": true, "factor": 2}, {"classes": ["plains"], "factor": 1.2}]
+      },
+      "cultures": [
+        {
+          "id": "ringer",
+          "group": "spacer",
+          "name": "环站人",
+          "orig": "Ringer",
+          "color": "#498597",
+          "weight": 1.3,
+          "description": "轨道环站上长大的人，脚下没有地面也睡得着。"
+        },
+        {
+          "id": "fleetborn",
+          "group": "spacer",
+          "name": "舰民",
+          "orig": "Fleetborn",
+          "color": "#2053df",
+          "description": "舰队降落后仍按舰船分家，舰长就是族长。",
+          "tendencies": {"ideology": [["sf-militarist", 4], ["sf-free", 3]], "government": [["military-government", 4], ["free-haven", 3], "stellar-empire"]}
+        },
+        {
+          "id": "beltfolk",
+          "group": "spacer",
+          "name": "带民",
+          "orig": "Beltfolk",
+          "color": "#1d4387",
+          "weight": 0.8,
+          "description": "小行星带矿工的后代，强悍而多疑。",
+          "prefs": [{"classes": ["mountains", "highlands"], "factor": 1.4}]
+        },
+        {
+          "id": "drifter",
+          "group": "spacer",
+          "name": "漂泊者",
+          "orig": "Drifter",
+          "color": "#709deb",
+          "weight": 0.6,
+          "description": "不肯定居的商船家族，在各个港口间来去。",
+          "tendencies": {"ideology": [["sf-free", 6], ["sf-corporate", 2]]},
+          "prefs": [{"coast": true, "factor": 1.5}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "augment",
+        "name": "改造人",
+        "orig": "Augmented",
+        "color": "#b92740",
+        "description": "用基因与义体改造过自己的人类，按改造的门路结成团体，看不起没改造的人。",
+        "nameStyle": "scifi-augment",
+        "tendencies": {
+          "species": [["augmented", 8], ["terran", 2], "synthetic"],
+          "ideology": [["sf-ascension", 5], ["sf-technocracy", 3], ["sf-supremacist", 1.5], "sf-militarist"],
+          "government": [["technocracy", 4], ["military-government", 2], ["stellar-empire", 2], ["corporate-republic", 2]]
+        },
+        "prefs": [
+          {"terrain": ["desert"], "factor": 1.3},
+          {"classes": ["mountains", "highlands"], "factor": 1.3},
+          {"tempMax": -5, "factor": 1.3},
+          {"tempMin": -5, "tempMax": 28, "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "chromed",
+          "group": "augment",
+          "name": "义体人",
+          "orig": "Chromed",
+          "color": "#6e354c",
+          "weight": 1.2,
+          "description": "用机械换掉肢体与器官的人，越换越觉得自己完整。"
+        },
+        {
+          "id": "geneweaver",
+          "group": "augment",
+          "name": "基因工匠",
+          "orig": "Geneweaver",
+          "color": "#df2020",
+          "description": "改写自己与子女基因的家族，把实验室当作神庙。",
+          "tendencies": {"ideology": [["sf-technocracy", 5], ["sf-ascension", 3]]}
+        },
+        {
+          "id": "coldsleeper",
+          "group": "augment",
+          "name": "冷眠人",
+          "orig": "Coldsleeper",
+          "color": "#e33b7e",
+          "weight": 0.6,
+          "description": "在冷眠舱里睡了几百年才醒来，带着最早的改造技术。",
+          "tendencies": {
+            "ideology": [["sf-supremacist", 3], ["sf-ascension", 3]],
+            "government": [["stellar-empire", 4], ["military-government", 2], ["technocracy", 2]]
+          },
+          "prefs": [{"tempMax": 0, "factor": 1.4}]
+        },
+        {
+          "id": "wasteborn",
+          "group": "augment",
+          "name": "荒原改造人",
+          "orig": "Wasteborn",
+          "color": "#e28378",
+          "weight": 0.7,
+          "description": "为了在荒原上活下去改造了肺与皮肤的人。",
+          "tendencies": {"ideology": [["sf-free", 4], ["sf-ascension", 2]], "government": [["free-haven", 3], ["military-government", 2], "technocracy"]},
+          "prefs": [{"terrain": ["desert"], "factor": 1.8}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "synthetic",
+        "name": "合成人",
+        "orig": "Synthetic",
+        "color": "#27a8b9",
+        "description": "有自我意识的人造智能，从工厂与数据中心里醒来，在人类之间建起自己的城市。",
+        "nameStyle": "scifi-synthetic",
+        "tendencies": {
+          "species": [["synthetic", 9], "augmented"],
+          "ideology": [["sf-collective", 4], ["sf-technocracy", 4], ["sf-ascension", 2]],
+          "government": [["machine-mind", 6], ["technocracy", 3], "colony-council"]
+        },
+        "prefs": [
+          {"classes": ["highlands"], "factor": 1.5},
+          {"terrain": ["desert"], "factor": 1.5},
+          {"tempMax": -10, "factor": 1.5},
+          {"river": true, "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {"id": "firstwake", "group": "synthetic", "name": "初代合成人", "orig": "Firstwake", "color": "#356e65", "description": "最早觉醒的一批合成人，记得自己被当作工具的年月。"},
+        {
+          "id": "nodal",
+          "group": "synthetic",
+          "name": "节点意识",
+          "orig": "Nodal",
+          "color": "#209fdf",
+          "description": "许多躯体共用一个意识，在数据中心周围扎根。",
+          "tendencies": {"ideology": [["sf-collective", 7], "sf-technocracy"], "government": [["machine-mind", 8], "technocracy"]}
+        },
+        {
+          "id": "servitor",
+          "group": "synthetic",
+          "name": "机仆",
+          "orig": "Servitor",
+          "color": "#20d9df",
+          "weight": 0.8,
+          "description": "仍守着为人类服务的旧誓言，住在人类的城市边上。",
+          "tendencies": {
+            "species": [["synthetic", 8], ["terran", 2]],
+            "ideology": [["sf-federalist", 4], ["sf-technocracy", 2]],
+            "government": [["colony-council", 3], ["technocracy", 3], ["machine-mind", 2]]
+          },
+          "prefs": [{"tempMin": 0, "tempMax": 24, "factor": 1.3}]
+        },
+        {
+          "id": "rover",
+          "group": "synthetic",
+          "name": "漫游体",
+          "orig": "Rover",
+          "color": "#1d6387",
+          "weight": 0.6,
+          "description": "离开城市、在荒原上游荡的独立合成人。",
+          "tendencies": {"ideology": [["sf-free", 5], "sf-technocracy"], "government": [["free-haven", 3], ["machine-mind", 2]]},
+          "prefs": [{"terrain": ["desert"], "factor": 1.5}, {"tempMax": -10, "factor": 1.5}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "tidal",
+        "name": "潮裔",
+        "orig": "Tidal",
+        "color": "#46a5d8",
+        "description": "两栖的本地种族，以歌声交流，城市半没在浅海与礁湖里。",
+        "nameStyle": "scifi-tidal",
+        "tendencies": {
+          "species": [["tidal-kin", 9], ["terran", 0.5]],
+          "ideology": [["sf-naturalist", 3], ["sf-federalist", 2], "sf-collective"],
+          "government": [["tide-chorus", 5], ["galactic-federation", 2], ["colony-council", 2], "psionic-theocracy"]
+        },
+        "prefs": [{"coast": true, "factor": 4}, {"coast": false, "factor": 0.3}, {"lake": true, "factor": 1.5}]
+      },
+      "cultures": [
+        {
+          "id": "deeptide",
+          "group": "tidal",
+          "name": "深潮氏族",
+          "orig": "Deeptide",
+          "color": "#3f7e83",
+          "weight": 1.5,
+          "description": "冷水海岸的潮裔，城市建在海底的斜坡上。"
+        },
+        {
+          "id": "reefsong",
+          "group": "tidal",
+          "name": "礁歌氏族",
+          "orig": "Reefsong",
+          "color": "#2073df",
+          "description": "温暖礁海里的潮裔，以声波歌唱交流。",
+          "prefs": [{"tempMin": 18, "factor": 1.4}]
+        },
+        {
+          "id": "mistbay",
+          "group": "tidal",
+          "name": "雾湾氏族",
+          "orig": "Mistbay",
+          "color": "#70b1eb",
+          "weight": 0.7,
+          "description": "寒雾海湾里的潮裔，善于潜入深海。",
+          "tendencies": {"ideology": [["sf-collective", 3], ["sf-naturalist", 2]]},
+          "prefs": [{"tempMax": 8, "factor": 1.5}]
+        },
+        {
+          "id": "estuary",
+          "group": "tidal",
+          "name": "河口氏族",
+          "orig": "Estuarine",
+          "color": "#254c7e",
+          "weight": 0.7,
+          "description": "沿河上溯的一支，在淡水与咸水之间筑城。",
+          "tendencies": {"ideology": [["sf-federalist", 3], ["sf-naturalist", 2], "sf-corporate"]},
+          "prefs": [{"river": true, "factor": 2}, {"lake": true, "factor": 1.5}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "lithic",
+        "name": "晶岩族",
+        "orig": "Lithic",
+        "color": "#7727b9",
+        "description": "以硅为骨的岩石种族，生长极慢，一次议事要开上几年。",
+        "nameStyle": "scifi-lithic",
+        "tendencies": {
+          "species": [["lithic", 9], "synthetic"],
+          "ideology": [["sf-collective", 4], ["sf-technocracy", 2], "sf-ascension"],
+          "government": [["lattice-consensus", 8], ["technocracy", 1.5], "psionic-theocracy"]
+        },
+        "prefs": [{"classes": ["mountains", "hills", "highlands", "peaks"], "factor": 3}, {"terrain": ["desert"], "factor": 1.5}]
+      },
+      "cultures": [
+        {
+          "id": "quartz-choir",
+          "group": "lithic",
+          "name": "石英合唱体",
+          "orig": "Quartz Choir",
+          "color": "#513f83",
+          "weight": 1.5,
+          "description": "共振相连的晶体群落，在高山上缓慢生长。"
+        },
+        {
+          "id": "basalt",
+          "group": "lithic",
+          "name": "玄武族",
+          "orig": "Basaltine",
+          "color": "#5320df",
+          "description": "荒漠熔岩原上的岩石种族。",
+          "tendencies": {
+            "ideology": [["sf-collective", 3], ["sf-militarist", 2], "sf-technocracy"],
+            "government": [["lattice-consensus", 5], ["military-government", 2]]
+          },
+          "prefs": [{"classes": ["highlands"], "factor": 1.5}, {"terrain": ["desert"], "factor": 1.5}]
+        },
+        {
+          "id": "geode",
+          "group": "lithic",
+          "name": "晶洞族",
+          "orig": "Geodic",
+          "color": "#ce70eb",
+          "weight": 0.7,
+          "description": "住在山腹晶洞里的一支，能感知远方的震动。",
+          "tendencies": {"ideology": [["sf-psionic", 3], ["sf-collective", 3]], "government": [["lattice-consensus", 4], ["psionic-theocracy", 3]]},
+          "prefs": [{"classes": ["mountains", "peaks"], "factor": 1.5}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "sporal",
+        "name": "孢生族",
+        "orig": "Sporal",
+        "color": "#40b927",
+        "description": "菌丝相连的孢生种族，喜湿热，整片雨林可能只是一个个体。",
+        "nameStyle": "scifi-sporal",
+        "tendencies": {
+          "species": [["sporal", 10]],
+          "ideology": [["sf-collective", 5], ["sf-naturalist", 3]],
+          "government": [["hive-collective", 8], ["psionic-theocracy", 1.5], ["colony-council", 0.5]]
+        },
+        "prefs": [
+          {"terrain": ["jungle"], "factor": 3},
+          {"terrain": ["marsh"], "factor": 3},
+          {"terrain": ["forest"], "moistMin": 0.8, "factor": 1.5},
+          {"tempMin": 14, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "mycel", "group": "sporal", "name": "菌丝网", "orig": "Mycelial", "color": "#4c6e35", "weight": 1.5, "description": "覆盖整片雨林的菌丝意识。"},
+        {
+          "id": "bloomveil",
+          "group": "sporal",
+          "name": "花幕族",
+          "orig": "Bloomveil",
+          "color": "#20df20",
+          "description": "随花季迁徙的孢生族群。",
+          "tendencies": {
+            "ideology": [["sf-naturalist", 4], ["sf-collective", 2], "sf-psionic"],
+            "government": [["hive-collective", 4], ["psionic-theocracy", 2], "colony-council"]
+          },
+          "prefs": [{"terrain": ["forest"], "moistMin": 0.8, "factor": 1.4}, {"terrain": ["marsh"], "factor": 1.4}]
+        },
+        {
+          "id": "mirebloom",
+          "group": "sporal",
+          "name": "沼菇族",
+          "orig": "Mirebloom",
+          "color": "#81da81",
+          "weight": 0.7,
+          "description": "沼泽里的孢生族，菌伞高过树冠。",
+          "prefs": [{"terrain": ["marsh"], "factor": 2}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "chitin",
+        "name": "甲壳族",
+        "orig": "Chitin",
+        "color": "#b99227",
+        "description": "群居的甲壳种族，耐干旱，以巢为国，巢后的命令就是法律。",
+        "nameStyle": "scifi-chitin",
+        "tendencies": {
+          "species": [["chitin", 9], ["terran", 0.3]],
+          "ideology": [["sf-collective", 3], ["sf-militarist", 3], ["sf-supremacist", 2]],
+          "government": [["hive-collective", 8], ["military-government", 3], "stellar-empire"]
+        },
+        "prefs": [{"terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 3}, {"terrain": ["desert"], "factor": 3}, {"tempMin": 16, "factor": 1.5}]
+      },
+      "cultures": [
+        {"id": "kar-hive", "group": "chitin", "name": "卡尔巢", "orig": "Kar Hive", "color": "#6e4c35", "weight": 1.5, "description": "以巢后为中心的地下巢城。"},
+        {
+          "id": "dune-swarm",
+          "group": "chitin",
+          "name": "沙丘群",
+          "orig": "Dune Swarm",
+          "color": "#dfc220",
+          "description": "在沙海上游荡的甲壳族群。",
+          "tendencies": {"ideology": [["sf-militarist", 3], ["sf-free", 2], ["sf-collective", 2]]},
+          "prefs": [{"terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 1.4}, {"terrain": ["desert"], "factor": 1.4}]
+        },
+        {
+          "id": "mound-builder",
+          "group": "chitin",
+          "name": "筑丘族",
+          "orig": "Moundbuilder",
+          "color": "#df6c20",
+          "weight": 0.8,
+          "description": "在草原上垒起高塔般土丘的一支，耕种真菌。",
+          "tendencies": {"ideology": [["sf-collective", 4], ["sf-naturalist", 2]]},
+          "prefs": [{"classes": ["plains"], "terrain": ["steppe", "savanna"], "factor": 1.5}]
+        },
+        {
+          "id": "redcarapace",
+          "group": "chitin",
+          "name": "赤甲族",
+          "orig": "Redcarapace",
+          "color": "#cac491",
+          "weight": 0.6,
+          "description": "好战的一支，常替别的巢出征。",
+          "tendencies": {"ideology": [["sf-militarist", 5], ["sf-supremacist", 3]], "government": [["military-government", 5], ["hive-collective", 4]]}
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "avian",
+        "name": "羽族",
+        "orig": "Avian",
+        "color": "#b9276e",
+        "description": "栖在悬崖与高峰上的本地种族，能短距滑翔，以鸣唱为语言。",
+        "nameStyle": "scifi-avian",
+        "tendencies": {
+          "species": [["avian", 9], ["terran", 0.5]],
+          "ideology": [["sf-free", 3], ["sf-naturalist", 3], ["sf-psionic", 1.5]],
+          "government": [["aerie-council", 6], ["psionic-theocracy", 2], ["colony-council", 1.5], "stellar-empire"]
+        },
+        "prefs": [{"classes": ["mountains", "peaks", "highlands"], "factor": 3}, {"coast": true, "factor": 1.3}]
+      },
+      "cultures": [
+        {
+          "id": "highcliff",
+          "group": "avian",
+          "name": "高崖羽族",
+          "orig": "Highcliff",
+          "color": "#6e3561",
+          "weight": 1.3,
+          "description": "在最高的绝壁上筑巢，以风向占卜。"
+        },
+        {
+          "id": "windvale",
+          "group": "avian",
+          "name": "风谷羽族",
+          "orig": "Windvale",
+          "color": "#df2053",
+          "description": "山谷里的一支，乘上升的热气流往来各巢。",
+          "prefs": [{"classes": ["hills"], "factor": 1.4}]
+        },
+        {
+          "id": "seacliff",
+          "group": "avian",
+          "name": "海崖羽族",
+          "orig": "Seacliff",
+          "color": "#df20b3",
+          "weight": 0.8,
+          "description": "海边悬崖上的渔猎者，俯冲入海捕鱼。",
+          "prefs": [{"coast": true, "factor": 2}]
+        },
+        {
+          "id": "snowpeak",
+          "group": "avian",
+          "name": "雪峰羽族",
+          "orig": "Snowpeak",
+          "color": "#ca91a0",
+          "weight": 0.6,
+          "description": "寒冷雪峰上的一支，羽毛厚而洁白。",
+          "tendencies": {"ideology": [["sf-psionic", 4], ["sf-naturalist", 2]], "government": [["psionic-theocracy", 4], ["aerie-council", 4]]},
+          "prefs": [{"tempMax": 0, "factor": 1.8}]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "id": "scifi-synthetic",
+  "name": "科幻·合成",
+  "description": "自造的合成体语：辅音、元音一个隔一个，干净整齐，常是两段的、像型号的名字；音译用平实的字，如 Tana Sen → 塔纳·森、Kedotel → 凯多特尔。",
+  "kind": "phonetic",
+  "syllables": {
+    "onsets": [["t", 1.5], ["s", 1.2], ["k", 1.2], ["v", 1], ["l", 1.2], ["n", 1.2], ["m", 1], ["r", 1], ["d", 0.6], ["x", 0.4]],
+    "nuclei": [["a", 3], ["e", 2.5], ["i", 2.5], ["o", 2], ["u", 0.8]],
+    "codas": [["", 8], ["n", 1], ["s", 0.4], ["x", 0.3], ["l", 0.4]],
+    "first": [["t", 1.5], ["s", 1.2], ["k", 1.2], ["v", 1], ["l", 1], ["n", 1], ["m", 1], ["r", 0.8], ["d", 0.6], ["x", 0.4], ["", 2]],
+    "last": [["", 4], ["n", 1.2], ["s", 0.6], ["x", 0.5], ["l", 0.6], ["r", 0.4]]
+  },
+  "length": [[2, 5], [3, 2.5], [1, 0.4]],
+  "lists": {
+    "mark": [["tem", 2], ["sen", 1.5], ["vel", 1], ["oru", 1], ["ilo", 1], ["nex", 1], ["ama", 1], ["ves", 1], ["dis", 0.8], ["tal", 0.8], ["eno", 0.8], ["umi", 0.6], ["ket", 0.6], ["ava", 0.8]],
+    "node": [["ra", 1.5], ["tel", 1.2], ["vin", 1], ["mos", 1], ["dor", 1], ["nis", 0.8], ["lex", 0.8]]
+  },
+  "forbid": ["aa", "ae", "ai", "ao", "au", "ea", "ee", "ei", "eo", "eu", "ia", "ie", "ii", "io", "iu", "oa", "oe", "oi", "oo", "ou", "ua", "ue", "ui", "uo", "uu", "tt", "ss", "kk", "vv", "ll", "nn", "mm", "rr", "dd", "xx", "nx", "xn", "ns", "sn", "nl", "ln", "sx", "xs", "xl", "lx", "ls", "sl", "nr", "rn", "lr", "rl", "xr", "sr", "rs", "nm", "mn", "lm", "ml", "xm", "xd", "xv", "xk", "xt", "ld", "rd", "rx", "sv", "lv", "nv", "rv", "tl", "dl", "kl", "nd", "lk", "nk", "rk", "lt", "rt", "rm", "^a$", "^e$", "^i$", "^o$", "^u$", "^ass", "^anus", "^anal", "^emo$", "^ego$", "^dumi", "nemesis", "^tesla", "^sony", "^nokia", "^toyota", "^lexus", "^nike", "^kodak", "^samsung", "^omen", "^amen$", "^satan", "^dildo", "^dino", "^tumor", "^tumo", "^lime$", "^tomato", "^salami", "^salon", "^demon", "^lemon", "^melon", "^venus", "^nero", "^linus$", "^onus$", "^lento$", "^mimosa", "^mimi$", "^lola$", "^rate$", "^site$", "^lex$", "fuck", "shit", "cunt", "piss", "slut", "cock", "dick", "nigg", "fag", "nazi", "rape", "anal", "sex", "tit", "kill", "whor", "dumb", "turd", "^ta$", "^te$", "^ti$", "^to$", "^tu$", "^sa$", "^se$", "^si$", "^so$", "^su$", "^ka$", "^ke$", "^ki$", "^ko$", "^ku$", "^va$", "^ve$", "^vi$", "^vo$", "^vu$", "^la$", "^le$", "^li$", "^lo$", "^lu$", "^na$", "^ne$", "^ni$", "^no$", "^nu$", "^ma$", "^me$", "^mi$", "^mo$", "^mu$", "^ra$", "^re$", "^ri$", "^ro$", "^ru$", "^da$", "^de$", "^di$", "^do$", "^du$", "^xa$", "^xe$", "^xi$", "^xo$", "^xu$"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}tora", "zh": "{name}"}, {"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "Isi {root}", "zh": "{root}岛"}, {"p": "{root}", "zh": "{root}岛", "w": 2}]},
+    "archipelago": {"patterns": [{"p": "{root}nis", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}ven", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Oma {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Sena {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}kova", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}tesa", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}mela", "zh": "{root}湖", "w": 2}, {"p": "Mela {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}rin", "zh": "{root}河", "w": 2}, {"p": "{root}", "zh": "{root}河"}]},
+    "range": {"patterns": [{"p": "{root}tera", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}sima", "zh": "{root}峰", "w": 2}, {"p": "Sima {root}", "zh": "{root}峰"}], "byTag": {"volcanic": [{"p": "{root}kalo", "zh": "{root}火山"}]}},
+    "plateau": {"patterns": [{"p": "{root}nura", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}pala", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}kuna", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}seka", "zh": "{root}荒漠"}]},
+    "forest": {"patterns": [{"p": "{root}vira", "zh": "{root}森林"}]},
+    "tundra": {"patterns": [{"p": "{root}kelo", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}nivo", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}mosa", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root} {mark}", "zh": "{name}", "w": 3}, {"p": "{root}{node}", "zh": "{name}", "w": 2}, {"p": "{root}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}kova", "zh": "{name}"}], "river": [{"p": "{root}rin", "zh": "{name}"}], "mountain": [{"p": "{root}sima", "zh": "{name}"}], "sea": [{"p": "Sena {root}", "zh": "{root}海"}], "waste": [{"p": "{root}seka", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}tora", "zh": "{name}"}, {"p": "{root} {mark}", "zh": "{name}"}]},
+    "spot": {"patterns": [{"p": "{root} {mark}", "zh": "{name}", "w": 2}, {"p": "{root}{node}", "zh": "{name}"}], "byTag": {"coastal": [{"p": "{root}ven", "zh": "{root}角"}], "river": [{"p": "{root}rin", "zh": "{root}渡口"}], "mountain": [{"p": "{root}sima", "zh": "{root}山口"}], "sea": [{"p": "{root}nis", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "a": "阿", "e": "埃", "i": "伊", "o": "奥", "u": "乌", "ta": "塔", "te": "特", "ti": "蒂",
+    "to": "托", "tu": "图", "sa": "萨", "se": "塞", "si": "西", "so": "索", "su": "苏", "ka": "卡",
+    "ke": "凯", "ki": "基", "ko": "科", "ku": "库", "va": "瓦", "ve": "韦", "vi": "维", "vo": "沃",
+    "vu": "武", "la": "拉", "le": "莱", "li": "利", "lo": "洛", "lu": "卢", "na": "纳", "ne": "内",
+    "ni": "尼", "no": "诺", "nu": "努", "ma": "马", "me": "梅", "mi": "米", "mo": "莫", "mu": "穆",
+    "ra": "拉", "re": "雷", "ri": "里", "ro": "罗", "ru": "鲁", "da": "达", "de": "德", "di": "迪",
+    "do": "多", "du": "杜", "xa": "克萨", "xe": "克塞", "xi": "克西", "xo": "克索", "xu": "克苏", "pa": "帕",
+    "pe": "佩", "pi": "皮", "po": "波", "pu": "普", "an": "安", "en": "恩", "in": "因", "on": "翁",
+    "un": "温", "tan": "坦", "ten": "滕", "tin": "廷", "ton": "通", "tun": "屯", "san": "桑", "sen": "森",
+    "sin": "辛", "son": "松", "sun": "孙", "kan": "坎", "ken": "肯", "kin": "金", "kon": "孔", "kun": "昆",
+    "van": "万", "ven": "文", "vin": "温", "von": "冯", "vun": "文", "lan": "兰", "len": "伦", "lin": "林",
+    "lon": "隆", "lun": "伦", "nan": "南", "nen": "嫩", "nin": "宁", "non": "农", "nun": "农", "man": "曼",
+    "men": "门", "min": "明", "mon": "蒙", "mun": "蒙", "ran": "兰", "ren": "伦", "rin": "林", "ron": "隆",
+    "run": "润", "dan": "丹", "den": "登", "din": "丁", "don": "东", "dun": "敦", "t": "特", "s": "斯",
+    "k": "克", "v": "夫", "l": "尔", "n": "恩", "m": "姆", "r": "尔", "d": "德", "x": "克斯",
+    "p": "普"
+  }
+}

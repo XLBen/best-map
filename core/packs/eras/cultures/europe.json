@@ -48,9 +48,7 @@
             ["ultranationalist-state", 0.4],
             ["technocracy", 0.3],
             ["commune-federation", 0.2]
-          ],
-          "race": [["human", 8], ["halfling", 2], ["half-elf", 1.5], ["dwarf", 0.5], ["gnome", 0.5]],
-          "species": [["terran", 6], ["augmented", 2], ["synthetic", 2]]
+          ]
         },
         "eraTendencies": {
           "antiquity": {
@@ -66,23 +64,7 @@
             ]
           },
           "industrial": {"religion": [["anglican", 6], ["protestant", 2], ["reformed", 1], ["catholic", 1.5], ["jewish", 0.2]]},
-          "modern": {"religion": [["anglican", 6], ["protestant", 2], ["reformed", 1], ["catholic", 1.5], ["jewish", 0.2], ["irreligious", 3]]},
-          "fantasy": {
-            "religion": [["dawnlord", 5], ["grey-warden", 2], ["harvest-maid", 2], ["silver-lady", 1.5], ["arcane-eye", 1]],
-            "government": [["feudal-monarchy", 4], "empire", ["free-city", 2], ["holy-order", 1.5], "magocracy"]
-          },
-          "scifi": {
-            "ideology": [["sf-federalist", 4], ["sf-corporate", 3], ["sf-free", 2], ["sf-ascension", 1], ["sf-naturalist", 1]],
-            "government": [
-              "technocracy",
-              ["galactic-federation", 4],
-              ["corporate-republic", 3],
-              ["colony-council", 2],
-              "stellar-empire",
-              ["military-government", 0.6],
-              ["psionic-theocracy", 0.3]
-            ]
-          }
+          "modern": {"religion": [["anglican", 6], ["protestant", 2], ["reformed", 1], ["catholic", 1.5], ["jewish", 0.2], ["irreligious", 3]]}
         },
         "prefs": [{"tempMin": -2, "tempMax": 16, "factor": 2}, {"terrain": ["desert"], "factor": 0.6}, {"coast": true, "factor": 1.4}]
       },
@@ -751,8 +733,7 @@
             ["ultranationalist-state", 0.4],
             ["technocracy", 0.3],
             ["commune-federation", 0.2]
-          ],
-          "race": [["human", 8], ["half-elf", 1.5], ["tiefling", 1], ["gnome", 0.5]]
+          ]
         },
         "eraTendencies": {
           "antiquity": {
@@ -768,11 +749,7 @@
             ]
           },
           "industrial": {"religion": [["catholic", 10], ["jewish", 0.2]]},
-          "modern": {"religion": [["catholic", 10], ["jewish", 0.2], ["irreligious", 3]]},
-          "fantasy": {
-            "religion": [["dawnlord", 3], ["silver-lady", 3], ["deep-tide", 2], ["arcane-eye", 2], ["grey-warden", 1]],
-            "government": [["feudal-monarchy", 1.5], ["empire", 0.8], ["free-city", 4], ["magocracy", 1.5], ["holy-order", 1.5]]
-          }
+          "modern": {"religion": [["catholic", 10], ["jewish", 0.2], ["irreligious", 3]]}
         },
         "prefs": [
           {"tempMin": 10, "tempMax": 21, "factor": 2},

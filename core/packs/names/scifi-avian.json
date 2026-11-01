@@ -1,0 +1,60 @@
+{
+  "id": "scifi-avian",
+  "name": "科幻·羽族",
+  "description": "自造的羽族语：h、r、l、k 这类轻音配 i、ee、y，像鸟鸣，偶尔用撇号连成两段；音译用希、琪、莉、鸣这类轻巧的字，如 Kitilee → 琪缇黎、Fiheer'mylee → 菲熙尔弥黎。",
+  "kind": "phonetic",
+  "syllables": {
+    "onsets": [["h", 1.2], ["r", 1.5], ["l", 1.5], ["k", 1.5], ["t", 1], ["s", 1], ["sh", 0.6], ["f", 0.5], ["w", 0.6], ["m", 0.4]],
+    "nuclei": [["i", 4], ["ee", 2], ["y", 1.5], ["a", 1.2], ["e", 0.8]],
+    "codas": [["", 5], ["r", 1], ["rr", 0.4], ["l", 0.8], ["k", 0.4], ["s", 0.3], ["n", 0.4]],
+    "first": [["k", 1.5], ["kr", 0.4], ["t", 1], ["tr", 0.4], ["h", 1], ["s", 1], ["sh", 0.6], ["f", 0.5], ["w", 0.6], ["r", 0.6], ["l", 0.6], ["m", 0.3], ["", 0.4]],
+    "last": [["", 3], ["r", 1], ["rr", 0.5], ["l", 1], ["k", 0.6], ["s", 0.5], ["sh", 0.4], ["n", 0.5]]
+  },
+  "length": [[2, 5], [3, 1.2], [1, 0.3]],
+  "lists": {
+    "nest": [["hiri", 1.5], ["lee", 1.2], ["wyk", 1], ["tilli", 1], ["ree", 1], ["sika", 1], ["fyr", 0.8]]
+  },
+  "forbid": ["aa", "ae", "ai", "ay", "ea", "ei", "ey", "ia", "ie", "ii", "iy", "ya", "ye", "yi", "yy", "eee", "rrr", "rrl", "lrr", "lll", "ss", "hh", "ww", "kk", "tt", "ff", "mm", "nn", "shsh", "ssh", "shs", "lr", "nr", "nl", "ln", "sr", "shr", "sl", "shl", "nh", "rh", "lh", "kh", "th", "ks", "ksh", "sht", "shk", "shm", "shf", "shn", "^ee", "rir", "kt", "tk", "kf", "sf", "nf", "fh", "wh", "hw", "kw", "tw", "nw", "lw", "sw", "shw", "rw", "km", "tm", "sm", "nm", "mn", "lm", "ml", "mh", "rrk", "rrs", "rrsh", "rrt", "rrf", "rrm", "rrn", "rrw", "lk", "nk", "lt", "nt", "kr$", "tr$", "kreel", "^kree", "kiki", "^tiki", "lily", "kitty", "silly", "shy$", "sly$", "fly", "^wee", "^shee$", "^lee$", "^sea$", "^see$", "heel", "keel", "feel", "reel", "shriek", "^hi$", "^ki$", "^ti$", "^i$", "^a$", "^e$", "^y$", "sissy", "kys", "fil$", "shill", "hiss", "tilt", "shiel", "sheer", "leer", "tikk", "kiwi", "kirk", "^wiki", "^his$", "^sis$", "^kis$", "^tis$", "fifi", "rihan", "sirisha", "yeti", "fuck", "shit", "cunt", "piss", "slut", "cock", "dick", "nigg", "fag", "nazi", "rape", "anal", "sex", "tit", "kill", "whor", "dumb", "turd", "^kee$", "^ky$", "^ka$", "^ke$", "^kri$", "^kree$", "^kry$", "^kra$", "^kre$", "^tee$", "^ty$", "^ta$", "^te$", "^tri$", "^tree$", "^try$", "^tra$", "^tre$", "^hee$", "^hy$", "^ha$", "^he$", "^si$", "^sy$", "^sa$", "^se$", "^shi$", "^shy$", "^sha$", "^she$", "^fi$", "^fee$", "^fy$", "^fa$", "^fe$", "^wi$", "^wee$", "^wy$", "^wa$", "^we$", "^ri$", "^ree$", "^ry$", "^ra$", "^re$", "^li$", "^ly$", "^la$", "^le$", "^mi$", "^mee$", "^my$", "^ma$", "^me$", "^ee$"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}halee", "zh": "{name}"}, {"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "Shee {root}", "zh": "{root}岛"}, {"p": "{root}", "zh": "{root}岛", "w": 2}]},
+    "archipelago": {"patterns": [{"p": "{root}shiree", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}lirr", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Wirrali {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Wiree {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}lisk", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}tisk", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}weel", "zh": "{root}湖", "w": 2}, {"p": "Weel {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}rissi", "zh": "{root}河", "w": 2}, {"p": "{root}", "zh": "{root}河"}]},
+    "range": {"patterns": [{"p": "Hirrak {root}", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}kirri", "zh": "{root}峰", "w": 2}, {"p": "Tirri {root}", "zh": "{root}峰"}], "byTag": {"volcanic": [{"p": "{root}firi", "zh": "{root}火山"}]}},
+    "plateau": {"patterns": [{"p": "{root}hysk", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}fela", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}wyla", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}sirra", "zh": "{root}荒漠"}]},
+    "forest": {"patterns": [{"p": "{root}leefi", "zh": "{root}森林"}]},
+    "tundra": {"patterns": [{"p": "{root}tsiri", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}shiri", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}wishi", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root}{nest}", "zh": "{name}", "w": 3}, {"p": "{root}", "zh": "{name}", "w": 2}, {"p": "{root}'{root2}", "zh": "{root}{root2}", "w": 0.6}], "byTag": {"coastal": [{"p": "{root}lisk", "zh": "{name}"}], "river": [{"p": "{root}rissi", "zh": "{name}"}], "mountain": [{"p": "{root}kirri", "zh": "{name}"}], "sea": [{"p": "Wiree {root}", "zh": "{root}海"}], "waste": [{"p": "{root}sirra", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}halee", "zh": "{name}"}, {"p": "{root}'{root2}", "zh": "{root}{root2}", "w": 0.6}]},
+    "spot": {"patterns": [{"p": "{root}{nest}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}lirr", "zh": "{root}角"}], "river": [{"p": "{root}rissi", "zh": "{root}渡口"}], "mountain": [{"p": "{root}kirri", "zh": "{root}山口"}], "sea": [{"p": "{root}shee", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "a": "阿", "e": "埃", "i": "伊", "ee": "怡", "y": "依", "ha": "哈", "he": "荷", "hi": "希",
+    "hee": "熙", "hy": "熹", "ra": "拉", "re": "蕾", "ri": "瑞", "ree": "蕊", "ry": "芮", "la": "菈",
+    "le": "乐", "li": "莉", "lee": "黎", "ly": "丽", "ka": "卡", "ke": "珂", "ki": "琪", "kee": "琦",
+    "ky": "绮", "ta": "塔", "te": "特", "ti": "缇", "tee": "蒂", "ty": "提", "sa": "莎", "se": "瑟",
+    "si": "思", "see": "茜", "sy": "丝", "sha": "霞", "she": "谢", "shi": "诗", "shee": "曦", "shy": "夕",
+    "fa": "法", "fe": "斐", "fi": "菲", "fee": "霏", "fy": "绯", "wa": "瓦", "we": "韦", "wi": "薇",
+    "wee": "蔚", "wy": "微", "ma": "玛", "me": "梅", "mi": "米", "mee": "蜜", "my": "弥", "an": "安",
+    "en": "恩", "in": "茵", "yn": "茵", "han": "涵", "hen": "亨", "hin": "欣", "hyn": "欣", "ran": "岚",
+    "ren": "伦", "rin": "琳", "ryn": "琳", "lan": "兰", "len": "伦", "lin": "霖", "lyn": "霖", "kan": "坎",
+    "ken": "肯", "kin": "琴", "kyn": "琴", "tan": "坦", "ten": "滕", "tin": "婷", "tyn": "婷", "san": "珊",
+    "sen": "森", "sin": "馨", "syn": "馨", "shan": "姗", "shen": "申", "shin": "昕", "shyn": "昕", "fan": "帆",
+    "fen": "芬", "fin": "芬", "fyn": "芬", "wan": "婉", "wen": "雯", "win": "雯", "wyn": "雯", "man": "曼",
+    "men": "门", "min": "鸣", "myn": "鸣", "r": "尔", "rr": "尔", "l": "尔", "k": "克", "s": "丝",
+    "sh": "什", "n": "恩", "h": "赫", "t": "特", "f": "夫", "w": "乌", "m": "姆"
+  }
+}

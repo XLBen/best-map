@@ -5,6 +5,10 @@ import enEnglish from './en-english.json';
 import { EU4_STYLES_A } from './eu4-a';
 import { EU4_STYLES_B } from './eu4-b';
 import { EU4_STYLES_C } from './eu4-c';
+import { FICTION_STYLES_A } from './fiction-a';
+import { FICTION_STYLES_B } from './fiction-b';
+import { FICTION_STYLES_C } from './fiction-c';
+import { FICTION_STYLES_D } from './fiction-d';
 import esSpanish from './es-spanish.json';
 import fantasyDwarf from './fantasy-dwarf.json';
 import fantasyElf from './fantasy-elf.json';
@@ -38,6 +42,7 @@ import zhDefault from './zh-default.json';
 //   其余都是音译式（先拼原文、再按音译表写成中文），按地区排：
 //   西欧（英、法、荷）→ 南欧（西、意、拉丁、希腊）→ 北欧、东欧 → 西亚、中亚、南亚 → 东南亚 → 非洲 → 美洲 → 大洋洲 → 幻想
 //   第四十三轮的 49 种按 EU4 的文化组分在 eu4-a / b / c.ts 里（一个文化组一种），排在大洋洲之后、幻想之前
+//   第四十四轮的 16 种给奇幻的文化组、科幻的物种组（一组一种）分在 fiction-a / b / c / d.ts 里，排在最后（幻想 → 科幻）
 // 加一种：放一个 JSON 进来，在下面的表里加一行（资源库里按这个先后列出，地区见 builtin-tree.ts 的 STYLE_REGIONS）
 
 const FILES: unknown[] = [
@@ -72,6 +77,11 @@ const FILES: unknown[] = [
   fantasyDwarf,
   fantasyOrc,
   fantasySeafolk,
+  // 第四十四轮：奇幻的文化组、科幻的物种组一组一种（fiction-a / b / c / d.ts）
+  ...FICTION_STYLES_A,
+  ...FICTION_STYLES_B,
+  ...FICTION_STYLES_C,
+  ...FICTION_STYLES_D,
 ];
 
 export const BUILTIN_STYLES: readonly NameStyle[] = FILES.map((f) => nameStyleSchema.parse(f));

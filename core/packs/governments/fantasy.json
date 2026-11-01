@@ -1,16 +1,178 @@
 {
   "governments": [
     {
+      "id": "feudal-realm",
+      "name": "封建王国",
+      "category": ["monarchy"],
+      "description": "国王把土地封给领主，换取兵役与效忠；王权的强弱全看领主们的向背。",
+      "color": "#9a5a3c",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "侯国", "orig": "March of {name}"},
+        "medium": {"zh": "公国", "orig": "Duchy of {name}"},
+        "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+        "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+      },
+      "rulers": {"city": "领主", "small": "侯爵", "medium": "公爵", "large": "国王", "empire": "皇帝"},
+      "eras": ["fantasy"],
+      "names": [
+        {
+          "cultureGroups": ["northmark"],
+          "titles": {
+            "city": {"zh": "长屋", "orig": "{name} Hall"},
+            "small": {"zh": "峡湾领", "orig": "Fjordhold of {name}"},
+            "medium": {"zh": "海王国", "orig": "Sea Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "至高王国", "orig": "High Kingdom of {name}"}
+          },
+          "rulers": {"city": "屋主", "small": "峡湾领主", "medium": "海王", "large": "国王", "empire": "至高王"}
+        },
+        {
+          "cultureGroups": ["sandsea"],
+          "titles": {
+            "city": {"zh": "绿洲领", "orig": "Oasis of {name}"},
+            "small": {"zh": "城主国", "orig": "Emirate of {name}"},
+            "medium": {"zh": "君侯国", "orig": "Princedom of {name}"},
+            "large": {"zh": "大君国", "orig": "Great Realm of {name}"},
+            "empire": {"zh": "万王之国", "orig": "Realm of Kings of {name}"}
+          },
+          "rulers": {"city": "城主", "small": "城主", "medium": "君侯", "large": "大君", "empire": "万王之王"}
+        },
+        {
+          "cultureGroups": ["elven"],
+          "titles": {
+            "city": {"zh": "林苑", "orig": "Glade of {name}"},
+            "small": {"zh": "林境", "orig": "Realm of {name}"},
+            "medium": {"zh": "精灵公国", "orig": "Elven Duchy of {name}"},
+            "large": {"zh": "精灵王国", "orig": "Elven Kingdom of {name}"},
+            "empire": {"zh": "精灵帝国", "orig": "Elven Empire of {name}"}
+          },
+          "rulers": {"city": "苑主", "small": "林主", "medium": "公爵", "large": "精灵王", "empire": "精灵皇帝"}
+        },
+        {
+          "cultureGroups": ["dwarven", "gnomish"],
+          "titles": {
+            "city": {"zh": "山堡", "orig": "Hold of {name}"},
+            "small": {"zh": "堡领", "orig": "Holdfast of {name}"},
+            "medium": {"zh": "山国", "orig": "Mountain Realm of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"city": "堡主", "small": "领主", "medium": "山主", "large": "国王", "empire": "皇帝"}
+        }
+      ],
+      "weight": 3,
+      "size": 1,
+      "expansion": 0.45,
+      "coastal": 0.2,
+      "urbanization": 1,
+      "cohesion": 0.5,
+      "vassals": 0.45,
+      "nomadic": 0,
+      "emblems": ["crown", "lion", "tower", "cross"],
+      "layouts": ["quartered", "border", "plain"]
+    },
+    {
+      "id": "high-kingdom",
+      "name": "至高王权",
+      "category": ["monarchy", "empire"],
+      "description": "一位至高王统御诸王，各王国保留自己的王冠，却要向他纳贡、随他出征。",
+      "color": "#8a2f4a",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "侯国", "orig": "March of {name}"},
+        "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+        "large": {"zh": "至高王国", "orig": "High Kingdom of {name}"},
+        "empire": {"zh": "帝国", "orig": "{name} Empire"}
+      },
+      "rulers": {"city": "领主", "small": "侯爵", "medium": "国王", "large": "至高王", "empire": "皇帝"},
+      "eras": ["fantasy"],
+      "names": [
+        {
+          "cultureGroups": ["elven"],
+          "titles": {
+            "city": {"zh": "林苑", "orig": "Glade of {name}"},
+            "small": {"zh": "林境", "orig": "Realm of {name}"},
+            "medium": {"zh": "王庭", "orig": "Court of {name}"},
+            "large": {"zh": "至高王庭", "orig": "High Court of {name}"},
+            "empire": {"zh": "永恒王庭", "orig": "Everlasting Court of {name}"}
+          },
+          "rulers": {"city": "苑主", "small": "林主", "medium": "精灵王", "large": "至高精灵王", "empire": "永恒之王"}
+        },
+        {
+          "cultureGroups": ["goblinoid", "orcish"],
+          "titles": {
+            "city": {"zh": "营", "orig": "{name} Camp"},
+            "small": {"zh": "军团领", "orig": "Legion of {name}"},
+            "medium": {"zh": "军团王国", "orig": "Legion Kingdom of {name}"},
+            "large": {"zh": "大军团", "orig": "Grand Legion of {name}"},
+            "empire": {"zh": "军团帝国", "orig": "{name} Legion Empire"}
+          },
+          "rulers": {"city": "百夫长", "small": "军团长", "medium": "军团王", "large": "大军团长", "empire": "军团皇帝"}
+        },
+        {
+          "cultureGroups": ["sandsea"],
+          "titles": {
+            "city": {"zh": "绿洲领", "orig": "Oasis of {name}"},
+            "small": {"zh": "城主国", "orig": "Emirate of {name}"},
+            "medium": {"zh": "大君国", "orig": "Great Realm of {name}"},
+            "large": {"zh": "万王之国", "orig": "Realm of Kings of {name}"},
+            "empire": {"zh": "沙海帝国", "orig": "{name} Empire of the Sands"}
+          },
+          "rulers": {"city": "城主", "small": "城主", "medium": "大君", "large": "万王之王", "empire": "万王之王"}
+        }
+      ],
+      "weight": 0.6,
+      "size": 2.6,
+      "expansion": 0.85,
+      "coastal": 0.1,
+      "urbanization": 1.3,
+      "cohesion": 0.3,
+      "vassals": 0.6,
+      "nomadic": 0.2,
+      "emblems": ["eagle", "crown", "sun"],
+      "layouts": ["plain", "quartered", "border"]
+    },
+    {
       "id": "elven-council",
       "name": "精灵议会",
       "category": ["oligarchy", "republic"],
       "description": "长寿的古老家族各出一位长者，议会以共识决事，守护森林重于开疆。",
       "color": "#3c8a5a",
-      "titles": {"zh": "议会国", "orig": "Council of {name}"},
-      "rulers": "议长",
-      "names": [{"cultureGroups": ["elves"], "titles": {"zh": "{name}之境", "orig": "Realm of {name}"}, "rulers": "长老"}],
+      "titles": {
+        "city": {"zh": "林苑", "orig": "Glade of {name}"},
+        "small": {"zh": "林境", "orig": "Realm of {name}"},
+        "medium": {"zh": "议会国", "orig": "Council of {name}"},
+        "large": {"zh": "大议会国", "orig": "High Council of {name}"},
+        "empire": {"zh": "永恒议会", "orig": "Eternal Council of {name}"}
+      },
+      "rulers": {"city": "苑主", "small": "长老", "medium": "议长", "large": "首席长老", "empire": "永恒议长"},
       "eras": ["fantasy"],
-      "weight": 0.8,
+      "only": [{"cultureGroups": ["elven"]}],
+      "names": [
+        {
+          "cultures": ["dark-elf"],
+          "titles": {
+            "city": {"zh": "影苑", "orig": "Shadow Glade of {name}"},
+            "small": {"zh": "影庭", "orig": "Shadow Court of {name}"},
+            "medium": {"zh": "影庭", "orig": "Shadow Court of {name}"},
+            "large": {"zh": "大影庭", "orig": "High Shadow Court of {name}"},
+            "empire": {"zh": "幽暗议会", "orig": "Umbral Council of {name}"}
+          },
+          "rulers": {"city": "影主", "small": "影主", "medium": "影庭之主", "large": "大影主", "empire": "幽暗之主"}
+        },
+        {
+          "cultures": ["sea-elf"],
+          "titles": {
+            "city": {"zh": "潮苑", "orig": "Tide Glade of {name}"},
+            "small": {"zh": "潮境", "orig": "Tide Realm of {name}"},
+            "medium": {"zh": "海议会国", "orig": "Sea Council of {name}"},
+            "large": {"zh": "大海议会", "orig": "High Sea Council of {name}"},
+            "empire": {"zh": "永恒海议会", "orig": "Eternal Sea Council of {name}"}
+          }
+        }
+      ],
+      "weight": 1,
       "size": 1.1,
       "expansion": 0.1,
       "coastal": 0.1,
@@ -25,13 +187,19 @@
       "id": "dwarven-hold",
       "name": "氏族王国",
       "category": ["monarchy", "tribal"],
-      "description": "各氏族奉一位山王，城堡与矿坑凿在山腹里，氏族长老议会掌管工坊与宝库。",
+      "description": "各氏族奉一位山王，城堡与矿坑凿在山腹里，长老议会掌管工坊与宝库。",
       "color": "#8a6a4a",
-      "titles": {"zh": "氏族王国", "orig": "{name} Hold"},
-      "rulers": "族王",
-      "names": [{"cultureGroups": ["dwarves"], "titles": {"zh": "氏族王国", "orig": "Hold of {name}"}, "rulers": "山王"}],
+      "titles": {
+        "city": {"zh": "山堡", "orig": "Hold of {name}"},
+        "small": {"zh": "要塞", "orig": "Stronghold of {name}"},
+        "medium": {"zh": "氏族王国", "orig": "Clan Kingdom of {name}"},
+        "large": {"zh": "山下王国", "orig": "Kingdom under {name}"},
+        "empire": {"zh": "万山帝国", "orig": "{name} Empire of Peaks"}
+      },
+      "rulers": {"city": "堡主", "small": "要塞领主", "medium": "氏族王", "large": "山王", "empire": "万山之王"},
       "eras": ["fantasy"],
-      "weight": 0.8,
+      "only": [{"cultureGroups": ["dwarven"]}],
+      "weight": 1,
       "size": 0.75,
       "expansion": 0.2,
       "coastal": 0,
@@ -48,14 +216,30 @@
       "category": ["tribal", "nomadic"],
       "description": "最强的战士夺得领导权，各部在他麾下劫掠四方，首领一死便可能四分五裂。",
       "color": "#6a7a2a",
-      "titles": {"zh": "部众", "orig": "{name} Horde"},
-      "rulers": "首领",
-      "names": [
-        {"cultures": ["bog-goblin"], "titles": {"zh": "部落", "orig": "{name} Warren"}, "rulers": "头目"},
-        {"cultureGroups": ["orcs"], "titles": {"zh": "大部落", "orig": "{name} Horde"}, "rulers": "战酋"}
-      ],
+      "titles": {
+        "city": {"zh": "战帮", "orig": "Warband of {name}"},
+        "small": {"zh": "部落", "orig": "{name} Tribe"},
+        "medium": {"zh": "大部落", "orig": "{name} Great Tribe"},
+        "large": {"zh": "部众", "orig": "{name} Horde"},
+        "empire": {"zh": "大部众", "orig": "Great Horde of {name}"}
+      },
+      "rulers": {"city": "头目", "small": "酋长", "medium": "督军", "large": "战酋", "empire": "大战酋"},
       "eras": ["fantasy"],
-      "weight": 0.8,
+      "only": [{"cultureGroups": ["orcish", "goblinoid"]}],
+      "names": [
+        {
+          "cultureGroups": ["goblinoid"],
+          "titles": {
+            "city": {"zh": "窝", "orig": "Warren of {name}"},
+            "small": {"zh": "大窝", "orig": "Great Warren of {name}"},
+            "medium": {"zh": "窝群", "orig": "{name} Warrens"},
+            "large": {"zh": "部众", "orig": "{name} Horde"},
+            "empire": {"zh": "大部众", "orig": "Great Horde of {name}"}
+          },
+          "rulers": {"city": "老大", "small": "首领", "medium": "大首领", "large": "战酋", "empire": "大战酋"}
+        }
+      ],
+      "weight": 1,
       "size": 1.8,
       "expansion": 0.9,
       "coastal": 0,
@@ -67,66 +251,116 @@
       "layouts": ["plain", "saltire", "diagonal"]
     },
     {
-      "id": "magocracy",
-      "name": "法师统治",
-      "category": ["magocracy"],
-      "description": "法师议会统治城市与学院，施法的天赋决定地位，平民不得过问秘法。",
-      "color": "#8a5ad0",
-      "titles": {"zh": "法师国", "orig": "Magocracy of {name}"},
-      "rulers": "大法师",
-      "names": [
-        {"cultures": ["cogwork"], "titles": {"zh": "学院国", "orig": "Academy of {name}"}, "rulers": "首席学士"},
-        {"cultures": ["ashen"], "titles": {"zh": "契约国", "orig": "Covenant of {name}"}, "rulers": "契约主"}
-      ],
+      "id": "tribal-chiefdom",
+      "name": "部落酋邦",
+      "category": ["tribal"],
+      "description": "几个氏族推举一位酋长，按血缘与习俗议事，打仗时才合成一支大军。",
+      "color": "#4a6a3a",
+      "titles": {
+        "city": {"zh": "部落", "orig": "{name} Tribe"},
+        "small": {"zh": "部落", "orig": "{name} Tribe"},
+        "medium": {"zh": "酋邦", "orig": "Chiefdom of {name}"},
+        "large": {"zh": "部落联盟", "orig": "{name} Confederacy"},
+        "empire": {"zh": "大联盟", "orig": "Grand Confederacy of {name}"}
+      },
+      "rulers": {"city": "首领", "small": "首领", "medium": "酋长", "large": "大酋长", "empire": "众酋之王"},
       "eras": ["fantasy"],
-      "weight": 0.5,
+      "names": [
+        {
+          "cultureGroups": ["northmark"],
+          "titles": {
+            "city": {"zh": "氏族", "orig": "Clan {name}"},
+            "small": {"zh": "氏族", "orig": "Clan {name}"},
+            "medium": {"zh": "氏族联盟", "orig": "{name} Clans"},
+            "large": {"zh": "部落联盟", "orig": "{name} Confederacy"},
+            "empire": {"zh": "大联盟", "orig": "Grand Confederacy of {name}"}
+          },
+          "rulers": {"city": "族长", "small": "族长", "medium": "大族长", "large": "大族长", "empire": "众族之王"}
+        },
+        {
+          "cultureGroups": ["sandsea"],
+          "titles": {
+            "city": {"zh": "驼队", "orig": "{name} Caravan"},
+            "small": {"zh": "部族", "orig": "{name} Tribe"},
+            "medium": {"zh": "部族联盟", "orig": "{name} Tribes"},
+            "large": {"zh": "部落联盟", "orig": "{name} Confederacy"},
+            "empire": {"zh": "大联盟", "orig": "Grand Confederacy of {name}"}
+          },
+          "rulers": {"city": "驼队长", "small": "族长", "medium": "大族长", "large": "大族长", "empire": "众族之王"}
+        },
+        {
+          "cultureGroups": ["goblinoid"],
+          "titles": {
+            "city": {"zh": "窝", "orig": "Warren of {name}"},
+            "small": {"zh": "大窝", "orig": "Great Warren of {name}"},
+            "medium": {"zh": "窝群", "orig": "{name} Warrens"},
+            "large": {"zh": "部落联盟", "orig": "{name} Confederacy"},
+            "empire": {"zh": "大联盟", "orig": "Grand Confederacy of {name}"}
+          },
+          "rulers": {"city": "老大", "small": "首领", "medium": "大首领", "large": "大酋长", "empire": "众酋之王"}
+        },
+        {
+          "cultureGroups": ["elven"],
+          "titles": {
+            "city": {"zh": "林族", "orig": "{name} Kin"},
+            "small": {"zh": "林族", "orig": "{name} Kin"},
+            "medium": {"zh": "林族联盟", "orig": "{name} Kindred"},
+            "large": {"zh": "大林族", "orig": "Great Kindred of {name}"},
+            "empire": {"zh": "大林族", "orig": "Great Kindred of {name}"}
+          },
+          "rulers": {"city": "林长", "small": "林长", "medium": "大林长", "large": "大林长", "empire": "大林长"}
+        }
+      ],
+      "weight": 1,
       "size": 0.6,
-      "expansion": 0.3,
-      "coastal": 0.3,
-      "urbanization": 2,
-      "cohesion": 0.6,
-      "vassals": 0.25,
-      "nomadic": 0,
-      "emblems": ["star", "moon", "circle"],
-      "layouts": ["diagonal", "border", "plain"]
-    },
-    {
-      "id": "holy-order",
-      "name": "神权教团",
-      "category": ["theocracy"],
-      "description": "一座神殿的骑士团与祭司团共治领地，以护教与驱邪为名征战。",
-      "color": "#c9a227",
-      "titles": {"zh": "圣殿领", "orig": "Holy Order of {name}"},
-      "rulers": "大团长",
-      "names": [
-        {"cultureGroups": ["dwarves"], "titles": {"zh": "炉殿领", "orig": "Forge Order of {name}"}, "rulers": "炉主"},
-        {"cultureGroups": ["elves"], "titles": {"zh": "月殿领", "orig": "Moon Order of {name}"}, "rulers": "月祭司"}
-      ],
-      "eras": ["fantasy"],
-      "weight": 0.6,
-      "size": 0.7,
-      "expansion": 0.6,
-      "coastal": 0.05,
-      "urbanization": 1.2,
-      "cohesion": 0.45,
-      "vassals": 0.2,
-      "nomadic": 0,
-      "emblems": ["sun", "cross", "sword"],
-      "layouts": ["cross", "saltire", "border"]
+      "expansion": 0.4,
+      "coastal": 0.1,
+      "urbanization": 0.5,
+      "cohesion": 0.4,
+      "vassals": 0.3,
+      "nomadic": 0.5,
+      "emblems": ["sun", "tree", "mountain"],
+      "layouts": ["border", "chevron", "plain"]
     },
     {
       "id": "free-city",
       "name": "自由城邦",
       "category": ["republic", "oligarchy"],
-      "description": "不受国王管辖的城市，由行会推举的议会治理，靠商路、港口与佣兵自保。",
-      "color": "#2f8a8a",
-      "titles": {"zh": "自由城", "orig": "Free City of {name}"},
-      "rulers": "执政",
-      "names": [
-        {"cultureGroups": ["seafolk"], "titles": {"zh": "自由港", "orig": "Free Port of {name}"}, "rulers": "港主"},
-        {"cultureGroups": ["smallfolk"], "titles": {"zh": "自由镇", "orig": "Free Town of {name}"}, "rulers": "镇长"}
-      ],
+      "description": "城墙内的市民自己选出议会与市长，向哪位国王都不低头，只认契约与金币。",
+      "color": "#3a7a9a",
+      "titles": {
+        "city": {"zh": "自由城", "orig": "{name} Free City"},
+        "small": {"zh": "自由城", "orig": "{name} Free City"},
+        "medium": {"zh": "城市同盟", "orig": "League of {name}"},
+        "large": {"zh": "城邦联盟", "orig": "{name} City League"},
+        "empire": {"zh": "大同盟", "orig": "Grand League of {name}"}
+      },
+      "rulers": {"city": "市长", "small": "市长", "medium": "执政", "large": "执政官", "empire": "大执政官"},
       "eras": ["fantasy"],
+      "names": [
+        {
+          "cultureGroups": ["halfling"],
+          "titles": {
+            "city": {"zh": "镇", "orig": "{name} Township"},
+            "small": {"zh": "镇", "orig": "{name} Township"},
+            "medium": {"zh": "镇联合", "orig": "United Townships of {name}"},
+            "large": {"zh": "镇联合", "orig": "United Townships of {name}"},
+            "empire": {"zh": "大联合", "orig": "Grand Union of {name}"}
+          },
+          "rulers": {"city": "镇长", "small": "镇长", "medium": "总镇长", "large": "总镇长", "empire": "总镇长"}
+        },
+        {
+          "cultureGroups": ["seafolk"],
+          "titles": {
+            "city": {"zh": "港", "orig": "{name} Port"},
+            "small": {"zh": "自由港", "orig": "{name} Freeport"},
+            "medium": {"zh": "港口同盟", "orig": "{name} Port League"},
+            "large": {"zh": "港口同盟", "orig": "{name} Port League"},
+            "empire": {"zh": "大同盟", "orig": "Grand League of {name}"}
+          },
+          "rulers": {"city": "港主", "small": "港主", "medium": "执政", "large": "执政官", "empire": "大执政官"}
+        }
+      ],
       "weight": 1,
       "size": 0.2,
       "expansion": 0.05,
@@ -139,16 +373,239 @@
       "layouts": ["bicolor-h", "canton", "quartered"]
     },
     {
+      "id": "merchant-league",
+      "name": "商会共和国",
+      "category": ["republic", "oligarchy"],
+      "description": "大商家轮流执政，舰队护着商路，议会里谈的多半是关税与航线。",
+      "color": "#2f8a8a",
+      "titles": {
+        "city": {"zh": "商站", "orig": "Trading Post of {name}"},
+        "small": {"zh": "商会城", "orig": "Guildport of {name}"},
+        "medium": {"zh": "商会共和国", "orig": "Merchant Republic of {name}"},
+        "large": {"zh": "至尊共和国", "orig": "Serene Republic of {name}"},
+        "empire": {"zh": "商业帝国", "orig": "{name} Trade Empire"}
+      },
+      "rulers": {"city": "商站长", "small": "会长", "medium": "总督", "large": "总督", "empire": "大总督"},
+      "eras": ["fantasy"],
+      "weight": 0.7,
+      "size": 0.5,
+      "expansion": 0.25,
+      "coastal": 0.9,
+      "urbanization": 2,
+      "cohesion": 0.4,
+      "vassals": 0.2,
+      "nomadic": 0,
+      "emblems": ["wave", "wheel", "lion"],
+      "layouts": ["bicolor-v", "canton", "border"]
+    },
+    {
+      "id": "hearth-moot",
+      "name": "乡民大会",
+      "category": ["republic", "democracy"],
+      "description": "各村的户主每年聚会一次，推举乡长，决定修路、收成与节日。",
+      "color": "#9a9a3a",
+      "titles": {
+        "city": {"zh": "乡", "orig": "{name} Hamlet"},
+        "small": {"zh": "郡", "orig": "{name} County"},
+        "medium": {"zh": "郡联合", "orig": "United Counties of {name}"},
+        "large": {"zh": "大郡联合", "orig": "Greater Counties of {name}"},
+        "empire": {"zh": "大联合", "orig": "Grand Union of {name}"}
+      },
+      "rulers": {"city": "乡长", "small": "郡长", "medium": "大会长", "large": "大会长", "empire": "大会长"},
+      "eras": ["fantasy"],
+      "only": [{"cultureGroups": ["halfling"]}],
+      "weight": 1,
+      "size": 0.5,
+      "expansion": 0.1,
+      "coastal": 0.1,
+      "urbanization": 0.8,
+      "cohesion": 0.8,
+      "vassals": 0.1,
+      "nomadic": 0,
+      "emblems": ["tree", "sun", "wheel"],
+      "layouts": ["border", "bicolor-h", "plain"]
+    },
+    {
+      "id": "tinker-guild",
+      "name": "机巧行会",
+      "category": ["oligarchy", "republic"],
+      "description": "工坊的大匠组成行会掌权，谁的发明最管用，谁的声音就最大。",
+      "color": "#a04a8a",
+      "titles": {
+        "city": {"zh": "工坊", "orig": "{name} Workshop"},
+        "small": {"zh": "行会城", "orig": "Guildtown of {name}"},
+        "medium": {"zh": "行会国", "orig": "Guild of {name}"},
+        "large": {"zh": "大行会", "orig": "Grand Guild of {name}"},
+        "empire": {"zh": "机巧帝国", "orig": "{name} Clockwork Empire"}
+      },
+      "rulers": {"city": "工坊主", "small": "行会长", "medium": "大匠", "large": "大匠师", "empire": "首席大匠"},
+      "eras": ["fantasy"],
+      "only": [{"cultureGroups": ["gnomish"]}],
+      "weight": 1,
+      "size": 0.4,
+      "expansion": 0.15,
+      "coastal": 0.3,
+      "urbanization": 2,
+      "cohesion": 0.8,
+      "vassals": 0.1,
+      "nomadic": 0,
+      "emblems": ["wheel", "star", "tower"],
+      "layouts": ["quartered", "diagonal", "border"]
+    },
+    {
+      "id": "magocracy",
+      "name": "法师统治",
+      "category": ["magocracy"],
+      "description": "法师塔与学院掌握权柄，最强的施法者坐在议会的最高处。",
+      "color": "#6a4ab0",
+      "titles": {
+        "city": {"zh": "法师塔", "orig": "{name} Tower"},
+        "small": {"zh": "秘法领", "orig": "Arcane Demesne of {name}"},
+        "medium": {"zh": "法师议会国", "orig": "Conclave of {name}"},
+        "large": {"zh": "秘法王国", "orig": "Arcane Kingdom of {name}"},
+        "empire": {"zh": "秘法帝国", "orig": "Arcane Empire of {name}"}
+      },
+      "rulers": {"city": "塔主", "small": "大法师", "medium": "首席法师", "large": "法师王", "empire": "大法师王"},
+      "eras": ["fantasy"],
+      "names": [{"cultures": ["ashen"], "rulers": {"city": "契主", "small": "契主", "medium": "大契主", "large": "契约之王", "empire": "契约之王"}}],
+      "weight": 0.5,
+      "size": 0.6,
+      "expansion": 0.3,
+      "coastal": 0.3,
+      "urbanization": 2,
+      "cohesion": 0.6,
+      "vassals": 0.25,
+      "nomadic": 0,
+      "emblems": ["star", "moon", "circle"],
+      "layouts": ["diagonal", "border", "plain"]
+    },
+    {
+      "id": "temple-state",
+      "name": "神殿国",
+      "category": ["theocracy"],
+      "description": "大神殿的祭司治理土地与信众，教规就是国法。",
+      "color": "#c9a227",
+      "titles": {
+        "city": {"zh": "神殿领", "orig": "Temple of {name}"},
+        "small": {"zh": "主教领", "orig": "Bishopric of {name}"},
+        "medium": {"zh": "大主教领", "orig": "Archbishopric of {name}"},
+        "large": {"zh": "神圣王国", "orig": "Holy Kingdom of {name}"},
+        "empire": {"zh": "神权帝国", "orig": "Holy Empire of {name}"}
+      },
+      "rulers": {"city": "祭司", "small": "主教", "medium": "大主教", "large": "大祭司", "empire": "圣座"},
+      "eras": ["fantasy"],
+      "names": [
+        {
+          "valueGroups": ["natural"],
+          "titles": {
+            "city": {"zh": "圣林", "orig": "Sacred Grove of {name}"},
+            "small": {"zh": "德鲁伊领", "orig": "Druidic Circle of {name}"},
+            "medium": {"zh": "大圣林", "orig": "Great Grove of {name}"},
+            "large": {"zh": "圣林王国", "orig": "Grove Kingdom of {name}"},
+            "empire": {"zh": "圣林帝国", "orig": "Grove Empire of {name}"}
+          },
+          "rulers": {"city": "德鲁伊", "small": "德鲁伊", "medium": "大德鲁伊", "large": "大德鲁伊", "empire": "至高德鲁伊"}
+        },
+        {
+          "valueGroups": ["ancestral"],
+          "titles": {
+            "city": {"zh": "祖庙", "orig": "Ancestral Hall of {name}"},
+            "small": {"zh": "祖庙领", "orig": "Ancestral Seat of {name}"},
+            "medium": {"zh": "大祖庙", "orig": "Great Hall of {name}"},
+            "large": {"zh": "祖灵王国", "orig": "Ancestral Kingdom of {name}"},
+            "empire": {"zh": "祖灵帝国", "orig": "Ancestral Empire of {name}"}
+          },
+          "rulers": {"city": "祖灵祭司", "small": "祖灵祭司", "medium": "大祭司", "large": "大祭司", "empire": "先祖之声"}
+        },
+        {
+          "valueGroups": ["arcane"],
+          "titles": {
+            "city": {"zh": "秘院", "orig": "Sanctum of {name}"},
+            "small": {"zh": "秘院领", "orig": "Arcane See of {name}"},
+            "medium": {"zh": "大秘院", "orig": "Grand Sanctum of {name}"},
+            "large": {"zh": "秘法圣国", "orig": "Arcane Theocracy of {name}"},
+            "empire": {"zh": "秘法圣国", "orig": "Arcane Theocracy of {name}"}
+          },
+          "rulers": {"city": "学士", "small": "大学士", "medium": "首席学士", "large": "圣贤", "empire": "圣贤"}
+        },
+        {
+          "valueGroups": ["umbral"],
+          "titles": {
+            "city": {"zh": "影殿", "orig": "Dark Temple of {name}"},
+            "small": {"zh": "影殿领", "orig": "Dark See of {name}"},
+            "medium": {"zh": "大影殿", "orig": "Great Dark Temple of {name}"},
+            "large": {"zh": "幽暗王国", "orig": "Umbral Kingdom of {name}"},
+            "empire": {"zh": "幽暗帝国", "orig": "Umbral Empire of {name}"}
+          },
+          "rulers": {"city": "暗祭司", "small": "暗祭司", "medium": "大暗祭司", "large": "大暗祭司", "empire": "幽暗之主"}
+        },
+        {
+          "valueGroups": ["draconic"],
+          "titles": {
+            "city": {"zh": "龙殿", "orig": "Dragon Temple of {name}"},
+            "small": {"zh": "龙殿领", "orig": "Dragon See of {name}"},
+            "medium": {"zh": "大龙殿", "orig": "Great Dragon Temple of {name}"},
+            "large": {"zh": "龙神王国", "orig": "Dragon-Holy Kingdom of {name}"},
+            "empire": {"zh": "龙神帝国", "orig": "Dragon-Holy Empire of {name}"}
+          },
+          "rulers": {"city": "龙祭司", "small": "龙祭司", "medium": "大龙祭司", "large": "大龙祭司", "empire": "龙之喉舌"}
+        }
+      ],
+      "weight": 0.5,
+      "size": 0.6,
+      "expansion": 0.5,
+      "coastal": 0.05,
+      "urbanization": 1.2,
+      "cohesion": 0.5,
+      "vassals": 0.2,
+      "nomadic": 0,
+      "emblems": ["sun", "cross", "star"],
+      "layouts": ["cross", "border", "chevron"]
+    },
+    {
+      "id": "holy-order",
+      "name": "圣武士团",
+      "category": ["theocracy"],
+      "description": "立誓守护信仰的骑士团，占据边境的要塞，替晨光诸神讨伐异教。",
+      "color": "#d05a6a",
+      "titles": {
+        "city": {"zh": "团领", "orig": "{name} Commandery"},
+        "small": {"zh": "骑士团领", "orig": "Order of {name}"},
+        "medium": {"zh": "骑士团国", "orig": "Order-State of {name}"},
+        "large": {"zh": "圣骑士团国", "orig": "Holy Order of {name}"},
+        "empire": {"zh": "圣骑士团国", "orig": "Holy Order of {name}"}
+      },
+      "rulers": {"city": "分团长", "small": "团长", "medium": "大团长", "large": "大团长", "empire": "至高大团长"},
+      "eras": ["fantasy"],
+      "only": [{"valueGroups": ["radiant"]}],
+      "weight": 0.3,
+      "size": 0.6,
+      "expansion": 0.6,
+      "coastal": 0.05,
+      "urbanization": 1.2,
+      "cohesion": 0.45,
+      "vassals": 0.2,
+      "nomadic": 0,
+      "emblems": ["sun", "cross", "sword"],
+      "layouts": ["cross", "saltire", "border"]
+    },
+    {
       "id": "dragon-lordship",
       "name": "龙主统治",
       "category": ["monarchy", "empire"],
-      "description": "一头古龙或龙裔的血脉高踞王座，诸领主按时纳贡效忠，宝库就是国库。",
-      "color": "#b03a2a",
-      "titles": {"zh": "龙庭", "orig": "Dragon Throne of {name}"},
-      "rulers": "龙主",
-      "names": [{"cultureGroups": ["emberkin"], "titles": {"zh": "龙庭", "orig": "{name} Dragonthrone"}}],
+      "description": "一条巨龙或龙血的君主高踞山巅，各氏族向他献上财宝与忠诚。",
+      "color": "#b4281e",
+      "titles": {
+        "city": {"zh": "龙巢", "orig": "{name} Lair"},
+        "small": {"zh": "鳞主领", "orig": "Scaledom of {name}"},
+        "medium": {"zh": "龙主国", "orig": "Dragonlordship of {name}"},
+        "large": {"zh": "龙王国", "orig": "Dragon Kingdom of {name}"},
+        "empire": {"zh": "龙皇国", "orig": "{name} Dragon Empire"}
+      },
+      "rulers": {"city": "巢主", "small": "鳞主", "medium": "龙主", "large": "龙王", "empire": "龙皇"},
       "eras": ["fantasy"],
-      "weight": 0.3,
+      "only": [{"cultureGroups": ["draconic"]}, {"valueGroups": ["draconic"]}],
+      "weight": 0.5,
       "size": 2,
       "expansion": 0.8,
       "coastal": 0.05,
@@ -158,26 +615,6 @@
       "nomadic": 0.3,
       "emblems": ["sun", "crown", "mountain"],
       "layouts": ["plain", "border", "diagonal"]
-    },
-    {
-      "id": "empire",
-      "name": "帝国",
-      "category": ["monarchy", "empire"],
-      "description": "皇帝统御多个民族与属国，疆域辽阔，边地常有异族。",
-      "color": "#6a2c91",
-      "titles": {"zh": "帝国", "orig": "Empire of {name}"},
-      "rulers": "皇帝",
-      "names": [{"cultureGroups": ["orcs"], "titles": {"zh": "大部落", "orig": "Great {name} Horde"}, "rulers": "大督军"}],
-      "eras": ["fantasy"],
-      "weight": 0.6,
-      "size": 3,
-      "expansion": 0.85,
-      "coastal": 0.1,
-      "urbanization": 1.3,
-      "cohesion": 0.3,
-      "vassals": 0.6,
-      "nomadic": 0.2,
-      "emblems": ["eagle", "crown", "sun"]
     }
   ],
   "factions": [
@@ -191,7 +628,7 @@
       "drivers": [
         {"dimension": "race", "value": "elf", "weight": 0.6},
         {"dimension": "race", "value": "gnome", "weight": 0.8},
-        {"dimension": "race", "value": "tiefling", "weight": 0.6},
+        {"dimension": "race", "value": "fiendkin", "weight": 0.6},
         {"dimension": "religion", "value": "arcane-eye", "weight": 1.2}
       ]
     },
@@ -202,13 +639,7 @@
       "description": "神殿、修会与圣武士，照看信众也操练士兵。",
       "eras": ["fantasy"],
       "base": {"theocracy": 2.2, "monarchy": 0.45, "empire": 0.4, "tribal": 0.3, "default": 0.35},
-      "drivers": [
-        {"dimension": "religion", "value": "dawnlord", "weight": 0.5},
-        {"dimension": "religion", "value": "silver-lady", "weight": 0.4},
-        {"dimension": "religion", "value": "forge-father", "weight": 0.4},
-        {"dimension": "religion", "value": "harvest-maid", "weight": 0.4},
-        {"minority": true, "weight": -0.2}
-      ]
+      "drivers": [{"faith": "same", "weight": 0.6}, {"faith": "heretic", "weight": -0.2}, {"minority": true, "weight": -0.2}]
     },
     {
       "id": "guilds",
@@ -221,7 +652,8 @@
         {"coastal": true, "weight": 0.8},
         {"dimension": "race", "value": "halfling", "weight": 0.6},
         {"dimension": "race", "value": "dwarf", "weight": 0.4},
-        {"dimension": "race", "value": "gnome", "weight": 0.4}
+        {"dimension": "race", "value": "gnome", "weight": 0.4},
+        {"dimension": "religion", "value": "cogwheel", "weight": 0.6}
       ]
     },
     {
@@ -235,7 +667,9 @@
         {"dimension": "race", "value": "orc", "weight": 0.8},
         {"dimension": "race", "value": "dwarf", "weight": 0.6},
         {"dimension": "race", "value": "goblin", "weight": 0.5},
-        {"dimension": "race", "value": "dragonborn", "weight": 0.4}
+        {"dimension": "race", "value": "dragonborn", "weight": 0.4},
+        {"dimension": "religion", "value": "blood-ancestors", "weight": 0.6},
+        {"dimension": "religion", "value": "stone-oath", "weight": 0.6}
       ]
     }
   ]

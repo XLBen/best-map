@@ -175,11 +175,24 @@ describe('内置的政体与派系：格式与引用', () => {
     // 世界里的等级少了：没写的一级按最近的一级
     const two = [{ id: 'big', order: 40 }, { id: 'large', order: 41 }];
     expect(govTitles(gov('feudal-monarchy'), { ...ctxOf(cultureIn('english'), 'medieval'), tier: 'big', tiers: two }).title!.zh).toBe('王国');
-    // 奇幻、科幻的种族照旧
-    expect(govTitles(gov('orc-horde'), ctxOf(firstOf('orcs'), 'fantasy', 'medium')).title!.zh).toBe('大部落');
-    expect(govTitles(gov('dwarven-hold'), ctxOf(firstOf('dwarves'), 'fantasy', 'medium')).title!.zh).toBe('氏族王国');
+    // 奇幻、科幻（第四十四轮）：各族自己的政体按等级起称号，换说法按文化组、文化、宗教组
+    expect(['city', 'small', 'medium', 'large', 'empire'].map((t) => govTitles(gov('orc-horde'), ctxOf(firstOf('orcish'), 'fantasy', t)).title!.zh)).toEqual(['战帮', '部落', '大部落', '部众', '大部众']);
+    expect(govTitles(gov('orc-horde'), ctxOf(firstOf('goblinoid'), 'fantasy', 'city')).ruler!.zh).toBe('老大');
+    expect(['medium', 'large', 'empire'].map((t) => govTitles(gov('dwarven-hold'), ctxOf(firstOf('dwarven'), 'fantasy', t)).title!.zh)).toEqual(['氏族王国', '山下王国', '万山帝国']);
+    expect(govTitles(gov('feudal-realm'), ctxOf(firstOf('northmark'), 'fantasy', 'medium')).title!.zh).toBe('海王国');
+    expect(govTitles(gov('feudal-realm'), ctxOf(firstOf('sandsea'), 'fantasy', 'large')).ruler!.zh).toBe('大君');
+    expect(govTitles(gov('feudal-realm'), ctxOf(firstOf('westmark'), 'fantasy', 'large')).title!.zh).toBe('王国');
+    expect(titled({ zh: '薇亚诺尔', orig: 'Vianor' }, govTitles(gov('elven-council'), ctxOf(cultureIn('wood-elf'), 'fantasy', 'medium')).title)).toEqual({ zh: '薇亚诺尔议会国', orig: 'Council of Vianor' });
+    expect(govTitles(gov('elven-council'), ctxOf(cultureIn('dark-elf'), 'fantasy', 'medium')).title!.zh).toBe('影庭');
+    // 神殿国按宗教组：光明诸神是主教领，自然是圣林，龙是龙殿
+    expect(govTitles(gov('temple-state'), ctxOf(firstOf('westmark'), 'fantasy', 'small')).title!.zh).toBe('主教领');
+    expect(govTitles(gov('temple-state'), ctxOf(cultureIn('wood-elf'), 'fantasy', 'city')).title!.zh).toBe('圣林');
+    expect(govTitles(gov('temple-state'), ctxOf(firstOf('draconic'), 'fantasy', 'city')).title!.zh).toBe('龙殿');
+    // 科幻：星区 → 星团 → 联邦 → 星际联邦；星际帝国的爵位按星区、星团、星域
+    expect(['small', 'medium', 'large', 'empire'].map((t) => govTitles(gov('galactic-federation'), ctxOf(firstOf('terran'), 'scifi', t)).title!.zh)).toEqual(['星区', '星团联合', '联邦', '星际联邦']);
+    expect(['small', 'medium', 'large', 'empire'].map((t) => govTitles(gov('stellar-empire'), ctxOf(firstOf('terran'), 'scifi', t)).ruler!.zh)).toEqual(['星区侯', '星团公', '星王', '星帝']);
     expect(govTitles(gov('hive-collective'), ctxOf(firstOf('chitin'), 'scifi', 'medium')).title!.zh).toBe('巢群');
-    expect(titled({ zh: '薇亚诺尔', orig: 'Vianor' }, govTitles(gov('elven-council'), ctxOf(cultureIn('sylvan'), 'fantasy', 'medium')).title)).toEqual({ zh: '薇亚诺尔之境', orig: 'Realm of Vianor' });
+    expect(govTitles(gov('hive-collective'), ctxOf(firstOf('sporal'), 'scifi', 'medium')).title!.zh).toBe('菌网');
   });
 
   it('每个时代列着 5 种以上政体、3 个以上派系（都是写了这个时代的内置项），还有 countryKm2 与 years；每个内置项都有时代在用', () => {
@@ -232,7 +245,7 @@ describe('内置的政体与派系：格式与引用', () => {
         }
         expect(new Set(list.map(([id]) => id)).size, c.id).toBe(list.length);
         // 写了某个时代的政体时至少写两种（不然这个时代的国家全是同一种）；历史上的时代都写了
-        // 奇幻、科幻里的 EU4 文化（第四十四轮再给它们写）只查历史上的四个时代
+        // 奇幻、科幻里的 EU4 文化（第四十四轮起奇幻、科幻的包不再默认带它们，不写这两个时代的倾向）只查历史上的四个时代
         const own = list.filter(([id]) => govIds(era).includes(id));
         if (HISTORY.includes(era.id) || (own.length && !CULTURE_REGIONS.some((r) => r.groups.includes(c.group)))) expect(own.length, `${c.id} / ${era.id}`).toBeGreaterThanOrEqual(2);
       }
@@ -335,10 +348,9 @@ describe('内置的政体与派系：每个时代生成国家', () => {
     ];
     expect(share('medieval', ['altaic'], ['steppe-horde', 'tribal-federation', 'tribal-despotism', 'tribal-kingdom'], steppe)).toBeGreaterThan(0.5);
     expect(share('medieval', ['chinese'], ['celestial-empire', 'administrative-monarchy', 'despotic-monarchy'])).toBeGreaterThan(0.6);
-    expect(share('fantasy', ['elves', 'dwarves', 'orcs', 'emberkin'], ['elven-council', 'dwarven-hold', 'orc-horde', 'dragon-lordship'])).toBeGreaterThan(0.5);
-    // 甲巢诸族也常是军事政府（第三十二轮的地形上蜂巢意志约 0.34、连同军事政府约 0.45，以前 0.35、0.5 以上）
-    expect(share('scifi', ['lithic', 'sporal', 'chitin'], ['hive-collective'])).toBeGreaterThan(0.3);
-    expect(share('scifi', ['lithic', 'sporal', 'chitin'], ['hive-collective', 'military-government'])).toBeGreaterThan(0.4);
+    // 第四十四轮：奇幻、科幻的各族多用自己的政体
+    expect(share('fantasy', ['elven', 'dwarven', 'orcish', 'draconic'], ['elven-council', 'dwarven-hold', 'orc-horde', 'dragon-lordship'])).toBeGreaterThan(0.5);
+    expect(share('scifi', ['lithic', 'sporal', 'chitin'], ['hive-collective', 'lattice-consensus'])).toBeGreaterThan(0.4);
   });
 
   it('同样的参数同样的结果', () => {

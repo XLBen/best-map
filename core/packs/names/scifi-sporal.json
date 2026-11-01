@@ -1,0 +1,63 @@
+{
+  "id": "scifi-sporal",
+  "name": "科幻·孢生",
+  "description": "自造的孢生语：m、b、l、sh 这类柔软含混的音，鼻音多，常有 mb 连读，元音也多；音译用姆、芭、露、茵这类柔软的字，如 Nanolumba → 娜诺伦芭、Lunialomi → 露妮娅萝弥。",
+  "kind": "phonetic",
+  "syllables": {
+    "onsets": [["l", 2.2], ["m", 1.8], ["b", 1.8], ["sh", 1.2], ["n", 1.2], ["w", 0.5]],
+    "nuclei": [["u", 3], ["a", 2.6], ["o", 1.5], ["i", 1.3], ["e", 0.6], ["ua", 0.5], ["ia", 0.5], ["ai", 0.5]],
+    "codas": [["", 5], ["m", 1.6], ["n", 0.8]],
+    "first": [["", 1.8], ["m", 2], ["b", 1.6], ["l", 1.5], ["sh", 1.2], ["n", 0.8], ["w", 0.5]],
+    "last": [["", 3.5], ["m", 1.3], ["n", 1]]
+  },
+  "length": [[2, 4], [3, 4], [4, 0.5], [1, 0.3]],
+  "lists": {
+    "bloom": [["lumba", 2], ["shuma", 1.5], ["nubi", 1.2], ["bimu", 1], ["melun", 1], ["wuma", 0.8], ["lomi", 1]]
+  },
+  "forbid": ["aa", "oo", "uu", "ii", "ee", "aia", "uai", "iai", "aiu", "aio", "aii", "oai", "eai", "aua", "iua", "oua", "eua", "uua", "oia", "eia", "uia", "iia", "uam", "uan", "iam", "ian", "aim", "ain", "ae", "ao", "eo", "ea", "oe", "ue", "ie", "oi", "ui", "io", "iu", "eu", "ou", "uo", "au", "mm", "nn", "mn", "nm", "bb", "ll", "nb", "ml", "wi", "wia", "wua", "shsh", "msh", "mw", "bum", "bimbo", "bambi", "mumbai", "lumumba", "mumbo", "shaman", "labia", "boob", "nun", "mum$", "^lima$", "^milan$", "^mali$", "^bali$", "^oman$", "malawi", "^luna$", "^mona$", "^lesbo", "^bimbo", "shibal", "bomba", "^a$", "^o$", "^u$", "^i$", "^e$", "fuck", "shit", "slut", "whor", "cunt", "piss", "dick", "cock", "nigg", "fag"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}nubal", "zh": "{name}"},{"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "{root}bulu", "zh": "{root}岛", "w": 2},{"p": "{root}", "zh": "{root}岛", "w": 2}]},
+    "archipelago": {"patterns": [{"p": "{root}bulubu", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}nemu", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Umalu {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Uma {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}lomi", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}shibun", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}mulim", "zh": "{root}湖", "w": 2},{"p": "Mulim {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}nilu", "zh": "{root}河", "w": 2},{"p": "{root}", "zh": "{root}河"}]},
+    "range": {"patterns": [{"p": "{root} Ombulai", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}bomu", "zh": "{root}峰", "w": 2},{"p": "Bomu {root}", "zh": "{root}峰"}]},
+    "plateau": {"patterns": [{"p": "{root}sholam", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}nalum", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}lubom", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}shasu", "zh": "{root}荒漠"}]},
+    "forest": {"patterns": [{"p": "{root}bilai", "zh": "{root}菌林", "w": 2},{"p": "{root}bilai", "zh": "{root}林"}]},
+    "tundra": {"patterns": [{"p": "{root}nuwem", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}shelum", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}mulumu", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root}{bloom}", "zh": "{name}", "w": 3},{"p": "{root}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}lomi", "zh": "{name}"}], "river": [{"p": "{root}nilu", "zh": "{name}"}], "mountain": [{"p": "{root}bomu", "zh": "{name}"}], "sea": [{"p": "Uma {root}", "zh": "{root}海"}], "waste": [{"p": "{root}shasu", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}nubal", "zh": "{name}"},{"p": "{root}{bloom}", "zh": "{name}", "w": 2}]},
+    "spot": {"patterns": [{"p": "{root}{bloom}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}nemu", "zh": "{root}角"}], "river": [{"p": "{root}nilu", "zh": "{name}"}], "mountain": [{"p": "{root}bomu", "zh": "{name}"}], "sea": [{"p": "{root}bulu", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "a": "阿", "o": "欧", "u": "乌", "i": "伊", "e": "埃", "ai": "艾", "ma": "玛", "mo": "茉",
+    "mu": "姆", "mi": "弥", "me": "梅", "mai": "迈", "ba": "芭", "bo": "菠", "bu": "布", "bi": "碧",
+    "be": "蓓", "bai": "柏", "la": "拉", "lo": "萝", "lu": "露", "li": "莉", "le": "蕾", "lai": "莱",
+    "sha": "莎", "sho": "朔", "shu": "舒", "shi": "希", "she": "谢", "shai": "夏", "na": "娜", "no": "诺",
+    "nu": "努", "ni": "妮", "ne": "内", "nai": "奈", "wa": "娃", "wo": "沃", "wu": "雾", "we": "薇",
+    "wai": "怀", "ua": "瓦", "ia": "雅", "mua": "姆娃", "mia": "弥娅", "bua": "布娃", "bia": "碧娅", "lua": "露娃",
+    "lia": "莉娅", "shua": "舒娃", "shia": "希娅", "nua": "努娃", "nia": "妮娅", "am": "安", "an": "安", "om": "翁",
+    "on": "翁", "um": "温", "un": "温", "im": "茵", "in": "茵", "em": "恩", "en": "恩", "mam": "曼",
+    "man": "曼", "mom": "蒙", "mon": "蒙", "mum": "萌", "mun": "萌", "mim": "敏", "min": "敏", "mem": "蔓",
+    "men": "蔓", "bam": "班", "ban": "班", "bom": "邦", "bon": "邦", "bum": "本", "bun": "本", "bim": "宾",
+    "bin": "宾", "bem": "贲", "ben": "贲", "lam": "兰", "lan": "兰", "lom": "茏", "lon": "茏", "lum": "伦",
+    "lun": "伦", "lim": "林", "lin": "林", "lem": "莲", "len": "莲", "sham": "珊", "shan": "珊", "shom": "松",
+    "shon": "松", "shum": "顺", "shun": "顺", "shim": "欣", "shin": "欣", "shem": "申", "shen": "申", "nam": "楠",
+    "nan": "楠", "nom": "侬", "non": "侬", "num": "农", "nun": "农", "nim": "宁", "nin": "宁", "nem": "年",
+    "nen": "年", "wam": "婉", "wan": "婉", "wom": "翁", "won": "翁", "wum": "温", "wun": "温", "wem": "雯",
+    "wen": "雯", "m": "姆", "n": "恩", "b": "布", "l": "尔", "sh": "什", "s": "斯", "h": "赫",
+    "w": "乌"
+  }
+}

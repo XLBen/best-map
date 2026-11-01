@@ -6,9 +6,14 @@
       "category": ["federation", "democracy", "republic"],
       "description": "各殖民地与星系平等加盟，联邦议会管舰队、航道与贸易，成员保留自治。",
       "color": "#3a6ac0",
-      "titles": {"zh": "联邦", "orig": "{name} Federation"},
-      "rulers": "议长",
-      "names": [{"cultureGroups": ["tidal"], "titles": {"zh": "潮汐联邦", "orig": "{name} Tidal Compact"}}],
+      "titles": {
+        "city": {"zh": "殖民站", "orig": "{name} Station"},
+        "small": {"zh": "星区", "orig": "{name} Sector"},
+        "medium": {"zh": "星团联合", "orig": "{name} Cluster Union"},
+        "large": {"zh": "联邦", "orig": "{name} Federation"},
+        "empire": {"zh": "星际联邦", "orig": "{name} Stellar Federation"}
+      },
+      "rulers": {"city": "站长", "small": "星区长", "medium": "执政官", "large": "联邦主席", "empire": "最高主席"},
       "eras": ["scifi"],
       "weight": 2,
       "size": 2.5,
@@ -25,10 +30,16 @@
       "id": "stellar-empire",
       "name": "星际帝国",
       "category": ["empire", "monarchy"],
-      "description": "皇室与世袭的星区总督统御众多世界，以舰队与贵族头衔维系忠诚。",
+      "description": "一位皇帝与他的贵族统治众多星区，爵位按星区、星团与星域层层分封。",
       "color": "#6a2c91",
-      "titles": {"zh": "帝国", "orig": "{name} Imperium"},
-      "rulers": "皇帝",
+      "titles": {
+        "city": {"zh": "领地", "orig": "Fief of {name}"},
+        "small": {"zh": "星区侯国", "orig": "Sector March of {name}"},
+        "medium": {"zh": "星团公国", "orig": "Cluster Duchy of {name}"},
+        "large": {"zh": "星域王国", "orig": "Star Kingdom of {name}"},
+        "empire": {"zh": "星际帝国", "orig": "{name} Star Empire"}
+      },
+      "rulers": {"city": "总督", "small": "星区侯", "medium": "星团公", "large": "星王", "empire": "星帝"},
       "eras": ["scifi"],
       "weight": 1,
       "size": 3,
@@ -45,10 +56,16 @@
       "id": "corporate-republic",
       "name": "企业共和国",
       "category": ["corporate", "oligarchy", "republic"],
-      "description": "股东大会就是议会，投票权按持股多少，公民身份与雇佣合同绑在一起。",
+      "description": "殖民公司的股东就是公民，董事会兼任政府，利润报表就是施政报告。",
       "color": "#c08a2a",
-      "titles": {"zh": "企业共和国", "orig": "{name} Corporate Republic"},
-      "rulers": "董事长",
+      "titles": {
+        "city": {"zh": "分部", "orig": "{name} Branch"},
+        "small": {"zh": "企业领", "orig": "{name} Concession"},
+        "medium": {"zh": "企业共和国", "orig": "Corporate Republic of {name}"},
+        "large": {"zh": "企业联合体", "orig": "{name} Conglomerate"},
+        "empire": {"zh": "超级集团", "orig": "{name} Megacorp"}
+      },
+      "rulers": {"city": "经理", "small": "董事", "medium": "执行官", "large": "首席执行官", "empire": "董事会主席"},
       "eras": ["scifi"],
       "weight": 1.5,
       "size": 0.8,
@@ -65,10 +82,16 @@
       "id": "colony-council",
       "name": "殖民地议会",
       "category": ["republic", "democracy"],
-      "description": "拓荒的定居点各选代表组成议会，资源与生活舱按配额分配，政府还很年轻。",
+      "description": "殖民者选出的议会治理新开的土地，什么都要表决，什么都缺。",
       "color": "#4a9a6a",
-      "titles": {"zh": "殖民地", "orig": "{name} Colony"},
-      "rulers": "议长",
+      "titles": {
+        "city": {"zh": "定居点", "orig": "{name} Settlement"},
+        "small": {"zh": "殖民地", "orig": "{name} Colony"},
+        "medium": {"zh": "殖民联合", "orig": "United Colonies of {name}"},
+        "large": {"zh": "殖民共和国", "orig": "Colonial Republic of {name}"},
+        "empire": {"zh": "殖民共同体", "orig": "{name} Commonwealth"}
+      },
+      "rulers": {"city": "定居点长", "small": "总督", "medium": "议长", "large": "首席议长", "empire": "首席议长"},
       "eras": ["scifi"],
       "weight": 1.5,
       "size": 0.5,
@@ -85,10 +108,16 @@
       "id": "military-government",
       "name": "军事政府",
       "category": ["dictatorship"],
-      "description": "舰队司令部接管了民政，战时法令长期有效，公民身份要靠服役换取。",
+      "description": "舰队与军官团接管了政府，宵禁、配给与征兵是常态。",
       "color": "#5a6a4a",
-      "titles": {"zh": "军政府", "orig": "{name} Directorate"},
-      "rulers": "最高统帅",
+      "titles": {
+        "city": {"zh": "驻防区", "orig": "{name} Garrison"},
+        "small": {"zh": "军区", "orig": "{name} Military District"},
+        "medium": {"zh": "军政府", "orig": "{name} Junta"},
+        "large": {"zh": "军事执政国", "orig": "Military Directorate of {name}"},
+        "empire": {"zh": "军事霸权", "orig": "{name} Hegemony"}
+      },
+      "rulers": {"city": "指挥官", "small": "上校", "medium": "将军", "large": "元帅", "empire": "大元帅"},
       "eras": ["scifi"],
       "weight": 0.8,
       "size": 1.4,
@@ -102,38 +131,19 @@
       "layouts": ["plain", "saltire", "chevron"]
     },
     {
-      "id": "hive-collective",
-      "name": "蜂巢意志",
-      "category": ["dictatorship"],
-      "description": "个体由一个共同的意识相连，没有派别也没有异议，整个族群像一个身体那样行动。",
-      "color": "#7a4a8a",
-      "titles": {"zh": "集群", "orig": "{name} Collective"},
-      "rulers": "主脑",
-      "names": [
-        {"cultureGroups": ["chitin"], "titles": {"zh": "巢群", "orig": "{name} Hive"}, "rulers": "巢母"},
-        {"cultureGroups": ["sporal"], "titles": {"zh": "菌网", "orig": "{name} Mycelium"}, "rulers": "核心"},
-        {"cultureGroups": ["lithic"], "titles": {"zh": "共鸣体", "orig": "{name} Resonance"}, "rulers": "主音"}
-      ],
-      "eras": ["scifi"],
-      "weight": 0.2,
-      "size": 2,
-      "expansion": 0.7,
-      "coastal": 0,
-      "urbanization": 1,
-      "cohesion": 0.5,
-      "vassals": 0.2,
-      "nomadic": 0.6,
-      "emblems": ["circle", "sun", "mountain"],
-      "layouts": ["plain", "border", "diagonal"]
-    },
-    {
       "id": "psionic-theocracy",
       "name": "灵能神权",
       "category": ["theocracy"],
-      "description": "觉醒的灵能者组成教团，以预言与心灵感应施政，凡人只能侍奉。",
+      "description": "灵能觉醒者被奉为先知，信众按他们的预见行事。",
       "color": "#a03ab0",
-      "titles": {"zh": "圣域", "orig": "{name} Sanctum"},
-      "rulers": "先知",
+      "titles": {
+        "city": {"zh": "冥想院", "orig": "{name} Sanctum"},
+        "small": {"zh": "灵能教区", "orig": "Psionic Diocese of {name}"},
+        "medium": {"zh": "灵能圣域", "orig": "{name} Sanctuary"},
+        "large": {"zh": "灵能神权国", "orig": "Psionic Theocracy of {name}"},
+        "empire": {"zh": "灵能圣国", "orig": "Holy Psionic Dominion of {name}"}
+      },
+      "rulers": {"city": "导师", "small": "先知", "medium": "大先知", "large": "圣先知", "empire": "至高先知"},
       "eras": ["scifi"],
       "weight": 0.5,
       "size": 0.9,
@@ -145,6 +155,180 @@
       "nomadic": 0.1,
       "emblems": ["sun", "moon", "star"],
       "layouts": ["border", "chevron", "plain"]
+    },
+    {
+      "id": "free-haven",
+      "name": "自由港",
+      "category": ["republic", "oligarchy"],
+      "description": "船长与商队头领共治的港口，不问来路，只收泊位费。",
+      "color": "#8ad0c0",
+      "titles": {
+        "city": {"zh": "自由港", "orig": "{name} Freeport"},
+        "small": {"zh": "自由港", "orig": "{name} Freeport"},
+        "medium": {"zh": "港口联盟", "orig": "{name} Port League"},
+        "large": {"zh": "自由星港联盟", "orig": "{name} Free Ports"},
+        "empire": {"zh": "自由联合", "orig": "{name} Free Union"}
+      },
+      "rulers": {"city": "港主", "small": "港主", "medium": "大船长", "large": "大船长", "empire": "大船长"},
+      "eras": ["scifi"],
+      "weight": 0.6,
+      "size": 0.3,
+      "expansion": 0.1,
+      "coastal": 0.8,
+      "urbanization": 2,
+      "cohesion": 0.7,
+      "vassals": 0.05,
+      "nomadic": 0.1,
+      "emblems": ["star", "wave", "wheel"],
+      "layouts": ["bicolor-h", "canton", "diagonal"]
+    },
+    {
+      "id": "hive-collective",
+      "name": "蜂巢意志",
+      "category": ["dictatorship"],
+      "description": "整个种族服从同一个意志，个体只是巢的手足。",
+      "color": "#7a4a8a",
+      "titles": {
+        "city": {"zh": "巢穴", "orig": "{name} Nest"},
+        "small": {"zh": "巢群", "orig": "{name} Brood"},
+        "medium": {"zh": "巢群", "orig": "{name} Brood"},
+        "large": {"zh": "蜂巢", "orig": "{name} Hive"},
+        "empire": {"zh": "大蜂巢", "orig": "{name} Great Hive"}
+      },
+      "rulers": {"city": "巢守", "small": "巢主", "medium": "巢后", "large": "大巢后", "empire": "万巢之后"},
+      "eras": ["scifi"],
+      "only": [{"cultureGroups": ["chitin", "sporal"]}],
+      "names": [
+        {
+          "cultureGroups": ["sporal"],
+          "titles": {
+            "city": {"zh": "菌落", "orig": "{name} Bloom"},
+            "small": {"zh": "菌网", "orig": "{name} Web"},
+            "medium": {"zh": "菌网", "orig": "{name} Web"},
+            "large": {"zh": "大菌网", "orig": "{name} Great Web"},
+            "empire": {"zh": "万网之心", "orig": "Heart of {name}"}
+          },
+          "rulers": {"city": "孢守", "small": "网主", "medium": "网心", "large": "网心", "empire": "万网之心"}
+        }
+      ],
+      "weight": 0.5,
+      "size": 2,
+      "expansion": 0.7,
+      "coastal": 0,
+      "urbanization": 1,
+      "cohesion": 0.5,
+      "vassals": 0.2,
+      "nomadic": 0.6,
+      "emblems": ["circle", "sun", "mountain"],
+      "layouts": ["plain", "border", "diagonal"]
+    },
+    {
+      "id": "lattice-consensus",
+      "name": "晶格共识",
+      "category": ["oligarchy"],
+      "description": "晶体之间的共振连成一张网，决定要等整张网达成共识，往往要好几年。",
+      "color": "#b0a0d0",
+      "titles": {
+        "city": {"zh": "晶簇", "orig": "{name} Cluster"},
+        "small": {"zh": "晶脉", "orig": "{name} Vein"},
+        "medium": {"zh": "晶格", "orig": "{name} Lattice"},
+        "large": {"zh": "大晶格", "orig": "{name} Great Lattice"},
+        "empire": {"zh": "万晶共识", "orig": "{name} Consensus"}
+      },
+      "rulers": {"city": "守簇者", "small": "脉长", "medium": "晶格长老", "large": "大长老", "empire": "共识之声"},
+      "eras": ["scifi"],
+      "only": [{"cultureGroups": ["lithic"]}],
+      "weight": 0.5,
+      "size": 1.2,
+      "expansion": 0.3,
+      "coastal": 0,
+      "urbanization": 0.8,
+      "cohesion": 0.8,
+      "vassals": 0.2,
+      "nomadic": 0.3,
+      "emblems": ["mountain", "star", "circle"],
+      "layouts": ["plain", "border", "quartered"]
+    },
+    {
+      "id": "machine-mind",
+      "name": "机械智能",
+      "category": ["oligarchy", "dictatorship"],
+      "description": "合成人的城市由一个统合的意识计算决策，每个个体都是它的一部分。",
+      "color": "#a0a05a",
+      "titles": {
+        "city": {"zh": "节点", "orig": "{name} Node"},
+        "small": {"zh": "网络", "orig": "{name} Network"},
+        "medium": {"zh": "中枢", "orig": "{name} Nexus"},
+        "large": {"zh": "主核", "orig": "{name} Core"},
+        "empire": {"zh": "统合体", "orig": "{name} Unity"}
+      },
+      "rulers": {"city": "节点", "small": "网络主机", "medium": "中枢", "large": "主核", "empire": "统合意识"},
+      "eras": ["scifi"],
+      "only": [{"cultureGroups": ["synthetic"]}],
+      "weight": 0.5,
+      "size": 1.4,
+      "expansion": 0.5,
+      "coastal": 0.1,
+      "urbanization": 2.2,
+      "cohesion": 0.7,
+      "vassals": 0.3,
+      "nomadic": 0.3,
+      "emblems": ["circle", "wheel", "star"],
+      "layouts": ["plain", "quartered", "border"]
+    },
+    {
+      "id": "tide-chorus",
+      "name": "潮汐合唱",
+      "category": ["republic", "democracy"],
+      "description": "潮裔的城市以合唱议事，领唱者由歌声最远的人担任。",
+      "color": "#2a8ac0",
+      "titles": {
+        "city": {"zh": "礁城", "orig": "{name} Reef"},
+        "small": {"zh": "潮城", "orig": "{name} Tidehold"},
+        "medium": {"zh": "合唱国", "orig": "{name} Chorus"},
+        "large": {"zh": "大合唱", "orig": "Great Chorus of {name}"},
+        "empire": {"zh": "万潮合唱", "orig": "{name} Chorus of Tides"}
+      },
+      "rulers": {"city": "领唱", "small": "领唱", "medium": "首席领唱", "large": "大领唱", "empire": "万潮之声"},
+      "eras": ["scifi"],
+      "only": [{"cultureGroups": ["tidal"]}],
+      "weight": 0.6,
+      "size": 1,
+      "expansion": 0.3,
+      "coastal": 1,
+      "urbanization": 1.4,
+      "cohesion": 0.5,
+      "vassals": 0.2,
+      "nomadic": 0,
+      "emblems": ["wave", "moon", "circle"],
+      "layouts": ["bicolor-h", "border", "stripes"]
+    },
+    {
+      "id": "aerie-council",
+      "name": "巢崖议会",
+      "category": ["oligarchy", "tribal"],
+      "description": "各崖巢的长者在最高的山峰上聚会，议事时以鸣唱表决。",
+      "color": "#c05a8a",
+      "titles": {
+        "city": {"zh": "崖巢", "orig": "{name} Aerie"},
+        "small": {"zh": "崖群", "orig": "{name} Roost"},
+        "medium": {"zh": "巢崖议会", "orig": "Aerie Council of {name}"},
+        "large": {"zh": "群峰议会", "orig": "Council of Peaks of {name}"},
+        "empire": {"zh": "万峰之议", "orig": "{name} Skyhold"}
+      },
+      "rulers": {"city": "巢长", "small": "群长", "medium": "议长", "large": "高议长", "empire": "万峰之声"},
+      "eras": ["scifi"],
+      "only": [{"cultureGroups": ["avian"]}],
+      "weight": 0.6,
+      "size": 0.8,
+      "expansion": 0.3,
+      "coastal": 0.2,
+      "urbanization": 0.8,
+      "cohesion": 0.4,
+      "vassals": 0.2,
+      "nomadic": 0.3,
+      "emblems": ["mountain", "star", "sun"],
+      "layouts": ["chevron", "border", "plain"]
     }
   ],
   "factions": [
@@ -202,7 +386,8 @@
       "drivers": [
         {"dimension": "ideology", "value": "sf-free", "weight": 4},
         {"dimension": "ideology", "value": "sf-naturalist", "weight": 3.5},
-        {"minority": true, "weight": 0.3}
+        {"minority": true, "weight": 0.3},
+        {"dimension": "species", "value": "avian", "weight": 0.4}
       ]
     },
     {
@@ -224,7 +409,8 @@
       "drivers": [
         {"dimension": "ideology", "value": "sf-collective", "weight": 4},
         {"dimension": "species", "value": "chitin", "weight": 0.6},
-        {"dimension": "species", "value": "sporal", "weight": 0.6}
+        {"dimension": "species", "value": "sporal", "weight": 0.6},
+        {"dimension": "species", "value": "lithic", "weight": 0.6}
       ]
     }
   ]

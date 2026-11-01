@@ -1,0 +1,63 @@
+{
+  "id": "scifi-tidal",
+  "name": "科幻·潮裔",
+  "description": "自造的潮裔语：l、w、m、n、sh 这类流动的音，o、u、oa 多，结尾常带鼻音 -ng，还爱把一节叠唱两遍；音译用澜、洛、慕、汐这类带水的字，如 Lumolala → 露沫拉拉、Langlawan → 琅拉湾。",
+  "kind": "phonetic",
+  "vowels": "aeiou",
+  "syllables": {
+    "onsets": [["l", 3], ["m", 2], ["n", 1.5], ["w", 2.2], ["sh", 1.5], ["y", 0.7]],
+    "nuclei": [["o", 3], ["u", 2.5], ["a", 2.2], ["oa", 1.2], ["i", 0.9], ["e", 0.6]],
+    "codas": [["", 6], ["n", 1], ["ng", 1.2]],
+    "first": [["l", 2.5], ["m", 2], ["n", 1.2], ["w", 2], ["sh", 1.5], ["y", 0.8], ["", 1.2]],
+    "last": [["", 3], ["ng", 1.6], ["n", 1]]
+  },
+  "length": [[2, 5], [3, 2.5], [1, 0.4]],
+  "lists": {
+    "tide": [["wan", 2], ["mulo", 1.5], ["shoa", 1.2], ["yolu", 1], ["lowong", 0.8], ["ming", 1]],
+    "echo": [["lu", 2], ["wa", 1.5], ["mo", 1.2], ["shi", 1], ["nu", 0.8], ["wu", 0.8], ["la", 1]]
+  },
+  "forbid": ["aa", "oo", "uu", "ee", "ii", "oaa", "oao", "oau", "oae", "oai", "aoa", "uoa", "eoa", "ioa", "oaoa", "oan", "yi", "nn", "ngn", "ngng", "nng", "mong", "nun", "wino", "yolo", "yoyo", "nono", "mama", "nana", "^luna$", "^mona$", "^lima$", "^milan$", "^moan", "^shenyang", "^lung$", "^wing$", "^long$", "^wong$", "^lol", "lmao", "noam", "shun$", "^a$", "^e$", "^i$", "^o$", "^u$", "^oa$", "fuck", "shit", "slut", "whor", "cunt", "piss", "dick", "cock", "nigg", "fag"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}lunoa", "zh": "{name}"},{"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "{root}moa", "zh": "{root}岛", "w": 2},{"p": "{root}", "zh": "{root}岛", "w": 2}]},
+    "archipelago": {"patterns": [{"p": "{root}moamoa", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}shiwa", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Wamaloa {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Wama {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}wan", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}shilu", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}lumo", "zh": "{root}湖", "w": 2},{"p": "Lumo {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}yolu", "zh": "{root}河", "w": 2},{"p": "{root}", "zh": "{root}河", "w": 2}]},
+    "range": {"patterns": [{"p": "{root}wolomung", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}wolo", "zh": "{root}峰", "w": 2},{"p": "Wolo {root}", "zh": "{root}峰"}]},
+    "plateau": {"patterns": [{"p": "{root}nawe", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}lowa", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}mulun", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}shasha", "zh": "{root}沙地"}]},
+    "forest": {"patterns": [{"p": "{root}yuwa", "zh": "{root}林"}]},
+    "tundra": {"patterns": [{"p": "{root}nimo", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}shilo", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}mulu", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root}{tide}", "zh": "{name}", "w": 3},{"p": "{root}", "zh": "{name}", "w": 2},{"p": "{root}{echo}{echo}", "zh": "{name}", "w": 1.2}], "byTag": {"coastal": [{"p": "{root}wan", "zh": "{name}"},{"p": "{root}{echo}{echo}", "zh": "{name}"}], "river": [{"p": "{root}yolu", "zh": "{name}"}], "mountain": [{"p": "{root}wolo", "zh": "{name}"}], "sea": [{"p": "Wama {root}", "zh": "{root}海"}], "waste": [{"p": "{root}shasha", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}lunoa", "zh": "{name}"},{"p": "{root}{tide}", "zh": "{name}", "w": 2},{"p": "{echo}{echo}{root}", "zh": "{name}"}]},
+    "spot": {"patterns": [{"p": "{root}{tide}", "zh": "{name}", "w": 2},{"p": "{root}{echo}{echo}", "zh": "{name}"}], "byTag": {"coastal": [{"p": "{root}shiwa", "zh": "{root}角"}], "river": [{"p": "{root}yolu", "zh": "{name}"}], "mountain": [{"p": "{root}wolo", "zh": "{name}"}], "sea": [{"p": "{root}nomo", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "a": "阿", "o": "鸥", "u": "乌", "oa": "沃", "e": "埃", "i": "伊", "la": "拉", "lo": "洛",
+    "lu": "露", "loa": "珞", "le": "蕾", "li": "漓", "ma": "玛", "mo": "沫", "mu": "慕", "moa": "茉",
+    "me": "湄", "mi": "弥", "na": "娜", "no": "诺", "nu": "努", "noa": "挪", "ne": "涅", "ni": "霓",
+    "wa": "瓦", "wo": "沃", "wu": "雾", "woa": "渥", "we": "薇", "wi": "维", "sha": "莎", "sho": "朔",
+    "shu": "舒", "shoa": "硕", "she": "谢", "shi": "汐", "ya": "雅", "yo": "悠", "yu": "渝", "yoa": "遥",
+    "ye": "叶", "an": "安", "on": "翁", "un": "温", "en": "恩", "in": "茵", "lan": "澜", "lon": "伦",
+    "lun": "纶", "len": "涟", "lin": "霖", "man": "漫", "mon": "濛", "mun": "闻", "men": "门", "min": "岷",
+    "nan": "南", "non": "侬", "nen": "年", "nin": "宁", "wan": "湾", "won": "汶", "wun": "温", "wen": "雯",
+    "win": "文", "shan": "珊", "shon": "顺", "shun": "舜", "shen": "深", "shin": "欣", "yan": "烟", "yon": "永",
+    "yun": "云", "yen": "嫣", "ang": "昂", "ong": "雍", "ung": "嗡", "eng": "恒", "ing": "英", "lang": "琅",
+    "long": "泷", "lung": "珑", "leng": "棱", "ling": "泠", "mang": "芒", "mung": "蒙", "meng": "梦", "ming": "溟",
+    "nang": "楠", "nong": "浓", "nung": "农", "neng": "能", "ning": "凝", "wang": "汪", "wong": "翁", "wung": "嗡",
+    "weng": "蓊", "wing": "莹", "shang": "尚", "shong": "笙", "shung": "淞", "sheng": "声", "shing": "星", "yang": "漾",
+    "yong": "泳", "yung": "涌", "yeng": "莺", "l": "尔", "m": "姆", "n": "恩", "w": "乌", "s": "斯",
+    "h": "赫", "y": "伊", "g": "格", "ng": "恩", "sh": "什"
+  }
+}

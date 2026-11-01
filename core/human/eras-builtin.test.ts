@@ -138,7 +138,9 @@ describe('内置的时代与文化：格式与引用', () => {
         expect(BUILTIN_VALUE_GROUPS.find((x) => x.id === g)?.dimension, id).toBe('religion');
       }
     expect(rel('medieval').length).toBe(28);
-    const byGroup = (era: string) => Object.fromEntries(BUILTIN_VALUE_GROUPS.map((g) => [g.id, rel(era).filter((id) => groupOfValue(id) === g.id).length]));
+    // 历史上的宗教组（奇幻的宗教组第四十四轮另查）
+    const HISTORY_VG = BUILTIN_VALUE_GROUPS.filter((g) => BUILTIN_POP_VALUES.some((v) => v.group === g.id && HISTORY.some((e) => VALUE_ERAS.get(v.id)?.includes(e))));
+    const byGroup = (era: string) => Object.fromEntries(HISTORY_VG.map((g) => [g.id, rel(era).filter((id) => groupOfValue(id) === g.id).length]));
     expect(byGroup('medieval')).toEqual({ christian: 7, muslim: 3, eastern: 5, dharmic: 2, pagan: 9, judaism: 1, 'zoroastrian-group': 1, ancient: 0 });
     // 古代：古代的诸神，没有基督教、伊斯兰教、锡克教、大乘、印度教（吠陀教）
     expect(byGroup('antiquity')).toMatchObject({ christian: 0, muslim: 0, dharmic: 0, ancient: 8 });
@@ -253,7 +255,7 @@ describe('内置的时代与文化：格式与引用', () => {
     let pairs = 0;
     for (const c of BUILTIN_CULTURES)
       for (const era of erasOf(groupOf(c))) {
-        // 奇幻、科幻里的 EU4 文化（第四十四轮再给它们写）只查不列颠、拉丁、汉、印度斯坦（奇幻、科幻的包默认带的）
+        // 奇幻、科幻里的 EU4 文化不查（第四十四轮起奇幻、科幻的包不再默认带它们，不写这两个时代的种族、宗教……）
         if (!HISTORY.includes(era.id) && EU4_GROUPS.has(c.group) && !ERA_PACKS.get(era.id)!.cultures.some(([id]) => id === c.group)) continue;
         for (const dim of era.dimensions) {
           const known = new Set(valuesOf(era, dim.id).map((v) => v.id));
@@ -298,7 +300,7 @@ describe('内置的时代与文化：格式与引用', () => {
   });
 
   it(`${STYLE_IDS.size} 种内置地名风格都有文化（或文化组）在用；EU4 的文化组一组一种`, () => {
-    expect(STYLE_IDS.size).toBe(76);
+    expect(STYLE_IDS.size).toBe(92);
     expect(new Set([...BUILTIN_CULTURES.map(styleOf), ...BUILTIN_CULTURE_GROUPS.map((g) => g.nameStyle).filter(Boolean)])).toEqual(STYLE_IDS);
     const styles = BUILTIN_CULTURE_GROUPS.filter((g) => EU4_GROUPS.has(g.id) && g.id !== 'lost').map((g) => g.nameStyle);
     expect(new Set(styles).size).toBe(styles.length);
@@ -455,10 +457,14 @@ describe('每个时代按默认生成人文', () => {
     const fantasy = peopled(BUILTIN_ERAS.find((e) => e.id === 'fantasy')!).world;
     const medieval = peopled(BUILTIN_ERAS.find((e) => e.id === 'medieval')!).world;
     const rel = (w: World, groups: string[], test: (i: number) => boolean) => shareWhere(w, groups, test) / shareWhere(w, null, test);
-    expect(rel(fantasy, ['dwarves'], isClass(fantasy, ['hills', 'mountains', 'highlands', 'peaks']))).toBeGreaterThan(1.5);
-    expect(rel(fantasy, ['elves'], isTerrain(fantasy, ['forest', 'jungle']))).toBeGreaterThan(1.2);
-    // 兽人：第三十二轮的地形上约 1.47（以前 1.5 以上）：高地多了，“高地”这一类分得更散；第三十五轮的地形上约 1.38
-    expect(rel(fantasy, ['orcs'], (i) => isTerrain(fantasy, ['steppe', 'savanna', 'desert'])(i) || isClass(fantasy, ['highlands'])(i))).toBeGreaterThan(1.3);
+    expect(rel(fantasy, ['dwarven'], isClass(fantasy, ['hills', 'mountains', 'highlands', 'peaks']))).toBeGreaterThan(1.5);
+    expect(rel(fantasy, ['elven'], isTerrain(fantasy, ['forest', 'jungle']))).toBeGreaterThan(1.2);
+    // 兽人：第三十二轮的地形上约 1.47（以前 1.5 以上）：高地多了，“高地”这一类分得更散；第三十五轮的地形上约 1.38；
+    // 第四十四轮约 1.2（沙海、龙裔也住在荒漠与高地）
+    expect(rel(fantasy, ['orcish'], (i) => isTerrain(fantasy, ['steppe', 'savanna', 'desert'])(i) || isClass(fantasy, ['highlands'])(i))).toBeGreaterThan(1.15);
+    // 第四十四轮：沙海住在干的地方、北境住在冷的地方
+    expect(rel(fantasy, ['sandsea'], isTerrain(fantasy, ['desert', 'steppe', 'savanna']))).toBeGreaterThan(1.2);
+    expect(rel(fantasy, ['northmark'], (i) => fantasy.derived.tMean[i] < 6)).toBeGreaterThan(1.2);
     expect(rel(fantasy, ['seafolk'], isCoast(fantasy))).toBeGreaterThan(2);
     // 草原民族（第四十三轮：阿尔泰）
     expect(rel(medieval, ['altaic'], isTerrain(medieval, ['steppe', 'savanna', 'desert']))).toBeGreaterThan(1.1);

@@ -48,10 +48,11 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts；新建时默认勾上）
 //     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json；新建时默认勾上）
 //     cultures ▸ <地区> 文化（第四十三轮）：EU4 的全部文化组，按地区（欧洲、中东、非洲、亚洲、美洲、大洋洲、失落）
-//                       一个小包：地区里的组、文化与它们用的地名风格。奇幻、科幻的种族只在它们的时代包里
+//                       一个小包：地区里的组、文化与它们用的地名风格。奇幻、科幻的文化组（种族、物种）只在它们的时代包里
+//                       （第四十四轮：奇幻 11 组、科幻 9 组，时代包的 cultures ▸ <组> 默认全带；宗教组在奇幻包的“宗教”小包里）
 //
 // 没被任何时代列出的政体、派系归到最贴切的时代：先看它自己写的 eras（第一个是内置时代的），再按政体的类别（CATEGORY_ERA，
-// 按类别的先后取第一个认得的），都没有时归中世纪。现在的 46 种政体、30 种派系都被时代列出了，这条归法管以后加的
+// 按类别的先后取第一个认得的），都没有时归中世纪。现在的 61 种政体、27 种派系都被时代列出了（第四十四轮），这条归法管以后加的
 
 export const COMMON_PACK_ID = 'common';
 export const BASE_PATH: readonly string[] = [COMMON_PACK_ID, 'base'];
@@ -99,7 +100,13 @@ const STYLE_REGIONS: readonly { id: string; name: string; styles: readonly strin
   },
   { id: 'americas', name: '中美与南美', styles: ['nahuatl', 'aridoamerican', 'otomanguean', 'mayan', 'caribbean', 'chibchan', 'maranon', 'quechua', 'araucanian', 'matacoan', 'je', 'tupi'] },
   { id: 'oceania', name: '大洋洲', styles: ['polynesian', 'aboriginal'] },
-  { id: 'fantasy', name: '幻想', styles: ['fantasy-elf', 'fantasy-dwarf', 'fantasy-orc', 'fantasy-seafolk'] },
+  // 第四十四轮：奇幻的文化组、科幻的物种组一组一种
+  {
+    id: 'fantasy',
+    name: '幻想',
+    styles: ['fantasy-elf', 'fantasy-dwarf', 'fantasy-halfling', 'fantasy-gnome', 'fantasy-orc', 'fantasy-goblin', 'fantasy-draconic', 'fantasy-west', 'fantasy-north', 'fantasy-sand', 'fantasy-seafolk'],
+  },
+  { id: 'scifi', name: '科幻', styles: ['scifi-terran', 'scifi-spacer', 'scifi-augment', 'scifi-synthetic', 'scifi-tidal', 'scifi-lithic', 'scifi-sporal', 'scifi-chitin', 'scifi-avian'] },
 ];
 
 const asItems = (list: readonly unknown[]): PackItem[] => list as PackItem[];

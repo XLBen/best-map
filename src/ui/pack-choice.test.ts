@@ -60,17 +60,17 @@ describe('勾选资源包', () => {
     const both = choosePack(c, ['fantasy'], true, LIB);
     expect(choiceEra(both, LIB)!.id).toBe('medieval');
     expect(both.pop).toBeNull();
-    expect(both.groups.map((g) => g.id)).toEqual(expect.arrayContaining(['elves', 'dwarves', 'germanic', 'chinese']));
+    expect(both.groups.map((g) => g.id)).toEqual(expect.arrayContaining(['elven', 'dwarven', 'germanic', 'chinese']));
     // 列出来的文化组：两个包里的（同一组只列一次，在先勾的包里）
     const listed = packGroups(both.packs, LIB);
     expect(listed.find((g) => g.group.id === 'germanic')!.pack).toEqual(['medieval']);
-    expect(listed.find((g) => g.group.id === 'elves')!.pack).toEqual(['fantasy']);
+    expect(listed.find((g) => g.group.id === 'elven')!.pack).toEqual(['fantasy']);
     const ruled = chooseRule(both, ['fantasy']);
     expect(ruled.packs[0]).toEqual(['fantasy']);
     expect(rulePack(ruled.packs, LIB)!.name).toBe('奇幻');
     const back = choosePack(ruled, ['fantasy'], false, LIB);
     expect(choiceEra(back, LIB)!.id).toBe('medieval');
-    expect(back.groups.some((g) => g.id === 'elves')).toBe(false);
+    expect(back.groups.some((g) => g.id === 'elven')).toBe(false);
     // 两个包都有的组（western）留着
     expect(back.groups.some((g) => g.id === 'germanic')).toBe(true);
   });
@@ -152,7 +152,7 @@ describe('新建与生成的命令', () => {
     expect(flat([cmd]).some((x) => fromOf(x)?.[0] === 'fantasy')).toBe(true);
     const eng = nations();
     eng.exec(cmd);
-    expect(worldCultureGroups(eng.world.small).some((g) => g.id === 'elves')).toBe(true);
+    expect(worldCultureGroups(eng.world.small).some((g) => g.id === 'elven')).toBe(true);
     // 换规则：国家也重新长，不保留手改的
     expect(lastOf(regenerateWith(chooseRule(more, ['fantasy']), w.small, LIB)!)).toMatchObject({ keepManual: false, countries: {} });
   });

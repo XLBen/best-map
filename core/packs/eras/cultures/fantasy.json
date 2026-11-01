@@ -1,0 +1,789 @@
+{
+  "groups": [
+    {
+      "group": {
+        "id": "elven",
+        "name": "精灵",
+        "orig": "Elven",
+        "color": "#27b95a",
+        "description": "古林与白塔里的长寿之民，记得人类王国兴起以前的年月，议事以百年计。",
+        "nameStyle": "fantasy-elf",
+        "tendencies": {
+          "race": [["elf", 8], ["half-elf", 2], ["human", 0.5]],
+          "religion": [["grove-mother", 5], ["silver-lady", 3], ["arcane-eye", 2]],
+          "government": [["elven-council", 8], "high-kingdom", ["magocracy", 1.5], ["temple-state", 0.8], ["free-city", 0.3]]
+        },
+        "prefs": [
+          {"terrain": ["forest"], "factor": 3},
+          {"terrain": ["jungle"], "factor": 1.5},
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 0.4},
+          {"terrain": ["desert"], "factor": 0.4}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "high-elf",
+          "group": "elven",
+          "name": "高等精灵",
+          "orig": "High Elven",
+          "color": "#356e39",
+          "weight": 1.2,
+          "description": "白塔里的学者与法师，自认是精灵的正统。",
+          "tendencies": {
+            "religion": [["arcane-eye", 5], ["silver-lady", 3], "grove-mother"],
+            "government": [["elven-council", 6], ["magocracy", 4], ["high-kingdom", 1.5]]
+          },
+          "prefs": [{"coast": true, "factor": 1.4}]
+        },
+        {
+          "id": "wood-elf",
+          "group": "elven",
+          "name": "木精灵",
+          "orig": "Wood Elven",
+          "color": "#20df2d",
+          "weight": 1.5,
+          "description": "深林里的猎人与德鲁伊，树屋连成城镇。",
+          "prefs": [{"terrain": ["forest"], "factor": 1.3}]
+        },
+        {
+          "id": "dark-elf",
+          "group": "elven",
+          "name": "暗精灵",
+          "orig": "Dark Elven",
+          "color": "#5fdd8d",
+          "weight": 0.7,
+          "description": "被逐入地底洞窟的一支，与地上的同族世代为仇。",
+          "tendencies": {
+            "race": [["elf", 9], ["goblin", 0.5]],
+            "religion": [["shadow-mother", 6], ["pact-lords", 2]],
+            "government": [["elven-council", 3], ["magocracy", 3], ["temple-state", 2]]
+          },
+          "prefs": [{"classes": ["mountains", "hills", "highlands", "peaks"], "factor": 1.8}]
+        },
+        {
+          "id": "sea-elf",
+          "group": "elven",
+          "name": "海精灵",
+          "orig": "Sea Elven",
+          "color": "#91cab1",
+          "weight": 0.8,
+          "description": "住在礁岩与白帆船上的精灵，以潮汐计年。",
+          "tendencies": {"religion": [["deep-tide", 5], ["silver-lady", 3]]},
+          "prefs": [{"coast": true, "factor": 2}]
+        },
+        {
+          "id": "snow-elf",
+          "group": "elven",
+          "name": "雪精灵",
+          "orig": "Snow Elven",
+          "color": "#148f1d",
+          "weight": 0.6,
+          "description": "北方冰原边的精灵，冬夜里传唱最古老的歌谣。",
+          "tendencies": {"religion": [["wheel-seasons", 4], ["silver-lady", 3]]},
+          "prefs": [{"tempMax": 4, "factor": 2}]
+        },
+        {
+          "id": "wild-elf",
+          "group": "elven",
+          "name": "野精灵",
+          "orig": "Wild Elven",
+          "color": "#22a069",
+          "weight": 0.6,
+          "description": "不肯筑城的游猎精灵，随季节在雨林间迁徙。",
+          "tendencies": {"religion": [["grove-mother", 6], ["wheel-seasons", 2]], "government": [["elven-council", 4], ["tribal-chiefdom", 4]]},
+          "prefs": [{"terrain": ["jungle"], "factor": 2}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "dwarven",
+        "name": "矮人",
+        "orig": "Dwarven",
+        "color": "#b96427",
+        "description": "山心里的工匠与战士，按氏族守着祖先开凿的要塞，记仇也记恩。",
+        "nameStyle": "fantasy-dwarf",
+        "tendencies": {
+          "race": [["dwarf", 9], ["gnome", 0.5], ["human", 0.5]],
+          "religion": [["forge-father", 6], ["stone-oath", 3]],
+          "government": [["dwarven-hold", 8], "feudal-realm", ["temple-state", 0.5], ["merchant-league", 0.5]]
+        },
+        "prefs": [
+          {"classes": ["mountains", "hills", "highlands"], "factor": 3.5},
+          {"classes": ["peaks"], "factor": 2},
+          {"classes": ["plains"], "terrain": ["steppe", "savanna", "marsh"], "factor": 0.5}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "hill-dwarf",
+          "group": "dwarven",
+          "name": "山丘矮人",
+          "orig": "Hill Dwarven",
+          "color": "#6e3d35",
+          "weight": 1.5,
+          "description": "丘陵里的农夫与酿酒人，最常与人类往来。",
+          "tendencies": {"race": [["dwarf", 8], "human", "halfling"]},
+          "prefs": [{"classes": ["hills"], "factor": 1.5}]
+        },
+        {
+          "id": "mountain-dwarf",
+          "group": "dwarven",
+          "name": "高山矮人",
+          "orig": "Mountain Dwarven",
+          "color": "#df9920",
+          "weight": 1.3,
+          "description": "高山要塞里的战士与铁匠，以盾墙闻名。",
+          "prefs": [{"classes": ["mountains", "peaks"], "factor": 1.5}]
+        },
+        {
+          "id": "deep-dwarf",
+          "group": "dwarven",
+          "name": "深地矮人",
+          "orig": "Deep Dwarven",
+          "color": "#df3920",
+          "weight": 0.6,
+          "description": "住在不见天日的深矿里，很少与外界往来。",
+          "tendencies": {"religion": [["stone-oath", 5], ["forge-father", 3]]},
+          "prefs": [{"classes": ["mountains", "peaks"], "factor": 1.6}]
+        },
+        {
+          "id": "frost-dwarf",
+          "group": "dwarven",
+          "name": "霜须矮人",
+          "orig": "Frostbeard",
+          "color": "#cab591",
+          "weight": 0.6,
+          "description": "北方冰峰下的矮人，以猎熊和凿冰取矿为生。",
+          "prefs": [{"tempMax": 2, "factor": 2}]
+        },
+        {
+          "id": "forge-dwarf",
+          "group": "dwarven",
+          "name": "熔炉矮人",
+          "orig": "Forge Dwarven",
+          "color": "#eb8170",
+          "weight": 0.6,
+          "description": "火山边的冶炼氏族，炉火从不熄灭。",
+          "tendencies": {"religion": [["forge-father", 6], "ember-flame"]},
+          "prefs": [{"tempMin": 14, "factor": 1.5}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "halfling",
+        "name": "半身人",
+        "orig": "Halfling",
+        "color": "#b9ad27",
+        "description": "丘陵与河谷里的小个子农人，爱宴饮、爱安稳，很少离开家乡。",
+        "nameStyle": "fantasy-halfling",
+        "tendencies": {
+          "race": [["halfling", 8], "human", ["gnome", 0.5]],
+          "religion": [["harvest-maid", 5], ["trickster", 2], "dawnlord"],
+          "government": [["hearth-moot", 6], ["free-city", 2], "feudal-realm", "merchant-league"]
+        },
+        "prefs": [
+          {"classes": ["plains"], "terrain": ["steppe", "savanna"], "factor": 2},
+          {"classes": ["hills"], "factor": 2},
+          {"tempMin": 4, "tempMax": 18, "factor": 1.8}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "hill-halfling",
+          "group": "halfling",
+          "name": "丘居半身人",
+          "orig": "Hillhome",
+          "color": "#6e5935",
+          "weight": 1.5,
+          "description": "住在丘洞里的农人，一年要过七个节日。"
+        },
+        {
+          "id": "river-halfling",
+          "group": "halfling",
+          "name": "河居半身人",
+          "orig": "Riverhome",
+          "color": "#aec41c",
+          "description": "河谷里的渔人与磨坊主，撑着平底船往来各村。",
+          "prefs": [{"river": true, "factor": 1.6}]
+        },
+        {
+          "id": "wood-halfling",
+          "group": "halfling",
+          "name": "林居半身人",
+          "orig": "Woodhome",
+          "color": "#df9920",
+          "weight": 0.7,
+          "description": "森林边上的采集者，与精灵比邻而居。",
+          "tendencies": {"race": [["halfling", 8], "elf"]},
+          "prefs": [{"terrain": ["forest"], "factor": 1.4}]
+        },
+        {
+          "id": "wandering-halfling",
+          "group": "halfling",
+          "name": "行商半身人",
+          "orig": "Wayfarer",
+          "color": "#c2ca91",
+          "weight": 0.6,
+          "description": "赶着篷车走遍各国的小商贩，消息最灵通。",
+          "tendencies": {"religion": [["trickster", 5], ["harvest-maid", 2]], "government": [["merchant-league", 4], ["free-city", 3], ["hearth-moot", 2]]},
+          "prefs": [{"classes": ["plains"], "factor": 1.3}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "gnomish",
+        "name": "侏儒",
+        "orig": "Gnomish",
+        "color": "#b9279a",
+        "description": "好奇的小个子发明家，丘陵里满是他们的钟楼、齿轮与失败的试验。",
+        "nameStyle": "fantasy-gnome",
+        "tendencies": {
+          "race": [["gnome", 8], "halfling", "dwarf"],
+          "religion": [["cogwheel", 5], ["arcane-eye", 3], ["trickster", 2]],
+          "government": [["tinker-guild", 6], ["magocracy", 3], ["free-city", 2]]
+        },
+        "prefs": [
+          {"classes": ["hills"], "factor": 2},
+          {"classes": ["plains", "highlands", "mountains", "peaks"], "terrain": ["forest"], "moistMin": 0.8, "factor": 1.5},
+          {"tempMin": 4, "tempMax": 20, "factor": 1.4}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "rock-gnome",
+          "group": "gnomish",
+          "name": "岩侏儒",
+          "orig": "Rock Gnomish",
+          "color": "#6a356e",
+          "weight": 1.2,
+          "description": "丘陵石屋里的工匠，什么都要拆开看看。"
+        },
+        {
+          "id": "forest-gnome",
+          "group": "gnomish",
+          "name": "林侏儒",
+          "orig": "Forest Gnomish",
+          "color": "#dc20df",
+          "description": "林中的幻术师，会和松鼠、狐狸说话。",
+          "tendencies": {"religion": [["grove-mother", 4], ["trickster", 3], ["arcane-eye", 2]], "government": [["magocracy", 4], ["tinker-guild", 3], "free-city"]},
+          "prefs": [{"terrain": ["forest"], "factor": 1.6}]
+        },
+        {
+          "id": "cogwork",
+          "group": "gnomish",
+          "name": "齿轮侏儒",
+          "orig": "Cogwork",
+          "color": "#df208c",
+          "description": "城里的机匠与发明家，钟楼就是他们的神殿。",
+          "tendencies": {"religion": [["cogwheel", 7], ["arcane-eye", 2]]},
+          "prefs": [{"river": true, "factor": 1.3}]
+        },
+        {
+          "id": "deep-gnome",
+          "group": "gnomish",
+          "name": "深地侏儒",
+          "orig": "Deep Gnomish",
+          "color": "#ca91b1",
+          "weight": 0.5,
+          "description": "地底的宝石匠，以沉默与谨慎著称。",
+          "tendencies": {"religion": [["stone-oath", 3], ["cogwheel", 3]]},
+          "prefs": [{"classes": ["mountains", "peaks"], "factor": 1.6}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "orcish",
+        "name": "兽人",
+        "orig": "Orcish",
+        "color": "#89b927",
+        "description": "荒原与干草原上的高大战士，部众随战酋迁徙，以战功论尊卑。",
+        "nameStyle": "fantasy-orc",
+        "tendencies": {
+          "race": [["orc", 8], ["half-orc", 2], "goblin"],
+          "religion": [["storm-horn", 5], ["blood-ancestors", 4]],
+          "government": [["orc-horde", 8], ["tribal-chiefdom", 2], ["high-kingdom", 0.3]]
+        },
+        "prefs": [
+          {"classes": ["highlands"], "factor": 2.5},
+          {"classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 2.5},
+          {"classes": ["plains", "hills", "mountains", "peaks"], "terrain": ["desert"], "factor": 2.5},
+          {"terrain": ["steppe", "savanna"], "moistMin": 0.35, "factor": 1.5},
+          {"terrain": ["forest"], "moistMin": 0.8, "factor": 0.6},
+          {"terrain": ["jungle"], "factor": 0.6}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "steppe-orc",
+          "group": "orcish",
+          "name": "荒原兽人",
+          "orig": "Steppe Orcish",
+          "color": "#686e35",
+          "weight": 1.5,
+          "description": "干草原上骑狼的部众，草场就是战场。"
+        },
+        {
+          "id": "mountain-orc",
+          "group": "orcish",
+          "name": "山地兽人",
+          "orig": "Mountain Orcish",
+          "color": "#6cdf20",
+          "description": "盘踞山口的部落，向过路的商队收取血税。",
+          "prefs": [{"classes": ["mountains", "highlands"], "factor": 1.6}]
+        },
+        {
+          "id": "snow-orc",
+          "group": "orcish",
+          "name": "雪原兽人",
+          "orig": "Snow Orcish",
+          "color": "#c0cd51",
+          "weight": 0.6,
+          "description": "北方冻原上的猎人部落，披着熊皮作战。",
+          "prefs": [{"tempMax": 2, "factor": 2}]
+        },
+        {
+          "id": "bog-orc",
+          "group": "orcish",
+          "name": "沼地兽人",
+          "orig": "Bog Orcish",
+          "color": "#458f14",
+          "weight": 0.6,
+          "description": "沼泽里的兽人，与地精杂居。",
+          "tendencies": {"race": [["orc", 7], ["goblin", 3]]},
+          "prefs": [{"terrain": ["marsh"], "factor": 2}]
+        },
+        {
+          "id": "half-orc-folk",
+          "group": "orcish",
+          "name": "半兽人",
+          "orig": "Half-Orcish",
+          "color": "#a8ca91",
+          "weight": 0.7,
+          "description": "生在兽人与人类之间，多在边境的城镇里当佣兵。",
+          "tendencies": {
+            "race": [["half-orc", 7], ["human", 2], "orc"],
+            "religion": [["storm-horn", 3], ["dawnlord", 2], "blood-ancestors"],
+            "government": [["orc-horde", 3], ["feudal-realm", 2], ["free-city", 2]]
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "goblinoid",
+        "name": "地精",
+        "orig": "Goblinoid",
+        "color": "#27b997",
+        "description": "矮小机灵的穴居之民，成群住在丘陵洞窟与沼泽里，最会偷，也最会躲。",
+        "nameStyle": "fantasy-goblin",
+        "tendencies": {
+          "race": [["goblin", 8], "orc", ["kobold", 0.5]],
+          "religion": [["blood-ancestors", 3], ["nameless-hunger", 3], ["trickster", 2]],
+          "government": [["tribal-chiefdom", 5], ["orc-horde", 3], ["high-kingdom", 0.3]]
+        },
+        "prefs": [
+          {"classes": ["hills"], "factor": 1.8},
+          {"terrain": ["marsh"], "factor": 1.8},
+          {"classes": ["mountains", "highlands"], "factor": 1.3},
+          {"terrain": ["forest"], "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "cave-goblin",
+          "group": "goblinoid",
+          "name": "洞穴地精",
+          "orig": "Cave Goblin",
+          "color": "#356e51",
+          "weight": 1.5,
+          "description": "丘陵洞窟里的地精部落，夜里出来劫掠。"
+        },
+        {
+          "id": "bog-goblin",
+          "group": "goblinoid",
+          "name": "沼泽地精",
+          "orig": "Bog Goblin",
+          "color": "#20df7c",
+          "description": "住在沼泽里的高脚屋里，擅长下毒与设陷阱。",
+          "prefs": [{"terrain": ["marsh"], "factor": 2}]
+        },
+        {
+          "id": "hobgoblin",
+          "group": "goblinoid",
+          "name": "大地精",
+          "orig": "Hobgoblin",
+          "color": "#46d8d5",
+          "weight": 0.8,
+          "description": "高大守纪的地精，按军团编制作战，常替别族当兵。",
+          "tendencies": {"religion": [["blood-ancestors", 4], ["storm-horn", 2]], "government": [["high-kingdom", 3], ["tribal-chiefdom", 2], ["orc-horde", 2]]},
+          "prefs": [{"classes": ["plains"], "factor": 1.3}]
+        },
+        {
+          "id": "bugbear",
+          "group": "goblinoid",
+          "name": "熊地精",
+          "orig": "Bugbear",
+          "color": "#18aa74",
+          "weight": 0.5,
+          "description": "毛发浓密的大个子地精，独来独往的伏击者。",
+          "prefs": [{"terrain": ["forest"], "factor": 1.6}]
+        },
+        {
+          "id": "kobold",
+          "group": "goblinoid",
+          "name": "狗头人",
+          "orig": "Kobold",
+          "color": "#499796",
+          "weight": 0.7,
+          "description": "自称龙的后裔，在矿洞里布满机关。",
+          "tendencies": {"race": [["kobold", 8], "goblin"], "religion": [["elder-dragons", 4], ["blood-ancestors", 2]]},
+          "prefs": [{"classes": ["mountains", "highlands"], "factor": 1.5}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "draconic",
+        "name": "龙裔",
+        "orig": "Draconic",
+        "color": "#b92736",
+        "description": "带着龙的血脉的鳞族，按鳞色分成几支氏族，以荣誉与血统为重。",
+        "nameStyle": "fantasy-draconic",
+        "tendencies": {
+          "race": [["dragonborn", 8], "kobold", "human"],
+          "religion": [["elder-dragons", 5], ["scale-oath", 3], ["ember-flame", 2]],
+          "government": [["dragon-lordship", 8], "high-kingdom", "temple-state"]
+        },
+        "prefs": [
+          {"classes": ["highlands", "mountains"], "factor": 2.2},
+          {"classes": ["plains", "hills", "peaks"], "terrain": ["desert"], "factor": 2.2},
+          {"tempMin": 16, "factor": 1.6}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "red-scale",
+          "group": "draconic",
+          "name": "赤鳞龙裔",
+          "orig": "Redscale",
+          "color": "#6e3548",
+          "weight": 1.5,
+          "description": "火山山脉边的氏族，以火焰与战功为荣。",
+          "tendencies": {"religion": [["ember-flame", 5], ["elder-dragons", 4]]},
+          "prefs": [{"classes": ["mountains", "highlands"], "factor": 1.3}]
+        },
+        {
+          "id": "gold-scale",
+          "group": "draconic",
+          "name": "金鳞龙裔",
+          "orig": "Goldscale",
+          "color": "#df2320",
+          "description": "荒漠绿洲里的贵胄，自认是龙王的嫡裔。",
+          "prefs": [{"terrain": ["desert"], "factor": 1.4}]
+        },
+        {
+          "id": "blue-scale",
+          "group": "draconic",
+          "name": "青鳞龙裔",
+          "orig": "Bluescale",
+          "color": "#e28a78",
+          "weight": 0.8,
+          "description": "海边悬崖上的氏族，驾着长船巡海。",
+          "tendencies": {"religion": [["scale-oath", 4], ["deep-tide", 2]]},
+          "prefs": [{"coast": true, "factor": 1.6}]
+        },
+        {
+          "id": "black-scale",
+          "group": "draconic",
+          "name": "玄鳞龙裔",
+          "orig": "Blackscale",
+          "color": "#e33b73",
+          "weight": 0.6,
+          "description": "沼泽与雨林里的氏族，被别的龙裔视为不洁。",
+          "tendencies": {"religion": [["elder-dragons", 3], ["pact-lords", 2]]},
+          "prefs": [{"terrain": ["marsh"], "factor": 1.6}, {"terrain": ["jungle"], "factor": 1.6}]
+        },
+        {
+          "id": "white-scale",
+          "group": "draconic",
+          "name": "白鳞龙裔",
+          "orig": "Whitescale",
+          "color": "#8f141f",
+          "weight": 0.5,
+          "description": "冰峰上的氏族，寡言而长寿。",
+          "prefs": [{"tempMax": 2, "factor": 1.8}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "westmark",
+        "name": "西境",
+        "orig": "Westmark",
+        "color": "#2758b9",
+        "description": "平原上的人类王国，骑士、城堡与教堂林立，诸王都想重建古老的帝国。",
+        "nameStyle": "fantasy-west",
+        "tendencies": {
+          "race": [["human", 8], ["halfling", 1.5], ["half-elf", 1.5], ["dwarf", 0.3]],
+          "religion": [["dawnlord", 6], ["harvest-maid", 2], ["grey-warden", 1.5], "oathbound", "silver-lady"],
+          "government": [
+            ["feudal-realm", 6],
+            ["high-kingdom", 1.5],
+            ["holy-order", 1.2],
+            ["free-city", 1.5],
+            ["magocracy", 0.8],
+            ["temple-state", 0.8],
+            ["merchant-league", 0.6]
+          ]
+        },
+        "prefs": [{"tempMin": 0, "tempMax": 18, "factor": 2}, {"classes": ["plains"], "factor": 1.3}, {"river": true, "factor": 1.2}]
+      },
+      "cultures": [
+        {
+          "id": "rovellan",
+          "group": "westmark",
+          "name": "罗维尔人",
+          "orig": "Rovellan",
+          "color": "#3f6583",
+          "weight": 1.5,
+          "description": "西境腹地的骑士之民，王冠在他们手里传了十代。"
+        },
+        {
+          "id": "mondaran",
+          "group": "westmark",
+          "name": "蒙达尔人",
+          "orig": "Mondaran",
+          "color": "#202ddf",
+          "description": "河谷里的葡萄与羊毛之乡，城市富庶而好讼。",
+          "prefs": [{"river": true, "factor": 1.4}]
+        },
+        {
+          "id": "luveradin",
+          "group": "westmark",
+          "name": "卢韦拉德人",
+          "orig": "Luveradin",
+          "color": "#707eeb",
+          "weight": 0.8,
+          "description": "沿海诸港的人，船队远航到南方的沙海。",
+          "tendencies": {
+            "religion": [["dawnlord", 4], ["silver-lady", 3], "deep-tide"],
+            "government": [["merchant-league", 3], ["feudal-realm", 3], ["free-city", 2]]
+          },
+          "prefs": [{"coast": true, "factor": 1.5}]
+        },
+        {
+          "id": "caurtish",
+          "group": "westmark",
+          "name": "考尔特人",
+          "orig": "Caurtish",
+          "color": "#70b6eb",
+          "weight": 0.8,
+          "description": "边境高地上的人，世代与兽人交战。",
+          "tendencies": {"religion": [["dawnlord", 5], ["oathbound", 3]], "government": [["feudal-realm", 4], ["holy-order", 3]]},
+          "prefs": [{"classes": ["hills"], "factor": 1.4}]
+        },
+        {
+          "id": "valancer",
+          "group": "westmark",
+          "name": "瓦朗塞人",
+          "orig": "Valancer",
+          "color": "#14478f",
+          "weight": 0.6,
+          "description": "古帝国旧都一带的人，以法师学院与古老的家族自傲。",
+          "tendencies": {"religion": [["arcane-eye", 3], ["dawnlord", 3]], "government": [["magocracy", 4], ["feudal-realm", 3], ["high-kingdom", 1.5]]}
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "northmark",
+        "name": "北境",
+        "orig": "Northmark",
+        "color": "#5f27b9",
+        "description": "寒冷峡湾与海岸上的人类，驾长船劫掠南方，冬天在长屋里讲先祖的故事。",
+        "nameStyle": "fantasy-north",
+        "tendencies": {
+          "race": [["human", 8], ["half-elf", 0.5], ["dwarf", 0.5], ["half-orc", 0.5]],
+          "religion": [["storm-horn", 4], ["wheel-seasons", 4], ["grey-warden", 2], "dawnlord"],
+          "government": [["feudal-realm", 4], ["tribal-chiefdom", 3], "high-kingdom", ["free-city", 0.5]]
+        },
+        "prefs": [{"tempMax": 8, "factor": 2.2}, {"coast": true, "factor": 1.6}]
+      },
+      "cultures": [
+        {
+          "id": "skordish",
+          "group": "northmark",
+          "name": "斯科尔德人",
+          "orig": "Skordish",
+          "color": "#463f83",
+          "weight": 1.3,
+          "description": "最北的峡湾之民，冬夜漫长，船是一家的家产。",
+          "prefs": [{"coast": true, "factor": 1.4}]
+        },
+        {"id": "hraldic", "group": "northmark", "name": "赫拉尔德人", "orig": "Hraldic", "color": "#3320df", "description": "长屋与石圈遍布的海岸之民，用诗歌记家谱。"},
+        {
+          "id": "rekvorn",
+          "group": "northmark",
+          "name": "雷克沃恩人",
+          "orig": "Rekvorn",
+          "color": "#ba70eb",
+          "weight": 0.8,
+          "description": "内陆森林里的伐木人与猎人，最敬四季轮。",
+          "tendencies": {"religion": [["wheel-seasons", 6], ["grove-mother", 2]]},
+          "prefs": [{"terrain": ["forest"], "factor": 1.4}]
+        },
+        {
+          "id": "kvaran",
+          "group": "northmark",
+          "name": "卡瓦尔人",
+          "orig": "Kvaran",
+          "color": "#b391ca",
+          "weight": 0.6,
+          "description": "东边冰原上的骑马人，与兽人时战时和。",
+          "tendencies": {"race": [["human", 7], ["half-orc", 2]], "government": [["tribal-chiefdom", 4], ["feudal-realm", 2]]},
+          "prefs": [{"classes": ["plains"], "terrain": ["steppe", "savanna"], "factor": 1.4}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "sandsea",
+        "name": "沙海",
+        "orig": "Sandsea",
+        "color": "#c69039",
+        "description": "大荒漠里的绿洲诸城，驼队连起东西的商路，城主与先知轮流掌权。",
+        "nameStyle": "fantasy-sand",
+        "tendencies": {
+          "race": [["human", 8], "dragonborn", "fiendkin", ["half-elf", 0.5]],
+          "religion": [["ember-flame", 4], ["dawnlord", 3], "pact-lords"],
+          "government": [["feudal-realm", 3], ["merchant-league", 3], ["high-kingdom", 2], ["temple-state", 2], "magocracy"]
+        },
+        "prefs": [
+          {"terrain": ["desert"], "factor": 2.2},
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 1.6},
+          {"river": true, "factor": 1.5},
+          {"tempMin": 16, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "qartabi",
+          "group": "sandsea",
+          "name": "卡尔塔卜人",
+          "orig": "Qartabi",
+          "color": "#6e4835",
+          "weight": 1.3,
+          "description": "大荒漠中心的绿洲之民，城墙用红土筑成。"
+        },
+        {
+          "id": "shardizi",
+          "group": "sandsea",
+          "name": "沙尔迪兹人",
+          "orig": "Shardizi",
+          "color": "#dfbf20",
+          "description": "沿河而居的农人与运河工匠。",
+          "prefs": [{"river": true, "factor": 1.6}]
+        },
+        {
+          "id": "khabeli",
+          "group": "sandsea",
+          "name": "哈贝勒人",
+          "orig": "Khabeli",
+          "color": "#df6020",
+          "weight": 0.8,
+          "description": "沙海边缘的驼队部族，靠星辰辨路。",
+          "tendencies": {"government": [["tribal-chiefdom", 4], ["merchant-league", 2], "feudal-realm"]},
+          "prefs": [{"terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 1.5}]
+        },
+        {
+          "id": "milsoni",
+          "group": "sandsea",
+          "name": "米勒索人",
+          "orig": "Milsoni",
+          "color": "#cac091",
+          "weight": 0.8,
+          "description": "南方海岸的商港之民，商船往来各国。",
+          "tendencies": {"government": [["merchant-league", 5], "feudal-realm", "free-city"]},
+          "prefs": [{"coast": true, "factor": 1.6}]
+        },
+        {
+          "id": "ashen",
+          "group": "sandsea",
+          "name": "灰烬魔裔",
+          "orig": "Ashen",
+          "color": "#8f7414",
+          "weight": 0.5,
+          "description": "带着古老契约的印记，聚居在荒漠边的城市。",
+          "tendencies": {
+            "race": [["fiendkin", 7], ["human", 3]],
+            "religion": [["pact-lords", 5], ["ember-flame", 2]],
+            "government": [["magocracy", 5], "feudal-realm", "temple-state"]
+          },
+          "prefs": [{"river": true, "factor": 1.3}]
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "seafolk",
+        "name": "海民",
+        "orig": "Seafolk",
+        "color": "#2795b9",
+        "description": "沿海与群岛上以船为家的民族，港口就是城邦，海图就是家谱。",
+        "nameStyle": "fantasy-seafolk",
+        "tendencies": {
+          "race": [["human", 5], ["half-elf", 3], "elf", ["fiendkin", 0.3]],
+          "religion": [["deep-tide", 6], ["silver-lady", 2], "trickster"],
+          "government": [["merchant-league", 5], ["free-city", 4], "feudal-realm", ["magocracy", 0.5]]
+        },
+        "prefs": [{"coast": true, "factor": 4}, {"coast": false, "factor": 0.3}]
+      },
+      "cultures": [
+        {
+          "id": "tidesong",
+          "group": "seafolk",
+          "name": "潮歌人",
+          "orig": "Tidesong",
+          "color": "#3f8381",
+          "weight": 1.5,
+          "description": "以歌声领航的海上民族，船就是家。"
+        },
+        {
+          "id": "coral",
+          "group": "seafolk",
+          "name": "珊瑚海民",
+          "orig": "Coral",
+          "color": "#2086df",
+          "description": "温暖礁海上的采珠人与渔民。",
+          "tendencies": {"race": [["human", 4], ["half-elf", 2], ["elf", 2]]},
+          "prefs": [{"tempMin": 18, "factor": 1.5}]
+        },
+        {
+          "id": "mistisle",
+          "group": "seafolk",
+          "name": "雾岛人",
+          "orig": "Mistisle",
+          "color": "#70beeb",
+          "weight": 0.8,
+          "description": "北方雾海群岛上的人，捕鲸为生，也做海盗。",
+          "tendencies": {"religion": [["deep-tide", 4], ["storm-horn", 2]]},
+          "prefs": [{"tempMax": 8, "factor": 1.5}]
+        },
+        {
+          "id": "saltport",
+          "group": "seafolk",
+          "name": "盐港人",
+          "orig": "Saltport",
+          "color": "#46d8d3",
+          "weight": 0.8,
+          "description": "大港口里的船东与水手，什么旗都挂过。",
+          "tendencies": {"religion": [["trickster", 3], ["deep-tide", 3]], "government": [["merchant-league", 6], ["free-city", 2]]}
+        }
+      ]
+    }
+  ]
+}

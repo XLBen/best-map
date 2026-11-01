@@ -1,0 +1,63 @@
+{
+  "id": "fantasy-goblin",
+  "name": "幻想·地精",
+  "description": "自造的地精语：sk、sn、gr、k、z 这类尖细的音，短的 i、a 多，窝点叫 -nik、-zik、-rik；音译用斯、基、孜、克这类字，如 Snikiznik → 斯尼基兹尼克、Gizgakrik → 吉兹嘎克里克。",
+  "kind": "phonetic",
+  "syllables": {
+    "onsets": [["k",2], ["g",1.5], ["z",1.5], ["s",1], ["n",1.2], ["t",1], ["r",1.2], ["b",0.4], ["d",0.4], ["m",0.3]],
+    "nuclei": [["i",4], ["a",3.5], ["e",0.8], ["o",0.3], ["u",0.2]],
+    "codas": [["",4], ["k",0.8], ["z",0.6], ["n",0.8], ["s",0.4], ["t",0.4], ["r",0.4]],
+    "first": [["sk",1.5], ["sn",1.2], ["gr",1.2], ["kr",1], ["k",1.2], ["g",1], ["z",1.2], ["n",0.6], ["s",0.6], ["t",0.6], ["r",0.4], ["",0.3]],
+    "last": [["k",2.5], ["z",1.5], ["t",1], ["n",1.2], ["g",0.5], ["",0.8]]
+  },
+  "length": [[1,2], [2,5], [3,1]],
+  "lists": {
+    "den": [["nik",2], ["zik",2], ["rik",1], ["kiz",1], ["gan",0.6], ["naz",0.6]]
+  },
+  "forbid": ["aa", "ae", "ai", "ao", "au", "ea", "ee", "ei", "eo", "eu", "ia", "ie", "ii", "io", "iu", "oa", "oe", "oi", "oo", "ou", "ua", "ue", "ui", "uo", "uu", "kk", "gg", "zz", "ss", "nn", "tt", "rr", "bb", "dd", "mm", "nr", "gk", "kg", "sz", "zs", "sr", "zr", "mr", "nm", "mn", "sd", "zd", "ds", "dz", "tm", "km", "zm", "gm", "sm", "td", "dt", "tg", "gt", "tb", "bt", "kb", "bk", "gb", "bg", "db", "bd", "gd", "dg", "kd", "dk", "zb", "bz", "sb", "bs", "ts", "nb", "mb", "rm", "tz", "gz", "nig", "neg", "skank", "snitch", "pizd", "kaka", "^gnik", "^skin$", "^grin$", "^grit$", "^grim$", "^snit$", "^skit$", "^skid$", "^snag$", "^snak", "^zit$", "^kit$", "^kin$", "^sin$", "^tin$", "^rat$", "^rag$", "^gag$", "^gin$", "^grab", "^grand", "^grant", "^krak", "^grog", "^snik$", "^sniz$", "^skin", "^graz$", "fuck", "shit", "cunt", "dick", "cock", "nigg", "fag", "piss", "slut", "whor", "tit", "kike", "nazi", "penis", "anus", "dildo", "bitch", "wank", "rape", "porn", "semen", "^ska$", "^ske$", "^ski$", "^sko$", "^sku$", "^sna$", "^sne$", "^sni$", "^sno$", "^snu$", "^gra$", "^gre$", "^gri$", "^gro$", "^gru$", "^kra$", "^kre$", "^kri$", "^kro$", "^kru$", "^ka$", "^ke$", "^ki$", "^ko$", "^ku$", "^ga$", "^ge$", "^gi$", "^go$", "^gu$", "^za$", "^ze$", "^zi$", "^zo$", "^zu$", "^na$", "^ne$", "^ni$", "^no$", "^nu$", "^sa$", "^se$", "^si$", "^so$", "^su$", "^ta$", "^te$", "^ti$", "^to$", "^tu$", "^ra$", "^re$", "^ri$", "^ro$", "^ru$", "^a$", "^e$", "^i$", "^o$", "^u$"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}gaznak", "zh": "{name}"},{"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "{root}tiz", "zh": "{root}岛", "w": 2},{"p": "{root}", "zh": "{root}岛"}]},
+    "archipelago": {"patterns": [{"p": "{root}tizin", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}snok", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Gizgarat {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Giz {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}kriv", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}skrit", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}gublik", "zh": "{root}湖", "w": 2},{"p": "Gub {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}iska", "zh": "{root}河", "w": 2},{"p": "{root}", "zh": "{root}河"}]},
+    "range": {"patterns": [{"p": "{root}kragit", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}igrat", "zh": "{root}峰", "w": 2},{"p": "Skarn {root}", "zh": "{root}峰"}], "byTag": {"volcanic": [{"p": "{root}brizk", "zh": "{root}火山"}]}},
+    "plateau": {"patterns": [{"p": "{root}tazak", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}zarnit", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}gidnik", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}skazat", "zh": "{root}荒漠"}]},
+    "forest": {"patterns": [{"p": "{root}nikzak", "zh": "{root}森林"}]},
+    "tundra": {"patterns": [{"p": "{root}frizik", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}ziknir", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}glibnik", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root}{den}", "zh": "{name}", "w": 3},{"p": "{root}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}kriv", "zh": "{name}"}], "river": [{"p": "{root}iska", "zh": "{name}"}], "mountain": [{"p": "{root}igrat", "zh": "{name}"}], "sea": [{"p": "Giz {root}", "zh": "{root}海"}], "waste": [{"p": "{root}skazat", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}gaznak", "zh": "{name}"},{"p": "{root}{den}", "zh": "{name}", "w": 2}]},
+    "spot": {"patterns": [{"p": "{root}{den}", "zh": "{name}", "w": 2}], "byTag": {"coastal": [{"p": "{root}snok", "zh": "{root}角"}], "river": [{"p": "{root}iska", "zh": "{name}"}], "mountain": [{"p": "{root}igrat", "zh": "{name}"}], "sea": [{"p": "{root}tiz", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "a": "阿", "e": "埃", "i": "伊", "o": "奥", "u": "乌", "ka": "卡", "ke": "凯", "ki": "基",
+    "ko": "科", "ku": "库", "ga": "嘎", "ge": "盖", "gi": "吉", "go": "戈", "gu": "古", "za": "扎",
+    "ze": "泽", "zi": "孜", "zo": "佐", "zu": "祖", "sa": "萨", "se": "塞", "si": "西", "so": "索",
+    "su": "苏", "na": "纳", "ne": "内", "ni": "尼", "no": "诺", "nu": "努", "ta": "塔", "te": "泰",
+    "ti": "提", "to": "托", "tu": "图", "ra": "拉", "re": "雷", "ri": "里", "ro": "罗", "ru": "鲁",
+    "ba": "巴", "be": "贝", "bi": "比", "bo": "波", "bu": "布", "da": "达", "de": "德", "di": "迪",
+    "do": "多", "du": "杜", "ma": "马", "me": "梅", "mi": "米", "mo": "莫", "mu": "穆", "an": "安",
+    "en": "恩", "in": "因", "on": "翁", "un": "温", "kan": "坎", "ken": "肯", "kin": "金", "kon": "孔",
+    "kun": "昆", "gan": "甘", "gen": "根", "gin": "金", "gon": "贡", "gun": "衮", "zan": "赞", "zen": "曾",
+    "zin": "津", "zon": "宗", "zun": "尊", "san": "桑", "sen": "森", "sin": "辛", "son": "松", "sun": "孙",
+    "nan": "南", "nen": "嫩", "nin": "宁", "non": "农", "nun": "农", "tan": "坦", "ten": "滕", "tin": "廷",
+    "ton": "通", "tun": "通", "ran": "兰", "ren": "伦", "rin": "林", "ron": "隆", "run": "伦", "ban": "班",
+    "ben": "本", "bin": "宾", "bon": "邦", "bun": "本", "dan": "丹", "den": "登", "din": "丁", "don": "东",
+    "dun": "敦", "man": "曼", "men": "门", "min": "明", "mon": "蒙", "mun": "蒙", "k": "克", "g": "格",
+    "z": "兹", "s": "斯", "n": "恩", "t": "特", "r": "尔", "b": "布", "d": "德", "m": "姆",
+    "f": "夫", "fa": "法", "fe": "费", "fi": "菲", "fo": "福", "fu": "富", "l": "尔", "la": "拉",
+    "le": "莱", "li": "利", "lo": "洛", "lu": "卢", "v": "夫"
+  }
+}

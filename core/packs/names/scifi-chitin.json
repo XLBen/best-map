@@ -1,0 +1,51 @@
+{
+  "id": "scifi-chitin",
+  "name": "科幻·甲壳",
+  "description": "自造的甲壳语：k、t、tch、x、q 这类咔嗒、嘶嘶的短音，i、a 多，偶尔用撇号记一声顿响；音译用奇、卡、提、克这类短促的字，如 Qiktux → 齐克图克斯、Ta'tazikat → 塔塔孜卡特。",
+  "kind": "phonetic",
+  "syllables": {
+    "onsets": [["k", 2], ["t", 2], ["tch", 0.6], ["x", 0.9], ["q", 0.7], ["z", 0.6], ["s", 0.5]],
+    "nuclei": [["i", 3], ["a", 3], ["e", 0.7], ["u", 0.5]],
+    "codas": [["", 3], ["k", 1.4], ["t", 0.9], ["x", 0.6], ["'", 0.3]],
+    "first": [["k", 2], ["t", 1.8], ["tch", 0.6], ["x", 0.9], ["q", 0.8], ["z", 0.5], ["s", 0.4], ["", 0.3]],
+    "last": [["", 1.5], ["k", 1.5], ["t", 1], ["x", 1], ["tch", 0.5]]
+  },
+  "length": [[2, 5], [3, 2.2], [1, 0.6]],
+  "lists": {
+    "hive": [["kat", 2], ["tix", 1.5], ["zik", 1.2], ["qa", 1], ["tchak", 0.7], ["xit", 1], ["ki", 1]]
+  },
+  "forbid": ["aa", "ii", "ee", "uu", "ai", "ia", "ae", "ea", "ie", "ei", "au", "ua", "iu", "ui", "eu", "ue", "kk", "tt", "xx", "zz", "ss", "qq", "tcht", "ttch", "tchtch", "tchk", "tchx", "tchq", "tchs", "kq", "qk", "tq", "qt", "xq", "qx", "zx", "xs", "sx", "zs", "sz", "zt", "ts", "zk", "tx", "xt", "kx", "xk", "qu", "qe", "qo", "''", "'$", "^'", "k'k", "t't", "x'x", "z'z", "q'q", "s's", "tit", "sex", "kike", "^taxi$", "kitkat", "kaka", "^zika", "^zit", "^zeta$", "xel", "zerg", "kree", "skrull", "qapla", "tok'ra", "xindi", "kilrath", "tleilax", "zek", "kazak", "^qatar", "^tikal", "^a$", "^e$", "^i$", "^u$", "fuck", "shit", "slut", "whor", "cunt", "piss", "dick", "cock", "nigg", "fag"],
+  "types": {
+    "continent": {"patterns": [{"p": "{root}kitax", "zh": "{name}"},{"p": "{root}", "zh": "{name}", "w": 2}]},
+    "island": {"patterns": [{"p": "{root}tik", "zh": "{root}岛", "w": 2},{"p": "{root}", "zh": "{root}岛", "w": 2}]},
+    "archipelago": {"patterns": [{"p": "{root}tiktik", "zh": "{root}群岛"}]},
+    "peninsula": {"patterns": [{"p": "{root}tchit", "zh": "{root}半岛"}]},
+    "ocean": {"patterns": [{"p": "Xakati {root}", "zh": "{root}洋"}]},
+    "sea": {"patterns": [{"p": "Xaka {root}", "zh": "{root}海"}]},
+    "bay": {"patterns": [{"p": "{root}zikat", "zh": "{root}湾"}]},
+    "strait": {"patterns": [{"p": "{root}'tix", "zh": "{root}海峡"}]},
+    "lake": {"patterns": [{"p": "{root}tika", "zh": "{root}湖", "w": 2},{"p": "Tika {root}", "zh": "{root}湖"}]},
+    "river": {"patterns": [{"p": "{root}kix", "zh": "{root}河", "w": 2},{"p": "{root}", "zh": "{root}河", "w": 2}]},
+    "range": {"patterns": [{"p": "{root} Kitaxa", "zh": "{root}山脉"}]},
+    "peak": {"patterns": [{"p": "{root}tak", "zh": "{root}峰", "w": 2},{"p": "Tak'{root}", "zh": "{root}峰"}]},
+    "plateau": {"patterns": [{"p": "{root}tatik", "zh": "{root}高原"}]},
+    "plain": {"patterns": [{"p": "{root}saki", "zh": "{root}平原"}]},
+    "basin": {"patterns": [{"p": "{root}kuti", "zh": "{root}盆地"}]},
+    "desert": {"patterns": [{"p": "{root}zax", "zh": "{root}荒漠"}]},
+    "forest": {"patterns": [{"p": "{root}tchiki", "zh": "{root}林"}]},
+    "tundra": {"patterns": [{"p": "{root}kisa", "zh": "{root}冻原"}]},
+    "icecap": {"patterns": [{"p": "{root}zixit", "zh": "{root}冰原"}]},
+    "wetland": {"patterns": [{"p": "{root}tixu", "zh": "{root}沼泽"}]},
+    "biome": {"patterns": [{"p": "{root}", "zh": "{root}{__species}"}]},
+    "province": {"patterns": [{"p": "{root}{hive}", "zh": "{name}", "w": 3},{"p": "{root}", "zh": "{name}", "w": 2},{"p": "{root}'{hive}", "zh": "{name}", "w": 0.6}], "byTag": {"coastal": [{"p": "{root}zikat", "zh": "{name}"}], "river": [{"p": "{root}kix", "zh": "{name}"}], "mountain": [{"p": "{root}tak", "zh": "{name}"}], "sea": [{"p": "Xaka {root}", "zh": "{root}海"}], "waste": [{"p": "{root}zax", "zh": "{root}荒原"}]}},
+    "region": {"patterns": [{"p": "{root}kitax", "zh": "{name}"},{"p": "{root}{hive}", "zh": "{name}", "w": 2}]},
+    "spot": {"patterns": [{"p": "{root}{hive}", "zh": "{name}", "w": 2},{"p": "{root}'{hive}", "zh": "{name}", "w": 0.6}], "byTag": {"coastal": [{"p": "{root}tchit", "zh": "{root}角"}], "river": [{"p": "{root}kix", "zh": "{name}"}], "mountain": [{"p": "{root}tak", "zh": "{name}"}], "sea": [{"p": "{root}tik", "zh": "{root}礁"}]}}
+  },
+  "translit": {
+    "i": "伊", "a": "阿", "e": "埃", "u": "乌", "ki": "奇", "ka": "卡", "ke": "凯", "ku": "库",
+    "ti": "提", "ta": "塔", "te": "忒", "tu": "图", "tchi": "契", "tcha": "恰", "tche": "切", "tchu": "楚",
+    "xi": "希", "xa": "夏", "xe": "谢", "xu": "旭", "qi": "齐", "qa": "喀", "zi": "孜", "za": "扎",
+    "ze": "泽", "zu": "祖", "si": "西", "sa": "萨", "se": "塞", "su": "苏", "k": "克", "t": "特",
+    "x": "克斯", "tch": "契", "q": "克", "z": "兹", "s": "斯", "c": "克", "h": "赫"
+  }
+}

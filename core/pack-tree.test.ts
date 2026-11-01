@@ -95,9 +95,17 @@ describe('内置资源包的树', () => {
     expect(subPacks(findPack(common, ['cultures'])!).map((x) => x.name)).toEqual(['欧洲', '中东', '非洲', '亚洲', '美洲', '大洋洲', '失落']);
     const all = packItems<{ id: string }>(findPack(common, ['cultures'])!, 'cultureGroups').map((g) => g.id);
     expect(all.length).toBe(71);
-    // 奇幻、科幻的种族只在它们的时代包里
+    // 奇幻、科幻的文化组只在它们的时代包里（第四十四轮：奇幻 11 组、科幻 9 组，时代包默认全带）
     const others = BUILTIN_CULTURE_GROUPS.map((g) => g.id).filter((g) => !all.includes(g));
-    expect(others.sort()).toEqual(['chitin', 'dwarves', 'elves', 'emberkin', 'lithic', 'orcs', 'seafolk', 'smallfolk', 'sporal', 'tidal']);
+    const FANTASY = ['elven', 'dwarven', 'halfling', 'gnomish', 'orcish', 'goblinoid', 'draconic', 'westmark', 'northmark', 'sandsea', 'seafolk'];
+    const SCIFI = ['terran', 'spacer', 'augment', 'synthetic', 'tidal', 'lithic', 'sporal', 'chitin', 'avian'];
+    expect(others).toEqual([...FANTASY, ...SCIFI]);
+    expect(subPacks(findPack(top('fantasy'), ['cultures'])!).map((x) => x.id)).toEqual(FANTASY);
+    expect(subPacks(findPack(top('scifi'), ['cultures'])!).map((x) => x.id)).toEqual(SCIFI);
+    // 奇幻的宗教组在奇幻包的“宗教”小包里；地名风格在“通用 ▸ 地名 ▸ 幻想 / 科幻”
+    expect(ownItems<{ id: string }>(findPack(top('fantasy'), ['religion'])!, 'valueGroups').map((g) => g.id)).toEqual(['radiant', 'natural', 'ancestral', 'arcane', 'umbral', 'draconic']);
+    expect(ownItems<{ id: string }>(findPack(common, ['names', 'fantasy'])!, 'nameStyles').length).toBe(11);
+    expect(ownItems<{ id: string }>(findPack(common, ['names', 'scifi'])!, 'nameStyles').length).toBe(9);
     expect(packItems(findPack(common, ['cultures'])!, 'cultures').length).toBe(410);
     expect(builtinOrigin('islandType', 'atoll')).toEqual([...BASE_PATH]);
   });
