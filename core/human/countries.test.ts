@@ -84,9 +84,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（日耳曼、汉、阿尔泰三组；政体的称号按国家的等级）
+// 第四十四轮重录：政体限谁用（伊克塔只给穆斯林……），倾向里没写的政体不再人人有 0.15 的余地
 const RECORDED = {
-  region: { country: '4945ac491e9731ee', countries: 'ffa6be21bd595f8d' },
-  planet: { country: 'ec32bb6b01aeba6d', countries: '6054c39a6d7a48cc' },
+  region: { country: '369fb7830ef4c6f9', countries: 'bfe4a87272a330b9' },
+  planet: { country: 'fee33fdd141106ea', countries: '52ac63721420fef7' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

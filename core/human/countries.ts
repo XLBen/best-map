@@ -8,7 +8,7 @@ import { countryBase, personName } from './country-names';
 import { edgeCosts } from './cultures';
 import { type Culture, type Era, SUBJECT_KINDS, type SubjectKind, cultureById, styleOfCulture, cultureTendency, dimensionValues, popValueById, weightedList, worldEra } from './era';
 import { makeFlag } from './flags';
-import { type Government, type TitleContext, eraGovernments, govTitles, governmentById, titled } from './government';
+import { type Government, type TitleContext, eraGovernments, govAllowed, govRestricted, govTitles, governmentById, titled } from './government';
 import { GroupTable, SLOTS, type Share, readComp, writeComp } from './groups';
 import { COAST } from './rules';
 import { cellKm2, distKm, noiseAt } from './space';
@@ -123,11 +123,16 @@ function styleOf(world: World, culture: Culture | undefined) {
 // 挑称号时看的（第四十三轮）：国家的等级、主流文化与文化组、主流文化最典型的取值（宗教……）与它们的组。
 // era 省略时按世界的时代（生成时世界的时代还没换上，按生成的时代）
 export function titleContext(world: Pick<World, 'small'>, meta: Pick<CountryMeta, 'tier' | 'primaryCulture'>, era: Era | undefined = worldEra(world.small)): TitleContext {
+  return { ...(meta.tier ? { tier: meta.tier } : {}), tiers: worldTiers(world.small), ...cultureContext(world, meta.primaryCulture, era) };
+}
+
+// 一个主流文化的：文化、文化组、最典型的取值与它们的组（称号的换说法、政体限谁用都看它；第四十四轮从 titleContext 分出来）
+export function cultureContext(world: Pick<World, 'small'>, culture: string, era: Era | undefined = worldEra(world.small)): Omit<TitleContext, 'tier' | 'tiers'> {
   const small = world.small;
-  const c = cultureById(small, meta.primaryCulture);
-  const values = era ? Object.values(typical(world, era, meta.primaryCulture).values) : [];
+  const c = cultureById(small, culture);
+  const values = era ? Object.values(typical(world, era, culture).values) : [];
   const valueGroups = values.flatMap((v) => popValueById(small, v)?.group ?? []);
-  return { ...(meta.tier ? { tier: meta.tier } : {}), tiers: worldTiers(small), ...(c ? { culture: c.id, group: c.group } : {}), values, valueGroups };
+  return { ...(c ? { culture: c.id, group: c.group } : {}), values, valueGroups };
 }
 
 // 国名：地名 + 称号（按等级、主流文化、宗教换说法，见 government.ts 的 govTitles）
@@ -210,11 +215,24 @@ function pickWeighted<T>(items: readonly T[], w: (x: T) => number, rand: () => n
   return items[items.length - 1];
 }
 
-// 一个文化挑政体的权重：政体的 weight × 文化的倾向（文化或文化组写了 government 的倾向时，没写到的 × 0.15）
-function govWeights(small: World['small'], era: string, culture: Culture | undefined, govs: readonly Government[]): (g: Government) => number {
-  const tend = new Map(weightedList(cultureTendency(small, culture, 'government', era)));
+// 一个文化挑政体的权重：政体的 weight × 文化的倾向（文化或文化组写了 government 的倾向时，没写到的 × 0.15）。
+// 第四十四轮：限谁用（only）的政体这个文化用不了时是 0（不给 0.15 的余地）
+function govWeights(world: Pick<World, 'small'>, era: Era, culture: Culture | undefined, govs: readonly Government[]): (g: Government) => number {
+  const small = world.small;
+  const tend = new Map(weightedList(cultureTendency(small, culture, 'government', era.id)));
   const has = [...tend.keys()].some((id) => govs.some((g) => g.id === id));
-  return (g) => (g.weight ?? 1) * (has ? (tend.get(g.id) ?? 0.15) : 1);
+  const ctx = govs.some(govRestricted) && culture ? cultureContext(world, culture.id, era) : undefined;
+  return (g) => (ctx && !govAllowed(g, ctx) ? 0 : (g.weight ?? 1) * (has ? (tend.get(g.id) ?? 0.15) : 1));
+}
+
+// 按权重挑政体（第四十四轮）：权重都是 0（这个文化能用的都被限了）时在不限谁用的里按 weight 挑，再没有时在全部里挑——国家总有政体
+function pickGov(govs: readonly Government[], w: (g: Government) => number, rand: () => number): Government {
+  let total = 0;
+  for (const g of govs) total += Math.max(0, w(g));
+  if (total > 0) return pickWeighted(govs, w, rand)!;
+  const free = govs.filter((g) => !govRestricted(g));
+  const list = free.length ? free : govs;
+  return pickWeighted(list, (g) => g.weight ?? 1, rand)!;
 }
 
 // 离 src 不到 km 的格（按边的长度走，海、陆都走）：visit 每格一次
@@ -514,8 +532,8 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
         const culture = ctx.cultures[c];
         // 中心是邦联的中心那一级（皇帝的本领，内置的是公国级），别的按成员的比例（内置的是城邦级、侯国级）；预算先记倍数，挑完按这一片的面积分
         const tier = s === 0 ? centreTier : pickWeighted(members.list, members.weight, rand)!;
-        const w = govWeights(ctx.world.small, ctx.era.id, culture, govs);
-        const gov = pickWeighted(govs, (gg) => w(gg) * govFit(gg, tier), rand)!;
+        const w = govWeights(ctx.world, ctx.era, culture, govs);
+        const gov = pickGov(govs, (gg) => w(gg) * govFit(gg, tier), rand);
         list.push({ cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), confed: k0 });
         // 离起点的距离（只在这一片里走）
         heap.size = 0;
@@ -631,9 +649,9 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
     if (!counts[u]) continue;
     const culture = ctx.cultures[unitCulture[u]];
     const rand = mulberry32(mixSeed(seed, hashString(`country:${culture.id}`), unitComp[u]));
-    const w = govWeights(ctx.world.small, ctx.era.id, culture, govs);
+    const w = govWeights(ctx.world, ctx.era, culture, govs);
     for (let k = 0; k < counts[u]; k++) {
-      const gov = pickWeighted(govs, w, rand)!;
+      const gov = pickGov(govs, w, rand);
       const tier = pickWeighted(tierList, (t) => tierW[tierIndex.get(t)!] * govFit(gov, t), rand)!;
       list.push({ tier, gov, budget: tier.area * (0.7 + 0.6 * rand()) });
       mSum += tier.area;
@@ -977,6 +995,16 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
     const g = ctx.cultureGroup[c];
     groupMass[o].set(g, (groupMass[o].get(g) ?? 0) + m);
     cultureMass[o].set(c, (cultureMass[o].get(c) ?? 0) + m);
+  }
+  // 第四十四轮：长完以后再查一遍政体限谁用（按主流文化与它最典型的取值）：用不了的按主流文化的倾向 × 与等级相配换一个
+  if (govs.some(govRestricted)) {
+    for (let o = 0; o < k; o++) {
+      const s = seeds[o];
+      const culture = ctx.cultures[s.culture];
+      if (govAllowed(s.gov, cultureContext(world, culture.id, era))) continue;
+      const w = govWeights(world, era, culture, govs);
+      s.gov = pickGov(govs, (g) => w(g) * govFit(g, s.tier), mulberry32(mixSeed(seed, hashString('country:regov'), o)));
+    }
   }
   const yearRand = mulberry32(mixSeed(seed, hashString('country:year')));
   const metas: CountryMeta[] = seeds.map((s, o) => {

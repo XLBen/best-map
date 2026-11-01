@@ -605,6 +605,7 @@
       "name": "天朝",
       "category": ["monarchy", "empire"],
       "eras": ["medieval", "industrial"],
+      "only": [{"cultureGroups": ["chinese"]}],
       "color": "#d8b030",
       "description": "天子受命于天，统御四海；科举选出的官员治理天下，四夷以朝贡来朝。",
       "titles": {
@@ -631,6 +632,7 @@
       "name": "幕府",
       "category": ["monarchy", "dictatorship"],
       "eras": ["medieval", "industrial"],
+      "only": [{"cultureGroups": ["japanese"]}],
       "color": "#a03c50",
       "description": "天皇只是名义上的君主，实际的权柄握在将军手中，各地大名对幕府称臣。",
       "titles": {
@@ -657,6 +659,7 @@
       "name": "伊克塔",
       "category": ["monarchy"],
       "eras": ["medieval"],
+      "only": [{"valueGroups": ["muslim"]}],
       "color": "#3aa070",
       "description": "苏丹把土地的税收分给效力的骑兵将领，以此养活军队；封地不得世袭，全凭君主的恩宠。",
       "titles": {
@@ -754,6 +757,7 @@
       "name": "自由市",
       "category": ["republic"],
       "eras": ["medieval"],
+      "only": [{"cultureGroups": ["germanic", "british", "french", "iberian", "latin", "scandinavian", "west-slavic", "carpathian", "baltic", "celtic"]}],
       "color": "#4a7a3a",
       "description": "只向皇帝一人称臣的城市，市议会自行征税、铸币、筑墙，城外的诸侯奈何不得。",
       "titles": {"zh": "自由市", "orig": "Free City of {name}"},
@@ -774,6 +778,7 @@
       "name": "骑士团",
       "category": ["theocracy"],
       "eras": ["medieval"],
+      "only": [{"valueGroups": ["christian"]}],
       "color": "#3a3a3a",
       "description": "发誓守贞、清贫与服从的武装修士团，在异教的边疆上以刀剑建起了自己的国家。",
       "titles": {"zh": "骑士团国", "orig": "Order State of {name}"},

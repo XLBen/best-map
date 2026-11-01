@@ -147,6 +147,7 @@
       "name": "草原游牧",
       "category": ["tribal", "nomadic"],
       "eras": ["antiquity", "medieval", "industrial"],
+      "only": [{"cultureGroups": ["altaic", "tatar"]}, {"cultures": ["scythian", "parthian"]}],
       "color": "#d0b878",
       "description": "马背上的帝国：部众随草场迁徙，汗廷是一座移动的城，四方的定居之国只是他们的牧场与粮仓。",
       "titles": {
@@ -157,17 +158,6 @@
         "empire": {"zh": "大汗国", "orig": "Khaganate of {name}"}
       },
       "rulers": {"city": "首领", "small": "首领", "medium": "首领", "large": "汗", "empire": "大汗"},
-      "names": [
-        {
-          "cultureGroups": ["sahelian"],
-          "titles": {
-            "medium": {"zh": "部落", "orig": "{name} Horde"},
-            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
-            "empire": {"zh": "帝国", "orig": "{name} Empire"}
-          },
-          "rulers": {"city": "首领", "small": "首领", "medium": "首领", "large": "苏丹", "empire": "苏丹"}
-        }
-      ],
       "weight": 0.5,
       "size": 2.2,
       "expansion": 0.8,
@@ -553,6 +543,7 @@
       "name": "原住民议会",
       "category": ["tribal"],
       "eras": ["antiquity", "medieval", "industrial"],
+      "only": [{"cultureGroups": ["eskaleut", "na-dene", "penutian", "sonoran", "apachean", "plains-algonquian", "central-algonquian", "eastern-algonquian", "iroquoian", "siouan", "caddoan", "muskogean", "aridoamerican", "central-american", "otomanguean", "mayan", "caribbean", "chibchan", "maranon", "andean", "araucanian", "matacoan", "je", "tupi", "evenki", "kamchatkan", "ugric", "aboriginal", "pacific"]}],
       "color": "#8ab0a0",
       "description": "各家族、各村落的长者围着议事的火堆共商大事，没有谁能独断专行。",
       "titles": {

@@ -48,9 +48,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（人口、国家都跟着变）
+// 第四十四轮重录：政体限谁用，国家的政体变了（城市化、扩张性跟着变）
 const RECORDED = {
-  region: { cities: '175d2bf8db68155f', roads: 'a982edc5a1f00577', landmarks: 'd4b22f2206d39214' },
-  planet: { cities: '00f25e76b80df249', roads: '27068028eb3fcae7', landmarks: '3c8a3d516e631055' },
+  region: { cities: '78274d421d1c490d', roads: '9934ad3163247145', landmarks: 'c0a6121776a8bcc2' },
+  planet: { cities: 'b9b5c72cde10fbff', roads: 'b37079d95fbf1c07', landmarks: '351670c399359c6d' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 

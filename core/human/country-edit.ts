@@ -3,10 +3,10 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
 import { joinBlocsOf, mergeBlocMembers, tidyBlocs } from './blocs';
-import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, titleContext, yearText } from './countries';
+import { countryColor, countryName, cultureContext, ensureCountryArray, foundedYear, nameCountry, titleContext, yearText } from './countries';
 import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
-import { type Government, eraGovernments, governmentById } from './government';
+import { type Government, eraGovernments, govAllowed, govRestricted, governmentById } from './government';
 import { SLOTS } from './groups';
 
 // 改国家（第二十三轮，命令见 commands.ts）：画领土、新建、合并、拆分、改档案、删除、挪首都；改地形之后的修补；
@@ -130,10 +130,13 @@ function majorityCultureOf(world: World, cells: readonly number[]): Culture | un
 }
 
 // 时代里最常见的政体（weight 最大的，一样大时排在前面的）
-function commonGovernment(world: World): Government | undefined {
+// 第四十四轮：先在这个文化能用的（政体的限谁用）里挑，一个都没有时在全部里挑
+function commonGovernment(world: World, culture: Culture): Government | undefined {
   const govs = eraGovernments(world.small, worldEra(world.small));
+  const ctx = govs.some(govRestricted) ? cultureContext(world, culture.id) : undefined;
+  const ok = ctx ? govs.filter((g) => govAllowed(g, ctx)) : govs;
   let best: Government | undefined;
-  for (const g of govs) if (!best || (g.weight ?? 1) > (best.weight ?? 1)) best = g;
+  for (const g of ok.length ? ok : govs) if (!best || (g.weight ?? 1) > (best.weight ?? 1)) best = g;
   return best;
 }
 
@@ -156,7 +159,7 @@ export function newCountry(world: World, opts: NewCountryOpts): number {
   const culture = opts.culture ? cultureById(small, opts.culture) : majorityCultureOf(world, cells);
   if (opts.culture && !culture) throw new CommandError(`世界里没有文化 "${opts.culture}"`);
   if (!culture) throw new CommandError('世界里没有文化');
-  const gov = opts.government ? governmentById(small, opts.government) : commonGovernment(world);
+  const gov = opts.government ? governmentById(small, opts.government) : commonGovernment(world, culture);
   if (opts.government && !gov) throw new CommandError(`世界里没有政体 "${opts.government}"：先从资源库添加它`);
   if (!gov) throw new CommandError('世界里没有政体');
   const id = Math.max(1, small.nextCountry ?? 1);

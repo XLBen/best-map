@@ -17,6 +17,9 @@ const NAME_RULE_FIELDS: readonly FieldDesc[] = [
   { key: 'rulers', label: '统治者称号', type: 'json', optional: true, hint: '按等级' },
 ];
 
+// 限谁用的一条（第四十四轮）
+const ONLY_FIELDS: readonly FieldDesc[] = NAME_RULE_FIELDS.filter((f) => f.key !== 'titles' && f.key !== 'rulers');
+
 const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
@@ -26,6 +29,7 @@ const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'titles', label: '国家称号', type: 'json', hint: '按国家的等级：等级 id → 称号（没写的等级用最近的一级）；只写一种时各等级都用它' },
   { key: 'rulers', label: '统治者称号', type: 'json', optional: true, hint: '写法同国家称号' },
   { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, hint: '按文化组、宗教……换称号；第一条满足的起作用' },
+  { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, hint: '满足其中一条的国家才能用（伊克塔只给穆斯林）；不写时谁都能用' },
   { key: 'weight', label: '多见', type: 'number', optional: true, min: 0, max: 100, step: 0.1, hint: '省略为 1' },
   { key: 'size', label: '国土', type: 'number', min: 0.05, max: 10, step: 0.05, hint: '1 是平均' },
   { key: 'expansion', label: '扩张性', type: 'number', min: 0, max: 1, step: 0.05, hint: '越大越多吞进异族的地方' },

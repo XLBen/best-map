@@ -44,6 +44,18 @@ export const nameRuleSchema = z
   .strict();
 export type NameRule = z.output<typeof nameRuleSchema>;
 
+// 政体限谁用（第四十四轮，仿 EU4：伊克塔只给穆斯林、幕府只给日本……）：一条里写了的几项都要满足（各自是“其中之一”），
+// 几条里满足一条就行；不写时谁都能用。看的是国家的主流文化、文化组与主流文化最典型的取值（国教……）、取值组
+export const govOnlySchema = z
+  .object({
+    cultures: ids,
+    cultureGroups: ids,
+    values: ids,
+    valueGroups: ids,
+  })
+  .strict();
+export type GovOnly = z.output<typeof govOnlySchema>;
+
 export const governmentSchema = z.object({
   id: typeIdSchema,
   name: z.string().min(1).max(20),
@@ -55,6 +67,8 @@ export const governmentSchema = z.object({
   titles: tierTitlesSchema,
   rulers: tierTitlesSchema.optional(),
   names: z.array(nameRuleSchema).max(48).optional(),
+  // 限谁用（第四十四轮）：满足其中一条的国家才能用；生成时不满足的不挑，生成后不满足的换掉
+  only: z.array(govOnlySchema).max(16).optional(),
   // 被选中的多少（省略为 1）：时代里的政体按它挑
   weight: z.number().min(0).max(100).optional(),
   // ---- 生成的倾向 ----
@@ -217,10 +231,17 @@ export function tierTitle(t: Title | undefined, tier: string | undefined, tiers:
   return vals.length ? oneTitle(vals[Math.floor((vals.length - 1) / 2)]) : undefined;
 }
 
-// 一条换说法满不满足
-function ruleMatches(r: NameRule, c: TitleContext): boolean {
+// 一条换说法（或限谁用的一条）满不满足
+type RuleContext = Pick<TitleContext, 'culture' | 'group' | 'values' | 'valueGroups'>;
+function ruleMatches(r: Pick<NameRule, 'cultures' | 'cultureGroups' | 'values' | 'valueGroups'>, c: RuleContext): boolean {
   const any = (list: readonly string[] | undefined, have: readonly (string | undefined)[]) => !list?.length || have.some((h) => h !== undefined && list.includes(h));
   return any(r.cultures, [c.culture]) && any(r.cultureGroups, [c.group]) && any(r.values, c.values) && any(r.valueGroups, c.valueGroups);
+}
+
+// 第四十四轮：这个国家（主流文化、组、最典型的取值与取值组）能不能用这个政体（没写 only 的谁都能用）
+export const govRestricted = (g: Pick<Government, 'only'>): boolean => !!g.only?.length;
+export function govAllowed(g: Pick<Government, 'only'>, c: RuleContext): boolean {
+  return !g.only?.length || g.only.some((r) => ruleMatches(r, c));
 }
 
 // 一样（国家称号或统治者称号）：满足的几条换说法（按先后）里第一条写了这一级（或 default、或只写一种）的；
