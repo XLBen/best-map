@@ -1,6 +1,6 @@
 # core/human/：人文
 
-流水线里人文的几层（`Dirty.Human` 只重算这里与名字）。设计见 history/：[第21轮](history/第21轮.md)（地形类别、资源、格的档案）、[第22轮](history/第22轮.md)（时代、文化、人口）、[第23轮](history/第23轮.md)（国家与政体）、[第24轮](history/第24轮.md)（城市、道路、地标、点）、[第26轮](history/第26轮.md)（等级、领土补齐、集团）、[第27轮](history/第27轮.md)（自动的结果）、[第30轮](history/第30轮.md)（时代就是资源包）、[第42轮](history/第42轮.md)（国家等级是内容）。
+流水线里人文的几层（`Dirty.Human` 只重算这里与名字）。设计见 history/：[第21轮](history/第21轮.md)（地形类别、资源、格的档案）、[第22轮](history/第22轮.md)（时代、文化、人口）、[第23轮](history/第23轮.md)（国家与政体）、[第24轮](history/第24轮.md)（城市、道路、地标、点）、[第26轮](history/第26轮.md)（等级、领土补齐、集团）、[第27轮](history/第27轮.md)（自动的结果）、[第30轮](history/第30轮.md)（时代就是资源包）、[第42轮](history/第42轮.md)（国家等级是内容）、[第43轮](history/第43轮.md)（EU4 的文化组、宗教组与政体名）。
 
 ## 格的几层（第二十一轮）
 - `index.ts` 流水线里的一步 `computeHuman` 与给界面的函数（`countryLabels`、`regionLabels`、`peakMarks`、`cellName`……）
@@ -12,20 +12,20 @@
 - `kinds.ts` 地形类别、资源登记进登记表
 
 ## 时代、文化、人口（第二十二轮）
-- `era.ts` 时代、取值、文化组、文化的格式与世界里的列表（`worldEra`、`worldCultures`、`worldDimensions`……）
-- `pop-kinds.ts` 这四种登记进登记表
+- `era.ts` 时代、取值、取值组（第四十三轮）、文化组、文化的格式与世界里的列表（`worldEra`、`worldCultures`、`worldDimensions`……）；文化的倾向 `cultureTendency`（文化按时代 → 文化 → 组按时代 → 组）、风格 `styleOfCulture`、异端 / 异教 `faithRelation`
+- `pop-kinds.ts` 这五种登记进登记表
 - `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`）
 - `habitability.ts` 宜居度与偏好；`cultures.ts` 文化圈；`culture-style.ts` 地名跟着文化
 - `population.ts` 人口、修补、笔刷（`paintPop`、`setCellPop`、`applyPopFix`）；`groups.ts` 人口群体的编号与每格成分
 - `layers.ts` 人口的几层、图例、档案的人口一栏、每省人口；`space.ts` 面积、距离、噪声、按份额长
 - `prune.ts` 生成之后只留用到的内容（第二十八轮）
-- `packs/eras/` 内置 6 个时代（一个 JSON 一个）、`values/` 共用的取值、`cultures/` 23 个文化组
+- `packs/eras/` 内置 6 个时代（一个 JSON 一个）、`values/` 共用的取值与宗教组、`cultures/` EU4 的 71 个文化组 410 个文化（一个地区一个 JSON）与奇幻、科幻的 10 个组（一组一个）
 
 ## 国家与政体（第二十三轮、第二十六轮）
-- `government.ts` 政体、派系的格式与世界里的列表、称号；`gov-kinds.ts` 登记进登记表
-- `countries.ts` 生成国家（两步）、颜色、名字、历史、按世界里的等级挑大小；`country-names.ts` 国名的地名部分、人名
+- `government.ts` 政体、派系的格式与世界里的列表；称号按国家等级与换说法（`govTitles`、`tierTitle`，第四十三轮），地标、集团的称号 `pickTitle`；`gov-kinds.ts` 登记进登记表
+- `countries.ts` 生成国家（两步）、颜色、名字（`titleContext`：等级、主流文化、最典型的宗教……）、历史、按世界里的等级挑大小；`country-names.ts` 国名的地名部分、人名
 - `country-edit.ts` 改国家的命令、整理、改地形后的修补
-- `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力、国名的位置
+- `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力（来源可以按与国教的关系）、国教 `countryFaith`、国名的位置
 - `claims.ts` 领土补齐（国家一步之后、人口之前）；`blocs.ts` 帝国、联邦、同盟（`small.blocs`）
 - `tiers.ts` 国家等级、格局的格式与世界里的列表（按 order 排）、生效的比例 `tierWeights`、邦联 / 联邦 / 附庸的规则、首都的样子 `capitalLook`（第四十二轮）；`tier-kinds.ts` 登记进登记表；`packs/countries/` 内置的五级与四种格局
 - `flags.ts` 旗帜的规则与 SVG；`packs/governments/` 内置政体与派系
