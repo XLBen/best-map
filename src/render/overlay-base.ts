@@ -84,6 +84,9 @@ export interface OverlayState {
   settlements?: SettleMark[] | null;
   settleNames?: boolean;
   cellSize?: number;
+  // 照最醒目的画的点（第四十二轮：淡一些、小一些的城市与首都，鼠标停着的、选中的国家的首都）：点的键（'settle:…'）与 'country:<编号>'。
+  // 只在画的时候看，不重排
+  settleStrong?: readonly string[] | null;
   // 道路（第二十四轮）：画在地名、工具的图形下面；小路放大后才画
   roads?: RoadDraw | null;
   kmPerUnit: number;
@@ -213,6 +216,9 @@ export interface PlacedLabel {
   // 城市、地标、点的图标（第二十四轮）：画在 x、y（CSS 像素），没有字；markScale：缩得很小时小一些
   mark?: SettleMark;
   markScale?: number;
+  // 第四十二轮：淡一些的点的名字（of 是那个点；浓淡按它的 labelAlpha）、小一些的图标照原来大小画时的 markScale
+  of?: SettleMark;
+  fullScale?: number;
   // 投影时（第四十轮）：地名、图标的锚点（地图坐标）与排的时候它在屏幕上的位置；国名每个字落在地图上的点（转球的手势里按它重新投影）
   anchor?: Anchor;
   glyphAnchors?: ([number, number] | null)[];

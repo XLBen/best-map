@@ -250,22 +250,36 @@ export {
 } from './government';
 export {
   COUNTRY_KM2,
-  COUNTRY_TIERS,
-  DEFAULT_TIERS,
   DEFAULT_YEARS,
-  LAYOUT_NAMES,
-  LAYOUT_TIERS,
   MAX_COUNTRIES,
   SUBJECT_NAMES,
-  TIER_NAMES,
   averageCountryKm2,
   countryList,
   estimateCountryCount,
   plannedCountries,
   sizeFactor,
-  tierWeights,
   yearText,
 } from './countries';
+// 第四十二轮：国家等级与格局是内容
+export {
+  type CapitalLook,
+  type CountryLayoutDef,
+  type CountryTierDef,
+  ERA_LAYOUT,
+  ERA_LAYOUT_HINT,
+  ERA_LAYOUT_NAME,
+  FULL_CAPITAL,
+  capitalLook,
+  countryLayoutSchema,
+  countryTierSchema,
+  layoutById,
+  tierById,
+  tierOfCountry,
+  tierShort,
+  tierWeights,
+  worldLayouts,
+  worldTiers,
+} from './tiers';
 // 第二十六轮：帝国、联邦、同盟
 export {
   ALLIANCE_COLORS,
@@ -284,7 +298,7 @@ export {
   nextBlocId,
 } from './blocs';
 export { SMALL_GAP } from './claims';
-export { COUNTRY_TIER_IDS, type CountryTier, SUBJECT_KINDS, type SubjectKind, type TierWeights } from './era';
+export { SUBJECT_KINDS, type SubjectKind, type TierWeights } from './era';
 export { autoCapital, countryCells, type CountryPatch } from './country-edit';
 export {
   type CountryLabel,

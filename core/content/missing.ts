@@ -3,6 +3,7 @@ import { worldFactions, worldGovernments } from '../human/government';
 import { worldResources } from '../human/resources';
 import { worldCityRanks, worldLandmarkTypes } from '../human/settle-content';
 import { worldTerrainClasses } from '../human/terrain-class';
+import { worldTiers } from '../human/tiers';
 import { worldStyles } from '../name-styles';
 import type { SmallState } from '../world';
 
@@ -14,6 +15,7 @@ import type { SmallState } from '../world';
 //   没有地名风格     → 不起名（地物、省份没有名字，界面照常）
 //   没有时代         → 不生成人文；没有文化 → 不生成人口
 //   没有政体         → 不生成国家；没有派系 → 国家没有派系的影响力
+//   没有国家等级     → 国家都按一般的大小（第四十二轮）
 //   没有城市等级     → 不放城市、道路；没有地标类型 → 不放地标
 // 生成的命令（新世界、生成人文 / 国家 / 城市道路地标）把这里的说明放进结果（applyCommand 的 skipped，Worker 的 exec 回复），
 // 界面显示一次
@@ -35,7 +37,10 @@ export function missingNotes(small: MissingSmall, scopes: readonly MissingScope[
   if (has('human') && !worldEras(small).length) out.push('没有时代：没有生成人文');
   if (has('countries')) {
     if (!worldGovernments(small).length) out.push('没有政体：没有生成国家');
-    else if (!worldFactions(small).length) out.push('没有派系：国家没有派系');
+    else {
+      if (!worldFactions(small).length) out.push('没有派系：国家没有派系');
+      if (!worldTiers(small).length) out.push('没有国家等级：国家都按一般的大小');
+    }
   }
   if (has('settlements')) {
     if (!worldCityRanks(small).length) out.push('没有城市等级：没有放城市和道路');

@@ -216,8 +216,8 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     return eng;
   };
 
-  it('新建时默认的几个包：基础、自然、中文地名、画风（第三十八轮）', () => {
-    expect(DEFAULT_WORLD_PACKS).toEqual([BASE_PATH, ['common', 'nature'], ['common', 'names', 'zh'], ['common', 'styles']]);
+  it('新建时默认的几个包：基础、自然、中文地名、画风（第三十八轮）、国家等级（第四十二轮）', () => {
+    expect(DEFAULT_WORLD_PACKS).toEqual([BASE_PATH, ['common', 'nature'], ['common', 'names', 'zh'], ['common', 'styles'], ['common', 'tiers']]);
     const eng = bare(DEFAULT_WORLD_PACKS);
     expect(eng.lastSkipped).toEqual([]);
     const s = eng.world.small;

@@ -280,8 +280,8 @@ export function repoSections(
 
 // 人文的四种：资源库里有“生成人文…”的入口
 export const HUMAN_KINDS: ReadonlySet<string> = new Set(['era', 'popValue', 'cultureGroup', 'culture']);
-// 第二十三轮的两种（政体、派系）：资源库里有“生成国家…”的入口
-export const GOV_KINDS: ReadonlySet<string> = new Set(['government', 'faction']);
+// 第二十三轮的两种（政体、派系）与第四十二轮的国家等级、格局：资源库里有“生成国家…”的入口
+export const GOV_KINDS: ReadonlySet<string> = new Set(['government', 'faction', 'countryTier', 'countryLayout']);
 // 第二十四轮的三种（城市等级、地标类型、点的类型）：资源库里有“生成城市… / 重新生成…”的入口
 export const SETTLE_KINDS: ReadonlySet<string> = new Set(['cityRank', 'landmarkType', 'pointType']);
 

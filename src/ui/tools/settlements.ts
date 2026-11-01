@@ -180,7 +180,7 @@ function markTool(o: {
           warn: h.warn,
         };
       }
-      if (hot) return { layers: [], shapes: [ring(hot.x, hot.y, 11, z, HOVER)], hint: o.name(w, refOfKey(hot.key)!) };
+      if (hot) return { layers: [], shapes: [ring(hot.x, hot.y, 11, z, HOVER)], hint: o.name(w, refOfKey(hot.key)!), mark: hot.key };
       return o.placeHint(w, pointer);
     },
   };

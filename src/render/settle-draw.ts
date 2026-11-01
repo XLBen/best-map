@@ -58,6 +58,13 @@ export interface SettleMark {
   namePx: number;
   // 首都、陪都：和别的图标挤在一起时照样画
   always?: boolean;
+  // 淡一些、小一些（第四十二轮：城市按等级的 alpha、iconScale，首都按国家的等级）：图标的浓淡、大小倍数，名字的浓淡（省略为 1、1、同图标）。
+  // 鼠标停着、选中的（叠加层的 settleStrong）照 1 画
+  alpha?: number;
+  scale?: number;
+  labelAlpha?: number;
+  // 首都、陪都所属的国家（选中、钉住、鼠标停在这个国家时照 1 画）
+  country?: number;
 }
 
 // 道路：大道、小路各一组折线（地图坐标，已平滑；星球上沿路展开，x 可能超出 [0, 2)）。minorPx：一格至少这么多像素才画小路

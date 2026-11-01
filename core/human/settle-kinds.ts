@@ -21,6 +21,9 @@ const RANK_FIELDS: readonly FieldDesc[] = [
   { key: 'minPop', label: '人数下限', type: 'number', optional: true, min: 0, max: 1e10, step: 1000 },
   { key: 'label', label: '字号', type: 'number', min: 0.3, max: 4, step: 0.05, hint: '1 是普通城市' },
   { key: 'major', label: '连大道', type: 'bool', optional: true },
+  { key: 'alpha', label: '图标浓淡', type: 'number', optional: true, min: 0.1, max: 1, step: 0.05, hint: '1 不透明；鼠标停着、选中时照 1 画' },
+  { key: 'iconScale', label: '图标大小', type: 'number', optional: true, min: 0.3, max: 2, step: 0.05, hint: '1 是原来的大小' },
+  { key: 'labelAlpha', label: '名字浓淡', type: 'number', optional: true, min: 0.1, max: 1, step: 0.05, hint: '空着时同图标' },
 ];
 
 const LANDMARK_FIELDS: readonly FieldDesc[] = [

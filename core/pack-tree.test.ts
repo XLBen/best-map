@@ -85,7 +85,7 @@ describe('内置资源包的树', () => {
     expect(subPacks(top('fantasy')).map((x) => x.id)).toEqual(expect.arrayContaining(['biomes', 'rivers', 'lakes', 'resources', 'forms']));
     // 通用：基础、自然、地名（中文、按地区）、星球形态、画风（第三十八轮）、文化（没有时代默认带的组）
     const common = top('common');
-    expect(subPacks(common).map((x) => x.id)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'cultures']);
+    expect(subPacks(common).map((x) => x.id)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'cultures']);
     expect(packItems(findPack(common, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);
     expect(subPacks(findPack(common, ['names'])!).length).toBeGreaterThan(5);
     const rest = packItems<{ id: string }>(findPack(common, ['cultures'])!, 'cultureGroups').map((g) => g.id);

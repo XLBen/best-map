@@ -49,6 +49,8 @@ import {
   settleShow,
   textPatch,
 } from './settlements';
+import { fragTitle, layoutChoices, tierLabel } from './countries';
+import { eraOf } from '../../core/testing/eras';
 import { modeDef } from './map/modes';
 import { type Pointer, cityTool, landmarkTool, pointTool, roadTool } from './tools';
 
@@ -495,6 +497,65 @@ describe('导出与仓库', () => {
     expect(iconChoices('biome')).toBeNull();
     expect(isImageUrl('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
     expect(isImageUrl('https://example.com/a.png')).toBe(false);
+  });
+});
+
+describe('城市与首都分轻重（第四十二轮）', () => {
+  it('城市按等级的浓淡、大小（数据里的）；首都按国家的等级；“城市”工具选中的照最醒目的画', () => {
+    const w = towns().world;
+    const marks = settleMarks(w, 'zh', ALL);
+    const cities = cityList(w).filter((c) => !c.point);
+    const byKey = new Map(marks.map((m) => [m.key, m]));
+    for (const c of cities) {
+      const m = byKey.get(markKey('city', c.id))!;
+      if (c.capital || c.secondCapital) continue;
+      expect(m.alpha, c.rank.id).toBe(c.rank.alpha);
+      expect(m.scale, c.rank.id).toBe(c.rank.iconScale);
+    }
+    // 内置的：大城市照旧，城市 0.7 / 0.85，村镇 0.6 / 0.85
+    const rank = (id: string) => BUILTIN_RANKS.find((r) => r.id === id)!;
+    expect([rank('capital').alpha, rank('big').alpha, rank('medium').alpha, rank('small').alpha]).toEqual([undefined, undefined, 0.7, 0.6]);
+    expect(rank('medium').iconScale).toBe(0.85);
+    const medium = cities.find((c) => c.rank.id === 'medium' && !c.capital)!;
+    expect(cityMark(medium, 'zh', true, w.small)).not.toHaveProperty('alpha');
+    // 首都：按国家的等级（帝国级与以前一样）
+    const metas = w.small.countries!;
+    let saw = 0;
+    for (const c of cities.filter((x) => x.capital)) {
+      const m = byKey.get(markKey('city', c.id))!;
+      const t = metas[c.country!].tier;
+      const tier = w.small.content!.countryTier![t!] as { capitalAlpha?: number; capitalIcon?: number; capitalBold?: boolean };
+      if (t === 'empire') {
+        expect(m).not.toHaveProperty('alpha');
+        expect(m).toMatchObject({ bold: true, fontPx: 15 });
+      } else {
+        saw++;
+        expect(m.alpha).toBe(tier.capitalAlpha);
+        expect(m.scale).toBe(tier.capitalIcon);
+        expect(m.country).toBe(c.country);
+        expect(!!m.bold).toBe(tier.capitalBold !== false);
+        expect(m.fontPx).toBeLessThanOrEqual(15);
+        // 选中的照最醒目的画
+        expect(cityMark(c, 'zh', true, w.small)).toMatchObject({ bold: true, fontPx: 15 });
+      }
+    }
+    expect(saw).toBeGreaterThan(0);
+    // 不给世界时（旧的调用）照最醒目的画
+    const cap = cities.find((x) => x.capital)!;
+    expect(cityMark(cap, 'zh')).not.toHaveProperty('alpha');
+  });
+
+  it('界面的字按数据里的名字：档案的等级、格局的选项；“分裂 ↔ 统一”不提小国、大国', () => {
+    const w = towns().world;
+    const m = Object.values(w.small.countries!).find((x) => x.tier === 'empire') ?? Object.values(w.small.countries!)[0];
+    expect(['帝国级', '王国级', '公国级', '侯国级', '城邦级']).toContain(tierLabel(w, m));
+    expect(tierLabel(w, { tier: undefined })).toBe('');
+    expect(tierLabel(w, { tier: 'gone' })).toBe('');
+    expect(layoutChoices(w.small).map((c) => c.name)).toEqual(['按时代', '混合', '诸侯林立', '大一统', '列强并立']);
+    expect(layoutChoices(w.small, 'gone').map((c) => c.id)).toEqual(['era', 'mixed', 'petty', 'unified', 'powers', 'gone']);
+    expect(layoutChoices(undefined).map((c) => c.id)).toEqual(['era']);
+    for (const era of ['medieval', 'modern']) expect(fragTitle(eraOf(era))).not.toMatch(/小国|大国|城邦|帝国|中等国家/);
+    for (const c of layoutChoices(w.small)) expect(c.hint).not.toMatch(/小国|大国|中等国家/);
   });
 });
 

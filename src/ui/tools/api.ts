@@ -47,6 +47,8 @@ export interface Preview {
   world?: World | null;
   // 描格（第三十七轮，指针）：鼠标下这一格画成陆地或水面的那一部分，地图按画面上的陆海描边（renderer.setFocus）
   focus?: CellFocus | null;
+  // 鼠标下的城市、地标、点（第四十二轮）：它的键（'settle:…'），地图上照最醒目的画（淡一些的城市、首都）
+  mark?: string | null;
 }
 
 // 描格的格（第三十七轮）：屏幕上这一点画成的陆地或水面那一部分（core/display.ts 的 DisplayCell.focus）。

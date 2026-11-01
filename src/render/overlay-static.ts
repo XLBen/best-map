@@ -26,6 +26,7 @@ export const FIELD_KIND: { [K in keyof Required<OverlayState>]: 'static' | 'shap
   countries: 'static',
   settlements: 'static',
   settleNames: 'static',
+  settleStrong: 'static',
   cellSize: 'static',
   roads: 'static',
   kmPerUnit: 'static',
@@ -60,6 +61,7 @@ export function fieldKey(k: keyof OverlayState, v: unknown): unknown {
   }
   if (k === 'latitude') return v ? `${(v as { north: number }).north}|${(v as { south: number }).south}` : null;
   if (k === 'style') return mapStyleKey(v as MapStyle);
+  if (k === 'settleStrong') return v ? (v as readonly string[]).join('|') : null;
   return v;
 }
 

@@ -37,11 +37,9 @@ export const dimensionSchema = z.object({
 });
 export type Dimension = z.output<typeof dimensionSchema>;
 
-// 国家的等级（第二十六轮）：城邦、小国、中等、大国、帝国
-export const COUNTRY_TIER_IDS = ['city', 'small', 'medium', 'large', 'empire'] as const;
-export type CountryTier = (typeof COUNTRY_TIER_IDS)[number];
-const tierWeightsSchema = z.object(Object.fromEntries(COUNTRY_TIER_IDS.map((t) => [t, z.number().min(0).max(100).optional()])) as Record<CountryTier, z.ZodOptional<z.ZodNumber>>).strict();
-export type TierWeights = Partial<Record<CountryTier, number>>;
+// 国家的等级比例（第二十六轮；第四十二轮起等级是内容，见 tiers.ts）：等级的 id → 占多少。世界里没有的 id 不算，没写的等级为 0
+const tierWeightsSchema = z.record(typeIdSchema, z.number().min(0).max(100));
+export type TierWeights = Readonly<Record<string, number>>;
 
 // 从属的种类（第二十六轮，CountryMeta.subject）：附庸、保护国、自治领、朝贡国
 export const SUBJECT_KINDS = ['vassal', 'protectorate', 'dominion', 'tributary'] as const;
@@ -97,7 +95,7 @@ export const eraSchema = z.object({
   countryKm2: z.number().min(1000).max(1e9).optional(),
   // 年份的范围 [最早, 现在]：建国年份在这里面（省略为 [500, 1000]）
   years: z.tuple([z.number().int().min(-100000).max(100000), z.number().int().min(-100000).max(100000)]).optional(),
-  // 国家的等级（第二十六轮，见 countries.ts 的 COUNTRY_TIERS）：城邦、小国、中等、大国、帝国各占多少（省略为 DEFAULT_TIERS）
+  // 国家的等级（第二十六轮；第四十二轮起按世界里的等级，见 tiers.ts）：各等级（id）占多少（省略时按各等级的 weight）
   tiers: tierWeightsSchema.optional(),
   // 国家关系（第二十六轮，见 blocs.ts）：省略时没有帝国、联邦、同盟，附庸都是 vassal
   relations: relationsSchema.optional(),

@@ -1,6 +1,6 @@
 # core/human/：人文
 
-流水线里人文的几层（`Dirty.Human` 只重算这里与名字）。设计见 history/：[第21轮](history/第21轮.md)（地形类别、资源、格的档案）、[第22轮](history/第22轮.md)（时代、文化、人口）、[第23轮](history/第23轮.md)（国家与政体）、[第24轮](history/第24轮.md)（城市、道路、地标、点）、[第26轮](history/第26轮.md)（等级、领土补齐、集团）、[第27轮](history/第27轮.md)（自动的结果）、[第30轮](history/第30轮.md)（时代就是资源包）。
+流水线里人文的几层（`Dirty.Human` 只重算这里与名字）。设计见 history/：[第21轮](history/第21轮.md)（地形类别、资源、格的档案）、[第22轮](history/第22轮.md)（时代、文化、人口）、[第23轮](history/第23轮.md)（国家与政体）、[第24轮](history/第24轮.md)（城市、道路、地标、点）、[第26轮](history/第26轮.md)（等级、领土补齐、集团）、[第27轮](history/第27轮.md)（自动的结果）、[第30轮](history/第30轮.md)（时代就是资源包）、[第42轮](history/第42轮.md)（国家等级是内容）。
 
 ## 格的几层（第二十一轮）
 - `index.ts` 流水线里的一步 `computeHuman` 与给界面的函数（`countryLabels`、`regionLabels`、`peakMarks`、`cellName`……）
@@ -23,15 +23,16 @@
 
 ## 国家与政体（第二十三轮、第二十六轮）
 - `government.ts` 政体、派系的格式与世界里的列表、称号；`gov-kinds.ts` 登记进登记表
-- `countries.ts` 生成国家（两步）、颜色、名字、历史、等级；`country-names.ts` 国名的地名部分、人名
+- `countries.ts` 生成国家（两步）、颜色、名字、历史、按世界里的等级挑大小；`country-names.ts` 国名的地名部分、人名
 - `country-edit.ts` 改国家的命令、整理、改地形后的修补
 - `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力、国名的位置
 - `claims.ts` 领土补齐（国家一步之后、人口之前）；`blocs.ts` 帝国、联邦、同盟（`small.blocs`）
+- `tiers.ts` 国家等级、格局的格式与世界里的列表（按 order 排）、生效的比例 `tierWeights`、邦联 / 联邦 / 附庸的规则、首都的样子 `capitalLook`（第四十二轮）；`tier-kinds.ts` 登记进登记表；`packs/countries/` 内置的五级与四种格局
 - `flags.ts` 旗帜的规则与 SVG；`packs/governments/` 内置政体与派系
 - `auto.ts` 自动的结果（`causes.countryAuto`、`popAuto*`），橡皮擦的“恢复自动”（第二十七轮）
 
 ## 城市、道路、地标、点（第二十四轮）
-- `settle-types.ts` 城市等级、地标类型、点的类型的格式与等级规则；`settle-content.ts` 世界里的列表；`settle-kinds.ts` 登记进登记表
+- `settle-types.ts` 城市等级（第四十二轮多了地图上的浓淡、大小）、地标类型、点的类型的格式与等级规则；`settle-content.ts` 世界里的列表；`settle-kinds.ts` 登记进登记表
 - `settlements.ts` 城市（生成、表与档案、命令、整理、修补）
 - `roads.ts` 道路（代价、A* 与最近的路网、生成、改走向、修补）
 - `landmarks.ts` 地标（自然的检测器、人造的放法、名字、命令）；`points.ts` 自定义点

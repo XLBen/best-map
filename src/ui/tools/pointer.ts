@@ -92,7 +92,7 @@ export function pointerTool(zoom: () => number): ToolHandler {
       if (!w || !pointer || pointer.cell < 0) return EMPTY;
       if (hot) {
         const ref = refOfKey(hot.key);
-        return { layers: [], shapes: [ring(hot.x, hot.y, 11, zoom(), HOVER)], hint: ref ? settleHoverText(w, ref) : null };
+        return { layers: [], shapes: [ring(hot.x, hot.y, 11, zoom(), HOVER)], hint: ref ? settleHoverText(w, ref) : null, mark: hot.key };
       }
       const cell = cellOf(pointer);
       const f = focusOf(w, pointer);

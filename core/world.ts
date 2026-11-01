@@ -10,7 +10,7 @@ import type { IslandType } from './island-types';
 import type { RiverType } from './river-types';
 import type { ProvinceSeam } from './seams';
 import type { ScriptIssue } from './script';
-import type { CountryTier, SubjectKind } from './human/era';
+import type { SubjectKind } from './human/era';
 import type { FlagSpec } from './human/flags';
 import type { Species } from './species';
 import { typeIdSchema } from './type-id';
@@ -295,11 +295,10 @@ export interface HumanState {
 export interface CountryRules {
   fragmentation: number;
   seed: number;
-  // 格局（第二十六轮）：国家大小怎么分布。省略（或 'era'）按时代的 tiers；mixed 混合、petty 诸侯林立、unified 大一统、powers 列强并立
+  // 格局（第二十六轮）：国家大小怎么分布。省略（或 'era'）按时代的 tiers；别的是世界里格局（countryLayout，第四十二轮起是内容，见 human/tiers.ts）的 id
   layout?: CountryLayout;
 }
-export const COUNTRY_LAYOUTS = ['era', 'mixed', 'petty', 'unified', 'powers'] as const;
-export type CountryLayout = (typeof COUNTRY_LAYOUTS)[number];
+export type CountryLayout = string;
 
 // 国家之间的集团（第二十六轮，见 human/blocs.ts）：帝国（邦联：成员各自一色，外沿一道帝国的边线）、
 // 联邦（成员邦在地图上是一种颜色）、军事同盟。一个国家最多在一个帝国或联邦里、一个同盟里
@@ -348,8 +347,8 @@ export interface CountryMeta {
   history: string;
   // 锁定：重新生成国家时领土、档案都不动
   locked?: true;
-  // 等级（第二十六轮，生成时定的面积档次；自己建的没有，算 medium）
-  tier?: CountryTier;
+  // 等级（第二十六轮，生成时定的面积档次；第四十二轮起是世界里国家等级（countryTier）的 id，见 human/tiers.ts）。自己建的没有
+  tier?: string;
 }
 // 城市（第二十四轮，见 human/settlements.ts）。名字、等级、所属、人口、建城年份、简介没写时都按世界现算（自动起名、按占本国人口的比例定等级……）
 export interface CityMeta {

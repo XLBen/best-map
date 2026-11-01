@@ -22,7 +22,7 @@ WebGL2 底图 + 2D 画布的矢量叠加。屏幕与导出共用同一套画法�
 - `overlay-static.ts` 静态的键（`FIELD_KIND` 表：新加一项叠加层选项要在这里写它算不算静态）、`staticKey`、`sameShapes`
 - `overlay-rivers.ts` 河线（`riverLines`、`seedRivers`）、路径（`buildPaths`）、河的画法（宽度、颜色、样式）
 - `overlay-river-layer.ts` 河画进叠加层或离屏的河的图层（`riverLayer`、`riverLayerTile`、`riverLayerScene`，极地）
-- `overlay-labels.ts` 地名、山峰、城市与地标的排版（`placeLabels`：按格子避让 `BoxIndex`，移动中沿用版面）与画法（`drawLabels`）、`peakLabels`
+- `overlay-labels.ts` 地名、山峰、城市与地标的排版（`placeLabels`：按格子避让 `BoxIndex`，移动中沿用版面）与画法（`drawLabels`；第四十二轮淡一些的点按 `alpha` 画，`settleStrong` 里的照 1 画）、`peakLabels`
 - `overlay-country-labels.ts` 国名、片区名沿中线弯着写（`smoothPath`、`layoutAlong`、`COUNTRY_KEY`、`REGION_KEY`）
 - `overlay-grid.ts` 经纬网、纬度刻度、比例尺
 - `overlay-shapes.ts` 工具的预览图形（圈、线、箭头、格、河）

@@ -31,6 +31,7 @@ import {
   pinnedPart,
   picking,
   selectedSettle,
+  selectedCountry,
   prefs,
   redrawTick,
   reference,
@@ -504,6 +505,7 @@ export function MapView() {
         countries: md.regions && overlays.value.labels ? (clean ? regionDraws(shown, md.regions, nameMode.value) : regionDraws(shown, md.regions, nameMode.value, requestDraw)) : null,
         // 城市、道路、地标、自定义点（第二十四轮）：“城市”一类开着时都画、选中的城市写名字；“道路”工具开着时道路画得清楚
         ...settleOverlay(shown, { mode: md, editing: cat.id === 'settlements' && !clean, selected: settleKey(), roadEdit: tool.value === 'road' && !clean }),
+        settleStrong: clean ? null : settleStrong(w, preview),
         labelTypes: types,
         peaks: overlays.value.peaks ? peakLabels(shown) : null,
         nameMode: nameMode.value,
@@ -685,6 +687,31 @@ export function MapView() {
       return r && (r.kind === 'city' || r.kind === 'point') ? markKey(r.kind, r.id) : null;
     }
 
+    // 照最醒目的画的点（第四十二轮）：鼠标下的点、选中的城市，选中、钉住、指针停着的国家的首都（淡一些的城市、首都照原样画）。
+    // 同样的内容给同一个数组
+    let strongMemo: { key: string; out: readonly string[] } | null = null;
+    function settleStrong(w: World, preview: Preview): readonly string[] | null {
+      const out: string[] = [];
+      if (preview.mark) out.push(preview.mark);
+      const sk = settleKey();
+      if (sk && sk !== preview.mark) out.push(sk);
+      const country = w.causes.country;
+      if (w.small.cities && country) {
+        const add = (id: number | null | undefined) => {
+          if (id !== null && id !== undefined && id >= 0 && !out.includes(`country:${id}`)) out.push(`country:${id}`);
+        };
+        add(selectedCountry.value);
+        const pin = pinnedCell.value;
+        if (pin >= 0 && pin < country.length) add(country[pin]);
+        const p = view.pointer;
+        if (tool.value === 'pointer' && p && p.cell >= 0 && p.cell < country.length) add(country[p.cell]);
+      }
+      if (!out.length) return null;
+      const key = out.join('|');
+      if (strongMemo?.key !== key) strongMemo = { key, out };
+      return strongMemo.out;
+    }
+
     // 钉住的格（第三十七轮）：钉住时记下的陆或水那一部分；没记下（钉住的点没有描格的格）不描
     function pinnedFocus(w: World): CellFocus | null {
       const c = pinnedCell.value;
@@ -745,6 +772,7 @@ export function MapView() {
       void options.value;
       void pinnedCell.value;
       void pinnedPart.value;
+      void selectedCountry.value;
       void overlays.value;
       void season.value;
       void category.value;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { typeIdSchema } from '../type-id';
 import { originSchema } from '../content/origin';
-import { constraintSchema, COUNTRY_LAYOUTS, guideSchema, lakeSchema, planetPatchSchema, REGION_KINDS, regionSchema } from '../world';
+import { constraintSchema, guideSchema, lakeSchema, planetPatchSchema, REGION_KINDS, regionSchema } from '../world';
 import { HEX } from '../human/terrain-class';
 import { flagSchema } from '../human/flags';
 import { SUBJECT_KINDS } from '../human/era';
@@ -33,7 +33,8 @@ export const popTupleSchema = z.object({ culture: typeIdSchema, values: z.record
 export const countryId = z.number().int().min(1);
 export const fragmentation = z.number().min(0).max(1);
 // 第二十六轮：格局（国家大小怎么分布，'era' 按时代）
-export const layoutSchema = z.enum(COUNTRY_LAYOUTS);
+// 格局（第四十二轮起是内容的 id，'era' 按时代）
+export const layoutSchema = typeIdSchema;
 export const countryRulesInput = z.object({ fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional() }).strict();
 export const countryPatchSchema = z
   .object({

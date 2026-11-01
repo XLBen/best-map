@@ -39,7 +39,9 @@ export function placeSettlements(
   for (const m of marks) {
     const cellPx = size * zoomAt(m.x, m.y);
     if (cellPx < m.iconPx) continue;
-    const scale = iconScale(cellPx);
+    const full = iconScale(cellPx);
+    // 第四十二轮：小一些的城市、首都（等级的 iconScale）
+    const scale = m.scale === undefined ? full : full * m.scale;
     const r = markRadius(m, scale);
     for (const k of ks) {
       const at = toScreen(m.x + 2 * k, m.y);
@@ -53,7 +55,7 @@ export function placeSettlements(
       index.add(ib);
       boxes.push(ib);
       const anchor: Anchor | undefined = view.anchors ? [m.x + 2 * k, m.y, sx, sy] : undefined;
-      placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale, ...(anchor ? { anchor } : {}) });
+      placed.push({ key: m.key, chars: [], widths: [], spacing: 0, total: 0, font: '', color: '', x: sx, y: sy, angle: 0, mark: m, markScale: scale, ...(m.scale !== undefined ? { fullScale: full } : {}), ...(anchor ? { anchor } : {}) });
       if (!names || !m.name || cellPx < m.namePx) continue;
       const font = `${m.bold ? 600 : 500} ${m.fontPx}px ${SETTLE_FONT}`;
       const chars = [...m.name];
@@ -67,7 +69,7 @@ export function placeSettlements(
         if (index.hits(nb)) continue;
         index.add(nb);
         boxes.push(nb);
-        placed.push({ key: m.key, chars, widths, spacing: 0, total, font, color: m.textColor, x: cx, y: cy, angle: 0, ...(anchor ? { anchor } : {}) });
+        placed.push({ key: m.key, chars, widths, spacing: 0, total, font, color: m.textColor, x: cx, y: cy, angle: 0, ...(m.alpha !== undefined || m.labelAlpha !== undefined ? { of: m } : {}), ...(anchor ? { anchor } : {}) });
         break;
       }
     }
@@ -412,12 +414,21 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
       continue;
     }
     if (l.mark) {
-      drawMark(ctx, l.mark, l.x, l.y, l.markScale, !!st.frame);
+      const m = l.mark;
+      // 第四十二轮：淡一些、小一些的点（鼠标停着、选中的照原样）
+      if (m.alpha === undefined && m.scale === undefined) drawMark(ctx, m, l.x, l.y, l.markScale, !!st.frame);
+      else {
+        const strong = isStrong(st, m);
+        if (!strong && m.alpha !== undefined) ctx.globalAlpha = m.alpha;
+        drawMark(ctx, m, l.x, l.y, strong && l.fullScale !== undefined ? l.fullScale : l.markScale, !!st.frame);
+        ctx.globalAlpha = 1;
+      }
       ctx.lineWidth = 3;
       ctx.lineJoin = 'round';
       continue;
     }
     ctx.save();
+    if (l.of && !isStrong(st, l.of)) ctx.globalAlpha = l.of.labelAlpha ?? l.of.alpha ?? 1;
     ctx.translate(l.x, l.y);
     ctx.rotate(l.angle);
     ctx.font = l.font;
@@ -453,6 +464,9 @@ export function drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, st: Overl
   }
   return boxes;
 }
+
+// 照最醒目的画（第四十二轮）：鼠标停着、选中的点，选中、钉住、鼠标停着的国家的首都
+const isStrong = (st: OverlayState, m: SettleMark): boolean => !!st.settleStrong && (st.settleStrong.includes(m.key) || (m.country !== undefined && st.settleStrong.includes(`country:${m.country}`)));
 
 // 国名：每个字按自己的位置、方向画；先描边、再填字（同地名）
 export function drawGlyphs(ctx: CanvasRenderingContext2D, l: PlacedLabel, hover: boolean) {

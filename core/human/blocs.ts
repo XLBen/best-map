@@ -9,6 +9,7 @@ import { type Era, cultureById, worldEra } from './era';
 import { makeFlag } from './flags';
 import { type TitleOne, governmentById, titled } from './government';
 import { cellKm2, distKm } from './space';
+import { fedMemberTier, genTiers, worldTiers } from './tiers';
 
 // 国家之间的集团（第二十六轮）：帝国（邦联并成的）、联邦、军事同盟，存在 small.blocs；附庸照旧是 CountryMeta.overlord（加了 subject）。
 // 生成（领土补齐之后、人口之前，只在重新长国家时）按时代的 relations：
@@ -355,7 +356,9 @@ function makeBlocs(ctx: GenContext) {
     const cells = new Map<number, number>();
     const c = world.causes.country;
     for (let i = 0; i < c.length; i++) if (c[i] >= 0) cells.set(c[i], (cells.get(c[i]) ?? 0) + 1);
-    const cands = Object.values(metas).filter((m) => fresh(m) && !inUnion.has(m.id) && m.overlord === undefined && (m.tier === 'large' || m.tier === 'empire') && (cells.get(m.id) ?? 0) >= 48);
+    // 能分成联邦的等级（第四十二轮：等级的 federation，内置的是王国级、帝国级）
+    const fedTiers = new Set(worldTiers(small).flatMap((t) => (t.federation ? [t.id] : [])));
+    const cands = Object.values(metas).filter((m) => fresh(m) && !inUnion.has(m.id) && m.overlord === undefined && m.tier !== undefined && fedTiers.has(m.tier) && (cells.get(m.id) ?? 0) >= 48);
     for (let q = 0; q < nFed && cands.length; q++) {
       // 越大越容易（面积的平方），联邦制的政体 × 4
       const w = (m: CountryMeta) => (area.get(m.id) ?? 0) ** 2 * (governmentById(small, m.government)?.category.includes('federation') ? 4 : 1);
@@ -619,7 +622,9 @@ function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: number, 
   const culture = cultureById(small, m.primaryCulture);
   const fedArea = (cs: number[]) => cs.reduce((s, i) => s + (dry(i) ? cellKm2(world, i) : 0), 0);
   const T = averageCountryKm2(era, ctx.countries!.rules.fragmentation);
-  const tierOf = (a: number) => (a >= 0.7 * T ? 'medium' : a >= 0.2 * T ? 'small' : 'city') as CountryMeta['tier'];
+  // 成员邦的等级按面积（第四十二轮：等级的 fedMember，内置的是 0.7 倍以上公国级、0.2 倍以上侯国级、其余城邦级）
+  const tiers = genTiers(small);
+  const tierOf = (a: number): string | undefined => fedMemberTier(tiers, a, T).id || undefined;
   const members: number[] = [m.id];
   // 首府那一邦是原来的国家：换成成员的称号
   const rename = (x: CountryMeta) => {
@@ -630,7 +635,9 @@ function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: number, 
     x.nameLocked = true;
   };
   rename(m);
-  m.tier = tierOf(fedArea(live[0].cs));
+  const t0 = tierOf(fedArea(live[0].cs));
+  if (t0) m.tier = t0;
+  else delete m.tier;
   m.history = `${yearText(m.founded)}，${culture?.name ?? m.primaryCulture}建立${fedName.zh}，${m.name}是联邦的首府所在。`;
   for (const { cs, k } of live) {
     if (k === 0) continue;
@@ -655,6 +662,7 @@ function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: number, 
       tier: tierOf(fedArea(cs)),
     };
     if (meta.capitalCell === undefined) delete meta.capitalCell;
+    if (meta.tier === undefined) delete meta.tier;
     Object.assign(meta, nameCountry(world, meta, seed, taken));
     taken.add(meta.name);
     rename(meta);

@@ -2,16 +2,17 @@ import { HeapLite } from '../mesh';
 import { styleById, worldStyleId } from '../name-styles';
 import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
-import type { CountryLayout, CountryMeta, CountryRules, Derived, PopTuple, World } from '../world';
+import type { CountryMeta, CountryRules, Derived, PopTuple, World } from '../world';
 import type { GenContext, HumanStage } from './context';
 import { countryBase, personName } from './country-names';
 import { edgeCosts } from './cultures';
-import { COUNTRY_TIER_IDS, type CountryTier, type Culture, type Era, SUBJECT_KINDS, type SubjectKind, type TierWeights, cultureById, dimensionValues, weightedList } from './era';
+import { type Culture, type Era, SUBJECT_KINDS, type SubjectKind, cultureById, dimensionValues, weightedList } from './era';
 import { makeFlag } from './flags';
 import { type Government, eraGovernments, governmentById, pickTitle, titled } from './government';
 import { GroupTable, SLOTS, type Share, readComp, writeComp } from './groups';
 import { COAST } from './rules';
 import { cellKm2, distKm, noiseAt } from './space';
+import { type CountryTierDef, confedCentre, confedMembers, genTiers, layoutById, tierWeights, vassalOf } from './tiers';
 
 // 国家（第二十三轮）：在文化圈与人口之间的一步（见 generate.ts 的 registerHumanStage）。
 //   1. 几个国家：能住人的陆地面积 ÷（时代的 countryKm2 × “统一 ↔ 分裂”的倍数），按各文化能住人的面积分给文化；
@@ -23,7 +24,7 @@ import { cellKm2, distKm, noiseAt } from './space';
 //   5. 档案：名字（文化的风格起的地名 + 政体的称号）、颜色、旗帜、统治者、建国年份、兼容的文化组、外交（附庸、同盟、敌对）、历史；
 //   6. 人口一步之前：首都一带的人口多一些（ctx.popScale，按政体的城市化）；人口一步之后：扩张性强的国家在异族的地方掺进主流文化的人。
 // 锁定的国家（重新生成时 keepLocked）领土、档案都不动
-// 第二十六轮：每国一个等级（城邦 … 帝国，按时代的 tiers 或格局 countryRules.layout），面积预算 = 平均的国家 × 等级的倍数 ×（0.7–1.3）
+// 第二十六轮：每国一个等级（第四十二轮起是世界里的国家等级，见 tiers.ts；按时代的 tiers 或格局 countryRules.layout），面积预算 = 平均的国家 × 等级的倍数 ×（0.7–1.3）
 //   （不超过能住人的地方的 MAX_SHARE）；国家按“文化 × 陆块”分。第 3 步分两遍：先各长到预算就停，剩下能占的地方再接着长到预算的
 //   FREE_MUL 倍（快慢拉平：剩下的归近的），再剩下的是无主地。下海按政体变难（游牧几乎不下海），别的陆块上没什么人的地方不要。
 //   先按文化的倾向挑政体，再按政体的 size 挑相配的等级。
@@ -225,30 +226,7 @@ function within(world: World, src: number, km: number, visit: (i: number) => voi
   }
 }
 
-// ---------- 等级与格局（第二十六轮） ----------
-
-// 各等级的面积倍数（1 是平均的国家）
-export const COUNTRY_TIERS: Record<CountryTier, number> = { city: 0.12, small: 0.4, medium: 1, large: 3, empire: 9 };
-export const TIER_NAMES: Record<CountryTier, string> = { city: '城邦', small: '小国', medium: '中等国家', large: '大国', empire: '帝国' };
-// 等级的典型政体大小：挑等级时政体的 size 离它越近越容易挑中
-const TIER_GOV_SIZE: Record<CountryTier, number> = { city: 0.15, small: 0.45, medium: 1, large: 2, empire: 3 };
-// 时代没写 tiers 时各等级占多少
-export const DEFAULT_TIERS: TierWeights = { city: 0.6, small: 2, medium: 3, large: 1.5, empire: 0.4 };
-// 格局：换掉时代的比例（era 按时代）
-export const LAYOUT_TIERS: Record<Exclude<CountryLayout, 'era'>, TierWeights> = {
-  mixed: { city: 2, small: 3, medium: 2, large: 1.5, empire: 0.6 },
-  petty: { city: 3, small: 4, medium: 1.5, large: 0.2, empire: 0 },
-  unified: { city: 0.3, small: 0.7, medium: 1, large: 2, empire: 1.5 },
-  powers: { city: 0.5, small: 2, medium: 0.4, large: 2.5, empire: 0.6 },
-};
-export const LAYOUT_NAMES: Record<CountryLayout, string> = { era: '按时代', mixed: '混合', petty: '诸侯林立', unified: '大一统', powers: '列强并立' };
-
-// 生效的等级比例：格局写了（不是 era）时按格局，否则按时代（时代没写、或全是 0 时按 DEFAULT_TIERS）
-export function tierWeights(era: Pick<Era, 'tiers'> | undefined, layout: CountryLayout | undefined): TierWeights {
-  if (layout && layout !== 'era') return LAYOUT_TIERS[layout];
-  const t = era?.tiers;
-  return t && COUNTRY_TIER_IDS.some((id) => (t[id] ?? 0) > 0) ? t : DEFAULT_TIERS;
-}
+// ---------- 等级与格局（第二十六轮；第四十二轮起是世界里的内容，见 tiers.ts） ----------
 
 // 一个国家平均占多少 km² 能住人的陆地
 export const averageCountryKm2 = (era: Pick<Era, 'countryKm2'>, fragmentation: number): number => (era.countryKm2 ?? COUNTRY_KM2) * sizeFactor(fragmentation);
@@ -337,12 +315,11 @@ export function landComponents(world: World): { id: Int32Array; size: Int32Array
 }
 
 // 政体与等级相配的程度：size 与等级的典型大小之比的对数越近越大
-const govFit = (g: Government, tier: CountryTier): number => {
-  const r = Math.log(g.size / TIER_GOV_SIZE[tier]);
+const govFit = (g: Government, tier: CountryTierDef): number => {
+  const r = Math.log(g.size / tier.govSize);
   return Math.exp(-(r * r) / 1.5);
 };
 
-const TIER_LIST = [...COUNTRY_TIER_IDS];
 const SUBJECT_LIST = [...SUBJECT_KINDS];
 
 interface Seed {
@@ -350,7 +327,7 @@ interface Seed {
   // ctx.cultures 的下标
   culture: number;
   gov: Government;
-  tier: CountryTier;
+  tier: CountryTierDef;
   // 面积预算（km² 能住人的干陆地）：长到这么大就先停下
   budget: number;
   // 邦联的下标（不在邦联里为 −1）
@@ -406,7 +383,10 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
   const total = plannedCountries(area, T);
   let massSum = 0;
   for (let c = 0; c < K; c++) massSum += massC[c];
-  const tiers = tierWeights(era, plan.rules.layout);
+  // 世界里的等级（按 order 从小到大）与生效的比例（第四十二轮）
+  const tierList = genTiers(small);
+  const tierW = tierWeights(tierList, era, layoutById(small, plan.rules.layout));
+  const tierIndex = new Map(tierList.map((t, k) => [t, k]));
   const isSeed = new Uint8Array(n);
   const seeds: Seed[] = [];
 
@@ -426,6 +406,8 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
       areaG[ctx.cultureGroup[c]] += areaC[c];
     }
     const usedG = new Set<number>();
+    const centreTier = confedCentre(tierList);
+    const members = confedMembers(tierList);
     const heap = new HeapLite(1024);
     const dist = new Float64Array(n);
     for (let q = 0; q < nConf; q++) {
@@ -513,11 +495,11 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
         isSeed[pick] = 1;
         const c = cultureOf[pick];
         const culture = ctx.cultures[c];
-        // 中心是一个中等国家（皇帝的本领），别的是城邦、小国；预算先记倍数，挑完按这一片的面积分
-        const tier: CountryTier = s === 0 ? 'medium' : rand() < 0.35 ? 'city' : 'small';
+        // 中心是邦联的中心那一级（皇帝的本领，内置的是公国级），别的按成员的比例（内置的是城邦级、侯国级）；预算先记倍数，挑完按这一片的面积分
+        const tier = s === 0 ? centreTier : pickWeighted(members.list, members.weight, rand)!;
         const w = govWeights(culture, govs);
         const gov = pickWeighted(govs, (gg) => w(gg) * govFit(gg, tier), rand)!;
-        list.push({ cell: pick, culture: c, gov, tier, budget: COUNTRY_TIERS[tier] * (0.7 + 0.6 * rand()), confed: k0 });
+        list.push({ cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), confed: k0 });
         // 离起点的距离（只在这一片里走）
         heap.size = 0;
         minD[pick] = 0;
@@ -624,20 +606,20 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
   const wdist = new Float64Array(n);
   const stamp = new Int32Array(n).fill(-1);
   // 先按文化的倾向挑政体，再挑等级（时代或格局的比例 × 与政体的大小相配）；面积预算 = 平均的国家 × 等级的倍数 ÷ 实际挑出的平均倍数
-  const slotsOf: { tier: CountryTier; gov: Government; budget: number }[][] = [];
+  const slotsOf: { tier: CountryTierDef; gov: Government; budget: number }[][] = [];
   let mSum = 0;
   let mCount = 0;
   for (let u = 0; u < U; u++) {
-    const list: { tier: CountryTier; gov: Government; budget: number }[] = (slotsOf[u] = []);
+    const list: { tier: CountryTierDef; gov: Government; budget: number }[] = (slotsOf[u] = []);
     if (!counts[u]) continue;
     const culture = ctx.cultures[unitCulture[u]];
     const rand = mulberry32(mixSeed(seed, hashString(`country:${culture.id}`), unitComp[u]));
     const w = govWeights(culture, govs);
     for (let k = 0; k < counts[u]; k++) {
       const gov = pickWeighted(govs, w, rand)!;
-      const tier = pickWeighted(TIER_LIST, (t) => (tiers[t] ?? 0) * govFit(gov, t), rand)!;
-      list.push({ tier, gov, budget: COUNTRY_TIERS[tier] * (0.7 + 0.6 * rand()) });
-      mSum += COUNTRY_TIERS[tier];
+      const tier = pickWeighted(tierList, (t) => tierW[tierIndex.get(t)!] * govFit(gov, t), rand)!;
+      list.push({ tier, gov, budget: tier.area * (0.7 + 0.6 * rand()) });
+      mSum += tier.area;
       mCount++;
     }
   }
@@ -1007,7 +989,7 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
       ruler: { name: '' },
       founded: foundedYear(era, yearRand),
       history: '',
-      tier: s.tier,
+      ...(s.tier.id ? { tier: s.tier.id } : {}),
     };
     Object.assign(meta, nameCountry(world, meta, seed, taken));
     return meta;
@@ -1092,8 +1074,7 @@ function diplomacy(ctx: GenContext, seeds: Seed[], metas: CountryMeta[], owner: 
     }
     if (best < 0) continue;
     const rr = mulberry32(mixSeed(seed, hashString('vassal'), v));
-    const small = seeds[v].tier === 'city' || seeds[v].tier === 'small';
-    const p = seeds[best].gov.vassals * (group(best) === group(v) ? 1 : 0.5) * (small ? 1 : 0.5) * (below[v] > 0 || above(best) > 0 ? 0.5 : 1);
+    const p = seeds[best].gov.vassals * (group(best) === group(v) ? 1 : 0.5) * vassalOf(seeds[v].tier) * (below[v] > 0 || above(best) > 0 ? 0.5 : 1);
     if (rr() >= p) continue;
     overlord[v] = best;
     for (let a = best, dd = below[v] + 1; a >= 0; a = overlord[a], dd++) below[a] = Math.max(below[a], dd);

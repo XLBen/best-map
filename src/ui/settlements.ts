@@ -17,6 +17,7 @@ import {
   worldCityRanks,
   worldLandmarkTypes,
   worldPointTypes,
+  capitalLook,
 } from '../../core/human';
 import { type NameMode, nameText } from '../../core/name-display';
 import type { World } from '../../core/world';
@@ -93,10 +94,42 @@ export function refOfKey(key: string): SettleRef | null {
   return kind === 'city' || kind === 'road' || kind === 'landmark' || kind === 'point' ? { kind, id: Number(id) } : null;
 }
 
-// named：写名字（省略时首都、陪都写，别的不写）
-export function cityMark(c: CityInfo, nm: NameMode, named?: boolean): SettleMark {
+// 城市在地图上的样子（第四十二轮）：首都、陪都按所属国家的等级（core/human/tiers.ts 的 capitalLook：最高的一级、自己建的国家与以前一样），
+// 别的按城市等级的 alpha、iconScale、labelAlpha。都是 1 时与以前一样（不写这几项）
+export interface CityLook {
+  alpha?: number;
+  scale?: number;
+  labelAlpha?: number;
+  // 字号的倍数、加不加粗（首都）
+  label: number;
+  bold?: boolean;
+}
+const FULL_LOOK: CityLook = { label: 1 };
+export function cityLook(c: CityInfo, small: Pick<World['small'], 'content' | 'countries'> | undefined): CityLook {
+  const r = c.rank;
+  let alpha = r.alpha ?? 1;
+  let scale = r.iconScale ?? 1;
+  let labelAlpha = r.labelAlpha ?? alpha;
+  let label = 1;
+  let bold: boolean | undefined;
+  if ((c.capital || c.secondCapital) && small && c.country !== null) {
+    const look = capitalLook(small, small.countries?.[c.country]?.tier);
+    alpha *= look.alpha;
+    scale *= look.icon;
+    labelAlpha *= look.alpha;
+    label = look.label;
+    bold = look.bold;
+  }
+  if (alpha === 1 && scale === 1 && labelAlpha === 1 && label === 1 && bold !== false) return FULL_LOOK;
+  return { ...(alpha !== 1 ? { alpha } : {}), ...(scale !== 1 ? { scale } : {}), ...(labelAlpha !== alpha ? { labelAlpha } : {}), label, ...(bold === false ? { bold } : {}) };
+}
+
+// named：写名字（省略时首都、陪都写，别的不写；true 是“城市”工具选中的，照最醒目的画）。small：世界（首都按国家的等级画；省略时都照最醒目的）
+export function cityMark(c: CityInfo, nm: NameMode, named?: boolean, small?: Pick<World['small'], 'content' | 'countries'>): SettleMark {
   const capital = c.capital || c.secondCapital;
   const key = markKey(c.point ? 'point' : 'city', c.id);
+  const look = named === true ? FULL_LOOK : cityLook(c, small);
+  const faint = look !== FULL_LOOK;
   return {
     key,
     kind: 'city',
@@ -105,12 +138,16 @@ export function cityMark(c: CityInfo, nm: NameMode, named?: boolean): SettleMark
     icon: cityIconOf(c.rank),
     ...(c.secondCapital && !c.capital ? { hollow: true } : {}),
     name: settleLabel(c.name, c.orig, nm),
-    fontPx: cityFontPx(c.rank),
-    ...(capital || c.rank.level >= 3 ? { bold: true } : {}),
+    fontPx: look.label === 1 ? cityFontPx(c.rank) : cityFontPx({ label: (c.rank.label ?? 1) * look.label }),
+    ...((capital && look.bold !== false) || (!capital && c.rank.level >= 3) ? { bold: true } : {}),
     textColor: CITY_TEXT,
     iconPx: cityIconPx(c.rank.level, capital),
     namePx: named === false ? NO_NAME_PX : named ? cityIconPx(c.rank.level, capital) : cityNamePx(c.rank.level, capital),
     ...(capital ? { always: true } : {}),
+    ...(faint && look.alpha !== undefined ? { alpha: look.alpha } : {}),
+    ...(faint && look.scale !== undefined ? { scale: look.scale } : {}),
+    ...(faint && look.labelAlpha !== undefined ? { labelAlpha: look.labelAlpha } : {}),
+    ...(faint && capital && c.country !== null ? { country: c.country } : {}),
   };
 }
 
@@ -239,7 +276,7 @@ export function settleMarks(w: World, nm: NameMode, show: SettleShow): SettleMar
   const rest = cities.filter((c) => !(capitalLike(c) || c.rank.level >= 3));
   const mark = (c: CityInfo) => {
     const key = markKey(c.point ? 'point' : 'city', c.id);
-    return cityMark(c, nm, key === show.selected ? true : capitalLike(c) && show.cityNames === 'capitals' ? undefined : false);
+    return cityMark(c, nm, key === show.selected ? true : capitalLike(c) && show.cityNames === 'capitals' ? undefined : false, w.small);
   };
   for (const c of major) out.push(mark(c));
   if (show.points) for (const p of lists.points) if (pointDrawn(p)) out.push(pointMark(p));

@@ -29,6 +29,10 @@ export const cityRankSchema = z.object({
   label: z.number().min(0.3).max(4).default(1),
   // 大道连这一级（省略时：首都与 level 不小于 3 的连大道）
   major: z.boolean().optional(),
+  // 地图上的样子（第四十二轮）：图标的浓淡与大小、名字的浓淡（省略为 1、1、同图标）。首都另按国家的等级（human/tiers.ts 的 capitalLook）
+  alpha: z.number().min(0.1).max(1).optional(),
+  iconScale: z.number().min(0.3).max(2).optional(),
+  labelAlpha: z.number().min(0.1).max(1).optional(),
 });
 export type CityRank = z.output<typeof cityRankSchema>;
 

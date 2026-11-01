@@ -10,7 +10,6 @@ import {
   FLAG_LAYOUTS,
   type FlagSpec,
   LAYOUT_COLORS,
-  TIER_NAMES,
   blocsOf,
   categoryName,
   cellName,
@@ -38,6 +37,7 @@ import {
   rerollFlag,
   rulerPatch,
   statsOf,
+  tierLabel,
   titlePreview,
   vassalsOf,
   withId,
@@ -861,7 +861,7 @@ export function CountryArchive() {
         <Flag m={m} w={36} h={24} />
         <span class="grow item-text">
           <b>{m.name}</b>
-          <span class="hint">{[TIER_NAMES[m.tier ?? 'medium'], m.orig].filter(Boolean).join(' · ')}</span>
+          <span class="hint">{[tierLabel(w, m), m.orig].filter(Boolean).join(' · ')}</span>
         </span>
         <button class="icon-btn" onClick={() => focusOn(cellsOf(w, m.id))} title="定位">
           <ScanSearch />

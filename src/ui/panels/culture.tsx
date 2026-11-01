@@ -272,7 +272,7 @@ export function CountryChoice({
           onCancel={() => setDraft(null)}
         />
       )}
-      {c.on && <LayoutPick value={c.layout ?? 'era'} disabled={disabled} onChange={(layout) => set({ layout })} />}
+      {c.on && <LayoutPick w={world.value} value={c.layout ?? 'era'} disabled={disabled} onChange={(layout) => set({ layout })} />}
       {settlements && (
         <>
           <h5>城市</h5>

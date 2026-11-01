@@ -14,6 +14,7 @@ import { FANTASY_FORMS } from './fantasy-forms';
 import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './fantasy-rivers';
 import { BUILTIN_MAP_STYLES } from './map-styles';
+import { BUILTIN_COUNTRY_LAYOUTS, BUILTIN_COUNTRY_TIERS } from './countries';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from './governments';
 import { BUILTIN_STYLES } from './names';
 import { DEFAULT_SPECIES } from './nature';
@@ -43,6 +44,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts）
 //     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts；新建时默认勾上）
+//     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json；新建时默认勾上）
 //     cultures ▸ <组>   文化：没有哪个时代默认带的文化组
 //
 // 没被任何时代列出的政体、派系归到最贴切的时代：先看它自己写的 eras（第一个是内置时代的），再按政体的类别（CATEGORY_ERA，
@@ -52,8 +54,10 @@ export const COMMON_PACK_ID = 'common';
 export const BASE_PATH: readonly string[] = [COMMON_PACK_ID, 'base'];
 // 画风的小包（第三十八轮）
 export const STYLES_PATH: readonly string[] = [COMMON_PACK_ID, 'styles'];
-// 新建世界默认勾上的包（第三十轮）：基础、自然、中文地名、画风（第三十八轮）（新建向导另外默认勾上一个时代包）
-export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = [BASE_PATH, [COMMON_PACK_ID, 'nature'], [COMMON_PACK_ID, 'names', 'zh'], STYLES_PATH];
+// 国家等级的小包（第四十二轮）
+export const TIERS_PATH: readonly string[] = [COMMON_PACK_ID, 'tiers'];
+// 新建世界默认勾上的包（第三十轮）：基础、自然、中文地名、画风（第三十八轮）、国家等级（第四十二轮）（新建向导另外默认勾上一个时代包）
+export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = [BASE_PATH, [COMMON_PACK_ID, 'nature'], [COMMON_PACK_ID, 'names', 'zh'], STYLES_PATH, TIERS_PATH];
 // 星球形态的小包
 export const FORMS_PATH: readonly string[] = [COMMON_PACK_ID, 'forms'];
 
@@ -185,7 +189,7 @@ function build(): ResourcePack[] {
   const other = styles.filter((s) => !regionOf.has(s.id));
   if (other.length) regions.push({ id: 'other', name: '其他', nameStyles: asItems(other) });
   const restGroups = BUILTIN_CULTURE_GROUPS.filter((g) => !defaultGroups.has(g.id));
-  const common = top(COMMON_PACK_ID, '通用', '基础内容、普通的生态、各地的地名风格、星球形态、画风，和没有哪个时代默认带的文化组', [
+  const common = top(COMMON_PACK_ID, '通用', '基础内容、普通的生态、各地的地名风格、星球形态、画风、国家等级，和没有哪个时代默认带的文化组', [
     {
       id: 'base',
       name: '基础',
@@ -201,6 +205,13 @@ function build(): ResourcePack[] {
     { id: 'names', name: '地名', packs: regions },
     { id: 'forms', name: '星球形态', description: '新建整个星球时选：像地球、一块超大陆、破碎大陆……', planetForms: asItems(BUILTIN_PLANET_FORMS) },
     { id: 'styles', name: '画风', description: '地图怎么画：写实、地图册。新建世界时默认勾上；在“图层 → 画风”里换', mapStyles: asItems(BUILTIN_MAP_STYLES) },
+    {
+      id: 'tiers',
+      name: '国家等级',
+      description: '国家分几级（帝国级、王国级、公国级、侯国级、城邦级行政）和几种格局。新建世界时默认勾上；生成国家时按它们挑大小',
+      countryTiers: asItems(BUILTIN_COUNTRY_TIERS),
+      countryLayouts: asItems(BUILTIN_COUNTRY_LAYOUTS),
+    },
     ...(restGroups.length ? [{ id: 'cultures', name: '文化', packs: restGroups.map((g) => groupPack(g)) }] : []),
   ]);
   return [...eraPacks, common];

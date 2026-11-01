@@ -51,6 +51,19 @@ const WORLDS: [string, () => World][] = [
   ['整个星球（种子 3，1.6 万格）', () => snapshot('r40:planet', () => r40Engine(true, 16000)).world],
 ];
 
+// 第四十二轮的淡一些、小一些（城市等级的 alpha、iconScale，首都按国家的等级）冻结的第三十九轮参照不认：
+// 对照排版的算法时去掉这几项（两边按同样的图标大小排）
+const LOOK_KEYS = ['alpha', 'scale', 'labelAlpha', 'country'] as const;
+function plainMarks<T extends Pick<OverlayState, 'settlements'>>(o: T): T {
+  if (!o.settlements) return o;
+  const marks = o.settlements.map((m) => {
+    const c = { ...m };
+    for (const k of LOOK_KEYS) delete c[k];
+    return c;
+  });
+  return { ...o, settlements: marks };
+}
+
 // MapView 的叠加层选项（geo：地貌；country：国家模式）
 function stateFor(w: World, kind: MapKind, more: Partial<OverlayState> = {}): OverlayState {
   const md = modeDef(kind);
@@ -67,7 +80,7 @@ function stateFor(w: World, kind: MapKind, more: Partial<OverlayState> = {}): Ov
     nameMode: 'zh',
     peaks: peakLabels(w),
     countries: md.regions ? regionDraws(w, md.regions, 'zh') : null,
-    ...settleOverlay(w, { mode: md, editing: false }),
+    ...plainMarks(settleOverlay(w, { mode: md, editing: false })),
     kmPerUnit: w.kmPerUnit,
     hoverLabel: null,
     scaleBar: true,
@@ -377,6 +390,42 @@ describe('叠加层的静态那一层：什么都没变时不画，别的帧与�
     expect(sameShapes(a, [b[0], { kind: 'cells', cells: [1, 2] }])).toBe(false);
     expect(sameShapes(a, [b[0]])).toBe(false);
     expect(sameShapes([], null)).toBe(false);
+  });
+});
+
+describe('城市与首都分轻重（第四十二轮）', () => {
+  it('淡一些的点按 alpha 画、小一些；settleStrong 里的照 1、照原来大小画（不重排）；没有淡的点时与以前一样', () => {
+    const w = WORLDS[0][1]();
+    const paths = buildPaths(w);
+    const md = modeDef('country');
+    const st = { ...stateFor(w, 'country'), ...settleOverlay(w, { mode: md, editing: false }) } as OverlayState;
+    const faint = st.settlements!.filter((m) => m.alpha !== undefined);
+    expect(faint.length).toBeGreaterThan(10);
+    const cam = cameras(w)[2];
+    // 每一笔的 globalAlpha（RecCtx 记下的状态里倒数第 4 个）
+    const alphas = (ops: Op[]) => new Set(ops.map((o) => o[o.length - 4] as number));
+    const draw = (s: OverlayState) => {
+      const c = new RecCtx(1000, 700, 'A');
+      overlayDebug.noStatic = true;
+      const boxes = drawOverlay(c as unknown as CanvasRenderingContext2D, w, paths, cam, s);
+      overlayDebug.noStatic = false;
+      return { ops: c.ops, boxes };
+    };
+    const a = draw(st);
+    expect([...alphas(a.ops)].some((x) => x < 1)).toBe(true);
+    const b = draw({ ...st, settleStrong: st.settlements!.map((m) => m.key) });
+    expect([...alphas(b.ops)]).toEqual([1]);
+    expect(b.boxes).toEqual(a.boxes);
+    // 去掉这几项：一笔也没有淡的
+    const c = draw({ ...st, ...plainMarks(st) });
+    expect([...alphas(c.ops)]).toEqual([1]);
+    // 首都：按国家选中的照 1 画
+    const capital = st.settlements!.find((m) => m.country !== undefined);
+    if (capital) {
+      const d = draw({ ...st, settleStrong: [`country:${capital.country}`] });
+      expect(d.ops.length).toBe(a.ops.length);
+      expect(d.boxes).toEqual(a.boxes);
+    }
   });
 });
 

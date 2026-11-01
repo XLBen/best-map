@@ -452,7 +452,7 @@ describe('“国家 ⋯”与仓库', () => {
     const kinds = repoKinds().map((k) => k.id);
     expect(kinds).toContain('government');
     expect(kinds).toContain('faction');
-    expect([...GOV_KINDS]).toEqual(['government', 'faction']);
+    expect([...GOV_KINDS]).toEqual(['government', 'faction', 'countryTier', 'countryLayout']);
     const gov = repoKinds().find((k) => k.id === 'government')!;
     expect(gov.fields!.filter(isTitleField).map((f) => f.key)).toEqual(['title', 'rulerTitle']);
     expect(titleRows('王国')).toEqual([{ key: 'default', zh: '王国', orig: '' }]);

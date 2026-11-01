@@ -1,6 +1,6 @@
 import { memo } from 'preact/compat';
 import { useState } from 'preact/hooks';
-import { LAYOUT_NAMES, SUBJECT_NAMES, flagSvg, worldEra } from '../../../core/human';
+import { SUBJECT_NAMES, flagSvg, worldEra } from '../../../core/human';
 import type { CountryLayout, CountryMeta, World } from '../../../core/world';
 import { askUser, exec, openPanel, selectedCountry, setOptions, sheet, switchTool, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
@@ -8,8 +8,6 @@ import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import {
-  COUNTRY_LAYOUTS,
-  LAYOUT_HINTS,
   NO_COUNTRIES,
   type CountryRow,
   cellsOf,
@@ -21,6 +19,7 @@ import {
   fragTitle,
   generateCountriesCommand,
   hasCountries,
+  layoutChoices,
   layoutOf,
   regenerateCountriesCommand,
 } from '../countries';
@@ -179,14 +178,16 @@ function FragSlider({ w, value, onChange, keepLocked }: { w: World; value: numbe
 }
 
 // 格局（第二十六轮）：国家大小怎么分布。“国家 ⋯”与生成人文（向导、“文化 ⋯”）共用
-export function LayoutPick({ value, onChange, disabled }: { value: CountryLayout; onChange: (v: CountryLayout) => void; disabled?: boolean }) {
+// 第四十二轮：选项是“按时代”与世界里的格局（内容，资源库里改）
+export function LayoutPick({ w, value, onChange, disabled }: { w: Pick<World, 'small'> | null | undefined; value: CountryLayout; onChange: (v: CountryLayout) => void; disabled?: boolean }) {
+  const choices = layoutChoices(w?.small, value);
   return (
-    <div class="row" title={LAYOUT_HINTS[value]}>
+    <div class="row" title={choices.find((c) => c.id === value)?.hint}>
       <span class="grow">格局</span>
       <select value={value} disabled={disabled} onChange={(e) => onChange((e.target as HTMLSelectElement).value as CountryLayout)}>
-        {COUNTRY_LAYOUTS.map((l) => (
-          <option value={l} title={LAYOUT_HINTS[l]}>
-            {LAYOUT_NAMES[l]}
+        {choices.map((c) => (
+          <option value={c.id} title={c.hint}>
+            {c.name}
           </option>
         ))}
       </select>
@@ -201,7 +202,7 @@ function GenerateCountries({ w }: { w: World }) {
     <section>
       <h5>生成国家</h5>
       <FragSlider w={w} value={f} onChange={setF} />
-      <LayoutPick value={layout} onChange={setLayout} />
+      <LayoutPick w={w} value={layout} onChange={setLayout} />
       <button class="primary" onClick={() => void exec(withPackImports(generateCountriesCommand(f, layout), w.small, library.value), '正在生成…')}>
         生成
       </button>
@@ -223,7 +224,7 @@ function CountryTools({ w }: { w: World }) {
       <section>
         <h5>重新生成</h5>
         <FragSlider w={w} value={f} onChange={setF} keepLocked={keep} />
-        <LayoutPick value={layout} onChange={setLayout} />
+        <LayoutPick w={w} value={layout} onChange={setLayout} />
         {locked > 0 && (
           <Toggle on={keep} onChange={setKeep}>
             锁定的不动 · {locked} 个
