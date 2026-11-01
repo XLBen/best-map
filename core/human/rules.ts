@@ -55,7 +55,7 @@ export const RULE_FIELDS: readonly FieldDesc[] = [
   ...range('wet', '地形湿度', ''),
   ...range('lat', '纬度', '°（绝对值）'),
   { key: 'terrain', label: '生态的地形', type: 'tags', optional: true, hint: 'forest、jungle、steppe、desert、arctic、marsh…' },
-  { key: 'biomes', label: '生态', type: 'tags', optional: true, hint: '生态的 id' },
+  { key: 'biomes', label: '生态', type: 'tags', optional: true, ref: 'biome' },
   { key: 'coast', label: '挨着海', type: 'bool', optional: true },
   { key: 'river', label: '有河', type: 'bool', optional: true },
   { key: 'lake', label: '挨着湖', type: 'bool', optional: true },

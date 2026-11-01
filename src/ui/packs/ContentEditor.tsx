@@ -6,41 +6,19 @@ import { CityGlyph } from '../panels/settlements';
 import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../settlements';
 import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
-import { FEATURE_INFO, type FeatureType } from '../../../core/features';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
-import {
-  type EditorIssue,
-  type Obj,
-  type TitleRow,
-  addedValue,
-  colorHex,
-  isTitleField,
-  plainHex,
-  withHex,
-  titleRows,
-  titleValue,
-  defaultValue,
-  isSparse,
-  isObj,
-  issuesAt,
-  newKey,
-  objectOf,
-  parseTags,
-  renameKey,
-  setField,
-  shownFields,
-  sparseSplit,
-  tagsText,
-  weightedRows,
-  weightedValue,
-} from './fields';
+import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, objectOf, parseTags, setField, shownFields, sparseSplit, tagsText } from './fields';
+import { Grip, MapEditor, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
+import { TendencyEditor } from './TendencyEditor';
 
 // 通用编辑器：按登记表的字段表（FieldDesc）画出来。text / longtext / number / bool / color / enum / tags / weighted /
 // list / map / script / json，when 指着的字段换了值时跟着换（fields.ts 的 setField）。
-// 一组字、带权重的、键都在框里写完、离开框时才换上（打字时不被重新排版打断）
+// 一组字、带权重的、键都在框里写完、离开框时才换上（打字时不被重新排版打断）。
+// 第四十五轮：写了 ref 的从带搜索的下拉里选（RefPicker），tuple / tuples / title / titleList / tendencies 各有成块的控件
+// （editors.tsx、TendencyEditor.tsx），可以不写的对象没写时是一个“添加”，列表能拖动换先后；不再有原样的 JSON 框
 
-type Path = PropertyKey[];
+export type Path = PropertyKey[];
 
 interface Props {
   fields: readonly FieldDesc[];
@@ -50,17 +28,26 @@ interface Props {
   issues: readonly EditorIssue[];
 }
 
-// map 的键是地物类型时旁边写中文
-const keyLabel = (k: string): string | undefined => (k === 'province' ? '省份' : FEATURE_INFO[k as FeatureType]?.label);
-
-// 一组字段（一个对象）
+// 一组字段（一个对象）。倾向（tendencies）与按时代的倾向画在同一张表里
 export function FieldsBox({ fields, value, onChange, path = [], issues }: Props) {
-  if (isSparse(shownFields(fields, value))) return <SparseBox fields={shownFields(fields, value)} value={value} onChange={onChange} path={path} issues={issues} />;
+  const shown = shownFields(fields, value);
+  if (isSparse(shown)) return <SparseBox fields={shown} value={value} onChange={onChange} path={path} issues={issues} />;
+  const plainTend = shown.some((f) => f.type === 'tendencies' && !f.byEra);
+  const eraTend = shown.some((f) => f.type === 'tendencies' && f.byEra);
   return (
     <div class="ed-fields">
-      {shownFields(fields, value).map((f) => (
-        <Field key={f.key} f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(fields, value, f.key, v))} />
-      ))}
+      {shown.map((f) => {
+        if (f.type === 'tendencies') {
+          if (f.byEra && plainTend) return null;
+          return (
+            <div key={f.key}>
+              <TendencyEditor obj={value} onChange={onChange} byEra={eraTend} label={f.label} hint={f.hint} />
+              <Errors issues={issues} path={[...path, f.key]} />
+            </div>
+          );
+        }
+        return <Field key={f.key} f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(fields, value, f.key, v))} />;
+      })}
     </div>
   );
 }
@@ -104,12 +91,12 @@ function SparseBox({ fields, value, onChange, path = [], issues }: Props) {
 }
 
 // 出错的说明（这一处的，不含下面一层的）
-function Errors({ issues, path }: { issues: readonly EditorIssue[]; path: Path }) {
+export function Errors({ issues, path }: { issues: readonly EditorIssue[]; path: Path }) {
   const here = issuesAt(issues, path).filter((i) => i.path.length === path.length);
   return here.length ? <p class="warn small">{here.map((i) => i.message).join('；')}</p> : null;
 }
 
-const COMPLEX = new Set(['list', 'map', 'weighted', 'json', 'script']);
+const COMPLEX = new Set(['list', 'map', 'weighted', 'json', 'script', 'tuples']);
 
 // 正在编辑的是哪一种内容（第二十四轮：城市等级、地标类型、点的类型的图标选内置的，点的类型能上传小图）
 export const EditorKind = createContext<string | null>(null);
@@ -209,15 +196,42 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
     );
   }
   const count = Array.isArray(value) ? value.length : isObj(value) ? Object.keys(value).length : 0;
-  // 称号（第二十三轮）：一行一种写法
+  // 称号（第二十三轮）：一行一种写法；键从 keyRef 里选（第四十五轮）
   if (isTitleField(f)) {
     return (
       <div class={`ed-group ${bad ? 'bad' : ''}`}>
         <div class="ed-label" title={f.hint}>
           {f.label}
         </div>
-        <TitleEditor value={value} onChange={onChange} orig={f.key === 'titles'} />
+        <TitleEditor value={value} onChange={onChange} orig={f.key !== 'rulers'} keyRef={f.keyRef} />
         <Errors issues={issues} path={path} />
+      </div>
+    );
+  }
+  // 按引用的比例表（第四十五轮：格局、时代的各等级占多少）
+  if (f.type === 'map' && f.keyRef && f.value?.type === 'number') {
+    return (
+      <div class={`ed-group ${bad ? 'bad' : ''}`}>
+        <div class="ed-label" title={f.hint}>
+          {f.label}
+        </div>
+        <WeightTable f={f} value={value} onChange={onChange} />
+        <Errors issues={issues} path={path} />
+      </div>
+    );
+  }
+  // 可以不写的一组字段（第四十五轮）：没写时只有“添加”，写了的能删掉整个
+  if (f.type === 'json' && f.of && f.optional && !isObj(value)) {
+    return (
+      <div class="ed-field">
+        <span class="ed-label" title={f.hint}>
+          {f.label}
+        </span>
+        <div class="ed-control">
+          <button class="small" onClick={() => onChange(objectOf(f.of!))}>
+            <Plus /> 添加
+          </button>
+        </div>
       </div>
     );
   }
@@ -236,8 +250,13 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   if (f.type === 'json' && f.of) {
     return (
       <div class="ed-group">
-        <div class="ed-label" title={f.hint}>
+        <div class="ed-label row between" title={f.hint}>
           {f.label}
+          {f.optional && (
+            <button class="small icon ghost" title="删除" onClick={() => onChange(undefined)}>
+              <X />
+            </button>
+          )}
         </div>
         <FieldsBox fields={f.of} value={isObj(value) ? value : objectOf(f.of)} path={path} issues={issues} onChange={onChange} />
         <Errors issues={issues} path={path} />
@@ -258,7 +277,7 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
 }
 
 // 框里写完、离开框（或回车）才换上
-function Draft({ text, onCommit, multi, mono, placeholder }: { text: string; onCommit: (t: string) => void; multi?: boolean; mono?: boolean; placeholder?: string }) {
+export function Draft({ text, onCommit, multi, mono, placeholder }: { text: string; onCommit: (t: string) => void; multi?: boolean; mono?: boolean; placeholder?: string }) {
   const [draft, setDraft] = useState(text);
   useEffect(() => setDraft(text), [text]);
   const commit = () => {
@@ -309,9 +328,10 @@ function JsonInput({ value, onChange }: { value: unknown; onChange: (v: unknown)
   );
 }
 
-function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
+export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
   switch (f.type) {
     case 'text':
+      if (f.ref) return <OneRef refKind={f.ref} value={value} optional={f.optional} onChange={onChange} />;
       return <Draft text={typeof value === 'string' ? value : ''} onCommit={(t) => onChange(t)} />;
     case 'longtext':
       return <Draft multi text={typeof value === 'string' ? value : ''} onCommit={(t) => onChange(t)} />;
@@ -356,28 +376,22 @@ function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: un
       );
     }
     case 'tags':
+      if (f.ref) return <TagRefs refKind={f.ref} value={value} onChange={onChange} />;
       return <Draft text={tagsText(value)} placeholder="空格隔开" onCommit={(t) => onChange(parseTags(t))} />;
     case 'weighted':
       return <WeightedEditor value={value} onChange={onChange} />;
-    case 'list': {
-      const list = Array.isArray(value) ? value : [];
-      const of = f.of ?? [];
-      return (
-        <div class="ed-list">
-          {list.map((item, k) => (
-            <div class="ed-item">
-              <FieldsBox fields={of} value={isObj(item) ? item : {}} path={[...path, k]} issues={issues} onChange={(v) => onChange(list.map((x, j) => (j === k ? v : x)))} />
-              <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
-                <X />
-              </button>
-            </div>
-          ))}
-          <button class="small" onClick={() => onChange([...list, objectOf(of)])}>
-            <Plus /> 添加
-          </button>
-        </div>
-      );
-    }
+    case 'list':
+      return <ListEditor f={f} value={value} onChange={onChange} path={path} issues={issues} />;
+    case 'tuple':
+      return <TupleEditor f={f} value={value} onChange={onChange} />;
+    case 'tuples':
+      return <TuplesEditor f={f} value={value} onChange={onChange} />;
+    case 'title':
+      return <TitleEditor value={value} onChange={onChange} orig keyRef={f.keyRef} />;
+    case 'titleList':
+      return <TitleListEditor value={value} onChange={onChange} />;
+    case 'tendencies':
+      return null;
     case 'map':
       return <MapEditor f={f} value={value} onChange={onChange} path={path} issues={issues} />;
     case 'script': {
@@ -389,109 +403,26 @@ function Control({ f, value, onChange, path, issues }: { f: FieldDesc; value: un
   }
 }
 
-// 称号：一行一种（键：default、文化 id、文化组 id；中文；原文的写法，{name} 换成国名）。空着中文的行先留在框里，不存
-function TitleEditor({ value, onChange, orig }: { value: unknown; onChange: (v: unknown) => void; orig: boolean }) {
-  const [rows, setRows] = useState<TitleRow[]>(() => titleRows(value));
-  const key = JSON.stringify(value ?? null);
-  useEffect(() => {
-    if (JSON.stringify(titleValue(rows) ?? null) !== key) setRows(titleRows(value));
-  }, [key]);
-  const put = (next: TitleRow[]) => {
-    setRows(next);
-    onChange(titleValue(next));
-  };
-  const edit = (k: number, patch: Partial<TitleRow>) => put(rows.map((r, j) => (j === k ? { ...r, ...patch } : r)));
+// 一组对象：每一项一块，左边的把手拖动换先后（换说法、限谁用的几条按先后，第一条满足的起作用）
+function ListEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
+  const list = Array.isArray(value) ? value : [];
+  const of = f.of ?? [];
+  const drag = useDragSort((a, b) => onChange(moveItem(list, a, b)));
   return (
-    <div class="ed-rows">
-      {rows.map((r, k) => (
-        <div class="ed-row">
-          <Draft text={r.key} placeholder="default" onCommit={(t) => edit(k, { key: t.trim() })} />
-          <Draft text={r.zh} placeholder="王国" onCommit={(t) => edit(k, { zh: t })} />
-          {orig && <Draft text={r.orig} placeholder="Kingdom of {name}" onCommit={(t) => edit(k, { orig: t })} />}
-          <button class="small icon ghost" title="删除" onClick={() => put(rows.filter((_, j) => j !== k))}>
-            <X />
-          </button>
-        </div>
-      ))}
-      <p class="hint">键写国家等级的 id（city、small、medium、large、empire）或 default；没写的等级用最近的一级</p>
-      <button class="small" onClick={() => setRows([...rows, { key: rows.length ? '' : 'default', zh: '', orig: '' }])}>
-        <Plus /> 添加
-      </button>
-    </div>
-  );
-}
-
-// 带权重的一组：一行一项（字、权重，权重空着是 1）
-function WeightedEditor({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
-  const rows = weightedRows(value);
-  const put = (k: number, patch: Partial<(typeof rows)[number]>) => onChange(weightedValue(rows.map((r, j) => (j === k ? { ...r, ...patch } : r))));
-  return (
-    <div class="ed-rows">
-      {rows.map((r, k) => (
-        <div class="ed-row">
-          <Draft text={r.text} placeholder="（空）" onCommit={(t) => put(k, { text: t })} />
-          <input
-            type="number"
-            class="ed-weight"
-            value={r.w ?? ''}
-            min={0}
-            step="any"
-            placeholder="1"
-            title="权重"
-            onChange={(e) => {
-              const t = (e.target as HTMLInputElement).value;
-              put(k, { w: t === '' ? undefined : Number(t) });
-            }}
-          />
-          <button class="small icon ghost" title="删除" onClick={() => onChange(weightedValue(rows.filter((_, j) => j !== k)))}>
-            <X />
-          </button>
-        </div>
-      ))}
-      <button class="small" onClick={() => onChange(weightedValue([...rows, { text: '' }]))}>
-        <Plus /> 添加
-      </button>
-    </div>
-  );
-}
-
-// 键 → 值：键在框里改（离开框时换上，已有的键不换），值按 value（或 of 的一组字段）
-function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
-  const obj = isObj(value) ? value : {};
-  const put = (k: string, v: unknown) => onChange({ ...obj, [k]: v });
-  const blank = () => (f.of ? objectOf(f.of) : f.value ? defaultValue(f.value) : '');
-  return (
-    <div class={`ed-map ${f.of ? 'nested' : ''}`}>
-      {Object.entries(obj).map(([k, v]) => (
-        <div class="ed-entry">
-          <div class="ed-key">
-            <Draft text={k} onCommit={(t) => onChange(renameKey(obj, k, t.trim()))} />
-            {keyLabel(k) && <span class="hint">{keyLabel(k)}</span>}
-            <button
-              class="small icon ghost"
-              title="删除"
-              onClick={() => {
-                const next = { ...obj };
-                delete next[k];
-                onChange(next);
-              }}
-            >
+    <div class="ed-list">
+      {list.map((item, k) => {
+        const it = drag.item(k);
+        return (
+          <div class={`ed-item ${it.dropClass}`} onDragOver={it.onDragOver} onDrop={it.onDrop}>
+            {list.length > 1 && <Grip {...drag.handle(k)} />}
+            <FieldsBox fields={of} value={isObj(item) ? item : {}} path={[...path, k]} issues={issues} onChange={(v) => onChange(list.map((x, j) => (j === k ? v : x)))} />
+            <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((_, j) => j !== k))}>
               <X />
             </button>
           </div>
-          <div class="ed-value">
-            {f.of ? (
-              <FieldsBox fields={f.of} value={isObj(v) ? v : {}} path={[...path, k]} issues={issues} onChange={(nv) => put(k, nv)} />
-            ) : f.value ? (
-              <>
-                <Control f={f.value} value={v} onChange={(nv) => put(k, nv)} path={[...path, k]} issues={issues} />
-                <Errors issues={issues} path={[...path, k]} />
-              </>
-            ) : null}
-          </div>
-        </div>
-      ))}
-      <button class="small" onClick={() => put(newKey(obj), blank())}>
+        );
+      })}
+      <button class="small" onClick={() => onChange([...list, objectOf(of)])}>
         <Plus /> 添加
       </button>
     </div>

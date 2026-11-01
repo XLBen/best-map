@@ -52,7 +52,25 @@ export function defaultValue(f: FieldDesc): unknown {
       return { api: SCRIPT_API, src: '' };
     case 'json':
       return f.of ? objectOf(f.of) : [];
+    case 'tuple':
+      return (f.items ?? []).map((x) => defaultValue(x));
+    case 'tuples':
+    case 'titleList':
+      return [];
+    case 'title':
+      return '';
+    case 'tendencies':
+      return {};
   }
+}
+
+// 列表里把第 from 项挪到第 to 项的位置（拖动换先后，第四十五轮）
+export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return [...list];
+  const out = [...list];
+  const [x] = out.splice(from, 1);
+  out.splice(to, 0, x);
+  return out;
 }
 
 // 一组字段的新对象：只填必填的
@@ -146,13 +164,22 @@ export function pathLabel(fields: readonly FieldDesc[], obj: unknown, path: read
   let desc: FieldDesc | undefined;
   for (let i = 0; i < path.length; i++) {
     const k = path[i];
-    if (desc && (desc.type === 'list' || desc.type === 'weighted' || desc.type === 'tags') && typeof k === 'number') {
+    if (desc && (desc.type === 'list' || desc.type === 'weighted' || desc.type === 'tags' || desc.type === 'tuples' || desc.type === 'titleList') && typeof k === 'number') {
       parts.push(`第 ${k + 1} 个`);
       cur = Array.isArray(cur) ? cur[k] : undefined;
       if (desc.type === 'list') {
         fs = desc.of;
         desc = undefined;
       }
+      continue;
+    }
+    if (desc && desc.type === 'tuple' && typeof k === 'number') {
+      parts.push(desc.items?.[k]?.label ?? `第 ${k + 1} 个`);
+      continue;
+    }
+    if (desc && (desc.type === 'title' || desc.type === 'tendencies')) {
+      parts.push(String(k));
+      cur = isObj(cur) ? cur[String(k)] : undefined;
       continue;
     }
     if (desc && desc.type === 'map') {
@@ -236,7 +263,8 @@ export interface TitleRow {
   orig: string;
 }
 
-export const isTitleField = (f: Pick<FieldDesc, 'type' | 'key' | 'of'>) => f.type === 'json' && !f.of && (f.key === 'titles' || f.key === 'rulers');
+// 第四十五轮起是单独的一种字段（title），键从 keyRef 里选
+export const isTitleField = (f: Pick<FieldDesc, 'type'>) => f.type === 'title';
 
 export function titleRows(v: unknown): TitleRow[] {
   const one = (key: string, x: unknown): TitleRow => (typeof x === 'string' ? { key, zh: x, orig: '' } : isObj(x) ? { key, zh: String(x.zh ?? ''), orig: String(x.orig ?? '') } : { key, zh: '', orig: '' });

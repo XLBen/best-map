@@ -9,12 +9,12 @@ const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(
 
 // 换说法的一条（第四十三轮，仿 EU4 的 government_names）
 const NAME_RULE_FIELDS: readonly FieldDesc[] = [
-  { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, hint: '主流文化在这几组之一' },
-  { key: 'cultures', label: '文化', type: 'tags', optional: true },
-  { key: 'valueGroups', label: '取值组', type: 'tags', optional: true, hint: '宗教组……：christian、muslim' },
-  { key: 'values', label: '取值', type: 'tags', optional: true, hint: '宗教……：catholic、sunni' },
-  { key: 'titles', label: '国家称号', type: 'json', optional: true, hint: '按等级' },
-  { key: 'rulers', label: '统治者称号', type: 'json', optional: true, hint: '按等级' },
+  { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, ref: 'cultureGroup', hint: '主流文化在这几组之一' },
+  { key: 'cultures', label: '文化', type: 'tags', optional: true, ref: 'culture' },
+  { key: 'valueGroups', label: '取值组', type: 'tags', optional: true, ref: 'valueGroup', hint: '宗教组……' },
+  { key: 'values', label: '取值', type: 'tags', optional: true, ref: 'popValue', hint: '宗教……' },
+  { key: 'titles', label: '国家称号', type: 'title', optional: true, keyRef: 'countryTier', hint: '按等级' },
+  { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', hint: '按等级' },
 ];
 
 // 限谁用的一条（第四十四轮）
@@ -23,11 +23,11 @@ const ONLY_FIELDS: readonly FieldDesc[] = NAME_RULE_FIELDS.filter((f) => f.key !
 const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
-  { key: 'category', label: '类别', type: 'tags', hint: 'monarchy、republic、theocracy、tribal、empire……' },
+  { key: 'category', label: '类别', type: 'tags', ref: 'govCategory', hint: 'monarchy、republic、theocracy、tribal、empire……' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'titles', label: '国家称号', type: 'json', hint: '按国家的等级：等级 id → 称号（没写的等级用最近的一级）；只写一种时各等级都用它' },
-  { key: 'rulers', label: '统治者称号', type: 'json', optional: true, hint: '写法同国家称号' },
+  { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', hint: '按国家的等级（没写的等级用最近的一级）；只写一种时各等级都用它' },
+  { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', hint: '写法同国家称号' },
   { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, hint: '按文化组、宗教……换称号；第一条满足的起作用' },
   { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, hint: '满足其中一条的国家才能用（伊克塔只给穆斯林）；不写时谁都能用' },
   { key: 'weight', label: '多见', type: 'number', optional: true, min: 0, max: 100, step: 0.1, hint: '省略为 1' },
@@ -44,10 +44,10 @@ const GOV_FIELDS: readonly FieldDesc[] = [
 
 const DRIVER_FIELDS: readonly FieldDesc[] = [
   { key: 'weight', label: '权重', type: 'number', min: -10, max: 10, step: 0.1, hint: '这部分人的比例乘以它' },
-  { key: 'dimension', label: '维度', type: 'text', optional: true },
-  { key: 'value', label: '取值', type: 'text', optional: true },
-  { key: 'culture', label: '文化', type: 'text', optional: true },
-  { key: 'cultureGroup', label: '文化组', type: 'text', optional: true },
+  { key: 'dimension', label: '维度', type: 'text', optional: true, ref: 'dimension' },
+  { key: 'value', label: '取值', type: 'text', optional: true, ref: 'popValue' },
+  { key: 'culture', label: '文化', type: 'text', optional: true, ref: 'culture' },
+  { key: 'cultureGroup', label: '文化组', type: 'text', optional: true, ref: 'cultureGroup' },
   { key: 'primary', label: '主流文化', type: 'bool', optional: true },
   { key: 'minority', label: '少数群体', type: 'bool', optional: true },
   { key: 'coastal', label: '住在海边', type: 'bool', optional: true },
@@ -70,7 +70,7 @@ const FACTION_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'base', label: '基础', type: 'map', value: { key: 'value', label: '影响力', type: 'number', min: 0, max: 10, step: 0.1 }, hint: '政体的类别 → 影响力；default 是别的类别' },
+  { key: 'base', label: '基础', type: 'map', keyRef: 'govCategory', value: { key: 'value', label: '影响力', type: 'number', min: 0, max: 10, step: 0.1 }, hint: '政体的类别 → 影响力；default 是别的类别' },
   { key: 'drivers', label: '来自人口', type: 'list', optional: true, of: DRIVER_FIELDS, hint: '这部分人越多，影响力越大' },
 ];
 

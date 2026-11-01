@@ -42,8 +42,8 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'detector', label: '怎么找', type: 'enum', optional: true, options: LANDMARK_DETECTORS.map((d) => ({ value: d, label: d })), when: { key: 'category', is: 'natural' } },
-  { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, hint: '空着时不限' },
-  { key: 'governments', label: '政体的类别', type: 'tags', optional: true, hint: '空着时不限' },
+  { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, ref: 'cultureGroup', hint: '空着时不限' },
+  { key: 'governments', label: '政体的类别', type: 'tags', optional: true, ref: 'govCategory', hint: '空着时不限' },
   { key: 'place', label: '放在哪', type: 'enum', options: LANDMARK_PLACES.map((p) => ({ value: p, label: p })) },
   {
     key: 'per',
@@ -56,7 +56,7 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
   },
   { key: 'count', label: '个数', type: 'number', min: 0, max: 100, step: 0.1 },
   { key: 'chance', label: '可能', type: 'number', min: 0, max: 1, step: 0.05 },
-  { key: 'label', label: '名字的写法', type: 'json', hint: '“{city}神庙”，或按文化：{"default": "{city}神庙"}' },
+  { key: 'label', label: '名字的写法', type: 'title', keyRef: ['culture', 'cultureGroup'], hint: '“{city}神庙”；可以按文化、文化组换说法' },
   { key: 'manual', label: '不自动放', type: 'bool', optional: true },
 ];
 
@@ -74,7 +74,7 @@ const POINT_FIELDS: readonly FieldDesc[] = [
     optional: true,
     of: [
       { key: 'capital', label: '算首都', type: 'bool', optional: true },
-      { key: 'rank', label: '等级', type: 'text', optional: true },
+      { key: 'rank', label: '等级', type: 'text', optional: true, ref: 'cityRank' },
     ],
   },
 ];

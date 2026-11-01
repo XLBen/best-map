@@ -3,7 +3,8 @@ import { type ContentKind, type ContentUsage, type UsageWorld, builtinOf, disabl
 import { styleProblems, worldStyleId, type NameStyle } from '../../../core/name-styles';
 import { worldMapStyleId } from '../../../core/map-style';
 import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, packItems, packSections, planPack, sameItem, subPacks, walkPacks, findPack } from '../../../core/packs';
-import { originOf } from '../../../core/packs/builtin-tree';
+import { builtinItem, isBuiltinSame, originOf } from '../../../core/packs/builtin-tree';
+import { recordedOrigin } from '../../../core/content/origin';
 import type { ContentRef } from '../../../core/content/unused';
 import type { LibraryEntry } from '../../library';
 
@@ -45,8 +46,29 @@ export interface RepoStatus {
   isDefault?: boolean;
   // 总在世界里的内置项（第二十一轮：内置的地形类别、通用资源）：没有开关，写“内置·常开”。第三十轮起没有总在的项，不再有这两个
   always?: boolean;
-  // 总在的内置项在这个世界里改过（small.content 里同 id 的一份）：可以恢复
+  // 总在的内置项在这个世界里改过（small.content 里同 id 的一份）：可以恢复。
+  // 第四十五轮：本世界里内置的一项改过（来源是内置的树，内容与内置的不同）：写“改过”，能“恢复内置”
   modified?: boolean;
+}
+
+// ---------- 改过的内置项（第四十五轮） ----------
+
+const NO_RENAMES = { biomes: new Map<string, string>(), riverTypes: new Map<string, string>(), lakeTypes: new Map<string, string>() };
+
+// 能恢复内置的几种：整项换掉的（放在 small.content 的，河、湖、岛的种类）。生态的命令是按字段改的，不在里面
+export const restorable = (kind: ContentKind): boolean => canApply(kind) && (kind.store === 'content' || kind.id === 'riverType' || kind.id === 'lakeType' || kind.id === 'islandType');
+
+// 世界里的一项是改过的内置项时，内置的原样（用到世界时的样子）；不是时 null。
+// 来源记的是内置的树（或没记来源）、内置的树里有同 id 的一项、内容不一样，才算改过
+export function builtinOriginal(kind: ContentKind, item: unknown, world: PackWorld): unknown | null {
+  if (!restorable(kind)) return null;
+  const id = itemId(kind, item);
+  const b = builtinItem(kind.id, id);
+  if (!b) return null;
+  const rec = recordedOrigin(world.small, kind.id, id);
+  if (rec && !b.paths.some((p) => p[0] === rec[0])) return null;
+  if (isBuiltinSame(kind.id, item)) return null;
+  return kind.pack.finalize?.(b.item, NO_RENAMES) ?? b.item;
 }
 
 export interface RepoRow {
@@ -88,7 +110,8 @@ function defaultMark(kind: ContentKind, world: PackWorld, id: string): Pick<Repo
 
 // 一项在这个世界里的状态
 // builtin：登记表里的内置项（不是资源库里的包）
-function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackWorld | null, builtin = false, ctx?: Ctx): RepoStatus {
+// entry：资源库里内置的包的键（第四十五轮：本世界里改过的内置项在内置的包里算在本世界，写“改过”）
+function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackWorld | null, builtin = false, ctx?: Ctx, entry?: string): RepoStatus {
   const id = itemId(kind, item);
   if (!world) return { on: false, locked: '先新建或打开世界' };
   const inWorld = inWorldOf(kind, world, ctx);
@@ -106,7 +129,10 @@ function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackW
     if (bad.length) return { on: false, locked: bad[0] };
   }
   // 世界里没有同 id 的：加进来时不改名，就是不在本世界（不必按资源包的规则算一遍）
-  if (!inWorld.some((x) => itemId(kind, x) === id)) return { on: false };
+  const same = inWorld.find((x) => itemId(kind, x) === id);
+  if (!same) return { on: false };
+  // 本世界里那一份是这一项改过的（来源记的就是这个内置的包）
+  if (entry && recordedOrigin(world.small, kind.id, id)?.[0] === entry && builtinOriginal(kind, same, world)) return { on: true, worldId: id, modified: true, ...isDefault(id) };
   // 按资源包的规则：加进世界时的样子（没写“自然生成”的关掉……）与世界里的一样就是启用着
   const plan = planPack(world, pack, { [kind.pack.key]: [id], defaultStyle: null });
   const skip = plan.skipped.find((x) => x.section === kind.pack.key && x.from === id);
@@ -333,7 +359,7 @@ function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: read
   for (const k of kinds) {
     for (const x of ownItems(node, k.pack.key)) {
       const id = itemId(k, x);
-      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusOf(k, x, node, world, false, ctx) });
+      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusOf(k, x, node, world, false, ctx, e.builtin ? e.key : undefined) });
     }
   }
   const children = subPacks(node)
@@ -349,7 +375,7 @@ function worldStatus(kind: ContentKind, item: unknown, world: PackWorld): RepoSt
   const id = itemId(kind, item);
   const def = defaultMark(kind, world, id);
   if (!canApply(kind)) return { on: true, worldId: id, locked: kind.pack.note ?? '不能移出' };
-  return { on: true, worldId: id, ...def };
+  return { on: true, worldId: id, ...def, ...(builtinOriginal(kind, item, world) ? { modified: true } : {}) };
 }
 
 // 本世界一栏的树：按来源的包分组（大包 ▸ 小包），先后照资源库；离群的放最后

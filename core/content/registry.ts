@@ -38,8 +38,18 @@ export type FieldType =
   | 'map'
   // 脚本（{api, src}）
   | 'script'
-  // 太复杂、只给高级编辑的（原样的 JSON）
-  | 'json';
+  // 一个对象（字段是 of）；没写 of 时是原样的 JSON（第四十五轮起内置的种类都写了 of 或下面几种，不再有原样的）
+  | 'json'
+  // 固定几位的数组（每一位是 items）：年份 [最早, 现在]、配方里的 [小, 大]（第四十五轮）
+  | 'tuple'
+  // 一组固定几位的数组：音节数 [[音节数, 权重], …]（第四十五轮）
+  | 'tuples'
+  // 称号的写法：一种（字，或 {zh, orig}），或“键 → 一种”的表，键从 keyRef 里选（第四十五轮）
+  | 'title'
+  // 几种称号的写法（按种子挑一个；第四十五轮）
+  | 'titleList'
+  // 倾向：维度 → 取值与权重；byEra 的是“时代 → 维度 → 取值与权重”（第四十五轮，资源库里画成一张表）
+  | 'tendencies';
 
 export interface FieldDesc {
   key: string;
@@ -61,6 +71,17 @@ export interface FieldDesc {
   when?: { key: string; is: string };
   // 新加这个字段（或换了 when 指的字段、它露出来）时的值（第三十八轮，画风；省略时按类型，见界面的 defaultValue）
   default?: unknown;
+  // ---------- 第四十五轮：资源库的编辑器 ----------
+  // 引用的是什么（text、tags 的值，weighted 的字）：内容种类的 id（'culture'、'nameStyle'……），
+  // 或 'dimension'（时代里的维度，另有 government）、'govCategory'（政体的类别）、'tolerance'（生态的条件）。
+  // 资源库里从带搜索的下拉里选，也能写列表里没有的
+  ref?: string;
+  // map、title 的键引用的是什么（同 ref；几种时是数组，比如称号按文化或文化组）
+  keyRef?: string | readonly string[];
+  // tuple、tuples 每一位的样子
+  items?: readonly FieldDesc[];
+  // tendencies：按时代的那一份（和不分时代的那个字段画在同一张表里）
+  byEra?: boolean;
 }
 
 export type ContentWorld = Pick<World, 'small' | 'causes'>;

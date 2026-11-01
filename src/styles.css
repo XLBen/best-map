@@ -1228,20 +1228,38 @@ ol.history li.undone {
   z-index: 15;
 }
 
-/* 资源库（packs/RepoPanel.tsx，第二十九轮）：浮在地图左边，不挡地图。顶上筛种类、搜索；两栏“本世界 | 资源库”，
-   都是按资源包分组的树，一行一项（约 28 px）：名字、灰色的数或种类、右边小按钮；点开一项在它下面展开 */
+/* 资源库（packs/RepoPanel.tsx，第二十九轮；第四十五轮改成左上角）：顶栏最左边的“资源库”打开，从左上角展开，浮在地图上。
+   顶上筛种类、搜索；左栏“本世界 | 资源库”两段摊成的一长列（一行一项，约 28 px，只画看得见的行），
+   右栏是选中的一项的详情和编辑器 */
 .repo {
   position: absolute;
   top: 60px;
-  left: 10px;
+  left: var(--sp-2);
   /* 让出底部的工具条 */
   bottom: 84px;
-  width: min(880px, calc(100% - 20px));
+  width: min(980px, calc(100% - 16px));
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
   border-radius: var(--r-lg);
   z-index: 15;
+  transform-origin: top left;
+  animation: repo-unfold 160ms ease-out;
+}
+@keyframes repo-unfold {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .repo {
+    animation: none;
+  }
 }
 .repo .popover-head .row {
   margin: 0;
@@ -1277,23 +1295,32 @@ ol.history li.undone {
 .repo-notes .chip {
   padding-right: 0;
 }
-.repo-cols {
+/* 左栏一长列、右栏详情与编辑器 */
+.repo-main {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 5fr) minmax(0, 6fr);
   gap: var(--sp-3);
   padding: 0 var(--sp-3);
 }
-.repo-col {
+.repo-list,
+.repo-side {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
 }
-.repo h5.repo-col-head {
-  flex: none;
-  margin: 0 0 2px;
+.repo-side {
+  overflow-y: auto;
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--fill);
+}
+.repo-side-body {
+  padding-bottom: var(--sp-2);
+}
+.repo-side-hint {
+  margin: var(--sp-3) 0;
 }
 .repo-tree {
   flex: 1 1 auto;
@@ -1301,18 +1328,27 @@ ol.history li.undone {
   overflow-y: auto;
   padding-bottom: var(--sp-2);
 }
-/* 树的一行：包（▸ 名字 数）或一项（色块 名字 种类），右边几个小按钮 */
+/* 只画看得见的行：外面撑出整列的高度，里面那几十行挪到看得见的地方 */
+.repo-spacer {
+  position: relative;
+}
+.repo-window {
+  will-change: transform;
+}
+/* 一行：段（▾ 本世界 数）、包（▸ 名字 数）或一项（色块 名字 种类），右边几个小按钮 */
 .repo-row {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  min-height: var(--h-sm);
+  height: var(--h-sm);
   padding-right: var(--sp-1);
   border-radius: var(--r-sm);
 }
-.repo-row:hover,
-.repo-item.open {
+.repo-row:hover {
   background-image: linear-gradient(var(--hover), var(--hover));
+}
+.repo-item.sel {
+  background: var(--accent-bg);
 }
 .repo-row button.repo-twist {
   flex: none;
@@ -1336,6 +1372,9 @@ ol.history li.undone {
 .repo-row button.repo-name:hover:not(:disabled) {
   background-image: none;
 }
+.repo-section .repo-name {
+  font-weight: 600;
+}
 .repo-node .repo-name {
   font-weight: 500;
 }
@@ -1346,6 +1385,34 @@ ol.history li.undone {
   flex: none;
   white-space: nowrap;
 }
+.repo-mod {
+  color: var(--warn-text);
+}
+.repo-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 22px;
+}
+.repo-grip {
+  flex: none;
+  display: inline-flex;
+  margin-left: -16px;
+  color: var(--faint);
+  cursor: grab;
+}
+.repo-empty {
+  margin: 0;
+  height: var(--h-sm);
+  line-height: var(--h-sm);
+  padding-left: 22px;
+}
+/* 拖着换先后：放下的地方画一条线 */
+.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 .repo-actions {
   flex: none;
   display: flex;
@@ -1353,7 +1420,7 @@ ol.history li.undone {
   gap: 2px;
   margin-left: auto;
 }
-/* 资源库一栏里已在本世界的：打勾、变暗 */
+/* 资源库一段里已在本世界的：打勾、变暗 */
 .repo-item.on .repo-name,
 .repo-item.on .swatch {
   opacity: 0.55;
@@ -1363,13 +1430,23 @@ ol.history li.undone {
   padding: 0 var(--sp-1);
   color: var(--ok);
 }
+/* 右栏：选中的一项 */
 .repo-detail {
-  padding-top: 2px;
-  padding-bottom: var(--sp-2);
-  padding-right: var(--sp-1);
+  padding: var(--sp-2) 0;
+}
+.repo-detail-head {
+  gap: var(--sp-2);
+  margin: 0;
+}
+.repo-detail-head h3 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .repo-detail p {
-  margin: 0 0 var(--sp-1);
+  margin: 2px 0 var(--sp-1);
 }
 .repo-sample {
   overflow: hidden;
@@ -1378,16 +1455,11 @@ ol.history li.undone {
 }
 .repo-detail-actions {
   gap: 2px;
-}
-.repo-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 var(--sp-3);
+  margin-top: var(--sp-1);
 }
 .repo-restyle {
   flex: none;
-  padding: var(--sp-1) var(--sp-3) 0;
+  padding: var(--sp-1) 0 0;
 }
 .repo-foot {
   flex: 0 0 auto;
@@ -1415,16 +1487,16 @@ ol.history li.undone {
 .repo-menu .file-item input {
   display: none;
 }
-/* 窄屏：两栏上下排，整个一起滚 */
+/* 窄屏：左右两栏上下排，各占一半 */
 @media (max-width: 720px) {
-  .repo-cols {
+  .repo-main {
     grid-template-columns: minmax(0, 1fr);
-    overflow-y: auto;
-    align-content: start;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .repo-tree {
-    flex: none;
-    overflow: visible;
+  .repo-side {
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid var(--fill);
   }
 }
 
@@ -1557,6 +1629,192 @@ select.ed-add {
 .ed-map.nested .ed-value {
   margin-top: var(--sp-1);
 }
+/* 带搜索的下拉（packs/RefPicker.tsx，第四十五轮）：按钮写选着的名字，点开是搜索框和一列选项 */
+.ref-pick {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.ed-control > .ref-pick,
+.ed-title-key > .ref-pick {
+  width: 100%;
+}
+.ref-btn {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.ref-btn.small {
+  width: auto;
+  background: var(--fill);
+  border-color: transparent;
+}
+.ref-btn.open {
+  border-color: var(--accent-line);
+}
+.ref-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.ref-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  max-width: 80vw;
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 5;
+}
+.ref-pop input[type='search'] {
+  width: 100%;
+  min-height: var(--h-sm);
+  margin-bottom: var(--sp-1);
+  padding: 0 var(--sp-2);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.ref-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ref-list .item.hi {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+.ref-list .item.on {
+  background: var(--accent-bg);
+}
+.ref-list p {
+  margin: var(--sp-1) var(--sp-2);
+}
+/* 引用的一组：一项一个小块 */
+.ed-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.ed-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: var(--sp-2);
+  background: var(--fill);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+}
+/* 拖动换先后的把手 */
+.ed-grip {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  color: var(--faint);
+  cursor: grab;
+}
+.ed-item > .ed-grip {
+  padding-top: 6px;
+}
+/* 固定几位的数、一组固定几位的数 */
+.ed-tuple {
+  gap: var(--sp-1);
+  align-items: center;
+}
+.ed-num {
+  width: 84px;
+}
+.ed-tuple-head {
+  font-size: var(--fs-xs);
+}
+.ed-title-key {
+  flex: 0 0 96px;
+  min-width: 0;
+}
+/* 按引用的比例表：名字、数、百分比 */
+.ed-wtable .ed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 40px;
+}
+.ed-wkey {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.ed-wpct,
+.tend-pct {
+  text-align: right;
+  font-size: var(--fs-xs);
+}
+/* 倾向的表（packs/TendencyEditor.tsx）：行是维度，每行几个取值与权重 */
+.tend-head {
+  margin: 0;
+}
+.tend-era {
+  max-width: 180px;
+}
+.tend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-1) 0;
+}
+.tend-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: var(--sp-1);
+  align-items: start;
+}
+.tend-dim {
+  padding-top: 5px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tend-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+}
+.tend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 0 0 var(--sp-2);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+}
+.tend-chip .ed-weight {
+  width: 52px;
+  min-height: 22px;
+}
+.tend-name {
+  white-space: nowrap;
+}
+.tend-inherit {
+  margin: var(--sp-1) 0 0;
+}
+
 .ed-samples {
   margin-top: var(--sp-2);
 }

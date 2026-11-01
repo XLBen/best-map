@@ -45,7 +45,8 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (picking.value) picking.value = false;
     else if (uiHidden.value) uiHidden.value = false;
-    else if (repo.value) repo.value = repo.value.edit ? { ...repo.value, edit: undefined } : null;
+    // 资源库：先取消选中（右栏的详情、编辑器一起收起），再按一次关上
+    else if (repo.value) repo.value = repo.value.edit || repo.value.sel ? { ...repo.value, edit: undefined, sel: undefined } : null;
     else if (sheet.value) sheet.value = null;
     else if (provinceSet.value.length) provinceSet.value = [];
     else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value || selectedLake.value) {

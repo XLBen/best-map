@@ -2,9 +2,10 @@ import { signal } from '@preact/signals';
 import type { PackRead } from '../../../core/packs';
 import { refreshLibrary } from '../../library';
 import type { Obj } from './fields';
+import { loadRepoPrefs, saveRepoPrefs } from './prefs';
 import type { RepoFilter } from './repo';
 
-// 资源库的界面状态：浮在地图左边的资源库（第二十九轮：两栏，本世界 | 资源库，都按资源包分组；顶上筛种类、搜索），
+// 资源库的界面状态：浮在地图左上角的资源库（第四十五轮：顶栏最左边的按钮打开）（第二十九轮：两栏，本世界 | 资源库，都按资源包分组；顶上筛种类、搜索），
 // 和角落“⋯”里打开的弹窗（导入文件、从世界存进资源库、资源包）。
 // 都是点了才开（世界菜单的“资源库…”、生态抽屉的“示例生态…”、地名里的“资源库…”、导入文件），不会自己弹出来
 
@@ -15,6 +16,10 @@ export interface RepoEdit {
   worldId?: string;
   // 哪一种（第二十九轮：种类筛成“全部”时也能编辑；省略时按 RepoState.kind）
   kind?: string;
+  // 第四十五轮：开始时的样子（和它不一样就是改过了）、改的是左栏的哪一行、用到本世界时记的来源（资源库里的包）
+  base?: Obj;
+  row?: string;
+  from?: string[];
 }
 
 export interface RepoState {
@@ -26,20 +31,32 @@ export interface RepoState {
   // 资源库一栏只看一个包（资源库里的键：刚导入的包、生态抽屉的“示例生态…”），展开着
   entry?: string;
   edit?: RepoEdit;
+  // 左栏选中的一行（第四十五轮：右栏是它的详情与编辑器）
+  sel?: string;
 }
 
 export const repo = signal<RepoState | null>(null);
 
+// 第四十五轮：种类记在浏览器里（prefs.ts），关上、刷新后照旧
 export function openRepo(st: Partial<RepoState> = {}) {
   void refreshLibrary();
   packDialog.value = null;
-  repo.value = { kind: repo.value?.kind ?? 'all', filter: 'all', query: '', ...st };
+  repo.value = { kind: repo.value?.kind ?? loadRepoPrefs().kind, filter: 'all', query: '', ...st };
+  if (st.kind) saveRepoPrefs({ kind: st.kind });
 }
 
 export const closeRepo = () => (repo.value = null);
 
+// 顶栏最左边的“资源库”：开着就关上，关着就打开（第四十五轮）
+export function toggleRepo() {
+  if (repo.value) closeRepo();
+  else openRepo();
+}
+
 export function patchRepo(patch: Partial<RepoState>) {
-  if (repo.value) repo.value = { ...repo.value, ...patch };
+  if (!repo.value) return;
+  repo.value = { ...repo.value, ...patch };
+  if (patch.kind) saveRepoPrefs({ kind: patch.kind });
 }
 
 export type DialogView =

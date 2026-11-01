@@ -6,7 +6,7 @@ import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, s
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
-import { type Species, speciesSchema } from '../species';
+import { PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, type Renames, builtinOf, isBuiltinCopy, registerKind } from './registry';
@@ -45,6 +45,12 @@ function fieldProblems(who: string, item: Parameters<typeof fieldRefs>[0], field
   return out;
 }
 
+// 两个数的范围 [小, 大]（星球形态的配方）
+const PAIR = (min: number, max: number, step: number): FieldDesc[] => [
+  { key: 'lo', label: '小', type: 'number', min, max, step },
+  { key: 'hi', label: '大', type: 'number', min, max, step },
+];
+
 const NAMES_FIELD: FieldDesc = {
   key: 'names',
   label: '起名模板',
@@ -63,12 +69,17 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '画风选了“另一种颜色”时用（地图册）；空着时同颜色' },
   { key: 'natural', label: '自然生成', type: 'bool', optional: true },
-  { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true },
+  { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome' },
   {
     key: 'bank',
     label: '岸边的影响',
     type: 'json',
     optional: true,
+    of: [
+      { key: 'radiusKm', label: '范围', type: 'number', min: 10, max: 1000, step: 10, hint: 'km；越近越强' },
+      { key: 'dT', label: '变暖变冷', type: 'number', optional: true, min: -10, max: 10, step: 0.5, hint: '°C' },
+      { key: 'dP', label: '变湿变干', type: 'number', optional: true, min: -1.5, max: 1.5, step: 0.05, hint: '降水乘以 e 的这么多次方' },
+    ],
   },
   NAMES_FIELD,
   { key: 'scripts', label: '脚本', type: 'script', optional: true },
@@ -135,10 +146,69 @@ registerKind<Species>({
     { key: 'natural', label: '自然生成', type: 'bool', optional: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
-    { key: 'tolerances', label: '耐受条件', type: 'json' },
-    { key: 'visual', label: '样子', type: 'json', optional: true },
-    { key: 'effects', label: '对周围的影响', type: 'json', optional: true },
-    { key: 'feature', label: '地名设定', type: 'json', optional: true },
+    {
+      key: 'tolerances',
+      label: '耐受条件',
+      type: 'list',
+      hint: '最适合的范围在“偏低”到“偏高”之间，到“最低”“最高”降到 0',
+      of: [
+        { key: 'field', label: '条件', type: 'text', ref: 'tolerance' },
+        { key: 'min', label: '最低', type: 'number' },
+        { key: 'optLow', label: '偏低', type: 'number' },
+        { key: 'optHigh', label: '偏高', type: 'number' },
+        { key: 'max', label: '最高', type: 'number' },
+      ],
+    },
+    {
+      key: 'visual',
+      label: '样子',
+      type: 'json',
+      optional: true,
+      of: [
+        { key: 'pattern', label: '花纹', type: 'enum', options: PATTERNS.map((p) => ({ value: p, label: PATTERN_LABEL[p] })) },
+        { key: 'color2', label: '第二种颜色', type: 'color', optional: true },
+        { key: 'amount', label: '明显', type: 'number', optional: true, min: 0, max: 1, step: 0.05 },
+        { key: 'size', label: '花纹大小', type: 'number', optional: true, min: 0.1, max: 4, step: 0.1, hint: '以格为单位' },
+        { key: 'glow', label: '发光', type: 'number', optional: true, min: 0, max: 1, step: 0.05 },
+        { key: 'glowColor', label: '光的颜色', type: 'color', optional: true },
+      ],
+    },
+    {
+      key: 'effects',
+      label: '对周围的影响',
+      type: 'json',
+      optional: true,
+      of: [
+        {
+          key: 'climate',
+          label: '气候',
+          type: 'json',
+          optional: true,
+          of: [
+            { key: 'radiusKm', label: '范围', type: 'number', min: 20, max: 3000, step: 10, hint: 'km' },
+            { key: 'dT', label: '变暖变冷', type: 'number', optional: true, min: -10, max: 10, step: 0.5, hint: '°C' },
+            { key: 'dP', label: '变湿变干', type: 'number', optional: true, min: -1.5, max: 1.5, step: 0.05 },
+          ],
+        },
+        {
+          key: 'invade',
+          label: '侵占',
+          type: 'json',
+          optional: true,
+          of: [
+            { key: 'targets', label: '目标', type: 'tags', ref: 'biome' },
+            { key: 'strength', label: '力度', type: 'number', min: 0, max: 10, step: 0.1 },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'feature',
+      label: '地名设定',
+      type: 'json',
+      optional: true,
+      of: [{ key: 'label', label: '类型名', type: 'text', hint: '“晶林”' }, { ...NAMES_FIELD, label: '起名模板' }],
+    },
     { key: 'scripts', label: '脚本', type: 'script', optional: true },
   ],
   pack: {
@@ -299,8 +369,39 @@ registerKind<PlanetForm>({
     { key: 'name', label: '名字', type: 'text' },
     { key: 'hint', label: '说明', type: 'text', optional: true },
     { key: 'base', label: '从哪种星球改起', type: 'text' },
-    { key: 'profile', label: '配方', type: 'json', optional: true },
-    { key: 'tuning', label: '微调', type: 'json', optional: true },
+    {
+      key: 'profile',
+      label: '配方',
+      type: 'json',
+      optional: true,
+      of: [
+        { key: 'landFraction', label: '陆地多少', type: 'number', optional: true, min: 0, max: 0.85, step: 0.01 },
+        { key: 'islands', label: '岛多少', type: 'number', optional: true, min: 0, max: 1, step: 0.05 },
+        { key: 'plates', label: '板块数', type: 'tuple', optional: true, items: PAIR(2, 40, 1) },
+        { key: 'blocks', label: '大陆块数', type: 'tuple', optional: true, items: PAIR(0, 60, 1) },
+        { key: 'radius', label: '大陆块大小', type: 'tuple', optional: true, items: PAIR(0.02, 0.6, 0.01) },
+        { key: 'main', label: '主大陆大小', type: 'tuple', optional: true, items: PAIR(0.05, 0.9, 0.01) },
+        { key: 'attach', label: '贴在主块边上', type: 'bool', optional: true },
+        { key: 'rise', label: '内陆抬升', type: 'number', optional: true, min: 0, max: 4000, step: 10 },
+        { key: 'relief', label: '地表起伏', type: 'number', optional: true, min: 0, max: 2000, step: 10 },
+        { key: 'hotspots', label: '热点数', type: 'tuple', optional: true, items: PAIR(0, 30, 1) },
+        { key: 'seamounts', label: '海山数', type: 'number', optional: true, min: 0, max: 1000, step: 1 },
+        { key: 'ring', label: '排成一圈', type: 'bool', optional: true },
+      ],
+    },
+    {
+      key: 'tuning',
+      label: '微调',
+      type: 'json',
+      optional: true,
+      of: [
+        { key: 'beltWidth', label: '山带宽窄', type: 'number', optional: true, min: 0.3, max: 3, step: 0.05 },
+        { key: 'ridge', label: '洋中脊', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
+        { key: 'trench', label: '海沟', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
+        { key: 'rift', label: '裂谷', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
+        { key: 'hills', label: '丘陵', type: 'number', optional: true, min: 0, max: 3, step: 0.05 },
+      ],
+    },
     { key: 'scripts', label: '脚本', type: 'script', optional: true },
   ],
   pack: {
@@ -414,7 +515,16 @@ registerKind<NameStyle>({
         { key: 'last', label: '结尾的韵尾', type: 'weighted', optional: true },
       ],
     },
-    { key: 'length', label: '音节数', type: 'json', when: PHONETIC, hint: '[音节数, 权重] 的列表' },
+    {
+      key: 'length',
+      label: '音节数',
+      type: 'tuples',
+      when: PHONETIC,
+      items: [
+        { key: 'n', label: '音节数', type: 'number', min: 1, max: 6, step: 1 },
+        { key: 'w', label: '权重', type: 'number', min: 0.01, step: 0.1 },
+      ],
+    },
     { key: 'lists', label: '词缀', type: 'map', optional: true, when: PHONETIC, value: { key: '', label: '词', type: 'weighted' } },
     { key: 'forbid', label: '不许的写法', type: 'tags', optional: true, when: PHONETIC, hint: '^ 开头，$ 结尾' },
     {

@@ -42,20 +42,78 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     of: [
       { key: 'minHabitability', label: '宜居度下限', type: 'number', min: 0, max: 1, step: 0.01, hint: '低于它的地方人少' },
       { key: 'nomads', label: '游牧', type: 'number', min: 0, max: 1, step: 0.05, hint: '那些地方的人口倍数' },
+      { key: 'bandKm', label: '划进国家', type: 'number', optional: true, min: 0, max: 5000, step: 10, hint: 'km；国境外这么宽的无主地划进最近的国家' },
     ],
   },
   { key: 'seaClaimKm', label: '领海', type: 'number', min: 0, max: 2000, step: 10, hint: 'km；0 是海不归国家' },
   { key: 'countryKm2', label: '国家大小', type: 'number', optional: true, min: 1000, max: 1e9, step: 10000, hint: 'km²；一个国家平均占的能住人的陆地' },
-  { key: 'years', label: '年份', type: 'json', optional: true, hint: '[最早, 现在]，建国年份在这里面' },
+  {
+    key: 'years',
+    label: '年份',
+    type: 'tuple',
+    optional: true,
+    hint: '建国年份在这里面',
+    items: [
+      { key: 'from', label: '最早', type: 'number', min: -100000, max: 100000, step: 1 },
+      { key: 'now', label: '现在', type: 'number', min: -100000, max: 100000, step: 1 },
+    ],
+    default: [500, 1000],
+  },
+  {
+    key: 'tiers',
+    label: '国家等级的比例',
+    type: 'map',
+    optional: true,
+    keyRef: 'countryTier',
+    value: { key: 'value', label: '比例', type: 'number', min: 0, max: 100, step: 0.1 },
+    hint: '空着的等级不出现；整个不写时按各等级的“多见”',
+  },
+  {
+    key: 'relations',
+    label: '国家关系',
+    type: 'json',
+    optional: true,
+    of: [
+      { key: 'confederation', label: '邦联', type: 'number', optional: true, min: 0, max: 4, step: 0.1, hint: '几片诸侯林立的地方；小数是再多一片的可能' },
+      { key: 'federation', label: '联邦', type: 'number', optional: true, min: 0, max: 4, step: 0.1, hint: '几个大国分成成员邦' },
+      { key: 'alliances', label: '同盟', type: 'number', optional: true, min: 0, max: 6, step: 0.1, hint: '聚成几个军事集团' },
+      {
+        key: 'subjects',
+        label: '附庸的种类',
+        type: 'json',
+        optional: true,
+        hint: '各占多少；不写时都是附庸',
+        of: [
+          { key: 'vassal', label: '附庸', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
+          { key: 'protectorate', label: '保护国', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
+          { key: 'dominion', label: '自治领', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
+          { key: 'tributary', label: '朝贡国', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
+        ],
+      },
+      {
+        key: 'titles',
+        label: '称号',
+        type: 'json',
+        optional: true,
+        hint: '盟主的地名加上称号；几种时按种子挑',
+        of: [
+          { key: 'empire', label: '帝国', type: 'titleList', optional: true },
+          { key: 'federation', label: '联邦', type: 'titleList', optional: true },
+          { key: 'alliance', label: '同盟', type: 'titleList', optional: true },
+          { key: 'member', label: '成员邦', type: 'titleList', optional: true },
+        ],
+      },
+    ],
+  },
 ];
 
 const VALUE_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
-  { key: 'dimension', label: '维度', type: 'text', hint: '时代里维度的 id：religion……' },
+  { key: 'dimension', label: '维度', type: 'text', ref: 'dimension', hint: '时代里的维度：宗教……' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'group', label: '组', type: 'text', optional: true, hint: '取值组的 id：同组是异端，不同组是异教' },
+  { key: 'group', label: '组', type: 'text', optional: true, ref: 'valueGroup', hint: '取值组：同组是异端，不同组是异教' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   PREFS,
 ];
@@ -63,7 +121,7 @@ const VALUE_FIELDS: readonly FieldDesc[] = [
 // 取值组（第四十三轮）：宗教组……
 const VALUE_GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
-  { key: 'dimension', label: '维度', type: 'text', hint: '时代里维度的 id：religion……' },
+  { key: 'dimension', label: '维度', type: 'text', ref: 'dimension', hint: '时代里的维度：宗教……' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
@@ -71,15 +129,9 @@ const VALUE_GROUP_FIELDS: readonly FieldDesc[] = [
 ];
 
 // 倾向（第四十三轮起文化组也有）：不分时代的、按时代的
-const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'map', optional: true, value: { key: 'value', label: '取值与权重', type: 'weighted' }, hint: '维度 → 更可能的取值（政体写 government）' };
-const ERA_TENDENCIES: FieldDesc = {
-  key: 'eraTendencies',
-  label: '按时代的倾向',
-  type: 'map',
-  optional: true,
-  value: { key: 'value', label: '这个时代', type: 'map', value: { key: 'value', label: '取值与权重', type: 'weighted' } },
-  hint: '时代 id → 维度 → 取值；写了的那几维换掉不分时代的',
-};
+// 第四十五轮起资源库里画成一张表（行是维度，每行是取值与权重），表上面选时代
+const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'tendencies', optional: true, hint: '每一维更可能是哪些取值（政体也算一维）' };
+const ERA_TENDENCIES: FieldDesc = { key: 'eraTendencies', label: '按时代的倾向', type: 'tendencies', byEra: true, optional: true, hint: '写了的那几维换掉不分时代的' };
 
 const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
@@ -87,22 +139,22 @@ const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, hint: '组里文化默认的地名风格的 id' },
-  { ...TENDENCIES, hint: '组里文化默认的倾向：维度 → 更可能的取值（政体写 government）' },
+  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', hint: '组里文化默认的地名风格' },
+  { ...TENDENCIES, hint: '组里文化默认的倾向（政体也算一维）' },
   ERA_TENDENCIES,
   PREFS,
 ];
 
 const CULTURE_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
-  { key: 'group', label: '文化组', type: 'text', hint: '文化组的 id' },
+  { key: 'group', label: '文化组', type: 'text', ref: 'cultureGroup' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, hint: '地名风格的 id；省略时用文化组的' },
+  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', hint: '空着时用文化组的' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'weight', label: '在组里占多少', type: 'number', optional: true, min: 0, max: 1000, step: 0.1, hint: '省略为 1' },
-  { ...TENDENCIES, hint: '只写与文化组不同的维度：维度 → 更可能的取值' },
+  { ...TENDENCIES, hint: '只写与文化组不同的维度' },
   ERA_TENDENCIES,
   PREFS,
 ];

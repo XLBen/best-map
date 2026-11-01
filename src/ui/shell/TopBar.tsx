@@ -1,12 +1,31 @@
-import { CircleEllipsis, Globe, Layers, MousePointer, Redo2, Undo2, WandSparkles } from 'lucide-preact';
+import { Boxes, CircleEllipsis, Globe, Layers, MousePointer, Redo2, Undo2, WandSparkles } from 'lucide-preact';
 import type { PanelId } from '../../state';
 import { canRedo, canUndo, openPanel, redo, togglePanel, undo, world } from '../../state';
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
+import { repo, toggleRepo } from '../packs/store';
 import { MapKindSwitch } from './MapKind';
 
-// 顶栏：左边是整个世界的事（世界、更多、调整）和撤销、重做，右边是指针、各类工具、图层（生态的色板在“自然”里）
+// 顶栏：左边是资源库（第四十五轮，最左边）、整个世界的事（世界、更多、调整）和撤销、重做，
+// 右边是指针、各类工具、图层（生态的色板在“自然”里）
+
+// 资源库：从左上角展开，再点一下关上
+function RepoButton() {
+  return (
+    <button
+      class={`tb-btn ${repo.value ? 'open' : ''}`}
+      onClick={() => {
+        if (!repo.value) openPanel.value = null;
+        toggleRepo();
+      }}
+      title="资源库：添加、编辑地名风格、文化、政体……"
+    >
+      <Boxes size={18} />
+      <span class="tb-label">资源库</span>
+    </button>
+  );
+}
 
 function PanelButton({ panel, icon: I, label, disabled = false, title }: { panel: PanelId; icon: Icon; label: string; disabled?: boolean; title?: string }) {
   return (
@@ -43,6 +62,8 @@ export function TopBar() {
   return (
     <div class="topbar">
       <div class="tb-group">
+        <RepoButton />
+        <span class="tb-sep" />
         <PanelButton panel="world" icon={Globe} label="世界" title={`新建、保存、打开、资源库、导出\n${mapStatus()}`} />
         <PanelButton panel="more" icon={CircleEllipsis} label="更多" disabled={!w} title="历史、偏好、上手说明" />
         <PanelButton panel="adjust" icon={WandSparkles} label="调整" disabled={!w} title="冷暖干湿、四季、河流多少" />

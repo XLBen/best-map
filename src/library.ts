@@ -187,6 +187,33 @@ export async function removeItem(entryKey: string, key: string, id: string): Pro
   return { ok: true };
 }
 
+// 改“我的”包里一个小包的一段（第四十五轮：资源库里双击改名、拖动换先后）。path 是 [资源库的键, 小包…]，
+// fn 给出这一段新的样子。改完按现在的格式查一遍，不合格式的不存
+export async function editMineList(path: readonly string[], key: string, fn: (list: unknown[]) => unknown[]): Promise<{ ok: boolean; error?: string }> {
+  const kind = kindByPackKey(key);
+  const cur = (await refreshLibrary()).find((e) => e.key === path[0]);
+  if (!kind || !cur) return { ok: false, error: '资源库里没有这一项' };
+  if (cur.builtin || !cur.mine) return { ok: false, error: '只有自己的内容能在资源库里改' };
+  const pack = structuredClone(cur.pack) as ResourcePack;
+  let node: PackNode | undefined = pack;
+  for (const id of path.slice(1)) node = node && subPacks(node).find((c) => c.id === id);
+  if (!node || !Array.isArray(node[key])) return { ok: false, error: '资源库里没有这一项' };
+  node[key] = fn([...(node[key] as unknown[])]);
+  const r = parsePack(pack);
+  if (!r.ok) return { ok: false, error: r.errors[0] };
+  const rec: Stored = { key: cur.key, pack: r.pack, installedAt: cur.installedAt, mine: true };
+  let stored = true;
+  try {
+    await idbTx(['packs'], 'readwrite', (s) => s.put(rec, cur.key));
+    memory.delete(cur.key);
+  } catch {
+    stored = false;
+    memory.set(cur.key, rec);
+  }
+  await refreshLibrary();
+  return stored ? { ok: true } : { ok: true, error: '存不进浏览器：只在这次打开的页面里' };
+}
+
 // 整棵树里有几项（各种内容）
 function packCount(pack: PackNode): number {
   let n = 0;
