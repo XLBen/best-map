@@ -854,7 +854,7 @@ function enclosedDry(mesh: Mesh, land: Uint8Array, lake: Uint8Array, comp: Int32
   return 0;
 }
 
-// 导出给测试（r32-speed：与以前的整块走一遍的写法逐值相同）
+// 导出给测试（features-memo：与以前的整块走一遍的写法逐值相同）
 export function lakeIslandInputs(world: World, d: Derived): AddInput[] {
   const { mesh } = world;
   const n = mesh.n;
@@ -926,7 +926,7 @@ function lakeInputs(world: World, d: Derived, terrain: ArrayLike<number>): AddIn
 }
 
 // 大河：从河口沿流量最大的支流上溯。只取决于陆海、流向、流量、湖面与河的门槛
-// 导出给测试（r32-speed：与以前建整张上游表的写法逐值相同）
+// 导出给测试（features-memo：与以前建整张上游表的写法逐值相同）
 export function riverInputs(world: World, d: Derived): AddInput[] {
   const n = world.mesh.n;
   const land = world.causes.land;

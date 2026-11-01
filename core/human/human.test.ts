@@ -108,7 +108,7 @@ describe('地形类别：自动规则', () => {
     const hillForest = at('hills', 'taiga');
     expect(move[hillForest!]).toBeCloseTo(1.5 * biomeMovement(w.small.species.find((s) => s.id === 'taiga')!), 5);
     expect(move[hillForest!]).toBeGreaterThan(move[at('plains', 'taiga')!]);
-    // 第三十轮：通行倍数写在生态自己身上（与以前的 BIOME_MOVEMENT 表相同，见 r30-era-packs.test.ts）
+    // 第三十轮：通行倍数写在生态自己身上（与以前的 BIOME_MOVEMENT 表相同，见 era-packs.test.ts）
     for (const sp of w.small.species) expect(biomeMovement(sp), sp.id).toBe(sp.movement);
     // 生态写了 movement 就用它
     expect(biomeMovement({ ...w.small.species[0], movement: 7 })).toBe(7);

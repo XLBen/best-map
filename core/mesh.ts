@@ -437,7 +437,7 @@ export function graphDistanceOwner(
 
 // 第三十五轮（提速）：两种常用的代价函数写成专门的函数（以前每次传一个新的闭包：graphDistanceOwner 里调用它的地方
 // 见过各式各样的闭包，编译器内联不了，每条边都是一次函数调用）。与传对应的闭包时逐值相同：同样的堆、同样的入堆、出堆先后，
-// 边长照样取 mesh.dist（r35-speed 测试）
+// 边长照样取 mesh.dist（rewrite-identity 测试）
 // 只走同一类的格：边 i→j 在 cls[i] === cls[j] 时长 mesh.dist[e]，否则不通（陆上的海岸距离：cls 是陆海）
 export function graphDistanceSame(mesh: Mesh, seeds: ArrayLike<number>, limit: number, cls: Uint8Array): Float64Array {
   const d = new Float64Array(mesh.n).fill(Infinity);

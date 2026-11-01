@@ -518,7 +518,7 @@ function seaPocket(mesh: Mesh, isSea: (i: number) => boolean, isLagoon: (i: numb
 
 // 第三十二轮（提速）：先把每块海整块走一遍（类型化数组），挨地图边或超过 POCKET_MAX 格的整块跳过——以前对大洋里的每一格
 // 都从它起找一遍（每次最多 7 格，但大洋有几万格）。seaPocket 的结果只取决于海块本身，所以只在每块的第一格（编号最小）上找一次，
-// 与以前逐格找、找到的块标上不再找逐值相同（并回陆地的格一样）。导出给测试（r32-speed）
+// 与以前逐格找、找到的块标上不再找逐值相同（并回陆地的格一样）。导出给测试（features-memo）
 export function fillSeaPockets(mesh: Mesh, land: Uint8Array, isLagoon: (i: number) => boolean) {
   const n = mesh.n;
   const seen = new Uint8Array(n);

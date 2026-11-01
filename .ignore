@@ -1,0 +1,4 @@
+dist/
+src/ui/__snapshots__/
+tools/bench-baseline/
+src/testing/frozen/

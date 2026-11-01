@@ -1245,5 +1245,5 @@ export function ghostLayers(world: World, base: CellLayers, patch: GhostPatch, m
   return new GhostBuffer(base, mode).apply(world, patch, coastAmp);
 }
 
-// 测试用（src/render/r39-layers.test.ts 里留着的第三十八轮的 cellLayers 要用）：几张色带与内部的几个函数
+// 测试用（src/render/layers-cache.test.ts 里留着的第三十八轮的 cellLayers 要用）：几张色带与内部的几个函数
 export const COLORS_INTERNALS = { humanMode, ramp, SEA, HYPSO, TEMP, PRECIP, MOIST, DIVERGE, HABIT, DENSITY, UNIT, warmth, snowAmount, staticLayers, fillOther, ISLAND_TINT };

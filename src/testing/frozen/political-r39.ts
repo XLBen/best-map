@@ -1,11 +1,11 @@
-// 第四十轮的冻结的参照：第三十九轮（7b4dfea）的片区名（几何与字一起按中文 / 原文、档案缓存），照抄。r40-overlay.test.ts 拿它与现在的比。不要改它
+// 第四十轮的冻结的参照：第三十九轮（7b4dfea）的片区名（几何与字一起按中文 / 原文、档案缓存），照抄。overlay-static.test.ts 拿它与现在的比。不要改它
 import { blocCells, blocList, countryLabels, dimensionValues, regionLabels, valueLayer, worldCultureGroups, worldCultures, worldDimensions } from '../../../core/human';
 import type { BlocKind } from '../../../core/world';
 import { type NameMode, nameLines } from '../../../core/name-display';
 import type { World } from '../../../core/world';
 import { type CountryLabelDraw, REGION_KEY } from '../../render/overlay';
-import { countryLabelLines } from '../countries';
-import type { RegionSource } from './modes';
+import { countryLabelLines } from '../../ui/countries';
+import type { RegionSource } from '../../ui/map/modes';
 
 // 片区名（第二十三轮的国名，第二十五轮推广到文化、文化组、每一维的取值）：沿片区的中线弯着写。屏幕与导出的图共用
 

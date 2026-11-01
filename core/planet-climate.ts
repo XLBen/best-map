@@ -65,7 +65,7 @@ export function landFractionSphere(mesh: SphereMesh, land: Uint8Array, kmPerUnit
 
 // 第三十二轮（提速）：landFractionSphere、sphereLand 里的几段循环拆成小函数（很快就被编译优化），原样照搬，结果逐值相同。
 // 第三十五轮（提速）：东西方向首尾相接的列号查表（以前每次取两次余数），南北方向的权重每个 d 先算一次（以前每个像素都重算 exp）；
-// 加的先后、每一项的值都不变，结果逐值相同（r35-speed）
+// 加的先后、每一项的值都不变，结果逐值相同（rewrite-identity）
 // 列号 t（−BLUR_PAD ≤ t < COLS + BLUR_PAD）首尾相接后的列：WRAP[t + BLUR_PAD]。核的半径不超过 ceil(3 × COLS / 2)
 const BLUR_PAD = Math.ceil((3 * COLS) / 2);
 const WRAP = Int32Array.from({ length: COLS + 2 * BLUR_PAD }, (_, k) => ((((k - BLUR_PAD) % COLS) + COLS) % COLS));

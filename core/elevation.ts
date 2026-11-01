@@ -1275,7 +1275,7 @@ export const seafloorSameLand = { on: true };
 // 陆海与 base 相同（第三十五轮提速）：离岸距离、最近的岸边格只取决于陆海，照用 base 的。
 // 平滑之前的 W、A 只取决于最近的岸边格的属性（up、size、toOcean）与这一格的噪声：只重算属性变了的岸边格管着的格；
 // 第 p 遍平滑只重算第 p − 1 遍重算过的格与它们挨着的格（都只在有岸边格的格里）；深度只重算 W、A 重算过的格与 landness 变了的海格。
-// 别的格的输入与 base 逐位相同，照抄 base 的结果，与整个重算逐位相同（seabed 测试的“海岸上堆山”、r35-speed）
+// 别的格的输入与 base 逐位相同，照抄 base 的结果，与整个重算逐位相同（seabed 测试的“海岸上堆山”、rewrite-identity）
 function sameLandSeafloor(world: World, fields: ReturnType<typeof seabedFields>, base: SeafloorMemoEntry, up: Float32Array, size: Float32Array, toOcean: Int32Array, cellKm: number, riseKm: number): { W: Float32Array[]; A: Float32Array[]; z: Float32Array } {
   const { mesh, causes, kmPerUnit } = world;
   const n = mesh.n;

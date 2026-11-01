@@ -1,12 +1,12 @@
 // 第四十轮的冻结的参照：第三十九轮（7b4dfea）的地名排版（逐个比的避让、每个地名都设字体），照抄、只去掉缓存。
-// r40-overlay.test.ts 拿它与现在的 placeLabels 逐项比（排出来的位置、字、框、山峰的三角都相同）。不要改它
+// overlay-static.test.ts 拿它与现在的 placeLabels 逐项比（排出来的位置、字、框、山峰的三角都相同）。不要改它
 /* eslint-disable */
-import { FEATURE_INFO, type GeoFeature } from '../../core/features';
-import { nameText } from '../../core/name-display';
-import type { Camera } from './renderer';
-import { type LabelBox, type OverlayState, PEAK_KEY, SETTLE_KEY } from './overlay';
-import { type SettleMark, iconScale, markRadius, nameSpots } from './settle-draw';
-import { trueScale, worldToScreen as projWorldToScreen } from './projection';
+import { FEATURE_INFO, type GeoFeature } from '../../../core/features';
+import { nameText } from '../../../core/name-display';
+import type { Camera } from '../../render/renderer';
+import { type LabelBox, type OverlayState, PEAK_KEY, SETTLE_KEY } from '../../render/overlay';
+import { type SettleMark, iconScale, markRadius, nameSpots } from '../../render/settle-draw';
+import { trueScale, worldToScreen as projWorldToScreen } from '../../render/projection';
 
 const MOTION_LAYER_MARGIN = 0.35;
 type Box = LabelBox;
