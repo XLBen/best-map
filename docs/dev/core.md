@@ -63,7 +63,7 @@
 - `content/refs.ts` 脚本里的引用与改名；`content/usage.ts` 内容用在哪里；`content/unused.ts` 哪里都没用到的；`content/origin.ts` 每项来自哪个包；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
 - `packs/builtin-tree.ts` 内置资源包的树（时代包、通用；“通用 ▸ 文化 ▸ 地区”放全部 EU4 文化组，时代包引用其中几组）；`packs/base.ts` “通用 ▸ 基础”；`packs/nature.ts` 13 种生态；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）
-- `packs/import.ts` 生成要用的内容从资源包加进世界；`packs/names/` 内置地名风格（一个 JSON 一种，76 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
+- `packs/import.ts` 生成要用的内容从资源包加进世界；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
 - `packs/fantasy-*.ts` 奇幻示例包（生态、河流类型、湖泊类型、星球形态）
 - `compact.ts` 压缩世界文件；`tidy.ts` 整理本世界的计划
 
