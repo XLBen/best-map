@@ -59,7 +59,7 @@
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 
 ## 内容与资源包
-- `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）
+- `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）
 - `content/refs.ts` 脚本里的引用与改名；`content/usage.ts` 内容用在哪里；`content/unused.ts` 哪里都没用到的；`content/origin.ts` 每项来自哪个包；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
 - `packs/builtin-tree.ts` 内置资源包的树（时代包、通用；“通用 ▸ 文化 ▸ 地区”放全部 EU4 文化组，时代包引用其中几组）；`packs/base.ts` “通用 ▸ 基础”；`packs/nature.ts` 13 种生态；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）
