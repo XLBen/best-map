@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SHADER_PROGRAMS } from './renderer';
+import { SHADER_PROGRAMS } from './shaders';
 
 // 第四十一轮：着色器源码搬到 src/render/shaders/ 时逐字节不变。shader-hashes.json 是搬之前（086a66c）记下的每个程序源码的 sha256；
 // 改着色器的轮次照常改源码，然后 RECORD_SHADERS=1 npx vitest run src/render/shader-sources.test.ts 重记

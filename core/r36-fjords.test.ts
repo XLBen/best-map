@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FJORD_GLSL, PROJ_SOURCES, STYLE_GLSL, STYLE_N2, STYLE_N3, TERRAIN_SOURCES } from '../src/render/renderer';
+import { FJORD_GLSL, PROJ_SOURCES, STYLE_GLSL, STYLE_N2, STYLE_N3, TERRAIN_SOURCES } from '../src/render/shaders';
 import { coastRaster, fjordStats } from '../tools/realism';
 import { GhostBuffer, cellLayers, editGhost } from '../src/render/colors';
 import { LOOK, SKERRY_REACH, coastStyle, fjordData, skerryIsle } from './coast-style';

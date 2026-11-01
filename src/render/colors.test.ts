@@ -348,7 +348,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
 
   it('合成着色器：平面用二维的花纹、星球换成球面上的三维花纹，括号配得上', async () => {
     // 没有 WebGL：只看拼出来的源码（替换找不到时模块加载就会报错）
-    const { COMPOSE_SOURCES } = await import('./renderer');
+    const { COMPOSE_SOURCES } = await import('./shaders');
     const count = (src: string, s: string) => src.split(s).length - 1;
     for (const [name, src] of Object.entries(COMPOSE_SOURCES)) {
       expect(count(src, '{'), name).toBe(count(src, '}'));
@@ -369,7 +369,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
   });
 
   it('花纹那几段编译不过时的退路：去掉花纹、发光的几段，剩下的照样是完整的着色器（与没有花纹时一样）', async () => {
-    const { COMPOSE_SOURCES, withoutFx } = await import('./renderer');
+    const { COMPOSE_SOURCES, withoutFx } = await import('./shaders');
     const count = (src: string, s: string) => src.split(s).length - 1;
     for (const [name, full] of Object.entries(COMPOSE_SOURCES)) {
       const src = withoutFx(full);
@@ -385,7 +385,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
   });
 
   it('画风（第三十八轮）：着色器里不再分写实、地图册，全按画风的 uniform；分层的海之后再涂一次省份着色（海省选了颜色时看得到）', async () => {
-    const { COMPOSE_SOURCES, PROJ_SOURCES } = await import('./renderer');
+    const { COMPOSE_SOURCES, PROJ_SOURCES } = await import('./shaders');
     const all = { ...COMPOSE_SOURCES, proj: PROJ_SOURCES.compose };
     for (const [name, src] of Object.entries(all)) {
       expect(src, name).not.toContain('uStyle');
@@ -405,7 +405,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
   });
 
   it('第十三轮：河只合在画成陆地的像素上，排在平涂、湖面之后，海岸线、省界、高亮之前；省份的平涂、省界、高亮都按 provCell 取格', async () => {
-    const { COMPOSE_SOURCES } = await import('./renderer');
+    const { COMPOSE_SOURCES } = await import('./shaders');
     for (const [name, src] of Object.entries(COMPOSE_SOURCES)) {
       const main = src.slice(src.indexOf('void main() {'));
       const river = main.indexOf('if (uHasRiver == 1 && land) {');
@@ -435,7 +435,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
   });
 
   it('第三十七轮：描格不走高亮纹理，按 focusAt（省份的规则去掉切线、小湖群算陆地）描在高亮之上；只算格心附近的像素', async () => {
-    const { COMPOSE_SOURCES, PROJ_SOURCES, FOCUS_GLSL } = await import('./renderer');
+    const { COMPOSE_SOURCES, PROJ_SOURCES, FOCUS_GLSL } = await import('./shaders');
     const all = { ...COMPOSE_SOURCES, proj: PROJ_SOURCES.compose };
     for (const [name, src] of Object.entries(all)) {
       // focusCell 与 provCell 同一个模子，只是不按切线换格
@@ -466,7 +466,7 @@ describe('生态的颜色脚本、花纹与发光', () => {
   });
 
   it('第三十九轮：合成里先判断再跳过——省份格用得上才算，省界淡出为 0 时、国界外面一圈看不出时、离边界远时不取相邻像素', async () => {
-    const { COMPOSE_SOURCES, PROJ_SOURCES } = await import('./renderer');
+    const { COMPOSE_SOURCES, PROJ_SOURCES } = await import('./shaders');
     const all = { ...COMPOSE_SOURCES, proj: PROJ_SOURCES.compose };
     for (const [name, src] of Object.entries(all)) {
       const main = src.slice(src.indexOf('void main() {'));

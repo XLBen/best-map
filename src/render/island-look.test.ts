@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { World } from '../../core/world';
 import { type ColorOptions, cellLayers, lithLayer, shoreElevation } from './colors';
-import { LITH_LAND_GLSL, packElevation } from './renderer';
+import { packElevation } from './renderer';
+import { LITH_LAND_GLSL } from './shaders';
 import { seededEngine } from '../../core/testing/fixtures';
 
 // 第十三轮修：陡的小岛四周不再有一圈多边形的浅水（水深只来自水面格）；几种岛大到两百公里也一眼分得出

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FRAG_FREQ, FRAG_OFF, fragCoast, fragIsleHeight, fragSeaDepth } from '../../core/subcell';
-import { FRAG_GLSL, PROJ_SOURCES, TERRAIN_SOURCES } from './renderer';
+import { FRAG_GLSL, PROJ_SOURCES, TERRAIN_SOURCES } from './shaders';
 
 // 第十八轮：着色器里的破碎度（FRAG_GLSL）与 core/subcell.ts 的 CPU 版本是同一个算式。
 // 这一段只用标量（float、min、max、abs），把它照字面换成 JS 跑一遍，与 CPU 版本逐个比（着色器是单精度，差在千分之一以内）

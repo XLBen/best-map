@@ -335,7 +335,7 @@ describe('地名按投影放（球的背面不标）', () => {
 
 describe('投影的着色器源码', () => {
   it('合成：括号配得上，场景都按世界坐标取（toScene），相邻像素、圆圈在世界坐标上；花纹的退路照样完整', async () => {
-    const { PROJ_SOURCES, COMPOSE_SOURCES, withoutFx } = await import('./renderer');
+    const { PROJ_SOURCES, COMPOSE_SOURCES, withoutFx } = await import('./shaders');
     const count = (src: string, s: string) => src.split(s).length - 1;
     for (const src of [PROJ_SOURCES.compose, withoutFx(PROJ_SOURCES.compose)]) {
       expect(count(src, '{')).toBe(count(src, '}'));
@@ -357,7 +357,7 @@ describe('投影的着色器源码', () => {
   });
 
   it('极地的场景：位置按极点的等距方位投影，坡度换到平面上再换回来', async () => {
-    const { PROJ_SOURCES } = await import('./renderer');
+    const { PROJ_SOURCES } = await import('./shaders');
     const count = (src: string, s: string) => src.split(s).length - 1;
     for (const [name, src] of Object.entries(PROJ_SOURCES)) {
       expect(count(src, '{'), name).toBe(count(src, '}'));

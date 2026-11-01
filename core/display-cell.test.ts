@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FOCUS_GLSL, FOCUS_REACH, SPECK_MARK } from '../src/render/renderer';
+import { FOCUS_REACH } from '../src/render/renderer';
+import { FOCUS_GLSL, SPECK_MARK } from '../src/render/shaders';
 import { type DisplayCell, displayCellAt, displayCoast, displayCoastAt } from './display';
 import { Engine } from './engine';
 import { wrapX } from './geo';

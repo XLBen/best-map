@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STYLE_GLSL, STYLE_N2, STYLE_N3, TERRAIN_SOURCES, PROJ_SOURCES } from '../src/render/renderer';
+import { STYLE_GLSL, STYLE_N2, STYLE_N3, TERRAIN_SOURCES, PROJ_SOURCES } from '../src/render/shaders';
 import { GhostBuffer, cellLayers, editGhost } from '../src/render/colors';
 import { digestWorld } from '../tools/hash';
 import { glacialLakes } from '../tools/realism';
