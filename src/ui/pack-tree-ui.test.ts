@@ -35,7 +35,7 @@ const BUILTIN: LibraryEntry[] = builtinPacks().map((p) => entry(p.id, p, { built
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
 const topName = (id: string) => builtinPacks().find((p) => p.id === id)!.name;
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r29-ui:peopled', () => {
     const e = continents();
@@ -53,7 +53,7 @@ const find = (nodes: readonly TreeNode[], key: string): TreeNode | undefined => 
 };
 
 // 本世界做的一个文化（没有来源）
-const myCulture = { id: 'my-c', group: 'western', name: '我的人', color: '#335577', nameStyle: DEFAULT_STYLE };
+const myCulture = { id: 'my-c', group: 'germanic', name: '我的人', color: '#335577', nameStyle: DEFAULT_STYLE };
 const addMine: Command = { op: 'set_content', kind: 'culture', id: myCulture.id, item: myCulture };
 
 afterEach(() => {
@@ -74,7 +74,7 @@ describe('资源库两栏：packTree', () => {
     expect(base.on).toBe(base.count);
     // 中世纪 ▸ 政体：13 种，一种都还不在本世界
     const gov = find(t.library, 'l:medieval/governments')!;
-    expect([gov.name, gov.count, gov.on]).toEqual(['政体', 13, 0]);
+    expect([gov.name, gov.count, gov.on]).toEqual(['政体', 19, 0]);
     expect(t.library.at(-1)!.rows.map((r) => [r.source, r.name])).toEqual([['mine', '我的人']]);
   });
 
@@ -141,18 +141,18 @@ describe('资源库两栏：packTree', () => {
     const cmd = packAddCommand(node(), eng.world)!;
     expect(cmd).toMatchObject({ op: 'batch', label: '添加到本世界：“政体”' });
     const cmds = (cmd as Extract<Command, { op: 'batch' }>).commands;
-    expect(cmds).toHaveLength(13 - used);
+    expect(cmds).toHaveLength(19 - used);
     expect(cmds.every((c) => c.op === 'set_content' && JSON.stringify((c as { from?: string[] }).from) === JSON.stringify(['medieval', 'governments']))).toBe(true);
     eng.exec(cmd);
-    expect([node().on, node().count]).toEqual([13, 13]);
+    expect([node().on, node().count]).toEqual([19, 19]);
     expect(packAddCommand(node(), eng.world)).toBeNull();
-    // 左栏：中世纪 ▸ 政体 13 种；移出没用到的
+    // 左栏：中世纪 ▸ 政体 19 种（第四十三轮）；移出没用到的
     const left = find(packTree(eng.world, BUILTIN, 'government').world, 'w:medieval/governments')!;
-    expect(left.count).toBe(13);
+    expect(left.count).toBe(19);
     const refs = packRemoveRefs(left);
-    expect(refs).toHaveLength(13);
+    expect(refs).toHaveLength(19);
     const plan = eng.planTidy({ only: refs });
-    expect(plan.removed).toHaveLength(13 - used);
+    expect(plan.removed).toHaveLength(19 - used);
     eng.exec(plan.command!);
     expect(find(packTree(eng.world, BUILTIN, 'government').world, 'w:medieval/governments')!.count).toBe(used);
     // 内置原样的移出时不存（本来就在包里）

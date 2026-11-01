@@ -3,7 +3,8 @@ import { HeapLite } from '../mesh';
 import type { CountryMeta, Derived, World } from '../world';
 import { federationColorOf } from './blocs';
 import { countryList } from './countries';
-import { cultureById, cultureGroupById, dimensionValues, worldDimensions, worldEra } from './era';
+import { type FaithRelation, cultureById, cultureGroupById, dimensionValues, faithRelation, popValueById, valueGroupById, worldDimensions, worldEra } from './era';
+import { typicalTuple } from './population';
 import { type Faction, categoryName, eraFactions, governmentById } from './government';
 import { SLOTS } from './groups';
 import { cellKm2 } from './space';
@@ -382,23 +383,55 @@ export function countryFactions(world: World, id: number, stats?: CountryStats):
   const gov = governmentById(small, m.government);
   const cats = gov?.category ?? [];
   const valueShare = (dim: string, v: string) => st?.values.find((x) => x.dimension === dim)?.items.find((x) => x.id === v)?.share ?? 0;
+  // 第四十三轮：与国教的关系（同上，按主流文化最典型的取值）
+  const state = typicalTuple(world, m.primaryCulture).values;
+  const faithShare = (dim: string, rel: FaithRelation) => {
+    const own = state[dim];
+    if (!own) return 0;
+    let s = 0;
+    for (const x of st?.values.find((y) => y.dimension === dim)?.items ?? []) if (faithRelation(small, own, x.id) === rel) s += x.share;
+    return s;
+  };
   const raw = factions.map((f) => {
     let s = baseOf(f, cats);
     for (const dr of f.drivers ?? []) {
       // 几项都写了时取最窄的一项（数据只按单项分开记）
       const parts: number[] = [];
-      if (dr.dimension && dr.value) parts.push(valueShare(dr.dimension, dr.value));
+      if (dr.dimension && dr.value && !dr.faith) parts.push(valueShare(dr.dimension, dr.value));
       if (dr.culture) parts.push(st?.cultures.find((x) => x.id === dr.culture)?.share ?? 0);
       if (dr.cultureGroup) parts.push(st?.cultureGroups.find((x) => x.id === dr.cultureGroup)?.share ?? 0);
       if (dr.primary) parts.push(st?.primaryShare ?? 0);
       if (dr.minority) parts.push(st?.minorityShare ?? 0);
       if (dr.coastal) parts.push(st?.coastalShare ?? 0);
+      if (dr.faith) parts.push(faithShare(dr.dimension ?? 'religion', dr.faith));
       if (parts.length) s += dr.weight * Math.min(...parts);
     }
     return Math.max(0, s);
   });
   const sum = raw.reduce((a, b) => a + b, 0);
   return factions.map((f, k) => ({ id: f.id, name: f.name, color: f.color, influence: sum > 0 ? Math.round((raw[k] / sum) * 1000) / 1000 : 0 }));
+}
+
+// 国教（第四十三轮，档案用）：主流文化最典型的宗教（时代没有宗教这一维时 undefined）、它的组，与信异端、异教的人占多少
+export interface CountryFaith {
+  id: string;
+  name: string;
+  group?: string;
+  same: number;
+  heretic: number;
+  heathen: number;
+}
+export function countryFaith(world: World, id: number, stats?: CountryStats, dim = 'religion'): CountryFaith | undefined {
+  const small = world.small;
+  const m = small.countries?.[id];
+  if (!m || !worldDimensions(small).some((d) => d.id === dim)) return undefined;
+  const own = typicalTuple(world, m.primaryCulture).values[dim];
+  const v = own ? popValueById(small, own) : undefined;
+  if (!v) return undefined;
+  const st = stats ?? countryStats(world, id);
+  const out: CountryFaith = { id: v.id, name: v.name, ...(v.group && valueGroupById(small, v.group) ? { group: valueGroupById(small, v.group)!.name } : {}), same: 0, heretic: 0, heathen: 0 };
+  for (const x of st?.values.find((y) => y.dimension === dim)?.items ?? []) out[faithRelation(small, v.id, x.id)] += x.share;
+  return out;
 }
 
 // 政体的说明（档案用）：名字、类别的中文名

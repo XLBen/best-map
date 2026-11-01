@@ -49,9 +49,9 @@ afterEach(() => {
 });
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 // 中世纪（有帝国）与现代（联邦、同盟）
 const nations = (): Engine =>

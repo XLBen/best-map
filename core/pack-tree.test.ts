@@ -25,7 +25,7 @@ import { DEFAULT_SPECIES } from './packs/nature';
 // 第三十轮：生成只读世界里的内容（测试里 humanExec 先把时代包加进世界），清理不论是不是内置原样
 
 const top = (id: string) => builtinPacks().find((p) => p.id === id)!;
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {} };
 const peopled = () =>
   snapshot('r29:peopled', () => {
     const e = continents();
@@ -67,30 +67,38 @@ describe('内置资源包的树', () => {
         const want = BUILTIN_POP_VALUES.filter((v) => v.dimension === d.id && (!VALUE_ERAS.get(v.id) || VALUE_ERAS.get(v.id)!.includes(era.id))).map((v) => v.id);
         expect(ownItems<{ id: string }>(findPack(p, [d.id])!, 'popValues').map((v) => v.id)).toEqual(want);
       }
-      // 默认带的文化组每组一个小包：组、文化、地名风格
-      for (const [g] of ERA_PACKS.get(era.id)!.cultures) {
+      // 默认带的文化组每组一个小包：组、文化（except 里的不带）、地名风格；第四十三轮起与“通用 ▸ 文化 ▸ 地区”里的是同一份
+      for (const [g, , opt] of ERA_PACKS.get(era.id)!.cultures) {
         const node = findPack(p, ['cultures', String(g)])!;
         expect(ownItems<{ id: string }>(node, 'cultureGroups').map((x) => x.id)).toEqual([g]);
-        expect(ownItems<{ id: string }>(node, 'cultures').map((c) => c.id)).toEqual(BUILTIN_CULTURES.filter((c) => c.group === g).map((c) => c.id));
+        expect(ownItems<{ id: string }>(node, 'cultures').map((c) => c.id)).toEqual(BUILTIN_CULTURES.filter((c) => c.group === g && !opt?.except.includes(c.id)).map((c) => c.id));
+        expect(ownItems(node, 'cultureGroups')[0]).toBe(BUILTIN_CULTURE_GROUPS.find((x) => x.id === g));
       }
     }
-    // 中世纪 ▸ 政体：13 种全在
-    expect(ownItems(findPack(top('medieval'), ['governments'])!, 'governments').length).toBe(13);
+    // 中世纪 ▸ 政体：19 种全在（第四十三轮：EU4 的君主制、共和制、神权、部落）
+    expect(ownItems(findPack(top('medieval'), ['governments'])!, 'governments').length).toBe(19);
     // 几个时代共用的政体：同一份
-    const a = ownItems(findPack(top('medieval'), ['governments'])!, 'governments').find((g) => (g as { id: string }).id === 'empire');
-    const b = ownItems(findPack(top('industrial'), ['governments'])!, 'governments').find((g) => (g as { id: string }).id === 'empire');
+    const a = ownItems(findPack(top('medieval'), ['governments'])!, 'governments').find((g) => (g as { id: string }).id === 'absolute-monarchy');
+    const b = ownItems(findPack(top('industrial'), ['governments'])!, 'governments').find((g) => (g as { id: string }).id === 'absolute-monarchy');
     expect(a).toBe(b);
-    expect(builtinItem('government', 'empire')!.paths.map((p) => p[0])).toEqual(['medieval', 'industrial', 'fantasy']);
+    expect(builtinItem('government', 'absolute-monarchy')!.paths.map((p) => p[0])).toEqual(['medieval', 'industrial', 'modern']);
+    // 宗教组跟着宗教放在时代包的“宗教”小包里
+    expect(ownItems<{ id: string }>(findPack(top('medieval'), ['religion'])!, 'valueGroups').map((g) => g.id)).toEqual(['christian', 'muslim', 'eastern', 'dharmic', 'pagan', 'judaism', 'zoroastrian-group']);
+    expect(ownItems<{ id: string }>(findPack(top('antiquity'), ['religion'])!, 'valueGroups').map((g) => g.id)).toContain('ancient');
     // 奇幻另有生态、河、湖、资源、星球形态
     expect(subPacks(top('fantasy')).map((x) => x.id)).toEqual(expect.arrayContaining(['biomes', 'rivers', 'lakes', 'resources', 'forms']));
-    // 通用：基础、自然、地名（中文、按地区）、星球形态、画风（第三十八轮）、文化（没有时代默认带的组）
+    // 通用：基础、自然、地名（中文、按地区）、星球形态、画风（第三十八轮）、文化（第四十三轮：EU4 的全部文化组，按地区）
     const common = top('common');
     expect(subPacks(common).map((x) => x.id)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'cultures']);
     expect(packItems(findPack(common, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);
     expect(subPacks(findPack(common, ['names'])!).length).toBeGreaterThan(5);
-    const rest = packItems<{ id: string }>(findPack(common, ['cultures'])!, 'cultureGroups').map((g) => g.id);
-    const byEra = new Set(BUILTIN_ERAS.flatMap((e) => ERA_PACKS.get(e.id)!.cultures.map(([g]) => g)));
-    expect(rest.sort()).toEqual(BUILTIN_CULTURE_GROUPS.map((g) => g.id).filter((g) => !byEra.has(g)).sort());
+    expect(subPacks(findPack(common, ['cultures'])!).map((x) => x.name)).toEqual(['欧洲', '中东', '非洲', '亚洲', '美洲', '大洋洲', '失落']);
+    const all = packItems<{ id: string }>(findPack(common, ['cultures'])!, 'cultureGroups').map((g) => g.id);
+    expect(all.length).toBe(71);
+    // 奇幻、科幻的种族只在它们的时代包里
+    const others = BUILTIN_CULTURE_GROUPS.map((g) => g.id).filter((g) => !all.includes(g));
+    expect(others.sort()).toEqual(['chitin', 'dwarves', 'elves', 'emberkin', 'lithic', 'orcs', 'seafolk', 'smallfolk', 'sporal', 'tidal']);
+    expect(packItems(findPack(common, ['cultures'])!, 'cultures').length).toBe(410);
     expect(builtinOrigin('islandType', 'atoll')).toEqual([...BASE_PATH]);
   });
 
@@ -249,7 +257,7 @@ describe('生成后只留用到的', () => {
 
   it('第三十轮：自己做的、改过的没用到也收掉（报在移出的项里，界面存进资源库）；内置原样的由界面判断', () => {
     const eng = continents();
-    const gov = { ...BUILTIN_GOVERNMENTS.find((g) => g.id === 'theocracy')!, id: 'r29-mine', name: '我的政体' } as unknown as Record<string, unknown>;
+    const gov = { ...BUILTIN_GOVERNMENTS.find((g) => g.id === 'theocratic-government')!, id: 'r29-mine', name: '我的政体' } as unknown as Record<string, unknown>;
     eng.exec({ op: 'set_content', kind: 'government', id: 'r29-mine', item: gov });
     humanExec(eng, GEN);
     expect(eng.world.small.content!.government!['r29-mine']).toBeUndefined();
@@ -290,8 +298,8 @@ describe('生成后只留用到的', () => {
 
   it('点名的文化：只带点名的那几个进来', () => {
     const eng = continents();
-    const first = BUILTIN_CULTURES.find((c) => c.group === 'western')!;
-    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 1, cultures: [first.id] }] });
+    const first = BUILTIN_CULTURES.find((c) => c.group === 'germanic')!;
+    humanExec(eng, { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 1, cultures: [first.id] }] });
     expect(Object.keys(eng.world.small.content!.culture!)).toEqual([first.id]);
   });
 
@@ -299,11 +307,11 @@ describe('生成后只留用到的', () => {
     const eng = continents();
     const era = { ...BUILTIN_ERAS.find((e) => e.id === 'medieval')!, id: 'r29-era', name: '我的时代' } as Record<string, unknown>;
     eng.exec({ op: 'set_content', kind: 'era', id: 'r29-era', item: era });
-    humanExec(eng, { op: 'generate_human', era: 'r29-era', groups: [{ id: 'western', weight: 1 }], countries: {} });
+    humanExec(eng, { op: 'generate_human', era: 'r29-era', groups: [{ id: 'germanic', weight: 1 }], countries: {} });
     expect(eng.world.small.human!.era).toBe('r29-era');
     expect(eng.world.small.countries).toBeUndefined();
     expect(eng.lastSkipped).toContain('没有政体：没有生成国家');
-    humanExec(eng, { op: 'generate_human', packs: [['r29-era'], ['medieval', 'governments'], ['medieval', 'factions']], groups: [{ id: 'western', weight: 1 }], countries: {} });
+    humanExec(eng, { op: 'generate_human', packs: [['r29-era'], ['medieval', 'governments'], ['medieval', 'factions']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
     expect(eng.world.small.human!.era).toBe('r29-era');
     const govs = Object.keys(eng.world.small.content!.government!);
     expect(govs.every((g) => ERA_PACKS.get('medieval')!.governments.includes(g))).toBe(true);
@@ -456,7 +464,7 @@ describe('打开世界文件时拆开', () => {
     eng.exec({ op: 'set_content', kind: 'government', id: 'r29-own', item: { ...gov, id: 'r29-own' } });
     expect(isBuiltinSame('riverType', eng.world.small.riverTypes![0])).toBe(true);
     const items = splitWorldContent(eng.world);
-    expect(items.map((x) => `${x.kind}:${x.id}`).sort()).toEqual([`government:${gov.id}`, 'government:r29-own']);
+    expect(items.map((x) => `${x.kind}:${x.id}`).sort()).toEqual([`government:${gov.id}`, 'government:r29-own'].sort());
     expect(items.find((x) => x.id === gov.id)!.origin).toEqual(['antiquity', 'governments']);
     // 存进“来自《世界》”：再存一次不重复
     const pack: ResourcePack = { format: 'map2-pack', version: 1, id: 'from', name: '来自《世界》' };

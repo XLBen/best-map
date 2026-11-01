@@ -1,7 +1,7 @@
 import { type World, longitudeOf, worldLatitude } from '../world';
 import { countryList } from './countries';
-import { allCountryStats, countryFactions } from './country-layers';
-import { cultureById, cultureGroupById, worldEra } from './era';
+import { allCountryStats, countryFactions, countryFaith } from './country-layers';
+import { FAITH_NAMES, cultureById, cultureGroupById, worldEra } from './era';
 import { categoryName, governmentById } from './government';
 import { landmarkList } from './landmarks';
 import { populationSummary } from './layers';
@@ -129,6 +129,11 @@ export function archiveMarkdown(world: World): string {
       lines.push(`- 主流文化：${culture?.name ?? m.primaryCulture}；兼容的文化组：${m.acceptedGroups.map((g) => cultureGroupById(small, g)?.name ?? g).join('、')}`);
       if (st) lines.push(`- 人口：${popText(st.population)}；面积：${km2(st.areaKm2)}；城市：${st.cities} 座；省份：${st.provinces} 个`);
       if (st?.cultures.length) lines.push(`- 人口构成：${st.cultures.slice(0, 6).map((c) => `${c.name} ${pct(c.share)}`).join('、')}`);
+      const faith = countryFaith(world, m.id, st);
+      if (faith) {
+        const rest = [faith.heretic > 0.0005 ? `${FAITH_NAMES.heretic} ${pct(faith.heretic)}` : '', faith.heathen > 0.0005 ? `${FAITH_NAMES.heathen} ${pct(faith.heathen)}` : ''].filter(Boolean);
+        lines.push(`- 国教：${faith.name}${faith.group ? `（${faith.group}）` : ''}${rest.length ? `；${rest.join('、')}` : ''}`);
+      }
       const fac = countryFactions(world, m.id, st);
       if (fac.length) lines.push(`- 派系：${fac.map((f) => `${f.name} ${pct(f.influence)}`).join('、')}`);
       lines.push(`- 统治者：${m.ruler.title ? `${m.ruler.title} ` : ''}${m.ruler.name}${m.ruler.orig ? `（${m.ruler.orig}）` : ''}`);

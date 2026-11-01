@@ -1,7 +1,7 @@
 import { contentItems } from '../content/registry';
 import { styleInUse } from '../name-styles';
 import type { World } from '../world';
-import { type Culture, type CultureGroup, type Era, type PopValue, worldEra } from './era';
+import { type Culture, type CultureGroup, type Era, type PopValue, type ValueGroup, styleOfCulture, worldEra } from './era';
 import { eraFactions } from './government';
 
 // 生成人文之后只留用到的内容（第二十八轮）：世界里只放用得上的时代、取值、文化组、文化，工具里就只列这些。
@@ -13,6 +13,7 @@ import { eraFactions } from './government';
 //   - 取值：有人的（现在的人口或自动的快照里）。第二十九轮起这个时代没人的取值也去掉（画人口要用时从资源库的时代包里加回来）；
 //   - 文化：有人的、是国家的主流文化的、有发源地的、生成时点名要的；
 //   - 文化组：生成时选的、留下的文化所在的、国家兼容的、有发源地的；
+//   - 取值组（第四十三轮）：留下的取值所在的；
 //   - 地名风格：去掉的文化用的、别处都没用到的风格（世界默认、地名、省份、留下的文化都没用到）才去掉；
 //   - 政体、派系（第二十九轮）：有国家用的（国家的政体、国家写了影响力的派系）。换了时代后旧时代的那一套、
 //     没有国家时的全部都去掉
@@ -66,6 +67,14 @@ export function pruneHumanContent(world: World): void {
     'popValue',
     values.filter((v) => !popValues.has(v.id)).map((v) => v.id),
   );
+  // 取值组（第四十三轮）：留下的取值都不在里面的
+  const valueGroupsUsed = new Set(values.filter((v) => popValues.has(v.id) && v.group).map((v) => v.group!));
+  drop(
+    'valueGroup',
+    Object.values(contentItems<ValueGroup>(small, 'valueGroup'))
+      .filter((g) => !valueGroupsUsed.has(g.id))
+      .map((g) => g.id),
+  );
 
   // 文化
   const keepCulture = new Set<string>(popCultures);
@@ -86,13 +95,14 @@ export function pruneHumanContent(world: World): void {
   for (const c of countries) for (const g of c.acceptedGroups) keepGroup.add(g);
   for (const x of h.hearths) keepGroup.add(x.group);
   const groups = Object.values(contentItems<CultureGroup>(small, 'cultureGroup'));
+  const goneGroups = groups.filter((g) => !keepGroup.has(g.id));
   drop(
     'cultureGroup',
-    groups.filter((g) => !keepGroup.has(g.id)).map((g) => g.id),
+    goneGroups.map((g) => g.id),
   );
 
-  // 去掉的文化用的地名风格
-  dropStyles(small, content, goneCultures, left, drop);
+  // 去掉的文化（与文化组）用的地名风格
+  dropStyles(small, content, goneCultures, left, drop, goneGroups);
 
   // 政体、派系：没有国家用的
   dropUnusedGov(small, content, drop);
@@ -105,9 +115,18 @@ type Drop = (kind: string, ids: readonly string[]) => void;
 type Content = NonNullable<World['small']['content']>;
 
 // 去掉的文化用的、别处都没用到的地名风格
-function dropStyles(small: World['small'], content: Content, gone: readonly Culture[], left: readonly Culture[], drop: Drop) {
-  const styleIds = new Set(gone.map((c) => c.nameStyle));
-  for (const c of left) styleIds.delete(c.nameStyle);
+// （第四十三轮：文化没写风格时用文化组的；去掉的文化组写的默认风格也算，按移出之前的世界查）
+function dropStyles(small: World['small'], content: Content, gone: readonly Culture[], left: readonly Culture[], drop: Drop, goneGroups: readonly CultureGroup[] = []) {
+  const styleIds = new Set<string>();
+  for (const c of gone) {
+    const id = styleOfCulture(small, c);
+    if (id) styleIds.add(id);
+  }
+  for (const g of goneGroups) if (g.nameStyle) styleIds.add(g.nameStyle);
+  for (const c of left) {
+    const id = styleOfCulture(small, c);
+    if (id) styleIds.delete(id);
+  }
   const styles = (content.nameStyle ?? {}) as Record<string, { id: string }>;
   drop(
     'nameStyle',
@@ -158,8 +177,10 @@ export function dropBroughtContent(world: World): void {
       'culture',
       cultures.map((c) => c.id),
     );
+    drop('valueGroup', ids('valueGroup'));
+    const groups = Object.values(contentItems<CultureGroup>(small, 'cultureGroup'));
     drop('cultureGroup', ids('cultureGroup'));
-    dropStyles(small, content, cultures, [], drop);
+    dropStyles(small, content, cultures, [], drop, groups);
   }
   dropUnusedGov(small, content, drop);
   if (Object.keys(content).length) small.content = content;

@@ -112,10 +112,31 @@ export const popValueSchema = z.object({
   orig: z.string().min(1).max(40).optional(),
   color: HEX,
   description: z.string().max(400).optional(),
+  // 取值组的 id（第四十三轮，可省略）：宗教的教派归到宗教组（基督教、伊斯兰教……）。同组不同取值是“异端”，不同组是“异教”
+  group: typeIdSchema.optional(),
   // 有这一取值的人在哪里更多：宜居度的偏好（矮人 × 山地）。只影响一格里的成分，不影响总人数
   prefs,
 });
 export type PopValue = z.output<typeof popValueSchema>;
+
+// 取值组（第四十三轮）：一维的取值分几组（宗教组：基督教、伊斯兰教、东方宗教……）。只是归类与说明：
+// 图例、档案写“天主教（基督教）”，派系的来源能按“与国教同组不同派（异端）/ 不同组（异教）”算，国家的称号能按组换说法
+export const valueGroupSchema = z.object({
+  id: typeIdSchema,
+  // 属于哪一维（时代的 dimensions 里的 id）
+  dimension: typeIdSchema,
+  name: z.string().min(1).max(20),
+  orig: z.string().min(1).max(40).optional(),
+  color: HEX,
+  description: z.string().max(400).optional(),
+});
+export type ValueGroup = z.output<typeof valueGroupSchema>;
+
+// 倾向（第二十二轮；第四十三轮起文化组也有，可以按时代分开写）：维度 id → 更可能是哪些取值（['a', 3]、'b'）
+export const tendenciesSchema = z.record(typeIdSchema, weightedIdsSchema);
+export type Tendencies = z.output<typeof tendenciesSchema>;
+// 按时代的倾向：时代 id → 维度 id → 取值与权重（写了的那几维换掉不分时代的）
+const eraTendenciesSchema = z.record(typeIdSchema, tendenciesSchema);
 
 export const cultureGroupSchema = z.object({
   id: typeIdSchema,
@@ -124,6 +145,11 @@ export const cultureGroupSchema = z.object({
   orig: z.string().min(1).max(40).optional(),
   color: HEX,
   description: z.string().max(400).optional(),
+  // 组里文化默认的地名风格（第四十三轮）：文化自己没写 nameStyle 时用它
+  nameStyle: typeIdSchema.optional(),
+  // 组里文化默认的倾向（第四十三轮，以前只在内置的 JSON 里）：文化自己写了的那一维换掉组的，没写的用组的
+  tendencies: tendenciesSchema.optional(),
+  eraTendencies: eraTendenciesSchema.optional(),
   // 喜欢的地理：发源地按它挑，扩张时偏向这些地方，人口也更多住在这里
   prefs,
 });
@@ -137,13 +163,14 @@ export const cultureSchema = z.object({
   // 原文（第二十五轮，可省略）：地图上按“中文 / 原文 / 两者”写片区名
   orig: z.string().min(1).max(40).optional(),
   color: HEX,
-  // 地名风格的 id（core/packs/names/ 里的，或世界里启用的）
-  nameStyle: typeIdSchema,
+  // 地名风格的 id（core/packs/names/ 里的，或世界里启用的）。第四十三轮起可以省略：用文化组的
+  nameStyle: typeIdSchema.optional(),
   description: z.string().max(400).optional(),
   // 在组里占多少（省略为 1）
   weight: z.number().min(0).max(1000).optional(),
-  // 默认倾向：每一维（维度 id）更可能是哪些取值：['a', 3]、'b'（权重 1）
-  tendencies: z.record(typeIdSchema, weightedIdsSchema).optional(),
+  // 倾向：每一维（维度 id）更可能是哪些取值：['a', 3]、'b'（权重 1）。只写与文化组不同的那几维（见 cultureTendency）
+  tendencies: tendenciesSchema.optional(),
+  eraTendencies: eraTendenciesSchema.optional(),
   // 自己喜欢的地理（与文化组的连乘）
   prefs,
 });
@@ -169,6 +196,7 @@ export const worldEras = (small: HumanSmall): readonly Era[] => listOf<Era>(smal
 export const worldCultureGroups = (small: HumanSmall): readonly CultureGroup[] => listOf<CultureGroup>(small, 'cultureGroup');
 export const worldCultures = (small: HumanSmall): readonly Culture[] => listOf<Culture>(small, 'culture');
 export const worldPopValues = (small: HumanSmall): readonly PopValue[] => listOf<PopValue>(small, 'popValue');
+export const worldValueGroups = (small: HumanSmall): readonly ValueGroup[] => listOf<ValueGroup>(small, 'valueGroup');
 
 // 世界的时代（small.human.era；没有人文、或那个时代停用了时为 undefined）
 export function worldEra(small: HumanSmall): Era | undefined {
@@ -193,3 +221,29 @@ export function dimensionValues(small: HumanSmall, dim: string, _eraId?: string)
 export const cultureById = (small: HumanSmall, id: string): Culture | undefined => contentItems<Culture>(small, 'culture')[id];
 export const cultureGroupById = (small: HumanSmall, id: string): CultureGroup | undefined => contentItems<CultureGroup>(small, 'cultureGroup')[id];
 export const popValueById = (small: HumanSmall, id: string): PopValue | undefined => contentItems<PopValue>(small, 'popValue')[id];
+export const valueGroupById = (small: HumanSmall, id: string): ValueGroup | undefined => contentItems<ValueGroup>(small, 'valueGroup')[id];
+
+// 一个文化在某个时代、某一维的倾向（第四十三轮）：先看文化按时代写的、文化不分时代的，再看文化组按时代写的、组不分时代的；
+// 都没写时 undefined。era 省略时只看不分时代的
+export function cultureTendency(small: HumanSmall, c: Culture | undefined, dim: string, era?: string): WeightedIds | undefined {
+  if (!c) return undefined;
+  const own = (era && c.eraTendencies?.[era]?.[dim]) || c.tendencies?.[dim];
+  if (own) return own;
+  const g = cultureGroupById(small, c.group);
+  return (era && g?.eraTendencies?.[era]?.[dim]) || g?.tendencies?.[dim];
+}
+
+// 文化的地名风格的 id（第四十三轮）：自己写的，没写时文化组的；都没写时 undefined（用世界默认）
+export function styleOfCulture(small: HumanSmall, c: Pick<Culture, 'group' | 'nameStyle'> | undefined): string | undefined {
+  if (!c) return undefined;
+  return c.nameStyle ?? cultureGroupById(small, c.group)?.nameStyle;
+}
+
+// 两个取值的关系（第四十三轮）：same 一样、heretic 同组不同（异端）、heathen 不同组（异教；没写组的取值自成一组）
+export type FaithRelation = 'same' | 'heretic' | 'heathen';
+export function faithRelation(small: HumanSmall, a: string, b: string): FaithRelation {
+  if (a === b) return 'same';
+  const ga = popValueById(small, a)?.group;
+  return ga && ga === popValueById(small, b)?.group ? 'heretic' : 'heathen';
+}
+export const FAITH_NAMES: Record<FaithRelation, string> = { same: '国教', heretic: '异端', heathen: '异教' };

@@ -30,7 +30,7 @@ afterEach(() => {
   vi.mocked(exec).mockClear();
 });
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: { fragmentation: 1 }, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: { fragmentation: 1 }, settlements: {} };
 
 // 有人文、国家、省份、城市的世界：中间一块地方各种都手改过（冷暖、生态、类别、资源、自定义场、人口、领土、地势），橡皮擦都有东西可擦
 const edited = (): { eng: Engine; c: number; ring: number[] } => {

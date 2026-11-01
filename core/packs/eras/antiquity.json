@@ -4,22 +4,47 @@
     "name": "青铜与古典",
     "description": "青铜器与早期铁器的时代，城邦与最早的帝国。人挤在大河谷地与温暖的海岸，别处多是无人的荒野。",
     "color": "#b5a642",
-    "dimensions": [
-      { "id": "religion", "label": "宗教", "required": true }
-    ],
+    "dimensions": [{"id": "religion", "label": "宗教", "required": true}],
     "popDensity": 0.9,
     "sparsity": 2.6,
     "urbanization": 0.05,
-    "unclaimed": { "minHabitability": 0.25, "nomads": 0.05, "bandKm": 30 },
+    "unclaimed": {"minHabitability": 0.25, "nomads": 0.05, "bandKm": 30},
     "seaClaimKm": 0,
     "countryKm2": 450000,
     "years": [-2500, 200],
-    "tiers": { "city": 3, "small": 3, "medium": 2, "large": 0.8, "empire": 0.3 },
-    "relations": { "subjects": { "tributary": 3, "vassal": 1 } }
+    "tiers": {"city": 3, "small": 3, "medium": 2, "large": 0.8, "empire": 0.3},
+    "relations": {"subjects": {"tributary": 3, "vassal": 1}}
   },
   "pack": {
-    "governments": ["chiefdom", "city-state", "temple-state", "god-king", "early-kingdom", "classical-republic", "early-empire", "tribal-confederation", "nomad-confederation"],
-    "factions": ["priests", "warriors", "traders", "elders"],
-    "cultures": [["mediterranean", 3], ["mideast", 3], ["eastern", 3], ["southasia", 2], ["western", 1.5], ["steppe", 1.5]]
+    "governments": [
+      "tribal-despotism",
+      "tribal-federation",
+      "tribal-kingdom",
+      "steppe-horde",
+      "despotic-monarchy",
+      "divine-kingship",
+      "oligarchic-republic",
+      "noble-republic",
+      "theocratic-government",
+      "native-council"
+    ],
+    "factions": ["nobility", "clergy", "burghers", "tribes"],
+    "cultures": [
+      ["lost", 4, {"except": ["anglo-saxon", "scanian", "livonian", "pruthenian"]}],
+      ["chinese", 3, {"except": ["manchu", "sino-altaic", "sino-korean", "sino-tibetan", "sino-vietnamese", "sino-zhuang"]}],
+      ["levantine", 1.5, {"except": ["turkish"]}],
+      ["iranian", 1.5, {"except": ["azerbaijani", "turco-iranian"]}],
+      ["hindustani", 2],
+      ["dravidian", 1],
+      ["celtic", 1.5],
+      ["germanic", 1, {"except": ["dutch", "flemish", "balten", "swiss"]}],
+      ["altaic", 1],
+      ["maghrebi", 1],
+      ["sudanese", 1],
+      ["cushitic", 0.8],
+      ["japanese", 0.5],
+      ["andean", 0.5],
+      ["mayan", 0.5]
+    ]
   }
 }

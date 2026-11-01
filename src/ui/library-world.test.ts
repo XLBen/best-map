@@ -29,7 +29,7 @@ const entry = (key: string, pack: ResourcePack, extra: Partial<LibraryEntry> = {
 const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_SAMPLE, { builtin: true, installedAt: 0 })];
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r28-ui:peopled', () => {
     const e = continents();
@@ -76,7 +76,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect(packGroups([['medieval']], []).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
     const c = defaultChoice(w.small);
     expect(c.packs).toEqual(w.small.human!.packs);
-    expect(c.groups.map((g) => g.id).sort()).toEqual(['eastern', 'western']);
+    expect(c.groups.map((g) => g.id).sort()).toEqual(['chinese', 'germanic']);
   });
 
   it('向导选了资源包里的时代、文化组：生成之前先添加到本世界（文化组带上包里的文化和地名风格），一整步', () => {

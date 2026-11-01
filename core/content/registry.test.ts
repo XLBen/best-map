@@ -25,6 +25,7 @@ describe('内容种类的登记表', () => {
       ['terrainClass', 'terrainClasses', '地形类别', '地形类别'],
       ['resource', 'resources', '资源', '资源'],
       ['era', 'eras', '时代', '时代'],
+      ['valueGroup', 'valueGroups', '取值组', '取值组'],
       ['popValue', 'popValues', '人口维度的取值', '取值'],
       ['cultureGroup', 'cultureGroups', '文化组', '文化组'],
       ['culture', 'cultures', '文化', '文化'],
@@ -38,7 +39,7 @@ describe('内容种类的登记表', () => {
       ['mapStyle', 'mapStyles', '画风', '画风'],
       ['field', 'fields', '自定义场', '场'],
     ]);
-    expect(packSections().map((k) => k.id)).toEqual(['biome', 'riverType', 'lakeType', 'islandType', 'planetForm', 'nameStyle', 'terrainClass', 'resource', 'era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction', 'countryTier', 'countryLayout', 'cityRank', 'landmarkType', 'pointType', 'mapStyle']);
+    expect(packSections().map((k) => k.id)).toEqual(['biome', 'riverType', 'lakeType', 'islandType', 'planetForm', 'nameStyle', 'terrainClass', 'resource', 'era', 'valueGroup', 'popValue', 'cultureGroup', 'culture', 'government', 'faction', 'countryTier', 'countryLayout', 'cityRank', 'landmarkType', 'pointType', 'mapStyle']);
     expect(kindByPackKey('textPacks')?.id).toBe('nameStyle');
     // 每种都有编辑器的字段表
     for (const k of allKinds()) expect(k.fields.length, k.id).toBeGreaterThan(0);

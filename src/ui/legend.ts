@@ -134,7 +134,8 @@ function compute(w: World, mode: ViewMode): LegendData | null {
   if (mode.startsWith('dim:')) {
     const dim = worldDimensions(w.small).find((x) => x.id === mode.slice(4));
     if (!dim || !w.small.human) return null;
-    return { title: dim.label, items: humanLegend(w, dim.id).map((x) => ({ color: x.color, label: x.name, count: x.pop })) };
+    // 第四十三轮：取值有组时写上组（“天主教（基督教）”）
+    return { title: dim.label, items: humanLegend(w, dim.id).map((x) => ({ color: x.color, label: x.group ? `${x.name}（${x.group}）` : x.name, count: x.pop })) };
   }
   return null;
 }

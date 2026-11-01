@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { digest } from '../../tools/hash';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, BUILTIN_VALUE_GROUPS, CULTURE_REGIONS } from '../packs/eras';
+import { BUILTIN_COUNTRY_TIERS } from '../packs/countries';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS } from '../packs/governments';
 import { continents, humanExec } from '../testing/fixtures';
 import { defaultsOf, eraOf, erasOfCulture, factionsOf, govEras, govsOf } from '../testing/eras';
@@ -9,10 +10,10 @@ import { ERA_PACKS, VALUE_ERAS } from '../packs/eras';
 const govIds = (era: { id: string }) => ERA_PACKS.get(era.id)!.governments;
 const facIds = (era: { id: string }) => ERA_PACKS.get(era.id)!.factions;
 import type { World } from '../world';
-import { countryFactions, countryList } from './index';
-import { type Culture, weightedList } from './era';
+import { countryFactions, countryList, titleContext } from './index';
+import { type Culture, cultureTendency, weightedList } from './era';
 import { FLAG_EMBLEMS, FLAG_LAYOUTS } from './flags';
-import { CATEGORY_NAMES, type Government, type Title, factionSchema, governmentById, governmentSchema, pickTitle, titled } from './government';
+import { CATEGORY_NAMES, type Government, type TitleContext, type Title, factionSchema, govTitles, governmentById, governmentSchema, titled } from './government';
 
 // 第二十三轮 内容：内置的政体与派系（六个时代各一个文件）——格式、引用、称号的说法、文化的政体倾向；
 // 每个时代按默认生成国家：用的是这个时代自己的政体与派系、称号按文化换说法、无主地与国家多少合时代、确定性
@@ -20,6 +21,22 @@ import { CATEGORY_NAMES, type Government, type Title, factionSchema, governmentB
 const defaults = defaultsOf;
 const CULTURE_IDS = new Set(BUILTIN_CULTURES.map((c) => c.id));
 const GROUP_IDS = new Set(BUILTIN_CULTURE_GROUPS.map((g) => g.id));
+const VALUE_IDS = new Set(BUILTIN_POP_VALUES.map((v) => v.id));
+const VALUE_GROUP_IDS = new Set(BUILTIN_VALUE_GROUPS.map((g) => g.id));
+const TIER_IDS = new Set(BUILTIN_COUNTRY_TIERS.map((t) => t.id));
+const HISTORY = ['antiquity', 'medieval', 'industrial', 'modern'];
+// 内置的内容拼成的一个“世界”（只有内容）：按组查倾向
+const SMALL = { content: { cultureGroup: Object.fromEntries(BUILTIN_CULTURE_GROUPS.map((g) => [g.id, g])), popValue: Object.fromEntries(BUILTIN_POP_VALUES.map((v) => [v.id, v])) } } as never;
+// 一个文化在一个时代挑称号时看的（不生成：取倾向里这个时代有的权重最大的宗教）
+function ctxOf(c: Culture, era: string, tier?: string): TitleContext {
+  const known = new Set(BUILTIN_POP_VALUES.filter((v) => v.dimension === 'religion' && VALUE_ERAS.get(v.id)?.includes(era)).map((v) => v.id));
+  let best: [string, number] | undefined;
+  for (const [id, w] of weightedList(cultureTendency(SMALL, c, 'religion', era))) if (known.has(id) && (!best || w > best[1])) best = [id, w];
+  const value = best && BUILTIN_POP_VALUES.find((v) => v.id === best![0]);
+  return { ...(tier ? { tier } : {}), tiers: BUILTIN_COUNTRY_TIERS, culture: c.id, group: c.group, values: value ? [value.id] : [], valueGroups: value?.group ? [value.group] : [] };
+}
+const firstOf = (group: string) => BUILTIN_CULTURES.find((c) => c.group === group)!;
+const cultureIn = (id: string) => BUILTIN_CULTURES.find((c) => c.id === id)!;
 
 // 称号的每一种写法
 function titleForms(t: Title): [string, { zh: string; orig?: string }][] {
@@ -84,33 +101,85 @@ describe('内置的政体与派系：格式与引用', () => {
     }
   });
 
-  it('称号：键是文化、文化组或 default，都有 default；中文最多一个 {name}，原文都有 {name}；统治者的称号也一样', () => {
-    for (const g of BUILTIN_GOVERNMENTS) {
-      for (const t of [g.title, g.rulerTitle].filter((x): x is Title => !!x)) {
-        const forms = titleForms(t);
-        expect(forms.some(([k]) => k === 'default'), g.id).toBe(true);
-        for (const [k, v] of forms) {
-          if (k !== 'default') expect(CULTURE_IDS.has(k) || GROUP_IDS.has(k), `${g.id}: ${k}`).toBe(true);
-          expect(v.zh.split('{name}').length, `${g.id}/${k}`).toBeLessThanOrEqual(2);
-          if (v.orig !== undefined) expect(v.orig.split('{name}').length, `${g.id}/${k}: ${v.orig}`).toBe(2);
-        }
+  it('称号（第四十三轮，按国家等级）：键是等级或 default；中文最多一个 {name}，原文都有一个 {name}；统治者只写中文；换说法引用的都认得', () => {
+    const forms = (owner: string, t: Title, ruler: boolean) => {
+      for (const [k, v] of titleForms(t)) {
+        expect(k === 'default' || TIER_IDS.has(k), `${owner}: ${k}`).toBe(true);
+        expect(v.zh.split('{name}').length, `${owner}/${k}`).toBeLessThanOrEqual(2);
+        if (v.orig !== undefined) expect(v.orig.split('{name}').length, `${owner}/${k}: ${v.orig}`).toBe(2);
+        if (ruler) expect(v.orig, `${owner}/${k}`).toBeUndefined();
       }
-      // 统治者的称号只写中文
-      if (g.rulerTitle) for (const [k, v] of titleForms(g.rulerTitle)) expect(v.orig, `${g.id}/${k}`).toBeUndefined();
+    };
+    for (const g of BUILTIN_GOVERNMENTS) {
+      forms(g.id, g.titles, false);
+      if (g.rulers) forms(g.id, g.rulers, true);
+      for (const r of g.names ?? []) {
+        expect(r.titles ?? r.rulers, `${g.id} 的一条换说法什么都没写`).toBeDefined();
+        for (const id of r.cultures ?? []) expect(CULTURE_IDS, g.id).toContain(id);
+        for (const id of r.cultureGroups ?? []) expect(GROUP_IDS, g.id).toContain(id);
+        for (const id of r.values ?? []) expect(VALUE_IDS, g.id).toContain(id);
+        for (const id of r.valueGroups ?? []) expect(VALUE_GROUP_IDS, g.id).toContain(id);
+        if (r.titles) forms(g.id, r.titles, false);
+        if (r.rulers) forms(g.id, r.rulers, true);
+      }
     }
-    // 几个按文化换说法的例子
+  });
+
+  it('历史上的四个时代：每种政体给每个 EU4 文化组、每个默认的等级都有国家称号与统治者称号', () => {
+    let n = 0;
+    for (const era of HISTORY)
+      for (const g of govsOf(eraOf(era)))
+        for (const r of CULTURE_REGIONS)
+          for (const group of r.groups)
+            for (const tier of BUILTIN_COUNTRY_TIERS) {
+              const t = govTitles(g, ctxOf(firstOf(group), era, tier.id));
+              expect(t.title?.zh, `${era}/${g.id}/${group}/${tier.id}`).toBeTruthy();
+              expect(t.ruler?.zh, `${era}/${g.id}/${group}/${tier.id}`).toBeTruthy();
+              n++;
+            }
+    expect(n).toBeGreaterThan(10000);
+  });
+
+  it('仿 EU4 的说法：按等级、文化组、宗教换称号（第一条满足的起作用，没写这一级时用政体默认的）', () => {
     const gov = (id: string) => BUILTIN_GOVERNMENTS.find((g) => g.id === id)!;
-    expect(pickTitle(gov('shogunate').title, { id: 'yamato', group: 'eastern' })!.zh).toBe('幕府');
-    expect(pickTitle(gov('shogunate').title, { id: 'huaxia', group: 'eastern' })!.zh).toBe('国');
-    expect(pickTitle(gov('nomad-khanate').title, { id: 'turkic', group: 'steppe' })!.zh).toBe('汗国');
-    expect(pickTitle(gov('sultanate').title, { id: 'arab', group: 'mideast' })!.zh).toBe('苏丹国');
-    expect(pickTitle(gov('sultanate').title, { id: 'anglic', group: 'western' })!.zh).toBe('王国');
-    expect(pickTitle(gov('theocracy').title, { id: 'arab', group: 'mideast' })!.zh).toBe('哈里发国');
-    expect(pickTitle(gov('orc-horde').title, { id: 'greymane', group: 'orcs' })!.zh).toBe('大部落');
-    expect(pickTitle(gov('dwarven-hold').title, { id: 'anvil', group: 'dwarves' })!.zh).toBe('氏族王国');
-    expect(pickTitle(gov('hive-collective').title, { id: 'kar-hive', group: 'chitin' })!.zh).toBe('巢群');
-    expect(pickTitle(gov('empire').rulerTitle, { id: 'chagan', group: 'steppe' })!.zh).toBe('大汗');
-    expect(titled({ zh: '薇亚诺尔', orig: 'Vianor' }, pickTitle(gov('elven-council').title, { id: 'sylvan', group: 'elves' }))).toEqual({ zh: '薇亚诺尔之境', orig: 'Realm of Vianor' });
+    const at = (gid: string, culture: string, era: string, tier: string) => govTitles(gov(gid), ctxOf(cultureIn(culture), era, tier));
+    // 君主制：公国 → 王国 → 帝国
+    expect(['medium', 'large', 'empire'].map((t) => at('feudal-monarchy', 'english', 'medieval', t).title!.zh)).toEqual(['公国', '王国', '帝国']);
+    expect(['medium', 'large', 'empire'].map((t) => at('feudal-monarchy', 'english', 'medieval', t).ruler!.zh)).toEqual(['公爵', '国王', '皇帝']);
+    expect(at('feudal-monarchy', 'castilian', 'medieval', 'large').title).toEqual({ zh: '王国', orig: 'Kingdom of {name}' });
+    // 罗斯：公国 → 大公国 → 沙皇国
+    expect(['medium', 'large', 'empire'].map((t) => at('despotic-monarchy', 'muscovite', 'medieval', t).title!.zh)).toEqual(['公国', '大公国', '沙皇国']);
+    expect(at('despotic-monarchy', 'muscovite', 'medieval', 'empire').ruler!.zh).toBe('沙皇');
+    // 穆斯林：埃米尔国 → 苏丹国 → 帝国；伊朗：汗国 → 沙阿国；印度教：罗阇国 → 王国（摩诃罗阇）
+    expect(['medium', 'large', 'empire'].map((t) => at('iqta', 'syrian', 'medieval', t).title!.zh)).toEqual(['埃米尔国', '苏丹国', '帝国']);
+    expect(at('feudal-monarchy', 'egyptian', 'medieval', 'large').ruler!.zh).toBe('苏丹');
+    expect(['medium', 'large'].map((t) => at('despotic-monarchy', 'persian', 'medieval', t).title!.zh)).toEqual(['汗国', '沙阿国']);
+    expect(['medium', 'large'].map((t) => at('despotic-monarchy', 'tamil', 'medieval', t).title!.zh)).toEqual(['罗阇国', '王国']);
+    expect(['medium', 'large'].map((t) => at('despotic-monarchy', 'tamil', 'medieval', t).ruler!.zh)).toEqual(['罗阇', '摩诃罗阇']);
+    // 印度的穆斯林王朝：苏丹国
+    expect(at('despotic-monarchy', 'kashmiri', 'medieval', 'large').title!.zh).toBe('苏丹国');
+    // 草原：部落 → 汗国 → 大汗国
+    expect(['medium', 'large', 'empire'].map((t) => at('steppe-horde', 'khalkha', 'medieval', t).title!.zh)).toEqual(['部落', '汗国', '大汗国']);
+    // 神权：主教领 → 大主教领 → 神权国；伊斯兰的是伊玛目国、哈里发国
+    expect(['medium', 'large', 'empire'].map((t) => at('theocratic-government', 'tuscan', 'medieval', t).title!.zh)).toEqual(['主教领', '大主教领', '神权国']);
+    expect(at('theocratic-government', 'hejazi', 'medieval', 'empire').title!.zh).toBe('哈里发国');
+    // 汉：大某（{name} 写在中间）；日本的幕府
+    expect(titled({ zh: '明', orig: 'Ming' }, at('celestial-empire', 'zhili', 'medieval', 'empire').title)).toEqual({ zh: '大明', orig: 'Great Ming' });
+    expect(at('shogunate', 'togoku', 'medieval', 'large').title!.zh).toBe('幕府');
+    // 城邦级：君主制是“领”，共和制是“城邦”
+    expect(at('feudal-monarchy', 'english', 'medieval', 'city').title!.zh).toBe('领');
+    expect(at('merchant-republic', 'venetian', 'medieval', 'city').title!.zh).toBe('城邦');
+    // 现代：按意识形态的政体，称号也按等级
+    expect(at('socialist-republic', 'zhili', 'modern', 'medium').title!.zh).toBe('人民共和国');
+    expect(at('theocratic-republic', 'persian', 'modern', 'medium').title!.zh).toBe('伊斯兰共和国');
+    // 世界里的等级少了：没写的一级按最近的一级
+    const two = [{ id: 'big', order: 40 }, { id: 'large', order: 41 }];
+    expect(govTitles(gov('feudal-monarchy'), { ...ctxOf(cultureIn('english'), 'medieval'), tier: 'big', tiers: two }).title!.zh).toBe('王国');
+    // 奇幻、科幻的种族照旧
+    expect(govTitles(gov('orc-horde'), ctxOf(firstOf('orcs'), 'fantasy', 'medium')).title!.zh).toBe('大部落');
+    expect(govTitles(gov('dwarven-hold'), ctxOf(firstOf('dwarves'), 'fantasy', 'medium')).title!.zh).toBe('氏族王国');
+    expect(govTitles(gov('hive-collective'), ctxOf(firstOf('chitin'), 'scifi', 'medium')).title!.zh).toBe('巢群');
+    expect(titled({ zh: '薇亚诺尔', orig: 'Vianor' }, govTitles(gov('elven-council'), ctxOf(cultureIn('sylvan'), 'fantasy', 'medium')).title)).toEqual({ zh: '薇亚诺尔之境', orig: 'Realm of Vianor' });
   });
 
   it('每个时代列着 5 种以上政体、3 个以上派系（都是写了这个时代的内置项），还有 countryKm2 与 years；每个内置项都有时代在用', () => {
@@ -152,22 +221,20 @@ describe('内置的政体与派系：格式与引用', () => {
       }
   });
 
-  it('文化的政体倾向：都是内置的政体，且在这个文化能用的某个时代里有；每个文化组都写了', () => {
+  it('政体倾向（第四十三轮写在文化组上，文化只写不同的）：都是内置的政体；每个文化在它能用的每个时代至少两种', () => {
+    for (const g of BUILTIN_CULTURE_GROUPS) expect(weightedList(g.tendencies?.government).length, `${g.id} 有政体倾向`).toBeGreaterThan(0);
     for (const c of BUILTIN_CULTURES) {
-      const list = weightedList(c.tendencies?.government);
-      expect(list.length, `${c.id} 有政体倾向`).toBeGreaterThan(0);
-      const eras = erasOfCulture(c);
-      for (const [id, w] of list) {
-        const g = BUILTIN_GOVERNMENTS.find((x) => x.id === id);
-        expect(g, `${c.id}: ${id}`).toBeDefined();
-        expect(w, `${c.id}: ${id}`).toBeGreaterThan(0);
-        expect(eras.some((e) => govIds(e).includes(id)), `${c.id}: ${id}`).toBe(true);
-      }
-      expect(new Set(list.map(([id]) => id)).size, c.id).toBe(list.length);
-      // 写了某个时代的政体时至少写两种（不然这个时代的国家全是同一种）
-      for (const e of eras) {
-        const own = list.filter(([id]) => govIds(e).includes(id));
-        if (own.length) expect(own.length, `${c.id} / ${e.id}`).toBeGreaterThanOrEqual(2);
+      for (const era of erasOfCulture(c)) {
+        const list = weightedList(cultureTendency(SMALL, c, 'government', era.id));
+        for (const [id, w] of list) {
+          expect(BUILTIN_GOVERNMENTS.find((x) => x.id === id), `${c.id}: ${id}`).toBeDefined();
+          expect(w, `${c.id}: ${id}`).toBeGreaterThan(0);
+        }
+        expect(new Set(list.map(([id]) => id)).size, c.id).toBe(list.length);
+        // 写了某个时代的政体时至少写两种（不然这个时代的国家全是同一种）；历史上的时代都写了
+        // 奇幻、科幻里的 EU4 文化（第四十四轮再给它们写）只查历史上的四个时代
+        const own = list.filter(([id]) => govIds(era).includes(id));
+        if (HISTORY.includes(era.id) || (own.length && !CULTURE_REGIONS.some((r) => r.groups.includes(c.group)))) expect(own.length, `${c.id} / ${era.id}`).toBeGreaterThanOrEqual(2);
       }
     }
   });
@@ -200,7 +267,7 @@ const cultureOf = (w: World, id: string) => w.small.content!.culture![id] as Cul
 
 describe('内置的政体与派系：每个时代生成国家', () => {
   for (const era of BUILTIN_ERAS)
-    it(`${era.name}：只用这个时代的政体与派系，称号按文化换说法，建国年份在时代里`, () => {
+    it(`${era.name}：只用这个时代的政体与派系，称号按等级、文化、宗教换说法，建国年份在时代里`, () => {
       const w = generate(era.id);
       const list = countryList(w.small);
       expect(list.length, era.id).toBeGreaterThan(5);
@@ -214,11 +281,10 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         expect(govIds(era), m.name).toContain(m.government);
         used.add(m.government);
         const g = governmentById(w.small, m.government) as Government;
-        const c = cultureOf(w, m.primaryCulture);
-        const t = pickTitle(g.title, c)!;
+        const t = govTitles(g, titleContext(w, m));
         // 联邦的成员邦（第二十六轮）是地名 + 成员的称号，名字锁定
-        if (!m.nameLocked) expect(m.name).toBe(titled(m.base, t).zh);
-        if (g.rulerTitle) expect(m.ruler.title).toBe(pickTitle(g.rulerTitle, c)!.zh);
+        if (!m.nameLocked) expect(m.name).toBe(titled(m.base, t.title).zh);
+        expect(m.ruler.title).toBe(t.ruler?.zh);
         expect(m.founded).toBeGreaterThanOrEqual(era.years![0]);
         expect(m.founded).toBeLessThanOrEqual(era.years![1]);
         const fs = countryFactions(w, m.id);
@@ -239,18 +305,20 @@ describe('内置的政体与派系：每个时代生成国家', () => {
     expect(count('modern')).toBeGreaterThan(count('medieval'));
   });
 
-  it('文化的倾向起作用：草原多游牧的政体，奇幻的种族多用自己的政体，科幻的异星种族多是蜂巢意志', () => {
+  it('文化的倾向起作用：草原多游牧的政体，汉多天朝，奇幻的种族多用自己的政体，科幻的异星种族多是蜂巢意志', () => {
     // 一个地区只有几国：按三个种子合起来数
-    const share = (eraId: string, groups: string[], govs: string[]) => {
+    // only：只生成这几组（第四十三轮：中世纪默认带 18 组，一块 1.2 万格的地区只有十几国，草原的组常常一国都没有）
+    const share = (eraId: string, groups: string[], govs: string[], only?: { id: string; weight: number }[]) => {
       let all = 0;
       let hit = 0;
       for (const seed of [0, 11, 23]) {
-        let w = generate(eraId);
-        if (seed) {
+        let w = only ? undefined : generate(eraId);
+        if (seed || only) {
           const eng = continents();
-          humanExec(eng, { op: 'generate_human', era: eraId, groups: defaults(eraOf(eraId)), countries: { seed } });
+          humanExec(eng, { op: 'generate_human', era: eraId, groups: only ?? defaults(eraOf(eraId)), countries: { seed } });
           w = eng.world;
         }
+        if (!w) continue;
         const mine = countryList(w.small).filter((m) => groups.includes(cultureOf(w, m.primaryCulture).group));
         all += mine.length;
         hit += mine.filter((m) => govs.includes(m.government)).length;
@@ -258,8 +326,15 @@ describe('内置的政体与派系：每个时代生成国家', () => {
       expect(all, `${eraId}: ${groups}`).toBeGreaterThan(2);
       return hit / all;
     };
-    expect(share('antiquity', ['steppe'], ['nomad-confederation', 'tribal-confederation'])).toBeGreaterThan(0.5);
-    expect(share('medieval', ['steppe'], ['nomad-khanate', 'tribal-confederation', 'empire'])).toBeGreaterThan(0.5);
+    // 第四十三轮：草原（阿尔泰）多是部落、游牧；汉多是天朝、行政与专制君主制
+    expect(share('antiquity', ['altaic'], ['steppe-horde', 'tribal-federation', 'tribal-despotism'])).toBeGreaterThan(0.5);
+    const steppe = [
+      { id: 'altaic', weight: 3 },
+      { id: 'chinese', weight: 2 },
+      { id: 'iranian', weight: 1 },
+    ];
+    expect(share('medieval', ['altaic'], ['steppe-horde', 'tribal-federation', 'tribal-despotism', 'tribal-kingdom'], steppe)).toBeGreaterThan(0.5);
+    expect(share('medieval', ['chinese'], ['celestial-empire', 'administrative-monarchy', 'despotic-monarchy'])).toBeGreaterThan(0.6);
     expect(share('fantasy', ['elves', 'dwarves', 'orcs', 'emberkin'], ['elven-council', 'dwarven-hold', 'orc-horde', 'dragon-lordship'])).toBeGreaterThan(0.5);
     // 甲巢诸族也常是军事政府（第三十二轮的地形上蜂巢意志约 0.34、连同军事政府约 0.45，以前 0.35、0.5 以上）
     expect(share('scifi', ['lithic', 'sporal', 'chitin'], ['hive-collective'])).toBeGreaterThan(0.3);

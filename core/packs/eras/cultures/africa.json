@@ -1,61 +1,747 @@
 {
-  "group": {
-    "id": "africa",
-    "name": "非洲",
-    "color": "#78a52d",
-    "description": "稀树草原与雨林之间的农牧民族。",
-    "prefs": [
-      { "tempMin": 20, "factor": 2 },
-      { "terrain": ["savanna"], "factor": 2 },
-      { "classes": ["plains"], "terrain": ["steppe", "savanna"], "factor": 1.2 }
-    ]
-  },
-  "tendencies": {
-    "religion": [["spirit-ways", 5], ["ancestor-rites", 3], ["moon-faith", 2], ["sun-faith", 3], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]],
-    "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
-    "ideology": [["auth-nationalist", 3], ["traditionalist", 3], ["social-democracy", 2], ["rev-socialism", 2], ["market-liberal", 1], ["theocratic", 1], ["sf-federalist", 3], ["sf-naturalist", 2], ["sf-free", 2], ["sf-ascension", 1]],
-    "race": [["human", 8], ["dragonborn", 1], ["orc", 0.5]],
-    "species": [["terran", 7], ["augmented", 1.5], ["synthetic", 1]],
-    "government": [["chiefdom", 4], ["early-kingdom", 2.5], ["tribal-confederation", 2], "god-king", ["nomad-confederation", 0.5], ["feudal-monarchy", 2], ["empire", 1.5], ["city-state", 1.5], "merchant-republic", ["sultanate", 2], "nomad-khanate", ["absolute-monarchy", 1.5], "constitutional-monarchy", ["presidential-republic", 3], "revolutionary-state", "military-junta", ["one-party-state", 2.5], "parliamentary-republic", "socialist-republic", ["federal-republic", 0.5], ["theocratic-republic", 0.3], ["free-city", 1.5], "magocracy", "holy-order", ["galactic-federation", 3], ["colony-council", 2.5], "technocracy", "corporate-republic"]
-  },
-  "cultures": [
+  "region": {"id": "africa", "name": "非洲", "description": "马格里布、库希特、苏丹、萨赫勒、曼德、西非、刚果、大湖、东班图、非洲南部"},
+  "groups": [
     {
-      "id": "mwanga",
-      "group": "africa",
-      "name": "姆旺加人",
-      "color": "#78c34b",
-      "nameStyle": "bantu-swahili",
-      "weight": 1.5,
-      "description": "高原与稀树草原上的农牧民。"
-    },
-    {
-      "id": "kusini",
-      "group": "africa",
-      "name": "库西尼人",
-      "color": "#007800",
-      "nameStyle": "bantu-swahili",
-      "description": "南方草原上的牧牛人。",
-      "tendencies": {
-        "religion": [["ancestor-rites", 5], ["spirit-ways", 3], ["sun-faith", 3], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]]
+      "group": {
+        "id": "maghrebi",
+        "name": "马格里布",
+        "orig": "Maghrebi",
+        "color": "#944f38",
+        "description": "阿特拉斯山与地中海之间的“日落之地”，柏柏尔部落与海港埃米尔一同守着跨越撒哈拉的商路。",
+        "nameStyle": "maghrebi",
+        "tendencies": {
+          "religion": [["sunni", 9], ["ibadi", 0.4], ["jewish", 0.3]],
+          "nation": [["religious-community", 5], ["pan-group", 3], ["ethnic-nation", 2], ["imperial", 1.5]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["theocratic", 3],
+            ["monarchist", 3],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["social-democracy", 0.5]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["divine-kingship", 0.5],
+            ["tribal-federation", 1.5],
+            ["tribal-despotism", 1],
+            ["oligarchic-republic", 0.3],
+            ["iqta", 4],
+            ["theocratic-government", 0.6],
+            ["merchant-republic", 0.2],
+            ["steppe-horde", 0.3],
+            ["absolute-monarchy", 1.5],
+            ["constitutional-monarchy", 0.8],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 2.5],
+            ["one-party-state", 2],
+            ["military-junta", 1.5],
+            ["theocratic-republic", 1],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["canaanite", 3], ["animist", 5], ["roman-pagan", 1]]},
+          "industrial": {"religion": [["sunni", 10], ["jewish", 0.3]]},
+          "modern": {"religion": [["sunni", 10], ["jewish", 0.3], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"tempMin": 10, "tempMax": 21, "factor": 2},
+          {"biomes": ["shrubland"], "factor": 1.5},
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.45, "factor": 1.8},
+          {"terrain": ["desert"], "factor": 1.2},
+          {"classes": ["mountains", "hills"], "factor": 1.3}
+        ]
       },
-      "prefs": [
-        { "terrain": ["steppe", "savanna"], "factor": 1.4 }
+      "cultures": [
+        {"id": "moroccan", "group": "maghrebi", "name": "摩洛哥人", "orig": "Moroccan", "color": "#944f38", "weight": 1.3},
+        {"id": "algerian", "group": "maghrebi", "name": "阿尔及利亚人", "orig": "Algerian", "color": "#e4100c"},
+        {
+          "id": "tunisian",
+          "group": "maghrebi",
+          "name": "突尼斯人",
+          "orig": "Tunisian",
+          "color": "#d9bea6",
+          "eraTendencies": {"antiquity": {"religion": [["canaanite", 8], ["roman-pagan", 1]]}}
+        },
+        {
+          "id": "berber",
+          "group": "maghrebi",
+          "name": "柏柏尔人",
+          "orig": "Berber",
+          "color": "#f59942",
+          "weight": 1.2,
+          "eraTendencies": {"medieval": {"religion": [["sunni", 7], ["ibadi", 2]]}}
+        }
       ]
     },
     {
-      "id": "bahari",
-      "group": "africa",
-      "name": "巴哈里人",
-      "color": "#c3d278",
-      "nameStyle": "bantu-swahili",
-      "weight": 0.8,
-      "description": "东岸的港口商人，帆船往来于季风之间。",
-      "tendencies": {
-        "religion": [["moon-faith", 5], ["spirit-ways", 2], ["ancestor-rites", 1], ["grove-mother", 4], ["storm-horn", 2], ["grey-warden", 2], ["harvest-maid", 1]],
-        "nation": [["religious-community", 3], ["civic-nation", 2], ["regional", 2], ["ethnic-nation", 1]]
+      "group": {
+        "id": "cushitic",
+        "name": "库希特",
+        "orig": "Cushitic",
+        "color": "#356f8d",
+        "description": "东非高原与红海之角的古老王国，祭司王的传说与伊斯兰的苏丹国在同一片山地上交锋。",
+        "nameStyle": "cushitic",
+        "tendencies": {
+          "religion": [["coptic", 5], ["sunni", 4], ["animist", 1]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 3],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 6], ["jewish", 1], ["canaanite", 0.5]]},
+          "industrial": {"religion": [["coptic", 5], ["sunni", 5], ["animist", 0.5]]},
+          "modern": {"religion": [["coptic", 5], ["sunni", 5], ["animist", 0.5], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2},
+          {"terrain": ["savanna"], "factor": 2},
+          {"tempMin": 16, "factor": 1.4}
+        ]
       },
-      "prefs": [
-        { "coast": true, "factor": 1.8 }
+      "cultures": [
+        {
+          "id": "amhara",
+          "group": "cushitic",
+          "name": "阿姆哈拉人",
+          "orig": "Amhara",
+          "color": "#356f8d",
+          "weight": 1.5,
+          "eraTendencies": {
+            "medieval": {"religion": [["coptic", 10]]},
+            "industrial": {"religion": [["coptic", 10]]},
+            "modern": {"religion": [["coptic", 10], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "tigray",
+          "group": "cushitic",
+          "name": "提格雷人",
+          "orig": "Tigray",
+          "color": "#0c69e4",
+          "eraTendencies": {
+            "medieval": {"religion": [["coptic", 10]]},
+            "industrial": {"religion": [["coptic", 10]]},
+            "modern": {"religion": [["coptic", 10], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "oromo",
+          "group": "cushitic",
+          "name": "奥罗莫人",
+          "orig": "Oromo",
+          "color": "#42e3f5",
+          "weight": 1.3,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 6], ["sunni", 2], ["coptic", 1]]},
+            "industrial": {"religion": [["sunni", 5], ["coptic", 3], ["animist", 2]]},
+            "modern": {"religion": [["sunni", 5], ["coptic", 3], ["animist", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "somali",
+          "group": "cushitic",
+          "name": "索马里人",
+          "orig": "Somali",
+          "color": "#073a7e",
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 10]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "afar",
+          "group": "cushitic",
+          "name": "阿法尔人",
+          "orig": "Afar",
+          "color": "#64a4f7",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 10]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "harari",
+          "group": "cushitic",
+          "name": "哈勒尔人",
+          "orig": "Harari",
+          "color": "#a6bcd9",
+          "weight": 0.4,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 10]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "sidamo",
+          "group": "cushitic",
+          "name": "锡达莫人",
+          "orig": "Sidamo",
+          "color": "#1dabd3",
+          "weight": 0.7,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 6], ["coptic", 3]]},
+            "industrial": {"religion": [["coptic", 5], ["animist", 3]]},
+            "modern": {"religion": [["coptic", 5], ["animist", 3], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "sudanese",
+        "name": "苏丹",
+        "orig": "Sudanese",
+        "color": "#883a61",
+        "description": "尼罗河上游的努比亚故地，古老的基督教王国正在退潮，游牧的部落与新的苏丹国接踵而来。",
+        "nameStyle": "sudanese",
+        "tendencies": {
+          "religion": [["sunni", 5], ["coptic", 3], ["animist", 2]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 2],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1],
+            ["iqta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["egyptian-pagan", 4], ["animist", 5]]},
+          "industrial": {"religion": [["sunni", 8], ["animist", 2]]},
+          "modern": {"religion": [["sunni", 8], ["animist", 2], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"terrain": ["savanna"], "factor": 2},
+          {"tempMin": 16, "factor": 1.4},
+          {"river": true, "factor": 1.8},
+          {"moistMax": 0.5, "factor": 1.4}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "nubian",
+          "group": "sudanese",
+          "name": "努比亚人",
+          "orig": "Nubian",
+          "color": "#883a61",
+          "weight": 1.5,
+          "eraTendencies": {"antiquity": {"religion": [["egyptian-pagan", 8], ["animist", 1]]}}
+        },
+        {
+          "id": "beja",
+          "group": "sudanese",
+          "name": "贝贾人",
+          "orig": "Beja",
+          "color": "#f320bb",
+          "eraTendencies": {"medieval": {"religion": [["sunni", 8], ["animist", 2]]}}
+        },
+        {
+          "id": "acholi",
+          "group": "sudanese",
+          "name": "阿乔利人",
+          "orig": "Acholi",
+          "color": "#e40c46",
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 10]]},
+            "medieval": {"religion": [["animist", 10]]},
+            "industrial": {"religion": [["animist", 8], ["catholic", 1]]},
+            "modern": {"religion": [["animist", 8], ["catholic", 1], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "sahelian",
+        "name": "萨赫勒",
+        "orig": "Sahelian",
+        "color": "#d6ad5c",
+        "description": "撒哈拉南缘的草原地带，骑兵帝国与城邦靠着盐、黄金与骆驼商队兴衰沉浮。",
+        "nameStyle": "sahelian",
+        "tendencies": {
+          "religion": [["sunni", 6], ["animist", 3]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1],
+            ["iqta", 2],
+            ["steppe-horde", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 9]]},
+          "industrial": {"religion": [["sunni", 8], ["animist", 2]]},
+          "modern": {"religion": [["sunni", 8], ["animist", 2], ["irreligious", 0.3]]}
+        },
+        "prefs": [
+          {"terrain": ["savanna", "steppe"], "moistMax": 0.6, "factor": 2.2},
+          {"tempMin": 18, "factor": 1.6},
+          {"terrain": ["jungle"], "factor": 0.5}
+        ]
+      },
+      "cultures": [
+        {"id": "hausa", "group": "sahelian", "name": "豪萨人", "orig": "Hausa", "color": "#d6ad5c", "weight": 1.5},
+        {"id": "kanuri", "group": "sahelian", "name": "卡努里人", "orig": "Kanuri", "color": "#5d3f28"},
+        {"id": "fulani", "group": "sahelian", "name": "富拉尼人", "orig": "Fulani", "color": "#e4690c", "weight": 1.2},
+        {
+          "id": "tuareg",
+          "group": "sahelian",
+          "name": "图阿雷格人",
+          "orig": "Tuareg",
+          "color": "#e4ce0c",
+          "weight": 0.7,
+          "eraTendencies": {"medieval": {"religion": [["sunni", 9], ["animist", 1]]}}
+        },
+        {"id": "senegambian", "group": "sahelian", "name": "塞内冈比亚人", "orig": "Senegambian", "color": "#d9bca6"},
+        {"id": "bilala", "group": "sahelian", "name": "比拉拉人", "orig": "Bilala", "color": "#945b14", "weight": 0.4},
+        {"id": "tunjur", "group": "sahelian", "name": "通朱尔人", "orig": "Tunjur", "color": "#e49c0c", "weight": 0.4}
+      ]
+    },
+    {
+      "group": {
+        "id": "mande",
+        "name": "曼德",
+        "orig": "Mande",
+        "color": "#4c8a2e",
+        "description": "尼日尔河湾的黄金之国，说书人传诵着狮子王的史诗，廷巴克图的学者抄写着千卷经书。",
+        "nameStyle": "mande",
+        "tendencies": {
+          "religion": [["sunni", 5], ["animist", 4]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1],
+            ["iqta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 9]]},
+          "industrial": {"religion": [["sunni", 8], ["animist", 2]]},
+          "modern": {"religion": [["sunni", 8], ["animist", 2], ["irreligious", 0.3]]}
+        },
+        "prefs": [
+          {"terrain": ["savanna", "steppe"], "moistMax": 0.6, "factor": 2.2},
+          {"tempMin": 18, "factor": 1.6},
+          {"terrain": ["jungle"], "factor": 0.5},
+          {"river": true, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "mali", "group": "mande", "name": "马里人", "orig": "Mali", "color": "#4c8a2e", "weight": 1.5},
+        {
+          "id": "bambara",
+          "group": "mande",
+          "name": "班巴拉人",
+          "orig": "Bambara",
+          "color": "#22e40c",
+          "eraTendencies": {"medieval": {"religion": [["animist", 7], ["sunni", 3]]}}
+        },
+        {"id": "soninke", "group": "mande", "name": "索宁克人", "orig": "Soninke", "color": "#c3d9a6"},
+        {"id": "songhai", "group": "mande", "name": "桑海人", "orig": "Songhai", "color": "#73ce46", "weight": 1.3},
+        {"id": "bozo", "group": "mande", "name": "博佐人", "orig": "Bozo", "color": "#465d28", "weight": 0.4},
+        {"id": "dyola", "group": "mande", "name": "迪尤拉人", "orig": "Dyola", "color": "#a9dd7e", "weight": 0.6}
+      ]
+    },
+    {
+      "group": {
+        "id": "west-african",
+        "name": "西非",
+        "orig": "West African",
+        "color": "#309161",
+        "description": "几内亚湾的森林与草原之民，神圣的王与城邦的议会并存，铜像与可乐果见证着古老的秩序。",
+        "nameStyle": "west-african",
+        "tendencies": {
+          "religion": [["fetishist", 7], ["animist", 2], ["sunni", 1]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["fetishist", 7], ["animist", 3]]},
+          "industrial": {"religion": [["fetishist", 6], ["sunni", 2], ["protestant", 1]]},
+          "modern": {"religion": [["fetishist", 6], ["sunni", 2], ["protestant", 1], ["irreligious", 0.3]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"terrain": ["jungle"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "yoruba", "group": "west-african", "name": "约鲁巴人", "orig": "Yoruba", "color": "#309161", "weight": 1.5},
+        {"id": "akan", "group": "west-african", "name": "阿肯人", "orig": "Akan", "color": "#0ce446", "weight": 1.2},
+        {"id": "fon", "group": "west-african", "name": "丰人", "orig": "Fon", "color": "#a6d9cb"},
+        {
+          "id": "mossi",
+          "group": "west-african",
+          "name": "莫西人",
+          "orig": "Mossi",
+          "color": "#0ce491",
+          "eraTendencies": {"medieval": {"religion": [["animist", 6], ["fetishist", 3], ["sunni", 1]]}}
+        },
+        {
+          "id": "nupe",
+          "group": "west-african",
+          "name": "努佩人",
+          "orig": "Nupe",
+          "color": "#08a031",
+          "weight": 0.6,
+          "eraTendencies": {"medieval": {"religion": [["fetishist", 5], ["sunni", 4]]}}
+        },
+        {
+          "id": "dagomba",
+          "group": "west-african",
+          "name": "达贡巴人",
+          "orig": "Dagomba",
+          "color": "#285d4f",
+          "weight": 0.6,
+          "eraTendencies": {"medieval": {"religion": [["fetishist", 5], ["sunni", 4]]}}
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "kongo",
+        "name": "刚果",
+        "orig": "Kongo",
+        "color": "#542277",
+        "description": "刚果河流域的雨林与草原王国，曼尼刚果的宫廷里，祖灵的神龛与葡萄牙的十字架并排供奉。",
+        "nameStyle": "kongo",
+        "tendencies": {
+          "religion": [["fetishist", 7], ["animist", 2], ["catholic", 0.5]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["fetishist", 7], ["animist", 3]]},
+          "industrial": {"religion": [["fetishist", 6], ["catholic", 2], ["animist", 1]]},
+          "modern": {"religion": [["fetishist", 6], ["catholic", 2], ["animist", 1], ["irreligious", 0.3]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"terrain": ["jungle"], "factor": 1.8}, {"river": true, "factor": 1.5}]
+      },
+      "cultures": [
+        {
+          "id": "kongolese",
+          "group": "kongo",
+          "name": "刚果人",
+          "orig": "Kongolese",
+          "color": "#542277",
+          "weight": 1.5,
+          "eraTendencies": {
+            "medieval": {"religion": [["fetishist", 6], ["catholic", 3]]},
+            "industrial": {"religion": [["catholic", 6], ["fetishist", 4]]},
+            "modern": {"religion": [["catholic", 6], ["fetishist", 4], ["irreligious", 0.3]]}
+          }
+        },
+        {"id": "mbundu", "group": "kongo", "name": "姆本杜人", "orig": "Mbundu", "color": "#6a20f3"},
+        {"id": "mbangala", "group": "kongo", "name": "姆班加拉人", "orig": "Mbangala", "color": "#cfa6d9", "weight": 0.6},
+        {"id": "luba", "group": "kongo", "name": "卢巴人", "orig": "Luba", "color": "#dc64f7", "weight": 1.3},
+        {"id": "lunda", "group": "kongo", "name": "隆达人", "orig": "Lunda", "color": "#4f08a0"},
+        {"id": "kuba", "group": "kongo", "name": "库巴人", "orig": "Kuba", "color": "#8a62d5", "weight": 0.6},
+        {"id": "chokwe", "group": "kongo", "name": "乔克维人", "orig": "Chokwe", "color": "#de8ff0", "weight": 0.6},
+        {"id": "yaka", "group": "kongo", "name": "亚卡人", "orig": "Yaka", "color": "#bc0ce4", "weight": 0.5},
+        {"id": "sawabantu", "group": "kongo", "name": "萨瓦班图人", "orig": "Sawabantu", "color": "#8b2ba1", "weight": 0.5},
+        {"id": "jukun", "group": "kongo", "name": "朱昆人", "orig": "Jukun", "color": "#9074c3", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "great-lakes",
+        "name": "大湖",
+        "orig": "Great Lakes",
+        "color": "#7c3c7c",
+        "description": "赤道上的湖泊与丰饶高地，牛群、香蕉园与鼓声撑起了一个个由王与酋长统治的古国。",
+        "nameStyle": "great-lakes",
+        "tendencies": {
+          "religion": [["animist", 8], ["fetishist", 1]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 9]]},
+          "industrial": {"religion": [["animist", 6], ["catholic", 2], ["protestant", 1.5]]},
+          "modern": {"religion": [["animist", 6], ["catholic", 2], ["protestant", 1.5], ["irreligious", 0.3]]}
+        },
+        "prefs": [{"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2}, {"lake": true, "factor": 1.6}]
+      },
+      "cultures": [
+        {"id": "ganda", "group": "great-lakes", "name": "干达人", "orig": "Ganda", "color": "#7c3c7c", "weight": 1.3},
+        {"id": "rwandan", "group": "great-lakes", "name": "卢旺达人", "orig": "Rwandan", "color": "#f320f3"},
+        {"id": "masaba", "group": "great-lakes", "name": "马萨巴人", "orig": "Masaba", "color": "#d9a6cd", "weight": 0.6}
+      ]
+    },
+    {
+      "group": {
+        "id": "east-bantu",
+        "name": "东班图",
+        "orig": "East Bantu",
+        "color": "#4ebcb3",
+        "description": "季风吹拂的东非海岸，石砌的港城与内陆的牧民一道，把象牙与黄金送上远航印度的帆船。",
+        "nameStyle": "bantu-swahili",
+        "tendencies": {
+          "religion": [["animist", 6], ["sunni", 2]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1],
+            ["merchant-republic", 1.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 9]]},
+          "industrial": {"religion": [["animist", 5], ["sunni", 3], ["protestant", 1]]},
+          "modern": {"religion": [["animist", 5], ["sunni", 3], ["protestant", 1], ["irreligious", 0.3]]}
+        },
+        "prefs": [
+          {"tempMin": 20, "factor": 2},
+          {"coast": true, "factor": 1.8},
+          {"terrain": ["savanna"], "factor": 2},
+          {"tempMin": 16, "factor": 1.4}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "swahili",
+          "group": "east-bantu",
+          "name": "斯瓦希里人",
+          "orig": "Swahili",
+          "color": "#4ebcb3",
+          "weight": 1.5,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 9], ["animist", 1]]},
+            "industrial": {"religion": [["sunni", 9], ["animist", 1]]},
+            "modern": {"religion": [["sunni", 9], ["animist", 1], ["irreligious", 0.3]]}
+          }
+        },
+        {"id": "takama", "group": "east-bantu", "name": "塔卡马人", "orig": "Takama", "color": "#0ce49f"},
+        {"id": "thagiicu", "group": "east-bantu", "name": "塔吉丘人", "orig": "Thagiicu", "color": "#1c5d69"},
+        {"id": "bena", "group": "east-bantu", "name": "贝纳人", "orig": "Bena", "color": "#107555", "weight": 0.7},
+        {
+          "id": "malagasy",
+          "group": "east-bantu",
+          "name": "马尔加什人",
+          "orig": "Malagasy",
+          "color": "#20d4f3",
+          "nameStyle": "malay",
+          "weight": 0.8
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "southern-african",
+        "name": "非洲南部",
+        "orig": "Southern African",
+        "color": "#3f538d",
+        "description": "赞比西河以南的高草原与海岸，石城的建造者与放牧的部族在这里繁衍生息。",
+        "nameStyle": "southern-african",
+        "tendencies": {
+          "religion": [["animist", 8], ["fetishist", 1]],
+          "nation": [["regional", 5], ["ethnic-nation", 3], ["pan-group", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["traditionalist", 3],
+            ["social-democracy", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1],
+            ["theocratic", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["divine-kingship", 1],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 1],
+            ["presidential-despotism", 0.3],
+            ["presidential-republic", 3],
+            ["one-party-state", 3],
+            ["military-junta", 2],
+            ["socialist-republic", 1.5],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 9]]},
+          "industrial": {"religion": [["animist", 5], ["protestant", 2.5], ["catholic", 1]]},
+          "modern": {"religion": [["animist", 5], ["protestant", 2.5], ["catholic", 1], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"terrain": ["savanna"], "factor": 2},
+          {"tempMin": 16, "factor": 1.4},
+          {"classes": ["highlands", "hills"], "tempMin": 10, "factor": 1.6}
+        ]
+      },
+      "cultures": [
+        {"id": "nguni", "group": "southern-african", "name": "恩古尼人", "orig": "Nguni", "color": "#3f538d", "weight": 1.3},
+        {"id": "shona", "group": "southern-african", "name": "绍纳人", "orig": "Shona", "color": "#0c10e4", "weight": 1.2},
+        {"id": "khoisan", "group": "southern-african", "name": "科伊桑人", "orig": "Khoisan", "color": "#0c5be4", "weight": 0.6},
+        {"id": "makua", "group": "southern-african", "name": "马库阿人", "orig": "Makua", "color": "#a6bed9"},
+        {"id": "nyasa", "group": "southern-african", "name": "尼亚萨人", "orig": "Nyasa", "color": "#86a3f9"},
+        {"id": "bemba", "group": "southern-african", "name": "本巴人", "orig": "Bemba", "color": "#181bb4"}
       ]
     }
   ]

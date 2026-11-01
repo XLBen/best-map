@@ -358,7 +358,7 @@ registerKind<NameStyle>({
   short: '地名风格',
   order: 30,
   store: 'content',
-  maxInWorld: 64,
+  maxInWorld: 128,
   schema: nameStyleSchema as unknown as z.ZodType<NameStyle>,
   // 第三十轮起中文·默认也是普通内容（“通用 ▸ 地名 ▸ 中文”）
   inWorld: (w) => Object.values(worldStyles(w.small)),
@@ -435,7 +435,8 @@ registerKind<NameStyle>({
     key: 'nameStyles',
     // 以前的文字包就是模板式的地名风格
     aliases: ['textPacks'],
-    max: 64,
+    // 第四十三轮：内置的有 76 种（EU4 的每个文化组一种）
+    max: 128,
     listed: true,
     checked: true,
     read: readStyle,

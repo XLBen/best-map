@@ -45,9 +45,9 @@ afterEach(() => {
 
 // 与 core 的测试同一套：内置中世纪的三个组（加了别的文化组也不变）
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS };
 const peopled = (): Engine =>
@@ -269,7 +269,8 @@ describe('“文化”一类', () => {
     expect(t.backdrop!()!.shapes.length).toBe(marks.length * 2);
     // 第三十五轮：地形变了，第一个文化组的发源地与组里一个文化的发源地挨在一起，悬停先找到那个文化：挑一个附近没有别的圈的
     const apart = (a: number, b: number) => Math.hypot(w.mesh.x[a] - w.mesh.x[b], w.mesh.y[a] - w.mesh.y[b]) > 4 * w.mesh.spacing;
-    const m = marks.find((x) => !x.culture && marks.every((o) => o === x || apart(o.cell, x.cell))) ?? marks[0];
+    // 第四十三轮：汉有 20 个文化，组的发源地旁常挨着组里的文化：组的、文化的发源地都可以，挑附近没有别的圈的
+    const m = marks.find((x) => !x.culture && marks.every((o) => o === x || apart(o.cell, x.cell))) ?? marks.find((x) => marks.every((o) => o === x || apart(o.cell, x.cell))) ?? marks[0];
     const to = dry(w).find((i) => i !== m.cell && Math.abs(w.mesh.x[i] - w.mesh.x[m.cell]) > 5 * w.mesh.spacing)!;
     t.move!(pointer(w, m.cell), false);
     expect(t.drags).toBe(true);
@@ -410,7 +411,7 @@ describe('仓库与“文化 ⋯”', () => {
     const cultures = repoRows(kindOf('culture')!, w, []);
     const groups = new Map(worldCultureGroups(w.small).map((g) => [g.id, g.name]));
     const cs = repoSections(kindOf('culture')!, cultures, { dims, groups });
-    expect(cs.map((s) => s.label)).toEqual(expect.arrayContaining(['西欧']));
+    expect(cs.map((s) => s.label)).toEqual(expect.arrayContaining(['日耳曼']));
     expect(cs.reduce((n, s) => n + s.rows.length, 0)).toBe(cultures.length);
     expect(repoSections(kindOf('era')!, repoRows(kindOf('era')!, w, []), { dims, groups })).toHaveLength(1);
   });
@@ -422,10 +423,10 @@ describe('仓库与“文化 ⋯”', () => {
     expect(choiceEra(c, [], w.small)!.id).toBe('medieval');
     expect(c.groups).toEqual(GROUPS);
     expect(regenerateWith(c, w.small)).toBeNull();
-    const less = toggleGroup(c, 'steppe', false);
+    const less = toggleGroup(c, 'altaic', false);
     expect(lastOf(regenerateWith(less, w.small)!)).toEqual({ op: 'regenerate_human', packs: [['medieval']], groups: GROUPS.slice(0, 2), keepManual: true });
     const eng = peopled();
     eng.exec(regenerateWith(less, w.small)!);
-    expect(eng.world.small.human!.groups.map((g) => g.id)).toEqual(['western', 'eastern']);
+    expect(eng.world.small.human!.groups.map((g) => g.id)).toEqual(['germanic', 'chinese']);
   });
 });

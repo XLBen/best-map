@@ -9,8 +9,8 @@ import { SLOTS, readComp, worldDimensions, dimensionValues } from './index';
 // 第二十七轮：生成时的快照、橡皮擦的“恢复自动”（restore_country、restore_pop）、人口往外推、清空
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
 ];
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
 

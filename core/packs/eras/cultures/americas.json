@@ -1,0 +1,1141 @@
+{
+  "region": {"id": "americas", "name": "美洲", "description": "北美、中美、南美的二十四个原住民文化组"},
+  "groups": [
+    {
+      "group": {
+        "id": "eskaleut",
+        "name": "爱斯基摩-阿留申",
+        "orig": "Eskaleut",
+        "color": "#8ab2c7",
+        "description": "冰海与冻原的边缘，皮艇猎人追逐着海豹与鲸，冰屋与雪橇是他们的城池与车马。",
+        "nameStyle": "eskaleut",
+        "tendencies": {
+          "religion": [["animist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 10]]},
+          "industrial": {"religion": [["animist", 8], ["protestant", 1], ["orthodox", 0.5]]},
+          "modern": {"religion": [["animist", 8], ["protestant", 1], ["orthodox", 0.5], ["irreligious", 1]]}
+        },
+        "prefs": [{"tempMax": -6, "factor": 3}, {"terrain": ["arctic"], "factor": 2}, {"coast": true, "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "inuit", "group": "eskaleut", "name": "因纽特人", "orig": "Inuit", "color": "#8ab2c7", "weight": 1.5},
+        {
+          "id": "aleutian",
+          "group": "eskaleut",
+          "name": "阿留申人",
+          "orig": "Aleutian",
+          "color": "#0c69e4",
+          "weight": 0.5,
+          "eraTendencies": {
+            "industrial": {"religion": [["orthodox", 5], ["animist", 5]]},
+            "modern": {"religion": [["orthodox", 5], ["animist", 5], ["irreligious", 1]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "na-dene",
+        "name": "纳德内",
+        "orig": "Na-Dene",
+        "color": "#404f96",
+        "description": "北方森林与雨林海岸的部族，图腾柱与夸富宴诉说着家族的荣耀。",
+        "nameStyle": "na-dene",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 7], ["catholic", 1], ["protestant", 1]]},
+          "modern": {"religion": [["totemist", 7], ["catholic", 1], ["protestant", 1]]}
+        },
+        "prefs": [{"tempMin": -22, "tempMax": 2, "factor": 2.5}, {"terrain": ["forest"], "factor": 1.4}, {"coast": true, "factor": 1.2}]
+      },
+      "cultures": [
+        {"id": "athabascan", "group": "na-dene", "name": "阿萨巴斯卡人", "orig": "Athabascan", "color": "#404f96", "weight": 1.3},
+        {"id": "chipewyan", "group": "na-dene", "name": "奇珀维安人", "orig": "Chipewyan", "color": "#1a0ce4"},
+        {"id": "haida", "group": "na-dene", "name": "海达人", "orig": "Haida", "color": "#a6bad9", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "penutian",
+        "name": "佩纽蒂",
+        "orig": "Penutian",
+        "color": "#409679",
+        "description": "太平洋沿岸的渔猎之民，鲑鱼洄游的河口与橡树林谷地养活了众多村落。",
+        "nameStyle": "penutian",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 7], ["catholic", 2], ["protestant", 1]]},
+          "modern": {"religion": [["totemist", 7], ["catholic", 2], ["protestant", 1]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"coast": true, "factor": 1.8},
+          {"river": true, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "chinook", "group": "penutian", "name": "奇努克人", "orig": "Chinook", "color": "#409679"},
+        {"id": "salish", "group": "penutian", "name": "萨利希人", "orig": "Salish", "color": "#0ce469", "weight": 1.2},
+        {"id": "yokuts", "group": "penutian", "name": "约库特人", "orig": "Yokuts", "color": "#0ce4b5"}
+      ]
+    },
+    {
+      "group": {
+        "id": "sonoran",
+        "name": "索诺拉",
+        "orig": "Sonoran",
+        "color": "#c69053",
+        "description": "西南荒漠与高原的农人和猎手，土坯的村镇依着台地而建，玉米与豆子在旱地里顽强生长。",
+        "nameStyle": "sonoran",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 7], ["catholic", 2]]},
+          "modern": {"religion": [["totemist", 7], ["catholic", 2]]}
+        },
+        "prefs": [
+          {"river": true, "factor": 1.8},
+          {"moistMax": 0.5, "factor": 1.4},
+          {"classes": ["highlands", "hills"], "moistMax": 0.6, "factor": 1.8}
+        ]
+      },
+      "cultures": [
+        {"id": "shoshone", "group": "sonoran", "name": "肖肖尼人", "orig": "Shoshone", "color": "#c69053"},
+        {"id": "pueblo", "group": "sonoran", "name": "普韦布洛人", "orig": "Pueblo", "color": "#e44d0c"},
+        {"id": "piman", "group": "sonoran", "name": "皮马人", "orig": "Piman", "color": "#5d3828"},
+        {"id": "kiowa", "group": "sonoran", "name": "基奥瓦人", "orig": "Kiowa", "color": "#f3c220", "weight": 0.6}
+      ]
+    },
+    {
+      "group": {
+        "id": "apachean",
+        "name": "阿帕奇",
+        "orig": "Apachean",
+        "color": "#8d4735",
+        "description": "南方荒原上的骑射部族，来去如风，任何城墙都挡不住他们的劫掠。",
+        "nameStyle": "apachean",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 8], ["catholic", 1]]},
+          "modern": {"religion": [["totemist", 8], ["catholic", 1]]}
+        },
+        "prefs": [
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.45, "factor": 1.8},
+          {"terrain": ["desert"], "factor": 1.2},
+          {"classes": ["highlands", "hills"], "moistMax": 0.6, "factor": 1.8}
+        ]
+      },
+      "cultures": [
+        {"id": "navajo", "group": "apachean", "name": "纳瓦霍人", "orig": "Navajo", "color": "#8d4735", "weight": 1.3},
+        {"id": "mescalero", "group": "apachean", "name": "梅斯卡莱罗人", "orig": "Mescalero", "color": "#e40c13"},
+        {"id": "lipan", "group": "apachean", "name": "利潘人", "orig": "Lipan", "color": "#d9bca6"},
+        {"id": "eastern-apache", "group": "apachean", "name": "东阿帕奇人", "orig": "Eastern Apache", "color": "#f59042"}
+      ]
+    },
+    {
+      "group": {
+        "id": "plains-algonquian",
+        "name": "平原阿尔冈昆",
+        "orig": "Plains Algonquian",
+        "color": "#b8a73d",
+        "description": "大平原上追逐野牛的部族，营帐随畜群迁徙，太阳舞的祭典把各部聚在一起。",
+        "nameStyle": "algonquian-plains",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 8], ["protestant", 1], ["catholic", 1]]},
+          "modern": {"religion": [["totemist", 8], ["protestant", 1], ["catholic", 1]]}
+        },
+        "prefs": [
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.6, "factor": 2.5},
+          {"terrain": ["forest"], "factor": 0.6},
+          {"terrain": ["jungle"], "factor": 0.4},
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6}
+        ]
+      },
+      "cultures": [
+        {"id": "blackfoot", "group": "plains-algonquian", "name": "黑脚人", "orig": "Blackfoot", "color": "#b8a73d"},
+        {"id": "cheyenne", "group": "plains-algonquian", "name": "夏延人", "orig": "Cheyenne", "color": "#5d4928"},
+        {"id": "arapaho", "group": "plains-algonquian", "name": "阿拉帕霍人", "orig": "Arapaho", "color": "#d9c6a6"},
+        {"id": "plains-cree", "group": "plains-algonquian", "name": "平原克里人", "orig": "Plains Cree", "color": "#c1d31d"},
+        {"id": "bungi", "group": "plains-algonquian", "name": "本吉人", "orig": "Bungi", "color": "#e4950c", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "central-algonquian",
+        "name": "中部阿尔冈昆",
+        "orig": "Central Algonquian",
+        "color": "#4d983e",
+        "description": "五大湖周围的林地部族，桦皮舟穿梭于湖泊河流之间，毛皮与野稻是他们的财富。",
+        "nameStyle": "algonquian-central",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 7], ["catholic", 2], ["protestant", 1]]},
+          "modern": {"religion": [["totemist", 7], ["catholic", 2], ["protestant", 1]]}
+        },
+        "prefs": [{"tempMin": -8, "tempMax": 10, "factor": 2}, {"terrain": ["forest"], "tempMax": 8, "factor": 1.5}, {"lake": true, "factor": 1.6}]
+      },
+      "cultures": [
+        {"id": "cree", "group": "central-algonquian", "name": "克里人", "orig": "Cree", "color": "#4d983e", "weight": 1.3},
+        {"id": "anishinabe", "group": "central-algonquian", "name": "阿尼什纳比人", "orig": "Anishinabe", "color": "#17e40c", "weight": 1.2},
+        {"id": "anicinabe", "group": "central-algonquian", "name": "阿尼奇纳比人", "orig": "Anicinabe", "color": "#bad9a6", "weight": 0.6},
+        {"id": "innu-naskapi", "group": "central-algonquian", "name": "因努-纳斯卡皮人", "orig": "Innu-Naskapi", "color": "#3d5d28", "weight": 0.6},
+        {"id": "illini", "group": "central-algonquian", "name": "伊利尼人", "orig": "Illini", "color": "#8ce750"},
+        {"id": "myaamia", "group": "central-algonquian", "name": "迈阿密人", "orig": "Myaamia", "color": "#10a008"},
+        {"id": "mesquakie", "group": "central-algonquian", "name": "梅斯夸基人", "orig": "Mesquakie", "color": "#99dd7e", "weight": 0.6},
+        {"id": "shawnee", "group": "central-algonquian", "name": "肖尼人", "orig": "Shawnee", "color": "#20691c"}
+      ]
+    },
+    {
+      "group": {
+        "id": "eastern-algonquian",
+        "name": "东部阿尔冈昆",
+        "orig": "Eastern Algonquian",
+        "color": "#59c07b",
+        "description": "大西洋沿岸的渔猎与农耕部族，最早迎来了从海上驶来的陌生船只。",
+        "nameStyle": "algonquian-east",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 5], ["protestant", 3], ["catholic", 1]]},
+          "modern": {"religion": [["totemist", 5], ["protestant", 3], ["catholic", 1]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"coast": true, "factor": 1.8},
+          {"terrain": ["forest"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "abenaki", "group": "eastern-algonquian", "name": "阿布纳基人", "orig": "Abenaki", "color": "#59c07b"},
+        {
+          "id": "mikmaq",
+          "group": "eastern-algonquian",
+          "name": "米克马克人",
+          "orig": "Mikmaq",
+          "color": "#0ce422",
+          "eraTendencies": {"industrial": {"religion": [["catholic", 6], ["totemist", 4]]}, "modern": {"religion": [["catholic", 6], ["totemist", 4]]}}
+        },
+        {"id": "maliseet", "group": "eastern-algonquian", "name": "马利西特人", "orig": "Maliseet", "color": "#285d46", "weight": 0.5},
+        {"id": "massachusset", "group": "eastern-algonquian", "name": "马萨诸塞人", "orig": "Massachusset", "color": "#a6d9c3"},
+        {"id": "pequot", "group": "eastern-algonquian", "name": "佩科特人", "orig": "Pequot", "color": "#08a018", "weight": 0.6},
+        {"id": "mahican", "group": "eastern-algonquian", "name": "马希坎人", "orig": "Mahican", "color": "#107526", "weight": 0.6},
+        {"id": "delaware", "group": "eastern-algonquian", "name": "特拉华人", "orig": "Delaware", "color": "#0ce46d"},
+        {"id": "powhatan", "group": "eastern-algonquian", "name": "波瓦坦人", "orig": "Powhatan", "color": "#3d8f62"}
+      ]
+    },
+    {
+      "group": {
+        "id": "iroquoian",
+        "name": "易洛魁",
+        "orig": "Iroquoian",
+        "color": "#813737",
+        "description": "长屋里的母系氏族结成了强大的联盟，大和平之法让五个部族同盟共治。",
+        "nameStyle": "iroquoian",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 3],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 6], ["protestant", 2], ["catholic", 1]]},
+          "modern": {"religion": [["totemist", 6], ["protestant", 2], ["catholic", 1]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"terrain": ["forest"], "factor": 1.3},
+          {"lake": true, "factor": 1.6}
+        ]
+      },
+      "cultures": [
+        {"id": "iroquois", "group": "iroquoian", "name": "易洛魁人", "orig": "Iroquois", "color": "#813737", "weight": 1.5},
+        {"id": "huron", "group": "iroquoian", "name": "休伦人", "orig": "Huron", "color": "#e40c0c"},
+        {"id": "tionontate", "group": "iroquoian", "name": "提奥农塔提人", "orig": "Tionontate", "color": "#d9b2a6", "weight": 0.4},
+        {"id": "susquehannock", "group": "iroquoian", "name": "萨斯奎汉诺克人", "orig": "Susquehannock", "color": "#f5426c", "weight": 0.6},
+        {"id": "laurentian", "group": "iroquoian", "name": "劳伦特人", "orig": "Laurentian", "color": "#f78664", "weight": 0.5},
+        {"id": "cherokee", "group": "iroquoian", "name": "切罗基人", "orig": "Cherokee", "color": "#a02c08", "weight": 1.3}
+      ]
+    },
+    {
+      "group": {
+        "id": "siouan",
+        "name": "苏",
+        "orig": "Siouan",
+        "color": "#804db3",
+        "description": "密苏里河与大平原上的部族，马匹到来之后，他们成了草原上最令人生畏的骑手。",
+        "nameStyle": "siouan",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 8], ["catholic", 1], ["protestant", 1]]},
+          "modern": {"religion": [["totemist", 8], ["catholic", 1], ["protestant", 1]]}
+        },
+        "prefs": [
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.6, "factor": 2.5},
+          {"terrain": ["forest"], "factor": 0.6},
+          {"terrain": ["jungle"], "factor": 0.4},
+          {"river": true, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "dakota", "group": "siouan", "name": "达科他人", "orig": "Dakota", "color": "#804db3", "weight": 1.3},
+        {"id": "nakota", "group": "siouan", "name": "纳科他人", "orig": "Nakota", "color": "#460ce4"},
+        {"id": "chiwere", "group": "siouan", "name": "奇韦雷人", "orig": "Chiwere", "color": "#b3a6d9", "weight": 0.6},
+        {"id": "osage", "group": "siouan", "name": "奥赛奇人", "orig": "Osage", "color": "#c542f5"}
+      ]
+    },
+    {
+      "group": {
+        "id": "caddoan",
+        "name": "卡多",
+        "orig": "Caddoan",
+        "color": "#964096",
+        "description": "南部平原与河谷的农耕部族，土丘上的神庙与玉米田连成一片。",
+        "nameStyle": "caddoan",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 7], ["catholic", 1.5], ["protestant", 1]]},
+          "modern": {"religion": [["totemist", 7], ["catholic", 1.5], ["protestant", 1]]}
+        },
+        "prefs": [
+          {"tempMin": 12, "tempMax": 24, "factor": 2},
+          {"moistMin": 0.7, "factor": 1.3},
+          {"river": true, "factor": 1.5},
+          {"classes": ["plains"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "caddo", "group": "caddoan", "name": "卡多人", "orig": "Caddo", "color": "#964096"},
+        {"id": "pawnee", "group": "caddoan", "name": "波尼人", "orig": "Pawnee", "color": "#c220f3"},
+        {"id": "wichita", "group": "caddoan", "name": "威奇托人", "orig": "Wichita", "color": "#d9a6cd"}
+      ]
+    },
+    {
+      "group": {
+        "id": "muskogean",
+        "name": "马斯科吉",
+        "orig": "Muskogean",
+        "color": "#bc5c8c",
+        "description": "东南林地的土丘建造者的后裔，城镇围绕着广场与圣火，酋长们组成松散的联盟。",
+        "nameStyle": "muskogean",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 6], ["protestant", 3], ["catholic", 1]]},
+          "modern": {"religion": [["totemist", 6], ["protestant", 3], ["catholic", 1]]}
+        },
+        "prefs": [
+          {"tempMin": 12, "tempMax": 24, "factor": 2},
+          {"moistMin": 0.7, "factor": 1.3},
+          {"terrain": ["forest"], "factor": 1.3},
+          {"river": true, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "creek", "group": "muskogean", "name": "克里克人", "orig": "Creek", "color": "#bc5c8c", "weight": 1.3},
+        {"id": "choctaw", "group": "muskogean", "name": "乔克托人", "orig": "Choctaw", "color": "#e40c46", "weight": 1.2},
+        {"id": "chickasaw", "group": "muskogean", "name": "契卡索人", "orig": "Chickasaw", "color": "#f320bb"},
+        {"id": "natchez", "group": "muskogean", "name": "纳奇兹人", "orig": "Natchez", "color": "#7e0726", "weight": 0.6},
+        {"id": "yamasee", "group": "muskogean", "name": "亚马西人", "orig": "Yamasee", "color": "#d9a6b3", "weight": 0.6},
+        {"id": "catawba", "group": "muskogean", "name": "卡托巴人", "orig": "Catawba", "color": "#5d2848", "weight": 0.5},
+        {"id": "yuchi", "group": "muskogean", "name": "尤奇人", "orig": "Yuchi", "color": "#e40c78", "weight": 0.4},
+        {"id": "yoron", "group": "muskogean", "name": "约龙人", "orig": "Yoron", "color": "#a00877", "weight": 0.4}
+      ]
+    },
+    {
+      "group": {
+        "id": "aridoamerican",
+        "name": "干旱美洲",
+        "orig": "Aridoamerican",
+        "color": "#c8ad7e",
+        "description": "墨西哥北部的旱地与山岭，奇奇梅克的弓手让南方的帝国也不敢轻易北顾。",
+        "nameStyle": "aridoamerican",
+        "tendencies": {
+          "religion": [["nahuatl-faith", 5], ["totemist", 5]],
+          "nation": [["settler", 4], ["civic-nation", 3], ["regional", 2], ["ethnic-nation", 1]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 2],
+            ["auth-nationalist", 2],
+            ["religious-democracy", 1.5],
+            ["dem-socialism", 1.5]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 9], ["mayan-faith", 1]]},
+          "industrial": {"religion": [["catholic", 6], ["totemist", 3]]},
+          "modern": {"religion": [["catholic", 6], ["totemist", 3]]}
+        },
+        "prefs": [
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.45, "factor": 1.8},
+          {"terrain": ["desert"], "factor": 1.2},
+          {"classes": ["highlands", "hills"], "moistMax": 0.6, "factor": 1.8}
+        ]
+      },
+      "cultures": [
+        {"id": "chichimecan", "group": "aridoamerican", "name": "奇奇梅克人", "orig": "Chichimecan", "color": "#c8ad7e", "weight": 1.3},
+        {"id": "guamares", "group": "aridoamerican", "name": "瓜马雷人", "orig": "Guamares", "color": "#e4620c", "weight": 0.6},
+        {"id": "otomi", "group": "aridoamerican", "name": "奥托米人", "orig": "Otomi", "color": "#e4c70c"},
+        {"id": "tecos", "group": "aridoamerican", "name": "特科人", "orig": "Tecos", "color": "#753810", "weight": 0.6},
+        {"id": "tepic", "group": "aridoamerican", "name": "特皮克人", "orig": "Tepic", "color": "#a07a08", "weight": 0.6},
+        {"id": "yaqui", "group": "aridoamerican", "name": "亚基人", "orig": "Yaqui", "color": "#5d5628"}
+      ]
+    },
+    {
+      "group": {
+        "id": "central-american",
+        "name": "中美洲",
+        "orig": "Central American",
+        "color": "#32857e",
+        "description": "湖上之城的主人与山谷里的诸城邦，花之战与献祭维系着太阳的运行，也维系着帝国的贡赋。",
+        "nameStyle": "nahuatl",
+        "tendencies": {
+          "religion": [["nahuatl-faith", 9], ["mayan-faith", 1]],
+          "nation": [["settler", 4], ["civic-nation", 3], ["regional", 2], ["ethnic-nation", 1]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 2],
+            ["auth-nationalist", 2],
+            ["religious-democracy", 1.5],
+            ["dem-socialism", 1.5]
+          ],
+          "government": [
+            ["divine-kingship", 3],
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["tribal-federation", 1],
+            ["theocratic-government", 0.8],
+            ["oligarchic-republic", 0.5],
+            ["native-council", 1],
+            ["constitutional-republic", 1.5],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 3],
+            ["federal-republic", 1],
+            ["one-party-state", 1],
+            ["military-junta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["mayan-faith", 8], ["totemist", 2]]},
+          "industrial": {"religion": [["catholic", 9], ["totemist", 0.5]]},
+          "modern": {"religion": [["catholic", 8], ["protestant", 1], ["irreligious", 1]]}
+        },
+        "prefs": [{"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2}, {"lake": true, "factor": 1.6}]
+      },
+      "cultures": [
+        {"id": "aztec", "group": "central-american", "name": "阿兹特克人", "orig": "Aztec", "color": "#32857e", "weight": 2},
+        {"id": "purepecha", "group": "central-american", "name": "普雷佩查人", "orig": "Purepecha", "color": "#0ce49f"},
+        {"id": "totonac", "group": "central-american", "name": "托托纳克人", "orig": "Totonac", "color": "#64e1f7"},
+        {"id": "matlantzinca", "group": "central-american", "name": "马特拉津卡人", "orig": "Matlantzinca", "color": "#7eddbf", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "otomanguean",
+        "name": "奥托曼格",
+        "orig": "Otomanguean",
+        "color": "#8d8d35",
+        "description": "瓦哈卡群山里的古老城邦之民，山顶的神殿与精美的抄本记录着家族的世系。",
+        "nameStyle": "otomanguean",
+        "tendencies": {
+          "religion": [["mayan-faith", 6], ["nahuatl-faith", 3]],
+          "nation": [["settler", 4], ["civic-nation", 3], ["regional", 2], ["ethnic-nation", 1]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 2],
+            ["auth-nationalist", 2],
+            ["religious-democracy", 1.5],
+            ["dem-socialism", 1.5]
+          ],
+          "government": [
+            ["divine-kingship", 3],
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["tribal-federation", 1],
+            ["theocratic-government", 0.8],
+            ["oligarchic-republic", 0.5],
+            ["native-council", 1],
+            ["constitutional-republic", 1.5],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 3],
+            ["federal-republic", 1],
+            ["one-party-state", 1],
+            ["military-junta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["mayan-faith", 8], ["totemist", 2]]},
+          "industrial": {"religion": [["catholic", 8], ["mayan-faith", 1]]},
+          "modern": {"religion": [["catholic", 8], ["protestant", 1], ["irreligious", 1]]}
+        },
+        "prefs": [{"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2}, {"classes": ["hills"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "zapotek", "group": "otomanguean", "name": "萨波特克人", "orig": "Zapotek", "color": "#8d8d35"},
+        {"id": "mixtec", "group": "otomanguean", "name": "米斯特克人", "orig": "Mixtec", "color": "#a8d31d"},
+        {"id": "tlapanec", "group": "otomanguean", "name": "特拉帕内克人", "orig": "Tlapanec", "color": "#f3c220", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "mayan",
+        "name": "玛雅",
+        "orig": "Mayan",
+        "color": "#297a29",
+        "description": "雨林与石灰岩半岛上的城邦之民，历法与文字的守护者，盛世的金字塔早已被绿荫覆盖。",
+        "nameStyle": "mayan",
+        "tendencies": {
+          "religion": [["mayan-faith", 10]],
+          "nation": [["settler", 4], ["civic-nation", 3], ["regional", 2], ["ethnic-nation", 1]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 2],
+            ["auth-nationalist", 2],
+            ["religious-democracy", 1.5],
+            ["dem-socialism", 1.5]
+          ],
+          "government": [
+            ["divine-kingship", 3],
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["tribal-federation", 1],
+            ["theocratic-government", 0.8],
+            ["oligarchic-republic", 0.5],
+            ["native-council", 1],
+            ["constitutional-republic", 1.5],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 3],
+            ["federal-republic", 1],
+            ["one-party-state", 1],
+            ["military-junta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["mayan-faith", 10]]},
+          "industrial": {"religion": [["catholic", 6], ["mayan-faith", 3]]},
+          "modern": {"religion": [["catholic", 6], ["protestant", 3], ["animist", 0.5]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"terrain": ["jungle"], "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "mayan", "group": "mayan", "name": "玛雅人", "orig": "Mayan", "color": "#297a29", "weight": 1.3},
+        {"id": "yucatec", "group": "mayan", "name": "尤卡坦玛雅人", "orig": "Yucatec", "color": "#0ce40c"},
+        {"id": "highland-mayan", "group": "mayan", "name": "高地玛雅人", "orig": "Highland Mayan", "color": "#a6d9b2"},
+        {"id": "putun", "group": "mayan", "name": "普吞人", "orig": "Putun", "color": "#62d562", "weight": 0.5},
+        {"id": "chontales", "group": "mayan", "name": "琼塔尔人", "orig": "Chontales", "color": "#285d34", "weight": 0.5},
+        {"id": "lacandon", "group": "mayan", "name": "拉坎东人", "orig": "Lacandon", "color": "#86c374", "weight": 0.4},
+        {"id": "wastek", "group": "mayan", "name": "瓦斯特克人", "orig": "Wastek", "color": "#08a008", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "caribbean",
+        "name": "加勒比",
+        "orig": "Caribbean",
+        "color": "#40aabf",
+        "description": "碧海群岛与河口的独木舟民族，最先迎来了西班牙人的帆船，也最先承受了它带来的灾难。",
+        "nameStyle": "caribbean",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["settler", 4], ["civic-nation", 3], ["regional", 2], ["ethnic-nation", 1]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 2],
+            ["auth-nationalist", 2],
+            ["religious-democracy", 1.5],
+            ["dem-socialism", 1.5]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["catholic", 6], ["totemist", 3]]},
+          "modern": {"religion": [["catholic", 6], ["totemist", 3]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"coast": true, "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "taino", "group": "caribbean", "name": "泰诺人", "orig": "Taino", "color": "#40aabf", "weight": 1.3},
+        {"id": "carib", "group": "caribbean", "name": "加勒比人", "orig": "Carib", "color": "#074e7e"},
+        {"id": "lokono", "group": "caribbean", "name": "洛科诺人", "orig": "Lokono", "color": "#209ff3", "weight": 0.6},
+        {"id": "maipurean", "group": "caribbean", "name": "迈普雷人", "orig": "Maipurean", "color": "#285d59", "weight": 0.6}
+      ]
+    },
+    {
+      "group": {
+        "id": "chibchan",
+        "name": "奇布查",
+        "orig": "Chibchan",
+        "color": "#4b3d8f",
+        "description": "哥伦比亚高原与地峡的民族，黄金的祭品沉入圣湖，诞生了“黄金国”的传说。",
+        "nameStyle": "chibchan",
+        "tendencies": {
+          "religion": [["inti", 7], ["totemist", 3]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["divine-kingship", 3],
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["tribal-federation", 1],
+            ["theocratic-government", 0.8],
+            ["oligarchic-republic", 0.5],
+            ["native-council", 1],
+            ["constitutional-republic", 1.5],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 3],
+            ["federal-republic", 1],
+            ["one-party-state", 1],
+            ["military-junta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["inti", 5], ["totemist", 5]]},
+          "industrial": {"religion": [["catholic", 7], ["totemist", 2]]},
+          "modern": {"religion": [["catholic", 7], ["totemist", 2]]}
+        },
+        "prefs": [{"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2}, {"tempMin": 20, "factor": 2}]
+      },
+      "cultures": [
+        {"id": "muisca", "group": "chibchan", "name": "穆伊斯卡人", "orig": "Muisca", "color": "#4b3d8f", "weight": 1.3},
+        {"id": "caran", "group": "chibchan", "name": "卡兰人", "orig": "Caran", "color": "#2b20f3"},
+        {
+          "id": "miskito",
+          "group": "chibchan",
+          "name": "米斯基托人",
+          "orig": "Miskito",
+          "color": "#a6a9d9",
+          "eraTendencies": {
+            "medieval": {"religion": [["totemist", 9]]},
+            "industrial": {"religion": [["totemist", 5], ["protestant", 3]]},
+            "modern": {"religion": [["totemist", 5], ["protestant", 3]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "maranon",
+        "name": "马拉尼翁",
+        "orig": "Marañón",
+        "color": "#85bc4e",
+        "description": "安第斯东坡的云雾林与雨林之民，悬崖上的石墓和猎首的勇士让外人望而却步。",
+        "nameStyle": "maranon",
+        "tendencies": {
+          "religion": [["inti", 5], ["totemist", 5]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["inti", 3], ["totemist", 7]]},
+          "industrial": {"religion": [["catholic", 5], ["totemist", 4]]},
+          "modern": {"religion": [["catholic", 5], ["totemist", 4]]}
+        },
+        "prefs": [{"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2}, {"terrain": ["jungle"], "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "chachapoyan", "group": "maranon", "name": "查查波亚人", "orig": "Chachapoyan", "color": "#85bc4e"},
+        {
+          "id": "jivaro",
+          "group": "maranon",
+          "name": "希瓦罗人",
+          "orig": "Jivaro",
+          "color": "#46e40c",
+          "eraTendencies": {"medieval": {"religion": [["totemist", 9]]}}
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "andean",
+        "name": "安第斯",
+        "orig": "Andean",
+        "color": "#aa40bf",
+        "description": "群山之巅的太阳之子，梯田、驿道与结绳记事撑起了一个横跨万里的帝国。",
+        "nameStyle": "quechua",
+        "tendencies": {
+          "religion": [["inti", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["divine-kingship", 3],
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["tribal-federation", 1],
+            ["theocratic-government", 0.8],
+            ["oligarchic-republic", 0.5],
+            ["native-council", 1],
+            ["constitutional-republic", 1.5],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 3],
+            ["federal-republic", 1],
+            ["one-party-state", 1],
+            ["military-junta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["inti", 9], ["totemist", 1]]},
+          "industrial": {"religion": [["catholic", 9], ["animist", 1]]},
+          "modern": {"religion": [["catholic", 8], ["protestant", 1.5], ["irreligious", 1]]}
+        },
+        "prefs": [
+          {"classes": ["highlands", "mountains", "hills"], "tempMin": 8, "factor": 2},
+          {"classes": ["mountains", "highlands", "hills"], "factor": 1.8}
+        ]
+      },
+      "cultures": [
+        {"id": "quechua", "group": "andean", "name": "克丘亚人", "orig": "Quechua", "color": "#aa40bf", "weight": 2},
+        {"id": "aimara", "group": "andean", "name": "艾马拉人", "orig": "Aimara", "color": "#c4a6d9"},
+        {"id": "chimuan", "group": "andean", "name": "奇穆人", "orig": "Chimuan", "color": "#5d2859", "weight": 0.8},
+        {"id": "diaguita", "group": "andean", "name": "迪亚吉塔人", "orig": "Diaguita", "color": "#9f20f3", "weight": 0.6}
+      ]
+    },
+    {
+      "group": {
+        "id": "araucanian",
+        "name": "阿劳坎",
+        "orig": "Araucanian",
+        "color": "#598cc0",
+        "description": "南方森林与草原的不屈之民，印加与西班牙的军队都没能越过他们的边界。",
+        "nameStyle": "araucanian",
+        "tendencies": {
+          "religion": [["totemist", 7], ["inti", 3]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 7], ["inti", 3]]},
+          "industrial": {"religion": [["totemist", 5], ["catholic", 4]]},
+          "modern": {"religion": [["totemist", 5], ["catholic", 4]]}
+        },
+        "prefs": [{"tempMin": -2, "tempMax": 16, "factor": 2}, {"terrain": ["desert"], "factor": 0.6}, {"terrain": ["forest"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "mapuche", "group": "araucanian", "name": "马普切人", "orig": "Mapuche", "color": "#598cc0", "weight": 1.5},
+        {"id": "huarpe", "group": "araucanian", "name": "瓦尔佩人", "orig": "Huarpe", "color": "#0c46e4", "weight": 0.6},
+        {"id": "patagonian", "group": "araucanian", "name": "巴塔哥尼亚人", "orig": "Patagonian", "color": "#0842a0"},
+        {"id": "het", "group": "araucanian", "name": "赫特人", "orig": "Het", "color": "#283c5d", "weight": 0.6}
+      ]
+    },
+    {
+      "group": {
+        "id": "matacoan",
+        "name": "马塔科",
+        "orig": "Matacoan",
+        "color": "#b4c270",
+        "description": "大查科干旱林地里的渔猎部族，季节的洪水决定着他们的迁徙。",
+        "nameStyle": "matacoan",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 6], ["catholic", 3]]},
+          "modern": {"religion": [["totemist", 6], ["catholic", 3]]}
+        },
+        "prefs": [{"terrain": ["savanna"], "factor": 2}, {"tempMin": 16, "factor": 1.4}, {"river": true, "factor": 1.5}]
+      },
+      "cultures": [{"id": "chacoan", "group": "matacoan", "name": "查科人", "orig": "Chacoan", "color": "#b4c270"}]
+    },
+    {
+      "group": {
+        "id": "je",
+        "name": "热",
+        "orig": "Je",
+        "color": "#79c39e",
+        "description": "巴西高原的稀树草原上的部族，环形的村落围绕着中央的广场。",
+        "nameStyle": "je",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["totemist", 6], ["catholic", 3]]},
+          "modern": {"religion": [["totemist", 6], ["catholic", 3]]}
+        },
+        "prefs": [
+          {"terrain": ["savanna"], "factor": 2},
+          {"tempMin": 16, "factor": 1.4},
+          {"classes": ["highlands", "hills"], "tempMin": 10, "factor": 1.6}
+        ]
+      },
+      "cultures": [
+        {"id": "ge", "group": "je", "name": "热人", "orig": "Ge", "color": "#79c39e", "weight": 1.3},
+        {"id": "charruan", "group": "je", "name": "查鲁亚人", "orig": "Charruan", "color": "#0ce446"}
+      ]
+    },
+    {
+      "group": {
+        "id": "tupi",
+        "name": "图皮",
+        "orig": "Tupi",
+        "color": "#732640",
+        "description": "大西洋沿岸与巴拉那河的雨林农人，独木舟船队沿着海岸与大河迁徙征伐。",
+        "nameStyle": "tupi",
+        "tendencies": {
+          "religion": [["totemist", 10]],
+          "nation": [["regional", 4], ["settler", 3], ["ethnic-nation", 2], ["civic-nation", 2]],
+          "ideology": [
+            ["dem-socialism", 3],
+            ["social-democracy", 2],
+            ["auth-nationalist", 2],
+            ["rev-socialism", 2],
+            ["liberal-conservative", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["native-council", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 2],
+            ["federal-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["totemist", 10]]},
+          "industrial": {"religion": [["catholic", 5], ["totemist", 4]]},
+          "modern": {"religion": [["catholic", 5], ["totemist", 4]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"terrain": ["jungle"], "factor": 1.8}, {"coast": true, "factor": 1.2}]
+      },
+      "cultures": [
+        {"id": "guarani", "group": "tupi", "name": "瓜拉尼人", "orig": "Guarani", "color": "#732640", "weight": 1.3},
+        {"id": "tupinamba", "group": "tupi", "name": "图皮南巴人", "orig": "Tupinamba", "color": "#e40c22"}
+      ]
+    }
+  ]
+}

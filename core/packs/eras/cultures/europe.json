@@ -1,0 +1,1628 @@
+{
+  "region": {"id": "europe", "name": "欧洲", "description": "不列颠、法兰西、日耳曼、伊比利亚、拉丁、拜占庭、北欧、东西南三支斯拉夫、喀尔巴阡、波罗的、凯尔特、乌戈尔、鞑靼"},
+  "groups": [
+    {
+      "group": {
+        "id": "british",
+        "name": "不列颠",
+        "orig": "British",
+        "color": "#be2d2d",
+        "description": "海峡对岸的岛国之民，长弓与羊毛养出了议会与船队，终将把旗帜插遍七海。",
+        "nameStyle": "en-english",
+        "tendencies": {
+          "religion": [["catholic", 8], ["anglican", 1.5], ["protestant", 0.5], ["jewish", 0.1]],
+          "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["regional", 1.5], ["imperial", 1], ["cosmopolitan", 2]],
+          "ideology": [
+            ["social-democracy", 4],
+            ["liberal-conservative", 4],
+            ["social-liberal", 3],
+            ["market-liberal", 2],
+            ["green", 2],
+            ["religious-democracy", 2],
+            ["dem-socialism", 1],
+            ["auth-nationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 0.5],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ],
+          "race": [["human", 8], ["halfling", 2], ["half-elf", 1.5], ["dwarf", 0.5], ["gnome", 0.5]],
+          "species": [["terran", 6], ["augmented", 2], ["synthetic", 2]]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["celtic-pagan", 6], ["roman-pagan", 1]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["anglican", 6], ["protestant", 2], ["reformed", 1], ["catholic", 1.5], ["jewish", 0.2]]},
+          "modern": {"religion": [["anglican", 6], ["protestant", 2], ["reformed", 1], ["catholic", 1.5], ["jewish", 0.2], ["irreligious", 3]]},
+          "fantasy": {
+            "religion": [["dawnlord", 5], ["grey-warden", 2], ["harvest-maid", 2], ["silver-lady", 1.5], ["arcane-eye", 1]],
+            "government": [["feudal-monarchy", 4], "empire", ["free-city", 2], ["holy-order", 1.5], "magocracy"]
+          },
+          "scifi": {
+            "ideology": [["sf-federalist", 4], ["sf-corporate", 3], ["sf-free", 2], ["sf-ascension", 1], ["sf-naturalist", 1]],
+            "government": [
+              "technocracy",
+              ["galactic-federation", 4],
+              ["corporate-republic", 3],
+              ["colony-council", 2],
+              "stellar-empire",
+              ["military-government", 0.6],
+              ["psionic-theocracy", 0.3]
+            ]
+          }
+        },
+        "prefs": [{"tempMin": -2, "tempMax": 16, "factor": 2}, {"terrain": ["desert"], "factor": 0.6}, {"coast": true, "factor": 1.4}]
+      },
+      "cultures": [
+        {"id": "english", "group": "british", "name": "英格兰人", "orig": "English", "color": "#be2d2d", "weight": 2},
+        {
+          "id": "scottish",
+          "group": "british",
+          "name": "苏格兰人",
+          "orig": "Scottish",
+          "color": "#d9b2a6",
+          "eraTendencies": {
+            "industrial": {"religion": [["reformed", 6], ["anglican", 1.5], ["catholic", 0.5]]},
+            "modern": {"religion": [["reformed", 6], ["anglican", 1.5], ["catholic", 0.5], ["irreligious", 3]]}
+          }
+        },
+        {"id": "welsh", "group": "british", "name": "威尔士人", "orig": "Welsh", "color": "#5d3428", "nameStyle": "celtic", "weight": 0.7},
+        {"id": "cornish", "group": "british", "name": "康沃尔人", "orig": "Cornish", "color": "#f986a1", "nameStyle": "celtic", "weight": 0.3},
+        {
+          "id": "american",
+          "group": "british",
+          "name": "美利坚人",
+          "orig": "American",
+          "color": "#f78664",
+          "tendencies": {"nation": [["settler", 5], ["civic-nation", 4], ["ethnic-nation", 1], ["cosmopolitan", 1]]},
+          "eraTendencies": {
+            "industrial": {
+              "religion": [["protestant", 6], ["anglican", 1.5], ["reformed", 1.5], ["catholic", 2]],
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            },
+            "modern": {
+              "religion": [["protestant", 6], ["anglican", 1.5], ["reformed", 1.5], ["catholic", 2], ["irreligious", 3]],
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "french",
+        "name": "法兰西",
+        "orig": "French",
+        "color": "#3069c0",
+        "description": "卢瓦尔河与塞纳河之间的王国之民，骑士、葡萄园与大教堂并立，王权在百年战火中愈发坚固。",
+        "nameStyle": "fr-french",
+        "tendencies": {
+          "religion": [["catholic", 9], ["reformed", 1], ["jewish", 0.1]],
+          "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["regional", 1.5], ["imperial", 1], ["cosmopolitan", 2]],
+          "ideology": [
+            ["social-democracy", 4],
+            ["liberal-conservative", 4],
+            ["social-liberal", 3],
+            ["market-liberal", 2],
+            ["green", 2],
+            ["religious-democracy", 2],
+            ["dem-socialism", 1],
+            ["auth-nationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 3],
+            ["elective-monarchy", 0.5],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 1.5],
+            ["revolutionary-empire", 1.5],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["celtic-pagan", 6], ["roman-pagan", 2]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["catholic", 9], ["reformed", 0.8], ["jewish", 0.3]]},
+          "modern": {"religion": [["catholic", 9], ["reformed", 0.8], ["jewish", 0.3], ["irreligious", 4]]}
+        },
+        "prefs": [{"tempMin": -2, "tempMax": 16, "factor": 2}, {"terrain": ["desert"], "factor": 0.6}, {"classes": ["plains"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "francien", "group": "french", "name": "法兰西人", "orig": "Francien", "color": "#3069c0", "weight": 2},
+        {"id": "norman", "group": "french", "name": "诺曼人", "orig": "Norman", "color": "#0c30e4"},
+        {"id": "breton", "group": "french", "name": "布列塔尼人", "orig": "Breton", "color": "#9ac9e4", "nameStyle": "celtic", "weight": 0.6},
+        {"id": "burgundian", "group": "french", "name": "勃艮第人", "orig": "Burgundian", "color": "#28495d"},
+        {"id": "aquitanian", "group": "french", "name": "阿基坦人", "orig": "Aquitanian", "color": "#1d50d3"},
+        {"id": "gascon", "group": "french", "name": "加斯科涅人", "orig": "Gascon", "color": "#328abd", "weight": 0.7},
+        {"id": "occitan", "group": "french", "name": "奥克西坦人", "orig": "Occitan", "color": "#86a6f9"},
+        {"id": "walloon", "group": "french", "name": "瓦隆人", "orig": "Walloon", "color": "#323e76", "weight": 0.6},
+        {"id": "anglois", "group": "french", "name": "盎格鲁法兰西人", "orig": "Anglois", "color": "#143894", "weight": 0.3},
+        {
+          "id": "quebecois",
+          "group": "french",
+          "name": "魁北克人",
+          "orig": "Québécois",
+          "color": "#647cf7",
+          "tendencies": {"nation": [["settler", 5], ["civic-nation", 4], ["ethnic-nation", 1], ["cosmopolitan", 1]]},
+          "eraTendencies": {
+            "industrial": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            },
+            "modern": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            }
+          }
+        },
+        {
+          "id": "louisianan",
+          "group": "french",
+          "name": "路易斯安那人",
+          "orig": "Louisianan",
+          "color": "#8d9fce",
+          "weight": 0.5,
+          "tendencies": {"nation": [["settler", 5], ["civic-nation", 4], ["ethnic-nation", 1], ["cosmopolitan", 1]]},
+          "eraTendencies": {
+            "industrial": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            },
+            "modern": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "germanic",
+        "name": "日耳曼",
+        "orig": "Germanic",
+        "color": "#6e46aa",
+        "description": "神圣罗马帝国的林地与河谷里诸侯林立，选侯、主教与自由市各守一方，商盟的船只往来北海。",
+        "nameStyle": "west-germanic",
+        "tendencies": {
+          "religion": [["catholic", 7], ["protestant", 2.5], ["reformed", 0.5], ["jewish", 0.3]],
+          "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["regional", 1.5], ["imperial", 1], ["cosmopolitan", 2]],
+          "ideology": [
+            ["social-democracy", 4],
+            ["liberal-conservative", 4],
+            ["social-liberal", 3],
+            ["market-liberal", 2],
+            ["green", 2],
+            ["religious-democracy", 2],
+            ["dem-socialism", 1],
+            ["auth-nationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 2],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 2.5],
+            ["theocratic-government", 1],
+            ["monastic-order", 0.8],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 2],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["germanic-pagan", 8], ["celtic-pagan", 1]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 1]
+            ]
+          },
+          "industrial": {"religion": [["protestant", 5], ["catholic", 4.5], ["reformed", 1], ["jewish", 0.5]]},
+          "modern": {"religion": [["protestant", 5], ["catholic", 4.5], ["reformed", 1], ["jewish", 0.5], ["irreligious", 4]]}
+        },
+        "prefs": [{"tempMin": -2, "tempMax": 16, "factor": 2}, {"terrain": ["desert"], "factor": 0.6}, {"terrain": ["forest"], "factor": 1.3}]
+      },
+      "cultures": [
+        {
+          "id": "austrian",
+          "group": "germanic",
+          "name": "奥地利人",
+          "orig": "Austrian",
+          "color": "#6e46aa",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 9], ["protestant", 0.5]]},
+            "industrial": {"religion": [["catholic", 9], ["protestant", 0.5], ["jewish", 0.6]]},
+            "modern": {"religion": [["catholic", 9], ["protestant", 0.5], ["jewish", 0.6], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "bavarian",
+          "group": "germanic",
+          "name": "巴伐利亚人",
+          "orig": "Bavarian",
+          "color": "#300ce4",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 9], ["protestant", 0.5]]},
+            "industrial": {"religion": [["catholic", 9], ["protestant", 0.6]]},
+            "modern": {"religion": [["catholic", 9], ["protestant", 0.6], ["irreligious", 4]]}
+          }
+        },
+        {"id": "swabian", "group": "germanic", "name": "施瓦本人", "orig": "Swabian", "color": "#aea6d9"},
+        {"id": "franconian", "group": "germanic", "name": "法兰克尼亚人", "orig": "Franconian", "color": "#b342f5"},
+        {
+          "id": "rhenish",
+          "group": "germanic",
+          "name": "莱茵兰人",
+          "orig": "Rhenish",
+          "color": "#cc8ff0",
+          "eraTendencies": {
+            "industrial": {"religion": [["catholic", 7], ["protestant", 2.5]]},
+            "modern": {"religion": [["catholic", 7], ["protestant", 2.5], ["irreligious", 4]]}
+          }
+        },
+        {"id": "westphalian", "group": "germanic", "name": "威斯特伐利亚人", "orig": "Westphalian", "color": "#5708a0"},
+        {
+          "id": "lower-saxon",
+          "group": "germanic",
+          "name": "下萨克森人",
+          "orig": "Lower Saxon",
+          "color": "#7c64f7",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 6], ["protestant", 4]]},
+            "industrial": {"religion": [["protestant", 8], ["catholic", 1]]},
+            "modern": {"religion": [["protestant", 8], ["catholic", 1], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "saxon",
+          "group": "germanic",
+          "name": "萨克森人",
+          "orig": "Saxon",
+          "color": "#8174c3",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 5], ["protestant", 5]]},
+            "industrial": {"religion": [["protestant", 8], ["catholic", 1]]},
+            "modern": {"religion": [["protestant", 8], ["catholic", 1], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "pomeranian",
+          "group": "germanic",
+          "name": "波美拉尼亚人",
+          "orig": "Pomeranian",
+          "color": "#3e3276",
+          "weight": 0.7,
+          "eraTendencies": {
+            "industrial": {"religion": [["protestant", 8], ["catholic", 1]]},
+            "modern": {"religion": [["protestant", 8], ["catholic", 1], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "prussian",
+          "group": "germanic",
+          "name": "普鲁士人",
+          "orig": "Prussian",
+          "color": "#6042f5",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 5], ["protestant", 5]]},
+            "industrial": {"religion": [["protestant", 8], ["catholic", 1.5]]},
+            "modern": {"religion": [["protestant", 8], ["catholic", 1.5], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "balten",
+          "group": "germanic",
+          "name": "波罗的德意志人",
+          "orig": "Balten",
+          "color": "#9c46ce",
+          "weight": 0.3,
+          "eraTendencies": {"industrial": {"religion": [["protestant", 8]]}, "modern": {"religion": [["protestant", 8], ["irreligious", 4]]}}
+        },
+        {
+          "id": "swiss",
+          "group": "germanic",
+          "name": "瑞士人",
+          "orig": "Swiss",
+          "color": "#9986f9",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 6], ["reformed", 4]]},
+            "industrial": {"religion": [["reformed", 5], ["catholic", 5]]},
+            "modern": {"religion": [["reformed", 5], ["catholic", 5], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "dutch",
+          "group": "germanic",
+          "name": "荷兰人",
+          "orig": "Dutch",
+          "color": "#8d20f3",
+          "nameStyle": "nl-dutch",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 6], ["reformed", 4]]},
+            "industrial": {"religion": [["reformed", 7], ["catholic", 3]]},
+            "modern": {"religion": [["reformed", 7], ["catholic", 3], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "flemish",
+          "group": "germanic",
+          "name": "佛兰德人",
+          "orig": "Flemish",
+          "color": "#3e0ac2",
+          "nameStyle": "nl-dutch",
+          "weight": 0.8,
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 9]]},
+            "industrial": {"religion": [["catholic", 9]]},
+            "modern": {"religion": [["catholic", 9], ["irreligious", 4]]}
+          }
+        },
+        {
+          "id": "frisian",
+          "group": "germanic",
+          "name": "弗里斯兰人",
+          "orig": "Frisian",
+          "color": "#3f2ba1",
+          "nameStyle": "nl-dutch",
+          "weight": 0.4,
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 6], ["reformed", 4]]},
+            "industrial": {"religion": [["reformed", 7], ["catholic", 2]]},
+            "modern": {"religion": [["reformed", 7], ["catholic", 2], ["irreligious", 4]]}
+          }
+        },
+        {"id": "gothic", "group": "germanic", "name": "哥特人", "orig": "Gothic", "color": "#b68dce", "weight": 0.15}
+      ]
+    },
+    {
+      "group": {
+        "id": "iberian",
+        "name": "伊比利亚",
+        "orig": "Iberian",
+        "color": "#d6ab1f",
+        "description": "收复失地运动磨砺出的半岛王国之民，十字架与卡拉维尔帆船一道驶向未知的大洋。",
+        "nameStyle": "es-spanish",
+        "tendencies": {
+          "religion": [["catholic", 9], ["sunni", 0.3], ["jewish", 0.3]],
+          "nation": [["civic-nation", 4], ["ethnic-nation", 3], ["regional", 3]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["religious-democracy", 3],
+            ["liberal-conservative", 2],
+            ["rev-socialism", 1.5],
+            ["anarchism", 1],
+            ["auth-nationalist", 1.5],
+            ["monarchist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 2.5],
+            ["elective-monarchy", 0.5],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["celtic-pagan", 4], ["roman-pagan", 3], ["canaanite", 0.5]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["catholic", 10]]},
+          "modern": {"religion": [["catholic", 10], ["irreligious", 3]]}
+        },
+        "prefs": [{"tempMin": 10, "tempMax": 21, "factor": 2}, {"biomes": ["shrubland"], "factor": 1.5}, {"classes": ["highlands"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "castilian", "group": "iberian", "name": "卡斯蒂利亚人", "orig": "Castilian", "color": "#d6ab1f", "weight": 2},
+        {"id": "leonese", "group": "iberian", "name": "莱昂人", "orig": "Leonese", "color": "#5d4428", "weight": 0.6},
+        {"id": "galician", "group": "iberian", "name": "加利西亚人", "orig": "Galician", "color": "#d9c7a6", "weight": 0.7},
+        {"id": "portuguese", "group": "iberian", "name": "葡萄牙人", "orig": "Portuguese", "color": "#a05908", "weight": 1.5},
+        {"id": "aragonese", "group": "iberian", "name": "阿拉贡人", "orig": "Aragonese", "color": "#757510"},
+        {"id": "catalan", "group": "iberian", "name": "加泰罗尼亚人", "orig": "Catalan", "color": "#ebb26f"},
+        {
+          "id": "andalusian",
+          "group": "iberian",
+          "name": "安达卢西亚人",
+          "orig": "Andalusian",
+          "color": "#f39120",
+          "eraTendencies": {"medieval": {"religion": [["catholic", 6], ["sunni", 3], ["jewish", 0.4]]}}
+        },
+        {"id": "basque", "group": "iberian", "name": "巴斯克人", "orig": "Basque", "color": "#b9b95b", "weight": 0.4},
+        {
+          "id": "brazilian",
+          "group": "iberian",
+          "name": "巴西人",
+          "orig": "Brazilian",
+          "color": "#d3d31d",
+          "tendencies": {"nation": [["settler", 5], ["civic-nation", 4], ["ethnic-nation", 1], ["cosmopolitan", 1]]},
+          "eraTendencies": {
+            "industrial": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            },
+            "modern": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            }
+          }
+        },
+        {
+          "id": "mexican",
+          "group": "iberian",
+          "name": "墨西哥人",
+          "orig": "Mexican",
+          "color": "#a87b48",
+          "tendencies": {"nation": [["settler", 5], ["civic-nation", 4], ["ethnic-nation", 1], ["cosmopolitan", 1]]},
+          "eraTendencies": {
+            "industrial": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            },
+            "modern": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            }
+          }
+        },
+        {
+          "id": "platinean",
+          "group": "iberian",
+          "name": "拉普拉塔人",
+          "orig": "Platinean",
+          "color": "#a0a008",
+          "tendencies": {"nation": [["settler", 5], ["civic-nation", 4], ["ethnic-nation", 1], ["cosmopolitan", 1]]},
+          "eraTendencies": {
+            "industrial": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            },
+            "modern": {
+              "government": [
+                ["constitutional-republic", 3],
+                ["federal-republic", 2.5],
+                ["presidential-despotism", 1.5],
+                ["revolutionary-republic", 1],
+                ["constitutional-monarchy", 1],
+                ["absolute-monarchy", 0.5],
+                ["presidential-republic", 4],
+                ["parliamentary-republic", 1.5],
+                ["military-junta", 0.5]
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "latin",
+        "name": "拉丁",
+        "orig": "Latin",
+        "color": "#389438",
+        "description": "罗马的继承者散居在半岛的城邦里，银行家、雇佣兵与画匠一同把这片土地变成了列国的棋盘。",
+        "nameStyle": "it-italian",
+        "tendencies": {
+          "religion": [["catholic", 10], ["jewish", 0.2]],
+          "nation": [["civic-nation", 4], ["ethnic-nation", 3], ["regional", 3]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["religious-democracy", 3],
+            ["liberal-conservative", 2],
+            ["rev-socialism", 1.5],
+            ["anarchism", 1],
+            ["auth-nationalist", 1.5],
+            ["monarchist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 1.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 0.5],
+            ["merchant-republic", 3],
+            ["noble-republic", 1],
+            ["imperial-free-city", 1],
+            ["theocratic-government", 1.2],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ],
+          "race": [["human", 8], ["half-elf", 1.5], ["tiefling", 1], ["gnome", 0.5]]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["roman-pagan", 8], ["hellenic", 1]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 1.5],
+              ["noble-republic", 1],
+              ["theocratic-government", 1.2]
+            ]
+          },
+          "industrial": {"religion": [["catholic", 10], ["jewish", 0.2]]},
+          "modern": {"religion": [["catholic", 10], ["jewish", 0.2], ["irreligious", 3]]},
+          "fantasy": {
+            "religion": [["dawnlord", 3], ["silver-lady", 3], ["deep-tide", 2], ["arcane-eye", 2], ["grey-warden", 1]],
+            "government": [["feudal-monarchy", 1.5], ["empire", 0.8], ["free-city", 4], ["magocracy", 1.5], ["holy-order", 1.5]]
+          }
+        },
+        "prefs": [
+          {"tempMin": 10, "tempMax": 21, "factor": 2},
+          {"biomes": ["shrubland"], "factor": 1.5},
+          {"coast": true, "factor": 1.4},
+          {"classes": ["hills"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "tuscan", "group": "latin", "name": "托斯卡纳人", "orig": "Tuscan", "color": "#389438"},
+        {"id": "lombard", "group": "latin", "name": "伦巴第人", "orig": "Lombard", "color": "#0ce40c"},
+        {"id": "venetian", "group": "latin", "name": "威尼斯人", "orig": "Venetian", "color": "#a6d9b2"},
+        {"id": "ligurian", "group": "latin", "name": "利古里亚人", "orig": "Ligurian", "color": "#285d34", "weight": 0.6},
+        {"id": "piedmontese", "group": "latin", "name": "皮埃蒙特人", "orig": "Piedmontese", "color": "#6feb6f", "weight": 0.7},
+        {"id": "romagnol", "group": "latin", "name": "罗马涅人", "orig": "Romagnol", "color": "#7edd94", "weight": 0.6},
+        {"id": "umbrian", "group": "latin", "name": "翁布里亚人", "orig": "Umbrian", "color": "#18b418", "weight": 0.5},
+        {"id": "neapolitan", "group": "latin", "name": "那不勒斯人", "orig": "Neapolitan", "color": "#2e691c", "weight": 1.3},
+        {"id": "sicilian", "group": "latin", "name": "西西里人", "orig": "Sicilian", "color": "#32bd53"},
+        {"id": "sardinian", "group": "latin", "name": "撒丁人", "orig": "Sardinian", "color": "#71b95b", "weight": 0.5},
+        {"id": "dalmatian", "group": "latin", "name": "达尔马提亚人", "orig": "Dalmatian", "color": "#149414", "weight": 0.3},
+        {"id": "maltese", "group": "latin", "name": "马耳他人", "orig": "Maltese", "color": "#3d8f50", "weight": 0.2}
+      ]
+    },
+    {
+      "group": {
+        "id": "byzantine",
+        "name": "拜占庭",
+        "orig": "Byzantine",
+        "color": "#ac3995",
+        "description": "千年帝国的遗民守着金角湾与爱琴海的岛屿，圣像与希腊语仍是他们不肯放下的骄傲。",
+        "nameStyle": "greek",
+        "tendencies": {
+          "religion": [["orthodox", 10]],
+          "nation": [["civic-nation", 4], ["ethnic-nation", 3], ["regional", 3]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["religious-democracy", 3],
+            ["liberal-conservative", 2],
+            ["rev-socialism", 1.5],
+            ["anarchism", 1],
+            ["auth-nationalist", 1.5],
+            ["monarchist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 3],
+            ["administrative-monarchy", 2],
+            ["absolute-monarchy", 2],
+            ["elective-monarchy", 0.3],
+            ["merchant-republic", 0.3],
+            ["oligarchic-republic", 0.3],
+            ["theocratic-government", 0.3],
+            ["constitutional-monarchy", 1.5],
+            ["constitutional-republic", 0.8],
+            ["presidential-despotism", 0.6],
+            ["revolutionary-republic", 0.3],
+            ["parliamentary-republic", 2],
+            ["presidential-republic", 2.5],
+            ["socialist-republic", 1.5],
+            ["one-party-state", 1.5],
+            ["military-junta", 0.5],
+            ["ultranationalist-state", 0.4]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["hellenic", 9]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["despotic-monarchy", 3],
+              ["oligarchic-republic", 0.3],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["orthodox", 10]]},
+          "modern": {"religion": [["orthodox", 10], ["irreligious", 1.5]]}
+        },
+        "prefs": [{"tempMin": 10, "tempMax": 21, "factor": 2}, {"biomes": ["shrubland"], "factor": 1.5}, {"coast": true, "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "greek", "group": "byzantine", "name": "希腊人", "orig": "Greek", "color": "#ac3995", "weight": 2},
+        {"id": "pontic", "group": "byzantine", "name": "本都希腊人", "orig": "Pontic", "color": "#ec20f3"},
+        {"id": "cappadocian", "group": "byzantine", "name": "卡帕多西亚人", "orig": "Cappadocian", "color": "#d9a6c3", "weight": 0.7},
+        {"id": "griko", "group": "byzantine", "name": "格里科人", "orig": "Griko", "color": "#5d2846", "weight": 0.3},
+        {"id": "greco-georgian", "group": "byzantine", "name": "格鲁吉亚希腊人", "orig": "Greco-Georgian", "color": "#f586f9", "weight": 0.3},
+        {"id": "crimean-gothic", "group": "byzantine", "name": "克里米亚哥特人", "orig": "Gothic (Crimean)", "color": "#f32098", "weight": 0.2}
+      ]
+    },
+    {
+      "group": {
+        "id": "scandinavian",
+        "name": "北欧",
+        "orig": "Nordic",
+        "color": "#3499b2",
+        "description": "峡湾与松林间的王国之民，维京人的子孙如今在卡尔马的联合之下争执不休。",
+        "nameStyle": "nordic-norse",
+        "tendencies": {
+          "religion": [["catholic", 7], ["protestant", 3], ["norse-pagan", 0.2]],
+          "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["cosmopolitan", 2]],
+          "ideology": [["social-democracy", 6], ["social-liberal", 2], ["green", 2], ["liberal-conservative", 2], ["dem-socialism", 1.5]],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 1],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["germanic-pagan", 9]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["protestant", 10]]},
+          "modern": {"religion": [["protestant", 10], ["irreligious", 5]]}
+        },
+        "prefs": [{"tempMin": -14, "tempMax": 6, "factor": 2.2}, {"terrain": ["desert"], "factor": 0.5}, {"coast": true, "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "danish", "group": "scandinavian", "name": "丹麦人", "orig": "Danish", "color": "#3499b2"},
+        {"id": "swedish", "group": "scandinavian", "name": "瑞典人", "orig": "Swedish", "color": "#0c86e4", "weight": 1.3},
+        {"id": "norwegian", "group": "scandinavian", "name": "挪威人", "orig": "Norwegian", "color": "#0ce4dd"},
+        {"id": "norse", "group": "scandinavian", "name": "诺斯人", "orig": "Norse", "color": "#104975", "weight": 0.2},
+        {"id": "icelandic", "group": "scandinavian", "name": "冰岛人", "orig": "Icelandic", "color": "#a6d9d7", "weight": 0.3},
+        {"id": "finnish", "group": "scandinavian", "name": "芬兰人", "orig": "Finnish", "color": "#285d5b", "nameStyle": "ugric"},
+        {
+          "id": "karelian",
+          "group": "scandinavian",
+          "name": "卡累利阿人",
+          "orig": "Karelian",
+          "color": "#64b7f7",
+          "nameStyle": "ugric",
+          "weight": 0.5,
+          "eraTendencies": {
+            "medieval": {"religion": [["orthodox", 5], ["catholic", 3]]},
+            "industrial": {"religion": [["orthodox", 5], ["protestant", 4]]},
+            "modern": {"religion": [["orthodox", 5], ["protestant", 4], ["irreligious", 5]]}
+          }
+        },
+        {
+          "id": "sami",
+          "group": "scandinavian",
+          "name": "萨米人",
+          "orig": "Sámi",
+          "color": "#64d9f7",
+          "nameStyle": "ugric",
+          "weight": 0.4,
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 8]]},
+            "medieval": {"religion": [["norse-pagan", 4], ["animist", 3], ["catholic", 2]]},
+            "industrial": {"religion": [["protestant", 6], ["animist", 2]]},
+            "modern": {"religion": [["protestant", 6], ["animist", 2], ["irreligious", 5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "east-slavic",
+        "name": "东斯拉夫",
+        "orig": "East Slavic",
+        "color": "#359783",
+        "description": "第聂伯河与伏尔加河之间的罗斯诸公国，从金帐汗国的阴影下走出，各自争夺“第三罗马”的冠冕。",
+        "nameStyle": "slavic-east",
+        "tendencies": {
+          "religion": [["orthodox", 9], ["jewish", 0.2]],
+          "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["auth-socialism", 3],
+            ["liberal-conservative", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["ultranationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 3],
+            ["administrative-monarchy", 0.5],
+            ["absolute-monarchy", 2],
+            ["elective-monarchy", 0.3],
+            ["merchant-republic", 0.3],
+            ["oligarchic-republic", 0.3],
+            ["theocratic-government", 0.3],
+            ["constitutional-monarchy", 1.5],
+            ["constitutional-republic", 0.8],
+            ["presidential-despotism", 0.6],
+            ["revolutionary-republic", 0.3],
+            ["parliamentary-republic", 2],
+            ["presidential-republic", 2.5],
+            ["socialist-republic", 1.5],
+            ["one-party-state", 1.5],
+            ["military-junta", 0.5],
+            ["ultranationalist-state", 0.4]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 8]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["despotic-monarchy", 3],
+              ["oligarchic-republic", 0.3],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["orthodox", 9], ["jewish", 0.6]]},
+          "modern": {"religion": [["orthodox", 9], ["jewish", 0.6], ["irreligious", 5]]}
+        },
+        "prefs": [{"tempMin": -8, "tempMax": 10, "factor": 2}, {"terrain": ["forest"], "tempMax": 8, "factor": 1.5}]
+      },
+      "cultures": [
+        {"id": "muscovite", "group": "east-slavic", "name": "莫斯科人", "orig": "Muscovite", "color": "#359783", "weight": 2},
+        {"id": "novgorodian", "group": "east-slavic", "name": "诺夫哥罗德人", "orig": "Novgorodian", "color": "#0ce486"},
+        {"id": "ryazanian", "group": "east-slavic", "name": "梁赞人", "orig": "Ryazanian", "color": "#a6d7d9", "weight": 0.6},
+        {
+          "id": "ruthenian",
+          "group": "east-slavic",
+          "name": "鲁塞尼亚人",
+          "orig": "Ruthenian",
+          "color": "#31e3bf",
+          "weight": 1.5,
+          "eraTendencies": {"medieval": {"religion": [["orthodox", 7], ["catholic", 1.5], ["jewish", 0.4]]}}
+        },
+        {
+          "id": "byelorussian",
+          "group": "east-slavic",
+          "name": "白俄罗斯人",
+          "orig": "Byelorussian",
+          "color": "#08a05e",
+          "eraTendencies": {"medieval": {"religion": [["orthodox", 7], ["catholic", 2], ["jewish", 0.4]]}}
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "west-slavic",
+        "name": "西斯拉夫",
+        "orig": "West Slavic",
+        "color": "#c66b2f",
+        "description": "维斯瓦河与易北河之间的平原之民，贵族的议会能选立国王，也能让国王一事无成。",
+        "nameStyle": "slavic-west",
+        "tendencies": {
+          "religion": [["catholic", 8], ["jewish", 0.8], ["protestant", 0.5]],
+          "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["auth-socialism", 3],
+            ["liberal-conservative", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["ultranationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 2.5],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 2],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 8]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 2],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["catholic", 8], ["jewish", 1], ["protestant", 1]]},
+          "modern": {"religion": [["catholic", 8], ["jewish", 1], ["protestant", 1], ["irreligious", 3]]}
+        },
+        "prefs": [{"tempMin": -8, "tempMax": 10, "factor": 2}, {"classes": ["plains"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "polish", "group": "west-slavic", "name": "波兰人", "orig": "Polish", "color": "#c66b2f", "weight": 2},
+        {
+          "id": "czech",
+          "group": "west-slavic",
+          "name": "捷克人",
+          "orig": "Czech",
+          "color": "#d9c6a6",
+          "eraTendencies": {
+            "medieval": {"religion": [["hussite", 5], ["catholic", 4]]},
+            "industrial": {"religion": [["catholic", 8], ["protestant", 1.5]]},
+            "modern": {"religion": [["catholic", 8], ["protestant", 1.5], ["irreligious", 3]]}
+          }
+        },
+        {"id": "slovak", "group": "west-slavic", "name": "斯洛伐克人", "orig": "Slovak", "color": "#5d3128"},
+        {"id": "silesian", "group": "west-slavic", "name": "西里西亚人", "orig": "Silesian", "color": "#e4300c", "weight": 0.6},
+        {"id": "sorbian", "group": "west-slavic", "name": "索布人", "orig": "Sorbian", "color": "#f7c164", "weight": 0.3}
+      ]
+    },
+    {
+      "group": {
+        "id": "south-slavic",
+        "name": "南斯拉夫",
+        "orig": "South Slavic",
+        "color": "#4646b9",
+        "description": "巴尔干群山间的诸王国，夹在新月与十字之间，修道院与清真寺在同一条河谷里相望。",
+        "nameStyle": "slavic-south",
+        "tendencies": {
+          "religion": [["orthodox", 7], ["catholic", 2], ["sunni", 1]],
+          "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["auth-socialism", 3],
+            ["liberal-conservative", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["ultranationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 3],
+            ["administrative-monarchy", 0.5],
+            ["absolute-monarchy", 2],
+            ["elective-monarchy", 0.3],
+            ["merchant-republic", 0.3],
+            ["oligarchic-republic", 0.3],
+            ["theocratic-government", 0.3],
+            ["constitutional-monarchy", 1.5],
+            ["constitutional-republic", 0.8],
+            ["presidential-despotism", 0.6],
+            ["revolutionary-republic", 0.3],
+            ["parliamentary-republic", 2],
+            ["presidential-republic", 2.5],
+            ["socialist-republic", 1.5],
+            ["one-party-state", 1.5],
+            ["military-junta", 0.5],
+            ["ultranationalist-state", 0.4]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 6], ["hellenic", 1]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["despotic-monarchy", 3],
+              ["oligarchic-republic", 0.3],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["orthodox", 7], ["catholic", 2], ["sunni", 2]]},
+          "modern": {"religion": [["orthodox", 7], ["catholic", 2], ["sunni", 2], ["irreligious", 3]]}
+        },
+        "prefs": [{"tempMin": -2, "tempMax": 16, "factor": 2}, {"terrain": ["desert"], "factor": 0.6}, {"classes": ["hills"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "serbian", "group": "south-slavic", "name": "塞尔维亚人", "orig": "Serbian", "color": "#4646b9"},
+        {
+          "id": "croatian",
+          "group": "south-slavic",
+          "name": "克罗地亚人",
+          "orig": "Croatian",
+          "color": "#a6b2d9",
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 9]]},
+            "industrial": {"religion": [["catholic", 9]]},
+            "modern": {"religion": [["catholic", 9], ["irreligious", 3]]}
+          }
+        },
+        {
+          "id": "bosnian",
+          "group": "south-slavic",
+          "name": "波斯尼亚人",
+          "orig": "Bosnian",
+          "color": "#0c0ce4",
+          "eraTendencies": {
+            "medieval": {"religion": [["orthodox", 3], ["catholic", 3], ["sunni", 3]]},
+            "industrial": {"religion": [["sunni", 6], ["orthodox", 2], ["catholic", 2]]},
+            "modern": {"religion": [["sunni", 6], ["orthodox", 2], ["catholic", 2], ["irreligious", 3]]}
+          }
+        },
+        {"id": "bulgarian", "group": "south-slavic", "name": "保加利亚人", "orig": "Bulgarian", "color": "#324276"},
+        {
+          "id": "slovene",
+          "group": "south-slavic",
+          "name": "斯洛文尼亚人",
+          "orig": "Slovene",
+          "color": "#a58ff0",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 9]]},
+            "industrial": {"religion": [["catholic", 9]]},
+            "modern": {"religion": [["catholic", 9], ["irreligious", 3]]}
+          }
+        },
+        {
+          "id": "albanian",
+          "group": "south-slavic",
+          "name": "阿尔巴尼亚人",
+          "orig": "Albanian",
+          "color": "#3d18b4",
+          "eraTendencies": {
+            "antiquity": {"religion": [["hellenic", 4], ["animist", 4]]},
+            "medieval": {"religion": [["catholic", 4], ["orthodox", 3], ["sunni", 2]]},
+            "industrial": {"religion": [["sunni", 6], ["orthodox", 2], ["catholic", 2]]},
+            "modern": {"religion": [["sunni", 6], ["orthodox", 2], ["catholic", 2], ["irreligious", 3]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "carpathian",
+        "name": "喀尔巴阡",
+        "orig": "Carpathian",
+        "color": "#8ba136",
+        "description": "多瑙河平原与群山环抱的盆地之民，马扎尔骑手与瓦拉几亚农夫守着通往欧洲腹地的门户。",
+        "nameStyle": "carpathian",
+        "tendencies": {
+          "religion": [["catholic", 7], ["reformed", 1.5], ["orthodox", 1]],
+          "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["auth-socialism", 3],
+            ["liberal-conservative", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["ultranationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 1.5],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["tengri", 3], ["animist", 3], ["roman-pagan", 2]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["catholic", 6], ["reformed", 2.5], ["orthodox", 1.5]]},
+          "modern": {"religion": [["catholic", 6], ["reformed", 2.5], ["orthodox", 1.5], ["irreligious", 2]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"classes": ["plains"], "factor": 1.3},
+          {"classes": ["hills"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "hungarian", "group": "carpathian", "name": "匈牙利人", "orig": "Hungarian", "color": "#8ba136", "weight": 2},
+        {
+          "id": "romanian",
+          "group": "carpathian",
+          "name": "罗马尼亚人",
+          "orig": "Romanian",
+          "color": "#86e40c",
+          "weight": 1.5,
+          "eraTendencies": {
+            "antiquity": {"religion": [["roman-pagan", 5], ["animist", 3]]},
+            "medieval": {"religion": [["orthodox", 10]]},
+            "industrial": {"religion": [["orthodox", 10]]},
+            "modern": {"religion": [["orthodox", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "transylvanian",
+          "group": "carpathian",
+          "name": "特兰西瓦尼亚人",
+          "orig": "Transylvanian",
+          "color": "#5d5b28",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["catholic", 4], ["reformed", 3], ["orthodox", 2]]},
+            "industrial": {"religion": [["reformed", 4], ["catholic", 3], ["orthodox", 3]]},
+            "modern": {"religion": [["reformed", 4], ["catholic", 3], ["orthodox", 3], ["irreligious", 2]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "baltic",
+        "name": "波罗的",
+        "orig": "Baltic",
+        "color": "#73bf40",
+        "description": "琥珀海岸与沼泽林地间的古老民族，欧洲最后的异教徒，直到条顿骑士的刀剑与立陶宛大公的联姻改变了一切。",
+        "nameStyle": "baltic",
+        "tendencies": {
+          "religion": [["catholic", 6], ["protestant", 2], ["animist", 0.6]],
+          "nation": [["ethnic-nation", 5], ["pan-group", 3], ["imperial", 2], ["religious-community", 1]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["auth-socialism", 3],
+            ["liberal-conservative", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["ultranationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 1],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.6],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 9]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 2],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["protestant", 6], ["catholic", 4]]},
+          "modern": {"religion": [["protestant", 6], ["catholic", 4], ["irreligious", 4]]}
+        },
+        "prefs": [{"tempMin": -8, "tempMax": 10, "factor": 2}, {"terrain": ["forest"], "tempMax": 8, "factor": 1.5}, {"coast": true, "factor": 1.2}]
+      },
+      "cultures": [
+        {
+          "id": "lithuanian",
+          "group": "baltic",
+          "name": "立陶宛人",
+          "orig": "Lithuanian",
+          "color": "#73bf40",
+          "weight": 1.5,
+          "eraTendencies": {"industrial": {"religion": [["catholic", 9]]}, "modern": {"religion": [["catholic", 9], ["irreligious", 4]]}}
+        },
+        {"id": "latvian", "group": "baltic", "name": "拉脱维亚人", "orig": "Latvian", "color": "#495d28"},
+        {"id": "estonian", "group": "baltic", "name": "爱沙尼亚人", "orig": "Estonian", "color": "#c0d9a6"}
+      ]
+    },
+    {
+      "group": {
+        "id": "celtic",
+        "name": "凯尔特",
+        "orig": "Celtic",
+        "color": "#36a160",
+        "description": "雾气笼罩的山地与海岛上的氏族之民，竖琴手传唱着先祖的谱系，从不轻易向海峡对岸低头。",
+        "nameStyle": "celtic",
+        "tendencies": {
+          "religion": [["catholic", 10]],
+          "nation": [["civic-nation", 5], ["ethnic-nation", 3], ["regional", 1.5], ["imperial", 1], ["cosmopolitan", 2]],
+          "ideology": [
+            ["social-democracy", 4],
+            ["liberal-conservative", 4],
+            ["social-liberal", 3],
+            ["market-liberal", 2],
+            ["green", 2],
+            ["religious-democracy", 2],
+            ["dem-socialism", 1],
+            ["auth-nationalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["oligarchic-republic", 0.5],
+            ["feudal-monarchy", 5],
+            ["administrative-monarchy", 1],
+            ["absolute-monarchy", 1],
+            ["elective-monarchy", 0.5],
+            ["merchant-republic", 0.5],
+            ["noble-republic", 0.3],
+            ["imperial-free-city", 0.4],
+            ["theocratic-government", 0.4],
+            ["monastic-order", 0.15],
+            ["constitutional-monarchy", 3],
+            ["constitutional-republic", 1.5],
+            ["revolutionary-republic", 0.6],
+            ["revolutionary-empire", 0.3],
+            ["federal-republic", 0.6],
+            ["presidential-despotism", 0.3],
+            ["parliamentary-republic", 4],
+            ["presidential-republic", 2],
+            ["socialist-republic", 0.4],
+            ["one-party-state", 0.4],
+            ["military-junta", 0.3],
+            ["ultranationalist-state", 0.4],
+            ["technocracy", 0.3],
+            ["commune-federation", 0.2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["celtic-pagan", 10]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 1],
+              ["tribal-despotism", 1.5],
+              ["despotic-monarchy", 1],
+              ["oligarchic-republic", 0.5],
+              ["noble-republic", 0.3],
+              ["theocratic-government", 0.4]
+            ]
+          },
+          "industrial": {"religion": [["catholic", 7], ["reformed", 2], ["anglican", 1]]},
+          "modern": {"religion": [["catholic", 7], ["reformed", 2], ["anglican", 1], ["irreligious", 2]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"coast": true, "factor": 1.4},
+          {"classes": ["hills"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "irish",
+          "group": "celtic",
+          "name": "爱尔兰人",
+          "orig": "Irish",
+          "color": "#36a160",
+          "weight": 1.5,
+          "eraTendencies": {
+            "industrial": {"religion": [["catholic", 9], ["anglican", 1]]},
+            "modern": {"religion": [["catholic", 9], ["anglican", 1], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "highlander",
+          "group": "celtic",
+          "name": "苏格兰高地人",
+          "orig": "Highlander",
+          "color": "#0ce430",
+          "eraTendencies": {
+            "industrial": {"religion": [["reformed", 5], ["catholic", 4]]},
+            "modern": {"religion": [["reformed", 5], ["catholic", 4], ["irreligious", 2]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "ugric",
+        "name": "乌戈尔",
+        "orig": "Ugric",
+        "color": "#9a53ac",
+        "description": "乌拉尔山两侧森林与冻原上的猎人与驯鹿人，皮毛贸易把他们卷进了南方诸国的账簿。",
+        "nameStyle": "ugric",
+        "tendencies": {
+          "religion": [["animist", 6], ["orthodox", 3]],
+          "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
+          "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1]],
+          "government": [
+            ["native-council", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["steppe-horde", 0.5],
+            ["despotic-monarchy", 0.5],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 1],
+            ["one-party-state", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 10]]},
+          "industrial": {"religion": [["orthodox", 6], ["animist", 3]]},
+          "modern": {"religion": [["orthodox", 6], ["animist", 3], ["irreligious", 2]]}
+        },
+        "prefs": [{"tempMin": -22, "tempMax": 2, "factor": 2.5}, {"terrain": ["forest"], "factor": 1.4}]
+      },
+      "cultures": [
+        {"id": "uralic", "group": "ugric", "name": "乌拉尔人", "orig": "Uralic", "color": "#9a53ac"},
+        {"id": "ostyak", "group": "ugric", "name": "奥斯恰克人", "orig": "Ostyak", "color": "#9820f3"},
+        {"id": "samoyed", "group": "ugric", "name": "萨莫耶德人", "orig": "Samoyed", "color": "#c3a6d9", "weight": 0.6},
+        {
+          "id": "ingrian",
+          "group": "ugric",
+          "name": "英格里亚人",
+          "orig": "Ingrian",
+          "color": "#f764f2",
+          "weight": 0.5,
+          "eraTendencies": {
+            "medieval": {"religion": [["orthodox", 6], ["catholic", 2]]},
+            "industrial": {"religion": [["protestant", 6], ["orthodox", 3]]},
+            "modern": {"religion": [["protestant", 6], ["orthodox", 3], ["irreligious", 2]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "tatar",
+        "name": "鞑靼",
+        "orig": "Tatar",
+        "color": "#a63f68",
+        "description": "金帐汗国碎裂后的继承者，草原上的骑兵仍能一夜之间出现在莫斯科的城下。",
+        "nameStyle": "tatar",
+        "tendencies": {
+          "religion": [["sunni", 8], ["tengri", 1]],
+          "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
+          "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1]],
+          "government": [
+            ["steppe-horde", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1.5],
+            ["despotic-monarchy", 1.5],
+            ["iqta", 1],
+            ["tribal-kingdom", 0.5],
+            ["absolute-monarchy", 0.5],
+            ["socialist-republic", 2],
+            ["one-party-state", 2.5],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["tengri", 9]]},
+          "industrial": {"religion": [["sunni", 9], ["orthodox", 0.5]]},
+          "modern": {"religion": [["sunni", 9], ["orthodox", 0.5], ["irreligious", 2]]}
+        },
+        "prefs": [
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.6, "factor": 2.5},
+          {"terrain": ["forest"], "factor": 0.6},
+          {"terrain": ["jungle"], "factor": 0.4},
+          {"river": true, "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "kazani", "group": "tatar", "name": "喀山鞑靼人", "orig": "Kazani", "color": "#a63f68"},
+        {"id": "crimean", "group": "tatar", "name": "克里米亚鞑靼人", "orig": "Crimean", "color": "#e40c30"},
+        {"id": "astrakhani", "group": "tatar", "name": "阿斯特拉罕鞑靼人", "orig": "Astrakhani", "color": "#f320a6", "weight": 0.6},
+        {"id": "nogai", "group": "tatar", "name": "诺盖人", "orig": "Nogai", "color": "#d9a6ae"},
+        {"id": "bashkir", "group": "tatar", "name": "巴什基尔人", "orig": "Bashkir", "color": "#f986cf"},
+        {"id": "mishar", "group": "tatar", "name": "米舍尔鞑靼人", "orig": "Mishar", "color": "#7e071b", "weight": 0.5},
+        {
+          "id": "siberian",
+          "group": "tatar",
+          "name": "西伯利亚鞑靼人",
+          "orig": "Siberian",
+          "color": "#f54275",
+          "weight": 0.6,
+          "eraTendencies": {"medieval": {"religion": [["sunni", 5], ["tengri", 4]]}}
+        },
+        {
+          "id": "sibir",
+          "group": "tatar",
+          "name": "西比尔人",
+          "orig": "Sibir",
+          "color": "#5d2837",
+          "weight": 0.4,
+          "eraTendencies": {"medieval": {"religion": [["tengri", 5], ["sunni", 4]]}}
+        }
+      ]
+    }
+  ]
+}

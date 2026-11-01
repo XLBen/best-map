@@ -1,0 +1,52 @@
+[
+  {
+    "id": "christian",
+    "dimension": "religion",
+    "name": "基督教",
+    "orig": "Christian",
+    "color": "#d2be3c",
+    "description": "信奉基督的诸教会：罗马的教宗、君士坦丁堡的牧首与宗教改革后的新教会，彼此视为异端。"
+  },
+  {
+    "id": "muslim",
+    "dimension": "religion",
+    "name": "伊斯兰教",
+    "orig": "Muslim",
+    "color": "#28a028",
+    "description": "信奉真主与先知的乌玛，在先知继承人的问题上分成了几派。"
+  },
+  {
+    "id": "eastern",
+    "dimension": "religion",
+    "name": "东方宗教",
+    "orig": "Eastern",
+    "color": "#c8641e",
+    "description": "佛陀的三乘、儒家的礼教与日本的神道：东亚与东南亚的宗教与学说。"
+  },
+  {"id": "dharmic", "dimension": "religion", "name": "达摩宗教", "orig": "Dharmic", "color": "#14aaa0", "description": "印度次大陆讲业力与轮回的宗教。"},
+  {"id": "pagan", "dimension": "religion", "name": "原生信仰", "orig": "Pagan", "color": "#8c6e46", "description": "各地的多神、自然与祖灵信仰，没有统一的教会。"},
+  {
+    "id": "judaism",
+    "dimension": "religion",
+    "name": "犹太教",
+    "orig": "Jewish",
+    "color": "#5a64dc",
+    "description": "亚伯拉罕的子孙守着律法与圣殿的记忆，散居在万国之间。"
+  },
+  {
+    "id": "zoroastrian-group",
+    "dimension": "religion",
+    "name": "琐罗亚斯德教",
+    "orig": "Zoroastrian",
+    "color": "#e65028",
+    "description": "拜火的古老宗教，讲善与恶的永恒斗争。"
+  },
+  {
+    "id": "ancient",
+    "dimension": "religion",
+    "name": "古代宗教",
+    "orig": "Ancient",
+    "color": "#a07850",
+    "description": "古典世界的诸神：奥林匹斯、尼罗河、两河与北方森林的神殿，后来都被新的信仰取代。"
+  }
+]

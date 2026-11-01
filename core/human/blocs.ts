@@ -4,7 +4,7 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { Bloc, BlocKind, CountryMeta, World } from '../world';
 import type { GenContext, HumanStage } from './context';
-import { averageCountryKm2, countryColor, countryList, countryPopScale, nameCountry, yearText } from './countries';
+import { averageCountryKm2, countryColor, countryList, countryPopScale, nameCountry, rulerTitleOf, yearText } from './countries';
 import { type Era, cultureById, worldEra } from './era';
 import { makeFlag } from './flags';
 import { type TitleOne, governmentById, titled } from './government';
@@ -638,6 +638,10 @@ function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: number, 
   const t0 = tierOf(fedArea(live[0].cs));
   if (t0) m.tier = t0;
   else delete m.tier;
+  // 等级变了：统治者的称号跟着（第四十三轮，称号按等级）
+  const rt = rulerTitleOf(world, m, era);
+  if (rt) m.ruler = { ...m.ruler, title: rt };
+  else if (m.ruler.title) m.ruler = { name: m.ruler.name, ...(m.ruler.orig ? { orig: m.ruler.orig } : {}) };
   m.history = `${yearText(m.founded)}，${culture?.name ?? m.primaryCulture}建立${fedName.zh}，${m.name}是联邦的首府所在。`;
   for (const { cs, k } of live) {
     if (k === 0) continue;
@@ -663,7 +667,7 @@ function federate(ctx: GenContext, m: CountryMeta, parts: number, seed: number, 
     };
     if (meta.capitalCell === undefined) delete meta.capitalCell;
     if (meta.tier === undefined) delete meta.tier;
-    Object.assign(meta, nameCountry(world, meta, seed, taken));
+    Object.assign(meta, nameCountry(world, meta, seed, taken, era));
     taken.add(meta.name);
     rename(meta);
     meta.history = `${yearText(meta.founded)}，与${m.name}等一起组成${fedName.zh}。`;

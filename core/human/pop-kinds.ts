@@ -1,9 +1,10 @@
 import type { z } from 'zod';
 import { type FieldDesc, builtinOf, contentItems, notBuiltin, registerKind } from '../content/registry';
-import { type Culture, type CultureGroup, type Era, type PopValue, cultureGroupSchema, cultureSchema, eraSchema, popValueSchema } from './era';
+import { type Culture, type CultureGroup, type Era, type PopValue, type ValueGroup, cultureGroupSchema, cultureSchema, eraSchema, popValueSchema, valueGroupSchema } from './era';
 import { RESOURCE_RULE_FIELDS } from './rules';
 
 // 第二十二轮的四种内容登记进登记表：时代、人口维度的取值、文化组、文化（都放在 small.content，命令是 set_content）。
+// 第四十三轮加了取值组（宗教组……，排在取值之前）
 // 内置的在时代包里（packs/builtin-tree.ts）：生成人文之前由界面加进世界（第三十轮），生成只读世界里的
 
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);
@@ -54,9 +55,31 @@ const VALUE_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
+  { key: 'group', label: '组', type: 'text', optional: true, hint: '取值组的 id：同组是异端，不同组是异教' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   PREFS,
 ];
+
+// 取值组（第四十三轮）：宗教组……
+const VALUE_GROUP_FIELDS: readonly FieldDesc[] = [
+  { key: 'id', label: 'id', type: 'text' },
+  { key: 'dimension', label: '维度', type: 'text', hint: '时代里维度的 id：religion……' },
+  { key: 'name', label: '名字', type: 'text' },
+  { key: 'orig', label: '原文', type: 'text', optional: true },
+  { key: 'color', label: '颜色', type: 'color' },
+  { key: 'description', label: '说明', type: 'longtext', optional: true },
+];
+
+// 倾向（第四十三轮起文化组也有）：不分时代的、按时代的
+const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'map', optional: true, value: { key: 'value', label: '取值与权重', type: 'weighted' }, hint: '维度 → 更可能的取值（政体写 government）' };
+const ERA_TENDENCIES: FieldDesc = {
+  key: 'eraTendencies',
+  label: '按时代的倾向',
+  type: 'map',
+  optional: true,
+  value: { key: 'value', label: '这个时代', type: 'map', value: { key: 'value', label: '取值与权重', type: 'weighted' } },
+  hint: '时代 id → 维度 → 取值；写了的那几维换掉不分时代的',
+};
 
 const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
@@ -64,6 +87,9 @@ const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
+  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, hint: '组里文化默认的地名风格的 id' },
+  { ...TENDENCIES, hint: '组里文化默认的倾向：维度 → 更可能的取值（政体写 government）' },
+  ERA_TENDENCIES,
   PREFS,
 ];
 
@@ -73,10 +99,11 @@ const CULTURE_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'nameStyle', label: '地名风格', type: 'text', hint: '地名风格的 id' },
+  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, hint: '地名风格的 id；省略时用文化组的' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'weight', label: '在组里占多少', type: 'number', optional: true, min: 0, max: 1000, step: 0.1, hint: '省略为 1' },
-  { key: 'tendencies', label: '倾向', type: 'map', optional: true, value: { key: 'value', label: '取值与权重', type: 'weighted' }, hint: '维度 → 更可能的取值' },
+  { ...TENDENCIES, hint: '只写与文化组不同的维度：维度 → 更可能的取值' },
+  ERA_TENDENCIES,
   PREFS,
 ];
 
@@ -105,6 +132,29 @@ export function registerPopKinds(): void {
     },
   });
 
+  registerKind<ValueGroup>({
+    id: 'valueGroup',
+    label: '取值组',
+    short: '取值组',
+    order: 37.5,
+    store: 'content',
+    maxInWorld: 128,
+    schema: valueGroupSchema as unknown as z.ZodType<ValueGroup>,
+    inWorld: (w) => Object.values(contentItems<ValueGroup>(w.small, 'valueGroup')),
+    dirty: () => 'human',
+    blank: () => ({ id: 'my-value-group', dimension: 'religion', name: '新取值组', color: '#999999' }),
+    fields: VALUE_GROUP_FIELDS,
+    pack: {
+      key: 'valueGroups',
+      max: 128,
+      listed: true,
+      checked: true,
+      withId: (g, id, from) => (id === from ? g : { ...g, id, name: renamed(g.name, id, from) }),
+      fromWorld: (w) => changed('valueGroup', contentItems<ValueGroup>(w.small, 'valueGroup')).map((g) => structuredClone(g)),
+      exportItem: (g) => structuredClone(g),
+    },
+  });
+
   registerKind<PopValue>({
     id: 'popValue',
     label: '人口维度的取值',
@@ -123,6 +173,11 @@ export function registerPopKinds(): void {
       listed: true,
       checked: true,
       withId: (v, id, from) => (id === from ? v : { ...v, id, name: renamed(v.name, id, from) }),
+      // 包里的取值组改了 id 时，取值跟着改
+      rewrite: (v, renames) => {
+        const g = v.group && renames.valueGroups?.get(v.group);
+        return g && g !== v.group ? { ...v, group: g } : v;
+      },
       fromWorld: (w) => changed('popValue', contentItems<PopValue>(w.small, 'popValue')).map((v) => structuredClone(v)),
       exportItem: (v) => structuredClone(v),
     },
@@ -161,8 +216,8 @@ export function registerPopKinds(): void {
     schema: cultureSchema as unknown as z.ZodType<Culture>,
     inWorld: (w) => Object.values(contentItems<Culture>(w.small, 'culture')),
     dirty: () => 'human',
-    blank: () => ({ id: 'my-culture', group: 'western', name: '新文化', color: '#999999', nameStyle: 'zh-default' }),
-    notes: (c) => (builtinOf<{ id: string }>('nameStyle').some((s) => s.id === c.nameStyle) ? [] : [`地名风格“${c.nameStyle}”不是内置的：世界里要先启用它`]),
+    blank: () => ({ id: 'my-culture', group: 'chinese', name: '新文化', color: '#999999' }),
+    notes: (c) => (c.nameStyle === undefined || builtinOf<{ id: string }>('nameStyle').some((s) => s.id === c.nameStyle) ? [] : [`地名风格“${c.nameStyle}”不是内置的：世界里要先启用它`]),
     fields: CULTURE_FIELDS,
     pack: {
       key: 'cultures',

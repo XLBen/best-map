@@ -6,13 +6,13 @@ import type { CountryMeta, CountryRules, Derived, PopTuple, World } from '../wor
 import type { GenContext, HumanStage } from './context';
 import { countryBase, personName } from './country-names';
 import { edgeCosts } from './cultures';
-import { type Culture, type Era, SUBJECT_KINDS, type SubjectKind, cultureById, dimensionValues, weightedList } from './era';
+import { type Culture, type Era, SUBJECT_KINDS, type SubjectKind, cultureById, styleOfCulture, cultureTendency, dimensionValues, popValueById, weightedList, worldEra } from './era';
 import { makeFlag } from './flags';
-import { type Government, eraGovernments, governmentById, pickTitle, titled } from './government';
+import { type Government, type TitleContext, eraGovernments, govTitles, governmentById, titled } from './government';
 import { GroupTable, SLOTS, type Share, readComp, writeComp } from './groups';
 import { COAST } from './rules';
 import { cellKm2, distKm, noiseAt } from './space';
-import { type CountryTierDef, confedCentre, confedMembers, genTiers, layoutById, tierWeights, vassalOf } from './tiers';
+import { type CountryTierDef, confedCentre, confedMembers, genTiers, layoutById, tierWeights, vassalOf, worldTiers } from './tiers';
 
 // 国家（第二十三轮）：在文化圈与人口之间的一步（见 generate.ts 的 registerHumanStage）。
 //   1. 几个国家：能住人的陆地面积 ÷（时代的 countryKm2 × “统一 ↔ 分裂”的倍数），按各文化能住人的面积分给文化；
@@ -116,25 +116,42 @@ export function countryColor(base: string, k: number, used: Set<string>): string
 // 文化的地名风格（不在世界里时用世界默认）
 function styleOf(world: World, culture: Culture | undefined) {
   const small = world.small;
-  return (culture && styleById(small, culture.nameStyle)) || styleById(small, worldStyleId(small))!;
+  const id = styleOfCulture(small, culture);
+  return (id && styleById(small, id)) || styleById(small, worldStyleId(small))!;
 }
 
-// 国名：地名 + 称号（按主流文化换说法）
-export function countryName(base: { zh: string; orig?: string }, government: Government | undefined, culture: Culture | undefined): { zh: string; orig?: string } {
-  return titled(base, pickTitle(government?.title, culture));
+// 挑称号时看的（第四十三轮）：国家的等级、主流文化与文化组、主流文化最典型的取值（宗教……）与它们的组。
+// era 省略时按世界的时代（生成时世界的时代还没换上，按生成的时代）
+export function titleContext(world: Pick<World, 'small'>, meta: Pick<CountryMeta, 'tier' | 'primaryCulture'>, era: Era | undefined = worldEra(world.small)): TitleContext {
+  const small = world.small;
+  const c = cultureById(small, meta.primaryCulture);
+  const values = era ? Object.values(typical(world, era, meta.primaryCulture).values) : [];
+  const valueGroups = values.flatMap((v) => popValueById(small, v)?.group ?? []);
+  return { ...(meta.tier ? { tier: meta.tier } : {}), tiers: worldTiers(small), ...(c ? { culture: c.id, group: c.group } : {}), values, valueGroups };
+}
+
+// 国名：地名 + 称号（按等级、主流文化、宗教换说法，见 government.ts 的 govTitles）
+export function countryName(base: { zh: string; orig?: string }, government: Government | undefined, ctx: TitleContext): { zh: string; orig?: string } {
+  return titled(base, govTitles(government, ctx).title);
+}
+
+// 统治者的称号（等级变了时重算：联邦的首府那一邦，第四十三轮）
+export function rulerTitleOf(world: Pick<World, 'small'>, meta: Pick<CountryMeta, 'government' | 'primaryCulture' | 'tier'>, era?: Era): string | undefined {
+  return govTitles(governmentById(world.small, meta.government), titleContext(world, meta, era ?? worldEra(world.small))).ruler?.zh;
 }
 
 // 名字、统治者（taken 里的国名避开）
-export function nameCountry(world: World, meta: Pick<CountryMeta, 'id' | 'government' | 'primaryCulture'>, seed: number, taken: Set<string>): Pick<CountryMeta, 'name' | 'orig' | 'base' | 'ruler'> {
+export function nameCountry(world: World, meta: Pick<CountryMeta, 'id' | 'government' | 'primaryCulture' | 'tier'>, seed: number, taken: Set<string>, era?: Era): Pick<CountryMeta, 'name' | 'orig' | 'base' | 'ruler'> {
   const small = world.small;
   const culture = cultureById(small, meta.primaryCulture);
   const gov = governmentById(small, meta.government);
   const style = styleOf(world, culture);
   const s = mixSeed(seed, hashString('country'), meta.id);
   const base = countryBase(style, s, taken);
-  const name = countryName(base, gov, culture);
+  const titles = govTitles(gov, titleContext(world, meta, era ?? worldEra(small)));
+  const name = titled(base, titles.title);
   const person = personName(style, mixSeed(s, 0x7e1));
-  const title = pickTitle(gov?.rulerTitle, culture)?.zh;
+  const title = titles.ruler?.zh;
   return {
     name: name.zh,
     ...(name.orig ? { orig: name.orig } : {}),
@@ -193,9 +210,9 @@ function pickWeighted<T>(items: readonly T[], w: (x: T) => number, rand: () => n
   return items[items.length - 1];
 }
 
-// 一个文化挑政体的权重：政体的 weight × 文化的倾向（文化写了 tendencies.government 时，没写到的 × 0.15）
-function govWeights(culture: Culture | undefined, govs: readonly Government[]): (g: Government) => number {
-  const tend = new Map(weightedList(culture?.tendencies?.government));
+// 一个文化挑政体的权重：政体的 weight × 文化的倾向（文化或文化组写了 government 的倾向时，没写到的 × 0.15）
+function govWeights(small: World['small'], era: string, culture: Culture | undefined, govs: readonly Government[]): (g: Government) => number {
+  const tend = new Map(weightedList(cultureTendency(small, culture, 'government', era)));
   const has = [...tend.keys()].some((id) => govs.some((g) => g.id === id));
   return (g) => (g.weight ?? 1) * (has ? (tend.get(g.id) ?? 0.15) : 1);
 }
@@ -497,7 +514,7 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
         const culture = ctx.cultures[c];
         // 中心是邦联的中心那一级（皇帝的本领，内置的是公国级），别的按成员的比例（内置的是城邦级、侯国级）；预算先记倍数，挑完按这一片的面积分
         const tier = s === 0 ? centreTier : pickWeighted(members.list, members.weight, rand)!;
-        const w = govWeights(culture, govs);
+        const w = govWeights(ctx.world.small, ctx.era.id, culture, govs);
         const gov = pickWeighted(govs, (gg) => w(gg) * govFit(gg, tier), rand)!;
         list.push({ cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), confed: k0 });
         // 离起点的距离（只在这一片里走）
@@ -614,7 +631,7 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
     if (!counts[u]) continue;
     const culture = ctx.cultures[unitCulture[u]];
     const rand = mulberry32(mixSeed(seed, hashString(`country:${culture.id}`), unitComp[u]));
-    const w = govWeights(culture, govs);
+    const w = govWeights(ctx.world.small, ctx.era.id, culture, govs);
     for (let k = 0; k < counts[u]; k++) {
       const gov = pickWeighted(govs, w, rand)!;
       const tier = pickWeighted(tierList, (t) => tierW[tierIndex.get(t)!] * govFit(gov, t), rand)!;
@@ -991,7 +1008,7 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
       history: '',
       ...(s.tier.id ? { tier: s.tier.id } : {}),
     };
-    Object.assign(meta, nameCountry(world, meta, seed, taken));
+    Object.assign(meta, nameCountry(world, meta, seed, taken, era));
     return meta;
   });
   for (const m of metas) small.countries[m.id] = m;
@@ -1146,14 +1163,14 @@ function placeCountries(ctx: GenContext) {
 }
 
 // 一个文化最典型的群体（生成时用：世界的时代还没换上，按 ctx 的时代）
-function typical(world: World, era: Era, culture: string): PopTuple {
+function typical(world: Pick<World, 'small'>, era: Era, culture: string): PopTuple {
   const c = cultureById(world.small, culture);
   const values: Record<string, string> = {};
   for (const dim of era.dimensions) {
     const list = dimensionValues(world.small, dim.id, era.id);
     const known = new Set(list.map((v) => v.id));
     let best: [string, number] | null = null;
-    for (const [id, w] of weightedList(c?.tendencies?.[dim.id])) if (known.has(id) && (!best || w > best[1])) best = [id, w];
+    for (const [id, w] of weightedList(cultureTendency(world.small, c, dim.id, era.id))) if (known.has(id) && (!best || w > best[1])) best = [id, w];
     if (best) values[dim.id] = best[0];
     else if (dim.required && list[0]) values[dim.id] = list[0].id;
   }

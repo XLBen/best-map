@@ -2,13 +2,13 @@ import '../content/kinds';
 import { recordedOrigin } from '../content/origin';
 import { sameItem } from '../content/refs';
 import { allKinds, itemId, kindByPackKey, kindOf, useBuiltinSource } from '../content/registry';
-import type { CultureGroup, Era, PopValue } from '../human/era';
+import type { Culture, CultureGroup, Era, PopValue } from '../human/era';
 import type { Faction, Government } from '../human/government';
 import { DEFAULT_STYLE } from '../name-styles';
 import type { PackItem, PackNode, ResourcePack } from '../packs';
 import type { SmallState } from '../world';
 import { BUILTIN_CLASSES, BUILTIN_ISLAND_TYPES, FANTASY_RESOURCES, GENERAL_RESOURCES } from './base';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, ERA_PACKS, VALUE_ERAS } from './eras';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, BUILTIN_VALUE_GROUPS, CULTURE_REGIONS, type CultureRegion, ERA_PACKS, VALUE_ERAS } from './eras';
 import { FANTASY_BIOMES, FANTASY_FIELDS } from './fantasy-biomes';
 import { FANTASY_FORMS } from './fantasy-forms';
 import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
@@ -28,14 +28,16 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //
 //   每个内置时代一个大包（时代包，id 就是时代的 id：antiquity、medieval、industrial、modern、fantasy、scifi）：
 //     era               时代项（只有规则：维度、人口密度、无主地、领海、国家大小、城市化、关系、年代）
-//     <维度 id>         每个维度一个小包（宗教、民族认同、意识形态、种族……）：放进这个时代的取值（文件里写的 eras）
+//     <维度 id>         每个维度一个小包（宗教、民族认同、意识形态、种族……）：放进这个时代的取值（文件里写的 eras），
+//                       与它们用到的取值组（第四十三轮：宗教组）
 //     governments       政体：时代文件的 pack 列出的（按列的先后），加上按下面的归法归到这个时代的
 //     factions          派系：同上
 //     resources         基础之外的资源（奇幻的秘银、魔晶……）
 //     landmarks         这个时代的地标：时代自己的（神庙、城堡、太空港……；landmarks.json 写了 eras 的）和不分时代的
 //                       （与基础里的是同一项），按 landmarks.json 的先后（生成后排成这个先后，放地标的先后与以前一样）
-//     cultures ▸ <组>   时代默认带的文化组（pack.cultures，小包带着默认的权重 weight），每组一个小包：组、组里的文化、
-//                       这些文化的地名风格
+//     cultures ▸ <组>   时代默认带的文化组（pack.cultures，小包带着默认的权重 weight），每组一个小包：组、组里的文化
+//                       （写了 except 的不带：中世纪不带殖民地的文化）、这些文化的地名风格。第四十三轮起地球上的组与文化
+//                       是“通用 ▸ 文化 ▸ 地区”里的同一份（引用），时代包只是挑几组、给权重
 //     奇幻另有 biomes、rivers、lakes、forms：奇幻的生态（带它们用到的自定义场）、河、湖、星球形态
 //   通用（common）：
 //     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类（新建时默认勾上）
@@ -45,7 +47,8 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts）
 //     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts；新建时默认勾上）
 //     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json；新建时默认勾上）
-//     cultures ▸ <组>   文化：没有哪个时代默认带的文化组
+//     cultures ▸ <地区> 文化（第四十三轮）：EU4 的全部文化组，按地区（欧洲、中东、非洲、亚洲、美洲、大洋洲、失落）
+//                       一个小包：地区里的组、文化与它们用的地名风格。奇幻、科幻的种族只在它们的时代包里
 //
 // 没被任何时代列出的政体、派系归到最贴切的时代：先看它自己写的 eras（第一个是内置时代的），再按政体的类别（CATEGORY_ERA，
 // 按类别的先后取第一个认得的），都没有时归中世纪。现在的 46 种政体、30 种派系都被时代列出了，这条归法管以后加的
@@ -82,15 +85,20 @@ const FALLBACK_ERA = 'medieval';
 
 // 地名风格按地区分（id → 地区）；没列的放“其他”。中文·默认单独一个小包（zh），在最前
 const STYLE_REGIONS: readonly { id: string; name: string; styles: readonly string[] }[] = [
-  { id: 'west-europe', name: '西欧', styles: ['west-germanic', 'en-english', 'fr-french', 'nl-dutch'] },
+  { id: 'west-europe', name: '西欧', styles: ['west-germanic', 'en-english', 'fr-french', 'nl-dutch', 'celtic'] },
   { id: 'south-europe', name: '南欧', styles: ['es-spanish', 'it-italian', 'latin', 'greek'] },
-  { id: 'north-east-europe', name: '北欧与东欧', styles: ['nordic-norse', 'slavic-east'] },
-  { id: 'east-asia', name: '东亚', styles: ['ja-kanji', 'ko-hanja'] },
-  { id: 'west-central-asia', name: '西亚与中亚', styles: ['arabic', 'persian', 'turkic'] },
-  { id: 'south-asia', name: '南亚与东南亚', styles: ['indic', 'malay', 'thai'] },
-  { id: 'africa', name: '非洲', styles: ['bantu-swahili'] },
-  { id: 'americas', name: '美洲', styles: ['nahuatl', 'quechua'] },
-  { id: 'oceania', name: '大洋洲', styles: ['polynesian'] },
+  { id: 'north-east-europe', name: '北欧与东欧', styles: ['nordic-norse', 'baltic', 'slavic-east', 'slavic-west', 'slavic-south', 'carpathian', 'ugric', 'tatar'] },
+  { id: 'east-asia', name: '东亚', styles: ['ja-kanji', 'ko-hanja', 'tibetan', 'evenki', 'kamchatkan'] },
+  { id: 'west-central-asia', name: '西亚与中亚', styles: ['arabic', 'persian', 'turkic', 'caucasian'] },
+  { id: 'south-asia', name: '南亚与东南亚', styles: ['indic', 'aryan-west', 'aryan-east', 'central-indian', 'dravidian', 'malay', 'thai', 'burman', 'mon-khmer'] },
+  { id: 'africa', name: '非洲', styles: ['maghrebi', 'cushitic', 'sudanese', 'sahelian', 'mande', 'west-african', 'kongo', 'great-lakes', 'bantu-swahili', 'southern-african'] },
+  {
+    id: 'north-america',
+    name: '北美',
+    styles: ['eskaleut', 'na-dene', 'penutian', 'sonoran', 'apachean', 'algonquian-plains', 'algonquian-central', 'algonquian-east', 'iroquoian', 'siouan', 'caddoan', 'muskogean'],
+  },
+  { id: 'americas', name: '中美与南美', styles: ['nahuatl', 'aridoamerican', 'otomanguean', 'mayan', 'caribbean', 'chibchan', 'maranon', 'quechua', 'araucanian', 'matacoan', 'je', 'tupi'] },
+  { id: 'oceania', name: '大洋洲', styles: ['polynesian', 'aboriginal'] },
   { id: 'fantasy', name: '幻想', styles: ['fantasy-elf', 'fantasy-dwarf', 'fantasy-orc', 'fantasy-seafolk'] },
 ];
 
@@ -126,12 +134,29 @@ function eraSets<T extends { id: string; category?: readonly string[] }>(builtin
   return out;
 }
 
-// 一个文化组的小包：组、组里的文化、这些文化的地名风格（第三十轮起中文·默认也带上：它不再总在世界里）。
-// weight：时代默认带这一组时的权重（新建向导默认的权重）
-function groupPack(g: CultureGroup, weight?: number): PackNode {
-  const cultures = BUILTIN_CULTURES.filter((c) => c.group === g.id);
-  const styleIds = new Set(cultures.map((c) => c.nameStyle));
-  const styles = BUILTIN_STYLES.filter((s) => styleIds.has(s.id));
+// 文化用的地名风格（自己写的，没写时组的）
+const styleOfIn = (c: Culture, groups: ReadonlyMap<string, CultureGroup>): string | undefined => c.nameStyle ?? groups.get(c.group)?.nameStyle;
+const groupById = new Map<string, CultureGroup>();
+const groupsMap = (): ReadonlyMap<string, CultureGroup> => {
+  if (!groupById.size) for (const g of BUILTIN_CULTURE_GROUPS) groupById.set(g.id, g);
+  return groupById;
+};
+// 这些文化（与组）用的地名风格，按风格表的先后
+function stylesFor(groups: readonly CultureGroup[], cultures: readonly Culture[]): unknown[] {
+  const ids = new Set<string>();
+  for (const g of groups) if (g.nameStyle) ids.add(g.nameStyle);
+  for (const c of cultures) {
+    const id = styleOfIn(c, groupsMap());
+    if (id) ids.add(id);
+  }
+  return BUILTIN_STYLES.filter((s) => ids.has(s.id));
+}
+
+// 时代包里一个文化组的小包：组、组里的文化（except 里的不带）、这些文化的地名风格（第三十轮起中文·默认也带上：它不再总在世界里）。
+// weight：时代默认带这一组时的权重（新建向导默认的权重）。第四十三轮：组与文化是“通用 ▸ 文化 ▸ 地区”里的同一份（引用，不复制）
+function groupPack(g: CultureGroup, weight?: number, except: readonly string[] = []): PackNode {
+  const cultures = BUILTIN_CULTURES.filter((c) => c.group === g.id && !except.includes(c.id));
+  const styles = stylesFor([g], cultures);
   return {
     id: g.id,
     name: g.name,
@@ -142,10 +167,16 @@ function groupPack(g: CultureGroup, weight?: number): PackNode {
   };
 }
 
+// “通用 ▸ 文化”的一个地区（第四十三轮）：地区里的全部文化组、文化与它们用的地名风格
+function regionPack(r: CultureRegion): PackNode {
+  const groups = r.groups.map((id) => groupsMap().get(id)!).filter(Boolean);
+  const cultures = BUILTIN_CULTURES.filter((c) => r.groups.includes(c.group));
+  return { id: r.id, name: r.name, description: r.description, cultureGroups: asItems(groups), cultures: asItems(cultures), nameStyles: asItems(stylesFor(groups, cultures)) };
+}
+
 function build(): ResourcePack[] {
   const govs = eraSets<Government>(BUILTIN_GOVERNMENTS, 'governments');
   const facs = eraSets<Faction>(BUILTIN_FACTIONS, 'factions');
-  const defaultGroups = new Set<string>();
   const top = (id: string, name: string, description: string, packs: PackNode[]): ResourcePack => ({ format: 'map2-pack', version: 1, id, name, author: 'map_2', description, packs });
 
   const eraPacks = BUILTIN_ERAS.map((era) => {
@@ -153,7 +184,9 @@ function build(): ResourcePack[] {
     const packs: PackNode[] = [{ id: 'era', name: '时代', eras: asItems([era]) }];
     for (const d of era.dimensions) {
       const values = eraValues(era, d.id);
-      if (values.length) packs.push({ id: d.id, name: d.label, popValues: asItems(values) });
+      // 第四十三轮：取值用到的取值组（宗教组）一起放在这一维的小包里
+      const vg = BUILTIN_VALUE_GROUPS.filter((g) => g.dimension === d.id && values.some((v) => v.group === g.id));
+      if (values.length) packs.push({ id: d.id, name: d.label, ...(vg.length ? { valueGroups: asItems(vg) } : {}), popValues: asItems(values) });
     }
     const g = govs.get(era.id) ?? [];
     if (g.length) packs.push({ id: 'governments', name: '政体', governments: asItems(g) });
@@ -163,11 +196,10 @@ function build(): ResourcePack[] {
     if (res.length) packs.push({ id: 'resources', name: '资源', resources: asItems(res) });
     const marks = BUILTIN_LANDMARK_TYPES.filter((t) => !LANDMARK_ERAS.has(t.id) || LANDMARK_ERAS.get(t.id)!.includes(era.id));
     if (marks.length) packs.push({ id: 'landmarks', name: '地标', landmarkTypes: asItems(marks) });
-    const groups = (def?.cultures ?? []).flatMap(([id, w]) => {
-      const x = BUILTIN_CULTURE_GROUPS.find((y) => y.id === id);
-      return x ? [groupPack(x, w)] : [];
+    const groups = (def?.cultures ?? []).flatMap(([id, w, opt]) => {
+      const x = groupsMap().get(id);
+      return x ? [groupPack(x, w, opt?.except)] : [];
     });
-    for (const x of groups) defaultGroups.add(x.id);
     if (groups.length) packs.push({ id: 'cultures', name: '文化', packs: groups });
     if (era.id === 'fantasy') {
       packs.push(
@@ -188,8 +220,7 @@ function build(): ResourcePack[] {
   ];
   const other = styles.filter((s) => !regionOf.has(s.id));
   if (other.length) regions.push({ id: 'other', name: '其他', nameStyles: asItems(other) });
-  const restGroups = BUILTIN_CULTURE_GROUPS.filter((g) => !defaultGroups.has(g.id));
-  const common = top(COMMON_PACK_ID, '通用', '基础内容、普通的生态、各地的地名风格、星球形态、画风、国家等级，和没有哪个时代默认带的文化组', [
+  const common = top(COMMON_PACK_ID, '通用', '基础内容、普通的生态、各地的地名风格、星球形态、画风、国家等级，和按地区分的全部文化组（EU4 的文化组）', [
     {
       id: 'base',
       name: '基础',
@@ -212,7 +243,7 @@ function build(): ResourcePack[] {
       countryTiers: asItems(BUILTIN_COUNTRY_TIERS),
       countryLayouts: asItems(BUILTIN_COUNTRY_LAYOUTS),
     },
-    ...(restGroups.length ? [{ id: 'cultures', name: '文化', packs: restGroups.map((g) => groupPack(g)) }] : []),
+    { id: 'cultures', name: '文化', description: 'EU4 的文化组与文化，按地区分；时代包默认带其中的一些', packs: CULTURE_REGIONS.map(regionPack) },
   ]);
   return [...eraPacks, common];
 }

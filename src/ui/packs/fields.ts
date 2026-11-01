@@ -226,8 +226,8 @@ export function copyItem(kind: ContentKind, item: unknown, taken: ReadonlySet<st
   return { ...src, id, ...(typeof src.name === 'string' ? { name: `${name.slice(0, 40)} ${k}` } : {}) };
 }
 
-// ---------- 称号（第二十三轮：政体的国家称号、统治者称号） ----------
-// 写法有三种（一个字符串、{zh, orig}、按文化换说法的表），编辑器里一律是一行一种：键（default、文化 id、文化组 id）、中文、原文。
+// ---------- 称号（第二十三轮：政体的国家称号、统治者称号；第四十三轮起按等级：titles、rulers，换说法的几条里也是） ----------
+// 写法有三种（一个字符串、{zh, orig}、按等级的表），编辑器里一律是一行一种：键（等级 id、default）、中文、原文。
 // 只有 default 一行时存回最简单的写法。登记表里这两个字段是 json，界面按 key 认出来换成这种编辑器
 
 export interface TitleRow {
@@ -236,7 +236,7 @@ export interface TitleRow {
   orig: string;
 }
 
-export const isTitleField = (f: Pick<FieldDesc, 'type' | 'key' | 'of'>) => f.type === 'json' && !f.of && (f.key === 'title' || f.key === 'rulerTitle');
+export const isTitleField = (f: Pick<FieldDesc, 'type' | 'key' | 'of'>) => f.type === 'json' && !f.of && (f.key === 'titles' || f.key === 'rulers');
 
 export function titleRows(v: unknown): TitleRow[] {
   const one = (key: string, x: unknown): TitleRow => (typeof x === 'string' ? { key, zh: x, orig: '' } : isObj(x) ? { key, zh: String(x.zh ?? ''), orig: String(x.orig ?? '') } : { key, zh: '', orig: '' });

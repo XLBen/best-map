@@ -12,6 +12,7 @@ import { strictWorld } from './usage';
 //   河、湖的种类：没画、没选，也没被规则自动套上（推导里没有一格是这一种）；
 //   自定义场：哪一项内容都没写到它，也没画过（场里有不是 0 的格）；
 //   政体、派系、人口维度的取值：没有国家用、没有人（现在的人口与自动的快照），与资源库里“移出”时查的一样（usage.ts）；
+//   取值组（第四十三轮）：移出没用到的取值之后没有取值属于它的；
 //   画风（第三十八轮）：世界在用的那一种（选的，没选时第一种）以外的。
 // 只按这些判断，不看移出之后地图变不变：那一步在 tidy.ts 的 planTidy（在世界的副本上真的移出、重算、逐值比较）。
 // 结果按种类、再按世界里的先后，同一个世界总是一样
@@ -22,7 +23,7 @@ export interface ContentRef {
 }
 
 // 整理时会看的种类（按移出的先后：先移用到场的内容，最后是场）
-export const TIDY_KINDS = ['government', 'faction', 'popValue', 'mapStyle', 'biome', 'riverType', 'lakeType', 'field'] as const;
+export const TIDY_KINDS = ['government', 'faction', 'popValue', 'valueGroup', 'mapStyle', 'biome', 'riverType', 'lakeType', 'field'] as const;
 
 type TidyWorld = ContentWorld & Pick<World, 'derived'>;
 
@@ -55,6 +56,10 @@ export function unusedContent(world: TidyWorld): ContentRef[] {
     const k = kindOf(kind)!;
     for (const id of Object.keys(contentItems(small, kind))) if (!usageOf(k, strict, id)) out.push({ kind, id });
   }
+  // 取值组（第四十三轮）：移出上面那些取值之后没有取值属于它的
+  const goneValues = new Set(out.filter((x) => x.kind === 'popValue').map((x) => x.id));
+  const heldGroups = new Set(Object.values(contentItems<{ id: string; group?: string }>(small, 'popValue')).flatMap((v) => (!goneValues.has(v.id) && v.group ? [v.group] : [])));
+  for (const id of Object.keys(contentItems(small, 'valueGroup'))) if (!heldGroups.has(id)) out.push({ kind: 'valueGroup', id });
   // 画风：只留世界在用的那一种
   const style = worldMapStyleId(small);
   for (const id of Object.keys(worldMapStyles(small))) if (id !== style) out.push({ kind: 'mapStyle', id });

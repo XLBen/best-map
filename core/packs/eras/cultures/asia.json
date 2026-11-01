@@ -1,0 +1,1379 @@
+{
+  "region": {"id": "asia", "name": "亚洲", "description": "阿尔泰、埃文基、堪察加、汉、朝鲜、日本、藏、泰、缅、孟-高棉、马来、印度次大陆的五组"},
+  "groups": [
+    {
+      "group": {
+        "id": "altaic",
+        "name": "阿尔泰",
+        "orig": "Altaic",
+        "color": "#92b234",
+        "description": "从戈壁到河中的草原之民，铁骑曾经踏遍半个世界，如今的汗们仍在争夺长生天赐予的正统。",
+        "nameStyle": "turkic",
+        "tendencies": {
+          "religion": [["sunni", 5], ["tengri", 3], ["vajrayana", 1]],
+          "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
+          "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1]],
+          "government": [
+            ["steppe-horde", 5],
+            ["tribal-federation", 2],
+            ["tribal-despotism", 1.5],
+            ["despotic-monarchy", 1.5],
+            ["iqta", 1],
+            ["tribal-kingdom", 0.5],
+            ["absolute-monarchy", 0.5],
+            ["socialist-republic", 2],
+            ["one-party-state", 2.5],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["tengri", 9], ["zoroastrian", 0.5]]},
+          "industrial": {"religion": [["sunni", 7], ["vajrayana", 3]]},
+          "modern": {"religion": [["sunni", 7], ["vajrayana", 3], ["irreligious", 3]]}
+        },
+        "prefs": [
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.6, "factor": 2.5},
+          {"terrain": ["forest"], "factor": 0.6},
+          {"terrain": ["jungle"], "factor": 0.4},
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.45, "factor": 1.8},
+          {"terrain": ["desert"], "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "mongol",
+          "group": "altaic",
+          "name": "蒙古人",
+          "orig": "Mongol",
+          "color": "#92b234",
+          "weight": 1.3,
+          "eraTendencies": {
+            "medieval": {"religion": [["tengri", 6], ["vajrayana", 3]]},
+            "industrial": {"religion": [["vajrayana", 9], ["tengri", 1]]},
+            "modern": {"religion": [["vajrayana", 9], ["tengri", 1], ["irreligious", 3]]}
+          }
+        },
+        {
+          "id": "khalkha",
+          "group": "altaic",
+          "name": "喀尔喀人",
+          "orig": "Khalkha",
+          "color": "#5c5d28",
+          "eraTendencies": {
+            "medieval": {"religion": [["tengri", 6], ["vajrayana", 3]]},
+            "industrial": {"religion": [["vajrayana", 9], ["tengri", 1]]},
+            "modern": {"religion": [["vajrayana", 9], ["tengri", 1], ["irreligious", 3]]}
+          }
+        },
+        {
+          "id": "oirat",
+          "group": "altaic",
+          "name": "卫拉特人",
+          "orig": "Oirat",
+          "color": "#c0d9a6",
+          "eraTendencies": {
+            "medieval": {"religion": [["tengri", 5], ["vajrayana", 4]]},
+            "industrial": {"religion": [["vajrayana", 9]]},
+            "modern": {"religion": [["vajrayana", 9], ["irreligious", 3]]}
+          }
+        },
+        {
+          "id": "korchin",
+          "group": "altaic",
+          "name": "科尔沁人",
+          "orig": "Korchin",
+          "color": "#7be40c",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["tengri", 6], ["vajrayana", 3]]},
+            "industrial": {"religion": [["vajrayana", 9]]},
+            "modern": {"religion": [["vajrayana", 9], ["irreligious", 3]]}
+          }
+        },
+        {"id": "kazakh", "group": "altaic", "name": "哈萨克人", "orig": "Kazakh", "color": "#447510"},
+        {
+          "id": "uzbek",
+          "group": "altaic",
+          "name": "乌兹别克人",
+          "orig": "Uzbek",
+          "color": "#d0d31d",
+          "weight": 1.3,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 10]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 3]]}
+          }
+        },
+        {
+          "id": "turkmeni",
+          "group": "altaic",
+          "name": "土库曼人",
+          "orig": "Turkmeni",
+          "color": "#8d8f3d",
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 10]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 3]]}
+          }
+        },
+        {"id": "kyrgyz", "group": "altaic", "name": "吉尔吉斯人", "orig": "Kyrgyz", "color": "#afdd7e", "weight": 0.6},
+        {
+          "id": "uyghur",
+          "group": "altaic",
+          "name": "维吾尔人",
+          "orig": "Uyghur",
+          "color": "#d3d562",
+          "eraTendencies": {
+            "antiquity": {"religion": [["tengri", 5], ["theravada", 3]]},
+            "medieval": {"religion": [["sunni", 8], ["mahayana", 1]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 3]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "evenki",
+        "name": "埃文基",
+        "orig": "Evenki",
+        "color": "#70acc2",
+        "description": "西伯利亚密林与冻原上的猎人与渔夫，萨满的鼓声在漫长的冬夜里回荡。",
+        "nameStyle": "evenki",
+        "tendencies": {
+          "religion": [["animist", 5], ["tengri", 4]],
+          "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
+          "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1]],
+          "government": [
+            ["native-council", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["steppe-horde", 0.5],
+            ["despotic-monarchy", 0.5],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 1],
+            ["one-party-state", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 6], ["tengri", 3]]},
+          "industrial": {"religion": [["animist", 5], ["orthodox", 2], ["vajrayana", 1]]},
+          "modern": {"religion": [["animist", 5], ["orthodox", 2], ["vajrayana", 1], ["irreligious", 2]]}
+        },
+        "prefs": [{"tempMin": -22, "tempMax": 2, "factor": 2.5}, {"terrain": ["forest"], "factor": 1.4}, {"river": true, "factor": 1.5}]
+      },
+      "cultures": [
+        {"id": "evenk", "group": "evenki", "name": "埃文基人", "orig": "Evenk", "color": "#70acc2"},
+        {"id": "tungus", "group": "evenki", "name": "通古斯人", "orig": "Tungus", "color": "#0c78e4"},
+        {
+          "id": "jurchen",
+          "group": "evenki",
+          "name": "女真人",
+          "orig": "Jurchen",
+          "color": "#1c4269",
+          "weight": 1.3,
+          "eraTendencies": {"medieval": {"religion": [["tengri", 6], ["mahayana", 2]]}}
+        },
+        {
+          "id": "buryat",
+          "group": "evenki",
+          "name": "布里亚特人",
+          "orig": "Buryat",
+          "color": "#1c6669",
+          "eraTendencies": {
+            "medieval": {"religion": [["tengri", 5], ["vajrayana", 3]]},
+            "industrial": {"religion": [["vajrayana", 8], ["animist", 1]]},
+            "modern": {"religion": [["vajrayana", 8], ["animist", 1], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "yakut",
+          "group": "evenki",
+          "name": "雅库特人",
+          "orig": "Yakut",
+          "color": "#0cdde4",
+          "eraTendencies": {
+            "industrial": {"religion": [["orthodox", 5], ["animist", 4]]},
+            "modern": {"religion": [["orthodox", 5], ["animist", 4], ["irreligious", 2]]}
+          }
+        },
+        {"id": "yukaghir", "group": "evenki", "name": "尤卡吉尔人", "orig": "Yukaghir", "color": "#64adf7", "weight": 0.4}
+      ]
+    },
+    {
+      "group": {
+        "id": "kamchatkan",
+        "name": "堪察加",
+        "orig": "Kamchatkan",
+        "color": "#7784c5",
+        "description": "火山与寒海之间的渔猎之民，靠鲑鱼与海兽度过漫长的冬天。",
+        "nameStyle": "kamchatkan",
+        "tendencies": {
+          "religion": [["animist", 9], ["shinto", 0.5]],
+          "nation": [["ethnic-nation", 4], ["pan-group", 3], ["regional", 2], ["religious-community", 1]],
+          "ideology": [["auth-nationalist", 4], ["auth-socialism", 2], ["traditionalist", 2], ["theocratic", 1], ["liberal-conservative", 1]],
+          "government": [
+            ["native-council", 3],
+            ["tribal-despotism", 2],
+            ["tribal-federation", 2],
+            ["steppe-horde", 0.5],
+            ["despotic-monarchy", 0.5],
+            ["presidential-republic", 2],
+            ["parliamentary-republic", 1],
+            ["one-party-state", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 10]]},
+          "industrial": {"religion": [["animist", 8], ["orthodox", 1.5]]},
+          "modern": {"religion": [["animist", 8], ["orthodox", 1.5], ["irreligious", 2]]}
+        },
+        "prefs": [{"tempMin": -14, "tempMax": 6, "factor": 2.2}, {"terrain": ["desert"], "factor": 0.5}, {"coast": true, "factor": 1.8}]
+      },
+      "cultures": [
+        {"id": "kamchatkan", "group": "kamchatkan", "name": "堪察加人", "orig": "Kamchatkan", "color": "#7784c5"},
+        {
+          "id": "ainu",
+          "group": "kamchatkan",
+          "name": "阿伊努人",
+          "orig": "Ainu",
+          "color": "#1a0ce4",
+          "eraTendencies": {"medieval": {"religion": [["animist", 9], ["shinto", 1]]}}
+        },
+        {"id": "nivkh", "group": "kamchatkan", "name": "尼夫赫人", "orig": "Nivkh", "color": "#332ba1", "weight": 0.5}
+      ]
+    },
+    {
+      "group": {
+        "id": "chinese",
+        "name": "汉",
+        "orig": "Chinese",
+        "color": "#eecd2b",
+        "description": "大河之滨的天下之国，科举的士大夫、精耕的农夫与远航的宝船共同托起了天朝的体面。",
+        "nameStyle": "zh-default",
+        "tendencies": {
+          "religion": [["confucian", 6], ["mahayana", 4], ["sunni", 0.2]],
+          "nation": [["ethnic-nation", 5], ["civic-nation", 2], ["imperial", 2], ["pan-group", 1]],
+          "ideology": [
+            ["liberal-conservative", 3],
+            ["auth-socialism", 3],
+            ["auth-nationalist", 2],
+            ["market-liberal", 2],
+            ["social-democracy", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["celestial-empire", 6],
+            ["administrative-monarchy", 3],
+            ["feudal-monarchy", 0.5],
+            ["constitutional-monarchy", 0.5],
+            ["constitutional-republic", 1],
+            ["presidential-despotism", 1],
+            ["socialist-republic", 3],
+            ["one-party-state", 3],
+            ["presidential-republic", 1.5],
+            ["military-junta", 1],
+            ["parliamentary-republic", 1]
+          ],
+          "species": [["terran", 5], ["augmented", 3], ["synthetic", 2.5]]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["confucian", 7], ["animist", 2]],
+            "government": [["despotic-monarchy", 3], ["divine-kingship", 1], ["tribal-kingdom", 1]]
+          },
+          "industrial": {"religion": [["confucian", 6], ["mahayana", 4], ["sunni", 0.3], ["protestant", 0.1]]},
+          "modern": {"religion": [["confucian", 6], ["mahayana", 4], ["sunni", 0.3], ["protestant", 0.1], ["irreligious", 6]]},
+          "scifi": {
+            "ideology": [["sf-technocracy", 4], ["sf-corporate", 3], ["sf-federalist", 1.5], ["sf-militarist", 1]],
+            "government": [
+              ["technocracy", 1.5],
+              ["corporate-republic", 3],
+              ["stellar-empire", 2],
+              ["galactic-federation", 1.5],
+              "military-government",
+              "colony-council"
+            ]
+          }
+        },
+        "prefs": [
+          {"tempMin": 12, "tempMax": 24, "factor": 2},
+          {"moistMin": 0.7, "factor": 1.3},
+          {"river": true, "factor": 1.5},
+          {"classes": ["plains"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "zhili", "group": "chinese", "name": "直隶人", "orig": "Zhili", "color": "#eecd2b", "weight": 1.3},
+        {"id": "zhongyuan", "group": "chinese", "name": "中原人", "orig": "Zhongyuan", "color": "#5d4828", "weight": 1.3},
+        {"id": "shandong", "group": "chinese", "name": "山东人", "orig": "Shandong", "color": "#d9d0a6"},
+        {"id": "jin", "group": "chinese", "name": "晋人", "orig": "Jin", "color": "#767e07"},
+        {
+          "id": "xibei",
+          "group": "chinese",
+          "name": "西北人",
+          "orig": "Xibei",
+          "color": "#c2780a",
+          "eraTendencies": {"medieval": {"religion": [["confucian", 5], ["mahayana", 3], ["sunni", 2]]}}
+        },
+        {"id": "jianghuai", "group": "chinese", "name": "江淮人", "orig": "Jianghuai", "color": "#a88148"},
+        {"id": "hubei", "group": "chinese", "name": "湖北人", "orig": "Hubei", "color": "#d5c262"},
+        {"id": "wu", "group": "chinese", "name": "吴人", "orig": "Wu", "color": "#a9b418", "weight": 1.3},
+        {"id": "gan", "group": "chinese", "name": "赣人", "orig": "Gan", "color": "#7e4e07"},
+        {"id": "xiang", "group": "chinese", "name": "湘人", "orig": "Xiang", "color": "#b49a18"},
+        {"id": "min", "group": "chinese", "name": "闽人", "orig": "Min", "color": "#f5ad42"},
+        {"id": "hakka", "group": "chinese", "name": "客家人", "orig": "Hakka", "color": "#69651c", "weight": 0.6},
+        {"id": "cantonese", "group": "chinese", "name": "粤人", "orig": "Cantonese", "color": "#ce9746", "weight": 1.2},
+        {"id": "sichuanese", "group": "chinese", "name": "巴蜀人", "orig": "Sichuanese", "color": "#ddb77e", "weight": 1.2},
+        {
+          "id": "manchu",
+          "group": "chinese",
+          "name": "满洲人",
+          "orig": "Manchu",
+          "color": "#947014",
+          "nameStyle": "evenki",
+          "weight": 0.6,
+          "eraTendencies": {"medieval": {"religion": [["tengri", 4], ["confucian", 3], ["mahayana", 2]]}}
+        },
+        {"id": "sino-altaic", "group": "chinese", "name": "北疆汉人", "orig": "Sino-Altaic", "color": "#a1a848", "weight": 0.3},
+        {"id": "sino-korean", "group": "chinese", "name": "辽东汉人", "orig": "Sino-Korean", "color": "#c7d31d", "weight": 0.3},
+        {
+          "id": "sino-tibetan",
+          "group": "chinese",
+          "name": "汉藏人",
+          "orig": "Sino-Tibetan",
+          "color": "#f3b720",
+          "weight": 0.3,
+          "eraTendencies": {"medieval": {"religion": [["confucian", 4], ["vajrayana", 3], ["mahayana", 2]]}}
+        },
+        {"id": "sino-vietnamese", "group": "chinese", "name": "交趾汉人", "orig": "Sino-Vietnamese", "color": "#ced562", "weight": 0.3},
+        {"id": "sino-zhuang", "group": "chinese", "name": "岭西汉人", "orig": "Sino-Zhuang", "color": "#bec374", "weight": 0.3}
+      ]
+    },
+    {
+      "group": {
+        "id": "korean",
+        "name": "朝鲜",
+        "orig": "Korean",
+        "color": "#4ebc72",
+        "description": "半岛上的礼仪之邦，两班士大夫恪守朱子的教诲，夹在大国之间谨慎地守着自己的王统。",
+        "nameStyle": "ko-hanja",
+        "tendencies": {
+          "religion": [["confucian", 7], ["mahayana", 3]],
+          "nation": [["ethnic-nation", 5], ["civic-nation", 2], ["imperial", 2], ["pan-group", 1]],
+          "ideology": [
+            ["liberal-conservative", 3],
+            ["auth-socialism", 3],
+            ["auth-nationalist", 2],
+            ["market-liberal", 2],
+            ["social-democracy", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 2],
+            ["administrative-monarchy", 5],
+            ["feudal-monarchy", 0.5],
+            ["absolute-monarchy", 3],
+            ["constitutional-monarchy", 1],
+            ["presidential-republic", 3],
+            ["one-party-state", 2],
+            ["socialist-republic", 2],
+            ["military-junta", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 6], ["confucian", 3]], "government": [["tribal-kingdom", 2], ["despotic-monarchy", 2]]},
+          "industrial": {"religion": [["confucian", 7], ["mahayana", 2.5], ["protestant", 0.3], ["catholic", 0.3]]},
+          "modern": {"religion": [["irreligious", 5], ["protestant", 2.5], ["mahayana", 2.5], ["catholic", 1], ["confucian", 1]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"classes": ["hills"], "factor": 1.3},
+          {"coast": true, "factor": 1.2}
+        ]
+      },
+      "cultures": [{"id": "korean", "group": "korean", "name": "朝鲜人", "orig": "Korean", "color": "#4ebc72"}]
+    },
+    {
+      "group": {
+        "id": "japanese",
+        "name": "日本",
+        "orig": "Japanese",
+        "color": "#9b273a",
+        "description": "东海之中的岛国，天皇高居京都，各地的武士大名为天下的霸权兵戈相见。",
+        "nameStyle": "ja-kanji",
+        "tendencies": {
+          "religion": [["shinto", 6], ["mahayana", 5], ["catholic", 0.1]],
+          "nation": [["ethnic-nation", 5], ["civic-nation", 2], ["imperial", 2], ["pan-group", 1]],
+          "ideology": [
+            ["liberal-conservative", 3],
+            ["auth-socialism", 3],
+            ["auth-nationalist", 2],
+            ["market-liberal", 2],
+            ["social-democracy", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 1],
+            ["shogunate", 6],
+            ["feudal-monarchy", 2],
+            ["administrative-monarchy", 0.8],
+            ["constitutional-monarchy", 4],
+            ["absolute-monarchy", 1],
+            ["parliamentary-republic", 2],
+            ["ultranationalist-state", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["shinto", 10]], "government": [["tribal-kingdom", 2], ["divine-kingship", 2], ["despotic-monarchy", 1]]},
+          "industrial": {"religion": [["shinto", 6], ["mahayana", 5]]},
+          "modern": {"religion": [["shinto", 6], ["mahayana", 5], ["irreligious", 5]]}
+        },
+        "prefs": [
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6},
+          {"coast": true, "factor": 1.8},
+          {"classes": ["hills"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "togoku", "group": "japanese", "name": "东国人", "orig": "Togoku", "color": "#9b273a", "weight": 1.2},
+        {"id": "saigoku", "group": "japanese", "name": "西国人", "orig": "Saigoku", "color": "#d9a6ba", "weight": 1.2},
+        {"id": "kyushuan", "group": "japanese", "name": "九州人", "orig": "Kyushuan", "color": "#e41a0c", "weight": 0.8}
+      ]
+    },
+    {
+      "group": {
+        "id": "tibetan",
+        "name": "藏",
+        "orig": "Tibetan",
+        "color": "#cf916e",
+        "description": "世界屋脊上的高原之民，寺院与活佛是这片稀薄空气里最坚固的权威。",
+        "nameStyle": "tibetan",
+        "tendencies": {
+          "religion": [["vajrayana", 9], ["animist", 1]],
+          "nation": [["ethnic-nation", 5], ["civic-nation", 2], ["imperial", 2], ["pan-group", 1]],
+          "ideology": [
+            ["liberal-conservative", 3],
+            ["auth-socialism", 3],
+            ["auth-nationalist", 2],
+            ["market-liberal", 2],
+            ["social-democracy", 1.5],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 2],
+            ["tribal-despotism", 2],
+            ["theocratic-government", 5],
+            ["feudal-monarchy", 2],
+            ["despotic-monarchy", 1],
+            ["tribal-federation", 1],
+            ["one-party-state", 1],
+            ["socialist-republic", 1],
+            ["parliamentary-republic", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["animist", 8], ["tengri", 1]]},
+          "industrial": {"religion": [["vajrayana", 9], ["animist", 0.5]]},
+          "modern": {"religion": [["vajrayana", 9], ["animist", 0.5], ["irreligious", 2]]}
+        },
+        "prefs": [{"classes": ["highlands", "mountains", "peaks"], "factor": 2.5}, {"tempMax": 10, "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "tibetan", "group": "tibetan", "name": "藏人", "orig": "Tibetan", "color": "#cf916e", "weight": 1.5},
+        {
+          "id": "bai",
+          "group": "tibetan",
+          "name": "白族人",
+          "orig": "Bai",
+          "color": "#e4290c",
+          "nameStyle": "zh-default",
+          "weight": 0.5,
+          "eraTendencies": {
+            "medieval": {"religion": [["mahayana", 6], ["confucian", 3]]},
+            "industrial": {"religion": [["mahayana", 6], ["confucian", 3]]},
+            "modern": {"religion": [["mahayana", 6], ["confucian", 3], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "miao",
+          "group": "tibetan",
+          "name": "苗人",
+          "orig": "Miao",
+          "color": "#f39f20",
+          "nameStyle": "zh-default",
+          "weight": 0.8,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 9], ["confucian", 1]]},
+            "industrial": {"religion": [["animist", 8], ["confucian", 1]]},
+            "modern": {"religion": [["animist", 8], ["confucian", 1], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "yi",
+          "group": "tibetan",
+          "name": "彝人",
+          "orig": "Yi",
+          "color": "#751d10",
+          "nameStyle": "zh-default",
+          "weight": 0.8,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 8], ["vajrayana", 1]]},
+            "industrial": {"religion": [["animist", 8], ["vajrayana", 1]]},
+            "modern": {"religion": [["animist", 8], ["vajrayana", 1], ["irreligious", 2]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "tai",
+        "name": "泰",
+        "orig": "Tai",
+        "color": "#60ce3b",
+        "description": "湄南河与湄公河谷地的稻作之民，金顶的佛寺与象兵护卫着一座座曼陀罗式的王城。",
+        "nameStyle": "thai",
+        "tendencies": {
+          "religion": [["theravada", 8], ["animist", 1]],
+          "nation": [["ethnic-nation", 3], ["civic-nation", 3], ["religious-community", 2], ["regional", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["liberal-conservative", 2],
+            ["market-liberal", 2],
+            ["auth-socialism", 2],
+            ["monarchist", 2],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 2],
+            ["tribal-federation", 0.5],
+            ["absolute-monarchy", 2],
+            ["constitutional-monarchy", 1.5],
+            ["military-junta", 2],
+            ["one-party-state", 2],
+            ["socialist-republic", 1.5],
+            ["presidential-republic", 1.5],
+            ["parliamentary-republic", 1.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 8], ["theravada", 1]],
+            "government": [["tribal-kingdom", 2], ["despotic-monarchy", 3], ["divine-kingship", 1.5], ["tribal-federation", 0.5]]
+          },
+          "industrial": {"religion": [["theravada", 9], ["animist", 0.5]]},
+          "modern": {"religion": [["theravada", 9], ["animist", 0.5], ["irreligious", 1]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"river": true, "factor": 1.5}, {"tempMin": 18, "factor": 1.6}, {"moistMin": 0.9, "factor": 1.4}]
+      },
+      "cultures": [
+        {"id": "siamese", "group": "tai", "name": "暹罗人", "orig": "Siamese", "color": "#60ce3b", "weight": 1.5},
+        {"id": "lao", "group": "tai", "name": "老挝人", "orig": "Lao", "color": "#415d28"},
+        {"id": "khon-muang", "group": "tai", "name": "兰纳人", "orig": "Khon Muang", "color": "#bed9a6"},
+        {"id": "shan", "group": "tai", "name": "掸人", "orig": "Shan", "color": "#327e07"},
+        {
+          "id": "zhuang",
+          "group": "tai",
+          "name": "壮人",
+          "orig": "Zhuang",
+          "color": "#96dd7e",
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 5], ["mahayana", 2], ["confucian", 2]]},
+            "industrial": {"religion": [["animist", 4], ["mahayana", 3], ["confucian", 3]]},
+            "modern": {"religion": [["animist", 4], ["mahayana", 3], ["confucian", 3], ["irreligious", 1]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "burman",
+        "name": "缅",
+        "orig": "Burman",
+        "color": "#a85cc1",
+        "description": "伊洛瓦底江流域的佛塔之国，王朝在蒲甘的遗迹上一次次重建，又一次次向四邻征伐。",
+        "nameStyle": "burman",
+        "tendencies": {
+          "religion": [["theravada", 8], ["animist", 1]],
+          "nation": [["ethnic-nation", 3], ["civic-nation", 3], ["religious-community", 2], ["regional", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["liberal-conservative", 2],
+            ["market-liberal", 2],
+            ["auth-socialism", 2],
+            ["monarchist", 2],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 2],
+            ["tribal-federation", 0.5],
+            ["absolute-monarchy", 2],
+            ["constitutional-monarchy", 1.5],
+            ["military-junta", 2],
+            ["one-party-state", 2],
+            ["socialist-republic", 1.5],
+            ["presidential-republic", 1.5],
+            ["parliamentary-republic", 1.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 8], ["theravada", 1]],
+            "government": [["tribal-kingdom", 2], ["despotic-monarchy", 3], ["divine-kingship", 1.5], ["tribal-federation", 0.5]]
+          },
+          "industrial": {"religion": [["theravada", 8], ["animist", 1], ["protestant", 0.3]]},
+          "modern": {"religion": [["theravada", 8], ["animist", 1], ["protestant", 0.3], ["irreligious", 0.5]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"river": true, "factor": 1.5}, {"tempMin": 18, "factor": 1.6}, {"moistMin": 0.9, "factor": 1.4}]
+      },
+      "cultures": [
+        {"id": "burmese", "group": "burman", "name": "缅人", "orig": "Burmese", "color": "#a85cc1", "weight": 1.5},
+        {"id": "arakanese", "group": "burman", "name": "若开人", "orig": "Arakanese", "color": "#7b0ce4"},
+        {
+          "id": "karen",
+          "group": "burman",
+          "name": "克伦人",
+          "orig": "Karen",
+          "color": "#c0a6d9",
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 6], ["theravada", 3]]},
+            "industrial": {"religion": [["theravada", 5], ["animist", 3], ["protestant", 1.5]]},
+            "modern": {"religion": [["theravada", 5], ["animist", 3], ["protestant", 1.5], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "chin",
+          "group": "burman",
+          "name": "钦人",
+          "orig": "Chin",
+          "color": "#f242f5",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 9]]},
+            "industrial": {"religion": [["animist", 7], ["protestant", 2]]},
+            "modern": {"religion": [["animist", 7], ["protestant", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "kachin",
+          "group": "burman",
+          "name": "克钦人",
+          "orig": "Kachin",
+          "color": "#56285d",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 9]]},
+            "industrial": {"religion": [["animist", 7], ["protestant", 2]]},
+            "modern": {"religion": [["animist", 7], ["protestant", 2], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "mon-khmer",
+        "name": "孟-高棉",
+        "orig": "Mon-Khmer",
+        "color": "#358269",
+        "description": "吴哥的子孙与湄公河三角洲的稻农，往日的石砌神殿已被森林吞没，新的王朝仍在其阴影下延续。",
+        "nameStyle": "mon-khmer",
+        "tendencies": {
+          "religion": [["theravada", 8], ["animist", 1]],
+          "nation": [["ethnic-nation", 3], ["civic-nation", 3], ["religious-community", 2], ["regional", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["liberal-conservative", 2],
+            ["market-liberal", 2],
+            ["auth-socialism", 2],
+            ["monarchist", 2],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 2],
+            ["tribal-federation", 0.5],
+            ["absolute-monarchy", 2],
+            ["constitutional-monarchy", 1.5],
+            ["military-junta", 2],
+            ["one-party-state", 2],
+            ["socialist-republic", 1.5],
+            ["presidential-republic", 1.5],
+            ["parliamentary-republic", 1.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["vedic", 4], ["animist", 5]],
+            "government": [["tribal-kingdom", 2], ["despotic-monarchy", 3], ["divine-kingship", 1.5], ["tribal-federation", 0.5]]
+          },
+          "industrial": {"religion": [["theravada", 9]]},
+          "modern": {"religion": [["theravada", 9], ["irreligious", 1]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"river": true, "factor": 1.5}, {"tempMin": 18, "factor": 1.6}, {"moistMin": 0.9, "factor": 1.4}]
+      },
+      "cultures": [
+        {"id": "khmer", "group": "mon-khmer", "name": "高棉人", "orig": "Khmer", "color": "#358269", "weight": 1.3},
+        {"id": "mon", "group": "mon-khmer", "name": "孟人", "orig": "Mon", "color": "#0ce469"},
+        {
+          "id": "vietnamese",
+          "group": "mon-khmer",
+          "name": "越南人",
+          "orig": "Vietnamese",
+          "color": "#50e7b5",
+          "weight": 1.5,
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 7], ["confucian", 2]]},
+            "medieval": {"religion": [["confucian", 5], ["mahayana", 5]]},
+            "industrial": {"religion": [["mahayana", 5], ["confucian", 4], ["catholic", 1]]},
+            "modern": {"religion": [["irreligious", 6], ["mahayana", 3], ["catholic", 1]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "malay",
+        "name": "马来",
+        "orig": "Malay",
+        "color": "#a63a82",
+        "description": "万岛之海上的港口与苏丹国，香料、季风与海峡造就了一个个商人的王国。",
+        "nameStyle": "malay",
+        "tendencies": {
+          "religion": [["sunni", 6], ["hindu", 1.5], ["animist", 2]],
+          "nation": [["ethnic-nation", 3], ["civic-nation", 3], ["religious-community", 2], ["regional", 2]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["liberal-conservative", 2],
+            ["market-liberal", 2],
+            ["auth-socialism", 2],
+            ["monarchist", 2],
+            ["traditionalist", 1]
+          ],
+          "government": [
+            ["tribal-kingdom", 2],
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 2],
+            ["tribal-federation", 0.5],
+            ["absolute-monarchy", 2],
+            ["constitutional-monarchy", 1.5],
+            ["military-junta", 2],
+            ["one-party-state", 2],
+            ["socialist-republic", 1.5],
+            ["presidential-republic", 1.5],
+            ["parliamentary-republic", 1.5],
+            ["merchant-republic", 1],
+            ["iqta", 1.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["vedic", 3], ["animist", 6]],
+            "government": [["tribal-kingdom", 2], ["despotic-monarchy", 3], ["divine-kingship", 1.5], ["tribal-federation", 0.5]]
+          },
+          "industrial": {"religion": [["sunni", 7], ["animist", 1.5], ["catholic", 0.5]]},
+          "modern": {"religion": [["sunni", 7], ["animist", 1.5], ["catholic", 0.5], ["irreligious", 0.5]]}
+        },
+        "prefs": [{"tempMin": 20, "factor": 2}, {"coast": true, "factor": 1.8}, {"terrain": ["jungle"], "factor": 1.3}]
+      },
+      "cultures": [
+        {"id": "malayan", "group": "malay", "name": "马来人", "orig": "Malayan", "color": "#a63a82", "weight": 1.3},
+        {
+          "id": "javanese",
+          "group": "malay",
+          "name": "爪哇人",
+          "orig": "Javanese",
+          "color": "#f320de",
+          "weight": 1.5,
+          "eraTendencies": {"medieval": {"religion": [["sunni", 5], ["hindu", 4]]}}
+        },
+        {"id": "sundanese", "group": "malay", "name": "巽他人", "orig": "Sundanese", "color": "#d9a6bc"},
+        {"id": "sumatran", "group": "malay", "name": "苏门答腊人", "orig": "Sumatran", "color": "#e40c69"},
+        {
+          "id": "acehnese",
+          "group": "malay",
+          "name": "亚齐人",
+          "orig": "Acehnese",
+          "color": "#5d283f",
+          "weight": 0.6,
+          "eraTendencies": {"medieval": {"religion": [["sunni", 10]]}}
+        },
+        {
+          "id": "bornean",
+          "group": "malay",
+          "name": "婆罗洲人",
+          "orig": "Bornean",
+          "color": "#f986ed",
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 6], ["sunni", 3]]},
+            "industrial": {"religion": [["animist", 5], ["sunni", 4], ["protestant", 1]]},
+            "modern": {"religion": [["animist", 5], ["sunni", 4], ["protestant", 1], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "sulawesi",
+          "group": "malay",
+          "name": "苏拉威西人",
+          "orig": "Sulawesi",
+          "color": "#e40c9c",
+          "eraTendencies": {"medieval": {"religion": [["animist", 5], ["sunni", 4]]}}
+        },
+        {
+          "id": "moluccan",
+          "group": "malay",
+          "name": "摩鹿加人",
+          "orig": "Moluccan",
+          "color": "#f986b8",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 6], ["animist", 3]]},
+            "industrial": {"religion": [["sunni", 5], ["protestant", 3]]},
+            "modern": {"religion": [["sunni", 5], ["protestant", 3], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "nusa-tenggara",
+          "group": "malay",
+          "name": "努沙登加拉人",
+          "orig": "Nusa Tenggara",
+          "color": "#a0084a",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["hindu", 4], ["animist", 4], ["sunni", 2]]},
+            "industrial": {"religion": [["hindu", 4], ["sunni", 3], ["catholic", 2]]},
+            "modern": {"religion": [["hindu", 4], ["sunni", 3], ["catholic", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "filipino",
+          "group": "malay",
+          "name": "菲律宾人",
+          "orig": "Filipino",
+          "color": "#a00891",
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 5], ["sunni", 3]]},
+            "industrial": {"religion": [["catholic", 8], ["sunni", 1]]},
+            "modern": {"religion": [["catholic", 8], ["sunni", 1], ["protestant", 1]]}
+          }
+        },
+        {
+          "id": "cham",
+          "group": "malay",
+          "name": "占人",
+          "orig": "Cham",
+          "color": "#c374bb",
+          "weight": 0.5,
+          "eraTendencies": {"antiquity": {"religion": [["vedic", 7]]}, "medieval": {"religion": [["hindu", 4], ["sunni", 5]]}}
+        },
+        {
+          "id": "madagascan",
+          "group": "malay",
+          "name": "马达加斯加人",
+          "orig": "Madagascan",
+          "color": "#691c58",
+          "weight": 0.4,
+          "eraTendencies": {
+            "medieval": {"religion": [["animist", 9]]},
+            "industrial": {"religion": [["animist", 6], ["protestant", 2]]},
+            "modern": {"religion": [["animist", 6], ["protestant", 2], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "hindustani",
+        "name": "印度斯坦",
+        "orig": "Hindustani",
+        "color": "#c53620",
+        "description": "恒河平原上的富庶之地，苏丹的宫廷、拉其普特的堡垒与圣城的河阶层层交织。",
+        "nameStyle": "indic",
+        "tendencies": {
+          "religion": [["hindu", 6], ["sunni", 3], ["sikh", 0.3]],
+          "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["social-democracy", 2],
+            ["religious-democracy", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["oligarchic-republic", 1],
+            ["tribal-kingdom", 1],
+            ["feudal-monarchy", 2],
+            ["administrative-monarchy", 1],
+            ["iqta", 2],
+            ["theocratic-government", 0.3],
+            ["absolute-monarchy", 1],
+            ["constitutional-monarchy", 1],
+            ["presidential-despotism", 0.5],
+            ["parliamentary-republic", 4],
+            ["federal-republic", 2],
+            ["presidential-republic", 1],
+            ["socialist-republic", 0.5],
+            ["one-party-state", 0.5]
+          ],
+          "species": [["terran", 7], ["augmented", 2], ["synthetic", 1]]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["vedic", 8], ["theravada", 2]],
+            "government": [
+              ["despotic-monarchy", 3],
+              ["divine-kingship", 1.5],
+              ["oligarchic-republic", 1],
+              ["tribal-kingdom", 1],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["hindu", 6], ["sunni", 3], ["sikh", 0.5]]},
+          "modern": {"religion": [["hindu", 6], ["sunni", 3], ["sikh", 0.5], ["irreligious", 0.5]]},
+          "scifi": {
+            "ideology": [["sf-technocracy", 3], ["sf-psionic", 3], ["sf-federalist", 2]],
+            "government": [["technocracy", 2], ["psionic-theocracy", 3], ["galactic-federation", 2], "corporate-republic", "stellar-empire"]
+          }
+        },
+        "prefs": [
+          {"tempMin": 18, "factor": 1.6},
+          {"moistMin": 0.9, "factor": 1.4},
+          {"river": true, "factor": 1.5},
+          {"classes": ["plains"], "factor": 1.3}
+        ]
+      },
+      "cultures": [
+        {"id": "hindavi", "group": "hindustani", "name": "印地人", "orig": "Hindavi", "color": "#c53620", "weight": 2},
+        {"id": "avadhi", "group": "hindustani", "name": "阿瓦德人", "orig": "Avadhi", "color": "#d9b8a6", "weight": 1.3},
+        {
+          "id": "panjabi",
+          "group": "hindustani",
+          "name": "旁遮普人",
+          "orig": "Panjabi",
+          "color": "#5d2f28",
+          "weight": 1.3,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 5], ["hindu", 4], ["sikh", 1]]},
+            "industrial": {"religion": [["sunni", 5], ["sikh", 3], ["hindu", 3]]},
+            "modern": {"religion": [["sunni", 5], ["sikh", 3], ["hindu", 3], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "kashmiri",
+          "group": "hindustani",
+          "name": "克什米尔人",
+          "orig": "Kashmiri",
+          "color": "#f98691",
+          "weight": 0.6,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 8], ["hindu", 2]]},
+            "industrial": {"religion": [["sunni", 8], ["hindu", 2]]},
+            "modern": {"religion": [["sunni", 8], ["hindu", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "vindhyan",
+          "group": "hindustani",
+          "name": "温迪亚人",
+          "orig": "Vindhyan",
+          "color": "#f79a64",
+          "weight": 0.8,
+          "eraTendencies": {"medieval": {"religion": [["hindu", 9], ["sunni", 1]]}}
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "western-aryan",
+        "name": "西雅利安",
+        "orig": "Western Aryan",
+        "color": "#d2b04b",
+        "description": "印度西部的沙漠、海岸与德干高原，商人行会、拉其普特武士与马拉塔骑兵各据一方。",
+        "nameStyle": "aryan-west",
+        "tendencies": {
+          "religion": [["hindu", 7], ["sunni", 2]],
+          "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["social-democracy", 2],
+            ["religious-democracy", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["oligarchic-republic", 1],
+            ["tribal-kingdom", 1],
+            ["feudal-monarchy", 2],
+            ["administrative-monarchy", 1],
+            ["iqta", 1],
+            ["theocratic-government", 0.3],
+            ["absolute-monarchy", 1],
+            ["constitutional-monarchy", 1],
+            ["presidential-despotism", 0.5],
+            ["parliamentary-republic", 4],
+            ["federal-republic", 2],
+            ["presidential-republic", 1],
+            ["socialist-republic", 0.5],
+            ["one-party-state", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["vedic", 9], ["theravada", 1]],
+            "government": [
+              ["despotic-monarchy", 3],
+              ["divine-kingship", 1.5],
+              ["oligarchic-republic", 1],
+              ["tribal-kingdom", 1],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["hindu", 7], ["sunni", 2]]},
+          "modern": {"religion": [["hindu", 7], ["sunni", 2], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"tempMin": 18, "factor": 1.6},
+          {"moistMin": 0.9, "factor": 1.4},
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.45, "factor": 1.8},
+          {"terrain": ["desert"], "factor": 1.2},
+          {"coast": true, "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {"id": "gujarati", "group": "western-aryan", "name": "古吉拉特人", "orig": "Gujarati", "color": "#d2b04b", "weight": 1.3},
+        {
+          "id": "marathi",
+          "group": "western-aryan",
+          "name": "马拉地人",
+          "orig": "Marathi",
+          "color": "#5d4328",
+          "weight": 1.5,
+          "eraTendencies": {"medieval": {"religion": [["hindu", 9], ["sunni", 1]]}}
+        },
+        {
+          "id": "rajasthani",
+          "group": "western-aryan",
+          "name": "拉贾斯坦人",
+          "orig": "Rajasthani",
+          "color": "#d9c0a6",
+          "weight": 1.2,
+          "eraTendencies": {"medieval": {"religion": [["hindu", 9], ["sunni", 1]]}}
+        },
+        {"id": "malvi", "group": "western-aryan", "name": "马尔瓦人", "orig": "Malvi", "color": "#e47b0c", "weight": 0.7},
+        {"id": "saurashtri", "group": "western-aryan", "name": "索拉什特拉人", "orig": "Saurashtri", "color": "#756710", "weight": 0.6},
+        {
+          "id": "sindhi",
+          "group": "western-aryan",
+          "name": "信德人",
+          "orig": "Sindhi",
+          "color": "#d3d01d",
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 8], ["hindu", 2]]},
+            "industrial": {"religion": [["sunni", 8], ["hindu", 2]]},
+            "modern": {"religion": [["sunni", 8], ["hindu", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "parsi",
+          "group": "western-aryan",
+          "name": "帕西人",
+          "orig": "Parsi",
+          "color": "#7e4407",
+          "weight": 0.15,
+          "eraTendencies": {
+            "antiquity": {"religion": [["zoroastrian", 10]]},
+            "medieval": {"religion": [["zoroastrian", 10]]},
+            "industrial": {"religion": [["zoroastrian", 10]]},
+            "modern": {"religion": [["zoroastrian", 10], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "eastern-aryan",
+        "name": "东雅利安",
+        "orig": "Eastern Aryan",
+        "color": "#2c8d96",
+        "description": "恒河三角洲与喜马拉雅南麓之民，稻田、丝绸与季风把这里变成了次大陆最稠密的土地。",
+        "nameStyle": "aryan-east",
+        "tendencies": {
+          "religion": [["hindu", 6], ["sunni", 3]],
+          "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["social-democracy", 2],
+            ["religious-democracy", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["oligarchic-republic", 1],
+            ["tribal-kingdom", 1],
+            ["feudal-monarchy", 2],
+            ["administrative-monarchy", 1],
+            ["iqta", 1],
+            ["theocratic-government", 0.3],
+            ["absolute-monarchy", 1],
+            ["constitutional-monarchy", 1],
+            ["presidential-despotism", 0.5],
+            ["parliamentary-republic", 4],
+            ["federal-republic", 2],
+            ["presidential-republic", 1],
+            ["socialist-republic", 0.5],
+            ["one-party-state", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["vedic", 7], ["theravada", 3]],
+            "government": [
+              ["despotic-monarchy", 3],
+              ["divine-kingship", 1.5],
+              ["oligarchic-republic", 1],
+              ["tribal-kingdom", 1],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["hindu", 5], ["sunni", 4]]},
+          "modern": {"religion": [["hindu", 5], ["sunni", 4], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"tempMin": 18, "factor": 1.6},
+          {"moistMin": 0.9, "factor": 1.4},
+          {"river": true, "factor": 1.5},
+          {"terrain": ["marsh"], "factor": 1.4},
+          {"moistMin": 1, "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "bengali",
+          "group": "eastern-aryan",
+          "name": "孟加拉人",
+          "orig": "Bengali",
+          "color": "#2c8d96",
+          "weight": 2,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 5], ["hindu", 5]]},
+            "industrial": {"religion": [["sunni", 6], ["hindu", 4]]},
+            "modern": {"religion": [["sunni", 6], ["hindu", 4], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "bihari",
+          "group": "eastern-aryan",
+          "name": "比哈尔人",
+          "orig": "Bihari",
+          "color": "#0ce4c3",
+          "weight": 1.2,
+          "eraTendencies": {"medieval": {"religion": [["hindu", 8], ["sunni", 2]]}}
+        },
+        {
+          "id": "oriya",
+          "group": "eastern-aryan",
+          "name": "奥里亚人",
+          "orig": "Oriya",
+          "color": "#0c9fe4",
+          "eraTendencies": {"medieval": {"religion": [["hindu", 10]]}}
+        },
+        {
+          "id": "assamese",
+          "group": "eastern-aryan",
+          "name": "阿萨姆人",
+          "orig": "Assamese",
+          "color": "#a6d9d1",
+          "weight": 0.7,
+          "eraTendencies": {"medieval": {"religion": [["hindu", 6], ["animist", 3]]}}
+        },
+        {"id": "kochi", "group": "eastern-aryan", "name": "科奇人", "orig": "Kochi", "color": "#07587e", "weight": 0.4},
+        {
+          "id": "nepali",
+          "group": "eastern-aryan",
+          "name": "尼泊尔人",
+          "orig": "Nepali",
+          "color": "#42d1f5",
+          "weight": 0.7,
+          "eraTendencies": {
+            "medieval": {"religion": [["hindu", 8], ["vajrayana", 2]]},
+            "industrial": {"religion": [["hindu", 8], ["vajrayana", 2]]},
+            "modern": {"religion": [["hindu", 8], ["vajrayana", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "pahari",
+          "group": "eastern-aryan",
+          "name": "帕哈里人",
+          "orig": "Pahari",
+          "color": "#08a089",
+          "weight": 0.5,
+          "eraTendencies": {"medieval": {"religion": [["hindu", 9]]}}
+        },
+        {
+          "id": "sinhalese",
+          "group": "eastern-aryan",
+          "name": "僧伽罗人",
+          "orig": "Sinhalese",
+          "color": "#285d55",
+          "weight": 0.8,
+          "eraTendencies": {
+            "antiquity": {"religion": [["theravada", 9]]},
+            "medieval": {"religion": [["theravada", 9], ["hindu", 1]]},
+            "industrial": {"religion": [["theravada", 9], ["catholic", 0.5]]},
+            "modern": {"religion": [["theravada", 9], ["catholic", 0.5], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "central-indian",
+        "name": "中印度",
+        "orig": "Central Indian",
+        "color": "#37813d",
+        "description": "德干北缘的丘陵林地，贡德的王公在密林深处建起了自己的城堡。",
+        "nameStyle": "central-indian",
+        "tendencies": {
+          "religion": [["hindu", 5], ["animist", 4]],
+          "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["social-democracy", 2],
+            ["religious-democracy", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["oligarchic-republic", 1],
+            ["tribal-kingdom", 2],
+            ["feudal-monarchy", 2],
+            ["administrative-monarchy", 1],
+            ["iqta", 1],
+            ["theocratic-government", 0.3],
+            ["absolute-monarchy", 1],
+            ["constitutional-monarchy", 1],
+            ["presidential-despotism", 0.5],
+            ["parliamentary-republic", 4],
+            ["federal-republic", 2],
+            ["presidential-republic", 1],
+            ["socialist-republic", 0.5],
+            ["one-party-state", 0.5],
+            ["tribal-federation", 2]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["animist", 7], ["vedic", 2]],
+            "government": [
+              ["despotic-monarchy", 3],
+              ["divine-kingship", 1.5],
+              ["oligarchic-republic", 1],
+              ["tribal-kingdom", 2],
+              ["theocratic-government", 0.3],
+              ["tribal-federation", 2]
+            ]
+          },
+          "industrial": {"religion": [["hindu", 6], ["animist", 3]]},
+          "modern": {"religion": [["hindu", 6], ["animist", 3], ["irreligious", 0.3]]}
+        },
+        "prefs": [
+          {"tempMin": 18, "factor": 1.6},
+          {"moistMin": 0.9, "factor": 1.4},
+          {"classes": ["hills"], "factor": 1.3},
+          {"terrain": ["forest"], "factor": 1.5}
+        ]
+      },
+      "cultures": [
+        {"id": "gondi", "group": "central-indian", "name": "贡德人", "orig": "Gondi", "color": "#37813d", "weight": 1.3},
+        {"id": "jharkandi", "group": "central-indian", "name": "贾坎德人", "orig": "Jharkandi", "color": "#13e40c"},
+        {"id": "garjati", "group": "central-indian", "name": "加尔贾特人", "orig": "Garjati", "color": "#a6d9b6", "weight": 0.7}
+      ]
+    },
+    {
+      "group": {
+        "id": "dravidian",
+        "name": "达罗毗荼",
+        "orig": "Dravidian",
+        "color": "#2c3d96",
+        "description": "南印度的古老之民，巨大的神庙门塔与通往香料海岸的港口见证着一代代王朝。",
+        "nameStyle": "dravidian",
+        "tendencies": {
+          "religion": [["hindu", 9], ["sunni", 0.5]],
+          "nation": [["religious-community", 4], ["civic-nation", 3], ["regional", 3], ["ethnic-nation", 1]],
+          "ideology": [
+            ["auth-nationalist", 3],
+            ["social-democracy", 2],
+            ["religious-democracy", 2],
+            ["traditionalist", 2],
+            ["rev-socialism", 2],
+            ["market-liberal", 1]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["oligarchic-republic", 1],
+            ["tribal-kingdom", 1],
+            ["feudal-monarchy", 2],
+            ["administrative-monarchy", 1],
+            ["iqta", 1],
+            ["theocratic-government", 0.3],
+            ["absolute-monarchy", 1],
+            ["constitutional-monarchy", 1],
+            ["presidential-despotism", 0.5],
+            ["parliamentary-republic", 4],
+            ["federal-republic", 2],
+            ["presidential-republic", 1],
+            ["socialist-republic", 0.5],
+            ["one-party-state", 0.5]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["vedic", 6], ["animist", 3], ["theravada", 1]],
+            "government": [
+              ["despotic-monarchy", 3],
+              ["divine-kingship", 1.5],
+              ["oligarchic-republic", 1],
+              ["tribal-kingdom", 1],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["hindu", 8], ["sunni", 1], ["catholic", 0.5]]},
+          "modern": {"religion": [["hindu", 8], ["sunni", 1], ["catholic", 0.5], ["irreligious", 0.5]]}
+        },
+        "prefs": [{"tempMin": 18, "factor": 1.6}, {"moistMin": 0.9, "factor": 1.4}, {"coast": true, "factor": 1.4}, {"tempMin": 20, "factor": 2}]
+      },
+      "cultures": [
+        {"id": "tamil", "group": "dravidian", "name": "泰米尔人", "orig": "Tamil", "color": "#2c3d96", "weight": 1.5},
+        {"id": "telugu", "group": "dravidian", "name": "泰卢固人", "orig": "Telugu", "color": "#2e20f3", "weight": 1.5},
+        {"id": "kannada", "group": "dravidian", "name": "卡纳达人", "orig": "Kannada", "color": "#a6bad9"},
+        {
+          "id": "malayalam",
+          "group": "dravidian",
+          "name": "马拉雅拉姆人",
+          "orig": "Malayalam",
+          "color": "#283d5d",
+          "eraTendencies": {
+            "medieval": {"religion": [["hindu", 7], ["sunni", 2], ["orthodox", 0.5]]},
+            "industrial": {"religion": [["hindu", 6], ["sunni", 2], ["catholic", 2]]},
+            "modern": {"religion": [["hindu", 6], ["sunni", 2], ["catholic", 2], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    }
+  ]
+}

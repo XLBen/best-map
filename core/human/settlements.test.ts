@@ -14,9 +14,9 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS } from '../p
 // 第二十四轮：城市、道路、地标、自定义点、导出
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {}, settlements: {} };
 
@@ -47,9 +47,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第二十六轮又重录一次：国家的领土又变了（见 countries.test.ts）；第二十七轮重录：地形类别只管起伏（通行难度、人口、国家都跟着变）
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
+// 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（人口、国家都跟着变）
 const RECORDED = {
-  region: { cities: '9bfea332d412bce1', roads: 'ec05c5ab58c7019f', landmarks: 'e1fe950d4df2831d' },
-  planet: { cities: '5b312728a9af8fe2', roads: '392b59ba21e69e7b', landmarks: '117b82ef01818335' },
+  region: { cities: '175d2bf8db68155f', roads: 'a982edc5a1f00577', landmarks: 'd4b22f2206d39214' },
+  planet: { cities: '00f25e76b80df249', roads: '27068028eb3fcae7', landmarks: '3c8a3d516e631055' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 
@@ -176,7 +177,7 @@ describe('城市', () => {
   it('城市化率高的时代城市多', () => {
     const count = (era: string) => {
       const eng = continents({ provinces: true });
-      humanExec(eng, { op: 'generate_human', era, groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: { roads: false, landmarks: false } });
+      humanExec(eng, { op: 'generate_human', era, groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: { roads: false, landmarks: false } });
       return cityIds(eng.world).length;
     };
     const ancient = count('antiquity');

@@ -31,6 +31,9 @@ import { newWorldContentCommands, packImportCommands } from '../core/packs/impor
 import { mulberry32 } from '../core/rng';
 import { coastalStroke, digest } from './hash';
 
+// 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
+const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
+
 let t = performance.now();
 const results: Record<string, number> = {};
 const json = process.argv.includes('--json');
@@ -391,11 +394,11 @@ function humanBench(eng: Engine) {
   lap('paint terrain class (human)');
   eng.exec({ op: 'set_cell_resource', cells: land.slice(0, 120), resource: 'iron' });
   lap('paint resource (human)');
-  for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: ['western', 'eastern', 'steppe'] }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }], countries: {} });
+  for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: medievalGroups().map((g) => g.id) }, eng.world)) eng.exec(c);
+  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: {} });
   lap(`generate human + countries (${Object.keys(eng.world.small.countries ?? {}).length})`);
   const peopled = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.popTotal![i] > 0).slice(1000, 1120);
-  eng.exec({ op: 'paint_culture', cells: peopled, culture: 'frankish', amount: 0.5 });
+  eng.exec({ op: 'paint_culture', cells: peopled, culture: Object.keys(eng.world.small.content?.culture ?? {})[0], amount: 0.5 });
   lap('paint culture (human)');
   eng.exec({ op: 'paint_pop', cells: peopled, mode: 'count', factor: 1.5 });
   lap('paint count (human)');

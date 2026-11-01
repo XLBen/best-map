@@ -6,6 +6,7 @@ import { Engine } from '../engine';
 import { exportPackage } from '../export';
 import { BUILTIN_ERAS, ERA_PACKS } from '../packs/eras';
 import { BUILTIN_GOVERNMENTS } from '../packs/governments';
+import { BUILTIN_COUNTRY_TIERS } from '../packs/countries';
 import { continents, engineFor, snapshot, humanExec, type HumanCommand, importPacks } from '../testing/fixtures';
 import type { World } from '../world';
 import {
@@ -20,7 +21,9 @@ import {
   flagSchema,
   flagSvg,
   governmentById,
+  govTitles,
   pickTitle,
+  titleContext,
   sizeFactor,
 } from './index';
 import { claimsStage } from './claims';
@@ -30,9 +33,9 @@ import { readComp } from './groups';
 // 第二十三轮：国家与政体
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
 
@@ -80,9 +83,10 @@ function countryDigest(w: World): Record<string, string> {
 //   第二十七轮重录：地形类别只管起伏，通行难度 = 起伏 × 植被，宜居度、偏好按生态）
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
+// 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（日耳曼、汉、阿尔泰三组；政体的称号按国家的等级）
 const RECORDED = {
-  region: { country: '70de5aab70843a22', countries: 'b5e794a9e4b6e727' },
-  planet: { country: 'c0a55bfc983f7ad9', countries: '17a660490f92bfc6' },
+  region: { country: '4945ac491e9731ee', countries: 'ffa6be21bd595f8d' },
+  planet: { country: 'ec32bb6b01aeba6d', countries: '6054c39a6d7a48cc' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -91,17 +95,19 @@ const medievalGovs = () => [...ERA_PACKS.get('medieval')!.governments];
 const medievalFactions = () => [...ERA_PACKS.get('medieval')!.factions];
 
 describe('政体与派系', () => {
-  it('内置的政体、派系合格；称号按文化、文化组换说法', () => {
-    // 中世纪示例原有的六种政体、三个派系留着 id
-    expect(medievalGovs()).toEqual(expect.arrayContaining(['feudal-monarchy', 'merchant-republic', 'theocracy', 'tribal-confederation', 'empire', 'city-state']));
-    expect(medievalFactions()).toEqual(expect.arrayContaining(['nobility', 'merchants', 'clergy']));
+  it('内置的政体、派系合格；称号按等级、文化组换说法（第四十三轮）', () => {
+    // 第四十三轮：中世纪是 EU4 的政体与阶层
+    expect(medievalGovs()).toEqual(expect.arrayContaining(['feudal-monarchy', 'merchant-republic', 'theocratic-government', 'tribal-federation', 'imperial-free-city', 'celestial-empire']));
+    expect(medievalFactions()).toEqual(expect.arrayContaining(['nobility', 'burghers', 'clergy']));
     const feudal = BUILTIN_GOVERNMENTS.find((g) => g.id === 'feudal-monarchy')!;
-    expect(pickTitle(feudal.title, { id: 'turkic', group: 'steppe' })).toEqual({ zh: '汗国', orig: '{name} Khanate' });
-    expect(pickTitle(feudal.title, { id: 'anglic', group: 'western' })).toEqual({ zh: '王国', orig: 'Kingdom of {name}' });
-    // 文化 id 先于文化组
-    expect(pickTitle(feudal.title, { id: 'frankish', group: 'western' })).toEqual({ zh: '王国', orig: 'Royaume de {name}' });
+    const ctx = (culture: string, group: string, tier: string) => ({ tier, tiers: BUILTIN_COUNTRY_TIERS, culture, group, values: [], valueGroups: [] });
+    expect(govTitles(feudal, ctx('kazakh', 'altaic', 'large')).title).toEqual({ zh: '汗国', orig: 'Khanate of {name}' });
+    expect(govTitles(feudal, ctx('swabian', 'germanic', 'large')).title).toEqual({ zh: '王国', orig: 'Kingdom of {name}' });
+    expect(govTitles(feudal, ctx('swabian', 'germanic', 'medium')).ruler).toEqual({ zh: '公爵' });
+    // 地标的名字照旧按文化、文化组取（pickTitle）
     expect(pickTitle('共和国', undefined)).toEqual({ zh: '共和国' });
-    expect(pickTitle({ default: '王国', yamato: '幕府' }, { id: 'yamato', group: 'eastern' })).toEqual({ zh: '幕府' });
+    expect(pickTitle({ default: '王国', wu: '幕府' }, { id: 'wu', group: 'chinese' })).toEqual({ zh: '幕府' });
+    expect(pickTitle({ default: '王国', chinese: '国' }, { id: 'wu', group: 'chinese' })).toEqual({ zh: '国' });
   });
 
   it('旗帜的规则画得出 SVG', () => {
@@ -144,15 +150,15 @@ describe('生成国家', () => {
     expect(colors.size).toBe(list.length);
   });
 
-  it('国名 = 文化风格的地名 + 政体的称号（草原的王国是汗国）', () => {
+  it('国名 = 文化风格的地名 + 政体按等级、文化组、宗教的称号（草原的王国是汗国）', () => {
     const w = nations().world;
     for (const m of countryList(w.small)) {
       const g = governmentById(w.small, m.government)!;
-      const c = w.small.content!.culture![m.primaryCulture] as { id: string; group: string };
-      const t = pickTitle(g.title, c)!;
-      expect(m.name, m.government).toBe(t.zh.includes('{name}') ? t.zh.replace('{name}', m.base.zh) : m.base.zh + t.zh);
-      if (m.base.orig && t.orig) expect(m.orig).toBe(t.orig.replace('{name}', m.base.orig));
-      if (m.ruler.title) expect(m.ruler.title).toBe(pickTitle(g.rulerTitle, c)!.zh);
+      const { title: t, ruler } = govTitles(g, titleContext(w, m));
+      if (m.nameLocked) continue;
+      expect(m.name, m.government).toBe(t!.zh.includes('{name}') ? t!.zh.replace('{name}', m.base.zh) : m.base.zh + t!.zh);
+      if (m.base.orig && t!.orig) expect(m.orig).toBe(t!.orig.replace('{name}', m.base.orig));
+      expect(m.ruler.title).toBe(ruler?.zh);
     }
   });
 
@@ -474,22 +480,25 @@ describe('改国家', () => {
     importPacks(eng, { packs: [['medieval', 'governments']] });
     const w = eng.world;
     const list = countryList(w.small);
-    const m = list.find((x) => (w.small.content!.culture![x.primaryCulture] as { group: string }).group === 'western')!;
+    const m = list.find((x) => (w.small.content!.culture![x.primaryCulture] as { group: string }).group === 'germanic')!;
     eng.exec({ op: 'set_country', id: m.id, patch: { government: 'merchant-republic' } });
-    expect(w.small.countries![m.id].name).toBe(`${m.base.zh}共和国`);
-    // 原文按文化的语言（西欧的几个文化各有写法）
-    const rep = pickTitle(governmentById(w.small, 'merchant-republic')!.title, { id: m.primaryCulture, group: 'western' })!;
+    // 第四十三轮：称号按国家的等级（城邦级是城邦，往上是共和国、至尊共和国）
+    const rep = govTitles(governmentById(w.small, 'merchant-republic')!, titleContext(w, w.small.countries![m.id])).title!;
+    expect(['城邦', '共和国', '至尊共和国']).toContain(rep.zh);
+    expect(w.small.countries![m.id].name).toBe(`${m.base.zh}${rep.zh}`);
     if (m.base.orig) expect(w.small.countries![m.id].orig).toBe(rep.orig!.replace('{name}', m.base.orig));
     eng.exec({ op: 'set_country', id: m.id, patch: { name: '大公国', orig: 'Grand Duchy' } });
     eng.exec({ op: 'set_country', id: m.id, patch: { government: 'feudal-monarchy' } });
     expect(w.small.countries![m.id].name).toBe('大公国');
     expect(w.small.countries![m.id].orig).toBe('Grand Duchy');
     eng.exec({ op: 'set_country', id: m.id, patch: { name: '' } });
-    expect(w.small.countries![m.id].name).toBe(`${m.base.zh}王国`);
-    // 换成草原的文化：地名按突厥的风格，称号是汗国
-    eng.exec({ op: 'set_country', id: m.id, patch: { primaryCulture: 'turkic' } });
-    expect(w.small.countries![m.id].name.endsWith('汗国')).toBe(true);
-    expect(w.small.countries![m.id].acceptedGroups[0]).toBe('steppe');
+    const king = govTitles(governmentById(w.small, 'feudal-monarchy')!, titleContext(w, w.small.countries![m.id])).title!.zh;
+    expect(['领', '侯国', '公国', '王国', '帝国']).toContain(king);
+    expect(w.small.countries![m.id].name).toBe(`${m.base.zh}${king}`);
+    // 换成草原的文化：地名按突厥的风格，称号是伯克领、汗国或大汗国
+    eng.exec({ op: 'set_country', id: m.id, patch: { primaryCulture: 'kazakh' } });
+    expect(['伯克领', '汗国', '大汗国', '领'].some((x) => w.small.countries![m.id].name.endsWith(x))).toBe(true);
+    expect(w.small.countries![m.id].acceptedGroups[0]).toBe('altaic');
     const o = list.find((x) => x.id !== m.id)!;
     eng.exec({ op: 'set_country', id: m.id, patch: { allies: [o.id] } });
     expect(w.small.countries![o.id].allies).toContain(m.id);
@@ -531,15 +540,15 @@ describe('改国家', () => {
     expect(countryDigest(Engine.fromDoc(doc, w.mesh).world)).toEqual(countryDigest(w));
   });
 
-  it('派系：商业共和国的商人比封建王国的多', () => {
+  it('派系：商人共和国的市民比封建君主制的多', () => {
     const eng = nations();
     importPacks(eng, { packs: [['medieval', 'governments']] });
     const w = eng.world;
     const m = countryList(w.small)[0];
     eng.exec({ op: 'set_country', id: m.id, patch: { government: 'feudal-monarchy' } });
-    const feudal = countryFactions(w, m.id).find((f) => f.id === 'merchants')!.influence;
+    const feudal = countryFactions(w, m.id).find((f) => f.id === 'burghers')!.influence;
     eng.exec({ op: 'set_country', id: m.id, patch: { government: 'merchant-republic' } });
-    const rep = countryFactions(w, m.id).find((f) => f.id === 'merchants')!.influence;
+    const rep = countryFactions(w, m.id).find((f) => f.id === 'burghers')!.influence;
     expect(rep).toBeGreaterThan(feudal);
   });
 

@@ -28,7 +28,8 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 
 // 与第二十九轮的代码同样的设置下生成的摘要（r29-digests.json 是用第二十九轮的代码记下的：同一块大陆、同样的时代与文化组，
 // 生成人文 + 国家 + 城市地标；再“重新生成国家”一遍）。第三十二轮地形变了（大格局），用第三十二轮的代码重录一次：
-// 第三十三轮（平原与河口，高程变了）再重录一次。
+// 第三十三轮（平原与河口，高程变了）再重录一次。第四十三轮：内置的文化、宗教、政体换成 EU4 的，几种设置的组换成 EU4 的组
+// （日耳曼、汉、阿尔泰……）后重录；没有人文的那一项（nature）没变。
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
@@ -37,14 +38,14 @@ const check = (got: unknown, key: string) => {
   else expect(got, key).toEqual(old[key]);
 };
 const SCENES = [
-  { id: 'medieval', era: 'medieval', groups: [['western', 3], ['eastern', 3], ['mideast', 2], ['southasia', 2], ['slavic', 1.5], ['steppe', 1.5]], countries: true, settlements: true },
-  { id: 'antiquity', era: 'antiquity', groups: [['mediterranean', 3], ['mideast', 3], ['eastern', 3]], countries: true, settlements: false },
-  { id: 'industrial', era: 'industrial', groups: [['western', 3], ['eastern', 3], ['slavic', 2]], countries: true, settlements: true },
-  { id: 'modern', era: 'modern', groups: [['eastern', 4], ['southasia', 4], ['africa', 3], ['western', 2]], countries: true, settlements: true },
-  { id: 'fantasy', era: 'fantasy', groups: [['western', 3], ['elves', 2], ['dwarves', 1.5], ['orcs', 1.5]], countries: true, settlements: true },
-  { id: 'scifi', era: 'scifi', groups: [['eastern', 3], ['tidal', 1.5], ['lithic', 1.5]], countries: true, settlements: false },
+  { id: 'medieval', era: 'medieval', groups: [['germanic', 3], ['chinese', 3], ['levantine', 2], ['hindustani', 2], ['east-slavic', 1.5], ['altaic', 1.5]], countries: true, settlements: true },
+  { id: 'antiquity', era: 'antiquity', groups: [['latin', 3], ['levantine', 3], ['chinese', 3]], countries: true, settlements: false },
+  { id: 'industrial', era: 'industrial', groups: [['germanic', 3], ['chinese', 3], ['east-slavic', 2]], countries: true, settlements: true },
+  { id: 'modern', era: 'modern', groups: [['chinese', 4], ['hindustani', 4], ['kongo', 3], ['germanic', 2]], countries: true, settlements: true },
+  { id: 'fantasy', era: 'fantasy', groups: [['germanic', 3], ['elves', 2], ['dwarves', 1.5], ['orcs', 1.5]], countries: true, settlements: true },
+  { id: 'scifi', era: 'scifi', groups: [['chinese', 3], ['tidal', 1.5], ['lithic', 1.5]], countries: true, settlements: false },
   // 北欧不是中世纪默认带的组：在“通用 ▸ 文化”里（packImportCommands 在资源库里找）
-  { id: 'medieval-pop', era: 'medieval', groups: [['western', 1], ['nordic', 2]], countries: false, settlements: false },
+  { id: 'medieval-pop', era: 'medieval', groups: [['germanic', 1], ['scandinavian', 2]], countries: false, settlements: false },
 ] as const;
 
 function humanDigest(w: World): Record<string, string> {
@@ -85,14 +86,14 @@ const groupsOf = (g: readonly (readonly [string, number])[]) => g.map(([id, weig
 describe('生成只读世界里的内容', () => {
   it('不先加时代包：不生成人文，结果里写明缺时代（命令照样能执行，不报错）', () => {
     const eng = world();
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }] });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] });
     expect(eng.world.small.human).toBeUndefined();
     expect(eng.lastSkipped[0]).toMatch(/^没有时代/);
     // 有时代、没有文化：也不生成，写明缺文化
     importPacks(eng, { packs: [['medieval']], groups: [] });
     expect(eng.world.small.content?.era?.medieval).toBeDefined();
     expect(eng.world.small.content?.culture).toBeUndefined();
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }] });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }] });
     expect(eng.world.small.human).toBeUndefined();
     expect(eng.lastSkipped[0]).toMatch(/^没有文化/);
   });
@@ -118,17 +119,17 @@ describe('生成只读世界里的内容', () => {
 
   it('加进来的每一项记着来源（时代包里的小包）；生成后只留用到的', () => {
     const eng = world();
-    importPacks(eng, { packs: [['medieval']], groups: ['western'] });
+    importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
     const o = eng.world.small.origin!;
     expect(o.era.medieval).toEqual(['medieval', 'era']);
     expect(o.government['feudal-monarchy']).toEqual(['medieval', 'governments']);
-    expect(o.cultureGroup.western).toEqual(['medieval', 'cultures', 'western']);
-    expect(o.nameStyle['west-germanic']).toEqual(['medieval', 'cultures', 'western']);
+    expect(o.cultureGroup.germanic).toEqual(['medieval', 'cultures', 'germanic']);
+    expect(o.nameStyle['west-germanic']).toEqual(['medieval', 'cultures', 'germanic']);
     // 中文·默认是新建时从“通用 ▸ 地名 ▸ 中文”加进来的
     expect(o.nameStyle[DEFAULT_STYLE]).toEqual(['common', 'names', 'zh']);
     const govs = Object.keys(eng.world.small.content!.government!);
     expect(govs).toEqual(ERA_PACKS.get('medieval')!.governments);
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }], countries: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
     const used = new Set(Object.values(eng.world.small.countries!).map((c) => c.government));
     expect(Object.keys(eng.world.small.content!.government!).sort()).toEqual([...used].sort());
     // 清理掉的都在命令结果里（界面判断是不是内置原样，内置原样的不另存）
@@ -140,7 +141,7 @@ describe('生成只读世界里的内容', () => {
 describe('几个包合起来生成', () => {
   const combo = (packs: string[][]) => {
     const eng = world();
-    const groups = ['western', 'elves'];
+    const groups = ['germanic', 'elves'];
     importPacks(eng, { packs, groups });
     eng.exec({ op: 'generate_human', packs, groups: groups.map((id) => ({ id, weight: 1 })), countries: {} });
     return eng;
@@ -153,7 +154,7 @@ describe('几个包合起来生成', () => {
     expect(worldEra(small)!.id).toBe('medieval');
     expect(worldDimensions(small).map((d) => d.id)).toEqual(['religion']);
     // 只带了规则包的时代项；取值只带中世纪的维度（宗教）的，奇幻的种族不带
-    const plan = packImportPlan(LIB, { packs: [['medieval'], ['fantasy']], groups: ['western', 'elves'] });
+    const plan = packImportPlan(LIB, { packs: [['medieval'], ['fantasy']], groups: ['germanic', 'elves'] });
     expect(plan.era).toEqual({ id: 'medieval', path: ['medieval', 'era'] });
     const fresh = world();
     for (const c of plan.commands) fresh.exec(c);
@@ -163,7 +164,7 @@ describe('几个包合起来生成', () => {
     const govs = eraGovernments(fresh.world.small).map((g) => g.id);
     const want = [...new Set([...ERA_PACKS.get('medieval')!.governments, ...ERA_PACKS.get('fantasy')!.governments])];
     expect(govs).toEqual(want);
-    expect(Object.keys(fresh.world.small.content!.cultureGroup!)).toEqual(['western', 'elves']);
+    expect(Object.keys(fresh.world.small.content!.cultureGroup!)).toEqual(['germanic', 'elves']);
     // 时代包里奇幻的生态、河湖、资源不带（要单独勾那几个小包）
     expect(fresh.world.small.species.length).toBe(DEFAULT_SPECIES.length);
     expect(fresh.world.small.riverTypes).toBeUndefined();
@@ -188,8 +189,8 @@ describe('几个包合起来生成', () => {
 
   it('再加一遍是空的（世界里都有了）；排先后的命令只在先后不一样时改世界', () => {
     const eng = world();
-    importPacks(eng, { packs: [['modern']], groups: ['eastern'] });
-    const again = packImportCommands(LIB, { packs: [['modern']], groups: ['eastern'] }, eng.world);
+    importPacks(eng, { packs: [['modern']], groups: ['chinese'] });
+    const again = packImportCommands(LIB, { packs: [['modern']], groups: ['chinese'] }, eng.world);
     expect(again.flatMap((c) => (c.op === 'batch' ? c.commands : [c])).filter((c) => c.op !== 'order_content')).toEqual([]);
     const before = JSON.stringify(eng.world.small);
     for (const c of again) eng.exec(c);
@@ -244,8 +245,8 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
     expect(Object.values(w.small.provinces).every((p) => p.name === '')).toBe(true);
     // 生成人文：时代包照样能用（没有地形类别时宜居按平地算）；没有城市等级、地标类型时不放城市、地标
-    importPacks(eng, { packs: [['medieval']], groups: ['western'] });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }], countries: {}, settlements: {} });
+    importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {}, settlements: {} });
     expect(w.small.human).toBeDefined();
     expect(Object.keys(w.small.cities ?? {})).toEqual([]);
     expect(eng.lastSkipped).toContain('没有城市等级：没有放城市和道路');
@@ -271,10 +272,10 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     const eng = bare(DEFAULT_WORLD_PACKS);
     const ranks = Object.keys(eng.world.small.content!.cityRank!);
     eng.exec({ op: 'batch', commands: ranks.map((id) => ({ op: 'set_content', kind: 'cityRank', id, item: null }) as Command) });
-    importPacks(eng, { packs: [['medieval']], groups: ['western'] });
+    importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
     const marks = Object.keys(eng.world.small.content!.landmarkType!);
     eng.exec({ op: 'batch', commands: marks.map((id) => ({ op: 'set_content', kind: 'landmarkType', id, item: null }) as Command) });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }], countries: {}, settlements: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {}, settlements: {} });
     expect(eng.world.small.countries).toBeDefined();
     expect(Object.keys(eng.world.small.cities ?? {})).toEqual([]);
     expect(Object.keys(eng.world.small.landmarks ?? {})).toEqual([]);
@@ -283,10 +284,10 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
 
   it('没有政体：不生成国家，写明', () => {
     const eng = bare(DEFAULT_WORLD_PACKS);
-    importPacks(eng, { packs: [['medieval']], groups: ['western'] });
+    importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
     const govs = Object.keys(eng.world.small.content!.government!);
     eng.exec({ op: 'batch', commands: govs.map((id) => ({ op: 'set_content', kind: 'government', id, item: null }) as Command) });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }], countries: {} });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
     expect(eng.world.small.human).toBeDefined();
     expect(eng.world.small.countries).toBeUndefined();
     expect(eng.lastSkipped).toContain('没有政体：没有生成国家');
@@ -294,8 +295,8 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
 
   it('档案里换成世界里没有的政体：报错，说先从资源库添加（引擎不再从内置的复制）', () => {
     const eng = world();
-    importPacks(eng, { packs: [['medieval']], groups: ['western'] });
-    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 1 }], countries: {} });
+    importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
+    eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
     const id = Number(Object.keys(eng.world.small.countries!)[0]);
     const unused = BUILTIN_GOVERNMENTS.find((g) => !eng.world.small.content!.government![g.id])!;
     expect(() => eng.exec({ op: 'set_country', id, patch: { government: unused.id } })).toThrow('先从资源库添加它');
@@ -371,7 +372,7 @@ describe('内置的树（第三十轮）', () => {
       expect(ownItems(findPack(top, ['era'])!, 'eras')).toEqual([era]);
       expect(packItems<{ id: string }>(findPack(top, ['governments'])!, 'governments').map((g) => g.id)).toEqual(ERA_PACKS.get(era.id)!.governments);
       const cultures = findPack(top, ['cultures'])!;
-      expect(cultures.packs!.map((g) => [g.id, g.weight])).toEqual(ERA_PACKS.get(era.id)!.cultures);
+      expect(cultures.packs!.map((g) => [g.id, g.weight])).toEqual(ERA_PACKS.get(era.id)!.cultures.map(([id, w]) => [id, w]));
       expect(packItems(findPack(top, ['landmarks'])!, 'landmarkTypes').length).toBeGreaterThan(0);
     }
   });

@@ -11,7 +11,7 @@ import { builtinPacks, DEFAULT_WORLD_PACKS } from './builtin-tree';
 //   picks.groups  选的文化组（省略时是勾选的包里的全部组）
 //   picks.extra   另外要加的包（路径 + 那个包里的勾选，省略为整个包）：比如单独挑的几个政体
 //
-// 从勾选的包里带进来：规则包的那一个时代项；各包里规则时代的维度的取值；全部的政体、派系、地标、城市等级、点的类型；
+// 从勾选的包里带进来：规则包的那一个时代项；各包里规则时代的维度的取值与取值组（第四十三轮）；全部的政体、派系、地标、城市等级、点的类型；
 // 文化只带选了的组（组、组里的文化、这些文化用的地名风格；勾选的包里没有的组在资源库里找第一个有它的小包）。
 // 时代包（树里有时代项的）只带这几种：奇幻包里的生态、河湖、资源要单独勾那几个小包（[“fantasy”, “biomes”]）。
 // 别的包（基础、自然、地名……）整个带进来（地名包里的风格都带）。星球形态不带（它在 set_worldgen 里）。同一项出现在几个包里时只带第一次出现的那一份，来源记它所在的包（planPack 的 from）。
@@ -45,9 +45,9 @@ export interface ImportPlan {
 }
 
 // 生成后先后要紧的几种（见上）
-const ORDERED = ['popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'landmarkTypes'];
+const ORDERED = ['valueGroups', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'landmarkTypes'];
 // 时代包里带的几种（生成人文、国家、城市地标要用的）；时代包里别的（奇幻的生态、河湖、资源）要单独勾那个小包
-const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
+const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
 
 const hasEra = (node: PackNode): boolean => {
   let yes = false;
@@ -131,7 +131,9 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
       // 文化组的小包：选了的组才带（组、组里的文化、它们用的地名风格）
       const nodeGroups = ownItems<CultureGroup>(n, 'cultureGroups');
       const cultures = ownItems<Culture>(n, 'cultures').filter((x) => wantGroup(x.group));
-      const styleUsed = new Set(cultures.map((x) => x.nameStyle));
+      // 文化没写风格时用文化组的（第四十三轮）
+      const groupStyle = new Map(nodeGroups.map((g) => [g.id, g.nameStyle]));
+      const styleUsed = new Set([...cultures.map((x) => x.nameStyle ?? groupStyle.get(x.group)), ...nodeGroups.filter((g) => wantGroup(g.id)).map((g) => g.nameStyle)]);
       const culturePack = nodeGroups.length > 0 || ownItems(n, 'cultures').length > 0;
       for (const [key, v] of Object.entries(n)) {
         if (!Array.isArray(v) || key === 'packs' || (eraPack && !GEN_KEYS.has(key))) continue;
@@ -144,7 +146,7 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
           if (!kind || !own(key, itemId(kind, x))) continue;
           if (key === 'planetForms') continue;
           if (key === 'eras' && !(era && era.id === (x as Era).id && era.path.join('/') === path.join('/'))) continue;
-          if (key === 'popValues' && !dims.has((x as PopValue).dimension)) continue;
+          if ((key === 'popValues' || key === 'valueGroups') && !dims.has((x as PopValue).dimension)) continue;
           if (key === 'cultureGroups') {
             const g = x as CultureGroup;
             if (!wantGroup(g.id)) continue;

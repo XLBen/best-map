@@ -14,7 +14,7 @@ import { DEFAULT_SPECIES } from '../packs/nature';
 
 // 第二十八轮的核心：新世界只带用得上的内容；生成人文后只留用到的文化；在用的内容不能移出世界（引擎也拦）
 
-const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }], countries: {}, settlements: {} };
+const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
   snapshot('r28:peopled', () => {
     const e = continents();
@@ -47,12 +47,12 @@ describe('新世界只带用得上的', () => {
   it('生成人文后只留用到的：一个时代、选的两个文化组、有人或被引用的文化', () => {
     const w = peopled().world;
     expect(worldEras(w.small).map((e) => e.id)).toEqual(['medieval']);
-    expect(worldCultureGroups(w.small).map((g) => g.id).sort()).toEqual(['eastern', 'western']);
+    expect(worldCultureGroups(w.small).map((g) => g.id).sort()).toEqual(['chinese', 'germanic']);
     const people = culturesWithPeople(w);
     const primary = new Set(Object.values(w.small.countries ?? {}).map((c) => c.primaryCulture));
     for (const c of worldCultures(w.small)) expect(people.has(c.id) || primary.has(c.id)).toBe(true);
     // 别的组的文化不在
-    expect(worldCultures(w.small).every((c) => c.group === 'western' || c.group === 'eastern')).toBe(true);
+    expect(worldCultures(w.small).every((c) => c.group === 'germanic' || c.group === 'chinese')).toBe(true);
     expect(BUILTIN_CULTURE_GROUPS.length).toBeGreaterThan(2);
     // 取值：这个时代的维度里有人的（第二十九轮起没人的也去掉）
     const dims = new Set(BUILTIN_ERAS.find((e) => e.id === 'medieval')!.dimensions.map((d) => d.id));
@@ -66,11 +66,11 @@ describe('新世界只带用得上的', () => {
     const eng = peopled();
     const w = eng.world;
     const before = JSON.stringify(w.small.content);
-    humanExec(eng, { op: 'regenerate_human', era: 'antiquity', groups: [{ id: 'western', weight: 1 }], keepManual: false, countries: {} });
+    humanExec(eng, { op: 'regenerate_human', era: 'antiquity', groups: [{ id: 'germanic', weight: 1 }], keepManual: false, countries: {} });
     expect(worldEras(w.small).map((e) => e.id)).toEqual(['antiquity']);
     // 换了时代、国家重新长：东方的文化没人了，一起移出
-    expect(worldCultureGroups(w.small).map((g) => g.id)).toEqual(['western']);
-    expect(worldCultures(w.small).every((c) => c.group === 'western')).toBe(true);
+    expect(worldCultureGroups(w.small).map((g) => g.id)).toEqual(['germanic']);
+    expect(worldCultures(w.small).every((c) => c.group === 'germanic')).toBe(true);
     const replay = Engine.fromDoc(eng.toDoc(), w.mesh).world;
     expect(JSON.stringify(replay.small.content)).toBe(JSON.stringify(w.small.content));
     // 加内容、重新生成是两步
@@ -81,8 +81,8 @@ describe('新世界只带用得上的', () => {
 
   it('第三十轮：自己改过的文化没人也移出（报在移出的项里，界面存进资源库）', () => {
     const eng = continents();
-    const zeven = BUILTIN_CULTURES.find((c) => c.group === 'western')!;
-    eng.exec({ op: 'set_content', kind: 'culture', id: 'my-lonely', item: { ...zeven, id: 'my-lonely', name: '孤人', group: 'nordic' } });
+    const zeven = BUILTIN_CULTURES.find((c) => c.group === 'germanic')!;
+    eng.exec({ op: 'set_content', kind: 'culture', id: 'my-lonely', item: { ...zeven, id: 'my-lonely', name: '孤人', group: 'scandinavian' } });
     humanExec(eng, GEN);
     expect(worldCultures(eng.world.small).some((c) => c.id === 'my-lonely')).toBe(false);
     expect(eng.lastRemoved.some((r) => r.id === 'my-lonely')).toBe(true);
@@ -102,8 +102,8 @@ describe('在用的内容不能移出世界', () => {
     expect(u.cells!.length).toBeGreaterThan(0);
     expect(() => eng.exec({ op: 'set_content', kind: 'culture', id: culture, item: null })).toThrow(/还在用/);
     expect(worldCultures(w.small).some((c) => c.id === culture)).toBe(true);
-    expect(usageOf(kindOf('cultureGroup')!, strictWorld(w), 'western')!.label).toMatch(/个文化属于它/);
-    expect(() => eng.exec({ op: 'set_content', kind: 'cultureGroup', id: 'western', item: null })).toThrow(/还在用/);
+    expect(usageOf(kindOf('cultureGroup')!, strictWorld(w), 'germanic')!.label).toMatch(/个文化属于它/);
+    expect(() => eng.exec({ op: 'set_content', kind: 'cultureGroup', id: 'germanic', item: null })).toThrow(/还在用/);
     expect(usageOf(kindOf('era')!, strictWorld(w), 'medieval')).toEqual({ count: 1, label: '人文用的时代' });
     expect(() => eng.exec({ op: 'set_content', kind: 'era', id: 'medieval', item: null })).toThrow(/人文用的时代/);
     const gov = Object.values(w.small.countries!)[0].government;

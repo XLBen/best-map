@@ -14,6 +14,8 @@ import {
   categoryName,
   cellName,
   countryFactions,
+  countryFaith,
+  FAITH_NAMES,
   worldCultureGroups,
   worldCultures,
 } from '../../core/human';
@@ -413,6 +415,8 @@ function StatsSection({ w, m }: { w: World; m: CountryMeta }) {
   if (!st) return null;
   const top = st.cultures.slice(0, 5);
   const other = Math.max(0, 1 - top.reduce((a, x) => a + x.share, 0));
+  // 第四十三轮：国教，与信异端（同组不同派）、异教（不同组）的人
+  const faith = countryFaith(w, m.id, st);
   return (
     <section>
       <h5>统计</h5>
@@ -441,6 +445,14 @@ function StatsSection({ w, m }: { w: World; m: CountryMeta }) {
                 <StackBar items={v.items} />
               </>
             ) : null,
+          )}
+          {faith && (
+            <p class="hint">
+              国教：{faith.name}
+              {faith.group ? `（${faith.group}）` : ''}
+              {faith.heretic > 0.005 ? ` · ${FAITH_NAMES.heretic} ${shareText(faith.heretic)}` : ''}
+              {faith.heathen > 0.005 ? ` · ${FAITH_NAMES.heathen} ${shareText(faith.heathen)}` : ''}
+            </p>
           )}
           {st.minorityShare > 0.005 && <p class="hint">不兼容的少数群体 {shareText(st.minorityShare)}</p>}
         </>

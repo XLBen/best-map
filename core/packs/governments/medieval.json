@@ -4,37 +4,144 @@
       "id": "feudal-monarchy",
       "name": "封建君主制",
       "category": ["monarchy"],
-      "description": "国王把土地分封给贵族，换取兵役与忠诚。王权强弱随领主的向背起落。",
-      "color": "#9a4b3c",
-      "title": {
-        "default": { "zh": "王国", "orig": "Kingdom of {name}" },
-        "frankish": { "zh": "王国", "orig": "Royaume de {name}" },
-        "teutonic": { "zh": "王国", "orig": "Königreich {name}" },
-        "zeven": { "zh": "王国", "orig": "Koninkrijk {name}" },
-        "veturia": { "zh": "王国", "orig": "Regnum {name}" },
-        "montevi": { "zh": "王国", "orig": "Regno di {name}" },
-        "estrella": { "zh": "王国", "orig": "Reino de {name}" },
-        "nordic": { "zh": "王国", "orig": "Kongeriket {name}" },
-        "slavic": { "zh": "公国", "orig": "Knyazhestvo {name}" },
-        "steppe": { "zh": "汗国", "orig": "{name} Khanate" },
-        "mideast": { "zh": "埃米尔国", "orig": "Emirate of {name}" },
-        "southasia": { "zh": "王国", "orig": "{name} Rajya" },
-        "eastern": { "zh": "国" },
-        "seafolk": { "zh": "海国", "orig": "Sea Kingdom of {name}" },
-        "dwarves": { "zh": "山下王国", "orig": "Kingdom under {name}" },
-        "orcs": { "zh": "王国", "orig": "{name} Warlands" }
-      },
-      "rulerTitle": {
-        "default": "国王",
-        "slavic": "大公",
-        "steppe": "可汗",
-        "mideast": "埃米尔",
-        "southasia": "罗阇",
-        "eastern": "王",
-        "dwarves": "山王",
-        "orcs": "战王"
-      },
       "eras": ["medieval", "fantasy"],
+      "color": "#9a4b3c",
+      "description": "国王把土地封给贵族，换取他们的兵役与效忠；王权的强弱全看领主们的向背。",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "侯国", "orig": "March of {name}"},
+        "medium": {"zh": "公国", "orig": "Duchy of {name}"},
+        "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+        "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+      },
+      "rulers": {"city": "领主", "small": "侯爵", "medium": "公爵", "large": "国王", "empire": "皇帝"},
+      "names": [
+        {"cultureGroups": ["seafolk"], "titles": {"zh": "海国", "orig": "Sea Kingdom of {name}"}},
+        {"cultureGroups": ["dwarves"], "titles": {"zh": "山下王国", "orig": "Kingdom under {name}"}, "rulers": "山王"},
+        {"cultureGroups": ["orcs"], "titles": {"zh": "王国", "orig": "{name} Warlands"}, "rulers": "战王"},
+        {
+          "cultureGroups": ["east-slavic"],
+          "valueGroups": ["christian"],
+          "titles": {
+            "small": {"zh": "公国", "orig": "Principality of {name}"},
+            "medium": {"zh": "公国", "orig": "Principality of {name}"},
+            "large": {"zh": "大公国", "orig": "Grand Principality of {name}"},
+            "empire": {"zh": "沙皇国", "orig": "Tsardom of {name}"}
+          },
+          "rulers": {"small": "王公", "medium": "王公", "large": "大公", "empire": "沙皇"}
+        },
+        {"cultureGroups": ["cushitic"], "valueGroups": ["christian"], "rulers": {"medium": "拉斯", "large": "内格斯", "empire": "万王之王"}},
+        {
+          "cultureGroups": ["iranian"],
+          "titles": {
+            "small": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "沙阿国", "orig": "Shahdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "汗", "medium": "汗", "large": "沙阿", "empire": "众王之王"}
+        },
+        {
+          "cultureGroups": ["altaic", "tatar"],
+          "titles": {
+            "small": {"zh": "伯克领", "orig": "Beylik of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "empire": {"zh": "大汗国", "orig": "Khaganate of {name}"}
+          },
+          "rulers": {"small": "伯克", "medium": "汗", "large": "可汗", "empire": "大汗"}
+        },
+        {
+          "cultureGroups": ["hindustani", "western-aryan", "eastern-aryan", "central-indian", "dravidian"],
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "纳瓦卜国", "orig": "Nawabate of {name}"},
+            "medium": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "纳瓦卜", "medium": "苏丹", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "谢赫国", "orig": "Sheikhdom of {name}"},
+            "medium": {"zh": "埃米尔国", "orig": "Emirate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "谢赫", "medium": "埃米尔", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["dharmic"],
+          "titles": {
+            "small": {"zh": "塔库尔领", "orig": "Thakurate of {name}"},
+            "medium": {"zh": "罗阇国", "orig": "Rajya of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "塔库尔", "medium": "罗阇", "large": "摩诃罗阇", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["chinese"],
+          "titles": {
+            "city": {"zh": "邑", "orig": "Fief of {name}"},
+            "small": {"zh": "侯国", "orig": "Marquisate of {name}"},
+            "medium": {"zh": "国", "orig": "State of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "大{name}", "orig": "Great {name}"}
+          },
+          "rulers": {"city": "邑主", "small": "侯", "medium": "公", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["japanese"],
+          "titles": {
+            "small": {"zh": "藩", "orig": "{name} Domain"},
+            "medium": {"zh": "国", "orig": "{name} Province"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "藩主", "medium": "大名", "large": "大王", "empire": "天皇"}
+        },
+        {
+          "cultureGroups": ["korean"],
+          "titles": {
+            "small": {"zh": "郡", "orig": "{name} Commandery"},
+            "medium": {"zh": "国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "君", "medium": "王", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["tai", "burman", "mon-khmer"],
+          "valueGroups": ["eastern"],
+          "titles": {
+            "small": {"zh": "勐", "orig": "Mueang {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "召", "medium": "王", "large": "国王", "empire": "万王之王"}
+        },
+        {"cultureGroups": ["mande"], "rulers": {"small": "法林", "medium": "国王", "large": "曼萨", "empire": "曼萨"}},
+        {
+          "cultureGroups": ["andean"],
+          "titles": {
+            "small": {"zh": "库拉卡领", "orig": "Curacazgo of {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "库拉卡", "medium": "库拉卡", "large": "印卡", "empire": "萨帕印卡"}
+        },
+        {
+          "cultureGroups": ["central-american", "otomanguean", "aridoamerican"],
+          "titles": {"city": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}, "small": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}},
+          "rulers": {"city": "特拉托阿尼", "small": "特拉托阿尼", "medium": "特拉托阿尼", "large": "特拉托阿尼", "empire": "大特拉托阿尼"}
+        },
+        {"cultureGroups": ["mayan"], "rulers": {"city": "巴塔布", "small": "阿哈乌", "medium": "阿哈乌", "large": "圣王", "empire": "圣王"}}
+      ],
       "weight": 3,
       "size": 1,
       "expansion": 0.3,
@@ -46,25 +153,443 @@
       "emblems": ["crown", "lion", "tower"]
     },
     {
+      "id": "administrative-monarchy",
+      "name": "行政君主制",
+      "category": ["monarchy"],
+      "eras": ["medieval"],
+      "color": "#c47a2c",
+      "description": "由领薪俸的官僚而不是封臣治理地方，税册与法典比贵族的刀剑更可靠。",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "侯国", "orig": "March of {name}"},
+        "medium": {"zh": "公国", "orig": "Duchy of {name}"},
+        "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+        "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+      },
+      "rulers": {"city": "领主", "small": "侯爵", "medium": "公爵", "large": "国王", "empire": "皇帝"},
+      "names": [
+        {
+          "cultureGroups": ["east-slavic"],
+          "valueGroups": ["christian"],
+          "titles": {
+            "small": {"zh": "公国", "orig": "Principality of {name}"},
+            "medium": {"zh": "公国", "orig": "Principality of {name}"},
+            "large": {"zh": "大公国", "orig": "Grand Principality of {name}"},
+            "empire": {"zh": "沙皇国", "orig": "Tsardom of {name}"}
+          },
+          "rulers": {"small": "王公", "medium": "王公", "large": "大公", "empire": "沙皇"}
+        },
+        {"cultureGroups": ["cushitic"], "valueGroups": ["christian"], "rulers": {"medium": "拉斯", "large": "内格斯", "empire": "万王之王"}},
+        {
+          "cultureGroups": ["iranian"],
+          "titles": {
+            "small": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "沙阿国", "orig": "Shahdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "汗", "medium": "汗", "large": "沙阿", "empire": "众王之王"}
+        },
+        {
+          "cultureGroups": ["altaic", "tatar"],
+          "titles": {
+            "small": {"zh": "伯克领", "orig": "Beylik of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "empire": {"zh": "大汗国", "orig": "Khaganate of {name}"}
+          },
+          "rulers": {"small": "伯克", "medium": "汗", "large": "可汗", "empire": "大汗"}
+        },
+        {
+          "cultureGroups": ["hindustani", "western-aryan", "eastern-aryan", "central-indian", "dravidian"],
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "纳瓦卜国", "orig": "Nawabate of {name}"},
+            "medium": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "纳瓦卜", "medium": "苏丹", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "谢赫国", "orig": "Sheikhdom of {name}"},
+            "medium": {"zh": "埃米尔国", "orig": "Emirate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "谢赫", "medium": "埃米尔", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["dharmic"],
+          "titles": {
+            "small": {"zh": "塔库尔领", "orig": "Thakurate of {name}"},
+            "medium": {"zh": "罗阇国", "orig": "Rajya of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "塔库尔", "medium": "罗阇", "large": "摩诃罗阇", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["chinese"],
+          "titles": {
+            "city": {"zh": "邑", "orig": "Fief of {name}"},
+            "small": {"zh": "侯国", "orig": "Marquisate of {name}"},
+            "medium": {"zh": "国", "orig": "State of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "大{name}", "orig": "Great {name}"}
+          },
+          "rulers": {"city": "邑主", "small": "侯", "medium": "公", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["japanese"],
+          "titles": {
+            "small": {"zh": "藩", "orig": "{name} Domain"},
+            "medium": {"zh": "国", "orig": "{name} Province"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "藩主", "medium": "大名", "large": "大王", "empire": "天皇"}
+        },
+        {
+          "cultureGroups": ["korean"],
+          "titles": {
+            "small": {"zh": "郡", "orig": "{name} Commandery"},
+            "medium": {"zh": "国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "君", "medium": "王", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["tai", "burman", "mon-khmer"],
+          "valueGroups": ["eastern"],
+          "titles": {
+            "small": {"zh": "勐", "orig": "Mueang {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "召", "medium": "王", "large": "国王", "empire": "万王之王"}
+        },
+        {"cultureGroups": ["mande"], "rulers": {"small": "法林", "medium": "国王", "large": "曼萨", "empire": "曼萨"}},
+        {
+          "cultureGroups": ["andean"],
+          "titles": {
+            "small": {"zh": "库拉卡领", "orig": "Curacazgo of {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "库拉卡", "medium": "库拉卡", "large": "印卡", "empire": "萨帕印卡"}
+        },
+        {
+          "cultureGroups": ["central-american", "otomanguean", "aridoamerican"],
+          "titles": {"city": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}, "small": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}},
+          "rulers": {"city": "特拉托阿尼", "small": "特拉托阿尼", "medium": "特拉托阿尼", "large": "特拉托阿尼", "empire": "大特拉托阿尼"}
+        },
+        {"cultureGroups": ["mayan"], "rulers": {"city": "巴塔布", "small": "阿哈乌", "medium": "阿哈乌", "large": "圣王", "empire": "圣王"}}
+      ],
+      "weight": 0.8,
+      "size": 1.4,
+      "expansion": 0.35,
+      "coastal": 0.1,
+      "urbanization": 1.4,
+      "cohesion": 0.6,
+      "vassals": 0.25,
+      "nomadic": 0,
+      "emblems": ["crown", "tower", "eagle", "circle"]
+    },
+    {
+      "id": "elective-monarchy",
+      "name": "选举君主制",
+      "category": ["monarchy", "oligarchy"],
+      "eras": ["medieval"],
+      "color": "#c87890",
+      "description": "王冠不由父传子，而由大贵族与高级教士选出；每一次选举都是一场讨价还价。",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "侯国", "orig": "March of {name}"},
+        "medium": {"zh": "公国", "orig": "Duchy of {name}"},
+        "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+        "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+      },
+      "rulers": {"city": "领主", "small": "侯爵", "medium": "公爵", "large": "国王", "empire": "皇帝"},
+      "names": [
+        {
+          "cultureGroups": ["east-slavic"],
+          "valueGroups": ["christian"],
+          "titles": {
+            "small": {"zh": "公国", "orig": "Principality of {name}"},
+            "medium": {"zh": "公国", "orig": "Principality of {name}"},
+            "large": {"zh": "大公国", "orig": "Grand Principality of {name}"},
+            "empire": {"zh": "沙皇国", "orig": "Tsardom of {name}"}
+          },
+          "rulers": {"small": "王公", "medium": "王公", "large": "大公", "empire": "沙皇"}
+        },
+        {"cultureGroups": ["cushitic"], "valueGroups": ["christian"], "rulers": {"medium": "拉斯", "large": "内格斯", "empire": "万王之王"}},
+        {
+          "cultureGroups": ["iranian"],
+          "titles": {
+            "small": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "沙阿国", "orig": "Shahdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "汗", "medium": "汗", "large": "沙阿", "empire": "众王之王"}
+        },
+        {
+          "cultureGroups": ["altaic", "tatar"],
+          "titles": {
+            "small": {"zh": "伯克领", "orig": "Beylik of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "empire": {"zh": "大汗国", "orig": "Khaganate of {name}"}
+          },
+          "rulers": {"small": "伯克", "medium": "汗", "large": "可汗", "empire": "大汗"}
+        },
+        {
+          "cultureGroups": ["hindustani", "western-aryan", "eastern-aryan", "central-indian", "dravidian"],
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "纳瓦卜国", "orig": "Nawabate of {name}"},
+            "medium": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "纳瓦卜", "medium": "苏丹", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "谢赫国", "orig": "Sheikhdom of {name}"},
+            "medium": {"zh": "埃米尔国", "orig": "Emirate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "谢赫", "medium": "埃米尔", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["dharmic"],
+          "titles": {
+            "small": {"zh": "塔库尔领", "orig": "Thakurate of {name}"},
+            "medium": {"zh": "罗阇国", "orig": "Rajya of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "塔库尔", "medium": "罗阇", "large": "摩诃罗阇", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["chinese"],
+          "titles": {
+            "city": {"zh": "邑", "orig": "Fief of {name}"},
+            "small": {"zh": "侯国", "orig": "Marquisate of {name}"},
+            "medium": {"zh": "国", "orig": "State of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "大{name}", "orig": "Great {name}"}
+          },
+          "rulers": {"city": "邑主", "small": "侯", "medium": "公", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["japanese"],
+          "titles": {
+            "small": {"zh": "藩", "orig": "{name} Domain"},
+            "medium": {"zh": "国", "orig": "{name} Province"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "藩主", "medium": "大名", "large": "大王", "empire": "天皇"}
+        },
+        {
+          "cultureGroups": ["korean"],
+          "titles": {
+            "small": {"zh": "郡", "orig": "{name} Commandery"},
+            "medium": {"zh": "国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "君", "medium": "王", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["tai", "burman", "mon-khmer"],
+          "valueGroups": ["eastern"],
+          "titles": {
+            "small": {"zh": "勐", "orig": "Mueang {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "召", "medium": "王", "large": "国王", "empire": "万王之王"}
+        },
+        {"cultureGroups": ["mande"], "rulers": {"small": "法林", "medium": "国王", "large": "曼萨", "empire": "曼萨"}},
+        {
+          "cultureGroups": ["andean"],
+          "titles": {
+            "small": {"zh": "库拉卡领", "orig": "Curacazgo of {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "库拉卡", "medium": "库拉卡", "large": "印卡", "empire": "萨帕印卡"}
+        },
+        {
+          "cultureGroups": ["central-american", "otomanguean", "aridoamerican"],
+          "titles": {"city": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}, "small": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}},
+          "rulers": {"city": "特拉托阿尼", "small": "特拉托阿尼", "medium": "特拉托阿尼", "large": "特拉托阿尼", "empire": "大特拉托阿尼"}
+        },
+        {"cultureGroups": ["mayan"], "rulers": {"city": "巴塔布", "small": "阿哈乌", "medium": "阿哈乌", "large": "圣王", "empire": "圣王"}}
+      ],
+      "weight": 0.5,
+      "size": 1.2,
+      "expansion": 0.3,
+      "coastal": 0.05,
+      "urbanization": 0.9,
+      "cohesion": 0.3,
+      "vassals": 0.4,
+      "nomadic": 0,
+      "emblems": ["crown", "eagle", "cross"]
+    },
+    {
       "id": "absolute-monarchy",
       "name": "绝对君主制",
       "category": ["monarchy"],
-      "description": "君主集立法、司法与军权于一身，由常备军与官僚治国，贵族的特权受到压制。",
+      "eras": ["medieval", "industrial", "modern"],
       "color": "#7a2e2e",
-      "title": {
-        "default": { "zh": "王国", "orig": "Kingdom of {name}" },
-        "frankish": { "zh": "王国", "orig": "Royaume de {name}" },
-        "teutonic": { "zh": "王国", "orig": "Königreich {name}" },
-        "estrella": { "zh": "王国", "orig": "Reino de {name}" },
-        "slavic": { "zh": "沙皇国", "orig": "Tsarstvo {name}" },
-        "steppe": { "zh": "汗国", "orig": "{name} Khanate" },
-        "darian": { "zh": "王国", "orig": "{name} Shahdom" },
-        "mideast": { "zh": "王国", "orig": "Mamlakat {name}" },
-        "eastern": { "zh": "国" }
+      "description": "“朕即国家”：常备军与中央的官僚让君主凌驾于贵族与议会之上。",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "侯国", "orig": "March of {name}"},
+        "medium": {"zh": "公国", "orig": "Duchy of {name}"},
+        "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+        "empire": {"zh": "帝国", "orig": "Empire of {name}"}
       },
-      "rulerTitle": { "default": "国王", "slavic": "沙皇", "steppe": "可汗", "darian": "沙阿", "eastern": "国王" },
-      "eras": ["medieval", "industrial"],
-      "weight": 1,
+      "rulers": {"city": "领主", "small": "侯爵", "medium": "公爵", "large": "国王", "empire": "皇帝"},
+      "names": [
+        {
+          "cultureGroups": ["east-slavic"],
+          "valueGroups": ["christian"],
+          "titles": {
+            "small": {"zh": "公国", "orig": "Principality of {name}"},
+            "medium": {"zh": "公国", "orig": "Principality of {name}"},
+            "large": {"zh": "大公国", "orig": "Grand Principality of {name}"},
+            "empire": {"zh": "沙皇国", "orig": "Tsardom of {name}"}
+          },
+          "rulers": {"small": "王公", "medium": "王公", "large": "大公", "empire": "沙皇"}
+        },
+        {"cultureGroups": ["cushitic"], "valueGroups": ["christian"], "rulers": {"medium": "拉斯", "large": "内格斯", "empire": "万王之王"}},
+        {
+          "cultureGroups": ["iranian"],
+          "titles": {
+            "small": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "沙阿国", "orig": "Shahdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "汗", "medium": "汗", "large": "沙阿", "empire": "众王之王"}
+        },
+        {
+          "cultureGroups": ["altaic", "tatar"],
+          "titles": {
+            "small": {"zh": "伯克领", "orig": "Beylik of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "empire": {"zh": "大汗国", "orig": "Khaganate of {name}"}
+          },
+          "rulers": {"small": "伯克", "medium": "汗", "large": "可汗", "empire": "大汗"}
+        },
+        {
+          "cultureGroups": ["hindustani", "western-aryan", "eastern-aryan", "central-indian", "dravidian"],
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "纳瓦卜国", "orig": "Nawabate of {name}"},
+            "medium": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "纳瓦卜", "medium": "苏丹", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "谢赫国", "orig": "Sheikhdom of {name}"},
+            "medium": {"zh": "埃米尔国", "orig": "Emirate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "谢赫", "medium": "埃米尔", "large": "苏丹", "empire": "帕迪沙阿"}
+        },
+        {
+          "valueGroups": ["dharmic"],
+          "titles": {
+            "small": {"zh": "塔库尔领", "orig": "Thakurate of {name}"},
+            "medium": {"zh": "罗阇国", "orig": "Rajya of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "塔库尔", "medium": "罗阇", "large": "摩诃罗阇", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["chinese"],
+          "titles": {
+            "city": {"zh": "邑", "orig": "Fief of {name}"},
+            "small": {"zh": "侯国", "orig": "Marquisate of {name}"},
+            "medium": {"zh": "国", "orig": "State of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "大{name}", "orig": "Great {name}"}
+          },
+          "rulers": {"city": "邑主", "small": "侯", "medium": "公", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["japanese"],
+          "titles": {
+            "small": {"zh": "藩", "orig": "{name} Domain"},
+            "medium": {"zh": "国", "orig": "{name} Province"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "藩主", "medium": "大名", "large": "大王", "empire": "天皇"}
+        },
+        {
+          "cultureGroups": ["korean"],
+          "titles": {
+            "small": {"zh": "郡", "orig": "{name} Commandery"},
+            "medium": {"zh": "国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "Empire of {name}"}
+          },
+          "rulers": {"small": "君", "medium": "王", "large": "王", "empire": "皇帝"}
+        },
+        {
+          "cultureGroups": ["tai", "burman", "mon-khmer"],
+          "valueGroups": ["eastern"],
+          "titles": {
+            "small": {"zh": "勐", "orig": "Mueang {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "召", "medium": "王", "large": "国王", "empire": "万王之王"}
+        },
+        {"cultureGroups": ["mande"], "rulers": {"small": "法林", "medium": "国王", "large": "曼萨", "empire": "曼萨"}},
+        {
+          "cultureGroups": ["andean"],
+          "titles": {
+            "small": {"zh": "库拉卡领", "orig": "Curacazgo of {name}"},
+            "medium": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "large": {"zh": "王国", "orig": "Kingdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "库拉卡", "medium": "库拉卡", "large": "印卡", "empire": "萨帕印卡"}
+        },
+        {
+          "cultureGroups": ["central-american", "otomanguean", "aridoamerican"],
+          "titles": {"city": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}, "small": {"zh": "阿尔特佩特尔", "orig": "Altepetl of {name}"}},
+          "rulers": {"city": "特拉托阿尼", "small": "特拉托阿尼", "medium": "特拉托阿尼", "large": "特拉托阿尼", "empire": "大特拉托阿尼"}
+        },
+        {"cultureGroups": ["mayan"], "rulers": {"city": "巴塔布", "small": "阿哈乌", "medium": "阿哈乌", "large": "圣王", "empire": "圣王"}}
+      ],
+      "weight": 0.6,
       "size": 1.4,
       "expansion": 0.5,
       "coastal": 0.1,
@@ -76,204 +601,47 @@
       "layouts": ["plain", "canton", "quartered", "border"]
     },
     {
-      "id": "elective-monarchy",
-      "name": "选举君主制",
-      "category": ["monarchy", "oligarchy"],
-      "description": "王位不世袭，由大贵族与高级教士在先王死后推选，选出的国王常要让出权力换取支持。",
-      "color": "#c87890",
-      "title": {
-        "default": { "zh": "王国", "orig": "Kingdom of {name}" },
-        "teutonic": { "zh": "王国", "orig": "Wahlreich {name}" },
-        "nordic": { "zh": "王国", "orig": "Kongeriket {name}" },
-        "slavic": { "zh": "王国", "orig": "Korolevstvo {name}" },
-        "steppe": { "zh": "汗国", "orig": "{name} Khanate" }
-      },
-      "rulerTitle": { "default": "国王", "steppe": "可汗" },
-      "eras": ["medieval"],
-      "weight": 0.6,
-      "size": 1.2,
-      "expansion": 0.3,
-      "coastal": 0.05,
-      "urbanization": 0.9,
-      "cohesion": 0.3,
-      "vassals": 0.4,
-      "nomadic": 0,
-      "emblems": ["crown", "eagle", "cross"]
-    },
-    {
-      "id": "merchant-republic",
-      "name": "商业共和国",
-      "category": ["republic", "oligarchy"],
-      "description": "由大商家推举执政，靠港口与航路致富。国土小，城市大。",
-      "color": "#2f7d8a",
-      "title": {
-        "default": { "zh": "共和国", "orig": "Republic of {name}" },
-        "montevi": { "zh": "共和国", "orig": "Repubblica di {name}" },
-        "estrella": { "zh": "共和国", "orig": "República de {name}" },
-        "frankish": { "zh": "共和国", "orig": "République de {name}" },
-        "teutonic": { "zh": "共和国", "orig": "Republik {name}" },
-        "zeven": { "zh": "共和国", "orig": "Republiek {name}" },
-        "veturia": { "zh": "共和国", "orig": "Res Publica {name}" }
-      },
-      "rulerTitle": "总督",
-      "eras": ["medieval"],
-      "weight": 1,
-      "size": 0.35,
-      "expansion": 0.15,
-      "coastal": 0.9,
-      "urbanization": 1.8,
-      "cohesion": 0.6,
-      "vassals": 0.1,
-      "nomadic": 0,
-      "emblems": ["tower", "wheel", "wave"],
-      "layouts": ["bicolor-h", "canton", "cross"]
-    },
-    {
-      "id": "noble-republic",
-      "name": "贵族共和国",
-      "category": ["oligarchy"],
-      "description": "全体有地的贵族在议会里平起平坐，国王只是选出的首席，大事要议会一致同意。",
-      "color": "#8a3a5a",
-      "title": {
-        "default": { "zh": "共和国", "orig": "Commonwealth of {name}" },
-        "slavic": { "zh": "共和国", "orig": "Rzeczpospolita {name}" },
-        "teutonic": { "zh": "共和国", "orig": "Adelsrepublik {name}" }
-      },
-      "rulerTitle": "执政",
-      "eras": ["medieval"],
-      "weight": 0.5,
-      "size": 1.1,
-      "expansion": 0.3,
-      "coastal": 0.1,
-      "urbanization": 0.8,
-      "cohesion": 0.3,
-      "vassals": 0.3,
-      "nomadic": 0,
-      "emblems": ["eagle", "crown", "tower"],
-      "layouts": ["bicolor-h", "quartered", "border"]
-    },
-    {
-      "id": "theocracy",
-      "name": "神权国家",
-      "category": ["theocracy"],
-      "description": "教会的首领同时是国家的首领，律法出自经典。",
-      "color": "#c9a227",
-      "title": {
-        "default": { "zh": "教国", "orig": "Holy State of {name}" },
-        "mideast": { "zh": "哈里发国", "orig": "{name} Caliphate" },
-        "eastern": { "zh": "神国" },
-        "southasia": { "zh": "圣国", "orig": "{name} Dharmarajya" }
-      },
-      "rulerTitle": { "default": "大祭司", "mideast": "哈里发", "eastern": "法王", "southasia": "法王" },
-      "eras": ["medieval", "industrial"],
-      "weight": 0.6,
-      "size": 0.6,
-      "expansion": 0.4,
-      "coastal": 0,
-      "urbanization": 1.1,
-      "cohesion": 0.45,
-      "vassals": 0.15,
-      "nomadic": 0,
-      "emblems": ["sun", "moon", "cross"]
-    },
-    {
-      "id": "empire",
-      "name": "帝国",
+      "id": "celestial-empire",
+      "name": "天朝",
       "category": ["monarchy", "empire"],
-      "description": "皇帝统御多个民族与属国，疆域辽阔，边地常有异族。",
-      "color": "#6a2c91",
-      "title": {
-        "default": { "zh": "帝国", "orig": "Empire of {name}" },
-        "frankish": { "zh": "帝国", "orig": "Empire de {name}" },
-        "teutonic": { "zh": "帝国", "orig": "Kaiserreich {name}" },
-        "veturia": { "zh": "帝国", "orig": "Imperium {name}" },
-        "montevi": { "zh": "帝国", "orig": "Impero di {name}" },
-        "estrella": { "zh": "帝国", "orig": "Imperio de {name}" },
-        "slavic": { "zh": "帝国", "orig": "Imperiya {name}" },
-        "eastern": { "zh": "朝" },
-        "yamato": { "zh": "皇国" },
-        "steppe": { "zh": "大汗国", "orig": "Great {name} Khaganate" },
-        "darian": { "zh": "帝国", "orig": "{name} Shahanshahr" },
-        "orcs": { "zh": "大部落", "orig": "Great {name} Horde" }
+      "eras": ["medieval", "industrial"],
+      "color": "#d8b030",
+      "description": "天子受命于天，统御四海；科举选出的官员治理天下，四夷以朝贡来朝。",
+      "titles": {
+        "city": {"zh": "邑", "orig": "Fief of {name}"},
+        "small": {"zh": "国", "orig": "State of {name}"},
+        "medium": {"zh": "国", "orig": "State of {name}"},
+        "large": {"zh": "朝", "orig": "{name} Dynasty"},
+        "empire": {"zh": "大{name}", "orig": "Great {name}"}
       },
-      "rulerTitle": { "default": "皇帝", "slavic": "沙皇", "steppe": "大汗", "darian": "万王之王", "mideast": "大苏丹", "yamato": "天皇", "orcs": "大督军" },
-      "eras": ["medieval", "industrial", "fantasy"],
-      "weight": 0.6,
+      "rulers": {"city": "邑主", "small": "王", "medium": "王", "large": "皇帝", "empire": "皇帝"},
+      "weight": 0.3,
       "size": 3,
-      "expansion": 0.85,
-      "coastal": 0.1,
-      "urbanization": 1.3,
-      "cohesion": 0.3,
-      "vassals": 0.6,
-      "nomadic": 0.2,
-      "emblems": ["eagle", "crown", "sun"]
-    },
-    {
-      "id": "nomad-khanate",
-      "name": "游牧汗国",
-      "category": ["monarchy", "nomadic"],
-      "description": "一位可汗以亲族与亲兵统御各部，冬夏转场，向定居的属地征收贡赋。",
-      "color": "#b07a32",
-      "title": {
-        "default": { "zh": "汗国", "orig": "{name} Khanate" },
-        "mideast": { "zh": "酋长国", "orig": "Emirate of {name}" },
-        "africa": { "zh": "游牧王国", "orig": "{name} Pastoral Kingdom" }
-      },
-      "rulerTitle": { "default": "可汗", "mideast": "谢赫", "africa": "首领" },
-      "eras": ["medieval"],
-      "weight": 0.3,
-      "size": 2.2,
-      "expansion": 0.8,
-      "coastal": 0,
-      "urbanization": 0.4,
-      "cohesion": 0.15,
-      "vassals": 0.5,
-      "nomadic": 1,
-      "emblems": ["sun", "moon", "mountain"],
-      "layouts": ["plain", "bicolor-h", "border"]
-    },
-    {
-      "id": "sultanate",
-      "name": "苏丹制",
-      "category": ["monarchy"],
-      "description": "君主手握军政大权，以税田供养骑兵，地方长官由宫廷任免，宗教学者为王权背书。",
-      "color": "#3aa070",
-      "title": {
-        "default": { "zh": "王国", "orig": "Kingdom of {name}" },
-        "mideast": { "zh": "苏丹国", "orig": "Sultanate of {name}" },
-        "steppe": { "zh": "苏丹国", "orig": "{name} Sultanate" },
-        "southasia": { "zh": "苏丹国", "orig": "Sultanate of {name}" },
-        "southeast": { "zh": "苏丹国", "orig": "Kesultanan {name}" },
-        "africa": { "zh": "苏丹国", "orig": "Sultanate of {name}" },
-        "darian": { "zh": "沙阿国", "orig": "{name} Shahdom" }
-      },
-      "rulerTitle": { "default": "国王", "mideast": "苏丹", "steppe": "苏丹", "southasia": "苏丹", "southeast": "苏丹", "africa": "苏丹", "darian": "沙阿" },
-      "eras": ["medieval"],
-      "weight": 0.3,
-      "size": 1.5,
       "expansion": 0.6,
-      "coastal": 0.15,
+      "coastal": 0.05,
       "urbanization": 1.4,
-      "cohesion": 0.35,
-      "vassals": 0.45,
-      "nomadic": 0.15,
-      "emblems": ["moon", "star", "sword"],
-      "layouts": ["plain", "border", "bicolor-v"]
+      "cohesion": 0.55,
+      "vassals": 0.6,
+      "nomadic": 0,
+      "emblems": ["sun", "circle", "crown"],
+      "layouts": ["plain", "border", "canton"]
     },
     {
       "id": "shogunate",
-      "name": "武家政权",
+      "name": "幕府",
       "category": ["monarchy", "dictatorship"],
-      "description": "君主只留礼仪上的尊位，实权在世袭的大将军与武士家族手里，各地领主向将军效忠。",
+      "eras": ["medieval", "industrial"],
       "color": "#a03c50",
-      "title": {
-        "default": { "zh": "摄政国", "orig": "Regency of {name}" },
-        "yamato": { "zh": "幕府", "orig": "{name} Bakufu" },
-        "eastern": { "zh": "国" }
+      "description": "天皇只是名义上的君主，实际的权柄握在将军手中，各地大名对幕府称臣。",
+      "titles": {
+        "city": {"zh": "藩", "orig": "{name} Domain"},
+        "small": {"zh": "藩", "orig": "{name} Domain"},
+        "medium": {"zh": "幕府", "orig": "{name} Shogunate"},
+        "large": {"zh": "幕府", "orig": "{name} Shogunate"},
+        "empire": {"zh": "幕府", "orig": "{name} Shogunate"}
       },
-      "rulerTitle": { "default": "摄政", "yamato": "将军", "eastern": "大将军" },
-      "eras": ["medieval"],
-      "weight": 0.15,
+      "rulers": {"city": "藩主", "small": "藩主", "medium": "将军", "large": "将军", "empire": "将军"},
+      "weight": 0.2,
       "size": 1.3,
       "expansion": 0.45,
       "coastal": 0.2,
@@ -285,68 +653,152 @@
       "layouts": ["plain", "border", "bicolor-v"]
     },
     {
-      "id": "colonial-empire",
-      "name": "殖民帝国",
-      "category": ["monarchy", "empire"],
-      "description": "靠舰队与特许公司向海外扩张，本土之外有贸易站、种植园与总督辖区。",
-      "color": "#1e2e4e",
-      "title": {
-        "default": { "zh": "帝国", "orig": "{name} Empire" },
-        "frankish": { "zh": "帝国", "orig": "Empire colonial de {name}" },
-        "estrella": { "zh": "帝国", "orig": "Imperio de {name}" },
-        "zeven": { "zh": "帝国", "orig": "Rijk van {name}" },
-        "eastern": { "zh": "朝" }
+      "id": "iqta",
+      "name": "伊克塔",
+      "category": ["monarchy"],
+      "eras": ["medieval"],
+      "color": "#3aa070",
+      "description": "苏丹把土地的税收分给效力的骑兵将领，以此养活军队；封地不得世袭，全凭君主的恩宠。",
+      "titles": {
+        "city": {"zh": "领", "orig": "Lordship of {name}"},
+        "small": {"zh": "谢赫国", "orig": "Sheikhdom of {name}"},
+        "medium": {"zh": "埃米尔国", "orig": "Emirate of {name}"},
+        "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+        "empire": {"zh": "帝国", "orig": "{name} Empire"}
       },
-      "rulerTitle": { "default": "国王", "eastern": "皇帝" },
-      "eras": ["medieval", "industrial"],
-      "weight": 0.3,
-      "size": 2.4,
-      "expansion": 0.85,
-      "coastal": 0.75,
+      "rulers": {"city": "领主", "small": "谢赫", "medium": "埃米尔", "large": "苏丹", "empire": "帕迪沙阿"},
+      "names": [
+        {
+          "cultureGroups": ["iranian"],
+          "titles": {
+            "small": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "沙阿国", "orig": "Shahdom of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "汗", "medium": "汗", "large": "沙阿", "empire": "众王之王"}
+        },
+        {
+          "cultureGroups": ["altaic", "tatar"],
+          "titles": {
+            "small": {"zh": "伯克领", "orig": "Beylik of {name}"},
+            "medium": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "large": {"zh": "汗国", "orig": "Khanate of {name}"},
+            "empire": {"zh": "大汗国", "orig": "Khaganate of {name}"}
+          },
+          "rulers": {"small": "伯克", "medium": "汗", "large": "可汗", "empire": "大汗"}
+        },
+        {
+          "cultureGroups": ["hindustani", "western-aryan", "eastern-aryan", "central-indian", "dravidian"],
+          "valueGroups": ["muslim"],
+          "titles": {
+            "small": {"zh": "纳瓦卜国", "orig": "Nawabate of {name}"},
+            "medium": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "empire": {"zh": "帝国", "orig": "{name} Empire"}
+          },
+          "rulers": {"small": "纳瓦卜", "medium": "苏丹", "large": "苏丹", "empire": "帕迪沙阿"}
+        }
+      ],
+      "weight": 0.8,
+      "size": 1.5,
+      "expansion": 0.6,
+      "coastal": 0.15,
       "urbanization": 1.4,
-      "cohesion": 0.1,
-      "vassals": 0.5,
+      "cohesion": 0.35,
+      "vassals": 0.45,
+      "nomadic": 0.15,
+      "emblems": ["moon", "star", "sword"],
+      "layouts": ["plain", "border", "bicolor-v"]
+    },
+    {
+      "id": "merchant-republic",
+      "name": "商人共和国",
+      "category": ["republic", "oligarchy"],
+      "eras": ["medieval"],
+      "color": "#2f7d8a",
+      "description": "由富商家族把持的港口城邦，舰队与账簿是它的权力，贸易站沿着海岸一路铺开。",
+      "titles": {
+        "city": {"zh": "城邦", "orig": "City of {name}"},
+        "small": {"zh": "共和国", "orig": "Republic of {name}"},
+        "medium": {"zh": "共和国", "orig": "Republic of {name}"},
+        "large": {"zh": "至尊共和国", "orig": "Most Serene Republic of {name}"},
+        "empire": {"zh": "至尊共和国", "orig": "Most Serene Republic of {name}"}
+      },
+      "rulers": "总督",
+      "names": [
+        {
+          "cultureGroups": ["east-bantu", "malay"],
+          "titles": {
+            "city": {"zh": "城邦", "orig": "City of {name}"},
+            "small": {"zh": "港邦", "orig": "Port of {name}"},
+            "medium": {"zh": "苏丹国", "orig": "Sultanate of {name}"},
+            "large": {"zh": "苏丹国", "orig": "Sultanate of {name}"}
+          },
+          "rulers": "苏丹"
+        }
+      ],
+      "weight": 0.6,
+      "size": 0.35,
+      "expansion": 0.15,
+      "coastal": 0.9,
+      "urbanization": 1.8,
+      "cohesion": 0.6,
+      "vassals": 0.1,
       "nomadic": 0,
-      "emblems": ["crown", "wave", "lion", "star"],
-      "layouts": ["canton", "cross", "quartered"]
+      "emblems": ["tower", "wheel", "wave"],
+      "layouts": ["bicolor-h", "canton", "cross"]
+    },
+    {
+      "id": "imperial-free-city",
+      "name": "自由市",
+      "category": ["republic"],
+      "eras": ["medieval"],
+      "color": "#4a7a3a",
+      "description": "只向皇帝一人称臣的城市，市议会自行征税、铸币、筑墙，城外的诸侯奈何不得。",
+      "titles": {"zh": "自由市", "orig": "Free City of {name}"},
+      "rulers": "市长",
+      "names": [{"cultureGroups": ["germanic"], "titles": {"zh": "帝国自由市", "orig": "Free Imperial City of {name}"}}],
+      "weight": 0.4,
+      "size": 0.12,
+      "expansion": 0.05,
+      "coastal": 0.3,
+      "urbanization": 2.5,
+      "cohesion": 0.9,
+      "vassals": 0,
+      "nomadic": 0,
+      "emblems": ["tower", "star", "wheel", "eagle"]
+    },
+    {
+      "id": "monastic-order",
+      "name": "骑士团",
+      "category": ["theocracy"],
+      "eras": ["medieval"],
+      "color": "#3a3a3a",
+      "description": "发誓守贞、清贫与服从的武装修士团，在异教的边疆上以刀剑建起了自己的国家。",
+      "titles": {"zh": "骑士团国", "orig": "Order State of {name}"},
+      "rulers": "大团长",
+      "weight": 0.2,
+      "size": 0.6,
+      "expansion": 0.55,
+      "coastal": 0.2,
+      "urbanization": 1,
+      "cohesion": 0.5,
+      "vassals": 0.1,
+      "nomadic": 0,
+      "emblems": ["cross", "sword", "tower"],
+      "layouts": ["cross", "plain", "border"]
     }
   ],
   "factions": [
     {
-      "id": "nobility",
-      "name": "贵族",
-      "color": "#8a3a3a",
-      "description": "拥有土地与私兵的世家。",
-      "eras": ["medieval", "fantasy"],
-      "base": { "monarchy": 1, "empire": 1.2, "oligarchy": 1.5, "tribal": 0.6, "republic": 0.3, "theocracy": 0.4, "default": 0.5 },
-      "drivers": [{ "primary": true, "weight": 0.3 }]
-    },
-    {
-      "id": "merchants",
-      "name": "商人",
-      "color": "#c9a227",
-      "description": "行会与商家，掌握钱与航路。",
+      "id": "dhimmi",
+      "name": "异教臣民",
+      "color": "#5a64dc",
       "eras": ["medieval"],
-      "base": { "republic": 1.4, "oligarchy": 1, "monarchy": 0.35, "default": 0.3 },
-      "drivers": [{ "coastal": true, "weight": 0.8 }]
-    },
-    {
-      "id": "clergy",
-      "name": "教士",
-      "color": "#5a5aa0",
-      "description": "教会与寺院，管着信仰、教育与大片田产。",
-      "eras": ["medieval"],
-      "base": { "theocracy": 1.6, "monarchy": 0.5, "empire": 0.5, "default": 0.4 },
-      "drivers": [{ "minority": true, "weight": -0.3 }]
-    },
-    {
-      "id": "soldiery",
-      "name": "军人",
-      "color": "#5a6a4a",
-      "description": "常备军、亲兵与佣兵的将领，在边地与宫廷里都说得上话。",
-      "eras": ["medieval"],
-      "base": { "dictatorship": 1.4, "nomadic": 1.1, "empire": 0.7, "tribal": 0.6, "monarchy": 0.35, "republic": 0.2, "default": 0.25 },
-      "drivers": [{ "minority": true, "weight": 0.5 }]
+      "description": "不信国教、纳税换取保护的社群（EU4 的“迪米”）；国中异教徒越多，他们越举足轻重。",
+      "base": {"default": 0.05},
+      "drivers": [{"faith": "heathen", "weight": 1.5}]
     }
   ]
 }

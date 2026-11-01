@@ -7,12 +7,12 @@ import {
   type Government,
   allCountryStats,
   countryCodes,
-  cultureById,
   eraGovernments,
   worldGovernments,
   estimateCountryCount,
   makeFlag,
-  pickTitle,
+  govTitles,
+  titleContext,
   titled,
   worldEra,
   ERA_LAYOUT,
@@ -145,7 +145,7 @@ export function governmentCommand(w: World, m: CountryMeta, g: GovChoice, lib: r
 // 换成这个政体后的国名（改过名字的不变）
 export function titlePreview(w: World, m: CountryMeta, gov: Government): string {
   if (m.nameLocked) return m.name;
-  return titled(m.base, pickTitle(gov.title, cultureById(w.small, m.primaryCulture))).zh;
+  return titled(m.base, govTitles(gov, titleContext(w, m)).title).zh;
 }
 
 // 国名在地图上怎么写（中文 / 原文 / 两者：两者时中文一行、原文一行）

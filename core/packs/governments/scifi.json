@@ -6,11 +6,9 @@
       "category": ["federation", "democracy", "republic"],
       "description": "各殖民地与星系平等加盟，联邦议会管舰队、航道与贸易，成员保留自治。",
       "color": "#3a6ac0",
-      "title": {
-        "default": { "zh": "联邦", "orig": "{name} Federation" },
-        "tidal": { "zh": "潮汐联邦", "orig": "{name} Tidal Compact" }
-      },
-      "rulerTitle": "议长",
+      "titles": {"zh": "联邦", "orig": "{name} Federation"},
+      "rulers": "议长",
+      "names": [{"cultureGroups": ["tidal"], "titles": {"zh": "潮汐联邦", "orig": "{name} Tidal Compact"}}],
       "eras": ["scifi"],
       "weight": 2,
       "size": 2.5,
@@ -29,11 +27,8 @@
       "category": ["empire", "monarchy"],
       "description": "皇室与世袭的星区总督统御众多世界，以舰队与贵族头衔维系忠诚。",
       "color": "#6a2c91",
-      "title": {
-        "default": { "zh": "帝国", "orig": "{name} Imperium" },
-        "eastern": { "zh": "天朝", "orig": "Celestial {name}" }
-      },
-      "rulerTitle": { "default": "皇帝", "eastern": "天帝" },
+      "titles": {"zh": "帝国", "orig": "{name} Imperium"},
+      "rulers": "皇帝",
       "eras": ["scifi"],
       "weight": 1,
       "size": 3,
@@ -52,11 +47,8 @@
       "category": ["corporate", "oligarchy", "republic"],
       "description": "股东大会就是议会，投票权按持股多少，公民身份与雇佣合同绑在一起。",
       "color": "#c08a2a",
-      "title": {
-        "default": { "zh": "企业共和国", "orig": "{name} Corporate Republic" },
-        "eastern": { "zh": "公司国", "orig": "{name} Combine" }
-      },
-      "rulerTitle": "董事长",
+      "titles": {"zh": "企业共和国", "orig": "{name} Corporate Republic"},
+      "rulers": "董事长",
       "eras": ["scifi"],
       "weight": 1.5,
       "size": 0.8,
@@ -75,8 +67,8 @@
       "category": ["republic", "democracy"],
       "description": "拓荒的定居点各选代表组成议会，资源与生活舱按配额分配，政府还很年轻。",
       "color": "#4a9a6a",
-      "title": { "default": { "zh": "殖民地", "orig": "{name} Colony" } },
-      "rulerTitle": "议长",
+      "titles": {"zh": "殖民地", "orig": "{name} Colony"},
+      "rulers": "议长",
       "eras": ["scifi"],
       "weight": 1.5,
       "size": 0.5,
@@ -95,8 +87,8 @@
       "category": ["dictatorship"],
       "description": "舰队司令部接管了民政，战时法令长期有效，公民身份要靠服役换取。",
       "color": "#5a6a4a",
-      "title": { "default": { "zh": "军政府", "orig": "{name} Directorate" } },
-      "rulerTitle": "最高统帅",
+      "titles": {"zh": "军政府", "orig": "{name} Directorate"},
+      "rulers": "最高统帅",
       "eras": ["scifi"],
       "weight": 0.8,
       "size": 1.4,
@@ -115,13 +107,13 @@
       "category": ["dictatorship"],
       "description": "个体由一个共同的意识相连，没有派别也没有异议，整个族群像一个身体那样行动。",
       "color": "#7a4a8a",
-      "title": {
-        "default": { "zh": "集群", "orig": "{name} Collective" },
-        "chitin": { "zh": "巢群", "orig": "{name} Hive" },
-        "sporal": { "zh": "菌网", "orig": "{name} Mycelium" },
-        "lithic": { "zh": "共鸣体", "orig": "{name} Resonance" }
-      },
-      "rulerTitle": { "default": "主脑", "chitin": "巢母", "sporal": "核心", "lithic": "主音" },
+      "titles": {"zh": "集群", "orig": "{name} Collective"},
+      "rulers": "主脑",
+      "names": [
+        {"cultureGroups": ["chitin"], "titles": {"zh": "巢群", "orig": "{name} Hive"}, "rulers": "巢母"},
+        {"cultureGroups": ["sporal"], "titles": {"zh": "菌网", "orig": "{name} Mycelium"}, "rulers": "核心"},
+        {"cultureGroups": ["lithic"], "titles": {"zh": "共鸣体", "orig": "{name} Resonance"}, "rulers": "主音"}
+      ],
       "eras": ["scifi"],
       "weight": 0.2,
       "size": 2,
@@ -140,8 +132,8 @@
       "category": ["theocracy"],
       "description": "觉醒的灵能者组成教团，以预言与心灵感应施政，凡人只能侍奉。",
       "color": "#a03ab0",
-      "title": { "default": { "zh": "圣域", "orig": "{name} Sanctum" } },
-      "rulerTitle": "先知",
+      "titles": {"zh": "圣域", "orig": "{name} Sanctum"},
+      "rulers": "先知",
       "eras": ["scifi"],
       "weight": 0.5,
       "size": 0.9,
@@ -162,8 +154,8 @@
       "color": "#3a6ac0",
       "description": "主张各殖民地平等、权力分散的议员与地方领袖。",
       "eras": ["scifi"],
-      "base": { "federation": 1.5, "democracy": 1, "republic": 0.6, "default": 0.2 },
-      "drivers": [{ "dimension": "ideology", "value": "sf-federalist", "weight": 4 }]
+      "base": {"federation": 1.5, "democracy": 1, "republic": 0.6, "default": 0.2},
+      "drivers": [{"dimension": "ideology", "value": "sf-federalist", "weight": 4}]
     },
     {
       "id": "conglomerates",
@@ -171,8 +163,8 @@
       "color": "#c08a2a",
       "description": "掌握航运、采矿与工厂的大公司。",
       "eras": ["scifi"],
-      "base": { "corporate": 2.5, "oligarchy": 0.6, "republic": 0.4, "default": 0.2 },
-      "drivers": [{ "dimension": "ideology", "value": "sf-corporate", "weight": 4 }, { "coastal": true, "weight": 0.3 }]
+      "base": {"corporate": 2.5, "oligarchy": 0.6, "republic": 0.4, "default": 0.2},
+      "drivers": [{"dimension": "ideology", "value": "sf-corporate", "weight": 4}, {"coastal": true, "weight": 0.3}]
     },
     {
       "id": "academy",
@@ -180,11 +172,11 @@
       "color": "#2a8aa0",
       "description": "科学家、工程师与改造技术的推动者。",
       "eras": ["scifi"],
-      "base": { "oligarchy": 1, "republic": 0.4, "default": 0.25 },
+      "base": {"oligarchy": 1, "republic": 0.4, "default": 0.25},
       "drivers": [
-        { "dimension": "ideology", "value": "sf-technocracy", "weight": 4 },
-        { "dimension": "ideology", "value": "sf-ascension", "weight": 3 },
-        { "dimension": "species", "value": "synthetic", "weight": 0.8 }
+        {"dimension": "ideology", "value": "sf-technocracy", "weight": 4},
+        {"dimension": "ideology", "value": "sf-ascension", "weight": 3},
+        {"dimension": "species", "value": "synthetic", "weight": 0.8}
       ]
     },
     {
@@ -193,11 +185,11 @@
       "color": "#5a6a4a",
       "description": "舰队司令部与老兵团体，要求扩军与强硬的边疆政策。",
       "eras": ["scifi"],
-      "base": { "dictatorship": 1.6, "empire": 1.2, "monarchy": 0.5, "default": 0.25 },
+      "base": {"dictatorship": 1.6, "empire": 1.2, "monarchy": 0.5, "default": 0.25},
       "drivers": [
-        { "dimension": "ideology", "value": "sf-militarist", "weight": 4 },
-        { "dimension": "ideology", "value": "sf-supremacist", "weight": 3 },
-        { "dimension": "species", "value": "augmented", "weight": 0.5 }
+        {"dimension": "ideology", "value": "sf-militarist", "weight": 4},
+        {"dimension": "ideology", "value": "sf-supremacist", "weight": 3},
+        {"dimension": "species", "value": "augmented", "weight": 0.5}
       ]
     },
     {
@@ -206,11 +198,11 @@
       "color": "#6a9a3a",
       "description": "边疆的移民、行商与生态守护者，不信任中央政府。",
       "eras": ["scifi"],
-      "base": { "democracy": 0.5, "federation": 0.4, "default": 0.15 },
+      "base": {"democracy": 0.5, "federation": 0.4, "default": 0.15},
       "drivers": [
-        { "dimension": "ideology", "value": "sf-free", "weight": 4 },
-        { "dimension": "ideology", "value": "sf-naturalist", "weight": 3.5 },
-        { "minority": true, "weight": 0.3 }
+        {"dimension": "ideology", "value": "sf-free", "weight": 4},
+        {"dimension": "ideology", "value": "sf-naturalist", "weight": 3.5},
+        {"minority": true, "weight": 0.3}
       ]
     },
     {
@@ -219,8 +211,8 @@
       "color": "#a03ab0",
       "description": "灵能觉醒者与追随他们的信众。",
       "eras": ["scifi"],
-      "base": { "theocracy": 2.5, "default": 0.1 },
-      "drivers": [{ "dimension": "ideology", "value": "sf-psionic", "weight": 4 }]
+      "base": {"theocracy": 2.5, "default": 0.1},
+      "drivers": [{"dimension": "ideology", "value": "sf-psionic", "weight": 4}]
     },
     {
       "id": "consensus",
@@ -228,11 +220,11 @@
       "color": "#7a4a8a",
       "description": "主张个体服从群体、由集体共同决策的一派。",
       "eras": ["scifi"],
-      "base": { "dictatorship": 0.6, "default": 0.1 },
+      "base": {"dictatorship": 0.6, "default": 0.1},
       "drivers": [
-        { "dimension": "ideology", "value": "sf-collective", "weight": 4 },
-        { "dimension": "species", "value": "chitin", "weight": 0.6 },
-        { "dimension": "species", "value": "sporal", "weight": 0.6 }
+        {"dimension": "ideology", "value": "sf-collective", "weight": 4},
+        {"dimension": "species", "value": "chitin", "weight": 0.6},
+        {"dimension": "species", "value": "sporal", "weight": 0.6}
       ]
     }
   ]

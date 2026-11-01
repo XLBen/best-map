@@ -1,5 +1,5 @@
 import type { Derived, PopTuple, World } from '../world';
-import { type Culture, type CultureGroup, type PopValue, cultureById, dimensionValues, worldCultureGroups, worldCultures, worldDimensions, worldEra } from './era';
+import { type Culture, type CultureGroup, type PopValue, cultureById, dimensionValues, valueGroupById, worldCultureGroups, worldCultures, worldDimensions, worldEra } from './era';
 import { SLOTS, readComp } from './groups';
 import { cellKm2, nearestBy } from './space';
 
@@ -187,6 +187,8 @@ export interface LegendEntry {
   // 这一项占多数的格里一共多少人
   pop: number;
   cells: number;
+  // 取值所在的取值组的名字（第四十三轮：宗教组）
+  group?: string;
 }
 
 // 图例：文化、文化组、某一维的取值（按人数从多到少；没有人的不列）。layer：'culture' | 'cultureGroup' | 维度的 id
@@ -216,7 +218,10 @@ export function humanLegend(world: World, layer: string): LegendEntry[] {
   }
   const out: LegendEntry[] = [];
   items.forEach((x, k) => {
-    if (c[k + 1]) out.push({ code: k + 1, id: x.id, name: x.name, color: x.color, pop: p[k + 1], cells: c[k + 1] });
+    if (!c[k + 1]) return;
+    const g = (x as { group?: string }).group;
+    const group = g ? valueGroupById(small, g)?.name : undefined;
+    out.push({ code: k + 1, id: x.id, name: x.name, color: x.color, pop: p[k + 1], cells: c[k + 1], ...(group ? { group } : {}) });
   });
   return out.sort((a, b) => b.pop - a.pop || a.code - b.code);
 }

@@ -19,9 +19,9 @@ import { NEAR_MAX, drawnCellAt, nearFixed, nearGraph, nearLayer, nearRho } from 
 // 像素的陆海故意打乱一些（按位置的哈希把约 12% 的取样翻成另一类，再有 2% 是小湖群）：provCell 往外找格、landCellOf 都走得到
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 
 function cutBig(eng: Engine) {

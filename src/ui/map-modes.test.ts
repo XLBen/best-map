@@ -41,9 +41,9 @@ const GEN: HumanCommand = {
   op: 'generate_human',
   era: 'medieval',
   groups: [
-    { id: 'western', weight: 3 },
-    { id: 'eastern', weight: 3 },
-    { id: 'steppe', weight: 1.5 },
+    { id: 'germanic', weight: 3 },
+    { id: 'chinese', weight: 3 },
+    { id: 'altaic', weight: 1.5 },
   ],
   countries: { fragmentation: 1 },
   settlements: {},

@@ -26,6 +26,24 @@ export type Title = z.output<typeof titleSchema>;
 const unit = z.number().min(0).max(1);
 const tag = z.string().min(1).max(16);
 
+// 按等级的称号（第四十三轮，仿 EU4 的 government_names）：一种写法（各等级都用它），或“等级 id → 写法”的表
+// （default 是表里没写到的等级；default 也没写时用表里离这一级最近的一级，见 tierTitle）
+export const tierTitlesSchema = titleSchema;
+const ids = z.array(typeIdSchema).max(64).optional();
+// 换说法的一条：几项都写了时都要满足（文化、文化组、取值、取值组各自是“其中之一”）；按先后，第一条满足、又写了这一样的那条起作用
+export const nameRuleSchema = z
+  .object({
+    cultures: ids,
+    cultureGroups: ids,
+    // 国家的主流文化最典型的取值（宗教……）：取值 id、取值组 id
+    values: ids,
+    valueGroups: ids,
+    titles: tierTitlesSchema.optional(),
+    rulers: tierTitlesSchema.optional(),
+  })
+  .strict();
+export type NameRule = z.output<typeof nameRuleSchema>;
+
 export const governmentSchema = z.object({
   id: typeIdSchema,
   name: z.string().min(1).max(20),
@@ -33,9 +51,10 @@ export const governmentSchema = z.object({
   category: z.array(tag).min(1).max(8),
   description: z.string().max(400).optional(),
   color: HEX.optional(),
-  // 国家的称号与统治者的称号
-  title: titleSchema,
-  rulerTitle: titleSchema.optional(),
+  // 国家的称号与统治者的称号（第四十三轮起按国家的等级）：默认的写法，与按文化组、宗教……换说法的几条（names）
+  titles: tierTitlesSchema,
+  rulers: tierTitlesSchema.optional(),
+  names: z.array(nameRuleSchema).max(48).optional(),
   // 被选中的多少（省略为 1）：时代里的政体按它挑
   weight: z.number().min(0).max(100).optional(),
   // ---- 生成的倾向 ----
@@ -72,6 +91,9 @@ export const factionDriverSchema = z
     minority: z.boolean().optional(),
     // 住在海边的人
     coastal: z.boolean().optional(),
+    // 第四十三轮：与国教（主流文化最典型的取值，维度是 dimension，省略为 religion）的关系——same 信国教的、
+    // heretic 同组不同派（异端）、heathen 不同组（异教）
+    faith: z.enum(['same', 'heretic', 'heathen']).optional(),
     weight: z.number().min(-10).max(10),
   })
   .strict();
@@ -132,7 +154,7 @@ export const factionById = (small: GovSmall, id: string): Faction | undefined =>
 export const eraGovernments = (small: GovSmall, _era?: unknown): Government[] => [...worldGovernments(small)];
 export const eraFactions = (small: GovSmall, _era?: unknown): Faction[] => [...worldFactions(small)];
 
-// 称号按文化取一种写法：文化 id → 文化组 id → default → 第一个
+// 称号按文化取一种写法：文化 id → 文化组 id → default → 第一个（地标的名字、时代的帝国与同盟的称号用；政体的称号见 govTitles）
 export function pickTitle(t: Title | undefined, culture: Pick<Culture, 'id' | 'group'> | undefined): { zh: string; orig?: string } | undefined {
   if (t === undefined) return undefined;
   const one = (x: TitleOne) => (typeof x === 'string' ? { zh: x } : x);
@@ -148,4 +170,77 @@ export function titled(base: { zh: string; orig?: string }, title: { zh: string;
   const zh = title.zh.includes('{name}') ? title.zh.replace('{name}', base.zh) : base.zh + title.zh;
   const orig = base.orig ? (title.orig ? title.orig.replace('{name}', base.orig) : base.orig) : undefined;
   return orig ? { zh, orig } : { zh };
+}
+
+// ---------- 政体的称号（第四十三轮） ----------
+
+// 挑称号时看的：国家的等级（id 与世界里各等级的先后，没有等级时 undefined）、主流文化与文化组、主流文化最典型的取值与它们的组
+export interface TitleContext {
+  tier?: string;
+  // 世界里的等级（按先后）：只要 id 与 order
+  tiers: readonly { id: string; order: number }[];
+  culture?: string;
+  group?: string;
+  values: readonly string[];
+  valueGroups: readonly string[];
+}
+
+const oneTitle = (x: TitleOne): { zh: string; orig?: string } => (typeof x === 'string' ? { zh: x } : x);
+
+// 一张按等级的称号表里这一级的写法：一种写法时就是它；表里有这一级 → default；都没有时 undefined
+function exactTitle(t: Title, tier: string | undefined): TitleOne | undefined {
+  if (typeof t === 'string' || 'zh' in t) return t as TitleOne;
+  const rec = t as Record<string, TitleOne>;
+  return (tier !== undefined ? rec[tier] : undefined) ?? rec.default;
+}
+
+// 按等级的称号表取一种写法（只看这一张表）：一种写法时就是它；表里有这一级 → default → 世界里离这一级最近的一级
+// （一样近时取低的）→ 表里排在正中的一项。国家没有等级时按世界里排在正中的一级
+export function tierTitle(t: Title | undefined, tier: string | undefined, tiers: TitleContext['tiers']): { zh: string; orig?: string } | undefined {
+  if (t === undefined) return undefined;
+  const at = tier ?? tiers[Math.floor(tiers.length / 2)]?.id;
+  const hit = exactTitle(t, at);
+  if (hit !== undefined) return oneTitle(hit);
+  const rec = t as Record<string, TitleOne>;
+  const me = tiers.find((x) => x.id === at);
+  if (me) {
+    let best: { order: number; d: number; v: TitleOne } | undefined;
+    for (const x of tiers) {
+      const v = rec[x.id];
+      if (v === undefined) continue;
+      const d = Math.abs(x.order - me.order);
+      if (!best || d < best.d || (d === best.d && x.order < best.order)) best = { order: x.order, d, v };
+    }
+    if (best) return oneTitle(best.v);
+  }
+  const vals = Object.values(rec);
+  return vals.length ? oneTitle(vals[Math.floor((vals.length - 1) / 2)]) : undefined;
+}
+
+// 一条换说法满不满足
+function ruleMatches(r: NameRule, c: TitleContext): boolean {
+  const any = (list: readonly string[] | undefined, have: readonly (string | undefined)[]) => !list?.length || have.some((h) => h !== undefined && list.includes(h));
+  return any(r.cultures, [c.culture]) && any(r.cultureGroups, [c.group]) && any(r.values, c.values) && any(r.valueGroups, c.valueGroups);
+}
+
+// 一样（国家称号或统治者称号）：满足的几条换说法（按先后）里第一条写了这一级（或 default、或只写一种）的；
+// 都没写这一级时用政体默认的（按 tierTitle：没写这一级时取最近的一级）
+function pickFor(rules: readonly NameRule[], key: 'titles' | 'rulers', base: Title | undefined, c: TitleContext): { zh: string; orig?: string } | undefined {
+  const at = c.tier ?? c.tiers[Math.floor(c.tiers.length / 2)]?.id;
+  for (const r of rules) {
+    const t = r[key];
+    if (t === undefined) continue;
+    const hit = exactTitle(t, at);
+    if (hit !== undefined) return oneTitle(hit);
+  }
+  return tierTitle(base, c.tier, c.tiers);
+}
+
+// 政体给这个国家的称号与统治者的称号（仿 EU4 的 government_names）：按国家的等级，先看满足的换说法，再看政体默认的
+export function govTitles(g: Pick<Government, 'titles' | 'rulers' | 'names'> | undefined, c: TitleContext): { title?: { zh: string; orig?: string }; ruler?: { zh: string; orig?: string } } {
+  if (!g) return {};
+  const rules = (g.names ?? []).filter((r) => ruleMatches(r, c));
+  const title = pickFor(rules, 'titles', g.titles, c);
+  const ruler = pickFor(rules, 'rulers', g.rulers, c);
+  return { ...(title ? { title } : {}), ...(ruler ? { ruler } : {}) };
 }

@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
 import type { CountryMeta, World } from '../world';
 import { joinBlocsOf, mergeBlocMembers, tidyBlocs } from './blocs';
-import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, yearText } from './countries';
+import { countryColor, countryName, ensureCountryArray, foundedYear, nameCountry, titleContext, yearText } from './countries';
 import { type Culture, type SubjectKind, cultureById, worldCultures, worldEra } from './era';
 import { type FlagSpec, makeFlag } from './flags';
 import { type Government, eraGovernments, governmentById } from './government';
@@ -345,7 +345,7 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
     }
   }
   if ((p.government !== undefined || p.primaryCulture !== undefined) && !m.nameLocked) {
-    const n = countryName(m.base, governmentById(small, m.government), cultureById(small, m.primaryCulture));
+    const n = countryName(m.base, governmentById(small, m.government), titleContext(world, m));
     m.name = n.zh;
     if (n.orig) m.orig = n.orig;
     else delete m.orig;
@@ -361,7 +361,7 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
     } else {
       // 空的名字：恢复自动
       delete m.nameLocked;
-      const n = countryName(m.base, governmentById(small, m.government), cultureById(small, m.primaryCulture));
+      const n = countryName(m.base, governmentById(small, m.government), titleContext(world, m));
       m.name = n.zh;
       if (n.orig) m.orig = n.orig;
       else delete m.orig;

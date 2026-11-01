@@ -56,9 +56,9 @@ afterEach(() => {
 });
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 // 分裂一些：小地图上也有好几个国家
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: { fragmentation: 1 } };
@@ -454,12 +454,14 @@ describe('“国家 ⋯”与仓库', () => {
     expect(kinds).toContain('faction');
     expect([...GOV_KINDS]).toEqual(['government', 'faction', 'countryTier', 'countryLayout']);
     const gov = repoKinds().find((k) => k.id === 'government')!;
-    expect(gov.fields!.filter(isTitleField).map((f) => f.key)).toEqual(['title', 'rulerTitle']);
+    // 第四十三轮：称号按等级（titles、rulers），换说法的每一条里也有
+    expect(gov.fields!.filter(isTitleField).map((f) => f.key)).toEqual(['titles', 'rulers']);
+    expect(gov.fields!.find((f) => f.key === 'names')!.of!.filter(isTitleField).map((f) => f.key)).toEqual(['titles', 'rulers']);
     expect(titleRows('王国')).toEqual([{ key: 'default', zh: '王国', orig: '' }]);
     expect(titleRows({ zh: '王国', orig: 'Kingdom of {name}' })).toEqual([{ key: 'default', zh: '王国', orig: 'Kingdom of {name}' }]);
-    const rows = titleRows({ default: { zh: '王国', orig: 'Kingdom of {name}' }, steppe: '汗国' });
+    const rows = titleRows({ default: { zh: '王国', orig: 'Kingdom of {name}' }, empire: '帝国' });
     expect(rows).toHaveLength(2);
-    expect(titleValue(rows)).toEqual({ default: { zh: '王国', orig: 'Kingdom of {name}' }, steppe: '汗国' });
+    expect(titleValue(rows)).toEqual({ default: { zh: '王国', orig: 'Kingdom of {name}' }, empire: '帝国' });
     expect(titleValue([{ key: 'default', zh: '王国', orig: '' }])).toBe('王国');
     expect(titleValue([{ key: 'default', zh: '', orig: '' }])).toBeUndefined();
   });

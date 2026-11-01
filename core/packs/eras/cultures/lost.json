@@ -1,0 +1,305 @@
+{
+  "region": {"id": "lost", "name": "失落", "description": "罗马人、雅典人、腓尼基人、古埃及人……只在古代默认带上"},
+  "groups": [
+    {
+      "group": {
+        "id": "lost",
+        "name": "失落",
+        "orig": "Lost cultures",
+        "color": "#8d7749",
+        "description": "只存在于史书与废墟中的古老民族；在合适的时代，他们的名字仍能重新响彻大地。",
+        "nameStyle": "latin",
+        "tendencies": {
+          "religion": [["catholic", 8], ["orthodox", 1]],
+          "nation": [["civic-nation", 4], ["ethnic-nation", 3], ["regional", 3]],
+          "ideology": [
+            ["social-democracy", 3],
+            ["religious-democracy", 3],
+            ["liberal-conservative", 2],
+            ["rev-socialism", 1.5],
+            ["anarchism", 1],
+            ["auth-nationalist", 1.5],
+            ["monarchist", 1]
+          ],
+          "government": [
+            ["oligarchic-republic", 2],
+            ["noble-republic", 1],
+            ["divine-kingship", 1.5],
+            ["despotic-monarchy", 2],
+            ["feudal-monarchy", 3],
+            ["absolute-monarchy", 1],
+            ["constitutional-monarchy", 1],
+            ["constitutional-republic", 1],
+            ["parliamentary-republic", 2],
+            ["presidential-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["roman-pagan", 3], ["hellenic", 3]],
+            "government": [["oligarchic-republic", 2], ["noble-republic", 1], ["divine-kingship", 1.5], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+          },
+          "industrial": {"religion": [["catholic", 8], ["orthodox", 1]]},
+          "modern": {"religion": [["catholic", 8], ["orthodox", 1], ["irreligious", 2]]}
+        },
+        "prefs": [{"tempMin": 10, "tempMax": 21, "factor": 2}, {"biomes": ["shrubland"], "factor": 1.5}, {"river": true, "factor": 1.5}]
+      },
+      "cultures": [
+        {
+          "id": "roman",
+          "group": "lost",
+          "name": "罗马人",
+          "orig": "Roman",
+          "color": "#8d7749",
+          "weight": 1.5,
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["roman-pagan", 10]],
+              "government": [["oligarchic-republic", 4], ["noble-republic", 1], ["divine-kingship", 1.5], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+            }
+          }
+        },
+        {
+          "id": "etrurian",
+          "group": "lost",
+          "name": "伊特鲁里亚人",
+          "orig": "Etrurian",
+          "color": "#e4ce0c",
+          "weight": 0.6,
+          "eraTendencies": {"antiquity": {"religion": [["roman-pagan", 10]]}}
+        },
+        {
+          "id": "athenian",
+          "group": "lost",
+          "name": "雅典人",
+          "orig": "Athenian",
+          "color": "#e4690c",
+          "nameStyle": "greek",
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["hellenic", 10]],
+              "government": [["oligarchic-republic", 5], ["noble-republic", 1], ["divine-kingship", 1.5], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+            },
+            "medieval": {"religion": [["orthodox", 10]]},
+            "industrial": {"religion": [["orthodox", 10]]},
+            "modern": {"religion": [["orthodox", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "spartan",
+          "group": "lost",
+          "name": "斯巴达人",
+          "orig": "Spartan",
+          "color": "#ddd37e",
+          "nameStyle": "greek",
+          "weight": 0.6,
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["hellenic", 10]],
+              "government": [["oligarchic-republic", 2], ["noble-republic", 3], ["divine-kingship", 1.5], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+            },
+            "medieval": {"religion": [["orthodox", 10]]},
+            "industrial": {"religion": [["orthodox", 10]]},
+            "modern": {"religion": [["orthodox", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "phoenician",
+          "group": "lost",
+          "name": "腓尼基人",
+          "orig": "Phoenician",
+          "color": "#7e3a07",
+          "nameStyle": "arabic",
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["canaanite", 10]],
+              "government": [["oligarchic-republic", 3], ["noble-republic", 1], ["divine-kingship", 1], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+            },
+            "medieval": {"religion": [["sunni", 6], ["orthodox", 4]]},
+            "industrial": {"religion": [["sunni", 6], ["orthodox", 4]]},
+            "modern": {"religion": [["sunni", 6], ["orthodox", 4], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "hebrew",
+          "group": "lost",
+          "name": "希伯来人",
+          "orig": "Hebrew",
+          "color": "#b48018",
+          "nameStyle": "arabic",
+          "weight": 0.6,
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["jewish", 10]],
+              "government": [
+                ["oligarchic-republic", 2],
+                ["noble-republic", 1],
+                ["divine-kingship", 1.5],
+                ["despotic-monarchy", 2],
+                ["tribal-kingdom", 1],
+                ["theocratic-government", 3]
+              ]
+            },
+            "medieval": {"religion": [["jewish", 10]]},
+            "industrial": {"religion": [["jewish", 10]]},
+            "modern": {"religion": [["jewish", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "aramaic",
+          "group": "lost",
+          "name": "阿拉米人",
+          "orig": "Aramaic",
+          "color": "#d9bca6",
+          "nameStyle": "arabic",
+          "weight": 0.8,
+          "eraTendencies": {
+            "antiquity": {"religion": [["mesopotamian", 7], ["canaanite", 2]]},
+            "medieval": {"religion": [["orthodox", 5], ["sunni", 5]]},
+            "industrial": {"religion": [["sunni", 6], ["orthodox", 4]]},
+            "modern": {"religion": [["sunni", 6], ["orthodox", 4], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "babylonian",
+          "group": "lost",
+          "name": "巴比伦人",
+          "orig": "Babylonian",
+          "color": "#eba56f",
+          "nameStyle": "arabic",
+          "weight": 1.2,
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["mesopotamian", 10]],
+              "government": [["oligarchic-republic", 2], ["noble-republic", 1], ["divine-kingship", 5], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+            },
+            "medieval": {"religion": [["sunni", 8], ["jewish", 1]]},
+            "industrial": {"religion": [["sunni", 8], ["jewish", 1]]},
+            "modern": {"religion": [["sunni", 8], ["jewish", 1], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "old-egyptian",
+          "group": "lost",
+          "name": "古埃及人",
+          "orig": "Old Egyptian",
+          "color": "#5d3f28",
+          "nameStyle": "arabic",
+          "weight": 1.3,
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["egyptian-pagan", 10]],
+              "government": [["oligarchic-republic", 2], ["noble-republic", 1], ["divine-kingship", 6], ["despotic-monarchy", 2], ["tribal-kingdom", 1]]
+            },
+            "medieval": {"religion": [["coptic", 8], ["sunni", 2]]},
+            "industrial": {"religion": [["coptic", 8], ["sunni", 2]]},
+            "modern": {"religion": [["coptic", 8], ["sunni", 2], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "parthian",
+          "group": "lost",
+          "name": "帕提亚人",
+          "orig": "Parthian",
+          "color": "#f3ad20",
+          "nameStyle": "persian",
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["zoroastrian", 10]],
+              "government": [
+                ["oligarchic-republic", 2],
+                ["noble-republic", 1],
+                ["divine-kingship", 1.5],
+                ["despotic-monarchy", 4],
+                ["tribal-kingdom", 1],
+                ["steppe-horde", 1]
+              ]
+            },
+            "medieval": {"religion": [["zoroastrian", 6], ["shiite", 4]]},
+            "industrial": {"religion": [["shiite", 7], ["zoroastrian", 3]]},
+            "modern": {"religion": [["shiite", 7], ["zoroastrian", 3], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "scythian",
+          "group": "lost",
+          "name": "斯基泰人",
+          "orig": "Scythian",
+          "color": "#bdaf32",
+          "nameStyle": "persian",
+          "weight": 0.8,
+          "eraTendencies": {
+            "antiquity": {
+              "religion": [["tengri", 6], ["zoroastrian", 3]],
+              "government": [
+                ["oligarchic-republic", 2],
+                ["noble-republic", 1],
+                ["divine-kingship", 1.5],
+                ["despotic-monarchy", 2],
+                ["tribal-kingdom", 1],
+                ["steppe-horde", 6],
+                ["tribal-federation", 2]
+              ]
+            },
+            "medieval": {"religion": [["tengri", 5], ["orthodox", 5]]},
+            "industrial": {"religion": [["orthodox", 7], ["tengri", 3]]},
+            "modern": {"religion": [["orthodox", 7], ["tengri", 3], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "anglo-saxon",
+          "group": "lost",
+          "name": "盎格鲁-撒克逊人",
+          "orig": "Anglo-Saxon",
+          "color": "#756b10",
+          "nameStyle": "en-english",
+          "weight": 0.6,
+          "eraTendencies": {"antiquity": {"religion": [["germanic-pagan", 10]]}}
+        },
+        {
+          "id": "scanian",
+          "group": "lost",
+          "name": "斯堪尼亚人",
+          "orig": "Scanian",
+          "color": "#b45c18",
+          "nameStyle": "nordic-norse",
+          "weight": 0.4,
+          "eraTendencies": {
+            "antiquity": {"religion": [["germanic-pagan", 10]]},
+            "industrial": {"religion": [["protestant", 10]]},
+            "modern": {"religion": [["protestant", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "livonian",
+          "group": "lost",
+          "name": "利沃尼亚人",
+          "orig": "Livonian",
+          "color": "#f7c664",
+          "nameStyle": "baltic",
+          "weight": 0.3,
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 10]]},
+            "industrial": {"religion": [["protestant", 10]]},
+            "modern": {"religion": [["protestant", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "pruthenian",
+          "group": "lost",
+          "name": "古普鲁士人",
+          "orig": "Pruthenian",
+          "color": "#c3a974",
+          "nameStyle": "baltic",
+          "weight": 0.3,
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 10]]},
+            "medieval": {"religion": [["catholic", 6], ["animist", 4]]},
+            "industrial": {"religion": [["protestant", 10]]},
+            "modern": {"religion": [["protestant", 10], ["irreligious", 2]]}
+          }
+        }
+      ]
+    }
+  ]
+}

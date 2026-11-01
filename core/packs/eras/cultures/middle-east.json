@@ -1,0 +1,408 @@
+{
+  "region": {"id": "middle-east", "name": "中东", "description": "伊朗、黎凡特、高加索"},
+  "groups": [
+    {
+      "group": {
+        "id": "iranian",
+        "name": "伊朗",
+        "orig": "Iranian",
+        "color": "#a66b30",
+        "description": "高原上的古老文明，诗人、细密画师与坚城一同见证了一个又一个王朝在此兴起与陨落。",
+        "nameStyle": "persian",
+        "tendencies": {
+          "religion": [["sunni", 5], ["shiite", 4], ["zoroastrian", 0.4], ["jewish", 0.2]],
+          "nation": [["religious-community", 5], ["pan-group", 3], ["ethnic-nation", 2], ["imperial", 1.5]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["theocratic", 3],
+            ["monarchist", 3],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["social-democracy", 0.5]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["divine-kingship", 0.5],
+            ["tribal-federation", 1.5],
+            ["tribal-despotism", 1],
+            ["oligarchic-republic", 0.3],
+            ["iqta", 4],
+            ["theocratic-government", 0.6],
+            ["merchant-republic", 0.2],
+            ["steppe-horde", 0.3],
+            ["absolute-monarchy", 1.5],
+            ["constitutional-monarchy", 0.8],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 2.5],
+            ["one-party-state", 2],
+            ["military-junta", 1.5],
+            ["theocratic-republic", 1],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["zoroastrian", 9], ["jewish", 0.3]]},
+          "industrial": {"religion": [["shiite", 7], ["sunni", 3], ["zoroastrian", 0.2]]},
+          "modern": {"religion": [["shiite", 7], ["sunni", 3], ["zoroastrian", 0.2], ["irreligious", 1]]}
+        },
+        "prefs": [
+          {"classes": ["highlands", "hills"], "moistMax": 0.6, "factor": 1.8},
+          {"river": true, "factor": 1.8},
+          {"moistMax": 0.5, "factor": 1.4}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "persian",
+          "group": "iranian",
+          "name": "波斯人",
+          "orig": "Persian",
+          "color": "#a66b30",
+          "weight": 2,
+          "eraTendencies": {
+            "industrial": {"religion": [["shiite", 9], ["sunni", 1], ["zoroastrian", 0.2]]},
+            "modern": {"religion": [["shiite", 9], ["sunni", 1], ["zoroastrian", 0.2], ["irreligious", 1]]}
+          }
+        },
+        {"id": "khorasani", "group": "iranian", "name": "呼罗珊人", "orig": "Khorasani", "color": "#f3bb20"},
+        {
+          "id": "azerbaijani",
+          "group": "iranian",
+          "name": "阿塞拜疆人",
+          "orig": "Azerbaijani",
+          "color": "#e4460c",
+          "nameStyle": "turkic",
+          "eraTendencies": {
+            "medieval": {"religion": [["shiite", 7], ["sunni", 3]]},
+            "industrial": {"religion": [["shiite", 9], ["sunni", 1]]},
+            "modern": {"religion": [["shiite", 9], ["sunni", 1], ["irreligious", 1]]}
+          }
+        },
+        {
+          "id": "kurdish",
+          "group": "iranian",
+          "name": "库尔德人",
+          "orig": "Kurdish",
+          "color": "#d9cba6",
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 8], ["shiite", 1]]},
+            "industrial": {"religion": [["sunni", 8], ["shiite", 1]]},
+            "modern": {"religion": [["sunni", 8], ["shiite", 1], ["irreligious", 1]]}
+          }
+        },
+        {"id": "luri", "group": "iranian", "name": "卢尔人", "orig": "Luri", "color": "#5d3628", "weight": 0.6},
+        {"id": "mazandarani", "group": "iranian", "name": "马赞德兰人", "orig": "Mazandarani", "color": "#f9a486", "weight": 0.6},
+        {
+          "id": "afghan",
+          "group": "iranian",
+          "name": "阿富汗人",
+          "orig": "Afghan",
+          "color": "#f38a20",
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 9]]},
+            "industrial": {"religion": [["sunni", 9], ["shiite", 1]]},
+            "modern": {"religion": [["sunni", 9], ["shiite", 1], ["irreligious", 1]]}
+          }
+        },
+        {
+          "id": "baluchi",
+          "group": "iranian",
+          "name": "俾路支人",
+          "orig": "Baluchi",
+          "color": "#7e2607",
+          "weight": 0.7,
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 9]]},
+            "industrial": {"religion": [["sunni", 9]]},
+            "modern": {"religion": [["sunni", 9], ["irreligious", 1]]}
+          }
+        },
+        {
+          "id": "turco-iranian",
+          "group": "iranian",
+          "name": "突厥伊朗人",
+          "orig": "Turco-Iranian",
+          "color": "#ebca6f",
+          "nameStyle": "turkic",
+          "weight": 0.4
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "levantine",
+        "name": "黎凡特",
+        "orig": "Levantine",
+        "color": "#548a2e",
+        "description": "沙漠、绿洲与古老港城之民，商队、朝圣者与学者沿着信仰的道路把半个世界连在一起。",
+        "nameStyle": "arabic",
+        "tendencies": {
+          "religion": [["sunni", 8], ["shiite", 1.5], ["coptic", 0.3], ["jewish", 0.3]],
+          "nation": [["religious-community", 5], ["pan-group", 3], ["ethnic-nation", 2], ["imperial", 1.5]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["theocratic", 3],
+            ["monarchist", 3],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["social-democracy", 0.5]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["divine-kingship", 0.5],
+            ["tribal-federation", 1.5],
+            ["tribal-despotism", 1],
+            ["oligarchic-republic", 0.3],
+            ["iqta", 4],
+            ["theocratic-government", 0.6],
+            ["merchant-republic", 0.2],
+            ["steppe-horde", 0.3],
+            ["absolute-monarchy", 1.5],
+            ["constitutional-monarchy", 0.8],
+            ["presidential-despotism", 1],
+            ["presidential-republic", 2.5],
+            ["one-party-state", 2],
+            ["military-junta", 1.5],
+            ["theocratic-republic", 1],
+            ["parliamentary-republic", 1]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {"religion": [["canaanite", 4], ["mesopotamian", 3], ["jewish", 1], ["animist", 1]]},
+          "industrial": {"religion": [["sunni", 8], ["shiite", 1.5], ["coptic", 0.3], ["jewish", 0.2]]},
+          "modern": {"religion": [["sunni", 8], ["shiite", 1.5], ["coptic", 0.3], ["jewish", 0.2], ["irreligious", 0.5]]}
+        },
+        "prefs": [
+          {"terrain": ["desert"], "factor": 2},
+          {"terrain": ["steppe", "savanna"], "moistMax": 0.35, "factor": 1.5},
+          {"terrain": ["forest", "jungle"], "factor": 0.5},
+          {"river": true, "factor": 1.8},
+          {"moistMax": 0.5, "factor": 1.4},
+          {"coast": true, "factor": 1.2}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "syrian",
+          "group": "levantine",
+          "name": "叙利亚人",
+          "orig": "Syrian",
+          "color": "#548a2e",
+          "eraTendencies": {"medieval": {"religion": [["sunni", 7], ["shiite", 1], ["orthodox", 1], ["jewish", 0.3]]}}
+        },
+        {
+          "id": "mashriqi",
+          "group": "levantine",
+          "name": "马什里克人",
+          "orig": "Mashriqi",
+          "color": "#34e40c",
+          "eraTendencies": {
+            "antiquity": {"religion": [["mesopotamian", 8]]},
+            "medieval": {"religion": [["sunni", 5], ["shiite", 5]]},
+            "industrial": {"religion": [["shiite", 6], ["sunni", 4]]},
+            "modern": {"religion": [["shiite", 6], ["sunni", 4], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "egyptian",
+          "group": "levantine",
+          "name": "埃及人",
+          "orig": "Egyptian",
+          "color": "#c1d9a6",
+          "weight": 1.5,
+          "eraTendencies": {
+            "antiquity": {"religion": [["egyptian-pagan", 9]]},
+            "medieval": {"religion": [["sunni", 8], ["coptic", 2]]},
+            "industrial": {"religion": [["sunni", 8], ["coptic", 1.5]]},
+            "modern": {"religion": [["sunni", 8], ["coptic", 1.5], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "bedouin",
+          "group": "levantine",
+          "name": "贝都因人",
+          "orig": "Bedouin",
+          "color": "#82c20a",
+          "eraTendencies": {"antiquity": {"religion": [["animist", 4], ["canaanite", 2]]}}
+        },
+        {
+          "id": "hejazi",
+          "group": "levantine",
+          "name": "汉志人",
+          "orig": "Hejazi",
+          "color": "#8fdd7e",
+          "eraTendencies": {"antiquity": {"religion": [["animist", 6]]}}
+        },
+        {
+          "id": "yemeni",
+          "group": "levantine",
+          "name": "也门人",
+          "orig": "Yemeni",
+          "color": "#4a5d28",
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 4], ["jewish", 1]]},
+            "medieval": {"religion": [["sunni", 5], ["shiite", 4], ["jewish", 0.3]]}
+          }
+        },
+        {
+          "id": "omani",
+          "group": "levantine",
+          "name": "阿曼人",
+          "orig": "Omani",
+          "color": "#24a008",
+          "weight": 0.7,
+          "eraTendencies": {
+            "antiquity": {"religion": [["animist", 5]]},
+            "medieval": {"religion": [["ibadi", 8], ["sunni", 2]]},
+            "industrial": {"religion": [["ibadi", 8], ["sunni", 2]]},
+            "modern": {"religion": [["ibadi", 8], ["sunni", 2], ["irreligious", 0.5]]}
+          }
+        },
+        {
+          "id": "khaleeji",
+          "group": "levantine",
+          "name": "海湾人",
+          "orig": "Khaleeji",
+          "color": "#6ce750",
+          "weight": 0.6,
+          "eraTendencies": {"antiquity": {"religion": [["animist", 4]]}, "medieval": {"religion": [["sunni", 6], ["shiite", 4]]}}
+        },
+        {
+          "id": "mahri",
+          "group": "levantine",
+          "name": "迈赫拉人",
+          "orig": "Mahri",
+          "color": "#98b95b",
+          "weight": 0.3,
+          "eraTendencies": {"antiquity": {"religion": [["animist", 6]]}}
+        },
+        {
+          "id": "turkish",
+          "group": "levantine",
+          "name": "土耳其人",
+          "orig": "Turkish",
+          "color": "#7fe40c",
+          "nameStyle": "turkic",
+          "weight": 2,
+          "eraTendencies": {
+            "antiquity": {"religion": [["tengri", 8]]},
+            "medieval": {"religion": [["sunni", 9], ["shiite", 0.5]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 0.5]]}
+          }
+        }
+      ]
+    },
+    {
+      "group": {
+        "id": "caucasian",
+        "name": "高加索",
+        "orig": "Caucasian",
+        "color": "#378181",
+        "description": "黑海与里海之间的山国之民，每一道峡谷都有自己的语言、教堂和永不屈服的族长。",
+        "nameStyle": "caucasian",
+        "tendencies": {
+          "religion": [["orthodox", 6], ["coptic", 3], ["sunni", 2]],
+          "nation": [["religious-community", 5], ["pan-group", 3], ["ethnic-nation", 2], ["imperial", 1.5]],
+          "ideology": [
+            ["auth-nationalist", 4],
+            ["theocratic", 3],
+            ["monarchist", 3],
+            ["traditionalist", 2],
+            ["rev-socialism", 1],
+            ["social-democracy", 0.5]
+          ],
+          "government": [
+            ["despotic-monarchy", 3],
+            ["feudal-monarchy", 3],
+            ["administrative-monarchy", 0.5],
+            ["absolute-monarchy", 2],
+            ["elective-monarchy", 0.3],
+            ["merchant-republic", 0.3],
+            ["oligarchic-republic", 0.3],
+            ["theocratic-government", 0.3],
+            ["constitutional-monarchy", 1.5],
+            ["constitutional-republic", 0.8],
+            ["presidential-despotism", 0.6],
+            ["revolutionary-republic", 0.3],
+            ["parliamentary-republic", 2],
+            ["presidential-republic", 2.5],
+            ["socialist-republic", 1.5],
+            ["one-party-state", 1.5],
+            ["military-junta", 0.5],
+            ["ultranationalist-state", 0.4]
+          ]
+        },
+        "eraTendencies": {
+          "antiquity": {
+            "religion": [["zoroastrian", 4], ["animist", 4], ["hellenic", 1]],
+            "government": [
+              ["tribal-kingdom", 2],
+              ["tribal-federation", 1.5],
+              ["despotic-monarchy", 3],
+              ["oligarchic-republic", 0.3],
+              ["theocratic-government", 0.3]
+            ]
+          },
+          "industrial": {"religion": [["orthodox", 5], ["coptic", 3], ["sunni", 3]]},
+          "modern": {"religion": [["orthodox", 5], ["coptic", 3], ["sunni", 3], ["irreligious", 2]]}
+        },
+        "prefs": [
+          {"classes": ["mountains", "highlands", "hills"], "factor": 1.8},
+          {"tempMin": -2, "tempMax": 16, "factor": 2},
+          {"terrain": ["desert"], "factor": 0.6}
+        ]
+      },
+      "cultures": [
+        {
+          "id": "georgian",
+          "group": "caucasian",
+          "name": "格鲁吉亚人",
+          "orig": "Georgian",
+          "color": "#378181",
+          "eraTendencies": {
+            "medieval": {"religion": [["orthodox", 10]]},
+            "industrial": {"religion": [["orthodox", 10]]},
+            "modern": {"religion": [["orthodox", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "armenian",
+          "group": "caucasian",
+          "name": "亚美尼亚人",
+          "orig": "Armenian",
+          "color": "#0ce4b1",
+          "eraTendencies": {
+            "medieval": {"religion": [["coptic", 10]]},
+            "industrial": {"religion": [["coptic", 10]]},
+            "modern": {"religion": [["coptic", 10], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "circassian",
+          "group": "caucasian",
+          "name": "切尔克斯人",
+          "orig": "Circassian",
+          "color": "#42e0f5",
+          "eraTendencies": {
+            "medieval": {"religion": [["orthodox", 4], ["animist", 3], ["sunni", 3]]},
+            "industrial": {"religion": [["sunni", 9]]},
+            "modern": {"religion": [["sunni", 9], ["irreligious", 2]]}
+          }
+        },
+        {
+          "id": "dagestani",
+          "group": "caucasian",
+          "name": "达吉斯坦人",
+          "orig": "Dagestani",
+          "color": "#a6d9cd",
+          "eraTendencies": {
+            "medieval": {"religion": [["sunni", 9]]},
+            "industrial": {"religion": [["sunni", 10]]},
+            "modern": {"religion": [["sunni", 10], ["irreligious", 2]]}
+          }
+        }
+      ]
+    }
+  ]
+}

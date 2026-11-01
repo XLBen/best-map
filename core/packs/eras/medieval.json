@@ -4,28 +4,63 @@
     "name": "中世纪与近世",
     "description": "封建领地与王国，宗教是人群的第二条分界线。宜居与稍差的地方大多住了人，草原、荒漠边缘有游牧民。",
     "color": "#a0703c",
-    "dimensions": [
-      { "id": "religion", "label": "宗教", "required": true }
-    ],
+    "dimensions": [{"id": "religion", "label": "宗教", "required": true}],
     "popDensity": 2.7,
     "sparsity": 1.6,
     "urbanization": 0.1,
-    "unclaimed": { "minHabitability": 0.05, "nomads": 0.35, "bandKm": 80 },
+    "unclaimed": {"minHabitability": 0.05, "nomads": 0.35, "bandKm": 80},
     "seaClaimKm": 0,
     "countryKm2": 1500000,
     "years": [600, 1700],
-    "tiers": { "city": 1, "small": 3, "medium": 2.5, "large": 1.2, "empire": 0.3 },
+    "tiers": {"city": 1, "small": 3, "medium": 2.5, "large": 1.2, "empire": 0.3},
     "relations": {
       "confederation": 1,
-      "subjects": { "vassal": 4, "tributary": 1 },
-      "titles": {
-        "empire": [{ "zh": "神圣{name}帝国", "orig": "Holy {name} Empire" }, { "zh": "帝国", "orig": "{name} Empire" }]
-      }
+      "subjects": {"vassal": 4, "tributary": 1},
+      "titles": {"empire": [{"zh": "神圣{name}帝国", "orig": "Holy {name} Empire"}, {"zh": "帝国", "orig": "{name} Empire"}]}
     }
   },
   "pack": {
-    "governments": ["feudal-monarchy", "absolute-monarchy", "elective-monarchy", "merchant-republic", "noble-republic", "theocracy", "tribal-confederation", "empire", "city-state", "nomad-khanate", "sultanate", "shogunate", "colonial-empire"],
-    "factions": ["nobility", "merchants", "clergy", "soldiery"],
-    "cultures": [["western", 3], ["eastern", 3], ["mideast", 2], ["southasia", 2], ["slavic", 1.5], ["steppe", 1.5]]
+    "governments": [
+      "feudal-monarchy",
+      "despotic-monarchy",
+      "administrative-monarchy",
+      "elective-monarchy",
+      "absolute-monarchy",
+      "celestial-empire",
+      "shogunate",
+      "iqta",
+      "merchant-republic",
+      "oligarchic-republic",
+      "noble-republic",
+      "imperial-free-city",
+      "theocratic-government",
+      "monastic-order",
+      "tribal-despotism",
+      "tribal-kingdom",
+      "tribal-federation",
+      "steppe-horde",
+      "native-council"
+    ],
+    "factions": ["nobility", "clergy", "burghers", "dhimmi", "tribes"],
+    "cultures": [
+      ["chinese", 4],
+      ["levantine", 3],
+      ["germanic", 3],
+      ["french", 2.5, {"except": ["quebecois", "louisianan"]}],
+      ["hindustani", 2.5],
+      ["british", 2, {"except": ["american"]}],
+      ["iberian", 2, {"except": ["brazilian", "mexican", "platinean"]}],
+      ["latin", 2],
+      ["east-slavic", 2],
+      ["iranian", 2],
+      ["altaic", 2],
+      ["byzantine", 1.5],
+      ["scandinavian", 1.5],
+      ["west-slavic", 1.5],
+      ["maghrebi", 1.5],
+      ["japanese", 1.5],
+      ["sahelian", 1],
+      ["andean", 0.8]
+    ]
   }
 }

@@ -17,9 +17,9 @@ import { BUILTIN_RANKS } from '../packs/settlements';
 // 第二十六轮：国家——领土补齐、等级与格局、帝国 / 联邦 / 同盟、从属的种类、大城市的上限
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: GROUPS, countries: {} };
 
@@ -30,11 +30,12 @@ const nations = (): Engine =>
     return eng;
   });
 // 第三十五轮：大陆轮廓变了，默认的种子在这个世界上撒不出邦联（那一组文化的地方连不成够大的一片），没有帝国，
-// 面积的变异系数 0.62、“混合”留的无主地多（有主 68%）：看帝国、变异系数、“混合”的几个测试换种子 3
+// 面积的变异系数 0.62、“混合”留的无主地多（有主 68%）：看帝国、变异系数、“混合”的几个测试换种子 3。
+// 第四十三轮：三组换成 EU4 的日耳曼、汉、阿尔泰，种子 3 的“混合”有主 62%，换种子 7（有主 72%，帝国 6 个成员）
 const empires = (): Engine =>
   snapshot('r26-empires', () => {
     const eng = continents({ provinces: true });
-    humanExec(eng, { ...GEN, countries: { seed: 3 } } as HumanCommand);
+    humanExec(eng, { ...GEN, countries: { seed: 7 } } as HumanCommand);
     return eng;
   });
 const moderns = (): Engine =>

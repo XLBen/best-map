@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { mixSeed } from '../rng';
 import type { Derived, PopTuple, World } from '../world';
 import type { GenContext, HumanStage } from './context';
-import { type Culture, type Dimension, cultureById, cultureGroupById, dimensionValues, popValueById, weightedList, worldDimensions, worldEra } from './era';
+import { type Culture, type Dimension, cultureById, cultureGroupById, cultureTendency, dimensionValues, popValueById, weightedList, worldDimensions, worldEra } from './era';
 import { GroupTable, SLOTS, type Share, clearCell, readComp, writeComp } from './groups';
 import { type CompiledPrefs, compilePrefs, prefAt } from './habitability';
 import { type CellInputs, cellInputs } from './rules';
@@ -90,7 +90,7 @@ function dimPlans(world: World, era: string, cultures: readonly Culture[], dims:
     const values = dimensionValues(world.small, dim.id, era);
     const known = new Set(values.map((v) => v.id));
     const options = cultures.map((c) => {
-      let list = weightedList(c.tendencies?.[dim.id]).filter(([id, w]) => known.has(id) && w > 0);
+      let list = weightedList(cultureTendency(world.small, c, dim.id, era)).filter(([id, w]) => known.has(id) && w > 0);
       if (!list.length && dim.required) list = values.map((v) => [v.id, 1]);
       return list.map(([id, w]) => ({ id, w, prefs: compilePrefs(popValueById(world.small, id)?.prefs, biomes, classIds), seed: mixSeed(seed, hashString(`value:${dim.id}:${id}`)) }));
     });
@@ -330,7 +330,7 @@ export function typicalTuple(world: Pick<World, 'small'>, culture: string): PopT
   for (const dim of worldDimensions(world.small)) {
     const known = new Set(dimensionValues(world.small, dim.id).map((v) => v.id));
     let best: [string, number] | null = null;
-    for (const [id, w] of weightedList(c?.tendencies?.[dim.id])) if (known.has(id) && (!best || w > best[1])) best = [id, w];
+    for (const [id, w] of weightedList(cultureTendency(world.small, c, dim.id, world.small.human?.era))) if (known.has(id) && (!best || w > best[1])) best = [id, w];
     const first = dimensionValues(world.small, dim.id)[0];
     if (best) values[dim.id] = best[0];
     else if (dim.required && first) values[dim.id] = first.id;

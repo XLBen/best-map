@@ -128,6 +128,12 @@ function valueUsage(w: W, id: string): ContentUsage | null {
   return result([...part(cells.length, '格有这样的人'), ...(auto ? ['自动的人口里有它'] : [])], cells.length + auto, cells);
 }
 
+// 取值组（第四十三轮）：世界里属于它的取值
+function valueGroupUsage(w: W, id: string): ContentUsage | null {
+  const n = Object.values((w.small.content?.popValue ?? {}) as Record<string, { group?: string }>).filter((v) => v.group === id).length;
+  return result(part(n, '个取值属于它'), n, []);
+}
+
 function eraUsage(w: W, id: string): ContentUsage | null {
   return w.small.human?.era === id ? { count: 1, label: '人文用的时代' } : null;
 }
@@ -147,7 +153,11 @@ function factionUsage(w: W, id: string): ContentUsage | null {
 
 function styleUsage(w: W, id: string): ContentUsage | null {
   const s = w.small;
-  const cultures = Object.values((s.content?.culture ?? {}) as Record<string, { nameStyle: string }>).filter((c) => c.nameStyle === id).length;
+  // 第四十三轮：文化没写时用文化组的；组写了它也算
+  const groups = (s.content?.cultureGroup ?? {}) as Record<string, { nameStyle?: string }>;
+  const cultures =
+    Object.values((s.content?.culture ?? {}) as Record<string, { group: string; nameStyle?: string }>).filter((c) => (c.nameStyle ?? groups[c.group]?.nameStyle) === id).length +
+    Object.values(groups).filter((g) => g.nameStyle === id).length;
   const features = Object.values(s.featureNames).filter((o) => o.style === id).length;
   const provs = Object.entries(s.provinces)
     .filter(([, p]) => p.style === id)
@@ -217,6 +227,7 @@ export function registerUsage(): void {
   set('culture', cultureUsage);
   set('cultureGroup', groupUsage);
   set('popValue', valueUsage);
+  set('valueGroup', valueGroupUsage);
   set('era', eraUsage);
   set('government', governmentUsage);
   set('faction', factionUsage);

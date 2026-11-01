@@ -36,10 +36,11 @@ interface AnyRenderer {
 }
 type Ctor = new (c: HTMLCanvasElement) => AnyRenderer;
 
+// 第四十三轮：EU4 的文化组
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'chinese', weight: 4 },
+  { id: 'levantine', weight: 3 },
+  { id: 'germanic', weight: 3 },
 ];
 
 // 横切一个大的陆地省（同 core/display-cell.test.ts 的 cutBig）

@@ -42,9 +42,9 @@ const R41 = {
 };
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 
 const tier = (id: string, order: number, more: Partial<CountryTierDef> = {}): CountryTierDef => ({ id, name: `${id}级`, order, area: 1, govSize: 1, ...more });

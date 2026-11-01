@@ -58,6 +58,8 @@ export function majorityCulture(world: CultureWorld, cells: Cells): number {
 export function cultureStyleId(world: CultureWorld, cells: Cells): string | undefined {
   const code = majorityCulture(world, cells);
   if (!code) return undefined;
-  const list = Object.values(world.small.content?.culture ?? {}) as { nameStyle?: string }[];
-  return list[code - 1]?.nameStyle;
+  const list = Object.values(world.small.content?.culture ?? {}) as { group: string; nameStyle?: string }[];
+  const c = list[code - 1];
+  // 第四十三轮：文化没写时用文化组的
+  return c && (c.nameStyle ?? (world.small.content?.cultureGroup?.[c.group] as { nameStyle?: string } | undefined)?.nameStyle);
 }

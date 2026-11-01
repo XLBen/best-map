@@ -216,7 +216,7 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
         <div class="ed-label" title={f.hint}>
           {f.label}
         </div>
-        <TitleEditor value={value} onChange={onChange} orig={f.key === 'title'} />
+        <TitleEditor value={value} onChange={onChange} orig={f.key === 'titles'} />
         <Errors issues={issues} path={path} />
       </div>
     );
@@ -413,7 +413,7 @@ function TitleEditor({ value, onChange, orig }: { value: unknown; onChange: (v: 
           </button>
         </div>
       ))}
-      <p class="hint">键写 default、文化或文化组的 id</p>
+      <p class="hint">键写国家等级的 id（city、small、medium、large、empire）或 default；没写的等级用最近的一级</p>
       <button class="small" onClick={() => setRows([...rows, { key: rows.length ? '' : 'default', zh: '', orig: '' }])}>
         <Plus /> 添加
       </button>

@@ -224,9 +224,9 @@ function oldCellLayers(world: World, o: ColorOptions): CellLayers {
 // ---------- 对照 ----------
 
 const GROUPS = [
-  { id: 'western', weight: 3 },
-  { id: 'eastern', weight: 3 },
-  { id: 'steppe', weight: 1.5 },
+  { id: 'germanic', weight: 3 },
+  { id: 'chinese', weight: 3 },
+  { id: 'altaic', weight: 1.5 },
 ];
 const WORLDS: [string, () => World][] = [
   [

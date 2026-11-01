@@ -18,6 +18,9 @@ import { PLANET_SIZES, planetCells } from '../core/presets';
 import { blocList, worldDimensions } from '../core/human';
 import type { World } from '../core/world';
 
+// 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
+const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
+
 const json = process.argv.includes('--json');
 const globe = process.argv.includes('--globe');
 const runsArg = process.argv.indexOf('--runs');
@@ -39,8 +42,8 @@ function build(): World {
     : new Engine({ seed: 3, cells: 40000 });
   eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
-  for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: ['western', 'eastern', 'steppe'] }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'western', weight: 3 }, { id: 'eastern', weight: 3 }, { id: 'steppe', weight: 1.5 }], countries: { seed: 3 } });
+  for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: medievalGroups().map((g) => g.id) }, eng.world)) eng.exec(c);
+  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: { seed: 3 } });
   if (!json) console.log(`world ${eng.world.mesh.n} cells, ${Object.keys(eng.world.small.countries ?? {}).length} countries, ${blocList(eng.world.small).length} blocs (${(performance.now() - t0).toFixed(0)} ms)`);
   return eng.world;
 }
