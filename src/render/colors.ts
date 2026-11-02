@@ -266,7 +266,6 @@ export function cellLayers(world: World, o: ColorOptions): CellLayers {
 }
 
 export function baseLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season' | 'focusSpecies'>): BaseLayers {
-  if (o.mode === 'wind') return windBase(world);
   const { mesh, causes, derived: d, small } = world;
   const n = mesh.n;
   const smooth = new Uint8Array(n * 4);
@@ -410,40 +409,6 @@ export function baseLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'
     seaData: seaTemp,
     coastAmp: COAST_AMP * small.terrain.coastRoughness,
   };
-}
-
-// 风与洋流（第四十六轮）的底子：全年的地貌褪了色——陆地灰一些、暗一些，海是暗的蓝灰（白色的风、橙蓝的洋流看得清），
-// 晕渲淡一些、不画露岩与岛的样子。对岸的颜色按格自己是陆是水反着褪（陆格的对岸是水色）
-function windBase(world: World): BaseLayers {
-  const b = baseLayers(world, { mode: 'terrain', season: 'annual', focusSpecies: null });
-  const n = world.mesh.n;
-  const smooth = new Uint8Array(b.smooth.length);
-  const other = new Uint8Array(b.other.length);
-  for (let i = 0; i < n; i++) {
-    const wet = b.coast[i] <= 0;
-    fadeInto(b.smooth, smooth, i, wet);
-    fadeInto(b.other, other, i, !wet);
-  }
-  return { ...b, smooth, other, lith: null, shade: 0.75, rock: 0 };
-}
-
-const WIND_SEA: RGB = [30, 46, 66];
-function fadeInto(src: Uint8Array, dst: Uint8Array, i: number, water: boolean) {
-  const r = src[i * 4];
-  const g = src[i * 4 + 1];
-  const bl = src[i * 4 + 2];
-  if (water) {
-    dst[i * 4] = Math.round(WIND_SEA[0] + (r - WIND_SEA[0]) * 0.3);
-    dst[i * 4 + 1] = Math.round(WIND_SEA[1] + (g - WIND_SEA[1]) * 0.3);
-    dst[i * 4 + 2] = Math.round(WIND_SEA[2] + (bl - WIND_SEA[2]) * 0.3);
-  } else {
-    // 褪掉七成的颜色，再压暗到六成多
-    const y = 0.3 * r + 0.59 * g + 0.11 * bl;
-    dst[i * 4] = Math.round((y + (r - y) * 0.3) * 0.64);
-    dst[i * 4 + 1] = Math.round((y + (g - y) * 0.3) * 0.64);
-    dst[i * 4 + 2] = Math.round((y + (bl - y) * 0.3) * 0.64);
-  }
-  dst[i * 4 + 3] = src[i * 4 + 3];
 }
 
 export function modeLayers(world: World, o: ColorOptions): ModeLayers {

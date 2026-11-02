@@ -15,7 +15,7 @@ export const FIELD_KIND: { [K in keyof Required<OverlayState>]: 'static' | 'shap
   rivers: 'static',
   wind: 'static',
   markers: 'static',
-  season: 'static',
+  flowSeason: 'static',
   style: 'static',
   shapes: 'shapes',
   provinceLabels: 'static',

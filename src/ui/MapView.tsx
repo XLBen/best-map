@@ -37,7 +37,7 @@ import {
   reference,
   riverStyleOverride,
   season,
-  flowShow,
+  flowSeason,
   sheet,
   showToast,
   sliderActive,
@@ -490,10 +490,10 @@ export function MapView() {
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
       const ovArgs: OverlayArgs = [shown, shownRivers, renderer.camera, {
         rivers: false,
-        // 风与洋流（第四十六轮）：只在这种模式里画（别的模式里流线一点不算）
-        wind: !!md.wind && flowShow.value !== 'currents',
+        // 风向、洋流（第四十八轮）：图层里两个独立的开关，任何模式上都能叠加；关着时流线一点不算
+        wind: overlays.value.wind,
         markers: !!cm.markers && !clean,
-        season: season.value,
+        flowSeason: flowSeason.value,
         style,
         shapes: glow.length || back?.shapes.length ? [...(back?.shapes ?? []), ...glow, ...preview.shapes] : preview.shapes,
         // 省名：省份类工具打开时（不是导出）标出所有的省帮着选；别的时候、导出都按图层里的“省名”（第十三轮修）
@@ -518,7 +518,7 @@ export function MapView() {
         latitude: overlays.value.latitude
           ? { north: shown.settings.latNorth + shown.small.planet.latShift, south: shown.settings.latSouth + shown.small.planet.latShift }
           : null,
-        currents: !!md.wind && flowShow.value !== 'wind',
+        currents: overlays.value.currents,
         motion: moving || settling,
         motionEpoch: renderer.motionEpoch,
         exact: clean,
@@ -777,7 +777,7 @@ export function MapView() {
       void selectedCountry.value;
       void overlays.value;
       void season.value;
-      void flowShow.value;
+      void flowSeason.value;
       void category.value;
       void flash.value;
       void hoverRiver.value;

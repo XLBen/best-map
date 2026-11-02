@@ -7,7 +7,7 @@ import type { Camera } from './renderer';
 // 起点放在抖动网格上，沿插值后的风用 RK2 往前、往后积分；靠近别的线、出了地图、风太弱就停。
 // 地图分成方块，每块各算各的，按 世界 × 季节 × 疏密档 × 方块 缓存：平移时只算新露出来的方块，
 // 缩放时换一档疏密，屏幕上的线距始终约 44 像素。
-// 第四十六轮：地图模式“风与洋流”才算、才画（wind-layer.ts 画进位图、三种投影都画）；一块地区也有洋流（场换成 currentX/Y，
+// 第四十八轮：图层里的“风向”“洋流”开着才算、才画（wind-layer.ts 画进位图、三种投影都画）；第四十六轮：一块地区也有洋流（场换成 currentX/Y，
 // 碰到陆地就停）。块的算法、随机数与以前相同
 
 export type WindSeason = 'annual' | 'summer' | 'winter';
@@ -72,6 +72,8 @@ function schedule() {
 // 算一段（约 SLICE_MS 毫秒，至少一块）；队空了通知重画
 function drain() {
   scheduled = false;
+  // 排着的已经丢了（关掉了图层）：不算，也不让静态的那一层多画一遍
+  if (!queue.length) return;
   const t0 = performance.now();
   while (queue.length) {
     const j = queue.shift()!;
@@ -86,6 +88,12 @@ function drain() {
   const fs = [...waiting];
   waiting.clear();
   for (const f of fs) f();
+}
+
+// 丢掉排着的块（第四十八轮：关掉了图层，空闲时不再替它算；还开着的那一层下一次画时重新排）
+export function dropWindQueue() {
+  queue.length = 0;
+  waiting.clear();
 }
 
 // 测试用：排着的块当场算完（不等空闲）
@@ -441,25 +449,27 @@ export interface FlowLine {
   color: number;
 }
 
-// 风的三档：线的浓淡；洋流按冷暖三种颜色、每种三档（流得越快越不透明）。描边是深色的一道
+// 风的三档：线的浓淡；洋流按冷暖三种颜色、每种三档（流得越快越不透明）。描边是深色的一道。
+// 第四十八轮：能叠在任何底图上了，地图册的浅色海、海水温度的黄色带上原来的线看不清（tools/flow-layer.mjs 量到线的边 ΔE 约 18，写实的地貌上约 38）：
+// 线浓一些、尾巴粗一些，描边深一倍。深色底图上描边看不出来，浅色底图上靠它（见第48轮）。图例的颜色读这里
 export interface FlowStyle {
   colors: string[][];
   halo: string;
   // 线宽的倍数（洋流粗一些，和风分得开）
   width: number;
 }
-export const WIND_STYLE: FlowStyle = { colors: [['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0.85)']], halo: 'rgba(10, 16, 24, 0.28)', width: 1 };
+export const WIND_STYLE: FlowStyle = { colors: [['rgba(255, 255, 255, 0.7)', 'rgba(255, 255, 255, 0.85)', 'rgba(255, 255, 255, 0.97)']], halo: 'rgba(10, 16, 24, 0.55)', width: 1 };
 export const CURRENT_STYLE: FlowStyle = {
   colors: [
-    ['rgba(170, 225, 215, 0.45)', 'rgba(170, 225, 215, 0.65)', 'rgba(170, 225, 215, 0.85)'],
-    ['rgba(255, 160, 110, 0.5)', 'rgba(255, 150, 100, 0.7)', 'rgba(255, 140, 90, 0.9)'],
-    ['rgba(140, 200, 255, 0.5)', 'rgba(130, 195, 255, 0.7)', 'rgba(120, 190, 255, 0.9)'],
+    ['rgba(170, 225, 215, 0.7)', 'rgba(170, 225, 215, 0.85)', 'rgba(170, 225, 215, 0.97)'],
+    ['rgba(255, 160, 110, 0.75)', 'rgba(255, 150, 100, 0.87)', 'rgba(255, 140, 90, 0.97)'],
+    ['rgba(140, 200, 255, 0.75)', 'rgba(130, 195, 255, 0.87)', 'rgba(120, 190, 255, 0.97)'],
   ],
-  halo: 'rgba(8, 20, 36, 0.3)',
+  halo: 'rgba(8, 20, 36, 0.5)',
   width: 1.7,
 };
 // 尾、中、头三段的线宽（像素）、箭头的线宽与长度
-const WIDTHS = [0.7, 1.15, 1.6];
+const WIDTHS = [1, 1.4, 1.8];
 const HEAD_W = 1.5;
 const HEAD_LEN = 5.5;
 

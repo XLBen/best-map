@@ -7,7 +7,7 @@ import type { Renderer } from '../../render/renderer';
 import { modeDef, modeFeatures, modeOf } from './modes';
 import { regionDraws } from './political';
 import { settleOverlay } from './settle';
-import { exportProgress, flowShow, imageExportCancel, labelGroups, nameMode, overlays, season, showToast, world } from '../../state';
+import { exportProgress, flowSeason, imageExportCancel, labelGroups, nameMode, overlays, showToast, world } from '../../state';
 import { worldMapStyle } from '../../../core/map-style';
 
 // 导出图片：当前画面（snapshotCanvas）与整张地图（exportFullMap）。都是干净的画面：只有地图本身，
@@ -16,7 +16,7 @@ import { worldMapStyle } from '../../../core/map-style';
 export type ExportImageOptions = { width: number; labels: LabelSize; tile?: number; overlay?: boolean; seam?: number; projected?: boolean };
 type ExportImage = (o: ExportImageOptions, progress: (p: number) => void, cancelled: () => boolean) => Promise<HTMLCanvasElement | null>;
 
-// 干净的画面的叠加层（与屏幕上 draw(true) 的一样：图层里打开的河、地名、省名、比例尺、纬度刻度，风与洋流模式里的流线；不看开着的是哪类工具）
+// 干净的画面的叠加层（与屏幕上 draw(true) 的一样：图层里打开的河、地名、省名、比例尺、纬度刻度，开着的风向、洋流；不看开着的是哪类工具）
 export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLabel[]): OverlayState {
   const groups = labelGroups.value;
   const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
@@ -25,9 +25,9 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
   return {
     // 河画在每一块里（renderTile）
     rivers: false,
-    wind: !!md.wind && flowShow.value !== 'currents',
+    wind: overlays.value.wind,
     markers: false,
-    season: season.value,
+    flowSeason: flowSeason.value,
     style: worldMapStyle(w.small),
     shapes: [],
     // 导出只看图层的设定（第十三轮修：以前省份类、地名类工具开着时导出的图里写满了省名，连海省也有）
@@ -43,7 +43,7 @@ export function cleanOverlay(w: World, frame: Frame, provinceLabels: ProvinceLab
     scaleBar: overlays.value.scale,
     cornerLift: 0,
     latitude: overlays.value.latitude ? { north: w.settings.latNorth + w.small.planet.latShift, south: w.settings.latSouth + w.small.planet.latShift } : null,
-    currents: !!md.wind && flowShow.value !== 'wind',
+    currents: overlays.value.currents,
     motion: false,
     exact: true,
     frame,

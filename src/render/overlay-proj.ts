@@ -4,7 +4,7 @@ import type { RiverLine } from '../../core/rivers';
 import type { World } from '../../core/world';
 import { type Frame, type OverlayParts, type OverlayPaths, type OverlayState, type Shape, PROVINCE_LABEL_COLOR, drawLabels, drawScaleBar, hasLabels, refZoom, riverDraw, riverScale, riverStroke, riverTypeColor } from './overlay';
 import { ROAD_SMOOTH_PX, type RoadDraw, roadStyle } from './settle-draw';
-import { drawFlows } from './wind-layer';
+import { drawFlows, releaseFlows } from './wind-layer';
 import { type Proj, type ProjCamera, effectiveZoom, inverse, screenToPlane, screenToWorld, trueScale, worldToScreen } from './projection';
 
 // 等面积、球形投影时的叠加层（第十三轮 G4）：点按投影算，线沿大圆加密后逐点投影（球的背面、等面积的左右两边断开）。
@@ -347,7 +347,7 @@ export function projectedParts(world: World, paths: OverlayPaths, cam: Cam, st: 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-      }
+      } else releaseFlows();
       if (st.latitude) drawGraticule(ctx, P, f);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.lineCap = 'round';

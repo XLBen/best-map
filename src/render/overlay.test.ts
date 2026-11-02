@@ -119,7 +119,7 @@ const riverState = (w: World): OverlayState =>
     rivers: true,
     wind: false,
     markers: false,
-    season: 'annual',
+    flowSeason: 'annual',
     style: FALLBACK_MAP_STYLE,
     shapes: [],
     provinceLabels: [],

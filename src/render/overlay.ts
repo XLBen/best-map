@@ -11,7 +11,7 @@ import { sameShapes, staticKey } from './overlay-static';
 import type { Proj } from './projection';
 import type { Camera } from './renderer';
 import { drawRoads } from './settle-draw';
-import { drawFlows } from './wind-layer';
+import { drawFlows, releaseFlows } from './wind-layer';
 
 // 2D 画布上的矢量叠加：河流、河道引导、湖标记、风与洋流（wind-layer.ts）、画笔、箭头、预览路径、地名。
 // 海岸线、省份边界、选区轮廓在着色器里画（自然曲线）。
@@ -204,8 +204,9 @@ export function overlayParts(world: World, paths: OverlayPaths, cam: Camera, st:
       pasteBack(ctx, world, paths, cam, st);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      // 风与洋流（第四十六轮：只在那种模式里；停稳时贴位图，见 wind-layer.ts）
+      // 风向、洋流（第四十八轮：图层里的开关；停稳时贴位图，都关着时放掉位图和排着的块，见 wind-layer.ts）
       if (st.wind || st.currents) drawFlows(ctx, world, cam, st, f);
+      else releaseFlows();
       setT(ctx, 0);
       if (st.latitude) {
         if (sphere) drawGraticule(ctx, cam, ks, f, !!st.frame);

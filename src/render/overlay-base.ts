@@ -62,11 +62,12 @@ export const PROVINCE_LABEL_COLOR: Record<string, string> = { wasteland: 'rgba(9
 export interface OverlayState {
   // 河画在叠加层上（屏幕、导出的地图上河由渲染器合成，只画在陆地上：MapView 给 false，见 riverLayer）
   rivers: boolean;
-  // 风的流线（第四十六轮起只在“风与洋流”模式里为 true，见 wind-layer.ts）
+  // 风的流线（第四十八轮起是图层里的开关，见 wind-layer.ts）
   wind: boolean;
   // 画过的河与湖的标记（水模式）
   markers: boolean;
-  season: 'annual' | 'summer' | 'winter';
+  // 风的流线按哪一季（第四十八轮：与地貌的季节分开，只有风用它；关着风时不进位图的键）
+  flowSeason: 'annual' | 'summer' | 'winter';
   style: MapStyle;
   shapes: Shape[];
   provinceLabels: ProvinceLabel[];
@@ -98,7 +99,7 @@ export interface OverlayState {
   cornerLift: number;
   // 纬度刻度：地图上下边的实际纬度（含挪动）；null 不画。整个星球画经纬网
   latitude: { north: number; south: number } | null;
-  // 洋流流线（第四十六轮起一块地区也有；只在“风与洋流”模式里为 true）
+  // 洋流流线（第四十六轮起一块地区也有；第四十八轮起是图层里的开关）
   currents?: boolean;
   // 镜头正在动（渲染器按低分辨率画的那几帧）：底层的河挪用缓存的那张、地名沿用排好的版面，停稳后按原样画
   motion?: boolean;

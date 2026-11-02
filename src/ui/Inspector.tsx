@@ -44,7 +44,7 @@ function currentText(w: World, cell: number): string | null {
 }
 
 // 风从哪边吹来、多大：“西南风（中）”。风的分量是东、南（y 朝南）；风从 (−东, +北) 的方向来。
-// 快慢分档与“风与洋流”模式的流线相同
+// 快慢分档与图层里“风向”的流线相同
 function windText(x: number, y: number): string {
   const m = Math.hypot(x, y);
   if (m < 0.05) return '无风';

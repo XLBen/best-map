@@ -71,7 +71,7 @@ function stateFor(w: World, kind: MapKind, more: Partial<OverlayState> = {}): Ov
     rivers: false,
     wind: false,
     markers: false,
-    season: 'annual',
+    flowSeason: 'annual',
     style: { countryLabel: '#3a2a1a' } as OverlayState['style'],
     shapes: [],
     provinceLabels: [],

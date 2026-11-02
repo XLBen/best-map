@@ -2,9 +2,9 @@ import type { World } from '../../core/world';
 import { type Frame, MOTION_LAYER_MARGIN, MOTION_LAYER_SCALE, MOTION_LAYER_ZOOM, type OverlayState, overlayDebug, perf } from './overlay-base';
 import { EE_K, GLOBE_G, POINT_COEFS, type Proj, effectiveZoom, inverse, pointCoefs, screenToPlane, worldToScreen, wrapLon } from './projection';
 import type { Camera } from './renderer';
-import { CURRENT_STYLE, type FlowLine, type FlowProject, WIND_STYLE, currentLines, strokeFlows, windEpoch, windLines } from './wind';
+import { CURRENT_STYLE, type FlowLine, type FlowProject, WIND_STYLE, currentLines, dropWindQueue, strokeFlows, windEpoch, windLines } from './wind';
 
-// 风与洋流的流线画到叠加层上（第四十六轮，地图模式“风与洋流”；别的模式里 OverlayState.wind / currents 为 false，这里一笔不画、一块不算）。
+// 风与洋流的流线画到叠加层上（第四十六轮；第四十八轮起是图层里两个独立的开关，都关着时 OverlayState.wind / currents 为 false，这里一笔不画、一块不算，位图也放掉）。
 // 三种投影都画：等距圆柱、一块地区直接按地图坐标画；等面积、球形按一个盖住看得见的经纬范围的等距圆柱镜头取线（同一套块的缓存），
 // 逐点投影到屏幕上（球的背面、等面积的左右两边断开）。
 // 位图：
@@ -21,6 +21,8 @@ interface FlowBitmap {
 }
 let rest: FlowBitmap | null = null;
 let moving: FlowBitmap | null = null;
+// 上一次画的是哪几层（第四十八轮）；空串是都没开
+let shown = '';
 
 const hasCanvas = () => typeof OffscreenCanvas !== 'undefined' || typeof document !== 'undefined';
 
@@ -36,7 +38,7 @@ const sameKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every
 // 画什么（不含镜头）：场的数组、陆海（洋流碰到陆地停）、开关、季节、算好了几块
 function flowKey(world: World, st: OverlayState): unknown[] {
   const d = world.derived;
-  return [world.mesh, d.windSX, d.windSY, d.windWX, d.windWY, d.currentX, d.sstAnom, world.causes.land, st.wind, !!st.currents, st.season, windEpoch()];
+  return [world.mesh, d.windSX, d.windSY, d.windWX, d.windWY, d.currentX, d.sstAnom, world.causes.land, st.wind, !!st.currents, st.wind ? st.flowSeason : null, windEpoch()];
 }
 
 // 测试用：位图的命中、重画次数
@@ -50,7 +52,7 @@ function paint(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
     const z = cam.zoom * dev;
     ctx.setTransform(z, 0, 0, z, (cw / 2 - cam.x * cam.zoom) * dev, (ch / 2 - cam.y * cam.zoom) * dev);
     const size = { cw, ch };
-    if (st.wind) strokeFlows(c2, windLines(world, cam, st.season, size, lazy), WIND_STYLE, 1 / z, undefined, Infinity, light);
+    if (st.wind) strokeFlows(c2, windLines(world, cam, st.flowSeason, size, lazy), WIND_STYLE, 1 / z, undefined, Infinity, light);
     if (st.currents) strokeFlows(c2, currentLines(world, cam, size, lazy), CURRENT_STYLE, 1 / z, undefined, Infinity, light);
     return;
   }
@@ -64,7 +66,7 @@ function paint(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
   ctx.setTransform(dev, 0, 0, dev, 0, 0);
   const project = projector(pc, cw, ch);
   // 线宽与等距圆柱一样按设备像素（一个 CSS 像素 dev 个）
-  if (st.wind) strokeFlows(c2, windLines(world, vcam, st.season, size, lazy), WIND_STYLE, 1 / dev, project, 80, light);
+  if (st.wind) strokeFlows(c2, windLines(world, vcam, st.flowSeason, size, lazy), WIND_STYLE, 1 / dev, project, 80, light);
   if (st.currents) strokeFlows(c2, currentLines(world, vcam, size, lazy), CURRENT_STYLE, 1 / dev, project, 80, light);
 }
 
@@ -154,9 +156,27 @@ function lonLatBox(cam: Camera & { proj: Proj }, cw: number, ch: number): [numbe
   return [x0 - pad, x1 + pad, Math.max(0, y0 - pad / 2), Math.min(1, y1 + pad / 2)];
 }
 
+// 测试用：两张位图还留着没有
+export const flowBitmapsHeld = () => !!rest || !!moving;
+
+// 两个开关都关了（第四十八轮）：放掉两张位图，丢掉排着的块（算好的块还在各自的缓存里，有上限，跟着世界一起没；再打开时不用重算）
+export function releaseFlows() {
+  if (!rest && !moving && !shown) return;
+  rest = null;
+  moving = null;
+  shown = '';
+  dropWindQueue();
+}
+
 // 叠加层里画风与洋流（ctx 的变换之后由调用的一方重设）
 export function drawFlows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, st: OverlayState, f: Frame) {
   if (!st.wind && !st.currents) return;
+  // 开关变了（比如关了风、洋流还开着）：排着的块里可能有关掉的那一层的。丢掉，下面画的时候还要的会重新排
+  const which = st.wind ? (st.currents ? 'both' : 'wind') : 'currents';
+  if (which !== shown) {
+    if (shown) dropWindQueue();
+    shown = which;
+  }
   const t0 = perf ? performance.now() : 0;
   const { cw, ch, dpr } = f;
   if (st.frame || !hasCanvas() || overlayDebug.noFlowBitmap) {

@@ -4,6 +4,7 @@ import { countryRows } from './countries';
 import { speciesColor } from '../../core/species';
 import type { World } from '../../core/world';
 import { NO_BLOC, NO_RESOURCE, densityRgb, habitRgb } from '../render/colors';
+import { WIND_STYLE } from '../render/wind';
 import type { ViewMode } from '../state';
 import type { LegendItem } from './components/Legend';
 
@@ -33,18 +34,28 @@ function countCodes(w: World, codes: ArrayLike<number>): Map<number, number> {
 
 const byCount = (a: LegendItem, b: LegendItem) => (b.count ?? 0) - (a.count ?? 0);
 
-// 风与洋流（第四十六轮）：风按快慢三档（与 render/wind.ts 画的线宽、浓淡相同），洋流按冷暖
-export const WIND_LEGEND: LegendData = {
-  title: '风与洋流',
-  items: [
-    { color: 'rgba(255, 255, 255, 0.45)', label: '弱风', line: 1 },
-    { color: 'rgba(255, 255, 255, 0.65)', label: '中等的风', line: 1.6 },
-    { color: 'rgba(255, 255, 255, 0.85)', label: '强风', line: 2.4 },
-    { color: 'rgb(255, 150, 100)', label: '暖流', line: 3 },
-    { color: 'rgb(130, 195, 255)', label: '寒流', line: 3 },
-    { color: 'rgb(170, 225, 215)', label: '不冷不暖的洋流', line: 3 },
-  ],
-};
+// 风向、洋流（第四十六轮；第四十八轮起是图层里两个独立的开关）：风按快慢三档（与 render/wind.ts 画的线宽、浓淡相同），洋流按冷暖。
+// 只列开着的那一层；都关着时没有这张图例
+const WIND_ITEMS: LegendItem[] = [
+  { color: WIND_STYLE.colors[0][0], label: '弱风', line: 1 },
+  { color: WIND_STYLE.colors[0][1], label: '中等的风', line: 1.6 },
+  { color: WIND_STYLE.colors[0][2], label: '强风', line: 2.4 },
+];
+const CURRENT_ITEMS: LegendItem[] = [
+  { color: 'rgb(255, 150, 100)', label: '暖流', line: 3 },
+  { color: 'rgb(130, 195, 255)', label: '寒流', line: 3 },
+  { color: 'rgb(170, 225, 215)', label: '不冷不暖的洋流', line: 3 },
+];
+export function flowLegend(wind: boolean, currents: boolean): LegendData | null {
+  if (!wind && !currents) return null;
+  return { title: wind && currents ? '风向与洋流' : wind ? '风向' : '洋流', items: [...(wind ? WIND_ITEMS : []), ...(currents ? CURRENT_ITEMS : [])] };
+}
+// 图例下面的一句话：季节只管风；洋流强弱是 0 时地图上没有洋流
+export function flowHint(wind: boolean, currents: boolean, strength: number): string {
+  if (currents && strength === 0) return '洋流强弱是 0：没有洋流';
+  if (currents) return wind ? '季节只换风，洋流是全年平均的' : '洋流是全年平均的，不随季节变';
+  return '这里的季节只换风，不影响地貌的雪';
+}
 
 // 国家的图例列几个
 export const LEGEND_TOP = 12;

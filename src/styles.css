@@ -2823,3 +2823,20 @@ select.chip-add {
 .legend.wide .legend-list {
   max-height: none;
 }
+
+/* 风向、洋流的图例与底图的图例叠着放（第四十八轮）：窗口矮时各自的列表滚动，加起来不盖住顶栏 */
+.legend-stack {
+  position: absolute;
+  left: 10px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.legend-stack > .legend {
+  position: static;
+}
+.legend-stack > .legend > .legend-list {
+  max-height: min(220px, 28vh);
+}

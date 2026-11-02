@@ -74,7 +74,7 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean }) {
         rivers: false,
         wind: false,
         markers: false,
-        season: 'annual' as const,
+        flowSeason: 'annual' as const,
         style,
         shapes: [],
         provinceLabels: [],

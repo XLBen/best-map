@@ -4,10 +4,10 @@ import { meshFor, seededEngine } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { type OverlayState, buildPaths, drawOverlay, overlayDebug } from './overlay';
 import type { Camera } from './renderer';
-import { currentLines, flushWindQueue, windLines, windTilesCached } from './wind';
-import { drawFlows, flowStats } from './wind-layer';
+import { currentLines, dropWindQueue, flushWindQueue, windEpoch, windLines, windTilesCached } from './wind';
+import { drawFlows, flowBitmapsHeld, flowStats, releaseFlows } from './wind-layer';
 
-// 风与洋流（第四十六轮）：不在这种模式时一块不算、一笔不画；停稳时贴位图、移动中平移缩放挪位图；三种投影都画；区域的洋流
+// 风向、洋流（第四十六轮；第四十八轮起是两个开关）：都关着时一块不算、一笔不画、位图放掉；停稳时贴位图、移动中平移缩放挪位图；三种投影都画；区域的洋流
 
 // 测试里没有画布：Path2D 记下画了几个点，画布的上下文记下画了几笔
 class FakePath {
@@ -85,7 +85,7 @@ const stateOf = (w: World, on: boolean, more: Partial<OverlayState> = {}): Overl
     wind: on,
     currents: on,
     markers: false,
-    season: 'summer',
+    flowSeason: 'summer',
     style: { countryLabel: '#3a2a1a' } as OverlayState['style'],
     shapes: [],
     provinceLabels: [],
@@ -102,7 +102,7 @@ const stateOf = (w: World, on: boolean, more: Partial<OverlayState> = {}): Overl
 const frame = { cw: 1000, ch: 700, dpr: 1 };
 const fieldTiles = (w: World) => windTilesCached(w.derived.windSX) + windTilesCached(w.derived.currentX);
 
-describe('不在“风与洋流”模式：一块不算、一笔不画', () => {
+describe('两个开关都关着：一块不算、一笔不画', () => {
   for (const kind of ['region', 'planet'] as const) {
     it(kind, () => {
       const w = world(kind);
@@ -127,7 +127,7 @@ describe('不在“风与洋流”模式：一块不算、一笔不画', () => {
   }
 });
 
-describe('在“风与洋流”模式里', () => {
+describe('开着', () => {
   it('一块地区也有洋流：流线只在海上（碰到陆地就停），有风有洋流', () => {
     const w = world('region');
     const cam = { x: 1, y: 0.5, zoom: 500 };
@@ -174,8 +174,15 @@ describe('在“风与洋流”模式里', () => {
     expect(a.calls.image).toBe(3);
     // 叠加层本身一笔不描
     expect(a.calls.stroke).toBe(0);
-    drawFlows(a.ctx, w, cam, { ...st, season: 'winter' }, frame);
+    drawFlows(a.ctx, w, cam, { ...st, flowSeason: 'winter' }, frame);
     expect(flowStats.paints - s0.paints).toBe(2);
+    // 只开洋流：风的季节变了不用重描（洋流是全年平均的）
+    const cur = { ...st, wind: false };
+    drawFlows(a.ctx, w, cam, cur, frame);
+    const p = flowStats.paints;
+    drawFlows(a.ctx, w, cam, { ...cur, flowSeason: 'summer' }, frame);
+    drawFlows(a.ctx, w, cam, { ...cur, flowSeason: 'annual' }, frame);
+    expect(flowStats.paints).toBe(p);
   });
 
   it('移动中：平移、缩放在边距之内挪位图（不重描、不重算块）；转球时直接画', () => {
@@ -212,5 +219,89 @@ describe('在“风与洋流”模式里', () => {
     const z0 = { ...flowStats };
     drawFlows(a.ctx, w, { ...turn(0.1), zoom: 610 }, st, frame);
     expect(flowStats.direct - z0.direct).toBe(0);
+  });
+});
+
+describe('两个开关（第四十八轮）', () => {
+  // 没见过的场：一个新的星球世界的风、洋流的数组都还没有算过块
+  const fresh = (): World => {
+    const settings = { seed: 11, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 };
+    const e = seededEngine(settings, meshFor(settings));
+    e.exec({ op: 'set_worldgen', params: { seed: 11, type: 'continents' }, reset: true });
+    return e.world;
+  };
+  const cam: Camera = { x: 1, y: 0.5, zoom: 500 };
+
+  it('独立：只开风只算风的块，只开洋流只算洋流的块', () => {
+    overlayDebug.noFlowBitmap = true;
+    const w = fresh();
+    const { ctx } = fakeCtx(1000, 700);
+    drawFlows(ctx, w, cam, stateOf(w, false, { wind: true }), frame);
+    expect(windTilesCached(w.derived.windSX)).toBeGreaterThan(0);
+    expect(windTilesCached(w.derived.currentX)).toBe(0);
+    const w2 = fresh();
+    drawFlows(ctx, w2, cam, stateOf(w2, false, { currents: true }), frame);
+    expect(windTilesCached(w2.derived.windSX)).toBe(0);
+    expect(windTilesCached(w2.derived.currentX)).toBeGreaterThan(0);
+  });
+
+  it('叠在别的模式上：地名、片区名不变，多的只有流线', () => {
+    overlayDebug.noFlowBitmap = true;
+    const w = world('region');
+    const paths = buildPaths(w);
+    const off = fakeCtx(1000, 700);
+    drawOverlay(off.ctx, w, paths, cam, stateOf(w, false, { frame }));
+    const on = fakeCtx(1000, 700);
+    drawOverlay(on.ctx, w, paths, cam, stateOf(w, true, { frame }));
+    expect(off.calls.stroke).toBe(0);
+    expect(on.calls.stroke).toBeGreaterThan(10);
+  });
+
+  it('关掉：排着的块丢掉、空闲时不再算，两张位图放掉，也不多画一遍静态的那一层', async () => {
+    g.OffscreenCanvas = FakeOffscreen;
+    const w = fresh();
+    const paths = buildPaths(w);
+    const { ctx } = fakeCtx(1000, 700);
+    let redraws = 0;
+    const lazy = () => redraws++;
+    // 打开：新的块排进队，这一帧一块不算
+    drawOverlay(ctx, w, paths, cam, stateOf(w, true, { lazy }));
+    expect(windTilesCached(w.derived.windSX)).toBe(0);
+    expect(flowBitmapsHeld()).toBe(true);
+    // 关掉：一帧之后什么都不留
+    const epoch = windEpoch();
+    drawOverlay(ctx, w, paths, cam, stateOf(w, false, { lazy }));
+    expect(flowBitmapsHeld()).toBe(false);
+    await new Promise((r) => setTimeout(r, 5));
+    flushWindQueue();
+    expect(windTilesCached(w.derived.windSX) + windTilesCached(w.derived.currentX)).toBe(0);
+    expect(redraws).toBe(0);
+    expect(windEpoch()).toBe(epoch);
+  });
+
+  it('关掉一层、另一层还开着：关掉的那一层排着的块也不算了', () => {
+    g.OffscreenCanvas = FakeOffscreen;
+    const w = fresh();
+    const lazy = () => {};
+    const { ctx } = fakeCtx(1000, 700);
+    drawFlows(ctx, w, cam, stateOf(w, true, { lazy }), frame);
+    drawFlows(ctx, w, cam, stateOf(w, false, { wind: true, lazy }), frame);
+    flushWindQueue();
+    expect(windTilesCached(w.derived.windSX)).toBeGreaterThan(0);
+    expect(windTilesCached(w.derived.currentX)).toBe(0);
+    releaseFlows();
+  });
+
+  it('再打开：算好的块还在，不重算', () => {
+    overlayDebug.noFlowBitmap = true;
+    const w = fresh();
+    const { ctx } = fakeCtx(1000, 700);
+    drawFlows(ctx, w, cam, stateOf(w, true), frame);
+    const tiles = fieldTiles(w);
+    releaseFlows();
+    dropWindQueue();
+    drawFlows(ctx, w, cam, stateOf(w, true), frame);
+    expect(fieldTiles(w)).toBe(tiles);
+    releaseFlows();
   });
 });

@@ -67,8 +67,6 @@ export type ViewMode =
   | 'country'
   // 同盟（第二十六轮）：帝国、联邦、同盟各一种颜色，不在集团里的国家灰色
   | 'bloc'
-  // 风与洋流（第四十六轮）：地图模式“风与洋流”的底子，淡淡的地貌（流线画在叠加层上）
-  | 'wind'
   | `dim:${string}`
   | `field:${string}`;
 
@@ -109,13 +107,12 @@ export function registerToolSwitch(f: (id: ToolId) => void) {
 }
 export const mode = signal<ViewMode>('terrain');
 export const season = signal<Season>('annual');
-// 风与洋流模式（第四十六轮）里画什么：都画、只画风、只画洋流（只在这次打开的页面里记着）
-export type FlowShow = 'both' | 'wind' | 'currents';
-export const flowShow = signal<FlowShow>('both');
+// 风的流线按哪一季画（第四十八轮）：与 season 分开——season 管地貌的雪、气温降水的底图，这一个只管风，换它不重算底图（只在这次打开的页面里记着）
+export const flowSeason = signal<Season>('annual');
 // peaks（第二十一轮）：全部山峰画成小三角，放大后标名字
 // roads、cities、landmarks（第二十四轮）：道路两种图都画；城市在人文图里画；地标在人文图里全画、地理图里只画自然的（自定义点两种图都画）
-// 第四十六轮：风向、洋流不再是开关，是地图模式“风与洋流”（见 ui/map/modes.ts）
-export const overlays = signal({ rivers: true, borders: true, labels: true, scale: true, latitude: false, edits: false, peaks: false, roads: true, cities: true, landmarks: true });
+// wind、currents（第四十八轮）：风向、洋流两个独立的开关，任何地图模式上都能叠加；关着时一块不算、一笔不画（见 render/wind-layer.ts）
+export const overlays = signal({ rivers: true, borders: true, labels: true, scale: true, latitude: false, edits: false, peaks: false, roads: true, cities: true, landmarks: true, wind: false, currents: false });
 export const hoverCell = signal<number>(-1);
 // 鼠标下画出来的省按哪一格算（扭曲后的格、剪刀切线旁按显示的那一边，见 core/display.ts）：“这里”的省份一行用它。
 // 与 hoverCell 一起设
@@ -279,13 +276,13 @@ export type WheelPref = 'auto' | 'zoom' | 'pan';
 // 整个星球用哪种投影看（第十三轮 G4）：等距圆柱（平铺图）、等面积（椭圆形）、球形（从太空看）。只是看的方式，不写进世界文件
 export type ProjectionPref = 'equirect' | 'equalEarth' | 'globe';
 const PREFS_KEY = 'map2.prefs';
-// 地图模式（第二十五轮，像 EU4：地理、国家、文化、文化组、时代的每一维、人口；第二十三轮的“人文图”就是“国家”；
-// 第四十六轮：风与洋流）。每种模式画什么见 ui/map/modes.ts 的表
-export type MapKind = 'geo' | 'wind' | 'country' | 'bloc' | 'culture' | 'cultureGroup' | 'popDensity' | `dim:${string}`;
-// 存着的模式读回来：第二十三轮的 political 读作 country，不认识的是地理
+// 地图模式（第二十五轮，像 EU4：地理、国家、文化、文化组、时代的每一维、人口；第二十三轮的“人文图”就是“国家”）。
+// 每种模式画什么见 ui/map/modes.ts 的表
+export type MapKind = 'geo' | 'country' | 'bloc' | 'culture' | 'cultureGroup' | 'popDensity' | `dim:${string}`;
+// 存着的模式读回来：第二十三轮的 political 读作 country，不认识的是地理（第四十六到四十七轮存下的 wind 也在其中：这种模式没有了）
 export function parseMapKind(v: unknown): MapKind {
   if (v === 'political') return 'country';
-  if (v === 'wind' || v === 'country' || v === 'bloc' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity') return v;
+  if (v === 'country' || v === 'bloc' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity') return v;
   if (typeof v === 'string' && /^dim:[\w-]{1,64}$/.test(v)) return v as MapKind;
   return 'geo';
 }

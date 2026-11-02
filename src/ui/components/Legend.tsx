@@ -14,7 +14,7 @@ export interface LegendItem {
 
 const pct = (v: number) => (v >= 0.095 ? `${Math.round(v * 100)}%` : v >= 0.0005 ? `${(v * 100).toFixed(1)}%` : '<0.1%');
 
-// children：列表上面的控件（第四十六轮：风与洋流的季节）；hint：列表下面的一句话
+// children：列表上面的控件（第四十八轮：风的季节）；hint：列表下面的一句话
 export function Legend({ title, items, open, onToggle, style, children, hint, wide }: { title: string; items: LegendItem[]; open: boolean; onToggle: () => void; style?: Record<string, string>; children?: ComponentChildren; hint?: string; wide?: boolean }) {
   const total = items.every((it) => it.count !== undefined) ? items.reduce((a, it) => a + (it.count ?? 0), 0) : 0;
   return (

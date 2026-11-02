@@ -94,25 +94,20 @@ describe('地图模式的表', () => {
     expect(mapKind.value).toBe('geo');
   });
 
-  it('按钮：没有人文时只有地理、风与洋流；没有国家时没有“国家”；有时代的每一维', () => {
-    // 第四十六轮：多了“风与洋流”，没有人文时也有
-    expect(mapModes(continents().world).map((m) => m.id)).toEqual(['geo', 'wind']);
+  it('按钮：没有人文时没有这一排；没有国家时没有“国家”；有时代的每一维', () => {
+    // 第四十八轮：风向、洋流是图层里的开关，不再是模式（第四十六、四十七轮时没有人文也有一排）
+    expect(mapModes(continents().world)).toEqual([]);
     expect(mapModes(null)).toEqual([]);
-    expect(mapModes(peoples().world).map((m) => m.id)).toEqual(['geo', 'wind', 'culture', 'cultureGroup', 'dim:religion', 'popDensity']);
+    expect(mapModes(peoples().world).map((m) => m.id)).toEqual(['geo', 'culture', 'cultureGroup', 'dim:religion', 'popDensity']);
     const b = mapModes(towns().world);
     // 第二十六轮：这个世界里有帝国（中世纪的邦联），多一个“同盟”
-    expect(b.map((m) => m.label)).toEqual(['地理', '风与洋流', '国家', '同盟', '文化', '文化组', '宗教', '人口']);
+    expect(b.map((m) => m.label)).toEqual(['地理', '国家', '同盟', '文化', '文化组', '宗教', '人口']);
     for (const m of b) expect(m.title.length).toBeGreaterThan(0);
     // 世界里没有那一层时是地理
     expect(modeOf(peoples().world, 'country')).toBe('geo');
     expect(modeOf(continents().world, 'culture')).toBe('geo');
     expect(modeOf(towns().world, 'dim:nation')).toBe('geo');
     expect(modeOf(towns().world, 'dim:religion')).toBe('dim:religion');
-    // 风与洋流哪个世界里都有；底图是 wind，存进偏好、读回来照旧
-    expect(modeOf(continents().world, 'wind')).toBe('wind');
-    expect(kindOfView('wind')).toBe('wind');
-    expect(modeDef('wind').wind).toBe(true);
-    for (const k of ['geo', 'country', 'culture', 'popDensity'] as const) expect(modeDef(k).wind).toBeFalsy();
   });
 
   it('偏好：旧的 political 读作国家；维度的模式、不认识的', () => {
