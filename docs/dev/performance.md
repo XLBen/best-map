@@ -7,6 +7,7 @@
 结果全部逐值不变（见“测试”）；每一项提速都有自己的“新旧算法逐位相同”测试。
 
 - **撤销缓存**：最近几步的完整推导结果都存着（地区 8 步、星球 6 步，相同的数组几步共用，合计不超过 200 MB），撤销、重做直接换回；更早的从那一步影响到的那一层重算。
+- **内容共用**（第四十七轮，`core/small-copy.ts`）：`small.content` 不可变，撤销记录、比较、预览的克隆按引用共用，快照、预览的回复里内容没换时不发（`src/content-post.ts`）；每步的撤销记录只留不是内容的那段 JSON。量到的数见 [第47轮](history/第47轮.md)。
 - **按内容缓存**：气候里和地形有关的那部分（风、水汽输送图、洋流）、汇流，地形没变就不重算；星球气候分层缓存（只取决于纬度的、只取决于海陆的各留两份）；地物识别按地形缓存，只改气候时不重找陆块、海、山脉。
 - **只算变了的**：重画一片只重算圈里的格；高程按陆块复用（没改过的陆块原样留着）；离海岸、离河的距离场从上一份改起；省份只修补变了陆海的格、起名线性；生态脚本按格记住结果，只重算输入变了的格；生成器的采样按网格缓存。
 - **内核**：噪声内核去掉闭包，高程的噪声因子按网格缓存；汇流路由（`core/routing.ts`，Priority-Flood 填洼后按最陡下降，结果无环）的缓冲区在迭代间复用；约束求解试算不分配对象；类型化数组的堆（`core/heap.ts`，优先级相同时先进先出，平地上的顺序可复现）。
@@ -104,7 +105,7 @@ Node 里实测，整个星球 + 奇幻包（`node tools/bench-median.mjs 3 -- --
 
 `tools/bench.ts` 的普通一轮（不带 `--pack`）按用户的加工逐步计时，区域 4 万格（种子 3、“几块大陆”），`--globe` 整个星球（类地 6.26 万格）。键（`--json` 最后一行）：
 
-- 步骤：`newWorld`、`relief`（抬山，半径 6 格）、`erod`（岩性）、`tempBrush`（冷暖笔）、`paintLand`（沿海一笔，真改海陆）、`island`、`reroll`（重新生成一片）、`rerollFjord`（第三十六轮（续）：峡湾权重最大的海岸陆格上重新生成一片；没有海岸类型的旧提交上跳过）、`river`（画河）、`lake`（放湖）、`humidity`、`latShift`（星球上是轴倾角）、`undo1`–`undo6`、`redo`；`openCheckpoint`、`coldRelief`（从检查点恢复到新的网格对象上，所有按网格的缓存都是空的，像刷新后打开，再抬一笔）、`warmup` / `warmupLongestChunk` / `warmRelief`（先 `warmSteps` 预热再抬同一笔）、`hotRelief`（一直开着的世界上同一笔）；`--long` 加 `longReplay`（约 200 条混合命令的文档按固定种子挑出来，在新网格上整段重放）、`longCheckpoint`。
+- 步骤：`newWorld`、`relief`（抬山，半径 6 格）、`erod`（岩性）、`tempBrush`（冷暖笔）、`paintLand`（沿海一笔，真改海陆）、`island`、`reroll`（重新生成一片）、`rerollFjord`（第三十六轮（续）：峡湾权重最大的海岸陆格上重新生成一片；没有海岸类型的旧提交上跳过）、`river`（画河）、`lake`（放湖）、`humidity`、`latShift`（星球上是轴倾角）、`undo1`–`undo6`、`redo`；`openCheckpoint`、`coldRelief`（从检查点恢复到新的网格对象上，所有按网格的缓存都是空的，像刷新后打开，再抬一笔）、`warmup` / `warmupLongestChunk` / `warmRelief`（先 `warmSteps` 预热再抬同一笔）、`hotRelief`（一直开着的世界上同一笔）；`--long` 加 `longReplay`（约 200 条混合命令的文档按固定种子挑出来，在新网格上整段重放）、`longCheckpoint`；`--library`（第四十七轮：世界带着一整个时代库，步骤相同）加 `libEdit`、`libUndo`、`libRedo`、`libContent`、`libContentUndo`、`libNoop`（不重算的几步，几十次的中位数）、`libPost`（发给主线程的小数据）、`undoKB`（一步的撤销记录，千字）。
 - `步骤.阶段`：`elevation`、`climate`、`solve`、`hydrology`（含一遍遍的植被）、`vegetation`、`human`、`features`（引擎的 `lastTimings`），`apply`（命令本身，含生成器的组合），`sample`（生成器采样，`terrain.ts` 的 `terrainLaps`），`elev.scan` / `elev.solve` / `elev.finish`（高程的认陆块与比记忆、求解、收尾，`elevation.ts` 的 `elevationLaps`）。
 - `步骤#计数`：`#landmasses`（重算的陆块）、`#lakes`（湖的地物）、`#mouths`（河口）。计数不是毫秒，用来看改动有没有改变要做的事。
 - 描河（第三十三轮提速）：每一步之后另计 Worker 接着做的描河并打包（`river-pack.ts` 的 `worldRivers`，与 `src/worker.ts` 的快照一样：读的东西没变时用上一次的；键 `步骤.rivers`）与主线程地形层的海岸场（`display.ts` 的 `displayCoast`，高程换一份副本，像收到的新数组；键 `步骤.coast`），不算进这一步自己的耗时（与以前的对照照样能比）。加工各步（抬山到重做）的这两样加起来记成 `rivers`、`coast` 两步，与加工一样按第六条门槛比。以前测速不含描河，第三十三轮分汊让描河慢了将近一倍也没看出来。旧的提交上没有这两个函数时跳过。

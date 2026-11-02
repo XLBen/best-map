@@ -2,7 +2,7 @@
 
 测试怎样组织、金标准与逐值不变的规则（从开发说明搬来，第四十一轮）。
 
-现在共 172 个测试文件、1762 个测试（`npm test`）。测试文件是 `*.test.ts`，和被测的文件放在一起：
+现在共 174 个测试文件、1779 个测试（`npm test`）。测试文件是 `*.test.ts`，和被测的文件放在一起：
 
 - **金标准**：`golden.test.ts`（一块地区的结果逐值不变）、`golden-full.test.ts`（一组较长的操作后整个世界的每一个数组、地物、省份按字节记下哈希，地区与星球各一组）。
 - **新旧算法逐位相同**（每项提速一组）：`rng-kernel`、`mesh-build`、`mesh-pack`、`reroll-incremental`、`flow-order`、`provinces-naming`、`features-cache`、`climate-cache`、`routing-identity`、`raster-identity`、`solver-identity`、`distance-update`、`sampled-base`、`heap-lite`；第三十一轮：`speed-identity`（一组加工每一步之后整个世界的哈希与 1421485 的代码记下的 `r31-digests.json` 相同，地区再关掉分层缓存比一遍）、`elevation-memo`（高程记忆的快路与逐块比相同、重算的陆块一样多）、`warm-up`（预热后改一笔 = 不预热 = 一直开着，预热到一半停下、中途世界变了也一样）。

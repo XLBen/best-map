@@ -14,6 +14,7 @@ npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
 node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
 node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
+node tools/bench-median.mjs 5 --against <提交> -- --library # 带着一整个时代库的世界（small.content 约 300 KB）：同样的加工，另计不重算的几步（libEdit、libUndo……）
 node tools/compose-ab.mjs --against <提交>   # 合成着色器在无头 Chrome 里逐字节对照（file://，不起服务器）
 node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 ```
