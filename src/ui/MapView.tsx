@@ -37,6 +37,7 @@ import {
   reference,
   riverStyleOverride,
   season,
+  flowShow,
   sheet,
   showToast,
   sliderActive,
@@ -489,7 +490,8 @@ export function MapView() {
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
       const ovArgs: OverlayArgs = [shown, shownRivers, renderer.camera, {
         rivers: false,
-        wind: overlays.value.wind,
+        // 风与洋流（第四十六轮）：只在这种模式里画（别的模式里流线一点不算）
+        wind: !!md.wind && flowShow.value !== 'currents',
         markers: !!cm.markers && !clean,
         season: season.value,
         style,
@@ -516,7 +518,7 @@ export function MapView() {
         latitude: overlays.value.latitude
           ? { north: shown.settings.latNorth + shown.small.planet.latShift, south: shown.settings.latSouth + shown.small.planet.latShift }
           : null,
-        currents: overlays.value.currents,
+        currents: !!md.wind && flowShow.value !== 'wind',
         motion: moving || settling,
         motionEpoch: renderer.motionEpoch,
         exact: clean,
@@ -775,6 +777,7 @@ export function MapView() {
       void selectedCountry.value;
       void overlays.value;
       void season.value;
+      void flowShow.value;
       void category.value;
       void flash.value;
       void hoverRiver.value;

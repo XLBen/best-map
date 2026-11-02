@@ -6,7 +6,7 @@ import { type MapKind, type ViewMode, mode, prefs, setPrefs, world, worldEpoch }
 import { hasCountries } from '../countries';
 import { viewAvailable } from '../defs/layers';
 
-// 地图模式（第二十五轮，像 EU4 的地图模式）：地理、国家、同盟（第二十六轮）、文化、文化组、时代的每一维（宗教、种族……）、人口。
+// 地图模式（第二十五轮，像 EU4 的地图模式）：地理、风与洋流（第四十六轮）、国家、同盟（第二十六轮）、文化、文化组、时代的每一维（宗教、种族……）、人口。
 // 模式就是人文的底图：底图换成哪一层，模式就是哪一种（图层里选人文的底图、工具换上它那一层，模式都跟着变；
 // 别的底图都算地理）。每种模式在地图上画什么写在下面这张表里，地图、导出、图层面板都读它
 
@@ -16,6 +16,8 @@ export type { MapKind };
 export type RegionSource = 'country' | 'bloc' | 'culture' | 'cultureGroup' | `dim:${string}`;
 
 export interface ModeDef {
+  // 风与洋流的流线（第四十六轮）：只在这种模式里算、画（别的模式里一点不花）
+  wind?: boolean;
   // 省界的浓淡：0 是不画（只在省份底图、省份工具里画），否则画、按这个浓淡
   provinces: number;
   // 国界：不画 / 细而淡 / 显眼
@@ -40,9 +42,12 @@ const POP: ModeDef = { ...LAYER('culture'), regions: null };
 
 // 同盟（第二十六轮）：按集团着色（不在集团里的灰色），国界淡淡地留着，写集团的名字
 const BLOC = LAYER('bloc');
+// 风与洋流（第四十六轮）：淡淡的地貌上画风的流线与洋流（暖流橙、寒流蓝），只标大洋、海；城市照地理图的规则（有国家时不画），不画地标
+const WIND: ModeDef = { wind: true, provinces: 0, countryBorders: 'none', cities: 'geo', cityNames: 'capitals', landmarks: 'none', features: 'ocean', regions: null };
 
 export function modeDef(k: MapKind): ModeDef {
   if (k === 'geo') return GEO;
+  if (k === 'wind') return WIND;
   if (k === 'country') return COUNTRY;
   if (k === 'bloc') return BLOC;
   if (k === 'popDensity') return POP;
@@ -51,7 +56,7 @@ export function modeDef(k: MapKind): ModeDef {
 
 // 底图是哪一种模式（人文的几层各是一种，别的底图都是地理）
 export function kindOfView(v: ViewMode): MapKind {
-  if (v === 'country' || v === 'bloc' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity' || v.startsWith('dim:')) return v as MapKind;
+  if (v === 'wind' || v === 'country' || v === 'bloc' || v === 'culture' || v === 'cultureGroup' || v === 'popDensity' || v.startsWith('dim:')) return v as MapKind;
   return 'geo';
 }
 
@@ -61,20 +66,26 @@ export const mapKind = computed<MapKind>(() => kindOfView(mode.value));
 // 一个世界里现在的模式：这个世界里没有那一层（预览的世界、刚删了人文）时是地理
 export function modeOf(w: Pick<World, 'small' | 'causes'> | null, k: MapKind = mapKind.value): MapKind {
   if (!w || k === 'geo') return 'geo';
+  if (k === 'wind') return k;
   if (k === 'country') return hasCountries(w) ? k : 'geo';
   return viewAvailable(w, k) ? k : 'geo';
 }
 
-// 模式按钮：名字、悬停的说明。没有人文时没有（只有地理）；没有国家时没有“国家”；没有帝国、联邦、同盟时没有“同盟”
+// 模式按钮：名字、悬停的说明。没有人文时只有地理、风与洋流（第四十六轮）；没有国家时没有“国家”；没有帝国、联邦、同盟时没有“同盟”
 export interface ModeButton {
   id: MapKind;
   label: string;
   title: string;
 }
 export function mapModes(w: Pick<World, 'small' | 'causes'> | null): ModeButton[] {
-  if (!w?.small.human) return [];
-  return [
+  if (!w) return [];
+  const nature: ModeButton[] = [
     { id: 'geo', label: '地理', title: '地貌与自然的地名' },
+    { id: 'wind', label: '风与洋流', title: '风的流线与洋流：暖流橙、寒流蓝' },
+  ];
+  if (!w.small.human) return nature;
+  return [
+    ...nature,
     ...(hasCountries(w) ? [{ id: 'country' as MapKind, label: '国家', title: '国界、国名、城市与地标' }] : []),
     ...(hasCountries(w) && blocList(w.small).length ? [{ id: 'bloc' as MapKind, label: '同盟', title: '帝国、联邦与同盟，灰色是不在其中的国家' }] : []),
     { id: 'culture', label: '文化', title: '各文化的分布' },

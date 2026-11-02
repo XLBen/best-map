@@ -27,10 +27,10 @@ function lonLatText(w: World, cell: number): string {
   return `${la} · ${lon >= 0 ? '东' : '西'}经 ${fmt(Math.abs(lon), 1)}°`;
 }
 
-// 整个星球的洋流：海上“洋流：向东北 · 暖流 +3.0 °C”，陆地上“洋流让这里暖 1.8 °C”；没有洋流时为 null
+// 洋流（第四十六轮起一块地区也有）：海上“洋流：向东北 · 暖流 +3.0 °C”，陆地上“洋流让这里暖 1.8 °C”；没有洋流时为 null
 const COMPASS = ['东', '东北', '北', '西北', '西', '西南', '南', '东南'];
 function currentText(w: World, cell: number): string | null {
-  if (!w.settings.globe || w.small.planet.currents === 0) return null;
+  if (w.small.planet.currents === 0) return null;
   const d = w.derived;
   const a = d.sstAnom[cell];
   if (w.causes.land[cell]) return Math.abs(a) >= 0.3 ? `洋流让这里${a > 0 ? '暖' : '凉'} ${fmt(Math.abs(a), 1)} °C` : null;
@@ -44,7 +44,7 @@ function currentText(w: World, cell: number): string | null {
 }
 
 // 风从哪边吹来、多大：“西南风（中）”。风的分量是东、南（y 朝南）；风从 (−东, +北) 的方向来。
-// 快慢分档与风向图层相同
+// 快慢分档与“风与洋流”模式的流线相同
 function windText(x: number, y: number): string {
   const m = Math.hypot(x, y);
   if (m < 0.05) return '无风';

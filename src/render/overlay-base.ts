@@ -62,6 +62,7 @@ export const PROVINCE_LABEL_COLOR: Record<string, string> = { wasteland: 'rgba(9
 export interface OverlayState {
   // 河画在叠加层上（屏幕、导出的地图上河由渲染器合成，只画在陆地上：MapView 给 false，见 riverLayer）
   rivers: boolean;
+  // 风的流线（第四十六轮起只在“风与洋流”模式里为 true，见 wind-layer.ts）
   wind: boolean;
   // 画过的河与湖的标记（水模式）
   markers: boolean;
@@ -97,7 +98,7 @@ export interface OverlayState {
   cornerLift: number;
   // 纬度刻度：地图上下边的实际纬度（含挪动）；null 不画。整个星球画经纬网
   latitude: { north: number; south: number } | null;
-  // 洋流流线（整个星球）
+  // 洋流流线（第四十六轮起一块地区也有；只在“风与洋流”模式里为 true）
   currents?: boolean;
   // 镜头正在动（渲染器按低分辨率画的那几帧）：底层的河挪用缓存的那张、地名沿用排好的版面，停稳后按原样画
   motion?: boolean;
@@ -174,8 +175,8 @@ export interface BackLayer {
 }
 
 // 开发用（src/render/bench.ts 的 overlayBench）：底层改用软件画的画布，测速时能同步量到画它花的时间
-// noStatic：屏幕上什么都没变时也照原样直接画（测速、对照用）
-export const overlayDebug: { softLayers: boolean; noStatic: boolean } = { softLayers: false, noStatic: false };
+// noStatic：屏幕上什么都没变时也照原样直接画（测速、对照用）；noFlowBitmap：风与洋流不进位图、每次直接画（第四十六轮，对照用）
+export const overlayDebug: { softLayers: boolean; noStatic: boolean; noFlowBitmap: boolean } = { softLayers: false, noStatic: false, noFlowBitmap: false };
 
 export function makeLayer(w: number, h: number, dpr: number): BackLayer {
   const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });

@@ -67,9 +67,10 @@ export function suitabilityFocus(species: readonly { id: string }[], cur: string
   return cur && species.some((s) => s.id === cur) ? cur : (species[0]?.id ?? null);
 }
 
-export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'wind' | 'currents' | 'scale' | 'latitude' | 'edits' | 'peaks' | 'roads' | 'cities' | 'landmarks';
+export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'scale' | 'latitude' | 'edits' | 'peaks' | 'roads' | 'cities' | 'landmarks';
 
 // planetLabel / planetHint：整个星球上的说法；planetOnly：只在整个星球上出现；settle：世界里有城市、道路、地标或自定义点时才出现（第二十四轮）
+// 第四十六轮：风向、洋流不在这里了，是地图模式“风与洋流”
 export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLabel?: string; planetHint?: string; planetOnly?: boolean; settle?: boolean }[] = [
   { key: 'labels', label: '地名' },
   { key: 'rivers', label: '河流' },
@@ -78,8 +79,6 @@ export const OVERLAYS: { key: OverlayKey; label: string; hint?: string; planetLa
   { key: 'roads', label: '道路', hint: '放大后才画小路', settle: true },
   { key: 'cities', label: '城市', hint: '国家模式全画，文化等模式只画首都', settle: true },
   { key: 'landmarks', label: '地标', hint: '含自定义点；地理模式只画自然的', settle: true },
-  { key: 'wind', label: '风向' },
-  { key: 'currents', label: '洋流', hint: '暖流偏橙、寒流偏蓝', planetOnly: true },
   { key: 'scale', label: '比例尺', hint: '左下角，导出的图片里也有' },
   { key: 'edits', label: '我改过的地方', hint: '地形橙、气候蓝、生态绿、河湖青' },
   { key: 'latitude', label: '纬度刻度', hint: '地图左边每 10° 一格，回归线、极圈', planetLabel: '经纬网', planetHint: '经线、纬线，回归线、极圈' },

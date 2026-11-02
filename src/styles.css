@@ -2799,3 +2799,27 @@ select.chip-add {
 .settle-archive .chips .link {
   font-size: var(--fs-sm);
 }
+
+/* 图例里的一小段线（第四十六轮：风与洋流）：暗底上横着一段 */
+.swatch.line {
+  width: 22px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 3px;
+  background: #24364a;
+}
+.swatch.line > span {
+  flex: 1;
+  border-radius: 2px;
+}
+.legend-list > .seg {
+  margin-bottom: var(--sp-1);
+}
+.legend.wide {
+  width: 236px;
+}
+.legend.wide .legend-list {
+  max-height: none;
+}

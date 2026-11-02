@@ -102,6 +102,23 @@ export function inverse(p: Proj, u: number, v: number): [number, number] | null 
   return [wrapX(1 + lon / PI), 0.5 - lat / PI];
 }
 
+// 一点只取决于它自己的那几个数（第四十六轮，风与洋流的流线每帧逐点投影时先算好）：
+// 经度、cos 经度、sin 经度、sin 纬度、cos 纬度，等面积的 cos t / (M·Y′(t)) 与 Y(t)。按它们投影与 forward 是同一个算式
+export function pointCoefs(x: number, y: number, out: Float64Array, o: number) {
+  const lon = PI * (x - 1);
+  const lat = PI * (0.5 - y);
+  const t = Math.asin(M * Math.sin(lat));
+  out[o] = lon;
+  out[o + 1] = Math.cos(lon);
+  out[o + 2] = Math.sin(lon);
+  out[o + 3] = Math.sin(lat);
+  out[o + 4] = Math.cos(lat);
+  out[o + 5] = Math.cos(t) / (M * eeDY(t));
+  out[o + 6] = eeY(t);
+}
+export const POINT_COEFS = 7;
+export { wrapLon };
+
 // 平面上的点在不在投影之内
 export const insidePlane = (p: Proj, u: number, v: number) => inverse(p, u, v) !== null;
 

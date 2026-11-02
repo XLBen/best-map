@@ -11,9 +11,9 @@ import { sameShapes, staticKey } from './overlay-static';
 import type { Proj } from './projection';
 import type { Camera } from './renderer';
 import { drawRoads } from './settle-draw';
-import { drawCurrents, drawWind } from './wind';
+import { drawFlows } from './wind-layer';
 
-// 2D 画布上的矢量叠加：河流、河道引导、湖标记、风向、画笔、箭头、预览路径、地名。
+// 2D 画布上的矢量叠加：河流、河道引导、湖标记、风与洋流（wind-layer.ts）、画笔、箭头、预览路径、地名。
 // 海岸线、省份边界、选区轮廓在着色器里画（自然曲线）。
 // 路径按地图单位预先构建成 Path2D，绘制时只换变换矩阵，平移缩放很便宜。
 // 第四十一轮拆成几个文件（代码原样搬），这里留底层的缓存、drawOverlay / overlayParts、屏幕上的静态那一层，并照旧导出全部：
@@ -204,9 +204,9 @@ export function overlayParts(world: World, paths: OverlayPaths, cam: Camera, st:
       pasteBack(ctx, world, paths, cam, st);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      // 风与洋流（第四十六轮：只在那种模式里；停稳时贴位图，见 wind-layer.ts）
+      if (st.wind || st.currents) drawFlows(ctx, world, cam, st, f);
       setT(ctx, 0);
-      if (st.wind) drawWind(ctx, world, cam, st.season, px * dpr, f, st.lazy);
-      if (st.currents && sphere) drawCurrents(ctx, world, cam, px * dpr, f, st.lazy);
       if (st.latitude) {
         if (sphere) drawGraticule(ctx, cam, ks, f, !!st.frame);
         else drawLatitude(ctx, world, cam, st.latitude, f);

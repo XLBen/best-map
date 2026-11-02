@@ -6,7 +6,9 @@ import type { Camera } from './renderer';
 // 风向流线：在风场上按“均匀间距流线”的办法撒线（Jobard–Lefer 的简化版）——
 // 起点放在抖动网格上，沿插值后的风用 RK2 往前、往后积分；靠近别的线、出了地图、风太弱就停。
 // 地图分成方块，每块各算各的，按 世界 × 季节 × 疏密档 × 方块 缓存：平移时只算新露出来的方块，
-// 缩放时换一档疏密，屏幕上的线距始终约 44 像素
+// 缩放时换一档疏密，屏幕上的线距始终约 44 像素。
+// 第四十六轮：地图模式“风与洋流”才算、才画（wind-layer.ts 画进位图、三种投影都画）；一块地区也有洋流（场换成 currentX/Y，
+// 碰到陆地就停）。块的算法、随机数与以前相同
 
 export type WindSeason = 'annual' | 'summer' | 'winter';
 
@@ -115,9 +117,9 @@ function pickLevel<T>(field: Float32Array, tag: string, want: number, at: (level
 // 只看缓存、不排队也不当场算
 const NO_QUEUE = () => {};
 
-// 一点的风：所在格与相邻格按距离加权，平滑地插值；“全年”取冬夏平均
-function windAt(world: World, season: WindSeason, x: number, y: number, hint: number): [number, number, number] {
-  const { mesh, derived: d } = world;
+// 一点的场：所在格与相邻格按距离加权，平滑地插值（风“全年”取冬夏平均，见 windField）
+function fieldAtPlane(world: World, field: Field, x: number, y: number, hint: number): [number, number, number] {
+  const { mesh } = world;
   const c = findCell(mesh, x, y, hint);
   let u = 0;
   let v = 0;
@@ -125,10 +127,9 @@ function windAt(world: World, season: WindSeason, x: number, y: number, hint: nu
   const add = (i: number) => {
     const dist2 = (mesh.x[i] - x) ** 2 + (mesh.y[i] - y) ** 2;
     const w = 1 / (dist2 + mesh.spacing * mesh.spacing * 0.05);
-    const wu = season === 'summer' ? d.windSX[i] : season === 'winter' ? d.windWX[i] : (d.windSX[i] + d.windWX[i]) / 2;
-    const wv = season === 'summer' ? d.windSY[i] : season === 'winter' ? d.windWY[i] : (d.windSY[i] + d.windWY[i]) / 2;
-    u += w * wu;
-    v += w * wv;
+    const [fu, fv] = field.vec(i);
+    u += w * fu;
+    v += w * fv;
     wsum += w;
   };
   add(c);
@@ -136,14 +137,14 @@ function windAt(world: World, season: WindSeason, x: number, y: number, hint: nu
   return [u / wsum, v / wsum, c];
 }
 
-function tileLines(world: World, season: WindSeason, level: number, tx: number, ty: number, lazy?: () => void): Line[] | null {
-  const key = `${season}|${level}|${tx}|${ty}`;
-  let m = cache.get(world.derived.windSX);
-  if (!m) cache.set(world.derived.windSX, (m = new Map()));
-  return tile(m, key, () => computeTile(world, season, level, tx, ty), lazy);
+function tileLines(world: World, field: Field, tag: string, level: number, tx: number, ty: number, lazy?: () => void): Line[] | null {
+  const key = `${tag}|${level}|${tx}|${ty}`;
+  let m = cache.get(field.key);
+  if (!m) cache.set(field.key, (m = new Map()));
+  return tile(m, key, () => computeTile(world, field, tag, level, tx, ty), lazy);
 }
 
-function computeTile(world: World, season: WindSeason, level: number, tx: number, ty: number): Line[] {
+function computeTile(world: World, field: Field, tag: string, level: number, tx: number, ty: number): Line[] {
   const { mesh } = world;
   const sep = mesh.width / 2 ** level;
   const x0 = tx * TILE * sep;
@@ -169,7 +170,7 @@ function computeTile(world: World, season: WindSeason, level: number, tx: number
   };
   const inside = (x: number, y: number) =>
     x >= Math.max(0, x0 - margin) && y >= Math.max(0, y0 - margin) && x <= Math.min(mesh.width, x0 + span + margin) && y <= Math.min(mesh.height, y0 + span + margin);
-  const rand = mulberry32(mixSeed(level, tx * 7919 + ty, season.length));
+  const rand = mulberry32(mixSeed(level, tx * 7919 + ty, tag.length));
   const lines: Line[] = [];
   const step = sep * 0.32;
   const maxSteps = 16;
@@ -188,18 +189,22 @@ function computeTile(world: World, season: WindSeason, level: number, tx: number
         let x = sx;
         let y = sy;
         for (let k = 0; k < maxSteps; k++) {
-          const [u0, v0, c0] = windAt(world, season, x, y, hint);
+          const [u0, v0, c0] = fieldAtPlane(world, field, x, y, hint);
           hint = c0;
+          if (field.stop?.(c0)) break;
           const s0 = Math.hypot(u0, v0);
           if (s0 < 0.05) break;
           const mx = x + ((dir * u0) / s0) * step * 0.5;
           const my = y + ((dir * v0) / s0) * step * 0.5;
-          const [u1, v1] = windAt(world, season, mx, my, hint);
+          const [u1, v1, c1] = fieldAtPlane(world, field, mx, my, hint);
+          if (field.stop?.(c1)) break;
           const s1 = Math.hypot(u1, v1);
           if (s1 < 0.05) break;
           const nx = x + ((dir * u1) / s1) * step;
           const ny = y + ((dir * v1) / s1) * step;
           if (!inside(nx, ny) || near(nx, ny, id, sep * 0.45)) break;
+          // 洋流：新的一点落在陆地上就停（第四十六轮）
+          if (field.stop && field.stop((hint = findCell(mesh, nx, ny, hint)))) break;
           out.push([nx, ny]);
           speedSum += s1;
           count++;
@@ -224,90 +229,14 @@ function computeTile(world: World, season: WindSeason, level: number, tx: number
   return lines;
 }
 
-// 画流线：先整体描一道深色的边，再按风速分三档画白线，线尾细、线头粗，末端带小箭头。unitPx：一个设备像素合多少地图单位
-// size：画布的 CSS 大小（导出整张地图时是虚拟窗口；不给就按画布）
 type Size = { cw: number; ch: number };
 const sizeOf = (ctx: CanvasRenderingContext2D, size?: Size): Size => size ?? { cw: ctx.canvas.clientWidth, ch: ctx.canvas.clientHeight };
-
-// lazy（第四十轮，屏幕上）：新的块空闲时算，算好之前先画上一次画全了的那一档（看得见的块都在缓存里时），否则只画算好了的块
-export function drawWind(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size, lazy?: () => void) {
-  if (world.mesh.kind === 'sphere') {
-    drawWindSphere(ctx, world, cam, season, unitPx, size, lazy);
-    return;
-  }
-  const { mesh } = world;
-  const { cw, ch } = sizeOf(ctx, size);
-  const at = (level: number, q: (() => void) | undefined) => {
-    const span = TILE * (mesh.width / 2 ** level);
-    const halfW = cw / 2 / cam.zoom;
-    const halfH = ch / 2 / cam.zoom;
-    const tx0 = Math.max(0, Math.floor((cam.x - halfW) / span));
-    const tx1 = Math.min(Math.ceil(mesh.width / span) - 1, Math.floor((cam.x + halfW) / span));
-    const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
-    const ty1 = Math.min(Math.ceil(mesh.height / span) - 1, Math.floor((cam.y + halfH) / span));
-    const out: Line[] = [];
-    let full = true;
-    for (let tx = tx0; tx <= tx1; tx++)
-      for (let ty = ty0; ty <= ty1; ty++) {
-        const t = tileLines(world, season, level, tx, ty, q);
-        if (t) out.push(...t);
-        else full = false;
-      }
-    return { out, full };
-  };
-  const want = Math.max(3, Math.min(12, Math.round(Math.log2((mesh.width * cam.zoom) / 44))));
-  const lines = pickLevel(world.derived.windSX, season, want, at, lazy);
-  if (!lines.length) return;
-  const halo = new Path2D();
-  // 三档风速 × 三段（尾、中、头）
-  const body: Path2D[][] = [0, 1, 2].map(() => [new Path2D(), new Path2D(), new Path2D()]);
-  const heads: Path2D[] = [new Path2D(), new Path2D(), new Path2D()];
-  for (const l of lines) {
-    const p = l.pts;
-    const band = l.speed < 0.35 ? 0 : l.speed < 0.75 ? 1 : 2;
-    halo.moveTo(p[0][0], p[0][1]);
-    for (let k = 1; k < p.length; k++) halo.lineTo(p[k][0], p[k][1]);
-    for (let part = 0; part < 3; part++) {
-      const a = Math.floor(((p.length - 1) * part) / 3);
-      const b = Math.floor(((p.length - 1) * (part + 1)) / 3);
-      const path = body[band][part];
-      path.moveTo(p[a][0], p[a][1]);
-      for (let k = a + 1; k <= b; k++) path.lineTo(p[k][0], p[k][1]);
-    }
-    // 箭头：沿最后一段的方向，两边各张 0.5 弧度
-    const [x1, y1] = p[p.length - 1];
-    const [xa, ya] = p[p.length - 2];
-    const ang = Math.atan2(y1 - ya, x1 - xa);
-    const hs = 5.5 * unitPx;
-    heads[band].moveTo(x1 - hs * Math.cos(ang - 0.5), y1 - hs * Math.sin(ang - 0.5));
-    heads[band].lineTo(x1, y1);
-    heads[band].lineTo(x1 - hs * Math.cos(ang + 0.5), y1 - hs * Math.sin(ang + 0.5));
-  }
-  ctx.save();
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(10, 16, 24, 0.28)';
-  ctx.lineWidth = 3 * unitPx;
-  ctx.stroke(halo);
-  const alpha = [0.45, 0.65, 0.85];
-  const widths = [0.7, 1.15, 1.6];
-  for (let band = 0; band < 3; band++) {
-    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha[band]})`;
-    for (let part = 0; part < 3; part++) {
-      ctx.lineWidth = widths[part] * unitPx;
-      ctx.stroke(body[band][part]);
-    }
-    ctx.lineWidth = 1.5 * unitPx;
-    ctx.stroke(heads[band]);
-  }
-  ctx.restore();
-}
 
 // ---------- 整个星球：风与洋流的流线 ----------
 // 经度方向的瓦片以 2（一整圈）为周期：每块瓦片只算一次，平铺的每份副本照着画；
 // 场是每格切平面上的（东、南）分量，画到平铺图上时东西方向除以 cos 纬度；纬度超过 80° 不画（越近极点越变形）
 
-interface Field {
+export interface Field {
   // 缓存的身份：场的数组换了就重算
   key: Float32Array;
   vec: (c: number) => [number, number];
@@ -403,6 +332,8 @@ function computeTileSphere(world: World, field: Field, tag: string, level: numbe
           const nx = x + b[0] * step;
           const ny = y + b[1] * step;
           if (!inside(nx, ny) || near(nx, ny, id, sep * 0.45)) break;
+          // 洋流：新的一点落在陆地上就停（第四十六轮）
+          if (field.stop && field.stop((hint = findCell(world.mesh, nx, ny, hint)))) break;
           out.push([nx, ny]);
           speedSum += b[2];
           count++;
@@ -428,9 +359,9 @@ function computeTileSphere(world: World, field: Field, tag: string, level: numbe
 }
 
 // 星球上看得见的瓦片（经度方向不截断，按一整圈取模），每条线连同它所在副本的平移量
-// lazy：同平面的 drawWind（缺块时先画上一次画全了的那一档，否则只画算好了的块）
-function visibleLines(world: World, field: Field, tag: string, cam: Camera, ctx: CanvasRenderingContext2D, size?: Size, lazy?: () => void): { line: Line; dx: number }[] {
-  const { cw, ch } = sizeOf(ctx, size);
+// lazy：缺块时先画上一次画全了的那一档，否则只画算好了的块
+function visibleSphere(world: World, field: Field, tag: string, cam: Camera, size: Size, lazy?: () => void): { line: Line; dx: number }[] {
+  const { cw, ch } = size;
   const at = (level: number, q: (() => void) | undefined) => {
     const nT = Math.max(1, Math.round(2 ** level / TILE));
     const span = 2 / nT;
@@ -457,84 +388,196 @@ function visibleLines(world: World, field: Field, tag: string, cam: Camera, ctx:
   return pickLevel(field.key, tag, want, at, lazy);
 }
 
-// 按样式分组描线：尾细头粗，末端小箭头（与平面世界的风相同的画法）
-function strokeLines(ctx: CanvasRenderingContext2D, lines: { line: Line; dx: number; band: number; color: number }[], colors: string[][], unitPx: number, halo: string) {
+// 一块地区上看得见的块（与以前的 drawWind 相同的块、档）
+function visiblePlane(world: World, field: Field, tag: string, cam: Camera, size: Size, lazy?: () => void): { line: Line; dx: number }[] {
+  const { mesh } = world;
+  const { cw, ch } = size;
+  const at = (level: number, q: (() => void) | undefined) => {
+    const span = TILE * (mesh.width / 2 ** level);
+    const halfW = cw / 2 / cam.zoom;
+    const halfH = ch / 2 / cam.zoom;
+    const tx0 = Math.max(0, Math.floor((cam.x - halfW) / span));
+    const tx1 = Math.min(Math.ceil(mesh.width / span) - 1, Math.floor((cam.x + halfW) / span));
+    const ty0 = Math.max(0, Math.floor((cam.y - halfH) / span));
+    const ty1 = Math.min(Math.ceil(mesh.height / span) - 1, Math.floor((cam.y + halfH) / span));
+    const out: { line: Line; dx: number }[] = [];
+    let full = true;
+    for (let tx = tx0; tx <= tx1; tx++)
+      for (let ty = ty0; ty <= ty1; ty++) {
+        const t = tileLines(world, field, tag, level, tx, ty, q);
+        if (t) for (const line of t) out.push({ line, dx: 0 });
+        else full = false;
+      }
+    return { out, full };
+  };
+  const want = Math.max(3, Math.min(12, Math.round(Math.log2((mesh.width * cam.zoom) / 44))));
+  return pickLevel(field.key, tag, want, at, lazy);
+}
+
+// ---------- 场与画法 ----------
+
+// 风（按季节；“全年”取冬夏平均）
+export function windField(world: World, season: WindSeason): Field {
+  const d = world.derived;
+  return {
+    key: d.windSX,
+    vec: (i) =>
+      season === 'summer' ? [d.windSX[i], d.windSY[i]] : season === 'winter' ? [d.windWX[i], d.windWY[i]] : [(d.windSX[i] + d.windWX[i]) / 2, (d.windSY[i] + d.windWY[i]) / 2],
+  };
+}
+
+// 洋流（全年平均）：碰到陆地就停
+export function currentField(world: World): Field {
+  const d = world.derived;
+  const land = world.causes.land;
+  return { key: d.currentX, vec: (i) => [d.currentX[i], d.currentY[i]], stop: (i) => land[i] === 1 };
+}
+
+// 一条要画的线：点（地图单位；整个星球上再平移 dx）、快慢的档（0–2）、颜色（风只有 0；洋流 0 不冷不暖、1 暖、2 冷）
+export interface FlowLine {
+  pts: [number, number][];
+  dx: number;
+  band: number;
+  color: number;
+}
+
+// 风的三档：线的浓淡；洋流按冷暖三种颜色、每种三档（流得越快越不透明）。描边是深色的一道
+export interface FlowStyle {
+  colors: string[][];
+  halo: string;
+  // 线宽的倍数（洋流粗一些，和风分得开）
+  width: number;
+}
+export const WIND_STYLE: FlowStyle = { colors: [['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0.85)']], halo: 'rgba(10, 16, 24, 0.28)', width: 1 };
+export const CURRENT_STYLE: FlowStyle = {
+  colors: [
+    ['rgba(170, 225, 215, 0.45)', 'rgba(170, 225, 215, 0.65)', 'rgba(170, 225, 215, 0.85)'],
+    ['rgba(255, 160, 110, 0.5)', 'rgba(255, 150, 100, 0.7)', 'rgba(255, 140, 90, 0.9)'],
+    ['rgba(140, 200, 255, 0.5)', 'rgba(130, 195, 255, 0.7)', 'rgba(120, 190, 255, 0.9)'],
+  ],
+  halo: 'rgba(8, 20, 36, 0.3)',
+  width: 1.7,
+};
+// 尾、中、头三段的线宽（像素）、箭头的线宽与长度
+const WIDTHS = [0.7, 1.15, 1.6];
+const HEAD_W = 1.5;
+const HEAD_LEN = 5.5;
+
+// 看得见的风、洋流的线（等距圆柱的镜头；投影时 wind-layer.ts 给一个盖住看得见的经纬范围的镜头）
+export function windLines(world: World, cam: Camera, season: WindSeason, size: Size, lazy?: () => void): FlowLine[] {
+  const field = windField(world, season);
+  const raw = world.mesh.kind === 'sphere' ? visibleSphere(world, field, season, cam, size, lazy) : visiblePlane(world, field, season, cam, size, lazy);
+  return raw.map(({ line, dx }) => ({ pts: line.pts, dx, band: line.speed < 0.35 ? 0 : line.speed < 0.75 ? 1 : 2, color: 0 }));
+}
+
+// 洋流：暖流（海温偏高）偏橙、寒流（偏低）偏蓝，其余青灰；流得越快越不透明。颜色按线中间那一点所在的格
+// 按海温偏离的数组记（只改了洋流强弱时海流不变、冷暖变了）
+const lineColors = new WeakMap<Float32Array, WeakMap<Line, number>>();
+export function currentLines(world: World, cam: Camera, size: Size, lazy?: () => void): FlowLine[] {
+  const field = currentField(world);
+  const { mesh } = world;
+  const d = world.derived;
+  let lineColor = lineColors.get(d.sstAnom);
+  if (!lineColor) lineColors.set(d.sstAnom, (lineColor = new WeakMap()));
+  const raw = mesh.kind === 'sphere' ? visibleSphere(world, field, 'currents', cam, size, lazy) : visiblePlane(world, field, 'currents', cam, size, lazy);
+  return raw.map(({ line, dx }) => {
+    let color = lineColor!.get(line);
+    if (color === undefined) {
+      const [mx, my] = line.pts[Math.floor(line.pts.length / 2)];
+      const a = d.sstAnom[findCell(mesh, mx, my)];
+      color = a > 0.7 ? 1 : a < -0.7 ? 2 : 0;
+      lineColor!.set(line, color);
+    }
+    return { pts: line.pts, dx, band: line.speed < 0.3 ? 0 : line.speed < 1 ? 1 : 2, color };
+  });
+}
+
+// 一条线的每一点画到哪里（写进 xs、ys；看不见的点 ok 为 0，线在那里断开），返回有没有看得见的点。
+// 没有时直接用地图坐标（画布的变换已经设好）
+export type FlowProject = (line: FlowLine, xs: Float64Array, ys: Float64Array, ok: Uint8Array) => boolean;
+
+// 按样式分组描线：尾细头粗，末端小箭头。unit：一个像素合多少画的单位（地图坐标时是 1 / 缩放，投影后的屏幕坐标时是 1）。
+// project：投影时逐点换到屏幕上（相邻两点隔 jump 以上也断开：等面积的左右两边）；light：移动中不描深色的边
+export function strokeFlows(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, lines: FlowLine[], style: FlowStyle, unit: number, project?: FlowProject, jump = Infinity, light = false) {
   if (!lines.length) return;
   const haloPath = new Path2D();
-  const body = colors.map(() => [0, 1, 2].map(() => [new Path2D(), new Path2D(), new Path2D()]));
-  const heads = colors.map(() => [new Path2D(), new Path2D(), new Path2D()]);
-  for (const { line, dx, band, color } of lines) {
-    const p = line.pts;
-    haloPath.moveTo(p[0][0] + dx, p[0][1]);
-    for (let k = 1; k < p.length; k++) haloPath.lineTo(p[k][0] + dx, p[k][1]);
-    for (let part = 0; part < 3; part++) {
-      const a = Math.floor(((p.length - 1) * part) / 3);
-      const b = Math.floor(((p.length - 1) * (part + 1)) / 3);
-      const path = body[color][band][part];
-      path.moveTo(p[a][0] + dx, p[a][1]);
-      for (let k = a + 1; k <= b; k++) path.lineTo(p[k][0] + dx, p[k][1]);
+  const body = style.colors.map(() => [0, 1, 2].map(() => [new Path2D(), new Path2D(), new Path2D()]));
+  const heads = style.colors.map(() => [new Path2D(), new Path2D(), new Path2D()]);
+  let xs = new Float64Array(64);
+  let ys = new Float64Array(64);
+  let ok = new Uint8Array(64);
+  for (const l of lines) {
+    const { pts: p, dx, band, color } = l;
+    const n = p.length;
+    if (xs.length < n) {
+      xs = new Float64Array(n * 2);
+      ys = new Float64Array(n * 2);
+      ok = new Uint8Array(n * 2);
     }
-    const [x1, y1] = p[p.length - 1];
-    const [xa, ya] = p[p.length - 2];
-    const ang = Math.atan2(y1 - ya, x1 - xa);
-    const hs = 5.5 * unitPx;
-    heads[color][band].moveTo(x1 + dx - hs * Math.cos(ang - 0.5), y1 - hs * Math.sin(ang - 0.5));
-    heads[color][band].lineTo(x1 + dx, y1);
-    heads[color][band].lineTo(x1 + dx - hs * Math.cos(ang + 0.5), y1 - hs * Math.sin(ang + 0.5));
+    // 每一点画到哪里（投影时看不见的点 ok 为 0）
+    if (project) {
+      if (!project(l, xs, ys, ok)) continue;
+    } else
+      for (let k = 0; k < n; k++) {
+        xs[k] = p[k][0] + dx;
+        ys[k] = p[k][1];
+        ok[k] = 1;
+      }
+    const linked = (k: number) => ok[k] && ok[k - 1] && (jump === Infinity || Math.abs(xs[k] - xs[k - 1]) + Math.abs(ys[k] - ys[k - 1]) < jump);
+    const trace = (path: Path2D, a: number, b: number) => {
+      let open = false;
+      for (let k = a; k <= b; k++) {
+        if (!ok[k]) {
+          open = false;
+          continue;
+        }
+        if (open && linked(k)) path.lineTo(xs[k], ys[k]);
+        else path.moveTo(xs[k], ys[k]);
+        open = true;
+      }
+    };
+    if (!light) trace(haloPath, 0, n - 1);
+    for (let part = 0; part < 3; part++) trace(body[color][band][part], Math.floor(((n - 1) * part) / 3), Math.floor(((n - 1) * (part + 1)) / 3));
+    // 箭头：沿最后一段的方向，两边各张 0.5 弧度（最后两点都看得见、没断开时）
+    if (linked(n - 1)) {
+      const x1 = xs[n - 1];
+      const y1 = ys[n - 1];
+      const ang = Math.atan2(y1 - ys[n - 2], x1 - xs[n - 2]);
+      const hs = HEAD_LEN * unit * style.width;
+      const h = heads[color][band];
+      h.moveTo(x1 - hs * Math.cos(ang - 0.5), y1 - hs * Math.sin(ang - 0.5));
+      h.lineTo(x1, y1);
+      h.lineTo(x1 - hs * Math.cos(ang + 0.5), y1 - hs * Math.sin(ang + 0.5));
+    }
   }
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = halo;
-  ctx.lineWidth = 3 * unitPx;
-  ctx.stroke(haloPath);
-  const widths = [0.7, 1.15, 1.6];
-  colors.forEach((bandColors, ci) => {
+  if (!light) {
+    ctx.strokeStyle = style.halo;
+    ctx.lineWidth = 3 * unit * style.width;
+    ctx.stroke(haloPath);
+  }
+  style.colors.forEach((bandColors, ci) => {
     for (let band = 0; band < 3; band++) {
       ctx.strokeStyle = bandColors[band];
       for (let part = 0; part < 3; part++) {
-        ctx.lineWidth = widths[part] * unitPx;
+        ctx.lineWidth = WIDTHS[part] * unit * style.width;
         ctx.stroke(body[ci][band][part]);
       }
-      ctx.lineWidth = 1.5 * unitPx;
+      ctx.lineWidth = HEAD_W * unit * style.width;
       ctx.stroke(heads[ci][band]);
     }
   });
   ctx.restore();
 }
 
-function drawWindSphere(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size, lazy?: () => void) {
-  const d = world.derived;
-  const field: Field = {
-    key: d.windSX,
-    vec: (i) =>
-      season === 'summer' ? [d.windSX[i], d.windSY[i]] : season === 'winter' ? [d.windWX[i], d.windWY[i]] : [(d.windSX[i] + d.windWX[i]) / 2, (d.windSY[i] + d.windWY[i]) / 2],
-  };
-  const lines = visibleLines(world, field, season, cam, ctx, size, lazy).map(({ line, dx }) => ({ line, dx, band: line.speed < 0.35 ? 0 : line.speed < 0.75 ? 1 : 2, color: 0 }));
-  strokeLines(ctx, lines, [['rgba(255, 255, 255, 0.45)', 'rgba(255, 255, 255, 0.65)', 'rgba(255, 255, 255, 0.85)']], unitPx, 'rgba(10, 16, 24, 0.28)');
+// 等距圆柱、一块地区：直接画在 ctx 上（画布的变换已设成地图单位 → 设备像素）。unitPx：一个设备像素合多少地图单位
+// size：画布的 CSS 大小（导出整张地图时是虚拟窗口；不给就按画布）。lazy（第四十轮，屏幕上）：新的块空闲时算
+export function drawWind(ctx: CanvasRenderingContext2D, world: World, cam: Camera, season: WindSeason, unitPx: number, size?: Size, lazy?: () => void) {
+  strokeFlows(ctx, windLines(world, cam, season, sizeOf(ctx, size), lazy), WIND_STYLE, unitPx);
 }
 
-// 洋流：只在海上，暖流（海温偏高）偏橙、寒流（偏低）偏蓝，其余白色；流得越快越不透明
 export function drawCurrents(ctx: CanvasRenderingContext2D, world: World, cam: Camera, unitPx: number, size?: Size, lazy?: () => void) {
-  const d = world.derived;
-  const land = world.causes.land;
-  const field: Field = { key: d.currentX, vec: (i) => [d.currentX[i], d.currentY[i]], stop: (i) => land[i] === 1 };
-  const { mesh } = world;
-  const lines = visibleLines(world, field, 'currents', cam, ctx, size, lazy).map(({ line, dx }) => {
-    const [mx, my] = line.pts[Math.floor(line.pts.length / 2)];
-    const c = findCell(mesh, mx, my);
-    const a = d.sstAnom[c];
-    return { line, dx, band: line.speed < 0.3 ? 0 : line.speed < 1 ? 1 : 2, color: a > 0.7 ? 1 : a < -0.7 ? 2 : 0 };
-  });
-  strokeLines(
-    ctx,
-    lines,
-    [
-      ['rgba(235, 240, 245, 0.4)', 'rgba(235, 240, 245, 0.6)', 'rgba(235, 240, 245, 0.8)'],
-      ['rgba(255, 160, 110, 0.5)', 'rgba(255, 150, 100, 0.7)', 'rgba(255, 140, 90, 0.9)'],
-      ['rgba(140, 200, 255, 0.5)', 'rgba(130, 195, 255, 0.7)', 'rgba(120, 190, 255, 0.9)'],
-    ],
-    unitPx,
-    'rgba(8, 20, 36, 0.3)',
-  );
+  strokeFlows(ctx, currentLines(world, cam, sizeOf(ctx, size), lazy), CURRENT_STYLE, unitPx);
 }

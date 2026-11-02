@@ -227,7 +227,7 @@ export function LayersPanel() {
           <Seg value={prefs.value.projection} options={PROJECTIONS} titles={PROJECTION_TITLES} onChange={(v) => setPrefs({ projection: v })} wide />
           <p class="hint">
             {PROJECTION_HINTS[prefs.value.projection]}
-            {prefs.value.projection !== 'equirect' ? '风向、洋流、参考图只在等距圆柱里显示。' : ''}
+            {prefs.value.projection !== 'equirect' ? '参考图只在等距圆柱里显示。' : ''}
           </p>
         </section>
       )}

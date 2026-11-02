@@ -33,6 +33,19 @@ function countCodes(w: World, codes: ArrayLike<number>): Map<number, number> {
 
 const byCount = (a: LegendItem, b: LegendItem) => (b.count ?? 0) - (a.count ?? 0);
 
+// 风与洋流（第四十六轮）：风按快慢三档（与 render/wind.ts 画的线宽、浓淡相同），洋流按冷暖
+export const WIND_LEGEND: LegendData = {
+  title: '风与洋流',
+  items: [
+    { color: 'rgba(255, 255, 255, 0.45)', label: '弱风', line: 1 },
+    { color: 'rgba(255, 255, 255, 0.65)', label: '中等的风', line: 1.6 },
+    { color: 'rgba(255, 255, 255, 0.85)', label: '强风', line: 2.4 },
+    { color: 'rgb(255, 150, 100)', label: '暖流', line: 3 },
+    { color: 'rgb(130, 195, 255)', label: '寒流', line: 3 },
+    { color: 'rgb(170, 225, 215)', label: '不冷不暖的洋流', line: 3 },
+  ],
+};
+
 // 国家的图例列几个
 export const LEGEND_TOP = 12;
 

@@ -85,7 +85,7 @@ describe('同盟模式', () => {
     expect(parsePrefs(JSON.stringify({ map: 'bloc' })).map).toBe('bloc');
     const w = nations().world;
     expect(blocList(w.small).length).toBeGreaterThan(0);
-    expect(mapModes(w).map((m) => m.id).slice(0, 3)).toEqual(['geo', 'country', 'bloc']);
+    expect(mapModes(w).map((m) => m.id).slice(0, 4)).toEqual(['geo', 'wind', 'country', 'bloc']);
     expect(humanViews(w).map((v) => v.id).slice(0, 2)).toEqual(['country', 'bloc']);
     expect(modeOf(w, 'bloc')).toBe('bloc');
     const bare = noBlocs(nations()).world;
