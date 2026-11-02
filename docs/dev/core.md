@@ -22,10 +22,14 @@
 - `stats.ts` 地形统计量与和地球比（`tools/terrain-stats.ts`、`tools/realism-report.ts` 用）
 
 ## 气候与水
-- `climate.ts` 地区的日照温度、风带季风、山挡风、水汽输运，分层缓存（`planeLayers`）；第四十六轮起洋流的增减（`planeSeaOf`、`currentTemps`、`currentRain`）
+- `climate.ts` 地区的气候：风带季风、水汽输运、洋流的增减（`planeSeaOf`、`currentTemps`），分层缓存（`planeLayers`）；下面四个是第四十六轮搬出去的，它照旧导出
+- `climate-physics.ts` 共用的式子：扩散一轮 `smoothPass`、日照、辐射平衡温度（每格调的 `saturation`、`petHalf` 留在 `climate.ts`）
+- `climate-flow.ts` 平面的输运图：网格的邻接反查与扫描顺序、入流表 `buildFlow`、拓扑序 `kahnOrder`
+- `wind-deflect.ts` 山挡风（平面与球面共用）
+- `content-memo.ts` 按内容做键的缓存 `ContentMemo`
 - `planet-climate.ts` 整个星球的气候（`sphereStatic` / `sphereLand` 分层缓存）；`sphere-flow.ts` 球面上的输送
 - `ocean.ts` 简化洋流与海面温度（整个星球）
-- `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 3 格、长边 ≤ 128）上的风生环流、上涌、海温输送、带上陆地；按像素上取到的海陆、温度、风缓存
+- `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 3 格、长边 ≤ 128）上的风生环流、上涌、海温输送、带上陆地；按像素上取到的海陆、温度、风缓存；`ocean-raster.ts` 它用的只看像素的小算子（挡流陆地、海岸距离、平滑、倒角距离）
 - `hydrology.ts` 填洼汇流、湖、径流、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`）
 - `rivers.ts` 河流折线与河画出来的带子（`riverRibbon`）、河口（`normalMouth`、`tidyMouths`）、三角洲分汊（`withBranches`）
 - `delta.ts` 三角洲的河口与亚格子海岸凸出（`deltaBulge`）
