@@ -14,7 +14,7 @@ const changed = <T>(kind: string, items: Record<string, T>): T[] => notBuiltin(k
 
 // 偏好：按格的条件加一个倍数
 export const PREF_FIELDS: readonly FieldDesc[] = [{ key: 'factor', label: '倍数', type: 'number', min: 0, max: 20, step: 0.1, hint: '满足时宜居度乘以它' }, ...RESOURCE_RULE_FIELDS];
-const PREFS: FieldDesc = { key: 'prefs', label: '喜欢的地方', type: 'list', optional: true, of: PREF_FIELDS, hint: '满足条件时宜居度乘以倍数' };
+const PREFS: FieldDesc = { key: 'prefs', label: '喜欢的地方', type: 'list', optional: true, of: PREF_FIELDS, dep: 'strip', hint: '满足条件时宜居度乘以倍数' };
 
 const ERA_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
@@ -65,6 +65,7 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     type: 'map',
     optional: true,
     keyRef: 'countryTier',
+    dep: 'strip',
     value: { key: 'value', label: '比例', type: 'number', min: 0, max: 100, step: 0.1 },
     hint: '空着的等级不出现；整个不写时按各等级的“多见”',
   },
@@ -130,8 +131,8 @@ const VALUE_GROUP_FIELDS: readonly FieldDesc[] = [
 
 // 倾向（第四十三轮起文化组也有）：不分时代的、按时代的
 // 第四十五轮起资源库里画成一张表（行是维度，每行是取值与权重），表上面选时代
-const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'tendencies', optional: true, hint: '每一维更可能是哪些取值（政体也算一维）' };
-const ERA_TENDENCIES: FieldDesc = { key: 'eraTendencies', label: '按时代的倾向', type: 'tendencies', byEra: true, optional: true, hint: '写了的那几维换掉不分时代的' };
+const TENDENCIES: FieldDesc = { key: 'tendencies', label: '倾向', type: 'tendencies', optional: true, dep: 'strip', hint: '每一维更可能是哪些取值（政体也算一维）' };
+const ERA_TENDENCIES: FieldDesc = { key: 'eraTendencies', label: '按时代的倾向', type: 'tendencies', byEra: true, optional: true, dep: 'strip', hint: '写了的那几维换掉不分时代的' };
 
 const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
@@ -139,7 +140,7 @@ const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', hint: '组里文化默认的地名风格' },
+  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', dep: 'auto', hint: '组里文化默认的地名风格' },
   { ...TENDENCIES, hint: '组里文化默认的倾向（政体也算一维）' },
   ERA_TENDENCIES,
   PREFS,
@@ -151,7 +152,7 @@ const CULTURE_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'orig', label: '原文', type: 'text', optional: true },
   { key: 'color', label: '颜色', type: 'color' },
-  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', hint: '空着时用文化组的' },
+  { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', dep: 'auto', hint: '空着时用文化组的' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'weight', label: '在组里占多少', type: 'number', optional: true, min: 0, max: 1000, step: 0.1, hint: '省略为 1' },
   { ...TENDENCIES, hint: '只写与文化组不同的维度' },
@@ -225,11 +226,6 @@ export function registerPopKinds(): void {
       listed: true,
       checked: true,
       withId: (v, id, from) => (id === from ? v : { ...v, id, name: renamed(v.name, id, from) }),
-      // 包里的取值组改了 id 时，取值跟着改
-      rewrite: (v, renames) => {
-        const g = v.group && renames.valueGroups?.get(v.group);
-        return g && g !== v.group ? { ...v, group: g } : v;
-      },
       fromWorld: (w) => changed('popValue', contentItems<PopValue>(w.small, 'popValue')).map((v) => structuredClone(v)),
       exportItem: (v) => structuredClone(v),
     },
@@ -252,6 +248,7 @@ export function registerPopKinds(): void {
       max: 128,
       listed: true,
       checked: true,
+      // 第五十轮：加 weight 时在这里写 sameIgnore: ['weight']（同一组在不同的库里只差权重时算同一项，见 refs.ts 的 sameContent）
       withId: (g, id, from) => (id === from ? g : { ...g, id, name: renamed(g.name, id, from) }),
       fromWorld: (w) => changed('cultureGroup', contentItems<CultureGroup>(w.small, 'cultureGroup')).map((g) => structuredClone(g)),
       exportItem: (g) => structuredClone(g),
@@ -277,11 +274,6 @@ export function registerPopKinds(): void {
       listed: true,
       checked: true,
       withId: (c, id, from) => (id === from ? c : { ...c, id, name: renamed(c.name, id, from) }),
-      // 包里的文化组改了 id 时，文化跟着改
-      rewrite: (c, renames) => {
-        const g = renames.cultureGroups?.get(c.group);
-        return g && g !== c.group ? { ...c, group: g } : c;
-      },
       fromWorld: (w) => changed('culture', contentItems<Culture>(w.small, 'culture')).map((c) => structuredClone(c)),
       exportItem: (c) => structuredClone(c),
     },

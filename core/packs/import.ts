@@ -1,7 +1,8 @@
 import type { Command } from '../commands';
+import { itemFields } from '../content/links';
 import { itemId, kindByPackKey } from '../content/registry';
 import type { Culture, CultureGroup, Era, PopValue } from '../human/era';
-import { type PackItem, type PackNode, type PackPicks, type PackPlan, type PackWorld, type ResourcePack, findPack, ownItems, planPack, walkPacks } from '../packs';
+import { type PackItem, type PackNode, type PackPicks, type PackPlan, type PackWorld, type ResourcePack, defaultPicks, findPack, firstOfEach, nestByKind, ownItems, packItems, packSections, pickedIds, planPack, renamedItem, settleIds, subPacks, walkPacks } from '../packs';
 import { builtinPacks, DEFAULT_WORLD_PACKS } from './builtin-tree';
 
 // 生成要用的内容从资源包加进世界（第三十轮）：时代就是资源包，生成只读世界里的内容，界面在生成之前先发这里给出的命令。
@@ -192,7 +193,68 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
     });
     cmds.push({ op: 'order_content', kind: kind.id, ids });
   }
-  return { commands: cmds.length ? [{ ...plan.command, commands: cmds }] : [], era, groups, missing, added: plan.added, skipped: plan.skipped };
+  // 改了名的时代、文化组按世界里的 id 说（第四十九轮）；对应的来源路径不变
+  const inWorld = (key: string, id: string) => renamed.get(`${key}\u0000${id}`) ?? skippedTo.get(`${key}\u0000${id}`) ?? id;
+  return {
+    commands: cmds.length ? [{ ...plan.command, commands: cmds }] : [],
+    era: era && { ...era, id: inWorld('eras', era.id) },
+    groups: groups.map((g) => inWorld('cultureGroups', g)),
+    missing,
+    added: plan.added,
+    skipped: plan.skipped,
+  };
+}
+
+// 把一个包里的内容导入另一个包（第四十九轮，第六十一轮的导入窗口用；“存进我的库”换同 id 的内容用 packs.ts 的 addToPack）：
+// 和用到世界一样——一模一样的跳过（同一项只差 sameIgnore 的也算），同 id 不同内容的改名为 id-2，引用跟着改（引用表）。
+// 不做加进世界的最后一步（“自然生成”还是包里写的样子）。按种类分小包放；一段满了的不放（列在 full 里）。原来的两个包都不动
+export function importIntoPack(target: ResourcePack, source: PackNode, picks: PackPicks = defaultPicks(source)): { pack: ResourcePack; added: PackPlan['added']; skipped: PackPlan['skipped']; full: string[] } {
+  const kinds = packSections();
+  const picked = new Map(kinds.map((k) => [k, firstOfEach(k, packItems(source, k.pack.key), pickedIds(picks, k.pack.key))]));
+  const there = new Map(kinds.map((k) => [k, packItems(target, k.pack.key)]));
+  const { assigned, renames } = settleIds(kinds, picked, there, renamedItem);
+  const out = nestByKind(structuredClone(target));
+  const packs = [...subPacks(out)];
+  const added: PackPlan['added'] = [];
+  const skipped: PackPlan['skipped'] = [];
+  const full: string[] = [];
+  const fields = new Set<string>();
+  const nameOf = (k: (typeof kinds)[number], x: unknown) => {
+    const n = k.nameOf ? k.nameOf(x) : (x as { name?: unknown }).name;
+    return typeof n === 'string' ? n : '';
+  };
+  for (const k of kinds) {
+    const a = assigned.get(k)!;
+    const key = k.pack.key;
+    for (const x of picked.get(k)!) {
+      const from = itemId(k, x);
+      const id = a.ids.get(from)!;
+      if (a.skip.has(from)) {
+        skipped.push({ section: key, from, id, name: nameOf(k, x) || from });
+        continue;
+      }
+      if (there.get(k)!.length + added.filter((y) => y.section === key).length >= k.pack.max) {
+        full.push(`${k.label}“${nameOf(k, x) || from}”`);
+        continue;
+      }
+      const item = structuredClone(renamedItem(k, x, id, renames));
+      let at = packs.findIndex((n) => n.id === key);
+      if (at < 0) at = packs.push({ id: key, name: k.label }) - 1;
+      packs[at] = { ...packs[at], [key]: [...ownItems(packs[at], key), item] };
+      added.push({ section: key, from, id, name: nameOf(k, item) || id });
+      for (const f of itemFields(k, item)) fields.add(f);
+    }
+  }
+  // 用到的自定义场放在生态的小包里（没有生态时放在第一个小包）
+  const have = new Set(packItems<string>(out, 'fields'));
+  const newFields = [...fields].filter((f) => !have.has(f));
+  if (newFields.length) {
+    let at = packs.findIndex((n) => n.id === 'biomes');
+    if (at < 0) at = 0;
+    packs[at] = { ...packs[at], fields: [...ownItems<string>(packs[at], 'fields'), ...newFields] };
+  }
+  if (packs.length) out.packs = packs;
+  return { pack: out, added, skipped, full };
 }
 
 // 同上，只要命令

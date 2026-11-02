@@ -55,6 +55,8 @@ describe('计算 Worker 不引用内置的内容（第三十轮）', () => {
     const files = [...importGraph(resolve(root, 'src/worker.ts'))].map((f) => relative(root, f));
     expect(files.length).toBeGreaterThan(50);
     expect(files.filter((f) => f.startsWith('core/packs/'))).toEqual([]);
+    // 第四十九轮：引用表也在 Worker 这边（整理本世界用），不带内置的数据
+    expect(files).toContain('core/content/links.ts');
     // 对照：检查本身管用（主线程的资源库引用内置的树）
     expect([...importGraph(resolve(root, 'src/library.ts'))].map((f) => relative(root, f))).toContain('core/packs/builtin-tree.ts');
   });

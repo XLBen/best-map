@@ -2,9 +2,11 @@ import { z } from 'zod';
 import zhCN from 'zod/v4/locales/zh-CN.js';
 import type { Command } from './commands';
 import { ORIGIN_OPS } from './content/origin';
+import { ownItems, packItems, packPaths, subPacks, walkPacks } from './content/pack-tree';
 import './content/kinds';
-import { type ContentKind, type PackContext, type Renames, allKinds, itemId, itemName, kindByPackKey, kindOf, registryVersion } from './content/registry';
-import { ITEM_ID, sameItem, stableJson } from './content/refs';
+import { itemFields, linksBlanked, renameLinks } from './content/links';
+import { type ContentKind, type LinkClass, type PackContext, type Renames, allKinds, itemId, itemName, kindByPackKey, kindOf, registryVersion } from './content/registry';
+import { ITEM_ID, sameContent, sameItem, stableJson } from './content/refs';
 import { DEFAULT_STYLE, type NameStyle, worldStyleId, worldStyles } from './name-styles';
 import { BUILTIN_STYLES } from './packs/names';
 import type { PlanetForm } from './planet-form';
@@ -142,52 +144,8 @@ export interface ResourcePack extends PackNode {
   [section: string]: unknown;
 }
 
-// 这一层自己的一段（不含小包里的；没有时是空的）
-export function ownItems<T = unknown>(node: PackNode, key: string): T[] {
-  const v = node[key];
-  return Array.isArray(v) ? (v as T[]) : [];
-}
-
-// 这一层的小包
-export const subPacks = (node: PackNode): PackNode[] => (Array.isArray(node.packs) ? node.packs : []);
-
-// 按先后走一遍整棵树（先这一层，再各个小包）：path 是从 node 往下的小包 id（node 自己是 []）
-export function walkPacks(node: PackNode, fn: (n: PackNode, path: string[]) => void, path: string[] = []): void {
-  fn(node, path);
-  for (const c of subPacks(node)) walkPacks(c, fn, [...path, c.id]);
-}
-
-// 按路径找小包（[] 是 node 自己）
-export function findPack(node: PackNode, path: readonly string[]): PackNode | undefined {
-  let cur: PackNode | undefined = node;
-  for (const id of path) cur = cur && subPacks(cur).find((c) => c.id === id);
-  return cur;
-}
-
-// 包里一段的项：整棵树里的（同一个 id 只算先出现的那一个；几个小包共用的是同一项）
-export function packItems<T = unknown>(pack: PackNode, key: string): T[] {
-  if (!subPacks(pack).length) return ownItems<T>(pack, key);
-  const kind = kindByPackKey(key);
-  const seen = new Set<string>();
-  const out: T[] = [];
-  walkPacks(pack, (n) => {
-    for (const x of ownItems<T>(n, key)) {
-      const id = kind ? itemId(kind, x) : JSON.stringify(x);
-      if (!seen.has(id) && !!seen.add(id)) out.push(x);
-    }
-  });
-  return out;
-}
-
-// 一项在包里的哪几个小包（从 pack 往下的路径，[] 是 pack 自己那一层），按先后
-export function packPaths(pack: PackNode, key: string, id: string): string[][] {
-  const kind = kindByPackKey(key);
-  const out: string[][] = [];
-  walkPacks(pack, (n, path) => {
-    if (ownItems(n, key).some((x) => (kind ? itemId(kind, x) : x) === id)) out.push(path);
-  });
-  return out;
-}
+// 包的树（拆到 content/pack-tree.ts，这里照旧导出）
+export { findPack, ownItems, packItems, packPaths, subPacks, walkPacks } from './content/pack-tree';
 
 // 出错说明：顶层多出来的部分说“不认识的部分”，类型不对、缺项用中文说，其余用 zod 的中文
 const zh = zhCN().localeError;
@@ -378,7 +336,8 @@ export function packScripts(json: unknown): FoundScript[] {
 }
 
 // 脚本里的引用（拆到 content/refs.ts，这里照旧导出）
-export { biomeFields, rewriteRiverRefs, scriptRefs } from './content/refs';
+export { scriptRefs } from './content/refs';
+export const biomeFields = (sp: Species): string[] => itemFields('biome', sp);
 export type { Renames } from './content/registry';
 export { exportableBiomes } from './content/kinds';
 
@@ -398,7 +357,7 @@ export function packProblems(pack: PackNode): string[] {
       for (const x of ownItems(n, k.pack.key)) {
         const id = itemId(k, x);
         const there = across.get(id);
-        if ((seen.has(id) || (there !== undefined && !sameItem(there, x))) && !told.has(id)) {
+        if ((seen.has(id) || (there !== undefined && !sameContent(k, there, x))) && !told.has(id)) {
           told.add(id);
           problems.push(`有两个${k.label}的 id 都是 ${id}`);
         }
@@ -489,7 +448,9 @@ export interface PlanOptions {
 
 // 给包里的一类项定下用到世界时的 id：没有冲突的照旧；世界里有一模一样的跳过（引用指向世界里那一项）；
 // 同 id 不同内容的改名为 id-2、id-3……（跳过也看改了名的那一项：同一个包用两次，第二次全部跳过）
-function assignIds(kind: ContentKind, items: readonly unknown[], worldItems: readonly unknown[], finalOf: (item: unknown, id: string) => unknown): { ids: Map<string, string>; skip: Set<string> } {
+// 第四十九轮：只差 auto、strip 类引用的目标改了名时也算一模一样（finalOf 给出的两种样子对上一种就行）：世界里那份接着引用世界里的目标，
+// 一个文化组撞了名不会把写到它的政体、派系、地标全复制一遍；hard 类改了名才算不一样（文化的组换了，就是另一个文化）
+function assignIds(kind: ContentKind, items: readonly unknown[], worldItems: readonly unknown[], finalOf: (item: unknown, id: string) => readonly unknown[]): { ids: Map<string, string>; skip: Set<string> } {
   const idOf = (x: unknown) => itemId(kind, x);
   const byId = new Map(worldItems.map((x) => [idOf(x), x]));
   const ids = new Map<string, string>();
@@ -505,7 +466,7 @@ function assignIds(kind: ContentKind, items: readonly unknown[], worldItems: rea
     for (let k = 1; ; k++) {
       const cand = k === 1 ? id0 : `${id0}-${k}`;
       const there = byId.get(cand);
-      if (there && sameItem(there, finalOf(item, cand))) {
+      if (there && finalOf(item, cand).some((x) => sameContent(kind, there, x))) {
         ids.set(id0, cand);
         skip.add(id0);
         break;
@@ -521,7 +482,7 @@ function assignIds(kind: ContentKind, items: readonly unknown[], worldItems: rea
 }
 
 // 同一个 id 在包里出现几次时只用第一个（packProblems 会提醒）
-function firstOfEach(kind: ContentKind, items: readonly unknown[], ids: readonly string[] | undefined): unknown[] {
+export function firstOfEach(kind: ContentKind, items: readonly unknown[], ids: readonly string[] | undefined): unknown[] {
   const seen = new Set<string>();
   return items.filter((x) => {
     const id = itemId(kind, x);
@@ -529,12 +490,73 @@ function firstOfEach(kind: ContentKind, items: readonly unknown[], ids: readonly
   });
 }
 
-// 加进世界的最终样子：引用跟着改名 → 换 id → 最后一步（自然生成关掉……）
-function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames): unknown {
-  const p = kind.pack;
-  const re = p.rewrite ? p.rewrite(x, r) : x;
-  const out = id === itemId(kind, x) ? re : p.withId ? p.withId(re, id, itemId(kind, x)) : { ...(re as object), id };
-  return p.finalize ? p.finalize(out, r) : out;
+// 换了 id、引用跟着改名之后的样子（引用表，见 content/links.ts）。only：只换这一类的引用
+export function renamedItem(kind: ContentKind, x: unknown, id: string, r: Renames, only?: LinkClass): unknown {
+  const re = renameLinks(kind, x, r, only);
+  return id === itemId(kind, x) ? re : kind.pack.withId ? kind.pack.withId(re, id, itemId(kind, x)) : { ...(re as object), id };
+}
+
+// 加进世界的最终样子：最后一步（自然生成关掉……）
+function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames, only?: LinkClass): unknown {
+  const out = renamedItem(kind, x, id, r, only);
+  return kind.pack.finalize ? kind.pack.finalize(out) : out;
+}
+
+const emptyRenames = (): Renames => ({ biomes: new Map(), riverTypes: new Map(), lakeTypes: new Map() });
+
+// 见 settleIds：撞了名、内容不一样的项，目的地里只差引用目标的那个 id-k
+function guessRenames(kinds: readonly ContentKind[], picked: ReadonlyMap<ContentKind, readonly unknown[]>, there: ReadonlyMap<ContentKind, readonly unknown[]>, finalOf: (k: ContentKind, x: unknown, id: string, r: Renames) => unknown): Renames {
+  const none = emptyRenames();
+  const out = emptyRenames();
+  for (const k of kinds) {
+    const byId = new Map(there.get(k)!.map((x) => [itemId(k, x), x]));
+    const to = new Map<string, string>();
+    for (const x of picked.get(k)!) {
+      const id = itemId(k, x);
+      const same = byId.get(id);
+      if (same === undefined || sameContent(k, same, finalOf(k, x, id, none))) continue;
+      for (let n = 2; ; n++) {
+        const cand = `${id}-${n}`;
+        const y = byId.get(cand);
+        if (y === undefined) break;
+        if (sameContent(k, linksBlanked(k, y), linksBlanked(k, finalOf(k, x, cand, none)))) {
+          to.set(id, cand);
+          break;
+        }
+      }
+    }
+    if (to.size) out[k.pack.key] = to;
+  }
+  return out;
+}
+
+// 一起定下几种内容的 id（第四十九轮从 planPack 拆出来，导入到包也用）：picked 是要加的项，there 是目的地已有的项，
+// finalOf 给出一项在目的地的样子。改名表要一起定：生态 A 侵占生态 B 时，A 是不是一模一样还要看 B 改没改名。反复几遍直到不再变。
+// 第一遍先猜：目的地有只差引用目标的 id-2、id-3……（以前导入时改的名）就当它是。文化组和政体互相写到时，
+// 不这样猜就谁都认不出谁，同一个包用两次全都多一份；猜错了下一遍会对不上，换回新的 id
+export function settleIds(
+  kinds: readonly ContentKind[],
+  picked: ReadonlyMap<ContentKind, readonly unknown[]>,
+  there: ReadonlyMap<ContentKind, readonly unknown[]>,
+  finalOf: (k: ContentKind, x: unknown, id: string, r: Renames, only?: LinkClass) => unknown,
+): { assigned: Map<ContentKind, ReturnType<typeof assignIds>>; renames: Renames } {
+  let renames = guessRenames(kinds, picked, there, finalOf);
+  let assigned = new Map<ContentKind, ReturnType<typeof assignIds>>();
+  const flat = (r: Renames) => stableJson(kinds.map((k) => [...(r[k.pack.key] ?? [])]));
+  const toRenames = (a: Map<ContentKind, ReturnType<typeof assignIds>>): Renames => {
+    const r = emptyRenames();
+    for (const [k, v] of a) r[k.pack.key] = v.ids;
+    return r;
+  };
+  // 依赖一层传一层（生态侵占生态可以连得很长），放宽一点；到不再变就停
+  for (let round = 0; round < 32; round++) {
+    const now = renames;
+    assigned = new Map(kinds.map((k) => [k, assignIds(k, picked.get(k)!, there.get(k)!, (x, id) => [finalOf(k, x, id, now), finalOf(k, x, id, now, 'hard')])]));
+    const next = toRenames(assigned);
+    if (flat(next) === flat(renames)) break;
+    renames = next;
+  }
+  return { assigned, renames: toRenames(assigned) };
 }
 
 // 资源包用到世界的计划：一整步（batch，标签“用上资源包“X””）。pack 可以是资源包里的一个小包。
@@ -553,23 +575,7 @@ export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opt
     inWorld.set(k, k.inWorld(world));
   }
 
-  // 改名表要一起定：生态 A 侵占生态 B 时，A 是不是一模一样还要看 B 改没改名。反复几遍直到不再变
-  const emptyRenames = (): Renames => ({ biomes: new Map(), riverTypes: new Map(), lakeTypes: new Map() });
-  let renames = emptyRenames();
-  let assigned = new Map<ContentKind, ReturnType<typeof assignIds>>();
-  const flat = (r: Renames) => stableJson(kinds.map((k) => [...(r[k.pack.key] ?? [])]));
-  const toRenames = (a: Map<ContentKind, ReturnType<typeof assignIds>>): Renames => {
-    const r = emptyRenames();
-    for (const [k, v] of a) r[k.pack.key] = v.ids;
-    return r;
-  };
-  for (let round = 0; round < 6; round++) {
-    assigned = new Map(kinds.map((k) => [k, assignIds(k, picked.get(k)!, inWorld.get(k)!, (x, id) => finalItem(k, x, id, renames))]));
-    const next = toRenames(assigned);
-    if (flat(next) === flat(renames)) break;
-    renames = next;
-  }
-  renames = toRenames(assigned);
+  const { assigned, renames } = settleIds(kinds, picked, inWorld, finalItem);
 
   // 加了、跳过的按登记的先后列（生态在前）；命令按用到世界的先后
   const added: PackPlan['added'] = [];
@@ -589,10 +595,10 @@ export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opt
       }
       const item = finalItem(k, x, id, renames);
       const cmd: Command = k.enable ? k.enable(item, world) : { op: 'set_content', kind: k.id, id, item: item as Record<string, unknown> };
-      cmds.push(withFrom(cmd, originOf(k, from)));
+      cmds.push(withFrom(cmd, originOf(k, from), id === from ? undefined : from));
       // 名字是加进世界后的（改了名的带编号）
       added.push({ section: k.pack.key, from, id, name: nameOf(k, item) || id });
-      newFields.push(...(k.pack.fieldsOf?.(item) ?? []));
+      newFields.push(...itemFields(k, item));
     }
   }
   const itemCmds = kinds.flatMap((k) => cmdsOf.get(k) ?? []);
@@ -616,9 +622,9 @@ export function planPack(world: PackWorld, pack: PackNode, picks: PackPicks, opt
   return { command: { op: 'batch', label: opts.label ?? `用上资源包“${pack.name}”`, commands }, added, skipped, fields, defaultStyle };
 }
 
-// 命令带上来源（能记来源的命令才带：启用一项内容的几种，见 commands.ts 的 ORIGIN_OPS）
-function withFrom(cmd: Command, from: string[]): Command {
-  return ORIGIN_OPS.has(cmd.op) ? ({ ...cmd, from } as Command) : cmd;
+// 命令带上来源（能记来源的命令才带：启用一项内容的几种，见 commands.ts 的 ORIGIN_OPS）。fromId：改了名时来源里的 id
+function withFrom(cmd: Command, from: string[], fromId?: string): Command {
+  return ORIGIN_OPS.has(cmd.op) ? ({ ...cmd, from, ...(fromId ? { fromId } : {}) } as Command) : cmd;
 }
 
 function nameOf(kind: ContentKind, item: unknown): string {
@@ -725,7 +731,7 @@ export function addToPack(pack: ResourcePack, items: readonly { kind: string; it
     const there = list.findIndex((x) => itemId(k, x) === id);
     const put = k.pack.exportItem ? k.pack.exportItem(structuredClone(item)) : structuredClone(item);
     let next: PackNode = node;
-    if (there >= 0 && sameItem(list[there], put)) {
+    if (there >= 0 && sameContent(k, list[there], put)) {
       same++;
       continue;
     }
@@ -740,7 +746,7 @@ export function addToPack(pack: ResourcePack, items: readonly { kind: string; it
       added++;
     }
     next = { ...node, [key]: list };
-    const fields = k.pack.fieldsOf?.(put) ?? [];
+    const fields = itemFields(k, put);
     if (fields.length) next.fields = [...new Set([...ownItems<string>(next, 'fields'), ...fields])];
     packs[at] = next;
   }
@@ -760,7 +766,7 @@ function flatPackFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMeta):
     const chosen = Array.isArray(ids) ? all.filter((x) => ids.includes(itemId(k, x))) : all;
     const items = chosen.map((x) => (k.pack.exportItem ? k.pack.exportItem(x) : x));
     // 自定义场只跟着生态（与以前一样）
-    if (k.pack.key === 'biomes') for (const x of items) for (const f of k.pack.fieldsOf?.(x) ?? []) fields.add(f);
+    if (k.pack.key === 'biomes') for (const x of items) for (const f of itemFields(k, x)) fields.add(f);
     if (items.length) sections.push([k.pack.key, items]);
   }
   if (fields.size) pack.fields = [...fields];

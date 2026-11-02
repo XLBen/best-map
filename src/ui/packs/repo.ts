@@ -4,6 +4,7 @@ import { styleProblems, worldStyleId, type NameStyle } from '../../../core/name-
 import { worldMapStyleId } from '../../../core/map-style';
 import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, packItems, packSections, planPack, sameItem, subPacks, walkPacks, findPack } from '../../../core/packs';
 import { builtinItem, isBuiltinSame, originOf } from '../../../core/packs/builtin-tree';
+import { itemFields } from '../../../core/content/links';
 import { recordedOrigin } from '../../../core/content/origin';
 import type { ContentRef } from '../../../core/content/unused';
 import type { LibraryEntry } from '../../library';
@@ -53,7 +54,6 @@ export interface RepoStatus {
 
 // ---------- 改过的内置项（第四十五轮） ----------
 
-const NO_RENAMES = { biomes: new Map<string, string>(), riverTypes: new Map<string, string>(), lakeTypes: new Map<string, string>() };
 
 // 能恢复内置的几种：整项换掉的（放在 small.content 的，河、湖、岛的种类）。生态的命令是按字段改的，不在里面
 export const restorable = (kind: ContentKind): boolean => canApply(kind) && (kind.store === 'content' || kind.id === 'riverType' || kind.id === 'lakeType' || kind.id === 'islandType');
@@ -68,7 +68,7 @@ export function builtinOriginal(kind: ContentKind, item: unknown, world: PackWor
   const rec = recordedOrigin(world.small, kind.id, id);
   if (rec && !b.paths.some((p) => p[0] === rec[0])) return null;
   if (isBuiltinSame(kind.id, item)) return null;
-  return kind.pack.finalize?.(b.item, NO_RENAMES) ?? b.item;
+  return kind.pack.finalize?.(b.item) ?? b.item;
 }
 
 export interface RepoRow {
@@ -243,7 +243,7 @@ export function itemPack(row: RepoRow): ResourcePack {
   const k = row.kind;
   const item = row.source === 'world' && k.pack.exportItem ? k.pack.exportItem(row.item) : structuredClone(row.item);
   const pack: ResourcePack = { format: PACK_FORMAT, version: PACK_VERSION, id: packIdFor(`${k.id}-${row.name}`), name: row.name, [k.pack.key]: [item] };
-  const fields = k.pack.fieldsOf?.(item) ?? [];
+  const fields = itemFields(k, item);
   if (fields.length) pack.fields = [...new Set(fields)];
   return pack;
 }

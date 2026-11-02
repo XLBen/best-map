@@ -164,9 +164,10 @@ export const baseCommands = [
     mode: z.enum(['set', 'add', 'max', 'min']).default('set'),
   }),
   z.object({ op: z.literal('set_planet'), patch: planetPatchSchema }),
-  // from（第二十九轮，见 content/origin.ts）：这一项来自资源库的哪个包，记进 small.origin（启用一项的几种命令都能带）
-  z.object({ op: z.literal('add_species'), species: speciesSchema, from: originSchema.optional() }),
-  z.object({ op: z.literal('update_species'), id: z.string(), patch: z.record(z.string(), z.unknown()), from: originSchema.optional() }),
+  // from（第二十九轮，见 content/origin.ts）：这一项来自资源库的哪个包，记进 small.origin（启用一项的几种命令都能带）；
+  // fromId（第四十九轮）：撞 id 改了名时它在包里的 id，记进 small.originId
+  z.object({ op: z.literal('add_species'), species: speciesSchema, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
+  z.object({ op: z.literal('update_species'), id: z.string(), patch: z.record(z.string(), z.unknown()), from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_species'), id: z.string() }),
   z.object({ op: z.literal('add_constraint'), constraint: constraintSchema.omit({ id: true }).extend({ id: z.string().optional() }) }),
   z.object({ op: z.literal('update_constraint'), id: z.string(), patch: z.record(z.string(), z.unknown()) }),
@@ -210,7 +211,7 @@ export const baseCommands = [
     drop: z.array(z.number().int().min(0)).max(1000).optional(),
     label: z.string().max(200).optional(),
   }),
-  z.object({ op: z.literal('add_field'), name: fieldName, from: originSchema.optional() }),
+  z.object({ op: z.literal('add_field'), name: fieldName, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_field'), name: fieldName }),
   // 自动划分省份：规则与当前规则合并（省略的项沿用），锁定的省份不动
   z.object({ op: z.literal('generate_provinces'), rules: provinceRulesPatchSchema.default({}) }),
@@ -256,7 +257,7 @@ export const baseCommands = [
   }),
   z.object({ op: z.literal('reroll_feature'), key: z.string().regex(/^\w+:\d+$/) }),
   // 启用、修改、停用一项内容（第二十轮，见 content/registry.ts）：item 为 null 是停用。只用于存在 small.content 里的种类
-  z.object({ op: z.literal('set_content'), kind: typeIdSchema, id: typeIdSchema, item: z.record(z.string(), z.unknown()).nullable(), from: originSchema.optional() }),
+  z.object({ op: z.literal('set_content'), kind: typeIdSchema, id: typeIdSchema, item: z.record(z.string(), z.unknown()).nullable(), from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   // 排一排一种内容在世界里的先后（第三十轮，见 packs/import.ts）：ids 里列着的（世界里有的）按 ids 的先后排进它们占着的位置，
   // 没列的不动。从资源包加回来的项排回包里的先后（取值、政体、派系、文化的先后会影响挑哪一个）
   z.object({ op: z.literal('order_content'), kind: typeIdSchema, ids: z.array(typeIdSchema).max(4096) }),
@@ -284,13 +285,13 @@ export const baseCommands = [
   }),
   z.object({ op: z.literal('remove_region'), id: z.string() }),
   // 河流类型（第三批）：新建或整份换掉（按 id）；删掉时画的河上选的这一种也去掉
-  z.object({ op: z.literal('set_river_type'), type: riverTypeSchema, from: originSchema.optional() }),
+  z.object({ op: z.literal('set_river_type'), type: riverTypeSchema, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_river_type'), id: z.string() }),
   // 湖泊类型（第九轮）：同河流类型；删掉时放的湖、自然的湖上选的这一种也去掉
-  z.object({ op: z.literal('set_lake_type'), type: lakeTypeSchema, from: originSchema.optional() }),
+  z.object({ op: z.literal('set_lake_type'), type: lakeTypeSchema, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_lake_type'), id: z.string() }),
   // 岛的种类（第十四轮，见 island-types.ts）：新建或整份换掉（按 id）；删掉时这种岛变成大陆岛
-  z.object({ op: z.literal('set_island_type'), type: islandTypeSchema, from: originSchema.optional() }),
+  z.object({ op: z.literal('set_island_type'), type: islandTypeSchema, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_island_type'), id: z.string() }),
   // 画地形类别（第二十一轮，见 human/terrain-class.ts）：这些格（只画陆地格）的类别换成 class，null 恢复自动。只改类别、不改高度
   z.object({ op: z.literal('set_cell_class'), cells, class: typeIdSchema.nullable() }),

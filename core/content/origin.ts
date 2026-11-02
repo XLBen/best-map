@@ -40,8 +40,9 @@ export function originTarget(cmd: Command): { kind: string; id: string } | null 
   }
 }
 
-// 记下（或去掉）一项的来源
-export function setOrigin(small: Pick<SmallState, 'origin'>, kind: string, id: string, path: readonly string[] | null): void {
+// 记下（或去掉）一项的来源。fromId（第四十九轮）：撞 id 改了名时来源里的 id，记进 small.originId（来源里同 id 的不记）
+export function setOrigin(small: Pick<SmallState, 'origin' | 'originId'>, kind: string, id: string, path: readonly string[] | null, fromId?: string): void {
+  if (fromId !== undefined || small.originId?.[kind]?.[id] !== undefined) setOriginId(small, kind, id, path ? fromId : undefined);
   const all = { ...(small.origin ?? {}) };
   const of = { ...(all[kind] ?? {}) };
   if (path) of[id] = [...path];
@@ -51,6 +52,20 @@ export function setOrigin(small: Pick<SmallState, 'origin'>, kind: string, id: s
   if (Object.keys(all).length) small.origin = all;
   else delete small.origin;
 }
+
+function setOriginId(small: Pick<SmallState, 'originId'>, kind: string, id: string, fromId: string | undefined): void {
+  const all = { ...(small.originId ?? {}) };
+  const of = { ...(all[kind] ?? {}) };
+  if (fromId !== undefined && fromId !== id) of[id] = fromId;
+  else delete of[id];
+  if (Object.keys(of).length) all[kind] = of;
+  else delete all[kind];
+  if (Object.keys(all).length) small.originId = all;
+  else delete small.originId;
+}
+
+// 世界里这一项在来源里的 id（改过名的是改名前的；和来源比较、“用库里的版本”要按它找）
+export const originSourceId = (small: Pick<SmallState, 'originId'>, kind: string, id: string): string => small.originId?.[kind]?.[id] ?? id;
 
 // 世界里记着的来源（没有时 undefined）
 export const recordedOrigin = (small: Pick<SmallState, 'origin'>, kind: string, id: string): string[] | undefined => small.origin?.[kind]?.[id];
@@ -71,4 +86,16 @@ export function tidyOrigins(world: ContentWorld): void {
   if (!changed) return;
   if (Object.keys(next).length) world.small.origin = next;
   else delete world.small.origin;
+  // 来源去掉了的项，来源里的 id 也去掉
+  const left = world.small.origin;
+  const had = world.small.originId;
+  if (had) {
+    const kept: Record<string, Record<string, string>> = {};
+    for (const [kind, of] of Object.entries(had)) {
+      const still = Object.entries(of).filter(([id]) => left?.[kind]?.[id]);
+      if (still.length) kept[kind] = Object.fromEntries(still);
+    }
+    if (Object.keys(kept).length) world.small.originId = kept;
+    else delete world.small.originId;
+  }
 }

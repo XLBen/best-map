@@ -51,6 +51,12 @@ export type FieldType =
   // 倾向：维度 → 取值与权重；byEra 的是“时代 → 维度 → 取值与权重”（第四十五轮，资源库里画成一张表）
   | 'tendencies';
 
+// 引用的依赖类别（第四十九轮，见 links.ts）：
+//   hard   没有它这一项就不成立（文化的组、取值的维度）；
+//   auto   默认跟着带，取消也行：去掉它只是放开限制或换回默认（政体的“限谁用”、地名风格）；
+//   strip  缺了就把这条引用去掉，不把目标拖进来（换说法、称号的键、倾向：否则一个政体会拖来很多文化组）
+export type LinkClass = 'hard' | 'auto' | 'strip';
+
 export interface FieldDesc {
   key: string;
   label: string;
@@ -82,6 +88,9 @@ export interface FieldDesc {
   items?: readonly FieldDesc[];
   // tendencies：按时代的那一份（和不分时代的那个字段画在同一张表里）
   byEra?: boolean;
+  // ---------- 第四十九轮：引用表（links.ts） ----------
+  // 这个字段（和它下面的字段）里引用的依赖类别；省略时跟着上一层，最外层是 hard
+  dep?: LinkClass;
 }
 
 export type ContentWorld = Pick<World, 'small' | 'causes'>;
@@ -117,12 +126,10 @@ export interface PackSpec<T> {
   defaultPick?(item: T): boolean;
   // 撞 id 改名：换 id（种子要用原来的，花纹、匹配才不变），名字带上编号
   withId?(item: T, id: string, from: string): T;
-  // 包里别的项改了名时，这一项里的引用跟着改
-  rewrite?(item: T, renames: Renames): T;
-  // 加进世界之前最后一步（没写“自然生成”的关掉、引用的生态按新名字……）
-  finalize?(item: T, renames: Renames): T;
-  // 加进世界时要先有的自定义场
-  fieldsOf?(item: T): string[];
+  // 加进世界之前最后一步（没写“自然生成”的关掉）。引用跟着改名由引用表来（links.ts 的 renameLinks），这里不用管
+  finalize?(item: T): T;
+  // 比较“是不是同一项”时不看的顶层键（第四十九轮，见 refs.ts 的 sameContent）
+  sameIgnore?: readonly string[];
   // 从世界导出的项（省略时是 inWorld 里不是内置原样的）与导出时的样子
   fromWorld?(world: ContentWorld): T[];
   exportItem?(item: T): T;
@@ -130,7 +137,7 @@ export interface PackSpec<T> {
   problems?(items: readonly T[], ctx: PackContext): string[];
 }
 
-// 改名表：段名 → 包里的 id → 用到世界时的 id
+// 改名表：段名 → 包里的 id → 用到世界时的 id（没改名的也在，映射到自己）
 export interface Renames {
   biomes: ReadonlyMap<string, string>;
   riverTypes: ReadonlyMap<string, string>;

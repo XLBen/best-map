@@ -1,8 +1,8 @@
 import { VARIABLES, codeOnly } from '../script';
-import type { Species } from '../species';
+import type { ContentKind } from './registry';
 
-// 内容之间的引用（从 packs.ts 拆出来，content/kinds.ts 与 packs.ts 共用）：脚本里的 field('x')、river('x')……、
-// 耐受条件里的 field:x、river:x、lake:x，改名时跟着改；两项是不是一模一样
+// 引用的底层小工具（从 packs.ts 拆出来）：脚本里的 field('x')、river('x')……在源码里的位置；两项是不是一模一样。
+// 一项内容引用了什么、谁引用它、改名时怎么跟着改，都在 links.ts（第四十九轮）
 
 export const ITEM_ID = /^[\w-]+$/;
 
@@ -22,86 +22,56 @@ export function sameItem(a: unknown, b: unknown): boolean {
   return stableJson(a) === stableJson(b);
 }
 
+// 同一种内容里的两项算不算“同一项”（第四十九轮）：比较时不看这一种写的 pack.sameIgnore（顶层的键）。
+// 同一项在不同的库里只差权重时算同一项，导入时不改名（第五十轮的 cultureGroup.weight 写在那里）
+export function sameContent(kind: Pick<ContentKind, 'pack'>, a: unknown, b: unknown): boolean {
+  const skip = kind.pack.sameIgnore;
+  if (!skip?.length) return sameItem(a, b);
+  const bare = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).filter(([k]) => !skip.includes(k))) : x);
+  return sameItem(bare(a), bare(b));
+}
+
 // 没写“自然生成”的写成 false（写了的照旧）
 export function naturalOff<T extends object>(x: T): T {
   return (x as { natural?: boolean }).natural === undefined ? { ...x, natural: false } : x;
 }
 
-// ---------- 脚本里的引用：field('x')、river('x')、hasRiver('x')、nearLake('x')、hasLake('x') ----------
+// ---------- 脚本里的引用：field('x')、river('x')、hasRiver('x')、nearLake('x')、hasLake('x')、biome('x') ----------
 
 const VAR_NAMES = new Set(VARIABLES.flatMap((v) => (v.zh ? [v.key, v.zh] : [v.key])));
-const CALL_RE = /(?<![\p{L}\p{N}_$.])(field|river|hasRiver|nearLake|hasLake)\s*\(/gu;
-const RIVER_FNS = new Set(['river', 'hasRiver']);
-const LAKE_FNS = new Set(['nearLake', 'hasLake']);
+// 内置变量的名字：field('tMean') 不是自定义场
+export const isScriptVariable = (name: string): boolean => VAR_NAMES.has(name);
+const CALL_RE = /(?<![\p{L}\p{N}_$.])(field|river|hasRiver|nearLake|hasLake|biome)\s*\(/gu;
+// 河、湖的 match 脚本里拿生态的 id 比：dominantBiome() === 'x'（字面量在右边的才找得到）
+const COMPARE_RE = /(?<![\p{L}\p{N}_$.])(?:dominantBiome|biomeAtSource|biomeAtMouth)\s*\(\s*\)\s*[!=]==?\s*/gu;
 
 export interface Ref {
-  // river、hasRiver 引用河流类型；nearLake、hasLake 引用湖泊类型
-  fn: 'field' | 'river' | 'hasRiver' | 'nearLake' | 'hasLake';
+  // river、hasRiver 引用河流类型；nearLake、hasLake 引用湖泊类型；biome（以及和 dominantBiome() 比的字面量）引用生态
+  fn: 'field' | 'river' | 'hasRiver' | 'nearLake' | 'hasLake' | 'biome';
   name: string;
   // 名字在源码里的位置（不含引号）
   start: number;
   end: number;
 }
 
-// 源码里 field('x')、river('x')、hasRiver('x') 的字面量参数（只看代码，注释里的不算；参数不是字面量的找不到，不报）
+// 源码里这些写法的字面量参数（只看代码，注释里的不算；参数不是字面量的找不到，不报）。按在源码里的先后
 export function scriptRefs(src: string): Ref[] {
   const code = codeOnly(src);
   const out: Ref[] = [];
-  for (const m of code.matchAll(CALL_RE)) {
-    let at = m.index + m[0].length;
+  const literal = (fn: Ref['fn'], from: number) => {
+    let at = from;
     while (at < src.length && /\s/.test(src[at])) at++;
     const q = src[at];
-    if (q !== "'" && q !== '"' && q !== '`') continue;
+    if (q !== "'" && q !== '"' && q !== '`') return;
     const end = src.indexOf(q, at + 1);
-    if (end < 0) continue;
+    if (end < 0) return;
     const name = src.slice(at + 1, end);
-    if (name.includes('${') || name.includes('\n')) continue;
-    out.push({ fn: m[1] as Ref['fn'], name, start: at + 1, end });
-  }
-  return out;
-}
-
-// 一种生态（或河流类型）写到的自定义场的名字：耐受条件里的 field:x，脚本里的 field('x')（内置变量的名字不算）。可能有不合规的名字
-export function fieldRefs(sp: Pick<Species, 'scripts'> & { tolerances?: Species['tolerances'] }): string[] {
-  const out = new Set<string>();
-  for (const t of sp.tolerances ?? []) if (t.field.startsWith('field:')) out.add(t.field.slice(6));
-  for (const s of Object.values(sp.scripts ?? {})) {
-    if (!s) continue;
-    for (const r of scriptRefs(s.src)) if (r.fn === 'field' && !VAR_NAMES.has(r.name)) out.add(r.name);
-  }
-  return [...out];
-}
-
-// 一种生态用到的自定义场（只算合规的名字：别的名字世界里不会有这个场，加也加不了，脚本照“出错”处理）
-export function biomeFields(sp: Species): string[] {
-  return fieldRefs(sp).filter((f) => ITEM_ID.test(f));
-}
-
-// 一种生态的脚本、耐受条件（river:x，“靠近某种河”）里用到的河流类型
-export function biomeRivers(sp: Species): string[] {
-  const out = new Set<string>();
-  for (const t of sp.tolerances) if (t.field.startsWith('river:')) out.add(t.field.slice(6));
-  for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (RIVER_FNS.has(r.fn)) out.add(r.name);
-  return [...out];
-}
-
-// 一种生态的脚本、耐受条件（lake:x，“靠近某种湖”）里用到的湖泊类型
-export function biomeLakes(sp: Species): string[] {
-  const out = new Set<string>();
-  for (const t of sp.tolerances) if (t.field.startsWith('lake:')) out.add(t.field.slice(5));
-  for (const s of Object.values(sp.scripts ?? {})) if (s) for (const r of scriptRefs(s.src)) if (LAKE_FNS.has(r.fn)) out.add(r.name);
-  return [...out];
-}
-
-// 把源码里 river('旧')、hasRiver('旧')（以及 nearLake('旧')、hasLake('旧')，按 lakes）换成新的（只换代码里的字面量）
-export function rewriteRiverRefs(src: string, rivers: ReadonlyMap<string, string>, lakes: ReadonlyMap<string, string> = new Map()): string {
-  if (!rivers.size && !lakes.size) return src;
-  let out = src;
-  for (const r of scriptRefs(src).reverse()) {
-    const to = RIVER_FNS.has(r.fn) ? rivers.get(r.name) : LAKE_FNS.has(r.fn) ? lakes.get(r.name) : undefined;
-    if (to !== undefined && to !== r.name) out = out.slice(0, r.start) + to + out.slice(r.end);
-  }
-  return out;
+    if (name.includes('${') || name.includes('\n')) return;
+    out.push({ fn, name, start: at + 1, end });
+  };
+  for (const m of code.matchAll(CALL_RE)) literal(m[1] as Ref['fn'], m.index + m[0].length);
+  for (const m of code.matchAll(COMPARE_RE)) literal('biome', m.index + m[0].length);
+  return out.sort((x, y) => x.start - y.start);
 }
 
 // 模板里用到的词表名：{xxx}

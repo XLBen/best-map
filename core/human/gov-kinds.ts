@@ -13,8 +13,8 @@ const NAME_RULE_FIELDS: readonly FieldDesc[] = [
   { key: 'cultures', label: '文化', type: 'tags', optional: true, ref: 'culture' },
   { key: 'valueGroups', label: '取值组', type: 'tags', optional: true, ref: 'valueGroup', hint: '宗教组……' },
   { key: 'values', label: '取值', type: 'tags', optional: true, ref: 'popValue', hint: '宗教……' },
-  { key: 'titles', label: '国家称号', type: 'title', optional: true, keyRef: 'countryTier', hint: '按等级' },
-  { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', hint: '按等级' },
+  { key: 'titles', label: '国家称号', type: 'title', optional: true, keyRef: 'countryTier', dep: 'strip', hint: '按等级' },
+  { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', dep: 'strip', hint: '按等级' },
 ];
 
 // 限谁用的一条（第四十四轮）
@@ -26,10 +26,10 @@ const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'category', label: '类别', type: 'tags', ref: 'govCategory', hint: 'monarchy、republic、theocracy、tribal、empire……' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', hint: '按国家的等级（没写的等级用最近的一级）；只写一种时各等级都用它' },
-  { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', hint: '写法同国家称号' },
-  { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, hint: '按文化组、宗教……换称号；第一条满足的起作用' },
-  { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, hint: '满足其中一条的国家才能用（伊克塔只给穆斯林）；不写时谁都能用' },
+  { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', dep: 'strip', hint: '按国家的等级（没写的等级用最近的一级）；只写一种时各等级都用它' },
+  { key: 'rulers', label: '统治者称号', type: 'title', optional: true, keyRef: 'countryTier', dep: 'strip', hint: '写法同国家称号' },
+  { key: 'names', label: '换说法', type: 'list', optional: true, of: NAME_RULE_FIELDS, dep: 'strip', hint: '按文化组、宗教……换称号；第一条满足的起作用' },
+  { key: 'only', label: '限谁用', type: 'list', optional: true, of: ONLY_FIELDS, dep: 'auto', hint: '满足其中一条的国家才能用（伊克塔只给穆斯林）；不写时谁都能用' },
   { key: 'weight', label: '多见', type: 'number', optional: true, min: 0, max: 100, step: 0.1, hint: '省略为 1' },
   { key: 'size', label: '国土', type: 'number', min: 0.05, max: 10, step: 0.05, hint: '1 是平均' },
   { key: 'expansion', label: '扩张性', type: 'number', min: 0, max: 1, step: 0.05, hint: '越大越多吞进异族的地方' },
@@ -71,7 +71,7 @@ const FACTION_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'base', label: '基础', type: 'map', keyRef: 'govCategory', value: { key: 'value', label: '影响力', type: 'number', min: 0, max: 10, step: 0.1 }, hint: '政体的类别 → 影响力；default 是别的类别' },
-  { key: 'drivers', label: '来自人口', type: 'list', optional: true, of: DRIVER_FIELDS, hint: '这部分人越多，影响力越大' },
+  { key: 'drivers', label: '来自人口', type: 'list', optional: true, of: DRIVER_FIELDS, dep: 'strip', hint: '这部分人越多，影响力越大' },
 ];
 
 // 由 human/kinds.ts 在第二十二轮的四种之后调用

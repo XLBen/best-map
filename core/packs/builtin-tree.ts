@@ -1,6 +1,6 @@
 import '../content/kinds';
 import { recordedOrigin } from '../content/origin';
-import { sameItem } from '../content/refs';
+import { sameContent } from '../content/refs';
 import { allKinds, itemId, kindByPackKey, kindOf, useBuiltinSource } from '../content/registry';
 import type { Culture, CultureGroup, Era, PopValue } from '../human/era';
 import type { Faction, Government } from '../human/government';
@@ -325,9 +325,9 @@ export function isBuiltinSame(kind: string, item: unknown): boolean {
   if (!k) return false;
   const b = builtinItem(kind, itemId(k, item));
   if (!b) return false;
-  if (sameItem(b.item, item)) return true;
-  const fin = k.pack.finalize?.(b.item, { biomes: new Map(), riverTypes: new Map(), lakeTypes: new Map() });
-  return fin !== undefined && sameItem(fin, item);
+  if (sameContent(k, b.item, item)) return true;
+  const fin = k.pack.finalize?.(b.item);
+  return fin !== undefined && sameContent(k, fin, item);
 }
 
 // 世界里一项的来源：记着的；没记、但与内置的一模一样时按内置的树；都没有时 undefined（离群）

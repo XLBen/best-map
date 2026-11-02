@@ -3,7 +3,8 @@ import { classCode } from '../human/terrain-class';
 import { resourceCode } from '../human/resources';
 import { worldEra } from '../human/era';
 import { eraFactions } from '../human/government';
-import { type ContentUsage, type ContentWorld, type UsageWorld, updateKind } from './registry';
+import { linksOf } from './links';
+import { type ContentUsage, type ContentWorld, type UsageWorld, contentItems, updateKind } from './registry';
 
 // 内容在世界里用在哪里（第二十八轮）：资源库里“移出本世界”之前查一遍，有在用的不让移出，写“有 N 处在用”，带一个定位。
 // 引擎的 set_content（停用一项）也查同一个钩子（见 commands.ts 的 setContent），所以在用的内容从核心上就移不出去。
@@ -107,7 +108,7 @@ function cultureUsage(w: W, id: string): ContentUsage | null {
 }
 
 function groupUsage(w: W, id: string): ContentUsage | null {
-  const cultures = Object.values((w.small.content?.culture ?? {}) as Record<string, { id: string; group: string }>).filter((c) => c.group === id);
+  const cultures = Object.values(contentItems<{ id: string }>(w.small, 'culture')).filter((c) => linksOf('culture', c).some((l) => l.cls === 'hard' && l.kinds.includes('cultureGroup') && l.id === id));
   const mine = new Set(cultures.map((c) => c.id));
   const cells = mine.size ? popCells(w, (t) => mine.has(t.culture)) : [];
   const ctry = countries(w).filter((c) => c.acceptedGroups.includes(id));
@@ -130,7 +131,7 @@ function valueUsage(w: W, id: string): ContentUsage | null {
 
 // 取值组（第四十三轮）：世界里属于它的取值
 function valueGroupUsage(w: W, id: string): ContentUsage | null {
-  const n = Object.values((w.small.content?.popValue ?? {}) as Record<string, { group?: string }>).filter((v) => v.group === id).length;
+  const n = Object.values(contentItems(w.small, 'popValue')).filter((v) => linksOf('popValue', v).some((l) => l.cls === 'hard' && l.kinds.includes('valueGroup') && l.id === id)).length;
   return result(part(n, '个取值属于它'), n, []);
 }
 

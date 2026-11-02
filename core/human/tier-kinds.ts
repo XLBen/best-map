@@ -32,7 +32,7 @@ const LAYOUT_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'weights', label: '各等级占多少', type: 'map', keyRef: 'countryTier', value: { key: 'value', label: '比例', type: 'number', min: 0, max: 100, step: 0.1 }, hint: '空着的等级不出现' },
+  { key: 'weights', label: '各等级占多少', type: 'map', keyRef: 'countryTier', dep: 'auto', value: { key: 'value', label: '比例', type: 'number', min: 0, max: 100, step: 0.1 }, hint: '空着的等级不出现' },
 ];
 
 // 由 human/kinds.ts 在政体、派系之后调用

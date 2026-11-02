@@ -3,8 +3,8 @@ import { lakeTypesOf } from '../lake-types';
 import { worldMapStyleId, worldMapStyles } from '../map-style';
 import { riverTypesOf } from '../river-types';
 import type { World } from '../world';
-import { fieldRefs } from './refs';
-import { type ContentWorld, contentItems, itemName, kindOf, usageOf } from './registry';
+import { type ContentRef, linkIds } from './links';
+import { type ContentWorld, allKinds, contentItems, itemName, kindOf, usageOf } from './registry';
 import { strictWorld } from './usage';
 
 // 世界里哪里都没用到的内容（第二十九轮，整理本世界 tidy_content 与压缩世界文件用）：
@@ -17,10 +17,7 @@ import { strictWorld } from './usage';
 // 只按这些判断，不看移出之后地图变不变：那一步在 tidy.ts 的 planTidy（在世界的副本上真的移出、重算、逐值比较）。
 // 结果按种类、再按世界里的先后，同一个世界总是一样
 
-export interface ContentRef {
-  kind: string;
-  id: string;
-}
+export type { ContentRef };
 
 // 整理时会看的种类（按移出的先后：先移用到场的内容，最后是场）
 export const TIDY_KINDS = ['government', 'faction', 'popValue', 'valueGroup', 'mapStyle', 'biome', 'riverType', 'lakeType', 'field'] as const;
@@ -37,13 +34,10 @@ function usedCodes(arr: Uint8Array | Int16Array | undefined, size: number): Uint
   return out;
 }
 
-// 写到自定义场的地方：生态、河湖的种类（耐受条件、脚本），其余内容按 JSON 里有没有 field:x、field('x') 这样的写法
+// 写到自定义场的地方（引用表，见 links.ts：耐受条件、脚本，哪一种内容都一样）
 function fieldsInUse(w: ContentWorld): Set<string> {
   const out = new Set<string>();
-  for (const sp of w.small.species) for (const f of fieldRefs(sp)) out.add(f);
-  for (const t of [...riverTypesOf(w.small), ...lakeTypesOf(w.small)]) for (const f of fieldRefs(t)) out.add(f);
-  const rest = JSON.stringify([w.small.content ?? {}, w.small.terrain?.gen?.form ?? null]);
-  for (const name of Object.keys(w.causes.fields)) if (rest.includes(`field:${name}`) || rest.includes(`field('${name}')`) || rest.includes(`field(\\"${name}\\")`)) out.add(name);
+  for (const k of allKinds()) for (const x of k.inWorld(w)) for (const f of linkIds(k, x, 'field')) out.add(f);
   return out;
 }
 

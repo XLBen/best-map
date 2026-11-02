@@ -25,10 +25,9 @@ export interface RefCtx {
   lib: readonly LibraryEntry[];
 }
 
-// 倾向里政体那一维
-export const GOVERNMENT_DIM = 'government';
-// 称号、派系的基础里“其余的”
-export const DEFAULT_KEY = 'default';
+// 倾向里政体那一维、称号与派系的基础里“其余的”（第四十九轮搬到引用表，这里照旧导出）
+export { DEFAULT_KEY, GOVERNMENT_DIM } from '../../../core/content/link-rules';
+import { DEFAULT_KEY, GOVERNMENT_DIM } from '../../../core/content/link-rules';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
@@ -92,8 +91,9 @@ function build(ref: string, ctx: RefCtx): RefOption[] {
       }
       const field = kindOf('field');
       for (const x of field && ctx.world ? field.inWorld(ctx.world) : []) {
+        // 第四十九轮：条件里写 field:x（以前这里给的是 x，选了之后那一条条件永远是 0）
         const id = itemId(field!, x);
-        out.push({ id, label: itemName(field!, x), hint: '自定义场' });
+        out.push({ id: `field:${id}`, label: itemName(field!, x), hint: '自定义场' });
       }
       return out;
     }

@@ -297,7 +297,7 @@ function run(world: World, cmd: Command, ctx: ApplyContext): RunResult {
   const r = runOp(world, cmd, ctx);
   const from = (cmd as { from?: string[] }).from;
   const target = from ? originTarget(cmd) : null;
-  if (target) setOrigin(world.small, target.kind, target.id, from!);
+  if (target) setOrigin(world.small, target.kind, target.id, from!, (cmd as { fromId?: string }).fromId);
   return r;
 }
 

@@ -9,9 +9,10 @@ import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../
 import { PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
-import { type ContentWorld, type FieldDesc, type PackContext, type Renames, builtinOf, isBuiltinCopy, registerKind } from './registry';
+import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
 import { registerUsage } from './usage';
-import { ITEM_ID, biomeFields, biomeLakes, biomeRivers, fieldRefs, naturalOff, rewriteRiverRefs, stableJson, templateLists } from './refs';
+import { linkIds } from './links';
+import { ITEM_ID, naturalOff, templateLists } from './refs';
 
 // 现有的内容种类登记进登记表（第二十轮）：生态、河 / 湖 / 岛的种类、星球形态、地名风格、自定义场。
 // 以前的种类在世界里的放法、命令都不变（登记表只是适配），资源包文件的格式不变。
@@ -36,9 +37,9 @@ function badLists(who: string, names: readonly { p: string }[] | undefined, list
 }
 
 // 河流类型、湖泊类型用到的自定义场
-function fieldProblems(who: string, item: Parameters<typeof fieldRefs>[0], fields: ReadonlySet<string>): string[] {
+function fieldProblems(who: string, kind: string, item: unknown, fields: ReadonlySet<string>): string[] {
   const out: string[] = [];
-  for (const f of fieldRefs(item)) {
+  for (const f of linkIds(kind, item, 'field')) {
     if (!ITEM_ID.test(f)) out.push(`${who}用到的自定义场“${f}”名字无效：只能用字母、数字、下划线和连字符`);
     else if (!fields.has(f)) out.push(`${who}用到的自定义场 ${f} 不在资源包里，用时新建一个空的`);
   }
@@ -69,7 +70,7 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '画风选了“另一种颜色”时用（地图册）；空着时同颜色' },
   { key: 'natural', label: '自然生成', type: 'bool', optional: true },
-  { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome' },
+  { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
   {
     key: 'bank',
     label: '岸边的影响',
@@ -86,27 +87,6 @@ const WATER_FIELDS: readonly FieldDesc[] = [
 ];
 
 // ---------- 生态 ----------
-
-// 生态里的引用跟着改名：侵占的目标、脚本里的 river('x')、耐受条件里的 river:x、lake:x
-export function rewriteBiome(sp: Species, renames: Renames): Species {
-  let out = sp;
-  if (sp.tolerances.some((t) => t.field.startsWith('river:') && (renames.riverTypes.get(t.field.slice(6)) ?? t.field.slice(6)) !== t.field.slice(6))) {
-    out = { ...out, tolerances: sp.tolerances.map((t) => (t.field.startsWith('river:') ? { ...t, field: `river:${renames.riverTypes.get(t.field.slice(6)) ?? t.field.slice(6)}` } : t)) };
-  }
-  const lakes = renames.lakeTypes ?? new Map<string, string>();
-  if (sp.tolerances.some((t) => t.field.startsWith('lake:') && (lakes.get(t.field.slice(5)) ?? t.field.slice(5)) !== t.field.slice(5))) {
-    out = { ...out, tolerances: out.tolerances.map((t) => (t.field.startsWith('lake:') ? { ...t, field: `lake:${lakes.get(t.field.slice(5)) ?? t.field.slice(5)}` } : t)) };
-  }
-  const inv = sp.effects?.invade;
-  if (inv && inv.targets.some((t) => (renames.biomes.get(t) ?? t) !== t)) {
-    out = { ...out, effects: { ...out.effects, invade: { ...inv, targets: inv.targets.map((t) => renames.biomes.get(t) ?? t) } } };
-  }
-  if (sp.scripts && (renames.riverTypes.size || lakes.size)) {
-    const scripts = Object.fromEntries(Object.entries(sp.scripts).map(([k, s]) => [k, s && { ...s, src: rewriteRiverRefs(s.src, renames.riverTypes, lakes) }]));
-    if (stableJson(scripts) !== stableJson(sp.scripts)) out = { ...out, scripts };
-  }
-  return out;
-}
 
 // 换 id：种子用原来的（省略 seedKey 时种子就是 id），改了名花纹也不变。
 // 名字也跟着带上编号（“水晶丛林 2”）：世界里那份不一样的同名生态还在，列表里才分得清
@@ -219,9 +199,7 @@ registerKind<Species>({
     // 只长在某处的生态（从起源地扩散、只在某个岛上、圈的范围里）不勾：起源地的格编号只对做它的那个世界有效
     defaultPick: (b) => !b.dispersal && !b.range,
     withId: biomeWithId,
-    rewrite: rewriteBiome,
     finalize: (b) => naturalOff(b),
-    fieldsOf: biomeFields,
     fromWorld: exportableBiomes,
     exportItem: (s) => naturalOn(structuredClone(s)),
     problems: (biomes, ctx) => {
@@ -233,9 +211,9 @@ registerKind<Species>({
       for (const b of biomes) {
         const who = `“${b.name || b.id}”`;
         for (const t of b.effects?.invade?.targets ?? []) if (!known.has(t)) problems.push(`${who}侵占的 ${t} 不在资源包里，也不是内置生态：世界里没有它时无效`);
-        problems.push(...fieldProblems(who, b, ctx.fields));
-        for (const r of biomeRivers(b)) if (!rivers.has(r)) problems.push(`${who}用到的河流类型 ${r} 不在资源包里：没有这种河时按很远算`);
-        for (const r of biomeLakes(b)) if (!lakes.has(r)) problems.push(`${who}用到的湖泊类型 ${r} 不在资源包里：没有这种湖时按很远算`);
+        problems.push(...fieldProblems(who, 'biome', b, ctx.fields));
+        for (const r of linkIds('biome', b, 'riverType')) if (!rivers.has(r)) problems.push(`${who}用到的河流类型 ${r} 不在资源包里：没有这种河时按很远算`);
+        for (const r of linkIds('biome', b, 'lakeType')) if (!lakes.has(r)) problems.push(`${who}用到的湖泊类型 ${r} 不在资源包里：没有这种湖时按很远算`);
         problems.push(...badLists(who, b.feature?.names, ctx.lists));
         if (b.dispersal) problems.push(`${who}只在起源地附近长：只对原来的世界有效`);
         if (b.range) problems.push(`${who}只长在某处：只对原来的世界有效`);
@@ -253,17 +231,12 @@ function waterTypeWithId<T extends RiverType | LakeType>(t: T, id: string, from:
   return { ...t, id, name: numbered(t.name, id, from), seedKey: t.seedKey ?? from };
 }
 
-// 加进世界前：“只在这些生态里”按改了名的生态，没写“自然生成”的关掉
-function waterFinalize<T extends RiverType | LakeType>(t: T, r: Renames): T {
-  return naturalOff(t.biomes ? { ...t, biomes: t.biomes.map((b) => r.biomes.get(b) ?? b) } : t);
-}
-
 const waterProblems =
-  (what: string) =>
+  (what: string, kind: string) =>
   (items: readonly (RiverType | LakeType)[], ctx: PackContext): string[] =>
     items.flatMap((t) => {
       const who = `${what}“${t.name || t.id}”`;
-      return [...fieldProblems(who, t, ctx.fields), ...badLists(who, t.names, ctx.lists)];
+      return [...fieldProblems(who, kind, t, ctx.fields), ...badLists(who, t.names, ctx.lists)];
     });
 
 registerKind<RiverType>({
@@ -282,12 +255,11 @@ registerKind<RiverType>({
     listed: true,
     checked: true,
     withId: waterTypeWithId,
-    finalize: waterFinalize,
-    fieldsOf: (t) => fieldRefs(t).filter((f) => ITEM_ID.test(f)),
+    finalize: naturalOff,
     // 世界里的河流类型全部能导出（与内置的一模一样的也带上：从世界存成文件时带着它用的河）
     fromWorld: (w) => riverTypesOf(w.small).map((t) => structuredClone(t)),
     exportItem: (t) => naturalOn(structuredClone(t)),
-    problems: waterProblems('河流类型'),
+    problems: waterProblems('河流类型', 'riverType'),
   },
 });
 
@@ -307,11 +279,10 @@ registerKind<LakeType>({
     listed: true,
     checked: true,
     withId: waterTypeWithId,
-    finalize: waterFinalize,
-    fieldsOf: (t) => fieldRefs(t).filter((f) => ITEM_ID.test(f)),
+    finalize: naturalOff,
     fromWorld: (w) => lakeTypesOf(w.small).map((t) => structuredClone(t)),
     exportItem: (t) => naturalOn(structuredClone(t)),
-    problems: waterProblems('湖泊类型'),
+    problems: waterProblems('湖泊类型', 'lakeType'),
   },
 });
 

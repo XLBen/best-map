@@ -60,7 +60,7 @@ export const RULE_FIELDS: readonly FieldDesc[] = [
   { key: 'river', label: '有河', type: 'bool', optional: true },
   { key: 'lake', label: '挨着湖', type: 'bool', optional: true },
 ];
-export const RESOURCE_RULE_FIELDS: readonly FieldDesc[] = [{ key: 'classes', label: '地形类别', type: 'tags', optional: true, hint: 'plains、hills、highlands、mountains、peaks（只管起伏；植被写“生态的地形”）' }, ...RULE_FIELDS];
+export const RESOURCE_RULE_FIELDS: readonly FieldDesc[] = [{ key: 'classes', label: '地形类别', type: 'tags', optional: true, ref: 'terrainClass', hint: 'plains、hills、highlands、mountains、peaks（只管起伏；植被写“生态的地形”）' }, ...RULE_FIELDS];
 
 // 每格的输入：一次算好，规则只查表
 export interface CellInputs {

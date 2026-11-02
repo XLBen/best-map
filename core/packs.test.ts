@@ -1,3 +1,4 @@
+import { renameLinks } from './content/links';
 import { afterEach, describe, expect, it } from 'vitest';
 import { digestWorld } from '../tools/hash';
 import { Engine } from './engine';
@@ -21,7 +22,6 @@ import {
   packSummary,
   planPack,
   readPack,
-  rewriteRiverRefs,
   scriptRefs,
 } from './packs';
 import { FANTASY_BIOMES } from './packs/fantasy-biomes';
@@ -180,7 +180,8 @@ describe('资源包的检查（不运行脚本）', () => {
   it('脚本里的引用：只认代码里的字面量，改名时只换它', () => {
     const src = "// river('a') 注释里的不算\nconst s = \"river('a')\";\nreturn river( 'a' ) + river(\"b\") + field('c');";
     expect(scriptRefs(src).map((r) => `${r.fn}:${r.name}`)).toEqual(['river:a', 'river:b', 'field:c']);
-    expect(rewriteRiverRefs(src, new Map([['a', 'a-2']]))).toBe("// river('a') 注释里的不算\nconst s = \"river('a')\";\nreturn river( 'a-2' ) + river(\"b\") + field('c');");
+    const renames = { biomes: new Map<string, string>(), riverTypes: new Map([['a', 'a-2']]), lakeTypes: new Map<string, string>() };
+    expect(renameLinks('riverType', { id: 'r', scripts: { match: { src } } }, renames).scripts.match.src).toBe("// river('a') 注释里的不算\nconst s = \"river('a')\";\nreturn river( 'a-2' ) + river(\"b\") + field('c');");
   });
 });
 

@@ -477,6 +477,8 @@ export interface SmallState {
   // 内容来自资源库的哪个包（第二十九轮，见 content/origin.ts）：种类 → id → 包的路径（[资源包, 小包, ……]）。
   // 本世界自己做的没有（“离群”）；移出世界时一起去掉。第一次记之前没有这一项
   origin?: Record<string, Record<string, string[]>>;
+  // 撞 id 改了名的项在来源里的 id（第四十九轮，见 content/origin.ts）：种类 → 世界里的 id → 来源里的 id。没改过名时没有这一项
+  originId?: Record<string, Record<string, string>>;
   // 世界默认的地名风格（第二十轮）：没有这一项是内置中文（zh-default）
   nameStyle?: string;
   // 世界选的画风（第三十八轮，见 map-style.ts）：没有这一项、选的不在了时按世界里第一种画风
