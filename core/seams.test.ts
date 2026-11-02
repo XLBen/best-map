@@ -9,7 +9,7 @@ import { findCell } from './mesh';
 import { SEAM_BAND, applySeams, exportProvinceCells, scissors, seamLayers, seamPick } from './seams';
 import { provinceCells } from './select';
 import { rasterizeWorld } from './subcell';
-import { snapshot, seededEngine } from './testing/fixtures';
+import { NO_CURRENTS, snapshot, seededEngine } from './testing/fixtures';
 import type { World } from './world';
 
 // 第八轮：剪刀切出的边就是画的线。切线附近的像素按“在线的哪一边”分省，屏幕（着色器）与导出（provinces.bmp）同一条规则；
@@ -23,6 +23,8 @@ type Pt = [number, number];
 const region = () =>
   snapshot('seams:region', () => {
     const eng = seededEngine({ seed: 3, cells: 6000 });
+    // 第四十六轮：关掉区域的洋流（与以前逐值相同，见 fixtures 的 NO_CURRENTS）：这些用例按这个世界的省份挑的格
+    eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 8, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
     return eng;

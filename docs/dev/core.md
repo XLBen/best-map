@@ -25,7 +25,7 @@
 - `climate.ts` 地区的日照温度、风带季风、山挡风、水汽输运，分层缓存（`planeLayers`）；第四十六轮起洋流的增减（`planeSeaOf`、`currentTemps`、`currentRain`）
 - `planet-climate.ts` 整个星球的气候（`sphereStatic` / `sphereLand` 分层缓存）；`sphere-flow.ts` 球面上的输送
 - `ocean.ts` 简化洋流与海面温度（整个星球）
-- `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 2 格、长边 ≤ 200）上的风生环流、上涌、海温输送、带上陆地；海上那部分按海陆缓存
+- `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 3 格、长边 ≤ 128）上的风生环流、上涌、海温输送、带上陆地；按像素上取到的海陆、温度、风缓存
 - `hydrology.ts` 填洼汇流、湖、径流、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`）
 - `rivers.ts` 河流折线与河画出来的带子（`riverRibbon`）、河口（`normalMouth`、`tidyMouths`）、三角洲分汊（`withBranches`）
 - `delta.ts` 三角洲的河口与亚格子海岸凸出（`deltaBulge`）

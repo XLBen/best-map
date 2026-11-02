@@ -1,6 +1,6 @@
 import { type Mesh, gradientField, ringDistance } from './mesh';
 import { clamp, smoothstep } from './rng';
-import { type PlaneSea, planeGrid, planeSea } from './ocean-plane';
+import { NO_SAT, type PlaneSea, planeGrid, planeSea } from './ocean-plane';
 import { type Derived, type World, worldLatitude } from './world';
 
 // 气候：少参数的物理过程模型，不对地球的海陆形状做拟合，换一块大陆也成立。
@@ -421,6 +421,8 @@ interface PlaneTerrain {
   // 两季降水速率里只取决于纬度的部分（辐合 × 副高下沉 × 风暴带）与背风的抑制（不在背风处为 1）
   rain: Float64Array[];
   lee: Float64Array[];
+  // 偏转前的两季背景风（第四十六轮：区域的洋流用，按海陆缓存的那一份）
+  baseWinds: Float32Array[];
 }
 
 // 一份约每万格 2 MB：大网格只留一份
@@ -635,7 +637,7 @@ function planeTerrain(world: World, elevation: Float32Array, out: Derived): Plan
   for (let si = 0; si < 2; si++) leeOf(n, land, winds[si][0], winds[si][1], hx, hy, lee[si]);
   const { e150, e900 } = geo;
 
-  const t: PlaneTerrain = { lat, written: written.map((a) => a.slice()), flows, edges, edgeW, dKm: spacingKm, e150, e900, rain, lee };
+  const t: PlaneTerrain = { lat, written: written.map((a) => a.slice()), flows, edges, edgeW, dKm: spacingKm, e150, e900, rain, lee, baseWinds };
   planeMemo.keep(mesh, [land.slice(), elevation.slice(), lat], params, t);
   return t;
 }
@@ -717,9 +719,14 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
   const cont = out.continentality;
   planeTemps(n, land, tAnnOf, kS, kW, cont, elevation, planet.lapse, causes.tempOffset, base.tS, base.tW);
   // 洋流（第四十六轮，见 ocean-plane.ts）：海上直接改变海温，陆上是风带来的海洋影响。强弱为 0 时整段跳过（与没有洋流逐值相同）
-  const sea = planet.currents > 0 ? planeSeaOf(world, lat, out) : null;
+  const sea = planet.currents > 0 ? planeSeaOf(world, lat, out, tr.baseWinds) : null;
   const satSea = sea ? seaSaturation(n, land, sun, sea) : null;
-  if (sea) currentTemps(n, sea, base.tS, base.tW);
+  // 这个进程里第一次算洋流时，海面饱和水汽量那一遍也空算几遍（只在改海陆时才跑的循环先编译好，见 ocean-plane.ts 的 warmed）
+  if (sea && !satWarmed) {
+    satWarmed = true;
+    for (let k = 0; k < 3; k++) seaSaturation(n, land, sun, { ...sea, sat: [], satFor: NO_SAT });
+  }
+  if (sea) currentTemps(n, land, sea, base.tS, base.tW);
   else {
     out.currentX.fill(0);
     out.currentY.fill(0);
@@ -736,7 +743,7 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
     const fall = new Float64Array(n);
     const lim = new Float64Array(n);
     const evap = new Float64Array(n);
-    if (sea) planeRainSetupCur(n, land, T, rain, lee, sea.cur[si], satO, dKm, planet.humidity, fall, lim, evap);
+    if (sea) planeRainSetupCur(n, land, T, rain, lee, sea.x[si], satO, dKm, planet.humidity, fall, lim, evap);
     else planeRainSetup(n, land, T, rain, lee, satO, dKm, planet.humidity, fall, lim, evap);
     // 图外来流：图外是海时取当地海面饱和量
     const num0 = new Float64Array(n);
@@ -749,58 +756,41 @@ export function computeClimate(world: World, elevation: Float32Array, out: Deriv
 }
 
 // 区域的洋流（第四十六轮）：用偏转前的背景风（与星球相同，山挡风不改洋流；带上陆地也按它，见 ocean-plane.ts）
-const meanWindCache = new WeakMap<Float32Array, { wE: Float64Array; wS: Float64Array }>();
-// out 为 null 时只算、放进缓存（空闲预热）
-function planeSeaOf(world: World, lat: Float64Array, out: Derived | null): PlaneSea {
+// out 为 null 时只算、放进缓存（空闲预热）；bw：偏转前的两季背景风（planeTerrain 记着，没有时现取，都在缓存里）
+function planeSeaOf(world: World, lat: Float64Array, out: Derived | null, bw?: Float32Array[]): PlaneSea {
   const { mesh, causes, small, kmPerUnit } = world;
   const planet = small.planet;
-  const n = mesh.n;
-  const st = planeStatic(mesh, lat, planet.tilt, planet.rotation, kmPerUnit);
-  const bw = planeWinds(mesh, st, landFraction(mesh, causes.land, kmPerUnit));
-  // 两季平均（按背景风的数组记：分层缓存开着时同样的海陆是同一个数组）
-  let mean = meanWindCache.get(bw[0]);
-  if (!mean) {
-    mean = { wE: new Float64Array(n), wS: new Float64Array(n) };
-    for (let i = 0; i < n; i++) {
-      mean.wE[i] = (bw[0][i] + bw[2][i]) / 2;
-      mean.wS[i] = (bw[1][i] + bw[3][i]) / 2;
-    }
-    meanWindCache.set(bw[0], mean);
-  }
+  if (!bw) bw = planeWinds(mesh, planeStatic(mesh, lat, planet.tilt, planet.rotation, kmPerUnit), landFraction(mesh, causes.land, kmPerUnit));
   const sun = planeSun(mesh, lat, planet.tilt, planet.solar);
   const sea = planeSea(mesh, {
     land: causes.land,
     latAt: (y) => worldLatitude(world, y),
     tAnn: sun.tAnn,
-    wE: mean.wE,
-    wS: mean.wS,
+    seasons: bw,
     tilt: planet.tilt,
     rotation: planet.rotation,
     outsideOcean: planet.outsideOcean,
     kmPerUnit,
     strength: planet.currents,
-    winds: [
-      [bw[0], bw[1]],
-      [bw[2], bw[3]],
-    ],
   });
   if (!out) return sea;
   out.currentX.set(sea.cellE);
   out.currentY.set(sea.cellS);
-  out.sstAnom.set(sea.sstAnom);
+  sstAnomOut(causes.land, sea.x[0], sea.x[1], out.sstAnom);
   return sea;
 }
 
-// 两季海面温度的饱和水汽量（海格加上洋流的增减），按（洋流那一份、日照那一份）记下
-// 陆格就是日照那一份里的（同一个算式），只算海格
-const satCache = new WeakMap<PlaneSea, { oceanT: Float64Array; sat: Float64Array[] }>();
+let satWarmed = false;
+// 两季海面温度的饱和水汽量（海格加上洋流的增减），记在洋流那一份上（按日照那一份认）。陆格就是日照那一份里的（同一个算式），只算海格
 function seaSaturation(n: number, land: Uint8Array, sun: PlaneSun, sea: PlaneSea): Float64Array[] {
-  const hit = satCache.get(sea);
-  if (hit && hit.oceanT === sun.oceanT[0]) return hit.sat;
-  const sst = sea.sst;
-  const sat = [Float64Array.from(sun.satOcean[0]), Float64Array.from(sun.satOcean[1])];
-  for (let si = 0; si < 2; si++) seaSat(n, land, sun.oceanT[si], sst, sat[si]);
-  if (planeLayers.on) satCache.set(sea, { oceanT: sun.oceanT[0], sat });
+  if (sea.sat.length && sea.satFor === sun.oceanT[0]) return sea.sat;
+  const sat = sea.sat.length && sea.sat[0].length === n ? sea.sat : [new Float64Array(n), new Float64Array(n)];
+  for (let si = 0; si < 2; si++) {
+    sat[si].set(sun.satOcean[si]);
+    seaSat(n, land, sun.oceanT[si], sea.x[0], sat[si]);
+  }
+  sea.sat = sat;
+  sea.satFor = planeLayers.on ? sun.oceanT[0] : NO_SAT;
   return sat;
 }
 function seaSat(n: number, land: Uint8Array, oceanT: Float64Array, sst: Float64Array, out: Float64Array) {
@@ -808,19 +798,24 @@ function seaSat(n: number, land: Uint8Array, oceanT: Float64Array, sst: Float64A
 }
 
 // 洋流带来的增减（与星球相同：先写进 Float32 再加）：海上直接改变海温，陆上是风带来的海洋影响的八成
-function currentTemps(n: number, sea: PlaneSea, tS: Float32Array, tW: Float32Array) {
-  const [a0, a1] = sea.add;
+function currentTemps(n: number, land: Uint8Array, sea: PlaneSea, tS: Float32Array, tW: Float32Array) {
+  const [x0, x1] = sea.x;
   for (let i = 0; i < n; i++) {
-    tS[i] += a0[i];
-    tW[i] += a1[i];
+    tS[i] += land[i] ? 0.8 * x0[i] : x0[i];
+    tW[i] += land[i] ? 0.8 * x1[i] : x1[i];
   }
 }
 
-// 与 planeRainSetup 相同，降水速率再乘洋流的倍数 cur（与星球的 rainSetup 同一个写法）
-function planeRainSetupCur(n: number, land: Uint8Array, T: Float32Array, rain: Float64Array, lee: Float64Array, cur: Float64Array, satO: Float64Array, dKm: Float64Array, humidity: number, fall: Float64Array, lim: Float64Array, evap: Float64Array) {
+// 写进推导的海温偏离：海上是海温的增减，陆上是两季带上来的偏离的平均的八成
+function sstAnomOut(land: Uint8Array, x0: Float64Array, x1: Float64Array, out: Float32Array) {
+  for (let i = 0; i < land.length; i++) out[i] = land[i] ? (0.8 * (x0[i] + x1[i])) / 2 : x0[i];
+}
+
+// 与 planeRainSetup 相同，降水速率再乘洋流的倍数 clamp(1 + 0.06·x, 0.5, 1.25)（与星球的 rainSetup 同一个写法）
+function planeRainSetupCur(n: number, land: Uint8Array, T: Float32Array, rain: Float64Array, lee: Float64Array, x: Float64Array, satO: Float64Array, dKm: Float64Array, humidity: number, fall: Float64Array, lim: Float64Array, evap: Float64Array) {
   for (let i = 0; i < n; i++) {
     const warmth = 0.45 + 0.55 * smoothstep(-10, 25, T[i]);
-    const r = ((rain[i] * warmth) / 1800) * lee[i] * cur[i];
+    const r = ((rain[i] * warmth) / 1800) * lee[i] * clamp(1 + 0.06 * x[i], 0.5, 1.25);
     fall[i] = 1 - Math.exp(-r * dKm[i]);
     if (land[i]) {
       lim[i] = humidity * saturation(T[i]) * 1.1;

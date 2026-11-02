@@ -3,7 +3,7 @@ import { digest, digestWorld } from '../tools/hash';
 import { planeLayers } from './climate';
 import { meshFor, seededEngine } from './testing/fixtures';
 import { zonalBelt } from './ocean';
-import { type PlaneOceanInputs, planeGrid, planeOcean, planeOceanCache } from './ocean-plane';
+import { type PlaneOceanInputs, planeGrid, planeOcean, planeOceanCache, planeSea } from './ocean-plane';
 
 // 区域地图的洋流（第四十六轮，ocean-plane.ts）
 
@@ -41,6 +41,61 @@ function rowFlow(b: ReturnType<typeof basin>, lat: number) {
   const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
   return { west, east, mid, meanE: mean(zonal), meanMid: mean(mid) };
 }
+
+// 第四十六轮续：缓存按像素上取到的输入认、每格的那一份的数组挤掉后再用：结果都与不用缓存现算的逐值相同
+describe('区域的洋流：缓存与现算逐值相同', () => {
+  const seaInputs = (land: Uint8Array) => {
+    const b = basin();
+    const n = b.mesh.n;
+    const f = (v: ArrayLike<number>) => Float32Array.from(v);
+    const seasons = [f(b.inp.wE!), f(b.inp.wS!), f(b.inp.wE!), f(b.inp.wS!)];
+    return { mesh: b.mesh, n, inp: { ...b.inp, wE: undefined, wS: undefined, land, seasons, strength: 1 } };
+  };
+  const fresh = (mesh: Parameters<typeof planeSea>[0], inp: Parameters<typeof planeSea>[1]) => {
+    planeOceanCache.on = false;
+    try {
+      return planeSea(mesh, inp);
+    } finally {
+      planeOceanCache.on = true;
+    }
+  };
+  const same = (a: ReturnType<typeof planeSea>, b: ReturnType<typeof planeSea>) => {
+    expect(Array.from(a.cellE)).toEqual(Array.from(b.cellE));
+    expect(Array.from(a.cellS)).toEqual(Array.from(b.cellS));
+    expect(Array.from(a.x[0])).toEqual(Array.from(b.x[0]));
+    expect(Array.from(a.x[1])).toEqual(Array.from(b.x[1]));
+  };
+
+  it('改的格不在任何像素中心：栅格那份照用，每格的那一份跟着格的陆海变，与现算相同', () => {
+    const base = basin().inp.land;
+    const { mesh, inp } = seaInputs(base);
+    const { cells } = planeGrid(mesh);
+    const sampled = new Set(cells);
+    const c = [...Array(mesh.n).keys()].find((i) => !sampled.has(i) && !base[i] && mesh.x[i] > 0.6 && mesh.x[i] < 1.4)!;
+    expect(c).toBeGreaterThanOrEqual(0);
+    const land2 = base.slice();
+    land2[c] = 1;
+    const oc1 = planeOcean(mesh, inp);
+    const oc2 = planeOcean(mesh, { ...inp, land: land2 });
+    expect(oc2).toBe(oc1);
+    const v = planeSea(mesh, { ...inp, land: land2 });
+    expect(v.cellE[c]).toBe(0);
+    same(v, fresh(mesh, { ...inp, land: land2 }));
+  });
+
+  it('来回改海陆（数组挤掉后再用、撤销回到先前的海陆）：每一步都与现算相同', () => {
+    const base = basin().inp.land;
+    const { mesh, inp } = seaInputs(base);
+    const lands = [0.5, 0.8, 1.1, 0.5, 1.4, 0.8].map((x0) => {
+      const l = base.slice();
+      for (let i = 0; i < mesh.n; i++) if (Math.hypot(mesh.x[i] - x0, mesh.y[i] - 0.5) < 0.12) l[i] = 1;
+      return l;
+    });
+    for (const land of lands) same(planeSea(mesh, { ...inp, land }), fresh(mesh, { ...inp, land }));
+    // 洋流强弱不同是另一份
+    same(planeSea(mesh, { ...inp, land: lands[0], strength: 0.5 }), fresh(mesh, { ...inp, land: lands[0], strength: 0.5 }));
+  });
+});
 
 describe('区域的洋流：方向', () => {
   it('北半球的副热带环流顺时针：西侧向北的边界流又窄又强，东侧与大洋中间向南；北边向东、南边向西', () => {
@@ -87,14 +142,14 @@ describe('区域的洋流：方向', () => {
     try {
       const fresh = planeOcean(b.mesh, b.inp);
       expect(fresh).not.toBe(b.oc);
-      expect(Array.from(fresh.cellE)).toEqual(Array.from(b.oc.cellE));
-      expect(Array.from(fresh.cellD)).toEqual(Array.from(b.oc.cellD));
+      expect(Array.from(fresh.cE)).toEqual(Array.from(b.oc.cE));
+      expect(Array.from(fresh.dSST1)).toEqual(Array.from(b.oc.dSST1));
     } finally {
       planeOceanCache.on = true;
     }
-    // 栅格：像素约 2 格宽、长边不超过 200
+    // 栅格：像素约 3 格宽、长边不超过 128
     const g = planeGrid(b.mesh);
-    expect(Math.max(g.cols, g.rows)).toBeLessThanOrEqual(200);
+    expect(Math.max(g.cols, g.rows)).toBeLessThanOrEqual(128);
   });
 });
 

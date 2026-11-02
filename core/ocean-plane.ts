@@ -5,12 +5,12 @@ import { zonalBelt } from './ocean';
 // 区域地图的洋流（第四十六轮）。与整个星球的 ocean.ts 同一个道理、同一组系数，只是在一张粗的经纬格（栅格）上算：
 //   风推着海面转成大圈（北半球顺时针），回流挤在大洋西侧成为又窄又快的暖流，东侧又宽又慢的寒流；
 //   风把表层海水推离海岸时近岸冷水上涌；海面温度顺着海流输送，约 1000–2000 km 内回到按纬度的平衡；
-//   海温的偏离再随风带上陆地（约 1200 km 内衰减，山会挡住），沿岸一圈另和邻格平均（海风）。
+//   海温的偏离再随（偏转前的）背景风带上陆地（约 1200 km 内衰减；不按高度、不跟着山挡风拐），沿岸一圈另和邻格平均（海风）。
 // 和星球不同的地方：
 //   - 区域没有“绕星球一圈”：地图左右两边外面是海时（地图外面是海），当作外面还有 EXT_KM 宽的海；不是海时图边就是海岸
 //   - 每条纬度带的平均偏离（按纬度的平衡温度已经含着它）按“这一行的海 + 图外假想的海”平均：地图只占大洋的一段时不至于把偏离全扣掉
-//   - 全在栅格上算（像素约 2.5 格宽、长边最多 160 个像素），只在海陆变了时重算海上那部分（按海陆缓存两份）；
-//     带上陆地那部分随高程、风变，每次重算气候的地形部分时现算（几毫秒）
+//   - 全在栅格上算（像素约 3 格宽、长边最多 128 个像素），按像素上取到的输入（陆海、平衡温度、背景风、纬度）缓存：
+//     只改高程、冷暖、干湿，或改海陆没改到像素中心时都不重算（第四十六轮续，见开发说明第46轮的“缓存”）
 // 洋流强弱为 0 时不算（与没有这一步逐值相同）
 
 const DEG = Math.PI / 180;
@@ -40,11 +40,11 @@ export interface PlaneGrid {
 }
 
 const gridCache = new WeakMap<Mesh, PlaneGrid>();
-// 栅格：像素约 2.5 格宽，长边最多 160 个像素
+// 栅格：像素约 3 格宽，长边最多 128 个像素
 export function planeGrid(mesh: Mesh): PlaneGrid {
   let g = gridCache.get(mesh);
   if (g) return g;
-  const p = Math.max(2.5 * mesh.spacing, Math.max(mesh.width, mesh.height) / 160);
+  const p = Math.max(3 * mesh.spacing, Math.max(mesh.width, mesh.height) / 128);
   const cols = Math.max(4, Math.round(mesh.width / p));
   const rows = Math.max(4, Math.round(mesh.height / p));
   const pw = mesh.width / cols;
@@ -84,9 +84,10 @@ export interface PlaneOceanInputs {
   latAt: (y: number) => number;
   // 每格的年均辐射平衡温度（不含海流）
   tAnn: Float64Array;
-  // 两季平均的背景风（东、南分量，每格）
-  wE: ArrayLike<number>;
-  wS: ArrayLike<number>;
+  // 两季平均的背景风（东、南分量，每格）；或者给两季的（夏东、夏南、冬东、冬南），按像素取平均（与先逐格平均相同）
+  wE?: ArrayLike<number>;
+  wS?: ArrayLike<number>;
+  seasons?: Float32Array[];
   tilt: number;
   rotation: number;
   outsideOcean: boolean;
@@ -102,14 +103,57 @@ export interface PlaneOcean {
   cE: Float64Array;
   cS: Float64Array;
   dSST1: Float64Array;
-  // 每格（海格；陆地为 0）
-  cellE: Float32Array;
-  cellS: Float32Array;
-  cellD: Float64Array;
+  // 像素上两季的背景风（夏东、夏南、冬东、冬南；给了两季的风时才有）与按洋流强弱记下的带上陆地的两季偏离
+  seasonPx: Float64Array[] | null;
+  carry: Map<number, Float64Array[]>;
+  // 离海 passes 个像素以内的陆地（海风）
+  near: Uint8Array;
+  passes: number;
+}
+
+// 只取决于像素的陆海（与图外是不是海、像素大小）的几样：挡流的陆地、到东西海岸的距离、到挡流陆地的距离与它平滑后的样子、
+// 近海的陆地。按像素的陆海记两份：挪纬度、改轴倾角、日照时照用
+interface LandParts {
+  landPx: Uint8Array;
+  key: string;
+  steer: Uint8Array;
+  dE: Float64Array;
+  dW: Float64Array;
+  dist: Float64Array;
+  sm: Float64Array;
+  near: Uint8Array;
+  passes: number;
+}
+const landPartsCache = new WeakMap<PlaneGrid, LandParts[]>();
+function landParts(grid: PlaneGrid, landPx: Uint8Array, minPx: number, ext: number, pwKm: number, phKm: number): LandParts {
+  const key = `${minPx}|${ext}|${pwKm}|${phKm}`;
+  const list = landPartsCache.get(grid) ?? [];
+  if (planeOceanCache.on) for (const c of list) if (c.key === key && sameU8(c.landPx, landPx)) return c;
+  const { cols, rows } = grid;
+  const N = cols * rows;
+  const steer = steerPx(landPx, cols, rows, minPx);
+  const dE = new Float64Array(N);
+  const dW = new Float64Array(N);
+  rowDistances(steer, cols, rows, pwKm, ext, dE, dW);
+  const dist = chamfer(steer, cols, rows, pwKm, phKm);
+  // 挡流的陆地（0 / 1）与四邻平均两遍，梯度朝陆地，反过来就是朝海的方向
+  const sm = new Float64Array(N);
+  for (let k = 0; k < N; k++) sm[k] = steer[k];
+  for (let pass = 0; pass < 2; pass++) smoothSea(sm, new Uint8Array(N), cols, rows);
+  const passes = clamp(Math.round(150 / Math.sqrt(pwKm * phKm)), 1, 6);
+  const near = new Uint8Array(N);
+  const sea = new Uint8Array(N);
+  for (let k = 0; k < N; k++) sea[k] = landPx[k] ? 0 : 1;
+  const d1 = chamfer(sea, cols, rows, 1, 1);
+  for (let k = 0; k < N; k++) near[k] = landPx[k] && d1[k] <= passes ? 1 : 0;
+  const v: LandParts = { landPx: landPx.slice(), key, steer, dE, dW, dist, sm, near, passes };
+  if (planeOceanCache.on) landPartsCache.set(grid, [v, ...list].slice(0, 2));
+  return v;
 }
 
 // tAnnRef、wRef：传进来的那个数组（分层缓存开着时是同一个对象，先按它认，认不出再逐值比）
-const oceanCache = new WeakMap<Mesh, { land: Uint8Array; key: string; lat: Float64Array; tAnnRef: ArrayLike<number>; wRef: ArrayLike<number>; tAnn: Float64Array; wE: Float64Array; wS: Float64Array; result: PlaneOcean }[]>();
+// 第四十六轮（续）：按栅格上取到的输入认（像素的陆海、平衡温度、风，各行的纬度）：改海陆没改到哪个像素中心时整份照用
+const oceanCache = new WeakMap<Mesh, { key: string; lat: Float64Array; px: Float64Array[]; landPx: Uint8Array; result: PlaneOcean }[]>();
 // 测试用：false 时不读也不写缓存
 export const planeOceanCache = { on: true };
 
@@ -127,30 +171,39 @@ const sameNum = (a: Float64Array, b: ArrayLike<number>) => {
 export function planeOcean(mesh: Mesh, inp: PlaneOceanInputs): PlaneOcean {
   const grid = planeGrid(mesh);
   const { cols, rows, ph, cells } = grid;
-  const rowLat = new Float64Array(rows);
-  for (let r = 0; r < rows; r++) rowLat[r] = inp.latAt((r + 0.5) * ph);
+  const N = cols * rows;
   const key = `${inp.tilt}|${inp.rotation}|${inp.outsideOcean}|${inp.kmPerUnit}`;
+  // 1. 每像素的陆地、平衡温度与风（两季的风另记下，带上陆地用）。先取进按栅格留着的一份草稿（命中时什么都不新开），
+  // 没命中再复制出来
+  const sc = scratchOf(grid, !!inp.seasons);
+  for (let r = 0; r < rows; r++) sc.rowLat[r] = inp.latAt((r + 0.5) * ph);
+  if (inp.seasons && sc.seasons) gatherSeasons(cells, inp.land, inp.tAnn, inp.seasons, sc.landPx, sc.px[0], sc.px[1], sc.px[2], sc.seasons);
+  else gatherPx(cells, inp.land, inp.tAnn, inp.wE!, inp.wS!, sc.landPx, sc.px[0], sc.px[1], sc.px[2]);
   const list = oceanCache.get(mesh) ?? [];
   if (planeOceanCache.on) {
-    for (const c of list) if (c.key === key && sameU8(c.land, inp.land) && sameNum(c.lat, rowLat) && (c.tAnnRef === inp.tAnn || sameNum(c.tAnn, inp.tAnn)) && (c.wRef === inp.wE || (sameNum(c.wE, inp.wE) && sameNum(c.wS, inp.wS)))) return c.result;
+    for (let k = 0; k < list.length; k++) {
+      const c = list[k];
+      if (c.key === key && c.px.length === sc.all.length && sameU8(c.landPx, sc.landPx) && sameNum(c.lat, sc.rowLat) && c.px.every((a, j) => sameNum(a, sc.all[j]))) {
+        list.splice(k, 1);
+        list.unshift(c);
+        return c.result;
+      }
+    }
   }
-  const N = cols * rows;
+  const rowLat = sc.rowLat.slice();
+  const landPx = sc.landPx.slice();
+  const [tAnn, wE, wS] = sc.px.map((a) => a.slice());
+  const seasonPx = sc.seasons ? sc.seasons.map((a) => a.slice()) : null;
+  const px = [tAnn, wE, wS, ...(seasonPx ?? [])];
   const pwKm = grid.pw * inp.kmPerUnit;
   const phKm = ph * inp.kmPerUnit;
   const rot = inp.rotation;
   // 各段拆成小函数（小函数里的循环很快就被编译优化，见第三十二轮）
-  // 1. 陆地、挡海流的陆地（够大的陆块，再填掉一像素宽的海峡）；每像素的平衡温度与风
-  const landPx = new Uint8Array(N);
-  const tAnn = new Float64Array(N);
-  const wE = new Float64Array(N);
-  const wS = new Float64Array(N);
-  gatherPx(cells, inp.land, inp.tAnn, inp.wE, inp.wS, landPx, tAnn, wE, wS);
+  // 挡海流的陆地（够大的陆块，再填掉一像素宽的海峡）
   const mapKm2 = mesh.width * mesh.height * inp.kmPerUnit * inp.kmPerUnit;
-  const steer = steerPx(landPx, cols, rows, Math.min(1.5e5, 0.01 * mapKm2) / (pwKm * phKm));
+  const lp = landParts(grid, landPx, Math.min(1.5e5, 0.01 * mapKm2) / (pwKm * phKm), inp.outsideOcean ? EXT_KM : 0, pwKm, phKm);
+  const { steer, dE, dW } = lp;
   // 2. 每行到东、西两边海岸的距离（km）
-  const dE = new Float64Array(N);
-  const dW = new Float64Array(N);
-  rowDistances(steer, cols, rows, pwKm, inp.outsideOcean ? EXT_KM : 0, dE, dW);
   // 3. 流函数（km）：Sverdrup 平衡，西侧收成边界流；南北方向平滑约 1.5°，再在海上平滑两遍
   const psi = streamPx(steer, rowLat, dE, dW, cols, rows, inp.tilt, rot);
   // 4. 海流 = ψ 的旋转梯度 + 顺风偏转约 30° 的风吹流
@@ -158,25 +211,60 @@ export function planeOcean(mesh: Mesh, inp: PlaneOceanInputs): PlaneOcean {
   const cS = new Float64Array(N);
   currentsPx(psi, landPx, rowLat, wE, wS, cols, rows, pwKm, phKm, rot, cE, cS);
   // 5. 上涌（海面温度的降低，°C）
-  const dUp = upwellPx(steer, landPx, rowLat, wE, wS, dE, dW, cols, rows, pwKm, phKm, rot);
+  const dUp = upwellPx(lp, landPx, rowLat, wE, wS, cols, rows, pwKm, phKm, rot);
   // 6. 海面温度：平衡温度顺着海流输送（半拉格朗日，每步约 150 km，正反交替扫约 3000 km）
   const teq = new Float64Array(N);
   for (let k = 0; k < N; k++) teq[k] = tAnn[k] + (landPx[k] ? 0 : dUp[k]);
   const sst = sstPx(teq, landPx, cE, cS, cols, rows, pwKm, phKm);
   // 7. 去掉每条纬度带的平均偏离（这一行的海 + 图外假想的偏离为 0 的海），限在 ±10 °C
   const dSST1 = bandAnomaly(sst, tAnn, landPx, cols, rows, inp.outsideOcean ? BAND_KM / pwKm : 0);
-  // 每格（海格）：按像素中心双线性取，只用海上的像素
-  const n = mesh.n;
-  const cellE = new Float32Array(n);
-  const cellS = new Float32Array(n);
-  const cellD = new Float64Array(n);
-  seaCells(grid, landPx, cE, cS, dSST1, inp.land, cellE, cellS, cellD);
-  const result: PlaneOcean = { grid, landPx, steer, cE, cS, dSST1, cellE, cellS, cellD };
+  // 回到格上在 seaOf 里（与带上陆地的一遍算）
+  const result: PlaneOcean = { grid, landPx, steer, cE, cS, dSST1, seasonPx, carry: new Map(), near: lp.near, passes: lp.passes };
   if (planeOceanCache.on) {
-    list.unshift({ land: inp.land.slice(), key, lat: rowLat, tAnnRef: inp.tAnn, wRef: inp.wE, tAnn: inp.tAnn.slice(), wE: Float64Array.from(inp.wE), wS: Float64Array.from(inp.wS), result });
+    list.unshift({ key, lat: rowLat, px, landPx, result });
     oceanCache.set(mesh, list.slice(0, 2));
   }
   return result;
+}
+
+// 按栅格留一份取输入的草稿（各行纬度、像素的陆地、平衡温度、平均风，两季的风）
+interface Scratch {
+  rowLat: Float64Array;
+  landPx: Uint8Array;
+  px: Float64Array[];
+  seasons: Float64Array[] | null;
+  all: Float64Array[];
+}
+const scratchCache = new WeakMap<PlaneGrid, Scratch[]>();
+function scratchOf(grid: PlaneGrid, seasons: boolean): Scratch {
+  let pair = scratchCache.get(grid);
+  if (!pair) scratchCache.set(grid, (pair = []));
+  const k = seasons ? 1 : 0;
+  let sc = pair[k];
+  if (!sc) {
+    const N = grid.cols * grid.rows;
+    const f = () => new Float64Array(N);
+    const px = [f(), f(), f()];
+    const ss = seasons ? [f(), f(), f(), f()] : null;
+    sc = pair[k] = { rowLat: new Float64Array(grid.rows), landPx: new Uint8Array(N), px, seasons: ss, all: [...px, ...(ss ?? [])] };
+  }
+  return sc;
+}
+
+function gatherSeasons(cells: Int32Array, land: Uint8Array, tA: Float64Array, w: Float32Array[], landPx: Uint8Array, tAnn: Float64Array, wE: Float64Array, wS: Float64Array, out: Float64Array[]) {
+  const [sx, sy, wx, wy] = w;
+  const [a, b, c2, d] = out;
+  for (let k = 0; k < cells.length; k++) {
+    const c = cells[k];
+    landPx[k] = land[c];
+    tAnn[k] = tA[c];
+    a[k] = sx[c];
+    b[k] = sy[c];
+    c2[k] = wx[c];
+    d[k] = wy[c];
+    wE[k] = (sx[c] + wx[c]) / 2;
+    wS[k] = (sy[c] + wy[c]) / 2;
+  }
 }
 
 function gatherPx(cells: Int32Array, land: Uint8Array, tA: Float64Array, e: ArrayLike<number>, sN: ArrayLike<number>, landPx: Uint8Array, tAnn: Float64Array, wE: Float64Array, wS: Float64Array) {
@@ -274,7 +362,7 @@ function sstPx(teq: Float64Array, landPx: Uint8Array, cE: Float64Array, cS: Floa
       uy[k] = (-(cS[k] / s) * stepKm) / phKm;
     }
   }
-  const iters = Math.min(40, Math.ceil(3000 / stepKm));
+  const iters = Math.min(40, Math.ceil(2500 / stepKm));
   const st = stencil(landPx, 0, ux, uy, teq, cols, rows);
   for (let it = 0; it < iters; it++) advectSweep(sst, st, fac, it % 2 === 1);
   return sst;
@@ -359,34 +447,6 @@ function bandAnomaly(sst: Float64Array, tAnn: Float64Array, landPx: Uint8Array, 
 }
 
 // 每个海格的海流、偏离：四个像素里只用海上的，按双线性的权重重新归一；四个都是陆地时为 0
-function seaCells(g: PlaneGrid, landPx: Uint8Array, cE: Float64Array, cS: Float64Array, d: Float64Array, land: Uint8Array, outE: Float32Array, outS: Float32Array, outD: Float64Array) {
-  const { cols, k0: K, tx: TX, ty: TY } = g;
-  for (let i = 0; i < land.length; i++) {
-    if (land[i]) continue;
-    const k0 = K[i];
-    const tx = TX[i];
-    const ty = TY[i];
-    let e = 0;
-    let s = 0;
-    let t = 0;
-    let w = 0;
-    for (let j = 0; j < 4; j++) {
-      const k = k0 + (j & 1) + (j >> 1) * cols;
-      const wk = (j & 1 ? tx : 1 - tx) * (j >> 1 ? ty : 1 - ty);
-      if (landPx[k] || wk <= 0) continue;
-      e += cE[k] * wk;
-      s += cS[k] * wk;
-      t += d[k] * wk;
-      w += wk;
-    }
-    if (w > 1e-9) {
-      outE[i] = e / w;
-      outS[i] = s / w;
-      outD[i] = t / w;
-    }
-  }
-}
-
 // 挡海流的陆地：面积够大（像素数 ≥ minPx）的陆块，再填掉一像素宽的海峡（四周的像素都挨着陆地的海像素）
 function steerPx(landPx: Uint8Array, cols: number, rows: number, minPx: number): Uint8Array {
   const N = cols * rows;
@@ -468,14 +528,10 @@ function smoothSea(a: Float64Array, steer: Uint8Array, cols: number, rows: numbe
 
 
 // 上涌：近岸（挡流的陆地 300 km 以内）风把表层海水推离海岸；赤道上信风把表层水推向大洋西部、东部冷水上涌
-function upwellPx(steer: Uint8Array, landPx: Uint8Array, rowLat: Float64Array, wE: Float64Array, wS: Float64Array, dE: Float64Array, dW: Float64Array, cols: number, rows: number, pwKm: number, phKm: number, rot: number): Float64Array {
+function upwellPx(lp: LandParts, landPx: Uint8Array, rowLat: Float64Array, wE: Float64Array, wS: Float64Array, cols: number, rows: number, pwKm: number, phKm: number, rot: number): Float64Array {
   const N = cols * rows;
   const dUp = new Float64Array(N);
-  const dist = chamfer(steer, cols, rows, pwKm, phKm);
-  // 挡流的陆地（0 / 1）与四邻平均两遍，梯度朝陆地，反过来就是朝海的方向
-  const sm = new Float64Array(N);
-  for (let k = 0; k < N; k++) sm[k] = steer[k];
-  for (let pass = 0; pass < 2; pass++) smoothSea(sm, new Uint8Array(N), cols, rows);
+  const { dist, sm, dE, dW } = lp;
   for (let r = 0; r < rows; r++) {
     const lat = rowLat[r];
     const h = Math.sign(lat) * rot;
@@ -547,9 +603,9 @@ function chamfer(seed: Uint8Array, cols: number, rows: number, pwKm: number, phK
 // 海上像素的偏离（洋流强弱 × dSST1，限在 ±14 °C）顺着这一季的背景风吹上陆地：每步约 150 km，按距离衰减（约 1200 km），
 // 走约 2000 km；离海约 150 km 内的陆地再与四邻平均几遍（海风）。返回像素上的偏离（海上是海温的偏离）。
 // 与星球不同：不按高度衰减、不跟着山挡风拐（这样改高程时不用重算；星球上山会挡住）
-export function carryAnomaly(oc: PlaneOcean, strength: number, windX: ArrayLike<number>, windY: ArrayLike<number>, kmPerUnit: number): Float64Array {
+export function carryAnomaly(oc: PlaneOcean, strength: number, windX: Float64Array, windY: Float64Array, kmPerUnit: number): Float64Array {
   const { grid, landPx, dSST1 } = oc;
-  const { cols, rows, cells } = grid;
+  const { cols, rows } = grid;
   const N = cols * rows;
   const pwKm = grid.pw * kmPerUnit;
   const phKm = grid.ph * kmPerUnit;
@@ -563,9 +619,8 @@ export function carryAnomaly(oc: PlaneOcean, strength: number, windX: ArrayLike<
   const decay = Math.exp(-stepKm / 1200);
   for (let k = 0; k < N; k++) {
     if (!landPx[k]) continue;
-    const c = cells[k];
-    const u = windX[c];
-    const v = windY[c];
+    const u = windX[k];
+    const v = windY[k];
     const s = Math.hypot(u, v);
     if (s > 0.02) {
       ux[k] = (-(u / s) * stepKm) / pwKm;
@@ -573,16 +628,11 @@ export function carryAnomaly(oc: PlaneOcean, strength: number, windX: ArrayLike<
     }
   }
   const zero = new Float64Array(N);
-  const iters = Math.min(30, Math.ceil(2000 / stepKm));
+  const iters = Math.min(30, Math.ceil(1500 / stepKm));
   const st = stencil(landPx, 1, ux, uy, zero, cols, rows, true);
   for (let it = 0; it < iters; it++) carrySweep(A, st, decay, it % 2 === 1);
   // 海风：离海 passes 个像素以内的陆地与四邻平均
-  const passes = clamp(Math.round(150 / pxKm), 1, 6);
-  const near = new Uint8Array(N);
-  {
-    const dist = chamfer(Uint8Array.from(landPx, (v) => (v ? 0 : 1)), cols, rows, 1, 1);
-    for (let k = 0; k < N; k++) near[k] = landPx[k] && dist[k] <= passes ? 1 : 0;
-  }
+  const { near, passes } = oc;
   for (let pass = 0; pass < passes; pass++) {
     const next = Float64Array.from(A);
     for (let k = 0; k < N; k++) {
@@ -604,60 +654,111 @@ export function carryAnomaly(oc: PlaneOcean, strength: number, windX: ArrayLike<
 
 // ---------- 气候用的一份（climate.ts 的 computeClimate 调）----------
 export interface PlaneSea {
-  // 每格：海流（东、南）、海面温度的增减（海格，°C）、两季带上陆地的偏离（陆格）
+  // 每格：海流（东、南）；两季的偏离 x（海格是海温的增减，两季相同；陆格是这一季带上来的偏离）。
+  // 由它算（climate.ts）：温度的增减（陆上八成）、降水速率的倍数 clamp(1 + 0.06·x, 0.5, 1.25)、写进推导的偏离（陆上两季平均的八成）
   cellE: Float32Array;
   cellS: Float32Array;
-  sst: Float64Array;
-  anomaly: Float64Array[];
-  // 两季降水速率的倍数：冷水海岸空气稳定（多雾少雨），暖流上空对流更强（与星球相同的系数）
-  cur: Float64Array[];
-  // 两季温度的增减（海上是海温的增减，陆上是带上来的偏离的八成）、写进推导的海温偏离（陆上是两季平均的八成）
-  add: Float64Array[];
-  sstAnom: Float32Array;
+  x: Float64Array[];
+  // 两季海面的饱和水汽量（climate.ts 按日照那一份算好放这里；satFor 是算它时日照那一份的数组，没算过时是空的）。
+  // 两项一开始就是数组、之后只换内容：字段的类型变了（null → 数组）会让读这个对象的、已经编译好的函数作废，
+  // 下一次改海陆时回到格上的那一遍又要从头编译（量到 8–16 ms）
+  sat: Float64Array[];
+  satFor: Float64Array;
 }
 
 export interface PlaneSeaInputs extends PlaneOceanInputs {
   strength: number;
-  // 两季偏转前的背景风（东、南分量，每格）
-  winds: [ArrayLike<number>, ArrayLike<number>][];
+  // 两季偏转前的背景风（夏东、夏南、冬东、冬南，每格）
+  seasons: Float32Array[];
 }
 
-// 按（海上那份、强弱）缓存两份：海上那份按海陆、纬度、背景风认出来，两季的背景风也只取决于这些
-const seaCache = new WeakMap<PlaneOcean, { strength: number; value: PlaneSea }[]>();
+// 每格的那一份按（海上那份、强弱、格的陆海）认，留 SEA_KEEP 份；挤掉的那份的数组拿来装新的（每次改海陆不再新开 10 个整图大小的数组）
+const SEA_KEEP = 2;
+const seaCache = new WeakMap<Mesh, { oc: PlaneOcean; strength: number; land: Uint8Array; value: PlaneSea }[]>();
+
+// 这个进程里第一次算（新建、打开）时再空算几遍：几段循环先编译好，之后改海陆的每一笔不冷（结果扔掉，与缓存无关）
+// 预热时也走一遍“拿挤掉的那份的数组来装”的路（两条路都先编译好），最后那一份留作下一次新开时用的数组（spare）
+let warmed = false;
+export const NO_SAT = new Float64Array(0);
+let spare: PlaneSea | null = null;
 
 export function planeSea(mesh: Mesh, inp: PlaneSeaInputs): PlaneSea {
   const oc = planeOcean(mesh, inp);
-  const list = seaCache.get(oc) ?? [];
+  const list = seaCache.get(mesh) ?? [];
   if (planeOceanCache.on) {
-    const hit = list.find((c) => c.strength === inp.strength);
-    if (hit) return hit.value;
+    for (let k = 0; k < list.length; k++) {
+      const c = list[k];
+      if (c.oc === oc && c.strength === inp.strength && sameU8(c.land, inp.land)) {
+        list.splice(k, 1);
+        list.unshift(c);
+        return c.value;
+      }
+    }
   }
-  const A = inp.winds.map(([wx, wy]) => carryAnomaly(oc, inp.strength, wx, wy, inp.kmPerUnit));
-  const n = mesh.n;
-  const two = () => [new Float64Array(n), new Float64Array(n)];
-  const value: PlaneSea = { cellE: oc.cellE, cellS: oc.cellS, sst: new Float64Array(n), anomaly: two(), cur: two(), add: two(), sstAnom: new Float32Array(n) };
-  seaOut(oc.grid, inp.land, inp.strength, oc.cellD, A[0], A[1], value);
-  if (planeOceanCache.on) seaCache.set(oc, [{ strength: inp.strength, value }, ...list].slice(0, 2));
+  let old = planeOceanCache.on && list.length >= SEA_KEEP ? list.pop()!.value : null;
+  if (!old && planeOceanCache.on && spare && spare.x[0].length === mesh.n) {
+    old = spare;
+    spare = null;
+  }
+  const value = seaOf(mesh, inp, oc, old);
+  if (planeOceanCache.on) {
+    list.unshift({ oc, strength: inp.strength, land: inp.land.slice(), value });
+    seaCache.set(mesh, list);
+  }
+  if (planeOceanCache.on && !warmed) {
+    warmed = true;
+    planeOceanCache.on = false;
+    try {
+      let w: PlaneSea | null = null;
+      for (let k = 0; k < 3; k++) w = seaOf(mesh, inp, planeOcean(mesh, inp), w);
+      spare = w;
+    } finally {
+      planeOceanCache.on = true;
+    }
+  }
   return value;
 }
 
-// 每格一遍：海格的海温增减；陆格两季带上来的偏离（像素上双线性）；两季降水的倍数
-function seaOut(g: PlaneGrid, land: Uint8Array, strength: number, cellD: Float64Array, A0: Float64Array, A1: Float64Array, v: PlaneSea) {
-  const { cols, k0: K, tx: TX, ty: TY } = g;
-  const [a0, a1] = v.anomaly;
-  const [c0, c1] = v.cur;
-  const [d0, d1] = v.add;
-  const sst = v.sst;
-  const sa = v.sstAnom;
-  for (let i = 0; i < land.length; i++) {
-    if (!land[i]) {
-      const t = clamp(strength * cellD[i], -14, 14);
-      sst[i] = t;
-      c0[i] = c1[i] = clamp(1 + 0.06 * t, 0.5, 1.25);
-      d0[i] = d1[i] = t;
-      sa[i] = t;
-      continue;
+// 带上陆地的两季偏离（像素上）：按洋流强弱记在海上那份上
+function carryOf(oc: PlaneOcean, strength: number, kmPerUnit: number): Float64Array[] {
+  let A = planeOceanCache.on ? oc.carry.get(strength) : undefined;
+  if (!A) {
+    const w = oc.seasonPx!;
+    A = [carryAnomaly(oc, strength, w[0], w[1], kmPerUnit), carryAnomaly(oc, strength, w[2], w[3], kmPerUnit)];
+    if (planeOceanCache.on) {
+      if (oc.carry.size >= 2) oc.carry.delete(oc.carry.keys().next().value as number);
+      oc.carry.set(strength, A);
     }
+  }
+  return A;
+}
+
+// old：挤掉的那一份（它的数组拿来装这一份；每一项都重写）
+function seaOf(mesh: Mesh, inp: PlaneSeaInputs, oc: PlaneOcean, old: PlaneSea | null): PlaneSea {
+  const A = carryOf(oc, inp.strength, inp.kmPerUnit);
+  const n = mesh.n;
+  const f64 = (a?: Float64Array) => (a && a.length === n ? a : new Float64Array(n));
+  const f32 = (a?: Float32Array) => (a && a.length === n ? a : new Float32Array(n));
+  const value: PlaneSea = {
+    cellE: f32(old?.cellE),
+    cellS: f32(old?.cellS),
+    x: [f64(old?.x[0]), f64(old?.x[1])],
+    sat: old ? old.sat : [],
+    satFor: NO_SAT,
+  };
+  seaOut(oc, inp.land, inp.strength, A[0], A[1], value);
+  return value;
+}
+
+// 每格一遍（按网格记下的双线性的像素与比例）：
+//   海格：海流与偏离只用四个像素里海上的那几个（重新归一，都是陆地时为 0），海温增减 = 强弱 × 偏离（限 ±14 °C）
+//   陆格：两季带上来的偏离（四个像素都用）
+function seaOut(oc: PlaneOcean, land: Uint8Array, strength: number, A0: Float64Array, A1: Float64Array, v: PlaneSea) {
+  const { landPx, cE, cS, dSST1 } = oc;
+  const { cols, k0: K, tx: TX, ty: TY } = oc.grid;
+  const [x0s, x1s] = v.x;
+  const { cellE, cellS } = v;
+  for (let i = 0; i < land.length; i++) {
     const k = K[i];
     const tx = TX[i];
     const ty = TY[i];
@@ -665,15 +766,26 @@ function seaOut(g: PlaneGrid, land: Uint8Array, strength: number, cellD: Float64
     const w01 = tx * (1 - ty);
     const w10 = (1 - tx) * ty;
     const w11 = tx * ty;
-    const x0 = A0[k] * w00 + A0[k + 1] * w01 + A0[k + cols] * w10 + A0[k + cols + 1] * w11;
-    const x1 = A1[k] * w00 + A1[k + 1] * w01 + A1[k + cols] * w10 + A1[k + cols + 1] * w11;
-    a0[i] = x0;
-    a1[i] = x1;
-    c0[i] = clamp(1 + 0.06 * x0, 0.5, 1.25);
-    c1[i] = clamp(1 + 0.06 * x1, 0.5, 1.25);
-    d0[i] = 0.8 * x0;
-    d1[i] = 0.8 * x1;
-    sa[i] = (0.8 * (x0 + x1)) / 2;
+    if (!land[i]) {
+      let e = 0;
+      let s = 0;
+      let t = 0;
+      let w = 0;
+      if (!landPx[k] && w00 > 0) (e += cE[k] * w00), (s += cS[k] * w00), (t += dSST1[k] * w00), (w += w00);
+      if (!landPx[k + 1] && w01 > 0) (e += cE[k + 1] * w01), (s += cS[k + 1] * w01), (t += dSST1[k + 1] * w01), (w += w01);
+      if (!landPx[k + cols] && w10 > 0) (e += cE[k + cols] * w10), (s += cS[k + cols] * w10), (t += dSST1[k + cols] * w10), (w += w10);
+      if (!landPx[k + cols + 1] && w11 > 0) (e += cE[k + cols + 1] * w11), (s += cS[k + cols + 1] * w11), (t += dSST1[k + cols + 1] * w11), (w += w11);
+      const d = w > 1e-9 ? t / w : 0;
+      cellE[i] = w > 1e-9 ? e / w : 0;
+      cellS[i] = w > 1e-9 ? s / w : 0;
+      const tt = clamp(strength * d, -14, 14);
+      x0s[i] = x1s[i] = tt;
+      continue;
+    }
+    cellE[i] = 0;
+    cellS[i] = 0;
+    x0s[i] = A0[k] * w00 + A0[k + 1] * w01 + A0[k + cols] * w10 + A0[k + cols + 1] * w11;
+    x1s[i] = A1[k] * w00 + A1[k + 1] * w01 + A1[k + cols] * w10 + A1[k + cols + 1] * w11;
   }
 }
 
