@@ -28,5 +28,6 @@ WebGL2 底图 + 2D 画布的矢量叠加。屏幕与导出共用同一套画法�
 - `overlay-shapes.ts` 工具的预览图形（圈、线、箭头、格、河）
 - `overlay-proj.ts` 投影时的叠加层（`projectedParts`）
 - `settle-draw.ts` 城市、道路、地标、点的图标与道路的画法，避让用的格子 `BoxIndex`
-- `wind.ts` 风向与洋流流线（块的缓存有上限、新的块空闲时算）
+- `wind.ts` 风与洋流的流线：按场（风按季节、洋流碰到陆地就停）分块算、块的缓存有上限、新的块空闲时算；`windLines` / `currentLines` 取看得见的线，`strokeFlows` 画（可逐线投影）
+- `wind-layer.ts` 第四十六轮：“风与洋流”模式里把流线画进叠加层：停稳贴位图、移动中挪位图，转球时直接画（逐点投影的系数按线记下）；不在这种模式时一笔不画
 - `export-plan.ts` 导出整张地图的算式（虚拟镜头、分块、`autoSeam`；不碰 WebGL）
