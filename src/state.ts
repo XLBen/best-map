@@ -23,6 +23,7 @@ import { outsideRangeReason } from './ui/biomeRange';
 import { scriptTrustText } from './ui/copy';
 import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from './ui/shell/noticeTimer';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
+import { ContentHolder } from './content-post';
 import { buildKey, engineCode, engineUrl } from './engine-source';
 import { EngineWorker, type RawWorker, type SpawnMemory } from './engine-spawn';
 import type { MeshRequest } from './mesh-worker';
@@ -712,7 +713,8 @@ function engineReset(message: string) {
 function engineRestored(r: Extract<Response, { ok: true }>, reason: string | null) {
   recovered();
   resetAutosaveIds();
-  if (r.snapshot) applySnapshot(r.snapshot);
+  // 换了 Worker：第一份快照总是带着内容
+  if (r.snapshot && contentHolder.unpack(r.snapshot)) applySnapshot(r.snapshot);
   safeMode.value = reason !== null ? { reason } : null;
 }
 
@@ -1047,6 +1049,9 @@ function noteChange(head: string, before: World | null, undoable = true, action?
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
 }
 
+// 快照里没带的内容从这里补上（见 content-post.ts）
+const contentHolder = new ContentHolder();
+
 // fresh：新建或打开了一个世界（不是编辑）
 async function handle(r: Response, fresh = false): Promise<boolean> {
   if (!r.ok) {
@@ -1054,12 +1059,12 @@ async function handle(r: Response, fresh = false): Promise<boolean> {
     return false;
   }
   if (r.snapshot) {
-    const s = 'light' in r.snapshot ? r.snapshot : completeSnapshot(r.snapshot);
+    const s = contentHolder.unpack(r.snapshot) ? ('light' in r.snapshot ? r.snapshot : completeSnapshot(r.snapshot)) : null;
     if (s) applySnapshot(s, fresh);
     else {
       // 只带变了的数组、却拼不起来（手上的世界不是 Worker 上一次发快照时的状态）：要一份完整的
       const full = await call({ kind: 'snapshot' }, null);
-      if (full.ok && full.snapshot && !('light' in full.snapshot)) {
+      if (full.ok && full.snapshot && !('light' in full.snapshot) && contentHolder.unpack(full.snapshot)) {
         const f = completeSnapshot(full.snapshot);
         if (f) applySnapshot(f, fresh);
       }

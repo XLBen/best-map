@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { Dirty, type RemovedItem } from '../core/commands';
-import { previewWorldOf } from '../core/preview-world';
+import { postedPatch, previewWorldOf } from '../core/preview-world';
 import { riverBuffers, worldRivers } from '../core/river-pack';
 import { type Checkpoint, Engine, type WorldDoc } from '../core/engine';
 import { planetFormIssues, previewTerrain } from '../core/terrain';
@@ -11,6 +11,7 @@ import { setScriptHost, setScriptsEnabled } from '../core/script';
 import { type Settings, buildMeshFor, meshKey, settingsSchema } from '../core/world';
 import { probeIsolation } from './isolation-probe';
 import type { CheckpointPut, TakeReply } from './checkpoint-store';
+import { ContentSender } from './content-post';
 import type { CheckpointReady, Hello, LightSnapshot, MirrorLog, Request, Response, ScriptPing, Snapshot } from './protocol';
 
 // 计算 Worker：持有引擎；每次状态变化后把原因与推导的副本发回主线程。
@@ -153,6 +154,9 @@ function changedCells(a: ArrayBufferView, b: ArrayBufferView, n: number): { idx:
   return { idx: Int32Array.from(idx), rows };
 }
 
+// 小数据里的内容没换时不发（见 content-post.ts）。编号带上这个 Worker 的开始时间：换了 Worker 也不会碰巧对上
+const contentSender = new ContentSender(performance.timeOrigin);
+
 // 快照：原因（不大）整份复制；推导只复制、转交与上一次发的不同的数组（full 时全部），相同的写 null、列进 same
 function snapshot(e: Engine, full = false): { snap: Snapshot; transfer: Transferable[] } {
   const w = e.world;
@@ -210,7 +214,7 @@ function snapshot(e: Engine, full = false): { snap: Snapshot; transfer: Transfer
       rivers,
       settings: w.settings,
       causes,
-      small: w.small,
+      ...contentSender.pack(w.small, full),
       derived,
       history: e.history,
       canUndo: e.canUndo,
@@ -233,7 +237,7 @@ function lightSnapshot(e: Engine): { snap: LightSnapshot; transfer: Transferable
   return {
     snap: {
       light: true,
-      small: w.small,
+      ...contentSender.pack(w.small),
       features: w.derived.features,
       province,
       islandType,
@@ -508,7 +512,7 @@ async function handle(id: number, req: Request) {
               // 差别里的数组是副本的（副本留着给紧接着的执行采用）：不转移，结构化克隆复制一份发过去。
               // 预览世界的河也在这里描好（主线程画将来的样子时直接用）
               const rivers = worldRivers(previewWorldOf(engine!.world, r.value.patch));
-              reply({ id, ok: true, preview: r.value.result, world: r.value.patch, rivers }, riverBuffers(rivers));
+              reply({ id, ok: true, preview: r.value.result, world: postedPatch(engine!.world, r.value.patch), rivers }, riverBuffers(rivers));
               return;
             }
             await yieldNow();

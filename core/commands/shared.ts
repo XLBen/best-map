@@ -1,5 +1,6 @@
 import type { Derived, SmallState, World } from '../world';
 import { z } from 'zod';
+import type { SmallCopy } from '../small-copy';
 import { clearAuto } from '../human/auto';
 import { clearCountries } from '../human/countries';
 import { clearCities } from '../human/settlements';
@@ -39,12 +40,11 @@ export function getArray(world: World, key: ArrayKey): Float32Array | Uint8Array
   return world.causes[key as Exclude<ArrayKey, `field:${string}`>];
 }
 
-// 撤销记录：稀疏的数组差异 + 小状态快照
-export interface UndoRecord {
+// 撤销记录：稀疏的数组差异 + 小状态快照（small、content，见 small-copy.ts：内容按引用共用）
+export interface UndoRecord extends SmallCopy {
   arrays: { key: ArrayKey; idx: Int32Array; old: Float64Array }[];
   // 新增或删除的自定义场：撤销时恢复为 old（null 表示原来不存在）
   fields: { name: string; old: Float32Array | null }[];
-  small: string;
   // 这一步第一次有了湖里的岛定下的高度（causes.islandHeight）：撤销时去掉整个数组
   dropHeights?: true;
   // 这一步第一次有了破碎度（causes.fragment，第十八轮）：撤销时去掉整个数组

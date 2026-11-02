@@ -2,6 +2,7 @@ import { coastStyleCached, fjordData, landStyle } from './coast-style';
 import { type ClimateBase, type ClimateEffects, computeClimate, finalizeClimate, prepareClimatePlane } from './climate';
 import { DOC_VERSION, checkDoc } from './doc-version';
 import { type Command, CommandError, Dirty, type RemovedItem, type UndoRecord, addArrayUndo, applyCommand, revert } from './commands';
+import { cloneSmall, copySmall, restoreSmall, type SmallCopy } from './small-copy';
 import type { ContentRef } from './content/unused';
 import { type TidyPlan, planTidy } from './tidy';
 import { lakeProvinceFix } from './provinces';
@@ -396,7 +397,7 @@ export class Engine {
     this.lastPreview = null;
     const stateBefore = this.stateId;
     // 换之前看到的地物与小数据：新的一步按它们留名字（换掉的岛还叫原来的名字）
-    const shown = this.dirty === Dirty.None && this.done.length ? { features: this.world.derived.features, small: JSON.stringify(this.world.small) } : null;
+    const shown = this.dirty === Dirty.None && this.done.length ? { features: this.world.derived.features, small: copySmall(this.world.small) } : null;
     const h = this.revertLast();
     if (!h) throw new CommandError('没有可以替换的一步');
     const water0 = this.waterMask();
@@ -446,15 +447,15 @@ export class Engine {
   // 名字跟着地方走（见 features.ts 的 carryNames）：最后一步重算之后，与这一步之前的地物 prev 比，
   // 锚点挪了、名字被新出来的地物抢了的地物留着原来的名字，落不到地物上的改名挪过去。记进这一步的命令
   // （重放、重做时照用，所以从头重放与一步一步编辑一字不差），再重新起名。只改名字、省份的步，没识别地物时不做
-  // prevSmall：prev 那时的小数据（JSON），默认是这一步之前的
-  private carryNames(prev: GeoFeature[], prevSmall?: string) {
+  // prevSmall：prev 那时的小数据（副本），默认是这一步之前的
+  private carryNames(prev: GeoFeature[], prevSmall?: SmallCopy) {
     const step = this.done[this.done.length - 1];
     if (!this.features || !step || step.dirty <= Dirty.None || !prev.length) return;
     const w = this.world;
     // 只重算了人文的几层（第二十二轮）：地物还是那些，名字变了的都是换了风格（当地的文化变了）的，起名的办法变了，
     // 没有要留的名字（与整个比一遍的结果相同，省下三遍起名）
     if (step.dirty === Dirty.Human && step.cmd.op !== 'batch' && onlyRestyled(prev, w.derived.features)) return;
-    const carry = carryNames(w, w.derived.features, JSON.parse(prevSmall ?? step.undo.small) as SmallState, prev);
+    const carry = carryNames(w, w.derived.features, restoreSmall(prevSmall ?? step.undo), prev);
     if (!carry) return;
     applyNameCarry(w.small, carry);
     step.cmd = { ...step.cmd, nameCarry: mergeNameCarry(step.cmd.nameCarry, carry) };
@@ -826,7 +827,7 @@ export class Engine {
     const w = this.world;
     // 涂省、并省会让格跟着省份换国家（第二十三轮）：国家的数组也复制一份
     const causes = { ...w.causes, province: w.causes.province.slice(), ...(w.causes.country ? { country: w.causes.country.slice() } : {}) };
-    const scratch: World = { ...w, causes, small: structuredClone(w.small) };
+    const scratch: World = { ...w, causes, small: cloneSmall(w.small) };
     const r = applyCommand(scratch, cmd, { ensureDerived: () => d });
     return { province: scratch.causes.province, provinces: scratch.small.provinces, seams: scratch.small.provinceSeams ?? null, summary: r.summary, changed: r.changed };
   }
@@ -1124,7 +1125,7 @@ function cloneWorld(w: World): World {
     mesh: w.mesh,
     kmPerUnit: w.kmPerUnit,
     causes: cloneCauses(c, fields),
-    small: structuredClone(w.small),
+    small: cloneSmall(w.small),
     derived,
   };
 }

@@ -328,6 +328,47 @@ describe('快照只带变了的数组', () => {
     for (const [k, v] of Object.entries(first.derived)) if (ArrayBuffer.isView(v)) expect(Array.from(du[k] as ArrayLike<number>), k).toEqual(Array.from(v as unknown as ArrayLike<number>));
   });
 
+  // 第四十七轮：内容没换时快照、预览的回复都不带；主线程补上之后与完整的快照逐字节相同
+  it('快照里的内容：没换时不发，补上之后与完整的相同；改了内容、撤销、要完整的都整份发', async () => {
+    const { ContentHolder } = await import('./content-post');
+    const { previewWorldOf } = await import('../core/preview-world');
+    const rx = new ContentHolder();
+    const got = async (req: Request) => {
+      const r = await send(req);
+      // 假的 self 不复制：这里像 postMessage 一样克隆一份（内容对象不能是 Worker 那一份）
+      const s = structuredClone({ ...r.snapshot!, causes: {}, derived: {}, rivers: undefined }) as unknown as Snapshot;
+      expect(rx.unpack(s)).toBe(true);
+      return s;
+    };
+    const first = await got({ kind: 'init', settings, commands });
+    expect(first.sameContent).toBeUndefined();
+    const held = first.small.content;
+    expect(held).toBeTruthy();
+    const land = (await send({ kind: 'snapshot' })).snapshot as Snapshot;
+    const cells = [...land.causes.land.keys()].filter((i) => land.causes.land[i]).slice(0, 80);
+    rx.unpack(structuredClone({ small: land.small, contentRev: land.contentRev }));
+    const edit = await got({ kind: 'exec', cmd: { op: 'paint', field: 'tempOffset', cells, value: -3, mode: 'add' } });
+    expect(edit.sameContent).toBe(true);
+    const full = await got({ kind: 'snapshot' });
+    expect(full.sameContent).toBeUndefined();
+    expect(JSON.stringify(edit.small)).toBe(JSON.stringify(full.small));
+    // 预览：差别里不带内容，补上之后与带内容的相同
+    const pv = await send({ kind: 'previewWorld', cmd: { op: 'paint', field: 'tempOffset', cells, value: -1, mode: 'add' } });
+    expect(pv.world!.sameContent).toBe(true);
+    expect(pv.world!.small.content).toBe(0);
+    const base = { ...land, small: full.small, mesh: { n: land.causes.land.length } } as unknown as Parameters<typeof previewWorldOf>[0];
+    expect(JSON.stringify(previewWorldOf(base, pv.world!).small.content)).toBe(JSON.stringify(full.small.content));
+    expect(Object.keys(previewWorldOf(base, pv.world!).small)).toEqual(Object.keys(full.small));
+    // 改了内容：整份发；撤销回去：又是另一份，也整份发
+    const t = Object.values(full.small.content!.terrainClass!)[0] as { id: string; name: string };
+    const changed = await got({ kind: 'exec', cmd: { op: 'set_content', kind: 'terrainClass', id: t.id, item: { ...t, name: `${t.name}二` } } });
+    expect(changed.sameContent).toBeUndefined();
+    expect((changed.small.content!.terrainClass![t.id] as { name: string }).name).toBe(`${t.name}二`);
+    const back = await got({ kind: 'undo' });
+    expect(back.sameContent).toBeUndefined();
+    expect(JSON.stringify(back.small)).toBe(JSON.stringify(edit.small));
+  });
+
   // 第十三轮：地图上的河在 Worker 里描好随快照转交（主线程不再描）：拆开的与主线程按快照拼出的世界描的逐位相同，
   // 只带变了的数组的快照也一样；预览世界的河随预览的回复送来
   it('快照带着描好的河：与按快照拼出的世界描的逐位相同；预览世界的河也送来', async () => {

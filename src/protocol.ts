@@ -11,6 +11,7 @@ import type { TerrainPatch, TerrainPreview } from '../core/terrain';
 import type { GeoFeature } from '../core/features';
 import type { ScriptIssue } from '../core/script';
 import type { Causes, Derived, Settings, SmallState } from '../core/world';
+import type { PostedContent } from './content-post';
 
 // 主线程与计算 Worker 之间的消息
 
@@ -52,10 +53,10 @@ export type Request =
   // 整理本世界的计划（第二十九轮）：在世界的副本上试，世界不变。only：只考虑这几项（资源库里一个包“移出没用到的”）
   | { kind: 'planTidy'; only?: ContentRef[] };
 
-export interface Snapshot {
+// small、contentRev、sameContent：内容没换时不发（见 content-post.ts）
+export interface Snapshot extends PostedContent {
   settings: Settings;
   causes: Causes;
-  small: SmallState;
   derived: Derived;
   history: { summary: string; done: boolean }[];
   canUndo: boolean;
@@ -74,9 +75,8 @@ export interface Snapshot {
 }
 
 // 轻快照：只改了名字、省份（推导没有重算）时只发这些，推导数组沿用主线程上已有的
-export interface LightSnapshot {
+export interface LightSnapshot extends PostedContent {
   light: true;
-  small: SmallState;
   features: GeoFeature[];
   province: Int32Array;
   // 每格的岛的种类（第十四轮：删掉一种岛时编号会挪，只重新起名的一步也要带上）

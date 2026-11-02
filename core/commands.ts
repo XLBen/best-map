@@ -14,6 +14,7 @@ import { applyNameCarry } from './features';
 import { applyPopFix } from './human/population';
 import { tidyCities } from './human/settlements';
 import { applyProvinceFix } from './provinces';
+import { copySmall, restoreSmall, sameAsCopy } from './small-copy';
 import { resolveTerrain } from './terrain';
 import type { SmallState, World } from './world';
 import { type ApplyContext, type ArrayKey, AUTO_ARRAYS, Dirty, formatIssues, getArray, HUMAN_ARRAYS, POP_ARRAYS, type RemovedItem, type RunResult, type UndoRecord } from './commands/shared';
@@ -27,6 +28,7 @@ export { type GuidePatch, type LakePatch, type Command, commandSchema } from './
 export { Dirty, type UndoRecord, type ApplyContext, type RemovedItem } from './commands/shared';
 export { popText } from './commands/human';
 export { truncateGuide, guideDirty } from './commands/nature';
+export { postedSmall } from './small-copy';
 
 // 在 errors.ts 里（避免循环引用），这里照旧导出
 export { CommandError };
@@ -104,26 +106,32 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   }
 }
 
-// 世界里的各项内容（按种类、id）：放在 small.content 的种类按 small.content 里的，
-// 以前的种类按原来的放法。星球形态不算（换形态不是移出）
-function contentSnapshot(world: World): Map<string, Map<string, unknown>> {
-  const out = new Map<string, Map<string, unknown>>();
+// 世界里的各项内容（按种类）：放在 small.content 的种类记那一种的对象（不可变，改了就是新对象，没变的这一步不用比）；
+// 以前的种类按原来的放法，当时就按 id 列好（数组可能就地改）。星球形态不算（换形态不是移出）
+type KindItems = Map<string, unknown>;
+type ContentBefore = Map<string, Record<string, unknown> | KindItems>;
+const NO_ITEMS: Record<string, unknown> = {};
+function contentSnapshot(world: World): ContentBefore {
+  const out: ContentBefore = new Map();
   for (const k of allKinds()) {
     if (k.id === 'planetForm') continue;
-    const list = k.store === 'content' ? Object.values(world.small.content?.[k.id] ?? {}) : k.inWorld(world);
-    out.set(k.id, new Map(list.map((x) => [itemId(k, x), x])));
+    out.set(k.id, k.store === 'content' ? (world.small.content?.[k.id] ?? NO_ITEMS) : new Map(k.inWorld(world).map((x) => [itemId(k, x), x])));
   }
   return out;
 }
 
 // 前后两份比较：移出的项、新加的项（按种类的登记先后，同一种按世界里的先后）
-function contentDiff(world: World, before: Map<string, Map<string, unknown>>, originBefore: SmallState['origin']): { removed: RemovedItem[]; added: ContentRef[] } {
+function contentDiff(world: World, before: ContentBefore, originBefore: SmallState['origin']): { removed: RemovedItem[]; added: ContentRef[] } {
   const after = contentSnapshot(world);
   const removed: RemovedItem[] = [];
   const added: ContentRef[] = [];
-  for (const [kind, was] of before) {
-    const now = after.get(kind)!;
+  for (const [kind, wasAll] of before) {
+    const nowAll = after.get(kind)!;
+    if (nowAll === wasAll) continue;
     const k = kindOf(kind)!;
+    const itemsOf = (v: Record<string, unknown> | KindItems): KindItems => (v instanceof Map ? v : new Map(Object.values(v).map((x) => [itemId(k, x), x])));
+    const was = itemsOf(wasAll);
+    const now = itemsOf(nowAll);
     for (const [id, item] of was) {
       if (now.has(id)) continue;
       const origin = originBefore ? recordedOrigin({ origin: originBefore }, kind, id) : undefined;
@@ -174,7 +182,7 @@ export function applyCommand(
   if (popFix) for (const k of POP_ARRAYS) if (!touched.includes(k)) touched.push(k);
   const keys = touched.filter((k) => getArray(world, k));
   const before = keys.map((k) => Float64Array.from(getArray(world, k)!));
-  const smallBefore = JSON.stringify(world.small);
+  const smallBefore = copySmall(world.small);
   const fieldsBefore = { ...world.causes.fields };
   const heightsBefore = world.causes.islandHeight;
   const fragmentBefore = world.causes.fragment;
@@ -206,14 +214,14 @@ export function applyCommand(
   } catch (e) {
     // 失败时恢复，保证命令要么完整生效要么不生效
     keys.forEach((k, idx) => getArray(world, k)!.set(before[idx]));
-    world.small = JSON.parse(smallBefore);
+    world.small = restoreSmall(smallBefore);
     world.causes.fields = fieldsBefore;
     if (!heightsBefore) delete world.causes.islandHeight;
     if (!fragmentBefore) delete world.causes.fragment;
     for (const k of HUMAN_ARRAYS) if (!humanBefore.includes(k)) delete world.causes[k];
     throw e;
   }
-  const undo: UndoRecord = { arrays: [], fields: [], small: smallBefore };
+  const undo: UndoRecord = { arrays: [], fields: [], ...smallBefore };
   if (!heightsBefore && world.causes.islandHeight) undo.dropHeights = true;
   if (!fragmentBefore && world.causes.fragment) undo.dropFragment = true;
   const created = HUMAN_ARRAYS.filter((k) => world.causes[k] && !humanBefore.includes(k));
@@ -227,7 +235,9 @@ export function applyCommand(
   });
   const names = new Set([...Object.keys(fieldsBefore), ...Object.keys(world.causes.fields)]);
   for (const name of names) if (fieldsBefore[name] !== world.causes.fields[name]) undo.fields.push({ name, old: fieldsBefore[name] ?? null });
-  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || !!undo.dropFragment || !!undo.dropArrays || JSON.stringify(world.small) !== smallBefore;
+  const changed = undo.arrays.length > 0 || undo.fields.length > 0 || !!undo.dropHeights || !!undo.dropFragment || !!undo.dropArrays || !sameAsCopy(world.small, smallBefore);
+  // 什么都没改（比如把一项改成一模一样的）：内容换回原来的对象（一字不差），之后接着共用、缓存照样命中
+  if (!changed && smallBefore.content !== undefined) world.small.content = smallBefore.content;
   const provinceNames: Record<string, string> = {};
   const provinceOrig: Record<string, string> = {};
   for (const [id, p] of Object.entries(world.small.provinces)) {
@@ -278,7 +288,7 @@ export function revert(world: World, undo: UndoRecord) {
   if (undo.dropHeights) delete world.causes.islandHeight;
   if (undo.dropFragment) delete world.causes.fragment;
   for (const k of undo.dropArrays ?? []) delete world.causes[k];
-  world.small = JSON.parse(undo.small) as SmallState;
+  world.small = restoreSmall(undo);
   // 陆海、抬升等组合值由增量与生成参数算出，撤销后重新组合
   resolveTerrain(world);
 }

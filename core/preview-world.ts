@@ -1,4 +1,5 @@
 import type { GeoFeature } from './features';
+import { postedSmall } from './small-copy';
 import type { Causes, Conflict, Derived, SmallState, World } from './world';
 
 // 预览世界：引擎在副本上执行一条命令之后，副本与当前世界的差别。只带内容变了的数组（主线程在当前世界上
@@ -15,6 +16,8 @@ export interface SparseRows {
 
 export interface PreviewPatch {
   small: SmallState;
+  // 没带内容（small.content 是占位）：内容与当前世界相同（postedPatch）
+  sameContent?: true;
   causes: Partial<Record<keyof Causes, Typed>>;
   // 自定义场：有一个变了（或新增、删除）时整份带上；没变为 null
   fields: Record<string, Float32Array> | null;
@@ -115,6 +118,8 @@ export function previewPatch(live: World, copy: World): PreviewPatch {
 // 在当前世界（base，要与算预览时的世界是同一个状态）上补上差别，得到将来的世界。没变的数组沿用 base 的
 export function previewWorldOf(base: World, p: PreviewPatch): World {
   const S = p.small.species.length;
+  // 没带内容（postedPatch）：与 base 的是同一份。先展开再赋给占位的键，键的先后不变
+  const small = p.sameContent ? { ...p.small, content: base.small.content } : p.small;
   const derived: Derived = { ...base.derived, ...(p.derived as Partial<Derived>), features: p.features, conflicts: p.conflicts };
   if (p.corrF) derived.corrF = p.corrF;
   if (p.share) derived.share = withRows(base.derived.share, p.share, S);
@@ -122,5 +127,11 @@ export function previewWorldOf(base: World, p: PreviewPatch): World {
   for (const k of p.gone ?? []) delete (derived as unknown as Record<string, unknown>)[k];
   const causes: Causes = { ...base.causes, ...(p.causes as Partial<Causes>) };
   if (p.fields) causes.fields = p.fields;
-  return { ...base, causes, small: p.small, derived };
+  return { ...base, causes, small, derived };
+}
+
+// 发给主线程的差别（第四十七轮）：这一步没换内容时不带（结构化克隆 300 KB 上下，预览每一笔都发）。
+// 主线程只在手上的世界与算预览的世界是同一个状态时才用（见 state.ts 的 r.preview.stateId），补上自己手上的那一份
+export function postedPatch(live: World, p: PreviewPatch): PreviewPatch {
+  return p.small.content !== undefined && p.small.content === live.small.content ? { ...p, small: postedSmall(p.small), sameContent: true } : p;
 }
