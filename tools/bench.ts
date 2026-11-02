@@ -6,6 +6,9 @@
 //     每一步另记各阶段（高程里再分生成器采样、认陆块、求解、收尾）与计数（重算了几块陆地、湖、河口）。
 //     --long：再造一份约 200 条混合命令的文档，计整段重放与从检查点恢复（都在新的网格上，像重新打开）。
 //     --human：再接着跑人文（省份、文化、人口、国家、城市）的旧步骤（只打印，不进 --json）
+//     --library：世界带着一整个时代库（第四十七轮：中世纪的包照常导入，small.content 约 300 KB，没有人文、地图不变），
+//     步骤相同，最后另计不重算推导的几步（libEdit、libUndo、libRedo、libContent、libContentUndo、libNoop：几十次的中位数，
+//     毫秒、两位小数）、发给主线程的小数据（libPost）、每步撤销记录里的字（undoKB，千字）
 //   npx tsx tools/bench.ts --globe --pack fantasy [--json] [--hash]：整个星球 + 奇幻示例包，按用户平时的操作逐步计时
 //     （新建、用资源包、画陆地、堆山、放岛、冷暖、自然融入的生态、湿度滑块、画河的预览与执行、撤销 6 次、重做、
 //     打开（整段重放）、从检查点恢复）
@@ -22,6 +25,7 @@ import * as RiverPack from '../core/river-pack';
 import * as Display from '../core/display';
 import * as CoastStyle from '../core/coast-style';
 import { Engine } from '../core/engine';
+import * as Commands from '../core/commands';
 import type { Command } from '../core/commands';
 import { packMesh, unpackMesh } from '../core/mesh-pack';
 import type { Mesh } from '../core/mesh';
@@ -44,6 +48,7 @@ const lap = (label: string, key?: string) => {
   t = now;
 };
 const globe = process.argv.includes('--globe');
+const library = process.argv.includes('--library');
 const packArg = process.argv.indexOf('--pack');
 const pack = packArg >= 0 ? process.argv[packArg + 1] : null;
 const EARTH_CELLS = planetCells(PLANET_SIZES.earth.radiusKm);
@@ -197,6 +202,12 @@ function plainBench() {
   lap('mesh', 'mesh');
   measure(eng, 'newWorld', 'new world', () => eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] }));
   const w = eng.world;
+  if (library) {
+    for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']] }, w)) eng.exec(c);
+    lap('import library', 'library');
+    results.smallKB = Math.round(JSON.stringify(w.small).length / 1000);
+    results.contentKB = Math.round(JSON.stringify(w.small.content ?? {}).length / 1000);
+  }
 
   // 抬山：内陆一笔（半径 6 格）
   const hill = disc(eng, inland(eng, 0.3), 6);
@@ -280,11 +291,67 @@ function plainBench() {
   }
   // 一直开着的世界上同一笔（缓存都是热的）
   measure(eng, 'hotRelief', 'same edit, long-open world', () => eng.exec(relief2));
+  if (library) libraryBench(eng);
 
   if (process.argv.includes('--long')) longBench(eng);
   if (process.argv.includes('--human')) humanBench(eng);
   if (process.argv.includes('--hash')) printHashes(eng);
   if (json) console.log(JSON.stringify(results));
+}
+
+// 带库的世界上不重算推导的几步：这里几乎只有小数据的开销（序列化、比较、解析、克隆）。几十次的中位数，两位小数。
+// 键都不带“.”“#”，对照表里直接列出来。旧的提交上也能跑（第三十七轮起有 set_map_style）
+function libraryBench(eng: Engine) {
+  const w = eng.world;
+  const median = (v: number[]) => [...v].sort((a, b) => a - b)[v.length >> 1];
+  const time = (run: () => void) => {
+    const a = performance.now();
+    run();
+    return performance.now() - a;
+  };
+  const put = (key: string, label: string, v: number[]) => {
+    results[key] = Math.round(median(v) * 100) / 100;
+    if (!json) console.log(label.padEnd(28), results[key].toFixed(2).padStart(7), 'ms');
+  };
+  const N = 41;
+  const styles = Object.keys(w.small.content?.mapStyle ?? {});
+  const style: Command = { op: 'set_map_style', id: styles.find((id) => id !== w.small.mapStyle) ?? styles[0] };
+  const edit: number[] = [];
+  const undo: number[] = [];
+  const redo: number[] = [];
+  for (let k = 0; k < N; k++) {
+    edit.push(time(() => eng.exec(style)));
+    undo.push(time(() => eng.undo()));
+    redo.push(time(() => eng.redo()));
+    eng.undo();
+  }
+  put('libEdit', 'edit, no recompute', edit);
+  put('libUndo', 'undo of it', undo);
+  put('libRedo', 'redo of it', redo);
+  // 改一项内容（一种里的一项换掉）与它的撤销；改回一模一样的一项：“没有变化”，不进历史
+  const points = (w.small.content?.pointType ?? {}) as Record<string, { id: string; name: string }>;
+  const point = Object.values(points)[0];
+  const changed: Command = { op: 'set_content', kind: 'pointType', id: point.id, item: { ...point, name: `${point.name}2` } };
+  const same: Command = { op: 'set_content', kind: 'pointType', id: point.id, item: { ...point } };
+  const content: number[] = [];
+  const contentUndo: number[] = [];
+  const noop: number[] = [];
+  for (let k = 0; k < N; k++) {
+    content.push(time(() => eng.exec(changed)));
+    contentUndo.push(time(() => eng.undo()));
+    noop.push(time(() => eng.exec(same)));
+  }
+  put('libContent', 'edit one content item', content);
+  put('libContentUndo', 'undo of it', contentUndo);
+  put('libNoop', 'edit that changes nothing', noop);
+  // 发给主线程的小数据（Worker 的快照，结构化克隆）：内容没变时不发（没有 postedSmall 的旧提交上是整份）
+  const posted = (Commands as unknown as { postedSmall?: (s: typeof w.small) => unknown }).postedSmall?.(w.small) ?? w.small;
+  put('libPost', 'small posted to main thread', Array.from({ length: N }, () => time(() => structuredClone(posted))));
+  // 撤销记录：每步留下多少字（一个字符 1–2 字节）。内容共用以后只有不是内容的部分
+  const steps = (eng as unknown as { done: { undo: { small: string } }[] }).done;
+  results.undoKB = Math.round(steps[steps.length - 1].undo.small.length / 1000);
+  if (!json) console.log('undo record of the last step'.padEnd(28), String(results.undoKB).padStart(7), 'k chars');
+  t = performance.now();
 }
 
 // 峡湾权重最大的海岸陆格（挨着海的陆格；core/coast-style.ts 的 fjord）；没有时 −1

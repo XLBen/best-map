@@ -2,6 +2,7 @@
 //   node tools/bench-median.mjs [次数] [--out 文件] -- [bench 的参数]
 //     例：node tools/bench-median.mjs 5 -- --globe          整个星球的加工各步，五次的中位数
 //         node tools/bench-median.mjs 3 -- --globe --pack fantasy
+//         node tools/bench-median.mjs 5 -- --library            带着一整个时代库的世界（第四十七轮，见 tools/bench.ts）
 //   node tools/bench-median.mjs [次数] --against <提交> [--out 文件] -- [bench 的参数]
 //     在临时的 git worktree 里检出那个提交，把现在的 tools/bench.ts 复制过去（两边跑同样的步骤），
 //     旧、新交替各跑几次（机器忙闲的变化两边一样），打出对照表；--out 存下 { base, head } 两份中位数
@@ -27,7 +28,7 @@ const showAll = own.includes('--all');
 
 // 加工：门槛是不比旧的慢 5% 以上（开发说明“速度”、计划的第六条）。
 // rivers、coast：加工各步之后 Worker 描河并打包、主线程算海岸场的时间加起来（第三十三轮提速）
-const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief'];
+const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief', 'libEdit', 'libUndo', 'libRedo', 'libContent', 'libContentUndo', 'libNoop', 'libPost'];
 
 function runOnce(dir) {
   const out = execFileSync(process.execPath, [join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(dir, 'tools', 'bench.ts'), ...benchArgs, '--json'], {
