@@ -12,7 +12,8 @@ npm run test:fast                # 跳过最慢的几个文件
 npx vitest run core/foo.test.ts  # 单个文件；机器忙时 core/sizing 的“滑块最小值命令都接受”会超时，单独重跑
 npm run golden                   # 只跑金标准
 npm run build                    # 查类型后打包
-node tools/bench-median.mjs 5 --against <提交> -- [--globe]   # 加工各步与旧提交对照，五次中位数
+node tools/bench-median.mjs 5 --against <提交> --           # 一块地区的加工各步与旧提交对照，五次中位数（结尾的 -- 不能省：省了只测星球）
+node tools/bench-median.mjs 5 --against <提交> -- --globe   # 整个星球
 node tools/compose-ab.mjs --against <提交>   # 合成着色器在无头 Chrome 里逐字节对照（file://，不起服务器）
 node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 ```
@@ -54,7 +55,7 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 ## 规矩
 
 - **结果逐值不变**：提速、重构后金标准（`core/golden*.json`、`*digests*.json`、`shader-hashes.json`）一个都不重录；每项提速另加“新旧逐位相同”的测试。
-- **不能变慢**：编辑不能变慢，`node tools/bench-median.mjs 5 --against <上一个提交>` 任何一步超过 +5% 要压回去；画法的改动跑 `compose-ab` / `overlay-ab`，0 字节不同。
+- **不能变慢**：编辑不能变慢，`node tools/bench-median.mjs 5 --against <上一个提交> --`（区域）和 `-- --globe`（星球）任何一步超过 +5% 要压回去；噪音大时先拿同一提交对照自己看宽度；画法的改动跑 `compose-ab` / `overlay-ab`，0 字节不同。
 - **旧存档不必兼容**：世界格式变了就把 `DOC_VERSION` 加一，代码里不留旧存档的写法。
 - **计算 Worker 不打包内置数据**：内置的包只在主线程（`src/worker-imports.test.ts` 查着）。
 - **文件不要太大**：往一个文件里加代码时控制在约 800 行以内，超过就按职责拆（原样搬、照旧导出）。
