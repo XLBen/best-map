@@ -5,7 +5,7 @@ import { CommandError } from '../commands';
 import { Engine, passStats } from '../engine';
 import { TERRAIN_COLORS, exportPackage } from '../export';
 import { BUILTIN_STYLES } from '../packs/names';
-import { continents, engineFor } from '../testing/fixtures';
+import { NO_CURRENTS, continents, engineFor } from '../testing/fixtures';
 import { HUMAN_DERIVED, type World } from '../world';
 import { CATEGORY_LABEL, PEAK_MIN, RESOURCE_NONE, biomeMovement, cellArchive, cellMovement, cellName, cellParadoxTerrain, paradoxTerrain, classAt, classCode, peakCells, peakMarks, resourceAt, resourceCode, worldResources, worldTerrainClasses } from './index';
 import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../packs/base';
@@ -119,6 +119,7 @@ describe('地形类别：自动规则', () => {
     expect(a.causes.terrainClass).toBeUndefined();
     expect(a.derived.terrainClass).toEqual(a.derived.terrainClassAuto);
     const b = engineFor({ cells: 12000, seed: 1, latNorth: 72, latSouth: 20 });
+    b.exec(NO_CURRENTS);
     b.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     expect(humanDigest(b.world)).toEqual(humanDigest(a));
   });

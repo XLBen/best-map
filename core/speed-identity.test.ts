@@ -4,12 +4,13 @@ import { coastalStroke, digest, digestWorld } from '../tools/hash';
 import * as Climate from './climate';
 import type { Command } from './commands';
 import type { Engine } from './engine';
-import { seededEngine } from './testing/fixtures';
+import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 
 // 第三十一轮的提速（气候：地区的分层缓存、边的方向与梯度的几何按网格缓存、输运图少扫几遍；水文：面积按网格缓存、
 // 放的湖的标记表；高程记忆的快路）与以前的代码逐值相同：一组加工（各种会碰到这些缓存的键的改动）每一步之后整个世界的哈希，
 // 与 r31-digests.json 里第三十一轮之前的代码（1421485）记下的相同。分层缓存关掉（每次现算）时也相同。
 // 重新记录（只在旧的代码上做）：R31_RECORD=1 npx vitest run core/speed-identity.test.ts。
+// 第四十六轮：一块地区先关掉洋流（小数据里多了 currents: 0），在第四十五轮的代码（899d2fb）上按同样的设置重录了 region；planet 不变
 // 第三十二轮地形变了（大格局），用第三十二轮的代码重录过一次：之后的提速与第三十二轮逐值相同。
 // 第三十三轮（平原与河口）高程又变了，用第三十三轮的代码再重录一次。
 // 第三十八轮新世界默认多加画风包（小数据多了两种画风），再重录一次；核对过默认的包里去掉画风时与原来的记录逐值相同
@@ -28,6 +29,8 @@ function scenario(kind: keyof typeof SETTINGS): string[] {
   const eng = seededEngine(SETTINGS[kind]);
   // 撤销也重算（不用撤销缓存），记忆、分层缓存才用得上
   eng.undoCache = 0;
+  // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同
+  if (kind === 'region') eng.exec(NO_CURRENTS);
   const out: string[] = [];
   const step = (f: (e: Engine) => void) => {
     f(eng);

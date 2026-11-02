@@ -3,7 +3,7 @@ import { Engine } from './engine';
 import { type GeoFeature, featureLabel } from './features';
 import { findCell, graphDistance, ringDistance } from './mesh';
 import { type WordPack, generateName, hashString } from './names';
-import { continents, engineFor, snapshot, seededEngine, ZH_STYLE, wordPackCommand } from './testing/fixtures';
+import { NO_CURRENTS, continents, engineFor, snapshot, seededEngine, ZH_STYLE, wordPackCommand } from './testing/fixtures';
 import { featuresCsv } from './export';
 
 // 人工构造的地图：一块带半岛和海湾的大陆，东边两个岛之间隔着一道窄海峡
@@ -360,6 +360,8 @@ describe('名字稳定', () => {
     expect(kv(continents())).toBe('61975b73');
     expect(kv(planet())).toBe('20dd0526');
     const islands = engineFor({ seed: 2, cells: 6000 });
+    // 第四十六轮：关掉区域的洋流，与以前逐值相同（见 fixtures 的 NO_CURRENTS）
+    islands.exec(NO_CURRENTS);
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
     expect(kv(islands)).toBe('708c881b');
   });

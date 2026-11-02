@@ -21,7 +21,7 @@ import {
   warpOffset3,
 } from './subcell';
 import { renderThumbnail } from './thumbnail';
-import { seededEngine } from './testing/fixtures';
+import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 
 // 导出的栅格化（subcell.ts）、导出文件（export.ts）、缩略图（thumbnail.ts）提速后结果逐位不变。
 // 下面记下的摘要由提速前的代码（提交 c6f1444 的这三个文件）跑同一个 digests() 得到；
@@ -71,6 +71,8 @@ function digest(a: ArrayBufferView): string {
 
 function region(): Engine {
   const eng = seededEngine({ seed: 3, cells: 6000 });
+  // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同
+  eng.exec(NO_CURRENTS);
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
   return eng;
@@ -137,6 +139,7 @@ function digests(): Record<string, string> {
   return out;
 }
 
+// 第四十六轮：一块地区先关掉洋流，只有 world.json（设置里写着 currents: 0）重录；第四十五轮的代码上同样的设置得到同样的值
 const RECORDED: Record<string, string> = {
   'region 256x128 land': '40f111eba907e8c7',
   'region 256x128 elevation': '8f9308bdce2c8e2f',
@@ -156,7 +159,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 resources.bmp': 'b9e7d139c01ba5d1',
   'region 256x128 terrain_classes.csv': 'e40143df203f2c29',
   'region 256x128 resources.csv': '07885b5acbf8f0bc',
-  'region 256x128 world.json': 'd4ffa90617df70f4',
+  'region 256x128 world.json': 'c4e280ae9cec861e',
   'region 256x128 README.txt': 'e119bc0eb4669bf8',
   'region 300x150 land': '21ebb4f1ddc4a08b',
   'region 300x150 elevation': '53bf091ef5b50eb8',
@@ -176,7 +179,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 resources.bmp': 'b7d1c804053c9fec',
   'region 300x150 terrain_classes.csv': 'e40143df203f2c29',
   'region 300x150 resources.csv': '07885b5acbf8f0bc',
-  'region 300x150 world.json': 'd4ffa90617df70f4',
+  'region 300x150 world.json': 'c4e280ae9cec861e',
   'region 300x150 README.txt': '61d7aa0393c2ab35',
   'region thumbnail': 'b83fcdb70ed5f38d',
   'region functions': '21b1b0794f63fb65',

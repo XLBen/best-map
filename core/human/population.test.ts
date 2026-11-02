@@ -8,7 +8,7 @@ import { Engine, passStats } from '../engine';
 import { exportPackage } from '../export';
 import { styleFor } from '../name-styles';
 import { BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES } from '../packs/eras';
-import { continents, engineFor, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
+import { NO_CURRENTS, continents, engineFor, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import { HUMAN_DERIVED, POP_DERIVED, type World } from '../world';
 import {
   SLOTS,
@@ -548,6 +548,7 @@ describe('地名跟着文化', () => {
   it('没有人文的世界名字不变', () => {
     const a = continents().world.derived.features.map((f) => [f.key, f.name]);
     const b = engineFor({ cells: 12000, seed: 1, latNorth: 72, latSouth: 20 });
+    b.exec(NO_CURRENTS);
     b.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     expect(b.world.derived.features.map((f) => [f.key, f.name])).toEqual(a);
   });

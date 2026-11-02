@@ -16,7 +16,7 @@ import { biomeMovement } from './terrain-class';
 import { worldEra, worldDimensions } from './era';
 import { eraGovernments } from './government';
 import { BUILTIN_CLASSES, GENERAL_RESOURCES } from '../packs/base';
-import { engineFor, importPacks, meshFor, seedCommands } from '../testing/fixtures';
+import { NO_CURRENTS, engineFor, importPacks, meshFor, seedCommands } from '../testing/fixtures';
 import type { World } from '../world';
 import { writeFileSync } from 'node:fs';
 import saved from './r29-digests.json';
@@ -75,6 +75,8 @@ let base: Engine | null = null;
 function world(): Engine {
   if (!base) {
     base = engineFor({ cells: 12000, seed: 1, latNorth: 72, latSouth: 20 });
+    // 第四十六轮：与 continents() 一样关掉区域的洋流（见 fixtures 的 NO_CURRENTS）
+    base.exec(NO_CURRENTS);
     base.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     base.exec({ op: 'generate_provinces', rules: { seed: 5 } });
   }

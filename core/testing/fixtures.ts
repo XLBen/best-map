@@ -62,11 +62,15 @@ export function snapshot(key: string, build: () => Engine): Engine {
   return t.clone();
 }
 
-// 几个测试文件共用的大陆世界：1.2 万格、北纬 20°–72°、陆地 40%；provinces：再划好省份
+// 几个测试文件共用的大陆世界：1.2 万格、北纬 20°–72°、陆地 40%；provinces：再划好省份。
+// 第四十六轮：一块地区有了洋流（默认强弱 1）。这个世界核对的是人文、地名、河这些，关掉洋流（强弱 0，与第四十五轮逐值相同，
+// 见 core/ocean-plane.test.ts），它们的金标准与阈值照旧；区域洋流的结果由 golden-hashes、golden-full 与 ocean-plane 的测试管
+export const NO_CURRENTS: Command = { op: 'set_planet', patch: { currents: 0 } };
 export function continents(opts: { cells?: number; latNorth?: number; latSouth?: number; provinces?: boolean } = {}): Engine {
   const { cells = 12000, latNorth = 72, latSouth = 20, provinces = false } = opts;
   return snapshot(`continents:${cells}:${latNorth}:${latSouth}:${provinces}`, () => {
     const eng = engineFor({ cells, seed: 1, latNorth, latSouth });
+    eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     if (provinces) eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
     return eng;

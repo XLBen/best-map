@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hashArray } from '../tools/hash';
 import { Engine } from './engine';
-import { continents as sharedContinents, seededEngine } from './testing/fixtures';
+import { NO_CURRENTS, continents as sharedContinents, seededEngine } from './testing/fixtures';
 import { findCell } from './mesh';
 import { hashString } from './names';
 import { isRiverCell, lassoBandKm, lassoStroke, planRiver, traceRiver } from './select';
@@ -38,6 +38,8 @@ describe('画的河逐值不变', () => {
     // 第九轮去掉旧存档兼容时重录（画的河都只挖河床，不再下切山谷）；之后的优化必须逐值不变
     // 第十三轮修：陆地围住的小块海（6 格以内）并回陆地、三格以上挖成湖，放的火山岛按大小定高度并有火山口，陆海、高程往后都变了，重录变了的项
     const eng = seededEngine({ seed: 6, cells: 12000 });
+    // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同
+    eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'continents' }, reset: true });
     const w = eng.world;
     const thr = w.small.planet.riverThreshold;

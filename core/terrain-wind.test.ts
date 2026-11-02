@@ -4,7 +4,7 @@ import { deflectWind, smoothPass, windDeflectPasses } from './climate';
 import type { Command } from './commands';
 import { Engine } from './engine';
 import { gradient } from './mesh';
-import { engineFor, meshFor, seededEngine } from './testing/fixtures';
+import { NO_CURRENTS, engineFor, meshFor, seededEngine } from './testing/fixtures';
 import { type World, worldLatitude } from './world';
 
 // 山挡风：高山让风拐弯。新世界默认是 1；为 0 时风直接翻过山（下面记着固定的哈希）；
@@ -25,6 +25,8 @@ describe('山挡风为 0 时逐值不变', () => {
     const eng = seededEngine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
+    // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同
+    eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
     eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
     eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'continental', size: 440, variant: 0 } });

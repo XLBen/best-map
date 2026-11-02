@@ -3,7 +3,7 @@ import { clamp, smoothstep } from './rng';
 import { PLANET_SWEEPS, buildFlowSphere } from './sphere-flow';
 import type { World } from './world';
 
-// 简化的洋流（只用于整个星球）。给人看的说法：
+// 简化的洋流（整个星球；区域地图的是 ocean-plane.ts，第四十六轮）。给人看的说法：
 //   风推着海面走。每个大洋里，信风和西风让海水转成一个大圈（北半球顺时针，南半球逆时针）；
 //   回流挤在大洋西侧，成为又窄又快的暖流，沿大陆东岸流向高纬；大洋东侧是又宽又慢的寒流，
 //   沿大陆西岸流向赤道，那里风把表层海水推离岸边、冷水上涌，海岸凉爽干燥。
@@ -67,8 +67,8 @@ function pixels(mesh: SphereMesh): { cols: number; rows: number; cells: Int32Arr
   return p;
 }
 
-// 纬向风带（两个季节平均，不含季风）：与气候里的风同一个公式
-function zonalBelt(latDeg: number, tilt: number, rotation: number): number {
+// 纬向风带（两个季节平均，不含季风）：与气候里的风同一个公式（第四十六轮：区域的洋流 ocean-plane.ts 也用）
+export function zonalBelt(latDeg: number, tilt: number, rotation: number): number {
   let sum = 0;
   for (const sigma of [1, -1]) {
     const d = latDeg - sigma * 0.35 * tilt;

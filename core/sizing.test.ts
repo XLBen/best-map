@@ -23,7 +23,7 @@ import {
   reachRangeKm,
   resolveTerrain,
 } from './terrain';
-import { continents, meshFor, seededEngine, seededWorld } from './testing/fixtures';
+import { NO_CURRENTS, continents, meshFor, seededEngine, seededWorld } from './testing/fixtures';
 import { type Settings, settingsSchema } from './world';
 import { BUILTIN_ISLAND_TYPES } from './packs/base';
 
@@ -52,6 +52,8 @@ describe('岛的大小', () => {
     // 第三十二轮：岛的岩性按生成的岩性（多了地盾、盆地、缝合线的条纹）算增量，高程有了大格局，重录 erodDelta、elevation、discharge
     // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
     const eng = seededEngine({ seed: 4, cells: 12000 });
+    // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同
+    eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'archipelago' }, reset: true });
     let k = 0;
     for (const kind of SHAPED_KINDS) {
