@@ -5,7 +5,7 @@
 //         node tools/bench-median.mjs 5 -- --library            带着一整个时代库的世界（第四十七轮，见 tools/bench.ts）
 //   node tools/bench-median.mjs [次数] --against <提交> [--out 文件] -- [bench 的参数]
 //     在临时的 git worktree 里检出那个提交，把现在的 tools/bench.ts 复制过去（两边跑同样的步骤），
-//     旧、新交替各跑几次（机器忙闲的变化两边一样），打出对照表；--out 存下 { base, head } 两份中位数
+//     旧、新交替各跑几次，每轮换一边先跑（机器忙闲的变化两边一样），打出对照表；--out 存下 { base, head } 两份中位数
 //   node tools/bench-median.mjs --compare 旧.json 新.json：对照两份存下的中位数（单份的，或 --against 存的 { base, head }）
 //   对照表只列步骤的总耗时（键里没有“.”“#”的）；--all 连同各阶段一起列。加工的步骤比旧的慢 5% 以上的标出来（第六条门槛）
 import { execFileSync } from 'node:child_process';
@@ -99,8 +99,14 @@ if (cmpAt >= 0) {
       const base = [];
       const head = [];
       for (let k = 0; k < runs; k++) {
-        base.push(runOnce(dir));
-        head.push(runOnce(root));
+        // 每轮换一边先跑：一直旧的先跑时，同一个提交对照自己后跑的也慢 8–12%（第四十七轮量的）
+        if (k % 2 === 0) {
+          base.push(runOnce(dir));
+          head.push(runOnce(root));
+        } else {
+          head.push(runOnce(root));
+          base.push(runOnce(dir));
+        }
         process.stderr.write(`run ${k + 1}/${runs} done (old, new)\n`);
       }
       const m = { against, args: benchArgs, base: median(base), head: median(head) };
