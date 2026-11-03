@@ -11,6 +11,7 @@ import golden from './golden-full.json';
 // 第五十一轮：通用拆进了各库，新世界的内容来自“中世纪与近世”，来源的路径（small.origin）变了，只有 small 一项重录（核对过 from 写回 common 时与原来的值逐值相同）
 // 第五十五轮：生态跟高度走，生态、地物、小数据变了；这组操作里有“自然融入”，修正场跟着生态变，气候、径流也重录（网格、原因、高程、风、洋流、水面、流向、汇水不变；
 // 去掉内置生态的高度范围时全部回到以前的值，见 biome-legacy.test.ts）
+// 第五十七轮：新世界默认带现实的水系：derived.riverType、derived.lakeType、derived.features（类型的标签）、small 重录，别的一项不变（核对过去掉这些类型时全部回到以前的值）
 describe('整个世界逐值不变（加长的操作序列）', () => {
   it('一块地区', () => {
     expect(extendedHashes('region')).toEqual(golden.region);

@@ -60,9 +60,11 @@
   "derived.currentX": "3d6babddb8424d19",
   "derived.currentY": "f8834e35e5d2fc1e",
   "derived.sstAnom": "455c982de0c4e8b3",
-  "derived.features": "561013ea21b1f33c",
+  "derived.riverType": "7bf6c9c868240e3a",
+  "derived.lakeType": "8fd78912cd352916",
+  "derived.features": "6c76e0c2c043291f",
   "derived.conflicts": "d5e7c69f6c31689e",
-  "small": "7f7ff8fcdfb629ef"
+  "small": "d65da5660ced4062"
  },
  "planet": {
   "mesh.x": "edbabd66920764cd",
@@ -128,8 +130,10 @@
   "derived.currentX": "1404d349a69187cc",
   "derived.currentY": "5b45b5deba2138a6",
   "derived.sstAnom": "88d34347877fc02b",
-  "derived.features": "a71482b82a186553",
+  "derived.riverType": "d441e9173a153dd3",
+  "derived.lakeType": "38c9f3aa6508ab2e",
+  "derived.features": "c5d0d3b612af7cf5",
   "derived.conflicts": "e910f1dd381de742",
-  "small": "d2919991ac761614"
+  "small": "0f157e8e6d11eaa3"
  }
 }

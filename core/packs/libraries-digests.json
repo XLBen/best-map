@@ -24,9 +24,9 @@
   "features": "dd7981dd7335c6a5",
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
-  "resource": "584c551adb263db1",
-  "content": "a209ddc6a14c98d0",
-  "origin": "fa014aea93184c63"
+  "resource": "c03fc57c6d5df643",
+  "content": "cb98c07f48e42268",
+  "origin": "3a99424fcb93c725"
  },
  "medieval:strip": {
   "cultureGroup→dimension": 142,
@@ -52,9 +52,9 @@
   "features": "746d3e45efbe2aeb",
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
-  "resource": "584c551adb263db1",
-  "content": "94d4db7f9eaaba0d",
-  "origin": "5ad5d335ecf3549a"
+  "resource": "c03fc57c6d5df643",
+  "content": "f27674b982a77b39",
+  "origin": "4d1a7b89746264b9"
  },
  "industrial:strip": {
   "cultureGroup→dimension": 71,
@@ -82,9 +82,9 @@
   "features": "ba8306e1d6b7783e",
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
-  "resource": "584c551adb263db1",
-  "content": "6c0951b3d6677174",
-  "origin": "ae89e8d3f40cbead"
+  "resource": "c03fc57c6d5df643",
+  "content": "6ad7e3c69bc9964d",
+  "origin": "d546433657532d49"
  },
  "modern:strip": {
   "cultureGroup→era": 142,
@@ -110,9 +110,9 @@
   "features": "c23169f035c48010",
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
-  "resource": "584c551adb263db1",
-  "content": "244617705f2709a2",
-  "origin": "e929f4b8d74907e1"
+  "resource": "c03fc57c6d5df643",
+  "content": "c0321a6a40911097",
+  "origin": "97da960c3fc2f1e2"
  },
  "fantasy:strip": {
   "landmarkType→culture": 14
@@ -131,9 +131,9 @@
   "features": "d516d31d011a0efb",
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
-  "resource": "4a8447314b0c3f65",
-  "content": "d2b76b29c9d815f0",
-  "origin": "592ecd7c19989ae9"
+  "resource": "ab729588290f30fd",
+  "content": "904921aa5b2db3ee",
+  "origin": "33aece55b2b96e5f"
  },
  "scifi:strip": {},
  "scifi": {
@@ -150,8 +150,8 @@
   "features": "a5b10f69191aa77b",
   "habitability": "da4181c5b449d990",
   "terrainClass": "ac37ad28b5a0fad5",
-  "resource": "584c551adb263db1",
-  "content": "e12354726eb406ee",
-  "origin": "aa04630012d524ca"
+  "resource": "c03fc57c6d5df643",
+  "content": "a8d11bed76e16f92",
+  "origin": "aabb611d332e8454"
  }
 }

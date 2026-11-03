@@ -26,8 +26,9 @@ const autoDigest = (w: World) => ({ classes: digest(w.derived.terrainClassAuto),
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第五十五轮：生态跟高度走，只有资源变了（类别、山峰不变）
+// 第五十七轮：毛皮多一种生态（高山苔原），只有地区的资源变了
 const RECORDED = {
-  region: { classes: '90d63b51331db1bd', resources: '79538b07fbfb5059', peaks: 'a638ddc660d55eb4' },
+  region: { classes: '90d63b51331db1bd', resources: 'f13effd6a06a1f5f', peaks: 'a638ddc660d55eb4' },
   planet: { classes: '638d8eb12c518db4', resources: 'd4428d57a3df5ffa', peaks: '25d1d1eeb6845f9e' },
 };
 

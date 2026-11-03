@@ -59,6 +59,8 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第五十轮：只重录 world.json（四个）：文件的版本是 12；图片、表格一个不变（核对过文件写成版本 11 时与原来的值相同）
 // 第五十一轮：只重录 world.json（四个）：命令里的 from 从 common 换成 medieval；图片、表格一个不变（核对过 from 写回 common 时与原来的值相同）
 // 第五十三轮：只重录 world.json（四个）：文件的版本是 13；图片、表格一个不变（核对过文件写成版本 12 时与原来的值相同）
+// 第五十七轮：world.json（四个）：新建的命令里多了现实的水系、毛皮多一种生态；星球的 resources.bmp、resources.csv（各两个）：毛皮长到高山苔原上。
+// 河、生态、地形类别的图一个不变（核对过去掉这些时与原来的值相同）
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -163,7 +165,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 resources.bmp': '8c5357a61f173686',
   'region 256x128 terrain_classes.csv': 'e40143df203f2c29',
   'region 256x128 resources.csv': 'adee17512a93512f',
-  'region 256x128 world.json': '652431f27af62f14',
+  'region 256x128 world.json': '124204689b5775cc',
   'region 256x128 README.txt': 'e119bc0eb4669bf8',
   'region 300x150 land': '21ebb4f1ddc4a08b',
   'region 300x150 elevation': '53bf091ef5b50eb8',
@@ -183,7 +185,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 resources.bmp': 'd127157c2d2990de',
   'region 300x150 terrain_classes.csv': 'e40143df203f2c29',
   'region 300x150 resources.csv': 'adee17512a93512f',
-  'region 300x150 world.json': '652431f27af62f14',
+  'region 300x150 world.json': '124204689b5775cc',
   'region 300x150 README.txt': '61d7aa0393c2ab35',
   'region thumbnail': '8efca894a4696eca',
   'region functions': '21b1b0794f63fb65',
@@ -202,10 +204,10 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 biomes.bmp': '1785830708f407d7',
   'planet 256x128 rivers.bmp': '4fe2ee5b3aead50f',
   'planet 256x128 terrain_class.bmp': 'e4e48ba97c03cd43',
-  'planet 256x128 resources.bmp': 'cb9a0865a2e5c7c5',
+  'planet 256x128 resources.bmp': '54ad4d8a17c22a6a',
   'planet 256x128 terrain_classes.csv': '416ef548f21384fe',
-  'planet 256x128 resources.csv': '717d759f04fb596f',
-  'planet 256x128 world.json': 'ba98e47d6db56c0d',
+  'planet 256x128 resources.csv': '3872e2d500c914df',
+  'planet 256x128 world.json': '51c6468f09959b15',
   'planet 256x128 README.txt': '7d6804179e70b277',
   'planet 300x150 land': '84cf08ba8ffc6ab6',
   'planet 300x150 elevation': 'dd0a7bed4769b3a1',
@@ -222,10 +224,10 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 biomes.bmp': '3bb710e9c9b6b8bf',
   'planet 300x150 rivers.bmp': '9c57d85c985371f2',
   'planet 300x150 terrain_class.bmp': '09c4146120ac9e93',
-  'planet 300x150 resources.bmp': '4c7552779ff48e99',
+  'planet 300x150 resources.bmp': '09783432fa3e7b98',
   'planet 300x150 terrain_classes.csv': '416ef548f21384fe',
-  'planet 300x150 resources.csv': '717d759f04fb596f',
-  'planet 300x150 world.json': 'ba98e47d6db56c0d',
+  'planet 300x150 resources.csv': '3872e2d500c914df',
+  'planet 300x150 world.json': '51c6468f09959b15',
   'planet 300x150 README.txt': '57acf72e11dc422a',
   'planet thumbnail': '33920eb4237a4772',
   'planet functions': '2b5491eb1322a165',

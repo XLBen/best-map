@@ -13,7 +13,7 @@
   "features": "a91e502511b2e049",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "medieval": {
   "pop": "ac31e4af66325124",
@@ -29,7 +29,7 @@
   "features": "ccc6d2cd406dc75e",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "medieval:again": {
   "pop": "34db8f8c53283850",
@@ -45,7 +45,7 @@
   "features": "ccc6d2cd406dc75e",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "antiquity": {
   "pop": "6817250604cfddb1",
@@ -61,7 +61,7 @@
   "features": "9a0e393d1268551d",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "antiquity:again": {
   "pop": "2f72585a48883e8a",
@@ -77,7 +77,7 @@
   "features": "9a0e393d1268551d",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "industrial": {
   "pop": "19636756fd6838be",
@@ -93,7 +93,7 @@
   "features": "35c4227512650da3",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "industrial:again": {
   "pop": "33dfb8558e1b0953",
@@ -109,7 +109,7 @@
   "features": "35c4227512650da3",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "modern": {
   "pop": "f55d30e3a59bd05a",
@@ -125,7 +125,7 @@
   "features": "7316625ffb13043f",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "modern:again": {
   "pop": "fe73290d57a7f419",
@@ -141,7 +141,7 @@
   "features": "7316625ffb13043f",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "fantasy": {
   "pop": "5419a0cc3c4e3f11",
@@ -157,7 +157,7 @@
   "features": "4f9494c3b29e5400",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "66af6302931a7546"
+  "resource": "dfbf00dc778a4545"
  },
  "fantasy:again": {
   "pop": "1dd32f5b2ed69f8f",
@@ -173,7 +173,7 @@
   "features": "4f9494c3b29e5400",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "66af6302931a7546"
+  "resource": "dfbf00dc778a4545"
  },
  "scifi": {
   "pop": "22a1b4aebbf1e41a",
@@ -189,7 +189,7 @@
   "features": "6e3788e8e9bc8174",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "scifi:again": {
   "pop": "00689108996b00c3",
@@ -205,7 +205,7 @@
   "features": "6e3788e8e9bc8174",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  },
  "medieval-pop": {
   "pop": "bebae6d50acefc46",
@@ -221,6 +221,6 @@
   "features": "135e22c62a25a108",
   "habitability": "09d6170f1830c6c0",
   "terrainClass": "90d63b51331db1bd",
-  "resource": "79538b07fbfb5059"
+  "resource": "f13effd6a06a1f5f"
  }
 }
