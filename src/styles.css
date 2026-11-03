@@ -2511,46 +2511,13 @@ input.share-input {
   flex-direction: column;
   gap: var(--sp-1);
 }
-/* 勾选资源包（第三十轮：新建向导的“内容”、生成人文）：资源库的树一行一项，勾选框、名字、灰色的种类，右边“规则” */
-.pack-tree {
-  max-height: 320px;
-  overflow-y: auto;
-  margin-bottom: var(--sp-1);
-}
-.pack-row span.repo-twist {
-  flex: none;
-  width: 18px;
-}
-.pack-row label.pack-check {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  margin: 0;
-  cursor: pointer;
-}
-.pack-row label.pack-check input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-.pack-row .pack-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pack-row.covered .pack-name {
-  color: var(--muted);
-}
-.pack-row .tag {
-  margin-left: 0;
-}
+/* 新建向导里选库的一步（第五十二轮） */
 .wizard-content {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
 }
-/* 按资源包分的组（第二十九轮：向导、重新生成里的时代、文化组、星球形态）：小号灰字 */
+/* 分段的小标题（第二十九轮：向导里的星球形态、文化组）：小号灰字 */
 h6.choice-group {
   margin: var(--sp-2) 0 var(--sp-1);
   font-size: var(--fs-xs);

@@ -16,8 +16,7 @@ import { CATEGORIES, CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf } from './defs/t
 import { newWorldCommands } from './forms';
 import {
   choiceEra,
-  choosePack,
-  chooseRule,
+  chooseLibrary,
   defaultChoice,
   densityText,
   estimateLandKm2,
@@ -68,10 +67,10 @@ describe('新建向导的“人文”', () => {
     expect(era.id).toBe('medieval');
     expect(c).toMatchObject({ on: true, pop: null });
     expect(c.groups).toEqual(defaultsOf(era));
-    // 第三十轮：先把时代包的内容加进世界，再生成（一整步）；生成的命令带上勾选的全部包
+    // 第三十轮：先把库里的内容加进世界，再生成（一整步）；生成的命令带上这个库
     const cmd = lastOf(generateCommand(c)!);
     // 第二十三轮：默认同时生成国家（分裂 ↔ 统一在正中时不写，按时代）；第二十四轮：默认同时生成城市、道路、地标
-    expect(cmd).toEqual({ op: 'generate_human', packs: c.packs, groups: c.groups, countries: {}, settlements: {} });
+    expect(cmd).toEqual({ op: 'generate_human', packs: [['medieval']], groups: c.groups, countries: {}, settlements: {} });
     expect('totalPop' in cmd).toBe(false);
     // 关掉、一个组都没勾：没有命令
     expect(generateCommand({ ...c, on: false })).toBeNull();
@@ -80,13 +79,13 @@ describe('新建向导的“人文”', () => {
     expect(lastOf(generateCommand({ ...c, pop: 123456789.4 })!)).toMatchObject({ totalPop: 123456789 });
   });
 
-  it('第三十轮：换时代是勾上另一个时代包、设为规则；总人口回到自动，那个包默认的文化组跟着勾上', () => {
+  it('第五十二轮：换时代是选另一个库；总人口回到自动，文化组换成那个库默认带的', () => {
     const c = { ...defaultChoice(null), pop: 5e8 };
     for (const id of ['antiquity', 'industrial', 'modern', 'fantasy', 'scifi']) {
-      const d = chooseRule(choosePack(c, [id], true), [id]);
+      const d = chooseLibrary(c, id);
       expect(choiceEra(d)!.id).toBe(id);
       expect(d.pop).toBeNull();
-      for (const g of defaultsOf({ id })) expect(d.groups.map((x) => x.id)).toContain(g.id);
+      expect(d.groups).toEqual(defaultsOf({ id }));
     }
   });
 
@@ -419,7 +418,7 @@ describe('仓库与“文化 ⋯”', () => {
   it('换时代、文化组重新生成：regenerate_human（同一个时代保留手改的）；没变时没有命令', () => {
     const w = peopled().world;
     const c = defaultChoice(w.small);
-    expect(c).toMatchObject({ packs: [['medieval']], pop: null });
+    expect(c).toMatchObject({ library: 'medieval', pop: null });
     expect(choiceEra(c, [], w.small)!.id).toBe('medieval');
     expect(c.groups).toEqual(GROUPS);
     expect(regenerateWith(c, w.small)).toBeNull();

@@ -108,7 +108,7 @@ describe('新建向导的“国家”', () => {
     const w = nations().world;
     const same = lastOf(regenerateWith({ ...defaultChoice(w.small), pop: 1e8 }, w.small)!);
     expect('countries' in same).toBe(false);
-    const other = lastOf(regenerateWith({ ...defaultChoice(w.small), packs: [['antiquity']] }, w.small)!);
+    const other = lastOf(regenerateWith({ ...defaultChoice(w.small), library: 'antiquity' }, w.small)!);
     expect(other).toMatchObject({ op: 'regenerate_human', packs: [['antiquity']], countries: {} });
   });
 });

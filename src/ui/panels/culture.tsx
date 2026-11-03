@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
-import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSummary, stampedPacks, typicalTuple, worldCultureGroups, worldCultures, worldDimensions, worldEra } from '../../../core/human';
+import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSummary, typicalTuple, worldCultureGroups, worldCultures, worldDimensions, worldEra } from '../../../core/human';
 import type { World } from '../../../core/world';
 import { askUser, exec, openPanel, options, setOptions, togglePanel, world } from '../../state';
 import { Seg } from '../common';
@@ -13,6 +13,7 @@ import type { SliderDef } from '../defs/types';
 import {
   type HumanChoice,
   WEIGHT_RANGE,
+  chooseLibrary,
   choiceEra,
   choiceProblem,
   defaultChoice,
@@ -22,15 +23,16 @@ import {
   popAt,
   popPos,
   popText,
+  regenerateCommand,
   regenerateWith,
   roundWeight,
   setGroupWeight,
   shareText,
+  switchNote,
   toggleGroup,
-  withPackImports,
 } from '../human';
-import { PackChecklist } from '../components/PackChecklist';
-import { type GroupOption, itemsInPacks, libRoots, packGroups, packLabel } from '../packChoice';
+import { LibraryPick } from '../components/LibraryPick';
+import { type GroupOption, beyondGroups, packGroups, packLabel, worldLibrary } from '../packChoice';
 import { openRepo } from '../packs/store';
 import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';
@@ -291,7 +293,7 @@ export function CountryChoice({
 // defaultPop：按规则的时代的默认密度算的总人口（向导里是估的）
 // compact：弹出面板里（窄）：组旁不写有几个文化
 // countries：带上“国家”（生成人文时；重新生成时不带）
-// packs（第三十轮）：带上勾选资源包（“文化 ⋯”里；新建向导的勾选在“内容”一步里，这里不带）
+// picker（第五十二轮）：带上选库（“文化 ⋯”里；新建向导的选库是单独的一步，这里不带）
 export function HumanChoices({
   choice,
   onChange,
@@ -301,7 +303,7 @@ export function HumanChoices({
   compact,
   countries,
   estimate,
-  packs = true,
+  picker = true,
 }: {
   choice: HumanChoice;
   onChange: (c: HumanChoice) => void;
@@ -311,12 +313,12 @@ export function HumanChoices({
   compact?: boolean;
   countries?: boolean;
   estimate?: (f: number) => number | null;
-  packs?: boolean;
+  picker?: boolean;
 }) {
   const lib = library.value;
   const era = choiceEra(choice, lib, small);
-  // 文化组：勾选的包里的，按包分段；选着、勾选的包里却没有的（以前从资源库别处挑的）列在最后
-  const offered = packGroups(choice.packs, lib);
+  // 文化组：库里的；世界里自己的、从别的库加来的列在最后
+  const offered = packGroups(choice.library, lib);
   const shares = groupShares(choice);
   const pop = choice.pop ?? defaultPop;
   const [draft, setDraft] = useState<number | null>(null);
@@ -348,44 +350,36 @@ export function HumanChoices({
     );
   };
   const problem = choiceProblem(choice, small, lib);
-  const sections: { label: string; rows: Pick<GroupOption, 'group' | 'weight' | 'cultures'>[] }[] = [];
-  // 第五十一轮：库里比重是 0 的组（这个时代默认不带的）收着，勾上了才列在上面
+  // 第五十一轮：库里比重是 0 的组（这个库默认不带的）收着，勾上了才列在上面
   const isSpare = (o: GroupOption) => o.weight === 0 && !choice.groups.some((x) => x.id === o.group.id);
   const spare = offered.filter(isSpare);
-  for (const o of offered) {
-    if (isSpare(o)) continue;
-    const label = packLabel(lib, o.pack);
-    const sec = sections.find((x) => x.label === label);
-    if (sec) sec.rows.push(o);
-    else sections.push({ label, rows: [o] });
-  }
-  const known = new Map((small ? worldCultureGroups(small) : []).map((g) => [g.id, g]));
-  const others = choice.groups.filter((g) => !offered.some((o) => o.group.id === g.id)).flatMap((g) => (known.has(g.id) ? [{ group: known.get(g.id)!, cultures: small ? worldCultures(small).filter((c) => c.group === g.id).length : 0 }] : []));
-  if (others.length) sections.push({ label: '其他', rows: others });
-  const more = new Set(libRoots(lib).flatMap((r) => itemsInPacks<{ id: string }>([[r.key]], lib, 'cultureGroups').map((x) => x.item.id)).filter((id) => !offered.some((o) => o.group.id === id))).size;
+  const rows = offered.filter((o) => !isSpare(o));
+  const own = beyondGroups(small, choice.library, lib).map((group) => ({ group, cultures: small ? worldCultures(small).filter((c) => c.group === group.id).length : 0 }));
+  const note = switchNote(choice, small, lib);
   return (
     <div class="human-choices">
-      {packs && (
+      {picker && (
         <>
-          <h5>资源包</h5>
-          <PackChecklist choice={choice} onChange={onChange} lib={lib} small={small} disabled={disabled} compact={compact} />
+          <h5>库</h5>
+          <LibraryPick value={choice.library} onChange={(key) => onChange(chooseLibrary(choice, key, lib, small))} lib={lib} compact={compact} disabled={disabled} />
+          {note && <p class="hint">{note}</p>}
         </>
       )}
       <h5>文化组</h5>
-      {sections.map((sec) => (
+      <div class="human-groups">{rows.map(groupRow)}</div>
+      {own.length > 0 && (
         <>
-          {sections.length > 1 && <h6 class="choice-group">{sec.label}</h6>}
-          <div class="human-groups">{sec.rows.map(groupRow)}</div>
+          <h6 class="choice-group">本世界加的</h6>
+          <div class="human-groups">{own.map(groupRow)}</div>
         </>
-      ))}
-      {!sections.length && !spare.length && <p class="hint">勾选的包里没有文化组</p>}
+      )}
+      {!rows.length && !own.length && !spare.length && <p class="hint">这个库里没有文化组</p>}
       {spare.length > 0 && (
         <details>
           <summary>还有 {spare.length} 个文化组（这个库默认不带）</summary>
           <div class="human-groups">{spare.map(groupRow)}</div>
         </details>
       )}
-      {more > 0 && <p class="hint">资源库里还有 {more} 个文化组，勾上它们所在的包就能选</p>}
       <Slider
         stacked
         label="总人口"
@@ -460,7 +454,7 @@ function GenerateBox({ w, onDone }: { w: World; onDone: () => void }) {
   );
 }
 
-// 已有人文：时代、各文化组占多少、总人口、重新生成、换时代或文化组、删除
+// 已有人文：时代、各文化组占多少、总人口、重新生成、换库或文化组、删除
 function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
   const [edit, setEdit] = useState<HumanChoice | null>(null);
   const [draft, setDraft] = useState<number | null>(null);
@@ -480,7 +474,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
     return (
       <>
         <HumanChoices choice={edit} onChange={setEdit} small={w.small} defaultPop={editDef} compact />
-        {editEra && editEra.id !== w.small.human!.era && manual && <p class="hint">换了时代，手改过的格也重新生成</p>}
+        {editEra && editEra.id !== w.small.human!.era && manual && <p class="hint">换了库，手改过的格也重新生成</p>}
         <div class="row">
           <button
             class="primary"
@@ -506,7 +500,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
           <span class="hint"> · 人口分{['文化', ...worldDimensions(w.small).map((d) => d.label)].join('、')}</span>
         </p>
         {era?.description && <p class="hint">{era.description}</p>}
-        {stampedPacks(w.small).length > 0 && <p class="hint">用的包：{stampedPacks(w.small).map((p) => packLabel(library.value, p)).join('、')}</p>}
+        {worldLibrary(w.small) && <p class="hint">库：{packLabel(library.value, [worldLibrary(w.small)!])}</p>}
       </section>
       <section>
         <h5>文化组</h5>
@@ -540,11 +534,11 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
         />
       </section>
       <section class="row wrap">
-        <button onClick={() => void run(withPackImports({ op: 'regenerate_human' }, w.small, library.value))} title="拖过的发源地、手改过的格不动">
+        <button onClick={() => void run(regenerateCommand(w.small, library.value))} title="拖过的发源地、手改过的格不动">
           重新生成
         </button>
-        <button onClick={() => setEdit(defaultChoice(w.small, true, library.value))} title="勾选资源包：换规则的时代、加别的包里的政体、文化……">
-          换时代、文化组…
+        <button onClick={() => setEdit(defaultChoice(w.small, true, library.value))} title="换一个库，或改文化组、总人口">
+          换库、文化组…
         </button>
         <button
           onClick={async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
+import { digest } from '../../core/digest';
 import { Engine } from '../../core/engine';
 import { type Government, worldCultureGroups, worldEras, worldGovernments, worldTerrainClasses } from '../../core/human';
 import type { PackNode } from '../../core/packs';
@@ -10,12 +11,12 @@ import { type HumanCommand, continents, humanExec, lastOf, meshFor, snapshot } f
 import type { LibraryEntry } from '../library';
 import { governmentChoices, governmentCommand } from './countries';
 import { formChoices, formsInPacks, newWorldCommands } from './forms';
-import { type HumanChoice, NO_ERA, choiceEra, choiceProblem, choosePack, chooseRule, defaultChoice, generateCommand, regenerateWith, withPackImports } from './human';
-import { defaultGroupsOf, humanImportCommands, packGroups, packState, rulePack, worldContentCommands } from './packChoice';
+import { type HumanChoice, NO_ERA, chooseLibrary, choiceEra, choiceProblem, defaultChoice, generateCommand, regenerateCommand, regenerateWith, switchNote, withPackImports } from './human';
+import { beyondGroups, choicePacks, defaultGroupsOf, humanImportCommands, isLibrary, libraryOptions, libraryRule, packGroups, worldContentCommands, worldLibrary } from './packChoice';
 import { skippedKind, skippedSummary } from './skipped';
 
-// 第三十轮的界面：新建向导的“内容”（资源包的勾选、规则来自哪个包、文化组从勾选的包里列、星球形态只列勾选的包里的），
-// 新建与生成的命令（先加内容再生成），重新生成默认是世界用的包，缺了内容跳过的说明，档案里换成本世界没有的政体
+// 第五十二轮的界面：新建向导选一个库（文化组从这个库里列、星球形态只列这个库里的），新建与生成的命令（先加内容再生成），
+// 重新生成默认是世界用的库，缺了内容跳过的说明，档案里换成本世界没有的政体。换库的内容见 core/packs/switch.test.ts
 
 const LIB: LibraryEntry[] = builtinPacks().map((p) => ({ key: p.id, pack: p, builtin: true, mine: false, installedAt: 0 }));
 const flat = (cmds: readonly Command[]): Command[] => cmds.flatMap((c) => (c.op === 'batch' ? flat(c.commands) : [c]));
@@ -33,7 +34,7 @@ const nations = () =>
 function wizardWorld(c: HumanChoice) {
   const settings = { cells: 6000, seed: 1, latNorth: 60, latSouth: 20 };
   const eng = new Engine(settings, meshFor(settings));
-  const cmds = newWorldCommands({ seed: 5, type: 'continents', landFraction: 0.4 }, '像地球', 5, [], generateCommand(c, null, LIB), worldContentCommands(c, LIB, c.on));
+  const cmds = newWorldCommands({ seed: 5, type: 'continents', landFraction: 0.4 }, '像地球', 5, [], generateCommand(c, null, LIB), worldContentCommands(c, LIB));
   const skipped: string[] = [];
   for (const cmd of cmds) {
     eng.exec(cmd);
@@ -42,73 +43,93 @@ function wizardWorld(c: HumanChoice) {
   return { eng, cmds, skipped };
 }
 
-describe('勾选资源包', () => {
-  it('新建默认勾上中世纪与近世这个库（基础、自然、中文地名……都在里面）；规则来自中世纪，文化组是它默认带的', () => {
+describe('选一个库', () => {
+  it('新建默认选中世纪与近世（基础、自然、中文地名……都在里面）；规则来自它，文化组是它默认带的', () => {
     const c = defaultChoice(null, true, LIB);
-    expect(c.packs).toEqual([['medieval']]);
-    const rule = rulePack(c.packs, LIB)!;
+    expect(c.library).toBe('medieval');
+    expect(choicePacks(c)).toEqual([['medieval']]);
+    const rule = libraryRule(c.library, LIB)!;
     expect([rule.name, rule.era.id, rule.path]).toEqual(['中世纪与近世', 'medieval', ['medieval']]);
     expect(c.groups).toEqual(defaultsOf({ id: 'medieval' }));
     expect(choiceProblem(c, null, LIB)).toBeNull();
-    // 勾着一个小包时大包是“部分”，勾着大包时小包是“整个包在”
-    expect(packState([['fantasy', 'biomes']], ['fantasy'])).toBe('partial');
-    expect(packState([[...BASE_PATH]], [...BASE_PATH])).toBe('on');
-    expect(packState(c.packs, [...BASE_PATH])).toBe('covered');
-    expect(packState(c.packs, ['medieval', 'governments'])).toBe('covered');
-    expect(packState(c.packs, ['fantasy'])).toBe('off');
   });
 
-  it('再勾奇幻：规则还是第一个时代包的，奇幻默认的文化组跟着勾上；设为规则后规则来自奇幻；去掉奇幻时它的组跟着去掉', () => {
+  it('能选的是内置的六个，加上我的库里够完整的；只有几项内容的包不列，新建世界还要有基础和自然', () => {
+    const base = builtinPacks().find((p) => p.id === 'medieval')!;
+    const era = (base.packs as PackNode[]).find((n) => n.id === 'era')!;
+    const cultures = (base.packs as PackNode[]).find((n) => n.id === 'cultures')!;
+    const nature = (base.packs as PackNode[]).find((n) => n.id === 'nature')!;
+    const basePack = (base.packs as PackNode[]).find((n) => n.id === 'base')!;
+    const mine = (key: string, packs: PackNode[]): LibraryEntry => ({ key, pack: { format: 'map2-pack', version: 1, id: key, name: key, packs } as LibraryEntry['pack'], builtin: false, mine: true, installedAt: 1 });
+    const lib = [...LIB, mine('only-era', [era]), mine('for-humans', [era, cultures]), mine('whole', [era, cultures, basePack, nature])];
+    expect(libraryOptions(lib).map((o) => o.key)).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'for-humans', 'whole']);
+    expect(libraryOptions(lib, true).map((o) => o.key)).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'whole']);
+    expect(libraryOptions(lib).filter((o) => !o.builtin).map((o) => o.key)).toEqual(['for-humans', 'whole']);
+    expect(isLibrary(lib.find((e) => e.key === 'only-era')!.pack as PackNode)).toBe(false);
+  });
+
+  it('换一个库：规则、文化组都换成它的（不合起来），总人口回到自动；奇幻不带历史库的组', () => {
     const c = { ...defaultChoice(null, true, LIB), pop: 1e8 };
-    const both = choosePack(c, ['fantasy'], true, LIB);
-    expect(choiceEra(both, LIB)!.id).toBe('medieval');
-    expect(both.pop).toBeNull();
-    expect(both.groups.map((g) => g.id)).toEqual(expect.arrayContaining(['elven', 'dwarven', 'germanic', 'chinese']));
-    // 列出来的文化组：两个包里的（同一组只列一次，在先勾的包里）
-    const listed = packGroups(both.packs, LIB);
-    expect(listed.find((g) => g.group.id === 'germanic')!.pack).toEqual(['medieval']);
-    expect(listed.find((g) => g.group.id === 'elven')!.pack).toEqual(['fantasy']);
-    const ruled = chooseRule(both, ['fantasy']);
-    expect(ruled.packs[0]).toEqual(['fantasy']);
-    expect(rulePack(ruled.packs, LIB)!.name).toBe('奇幻');
-    const back = choosePack(ruled, ['fantasy'], false, LIB);
-    expect(choiceEra(back, LIB)!.id).toBe('medieval');
-    expect(back.groups.some((g) => g.id === 'elven')).toBe(false);
-    // 两个包都有的组（western）留着
-    expect(back.groups.some((g) => g.id === 'germanic')).toBe(true);
+    const f = chooseLibrary(c, 'fantasy', LIB);
+    expect(f.library).toBe('fantasy');
+    expect(choiceEra(f, LIB)!.id).toBe('fantasy');
+    expect(f.pop).toBeNull();
+    expect(f.groups).toEqual(defaultsOf({ id: 'fantasy' }));
+    expect(f.groups.some((g) => g.id === 'germanic')).toBe(false);
+    expect(chooseLibrary(f, 'medieval', LIB).groups).toEqual(c.groups);
+    // 一个都不勾时写明
+    expect(choiceProblem({ ...c, groups: [] }, null, LIB)).toBe('至少勾一个文化组');
+    expect(choiceProblem({ ...c, library: null }, null, LIB)).toBe(NO_ERA);
+    expect(generateCommand({ ...c, library: null }, null, LIB)).toBeNull();
   });
 
-  it('勾大包时下面勾着的小包并进去；都不带时代时写明不生成人文', () => {
-    const c = defaultChoice(null, true, LIB);
-    const whole = choosePack(choosePack(c, ['fantasy', 'biomes'], true, LIB), ['fantasy'], true, LIB);
-    expect(whole.packs.filter((p) => p[0] === 'fantasy')).toEqual([['fantasy']]);
-    const none = choosePack(c, ['medieval'], false, LIB);
-    expect(rulePack(none.packs, LIB)).toBeUndefined();
-    expect(none.groups).toEqual([]);
-    expect(choiceProblem(none, null, LIB)).toBe(NO_ERA);
-    expect(generateCommand(none, null, LIB)).toBeNull();
+  it('文化组的列表：默认的在前，别的 EU4 组比重是 0（收着的那些）；奇幻没有收着的', () => {
+    const groups = packGroups('medieval', LIB);
+    expect(groups.filter((g) => g.weight !== 0).map((g) => g.group.id)).toEqual(defaultsOf({ id: 'medieval' }).map((g) => g.id));
+    expect(groups.filter((g) => g.weight === 0).length).toBe(53);
+    expect(packGroups('fantasy', LIB).filter((g) => g.weight === 0)).toEqual([]);
+    expect(packGroups('不存在', LIB)).toEqual([]);
   });
 
-  it('星球形态只列勾选的包里的；奇幻的在“其他包里的形态”', () => {
+  it('星球形态只列选的库里的；奇幻的在“其他库里的形态”', () => {
     const choices = formChoices(LIB);
     const c = defaultChoice(null, true, LIB);
-    const { shown, rest } = formsInPacks(choices, c.packs);
+    const { shown, rest } = formsInPacks(choices, choicePacks(c));
     expect(shown.length).toBeGreaterThan(0);
     expect(shown.every((f) => f.path[0] === 'medieval')).toBe(true);
-    // 同一种形态每个库都有，只列一次；只勾奇幻时也列得出来，段名写奇幻
+    // 同一种形态每个库都有，只列一次；选奇幻时也列得出来，段名写奇幻
     expect(new Set(shown.map((f) => f.key)).size).toBe(shown.length);
     const fantasy = formsInPacks(choices, [['fantasy']]);
     expect(fantasy.rest).toEqual([]);
     expect(fantasy.shown.every((f) => f.path[0] === 'fantasy')).toBe(true);
     expect(rest.every((f) => f.path[0] === 'fantasy')).toBe(true);
-    const more = formsInPacks(choices, choosePack(c, ['fantasy', 'forms'], true, LIB).packs);
-    expect(more.rest).toEqual([]);
     expect(formsInPacks(choices, []).shown).toEqual([]);
   });
 });
 
+describe('向导走得通（六个库）', () => {
+  for (const id of ['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi']) {
+    it(`${id}：向导自己的命令新建，规则、文化组、国家都是这个库的，世界的底子来自它；奇幻的生态、河、湖照旧不带`, () => {
+      const c = chooseLibrary(defaultChoice(null, true, LIB), id, LIB);
+      const { eng, skipped } = wizardWorld(c);
+      const small = eng.world.small;
+      expect(skipped).toEqual([]);
+      expect(small.human!.era).toBe(id);
+      expect(small.genStamp!.packs).toEqual([[id]]);
+      expect(small.human!.groups.map((g) => g.id)).toEqual(defaultsOf({ id }).map((g) => g.id));
+      expect(Object.keys(small.countries!).length).toBeGreaterThan(0);
+      expect(small.origin!.terrainClass.plains[0]).toBe(id);
+      expect(small.origin!.era[id][0]).toBe(id);
+      expect(small.species.every((sp) => !sp.id.startsWith('fantasy'))).toBe(true);
+      expect(small.species.map((sp) => small.origin!.biome[sp.id]?.join('/'))).toEqual(small.species.map(() => `${id}/nature`));
+      expect((small.riverTypes ?? []).length).toBe(0);
+      expect((small.lakeTypes ?? []).length).toBe(0);
+    });
+  }
+});
+
 describe('新建与生成的命令', () => {
-  it('向导：不带时代的包在新建的一步里（生成之前）加，时代包与生成人文是第二步；生成命令带上勾选的包', () => {
+  it('向导：世界的底子在新建的一步里（生成之前）加，库里生成要用的与生成人文是第二步；生成命令带上这个库', () => {
     const c = defaultChoice(null, true, LIB);
     const { eng, cmds, skipped } = wizardWorld(c);
     expect(cmds.map((x) => x.op)).toEqual(['batch', 'batch', 'generate_provinces']);
@@ -119,22 +140,33 @@ describe('新建与生成的命令', () => {
     expect(first.every((x) => !fromOf(x) || LIBRARY_BASE_PACKS.has(fromOf(x)![1]))).toBe(true);
     // 第二步：先加时代包里的（不再加一遍基础），再生成
     const second = flat([cmds[1]]);
-    expect(second.at(-1)).toMatchObject({ op: 'generate_human', packs: c.packs, groups: c.groups });
+    expect(second.at(-1)).toMatchObject({ op: 'generate_human', packs: [['medieval']], groups: c.groups });
     expect(second.slice(0, -1).every((x) => x.op === 'order_content' || fromOf(x)?.[0] === 'medieval')).toBe(true);
     expect(skipped).toEqual([]);
     expect(worldEras(eng.world.small).map((e) => e.id)).toEqual(['medieval']);
-    expect(eng.world.small.genStamp!.packs).toEqual(c.packs);
+    expect(eng.world.small.genStamp!.packs).toEqual([['medieval']]);
     expect(Object.keys(eng.world.small.countries ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('去掉基础：照样新建，缺的那几步跳过并写明（地形类别、城市等级……）', () => {
-    // 第五十一轮：勾着整个库时基础跟着库走，不要基础就单独勾小包
-    const c = { ...defaultChoice(null, true, LIB), packs: [['medieval', 'era'], ['medieval', 'nature'], ['medieval', 'names', 'zh']] };
-    const { eng, skipped } = wizardWorld(c);
+  it('自己的库里没有基础：照样新建，缺的那几步跳过并写明（地形类别、城市等级……）', () => {
+    const med = builtinPacks().find((p) => p.id === 'medieval')!;
+    const noBase: LibraryEntry = { key: 'no-base', pack: { ...med, id: 'no-base', packs: (med.packs as PackNode[]).filter((n) => n.id !== 'base') }, builtin: false, mine: true, installedAt: 1 };
+    const lib = [...LIB, noBase];
+    const c = chooseLibrary(defaultChoice(null, true, lib), 'no-base', lib);
+    const settings = { cells: 6000, seed: 1, latNorth: 60, latSouth: 20 };
+    const eng = new Engine(settings, meshFor(settings));
+    const skipped: string[] = [];
+    for (const cmd of newWorldCommands({ seed: 5, type: 'continents', landFraction: 0.4 }, '像地球', 5, [], generateCommand(c, null, lib), worldContentCommands(c, lib))) {
+      eng.exec(cmd);
+      skipped.push(...eng.lastSkipped);
+    }
     expect(worldTerrainClasses(eng.world.small)).toEqual([]);
     expect(skipped.some((x) => x.startsWith('没有地形类别'))).toBe(true);
     expect(skipped.some((x) => x.startsWith('没有岛的种类'))).toBe(true);
     expect(eng.world.small.human).toBeTruthy();
+    // 新建时选不到它（不够完整），第一步也不缺别的：自然照样带
+    expect(libraryOptions(lib, true).some((o) => o.key === 'no-base')).toBe(false);
+    expect(eng.world.small.species.length).toBeGreaterThan(0);
   });
 
   it('跳过的说明：认出缺的是哪一种，只缺一种时资源库筛成它', () => {
@@ -145,46 +177,137 @@ describe('新建与生成的命令', () => {
     expect(skippedSummary(['没有生态：植被为空', '没有资源：没有资源层'])).toEqual({ head: '缺了内容，跳过了 2 步', kind: 'all' });
   });
 
-  it('已有的世界第一次生成人文：默认勾上中世纪这个库；世界的底子已经在世界里，不再加', () => {
+  it('已有的世界第一次生成人文：默认是世界的底子来自的库；世界的底子已经在世界里，不再加', () => {
     const eng = continents();
     const c = defaultChoice(eng.world.small, true, LIB);
-    expect(c.packs).toEqual([['medieval']]);
+    expect(c.library).toBe('medieval');
     const cmds = flat(humanImportCommands(c, eng.world.small, LIB));
     expect(cmds.every((x) => !fromOf(x) || !LIBRARY_BASE_PACKS.has(fromOf(x)![1]))).toBe(true);
   });
 
-  it('重新生成：默认是世界用的包与文化组；加勾奇幻时先加它的内容，规则没换时保留手改的', () => {
+  it('重新生成：默认是世界用的库与文化组；只改文化组、总人口时保留手改的，不重新长国家', () => {
     const w = nations().world;
     const c = defaultChoice(w.small, true, LIB);
-    expect(c.packs).toEqual(w.small.genStamp!.packs);
+    expect(choicePacks(c)).toEqual(w.small.genStamp!.packs);
     expect(regenerateWith(c, w.small, LIB)).toBeNull();
-    const more = choosePack(c, ['fantasy'], true, LIB);
-    const cmd = regenerateWith(more, w.small, LIB)!;
-    expect(cmd.op).toBe('batch');
-    expect(lastOf(cmd)).toMatchObject({ op: 'regenerate_human', packs: [['medieval'], ['fantasy']], keepManual: true });
-    expect(flat([cmd]).some((x) => fromOf(x)?.[0] === 'fantasy')).toBe(true);
-    const eng = nations();
-    eng.exec(cmd);
-    expect(worldCultureGroups(eng.world.small).some((g) => g.id === 'elven')).toBe(true);
-    // 换规则：国家也重新长，不保留手改的
-    expect(lastOf(regenerateWith(chooseRule(more, ['fantasy']), w.small, LIB)!)).toMatchObject({ keepManual: false, countries: {} });
+    const more = regenerateWith({ ...c, groups: [...c.groups, { id: 'scandinavian', weight: 1 }] }, w.small, LIB)!;
+    expect(more.op).toBe('batch');
+    expect(lastOf(more)).toMatchObject({ op: 'regenerate_human', packs: [['medieval']], keepManual: true });
+    expect('countries' in lastOf(more)).toBe(false);
+    expect(flat([more]).some((x) => (x as { kind?: string; id?: string }).kind === 'cultureGroup' && (x as { id?: string }).id === 'scandinavian')).toBe(true);
+    // 换库：国家也重新长，不保留手改的，生成的命令带着名单（core/packs/switch.test.ts）
+    const other = regenerateWith(chooseLibrary(c, 'fantasy', LIB, w.small), w.small, LIB)!;
+    expect(lastOf(other)).toMatchObject({ keepManual: false, countries: {}, packs: [['fantasy']] });
+    expect((lastOf(other) as Extract<Command, { op: 'regenerate_human' }>).switchLibrary!.drop.length).toBeGreaterThan(0);
   });
 
-  it('已有的世界：在用的基础包再生成时只补整理时可能移出的几种，自己移出的地形类别不会加回来', () => {
+  it('自己移出的地形类别重新生成时不回来；重新生成国家之前加回世界用的库里整理掉的政体', () => {
     const eng = nations();
     const cls = worldTerrainClasses(eng.world.small).find((x) => x.id !== 'plains')!;
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: cls.id, item: null });
-    const c = { packs: [[...BASE_PATH], ['medieval']], groups: eng.world.small.human!.groups.map((g) => ({ id: g.id, weight: g.weight })) };
+    const c = { library: 'medieval', groups: eng.world.small.human!.groups.map((g) => ({ id: g.id, weight: g.weight })) };
     const cmds = flat(humanImportCommands(c, eng.world.small, LIB));
     expect(cmds.some((x) => (x as { kind?: string }).kind === 'terrainClass')).toBe(false);
-    // 第一次勾上的（没在用的）整个加进来
-    const fresh = flat(humanImportCommands({ ...c, packs: [...c.packs, ['fantasy', 'biomes']] }, eng.world.small, LIB));
-    expect(fresh.some((x) => fromOf(x)?.join('/') === 'fantasy/biomes')).toBe(true);
-    // 重新生成国家之前：加回世界用的包里整理掉的政体
     eng.exec(eng.planTidy({ only: Object.keys(eng.world.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
     const regen = withPackImports({ op: 'regenerate_countries' }, eng.world.small, LIB);
     expect(regen.op).toBe('batch');
     expect(flat([regen]).some((x) => (x as { kind?: string }).kind === 'government')).toBe(true);
+  });
+
+  it('后来从别的库加进世界的文化组：“重新生成”和“换库、文化组…”都带上，列在世界加的里', () => {
+    const eng = nations();
+    for (const x of packImportCommands(builtinPacks(), { packs: [['fantasy', 'cultures', 'elven']], groups: ['elven'] }, eng.world)) eng.exec(x);
+    const c = defaultChoice(eng.world.small, true, LIB);
+    expect(c.groups.at(-1)).toEqual({ id: 'elven', weight: 1 });
+    eng.exec(regenerateCommand(eng.world.small, LIB));
+    expect(eng.world.small.human!.groups.some((g) => g.id === 'elven')).toBe(true);
+    expect(Object.values(eng.world.small.popGroups!).some((t) => worldCultureGroups(eng.world.small).find((g) => g.id === 'elven') && t.culture && (eng.world.small.content!.culture![t.culture] as { group: string }).group === 'elven')).toBe(true);
+    // 没有加过时命令和以前一样
+    expect(lastOf(regenerateCommand(nations().world.small, LIB))).toEqual({ op: 'regenerate_human' });
+  });
+});
+
+describe('已有的世界换库（界面发的命令，内容的门槛见 core/packs/switch.test.ts）', () => {
+  const contentOf = (eng: Engine, kind: string) => digest(eng.world.small.content?.[kind] ?? null);
+  const GEN = ['era', 'popValue', 'valueGroup', 'government', 'faction', 'cultureGroup', 'culture', 'nameStyle', 'resource', 'landmarkType'];
+
+  for (const [a, b] of [['medieval', 'modern'], ['medieval', 'fantasy'], ['fantasy', 'scifi']] as const) {
+    it(`向导建的 ${a} 世界换成 ${b}：一步，能撤销；内容和向导直接建 ${b} 相同；写明移出几项`, () => {
+      const { eng } = wizardWorld(chooseLibrary(defaultChoice(null, true, LIB), a, LIB));
+      const small = eng.world.small;
+      const before = GEN.map((k) => contentOf(eng, k));
+      const c = chooseLibrary(defaultChoice(small, true, LIB), b, LIB, small);
+      expect(c.library).toBe(b);
+      expect(c.groups).toEqual(defaultsOf({ id: b }));
+      const cmd = regenerateWith(c, small, LIB)!;
+      expect(cmd.op).toBe('batch');
+      const drop = (lastOf(cmd) as Extract<Command, { op: 'regenerate_human' }>).switchLibrary!.drop;
+      expect((cmd as { label?: string }).label).toBe(`换库“${LIB.find((e) => e.key === b)!.pack.name}” · 移出 ${drop.length} 项`);
+      expect(switchNote(c, small, LIB)).toMatch(new RegExp(`^换库：移出旧库的 ${drop.length} 项，加入 \\d+ 项。可以撤销$`));
+      eng.exec(cmd);
+      eng.update();
+      const { eng: direct } = wizardWorld(chooseLibrary(defaultChoice(null, true, LIB), b, LIB));
+      expect(GEN.map((k) => contentOf(eng, k))).toEqual(GEN.map((k) => contentOf(direct, k)));
+      expect(eng.world.small.human!.era).toBe(b);
+      expect(eng.world.small.genStamp!.packs).toEqual([[b]]);
+      expect(worldLibrary(eng.world.small)).toBe(b);
+      eng.undo();
+      eng.update();
+      expect(GEN.map((k) => contentOf(eng, k))).toEqual(before);
+      expect(worldLibrary(eng.world.small)).toBe(a);
+    });
+  }
+
+  it('选回世界正在用的库：文化组回到上次生成的，不算换库', () => {
+    const eng = nations();
+    const small = eng.world.small;
+    const c = defaultChoice(small, true, LIB);
+    const f = chooseLibrary(c, 'fantasy', LIB, small);
+    expect(switchNote(f, small, LIB)).not.toBeNull();
+    const back = chooseLibrary(f, 'medieval', LIB, small);
+    expect(back.groups).toEqual(c.groups);
+    expect(switchNote(back, small, LIB)).toBeNull();
+    expect(regenerateWith(back, small, LIB)).toBeNull();
+  });
+
+  it('换库时勾上新库默认不带的组：参与，来源记新库', () => {
+    const eng = nations();
+    const small = eng.world.small;
+    const c = chooseLibrary(defaultChoice(small, true, LIB), 'modern', LIB, small);
+    const spare = packGroups('modern', LIB).find((g) => g.weight === 0)!.group.id;
+    eng.exec(regenerateWith({ ...c, groups: [...c.groups, { id: spare, weight: 1 }] }, small, LIB)!);
+    expect(eng.world.small.human!.groups.some((g) => g.id === spare)).toBe(true);
+    expect(eng.world.small.origin!.cultureGroup[spare]).toEqual(['modern', 'cultures', spare]);
+    expect(worldCultureGroups(eng.world.small).find((g) => g.id === spare)!.weight).toBeUndefined();
+  });
+
+  it('世界里从别的库加的文化组：换库后还列着、默认参与；旧库的不列', () => {
+    const eng = nations();
+    for (const x of packImportCommands(builtinPacks(), { packs: [['fantasy', 'cultures', 'elven']], groups: ['elven'] }, eng.world)) eng.exec(x);
+    const small = eng.world.small;
+    expect(beyondGroups(small, 'medieval', LIB).map((g) => g.id)).toEqual(['elven']);
+    const c = chooseLibrary(defaultChoice(small, true, LIB), 'scifi', LIB, small);
+    expect(beyondGroups(small, 'scifi', LIB).map((g) => g.id)).toEqual(['elven']);
+    expect(c.groups.at(-1)).toEqual({ id: 'elven', weight: 1 });
+    eng.exec(regenerateWith(c, small, LIB)!);
+    expect(eng.world.small.human!.groups.map((g) => g.id)).toContain('elven');
+    expect(eng.world.small.content!.cultureGroup!.elven).toBeDefined();
+    expect(eng.world.small.content!.cultureGroup!.germanic).toBeUndefined();
+    expect(eng.world.small.origin!.cultureGroup.elven[0]).toBe('fantasy');
+  });
+
+  it('没有人文的世界第一次选别的库：生成的命令带着名单，世界用的库变了', () => {
+    const eng = continents();
+    const small = eng.world.small;
+    expect(defaultChoice(small, true, LIB).library).toBe('medieval');
+    const c = chooseLibrary(defaultChoice(small, true, LIB), 'fantasy', LIB, small);
+    const cmd = generateCommand(c, small, LIB)!;
+    expect((lastOf(cmd) as Extract<Command, { op: 'generate_human' }>).switchLibrary).toBeDefined();
+    eng.exec(cmd);
+    expect(worldLibrary(eng.world.small)).toBe('fantasy');
+    // 没换库时命令和以前一样，不带名单
+    const same = generateCommand(defaultChoice(small.human ? continents().world.small : small, true, LIB), continents().world.small, LIB)!;
+    expect('switchLibrary' in lastOf(same)).toBe(false);
   });
 });
 
@@ -192,7 +315,7 @@ describe('比重是 0 的组（第五十一轮）', () => {
   it('向导里默认不勾；勾上后生成时参与，世界里的那一项不写 0', () => {
     const c = defaultChoice(null, true, LIB);
     expect(c.groups.some((g) => g.id === 'kongo')).toBe(false);
-    expect(packGroups(c.packs, LIB).find((g) => g.group.id === 'kongo')!.weight).toBe(0);
+    expect(packGroups(c.library, LIB).find((g) => g.group.id === 'kongo')!.weight).toBe(0);
     const { eng } = wizardWorld({ ...c, groups: [...c.groups, { id: 'kongo', weight: 1 }] });
     expect(eng.world.small.human!.groups.some((g) => g.id === 'kongo')).toBe(true);
     expect(worldCultureGroups(eng.world.small).find((g) => g.id === 'kongo')!.weight).toBeUndefined();
@@ -228,7 +351,7 @@ describe('世界里改过的内容（第五十轮）', () => {
     expect((w.small.content!.government![id] as { name: string }).name).toBe('改过的');
     // 换了选择（多一个组）也一样
     const h = w.small.human!;
-    const choice = { on: true, packs: w.small.genStamp!.packs.map((p) => [...p]), groups: [...h.groups.map((g) => ({ id: g.id, weight: g.weight })), { id: 'scandinavian', weight: 1 }], pop: null, countries: { on: true, fragmentation: 0.5 }, settlements: { on: false, landmarks: false } } as unknown as HumanChoice;
+    const choice = { on: true, library: 'medieval', groups: [...h.groups.map((g) => ({ id: g.id, weight: g.weight })), { id: 'scandinavian', weight: 1 }], pop: null, countries: { on: true, fragmentation: 0.5 }, settlements: { on: false, landmarks: false } } as unknown as HumanChoice;
     eng.exec(regenerateWith(choice, w.small, LIB)!);
     expect(Object.keys(w.small.content!.government!).sort()).toEqual([...govs].sort());
     expect(w.small.human!.groups.some((g) => g.id === 'scandinavian')).toBe(true);
@@ -241,7 +364,7 @@ describe('世界里改过的内容（第五十轮）', () => {
     expect((w.small.content!.government![id] as { name: string }).name).toBe('改过的');
   });
 
-  it('组的比重是 0 时勾上包不跟着勾它', () => {
+  it('组的比重是 0 时选上库不跟着勾它', () => {
     const node: PackNode = { id: 'p', name: 'p', cultureGroups: [{ id: 'a', name: 'A', color: '#111111' }, { id: 'b', name: 'B', color: '#222222', weight: 0 }] as unknown as PackNode['cultureGroups'] };
     expect(defaultGroupsOf(node).map((g) => g.id)).toEqual(['a']);
   });

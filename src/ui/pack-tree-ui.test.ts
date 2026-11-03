@@ -189,12 +189,10 @@ describe('选择器、向导按包分组', () => {
     expect(originGroups([{ label: 'a', on: false, group: 'g', id: 'x', onPick: () => {} }], 'culture', eng.world, BUILTIN)[0].group).toBe('g');
   });
 
-  it('向导（第三十轮）：文化组按勾着的包分段（库、别的库里的“文化”）；“离群”放最后', () => {
-    const groups = packGroups([['medieval'], ['fantasy', 'cultures']], BUILTIN);
-    const labels = [...new Set(groups.map((g) => packLabel(BUILTIN, g.pack)))];
-    expect(labels).toEqual([topName('medieval'), `${topName('fantasy')} ▸ 文化`]);
+  it('向导：文化组列选的库里的；包的叫法用路径上的名字；“离群”放最后', () => {
+    expect(packLabel(BUILTIN, ['fantasy', 'cultures'])).toBe(`${topName('fantasy')} ▸ 文化`);
     // 库里默认带的组写着权重，别的 EU4 文化组是 0（第五十一轮）
-    const mine = groups.filter((g) => g.pack[0] === 'medieval');
+    const mine = packGroups('medieval', BUILTIN);
     expect(mine.length).toBe(71);
     expect(mine.filter((g) => (g.weight ?? 0) > 0).length).toBe(18);
     expect(mine.filter((g) => g.weight === 0).length).toBe(53);
@@ -225,7 +223,7 @@ describe('选择器、向导按包分组', () => {
       ],
     } as Partial<ResourcePack>);
     const lib = [...BUILTIN, entry('lib', p, { mine: true })];
-    const cmds = humanImportCommands({ packs: [['lib']], groups: [{ id: 'my-group', weight: 1 }] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
+    const cmds = humanImportCommands({ library: 'lib', groups: [{ id: 'my-group', weight: 1 }] }, null, lib).flatMap((c) => (c.op === 'batch' ? c.commands : [c])) as (Command & { kind: string; id: string; from?: string[] })[];
     // 第三十轮：一个 batch（core/packs/import.ts）；只有一项的种类不排先后
     expect(cmds.map((c) => [c.kind, c.id, c.from])).toEqual([
       ['nameStyle', 'my-style', ['lib', 'g']],

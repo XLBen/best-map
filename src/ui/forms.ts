@@ -89,10 +89,10 @@ export const DEFAULT_PLANET = `${FORMS_PATH[0]}:continents`;
 // 默认的库“星球形态”里的（向导第一排的卡片）
 export const isBuiltinPlanet = (c: FormChoice): boolean => c.builtin && c.key.startsWith(`${FORMS_PATH[0]}:`);
 
-// 向导里列的形态（第三十轮）：勾选的包里的（shown），别的包里的另列（rest，收着）；勾选的包里一个都没有时 shown 为空
+// 向导里列的形态（第三十轮）：选的库里的（shown），别的库里的另列（rest，收着）；库里一个都没有时 shown 为空
 export function formsInPacks(choices: readonly FormChoice[], packs: readonly (readonly string[])[]): { shown: FormChoice[]; rest: FormChoice[] } {
   const inPacks = (c: FormChoice) => c.paths.find((at) => packs.some((p) => p.length <= at.length && p.every((x, k) => at[k] === x)));
-  // 列在勾着的库下面（段名写那个库）
+  // 列在选的库下面（段名写那个库）
   return { shown: choices.flatMap((c) => { const at = inPacks(c); return at ? [{ ...c, path: at }] : []; }), rest: choices.filter((c) => !inPacks(c)) };
 }
 

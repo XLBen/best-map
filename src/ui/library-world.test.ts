@@ -11,8 +11,8 @@ import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { world } from '../state';
 import { LIBRARY_LABEL, type TypeChoice, openLibraryFor } from './components/TypePicker';
-import { defaultChoice, generateCommand } from './human';
-import { humanImportCommands, packGroups, togglePack } from './packChoice';
+import { chooseLibrary, defaultChoice, generateCommand } from './human';
+import { choicePacks, humanImportCommands, packGroups } from './packChoice';
 import { defaultsOf, eraOf } from '../../core/testing/eras';
 import { exportPicks, exportSections, packEmpty } from './packs/PackDialog';
 import { REPO_FILTERS, addCommand, canDeleteFromLibrary, filterRows, itemPack, removeCommand, repoRows, rowUsage, saveableItem } from './packs/repo';
@@ -71,12 +71,12 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect([isle.library, !!isle.onNew]).toEqual(['islandType', true]);
   });
 
-  it('生成人文的选择（第三十轮）：文化组列勾选的包里的；重新生成默认是世界用的包与文化组', () => {
+  it('生成人文的选择（第五十二轮）：文化组列库里的；重新生成默认是世界用的库与文化组', () => {
     const w = peopled().world;
     // 第五十一轮：库里默认带的在前，比重是 0 的（别的 EU4 文化组）也列着，但不默认勾
-    expect(packGroups([['medieval']], []).filter((g) => g.weight !== 0).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
+    expect(packGroups('medieval', []).filter((g) => g.weight !== 0).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
     const c = defaultChoice(w.small);
-    expect(c.packs).toEqual(w.small.genStamp!.packs);
+    expect(choicePacks(c)).toEqual(w.small.genStamp!.packs);
     expect(c.groups.map((g) => g.id).sort()).toEqual(['chinese', 'germanic']);
   });
 
@@ -86,8 +86,8 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     const style = { ...NAME_STYLES_SAMPLE.nameStyles![0], id: 'my-style', name: '我的风格' };
     const culture = { id: 'my-culture', group: 'my-group', name: '我的人', color: '#335577', nameStyle: 'my-style' };
     const lib = [...LIB, entry('mine', pack('mine', { eras: [era], cultureGroups: [group], cultures: [culture], nameStyles: [style] } as Partial<ResourcePack>), { mine: true })];
-    // 第三十轮：勾上这个包（没写权重时包里的组都勾上），它是规则包；生成要用的内容一次加进来，生成的命令带上这个包
-    const choice = togglePack({ ...defaultChoice(null, true, lib), packs: [], groups: [] }, ['mine'], true, lib);
+    // 选这个库（没写权重时库里的组都勾上）；生成要用的内容一次加进来，生成的命令带上这个库
+    const choice = chooseLibrary(defaultChoice(null, true, lib), 'mine', lib);
     expect(choice.groups).toEqual([{ id: 'my-group', weight: 1 }]);
     const imports = humanImportCommands(choice, null, lib);
     const inner = imports.flatMap((x) => (x.op === 'batch' ? x.commands : [x]));
