@@ -7,6 +7,7 @@ import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
 import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
+import { WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
@@ -72,6 +73,14 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'natural', label: '自然生成', type: 'bool', optional: true },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
   {
+    key: 'when',
+    label: '条件',
+    type: 'json',
+    optional: true,
+    hint: '河按每格看，湖按整个湖；到两头是不限',
+    of: WHEN_KEYS.map((k) => ({ key: k, label: WHEN_RANGE[k].label, type: 'range' as const, optional: true, min: WHEN_RANGE[k].lo, max: WHEN_RANGE[k].hi, step: WHEN_RANGE[k].step, unit: WHEN_RANGE[k].unit })),
+  },
+  {
     key: 'bank',
     label: '岸边的影响',
     type: 'json',
@@ -127,6 +136,19 @@ registerKind<Species>({
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
     { key: 'height', label: '高度范围', type: 'range', optional: true, min: 0, max: HEIGHT_MAX, step: 100, hint: `海拔，米；超出后 ${HEIGHT_MARGIN} m 内慢慢长不了。空着时不看高度` },
+    { key: 'plainRiver', label: '允许普通河', type: 'bool', optional: true },
+    { key: 'plainLake', label: '允许普通湖', type: 'bool', optional: true },
+    {
+      key: 'waterBlock',
+      label: '水系不允许时',
+      type: 'enum',
+      optional: true,
+      hint: '断流：河在这里消失，下游的河可能变小或消失',
+      options: [
+        { value: 'swap', label: '换类型' },
+        { value: 'stop', label: '断流' },
+      ],
+    },
     {
       key: 'tolerances',
       label: '耐受条件',

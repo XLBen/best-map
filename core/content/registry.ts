@@ -71,6 +71,8 @@ export interface FieldDesc {
   min?: number;
   max?: number;
   step?: number;
+  // range 的单位（省略为 m）
+  unit?: string;
   // list 每一项、map 每个值（是对象时）的字段
   of?: readonly FieldDesc[];
   // map 的值不是对象时的样子

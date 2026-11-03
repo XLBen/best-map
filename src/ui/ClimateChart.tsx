@@ -28,6 +28,7 @@ import { Seg } from './common';
 import { RangeSliders } from './components/RangeSliders';
 import { Slider, linear } from './components/Slider';
 import { Toggle } from './components/Toggle';
+import { SpeciesWater } from './panels/speciesWater';
 import { paintWith, setTool } from './defs/tools';
 import { rangePick } from './tools';
 import { packItems, readPack } from '../../core/packs';
@@ -413,6 +414,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         wide
       />
       <SpeciesWhere sp={sp} />
+      <SpeciesWater w={world.value!} sp={sp} />
       {sp.dispersal && (
         <p class="hint">
           只长在起源地能扩散到的地方 · {sp.dispersal.seaCost >= 1e5 ? '不能跨海' : '可以跨海'}

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { LAKE_PREFIX, lakeBank } from './lake-types';
 import { joinsRiver } from './rivers';
 import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
-import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, inBiomes, majorityOf, matchesNaturally, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
+import { mergeShortRuns } from './river-segments';
+import { PLAIN_TYPE, type WaterRules, bankField, bankRadiusKm, biomeInputsFor, checkMatchScripts, majorityOf, matchesNaturally, perCellRule, waterRules, waterTypeDirty, waterTypeOwner, waterTypeShape, whenHolds } from './water-types';
 import type { Derived, Guide, SmallState, World } from './world';
 
 // 河流类型（第三批）：血河、晶川、冥河……每种有自己的颜色、画法、两岸的影响、起名模板，
@@ -16,6 +17,13 @@ import type { Derived, Guide, SmallState, World } from './world';
 //   3. 往下游传：还没有类型的河格，它最大的上游有类型、并且那条上游的水不少于这一格的一半时，跟着上游。
 //      所以带类型的河流进更大的河就停了。
 // 没有河流类型的世界里根本没有 riverType 这个键（推导与没有这一层时逐值相同）
+//
+// 第五十六轮：河按段定类型。写了声明式条件（when）、列了生态（biomes）的类型按每格看（有 match 脚本的，脚本还是整条河算一次，说“是”的河才看），
+// 第 3 步只从第 1、2 步整条定下的格往下传；然后：
+//   4. 允许表：这一格的类型这里不允许（普通的河也是一行，在生态上）时，这种生态设成“断流”就断流（见 stopCells），否则换成这一列第一种允许的，
+//      一种都没有就照旧是普通的河。选了类型的河道不受限制；
+//   5. 短于 RIVER_SEGMENT_MIN 格的段并进相邻的段（river-segments.ts），所以并进去的那几格可以是这里不允许的。
+// 没有规则的世界（只有脚本、没有哪种生态不允许普通河）不走第 4、5 步，和以前逐值相同
 
 // 画法
 export const RIVER_STYLES = ['solid', 'dashed', 'double', 'glow'] as const;
@@ -53,8 +61,6 @@ export const riverTypeDirty = (before: RiverType | undefined, after: RiverType |
 
 // ---------- 每格是哪一种河 ----------
 
-const isRiverAt = (world: World, d: Derived, i: number) => world.causes.land[i] === 1 && d.lake[i] !== 1 && d.discharge[i] >= world.small.planet.riverThreshold;
-
 // 河网：每格最大的上游（下游是它、也是河格；流量相同取编号小的），以及一条条河（源头到汇入更大的河、入海、入湖为止）。
 // 每个河格正好在一条河上：从它顺着“最大的上游”往上走，到的是唯一一个源头
 export interface RiverNet {
@@ -64,18 +70,42 @@ export interface RiverNet {
   stems: Int32Array[];
 }
 
-export function riverNet(world: World, d: Derived): RiverNet {
-  const n = world.mesh.n;
-  const isRiver = new Uint8Array(n);
-  for (let i = 0; i < n; i++) if (isRiverAt(world, d, i)) isRiver[i] = 1;
-  const mainDonor = new Int32Array(n).fill(-1);
+// 第五十六轮（提速）：河网只取决于哪些格是河、每格最大的上游。这两样和上一次相同时（多数笔画里河没变）一条条河不用重新走，
+// 只碰河的格。结果只读
+const netMemo = new WeakMap<World['mesh'], { net: RiverNet; isRiver: Uint8Array; mainDonor: Int32Array }>();
+
+function sameInts(a: Int32Array, b: Int32Array): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function sameFlags(a: Uint8Array, b: Uint8Array): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function fillIsRiver(n: number, land: Uint8Array, lake: Uint8Array, discharge: Float32Array, threshold: number, isRiver: Uint8Array) {
+  for (let i = 0; i < n; i++) isRiver[i] = land[i] === 1 && lake[i] !== 1 && discharge[i] >= threshold ? 1 : 0;
+}
+
+function fillDonors(n: number, isRiver: Uint8Array, receiver: Int32Array, discharge: Float32Array, mainDonor: Int32Array) {
+  mainDonor.fill(-1);
   for (let j = 0; j < n; j++) {
     if (!isRiver[j]) continue;
-    const r = d.receiver[j];
+    const r = receiver[j];
     if (r < 0 || !isRiver[r]) continue;
     const m = mainDonor[r];
-    if (m < 0 || d.discharge[j] > d.discharge[m] || (d.discharge[j] === d.discharge[m] && j < m)) mainDonor[r] = j;
+    if (m < 0 || discharge[j] > discharge[m] || (discharge[j] === discharge[m] && j < m)) mainDonor[r] = j;
   }
+}
+
+export function riverNet(world: World, d: Derived): RiverNet {
+  const n = world.mesh.n;
+  let pad = netMemo.get(world.mesh);
+  const isRiver = pad ? pad.isRiver : new Uint8Array(n);
+  const mainDonor = pad ? pad.mainDonor : new Int32Array(n);
+  fillIsRiver(n, world.causes.land, d.lake, d.discharge, world.small.planet.riverThreshold, isRiver);
+  fillDonors(n, isRiver, d.receiver, d.discharge, mainDonor);
+  if (pad && sameFlags(pad.net.isRiver, isRiver) && sameInts(pad.net.mainDonor, mainDonor)) return pad.net;
   const stems: Int32Array[] = [];
   const seen = new Uint8Array(n);
   for (let s = 0; s < n; s++) {
@@ -90,7 +120,10 @@ export function riverNet(world: World, d: Derived): RiverNet {
     }
     stems.push(Int32Array.from(cells));
   }
-  return { isRiver, mainDonor, stems };
+  const net: RiverNet = { isRiver: isRiver.slice(), mainDonor: mainDonor.slice(), stems };
+  if (pad) pad.net = net;
+  else netMemo.set(world.mesh, (pad = { net, isRiver, mainDonor }));
+  return net;
 }
 
 // 一条带类型（或选了普通的河）的河道定下的格：河道上的河格，汇入别的河的最后一格不算（那是那条河的）
@@ -180,23 +213,32 @@ function stemInputs(world: World, d: Derived, stems: readonly Int32Array[], biom
   };
 }
 
-// 每格是哪一种河：写进 d.riverType。没有河流类型时为 undefined（从来没有过的世界里没有这个键）。
-// 返回 match 脚本出的问题（出错的那段这一次按“不匹配”处理，不挡操作）。
-// biomes：不计水体类型的一遍植被的主导生态（第十二轮，见 vegetation.ts 的 baseBiomes）；没有类型按生态限制、用生态的辅助函数时为 null
-export function typeRivers(world: World, d: Derived, seed: number, biomes: Int16Array | null = null): ScriptIssue[] {
-  const types = riverTypesOf(world.small);
-  if (!types.length) {
-    if (d.riverType !== undefined) d.riverType = undefined;
-    return [];
+// 标签：这一格要断流（河的类型最多 64 种，不会撞）
+const STOP = 255;
+
+// 这一种水在这一格行不行（列的生态、声明式条件）
+function cellRule(rules: WaterRules, k: number, c: number, d: Derived, biomes: Int16Array | null): boolean {
+  if (rules.listed[k]) {
+    const b = biomes ? biomes[c] : -1;
+    if (b < 0 || !rules.allow[k * rules.S + b]) return false;
   }
+  const bounds = rules.bounds[k];
+  return bounds === null || whenHolds(bounds, Math.max(0, d.elevation[c]), d.slope[c], d.tMean[c], d.discharge[c]);
+}
+
+// 每个河格的标签写进 rt（0 普通，k + 1 第 k 种；stopping 时还有 STOP）。步骤见文件开头。返回 match 脚本出的问题
+function labelRivers(world: World, d: Derived, seed: number, biomes: Int16Array | null, rt: Uint8Array, stopping: boolean): ScriptIssue[] {
+  const types = riverTypesOf(world.small);
   const n = world.mesh.n;
-  const rt = d.riverType?.length === n ? d.riverType : new Uint8Array(n);
   rt.fill(0);
   const index = new Map(types.map((t, k) => [t.id, k]));
-  const net = riverNet(world, d);
-  const { isRiver, mainDonor, stems } = net;
-  // 由河道定下的格（带类型的、选了普通的河的）：不再匹配，也不往里传
+  const { isRiver, mainDonor, stems } = riverNet(world, d);
+  const rules = waterRules(world.small.species, types, 'plainRiver');
+  // 1：由河道定下的格（带类型的、选了普通的河的）：不再匹配，也不往里传。2：整条定下的、传下去的格（可以再往下传）
   const claimed = new Uint8Array(n);
+  let anyChosen = false;
+  // 有整条定下、河道定下的格（才有东西往下传）
+  let carried = false;
   for (const g of world.small.guides) {
     if (g.type === undefined) continue;
     const k = g.type === PLAIN_RIVER ? -1 : index.get(g.type);
@@ -205,22 +247,32 @@ export function typeRivers(world: World, d: Derived, seed: number, biomes: Int16
     for (const c of guideCells(world, d, g, isRiver)) {
       rt[c] = k + 1;
       claimed[c] = 1;
+      anyChosen = true;
+      carried = true;
     }
   }
   // 每条河一次的 match（按类型的先后，先匹配上的算）。安全模式（脚本不运行）下带脚本的类型与生态的脚本一样跳过：按不匹配，不记问题。
-  // 第十二轮：关掉了自然生成的类型不匹配；选了“只在这些生态里”的，河流经的格至少一半是那几种生态才算（只选了生态、没写脚本的，那些生态里的河都是它）
+  // 第十二轮：关掉了自然生成的类型不匹配。第五十六轮：写了条件、列了生态的按每格看（先后照旧按类型，前面的说了算）
   const issues: ScriptIssue[] = [];
   const scriptsOn = scriptsEnabled();
-  let open = stems.filter((cells) => cells.every((c) => !claimed[c]));
+  // 还没有整条定下来的河：只有脚本才看（每条河算一次）
+  let open: Int32Array[] | null = null;
+  const openStems = () => (open ??= stems.filter((cells) => cells.every((c) => !claimed[c])));
   let inputs: ScriptInputs | null = null;
+  // 所有的河格（从源头往下一条条接起来）：按每格看的只走这些格
+  let flat: Int32Array | null = null;
+  const riverCells = () => (flat ??= joinStems(stems));
   types.forEach((t, k) => {
-    if (!matchesNaturally(t) || !open.length) return;
+    if (!matchesNaturally(t)) return;
     const src = t.scripts?.match?.src;
     if (src && !scriptsOn) return;
+    const perCell = perCellRule(t);
     let match: ArrayLike<number> | null = null;
     if (src) {
-      inputs ??= stemInputs(world, d, open, biomes);
-      const sources = Int32Array.from(open, (cells) => cells[0]);
+      const list = openStems();
+      if (!list.length) return;
+      inputs ??= stemInputs(world, d, list, biomes);
+      const sources = Int32Array.from(list, (cells) => cells[0]);
       matchRunStats.rivers += sources.length;
       const r = runScript({ kind: 'match', src }, { owner: riverTypeOwner(t), id: t.id, seedKey: t.seedKey, seed, inputs, cells: sources });
       if (!r.ok) {
@@ -229,26 +281,139 @@ export function typeRivers(world: World, d: Derived, seed: number, biomes: Int16
       }
       match = r.output.match;
     }
-    const set = t.biomes?.length ? biomeSet(world.small.species, t.biomes) : null;
+    if (perCell) {
+      // 脚本还是整条河算一次（有一格是河道定下的河不算）；只写了条件的看所有的河。类型的先后说了算：前面的定下的格不变
+      if (match) {
+        const list = openStems();
+        for (let j = 0; j < list.length; j++) if (match[j]) markCells(list[j], rules!, k, d, biomes, rt, claimed);
+      } else markCells(riverCells(), rules!, k, d, biomes, rt, claimed);
+      return;
+    }
     const rest: Int32Array[] = [];
-    open.forEach((cells, j) => {
-      const ok = (!match || match[j]) && (!set || (biomes !== null && inBiomes(biomes, cells, set)));
-      if (ok) for (let q = 0; q < cells.length; q++) rt[cells[q]] = k + 1;
-      else rest.push(cells);
+    openStems().forEach((cells, j) => {
+      if (match && !match[j]) {
+        rest.push(cells);
+        return;
+      }
+      for (let q = 0; q < cells.length; q++) {
+        const c = cells[q];
+        if (rt[c] === 0) {
+          rt[c] = k + 1;
+          claimed[c] = 2;
+        }
+      }
+      carried = true;
     });
     open = rest;
   });
-  // 往下游传（同一条河上：一格最大的上游就是这条河上的前一格）
-  for (const cells of stems) {
-    for (let q = 1; q < cells.length; q++) {
-      const c = cells[q];
-      if (rt[c] !== 0 || claimed[c]) continue;
-      const m = mainDonor[c];
-      if (m >= 0 && rt[m] !== 0 && d.discharge[m] >= 0.5 * d.discharge[c]) rt[c] = rt[m];
+  // 往下游传（同一条河上：一格最大的上游就是这条河上的前一格）。按每格定的类型不传：过了那一段就不是了
+  if (carried) {
+    for (const cells of stems) {
+      for (let q = 1; q < cells.length; q++) {
+        const c = cells[q];
+        if (rt[c] !== 0 || claimed[c]) continue;
+        const m = mainDonor[c];
+        if (m >= 0 && rt[m] !== 0 && claimed[m] && d.discharge[m] >= 0.5 * d.discharge[c]) {
+          rt[c] = rt[m];
+          claimed[c] = 2;
+        }
+      }
     }
   }
+  if (!rules) return issues;
+  // 允许表
+  if (rules.restricted && biomes) applyAllowedAll(riverCells(), rules, biomes, rt, claimed, stopping);
+  // 太短的段并进相邻的段
+  const chosen = anyChosen ? Uint8Array.from(claimed, (v) => (v === 1 ? 1 : 0)) : null;
+  for (const cells of stems) mergeShortRuns(rt, cells, chosen);
+  // 画的河、锁定的河不断流（画出来的线一路都在）：这几格照换类型
+  if (stopping) {
+    for (const g of world.small.guides) {
+      for (const c of g.cells) {
+        if (c < n && rt[c] === STOP) {
+          const f = biomes ? rules.fallback[biomes[c]] : -1;
+          rt[c] = f === undefined || f < 0 ? 0 : f + 1;
+        }
+      }
+    }
+  }
+  return issues;
+}
+
+function joinStems(stems: readonly Int32Array[]): Int32Array {
+  let m = 0;
+  for (const cells of stems) m += cells.length;
+  const out = new Int32Array(m);
+  let o = 0;
+  for (const cells of stems) {
+    out.set(cells, o);
+    o += cells.length;
+  }
+  return out;
+}
+
+// 这些格里还没有类型、这种水行的，定成第 k 种
+function markCells(cells: Int32Array, rules: WaterRules, k: number, d: Derived, biomes: Int16Array | null, rt: Uint8Array, claimed: Uint8Array) {
+  for (let q = 0; q < cells.length; q++) {
+    const c = cells[q];
+    if (rt[c] === 0 && claimed[c] === 0 && cellRule(rules, k, c, d, biomes)) rt[c] = k + 1;
+  }
+}
+
+function applyAllowedAll(cells: Int32Array, rules: WaterRules, biomes: Int16Array, rt: Uint8Array, claimed: Uint8Array, stopping: boolean) {
+  for (let q = 0; q < cells.length; q++) {
+    const c = cells[q];
+    if (claimed[c] !== 1) applyAllowed(rules, c, biomes[c], rt, stopping);
+  }
+}
+
+// 这一格的类型这里允不允许，不允许时断流或者换类型。b：这一格的生态（不长植被的格不限制）
+function applyAllowed(rules: WaterRules, c: number, b: number, rt: Uint8Array, stopping: boolean): void {
+  if (b < 0) return;
+  const v = rt[c];
+  if (v === 0 ? rules.plainOK[b] === 1 : rules.allow[(v - 1) * rules.S + b] === 1) return;
+  // 选了类型的河传下来的，这里不允许这种、允许普通的河：普通的河
+  if (v !== 0 && rules.plainOK[b] === 1) {
+    rt[c] = 0;
+    return;
+  }
+  if (stopping && rules.stop[b] === 1) {
+    rt[c] = STOP;
+    return;
+  }
+  const f = rules.fallback[b];
+  rt[c] = f < 0 ? 0 : f + 1;
+}
+
+// 每格是哪一种河：写进 d.riverType。没有河流类型时为 undefined（从来没有过的世界里没有这个键）。
+// 返回 match 脚本出的问题（出错的那段这一次按“不匹配”处理，不挡操作）。
+// biomes：这一遍的主导生态（不计河岸、湖岸；第十二轮，见 engine.ts 的 pass）；没有类型按生态限制、用生态的辅助函数时为 null
+export function typeRivers(world: World, d: Derived, seed: number, biomes: Int16Array | null = null): ScriptIssue[] {
+  if (!riverTypesOf(world.small).length) {
+    if (d.riverType !== undefined) d.riverType = undefined;
+    return [];
+  }
+  const n = world.mesh.n;
+  const rt = d.riverType?.length === n ? d.riverType : new Uint8Array(n);
+  const issues = labelRivers(world, d, seed, biomes, rt, false);
   d.riverType = rt;
   return issues;
+}
+
+// 断流（第五十六轮）：哪些河格的水到这里为止（engine.ts 的 pass 再算一遍水，见 hydrology.ts 的 cut）。没有这样的格时为 null。
+// 按没有断流时的水算一次，不迭代。断流以后还留在这种生态里的河（水少了、条件变了）在 typeRivers 里按换类型算
+export function stopCells(world: World, d: Derived, seed: number, biomes: Int16Array): Uint8Array | null {
+  const n = world.mesh.n;
+  const cut = new Uint8Array(n);
+  labelRivers(world, d, seed, biomes, cut, true);
+  let any = false;
+  for (let i = 0; i < n; i++) {
+    if (cut[i] === STOP) {
+      cut[i] = 1;
+      any = true;
+    } else cut[i] = 0;
+  }
+  return any ? cut : null;
 }
 
 // ---------- 两岸：河岸场 river:<id> ----------

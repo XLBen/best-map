@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CommandError } from './errors';
 import { type Mesh, graphDistance } from './mesh';
 // 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用别的模块，顶层直接读会碰上“初始化之前不能访问”
-import { type BiomeInputs, compileScript, scriptsSchema, usesBiomeHelpers } from './script';
+import { type BiomeInputs, codeOnly, compileScript, scriptsSchema, usesBiomeHelpers } from './script';
 import { typeIdSchema } from './type-id';
 import type { World } from './world';
 
@@ -13,6 +13,53 @@ import type { World } from './world';
 export const PLAIN_TYPE = 'plain';
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
+
+// ---------- 声明式条件（第五十六轮） ----------
+
+// 每一项的滑块：到两头是“不限”。height 的上限同 species.ts 的 HEIGHT_MAX（这里不能在顶层读它：模块互相引用，测试查着两个数相同）
+export const WHEN_KEYS = ['height', 'slope', 'temp', 'flow'] as const;
+export type WhenKey = (typeof WHEN_KEYS)[number];
+export const WHEN_RANGE: Record<WhenKey, { label: string; unit: string; lo: number; hi: number; step: number }> = {
+  height: { label: '高度', unit: 'm', lo: 0, hi: 9000, step: 100 },
+  slope: { label: '坡度', unit: 'm/km', lo: 0, hi: 100, step: 1 },
+  temp: { label: '气温', unit: '°C', lo: -40, hi: 35, step: 1 },
+  flow: { label: '流量', unit: 'm³/s', lo: 0, hi: 20000, step: 10 },
+};
+
+const whenRangeSchema = z.object({ low: z.number(), high: z.number() }).refine((r) => r.low <= r.high, { message: '下限不能高于上限' });
+export const waterWhenSchema = z.object({
+  height: whenRangeSchema.optional(),
+  slope: whenRangeSchema.optional(),
+  temp: whenRangeSchema.optional(),
+  flow: whenRangeSchema.optional(),
+});
+export type WaterWhen = z.output<typeof waterWhenSchema>;
+
+// 写了条件（空的对象、全是“不限”的不算）
+export function hasWhen(t: { when?: WaterWhen }): boolean {
+  const w = t.when;
+  if (!w) return false;
+  for (const k of WHEN_KEYS) {
+    const r = w[k];
+    if (r && (r.low > WHEN_RANGE[k].lo || r.high < WHEN_RANGE[k].hi)) return true;
+  }
+  return false;
+}
+
+// 条件换成八个数（高度、坡度、气温、流量各一对下限上限；到两头的是无穷）
+export function whenBounds(w: WaterWhen): Float64Array {
+  const out = new Float64Array(8);
+  WHEN_KEYS.forEach((k, q) => {
+    const r = w[k];
+    out[2 * q] = !r || r.low <= WHEN_RANGE[k].lo ? -Infinity : r.low;
+    out[2 * q + 1] = !r || r.high >= WHEN_RANGE[k].hi ? Infinity : r.high;
+  });
+  return out;
+}
+
+export function whenHolds(b: Float64Array, height: number, slope: number, temp: number, flow: number): boolean {
+  return height >= b[0] && height <= b[1] && slope >= b[2] && slope <= b[3] && temp >= b[4] && temp <= b[5] && flow >= b[6] && flow <= b[7];
+}
 
 // 两种共有的几项。what：出错说明里的叫法（“河流类型”“湖泊类型”）；kind：match 脚本说明里的“哪些河 / 哪些湖”
 export function waterTypeShape(what: string, noun: string) {
@@ -47,8 +94,11 @@ export function waterTypeShape(what: string, noun: string) {
     // 第十二轮：自然生成。false 时不按规则自己出现（只用在画的河、放的湖、选了它的河和湖上）。
     // 省略为 true（旧的类型照旧）；界面里新建的、资源包里没写的是 false
     natural: z.boolean().optional(),
-    // 只在这些生态里出现：一条河流经的格（一个湖的湖岸）至少一半是这几种生态（按不计水体类型的一遍植被）
-    biomes: z.array(z.string().min(1)).min(1).max(64).optional(),
+    // 允许表里的一行（第五十六轮）：这种水可以出现在哪些生态里，省略为全部，空的列表哪里都不行。河按每格的生态看，湖按湖岸一圈至少一半（按不计水体类型的一遍植被）。
+    // 自然生成时它也是条件：只选了生态的，那些生态里的河（湖）都是这一种。普通河、普通湖那一行在生态上（species.ts 的 plainRiver、plainLake）
+    biomes: z.array(z.string().min(1)).max(256).optional(),
+    // 声明式条件（第五十六轮）：高度、坡度、气温、流量，河按每格看，湖按整个湖（平均，流量取最大）。不写脚本
+    when: waterWhenSchema.optional(),
   };
 }
 
@@ -65,17 +115,122 @@ export interface WaterType {
   seedKey?: string;
   natural?: boolean;
   biomes?: string[];
+  when?: WaterWhen;
 }
 
-// 会不会按规则自己出现：没关掉自然生成，并且有规则（match 脚本）或选了“只在这些生态里”。
-// 只选了生态、没写脚本时，那些生态里的河（湖）都是这一种
-export function matchesNaturally(t: Pick<WaterType, 'natural' | 'scripts' | 'biomes'>): boolean {
-  return t.natural !== false && (!!t.scripts?.match?.src || !!t.biomes?.length);
+// 会不会按规则自己出现：没关掉自然生成，并且有规则（match 脚本、声明式条件）或选了“只在这些生态里”。
+// 只选了生态、没写别的时，那些生态里的河（湖）都是这一种
+export function matchesNaturally(t: Pick<WaterType, 'natural' | 'scripts' | 'biomes' | 'when'>): boolean {
+  return t.natural !== false && (!!t.scripts?.match?.src || t.biomes !== undefined || hasWhen(t));
 }
 
-// 要不要先算一遍不计水体类型的植被（有类型按生态限制，或规则里用了生态的辅助函数）
+// 有没有按一格（一个湖）看的条件：选了生态或写了声明式条件。只有脚本的类型是整条河一种
+export const perCellRule = (t: Pick<WaterType, 'biomes' | 'when'>): boolean => t.biomes !== undefined || hasWhen(t);
+
+// 河、湖的类型要不要读生态（有类型按生态限制，或规则里用了生态的辅助函数）
 export function needsBaseBiomes(types: readonly WaterType[]): boolean {
-  return types.some((t) => matchesNaturally(t) && (!!t.biomes?.length || (!!t.scripts?.match?.src && usesBiomeHelpers(t.scripts.match.src))));
+  return types.some((t) => t.biomes !== undefined || (matchesNaturally(t) && !!t.scripts?.match?.src && usesBiomeHelpers(t.scripts.match.src)));
+}
+
+// ---------- 一遍水文之后要做什么（第五十六轮，engine.ts 的 pass） ----------
+
+// 生态上和水系有关的几项（species.ts）
+export interface WaterSpecies {
+  id: string;
+  plainRiver?: boolean;
+  plainLake?: boolean;
+  waterBlock?: 'swap' | 'stop';
+  tolerances: readonly { field: string }[];
+  scripts?: { placement?: { src: string } };
+}
+
+// 生态读不读河岸、湖岸（条件里的 river:<id>、lake:<id>，“长在哪里”脚本里的 river()、hasRiver()、nearLake()、hasLake()）。
+// 读的话生态要等河湖的类型定了才算得出来；不读的话植被和河湖的类型无关（颜色脚本不决定长什么，不算）
+const BANK_NAME = /(?<![\p{ID_Continue}$.])(river|hasRiver|nearLake|hasLake)(?![\p{ID_Continue}$])/u;
+function readsBanks(sp: WaterSpecies): boolean {
+  const src = sp.scripts?.placement?.src;
+  return sp.tolerances.some((t) => t.field.startsWith('river:') || t.field.startsWith('lake:')) || (!!src && BANK_NAME.test(codeOnly(src)));
+}
+
+export interface WaterPlan {
+  // 河、湖的类型要读生态（否则类型照旧在植被之前定，读不到生态）
+  biomes: boolean;
+  // 生态读河岸、湖岸：只有这时才要先多算一遍不计水体类型的植被（baseBiomes）。别的世界里那一遍和真的植被逐值相同，算一遍就够
+  baseFirst: boolean;
+  // 有生态会让河断流（不允许普通河、设成“断流”）：水文要多算一遍
+  stops: boolean;
+}
+
+// 测试用：baseFirst 为 true 时照第五十六轮以前的走法（读生态的世界总是先多算一遍），和提速后的结果对照
+export const waterPlanDebug = { baseFirst: false };
+
+export function waterPlan(small: { species: readonly WaterSpecies[]; riverTypes?: readonly WaterType[]; lakeTypes?: readonly WaterType[] }): WaterPlan {
+  const rivers = small.riverTypes ?? [];
+  const lakes = small.lakeTypes ?? [];
+  const species = small.species;
+  const stops = species.some((s) => s.waterBlock === 'stop' && s.plainRiver === false);
+  const plain = (rivers.length > 0 && species.some((s) => s.plainRiver === false)) || (lakes.length > 0 && species.some((s) => s.plainLake === false));
+  const biomes = stops || plain || needsBaseBiomes(rivers) || needsBaseBiomes(lakes);
+  return { biomes, baseFirst: biomes && (waterPlanDebug.baseFirst || species.some(readsBanks)), stops };
+}
+
+// ---------- 允许表（第五十六轮） ----------
+// 表的一格只存一份：普通河、普通湖那一行在生态上（plainRiver、plainLake，省略为允许），别的行在这种水上（biomes，省略为全部）。
+// 读写都走 water-table.ts
+
+export interface WaterRules {
+  S: number;
+  // 这种水有没有列生态、第 k 种能不能在第 s 种生态里（k × S + s）
+  listed: Uint8Array;
+  allow: Uint8Array;
+  // 这种生态允许普通的河（湖）吗
+  plainOK: Uint8Array;
+  // 这种生态不允许时断流（只有河）
+  stop: Uint8Array;
+  // 不允许时换成哪一种：这一列从上往下第一种允许、自然生成的；没有为 −1
+  fallback: Int16Array;
+  // 按一格看的条件：第 k 种的条件（没有为 null）
+  bounds: (Float64Array | null)[];
+  // 有哪一种生态不允许普通的河（湖），或哪一种水列了生态
+  restricted: boolean;
+}
+
+// 这一种水系的规则。没有规则（没有哪一种列了生态、写了条件，也没有哪种生态不允许普通的）时为 null：走第五十六轮以前的算法，逐值不变
+export function waterRules(species: readonly WaterSpecies[], types: readonly WaterType[], plainKey: 'plainRiver' | 'plainLake'): WaterRules | null {
+  const plainOff = species.some((s) => s[plainKey] === false);
+  if (!plainOff && !types.some((t) => t.biomes !== undefined || (t.natural !== false && hasWhen(t)))) return null;
+  const S = species.length;
+  const T = types.length;
+  const listed = new Uint8Array(T);
+  const allow = new Uint8Array(T * S).fill(1);
+  const index = new Map(species.map((s, q) => [s.id, q]));
+  types.forEach((t, k) => {
+    if (!t.biomes) return;
+    listed[k] = 1;
+    allow.fill(0, k * S, (k + 1) * S);
+    for (const id of t.biomes) {
+      const q = index.get(id);
+      if (q !== undefined) allow[k * S + q] = 1;
+    }
+  });
+  const plainOK = new Uint8Array(S);
+  const stop = new Uint8Array(S);
+  const fallback = new Int16Array(S).fill(-1);
+  species.forEach((sp, q) => {
+    plainOK[q] = sp[plainKey] === false ? 0 : 1;
+    stop[q] = sp.waterBlock === 'stop' ? 1 : 0;
+    for (let k = 0; k < T && fallback[q] < 0; k++) if (types[k].natural !== false && allow[k * S + q]) fallback[q] = k;
+  });
+  return {
+    S,
+    listed,
+    allow,
+    plainOK,
+    stop,
+    fallback,
+    bounds: types.map((t) => (hasWhen(t) ? whenBounds(t.when!) : null)),
+    restricted: plainOff || listed.some((v) => v === 1),
+  };
 }
 
 // 一串格里属于 biomes（生态下标的集合）的比例至少一半。base：每格的生态下标（不长植被的格为 −1，不算进分母）

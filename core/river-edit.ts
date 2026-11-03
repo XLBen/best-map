@@ -1,3 +1,4 @@
+import { perCellRule } from './water-types';
 import type { Command, GuidePatch } from './commands';
 import { wrapDelta } from './geo';
 import { findCell } from './mesh';
@@ -64,13 +65,15 @@ export interface EditTarget {
   ruleType?: string;
 }
 
-// 这条河现在按规则是哪一种（河上的格里最多的那种；普通的河、没有河流类型时为 undefined）
+// 这条河现在按规则是哪一种（河上的格里最多的那种；普通的河、没有河流类型时为 undefined）。
+// 第五十六轮：有按段定类型的规则、这条河上不止一种时也是 undefined：改了走向以后照旧一段一段按规则算，不把整条河定成一种
 export function ruleTypeOf(world: World, d: Derived, cells: readonly number[]): string | undefined {
   const rt = d.riverType;
   const types = world.small.riverTypes;
   if (!rt || !types?.length) return undefined;
   const count = new Map<number, number>();
   for (const c of cells) if (isRiverCell(world, d, c)) count.set(rt[c], (count.get(rt[c]) ?? 0) + 1);
+  if (count.size > 1 && types.some(perCellRule)) return undefined;
   let best = 0;
   let bn = 0;
   for (const [v, k] of count) if (k > bn || (k === bn && v < best)) [best, bn] = [v, k];

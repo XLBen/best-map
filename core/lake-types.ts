@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { placedLakeCell } from './elevation';
 import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
-import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, inBiomes, majorityOf, matchesNaturally, waterTypeDirty, waterTypeOwner, waterTypeShape } from './water-types';
+import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, hasWhen, inBiomes, majorityOf, matchesNaturally, waterRules, waterTypeDirty, waterTypeOwner, waterTypeShape, whenBounds, whenHolds } from './water-types';
 import type { Derived, SmallState, World } from './world';
 
 // 湖泊类型（第九轮）：血池、晶湖、冥湖、熔岩湖……与河流类型同一套：颜色、画法、岸边的影响、起名模板、
@@ -13,6 +13,10 @@ import type { Derived, SmallState, World } from './world';
 //   3. 剩下的湖每种类型的 match 脚本每个湖只算一次（变量是整个湖的汇总：气候、海拔取平均，流量取最大，
 //      另有湖的面积、流进来的水、是不是干湖、是不是放的湖），按类型的先后，先匹配上的算。
 // 选了“普通的湖”（'plain'）的湖不再匹配。没有湖泊类型的世界里根本没有 lakeType 这个键（推导逐值照旧）
+//
+// 第五十六轮：声明式条件（when，按整个湖：高度、坡度、气温取平均，流量取最大）和脚本、列的生态同时要满足。
+// 允许表：湖岸最多的那种生态不允许普通的湖时，换成这一列第一种允许的，一种都没有就照旧是普通的湖。
+// 湖没有断流：湖是积出来的水面，水文已经算完，不能只去掉一块（设成“断流”的生态也按换类型）。选了类型的湖不受限制
 
 // 画法：实色、发光（湖面亮一些，湖岸一圈光晕）、干湖底（像盐壳一样不透明）
 export const LAKE_STYLES = ['solid', 'glow', 'playa'] as const;
@@ -192,6 +196,35 @@ function lakeInputs(world: World, d: Derived, parts: LakeParts, open: readonly n
   };
 }
 
+// 一个湖的高度、坡度、气温（平均）、流量（最大）：声明式条件按它们看
+function lakeMeasures(d: Derived, cells: Int32Array): [number, number, number, number] {
+  let h = 0;
+  let s = 0;
+  let t = 0;
+  let q = 0;
+  for (let k = 0; k < cells.length; k++) {
+    const c = cells[k];
+    h += Math.max(0, d.elevation[c]);
+    s += d.slope[c];
+    t += d.tMean[c];
+    if (d.discharge[c] > q) q = d.discharge[c];
+  }
+  const m = cells.length;
+  return [h / m, s / m, t / m, q];
+}
+
+// 湖岸最多的那种生态（一样多取先列的；没有为 −1）
+function shoreBiome(biomes: Int16Array, shore: Int32Array, S: number): number {
+  const count = new Int32Array(S);
+  let best = -1;
+  for (let k = 0; k < shore.length; k++) {
+    const b = biomes[shore[k]];
+    if (b >= 0) count[b]++;
+  }
+  for (let q = 0; q < S; q++) if (count[q] > 0 && (best < 0 || count[q] > count[best])) best = q;
+  return best;
+}
+
 // 每格是哪一种湖：写进 d.lakeType。没有湖泊类型时为 undefined（从来没有过的世界里没有这个键）。
 // 返回 match 脚本出的问题（出错的那种这一次按“不匹配”处理，不挡操作）。
 // biomes：不计水体类型的一遍植被的主导生态（第十二轮，见 vegetation.ts 的 baseBiomes），用不到时为 null
@@ -226,6 +259,7 @@ export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16A
   let inputs: ScriptInputs | null = null;
   let shores: Int32Array[] | null = null;
   const shoresOf = () => (shores ??= lakeShores(world, parts));
+  const measures: [number, number, number, number][] = [];
   types.forEach((t, k) => {
     if (!matchesNaturally(t) || !open.length) return;
     const src = t.scripts?.match?.src;
@@ -242,15 +276,24 @@ export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16A
       }
       match = r.output.match;
     }
-    const set = t.biomes?.length ? biomeSet(world.small.species, t.biomes) : null;
+    const set = t.biomes ? biomeSet(world.small.species, t.biomes) : null;
+    const bounds = hasWhen(t) ? whenBounds(t.when!) : null;
     const rest: number[] = [];
     open.forEach((j, q) => {
-      const ok = (!match || match[q]) && (!set || (biomes !== null && inBiomes(biomes, shoresOf()[j], set)));
+      const ok = (!match || match[q]) && (!set || (biomes !== null && inBiomes(biomes, shoresOf()[j], set))) && (!bounds || whenHolds(bounds, ...(measures[j] ??= lakeMeasures(d, parts.lakes[j]))));
       if (ok) chosen[j] = k;
       else rest.push(j);
     });
     open = rest;
   });
+  // 允许表：没有定下类型的湖按普通的湖算，这里不允许普通的湖时换类型
+  const rules = biomes ? waterRules(world.small.species, types, 'plainLake') : null;
+  if (rules && biomes && rules.plainOK.includes(0)) {
+    for (const j of open) {
+      const b = shoreBiome(biomes, shoresOf()[j], rules.S);
+      if (b >= 0 && !rules.plainOK[b] && rules.fallback[b] >= 0) chosen[j] = rules.fallback[b];
+    }
+  }
   chosen.forEach((k, j) => {
     if (k < 0) return;
     const cells = parts.lakes[j];

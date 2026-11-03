@@ -14,9 +14,9 @@ import { computeEffects } from './effects';
 import { computeHydrology, shapeLakeBeds } from './hydrology';
 import type { Mesh } from './mesh';
 import { type PreviewPatch, previewPatch } from './preview-world';
-import { lakeTypesOf, typeLakes } from './lake-types';
-import { riverTypesOf, typeRivers } from './river-types';
-import { needsBaseBiomes } from './water-types';
+import { typeLakes } from './lake-types';
+import { stopCells, typeRivers } from './river-types';
+import { waterPlan } from './water-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
 import { baseBiomes, computeVegetation, finishLook, isVegetated } from './vegetation';
@@ -611,18 +611,33 @@ export class Engine {
     // 一遍：气候（加上修正场、对周围的影响）→ 水文 → 河的类型 → 植被
     const base = this.base;
     const seed = worldSeedOf(w);
+    const water = waterPlan(w.small);
     const pass = (eff: ClimateEffects | null) => {
       passStats.passes++;
       finalizeClimate(w, base, d, eff);
       computeHydrology(w, d.elevation, d);
-      // 河流类型（第三批）：没有时什么都不做；match 脚本出的问题交给植被一起记下
-      // 湖泊类型（第九轮）同样：没有时什么都不做
-      // 第十二轮：有类型按生态限制（或规则里用了生态）时，先算一遍不计水体类型的植被，按它定哪些河、湖是哪一种
-      const bio = needsBaseBiomes([...riverTypesOf(w.small), ...lakeTypesOf(w.small)]) ? baseBiomes(w, d) : null;
-      const issues = typeRivers(w, d, seed, bio);
-      const lakeIssues = typeLakes(w, d, seed, bio);
+      // 断流（第五十六轮）：按这一遍的水和不计水体类型的生态定下哪些格断流，再算一遍水（汇流有缓存，高程、流向不变）。
+      // 单向的，不迭代：结果只取决于原因，撤销、重放都一样。不用断流的世界不走这里
+      let bio: Int16Array | null = null;
+      if (water.stops) {
+        bio = baseBiomes(w, d);
+        const cut = stopCells(w, d, seed, bio);
+        if (cut) {
+          computeHydrology(w, d.elevation, d, cut);
+          bio = null;
+        }
+      }
+      // 河流类型（第三批）、湖泊类型（第九轮）：没有时什么都不做；match 脚本出的问题交给植被一起记下
+      const typeWater = (biomes: Int16Array | null) => {
+        const issues = typeRivers(w, d, seed, biomes);
+        const lakeIssues = typeLakes(w, d, seed, biomes);
+        return lakeIssues.length ? [...issues, ...lakeIssues] : issues;
+      };
       // 颜色脚本只在全部几遍算完之后算一次（finishLook）：每一遍都整个重算 d.look，前几遍的没人用
-      computeVegetation(w, d, lakeIssues.length ? [...issues, ...lakeIssues] : issues, { look: false });
+      // 第十二轮：类型要读生态时按不计水体类型的一遍植被。第五十六轮（提速）：生态不读河岸、湖岸时那一遍和真的植被逐值相同，
+      // 只算一遍，算完再定类型（core/water-rules.test.ts 查着逐位相同）
+      if (water.biomes && !water.baseFirst) computeVegetation(w, d, [], { look: false, after: () => typeWater(d.dominant) });
+      else computeVegetation(w, d, typeWater(water.biomes ? (bio ?? baseBiomes(w, d)) : null), { look: false });
     };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);

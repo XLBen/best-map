@@ -173,6 +173,12 @@ export const speciesSchema = z.object({
   // ---------- 第五十五轮 ----------
   // 高度范围（见 HEIGHT_MAX）。省略时不看高度（用户自己做的、旧式的生态，结果和以前逐值相同）
   height: heightSchema.optional(),
+  // ---------- 第五十六轮：水系（允许表，见 water-types.ts） ----------
+  // false：不允许普通河、普通湖。省略为允许（别的河湖种类在它们自己的 biomes 里）
+  plainRiver: z.boolean().optional(),
+  plainLake: z.boolean().optional(),
+  // 河走到不允许的地方时：换类型（省略，河道和水量不变，这一段换成允许的类型）；断流（stop，河在这里消失，下游不再算这部分水）。湖没有断流，都按换类型
+  waterBlock: z.enum(['swap', 'stop']).optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;

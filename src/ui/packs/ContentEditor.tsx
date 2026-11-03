@@ -399,7 +399,7 @@ export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; va
       const lo = f.min ?? 0;
       const hi = f.max ?? 0;
       // 两头都不限时不写这个字段（和没写过一样）
-      return <RangeSliders lo={lo} hi={hi} step={f.step ?? 1} unit="m" value={{ low: Number(r.low), high: Number(r.high) }} onCommit={(v) => onChange(v.low <= lo && v.high >= hi ? undefined : v)} />;
+      return <RangeSliders lo={lo} hi={hi} step={f.step ?? 1} unit={f.unit ?? 'm'} value={{ low: Number(r.low), high: Number(r.high) }} onCommit={(v) => onChange(v.low <= lo && v.high >= hi ? undefined : v)} />;
     }
     case 'tuple':
       return <TupleEditor f={f} value={value} onChange={onChange} />;

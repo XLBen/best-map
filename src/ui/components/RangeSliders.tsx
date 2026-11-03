@@ -17,8 +17,9 @@ export function moveRange(r: Range, which: keyof Range, v: number): Range {
   return which === 'low' ? { low: v, high: Math.max(r.high, v) } : { low: Math.min(r.low, v), high: v };
 }
 
-export function RangeSliders(p: { lo: number; hi: number; step: number; unit: string; value: Range; onCommit: (r: Range) => void }) {
-  const scale = linear(p.lo, p.hi, p.step);
+// scale：滑块的刻度（省略时等间距；范围很大的流量用对数）
+export function RangeSliders(p: { lo: number; hi: number; step: number; unit: string; value: Range; onCommit: (r: Range) => void; scale?: { pos: (v: number) => number; at: (p: number) => number } }) {
+  const scale = p.scale ?? linear(p.lo, p.hi, p.step);
   const [draft, setDraft] = useState<Range | null>(null);
   useEffect(() => setDraft(null), [p.value.low, p.value.high]);
   const now = draft ?? p.value;

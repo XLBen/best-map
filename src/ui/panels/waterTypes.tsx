@@ -7,7 +7,8 @@ import { LAKE_STYLES, LAKE_STYLE_LABEL } from '../../../core/lake-types';
 import { RIVER_STYLES, RIVER_STYLE_LABEL } from '../../../core/river-types';
 import { SCRIPT_API } from '../../../core/script';
 import { FALLBACK_MAP_STYLE, type MapStyle } from '../../../core/map-style';
-import { type WaterType, bankRadiusKm, waterTypeOwner } from '../../../core/water-types';
+import { type WaterType, type WhenKey, WHEN_KEYS, WHEN_RANGE, bankRadiusKm, hasWhen, perCellRule, waterTypeOwner } from '../../../core/water-types';
+import { withWaterBiome } from '../../../core/water-table';
 import type { World } from '../../../core/world';
 import {
   type PanelId,
@@ -30,6 +31,7 @@ import { ScriptBox } from '../ScriptBox';
 import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from '../script-commit';
 import { lakeTypeColor } from '../../render/colors';
 import { riverStroke, riverTypeColor } from '../../render/overlay';
+import { RangeSliders } from '../components/RangeSliders';
 import { Slider } from '../components/Slider';
 
 // 水体类型（河流类型、湖泊类型）共用的界面：底部条上“新画的河：血河 ▾”“这个湖：晶湖 ▾”的按钮、弹出的列表（最后一项“新建类型…”），
@@ -105,7 +107,7 @@ const typeColor = (kind: WaterKind, t: WaterType, style: MapStyle = FALLBACK_MAP
 // 普通的河、湖的颜色（列表里的色块）
 const PLAIN_COLOR: Record<WaterKind, string> = { river: riverStroke(FALLBACK_MAP_STYLE), lake: 'rgb(70, 125, 175)' };
 
-function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }) {
+export function TypeSwatch({ kind, t }: { kind: WaterKind; t: WaterType | null }) {
   return <span class="swatch" style={{ background: t ? typeColor(kind, t) : PLAIN_COLOR[kind] }} />;
 }
 
@@ -421,30 +423,65 @@ function TypeEditor({ w, kind, t }: { w: World; kind: WaterKind; t: WaterType })
   );
 }
 
-// 第十二轮：自然生成的开关、只在这些生态里出现
+// 流量的滑块按对数走（河的流量从一百到几万），取两位有效数字
+const FLOW_LOG_LO = 50;
+export const flowScale = {
+  pos: (v: number) => (v <= 0 ? 0 : v >= WHEN_RANGE.flow.hi ? 1 : 0.02 + 0.96 * clamp01(logPos(v, FLOW_LOG_LO, WHEN_RANGE.flow.hi))),
+  at: (p: number) => {
+    if (p <= 0.01) return 0;
+    if (p >= 0.99) return WHEN_RANGE.flow.hi;
+    return Number(logAt(clamp01((p - 0.02) / 0.96), FLOW_LOG_LO, WHEN_RANGE.flow.hi).toPrecision(2));
+  },
+};
+
+// 第五十六轮：声明式条件。高度、坡度、气温、流量，到两头是不限
+function WhenBox({ kind, t, edit }: { kind: WaterKind; t: WaterType; edit: (label: string, make: (x: WaterType) => WaterType | null) => void }) {
+  const count = WHEN_KEYS.filter((k) => hasWhen({ when: { [k]: t.when?.[k] } })).length;
+  const set = (k: WhenKey, r: { low: number; high: number }) =>
+    edit(`修改“${t.name}”的条件 · ${WHEN_RANGE[k].label}`, (x) => {
+      const when = { ...x.when };
+      if (r.low <= WHEN_RANGE[k].lo && r.high >= WHEN_RANGE[k].hi) delete when[k];
+      else when[k] = r;
+      return { ...x, when: Object.keys(when).length ? when : undefined };
+    });
+  return (
+    <details>
+      <summary>条件 · {count ? `${count} 项` : '不限'}</summary>
+      <p class="hint">{kind === 'river' ? '按每格看，河可以一段一段不同' : '按整个湖看'}</p>
+      {WHEN_KEYS.map((k) => {
+        const g = WHEN_RANGE[k];
+        return (
+          <Fragment key={k}>
+            <h5>{g.label}</h5>
+            <RangeSliders lo={g.lo} hi={g.hi} step={g.step} unit={g.unit} scale={k === 'flow' ? flowScale : undefined} value={t.when?.[k] ?? { low: g.lo, high: g.hi }} onCommit={(r) => set(k, r)} />
+          </Fragment>
+        );
+      })}
+    </details>
+  );
+}
+
+// 第十二轮：自然生成的开关；第五十六轮：出现在这些生态里（允许表的一行，和生态抽屉里的“允许的水系”是同一份）、条件
 function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterType; edit: (label: string, make: (x: WaterType) => WaterType | null) => void }) {
   const noun = KINDS[kind].noun;
   const on = t.natural !== false;
-  const picked = new Set(t.biomes ?? []);
   const script = !!t.scripts?.match?.src;
-  const where = kind === 'river' ? '流经的格' : '湖岸一圈';
+  const ids = w.small.species.map((s) => s.id);
+  const has = (id: string) => !t.biomes || t.biomes.includes(id);
+  const count = ids.filter(has).length;
   const hint = !on
     ? `只用在${kind === 'river' ? '画的河和选了它的河' : '放的湖和选了它的湖'}上`
-    : !script && !picked.size
-      ? '没有条件：选生态或写规则'
+    : !script && !perCellRule(t)
+      ? '没有条件：选生态、写条件或规则'
       : !script
-        ? `${where}一半以上是选的生态时是这一种`
-        : picked.size
-          ? `规则说是，且${where}一半以上是选的生态`
+        ? `符合条件的${kind === 'river' ? '河段' : '湖'}是这一种`
+        : perCellRule(t)
+          ? `规则说是的${noun}里，符合条件的是这一种`
           : `规则说是的${noun}是这一种`;
   const toggle = (id: string) => {
-    const next = new Set(picked);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    // 按生态的先后存（结果与点的先后无关）
-    const list = w.small.species.map((s) => s.id).filter((x) => next.has(x));
     const sp = w.small.species.find((s) => s.id === id);
-    edit(`“${t.name}”${next.has(id) ? '可以' : '不再'}出现在“${sp?.name || id}”里`, (x) => ({ ...x, biomes: list.length ? list : undefined }));
+    const next = !has(id);
+    edit(`“${t.name}”${next ? '可以' : '不再'}出现在“${sp?.name || id}”里`, (x) => withWaterBiome(x, ids, id, next));
   };
   return (
     <>
@@ -455,18 +492,19 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
       <p class="hint">{hint}</p>
       <details>
         <summary>
-          只在这些生态里 · {picked.size ? `${picked.size} 种` : '不限'}
+          出现在这些生态里 · {t.biomes ? `${count} 种` : '全部'}
         </summary>
         <div class="biome-picks">
           {w.small.species.map((sp) => (
             <label class="check" key={sp.id}>
-              <input type="checkbox" checked={picked.has(sp.id)} onChange={() => toggle(sp.id)} />
+              <input type="checkbox" checked={has(sp.id)} onChange={() => toggle(sp.id)} />
               <span class="swatch" style={{ background: speciesColor(sp) }} /> {sp.name || sp.id}
             </label>
           ))}
         </div>
         <p class="hint">规则里可用 biome('生态 id')、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
       </details>
+      <WhenBox kind={kind} t={t} edit={edit} />
     </>
   );
 }
@@ -512,7 +550,7 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
                 </span>
                 <span class="hint">
                   {def.styleLabel[t.style ?? 'solid']}
-                  {t.natural === false ? ' · 不自然生成' : t.scripts?.match || t.biomes?.length ? ' · 自然生成' : ''}
+                  {t.natural === false ? ' · 不自然生成' : t.scripts?.match || perCellRule(t) ? ' · 自然生成' : ''}
                 </span>
               </div>
               {open === t.id && <TypeEditor w={w} kind={kind} t={t} />}

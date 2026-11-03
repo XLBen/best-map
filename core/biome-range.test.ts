@@ -150,7 +150,7 @@ describe('自然生成（natural）', () => {
 });
 
 describe('水体类型只在这些生态里出现（biomes）、脚本的 biome()', () => {
-  it('只选了生态：流经的格至少一半是那几种的河都是它，别的不是；与脚本 biome() 写法一样；重放一致', () => {
+  it('只选了生态：河按每格的生态（第五十六轮），短段并进相邻的段；脚本的 biome() 还是整条河算一次；重放一致', () => {
     const eng = continents();
     const w = eng.world;
     const S = w.small.species;
@@ -167,6 +167,26 @@ describe('水体类型只在这些生态里出现（biomes）、脚本的 biome(
     let yes = 0;
     let no = 0;
     for (const cells of riverNet(w, w.derived).stems) {
+      // 四格以上连着的一段（够长，不会并走）里都是它；连着四格都不是的里面都不是
+      for (let q = 3; q < cells.length; q++) {
+        const run = [cells[q], cells[q - 1], cells[q - 2], cells[q - 3]];
+        if (run.every((c) => base[c] === k)) {
+          expect(typed[cells[q]]).toBe(1);
+          yes++;
+        } else if (cells.length === 4 ? false : run.every((c) => base[c] !== k)) {
+          expect(typed[cells[q]]).toBe(0);
+          no++;
+        }
+      }
+    }
+    expect(yes).toBeGreaterThan(0);
+    expect(no).toBeGreaterThan(0);
+    expect(digestWorld(w)).toEqual(replayDigest(eng));
+    // 脚本：整条河一种（至少一半是这种生态的河）
+    eng.exec({ op: 'set_river_type', type: { id: 'b', name: '生态河', color: '#336699', natural: true, scripts: { match: { api: 1, src: `return biome('${pick[0]}') >= 0.5;` } } } as never });
+    expect(w.derived.scriptIssues ?? []).toEqual([]);
+    let whole = 0;
+    for (const cells of riverNet(w, w.derived).stems) {
       let hit = 0;
       let total = 0;
       for (const c of cells) {
@@ -174,20 +194,12 @@ describe('水体类型只在这些生态里出现（biomes）、脚本的 biome(
         total++;
         if (base[c] === k) hit++;
       }
-      const inside = total > 0 && hit * 2 >= total;
-      // 往下游传会给不在那几种生态里的河的下游染色，只看每条河的源头那一格
-      if (inside) {
-        expect(typed[cells[0]]).toBe(1);
-        yes++;
-      } else if (typed[cells[0]] === 0) no++;
+      if (total > 0 && hit * 2 >= total) {
+        for (const c of cells) expect(w.derived.riverType![c]).toBe(1);
+        whole++;
+      } else if (w.derived.riverType![cells[0]] !== 0) throw new Error('不该是这一种');
     }
-    expect(yes).toBeGreaterThan(0);
-    expect(no).toBeGreaterThan(0);
-    expect(digestWorld(w)).toEqual(replayDigest(eng));
-    // 同样的条件写成脚本
-    eng.exec({ op: 'set_river_type', type: { id: 'b', name: '生态河', color: '#336699', natural: true, scripts: { match: { api: 1, src: `return biome('${pick[0]}') >= 0.5;` } } } as never });
-    expect(Array.from(w.derived.riverType!)).toEqual(Array.from(typed));
-    expect(w.derived.scriptIssues ?? []).toEqual([]);
+    expect(whole).toBeGreaterThan(0);
     // dominantBiome、biomeAtSource 返回生态的 id
     eng.exec({ op: 'set_river_type', type: { id: 'b', name: '生态河', color: '#336699', natural: true, scripts: { match: { api: 1, src: `return dominantBiome() === '${S[top[0][0]].id}' && typeof biomeAtSource() === 'string' && typeof biomeAtMouth() === 'string';` } } } as never });
     expect(w.derived.scriptIssues ?? []).toEqual([]);

@@ -1901,33 +1901,53 @@ function meander(pts: readonly [number, number][], spacing: number): [number, nu
 }
 
 function chaikin(line: RiverLine, iterations: number): RiverLine {
-  let { points, flow, cells, type } = line;
+  let { points, flow, cells } = line;
+  let rounds = 0;
   for (let it = 0; it < iterations; it++) {
     if (points.length < 3) break;
+    rounds++;
     const p: [number, number][] = [points[0]];
     const f: number[] = [flow[0]];
     const t: number[] | undefined = cells ? [cells[0]] : undefined;
-    const g: number[] | undefined = type ? [type[0]] : undefined;
     for (let k = 0; k + 1 < points.length; k++) {
       const [ax, ay] = points[k];
       const [bx, by] = points[k + 1];
       p.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]);
       f.push(flow[k] * 0.75 + flow[k + 1] * 0.25, flow[k] * 0.25 + flow[k + 1] * 0.75);
       t?.push(cells![k], cells![k + 1]);
-      g?.push(type![k], type![k + 1]);
     }
     p.push(points[points.length - 1]);
     f.push(flow[flow.length - 1]);
     t?.push(cells![cells!.length - 1]);
-    g?.push(type![type!.length - 1]);
     points = p;
     flow = f;
     cells = t;
-    type = g;
   }
   const out: RiverLine = cells ? { points, flow, cells } : { points, flow };
-  if (type) out.type = type;
+  if (line.type) out.type = doubledTags(line.type, rounds);
   return out;
+}
+
+// 每个点的类型跟着平滑展开（和 cells 同样的规则：每个点取原来那点的）。第五十六轮（提速）：算完再一次展开，不跟着每一遍往数组里加；
+// 整条线一种类型（绝大多数）时直接填
+function doubledTags(type: readonly number[], rounds: number): number[] {
+  const m = type.length;
+  let single = true;
+  for (let k = 1; k < m && single; k++) single = type[k] === type[0];
+  if (single) return new Array<number>(m * 2 ** rounds).fill(m ? type[0] : 0);
+  let cur: number[] = type as number[];
+  for (let it = 0; it < rounds; it++) {
+    const L = cur.length;
+    const g = new Array<number>(2 * L);
+    g[0] = cur[0];
+    for (let k = 0; k + 1 < L; k++) {
+      g[2 * k + 1] = cur[k];
+      g[2 * k + 2] = cur[k + 1];
+    }
+    g[2 * L - 1] = cur[L - 1];
+    cur = g;
+  }
+  return rounds ? cur : [...type];
 }
 
 // 河宽（屏幕像素，未乘缩放系数）

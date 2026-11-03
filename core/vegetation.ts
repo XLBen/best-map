@@ -208,8 +208,10 @@ function scratchFor(n: number): VegScratch {
 }
 
 // extraIssues：这一遍里别处出的脚本问题（河流、湖泊类型的 match 脚本，见 river-types.ts 的 typeRivers、lake-types.ts 的 typeLakes），排在星球形态的之后。
-// look 为 false 时不算颜色脚本（引擎在不是最后一遍的那几遍里不算：之后的一遍会整个重算 d.look；最后再用 finishLook 补上）
-export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean } = {}) {
+// look 为 false 时不算颜色脚本（引擎在不是最后一遍的那几遍里不算：之后的一遍会整个重算 d.look；最后再用 finishLook 补上）。
+// after（第五十六轮）：生态算完之后马上定河、湖的类型（读 d.dominant），它们的问题和 extraIssues 排在同一处：
+// 生态不读河岸、湖岸的世界不用先多算一遍植被（engine.ts 的 pass），结果逐值相同
+export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean; after?: () => readonly ScriptIssue[] } = {}) {
   const { mesh, small } = world;
   const n = mesh.n;
   const species = small.species;
@@ -242,6 +244,7 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   }
   // 脚本出的问题（不挡操作：出错的脚本这一次按没有脚本处理）。星球形态的脚本的问题（地形那一步记下的）排在最前
   const issues: ScriptIssue[] = [...planetFormIssues(world, d.scriptIssues), ...extraIssues];
+  const issuesBefore = issues.length;
   // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
   const run: { session?: ScriptSession } = {};
   const sessionOf = () => (run.session ??= new ScriptSession(world));
@@ -303,6 +306,7 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
     }
   }
 
+  if (opts.after) issues.splice(issuesBefore, 0, ...opts.after());
   // 颜色脚本（第三批）：按最后的份额算每格的颜色，写进 d.look（没有颜色脚本时为 undefined）
   if (opts.look !== false) computeLook(world, d, issues, sessionOf);
   run.session?.finish();
@@ -467,6 +471,9 @@ function fillFar(mesh: World['mesh'], free: readonly boolean[], veg: Uint8Array,
   }
 }
 
+// 统计（测试用）：不计水体类型的那一遍一共算了几次
+export const vegetationStats = { base: 0 };
+
 // 第十二轮：不计水体类型的一遍植被的主导生态（河、湖类型“只在这些生态里出现”、脚本里的 biome() 用它）。
 // 在 d 的一份浅副本上算（河岸、湖岸场都当作没有），不改 d；结果只取决于这一遍的气候、水文，重放、撤销都一样
 export function baseBiomes(world: World, d: Derived): Int16Array {
@@ -485,6 +492,7 @@ export function baseBiomes(world: World, d: Derived): Int16Array {
     look: undefined,
     scriptIssues: undefined,
   };
+  vegetationStats.base++;
   computeVegetation(world, tmp, [], { look: false });
   return tmp.dominant;
 }

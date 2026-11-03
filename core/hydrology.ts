@@ -51,7 +51,9 @@ export function cellAreaKm(mesh: Mesh, kmPerUnit: number): Float64Array {
   return areaKm;
 }
 
-export function computeHydrology(world: World, elevation: Float32Array, d: Derived) {
+// cut（第五十六轮，断流，见 river-types.ts 的 stopCells）：这些格的水不再往下游流，自己的流量也是 0。没有时逐值照旧。
+// 只改流量和跟着流量走的（内流湖涨落）：高程、流向、汇水面积、湿度指数都和没有断流时相同
+export function computeHydrology(world: World, elevation: Float32Array, d: Derived, cut: Uint8Array | null = null) {
   const { mesh, causes, small, kmPerUnit } = world;
   const n = mesh.n;
   const land = causes.land;
@@ -105,9 +107,9 @@ export function computeHydrology(world: World, elevation: Float32Array, d: Deriv
   const Q = new Float64Array(n);
   const A = new Float64Array(n);
   const lakeFill = new Float64Array(lakes.length).fill(1);
-  accumulateFlow(r, land, local, areaKm, lakeId, lakes, Q, A, lakeFill);
+  accumulateFlow(r, land, local, areaKm, lakeId, lakes, Q, A, lakeFill, cut);
 
-  splitFlows(world, r, land, Q);
+  splitFlows(world, r, land, Q, cut);
 
   d.lake.fill(0);
   d.water.fill(0);
@@ -261,7 +263,7 @@ function localRunoff(n: number, land: Uint8Array, lakeId: Int32Array, precip: Fl
 }
 
 // 沿下游累加流量与汇水面积；湖的出口减去湖面蒸发（内流湖：入流不够时记下蓄满的比例）
-function accumulateFlow(r: Routing, land: Uint8Array, local: Float64Array, areaKm: Float64Array, lakeId: Int32Array, lakes: LakeBasin[], Q: Float64Array, A: Float64Array, lakeFill: Float64Array) {
+function accumulateFlow(r: Routing, land: Uint8Array, local: Float64Array, areaKm: Float64Array, lakeId: Int32Array, lakes: LakeBasin[], Q: Float64Array, A: Float64Array, lakeFill: Float64Array, cut: Uint8Array | null) {
   for (let k = 0; k < r.count; k++) {
     const i = r.order[k];
     Q[i] = local[i];
@@ -275,6 +277,7 @@ function accumulateFlow(r: Routing, land: Uint8Array, local: Float64Array, areaK
       if (Q[i] < loss) lakeFill[id] = Q[i] / loss;
       Q[i] = Math.max(0, Q[i] - loss);
     }
+    if (cut !== null && cut[i] === 1) Q[i] = 0;
     const j = r.receiver[i];
     if (j >= 0 && land[j]) {
       Q[j] += Q[i];
@@ -320,7 +323,7 @@ function writeSlope(n: number, land: Uint8Array, slope: Float64Array, A: Float64
 // 分出去的一股（guide.branch）：分出的那一格 s 的水按 share 分一部分沿这条河道流走。流向仍是一格一个下游（流域、拓扑序都不变），
 // 只是流量：从这条河道的第二格起顺着下游加上 share × Q[s]，从 s 的下游起顺着干流往下减去同样多（不小于 0）。
 // 分出去的又流回干流（汇回同一条河的下游）时，汇合以下加减相抵，水回到干流。上游的分流先算（下游的分流按算过的水量分）
-function splitFlows(world: World, r: Routing, land: Uint8Array, Q: Float64Array) {
+function splitFlows(world: World, r: Routing, land: Uint8Array, Q: Float64Array, cut: Uint8Array | null) {
   const { small, mesh } = world;
   const splits = small.guides.filter((g) => g.branch && g.cells.length >= 2 && land[g.cells[0]] && land[g.cells[1]]);
   if (!splits.length) return;
@@ -333,8 +336,9 @@ function splitFlows(world: World, r: Routing, land: Uint8Array, Q: Float64Array)
     const s = g.cells[0];
     const amount = g.branch!.share * Q[s];
     if (!(amount > 0)) continue;
-    for (let c = g.cells[1], guard = 0; c >= 0 && land[c] && c !== s && guard < mesh.n; c = r.receiver[c], guard++) Q[c] += amount;
-    for (let c = r.receiver[s], guard = 0; c >= 0 && land[c] && guard < mesh.n; c = r.receiver[c], guard++) Q[c] = Math.max(0, Q[c] - amount);
+    // 断流的格之下本来就不算这部分水（cut 为 null 时不看）
+    for (let c = g.cells[1], guard = 0; c >= 0 && land[c] && c !== s && guard < mesh.n && !cut?.[c]; c = r.receiver[c], guard++) Q[c] += amount;
+    for (let c = r.receiver[s], guard = 0; c >= 0 && land[c] && guard < mesh.n && !cut?.[c]; c = r.receiver[c], guard++) Q[c] = Math.max(0, Q[c] - amount);
   }
 }
 
