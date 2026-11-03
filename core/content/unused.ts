@@ -12,7 +12,8 @@ import { strictWorld } from './usage';
 //   生态：没有一格以它为主，也没涂过它（世界里一格长生态的陆地都没有时一种都不算：还没到长生态的时候）；
 //   河、湖的种类：没画、没选，也没被规则自动套上（推导里没有一格是这一种）；
 //   自定义场：哪一项内容都没写到它，也没画过（场里有不是 0 的格）；
-//   政体、派系、人口维度的取值：没有国家用、没有人（现在的人口与自动的快照），与资源库里“移出”时查的一样（usage.ts）；
+//   政体、人口维度的取值：没有国家用、没有人（现在的人口与自动的快照），与资源库里“移出”时查的一样（usage.ts）；
+//   派系（第五十三轮）：移出没用到的政体之后没有政体列着它；
 //   取值组（第四十三轮）：移出没用到的取值之后没有取值属于它的；
 //   文化（第五十轮）：没有人（现在的人口与自动的快照）、不是国家的主流文化、没有发源地、生成时没点名的；
 //   文化组（第五十轮）：移出没用到的文化之后没有文化属于它，也没有国家兼容、生成时没选、没有发源地的；
@@ -59,16 +60,18 @@ export function unusedContent(world: TidyWorld): ContentRef[] {
   const { small, causes, derived } = world;
   const out: ContentRef[] = [];
   const strict = strictWorld(world);
+  // 派系按移出没用到的政体之后的世界查：只有它们列着的派系也没用到
+  const after = (...kinds: string[]): UsageWorld => ({ ...strict, small: kinds.reduce((s, kind) => withoutItems(s, kind, out), small) });
   for (const kind of ['government', 'faction', 'popValue'] as const) {
     const k = kindOf(kind)!;
-    for (const id of Object.keys(contentItems(small, kind))) if (!usageOf(k, strict, id)) out.push({ kind, id });
+    const w = kind === 'faction' ? after('government') : strict;
+    for (const id of Object.keys(contentItems(small, kind))) if (!usageOf(k, w, id)) out.push({ kind, id });
   }
   // 取值组（第四十三轮）：移出上面那些取值之后没有取值属于它的
   const goneValues = new Set(out.filter((x) => x.kind === 'popValue').map((x) => x.id));
   const heldGroups = new Set(Object.values(contentItems<{ id: string; group?: string }>(small, 'popValue')).flatMap((v) => (!goneValues.has(v.id) && v.group ? [v.group] : [])));
   for (const id of Object.keys(contentItems(small, 'valueGroup'))) if (!heldGroups.has(id)) out.push({ kind: 'valueGroup', id });
   // 文化、文化组、地名风格：一层层算，后面的按移出前面那些之后的世界查
-  const after = (...kinds: string[]): UsageWorld => ({ ...strict, small: kinds.reduce((s, kind) => withoutItems(s, kind, out), small) });
   const unusedOf = (kind: 'culture' | 'cultureGroup' | 'nameStyle' | 'era', w: UsageWorld) => {
     const k = kindOf(kind)!;
     for (const id of Object.keys(contentItems(small, kind))) if (!usageOf(k, w, id) && !(kind === 'nameStyle' && styleInUse(w.small, id))) out.push({ kind, id });

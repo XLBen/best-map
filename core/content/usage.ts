@@ -1,8 +1,7 @@
 import { ISLAND_CODE_MASK, islandCode, islandTypesOf } from '../island-types';
 import { classCode } from '../human/terrain-class';
 import { resourceCode } from '../human/resources';
-import { worldEra } from '../human/era';
-import { eraFactions } from '../human/government';
+import type { Government } from '../human/government';
 import { linksOf } from './links';
 import { type ContentUsage, type ContentWorld, type UsageWorld, contentItems, updateKind } from './registry';
 
@@ -144,12 +143,13 @@ function governmentUsage(w: W, id: string): ContentUsage | null {
   return result(part(ctry.length, '个国家的政体'), ctry.length, countryCells(w, ctry.map((c) => c.id)));
 }
 
-// 派系：国家写了它的影响力；没写的国家按时代的派系自动算（第二十九轮：时代的派系对这些国家也算在用）
+// 派系（第五十三轮）：政体列着它（移出就留下找不到的引用），和用这些政体的国家
 function factionUsage(w: W, id: string): ContentUsage | null {
-  const era = worldEra(w.small);
-  const auto = !!era && eraFactions(w.small, era).some((f) => f.id === id);
-  const ctry = countries(w).filter((c) => (c.factions ? c.factions[id] !== undefined : auto));
-  return result(part(ctry.length, '个国家有它的影响力'), ctry.length, countryCells(w, ctry.map((c) => c.id)));
+  const govs = Object.values(contentItems<Government>(w.small, 'government')).filter((g) => g.factions?.includes(id));
+  if (!govs.length) return null;
+  const ids = new Set(govs.map((g) => g.id));
+  const ctry = countries(w).filter((c) => ids.has(c.government));
+  return result([...part(govs.length, '个政体列着它'), ...part(ctry.length, '个国家有它')], govs.length, countryCells(w, ctry.map((c) => c.id)));
 }
 
 function styleUsage(w: W, id: string): ContentUsage | null {

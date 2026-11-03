@@ -4,6 +4,7 @@
       "id": "feudal-realm",
       "name": "封建王国",
       "category": ["monarchy"],
+      "factions": ["nobility", "temples"],
       "description": "国王把土地封给领主，换取兵役与效忠；王权的强弱全看领主们的向背。",
       "color": "#9a5a3c",
       "titles": {
@@ -76,6 +77,7 @@
       "id": "high-kingdom",
       "name": "至高王权",
       "category": ["monarchy", "empire"],
+      "factions": ["nobility", "temples"],
       "description": "一位至高王统御诸王，各王国保留自己的王冠，却要向他纳贡、随他出征。",
       "color": "#8a2f4a",
       "titles": {
@@ -137,6 +139,7 @@
       "id": "elven-council",
       "name": "精灵议会",
       "category": ["oligarchy", "republic"],
+      "factions": ["nobility", "mages", "guilds", "clan-elders"],
       "description": "长寿的古老家族各出一位长者，议会以共识决事，守护森林重于开疆。",
       "color": "#3c8a5a",
       "titles": {
@@ -187,6 +190,7 @@
       "id": "dwarven-hold",
       "name": "氏族王国",
       "category": ["monarchy", "tribal"],
+      "factions": ["nobility", "temples", "clan-elders"],
       "description": "各氏族奉一位山王，城堡与矿坑凿在山腹里，长老议会掌管工坊与宝库。",
       "color": "#8a6a4a",
       "titles": {
@@ -214,6 +218,7 @@
       "id": "orc-horde",
       "name": "兽人部众",
       "category": ["tribal", "nomadic"],
+      "factions": ["nobility", "clan-elders"],
       "description": "最强的战士夺得领导权，各部在他麾下劫掠四方，首领一死便可能四分五裂。",
       "color": "#6a7a2a",
       "titles": {
@@ -254,6 +259,7 @@
       "id": "tribal-chiefdom",
       "name": "部落酋邦",
       "category": ["tribal"],
+      "factions": ["nobility", "clan-elders"],
       "description": "几个氏族推举一位酋长，按血缘与习俗议事，打仗时才合成一支大军。",
       "color": "#4a6a3a",
       "titles": {
@@ -326,6 +332,7 @@
       "id": "free-city",
       "name": "自由城邦",
       "category": ["republic", "oligarchy"],
+      "factions": ["nobility", "mages", "guilds", "clan-elders"],
       "description": "城墙内的市民自己选出议会与市长，向哪位国王都不低头，只认契约与金币。",
       "color": "#3a7a9a",
       "titles": {
@@ -376,6 +383,7 @@
       "id": "merchant-league",
       "name": "商会共和国",
       "category": ["republic", "oligarchy"],
+      "factions": ["nobility", "mages", "guilds", "clan-elders"],
       "description": "大商家轮流执政，舰队护着商路，议会里谈的多半是关税与航线。",
       "color": "#2f8a8a",
       "titles": {
@@ -402,6 +410,7 @@
       "id": "hearth-moot",
       "name": "乡民大会",
       "category": ["republic", "democracy"],
+      "factions": ["mages", "guilds"],
       "description": "各村的户主每年聚会一次，推举乡长，决定修路、收成与节日。",
       "color": "#9a9a3a",
       "titles": {
@@ -429,6 +438,7 @@
       "id": "tinker-guild",
       "name": "机巧行会",
       "category": ["oligarchy", "republic"],
+      "factions": ["nobility", "mages", "guilds", "clan-elders"],
       "description": "工坊的大匠组成行会掌权，谁的发明最管用，谁的声音就最大。",
       "color": "#a04a8a",
       "titles": {
@@ -456,6 +466,7 @@
       "id": "magocracy",
       "name": "法师统治",
       "category": ["magocracy"],
+      "factions": ["mages", "guilds"],
       "description": "法师塔与学院掌握权柄，最强的施法者坐在议会的最高处。",
       "color": "#6a4ab0",
       "titles": {
@@ -483,6 +494,7 @@
       "id": "temple-state",
       "name": "神殿国",
       "category": ["theocracy"],
+      "factions": ["nobility", "temples"],
       "description": "大神殿的祭司治理土地与信众，教规就是国法。",
       "color": "#c9a227",
       "titles": {
@@ -566,6 +578,7 @@
       "id": "holy-order",
       "name": "圣武士团",
       "category": ["theocracy"],
+      "factions": ["nobility", "temples"],
       "description": "立誓守护信仰的骑士团，占据边境的要塞，替晨光诸神讨伐异教。",
       "color": "#d05a6a",
       "titles": {
@@ -593,6 +606,7 @@
       "id": "dragon-lordship",
       "name": "龙主统治",
       "category": ["monarchy", "empire"],
+      "factions": ["nobility", "temples"],
       "description": "一条巨龙或龙血的君主高踞山巅，各氏族向他献上财宝与忠诚。",
       "color": "#b4281e",
       "titles": {
@@ -624,7 +638,7 @@
       "color": "#6a3ab0",
       "description": "学院、法师塔与秘法会，掌握施法的知识。",
       "eras": ["fantasy"],
-      "base": {"magocracy": 2.5, "oligarchy": 0.6, "republic": 0.4, "monarchy": 0.25, "tribal": 0.1, "default": 0.25},
+      "amount": 0.82,
       "drivers": [
         {"dimension": "race", "value": "elf", "weight": 0.6},
         {"dimension": "race", "value": "gnome", "weight": 0.8},
@@ -638,7 +652,7 @@
       "color": "#c9a227",
       "description": "神殿、修会与圣武士，照看信众也操练士兵。",
       "eras": ["fantasy"],
-      "base": {"theocracy": 2.2, "monarchy": 0.45, "empire": 0.4, "tribal": 0.3, "default": 0.35},
+      "amount": 1.01,
       "drivers": [{"faith": "same", "weight": 0.6}, {"faith": "heretic", "weight": -0.2}, {"minority": true, "weight": -0.2}]
     },
     {
@@ -647,7 +661,7 @@
       "color": "#2f8a8a",
       "description": "商人、工匠与冒险者的公会，管着集市、港口与委托。",
       "eras": ["fantasy"],
-      "base": {"republic": 1.3, "oligarchy": 1, "monarchy": 0.35, "magocracy": 0.4, "default": 0.3},
+      "amount": 1.05,
       "drivers": [
         {"coastal": true, "weight": 0.8},
         {"dimension": "race", "value": "halfling", "weight": 0.6},
@@ -662,7 +676,7 @@
       "color": "#7a6a3a",
       "description": "各氏族、部落的长者与萨满，按古老的血缘与誓约说话。",
       "eras": ["fantasy"],
-      "base": {"tribal": 1.8, "nomadic": 1.2, "oligarchy": 0.5, "monarchy": 0.3, "default": 0.25},
+      "amount": 0.91,
       "drivers": [
         {"dimension": "race", "value": "orc", "weight": 0.8},
         {"dimension": "race", "value": "dwarf", "weight": 0.6},

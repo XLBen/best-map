@@ -1,7 +1,7 @@
 import type { Command } from '../../core/commands';
 import { itemId, kindByPackKey } from '../../core/content/registry';
 import { recordedOrigin } from '../../core/content/origin';
-import { type Culture, type CultureGroup, type Era, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
+import { type Culture, type CultureGroup, type Era, type Government, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
 import { type PackNode, type PackWorld, findPack, ownItems, packItems, subPacks, walkPacks } from '../../core/packs';
 import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../core/packs/builtin-tree';
 import { type ImportPicks, type PackRoot, packAt, packImportCommands, packImportPlan } from '../../core/packs/import';
@@ -220,7 +220,17 @@ export function humanImportCommands(c: PackChoice, small: Small | null | undefin
 
 // 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）
 export function addFromLibrary(small: Small, lib: readonly LibraryEntry[], key: string, id: string, path: PackPath): { commands: Command[]; id: string } {
-  const plan = packImportPlan(libRoots(lib), { packs: [], extra: [{ path, picks: { [key]: [id] } }] }, worldOf(small));
+  const extra: { path: readonly string[]; picks: Record<string, string[]> }[] = [{ path, picks: { [key]: [id] } }];
+  // 第五十三轮：政体带上它列的、世界里没有的派系（先找同一个库的），不留下找不到的引用
+  if (key === 'governments') {
+    const gov = findInLibrary<Government>(lib, key, id, [path])?.item;
+    for (const fid of gov?.factions ?? []) {
+      if (small.content?.faction?.[fid]) continue;
+      const hit = findInLibrary<unknown>(lib, 'factions', fid, [path.slice(0, 1)]);
+      if (hit) extra.push({ path: hit.path, picks: { factions: [fid] } });
+    }
+  }
+  const plan = packImportPlan(libRoots(lib), { packs: [], extra }, worldOf(small));
   const hit = [...plan.added, ...plan.skipped].find((a) => a.section === key && a.from === id);
   return { commands: plan.commands, id: hit?.id ?? id };
 }

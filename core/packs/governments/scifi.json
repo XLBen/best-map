@@ -4,6 +4,7 @@
       "id": "galactic-federation",
       "name": "星际联邦",
       "category": ["federation", "democracy", "republic"],
+      "factions": ["federalists", "conglomerates", "academy", "frontier"],
       "description": "各殖民地与星系平等加盟，联邦议会管舰队、航道与贸易，成员保留自治。",
       "color": "#3a6ac0",
       "titles": {
@@ -30,6 +31,7 @@
       "id": "stellar-empire",
       "name": "星际帝国",
       "category": ["empire", "monarchy"],
+      "factions": ["academy", "fleet"],
       "description": "一位皇帝与他的贵族统治众多星区，爵位按星区、星团与星域层层分封。",
       "color": "#6a2c91",
       "titles": {
@@ -56,6 +58,7 @@
       "id": "corporate-republic",
       "name": "企业共和国",
       "category": ["corporate", "oligarchy", "republic"],
+      "factions": ["federalists", "conglomerates", "academy"],
       "description": "殖民公司的股东就是公民，董事会兼任政府，利润报表就是施政报告。",
       "color": "#c08a2a",
       "titles": {
@@ -82,6 +85,7 @@
       "id": "colony-council",
       "name": "殖民地议会",
       "category": ["republic", "democracy"],
+      "factions": ["federalists", "conglomerates", "academy", "frontier"],
       "description": "殖民者选出的议会治理新开的土地，什么都要表决，什么都缺。",
       "color": "#4a9a6a",
       "titles": {
@@ -108,6 +112,7 @@
       "id": "military-government",
       "name": "军事政府",
       "category": ["dictatorship"],
+      "factions": ["fleet", "consensus"],
       "description": "舰队与军官团接管了政府，宵禁、配给与征兵是常态。",
       "color": "#5a6a4a",
       "titles": {
@@ -134,6 +139,7 @@
       "id": "psionic-theocracy",
       "name": "灵能神权",
       "category": ["theocracy"],
+      "factions": ["academy", "psionics"],
       "description": "灵能觉醒者被奉为先知，信众按他们的预见行事。",
       "color": "#a03ab0",
       "titles": {
@@ -160,6 +166,7 @@
       "id": "free-haven",
       "name": "自由港",
       "category": ["republic", "oligarchy"],
+      "factions": ["federalists", "conglomerates", "academy"],
       "description": "船长与商队头领共治的港口，不问来路，只收泊位费。",
       "color": "#8ad0c0",
       "titles": {
@@ -186,6 +193,7 @@
       "id": "hive-collective",
       "name": "蜂巢意志",
       "category": ["dictatorship"],
+      "factions": ["fleet", "consensus"],
       "description": "整个种族服从同一个意志，个体只是巢的手足。",
       "color": "#7a4a8a",
       "titles": {
@@ -226,6 +234,7 @@
       "id": "lattice-consensus",
       "name": "晶格共识",
       "category": ["oligarchy"],
+      "factions": ["conglomerates", "academy"],
       "description": "晶体之间的共振连成一张网，决定要等整张网达成共识，往往要好几年。",
       "color": "#b0a0d0",
       "titles": {
@@ -253,6 +262,7 @@
       "id": "machine-mind",
       "name": "机械智能",
       "category": ["oligarchy", "dictatorship"],
+      "factions": ["conglomerates", "academy", "fleet", "consensus"],
       "description": "合成人的城市由一个统合的意识计算决策，每个个体都是它的一部分。",
       "color": "#a0a05a",
       "titles": {
@@ -280,6 +290,7 @@
       "id": "tide-chorus",
       "name": "潮汐合唱",
       "category": ["republic", "democracy"],
+      "factions": ["federalists", "conglomerates", "academy", "frontier"],
       "description": "潮裔的城市以合唱议事，领唱者由歌声最远的人担任。",
       "color": "#2a8ac0",
       "titles": {
@@ -307,6 +318,7 @@
       "id": "aerie-council",
       "name": "巢崖议会",
       "category": ["oligarchy", "tribal"],
+      "factions": ["conglomerates", "academy"],
       "description": "各崖巢的长者在最高的山峰上聚会，议事时以鸣唱表决。",
       "color": "#c05a8a",
       "titles": {
@@ -337,8 +349,8 @@
       "name": "联邦主义者",
       "color": "#3a6ac0",
       "description": "主张各殖民地平等、权力分散的议员与地方领袖。",
-      "eras": ["scifi"],
-      "base": {"federation": 1.5, "democracy": 1, "republic": 0.6, "default": 0.2},
+      "eras": ["modern", "scifi"],
+      "amount": 0.74,
       "drivers": [{"dimension": "ideology", "value": "sf-federalist", "weight": 4}]
     },
     {
@@ -346,8 +358,8 @@
       "name": "财团",
       "color": "#c08a2a",
       "description": "掌握航运、采矿与工厂的大公司。",
-      "eras": ["scifi"],
-      "base": {"corporate": 2.5, "oligarchy": 0.6, "republic": 0.4, "default": 0.2},
+      "eras": ["modern", "scifi"],
+      "amount": 0.57,
       "drivers": [{"dimension": "ideology", "value": "sf-corporate", "weight": 4}, {"coastal": true, "weight": 0.3}]
     },
     {
@@ -355,8 +367,8 @@
       "name": "科学院",
       "color": "#2a8aa0",
       "description": "科学家、工程师与改造技术的推动者。",
-      "eras": ["scifi"],
-      "base": {"oligarchy": 1, "republic": 0.4, "default": 0.25},
+      "eras": ["modern", "scifi"],
+      "amount": 0.62,
       "drivers": [
         {"dimension": "ideology", "value": "sf-technocracy", "weight": 4},
         {"dimension": "ideology", "value": "sf-ascension", "weight": 3},
@@ -369,7 +381,7 @@
       "color": "#5a6a4a",
       "description": "舰队司令部与老兵团体，要求扩军与强硬的边疆政策。",
       "eras": ["scifi"],
-      "base": {"dictatorship": 1.6, "empire": 1.2, "monarchy": 0.5, "default": 0.25},
+      "amount": 1.41,
       "drivers": [
         {"dimension": "ideology", "value": "sf-militarist", "weight": 4},
         {"dimension": "ideology", "value": "sf-supremacist", "weight": 3},
@@ -382,7 +394,7 @@
       "color": "#6a9a3a",
       "description": "边疆的移民、行商与生态守护者，不信任中央政府。",
       "eras": ["scifi"],
-      "base": {"democracy": 0.5, "federation": 0.4, "default": 0.15},
+      "amount": 0.48,
       "drivers": [
         {"dimension": "ideology", "value": "sf-free", "weight": 4},
         {"dimension": "ideology", "value": "sf-naturalist", "weight": 3.5},
@@ -396,7 +408,7 @@
       "color": "#a03ab0",
       "description": "灵能觉醒者与追随他们的信众。",
       "eras": ["scifi"],
-      "base": {"theocracy": 2.5, "default": 0.1},
+      "amount": 2.5,
       "drivers": [{"dimension": "ideology", "value": "sf-psionic", "weight": 4}]
     },
     {
@@ -405,7 +417,7 @@
       "color": "#7a4a8a",
       "description": "主张个体服从群体、由集体共同决策的一派。",
       "eras": ["scifi"],
-      "base": {"dictatorship": 0.6, "default": 0.1},
+      "amount": 0.6,
       "drivers": [
         {"dimension": "ideology", "value": "sf-collective", "weight": 4},
         {"dimension": "species", "value": "chitin", "weight": 0.6},

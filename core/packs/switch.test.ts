@@ -4,7 +4,8 @@ import { danglingLinks, linkTable, worldScope } from '../content/links';
 import { digest } from '../digest';
 import { Engine } from '../engine';
 import { worldCultureGroups, worldCultures } from '../human/era';
-import { worldGovernments } from '../human/government';
+import { countryFactions } from '../human/country-layers';
+import { governmentById, governmentFactions, worldGovernments } from '../human/government';
 import type { PackNode, ResourcePack } from '../packs';
 import { NO_CURRENTS, engineFor, humanDigest } from '../testing/fixtures';
 import { builtinPacks, worldPartsOf } from './builtin-tree';
@@ -238,6 +239,37 @@ describe('别的来源的内容留着', () => {
     expect(after.locked).toBe(true);
     expect(after.government).toBe(m.government);
     expect(eng.world.small.content!.culture![m.primaryCulture]).toBeDefined();
+  });
+
+  // 第五十三轮：政体列的派系
+  const danglingFactions = (eng: Engine) => danglingLinks(linkTable(worldScope(eng.world))).filter((d) => d.link.kinds.includes('faction'));
+  it('换库后政体的派系都找得到，每个国家都有派系；没有政体列的旧派系都走了', () => {
+    for (const [from, to] of [['medieval', 'modern'], ['medieval', 'fantasy'], ['modern', 'scifi'], ['scifi', 'antiquity']]) {
+      const eng = switched(from, to);
+      expect(danglingFactions(eng), `${from}→${to}`).toEqual([]);
+      const small = eng.world.small;
+      for (const m of Object.values(small.countries!)) expect(governmentFactions(small, governmentById(small, m.government)).length, `${from}→${to}: ${m.government}`).toBeGreaterThanOrEqual(2);
+      const brought = new Set(ERA_PACKS.get(to)!.factions);
+      expect(Object.keys(small.content!.faction!).sort()).toEqual([...brought].sort());
+    }
+  });
+  it('锁定的国家：政体留下时它列的派系也留下，不留悬空；撤销回到原样', () => {
+    const eng = fresh('medieval');
+    const m = Object.values(eng.world.small.countries!).find((c) => !ERA_PACKS.get('fantasy')!.governments.includes(c.government))!;
+    eng.exec({ op: 'set_country', id: m.id, patch: { locked: true } });
+    const listed = governmentById(eng.world.small, m.government)!.factions!;
+    const { cmd, plan } = switchCommand(eng, 'fantasy');
+    // 奇幻只有贵族，别的留下
+    for (const id of listed) expect(plan.drop.some((r) => r.kind === 'faction' && r.id === id), id).toBe(false);
+    expect(plan.kept.some((r) => r.kind === 'faction')).toBe(true);
+    eng.exec(cmd);
+    expect(danglingFactions(eng)).toEqual([]);
+    expect(governmentFactions(eng.world.small, governmentById(eng.world.small, m.government)).map((f) => f.id)).toEqual(listed);
+    expect(countryFactions(eng.world, m.id).length).toBe(listed.length);
+    // 没有政体列的旧派系走了
+    const small = eng.world.small;
+    const held = new Set(Object.values(small.content!.government as Record<string, { factions?: string[] }>).flatMap((g) => g.factions ?? []));
+    for (const id of Object.keys(small.content!.faction!)) expect(held.has(id), id).toBe(true);
   });
 
   it('省份自己选的地名风格留下', () => {

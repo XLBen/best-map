@@ -25,7 +25,7 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "728bfa7c5e4384b4",
+  "content": "cf33546982c8c2b4",
   "origin": "b946292a7400ae43"
  },
  "medieval:strip": {
@@ -53,7 +53,7 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "f3757014cf61b2e0",
+  "content": "e489b9676f09c58a",
   "origin": "991a41d72a8b6f42"
  },
  "industrial:strip": {
@@ -83,8 +83,8 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "38e7a0832a904f1e",
-  "origin": "20b768fdc04208fa"
+  "content": "a11a5ca979708f66",
+  "origin": "2f8b9ff47de632f0"
  },
  "modern:strip": {
   "cultureGroup→era": 142,
@@ -92,7 +92,9 @@
   "cultureGroup→popValue": 53,
   "culture→era": 249,
   "culture→government": 85,
-  "culture→popValue": 22
+  "culture→popValue": 22,
+  "faction→dimension": 1,
+  "faction→popValue": 5
  },
  "modern": {
   "pop": "1393550e88600b4c",
@@ -109,8 +111,8 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "39f43b5a3e1f7c28",
-  "origin": "e1e1f3a6c482b92b"
+  "content": "c4990fba35bb2183",
+  "origin": "b31928929d62c4f8"
  },
  "fantasy:strip": {
   "landmarkType→culture": 14
@@ -130,7 +132,7 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "b2ef9ec55fd3199c",
-  "content": "3cb304015f5940b3",
+  "content": "3935744abf019d46",
   "origin": "9730e9bb1fba103b"
  },
  "scifi:strip": {},
@@ -149,7 +151,7 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "9182b1da89b11b1e",
+  "content": "e12354726eb406ee",
   "origin": "7ee69b0843bf185b"
  }
 }

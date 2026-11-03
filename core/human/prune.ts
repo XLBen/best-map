@@ -1,8 +1,7 @@
 import { contentItems } from '../content/registry';
 import { styleInUse } from '../name-styles';
 import type { World } from '../world';
-import { type Culture, type CultureGroup, styleOfCulture, worldEra } from './era';
-import { eraFactions } from './government';
+import { type Culture, type CultureGroup, styleOfCulture } from './era';
 
 // 删掉人文、国家时带进来的内容一起移出（第二十九轮，remove_human、remove_countries）。
 // 生成之后不再移出没用到的（第五十轮：世界保留全部内容，要清理时走整理 core/tidy.ts）。
@@ -30,11 +29,9 @@ function dropStyles(small: World['small'], content: Content, gone: readonly Cult
 function dropUnusedGov(small: World['small'], content: Content, drop: Drop) {
   const countries = Object.values(small.countries ?? {});
   const govUsed = new Set(countries.map((c) => c.government));
-  // 没写影响力的国家按世界里的派系自动算：对它们都算在用
-  const era = worldEra(small);
-  const auto = era ? eraFactions(small, era).map((f) => f.id) : [];
-  const facUsed = new Set(countries.flatMap((c) => (c.factions ? Object.keys(c.factions) : auto)));
-  const govs = Object.values((content.government ?? {}) as Record<string, { id: string }>);
+  const govs = Object.values((content.government ?? {}) as Record<string, { id: string; factions?: string[] }>);
+  // 第五十三轮：留下的政体列着的派系算在用
+  const facUsed = new Set(govs.flatMap((g) => (govUsed.has(g.id) ? (g.factions ?? []) : [])));
   drop(
     'government',
     govs.filter((g) => !govUsed.has(g.id)).map((g) => g.id),

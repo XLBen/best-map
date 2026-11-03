@@ -13,7 +13,6 @@ import {
   blocsOf,
   categoryName,
   cellName,
-  countryFactions,
   countryFaith,
   FAITH_NAMES,
   worldCultureGroups,
@@ -23,12 +22,10 @@ import type { CountryMeta, World } from '../../core/world';
 import { askUser, exec, nameMode, selectedCountry, setOptions, sheet, switchTool, world } from '../state';
 import { library } from '../library';
 import { focusOn } from './camera';
-import { Slider } from './components/Slider';
 import { Toggle } from './components/Toggle';
 import {
   cellsOf,
   countriesByName,
-  factionPatch,
   flagColorPatch,
   governmentChoices,
   governmentCommand,
@@ -47,6 +44,7 @@ import {
 } from './countries';
 import { densityText, firstLine, popText, shareText } from './human';
 import { BLOC_KIND_OPTIONS, SUBJECT_OPTIONS, joinBlocCommand, joinNote, joinableBlocs, leaveBlocCommand, newBlocCommand, selectBloc, subjectCommand } from './blocs';
+import { FactionSection, StackBar } from './CountryFactions';
 import { Flag, showCountry } from './panels/countries';
 import { CityList } from './panels/settlements';
 import { countryCityRows, hasAnySettle } from './settlements';
@@ -62,6 +60,8 @@ import { LibraryLink } from './components/TypePicker';
 
 const run = (cmd: Command | null, busy = '正在保存…') => (cmd ? exec(cmd, busy) : Promise.resolve(false));
 const patch = (id: number, p: CountryPatch | null) => run(p ? patchCommand(id, p) : null);
+
+export { StackBar };
 
 export const LAYOUT_NAMES: Record<string, string> = {
   plain: '纯色',
@@ -157,19 +157,6 @@ export function ShareRow({ color, label, share, title, children }: { color: stri
         <span style={{ width: `${Math.round(share * 100)}%`, background: color }} />
       </span>
       {children ?? <span class="hint">{shareText(share)}</span>}
-    </div>
-  );
-}
-
-// 一整条的构成（文化、宗教……），鼠标停着写名字与占比
-export function StackBar({ items }: { items: { name: string; color: string; share: number }[] }) {
-  const rest = Math.max(0, 1 - items.reduce((a, x) => a + x.share, 0));
-  return (
-    <div class="stack-bar">
-      {items.map((x) => (
-        <span style={{ width: `${x.share * 100}%`, background: x.color }} title={`${x.name} ${shareText(x.share)}`} />
-      ))}
-      {rest > 0.005 && <span class="stack-rest" style={{ width: `${rest * 100}%` }} title={`其他 ${shareText(rest)}`} />}
     </div>
   );
 }
@@ -482,47 +469,6 @@ function CitySection({ w, m }: { w: World; m: CountryMeta }) {
         </Line>
       )}
       <CityList cities={rows} limit={12} />
-    </section>
-  );
-}
-
-function FactionSection({ w, m }: { w: World; m: CountryMeta }) {
-  const list = countryFactions(w, m.id, statsOf(w).get(m.id));
-  const [draft, setDraft] = useState<{ id: string; v: number } | null>(null);
-  // 换了国家：拖到一半的不留（第四十轮：抽屉不再按国家整个重建）
-  useEffect(() => setDraft(null), [m.id]);
-  if (!list.length) return null;
-  const shown = draft ? Object.entries(factionPatch(list, draft.id, draft.v)).map(([id, influence]) => ({ ...list.find((f) => f.id === id)!, influence })) : list;
-  return (
-    <section>
-      <div class="row between">
-        <h5>派系</h5>
-        {m.factions ? (
-          <button class="small" onClick={() => void patch(m.id, { factions: null })} title="按人口构成算">
-            恢复自动
-          </button>
-        ) : (
-          <span class="hint">自动</span>
-        )}
-      </div>
-      <StackBar items={shown.map((f) => ({ name: f.name, color: f.color, share: f.influence }))} />
-      {shown.map((f) => (
-        <div class="faction-row">
-          <span class="swatch" style={{ background: f.color }} />
-          <Slider
-            label={f.name}
-            pos={f.influence}
-            text={shareText(f.influence)}
-            changed={draft?.id === f.id}
-            onDraft={(p) => setDraft({ id: f.id, v: Math.round(p * 100) / 100 })}
-            onCommit={(p) => {
-              setDraft(null);
-              void patch(m.id, { factions: factionPatch(list, f.id, Math.round(p * 100) / 100) });
-            }}
-            onCancel={() => setDraft(null)}
-          />
-        </div>
-      ))}
     </section>
   );
 }

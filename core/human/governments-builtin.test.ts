@@ -97,7 +97,7 @@ describe('内置的政体与派系：格式与引用', () => {
     for (const f of BUILTIN_FACTIONS) {
       descOk(f);
       expect(govEras(f.id)?.length, `${f.id} 写明在哪几个时代里有`).toBeGreaterThan(0);
-      for (const k of Object.keys(f.base)) if (k !== 'default') expect(CATEGORY_NAMES, `${f.id}: ${k}`).toHaveProperty(k);
+      expect(f.amount, f.id).toBeGreaterThan(0);
     }
   });
 
@@ -210,8 +210,11 @@ describe('内置的政体与派系：格式与引用', () => {
       expect(new Set(factionsOf(era).map((f) => f.name)).size, era.id).toBe(facIds(era).length);
       const cg = closest(govsOf(era));
       expect(cg.d, `${era.id} 政体 ${cg.pair}`).toBeGreaterThan(12);
-      const cf = closest(factionsOf(era));
-      expect(cf.d, `${era.id} 派系 ${cf.pair}`).toBeGreaterThan(18);
+      // 派系只和同一个政体里的放在一起（第五十三轮）：一个政体列的颜色分得开
+      for (const g of govsOf(era)) {
+        const cf = closest(factionsOf(era).filter((f) => g.factions?.includes(f.id)));
+        expect(cf.d, `${era.id} ${g.id} 派系 ${cf.pair}`).toBeGreaterThan(18);
+      }
     }
     for (const g of BUILTIN_GOVERNMENTS) for (const e of govEras(g.id)!) expect(govIds(eraOf(e)), `${g.id}: ${e}`).toContain(g.id);
     for (const f of BUILTIN_FACTIONS) for (const e of govEras(f.id)!) expect(facIds(eraOf(e)), `${f.id}: ${e}`).toContain(f.id);
@@ -300,7 +303,7 @@ describe('内置的政体与派系：每个时代生成国家', () => {
         expect(m.founded).toBeGreaterThanOrEqual(era.years![0]);
         expect(m.founded).toBeLessThanOrEqual(era.years![1]);
         const fs = countryFactions(w, m.id);
-        expect(fs.map((f) => f.id)).toEqual(facIds(era));
+        expect(fs.map((f) => f.id)).toEqual(g.factions);
         expect(fs.reduce((a, f) => a + f.influence, 0)).toBeCloseTo(1, 2);
       }
       // 不止一两种政体

@@ -8,7 +8,8 @@ import { HEX } from './terrain-class';
 // 第二十三轮：政体与派系——两种内容（都放在 small.content，命令是 set_content）。
 // 政体只是“生成的倾向 + 说明”：国土多大、扩张性（吞进多少不兼容的少数群体）、偏不偏海岸、城市化、紧凑、收不收附庸、能不能占恶劣的地方，
 // 外加国家的称号（王国、共和国……，可以按文化、文化组换说法）。不带游戏里的数值。
-// 派系由时代定义，影响力按国家的人口构成与政体的类别大致算出（见 country-layers.ts 的 countryFactions）
+// 第五十三轮：政体列有哪些派系（factions），没有比重；派系的定义共用，比重在具体国家里：
+// 基础分量（amount）加这个国家的人口算出来（见 country-layers.ts 的 countryFactions），档案里可以覆盖（CountryMeta.factions）
 
 // 称号的一种写法：只写中文（“王国”），或中文加原文的写法（{name} 换成国名的原文：“Kingdom of {name}”）。
 // 中文里写了 {name} 时换成国名（“大{name}朝”），没写时接在国名后面
@@ -59,8 +60,10 @@ export type GovOnly = z.output<typeof govOnlySchema>;
 export const governmentSchema = z.object({
   id: typeIdSchema,
   name: z.string().min(1).max(20),
-  // 类别（几个标签）：monarchy 君主制、republic 共和制、theocracy 神权、tribal 部落、federation 联邦、empire 帝国……；派系按它给基础的影响力
+  // 类别（几个标签）：monarchy 君主制、republic 共和制、theocracy 神权、tribal 部落、federation 联邦、empire 帝国……
   category: z.array(tag).min(1).max(8),
+  // 这种政体有哪些派系（第五十三轮）：只列名字，比重在具体国家里算。没写的政体没有派系
+  factions: z.array(typeIdSchema).max(16).optional(),
   description: z.string().max(400).optional(),
   color: HEX.optional(),
   // 国家的称号与统治者的称号（第四十三轮起按国家的等级）：默认的写法，与按文化组、宗教……换说法的几条（names）
@@ -118,8 +121,8 @@ export const factionSchema = z.object({
   name: z.string().min(1).max(20),
   color: HEX,
   description: z.string().max(400).optional(),
-  // 基础的影响力：政体的类别 → 多少（几个类别都有时取平均；一个都没有时用 default，再没有为 0）
-  base: z.record(tag, z.number().min(0).max(10)),
+  // 基础分量：在列着它的政体里，人口之外它本来有多大（只有相对的大小有意义，加上来自人口的再归一）
+  amount: z.number().min(0).max(10),
   drivers: z.array(factionDriverSchema).max(16).optional(),
 });
 export type Faction = z.output<typeof factionSchema>;
@@ -163,10 +166,16 @@ export const worldFactions = (small: GovSmall): readonly Faction[] => listOf<Fac
 export const governmentById = (small: GovSmall, id: string): Government | undefined => contentItems<Government>(small, 'government')[id];
 export const factionById = (small: GovSmall, id: string): Faction | undefined => contentItems<Faction>(small, 'faction')[id];
 
-// 这个时代能用的政体、派系（第三十轮）：世界里的全部（按加进世界的先后）。时代包的“政体”“派系”小包由界面加进世界，
+// 这个时代能用的政体（第三十轮）：世界里的全部（按加进世界的先后）。时代包的“政体”小包由界面加进世界，
 // 不再按时代项里的列表、政体自己写的时代筛
 export const eraGovernments = (small: GovSmall, _era?: unknown): Government[] => [...worldGovernments(small)];
-export const eraFactions = (small: GovSmall, _era?: unknown): Faction[] => [...worldFactions(small)];
+
+// 政体的派系（第五十三轮）：按政体列的先后，世界里没有的、重复的不算
+export function governmentFactions(small: GovSmall, gov: Pick<Government, 'factions'> | undefined): Faction[] {
+  if (!gov?.factions?.length) return [];
+  const all = contentItems<Faction>(small, 'faction');
+  return [...new Set(gov.factions)].flatMap((id) => (all[id] ? [all[id]] : []));
+}
 
 // 称号按文化取一种写法：文化 id → 文化组 id → default → 第一个（地标的名字、时代的帝国与同盟的称号用；政体的称号见 govTitles）
 export function pickTitle(t: Title | undefined, culture: Pick<Culture, 'id' | 'group'> | undefined): { zh: string; orig?: string } | undefined {

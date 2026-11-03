@@ -24,6 +24,7 @@ const GOV_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
   { key: 'category', label: '类别', type: 'tags', ref: 'govCategory', hint: 'monarchy、republic、theocracy、tribal、empire……' },
+  { key: 'factions', label: '有哪些派系', type: 'tags', optional: true, ref: 'faction', dep: 'auto', hint: '只选有哪些。比重在国家档案里，每个国家按人口算，也可以自己调' },
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'titles', label: '国家称号', type: 'title', keyRef: 'countryTier', dep: 'strip', hint: '按国家的等级（没写的等级用最近的一级）；只写一种时各等级都用它' },
@@ -70,7 +71,7 @@ const FACTION_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
-  { key: 'base', label: '基础', type: 'map', keyRef: 'govCategory', value: { key: 'value', label: '影响力', type: 'number', min: 0, max: 10, step: 0.1 }, hint: '政体的类别 → 影响力；default 是别的类别' },
+  { key: 'amount', label: '基础分量', type: 'number', min: 0, max: 10, step: 0.05, hint: '人口之外它本来有多大，和同一个政体里别的派系比' },
   { key: 'drivers', label: '来自人口', type: 'list', optional: true, of: DRIVER_FIELDS, dep: 'strip', hint: '这部分人越多，影响力越大' },
 ];
 
@@ -109,7 +110,7 @@ export function registerGovKinds(): void {
     schema: factionSchema as unknown as z.ZodType<Faction>,
     inWorld: (w) => Object.values(contentItems<Faction>(w.small, 'faction')),
     dirty: () => 'human',
-    blank: () => ({ id: 'my-faction', name: '新派系', color: '#999999', base: { default: 1 } }),
+    blank: () => ({ id: 'my-faction', name: '新派系', color: '#999999', amount: 1 }),
     fields: FACTION_FIELDS,
     pack: {
       key: 'factions',

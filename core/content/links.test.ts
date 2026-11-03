@@ -38,6 +38,7 @@ function fullPack(id = 'src', tweak: (key: string, x: Record<string, unknown>) =
         id: 'gov1',
         name: '政体',
         category: ['monarchy'],
+        factions: ['f1'],
         titles: { t1: '王国', default: '公国' },
         rulers: { t2: { zh: '国王', orig: 'King' } },
         names: [{ cultures: ['c1'], cultureGroups: ['g1'], values: ['v1'], valueGroups: ['vg1'], titles: { t1: '大王国' }, rulers: { t2: '大王' } }],
@@ -45,7 +46,7 @@ function fullPack(id = 'src', tweak: (key: string, x: Record<string, unknown>) =
         size: 1,
       },
     ],
-    factions: [{ id: 'f1', name: '派系', color: '#999999', base: { monarchy: 1, default: 1 }, drivers: [{ dimension: 'religion', value: 'v1', culture: 'c1', cultureGroup: 'g1', weight: 1 }, { faith: 'heretic', weight: 1 }] }],
+    factions: [{ id: 'f1', name: '派系', color: '#999999', amount: 1, drivers: [{ dimension: 'religion', value: 'v1', culture: 'c1', cultureGroup: 'g1', weight: 1 }, { faith: 'heretic', weight: 1 }] }],
     countryTiers: [{ id: 't1', name: '大', order: 1, area: 2, govSize: 1 }, { id: 't2', name: '小', order: 0, area: 1, govSize: 1 }],
     countryLayouts: [{ id: 'lay1', name: '格局', weights: { t1: 1, t2: 2 } }],
     cityRanks: [{ id: 'cr1', name: '城', icon: 'dot', level: 1, minShare: 0.1, label: 1 }],
@@ -192,7 +193,6 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
       'cultureGroup:prefs.#.terrain.#': '生态的地形标签',
       'culture:prefs.#.terrain.#': '生态的地形标签',
       'government:category.#': '政体的类别（标签）',
-      'faction:KEY base': '政体的类别（标签）',
       'cityRank:KEY ': 'capital 是开关',
       'landmarkType:category': '固定的类别',
       'landmarkType:icon': '图标名',
@@ -235,6 +235,7 @@ describe('一项里的引用', () => {
 
   it('表的键、限谁用、维度、倾向、隐含的维度都有，default 不算', () => {
     expect(of('government', 'gov1').map(brief)).toEqual([
+      'factions.0→faction:f1:auto',
       'titles.t1→countryTier:t1:strip',
       'rulers.t2→countryTier:t2:strip',
       'names.0.cultureGroups.0→cultureGroup:g1:strip',
@@ -304,7 +305,7 @@ describe('一项里的引用', () => {
     // 政体：限谁用默认跟着走（组、文化、取值、取值组），取值的维度、取值组是 hard 的一路走到；等级只列出来
     const g = dependencyClosure(table, [{ kind: 'government', id: 'gov1' }]);
     expect(g.hard).toEqual([]);
-    expect(g.auto.map((x) => `${x.kind}:${x.id}`).sort()).toEqual(['culture:c1', 'cultureGroup:g1', 'dimension:religion', 'nameStyle:s1', 'popValue:v1', 'valueGroup:vg1'].sort());
+    expect(g.auto.map((x) => `${x.kind}:${x.id}`).sort()).toEqual(['culture:c1', 'cultureGroup:g1', 'dimension:religion', 'faction:f1', 'nameStyle:s1', 'popValue:v1', 'valueGroup:vg1'].sort());
     expect(g.strip.map((x) => x.id).sort()).toEqual(['b2', 'e1', 't1', 't2', 'tc1']);
     // 种子不算在里面，两条路的算 hard
     const both = dependencyClosure(table, [{ kind: 'culture', id: 'c1' }, { kind: 'landmarkType', id: 'lm1' }]);
@@ -323,7 +324,8 @@ describe('一项里的引用', () => {
     for (const g of wordy) {
       const c = dependencyClosure(lib, [{ kind: 'government', id: g.id }]);
       expect(c.hard, g.id).toEqual([]);
-      expect(c.auto, g.id).toEqual([]);
+      // 只带它列的派系（第五十三轮）
+      expect(c.auto.filter((x) => x.kind !== 'faction'), g.id).toEqual([]);
       expect(c.strip.filter((x) => x.kind === 'cultureGroup').length, g.id).toBeGreaterThanOrEqual(1);
     }
   });
@@ -374,7 +376,7 @@ describe('去掉引用', () => {
     const inv = b.schema.parse({ id: 'b', effects: { invade: { targets: ['a'], strength: 1 }, climate: { radiusKm: 100 } } }) as Record<string, any>;
     expect(stripLinks(b, inv, () => true).effects).toEqual({ climate: { radiusKm: 100 } });
     const f = kindOf('faction')!;
-    const fx = f.schema.parse({ id: 'f', name: 'f', color: '#000000', base: {}, drivers: [{ dimension: 'religion', value: 'v', weight: 1 }, { primary: true, weight: 1 }] }) as Record<string, any>;
+    const fx = f.schema.parse({ id: 'f', name: 'f', color: '#000000', amount: 1, drivers: [{ dimension: 'religion', value: 'v', weight: 1 }, { primary: true, weight: 1 }] }) as Record<string, any>;
     expect(stripLinks(f, fx, (l) => l.id === 'v').drivers).toEqual([{ primary: true, weight: 1 }]);
   });
 
@@ -449,11 +451,11 @@ describe('故意撞名的导入：引用跟着改名，不留下找不到的', (
       }
     }
     expect(nowWrong).toEqual([]);
-    // 这几个数记在 docs/dev/history/第49轮.md：以前 59 条引用里有 40 条没跟着改
+    // 这几个数记在 docs/dev/history/第49轮.md：以前 59 条引用里有 40 条没跟着改（第五十三轮的派系名单多一条：60 条、41 条）
     expect({ total, wrong: Object.values(oldWrong).reduce((a, b) => a + b, 0), oldWrong }).toEqual({
-      total: 59,
-      wrong: 40,
-      oldWrong: { riverType: 1, cultureGroup: 6, culture: 5, popValue: 2, government: 12, faction: 3, era: 2, countryLayout: 2, landmarkType: 3, terrainClass: 1, resource: 2, pointType: 1 },
+      total: 60,
+      wrong: 41,
+      oldWrong: { riverType: 1, cultureGroup: 6, culture: 5, popValue: 2, government: 13, faction: 3, era: 2, countryLayout: 2, landmarkType: 3, terrainClass: 1, resource: 2, pointType: 1 },
     });
   });
 

@@ -336,7 +336,7 @@ export interface CountryMeta {
   primaryCulture: string;
   // 兼容的文化组（主流文化的组总在里面）
   acceptedGroups: string[];
-  // 自己定的派系影响力（0–1）；没有时按人口构成自动算（country-layers.ts 的 countryFactions）
+  // 自己调过的派系影响力（0–1），用户拖过滑块才有；没有时用到才算（政体列的派系，基础分量加人口，country-layers.ts 的 countryFactions）
   factions?: Record<string, number>;
   // 宗主（附庸在地图上用宗主的浅色）、同盟、敌对（同盟、敌对两边都记）
   overlord?: number;

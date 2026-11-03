@@ -4,6 +4,7 @@
       "id": "constitutional-monarchy",
       "name": "君主立宪制",
       "category": ["monarchy", "democracy"],
+      "factions": ["conservatives", "liberals"],
       "eras": ["industrial", "modern"],
       "color": "#b0503c",
       "description": "国王统而不治，议会掌握钱袋与法律，大臣对议会而不是对王座负责。",
@@ -154,6 +155,7 @@
       "id": "revolutionary-empire",
       "name": "革命帝国",
       "category": ["monarchy", "empire", "dictatorship"],
+      "factions": ["conservatives", "radicals", "army", "church", "industrialists"],
       "eras": ["industrial"],
       "color": "#2a2a6a",
       "description": "从革命中崛起的皇帝，以人民的名义加冕，用法典与大军把新秩序带到四方。",
@@ -174,6 +176,7 @@
       "id": "constitutional-republic",
       "name": "立宪共和国",
       "category": ["republic", "democracy"],
+      "factions": ["conservatives", "liberals", "radicals", "industrialists"],
       "eras": ["industrial"],
       "color": "#3a6ab0",
       "description": "成文的宪法约束着权力，选民定期选出议会与总统，权力在几个机构之间相互制衡。",
@@ -200,6 +203,7 @@
       "id": "revolutionary-republic",
       "name": "革命共和国",
       "category": ["republic", "dictatorship"],
+      "factions": ["conservatives", "liberals", "radicals", "army", "industrialists"],
       "eras": ["industrial"],
       "color": "#c03a2a",
       "description": "推翻王座的人民建立了共和国，但革命的委员会常常比旧王更加严厉。",
@@ -220,6 +224,7 @@
       "id": "presidential-despotism",
       "name": "总统专制",
       "category": ["republic", "dictatorship"],
+      "factions": ["conservatives", "liberals", "radicals", "army", "industrialists"],
       "eras": ["industrial"],
       "color": "#5a6a3a",
       "description": "共和国的外壳里坐着一位终身的总统，选举只是走个过场，军队才是他的靠山。",
@@ -240,6 +245,7 @@
       "id": "federal-republic",
       "name": "联邦共和国",
       "category": ["federation", "republic", "democracy"],
+      "factions": ["conservatives", "liberals"],
       "eras": ["industrial", "modern"],
       "color": "#5ab0d8",
       "description": "各州保留自己的议会与法律，联邦政府只管外交、军队与共同的市场。",
@@ -270,7 +276,7 @@
       "color": "#3a4a8a",
       "description": "维护王室、教会与旧有的等级，主张慢慢改、不要大改。",
       "eras": ["industrial", "modern"],
-      "base": {"monarchy": 1.2, "empire": 1.2, "theocracy": 0.8, "dictatorship": 0.6, "republic": 0.5, "democracy": 0.6, "default": 0.5},
+      "amount": 0.63,
       "drivers": [
         {"dimension": "nation", "value": "imperial", "weight": 1.2},
         {"dimension": "nation", "value": "regional", "weight": 0.5},
@@ -286,7 +292,7 @@
       "color": "#d0a020",
       "description": "主张宪法、议会、言论自由与自由贸易。",
       "eras": ["industrial", "modern"],
-      "base": {"democracy": 1.2, "republic": 0.9, "federation": 0.8, "monarchy": 0.4, "dictatorship": 0.1, "default": 0.4},
+      "amount": 0.87,
       "drivers": [
         {"dimension": "nation", "value": "civic-nation", "weight": 1.2},
         {"dimension": "nation", "value": "cosmopolitan", "weight": 1},
@@ -301,7 +307,7 @@
       "color": "#c03a3a",
       "description": "要求普选、土地改革与工人的权利，也有人主张推翻君主。",
       "eras": ["industrial"],
-      "base": {"dictatorship": 0.8, "republic": 0.6, "democracy": 0.5, "monarchy": 0.25, "default": 0.3},
+      "amount": 0.62,
       "drivers": [
         {"dimension": "nation", "value": "ethnic-nation", "weight": 0.6},
         {"dimension": "nation", "value": "pan-group", "weight": 0.6},
@@ -314,7 +320,7 @@
       "color": "#5a6a3a",
       "description": "军官团与总参谋部，重视国防、殖民地与秩序。",
       "eras": ["industrial"],
-      "base": {"dictatorship": 1.8, "empire": 1, "monarchy": 0.6, "republic": 0.3, "democracy": 0.2, "default": 0.3},
+      "amount": 1.08,
       "drivers": [{"minority": true, "weight": 0.4}, {"dimension": "nation", "value": "imperial", "weight": 0.4}]
     },
     {
@@ -323,7 +329,7 @@
       "color": "#9a6ac0",
       "description": "各宗教的教会与学校，影响着婚姻、教育与乡村。",
       "eras": ["industrial"],
-      "base": {"theocracy": 2, "monarchy": 0.5, "empire": 0.5, "republic": 0.25, "default": 0.3},
+      "amount": 0.5,
       "drivers": [
         {"faith": "same", "weight": 0.6},
         {"dimension": "nation", "value": "religious-community", "weight": 1.5},
@@ -336,7 +342,7 @@
       "color": "#3a8a7a",
       "description": "工厂主、银行家与铁路公司，要的是市场、关税与港口。",
       "eras": ["industrial"],
-      "base": {"republic": 1, "democracy": 0.9, "empire": 0.7, "monarchy": 0.5, "default": 0.4},
+      "amount": 0.89,
       "drivers": [{"coastal": true, "weight": 1}, {"dimension": "nation", "value": "civic-nation", "weight": 0.4}]
     }
   ]

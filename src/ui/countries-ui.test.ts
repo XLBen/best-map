@@ -3,7 +3,11 @@ import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
 import { type Government, countryFactions, countryMapColors, countryStats } from '../../core/human';
 import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
+import { recordedOrigin } from '../../core/content/origin';
+import { findPack, packItems } from '../../core/packs';
+import { builtinPacks } from '../../core/packs/builtin-tree';
 import type { World } from '../../core/world';
+import type { LibraryEntry } from '../library';
 import { cellLayers, countryBorderGroups, humanFlat } from '../render/colors';
 import { countryLineText, layoutAlong, smoothPath } from '../render/overlay';
 import { askUser, exec, mode, options, parsePrefs, prefs, selectedCountry, setOptions, sheet, world } from '../state';
@@ -20,6 +24,7 @@ import {
   fragPos,
   fragText,
   generateCountriesCommand,
+  governmentCommand,
   hasCountries,
   historyPatch,
   namePatch,
@@ -306,6 +311,21 @@ describe('国家的档案', () => {
     expect(countryFactions(eng.world, id)[0].influence).toBe(0.7);
     eng.exec(patchCommand(id, { factions: null }));
     expect(eng.world.small.countries![id].factions).toBeUndefined();
+  });
+
+  it('换成别的库的政体：它列的、世界里没有的派系一起带来，档案里都有（第五十三轮）', () => {
+    const eng = nations();
+    const w = eng.world;
+    const id = ids(w)[0];
+    const lib: LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
+    const path = ['modern', 'governments'];
+    const gov = packItems<Government>(findPack(builtinPacks().find((p) => p.id === 'modern')!, ['governments'])!, 'governments').find((g) => g.id === 'parliamentary-republic')!;
+    expect(w.small.content!.faction![gov.factions![0]]).toBeUndefined();
+    eng.exec(governmentCommand(w, w.small.countries![id], { gov, path }, lib)!);
+    expect(countryFactions(eng.world, id).map((f) => f.id)).toEqual(gov.factions);
+    expect(recordedOrigin(eng.world.small, 'faction', gov.factions![0])?.[0]).toBe('modern');
+    eng.undo();
+    expect(eng.world.small.content!.faction![gov.factions![0]]).toBeUndefined();
   });
 
   it('外交：宗主、同盟、敌对都是整份换掉；附庸在地图上用宗主的浅色', () => {

@@ -521,10 +521,11 @@ describe('改国家', () => {
     expect(dist(colors[code]!, own)).toBeGreaterThan(0);
     // 派系
     const auto = countryFactions(w, m.id);
-    expect(auto.map((f) => f.id)).toEqual(medievalFactions());
+    expect(auto.map((f) => f.id)).toEqual(governmentById(w.small, w.small.countries![m.id].government)!.factions);
     expect(auto.reduce((a, f) => a + f.influence, 0)).toBeCloseTo(1, 2);
-    eng.exec({ op: 'set_country', id: m.id, patch: { factions: { nobility: 0.2, merchants: 0.7, clergy: 0.1 } } });
-    expect(countryFactions(w, m.id).find((f) => f.id === 'merchants')!.influence).toBe(0.7);
+    const mine = Object.fromEntries(auto.map((f, k) => [f.id, k ? 0.3 / (auto.length - 1) : 0.7]));
+    eng.exec({ op: 'set_country', id: m.id, patch: { factions: mine } });
+    expect(countryFactions(w, m.id)[0].influence).toBe(0.7);
     eng.exec({ op: 'set_country', id: m.id, patch: { factions: null } });
     expect(countryFactions(w, m.id)).toEqual(auto);
     eng.exec({ op: 'set_country', id: m.id, patch: { flag: { layout: 'cross', colors: ['#ffffff', '#cc0000'] }, color: '#123456', history: '一段历史', founded: 1200, ruler: { name: '某某', title: '公爵' } } });

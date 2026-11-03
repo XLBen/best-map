@@ -19,7 +19,7 @@ export interface KindLinks {
 export const DIMENSION = 'dimension';
 // 倾向里政体那一维：不是时代写的维度，取值是政体
 export const GOVERNMENT_DIM = 'government';
-// 称号、派系的基础里“其余的”：不是引用
+// 称号里“其余的”：不是引用
 export const DEFAULT_KEY = 'default';
 // 写在字段表 ref 里、不是内容种类的：维度、生态的条件（river:x、lake:x、field:x 或内置变量）、
 // 政体的类别（标签：不进表，没有“这一项”可以点过去，没人用这个类别也没关系）
@@ -45,9 +45,9 @@ export const KIND_LINKS: Readonly<Record<string, KindLinks>> = {
   popValue: { note: '维度、组、喜欢的地方在字段表里' },
   cultureGroup: { note: '地名风格、倾向、喜欢的地方在字段表里。组里有哪些文化由文化写（culture.group），不是组的依赖' },
   culture: { note: '组、地名风格、倾向、喜欢的地方在字段表里' },
-  government: { note: '称号的键、换说法、限谁用在字段表里。category 是标签；emblems、layouts 是旗帜的纹章和样式（固定的几种），不是格局' },
+  government: { note: '派系的名单、称号的键、换说法、限谁用在字段表里。category 是标签；emblems、layouts 是旗帜的纹章和样式（固定的几种），不是格局' },
   faction: {
-    note: '来源在字段表里。基础（base）的键是政体的类别（标签）。“与国教”没写维度时隐含宗教这一维（下面的 extra）',
+    note: '来源在字段表里。“与国教”没写维度时隐含宗教这一维（下面的 extra）',
     extra: (item) =>
       ((item as Faction).drivers ?? []).flatMap((d, k): Link[] =>
         d.faith && !d.dimension ? [{ kinds: [DIMENSION], id: FAITH_DIM, cls: 'strip', label: '与国教', path: ['drivers', k, 'faith'], at: 'implicit', drop: ['drivers', k], chain: [{ when: ['drivers'], remove: ['drivers'] }] }] : [],

@@ -331,6 +331,8 @@ export function setCountry(world: World, id: number, p: CountryPatch): string[] 
   if (p.government !== undefined) {
     // 第三十轮：世界里没有的政体由界面先从资源库加进来（set_content，带 from），引擎不再从内置的复制
     if (!governmentById(small, p.government)) throw new CommandError(`世界里没有政体 "${p.government}"：先从资源库添加它`);
+    // 第五十三轮：自己调的派系比重是给原来那份名单的，换了政体回到自动
+    if (m.government !== p.government) delete m.factions;
     m.government = p.government;
     what.push('政体');
   }

@@ -5,7 +5,7 @@ import { federationColorOf } from './blocs';
 import { countryList } from './countries';
 import { type FaithRelation, cultureById, cultureGroupById, dimensionValues, faithRelation, popValueById, valueGroupById, worldDimensions, worldEra } from './era';
 import { typicalTuple } from './population';
-import { type Faction, categoryName, eraFactions, governmentById } from './government';
+import { type Faction, categoryName, governmentById, governmentFactions } from './government';
 import { SLOTS } from './groups';
 import { cellKm2 } from './space';
 import { countryCities } from './settlements';
@@ -360,28 +360,30 @@ export interface FactionInfluence {
   influence: number;
 }
 
-// 一个派系的基础影响力：政体的类别里写了的取平均，一个都没写时用 default
-function baseOf(f: Faction, categories: readonly string[]): number {
-  const hits = categories.map((c) => f.base[c]).filter((v): v is number => v !== undefined);
-  if (hits.length) return hits.reduce((a, b) => a + b, 0) / hits.length;
-  return f.base.default ?? 0;
-}
-
-// 派系的影响力（0–1，加起来是 1）：自己定过的照用；否则 = 基础（按政体的类别）+ Σ 来源的权重 × 那部分人的比例，负的算 0，再归一
+// 派系的影响力（0–1）：这个国家的政体列的那些派系。
+// 自动：基础分量 + Σ 来源的权重 × 那部分人的比例，负的算 0，再归一。比重不存在世界里，用到时才算（档案、导出）；
+// 档案里拖过滑块（m.factions）时：名单对得上就照用；政体的名单后来改过时，没写的按自动，写了但不在名单里的不看，再归一
 export function countryFactions(world: World, id: number, stats?: CountryStats): FactionInfluence[] {
   const small = world.small;
   const m = small.countries?.[id];
   if (!m) return [];
-  const factions = eraFactions(small, worldEra(small));
-  if (m.factions) {
-    const known = factions.filter((f) => m.factions![f.id] !== undefined);
-    const extra = Object.keys(m.factions).filter((k) => !known.some((f) => f.id === k));
-    return [...known.map((f) => ({ id: f.id, name: f.name, color: f.color, influence: m.factions![f.id] })), ...extra.map((k) => ({ id: k, name: k, color: '#999999', influence: m.factions![k] }))];
-  }
+  const factions = governmentFactions(small, governmentById(small, m.government));
   if (!factions.length) return [];
-  const st = stats ?? countryStats(world, id);
-  const gov = governmentById(small, m.government);
-  const cats = gov?.category ?? [];
+  const own = m.factions;
+  if (own && Object.keys(own).length === factions.length && factions.every((f) => own[f.id] !== undefined)) return factions.map((f) => ({ id: f.id, name: f.name, color: f.color, influence: own[f.id] }));
+  const auto = autoFactions(world, m, factions, stats);
+  const shares = own ? normalized(factions.map((f, k) => own[f.id] ?? auto[k])) : auto;
+  return factions.map((f, k) => ({ id: f.id, name: f.name, color: f.color, influence: shares[k] }));
+}
+
+function normalized(raw: readonly number[]): number[] {
+  const sum = raw.reduce((a, b) => a + b, 0);
+  return raw.map((v) => (sum > 0 ? Math.round((v / sum) * 1000) / 1000 : 0));
+}
+
+function autoFactions(world: World, m: CountryMeta, factions: readonly Faction[], stats?: CountryStats): number[] {
+  const small = world.small;
+  const st = stats ?? countryStats(world, m.id);
   const valueShare = (dim: string, v: string) => st?.values.find((x) => x.dimension === dim)?.items.find((x) => x.id === v)?.share ?? 0;
   // 第四十三轮：与国教的关系（同上，按主流文化最典型的取值）
   const state = typicalTuple(world, m.primaryCulture).values;
@@ -392,24 +394,24 @@ export function countryFactions(world: World, id: number, stats?: CountryStats):
     for (const x of st?.values.find((y) => y.dimension === dim)?.items ?? []) if (faithRelation(small, own, x.id) === rel) s += x.share;
     return s;
   };
-  const raw = factions.map((f) => {
-    let s = baseOf(f, cats);
-    for (const dr of f.drivers ?? []) {
-      // 几项都写了时取最窄的一项（数据只按单项分开记）
-      const parts: number[] = [];
-      if (dr.dimension && dr.value && !dr.faith) parts.push(valueShare(dr.dimension, dr.value));
-      if (dr.culture) parts.push(st?.cultures.find((x) => x.id === dr.culture)?.share ?? 0);
-      if (dr.cultureGroup) parts.push(st?.cultureGroups.find((x) => x.id === dr.cultureGroup)?.share ?? 0);
-      if (dr.primary) parts.push(st?.primaryShare ?? 0);
-      if (dr.minority) parts.push(st?.minorityShare ?? 0);
-      if (dr.coastal) parts.push(st?.coastalShare ?? 0);
-      if (dr.faith) parts.push(faithShare(dr.dimension ?? 'religion', dr.faith));
-      if (parts.length) s += dr.weight * Math.min(...parts);
-    }
-    return Math.max(0, s);
-  });
-  const sum = raw.reduce((a, b) => a + b, 0);
-  return factions.map((f, k) => ({ id: f.id, name: f.name, color: f.color, influence: sum > 0 ? Math.round((raw[k] / sum) * 1000) / 1000 : 0 }));
+  return normalized(
+    factions.map((f) => {
+      let s = f.amount;
+      for (const dr of f.drivers ?? []) {
+        // 几项都写了时取最窄的一项（数据只按单项分开记）
+        const parts: number[] = [];
+        if (dr.dimension && dr.value && !dr.faith) parts.push(valueShare(dr.dimension, dr.value));
+        if (dr.culture) parts.push(st?.cultures.find((x) => x.id === dr.culture)?.share ?? 0);
+        if (dr.cultureGroup) parts.push(st?.cultureGroups.find((x) => x.id === dr.cultureGroup)?.share ?? 0);
+        if (dr.primary) parts.push(st?.primaryShare ?? 0);
+        if (dr.minority) parts.push(st?.minorityShare ?? 0);
+        if (dr.coastal) parts.push(st?.coastalShare ?? 0);
+        if (dr.faith) parts.push(faithShare(dr.dimension ?? 'religion', dr.faith));
+        if (parts.length) s += dr.weight * Math.min(...parts);
+      }
+      return Math.max(0, s);
+    }),
+  );
 }
 
 // 国教（第四十三轮，档案用）：主流文化最典型的宗教（时代没有宗教这一维时 undefined）、它的组，与信异端、异教的人占多少

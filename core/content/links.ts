@@ -107,7 +107,7 @@ function refValue(f: FieldDesc, id: string, ctx: Ctx, path: LinkPath, drop: Link
 
 // 表的键
 function refKeys(f: FieldDesc, m: Record<string, unknown>, ctx: Ctx, chain: readonly LinkPrune[], collapse: boolean, out: Link[]): void {
-  if (!f.keyRef || f.keyRef === 'govCategory') return;
+  if (!f.keyRef) return;
   for (const k of Object.keys(m)) {
     if (k === DEFAULT_KEY) continue;
     const path = [...ctx.path, k];
@@ -235,7 +235,7 @@ function walkFields(fields: readonly FieldDesc[], item: unknown, ctx: Ctx, out: 
 }
 
 // 字段（和下面的字段）有没有引用（按字段表缓存：名字、颜色这些每次不用看）
-const hasLinks = (f: FieldDesc): boolean => (!!f.ref && f.ref !== 'govCategory') || (!!f.keyRef && f.keyRef !== 'govCategory') || f.type === 'script' || f.type === 'tendencies' || !!f.of?.some(hasLinks) || !!f.items?.some(hasLinks) || (!!f.value && hasLinks(f.value));
+const hasLinks = (f: FieldDesc): boolean => (!!f.ref && f.ref !== 'govCategory') || !!f.keyRef || f.type === 'script' || f.type === 'tendencies' || !!f.of?.some(hasLinks) || !!f.items?.some(hasLinks) || (!!f.value && hasLinks(f.value));
 const refFieldCache = new WeakMap<readonly FieldDesc[], readonly FieldDesc[]>();
 function refFields(fields: readonly FieldDesc[]): readonly FieldDesc[] {
   let c = refFieldCache.get(fields);

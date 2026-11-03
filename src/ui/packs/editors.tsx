@@ -299,10 +299,10 @@ export function OneRef({ refKind, value, optional, onChange }: { refKind: string
   return <RefPicker options={opts} value={typeof value === 'string' ? value : ''} onPick={(id) => onChange(id)} onClear={optional ? () => onChange(undefined) : undefined} />;
 }
 
-// 按引用的比例表（格局、时代的各等级占多少，派系的基础）：列出全部能选的（国家等级……），每行一个数，空着的不写
+// 按引用的比例表（格局、时代的各等级占多少）：列出全部能选的（国家等级……），每行一个数，空着的不写
 export function WeightTable({ f, value, onChange }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void }) {
   const obj: Obj = isObj(value) ? value : {};
-  const opts = useRefOptions(f.keyRef ?? [], f.keyRef === 'govCategory' ? { extra: TIER_EXTRA } : undefined);
+  const opts = useRefOptions(f.keyRef ?? []);
   const keys = [...opts.map((o) => o.id), ...Object.keys(obj).filter((k) => !opts.some((o) => o.id === k))];
   const shown = keys.filter((k) => obj[k] !== undefined || opts.length <= 12);
   const missing = opts.filter((o) => obj[o.id] === undefined && !shown.includes(o.id));
