@@ -20,7 +20,8 @@ export const DIRTY_OF: Record<DirtyLevel, Dirty> = {
 };
 
 // 启用、修改、停用一项放在 small.content 里的内容（set_content）：按登记的格式检查，重算到登记的那一层
-export function setContent(world: World, kindId: string, id: string, raw: Record<string, unknown> | null): { dirty: Dirty; summary: string } {
+// force（换库时，见 switch.ts）：不查“还在用”，用到它的马上要重新生成
+export function setContent(world: World, kindId: string, id: string, raw: Record<string, unknown> | null, force = false): { dirty: Dirty; summary: string } {
   const kind = kindOf(kindId);
   if (!kind || kind.store !== 'content') throw new CommandError(`不认识的内容种类 "${kindId}"`);
   const small = world.small;
@@ -34,7 +35,7 @@ export function setContent(world: World, kindId: string, id: string, raw: Record
     delete store[id];
     // 第二十八轮：在用的不能移出世界。
     // 画过的格会跟着整理的种类（地形类别、资源：画成它的格恢复自动，见 afterSet）引擎照旧让移出，只在资源库里拦
-    const gone = !kind.afterSet;
+    const gone = !kind.afterSet && !force;
     const used = gone ? usageOf(kind, { small, causes: world.causes }, id) : null;
     if (used) throw new CommandError(`${kind.label}“${itemName(kind, before)}”还在用（${used.label}），先把用到它的地方改掉`);
   } else {

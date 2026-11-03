@@ -52,7 +52,7 @@ export interface ImportPlan {
 // 生成后先后要紧的几种（见上）
 const ORDERED = ['valueGroups', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'landmarkTypes'];
 // 时代包里带的几种（生成人文、国家、城市地标要用的，第五十一轮起还有基础之外的资源：奇幻自带）；时代包里别的（奇幻的生态、河湖）要单独勾那个小包
-const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'resources', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
+export const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'resources', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
 
 const hasEra = (node: PackNode): boolean => {
   let yes = false;
@@ -62,10 +62,20 @@ const hasEra = (node: PackNode): boolean => {
   return yes;
 };
 
-// 资源库里有这个文化组的小包（按资源库的先后）：先找比重不是 0 的（同一组在几个库里，这些库默认带它），都是 0 时第一个
-function findGroup(library: readonly (ResourcePack | PackRoot)[], id: string): { node: PackNode; path: string[] } | undefined {
+// 资源库里有这个文化组的小包：选着的库（prefer）里有就用它的（第五十二轮，比重是 0 也一样：来源记这个库）；
+// 别的按资源库的先后，先找比重不是 0 的（同一组在几个库里，这些库默认带它），都是 0 时第一个
+function findGroup(library: readonly (ResourcePack | PackRoot)[], id: string, prefer?: string): { node: PackNode; path: string[] } | undefined {
   let spare: { node: PackNode; path: string[] } | undefined;
-  for (const r of rootsOf(library)) {
+  const roots = rootsOf(library);
+  const chosen = roots.find((r) => r.key === prefer);
+  if (chosen) {
+    let hit: { node: PackNode; path: string[] } | undefined;
+    walkPacks(chosen.pack, (n, rel) => {
+      if (!hit && ownItems<CultureGroup>(n, 'cultureGroups').some((x) => x.id === id)) hit = { node: n, path: [chosen.key, ...rel] };
+    });
+    if (hit) return hit;
+  }
+  for (const r of roots) {
     let hit: { node: PackNode; path: string[] } | undefined;
     walkPacks(r.pack, (n, rel) => {
       if (hit) return;
@@ -179,10 +189,10 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
     });
   };
   for (const c of chosen) collect(c.node, c.path, c.picks);
-  // 选了、勾选的包里却没有的文化组：在资源库里找第一个有它的小包（“更多文化组”里挑的）
+  // 选了、勾选的包里却没有的文化组：在资源库里找（“还有 N 个文化组”里挑的）
   for (const g of picks.groups ?? []) {
     if (groups.includes(g)) continue;
-    const at = findGroup(library, g);
+    const at = findGroup(library, g, picks.packs[0]?.[0]);
     if (at) collect(at.node, at.path);
   }
 

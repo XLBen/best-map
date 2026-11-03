@@ -37,8 +37,10 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
   switch (cmd.op) {
     case 'set_worldgen':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'terrainClass', 'resource', ...POP_ARRAYS, 'country', ...AUTO_ARRAYS];
+    // 换库（第五十二轮）：移出的种类里有画格的（资源）还要记它的数组
     case 'generate_human':
     case 'regenerate_human':
+      return [...POP_ARRAYS, 'country', 'province', ...AUTO_ARRAYS, ...new Set((cmd.switchLibrary?.drop ?? []).flatMap((x) => kindOf(x.kind)?.arrays ?? []))];
     case 'move_hearth':
     case 'remove_human':
     case 'generate_countries':

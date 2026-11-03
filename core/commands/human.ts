@@ -6,7 +6,7 @@ import { afterCountries, type ApplyContext, clearPop, Dirty, type RunResult } fr
 import { classAt, classCode, RETIRED_CLASSES } from '../human/terrain-class';
 import { RESOURCE_NONE, resourceAt, resourceCode } from '../human/resources';
 import { missingNotes, type MissingScope } from '../content/missing';
-import { generateHuman, humanBlockers, regenerateHuman, stampedPacks } from '../human/generate';
+import { defaultTotalPop, generateHuman, humanBlockers, regenerateHuman, ruleEra, stampedPacks } from '../human/generate';
 import { clearCountries } from '../human/countries';
 import { dropBroughtContent } from '../human/prune';
 import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, removeCountry, setCountry, splitCountry, tidyCountries } from '../human/country-edit';
@@ -14,6 +14,7 @@ import { restoreCountry, restorePop } from '../human/auto';
 import { BLOC_NAMES, blocById, setBloc } from '../human/blocs';
 import { paintPop, type PopBrush, scalePop, setCellPop } from '../human/population';
 import { groupInfo } from '../human/layers';
+import { leaveLibrary } from './switch';
 
 // 格的地形类别与资源、人文、国家、集团、人口的命令（第四十一轮从 commands.ts 原样搬来）
 
@@ -121,6 +122,7 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
         if (small.human) clearPop(world);
         return { dirty: Dirty.Human, summary: '没有生成人文', skipped: [...blockers, ...missingNotes(small, ['world'])] };
       }
+      const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
       const h = generateHuman(world, d, {
         packs: cmd.packs,
         groups: cmd.groups,
@@ -133,7 +135,7 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       const era = worldEra(small);
       const k = (small.countries ? ` · ${Object.keys(small.countries).length} 个国家` : '') + (cmd.settlements && small.cities ? ` · ${Object.keys(small.cities).length} 座城市` : '');
       const skipped = missingNotes(small, scopes);
-      return { dirty: Dirty.Human, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}`, ...(skipped.length ? { skipped } : {}) };
+      return { dirty: Math.max(Dirty.Human, left) as Dirty, summary: `生成人文“${era?.name ?? h.era}” · ${h.groups.length} 个文化组 · ${popText(h.totalPop)}${k}`, ...(skipped.length ? { skipped } : {}) };
     }
     case 'regenerate_human': {
       const h = small.human;
@@ -141,11 +143,14 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       const blockers = humanBlockers(world, { packs: cmd.packs ?? stampedPacks(small).map((p) => [...p]), groups: cmd.groups ?? h.groups });
       if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
-      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed, countries: cmd.countries };
+      const left = cmd.switchLibrary ? leaveLibrary(world, cmd.switchLibrary) : Dirty.None;
+      // 换了库：总人口没写时按新时代的默认（和新世界一样），不留旧时代的
+      const era = cmd.switchLibrary && cmd.packs ? ruleEra(small, cmd.packs) : undefined;
+      const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: cmd.totalPop ?? (era ? defaultTotalPop(world, d, era) : undefined), seed: cmd.seed, countries: cmd.countries };
       regenerateHuman(world, d, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), { keepManual: cmd.keepManual ?? true });
       afterCountries(world);
       const skipped = missingNotes(small, ['world', ...(small.human?.countryRules ? (['countries'] as const) : [])]);
-      return { dirty: Dirty.Human, summary: '重新生成人文', ...(skipped.length ? { skipped } : {}) };
+      return { dirty: Math.max(Dirty.Human, left) as Dirty, summary: '重新生成人文', ...(skipped.length ? { skipped } : {}) };
     }
     case 'generate_countries':
     case 'regenerate_countries': {

@@ -36,6 +36,14 @@ export const fragmentation = z.number().min(0).max(1);
 // 格局（第四十二轮起是内容的 id，'era' 按时代）
 export const layoutSchema = typeIdSchema;
 export const countryRulesInput = z.object({ fragmentation: fragmentation.optional(), seed: seedSchema.optional(), layout: layoutSchema.optional() }).strict();
+// 换库（第五十二轮，见 core/packs/switch.ts）：生成之前从世界里移出 drop（旧库带来、新库不带的），两个库都有的项来源改写到新库（rehome）。
+// 只跟着生成走：用到它们的人口、国家马上就被新的换掉，所以不查“还在用”；生成之后还在的东西用到的，界面算计划时已经留下了
+export const librarySwitchInput = z
+  .object({
+    drop: z.array(z.object({ kind: typeIdSchema, id: z.string().min(1).max(64) })).max(4096),
+    rehome: z.array(z.object({ kind: typeIdSchema, id: z.string().min(1).max(64), from: originSchema })).max(4096),
+  })
+  .strict();
 export const countryPatchSchema = z
   .object({
     // '' 是恢复自动；orig 跟着 name
@@ -321,6 +329,7 @@ export const baseCommands = [
     seed: seedSchema.optional(),
     countries: countryRulesInput.optional(),
     settlements: settlementsInput.optional(),
+    switchLibrary: librarySwitchInput.optional(),
   }),
   // 按记着的参数重新生成（拖过的发源地留着）；写了的几项换掉。keepManual：手改过的格不动（省略为 true）。
   // 有国家时用现有的领土（只按它调人口）；写了 countries 时国家也重新长（锁定的留着）
@@ -332,6 +341,7 @@ export const baseCommands = [
     seed: seedSchema.optional(),
     keepManual: z.boolean().optional(),
     countries: countryRulesInput.optional(),
+    switchLibrary: librarySwitchInput.optional(),
   }),
   // 挪一个发源地（文化组的写 group，同一组有几个时 index 是第几个；文化的写 culture），挪过的锁定；cell 为 null 是不再锁定。之后重新生成
   z.object({

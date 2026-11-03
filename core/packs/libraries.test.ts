@@ -138,17 +138,20 @@ describe('比重 0 的组', () => {
     expect(cultureGroupById(eng.world.small, zero)).toEqual(BUILTIN_CULTURE_GROUPS.find((g) => g.id === zero));
   });
 
-  it('同一组在几个库里：比重不是 0 的优先（和 r29 走的路一样）；都是 0 时第一个库的', () => {
+  it('同一组在几个库里：选的库有就记选的库（第五十二轮）；选的库没有时比重不是 0 的优先，都是 0 时第一个库的', () => {
     // 刚果中世纪不默认带，近现代默认带
     expect(packImportPlan(LIB, { packs: [['medieval']], groups: ['kongo'] }).added.find((a) => a.section === 'cultureGroups')?.id).toBe('kongo');
-    const from = (id: string) => {
-      const cmds = packImportCommands(LIB, { packs: [['medieval']], groups: [id] });
+    const from = (lib: string, id: string) => {
+      const cmds = packImportCommands(LIB, { packs: [[lib]], groups: [id] });
       const hit = cmds.flatMap((c) => (c.op === 'batch' ? c.commands : [c])).find((c) => c.op === 'set_content' && c.kind === 'cultureGroup' && c.id === id);
       return (hit as { from?: string[] } | undefined)?.from;
     };
-    expect(from('kongo')).toEqual(['industrial', 'cultures', 'kongo']);
+    expect(from('medieval', 'kongo')).toEqual(['medieval', 'cultures', 'kongo']);
     const never = EU4.find((g) => !HISTORY.some((id) => ERA_PACKS.get(id)!.cultures.some(([x]) => x === g)))!;
-    expect(from(never)).toEqual(['antiquity', 'cultures', never]);
+    expect(from('modern', never)).toEqual(['modern', 'cultures', never]);
+    // 奇幻没有 EU4 的组：点名时在别的库里找
+    expect(from('fantasy', 'kongo')).toEqual(['industrial', 'cultures', 'kongo']);
+    expect(from('fantasy', never)).toEqual(['antiquity', 'cultures', never]);
   });
 
   it('依赖带来的（整个小包加进来、没有点名）比重是 0，留在世界里不参与生成，和不在世界里逐项相同', () => {
