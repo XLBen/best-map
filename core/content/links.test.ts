@@ -114,7 +114,7 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
     expect(linkProblems()).toEqual([]);
     expect(Object.keys(KIND_LINKS).sort()).toEqual(allKinds().map((k) => k.id).sort());
     // 字段类型的表和 FieldType 一一对应（少一种 tsc 不过，多一种这里写上）
-    const types: FieldType[] = ['text', 'longtext', 'number', 'bool', 'color', 'enum', 'tags', 'weighted', 'list', 'map', 'script', 'json', 'tuple', 'tuples', 'title', 'titleList', 'tendencies'];
+    const types: FieldType[] = ['text', 'longtext', 'number', 'range', 'bool', 'color', 'enum', 'tags', 'weighted', 'list', 'map', 'script', 'json', 'tuple', 'tuples', 'title', 'titleList', 'tendencies'];
     expect(Object.keys(FIELD_WALKERS).sort()).toEqual([...types].sort());
   });
 
@@ -176,6 +176,7 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
     const NOT_REFS: Readonly<Record<string, string>> = {
       'biome:KEY ': 'natural 是开关，碰巧有个取值组也叫它',
       'biome:KEY tolerances.#': 'min 是数的下限，碰巧有个文化叫它',
+      'biome:KEY height': 'high 是高度范围的上限，碰巧有个文化叫它',
       'biome:terrain': '导出用的地形标签',
       'biome:group': '固定的大类',
       'riverType:KEY ': 'natural 是开关',

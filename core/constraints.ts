@@ -1,7 +1,7 @@
 import { placementSlots } from './biome-scripts';
 import { type ClimateBase, type ClimateEffects, petHalf } from './climate';
 import { graphDistance } from './mesh';
-import { BUILTIN_FIELDS, type Tolerance, trapezoid } from './species';
+import { BUILTIN_FIELDS, type Tolerance, speciesTolerances, trapezoid } from './species';
 import { fieldGetter, invadeBoost, invadeTable, isVegetated, rangeMask } from './vegetation';
 import type { Conflict, Constraint, Derived, SmallState, World } from './world';
 
@@ -64,7 +64,7 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived, ef
   for (const k of Object.keys(d.corrF)) delete d.corrF[k];
 
   // 所有类型用到的字段：气候类每次试算重新计算，其余每格取一次
-  const fieldIds = [...new Set(species.flatMap((sp) => sp.tolerances.map((t) => t.field)))];
+  const fieldIds = [...new Set(species.flatMap((sp) => speciesTolerances(sp).map((t) => t.field)))];
   const fieldIndex = new Map(fieldIds.map((f, k) => [f, k]));
   const staticGetters = fieldIds.map((f) => ((CLIMATE_KEYS as readonly string[]).includes(f) || f.startsWith('field:') ? null : fieldGetter(world, d, f)));
   const customNames = fieldIds.map((f) => (f.startsWith('field:') ? f.slice(6) : null));
@@ -72,13 +72,13 @@ export function solveConstraints(world: World, base: ClimateBase, d: Derived, ef
   const scores = new Float64Array(S);
 
   // 所有耐受曲线排成一列：类型 s 的是 tolStart[s]..tolStart[s+1]；tolClim 为气候字段序号（-1：每格不变的字段）
-  const tols: Tolerance[] = species.flatMap((sp) => sp.tolerances);
+  const tols: Tolerance[] = species.flatMap((sp) => [...speciesTolerances(sp)]);
   const tolStart = new Int32Array(S + 1);
-  for (let s = 0; s < S; s++) tolStart[s + 1] = tolStart[s] + species[s].tolerances.length;
+  for (let s = 0; s < S; s++) tolStart[s + 1] = tolStart[s] + speciesTolerances(species[s]).length;
   const tolClim = Int32Array.from(tols, (t) => (CLIMATE_KEYS as readonly string[]).indexOf(t.field));
   const tolVal = Int32Array.from(tols, (t) => fieldIndex.get(t.field)!);
   // tame 的类型：各曲线值在 [0, 1]，有一条为 0（或竞争力、可达为 0）则得分恒为 0
-  const tameSp = species.map((sp) => Number.isFinite(sp.competition) && sp.tolerances.every((t) => tame(t.min) && tame(t.optLow) && tame(t.optHigh) && tame(t.max)));
+  const tameSp = species.map((sp) => Number.isFinite(sp.competition) && speciesTolerances(sp).every((t) => tame(t.min) && tame(t.optLow) && tame(t.optHigh) && tame(t.max)));
 
   // 每格：不随试算变的曲线值先算好（恰为 1 的乘上不改变结果，略去），prog 是各类型要乘的曲线
   const fac = new Float64Array(tols.length);
@@ -447,7 +447,7 @@ export function checkConstraints(world: World, d: Derived, solve: SolveResult): 
       return s[s.length >> 1];
     };
     const limiting: { field: string; value: number; factor: number; need: [number, number] }[] = [];
-    for (const t of sp.tolerances) {
+    for (const t of speciesTolerances(sp)) {
       const get = fieldGetter(world, d, t.field);
       const values = failing.map(get);
       if (!values.length) continue;

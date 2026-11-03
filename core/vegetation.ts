@@ -6,7 +6,7 @@ import { riverBank, riverProvider } from './river-types';
 import { planetFormIssues } from './terrain';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
 import { worldLatitude, type Derived, type World } from './world';
-import { type Species, type Tolerance, trapezoid } from './species';
+import { type Species, type Tolerance, speciesTolerances, trapezoid } from './species';
 
 // 植被：每种类型的适宜度 = 各耐受曲线之积；得分 = 适宜度 × 竞争力 × 可达；
 // 份额 ∝ 得分^k（k 为锐度），主导类型 = 份额最大者。
@@ -194,6 +194,19 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[], sessi
   return { slot, P, placeF };
 }
 
+// 第五十五轮（提速）：一遍里要用的几块地方留着下一遍接着用，不每遍都新开（每遍约 2 MB，会提早引来垃圾回收）。一次只算一遍，算完没人再读
+interface VegScratch {
+  n: number;
+  fields: Float64Array[];
+  keep: Int32Array;
+  val: Float64Array;
+}
+let scratch: VegScratch | null = null;
+function scratchFor(n: number): VegScratch {
+  if (scratch?.n !== n) scratch = { n, fields: [], keep: new Int32Array(n), val: new Float64Array(n) };
+  return scratch;
+}
+
 // extraIssues：这一遍里别处出的脚本问题（河流、湖泊类型的 match 脚本，见 river-types.ts 的 typeRivers、lake-types.ts 的 typeLakes），排在星球形态的之后。
 // look 为 false 时不算颜色脚本（引擎在不是最后一遍的那几遍里不算：之后的一遍会整个重算 d.look；最后再用 finishLook 补上）
 export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean } = {}) {
@@ -216,10 +229,13 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   for (let i = 0, k = 0; i < n; i++) if (veg[i]) vegCells[k++] = i;
   // 每个用到的场在能长植被的格上的值，一个场一份（与逐格调用取值函数的值完全相同：双精度存下，不经过单精度）
   const values = new Map<string, Float64Array>();
-  for (const sp of species) {
-    for (const t of sp.tolerances) {
+  const tolerances = species.map(speciesTolerances);
+  const pad = scratchFor(n);
+  for (const tols of tolerances) {
+    for (const t of tols) {
       if (values.has(t.field)) continue;
-      const arr = new Float64Array(n);
+      // 只读能长植被的格（别的格是上一次留下的，没人读）
+      const arr = (pad.fields[values.size] ??= new Float64Array(n));
       fillField(fieldGetter(world, d, t.field), vegCells, count, arr);
       values.set(t.field, arr);
     }
@@ -233,19 +249,20 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
 
   const suit = d.suit;
   const reach = d.reach;
+  const { keep, val } = pad;
   // 不长植被的格：适宜度 0、可达 1（下面只算长植被的格）
   suit.fill(0);
   reach.fill(1);
   for (let s = 0; s < S; s++) {
     const sp = species[s];
-    const tols = sp.tolerances;
+    const tols = tolerances[s];
     const K = tols.length;
     const fields = tols.map((t) => values.get(t.field)!);
     // 长在哪里的脚本：适宜度再乘上它的系数（没有脚本的生态 p 为 −1，与原来逐值相同）
     const p = place ? place.slot[s] : -1;
     const placeF = place ? place.placeF : null;
     const P = place ? place.P : 0;
-    suitability(vegCells, count, tols, fields, K, p, placeF, P, suit, S, s);
+    suitability(vegCells, count, tols, fields, K, p, placeF, P, suit, S, s, keep, val);
     if (sp.dispersal) {
       const disp = sp.dispersal;
       const limit = disp.range / world.kmPerUnit;
@@ -265,11 +282,13 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   const k = small.planet.vegSharpness;
   // 侵占：所有适宜度都算好之后，按目标的适宜度提高得分（不回头影响适宜度，没有反馈）。没有生态侵占时走原来的算法
   const invade = invadeTable(species);
-  const comp = species.map((sp) => sp.competition);
+  const comp = Float64Array.from(species, (sp) => sp.competition);
   const share = d.share;
   const dominant = d.dominant;
   d.overridden.fill(0);
   vegShares(n, S, veg, suit, reach, comp, k, invade, share, dominant);
+  // 第五十五轮：写了高度范围的世界不留下没有生态的陆地格（兜底）。一种都没写时不走这里，和以前逐值相同
+  if (species.some((sp) => sp.height)) fillBare(mesh, species, veg, share, dominant);
 
   // 硬覆盖：直接改结果，标为例外
   for (const c of small.constraints) {
@@ -302,53 +321,149 @@ function fillField(get: FieldGetter, vegCells: Int32Array, count: number, arr: F
   }
 }
 
-// 一种生态在能长植被的格上的适宜度（耐受曲线相乘，再乘上长在哪里的脚本的系数）
-function suitability(vegCells: Int32Array, count: number, tols: readonly Tolerance[], fields: Float64Array[], K: number, p: number, placeF: Float32Array | null, P: number, suit: Float32Array, S: number, s: number) {
-  for (let q = 0; q < count; q++) {
-    const i = vegCells[q];
-    let v = 1;
-    for (let k = 0; k < K && v > 0; k++) v *= trapezoid(tols[k], fields[k][i]);
-    if (p >= 0 && v > 0) v *= placeF![i * P + p];
-    suit[i * S + s] = v;
+// 一种生态在能长植被的格上的适宜度（耐受曲线相乘，再乘上长在哪里的脚本的系数）。
+// 第五十五轮（提速：多了两种生态、十几条高度曲线）：一条曲线一遍，下一条只看上一条留下的格（多数格被年均温、湿度卡掉，算都不用算）；
+// 适宜度是 0 的格不写（suit 算之前清成了 0）。曲线的先后、乘的先后和以前一样，结果逐值相同（biome-legacy.test.ts）。
+// keep、val 是一次 computeVegetation 共用的两块地方（至少 count 长）
+export function suitability(vegCells: Int32Array, count: number, tols: readonly Tolerance[], fields: Float64Array[], K: number, p: number, placeF: Float32Array | null, P: number, suit: Float32Array, S: number, s: number, keep: Int32Array, val: Float64Array) {
+  if (K === 0) {
+    for (let q = 0; q < count; q++) {
+      const i = vegCells[q];
+      suit[i * S + s] = p >= 0 ? placeF![i * P + p] : 1;
+    }
+    return;
+  }
+  val.fill(1, 0, count);
+  let m = count;
+  for (let k = 0; k < K && m > 0; k++) {
+    const t = tols[k];
+    m = narrow(k === 0 ? vegCells : keep, m, t.min, t.optLow, t.optHigh, t.max, fields[k], keep, val, suit, S, s);
+  }
+  for (let q = 0; q < m; q++) {
+    const i = keep[q];
+    suit[i * S + s] = p >= 0 ? val[q] * placeF![i * P + p] : val[q];
   }
 }
 
-// 每格各生态的份额与主导生态（侵占：按目标的适宜度提高得分）
-function vegShares(n: number, S: number, veg: Uint8Array, suit: Float32Array, reach: Uint8Array, comp: number[], k: number, invade: InvadeTable | null, share: Float32Array, dominant: Int16Array) {
+// 乘上一条曲线（梯形，同 species.ts 的 trapezoid），留下还大于 0 的格
+function narrow(cells: Int32Array, m: number, min: number, optLow: number, optHigh: number, max: number, field: Float64Array, keep: Int32Array, val: Float64Array, suit: Float32Array, S: number, s: number): number {
+  const rise = optLow - min;
+  const fall = max - optHigh;
+  let out = 0;
+  for (let q = 0; q < m; q++) {
+    const i = cells[q];
+    const x = field[i];
+    if (x < min || x > max) continue;
+    const f = x < optLow ? (rise === 0 ? 1 : (x - min) / rise) : x > optHigh ? (fall === 0 ? 1 : (max - x) / fall) : 1;
+    const v = val[q] * f;
+    if (v > 0) {
+      keep[out] = i;
+      val[out++] = v;
+    } else if (v !== 0) {
+      // 算不出数的曲线（不该有）：和以前一样记下这个数
+      suit[i * S + s] = v;
+    }
+  }
+  return out;
+}
+
+// 每格各生态的份额与主导生态（侵占：按目标的适宜度提高得分）。
+// 第五十五轮（提速）：一格里只有几种生态的适宜度不是 0，只碰这几种（得分是 0 的份额就是 0，先整个清成 0），结果逐值相同
+export function vegShares(n: number, S: number, veg: Uint8Array, suit: Float32Array, reach: Uint8Array, comp: Float64Array, k: number, invade: InvadeTable | null, share: Float32Array, dominant: Int16Array) {
+  share.fill(0);
+  const live = new Int32Array(S);
   for (let i = 0; i < n; i++) {
     if (!veg[i]) {
       dominant[i] = -1;
-      for (let s = 0; s < S; s++) share[i * S + s] = 0;
       continue;
     }
+    const row = i * S;
     let total = 0;
     let best = -2;
     let bestScore = 0;
-    if (!invade) {
-      for (let s = 0; s < S; s++) {
-        const score = suit[i * S + s] * comp[s] * reach[i * S + s];
-        const w = score > 0 ? Math.pow(score, k) : 0;
-        share[i * S + s] = w;
-        total += w;
-        if (score > bestScore) {
-          bestScore = score;
-          best = s;
-        }
+    let L = 0;
+    for (let s = 0; s < S; s++) {
+      const v = suit[row + s];
+      if (v === 0) continue;
+      const score = invade ? v * comp[s] * reach[row + s] * invadeBoost(invade, suit, S, i, s) : v * comp[s] * reach[row + s];
+      if (!(score > 0)) continue;
+      const w = Math.pow(score, k);
+      share[row + s] = w;
+      total += w;
+      live[L++] = s;
+      if (score > bestScore) {
+        bestScore = score;
+        best = s;
       }
-    } else {
-      for (let s = 0; s < S; s++) {
-        const score = suit[i * S + s] * comp[s] * reach[i * S + s] * invadeBoost(invade, suit, S, i, s);
-        const w = score > 0 ? Math.pow(score, k) : 0;
-        share[i * S + s] = w;
-        total += w;
-        if (score > bestScore) {
-          bestScore = score;
-          best = s;
+    }
+    if (total > 0) for (let q = 0; q < L; q++) share[row + live[q]] /= total;
+    dominant[i] = best;
+  }
+}
+
+// 兜底：没有任何生态能长的陆地格（得分都是 0，dominant 是 −2），取最近的长着生态的格的那一种，份额 1。
+// 一圈一圈往里填：一圈里每格看邻居（按邻接的先后）里第一个长着生态的，一圈填完再填下一圈，结果只取决于这一遍的 dominant。
+// 只从哪里都能长的生态传出去（只长在某处、不自然生成的不传）。这种格通常只有几十个，只碰它们和它们的邻居。
+// 四周没有能传的（小岛上全是这种格、隔着海）：再从全世界一圈一圈找过来（隔着海也找）；世界里没有这样的生态时留着 −2
+function fillBare(mesh: World['mesh'], species: readonly Species[], veg: Uint8Array, share: Float32Array, dominant: Int16Array) {
+  const n = mesh.n;
+  const S = species.length;
+  let left: number[] = [];
+  for (let i = 0; i < n; i++) if (veg[i] && dominant[i] < 0) left.push(i);
+  if (!left.length) return;
+  const free = species.map((sp) => sp.natural !== false && !sp.range && !sp.dispersal);
+  const { off, adj } = mesh;
+  while (left.length) {
+    const next: number[] = [];
+    const got: number[] = [];
+    for (const i of left) {
+      let s = -1;
+      for (let e = off[i]; e < off[i + 1] && s < 0; e++) {
+        const t = dominant[adj[e]];
+        if (t >= 0 && free[t]) s = t;
+      }
+      if (s < 0) next.push(i);
+      else got.push(i, s);
+    }
+    if (!got.length) break;
+    for (let k = 0; k < got.length; k += 2) {
+      dominant[got[k]] = got[k + 1];
+      share[got[k] * S + got[k + 1]] = 1;
+    }
+    left = next;
+  }
+  if (left.length) fillFar(mesh, free, veg, S, share, dominant, left.length);
+}
+
+// 隔着海的：每格离得最近的生态，从全世界长着生态的格一圈一圈传出去
+function fillFar(mesh: World['mesh'], free: readonly boolean[], veg: Uint8Array, S: number, share: Float32Array, dominant: Int16Array, count: number) {
+  const n = mesh.n;
+  const near = new Int16Array(n).fill(-1);
+  let front: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (dominant[i] >= 0 && free[dominant[i]]) {
+      near[i] = dominant[i];
+      front.push(i);
+    }
+  }
+  let left = count;
+  while (front.length && left > 0) {
+    const next: number[] = [];
+    for (const i of front) {
+      const s = near[i];
+      for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+        const j = mesh.adj[e];
+        if (near[j] >= 0) continue;
+        near[j] = s;
+        next.push(j);
+        if (veg[j] && dominant[j] < 0) {
+          dominant[j] = s;
+          share[j * S + s] = 1;
+          left--;
         }
       }
     }
-    if (total > 0) for (let s = 0; s < S; s++) share[i * S + s] /= total;
-    dominant[i] = best;
+    front = next;
   }
 }
 
@@ -414,7 +529,7 @@ export function explainCell(world: World, d: Derived, i: number): CellExplanatio
   const invade = invadeTable(species);
   return species
     .map((sp, s) => {
-      const factors = sp.tolerances.map((t) => {
+      const factors = speciesTolerances(sp).map((t) => {
         const value = fieldGetter(world, d, t.field)(i);
         return { field: t.field, value, factor: trapezoid(t, value), range: [t.min, t.optLow, t.optHigh, t.max] as [number, number, number, number] };
       });

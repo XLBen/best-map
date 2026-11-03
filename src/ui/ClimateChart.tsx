@@ -4,6 +4,9 @@ import {
   BUILTIN_FIELDS,
   CONDITIONS,
   type ConditionId,
+  HEIGHT_MARGIN,
+  HEIGHT_MAX,
+  type HeightRange,
   M_RANGE,
   type Rect,
   type Species,
@@ -22,6 +25,7 @@ import type { Command } from '../../core/commands';
 import { X } from 'lucide-preact';
 import { adjustPreviewNote, askUser, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
 import { Seg } from './common';
+import { RangeSliders } from './components/RangeSliders';
 import { Slider, linear } from './components/Slider';
 import { Toggle } from './components/Toggle';
 import { paintWith, setTool } from './defs/tools';
@@ -359,6 +363,8 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
   const conds = speciesConditions(sp);
   const rect = speciesRect(sp);
   const setCond = (id: ConditionId, on: boolean) => void exec({ op: 'update_species', id: sp.id, patch: { tolerances: withCondition(sp, id, on).tolerances } }, '正在计算…');
+  // 两头都不限时不写高度范围（和没写过一样）
+  const setHeight = (h: HeightRange) => void exec({ op: 'update_species', id: sp.id, patch: { height: h.low <= 0 && h.high >= HEIGHT_MAX ? null : h } }, '正在计算…');
   const rain = conds.has('summerRain') ? 'summerRain' : conds.has('winterRain') ? 'winterRain' : null;
   const rename = () => name.trim() && name.trim() !== sp.name && void exec({ op: 'update_species', id: sp.id, patch: { name: name.trim() } });
   return (
@@ -387,6 +393,8 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
         }}
         onCancel={() => setCompetition(null)}
       />
+      <h5 title={`超出后 ${HEIGHT_MARGIN} m 内慢慢长不了`}>高度范围（海拔）</h5>
+      <RangeSliders lo={0} hi={HEIGHT_MAX} step={100} unit="m" value={sp.height ?? { low: 0, high: HEIGHT_MAX }} onCommit={setHeight} />
       <h5>只长在……</h5>
       {PLACES.map((id) => (
         <label class="check">

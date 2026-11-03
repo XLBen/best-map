@@ -19,7 +19,7 @@ import { BUILTIN_CLASSES, GENERAL_RESOURCES } from '../packs/base';
 import { NO_CURRENTS, engineFor, humanDigest, importPacks, meshFor, seedCommands } from '../testing/fixtures';
 import type { World } from '../world';
 import { writeFileSync } from 'node:fs';
-import { R51_FANTASY_RESOURCE, r29Digest } from '../testing/r29';
+import { r29Digest } from '../testing/r29';
 import saved from './r29-digests.json';
 
 // 第三十轮：时代就是资源包，生成只读世界里的内容（见 packs/import.ts、human/generate.ts、content/missing.ts）
@@ -31,13 +31,13 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // 生成人文 + 国家 + 城市地标；再“重新生成国家”一遍）。第三十二轮地形变了（大格局），用第三十二轮的代码重录一次：
 // 第三十三轮（平原与河口，高程变了）再重录一次。第四十三轮：内置的文化、宗教、政体换成 EU4 的，几种设置的组换成 EU4 的组
 // （日耳曼、汉、阿尔泰……）后重录；没有人文的那一项（nature）没变。
+// 第五十五轮重录：生态跟高度走（第五十一轮记着的奇幻的 resource 这次一起进了文件）。去掉高度范围时还是以前的值，见 core/biome-legacy.test.ts。
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
 const check = (got: unknown, key: string) => {
   if (record) old[key] = got;
-  // 第五十一轮没有重录：只有奇幻的 resource 单独记着（见 testing/r29.ts）
-  else expect(got, key).toEqual(r29Digest(key));
+    else expect(got, key).toEqual(r29Digest(key));
 };
 const SCENES = [
   { id: 'medieval', era: 'medieval', groups: [['germanic', 3], ['chinese', 3], ['levantine', 2], ['hindustani', 2], ['east-slavic', 1.5], ['altaic', 1.5]], countries: true, settlements: true },
@@ -96,20 +96,6 @@ describe('生成只读世界里的内容', () => {
       check(humanDigest(e.world), `${sc.id}:again`);
     }
     if (record) writeFileSync(new URL('./r29-digests.json', import.meta.url), `${JSON.stringify(old, null, 1)}\n`);
-  });
-
-  it('第五十一轮的例外：奇幻库自带的 5 种资源移出世界再生成时，摘要的 14 项都和没有重录的记录相同', () => {
-    const base = world();
-    const groups = groupsOf(SCENES.find((s) => s.id === 'fantasy')!.groups);
-    const e = base.clone();
-    importPacks(e, { packs: [['fantasy']], groups: groups.map((g) => g.id) });
-    const ids = ERA_PACKS.get('fantasy')!.resources!;
-    expect(ids.length).toBe(5);
-    for (const id of ids) expect(e.world.small.content!.resource![id]).toBeDefined();
-    e.exec({ op: 'batch', commands: ids.map((id): Command => ({ op: 'set_content', kind: 'resource', id, item: null })) });
-    e.exec({ op: 'generate_human', packs: [['fantasy']], groups, countries: {}, settlements: {} });
-    expect(humanDigest(e.world)).toEqual((saved as Record<string, unknown>).fantasy);
-    expect(R51_FANTASY_RESOURCE).not.toBe((saved as Record<string, Record<string, string>>).fantasy.resource);
   });
 
   it('加进来的每一项记着来源（时代包里的小包）；生成后都留着', () => {
@@ -309,8 +295,8 @@ describe('生态、地形类别自己带的字段替代按 id 查的算法表', 
   const OLD_GROUP: Record<string, string> = { ice: 'icecap', tundra: 'tundra', taiga: 'forest', temperate_forest: 'forest', subtropical_forest: 'forest', dry_forest: 'forest', monsoon_forest: 'forest', rainforest: 'forest', wetland: 'wetland', desert: 'desert' };
   const OLD_CLASS: Record<string, number> = { plains: 1, hills: 0.92, highlands: 0.82, mountains: 0.5, peaks: 0.09 };
 
-  it('内置 13 种生态的宜居度、通行难度、大类与原来的表逐个相同；5 种地形类别的宜居倍数也相同', () => {
-    for (const sp of DEFAULT_SPECIES) {
+  it('内置 13 种生态（第五十五轮多的两种高山生态不算）的宜居度、通行难度、大类与原来的表逐个相同；5 种地形类别的宜居倍数也相同', () => {
+    for (const sp of DEFAULT_SPECIES.filter((x) => !x.id.startsWith('alpine_'))) {
       expect(biomeHabitability(sp), sp.id).toBe(OLD_HAB[sp.id]);
       expect(biomeMovement(sp), sp.id).toBe(OLD_MOVE[sp.id]);
       expect(sp.group, sp.id).toBe(OLD_GROUP[sp.id]);

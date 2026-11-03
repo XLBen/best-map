@@ -113,6 +113,16 @@ export type SpeciesRange = z.output<typeof rangeSchema>;
 // 生态的大类（第三十轮，speciesSchema 的 group）：涂出来的一片按这一类的地物识别、起名
 export const BIOME_GROUPS = ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const;
 
+// 高度范围（第五十五轮，speciesSchema 的 height）：海拔，米，和检查器、山峰标注里写的是同一个数。
+// low、high 是最适合的范围，外面各留 HEIGHT_MARGIN 的过渡；low 为 0 不限下限，high 到 HEIGHT_MAX 不限上限。
+// 和气温、湿度一样是耐受曲线，乘进适宜度（见 heightTolerance），所以高度的边界和气候的边界一样是渐变的
+export const HEIGHT_MAX = 9000;
+export const HEIGHT_MARGIN = 300;
+export const heightSchema = z
+  .object({ low: z.number().min(0).max(HEIGHT_MAX), high: z.number().min(0).max(HEIGHT_MAX) })
+  .refine((h) => h.low <= h.high, { message: '高度范围的下限不能高于上限' });
+export type HeightRange = z.output<typeof heightSchema>;
+
 // 生态能有的两种脚本
 export const SPECIES_SCRIPT_KINDS = ['placement', 'color'] as const;
 
@@ -160,6 +170,9 @@ export const speciesSchema = z.object({
   // 大类（地物“荒漠、森林、苔原、冰原、湿地”）：涂出来的一片按这一类的地物识别、起名。省略时按地形归大片的地区，
   // 自己的一片按“生态区”起名（见 features.ts 的 speciesFeature）
   group: z.enum(BIOME_GROUPS).optional(),
+  // ---------- 第五十五轮 ----------
+  // 高度范围（见 HEIGHT_MAX）。省略时不看高度（用户自己做的、旧式的生态，结果和以前逐值相同）
+  height: heightSchema.optional(),
 });
 export type Species = z.output<typeof speciesSchema>;
 export type SpeciesInput = z.input<typeof speciesSchema>;
@@ -170,6 +183,18 @@ export function trapezoid(t: Tolerance, v: number): number {
   if (v < t.optLow) return t.optLow === t.min ? 1 : (v - t.min) / (t.optLow - t.min);
   if (v > t.optHigh) return t.optHigh === t.max ? 1 : (t.max - v) / (t.max - t.optHigh);
   return 1;
+}
+
+// 高度范围换成耐受曲线（场是 elevation，海面以下按 0）。不限的那一边放到碰不到的地方
+export function heightTolerance(h: HeightRange): Tolerance {
+  const noLow = h.low <= 0;
+  const noHigh = h.high >= HEIGHT_MAX;
+  return { field: 'elevation', min: noLow ? -1 : h.low - HEIGHT_MARGIN, optLow: noLow ? -1 : h.low, optHigh: noHigh ? 1e5 : h.high, max: noHigh ? 1e5 : h.high + HEIGHT_MARGIN };
+}
+
+// 算适宜度时用的全部耐受曲线：写着的，加上高度范围（排在最后）。没写高度范围时就是 sp.tolerances 这个数组
+export function speciesTolerances(sp: Pick<Species, 'tolerances' | 'height'>): readonly Tolerance[] {
+  return sp.height ? [...sp.tolerances, heightTolerance(sp.height)] : sp.tolerances;
 }
 
 // ---------- 简化编辑：气候图上的矩形 + 命名条件 ----------

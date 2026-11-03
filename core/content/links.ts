@@ -135,6 +135,7 @@ function tendencyLinks(f: FieldDesc, v: Record<string, unknown>, ctx: Ctx, out: 
 export const FIELD_WALKERS: Readonly<Record<FieldType, Walker>> = {
   longtext: noLinks,
   number: noLinks,
+  range: noLinks,
   bool: noLinks,
   color: noLinks,
   enum: noLinks,

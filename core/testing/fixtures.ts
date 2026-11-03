@@ -54,6 +54,18 @@ export function meshFor(raw: Partial<Settings>): Mesh {
 let seedCmds: Command[] | null = null;
 export const seedCommands = (): Command[] => (seedCmds ??= newWorldContentCommands());
 
+// 第五十五轮之前的生态：内置生态去掉高度范围，也去掉那两种高山生态（biome-legacy.test.ts 拿它和那时记下的摘要对照）
+export function withoutHeights(cmds: readonly Command[]): Command[] {
+  const one = (c: Command): Command[] => {
+    if (c.op === 'batch') return [{ ...c, commands: c.commands.flatMap(one) }];
+    if (c.op !== 'add_species') return [c];
+    if (c.species.id.startsWith('alpine_')) return [];
+    const { height: _, ...species } = c.species;
+    return [{ ...c, species }];
+  };
+  return cmds.flatMap(one);
+}
+
 // 给一个新的引擎加上默认的内容（与新建世界时一样，在一切之前）
 export function seedEngine(eng: Engine): Engine {
   for (const c of seedCommands()) eng.exec(c);
@@ -77,6 +89,13 @@ export function seededEngine(settings: Partial<Settings> = {}, mesh?: Mesh): Eng
   return seedEngine(new Engine(settings, mesh));
 }
 
+// 第五十五轮之前的生态的新引擎（同 seededEngine）：比的是算法和旧的代码逐值相同（记着旧代码的值、与生态无关）的测试用它
+export function plainEngine(settings: Partial<Settings> = {}, mesh?: Mesh): Engine {
+  const eng = new Engine(settings, mesh);
+  for (const c of withoutHeights(seedCommands())) eng.exec(c);
+  return eng;
+}
+
 const templates = new Map<string, Engine>();
 
 export function snapshot(key: string, build: () => Engine): Engine {
@@ -89,10 +108,10 @@ export function snapshot(key: string, build: () => Engine): Engine {
 // 第四十六轮：一块地区有了洋流（默认强弱 1）。这个世界核对的是人文、地名、河这些，关掉洋流（强弱 0，与第四十五轮逐值相同，
 // 见 core/ocean-plane.test.ts），它们的金标准与阈值照旧；区域洋流的结果由 golden-hashes、golden-full 与 ocean-plane 的测试管
 export const NO_CURRENTS: Command = { op: 'set_planet', patch: { currents: 0 } };
-export function continents(opts: { cells?: number; latNorth?: number; latSouth?: number; provinces?: boolean } = {}): Engine {
-  const { cells = 12000, latNorth = 72, latSouth = 20, provinces = false } = opts;
-  return snapshot(`continents:${cells}:${latNorth}:${latSouth}:${provinces}`, () => {
-    const eng = engineFor({ cells, seed: 1, latNorth, latSouth });
+export function continents(opts: { cells?: number; latNorth?: number; latSouth?: number; provinces?: boolean; plain?: boolean } = {}): Engine {
+  const { cells = 12000, latNorth = 72, latSouth = 20, provinces = false, plain = false } = opts;
+  return snapshot(`continents:${cells}:${latNorth}:${latSouth}:${provinces}:${plain}`, () => {
+    const eng = plain ? plainEngine({ cells, seed: 1, latNorth, latSouth }, meshFor({ cells, seed: 1, latNorth, latSouth })) : engineFor({ cells, seed: 1, latNorth, latSouth });
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     if (provinces) eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });

@@ -52,6 +52,8 @@ export function defaultValue(f: FieldDesc): unknown {
       return { api: SCRIPT_API, src: '' };
     case 'json':
       return f.of ? objectOf(f.of) : [];
+    case 'range':
+      return { low: f.min ?? 0, high: f.max ?? 0 };
     case 'tuple':
       return (f.items ?? []).map((x) => defaultValue(x));
     case 'tuples':

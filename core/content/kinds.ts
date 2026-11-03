@@ -6,7 +6,7 @@ import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, s
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
-import { PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
+import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
@@ -126,6 +126,7 @@ registerKind<Species>({
     { key: 'natural', label: '自然生成', type: 'bool', optional: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
+    { key: 'height', label: '高度范围', type: 'range', optional: true, min: 0, max: HEIGHT_MAX, step: 100, hint: `海拔，米；超出后 ${HEIGHT_MARGIN} m 内慢慢长不了。空着时不看高度` },
     {
       key: 'tolerances',
       label: '耐受条件',

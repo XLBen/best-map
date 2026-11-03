@@ -3,7 +3,7 @@ import { digest, digestWorld } from '../tools/hash';
 import type { SolveResult } from './constraints';
 import { Engine } from './engine';
 import { graphDistance } from './mesh';
-import { seededEngine } from './testing/fixtures';
+import { plainEngine } from './testing/fixtures';
 
 // 约束求解（自然融入）提速后必须逐值不变：可行、不可行、几块设定的修正区重叠、硬覆盖与自然融入混用、
 // 自定义场、扩散不到的类型，地区与小星球。每一步之后记下修正场、主导类型、份额等推导数组与求解计划的哈希。
@@ -19,11 +19,12 @@ import { seededEngine } from './testing/fixtures';
 // 第三十轮新世界从资源包加生态、基础内容（小数据里多了这些内容与来源，生态多了宜居度等字段），world 与 replay 重录；
 // 核对过：每一步的 digestWorld 除了 small 以外与第二十九轮的代码逐值相同，别的各项（修正场、份额、计划……）没有变
 
+// 第五十五轮：内置生态有了高度范围、多了两种（求解的结果跟着变）。这里比的是求解和以前的代码逐值相同，所以用那以前的生态（plainEngine），RECORDED 一个没动
 function run(kind: 'region' | 'planet'): Record<string, Record<string, string>> {
   const eng =
     kind === 'planet'
-      ? seededEngine({ seed: 2, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 })
-      : seededEngine({ seed: 4, cells: 8000, latNorth: 62, latSouth: 18 });
+      ? plainEngine({ seed: 2, cells: 6000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 })
+      : plainEngine({ seed: 4, cells: 8000, latNorth: 62, latSouth: 18 });
   const w = eng.world;
   const n = w.mesh.n;
   // 山挡风关掉：与记下 RECORDED 时的世界相同（第九轮起新世界默认打开山挡风）

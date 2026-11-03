@@ -7,6 +7,7 @@ import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../settle
 import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
 import { Seg } from '../common';
+import { RangeSliders } from '../components/RangeSliders';
 import { Toggle } from '../components/Toggle';
 import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, objectOf, parseTags, setField, shownFields, sparseSplit, tagsText } from './fields';
 import { Grip, MapEditor, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
@@ -247,6 +248,17 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
       </details>
     );
   }
+  if (f.type === 'range') {
+    return (
+      <div class={`ed-group ${bad ? 'bad' : ''}`}>
+        <div class="ed-label" title={f.hint}>
+          {f.label}
+        </div>
+        <Control f={f} value={value} onChange={onChange} path={path} issues={issues} />
+        <Errors issues={issues} path={path} />
+      </div>
+    );
+  }
   if (f.type === 'json' && f.of) {
     return (
       <div class="ed-group">
@@ -382,6 +394,13 @@ export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; va
       return <WeightedEditor value={value} onChange={onChange} />;
     case 'list':
       return <ListEditor f={f} value={value} onChange={onChange} path={path} issues={issues} />;
+    case 'range': {
+      const r = isObj(value) ? value : (defaultValue(f) as Obj);
+      const lo = f.min ?? 0;
+      const hi = f.max ?? 0;
+      // 两头都不限时不写这个字段（和没写过一样）
+      return <RangeSliders lo={lo} hi={hi} step={f.step ?? 1} unit="m" value={{ low: Number(r.low), high: Number(r.high) }} onCommit={(v) => onChange(v.low <= lo && v.high >= hi ? undefined : v)} />;
+    }
     case 'tuple':
       return <TupleEditor f={f} value={value} onChange={onChange} />;
     case 'tuples':

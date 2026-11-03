@@ -19,6 +19,7 @@ import { type Rect, type Species, withRect } from '../species';
 const script = (src: string) => ({ api: 1 as const, src });
 
 // 第十二轮：示例生态显式写上“自然生成”（资源包里没写的生态加进世界时默认不自然生成）
+// 第五十五轮：写上高度范围（见 packs/nature.ts 的表）。神圣之地没有下限：涂了“圣地”场的低地也要长
 const make = (base: Omit<Species, 'tolerances'>, rect: Rect): Species => withRect({ ...base, natural: true, tolerances: [] }, rect);
 
 // 森林类的内置生态：虫群侵占它们（和水晶丛林）
@@ -49,6 +50,7 @@ export const FANTASY_BIOMES: Species[] = [
         ),
       },
       seedKey: 'fantasy/crystal_jungle',
+      height: { low: 0, high: 2500 },
     },
     { t0: 16, t1: 40, m0: 1.0, m1: 50 },
   ),
@@ -74,6 +76,7 @@ export const FANTASY_BIOMES: Species[] = [
         color: script(['// 越高越灰白', 'return mixColor(color, [150, 142, 134], smoothstep(600, 2400, elevation));'].join('\n')),
       },
       seedKey: 'fantasy/dead_forest',
+      height: { low: 0, high: 3500 },
     },
     { t0: -6, t1: 18, m0: 0.35, m1: 1.6 },
   ),
@@ -93,6 +96,7 @@ export const FANTASY_BIOMES: Species[] = [
         placement: script(['// 一大块一大块地占', 'return smoothstep(0.2, 0.45, fbmAt(2.5, 2, 7));'].join('\n')),
       },
       seedKey: 'fantasy/swarm_zone',
+      height: { low: 0, high: 2500 },
     },
     { t0: 8, t1: 40, m0: 0.5, m1: 50 },
   ),
@@ -117,6 +121,7 @@ export const FANTASY_BIOMES: Species[] = [
         ),
       },
       seedKey: 'fantasy/holy_land',
+      height: { low: 0, high: 6000 },
     },
     { t0: -10, t1: 32, m0: 0.2, m1: 50 },
   ),
@@ -141,6 +146,7 @@ export const FANTASY_BIOMES: Species[] = [
         ),
       },
       seedKey: 'fantasy/bloody_land',
+      height: { low: 0, high: 3000 },
     },
     { t0: 4, t1: 40, m0: 0.15, m1: 1.4 },
   ),

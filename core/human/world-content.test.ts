@@ -32,10 +32,10 @@ function culturesWithPeople(w: World): Set<string> {
 }
 
 describe('新世界只带用得上的', () => {
-  it('生态是普通的 13 种，没有奇幻生态，没有河湖的种类（血河在资源库里）', () => {
+  it('生态是普通的 15 种，没有奇幻生态，没有河湖的种类（血河在资源库里）', () => {
     const w = continents().world;
     expect(w.small.species.map((s) => s.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
-    expect(w.small.species.length).toBe(13);
+    expect(w.small.species.length).toBe(15);
     expect(w.small.species.some((s) => FANTASY_BIOMES.some((f) => f.id === s.id))).toBe(false);
     expect(w.small.riverTypes ?? []).toEqual([]);
     expect(w.small.lakeTypes ?? []).toEqual([]);

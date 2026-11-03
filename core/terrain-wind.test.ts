@@ -4,7 +4,7 @@ import { deflectWind, smoothPass, windDeflectPasses } from './climate';
 import type { Command } from './commands';
 import { Engine } from './engine';
 import { gradient } from './mesh';
-import { NO_CURRENTS, engineFor, meshFor, seededEngine } from './testing/fixtures';
+import { NO_CURRENTS, engineFor, meshFor, plainEngine } from './testing/fixtures';
 import { type World, worldLatitude } from './world';
 
 // 山挡风：高山让风拐弯。新世界默认是 1；为 0 时风直接翻过山（下面记着固定的哈希）；
@@ -22,7 +22,8 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第三十二轮：地形有了大格局（高程变了，气候往后跟着变），重录全部
     // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
     const FROZEN = { tS: '97928795', pS: '3793bf38', discharge: 'f212a8ed', dominant: 'd7198605', corrT: '95748d5d', province: '2197e605' };
-    const eng = seededEngine({ seed: 3, cells: 40000 });
+    // 第五十五轮：这组操作里有“自然融入”的生态，修正场跟着生态变；这里比的是风的算法，用高度范围以前的生态（plainEngine），FROZEN 没动
+    const eng = plainEngine({ seed: 3, cells: 40000 });
     const w = eng.world;
     eng.exec(windOff);
     // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同

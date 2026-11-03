@@ -1,4 +1,5 @@
 // 打印各层数据的哈希，用于核对不同环境下结果是否逐值一致（Node 与浏览器跑同一段代码，比对输出）
+import type { Command } from '../core/commands';
 import { digest } from '../core/digest';
 import { Engine } from '../core/engine';
 import { newWorldContentCommands } from '../core/packs/import';
@@ -18,12 +19,13 @@ export function hashArray(a: ArrayLike<number>): string {
 }
 
 // 固定的一组操作：生成世界、划分省份、放岛、涂生态、画河。返回各层的哈希
-export function referenceHashes(): Record<string, string> {
+// content：新世界默认的内容（第五十五轮：biome-legacy.test.ts 换成没有高度范围的）
+export function referenceHashes(content: readonly Command[] = newWorldContentCommands()): Record<string, string> {
   const eng = new Engine({ seed: 3, cells: 40000 });
   const w = eng.world;
   const out: Record<string, string> = { meshX: hashArray(w.mesh.x), meshAdj: hashArray(w.mesh.adj) };
   // 第三十轮：新世界默认加的内容（基础、自然、中文地名）与 set_worldgen 在同一步里（与向导新建一样）
-  eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
+  eng.exec({ op: 'batch', commands: [...content, { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
   eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
   eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'continental', size: 440, variant: 0 } });
   const d = w.derived;
@@ -90,13 +92,13 @@ export function coastalStroke(w: Engine['world'], f: number, r: number): number[
 
 // 更长的一组操作（地区或整个星球）：生成、划省、重画一片、真改海陆、海岸曲折、冷暖、自然融入的生态、
 // 陆地多少滑块、撤销与重做、放岛（星球放在接缝上）。返回最后整个世界的哈希
-export function extendedHashes(kind: 'region' | 'planet'): Record<string, string> {
+export function extendedHashes(kind: 'region' | 'planet', content: readonly Command[] = newWorldContentCommands()): Record<string, string> {
   const eng =
     kind === 'planet'
       ? new Engine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 })
       : new Engine({ seed: 7, cells: 12000 });
   const w = eng.world;
-  eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 7, type: kind === 'planet' ? 'continents' : 'archipelago' }, reset: true }] });
+  eng.exec({ op: 'batch', commands: [...content, { op: 'set_worldgen', params: { seed: 7, type: kind === 'planet' ? 'continents' : 'archipelago' }, reset: true }] });
   eng.exec({ op: 'generate_provinces', rules: { seed: 7 } });
   eng.exec({ op: 'reroll_region', x: kind === 'planet' ? 1.99 : 1.0, y: 0.45, radius: 0.08, variant: 1 });
   let cells = coastalStroke(w, 0.37, 6);

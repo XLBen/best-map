@@ -3,7 +3,7 @@ import { coastalStroke, digestWorld } from '../tools/hash';
 
 import type { SphereMesh } from './mesh';
 import { PLANET_SWEEPS, buildFlowSphere, sphereAux } from './planet-climate';
-import { seededEngine } from './testing/fixtures';
+import { plainEngine, seededEngine } from './testing/fixtures';
 
 // 整个星球的气候：没有接缝（不会在某个经度出现一条干带）、转动不变、输运图规整、迭代收敛
 
@@ -192,7 +192,8 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
       // 第十二轮：省份分海、陆地、湖三类（陆地的格不再并进湖省），省份按新的规则修补，重录这一项
       'causes.province': '8ca1167e2ed59252',
     };
-    const eng = seededEngine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
+    // 第五十五轮：这组操作里有“自然融入”的生态，修正场跟着生态变；这里比的是气候的算法，用高度范围以前的生态（plainEngine），FROZEN 没动
+    const eng = plainEngine({ seed: 5, cells: 8000, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 });
     const w = eng.world;
     eng.exec({ op: 'set_planet', patch: { terrainWind: 0 } });
     eng.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
