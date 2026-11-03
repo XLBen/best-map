@@ -2017,6 +2017,8 @@ const smooth01 = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 // line：河线；thr：河的门槛；spacing：格距；mulAt（可选）：每个河线点再乘的粗细（拖粗细、河流类型的粗细）
 // opts.underShore（格，可选）：入海、入湖的河沿最后一段的方向再往水里多画这么长（河口的平头埋在水面下）。只给按陆地裁掉水面上那部分的画法用
 // （地图的河那一层按画面上的陆地遮住：河口正好收在弯弯曲曲的岸线上，不是一个跨在岸线上的平头）
+let ribbonPad = new Float64Array(4096);
+
 export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt?: (k: number) => number, opts?: { underShore?: number }): RiverRibbon {
   const under = line.mouth && opts?.underShore && line.points.length >= 2 ? opts.underShore * spacing : 0;
   if (under > 0) {
@@ -2048,8 +2050,11 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   }
   const x = new Float64Array(count);
   const y = new Float64Array(count);
-  const w = new Float64Array(count);
-  const mul = new Float64Array(count);
+  // 第五十七轮（提速）：宽度、粗细、平滑的系数只在这一条带子里用，留着下一条接着用（每条都先写后读，一条河一组数组，改一笔要开上千块）
+  if (ribbonPad.length < 3 * count) ribbonPad = new Float64Array(6 * count);
+  const w = ribbonPad.subarray(0, count);
+  const mul = ribbonPad.subarray(count, 2 * count);
+  const smoothA = ribbonPad.subarray(2 * count, 3 * count);
   const src = new Uint32Array(count);
   // 每个河线点的粗细倍数先算好（第三十三轮提速：以前每个加密的点算四遍；值与先后不变）
   const mk = new Float64Array(m);
@@ -2062,7 +2067,7 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   // 岸线在哪里（往水里多画的那段之前）
   const Ls = L - under;
   // 3. 宽度：往下游只增不减，再沿河来回各平滑一遍（约半格；只增不减的数列平滑后仍只增不减）
-  smoothWidth(w, s, count, WIDTH_SMOOTH * spacing);
+  smoothWidth(w, s, count, WIDTH_SMOOTH * spacing, smoothA);
   // 4. 源头收尖、河口张开（从湖里流出来的短河从湖岸起收细），乘上粗细
   const outlet = line.head === 'lake' && L > 0 ? 1 - smooth01((L / spacing - OUTLET_SHORT) / OUTLET_FADE) : 0;
   const hw = new Float32Array(count);
@@ -2192,9 +2197,8 @@ function putAt(px: Float64Array, py: Float64Array, flow: Float64Array, mk: Float
 
 // 带子第 3 步：宽度往下游只增不减，再沿河来回各平滑一遍（lam：平滑的长度）。
 // 来回两遍用的是同一对相邻点的 1 − exp(−Δs / lam)，只算一遍（第三十三轮提速，值不变）
-function smoothWidth(w: Float64Array, s: Float64Array, count: number, lam: number): void {
+function smoothWidth(w: Float64Array, s: Float64Array, count: number, lam: number, A: Float64Array): void {
   for (let i = 1; i < count; i++) if (w[i] < w[i - 1]) w[i] = w[i - 1];
-  const A = new Float64Array(count);
   for (let i = 1; i < count; i++) {
     const a = 1 - Math.exp(-(s[i] - s[i - 1]) / lam);
     A[i] = a;

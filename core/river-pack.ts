@@ -37,42 +37,61 @@ function hasDrawnType(tags: readonly number[], types: readonly RiverType[]): boo
 // 新世界默认带类型以后描河要多读类型、多分几段，这里省下的比多的多。带子只读（packRibbons 拷走）。逐位相同：core/water-real-speed.test.ts
 export const riverDrawDebug = { memo: true };
 export const riverDrawStats = { hit: 0, miss: 0 };
-let drawMemo: { key: string; byHead: Map<number, { line: RiverLine; draw: RiverDraw }[]> } | null = null;
+let drawMemo: { key: string; byHead: Map<number, { sig: Float64Array; draw: RiverDraw }[]> } | null = null;
 
-function sameNumbers(a: readonly number[] | undefined, b: readonly number[] | undefined): boolean {
-  if (a === b) return true;
-  if (!a || !b || a.length !== b.length) return false;
-  for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false;
-  return true;
+// 带子读到的几项（riverRibbon、riverDraw）记成一块数：留着河线本身的话，几千个小数组活过垃圾回收，后面的几步都跟着慢
+function lineSig(l: RiverLine): Float64Array {
+  const m = l.points.length;
+  const J = l.joins?.length ?? 0;
+  const out = new Float64Array(3 + 3 * m + (l.mul ? m : 0) + (l.type ? m : 0) + J);
+  out[0] = m;
+  out[1] = lineFlags(l);
+  out[2] = J;
+  let o = 3;
+  for (let k = 0; k < m; k++) {
+    out[o++] = l.points[k][0];
+    out[o++] = l.points[k][1];
+    out[o++] = l.flow[k];
+  }
+  if (l.mul) for (let k = 0; k < m; k++) out[o++] = l.mul[k];
+  if (l.type) for (let k = 0; k < m; k++) out[o++] = l.type[k];
+  for (let k = 0; k < J; k++) out[o++] = l.joins![k];
+  return out;
 }
 
-// 带子读到的几项都相同（riverRibbon、riverDraw）
-function sameRibbonInput(a: RiverLine, b: RiverLine): boolean {
-  if (a.points.length !== b.points.length || a.head !== b.head || !a.mouth !== !b.mouth || !a.ria !== !b.ria || !a.tail !== !b.tail) return false;
-  for (let k = 0; k < a.points.length; k++) {
-    const p = a.points[k];
-    const q = b.points[k];
-    if (p[0] !== q[0] || p[1] !== q[1]) return false;
+const lineFlags = (l: RiverLine): number => (l.head === 'source' ? 1 : l.head === 'lake' ? 2 : 0) | (l.mouth ? 4 : 0) | (l.ria ? 8 : 0) | (l.tail ? 16 : 0) | (l.mul ? 32 : 0) | (l.type ? 64 : 0);
+
+function sameSig(sig: Float64Array, l: RiverLine): boolean {
+  const m = l.points.length;
+  const J = l.joins?.length ?? 0;
+  if (sig[0] !== m || sig[1] !== lineFlags(l) || sig[2] !== J) return false;
+  let o = 3;
+  for (let k = 0; k < m; k++) {
+    const p = l.points[k];
+    if (sig[o++] !== p[0] || sig[o++] !== p[1] || sig[o++] !== l.flow[k]) return false;
   }
-  return sameNumbers(a.flow, b.flow) && sameNumbers(a.mul, b.mul) && sameNumbers(a.type, b.type) && sameNumbers(a.joins, b.joins);
+  if (l.mul) for (let k = 0; k < m; k++) if (sig[o++] !== l.mul[k]) return false;
+  if (l.type) for (let k = 0; k < m; k++) if (sig[o++] !== l.type[k]) return false;
+  for (let k = 0; k < J; k++) if (sig[o++] !== l.joins![k]) return false;
+  return true;
 }
 
 function memoDraws(lines: readonly RiverLine[], thr: number, spacing: number, types: readonly RiverType[] | null, typesKey: string): RiverDraw[] {
   if (!riverDrawDebug.memo) return lines.map((l) => riverDraw(l, thr, spacing, types, 1, MAP_UNDER_SHORE));
   const key = `${thr}|${spacing}|${typesKey}`;
   const old = drawMemo?.key === key ? drawMemo.byHead : null;
-  const next = new Map<number, { line: RiverLine; draw: RiverDraw }[]>();
+  const next = new Map<number, { sig: Float64Array; draw: RiverDraw }[]>();
   const out = lines.map((line) => {
     // 按第一点的横坐标认：同一处起头的线只有几条
     const head = line.points.length ? line.points[0][0] : 0;
-    const hit = old?.get(head)?.find((e) => sameRibbonInput(e.line, line));
+    const hit = old?.get(head)?.find((e) => sameSig(e.sig, line));
     if (hit) riverDrawStats.hit++;
     else riverDrawStats.miss++;
-    const draw = hit ? hit.draw : riverDraw(line, thr, spacing, types, 1, MAP_UNDER_SHORE);
+    const entry = hit ?? { sig: lineSig(line), draw: riverDraw(line, thr, spacing, types, 1, MAP_UNDER_SHORE) };
     const list = next.get(head);
-    if (list) list.push({ line, draw });
-    else next.set(head, [{ line, draw }]);
-    return draw;
+    if (list) list.push(entry);
+    else next.set(head, [entry]);
+    return entry.draw;
   });
   drawMemo = { key, byHead: next };
   return out;

@@ -41,7 +41,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //                       先是时代默认带的（pack.cultures，小包带着默认的权重 weight），四个历史库再加上别的 EU4 文化组：
 //                       小包和组的比重（weight）都是 0，不参与生成，新世界不带，点名了才带（core/packs/import.ts）。
 //                       奇幻、科幻只有自己的组（第四十四轮：奇幻 11 组、科幻 9 组，默认全带），不带 EU4 的文化
-//     奇幻另有 biomes、rivers、lakes：奇幻的生态（带它们用到的自定义场）、河、湖
+//     奇幻另有 biomes、rivers、lakes：奇幻的生态（带它们用到的自定义场）、河、湖；第五十七轮起新建奇幻世界时默认带上（worldPartsOf），换库照旧不带
 //   世界的底子（LIBRARY_BASE_PACKS，每个库都有，新建世界时放在生成之前）：
 //     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类
 //     nature            自然：13 种普通生态

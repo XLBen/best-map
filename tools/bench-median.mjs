@@ -16,6 +16,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+// node_modules 可能在上几层（git worktree 里的只有测试的缓存）
+let nm = root;
+while (!existsSync(join(nm, 'node_modules', 'tsx')) && dirname(nm) !== nm) nm = dirname(nm);
+nm = join(nm, 'node_modules');
 const argv = process.argv.slice(2);
 const sep = argv.indexOf('--');
 const own = sep >= 0 ? argv.slice(0, sep) : argv;
@@ -32,7 +36,7 @@ const showAll = own.includes('--all');
 const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief', 'libEdit', 'libUndo', 'libRedo', 'libContent', 'libContentUndo', 'libNoop', 'libPost', 'libHuman', 'libHumanUndo', 'libCountry', 'libCountryUndo', 'libSaveDoc'];
 
 function runOnce(dir) {
-  const out = execFileSync(process.execPath, [join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(dir, 'tools', 'bench.ts'), ...benchArgs, '--json'], {
+  const out = execFileSync(process.execPath, [join(nm, 'tsx', 'dist', 'cli.mjs'), join(dir, 'tools', 'bench.ts'), ...benchArgs, '--json'], {
     cwd: dir,
     encoding: 'utf8',
     maxBuffer: 1 << 26,
@@ -94,7 +98,7 @@ if (cmpAt >= 0) {
     const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
     git('worktree', 'add', '--detach', dir, against);
     try {
-      symlinkSync(realpathSync(join(root, 'node_modules')), join(dir, 'node_modules'));
+      symlinkSync(realpathSync(nm), join(dir, 'node_modules'));
       copyFileSync(join(root, 'tools', 'bench.ts'), join(dir, 'tools', 'bench.ts'));
       if (!existsSync(join(dir, 'tools', 'hash.ts'))) throw new Error('旧的提交里没有 tools/hash.ts');
       const base = [];
