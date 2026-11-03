@@ -14,7 +14,7 @@
 ## 时代、文化、人口（第二十二轮）
 - `era.ts` 时代、取值、取值组（第四十三轮）、文化组、文化的格式与世界里的列表（`worldEra`、`worldCultures`、`worldDimensions`……）；文化的倾向 `cultureTendency`（文化按时代 → 文化 → 组按时代 → 组）、风格 `styleOfCulture`、异端 / 异教 `faithRelation`
 - `pop-kinds.ts` 这五种登记进登记表
-- `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`）
+- `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`；用的包记在 `small.genStamp`，第五十一轮以前是 `human.packs`）
 - `habitability.ts` 宜居度与偏好；`cultures.ts` 文化圈；`culture-style.ts` 地名跟着文化
 - `population.ts` 人口、修补、笔刷（`paintPop`、`setCellPop`、`applyPopFix`）；`groups.ts` 人口群体的编号与每格成分
 - `layers.ts` 人口的几层、图例、档案的人口一栏、每省人口；`space.ts` 面积、距离、噪声、按份额长

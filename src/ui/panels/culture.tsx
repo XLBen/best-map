@@ -381,7 +381,7 @@ export function HumanChoices({
       {!sections.length && !spare.length && <p class="hint">勾选的包里没有文化组</p>}
       {spare.length > 0 && (
         <details>
-          <summary class="hint">还有 {spare.length} 个文化组（这个库默认不带）</summary>
+          <summary>还有 {spare.length} 个文化组（这个库默认不带）</summary>
           <div class="human-groups">{spare.map(groupRow)}</div>
         </details>
       )}

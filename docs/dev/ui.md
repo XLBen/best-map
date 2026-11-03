@@ -31,7 +31,7 @@ Preact + signals。工具、参数、底图都是声明（`defs/`），顶栏、
 
 ## 编辑器与档案
 - `ScriptBox.tsx` 脚本框（`script-syntax.ts` 只解析不运行、`script-commit.ts` 停一下就提交、`script-examples.ts`）；`SpeciesAdvanced.tsx`（`species-scripts.ts`）；`connect.ts`、`editor-hooks.ts`
-- `Wizard.tsx` 新建向导（`wizardTerrain.ts`、`human.ts`、`packChoice.ts` 勾选资源包）
+- `Wizard.tsx` 新建向导（`wizardTerrain.ts`、`human.ts`、`packChoice.ts` 勾选资源包，勾一个库时世界的底子从它来）
 - `countries.ts` + `CountryArchive.tsx`（第四十二轮：`layoutChoices`、`tierLabel` 按世界里的格局、等级）；`blocs.ts` + `BlocArchive.tsx`；`settlements.ts`（`cityLook`：城市按等级、首都按国家的等级分轻重，第四十二轮） + `SettleArchive.tsx`；`archive.ts` 格的档案的命令
 - `FormEditor.tsx` 星球形态编辑器（`forms.ts`、`form-store.ts`）；`ClimateChart.tsx` 生态类型编辑器；`Help.tsx` 上手说明
 - `packs/` 资源库（第四十五轮：顶栏最左边打开，左栏列表、右栏详情与编辑器）：`RepoPanel.tsx` 外壳与展开的状态；`RepoList.tsx` 左栏（两段摊成一长列只画看得见的行，双击改名、拖动换先后）、`lines.ts`（`treeLines`、`visibleRange`）；`RepoDetail.tsx` 右栏（详情、按钮、编辑器）；`RepoPreview.ts` 停一下预览；`repo-actions.ts` 各个按钮做的事；`edit.ts` 编辑的规则（`startEdit`、`applyEdit` 改内置不另起 id、`restoreCommand` 恢复内置、改名、换先后）；`prefs.ts` 记着的种类与展开（存不了时照默认）；`repo.ts`（`packTree`、添加与移出、`builtinOriginal` 改过的内置项）；`tidy.ts`、`styles.ts`、`PackDialog.tsx`、`Scripts.tsx`、`store.ts`
