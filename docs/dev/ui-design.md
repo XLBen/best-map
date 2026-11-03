@@ -28,6 +28,7 @@
   - `TypePicker.tsx`：选“哪一种”——底部条上的按钮 `TypePickerButton` 和弹出的列表 `TypePicker`。河、湖、岛（放岛、岛链）的六个列表都是它，`App.tsx` 的 `TYPE_PANELS` 写着每个列表的标题和种类表。一项写了 `group` 时按它分段（第二十二轮：文化按文化组列）；`icon`（lucide 图标）、`image`（上传的小图）画在名字前面（第二十四轮：地标、点的种类），按钮也可以带 `icon`。
   - `Legend.tsx`（第二十一轮）：图例，`{title, items: {color, label, count?}[], open, onToggle}`；都写了 `count` 时右边写百分比。按类着色的底图的图例由 `ui/legend.ts` 的 `legendFor(world, mode)` 给（地形类别、资源、生态分区：只列世界里有的，按格数从多到少，资源的“无”排最后；按着色用的数组缓存），`shell/MapLegend.tsx` 放在左下角量距离按钮上面（跟着 `cornerLift` 抬）。第二十二轮加了文化、文化组、时代的每一维（`humanLegend`，`count` 是人数）与宜居度、人口密度（色带上的五档，没有 `count`）；第二十三轮加了国家（`countryLegend`：按人口前 `LEGEND_TOP` = 12 国，颜色是 `countryMapColors` 的，其余合成“其他 N 国”；没有人时按格数）。
   - `SelectionActions.tsx`：选中一样东西时的换一个、恢复自动、锁定、在地图上看、删掉、取消选择，河、湖、地名、省份共用。河、省的底部条只放常用的几个，其余用 `menu` 布局放进它们的“⋯”（`PanelId` 的 `river`、`province`）；`MenuItem` 是“⋯”里的一行。
+  - `LibraryPick.tsx`（第五十二轮）：选一个库。新建向导里是一排卡片，`compact`（弹出面板）是下拉；内置的在前，我的库另成一段。
 - **列表行一种** `.item`（菜单、地名、河、湖、涂过的地方、类型列表、国家、城市），高 `--h-sm`，`.list` 是可以滚的一列；资源库里的一行是 `.repo-row`（第二十九轮：包 `.repo-node`、项 `.repo-item`，悬停时亮，鼠标停着时地图上预览）。（`.row` 早就是“一行排开”的布局类，所以列表行叫 `.item`。）
 - **排版**（第二十九轮，照 Claude Code 的密度，颜色不变）：
   - 一行一项：`.list` 里的 `.item-text` 名字和灰色的说明排在同一行，放不下时说明先省略；`.menu`（世界）里说明在名字下面、只占一行。

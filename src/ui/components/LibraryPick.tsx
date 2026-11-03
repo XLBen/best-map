@@ -28,7 +28,7 @@ export function LibraryPick({
   const mine = [...options.filter((o) => !o.builtin), ...gone];
   if (compact) {
     return (
-      <select class="library-pick" value={value ?? ''} disabled={disabled} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
+      <select value={value ?? ''} disabled={disabled} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
         <optgroup label="内置的库">
           {builtin.map((o) => (
             <option value={o.key}>{o.name}</option>
