@@ -92,7 +92,7 @@ describe('资源库两栏：packTree', () => {
     const cultures = worldCultures(eng.world.small).filter((c) => c.id !== 'my-c');
     const listed = treeRows(t.world.find((n) => n.path[0] === 'medieval')!).filter((r) => r.kind.id === 'culture');
     expect(listed.map((r) => r.id).sort()).toEqual(cultures.map((c) => c.id).sort());
-    // 新世界加的 13 种生态在默认的库“自然”，基础内容在“基础”
+    // 新世界加的 15 种生态在默认的库“自然”，基础内容在“基础”
     const w0 = packTree(continents().world, BUILTIN);
     expect(find(w0.world, 'w:medieval/nature')!.rows.map((r) => r.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
     expect(find(w0.world, `w:${BASE_PATH.join('/')}`)!.rows.length).toBeGreaterThan(0);

@@ -42,8 +42,8 @@
 - `effects.ts` 生态、河湖对周围冷暖干湿的影响
 
 ## 生态
-- `species.ts` 生态类型（色块 + 条件 + 耐受曲线）、`PATTERNS`
-- `vegetation.ts` 适宜度 / 竞争 / 扩散 / 长在哪里 / 不计水体类型的一遍（baseBiomes）
+- `species.ts` 生态类型（色块 + 条件 + 耐受曲线）、`PATTERNS`；高度范围（第五十五轮：`height`、`heightTolerance`、`speciesTolerances`，算适宜度时用后者）
+- `vegetation.ts` 适宜度 / 竞争 / 扩散 / 长在哪里 / 不计水体类型的一遍（baseBiomes）/ 没有生态的陆地格的兜底（`fillBare`，写了高度范围的世界才走）
 - `constraints.ts` 涂生态的反推与“没涂成”的原因
 - `biome-look.ts` 生态在地图上的样子（颜色脚本、花纹与发光的算式，着色器里同一份）；`biome-scripts.ts` 生态的脚本在世界上运行
 - `script.ts` 脚本的运行环境（编译、中英文变量表、辅助函数、安全模式、给看门狗报平安；冻结的 Math 副本）
@@ -82,5 +82,5 @@
 - `export.ts` 导出；`thumbnail.ts` 向导缩略图；`presets.ts` 世界大小、纬度带、星球格数（`planetCells`）
 
 ## 测试用
-- `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`testing/eras.ts` 按时代查内置内容
+- `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`withoutHeights`、`plainEngine`（第五十五轮之前的生态，比算法和旧代码相同的测试用）；`testing/eras.ts` 按时代查内置内容
 - `golden-full.json`、`golden-hashes.json`、`r31-digests.json`、`human/r29-digests.json` 金标准与摘要：不要重录（见 [测试](tests.md)）

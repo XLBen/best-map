@@ -37,4 +37,4 @@ Preact + signals。工具、参数、底图都是声明（`defs/`），顶栏、
 - `packs/` 资源库（第四十五轮：顶栏最左边打开，左栏列表、右栏详情与编辑器）：`RepoPanel.tsx` 外壳与展开的状态；`RepoList.tsx` 左栏（两段摊成一长列只画看得见的行，双击改名、拖动换先后）、`lines.ts`（`treeLines`、`visibleRange`）；`RepoDetail.tsx` 右栏（详情、按钮、编辑器）；`RepoPreview.ts` 停一下预览；`repo-actions.ts` 各个按钮做的事；`edit.ts` 编辑的规则（`startEdit`、`applyEdit` 改内置不另起 id、`restoreCommand` 恢复内置、改名、换先后）；`prefs.ts` 记着的种类与展开（存不了时照默认）；`repo.ts`（`packTree`、添加与移出、`builtinOriginal` 改过的内置项）；`tidy.ts`、`styles.ts`、`PackDialog.tsx`、`Scripts.tsx`、`store.ts`
 - 通用编辑器：`ContentEditor.tsx`（按字段表画）+ `editors.tsx`（称号、几种称号、带权重的、`tuple` / `tuples`、按引用的比例表、引用的一组、键 → 值、拖动的把手）+ `TendencyEditor.tsx`（倾向的表，`tendency.ts` 是规则）+ `RefPicker.tsx`（带搜索的下拉，`refs.ts` 给选项）+ `fields.ts`
 - `maps/` 我的地图的弹窗（`MapsDialog.tsx`、`store.ts`）
-- `copy.ts` 几处共用的一句话；`common.tsx` 的 `Seg`；`components/` 全界面共用的控件（`Slider`、`Toggle`、`TypePicker`、`Legend`、`LibraryPick`（第五十二轮：选一个库，向导里是卡片，弹出面板里是下拉）、`SelectionActions`）
+- `copy.ts` 几处共用的一句话；`common.tsx` 的 `Seg`；`components/` 全界面共用的控件（`Slider`、`RangeSliders`（第五十五轮：一段范围的两个滑块）、`Toggle`、`TypePicker`、`Legend`、`LibraryPick`（第五十二轮：选一个库，向导里是卡片，弹出面板里是下拉）、`SelectionActions`）
