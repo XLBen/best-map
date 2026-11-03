@@ -23,7 +23,7 @@
 - **按钮**没有边框：淡淡的底（`--fill`），悬停在任何底上叠同一层 `--hover`（`background-image`），选着的 `.on` / 主要的 `.primary` 是 `--accent-bg`，弹出面板开着的 `.open` 是 `--press`。图标由 `App.tsx` 的 `LucideProvider` 统一成 16 / 粗细 1.8，顶栏写 `size={18}`；各处不再写大小。
 - **控件各一种**（`src/ui/components/`）：
   - `Slider.tsx`：全界面的滑块。`Slider` 给位置（0–1）和写出来的数，拖动时 `onDraft`、松手 `onCommit`、拖着时被取消 `onCancel`、方向键 `onStep`；`stacked` 是面板里的两行样子，`note` 写在下面；`linear(lo, hi, step)` 是等间距的换算；`OptionSlider` 是底部条上工具的滑块（值在 `options` 里，换算在 `shell/sliders.ts`）。不再用原生的 `<input type="range">`。
-  - `RangeSliders.tsx`（第五十五轮）：一段范围，“最低”“最高”两个 `Slider`，到两头写“不限”，不交叉。字段表的类型是 `range`。
+  - `RangeSliders.tsx`（第五十五轮）：一段范围，“最低”“最高”两个 `Slider`（`scale` 可换刻度，第五十六轮：流量按对数），到两头写“不限”，不交叉。字段表的类型是 `range`。
   - `Toggle.tsx`：开 / 关一项设置（无人区、锁定、省份着色、图层里显示什么、自然生成……）。从一组里挑几样（从本世界存进资源库带哪些、只长在哪些地方、地名的几组）照旧是勾选框 `label.check`；资源库里每一项是两个按钮“添加到本世界 / 移出本世界”（第二十八轮以前是 `Toggle`）。
   - `common.tsx` 的 `Seg`：几个里选一个（底部条上工具的模式也是它；`swatches` 色块、`off` 现在不起作用）。
   - `TypePicker.tsx`：选“哪一种”——底部条上的按钮 `TypePickerButton` 和弹出的列表 `TypePicker`。河、湖、岛（放岛、岛链）的六个列表都是它，`App.tsx` 的 `TYPE_PANELS` 写着每个列表的标题和种类表。一项写了 `group` 时按它分段（第二十二轮：文化按文化组列）；`icon`（lucide 图标）、`image`（上传的小图）画在名字前面（第二十四轮：地标、点的种类），按钮也可以带 `icon`。

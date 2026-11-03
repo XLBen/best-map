@@ -30,7 +30,7 @@
 - `planet-climate.ts` 整个星球的气候（`sphereStatic` / `sphereLand` 分层缓存）；`sphere-flow.ts` 球面上的输送
 - `ocean.ts` 简化洋流与海面温度（整个星球）
 - `ocean-plane.ts` 一块地区的洋流（第四十六轮）：粗栅格（像素约 3 格、长边 ≤ 128）上的风生环流、上涌、海温输送、带上陆地；按像素上取到的海陆、温度、风缓存；`ocean-raster.ts` 它用的只看像素的小算子（挡流陆地、海岸距离、平滑、倒角距离）
-- `hydrology.ts` 填洼汇流、湖、径流、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`）
+- `hydrology.ts` 填洼汇流、湖、径流（`cut`：断流的格）、湖底修深（`shapeLakeBeds`）、坡度缓存（`slopeMemo`）
 - `rivers.ts` 河流折线与河画出来的带子（`riverRibbon`）、河口（`normalMouth`、`tidyMouths`）、三角洲分汊（`withBranches`）
 - `delta.ts` 三角洲的河口与亚格子海岸凸出（`deltaBulge`）
 - `coast-memo.ts` 描河时按画面海岸场的查询跨几次描河记下来
@@ -38,7 +38,7 @@
 - `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）、`fjordLayer`、着色器的峡湾纹理、`FJ` 常数
 - `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`
 - `river-edit.ts` 改一条河（拖控制点、加删弯点、重画一笔）
-- `water-types.ts` 河流类型、湖泊类型共用的部分；`river-types.ts` 河流类型（每格哪种河、河岸场）；`lake-types.ts` 湖泊类型
+- `water-types.ts` 河流类型、湖泊类型共用的部分：声明式条件（`when`）、一遍要做什么（`waterPlan`）、允许表编译成查表（`waterRules`）；`river-types.ts` 河流类型（每格哪种河、河网 `riverNet`、断流的格 `stopCells`、河岸场）；`river-segments.ts` 短段并进相邻的段；`lake-types.ts` 湖泊类型；`water-table.ts` 允许表的读写（生态页、河湖页共用）
 - `effects.ts` 生态、河湖对周围冷暖干湿的影响
 
 ## 生态
