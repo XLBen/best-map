@@ -51,7 +51,7 @@
       "technocracy",
       "commune-federation"
     ],
-    "factions": ["revolutionary-left", "social-democrats", "greens", "liberals", "conservatives", "nationalists", "religious-bloc", "nobility", "clergy", "burghers", "federalists", "conglomerates", "academy"],
+    "factions": ["revolutionary-left", "social-democrats", "greens", "liberals", "conservatives", "nationalists", "religious-bloc", "nobility", "clergy", "burghers", "dhimmi", "federalists", "conglomerates", "academy"],
     "cultures": [
       ["chinese", 4],
       ["hindustani", 4],

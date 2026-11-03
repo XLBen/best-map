@@ -41,7 +41,7 @@
       "steppe-horde",
       "native-council"
     ],
-    "factions": ["conservatives", "liberals", "radicals", "army", "church", "industrialists", "nobility", "tribes", "clergy", "burghers"],
+    "factions": ["conservatives", "liberals", "radicals", "army", "church", "industrialists", "nobility", "tribes", "dhimmi", "clergy", "burghers"],
     "cultures": [
       ["chinese", 4],
       ["british", 3],

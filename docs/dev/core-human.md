@@ -22,10 +22,10 @@
 - `packs/eras/` 内置 6 个时代（一个 JSON 一个）、`values/` 共用的取值与宗教组、`cultures/` EU4 的 71 个文化组 410 个文化（一个地区一个 JSON）与奇幻、科幻的组（`fantasy.json` 11 组、`scifi.json` 9 组，第四十四轮）；奇幻的宗教组在 `fantasy.json` 时代文件的 `valueGroups`
 
 ## 国家与政体（第二十三轮、第二十六轮）
-- `government.ts` 政体、派系的格式与世界里的列表；称号按国家等级与换说法（`govTitles`、`tierTitle`，第四十三轮），限谁用（`only`、`govAllowed`，第四十四轮），地标、集团的称号 `pickTitle`；`gov-kinds.ts` 登记进登记表
+- `government.ts` 政体、派系的格式与世界里的列表，政体列的派系 `governmentFactions`（第五十三轮）；称号按国家等级与换说法（`govTitles`、`tierTitle`，第四十三轮），限谁用（`only`、`govAllowed`，第四十四轮），地标、集团的称号 `pickTitle`；`gov-kinds.ts` 登记进登记表
 - `countries.ts` 生成国家（两步）、颜色、名字（`titleContext`：等级 + `cultureContext`：主流文化、最典型的宗教……；挑政体按限谁用，`pickGov`）、历史、按世界里的等级挑大小；`country-names.ts` 国名的地名部分、人名
 - `country-edit.ts` 改国家的命令、整理、改地形后的修补
-- `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力（来源可以按与国教的关系）、国教 `countryFaith`、国名的位置
+- `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力 `countryFactions`（政体列的，基础分量加人口，用到时才算，第五十三轮；来源可以按与国教的关系）、国教 `countryFaith`、国名的位置
 - `claims.ts` 领土补齐（国家一步之后、人口之前）；`blocs.ts` 帝国、联邦、同盟（`small.blocs`）
 - `tiers.ts` 国家等级、格局的格式与世界里的列表（按 order 排）、生效的比例 `tierWeights`、邦联 / 联邦 / 附庸的规则、首都的样子 `capitalLook`（第四十二轮）；`tier-kinds.ts` 登记进登记表；`packs/countries/` 内置的五级与四种格局
 - `flags.ts` 旗帜的规则与 SVG；`packs/governments/` 内置政体与派系

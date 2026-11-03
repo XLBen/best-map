@@ -31,7 +31,7 @@ export function FactionSection({ w, m }: { w: World; m: CountryMeta }) {
     return (
       <section>
         <h5>派系</h5>
-        <p class="hint">这种政体没有列派系。在资源库里打开这个政体，可以选它有哪些派系。</p>
+        <p class="hint">这种政体没有派系，可以在资源库里选</p>
       </section>
     );
   }
@@ -41,11 +41,11 @@ export function FactionSection({ w, m }: { w: World; m: CountryMeta }) {
       <div class="row between">
         <h5>派系</h5>
         {m.factions ? (
-          <button class="small" onClick={() => void exec(patchCommand(m.id, { factions: null }), '正在保存…')} title="回到按基础分量和人口算的比重">
+          <button class="small" onClick={() => void exec(patchCommand(m.id, { factions: null }), '正在保存…')} title="按基础分量和人口算">
             恢复自动
           </button>
         ) : (
-          <span class="hint" title="按派系的基础分量和这个国家的人口算；拖滑块可以自己定">
+          <span class="hint" title="按基础分量和人口算，拖滑块可以改">
             自动
           </span>
         )}

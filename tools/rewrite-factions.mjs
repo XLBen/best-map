@@ -8,9 +8,10 @@
 //   派系“点名”这个政体：base 里写了这个政体的某个类别，比 default 大，并且 ≥ 0.4 或 ≥ default 的 3 倍（基础太小的不算点名）。
 //   派系“靠人口驱动”：base 里只有 default，有 drivers（中世纪的异教臣民）。
 //   政体在几个库里时（比如专制君主在青铜、中世纪、近现代）名单只有一份，每个库都要找得到：
-//     先从这几个库都有的派系里选；都有的不到两个时，从政体最早的库（HOME 另写的除外）的派系里选点名的，再把选中的加进别的库。
-//     靠人口驱动的只从这几个库都有的里选。
-//   名单不到两个时，从能选的派系里按旧的基础影响力从大到小补（一样大时按库里的先后）。
+//     先从这几个库都有的派系里选点名的；都有的不到两个时，从政体最早的库（HOME 另写的除外）的派系里选。
+//     靠人口驱动的，这几个库里有一个带着就列（中世纪的每种政体都有异教臣民）。选中的、别的库没有的加进别的库。
+//   点名的不到两个时，从能选的派系里按旧的基础影响力从大到小补（一样大时按库里的先后）：靠人口驱动的不算在这两个里，
+//   它们可能接近 0（国里没有异教徒时），每个政体要有两个平常就有分量的。
 //   名单的先后按库里派系的先后。
 //   基础分量 amount = 列着它的政体上，旧的基础影响力的平均（两位小数）；哪个政体都没列时是 default。
 import { execFileSync } from 'node:child_process';
@@ -62,11 +63,14 @@ for (const g of govs.values()) {
   const common = first.filter((id) => libs.every((e) => packs.get(e).factions.includes(id)));
   const home = HOME[g.id] && libs.includes(HOME[g.id]) ? HOME[g.id] : libs[0];
   const pool = common.length >= 2 ? common : packs.get(home).factions;
-  const list = pool.filter((id) => named(facs.get(id), g) || (common.includes(id) && popDriven(facs.get(id))));
-  const rest = pool.filter((id) => !list.includes(id)).sort((a, b) => baseOf(facs.get(b), g.category) - baseOf(facs.get(a), g.category) || pool.indexOf(a) - pool.indexOf(b));
+  const pops = [...new Set(libs.flatMap((e) => packs.get(e).factions))].filter((id) => popDriven(facs.get(id)));
+  const order = [...new Set([...pool, ...pops])];
+  const list = pool.filter((id) => !pops.includes(id) && named(facs.get(id), g));
+  const rest = pool.filter((id) => !list.includes(id) && !pops.includes(id)).sort((a, b) => baseOf(facs.get(b), g.category) - baseOf(facs.get(a), g.category) || pool.indexOf(a) - pool.indexOf(b));
   while (list.length < 2 && rest.length) list.push(rest.shift());
   if (list.length < 2) throw new Error(`政体 ${g.id} 不到两个派系`);
-  list.sort((a, b) => pool.indexOf(a) - pool.indexOf(b));
+  list.push(...pops);
+  list.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   lists.set(g.id, list);
   for (const e of libs) for (const id of list) if (!packs.get(e).factions.includes(id) && !added.get(e).includes(id)) added.get(e).push(id);
 }

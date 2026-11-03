@@ -12,6 +12,7 @@
 - `overlay-ab.mjs` + `overlay-ab-page.ts` 无头 Chrome 里对照两个提交的叠加层（一串帧逐字节比）与选国家；`--against <提交>`
 - `flow-layer.mjs` + `flow-layer-page.ts` 风向、洋流的帧时间（关着 / 只开风 / 只开洋流 / 都开）与线看不看得清（真的底图上量 ΔE，`--png` 存图），第四十八轮
 - `r40-world.ts` 叠加层测试、测速用的世界（种子 3，人文、国家、城市）
+- `rewrite-factions.mjs` 一次性（第五十三轮）：从 bcf2c05 的 JSON 推出政体的派系名单和基础分量，写进 `core/packs/`；`--check` 查可复现，`--table` 打印
 
 ## 开发服务器与一键开启
 - `isolated-engine.ts` Vite 插件：开发服务器上现打包计算 Worker（`/__map2/engine.js`，开发时也隔离）；`isolated-engine.test.ts`

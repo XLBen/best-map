@@ -28,7 +28,7 @@
       "theocratic-government",
       "native-council"
     ],
-    "factions": ["nobility", "clergy", "burghers", "tribes"],
+    "factions": ["nobility", "clergy", "burghers", "tribes", "dhimmi"],
     "cultures": [
       ["lost", 4, {"except": ["anglo-saxon", "scanian", "livonian", "pruthenian"]}],
       ["chinese", 3, {"except": ["manchu", "sino-altaic", "sino-korean", "sino-tibetan", "sino-vietnamese", "sino-zhuang"]}],

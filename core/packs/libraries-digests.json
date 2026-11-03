@@ -25,8 +25,8 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "cf33546982c8c2b4",
-  "origin": "b946292a7400ae43"
+  "content": "a209ddc6a14c98d0",
+  "origin": "281c777c47b00012"
  },
  "medieval:strip": {
   "cultureGroup→dimension": 142,
@@ -53,7 +53,7 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "e489b9676f09c58a",
+  "content": "94d4db7f9eaaba0d",
   "origin": "991a41d72a8b6f42"
  },
  "industrial:strip": {
@@ -83,8 +83,8 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "a11a5ca979708f66",
-  "origin": "2f8b9ff47de632f0"
+  "content": "6c0951b3d6677174",
+  "origin": "2018a1ca5467e304"
  },
  "modern:strip": {
   "cultureGroup→era": 142,
@@ -111,8 +111,8 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "abf64551e4712240",
-  "content": "c4990fba35bb2183",
-  "origin": "b31928929d62c4f8"
+  "content": "244617705f2709a2",
+  "origin": "b78bf4f5dde33e09"
  },
  "fantasy:strip": {
   "landmarkType→culture": 14
@@ -132,7 +132,7 @@
   "habitability": "bc3de3ebaae13a5f",
   "terrainClass": "ac37ad28b5a0fad5",
   "resource": "b2ef9ec55fd3199c",
-  "content": "3935744abf019d46",
+  "content": "d2b76b29c9d815f0",
   "origin": "9730e9bb1fba103b"
  },
  "scifi:strip": {},
