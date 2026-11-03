@@ -14,6 +14,7 @@ import { BUILTIN_PLANET_FORMS } from './packs/planet-forms';
 
 import { FANTASY_LAKE_TYPES } from './packs/fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
+import { FANTASY_NEW_RIVER_TYPES } from './packs/fantasy-water';
 import { REAL_LAKE_TYPES, REAL_RIVER_TYPES } from './packs/water';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS } from './packs/governments';
 import { BUILTIN_STYLES } from './packs/names';
@@ -52,7 +53,7 @@ describe('内置资源包的树', () => {
     expect(count('cultureGroup')).toBe(BUILTIN_CULTURE_GROUPS.length);
     expect(count('nameStyle')).toBe(BUILTIN_STYLES.length);
     expect(count('biome')).toBe(DEFAULT_SPECIES.length + packItems(FANTASY_PACK, 'biomes').length);
-    expect(count('riverType')).toBe(FANTASY_RIVER_TYPES.length + REAL_RIVER_TYPES.length);
+    expect(count('riverType')).toBe(FANTASY_NEW_RIVER_TYPES.length + FANTASY_RIVER_TYPES.length + REAL_RIVER_TYPES.length);
     expect(count('lakeType')).toBe(FANTASY_LAKE_TYPES.length + REAL_LAKE_TYPES.length);
     expect(count('planetForm')).toBe(packItems(FANTASY_PACK, 'planetForms').length + BUILTIN_PLANET_FORMS.length);
   });

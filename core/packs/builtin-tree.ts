@@ -13,6 +13,7 @@ import { FANTASY_BIOMES, FANTASY_FIELDS } from './fantasy-biomes';
 import { FANTASY_FORMS } from './fantasy-forms';
 import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './fantasy-rivers';
+import { FANTASY_NEW_RIVER_TYPES } from './fantasy-water';
 import { BUILTIN_MAP_STYLES } from './map-styles';
 import { BUILTIN_COUNTRY_LAYOUTS, BUILTIN_COUNTRY_TIERS } from './countries';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from './governments';
@@ -67,7 +68,8 @@ export const FORMS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'forms'];
 // 新建世界时在生成之前单独加（worldPartsOf）
 export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'water']);
 // 一个库新建世界时加的小包（第三十轮起默认这几个：基础、自然、中文地名、画风、国家等级；第五十七轮加上现实的水系）
-export const worldPartsOf = (key: string): string[][] => [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers'], [key, 'water']];
+// 奇幻库另带奇幻的生态、河、湖（第五十七轮）：第五十二轮以后向导不能勾小包，不带就选不到。放在水系前面：类型的先后是前面的说了算，奇幻的河先定
+export const worldPartsOf = (key: string): string[][] => [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers'], ...(key === 'fantasy' ? [[key, 'biomes'], [key, 'rivers'], [key, 'lakes']] : []), [key, 'water']];
 export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = worldPartsOf(DEFAULT_LIBRARY);
 
 // 没被时代列出的政体按类别归到哪个时代
@@ -272,7 +274,7 @@ function build(): ResourcePack[] {
     if (era.id === 'fantasy') {
       packs.push(
         { id: 'biomes', name: '奇幻生态', fields: [...FANTASY_FIELDS], biomes: asItems(FANTASY_BIOMES) },
-        { id: 'rivers', name: '奇幻的河', riverTypes: asItems(FANTASY_RIVER_TYPES) },
+        { id: 'rivers', name: '奇幻的河', riverTypes: asItems([...FANTASY_NEW_RIVER_TYPES, ...FANTASY_RIVER_TYPES]) },
         { id: 'lakes', name: '奇幻的湖', lakeTypes: asItems(FANTASY_LAKE_TYPES) },
       );
     }
