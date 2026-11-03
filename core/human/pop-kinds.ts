@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import { type FieldDesc, builtinOf, contentItems, notBuiltin, registerKind } from '../content/registry';
-import { type Culture, type CultureGroup, type Era, type PopValue, type ValueGroup, cultureGroupSchema, cultureSchema, eraSchema, popValueSchema, valueGroupSchema } from './era';
+import { type Culture, type CultureGroup, type Era, MAX_DIMENSIONS, type PopValue, type ValueGroup, cultureGroupSchema, cultureSchema, eraSchema, popValueSchema, valueGroupSchema } from './era';
 import { RESOURCE_RULE_FIELDS } from './rules';
 
 // 第二十二轮的四种内容登记进登记表：时代、人口维度的取值、文化组、文化（都放在 small.content，命令是 set_content）。
@@ -25,7 +25,7 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     key: 'dimensions',
     label: '人口的维度',
     type: 'list',
-    hint: '文化之外的，最多 3 维',
+    hint: `文化之外的，最多 ${MAX_DIMENSIONS} 维`,
     of: [
       { key: 'id', label: 'id', type: 'text' },
       { key: 'label', label: '名字', type: 'text', hint: '宗教、种族……' },

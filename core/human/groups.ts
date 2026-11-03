@@ -17,21 +17,36 @@ export const tupleKey = (t: PopTuple): string =>
     .map((k) => `${k}=${t.values[k]}`)
     .join(',')}`;
 
-// 群体的编号表：读世界里的、给新的群体编号。改完 commit() 写回世界（换一个新的对象：按对象缓存的表跟着失效）
+// 按群体对象记着的“键 → 编号”（第五十四轮：世界加了变量后有上万个群体，每画一笔都从头建一遍要几毫秒）。群体对象换了就是新的一份，见 commit
+const keysOf = new WeakMap<object, { byKey: Map<string, number>; max: number }>();
+const NO_GROUPS: Record<string, PopTuple> = {};
+function groupKeys(groups: Record<string, PopTuple>): { byKey: Map<string, number>; max: number } {
+  let hit = keysOf.get(groups);
+  if (!hit) {
+    const byKey = new Map<string, number>();
+    let max = 0;
+    for (const [k, t] of Object.entries(groups)) {
+      const code = Number(k);
+      byKey.set(tupleKey(t), code);
+      if (code > max) max = code;
+    }
+    keysOf.set(groups, (hit = { byKey, max }));
+  }
+  return hit;
+}
+
+// 群体的编号表：读世界里的、给新的群体编号。改完 commit() 写回世界（换一个新的对象：按对象缓存的表跟着失效）。
+// 世界里的那一份不动：第一次给新编号时才拷贝（撤销记录里共用着它，见 small-copy.ts）
 export class GroupTable {
   private groups: Record<string, PopTuple>;
-  private byKey = new Map<string, number>();
+  private byKey: Map<string, number>;
   private next: number;
   private dirty = false;
   constructor(private small: Pick<SmallState, 'popGroups' | 'human'>) {
-    this.groups = { ...(small.popGroups ?? {}) };
-    let max = 0;
-    for (const [k, t] of Object.entries(this.groups)) {
-      const code = Number(k);
-      this.byKey.set(tupleKey(t), code);
-      if (code > max) max = code;
-    }
-    this.next = Math.max(small.human?.nextGroup ?? 1, max + 1);
+    this.groups = small.popGroups ?? NO_GROUPS;
+    const known = groupKeys(this.groups);
+    this.byKey = known.byKey;
+    this.next = Math.max(small.human?.nextGroup ?? 1, known.max + 1);
   }
   get(code: number): PopTuple | undefined {
     return this.groups[code];
@@ -42,12 +57,20 @@ export class GroupTable {
     let c = this.byKey.get(key);
     if (c === undefined) {
       if (this.next > 65535) throw new Error('人口群体太多（最多 65535 种）');
+      if (!this.dirty) {
+        this.groups = { ...this.groups };
+        this.byKey = new Map(this.byKey);
+        this.dirty = true;
+      }
       c = this.next++;
       this.groups[c] = { culture: t.culture, values: { ...t.values } };
       this.byKey.set(key, c);
-      this.dirty = true;
     }
     return c;
+  }
+  // 下一个要给的编号（第五十四轮：编号用到多少）
+  get nextCode(): number {
+    return this.next;
   }
   // 已有的群体的编号（没有时不新给）
   find(t: PopTuple): number | undefined {
@@ -57,6 +80,7 @@ export class GroupTable {
     if (!this.dirty) return;
     this.small.popGroups = this.groups;
     if (this.small.human) this.small.human.nextGroup = this.next;
+    keysOf.set(this.groups, { byKey: this.byKey, max: this.next - 1 });
     this.dirty = false;
   }
 }

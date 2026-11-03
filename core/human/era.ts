@@ -34,8 +34,20 @@ export const dimensionSchema = z.object({
   label: z.string().min(1).max(12),
   // 每个人都必须有这一维的取值（没有合适的取值时用这一维第一个取值）。省略时可以没有（“无”）
   required: z.boolean().optional(),
+  // 世界里后加的（第五十四轮，add_dimension）：人口先按别的维度算好，这一维再原地分开，文化比例不变（见 add-dimension.ts）
+  added: z.boolean().optional(),
 });
 export type Dimension = z.output<typeof dimensionSchema>;
+
+// 一个时代最多几维（第五十四轮，量过，见 docs/dev/history/第54轮.md）
+export const MAX_DIMENSIONS = 8;
+// 生成人口时“排列组合”的最多几维（这几维的组合取人最多的 4 个，多了“其他”越来越多，见 population.ts）；后加的和多出来的原地分开
+const COMPOSED_DIMENSIONS = 3;
+export const composedDims = (era: Pick<Era, 'dimensions'>): Dimension[] => era.dimensions.filter((d) => !d.added).slice(0, COMPOSED_DIMENSIONS);
+export const filledDims = (era: Pick<Era, 'dimensions'>): Dimension[] => {
+  const base = new Set(composedDims(era));
+  return era.dimensions.filter((d) => !base.has(d));
+};
 
 // 国家的等级比例（第二十六轮；第四十二轮起等级是内容，见 tiers.ts）：等级的 id → 占多少。世界里没有的 id 不算，没写的等级为 0
 const tierWeightsSchema = z.record(typeIdSchema, z.number().min(0).max(100));
@@ -75,8 +87,8 @@ export const eraSchema = z.object({
   name: z.string().min(1).max(20),
   description: z.string().max(400).optional(),
   color: HEX.optional(),
-  // 文化之外的维度（按先后；最多 3 维）
-  dimensions: z.array(dimensionSchema).max(3).default([]),
+  // 文化之外的维度（按先后）
+  dimensions: z.array(dimensionSchema).max(MAX_DIMENSIONS).default([]),
   // 默认的人口密度：人 / km² 陆地（湖面不算）。默认总人口 = 它 × 陆地面积；地球大小的中世纪星球约 2.7 → 约 4 亿
   popDensity: z.number().min(0.001).max(10000),
   // 人口有多集中：每格的人口 ∝ 宜居度 ^ sparsity（1 均匀些，3 挤在最好的地方）

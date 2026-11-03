@@ -3,7 +3,7 @@ import { hashString } from '../names';
 import { mixSeed } from '../rng';
 import type { Derived, PopTuple, World } from '../world';
 import type { GenContext, HumanStage } from './context';
-import { type Culture, type Dimension, cultureById, cultureGroupById, cultureTendency, dimensionValues, popValueById, weightedList, worldDimensions, worldEra } from './era';
+import { type Culture, type Dimension, composedDims, cultureById, cultureGroupById, cultureTendency, dimensionValues, popValueById, weightedList, worldDimensions, worldEra } from './era';
 import { GroupTable, SLOTS, type Share, clearCell, readComp, writeComp } from './groups';
 import { type CompiledPrefs, compilePrefs, prefAt } from './habitability';
 import { type CellInputs, cellInputs } from './rules';
@@ -79,13 +79,13 @@ function borderMix(world: World, x: CellInputs, cultureOf: Int32Array): { other:
 }
 
 // 一维的取值怎么分：每个文化、每一维各一份（按格算）
-interface DimPlan {
+export interface DimPlan {
   dim: Dimension;
   // 每个文化（ctx.cultures 的下标）的候选取值与权重；空的是这一维没有取值
   options: { id: string; w: number; prefs: CompiledPrefs | null; seed: number }[][];
 }
 
-function dimPlans(world: World, era: string, cultures: readonly Culture[], dims: readonly Dimension[], biomes: readonly { id: string; terrain: string }[], classIds: readonly string[], seed: number): DimPlan[] {
+export function dimPlans(world: World, era: string, cultures: readonly (Culture | undefined)[], dims: readonly Dimension[], biomes: readonly { id: string; terrain: string }[], classIds: readonly string[], seed: number): DimPlan[] {
   return dims.map((dim) => {
     const values = dimensionValues(world.small, dim.id, era);
     const known = new Set(values.map((v) => v.id));
@@ -99,7 +99,7 @@ function dimPlans(world: World, era: string, cultures: readonly Culture[], dims:
 }
 
 // 一个文化在第 i 格、某一维的取值分布（已归一；没有取值时是一项 null）
-function valueDist(world: World, plan: DimPlan, c: number, x: CellInputs, cls: Uint8Array, i: number, noise: Map<number, Float32Array>): { id: string | null; p: number }[] {
+export function valueDist(world: World, plan: DimPlan, c: number, x: CellInputs, cls: Uint8Array, i: number, noise: Map<number, Float32Array>): { id: string | null; p: number }[] {
   const opts = plan.options[c];
   if (!opts.length) return [{ id: null, p: 1 }];
   if (opts.length === 1) return [{ id: opts[0].id, p: 1 }];
@@ -190,7 +190,7 @@ function populate(ctx: GenContext) {
     world,
     era.id,
     cultures,
-    era.dimensions,
+    composedDims(era),
     world.small.species,
     ctx.classIds,
     ctx.seed,

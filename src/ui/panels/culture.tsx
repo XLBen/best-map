@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
 import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSummary, typicalTuple, worldCultureGroups, worldCultures, worldDimensions, worldEra } from '../../../core/human';
 import type { World } from '../../../core/world';
@@ -32,7 +32,9 @@ import {
   toggleGroup,
 } from '../human';
 import { LibraryPick } from '../components/LibraryPick';
-import { type GroupOption, beyondGroups, packGroups, packLabel, worldLibrary } from '../packChoice';
+import { ADD_DIMENSION_NOTE } from '../copy';
+import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
+import { type GroupOption, beyondGroups, libRoots, packGroups, packLabel, worldLibrary } from '../packChoice';
 import { openRepo } from '../packs/store';
 import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';
@@ -175,8 +177,15 @@ export function ValueMenu() {
   if (!dims.length || !cur) return <p class="hint">这个时代没有别的维度</p>;
   return (
     <>
-      {dims.length > 1 && (
+      {dims.length > 1 && dims.length <= 3 && (
         <Seg<string> value={cur.dim.id} options={dims.map((d) => [d.id, d.label])} onChange={(id) => setOptions({ popDim: id, popValue: '' })} wide />
+      )}
+      {dims.length > 3 && (
+        <select value={cur.dim.id} onChange={(e) => setOptions({ popDim: (e.target as HTMLSelectElement).value, popValue: '' })}>
+          {dims.map((d) => (
+            <option value={d.id}>{d.label}</option>
+          ))}
+        </select>
       )}
       <TypePicker
         items={dimensionValues(w.small, cur.dim.id).map((v) => ({ id: v.id, label: v.name, swatch: v.color, on: v.id === cur.value.id, hint: v.description, onPick: () => pick({ popDim: cur.dim.id, popValue: v.id }) }))}
@@ -454,6 +463,31 @@ function GenerateBox({ w, onDone }: { w: World; onDone: () => void }) {
   );
 }
 
+// 加一个变量：资源库里有、这个时代还没有的（意识形态、种族……）。只把现有的人分开，点一下就加，可以撤销
+function DimensionAdd({ w }: { w: World }) {
+  const lib = library.value;
+  const options = useMemo(() => dimensionOptions(libRoots(lib), w.small), [lib, w.small.content?.era, w.small.human?.era]);
+  if (!options.length) return null;
+  return (
+    <section>
+      <h5>加一个变量</h5>
+      <TypePicker
+        items={options.map((o) => ({
+          label: o.label,
+          meta: `${o.values.length} 种`,
+          hint: o.values.slice(0, 6).map((v) => v.name).join('、'),
+          on: false,
+          onPick: () => {
+            const cmd = addDimensionCommand(libRoots(lib), w, o.id, o.library);
+            if (cmd) void exec(cmd, '正在计算…');
+          },
+        }))}
+        note={ADD_DIMENSION_NOTE}
+      />
+    </section>
+  );
+}
+
 // 已有人文：时代、各文化组占多少、总人口、重新生成、换库或文化组、删除
 function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
   const [edit, setEdit] = useState<HumanChoice | null>(null);
@@ -502,6 +536,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
         {era?.description && <p class="hint">{era.description}</p>}
         {worldLibrary(w.small) && <p class="hint">库：{packLabel(library.value, [worldLibrary(w.small)!])}</p>}
       </section>
+      <DimensionAdd w={w} />
       <section>
         <h5>文化组</h5>
         {groups.map((g) => (

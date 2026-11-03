@@ -52,6 +52,9 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'set_cell_pop':
     case 'restore_pop':
       return [...POP_ARRAYS];
+    // 加一维（第五十四轮）：人数和手改的记号不变，成分和自动的成分都换成带这一维的
+    case 'add_dimension':
+      return ['popGroup', 'popShare', 'popAutoGroup', 'popAutoShare'];
     case 'remove_countries':
     case 'paint_country':
     case 'restore_country':

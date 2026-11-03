@@ -2,9 +2,9 @@ import type { Command } from '../commands';
 import { dependencyClosure, linkTable, worldScope } from '../content/links';
 import { originSourceId, originTarget, recordedOrigin } from '../content/origin';
 import { sameContent } from '../content/refs';
-import { type ContentKind, type ContentWorld, itemId, kindByPackKey, kindOf, usageOf } from '../content/registry';
+import { type ContentKind, type ContentWorld, contentItems, itemId, kindByPackKey, kindOf, usageOf } from '../content/registry';
 import { type ContentRef, withoutItems } from '../content/unused';
-import { worldEra } from '../human/era';
+import { type Dimension, type Era, worldEra } from '../human/era';
 import { styleInUse } from '../name-styles';
 import { ownItems, walkPacks } from '../packs';
 import type { World } from '../world';
@@ -95,6 +95,15 @@ function itemIn(library: readonly PackRoot[], rootKey: string, kind: ContentKind
   return hit;
 }
 
+// 世界自己加的、新库的时代没有的维度（要带到新时代）
+function carriedDims(library: readonly PackRoot[], small: Small, era: { id: string; path: string[] } | undefined): readonly Dimension[] {
+  const added = worldEra(small)?.dimensions.filter((d) => d.added) ?? [];
+  if (!added.length || !era) return [];
+  const node = packAt(library, era.path);
+  const own = [...(node ? ownItems<Era>(node, 'eras').find((e) => e.id === era.id)?.dimensions ?? [] : []), ...(contentItems<Era>(small, 'era')[era.id]?.dimensions ?? [])];
+  return added.filter((d) => !own.some((x) => x.id === d.id));
+}
+
 // from 换到 to 的计划。groups：新选的文化组（默认的、勾上的、世界里自己的）。世界里的项没有来源的、来源是别的库的都不动
 export function librarySwitchPlan(library: readonly PackRoot[], small: Small, from: string | undefined, to: string, groups: readonly string[]): LibrarySwitchPlan {
   const world = { small, causes: NO_CAUSES } as ContentWorld & NonNullable<Parameters<typeof packImportPlan>[2]>;
@@ -102,10 +111,13 @@ export function librarySwitchPlan(library: readonly PackRoot[], small: Small, fr
   const candidates: ContentRef[] = [];
   const rehome: LibrarySwitchPlan['rehome'] = [];
   const replace: Command[] = [];
+  const second = packImportPlan(library, { packs: [[to]], groups, onlyMissing: true }, world);
+  const carried = carriedDims(library, small, second.era);
   for (const kindId of SWITCH_KINDS) {
     const k = kindOf(kindId)!;
     for (const x of k.inWorld(world)) {
       const id = itemId(k, x);
+      if ((kindId === 'popValue' || kindId === 'valueGroup') && carried.some((d) => d.id === (x as { dimension: string }).dimension)) continue;
       const rec = recordedOrigin(small, kindId, id);
       if (!rec || rec[0] !== from) continue;
       const src = originSourceId(small, kindId, id);
@@ -168,7 +180,6 @@ export function librarySwitchPlan(library: readonly PackRoot[], small: Small, fr
     return out;
   };
   const first = packImportPlan(library, { packs: [], extra: parts.map((path) => ({ path, picks: picksFor(path) })), onlyMissing: true }, world);
-  const second = packImportPlan(library, { packs: [[to]], groups, onlyMissing: true }, world);
   // 先后也和新世界一样（比如地名风格：两个库都带的留在原来的位置，新世界里是新库的先后）
   const ordered = new Set(flat(second.commands).flatMap((c) => (c.op === 'order_content' ? [c.kind] : [])));
   const order: Command[] = SWITCH_KINDS.filter((kind) => !ordered.has(kind)).flatMap((kind): Command[] => {
@@ -176,7 +187,7 @@ export function librarySwitchPlan(library: readonly PackRoot[], small: Small, fr
     return ids.length > 1 ? [{ op: 'order_content', kind, ids }] : [];
   });
   return {
-    imports: [...first.commands, ...second.commands, ...replace, ...order],
+    imports: [...first.commands, ...second.commands, ...replace, ...order, ...carried.map((d): Command => ({ op: 'add_dimension', dimension: { id: d.id, label: d.label }, era: second.era!.id }))],
     drop: finalDrop,
     rehome,
     kept: finalKept,

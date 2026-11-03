@@ -6,7 +6,8 @@ import type { CountryMeta, CountryRules, Derived, PopTuple, World } from '../wor
 import type { GenContext, HumanStage } from './context';
 import { countryBase, personName } from './country-names';
 import { edgeCosts } from './cultures';
-import { type Culture, type Era, SUBJECT_KINDS, type SubjectKind, cultureById, styleOfCulture, cultureTendency, dimensionValues, popValueById, weightedList, worldEra } from './era';
+import { recordedOrigin } from '../content/origin';
+import { type Culture, type Era, SUBJECT_KINDS, type SubjectKind, composedDims, cultureById, styleOfCulture, cultureTendency, dimensionValues, popValueById, weightedList, worldEra } from './era';
 import { makeFlag } from './flags';
 import { type Government, type TitleContext, eraGovernments, govAllowed, govRestricted, govTitles, governmentById, titled } from './government';
 import { GroupTable, SLOTS, type Share, readComp, writeComp } from './groups';
@@ -216,13 +217,16 @@ function pickWeighted<T>(items: readonly T[], w: (x: T) => number, rand: () => n
 }
 
 // 一个文化挑政体的权重：政体的 weight × 文化的倾向（文化或文化组写了 government 的倾向时，没写到的 × 0.15）。
-// 第四十四轮：限谁用（only）的政体这个文化用不了时是 0（不给 0.15 的余地）
+// 第四十四轮：限谁用（only）的政体这个文化用不了时是 0（不给 0.15 的余地）。
+// 第五十四轮：世界自己加的政体（自己做的、从别的库加来的）不打 0.15 的折：库里文化的倾向写的时候不知道有它，用户加进来就是要它参与
 function govWeights(world: Pick<World, 'small'>, era: Era, culture: Culture | undefined, govs: readonly Government[]): (g: Government) => number {
   const small = world.small;
   const tend = new Map(weightedList(cultureTendency(small, culture, 'government', era.id)));
   const has = [...tend.keys()].some((id) => govs.some((g) => g.id === id));
   const ctx = govs.some(govRestricted) && culture ? cultureContext(world, culture.id, era) : undefined;
-  return (g) => (ctx && !govAllowed(g, ctx) ? 0 : (g.weight ?? 1) * (has ? (tend.get(g.id) ?? 0.15) : 1));
+  const library = recordedOrigin(small, 'era', era.id)?.[0];
+  const unlisted = (g: Government) => (library !== undefined && recordedOrigin(small, 'government', g.id)?.[0] !== library ? 1 : 0.15);
+  return (g) => (ctx && !govAllowed(g, ctx) ? 0 : (g.weight ?? 1) * (has ? (tend.get(g.id) ?? unlisted(g)) : 1));
 }
 
 // 按权重挑政体（第四十四轮）：权重都是 0（这个文化能用的都被限了）时在不限谁用的里按 weight 挑，再没有时在全部里挑——国家总有政体
@@ -1212,12 +1216,14 @@ function mixCountries(ctx: GenContext) {
   const country = causes.country;
   if (!ctx.countries || !country || !small.countries || !causes.popTotal) return;
   const table = new GroupTable(small);
+  // 后加的维度最后才分开（add-dimension.ts），这里的移民先不带
+  const base = { ...era, dimensions: composedDims(era) };
   const plan = new Map<number, { a: number; accepted: Set<string>; code: number }>();
   for (const m of Object.values(small.countries)) {
     const g = governmentById(small, m.government);
     const a = 0.35 * (g?.expansion ?? 0);
     if (a <= 0.02) continue;
-    plan.set(m.id, { a, accepted: new Set(m.acceptedGroups), code: table.code(typical(world, era, m.primaryCulture)) });
+    plan.set(m.id, { a, accepted: new Set(m.acceptedGroups), code: table.code(typical(world, base, m.primaryCulture)) });
   }
   if (!plan.size) return;
   const groupOfCode = (code: number) => {

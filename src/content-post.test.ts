@@ -43,6 +43,40 @@ describe('快照里的内容', () => {
     }
   });
 
+  it('人口群体（第五十四轮）：没换时不带，补上同一个对象；换了时整份带上；手上没有时补不上', () => {
+    const tx = new ContentSender(1);
+    const rx = new ContentHolder();
+    const popGroups = { 1: { culture: 'a', values: {} } };
+    const live = { ...small({ culture: {} }), popGroups } as unknown as SmallState;
+    const first = post(tx.pack(live));
+    expect(first.sameGroups).toBeUndefined();
+    expect(rx.unpack(first)).toBe(true);
+    const held = first.small.popGroups;
+    const second = post(tx.pack(live));
+    expect(second.sameGroups).toBe(true);
+    expect(second.small.popGroups).toBe(0);
+    expect(rx.unpack(second)).toBe(true);
+    expect(second.small.popGroups).toBe(held);
+    expect(JSON.stringify(second.small)).toBe(JSON.stringify(live));
+    expect(Object.keys(second.small)).toEqual(Object.keys(live));
+    expect(live.popGroups).toBe(popGroups);
+    // 换了（内容没换）
+    const changed = { ...live, popGroups: { ...popGroups, 2: { culture: 'b', values: {} } } } as unknown as SmallState;
+    const third = post(tx.pack(changed));
+    expect(third.sameGroups).toBeUndefined();
+    expect(third.sameContent).toBe(true);
+    expect(rx.unpack(third)).toBe(true);
+    expect(JSON.stringify(third.small)).toBe(JSON.stringify(changed));
+    // 手上的不是那一份
+    const lost = new ContentHolder();
+    const again = post(tx.pack(changed));
+    expect(again.sameGroups).toBe(true);
+    expect(lost.unpack(again)).toBe(false);
+    // 完整的之后接得上
+    expect(lost.unpack(post(tx.pack(changed, true)))).toBe(true);
+    expect(lost.unpack(post(tx.pack(changed)))).toBe(true);
+  });
+
   it('世界没有内容：没有占位，也不算补不上', () => {
     const tx = new ContentSender(1);
     const rx = new ContentHolder();

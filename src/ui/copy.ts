@@ -18,3 +18,6 @@ export const byRulesTip = (noun: string) => `按各类型的规则判断是哪�
 
 // 地图在星球上的位置（向导、调整、帮助）
 export const CLIMATE_BELT_NOTE = '越往极地越冷；地图本身跨几个气候带';
+
+// 给世界加一个变量
+export const ADD_DIMENSION_NOTE = '文化、国家、城市都不会变。想让国家用上它，点“重新生成国家”';

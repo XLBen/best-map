@@ -27,6 +27,9 @@ import {
   toggleGroup,
 } from './human';
 import { hereLine } from './Inspector';
+import { ADD_DIMENSION_NOTE } from './copy';
+import { libRoots } from './packChoice';
+import { addDimensionCommand, dimensionOptions } from '../../core/packs/add-dimension';
 import { legendFor } from './legend';
 import { repoKinds, repoRows, repoSections } from './packs/repo';
 import { type Pointer, chosenTuple, cultureTool, dryLand, hearthCommand, hearthMarks, hearthTool, popTool } from './tools';
@@ -59,6 +62,30 @@ const peopled = (): Engine =>
 const dry = (w: World) => Array.from({ length: w.mesh.n }, (_, i) => i).filter((i) => dryLand(w, i));
 const inhabited = (w: World) => dry(w).filter((i) => (w.causes.popTotal?.[i] ?? 0) > 0);
 const pointer = (w: World, c: number, shift = false): Pointer => ({ x: w.mesh.x[c], y: w.mesh.y[c], cell: c, sx: 0, sy: 0, shift, alt: false });
+
+describe('加一个变量（第五十四轮）', () => {
+  const world2 = () => peopled().clone();
+  it('资源库里有、时代还没有的才列；加了之后图层、图例、着色、人口笔刷的选择、格的档案都有；文化圈不变', () => {
+    const eng = world2();
+    const roots = libRoots([]);
+    const options = dimensionOptions(roots, eng.world.small);
+    expect(options.map((o) => o.id)).toEqual(expect.arrayContaining(['ideology', 'nation', 'race']));
+    expect(options.map((o) => o.id)).not.toContain('religion');
+    const culture = eng.world.derived.popCulture!.slice();
+    eng.exec(addDimensionCommand(roots, eng.world, 'ideology')!);
+    const w = eng.world;
+    expect(Array.from(w.derived.popCulture!)).toEqual(Array.from(culture));
+    expect(dimensionOptions(roots, w.small).map((o) => o.id)).not.toContain('ideology');
+    expect(humanViews(w).find((v) => v.id === 'dim:ideology')?.label).toBe('意识形态');
+    expect(viewAvailable(w, 'dim:ideology')).toBe(true);
+    expect(legendFor(w, 'dim:ideology')!.items.length).toBeGreaterThan(3);
+    const c = inhabited(w)[0];
+    expect(humanFlat(w, 'dim:ideology')[c * 4 + 3]).toBeGreaterThan(0);
+    expect(cellLayers(w, { mode: 'dim:ideology', season: 'annual', focusSpecies: null, borders: false }).flat).not.toBeNull();
+    expect(cellArchive(w, c).population!.groups[0].values.map((v) => v.dimension)).toContain('ideology');
+    expect(ADD_DIMENSION_NOTE).toContain('重新生成国家');
+  });
+});
 
 describe('新建向导的“人文”', () => {
   it('默认生成：中世纪与近世、它默认的文化组；总人口不动时不写（按真的陆地面积）', () => {

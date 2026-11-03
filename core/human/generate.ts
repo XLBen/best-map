@@ -2,6 +2,7 @@ import { recordedOrigin } from '../content/origin';
 import { CommandError } from '../errors';
 import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, SmallState, World } from '../world';
 import type { GenContext, GenGroup, HumanStage } from './context';
+import { fillAddedDims } from './add-dimension';
 import { snapshotCountries, snapshotPop } from './auto';
 import { blocsStage } from './blocs';
 import { claimsStage } from './claims';
@@ -185,6 +186,7 @@ export function generateHuman(
     ...(countries ? { countries } : {}),
   };
   for (const stage of STAGES) stage.run(ctx);
+  fillAddedDims(ctx);
   const state: HumanState = {
     era: era.id,
     seed,

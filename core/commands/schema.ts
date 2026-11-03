@@ -455,6 +455,9 @@ export const baseCommands = [
   z.object({ op: z.literal('remove_point'), id: settleId }),
   z.object({ op: z.literal('move_point'), id: settleId, cell: z.number().int().min(0), x: mapXY.optional(), y: mapXY.optional() }),
   z.object({ op: z.literal('set_point'), id: settleId, patch: pointPatchSchema }),
+  // 给世界的时代加一维（第五十四轮）：只把现有的人按这一维分开，文化、国家、城市都不动。这一维的取值要已经在世界里（界面在同一个批量里先 set_content）。
+  // era 省略时是人文用的时代；写了别的时代时只改那个时代（换库时把世界加的维度带到新时代）
+  z.object({ op: z.literal('add_dimension'), dimension: z.object({ id: typeIdSchema, label: z.string().min(1).max(12) }), era: typeIdSchema.optional() }),
 ] as const;
 
 // provinceNames：命令执行时新起的省名（省份编号 → 名字），由引擎记下，重放、重做时照用。

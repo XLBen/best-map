@@ -1,5 +1,5 @@
 import type { SmallState, World } from '../world';
-import { cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from '../human/era';
+import { type Dimension, type Era, MAX_DIMENSIONS, cultureById, cultureGroupById, dimensionValues, popValueById, worldDimensions, worldEra } from '../human/era';
 import { CommandError } from '../errors';
 import type { Command } from './schema';
 import { afterCountries, type ApplyContext, clearPop, Dirty, type RunResult } from './shared';
@@ -13,6 +13,9 @@ import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, remov
 import { restoreCountry, restorePop } from '../human/auto';
 import { BLOC_NAMES, blocById, setBloc } from '../human/blocs';
 import { paintPop, type PopBrush, scalePop, setCellPop } from '../human/population';
+import { fillPopulation } from '../human/add-dimension';
+import { contentItems } from '../content/registry';
+import { setContent } from './features';
 import { groupInfo } from '../human/layers';
 import { leaveLibrary } from './switch';
 
@@ -325,6 +328,25 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       for (const g of cmd.groups ?? []) checkTuple(small, g);
       setCellPop(world, cmd.cell, cmd.total, cmd.groups);
       return { dirty: Dirty.Human, summary: cmd.total !== undefined && !cmd.groups ? `人口改为 ${popText(cmd.total)}` : '修改人口' };
+    }
+    case 'add_dimension': {
+      const eras = contentItems<Era>(small, 'era');
+      const id = cmd.era ?? small.human?.era ?? (Object.keys(eras).length === 1 ? Object.keys(eras)[0] : undefined);
+      const era = id ? eras[id] : undefined;
+      if (!era) throw new CommandError(cmd.era ? `世界里没有时代 "${cmd.era}"` : '世界里没有时代，或者有几个时代，要写明加到哪一个');
+      const { id: dimId, label } = cmd.dimension;
+      if (era.dimensions.some((x) => x.id === dimId)) throw new CommandError(`时代“${era.name}”已经有“${label}”了`);
+      if (era.dimensions.length >= MAX_DIMENSIONS) throw new CommandError(`一个时代最多 ${MAX_DIMENSIONS} 个变量`);
+      // required：文化没写倾向时按平均；added：之后生成也原地分开（见 add-dimension.ts）
+      const dim: Dimension = { id: dimId, label, required: true, added: true };
+      // 是人文用的时代时把现有的人分开；别的时代（换库时带到新时代，第五十二轮的 switch.ts）只多一维
+      const fill = small.human?.era === era.id && !!causes.popGroup && !!causes.popShare;
+      const count = dimensionValues(small, dimId).length;
+      if (fill && !count) throw new CommandError(`世界里没有“${label}”的取值`);
+      const d = fill ? ctx.ensureDerived() : null;
+      setContent(world, 'era', era.id, { ...era, dimensions: [...era.dimensions, dim] });
+      if (fill) fillPopulation(world, d!, era.id, dim);
+      return { dirty: Dirty.Human, summary: `加变量“${label}” · ${count} 种` };
     }
   }
 }

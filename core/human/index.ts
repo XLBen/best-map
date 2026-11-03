@@ -212,6 +212,7 @@ export {
   popValueById,
   popValueSchema,
   preferenceSchema,
+  MAX_DIMENSIONS,
   weightedList,
   worldCultureGroups,
   worldCultures,
@@ -220,6 +221,7 @@ export {
   worldEras,
   worldPopValues,
 } from './era';
+export { MAX_POP_GROUPS, fillPopulation } from './add-dimension';
 export { biomeHabitability, classHabitability } from './habitability';
 export { type HumanParams, defaultTotalPop, dryLandKm2, generateHuman, humanBlockers, humanStages, regenerateHuman, registerHumanStage, ruleEra, stampedPacks, unregisterHumanStage } from './generate';
 export { type GenContext, type GenGroup, type HumanStage } from './context';
