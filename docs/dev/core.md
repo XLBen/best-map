@@ -60,7 +60,7 @@
 - `commands.ts` 命令的入口：`applyCommand`（校验、撤销记录、内容的增减）、`revert`、`runOp`；照旧导出 `Command`、`Dirty`……
 - `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`
 - `engine.ts` 流水线、历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`
-- `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它
+- `small-copy.ts` 小数据的副本（第四十七轮）：内容（`small.content`，不可变）按引用共用，别的是一段 JSON；撤销记录、比较、预览的克隆都用它第五十四轮：人口群体（`small.popGroups`）也按引用共用。
 - `preview-world.ts` 预览世界（只带变了的数组；`postedPatch`：内容没换时不发）；`doc-version.ts` 世界文件的版本（`DOC_VERSION`）与打开前的检查
 - `rng.ts` 随机数与噪声（按位置取，与格数无关）；`digest.ts` 64 位哈希；`errors.ts`、`type-id.ts`、`world-types.ts` 为避免循环引用拆出来的小文件
 
@@ -71,7 +71,8 @@
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
 - `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样；`packs/nature.ts` 13 种生态；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）
 - `packs/import.ts` 生成要用的内容从资源包加进世界（时代包整个加时不带世界的底子，比重 0 的组点名才带），`importIntoPack` 把一个包的内容导入另一个包（撞名改名）；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
-- `packs/switch.ts` 已有的世界换一个库的计划（第五十二轮）：`worldLibrary` 世界现在用的库；`librarySwitchPlan` 给出加什么、移出什么（来自旧库、新世界用新库不带的）、来源改写到哪里、还在用留下的。`commands/switch.ts` 的 `leaveLibrary` 在生成的命令里照着做（`switchLibrary`）
+- `packs/add-dimension.ts` 从资源库给世界加一个变量（第五十四轮，界面和第六十一轮的导入窗口用）：`dimensionOptions` 能加的；`addDimensionCommand` 批量：先加取值、取值组，再 `add_dimension`
+- `packs/switch.ts` 已有的世界换一个库的计划（第五十二轮）：`worldLibrary` 世界现在用的库；`librarySwitchPlan` 给出加什么、移出什么（来自旧库、新世界用新库不带的）、来源改写到哪里、还在用留下的。`commands/switch.ts` 的 `leaveLibrary` 在生成的命令里照着做（`switchLibrary`）世界自己加的变量（第五十四轮）：新库没有时带到新时代，取值不移出。
 - `packs/fantasy-*.ts` 奇幻示例包（生态、河流类型、湖泊类型、星球形态）
 - `compact.ts` 压缩世界文件（第五十轮：只去掉“加了又删”）；`tidy.ts` 整理本世界的计划（在副本上试，地图不变才移出）
 

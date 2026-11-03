@@ -6,7 +6,7 @@
 - `main.tsx` 入口；`state.ts` 主线程状态（世界的只读视图、界面状态、排队的请求、快照合并）
 - `protocol.ts` 主线程与计算 Worker 之间的消息；`transfer.ts` 搬数据不复制
 - `worker.ts` 计算 Worker（持有引擎；快照、描好的河、空闲预热）
-- `content-post.ts` 快照里的 `small.content` 没换时不发，主线程补上手上那一份（第四十七轮）
+- `content-post.ts` 快照里的 `small.content` 没换时不发，主线程补上手上那一份（第四十七轮）；人口群体 `small.popGroups` 同样（第五十四轮）
 - `engine-spawn.ts`、`engine-source.ts`、`isolation-probe.ts` 开计算 Worker 与隔离（data: 地址，Worker 里不打包内置数据）
 - `sandbox.ts` Worker 的看护（看门狗、恢复、安全模式）
 - `storage-worker.ts` + `checkpoint-store.ts` 存储 Worker 与检查点（经 MessageChannel，不过主线程）
