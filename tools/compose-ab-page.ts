@@ -9,6 +9,7 @@
 // 结果写进页面的 <pre id="o">（一行一组：不同的字节数）；最后一行 “DONE 共 N 组，不同 M 组”。
 import { continents, humanExec, seededEngine } from '../core/testing/fixtures';
 import type { Engine } from '../core/engine';
+import { dropWaterTypes } from './r40-world';
 import { scissors } from '../core/seams';
 import { worldDimensions } from '../core/human';
 import { findCell } from '../core/mesh';
@@ -84,13 +85,17 @@ function peopled(e: Engine, seaKm: number, fragmentation?: number): number[] | n
   return cutBig(e);
 }
 
-function worlds(): { label: string; eng: Engine; cut: number[] | null }[] {
+function worlds(plain = false): { label: string; eng: Engine; cut: number[] | null }[] {
   const region = continents({ provinces: true });
   const rc = peopled(region, 300);
   const planet = seededEngine({ cells: 12000, seed: 7, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
   planet.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
   planet.exec({ op: 'generate_provinces', rules: { seed: 3 } });
   const pc = peopled(planet, 400, 0.2);
+  if (plain) {
+    dropWaterTypes(region);
+    dropWaterTypes(planet);
+  }
   return [
     { label: 'region', eng: region, cut: rc },
     { label: 'planet', eng: planet, cut: pc },
@@ -143,7 +148,7 @@ function borderCells(w: World): number[] {
   return out;
 }
 
-export function run(OldR: Ctor, NewR: Ctor, opts: { quick?: boolean; time?: boolean } = {}) {
+export function run(OldR: Ctor, NewR: Ctor, opts: { quick?: boolean; time?: boolean; plain?: boolean } = {}) {
   if (opts.time) {
     timing(OldR, NewR);
     return;
@@ -180,7 +185,7 @@ export function run(OldR: Ctor, NewR: Ctor, opts: { quick?: boolean; time?: bool
       out.push(`${label}: ${d ? `DIFF ${d} bytes` : 'same'}`);
       return a;
     };
-    for (const { label, eng, cut } of worlds()) {
+    for (const { label, eng, cut } of worlds(opts.plain)) {
       const w = eng.world;
       const { mesh } = w;
       both((r) => r.setMesh(mesh));
@@ -336,7 +341,7 @@ function timing(OldR: Ctor, NewR: Ctor) {
       return performance.now() - t;
     };
     const med = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
-    for (const { label, eng } of worlds()) {
+    for (const { label, eng } of worlds(opts.plain)) {
       const w = eng.world;
       const { mesh } = w;
       for (const r of [A, B]) r.setMesh(mesh);

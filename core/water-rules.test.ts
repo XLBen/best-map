@@ -8,7 +8,7 @@ import { RIVER_SEGMENT_MIN, mergeShortRuns } from './river-segments';
 import { PLAIN_RIVER, riverNet, stopCells, typeRivers } from './river-types';
 import { smoothCourse, traceRivers } from './rivers';
 import { HEIGHT_MAX, type Species } from './species';
-import { continents } from './testing/fixtures';
+import { dryContinents as continents } from './testing/fixtures';
 import { baseBiomes, vegetationStats } from './vegetation';
 import { PLAIN_TYPE, WHEN_RANGE, type WaterType, hasWhen, matchesNaturally, waterPlan, waterPlanDebug, waterRules } from './water-types';
 import { setWaterAllowed, setWaterBlock, waterAllowed } from './water-table';

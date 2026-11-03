@@ -7,6 +7,13 @@ import { newWorldContentCommands, packImportCommands } from '../core/packs/impor
 // 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
 const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
 
+// 去掉世界里的河湖类型（overlay-ab、compose-ab 的 --plain）
+export function dropWaterTypes(eng: Engine): void {
+  for (const t of [...(eng.world.small.riverTypes ?? [])]) eng.exec({ op: 'remove_river_type', id: t.id });
+  for (const t of [...(eng.world.small.lakeTypes ?? [])]) eng.exec({ op: 'remove_lake_type', id: t.id });
+  eng.update();
+}
+
 export function r40Engine(globe: boolean, cells: number): Engine {
   const eng = globe
     ? new Engine({ seed: 3, cells, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 })

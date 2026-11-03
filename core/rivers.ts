@@ -5,6 +5,7 @@ import { coastStyle } from './coast-style';
 import { wrapDelta, wrapX } from './geo';
 import { type Mesh, findCell } from './mesh';
 import { locate, vnoise } from './subcell';
+import { riversStop } from './water-types';
 import { COURSE_MAX_POINTS, type Derived, type Guide, type World } from './world';
 
 // 河流折线：从源头顺流追到入海口、湖或与已画的河汇合处；加轻微的曲流并做 Chaikin 平滑。
@@ -41,6 +42,8 @@ export interface RiverLine {
   branch?: number;
   // 溺谷（第三十四轮，只是画法）：入海的河口在溺谷海岸上（core/coast-style.ts 的 ria），河口的喇叭口画得更宽、更长
   ria?: boolean;
+  // 断流（第五十七轮，只是画法）：河到这里没水了，尾巴收尖。只有用了断流的世界里才有
+  tail?: boolean;
 }
 
 // 支流从这一点接着画（画的河流到了别的河都不经过的地方：从它的线上接出去）
@@ -110,6 +113,8 @@ function traceRiversRaw(world: World): RiverLine[] {
   const course = small.guides.some((g) => g.path) ? courseIndex(world, isRiver, visited) : null;
   // 河流类型（第三批）：每个点带上是哪一种河。没有河流类型时不带（点、流量照旧逐位不变）
   const rt = d.riverType;
+  // 断流的世界（第五十七轮）：河走到没水的格就停了，尾巴收尖。别的世界里不看（分流后不够河的一小股照旧）
+  const stops = riversStop(small.species);
   const water = (c: number) => !causes.land[c] || d.lake[c] === 1;
   // 从湖里流出来的河：源头那格的上游是湖（取流量最大的那一格湖），河从这一格湖的岸线画起
   const lakeDonor = new Int32Array(n).fill(-1);
@@ -133,6 +138,7 @@ function traceRiversRaw(world: World): RiverLine[] {
     tags?: number[];
     head?: 'source' | 'lake';
     mouth: boolean;
+    tail?: boolean;
     // 汇入的那一格（自然的河的）
     join: number;
     line?: RiverLine;
@@ -153,6 +159,7 @@ function traceRiversRaw(world: World): RiverLine[] {
     let c = s;
     let cx = mesh.x[s];
     let mouth = false;
+    let tail = false;
     let join = -1;
     let onCourse: { line: RiverLine; k: number } | null = null;
     // 前面接着画的线已经流过这一格：只画到这一格（与支流画到画过的格一样），不然画的河在这里断开
@@ -199,7 +206,10 @@ function traceRiversRaw(world: World): RiverLine[] {
         mouth = true;
         break;
       }
-      if (!isRiver(r)) break;
+      if (!isRiver(r)) {
+        tail = stops;
+        break;
+      }
       if (visited[r] || main[r] !== c) {
         // 汇入别的河（画过的格，或者这里水更多的那条接着往下流）：画到它的线上（不是那一格的格心）。
         // 画的河的线已经定了，现在就画上去；自然的河等它画好了再定（见下面）
@@ -216,6 +226,7 @@ function traceRiversRaw(world: World): RiverLine[] {
     }
     if (pts.length < 2) return;
     const raw: Raw = { pts, flow, cells, tags, mouth, join };
+    if (tail) raw.tail = true;
     if (!lead) raw.head = fromLake ? 'lake' : 'source';
     if (onCourse) courseJoin.set(raw, onCourse);
     raws.push(raw);
@@ -249,6 +260,7 @@ function traceRiversRaw(world: World): RiverLine[] {
     }
     const line = smoothCourse(raw.pts, raw.flow, mesh.spacing, raw.cells, raw.tags);
     if (raw.head) line.head = raw.head;
+    if (raw.tail) line.tail = true;
     if (raw.mouth) {
       line.mouth = true;
       // 别的河还没接上来（接到它的线上之前）：最后一段改成沿岸线的法向进海、进湖。
@@ -2055,6 +2067,8 @@ export function riverRibbon(line: RiverLine, thr: number, spacing: number, mulAt
   const outlet = line.head === 'lake' && L > 0 ? 1 - smooth01((L / spacing - OUTLET_SHORT) / OUTLET_FADE) : 0;
   const hw = new Float32Array(count);
   const maxHw = halfWidths(hw, w, mul, s, count, line.head === 'source', outlet, !!line.mouth, L, Ls, spacing, line.mouth && line.ria ? 1 : 0);
+  // 断流的尾巴收尖（第五十七轮），和源头一样长
+  if (line.tail) for (let i = 0; i < count; i++) hw[i] *= TAPER_MIN + (1 - TAPER_MIN) * smooth01((L - s[i]) / (TAPER_LEN * spacing));
   // 5. 细小的弯曲：沿原来那条线的法向错开（按位置取噪声，结果确定）；两头半格之内渐渐不弯，水多（按流量的宽）的河弯得少，
   //    拖粗细不改中线
   const nx = new Float32Array(count);

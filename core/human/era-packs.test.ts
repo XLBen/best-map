@@ -6,6 +6,7 @@ import { Engine } from '../engine';
 import { DEFAULT_STYLE, worldStyleId } from '../name-styles';
 import { findPack, ownItems, packItems } from '../packs';
 import { BASE_PATH, DEFAULT_WORLD_PACKS, FORMS_PATH, builtinPacks, isBuiltinSame } from '../packs/builtin-tree';
+import { REAL_RIVER_TYPES } from '../packs/water';
 import { BUILTIN_ERAS, ERA_PACKS } from '../packs/eras';
 import { BUILTIN_GOVERNMENTS } from '../packs/governments';
 import { packImportCommands, packImportPlan } from '../packs/import';
@@ -32,6 +33,7 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // 第三十三轮（平原与河口，高程变了）再重录一次。第四十三轮：内置的文化、宗教、政体换成 EU4 的，几种设置的组换成 EU4 的组
 // （日耳曼、汉、阿尔泰……）后重录；没有人文的那一项（nature）没变。
 // 第五十五轮重录：生态跟高度走（第五十一轮记着的奇幻的 resource 这次一起进了文件）。去掉高度范围时还是以前的值，见 core/biome-legacy.test.ts。
+// 第五十七轮重录：只有 resource（14 项）：毛皮多一种生态（高山苔原）。现实的水系一项都不变（core/water-real.test.ts）。
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
@@ -149,7 +151,7 @@ describe('几个包合起来生成', () => {
     expect(Object.keys(fresh.world.small.content!.cultureGroup!)).toEqual(['germanic', 'elven']);
     // 时代包里奇幻的生态、河湖、资源不带（要单独勾那几个小包）
     expect(fresh.world.small.species.length).toBe(DEFAULT_SPECIES.length);
-    expect(fresh.world.small.riverTypes).toBeUndefined();
+    expect(fresh.world.small.riverTypes?.map((t) => t.id)).toEqual(REAL_RIVER_TYPES.map((t) => t.id));
   });
 
   it('顺序反过来：规则来自奇幻（维度是种族、宗教）', () => {
@@ -199,8 +201,8 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     return eng;
   };
 
-  it('新建时默认的几个包：基础、自然、中文地名、画风（第三十八轮）、国家等级（第四十二轮）', () => {
-    expect(DEFAULT_WORLD_PACKS).toEqual([BASE_PATH, ['medieval', 'nature'], ['medieval', 'names', 'zh'], ['medieval', 'styles'], ['medieval', 'tiers']]);
+  it('新建时默认的几个包：基础、自然、中文地名、画风（第三十八轮）、国家等级（第四十二轮）、水系（第五十七轮）', () => {
+    expect(DEFAULT_WORLD_PACKS).toEqual([BASE_PATH, ['medieval', 'nature'], ['medieval', 'names', 'zh'], ['medieval', 'styles'], ['medieval', 'tiers'], ['medieval', 'water']]);
     const eng = bare(DEFAULT_WORLD_PACKS);
     expect(eng.lastSkipped).toEqual([]);
     const s = eng.world.small;

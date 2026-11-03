@@ -54,10 +54,25 @@ export function meshFor(raw: Partial<Settings>): Mesh {
 let seedCmds: Command[] | null = null;
 export const seedCommands = (): Command[] => (seedCmds ??= newWorldContentCommands());
 
-// 第五十五轮之前的生态：内置生态去掉高度范围，也去掉那两种高山生态（biome-legacy.test.ts 拿它和那时记下的摘要对照）
+// 没有现实水系的世界（第五十七轮，core/water-real.test.ts 拿它和带着的对照；要自己定河湖类型的测试用它）
+export function withoutWater(cmds: readonly Command[]): Command[] {
+  const one = (c: Command): Command[] => {
+    if (c.op === 'batch') return [{ ...c, commands: c.commands.flatMap(one) }];
+    return c.op === 'set_river_type' || c.op === 'set_lake_type' ? [] : [c];
+  };
+  return cmds.flatMap(one);
+}
+
+// 第五十五轮之前的生态：内置生态去掉高度范围，也去掉那两种高山生态（biome-legacy.test.ts 拿它和那时记下的摘要对照）；
+// 第五十七轮起也去掉现实的水系（那时还没有），毛皮的规则也写回去（高山苔原是第五十七轮加的）
 export function withoutHeights(cmds: readonly Command[]): Command[] {
   const one = (c: Command): Command[] => {
     if (c.op === 'batch') return [{ ...c, commands: c.commands.flatMap(one) }];
+    if (c.op === 'set_river_type' || c.op === 'set_lake_type') return [];
+    if (c.op === 'set_content' && c.kind === 'resource' && c.id === 'fur' && c.item) {
+      const item = c.item as unknown as { rules: { biomes?: string[] }[] };
+      return [{ ...c, item: { ...c.item, rules: item.rules.map((r) => (r.biomes ? { ...r, biomes: r.biomes.filter((b) => b !== 'alpine_tundra') } : r)) } }];
+    }
     if (c.op !== 'add_species') return [c];
     if (c.species.id.startsWith('alpine_')) return [];
     const { height: _, ...species } = c.species;
@@ -79,8 +94,13 @@ export function seededWorld(input: Partial<Settings> = {}, mesh?: Mesh): World {
   return e.world;
 }
 
-export function engineFor(settings: Partial<Settings>, opts: { bare?: boolean } = {}): Engine {
+// noWater：没有现实的水系（测试自己定河湖类型时：类型的下标从 1 起，没有类型的世界里没有 riverType 这个键）
+export function engineFor(settings: Partial<Settings>, opts: { bare?: boolean; noWater?: boolean } = {}): Engine {
   const eng = new Engine(settings, meshFor(settings));
+  if (opts.noWater) {
+    for (const c of withoutWater(seedCommands())) eng.exec(c);
+    return eng;
+  }
   return opts.bare ? eng : seedEngine(eng);
 }
 
@@ -108,16 +128,19 @@ export function snapshot(key: string, build: () => Engine): Engine {
 // 第四十六轮：一块地区有了洋流（默认强弱 1）。这个世界核对的是人文、地名、河这些，关掉洋流（强弱 0，与第四十五轮逐值相同，
 // 见 core/ocean-plane.test.ts），它们的金标准与阈值照旧；区域洋流的结果由 golden-hashes、golden-full 与 ocean-plane 的测试管
 export const NO_CURRENTS: Command = { op: 'set_planet', patch: { currents: 0 } };
-export function continents(opts: { cells?: number; latNorth?: number; latSouth?: number; provinces?: boolean; plain?: boolean } = {}): Engine {
-  const { cells = 12000, latNorth = 72, latSouth = 20, provinces = false, plain = false } = opts;
-  return snapshot(`continents:${cells}:${latNorth}:${latSouth}:${provinces}:${plain}`, () => {
-    const eng = plain ? plainEngine({ cells, seed: 1, latNorth, latSouth }, meshFor({ cells, seed: 1, latNorth, latSouth })) : engineFor({ cells, seed: 1, latNorth, latSouth });
+export function continents(opts: { cells?: number; latNorth?: number; latSouth?: number; provinces?: boolean; plain?: boolean; noWater?: boolean } = {}): Engine {
+  const { cells = 12000, latNorth = 72, latSouth = 20, provinces = false, plain = false, noWater = false } = opts;
+  return snapshot(`continents:${cells}:${latNorth}:${latSouth}:${provinces}:${plain}:${noWater}`, () => {
+    const eng = plain ? plainEngine({ cells, seed: 1, latNorth, latSouth }, meshFor({ cells, seed: 1, latNorth, latSouth })) : engineFor({ cells, seed: 1, latNorth, latSouth }, { noWater });
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
     if (provinces) eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
     return eng;
   });
 }
+
+// 同上，没有现实的水系（第五十七轮）：自己定河湖类型的测试 import { dryContinents as continents }
+export const dryContinents = (opts: Parameters<typeof continents>[0] = {}): Engine => continents({ ...opts, noWater: true });
 
 // ---------- 人文（第三十轮：生成之前先把时代包的内容加进世界） ----------
 

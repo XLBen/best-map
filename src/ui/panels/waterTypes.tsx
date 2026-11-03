@@ -7,7 +7,7 @@ import { LAKE_STYLES, LAKE_STYLE_LABEL } from '../../../core/lake-types';
 import { RIVER_STYLES, RIVER_STYLE_LABEL } from '../../../core/river-types';
 import { SCRIPT_API } from '../../../core/script';
 import { FALLBACK_MAP_STYLE, type MapStyle } from '../../../core/map-style';
-import { type WaterType, type WhenKey, WHEN_KEYS, WHEN_RANGE, bankRadiusKm, hasWhen, perCellRule, waterTypeOwner } from '../../../core/water-types';
+import { type LakeWhenKey, type WaterType, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE, bankRadiusKm, hasWhen, perCellRule, waterTypeOwner } from '../../../core/water-types';
 import { withWaterBiome } from '../../../core/water-table';
 import type { World } from '../../../core/world';
 import {
@@ -436,8 +436,9 @@ export const flowScale = {
 
 // 第五十六轮：声明式条件。高度、坡度、气温、流量，到两头是不限
 function WhenBox({ kind, t, edit }: { kind: WaterKind; t: WaterType; edit: (label: string, make: (x: WaterType) => WaterType | null) => void }) {
-  const count = WHEN_KEYS.filter((k) => hasWhen({ when: { [k]: t.when?.[k] } })).length;
-  const set = (k: WhenKey, r: { low: number; high: number }) =>
+  const keys = kind === 'lake' ? LAKE_WHEN_KEYS : WHEN_KEYS;
+  const count = keys.filter((k) => hasWhen({ when: { [k]: t.when?.[k] } })).length;
+  const set = (k: LakeWhenKey, r: { low: number; high: number }) =>
     edit(`修改“${t.name}”的条件 · ${WHEN_RANGE[k].label}`, (x) => {
       const when = { ...x.when };
       if (r.low <= WHEN_RANGE[k].lo && r.high >= WHEN_RANGE[k].hi) delete when[k];
@@ -448,7 +449,7 @@ function WhenBox({ kind, t, edit }: { kind: WaterKind; t: WaterType; edit: (labe
     <details>
       <summary>条件 · {count ? `${count} 项` : '不限'}</summary>
       <p class="hint">{kind === 'river' ? '按每格看，河可以一段一段不同' : '按整个湖看'}</p>
-      {WHEN_KEYS.map((k) => {
+      {keys.map((k) => {
         const g = WHEN_RANGE[k];
         return (
           <Fragment key={k}>

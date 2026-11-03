@@ -20,6 +20,8 @@ const flag = (name, def) => {
 const against = flag('--against', 'b4aeaae');
 const chrome = flag('--chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 const quick = argv.includes('--quick');
+// 第五十七轮：--plain 画没有河湖类型的世界（新世界默认带类型）
+const plain = argv.includes('--plain');
 const time = argv.includes('--time');
 const keep = argv.includes('--keep');
 
@@ -42,7 +44,7 @@ try {
     `import { Renderer as OldR } from './base/src/render/renderer';
 import { Renderer as NewR } from ${JSON.stringify(join(root, 'src/render/renderer'))};
 import { run } from ${JSON.stringify(join(root, 'tools/compose-ab-page'))};
-window.addEventListener('load', () => run(OldR as never, NewR as never, { quick: ${quick}, time: ${time} }));
+window.addEventListener('load', () => run(OldR as never, NewR as never, { quick: ${quick}, time: ${time}, plain: ${plain} }));
 `,
   );
   const esbuild = await import('esbuild');

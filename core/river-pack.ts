@@ -1,6 +1,7 @@
 import type { RiverType } from './river-types';
 import { type RiverLine, type RiverRibbon, guidesSignature, riverRibbon, traceRivers } from './rivers';
 import { coastSeed } from './terrain';
+import { riversStop } from './water-types';
 import type { World } from './world';
 
 // ---------- 地图上的河在计算 Worker 里描好（第十三轮） ----------
@@ -23,8 +24,58 @@ export function riverDraw(line: RiverLine, thr: number, spacing: number, types: 
     return scale * (t > 0 ? (types![t - 1]?.width ?? 1) : 1);
   };
   const rb = riverRibbon(line, thr, spacing, typeMul, underShore ? { underShore } : undefined);
-  if (!tags || !tags.some((t) => t > 0 && types![t - 1])) return { rb };
-  return { rb, type: Uint8Array.from(tags) };
+  if (!tags || !hasDrawnType(tags, types!)) return { rb };
+  return { rb, type: new Uint8Array(tags) };
+}
+
+function hasDrawnType(tags: readonly number[], types: readonly RiverType[]): boolean {
+  for (let k = 0; k < tags.length; k++) if (tags[k] > 0 && types[tags[k] - 1]) return true;
+  return false;
+}
+
+// 第五十七轮（提速）：一条河线和上一次一模一样（点、流量、粗细、类型、两头、汇合处）时带子不重算：带子只取决于这些，改一笔多半只碰一两个流域。
+// 新世界默认带类型以后描河要多读类型、多分几段，这里省下的比多的多。带子只读（packRibbons 拷走）。逐位相同：core/water-real-speed.test.ts
+export const riverDrawDebug = { memo: true };
+export const riverDrawStats = { hit: 0, miss: 0 };
+let drawMemo: { key: string; byHead: Map<number, { line: RiverLine; draw: RiverDraw }[]> } | null = null;
+
+function sameNumbers(a: readonly number[] | undefined, b: readonly number[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+// 带子读到的几项都相同（riverRibbon、riverDraw）
+function sameRibbonInput(a: RiverLine, b: RiverLine): boolean {
+  if (a.points.length !== b.points.length || a.head !== b.head || !a.mouth !== !b.mouth || !a.ria !== !b.ria || !a.tail !== !b.tail) return false;
+  for (let k = 0; k < a.points.length; k++) {
+    const p = a.points[k];
+    const q = b.points[k];
+    if (p[0] !== q[0] || p[1] !== q[1]) return false;
+  }
+  return sameNumbers(a.flow, b.flow) && sameNumbers(a.mul, b.mul) && sameNumbers(a.type, b.type) && sameNumbers(a.joins, b.joins);
+}
+
+function memoDraws(lines: readonly RiverLine[], thr: number, spacing: number, types: readonly RiverType[] | null, typesKey: string): RiverDraw[] {
+  if (!riverDrawDebug.memo) return lines.map((l) => riverDraw(l, thr, spacing, types, 1, MAP_UNDER_SHORE));
+  const key = `${thr}|${spacing}|${typesKey}`;
+  const old = drawMemo?.key === key ? drawMemo.byHead : null;
+  const next = new Map<number, { line: RiverLine; draw: RiverDraw }[]>();
+  const out = lines.map((line) => {
+    // 按第一点的横坐标认：同一处起头的线只有几条
+    const head = line.points.length ? line.points[0][0] : 0;
+    const hit = old?.get(head)?.find((e) => sameRibbonInput(e.line, line));
+    if (hit) riverDrawStats.hit++;
+    else riverDrawStats.miss++;
+    const draw = hit ? hit.draw : riverDraw(line, thr, spacing, types, 1, MAP_UNDER_SHORE);
+    const list = next.get(head);
+    if (list) list.push({ line, draw });
+    else next.set(head, [{ line, draw }]);
+    return draw;
+  });
+  drawMemo = { key, byHead: next };
+  return out;
 }
 
 // 地图上的河画的时候用的河流类型（世界里有河流类型、推导里有每格的类型时才分开画）
@@ -82,6 +133,8 @@ const DRAW_TYPE = 64;
 const BRANCH = 128;
 // 溺谷的河口（第三十四轮）
 const RIA = 256;
+// 断流的尾巴（第五十七轮）
+const TAIL = 512;
 
 export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDraw[], drawKey?: { thr: number; spacing: number; types: string }): PackedRivers {
   let np = 0;
@@ -113,6 +166,7 @@ export function packRivers(lines: readonly RiverLine[], draws?: readonly RiverDr
     if (draws?.[i].type) flags |= DRAW_TYPE;
     if (l.branch !== undefined) flags |= BRANCH;
     if (l.ria) flags |= RIA;
+    if (l.tail) flags |= TAIL;
     let g = -1;
     if (l.guide !== undefined) {
       g = gi.get(l.guide) ?? -1;
@@ -211,6 +265,7 @@ export function unpackRivers(p: PackedRivers): { lines: RiverLine[]; draws: Rive
     if (flags & LAKE) line.head = 'lake';
     if (flags & MOUTH) line.mouth = true;
     if (flags & RIA) line.ria = true;
+    if (flags & TAIL) line.tail = true;
     if (into >= 0) {
       if (flags & BRANCH) line.branch = into;
       else line.into = into;
@@ -266,8 +321,9 @@ export function worldRivers(world: World): PackedRivers {
   if (last?.key !== key) {
     const w: World = { ...world, derived: { ...world.derived, elevation: world.derived.elevation.slice() } };
     const lines = traceRivers(w);
-    const draws = lines.map((l) => riverDraw(l, thr, spacing, types, 1, MAP_UNDER_SHORE));
-    last = { key, packed: packRivers(lines, draws, { thr, spacing, types: drawTypesKey(types) }) };
+    const typesKey = drawTypesKey(types);
+    const draws = memoDraws(lines, thr, spacing, types, typesKey);
+    last = { key, packed: packRivers(lines, draws, { thr, spacing, types: typesKey }) };
   }
   return copyPacked(last.packed);
 }
@@ -288,7 +344,7 @@ function riversKey(world: World, types: string): string {
   keyState[0] = 0x811c9dc5;
   keyState[1] = 0x9e3779b9;
   for (const x of [d.discharge, d.receiver, d.lake, d.elevation, d.water, d.riverType, causes.land, causes.landness, causes.fragment]) mixArray(keyState, x);
-  return [world.settings.seed, mesh.n, mesh.spacing, small.planet.riverThreshold, guidesSignature(small.guides), small.terrain.coastRoughness, coastSeed(world), types, keyState[0] >>> 0, keyState[1] >>> 0].join('|');
+  return [world.settings.seed, mesh.n, mesh.spacing, small.planet.riverThreshold, guidesSignature(small.guides), small.terrain.coastRoughness, coastSeed(world), types, riversStop(small.species), keyState[0] >>> 0, keyState[1] >>> 0].join('|');
 }
 const keyState = new Int32Array(2);
 

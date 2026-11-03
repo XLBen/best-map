@@ -8,7 +8,7 @@ import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
 import { type RiverType, PLAIN_RIVER, matchRunStats, riverBank, riverNet, riverTypeSchema } from './river-types';
 import { stemPath, traceRivers } from './rivers';
 import { riverStem } from './select';
-import { continents } from './testing/fixtures';
+import { dryContinents as continents } from './testing/fixtures';
 import { type World, buildMeshFor, settingsSchema } from './world';
 
 // 河流类型：每格是哪一种河（画的河带类型、每条河一次的 match、往下游传）、河岸场、只改样子不重算、起名、重放与撤销

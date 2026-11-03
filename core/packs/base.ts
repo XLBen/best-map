@@ -62,7 +62,7 @@ export const GENERAL_RESOURCES: readonly Resource[] = [
   res('coal', '煤', '#3b3a3a', 'ore', 0.08, [{ classes: ['hills', 'mountains'], tempMin: ICE }, { classes: ['plains'], terrain: ['forest'] }], { weight: 1.6, cluster: 400 }),
   res('gems', '宝石', '#b5427a', 'luxury', 0.03, [{ classes: ['mountains', 'peaks'], tempMin: ICE }, { classes: ['hills'], tempMin: 18 }, { classes: ['plains'], terrain: ['jungle'], tempMin: 18 }], { weight: 3, cluster: 150 }),
   res('spices', '香料', '#d0612c', 'luxury', 0.2, [{ classes: ['plains'], terrain: ['forest', 'hills', 'jungle'], tempMin: 20, moistMin: 0.9 }], { weight: 1.8, cluster: 300 }),
-  res('fur', '毛皮', '#8c6b4f', 'wood', 0.3, [{ classes: ['plains'], terrain: ['forest'], tempMax: 4 }, { classes: ['plains'], biomes: ['tundra'], tempMax: 4 }], { weight: 1.3, cluster: 400 }),
+  res('fur', '毛皮', '#8c6b4f', 'wood', 0.3, [{ classes: ['plains'], terrain: ['forest'], tempMax: 4 }, { classes: ['plains'], biomes: ['tundra', 'alpine_tundra'], tempMax: 4 }], { weight: 1.3, cluster: 400 }),
   res('wine', '葡萄酒', '#7b2340', 'farm', 0.15, [{ classes: ['hills'], tempMin: 10, tempMax: 21, moistMin: 0.3, moistMax: 1.1 }, { classes: ['plains'], terrain: ['forest', 'hills'], tempMin: 10, tempMax: 21, moistMin: 0.3, moistMax: 0.8 }, { classes: ['plains'], terrain: GRASS, tempMin: 10, tempMax: 21, moistMin: 0.4, moistMax: 0.8, elevMax: 500 }], { weight: 1.6, cluster: 250 }),
   res('silk', '丝', '#e6cfe0', 'luxury', 0.08, [{ classes: ['plains', 'hills'], terrain: ['forest', 'hills'], tempMin: 12, tempMax: 25, moistMin: 0.8 }], { weight: 2, cluster: 250 }),
   res('tea', '茶', '#5c8f3c', 'farm', 0.12, [{ classes: ['hills', 'highlands'], tempMin: 13, tempMax: 26, moistMin: 1 }], { weight: 1.8, cluster: 250 }),

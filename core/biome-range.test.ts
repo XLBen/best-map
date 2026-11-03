@@ -5,7 +5,7 @@ import { Engine } from './engine';
 import { lakeParts, lakeShores } from './lake-types';
 import { type RiverType, riverNet } from './river-types';
 import type { Species } from './species';
-import { continents, engineFor } from './testing/fixtures';
+import { dryContinents as continents, engineFor } from './testing/fixtures';
 import { baseBiomes, explainCell, landmassCells } from './vegetation';
 import type { World } from './world';
 

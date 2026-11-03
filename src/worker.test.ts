@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../core/commands';
 import type { Checkpoint, WorldDoc } from '../core/engine';
 import { newWorldContentCommands } from '../core/packs/import';
+import { withoutWater } from '../core/testing/fixtures';
 import type { CheckpointPut } from './checkpoint-store';
 import type { CheckpointReady, MirrorLog, Request, Response, Snapshot } from './protocol';
 
@@ -60,7 +61,7 @@ const commands: Command[] = [
   {
     op: 'batch',
     commands: [
-      ...newWorldContentCommands().flatMap((c) => (c.op === 'batch' ? c.commands : [c])),
+      ...withoutWater(newWorldContentCommands()).flatMap((c) => (c.op === 'batch' ? c.commands : [c])),
       { op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true },
       { op: 'set_planet', patch: { terrainWind: 1 } },
     ],

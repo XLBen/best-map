@@ -19,6 +19,7 @@ import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from './governments';
 import { BUILTIN_STYLES } from './names';
 import { DEFAULT_SPECIES } from './nature';
 import { BUILTIN_PLANET_FORMS } from './planet-forms';
+import { REAL_LAKE_TYPES, REAL_RIVER_TYPES } from './water';
 import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ERAS } from './settlements';
 
 // 内置的库（第二十九轮是资源包的树；第五十一轮起每个时代是一个完整的库，“通用”拆进了各库）。
@@ -48,6 +49,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts），奇幻的另有几种
 //     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts）
 //     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json）
+//     water             水系（第五十七轮）：七种现实的河、七种现实的湖（packs/water.ts）
 //
 // 没被任何时代列出的政体、派系归到最贴切的时代：先看它自己写的 eras（第一个是内置时代的），再按政体的类别（CATEGORY_ERA，
 // 按类别的先后取第一个认得的），都没有时归中世纪。现在的 61 种政体、27 种派系都被时代列出了（第四十四轮），这条归法管以后加的
@@ -63,9 +65,9 @@ export const TIERS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'tiers'];
 export const FORMS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'forms'];
 // 每个库里世界的底子（小包的 id）：把时代包整个加进世界时不带这几个（生成人文不用它们，自己移出的基础内容也不该被加回来），
 // 新建世界时在生成之前单独加（worldPartsOf）
-export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', 'tiers']);
-// 一个库新建世界时加的小包（第三十轮起默认这几个：基础、自然、中文地名、画风、国家等级）
-export const worldPartsOf = (key: string): string[][] => [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers']];
+export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'water']);
+// 一个库新建世界时加的小包（第三十轮起默认这几个：基础、自然、中文地名、画风、国家等级；第五十七轮加上现实的水系）
+export const worldPartsOf = (key: string): string[][] => [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers'], [key, 'water']];
 export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = worldPartsOf(DEFAULT_LIBRARY);
 
 // 没被时代列出的政体按类别归到哪个时代
@@ -195,7 +197,7 @@ const FICTION_ERAS: ReadonlySet<string> = new Set(['fantasy', 'scifi']);
 const EU4_GROUPS: readonly string[] = CULTURE_REGIONS.flatMap((r) => r.groups);
 
 // 世界的底子（见文件开头）：六个库共用同一份小包，奇幻的星球形态多几种
-function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms: PackNode; styles: PackNode; tiers: PackNode } {
+function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms: PackNode; styles: PackNode; tiers: PackNode; water: PackNode } {
   const regionOf = new Map(STYLE_REGIONS.flatMap((r) => r.styles.map((s) => [s, r.id])));
   const styles = BUILTIN_STYLES.filter((s) => s.id !== DEFAULT_STYLE);
   const regions: PackNode[] = [
@@ -226,6 +228,13 @@ function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms
       description: '国家分几级（帝国级、王国级、公国级、侯国级、城邦级行政）和几种格局。新建世界时默认带上；生成国家时按它们挑大小',
       countryTiers: asItems(BUILTIN_COUNTRY_TIERS),
       countryLayouts: asItems(BUILTIN_COUNTRY_LAYOUTS),
+    },
+    water: {
+      id: 'water',
+      name: '水系',
+      description: '现实的河与湖：冰川河、泥沙大河、盐湖、牛轭湖……只改河湖的种类和画出来的样子，水怎么流、地名、生态都不变。新建世界时默认带上',
+      riverTypes: asItems(REAL_RIVER_TYPES),
+      lakeTypes: asItems(REAL_LAKE_TYPES),
     },
   };
 }
@@ -268,7 +277,7 @@ function build(): ResourcePack[] {
       );
     }
     const forms = era.id === 'fantasy' ? { ...shared.forms, planetForms: asItems([...BUILTIN_PLANET_FORMS, ...FANTASY_FORMS]) } : shared.forms;
-    packs.push(shared.base, shared.nature, shared.names, forms, shared.styles, shared.tiers);
+    packs.push(shared.base, shared.nature, shared.names, forms, shared.styles, shared.tiers, shared.water);
     return top(era.id, era.name, era.description ?? `${era.name}的时代、取值、政体、派系与文化`, packs);
   });
 }

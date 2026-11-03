@@ -20,6 +20,8 @@ const flag = (name, def) => {
 const against = flag('--against', 'b4aeaae');
 const chrome = flag('--chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 const quick = argv.includes('--quick');
+// 第五十七轮：--plain 画没有河湖类型的世界（新世界默认带类型）
+const plain = argv.includes('--plain');
 const keep = argv.includes('--keep');
 
 let nm = root;
@@ -48,7 +50,7 @@ import * as NewS from ${cur('src/state')};
 import * as OldT from './base/src/ui/tools/countries';
 import * as NewT from ${cur('src/ui/tools/countries')};
 import { run } from ${cur('tools/overlay-ab-page')};
-window.addEventListener('load', () => run({ O: OldO, A: OldA, L: OldL, S: OldS, T: OldT } as never, { O: NewO, A: NewA, L: NewL, S: NewS, T: NewT } as never, { quick: ${quick} }));
+window.addEventListener('load', () => run({ O: OldO, A: OldA, L: OldL, S: OldS, T: OldT } as never, { O: NewO, A: NewA, L: NewL, S: NewS, T: NewT } as never, { quick: ${quick}, plain: ${plain} }));
 `,
   );
   const esbuild = await import('esbuild');

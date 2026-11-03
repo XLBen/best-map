@@ -6,6 +6,7 @@ import { guideShape, guidesSignature, type RiverLine, traceRivers } from '../../
 import { drawTypes, drawTypesKey, MAP_UNDER_SHORE, type PackedRivers, riverDraw, type RiverDraw, unpackRivers } from '../../core/river-pack';
 import { coastSeed } from '../../core/terrain';
 import { wrapX } from '../../core/geo';
+import { riversStop } from '../../core/water-types';
 
 // 叠加层的河：河线、画法、路径（第四十一轮从 overlay.ts 原样搬来）
 
@@ -291,6 +292,7 @@ export function splitRiverLine(line: RiverLine, cells: ReadonlySet<number>, keep
       // 源头、河口还在这一段上时照样收尖、张开
       if (line.head && cur[0] === 0) piece.head = line.head;
       if (line.mouth && cur[cur.length - 1] === line.points.length - 1) piece.mouth = true;
+      if (line.tail && cur[cur.length - 1] === line.points.length - 1) piece.tail = true;
       out.push(piece);
     }
     cur = [];
@@ -332,6 +334,8 @@ export function riverLinesKey(world: World): unknown[] {
     world.small.planet.riverThreshold,
     guidesSignature(world.small.guides),
     world.derived.riverType,
+    // 用了断流的世界里河的尾巴收尖（第五十七轮）
+    riversStop(world.small.species),
     // 河口画到画面上的岸线（core/display.ts 的 shoreCrossing）：岸线跟着陆地程度、海岸破碎度、海岸的种子、湖面走
     world.causes.landness,
     world.derived.water,

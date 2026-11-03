@@ -99,10 +99,11 @@ describe('资源库两栏：packTree', () => {
   });
 
   it('种类筛选：只列那一种；搜索：名字对上的项和它们所在的包', () => {
-    const w = continents().world;
+    const w = continents({ noWater: true }).world;
     const t = packTree(w, BUILTIN, 'riverType');
     expect(t.world).toEqual([]);
-    expect(t.library.map((n) => n.path[0])).toEqual(['fantasy']);
+    // 现实的河六个库都有（第五十七轮）
+    expect(t.library.map((n) => n.path[0])).toEqual(BUILTIN.map((p) => p.key));
     expect(new Set(t.library.flatMap(treeRows).map((r) => r.kind.id))).toEqual(new Set(['riverType']));
     const all = packTree(w, BUILTIN);
     const hit = filterTree(all.library, '血');
@@ -114,7 +115,7 @@ describe('资源库两栏：packTree', () => {
   });
 
   it('单项添加记上来源，左栏归到那个包；移出是一步，可以撤销', () => {
-    const eng = continents();
+    const eng = continents({ noWater: true });
     const blood = () => find(packTree(eng.world, BUILTIN, 'riverType').library, 'l:fantasy/rivers')!.rows.find((r) => r.id === 'blood_river')!;
     const add = addCommand(blood(), eng.world)!;
     expect(add).toMatchObject({ op: 'batch', commands: [{ op: 'set_river_type', from: ['fantasy', 'rivers'] }] });

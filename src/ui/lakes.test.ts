@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PLAIN_LAKE, lakeParts } from '../../core/lake-types';
-import { continents } from '../../core/testing/fixtures';
+import { dryContinents as continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { LAKE_GLOW, LAKE_LAND_GLOW, LAKE_WATER_CRUST, LAKE_WATER_TINT, lakeTintLayer, lakeTypeColor } from '../render/colors';
 import { setOptions } from '../state';

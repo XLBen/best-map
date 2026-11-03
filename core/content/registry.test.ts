@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type ResourcePack, packCounts, packFromWorld, packProblems, packSection, packSections, packSummary, parsePack, planPack, readPack } from '../packs';
 
 import { BUILTIN_STYLES } from '../packs/names';
-import { continents, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../testing/fixtures';
+import { dryContinents as continents, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../testing/fixtures';
 import { allKinds, contentItems, disableCommand, enableCommand, isEnabled, kindByPackKey, kindOf, registerKind, unregisterKind } from './registry';
 
 // 第二十轮：内容种类的登记表。登记一次，资源包的段、数、列表的一行、检查、用到世界、导出都跟着有；

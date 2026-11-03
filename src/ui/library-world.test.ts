@@ -106,7 +106,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
 describe('资源库：添加到本世界、移出本世界', () => {
   it('筛选“本世界”“不在本世界”；血河在资源库里、不在本世界；添加是一步，可以撤销', () => {
     expect(REPO_FILTERS.map(([k]) => k)).toEqual(['all', 'on', 'off', 'builtin', 'imported', 'mine']);
-    const eng = continents();
+    const eng = continents({ noWater: true });
     const w = eng.world;
     const kind = kindOf('riverType')!;
     const rows = repoRows(kind, w, LIB);
@@ -179,7 +179,7 @@ describe('资源库：添加到本世界、移出本世界', () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(packItems(read.pack, 'riverTypes')).toEqual([row.item]);
-    const eng = continents();
+    const eng = continents({ noWater: true });
     eng.exec(planPack(eng.world, read.pack, { riverTypes: ['blood_river'] }).command);
     expect(eng.world.small.riverTypes!.map((t) => t.name)).toEqual(['血河']);
     // 生态带上用到的自定义场
@@ -211,6 +211,6 @@ describe('从本世界存进资源库：人文的几种也能勾', () => {
     expect(packItems(p2, 'cultures')).toEqual([]);
     expect(packItems(p2, 'governments').length).toBe(1);
     // 什么都没改的世界：没有能导出的
-    expect(packEmpty(packFromWorld(continents().world, exportPicks(exportSections(continents().world), new Set(), false), { name: 'x' }))).toBe(true);
+    expect(packEmpty(packFromWorld(continents({ noWater: true }).world, exportPicks(exportSections(continents({ noWater: true }).world), new Set(), false), { name: 'x' }))).toBe(true);
   });
 });

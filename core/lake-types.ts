@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { placedLakeCell } from './elevation';
 import { type InputValue, type ScriptInputs, type ScriptIssue, runScript, scriptsEnabled, worldInputs } from './script';
-import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, hasWhen, inBiomes, majorityOf, matchesNaturally, waterRules, waterTypeDirty, waterTypeOwner, waterTypeShape, whenBounds, whenHolds } from './water-types';
+import { PLAIN_TYPE, bankField, bankRadiusKm, biomeInputsFor, biomeSet, checkMatchScripts, hasWhen, inBiomes, lakeWhenSchema, majorityOf, matchesNaturally, waterRules, waterTypeDirty, waterTypeOwner, waterTypeShape, whenBounds, whenHolds } from './water-types';
 import type { Derived, SmallState, World } from './world';
 
 // 湖泊类型（第九轮）：血池、晶湖、冥湖、熔岩湖……与河流类型同一套：颜色、画法、岸边的影响、起名模板、
@@ -14,7 +14,7 @@ import type { Derived, SmallState, World } from './world';
 //      另有湖的面积、流进来的水、是不是干湖、是不是放的湖），按类型的先后，先匹配上的算。
 // 选了“普通的湖”（'plain'）的湖不再匹配。没有湖泊类型的世界里根本没有 lakeType 这个键（推导逐值照旧）
 //
-// 第五十六轮：声明式条件（when，按整个湖：高度、坡度、气温取平均，流量取最大）和脚本、列的生态同时要满足。
+// 第五十六轮：声明式条件（when，按整个湖：高度、坡度、气温取平均，流量取最大；第五十七轮另有大小：几格）和脚本、列的生态同时要满足。
 // 允许表：湖岸最多的那种生态不允许普通的湖时，换成这一列第一种允许的，一种都没有就照旧是普通的湖。
 // 湖没有断流：湖是积出来的水面，水文已经算完，不能只去掉一块（设成“断流”的生态也按换类型）。选了类型的湖不受限制
 
@@ -31,6 +31,8 @@ export const LAKE_PREFIX = 'lake:';
 export const lakeTypeSchema = z.object({
   ...waterTypeShape('湖泊类型', '湖'),
   style: z.enum(LAKE_STYLES).optional(),
+  // 湖的条件另有大小（第五十七轮）
+  when: lakeWhenSchema.optional(),
 });
 export type LakeType = z.output<typeof lakeTypeSchema>;
 export type LakeTypeInput = z.input<typeof lakeTypeSchema>;
@@ -79,6 +81,24 @@ export function lakeParts(world: World, d: Pick<Derived, 'lake'>): LakeParts {
     lakes.push(Int32Array.from(q));
   }
   return { lakes, of };
+}
+
+// 第五十七轮（提速）：一片片的湖和湖岸只取决于湖、陆地这两个数组；和上一次相同时（多数笔画里湖没变）不再走一遍。结果只读
+const partsMemo = new WeakMap<World['mesh'], { lake: Uint8Array; land: Uint8Array; parts: LakeParts; shores: Int32Array[] | null }>();
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function partsOf(world: World, d: Pick<Derived, 'lake'>): { parts: LakeParts; shores: () => Int32Array[] } {
+  const land = world.causes.land;
+  let pad = partsMemo.get(world.mesh);
+  if (!pad || !sameBytes(pad.lake, d.lake) || !sameBytes(pad.land, land)) {
+    pad = { lake: d.lake.slice(), land: land.slice(), parts: lakeParts(world, d), shores: null };
+    partsMemo.set(world.mesh, pad);
+  }
+  const hit = pad;
+  return { parts: hit.parts, shores: () => (hit.shores ??= lakeShores(world, hit.parts)) };
 }
 
 // 统计（测试用）：match 脚本一共算了多少个湖
@@ -213,6 +233,9 @@ function lakeMeasures(d: Derived, cells: Int32Array): [number, number, number, n
   return [h / m, s / m, t / m, q];
 }
 
+// 条件里的大小（whenBounds 的最后一对）：这个湖有几格
+const sizeHolds = (b: Float64Array, cells: number): boolean => cells >= b[8] && cells <= b[9];
+
 // 湖岸最多的那种生态（一样多取先列的；没有为 −1）
 function shoreBiome(biomes: Int16Array, shore: Int32Array, S: number): number {
   const count = new Int32Array(S);
@@ -238,7 +261,7 @@ export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16A
   const lt = d.lakeType?.length === n ? d.lakeType : new Uint8Array(n);
   lt.fill(0);
   const index = new Map(types.map((t, k) => [t.id, k]));
-  const parts = lakeParts(world, d);
+  const { parts, shores: shoresOf } = partsOf(world, d);
   // 每个湖：−2 还没定，−1 普通的湖，k 第 k 种
   const chosen = new Int32Array(parts.lakes.length).fill(-2);
   const choose = (cell: number, type: string) => {
@@ -257,8 +280,6 @@ export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16A
   let open: number[] = [];
   for (let k = 0; k < chosen.length; k++) if (chosen[k] === -2) open.push(k);
   let inputs: ScriptInputs | null = null;
-  let shores: Int32Array[] | null = null;
-  const shoresOf = () => (shores ??= lakeShores(world, parts));
   const measures: [number, number, number, number][] = [];
   types.forEach((t, k) => {
     if (!matchesNaturally(t) || !open.length) return;
@@ -280,7 +301,7 @@ export function typeLakes(world: World, d: Derived, seed: number, biomes: Int16A
     const bounds = hasWhen(t) ? whenBounds(t.when!) : null;
     const rest: number[] = [];
     open.forEach((j, q) => {
-      const ok = (!match || match[q]) && (!set || (biomes !== null && inBiomes(biomes, shoresOf()[j], set))) && (!bounds || whenHolds(bounds, ...(measures[j] ??= lakeMeasures(d, parts.lakes[j]))));
+      const ok = (!match || match[q]) && (!set || (biomes !== null && inBiomes(biomes, shoresOf()[j], set))) && (!bounds || (sizeHolds(bounds, parts.lakes[j].length) && whenHolds(bounds, ...(measures[j] ??= lakeMeasures(d, parts.lakes[j])))));
       if (ok) chosen[j] = k;
       else rest.push(j);
     });

@@ -15,7 +15,7 @@ import type { World } from '../core/world';
 import { modeDef, modeFeatures } from '../src/ui/map/modes';
 import { regionDraws } from '../src/ui/map/political';
 import { settleOverlay } from '../src/ui/map/settle';
-import { r40Engine } from './r40-world';
+import { dropWaterTypes, r40Engine } from './r40-world';
 
 type OverlayMod = typeof import('../src/render/overlay');
 interface Side {
@@ -47,7 +47,7 @@ function canvas(read = false): CanvasRenderingContext2D {
 }
 
 // 全部同步地跑完（页面的 load 里）：--dump-dom 等 load 跑完再取页面；不用虚拟时间（那时 performance.now 不准）
-export function run(oldS: Side, newS: Side, opt: { quick: boolean }) {
+export function run(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) {
   try {
     main(oldS, newS, opt);
     log('DONE');
@@ -56,11 +56,17 @@ export function run(oldS: Side, newS: Side, opt: { quick: boolean }) {
   }
 }
 
-function main(oldS: Side, newS: Side, opt: { quick: boolean }) {
+function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) {
   const N = opt.quick ? 7 : 15;
   log(`devicePixelRatio ${devicePixelRatio}，画布 ${CW} × ${CH} CSS 像素，每项 ${N} 次的中位数（毫秒）`);
-  const worlds: [string, () => World][] = [['一块地区（4 万格）', () => r40Engine(false, 40000).world]];
-  if (!opt.quick) worlds.push(['类地星球', () => r40Engine(true, planetCells(PLANET_SIZES.earth.radiusKm)).world]);
+  // 第五十七轮：--plain 画没有河湖类型的世界（新世界默认带类型）
+  const worldOf = (globe: boolean, cells: number): World => {
+    const eng = r40Engine(globe, cells);
+    if (opt.plain) dropWaterTypes(eng);
+    return eng.world;
+  };
+  const worlds: [string, () => World][] = [['一块地区（4 万格）', () => worldOf(false, 40000)]];
+  if (!opt.quick) worlds.push(['类地星球', () => worldOf(true, planetCells(PLANET_SIZES.earth.radiusKm))]);
   let differ = 0;
   for (const [wname, make] of worlds) {
     const t0 = performance.now();

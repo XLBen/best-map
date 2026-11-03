@@ -6,6 +6,7 @@ import { Engine } from '../engine';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS } from '../packs/eras';
 import { FANTASY_BIOMES } from '../packs/fantasy-biomes';
 import { FANTASY_RIVER_TYPES } from '../packs/fantasy-rivers';
+import { REAL_LAKE_TYPES, REAL_RIVER_TYPES } from '../packs/water';
 
 import { continents, snapshot, humanExec, type HumanCommand } from '../testing/fixtures';
 import type { World } from '../world';
@@ -32,13 +33,13 @@ function culturesWithPeople(w: World): Set<string> {
 }
 
 describe('新世界只带用得上的', () => {
-  it('生态是普通的 15 种，没有奇幻生态，没有河湖的种类（血河在资源库里）', () => {
+  it('生态是普通的 15 种，没有奇幻生态；河湖只有现实的（第五十七轮，血河在资源库里）', () => {
     const w = continents().world;
     expect(w.small.species.map((s) => s.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
     expect(w.small.species.length).toBe(15);
     expect(w.small.species.some((s) => FANTASY_BIOMES.some((f) => f.id === s.id))).toBe(false);
-    expect(w.small.riverTypes ?? []).toEqual([]);
-    expect(w.small.lakeTypes ?? []).toEqual([]);
+    expect(w.small.riverTypes).toEqual(REAL_RIVER_TYPES);
+    expect(w.small.lakeTypes).toEqual(REAL_LAKE_TYPES);
     expect(FANTASY_RIVER_TYPES.some((t) => t.id === 'blood_river')).toBe(true);
     // 人文的内容一样都没有（第三十轮：生成之前才从时代包加进来）
     for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeUndefined();

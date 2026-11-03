@@ -19,11 +19,16 @@ const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色需为 #rrggbb');
 // 每一项的滑块：到两头是“不限”。height 的上限同 species.ts 的 HEIGHT_MAX（这里不能在顶层读它：模块互相引用，测试查着两个数相同）
 export const WHEN_KEYS = ['height', 'slope', 'temp', 'flow'] as const;
 export type WhenKey = (typeof WHEN_KEYS)[number];
-export const WHEN_RANGE: Record<WhenKey, { label: string; unit: string; lo: number; hi: number; step: number }> = {
+// 湖另有大小（第五十七轮，整个湖几格）：火山口湖、牛轭湖是小湖。按格不按 km²：最小的湖有 3 格，地区上约 4000 km²，星球上约 2 万 km²，
+// 写面积的话换一种大小的世界就永远不出现或者全都是
+export const LAKE_WHEN_KEYS = [...WHEN_KEYS, 'size'] as const;
+export type LakeWhenKey = (typeof LAKE_WHEN_KEYS)[number];
+export const WHEN_RANGE: Record<LakeWhenKey, { label: string; unit: string; lo: number; hi: number; step: number }> = {
   height: { label: '高度', unit: 'm', lo: 0, hi: 9000, step: 100 },
   slope: { label: '坡度', unit: 'm/km', lo: 0, hi: 100, step: 1 },
   temp: { label: '气温', unit: '°C', lo: -40, hi: 35, step: 1 },
   flow: { label: '流量', unit: 'm³/s', lo: 0, hi: 20000, step: 10 },
+  size: { label: '大小', unit: '格', lo: 0, hi: 200, step: 1 },
 };
 
 const whenRangeSchema = z.object({ low: z.number(), high: z.number() }).refine((r) => r.low <= r.high, { message: '下限不能高于上限' });
@@ -33,23 +38,24 @@ export const waterWhenSchema = z.object({
   temp: whenRangeSchema.optional(),
   flow: whenRangeSchema.optional(),
 });
-export type WaterWhen = z.output<typeof waterWhenSchema>;
+export const lakeWhenSchema = waterWhenSchema.extend({ size: whenRangeSchema.optional() });
+export type WaterWhen = z.output<typeof lakeWhenSchema>;
 
 // 写了条件（空的对象、全是“不限”的不算）
 export function hasWhen(t: { when?: WaterWhen }): boolean {
   const w = t.when;
   if (!w) return false;
-  for (const k of WHEN_KEYS) {
+  for (const k of LAKE_WHEN_KEYS) {
     const r = w[k];
     if (r && (r.low > WHEN_RANGE[k].lo || r.high < WHEN_RANGE[k].hi)) return true;
   }
   return false;
 }
 
-// 条件换成八个数（高度、坡度、气温、流量各一对下限上限；到两头的是无穷）
+// 条件换成十个数（高度、坡度、气温、流量、大小各一对下限上限；到两头的是无穷）。大小只有湖看（lake-types.ts）
 export function whenBounds(w: WaterWhen): Float64Array {
-  const out = new Float64Array(8);
-  WHEN_KEYS.forEach((k, q) => {
+  const out = new Float64Array(10);
+  LAKE_WHEN_KEYS.forEach((k, q) => {
     const r = w[k];
     out[2 * q] = !r || r.low <= WHEN_RANGE[k].lo ? -Infinity : r.low;
     out[2 * q + 1] = !r || r.high >= WHEN_RANGE[k].hi ? Infinity : r.high;
@@ -147,6 +153,9 @@ export interface WaterSpecies {
 // 生态读不读河岸、湖岸（条件里的 river:<id>、lake:<id>，“长在哪里”脚本里的 river()、hasRiver()、nearLake()、hasLake()）。
 // 读的话生态要等河湖的类型定了才算得出来；不读的话植被和河湖的类型无关（颜色脚本不决定长什么，不算）
 const BANK_NAME = /(?<![\p{ID_Continue}$.])(river|hasRiver|nearLake|hasLake)(?![\p{ID_Continue}$])/u;
+export function scriptReadsBanks(src: string): boolean {
+  return BANK_NAME.test(codeOnly(src));
+}
 function readsBanks(sp: WaterSpecies): boolean {
   const src = sp.scripts?.placement?.src;
   return sp.tolerances.some((t) => t.field.startsWith('river:') || t.field.startsWith('lake:')) || (!!src && BANK_NAME.test(codeOnly(src)));
@@ -164,11 +173,14 @@ export interface WaterPlan {
 // 测试用：baseFirst 为 true 时照第五十六轮以前的走法（读生态的世界总是先多算一遍），和提速后的结果对照
 export const waterPlanDebug = { baseFirst: false };
 
+// 有生态会让河断流（不允许普通河、设成“断流”）
+export const riversStop = (species: readonly Pick<WaterSpecies, 'waterBlock' | 'plainRiver'>[]): boolean => species.some((s) => s.waterBlock === 'stop' && s.plainRiver === false);
+
 export function waterPlan(small: { species: readonly WaterSpecies[]; riverTypes?: readonly WaterType[]; lakeTypes?: readonly WaterType[] }): WaterPlan {
   const rivers = small.riverTypes ?? [];
   const lakes = small.lakeTypes ?? [];
   const species = small.species;
-  const stops = species.some((s) => s.waterBlock === 'stop' && s.plainRiver === false);
+  const stops = riversStop(species);
   const plain = (rivers.length > 0 && species.some((s) => s.plainRiver === false)) || (lakes.length > 0 && species.some((s) => s.plainLake === false));
   const biomes = stops || plain || needsBaseBiomes(rivers) || needsBaseBiomes(lakes);
   return { biomes, baseFirst: biomes && (waterPlanDebug.baseFirst || species.some(readsBanks)), stops };

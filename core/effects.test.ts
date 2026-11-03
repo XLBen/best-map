@@ -8,7 +8,7 @@ import { FANTASY_BIOMES } from './packs/fantasy-biomes';
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
 import { previewWorldOf } from './preview-world';
 import type { Species } from './species';
-import { continents } from './testing/fixtures';
+import { dryContinents as continents } from './testing/fixtures';
 
 // 生态、河对周围的影响：第一遍植被之后按它的结果算一次，之后的求解、最后一遍都在加了影响的气候上算
 

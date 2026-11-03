@@ -52,7 +52,7 @@ const lap = (label: string, key?: string) => {
 const globe = process.argv.includes('--globe');
 const kept = process.argv.includes('--kept');
 const library = kept || process.argv.includes('--library');
-const water = process.argv.includes('--water');
+const noWater = process.argv.includes('--no-water');
 const packArg = process.argv.indexOf('--pack');
 const pack = packArg >= 0 ? process.argv[packArg + 1] : null;
 const EARTH_CELLS = planetCells(PLANET_SIZES.earth.radiusKm);
@@ -199,34 +199,13 @@ function measure(eng: Engine, key: string, label: string, run: () => void, stage
   t = performance.now();
 }
 
-// 第五十六轮：--water，带河湖类型和分段规则的世界（第五十七轮新世界默认的样子：七种河、七种湖，条件是声明式的，荒漠不允许普通河）。
-// 没有规则的旧提交上这几项没有意义，这一项对照的是同一个提交的 --water 和不带（node tools/bench-median.mjs 5 --compare 两份）
-function waterRuleCommands(): Command[] {
-  const at = (id: string, color: string, more: object) => ({ id, name: id, color, natural: true, ...more });
-  const up = (low: number) => ({ low, high: 9000 });
-  const rivers = [
-    at('glacier', '#b8dcf0', { when: { temp: { low: -40, high: -3 }, height: up(1000) } }),
-    at('rapids', '#6f9fc4', { when: { slope: { low: 25, high: 100 } } }),
-    at('seasonal', '#c2a56e', { biomes: ['desert', 'savanna', 'shrubland'], when: { flow: { low: 0, high: 2000 } } }),
-    at('dry_bed', '#b0946a', { biomes: ['desert'] }),
-    at('black', '#3a3a30', { biomes: ['rainforest', 'wetland'] }),
-    at('muddy', '#a37f55', { when: { flow: { low: 3000, high: 20000 }, slope: { low: 0, high: 4 } } }),
-    at('meander', '#5f8f7a', { biomes: ['wetland'], when: { slope: { low: 0, high: 2 } } }),
-  ];
-  const lakes = [
-    at('glacial', '#b8dcf0', { when: { temp: { low: -40, high: 0 } } }),
-    at('alpine', '#6fb0c4', { when: { height: up(2500) } }),
-    at('salt', '#dcd6c0', { biomes: ['desert'] }),
-    at('dry', '#c9b98e', { biomes: ['desert', 'savanna'], when: { flow: { low: 0, high: 200 } } }),
-    at('crater', '#4f7fa0', { when: { height: up(5000) } }),
-    at('swamp', '#587a5a', { biomes: ['wetland'] }),
-    at('oxbow', '#6d8fa8', { when: { flow: { low: 1000, high: 20000 }, slope: { low: 0, high: 2 } } }),
-  ];
-  return [
-    ...rivers.map((t) => ({ op: 'set_river_type', type: t }) as unknown as Command),
-    ...lakes.map((t) => ({ op: 'set_lake_type', type: t }) as unknown as Command),
-    { op: 'update_species', id: 'desert', patch: { plainRiver: false } },
-  ];
+// 第五十七轮：新世界默认带现实的水系。--no-water 把它们从新世界的内容里去掉（和同一个提交带着的对照；旧的提交上没有，加不加一样）
+function withoutWaterTypes(cmds: readonly Command[]): Command[] {
+  const one = (c: Command): Command[] => {
+    if (c.op === 'batch') return [{ ...c, commands: c.commands.flatMap(one) }];
+    return c.op === 'set_river_type' || c.op === 'set_lake_type' ? [] : [c];
+  };
+  return cmds.flatMap(one);
 }
 
 function plainBench() {
@@ -234,14 +213,10 @@ function plainBench() {
   t = performance.now();
   const eng = new Engine(settings);
   lap('mesh', 'mesh');
-  measure(eng, 'newWorld', 'new world', () => eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] }));
+  const content = noWater ? withoutWaterTypes(newWorldContentCommands()) : newWorldContentCommands();
+  measure(eng, 'newWorld', 'new world', () => eng.exec({ op: 'batch', commands: [...content, { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] }));
   const w = eng.world;
-  if (water) {
-    for (const c of waterRuleCommands()) eng.exec(c);
-    lap('water rules', 'waterRules');
-    results.riverTyped = w.derived.riverType?.reduce((a, v) => a + (v ? 1 : 0), 0) ?? 0;
-    t = performance.now();
-  }
+  results.riverTyped = w.derived.riverType?.reduce((a, v) => a + (v ? 1 : 0), 0) ?? 0;
   if (library) {
     for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']] }, w)) eng.exec(c);
     lap('import library', 'library');

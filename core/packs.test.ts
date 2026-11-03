@@ -29,7 +29,7 @@ import { FANTASY_BIOMES } from './packs/fantasy-biomes';
 import { FANTASY_FORMS, POLAR_CONTINENTS, TWIN_CONTINENTS } from './packs/fantasy-forms';
 import { findScripts } from './script';
 import { type Species, withRect } from './species';
-import { continents, engineFor, FANTASY_PACK, ZH_STYLE } from './testing/fixtures';
+import { dryContinents as continents, engineFor, FANTASY_PACK, ZH_STYLE } from './testing/fixtures';
 import { riverNet } from './river-types';
 import { DEFAULT_SPECIES } from './packs/nature';
 
@@ -427,7 +427,7 @@ describe('内置示例包', () => {
   });
 
   it('用到 8 千格的星球（格子粗、坡度小）：四种河至少三种出现，每条河整条是同一种，不是大部分的河都带类型', () => {
-    const eng = engineFor({ cells: 8000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
+    const eng = engineFor({ cells: 8000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 }, { noWater: true });
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents' }, reset: true });
     const w = eng.world;
     eng.exec(applyPackCommands(w, FANTASY_PACK));

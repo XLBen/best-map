@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PLAIN_RIVER, riverNet } from '../../core/river-types';
-import { continents } from '../../core/testing/fixtures';
+import { dryContinents as continents } from '../../core/testing/fixtures';
 import { setOptions, world } from '../state';
 import { riverTypeChoiceCommand, riverTypeOfRiver, riverTypeScriptCommand, newRiverType } from './panels/riverTypes';
 import { BY_RULES, chosenRiverType, hasRiverRules, pinCommand, riverInfo } from './riverCourse';

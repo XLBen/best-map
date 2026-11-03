@@ -7,7 +7,7 @@ import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
 import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
 import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
-import { WHEN_KEYS, WHEN_RANGE } from '../water-types';
+import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
 import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
@@ -65,6 +65,14 @@ const NAMES_FIELD: FieldDesc = {
   ],
 };
 
+const whenField = (keys: readonly LakeWhenKey[]): FieldDesc => ({
+  key: 'when',
+  label: '条件',
+  type: 'json',
+  optional: true,
+  hint: '河按每格看，湖按整个湖；到两头是不限',
+  of: keys.map((k) => ({ key: k, label: WHEN_RANGE[k].label, type: 'range' as const, optional: true, min: WHEN_RANGE[k].lo, max: WHEN_RANGE[k].hi, step: WHEN_RANGE[k].step, unit: WHEN_RANGE[k].unit })),
+});
 const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'id', label: 'id', type: 'text' },
   { key: 'name', label: '名字', type: 'text' },
@@ -72,14 +80,7 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '画风选了“另一种颜色”时用（地图册）；空着时同颜色' },
   { key: 'natural', label: '自然生成', type: 'bool', optional: true },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
-  {
-    key: 'when',
-    label: '条件',
-    type: 'json',
-    optional: true,
-    hint: '河按每格看，湖按整个湖；到两头是不限',
-    of: WHEN_KEYS.map((k) => ({ key: k, label: WHEN_RANGE[k].label, type: 'range' as const, optional: true, min: WHEN_RANGE[k].lo, max: WHEN_RANGE[k].hi, step: WHEN_RANGE[k].step, unit: WHEN_RANGE[k].unit })),
-  },
+  whenField(WHEN_KEYS),
   {
     key: 'bank',
     label: '岸边的影响',
@@ -295,7 +296,8 @@ registerKind<LakeType>({
   inWorld: (w) => lakeTypesOf(w.small),
   enable: (type) => ({ op: 'set_lake_type', type }),
   disable: (id) => ({ op: 'remove_lake_type', id }),
-  fields: WATER_FIELDS,
+  // 湖的条件另有大小（第五十七轮）
+  fields: WATER_FIELDS.map((f) => (f.key === 'when' ? whenField(LAKE_WHEN_KEYS) : f)),
   pack: {
     key: 'lakeTypes',
     max: 64,

@@ -252,6 +252,6 @@ describe('压缩世界文件：只去掉“加了又删”', () => {
     expect(back.small.content).toEqual(eng.world.small.content);
     expect(worldDigest(back)).toBe(worldDigest(eng.world));
     // 没用到的（整理才移出的）都在
-    expect(eng.planTidy().removed.every((x) => (back.small.content?.[x.kind] as Record<string, unknown> | undefined)?.[x.id] !== undefined || x.kind === 'biome' || x.kind === 'field')).toBe(true);
+    expect(eng.planTidy().removed.every((x) => (back.small.content?.[x.kind] as Record<string, unknown> | undefined)?.[x.id] !== undefined || x.kind === 'biome' || x.kind === 'field' || x.kind === 'riverType' || x.kind === 'lakeType')).toBe(true);
   });
 });

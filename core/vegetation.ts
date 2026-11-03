@@ -1,5 +1,6 @@
 import { computeLook } from './biome-look';
-import { ScriptSession, placementSlots, worldSeedOf } from './biome-scripts';
+import { scriptReadsBanks } from './water-types';
+import { SLOT_BANK_EFFECT, SLOT_BANK_FIRST, SLOT_EFFECT, SLOT_FIRST, SLOT_LOOK, ScriptSession, placementSlots, worldSeedOf } from './biome-scripts';
 import { graphDistance } from './mesh';
 import { LAKE_PREFIX, lakeBank } from './lake-types';
 import { riverBank, riverProvider } from './river-types';
@@ -155,7 +156,7 @@ export function invadeBoost(table: InvadeTable, suit: ArrayLike<number>, S: numb
 // 长在哪里的脚本的系数（第三批）：脚本没关掉、有生态带这种脚本时，对每个长植被的格运行，
 // 写进 d.placeF（n × P，P 为带脚本的生态个数，见 placementSlots；不长植被的格为 1）。
 // 脚本出错时这一段按没有脚本处理（系数 1），说明记进 issues。没有这种脚本时 placeF 为 undefined
-function computePlacement(world: World, d: Derived, issues: ScriptIssue[], session: () => ScriptSession): { slot: Int32Array; P: number; placeF: Float32Array } | null {
+function computePlacement(world: World, d: Derived, issues: ScriptIssue[], session: (src: string) => ScriptSession): { slot: Int32Array; P: number; placeF: Float32Array } | null {
   const species = world.small.species;
   const { slot, P } = scriptsEnabled() ? placementSlots(species) : { slot: null, P: 0 };
   if (!slot || P === 0) {
@@ -180,7 +181,8 @@ function computePlacement(world: World, d: Derived, issues: ScriptIssue[], sessi
   species.forEach((sp, s) => {
     const p = slot[s];
     if (p < 0) return;
-    const r = session().run('placement', sp, sp.scripts!.placement!.src, inputs, cells, mask, seed);
+    const src = sp.scripts!.placement!.src;
+    const r = session(src).run('placement', sp, src, inputs, cells, mask, seed);
     if (!r.ok) {
       issues.push(r.issue);
       return;
@@ -210,8 +212,9 @@ function scratchFor(n: number): VegScratch {
 // extraIssues：这一遍里别处出的脚本问题（河流、湖泊类型的 match 脚本，见 river-types.ts 的 typeRivers、lake-types.ts 的 typeLakes），排在星球形态的之后。
 // look 为 false 时不算颜色脚本（引擎在不是最后一遍的那几遍里不算：之后的一遍会整个重算 d.look；最后再用 finishLook 补上）。
 // after（第五十六轮）：生态算完之后马上定河、湖的类型（读 d.dominant），它们的问题和 extraIssues 排在同一处：
-// 生态不读河岸、湖岸的世界不用先多算一遍植被（engine.ts 的 pass），结果逐值相同
-export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean; after?: () => readonly ScriptIssue[] } = {}) {
+// 生态不读河岸、湖岸的世界不用先多算一遍植被（engine.ts 的 pass），结果逐值相同。
+// only（第五十七轮，baseBiomes）：只有这些格算适宜度和份额（别的格当作不长植被）；脚本还是所有的格都跑（出错了整段作废，要和全算时一样），不兜底
+export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean; after?: () => readonly ScriptIssue[]; base?: boolean; only?: Uint8Array; effect?: boolean } = {}) {
   const { mesh, small } = world;
   const n = mesh.n;
   const species = small.species;
@@ -226,7 +229,8 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   const lake = d.lake;
   const veg = new Uint8Array(n);
   let count = 0;
-  for (let i = 0; i < n; i++) if ((veg[i] = land[i] === 1 && lake[i] !== 1 ? 1 : 0)) count++;
+  const only = opts.only;
+  for (let i = 0; i < n; i++) if ((veg[i] = land[i] === 1 && lake[i] !== 1 && (!only || only[i] === 1) ? 1 : 0)) count++;
   const vegCells = new Int32Array(count);
   for (let i = 0, k = 0; i < n; i++) if (veg[i]) vegCells[k++] = i;
   // 每个用到的场在能长植被的格上的值，一个场一份（与逐格调用取值函数的值完全相同：双精度存下，不经过单精度）
@@ -246,9 +250,9 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   const issues: ScriptIssue[] = [...planetFormIssues(world, d.scriptIssues), ...extraIssues];
   const issuesBefore = issues.length;
   // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
-  const run: { session?: ScriptSession } = {};
-  const sessionOf = () => (run.session ??= new ScriptSession(world));
-  const place = computePlacement(world, d, issues, sessionOf);
+  const run: { session?: ScriptSession; bank?: ScriptSession } = {};
+  const sessionOf = () => (run.session ??= new ScriptSession(world, opts.effect ? SLOT_EFFECT : SLOT_FIRST));
+  const place = computePlacement(world, d, issues, (src) => (opts.base && scriptReadsBanks(src) ? (run.bank ??= new ScriptSession(world, opts.effect ? SLOT_BANK_EFFECT : SLOT_BANK_FIRST)) : sessionOf()));
 
   const suit = d.suit;
   const reach = d.reach;
@@ -291,7 +295,7 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   d.overridden.fill(0);
   vegShares(n, S, veg, suit, reach, comp, k, invade, share, dominant);
   // 第五十五轮：写了高度范围的世界不留下没有生态的陆地格（兜底）。一种都没写时不走这里，和以前逐值相同
-  if (species.some((sp) => sp.height)) fillBare(mesh, species, veg, share, dominant);
+  if (!only && species.some((sp) => sp.height)) fillBare(mesh, species, veg, share, dominant);
 
   // 硬覆盖：直接改结果，标为例外
   for (const c of small.constraints) {
@@ -310,6 +314,7 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   // 颜色脚本（第三批）：按最后的份额算每格的颜色，写进 d.look（没有颜色脚本时为 undefined）
   if (opts.look !== false) computeLook(world, d, issues, sessionOf);
   run.session?.finish();
+  run.bank?.finish();
   // 没有问题时为 undefined（与 placeF 一样只在曾经有过时才赋值：从来没有脚本的世界里没有这个键）
   if (issues.length) d.scriptIssues = issues;
   else if (d.scriptIssues !== undefined) d.scriptIssues = undefined;
@@ -476,24 +481,58 @@ export const vegetationStats = { base: 0 };
 
 // 第十二轮：不计水体类型的一遍植被的主导生态（河、湖类型“只在这些生态里出现”、脚本里的 biome() 用它）。
 // 在 d 的一份浅副本上算（河岸、湖岸场都当作没有），不改 d；结果只取决于这一遍的气候、水文，重放、撤销都一样
-export function baseBiomes(world: World, d: Derived): Int16Array {
+// 第五十七轮（提速）：奇幻库默认带上读河岸的生态，每一遍都走这里，一笔多算两遍。
+//   · 除了 dominant（这一遍的类型要读），别的几块是草稿，留着下一次用（computeVegetation 每次都整块重写）；
+//   · focused：河、湖的类型只读河格和湖岸的生态（waterCells），别的格不算。靠得住的两条：这些格上和全算逐值相同（core/water-real-speed.test.ts），
+//     会牵连别的格的两种情况走全算：有扩散范围的生态（dispersal 按邻格走）、这些格里有没有生态、要靠邻格兜底的（fillBare）
+const basePad = new WeakMap<World['mesh'], { S: number; share: Float32Array; suit: Float32Array; reach: Uint8Array; overridden: Uint8Array; only: Uint8Array }>();
+
+// 河、湖的类型读哪些格的生态：河格、湖岸（挨着湖面、干湖底的陆地格）
+export function waterCells(world: World, d: Derived, out: Uint8Array): void {
+  const { mesh } = world;
+  const land = world.causes.land;
+  const thr = world.small.planet.riverThreshold;
+  out.fill(0);
+  for (let i = 0; i < mesh.n; i++) {
+    if (land[i] !== 1) continue;
+    const l = d.lake[i];
+    if (l === 0) {
+      if (d.discharge[i] >= thr) out[i] = 1;
+      continue;
+    }
+    if (l !== 1 && d.discharge[i] >= thr) out[i] = 1;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) out[mesh.adj[e]] = 1;
+  }
+}
+
+export function baseBiomes(world: World, d: Derived, focused = false, effect = false): Int16Array {
   const n = world.mesh.n;
   const S = world.small.species.length;
+  let pad = basePad.get(world.mesh);
+  if (!pad || pad.S !== S) basePad.set(world.mesh, (pad = { S, share: new Float32Array(n * S), suit: new Float32Array(n * S), reach: new Uint8Array(n * S), overridden: new Uint8Array(n), only: new Uint8Array(n) }));
   const tmp: Derived = {
     ...d,
     riverType: undefined,
     lakeType: undefined,
-    share: new Float32Array(n * S),
-    suit: new Float32Array(n * S),
-    reach: new Uint8Array(n * S),
+    share: pad.share,
+    suit: pad.suit,
+    reach: pad.reach,
     dominant: new Int16Array(n).fill(-1),
-    overridden: new Uint8Array(n),
+    overridden: pad.overridden,
     placeF: undefined,
     look: undefined,
     scriptIssues: undefined,
   };
   vegetationStats.base++;
-  computeVegetation(world, tmp, [], { look: false });
+  if (focused && !world.small.species.some((sp) => sp.dispersal)) {
+    waterCells(world, d, pad.only);
+    computeVegetation(world, tmp, [], { look: false, base: true, only: pad.only, effect });
+    let bare = false;
+    for (let i = 0; i < n && !bare; i++) bare = pad.only[i] === 1 && tmp.dominant[i] < 0 && world.causes.land[i] === 1 && d.lake[i] !== 1;
+    if (!bare) return tmp.dominant;
+    tmp.dominant.fill(-1);
+  }
+  computeVegetation(world, tmp, [], { look: false, base: true, effect });
   return tmp.dominant;
 }
 
@@ -503,7 +542,7 @@ export function finishLook(world: World, d: Derived) {
   const issues: ScriptIssue[] = d.scriptIssues ? [...d.scriptIssues] : [];
   const before = issues.length;
   const run: { session?: ScriptSession } = {};
-  computeLook(world, d, issues, () => (run.session ??= new ScriptSession(world)));
+  computeLook(world, d, issues, () => (run.session ??= new ScriptSession(world, SLOT_LOOK)));
   run.session?.finish();
   if (issues.length !== before) d.scriptIssues = issues;
 }

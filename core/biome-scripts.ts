@@ -87,17 +87,27 @@ const MAX_ENTRIES = 32;
 
 // 统计（测试用）：累计实际运行脚本的格数
 export const scriptRunStats = { placement: 0, color: 0 };
-const stores = new WeakMap<Mesh, Store>();
+const stores = new WeakMap<Mesh, Store[]>();
 
 // 忘掉这个网格上记下的结果，下一次全部从头算（测试用它对照“从头算”）
 export function forgetScriptResults(mesh: Mesh): void {
   stores.delete(mesh);
 }
 
-function storeOf(mesh: Mesh): Store {
-  let s = stores.get(mesh);
-  if (!s) stores.set(mesh, (s = { snaps: new Map(), entries: new Map(), ver: 0 }));
-  return s;
+// 第五十七轮（提速）：一个网格几份记录（slot）。记录不影响结果，只是不重算没变的格，读到的输入一遍和一遍差得越少越省：
+//   SLOT_FIRST、SLOT_EFFECT：引擎的第一遍（没有对周围的影响）、加上影响之后的一遍。一笔要走这两遍，两遍的气候差得多，共用一份时每一笔都要重算一大片；
+//   SLOT_BANK_*：不计水体类型的一遍（vegetation.ts 的 baseBiomes）里读河岸的脚本。这一遍读不到河岸，共用一份时这几段每一遍都整个重算（奇幻库默认带上读河岸的生态）。
+//     不读河岸的脚本两遍读到的一样，和真的那一遍共用一份，后一遍不用再跑；
+//   SLOT_LOOK：颜色脚本（全部几遍之后算一次）
+export const SLOT_FIRST = 0;
+export const SLOT_EFFECT = 1;
+export const SLOT_BANK_FIRST = 2;
+export const SLOT_BANK_EFFECT = 3;
+export const SLOT_LOOK = 4;
+function storeOf(mesh: Mesh, slot: number): Store {
+  let list = stores.get(mesh);
+  if (!list) stores.set(mesh, (list = []));
+  return (list[slot] ??= { snaps: new Map(), entries: new Map(), ver: 0 });
 }
 
 function copyOf(v: ArrayLike<number>): Typed {
@@ -154,8 +164,8 @@ export class ScriptSession {
   private readonly current = new Map<string, ArrayLike<number>>();
   private readonly pending: { entry: Entry; deps: string[] }[] = [];
 
-  constructor(readonly world: World) {
-    this.store = storeOf(world.mesh);
+  constructor(readonly world: World, slot = SLOT_FIRST) {
+    this.store = storeOf(world.mesh, slot);
     this.n = world.mesh.n;
   }
 

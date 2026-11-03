@@ -29,10 +29,12 @@ const allButProvinces = (d: Record<string, string>) => {
   return rest;
 };
 
-// 地形和世界的底子。世界的底子来自第一个库（和向导一样）
+// 地形和世界的底子。世界的底子来自第一个库（和向导一样）。
+// 第五十七轮：奇幻库新建时另带奇幻的生态、河、湖，但换库不带（它们改的是地图），所以这里对照的新建不要那三个小包，“换库 = 新建”比的是人文。
+const FANTASY_EXTRAS = ['biomes', 'rivers', 'lakes'];
 function terrain(from: string): Engine {
   const eng = engineFor({ cells: 6000, seed: 2, latNorth: 70, latSouth: 15 }, { bare: true });
-  for (const c of packImportCommands(LIB, { packs: worldPartsOf(from), groups: [] }, eng.world)) eng.exec(c);
+  for (const c of packImportCommands(LIB, { packs: worldPartsOf(from).filter((p) => !FANTASY_EXTRAS.includes(p[1])), groups: [] }, eng.world)) eng.exec(c);
   eng.exec(NO_CURRENTS);
   eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
   eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
@@ -157,7 +159,7 @@ describe('换库 = 用新库新建', () => {
 
   it('奇幻可选的生态、河、湖不跟着来去：换到奇幻不带，手动加过的换走时也留着（它们改的是地图，不是人文）', () => {
     const x = switched('medieval', 'fantasy');
-    expect((x.world.small.riverTypes ?? []).length).toBe(0);
+    expect((x.world.small.riverTypes ?? []).map((t) => t.id)).toEqual(fresh('medieval').world.small.riverTypes!.map((t) => t.id));
     expect(x.world.small.species.map((s) => s.id)).toEqual(fresh('medieval').world.small.species.map((s) => s.id));
     const y = fresh('fantasy');
     const before = y.world.small.species.length;

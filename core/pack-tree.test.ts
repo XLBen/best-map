@@ -12,7 +12,9 @@ import { BASE_PATH, builtinItem, builtinItems, builtinOrigin, builtinPacks, isBu
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, CULTURE_REGIONS, ERA_PACKS, VALUE_ERAS } from './packs/eras';
 import { BUILTIN_PLANET_FORMS } from './packs/planet-forms';
 
+import { FANTASY_LAKE_TYPES } from './packs/fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
+import { REAL_LAKE_TYPES, REAL_RIVER_TYPES } from './packs/water';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS } from './packs/governments';
 import { BUILTIN_STYLES } from './packs/names';
 
@@ -50,7 +52,8 @@ describe('内置资源包的树', () => {
     expect(count('cultureGroup')).toBe(BUILTIN_CULTURE_GROUPS.length);
     expect(count('nameStyle')).toBe(BUILTIN_STYLES.length);
     expect(count('biome')).toBe(DEFAULT_SPECIES.length + packItems(FANTASY_PACK, 'biomes').length);
-    expect(count('riverType')).toBe(FANTASY_RIVER_TYPES.length);
+    expect(count('riverType')).toBe(FANTASY_RIVER_TYPES.length + REAL_RIVER_TYPES.length);
+    expect(count('lakeType')).toBe(FANTASY_LAKE_TYPES.length + REAL_LAKE_TYPES.length);
     expect(count('planetForm')).toBe(packItems(FANTASY_PACK, 'planetForms').length + BUILTIN_PLANET_FORMS.length);
   });
 
@@ -90,9 +93,9 @@ describe('内置资源包的树', () => {
     // 第五十一轮：每个库都有世界的底子（基础、自然、地名、星球形态、画风、国家等级），是同一份对象
     for (const era of BUILTIN_ERAS) {
       const ids = subPacks(top(era.id)).map((x) => x.id);
-      expect(ids.slice(-6)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers']);
+      expect(ids.slice(-7)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'water']);
       expect(ids).toContain('cultures');
-      for (const id of ['base', 'nature', 'names', 'styles', 'tiers']) expect(findPack(top(era.id), [id])).toBe(findPack(top('medieval'), [id]));
+      for (const id of ['base', 'nature', 'names', 'styles', 'tiers', 'water']) expect(findPack(top(era.id), [id])).toBe(findPack(top('medieval'), [id]));
     }
     const lib = top('medieval');
     expect(packItems(findPack(lib, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);
@@ -227,7 +230,7 @@ describe('来源（small.origin）', () => {
     expect(originOf(w.small, 'government', 'r29-own', { ...gov, id: 'r29-own' })).toBeUndefined();
     // 以前的种类：河的种类
     eng.exec({ op: 'set_river_type', type: FANTASY_RIVER_TYPES[0], from: ['fantasy', 'rivers'] });
-    expect(w.small.origin?.riverType).toEqual({ [FANTASY_RIVER_TYPES[0].id]: ['fantasy', 'rivers'] });
+    expect(w.small.origin?.riverType?.[FANTASY_RIVER_TYPES[0].id]).toEqual(['fantasy', 'rivers']);
     const doc = eng.toDoc();
     expect(Engine.fromDoc(doc, w.mesh).world.small.origin).toEqual(w.small.origin);
     // 移出：来源一起去掉；撤销回来
@@ -235,7 +238,7 @@ describe('来源（small.origin）', () => {
     eng.exec({ op: 'set_content', kind: 'government', id: gov.id as string, item: null });
     eng.exec({ op: 'remove_river_type', id: FANTASY_RIVER_TYPES[0].id });
     expect(w.small.origin?.government).toBeUndefined();
-    expect(w.small.origin?.riverType).toBeUndefined();
+    expect(w.small.origin?.riverType?.[FANTASY_RIVER_TYPES[0].id]).toBeUndefined();
     eng.undo();
     eng.undo();
     expect(w.small.origin).toEqual(before);
@@ -394,7 +397,8 @@ describe('整理本世界（tidy_content）', () => {
     expect(plan.command!.items!.length).toBe(unused.length);
     eng.exec(plan.command!);
     expect(mapDiff(ref.world, eng.world)).toEqual([]);
-    expect(eng.world.small.riverTypes ?? []).toEqual([]);
+    // 冥河移出了；留下的现实的河都用着（第五十七轮）
+    expect((eng.world.small.riverTypes ?? []).some((t) => t.id === 'styx')).toBe(false);
     expect(eng.world.causes.fields.r29_field).toBeUndefined();
     expect(eng.world.small.content!.government!['r29-gov']).toBeUndefined();
     // 报出来的：自己做的不是内置原样；普通生态、关着自然生成的冥河（就是奇幻包加进世界时的样子）是（界面按内置的树判断）
@@ -407,7 +411,7 @@ describe('整理本世界（tidy_content）', () => {
     // 一步撤销；重放一样
     expect(Engine.fromDoc(eng.toDoc(), eng.world.mesh).world.small.species.map((s) => s.id)).toEqual(eng.world.small.species.map((s) => s.id));
     eng.undo();
-    expect(eng.world.small.riverTypes?.map((t) => t.id)).toEqual(['styx']);
+    expect(eng.world.small.riverTypes?.map((t) => t.id)).toContain('styx');
   });
 
   it('没用到、但移出后地图会变的留着，写明原因', () => {

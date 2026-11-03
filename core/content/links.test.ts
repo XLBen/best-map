@@ -154,7 +154,7 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
     expect(danglingLinks(table).map((b) => `${b.from.kind}:${b.from.id} → ${b.link.kinds}:${b.link.id}`)).toEqual([]);
     // 每种有引用的都走到了
     const kinds = new Set([...table.out].filter(([, l]) => l.length).map(([k]) => k.split('\u0000')[0]));
-    expect([...kinds].sort()).toEqual(['biome', 'countryLayout', 'culture', 'cultureGroup', 'era', 'faction', 'government', 'landmarkType', 'popValue', 'resource', 'valueGroup'].sort());
+    expect([...kinds].sort()).toEqual(['biome', 'countryLayout', 'culture', 'cultureGroup', 'era', 'faction', 'government', 'lakeType', 'landmarkType', 'popValue', 'resource', 'riverType', 'valueGroup'].sort());
   });
 
   it('内置的每个库单独看：找不到的 hard 类一条都没有，其余找不到的都是能取消、能去掉的', () => {
@@ -174,6 +174,15 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
   it('数据里看着像 id、表里没有的字：都写明了不是引用（新的引用写漏了这里会报）', () => {
     // 种类:位置 → 为什么不算
     const NOT_REFS: Readonly<Record<string, string>> = {
+      'riverType:KEY when.height': '条件的上下限，碰巧有东西叫 low、high',
+      'riverType:KEY when.slope': '条件的上下限，碰巧有东西叫 low、high',
+      'riverType:KEY when.temp': '条件的上下限，碰巧有东西叫 low、high',
+      'riverType:KEY when.flow': '条件的上下限，碰巧有东西叫 low、high',
+      'lakeType:KEY when.height': '条件的上下限，碰巧有东西叫 low、high',
+      'lakeType:KEY when.slope': '条件的上下限，碰巧有东西叫 low、high',
+      'lakeType:KEY when.temp': '条件的上下限，碰巧有东西叫 low、high',
+      'lakeType:KEY when.flow': '条件的上下限，碰巧有东西叫 low、high',
+      'lakeType:KEY when.size': '条件的上下限，碰巧有东西叫 low、high',
       'biome:KEY ': 'natural 是开关，碰巧有个取值组也叫它',
       'biome:KEY tolerances.#': 'min 是数的下限，碰巧有个文化叫它',
       'biome:KEY height': 'high 是高度范围的上限，碰巧有个文化叫它',

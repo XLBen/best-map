@@ -109,7 +109,7 @@ describe('选一个库', () => {
 
 describe('向导走得通（六个库）', () => {
   for (const id of ['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi']) {
-    it(`${id}：向导自己的命令新建，规则、文化组、国家都是这个库的，世界的底子来自它；奇幻的生态、河、湖照旧不带`, () => {
+    it(`${id}：向导自己的命令新建，规则、文化组、国家都是这个库的，世界的底子来自它；现实的水系都带上（第五十七轮）`, () => {
       const c = chooseLibrary(defaultChoice(null, true, LIB), id, LIB);
       const { eng, skipped } = wizardWorld(c);
       const small = eng.world.small;
@@ -121,9 +121,14 @@ describe('向导走得通（六个库）', () => {
       expect(small.origin!.terrainClass.plains[0]).toBe(id);
       expect(small.origin!.era[id][0]).toBe(id);
       expect(small.species.every((sp) => !sp.id.startsWith('fantasy'))).toBe(true);
-      expect(small.species.map((sp) => small.origin!.biome[sp.id]?.join('/'))).toEqual(small.species.map(() => `${id}/nature`));
-      expect((small.riverTypes ?? []).length).toBe(0);
-      expect((small.lakeTypes ?? []).length).toBe(0);
+      const fantasy = false;
+      const fromNature = small.species.filter((sp) => small.origin!.biome[sp.id]?.join('/') === `${id}/nature`).length;
+      expect(fromNature).toBe(15);
+      expect(small.species.length).toBe(fantasy ? 20 : 15);
+      expect((small.riverTypes ?? []).filter((t) => small.origin!.riverType[t.id]?.join('/') === `${id}/water`).length).toBe(7);
+      expect((small.lakeTypes ?? []).filter((t) => small.origin!.lakeType[t.id]?.join('/') === `${id}/water`).length).toBe(7);
+      expect((small.riverTypes ?? []).length).toBe(fantasy ? 17 : 7);
+      expect((small.lakeTypes ?? []).length).toBe(fantasy ? 11 : 7);
     });
   }
 });

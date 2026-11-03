@@ -5,7 +5,7 @@ import { FALLBACK_MAP_STYLE } from '../../core/map-style';
 import { previewWorldOf } from '../../core/preview-world';
 import { encodePath, traceRivers } from '../../core/rivers';
 import { planCourse } from '../../core/select';
-import { continents, engineFor } from '../../core/testing/fixtures';
+import { dryContinents as continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { type OverlayPaths, type OverlayState, buildPaths, drawOverlay, placeLabels, riverDraws, riverLines, riverPathsKey, samePathsKey } from './overlay';
 

@@ -620,7 +620,7 @@ export class Engine {
       // 单向的，不迭代：结果只取决于原因，撤销、重放都一样。不用断流的世界不走这里
       let bio: Int16Array | null = null;
       if (water.stops) {
-        bio = baseBiomes(w, d);
+        bio = baseBiomes(w, d, true, !!eff);
         const cut = stopCells(w, d, seed, bio);
         if (cut) {
           computeHydrology(w, d.elevation, d, cut);
@@ -636,8 +636,8 @@ export class Engine {
       // 颜色脚本只在全部几遍算完之后算一次（finishLook）：每一遍都整个重算 d.look，前几遍的没人用
       // 第十二轮：类型要读生态时按不计水体类型的一遍植被。第五十六轮（提速）：生态不读河岸、湖岸时那一遍和真的植被逐值相同，
       // 只算一遍，算完再定类型（core/water-rules.test.ts 查着逐位相同）
-      if (water.biomes && !water.baseFirst) computeVegetation(w, d, [], { look: false, after: () => typeWater(d.dominant) });
-      else computeVegetation(w, d, typeWater(water.biomes ? (bio ?? baseBiomes(w, d)) : null), { look: false });
+      if (water.biomes && !water.baseFirst) computeVegetation(w, d, [], { look: false, after: () => typeWater(d.dominant), effect: !!eff });
+      else computeVegetation(w, d, typeWater(water.biomes ? (bio ?? baseBiomes(w, d, true, !!eff)) : null), { look: false, effect: !!eff });
     };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);

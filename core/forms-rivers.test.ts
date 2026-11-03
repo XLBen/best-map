@@ -7,7 +7,7 @@ import { TWIN_CONTINENTS } from './packs/fantasy-forms';
 import type { PlanetForm } from './planet-form';
 import type { RiverType } from './river-types';
 import { findScripts } from './script';
-import { continents, engineFor, meshFor, snapshot, FANTASY_PACK } from './testing/fixtures';
+import { dryContinents as continents, engineFor, meshFor, snapshot, FANTASY_PACK } from './testing/fixtures';
 
 // 两支合在一起以后：星球形态（布局、地形脚本）与河流类型（match 脚本）、生态和河对周围的影响、
 // 自带地名设定的生态自然长成的一片，放在同一个星球上：
@@ -27,7 +27,7 @@ const longRiver: RiverType = { id: 'long_river', name: '长河', color: '#2255aa
 
 function planet(): Engine {
   return snapshot('forms-rivers', () => {
-    const eng = engineFor(settings);
+    const eng = engineFor(settings, { noWater: true });
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents', form: badForm }, reset: true });
     eng.exec(applyPackCommands(eng.world, FANTASY_PACK));
     eng.exec({ op: 'set_river_type', type: badRiver });
