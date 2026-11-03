@@ -311,7 +311,7 @@ describe('内容是不可变的：所有写内容的地方都是换掉、不是�
     eng.update();
   };
 
-  it('改内容、排先后、生成人文（生成后清理）、去掉人文、整理、预览、撤销重做', () => {
+  it('改内容、排先后、生成人文、去掉人文、整理、预览、撤销重做', () => {
     const eng = newWorld();
     for (const c of edits(eng)) frozen(eng, c);
     while (eng.canUndo && eng.toDoc().commands.length > 3) eng.undo();

@@ -74,6 +74,18 @@ export const recordedOrigin = (small: Pick<SmallState, 'origin'>, kind: string, 
 export function tidyOrigins(world: ContentWorld): void {
   const origin = world.small.origin;
   if (!origin) return;
+  // 一般什么都没少（第五十轮：世界留着全部内容，每条命令都走这里）：放在 small.content 的种类直接查，不必拼出新的表
+  const whole = Object.entries(origin).every(([kind, ids]) => {
+    const k = kindOf(kind);
+    if (!k) return false;
+    if (k.store === 'content') {
+      const own = world.small.content?.[kind];
+      return !!own && Object.keys(ids).every((id) => Object.hasOwn(own, id));
+    }
+    const have = new Set(k.inWorld(world).map((x) => itemId(k, x)));
+    return Object.keys(ids).every((id) => have.has(id));
+  });
+  if (whole) return;
   let changed = false;
   const next: Record<string, Record<string, string[]>> = {};
   for (const [kind, ids] of Object.entries(origin)) {

@@ -12,7 +12,7 @@ import type { World } from '../world';
 import { worldCultureGroups, worldCultures, worldEras } from './era';
 import { DEFAULT_SPECIES } from '../packs/nature';
 
-// 第二十八轮的核心：新世界只带用得上的内容；生成人文后只留用到的文化；在用的内容不能移出世界（引擎也拦）
+// 第二十八轮的核心：新世界只带用得上的内容；生成人文后内容都留着（第五十轮）；在用的内容不能移出世界（引擎也拦）
 
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
