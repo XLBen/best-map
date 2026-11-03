@@ -85,9 +85,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（日耳曼、汉、阿尔泰三组；政体的称号按国家的等级）
 // 第四十四轮重录：政体限谁用（伊克塔只给穆斯林……），倾向里没写的政体不再人人有 0.15 的余地
+// 第五十五轮重录：生态跟高度走
 const RECORDED = {
-  region: { country: '369fb7830ef4c6f9', countries: 'bfe4a87272a330b9' },
-  planet: { country: 'fee33fdd141106ea', countries: '52ac63721420fef7' },
+  region: { country: '2201e2fb25f191ae', countries: '4aab20b450c749c8' },
+  planet: { country: '0c16e47d7e0d75e1', countries: '97ffd38f16b05689' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -389,7 +390,8 @@ describe('省份跟着国界', () => {
     eng.exec({ op: 'paint_country', cells: cb.slice(0, Math.floor(cb.length / 3)), country: a.id });
     expect(spanning(w)).toBe(0);
     // 把 a 的几格涂进 b 的一个省：这几格成了 b 的
-    const pb = w.causes.province[countryCells(w, b.id)[0]];
+    // 第五十五轮：世界变了，b 的头一格是湖面（湖省划不进陆地格）：取干的陆地上的省
+    const pb = w.causes.province[countryCells(w, b.id).find((i) => w.derived.lake[i] !== 1)!];
     // 第三十五轮：地形变了，a 的头几格里有湖面格（湖属于湖省，不能划进陆地省）：只取干的陆地
     const fromA = countryCells(w, a.id).filter((i) => w.derived.lake[i] !== 1).slice(0, 5);
     eng.exec({ op: 'assign_province', cells: fromA, province: pb });

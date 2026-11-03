@@ -155,7 +155,8 @@ describe('区域的洋流：方向', () => {
 
 // 第四十五轮的代码上同样的世界（洋流强弱为 0）的哈希：tools/hash.ts 的 digest(digestWorld(世界))。
 // 第五十一轮：来源的路径（small.origin）从 common 换成 medieval，重录；核对过 from 写回 common 时还是原来的 bcb87b61dc9df52a
-const R45_CURRENTS0 = '806db8ce0d15ee5c';
+// 第五十五轮：内置生态有了高度范围、多了两种，重录；核对过去掉高度范围时还是原来的 806db8ce0d15ee5c
+const R45_CURRENTS0 = '42d3888d3cfd1fe8';
 
 describe('区域的洋流进了气候', () => {
   const settings = { seed: 3, cells: 6000 };

@@ -71,9 +71,10 @@ const peopledCells = (w: World) => [...Array(w.mesh.n).keys()].filter((i) => w.c
 // 第三十二轮重录：地形有了大格局（高程、湖、河、生态往后都变了），人文跟着变
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第四十三轮重录：内置的文化换成 EU4 的（三组换成日耳曼、汉、阿尔泰，组的偏好、倾向都是新的）
+// 第五十五轮重录：生态跟高度走（宜居度变了）
 const RECORDED = {
-  region: { popTotal: '67e73cf561a95bf5', popGroup: 'e5c4b7475d058189', popShare: 'c787958e5c1600b9', human: '0d70c9adfbfac436' },
-  planet: { popTotal: 'b5945a5063937910', popGroup: '397ad062705a8e85', popShare: 'fd1c2004e6472392', human: '1ae218e861634c00' },
+  region: { popTotal: '44aaf71c756825c3', popGroup: 'f937fb6e65f47da2', popShare: 'f25f10906d3d318d', human: 'affb018eea39f0d2' },
+  planet: { popTotal: 'd97cb336d4422d86', popGroup: 'e46748e549810fbd', popShare: 'f41309eec0f6acab', human: '326f8b7290542edc' },
 };
 const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 

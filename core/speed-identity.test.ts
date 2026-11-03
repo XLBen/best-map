@@ -16,6 +16,7 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第三十八轮新世界默认多加画风包（小数据多了两种画风），再重录一次；核对过默认的包里去掉画风时与原来的记录逐值相同
 // 第四十二轮新世界默认多加国家等级包、城市等级多了浓淡与大小（小数据变了），再重录一次；核对过去掉这些时与原来的记录逐值相同
 // 第五十一轮通用拆进了各库，来源的路径（small.origin）变了，再重录一次；核对过 from 写回 common 时与原来的记录逐值相同
+// 第五十五轮内置生态有了高度范围、多了两种，再重录一次；核对过去掉高度范围时与原来的记录逐值相同
 
 const FILE = new URL('./r31-digests.json', import.meta.url);
 const record = !!process.env.R31_RECORD;

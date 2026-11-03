@@ -69,7 +69,8 @@ describe('画的河逐值不变', () => {
       features: hashString(d.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16),
     };
     // 第三十二轮重录（地形有了大格局：高程、河网、湖都变了）；第三十三轮重录（平原与河口：高程、河网都变了）；第三十五轮重录（大陆轮廓：海陆变了，从内陆点描的河长短不同）
-    expect(got).toEqual({ guides: '8,16,9', elevation: '6ad4a296', discharge: '57abf6e7', receiver: '4ec5ecc5', lake: 'f4f11545', features: 'e7d9045b' });
+    // 第五十五轮：生态跟高度走，只有 features 重录（河网、高程不变）
+    expect(got).toEqual({ guides: '8,16,9', elevation: '6ad4a296', discharge: '57abf6e7', receiver: '4ec5ecc5', lake: 'f4f11545', features: '53f4e90c' });
   });
 });
 

@@ -130,7 +130,10 @@ const forests = base.world.derived.features.filter((f) => f.type === 'forest');
 // （第三十二轮：取最大的那片；以前第一片就够大，现在第一片只比涂的 60 格大一点，涂完剩下的太小、不成地物）
 const pure = forests.filter((f) => Array.from(f.cells).every((c) => speciesAt(base, c) === speciesAt(base, f.anchor))).sort((a, b) => b.cells.length - a.cells.length)[0];
 // （第三十五轮：大陆轮廓变了，锚点不在边上的森林最大的一片只有 103 格：100 格以上就行）
-const deep = forests.find((f) => depthIn(base, f)[f.anchor] >= 1 && f.cells.length >= 100)!;
+// （第五十五轮：这个世界里森林的锚点碰巧都在边上了。涂的洞要包住锚点，这两个测试用高度范围以前的生态）
+const deepWorld = () => continents({ plain: true });
+const deepBase = deepWorld();
+const deep = deepBase.world.derived.features.filter((f) => f.type === 'forest').find((f) => depthIn(deepBase, f)[f.anchor] >= 1 && f.cells.length >= 100)!;
 // 6000 格的小星球（几个测试共用，每次给副本）
 const planet = () =>
   snapshot('features:planet', () => {
@@ -249,8 +252,8 @@ describe('涂出来的生态区有自己的名字', () => {
   });
 
   it('在森林中间涂沙漠：森林名字不变（锚点在涂的洞里也不变）', () => {
-    const depth = depthIn(base, deep);
-    const eng = continents();
+    const depth = depthIn(deepBase, deep);
+    const eng = deepWorld();
     // 锚点周围、不挨着森林边的 30 格：涂完四周还是这片森林。
     // 第三十五轮：地形变了，离锚点最近的 30 格（离边一格以上）不连成一片，有 4 格孤零零的不算进沙漠：从锚点起按邻接一圈圈取
     // （锚点所在的那一片只有 26 格时就涂 26 格）
@@ -309,11 +312,11 @@ describe('涂出来的生态区有自己的名字', () => {
   });
 
   it('改过的名字不会自动变', () => {
-    const eng = continents();
+    const eng = deepWorld();
     eng.exec({ op: 'rename_feature', key: deep.key, name: '我的林子' });
     const named = () => eng.world.derived.features.filter((f) => f.name === '我的林子');
     // 在中间涂一片雨林，包住锚点：名字留在原来的森林上，雨林另起名字
-    const depth = depthIn(base, deep);
+    const depth = depthIn(deepBase, deep);
     const hole = nearest(
       eng,
       Array.from(deep.cells).filter((c) => depth[c] >= 1),
@@ -357,13 +360,14 @@ describe('涂出来的生态区有自己的名字', () => {
 describe('名字稳定', () => {
   const kv = (eng: Engine) => hashString(eng.world.derived.features.map((f) => `${f.key}=${f.name}`).join('|')).toString(16);
   it('没涂过生态的世界：地物的 key 与名字和以前完全相同', () => {
-    expect(kv(continents())).toBe('61975b73');
-    expect(kv(planet())).toBe('20dd0526');
+    // 第五十五轮重录：生态跟高度走，森林、苔原、沼泽这些片变了
+    expect(kv(continents())).toBe('2365ec78');
+    expect(kv(planet())).toBe('ca526329');
     const islands = engineFor({ seed: 2, cells: 6000 });
     // 第四十六轮：关掉区域的洋流，与以前逐值相同（见 fixtures 的 NO_CURRENTS）
     islands.exec(NO_CURRENTS);
     islands.exec({ op: 'set_worldgen', params: { seed: 2, type: 'archipelago' }, reset: true });
-    expect(kv(islands)).toBe('708c881b');
+    expect(kv(islands)).toBe('74e4c6f4');
   });
 });
 

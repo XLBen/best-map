@@ -49,9 +49,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第三十三轮：平原与河口（冲积平原、冲积扇、三角洲平原）改了高程，往后都变了，再重录一次
 // 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（人口、国家都跟着变）
 // 第四十四轮重录：政体限谁用，国家的政体变了（城市化、扩张性跟着变）
+// 第五十五轮重录：生态跟高度走
 const RECORDED = {
-  region: { cities: '78274d421d1c490d', roads: '9934ad3163247145', landmarks: 'c0a6121776a8bcc2' },
-  planet: { cities: 'b9b5c72cde10fbff', roads: 'b37079d95fbf1c07', landmarks: '351670c399359c6d' },
+  region: { cities: '3f41ad0de99cdeed', roads: '839a6d976aa3377c', landmarks: '11c77051f90477f8' },
+  planet: { cities: 'c730bf7b8cde0e06', roads: '9d240a700b70aef0', landmarks: '76ba0082da224047' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 
