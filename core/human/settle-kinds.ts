@@ -4,7 +4,7 @@ import { worldCityRanks, worldLandmarkTypes, worldPointTypes } from './settle-co
 import { type CityRank, LANDMARK_DETECTORS, LANDMARK_PLACES, type LandmarkType, type PointType, cityRankSchema, landmarkTypeSchema, pointTypeSchema } from './settle-types';
 
 // 第二十四轮的三种内容登记进登记表：城市等级、地标类型、自定义点的类型（都放在 small.content，命令是 set_content）。
-// 第三十轮起内置的也是普通内容（“通用 ▸ 基础”，时代自己的地标在时代包里），和别的一样加进、移出世界。
+// 第三十轮起内置的也是普通内容（库里的“基础”，时代自己的地标在时代包里），和别的一样加进、移出世界。
 // 城市、地标的名字、等级都是现算的，改了这几种不用重算推导（dirty 是 none）
 
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);

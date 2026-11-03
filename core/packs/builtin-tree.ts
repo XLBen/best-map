@@ -8,7 +8,7 @@ import { DEFAULT_STYLE } from '../name-styles';
 import type { PackItem, PackNode, ResourcePack } from '../packs';
 import type { SmallState } from '../world';
 import { BUILTIN_CLASSES, BUILTIN_ISLAND_TYPES, FANTASY_RESOURCES, GENERAL_RESOURCES } from './base';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, BUILTIN_VALUE_GROUPS, CULTURE_REGIONS, type CultureRegion, ERA_PACKS, VALUE_ERAS } from './eras';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, BUILTIN_VALUE_GROUPS, CULTURE_REGIONS, ERA_PACKS, VALUE_ERAS } from './eras';
 import { FANTASY_BIOMES, FANTASY_FIELDS } from './fantasy-biomes';
 import { FANTASY_FORMS } from './fantasy-forms';
 import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
@@ -21,12 +21,12 @@ import { DEFAULT_SPECIES } from './nature';
 import { BUILTIN_PLANET_FORMS } from './planet-forms';
 import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ERAS } from './settlements';
 
-// 内置资源包的树（第二十九轮；第三十轮起时代就是资源包，基础、自然、地名、星球形态也都是普通的包）。
-// 资源库里的内置内容按时代、主题分大包，大包里按种类分小包，全部由现有的常量拼成（不复制数据）。
-// 每一个内置项至少属于一个包（测试逐项查）；几个时代共用的政体、派系、取值同时出现在几个包里（引用同一份）。
+// 内置的库（第二十九轮是资源包的树；第五十一轮起每个时代是一个完整的库，“通用”拆进了各库）。
+// 全部由现有的常量拼成（不复制数据）：六个库里的基础、自然、地名……是同一份对象，只在运行时多几个小包，不占打包的大小。
+// 每一个内置项至少属于一个包（测试逐项查）；几个库共用的政体、派系、取值同时出现在几个包里（引用同一份）。
 // 只在主线程用（资源库、向导、存进资源库前的“是不是内置原样”）：计算 Worker 只读世界里的内容，不打包这些数据。
 //
-//   每个内置时代一个大包（时代包，id 就是时代的 id：antiquity、medieval、industrial、modern、fantasy、scifi）：
+//   每个内置时代一个库（id 就是时代的 id：antiquity、medieval、industrial、modern、fantasy、scifi）：
 //     era               时代项（只有规则：维度、人口密度、无主地、领海、国家大小、城市化、关系、年代）
 //     <维度 id>         每个维度一个小包（宗教、民族认同、意识形态、种族……）：放进这个时代的取值（文件里写的 eras），
 //                       与它们用到的取值组（第四十三轮：宗教组）
@@ -35,35 +35,38 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     resources         基础之外的资源（奇幻的秘银、魔晶……）
 //     landmarks         这个时代的地标：时代自己的（神庙、城堡、太空港……；landmarks.json 写了 eras 的）和不分时代的
 //                       （与基础里的是同一项），按 landmarks.json 的先后（生成后排成这个先后，放地标的先后与以前一样）
-//     cultures ▸ <组>   时代默认带的文化组（pack.cultures，小包带着默认的权重 weight），每组一个小包：组、组里的文化
-//                       （写了 except 的不带：中世纪不带殖民地的文化）、这些文化的地名风格。第四十三轮起地球上的组与文化
-//                       是“通用 ▸ 文化 ▸ 地区”里的同一份（引用），时代包只是挑几组、给权重
-//     奇幻另有 biomes、rivers、lakes、forms：奇幻的生态（带它们用到的自定义场）、河、湖、星球形态
-//   通用（common）：
-//     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类（新建时默认勾上）
-//     nature            自然：13 种普通生态（新建时默认勾上）
-//     names ▸ zh        地名 ▸ 中文：中文·默认（新建时默认勾上）
+//     cultures ▸ <组>   文化组，每组一个小包：组、组里的文化（写了 except 的不带：中世纪不带殖民地的文化）、这些文化的地名风格。
+//                       先是时代默认带的（pack.cultures，小包带着默认的权重 weight），四个历史库再加上别的 EU4 文化组：
+//                       小包和组的比重（weight）都是 0，不参与生成，新世界不带，点名了才带（core/packs/import.ts）。
+//                       奇幻、科幻只有自己的组（第四十四轮：奇幻 11 组、科幻 9 组，默认全带），不带 EU4 的文化
+//     奇幻另有 biomes、rivers、lakes：奇幻的生态（带它们用到的自定义场）、河、湖
+//   世界的底子（LIBRARY_BASE_PACKS，每个库都有，新建世界时放在生成之前）：
+//     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类
+//     nature            自然：13 种普通生态
+//     names ▸ zh        地名 ▸ 中文：中文·默认
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
-//     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts）
-//     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts；新建时默认勾上）
-//     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json；新建时默认勾上）
-//     cultures ▸ <地区> 文化（第四十三轮）：EU4 的全部文化组，按地区（欧洲、中东、非洲、亚洲、美洲、大洋洲、失落）
-//                       一个小包：地区里的组、文化与它们用的地名风格。奇幻、科幻的文化组（种族、物种）只在它们的时代包里
-//                       （第四十四轮：奇幻 11 组、科幻 9 组，时代包的 cultures ▸ <组> 默认全带；宗教组在奇幻包的“宗教”小包里）
+//     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts），奇幻的另有几种
+//     styles            画风（第三十八轮）：写实、地图册（packs/map-styles.ts）
+//     tiers             国家等级（第四十二轮）：五档等级与四种格局（packs/countries/tiers.json）
 //
 // 没被任何时代列出的政体、派系归到最贴切的时代：先看它自己写的 eras（第一个是内置时代的），再按政体的类别（CATEGORY_ERA，
 // 按类别的先后取第一个认得的），都没有时归中世纪。现在的 61 种政体、27 种派系都被时代列出了（第四十四轮），这条归法管以后加的
 
-export const COMMON_PACK_ID = 'common';
-export const BASE_PATH: readonly string[] = [COMMON_PACK_ID, 'base'];
+// 新世界默认用的库（选库的界面在第五十二轮）
+export const DEFAULT_LIBRARY = 'medieval';
+export const BASE_PATH: readonly string[] = [DEFAULT_LIBRARY, 'base'];
 // 画风的小包（第三十八轮）
-export const STYLES_PATH: readonly string[] = [COMMON_PACK_ID, 'styles'];
+export const STYLES_PATH: readonly string[] = [DEFAULT_LIBRARY, 'styles'];
 // 国家等级的小包（第四十二轮）
-export const TIERS_PATH: readonly string[] = [COMMON_PACK_ID, 'tiers'];
-// 新建世界默认勾上的包（第三十轮）：基础、自然、中文地名、画风（第三十八轮）、国家等级（第四十二轮）（新建向导另外默认勾上一个时代包）
-export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = [BASE_PATH, [COMMON_PACK_ID, 'nature'], [COMMON_PACK_ID, 'names', 'zh'], STYLES_PATH, TIERS_PATH];
+export const TIERS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'tiers'];
 // 星球形态的小包
-export const FORMS_PATH: readonly string[] = [COMMON_PACK_ID, 'forms'];
+export const FORMS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'forms'];
+// 每个库里世界的底子（小包的 id）：把时代包整个加进世界时不带这几个（生成人文不用它们，自己移出的基础内容也不该被加回来），
+// 新建世界时在生成之前单独加（worldPartsOf）
+export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', 'tiers']);
+// 一个库新建世界时加的小包（第三十轮起默认这几个：基础、自然、中文地名、画风、国家等级）
+export const worldPartsOf = (key: string): string[][] => [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers']];
+export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = worldPartsOf(DEFAULT_LIBRARY);
 
 // 没被时代列出的政体按类别归到哪个时代
 const CATEGORY_ERA: Record<string, string> = {
@@ -159,8 +162,8 @@ function stylesFor(groups: readonly CultureGroup[], cultures: readonly Culture[]
   return BUILTIN_STYLES.filter((s) => ids.has(s.id));
 }
 
-// 时代包里一个文化组的小包：组、组里的文化（except 里的不带）、这些文化的地名风格（第三十轮起中文·默认也带上：它不再总在世界里）。
-// weight：时代默认带这一组时的权重（新建向导默认的权重）。第四十三轮：组与文化是“通用 ▸ 文化 ▸ 地区”里的同一份（引用，不复制）
+// 库里一个文化组的小包：组、组里的文化（except 里的不带）、这些文化的地名风格（第三十轮起中文·默认也带上：它不再总在世界里）。
+// weight：这个时代默认带这一组时的权重（新建向导默认的权重）。组与文化引用同一份，不复制
 function groupPack(g: CultureGroup, weight?: number, except: readonly string[] = []): PackNode {
   const cultures = BUILTIN_CULTURES.filter((c) => c.group === g.id && !except.includes(c.id));
   const styles = stylesFor([g], cultures);
@@ -174,19 +177,66 @@ function groupPack(g: CultureGroup, weight?: number, except: readonly string[] =
   };
 }
 
-// “通用 ▸ 文化”的一个地区（第四十三轮）：地区里的全部文化组、文化与它们用的地名风格
-function regionPack(r: CultureRegion): PackNode {
-  const groups = r.groups.map((id) => groupsMap().get(id)!).filter(Boolean);
-  const cultures = BUILTIN_CULTURES.filter((c) => r.groups.includes(c.group));
-  return { id: r.id, name: r.name, description: r.description, cultureGroups: asItems(groups), cultures: asItems(cultures), nameStyles: asItems(stylesFor(groups, cultures)) };
+// 这个时代不默认带的 EU4 文化组（第五十一轮）：小包和组的比重都是 0，四个历史库共用一份。
+// 组是加了 weight: 0 的浅拷贝（别的字段同一份）；比重 0 是库里的安排，不算这一项的内容（sameIgnore、builtinItem）
+const spareNodes = new Map<string, PackNode>();
+function sparePack(id: string): PackNode | undefined {
+  const hit = spareNodes.get(id);
+  if (hit) return hit;
+  const g = groupsMap().get(id);
+  if (!g) return undefined;
+  const node = { ...groupPack(g, 0), cultureGroups: asItems([{ ...g, weight: 0 }]) };
+  spareNodes.set(id, node);
+  return node;
+}
+
+// 奇幻、科幻不带 EU4 的文化组
+const FICTION_ERAS: ReadonlySet<string> = new Set(['fantasy', 'scifi']);
+const EU4_GROUPS: readonly string[] = CULTURE_REGIONS.flatMap((r) => r.groups);
+
+// 世界的底子（见文件开头）：六个库共用同一份小包，奇幻的星球形态多几种
+function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms: PackNode; styles: PackNode; tiers: PackNode } {
+  const regionOf = new Map(STYLE_REGIONS.flatMap((r) => r.styles.map((s) => [s, r.id])));
+  const styles = BUILTIN_STYLES.filter((s) => s.id !== DEFAULT_STYLE);
+  const regions: PackNode[] = [
+    { id: 'zh', name: '中文', nameStyles: asItems(BUILTIN_STYLES.filter((s) => s.id === DEFAULT_STYLE)) },
+    ...STYLE_REGIONS.map((r) => ({ id: r.id, name: r.name, nameStyles: asItems(styles.filter((s) => regionOf.get(s.id) === r.id)) })).filter((r) => r.nameStyles.length),
+  ];
+  const other = styles.filter((s) => !regionOf.has(s.id));
+  if (other.length) regions.push({ id: 'other', name: '其他', nameStyles: asItems(other) });
+  return {
+    base: {
+      id: 'base',
+      name: '基础',
+      description: '地形类别、通用资源、城市等级、地标、点和岛的种类。新建世界时默认带上；没有它们时用到的那一步跳过',
+      terrainClasses: asItems(BUILTIN_CLASSES),
+      resources: asItems(GENERAL_RESOURCES),
+      cityRanks: asItems(BUILTIN_RANKS),
+      landmarkTypes: asItems(BUILTIN_LANDMARK_TYPES.filter((t) => !LANDMARK_ERAS.has(t.id))),
+      pointTypes: asItems(BUILTIN_POINT_TYPES),
+      islandTypes: asItems(BUILTIN_ISLAND_TYPES),
+    },
+    nature: { id: 'nature', name: '自然', description: '13 种接近地球的生态。新建世界时默认带上', biomes: asItems(DEFAULT_SPECIES) },
+    names: { id: 'names', name: '地名', packs: regions },
+    forms: { id: 'forms', name: '星球形态', description: '新建整个星球时选：像地球、一块超大陆、破碎大陆……', planetForms: asItems(BUILTIN_PLANET_FORMS) },
+    styles: { id: 'styles', name: '画风', description: '地图怎么画：写实、地图册。新建世界时默认带上；在“图层 → 画风”里换', mapStyles: asItems(BUILTIN_MAP_STYLES) },
+    tiers: {
+      id: 'tiers',
+      name: '国家等级',
+      description: '国家分几级（帝国级、王国级、公国级、侯国级、城邦级行政）和几种格局。新建世界时默认带上；生成国家时按它们挑大小',
+      countryTiers: asItems(BUILTIN_COUNTRY_TIERS),
+      countryLayouts: asItems(BUILTIN_COUNTRY_LAYOUTS),
+    },
+  };
 }
 
 function build(): ResourcePack[] {
   const govs = eraSets<Government>(BUILTIN_GOVERNMENTS, 'governments');
   const facs = eraSets<Faction>(BUILTIN_FACTIONS, 'factions');
   const top = (id: string, name: string, description: string, packs: PackNode[]): ResourcePack => ({ format: 'map2-pack', version: 1, id, name, author: 'map_2', description, packs });
+  const shared = baseNodes();
 
-  const eraPacks = BUILTIN_ERAS.map((era) => {
+  return BUILTIN_ERAS.map((era) => {
     const def = ERA_PACKS.get(era.id);
     const packs: PackNode[] = [{ id: 'era', name: '时代', eras: asItems([era]) }];
     for (const d of era.dimensions) {
@@ -203,61 +253,29 @@ function build(): ResourcePack[] {
     if (res.length) packs.push({ id: 'resources', name: '资源', resources: asItems(res) });
     const marks = BUILTIN_LANDMARK_TYPES.filter((t) => !LANDMARK_ERAS.has(t.id) || LANDMARK_ERAS.get(t.id)!.includes(era.id));
     if (marks.length) packs.push({ id: 'landmarks', name: '地标', landmarkTypes: asItems(marks) });
-    const groups = (def?.cultures ?? []).flatMap(([id, w, opt]) => {
+    const listed = def?.cultures ?? [];
+    const groups = listed.flatMap(([id, w, opt]) => {
       const x = groupsMap().get(id);
       return x ? [groupPack(x, w, opt?.except)] : [];
     });
-    if (groups.length) packs.push({ id: 'cultures', name: '文化', packs: groups });
+    if (!FICTION_ERAS.has(era.id)) for (const id of EU4_GROUPS) if (!listed.some(([x]) => x === id)) groups.push(sparePack(id)!);
+    if (groups.length) packs.push({ id: 'cultures', name: '文化', ...(FICTION_ERAS.has(era.id) ? {} : { description: '这个时代默认带的文化组，和别的 EU4 文化组（比重是 0，不参与生成，点名了才加进世界）' }), packs: groups });
     if (era.id === 'fantasy') {
       packs.push(
         { id: 'biomes', name: '奇幻生态', fields: [...FANTASY_FIELDS], biomes: asItems(FANTASY_BIOMES) },
         { id: 'rivers', name: '奇幻的河', riverTypes: asItems(FANTASY_RIVER_TYPES) },
         { id: 'lakes', name: '奇幻的湖', lakeTypes: asItems(FANTASY_LAKE_TYPES) },
-        { id: 'forms', name: '星球形态', planetForms: asItems(FANTASY_FORMS) },
       );
     }
+    const forms = era.id === 'fantasy' ? { ...shared.forms, planetForms: asItems([...BUILTIN_PLANET_FORMS, ...FANTASY_FORMS]) } : shared.forms;
+    packs.push(shared.base, shared.nature, shared.names, forms, shared.styles, shared.tiers);
     return top(era.id, era.name, era.description ?? `${era.name}的时代、取值、政体、派系与文化`, packs);
   });
-
-  const regionOf = new Map(STYLE_REGIONS.flatMap((r) => r.styles.map((s) => [s, r.id])));
-  const styles = BUILTIN_STYLES.filter((s) => s.id !== DEFAULT_STYLE);
-  const regions: PackNode[] = [
-    { id: 'zh', name: '中文', nameStyles: asItems(BUILTIN_STYLES.filter((s) => s.id === DEFAULT_STYLE)) },
-    ...STYLE_REGIONS.map((r) => ({ id: r.id, name: r.name, nameStyles: asItems(styles.filter((s) => regionOf.get(s.id) === r.id)) })).filter((r) => r.nameStyles.length),
-  ];
-  const other = styles.filter((s) => !regionOf.has(s.id));
-  if (other.length) regions.push({ id: 'other', name: '其他', nameStyles: asItems(other) });
-  const common = top(COMMON_PACK_ID, '通用', '基础内容、普通的生态、各地的地名风格、星球形态、画风、国家等级，和按地区分的全部文化组（EU4 的文化组）', [
-    {
-      id: 'base',
-      name: '基础',
-      description: '地形类别、通用资源、城市等级、地标、点和岛的种类。新建世界时默认勾上；没有它们时用到的那一步跳过',
-      terrainClasses: asItems(BUILTIN_CLASSES),
-      resources: asItems(GENERAL_RESOURCES),
-      cityRanks: asItems(BUILTIN_RANKS),
-      landmarkTypes: asItems(BUILTIN_LANDMARK_TYPES.filter((t) => !LANDMARK_ERAS.has(t.id))),
-      pointTypes: asItems(BUILTIN_POINT_TYPES),
-      islandTypes: asItems(BUILTIN_ISLAND_TYPES),
-    },
-    { id: 'nature', name: '自然', description: '13 种接近地球的生态。新建世界时默认勾上', biomes: asItems(DEFAULT_SPECIES) },
-    { id: 'names', name: '地名', packs: regions },
-    { id: 'forms', name: '星球形态', description: '新建整个星球时选：像地球、一块超大陆、破碎大陆……', planetForms: asItems(BUILTIN_PLANET_FORMS) },
-    { id: 'styles', name: '画风', description: '地图怎么画：写实、地图册。新建世界时默认勾上；在“图层 → 画风”里换', mapStyles: asItems(BUILTIN_MAP_STYLES) },
-    {
-      id: 'tiers',
-      name: '国家等级',
-      description: '国家分几级（帝国级、王国级、公国级、侯国级、城邦级行政）和几种格局。新建世界时默认勾上；生成国家时按它们挑大小',
-      countryTiers: asItems(BUILTIN_COUNTRY_TIERS),
-      countryLayouts: asItems(BUILTIN_COUNTRY_LAYOUTS),
-    },
-    { id: 'cultures', name: '文化', description: 'EU4 的文化组与文化，按地区分；时代包默认带其中的一些', packs: CULTURE_REGIONS.map(regionPack) },
-  ]);
-  return [...eraPacks, common];
 }
 
 let tree: ResourcePack[] | null = null;
 
-// 内置的大包（按时代的先后，通用在最后）
+// 内置的库（按时代的先后）
 export function builtinPacks(): readonly ResourcePack[] {
   return (tree ??= build());
 }
@@ -302,7 +320,16 @@ export function indexTree(trees: readonly ResourcePack[]): Map<string, BuiltinIt
 }
 
 let index: Map<string, BuiltinItem> | null = null;
-const fullIndex = () => (index ??= indexTree(builtinPacks()));
+function fullIndex(): Map<string, BuiltinItem> {
+  if (index) return index;
+  index = indexTree(builtinPacks());
+  // 比重 0 是库里的安排（第五十一轮）：内置的原样是没写比重的那一份，不管树里先碰到的是哪个库的
+  for (const g of BUILTIN_CULTURE_GROUPS) {
+    const hit = index.get(`cultureGroup\u0000${g.id}`);
+    if (hit) hit.item = g;
+  }
+  return index;
+}
 
 // 内置的树里的每一项和它在哪几个包里
 export function builtinItems(): readonly BuiltinItem[] {
@@ -312,11 +339,11 @@ export function builtinItems(): readonly BuiltinItem[] {
 // 一项在内置的树里（没有时 undefined）
 export const builtinItem = (kind: string, id: string): BuiltinItem | undefined => fullIndex().get(`${kind}\u0000${id}`);
 
-// 内置的一项在树里的位置：prefer 是优先的大包；不在树里时 undefined
-export function builtinOrigin(kind: string, id: string, prefer?: string): string[] | undefined {
+// 内置的一项在树里的位置：prefer 是优先的库（省略时是默认的库）；不在树里时 undefined
+export function builtinOrigin(kind: string, id: string, prefer: string = DEFAULT_LIBRARY): string[] | undefined {
   const b = builtinItem(kind, id);
   if (!b) return undefined;
-  return [...((prefer && b.paths.find((p) => p[0] === prefer)) || b.paths[0])];
+  return [...(b.paths.find((p) => p[0] === prefer) ?? b.paths[0])];
 }
 
 // 一项与内置的一模一样（用到世界时“自然生成”关掉的奇幻生态、河、湖也算：与加进世界时的样子比）

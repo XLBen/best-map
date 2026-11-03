@@ -83,11 +83,11 @@ describe('列出来的形态', () => {
 
 describe('向导新建', () => {
   it('历史里的名字：整个星球用星球的叫法（不是生成器的“几块大陆”），形态用形态的名字，一块地区用世界类型', () => {
-    // 第三十轮：以前写死的六种星球是“通用 ▸ 星球形态”里的形态（键是 common:id）
-    const common = entry('common', builtinPacks().find((p) => p.id === 'common')!, { builtin: true, installedAt: 0 });
+    // 第三十轮：以前写死的六种星球是库里“星球形态”的形态（第五十一轮：每个库都有，键按默认的库 medieval:id）
+    const common = entry('medieval', builtinPacks().find((p) => p.id === 'medieval')!, { builtin: true, installedAt: 0 });
     const choices = formChoices([BUILTIN, common]);
-    expect(wizardWorldName('planet', 'common:continents', choices, 'archipelago')).toBe('像地球');
-    expect(wizardWorldName('planet', 'common:ocean_islands', choices, 'archipelago')).toBe('海洋星球');
+    expect(wizardWorldName('planet', 'medieval:continents', choices, 'archipelago')).toBe('像地球');
+    expect(wizardWorldName('planet', 'medieval:ocean_islands', choices, 'archipelago')).toBe('海洋星球');
     expect(wizardWorldName('planet', 'fantasy:polar_continents', choices, 'archipelago')).toBe('极地大陆');
     expect(wizardWorldName('region', 'fantasy:polar_continents', choices, 'archipelago')).toBe('群岛之海');
   });

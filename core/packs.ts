@@ -67,9 +67,9 @@ export function packSections(): ContentKind[] {
 const META_KEYS = ['format', 'version', 'id', 'name', 'author', 'description'] as const;
 const NODE_META = ['id', 'name', 'description', 'weight'] as const;
 
-// 包最多套几层（资源包 ▸ 小包 ▸ 小包）、一层最多几个小包
+// 包最多套几层（资源包 ▸ 小包 ▸ 小包）、一层最多几个小包（第五十一轮：一个库的“文化”下面有 71 个 EU4 文化组，还要能加自己的）
 export const PACK_DEPTH = 2;
-export const PACK_MAX_SUBPACKS = 64;
+export const PACK_MAX_SUBPACKS = 128;
 
 // 各段先按“列表”收下（parsePack 里按登记的格式逐项再查）
 function sectionShape(): Record<string, z.ZodType> {
@@ -87,7 +87,7 @@ function nodeSchema(depth: number): z.ZodType {
     id: z.string().min(1).max(64),
     name: z.string().min(1).max(60),
     description: z.string().max(2000).optional(),
-    // 第三十轮：时代包里文化组的小包默认的权重（新建向导里默认勾上这一组时的权重）
+    // 第三十轮：时代包里文化组的小包默认的权重（新建向导里默认勾上这一组时的权重）；第五十一轮：0 是这个库不默认带的组，点名了才加进世界
     weight: z.number().min(0).max(1000).optional(),
     ...sectionShape(),
   };

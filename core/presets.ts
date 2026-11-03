@@ -82,7 +82,7 @@ export const TYPE_DEFAULTS: Record<WorldType, { size: MapSize; zone: ClimateZone
 // —— 整个星球 ——
 
 // 整个星球的生成器种类叫什么（历史里的“新世界“像地球””、形态的“从哪种星球改起”）。这是算法的说法，不是内容：
-// 向导里选的星球是“通用 ▸ 星球形态”里的形态（第三十轮，见 packs/planet-forms.ts；以前写死在这里的 PLANET_TYPES）。
+// 向导里选的星球是库里“星球形态”里的形态（第三十轮，见 packs/planet-forms.ts；以前写死在这里的 PLANET_TYPES）。
 // 海洋星球与空白星球是同一种生成器（ocean），按岛多少分
 const PLANET_KIND_NAMES: Record<WorldType, string> = {
   continents: '像地球',

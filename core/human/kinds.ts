@@ -9,7 +9,7 @@ import { RESOURCE_RULE_FIELDS, RULE_FIELDS } from './rules';
 import { type TerrainClass, checkTerrainClass, remapCodes, terrainClassSchema, worldTerrainClasses } from './terrain-class';
 
 // 第二十一轮的两种内容登记进登记表：地形类别、资源（都放在 small.content，命令是 set_content）。
-// 第三十轮起内置的也是普通内容（“通用 ▸ 基础”），和别的一样加进、移出世界
+// 第三十轮起内置的也是普通内容（库里的“基础”），和别的一样加进、移出世界
 
 // 撞 id 改名：名字带上编号
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);

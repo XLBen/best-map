@@ -13,8 +13,8 @@ export const defaultsOf = (era: Pick<Era, 'id'>): { id: string; weight: number }
 // 政体、派系文件里写的时代（只用来归包）
 export const govEras = (id: string): readonly string[] | undefined => GOV_ERAS.get(id);
 
-// 一个文化组能用在哪些时代：只在奇幻、科幻的包里的（精灵、异星种族……）只用在那个时代，地球上的组（历史上的时代带的、
-// “通用 ▸ 文化”里的）哪个时代都能用
+// 一个文化组能用在哪些时代：只在奇幻、科幻的包里的（精灵、异星种族……）只用在那个时代，地球上的组（历史上的时代默认带的、
+// 历史库里比重是 0 的）哪个时代都能用
 const HISTORY = ['antiquity', 'medieval', 'industrial', 'modern'];
 const inPack = (era: Pick<Era, 'id'>, g: Pick<CultureGroup, 'id'>) => ERA_PACKS.get(era.id)!.cultures.some(([id]) => id === g.id);
 const earthly = (g: Pick<CultureGroup, 'id'>) => BUILTIN_ERAS.every((e) => !inPack(e, g)) || BUILTIN_ERAS.some((e) => HISTORY.includes(e.id) && inPack(e, g));

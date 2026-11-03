@@ -4,7 +4,7 @@ import { type CountryLayoutDef, type CountryTierDef, countryLayoutSchema, countr
 
 // 第四十二轮的两种内容登记进登记表：国家等级、格局（都放在 small.content，命令是 set_content）。
 // 只在生成国家时读，地图上按等级画首都：改了不重算（dirty 是 none），重新生成国家时按新的。
-// 内置的在“通用 ▸ 国家等级”（新建世界默认带上）
+// 内置的在每个库的“国家等级”（新建世界默认带上）
 
 const renamed = (name: string, id: string, from: string) => `${name} ${id.slice(from.length + 1) || id}`.slice(0, 20);
 

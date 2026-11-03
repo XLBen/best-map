@@ -28,7 +28,7 @@ const PROJECTION_HINTS: Record<ProjectionPref, string> = {
   globe: '拖动转动，越往边上挤得越紧。',
 };
 
-// 画风（第三十八轮）：世界里的画风（资源库“通用 ▸ 画风”里的，可以复制了改），选了记在世界里（可以撤销、跟着世界存盘）。
+// 画风（第三十八轮）：世界里的画风（每个库的“画风”里的，可以复制了改），选了记在世界里（可以撤销、跟着世界存盘）。
 // 四种以内用分段按钮，多了用下拉
 function MapStyleSection({ w }: { w: World }) {
   const styles = Object.values(worldMapStyles(w.small));
@@ -40,7 +40,7 @@ function MapStyleSection({ w }: { w: World }) {
     <section>
       <h5>画风</h5>
       {!styles.length ? (
-        <p class="hint">世界里没有画风，按写实画。在资源库“通用 ▸ 画风”里添加</p>
+        <p class="hint">世界里没有画风，按写实画。在资源库里任何一个库的“画风”里添加</p>
       ) : styles.length <= 4 ? (
         <Seg value={cur} options={styles.map((s): [string, string] => [s.id, s.name])} titles={Object.fromEntries(styles.map((s) => [s.id, s.description ?? s.name]))} onChange={pick} wide />
       ) : (

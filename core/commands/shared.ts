@@ -93,6 +93,7 @@ export function clearPop(world: World) {
   clearCities(world);
   if (!world.small.landmarks) delete world.small.settlementRules;
   delete world.small.human;
+  delete world.small.genStamp;
   delete world.small.popGroups;
 }
 

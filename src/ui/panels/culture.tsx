@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { Command } from '../../../core/commands';
-import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSummary, typicalTuple, worldCultureGroups, worldCultures, worldDimensions, worldEra } from '../../../core/human';
+import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSummary, stampedPacks, typicalTuple, worldCultureGroups, worldCultures, worldDimensions, worldEra } from '../../../core/human';
 import type { World } from '../../../core/world';
 import { askUser, exec, openPanel, options, setOptions, togglePanel, world } from '../../state';
 import { Seg } from '../common';
@@ -329,7 +329,7 @@ export function HumanChoices({
     return (
       <div class="human-group">
         <label class="check" title={compact ? `${g.description ? `${g.description}\n` : ''}${n} 个文化` : g.description}>
-          <input type="checkbox" checked={!!sel} disabled={disabled} onChange={() => onChange(toggleGroup(choice, g.id, !sel, o.weight ?? 1))} />
+          <input type="checkbox" checked={!!sel} disabled={disabled} onChange={() => onChange(toggleGroup(choice, g.id, !sel, o.weight || 1))} />
           <span class="swatch" style={{ background: g.color }} />
           {g.name}
           {!compact && n > 0 && <span class="hint">{n} 个文化</span>}
@@ -349,7 +349,11 @@ export function HumanChoices({
   };
   const problem = choiceProblem(choice, small, lib);
   const sections: { label: string; rows: Pick<GroupOption, 'group' | 'weight' | 'cultures'>[] }[] = [];
+  // 第五十一轮：库里比重是 0 的组（这个时代默认不带的）收着，勾上了才列在上面
+  const isSpare = (o: GroupOption) => o.weight === 0 && !choice.groups.some((x) => x.id === o.group.id);
+  const spare = offered.filter(isSpare);
   for (const o of offered) {
+    if (isSpare(o)) continue;
     const label = packLabel(lib, o.pack);
     const sec = sections.find((x) => x.label === label);
     if (sec) sec.rows.push(o);
@@ -374,7 +378,13 @@ export function HumanChoices({
           <div class="human-groups">{sec.rows.map(groupRow)}</div>
         </>
       ))}
-      {!sections.length && <p class="hint">勾选的包里没有文化组</p>}
+      {!sections.length && !spare.length && <p class="hint">勾选的包里没有文化组</p>}
+      {spare.length > 0 && (
+        <details>
+          <summary class="hint">还有 {spare.length} 个文化组（这个库默认不带）</summary>
+          <div class="human-groups">{spare.map(groupRow)}</div>
+        </details>
+      )}
       {more > 0 && <p class="hint">资源库里还有 {more} 个文化组，勾上它们所在的包就能选</p>}
       <Slider
         stacked
@@ -496,7 +506,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
           <span class="hint"> · 人口分{['文化', ...worldDimensions(w.small).map((d) => d.label)].join('、')}</span>
         </p>
         {era?.description && <p class="hint">{era.description}</p>}
-        {w.small.human!.packs.length > 0 && <p class="hint">用的包：{w.small.human!.packs.map((p) => packLabel(library.value, p)).join('、')}</p>}
+        {stampedPacks(w.small).length > 0 && <p class="hint">用的包：{stampedPacks(w.small).map((p) => packLabel(library.value, p)).join('、')}</p>}
       </section>
       <section>
         <h5>文化组</h5>

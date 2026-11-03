@@ -25,6 +25,8 @@ export interface FormChoice {
   // 在“我的资源”这个包里（形态编辑器存进去的）：编辑它改的就是它本身。
   // 别的自己导出的包里的不算：编辑那些是一份副本，存进“我的资源”，原来的包不变
   mine: boolean;
+  // 它在哪几个库里（第五十一轮：同一种形态每个库都有；path 是第一个）
+  paths: string[][];
 }
 
 // 资源库里全部的星球形态：内置的在前，之后按资源库的顺序（我的资源、导入的）。一模一样的只列一次（先出现的那个）。
@@ -41,16 +43,24 @@ export function formChoices(entries: readonly LibraryEntry[]): FormChoice[] {
   const hit = choicesMemo.get(entries);
   if (hit) return hit;
   const out: FormChoice[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, FormChoice>();
   const myKey = packIdFor(MY_PACK_NAME);
-  for (const e of entries) {
+  // 第五十一轮：同一种形态在每个库里都有，只列一次（键按默认的库：DEFAULT_PLANET），paths 记着它在哪几个库里
+  const first = FORMS_PATH[0];
+  for (const e of [...entries.filter((x) => x.key === first), ...entries.filter((x) => x.key !== first)]) {
     // 第二十九轮：资源包可以分小包（内置的星球形态在“奇幻 ▸ 星球形态”里）
     walkPacks(e.pack, (n, rel) => {
       for (const form of ownItems<PlanetForm>(n, 'planetForms')) {
         const k = formKey(form);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        out.push({ key: `${e.key}:${form.id}`, form, pack: e.pack.name, path: [e.key, ...rel], builtin: e.builtin, mine: e.mine && e.key === myKey });
+        const hit = seen.get(k);
+        if (hit) {
+          hit.paths.push([e.key, ...rel]);
+          continue;
+        }
+        const path = [e.key, ...rel];
+        const c: FormChoice = { key: `${e.key}:${form.id}`, form, pack: e.pack.name, path, paths: [path], builtin: e.builtin, mine: e.mine && e.key === myKey };
+        seen.set(k, c);
+        out.push(c);
       }
     });
   }
@@ -69,20 +79,21 @@ export function planetTypeName(type: WorldType): string {
 }
 
 // 世界的生成参数是哪种星球：与 planetTypeName 相同，只是海洋星球、空白星球是同一种生成器，按岛多少分
-// （“通用 ▸ 星球形态”里的海洋星球是“空白海洋 + 岛 0.7”）
+// （库里“星球形态”的海洋星球是“空白海洋 + 岛 0.7”）
 export function planetNameOf(gen: Pick<Worldgen, 'type' | 'islands'>): string {
   return planetKindName(gen.type, gen.islands);
 }
 
-// 向导默认选的星球（第三十轮：“通用 ▸ 星球形态”里的“像地球”，资源库里的键 + 形态的 id）
+// 向导默认选的星球（第三十轮：默认的库“星球形态”里的“像地球”，资源库里的键 + 形态的 id）
 export const DEFAULT_PLANET = `${FORMS_PATH[0]}:continents`;
-// “通用 ▸ 星球形态”里的（向导第一排的卡片）
+// 默认的库“星球形态”里的（向导第一排的卡片）
 export const isBuiltinPlanet = (c: FormChoice): boolean => c.builtin && c.key.startsWith(`${FORMS_PATH[0]}:`);
 
 // 向导里列的形态（第三十轮）：勾选的包里的（shown），别的包里的另列（rest，收着）；勾选的包里一个都没有时 shown 为空
 export function formsInPacks(choices: readonly FormChoice[], packs: readonly (readonly string[])[]): { shown: FormChoice[]; rest: FormChoice[] } {
-  const inPacks = (c: FormChoice) => packs.some((p) => p.length <= c.path.length && p.every((x, k) => c.path[k] === x));
-  return { shown: choices.filter(inPacks), rest: choices.filter((c) => !inPacks(c)) };
+  const inPacks = (c: FormChoice) => c.paths.find((at) => packs.some((p) => p.length <= at.length && p.every((x, k) => at[k] === x)));
+  // 列在勾着的库下面（段名写那个库）
+  return { shown: choices.flatMap((c) => { const at = inPacks(c); return at ? [{ ...c, path: at }] : []; }), rest: choices.filter((c) => !inPacks(c)) };
 }
 
 // 形态编辑器“从哪种星球改起”的六种

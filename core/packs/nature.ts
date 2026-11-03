@@ -1,6 +1,6 @@
 import { type ConditionId, type Rect, type Species, withCondition, withRect } from '../species';
 
-// 内置的 13 种生态（“通用 ▸ 自然”这个小包，见 builtin-tree.ts）。第三十轮以前新世界自带它们（world.ts 的 defaultSmall），
+// 内置的 13 种生态（每个库的“自然”这个小包，见 builtin-tree.ts）。第三十轮以前新世界自带它们（world.ts 的 defaultSmall），
 // 现在和别的内容一样从资源包加进世界（新建时默认勾上“自然”）。只在主线程用：计算 Worker 只读世界里的生态。
 //
 // 写明“自然生成”（natural: true）：从资源包加进世界时没写的会关掉（packs.ts 的 finalize），普通的生态要照常长。

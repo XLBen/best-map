@@ -9,7 +9,7 @@ import { digest, worldDigest } from './digest';
 
 import { addToPack, findPack, ownItems, packItems, packPaths, packProblems, parsePack, planPack, readPack, type ResourcePack, subPacks } from './packs';
 import { BASE_PATH, builtinItem, builtinItems, builtinOrigin, builtinPacks, isBuiltinSame, originOf } from './packs/builtin-tree';
-import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, ERA_PACKS, VALUE_ERAS } from './packs/eras';
+import { BUILTIN_CULTURE_GROUPS, BUILTIN_CULTURES, BUILTIN_ERAS, BUILTIN_POP_VALUES, CULTURE_REGIONS, ERA_PACKS, VALUE_ERAS } from './packs/eras';
 import { BUILTIN_PLANET_FORMS } from './packs/planet-forms';
 
 import { FANTASY_RIVER_TYPES } from './packs/fantasy-rivers';
@@ -54,8 +54,8 @@ describe('内置资源包的树', () => {
     expect(count('planetForm')).toBe(packItems(FANTASY_PACK, 'planetForms').length + BUILTIN_PLANET_FORMS.length);
   });
 
-  it('大包：每个内置时代一个，加上通用；每个时代包里有这个时代的全部政体、派系、取值', () => {
-    expect(builtinPacks().map((p) => p.id)).toEqual([...BUILTIN_ERAS.map((e) => e.id), 'common']);
+  it('每个内置时代一个库，没有通用；每个库里有这个时代的全部政体、派系、取值', () => {
+    expect(builtinPacks().map((p) => p.id)).toEqual(BUILTIN_ERAS.map((e) => e.id));
     for (const era of BUILTIN_ERAS) {
       const p = top(era.id);
       expect(ownItems(findPack(p, ['era'])!, 'eras')).toEqual([era]);
@@ -67,7 +67,7 @@ describe('内置资源包的树', () => {
         const want = BUILTIN_POP_VALUES.filter((v) => v.dimension === d.id && (!VALUE_ERAS.get(v.id) || VALUE_ERAS.get(v.id)!.includes(era.id))).map((v) => v.id);
         expect(ownItems<{ id: string }>(findPack(p, [d.id])!, 'popValues').map((v) => v.id)).toEqual(want);
       }
-      // 默认带的文化组每组一个小包：组、文化（except 里的不带）、地名风格；第四十三轮起与“通用 ▸ 文化 ▸ 地区”里的是同一份
+      // 默认带的文化组每组一个小包：组、文化（except 里的不带）、地名风格；组是内置的那一份（引用）
       for (const [g, , opt] of ERA_PACKS.get(era.id)!.cultures) {
         const node = findPack(p, ['cultures', String(g)])!;
         expect(ownItems<{ id: string }>(node, 'cultureGroups').map((x) => x.id)).toEqual([g]);
@@ -87,26 +87,44 @@ describe('内置资源包的树', () => {
     expect(ownItems<{ id: string }>(findPack(top('antiquity'), ['religion'])!, 'valueGroups').map((g) => g.id)).toContain('ancient');
     // 奇幻另有生态、河、湖、资源、星球形态
     expect(subPacks(top('fantasy')).map((x) => x.id)).toEqual(expect.arrayContaining(['biomes', 'rivers', 'lakes', 'resources', 'forms']));
-    // 通用：基础、自然、地名（中文、按地区）、星球形态、画风（第三十八轮）、文化（第四十三轮：EU4 的全部文化组，按地区）
-    const common = top('common');
-    expect(subPacks(common).map((x) => x.id)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'cultures']);
-    expect(packItems(findPack(common, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);
-    expect(subPacks(findPack(common, ['names'])!).length).toBeGreaterThan(5);
-    expect(subPacks(findPack(common, ['cultures'])!).map((x) => x.name)).toEqual(['欧洲', '中东', '非洲', '亚洲', '美洲', '大洋洲', '失落']);
-    const all = packItems<{ id: string }>(findPack(common, ['cultures'])!, 'cultureGroups').map((g) => g.id);
-    expect(all.length).toBe(71);
-    // 奇幻、科幻的文化组只在它们的时代包里（第四十四轮：奇幻 11 组、科幻 9 组，时代包默认全带）
+    // 第五十一轮：每个库都有世界的底子（基础、自然、地名、星球形态、画风、国家等级），是同一份对象
+    for (const era of BUILTIN_ERAS) {
+      const ids = subPacks(top(era.id)).map((x) => x.id);
+      expect(ids.slice(-6)).toEqual(['base', 'nature', 'names', 'forms', 'styles', 'tiers']);
+      expect(ids).toContain('cultures');
+      for (const id of ['base', 'nature', 'names', 'styles', 'tiers']) expect(findPack(top(era.id), [id])).toBe(findPack(top('medieval'), [id]));
+    }
+    const lib = top('medieval');
+    expect(packItems(findPack(lib, ['nature'])!, 'biomes')).toEqual(DEFAULT_SPECIES);
+    expect(subPacks(findPack(lib, ['names'])!).length).toBeGreaterThan(5);
+    // 四个历史库带全部 71 个 EU4 文化组（比重不是 0 的是时代默认带的，别的小包和组的比重都是 0），奇幻、科幻不带
+    const eu4 = CULTURE_REGIONS.flatMap((r) => r.groups);
+    expect(eu4.length).toBe(71);
+    const all = packItems<{ id: string }>(findPack(lib, ['cultures'])!, 'cultureGroups').map((g) => g.id);
+    for (const id of ['antiquity', 'medieval', 'industrial', 'modern']) {
+      const kids = subPacks(findPack(top(id), ['cultures'])!);
+      expect(kids.map((n) => n.id).sort()).toEqual([...eu4].sort());
+      const listed = ERA_PACKS.get(id)!.cultures.map(([g]) => g);
+      for (const n of kids) {
+        const g = ownItems<{ id: string; weight?: number }>(n, 'cultureGroups')[0];
+        expect(n.weight === 0, n.id).toBe(!listed.includes(n.id));
+        expect(g.weight === 0, n.id).toBe(!listed.includes(n.id));
+      }
+    }
+    expect(eu4.every((g) => all.includes(g))).toBe(true);
+    // 奇幻、科幻的文化组只在它们的库里（第四十四轮：奇幻 11 组、科幻 9 组，默认全带）
     const others = BUILTIN_CULTURE_GROUPS.map((g) => g.id).filter((g) => !all.includes(g));
     const FANTASY = ['elven', 'dwarven', 'halfling', 'gnomish', 'orcish', 'goblinoid', 'draconic', 'westmark', 'northmark', 'sandsea', 'seafolk'];
     const SCIFI = ['terran', 'spacer', 'augment', 'synthetic', 'tidal', 'lithic', 'sporal', 'chitin', 'avian'];
     expect(others).toEqual([...FANTASY, ...SCIFI]);
     expect(subPacks(findPack(top('fantasy'), ['cultures'])!).map((x) => x.id)).toEqual(FANTASY);
     expect(subPacks(findPack(top('scifi'), ['cultures'])!).map((x) => x.id)).toEqual(SCIFI);
-    // 奇幻的宗教组在奇幻包的“宗教”小包里；地名风格在“通用 ▸ 地名 ▸ 幻想 / 科幻”
+    // 奇幻的宗教组在奇幻包的“宗教”小包里；地名风格在每个库的“地名 ▸ 幻想 / 科幻”
     expect(ownItems<{ id: string }>(findPack(top('fantasy'), ['religion'])!, 'valueGroups').map((g) => g.id)).toEqual(['radiant', 'natural', 'ancestral', 'arcane', 'umbral', 'draconic']);
-    expect(ownItems<{ id: string }>(findPack(common, ['names', 'fantasy'])!, 'nameStyles').length).toBe(11);
-    expect(ownItems<{ id: string }>(findPack(common, ['names', 'scifi'])!, 'nameStyles').length).toBe(9);
-    expect(packItems(findPack(common, ['cultures'])!, 'cultures').length).toBe(410);
+    expect(ownItems<{ id: string }>(findPack(lib, ['names', 'fantasy'])!, 'nameStyles').length).toBe(11);
+    expect(ownItems<{ id: string }>(findPack(lib, ['names', 'scifi'])!, 'nameStyles').length).toBe(9);
+    // EU4 的文化一共 410 个；中世纪的“殖民地”不带，少几个
+    expect(new Set(eu4.flatMap((g) => BUILTIN_CULTURES.filter((c) => c.group === g).map((c) => c.id))).size).toBe(410);
     expect(builtinOrigin('islandType', 'atoll')).toEqual([...BASE_PATH]);
   });
 
@@ -221,9 +239,9 @@ describe('来源（small.origin）', () => {
     eng.undo();
     eng.undo();
     expect(w.small.origin).toEqual(before);
-    // 新世界从“通用 ▸ 自然”加进来的生态记着来源
-    expect(originOf(w.small, 'biome', DEFAULT_SPECIES[0].id, DEFAULT_SPECIES[0])).toEqual(['common', 'nature']);
-    expect(w.small.origin?.biome?.[DEFAULT_SPECIES[0].id]).toEqual(['common', 'nature']);
+    // 新世界从默认的库“自然”加进来的生态记着来源
+    expect(originOf(w.small, 'biome', DEFAULT_SPECIES[0].id, DEFAULT_SPECIES[0])).toEqual(['medieval', 'nature']);
+    expect(w.small.origin?.biome?.[DEFAULT_SPECIES[0].id]).toEqual(['medieval', 'nature']);
   });
 
   it('生成人文之前从时代包加进来的记它在时代包里的位置', () => {

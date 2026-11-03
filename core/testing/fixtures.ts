@@ -18,16 +18,14 @@ import { type Settings, type World, buildMeshFor, meshKey, settingsSchema } from
 // 第三十轮：新世界里没有内容（生态、基础、中文地名都从资源包加进来），这里建的世界默认先加上新建时默认勾上的几个包
 // （与向导新建的一样：基础、自然、中文地名），bare 时什么都不加
 
-// 一个世界里人文与地图的摘要（第三十轮的 r29-digests.json 就是它记的；human 里不算 packs）
+// 一个世界里人文与地图的摘要（第三十轮的 r29-digests.json 就是它记的；第五十一轮以前 human 里的 packs 不算，所以去掉它不改摘要）
 export function humanDigest(w: World): Record<string, string> {
   const c = w.causes;
   const s = w.small;
-  const h = s.human ? { ...s.human } : null;
-  if (h) delete (h as { packs?: unknown }).packs;
   return {
     pop: digest([c.popTotal, c.popGroup, c.popShare]),
     popGroups: digest(s.popGroups ?? null),
-    human: digest(h),
+    human: digest(s.human ?? null),
     country: digest(c.country ?? null),
     countries: digest(s.countries ?? null),
     blocs: digest(s.blocs ?? null),
@@ -125,7 +123,7 @@ export type HumanCommand = { op: 'generate_human' | 'regenerate_human' | 'genera
 export function humanExec(eng: Engine, cmd: HumanCommand | Command): string {
   const { era, ...rest } = cmd as HumanCommand;
   const h = eng.world.small.human;
-  const packs = rest.packs ?? (era ? [[era]] : h?.packs) ?? [];
+  const packs = rest.packs ?? (era ? [[era]] : h && eng.world.small.genStamp?.packs) ?? [];
   const groups = (rest.groups ?? h?.groups ?? []).map((g) => g.id);
   importPacks(eng, { packs, groups });
   const out = { ...rest, ...(era || rest.packs || cmd.op === 'generate_human' ? { packs } : {}) };

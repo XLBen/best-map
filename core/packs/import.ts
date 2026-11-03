@@ -3,18 +3,20 @@ import { itemFields } from '../content/links';
 import { itemId, kindByPackKey } from '../content/registry';
 import type { Culture, CultureGroup, Era, PopValue } from '../human/era';
 import { type PackItem, type PackNode, type PackPicks, type PackPlan, type PackWorld, type ResourcePack, defaultPicks, findPack, firstOfEach, nestByKind, ownItems, packItems, packSections, pickedIds, planPack, renamedItem, settleIds, subPacks, walkPacks } from '../packs';
-import { builtinPacks, DEFAULT_WORLD_PACKS } from './builtin-tree';
+import { builtinPacks, DEFAULT_WORLD_PACKS, LIBRARY_BASE_PACKS } from './builtin-tree';
 
 // 生成要用的内容从资源包加进世界（第三十轮）：时代就是资源包，生成只读世界里的内容，界面在生成之前先发这里给出的命令。
 //
-//   picks.packs   勾选的包（资源库里的路径：[资源库的键, 小包……]；内置的键就是大包的 id，[“medieval”]、[“common”, “base”]），
+//   picks.packs   勾选的包（资源库里的路径：[资源库的键, 小包……]；内置的键就是库的 id，[“medieval”]、[“medieval”, “base”]），
 //                 按勾选的先后。规则（时代项）取第一个带时代的包，维度也只用它的
-//   picks.groups  选的文化组（省略时是勾选的包里的全部组）
+//   picks.groups  选的文化组（省略时是勾选的包里的全部组，小包的比重是 0 的不算）
 //   picks.extra   另外要加的包（路径 + 那个包里的勾选，省略为整个包）：比如单独挑的几个政体
 //
-// 从勾选的包里带进来：规则包的那一个时代项；各包里规则时代的维度的取值与取值组（第四十三轮）；全部的政体、派系、地标、城市等级、点的类型；
+// 从勾选的包里带进来：规则包的那一个时代项；各包里规则时代的维度的取值与取值组（第四十三轮）；全部的政体、派系、地标、资源、城市等级、点的类型；
 // 文化只带选了的组（组、组里的文化、这些文化用的地名风格；勾选的包里没有的组在资源库里找第一个有它的小包）。
-// 时代包（树里有时代项的）只带这几种：奇幻包里的生态、河湖、资源要单独勾那几个小包（[“fantasy”, “biomes”]）。
+// 时代包（树里有时代项的）只带这几种：奇幻包里的生态、河湖要单独勾那几个小包（[“fantasy”, “biomes”]）；第五十一轮起库里世界的底子
+// （LIBRARY_BASE_PACKS：基础、自然、地名……）也不带，新建世界时单独加（worldPartsOf）。库里比重是 0 的组的小包（别的 EU4 文化组）点名了才带，
+// 点名的组加进世界时不带这个 0（用户就是要它参与）。
 // 别的包（基础、自然、地名……）整个带进来（地名包里的风格都带）。星球形态不带（它在 set_worldgen 里）。同一项出现在几个包里时只带第一次出现的那一份，来源记它所在的包（planPack 的 from）。
 // 世界里已有一模一样的跳过、同 id 不同内容的改名（与资源库里添加一样，见 packs.ts 的 planPack）。
 // 最后把这几种的先后排成包里的先后（order_content）：整理掉、再生成时加回来的项排回原来的位置，
@@ -49,8 +51,8 @@ export interface ImportPlan {
 
 // 生成后先后要紧的几种（见上）
 const ORDERED = ['valueGroups', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'landmarkTypes'];
-// 时代包里带的几种（生成人文、国家、城市地标要用的）；时代包里别的（奇幻的生态、河湖、资源）要单独勾那个小包
-const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
+// 时代包里带的几种（生成人文、国家、城市地标要用的，第五十一轮起还有基础之外的资源：奇幻自带）；时代包里别的（奇幻的生态、河湖）要单独勾那个小包
+const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'resources', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
 
 const hasEra = (node: PackNode): boolean => {
   let yes = false;
@@ -60,16 +62,21 @@ const hasEra = (node: PackNode): boolean => {
   return yes;
 };
 
-// 资源库里第一个有这个文化组的小包（按资源库的先后）
+// 资源库里有这个文化组的小包（按资源库的先后）：先找比重不是 0 的（同一组在几个库里，这些库默认带它），都是 0 时第一个
 function findGroup(library: readonly (ResourcePack | PackRoot)[], id: string): { node: PackNode; path: string[] } | undefined {
+  let spare: { node: PackNode; path: string[] } | undefined;
   for (const r of rootsOf(library)) {
     let hit: { node: PackNode; path: string[] } | undefined;
     walkPacks(r.pack, (n, rel) => {
-      if (!hit && ownItems<CultureGroup>(n, 'cultureGroups').some((g) => g.id === id)) hit = { node: n, path: [r.key, ...rel] };
+      if (hit) return;
+      const g = ownItems<CultureGroup>(n, 'cultureGroups').find((x) => x.id === id);
+      if (!g) return;
+      if (n.weight !== 0 && g.weight !== 0) hit = { node: n, path: [r.key, ...rel] };
+      else spare ??= { node: n, path: [r.key, ...rel] };
     });
     if (hit) return hit;
   }
-  return undefined;
+  return spare;
 }
 
 const isRoot = (x: ResourcePack | PackRoot): x is PackRoot => 'pack' in x && 'key' in x && !('format' in x);
@@ -104,7 +111,8 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
   }
   const ruleEra = era && (packAt(library, era.path) ? ownItems<Era>(packAt(library, era.path)!, 'eras').find((e) => e.id === era!.id) : undefined);
   const dims = new Set((ruleEra?.dimensions ?? []).map((d) => d.id));
-  const wantGroup = (id: string) => !picks.groups || picks.groups.includes(id);
+  const named = picks.groups;
+  const wantGroup = (id: string) => !named || named.includes(id);
 
   // 各段的项（同一个 id 只取第一次出现的）与它们的来源
   const items = new Map<string, PackItem[]>();
@@ -127,9 +135,11 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
       const ids = picks?.[key];
       return !picks || (Array.isArray(ids) && ids.includes(id));
     };
-    // 时代包（树里有时代项）只带生成要用的几种；生态、河湖、资源……要单独勾它们的小包
+    // 时代包（树里有时代项）只带生成要用的几种；生态、河湖……要单独勾它们的小包
     const eraPack = hasEra(node);
     walkPacks(node, (n, rel) => {
+      // 下面的小包：库里世界的底子不带；比重是 0 的组点名了才带（下面按 findGroup 找，和以前“勾选的包里没有的组”同一条路）
+      if (rel.length && ((eraPack && LIBRARY_BASE_PACKS.has(rel[0])) || n.weight === 0)) return;
       const path = [...base, ...rel];
       // 文化组的小包：选了的组才带（组、组里的文化、它们用的地名风格）
       const nodeGroups = ownItems<CultureGroup>(n, 'cultureGroups');
@@ -154,6 +164,12 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
             const g = x as CultureGroup;
             if (!wantGroup(g.id)) continue;
             if (!groups.includes(g.id)) groups.push(g.id);
+            // 点名了比重是 0 的组：用户就是要它参与
+            if (g.weight === 0 && named) {
+              const { weight: _, ...rest } = g;
+              add(key, rest, path);
+              continue;
+            }
           }
           if (key === 'cultures' && !wantGroup((x as Culture).group)) continue;
           if (key === 'nameStyles' && culturePack && !styleUsed.has((x as { id: string }).id)) continue;
@@ -266,7 +282,7 @@ export function packImportCommands(library: readonly (ResourcePack | PackRoot)[]
   return packImportPlan(library, picks, world).commands;
 }
 
-// 新世界要加的内容（默认勾上的基础、自然、中文地名；packs 省略为它们）：新建的那一步里放在 set_worldgen 之前
+// 新世界要加的内容（默认的库里的基础、自然、中文地名……；packs 省略为它们）：新建的那一步里放在 set_worldgen 之前
 export function newWorldContentCommands(library: readonly (ResourcePack | PackRoot)[] = builtinPacks(), packs: readonly (readonly string[])[] = DEFAULT_WORLD_PACKS): Command[] {
   return packImportCommands(library, { packs });
 }

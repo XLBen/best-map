@@ -96,7 +96,7 @@ function pieces(w: World): Int32Array {
 }
 
 describe('内置的内容', () => {
-  it('城市等级四种（新世界从“通用 ▸ 基础”加进来）；地标类型、点的类型合格、不重复', () => {
+  it('城市等级四种（新世界从库里的“基础”加进来）；地标类型、点的类型合格、不重复', () => {
     expect(BUILTIN_RANKS.map((r) => [r.id, r.icon])).toEqual([
       ['capital', 'star'],
       ['big', 'double-ring'],

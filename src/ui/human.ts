@@ -1,5 +1,5 @@
 import { type Command, popText } from '../../core/commands';
-import { type Era, worldEra } from '../../core/human';
+import { type Era, cultureGroupById, stampedPacks, worldEra } from '../../core/human';
 import type { CountryLayout, World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { type PackChoice, defaultPacks, humanImportCommands, makeRule, rulePack, togglePack, worldDefaultPacks } from './packChoice';
@@ -38,13 +38,12 @@ export interface HumanChoice extends PackChoice {
   settlements: { on: boolean; landmarks: boolean };
 }
 
-// 默认的选择：世界里已有人文时照它（用的包、文化组）；已有的世界第一次生成时勾上在用的包与中世纪；新建时勾上
-// 基础、自然、中文地名、星球形态、中世纪与近世，文化组是时代包默认带的
+// 默认的选择：世界里已有人文时照它（用的包、文化组）；没有时勾上中世纪与近世这个库，文化组是库默认带的
 export function defaultChoice(small?: Small | null, on = true, lib: readonly LibraryEntry[] = []): HumanChoice {
   const h = small?.human;
   const countries = { on: true, fragmentation: h?.countryRules?.fragmentation ?? 0.5, layout: h?.countryRules?.layout ?? ('era' as CountryLayout) };
   const settlements = { on: true, landmarks: small?.settlementRules?.landmarks ?? true };
-  if (h) return { on, packs: h.packs.map((p) => [...p]), groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null, countries, settlements };
+  if (h) return { on, packs: stampedPacks(small!).map((p) => [...p]), groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })), pop: null, countries, settlements };
   const packs = small ? worldDefaultPacks(small, lib) : defaultPacks(lib);
   const base: HumanChoice = { on, packs: [], groups: [], pop: null, countries, settlements };
   return packs.reduce((c, p) => togglePack(c, p, true, lib), base);
@@ -90,9 +89,21 @@ export function choiceProblem(c: HumanChoice, small?: Small | null, lib: readonl
 // small 为 null（新建向导）：不带时代的包已经在新建的那一步里加了（worldContentCommands），这里只加时代包里的
 export function generateCommand(c: HumanChoice, small?: Small | null, lib: readonly LibraryEntry[] = []): Command | null {
   if (!c.on || choiceProblem(c, small, lib)) return null;
-  const imports = humanImportCommands(c, small, lib);
+  const imports = [...humanImportCommands(c, small, lib), ...reviveGroups(c, small)];
   const gen = generateOnly(c);
   return imports.length ? { op: 'batch', label: '生成人文', commands: [...imports, gen] } : gen;
+}
+
+// 第五十一轮：世界里比重是 0 的组（从库里整包加进来的、依赖带来的）不参与生成；用户把它勾上就是要它参与，先去掉这个 0。
+// 上一次生成就选着它的不动（用户后来把比重改成了 0：照旧退出）
+function reviveGroups(c: Pick<PackChoice, 'groups'>, small?: Small | null): Command[] {
+  if (!small) return [];
+  return c.groups.flatMap((g): Command[] => {
+    const item = cultureGroupById(small, g.id);
+    if (!item || item.weight !== 0 || small.human?.groups.some((x) => x.id === g.id)) return [];
+    const { weight: _, ...rest } = item;
+    return [{ op: 'set_content', kind: 'cultureGroup', id: g.id, item: rest as unknown as Record<string, unknown> }];
+  });
 }
 
 function generateOnly(c: HumanChoice): Command {
@@ -117,15 +128,16 @@ export function regenerateWith(c: HumanChoice, small: Small, lib: readonly Libra
   const h = small.human;
   if (!h || choiceProblem(c, small, lib)) return null;
   const groups = c.groups.map((g) => ({ id: g.id, weight: g.weight }));
-  const same = samePacks(c.packs, h.packs) && JSON.stringify(groups) === JSON.stringify(h.groups.map((g) => ({ id: g.id, weight: g.weight })));
+  const packsWere = stampedPacks(small);
+  const same = samePacks(c.packs, packsWere) && JSON.stringify(groups) === JSON.stringify(h.groups.map((g) => ({ id: g.id, weight: g.weight })));
   if (same && c.pop === null) return null;
   // 规则的时代没换：同一个包、同一个时代
   const now = rulePack(c.packs, lib, small);
-  const was = rulePack(h.packs, lib, small);
+  const was = rulePack(packsWere, lib, small);
   const sameEra = !!now && !!was && now.era.id === h.era && samePacks([now.path], [was.path]);
   const countries = h.countryRules && !sameEra ? { countries: {} } : {};
   const regen: Command = { op: 'regenerate_human', packs: c.packs.map((p) => [...p]), groups, ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}), keepManual: sameEra, ...countries };
-  const imports = humanImportCommands(c, small, lib, samePacks(c.packs, h.packs));
+  const imports = [...humanImportCommands(c, small, lib, samePacks(c.packs, packsWere)), ...reviveGroups(c, small)];
   return imports.length ? { op: 'batch', label: '重新生成人文', commands: [...imports, regen] } : regen;
 }
 
@@ -137,7 +149,7 @@ const REGEN_LABELS: Partial<Record<Command['op'], string>> = { generate_human: '
 export function withPackImports(cmd: Command, small: Small, lib: readonly LibraryEntry[] = []): Command {
   const h = small.human;
   if (!h) return cmd;
-  const imports = humanImportCommands({ packs: h.packs, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })) }, small, lib, true);
+  const imports = humanImportCommands({ packs: stampedPacks(small).map((p) => [...p]), groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })) }, small, lib, true);
   const label = cmd.op === 'batch' ? cmd.label : REGEN_LABELS[cmd.op];
   return imports.length ? { op: 'batch', ...(label ? { label } : {}), commands: [...imports, cmd] } : cmd;
 }

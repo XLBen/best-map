@@ -5,6 +5,7 @@ import { worldMapStyleId } from '../../../core/map-style';
 import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, packItems, packSections, planPack, sameItem, subPacks, walkPacks, findPack } from '../../../core/packs';
 import { builtinItem, isBuiltinSame, originOf } from '../../../core/packs/builtin-tree';
 import { itemFields } from '../../../core/content/links';
+import { sameContent } from '../../../core/content/refs';
 import { recordedOrigin } from '../../../core/content/origin';
 import type { ContentRef } from '../../../core/content/unused';
 import type { LibraryEntry } from '../../library';
@@ -92,13 +93,24 @@ export interface RepoRow {
 
 const wrap = (kind: ContentKind, items: readonly unknown[], id: string, name: string): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name, [kind.pack.key]: [...items] });
 
-// 一次列表里共用的：每一种在世界里的项（列一棵树要查上千项，kind.inWorld 不必每项都算一遍）
-type Ctx = Map<string, readonly unknown[]>;
+// 一次列表里共用的：每一种在世界里的项（列一棵树要查上千项，kind.inWorld 不必每项都算一遍）；
+// 第五十一轮：六个库里的同一项是同一个对象，状态也只算一遍（状态不看它在哪个内置的库）
+interface Ctx {
+  inWorld: Map<string, readonly unknown[]>;
+  status: Map<unknown, RepoStatus>;
+}
 function inWorldOf(kind: ContentKind, world: PackWorld, ctx?: Ctx): readonly unknown[] {
   if (!ctx) return kind.inWorld(world);
-  let v = ctx.get(kind.id);
-  if (!v) ctx.set(kind.id, (v = kind.inWorld(world)));
+  let v = ctx.inWorld.get(kind.id);
+  if (!v) ctx.inWorld.set(kind.id, (v = kind.inWorld(world)));
   return v;
+}
+function statusIn(ctx: Ctx, kind: ContentKind, item: unknown, pack: PackNode, world: PackWorld | null, entry: LibraryEntry): RepoStatus {
+  const shared = entry.builtin ? ctx.status.get(item) : undefined;
+  if (shared) return shared;
+  const st = statusOf(kind, item, pack, world, false, ctx, entry.builtin ? entry.key : undefined);
+  if (entry.builtin) ctx.status.set(item, st);
+  return st;
 }
 
 // 世界默认的地名风格、世界在用的画风（第三十八轮）
@@ -131,8 +143,8 @@ function statusOf(kind: ContentKind, item: unknown, pack: PackNode, world: PackW
   // 世界里没有同 id 的：加进来时不改名，就是不在本世界（不必按资源包的规则算一遍）
   const same = inWorld.find((x) => itemId(kind, x) === id);
   if (!same) return { on: false };
-  // 本世界里那一份是这一项改过的（来源记的就是这个内置的包）
-  if (entry && recordedOrigin(world.small, kind.id, id)?.[0] === entry && builtinOriginal(kind, same, world)) return { on: true, worldId: id, modified: true, ...isDefault(id) };
+  // 本世界里那一份是这一项改过的（来源记的是内置的库；第五十一轮：同一项在几个库里，哪一个库的这一行都算）
+  if (entry && recordedOrigin(world.small, kind.id, id) && builtinOriginal(kind, same, world)) return { on: true, worldId: id, modified: true, ...isDefault(id) };
   // 按资源包的规则：加进世界时的样子（没写“自然生成”的关掉……）与世界里的一样就是启用着
   const plan = planPack(world, pack, { [kind.pack.key]: [id], defaultStyle: null });
   const skip = plan.skipped.find((x) => x.section === kind.pack.key && x.from === id);
@@ -155,7 +167,7 @@ export function repoRows(kind: ContentKind, world: PackWorld | null, lib: readon
   for (const e of lib.filter((x) => x.builtin)) {
     for (const x of packItems(e.pack, kind.pack.key)) {
       const id = itemId(kind, x);
-      if (rows.some((r) => r.source === 'builtin' && r.id === id && sameItem(r.item, x))) continue;
+      if (rows.some((r) => r.source === 'builtin' && r.id === id && sameContent(kind, r.item, x))) continue;
       push(x, 'builtin', e.pack, e.pack.name, e.key);
     }
   }
@@ -354,12 +366,12 @@ function finish(n: TreeNode): TreeNode {
 // 资源库里的一层（没有这几种的项时 null）
 function libraryNode(e: LibraryEntry, node: PackNode, rel: string[], kinds: readonly ContentKind[], world: PackWorld | null, ctx: Ctx): TreeNode | null {
   const path = [e.key, ...rel];
-  // 第三十轮：“通用 ▸ 基础”也是普通的包，能整包添加、移出没用到的（第二十九轮它只显示）
+  // 第三十轮：库里的“基础”也是普通的包，能整包添加、移出没用到的（第二十九轮它只显示）
   const rows: RepoRow[] = [];
   for (const k of kinds) {
     for (const x of ownItems(node, k.pack.key)) {
       const id = itemId(k, x);
-      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusOf(k, x, node, world, false, ctx, e.builtin ? e.key : undefined) });
+      rows.push({ kind: k, key: `l:${path.join('/')}:${k.id}:${id}`, id, name: itemName(k, x), item: x, source: sourceOf(e), pack: node, from: e.pack.name, entry: e.key, path, status: statusIn(ctx, k, x, node, world, e) });
     }
   }
   const children = subPacks(node)
@@ -452,7 +464,7 @@ function worldTree(world: PackWorld, lib: readonly LibraryEntry[], kinds: readon
 export function packTree(world: PackWorld | null, lib: readonly LibraryEntry[], kind?: string): PackTree {
   const k = kind && kind !== 'all' ? kindOf(kind) : undefined;
   const kinds = k ? [k] : repoKinds();
-  const ctx: Ctx = new Map();
+  const ctx: Ctx = { inWorld: new Map(), status: new Map() };
   const library = lib.map((e) => libraryNode(e, e.pack, [], kinds, world, ctx)).filter((n): n is TreeNode => n !== null).map(finish);
   return { world: world ? worldTree(world, lib, kinds) : [], library };
 }

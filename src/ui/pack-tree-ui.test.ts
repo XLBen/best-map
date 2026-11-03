@@ -63,10 +63,10 @@ afterEach(() => {
 });
 
 describe('资源库两栏：packTree', () => {
-  it('资源库一栏：内置的大包按时代的先后、通用在最后，之后是我的、装上的；通用 ▸ 基础是普通的包（第三十轮）', () => {
+  it('资源库一栏：内置的库按时代的先后，之后是我的、装上的；库里的基础是普通的包（第三十轮）', () => {
     const mine = entry('我的资源', pack('我的资源', { cultures: [myCulture] } as Partial<ResourcePack>), { mine: true });
     const t = packTree(continents().world, [...BUILTIN, mine]);
-    expect(t.library.map((n) => n.path[0])).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'common', '我的资源']);
+    expect(t.library.map((n) => n.path[0])).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', '我的资源']);
     const base = find(t.library, `l:${BASE_PATH.join('/')}`)!;
     expect(Object.keys(base)).not.toContain('base');
     // 新世界里基础的都在：没有能加的
@@ -84,8 +84,7 @@ describe('资源库两栏：packTree', () => {
     const t = packTree(eng.world, BUILTIN);
     const tops = t.world.map((n) => n.name);
     expect(tops.at(-1)).toBe('离群');
-    expect(tops).toEqual(expect.arrayContaining([topName('medieval'), topName('common')]));
-    expect(tops.indexOf(topName('medieval'))).toBeLessThan(tops.indexOf(topName('common')));
+    expect(tops).toEqual([topName('medieval'), '离群']);
     expect(t.world.at(-1)!.rows.map((r) => r.id)).toEqual(['my-c']);
     // 生成时带进来的时代、文化记着中世纪的包
     const era = find(t.world, 'w:medieval/era')!;
@@ -93,9 +92,9 @@ describe('资源库两栏：packTree', () => {
     const cultures = worldCultures(eng.world.small).filter((c) => c.id !== 'my-c');
     const listed = treeRows(t.world.find((n) => n.path[0] === 'medieval')!).filter((r) => r.kind.id === 'culture');
     expect(listed.map((r) => r.id).sort()).toEqual(cultures.map((c) => c.id).sort());
-    // 新世界加的 13 种生态在“通用 ▸ 自然”，基础内容在“通用 ▸ 基础”
+    // 新世界加的 13 种生态在默认的库“自然”，基础内容在“基础”
     const w0 = packTree(continents().world, BUILTIN);
-    expect(find(w0.world, 'w:common/nature')!.rows.map((r) => r.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
+    expect(find(w0.world, 'w:medieval/nature')!.rows.map((r) => r.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
     expect(find(w0.world, `w:${BASE_PATH.join('/')}`)!.rows.length).toBeGreaterThan(0);
   });
 
@@ -167,7 +166,7 @@ describe('选择器、向导按包分组', () => {
     const eng = continents();
     world.value = eng.world;
     const items = () => (ResourceMenu() as unknown as { props: { items: Parameters<typeof originGroups>[0] } }).props.items;
-    // 只有通用的资源：一段，不分
+    // 只有基础的资源：一段，不分
     expect(originGroups(items(), 'resource', eng.world, BUILTIN).every((x) => x.group === undefined)).toBe(true);
     // 加一种奇幻资源（从“奇幻 ▸ 资源”）、一种本世界做的
     const res = find(packTree(eng.world, BUILTIN, 'resource').library, 'l:fantasy/resources')!.rows[0];
@@ -181,7 +180,7 @@ describe('选择器、向导按包分组', () => {
       ['无', undefined],
     ]);
     const groups = [...new Set(shown.slice(2).map((x) => x.group))];
-    expect(groups).toEqual([topName('fantasy'), topName('common'), LOOSE_GROUP].filter((g) => groups.includes(g)));
+    expect(groups).toEqual([topName('medieval'), topName('fantasy'), LOOSE_GROUP].filter((g) => groups.includes(g)));
     expect(groups.at(-1)).toBe(LOOSE_GROUP);
     expect(shown.find((x) => x.label === res.name)!.group).toBe(topName('fantasy'));
     expect(shown.find((x) => x.label === '我的资源种')!.group).toBe(LOOSE_GROUP);
@@ -190,21 +189,23 @@ describe('选择器、向导按包分组', () => {
     expect(originGroups([{ label: 'a', on: false, group: 'g', id: 'x', onPick: () => {} }], 'culture', eng.world, BUILTIN)[0].group).toBe('g');
   });
 
-  it('向导（第三十轮）：文化组按勾着的包分段（时代包、通用 ▸ 文化）；“离群”放最后', () => {
-    const groups = packGroups([['medieval'], ['common', 'cultures']], BUILTIN);
+  it('向导（第三十轮）：文化组按勾着的包分段（库、别的库里的“文化”）；“离群”放最后', () => {
+    const groups = packGroups([['medieval'], ['fantasy', 'cultures']], BUILTIN);
     const labels = [...new Set(groups.map((g) => packLabel(BUILTIN, g.pack)))];
-    expect(labels).toEqual([topName('medieval'), `${topName('common')} ▸ 文化`]);
-    // 时代包里的组带默认的权重，通用的没有
-    expect(groups.filter((g) => g.pack[0] === 'medieval').every((g) => (g.weight ?? 0) > 0)).toBe(true);
-    expect(groups.filter((g) => g.pack[0] === 'common').every((g) => g.weight === undefined)).toBe(true);
+    expect(labels).toEqual([topName('medieval'), `${topName('fantasy')} ▸ 文化`]);
+    // 库里默认带的组写着权重，别的 EU4 文化组是 0（第五十一轮）
+    const mine = groups.filter((g) => g.pack[0] === 'medieval');
+    expect(mine.length).toBe(71);
+    expect(mine.filter((g) => (g.weight ?? 0) > 0).length).toBe(18);
+    expect(mine.filter((g) => g.weight === 0).length).toBe(53);
     expect(groupByPack(['a', 'b', 'c'], (x) => (x === 'a' ? LOOSE_GROUP : 'P')).map((s) => s.label)).toEqual(['P', LOOSE_GROUP]);
   });
 
   it('向导的星球形态：内置的在“奇幻 ▸ 星球形态”里也列得出来，按包分', () => {
     const list = formChoices(BUILTIN);
     expect(list.length).toBeGreaterThan(0);
-    // 第三十轮：以前写死的六种星球在“通用 ▸ 星球形态”里
-    expect(new Set(list.map((c) => c.pack))).toEqual(new Set([topName('fantasy'), topName('common')]));
+    // 第三十轮：以前写死的六种星球在库里的“星球形态”（第五十一轮：只列一次，按默认的库）
+    expect(new Set(list.map((c) => c.pack))).toEqual(new Set([topName('fantasy'), topName('medieval')]));
   });
 
   it('选了资源包里的时代、文化组：只带时代和它的维度的取值、组所在小包里的文化和地名风格，记上来源', () => {
@@ -213,7 +214,7 @@ describe('选择器、向导按包分组', () => {
     const value = { id: 'my-faith', dimension: 'faith', name: '我的信仰', color: '#884422' };
     const otherValue = { id: 'other-v', dimension: 'other', name: '别的', color: '#224488' };
     const group = { ...BUILTIN_CULTURE_GROUPS[0], id: 'my-group', name: '我的组' };
-    const style = { ...packItems<{ id: string; name: string }>(findPack(builtinPacks().find((p) => p.id === 'common')!, ['names'])!, 'nameStyles')[0], id: 'my-style', name: '我的风格' };
+    const style = { ...packItems<{ id: string; name: string }>(findPack(builtinPacks().find((p) => p.id === 'medieval')!, ['names'])!, 'nameStyles')[0], id: 'my-style', name: '我的风格' };
     const culture = { id: 'my-culture', group: 'my-group', name: '我的人', color: '#335577', nameStyle: 'my-style' };
     const stray = { id: 'stray', group: 'other-group', name: '别组的人', color: '#335577', nameStyle: 'my-style' };
     const p = pack('lib', {

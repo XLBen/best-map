@@ -432,7 +432,7 @@ registerKind<NameStyle>({
   store: 'content',
   maxInWorld: 128,
   schema: nameStyleSchema as unknown as z.ZodType<NameStyle>,
-  // 第三十轮起中文·默认也是普通内容（“通用 ▸ 地名 ▸ 中文”）
+  // 第三十轮起中文·默认也是普通内容（每个库的“地名 ▸ 中文”）
   inWorld: (w) => Object.values(worldStyles(w.small)),
   // 改的是世界默认、或者有地物、省份在用的风格时重新起名
   dirty: (before, after, w) => {

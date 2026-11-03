@@ -7,7 +7,7 @@ import { worldDigest } from './digest';
 import { Engine } from './engine';
 import { DEFAULT_LOOK, FALLBACK_MAP_STYLE, type MapStyle, mapStyleKey, mapStyleSchema, styleRgba, typeColor, worldMapStyle, worldMapStyleId, worldMapStyles } from './map-style';
 import { applyPackCommands, findPack, packItems, readPack } from './packs';
-import { COMMON_PACK_ID, DEFAULT_WORLD_PACKS, STYLES_PATH, builtinPacks, isBuiltinSame, originOf } from './packs/builtin-tree';
+import { DEFAULT_LIBRARY, DEFAULT_WORLD_PACKS, STYLES_PATH, builtinPacks, isBuiltinSame, originOf } from './packs/builtin-tree';
 import { packImportCommands } from './packs/import';
 import { BUILTIN_MAP_STYLES } from './packs/map-styles';
 import { continents, engineFor, seedCommands } from './testing/fixtures';
@@ -56,10 +56,10 @@ describe('画风的格式', () => {
 });
 
 describe('内置的画风包', () => {
-  it('“通用 ▸ 画风”里是写实、地图册，新建世界默认勾上；每一项都在树里', () => {
-    expect(STYLES_PATH).toEqual([COMMON_PACK_ID, 'styles']);
+  it('每个库的“画风”里是写实、地图册，新建世界默认带上；每一项都在树里', () => {
+    expect(STYLES_PATH).toEqual([DEFAULT_LIBRARY, 'styles']);
     expect(DEFAULT_WORLD_PACKS).toContainEqual(STYLES_PATH);
-    const common = LIB.find((p) => p.id === COMMON_PACK_ID)!;
+    const common = LIB.find((p) => p.id === DEFAULT_LIBRARY)!;
     expect(packItems(findPack(common, ['styles'])!, 'mapStyles')).toEqual(BUILTIN_MAP_STYLES);
     for (const s of BUILTIN_MAP_STYLES) expect(originOf({}, 'mapStyle', s.id, s)).toEqual([...STYLES_PATH]);
     expect(readPack(JSON.stringify(common)).ok).toBe(true);
@@ -80,7 +80,7 @@ describe('内置的画风包', () => {
     expect(worldMapStyle(eng.world.small)).toBe(FALLBACK_MAP_STYLE);
     expect(() => eng.exec({ op: 'set_map_style', id: 'atlas' })).toThrow(/没有画风/);
     // 加上画风包
-    eng.exec(applyPackCommands(eng.world, findPack(LIB.find((p) => p.id === COMMON_PACK_ID)!, ['styles'])!));
+    eng.exec(applyPackCommands(eng.world, findPack(LIB.find((p) => p.id === DEFAULT_LIBRARY)!, ['styles'])!));
     expect(worldMapStyle(eng.world.small)).toEqual(REALISTIC);
   });
 });

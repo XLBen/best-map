@@ -42,7 +42,7 @@ export type Resource = z.output<typeof resourceSchema>;
 
 type ResSmall = Pick<Partial<SmallState>, 'content'>;
 
-// 世界里的资源（编号 = 下标 + 1，按加进世界的先后）。第三十轮起只读世界里的（内置的通用一套在“通用 ▸ 基础”里，
+// 世界里的资源（编号 = 下标 + 1，按加进世界的先后）。第三十轮起只读世界里的（内置的通用一套在库里的“基础”里，
 // 奇幻的一套在“奇幻 ▸ 资源”里）；没有时没有资源层
 const EMPTY: readonly Resource[] = [];
 const lists = new WeakMap<object, Resource[]>();

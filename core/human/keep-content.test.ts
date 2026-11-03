@@ -12,11 +12,11 @@ import { NO_CURRENTS, engineFor, humanDigest, importPacks } from '../testing/fix
 import { mapDiff } from '../tidy';
 import { cultureGroupById, worldCultureGroups, worldCultures, worldEras } from './era';
 import { humanBlockers } from './generate';
-import saved from './r29-digests.json';
+import { r29Digest } from '../testing/r29';
 
 // 第五十轮：世界保留全部内容。生成后不再移出没用到的；清理（整理）覆盖文化、文化组、地名风格、时代；文化组的比重决定参不参与生成
 
-const r29 = saved as Record<string, unknown>;
+const r29 = new Proxy({}, { get: (_, key: string) => r29Digest(key) }) as Record<string, unknown>;
 const GROUPS = [['germanic', 3], ['chinese', 3], ['levantine', 2], ['hindustani', 2], ['east-slavic', 1.5], ['altaic', 1.5]] as const;
 const groupsOf = (g: readonly (readonly [string, number])[]) => g.map(([id, weight]) => ({ id, weight }));
 const MEDIEVAL = groupsOf(GROUPS);

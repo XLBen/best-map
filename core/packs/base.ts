@@ -3,7 +3,7 @@ import type { Resource, ResourceCategory } from '../human/resources';
 import type { TerrainClass } from '../human/terrain-class';
 import type { IslandType } from '../island-types';
 
-// “通用 ▸ 基础”里由代码写出的几样（第三十轮以前它们总在世界里，现在和别的内容一样从资源包加进世界，新建时默认勾上“基础”）：
+// 每个库的“基础”里由代码写出的几样（第三十轮以前它们总在世界里，现在和别的内容一样从资源包加进世界，新建时默认勾上“基础”）：
 // 地形类别、通用资源（奇幻的一套在“奇幻 ▸ 资源”）、岛的种类。城市等级、地标、点的类型在 settlements/ 的 JSON 里，
 // 中文·默认在 names/zh-default.json。只在主线程用（资源库、向导）：计算 Worker 只读世界里的内容。
 // 宜居度的倍数（habitability）以前按 id 查 human/habitability.ts 的 CLASS_HABITABILITY，现在写在类别自己身上（数值相同）

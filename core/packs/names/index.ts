@@ -35,7 +35,7 @@ import westGermanic from './west-germanic.json';
 import zhDefault from './zh-default.json';
 
 // 内置的地名风格（第二十轮）：一个文件一种，格式见 name-styles.ts 与 docs/开发说明.md 的“地名风格的写法”。
-//   zh-default.json    中文·默认（模板式；就是以前的内置文字包。第三十轮起是“通用 ▸ 地名 ▸ 中文”里的普通内容，新建时默认加进世界）
+//   zh-default.json    中文·默认（模板式；就是以前的内置文字包。第三十轮起是每个库“地名 ▸ 中文”里的普通内容，新建时默认加进世界）
 //   west-germanic.json 西欧·日耳曼（音译式：Karvilsburg → 卡尔维尔斯堡）
 //   ja-kanji.json      日本·汉字（模板式 + 读音表：白浜島 → Shirahamashima）
 //   ko-hanja.json      朝鲜半岛·韩语（模板式 + 读音表：白川江 → Baekcheongang）

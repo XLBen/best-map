@@ -18,6 +18,7 @@ import {
   ERA_LAYOUT,
   ERA_LAYOUT_HINT,
   ERA_LAYOUT_NAME,
+  stampedPacks,
   tierOfCountry,
   tierShort,
   worldLayouts,
@@ -128,7 +129,7 @@ export function governmentChoices(w: World, current?: string, lib: readonly Libr
   const all: GovChoice[] = [...list, ...rest].map((gov) => ({ gov }));
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;
   if (cur && !all.some((g) => g.gov.id === cur.id)) all.unshift({ gov: cur });
-  for (const x of itemsInPacks<Government>(w.small.human?.packs ?? [], lib, 'governments')) {
+  for (const x of itemsInPacks<Government>(w.small.human ? stampedPacks(w.small) : [], lib, 'governments')) {
     if (!all.some((g) => g.gov.id === x.item.id)) all.push({ gov: x.item, path: x.path });
   }
   return all;

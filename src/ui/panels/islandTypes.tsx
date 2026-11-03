@@ -296,7 +296,7 @@ export function IslandTypesSection() {
   return (
     <section>
       <h5>岛的种类</h5>
-      <p class="hint">世界里的岛的种类（内置的几种在资源库的“通用 ▸ 基础”里）</p>
+      <p class="hint">世界里的岛的种类（内置的几种在资源库里每个库的“基础”里）</p>
       {own.length > 0 && (
         <div class="list">
           {own.map((t) => (

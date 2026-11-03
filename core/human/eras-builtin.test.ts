@@ -22,7 +22,7 @@ import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../packs/
 // 第四十三轮：地球上的是 EU4 1.37 的 71 个文化组、410 个文化（按地区），宗教是 EU4 的 28 种（7 组）加古代的 8 种与现代的无宗教
 
 // 一个文化组能用在哪些时代（第三十轮：时代包里默认带的组）：只在奇幻、科幻的包里的（精灵、异星种族……）只用在那个时代，
-// 地球上的组（历史上的时代带的、“通用 ▸ 文化”里的）哪个时代都能用
+// 地球上的组（历史上的时代默认带的、历史库里比重是 0 的）哪个时代都能用
 const HISTORY = ['antiquity', 'medieval', 'industrial', 'modern'];
 const inPack = (era: Era, g: CultureGroup) => ERA_PACKS.get(era.id)!.cultures.some(([id]) => id === g.id);
 const earthly = (g: CultureGroup) => BUILTIN_ERAS.every((e) => !inPack(e, g)) || BUILTIN_ERAS.some((e) => HISTORY.includes(e.id) && inPack(e, g));

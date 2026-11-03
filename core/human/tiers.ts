@@ -6,7 +6,7 @@ import type { Era } from './era';
 
 // 国家等级与格局（第四十二轮）：以前写死在 countries.ts 的五档（城邦、小国、中等国家、大国、帝国）与四种格局，
 // 改成资源包里的两种内容：国家等级（countryTier，包里的段 countryTiers）、格局（countryLayout，段 countryLayouts），
-// 内置的在“通用 ▸ 国家等级”（packs/country-tiers.json，新建世界默认带上）。都放在 small.content，命令是 set_content。
+// 内置的在每个库的“国家等级”（packs/country-tiers.json，新建世界默认带上）。都放在 small.content，命令是 set_content。
 // 等级按 order 从小到大排（一样时按 id）：生成挑等级的先后、“比这一级高 / 低”都按这个先后，几档都行（加、删、改名都照常生成）。
 // 以前写死的几条规则都是等级的字段：
 //   - 面积倍数 area、时代没写比例时的比例 weight、与政体的 size 相配 govSize；

@@ -8,6 +8,7 @@ import golden from './golden-full.json';
 // 第四十二轮：新世界默认多加国家等级包、城市等级多了浓淡与大小，只有 small 一项重录（核对过去掉国家等级包、城市等级照旧时与原来的值逐值相同）
 // 第四十六轮：一块地区有了洋流（进气候），region 里气候与往后的几项（温度、降水、湿润、径流、生态、修正场、海流、海温偏离、地物、省份、small）重录；
 // 网格、原因、高程、风、大陆度、水面、湖、流向、汇水都不变。planet 一项没变
+// 第五十一轮：通用拆进了各库，新世界的内容来自“中世纪与近世”，来源的路径（small.origin）变了，只有 small 一项重录（核对过 from 写回 common 时与原来的值逐值相同）
 describe('整个世界逐值不变（加长的操作序列）', () => {
   it('一块地区', () => {
     expect(extendedHashes('region')).toEqual(golden.region);

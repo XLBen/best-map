@@ -211,7 +211,7 @@ describe('仓库：基础的内容（第三十轮起是普通内容）', () => {
   const classKind = kindOf('terrainClass')!;
   const resKind = kindOf('resource')!;
 
-  it('内置的地形类别：新世界从“通用 ▸ 基础”加进来，开着、能移出；编辑的是世界里那一份', () => {
+  it('内置的地形类别：新世界从库里的“基础”加进来，开着、能移出；编辑的是世界里那一份', () => {
     const eng = continents();
     const row = () => repoRows(classKind, eng.world, []).find((r) => r.id === 'mountains')!;
     expect(row().status).toMatchObject({ on: true, worldId: 'mountains' });

@@ -274,11 +274,13 @@ export interface HumanHearth {
   // 拖过的：重新生成时留在这里
   locked?: true;
 }
-export interface HumanState {
-  // 生成时用的资源包（第三十轮，按勾选的先后；每个是资源库里的路径 [大包, 小包……]）。规则（时代）取第一个带时代的包，
-  // 维度也只用它的；别的包提供政体、派系、文化、取值……（都已经由界面加进世界，生成只读世界里的内容）
+// 生成人文时用的包（按勾选的先后；每个是资源库里的路径 [库, 小包……]）。规则（时代）取第一个带时代的包，
+// 维度也只用它的；别的包提供政体、派系、文化、取值……（都已经由界面加进世界，生成只读世界里的内容）
+export interface GenStamp {
   packs: string[][];
-  // 规则用的时代（small.content.era 里的 id）：生成时按 packs 定下
+}
+export interface HumanState {
+  // 规则用的时代（small.content.era 里的 id）：生成时按命令的 packs 定下（第五十一轮起生成用的包记在 small.genStamp）
   era: string;
   seed: number;
   // 文化组与权重；cultures 是只用组里的这几个文化（省略时用世界里这一组的全部）
@@ -487,6 +489,8 @@ export interface SmallState {
   cells?: Record<string, CellMeta>;
   // 人文（第二十二轮）：生成过才有
   human?: HumanState;
+  // 上一次生成人文用的包（第五十一轮，以前是 human.packs；生成结果放 human，这是界面要记的“用什么生成的”，所以放在外面）
+  genStamp?: GenStamp;
   // 人口群体：编号 → 群体（causes.popGroup 里的编号）。生成过才有
   popGroups?: Record<string, PopTuple>;
   // 国家（第二十三轮）：编号 → 档案；下一个编号。生成过国家才有
@@ -730,7 +734,7 @@ function defaultSmall(): SmallState {
     terrain: { gen: null, coastRoughness: 1 },
     featureNames: {},
     planet: planetSchema.parse({}),
-    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是“通用 ▸ 自然”的 13 种）
+    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是库里“自然”的 13 种）
     species: [],
     constraints: [],
     guides: [],

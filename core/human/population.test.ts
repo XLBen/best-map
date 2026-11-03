@@ -75,12 +75,7 @@ const RECORDED = {
   region: { popTotal: '67e73cf561a95bf5', popGroup: 'e5c4b7475d058189', popShare: 'c787958e5c1600b9', human: '0d70c9adfbfac436' },
   planet: { popTotal: 'b5945a5063937910', popGroup: '397ad062705a8e85', popShare: 'fd1c2004e6472392', human: '1ae218e861634c00' },
 };
-// 第三十轮：small.human 多了用的资源包（packs），金标准记的是没有它的样子（别的一样）
-const humanState = (w: World) => {
-  const { packs: _, ...h } = w.small.human!;
-  return h;
-};
-const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(humanState(w)) });
+const genDigest = (w: World) => ({ popTotal: digest(w.causes.popTotal!), popGroup: digest(w.causes.popGroup!), popShare: digest(w.causes.popShare!), human: digest(w.small.human!) });
 
 describe('宜居度', () => {
   it('水面为 0，陆地在 0–1；冰盖、荒漠很低，河边、海边高；没有人文的世界也有', () => {

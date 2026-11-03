@@ -6,7 +6,7 @@ import { afterCountries, type ApplyContext, clearPop, Dirty, type RunResult } fr
 import { classAt, classCode, RETIRED_CLASSES } from '../human/terrain-class';
 import { RESOURCE_NONE, resourceAt, resourceCode } from '../human/resources';
 import { missingNotes, type MissingScope } from '../content/missing';
-import { generateHuman, humanBlockers, regenerateHuman } from '../human/generate';
+import { generateHuman, humanBlockers, regenerateHuman, stampedPacks } from '../human/generate';
 import { clearCountries } from '../human/countries';
 import { dropBroughtContent } from '../human/prune';
 import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, removeCountry, setCountry, splitCountry, tidyCountries } from '../human/country-edit';
@@ -138,7 +138,7 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
     case 'regenerate_human': {
       const h = small.human;
       if (!h) throw new CommandError('还没有生成人文');
-      const blockers = humanBlockers(world, { packs: cmd.packs ?? h.packs, groups: cmd.groups ?? h.groups });
+      const blockers = humanBlockers(world, { packs: cmd.packs ?? stampedPacks(small).map((p) => [...p]), groups: cmd.groups ?? h.groups });
       if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
       const patch = { packs: cmd.packs, groups: cmd.groups, totalPop: cmd.totalPop, seed: cmd.seed, countries: cmd.countries };
@@ -152,7 +152,7 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       const h = small.human;
       if (!h) throw new CommandError('还没有生成人文');
       if (cmd.op === 'regenerate_countries' && !h.countryRules) throw new CommandError('还没有生成国家');
-      const blockers = humanBlockers(world, { packs: cmd.packs ?? h.packs, groups: cmd.groups ?? h.groups });
+      const blockers = humanBlockers(world, { packs: cmd.packs ?? stampedPacks(small).map((p) => [...p]), groups: cmd.groups ?? h.groups });
       if (blockers.length) throw new CommandError(blockers[0]);
       const d = ctx.ensureDerived();
       const rules = {

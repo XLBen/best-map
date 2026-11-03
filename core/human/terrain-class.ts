@@ -10,7 +10,7 @@ import { type CellInputs, type CompiledRule, cellRuleSchema, compileRule, ruleMa
 // 第二十七轮起只管起伏：植被（森林、沙漠、沼泽……）是生态的事，格的档案写成“丘陵 · 温带阔叶林”。
 // 默认由自动规则按高度、坡度算出（derived.terrainClassAuto），点格、笔刷可以改（causes.terrainClass，0 是自动）。
 //
-// 世界里有哪些类别：small.content.terrainClass 里的（第三十轮起内置的 5 种也是普通内容，在“通用 ▸ 基础”里，新建时默认加进来）。
+// 世界里有哪些类别：small.content.terrainClass 里的（第三十轮起内置的 5 种也是普通内容，在库里的“基础”里，新建时默认加进来）。
 // 停用一种时，画成它的格恢复自动。编号按世界里的先后是 1、2……；0 是水面（derived）或自动（causes）。
 
 export const HEX = z.string().regex(/^#[0-9a-fA-F]{6}$/, '颜色写成 #rrggbb');
@@ -47,7 +47,7 @@ export const RETIRED_CLASSES: ReadonlySet<string> = new Set(['grasslands', 'step
 
 type ClassSmall = Pick<Partial<SmallState>, 'content'>;
 
-// 世界里的地形类别（编号 = 下标 + 1，按加进世界的先后）。第三十轮起只读世界里的（内置的 5 种在“通用 ▸ 基础”里，
+// 世界里的地形类别（编号 = 下标 + 1，按加进世界的先后）。第三十轮起只读世界里的（内置的 5 种在库里的“基础”里，
 // 新建时默认加进来）；没有时类别层为空，移动代价、宜居度按平地算，资源规则里的类别按平地算（见 rules.ts 的 compileRule）
 const EMPTY: readonly TerrainClass[] = [];
 const lists = new WeakMap<object, TerrainClass[]>();

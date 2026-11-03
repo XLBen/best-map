@@ -295,7 +295,7 @@ describe('资源', () => {
       }
       expect(wet).toBe(true);
     }
-    // 奇幻的默认不在（新世界从“通用 ▸ 基础”加进来的是通用的一套）
+    // 奇幻的默认不在（新世界从库里的“基础”加进来的是通用的一套）
     expect(worldResources(w.small)).toEqual(GENERAL_RESOURCES);
   });
 

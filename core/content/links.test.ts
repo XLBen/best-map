@@ -156,7 +156,7 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
     expect([...kinds].sort()).toEqual(['biome', 'countryLayout', 'culture', 'cultureGroup', 'era', 'faction', 'government', 'landmarkType', 'popValue', 'resource', 'valueGroup'].sort());
   });
 
-  it('内置的每个大包单独看：找不到的 hard 类只有写明的那几条，其余找不到的都是能取消、能去掉的', () => {
+  it('内置的每个库单独看：找不到的 hard 类一条都没有，其余找不到的都是能取消、能去掉的', () => {
     const lib = linkTable(packScope(...builtinPacks()));
     const hard: string[] = [];
     for (const p of builtinPacks()) {
@@ -166,15 +166,8 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
         if (b.link.cls === 'hard') hard.push(`${p.id} ${b.from.kind}:${b.from.id} → ${b.link.id}`);
       }
     }
-    // 奇幻的生态侵占“通用 ▸ 自然”里的生态：第五十一轮各库完整以后这几条就没有了
-    expect(hard).toEqual([
-      'fantasy biome:swarm_zone → taiga',
-      'fantasy biome:swarm_zone → temperate_forest',
-      'fantasy biome:swarm_zone → subtropical_forest',
-      'fantasy biome:swarm_zone → dry_forest',
-      'fantasy biome:swarm_zone → monsoon_forest',
-      'fantasy biome:swarm_zone → rainforest',
-    ]);
+    // 第五十一轮各库完整了：奇幻的生态侵占“自然”里的生态，也在奇幻这个库里，一条都没有了
+    expect(hard).toEqual([]);
   });
 
   it('数据里看着像 id、表里没有的字：都写明了不是引用（新的引用写漏了这里会报）', () => {

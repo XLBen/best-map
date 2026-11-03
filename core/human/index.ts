@@ -221,7 +221,7 @@ export {
   worldPopValues,
 } from './era';
 export { biomeHabitability, classHabitability } from './habitability';
-export { type HumanParams, defaultTotalPop, dryLandKm2, generateHuman, humanBlockers, humanStages, regenerateHuman, registerHumanStage, ruleEra, unregisterHumanStage } from './generate';
+export { type HumanParams, defaultTotalPop, dryLandKm2, generateHuman, humanBlockers, humanStages, regenerateHuman, registerHumanStage, ruleEra, stampedPacks, unregisterHumanStage } from './generate';
 export { type GenContext, type GenGroup, type HumanStage } from './context';
 export { SLOTS, type Share, readComp } from './groups';
 export { type PopBrush, type PopFix, typicalTuple } from './population';

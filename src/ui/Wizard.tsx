@@ -36,7 +36,7 @@ import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
 import { type HumanChoice, choiceEra, defaultChoice, estimateLandKm2, generateCommand, groupByPack } from './human';
 import { PackChecklist } from './components/PackChecklist';
-import { packLabel, splitPacks, worldContentCommands } from './packChoice';
+import { packLabel, worldContentCommands, worldContentPacks } from './packChoice';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
@@ -199,12 +199,12 @@ export function Wizard() {
   // 星球形态：内置的示例与资源库里装的（打开向导时再读一遍资源库）
   const lib = library.value;
   const choices = formChoices(lib);
-  // 第三十轮：星球形态只列勾选的包里的（“通用 ▸ 星球形态”是以前写死的 PLANET_TYPES），别的包里的收着
+  // 第三十轮：星球形态只列勾选的包里的（库里的“星球形态”是以前写死的 PLANET_TYPES），别的包里的收着
   const { shown, rest } = formsInPacks(choices, human.packs);
   const chosen = choices.find((c) => c.key === ptype) ?? shown[0] ?? choices[0];
   const showRest = moreForms || !shown.length || rest.some((c) => c.key === ptype);
   // 新建那一步里加的内容（不带时代的包）；缩略图按它画（文化不影响缩略图，不按选的文化组筛）
-  const otherKey = JSON.stringify(splitPacks(human.packs, lib).other);
+  const otherKey = JSON.stringify(worldContentPacks(human.packs, lib));
   const thumbContent = useMemo(() => {
     const cmds = worldContentCommands(human, lib, false);
     return { cmds, key: JSON.stringify(cmds) };
@@ -321,7 +321,7 @@ export function Wizard() {
     });
   };
 
-  // 星球形态的卡片，按包分段（“通用 ▸ 星球形态”的是简单的卡片，别的带“编辑…”）；newCard：最后一段后面放“新建…”
+  // 星球形态的卡片，按包分段（默认的库里“星球形态”的是简单的卡片，别的带“编辑…”）；newCard：最后一段后面放“新建…”
   const formSections = (list: readonly FormChoice[], last = !showRest || !rest.length) => {
     const secs = groupByPack(list, (c) => packLabel(lib, c.path));
     return secs.map((sec, k) => (

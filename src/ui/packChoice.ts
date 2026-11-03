@@ -3,7 +3,7 @@ import { itemId, kindByPackKey } from '../../core/content/registry';
 import { recordedOrigin } from '../../core/content/origin';
 import { type Culture, type CultureGroup, type Era, ruleEra, worldEras } from '../../core/human';
 import { type PackNode, type PackPicks, type PackWorld, ownItems, packItems, packSummary, subPacks, walkPacks } from '../../core/packs';
-import { DEFAULT_WORLD_PACKS, FORMS_PATH, builtinPacks } from '../../core/packs/builtin-tree';
+import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../core/packs/builtin-tree';
 import { type ImportPicks, type PackRoot, packAt, packImportCommands, packImportPlan } from '../../core/packs/import';
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
@@ -14,9 +14,10 @@ import type { LibraryEntry } from '../library';
 // - 勾选的先后就是包的先后：规则与维度取第一个带时代项的包（“规则与维度：中世纪与近世”），别的包提供政体、派系、文化、取值、
 //   生态……；“设为规则”把一个勾着的时代包挪到最前面。
 // - 文化组从勾选的包里列（时代包的“文化 ▸ 组”带默认的权重）：勾上一个包时它默认带的组跟着勾上，去掉时它的组跟着去掉。
+// - 第五十一轮：每个时代是一个完整的库，勾上一个库（路径只有一段）就是用它：世界的底子（基础、自然、中文地名、画风、国家等级）也从它来。
 // - 加进世界的命令（core/packs/import.ts 的 packImportCommands，每项带 from）：
-//   新建世界：不带时代的包整个加进来，放在新建的那一步里（生成之前：生态、地形类别、地名风格要在生成时就有）；
-//   时代包只带生成要用的（时代、取值、政体、派系、地标、选的文化组……），与 generate_human 一起作为第二步。
+//   新建世界：勾着的库里世界的底子、不带时代的包整个加进来，放在新建的那一步里（生成之前：生态、地形类别、地名风格要在生成时就有）；
+//   时代包只带生成要用的（时代、取值、政体、派系、资源、地标、选的文化组……），与 generate_human 一起作为第二步。
 //   已有的世界：时代包同上；不带时代的包已经在用的（世界里有来自它的内容，或上次生成时勾过）只补整理时可能移出的几种
 //   （政体、派系、取值、文化），不把自己移出的基础内容又加回来；新勾的整个加进来。
 
@@ -24,7 +25,7 @@ type Small = World['small'];
 export type PackPath = readonly string[];
 
 // 新建向导默认勾上的时代包（没有时是资源库里第一个时代包）
-export const DEFAULT_ERA_PACK = 'medieval';
+export const DEFAULT_ERA_PACK = DEFAULT_LIBRARY;
 
 // ---------- 路径、树 ----------
 
@@ -53,7 +54,7 @@ function firstEra(node: PackNode): Era | undefined {
   return era;
 }
 
-// 包的叫法：路径上的名字用 ▸ 连起来（“通用 ▸ 基础”）；不在资源库里时用路径
+// 包的叫法：路径上的名字用 ▸ 连起来（“中世纪与近世 ▸ 基础”）；不在资源库里时用路径
 export function packLabel(lib: readonly LibraryEntry[], path: PackPath): string {
   const root = libRoots(lib).find((r) => r.key === path[0]);
   if (!root) return path.join(' ▸ ');
@@ -112,7 +113,7 @@ export function rulePack(packs: readonly PackPath[], lib: readonly LibraryEntry[
   return undefined;
 }
 
-// 勾选的包里的文化组（按包的先后、包里的先后；同一组只列一次）。weight：小包写的默认权重；pack：勾着的那个包的叫法
+// 勾选的包里的文化组（按包的先后、包里的先后；同一组只列一次）。weight：小包写的默认权重（0 是这个库默认不带的）；pack：勾着的那个包的叫法
 export interface GroupOption {
   group: CultureGroup;
   weight?: number;
@@ -177,32 +178,27 @@ export function makeRule<T extends PackChoice>(c: T, path: PackPath): T {
   return { ...c, packs: [c.packs[k], ...c.packs.filter((_, j) => j !== k)] };
 }
 
-// 新建向导默认勾上的：基础、自然、中文地名、星球形态、中世纪与近世（资源库里有的）
+// 新建向导默认勾上的：中世纪与近世这个库（第五十一轮：基础、自然、中文地名……都在库里）
 export function defaultPacks(lib: readonly LibraryEntry[]): string[][] {
   const roots = libRoots(lib);
   const era = roots.find((r) => r.key === DEFAULT_ERA_PACK && hasEra(r.pack)) ?? roots.find((r) => hasEra(r.pack));
-  return [...DEFAULT_WORLD_PACKS, FORMS_PATH, ...(era ? [[era.key]] : [])].filter((p) => nodeAt(lib, p)).map((p) => [...p]);
+  return era ? [[era.key]] : [];
 }
 
 // 已有的世界里在用的包：上次生成时勾过的，或者世界里有来自它的内容（新建时加进来的基础、自然、中文地名……）
 export function inUse(small: Small, path: PackPath): boolean {
-  if (small.human?.packs.some((p) => samePath(p, path))) return true;
+  if (small.genStamp?.packs.some((p) => samePath(p, path))) return true;
   for (const byId of Object.values(small.origin ?? {})) for (const rec of Object.values(byId)) if (underPath(rec, path)) return true;
   return false;
 }
 
-// 已有的世界第一次生成人文时默认勾上的：默认的几个包里在用的，加上默认的时代包（星球形态与生成人文无关，不勾）
-export function worldDefaultPacks(small: Small, lib: readonly LibraryEntry[]): string[][] {
-  const all = defaultPacks(lib);
-  return all.filter((p) => {
-    const node = nodeAt(lib, p);
-    return (node && hasEra(node)) || inUse(small, p);
-  });
-}
+// 已有的世界第一次生成人文时默认勾上的：默认的时代包。世界的底子已经在世界里，勾着库也不再加（humanImportPicks）
+export const worldDefaultPacks = (_small: Small, lib: readonly LibraryEntry[]): string[][] => defaultPacks(lib);
 
 // ---------- 加进世界的命令 ----------
 
-// 整理时可能移出、生成又要用的几种（core/tidy.ts）：已经在用的包再生成时只补这几种
+// 整理时可能移出、生成又要用的几种（core/tidy.ts）：已经在用的包再生成时只补这几种。
+// 第五十一轮：世界的底子（基础、自然……）现在是库下面的小包，勾着库时不走这里；单独勾着的小包照旧
 const REFILLED = ['popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'nameStyles'];
 function refillPicks(node: PackNode): PackPicks {
   const picks: PackPicks = {};
@@ -226,14 +222,21 @@ export function splitPacks(packs: readonly PackPath[], lib: readonly LibraryEntr
   return { era, other };
 }
 
-// 新建世界那一步里加的内容：不带时代的包整个加进来（生态、地形类别、地名风格……）。
+// 新建世界那一步里要整个加的包：勾着的库里世界的底子（库的路径只有一段；自己的时代包里没有这些小包时不算），加上不带时代的包
+export function worldContentPacks(packs: readonly PackPath[], lib: readonly LibraryEntry[]): string[][] {
+  const { era, other } = splitPacks(packs, lib);
+  const parts = era.flatMap((p) => (p.length === 1 ? worldPartsOf(p[0]).filter((x) => nodeAt(lib, x)) : []));
+  return [...parts, ...other];
+}
+
+// 新建世界那一步里加的内容：见上（生态、地形类别、地名风格……）。
 // human：要生成人文时只带选了的文化组（不选的组的文化不加进来）
 export function worldContentCommands(c: PackChoice, lib: readonly LibraryEntry[], human = true): Command[] {
-  const { other } = splitPacks(c.packs, lib);
-  if (!other.length) return [];
-  const offered = new Set(packGroups(other, lib).map((g) => g.group.id));
+  const packs = worldContentPacks(c.packs, lib);
+  if (!packs.length) return [];
+  const offered = new Set(packGroups(packs, lib).map((g) => g.group.id));
   const groups = c.groups.map((g) => g.id).filter((id) => offered.has(id));
-  return packImportCommands(libRoots(lib), { packs: other, ...(human ? { groups } : {}) });
+  return packImportCommands(libRoots(lib), { packs, ...(human ? { groups } : {}) });
 }
 
 // 生成人文之前加的内容（时代包里生成要用的、选的文化组）。small 为 null：新建世界（不带时代的包已经在第一步里加了）；

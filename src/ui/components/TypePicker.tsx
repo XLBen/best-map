@@ -47,7 +47,7 @@ export function originGroups(items: readonly TypeChoice[], kind: string, w: Pick
   });
   const distinct = [...new Set(labels.filter((x): x is string => x !== null))];
   if (distinct.length <= 1) return [...items];
-  // 先后照资源库（内置的按时代，通用在后，之后是我的、装上的）
+  // 先后照资源库（内置的按时代，之后是我的、装上的）
   const rank = (label: string) => (label === LOOSE_GROUP ? Infinity : lib.findIndex((e) => e.pack.name === label) >>> 0);
   const order = [...distinct].sort((a, b) => rank(a) - rank(b));
   const head = items.filter((_, i) => labels[i] === null);

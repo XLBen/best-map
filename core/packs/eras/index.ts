@@ -29,7 +29,7 @@ import religion from './values/religion.json';
 //     { region: {id, name, description}, groups: [{ group, cultures }] }。文化组自带倾向（tendencies、按时代的 eraTendencies）
 //     与默认的地名风格（nameStyle），文化只写与组不同的；读进来照原样（合并在用的时候做，见 human/era.ts 的 cultureTendency）。
 //   第四十四轮：奇幻、科幻的文化组（种族、物种）各一个文件（cultures/fantasy.json、scifi.json）：{ groups: [{ group, cultures }] }，
-//     写法同地区的文件；它们只在奇幻、科幻的时代包里（不在“通用 ▸ 文化”）。奇幻的宗教组写在时代文件的 valueGroups 里
+//     写法同地区的文件；它们只在奇幻、科幻这两个库里。奇幻的宗教组写在时代文件的 valueGroups 里
 // 加一个：放一个 JSON 进来，在下面的表里加一行（仓库里按这个先后列出）
 
 // 时代包里默认带的一个文化组：[组, 权重]，或 [组, 权重, { except: [不带的文化] }]（中世纪不带殖民地的文化……）
@@ -41,11 +41,11 @@ export interface EraPackDef {
   factions: string[];
   // 默认带的文化组与权重（新建向导默认勾这几组）
   cultures: EraGroupRef[];
-  // 基础（“通用 ▸ 基础”的通用资源）之外的资源
+  // 基础（库里“基础”的通用资源）之外的资源
   resources?: string[];
 }
 
-// 地区（“通用 ▸ 文化”下面的一个小包）
+// 地区（一个文件；第五十一轮起不再是树里的一层，历史库的“文化”下面直接是这些文化组，按这个先后）
 export interface CultureRegion {
   id: string;
   name: string;
@@ -81,5 +81,5 @@ export const VALUE_ERAS: ReadonlyMap<string, readonly string[] | undefined> = ne
 export const BUILTIN_VALUE_GROUPS: readonly ValueGroup[] = unique([...(religionGroups as { id: string }[]), ...ERA_FILES.flatMap((f) => (f.valueGroups ?? []) as { id: string }[])]).map((g) => valueGroupSchema.parse(g));
 export const BUILTIN_CULTURE_GROUPS: readonly CultureGroup[] = GROUP_FILES.map((f) => cultureGroupSchema.parse(f.group));
 export const BUILTIN_CULTURES: readonly Culture[] = unique(GROUP_FILES.flatMap((f) => f.cultures.map((c) => cultureSchema.parse(c))));
-// 地区（“通用 ▸ 文化 ▸ 欧洲……”），按文件的先后
+// 地区（欧洲……），按文件的先后
 export const CULTURE_REGIONS: readonly CultureRegion[] = REGION_FILES.map((r) => ({ ...r.region, groups: r.groups.map((g) => (g.group as { id: string }).id) }));

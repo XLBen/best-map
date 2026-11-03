@@ -112,6 +112,9 @@ export function humanBlockers(world: World, params: Pick<HumanParams, 'packs' | 
   return [];
 }
 
+// 上一次生成用的包（重新生成时没写 packs 就用它）
+export const stampedPacks = (small: Pick<SmallState, 'genStamp'>): readonly (readonly string[])[] => small.genStamp?.packs ?? [];
+
 // 生成（或重新生成）。keepManual：手改过的格（causes.popManual）不动。返回生成的状态
 // countryMode（第二十三轮，有 params.countries 时）：generate 重新长国家（keepLocked：锁定的留着，默认不留），keep 用现有的领土
 export function generateHuman(
@@ -183,7 +186,6 @@ export function generateHuman(
   };
   for (const stage of STAGES) stage.run(ctx);
   const state: HumanState = {
-    packs: params.packs.map((p) => [...p]),
     era: era.id,
     seed,
     groups: used.map((g) => ({ id: g.id, weight: g.weight, ...(g.cultures?.length ? { cultures: [...g.cultures] } : {}) })),
@@ -194,6 +196,7 @@ export function generateHuman(
     ...(countries ? { countryRules: countries.rules } : {}),
   };
   small.human = state;
+  small.genStamp = { packs: params.packs.map((p) => [...p]) };
   // 第二十七轮：自动的结果存一份（橡皮擦的“恢复自动”），快照里的群体编号跟着一起整理
   const autoGroups = snapshotPop(world, keep);
   snapshotCountries(world, !!countries && countries.mode === 'generate');
@@ -218,7 +221,7 @@ export function regenerateHuman(world: World, d: Derived, patch: Partial<HumanPa
   const fresh = patch.countries !== undefined;
   const rules = fresh ? { ...h.countryRules, ...patch.countries } : h.countryRules;
   const params: HumanParams = {
-    packs: patch.packs ?? h.packs,
+    packs: patch.packs ?? stampedPacks(world.small).map((p) => [...p]),
     groups: patch.groups ?? h.groups,
     totalPop: patch.totalPop ?? h.totalPop,
     seed: patch.seed ?? h.seed,

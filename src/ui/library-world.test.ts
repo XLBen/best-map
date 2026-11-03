@@ -73,9 +73,10 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
 
   it('生成人文的选择（第三十轮）：文化组列勾选的包里的；重新生成默认是世界用的包与文化组', () => {
     const w = peopled().world;
-    expect(packGroups([['medieval']], []).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
+    // 第五十一轮：库里默认带的在前，比重是 0 的（别的 EU4 文化组）也列着，但不默认勾
+    expect(packGroups([['medieval']], []).filter((g) => g.weight !== 0).map((g) => g.group.id)).toEqual(defaultsOf(eraOf('medieval')).map((g) => g.id));
     const c = defaultChoice(w.small);
-    expect(c.packs).toEqual(w.small.human!.packs);
+    expect(c.packs).toEqual(w.small.genStamp!.packs);
     expect(c.groups.map((g) => g.id).sort()).toEqual(['chinese', 'germanic']);
   });
 

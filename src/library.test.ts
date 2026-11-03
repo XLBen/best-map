@@ -14,7 +14,7 @@ import { forgetTrustCache, trustScripts, untrustedScripts } from './trust';
 import { FANTASY_PACK, ZH_STYLE } from '../core/testing/fixtures';
 
 // 内置的树的大包（第二十九轮）
-const TREE_KEYS = ['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', 'common'];
+const TREE_KEYS = ['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi'];
 
 // 资源库与信任的脚本：IndexedDB 换成一个只在内存里的小替身（够这里用的几个操作）
 
@@ -121,7 +121,7 @@ describe('资源库', () => {
   });
 
   it('内置示例包总在最前面、删不掉；装、替换、删除只动资源库', async () => {
-    // 第二十九轮：内置的是一棵树，每个时代一个大包，加上“通用”
+    // 第五十一轮：内置的是六个完整的库，没有“通用”
     expect((await refreshLibrary()).map((e) => [e.key, e.builtin])).toEqual(TREE_KEYS.map((k) => [k, true]));
     await installPack(userPack('a'));
     await installPack(userPack('mine', { name: '我的' }), { mine: true });
@@ -257,21 +257,21 @@ describe('资源库的编辑器存进“我的资源”（第二十轮）', () =
     expect((await removeItem(key, 'nameStyles', 'nope')).ok).toBe(false);
     expect(await removeItem(key, 'nameStyles', 'my-h')).toEqual({ ok: true });
     expect(library.value.some((e) => e.key === key)).toBe(false);
-    expect((await removeItem('common', 'nameStyles', BUILTIN_STYLES[1].id)).ok).toBe(false);
+    expect((await removeItem('medieval', 'nameStyles', BUILTIN_STYLES[1].id)).ok).toBe(false);
     const other = await installPack(userPack('别人的', { nameStyles: [style] }));
     expect((await removeItem(other.entry.key, 'nameStyles', 'my-g')).ok).toBe(false);
   });
 
-  it('地名风格示例在内置的“通用 ▸ 地名”里：默认信任、删不掉', async () => {
+  it('地名风格示例在每个内置的库的“地名”里：默认信任、删不掉', async () => {
     const list = await refreshLibrary();
-    const e = list.find((x) => x.key === 'common')!;
+    const e = list.find((x) => x.key === 'medieval')!;
     expect(e.builtin).toBe(true);
     expect(packItems<{ id: string }>(e.pack, 'nameStyles').map((s) => s.id).sort()).toEqual(BUILTIN_STYLES.map((s) => s.id).sort());
-    // 第三十轮：中文·默认也在“通用 ▸ 地名”里（“中文”这个小包）
+    // 第三十轮：中文·默认也在“地名”里（“中文”这个小包）
     expect(packItems<{ id: string }>(findPack(e.pack, ['names'])!, 'nameStyles').map((s) => s.id).sort()).toEqual(BUILTIN_STYLES.map((s) => s.id).sort());
-    await removePack('common');
-    expect(library.value.map((x) => x.key)).toContain('common');
-    expect((await installPack(userPack('common'))).entry.key).toBe('common-2');
+    await removePack('medieval');
+    expect(library.value.map((x) => x.key)).toContain('medieval');
+    expect((await installPack(userPack('medieval'))).entry.key).toBe('medieval-2');
   });
 });
 

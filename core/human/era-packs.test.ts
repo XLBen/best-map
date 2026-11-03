@@ -19,6 +19,7 @@ import { BUILTIN_CLASSES, GENERAL_RESOURCES } from '../packs/base';
 import { NO_CURRENTS, engineFor, humanDigest, importPacks, meshFor, seedCommands } from '../testing/fixtures';
 import type { World } from '../world';
 import { writeFileSync } from 'node:fs';
+import { R51_FANTASY_RESOURCE, r29Digest } from '../testing/r29';
 import saved from './r29-digests.json';
 
 // 第三十轮：时代就是资源包，生成只读世界里的内容（见 packs/import.ts、human/generate.ts、content/missing.ts）
@@ -35,7 +36,8 @@ const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
 const check = (got: unknown, key: string) => {
   if (record) old[key] = got;
-  else expect(got, key).toEqual(old[key]);
+  // 第五十一轮没有重录：只有奇幻的 resource 单独记着（见 testing/r29.ts）
+  else expect(got, key).toEqual(r29Digest(key));
 };
 const SCENES = [
   { id: 'medieval', era: 'medieval', groups: [['germanic', 3], ['chinese', 3], ['levantine', 2], ['hindustani', 2], ['east-slavic', 1.5], ['altaic', 1.5]], countries: true, settlements: true },
@@ -44,7 +46,7 @@ const SCENES = [
   { id: 'modern', era: 'modern', groups: [['chinese', 4], ['hindustani', 4], ['kongo', 3], ['germanic', 2]], countries: true, settlements: true },
   { id: 'fantasy', era: 'fantasy', groups: [['germanic', 3], ['elven', 2], ['dwarven', 1.5], ['orcish', 1.5]], countries: true, settlements: true },
   { id: 'scifi', era: 'scifi', groups: [['chinese', 3], ['tidal', 1.5], ['lithic', 1.5]], countries: true, settlements: false },
-  // 北欧不是中世纪默认带的组：在“通用 ▸ 文化”里（packImportCommands 在资源库里找）
+  // 第五十一轮：奇幻、科幻不带 EU4 的文化，这两种设置里的日耳曼、汉由 packImportCommands 在资源库里找（比重不是 0 的第一个）
   { id: 'medieval-pop', era: 'medieval', groups: [['germanic', 1], ['scandinavian', 2]], countries: false, settlements: false },
 ] as const;
 
@@ -86,7 +88,7 @@ describe('生成只读世界里的内容', () => {
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
       e.exec({ op: 'generate_human', packs: [[sc.era]], groups, ...(sc.countries ? { countries: {} } : {}), ...(sc.settlements ? { settlements: {} } : {}) });
       check(humanDigest(e.world), sc.id);
-      expect(e.world.small.human?.packs).toEqual([[sc.era]]);
+      expect(e.world.small.genStamp?.packs).toEqual([[sc.era]]);
       if (!sc.countries) continue;
       // 重新生成之前再加一遍（界面的 withPackImports；世界里都有，只排回包里的先后），结果与第二十九轮一样
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
@@ -94,6 +96,20 @@ describe('生成只读世界里的内容', () => {
       check(humanDigest(e.world), `${sc.id}:again`);
     }
     if (record) writeFileSync(new URL('./r29-digests.json', import.meta.url), `${JSON.stringify(old, null, 1)}\n`);
+  });
+
+  it('第五十一轮的例外：奇幻库自带的 5 种资源移出世界再生成时，摘要的 14 项都和没有重录的记录相同', () => {
+    const base = world();
+    const groups = groupsOf(SCENES.find((s) => s.id === 'fantasy')!.groups);
+    const e = base.clone();
+    importPacks(e, { packs: [['fantasy']], groups: groups.map((g) => g.id) });
+    const ids = ERA_PACKS.get('fantasy')!.resources!;
+    expect(ids.length).toBe(5);
+    for (const id of ids) expect(e.world.small.content!.resource![id]).toBeDefined();
+    e.exec({ op: 'batch', commands: ids.map((id): Command => ({ op: 'set_content', kind: 'resource', id, item: null })) });
+    e.exec({ op: 'generate_human', packs: [['fantasy']], groups, countries: {}, settlements: {} });
+    expect(humanDigest(e.world)).toEqual((saved as Record<string, unknown>).fantasy);
+    expect(R51_FANTASY_RESOURCE).not.toBe((saved as Record<string, Record<string, string>>).fantasy.resource);
   });
 
   it('加进来的每一项记着来源（时代包里的小包）；生成后都留着', () => {
@@ -104,8 +120,8 @@ describe('生成只读世界里的内容', () => {
     expect(o.government['feudal-monarchy']).toEqual(['medieval', 'governments']);
     expect(o.cultureGroup.germanic).toEqual(['medieval', 'cultures', 'germanic']);
     expect(o.nameStyle['west-germanic']).toEqual(['medieval', 'cultures', 'germanic']);
-    // 中文·默认是新建时从“通用 ▸ 地名 ▸ 中文”加进来的
-    expect(o.nameStyle[DEFAULT_STYLE]).toEqual(['common', 'names', 'zh']);
+    // 中文·默认是新建时从默认的库“地名 ▸ 中文”加进来的
+    expect(o.nameStyle[DEFAULT_STYLE]).toEqual(['medieval', 'names', 'zh']);
     const govs = Object.keys(eng.world.small.content!.government!);
     expect(govs).toEqual(ERA_PACKS.get('medieval')!.governments);
     eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
@@ -155,7 +171,7 @@ describe('几个包合起来生成', () => {
     const small = eng.world.small;
     expect(small.human!.era).toBe('fantasy');
     expect(worldDimensions(small).map((d) => d.id)).toEqual(BUILTIN_ERAS.find((e) => e.id === 'fantasy')!.dimensions.map((d) => d.id));
-    expect(small.human!.packs).toEqual([['fantasy'], ['medieval']]);
+    expect(small.genStamp!.packs).toEqual([['fantasy'], ['medieval']]);
   });
 
   it('单独勾奇幻的生态小包时才带进奇幻的生态（没写自然生成的关掉），来源是那个小包', () => {
@@ -198,7 +214,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
   };
 
   it('新建时默认的几个包：基础、自然、中文地名、画风（第三十八轮）、国家等级（第四十二轮）', () => {
-    expect(DEFAULT_WORLD_PACKS).toEqual([BASE_PATH, ['common', 'nature'], ['common', 'names', 'zh'], ['common', 'styles'], ['common', 'tiers']]);
+    expect(DEFAULT_WORLD_PACKS).toEqual([BASE_PATH, ['medieval', 'nature'], ['medieval', 'names', 'zh'], ['medieval', 'styles'], ['medieval', 'tiers']]);
     const eng = bare(DEFAULT_WORLD_PACKS);
     expect(eng.lastSkipped).toEqual([]);
     const s = eng.world.small;
@@ -235,7 +251,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
   it('只有生态和资源、没有地形类别：类别层为空，资源规则里的类别按平地算', () => {
     const eng = new Engine(settings, meshFor(settings));
     const ids = BUILTIN_RESOURCES_IDS();
-    const cmds = packImportCommands(LIB, { packs: [['common', 'nature']], extra: [{ path: [...BASE_PATH], picks: { resources: ids } }] });
+    const cmds = packImportCommands(LIB, { packs: [['medieval', 'nature']], extra: [{ path: [...BASE_PATH], picks: { resources: ids } }] });
     eng.exec({ op: 'batch', commands: [...cmds.flatMap((c) => (c.op === 'batch' ? c.commands : [c])), { op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true }] });
     const w = eng.world;
     expect(Object.keys(w.small.content!.resource!)).toEqual(ids);
@@ -316,7 +332,7 @@ describe('生态、地形类别自己带的字段替代按 id 查的算法表', 
   });
 });
 
-describe('星球形态：以前的六种星球是“通用 ▸ 星球形态”里的普通形态', () => {
+describe('星球形态：以前的六种星球是每个库“星球形态”里的普通形态', () => {
   it('每一种都在那个小包里，用它新建的世界与以前选那种星球新建的逐值相同', () => {
     const forms = ownItems(findPack(LIB.find((p) => p.id === FORMS_PATH[0])!, FORMS_PATH.slice(1))!, 'planetForms');
     expect(forms).toEqual(BUILTIN_PLANET_FORMS);
@@ -352,14 +368,16 @@ describe('内置的树（第三十轮）', () => {
       expect(ownItems(findPack(top, ['era'])!, 'eras')).toEqual([era]);
       expect(packItems<{ id: string }>(findPack(top, ['governments'])!, 'governments').map((g) => g.id)).toEqual(ERA_PACKS.get(era.id)!.governments);
       const cultures = findPack(top, ['cultures'])!;
-      expect(cultures.packs!.map((g) => [g.id, g.weight])).toEqual(ERA_PACKS.get(era.id)!.cultures.map(([id, w]) => [id, w]));
+      // 时代默认带的在前（第五十一轮：别的 EU4 文化组在后面，比重是 0）
+      expect(cultures.packs!.filter((g) => g.weight !== 0).map((g) => [g.id, g.weight])).toEqual(ERA_PACKS.get(era.id)!.cultures.map(([id, w]) => [id, w]));
+      expect(cultures.packs!.slice(0, ERA_PACKS.get(era.id)!.cultures.length).every((g) => g.weight !== 0)).toBe(true);
       expect(packItems(findPack(top, ['landmarks'])!, 'landmarkTypes').length).toBeGreaterThan(0);
     }
   });
 
-  it('登记表的内置项由树给出（主线程接上）；中文·默认在“通用 ▸ 地名 ▸ 中文”', () => {
+  it('登记表的内置项由树给出（主线程接上）；中文·默认在每个库的“地名 ▸ 中文”', () => {
     expect(builtinOf('biome')).toEqual(expect.arrayContaining(DEFAULT_SPECIES));
     expect(builtinOf<{ id: string }>('era').map((e) => e.id)).toEqual(BUILTIN_ERAS.map((e) => e.id));
-    expect(ownItems<{ id: string }>(findPack(LIB.find((p) => p.id === 'common')!, ['names', 'zh'])!, 'nameStyles').map((s) => s.id)).toEqual([DEFAULT_STYLE]);
+    for (const top of LIB) expect(ownItems<{ id: string }>(findPack(top, ['names', 'zh'])!, 'nameStyles').map((s) => s.id)).toEqual([DEFAULT_STYLE]);
   });
 });
