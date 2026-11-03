@@ -67,12 +67,12 @@
 ## 内容与资源包
 - `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）
 - `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip`）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
-- `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts` 哪里都没用到的；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
+- `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
 - `packs/builtin-tree.ts` 内置资源包的树（时代包、通用；“通用 ▸ 文化 ▸ 地区”放全部 EU4 文化组，时代包引用其中几组）；`packs/base.ts` “通用 ▸ 基础”；`packs/nature.ts` 13 种生态；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）
 - `packs/import.ts` 生成要用的内容从资源包加进世界，`importIntoPack` 把一个包的内容导入另一个包（撞名改名）；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
 - `packs/fantasy-*.ts` 奇幻示例包（生态、河流类型、湖泊类型、星球形态）
-- `compact.ts` 压缩世界文件；`tidy.ts` 整理本世界的计划
+- `compact.ts` 压缩世界文件（第五十轮：只去掉“加了又删”）；`tidy.ts` 整理本世界的计划（在副本上试，地图不变才移出）
 
 ## 输出
 - `subcell.ts` 格以下的细节（破碎度、海岸值 `coastValues` / `shownCoastValues`、栅格化），屏幕与导出共用，着色器里同一套式子

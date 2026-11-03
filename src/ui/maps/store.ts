@@ -23,8 +23,7 @@ import {
 } from '../../maps';
 import { splitWorldContent } from '../../../core/compact';
 import { keepInLibrary } from '../../library';
-import { askText, askUser, autosaveNow, compactForSave, download, getDoc, history, loadDoc, noteThumb, planTidy, showNotice, showToast, world, worldEpoch, worldState } from '../../state';
-import { tidyWorld } from '../packs/tidy';
+import { askText, askUser, autosaveNow, compactForSave, download, getDoc, history, loadDoc, noteThumb, showToast, world, worldEpoch, worldState } from '../../state';
 
 // “我的地图”的界面这边：保存（⌘S）、另存为、打开、改名、导出、删掉，换世界之前问“先保存吗”。
 // 存进浏览器失败（隐私模式、存储被关、满了）时改成下载世界文件，并说清楚
@@ -319,18 +318,13 @@ export async function openFile(f: File): Promise<void> {
   await splitOpened(nameFromFile(f.name));
 }
 
-// 打开世界文件之后（第二十九轮）：文件里自己做的内容存进资源库“来自《文件名》”（一模一样的不重复存）；
-// 有没用到的内容时提示一次，点了整理
+// 打开世界文件之后（第二十九轮）：文件里自己做的内容存进资源库“来自《文件名》”（一模一样的不重复存）。
+// 第五十轮：世界本来就留着没用到的内容，不再提示整理
 export async function splitOpened(name: string): Promise<void> {
   const w = world.value;
   if (!w) return;
-  const epoch = worldEpoch.value;
   const items = splitWorldContent(w);
-  if (items.length) {
-    const r = await keepInLibrary(name, items);
-    if (r.saved) showToast(`${r.saved} 项存进了资源库`);
-  }
-  const plan = await planTidy(undefined, null);
-  if (!plan?.command || epoch !== worldEpoch.value) return;
-  showNotice(`有 ${plan.removed.length} 项没用到，可以整理`, { label: '整理…', run: () => void tidyWorld() });
+  if (!items.length) return;
+  const r = await keepInLibrary(name, items);
+  if (r.saved) showToast(`${r.saved} 项存进了资源库`);
 }

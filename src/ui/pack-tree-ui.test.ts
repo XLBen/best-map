@@ -135,6 +135,8 @@ describe('资源库两栏：packTree', () => {
 
   it('全部添加：一整步，每一项记着小包的路径；左栏一个包“移出没用到的”只移没在用的', () => {
     const eng = peopled();
+    // 第五十轮：生成后都留着，先整理掉没用到的政体
+    eng.exec(eng.planTidy({ only: Object.keys(eng.world.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
     const node = () => find(packTree(eng.world, BUILTIN, 'government').library, 'l:medieval/governments')!;
     const used = node().on;
     expect(used).toBeGreaterThan(0);

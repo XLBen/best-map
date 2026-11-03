@@ -1026,13 +1026,6 @@ export function flashCells(cells: number[]) {
   flashTimer = setTimeout(() => (flash.value = null), FLASH_MS);
 }
 
-// 只有一句话、可能带一个按钮的提示（不是编辑之后的：打开的世界文件里有没用到的内容……）
-export function showNotice(head: string, action?: NoteAction) {
-  const id = ++noteId;
-  changeNote.value = { id, head, detail: '', undoable: false, action };
-  noteTimer.start(action ? NOTE_ACTION_MS : NOTE_MS);
-}
-
 // quiet：不闪变了的格（改河：拖的时候地图上已经是改完的样子，松手后再闪一圈反而像出了别的变化）
 function noteChange(head: string, before: World | null, undoable = true, action?: NoteAction, quiet = false) {
   const after = world.value;
@@ -1732,7 +1725,7 @@ export async function planTidy(only?: ContentRef[], label: string | null = '正�
 }
 
 // 压缩要写出去的世界文件（导出、存进“我的地图”）：在导出 Worker 里重放两遍，核对过的才用，不然用原来的。
-// 当前打开的世界不变。压缩时末尾的整理移出的、自己做的内容存进资源库
+// 当前打开的世界不变
 const COMPACTING = '正在整理世界文件…';
 export async function compactForSave(doc: WorldDoc): Promise<WorldDoc> {
   if (typeof Worker === 'undefined') return doc;
@@ -1753,7 +1746,6 @@ export async function compactForSave(doc: WorldDoc): Promise<WorldDoc> {
     });
     if (!reply.ok || !('compacted' in reply)) return doc;
     const c = reply.compacted;
-    if (c.removed.length) void keepRemoved(c.removed);
     return c.verified ? c.doc : doc;
   } catch {
     return doc;

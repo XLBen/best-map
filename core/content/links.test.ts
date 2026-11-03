@@ -8,7 +8,7 @@ import { KIND_LINKS } from './link-rules';
 import { FIELD_WALKERS, type Link, danglingLinks, dependencyClosure, linkIds, linkProblems, linkTable, linksOf, packScope, referencesOf, referrersOf, renameLinks, stripLinks, worldScope } from './links';
 import { originSourceId, recordedOrigin } from './origin';
 import { sameContent, scriptRefs } from './refs';
-import { type ContentKind, type FieldType, type Renames, allKinds, itemId, kindByPackKey, kindOf, registerKind, unregisterKind, updateKind } from './registry';
+import { type ContentKind, type FieldType, type Renames, allKinds, itemId, kindByPackKey, kindOf, registerKind, unregisterKind } from './registry';
 import { unusedContent } from './unused';
 
 // 第四十九轮：内容之间的引用表。覆盖（内置的每一项、以后加的种类和字段）、查询、闭包、去掉引用、撞名导入。
@@ -563,15 +563,9 @@ describe('故意撞名的导入：引用跟着改名，不留下找不到的', (
 });
 
 describe('是不是同一项', () => {
-  const group = kindOf('cultureGroup')!;
-  const before = group.pack;
-  afterEach(() => updateKind('cultureGroup', { pack: before }));
-
   it('sameIgnore 写了的键不比（第五十轮的 cultureGroup.weight 写在那里）；别的种类的同名键照旧比', () => {
     const a = { id: 'g', name: '组', weight: 3 };
     const b = { id: 'g', name: '组', weight: 0 };
-    expect(sameContent(group, a, b)).toBe(false);
-    updateKind('cultureGroup', { pack: { ...before, sameIgnore: ['weight'] } });
     const k = kindOf('cultureGroup')!;
     expect(sameContent(k, a, b)).toBe(true);
     expect(sameContent(k, a, { ...b, name: '别的' })).toBe(false);

@@ -9,6 +9,8 @@
 //     --library：世界带着一整个时代库（第四十七轮：中世纪的包照常导入，small.content 约 300 KB，没有人文、地图不变），
 //     步骤相同，最后另计不重算推导的几步（libEdit、libUndo、libRedo、libContent、libContentUndo、libNoop：几十次的中位数，
 //     毫秒、两位小数）、发给主线程的小数据（libPost）、每步撤销记录里的字（undoKB，千字）
+//     --kept：--library 再加生成人文（第五十轮：世界留着全部内容；旧的提交上生成后清理掉，正好对照），步骤相同，
+//     另计改人口（libHuman、libHumanUndo）、改国家档案（libCountry、libCountryUndo）、存世界文件（libSaveDoc）和世界文件的大小（docKB）
 //   npx tsx tools/bench.ts --globe --pack fantasy [--json] [--hash]：整个星球 + 奇幻示例包，按用户平时的操作逐步计时
 //     （新建、用资源包、画陆地、堆山、放岛、冷暖、自然融入的生态、湿度滑块、画河的预览与执行、撤销 6 次、重做、
 //     打开（整段重放）、从检查点恢复）
@@ -48,7 +50,8 @@ const lap = (label: string, key?: string) => {
   t = now;
 };
 const globe = process.argv.includes('--globe');
-const library = process.argv.includes('--library');
+const kept = process.argv.includes('--kept');
+const library = kept || process.argv.includes('--library');
 const packArg = process.argv.indexOf('--pack');
 const pack = packArg >= 0 ? process.argv[packArg + 1] : null;
 const EARTH_CELLS = planetCells(PLANET_SIZES.earth.radiusKm);
@@ -205,8 +208,15 @@ function plainBench() {
   if (library) {
     for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']] }, w)) eng.exec(c);
     lap('import library', 'library');
+    if (kept) {
+      eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+      eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: {}, settlements: {} });
+      eng.update();
+      lap('generate human', 'genHuman');
+    }
     results.smallKB = Math.round(JSON.stringify(w.small).length / 1000);
     results.contentKB = Math.round(JSON.stringify(w.small.content ?? {}).length / 1000);
+    t = performance.now();
   }
 
   // 抬山：内陆一笔（半径 6 格）
@@ -351,6 +361,39 @@ function libraryBench(eng: Engine) {
   const steps = (eng as unknown as { done: { undo: { small: string } }[] }).done;
   results.undoKB = Math.round(steps[steps.length - 1].undo.small.length / 1000);
   if (!json) console.log('undo record of the last step'.padEnd(28), String(results.undoKB).padStart(7), 'k chars');
+  if (kept) {
+    // 改人口（要重算人文的几层）、改国家档案（不重算）、存世界文件
+    const cells = disc(eng, inland(eng, 0.5), 3);
+    const culture = Object.values(w.small.popGroups ?? {})[0].culture;
+    const paint: Command = { op: 'paint_culture', cells, culture, amount: 0.3 };
+    const human: number[] = [];
+    const humanUndo: number[] = [];
+    for (let k = 0; k < 11; k++) {
+      human.push(time(() => {
+        eng.exec(paint);
+        eng.update();
+      }));
+      humanUndo.push(time(() => {
+        eng.undo();
+        eng.update();
+      }));
+    }
+    put('libHuman', 'paint culture', human);
+    put('libHumanUndo', 'undo of it', humanUndo);
+    const id = Object.values(w.small.countries ?? {})[0].id;
+    const rename: Command = { op: 'set_country', id, patch: { name: '测速国' } };
+    const country: number[] = [];
+    const countryUndo: number[] = [];
+    for (let k = 0; k < N; k++) {
+      country.push(time(() => eng.exec(rename)));
+      countryUndo.push(time(() => eng.undo()));
+    }
+    put('libCountry', 'edit a country', country);
+    put('libCountryUndo', 'undo of it', countryUndo);
+    put('libSaveDoc', 'world file to text', Array.from({ length: 11 }, () => time(() => JSON.stringify(eng.toDoc()))));
+    results.docKB = Math.round(JSON.stringify(eng.toDoc()).length / 1000);
+    if (!json) console.log('world file'.padEnd(28), String(results.docKB).padStart(7), 'k chars');
+  }
   t = performance.now();
 }
 

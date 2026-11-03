@@ -160,14 +160,14 @@ describe('整理、压缩：只留在用的画风', () => {
     expect(worldMapStyle(eng.world.small)).toEqual(ATLAS);
   });
 
-  it('压缩世界文件：没用上的画风加的那条去掉，重放出来还是选的那一种', () => {
+  it('压缩世界文件：没用上的画风留着（整理才移出），重放出来还是选的那一种', () => {
     const eng = continents();
     eng.exec({ op: 'set_map_style', id: 'atlas' });
     const doc = eng.toDoc();
     const r = compactWorldDoc(doc, { mesh: eng.world.mesh });
     expect(r.verified).toBe(true);
     const back = Engine.fromDoc(r.doc, eng.world.mesh);
-    expect(Object.keys(worldMapStyles(back.world.small))).toEqual(['atlas']);
+    expect(Object.keys(worldMapStyles(back.world.small))).toEqual(['realistic', 'atlas']);
     expect(worldMapStyle(back.world.small)).toEqual(ATLAS);
   });
 });

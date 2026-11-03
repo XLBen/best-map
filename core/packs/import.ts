@@ -17,7 +17,7 @@ import { builtinPacks, DEFAULT_WORLD_PACKS } from './builtin-tree';
 // 时代包（树里有时代项的）只带这几种：奇幻包里的生态、河湖、资源要单独勾那几个小包（[“fantasy”, “biomes”]）。
 // 别的包（基础、自然、地名……）整个带进来（地名包里的风格都带）。星球形态不带（它在 set_worldgen 里）。同一项出现在几个包里时只带第一次出现的那一份，来源记它所在的包（planPack 的 from）。
 // 世界里已有一模一样的跳过、同 id 不同内容的改名（与资源库里添加一样，见 packs.ts 的 planPack）。
-// 最后把这几种的先后排成包里的先后（order_content）：生成后清理掉、再生成时加回来的项排回原来的位置，
+// 最后把这几种的先后排成包里的先后（order_content）：整理掉、再生成时加回来的项排回原来的位置，
 // 取值、政体、派系、文化的先后会影响挑哪一个，重新生成与第一次一样
 
 // 资源库里的一个包：键（路径的第一段）与包本身。内置的大包就是 { key: pack.id, pack }
@@ -30,6 +30,8 @@ export interface ImportPicks {
   packs: readonly (readonly string[])[];
   groups?: readonly string[];
   extra?: readonly { path: readonly string[]; picks?: PackPicks }[];
+  // 只补世界里没有的 id（第五十轮，已有的世界照旧的选择再生成时）：世界里有同 id 的（哪怕改过）就用世界里的，不加一份 id-2
+  onlyMissing?: boolean;
 }
 
 export interface ImportPlan {
@@ -174,9 +176,11 @@ export function packImportPlan(library: readonly (ResourcePack | PackRoot)[], pi
   const merged: PackNode = { id: 'import', name: '生成要用的内容' };
   const all: PackPicks = { defaultStyle: null };
   for (const [key, list] of items) {
-    merged[key] = list;
     const kind = kindByPackKey(key);
-    if (kind && key !== 'fields') all[key] = list.map((x) => itemId(kind, x));
+    const have = picks.onlyMissing && kind ? new Set(kind.inWorld(world).map((x) => itemId(kind, x))) : null;
+    const wantedHere = have ? list.filter((x) => !have.has(itemId(kind!, x))) : list;
+    merged[key] = wantedHere;
+    if (kind && key !== 'fields') all[key] = wantedHere.map((x) => itemId(kind, x));
   }
   const plan = planPack(world, merged, all, { origin: (key, id) => origin.get(`${key}\u0000${id}`), label: '添加生成要用的内容' });
   const cmds = [...plan.command.commands];

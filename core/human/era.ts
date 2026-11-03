@@ -147,6 +147,8 @@ export const cultureGroupSchema = z.object({
   description: z.string().max(400).optional(),
   // 组里文化默认的地名风格（第四十三轮）：文化自己没写 nameStyle 时用它
   nameStyle: typeIdSchema.optional(),
+  // 比重（第五十轮）：0 不参与生成，留在世界里；省略和别的数一样，各组占多少仍是生成的命令写的
+  weight: z.number().min(0).max(1000).optional(),
   // 组里文化默认的倾向（第四十三轮，以前只在内置的 JSON 里）：文化自己写了的那一维换掉组的，没写的用组的
   tendencies: tendenciesSchema.optional(),
   eraTendencies: eraTendenciesSchema.optional(),

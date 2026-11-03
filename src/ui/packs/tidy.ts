@@ -2,7 +2,7 @@ import type { TidyPlan } from '../../../core/tidy';
 import { kindOf } from '../../../core/content/registry';
 import { askUser, exec, planTidy, showToast } from '../../state';
 
-// 整理本世界（第二十九轮，资源库的“⋯”、打开旧的世界文件后的提示）：先在副本上算计划，列出移出、留着的，确认后执行（一步，可以撤销）。
+// 整理本世界（第二十九轮，资源库的“⋯”）：先在副本上算计划，列出移出、留着的，确认后执行（一步，可以撤销）。
 // 移出的内容里自己做的、改过的由 state.ts 的 exec 存进资源库
 
 const kindLabel = (kind: string) => kindOf(kind)?.label ?? kind;

@@ -9,7 +9,6 @@ import { culturesStage } from './cultures';
 import { type CountryPlan, clearCountries, countriesStage, countryMixStage } from './countries';
 import { type Era, cultureById, cultureGroupById, worldCultures, worldEras } from './era';
 import { compactGroups } from './groups';
-import { pruneHumanContent } from './prune';
 import { compilePrefs, preferenceFactors } from './habitability';
 import { ensurePopArrays, populationStage } from './population';
 import { cellInputs } from './rules';
@@ -23,7 +22,7 @@ import { clearCities } from './settlements';
 // 第三十轮：生成只读世界里的内容——时代、取值、文化组、文化、地名风格、政体、派系都由界面先从资源包加进世界
 // （core/packs/import.ts 的 packImportCommands：planPack，带 from），这里不再从代码里的内置常量复制。
 // 规则（时代）取 packs 里第一个带时代的包的那个时代；缺了什么就跳过用到它的那一步，结果里写明（见 content/missing.ts）。
-// 生成完只留用到的（第二十八轮，见 prune.ts；第三十轮起不论是不是内置原样）
+// 第五十轮：生成完世界里的内容都留着（以前没用到的会移出），要清理时走整理（core/tidy.ts）
 
 export interface HumanParams {
   // 用的资源包（资源库里的路径，按勾选的先后）：规则取第一个带时代的包（见 ruleEra）
@@ -88,12 +87,14 @@ export function ruleEra(small: Pick<SmallState, 'content' | 'origin'>, packs: re
   return eras[0];
 }
 
-// 生成要用的文化组（世界里有的、组里有文化的；点名的文化只留世界里有的）
+// 生成要用的文化组（世界里有的、比重不是 0 的、组里有文化的；点名的文化只留世界里有的）。
+// 比重（cultureGroup.weight，第五十轮）只决定参不参与：0 不参与，别的和没写一样，各组占多少仍是命令写的权重
 function usableGroups(world: World, groups: HumanParams['groups']): HumanParams['groups'] {
   const small = world.small;
   const out: HumanParams['groups'] = [];
   for (const g of groups) {
-    if (!cultureGroupById(small, g.id)) continue;
+    const group = cultureGroupById(small, g.id);
+    if (!group || group.weight === 0) continue;
     if (g.cultures?.length) {
       const named = g.cultures.filter((id) => cultureById(small, id));
       if (named.length) out.push({ ...g, cultures: named });
@@ -107,7 +108,7 @@ function usableGroups(world: World, groups: HumanParams['groups']): HumanParams[
 // 生成人文之前：缺了时代、文化（选的文化组世界里都没有，或组里没有文化）时不生成，写明缺什么
 export function humanBlockers(world: World, params: Pick<HumanParams, 'packs' | 'groups'>): string[] {
   if (!ruleEra(world.small, params.packs)) return ['没有时代：没有生成人文（先从资源库添加一个时代包）'];
-  if (!usableGroups(world, params.groups).length) return ['没有文化：没有生成人口（选的文化组世界里没有，或组里没有文化）'];
+  if (!usableGroups(world, params.groups).length) return ['没有文化：没有生成人口（选的文化组世界里没有，或组里没有文化，或比重是 0）'];
   return [];
 }
 
@@ -206,8 +207,6 @@ export function generateHuman(
     clearCities(world);
     if (!small.landmarks) delete small.settlementRules;
   }
-  // 第二十八轮：没用到的时代、取值、文化组、文化（和它们的地名风格）、政体、派系移出世界
-  pruneHumanContent(world);
   return state;
 }
 

@@ -123,9 +123,8 @@ describe('政体与派系', () => {
 describe('生成国家', () => {
   it('政体、派系复制进世界；每个国家有名字、颜色、旗帜、首都、政体、主流文化与兼容的文化组', () => {
     const w = nations().world;
-    // 第二十九轮：没有国家用的政体生成后收掉（按内置的先后）；派系各国都按时代的自动算，全留着
-    const usedGovs = new Set(countryList(w.small).map((m) => m.government));
-    expect(Object.keys(w.small.content?.government ?? {})).toEqual(medievalGovs().filter((g) => usedGovs.has(g)));
+    // 第五十轮：生成后内容都留着（按内置的先后）
+    expect(Object.keys(w.small.content?.government ?? {})).toEqual(medievalGovs());
     expect(Object.keys(w.small.content?.faction ?? {})).toEqual(medievalFactions());
     expect(w.small.human?.countryRules).toEqual({ fragmentation: 0.5, seed: w.small.human!.seed });
     const list = countryList(w.small);
@@ -477,8 +476,6 @@ describe('改国家', () => {
 
   it('改档案：名字锁定、换政体换称号、换文化重起地名、外交两边都记、宗主不能绕圈、派系锁定', () => {
     const eng = nations();
-    // 第三十轮：生成后没人用的政体收掉了，档案里换之前先从时代包加回来
-    importPacks(eng, { packs: [['medieval', 'governments']] });
     const w = eng.world;
     const list = countryList(w.small);
     const m = list.find((x) => (w.small.content!.culture![x.primaryCulture] as { group: string }).group === 'germanic')!;

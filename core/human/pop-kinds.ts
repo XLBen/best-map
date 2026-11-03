@@ -141,6 +141,7 @@ const GROUP_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'nameStyle', label: '地名风格', type: 'text', optional: true, ref: 'nameStyle', dep: 'auto', hint: '组里文化默认的地名风格' },
+  { key: 'weight', label: '比重', type: 'number', optional: true, min: 0, max: 1000, step: 0.1, hint: '0 就不参与生成' },
   { ...TENDENCIES, hint: '组里文化默认的倾向（政体也算一维）' },
   ERA_TENDENCIES,
   PREFS,
@@ -248,7 +249,8 @@ export function registerPopKinds(): void {
       max: 128,
       listed: true,
       checked: true,
-      // 第五十轮：加 weight 时在这里写 sameIgnore: ['weight']（同一组在不同的库里只差权重时算同一项，见 refs.ts 的 sameContent）
+      // 同一组在不同的库里只差比重时算同一项（见 refs.ts 的 sameContent）
+      sameIgnore: ['weight'],
       withId: (g, id, from) => (id === from ? g : { ...g, id, name: renamed(g.name, id, from) }),
       fromWorld: (w) => changed('cultureGroup', contentItems<CultureGroup>(w.small, 'cultureGroup')).map((g) => structuredClone(g)),
       exportItem: (g) => structuredClone(g),

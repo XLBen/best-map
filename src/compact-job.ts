@@ -18,5 +18,5 @@ export function onlyBuiltinScripts(json: unknown): boolean {
 export function compactJob(job: CompactJob): CompactReply {
   if (!onlyBuiltinScripts(job.compact)) return { ok: true, skipped: '有自己写的脚本' };
   const r = compactWorldDoc(job.compact, { mesh: buildMeshFor(job.compact.settings) });
-  return { ok: true, compacted: { doc: r.doc, changed: r.changed, verified: r.verified, dropped: r.dropped, removed: r.removed, kept: r.kept } };
+  return { ok: true, compacted: { doc: r.doc, changed: r.changed, verified: r.verified, dropped: r.dropped } };
 }

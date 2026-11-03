@@ -140,7 +140,7 @@ describe('生成人文', () => {
     expect(Object.keys(w.small.content?.cultureGroup ?? {})).toEqual(['chinese', 'germanic', 'altaic']);
     expect(worldCultures(w.small).map((c) => c.id)).toEqual(SAMPLE_CULTURES);
     for (const c of worldCultures(w.small)) expect(w.small.content?.nameStyle?.[styleOf(w, c)!], c.id).toBeDefined();
-    // 第二十九轮：时代的取值加进来，生成后只留有人的（按时代包里的先后）
+    // 第二十九轮：时代的取值加进来（按时代包里的先后）
     const religions = dimensionValues(w.small, 'religion').map((v) => v.id);
     expect(religions.length).toBeGreaterThan(0);
     expect(religions).toEqual(eraValues({ id: 'medieval' }, 'religion').filter((v) => religions.includes(v.id)).map((v) => v.id));

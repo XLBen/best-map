@@ -21,7 +21,7 @@ import { mapDiff } from './tidy';
 import { BUILTIN_ISLAND_TYPES } from './packs/base';
 import { DEFAULT_SPECIES } from './packs/nature';
 
-// 第二十九轮的核心：资源包的树、内容的来源、生成后只留用到的、整理本世界、压缩世界文件、打开时拆开。
+// 第二十九轮的核心：资源包的树、内容的来源、整理本世界、压缩世界文件、打开时拆开（第五十轮起生成后内容都留着）。
 // 第三十轮：生成只读世界里的内容（测试里 humanExec 先把时代包加进世界），清理不论是不是内置原样
 
 const top = (id: string) => builtinPacks().find((p) => p.id === id)!;
@@ -242,58 +242,65 @@ describe('来源（small.origin）', () => {
   });
 });
 
-describe('生成后只留用到的', () => {
-  it('政体、派系、取值只剩用到的；拿掉的都在时代包里，一步加回来', () => {
-    const w = peopled().world;
+describe('生成后内容都留着', () => {
+  it('政体、派系、取值生成后都在；整理之后只剩用到的，拿掉的都在时代包里，一步加回来', () => {
+    const medieval = top('medieval');
+    const all = packItems<{ id: string }>(findPack(medieval, ['governments'])!, 'governments').map((g) => g.id);
+    const eng = peopled();
+    expect(Object.keys(eng.world.small.content!.government!).sort()).toEqual([...all].sort());
+    eng.exec(eng.planTidy().command!);
+    const w = eng.world;
     const strict = strictWorld(w);
     for (const kind of ['government', 'faction', 'popValue']) {
       const ids = Object.keys(w.small.content?.[kind] ?? {});
       expect(ids.length, kind).toBeGreaterThan(0);
       for (const id of ids) expect(usageOf(kindOf(kind)!, strict, id), `${kind}:${id}`).not.toBeNull();
     }
-    const medieval = top('medieval');
-    const all = packItems<{ id: string }>(findPack(medieval, ['governments'])!, 'governments').map((g) => g.id);
     const left = Object.keys(w.small.content!.government!);
     expect(left.length).toBeLessThan(all.length);
     // 拿掉的在中世纪 ▸ 政体 里，整包加回来一步
-    const eng = peopled();
     const plan = planPack(eng.world, findPack(medieval, ['governments'])!, { governments: all }, { path: ['medieval', 'governments'] });
     expect(plan.added.map((a) => a.id).sort()).toEqual(all.filter((id) => !left.includes(id)).sort());
     eng.exec(plan.command);
     expect(Object.keys(eng.world.small.content!.government!).sort()).toEqual([...all].sort());
   });
 
-  it('第三十轮：自己做的、改过的没用到也收掉（报在移出的项里，界面存进资源库）；内置原样的由界面判断', () => {
+  it('自己做的、改过的没用到也留着；换时代时旧时代那一套也留着；整理才移出（报在移出的项里，界面存进资源库）', () => {
     const eng = continents();
     const gov = { ...BUILTIN_GOVERNMENTS.find((g) => g.id === 'theocratic-government')!, id: 'r29-mine', name: '我的政体' } as unknown as Record<string, unknown>;
     eng.exec({ op: 'set_content', kind: 'government', id: 'r29-mine', item: gov });
     humanExec(eng, GEN);
-    expect(eng.world.small.content!.government!['r29-mine']).toBeUndefined();
-    const mine = eng.lastRemoved.find((r) => r.id === 'r29-mine')!;
-    expect(isBuiltinSame(mine.kind, mine.item)).toBe(false);
-    // 带进来又收掉的（没国家用的政体）也报着：都是内置原样
-    expect(eng.lastRemoved.filter((r) => r.id !== 'r29-mine').every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
-    // 换时代：旧时代那一套没人用了，移出并报出来，来源是中世纪
-    // （工业时代还没有自己的政体，借用中世纪的：新的国家还用着的留下）。第三十三轮的地形上新的国家把六种都用上了，
-    // 所以查“没人用的都移出、还在的都有国家用”，不再要求一定有移出的
+    expect(eng.world.small.content!.government!['r29-mine']).toBeDefined();
+    expect(eng.lastRemoved).toEqual([]);
     const govs = Object.keys(eng.world.small.content!.government ?? {});
     humanExec(eng, { op: 'regenerate_human', era: 'industrial', countries: {} });
-    const gone = eng.lastRemoved.filter((r) => r.kind === 'government' && r.origin?.[0] === 'medieval');
+    expect(eng.lastRemoved).toEqual([]);
+    for (const id of govs) expect(eng.world.small.content!.government![id], id).toBeDefined();
+    const plan = eng.planTidy();
+    const mine = plan.removed.find((r) => r.id === 'r29-mine');
+    if (mine) expect(isBuiltinSame(mine.kind, mine.item)).toBe(false);
+    // 带进来没用上的也报着：都是内置原样（来源是中世纪的、没有国家用的那些）
+    const others = plan.removed.filter((r) => r.kind === 'government' && r.id !== 'r29-mine');
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
     const used = new Set(Object.values(eng.world.small.countries ?? {}).map((c) => c.government));
-    for (const id of govs) expect(gone.some((r) => r.id === id) !== used.has(id), id).toBe(true);
-    expect(gone.every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
+    expect(plan.removed.some((r) => r.kind === 'government' && used.has(r.id))).toBe(false);
   });
 
-  it('清理掉的再生成时复制回来、排回原来的位置：再生成一次与第一次一模一样', () => {
+  it('整理掉的再生成时复制回来、排回原来的位置：再生成一次与第一次一模一样', () => {
     const eng = peopled();
-    const first = { pop: digest(eng.world.causes.popGroup!), country: digest(eng.world.causes.country!), content: JSON.stringify(eng.world.small.content) };
+    const look = () => ({ pop: digest(eng.world.causes.popGroup!), country: digest(eng.world.causes.country!), content: JSON.stringify(['era', 'valueGroup', 'popValue', 'cultureGroup', 'culture', 'government', 'faction'].map((k) => eng.world.small.content?.[k])) });
+    const first = look();
+    eng.exec(eng.planTidy().command!);
+    expect(look().content).not.toBe(first.content);
     humanExec(eng, GEN);
-    expect({ pop: digest(eng.world.causes.popGroup!), country: digest(eng.world.causes.country!), content: JSON.stringify(eng.world.small.content) }).toEqual(first);
+    expect(look()).toEqual(first);
   });
 
-  it('国家档案换成收掉了的时代政体：先从资源库加回来（记下来源），引擎不再自己复制', () => {
+  it('国家档案换成整理掉的时代政体：先从资源库加回来（记下来源），引擎不再自己复制', () => {
     const eng = peopled();
     const w = eng.world;
+    eng.exec(eng.planTidy().command!);
     const all = ERA_PACKS.get('medieval')!.governments;
     const idle = all.find((g) => !w.small.content!.government![g])!;
     const id = Object.values(w.small.countries!)[0].id;
@@ -304,10 +311,14 @@ describe('生成后只留用到的', () => {
     expect(w.small.origin?.government?.[idle]).toEqual(['medieval', 'governments']);
   });
 
-  it('点名的文化：只带点名的那几个进来', () => {
+  it('点名的文化：只有点名的有人，组里别的文化留在世界里，整理才移出', () => {
     const eng = continents();
     const first = BUILTIN_CULTURES.find((c) => c.group === 'germanic')!;
     humanExec(eng, { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 1, cultures: [first.id] }] });
+    expect(new Set(Object.values(eng.world.small.popGroups!).map((t) => t.culture))).toEqual(new Set([first.id]));
+    expect(Object.keys(eng.world.small.content!.culture!)).toContain(first.id);
+    expect(Object.keys(eng.world.small.content!.culture!).length).toBeGreaterThan(1);
+    eng.exec(eng.planTidy().command!);
     expect(Object.keys(eng.world.small.content!.culture!)).toEqual([first.id]);
   });
 
@@ -406,7 +417,7 @@ describe('整理本世界（tidy_content）', () => {
 });
 
 describe('压缩世界文件', () => {
-  it('加过又移出的两条都去掉，没用上的加的那条去掉，末尾补整理；重放的世界与“原来的 + 整理”一模一样', () => {
+  it('加过又移出的两条都去掉；世界里有的（没用上的也算）一条不少，不补整理；重放的世界与原来的一模一样', () => {
     const eng = continents();
     const river = { ...FANTASY_RIVER_TYPES.find((t) => t.id === 'styx')!, natural: false };
     eng.exec({ op: 'set_river_type', type: river });
@@ -418,26 +429,29 @@ describe('压缩世界文件', () => {
     const r = compactWorldDoc(doc, { mesh: eng.world.mesh });
     expect(r.verified).toBe(true);
     expect(r.changed).toBe(true);
+    expect(r.dropped).toBe(2);
+    expect(r.doc.commands.length).toBe(doc.commands.length - 2);
     const ops = JSON.stringify(r.doc.commands);
     expect(ops).not.toContain('styx');
-    expect(ops).not.toContain('r29_f');
-    expect(ops).not.toContain('r29-gov');
-    // 第三十轮：新世界加的生态里在这个世界没长的也是“加了没用上”的，从加内容的那一步里去掉（不再留给末尾的整理）
-    expect(r.dropped).toBeGreaterThanOrEqual(4);
-    const idle = unusedContent(eng.world).filter((x) => x.kind === 'biome').map((x) => x.id);
-    for (const id of idle) expect(ops).not.toContain(`"id":"${id}"`);
-    expect(r.removed.map((x) => x.id)).toEqual(expect.arrayContaining(['r29-gov', 'r29_f']));
-    // 重放：与原来的 + 整理一模一样
-    const target = Engine.fromDoc(doc, eng.world.mesh);
-    target.exec(target.planTidy().command!);
-    target.update();
-    expect(worldDigest(Engine.fromDoc(r.doc, eng.world.mesh).world)).toBe(worldDigest(target.world));
+    expect(ops).not.toContain('tidy_content');
+    for (const id of ['r29_f', 'r29-gov', 'r29-pt']) expect(ops).toContain(id);
+    // 重放：与原来的一模一样（世界里有的都在）
+    const back = Engine.fromDoc(r.doc, eng.world.mesh).world;
+    expect(worldDigest(back)).toBe(worldDigest(eng.world));
+    expect(back.small.content).toEqual(eng.world.small.content);
     // 当前的世界不变
     expect(eng.toDoc()).toEqual(doc);
     expect(compactDoc(doc, { mesh: eng.world.mesh })).toEqual(r.doc);
   });
 
-  it('核对不上时退回原来的命令（末尾照样补上整理）', () => {
+  it('没有“加了又删”时什么都不变', () => {
+    const eng = peopled();
+    const doc = eng.toDoc();
+    const r = compactWorldDoc(doc, { mesh: eng.world.mesh });
+    expect(r).toEqual({ doc, changed: false, verified: true, dropped: 0 });
+  });
+
+  it('核对不上时退回原来的命令', () => {
     const eng = continents();
     eng.exec({ op: 'add_field', name: 'r29_g' });
     eng.exec({ op: 'remove_field', name: 'r29_g' });
@@ -445,8 +459,9 @@ describe('压缩世界文件', () => {
     let n = 0;
     const r = compactWorldDoc(doc, { mesh: eng.world.mesh, digestOf: () => String(n++) });
     expect(r.verified).toBe(false);
+    expect(r.changed).toBe(false);
     expect(r.dropped).toBe(0);
-    expect(r.doc.commands.slice(0, doc.commands.length)).toEqual(doc.commands);
+    expect(r.doc).toEqual(doc);
   });
 
   it('提到它的命令在中间时不去掉', () => {
@@ -456,7 +471,7 @@ describe('压缩世界文件', () => {
     eng.exec({ op: 'set_river_type', type: { ...river, name: '改名' } });
     eng.exec({ op: 'remove_river_type', id: 'styx' });
     const r = compactWorldDoc(eng.toDoc(), { mesh: eng.world.mesh });
-    // 只去掉新世界加的、没长的生态；冥河的三条都留着
+    // 冥河的三条都留着
     expect(r.doc.commands.filter((c) => c.op === 'set_river_type').length).toBe(2);
     expect(r.doc.commands.filter((c) => c.op === 'remove_river_type').length).toBe(1);
   });

@@ -1,4 +1,5 @@
 import type { Command } from '../commands';
+import { digest } from '../digest';
 import { Engine } from '../engine';
 import type { Mesh } from '../mesh';
 import { type PackNode, type PackItem, PACK_FORMAT, PACK_VERSION, type ResourcePack } from '../packs';
@@ -16,6 +17,30 @@ import { type Settings, type World, buildMeshFor, meshKey, settingsSchema } from
 // 不必每个测试都从头生成一遍。副本与重新生成的世界逐值相同（推导只取决于原因）。
 // 第三十轮：新世界里没有内容（生态、基础、中文地名都从资源包加进来），这里建的世界默认先加上新建时默认勾上的几个包
 // （与向导新建的一样：基础、自然、中文地名），bare 时什么都不加
+
+// 一个世界里人文与地图的摘要（第三十轮的 r29-digests.json 就是它记的；human 里不算 packs）
+export function humanDigest(w: World): Record<string, string> {
+  const c = w.causes;
+  const s = w.small;
+  const h = s.human ? { ...s.human } : null;
+  if (h) delete (h as { packs?: unknown }).packs;
+  return {
+    pop: digest([c.popTotal, c.popGroup, c.popShare]),
+    popGroups: digest(s.popGroups ?? null),
+    human: digest(h),
+    country: digest(c.country ?? null),
+    countries: digest(s.countries ?? null),
+    blocs: digest(s.blocs ?? null),
+    cities: digest(s.cities ?? null),
+    roads: digest(s.roads ?? null),
+    landmarks: digest(s.landmarks ?? null),
+    provinces: digest(Object.values(s.provinces).map((p) => [p.name, p.orig ?? ''])),
+    features: digest(w.derived.features.map((f) => [f.key, f.name, f.orig ?? ''])),
+    habitability: digest(w.derived.habitability),
+    terrainClass: digest(w.derived.terrainClass),
+    resource: digest(w.derived.resource),
+  };
+}
 
 const meshes = new Map<string, Mesh>();
 

@@ -8,7 +8,7 @@ import { type ContentWorld, kindOf, itemId } from './registry';
 //
 // 写进来源的只有命令：启用一项的几种命令（ORIGIN_OPS）带上可选的 from（资源包用到世界时 planPack 写上，资源库里单独添加一项时界面写上）；
 // 生成人文、国家时从内置的复制进来的项记它在内置的树里的位置（见 human/generate.ts、countries.ts）。
-// 改一项时没写 from 的照旧留着原来的来源；一项不在世界里了（移出、生成后清理、整理……）它的来源由 tidyOrigins 一起去掉。
+// 改一项时没写 from 的照旧留着原来的来源；一项不在世界里了（移出、整理……）它的来源由 tidyOrigins 一起去掉。
 // 都在小状态里，撤销、重放与别的小状态一样
 
 // 能带 from 的命令

@@ -1,8 +1,9 @@
 import type { Command, RemovedItem } from './commands';
 import { itemId, itemName, kindOf, usageOf } from './content/registry';
 import { strictWorld } from './content/usage';
-import { type ContentRef, TIDY_KINDS, unusedContent } from './content/unused';
+import { type ContentRef, TIDY_KINDS, unusedContent, withoutItems } from './content/unused';
 import type { Engine } from './engine';
+import { CommandError } from './errors';
 import { dimensionValues, worldCultureGroups, worldCultures, worldDimensions } from './human/era';
 import { worldResources } from './human/resources';
 import { worldTerrainClasses } from './human/terrain-class';
@@ -98,16 +99,33 @@ export function mapDiff(a: World, b: World): [string, number][] {
   return out;
 }
 
-// 移出这些之后地图差在哪里（在副本上试，原来的世界不动）
-function tryRemove(engine: Engine, items: readonly ContentRef[]): [string, number][] {
-  if (!items.length) return [];
+// 这些移出不了的原因：地图会变，或者还有留着的项要它（文化组里有留着的文化……）。能移出时为 null（在副本上试，原来的世界不动）
+function tryRemove(engine: Engine, items: readonly ContentRef[]): string | null {
+  if (!items.length) return null;
   const copy = engine.clone();
-  copy.exec({ op: 'tidy_content', items: [...items] });
+  try {
+    copy.exec({ op: 'tidy_content', items: [...items] });
+  } catch (e) {
+    if (e instanceof CommandError) return e.message;
+    throw e;
+  }
   copy.update();
-  return mapDiff(engine.world, copy.world);
+  const diff = mapDiff(engine.world, copy.world);
+  return diff.length ? `移出后地图会变：${diff.map(([what, n]) => `${n} 格的${what}`).join('、')}` : null;
 }
 
-const reasonOf = (diff: [string, number][]) => `移出后地图会变：${diff.map(([what, n]) => `${n} 格的${what}`).join('、')}`;
+// 只考虑这几项时能移出的（按移出的先后排好，一项项查：前面的移出之后后面的还有没有在用，比如文化组和组里的文化一起）
+function onlyCandidates(world: World, only: readonly ContentRef[]): ContentRef[] {
+  const rank = (r: ContentRef) => (TIDY_KINDS as readonly string[]).indexOf(r.kind);
+  const out: ContentRef[] = [];
+  let small = world.small;
+  for (const ref of [...only].sort((a, b) => rank(a) - rank(b))) {
+    if (findItem(world, ref) === undefined || inUse({ ...world, small }, ref)) continue;
+    out.push(ref);
+    small = withoutItems(small, ref.kind, [ref]);
+  }
+  return out;
+}
 
 // 整理的计划。engine 的推导会先算到最新。
 // only：只考虑这几项（界面整个小包移出时：小包里的项，没在用、移出后地图不变的才移）；省略时是 unusedContent 列出的全部。
@@ -115,22 +133,22 @@ const reasonOf = (diff: [string, number][]) => `移出后地图会变：${diff.m
 export function planTidy(engine: Engine, opts: { only?: readonly ContentRef[] } = {}): TidyPlan {
   engine.update();
   const world = engine.world;
-  const candidates = opts.only ? opts.only.filter((r) => findItem(world, r) !== undefined && !inUse(world, r)) : unusedContent(world);
+  const candidates = opts.only ? onlyCandidates(world, opts.only) : unusedContent(world);
   const kept: TidyKept[] = [];
   let accepted: ContentRef[] = [];
-  if (candidates.length && tryRemove(engine, candidates).length) {
+  if (candidates.length && tryRemove(engine, candidates)) {
     // 按种类一批批试；不过的那一种一项项试（之前通过的一起移出时再试）
     for (const kind of TIDY_KINDS) {
       const group = candidates.filter((c) => c.kind === kind);
       if (!group.length) continue;
-      if (!tryRemove(engine, [...accepted, ...group]).length) {
+      if (!tryRemove(engine, [...accepted, ...group])) {
         accepted = [...accepted, ...group];
         continue;
       }
       for (const ref of group) {
-        const diff = tryRemove(engine, [...accepted, ref]);
-        if (!diff.length) accepted = [...accepted, ref];
-        else kept.push({ ...ref, name: nameOf(world, ref), reason: reasonOf(diff) });
+        const reason = tryRemove(engine, [...accepted, ref]);
+        if (!reason) accepted = [...accepted, ref];
+        else kept.push({ ...ref, name: nameOf(world, ref), reason });
       }
     }
   } else accepted = candidates;

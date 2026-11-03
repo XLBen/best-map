@@ -105,7 +105,7 @@ export interface ExportJob {
 export interface CompactJob {
   compact: WorldDoc;
 }
-export type CompactReply = { ok: true; compacted: Pick<CompactResult, 'doc' | 'changed' | 'verified' | 'dropped' | 'removed' | 'kept'> } | { ok: true; skipped: string } | { ok: false; error: string };
+export type CompactReply = { ok: true; compacted: Pick<CompactResult, 'doc' | 'changed' | 'verified' | 'dropped'> } | { ok: true; skipped: string } | { ok: false; error: string };
 
 // warnings：导出时要告诉用户的话（比如极小的省在切线附近分不到像素）
 export type ExportReply = { progress: number } | { ok: true; zip: Uint8Array; warnings?: string[] } | { ok: true; files: Record<string, Uint8Array> } | { ok: false; error: string };

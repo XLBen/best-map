@@ -1,10 +1,11 @@
 import type { Command } from '../commands';
 import { lakeTypesOf } from '../lake-types';
 import { worldMapStyleId, worldMapStyles } from '../map-style';
+import { styleInUse } from '../name-styles';
 import { riverTypesOf } from '../river-types';
 import type { World } from '../world';
 import { type ContentRef, linkIds } from './links';
-import { type ContentWorld, allKinds, contentItems, itemName, kindOf, usageOf } from './registry';
+import { type ContentWorld, type UsageWorld, allKinds, contentItems, itemName, kindOf, usageOf } from './registry';
 import { strictWorld } from './usage';
 
 // 世界里哪里都没用到的内容（第二十九轮，整理本世界 tidy_content 与压缩世界文件用）：
@@ -13,14 +14,18 @@ import { strictWorld } from './usage';
 //   自定义场：哪一项内容都没写到它，也没画过（场里有不是 0 的格）；
 //   政体、派系、人口维度的取值：没有国家用、没有人（现在的人口与自动的快照），与资源库里“移出”时查的一样（usage.ts）；
 //   取值组（第四十三轮）：移出没用到的取值之后没有取值属于它的；
+//   文化（第五十轮）：没有人（现在的人口与自动的快照）、不是国家的主流文化、没有发源地、生成时没点名的；
+//   文化组（第五十轮）：移出没用到的文化之后没有文化属于它，也没有国家兼容、生成时没选、没有发源地的；
+//   地名风格（第五十轮）：移出上面那些之后没有文化、文化组写到，也不是世界默认、地名、省份用的；
+//   时代（第五十轮）：人文用的那一个以外的；
 //   画风（第三十八轮）：世界在用的那一种（选的，没选时第一种）以外的。
 // 只按这些判断，不看移出之后地图变不变：那一步在 tidy.ts 的 planTidy（在世界的副本上真的移出、重算、逐值比较）。
 // 结果按种类、再按世界里的先后，同一个世界总是一样
 
 export type { ContentRef };
 
-// 整理时会看的种类（按移出的先后：先移用到场的内容，最后是场）
-export const TIDY_KINDS = ['government', 'faction', 'popValue', 'valueGroup', 'mapStyle', 'biome', 'riverType', 'lakeType', 'field'] as const;
+// 整理时会看的种类（按移出的先后：先移用到别的项的，文化在文化组之前，文化、文化组在地名风格之前，用到场的内容在场之前）
+export const TIDY_KINDS = ['government', 'faction', 'popValue', 'valueGroup', 'culture', 'cultureGroup', 'nameStyle', 'era', 'mapStyle', 'biome', 'riverType', 'lakeType', 'field'] as const;
 
 type TidyWorld = ContentWorld & Pick<World, 'derived'>;
 
@@ -41,6 +46,14 @@ function fieldsInUse(w: ContentWorld): Set<string> {
   return out;
 }
 
+// 小数据去掉 gone 里这一种的项（查“移出它们之后还有没有用到”）
+export function withoutItems<S extends Pick<World['small'], 'content'>>(small: S, kind: string, gone: readonly ContentRef[]): S {
+  const ids = new Set(gone.filter((x) => x.kind === kind).map((x) => x.id));
+  const own = small.content?.[kind] as Record<string, unknown> | undefined;
+  if (!ids.size || !own) return small;
+  return { ...small, content: { ...small.content, [kind]: Object.fromEntries(Object.entries(own).filter(([id]) => !ids.has(id))) } };
+}
+
 // 世界里没用到的内容（推导要是最新的）
 export function unusedContent(world: TidyWorld): ContentRef[] {
   const { small, causes, derived } = world;
@@ -54,6 +67,16 @@ export function unusedContent(world: TidyWorld): ContentRef[] {
   const goneValues = new Set(out.filter((x) => x.kind === 'popValue').map((x) => x.id));
   const heldGroups = new Set(Object.values(contentItems<{ id: string; group?: string }>(small, 'popValue')).flatMap((v) => (!goneValues.has(v.id) && v.group ? [v.group] : [])));
   for (const id of Object.keys(contentItems(small, 'valueGroup'))) if (!heldGroups.has(id)) out.push({ kind: 'valueGroup', id });
+  // 文化、文化组、地名风格：一层层算，后面的按移出前面那些之后的世界查
+  const after = (...kinds: string[]): UsageWorld => ({ ...strict, small: kinds.reduce((s, kind) => withoutItems(s, kind, out), small) });
+  const unusedOf = (kind: 'culture' | 'cultureGroup' | 'nameStyle' | 'era', w: UsageWorld) => {
+    const k = kindOf(kind)!;
+    for (const id of Object.keys(contentItems(small, kind))) if (!usageOf(k, w, id) && !(kind === 'nameStyle' && styleInUse(w.small, id))) out.push({ kind, id });
+  };
+  unusedOf('culture', strict);
+  unusedOf('cultureGroup', after('culture'));
+  unusedOf('nameStyle', after('culture', 'cultureGroup'));
+  unusedOf('era', strict);
   // 画风：只留世界在用的那一种
   const style = worldMapStyleId(small);
   for (const id of Object.keys(worldMapStyles(small))) if (id !== style) out.push({ kind: 'mapStyle', id });

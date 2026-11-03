@@ -16,7 +16,7 @@ import { biomeMovement } from './terrain-class';
 import { worldEra, worldDimensions } from './era';
 import { eraGovernments } from './government';
 import { BUILTIN_CLASSES, GENERAL_RESOURCES } from '../packs/base';
-import { NO_CURRENTS, engineFor, importPacks, meshFor, seedCommands } from '../testing/fixtures';
+import { NO_CURRENTS, engineFor, humanDigest, importPacks, meshFor, seedCommands } from '../testing/fixtures';
 import type { World } from '../world';
 import { writeFileSync } from 'node:fs';
 import saved from './r29-digests.json';
@@ -47,29 +47,6 @@ const SCENES = [
   // 北欧不是中世纪默认带的组：在“通用 ▸ 文化”里（packImportCommands 在资源库里找）
   { id: 'medieval-pop', era: 'medieval', groups: [['germanic', 1], ['scandinavian', 2]], countries: false, settlements: false },
 ] as const;
-
-function humanDigest(w: World): Record<string, string> {
-  const c = w.causes;
-  const s = w.small;
-  const h = s.human ? { ...s.human } : null;
-  if (h) delete (h as { packs?: unknown }).packs;
-  return {
-    pop: digest([c.popTotal, c.popGroup, c.popShare]),
-    popGroups: digest(s.popGroups ?? null),
-    human: digest(h),
-    country: digest(c.country ?? null),
-    countries: digest(s.countries ?? null),
-    blocs: digest(s.blocs ?? null),
-    cities: digest(s.cities ?? null),
-    roads: digest(s.roads ?? null),
-    landmarks: digest(s.landmarks ?? null),
-    provinces: digest(Object.values(s.provinces).map((p) => [p.name, p.orig ?? ''])),
-    features: digest(w.derived.features.map((f) => [f.key, f.name, f.orig ?? ''])),
-    habitability: digest(w.derived.habitability),
-    terrainClass: digest(w.derived.terrainClass),
-    resource: digest(w.derived.resource),
-  };
-}
 
 let base: Engine | null = null;
 function world(): Engine {
@@ -111,7 +88,7 @@ describe('生成只读世界里的内容', () => {
       check(humanDigest(e.world), sc.id);
       expect(e.world.small.human?.packs).toEqual([[sc.era]]);
       if (!sc.countries) continue;
-      // 生成后没用到的政体清理掉了：重新生成之前再加一遍（排回包里的先后），结果与第二十九轮一样
+      // 重新生成之前再加一遍（界面的 withPackImports；世界里都有，只排回包里的先后），结果与第二十九轮一样
       importPacks(e, { packs: [[sc.era]], groups: groups.map((g) => g.id) });
       e.exec({ op: 'regenerate_countries', seed: 9 });
       check(humanDigest(e.world), `${sc.id}:again`);
@@ -119,7 +96,7 @@ describe('生成只读世界里的内容', () => {
     if (record) writeFileSync(new URL('./r29-digests.json', import.meta.url), `${JSON.stringify(old, null, 1)}\n`);
   });
 
-  it('加进来的每一项记着来源（时代包里的小包）；生成后只留用到的', () => {
+  it('加进来的每一项记着来源（时代包里的小包）；生成后都留着', () => {
     const eng = world();
     importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
     const o = eng.world.small.origin!;
@@ -132,11 +109,12 @@ describe('生成只读世界里的内容', () => {
     const govs = Object.keys(eng.world.small.content!.government!);
     expect(govs).toEqual(ERA_PACKS.get('medieval')!.governments);
     eng.exec({ op: 'generate_human', packs: [['medieval']], groups: [{ id: 'germanic', weight: 1 }], countries: {} });
-    const used = new Set(Object.values(eng.world.small.countries!).map((c) => c.government));
-    expect(Object.keys(eng.world.small.content!.government!).sort()).toEqual([...used].sort());
-    // 清理掉的都在命令结果里（界面判断是不是内置原样，内置原样的不另存）
-    expect(eng.lastRemoved.some((r) => r.kind === 'government')).toBe(true);
-    expect(eng.lastRemoved.every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
+    expect(Object.keys(eng.world.small.content!.government!)).toEqual(govs);
+    expect(eng.lastRemoved).toEqual([]);
+    // 整理才移出（界面判断是不是内置原样，内置原样的不另存）
+    const plan = eng.planTidy();
+    expect(plan.removed.some((r) => r.kind === 'government')).toBe(true);
+    expect(plan.removed.every((r) => isBuiltinSame(r.kind, r.item))).toBe(true);
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
 import { Engine } from '../../core/engine';
 import { type Government, worldCultureGroups, worldEras, worldGovernments, worldTerrainClasses } from '../../core/human';
+import type { PackNode } from '../../core/packs';
 import { BASE_PATH, DEFAULT_WORLD_PACKS, FORMS_PATH, builtinPacks } from '../../core/packs/builtin-tree';
 import { defaultsOf } from '../../core/testing/eras';
 import { type HumanCommand, continents, humanExec, lastOf, meshFor, snapshot } from '../../core/testing/fixtures';
@@ -9,7 +10,7 @@ import type { LibraryEntry } from '../library';
 import { governmentChoices, governmentCommand } from './countries';
 import { formChoices, formsInPacks, newWorldCommands } from './forms';
 import { type HumanChoice, NO_ERA, choiceEra, choiceProblem, choosePack, chooseRule, defaultChoice, generateCommand, regenerateWith, withPackImports } from './human';
-import { humanImportCommands, packGroups, packState, rulePack, worldContentCommands } from './packChoice';
+import { defaultGroupsOf, humanImportCommands, packGroups, packState, rulePack, worldContentCommands } from './packChoice';
 import { skippedKind, skippedSummary } from './skipped';
 
 // 第三十轮的界面：新建向导的“内容”（资源包的勾选、规则来自哪个包、文化组从勾选的包里列、星球形态只列勾选的包里的），
@@ -157,7 +158,7 @@ describe('新建与生成的命令', () => {
     expect(lastOf(regenerateWith(chooseRule(more, ['fantasy']), w.small, LIB)!)).toMatchObject({ keepManual: false, countries: {} });
   });
 
-  it('已有的世界：在用的基础包再生成时只补会清理掉的几种，自己移出的地形类别不会加回来', () => {
+  it('已有的世界：在用的基础包再生成时只补整理时可能移出的几种，自己移出的地形类别不会加回来', () => {
     const eng = nations();
     const cls = worldTerrainClasses(eng.world.small).find((x) => x.id !== 'plains')!;
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: cls.id, item: null });
@@ -167,10 +168,42 @@ describe('新建与生成的命令', () => {
     // 第一次勾上的（没在用的）整个加进来
     const fresh = flat(humanImportCommands({ ...c, packs: [...c.packs, ['fantasy', 'biomes']] }, eng.world.small, LIB));
     expect(fresh.some((x) => fromOf(x)?.join('/') === 'fantasy/biomes')).toBe(true);
-    // 重新生成国家之前：加回世界用的包里清理掉的政体
+    // 重新生成国家之前：加回世界用的包里整理掉的政体
+    eng.exec(eng.planTidy({ only: Object.keys(eng.world.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
     const regen = withPackImports({ op: 'regenerate_countries' }, eng.world.small, LIB);
     expect(regen.op).toBe('batch');
     expect(flat([regen]).some((x) => (x as { kind?: string }).kind === 'government')).toBe(true);
+  });
+});
+
+describe('世界里改过的内容（第五十轮）', () => {
+  it('包没换的再生成：改过的项不再多一份 id-2，世界里那份留着并参与生成；整理掉的才补回来', () => {
+    const eng = nations();
+    const w = eng.world;
+    const govs = Object.keys(w.small.content!.government!);
+    const id = govs[0];
+    eng.exec({ op: 'set_content', kind: 'government', id, item: { ...(w.small.content!.government![id] as object), name: '改过的' } as Record<string, unknown> });
+    eng.exec(withPackImports({ op: 'regenerate_countries', seed: 9 }, w.small, LIB));
+    expect(Object.keys(w.small.content!.government!).sort()).toEqual([...govs].sort());
+    expect((w.small.content!.government![id] as { name: string }).name).toBe('改过的');
+    // 换了选择（多一个组）也一样
+    const h = w.small.human!;
+    const choice = { on: true, packs: h.packs.map((p) => [...p]), groups: [...h.groups.map((g) => ({ id: g.id, weight: g.weight })), { id: 'scandinavian', weight: 1 }], pop: null, countries: { on: true, fragmentation: 0.5 }, settlements: { on: false, landmarks: false } } as unknown as HumanChoice;
+    eng.exec(regenerateWith(choice, w.small, LIB)!);
+    expect(Object.keys(w.small.content!.government!).sort()).toEqual([...govs].sort());
+    expect(w.small.human!.groups.some((g) => g.id === 'scandinavian')).toBe(true);
+    // 整理掉的补回来，改过的还是改过的
+    const used = new Set(Object.values(w.small.countries!).map((c) => c.government));
+    const idle = govs.find((g) => !used.has(g))!;
+    eng.exec({ op: 'set_content', kind: 'government', id: idle, item: null });
+    eng.exec(withPackImports({ op: 'regenerate_countries', seed: 3 }, w.small, LIB));
+    expect(w.small.content!.government![idle]).toBeDefined();
+    expect((w.small.content!.government![id] as { name: string }).name).toBe('改过的');
+  });
+
+  it('组的比重是 0 时勾上包不跟着勾它', () => {
+    const node: PackNode = { id: 'p', name: 'p', cultureGroups: [{ id: 'a', name: 'A', color: '#111111' }, { id: 'b', name: 'B', color: '#222222', weight: 0 }] as unknown as PackNode['cultureGroups'] };
+    expect(defaultGroupsOf(node).map((g) => g.id)).toEqual(['a']);
   });
 });
 
@@ -179,6 +212,8 @@ describe('档案里换政体', () => {
     const eng = nations();
     const w = eng.world;
     const m = Object.values(w.small.countries!)[0];
+    // 第五十轮：生成后都留着，整理掉的才要从资源库加回来
+    eng.exec(eng.planTidy({ only: Object.keys(w.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
     const list = governmentChoices(w, m.government, LIB);
     const have = new Set(worldGovernments(w.small).map((g) => g.id));
     const fromLib = list.find((g) => g.path && !have.has(g.gov.id))!;

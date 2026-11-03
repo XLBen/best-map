@@ -1,4 +1,4 @@
-import type { Command, RemovedItem } from './commands';
+import type { Command } from './commands';
 import { originTarget } from './content/origin';
 import { allKinds, itemId, itemName } from './content/registry';
 import type { ContentRef } from './content/unused';
@@ -6,30 +6,24 @@ import { worldDigest } from './digest';
 import { Engine, type WorldDoc } from './engine';
 import type { Mesh } from './mesh';
 import { isBuiltinSame, originOf } from './packs/builtin-tree';
-import type { TidyKept } from './tidy';
 import type { World } from './world';
 
 // 压缩世界文件（第二十九轮）：导出世界、存进“我的地图”时调用，当前打开的世界不变，只是写出去的命令更少、更干净。
 //   1. 从头重放一遍，记下每条命令新加、移出了哪些内容；
 //   2. 加过又移出、中间没有别的命令提到它的：加的那条和移出的那条都去掉（在批量里的只去掉那一条，批量空了整个去掉）；
-//   3. 加进来以后一直没用上、最后整理时会移出的（tidy.ts 的计划）：加的那条去掉；
-//   4. 末尾补一条整理（tidy_content，带上引擎执行时记下的地名、省份）；
-//   5. 压缩后的命令从头重放，最终世界（原因、推导、地物、小数据，见 digest.ts 的 worldDigest）必须与“原来的命令 + 整理”一模一样；
-//      不一样就退回原来的命令（末尾照样补上整理：那就是“原来的命令 + 整理”本身，不必再核对）。
+//   3. 压缩后的命令从头重放，最终世界（原因、推导、地物、小数据，见 digest.ts 的 worldDigest）必须与原来的一模一样；不一样就退回原来的命令。
+// 第五十轮：世界保留全部内容，世界里有的项一个都不去掉（以前末尾还补一条整理，移出没用到的；现在只有点“整理”才移出）。
 // “提到”按命令的 JSON 里有没有这个 id 的字样判断（宁可少去掉）；彼此提到、都要去掉的几条一起去掉。
 // 要重放两遍（原来的一遍、压缩后的一遍），大世界上要几秒到几十秒，界面放在后台做
 
 export interface CompactResult {
   doc: WorldDoc;
-  // 命令有没有变（只补了一条整理也算）
+  // 命令有没有变
   changed: boolean;
-  // 压缩后核对过一模一样（只补了整理、或者什么都没变时也是 true）；false 是核对不上、退回了原来的命令
+  // 压缩后核对过一模一样（什么都没变时也是 true）；false 是核对不上、退回了原来的命令
   verified: boolean;
   // 去掉了几条（批量里的一条算一条）
   dropped: number;
-  // 末尾的整理移出的项（自己做的、改过的由界面存进资源库）与没用到、但移出后地图会变而留着的
-  removed: RemovedItem[];
-  kept: TidyKept[];
 }
 
 // 一条命令里的各条（批量展开；路径是在各层批量里的下标）
@@ -94,8 +88,6 @@ interface Candidate {
   // 要看有没有被提到的命令范围（顶层的下标，含两头）
   from: number;
   to: number;
-  // 去掉加的这一条之后，末尾的整理就不用再移出它
-  tidy: boolean;
 }
 
 // digestOf：核对用的哈希（省略时是 worldDigest；测试换掉它来试核对不上时的退回）
@@ -110,20 +102,9 @@ export function compactWorldDoc(doc: WorldDoc, opts: { mesh?: Mesh; digestOf?: (
       if (step.removed.length) removed.set(k, step.removed.map((r) => ({ kind: r.kind, id: r.id })));
     },
   });
-  const plan = engine.planTidy();
-  // 原来的命令 + 整理：核对的目标。整理用引擎执行时记下的那一条（带上地名、省份），重放与执行一样
-  let tidyCmd: Command | null = null;
-  if (plan.command) {
-    engine.exec(plan.command);
-    tidyCmd = engine.toDoc().commands[engine.toDoc().commands.length - 1];
-  }
-  engine.update();
-  const plain: WorldDoc = tidyCmd ? { ...doc, commands: [...doc.commands, tidyCmd] } : doc;
-  const base = { removed: plan.removed, kept: plan.kept };
 
-  // 2、3. 能去掉的：加了又（明确地）移出的、加了以后一直没用上的
+  // 2. 能去掉的：加了又（明确地）移出的
   const leaves = doc.commands.map((c, k) => leavesOf(c, k));
-  const tidyIds = new Set((plan.command?.items ?? []).map(keyOf));
   const candidates: Candidate[] = [];
   const n = doc.commands.length;
   for (const [k, refs] of added) {
@@ -133,10 +114,9 @@ export function compactWorldDoc(doc: WorldDoc, opts: { mesh?: Mesh; digestOf?: (
       // 之后第一次移出它的命令
       let j = k + 1;
       while (j < n && !(removed.get(j) ?? []).some((r) => keyOf(r) === keyOf(ref))) j++;
-      if (j < n) {
-        const rm = only(leaves[j], (c) => removesItem(c, ref));
-        if (rm) candidates.push({ ref, leaves: [add, rm], from: k, to: j, tidy: false });
-      } else if (tidyIds.has(keyOf(ref))) candidates.push({ ref, leaves: [add], from: k, to: n - 1, tidy: true });
+      if (j >= n) continue;
+      const rm = only(leaves[j], (c) => removesItem(c, ref));
+      if (rm) candidates.push({ ref, leaves: [add, rm], from: k, to: j });
     }
   }
   // 中间（含两头的批量里的别的条）提到它的不去掉；彼此提到、都要去掉的一起去掉：反复几遍直到不再变
@@ -152,23 +132,19 @@ export function compactWorldDoc(doc: WorldDoc, opts: { mesh?: Mesh; digestOf?: (
     active = next;
   }
   const drop = new Set(active.flatMap((c) => c.leaves.map(leafKey)));
-  if (!drop.size) return { doc: plain, changed: plain !== doc, verified: true, dropped: 0, ...base };
+  if (!drop.size) return { doc, changed: false, verified: true, dropped: 0 };
 
-  // 4. 压缩后的命令：去掉的那几条，末尾的整理不再移出没加进来的
-  const skipTidy = new Set(active.filter((c) => c.tidy).map((c) => keyOf(c.ref)));
   const commands = doc.commands.map((c, k) => without(c, k, drop)).filter((c): c is Command => c !== null);
-  const rest = (plan.command?.items ?? []).filter((r) => !skipTidy.has(keyOf(r)));
-  if (rest.length) commands.push(rest.length === plan.command!.items!.length ? tidyCmd! : { op: 'tidy_content', items: rest });
   const compact: WorldDoc = { ...doc, commands };
 
-  // 5. 核对
+  // 3. 核对
   try {
     const replay = Engine.fromDoc(compact, opts.mesh ?? engine.world.mesh);
-    if (digestOf(replay.world) === digestOf(engine.world)) return { doc: compact, changed: true, verified: true, dropped: drop.size, ...base };
+    if (digestOf(replay.world) === digestOf(engine.world)) return { doc: compact, changed: true, verified: true, dropped: drop.size };
   } catch {
     // 重放不了：退回
   }
-  return { doc: plain, changed: plain !== doc, verified: false, dropped: 0, ...base };
+  return { doc, changed: false, verified: false, dropped: 0 };
 }
 
 // 只要压缩后的文件

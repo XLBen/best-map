@@ -17,7 +17,7 @@ import type { LibraryEntry } from '../library';
 // - 加进世界的命令（core/packs/import.ts 的 packImportCommands，每项带 from）：
 //   新建世界：不带时代的包整个加进来，放在新建的那一步里（生成之前：生态、地形类别、地名风格要在生成时就有）；
 //   时代包只带生成要用的（时代、取值、政体、派系、地标、选的文化组……），与 generate_human 一起作为第二步。
-//   已有的世界：时代包同上；不带时代的包已经在用的（世界里有来自它的内容，或上次生成时勾过）只补生成后会清理掉的几种
+//   已有的世界：时代包同上；不带时代的包已经在用的（世界里有来自它的内容，或上次生成时勾过）只补整理时可能移出的几种
 //   （政体、派系、取值、文化），不把自己移出的基础内容又加回来；新勾的整个加进来。
 
 type Small = World['small'];
@@ -139,13 +139,14 @@ export function packGroups(packs: readonly PackPath[], lib: readonly LibraryEntr
   return out;
 }
 
-// 勾上一个包时跟着勾上的文化组：小包写了权重的（时代包默认带的）；一个都没写权重时是包里的全部组（权重 1）
+// 勾上一个包时跟着勾上的文化组：小包写了权重的（时代包默认带的）；一个都没写权重时是包里的全部组（权重 1）。
+// 组自己的比重是 0 的不算（第五十轮：不参与生成）
 export function defaultGroupsOf(node: PackNode): { id: string; weight: number }[] {
   const weighted: { id: string; weight: number }[] = [];
   const all: { id: string; weight: number }[] = [];
   walkPacks(node, (n) => {
     for (const g of ownItems<CultureGroup>(n, 'cultureGroups')) {
-      if (all.some((x) => x.id === g.id)) continue;
+      if (g.weight === 0 || all.some((x) => x.id === g.id)) continue;
       all.push({ id: g.id, weight: 1 });
       if (typeof n.weight === 'number' && n.weight > 0) weighted.push({ id: g.id, weight: n.weight });
     }
@@ -201,11 +202,11 @@ export function worldDefaultPacks(small: Small, lib: readonly LibraryEntry[]): s
 
 // ---------- 加进世界的命令 ----------
 
-// 生成之后会清理掉的几种（core/human/prune.ts）：已经在用的包再生成时只补这几种
-const PRUNED = ['popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'nameStyles'];
-function prunedPicks(node: PackNode): PackPicks {
+// 整理时可能移出、生成又要用的几种（core/tidy.ts）：已经在用的包再生成时只补这几种
+const REFILLED = ['popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'nameStyles'];
+function refillPicks(node: PackNode): PackPicks {
   const picks: PackPicks = {};
-  for (const key of PRUNED) {
+  for (const key of REFILLED) {
     const kind = kindByPackKey(key);
     if (kind) picks[key] = packItems(node, key).map((x) => itemId(kind, x));
   }
@@ -237,7 +238,7 @@ export function worldContentCommands(c: PackChoice, lib: readonly LibraryEntry[]
 
 // 生成人文之前加的内容（时代包里生成要用的、选的文化组）。small 为 null：新建世界（不带时代的包已经在第一步里加了）；
 // 已有的世界见文件开头
-export function humanImportPicks(c: PackChoice, small: Small | null | undefined, lib: readonly LibraryEntry[]): ImportPicks {
+export function humanImportPicks(c: PackChoice, small: Small | null | undefined, lib: readonly LibraryEntry[], onlyMissing = false): ImportPicks {
   const { era, other } = splitPacks(c.packs, lib);
   const ids = c.groups.map((g) => g.id);
   if (!small) {
@@ -247,12 +248,13 @@ export function humanImportPicks(c: PackChoice, small: Small | null | undefined,
   const extra = other.flatMap((p) => {
     const node = nodeAt(lib, p);
     if (!node) return [];
-    return [inUse(small, p) ? { path: p, picks: prunedPicks(node) } : { path: p }];
+    return [inUse(small, p) ? { path: p, picks: refillPicks(node) } : { path: p }];
   });
-  return { packs: era, groups: ids, ...(extra.length ? { extra } : {}) };
+  return { packs: era, groups: ids, ...(extra.length ? { extra } : {}), ...(onlyMissing ? { onlyMissing } : {}) };
 }
-export function humanImportCommands(c: PackChoice, small: Small | null | undefined, lib: readonly LibraryEntry[]): Command[] {
-  return packImportCommands(libRoots(lib), humanImportPicks(c, small, lib), small ? worldOf(small) : undefined);
+// onlyMissing：包没换的再生成，只补世界里没有的 id。世界里改过的项不算撞名（以前生成后会清理掉多出来的 id-2，第五十轮不清理了）
+export function humanImportCommands(c: PackChoice, small: Small | null | undefined, lib: readonly LibraryEntry[], onlyMissing = false): Command[] {
+  return packImportCommands(libRoots(lib), humanImportPicks(c, small, lib, onlyMissing), small ? worldOf(small) : undefined);
 }
 
 // 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）

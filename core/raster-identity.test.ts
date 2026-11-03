@@ -56,6 +56,7 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第三十八轮：只重录 world.json（四个）：命令里新建时从资源包加内容的那一步多了“通用 ▸ 画风”；图片、表格一个不变
 // 第四十二轮：只重录 world.json（四个）：新建时多加“通用 ▸ 国家等级”、城市等级多了浓淡与大小；图片、表格一个不变（核对过去掉这些时与原来的值相同）
 // 第四十三轮：只重录 world.json（四个）：文件的版本是 11；图片、表格一个不变
+// 第五十轮：只重录 world.json（四个）：文件的版本是 12；图片、表格一个不变（核对过文件写成版本 11 时与原来的值相同）
 
 // 字节摘要：两个不同起点的 32 位 FNV-1a 拼成 16 位十六进制
 function digest(a: ArrayBufferView): string {
@@ -159,7 +160,7 @@ const RECORDED: Record<string, string> = {
   'region 256x128 resources.bmp': 'b9e7d139c01ba5d1',
   'region 256x128 terrain_classes.csv': 'e40143df203f2c29',
   'region 256x128 resources.csv': '07885b5acbf8f0bc',
-  'region 256x128 world.json': 'c4e280ae9cec861e',
+  'region 256x128 world.json': '91a6ed4df9189c95',
   'region 256x128 README.txt': 'e119bc0eb4669bf8',
   'region 300x150 land': '21ebb4f1ddc4a08b',
   'region 300x150 elevation': '53bf091ef5b50eb8',
@@ -179,7 +180,7 @@ const RECORDED: Record<string, string> = {
   'region 300x150 resources.bmp': 'b7d1c804053c9fec',
   'region 300x150 terrain_classes.csv': 'e40143df203f2c29',
   'region 300x150 resources.csv': '07885b5acbf8f0bc',
-  'region 300x150 world.json': 'c4e280ae9cec861e',
+  'region 300x150 world.json': '91a6ed4df9189c95',
   'region 300x150 README.txt': '61d7aa0393c2ab35',
   'region thumbnail': 'b83fcdb70ed5f38d',
   'region functions': '21b1b0794f63fb65',
@@ -201,7 +202,7 @@ const RECORDED: Record<string, string> = {
   'planet 256x128 resources.bmp': '45a0aa39fb8bc831',
   'planet 256x128 terrain_classes.csv': '416ef548f21384fe',
   'planet 256x128 resources.csv': '32eaaa445bd60f44',
-  'planet 256x128 world.json': '78c3ce0ddc1adc17',
+  'planet 256x128 world.json': '1bb21d728a75b014',
   'planet 256x128 README.txt': '7d6804179e70b277',
   'planet 300x150 land': '84cf08ba8ffc6ab6',
   'planet 300x150 elevation': 'dd0a7bed4769b3a1',
@@ -221,7 +222,7 @@ const RECORDED: Record<string, string> = {
   'planet 300x150 resources.bmp': 'f09260c5098f4d99',
   'planet 300x150 terrain_classes.csv': '416ef548f21384fe',
   'planet 300x150 resources.csv': '32eaaa445bd60f44',
-  'planet 300x150 world.json': '78c3ce0ddc1adc17',
+  'planet 300x150 world.json': '1bb21d728a75b014',
   'planet 300x150 README.txt': '57acf72e11dc422a',
   'planet thumbnail': '8ac4b86335e2d54f',
   'planet functions': '2b5491eb1322a165',

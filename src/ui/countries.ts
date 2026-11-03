@@ -115,7 +115,7 @@ export function governmentName(small: Small, id: string): string {
   return g?.name ?? id;
 }
 
-// 档案里能选的政体：本世界里的（时代的在前），加上世界用的包里本世界没有的（生成后没用到的清理掉了；第三十轮：选它时先从
+// 档案里能选的政体：本世界里的（时代的在前），加上世界用的包里本世界没有的（整理掉了的；第三十轮：选它时先从
 // 资源库加进本世界，path 是它在资源库里的小包）。这个国家现在的总在
 export interface GovChoice {
   gov: Government;

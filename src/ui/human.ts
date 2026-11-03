@@ -125,18 +125,19 @@ export function regenerateWith(c: HumanChoice, small: Small, lib: readonly Libra
   const sameEra = !!now && !!was && now.era.id === h.era && samePacks([now.path], [was.path]);
   const countries = h.countryRules && !sameEra ? { countries: {} } : {};
   const regen: Command = { op: 'regenerate_human', packs: c.packs.map((p) => [...p]), groups, ...(c.pop !== null ? { totalPop: Math.round(c.pop) } : {}), keepManual: sameEra, ...countries };
-  const imports = humanImportCommands(c, small, lib);
+  const imports = humanImportCommands(c, small, lib, samePacks(c.packs, h.packs));
   return imports.length ? { op: 'batch', label: '重新生成人文', commands: [...imports, regen] } : regen;
 }
 
 const REGEN_LABELS: Partial<Record<Command['op'], string>> = { generate_human: '生成人文', regenerate_human: '重新生成人文', generate_countries: '生成国家', regenerate_countries: '重新生成国家' };
 
-// 重新生成人文、生成国家之前（第三十轮）：生成后没用到的政体、派系、取值清理掉了，再生成之前把世界用的包再加一遍
-// （世界里有的跳过，先后排回包里的；不带时代的包只补会清理掉的几种），与第一次生成看到的一样。没有人文时原样
+// 重新生成人文、生成国家之前（第三十轮）：世界用的包再加一遍（世界里有的跳过，先后排回包里的；不带时代的包只补整理时
+// 可能移出的几种），整理过的世界也与第一次生成看到的一样；世界里已有的 id 不动（改过的也不再多一份），没整理过的什么都不加
+// （第五十轮：生成后内容都留着）。没有人文时原样
 export function withPackImports(cmd: Command, small: Small, lib: readonly LibraryEntry[] = []): Command {
   const h = small.human;
   if (!h) return cmd;
-  const imports = humanImportCommands({ packs: h.packs, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })) }, small, lib);
+  const imports = humanImportCommands({ packs: h.packs, groups: h.groups.map((g) => ({ id: g.id, weight: g.weight })) }, small, lib, true);
   const label = cmd.op === 'batch' ? cmd.label : REGEN_LABELS[cmd.op];
   return imports.length ? { op: 'batch', ...(label ? { label } : {}), commands: [...imports, cmd] } : cmd;
 }
