@@ -84,4 +84,5 @@
 
 ## 测试用
 - `testing/fixtures.ts` 共用的世界模板与 `snapshot(key, build)`（建一次，每个测试拿副本）；`withoutHeights`、`plainEngine`（第五十五轮之前的生态，比算法和旧代码相同的测试用）；`testing/eras.ts` 按时代查内置内容
+- `testing/class-only.ts` 只改类别的一串命令的摘要（第五十八轮，和 f01e102 记下的 `human/class-only-digests.json` 对照；不要改它）
 - `golden-full.json`、`golden-hashes.json`、`r31-digests.json`、`human/r29-digests.json` 金标准与摘要：不要重录（见 [测试](tests.md)）

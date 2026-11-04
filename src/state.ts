@@ -393,7 +393,7 @@ export interface ToolOptions {
   reliefMode: 'up' | 'down';
   // 堆山的力度（抬升量）
   reliefAmount: number;
-  // 涂地形类别时地面跟着变多少（第五十八轮）：0 只改类别；默认 0.5：一笔走缺的高度的三到五成，看得出变化，涂三五笔到典型高度
+  // 涂地形类别时地面跟着变多少（第五十八轮）：0 只改类别；默认 0.5：一笔走缺的高度的两到四成，看得出变化，多涂几笔接近典型高度
   classStrength: number;
   // 放岛用哪一种岛（内置的或自己的岛的种类的 id，见 core/island-types.ts；种类被删了时按大陆岛，见 ui/panels/islandTypes.tsx 的 liveIslandKind）
   islandKind: string;

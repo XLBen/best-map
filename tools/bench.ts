@@ -314,11 +314,38 @@ function plainBench() {
   // 一直开着的世界上同一笔（缓存都是热的）
   measure(eng, 'hotRelief', 'same edit, long-open world', () => eng.exec(relief2));
   if (library) libraryBench(eng);
+  classBench(eng, hill);
 
   if (process.argv.includes('--long')) longBench(eng);
   if (process.argv.includes('--human')) humanBench(eng);
   if (process.argv.includes('--hash')) printHashes(eng);
   if (json) console.log(JSON.stringify(results));
+}
+
+// 涂地形类别（第五十八轮）：抬山（relief）同样的笔画、同样的大小，同一个进程里交替，各涂一笔再撤销，21 次的中位数。
+// classHeight：力度 0.5 的山地（门槛：不超过 classRelief）；classOnly：力度 0，只改类别（旧的提交上三步都有，classHeight 在那里也只改类别）。
+// 放在最后：不影响前面各步的世界
+function classBench(eng: Engine, cells: number[]) {
+  const t0 = cells.map((_, k) => (k % 5) / 5);
+  const steps: [string, Command][] = [
+    ['classRelief', { op: 'paint_relief', cells, t: t0, strength: 0.7 }],
+    ['classHeight', { op: 'set_cell_class', cells, class: 'mountains', strength: 0.5, t: t0 } as Command],
+    ['classOnly', { op: 'set_cell_class', cells, class: 'mountains' }],
+  ];
+  const ms = new Map<string, number[]>(steps.map(([k]) => [k, []]));
+  for (let round = 0; round < 21; round++) {
+    for (let j = 0; j < steps.length; j++) {
+      const [key, cmd] = steps[(j + round) % steps.length];
+      const a = performance.now();
+      eng.exec(cmd);
+      ms.get(key)!.push(performance.now() - a);
+      eng.undo();
+    }
+  }
+  for (const [key, v] of ms) {
+    results[key] = Math.round([...v].sort((a, b) => a - b)[v.length >> 1] * 100) / 100;
+    if (!json) console.log(key.padEnd(28), results[key].toFixed(2).padStart(7), 'ms');
+  }
 }
 
 // 带库的世界上不重算推导的几步：这里几乎只有小数据的开销（序列化、比较、解析、克隆）。几十次的中位数，两位小数。

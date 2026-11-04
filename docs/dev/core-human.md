@@ -6,6 +6,7 @@
 - `index.ts` 流水线里的一步 `computeHuman` 与给界面的函数（`countryLabels`、`regionLabels`、`peakMarks`、`cellName`……）
 - `rules.ts` 按格的条件（地形类别的自动规则、资源的分布规则共用）
 - `terrain-class.ts` 地形类别（内置 5 种起伏、世界里的列表、自动分类、画过的；`cellMovement`、`paradoxTerrain`、`terrainLabel`）
+- `class-ground.ts` 涂类别时地面跟着变（第五十八轮）：这一笔下面的平均高度、每格抬升的变化、写进 `upliftDelta`、擦掉时回去；命令在 `commands/human.ts` 的 `paintClassGround`
 - `resources.ts` 资源（内置通用 18 种、奇幻 5 种，按噪声分布）
 - `peaks.ts` 山峰；`cells.ts` 格的小地名与档案
 - `cell-memo.ts` 自动的类别、资源、宜居度按格记下（只重算输入变了的格）
