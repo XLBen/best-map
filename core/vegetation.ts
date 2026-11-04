@@ -214,7 +214,7 @@ function scratchFor(n: number): VegScratch {
 // after（第五十六轮）：生态算完之后马上定河、湖的类型（读 d.dominant），它们的问题和 extraIssues 排在同一处：
 // 生态不读河岸、湖岸的世界不用先多算一遍植被（engine.ts 的 pass），结果逐值相同。
 // only（第五十七轮，baseBiomes）：只有这些格算适宜度和份额（别的格当作不长植被）；脚本还是所有的格都跑（出错了整段作废，要和全算时一样），不兜底
-export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean; after?: () => readonly ScriptIssue[]; base?: boolean; only?: Uint8Array; effect?: boolean } = {}) {
+export function computeVegetation(world: World, d: Derived, extraIssues: readonly ScriptIssue[] = [], opts: { look?: boolean; after?: () => readonly ScriptIssue[]; base?: boolean; only?: Uint8Array; effect?: boolean; pass?: number } = {}) {
   const { mesh, small } = world;
   const n = mesh.n;
   const species = small.species;
@@ -251,8 +251,8 @@ export function computeVegetation(world: World, d: Derived, extraIssues: readonl
   const issuesBefore = issues.length;
   // 长在哪里、颜色两种脚本共用一次运行（各输入与上次的差别只算一次，最后一起记下）；用到脚本时才开
   const run: { session?: ScriptSession; bank?: ScriptSession } = {};
-  const sessionOf = () => (run.session ??= new ScriptSession(world, opts.effect ? SLOT_EFFECT : SLOT_FIRST));
-  const place = computePlacement(world, d, issues, (src) => (opts.base && scriptReadsBanks(src) ? (run.bank ??= new ScriptSession(world, opts.effect ? SLOT_BANK_EFFECT : SLOT_BANK_FIRST)) : sessionOf()));
+  const sessionOf = () => (run.session ??= new ScriptSession(world, opts.effect ? SLOT_EFFECT : SLOT_FIRST, opts.pass));
+  const place = computePlacement(world, d, issues, (src) => (opts.base && scriptReadsBanks(src) ? (run.bank ??= new ScriptSession(world, opts.effect ? SLOT_BANK_EFFECT : SLOT_BANK_FIRST, opts.pass)) : sessionOf()));
 
   const suit = d.suit;
   const reach = d.reach;
@@ -505,7 +505,7 @@ export function waterCells(world: World, d: Derived, out: Uint8Array): void {
   }
 }
 
-export function baseBiomes(world: World, d: Derived, focused = false, effect = false): Int16Array {
+export function baseBiomes(world: World, d: Derived, focused = false, effect = false, pass = 0): Int16Array {
   const n = world.mesh.n;
   const S = world.small.species.length;
   let pad = basePad.get(world.mesh);
@@ -526,13 +526,13 @@ export function baseBiomes(world: World, d: Derived, focused = false, effect = f
   vegetationStats.base++;
   if (focused && !world.small.species.some((sp) => sp.dispersal)) {
     waterCells(world, d, pad.only);
-    computeVegetation(world, tmp, [], { look: false, base: true, only: pad.only, effect });
+    computeVegetation(world, tmp, [], { look: false, base: true, only: pad.only, effect, pass });
     let bare = false;
     for (let i = 0; i < n && !bare; i++) bare = pad.only[i] === 1 && tmp.dominant[i] < 0 && world.causes.land[i] === 1 && d.lake[i] !== 1;
     if (!bare) return tmp.dominant;
     tmp.dominant.fill(-1);
   }
-  computeVegetation(world, tmp, [], { look: false, base: true, effect });
+  computeVegetation(world, tmp, [], { look: false, base: true, effect, pass });
   return tmp.dominant;
 }
 

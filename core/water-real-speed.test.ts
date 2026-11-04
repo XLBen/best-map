@@ -8,6 +8,7 @@ import { builtinPacks, worldPartsOf } from './packs/builtin-tree';
 import { packImportCommands } from './packs/import';
 import { continents, engineFor } from './testing/fixtures';
 import { baseBiomes, waterCells } from './vegetation';
+import { scriptDiffStats, scriptPassDebug } from './biome-scripts';
 import type { World } from './world';
 import { digestWorld } from '../tools/hash';
 
@@ -151,6 +152,43 @@ describe('不计水体类型的一遍植被只算河格和湖岸', () => {
     waterCells(eng.world, eng.world.derived, on);
     for (let i = 0; i < on.length; i++) if (on[i]) expect(b[i]).toBe(a[i]);
   }, 120000);
+});
+
+describe('同一遍里脚本比较快照的结果复用', () => {
+  it('开着和关着逐位相同（奇幻库一串加工、脚本出错、撤销），比较的次数少了', () => {
+    const run = (reuse: boolean) => {
+      scriptPassDebug.reuse = reuse;
+      scriptDiffStats.diffs = 0;
+      // 新的网格：记录是空的，两边从同样的状态开始
+      const eng = new Engine({ seed: 4, cells: 6000 });
+      eng.exec({ op: 'batch', commands: [...packImportCommands(builtinPacks(), { packs: worldPartsOf('fantasy'), groups: [] }), { op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true }] });
+      const w = eng.world;
+      const land: number[] = [];
+      for (let i = 0; i < w.mesh.n && land.length < 200; i += 3) if (w.causes.land[i]) land.push(i);
+      const out: unknown[] = [digestWorld(w)];
+      const step = (f: () => void) => {
+        f();
+        out.push(digestWorld(w), w.derived.scriptIssues ?? null);
+      };
+      step(() => eng.exec({ op: 'paint', field: 'tempOffset', cells: land, values: land.map(() => -3), mode: 'add' }));
+      step(() => eng.exec({ op: 'paint', field: 'moistOffset', cells: land, values: land.map(() => 0.4), mode: 'add' }));
+      step(() => eng.exec({ op: 'set_planet', patch: { humidity: 1.2 } }));
+      step(() => eng.exec({ op: 'add_constraint', constraint: { cells: land.slice(0, 30), species: 'crystal_jungle', mode: 'constraint', ratio: 1, radius: 300, label: '' } }));
+      step(() => eng.exec({ op: 'update_species', id: 'taiga', patch: { scripts: { placement: { api: 1, src: 'if (x > 0.5) throw new Error("x"); return tMean > 0 ? 1 : 0.5;' } } } }));
+      step(() => eng.exec({ op: 'paint', field: 'tempOffset', cells: land, values: land.map(() => 1), mode: 'add' }));
+      step(() => eng.exec({ op: 'update_species', id: 'desert', patch: { plainRiver: false, waterBlock: 'stop' } }));
+      step(() => eng.exec({ op: 'paint', field: 'moistOffset', cells: land, values: land.map(() => -0.4), mode: 'add' }));
+      step(() => eng.undo());
+      step(() => eng.undo());
+      step(() => eng.undo());
+      return { out, diffs: scriptDiffStats.diffs };
+    };
+    const on = run(true);
+    const off = run(false);
+    scriptPassDebug.reuse = true;
+    expect(on.out).toEqual(off.out);
+    expect(on.diffs).toBeLessThan(off.diffs);
+  }, 180000);
 });
 
 describe('断流的尾巴收尖', () => {

@@ -20,6 +20,7 @@ import { waterPlan } from './water-types';
 import { scriptsEnabled } from './script';
 import { worldSeedOf } from './biome-scripts';
 import { baseBiomes, computeVegetation, finishLook, isVegetated } from './vegetation';
+import { newScriptPass } from './biome-scripts';
 import { resolveTerrain, shareTerrainBase, warmTerrainSteps } from './terrain';
 import { computeHuman } from './human';
 import { SLOTS } from './human/groups';
@@ -619,12 +620,15 @@ export class Engine {
       // 断流（第五十六轮）：按这一遍的水和不计水体类型的生态定下哪些格断流，再算一遍水（汇流有缓存，高程、流向不变）。
       // 单向的，不迭代：结果只取决于原因，撤销、重放都一样。不用断流的世界不走这里
       let bio: Int16Array | null = null;
+      // 这一遍的编号：脚本的两遍读到的输入相同，比较快照的结果复用（biome-scripts.ts）。水变了换一个
+      let scriptPass = newScriptPass();
       if (water.stops) {
-        bio = baseBiomes(w, d, true, !!eff);
+        bio = baseBiomes(w, d, true, !!eff, scriptPass);
         const cut = stopCells(w, d, seed, bio);
         if (cut) {
           computeHydrology(w, d.elevation, d, cut);
           bio = null;
+          scriptPass = newScriptPass();
         }
       }
       // 河流类型（第三批）、湖泊类型（第九轮）：没有时什么都不做；match 脚本出的问题交给植被一起记下
@@ -636,8 +640,8 @@ export class Engine {
       // 颜色脚本只在全部几遍算完之后算一次（finishLook）：每一遍都整个重算 d.look，前几遍的没人用
       // 第十二轮：类型要读生态时按不计水体类型的一遍植被。第五十六轮（提速）：生态不读河岸、湖岸时那一遍和真的植被逐值相同，
       // 只算一遍，算完再定类型（core/water-rules.test.ts 查着逐位相同）
-      if (water.biomes && !water.baseFirst) computeVegetation(w, d, [], { look: false, after: () => typeWater(d.dominant), effect: !!eff });
-      else computeVegetation(w, d, typeWater(water.biomes ? (bio ?? baseBiomes(w, d, true, !!eff)) : null), { look: false, effect: !!eff });
+      if (water.biomes && !water.baseFirst) computeVegetation(w, d, [], { look: false, after: () => typeWater(d.dominant), effect: !!eff, pass: scriptPass });
+      else computeVegetation(w, d, typeWater(water.biomes ? (bio ?? baseBiomes(w, d, true, !!eff, scriptPass)) : null), { look: false, effect: !!eff, pass: scriptPass });
     };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);

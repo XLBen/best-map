@@ -63,6 +63,8 @@ const STATIC_KEYS = new Set(['x', 'y', 'px', 'py', 'pz']);
 interface Snap {
   copy: Typed;
   ver: number;
+  // 这份内容是哪一遍的输入（见 newScriptPass；0：不知道）
+  pass: number;
 }
 
 interface Entry {
@@ -84,6 +86,23 @@ interface Store {
 }
 
 const MAX_ENTRIES = 32;
+
+// 第五十七轮（提速）：同一遍里，不计水体类型的那一遍植被和真的那一遍读到的输入一样（只有河岸不同，气候、水都没动过），比较快照的结果不用再算一次：
+//   · 快照就是这一遍存的：没有差别；
+//   · 另一份记录的快照来自同一遍：差别和已经比过的相同。
+// 河岸（river:）两遍不一样，不算。engine.ts 的 pass 每一遍要一个新的编号（水变了也要新的）；没给编号的（测试直接算）照旧每次比
+let passCounter = 0;
+export const newScriptPass = (): number => ++passCounter;
+export const scriptPassDebug = { reuse: true };
+export const scriptDiffStats = { diffs: 0 };
+let passDiffs: { pass: number; masks: Map<string, { from: number; mask: Uint8Array }> } | null = null;
+// 没有差别的输入都用这一块（只读）
+const cleanMasks = new Map<number, Uint8Array>();
+function cleanMask(n: number): Uint8Array {
+  let m = cleanMasks.get(n);
+  if (!m) cleanMasks.set(n, (m = new Uint8Array(n)));
+  return m;
+}
 
 // 统计（测试用）：累计实际运行脚本的格数
 export const scriptRunStats = { placement: 0, color: 0 };
@@ -164,9 +183,12 @@ export class ScriptSession {
   private readonly current = new Map<string, ArrayLike<number>>();
   private readonly pending: { entry: Entry; deps: string[] }[] = [];
 
-  constructor(readonly world: World, slot = SLOT_FIRST) {
+  // pass：这是哪一遍（newScriptPass）
+  private readonly pass: number;
+  constructor(readonly world: World, slot = SLOT_FIRST, pass = 0) {
     this.store = storeOf(world.mesh, slot);
     this.n = world.mesh.n;
+    this.pass = scriptPassDebug.reuse ? pass : 0;
   }
 
   private changed(key: string, cur: ArrayLike<number>): Uint8Array | null {
@@ -174,8 +196,23 @@ export class ScriptSession {
     const snap = this.store.snaps.get(key);
     let mask: Uint8Array | null = null;
     if (snap) {
-      mask = new Uint8Array(this.n);
-      if (diffInto(snap.copy, cur, mask) === null) mask = null;
+      const shared = this.pass !== 0 && !key.startsWith('river:');
+      if (shared && snap.pass === this.pass) mask = cleanMask(this.n);
+      else {
+        if (shared && passDiffs?.pass !== this.pass) passDiffs = { pass: this.pass, masks: new Map() };
+        const hit = shared && snap.pass !== 0 ? passDiffs!.masks.get(key) : undefined;
+        if (hit && hit.from === snap.pass) mask = hit.mask;
+        else {
+          scriptDiffStats.diffs++;
+          mask = new Uint8Array(this.n);
+          const any = diffInto(snap.copy, cur, mask);
+          if (any === null) mask = null;
+          else {
+            if (!any) mask = cleanMask(this.n);
+            if (shared && snap.pass !== 0) passDiffs!.masks.set(key, { from: snap.pass, mask });
+          }
+        }
+      }
     }
     this.changedOf.set(key, mask);
     return mask;
@@ -243,17 +280,20 @@ export class ScriptSession {
     const appeared = (dep: string) => (dep.startsWith('field:') ? inputs.field?.(dep.slice(6)) : inputs.river?.(dep.slice(6))) !== undefined;
     if (entry && entry.deps && entry.out.length === n * stride && ![...entry.absent].some(appeared)) {
       changes = [];
+      let comparable = true;
+      const clean = cleanMask(n);
       for (const [dep, ver] of entry.deps) {
         const snap = store.snaps.get(dep);
         const cur = valueOf(dep);
         const ch = snap && snap.ver === ver && cur ? this.changed(dep, cur) : null;
         if (!ch) {
+          comparable = false;
           changes = [];
           break;
         }
-        changes.push(ch);
+        if (ch !== clean) changes.push(ch);
       }
-      if (changes.length === entry.deps.size) {
+      if (comparable) {
         full = false;
         const list: number[] = [];
         for (let j = 0; j < cells.length; j++) {
@@ -306,7 +346,7 @@ export class ScriptSession {
     } else {
       for (const dep of absent) entry.absent.add(dep);
       // 不在这次范围里、输入却变了的格：记录对不上新的快照了
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; changes.length && i < n; i++) {
         if (!entry.valid[i] || mask[i]) continue;
         for (let k = 0; k < changes.length; k++) {
           if (changes[k][i]) {
@@ -343,9 +383,9 @@ export class ScriptSession {
         let snap = store.snaps.get(dep);
         const ch = snap ? this.changed(dep, cur) : null;
         if (!snap || !ch) {
-          snap = { copy: copyOf(cur), ver: ++store.ver };
+          snap = { copy: copyOf(cur), ver: ++store.ver, pass: 0 };
           store.snaps.set(dep, snap);
-        } else {
+        } else if (ch !== cleanMask(this.n)) {
           let any = false;
           for (let i = 0; i < ch.length && !any; i++) if (ch[i]) any = true;
           if (any) {
@@ -353,6 +393,8 @@ export class ScriptSession {
             snap.ver = ++store.ver;
           }
         }
+        // 这份快照现在就是这一遍的输入
+        snap.pass = this.pass !== 0 && !dep.startsWith('river:') ? this.pass : 0;
         bumped.set(dep, snap.ver);
       }
     }
