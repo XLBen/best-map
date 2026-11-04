@@ -21,3 +21,11 @@ export const CLIMATE_BELT_NOTE = '越往极地越冷；地图本身跨几个气�
 
 // 给世界加一个变量
 export const ADD_DIMENSION_NOTE = '文化、国家、城市都不会变。想让国家用上它，点“重新生成国家”';
+
+// 总表上写了规则（脚本）的河湖：规则说是的里面再看这张表
+export const SCRIPT_RIVER_NOTE = '带“规则”的先看规则，规则说是的再按这里的勾一格一格看';
+// 不自然生成的河湖
+export const WATER_MANUAL_NOTE = '不自然生成：勾了也不会自己出现，只用在画的、选了它的上面';
+
+// 地貌的季节和风的季节是两个
+export const SEASON_NOTE = '只改雪和植被的样子。风向有自己的季节，在左下角的图例里';

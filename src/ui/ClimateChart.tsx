@@ -33,7 +33,8 @@ import { paintWith, setTool } from './defs/tools';
 import { rangePick } from './tools';
 import { packItems, readPack } from '../../core/packs';
 import { library } from '../library';
-import { fileLabel, openPackImport, openRepo } from './packs/store';
+import { fileLabel, openPackImport } from './packs/store';
+import { openLibrary } from './packs/panel-store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
 
 // 导入生态文件：和资源包走同一条路（只解析、检查，带脚本的先问信任），只装进资源库（第二十九轮：以前的生态文件也不再整套换掉世界里的生态），
@@ -569,7 +570,7 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openRepo({ kind: 'biome', filter: 'off', entry: biomePackEntry(w) })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
+        <button onClick={() => openLibrary({ kind: 'biome', off: true, entry: biomePackEntry(w) })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
           示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>

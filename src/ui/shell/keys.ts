@@ -3,6 +3,9 @@ import { mapApi } from '../camera';
 import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
 import { packDialog, repo } from '../packs/store';
+import { libEdits } from '../../library-edit';
+import { closeLibrary, goBack, lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
+import { undoTarget } from '../packs/pages';
 import { closeFormEditor, formEditor } from '../form-store';
 import { mapsDialog, saveMap, saveMapAs } from '../maps/store';
 
@@ -45,7 +48,12 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (picking.value) picking.value = false;
     else if (uiHidden.value) uiHidden.value = false;
-    // 资源库：先取消选中（右栏的详情、编辑器一起收起），再按一次关上
+    // 资源库面板：一层层返回，首页再按一次关上
+    else if (libPanel.value) {
+      if (libPanel.value.stack.length > 1) goBack();
+      else closeLibrary();
+    }
+    // 旧的资源库：先取消选中（右栏的详情、编辑器一起收起），再按一次关上
     else if (repo.value) repo.value = repo.value.edit || repo.value.sel ? { ...repo.value, edit: undefined, sel: undefined } : null;
     else if (sheet.value) sheet.value = null;
     else if (provinceSet.value.length) provinceSet.value = [];
@@ -65,7 +73,15 @@ export function onKeyDown(e: KeyboardEvent) {
   }
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault();
-    void (e.shiftKey ? redo() : undo());
+    // 面板开着、看我的库、最后点的是面板里：撤销这个库（第五十九轮）；别的都是世界
+    const st = libPanel.value;
+    const ctx = pageCtx();
+    const src = st ? livePanel(st, ctx).source : null;
+    const target = undoTarget(src, ctx, lastPress.inPanel);
+    if (target === 'library' && src?.t === 'lib') {
+      if (e.shiftKey) libEdits.redo(src.key);
+      else libEdits.undo(src.key);
+    } else if (target === 'world') void (e.shiftKey ? redo() : undo());
     return;
   }
   if (mod || e.altKey || !world.value) return;
@@ -139,6 +155,8 @@ export function onMouseDownCapture(e: MouseEvent) {
 
 // 点弹出面板外面就关上（点地图由地图自己处理：那一下只关面板，不在地图上动手）
 export function onPointerDownCapture(e: PointerEvent) {
+  // 点在面板外面：⌘Z 回到世界（点在面板里的在面板上记，见 LibPanel.tsx）
+  if (!(e.target as HTMLElement).closest?.('.lib-panel')) lastPress.inPanel = false;
   if (!openPanel.value) return;
   const t = e.target as HTMLElement;
   if (t.closest('.popover') || t.closest('[data-panel]') || t.closest('.map') || t.closest('.modal-backdrop')) return;

@@ -4,7 +4,7 @@ import { canRedo, canUndo, openPanel, redo, togglePanel, undo, world } from '../
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
-import { repo, toggleRepo } from '../packs/store';
+import { libPanel, toggleLibrary } from '../packs/panel-store';
 import { MapKindSwitch } from './MapKind';
 
 // 顶栏：左边是资源库（第四十五轮，最左边）、整个世界的事（世界、更多、调整）和撤销、重做，
@@ -14,12 +14,12 @@ import { MapKindSwitch } from './MapKind';
 function RepoButton() {
   return (
     <button
-      class={`tb-btn ${repo.value ? 'open' : ''}`}
+      class={`tb-btn ${libPanel.value ? 'open' : ''}`}
       onClick={() => {
-        if (!repo.value) openPanel.value = null;
-        toggleRepo();
+        if (!libPanel.value) openPanel.value = null;
+        toggleLibrary();
       }}
-      title="资源库：添加、编辑地名风格、文化、政体……"
+      title="资源库：本世界和各个库里的文化、政体、生态……"
     >
       <Boxes size={18} />
       <span class="tb-label">资源库</span>

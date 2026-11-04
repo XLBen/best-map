@@ -1,5 +1,5 @@
 import { ChevronDown, Plus } from 'lucide-preact';
-import type { ComponentChildren } from 'preact';
+import { type ComponentChildren, createContext } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { library } from '../../library';
 import { world } from '../../state';
@@ -7,6 +7,9 @@ import { type RefOption, refLabel, refOptionsOf, searchRefs } from './refs';
 
 // 带搜索的下拉（第四十五轮）：编辑器里选文化组、地名风格、维度、取值、政体、国家等级……。
 // 点开后先列全部（多了只列前面的），输入几个字筛；方向键挑、回车选、Esc 关。列表里没有的 id 也能照写（“用 xxx”）
+
+// 引用点过去（第五十九轮）：资源库面板给这个函数：这个引用点了做什么（这一份里没有它时 null）。别处不给，引用就不能点
+export const RefGo = createContext<((ref: string | readonly string[], id: string) => (() => void) | null) | null>(null);
 
 // 编辑器里共用：本世界与资源库里的选项（世界、资源库换了才重算）
 export function useRefOptions(ref: string | readonly string[], opts?: { dimension?: string; extra?: readonly RefOption[] }): RefOption[] {

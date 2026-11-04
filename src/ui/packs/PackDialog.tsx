@@ -20,7 +20,8 @@ import { ScriptList, TrustBlock } from './Scripts';
 import { ModalHead } from '../common';
 import { askUser, download, knowIsolation, showToast, world } from '../../state';
 import { repoKinds } from './repo';
-import { type DialogView, openRepo, packDialog } from './store';
+import { type DialogView, packDialog } from './store';
+import { openLibrary } from './panel-store';
 
 // 资源库角落“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、从文件导入（解析、检查、信任，不运行任何脚本）、
 // 从本世界存进资源库（第二十八轮：每一种内容都能勾，人文的也在）。添加到本世界在资源库里一项一项点（RepoPanel）
@@ -31,7 +32,7 @@ const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.str
 
 // 在资源库里看这个包：资源库一栏只列它（展开着），种类是全部
 function showInRepo(key: string, _pack: ResourcePack) {
-  openRepo({ entry: key, kind: 'all', filter: 'all', query: '' });
+  openLibrary({ entry: key });
 }
 
 // 颜色小方块（最多几个）

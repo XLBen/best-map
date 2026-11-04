@@ -8,8 +8,9 @@ import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
 import { Seg } from '../common';
 import { RangeSliders } from '../components/RangeSliders';
+import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, objectOf, parseTags, setField, shownFields, sparseSplit, tagsText } from './fields';
+import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, numberText, objectOf, parseTags, setField, shownFields, sliderScale, sparseSplit, tagsText } from './fields';
 import { Grip, MapEditor, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
 import { TendencyEditor } from './TendencyEditor';
 
@@ -27,10 +28,12 @@ interface Props {
   onChange: (v: Obj) => void;
   path?: Path;
   issues: readonly EditorIssue[];
+  // 这一组只是整张字段表的一段时（第五十九轮：一项的页面分几段）：when 指的字段可能在别的段，改的时候按整张表算
+  scope?: readonly FieldDesc[];
 }
 
 // 一组字段（一个对象）。倾向（tendencies）与按时代的倾向画在同一张表里
-export function FieldsBox({ fields, value, onChange, path = [], issues }: Props) {
+export function FieldsBox({ fields, value, onChange, path = [], issues, scope }: Props) {
   const shown = shownFields(fields, value);
   if (isSparse(shown)) return <SparseBox fields={shown} value={value} onChange={onChange} path={path} issues={issues} />;
   const plainTend = shown.some((f) => f.type === 'tendencies' && !f.byEra);
@@ -47,7 +50,7 @@ export function FieldsBox({ fields, value, onChange, path = [], issues }: Props)
             </div>
           );
         }
-        return <Field key={f.key} f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(fields, value, f.key, v))} />;
+        return <Field key={f.key} f={f} value={value[f.key]} path={[...path, f.key]} issues={issues} onChange={(v) => onChange(setField(scope ?? fields, value, f.key, v))} />;
       })}
     </div>
   );
@@ -312,6 +315,36 @@ export function Draft({ text, onCommit, multi, mono, placeholder }: { text: stri
   );
 }
 
+// 写了上下限、步子不太密的数：滑块（第五十九轮，松手才换上）；可以不写的旁边一个去掉
+function NumberSlider({ f, value, onChange }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void }) {
+  const scale = sliderScale(f)!;
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => setDraft(null), [value]);
+  const cur = draft ?? (typeof value === 'number' ? value : null);
+  return (
+    <span class="ed-number">
+      <Slider
+        label={f.label}
+        pos={cur === null ? 0 : scale.pos(cur)}
+        text={cur === null ? '不写' : `${numberText(cur, f.step)}${f.unit ?? ''}`}
+        title={f.hint}
+        onDraft={(p) => setDraft(scale.at(p))}
+        onCommit={(p) => {
+          const v = scale.at(p);
+          setDraft(v);
+          if (v !== value) onChange(v);
+        }}
+        onCancel={() => setDraft(null)}
+      />
+      {f.optional && cur !== null && (
+        <button class="small icon ghost" title="不写" onClick={() => onChange(undefined)}>
+          <X />
+        </button>
+      )}
+    </span>
+  );
+}
+
 // JSON：写坏了不换上，说一句
 function JsonInput({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
   const [err, setErr] = useState('');
@@ -348,6 +381,7 @@ export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; va
     case 'longtext':
       return <Draft multi text={typeof value === 'string' ? value : ''} onCommit={(t) => onChange(t)} />;
     case 'number':
+      if (sliderScale(f)) return <NumberSlider f={f} value={value} onChange={onChange} />;
       return (
         <input
           type="number"

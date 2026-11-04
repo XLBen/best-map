@@ -54,7 +54,7 @@ function mapStyleSwatch(s: MapStyle): string {
   return `linear-gradient(135deg, rgb(${land.join(', ')}) 50%, ${sea} 50%)`;
 }
 
-export function swatchOf(row: RepoRow): string | null {
+export function swatchOf(row: Pick<RepoRow, 'kind' | 'item'>): string | null {
   if (row.kind.id === 'islandType') return islandSwatch(row.item as IslandType);
   if (row.kind.id === 'mapStyle') return mapStyleSwatch(row.item as MapStyle);
   const c = (row.item as { color?: unknown }).color;

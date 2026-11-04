@@ -1,10 +1,10 @@
-import { GripVertical, Plus, X } from 'lucide-preact';
-import { useEffect, useState } from 'preact/hooks';
+import { ChevronRight, GripVertical, Plus, X } from 'lucide-preact';
+import { useContext, useEffect, useState } from 'preact/hooks';
 import type { FieldDesc } from '../../../core/content/registry';
 import { FEATURE_INFO, type FeatureType } from '../../../core/features';
 import { Control, Draft, Errors, FieldsBox, type Path } from './ContentEditor';
 import { type EditorIssue, type Obj, type TitleRow, defaultValue, isObj, moveItem, newKey, objectOf, renameKey, titleRows, titleValue, weightedRows, weightedValue } from './fields';
-import { RefPicker, useRefOptions } from './RefPicker';
+import { RefGo, RefPicker, useRefOptions } from './RefPicker';
 import { DEFAULT_KEY, type RefOption, refLabel } from './refs';
 
 // 通用编辑器里几种成块的控件（第四十五轮从 ContentEditor.tsx 分出来，加了引用的下拉、拖动换先后）：
@@ -278,11 +278,12 @@ export function TagRefs({ refKind, value, onChange }: { refKind: string; value: 
   const list = Array.isArray(value) ? value.map(String) : [];
   const opts = useRefOptions(refKind);
   const set = new Set(list);
+  const go = useContext(RefGo);
   return (
     <span class="ed-tags">
       {list.map((id) => (
         <span class="ed-tag" title={id}>
-          {refLabel(opts, id)}
+          <RefText go={go?.(refKind, id) ?? null} text={refLabel(opts, id)} />
           <button class="small icon ghost" title="删除" onClick={() => onChange(list.filter((x) => x !== id))}>
             <X />
           </button>
@@ -296,7 +297,28 @@ export function TagRefs({ refKind, value, onChange }: { refKind: string; value: 
 // 引用的一个（文化组、地名风格……）
 export function OneRef({ refKind, value, optional, onChange }: { refKind: string; value: unknown; optional?: boolean; onChange: (v: unknown) => void }) {
   const opts = useRefOptions(refKind);
-  return <RefPicker options={opts} value={typeof value === 'string' ? value : ''} onPick={(id) => onChange(id)} onClear={optional ? () => onChange(undefined) : undefined} />;
+  const go = useContext(RefGo)?.(refKind, typeof value === 'string' ? value : '') ?? null;
+  return (
+    <span class="ref-one">
+      <RefPicker options={opts} value={typeof value === 'string' ? value : ''} onPick={(id) => onChange(id)} onClear={optional ? () => onChange(undefined) : undefined} />
+      {go && (
+        <a class="ref-go" role="button" title="打开这一项" onClick={go}>
+          <ChevronRight />
+        </a>
+      )}
+    </span>
+  );
+}
+
+// 引用的名字：能点过去时是链接（用 a：只读的表单里 button 都不能点）
+function RefText({ go, text }: { go: (() => void) | null; text: string }) {
+  return go ? (
+    <a class="ref-link" role="button" title="打开这一项" onClick={go}>
+      {text}
+    </a>
+  ) : (
+    <>{text}</>
+  );
 }
 
 // 按引用的比例表（格局、时代的各等级占多少）：列出全部能选的（国家等级……），每行一个数，空着的不写

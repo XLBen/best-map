@@ -35,7 +35,7 @@ import { LibraryPick } from '../components/LibraryPick';
 import { ADD_DIMENSION_NOTE } from '../copy';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
 import { type GroupOption, beyondGroups, libRoots, packGroups, packLabel, worldLibrary } from '../packChoice';
-import { openRepo } from '../packs/store';
+import { openLibrary } from '../packs/panel-store';
 import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';
 import { NO_HUMAN, chosenCulture, chosenTuple, chosenValue, hasHuman, hearthCommand, hearthMarks, percentText } from '../tools/culture';
@@ -49,7 +49,7 @@ const pick = (patch: Partial<typeof options.value>) => {
 };
 const toRepo = (kind: string) => () => {
   openPanel.value = null;
-  openRepo({ kind });
+  openLibrary({ kind });
 };
 
 // ---------- 底部条 ----------

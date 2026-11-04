@@ -4,7 +4,7 @@ import { originOf } from '../../../core/packs/builtin-tree';
 import type { World } from '../../../core/world';
 import { type LibraryEntry, library as libraryList } from '../../library';
 import { type PanelId, openPanel, togglePanel, world } from '../../state';
-import { openRepo } from '../packs/store';
+import { openLibrary } from '../packs/panel-store';
 
 // 选“哪一种”：底部条上的按钮（“新画的河：血河 ▾”“岛：珊瑚岛 ▾”）和点开的列表（最后一项“新建…”）。
 // 河、湖、岛（放岛、岛链）六个弹出的列表都是它，只是种类表不一样。
@@ -59,7 +59,7 @@ export function originGroups(items: readonly TypeChoice[], kind: string, w: Pick
 // 打开资源库，筛到这一种不在本世界的（工具里的“从资源库添加…”）
 export function openLibraryFor(kind: string) {
   openPanel.value = null;
-  openRepo({ kind, filter: 'off', query: '', entry: undefined, edit: undefined });
+  openLibrary({ kind, off: true });
 }
 
 // 不是 TypePicker 的选择（下拉框、档案里的列表）下面的一行“从资源库添加…”

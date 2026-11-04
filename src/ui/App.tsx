@@ -23,7 +23,7 @@ import { Help } from './Help';
 import { MapView } from './MapView';
 import { MapsDialog } from './maps/MapsDialog';
 import { PackDialog } from './packs/PackDialog';
-import { RepoPanel } from './packs/RepoPanel';
+import { LibPanel } from './packs/LibPanel';
 import { MorePanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
 import { LayersPanel } from './panels/LayersPanel';
@@ -203,7 +203,7 @@ export function App() {
             <MapLegend />
             <HereCard />
             <Sheet />
-            <RepoPanel />
+            <LibPanel />
             {openPanel.value && <PanelHost id={openPanel.value} />}
           </>
         )}

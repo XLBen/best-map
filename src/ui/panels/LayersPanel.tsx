@@ -7,6 +7,7 @@ import { type ProjectionPref, type ViewMode, exec, focusSpecies, labelGroups, mo
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
+import { SEASON_NOTE } from '../copy';
 import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
 import { hasAnySettle } from '../settlements';
 import { kindOfView } from '../map/modes';
@@ -265,6 +266,7 @@ export function LayersPanel() {
       <section>
         <h5>季节</h5>
         <Seg value={season.value} options={SEASONS} onChange={(v) => (season.value = v)} wide />
+        <p class="hint">{SEASON_NOTE}</p>
       </section>
       <ReferenceBox />
     </>

@@ -66,6 +66,27 @@ export function defaultValue(f: FieldDesc): unknown {
   }
 }
 
+// 数的滑块（第五十九轮）：写了上下限和步子、一共不超过这么多格的数用滑块，别的（从 0.001 到一万这样的）还是框
+const SLIDER_MAX_STEPS = 2000;
+export function sliderScale(f: Pick<FieldDesc, 'min' | 'max' | 'step'>): { pos: (v: number) => number; at: (p: number) => number } | null {
+  const { min: lo, max: hi, step } = f;
+  if (lo === undefined || hi === undefined || !step || hi <= lo || (hi - lo) / step > SLIDER_MAX_STEPS) return null;
+  const digits = decimals(step);
+  return {
+    pos: (v) => Math.max(0, Math.min(1, (v - lo) / (hi - lo))),
+    at: (p) => {
+      const v = lo + Math.round((Math.max(0, Math.min(1, p)) * (hi - lo)) / step) * step;
+      return Number(Math.max(lo, Math.min(hi, v)).toFixed(digits));
+    },
+  };
+}
+const decimals = (step: number): number => {
+  const s = String(step);
+  const k = s.indexOf('.');
+  return k < 0 ? 0 : s.length - k - 1;
+};
+export const numberText = (v: number, step?: number): string => (step ? v.toFixed(decimals(step)) : String(v));
+
 // 列表里把第 from 项挪到第 to 项的位置（拖动换先后，第四十五轮）
 export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return [...list];

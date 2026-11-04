@@ -2,8 +2,8 @@ import { signal } from '@preact/signals';
 import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
 import { library, refreshLibrary } from '../../library';
-import { libEdits } from '../../library-edit';
-import { world } from '../../state';
+import { copyLibrary, libEdits } from '../../library-edit';
+import { showToast, world } from '../../state';
 import { HOME, type OpenRequest, type PageCtx, type Route, type SourceRef, WORLD_SOURCE, liveSource, liveStack, openTarget, popRoute, pushRoute, sameSource } from './pages';
 
 // 资源库面板的状态（第五十九轮）：看的是哪一份、点到了第几层。关上再打开回到原来的地方。
@@ -76,6 +76,16 @@ export function setSource(source: SourceRef) {
 export function moveToCopy(source: SourceRef) {
   const st = current();
   if (st) set({ source, stack: st.stack });
+}
+
+// 复制成我的库（内置的、导入的），换到副本上接着看
+export async function copyToMine(src: SourceRef): Promise<string | null> {
+  if (src.t !== 'lib') return null;
+  const made = await copyLibrary(src.key);
+  if (!made) return null;
+  moveToCopy({ t: 'lib', key: made.key });
+  showToast(made.stored ? '已复制成我的库' : '存不进浏览器：只在这次打开的页面里', !made.stored);
+  return made.key;
 }
 
 export function goTo(r: Route) {

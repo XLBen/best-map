@@ -10,7 +10,7 @@ import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../components/TypePicker';
 import { hasCountries } from '../countries';
 import { popText } from '../human';
-import { openNewItem, openRepoKind } from '../packs/RepoPanel';
+import { openLibrary, openNewItemIn } from '../packs/panel-open';
 import {
   CATEGORY_NAMES,
   SETTLE_KIND_NAMES,
@@ -135,7 +135,7 @@ export function RankMenu() {
       ]}
       onNew={() => {
         openPanel.value = null;
-        openNewItem('cityRank');
+        openNewItemIn('cityRank');
       }}
       newLabel="新的等级…"
       newTitle="在资源库里新建一种城市等级"
@@ -206,7 +206,7 @@ export function LandmarkMenu() {
       }))}
       onNew={() => {
         openPanel.value = null;
-        openNewItem('landmarkType');
+        openNewItemIn('landmarkType');
       }}
       newLabel="新类型…"
       newTitle="在资源库里新建一种地标类型"
@@ -258,7 +258,7 @@ export function PointMenu() {
       }))}
       onNew={() => {
         openPanel.value = null;
-        openNewItem('pointType');
+        openNewItemIn('pointType');
       }}
       newLabel="新类型…"
       newTitle="在资源库里新建一种点的类型，可以上传小图"
@@ -423,7 +423,7 @@ export function SettlementExtras() {
       )}
       <RemoveBox w={w} />
       <section class="row wrap">
-        <button class="small" onClick={() => openRepoKind('cityRank')}>
+        <button class="small" onClick={() => openLibrary({ kind: 'cityRank' })}>
           资源库…
         </button>
       </section>

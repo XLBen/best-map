@@ -1,7 +1,7 @@
 import { X } from 'lucide-preact';
 import { useState } from 'preact/hooks';
 import { skippedNote, world } from '../../state';
-import { openRepo } from '../packs/store';
+import { openLibrary } from '../packs/panel-store';
 import { skippedSummary } from '../skipped';
 
 // 缺了内容跳过的步骤（第三十轮）：提示条上面的一条横幅，说一次。几条时点“详情”在下面列出来；
@@ -27,7 +27,7 @@ export function SkippedBanner() {
           class="pill-btn"
           onClick={() => {
             skippedNote.value = null;
-            openRepo({ kind, filter: 'off', edit: undefined });
+            openLibrary({ kind, off: true });
           }}
         >
           从资源库添加…

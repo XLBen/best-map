@@ -1,0 +1,519 @@
+/* 资源库面板（packs/LibPanel.tsx，第五十九轮）：左上角一个窄的面板，层层点进去。token 都在 styles.css 的 :root */
+.lib-panel {
+  position: absolute;
+  top: 60px;
+  left: var(--sp-2);
+  bottom: 84px;
+  width: min(420px, calc(100% - 16px));
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  border-radius: var(--r-lg);
+  z-index: 15;
+  transform-origin: top left;
+  animation: repo-unfold 160ms ease-out;
+}
+/* 总表要宽 */
+.lib-panel.wide {
+  width: min(860px, calc(100% - 16px));
+}
+@media (prefers-reduced-motion: reduce) {
+  .lib-panel {
+    animation: none;
+  }
+}
+.lp-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-3);
+}
+.lp-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.lp-source,
+.lp-more {
+  position: relative;
+  min-width: 0;
+}
+.lp-source-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 200px;
+  min-height: var(--h-md);
+  padding: 0 var(--sp-2);
+  margin-left: calc(-1 * var(--sp-2));
+  font-size: var(--fs-lg);
+  background-color: transparent;
+}
+.lp-source-btn b {
+  font-weight: 600;
+}
+.lp-source-btn.open {
+  background-color: var(--press);
+}
+.lp-source-menu {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: calc(-1 * var(--sp-2));
+  z-index: 30;
+  width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--sp-1);
+  background: var(--glass-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+}
+.lp-source-menu.right {
+  left: auto;
+  right: 0;
+}
+.lp-menu-group {
+  margin: var(--sp-2) var(--sp-2) 2px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+.lp-menu-new {
+  margin-top: var(--sp-1);
+}
+.lp-import {
+  margin: 0 var(--sp-1);
+}
+.lp-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-md);
+  padding: 0 var(--sp-3) var(--sp-1) var(--sp-1);
+  overflow: hidden;
+}
+.lp-back {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 60%;
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2) 0 2px;
+  background-color: transparent;
+  color: var(--accent);
+}
+.lp-crumbs {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.lp-crumb {
+  display: inline;
+  min-height: 0;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.lp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-3) var(--sp-3);
+}
+.lp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+}
+.lp-note {
+  margin: var(--sp-2) 0;
+}
+
+/* 首页 */
+.lp-section {
+  margin-top: var(--sp-3);
+}
+.lp-section > h5 {
+  margin: 0 0 var(--sp-1);
+}
+.lp-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-1);
+}
+.lp-card,
+.lp-era {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  background-color: var(--fill);
+  border-radius: var(--r-md);
+  text-align: left;
+  white-space: normal;
+}
+.lp-era {
+  min-height: 48px;
+  margin-top: var(--sp-1);
+}
+.lp-card.empty .lp-card-title,
+.lp-era.empty .lp-card-title {
+  color: var(--muted);
+}
+.lp-card-icon {
+  flex: none;
+  display: flex;
+  color: var(--muted);
+}
+.lp-card-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.lp-card-title {
+  font-weight: 500;
+}
+.lp-count {
+  flex: none;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列表 */
+.lp-tools {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px 0 var(--sp-1);
+}
+.lp-tools input[type='search'] {
+  min-width: 0;
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.lp-rows {
+  display: flex;
+  flex-direction: column;
+}
+.lp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-md);
+  border-radius: var(--r-sm);
+  /* 列表可以有上千行：看不见的不排版 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32px;
+}
+.lp-row:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+.lp-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.lp-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-md);
+  margin: 0;
+  padding: 0 var(--sp-1);
+  background: transparent;
+  text-align: left;
+}
+.lp-row-name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lp-row-hint {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lp-on {
+  flex: none;
+  display: flex;
+  color: var(--ok);
+}
+.lp-chevron {
+  flex: none;
+  color: var(--faint);
+}
+.lp-section-link {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 0;
+  margin: 0 0 var(--sp-1);
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.lp-section-link h5 {
+  margin: 0;
+}
+
+/* 一项的页面 */
+.lp-item-head {
+  margin: var(--sp-1) 0 0;
+}
+.lp-item-head h3 {
+  margin: 0;
+}
+.lp-readonly {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+  padding: var(--sp-1) var(--sp-2);
+  background-color: var(--fill);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.lp-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  border: 0;
+}
+/* 只读：表单不能动，能展开、能点引用（<a>） */
+.lp-fields:disabled .slider,
+.lp-fields:disabled .ed-grip,
+.lp-fields:disabled .repo-grip {
+  pointer-events: none;
+  opacity: 0.6;
+}
+.lp-fields:disabled .ed-add,
+.lp-fields:disabled .ed-tag .icon {
+  display: none;
+}
+.lp-seg {
+  background-color: var(--fill);
+  border-radius: var(--r-md);
+}
+.lp-seg-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 36px;
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+  user-select: none;
+}
+.lp-seg-head b {
+  flex: none;
+  font-weight: 500;
+}
+.lp-seg-twist {
+  flex: none;
+  color: var(--muted);
+  transition: transform 120ms ease-out;
+}
+.lp-seg.open .lp-seg-twist {
+  transform: rotate(90deg);
+}
+.lp-seg-brief {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  text-align: right;
+}
+.lp-seg-body {
+  padding: 2px var(--sp-2) var(--sp-2);
+}
+.lp-seg-body > .hint:first-child {
+  margin-top: 0;
+}
+.lp-seg-body h5:first-child {
+  margin-top: 0;
+}
+.lp-related {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 36px;
+  margin: var(--sp-1) 0 0;
+  padding: 0 var(--sp-2);
+  background-color: var(--fill);
+  border-radius: var(--r-md);
+  text-align: left;
+}
+.lp-item-actions {
+  margin-top: var(--sp-2);
+  gap: var(--sp-1);
+}
+
+/* 表单里的两样：数的滑块、引用点过去 */
+.ed-number {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.ed-number .slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.ed-number .slider-label {
+  display: none;
+}
+.ref-one {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.ref-one > .ref-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ref-go {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-sm);
+  height: var(--h-sm);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  cursor: pointer;
+}
+.ref-go:hover {
+  background-color: var(--hover);
+}
+.ref-link {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* 总表 */
+.lp-table-page {
+  padding-bottom: var(--sp-2);
+}
+.lp-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+  margin: var(--sp-2) 0;
+  border-radius: var(--r-md);
+}
+.lp-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-sm);
+}
+.lp-table th {
+  font-weight: 400;
+  background: var(--surface);
+}
+.lp-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.lp-table-corner {
+  left: 0;
+  z-index: 3 !important;
+  min-width: 132px;
+}
+.lp-table-col {
+  padding: var(--sp-1) 2px;
+  vertical-align: bottom;
+}
+.lp-table-col button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: 0;
+  width: 26px;
+  margin: 0 auto;
+  padding: 2px 0;
+  background: transparent;
+}
+.lp-table-col-name {
+  writing-mode: vertical-rl;
+  max-height: 96px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  font-size: var(--fs-xs);
+}
+.lp-table-row {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  max-width: 160px;
+}
+.lp-table-row button,
+.lp-table-plain {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: 100%;
+  min-height: var(--h-sm);
+  margin: 0;
+  padding: 0 var(--sp-2) 0 var(--sp-1);
+  background: transparent;
+  text-align: left;
+}
+.lp-table td {
+  text-align: center;
+  padding: 0;
+  min-width: 26px;
+}
+.lp-table td input {
+  margin: 0;
+  vertical-align: middle;
+}
+.lp-table tbody tr:hover td {
+  background-color: var(--hover);
+}
+.lp-table-split th,
+.lp-table-split td {
+  border-top: 1px solid var(--line);
+}
+
+/* 窄窗口：铺满宽度，首页的卡片一列 */
+@media (max-width: 520px) {
+  .lib-panel,
+  .lib-panel.wide {
+    top: 104px;
+    bottom: 72px;
+    left: var(--sp-1);
+    width: calc(100% - 8px);
+  }
+}
