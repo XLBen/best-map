@@ -16,6 +16,6 @@
 - `idb.ts` IndexedDB（自动保存、检查点、网格、参考图、资源库、我的地图）
 - `maps.ts` 我的地图（存、盖掉、改名、删掉，连着哪一张）
 - `library.ts` 资源库（内置的树、我的资源、“来自《世界名》”、导入的；`saveItem`、`removeItem`、`keepInLibrary`；第五十九轮：包带版本 `rev`，同一版不再 `parsePack`）
-- `library-edit.ts` 改我的库（第五十九轮；第六十轮加 `setArrange` 换融入的安排、`applyItems` 几项一步）：`setItem` 只查这一项、只换到树根的路、写日志（localStorage），整个库晚一点才写（`FLUSH_MS`、关面板、切换库）；自己的撤销；`adopt` 读存储时补上日志；`copyLibrary`、`createLibrary`、`deleteLibrary`
+- `library-edit.ts` 改我的库（第五十九轮；第六十轮加 `setArrange` 换融入的安排、`applyItems` 几项一步；第六十一轮加 `setPack` 导入时整个换掉，一步撤销，先 `parsePack`）：`setItem` 只查这一项、只换到树根的路、写日志（localStorage），整个库晚一点才写（`FLUSH_MS`、关面板、切换库）；自己的撤销；`adopt` 读存储时补上日志；`copyLibrary`、`createLibrary`、`deleteLibrary`
 - `trust.ts` 信任过的脚本（按源码的 SHA-256）
 - `styles.css` 全部样式
