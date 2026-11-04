@@ -66,14 +66,15 @@
 
 ## 内容与资源包
 - `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）
-- `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip`）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
+- `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip` / `gate`，`gate` 是“限谁用”，全部落空就不能导入）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
 - `content/arrange.ts` 融入（第六十轮）：库的 `arrange`（下级 → 上级，只改显示）、讲得通的组合 `RELATIONS`（怎么读出下面有哪些、加和移出改哪一项）、预设 `PRESET_ARRANGE`、`childrenOf`、`parentsOf`、`looseItems`
 - `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/cleanable.ts`（第六十二轮）生成后没用到的：面板上变淡的、“清理没用到的”清的都是它，生态、河、湖、画风不算；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
 - `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样；`packs/nature.ts` 13 种生态；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）
 - `packs/import.ts` 生成要用的内容从资源包加进世界（时代包整个加时不带世界的底子，比重 0 的组点名才带），`importIntoPack` 把一个包的内容导入另一个包（撞名改名；第六十一轮：文化组放进“文化”下面自己的小包，取值放进同一维的小包，包不再整个拷贝）；`packs/names/` 内置地名风格（一个 JSON 一种，92 种；`eu4-a/b/c.ts` 是第四十三轮照 EU4 文化组补的 49 种，`fiction-a/b/c/d.ts` 是第四十四轮给奇幻、科幻的组补的 16 种）；`packs/eras/`、`packs/governments/`、`packs/settlements/` 见 [core-human.md](core-human.md)
 - `packs/source-diff.ts` 世界里的一项和来源的库比（第六十二轮）：`sourceDiff`（一样、不同、只差导入时去掉的引用、来源不在了）、`usedSourceItem`（用库里的版本）、`savedBackItem`（存回我的库）
-- `packs/closure.ts` 导入的依赖闭包（第六十一轮）：`importPreview` 算还会带上（每项写为什么）、可以带上、已经有了、会改名、去掉的引用、放不下；`importCommand` 导入本世界（一个 batch，变量走 `add_dimension`）；`importToPack` 导入库（不动安排）
+- `packs/import-gates.ts` 导入时一项能不能选（第六十四轮）：`importGates(来源, 目的地, 勾选, 去掉的)` 给 `free` / `have` / `fixable` / `gated`（写要什么）/ `full`（写原因）；`walkClosure` 走勾的项、子项（库的 `arrange`）、去不掉的引用，最小不动点；来源的表、比较用的字按对象记着
+- `packs/closure.ts` 导入（第六十一轮，第六十四轮重写）：`importPreview` 算清单（`list` 树形、`rows`）、`count`（等于 `rows.length`，就是真的写入的）、`stripCount`、`dropped`（灰的、放不下的，带原因）、补回；`importCommand` 导入本世界（一个 batch，变量走 `add_dimension`）；`importToPack` 导入库（不动安排）
 - `packs/add-dimension.ts` 从资源库给世界加一个变量（第五十四轮，“文化 ⋯”和时代规则的“加变量”用）：`dimensionOptions` 能加的；`addDimensionCommand` 批量：先加取值、取值组，再 `add_dimension`
 - `packs/switch.ts` 已有的世界换一个库的计划（第五十二轮）：`worldLibrary` 世界现在用的库；`librarySwitchPlan` 给出加什么、移出什么（来自旧库、新世界用新库不带的）、来源改写到哪里、还在用留下的。`commands/switch.ts` 的 `leaveLibrary` 在生成的命令里照着做（`switchLibrary`）世界自己加的变量（第五十四轮）：新库没有时带到新时代，取值不移出。
 - `packs/fantasy-*.ts` 奇幻的内容（生态、河流类型、湖泊类型、星球形态；`fantasy-water.ts` 第五十七轮的六种河），奇幻库新建世界时默认带上生态、河、湖
