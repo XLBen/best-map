@@ -98,6 +98,13 @@ describe('列表上的标记', () => {
     expect(lines.every((l) => /\d+$/.test(l.label))).toBe(true);
     expect(tidyText(plan)).toContain(`清掉 ${plan.removed.length} 项`);
     expect(tidyText(plan)).toContain('河、湖、生态');
+    // 包一层写历史里的字：移出的照样报出来（自己做的存进资源库），一次撤销
+    const before = JSON.stringify(e.world.small.content);
+    e.exec({ op: 'batch', label: '清理没用到的', commands: [plan.command!] });
+    expect(e.lastRemoved.length).toBe(plan.removed.length);
+    expect(e.history[e.history.length - 1].summary).toBe('清理没用到的');
+    e.undo();
+    expect(JSON.stringify(e.world.small.content)).toBe(before);
   });
 });
 

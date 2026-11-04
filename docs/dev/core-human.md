@@ -20,7 +20,6 @@
 - `population.ts` 人口、修补、笔刷（`paintPop`、`setCellPop`、`applyPopFix`）；`groups.ts` 人口群体的编号与每格成分
 - `add-dimension.ts` 给已有的世界加一维（第五十四轮）：现有的人原地分开，文化比例逐值不变（`fillPopulation`）；生成时后加的维度最后分开（`fillAddedDims`）；群体的上限 `MAX_POP_GROUPS`。`era.ts` 的 `composedDims`、`filledDims` 分哪几维排列组合，`MAX_DIMENSIONS` 每个时代最多 8 维
 - `layers.ts` 人口的几层、图例、档案的人口一栏、每省人口；`space.ts` 面积、距离、噪声、按份额长
-- `prune.ts` 删掉人文、国家时带进来的内容一起移出（第五十轮起生成后不再移出；清理见 `core/tidy.ts`）
 - `packs/eras/` 内置 6 个时代（一个 JSON 一个）、`values/` 共用的取值与宗教组、`cultures/` EU4 的 71 个文化组 410 个文化（一个地区一个 JSON）与奇幻、科幻的组（`fantasy.json` 11 组、`scifi.json` 9 组，第四十四轮）；奇幻的宗教组在 `fantasy.json` 时代文件的 `valueGroups`
 
 ## 国家与政体（第二十三轮、第二十六轮）

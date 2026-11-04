@@ -1060,6 +1060,7 @@ const contentHolder = new ContentHolder();
 // fresh：新建或打开了一个世界（不是编辑）
 async function handle(r: Response, fresh = false): Promise<boolean> {
   if (!r.ok) {
+    regenTrack.pending = null;
     showToast(r.error, true);
     return false;
   }
@@ -1075,6 +1076,7 @@ async function handle(r: Response, fresh = false): Promise<boolean> {
       }
     }
   }
+  regenTrack.pending = null;
   return true;
 }
 

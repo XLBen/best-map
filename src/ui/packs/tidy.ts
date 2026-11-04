@@ -31,7 +31,7 @@ export function tidyLines(plan: TidyPlan): { label: string; hint?: string }[] {
 
 export function tidyText(plan: TidyPlan): string {
   const n = plan.removed.length;
-  return `清掉 ${n} 项生成后没用到的内容，地图不变，可以撤销。${plan.kept.length ? `${plan.kept.length} 项清掉后地图会变，留着。` : ''}河、湖、生态、画风不清：现在没有的，以后可能用到。`;
+  return `清掉 ${n} 项生成后没用到的内容，地图不变，可以撤销。${plan.kept.length ? `${plan.kept.length} 项清掉后地图会变，留着。` : ''}自己做的、改过的存进资源库。河、湖、生态、画风不清：现在没有的，以后可能用到。`;
 }
 
 export async function tidyWorld(): Promise<boolean> {
@@ -57,5 +57,5 @@ export async function tidyWorld(): Promise<boolean> {
     ],
   });
   if (v !== 'ok') return false;
-  return exec(plan.command, '正在清理…');
+  return exec({ op: 'batch', label: `清理没用到的 · ${plan.removed.length} 项`, commands: [plan.command] }, '正在清理…');
 }
