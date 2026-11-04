@@ -242,6 +242,11 @@ describe('层层点进去', () => {
     expect(openTarget({ kind: 'culture', off: true }, ctx, undefined, 'medieval').source).toEqual(lib('medieval'));
     expect(openTarget({ kind: 'biome', off: true, entry: 'fantasy' }, ctx, 'modern', 'medieval').source).toEqual(lib('fantasy'));
     expect(openTarget({}, ctx, undefined, 'medieval')).toEqual({ source: WORLD_SOURCE, stack: [HOME] });
+    // 世界用的库里的都在本世界了：开第一个还有的库（第六十三轮，不给一个空的列表）
+    const eng = continents();
+    const c2 = { world: eng.world, lib: ctx.lib };
+    expect(openTarget({ kind: 'lakeType', off: true }, c2, 'medieval', 'medieval').source).toEqual(lib('fantasy'));
+    expect(openTarget({ kind: 'terrainClass', off: true }, c2, 'medieval', 'medieval').source).toEqual(lib('medieval'));
   });
 });
 

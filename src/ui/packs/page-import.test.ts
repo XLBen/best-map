@@ -4,7 +4,10 @@ import { type ResourcePack, packItems } from '../../../core/packs';
 import { builtinPacks } from '../../../core/packs/builtin-tree';
 import { importCommand, importPreview } from '../../../core/packs/closure';
 import { continents } from '../../../core/testing/fixtures';
-import type { LibraryEntry } from '../../library';
+import { type LibraryEntry, library } from '../../library';
+import { viewLibrary } from './PackDialog';
+import { closeLibrary, libPanel } from './panel-store';
+import { packDialog } from './store';
 import { type ImportWindow, addRows, askOf, chooseFile, chooseFrom, closeImport, defaultFrom, hereState, importWindow, openImport, otherLibOptions, pickSections, regenLine, setPicks, sourceOf, targetOf, toggleDep, toggleOptional, togglePick } from './page-import';
 import { type PageCtx, type SourceRef, rowsOf } from './page-source';
 
@@ -54,6 +57,19 @@ describe('勾', () => {
     expect(st().on).toEqual([{ kind: 'dimension', id: 'nation' }]);
     toggleOptional({ kind: 'dimension', id: 'nation' }, false);
     expect(st().on).toEqual([]);
+  });
+
+  it('弹窗里的“查看”：弹窗和导入窗口都关上，面板换到那个库（第六十三轮）', () => {
+    openImport({ target: MINE, from: 'modern' }, ctx());
+    packDialog.value = { view: 'packs' };
+    const had = library.value;
+    library.value = [...ctx().lib];
+    viewLibrary('modern');
+    expect(packDialog.value).toBeNull();
+    expect(importWindow.value).toBeNull();
+    expect(libPanel.value?.source).toEqual({ t: 'lib', key: 'modern' });
+    closeLibrary();
+    library.value = had;
   });
 
   it('太大的文件不读进内存，窗口里说为什么', async () => {

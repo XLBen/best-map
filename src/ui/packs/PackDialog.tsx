@@ -21,6 +21,7 @@ import { ScriptList, TrustBlock } from './Scripts';
 import { ModalHead } from '../common';
 import { askUser, download, knowIsolation, showToast, world } from '../../state';
 import { type DialogView, packDialog } from './store';
+import { closeImport } from './page-import';
 import { openLibrary } from './panel-store';
 
 // 资源库面板“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、读好的文件（解析、检查、信任，不运行任何脚本）、
@@ -29,6 +30,13 @@ import { openLibrary } from './panel-store';
 const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
+
+// “查看”：面板换到这个库。弹窗（还有下面的导入窗口）一起关上，不然盖着面板
+export function viewLibrary(key: string) {
+  close();
+  closeImport();
+  openLibrary({ entry: key });
+}
 
 // 按这个先后列：地名风格在最前，自定义场不列
 function dialogKinds(): ContentKind[] {
@@ -130,7 +138,7 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
         )}
       </div>
       <div class="file-actions">
-        <button class="small primary" onClick={() => openLibrary({ entry: e.key })} title="在面板上看这个库">
+        <button class="small primary" onClick={() => viewLibrary(e.key)} title="在面板上看这个库">
           查看
         </button>
         <button class="small" onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
@@ -225,7 +233,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         <p>{installed ? `“${p.name}”已在资源库里。` : `“${p.name}”是内置的。`}</p>
         <div class="modal-foot">
           <button onClick={close}>关闭</button>
-          <button class="primary" onClick={() => openLibrary({ entry: installed ?? '' })} title="在面板上看这个库">
+          <button class="primary" onClick={() => viewLibrary(installed ?? '')} title="在面板上看这个库">
             查看
           </button>
         </div>

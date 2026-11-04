@@ -47,7 +47,7 @@ const pick = (patch: Partial<typeof options.value>) => {
   openPanel.value = null;
   setOptions(patch);
 };
-const toRepo = (kind: string) => () => {
+const toLibrary = (kind: string) => () => {
   openPanel.value = null;
   openLibrary({ kind });
 };
@@ -592,7 +592,7 @@ function HumanInfo({ w, onDone }: { w: World; onDone: () => void }) {
         </button>
       </section>
       <section class="row wrap">
-        <button class="small" onClick={toRepo('culture')}>
+        <button class="small" onClick={toLibrary('culture')}>
           资源库…
         </button>
       </section>

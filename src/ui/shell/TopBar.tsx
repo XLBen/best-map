@@ -12,7 +12,7 @@ import { MapKindSwitch } from './MapKind';
 // 右边是指针、各类工具、图层（生态的色板在“自然”里）
 
 // 资源库：从左上角展开，再点一下关上
-function RepoButton() {
+function LibraryButton() {
   return (
     <button
       class={`tb-btn ${libPanel.value ? 'open' : ''}`}
@@ -63,7 +63,7 @@ export function TopBar() {
   return (
     <div class="topbar">
       <div class="tb-group">
-        <RepoButton />
+        <LibraryButton />
         <span class="tb-sep" />
         <PanelButton panel="world" icon={Globe} label="世界" title={`新建、保存、打开、资源库、导出\n${mapStatus()}`} />
         <PanelButton panel="more" icon={CircleEllipsis} label="更多" disabled={!w} title="历史、偏好、上手说明" />

@@ -1,7 +1,7 @@
 import { RELATIONS, looseItems, relationOf } from '../../../core/content/arrange';
 import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
 import type { Era } from '../../../core/human';
-import { canApply, packSections } from '../../../core/packs';
+import { canApply, packItems, packSections } from '../../../core/packs';
 import type { Species } from '../../../core/species';
 import { PLAIN_TYPE, type WaterType, perCellRule } from '../../../core/water-types';
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
@@ -663,7 +663,8 @@ export function waterRuleNote(kind: WaterKind, t: WaterType): string {
 // ---------- 打开：别处点进来 ----------
 
 // 工具里的“从资源库添加…”、缺内容的提示、“城市 ⋯”：打开哪一份的哪一页。
-// 在世界里看的（没写 off）开本世界；“从资源库添加”开世界用的库（没有时默认的库），只列还不在本世界的
+// 在世界里看的（没写 off）开本世界；“从资源库添加”开世界用的库（没有时默认的库），只列还不在本世界的。
+// 这个库里的都在本世界了就开第一个还有的库（中世纪的世界找血河，在奇幻里），不要给一个空的列表
 export interface OpenRequest {
   kind?: string;
   // 只看不在本世界的
@@ -672,10 +673,21 @@ export interface OpenRequest {
   entry?: string;
 }
 export function openTarget(req: OpenRequest, ctx: PageCtx, worldLib: string | undefined, fallback: string): { source: SourceRef; stack: Route[] } {
-  const source: SourceRef = req.entry && ctx.lib.some((e) => e.key === req.entry) ? { t: 'lib', key: req.entry } : req.off ? { t: 'lib', key: worldLib && ctx.lib.some((e) => e.key === worldLib) ? worldLib : fallback } : WORLD_SOURCE;
+  const first = worldLib && ctx.lib.some((e) => e.key === worldLib) ? worldLib : fallback;
+  const source: SourceRef = req.entry && ctx.lib.some((e) => e.key === req.entry) ? { t: 'lib', key: req.entry } : req.off ? { t: 'lib', key: libWithMissing(req.kind, first, ctx) } : WORLD_SOURCE;
   const stack: Route[] = [HOME];
   if (req.kind && kindOf(req.kind)) stack.push({ p: 'list', kind: req.kind, ...(req.off && source.t === 'lib' ? { hideOn: true } : {}) });
   return { source, stack };
+}
+
+function libWithMissing(kindId: string | undefined, first: string, ctx: PageCtx): string {
+  const kind = kindId ? kindOf(kindId) : undefined;
+  if (!kind || !ctx.world) return first;
+  const have = new Set(kind.inWorld(ctx.world).map((x) => itemId(kind, x)));
+  const missing = (e: PageCtx['lib'][number]) => packItems(e.pack, kind.pack.key).some((x) => !have.has(itemId(kind, x)));
+  const here = ctx.lib.find((e) => e.key === first);
+  if (here && missing(here)) return first;
+  return ctx.lib.find(missing)?.key ?? first;
 }
 
 // ---------- ⌘Z 撤销哪一边 ----------
