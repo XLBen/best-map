@@ -22,6 +22,7 @@ import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
 import { MapsDialog } from './maps/MapsDialog';
+import { ImportDialog } from './packs/ImportDialog';
 import { PackDialog } from './packs/PackDialog';
 import { LibPanel } from './packs/LibPanel';
 import { MorePanel, WorldMenu } from './panels/ActionsPanel';
@@ -215,6 +216,7 @@ export function App() {
         </div>
         <CursorHint />
         <Wizard />
+        <ImportDialog />
         <PackDialog />
         <MapsDialog />
         <Help />

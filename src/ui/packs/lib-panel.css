@@ -689,3 +689,152 @@ body.lp-dragging * {
     width: calc(100% - 8px);
   }
 }
+
+/* ---------- 导入窗口（第六十一轮） ---------- */
+.modal.import {
+  width: 640px;
+}
+.imp-source {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.imp-pick select {
+  width: 100%;
+}
+.imp-file {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 0;
+}
+.imp-tools {
+  margin-top: var(--sp-2);
+  padding: 0;
+}
+.imp-list-box {
+  max-height: 38vh;
+  overflow-y: auto;
+  margin-top: var(--sp-2);
+  padding: var(--sp-1);
+  border-radius: var(--r-md);
+  background: var(--field);
+}
+.imp-group + .imp-group {
+  margin-top: 2px;
+}
+.imp-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+}
+.imp-group-head .imp-check {
+  flex: 1;
+  min-width: 0;
+}
+.imp-twist svg {
+  transition: transform 0.12s;
+}
+.imp-group.open .imp-twist svg {
+  transform: rotate(90deg);
+}
+.imp-rows {
+  padding-left: 26px;
+}
+.imp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-sm);
+  border-radius: var(--r-sm);
+}
+.imp-row:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+label.check.imp-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  flex: 1;
+}
+.imp-check .hint {
+  flex: none;
+  max-width: 45%;
+}
+.imp-name {
+  min-width: 0;
+}
+.imp-state {
+  flex: none;
+  padding-right: var(--sp-1);
+}
+.imp-more {
+  margin: var(--sp-1) 0 var(--sp-1) 22px;
+}
+.imp-summary {
+  margin-top: var(--sp-3);
+  max-height: 34vh;
+  overflow-y: auto;
+}
+.imp-bring h5 {
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+.imp-dep-group + .imp-dep-group {
+  margin-top: var(--sp-1);
+}
+.imp-dep-group h6 {
+  margin: var(--sp-1) 0 2px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+.imp-dep {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-height: var(--h-sm);
+  flex-wrap: wrap;
+}
+.imp-dep label.check.imp-check {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+.imp-dep .imp-check .hint {
+  max-width: none;
+}
+.imp-dep .imp-name {
+  flex: none;
+}
+.imp-dep.off .imp-name {
+  color: var(--muted);
+}
+.imp-why {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding-left: 22px;
+}
+.imp-fold {
+  margin-top: var(--sp-2);
+}
+.imp-fold summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
+.imp-fold-body {
+  padding: var(--sp-1) 0 0 var(--sp-3);
+}
+.imp-list {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-3);
+}
+.imp-regen {
+  margin: var(--sp-2) 0 0;
+}
+@media (max-width: 520px) {
+  .imp-check .hint {
+    max-width: 38%;
+  }
+}

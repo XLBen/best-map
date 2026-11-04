@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronLeft, Ellipsis, Plus, Redo2, Undo2, X } from 'lucide-preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { packFileName, readPack } from '../../../core/packs';
+import { packFileName } from '../../../core/packs';
 import { library } from '../../library';
 import { copyLibrary, createLibrary, deleteLibrary, libEdits } from '../../library-edit';
 import { askText, askUser, canRedo, canUndo, download, redo, showToast, undo, world } from '../../state';
@@ -11,12 +11,13 @@ import { PageItem } from './PageItem';
 import { PageList } from './PageList';
 import { WaterTablePage } from './PageWater';
 import { dragView } from './page-drag';
-import { fileLabel, openPackImport, openPackList, packDialog } from './store';
+import { pressImport } from './page-import';
+import { openPackList, packDialog } from './store';
 import { tidyWorld } from './tidy';
 
 // 新的资源库面板（第五十九轮）：左上角一个面板，标题是下拉（本世界 / 内置的库 / 我的库 / + 新建一个库），切换后界面完全一样。
 // 层层点进去：首页 → 列表 → 这一项的页面，左上角返回。逻辑都在 pages.ts，这里只画。
-// 右上角“导入”先打开现有的导入流程（第六十一轮做新窗口）
+// 右上角“导入”打开导入窗口（第六十一轮，ImportDialog.tsx）
 
 // ---------- 标题的下拉 ----------
 
@@ -91,10 +92,6 @@ function SourcePicker({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
 }
 
 // ---------- 右上角 ----------
-
-function importFile(file: File) {
-  void file.text().then((text) => openPackImport(readPack(text, fileLabel(file.name)), file.name));
-}
 
 async function renameLibrary(key: string, name: string) {
   const r = await askText({
@@ -261,19 +258,9 @@ export function LibPanel() {
         <SourcePicker src={source} ctx={ctx} />
         <span class="lp-actions">
           <UndoButtons src={source} ctx={ctx} />
-          <label class="file-button small lp-import" title="从文件导入资源包">
+          <button class="small lp-import" disabled={source.t === 'world' && !ctx.world} title={source.t === 'world' && !ctx.world ? '先新建或打开世界' : '从别的库、文件挑几项'} onClick={() => void pressImport(source, ctx)}>
             导入
-            <input
-              type="file"
-              accept=".json,application/json"
-              hidden
-              onChange={(ev) => {
-                const f = (ev.target as HTMLInputElement).files?.[0];
-                if (f) importFile(f);
-                (ev.target as HTMLInputElement).value = '';
-              }}
-            />
-          </label>
+          </button>
           <MoreMenu src={source} ctx={ctx} />
           <button class="icon-btn" onClick={closeLibrary} title="关闭">
             <X />

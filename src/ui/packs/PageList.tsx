@@ -3,12 +3,13 @@ import { useMemo, useState } from 'preact/hooks';
 import { kindOf } from '../../../core/content/registry';
 import { libEdits } from '../../library-edit';
 import { showToast } from '../../state';
-import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, entryOf, listPage, sourceKind } from './pages';
+import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, entryOf, listPage, rowsOf, sourceKind } from './pages';
 import { newItemIn } from './page-actions';
+import { addRows, openImport, otherLibOptions } from './page-import';
 import { InsideRows } from './PageChildren';
+import { RefPicker } from './RefPicker';
 import { copyToMine, goTo, libPanel } from './panel-store';
-import { addCommand, packAddCommand, packTree } from './repo';
-import { runTrusted, swatchOf } from './repo-actions';
+import { swatchOf } from './repo-actions';
 
 // 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。库里的每一行右边写在不在本世界（能添加）。
 // 我的库里能拖动换先后（同一个小包里）
@@ -20,10 +21,8 @@ function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCt
   const st = r.row.status;
   const [over, setOver] = useState(false);
   const inLib = src.t === 'lib' && !!ctx.world;
-  const add = () => {
-    const cmd = ctx.world ? addCommand(r.row, ctx.world) : null;
-    if (cmd) void runTrusted(cmd, '正在添加…');
-  };
+  // 走导入的闭包（第六十一轮）：一个政体也带上派系，不留下找不到的引用
+  const add = () => addRows([r.row], src, ctx, `添加到本世界：${r.kind.label}“${r.name}”`);
   return (
     <div
       class={`lp-row ${over ? 'drop-before' : ''}`}
@@ -79,16 +78,26 @@ function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCt
   );
 }
 
+// 别的库里有、这一份里没有的：选一项打开导入窗口，勾好它
+function FromOtherLib({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageCtx }) {
+  const options = useMemo(() => otherLibOptions(p.kind.id, src, ctx), [p.kind.id, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world]);
+  if (!options.length) return null;
+  return (
+    <RefPicker add title="从别的库加" options={options} onPick={(id) => {
+      const o = options.find((x) => x.id === id);
+      if (o) openImport({ target: src, from: o.lib, pick: { kind: p.kind.id, id } }, ctx);
+    }}>
+      从别的库加
+    </RefPicker>
+  );
+}
+
 // 这一份里还不在本世界的全部添加
 function AddAll({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageCtx }) {
   const e = entryOf(src, ctx);
   const left = p.sections.some((s) => s.rows.some((r) => !r.row.status.on && !r.row.status.locked));
   if (!e || !ctx.world || !left) return null;
-  const run = () => {
-    const top = packTree(ctx.world, [e], p.kind.id).library[0];
-    const cmd = top && ctx.world ? packAddCommand(top, ctx.world) : null;
-    if (cmd) void runTrusted(cmd, '正在添加…');
-  };
+  const run = () => addRows(rowsOf(src, p.kind, ctx).filter((r) => !r.status.on && !r.status.locked), src, ctx, `添加到本世界：${p.title}`);
   return (
     <button class="small" title="这一种还不在本世界的都添加" onClick={run}>
       全部添加
@@ -113,6 +122,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
         {(p.searchable || q) && <input class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
         {!(p.searchable || q) && <span class="grow" />}
         <AddAll p={p} src={src} ctx={ctx} />
+        {!p.readonly && <FromOtherLib p={p} src={src} ctx={ctx} />}
         {p.readonly && sourceKind(src, ctx) !== 'world' && (
           <button class="small" title={p.readonly} onClick={() => void copyToMine(src)}>
             复制成我的库

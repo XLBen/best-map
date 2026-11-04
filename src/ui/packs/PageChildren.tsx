@@ -9,6 +9,7 @@ import { libRoots } from '../packChoice';
 import { showToast } from '../../state';
 import { arrangeFor } from './page-arrange';
 import { applyArrange, linkChild, newChildIn, unlinkChild } from './page-actions';
+import { openImport, otherLibOptions } from './page-import';
 import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type InsideRow, shownRows } from './page-children';
 import { dragOutOf } from './page-drag';
 import { PageItem } from './PageItem';
@@ -85,6 +86,7 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
     applyArrange(src, splitOut(arrangeFor(src, ctx), s.key), `拆出${s.title}`, ctx);
   };
   const brief = s.rows.slice(0, 3).map((r) => r.name).join('、');
+  const others = useMemo(() => (!shut && s.canLink ? otherLibOptions(s.kind.id, src, ctx, (x) => s.relation.fits?.(parent, x as Obj) ?? true) : []), [shut, s.canLink, s.kind.id, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world, parent]);
   return (
     <section class={`lp-seg lp-child ${shut ? '' : 'open'}`} ref={zone}>
       <div
@@ -139,10 +141,13 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
           {s.note && <p class="hint">{s.note}</p>}
           {(s.canLink || s.canNew) && (
             <div class="row lp-child-foot">
-              {s.canLink && s.options.length > 0 && (
-                <RefPicker add options={s.options} onPick={(id) => {
+              {s.canLink && s.options.length + others.length > 0 && (
+                <RefPicker add options={[...s.options, ...others]} onPick={(id) => {
                   const x = s.options.some((o) => o.id === id) ? (itemsOf(src, s.kind, ctx) as readonly Obj[]).find((c) => c.id === id) : undefined;
-                  if (x) void linkChild(src, s.relation, parent, x, ctx);
+                  if (x) return void linkChild(src, s.relation, parent, x, ctx);
+                  // 别的库里的：打开导入窗口，勾好这一项；导入时放到这个上级下面（同一步）
+                  const o = others.find((y) => y.id === id);
+                  if (o) openImport({ target: src, from: o.lib, pick: { kind: s.kind.id, id }, onto: { relation: s.relation, parent: String(parent.id), child: { kind: s.kind.id, id } } }, ctx);
                   else showToast('这一份里没有它', true);
                 }}>
                   {s.addLabel}

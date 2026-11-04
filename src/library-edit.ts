@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { type Arrange, arrangeOf, arrangeProblems, sameArrange, withArrange } from '../core/content/arrange';
 import { type ContentKind, itemId, kindByPackKey, kindOf } from '../core/content/registry';
-import { PACK_MAX_SUBPACKS, type PackNode, type ResourcePack, findPack, itemErrors, ownItems, packIdFor, packItems, sameItem, subPacks, walkPacks } from '../core/packs';
+import { PACK_MAX_SUBPACKS, type PackNode, type ResourcePack, findPack, itemErrors, ownItems, packIdFor, packItems, parsePack, sameItem, subPacks, walkPacks } from '../core/packs';
 import { type LibraryEntry, type Stored, library, nextRev, refreshLibrary, rememberParsed, removePack, useLibraryOverlay, writeStored } from './library';
 
 // 改我的库（第五十九轮）：改一项不再整库校验、整库写盘，也有自己的撤销（和世界的撤销栈分开，切走不丢）。
@@ -348,6 +348,17 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
       if (sameArrange(arrangeOf(h.pack), arrange)) return { ok: true, noop: true };
       const pack = withArrange(h.pack, arrange);
       commit(key, h, pack, { label: label ?? '改融入', before: h.pack, after: pack }, null);
+      return { ok: true };
+    },
+
+    // 整个包换掉（导入，第六十一轮：core/packs/closure.ts 算好的）：一步撤销，马上写。写下去的要读得回来，不然刷新就没了
+    setPack(key: string, pack: ResourcePack, label?: string): EditResult {
+      const h = headOf(key);
+      if (!h) return { ok: false, error: '这个库不能改' };
+      if (pack === h.pack) return { ok: true, noop: true };
+      const parsed = parsePack(pack);
+      if (!parsed.ok) return { ok: false, error: parsed.errors[0] };
+      commit(key, h, pack, { label: label ?? '导入', before: h.pack, after: pack }, null);
       return { ok: true };
     },
 

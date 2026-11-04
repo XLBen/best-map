@@ -13,6 +13,8 @@ export function LibraryPick({
   newWorld,
   compact,
   disabled,
+  any,
+  exclude,
 }: {
   value: string | null;
   onChange: (key: string) => void;
@@ -20,8 +22,11 @@ export function LibraryPick({
   newWorld?: boolean;
   compact?: boolean;
   disabled?: boolean;
+  // 资源库里的每一个都列（导入窗口：不完整的库也能从里面挑几项）；exclude：除了这一个
+  any?: boolean;
+  exclude?: string;
 }) {
-  const options = libraryOptions(lib, newWorld);
+  const options = (any ? lib.map((e) => ({ key: e.key, name: e.pack.name, builtin: e.builtin })) : libraryOptions(lib, newWorld)).filter((o) => o.key !== exclude);
   // 世界用的库已经不在资源库里（删掉了）：也列着
   const gone = value && !options.some((o) => o.key === value) ? [{ key: value, name: packLabel(lib, [value]), builtin: false }] : [];
   const builtin = options.filter((o) => o.builtin);

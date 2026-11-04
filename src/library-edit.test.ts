@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { itemId, kindOf } from '../core/content/registry';
 import { type ResourcePack, packItems, parsePack, walkPacks } from '../core/packs';
 import { builtinPacks, worldPartsOf } from '../core/packs/builtin-tree';
+import { importToPack } from '../core/packs/closure';
 import { packImportCommands } from '../core/packs/import';
 import { type LibraryEntry, type Stored, installPack, library, refreshLibrary } from './library';
 import { FLUSH_MS, FLUSH_SOON_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
@@ -566,5 +567,53 @@ describe('融入的安排', () => {
     expect(cur()).toBe(before);
     expect(ed.applyItems('mine', [{ kind: 'culture', item: c1, add: true }]).ok).toBe(false);
     await ed.flushAll();
+  });
+});
+
+describe('导入：整个包换掉（第六十一轮）', () => {
+  const src = (): ResourcePack => ({
+    format: 'map2-pack',
+    version: 1,
+    id: 'src',
+    name: '来源',
+    cultureGroups: [{ id: 'h', name: '依赖的组', color: '#123456', weight: 3 }],
+    cultures: [{ id: 'c9', group: 'h', name: '九', color: '#654321' }],
+    governments: [{ id: 'gv', name: '政体', category: ['monarchy'], titles: '王国', size: 1, expansion: 0.3, coastal: 0, urbanization: 1, cohesion: 0.5, vassals: 0.2, nomadic: 0, only: [{ cultureGroups: ['h'] }] }],
+  });
+
+  it('一步撤销全撤，重做回来；马上写进存储（不等停手），新的编辑器读回来还在；读不回来的不写', async () => {
+    const { ed, cur, packs, wal, backend } = setup();
+    const before = cur();
+    const r = importToPack({ source: src(), target: { t: 'pack', pack: before }, picks: [{ kind: 'government', id: 'gv' }, { kind: 'culture', id: 'c9' }] });
+    expect(r.preview.count).toBe(3);
+    expect(ed.setPack('mine', r.pack, '导入 3 项')).toEqual({ ok: true });
+    expect(cur()).toBe(r.pack);
+    expect(packItems<{ id: string; weight?: number }>(cur(), 'cultureGroups').find((g) => g.id === 'h')!.weight).toBe(0);
+    await ed.flushAll();
+    expect(wal.has('mine')).toBe(false);
+    expect(packs.get('mine')!.pack).toBe(r.pack);
+    // 刷新页面：存着的就是导入后的，读得回来
+    const parsed = parsePack(JSON.parse(JSON.stringify(packs.get('mine')!.pack)));
+    expect(parsed.ok).toBe(true);
+    const again = createLibEditor(backend, { entries: () => [], publish: () => {} });
+    if (parsed.ok) expect(packItems<{ id: string }>(again.adopt(packs.get('mine')!, parsed.pack), 'governments').map((g) => g.id)).toEqual(['gv']);
+    // 撤销一步回到原来的树根，别的小包是同一个对象
+    expect(ed.undo('mine')).toBe('导入 3 项');
+    expect(cur()).toBe(before);
+    await ed.flushAll();
+    expect(packs.get('mine')!.pack).toBe(before);
+    expect(ed.redo('mine')).toBe('导入 3 项');
+    expect(cur()).toBe(r.pack);
+    expect(ed.canUndo('mine')).toBe(true);
+    // 写坏的包不收
+    const bad = { ...cur(), nonsense: [] } as ResourcePack;
+    expect(ed.setPack('mine', bad).ok).toBe(false);
+    expect(cur()).toBe(r.pack);
+    await ed.flushAll();
+  });
+
+  it('内置的库、不存在的库不能换', () => {
+    const { ed } = setup();
+    expect(ed.setPack('nope', pack()).ok).toBe(false);
   });
 });
