@@ -69,8 +69,14 @@ export const FORMS_PATH: readonly string[] = [DEFAULT_LIBRARY, 'forms'];
 export const LIBRARY_BASE_PACKS: ReadonlySet<string> = new Set(['base', 'nature', 'names', 'forms', 'styles', 'tiers', 'water']);
 // 一个库新建世界时加的小包（第三十轮起默认这几个：基础、自然、中文地名、画风、国家等级；第五十七轮加上现实的水系）
 // 奇幻库另带奇幻的生态、河、湖（第五十七轮）：第五十二轮以后向导不能勾小包，不带就选不到。放在水系前面：类型的先后是前面的说了算，奇幻的河先定
-export const worldPartsOf = (key: string): string[][] => [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers'], ...(key === 'fantasy' ? [[key, 'biomes'], [key, 'rivers'], [key, 'lakes']] : []), [key, 'water']];
-export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = worldPartsOf(DEFAULT_LIBRARY);
+// 第五十九轮：看小包在不在，不看键：奇幻库复制成我的库（键变了）以后照样带（root：这个库；省略时按内置的库找）
+const EXTRA_WORLD_PARTS = ['biomes', 'rivers', 'lakes'];
+export function worldPartsOf(key: string, root?: PackNode): string[][] {
+  const node = root ?? builtinPacks().find((p) => p.id === key);
+  const extra = EXTRA_WORLD_PARTS.filter((id) => (Array.isArray(node?.packs) ? node.packs : []).some((c) => c.id === id));
+  return [[key, 'base'], [key, 'nature'], [key, 'names', 'zh'], [key, 'styles'], [key, 'tiers'], ...extra.map((id) => [key, id]), [key, 'water']];
+}
+export const DEFAULT_WORLD_PACKS: readonly (readonly string[])[] = [[DEFAULT_LIBRARY, 'base'], [DEFAULT_LIBRARY, 'nature'], [DEFAULT_LIBRARY, 'names', 'zh'], [DEFAULT_LIBRARY, 'styles'], [DEFAULT_LIBRARY, 'tiers'], [DEFAULT_LIBRARY, 'water']];
 
 // 没被时代列出的政体按类别归到哪个时代
 const CATEGORY_ERA: Record<string, string> = {

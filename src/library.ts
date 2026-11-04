@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { PACK_FORMAT, PACK_VERSION, type PackItem, type PackNode, type ResourcePack, addToPack, packIdFor, packItems, parsePack, sameItem, subPacks, walkPacks } from '../core/packs';
 import type { PlanetForm } from '../core/planet-form';
 import { builtinPacks, isBuiltinSame } from '../core/packs/builtin-tree';
-import { allKinds, itemId, kindByPackKey, kindOf } from '../core/content/registry';
+import { allKinds, itemId, kindByPackKey, kindOf, registryVersion } from '../core/content/registry';
 import { idbAll, idbTx } from './idb';
 import { addTrustedSource } from './trust';
 
@@ -23,11 +23,13 @@ export interface LibraryEntry {
   installedAt: number;
 }
 
-interface Stored {
+export interface Stored {
   key: string;
   pack: ResourcePack;
   installedAt: number;
   mine?: boolean;
+  // 第五十九轮：第几版（每写一次变大）。版本没变的不再按格式查一遍；另一边的改动（别的包、别的页面）靠它认出来
+  rev?: number;
 }
 
 const BUILTINS: readonly LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
@@ -39,12 +41,45 @@ export const library = signal<LibraryEntry[]>([...BUILTINS]);
 // 存不进浏览器时留在这里（这一次打开页面期间有效）
 const memory = new Map<string, Stored>();
 
+// 查过格式的（第五十九轮）：同一版不再查一遍。一个带六个库的存储每次读要查约 9 MB 的内容
+const parsed = new Map<string, { rev: number; reg: number; pack: ResourcePack }>();
+function parsedPack(s: Stored): ResourcePack | null {
+  const hit = parsed.get(s.key);
+  if (s.rev && hit?.rev === s.rev && hit.reg === registryVersion()) return hit.pack;
+  const r = parsePack(s.pack);
+  if (!r.ok) return null;
+  if (s.rev) parsed.set(s.key, { rev: s.rev, reg: registryVersion(), pack: r.pack });
+  return r.pack;
+}
+
+// 我的库正在改的那一份（library-edit.ts，第五十九轮）：没写进存储的改动在内存里，读存储时换上它
+type Adopt = (rec: Stored, pack: ResourcePack) => ResourcePack;
+let adopt: Adopt = (_, pack) => pack;
+export function useLibraryOverlay(fn: Adopt) {
+  adopt = fn;
+}
+
+// 写一个包：写不进去时留在内存里（这一次打开的页面里有效）
+let lastRev = 0;
+export const nextRev = () => (lastRev = Math.max(lastRev + 1, Date.now()));
+export async function writeStored(rec: Stored): Promise<boolean> {
+  if (!rec.rev) rec.rev = nextRev();
+  try {
+    await idbTx(['packs'], 'readwrite', (s) => s.put(rec, rec.key));
+    memory.delete(rec.key);
+    return true;
+  } catch {
+    memory.set(rec.key, rec);
+    return false;
+  }
+}
+
 function order(list: Stored[]): LibraryEntry[] {
   const entries: LibraryEntry[] = [];
   for (const s of list) {
     // 存着的数据按现在的格式再查一遍：以前的版本存的、被改坏的不列出来
-    const r = parsePack(s.pack);
-    if (r.ok) entries.push({ key: s.key, pack: r.pack, builtin: false, mine: !!s.mine, installedAt: s.installedAt });
+    const pack = parsedPack(s);
+    if (pack) entries.push({ key: s.key, pack: adopt(s, pack), builtin: false, mine: !!s.mine, installedAt: s.installedAt });
   }
   entries.sort((a, b) => Number(b.mine) - Number(a.mine) || a.installedAt - b.installedAt);
   return [...BUILTINS, ...entries];
@@ -58,7 +93,7 @@ export async function refreshLibrary(): Promise<LibraryEntry[]> {
     // 读不了：只有这一次装的
   }
   const byKey = new Map(stored.map((s) => [s.key, s]));
-  for (const [k, s] of memory) if (!byKey.has(k)) byKey.set(k, s);
+  for (const [k, s] of memory) if ((s.rev ?? 0) >= (byKey.get(k)?.rev ?? 0)) byKey.set(k, s);
   library.value = order([...byKey.values()]);
   return library.value;
 }
@@ -78,14 +113,7 @@ export function inLibrary(pack: ResourcePack): LibraryEntry | undefined {
 export async function installPack(pack: ResourcePack, opts: { mine?: boolean } = {}): Promise<{ entry: LibraryEntry; ok: boolean }> {
   const key = libraryKey(pack);
   const rec: Stored = { key, pack: structuredClone(pack), installedAt: Date.now(), ...(opts.mine ? { mine: true } : {}) };
-  let ok = true;
-  try {
-    await idbTx(['packs'], 'readwrite', (s) => s.put(rec, key));
-    memory.delete(key);
-  } catch {
-    ok = false;
-    memory.set(key, rec);
-  }
+  const ok = await writeStored(rec);
   await refreshLibrary();
   return { entry: library.value.find((e) => e.key === key) ?? { key, pack, builtin: false, mine: !!opts.mine, installedAt: rec.installedAt }, ok };
 }
@@ -94,6 +122,7 @@ export async function installPack(pack: ResourcePack, opts: { mine?: boolean } =
 export async function removePack(key: string): Promise<void> {
   if (isBuiltinKey(key)) return;
   memory.delete(key);
+  parsed.delete(key);
   try {
     await idbTx(['packs'], 'readwrite', (s) => s.delete(key));
   } catch {
@@ -176,13 +205,7 @@ export async function removeItem(entryKey: string, key: string, id: string): Pro
   }
   const r = parsePack(pack);
   if (!r.ok) return { ok: false, error: r.errors[0] };
-  const rec: Stored = { key: entryKey, pack: r.pack, installedAt: cur.installedAt, mine: true };
-  try {
-    await idbTx(['packs'], 'readwrite', (s) => s.put(rec, entryKey));
-    memory.delete(entryKey);
-  } catch {
-    memory.set(entryKey, rec);
-  }
+  await writeStored({ key: entryKey, pack: r.pack, installedAt: cur.installedAt, mine: true });
   await refreshLibrary();
   return { ok: true };
 }
@@ -201,15 +224,7 @@ export async function editMineList(path: readonly string[], key: string, fn: (li
   node[key] = fn([...(node[key] as unknown[])]);
   const r = parsePack(pack);
   if (!r.ok) return { ok: false, error: r.errors[0] };
-  const rec: Stored = { key: cur.key, pack: r.pack, installedAt: cur.installedAt, mine: true };
-  let stored = true;
-  try {
-    await idbTx(['packs'], 'readwrite', (s) => s.put(rec, cur.key));
-    memory.delete(cur.key);
-  } catch {
-    stored = false;
-    memory.set(cur.key, rec);
-  }
+  const stored = await writeStored({ key: cur.key, pack: r.pack, installedAt: cur.installedAt, mine: true });
   await refreshLibrary();
   return stored ? { ok: true } : { ok: true, error: '存不进浏览器：只在这次打开的页面里' };
 }

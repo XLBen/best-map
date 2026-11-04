@@ -199,7 +199,7 @@ export function beyondGroups(small: Small | null | undefined, library: string | 
 
 // 新建世界那一步里要加的小包：库里世界的底子（自己的库里没有这些小包时不算）
 export function worldContentPacks(library: string | null, lib: readonly LibraryEntry[]): string[][] {
-  return library ? worldPartsOf(library).filter((x) => nodeAt(lib, x)) : [];
+  return library ? worldPartsOf(library, nodeAt(lib, [library])).filter((x) => nodeAt(lib, x)) : [];
 }
 
 // 新建世界那一步里加的内容（生态、地形类别、地名风格……）

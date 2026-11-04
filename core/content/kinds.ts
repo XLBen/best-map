@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { type IslandType, ISLAND_HEIGHTS, ISLAND_LOOKS, ISLAND_SHAPES, islandTypeSchema, islandTypesOf } from '../island-types';
-import { type LakeType, lakeTypeSchema, lakeTypesOf } from '../lake-types';
+import { LAKE_STYLES, LAKE_STYLE_LABEL, type LakeType, lakeTypeSchema, lakeTypesOf } from '../lake-types';
 import { FEATURE_INFO, type FeatureType } from '../features';
 import { type NameStyle, nameStyleSchema, sampleNames, styleInUse, styleNotes, styleProblems, worldStyles } from '../name-styles';
 import { type PlanetForm, planetFormSchema } from '../planet-form';
 import { DEFAULT_LOOK, type MapStyle, mapStyleSchema, worldMapStyles } from '../map-style';
-import { RIVER_STYLES, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
+import { RIVER_STYLES, RIVER_STYLE_LABEL, type RiverType, riverTypeSchema, riverTypesOf } from '../river-types';
 import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
 import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
@@ -127,6 +127,7 @@ registerKind<Species>({
   inWorld: (w) => w.small.species,
   enable: (sp, w) => (w.small.species.some((x) => x.id === sp.id) ? { op: 'update_species', id: sp.id, patch: sp as unknown as Record<string, unknown> } : { op: 'add_species', species: sp }),
   disable: (id) => ({ op: 'remove_species', id }),
+  blank: () => ({ id: 'my-biome', name: '新生态', color: '#88aa66', terrain: 'plains', competition: 1, tolerances: [], natural: false }),
   fields: [
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },
@@ -272,7 +273,8 @@ registerKind<RiverType>({
   inWorld: (w) => riverTypesOf(w.small),
   enable: (type) => ({ op: 'set_river_type', type }),
   disable: (id) => ({ op: 'remove_river_type', id }),
-  fields: [...WATER_FIELDS, { key: 'width', label: '粗细', type: 'number', optional: true, min: 0.3, max: 3, step: 0.1 }, { key: 'style', label: '画法', type: 'enum', optional: true, options: RIVER_STYLES.map((s) => ({ value: s, label: s })) }],
+  blank: () => ({ id: 'my-river', name: '新的河', color: '#2a7fbf', natural: false }),
+  fields: [...WATER_FIELDS, { key: 'width', label: '粗细', type: 'number', optional: true, min: 0.3, max: 3, step: 0.1 }, { key: 'style', label: '画法', type: 'enum', optional: true, options: RIVER_STYLES.map((s) => ({ value: s, label: RIVER_STYLE_LABEL[s] })) }],
   pack: {
     key: 'riverTypes',
     max: 64,
@@ -296,8 +298,9 @@ registerKind<LakeType>({
   inWorld: (w) => lakeTypesOf(w.small),
   enable: (type) => ({ op: 'set_lake_type', type }),
   disable: (id) => ({ op: 'remove_lake_type', id }),
+  blank: () => ({ id: 'my-lake', name: '新的湖', color: '#2a7fbf', natural: false }),
   // 湖的条件另有大小（第五十七轮）
-  fields: WATER_FIELDS.map((f) => (f.key === 'when' ? whenField(LAKE_WHEN_KEYS) : f)),
+  fields: [...WATER_FIELDS.map((f) => (f.key === 'when' ? whenField(LAKE_WHEN_KEYS) : f)), { key: 'style', label: '画法', type: 'enum', optional: true, options: LAKE_STYLES.map((s) => ({ value: s, label: LAKE_STYLE_LABEL[s] })) }],
   pack: {
     key: 'lakeTypes',
     max: 64,
@@ -322,6 +325,7 @@ registerKind<IslandType>({
   inWorld: (w) => islandTypesOf(w.small),
   enable: (type) => ({ op: 'set_island_type', type }),
   disable: (id) => ({ op: 'remove_island_type', id }),
+  blank: () => islandTypeSchema.parse({ id: 'my-island', name: '新的岛' }) as IslandType,
   fields: [
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },

@@ -1,7 +1,6 @@
 import type { Command } from './commands';
 import type { Species } from './species';
 import { type WaterType, PLAIN_TYPE } from './water-types';
-import type { SmallState } from './world';
 
 // 允许表（第五十六轮）：纵列生态，横行水系，普通河、普通湖也是一行。生态页和河湖页（第五十九轮的总表）都读写这里，数据只存一份：
 //   · 普通河、普通湖那一行在生态上：species.plainRiver、plainLake（false 不允许，省略为允许）。普通的河湖没有自己的记录；
@@ -11,7 +10,14 @@ import type { SmallState } from './world';
 
 export type WaterKind = 'river' | 'lake';
 
-type TypeLists = Pick<SmallState, 'riverTypes' | 'lakeTypes'>;
+// 世界的 small，或一个库里的这几段（第五十九轮）
+interface TypeLists {
+  riverTypes?: readonly WaterType[];
+  lakeTypes?: readonly WaterType[];
+}
+interface WaterLists extends TypeLists {
+  species: readonly Species[];
+}
 const listOf = (small: TypeLists, kind: WaterKind): readonly WaterType[] => (kind === 'river' ? small.riverTypes : small.lakeTypes) ?? [];
 const plainKey = (kind: WaterKind): 'plainRiver' | 'plainLake' => (kind === 'river' ? 'plainRiver' : 'plainLake');
 
@@ -32,21 +38,38 @@ export function withWaterBiome<T extends Pick<WaterType, 'biomes'>>(t: T, ids: r
   return (list.length === ids.length ? rest : { ...rest, biomes: list }) as T;
 }
 
-// 打勾、取消的命令（什么都不用改时为 null）。这种水没列生态（全部允许）时，取消一格写成列出别的所有生态；全都允许了就不再列
-export function setWaterAllowed(small: TypeLists & Pick<SmallState, 'species'>, spId: string, kind: WaterKind, typeId: string, on: boolean): Command | null {
+// 一处改动（第五十九轮：世界里是命令，我的库里是换掉这一项，算法同一份）。patch 里值为 null 的是去掉这个字段
+export type WaterEdit = { target: 'species'; id: string; patch: Record<string, unknown> } | { target: 'type'; kind: WaterKind; type: WaterType };
+
+export function waterEditCommand(e: WaterEdit): Command {
+  if (e.target === 'species') return { op: 'update_species', id: e.id, patch: e.patch };
+  return e.kind === 'river' ? { op: 'set_river_type', type: e.type as never } : { op: 'set_lake_type', type: e.type as never };
+}
+
+// 打勾、取消（什么都不用改时为 null）。这种水没列生态（全部允许）时，取消一格写成列出别的所有生态；全都允许了就不再列
+export function waterCellEdit(small: WaterLists, spId: string, kind: WaterKind, typeId: string, on: boolean): WaterEdit | null {
   const sp = small.species.find((s) => s.id === spId);
   if (!sp || waterAllowed(small, sp, kind, typeId) === on) return null;
-  if (typeId === PLAIN_TYPE) return { op: 'update_species', id: spId, patch: { [plainKey(kind)]: on ? null : false } };
+  if (typeId === PLAIN_TYPE) return { target: 'species', id: spId, patch: { [plainKey(kind)]: on ? null : false } };
   const t = listOf(small, kind).find((x) => x.id === typeId);
   if (!t) return null;
-  const next = withWaterBiome(t, small.species.map((s) => s.id), spId, on);
-  return kind === 'river' ? { op: 'set_river_type', type: next as never } : { op: 'set_lake_type', type: next as never };
+  return { target: 'type', kind, type: withWaterBiome(t, small.species.map((s) => s.id), spId, on) };
+}
+
+export function setWaterAllowed(small: WaterLists, spId: string, kind: WaterKind, typeId: string, on: boolean): Command | null {
+  const e = waterCellEdit(small, spId, kind, typeId, on);
+  return e && waterEditCommand(e);
 }
 
 // 不允许时怎么办。选“断流”而普通河还允许时，同一步取消普通河：否则普通河照常流过，什么都不会发生
-export function setWaterBlock(small: Pick<SmallState, 'species'>, spId: string, mode: 'swap' | 'stop'): Command | null {
+export function waterBlockEdit(small: Pick<WaterLists, 'species'>, spId: string, mode: 'swap' | 'stop'): WaterEdit | null {
   const sp = small.species.find((s) => s.id === spId);
   if (!sp || (sp.waterBlock ?? 'swap') === mode) return null;
-  if (mode === 'swap') return { op: 'update_species', id: spId, patch: { waterBlock: null } };
-  return { op: 'update_species', id: spId, patch: { waterBlock: 'stop', ...(sp.plainRiver === false ? {} : { plainRiver: false }) } };
+  if (mode === 'swap') return { target: 'species', id: spId, patch: { waterBlock: null } };
+  return { target: 'species', id: spId, patch: { waterBlock: 'stop', ...(sp.plainRiver === false ? {} : { plainRiver: false }) } };
+}
+
+export function setWaterBlock(small: Pick<WaterLists, 'species'>, spId: string, mode: 'swap' | 'stop'): Command | null {
+  const e = waterBlockEdit(small, spId, mode);
+  return e && waterEditCommand(e);
 }
