@@ -1,6 +1,7 @@
 import { X } from 'lucide-preact';
 import { useState } from 'preact/hooks';
 import { skippedNote, world } from '../../state';
+import { LIBRARY_ADD_LABEL } from '../copy';
 import { openLibrary } from '../packs/panel-store';
 import { skippedSummary } from '../skipped';
 
@@ -30,7 +31,7 @@ export function SkippedBanner() {
             openLibrary({ kind, off: true });
           }}
         >
-          从资源库添加…
+          {LIBRARY_ADD_LABEL}
         </button>
         <button class="pill-btn icon" onClick={() => (skippedNote.value = null)} title="关闭">
           <X />

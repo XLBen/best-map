@@ -1,5 +1,11 @@
 // 几处都要讲的同一句话：只写在这里（写法见 docs/开发说明.md 的“文字”）
 
+// 资源库：顶栏、“世界”菜单写它是什么
+export const LIBRARY_NOTE = '本世界和各个库里的文化、政体、生态、河湖、地名风格……';
+// 工具的选择器、缺内容的提示：去库里找
+export const LIBRARY_ADD_LABEL = '从资源库添加…';
+export const LIBRARY_ADD_TIP = '库里还有的，添加到本世界后就能选';
+
 // 没见过的脚本：打开世界、导入、换星球形态、资源包都问这一句
 export const scriptTrustText = (n: number) => `有 ${n} 段没见过的脚本，会在这台电脑上运行。只信任可靠的来源。`;
 

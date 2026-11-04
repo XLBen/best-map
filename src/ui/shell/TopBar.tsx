@@ -4,6 +4,7 @@ import { canRedo, canUndo, openPanel, redo, togglePanel, undo, world } from '../
 import { CATEGORIES, category, setCategory, setTool } from '../defs/tools';
 import type { CategoryDef, Icon } from '../defs/types';
 import { mapStatus } from '../maps/store';
+import { LIBRARY_NOTE } from '../copy';
 import { libPanel, toggleLibrary } from '../packs/panel-store';
 import { MapKindSwitch } from './MapKind';
 
@@ -19,7 +20,7 @@ function RepoButton() {
         if (!libPanel.value) openPanel.value = null;
         toggleLibrary();
       }}
-      title="资源库：本世界和各个库里的文化、政体、生态……"
+      title={`资源库：${LIBRARY_NOTE}`}
     >
       <Boxes size={18} />
       <span class="tb-label">资源库</span>

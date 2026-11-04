@@ -25,7 +25,8 @@ import {
 } from '../../state';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
-import { LIBRARY_LABEL, TypePicker, TypePickerButton, openLibraryFor } from '../components/TypePicker';
+import { TypePicker, TypePickerButton, openLibraryFor } from '../components/TypePicker';
+import { LIBRARY_ADD_LABEL } from '../copy';
 import { noteScriptCommitted, showCell } from '../editor-hooks';
 import { ScriptBox } from '../ScriptBox';
 import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from '../script-commit';
@@ -564,7 +565,7 @@ function TypeList({ w, kind, open, setOpen }: { w: World; kind: WaterKind; open:
           <Plus /> 新建
         </button>
         <button class="small" title={`资源库里的${def.title}（奇幻的示例都在那里）`} onClick={() => openLibraryFor(def.library)}>
-          <Library /> {LIBRARY_LABEL}
+          <Library /> {LIBRARY_ADD_LABEL}
         </button>
       </div>
     </>

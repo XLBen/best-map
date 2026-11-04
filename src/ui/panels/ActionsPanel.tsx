@@ -8,6 +8,7 @@ import { EE_HALF_W } from '../../render/projection';
 import type { World } from '../../../core/world';
 import { exportFullMap, snapshotCanvas } from '../map/export';
 import { HistoryPanel } from '../panels';
+import { LIBRARY_NOTE } from '../copy';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
@@ -93,7 +94,6 @@ export function WorldMenu() {
       </label>
       <button
         class="item"
-        title="添加到本世界、移出、存进资源库、导出：地名风格、生态、水体类型、岛、文化……"
         onClick={() => {
           close();
           openLibrary();
@@ -102,7 +102,7 @@ export function WorldMenu() {
         <Boxes />
         <span class="grow item-text">
           <b>资源库…</b>
-          <span class="hint">添加到本世界、移出、存进资源库、导出：地名风格、生态、水体类型、岛、文化……</span>
+          <span class="hint">{LIBRARY_NOTE}</span>
         </span>
       </button>
       <ExportSection />

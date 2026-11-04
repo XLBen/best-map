@@ -38,7 +38,7 @@ import { openLibrary } from './packs/panel-store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
 
 // 导入生态文件：和资源包走同一条路（只解析、检查，带脚本的先问信任），只装进资源库（第二十九轮：以前的生态文件也不再整套换掉世界里的生态），
-// 在资源库里一项一项添加到本世界
+// 在面板上添加到本世界
 export function importBiomeFile(text: string, file: string) {
   const read = readPack(text, fileLabel(file));
   if (!read.ok) {
@@ -570,7 +570,7 @@ export function SpeciesPanel() {
       </div>
       <div class="row wrap">
         <button onClick={addNew}>新建生态</button>
-        <button onClick={() => openLibrary({ kind: 'biome', off: true, entry: biomePackEntry(w) })} title="水晶丛林、死亡森林……在资源库里添加到本世界">
+        <button onClick={() => openLibrary({ kind: 'biome', off: true, entry: biomePackEntry(w) })} title="水晶丛林、死亡森林……在库里，添加到本世界">
           示例生态…
         </button>
         <button onClick={() => download('species.json', JSON.stringify(w.small.species, null, 2), 'application/json')}>导出</button>

@@ -4,6 +4,7 @@ import { originOf } from '../../../core/packs/builtin-tree';
 import type { World } from '../../../core/world';
 import { type LibraryEntry, library as libraryList } from '../../library';
 import { type PanelId, openPanel, togglePanel, world } from '../../state';
+import { LIBRARY_ADD_LABEL, LIBRARY_ADD_TIP } from '../copy';
 import { openLibrary } from '../packs/panel-store';
 
 // 选“哪一种”：底部条上的按钮（“新画的河：血河 ▾”“岛：珊瑚岛 ▾”）和点开的列表（最后一项“新建…”）。
@@ -30,7 +31,6 @@ export interface TypeChoice {
   onPick: () => void;
 }
 
-export const LIBRARY_LABEL = '从资源库添加…';
 export const LOOSE_GROUP = '离群';
 
 // 按来源的包分段（第二十九轮）：写了 id、都没写 group 的项按 small.origin 的大包（资源库里的名字）分段，先后照资源库，离群的（本世界做的）放最后；
@@ -65,8 +65,8 @@ export function openLibraryFor(kind: string) {
 // 不是 TypePicker 的选择（下拉框、档案里的列表）下面的一行“从资源库添加…”
 export function LibraryLink({ kind, title }: { kind: string; title?: string }) {
   return (
-    <button class="link-btn small" onClick={() => openLibraryFor(kind)} title={title ?? '资源库里还有的，添加到本世界后就能选'}>
-      <Library /> {LIBRARY_LABEL}
+    <button class="link-btn small" onClick={() => openLibraryFor(kind)} title={title ?? LIBRARY_ADD_TIP}>
+      <Library /> {LIBRARY_ADD_LABEL}
     </button>
   );
 }
@@ -108,9 +108,9 @@ export function TypePicker({
         </button>
       )}
       {library && (
-        <button class="item" onClick={() => openLibraryFor(library)} title="资源库里还有的，添加到本世界后就能选">
+        <button class="item" onClick={() => openLibraryFor(library)} title={LIBRARY_ADD_TIP}>
           <Library />
-          <span class="grow">{LIBRARY_LABEL}</span>
+          <span class="grow">{LIBRARY_ADD_LABEL}</span>
         </button>
       )}
       {note && <p class="hint">{note}</p>}

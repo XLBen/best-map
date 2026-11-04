@@ -13,7 +13,8 @@ import { continents, snapshot, FANTASY_PACK, NAME_STYLES_SAMPLE, type HumanComma
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { world } from '../state';
-import { LIBRARY_LABEL, type TypeChoice, openLibraryFor } from './components/TypePicker';
+import { type TypeChoice, openLibraryFor } from './components/TypePicker';
+import { LIBRARY_ADD_LABEL } from './copy';
 import { chooseLibrary, defaultChoice, generateCommand } from './human';
 import { choicePacks, humanImportCommands, packGroups } from './packChoice';
 import { defaultsOf, eraOf } from '../../core/testing/eras';
@@ -61,7 +62,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect(p.onNew).toBeUndefined();
     openLibraryFor(p.library!);
     expect(libPanel.value!.stack.at(-1)).toEqual({ p: 'list', kind: 'culture', hideOn: true });
-    expect(LIBRARY_LABEL).toBe('从资源库添加…');
+    expect(LIBRARY_ADD_LABEL).toBe('从资源库添加…');
   });
 
   it('资源、点的类型、岛的种类：本世界的（内置的总在），带着“从资源库添加…”；奇幻的资源不在本世界时不列', () => {
