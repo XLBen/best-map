@@ -38,7 +38,7 @@
 - `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）、`fjordLayer`、着色器的峡湾纹理、`FJ` 常数
 - `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`
 - `river-edit.ts` 改一条河（拖控制点、加删弯点、重画一笔）
-- `water-types.ts` 河流类型、湖泊类型共用的部分：声明式条件（`when`）、一遍要做什么（`waterPlan`）、允许表编译成查表（`waterRules`）；`river-types.ts` 河流类型（每格哪种河、河网 `riverNet`、断流的格 `stopCells`、河岸场）；`river-segments.ts` 短段并进相邻的段；`lake-types.ts` 湖泊类型；`water-table.ts` 允许表的读写（生态页、河湖页共用）。第五十七轮：湖的条件多大小（`LAKE_WHEN_KEYS`）；`river-pack.ts` 的带子按线缓存（`memoDraws`）；`rivers.ts` 断流的尾巴（`RiverLine.tail`）；`vegetation.ts` 的 `baseBiomes` 只算河格和湖岸（`waterCells`）；`biome-scripts.ts` 的记录按遍分开（`SLOT_*`）
+- `water-types.ts` 河流类型、湖泊类型共用的部分：声明式条件（`when`）、一遍要做什么（`waterPlan`）、允许表编译成查表（`waterRules`）；`river-types.ts` 河流类型（每格哪种河、河网 `riverNet`、断流的格 `stopCells`、河岸场）；`river-segments.ts` 短段并进相邻的段；`lake-types.ts` 湖泊类型；`water-table.ts` 允许表的读写（生态页、河湖页共用）。第五十七轮：湖的条件多大小（`LAKE_WHEN_KEYS`）；`river-pack.ts` 的带子按线缓存（`memoDraws`）；`rivers.ts` 断流的尾巴（`RiverLine.tail`）；`vegetation.ts` 的 `baseBiomes` 只算河格和湖岸（`waterCells`）；`biome-scripts.ts` 的记录按遍分开（`SLOT_*`），同一遍里比较快照的结果复用（`newScriptPass`）；`waterPlan` 的 `reuseFirstBase`：奇幻库第二遍的类型读第一遍的生态
 - `effects.ts` 生态、河湖对周围冷暖干湿的影响
 
 ## 生态
