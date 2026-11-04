@@ -8,7 +8,7 @@ import { KIND_LINKS } from './link-rules';
 import { FIELD_WALKERS, type Link, danglingLinks, dependencyClosure, linkIds, linkProblems, linkTable, linksOf, packScope, referencesOf, referrersOf, renameLinks, stripLinks, worldScope } from './links';
 import { originSourceId, recordedOrigin } from './origin';
 import { sameContent, scriptRefs } from './refs';
-import { type ContentKind, type FieldType, type Renames, allKinds, itemId, kindByPackKey, kindOf, registerKind, unregisterKind } from './registry';
+import { type ContentKind, type FieldDesc, type FieldType, type Renames, allKinds, itemId, kindByPackKey, kindOf, registerKind, unregisterKind } from './registry';
 import { unusedContent } from './unused';
 
 // 第四十九轮：内容之间的引用表。覆盖（内置的每一项、以后加的种类和字段）、查询、闭包、去掉引用、撞名导入。
@@ -157,6 +157,24 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
     expect([...kinds].sort()).toEqual(['biome', 'countryLayout', 'culture', 'cultureGroup', 'era', 'faction', 'government', 'lakeType', 'landmarkType', 'popValue', 'resource', 'riverType', 'valueGroup'].sort());
   });
 
+  it('内置的库里去不掉的引用都是 hard（导入时只有它们跟着来）', () => {
+    const other: string[] = [];
+    for (const p of builtinPacks()) {
+      for (const [key, links] of linkTable(packScope(p)).out) for (const l of links) if (!l.drop && l.cls !== 'hard') other.push(`${key} ${l.path.join('.')}:${l.cls}`);
+    }
+    expect(other).toEqual([]);
+  });
+
+  it('dep: gate 只写在最外层的列表字段上：写在里面、单个值上看不出“一条不剩”，linkProblems 报出来；内置的四处都是 gate', () => {
+    expect(linkProblems()).toEqual([]);
+    const kind = (fields: FieldDesc[]) => ({ ...kindOf('field')!, id: 'field', fields });
+    expect(linkProblems([kind([{ key: 'a', label: 'a', type: 'tags', ref: 'field', dep: 'gate' }])])).toEqual([]);
+    expect(linkProblems([kind([{ key: 'a', label: 'a', type: 'text', ref: 'field', dep: 'gate' }])])).toEqual(["field.a：dep: 'gate' 只能写在最外层的列表字段上"]);
+    expect(linkProblems([kind([{ key: 'a', label: 'a', type: 'list', of: [{ key: 'b', label: 'b', type: 'tags', ref: 'field', dep: 'gate' }] }])])).toEqual(["field.a.b：dep: 'gate' 只能写在最外层的列表字段上"]);
+    const gates = allKinds().flatMap((k) => k.fields.filter((f) => f.dep === 'gate').map((f) => `${k.id}.${f.key}`));
+    expect(gates.sort()).toEqual(['government.only', 'landmarkType.cultureGroups', 'resource.rules', 'terrainClass.rules']);
+  });
+
   it('内置的每个库单独看：找不到的 hard 类一条都没有，其余找不到的都是能取消、能去掉的', () => {
     const lib = linkTable(packScope(...builtinPacks()));
     const hard: string[] = [];
@@ -254,10 +272,10 @@ describe('一项里的引用', () => {
       'names.0.values.0→popValue:v1:strip',
       'names.0.titles.t1→countryTier:t1:strip',
       'names.0.rulers.t2→countryTier:t2:strip',
-      'only.0.cultureGroups.0→cultureGroup:g1:auto',
-      'only.0.cultures.0→culture:c1:auto',
-      'only.0.valueGroups.0→valueGroup:vg1:auto',
-      'only.0.values.0→popValue:v1:auto',
+      'only.0.cultureGroups.0→cultureGroup:g1:gate',
+      'only.0.cultures.0→culture:c1:gate',
+      'only.0.valueGroups.0→valueGroup:vg1:gate',
+      'only.0.values.0→popValue:v1:gate',
     ]);
     expect(of('culture', 'c1').map(brief)).toEqual([
       'group→cultureGroup:g1:hard',
@@ -269,7 +287,7 @@ describe('一项里的引用', () => {
       'prefs.0.classes.0→terrainClass:tc1:strip',
     ]);
     expect(of('popValue', 'v1').map((l) => `${l.path.join('.')}:${l.cls}`)).toEqual(['dimension:hard', 'group:hard', 'prefs.0.classes.0:strip', 'prefs.0.biomes.0:strip']);
-    expect(of('landmarkType', 'lm1').map(brief)).toEqual(['cultureGroups.0→cultureGroup:g1:auto', 'label.c1→culture|cultureGroup:c1:strip', 'label.g1→culture|cultureGroup:g1:strip']);
+    expect(of('landmarkType', 'lm1').map(brief)).toEqual(['cultureGroups.0→cultureGroup:g1:gate', 'label.c1→culture|cultureGroup:c1:strip', 'label.g1→culture|cultureGroup:g1:strip']);
     expect(of('faction', 'f1').map(brief)).toEqual([
       'drivers.0.dimension→dimension:religion:strip',
       'drivers.0.value→popValue:v1:strip',
@@ -297,7 +315,7 @@ describe('一项里的引用', () => {
   });
 
   it('谁引用它、引用了什么', () => {
-    expect(referrersOf(table, { kind: 'cultureGroup', id: 'g1' }).map((r) => `${r.from.kind}:${r.from.id}:${r.link.cls}`)).toEqual(['culture:c1:hard', 'government:gov1:strip', 'government:gov1:auto', 'faction:f1:strip', 'landmarkType:lm1:auto', 'landmarkType:lm1:strip']);
+    expect(referrersOf(table, { kind: 'cultureGroup', id: 'g1' }).map((r) => `${r.from.kind}:${r.from.id}:${r.link.cls}`)).toEqual(['culture:c1:hard', 'government:gov1:strip', 'government:gov1:gate', 'faction:f1:strip', 'landmarkType:lm1:gate', 'landmarkType:lm1:strip']);
     expect(referrersOf(table, { kind: 'dimension', id: 'religion' }).map((r) => r.from.id)).toContain('v1');
     expect(table.nodes.get('dimension\u0000religion')?.owners).toEqual(['e1']);
     const refs = referencesOf(table, { kind: 'landmarkType', id: 'lm1' });
@@ -306,7 +324,7 @@ describe('一项里的引用', () => {
     expect(danglingLinks(table)).toEqual([]);
   });
 
-  it('依赖的闭包：hard、auto 跟着走，strip 不走只列出来', () => {
+  it('依赖的闭包：hard、auto、gate 跟着走，strip 不走只列出来', () => {
     const c = dependencyClosure(table, [{ kind: 'culture', id: 'c1' }]);
     expect(c.hard).toEqual([{ kind: 'cultureGroup', id: 'g1' }]);
     expect(c.auto).toEqual([{ kind: 'nameStyle', id: 's1' }]);

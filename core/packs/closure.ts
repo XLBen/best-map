@@ -1,46 +1,29 @@
 import type { Command } from '../commands';
-import { type ArrangeRelation, linkTable as arrangeTable, relationOf } from '../content/arrange';
+import type { ArrangeRelation } from '../content/arrange';
 import { DIMENSION } from '../content/link-rules';
-import { type ContentRef, type Link, type LinkTable, linkKey, linkTable, packScope, resolveLink, stripLinks } from '../content/links';
-import { ITEM_ID, stableJson } from '../content/refs';
-import { type ContentKind, type Renames, enableCommand, itemId, itemName, kindOf, registryVersion } from '../content/registry';
-import { type Dimension, type Era, MAX_DIMENSIONS, worldEra, worldEras } from '../human/era';
-import type { Faction } from '../human/government';
-import { type PackNode, type PackPicks, type PackPlan, type PackWorld, type ResourcePack, canApply, finalItem, ownItems, packItems, packSections, planPack, renamedItem, settleIds, subPacks, walkPacks } from '../packs';
+import { type ContentRef, type Link, itemFields, linkKey, resolveLink, stripLinks } from '../content/links';
+import { type ContentKind, type Renames, enableCommand, itemId, kindOf } from '../content/registry';
+import { type Dimension, type Era, MAX_DIMENSIONS, type PopValue } from '../human/era';
+import { type PackNode, type PackPicks, type PackPlan, type ResourcePack, finalItem, ownItems, packItems, packSections, planPack, renamedItem, settleIds, subPacks, walkPacks } from '../packs';
 import { importIntoPack } from './import';
+import { type ImportAsk, type ImportGates, type ImportNode, type ImportRole, type WalkCtx, type Walked, destOf, dimThere, gatesOf, infoOf, keyRef, linkNeedName, linkThere, needText, relationOf, restoredLinks, softLacks, walkClosure, walkCtx, weightBack } from './import-gates';
 
-// 导入的依赖闭包（第六十一轮）：从一个库勾几项导入本世界或我的库，算“还会带上”的项（每一项写为什么）、“已经有了”“会改名”、哪些引用要去掉。
-// 引用从第四十九轮的表来（core/content/links.ts），这里不另写一份“谁引用谁”。窗口、列表上的“添加”“全部添加”都走这一个函数。
+export { contentKey, importGates, targetEra } from './import-gates';
+export type { ImportAsk, ImportGate, ImportGates, ImportNeed, ImportRole, ImportTarget } from './import-gates';
+
+// 导入的闭包（第六十一轮，第六十四轮重写）：从一个库勾几项导入本世界或我的库，勾什么进什么。能不能选、走到哪些在 import-gates.ts，这里算写入：
 //
-//   hard    默认带上。去不掉的引用（文化的组、脚本里写的）不能取消，去得掉的取消后去掉这条引用
-//   auto    默认带上，可以取消：取消后去掉这条引用（限谁用就解除了限制）
-//   strip   不带。目的地有目标（同 id）时留着，没有时去掉，所以政体的换说法不会拖来一堆文化组
-//   member  勾了文化组时组里的文化、勾了取值组时组里的取值（这是“组里有什么”，不是依赖；依赖带来的组不带它们）
+//   哪些引用留着：目标在目的地或这次带来的；别的去掉这一条（stripCount 是条数），内容照常导入
+//   灰的、放不下的：从结果里拿掉，写进 dropped（带原因），不挡别的项。清单里的都真的写入，count = rows.length
+//   改名：是不是同一项、撞名改名、引用跟着改都由 settleIds 算（第四十九轮），比较的是导入时的样子（去掉引用、写了 weight 之后），
+//         所以同样的勾选再导入一次什么都不加
+//   补回：目的地的一项是来源去掉了几条引用后的样子，而目标现在有了（先导入天主教，后导入基督教组）：写回去，不改名。世界里 enableCommand，库里 replaced
 //
-// 变量（维度）不是一项内容：写在目的地的时代里，取值、取值组是它的一部分，带它就一起带。世界里走 add_dimension（只算新变量），库里写进时代。
-// 什么算要变量：hard、auto 的引用；派系主要靠的那一维（NEEDS）。别的 strip 引用写到的变量列在 optional，默认不勾，可以勾上。
-// 目的地没有时代时带上来源里提供这个变量的时代。
-//
-// 依赖带来的文化组 weight 写 0，不参与生成；点名勾的组比重是 0 时去掉这个 0（用户就是要它参与，和 packImportPlan 一样）。
-// 是不是同一项（已经有了）、撞名改名、引用跟着改都由 settleIds 算（第四十九轮）：比较的是导入时的样子（去掉引用、写了 weight 之后），
-// 所以同样的勾选再导入一次全部“已经有了”。“已经有了”的项不再往下走（目的地那一份有它自己的依赖）。
+// 变量（维度）不是一项内容：写在目的地的时代里。世界里走 add_dimension（只算新变量），库里写进时代。目的地没有时代时带上来源里提供这个变量的时代。
+// 跟着来的文化组 weight 写 0，不参与生成；点名勾的组比重是 0 时去掉这个 0（用户就是要它参与，和 packImportPlan 一样）。
 // 目的地的安排（arrange）不动，来源的不带。
 
-export type ImportTarget = { t: 'world'; world: PackWorld } | { t: 'pack'; pack: ResourcePack };
-
-export interface ImportAsk {
-  source: PackNode;
-  target: ImportTarget;
-  // 勾的项（kind 是内容种类的 id 或 'dimension'）
-  picks: readonly ContentRef[];
-  // 取消的依赖
-  off?: readonly ContentRef[];
-  // 勾上的可选的变量
-  on?: readonly ContentRef[];
-}
-
-export type ImportClass = 'pick' | 'hard' | 'auto' | 'member' | 'optional';
-export type ImportState = 'new' | 'have' | 'rename' | 'blocked' | 'off';
+export type ImportRowState = 'new' | 'rename' | 'fix';
 
 export interface ImportRow {
   kind: string;
@@ -48,21 +31,18 @@ export interface ImportRow {
   name: string;
   // “政体”“变量”
   kindLabel: string;
-  cls: ImportClass;
-  state: ImportState;
-  // 为什么：“社会主义共和国 需要 革命左翼”，最多三句，whyMore 是还有几句
-  why: string[];
-  whyMore: number;
-  // 在目的地叫什么（改了名的、已经有了但名字不同的）
+  role: ImportRole;
+  // new 新加；rename 目的地有同 id、内容不同，导入后叫 to；fix 补回目的地这一份的引用
+  state: ImportRowState;
+  // 为什么来：“封建君主制 里的”“直隶人 要它”（勾的是空的）
+  because: string[];
   to?: string;
-  // 不能取消：原因
-  locked?: string;
-  // 取消后会怎样
-  offNote?: string;
-  // 属于哪个变量（这个变量的取值、取值组，窗口里不单独列）
+  // 属于哪个变量（这个变量的取值、取值组，清单里收成一行）
   under?: string;
-  // 变量：几种取值
+  // 变量：这次带来几种取值
   count?: number;
+  // 树形：排在这一行下面的（政体 ▸ 派系、变量 ▸ 取值）
+  children: ImportRow[];
 }
 
 export interface ImportStrip {
@@ -72,26 +52,30 @@ export interface ImportStrip {
   target: string;
 }
 
+export interface ImportDropped {
+  kind: string;
+  id: string;
+  name: string;
+  kindLabel: string;
+  reason: string;
+}
+
 export interface ImportPreview {
-  picks: ImportRow[];
-  // 还会带上（含取消了的，state 是 off）
-  bring: ImportRow[];
-  // 还可以带上（默认不勾的变量）
-  optional: ImportRow[];
-  // 已经有了（勾的、依赖的）
-  have: ImportRow[];
-  // 会改名
-  renamed: ImportRow[];
-  // 带不了（少了去不掉的引用）
-  blocked: ImportRow[];
-  // 去掉的引用
+  // 清单：树的第一层（变量在前，再按种类）
+  list: ImportRow[];
+  // 清单展开成一列（和 list、children 是同样的对象）
+  rows: ImportRow[];
+  // 真的写几项：写入的内容（新的、改名的、补回的）+ 新的自定义场 + 加到时代里的变量。等于 rows.length
+  count: number;
+  // 自动去掉的引用
+  stripCount: number;
   stripped: ImportStrip[];
-  // 放不下：有这个时不能导入
-  over: string[];
+  // 勾了但进不来的：灰的、放不下的（原因写着）
+  dropped: ImportDropped[];
   // 要加的变量（目的地的时代里）
   dims: Dimension[];
-  // 真的加几项（新的、改名的；变量算一项，它的取值不另算）
-  count: number;
+  // 每一项能不能选（按现在的勾选）
+  gates: ImportGates;
   // 写入用
   plan: SettledPlan;
 }
@@ -100,300 +84,15 @@ interface SettledPlan {
   finals: Map<ContentKind, unknown[]>;
   ids: Map<string, string>;
   renames: Renames;
+  // 补回的：目的地同 id 的一项换成这个样子
+  fixes: { kind: ContentKind; id: string; item: unknown }[];
   era?: Era;
 }
 
-// 这一项靠哪个变量才有意义：写到它的 strip 类引用在导入时按 auto 算。这里只说派系（写在这里，不进计算 Worker）：
-// 主要靠哪一维是来源里权重（绝对值）加起来最大的那一维，一样大时写在前面的；“与国教”没写维度时是宗教（见 link-rules.ts）。
-// 自由派写了民族认同（2.2）和意识形态（6），它要的是意识形态；民族认同那两条缺了就去掉，不再多拖一个变量进来
-const NEEDS: Readonly<Record<string, (item: unknown) => string[]>> = {
-  faction: (item) => {
-    const sum = new Map<string, number>();
-    for (const d of (item as Faction).drivers ?? []) {
-      const dim = d.dimension ?? (d.faith ? 'religion' : undefined);
-      if (dim) sum.set(dim, (sum.get(dim) ?? 0) + Math.abs(d.weight));
-    }
-    let best: string | null = null;
-    for (const [dim, w] of sum) if (best === null || w > sum.get(best)!) best = dim;
-    return best === null ? [] : [best];
-  },
-};
-
-// 取消一条依赖会怎样（窗口里写这一句）：种类 → 顶层字段。没写的是 GENERIC_OFF
-const OFF_NOTES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  government: { factions: '取消后，这个政体没有这个派系', only: '取消后解除这条限制，谁都能用' },
-  faction: { drivers: '取消后去掉这条来源' },
-  landmarkType: { cultureGroups: '取消后不再限这一组' },
-  pointType: { actsAsCity: '取消后这种点不当作城市' },
-  riverType: { biomes: '取消后不再限这种生态' },
-  lakeType: { biomes: '取消后不再限这种生态' },
-  cultureGroup: { nameStyle: '取消后用世界默认的地名风格' },
-  culture: { nameStyle: '取消后用世界默认的地名风格' },
-  terrainClass: { rules: '取消后去掉这条规则' },
-  resource: { rules: '取消后去掉这条规则' },
-  countryLayout: { weights: '取消后这种格局里没有这一等级' },
-};
-
-// ---------- 来源的表（同一个包只算一遍） ----------
-
-interface DimInfo {
-  label: string;
-  owners: string[];
-  values: string[];
-  groups: string[];
-}
-interface SourceInfo {
-  version: number;
-  table: LinkTable;
-  dims: Map<string, DimInfo>;
-  members: Map<string, { kind: string; ids: readonly string[] }>;
-}
-
-const infos = new WeakMap<object, SourceInfo>();
-function infoOf(source: PackNode): SourceInfo {
-  const hit = infos.get(source);
-  if (hit?.version === registryVersion()) return hit;
-  const table = linkTable(packScope(source));
-  const dims = new Map<string, DimInfo>();
-  const dimOf = (id: string): DimInfo => {
-    let d = dims.get(id);
-    if (!d) dims.set(id, (d = { label: id, owners: [], values: [], groups: [] }));
-    return d;
-  };
-  for (const e of packItems<Era>(source, 'eras')) {
-    for (const d of e.dimensions) {
-      const x = dimOf(d.id);
-      if (!x.owners.length) x.label = d.label;
-      x.owners.push(e.id);
-    }
-  }
-  for (const v of packItems<{ id: string; dimension: string }>(source, 'popValues')) dimOf(v.dimension).values.push(v.id);
-  for (const g of packItems<{ id: string; dimension: string }>(source, 'valueGroups')) dimOf(g.dimension).groups.push(g.id);
-  const items = (id: string) => {
-    const k = kindOf(id);
-    return k ? packItems(source, k.pack.key) : [];
-  };
-  // 组里有什么：融入的表里写着（core/content/arrange.ts）
-  const members: SourceInfo['members'] = new Map();
-  for (const [parent, rel] of [['cultureGroup', relationOf('culture', 'cultureGroup')], ['valueGroup', relationOf('popValue', 'valueGroup')]] as [string, ArrangeRelation][]) {
-    for (const [id, ids] of arrangeTable(rel, items).byParent) members.set(linkKey(parent, id), { kind: rel.child, ids });
-  }
-  const info = { version: registryVersion(), table, dims, members };
-  infos.set(source, info);
-  return info;
-}
-
-// ---------- 目的地 ----------
-
-interface Dest {
-  items: Map<ContentKind, readonly unknown[]>;
-  byId: Map<string, Map<string, unknown>>;
-  era: Era | undefined;
-  // 要加到哪个时代：它有的变量
-  dims: Set<string>;
-  // 目的地全部时代提供的变量（别的时代写的也算找得到）
-  allDims: Set<string>;
-  kinds: ContentKind[];
-}
-
-export const targetEra = (t: ImportTarget): Era | undefined => (t.t === 'world' ? (worldEra(t.world.small) ?? worldEras(t.world.small)[0]) : packItems<Era>(t.pack, 'eras')[0]);
-
-function destOf(target: ImportTarget): Dest {
-  const kinds = target.t === 'world' ? packSections().filter(canApply).sort((a, b) => a.order - b.order) : packSections();
-  const items = new Map<ContentKind, readonly unknown[]>();
-  const byId = new Map<string, Map<string, unknown>>();
-  for (const k of kinds) {
-    const list = target.t === 'world' ? k.inWorld(target.world) : packItems(target.pack, k.pack.key);
-    items.set(k, list);
-    byId.set(k.id, new Map(list.map((x) => [itemId(k, x), x])));
-  }
-  const era = targetEra(target);
-  const eras = (target.t === 'world' ? worldEras(target.world.small) : packItems<Era>(target.pack, 'eras')) as readonly Era[];
-  return { items, byId, era, dims: new Set(era?.dimensions.map((d) => d.id)), allDims: new Set(eras.flatMap((e) => e.dimensions.map((d) => d.id))), kinds };
-}
-
-// ---------- 走依赖 ----------
-
-interface Why {
-  from: ContentRef;
-  fromName: string;
-  link?: Link;
-  text: string;
-}
-interface Node {
-  ref: ContentRef;
-  item: unknown;
-  name: string;
-  cls: ImportClass;
-  why: Why[];
-  under?: string;
-}
-interface DimNode {
-  id: string;
-  label: string;
-  cls: ImportClass;
-  why: Why[];
-}
-
-const RANK: Record<ImportClass, number> = { pick: 4, hard: 3, member: 2, auto: 1, optional: 0 };
-const keyRef = (r: ContentRef) => linkKey(r.kind, r.id);
-const refName = (r: ContentRef, item: unknown): string => {
-  const k = kindOf(r.kind);
-  return k ? itemName(k, item) : r.id;
-};
-
-interface Walked {
-  reached: Map<string, Node>;
-  dims: Map<string, DimNode>;
-  offRows: Map<string, Node>;
-  optional: Map<string, DimNode>;
-  dimsFull: Set<string>;
-}
-
-function walk(info: SourceInfo, ask: ImportAsk, dest: Dest, skip: ReadonlySet<string>): Walked {
-  const { table } = info;
-  const off = new Set((ask.off ?? []).map(keyRef));
-  const on = new Set((ask.on ?? []).map(keyRef));
-  const picked = new Set(ask.picks.map(keyRef));
-  const reached = new Map<string, Node>();
-  const dims = new Map<string, DimNode>();
-  const offRows = new Map<string, Node>();
-  const optional = new Map<string, DimNode>();
-  const dimsFull = new Set<string>();
-  const queue: Node[] = [];
-
-  const addWhy = (list: Why[], w: Why | undefined) => {
-    if (w && !list.some((x) => x.text === w.text)) list.push(w);
-  };
-  const nodeOf = (ref: ContentRef) => table.nodes.get(keyRef(ref));
-  const reach = (ref: ContentRef, cls: ImportClass, why?: Why, under?: string): void => {
-    const key = keyRef(ref);
-    const cur = reached.get(key);
-    if (cur) {
-      addWhy(cur.why, why);
-      if (under && !cur.under) cur.under = under;
-      if (RANK[cls] > RANK[cur.cls]) {
-        cur.cls = cls;
-        queue.push(cur);
-      }
-      return;
-    }
-    const n = nodeOf(ref);
-    if (!n || n.owners) return;
-    const node: Node = { ref: { kind: ref.kind, id: ref.id }, item: n.item, name: refName(ref, n.item), cls, why: why ? [why] : [], ...(under ? { under } : {}) };
-    reached.set(key, node);
-    queue.push(node);
-  };
-  const recordOff = (ref: ContentRef, why: Why | undefined) => {
-    const key = keyRef(ref);
-    const cur = offRows.get(key);
-    if (cur) return addWhy(cur.why, why);
-    const n = nodeOf(ref);
-    if (n) offRows.set(key, { ref, item: n.item, name: ref.kind === DIMENSION ? (info.dims.get(ref.id)?.label ?? ref.id) : refName(ref, n.item), cls: 'auto', why: why ? [why] : [] });
-  };
-  const requireDim = (id: string, cls: ImportClass, why?: Why): void => {
-    const d = info.dims.get(id);
-    if (!d?.values.length || dest.dims.has(id)) return;
-    const key = linkKey(DIMENSION, id);
-    if (off.has(key) && !picked.has(key)) return recordOff({ kind: DIMENSION, id }, why);
-    const cur = dims.get(id);
-    if (cur) {
-      addWhy(cur.why, why);
-      if (RANK[cls] > RANK[cur.cls]) cur.cls = cls;
-      return;
-    }
-    if (dest.era && dest.dims.size + dims.size >= MAX_DIMENSIONS) {
-      dimsFull.add(id);
-      return;
-    }
-    // 目的地没有时代：带上提供它的时代
-    if (!dest.era) {
-      const owner = d.owners[0];
-      if (!owner) return;
-      const ref = { kind: 'era', id: owner };
-      if (off.has(keyRef(ref)) && !picked.has(keyRef(ref))) return recordOff(ref, why && { ...why, text: `${d.label} 写在这个时代里` });
-      const eraNode = nodeOf(ref);
-      reach(ref, 'hard', { from: { kind: DIMENSION, id }, fromName: d.label, text: `${d.label} 写在 ${eraNode ? refName(ref, eraNode.item) : owner} 里` });
-    }
-    dims.set(id, { id, label: d.label, cls, why: why ? [why] : [] });
-    const memberWhy = (name: string): Why => ({ from: { kind: DIMENSION, id }, fromName: d.label, text: `${name}属于 ${d.label}` });
-    for (const g of d.groups) reach({ kind: 'valueGroup', id: g }, 'member', memberWhy('取值组'), id);
-    for (const v of d.values) reach({ kind: 'popValue', id: v }, 'member', memberWhy('取值'), id);
-  };
-
-  for (const p of ask.picks) {
-    if (p.kind === DIMENSION) requireDim(p.id, 'pick');
-    else reach(p, 'pick');
-  }
-  for (const r of ask.on ?? []) if (r.kind === DIMENSION) requireDim(r.id, 'auto');
-
-  while (queue.length) {
-    const cur = queue.pop()!;
-    const key = keyRef(cur.ref);
-    // 勾了组：组里有什么一起带（组已经有了也一样，依赖带来的组不带）
-    if (cur.cls === 'pick') {
-      const m = info.members.get(key);
-      if (m) {
-        for (const id of m.ids) {
-          const ref = { kind: m.kind, id };
-          if (off.has(keyRef(ref)) && !picked.has(keyRef(ref))) recordOff(ref, { from: cur.ref, fromName: cur.name, text: `${cur.name} 里的` });
-          else reach(ref, 'member', { from: cur.ref, fromName: cur.name, text: `${cur.name} 里的` });
-        }
-      }
-    }
-    if (skip.has(key)) continue;
-    const needs = NEEDS[cur.ref.kind]?.(cur.item);
-    for (const link of table.out.get(key) ?? []) {
-      if (link.kinds.includes('field')) continue;
-      const to = resolveLink(table, link);
-      const promoted = link.cls === 'strip' && !!needs?.length && (link.kinds.includes(DIMENSION) ? needs.includes(link.id) : link.kinds.includes('popValue') && !!to && needs.includes(String((table.nodes.get(keyRef(to))?.item as { dimension?: unknown } | undefined)?.dimension)));
-      const cls = promoted ? 'auto' : link.cls;
-      const strong = cls === 'hard' && RANK[cur.cls] >= RANK.member;
-      const childCls: ImportClass = strong ? 'hard' : 'auto';
-      if (link.kinds.includes(DIMENSION)) {
-        if (cur.under === link.id || dest.dims.has(link.id) || !info.dims.get(link.id)?.values.length) continue;
-        const d = info.dims.get(link.id)!;
-        const why: Why = { from: cur.ref, fromName: cur.name, link, text: `${cur.name} ${cls === 'strip' ? '写到' : '需要'} ${d.label}` };
-        if (cls !== 'strip') requireDim(link.id, childCls, why);
-        else if (on.has(linkKey(DIMENSION, link.id))) requireDim(link.id, 'auto', why);
-        else {
-          const o = optional.get(link.id);
-          if (o) addWhy(o.why, why);
-          else optional.set(link.id, { id: link.id, label: d.label, cls: 'optional', why: [why] });
-        }
-        continue;
-      }
-      if (cls === 'strip' || !to) continue;
-      // 这个取值的变量取消了：不用再看它（这条来源去掉）
-      if (promoted && !link.kinds.includes(DIMENSION)) {
-        const dim = String((table.nodes.get(keyRef(to))?.item as { dimension?: unknown } | undefined)?.dimension);
-        if (!dest.dims.has(dim) && off.has(linkKey(DIMENSION, dim)) && !picked.has(linkKey(DIMENSION, dim))) continue;
-      }
-      const why: Why = { from: cur.ref, fromName: cur.name, link, text: `${cur.name} 需要 ${refName(to, table.nodes.get(keyRef(to))?.item)}` };
-      if (off.has(keyRef(to)) && !picked.has(keyRef(to))) recordOff(to, why);
-      else reach(to, childCls, why);
-    }
-  }
-  return { reached, dims, offRows, optional, dimsFull };
-}
+const DIM_LABEL = '变量';
+const FULL_DIMS = `一个时代最多 ${MAX_DIMENSIONS} 个变量`;
 
 // ---------- 导入时的样子 ----------
-
-function destHas(dest: Dest, kind: string, id: string): boolean {
-  return !!dest.byId.get(kind)?.has(id);
-}
-
-// 比较用的字（同 sameContent，按对象记着）：包和世界里的项都是不改动的数据，勾选每变一次都要比，一个库的地名风格就有约 1 MB
-const contentKeys = new WeakMap<object, string>();
-export function contentKey(k: ContentKind, x: unknown): string {
-  let s = contentKeys.get(x as object);
-  if (s === undefined) {
-    const skip = k.pack.sameIgnore;
-    s = stableJson(skip?.length ? Object.fromEntries(Object.entries(x as object).filter(([key]) => !skip.includes(key))) : x);
-    contentKeys.set(x as object, s);
-  }
-  return s;
-}
 
 // 去掉引用后的样子（去掉的一样时给同一个对象，比较时不用再算一遍）
 const stripMemo = new WeakMap<object, { sig: string; out: unknown }>();
@@ -406,65 +105,56 @@ function strippedItem(kind: string, item: unknown, gone: readonly Link[], pick: 
   return out;
 }
 
-// 加进世界的最后一步之后的样子（同一项给同一个对象）
-const finalMemo = new WeakMap<object, unknown>();
-function finalized(k: ContentKind, x: unknown): unknown {
-  if (!k.pack.finalize) return x;
-  let f = finalMemo.get(x as object);
-  if (f === undefined) finalMemo.set(x as object, (f = k.pack.finalize(x)));
-  return f;
-}
-
-const withWeight = (n: Node, item: unknown): unknown => {
+const withWeight = (n: ImportNode, item: unknown): unknown => {
   if (n.ref.kind !== 'cultureGroup') return item;
   const g = item as { weight?: number };
-  if (n.cls !== 'pick') return g.weight === 0 ? item : { ...g, weight: 0 };
+  if (n.role !== 'pick') return g.weight === 0 ? item : { ...g, weight: 0 };
   if (g.weight !== 0) return item;
   const { weight: _, ...rest } = g;
   return rest;
 };
 
+// 引用所在的那个顶层字段
+const fieldLabel = (kind: string, link: Link): string => kindOf(kind)?.fields.find((f) => f.key === link.path[0])?.label ?? link.label;
+
 interface Finals {
   items: Map<string, unknown>;
+  // 走到了但写不了：原因
   blocked: Map<string, string>;
   stripped: ImportStrip[];
-  avail: (link: Pick<Link, 'kinds' | 'id'>) => boolean;
+  fixes: Map<string, unknown>;
 }
 
-function finalsOf(w: Walked, dest: Dest, skip: ReadonlySet<string>, table: LinkTable): Finals {
+function finalsOf(c: WalkCtx, w: Walked): Finals {
+  const { info, dest } = c;
+  const { table } = info;
   const blocked = new Map<string, string>();
-  const provided = new Set<string>();
-  for (const n of w.reached.values()) if (n.ref.kind === 'era') for (const d of (n.item as Era).dimensions) provided.add(d.id);
-  const avail = (link: Pick<Link, 'kinds' | 'id'>): boolean => {
-    for (const kind of link.kinds) {
-      if (kind === 'field' && ITEM_ID.test(link.id)) return true;
-      if (kind === DIMENSION) {
-        if (dest.allDims.has(link.id) || w.dims.has(link.id) || provided.has(link.id)) return true;
-        continue;
-      }
-      const key = linkKey(kind, link.id);
-      if ((w.reached.has(key) && !blocked.has(key)) || destHas(dest, kind, link.id)) return true;
-    }
-    return false;
-  };
-  // 去不掉的引用找不到目标：这一项带不了；写到它的再看一遍
+  const avail = (l: Pick<Link, 'kinds' | 'id'>) => linkThere(c, w, l, blocked);
+  const has = { dim: (id: string) => dimThere(c, w, id), link: (l: Link) => avail(l) };
+  const settled = (key: string) => w.have.has(key) || c.skip.has(key);
+  // 写的时候又少了东西（目标放不下、被去掉）：这一项也写不了；写到它的再看一遍
   for (let changed = true; changed; ) {
     changed = false;
-    for (const key of w.reached.keys()) {
-      if (blocked.has(key) || skip.has(key)) continue;
+    for (const [key, n] of w.reached) {
+      if (blocked.has(key) || settled(key)) continue;
       const bad = (table.out.get(key) ?? []).find((l) => !l.drop && !avail(l));
       if (bad) {
-        blocked.set(key, `少了${bad.label}“${bad.id}”`);
+        blocked.set(key, bad.kinds.includes(DIMENSION) && w.dimsFull.has(bad.id) ? (c.over.get(linkKey(DIMENSION, bad.id)) ?? FULL_DIMS) : `需要${linkNeedName(info, bad)}`);
+        changed = true;
+        continue;
+      }
+      const lacks = softLacks(c, key, n.ref.kind, n.item, has);
+      if (lacks) {
+        blocked.set(key, needText(lacks));
         changed = true;
       }
     }
   }
   const items = new Map<string, unknown>();
   const stripped: ImportStrip[] = [];
-  for (const [key, n] of w.reached) {
-    if (blocked.has(key) || skip.has(key)) continue;
-    const links = table.out.get(key) ?? [];
-    const gone = links.filter((l) => l.drop && !avail(l));
+  const fixes = new Map<string, unknown>();
+  const strip = (key: string, n: ImportNode): unknown => {
+    const gone = (table.out.get(key) ?? []).filter((l) => l.drop && !avail(l));
     // 去掉的一处说一次（派系的一条来源写了变量和取值，是一处）：写具体的那个（取值，不是变量）
     const told = new Map<string, Link>();
     for (const l of gone) {
@@ -473,154 +163,199 @@ function finalsOf(w: Walked, dest: Dest, skip: ReadonlySet<string>, table: LinkT
     }
     for (const l of told.values()) {
       const to = resolveLink(table, l);
-      const name = !to ? l.id : to.kind === DIMENSION ? l.id : refName(to, table.nodes.get(keyRef(to))?.item);
+      const name = !to ? l.id : to.kind === DIMENSION ? l.id : linkNeedName(info, l);
       stripped.push({ from: n.ref, fromName: n.name, label: fieldLabel(n.ref.kind, l), target: name });
     }
-    items.set(key, withWeight(n, gone.length ? strippedItem(n.ref.kind, n.item, gone, (l) => !avail(l)) : n.item));
+    return gone.length ? strippedItem(n.ref.kind, n.item, gone, (l) => !avail(l)) : n.item;
+  };
+  for (const [key, n] of w.reached) {
+    if (blocked.has(key)) continue;
+    if (!settled(key)) {
+      items.set(key, withWeight(n, strip(key, n)));
+      continue;
+    }
+    // 目的地这一份少了引用，目标现在有了：勾的、下级补回（跟着来的只是要它在）
+    if (n.role === 'follow' || !w.have.has(key)) continue;
+    const k = dest.kindsById.get(n.ref.kind)!;
+    const there = dest.byId.get(n.ref.kind)!.get(n.ref.id);
+    const rel = relationOf(k, n.item, there, dest.world);
+    const back = n.role === 'pick' && weightBack(k, n.item, there);
+    if (!back && !restoredLinks(k, n.item, there, rel, avail).length) continue;
+    const next = withWeight(n, strip(key, n)) as Record<string, unknown>;
+    if (back) {
+      fixes.set(key, next);
+      continue;
+    }
+    // 不比的键（比重）留目的地的
+    const out = { ...next };
+    for (const skip of k.pack.sameIgnore ?? []) {
+      const v = (there as Record<string, unknown>)[skip];
+      if (v === undefined) delete out[skip];
+      else out[skip] = v;
+    }
+    fixes.set(key, out);
   }
-  return { items, blocked, stripped, avail };
+  return { items, blocked, stripped, fixes };
 }
-
-// 引用所在的那个顶层字段
-const topField = (kind: string, link: Link) => kindOf(kind)?.fields.find((f) => f.key === link.path[0]);
-const fieldLabel = (kind: string, link: Link): string => topField(kind, link)?.label ?? link.label;
 
 // ---------- 闭包 ----------
 
-const GENERIC_OFF = '取消后去掉这条引用';
-
-function rowOf(n: Pick<Node, 'ref' | 'name' | 'cls' | 'why' | 'under'>, state: ImportState, to: string | undefined, skipLock: boolean): ImportRow {
-  const k = kindOf(n.ref.kind);
-  const firsts = n.why.slice(0, 3).map((w) => w.text);
-  // 取消后会怎样：引用它的字段写的（一样的只写一句）
-  const notes = [...new Set(n.why.flatMap((w) => (w.link && w.from.kind !== DIMENSION ? [OFF_NOTES[w.from.kind]?.[String(w.link.path[0])] ?? (w.link.drop ? GENERIC_OFF : '')] : [])).filter(Boolean))];
-  const lockedBy = skipLock ? undefined : n.why.find((w) => w.link && !w.link.drop);
-  return {
-    kind: n.ref.kind,
-    id: n.ref.id,
-    name: n.name,
-    kindLabel: k?.label ?? '变量',
-    cls: n.cls,
-    state,
-    why: firsts,
-    whyMore: Math.max(0, n.why.length - firsts.length),
-    ...(to && to !== n.ref.id ? { to } : {}),
-    ...(lockedBy ? { locked: `少了它“${lockedBy.fromName}”用不了` } : {}),
-    ...(notes.length ? { offNote: notes[0] } : n.cls === 'member' ? { offNote: '取消后不带这一项' } : {}),
-    ...(n.under ? { under: n.under } : {}),
-  };
-}
-
-const DIM_OFF = '取消后不加这个变量，写到它的来源、倾向去掉';
-const dimRow = (d: DimNode, info: SourceInfo, state: ImportState): ImportRow => {
-  const r = rowOf({ ref: { kind: DIMENSION, id: d.id }, name: d.label, cls: d.cls, why: d.why }, state, undefined, d.cls !== 'hard');
-  return { ...r, offNote: d.cls === 'optional' ? '勾上后世界多一个变量，这些引用留着；不勾时去掉' : DIM_OFF, count: info.dims.get(d.id)?.values.length ?? 0 };
-};
+const rowOf = (n: ImportNode, state: ImportRowState, to: string | undefined): ImportRow => ({
+  kind: n.ref.kind,
+  id: n.ref.id,
+  name: n.name,
+  kindLabel: kindOf(n.ref.kind)?.label ?? DIM_LABEL,
+  role: n.role,
+  state,
+  because: n.role === 'pick' ? [] : n.because,
+  ...(to && to !== n.ref.id ? { to } : {}),
+  ...(n.under ? { under: n.under } : {}),
+  children: [],
+});
 
 export function importPreview(ask: ImportAsk): ImportPreview {
   const info = infoOf(ask.source);
   const dest = destOf(ask.target);
-  const kindsById = new Map(dest.kinds.map((k) => [k.id, k]));
+  const c = walkCtx(ask, info, dest);
   const finalOf = ask.target.t === 'world' ? finalItem : (k: ContentKind, x: unknown, id: string, r: Renames, only?: Parameters<typeof renamedItem>[4]) => renamedItem(k, x, id, r, only);
-  // 只看能放进目的地的种类（世界里星球形态不走这里）
-  const usable = (r: ContentRef) => r.kind === DIMENSION || kindsById.has(r.kind);
-  const filtered: ImportAsk = { ...ask, picks: ask.picks.filter(usable) };
   const skip = new Set<string>();
+  c.skip = skip;
   const skipFinal = new Map<string, unknown>();
   let w!: Walked;
   let finals!: Finals;
   let settled!: ReturnType<typeof settleIds>;
   let picked!: Map<ContentKind, unknown[]>;
-  // 认出“已经有了”的项后不再往下走，引用可能因此少一些，再算一遍。skip 只增不减，几遍就停
-  for (let round = 0; round < 8; round++) {
-    w = walk(info, filtered, dest, skip);
-    for (const key of w.reached.keys()) if (!kindsById.has(key.split('\u0000')[0])) w.reached.delete(key);
-    finals = finalsOf(w, dest, skip, info.table);
-    // 目的地有同 id、一模一样的（原样的，或导入时的样子）：已经有了。从库建的世界里的文化写着别的时代的倾向，来源那份也写着，这种不算不同
-    let same = false;
-    for (const [key, n] of w.reached) {
-      if (finals.blocked.has(key) || skip.has(key)) continue;
-      const there = dest.byId.get(n.ref.kind)?.get(n.ref.id);
-      if (there === undefined) continue;
-      const k = kindsById.get(n.ref.kind)!;
-      const have = contentKey(k, there);
-      if (have === contentKey(k, ask.target.t === 'world' ? finalized(k, n.item) : n.item) || have === contentKey(k, ask.target.t === 'world' ? finalized(k, finals.items.get(key)) : finals.items.get(key))) {
-        skip.add(key);
-        same = true;
-      }
-    }
-    if (same) {
-      round--;
-      continue;
-    }
+  // 认出“已经有了”、放不下的项后引用可能因此少一些，再算一遍。skip、over 只增不减，几遍就停
+  for (;;) {
+    w = walkClosure(c, ask.picks);
+    finals = finalsOf(c, w);
     picked = new Map(dest.kinds.map((k) => [k, [] as unknown[]]));
-    for (const [key, n] of w.reached) {
-      if (finals.blocked.has(key) || skip.has(key)) continue;
-      picked.get(kindsById.get(n.ref.kind)!)!.push(finals.items.get(key));
+    const keysOf = new Map<ContentKind, string[]>();
+    for (const [key, x] of finals.items) {
+      const k = dest.kindsById.get(key.split('\u0000')[0])!;
+      picked.get(k)!.push(x);
+      if (!keysOf.has(k)) keysOf.set(k, []);
+      keysOf.get(k)!.push(key);
     }
     // 已经有了的一直留着：写到它们的引用要按目的地的 id 改；它们自己什么也不加
-    for (const [key, x] of skipFinal) picked.get(kindsById.get(key.split('\u0000')[0])!)!.push(x);
+    for (const [key, x] of skipFinal) picked.get(dest.kindsById.get(key.split('\u0000')[0])!)!.push(x);
     settled = settleIds(dest.kinds, picked, dest.items, finalOf);
-    let grew = false;
+    let again = false;
     for (const [k, a] of settled.assigned) {
       for (const id of a.skip) {
         const key = linkKey(k.id, id);
         if (skip.has(key)) continue;
         skip.add(key);
         skipFinal.set(key, finals.items.get(key));
-        grew = true;
+        again = true;
       }
     }
-    if (!grew) break;
+    if (again) continue;
+    // 放不下：先走到的（勾的）留着，多出来的跳过
+    for (const [k, keys] of keysOf) {
+      const room = dest.cap(k) - dest.items.get(k)!.length;
+      for (const key of keys.slice(Math.max(0, room))) {
+        c.over.set(key, `${k.label}最多 ${dest.cap(k)} 个`);
+        again = true;
+      }
+    }
+    if (again) continue;
+    // 取值都放不下的变量不加（世界里没有取值的变量加不上）
+    if (dest.era) {
+      const valueKind = kindOf('popValue');
+      const there = valueKind ? (dest.items.get(valueKind) ?? []) : [];
+      for (const d of w.dims.values()) {
+        const has = there.some((v) => (v as PopValue).dimension === d.id) || [...w.reached].some(([key, n]) => n.ref.kind === 'popValue' && (n.item as PopValue).dimension === d.id && !finals.blocked.has(key));
+        if (!has) {
+          c.over.set(linkKey(DIMENSION, d.id), `“${d.label}”的取值都放不下`);
+          again = true;
+        }
+      }
+    }
+    if (!again) break;
   }
 
   const ids = new Map<string, string>();
   for (const [k, a] of settled.assigned) for (const [from, to] of a.ids) ids.set(linkKey(k.id, from), to);
-  for (const key of skip) if (!ids.has(key)) ids.set(key, key.split('\u0000')[1]);
+  for (const key of [...skip, ...w.have]) if (!ids.has(key) && !finals.blocked.has(key)) ids.set(key, key.split('\u0000')[1]);
 
+  // 清单
   const rows: ImportRow[] = [];
+  const byKey = new Map<string, ImportRow>();
+  const parents = new Map<ImportRow, string | undefined>();
+  const addRow = (key: string, row: ImportRow, parent: string | undefined) => {
+    rows.push(row);
+    byKey.set(key, row);
+    parents.set(row, parent);
+  };
+  if (dest.era) {
+    for (const d of w.dims.values()) {
+      const values = [...w.reached.values()].filter((n) => n.ref.kind === 'popValue' && (n.item as PopValue).dimension === d.id && !finals.blocked.has(keyRef(n.ref)) && finals.items.has(keyRef(n.ref))).length;
+      addRow(linkKey(DIMENSION, d.id), { kind: DIMENSION, id: d.id, name: d.label, kindLabel: DIM_LABEL, role: d.role, state: 'new', because: d.role === 'pick' ? [] : d.because, count: values, children: [] }, d.parent);
+    }
+  }
   for (const [key, n] of w.reached) {
-    const blocked = finals.blocked.get(key);
-    const state: ImportState = blocked ? 'blocked' : skip.has(key) ? 'have' : ids.get(key) !== n.ref.id ? 'rename' : 'new';
-    const lockSkip = n.cls === 'auto' || n.cls === 'member';
-    const row = rowOf(n, state, ids.get(key), lockSkip);
-    rows.push(blocked ? { ...row, why: [blocked, ...row.why] } : row);
+    if (finals.blocked.has(key)) continue;
+    if (finals.fixes.has(key)) {
+      addRow(key, rowOf(n, 'fix', undefined), n.parent);
+      continue;
+    }
+    if (skip.has(key) || w.have.has(key)) continue;
+    const to = ids.get(key);
+    addRow(key, rowOf(n, to !== n.ref.id ? 'rename' : 'new', to), n.parent);
   }
-  const dimRows = [...w.dims.values()].map((d) => dimRow(d, info, 'new'));
-  const offRows = [...w.offRows.values()].map((n): ImportRow => (n.ref.kind === DIMENSION ? dimRow({ id: n.ref.id, label: n.name, cls: 'auto', why: n.why }, info, 'off') : rowOf(n, 'off', undefined, true)));
-  const optional = [...w.optional.values()].filter((d) => !w.dims.has(d.id) && !finals.avail({ kinds: [DIMENSION], id: d.id })).map((d) => dimRow(d, info, 'off'));
-
-  const isPick = (r: ImportRow) => r.cls === 'pick';
-  // 变量在前，再按种类；取消了也留在原来的位置，能勾回来
+  // 用到的、目的地还没有的自定义场（跟着内容自动加）
+  const fieldsHere = new Set(ask.target.t === 'world' ? Object.keys(ask.target.world.causes.fields) : packItems<string>(ask.target.pack, 'fields'));
+  for (const [key, x] of finals.items) {
+    if (skip.has(key)) continue;
+    const n = w.reached.get(key)!;
+    for (const f of itemFields(n.ref.kind, x)) {
+      const at = linkKey('field', f);
+      if (fieldsHere.has(f) || byKey.has(at)) continue;
+      addRow(at, { kind: 'field', id: f, name: f, kindLabel: kindOf('field')?.label ?? '自定义场', role: 'follow', state: 'new', because: [`${n.name} 要它`], children: [] }, undefined);
+    }
+  }
+  // 变量在前，再按种类，同一种按走到的先后
   const kindAt = new Map(dest.kinds.map((k, i) => [k.id, i]));
-  const rank = (r: ImportRow) => (r.kind === DIMENSION ? -1 : (kindAt.get(r.kind) ?? 1e9));
-  const bring = [...dimRows.filter((r) => !isPick(r)), ...rows.filter((r) => !isPick(r) && !r.under && (r.state === 'new' || r.state === 'rename')), ...offRows].sort((a, b) => rank(a) - rank(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const eraDims: Dimension[] = dest.era ? [...w.dims.values()].filter((d) => !dest.dims.has(d.id)).map((d) => ({ id: d.id, label: d.label, required: true, added: true })) : [];
-
-  // 放不下
-  const over: string[] = [];
-  for (const k of dest.kinds) {
-    const a = settled.assigned.get(k);
-    const adding = a ? a.ids.size - a.skip.size : 0;
-    if (!adding) continue;
-    const cap = ask.target.t === 'world' ? (k.maxInWorld ?? k.pack.max) : k.pack.max;
-    if (dest.items.get(k)!.length + adding > cap) over.push(`${k.label}最多 ${cap} 个`);
+  const rank = (r: ImportRow) => (r.kind === DIMENSION ? -1 : (kindAt.get(r.kind) ?? -0.5));
+  const list: ImportRow[] = [];
+  for (const row of rows) {
+    const up = parents.get(row);
+    const parent = up ? byKey.get(up) : undefined;
+    if (parent) parent.children.push(row);
+    else list.push(row);
   }
-  for (const id of w.dimsFull) over.push(`一个时代最多 ${MAX_DIMENSIONS} 个变量，加不了“${info.dims.get(id)?.label ?? id}”`);
-  const count = rows.filter((r) => !r.under && (r.state === 'new' || r.state === 'rename')).length + w.dims.size;
+  list.sort((a, b) => rank(a) - rank(b));
+
+  // 勾了但进不来的
+  const dropped: ImportDropped[] = [];
+  const drop = (kind: string, id: string, name: string, reason: string) => {
+    if (!dropped.some((x) => x.kind === kind && x.id === id)) dropped.push({ kind, id, name, kindLabel: kindOf(kind)?.label ?? DIM_LABEL, reason });
+  };
+  for (const r of w.rejected.values()) if (r.role !== 'follow') drop(r.ref.kind, r.ref.id, r.name, r.gate.reason);
+  for (const [key, reason] of finals.blocked) {
+    const n = w.reached.get(key)!;
+    if (n.role !== 'follow') drop(n.ref.kind, n.ref.id, n.name, reason);
+  }
+  for (const id of w.dimsFull) drop(DIMENSION, id, info.dims.get(id)?.label ?? id, c.over.get(linkKey(DIMENSION, id)) ?? FULL_DIMS);
+
+  const fixes: SettledPlan['fixes'] = [];
+  for (const [key, item] of finals.fixes) {
+    const n = w.reached.get(key)!;
+    const k = dest.kindsById.get(n.ref.kind)!;
+    fixes.push({ kind: k, id: n.ref.id, item: finalOf(k, item, n.ref.id, settled.renames) });
+  }
+  const eraDims: Dimension[] = dest.era ? [...w.dims.values()].map((d) => ({ id: d.id, label: d.label, required: true, added: true })) : [];
   return {
-    picks: [...dimRows.filter(isPick), ...rows.filter(isPick)],
-    bring,
-    optional,
-    have: rows.filter((r) => r.state === 'have'),
-    renamed: rows.filter((r) => r.state === 'rename'),
-    // 只说要紧的：依赖带来的项带不了时，写到它的引用去掉（在 stripped 里）
-    blocked: rows.filter((r) => r.state === 'blocked' && (r.cls === 'pick' || r.cls === 'hard')),
+    list,
+    rows,
+    count: rows.length,
+    stripCount: finals.stripped.length,
     stripped: finals.stripped,
-    over,
+    dropped,
     dims: eraDims,
-    count,
-    plan: { finals: picked, ids, renames: settled.renames, ...(dest.era ? { era: dest.era } : {}) },
+    gates: gatesOf(c, w, ask.source),
+    plan: { finals: picked, ids, renames: settled.renames, fixes, ...(dest.era ? { era: dest.era } : {}) },
   };
 }
 
@@ -681,25 +416,24 @@ export interface WorldImport {
   preview: ImportPreview;
 }
 
-const LABEL_NAMES = 1;
 function importLabel(p: ImportPreview): string {
-  const first = p.picks[0];
+  const first = p.rows.find((r) => r.role === 'pick') ?? p.rows[0];
   if (!first) return `导入 ${p.count} 项`;
-  const head = p.picks.slice(0, LABEL_NAMES).map((r) => `${r.kindLabel}“${r.name}”`).join('、');
+  const head = `${first.kindLabel}“${first.name}”`;
   return p.count > 1 ? `导入${head}等 ${p.count} 项` : `导入${head}`;
 }
 
-// 导入本世界的命令：一个 batch，一次撤销全撤。先加各项，再加变量（add_dimension 要取值已经在世界里）。什么都不用加、放不下时 command 是 null。
+// 导入本世界的命令：一个 batch，一次撤销全撤。先加各项，再补回，再加变量（add_dimension 要取值已经在世界里）。什么都不用写时 command 是 null。
 // path：来源在资源库里的路径（记进世界的来源）
 export function importCommand(ask: ImportAsk, opts: { path?: readonly string[]; onto?: ImportOnto } = {}): WorldImport {
   if (ask.target.t !== 'world') throw new Error('importCommand 只给世界用');
   const world = ask.target.world;
   const preview = importPreview(ask);
-  if (preview.over.length) return { command: null, added: [], skipped: [], preview };
   const { pack, picks } = mergedPack(preview);
   const origin = originIndex(ask.source, opts.path ?? [ask.source.id]);
   const plan = planPack(world, pack, picks, { origin, label: importLabel(preview) });
   const commands: Command[] = [...plan.command.commands];
+  for (const f of preview.plan.fixes) commands.push(enableCommand(f.kind, f.item, world));
   const era = preview.plan.era;
   if (era) for (const d of preview.dims) commands.push({ op: 'add_dimension', dimension: { id: d.id, label: d.label.slice(0, 12) }, era: era.id });
   if (opts.onto) {
@@ -748,10 +482,11 @@ export function importToPack(ask: ImportAsk, opts: { onto?: ImportOnto } = {}): 
   if (ask.target.t !== 'pack') throw new Error('importToPack 只给库用');
   const target = ask.target.pack;
   const preview = importPreview(ask);
-  if (preview.over.length || (!preview.count && !opts.onto)) return { pack: target, added: [], skipped: [], preview };
+  if (!preview.count && !opts.onto) return { pack: target, added: [], skipped: [], preview };
   const { pack: merged, picks } = mergedPack(preview);
   const r = importIntoPack(target, merged, picks);
   let pack = r.pack;
+  for (const f of preview.plan.fixes) pack = replaced(pack, f.kind, f.id, structuredClone(f.item)) as ResourcePack;
   const era = preview.plan.era;
   const eraKind = kindOf('era');
   if (era && eraKind && preview.dims.length) pack = replaced(pack, eraKind, era.id, { ...era, dimensions: [...era.dimensions, ...preview.dims] }) as ResourcePack;

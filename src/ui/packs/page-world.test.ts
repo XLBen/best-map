@@ -232,7 +232,7 @@ describe('谁用到它', () => {
     const e = worldOf('fantasy', 3);
     const source = builtinPacks().find((p) => p.id === 'modern')!;
     const f = packItems<{ id: string }>(source, 'factions').find((x) => !kindOf('faction')!.inWorld(e.world).some((y) => (y as { id: string }).id === x.id))!;
-    const r = importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'faction', id: f.id }] }, { path: ['modern'] });
+    const r = importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'faction', id: f.id }, { kind: 'dimension', id: 'ideology' }, { kind: 'dimension', id: 'nation' }] }, { path: ['modern'] });
     e.exec(r.command!);
     e.update();
     const u = usedByOf(WORLD_SOURCE, kindOf('faction')!, f.id, item(e, 'faction', f.id), ctxOf(e.world));
@@ -395,7 +395,7 @@ describe('重新生成的按钮', () => {
     const source = builtinPacks().find((p) => p.id === 'modern')!;
     const gov = packItems<{ id: string; category?: string[] }>(source, 'governments').find((g) => g.category?.includes('communist'))!;
     const before = digest(e.world.causes.country!);
-    e.exec(importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'government', id: gov.id }] }, { path: ['modern'] }).command!);
+    e.exec(importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'government', id: gov.id }, { kind: 'dimension', id: 'ideology' }] }, { path: ['modern'] }).command!);
     e.update();
     t.step(1, e.world.small.content);
     expect(digest(e.world.causes.country!)).toBe(before);

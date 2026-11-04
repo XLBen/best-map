@@ -42,7 +42,7 @@ const LANDMARK_FIELDS: readonly FieldDesc[] = [
   { key: 'color', label: '颜色', type: 'color', optional: true },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
   { key: 'detector', label: '怎么找', type: 'enum', optional: true, options: LANDMARK_DETECTORS.map((d) => ({ value: d, label: d })), when: { key: 'category', is: 'natural' } },
-  { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, ref: 'cultureGroup', dep: 'auto', hint: '空着时不限' },
+  { key: 'cultureGroups', label: '文化组', type: 'tags', optional: true, ref: 'cultureGroup', dep: 'gate', hint: '空着时不限' },
   { key: 'governments', label: '政体的类别', type: 'tags', optional: true, ref: 'govCategory', hint: '空着时不限' },
   { key: 'place', label: '放在哪', type: 'enum', options: LANDMARK_PLACES.map((p) => ({ value: p, label: p })) },
   {

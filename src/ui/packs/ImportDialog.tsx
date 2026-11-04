@@ -1,17 +1,17 @@
 import { ChevronRight } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ImportPreview, ImportRow, ImportTarget } from '../../../core/packs/closure';
+import type { ImportGate, ImportGates, ImportPreview, ImportRow, ImportTarget } from '../../../core/packs/closure';
 import { importPreview } from '../../../core/packs/closure';
 import { library } from '../../library';
 import { showToast, world } from '../../state';
 import { LibraryPick } from '../components/LibraryPick';
 import { ModalHead } from '../common';
 import { CHILD_SHOW } from './page-children';
-import { type PickRow, type PickSection, askOf, chooseFile, chooseFrom, closeImport, hasRef, hereState, importWindow, matchRow, pickSections, regenLine, runImport, setPicks, sourceOf, targetOf, targetTitle, toggleDep, toggleOptional, togglePick } from './page-import';
+import { type PickRow, type PickSection, askOf, chooseFile, chooseFrom, closeImport, hasRef, importWindow, matchRow, pickSections, regenLine, runImport, setPicks, sourceOf, targetOf, targetTitle, toggleDep, togglePick } from './page-import';
 import type { PageCtx } from './page-source';
 import { openPackImport } from './store';
 
-// 导入窗口（第六十一轮）：选一个库 → 按种类分组勾 → 下面列还会带上、已经有了、会改名 → 确认后写入（一步）。逻辑都在 page-import.ts
+// 导入窗口（第六十一轮）：选一个库 → 按种类分组勾（灰的写原因） → 下面列会写入的 → 确认后写入（一步）。逻辑都在 page-import.ts。第六十五轮重写成两栏
 
 // ---------- 上面：勾 ----------
 
@@ -28,24 +28,37 @@ function Check({ checked, disabled, onChange, children, title, indeterminate }: 
   );
 }
 
-function PickLine({ r, target, picked, dep }: { r: PickRow; target: ImportTarget; picked: boolean; dep: ImportRow | undefined }) {
-  const here = hereState(r, target);
-  // 灰字：勾了以后会怎样（来自闭包），没勾时看目的地
-  const state = dep?.state === 'rename' ? `会改名为 ${dep.to}` : dep?.state === 'have' || here === 'same' ? '已经有了' : here === 'differs' ? '同 id、内容不同' : null;
+// 灰的、已经有了的不能勾
+function canPick(gates: ImportGates | null, r: PickRow): boolean {
+  const t = gates?.of({ kind: r.kind, id: r.id }).t;
+  return t !== 'gated' && t !== 'full' && t !== 'have';
+}
+
+function gateText(g: ImportGate): string | null {
+  if (g.t === 'gated' || g.t === 'full') return g.reason;
+  if (g.t === 'have') return '已经有了';
+  if (g.t === 'fixable') return g.restores.length ? `补回：${g.restores.join('、')}` : '勾上才参与生成';
+  return g.differs ? '有一份不同的，导入后并存' : null;
+}
+
+function PickLine({ r, gates, picked, row }: { r: PickRow; gates: ImportGates | null; picked: boolean; row: ImportRow | undefined }) {
+  const gate = gates?.of({ kind: r.kind, id: r.id });
+  const grey = !canPick(gates, r);
+  const state = row?.state === 'rename' ? `会叫 ${row.to}` : gate ? gateText(gate) : null;
   return (
     <div class={`imp-row ${picked ? 'on' : ''}`}>
-      <Check checked={picked} onChange={(on) => togglePick({ kind: r.kind, id: r.id }, on)}>
+      <Check checked={picked || !!row} disabled={grey && !picked} onChange={(on) => (!on && !picked ? toggleDep({ kind: r.kind, id: r.id }, false) : togglePick({ kind: r.kind, id: r.id }, on))}>
         {r.color && <span class="swatch" style={{ background: r.color }} />}
         <span class="ellipsis imp-name">{r.name}</span>
         {r.hint && <span class="hint ellipsis">{r.hint}</span>}
       </Check>
-      {!picked && dep && dep.cls !== 'pick' && dep.state !== 'off' && dep.state !== 'have' && <span class="hint imp-state">还会带上</span>}
+      {!picked && row && <span class="hint imp-state">{row.because[0]}</span>}
       {state && <span class="hint imp-state">{state}</span>}
     </div>
   );
 }
 
-function PickGroup({ s, query, target, picks, deps, open, onToggle }: { s: PickSection; query: string; target: ImportTarget; picks: readonly { kind: string; id: string }[]; deps: Map<string, ImportRow>; open: boolean; onToggle: () => void }) {
+function PickGroup({ s, query, gates, picks, rows: planned, open, onToggle }: { s: PickSection; query: string; gates: ImportGates | null; picks: readonly { kind: string; id: string }[]; rows: Map<string, ImportRow>; open: boolean; onToggle: () => void }) {
   const [limit, setLimit] = useState(CHILD_SHOW);
   const rows = useMemo(() => (query ? s.rows.filter((r) => matchRow(r, query)) : s.rows), [s, query]);
   if (query && !rows.length) return null;
@@ -60,7 +73,7 @@ function PickGroup({ s, query, target, picks, deps, open, onToggle }: { s: PickS
         <button class="icon-btn imp-twist" title={shown ? '收起' : '展开'} onClick={onToggle}>
           <ChevronRight />
         </button>
-        <Check checked={all} indeterminate={pickedCount > 0 && !all} title="整组勾" onChange={(on) => setPicks(refs(s.rows), on)}>
+        <Check checked={all} indeterminate={pickedCount > 0 && !all} title="整组勾" onChange={(on) => setPicks(refs(s.rows.filter((r) => !on || hasRef(picks, r) || canPick(gates, r))), on)}>
           <b>{s.title}</b>
         </Check>
         <span class="lp-count">{pickedCount ? `${pickedCount} / ${s.rows.length}` : s.rows.length}</span>
@@ -68,7 +81,7 @@ function PickGroup({ s, query, target, picks, deps, open, onToggle }: { s: PickS
       {shown && (
         <div class="imp-rows">
           {hits.map((r) => (
-            <PickLine key={`${r.kind}:${r.id}`} r={r} target={target} picked={hasRef(picks, r)} dep={deps.get(`${r.kind}:${r.id}`)} />
+            <PickLine key={`${r.kind}:${r.id}`} r={r} gates={gates} picked={hasRef(picks, r)} row={planned.get(`${r.kind}:${r.id}`)} />
           ))}
           {rows.length > hits.length && (
             <button class="small imp-more" onClick={() => setLimit(limit + CHILD_SHOW * 4)}>
@@ -81,66 +94,33 @@ function PickGroup({ s, query, target, picks, deps, open, onToggle }: { s: PickS
   );
 }
 
-// ---------- 下面：还会带上 ----------
+// ---------- 下面：会写入的 ----------
 
-function whyText(r: ImportRow): string {
-  return `${r.why.join('；')}${r.whyMore ? ` 等 ${r.why.length + r.whyMore} 处` : ''}`;
-}
+const SHOW_ROWS = 40;
 
-function DepLine({ r }: { r: ImportRow }) {
-  const off = r.state === 'off';
+function PlanLine({ r, depth }: { r: ImportRow; depth: number }) {
   const ref = { kind: r.kind, id: r.id };
+  // 勾的去掉勾，别的记进 off（跟着来的去掉时，要它的也进不来）
+  const remove = () => (r.role === 'pick' ? togglePick(ref, false) : toggleDep(ref, false));
   return (
-    <div class={`imp-dep ${off ? 'off' : ''}`}>
-      <Check checked={!off} disabled={!!r.locked} title={r.locked ? `不能取消：${r.locked}` : r.offNote} onChange={(on) => toggleDep(ref, on)}>
+    <>
+      <div class="imp-dep" style={{ paddingLeft: `${depth * 12}px` }}>
         <span class="ellipsis imp-name">{r.name}</span>
-        {r.count ? <span class="hint">{r.count} 种取值</span> : null}
-        {r.state === 'rename' && <span class="hint">改名为 {r.to}</span>}
-      </Check>
-      <span class="hint imp-why">{r.locked ? `不能取消：${r.locked}` : off ? (r.offNote ?? whyText(r)) : whyText(r)}</span>
-    </div>
-  );
-}
-
-const DEP_SHOW = 8;
-function DepKind({ title, rows }: { title: string; rows: ImportRow[] }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? rows : rows.slice(0, DEP_SHOW);
-  return (
-    <div class="imp-dep-group">
-      <h6>{title}</h6>
-      {shown.map((r) => (
-        <DepLine key={`${r.kind}:${r.id}`} r={r} />
+        <span class="hint">{r.kindLabel}</span>
+        {r.state === 'rename' && <span class="hint">会叫 {r.to}</span>}
+        {r.state === 'fix' && <span class="hint">补回引用</span>}
+        {r.because[0] && <span class="hint imp-why">{r.because[0]}</span>}
+        {r.kind !== 'field' && (
+          <button class="small" title={r.role === 'follow' ? '去掉后要它的那一项也进不来' : '不导入这一项'} onClick={remove}>
+            ×
+          </button>
+        )}
+      </div>
+      {r.children.slice(0, SHOW_ROWS).map((x) => (
+        <PlanLine key={`${x.kind}:${x.id}`} r={x} depth={depth + 1} />
       ))}
-      {rows.length > shown.length && (
-        <button class="small imp-more" onClick={() => setAll(true)}>
-          还有 {rows.length - shown.length} 个
-        </button>
-      )}
-    </div>
-  );
-}
-
-function byKind(rows: readonly ImportRow[]): [string, ImportRow[]][] {
-  const m = new Map<string, ImportRow[]>();
-  for (const r of rows) {
-    const k = r.kind === 'dimension' ? '变量' : r.kindLabel;
-    if (!m.has(k)) m.set(k, []);
-    m.get(k)!.push(r);
-  }
-  return [...m];
-}
-
-// 收着的一段（已经有了、会改名、去掉的引用）
-function Fold({ title, count, children }: { title: string; count: number; children: unknown }) {
-  if (!count) return null;
-  return (
-    <details class="imp-fold">
-      <summary>
-        {title} <span class="lp-count">{count}</span>
-      </summary>
-      <div class="imp-fold-body">{children as never}</div>
-    </details>
+      {r.children.length > SHOW_ROWS && <p class="hint">还有 {r.children.length - SHOW_ROWS} 项</p>}
+    </>
   );
 }
 
@@ -148,60 +128,19 @@ function Summary({ p, target }: { p: ImportPreview; target: ImportTarget }) {
   const line = regenLine(p, target);
   return (
     <div class="imp-summary">
-      {p.bring.length > 0 && (
+      {p.list.length > 0 && (
         <section class="imp-bring">
-          <h5>还会带上</h5>
-          {byKind(p.bring).map(([k, rows]) => (
-            <DepKind key={k} title={k} rows={rows} />
+          <h5>将导入 {p.count} 项</h5>
+          {p.list.slice(0, SHOW_ROWS).map((r) => (
+            <PlanLine key={`${r.kind}:${r.id}`} r={r} depth={0} />
           ))}
+          {p.list.length > SHOW_ROWS && <p class="hint">还有 {p.list.length - SHOW_ROWS} 项</p>}
         </section>
       )}
-      {p.optional.length > 0 && (
-        <section class="imp-bring">
-          <h5>可以带上</h5>
-          {p.optional.map((r) => (
-            <div class="imp-dep off" key={r.id}>
-              <Check checked={false} title={r.offNote} onChange={(on) => toggleOptional({ kind: r.kind, id: r.id }, on)}>
-                <span class="ellipsis imp-name">{r.name}</span>
-                {r.count ? <span class="hint">{r.count} 种取值</span> : null}
-              </Check>
-              <span class="hint imp-why">{whyText(r)}。不带时这几条去掉</span>
-            </div>
-          ))}
-        </section>
-      )}
-      <Fold title="已经有了" count={p.have.length}>
-        <p class="hint">{p.have.map((r) => (r.to ? `${r.name}（${r.to}）` : r.name)).join('、')}</p>
-      </Fold>
-      <Fold title="会改名" count={p.renamed.length}>
-        <p class="hint">目的地有同 id、内容不同的，原来的不动，写到它的引用跟着改</p>
-        <ul class="small imp-list">
-          {p.renamed.slice(0, 40).map((r) => (
-            <li key={`${r.kind}:${r.id}`}>
-              {r.kindLabel} {r.name}：{r.id} → {r.to}
-            </li>
-          ))}
-        </ul>
-      </Fold>
-      <Fold title="去掉的引用" count={p.stripped.length}>
-        <p class="hint">目的地没有目标的引用去掉，不把目标带来</p>
-        <ul class="small imp-list">
-          {p.stripped.slice(0, 40).map((s, k) => (
-            <li key={k}>
-              {s.fromName} · {s.label}：{s.target}
-            </li>
-          ))}
-          {p.stripped.length > 40 && <li>还有 {p.stripped.length - 40} 处</li>}
-        </ul>
-      </Fold>
-      {p.blocked.map((r) => (
-        <p class="warn small" key={r.id}>
-          {r.kindLabel}“{r.name}”带不了：{r.why[0]}
-        </p>
-      ))}
-      {p.over.map((t) => (
-        <p class="warn small" key={t}>
-          放不下：{t}
+      {p.stripCount > 0 && <p class="hint">自动去掉 {p.stripCount} 条写到这里没有的内容</p>}
+      {p.dropped.map((d) => (
+        <p class="warn small" key={`${d.kind}:${d.id}`}>
+          {d.kindLabel}“{d.name}”进不来：{d.reason}
         </p>
       ))}
       {line && <p class="hint imp-regen">{line}</p>}
@@ -222,12 +161,8 @@ function Body() {
   const fileInput = useRef<HTMLInputElement>(null);
   const sections = useMemo(() => (source && target ? pickSections(source, target) : []), [source, target?.t === 'world' ? target.world.small.content?.era : target?.pack]);
   const ask = askOf(st, ctx);
-  const preview = useMemo(() => (ask ? importPreview(ask) : null), [ask?.source, ask?.target.t === 'world' ? ask.target.world : ask?.target.pack, st.picks, st.off, st.on]);
-  const deps = useMemo(() => {
-    const m = new Map<string, ImportRow>();
-    for (const r of [...(preview?.bring ?? []), ...(preview?.have ?? []), ...(preview?.renamed ?? [])]) m.set(`${r.kind}:${r.id}`, r);
-    return m;
-  }, [preview]);
+  const preview = useMemo(() => (ask ? importPreview(ask) : null), [ask?.source, ask?.target.t === 'world' ? ask.target.world : ask?.target.pack, st.picks, st.off]);
+  const planned = useMemo(() => new Map((preview?.rows ?? []).map((r) => [`${r.kind}:${r.id}`, r])), [preview]);
   const query = q.trim().toLowerCase();
   const count = preview?.count ?? 0;
   const confirm = async () => {
@@ -308,9 +243,9 @@ function Body() {
                 key={s.kind}
                 s={s}
                 query={query}
-                target={target}
+                gates={preview?.gates ?? null}
                 picks={st.picks}
-                deps={deps}
+                rows={planned}
                 open={opened.has(s.kind)}
                 onToggle={() => {
                   const next = new Set(opened);
@@ -326,7 +261,7 @@ function Body() {
       )}
       <div class="modal-foot">
         <button onClick={closeImport}>取消</button>
-        <button class="primary" disabled={!count || working || !!preview?.over.length} onClick={() => void confirm()}>
+        <button class="primary" disabled={!count || working} onClick={() => void confirm()}>
           {st.picks.length && !count ? '都已经有了' : `导入${count ? ` ${count} 项` : ''}`}
         </button>
       </div>

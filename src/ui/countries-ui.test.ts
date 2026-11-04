@@ -7,6 +7,7 @@ import { danglingLinks, linkTable, worldScope } from '../../core/content/links';
 import { recordedOrigin } from '../../core/content/origin';
 import { findPack, packItems, packSections } from '../../core/packs';
 import { builtinPacks } from '../../core/packs/builtin-tree';
+import { importCommand } from '../../core/packs/closure';
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { cellLayers, countryBorderGroups, humanFlat } from '../render/colors';
@@ -315,37 +316,41 @@ describe('国家的档案', () => {
 
   it('换成别的库的政体：它列的、世界里没有的派系一起带来，档案里都有（第五十三轮）', () => {
     const eng = nations();
-    const w = eng.world;
-    const id = ids(w)[0];
+    const id = ids(eng.world)[0];
     const lib: LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
     const path = ['modern', 'governments'];
-    const gov = packItems<Government>(findPack(builtinPacks().find((p) => p.id === 'modern')!, ['governments'])!, 'governments').find((g) => g.id === 'parliamentary-republic')!;
+    const modern = builtinPacks().find((p) => p.id === 'modern')!;
+    // 派系靠的变量世界里要有（第六十四轮）：先导入变量
+    eng.exec(importCommand({ source: modern, target: { t: 'world', world: eng.world }, picks: [{ kind: 'dimension', id: 'ideology' }] }, { path: ['modern'] }).command!);
+    const w = eng.world;
+    const gov = packItems<Government>(findPack(modern, ['governments'])!, 'governments').find((g) => g.id === 'parliamentary-republic')!;
     expect(w.small.content!.faction![gov.factions![0]]).toBeUndefined();
     eng.exec(governmentCommand(w, w.small.countries![id], { gov, path }, lib)!);
     expect(countryFactions(eng.world, id).map((f) => f.id)).toEqual(gov.factions);
     expect(recordedOrigin(eng.world.small, 'faction', gov.factions![0])?.[0]).toBe('modern');
     eng.undo();
     expect(eng.world.small.content!.faction![gov.factions![0]]).toBeUndefined();
+    eng.undo();
   });
 
-  it('换成别的库的政体走导入的闭包（第六十三轮）：限谁用的组、派系都带上，不加变量，不留下找不到的引用', () => {
+  it('换成别的库的政体走导入的闭包（第六十四轮）：灰的带不了；能选的带上派系，不加变量，不留下找不到的引用', () => {
     const eng = nations();
     const w = eng.world;
     const id = ids(w)[0];
     const lib: LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
     const dangling = () => danglingLinks(linkTable(worldScope(eng.world))).map((b) => `${b.from.kind}:${b.from.id}:${b.link.id}`);
     const before = new Set(dangling());
-    const dims = worldDimensions(w.small).map((d) => d.id);
     const govs = (key: string) => packItems<Government>(builtinPacks().find((p) => p.id === key)!, 'governments');
-    // 限谁用的组：世界里没有这一组；带来的组比重 0，不参与生成
-    const limited = govs('scifi').find((g) => (g.only as { cultureGroups?: string[] }[] | undefined)?.some((o) => o.cultureGroups?.every((x) => !w.small.content?.cultureGroup?.[x])))!;
-    const groups = (limited.only as { cultureGroups?: string[] }[]).flatMap((o) => o.cultureGroups ?? []);
-    eng.exec(governmentCommand(w, eng.world.small.countries![id], { gov: limited, path: ['scifi', 'governments'] }, lib)!);
-    expect(eng.world.small.countries![id].government).toBe(limited.id);
-    for (const g of groups) expect((eng.world.small.content!.cultureGroup![g] as { weight?: number }).weight).toBe(0);
-    // 要变量的政体：派系带上，变量不加，写到变量的来源去掉
+    // 限谁用全部落空、要的变量世界里没有：灰的，不绕过
+    const limited = govs('scifi').find((g) => (g.only as { cultureGroups?: string[] }[] | undefined)?.every((o) => o.cultureGroups?.every((x) => !w.small.content?.cultureGroup?.[x])))!;
+    expect(governmentCommand(w, w.small.countries![id], { gov: limited, path: ['scifi', 'governments'] }, lib)).toBeNull();
     const socialist = govs('modern').find((g) => g.id === 'socialist-republic')!;
-    eng.exec(governmentCommand(w, eng.world.small.countries![id], { gov: socialist, path: ['modern', 'governments'] }, lib)!);
+    expect(governmentCommand(w, w.small.countries![id], { gov: socialist, path: ['modern', 'governments'] }, lib)).toBeNull();
+    // 先导入变量：能选了，派系带上，不再加变量
+    const modern = builtinPacks().find((p) => p.id === 'modern')!;
+    eng.exec(importCommand({ source: modern, target: { t: 'world', world: eng.world }, picks: [{ kind: 'dimension', id: 'ideology' }] }, { path: ['modern'] }).command!);
+    const dims = worldDimensions(eng.world.small).map((d) => d.id);
+    eng.exec(governmentCommand(eng.world, eng.world.small.countries![id], { gov: socialist, path: ['modern', 'governments'] }, lib)!);
     expect(eng.world.small.countries![id].government).toBe('socialist-republic');
     expect(worldDimensions(eng.world.small).map((d) => d.id)).toEqual(dims);
     for (const f of socialist.factions!) expect(eng.world.small.content!.faction![f]).toBeDefined();
@@ -354,7 +359,6 @@ describe('国家的档案', () => {
     eng.undo();
     expect(eng.world.small.content!.government!['socialist-republic']).toBeUndefined();
     eng.undo();
-    for (const g of groups) expect(eng.world.small.content!.cultureGroup?.[g]).toBeUndefined();
   });
 
   it('外交：宗主、同盟、敌对都是整份换掉；附庸在地图上用宗主的浅色', () => {

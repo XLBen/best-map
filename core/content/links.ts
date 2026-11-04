@@ -370,7 +370,7 @@ function compact(v: unknown): unknown {
   return v;
 }
 
-// 去掉选中的引用（第六十一轮导入时用：缺了的 strip 类，取消勾选的 auto 类）。列表里的去掉一个；规则里的条件没了时整条规则去掉
+// 去掉选中的引用（第六十一轮导入时用：目标缺了的）。列表里的去掉一个；规则里的条件没了时整条规则去掉
 // （只留另外几项规则就放宽了）；可选的字段空了去掉这个字段；称号的表键都没了时换成第一种写法。
 // 脚本、必须有的字段（文化的组）去不掉，留着。什么都没去掉时给回原来的对象；改了时给副本
 export function stripLinks<T>(kind: ContentKind | string, item: T, pick: (link: Link) => boolean): T {
@@ -490,7 +490,7 @@ export function danglingLinks(table: LinkTable): LinkFrom[] {
 export interface LinkClosure {
   // 顺着 hard 走到的
   hard: ContentRef[];
-  // 走到要经过 auto 的（默认勾上，可以取消）
+  // 走到要经过 auto、gate 的
   auto: ContentRef[];
   // 上面这些项 strip 类引用的、这张表里有的（不跟着带：目的地没有时去掉这条引用）
   strip: ContentRef[];
@@ -498,7 +498,7 @@ export interface LinkClosure {
   missing: LinkFrom[];
 }
 
-// 依赖的闭包：seeds 这几项还要带上什么（不含 seeds 自己）。一项有两条路时算在 hard 里。
+// 依赖的闭包：seeds 这几项写到的全部（不含 seeds 自己）。一项有两条路时算在 hard 里。导入不走这里（core/packs/import-gates.ts），这里只是查引用表。
 // 不反着走：文化组不带它的文化（那是“组里有什么”，第六十轮的 childrenOf），维度不带时代（只给 owners，加变量见第五十四轮）
 export function dependencyClosure(table: LinkTable, seeds: readonly ContentRef[]): LinkClosure {
   const inSeeds = new Set(seeds.map((s) => keyOf(s.kind, s.id)));
@@ -522,7 +522,7 @@ export function dependencyClosure(table: LinkTable, seeds: readonly ContentRef[]
     return found;
   };
   const hard = walk(seeds, ['hard']);
-  const auto = walk([...seeds, ...hard], ['hard', 'auto']);
+  const auto = walk([...seeds, ...hard], ['hard', 'auto', 'gate']);
   const all = [...seeds, ...hard, ...auto];
   const strip: ContentRef[] = [];
   const missing: LinkFrom[] = [];
@@ -550,9 +550,11 @@ export function linkProblems(kinds: readonly ContentKind[] = allKinds()): string
   const problems: string[] = [];
   const ids = new Set(kinds.map((k) => k.id));
   const known = (r: string) => ids.has(r) || REF_PSEUDO.has(r);
-  const see = (who: string, fields: readonly FieldDesc[]) => {
+  const see = (who: string, fields: readonly FieldDesc[], top = false) => {
     for (const f of fields) {
       const at = `${who}.${f.key}`;
+      // 导入时按最外层的字段看“一条不剩”（core/packs/import-gates.ts）：写在里面或写在单个值上看不出落空
+      if (f.dep === 'gate' && (!top || (f.type !== 'list' && f.type !== 'tags'))) problems.push(`${at}：dep: 'gate' 只能写在最外层的列表字段上`);
       if (!(f.type in FIELD_WALKERS)) problems.push(`${at}：引用表不认识字段类型 ${f.type}`);
       if (f.ref && !known(f.ref)) problems.push(`${at}：引用表不认识 ref ${f.ref}`);
       if (f.ref && !['text', 'tags', 'weighted'].includes(f.type)) problems.push(`${at}：${f.type} 字段上的 ref 走不到`);
@@ -567,7 +569,7 @@ export function linkProblems(kinds: readonly ContentKind[] = allKinds()): string
   };
   for (const k of kinds) {
     if (!KIND_LINKS[k.id]) problems.push(`${k.id}：还没有写进 link-rules.ts 的 KIND_LINKS`);
-    see(k.id, k.fields);
+    see(k.id, k.fields, true);
   }
   return problems;
 }

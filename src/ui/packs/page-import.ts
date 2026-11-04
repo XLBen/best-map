@@ -42,7 +42,6 @@ export interface ImportWindow {
   file: ImportFile | null;
   picks: readonly ContentRef[];
   off: readonly ContentRef[];
-  on: readonly ContentRef[];
   // 一开始展开哪一种
   focus?: string;
   // 上级页面“加”的下拉选的：导入时放到这个上级下面（同一步）
@@ -70,7 +69,7 @@ export function defaultFrom(target: SourceRef, ctx: PageCtx): string | null {
 
 export function openImport(req: { target: SourceRef; from?: string; pick?: ContentRef; onto?: OntoRef }, ctx: PageCtx) {
   const from = req.from ?? defaultFrom(req.target, ctx);
-  importWindow.value = { target: req.target, from, file: null, picks: req.pick ? [req.pick] : [], off: [], on: [], ...(req.pick ? { focus: req.pick.kind } : {}), ...(req.onto ? { onto: req.onto } : {}) };
+  importWindow.value = { target: req.target, from, file: null, picks: req.pick ? [req.pick] : [], off: [], ...(req.pick ? { focus: req.pick.kind } : {}), ...(req.onto ? { onto: req.onto } : {}) };
 }
 
 // 右上角的“导入”：看本世界、我的库时导入到它；内置的、导入的库只读，先问：从它导入本世界，或者复制成我的库
@@ -102,13 +101,13 @@ const patch = (p: Partial<ImportWindow>) => {
 
 export function chooseFrom(key: string) {
   lastFrom = key;
-  patch({ from: key, file: null, picks: [], off: [], on: [], onto: undefined, focus: undefined });
+  patch({ from: key, file: null, picks: [], off: [], onto: undefined, focus: undefined });
 }
 
 // 太大的文件不读进内存（readPack 按字数再查一遍；一个字可能占三个字节）
 export async function chooseFile(file: File) {
   const read: PackRead = file.size > 3 * PACK_MAX_CHARS ? { ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是资源包`] } : readPack(await file.text(), fileLabel(file.name));
-  patch({ file: { name: file.name, read }, picks: [], off: [], on: [], onto: undefined, focus: undefined });
+  patch({ file: { name: file.name, read }, picks: [], off: [], onto: undefined, focus: undefined });
 }
 
 export function togglePick(r: ContentRef, on: boolean) {
@@ -125,16 +124,10 @@ export function setPicks(rows: readonly ContentRef[], on: boolean) {
   patch({ picks: on ? [...rest, ...rows] : rest, off: on ? st.off.filter((x) => !set.has(linkKey(x.kind, x.id))) : st.off });
 }
 
-// 还会带上的一项：勾着是默认，去掉记进 off
+// 清单里的子项（政体的派系、变量的取值）：勾着是默认，去掉记进 off
 export function toggleDep(r: ContentRef, keep: boolean) {
   const st = importWindow.value;
   if (st) patch({ off: keep ? without(st.off, r) : [...without(st.off, r), r] });
-}
-
-// 可选的变量：勾上记进 on
-export function toggleOptional(r: ContentRef, keep: boolean) {
-  const st = importWindow.value;
-  if (st) patch({ on: keep ? [...without(st.on, r), r] : without(st.on, r), off: without(st.off, r) });
 }
 
 // ---------- 算 ----------
@@ -153,7 +146,7 @@ export function targetOf(st: ImportWindow, ctx: PageCtx): ImportTarget | null {
 export function askOf(st: ImportWindow, ctx: PageCtx): ImportAsk | null {
   const source = sourceOf(st, ctx);
   const target = targetOf(st, ctx);
-  return source && target ? { source, target, picks: st.picks, off: st.off, on: st.on } : null;
+  return source && target ? { source, target, picks: st.picks, off: st.off } : null;
 }
 
 export const targetTitle = (st: ImportWindow, ctx: PageCtx): string => (st.target.t === 'world' ? '本世界' : sourceTitle(st.target, ctx));
@@ -163,7 +156,7 @@ export function regenLine(p: ImportPreview, target: ImportTarget): string | null
   if (target.t !== 'world') return null;
   const small = target.world.small;
   if (p.dims.length && small.human) return ADD_DIMENSION_NOTE;
-  const adding = new Set([...p.picks, ...p.bring].filter((r) => r.state === 'new' || r.state === 'rename').map((r) => r.kind));
+  const adding = new Set(p.rows.map((r) => r.kind));
   const has = (...kinds: string[]) => kinds.some((k) => adding.has(k));
   const out: string[] = [];
   if (has('era', 'popValue', 'valueGroup', 'cultureGroup', 'culture') && small.human) out.push('重新生成人文后才用上');
@@ -341,7 +334,7 @@ export async function runImport(st: ImportWindow, ctx: PageCtx): Promise<ImportD
   }
   const key = st.target.key;
   const r = importToPack(ask, onto ? { onto } : {});
-  if (r.pack === (ask.target as Extract<ImportTarget, { t: 'pack' }>).pack) return { ok: !r.preview.over.length, count: 0, ...(r.preview.over.length ? { error: r.preview.over[0] } : {}) };
+  if (r.pack === (ask.target as Extract<ImportTarget, { t: 'pack' }>).pack) return { ok: true, count: 0 };
   const done = libEdits.setPack(key, r.pack as ResourcePack, `导入 ${r.preview.count} 项`);
   if (!done.ok) return { ok: false, count: 0, error: done.error };
   lastPress.inPanel = true;
@@ -350,7 +343,7 @@ export async function runImport(st: ImportWindow, ctx: PageCtx): Promise<ImportD
 
 // ---------- 列表上的“添加”“全部添加” ----------
 
-// 走同一个闭包。加一个变量的（会动人口）、改名的、带不了的先打开窗口看一眼；别的直接加，说一声还带上了什么
+// 走同一个闭包。加一个变量的（会动人口）、灰的、放不下的先打开窗口看一眼；别的直接加，说一声还带上了什么（第六十五轮改成不弹窗）
 export function addRows(rows: readonly ItemRow[], src: SourceRef, ctx: PageCtx, label: string): void {
   const e = entryOf(src, ctx);
   const world = ctx.world;
@@ -358,11 +351,11 @@ export function addRows(rows: readonly ItemRow[], src: SourceRef, ctx: PageCtx, 
   const picks = rows.map((r) => ({ kind: r.kind.id, id: r.id }));
   const ask: ImportAsk = { source: e.pack, target: { t: 'world', world }, picks };
   const p = importPreview(ask);
-  if (p.dims.length || p.over.length || p.blocked.length) {
-    importWindow.value = { target: WORLD_SOURCE, from: e.key, file: null, picks, off: [], on: [], focus: picks[0]?.kind };
+  if (p.dims.length || p.dropped.length) {
+    importWindow.value = { target: WORLD_SOURCE, from: e.key, file: null, picks, off: [], focus: picks[0]?.kind };
     return;
   }
-  const extra = p.bring.filter((r) => r.state !== 'off');
+  const extra = p.rows.filter((r) => r.role !== 'pick');
   void queueWorld((w) => {
     const c = importCommand({ ...ask, target: { t: 'world', world: w } }, { path: [e.key] }).command;
     return c && { ...c, label };

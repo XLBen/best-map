@@ -1,12 +1,11 @@
 import type { Command } from '../../core/commands';
-import { DIMENSION } from '../../core/content/link-rules';
 import { linkKey } from '../../core/content/links';
 import { itemId, kindByPackKey } from '../../core/content/registry';
 import { recordedOrigin } from '../../core/content/origin';
 import { type Culture, type CultureGroup, type Era, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
 import { type PackNode, type PackWorld, findPack, ownItems, packItems, subPacks, walkPacks } from '../../core/packs';
 import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../core/packs/builtin-tree';
-import { importCommand, importPreview } from '../../core/packs/closure';
+import { importCommand, importGates } from '../../core/packs/closure';
 import { type ImportPicks, type PackRoot, packAt, packImportCommands } from '../../core/packs/import';
 import { type LibrarySwitchPlan, librarySwitchPlan, worldLibrary } from '../../core/packs/switch';
 import type { World } from '../../core/world';
@@ -222,16 +221,17 @@ export function humanImportCommands(c: PackChoice, small: Small | null | undefin
 }
 
 // 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）；带不了时 id 是 null。
-// 第六十三轮：走导入的闭包（core/packs/closure.ts），派系、限谁用的组（比重 0，不参与生成）一起带上，不留下找不到的引用。
-// 变量不加：换一个国家的政体不该动所有人的人口，写到那个变量的来源去掉（要变量走“导入”）
+// 第六十三轮：走导入的闭包（core/packs/closure.ts），派系一起带上，不留下找不到的引用。
+// 第六十四轮：灰的、放不下的带不了（id 是 null）。派系靠的变量世界里都有才能选，所以不会加变量，换一个国家的政体不会动所有人的人口（要变量走“导入”）
 export function addFromLibrary(small: Small, lib: readonly LibraryEntry[], key: string, id: string, path: PackPath): { commands: Command[]; id: string | null } {
   const source = nodeAt(lib, path.slice(0, 1));
   const kind = kindByPackKey(key);
   if (!source || !kind) return { commands: [], id: null };
   const target = { t: 'world', world: worldOf(small) } as const;
   const picks = [{ kind: kind.id, id }];
-  const off = importPreview({ source, target, picks }).dims.map((d) => ({ kind: DIMENSION, id: d.id }));
-  const r = importCommand({ source, target, picks, off }, { path: path.slice(0, 1) });
+  const gate = importGates(source, target, picks).of(picks[0]).t;
+  if (gate === 'gated' || gate === 'full') return { commands: [], id: null };
+  const r = importCommand({ source, target, picks }, { path: path.slice(0, 1) });
   return { commands: r.command?.commands ?? [], id: r.preview.plan.ids.get(linkKey(kind.id, id)) ?? null };
 }
 

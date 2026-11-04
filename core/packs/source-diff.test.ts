@@ -142,7 +142,7 @@ describe('导入时去掉了引用：单独的一种说法，不标改过', () =
     const e = worldOf('fantasy');
     const source = LIBS.find((l) => l.key === 'modern')!.pack;
     const gov = packItems<{ id: string; category?: string[] }>(source, 'governments').find((g) => g.id.includes('socialist') || g.category?.includes('communist'))!;
-    const r = importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'government', id: gov.id }] }, { path: ['modern'] });
+    const r = importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'government', id: gov.id }, { kind: 'dimension', id: 'ideology' }] }, { path: ['modern'] });
     expect(r.preview.stripped.length).toBeGreaterThan(0);
     e.exec(r.command!);
     e.update();

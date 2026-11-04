@@ -8,7 +8,7 @@ import { type LibraryEntry, library } from '../../library';
 import { viewLibrary } from './PackDialog';
 import { closeLibrary, libPanel } from './panel-store';
 import { packDialog } from './store';
-import { type ImportWindow, addRows, askOf, chooseFile, chooseFrom, closeImport, defaultFrom, hereState, importWindow, openImport, otherLibOptions, pickSections, regenLine, setPicks, sourceOf, targetOf, toggleDep, toggleOptional, togglePick } from './page-import';
+import { type ImportWindow, addRows, askOf, chooseFile, chooseFrom, closeImport, defaultFrom, hereState, importWindow, openImport, otherLibOptions, pickSections, regenLine, setPicks, sourceOf, targetOf, toggleDep, togglePick } from './page-import';
 import { type PageCtx, type SourceRef, rowsOf } from './page-source';
 
 // 第六十一轮：导入窗口的逻辑（闭包的测试在 core/packs/closure.test.ts）
@@ -39,7 +39,7 @@ describe('打开', () => {
 });
 
 describe('勾', () => {
-  it('勾一项、整组勾；依赖取消、勾回来；可选的勾上', () => {
+  it('勾一项、整组勾；子项去掉、勾回来', () => {
     openImport({ target: MINE, from: 'modern' }, ctx());
     togglePick({ kind: 'government', id: 'a' }, true);
     togglePick({ kind: 'government', id: 'a' }, true);
@@ -53,10 +53,6 @@ describe('勾', () => {
     // 取消了的依赖又直接勾上：勾的算数
     togglePick({ kind: 'faction', id: 'f' }, true);
     expect(st().off).toEqual([]);
-    toggleOptional({ kind: 'dimension', id: 'nation' }, true);
-    expect(st().on).toEqual([{ kind: 'dimension', id: 'nation' }]);
-    toggleOptional({ kind: 'dimension', id: 'nation' }, false);
-    expect(st().on).toEqual([]);
   });
 
   it('弹窗里的“查看”：弹窗和导入窗口都关上，面板换到那个库（第六十三轮）', () => {
@@ -130,7 +126,7 @@ describe('重新生成的一句话', () => {
     const none = importCommand({ source: modern, target: { t: 'world', world: eng.world }, picks: [{ kind: 'mapStyle', id: packItems<{ id: string }>(modern, 'mapStyles')[0].id }] });
     expect(regenLine(none.preview, { t: 'world', world: eng.world })).toBeNull();
     const human = { small: { ...eng.world.small, human: { era: 'x', countryRules: {} } }, causes: eng.world.causes } as never;
-    const gov = importCommand({ source: modern, target: { t: 'world', world: eng.world }, picks: [{ kind: 'faction', id: 'greens' }], off: [{ kind: 'dimension', id: 'ideology' }, { kind: 'era', id: 'modern' }] });
+    const gov = importCommand({ source: { id: 's', name: 's', countryTiers: [{ id: 'new-tier', name: '新' }] }, target: { t: 'world', world: eng.world }, picks: [{ kind: 'countryTier', id: 'new-tier' }] });
     expect(regenLine(gov.preview, { t: 'world', world: human })).toBe('重新生成国家后才用上');
     expect(regenLine({ ...gov.preview, dims: [{ id: 'd', label: 'd' }] }, { t: 'world', world: human })).toContain('重新生成国家');
     expect(regenLine(gov.preview, { t: 'pack', pack: mine().pack })).toBeNull();
@@ -138,7 +134,7 @@ describe('重新生成的一句话', () => {
 });
 
 describe('列表上的“添加”走同一个闭包', () => {
-  it('要加变量时先打开窗口，勾好这几项（不直接动世界）', () => {
+  it('灰的先打开窗口，勾好这几项（不直接动世界）；窗口里写着要什么，勾变量后能选', () => {
     const eng = continents();
     const eras = packItems<{ id: string }>(PACKS.find((p) => p.id === 'fantasy')!, 'eras');
     eng.exec({ op: 'set_content', kind: 'era', id: eras[0].id, item: eras[0] as unknown as Record<string, unknown> });
@@ -149,8 +145,12 @@ describe('列表上的“添加”走同一个闭包', () => {
     addRows([row], src, c, '添加');
     expect(st()).toMatchObject({ target: { t: 'world' }, from: 'modern', picks: [{ kind: 'government', id: 'socialist-republic' }], focus: 'government' });
     expect(eng.toDoc().commands.length).toBe(steps);
-    // 窗口里算的和单独加一项一样：派系、变量都带
     const p = importPreview(askOf(st(), c)!);
-    expect(p.bring.map((r) => r.id).sort()).toEqual(['ideology', 'liberals', 'revolutionary-left']);
+    expect(p.count).toBe(0);
+    expect(p.dropped.map((d) => d.reason)).toEqual(['需要意识形态']);
+    togglePick({ kind: 'dimension', id: 'ideology' }, true);
+    const on = importPreview(askOf(st(), c)!);
+    expect(on.dropped).toEqual([]);
+    expect(on.rows.filter((r) => r.kind !== 'popValue' && r.kind !== 'valueGroup').map((r) => r.id).sort()).toEqual(['ideology', 'liberals', 'revolutionary-left', 'socialist-republic']);
   });
 });

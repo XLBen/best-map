@@ -5,20 +5,22 @@ import { allKinds, itemId } from '../content/registry';
 import { digest, worldDigest } from '../digest';
 import { Engine } from '../engine';
 import { countryList } from '../human/countries';
-import { worldDimensions } from '../human/era';
+import { type Era, worldDimensions } from '../human/era';
 import { SLOTS } from '../human/groups';
 import { type PackNode, type ResourcePack, itemErrors, packItems, packSections, parsePack, canApply } from '../packs';
 import { NO_CURRENTS, engineFor, humanDigest, snapshot } from '../testing/fixtures';
 import type { World } from '../world';
 import { builtinPacks, worldPartsOf } from './builtin-tree';
-import { type ImportAsk, importCommand, importPreview, importToPack } from './closure';
+import { type ImportAsk, importCommand, importGates, importPreview, importToPack } from './closure';
 import { ERA_PACKS } from './eras';
 import { packImportCommands } from './import';
 
-// 第六十一轮的门槛：
-//   1. 所有内置库之间两两导入随机抽的若干项（固定种子），加上取消部分依赖，世界和库里都没有找不到的引用；
-//   2. 奇幻导入社会主义：变量到位，文化、国家、城市、地名的摘要逐值不变，文化比例不变；重新生成国家后出现社会主义国家；
-//   3. 一步导入，撤销回到原样，存档重放逐值相同。库的那一半在 src/ui/packs/library-edit.test.ts
+// 第六十一轮的门槛，第六十四轮按“勾什么进什么”改写：
+//   1. 所有内置库之间两两导入随机抽的若干项（固定种子），加上去掉部分子项，世界和库里都没有找不到的引用；项数等于真的写入的；
+//      灰的项进不来，每个灰的项写明原因；同样的勾选再导入一次 0 项；
+//   2. 奇幻导入社会主义：灰着，勾意识形态后能选。变量到位，文化、国家、城市、地名的摘要逐值不变，文化比例不变；重新生成国家后出现社会主义国家；
+//   3. 一步导入，撤销回到原样，存档重放逐值相同。库的那一半在 src/library-edit.test.ts
+//   4. 只有一种取值的变量（科幻世界勾天主教）、补回、放不下，世界里走一遍
 
 const LIB = builtinPacks();
 const groupsOf = (id: string) => ERA_PACKS.get(id)!.cultures.map(([g, w]) => ({ id: g, weight: w }));
@@ -34,11 +36,17 @@ function rng(seed: number) {
   };
 }
 
-// 抽几项：每次先抽一种再抽一项，所以小的种类也抽得到
+// 抽几项：每次先抽一种再抽一项，所以小的种类也抽得到；变量也算一种
 function sample(source: PackNode, world: boolean, n: number, rand: () => number) {
   const kinds = packSections().filter((k) => (world ? canApply(k) : true) && packItems(source, k.pack.key).length);
+  const dims = packItems<Era>(source, 'eras').flatMap((e) => e.dimensions.map((d) => d.id));
   const out = new Map<string, { kind: string; id: string }>();
   for (let k = 0; k < n * 3 && out.size < n; k++) {
+    if (dims.length && rand() < 0.15) {
+      const id = dims[Math.floor(rand() * dims.length)];
+      out.set(`dimension:${id}`, { kind: 'dimension', id });
+      continue;
+    }
     const kind = kinds[Math.floor(rand() * kinds.length)];
     const items = packItems(source, kind.pack.key);
     const id = itemId(kind, items[Math.floor(rand() * items.length)]);
@@ -47,12 +55,10 @@ function sample(source: PackNode, world: boolean, n: number, rand: () => number)
   return [...out.values()];
 }
 
-// 随机取消一些依赖（锁着的不取消：界面上点不了）；再随机加上可选的变量
+// 随机去掉一些子项（勾的不去掉）
 function untick(ask: ImportAsk, rand: () => number): ImportAsk {
-  const p = importPreview(ask);
-  const off = p.bring.filter((r) => !r.locked && r.state !== 'off' && rand() < 0.4).map((r) => ({ kind: r.kind, id: r.id }));
-  const on = p.optional.filter(() => rand() < 0.3).map((r) => ({ kind: r.kind, id: r.id }));
-  return { ...ask, off, on };
+  const off = importPreview(ask).rows.filter((r) => r.role === 'child' && rand() < 0.4).map((r) => ({ kind: r.kind, id: r.id }));
+  return { ...ask, off };
 }
 
 const danglingKeys = (scope: Parameters<typeof linkTable>[0]) => new Set(danglingLinks(linkTable(scope)).map((b) => `${b.from.kind}:${b.from.id} ${b.link.kinds.join('/')} ${b.link.id}`));
@@ -69,6 +75,23 @@ function contentWorld(id: string): Engine {
 
 const copyOf = (id: string): ResourcePack => ({ ...(LIB.find((p) => p.id === id) as ResourcePack), id: `${id}-mine`, name: `${id}的副本` });
 
+// 灰的项：写明原因，勾了也进不来
+function checkGrey(ask: ImportAsk, p: ReturnType<typeof importPreview>) {
+  const written = new Set(p.rows.map((r) => `${r.kind}:${r.id}`));
+  for (const r of ask.picks) {
+    const g = p.gates.of(r);
+    if (g.t !== 'gated' && g.t !== 'full') continue;
+    expect(g.reason, `${r.kind}:${r.id} 没写原因`).not.toBe('');
+    expect(written.has(`${r.kind}:${r.id}`), `${r.kind}:${r.id} 灰着还写入了`).toBe(false);
+    expect(p.dropped.some((d) => d.kind === r.kind && d.id === r.id), `${r.kind}:${r.id} 灰着没写进 dropped`).toBe(true);
+  }
+  for (const d of p.dropped) expect(d.reason, `${d.kind}:${d.id}`).not.toBe('');
+  expect(p.count).toBe(p.rows.length);
+  // 树和一列是同样的项
+  const flat = (rows: readonly (typeof p.rows)[number][]): number => rows.reduce((n, r) => n + 1 + flat(r.children), 0);
+  expect(flat(p.list)).toBe(p.rows.length);
+}
+
 describe('门槛一：两两导入不留下找不到的引用', () => {
   for (const from of LIB) {
     for (const to of LIB) {
@@ -81,11 +104,16 @@ describe('门槛一：两两导入不留下找不到的引用', () => {
         const base = worldDigest(eng.world);
         const before = danglingKeys(worldScope(eng.world));
         const steps = eng.toDoc().commands.length;
+        // 每一项都有状态，灰的写明原因
+        for (const [key, g] of importGates(from, { t: 'world', world: eng.world }).all()) if (g.t === 'gated' || g.t === 'full') expect(g.reason, key).not.toBe('');
         for (let round = 0; round < 6; round++) {
           const ask = untick({ source: from, target: { t: 'world', world: eng.world }, picks: sample(from, true, 1 + Math.floor(rand() * 12), rand) }, rand);
           const r = importCommand(ask, { path: [from.id] });
-          // 取消的不带（写到它的也取消了时，这一行就没有了）
-          for (const f of ask.off ?? []) expect(r.preview.bring.find((x) => x.kind === f.kind && x.id === f.id)?.state ?? 'off', `${f.kind}:${f.id} 取消了还带着`).toBe('off');
+          checkGrey(ask, r.preview);
+          // 按钮上的项数就是真的写入的
+          expect(r.command?.commands.length ?? 0, `第 ${round} 次的项数：${JSON.stringify([ask.picks, ask.off])}`).toBe(r.preview.count);
+          // 去掉的不带（勾的除外）
+          for (const f of ask.off ?? []) if (!ask.picks.some((x) => x.kind === f.kind && x.id === f.id)) expect(r.preview.rows.find((x) => x.kind === f.kind && x.id === f.id && x.role === 'child'), `${f.kind}:${f.id} 去掉了还带着`).toBeUndefined();
           if (!r.command) continue;
           eng.exec(r.command);
           // 这一步之前就有的（库里政体写到世界没带的组）不算；这一步加的都找得到
@@ -96,9 +124,9 @@ describe('门槛一：两两导入不留下找不到的引用', () => {
             if (!canApply(k)) continue;
             for (const x of k.inWorld(eng.world)) expect(itemErrors(k, x), `${k.id}:${itemId(k, x)}`).toEqual([]);
           }
-          // 同样的勾选再导入一次：全部已经有了
+          // 同样的勾选再导入一次：什么都不加
           const again = importPreview({ ...ask, target: { t: 'world', world: eng.world } });
-          expect(again.count, `第 ${round} 次再导入：${JSON.stringify([ask.picks, ask.off, ask.on])} ${JSON.stringify(again.bring.map((b) => [b.id, b.state, b.why]))}${JSON.stringify(again.renamed.map((b) => b.id))}, ${JSON.stringify(r.preview.dims)}, ${JSON.stringify(worldDimensions(eng.world.small))}`).toBe(0);
+          expect(again.count, `第 ${round} 次再导入：${JSON.stringify([ask.picks, ask.off])} ${JSON.stringify(again.rows.map((b) => [b.kind, b.id, b.state, b.because]))}, ${JSON.stringify(r.preview.dims)}, ${JSON.stringify(worldDimensions(eng.world.small))}`).toBe(0);
           // 一步撤销
           eng.undo();
           expect(worldDigest(eng.world)).toBe(base);
@@ -110,11 +138,15 @@ describe('门槛一：两两导入不留下找不到的引用', () => {
         for (let round = 0; round < 6; round++) {
           const ask = untick({ source: from, target: { t: 'pack', pack: target }, picks: sample(from, false, 1 + Math.floor(rand() * 12), rand) }, rand);
           const r = importToPack(ask);
+          checkGrey(ask, r.preview);
+          const fields = r.preview.rows.filter((x) => x.kind === 'field').length;
+          expect(r.added.length + r.preview.plan.fixes.length + r.preview.dims.length + fields, `库，第 ${round} 次的项数`).toBe(r.preview.count);
           if (r.pack === target) continue;
           const fresh = [...danglingKeys(packScope(r.pack))].filter((k) => !packBefore.has(k));
           expect(fresh, `库，第 ${round} 次`).toEqual([]);
           expect(parsePack(JSON.parse(JSON.stringify(r.pack))).ok, `库，第 ${round} 次读得回来`).toBe(true);
-          expect(importPreview({ ...ask, target: { t: 'pack', pack: r.pack } }).count).toBe(0);
+          const again = importPreview({ ...ask, target: { t: 'pack', pack: r.pack } });
+          expect(again.count, `库，第 ${round} 次再导入：${JSON.stringify([ask.picks, ask.off])} ${JSON.stringify(again.rows.map((b) => [b.kind, b.id, b.state, b.to, b.because]))}`).toBe(0);
         }
         expect(worldDigest(eng.world)).toBe(base);
       }, 120000);
@@ -161,18 +193,30 @@ function cultureShares(w: World): [string, number][][] {
 }
 
 const modern = LIB.find((p) => p.id === 'modern')!;
-const socialism = (w: World): ImportAsk => ({ source: modern, target: { t: 'world', world: w }, picks: [{ kind: 'government', id: 'socialist-republic' }] });
+const GOV = { kind: 'government', id: 'socialist-republic' };
+const IDEOLOGY = { kind: 'dimension', id: 'ideology' };
+const socialism = (w: World): ImportAsk => ({ source: modern, target: { t: 'world', world: w }, picks: [GOV, IDEOLOGY] });
 
 describe('门槛二：奇幻世界导入社会主义', () => {
+  it('社会主义共和国灰着，写明要意识形态；勾上意识形态后能选', () => {
+    const eng = world('fantasy');
+    const target = { t: 'world' as const, world: eng.world };
+    expect(importGates(modern, target).of(GOV)).toMatchObject({ t: 'gated', reason: '需要意识形态' });
+    const none = importCommand({ source: modern, target, picks: [GOV] }, { path: ['modern'] });
+    expect(none.command).toBeNull();
+    expect(none.preview.dropped.map((d) => [d.id, d.reason])).toEqual([['socialist-republic', '需要意识形态']]);
+    expect(importGates(modern, target, [IDEOLOGY]).of(GOV).t).toBe('free');
+  });
+
   it('带上派系和意识形态；文化、国家、城市、地名逐值不变，文化比例不变；重新生成国家后出现社会主义国家', () => {
     const eng = world('fantasy');
     const before = untouched(eng.world);
     const shares = cultureShares(eng.world);
     const oldDims = worldDimensions(eng.world.small).map((d) => d.id);
     const { command, preview } = importCommand(socialism(eng.world), { path: ['modern'] });
-    expect(preview.bring.map((r) => r.id).sort()).toEqual(['ideology', 'liberals', 'revolutionary-left']);
-    expect(preview.optional.map((r) => r.id)).toEqual(['nation']);
-    expect(preview.over).toEqual([]);
+    expect(preview.rows.filter((r) => r.kind === 'government' || r.kind === 'faction' || r.kind === 'dimension').map((r) => r.id).sort()).toEqual(['ideology', 'liberals', 'revolutionary-left', 'socialist-republic']);
+    expect(preview.dropped).toEqual([]);
+    expect(command!.commands.length).toBe(preview.count);
     eng.exec(command!);
     const w = eng.world;
     expect(worldDimensions(w.small).map((d) => d.id)).toEqual([...oldDims, 'ideology']);
@@ -211,15 +255,91 @@ describe('门槛二：奇幻世界导入社会主义', () => {
     eng.undo();
   });
 
-  it('取消意识形态：只加政体和派系，没有 add_dimension；人一点不动', () => {
+  it('去掉一个派系：政体的名单少这一个', () => {
     const eng = world('fantasy');
-    const before = humanDigest(eng.world);
-    const { command } = importCommand({ ...socialism(eng.world), off: [{ kind: 'dimension', id: 'ideology' }] }, { path: ['modern'] });
-    expect(JSON.stringify(command)).not.toContain('add_dimension');
+    const { command } = importCommand({ ...socialism(eng.world), off: [{ kind: 'faction', id: 'liberals' }] }, { path: ['modern'] });
     eng.exec(command!);
-    expect(humanDigest(eng.world).popGroups).toBe(before.popGroups);
-    expect((eng.world.small.content!.faction!['revolutionary-left'] as { drivers?: unknown[] }).drivers).toBeUndefined();
-    expect(danglingLinks(linkTable(worldScope(eng.world))).filter((b) => b.from.id === 'liberals' || b.from.id === 'revolutionary-left')).toEqual([]);
+    expect((eng.world.small.content!.government!['socialist-republic'] as { factions: string[] }).factions).toEqual(['revolutionary-left']);
+    expect(eng.world.small.content!.faction!.liberals).toBeUndefined();
     eng.undo();
+  });
+});
+
+// ---------- 门槛四 ----------
+
+describe('门槛四：只有一种取值的变量', () => {
+  const medieval = LIB.find((p) => p.id === 'medieval')!;
+  const CATHOLIC = { kind: 'popValue', id: 'catholic' };
+
+  it('科幻世界勾天主教：写入 1 个取值 + 1 个变量；所有人都信它，文化比例逐值不变；撤销和重放一致', () => {
+    const eng = world('scifi');
+    expect(worldDimensions(eng.world.small).some((d) => d.id === 'religion')).toBe(false);
+    const base = worldDigest(eng.world);
+    const before = untouched(eng.world);
+    const shares = cultureShares(eng.world);
+    const steps = eng.toDoc().commands.length;
+    const { command, preview } = importCommand({ source: medieval, target: { t: 'world', world: eng.world }, picks: [CATHOLIC] }, { path: ['medieval'] });
+    expect(preview.rows.map((r) => `${r.kind}:${r.id}`).sort()).toEqual(['dimension:religion', 'popValue:catholic']);
+    expect(preview.count).toBe(2);
+    expect(command!.commands.map((c) => c.op)).toEqual(['set_content', 'add_dimension']);
+    eng.exec(command!);
+    const w = eng.world;
+    expect(untouched(w)).toEqual(before);
+    expect(cultureShares(w)).toEqual(shares);
+    // 每个群体都是天主教
+    let people = 0;
+    for (let i = 0; i < w.mesh.n * SLOTS; i++) {
+      const code = w.causes.popGroup![i];
+      if (!code) continue;
+      people++;
+      expect(w.small.popGroups![code].values.religion).toBe('catholic');
+    }
+    expect(people).toBeGreaterThan(0);
+    const after = worldDigest(w);
+    expect(eng.toDoc().commands.length).toBe(steps + 1);
+    eng.undo();
+    expect(worldDigest(eng.world)).toBe(base);
+    eng.redo();
+    expect(worldDigest(eng.world)).toBe(after);
+    const doc = JSON.parse(JSON.stringify(eng.toDoc()));
+    expect(worldDigest(Engine.fromDoc(doc, eng.world.mesh).world)).toBe(after);
+    eng.undo();
+  });
+
+  it('补回：世界里先导入天主教，再勾它的组：不产生 -2，引用补上，一步撤销', () => {
+    const eng = contentWorld('scifi');
+    const target = () => ({ t: 'world' as const, world: eng.world });
+    eng.exec(importCommand({ source: medieval, target: target(), picks: [CATHOLIC] }, { path: ['medieval'] }).command!);
+    const group = (eng.world.small.content!.popValue!.catholic as { group?: string }).group;
+    expect(group).toBeUndefined();
+    const srcGroup = packItems<{ id: string; group?: string }>(medieval, 'popValues').find((v) => v.id === 'catholic')!.group!;
+    const picks = [{ kind: 'valueGroup', id: srcGroup }, CATHOLIC];
+    const off = packItems<{ id: string; group?: string }>(medieval, 'popValues').filter((v) => v.group === srcGroup && v.id !== 'catholic').map((v) => ({ kind: 'popValue', id: v.id }));
+    const r = importCommand({ source: medieval, target: target(), picks, off }, { path: ['medieval'] });
+    expect(r.preview.rows.map((x) => [x.id, x.state])).toEqual(expect.arrayContaining([['catholic', 'fix']]));
+    expect(r.preview.rows.length).toBe(2);
+    const base = worldDigest(eng.world);
+    eng.exec(r.command!);
+    expect(Object.keys(eng.world.small.content!.popValue!).some((id) => id.startsWith('catholic-'))).toBe(false);
+    expect((eng.world.small.content!.popValue!.catholic as { group?: string }).group).toBe(srcGroup);
+    expect(importPreview({ source: medieval, target: target(), picks, off }).count).toBe(0);
+    eng.undo();
+    expect(worldDigest(eng.world)).toBe(base);
+    eng.undo();
+  });
+
+  it('目的地没有时代：勾取值跟着带时代；此时全部变量算没有', () => {
+    const eng = engineFor({ cells: 1000, seed: 2 }, { bare: true });
+    const target = { t: 'world' as const, world: eng.world };
+    const g = importGates(modern, target);
+    expect(g.of(GOV).t).toBe('gated');
+    expect(importGates(modern, target, [IDEOLOGY]).of(GOV).t).toBe('free');
+    const valueId = packItems<{ id: string; dimension: string }>(modern, 'popValues').find((v) => v.dimension === 'ideology')!.id;
+    const r = importCommand({ source: modern, target, picks: [{ kind: 'popValue', id: valueId }] }, { path: ['modern'] });
+    expect(r.preview.rows.map((x) => x.kind).sort()).toEqual(['era', 'popValue']);
+    expect(r.command!.commands.length).toBe(r.preview.count);
+    eng.exec(r.command!);
+    expect(Object.keys(eng.world.small.content!.era!)).toEqual(['modern']);
+    expect(danglingLinks(linkTable(worldScope(eng.world))).filter((b) => b.from.id === valueId)).toEqual([]);
   });
 });

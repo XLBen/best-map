@@ -55,9 +55,12 @@ export type FieldType =
 
 // 引用的依赖类别（第四十九轮，见 links.ts）：
 //   hard   没有它这一项就不成立（文化的组、取值的维度）；
-//   auto   默认跟着带，取消也行：去掉它只是放开限制或换回默认（政体的“限谁用”、地名风格）；
-//   strip  缺了就把这条引用去掉，不把目标拖进来（换说法、称号的键、倾向：否则一个政体会拖来很多文化组）
-export type LinkClass = 'hard' | 'auto' | 'strip';
+//   auto   缺了去掉它只是放开限制或换回默认（地名风格、政体的派系）；
+//   strip  缺了就把这条引用去掉，不把目标拖进来（换说法、称号的键、倾向：否则一个政体会拖来很多文化组）；
+//   gate   “限谁用”（第六十四轮）：写在一个列表字段的最外层。缺的目标去掉，还剩就只留剩下的；全部落空时这一项不能导入（灰着写明要什么），
+//          不然限制没了，谁都能用（政体的“限谁用”、地标的文化组、地形类别和资源的规则）。
+// hard 里写了 drop 的（取值的组、生态写到的河）导入时也是缺了就去掉；去不掉的才跟着带（见 core/packs/import-gates.ts）
+export type LinkClass = 'hard' | 'auto' | 'strip' | 'gate';
 
 export interface FieldDesc {
   key: string;

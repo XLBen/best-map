@@ -6,7 +6,7 @@ import { worldCultures } from '../../core/human';
 
 import { DEFAULT_STYLE } from '../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack, findPack, packItems, packSections } from '../../core/packs';
-import { importCommand } from '../../core/packs/closure';
+import { importCommand, importGates } from '../../core/packs/closure';
 import { BASE_PATH, builtinPacks } from '../../core/packs/builtin-tree';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_ERAS } from '../../core/packs/eras';
 
@@ -126,17 +126,22 @@ describe('来源：库里的小包、世界里记着的', () => {
     const rows = () => libraryRows(of('medieval'), kind, eng.world).filter(pathIs(['medieval', 'governments']));
     const used = rows().filter((r) => r.status.on).length;
     expect(used).toBeGreaterThan(0);
-    const cmd = addCmd(of('medieval'), kind, rows().filter((r) => !r.status.on).map((r) => r.id), eng.world);
+    // 第六十四轮：“限谁用”全部落空的灰着，勾了也进不来（伊克塔只给穆斯林，这个世界的组里没有）
+    const off = rows().filter((r) => !r.status.on).map((r) => r.id);
+    const gates = importGates(of('medieval').pack, { t: 'world', world: eng.world });
+    const grey = off.filter((id) => gates.of({ kind: 'government', id }).t === 'gated');
+    expect(grey.length).toBeGreaterThan(0);
+    const cmd = addCmd(of('medieval'), kind, off, eng.world);
     expect(cmd.op).toBe('batch');
     const govs = (cmd as Extract<Command, { op: 'batch' }>).commands.filter((c) => c.op === 'set_content' && c.kind === 'government');
-    expect(govs).toHaveLength(19 - used);
+    expect(govs).toHaveLength(19 - used - grey.length);
     expect(govs.every((c) => JSON.stringify((c as { from?: string[] }).from) === JSON.stringify(['medieval', 'governments']))).toBe(true);
     eng.exec(cmd);
-    expect(rows().filter((r) => r.status.on).length).toBe(19);
+    expect(rows().filter((r) => r.status.on).length).toBe(19 - grey.length);
     const left = worldRows(kind, eng.world).filter(pathIs(['medieval', 'governments']));
-    expect(left.length).toBe(19);
+    expect(left.length).toBe(19 - grey.length);
     const plan = eng.planTidy({ only: left.map((r) => ({ kind: 'government', id: r.id })) });
-    expect(plan.removed).toHaveLength(19 - used);
+    expect(plan.removed).toHaveLength(19 - used - grey.length);
     eng.exec(plan.command!);
     expect(worldRows(kind, eng.world).filter(pathIs(['medieval', 'governments'])).length).toBe(used);
   });
