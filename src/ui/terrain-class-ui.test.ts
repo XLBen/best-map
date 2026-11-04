@@ -113,7 +113,7 @@ describe('画地形类别、资源', () => {
     world.value = w;
     const cellKm = w.mesh.spacing * w.kmPerUnit;
     const c = dry(w).find((i) => brushCells(w, w.mesh.x[i], w.mesh.y[i], 2 * cellKm).cells.some((j) => !w.causes.land[j]))!;
-    setOptions({ brushKm: 2 * cellKm, terrainClass: 'highlands', resource: 'none' });
+    setOptions({ brushKm: 2 * cellKm, terrainClass: 'highlands', resource: 'none', classStrength: 0.5 });
     const paint = async (t: ReturnType<typeof terrainClassTool>) => {
       const p = pointer(w, c);
       t.move?.(p, false);
@@ -122,12 +122,17 @@ describe('画地形类别、资源', () => {
       return vi.mocked(exec).mock.calls.at(-1)![0] as Command & { cells: number[] };
     };
     const a = await paint(terrainClassTool());
-    expect(a).toMatchObject({ op: 'set_cell_class', class: 'highlands' });
+    expect(a).toMatchObject({ op: 'set_cell_class', class: 'highlands', strength: 0.5 });
+    expect((a as { t?: number[] }).t).toHaveLength(a.cells.length);
     expect(a.cells.length).toBeGreaterThan(0);
     expect(a.cells.every((i) => dryLand(w, i))).toBe(true);
+    // 力度 0（第五十八轮）：和以前的命令一字不差
+    setOptions({ classStrength: 0 });
+    expect(Object.keys(await paint(terrainClassTool())).sort()).toEqual(['cells', 'class', 'op']);
+    setOptions({ classStrength: 0.5 });
     expect((await paint(resourceTool())) as Command).toMatchObject({ op: 'set_cell_resource', resource: 'none' });
     setOptions({ terrainClass: '', resource: '' });
-    expect((await paint(terrainClassTool())) as Command).toMatchObject({ op: 'set_cell_class', class: null });
+    expect((await paint(terrainClassTool())) as Command).toMatchObject({ op: 'set_cell_class', class: null, strength: 0.5 });
     expect((await paint(resourceTool())) as Command).toMatchObject({ op: 'set_cell_resource', resource: null });
   });
 

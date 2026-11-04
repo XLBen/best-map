@@ -157,7 +157,8 @@ describe('区域的洋流：方向', () => {
 // 第五十一轮：来源的路径（small.origin）从 common 换成 medieval，重录；核对过 from 写回 common 时还是原来的 bcb87b61dc9df52a
 // 第五十五轮：内置生态有了高度范围、多了两种，重录；核对过去掉高度范围时还是原来的 806db8ce0d15ee5c
 // 第五十七轮：新世界默认带现实的水系（riverType、lakeType、地物的类型标签、小数据），毛皮多一种生态，重录；核对过去掉这些时还是原来的 42d3888d3cfd1fe8
-const R45_CURRENTS0 = '11e0b5f3b200fb7f';
+// 第五十八轮：内置的地形类别写了典型高度（只差在小数据），重录；核对过去掉典型高度时还是原来的 11e0b5f3b200fb7f
+const R45_CURRENTS0 = 'f76ba68de96c3f1e';
 
 describe('区域的洋流进了气候', () => {
   const settings = { seed: 3, cells: 6000 };

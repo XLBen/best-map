@@ -69,6 +69,11 @@ export function withoutHeights(cmds: readonly Command[]): Command[] {
   const one = (c: Command): Command[] => {
     if (c.op === 'batch') return [{ ...c, commands: c.commands.flatMap(one) }];
     if (c.op === 'set_river_type' || c.op === 'set_lake_type') return [];
+    // 第五十八轮：地形类别的典型高度那时也没有（地图不读它，只差在小数据的摘要上）
+    if (c.op === 'set_content' && c.kind === 'terrainClass' && c.item) {
+      const { height: _, ...item } = c.item as unknown as { height?: number };
+      return [{ ...c, item } as unknown as Command];
+    }
     if (c.op === 'set_content' && c.kind === 'resource' && c.id === 'fur' && c.item) {
       const item = c.item as unknown as { rules: { biomes?: string[] }[] };
       return [{ ...c, item: { ...c.item, rules: item.rules.map((r) => (r.biomes ? { ...r, biomes: r.biomes.filter((b) => b !== 'alpine_tundra') } : r)) } }];
