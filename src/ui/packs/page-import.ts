@@ -1,27 +1,30 @@
 import { signal } from '@preact/signals';
 import type { ArrangeRelation } from '../../../core/content/arrange';
+import { DIMENSION } from '../../../core/content/link-rules';
 import { type ContentRef, linkKey } from '../../../core/content/links';
-import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
-import { sameContent } from '../../../core/content/refs';
-import type { Culture, Era } from '../../../core/human/era';
-import { PACK_MAX_CHARS, type PackNode, type PackRead, type ResourcePack, canApply, packItems, packSections, readPack } from '../../../core/packs';
-import { type ImportAsk, type ImportOnto, type ImportPreview, type ImportTarget, importCommand, importPreview, importToPack, targetEra } from '../../../core/packs/closure';
+import { itemId, itemName, kindOf } from '../../../core/content/registry';
+import type { PopValue } from '../../../core/human/era';
+import { PACK_MAX_CHARS, type PackNode, type PackRead, type ResourcePack, packItems, readPack } from '../../../core/packs';
+import { type ImportAsk, type ImportGates, type ImportOnto, type ImportPreview, type ImportTarget, importCommand, importGates, importPreview, importToPack } from '../../../core/packs/closure';
+import { infoOf, keyRef } from '../../../core/packs/import-gates';
 import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
 import { libEdits } from '../../library-edit';
 import { askUser, showToast } from '../../state';
 import { ADD_DIMENSION_NOTE } from '../copy';
 import { queueWorld } from './page-actions';
-import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemsOf, kindTitle, sourceKind, sourceTitle } from './page-source';
-import { HOME_LAYOUT, WATER_KINDS } from './page-layout';
+import { soleText, soleValue } from './page-import-tree';
+import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemsOf, sourceKind, sourceTitle } from './page-source';
 import { copyToMine, lastPress, pageCtx } from './panel-store';
 import type { RefOption } from './refs';
 import type { ItemRow } from './rows';
 import { fileLabel } from './store';
 
-// 导入窗口的逻辑（第六十一轮）：从一个库勾几项，导入面板正在看的本世界或我的库。闭包在 core/packs/closure.ts，这里是窗口的状态、
-// 要列哪些、确认后写到哪里。组件（ImportDialog.tsx）只画。
-// 导入是一步：世界里一个 batch，库里一次 setPack，撤销全撤。
+export { type PickRow, type PickSection, matchRow, pickSections } from './page-import-tree';
+
+// 导入窗口的逻辑（第六十一轮，第六十五轮两栏）：从一个库勾几项，导入面板正在看的本世界或我的库。闭包在 core/packs/closure.ts，这里是窗口的状态、
+// 勾和去掉时的连带、确认后写到哪里；要画的树和每行的状态在 page-import-tree.ts。组件（ImportDialog、ImportList、ImportBasket）只画。
+// 导入是一步：世界里一个 batch，库里一次 setPack，撤销全撤。列表上的“添加”不开窗口，也走同一个闭包。
 
 export interface ImportFile {
   name: string;
@@ -110,24 +113,100 @@ export async function chooseFile(file: File) {
   patch({ file: { name: file.name, read }, picks: [], off: [], onto: undefined, focus: undefined });
 }
 
-export function togglePick(r: ContentRef, on: boolean) {
-  const st = importWindow.value;
-  if (!st) return;
-  patch({ picks: on ? (hasRef(st.picks, r) ? st.picks : [...st.picks, r]) : without(st.picks, r), off: on ? without(st.off, r) : st.off });
+// 连带：改了勾选之后，这一步新失效的项（灰了、进不来了）勾的拿掉，子项记进 off，到不再变为止。
+// 去掉变量后要它的政体、去掉文化组后要它的文化都在这里拿掉；原来就进不来的（放不下……）不动，写在清单底下
+function settled(ask: ImportAsk, had: ImportPreview, next: Pick<ImportWindow, 'picks' | 'off'>): Pick<ImportWindow, 'picks' | 'off'> {
+  const known = new Set(had.dropped.map((d) => linkKey(d.kind, d.id)));
+  let { picks, off } = next;
+  for (let round = 0; round < 16; round++) {
+    const p = importPreview({ ...ask, picks, off });
+    const fresh = p.dropped.filter((d) => !known.has(linkKey(d.kind, d.id)));
+    if (!fresh.length) break;
+    const gone = new Set(fresh.map((d) => linkKey(d.kind, d.id)));
+    const wasPick = new Set(picks.map(keyRef));
+    off = [...off, ...fresh.filter((d) => !wasPick.has(linkKey(d.kind, d.id)) && !off.some((x) => x.kind === d.kind && x.id === d.id)).map((d) => ({ kind: d.kind, id: d.id }))];
+    picks = picks.filter((x) => !gone.has(keyRef(x)));
+  }
+  return { picks, off };
 }
 
-export function setPicks(rows: readonly ContentRef[], on: boolean) {
-  const st = importWindow.value;
-  if (!st) return;
-  const set = new Set(rows.map((r) => linkKey(r.kind, r.id)));
-  const rest = st.picks.filter((x) => !set.has(linkKey(x.kind, x.id)));
-  patch({ picks: on ? [...rest, ...rows] : rest, off: on ? st.off.filter((x) => !set.has(linkKey(x.kind, x.id))) : st.off });
+// 这一项下面的（用库的安排：政体的派系、变量的取值和组）
+function descendants(source: PackNode, r: ContentRef): ContentRef[] {
+  const info = infoOf(source);
+  const seen = new Map<string, ContentRef>();
+  const walk = (x: ContentRef) => {
+    const kids: ContentRef[] = [...(info.children.get(keyRef(x)) ?? [])];
+    if (x.kind === DIMENSION) {
+      const d = info.dims.get(x.id);
+      for (const id of d?.groups ?? []) kids.push({ kind: 'valueGroup', id });
+      for (const id of d?.values ?? []) kids.push({ kind: 'popValue', id });
+    }
+    for (const k of kids) {
+      if (seen.has(keyRef(k))) continue;
+      seen.set(keyRef(k), k);
+      walk(k);
+    }
+  };
+  walk(r);
+  return [...seen.values()];
 }
 
-// 清单里的子项（政体的派系、变量的取值）：勾着是默认，去掉记进 off
-export function toggleDep(r: ContentRef, keep: boolean) {
+const rowIn = (p: ImportPreview, r: ContentRef) => p.rows.find((x) => x.kind === r.kind && x.id === r.id);
+
+// 勾上：它和它下面去掉过的都回来（勾上级时默认一起勾）。上级带着的子项去掉后又勾回来时不用另记一笔；跟着来的勾上才是勾整项（文化组勾整组）。
+// 取消：还作为子项在时记进 off；还有别的项要它时变回跟着来的（点清单上的 × 才连它们一起去掉）
+export function togglePick(r: ContentRef, on: boolean, ctx: PageCtx = pageCtx()) {
   const st = importWindow.value;
-  if (st) patch({ off: keep ? without(st.off, r) : [...without(st.off, r), r] });
+  if (!st) return;
+  const ask = askOf(st, ctx);
+  if (on) {
+    const under = ask ? new Set(descendants(ask.source, r).map(keyRef)) : new Set<string>();
+    const off = without(st.off, r).filter((x) => !under.has(keyRef(x)));
+    const already = hasRef(st.picks, r);
+    const child = !already && ask && rowIn(importPreview({ ...ask, picks: st.picks, off }), r)?.role === 'child';
+    patch({ picks: already || child ? st.picks : [...st.picks, r], off });
+    return;
+  }
+  const picks = without(st.picks, r);
+  if (!ask) {
+    patch({ picks });
+    return;
+  }
+  const had = importPreview(ask);
+  const off = rowIn(importPreview({ ...ask, picks }), r)?.role === 'child' ? [...without(st.off, r), r] : st.off;
+  patch(settled(ask, had, { picks, off }));
+}
+
+// 整段勾、整段取消
+export function setPicks(rows: readonly ContentRef[], on: boolean, ctx: PageCtx = pageCtx()) {
+  const st = importWindow.value;
+  if (!st) return;
+  const ask = askOf(st, ctx);
+  const set = new Set(rows.map(keyRef));
+  const rest = st.picks.filter((x) => !set.has(keyRef(x)));
+  if (on) {
+    const under = new Set(set);
+    if (ask) for (const r of rows) for (const d of descendants(ask.source, r)) under.add(keyRef(d));
+    patch({ picks: [...rest, ...rows], off: st.off.filter((x) => !under.has(keyRef(x))) });
+    return;
+  }
+  patch(ask ? settled(ask, importPreview(ask), { picks: rest, off: st.off }) : { picks: rest });
+}
+
+// 从清单里去掉一项（×）：这一项和要它的都进不来。off 只在有上级还会带它时留着：别的时候留着的话，之后勾要它的项会灰
+export function removeRow(r: ContentRef, ctx: PageCtx = pageCtx()) {
+  const st = importWindow.value;
+  if (!st) return;
+  const picks = without(st.picks, r);
+  const off = [...without(st.off, r), r];
+  const ask = askOf(st, ctx);
+  if (!ask) {
+    patch({ picks, off });
+    return;
+  }
+  const out = settled(ask, importPreview(ask), { picks, off });
+  const free = without(out.off, r);
+  patch(rowIn(importPreview({ ...ask, picks: out.picks, off: free }), r) ? out : { picks: out.picks, off: free });
 }
 
 // ---------- 算 ----------
@@ -151,113 +230,31 @@ export function askOf(st: ImportWindow, ctx: PageCtx): ImportAsk | null {
 
 export const targetTitle = (st: ImportWindow, ctx: PageCtx): string => (st.target.t === 'world' ? '本世界' : sourceTitle(st.target, ctx));
 
+const VALUE_NOTE = '新加的取值已有人口不变，重新生成人文才分到人';
+
+// 这次加的取值里有没有写到已有变量的（新变量的取值 add_dimension 会分给人）
+function addsToOldDim(p: ImportPreview): boolean {
+  const k = kindOf('popValue');
+  const adding = new Set(p.rows.filter((r) => r.kind === 'popValue').map((r) => r.id));
+  if (!k || !adding.size) return false;
+  const fresh = new Set(p.dims.map((d) => d.id));
+  return ((p.plan.finals.get(k) ?? []) as PopValue[]).some((v) => adding.has(v.id) && !fresh.has(v.dimension));
+}
+
 // 导入后要重新生成才影响地图时写一句（重新生成的按钮在第六十二轮）
 export function regenLine(p: ImportPreview, target: ImportTarget): string | null {
   if (target.t !== 'world') return null;
   const small = target.world.small;
-  if (p.dims.length && small.human) return ADD_DIMENSION_NOTE;
+  const values = !!small.human && addsToOldDim(p);
+  if (p.dims.length && small.human) return values ? `${ADD_DIMENSION_NOTE}；${VALUE_NOTE}` : ADD_DIMENSION_NOTE;
   const adding = new Set(p.rows.map((r) => r.kind));
   const has = (...kinds: string[]) => kinds.some((k) => adding.has(k));
   const out: string[] = [];
-  if (has('era', 'popValue', 'valueGroup', 'cultureGroup', 'culture') && small.human) out.push('重新生成人文后才用上');
-  else if (has('government', 'faction', 'countryTier', 'countryLayout') && small.human?.countryRules) out.push('重新生成国家后才用上');
+  if (values) out.push(VALUE_NOTE);
+  if (small.human && (has('era', 'cultureGroup', 'culture') || (has('popValue', 'valueGroup') && !values))) out.push('重新生成人文后才用上');
+  else if (!out.length && has('government', 'faction', 'countryTier', 'countryLayout') && small.human?.countryRules) out.push('重新生成国家后才用上');
   if (has('cityRank', 'landmarkType', 'pointType') && small.settlementRules) out.push('重新生成城市后才放到地图上');
   return out.length ? out.join('；') : null;
-}
-
-// ---------- 列哪些 ----------
-
-export interface PickRow {
-  kind: string;
-  id: string;
-  name: string;
-  color?: string;
-  hint?: string;
-  item?: unknown;
-}
-export interface PickSection {
-  kind: string;
-  title: string;
-  rows: PickRow[];
-}
-
-// 按首页的先后：时代规则、人文、政治、城市与地标、地理、外观
-function kindOrder(): string[] {
-  const out = ['era'];
-  for (const s of HOME_LAYOUT) {
-    for (const c of s.cards) {
-      if (c === 'water') out.push(...WATER_KINDS);
-      else if (c === 'dims') out.push('popValue');
-      else if (c === 'variables') out.push('dimension');
-      else out.push(c);
-    }
-  }
-  return out;
-}
-
-const sectionMemo = new WeakMap<object, Map<string, PickSection[]>>();
-
-// 来源里每种内容一段；世界里放不进去的种类（星球形态）不列。变量一段：来源的时代写的、目的地的时代还没有的
-export function pickSections(source: PackNode, target: ImportTarget): PickSection[] {
-  const here = new Set(targetEra(target)?.dimensions.map((d) => d.id));
-  const memoKey = `${target.t}|${[...here].join(',')}`;
-  let m = sectionMemo.get(source);
-  if (!m) sectionMemo.set(source, (m = new Map()));
-  const hit = m.get(memoKey);
-  if (hit) return hit;
-  const groupNames = new Map(packItems<{ id: string; name: string }>(source, 'cultureGroups').map((g) => [g.id, g.name]));
-  const dimNames = new Map(packItems<Era>(source, 'eras').flatMap((e) => e.dimensions.map((d) => [d.id, d.label] as const)));
-  const hintOf = (k: ContentKind, x: unknown): string | undefined => {
-    if (k.id === 'culture') return groupNames.get((x as Culture).group);
-    if (k.id === 'popValue' || k.id === 'valueGroup') return dimNames.get((x as { dimension: string }).dimension);
-    if (k.id === 'government') {
-      const n = (x as { factions?: string[] }).factions?.length;
-      return n ? `${n} 个派系` : undefined;
-    }
-    return undefined;
-  };
-  const byKind = new Map<string, PickSection>();
-  for (const k of packSections()) {
-    if (target.t === 'world' && !canApply(k)) continue;
-    const items = packItems(source, k.pack.key);
-    if (!items.length) continue;
-    byKind.set(k.id, {
-      kind: k.id,
-      title: kindTitle(k),
-      rows: items.map((x) => {
-        const c = (x as { color?: unknown }).color;
-        const hint = hintOf(k, x);
-        return { kind: k.id, id: itemId(k, x), name: itemName(k, x), item: x, ...(typeof c === 'string' && c.startsWith('#') ? { color: c } : {}), ...(hint ? { hint } : {}) };
-      }),
-    });
-  }
-  const values = packItems<{ dimension: string }>(source, 'popValues');
-  const dimRows: PickRow[] = [...dimNames].filter(([id]) => !here.has(id) && values.some((v) => v.dimension === id)).map(([id, label]) => ({ kind: 'dimension', id, name: label, hint: `${values.filter((v) => v.dimension === id).length} 种取值` }));
-  if (dimRows.length) byKind.set('dimension', { kind: 'dimension', title: '变量', rows: dimRows });
-  const out = [...new Set([...kindOrder(), ...byKind.keys()])].flatMap((k) => byKind.get(k) ?? []);
-  m.set(memoKey, out);
-  return out;
-}
-
-// 这一行在目的地是什么样：same 已经有了，differs 有同 id、内容不同（导入时改名）。按目的地、这一项记着
-const hereMemo = new WeakMap<object, Map<unknown, 'same' | 'differs' | null>>();
-export function hereState(r: PickRow, target: ImportTarget): 'same' | 'differs' | null {
-  const k = kindOf(r.kind);
-  if (!k || r.item === undefined) return null;
-  const holder = target.t === 'world' ? target.world.small : target.pack;
-  let m = hereMemo.get(holder);
-  if (!m) hereMemo.set(holder, (m = new Map()));
-  const hit = m.get(r.item);
-  if (hit !== undefined) return hit;
-  const list = target.t === 'world' ? k.inWorld(target.world) : packItems(target.pack, k.pack.key);
-  const there = list.find((x) => itemId(k, x) === r.id);
-  const v = there === undefined ? null : sameContent(k, there, k.pack.finalize && target.t === 'world' ? k.pack.finalize(r.item) : r.item) ? 'same' : 'differs';
-  m.set(r.item, v);
-  return v;
-}
-
-export function matchRow(r: PickRow, q: string): boolean {
-  return r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || !!r.hint?.toLowerCase().includes(q);
 }
 
 // ---------- 别的库里的（列表和上级页面“加”的下拉） ----------
@@ -291,16 +288,33 @@ function othersOf(kindId: string, ctx: PageCtx): Other[] {
   return out;
 }
 
-// 别的库里有、这一份里没有的（同一个 id 列第一个库的）。fits：这个上级下面放得下
+// 这一份能不能接收别的库的内容（世界、库）
+function targetFor(src: SourceRef, ctx: PageCtx): ImportTarget | null {
+  if (src.t === 'world') return ctx.world ? { t: 'world', world: ctx.world } : null;
+  const e = entryOf(src, ctx);
+  return e ? { t: 'pack', pack: e.pack } : null;
+}
+
+// 别的库里有、这一份里没有的（同一个 id 列第一个库的）。fits：这个上级下面放得下。灰的、放不下的不列（第六十五轮）
 export function otherLibOptions(kindId: string, src: SourceRef, ctx: PageCtx, fits?: (item: unknown) => boolean): (RefOption & { lib: string })[] {
   const k = kindOf(kindId);
   if (!k) return [];
   const here = new Set(itemsOf(src, k, ctx).map((x) => itemId(k, x)));
   const seen = new Set<string>();
   const out: (RefOption & { lib: string })[] = [];
+  const target = targetFor(src, ctx);
+  const gatesOfLib = new Map<string, ImportGates>();
+  const grey = (lib: string, id: string): boolean => {
+    const e = ctx.lib.find((x) => x.key === lib);
+    if (!target || !e) return false;
+    let g = gatesOfLib.get(lib);
+    if (!g) gatesOfLib.set(lib, (g = importGates(e.pack, target)));
+    const t = g.of({ kind: kindId, id }).t;
+    return t === 'gated' || t === 'full';
+  };
   for (const o of othersOf(kindId, ctx)) {
     if (src.t === 'lib' && o.lib === src.key) continue;
-    if (here.has(o.id) || seen.has(o.id) || (fits && !fits(o.item))) continue;
+    if (here.has(o.id) || seen.has(o.id) || (fits && !fits(o.item)) || grey(o.lib, o.id)) continue;
     seen.add(o.id);
     out.push({ id: o.id, label: o.name, hint: o.libName, lib: o.lib, ...(o.color ? { color: o.color } : {}) });
   }
@@ -313,6 +327,21 @@ export interface ImportDone {
   ok: boolean;
   count: number;
   error?: string;
+  // 写入时带不了、跳过的
+  skipped?: ImportPreview['dropped'];
+}
+
+// 跳过的项写成一句：一个原因时“还有 3 项需要意识形态，没加”，别的“还有 3 项没加：政体最多 128 个”
+export function skippedLine(dropped: ImportPreview['dropped']): string | null {
+  if (!dropped.length) return null;
+  const reasons = [...new Set(dropped.map((d) => d.reason))];
+  if (reasons.length === 1 && reasons[0].startsWith('需要')) return `还有 ${dropped.length} 项${reasons[0]}，没加`;
+  return `还有 ${dropped.length} 项没加：${reasons.slice(0, 2).join('；')}${reasons.length > 2 ? ' 等' : ''}`;
+}
+
+export function doneLine(r: ImportDone, regen: string | null): string {
+  const skip = skippedLine(r.skipped ?? []);
+  return [`已导入 ${r.count} 项`, skip, regen].filter(Boolean).join('。');
 }
 
 const pathOf = (st: ImportWindow): string[] | undefined => (st.file ? undefined : st.from ? [st.from] : undefined);
@@ -325,25 +354,54 @@ export async function runImport(st: ImportWindow, ctx: PageCtx): Promise<ImportD
   if (st.target.t === 'world') {
     const path = pathOf(st);
     let count = 0;
+    let skipped: ImportPreview['dropped'] = [];
     const ok = await queueWorld((w) => {
       const r = importCommand({ ...ask, target: { t: 'world', world: w } }, { ...(path ? { path } : {}), ...(onto ? { onto } : {}) });
       count = r.preview.count;
+      skipped = r.preview.dropped;
       return r.command;
     }, '正在导入…');
-    return { ok, count };
+    return { ok, count, skipped };
   }
   const key = st.target.key;
   const r = importToPack(ask, onto ? { onto } : {});
-  if (r.pack === (ask.target as Extract<ImportTarget, { t: 'pack' }>).pack) return { ok: true, count: 0 };
+  if (r.pack === (ask.target as Extract<ImportTarget, { t: 'pack' }>).pack) return { ok: true, count: 0, skipped: r.preview.dropped };
   const done = libEdits.setPack(key, r.pack as ResourcePack, `导入 ${r.preview.count} 项`);
   if (!done.ok) return { ok: false, count: 0, error: done.error };
   lastPress.inPanel = true;
-  return { ok: true, count: r.preview.count };
+  return { ok: true, count: r.preview.count, skipped: r.preview.dropped };
 }
 
 // ---------- 列表上的“添加”“全部添加” ----------
 
-// 走同一个闭包。加一个变量的（会动人口）、灰的、放不下的先打开窗口看一眼；别的直接加，说一声还带上了什么（第六十五轮改成不弹窗）
+// 从这个库加进本世界，每一项能不能选（组件按世界、库记着）。不是库、没有世界时 null
+export function addGates(src: SourceRef, ctx: PageCtx): ImportGates | null {
+  const e = entryOf(src, ctx);
+  return e && ctx.world ? importGates(e.pack, { t: 'world', world: ctx.world }) : null;
+}
+
+// 灰的、放不下的：原因（行上写，不能加）
+export function addBlock(gates: ImportGates | null, r: { kind: { id: string }; id: string }): string | null {
+  const g = gates?.of({ kind: r.kind.id, id: r.id });
+  return g?.t === 'gated' || g?.t === 'full' ? g.reason : null;
+}
+
+// 加完的提示：几项、带上了什么、加了只有一种取值的变量时所有人都是它、跳过了几项
+export function addedLine(p: ImportPreview, source: PackNode, target: ImportTarget): string {
+  const extra = p.rows.filter((r) => r.role !== 'pick');
+  const parts = [`已添加 ${p.count} 项${extra.length ? `，带上了${extra.slice(0, 3).map((r) => r.name).join('、')}${extra.length > 3 ? ` 等 ${extra.length} 项` : ''}` : ''}`];
+  for (const r of p.rows) {
+    const sole = soleValue(p, source, r);
+    if (sole) parts.push(`${r.name}${soleText(sole)}`);
+  }
+  const skip = skippedLine(p.dropped);
+  if (skip) parts.push(skip);
+  const regen = regenLine(p, target);
+  if (regen) parts.push(regen);
+  return parts.join('。');
+}
+
+// 走同一个闭包，不开窗口：能加的加，灰的跳过，提示写清带上了什么、有几项（第六十五轮）
 export function addRows(rows: readonly ItemRow[], src: SourceRef, ctx: PageCtx, label: string): void {
   const e = entryOf(src, ctx);
   const world = ctx.world;
@@ -351,15 +409,15 @@ export function addRows(rows: readonly ItemRow[], src: SourceRef, ctx: PageCtx, 
   const picks = rows.map((r) => ({ kind: r.kind.id, id: r.id }));
   const ask: ImportAsk = { source: e.pack, target: { t: 'world', world }, picks };
   const p = importPreview(ask);
-  if (p.dims.length || p.dropped.length) {
-    importWindow.value = { target: WORLD_SOURCE, from: e.key, file: null, picks, off: [], focus: picks[0]?.kind };
+  if (!p.count) {
+    const skip = skippedLine(p.dropped);
+    if (skip) showToast(skip, true);
     return;
   }
-  const extra = p.rows.filter((r) => r.role !== 'pick');
   void queueWorld((w) => {
     const c = importCommand({ ...ask, target: { t: 'world', world: w } }, { path: [e.key] }).command;
     return c && { ...c, label };
   }, '正在添加…').then((ok) => {
-    if (ok && extra.length) showToast(`还带上了：${extra.slice(0, 3).map((r) => r.name).join('、')}${extra.length > 3 ? ` 等 ${extra.length} 项` : ''}`);
+    if (ok) showToast(addedLine(p, e.pack, ask.target));
   });
 }

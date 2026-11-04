@@ -1,12 +1,13 @@
 import { Check, ChevronRight, Eraser, GripVertical, Plus } from 'lucide-preact';
 import { useMemo, useState } from 'preact/hooks';
 import { cleanableSet } from '../../../core/content/cleanable';
+import type { ImportGates } from '../../../core/packs/closure';
 import { kindOf } from '../../../core/content/registry';
 import { libEdits } from '../../library-edit';
 import { showToast } from '../../state';
 import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, entryOf, listPage, rowsOf, sourceKind } from './pages';
 import { newItemIn } from './page-actions';
-import { addRows, openImport, otherLibOptions } from './page-import';
+import { addBlock, addGates, addRows, openImport, otherLibOptions } from './page-import';
 import { InsideRows } from './PageChildren';
 import { RefPicker } from './RefPicker';
 import { copyToMine, goTo, libPanel } from './panel-store';
@@ -20,12 +21,13 @@ let dragging: string | null = null;
 
 const FAINT_NOTE = '生成后没用到，清理时会清掉';
 
-function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCtx; movable: boolean }) {
+function Row({ r, src, ctx, movable, gates }: { r: ListRow; src: SourceRef; ctx: PageCtx; movable: boolean; gates: ImportGates | null }) {
   const swatch = swatchOf(r);
   const st = r.row.status;
   const [over, setOver] = useState(false);
   const inLib = src.t === 'lib' && !!ctx.world;
-  // 走导入的闭包（第六十一轮）：一个政体也带上派系，不留下找不到的引用
+  // 走导入的闭包（第六十一轮）：一个政体也带上派系，不留下找不到的引用。灰的写原因，不能加（第六十五轮）
+  const blocked = inLib && !st.on && !st.locked ? addBlock(gates, r.row) : null;
   const add = () => addRows([r.row], src, ctx, `添加到本世界：${r.kind.label}“${r.name}”`);
   return (
     <div
@@ -78,6 +80,10 @@ function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCt
           <span class="lp-on" title="已在本世界">
             <Check />
           </span>
+        ) : blocked ? (
+          <span class="hint ellipsis lp-row-why" title={blocked}>
+            {blocked}
+          </span>
         ) : (
           <button class="small" disabled={!!st.locked} title={st.locked ?? '添加到本世界'} onClick={add}>
             添加
@@ -102,10 +108,10 @@ function FromOtherLib({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageC
   );
 }
 
-// 这一份里还不在本世界的全部添加
-function AddAll({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageCtx }) {
+// 这一份里还不在本世界的全部添加：灰的跳过，提示写着（第六十五轮）
+function AddAll({ p, src, ctx, gates }: { p: ListPage; src: SourceRef; ctx: PageCtx; gates: ImportGates | null }) {
   const e = entryOf(src, ctx);
-  const left = p.sections.some((s) => s.rows.some((r) => !r.row.status.on && !r.row.status.locked));
+  const left = p.sections.some((s) => s.rows.some((r) => !r.row.status.on && !r.row.status.locked && !addBlock(gates, r.row)));
   if (!e || !ctx.world || !left) return null;
   const run = () => addRows(rowsOf(src, p.kind, ctx).filter((r) => !r.status.on && !r.status.locked), src, ctx, `添加到本世界：${p.title}`);
   return (
@@ -118,6 +124,7 @@ function AddAll({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageCtx }) 
 export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list' }>; src: SourceRef; ctx: PageCtx }) {
   const [q, setQ] = useState('');
   const p = useMemo(() => listPage(src, route, ctx, q), [src.t === 'lib' ? src.key : '', route, ctx.world, ctx.lib, q]);
+  const gates = useMemo(() => addGates(src, ctx), [src.t === 'lib' ? src.key : '', ctx.world, ctx.lib]);
   if (!p) return null;
   const create = async (kindId: string, defaults: Record<string, unknown>) => {
     const kind = kindOf(kindId);
@@ -133,7 +140,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
       <div class="lp-tools">
         {(p.searchable || q) && <input class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
         {!(p.searchable || q) && <span class="grow" />}
-        <AddAll p={p} src={src} ctx={ctx} />
+        <AddAll p={p} src={src} ctx={ctx} gates={gates} />
         {!p.readonly && <FromOtherLib p={p} src={src} ctx={ctx} />}
         {p.readonly && sourceKind(src, ctx) !== 'world' && (
           <button class="small" title={p.readonly} onClick={() => void copyToMine(src)}>
@@ -174,7 +181,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
             ))}
           <div class="lp-rows">
             {s.rows.map((r) => (
-              <Row key={r.key} r={r} src={src} ctx={ctx} movable={movable && r.kind.id === p.kind.id} />
+              <Row key={r.key} r={r} src={src} ctx={ctx} gates={gates} movable={movable && r.kind.id === p.kind.id} />
             ))}
           </div>
         </section>

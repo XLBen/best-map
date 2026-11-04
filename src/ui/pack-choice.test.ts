@@ -3,8 +3,9 @@ import type { Command } from '../../core/commands';
 import { digest } from '../../core/digest';
 import { Engine } from '../../core/engine';
 import { type Government, worldCultureGroups, worldEras, worldGovernments, worldTerrainClasses } from '../../core/human';
-import type { PackNode } from '../../core/packs';
+import { type PackNode, packItems } from '../../core/packs';
 import { BASE_PATH, LIBRARY_BASE_PACKS, builtinPacks } from '../../core/packs/builtin-tree';
+import { importGates } from '../../core/packs/closure';
 import { packImportCommands } from '../../core/packs/import';
 import { defaultsOf } from '../../core/testing/eras';
 import { type HumanCommand, continents, humanExec, lastOf, meshFor, snapshot } from '../../core/testing/fixtures';
@@ -398,6 +399,23 @@ describe('世界里改过的内容（第五十轮）', () => {
 });
 
 describe('档案里换政体', () => {
+  it('灰的政体不列（第六十五轮）：列着的都换得成，要变量、“限谁用”落空的不在', () => {
+    const eng = nations();
+    const w = eng.world;
+    const m = Object.values(w.small.countries!)[0];
+    eng.exec(eng.planTidy({ only: Object.keys(w.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
+    const list = governmentChoices(w, m.government, LIB);
+    const medieval = LIB.find((e) => e.key === 'medieval')!.pack;
+    const gates = importGates(medieval, { t: 'world', world: w });
+    const grey = packItems<Government>(medieval, 'governments').filter((g) => gates.of({ kind: 'government', id: g.id }).t === 'gated');
+    expect(grey.length).toBeGreaterThan(0);
+    for (const g of grey) expect(list.some((c) => c.gov.id === g.id), g.id).toBe(false);
+    const fromLib = list.filter((c) => c.path);
+    expect(fromLib.length).toBeGreaterThan(0);
+    for (const c of fromLib) expect(governmentCommand(w, m, c, LIB), c.gov.id).not.toBeNull();
+    eng.undo();
+  });
+
   it('列出世界用的包里本世界没有的政体；选它时先从资源库加进来（带 from），再换', () => {
     const eng = nations();
     const w = eng.world;

@@ -8,7 +8,7 @@ import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
 import { type Obj, editorIssues } from './fields';
 import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
-import { addRows } from './page-import';
+import { addBlock, addGates, addRows } from './page-import';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
@@ -38,6 +38,8 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
     dedicated: DEDICATED.has(p.kind.id),
     newable: !!p.kind.blank,
   });
+  // 灰的写原因，不能加（第六十五轮）
+  const blocked = useMemo(() => (row && !row.status.on && !row.status.locked ? addBlock(addGates(src, ctx), row) : null), [row, src.t === 'lib' ? src.key : '', ctx.world, ctx.lib]);
   const button = (a: ItemAction) => {
     const dis = a.disabled;
     const common = { disabled: !!dis, title: dis };
@@ -50,13 +52,17 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
         );
       case 'addToWorld':
         return (
-          <button
-            class="small"
-            {...common}
-            onClick={() => row && addRows([row], src, ctx, `添加到本世界：${p.kind.label}“${p.name}”`)}
-          >
-            添加到本世界
-          </button>
+          <>
+            <button
+              class="small"
+              disabled={!!dis || !!blocked}
+              title={dis ?? blocked ?? undefined}
+              onClick={() => row && addRows([row], src, ctx, `添加到本世界：${p.kind.label}“${p.name}”`)}
+            >
+              添加到本世界
+            </button>
+            {blocked && <span class="hint">{blocked}</span>}
+          </>
         );
       case 'setDefault':
         return (

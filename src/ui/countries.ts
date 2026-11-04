@@ -25,7 +25,7 @@ import {
 } from '../../core/human';
 import type { Era } from '../../core/human';
 import type { LibraryEntry } from '../library';
-import { addFromLibrary, itemsInPacks } from './packChoice';
+import { addFromLibrary, itemsInPacks, librarySelectable } from './packChoice';
 import { type NameMode, nameLines } from '../../core/name-display';
 import type { CountryLayout, CountryMeta, World } from '../../core/world';
 
@@ -117,7 +117,7 @@ export function governmentName(small: Small, id: string): string {
 }
 
 // 档案里能选的政体：本世界里的（时代的在前），加上世界用的包里本世界没有的（整理掉了的；第三十轮：选它时先从
-// 资源库加进本世界，path 是它在资源库里的小包）。这个国家现在的总在
+// 资源库加进本世界，path 是它在资源库里的小包；灰的、放不下的不列，第六十五轮）。这个国家现在的总在
 export interface GovChoice {
   gov: Government;
   path?: string[];
@@ -129,8 +129,9 @@ export function governmentChoices(w: World, current?: string, lib: readonly Libr
   const all: GovChoice[] = [...list, ...rest].map((gov) => ({ gov }));
   const cur = current ? (w.small.content?.government?.[current] as Government | undefined) : undefined;
   if (cur && !all.some((g) => g.gov.id === cur.id)) all.unshift({ gov: cur });
+  const selectable = librarySelectable(w.small, lib, 'governments');
   for (const x of itemsInPacks<Government>(w.small.human ? stampedPacks(w.small) : [], lib, 'governments')) {
-    if (!all.some((g) => g.gov.id === x.item.id)) all.push({ gov: x.item, path: x.path });
+    if (!all.some((g) => g.gov.id === x.item.id) && selectable(x.item.id, x.path)) all.push({ gov: x.item, path: x.path });
   }
   return all;
 }

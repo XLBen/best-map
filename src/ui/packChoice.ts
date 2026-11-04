@@ -5,7 +5,7 @@ import { recordedOrigin } from '../../core/content/origin';
 import { type Culture, type CultureGroup, type Era, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
 import { type PackNode, type PackWorld, findPack, ownItems, packItems, subPacks, walkPacks } from '../../core/packs';
 import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../core/packs/builtin-tree';
-import { importCommand, importGates } from '../../core/packs/closure';
+import { type ImportGates, importCommand, importGates } from '../../core/packs/closure';
 import { type ImportPicks, type PackRoot, packAt, packImportCommands } from '../../core/packs/import';
 import { type LibrarySwitchPlan, librarySwitchPlan, worldLibrary } from '../../core/packs/switch';
 import type { World } from '../../core/world';
@@ -220,9 +220,27 @@ export function humanImportCommands(c: PackChoice, small: Small | null | undefin
   return packImportCommands(libRoots(lib), humanImportPicks(c, small), small ? worldOf(small) : undefined);
 }
 
+// 从资源库加进本世界时能不能选（灰的、放不下的不能）：一次问一串时同一个库只算一遍
+export function librarySelectable(small: Small, lib: readonly LibraryEntry[], key: string): (id: string, path: PackPath) => boolean {
+  const kind = kindByPackKey(key);
+  const target = { t: 'world', world: worldOf(small) } as const;
+  const memo = new Map<string, ImportGates | null>();
+  return (id, path) => {
+    const root = path[0];
+    if (!kind || root === undefined) return false;
+    if (!memo.has(root)) {
+      const source = nodeAt(lib, [root]);
+      memo.set(root, source ? importGates(source, target) : null);
+    }
+    const t = memo.get(root)?.of({ kind: kind.id, id }).t;
+    return t !== undefined && t !== 'gated' && t !== 'full';
+  };
+}
+
 // 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）；带不了时 id 是 null。
 // 第六十三轮：走导入的闭包（core/packs/closure.ts），派系一起带上，不留下找不到的引用。
-// 第六十四轮：灰的、放不下的带不了（id 是 null）。派系靠的变量世界里都有才能选，所以不会加变量，换一个国家的政体不会动所有人的人口（要变量走“导入”）
+// 第六十四轮：灰的、放不下的带不了（id 是 null；第六十五轮起档案里不列这些，见 countries.ts）。派系靠的变量世界里都有才能选，所以不会加变量，
+// 换一个国家的政体不会动所有人的人口（要变量走“导入”）
 export function addFromLibrary(small: Small, lib: readonly LibraryEntry[], key: string, id: string, path: PackPath): { commands: Command[]; id: string | null } {
   const source = nodeAt(lib, path.slice(0, 1));
   const kind = kindByPackKey(key);

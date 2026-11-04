@@ -278,6 +278,11 @@
   flex: 1 1 0;
   min-width: 0;
 }
+.lp-row-why {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
 .lp-on {
   flex: none;
   display: flex;
@@ -714,14 +719,35 @@ body.lp-dragging * {
   }
 }
 
-/* ---------- 导入窗口（第六十一轮） ---------- */
+/* ---------- 导入窗口（第六十五轮：左边选，右边看清单） ---------- */
 .modal.import {
-  width: 640px;
+  display: flex;
+  flex-direction: column;
+  width: 920px;
+  height: min(720px, calc(100vh - 60px));
+}
+.imp-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--sp-3);
+  flex: 1;
+  min-height: 0;
+}
+.imp-left,
+.imp-basket {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 .imp-source {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  min-width: 0;
+  flex: none;
+}
+.imp-pick {
   min-width: 0;
 }
 .imp-pick select {
@@ -732,13 +758,16 @@ body.lp-dragging * {
   align-items: center;
   gap: var(--sp-2);
   margin: var(--sp-1) 0 0;
+  flex: none;
 }
 .imp-tools {
   margin-top: var(--sp-2);
   padding: 0;
+  flex: none;
 }
 .imp-list-box {
-  max-height: 38vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin-top: var(--sp-2);
   padding: var(--sp-1);
@@ -754,112 +783,160 @@ body.lp-dragging * {
   gap: var(--sp-1);
   min-height: var(--h-sm);
 }
-.imp-group-head .imp-check {
-  flex: 1;
-  min-width: 0;
+.imp-group-head .lp-count {
+  flex: none;
+  padding-right: var(--sp-1);
+}
+.imp-twist {
+  flex: none;
 }
 .imp-twist svg {
   transition: transform 0.12s;
 }
-.imp-group.open .imp-twist svg {
+.imp-twist.open svg {
   transform: rotate(90deg);
 }
+.imp-twist-gap {
+  flex: none;
+  width: 24px;
+}
 .imp-rows {
-  padding-left: 26px;
+  padding-left: var(--sp-3);
 }
 .imp-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
   min-height: var(--h-sm);
   border-radius: var(--r-sm);
 }
 .imp-row:hover {
   background-image: linear-gradient(var(--hover), var(--hover));
 }
-label.check.imp-check {
+label.check.imp-check,
+.imp-still {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
   min-width: 0;
-  flex: 1;
+  flex: 1 1 40%;
 }
-.imp-check .hint {
+.imp-still svg {
   flex: none;
-  max-width: 45%;
+  width: 14px;
+  height: 14px;
+}
+.imp-have .imp-still {
+  color: var(--muted);
+}
+.imp-grey .imp-still {
+  color: var(--faint);
 }
 .imp-name {
   min-width: 0;
 }
-.imp-state {
+.imp-count {
   flex: none;
+}
+.imp-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
   padding-right: var(--sp-1);
 }
 .imp-more {
   margin: var(--sp-1) 0 var(--sp-1) 22px;
 }
-.imp-summary {
-  margin-top: var(--sp-3);
-  max-height: 34vh;
+/* 右边：清单 */
+.imp-basket h5 {
+  margin: 0 0 var(--sp-1);
+  flex: none;
+}
+.imp-basket-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
-.imp-bring h5 {
-  margin: var(--sp-2) 0 var(--sp-1);
+.imp-basket-group + .imp-basket-group {
+  margin-top: var(--sp-2);
 }
-.imp-dep-group + .imp-dep-group {
-  margin-top: var(--sp-1);
-}
-.imp-dep-group h6 {
-  margin: var(--sp-1) 0 2px;
+.imp-basket-group h6 {
+  margin: 0 0 2px;
   font-size: var(--fs-xs);
   font-weight: 500;
   color: var(--muted);
 }
-.imp-dep {
+.imp-line {
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
+  align-items: flex-start;
+  gap: var(--sp-1);
   min-height: var(--h-sm);
-  flex-wrap: wrap;
+  border-radius: var(--r-sm);
 }
-.imp-dep label.check.imp-check {
-  flex: 0 1 auto;
-  max-width: 100%;
+.imp-line:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
 }
-.imp-dep .imp-check .hint {
-  max-width: none;
+.imp-line-text {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-1) 0;
 }
-.imp-dep .imp-name {
+.imp-line-name {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.imp-line-note {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.imp-tick {
+  flex: none;
+  color: var(--faint);
+}
+.imp-x {
   flex: none;
 }
-.imp-dep.off .imp-name {
-  color: var(--muted);
+button.imp-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-1) 0 0;
+  background: none;
+  text-align: left;
 }
-.imp-why {
-  flex: 1 1 200px;
-  min-width: 0;
-  padding-left: 22px;
+.imp-fold svg {
+  flex: none;
+  transition: transform 0.12s;
 }
-.imp-fold {
+.imp-fold.open svg {
+  transform: rotate(90deg);
+}
+.imp-basket-foot {
+  flex: none;
   margin-top: var(--sp-2);
 }
-.imp-fold summary {
-  cursor: pointer;
-  font-size: var(--fs-sm);
-}
-.imp-fold-body {
-  padding: var(--sp-1) 0 0 var(--sp-3);
-}
-.imp-list {
+.imp-basket-foot p {
   margin: var(--sp-1) 0 0;
-  padding-left: var(--sp-3);
 }
-.imp-regen {
-  margin: var(--sp-2) 0 0;
-}
-@media (max-width: 520px) {
-  .imp-check .hint {
-    max-width: 38%;
+/* 窄窗口：清单放到下面，整个窗口跟着底板一起滚 */
+@media (max-width: 720px) {
+  .modal.import {
+    height: auto;
+  }
+  .imp-body {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+  }
+  .imp-list-box {
+    flex: none;
+    max-height: 44vh;
+  }
+  .imp-basket-list {
+    flex: none;
+    overflow: visible;
   }
 }
 
