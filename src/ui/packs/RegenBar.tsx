@@ -13,7 +13,9 @@ export function RegenBar({ ctx }: { ctx: PageCtx }) {
   return (
     <div class="lp-regen">
       <span class="grow">
-        <span class="hint">改了 {need.count} 项，地图还没用上。{need.what}</span>
+        <span class="hint">
+          改了 {need.count} 项。{need.what}
+        </span>
       </span>
       <button
         class="small primary"

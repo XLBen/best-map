@@ -1,5 +1,6 @@
 import { Check, ChevronRight, Eraser, GripVertical, Plus } from 'lucide-preact';
 import { useMemo, useState } from 'preact/hooks';
+import { cleanableSet } from '../../../core/content/cleanable';
 import { kindOf } from '../../../core/content/registry';
 import { libEdits } from '../../library-edit';
 import { showToast } from '../../state';
@@ -125,8 +126,8 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
     if (r && libPanel.value) goTo(r);
   };
   const movable = p.canMove && !route.dim && !route.group;
-  // 这一页上变淡的有几项（点了清的是全世界的，窗口里列着）
-  const faint = p.sections.reduce((n, s) => n + s.rows.filter((r) => r.mark?.faint).length, 0);
+  // 这一页上有变淡的才写；数是全世界的（点了清的是全世界的，和首页一样）
+  const faint = ctx.world && p.sections.some((s) => s.rows.some((r) => r.mark?.faint)) ? cleanableSet(ctx.world).size : 0;
   return (
     <>
       <div class="lp-tools">
