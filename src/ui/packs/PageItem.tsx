@@ -141,7 +141,7 @@ function Actions({ p, row, src, ctx }: { p: ItemPage; row: RepoRow | undefined; 
   return <div class="row wrap lp-item-actions">{list.map(button)}</div>;
 }
 
-function Samples({ row, item, kindId }: { row: RepoRow | undefined; item: Obj; kindId: string }) {
+function Samples({ item, kindId }: { item: Obj; kindId: string }) {
   const kind = kindOf(kindId);
   const [seed, setSeed] = useState(1);
   const groups = useMemo(() => {
@@ -152,7 +152,6 @@ function Samples({ row, item, kindId }: { row: RepoRow | undefined; item: Obj; k
       return [];
     }
   }, [kind, item, seed]);
-  void row;
   if (!groups.length) return <p class="hint">没有示例</p>;
   return (
     <section class="ed-samples">
@@ -234,9 +233,16 @@ export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item
               <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)}>
                 {s.hint && <p class="hint">{s.hint}</p>}
                 {s.custom === 'biomeWater' && <BiomeWaterSegment src={src} ctx={ctx} sp={item as never} />}
-                {s.custom === 'waterBiomes' && <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />}
-                {s.custom === 'samples' && <Samples row={row} item={item} kindId={p.kind.id} />}
-                {s.fields.length > 0 && !s.custom?.startsWith('biomeWater') && <FieldsBox fields={s.custom === 'waterBiomes' ? s.fields.filter((f) => f.key !== 'biomes') : s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />}
+                {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
+                {s.custom === 'waterBiomes' ? (
+                  <>
+                    <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+                    <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
+                    <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+                  </>
+                ) : (
+                  s.custom !== 'biomeWater' && s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+                )}
               </SegmentCard>
             ))}
           </fieldset>

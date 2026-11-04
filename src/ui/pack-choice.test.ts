@@ -301,6 +301,28 @@ describe('已有的世界换库（界面发的命令，内容的门槛见 core/p
     expect(eng.world.small.origin!.cultureGroup.elven[0]).toBe('fantasy');
   });
 
+  it('“本世界加的”组取消之后，重开面板不再勾上；再勾上就回来（第五十九轮）', () => {
+    const eng = nations();
+    for (const x of packImportCommands(builtinPacks(), { packs: [['fantasy', 'cultures', 'elven']], groups: ['elven'] }, eng.world)) eng.exec(x);
+    const start = defaultChoice(eng.world.small, true, LIB);
+    expect(start.groups.map((g) => g.id)).toContain('elven');
+    // 取消：组还在世界里，比重写 0；人口不用重算
+    const off = { ...start, groups: start.groups.filter((g) => g.id !== 'elven') };
+    const before = eng.world.small.human;
+    eng.exec(regenerateWith(off, eng.world.small, LIB)!);
+    expect(worldCultureGroups(eng.world.small).find((g) => g.id === 'elven')!.weight).toBe(0);
+    expect(eng.world.small.human).toEqual(before);
+    // 重开：不勾；“重新生成”也不带上
+    const again = defaultChoice(eng.world.small, true, LIB);
+    expect(again.groups.map((g) => g.id)).not.toContain('elven');
+    expect(beyondGroups(eng.world.small, 'medieval', LIB).map((g) => g.id)).toEqual(['elven']);
+    expect(JSON.stringify(regenerateCommand(eng.world.small, LIB))).not.toContain('"elven"');
+    // 再勾上：去掉这个 0，参与生成
+    eng.exec(regenerateWith({ ...again, groups: [...again.groups, { id: 'elven', weight: 1 }] }, eng.world.small, LIB)!);
+    expect(worldCultureGroups(eng.world.small).find((g) => g.id === 'elven')!.weight).toBeUndefined();
+    expect(eng.world.small.human!.groups.map((g) => g.id)).toContain('elven');
+  });
+
   it('没有人文的世界第一次选别的库：生成的命令带着名单，世界用的库变了', () => {
     const eng = continents();
     const small = eng.world.small;

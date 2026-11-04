@@ -397,7 +397,7 @@ export function Control({ f, value, onChange, path, issues }: { f: FieldDesc; va
       );
     case 'bool':
       return (
-        <Toggle on={value === true} onChange={(on) => onChange(on)}>
+        <Toggle on={value === true || (value === undefined && f.default === true)} onChange={(on) => onChange(on)}>
           {''}
         </Toggle>
       );

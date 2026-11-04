@@ -4,7 +4,7 @@
   top: 60px;
   left: var(--sp-2);
   bottom: 84px;
-  width: min(420px, calc(100% - 16px));
+  width: min(380px, calc(100% - 16px));
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
@@ -15,7 +15,9 @@
 }
 /* 总表要宽 */
 .lib-panel.wide {
-  width: min(860px, calc(100% - 16px));
+  width: fit-content;
+  min-width: min(380px, calc(100% - 16px));
+  max-width: calc(100% - 16px);
 }
 @media (prefers-reduced-motion: reduce) {
   .lib-panel {
@@ -198,9 +200,6 @@
 
 /* 列表 */
 .lp-tools {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--sp-1);
@@ -351,6 +350,15 @@
 .lp-seg-body {
   padding: 2px var(--sp-2) var(--sp-2);
 }
+.lp-seg-body .biome-picks {
+  max-height: none;
+  overflow: visible;
+}
+.lp-seg-body label.check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
 .lp-seg-body > .hint:first-child {
   margin-top: 0;
 }
@@ -420,12 +428,19 @@
 
 /* 总表 */
 .lp-table-page {
-  padding-bottom: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.lp-table-page > .hint {
+  flex: none;
+  margin: 0 0 var(--sp-1);
 }
 .lp-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
-  max-height: calc(100vh - 260px);
-  margin: var(--sp-2) 0;
+  margin: var(--sp-1) 0;
   border-radius: var(--r-md);
 }
 .lp-table {
@@ -482,6 +497,7 @@
 .lp-table-plain {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--sp-1);
   width: 100%;
   min-height: var(--h-sm);

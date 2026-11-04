@@ -11,6 +11,7 @@ import { copiedPack, libEdits } from '../../library-edit';
 import { world } from '../../state';
 import { commitItem, commitWaterBlock, commitWaterCell, copyItemIn, deleteFromLibrary, newItemIn, speciesPatch, worldItemCommand } from './page-actions';
 import { DEFAULT_INSIDE, HOME_LAYOUT } from './page-layout';
+import { numberText, sliderScale } from './fields';
 import { fieldBrief, initialOpen, segmentBrief, segmentsOf } from './page-segments';
 import {
   HOME,
@@ -623,6 +624,24 @@ describe('⌘Z 撤销哪一边', () => {
     expect(undoTarget(WORLD_SOURCE, ctx, true)).toBe('world');
     expect(undoTarget(null, ctx, true)).toBe('world');
     expect(undoTarget(lib('medieval'), ctx, true)).toBe('none');
+  });
+});
+
+describe('表单里的数', () => {
+  it('写了上下限和步子、格子不太多的用滑块，松手落在步子上；范围太大的还是框', () => {
+    const s = sliderScale({ min: 0, max: 9000, step: 50 })!;
+    expect(s.at(0)).toBe(0);
+    expect(s.at(1)).toBe(9000);
+    expect(s.at(0.5)).toBe(4500);
+    expect(s.at(0.5001)).toBe(4500);
+    expect(s.pos(2400)).toBeCloseTo(2400 / 9000);
+    expect(sliderScale({ min: 0, max: 1, step: 0.05 })!.at(0.33)).toBe(0.35);
+    expect(sliderScale({ min: 0.001, max: 10000, step: 0.1 })).toBeNull();
+    expect(sliderScale({ min: 0, max: 1 })).toBeNull();
+    expect(numberText(0.35, 0.05)).toBe('0.35');
+    expect(numberText(4500, 50)).toBe('4500');
+    // 第五十八轮的典型高度是滑块
+    expect(sliderScale(kindOf('terrainClass')!.fields.find((f) => f.key === 'height')!)).not.toBeNull();
   });
 });
 

@@ -3,9 +3,10 @@ import { itemId, kindOf } from '../core/content/registry';
 import { type ResourcePack, packItems, parsePack, walkPacks } from '../core/packs';
 import { builtinPacks, worldPartsOf } from '../core/packs/builtin-tree';
 import { packImportCommands } from '../core/packs/import';
-import { type LibraryEntry, type Stored, library, refreshLibrary } from './library';
-import { FLUSH_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
+import { type LibraryEntry, type Stored, installPack, library, refreshLibrary } from './library';
+import { FLUSH_MS, FLUSH_SOON_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
 import { isLibrary, libRoots, libraryOptions, worldContentPacks } from './ui/packChoice';
+import { closeLibrary, openLibrary, setSource } from './ui/packs/panel-store';
 
 // 第五十九轮：我的库改一项只查这一项、写进日志，整个库晚一点才写；有自己的撤销；复制成我的库
 
@@ -193,6 +194,59 @@ describe('改一项：只查这一项，延迟写入', () => {
   });
 });
 
+describe('真的日志（localStorage）', () => {
+  // 一张表当 localStorage
+  function fakeStorage() {
+    const m = new Map<string, string>();
+    return { m, getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
+  }
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('改一项写进 localStorage，只有这一项；写不进去（满了）时很快写整个库', async () => {
+    const s = fakeStorage();
+    vi.stubGlobal('localStorage', s);
+    let list: LibraryEntry[] = [{ key: 'mine', pack: pack(), builtin: false, mine: true, installedAt: 1 }];
+    const ed = createLibEditor(undefined, { entries: () => list, publish: (_k, p) => void (list = [{ ...list[0], pack: p }]) });
+    ed.setItem('mine', 'culture', 'c1', c1);
+    const raw = s.m.get('map2.libWal.mine')!;
+    expect(JSON.parse(raw).ops).toEqual([{ section: 'cultures', id: 'c1', item: c1 }]);
+    expect(raw.length).toBeLessThan(200);
+    // 刷新页面：新的编辑器从 localStorage 读到日志
+    const fresh = createLibEditor(undefined, { entries: () => [], publish: () => {} });
+    const p = fresh.adopt({ key: 'mine', pack: pack(), installedAt: 1, mine: true, rev: 1 }, pack());
+    expect(culture(p, 'c1')!.name).toBe('改过');
+    // 坏掉的日志当没有
+    s.m.set('map2.libWal.mine', '不是 JSON');
+    const fresh2 = createLibEditor(undefined, { entries: () => [], publish: () => {} });
+    const base = pack();
+    expect(fresh2.adopt({ key: 'mine', pack: base, installedAt: 1, mine: true, rev: 1 }, base)).toBe(base);
+    // 满了
+    s.setItem = () => {
+      throw new Error('满了');
+    };
+    expect(ed.setItem('mine', 'culture', 'c1', { ...c1, name: '满了也改' })).toEqual({ ok: true });
+    expect(culture(list[0].pack, 'c1')!.name).toBe('满了也改');
+    await vi.advanceTimersByTimeAsync(FLUSH_SOON_MS);
+    expect(ed.isDirty('mine')).toBe(false);
+  });
+
+  it('日志里不合格式的一项（版本变了）不补，别的照补', () => {
+    const { backend, wal } = fakeBackend();
+    wal.set('mine', {
+      rev: 9e15,
+      ops: [
+        { section: 'cultures', id: 'c1', item: c1 },
+        { section: 'cultures', id: 'c2', item: { id: 'c2', color: 'red' } },
+        { section: '没有这一段', id: 'x', item: {} },
+      ],
+    });
+    const ed = createLibEditor(backend, { entries: () => [], publish: () => {} });
+    const p = ed.adopt({ key: 'mine', pack: pack(), installedAt: 1, mine: true, rev: 1 }, pack());
+    expect(culture(p, 'c1')!.name).toBe('改过');
+    expect(culture(p, 'c2')!.name).toBe('二');
+  });
+});
+
 describe('我的库的撤销', () => {
   it('改一项、撤销、重做，回到一模一样的对象', () => {
     const { ed, cur } = setup();
@@ -349,6 +403,52 @@ describe('应用里的一份：新建、复制、删除、读存储', () => {
     await deleteLibrary(key);
     expect(library.value.some((e) => e.key === key)).toBe(false);
     expect(libEdits.canUndo(key)).toBe(false);
+  });
+
+  it('延迟期间关掉面板、切换库：马上写进存储', async () => {
+    await refreshLibrary();
+    const made = (await copyLibrary('medieval', '延迟'))!;
+    const c = packItems<{ id: string; name: string }>(library.value.find((e) => e.key === made.key)!.pack, 'cultures')[0];
+    const edit = (name: string) => libEdits.setItem(made.key, 'culture', c.id, { ...c, name });
+    openLibrary({ entry: made.key });
+    edit('一');
+    expect(libEdits.isDirty(made.key)).toBe(true);
+    closeLibrary();
+    await vi.waitFor(() => expect(libEdits.isDirty(made.key)).toBe(false));
+    openLibrary({ entry: made.key });
+    edit('二');
+    expect(libEdits.isDirty(made.key)).toBe(true);
+    setSource({ t: 'lib', key: 'medieval' });
+    await vi.waitFor(() => expect(libEdits.isDirty(made.key)).toBe(false));
+    // 切走再回来，撤销还在
+    expect(libEdits.canUndo(made.key)).toBe(true);
+    closeLibrary();
+    await deleteLibrary(made.key);
+  });
+
+  it('删掉一个库之后，还没写的不会把它写回来', async () => {
+    await refreshLibrary();
+    const made = (await copyLibrary('medieval', '要删的'))!;
+    const c = packItems<{ id: string; name: string }>(library.value.find((e) => e.key === made.key)!.pack, 'cultures')[0];
+    libEdits.setItem(made.key, 'culture', c.id, { ...c, name: '没写的' });
+    await deleteLibrary(made.key);
+    expect(libEdits.isDirty(made.key)).toBe(false);
+    await libEdits.flushAll();
+    await refreshLibrary();
+    expect(library.value.some((e) => e.key === made.key)).toBe(false);
+  });
+
+  it('别处换掉了这个包（存进资源库、再导入）：用新的，改到一半的撤销去掉', async () => {
+    await refreshLibrary();
+    const made = (await createLibrary('别处换'))!;
+    const e = () => library.value.find((x) => x.key === made.key)!;
+    expect(libEdits.addItem(made.key, 'culture', { id: 'c9', group: 'g', name: '九', color: '#999999' })).toEqual({ ok: true });
+    await libEdits.flushAll();
+    expect(libEdits.canUndo(made.key)).toBe(true);
+    await installPack({ ...e().pack, name: '新装的' }, { mine: true });
+    expect(e().pack.name).toBe('新装的');
+    expect(libEdits.canUndo(made.key)).toBe(false);
+    await deleteLibrary(made.key);
   });
 
   it('新建空的库：名字重复时键另起', async () => {

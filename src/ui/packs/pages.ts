@@ -2,7 +2,7 @@ import { type ContentKind, itemId, itemName, kindOf } from '../../../core/conten
 import type { Era } from '../../../core/human';
 import { type PackWorld, canApply, packItems, packSections } from '../../../core/packs';
 import type { Species } from '../../../core/species';
-import { PLAIN_TYPE, type WaterType } from '../../../core/water-types';
+import { PLAIN_TYPE, type WaterType, perCellRule } from '../../../core/water-types';
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
 import type { LibraryEntry } from '../../library';
 import { CARD_ICON, type CardDef, DEFAULT_INSIDE, HOME_LAYOUT, WATER_KINDS, type Inside } from './page-layout';
@@ -272,7 +272,7 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = DEFAULT_
     ? null
     : {
         title: kindTitle(eraKind!),
-        summary: eras.length === 1 ? eraSummary(eras[0]) : eras.length ? `${eras.length} 个时代` : '没有',
+        summary: eras.length === 1 ? eraSummary(eras[0]) : eras.length ? `${eras.length} 个时代` : src.t === 'world' ? '还没有生成人文' : '没有',
         empty: !eras.length,
         route: (eras.length === 1 ? { p: 'item', kind: 'era', id: eras[0].id } : { p: 'list', kind: 'era' }) as Route,
       };
@@ -641,6 +641,16 @@ export function waterTable(src: SourceRef, ctx: PageCtx): WaterTable {
     lakesFrom: rivers.length,
     anyScript: rows.some((r) => r.script),
   };
+}
+
+// 河湖页上一句话：现在这种水按什么出现在地图上。写在脚本里的（奇幻的六种河）：表上每一格都勾着，取消一格之后是“规则说是的里面按每格看”
+export function waterRuleNote(kind: WaterKind, t: WaterType): string {
+  const noun = kind === 'river' ? '河' : '湖';
+  if (t.natural === false) return `只用在${kind === 'river' ? '画的河和选了它的河' : '放的湖和选了它的湖'}上`;
+  const script = !!t.scripts?.match?.src;
+  if (!script && !perCellRule(t)) return '没有条件：选生态、写条件或规则';
+  if (!script) return `符合条件的${kind === 'river' ? '河段' : '湖'}是这一种`;
+  return perCellRule(t) ? `规则说是的${noun}里，符合条件的是这一种` : `规则说是的${noun}是这一种；取消一格后，规则说是的${noun}里按这里的勾看`;
 }
 
 // ---------- 打开：别处点进来 ----------

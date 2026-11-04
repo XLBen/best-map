@@ -17,6 +17,7 @@ import { defaultsOf, eraOf } from '../../core/testing/eras';
 import { exportPicks, exportSections, packEmpty } from './packs/PackDialog';
 import { REPO_FILTERS, addCommand, canDeleteFromLibrary, filterRows, itemPack, removeCommand, repoRows, rowUsage, saveableItem } from './packs/repo';
 import { repo } from './packs/store';
+import { libPanel } from './packs/panel-store';
 import { CultureMenu } from './panels/culture';
 import { ResourceMenu } from './panels/human';
 import { IslandTypeMenu } from './panels/islandTypes';
@@ -55,7 +56,7 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
     expect(p.library).toBe('culture');
     expect(p.onNew).toBeUndefined();
     openLibraryFor(p.library!);
-    expect(repo.value).toMatchObject({ kind: 'culture', filter: 'off' });
+    expect(libPanel.value!.stack.at(-1)).toEqual({ p: 'list', kind: 'culture', hideOn: true });
     expect(LIBRARY_LABEL).toBe('从资源库添加…');
   });
 

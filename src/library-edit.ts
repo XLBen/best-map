@@ -1,7 +1,7 @@
 import { signal } from '@preact/signals';
 import { type ContentKind, itemId, kindByPackKey, kindOf } from '../core/content/registry';
 import { PACK_MAX_SUBPACKS, type PackNode, type ResourcePack, findPack, itemErrors, ownItems, packIdFor, packItems, sameItem, subPacks, walkPacks } from '../core/packs';
-import { type LibraryEntry, type Stored, library, nextRev, refreshLibrary, removePack, useLibraryOverlay, writeStored } from './library';
+import { type LibraryEntry, type Stored, library, nextRev, refreshLibrary, rememberParsed, removePack, useLibraryOverlay, writeStored } from './library';
 
 // 改我的库（第五十九轮）：改一项不再整库校验、整库写盘，也有自己的撤销（和世界的撤销栈分开，切走不丢）。
 //
@@ -70,7 +70,10 @@ function localBackend(): LibBackend {
     }
   };
   return {
-    put: writeStored,
+    put: (rec) => {
+      rememberParsed(rec);
+      return writeStored(rec);
+    },
     walRead(key) {
       try {
         const raw = store()?.getItem(WAL_PREFIX + key);
@@ -400,7 +403,10 @@ export type LibEditor = ReturnType<typeof createLibEditor>;
 
 // 应用里只有一份：读存储时接上；关页面时写一次（日志已经在，这一次写得成就不用补）
 export const libEdits = createLibEditor();
-useLibraryOverlay((rec, pack) => libEdits.adopt(rec, pack));
+useLibraryOverlay(
+  (rec, pack) => libEdits.adopt(rec, pack),
+  (key) => libEdits.forget(key),
+);
 globalThis.addEventListener?.('pagehide', () => void libEdits.flushAll());
 
 // ---------- 库：新建、复制、删除 ----------
@@ -452,7 +458,4 @@ export async function copyLibrary(fromKey: string, name?: string): Promise<{ key
   return { key, stored };
 }
 
-export async function deleteLibrary(key: string): Promise<void> {
-  libEdits.forget(key);
-  await removePack(key);
-}
+export const deleteLibrary = (key: string): Promise<void> => removePack(key);

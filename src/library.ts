@@ -55,8 +55,15 @@ function parsedPack(s: Stored): ResourcePack | null {
 // 我的库正在改的那一份（library-edit.ts，第五十九轮）：没写进存储的改动在内存里，读存储时换上它
 type Adopt = (rec: Stored, pack: ResourcePack) => ResourcePack;
 let adopt: Adopt = (_, pack) => pack;
-export function useLibraryOverlay(fn: Adopt) {
+let forget: (key: string) => void = () => {};
+export function useLibraryOverlay(fn: Adopt, onRemoved: (key: string) => void) {
   adopt = fn;
+  forget = onRemoved;
+}
+
+// 我的库写进存储的那一份：每一项改的时候查过了，读回来时不用再查（第五十九轮）
+export function rememberParsed(rec: Stored) {
+  if (rec.rev) parsed.set(rec.key, { rev: rec.rev, reg: registryVersion(), pack: rec.pack });
 }
 
 // 写一个包：写不进去时留在内存里（这一次打开的页面里有效）
@@ -121,6 +128,7 @@ export async function installPack(pack: ResourcePack, opts: { mine?: boolean } =
 // 从资源库里删掉（内置的删不了）。用过它的世界不受影响
 export async function removePack(key: string): Promise<void> {
   if (isBuiltinKey(key)) return;
+  forget(key);
   memory.delete(key);
   parsed.delete(key);
   try {

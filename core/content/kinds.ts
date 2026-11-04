@@ -78,7 +78,7 @@ const WATER_FIELDS: readonly FieldDesc[] = [
   { key: 'name', label: '名字', type: 'text' },
   { key: 'color', label: '颜色', type: 'color' },
   { key: 'atlasColor', label: '另一种颜色', type: 'color', optional: true, hint: '画风选了“另一种颜色”时用（地图册）；空着时同颜色' },
-  { key: 'natural', label: '自然生成', type: 'bool', optional: true },
+  { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
   { key: 'biomes', label: '只在这些生态里', type: 'tags', optional: true, ref: 'biome', dep: 'auto' },
   whenField(WHEN_KEYS),
   {
@@ -134,7 +134,7 @@ registerKind<Species>({
     { key: 'color', label: '颜色', type: 'color' },
     { key: 'terrain', label: '地形类别', type: 'text', hint: '导出的地形图按它着色' },
     { key: 'competition', label: '竞争力', type: 'number', min: 0, max: 100, step: 0.5 },
-    { key: 'natural', label: '自然生成', type: 'bool', optional: true },
+    { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },
     { key: 'movement', label: '通行难度', type: 'number', optional: true, min: 0.1, max: 20, step: 0.05, hint: '乘在地形类别的起伏上；平地的草原为 1，空着时按生态估' },
     { key: 'height', label: '高度范围', type: 'range', optional: true, min: 0, max: HEIGHT_MAX, step: 100, hint: `海拔，米；超出后 ${HEIGHT_MARGIN} m 内慢慢长不了。空着时不看高度` },

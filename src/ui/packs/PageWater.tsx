@@ -6,7 +6,7 @@ import { type WaterKind, waterAllowed } from '../../../core/water-table';
 import { SpeciesWaterForm } from '../panels/speciesWater';
 import { TypeSwatch } from '../panels/waterTypes';
 import { commitWaterBlock, commitWaterCell } from './page-actions';
-import { type PageCtx, type SourceRef, kindReadonly, readonlyWhy, waterLists, waterTable } from './pages';
+import { type PageCtx, type SourceRef, kindReadonly, readonlyWhy, waterLists, waterRuleNote, waterTable } from './pages';
 import { goTo } from './panel-store';
 import { kindOf } from '../../../core/content/registry';
 import { SCRIPT_RIVER_NOTE, WATER_MANUAL_NOTE } from '../copy';
@@ -109,10 +109,9 @@ export function WaterBiomesSegment({ src, ctx, kindId, type }: { src: SourceRef;
   const lists = waterLists(src, ctx);
   const opt = useOptimistic(ctx);
   const ro = !!kindReadonly(src, kindOf(kindId)!, ctx);
-  const script = !!type.scripts?.match?.src;
   return (
     <>
-      {script && <p class="hint">{SCRIPT_RIVER_NOTE}</p>}
+      <p class="hint">{waterRuleNote(kind, type)}</p>
       <div class="biome-picks">
         {lists.species.map((sp) => {
           const on = opt.get(sp.id, waterAllowed(lists, sp, kind, type.id));

@@ -120,7 +120,7 @@ const switchInput = (plan: LibrarySwitchPlan) => ({ switchLibrary: { drop: plan.
 export function generateCommand(c: HumanChoice, small?: Small | null, lib: readonly LibraryEntry[] = []): Command | null {
   if (!c.on || choiceProblem(c, small, lib)) return null;
   const plan = switchPlanOf(c, small, lib);
-  const imports = [...(plan ? plan.imports : humanImportCommands(c, small, lib)), ...reviveGroups(c, small)];
+  const imports = [...(plan ? plan.imports : humanImportCommands(c, small, lib)), ...reviveGroups(c, small), ...retireGroups(c, small, lib)];
   const gen = { ...generateOnly(c), ...(plan ? switchInput(plan) : {}) } as Command;
   return imports.length ? { op: 'batch', label: plan ? switchLabel(c, plan, lib) : '生成人文', commands: [...imports, gen] } : gen;
 }
@@ -135,6 +135,13 @@ function reviveGroups(c: Pick<PackChoice, 'groups'>, small?: Small | null): Comm
     const { weight: _, ...rest } = item;
     return [{ op: 'set_content', kind: 'cultureGroup', id: g.id, item: rest as unknown as Record<string, unknown> }];
   });
+}
+
+// 第五十九轮：“本世界加的”组用户取消了就记下来（比重写 0），重开面板时不再勾上。再勾上时 reviveGroups 去掉这个 0
+function retireGroups(c: Pick<PackChoice, 'library' | 'groups'>, small: Small | null | undefined, lib: readonly LibraryEntry[]): Command[] {
+  return beyondGroups(small, c.library, lib)
+    .filter((g) => g.weight !== 0 && !c.groups.some((x) => x.id === g.id))
+    .map((g): Command => ({ op: 'set_content', kind: 'cultureGroup', id: g.id, item: { ...g, weight: 0 } as unknown as Record<string, unknown> }));
 }
 
 function generateOnly(c: HumanChoice): Command {
@@ -161,11 +168,15 @@ export function regenerateWith(c: HumanChoice, small: Small, lib: readonly Libra
   const plan = switchPlanOf(c, small, lib);
   if (plan) {
     const regen: Command = { op: 'regenerate_human', packs: choicePacks(c), groups, ...totalPop, keepManual: false, ...(h.countryRules ? { countries: {} } : {}), ...switchInput(plan) };
-    return { op: 'batch', label: switchLabel(c, plan, lib), commands: [...plan.imports, ...reviveGroups(c, small), regen] };
+    return { op: 'batch', label: switchLabel(c, plan, lib), commands: [...plan.imports, ...reviveGroups(c, small), ...retireGroups(c, small, lib), regen] };
   }
-  if (JSON.stringify(groups) === JSON.stringify(h.groups.map((g) => ({ id: g.id, weight: g.weight }))) && c.pop === null) return null;
+  if (JSON.stringify(groups) === JSON.stringify(h.groups.map((g) => ({ id: g.id, weight: g.weight }))) && c.pop === null) {
+    // 只取消了“本世界加的”组：人口不用重算，只记下这一笔
+    const retired = retireGroups(c, small, lib);
+    return retired.length ? { op: 'batch', label: '不参与生成', commands: retired } : null;
+  }
   const regen: Command = { op: 'regenerate_human', packs: choicePacks(c), groups, ...totalPop, keepManual: true };
-  const imports = [...humanImportCommands(c, small, lib), ...reviveGroups(c, small)];
+  const imports = [...humanImportCommands(c, small, lib), ...reviveGroups(c, small), ...retireGroups(c, small, lib)];
   return imports.length ? { op: 'batch', label: '重新生成人文', commands: [...imports, regen] } : regen;
 }
 
