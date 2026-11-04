@@ -67,6 +67,7 @@
 ## 内容与资源包
 - `content/registry.ts` 内容种类的登记表（`ContentKind`、`allKinds`、`kindOf`）；编辑器的字段表 `FieldDesc`（第四十五轮：`ref` / `keyRef` 引用什么，`tuple`、`tuples`、`title`、`titleList`、`tendencies` 几种成块的字段）；`content/kinds.ts` 现有的种类在这里登记（登记的先后有意义）
 - `content/links.ts` 内容之间的引用表（第四十九轮）：由字段表推出，一项引用了什么、谁引用它、依赖的闭包（`hard` / `auto` / `strip`）、改名时跟着改（`renameLinks`）、去掉引用（`stripLinks`）；`content/link-rules.ts` 每种内容一条补充；`content/pack-tree.ts` 走包的树（`packs.ts` 照旧导出）
+- `content/arrange.ts` 融入（第六十轮）：库的 `arrange`（下级 → 上级，只改显示）、讲得通的组合 `RELATIONS`（怎么读出下面有哪些、加和移出改哪一项）、预设 `PRESET_ARRANGE`、`childrenOf`、`parentsOf`、`looseItems`
 - `content/refs.ts` 引用的底层：脚本字面量的位置、两项是不是一模一样（`sameItem`、`sameContent`）；`content/usage.ts` 内容用在哪里；`content/unused.ts`（第五十轮起也看文化、文化组、地名风格、时代）哪里都没用到的；`content/origin.ts` 每项来自哪个包、改名前的 id；`content/missing.ts` 缺了什么
 - `packs.ts` 资源包的格式、检查、用到世界、从世界导出（各段由登记表推出）
 - `packs/builtin-tree.ts` 六个内置的库（第五十一轮：每个时代一个完整的库，由同一份数据拼出来；四个历史库带全部 EU4 文化组，不默认带的比重 0；`LIBRARY_BASE_PACKS`、`worldPartsOf` 是世界的底子）；`packs/base.ts` 库里“基础”由代码写的几样；`packs/nature.ts` 13 种生态；`packs/planet-forms.ts` 星球形态；`packs/map-styles.ts` 写实、地图册；`packs/countries/` 国家等级与格局（第四十二轮）

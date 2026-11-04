@@ -43,6 +43,11 @@ export function startDrag(down: PointerEvent, o: { source: string; label: string
     dragView.value = { ...r, x, y, label: o.label, source: o.source };
   };
   const move = (e: PointerEvent) => {
+    // 在窗口外面松的手：收不到 pointerup
+    if (e.buttons === 0) {
+      cancel();
+      return;
+    }
     if (!on) {
       if (Math.hypot(e.clientX - x0, e.clientY - y0) < START_PX) return;
       on = true;

@@ -272,7 +272,7 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
           )}
         </div>
       )}
-      {p.note && <p class="hint">{p.note}</p>}
+      {p.note && !embedded && <p class="hint">{p.note}</p>}
       <EditorKind.Provider value={p.kind.id}>
         <RefGo.Provider value={go}>
           <fieldset class="lp-fields" disabled={!!p.readonly}>
