@@ -1,8 +1,8 @@
 import type { Command } from '../commands';
 import { itemFields } from '../content/links';
-import { itemId, kindByPackKey } from '../content/registry';
+import { type ContentKind, itemId, kindByPackKey } from '../content/registry';
 import type { Culture, CultureGroup, Era, PopValue } from '../human/era';
-import { type PackItem, type PackNode, type PackPicks, type PackPlan, type PackWorld, type ResourcePack, defaultPicks, findPack, firstOfEach, nestByKind, ownItems, packItems, packSections, pickedIds, planPack, renamedItem, settleIds, subPacks, walkPacks } from '../packs';
+import { PACK_MAX_SUBPACKS, type PackItem, type PackNode, type PackPicks, type PackPlan, type PackWorld, type ResourcePack, defaultPicks, findPack, firstOfEach, nestByKind, ownItems, packItems, packSections, pickedIds, planPack, renamedItem, settleIds, subPacks, walkPacks } from '../packs';
 import { builtinPacks, DEFAULT_WORLD_PACKS, LIBRARY_BASE_PACKS } from './builtin-tree';
 
 // 生成要用的内容从资源包加进世界（第三十轮）：时代就是资源包，生成只读世界里的内容，界面在生成之前先发这里给出的命令。
@@ -243,8 +243,41 @@ export function importIntoPack(target: ResourcePack, source: PackNode, picks: Pa
   const picked = new Map(kinds.map((k) => [k, firstOfEach(k, packItems(source, k.pack.key), pickedIds(picks, k.pack.key))]));
   const there = new Map(kinds.map((k) => [k, packItems(target, k.pack.key)]));
   const { assigned, renames } = settleIds(kinds, picked, there, renamedItem);
-  const out = nestByKind(structuredClone(target));
+  // 包是不改动的数据：只换走到的几层，别的和原来的包共用
+  const out = nestByKind(target);
   const packs = [...subPacks(out)];
+  // 文化组放进“文化”下面自己的小包（新世界才带得上，比重 0 的小包点名了才带）；文化跟着它的组；取值、取值组放进同一维的小包
+  const inside = (id: string, node: PackNode) => subPacks(node).findIndex((c) => c.id === id);
+  const put = (k: ContentKind, item: unknown) => {
+    const key = k.pack.key;
+    const cultures = packs.findIndex((n) => n.id === 'cultures');
+    const up = cultures >= 0 ? packs[cultures] : null;
+    if (up && k.id === 'cultureGroup') {
+      const g = item as CultureGroup;
+      if (inside(g.id, up) < 0 && subPacks(up).length < PACK_MAX_SUBPACKS) {
+        packs[cultures] = { ...up, packs: [...subPacks(up), { id: g.id, name: String(g.name ?? g.id).slice(0, 60), weight: g.weight === 0 ? 0 : 1, cultureGroups: [item] }] };
+        return;
+      }
+    }
+    if (up && k.id === 'culture') {
+      const at = subPacks(up).findIndex((c) => ownItems<CultureGroup>(c, 'cultureGroups').some((g) => g.id === (item as Culture).group));
+      if (at >= 0) {
+        const kids = [...subPacks(up)];
+        kids[at] = { ...kids[at], cultures: [...ownItems(kids[at], 'cultures'), item] };
+        packs[cultures] = { ...up, packs: kids };
+        return;
+      }
+    }
+    let at = -1;
+    if (k.id === 'popValue' || k.id === 'valueGroup') {
+      const dim = (item as PopValue).dimension;
+      at = packs.findIndex((n) => n.id === dim || ownItems<PopValue>(n, key).some((v) => v.dimension === dim));
+      if (at < 0 && dim && packs.length < PACK_MAX_SUBPACKS) at = packs.push({ id: dim, name: dim }) - 1;
+    }
+    if (at < 0) at = packs.findIndex((n) => n.id === key);
+    if (at < 0) at = packs.push({ id: key, name: k.label }) - 1;
+    packs[at] = { ...packs[at], [key]: [...ownItems(packs[at], key), item] };
+  };
   const added: PackPlan['added'] = [];
   const skipped: PackPlan['skipped'] = [];
   const full: string[] = [];
@@ -268,9 +301,7 @@ export function importIntoPack(target: ResourcePack, source: PackNode, picks: Pa
         continue;
       }
       const item = structuredClone(renamedItem(k, x, id, renames));
-      let at = packs.findIndex((n) => n.id === key);
-      if (at < 0) at = packs.push({ id: key, name: k.label }) - 1;
-      packs[at] = { ...packs[at], [key]: [...ownItems(packs[at], key), item] };
+      put(k, item);
       added.push({ section: key, from, id, name: nameOf(k, item) || id });
       for (const f of itemFields(k, item)) fields.add(f);
     }

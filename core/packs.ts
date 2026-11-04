@@ -505,7 +505,7 @@ export function renamedItem(kind: ContentKind, x: unknown, id: string, r: Rename
 }
 
 // 加进世界的最终样子：最后一步（自然生成关掉……）
-function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames, only?: LinkClass): unknown {
+export function finalItem(kind: ContentKind, x: unknown, id: string, r: Renames, only?: LinkClass): unknown {
   const out = renamedItem(kind, x, id, r, only);
   return kind.pack.finalize ? kind.pack.finalize(out) : out;
 }

@@ -414,6 +414,7 @@ export const packScope = (...packs: readonly PackNode[]): LinkScope => ({
 });
 
 const keyOf = (kind: string, id: string) => `${kind}\u0000${id}`;
+export const linkKey = keyOf;
 
 export interface LinkFrom {
   from: ContentRef;
