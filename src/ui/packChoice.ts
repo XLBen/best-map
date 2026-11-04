@@ -1,10 +1,13 @@
 import type { Command } from '../../core/commands';
+import { DIMENSION } from '../../core/content/link-rules';
+import { linkKey } from '../../core/content/links';
 import { itemId, kindByPackKey } from '../../core/content/registry';
 import { recordedOrigin } from '../../core/content/origin';
-import { type Culture, type CultureGroup, type Era, type Government, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
+import { type Culture, type CultureGroup, type Era, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
 import { type PackNode, type PackWorld, findPack, ownItems, packItems, subPacks, walkPacks } from '../../core/packs';
 import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../core/packs/builtin-tree';
-import { type ImportPicks, type PackRoot, packAt, packImportCommands, packImportPlan } from '../../core/packs/import';
+import { importCommand, importPreview } from '../../core/packs/closure';
+import { type ImportPicks, type PackRoot, packAt, packImportCommands } from '../../core/packs/import';
 import { type LibrarySwitchPlan, librarySwitchPlan, worldLibrary } from '../../core/packs/switch';
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
@@ -218,46 +221,18 @@ export function humanImportCommands(c: PackChoice, small: Small | null | undefin
   return packImportCommands(libRoots(lib), humanImportPicks(c, small), small ? worldOf(small) : undefined);
 }
 
-// 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）
-export function addFromLibrary(small: Small, lib: readonly LibraryEntry[], key: string, id: string, path: PackPath): { commands: Command[]; id: string } {
-  const extra: { path: readonly string[]; picks: Record<string, string[]> }[] = [{ path, picks: { [key]: [id] } }];
-  // 第五十三轮：政体带上它列的、世界里没有的派系（先找同一个库的），不留下找不到的引用
-  if (key === 'governments') {
-    const gov = findInLibrary<Government>(lib, key, id, [path])?.item;
-    for (const fid of gov?.factions ?? []) {
-      if (small.content?.faction?.[fid]) continue;
-      const hit = findInLibrary<unknown>(lib, 'factions', fid, [path.slice(0, 1)]);
-      if (hit) extra.push({ path: hit.path, picks: { factions: [fid] } });
-    }
-  }
-  const plan = packImportPlan(libRoots(lib), { packs: [], extra }, worldOf(small));
-  const hit = [...plan.added, ...plan.skipped].find((a) => a.section === key && a.from === id);
-  return { commands: plan.commands, id: hit?.id ?? id };
-}
-
-// 资源库里一项所在的小包：先找 packs（世界用的包）里的，再找整个资源库（按资源库的先后）
-export function findInLibrary<T>(lib: readonly LibraryEntry[], key: string, id: string, packs: readonly PackPath[] = []): { item: T; path: string[] } | undefined {
+// 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）；带不了时 id 是 null。
+// 第六十三轮：走导入的闭包（core/packs/closure.ts），派系、限谁用的组（比重 0，不参与生成）一起带上，不留下找不到的引用。
+// 变量不加：换一个国家的政体不该动所有人的人口，写到那个变量的来源去掉（要变量走“导入”）
+export function addFromLibrary(small: Small, lib: readonly LibraryEntry[], key: string, id: string, path: PackPath): { commands: Command[]; id: string | null } {
+  const source = nodeAt(lib, path.slice(0, 1));
   const kind = kindByPackKey(key);
-  const idOf = (x: unknown) => (kind ? itemId(kind, x) : (x as { id?: string }).id);
-  const search = (node: PackNode, base: readonly string[]): { item: T; path: string[] } | undefined => {
-    let hit: { item: T; path: string[] } | undefined;
-    walkPacks(node, (n, rel) => {
-      if (hit) return;
-      const x = ownItems<T>(n, key).find((y) => idOf(y) === id);
-      if (x) hit = { item: x, path: [...base, ...rel] };
-    });
-    return hit;
-  };
-  for (const p of packs) {
-    const node = nodeAt(lib, p);
-    const hit = node && search(node, p);
-    if (hit) return hit;
-  }
-  for (const r of libRoots(lib)) {
-    const hit = search(r.pack, [r.key]);
-    if (hit) return hit;
-  }
-  return undefined;
+  if (!source || !kind) return { commands: [], id: null };
+  const target = { t: 'world', world: worldOf(small) } as const;
+  const picks = [{ kind: kind.id, id }];
+  const off = importPreview({ source, target, picks }).dims.map((d) => ({ kind: DIMENSION, id: d.id }));
+  const r = importCommand({ source, target, picks, off }, { path: path.slice(0, 1) });
+  return { commands: r.command?.commands ?? [], id: r.preview.plan.ids.get(linkKey(kind.id, id)) ?? null };
 }
 
 // 这几个包里的一种（同 id 只取第一个）与它们所在的小包

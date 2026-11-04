@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { PACK_FORMAT, PACK_VERSION, type PackItem, type PackNode, type ResourcePack, addToPack, packIdFor, packItems, parsePack, sameItem, subPacks, walkPacks } from '../core/packs';
+import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack, addToPack, packIdFor, packItems, parsePack, sameItem } from '../core/packs';
 import type { PlanetForm } from '../core/planet-form';
 import { builtinPacks, isBuiltinSame } from '../core/packs/builtin-tree';
 import { allKinds, itemId, kindByPackKey, kindOf, registryVersion } from '../core/content/registry';
@@ -178,72 +178,6 @@ export async function saveItem(key: string, item: unknown): Promise<SaveForm> {
   if (!r.ok) return { ok: false, error: r.errors[0] };
   const { entry, ok } = await installPack(r.pack, { mine: true });
   return { ok: true, entry, stored: ok };
-}
-
-// 从资源库里删掉一项（第二十八轮：资源库里“从库里删除”）：只删“我的”包里的（内置的、装上的资源包不能一项一项删）。
-// 第二十九轮：包可以分小包（“来自《世界名》”按种类分）：每一层里同 id 的都删掉，空了的小包去掉。
-// 包里没别的内容了就整个删掉。用过它的世界不受影响
-export async function removeItem(entryKey: string, key: string, id: string): Promise<{ ok: boolean; error?: string }> {
-  const kind = kindByPackKey(key);
-  const cur = (await refreshLibrary()).find((e) => e.key === entryKey);
-  if (!kind || !cur) return { ok: false, error: '资源库里没有这一项' };
-  if (cur.builtin || !cur.mine) return { ok: false, error: '只有自己的内容能从资源库里删掉' };
-  let found = false;
-  // 一层：去掉这一段里同 id 的、去掉空了的小包；这一层什么都不剩时 null
-  const strip = (node: PackNode, top: boolean): PackNode | null => {
-    const out: PackNode = { ...node };
-    const list = Array.isArray(node[key]) ? (node[key] as unknown[]) : [];
-    const rest = list.filter((x) => itemId(kind, x) !== id);
-    if (rest.length !== list.length) found = true;
-    if (rest.length) out[key] = rest;
-    else delete out[key];
-    const kids = subPacks(node)
-      .map((c) => strip(c, false))
-      .filter((c): c is PackNode => c !== null);
-    if (kids.length) out.packs = kids;
-    else delete out.packs;
-    if (!top && !kids.length && !allKinds().some((k) => Array.isArray(out[k.pack.key]) && (out[k.pack.key] as unknown[]).length)) return null;
-    return out;
-  };
-  const pack = strip(structuredClone(cur.pack), true) as ResourcePack;
-  if (!found) return { ok: false, error: '资源库里没有这一项' };
-  if (!packCount(pack)) {
-    await removePack(entryKey);
-    return { ok: true };
-  }
-  const r = parsePack(pack);
-  if (!r.ok) return { ok: false, error: r.errors[0] };
-  await writeStored({ key: entryKey, pack: r.pack, installedAt: cur.installedAt, mine: true });
-  await refreshLibrary();
-  return { ok: true };
-}
-
-// 改“我的”包里一个小包的一段（第四十五轮：资源库里双击改名、拖动换先后）。path 是 [资源库的键, 小包…]，
-// fn 给出这一段新的样子。改完按现在的格式查一遍，不合格式的不存
-export async function editMineList(path: readonly string[], key: string, fn: (list: unknown[]) => unknown[]): Promise<{ ok: boolean; error?: string }> {
-  const kind = kindByPackKey(key);
-  const cur = (await refreshLibrary()).find((e) => e.key === path[0]);
-  if (!kind || !cur) return { ok: false, error: '资源库里没有这一项' };
-  if (cur.builtin || !cur.mine) return { ok: false, error: '只有自己的内容能在资源库里改' };
-  const pack = structuredClone(cur.pack) as ResourcePack;
-  let node: PackNode | undefined = pack;
-  for (const id of path.slice(1)) node = node && subPacks(node).find((c) => c.id === id);
-  if (!node || !Array.isArray(node[key])) return { ok: false, error: '资源库里没有这一项' };
-  node[key] = fn([...(node[key] as unknown[])]);
-  const r = parsePack(pack);
-  if (!r.ok) return { ok: false, error: r.errors[0] };
-  const stored = await writeStored({ key: cur.key, pack: r.pack, installedAt: cur.installedAt, mine: true });
-  await refreshLibrary();
-  return stored ? { ok: true } : { ok: true, error: '存不进浏览器：只在这次打开的页面里' };
-}
-
-// 整棵树里有几项（各种内容）
-function packCount(pack: PackNode): number {
-  let n = 0;
-  walkPacks(pack, (node) => {
-    for (const k of allKinds()) if (Array.isArray(node[k.pack.key])) n += (node[k.pack.key] as unknown[]).length;
-  });
-  return n;
 }
 
 // ---------- 拿掉的不丢（第二十九轮）：移出世界的、打开的世界文件里自己做的，存进“来自《世界名》” ----------

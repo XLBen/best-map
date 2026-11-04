@@ -1,7 +1,7 @@
 import { type ContentKind, itemId } from '../../../core/content/registry';
 import { type PackWorld, canApply, packItems } from '../../../core/packs';
 import type { LibraryEntry } from '../../library';
-import { type RepoRow, type TreeNode, packTree, treeRows } from './repo';
+import { type ItemRow, libraryRows, worldRows } from './rows';
 
 // 看的是哪一份、这一份里有什么（第五十九轮写在 pages.ts，第六十轮搬到这里：融入的逻辑也要用，又不能和 pages.ts 绕圈）
 
@@ -89,10 +89,10 @@ export function itemOf(src: SourceRef, kind: ContentKind, id: string, ctx: PageC
 
 export const kindTitle = (k: ContentKind): string => (k.id === 'popValue' ? '取值' : k.id === 'landmarkType' ? '地标' : k.id === 'pointType' ? '自定义点' : k.id === 'riverType' ? '河' : k.id === 'lakeType' ? '湖' : k.id === 'islandType' ? '岛' : k.id === 'cityRank' ? '城市等级' : k.id === 'era' ? '时代规则' : k.label);
 
-// 列表的来源：repo.ts 的树（行里有状态、添加和移出的命令），同一项只列一次。按世界、库记着，点进点出不重算
-const rowsMemo = new WeakMap<object, Map<string, RepoRow[]>>();
+// 列表的来源（rows.ts：行里有状态），同一项只列一次。按世界、库记着，点进点出不重算
+const rowsMemo = new WeakMap<object, Map<string, ItemRow[]>>();
 const NO_WORLD = {};
-export function rowsOf(src: SourceRef, kind: ContentKind, ctx: PageCtx): RepoRow[] {
+export function rowsOf(src: SourceRef, kind: ContentKind, ctx: PageCtx): ItemRow[] {
   const holder = src.t === 'world' ? (ctx.world ?? NO_WORLD) : entryOf(src, ctx)?.pack;
   if (!holder) return [];
   // 库里的行要看世界（在不在本世界）
@@ -103,11 +103,8 @@ export function rowsOf(src: SourceRef, kind: ContentKind, ctx: PageCtx): RepoRow
   let rows = m.get(key);
   if (rows) return rows;
   const e = entryOf(src, ctx);
-  const tree = packTree(ctx.world, e ? [e] : [], kind.id);
-  const nodes: TreeNode[] = src.t === 'world' ? tree.world : tree.library;
-  const seen = new Set<string>();
-  rows = nodes.flatMap(treeRows).filter((r) => !seen.has(r.id) && !!seen.add(r.id));
-  // 按这一份里的先后（树是按小包走的，世界里的顺序是 inWorld 的）
+  rows = src.t === 'world' ? (ctx.world ? worldRows(kind, ctx.world) : []) : e ? libraryRows(e, kind, ctx.world) : [];
+  // 按这一份里的先后（库里是按小包走的）
   const order = new Map(itemsOf(src, kind, ctx).map((x, k) => [itemId(kind, x), k]));
   rows.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
   m.set(key, rows);

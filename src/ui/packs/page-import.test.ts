@@ -5,7 +5,7 @@ import { builtinPacks } from '../../../core/packs/builtin-tree';
 import { importCommand, importPreview } from '../../../core/packs/closure';
 import { continents } from '../../../core/testing/fixtures';
 import type { LibraryEntry } from '../../library';
-import { type ImportWindow, addRows, askOf, chooseFrom, closeImport, defaultFrom, hereState, importWindow, openImport, otherLibOptions, pickSections, regenLine, setPicks, sourceOf, targetOf, toggleDep, toggleOptional, togglePick } from './page-import';
+import { type ImportWindow, addRows, askOf, chooseFile, chooseFrom, closeImport, defaultFrom, hereState, importWindow, openImport, otherLibOptions, pickSections, regenLine, setPicks, sourceOf, targetOf, toggleDep, toggleOptional, togglePick } from './page-import';
 import { type PageCtx, type SourceRef, rowsOf } from './page-source';
 
 // 第六十一轮：导入窗口的逻辑（闭包的测试在 core/packs/closure.test.ts）
@@ -54,6 +54,12 @@ describe('勾', () => {
     expect(st().on).toEqual([{ kind: 'dimension', id: 'nation' }]);
     toggleOptional({ kind: 'dimension', id: 'nation' }, false);
     expect(st().on).toEqual([]);
+  });
+
+  it('太大的文件不读进内存，窗口里说为什么', async () => {
+    openImport({ target: MINE, from: 'modern' }, ctx());
+    await chooseFile({ name: '大.json', size: 1e9, text: () => Promise.reject(new Error('不该读')) } as unknown as File);
+    expect(st().file?.read).toEqual({ ok: false, errors: ['文件太大（1000 MB），不是资源包'] });
   });
 
   it('来源和目的地：世界没了、库没了时 null', () => {

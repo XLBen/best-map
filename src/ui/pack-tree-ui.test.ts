@@ -1,18 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Command } from '../../core/commands';
 import { splitWorldContent } from '../../core/compact';
-import { kindOf } from '../../core/content/registry';
+import { type ContentKind, kindOf } from '../../core/content/registry';
 import { worldCultures } from '../../core/human';
 
 import { DEFAULT_STYLE } from '../../core/name-styles';
-import { PACK_FORMAT, PACK_VERSION, type ResourcePack, findPack, packItems } from '../../core/packs';
+import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack, findPack, packItems, packSections } from '../../core/packs';
+import { importCommand } from '../../core/packs/closure';
 import { BASE_PATH, builtinPacks } from '../../core/packs/builtin-tree';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_ERAS } from '../../core/packs/eras';
 
 import { continents, snapshot, type HumanCommand, humanExec } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { compactJob, onlyBuiltinScripts } from '../compact-job';
-import { type LibraryEntry, keepInLibrary, library, refreshLibrary, removeItem, worldPackName, worthKeeping } from '../library';
+import { type LibraryEntry, keepInLibrary, library, refreshLibrary, removePack, worldPackName, worthKeeping } from '../library';
 import { world } from '../state';
 import { importBiomeFile } from './ClimateChart';
 import { originGroups } from './components/TypePicker';
@@ -20,13 +21,14 @@ import { formChoices } from './forms';
 import { LOOSE_GROUP, groupByPack } from './human';
 import { humanImportCommands, packGroups, packLabel } from './packChoice';
 import { ResourceMenu } from './panels/human';
-import { type TreeNode, addCommand, filterTree, packAddCommand, packRemoveRefs, packTree, removeCommand, rowUsage, treeRows } from './packs/repo';
-import { packDialog, repo } from './packs/store';
+import { WORLD_SOURCE, sourceMenu } from './packs/page-source';
+import { libraryRows, removeCommand, rowUsage, worldRows } from './packs/rows';
+import { packDialog } from './packs/store';
 import { tidyLines, tidyText } from './packs/tidy';
 import { FANTASY_RESOURCES, GENERAL_RESOURCES } from '../../core/packs/base';
 import { DEFAULT_SPECIES } from '../../core/packs/nature';
 
-// 第二十九轮的界面：资源库两栏（本世界按来源的包分组、离群在最后；资源库是包的树，整包添加记上来源，单项添加、移出，种类筛选），
+// 第二十九轮的界面：世界里的一项记着来源的小包（自己做的没有来源），添加记上来源，移出；
 // 选择器、向导按包分组，拿掉的自己做的存进“来自《世界名》”（不重复存），打开世界文件时拆开，导出时压缩，旧的生态文件只进资源库，
 // Worker 的整理计划
 
@@ -43,14 +45,10 @@ const peopled = () =>
     return e;
   });
 
-const find = (nodes: readonly TreeNode[], key: string): TreeNode | undefined => {
-  for (const n of nodes) {
-    if (n.key === key) return n;
-    const hit = find(n.children, key);
-    if (hit) return hit;
-  }
-  return undefined;
-};
+const of = (key: string) => BUILTIN.find((e) => e.key === key)!;
+const pathIs = (path: readonly string[]) => (r: { path?: string[] }) => r.path?.join('/') === path.join('/');
+// 面板上的“添加”“全部添加”：走导入的闭包
+const addCmd = (e: LibraryEntry, kind: ContentKind, ids: readonly string[], w: PackWorld) => importCommand({ source: e.pack, target: { t: 'world', world: w }, picks: ids.map((id) => ({ kind: kind.id, id })) }, { path: [e.key] }).command!;
 
 // 本世界做的一个文化（没有来源）
 const myCulture = { id: 'my-c', group: 'germanic', name: '我的人', color: '#335577', nameStyle: DEFAULT_STYLE };
@@ -58,107 +56,89 @@ const addMine: Command = { op: 'set_content', kind: 'culture', id: myCulture.id,
 
 afterEach(() => {
   world.value = null;
-  repo.value = null;
   packDialog.value = null;
 });
 
-describe('资源库两栏：packTree', () => {
-  it('资源库一栏：内置的库按时代的先后，之后是我的、装上的；库里的基础是普通的包（第三十轮）', () => {
+describe('来源：库里的小包、世界里记着的', () => {
+  it('标题的下拉：内置的库按时代的先后，之后是我的；库里的基础是普通的小包（第三十轮）', () => {
     const mine = entry('我的资源', pack('我的资源', { cultures: [myCulture] } as Partial<ResourcePack>), { mine: true });
-    const t = packTree(continents().world, [...BUILTIN, mine]);
-    expect(t.library.map((n) => n.path[0])).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi', '我的资源']);
-    const base = find(t.library, `l:${BASE_PATH.join('/')}`)!;
-    expect(Object.keys(base)).not.toContain('base');
-    // 新世界里基础的都在：没有能加的
-    expect(packAddCommand(base, continents().world)).toBeNull();
-    expect(base.on).toBe(base.count);
-    // 中世纪 ▸ 政体：13 种，一种都还不在本世界
-    const gov = find(t.library, 'l:medieval/governments')!;
-    expect([gov.name, gov.count, gov.on]).toEqual(['政体', 19, 0]);
-    expect(t.library.at(-1)!.rows.map((r) => [r.source, r.name])).toEqual([['mine', '我的人']]);
+    const w = continents().world;
+    const m = sourceMenu(WORLD_SOURCE, { world: w, lib: [...BUILTIN, mine] });
+    expect(m.builtin.map((x) => (x.src as { key: string }).key)).toEqual(['antiquity', 'medieval', 'industrial', 'modern', 'fantasy', 'scifi']);
+    expect(m.mine.map((x) => x.name)).toEqual(['我的资源']);
+    // 新世界里基础的都在
+    const base = packSections().flatMap((k) => libraryRows(of('medieval'), k, w).filter(pathIs(BASE_PATH)));
+    expect(base.length).toBeGreaterThan(0);
+    expect(base.filter((r) => r.kind.id !== 'planetForm').every((r) => r.status.on)).toBe(true);
+    // 中世纪 ▸ 政体：19 种，一种都还不在本世界
+    const gov = libraryRows(of('medieval'), kindOf('government')!, w).filter(pathIs(['medieval', 'governments']));
+    expect([gov.length, gov.filter((r) => r.status.on).length]).toEqual([19, 0]);
+    expect(libraryRows(mine, kindOf('culture')!, w).map((r) => [r.source, r.name])).toEqual([['lib', '我的人']]);
   });
 
-  it('本世界一栏：按来源的包分组（大包 ▸ 小包），先后照资源库；本世界做的在最后的“离群”', () => {
+  it('世界里的一项记着来源：生成时带进来的是中世纪的包，本世界做的没有来源', () => {
     const eng = peopled();
     eng.exec(addMine);
-    const t = packTree(eng.world, BUILTIN);
-    const tops = t.world.map((n) => n.name);
-    expect(tops.at(-1)).toBe('离群');
-    expect(tops).toEqual([topName('medieval'), '离群']);
-    expect(t.world.at(-1)!.rows.map((r) => r.id)).toEqual(['my-c']);
-    // 生成时带进来的时代、文化记着中世纪的包
-    const era = find(t.world, 'w:medieval/era')!;
-    expect(era.rows.map((r) => r.id)).toEqual(['medieval']);
-    const cultures = worldCultures(eng.world.small).filter((c) => c.id !== 'my-c');
-    const listed = treeRows(t.world.find((n) => n.path[0] === 'medieval')!).filter((r) => r.kind.id === 'culture');
-    expect(listed.map((r) => r.id).sort()).toEqual(cultures.map((c) => c.id).sort());
+    expect(worldRows(kindOf('era')!, eng.world).map((r) => [r.id, r.path])).toEqual([['medieval', ['medieval', 'era']]]);
+    const rows = worldRows(kindOf('culture')!, eng.world);
+    expect(rows.filter((r) => !r.path).map((r) => r.id)).toEqual(['my-c']);
+    expect(rows.filter((r) => r.path).every((r) => r.path![0] === 'medieval')).toBe(true);
+    expect(rows.filter((r) => r.path).map((r) => r.id).sort()).toEqual(worldCultures(eng.world.small).filter((c) => c.id !== 'my-c').map((c) => c.id).sort());
     // 新世界加的 15 种生态在默认的库“自然”，基础内容在“基础”
-    const w0 = packTree(continents().world, BUILTIN);
-    expect(find(w0.world, 'w:medieval/nature')!.rows.map((r) => r.id)).toEqual(DEFAULT_SPECIES.map((s) => s.id));
-    expect(find(w0.world, `w:${BASE_PATH.join('/')}`)!.rows.length).toBeGreaterThan(0);
+    const w0 = continents().world;
+    expect(worldRows(kindOf('biome')!, w0).map((r) => [r.id, r.path])).toEqual(DEFAULT_SPECIES.map((s) => [s.id, ['medieval', 'nature']]));
+    expect(packSections().some((k) => worldRows(k, w0).some(pathIs(BASE_PATH)))).toBe(true);
   });
 
-  it('种类筛选：只列那一种；搜索：名字对上的项和它们所在的包', () => {
+  it('只列那一种：现实的河六个库都有（第五十七轮）', () => {
     const w = continents({ noWater: true }).world;
-    const t = packTree(w, BUILTIN, 'riverType');
-    expect(t.world).toEqual([]);
-    // 现实的河六个库都有（第五十七轮）
-    expect(t.library.map((n) => n.path[0])).toEqual(BUILTIN.map((p) => p.key));
-    expect(new Set(t.library.flatMap(treeRows).map((r) => r.kind.id))).toEqual(new Set(['riverType']));
-    const all = packTree(w, BUILTIN);
-    const hit = filterTree(all.library, '血');
-    expect(hit.flatMap(treeRows).map((r) => r.name)).toContain('血河');
-    expect(hit.flatMap(treeRows).every((r) => r.name.includes('血') || r.id.includes('血'))).toBe(true);
-    // 只列不在本世界的
-    const off = filterTree(all.library, '', true);
-    expect(off.flatMap(treeRows).some((r) => r.status.on)).toBe(false);
+    const kind = kindOf('riverType')!;
+    expect(worldRows(kind, w)).toEqual([]);
+    expect(BUILTIN.filter((e) => libraryRows(e, kind, w).length).map((e) => e.key)).toEqual(BUILTIN.map((e) => e.key));
+    expect(libraryRows(of('fantasy'), kind, w).map((r) => r.name)).toContain('血河');
   });
 
-  it('单项添加记上来源，左栏归到那个包；移出是一步，可以撤销', () => {
+  it('单项添加记上来源；移出是一步，可以撤销', () => {
     const eng = continents({ noWater: true });
-    const blood = () => find(packTree(eng.world, BUILTIN, 'riverType').library, 'l:fantasy/rivers')!.rows.find((r) => r.id === 'blood_river')!;
-    const add = addCommand(blood(), eng.world)!;
-    expect(add).toMatchObject({ op: 'batch', commands: [{ op: 'set_river_type', from: ['fantasy', 'rivers'] }] });
-    eng.exec(add);
+    const kind = kindOf('riverType')!;
+    const blood = () => libraryRows(of('fantasy'), kind, eng.world).find((r) => r.id === 'blood_river')!;
+    eng.exec(addCmd(of('fantasy'), kind, ['blood_river'], eng.world));
     expect(eng.world.small.origin?.riverType?.blood_river).toEqual(['fantasy', 'rivers']);
     expect(blood().status.on).toBe(true);
-    const left = packTree(eng.world, BUILTIN, 'riverType').world;
-    const row = find(left, 'w:fantasy/rivers')!.rows[0];
-    expect([row.id, find(left, 'w:fantasy/rivers')!.name]).toEqual(['blood_river', '奇幻的河']);
+    const row = worldRows(kind, eng.world).find((r) => r.id === 'blood_river')!;
+    expect(row.path).toEqual(['fantasy', 'rivers']);
     expect(rowUsage(row, eng.world)).toBeNull();
     eng.exec(removeCommand(row, eng.world)!);
-    expect(packTree(eng.world, BUILTIN, 'riverType').world).toEqual([]);
+    expect(worldRows(kind, eng.world).some((r) => r.id === 'blood_river')).toBe(false);
     expect(eng.world.small.origin?.riverType?.blood_river).toBeUndefined();
     eng.undo();
     expect(eng.world.small.origin?.riverType?.blood_river).toEqual(['fantasy', 'rivers']);
   });
 
-  it('全部添加：一整步，每一项记着小包的路径；左栏一个包“移出没用到的”只移没在用的', () => {
+  it('全部添加：一整步，每一项记着小包的路径；只列几项的清理只清没在用的', () => {
     const eng = peopled();
+    const kind = kindOf('government')!;
     // 第五十轮：生成后都留着，先整理掉没用到的政体
-    eng.exec(eng.planTidy({ only: Object.keys(eng.world.small.content!.government!).map((id) => ({ kind: 'government', id })) }).command!);
-    const node = () => find(packTree(eng.world, BUILTIN, 'government').library, 'l:medieval/governments')!;
-    const used = node().on;
+    const first = eng.planTidy({ only: Object.keys(eng.world.small.content!.government!).map((id) => ({ kind: 'government', id })) });
+    // 内置原样的移出时不存（本来就在包里）
+    expect(worthKeeping(first.removed)).toEqual([]);
+    eng.exec(first.command!);
+    const rows = () => libraryRows(of('medieval'), kind, eng.world).filter(pathIs(['medieval', 'governments']));
+    const used = rows().filter((r) => r.status.on).length;
     expect(used).toBeGreaterThan(0);
-    const cmd = packAddCommand(node(), eng.world)!;
-    expect(cmd).toMatchObject({ op: 'batch', label: '添加到本世界：“政体”' });
-    const cmds = (cmd as Extract<Command, { op: 'batch' }>).commands;
-    expect(cmds).toHaveLength(19 - used);
-    expect(cmds.every((c) => c.op === 'set_content' && JSON.stringify((c as { from?: string[] }).from) === JSON.stringify(['medieval', 'governments']))).toBe(true);
+    const cmd = addCmd(of('medieval'), kind, rows().filter((r) => !r.status.on).map((r) => r.id), eng.world);
+    expect(cmd.op).toBe('batch');
+    const govs = (cmd as Extract<Command, { op: 'batch' }>).commands.filter((c) => c.op === 'set_content' && c.kind === 'government');
+    expect(govs).toHaveLength(19 - used);
+    expect(govs.every((c) => JSON.stringify((c as { from?: string[] }).from) === JSON.stringify(['medieval', 'governments']))).toBe(true);
     eng.exec(cmd);
-    expect([node().on, node().count]).toEqual([19, 19]);
-    expect(packAddCommand(node(), eng.world)).toBeNull();
-    // 左栏：中世纪 ▸ 政体 19 种（第四十三轮）；移出没用到的
-    const left = find(packTree(eng.world, BUILTIN, 'government').world, 'w:medieval/governments')!;
-    expect(left.count).toBe(19);
-    const refs = packRemoveRefs(left);
-    expect(refs).toHaveLength(19);
-    const plan = eng.planTidy({ only: refs });
+    expect(rows().filter((r) => r.status.on).length).toBe(19);
+    const left = worldRows(kind, eng.world).filter(pathIs(['medieval', 'governments']));
+    expect(left.length).toBe(19);
+    const plan = eng.planTidy({ only: left.map((r) => ({ kind: 'government', id: r.id })) });
     expect(plan.removed).toHaveLength(19 - used);
     eng.exec(plan.command!);
-    expect(find(packTree(eng.world, BUILTIN, 'government').world, 'w:medieval/governments')!.count).toBe(used);
-    // 内置原样的移出时不存（本来就在包里）
-    expect(worthKeeping(plan.removed)).toEqual([]);
+    expect(worldRows(kind, eng.world).filter(pathIs(['medieval', 'governments'])).length).toBe(used);
   });
 });
 
@@ -170,8 +150,8 @@ describe('选择器、向导按包分组', () => {
     // 只有基础的资源：一段，不分
     expect(originGroups(items(), 'resource', eng.world, BUILTIN).every((x) => x.group === undefined)).toBe(true);
     // 加一种奇幻资源（从“奇幻 ▸ 资源”）、一种本世界做的
-    const res = find(packTree(eng.world, BUILTIN, 'resource').library, 'l:fantasy/resources')!.rows[0];
-    eng.exec(addCommand(res, eng.world)!);
+    const res = libraryRows(of('fantasy'), kindOf('resource')!, eng.world).find(pathIs(['fantasy', 'resources']))!;
+    eng.exec(addCmd(of('fantasy'), res.kind, [res.id], eng.world));
     eng.exec({ op: 'set_content', kind: 'resource', id: 'my-res', item: { ...structuredClone(GENERAL_RESOURCES[0]), id: 'my-res', name: '我的资源种' } as unknown as Record<string, unknown> });
     world.value = eng.world;
     const shown = originGroups(items(), 'resource', eng.world, BUILTIN);
@@ -254,8 +234,7 @@ describe('拿掉的不丢', () => {
     // 内置原样（Worker 认不出的奇幻的河也按完整的树再看一遍）
     const blood = packItems(findPack(builtinPacks().find((p) => p.id === 'fantasy')!, ['rivers'])!, 'riverTypes')[0];
     expect(worthKeeping([{ kind: 'riverType', item: blood, builtinSame: false }])).toEqual([]);
-    // 从库里删除：分了小包的包里也删得掉，空了整个包去掉
-    expect(await removeItem(e.key, 'cultures', 'my-c')).toEqual({ ok: true });
+    await removePack(e.key);
     expect((await refreshLibrary()).some((x) => x.key === e.key)).toBe(false);
   });
 
@@ -267,18 +246,16 @@ describe('拿掉的不丢', () => {
     expect(await keepInLibrary('拆开测试', items)).toMatchObject({ saved: 1 });
     expect(await keepInLibrary('拆开测试', splitWorldContent(eng.world))).toMatchObject({ saved: 0 });
     const e = library.value.find((x) => x.key === worldPackName('拆开测试'))!;
-    // 资源库一栏里列着，在本世界的打勾
-    const t = packTree(eng.world, library.value, 'culture');
-    const node = t.library.find((n) => n.entry === e.key)!;
-    expect(treeRows(node).map((r) => [r.id, r.status.on, r.source])).toEqual([['my-c', true, 'mine']]);
-    await removeItem(e.key, 'cultures', 'my-c');
+    // 那个库里列着，在本世界的打勾
+    expect(libraryRows(e, kindOf('culture')!, eng.world).map((r) => [r.id, r.status.on])).toEqual([['my-c', true]]);
+    await removePack(e.key);
   });
 
   it('导出、存进我的地图时压缩：加了又移出的命令去掉，核对过才用；有自己写的脚本时不压缩', () => {
     const eng = continents({ cells: 3000 });
-    const t = packTree(eng.world, BUILTIN, 'riverType');
-    eng.exec(addCommand(find(t.library, 'l:fantasy/rivers')!.rows[0], eng.world)!);
-    eng.exec({ op: 'remove_river_type', id: find(t.library, 'l:fantasy/rivers')!.rows[0].id });
+    const river = libraryRows(of('fantasy'), kindOf('riverType')!, eng.world).find(pathIs(['fantasy', 'rivers']))!;
+    eng.exec(addCmd(of('fantasy'), river.kind, [river.id], eng.world));
+    eng.exec({ op: 'remove_river_type', id: river.id });
     const doc = eng.toDoc();
     const r = compactJob({ compact: doc });
     expect('compacted' in r && r.ok).toBe(true);

@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { VNode } from 'preact';
 
-import { kindOf } from '../../core/content/registry';
+import type { Command } from '../../core/commands';
+import { type ContentKind, kindOf } from '../../core/content/registry';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_ERAS } from '../../core/packs/eras';
 
-import { PACK_FORMAT, PACK_VERSION, type ResourcePack, packFromWorld, packItems, planPack, readPack } from '../../core/packs';
+import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack, packFromWorld, packItems, planPack, readPack } from '../../core/packs';
+import { builtinPacks } from '../../core/packs/builtin-tree';
+import { importCommand } from '../../core/packs/closure';
 import { worldCultureGroups, worldCultures, worldEras, worldResources } from '../../core/human';
 import { continents, snapshot, FANTASY_PACK, NAME_STYLES_SAMPLE, type HumanCommand, humanExec } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
@@ -15,8 +18,7 @@ import { chooseLibrary, defaultChoice, generateCommand } from './human';
 import { choicePacks, humanImportCommands, packGroups } from './packChoice';
 import { defaultsOf, eraOf } from '../../core/testing/eras';
 import { exportPicks, exportSections, packEmpty } from './packs/PackDialog';
-import { REPO_FILTERS, addCommand, canDeleteFromLibrary, filterRows, itemPack, removeCommand, repoRows, rowUsage, saveableItem } from './packs/repo';
-import { repo } from './packs/store';
+import { itemPack, libraryRows, removeCommand, rowUsage, saveableItem, worldRows } from './packs/rows';
 import { libPanel } from './packs/panel-store';
 import { CultureMenu } from './panels/culture';
 import { ResourceMenu } from './panels/human';
@@ -29,6 +31,9 @@ import { PointMenu } from './panels/settlements';
 const entry = (key: string, pack: ResourcePack, extra: Partial<LibraryEntry> = {}): LibraryEntry => ({ key, pack, builtin: false, mine: false, installedAt: 1, ...extra });
 const LIB: LibraryEntry[] = [entry('fantasy', FANTASY_PACK, { builtin: true, installedAt: 0 }), entry('name-styles', NAME_STYLES_SAMPLE, { builtin: true, installedAt: 0 })];
 const pack = (id: string, extra: Partial<ResourcePack>): ResourcePack => ({ format: PACK_FORMAT, version: PACK_VERSION, id, name: id, ...extra });
+// 面板上的“添加”：走导入的闭包
+const addCmd = (e: LibraryEntry, kind: ContentKind, id: string, w: PackWorld): Command => importCommand({ source: e.pack, target: { t: 'world', world: w }, picks: [{ kind: kind.id, id }] }, { path: [e.key] }).command!;
+const MEDIEVAL = entry('medieval', builtinPacks().find((p) => p.id === 'medieval')!, { builtin: true, installedAt: 0 });
 
 const GEN: HumanCommand = { op: 'generate_human', era: 'medieval', groups: [{ id: 'germanic', weight: 3 }, { id: 'chinese', weight: 3 }], countries: {}, settlements: {} };
 const peopled = () =>
@@ -43,7 +48,6 @@ const pickerOf = (v: unknown) => (v as VNode<{ items: TypeChoice[]; library?: st
 
 afterEach(() => {
   world.value = null;
-  repo.value = null;
 });
 
 describe('选择器只列本世界的，最后一项“从资源库添加…”', () => {
@@ -105,21 +109,17 @@ describe('选择器只列本世界的，最后一项“从资源库添加…”'
 });
 
 describe('资源库：添加到本世界、移出本世界', () => {
-  it('筛选“本世界”“不在本世界”；血河在资源库里、不在本世界；添加是一步，可以撤销', () => {
-    expect(REPO_FILTERS.map(([k]) => k)).toEqual(['all', 'on', 'off', 'builtin', 'imported', 'mine']);
+  it('血河在库里、不在本世界；添加是一步，可以撤销', () => {
     const eng = continents({ noWater: true });
     const w = eng.world;
     const kind = kindOf('riverType')!;
-    const rows = repoRows(kind, w, LIB);
-    const blood = () => repoRows(kind, eng.world, LIB).find((r) => r.id === 'blood_river')!;
-    expect(filterRows(rows, 'off').some((r) => r.id === 'blood_river')).toBe(true);
-    expect(filterRows(rows, 'on')).toEqual([]);
+    const blood = () => libraryRows(LIB[0], kind, eng.world).find((r) => r.id === 'blood_river')!;
+    expect(worldRows(kind, w)).toEqual([]);
     expect(blood().status.on).toBe(false);
     expect(removeCommand(blood(), w)).toBeNull();
-    eng.exec(addCommand(blood(), w)!);
+    eng.exec(addCmd(LIB[0], kind, 'blood_river', w));
     expect(w.small.riverTypes!.map((t) => t.id)).toEqual(['blood_river']);
     expect(blood().status.on).toBe(true);
-    expect(addCommand(blood(), w)).toBeNull();
     // 移出：按规则套上的河不算在用，能移出（那些河换回普通的河）；画的河选了它才算
     expect(rowUsage(blood(), w)).toBeNull();
     eng.exec(removeCommand(blood(), w)!);
@@ -129,50 +129,47 @@ describe('资源库：添加到本世界、移出本世界', () => {
     expect(w.small.riverTypes ?? []).toEqual([]);
   });
 
-  it('在用的文化不能移出（写着几处、能定位），没人的能移出；总在的内置项没有移出', () => {
+  it('在用的文化不能移出（写着几处、能定位），没人的能移出', () => {
     const eng = peopled();
     const w = eng.world;
     const kind = kindOf('culture')!;
-    const rows = repoRows(kind, w, LIB);
-    const used = rows.find((r) => r.status.on && rowUsage(r, w))!;
+    const rows = worldRows(kind, w);
+    const used = rows.find((r) => rowUsage(r, w))!;
     expect(used).toBeDefined();
     expect(removeCommand(used, w)).toBeNull();
     expect(rowUsage(used, w)!.cells!.length).toBeGreaterThan(0);
     // 加一个没人的文化，就能移出
-    const idle = rows.find((r) => !r.status.on && r.source === 'builtin')!;
-    eng.exec(addCommand(idle, w)!);
-    const row = repoRows(kind, eng.world, LIB).find((r) => r.id === idle.id)!;
+    const idle = libraryRows(MEDIEVAL, kind, w).find((r) => !r.status.on)!;
+    eng.exec(addCmd(MEDIEVAL, kind, idle.id, w));
+    const row = worldRows(kind, eng.world).find((r) => r.id === idle.id)!;
     expect(rowUsage(row, eng.world)).toBeNull();
     const off = removeCommand(row, eng.world)!;
     expect(off).toMatchObject({ op: 'batch', label: `移出本世界：文化“${row.name}”`, commands: [{ op: 'set_content', kind: 'culture', id: idle.id, item: null }] });
     eng.exec(off);
     expect(worldCultures(w.small).some((c) => c.id === idle.id)).toBe(false);
     // 第三十轮：内置的地形类别也是普通内容，没画过的能移出
-    const cls = repoRows(kindOf('terrainClass')!, w, LIB).find((r) => r.status.on)!;
+    const cls = worldRows(kindOf('terrainClass')!, w)[0];
     expect(rowUsage(cls, w)).toBeNull();
     expect(removeCommand(cls, w)).not.toBeNull();
   });
 
-  it('本世界做的能存进资源库；只有我的能从库里删', () => {
+  it('世界里的一项能存进资源库，库里的一行不用存', () => {
     const eng = continents();
     eng.exec({ op: 'set_content', kind: 'pointType', id: 'r28-camp', item: { id: 'r28-camp', name: '营地', color: '#336699' } });
     const kind = kindOf('pointType')!;
-    const own = repoRows(kind, eng.world, LIB).find((r) => r.id === 'r28-camp')!;
-    expect(own.source).toBe('world');
+    const own = worldRows(kind, eng.world).find((r) => r.id === 'r28-camp')!;
+    expect([own.source, own.path]).toEqual(['world', undefined]);
     expect(saveableItem(own)).toEqual({ id: 'r28-camp', name: '营地', color: '#336699' });
-    expect(canDeleteFromLibrary(own)).toBe(false);
-    const lib = [...LIB, entry('my', pack('my', { pointTypes: [{ id: 'r28-camp', name: '营地', color: '#336699' }] } as Partial<ResourcePack>), { mine: true })];
-    const rows = repoRows(kind, eng.world, lib).filter((r) => r.id === 'r28-camp');
-    // 资源库里有一模一样的：本世界那一份不再单独列
-    expect(rows.map((r) => [r.source, r.status.on])).toEqual([['mine', true]]);
-    expect(saveableItem(rows[0])).toBeNull();
-    expect(canDeleteFromLibrary(rows[0])).toBe(true);
-    expect(canDeleteFromLibrary(repoRows(kind, eng.world, lib).find((r) => r.source === 'builtin')!)).toBe(false);
+    const mine = entry('my', pack('my', { pointTypes: [{ id: 'r28-camp', name: '营地', color: '#336699' }] } as Partial<ResourcePack>), { mine: true });
+    const row = libraryRows(mine, kind, eng.world)[0];
+    // 库里有一模一样的：在本世界
+    expect([row.source, row.status.on]).toEqual(['lib', true]);
+    expect(saveableItem(row)).toBeNull();
   });
 
   it('单独一项导出成文件，再从文件导入：读回来是同一项，能添加到别的世界', () => {
     const kind = kindOf('riverType')!;
-    const row = repoRows(kind, continents().world, LIB).find((r) => r.id === 'blood_river')!;
+    const row = libraryRows(LIB[0], kind, continents().world).find((r) => r.id === 'blood_river')!;
     const p = itemPack(row);
     expect(p).toMatchObject({ format: PACK_FORMAT, name: '血河' });
     expect(packItems(p, 'riverTypes')).toEqual([row.item]);
@@ -184,7 +181,7 @@ describe('资源库：添加到本世界、移出本世界', () => {
     eng.exec(planPack(eng.world, read.pack, { riverTypes: ['blood_river'] }).command);
     expect(eng.world.small.riverTypes!.map((t) => t.name)).toEqual(['血河']);
     // 生态带上用到的自定义场
-    const holy = repoRows(kindOf('biome')!, continents().world, LIB).find((r) => itemPack(r).fields?.length)!;
+    const holy = libraryRows(LIB[0], kindOf('biome')!, continents().world).find((r) => itemPack(r).fields?.length)!;
     expect(holy).toBeDefined();
     expect(readPack(JSON.stringify(itemPack(holy)), 'x').ok).toBe(true);
   });

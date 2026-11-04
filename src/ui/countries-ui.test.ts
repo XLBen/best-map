@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
-import { type Government, countryFactions, countryMapColors, countryStats } from '../../core/human';
+import { type Government, countryFactions, countryMapColors, countryStats, worldDimensions } from '../../core/human';
 import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
+import { danglingLinks, linkTable, worldScope } from '../../core/content/links';
 import { recordedOrigin } from '../../core/content/origin';
-import { findPack, packItems } from '../../core/packs';
+import { findPack, packItems, packSections } from '../../core/packs';
 import { builtinPacks } from '../../core/packs/builtin-tree';
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
@@ -43,7 +44,6 @@ import { LEGEND_TOP, legendFor } from './legend';
 import { countryDraws } from './map/political';
 import { mapKind, modeFeatures, modeOf, setMapKind } from './map/modes';
 import { isTitleField, titleRows, titleValue } from './packs/fields';
-import { GOV_KINDS, repoKinds } from './packs/repo';
 import { type Pointer, chosenTerritory, countryLand, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from './tools';
 
 // 第二十三轮的界面：向导里的“国家”、“国家”一类的五个工具、国家的档案（set_country 的 patch）、地理图 / 人文图、国名、图例、仓库里的政体
@@ -328,6 +328,35 @@ describe('国家的档案', () => {
     expect(eng.world.small.content!.faction![gov.factions![0]]).toBeUndefined();
   });
 
+  it('换成别的库的政体走导入的闭包（第六十三轮）：限谁用的组、派系都带上，不加变量，不留下找不到的引用', () => {
+    const eng = nations();
+    const w = eng.world;
+    const id = ids(w)[0];
+    const lib: LibraryEntry[] = builtinPacks().map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
+    const dangling = () => danglingLinks(linkTable(worldScope(eng.world))).map((b) => `${b.from.kind}:${b.from.id}:${b.link.id}`);
+    const before = new Set(dangling());
+    const dims = worldDimensions(w.small).map((d) => d.id);
+    const govs = (key: string) => packItems<Government>(builtinPacks().find((p) => p.id === key)!, 'governments');
+    // 限谁用的组：世界里没有这一组；带来的组比重 0，不参与生成
+    const limited = govs('scifi').find((g) => (g.only as { cultureGroups?: string[] }[] | undefined)?.some((o) => o.cultureGroups?.every((x) => !w.small.content?.cultureGroup?.[x])))!;
+    const groups = (limited.only as { cultureGroups?: string[] }[]).flatMap((o) => o.cultureGroups ?? []);
+    eng.exec(governmentCommand(w, eng.world.small.countries![id], { gov: limited, path: ['scifi', 'governments'] }, lib)!);
+    expect(eng.world.small.countries![id].government).toBe(limited.id);
+    for (const g of groups) expect((eng.world.small.content!.cultureGroup![g] as { weight?: number }).weight).toBe(0);
+    // 要变量的政体：派系带上，变量不加，写到变量的来源去掉
+    const socialist = govs('modern').find((g) => g.id === 'socialist-republic')!;
+    eng.exec(governmentCommand(w, eng.world.small.countries![id], { gov: socialist, path: ['modern', 'governments'] }, lib)!);
+    expect(eng.world.small.countries![id].government).toBe('socialist-republic');
+    expect(worldDimensions(eng.world.small).map((d) => d.id)).toEqual(dims);
+    for (const f of socialist.factions!) expect(eng.world.small.content!.faction![f]).toBeDefined();
+    expect(dangling().filter((x) => !before.has(x))).toEqual([]);
+    // 一步
+    eng.undo();
+    expect(eng.world.small.content!.government!['socialist-republic']).toBeUndefined();
+    eng.undo();
+    for (const g of groups) expect(eng.world.small.content!.cultureGroup?.[g]).toBeUndefined();
+  });
+
   it('外交：宗主、同盟、敌对都是整份换掉；附庸在地图上用宗主的浅色', () => {
     const eng = nations();
     const [a, b, c] = ids(eng.world);
@@ -469,11 +498,10 @@ describe('“国家 ⋯”与仓库', () => {
   });
 
   it('仓库里有政体、派系；称号一行一种，只有 default 时存回最简单的写法', () => {
-    const kinds = repoKinds().map((k) => k.id);
+    const kinds = packSections().map((k) => k.id);
     expect(kinds).toContain('government');
     expect(kinds).toContain('faction');
-    expect([...GOV_KINDS]).toEqual(['government', 'faction', 'countryTier', 'countryLayout']);
-    const gov = repoKinds().find((k) => k.id === 'government')!;
+    const gov = packSections().find((k) => k.id === 'government')!;
     // 第四十三轮：称号按等级（titles、rulers），换说法的每一条里也有
     expect(gov.fields!.filter(isTitleField).map((f) => f.key)).toEqual(['titles', 'rulers']);
     expect(gov.fields!.find((f) => f.key === 'names')!.of!.filter(isTitleField).map((f) => f.key)).toEqual(['titles', 'rulers']);

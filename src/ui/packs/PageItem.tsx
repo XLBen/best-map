@@ -6,9 +6,9 @@ import type { Era } from '../../../core/human';
 import { askUser } from '../../state';
 import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
-import { DEDICATED } from './edit';
 import { type Obj, editorIssues } from './fields';
 import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
+import { addRows } from './page-import';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
@@ -17,20 +17,20 @@ import { ChildSegments, WorldVariables } from './PageChildren';
 import { BiomeWaterSegment, WaterBiomesSegment } from './PageWater';
 import { RefGo } from './RefPicker';
 import { refLabel, refOptionsOf } from './refs';
-import { type RepoRow, addCommand, defaultStyleCommand, removeCommand, rowUsage, saveableItem } from './repo';
-import { exportRow, fmt, openDedicated, runTrusted, sampleLine, saveRow, swatchOf } from './repo-actions';
+import { exportRow, openDedicated, runTrusted, sampleLine, saveRow, swatchOf } from './row-actions';
+import { DEDICATED, type ItemRow, defaultStyleCommand, removeCommand, rowUsage, saveableItem } from './rows';
 
 // 一项的页面（第五十九轮）：几段可折叠的卡片，收起时标题旁写一句当前内容；表单是 ContentEditor 的 FieldsBox。
 // 松开滑块、打完字（框失去焦点、回车）就存：本世界是一条命令，我的库走自己的撤销；有错的留在页面上、不存。只读的库整个表单不能动，引用照样能点过去
 
-function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: RepoRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean }) {
+function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean }) {
   const w = ctx.world;
   const usage = row && w && src.t === 'world' ? rowUsage(row, w) : null;
   const remove = row && w && src.t === 'world' ? removeCommand(row, w) : null;
   const def = row && w && p.kind.id === 'nameStyle' ? defaultStyleCommand(row, w) : null;
   const list = itemActions(src, row, ctx, {
     remove: !!remove,
-    usage: usage ? `有 ${fmt(usage.count)} 处在用：${usage.label}` : null,
+    usage: usage ? `有 ${usage.count.toLocaleString('en-US')} 处在用：${usage.label}` : null,
     changed: p.diff.t === 'changed',
     setDefault: !!def,
     hasCells: !!usage?.cells?.length,
@@ -53,10 +53,7 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: RepoRow | u
           <button
             class="small"
             {...common}
-            onClick={() => {
-              const cmd = row && w ? addCommand(row, w) : null;
-              if (cmd) void runTrusted(cmd, '正在添加…');
-            }}
+            onClick={() => row && addRows([row], src, ctx, `添加到本世界：${p.kind.label}“${p.name}”`)}
           >
             添加到本世界
           </button>
@@ -256,7 +253,7 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
         </>
       )}
       <DiffLine p={p} />
-      {sample && <p class="small repo-sample">{sample}</p>}
+      {sample && <p class="small lp-sample">{sample}</p>}
       {p.readonly && !embedded && (
         <div class="lp-readonly">
           <Lock />

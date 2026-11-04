@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
-import { kindOf } from '../../core/content/registry';
+import { type ContentKind, kindOf } from '../../core/content/registry';
 import { cellArchive, classAt, peakCells, peakMarks, resourceAt } from '../../core/human';
+import type { PackWorld } from '../../core/packs';
+import { builtinPacks } from '../../core/packs/builtin-tree';
+import { importCommand } from '../../core/packs/closure';
 import { brushCells } from '../../core/select';
 import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
+import type { LibraryEntry } from '../library';
 import { cellLayers, humanFlat } from '../render/colors';
 import { PEAK_KEY, peakLabels } from '../render/overlay';
 import { exec, mode, options, setOptions, world } from '../state';
@@ -12,7 +16,7 @@ import { autoNameCommand, cellClassCommand, cellResourceCommand, noteCommand, re
 import { TOOL_DEFS, setTool } from './defs/tools';
 import { legendFor } from './legend';
 import { addedValue, isSparse, sparseSplit } from './packs/fields';
-import { editStart, repoRows, toggleCommand } from './packs/repo';
+import { libraryRows, removeCommand, worldRows } from './packs/rows';
 import { RULE_FIELDS } from '../../core/human/rules';
 import { type Pointer, dryLand, resourceTool, terrainClassTool } from './tools';
 import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../../core/packs/base';
@@ -216,31 +220,32 @@ describe('仓库：基础的内容（第三十轮起是普通内容）', () => {
   const classKind = kindOf('terrainClass')!;
   const resKind = kindOf('resource')!;
 
-  it('内置的地形类别：新世界从库里的“基础”加进来，开着、能移出；编辑的是世界里那一份', () => {
+  const medieval: LibraryEntry = { key: 'medieval', pack: builtinPacks().find((p) => p.id === 'medieval')!, builtin: true, mine: false, installedAt: 0 };
+  const fantasy: LibraryEntry = { key: 'fantasy', pack: builtinPacks().find((p) => p.id === 'fantasy')!, builtin: true, mine: false, installedAt: 0 };
+  const addCmd = (e: LibraryEntry, kind: ContentKind, id: string, w: PackWorld) => importCommand({ source: e.pack, target: { t: 'world', world: w }, picks: [{ kind: kind.id, id }] }, { path: [e.key] }).command!;
+
+  it('内置的地形类别：新世界从库里的“基础”加进来，开着、能移出；改了世界里那一份；移出后能加回来', () => {
     const eng = continents();
-    const row = () => repoRows(classKind, eng.world, []).find((r) => r.id === 'mountains')!;
+    const row = () => libraryRows(medieval, classKind, eng.world).find((r) => r.id === 'mountains')!;
     expect(row().status).toMatchObject({ on: true, worldId: 'mountains' });
-    expect(row().status.always).toBeUndefined();
-    expect(editStart(row(), eng.world)).toEqual(row().item);
     const changed = { ...BUILTIN_CLASSES.find((c) => c.id === 'mountains')!, color: '#123456' };
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'mountains', item: changed });
-    // 改过的那一份另列一行（这个世界里的）
-    expect(repoRows(classKind, eng.world, []).some((r) => r.source === 'world' && r.id === 'mountains' && (r.item as { color: string }).color === '#123456')).toBe(true);
+    expect((worldRows(classKind, eng.world).find((r) => r.id === 'mountains')!.item as { color: string }).color).toBe('#123456');
     eng.exec({ op: 'set_content', kind: 'terrainClass', id: 'mountains', item: null });
     expect(row().status.on).toBe(false);
-    eng.exec(toggleCommand(row(), eng.world)!);
+    eng.exec(addCmd(medieval, classKind, 'mountains', eng.world));
     expect(row().status.on).toBe(true);
   });
 
-  it('资源：通用的新世界里开着；奇幻的可以启用、停用', () => {
+  it('资源：通用的新世界里开着；奇幻的可以添加、移出', () => {
     const eng = continents();
-    const rows = repoRows(resKind, eng.world, []);
-    for (const r of GENERAL_RESOURCES) expect(rows.find((x) => x.id === r.id)!.status.on).toBe(true);
-    const row = () => repoRows(resKind, eng.world, []).find((r) => r.id === 'mithril')!;
+    const rows = worldRows(resKind, eng.world);
+    for (const r of GENERAL_RESOURCES) expect(rows.some((x) => x.id === r.id)).toBe(true);
+    const row = () => libraryRows(fantasy, resKind, eng.world).find((r) => r.id === 'mithril')!;
     expect(row().status).toMatchObject({ on: false });
-    eng.exec(toggleCommand(row(), eng.world)!);
+    eng.exec(addCmd(fantasy, resKind, 'mithril', eng.world));
     expect(row().status.on).toBe(true);
-    eng.exec(toggleCommand(row(), eng.world)!);
+    eng.exec(removeCommand(worldRows(resKind, eng.world).find((r) => r.id === 'mithril')!, eng.world)!);
     expect(row().status.on).toBe(false);
   });
 });

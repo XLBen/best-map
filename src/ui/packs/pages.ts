@@ -12,12 +12,12 @@ import { type RowMark, type SourceDiff, type WorldMark, rowMarks, worldDiff } fr
 import { type Segment, segmentsOf } from './page-segments';
 import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemOf, itemsOf, kindReadonly, kindTitle, rowsOf, sourceKind, sourceTitle } from './page-source';
 import { type UsedBy, usedByOf } from './page-used-by';
-import type { RepoRow } from './repo';
+import type { ItemRow } from './rows';
 
 export * from './page-source';
 export type { RowMark, WorldMark };
 
-// 新的资源库面板（第五十九轮）的逻辑：看的是哪一份（本世界、内置的库、我的库）、首页有哪些卡片、怎么点进去、面包屑、
+// 资源库面板（第五十九轮）的逻辑：看的是哪一份（本世界、内置的库、我的库）、首页有哪些卡片、怎么点进去、面包屑、
 // 列表里有什么、某一项的页面有哪些段、只读与否、这一项能做什么、返回。全部在这里，组件只负责画。不碰界面，测试直接调。
 //
 // 切换来源后界面完全一样：所有的页面都从 SourceRef + PageCtx 算出来，本世界和库只差 itemsOf 和只读
@@ -265,7 +265,7 @@ export interface ListRow {
   // 灰色的说明：组里有几个文化、政体有几个派系……
   hint?: string;
   item: unknown;
-  row: RepoRow;
+  row: ItemRow;
   // 本世界里：生成后没用到（变淡）、和来源的库不同（第六十二轮）
   mark?: RowMark;
 }
@@ -314,7 +314,7 @@ const countBy = (items: readonly unknown[], key: string): Map<string, number> =>
 // 文化、取值的上级（分段、点过去）
 export const groupKind = (k: ContentKind): ContentKind | undefined => (k.id === 'culture' ? kindOf('cultureGroup') : k.id === 'popValue' ? kindOf('valueGroup') : undefined);
 
-function hintFor(k: ContentKind, src: SourceRef, ctx: PageCtx): (r: RepoRow) => string | undefined {
+function hintFor(k: ContentKind, src: SourceRef, ctx: PageCtx): (r: ItemRow) => string | undefined {
   if (k.id === 'cultureGroup') {
     const cul = kindOf('culture');
     const n = countBy(cul ? itemsOf(src, cul, ctx) : [], 'group');
@@ -336,7 +336,7 @@ function hintFor(k: ContentKind, src: SourceRef, ctx: PageCtx): (r: RepoRow) => 
   return () => undefined;
 }
 
-const listRow = (r: RepoRow, hint?: string): ListRow => ({ key: r.key, kind: r.kind, id: r.id, name: r.name, ...(hint ? { hint } : {}), item: r.item, row: r });
+const listRow = (r: ItemRow, hint?: string): ListRow => ({ key: r.key, kind: r.kind, id: r.id, name: r.name, ...(hint ? { hint } : {}), item: r.item, row: r });
 
 // 新建要从哪个样子开始（世界里生态、河湖、岛也可以：kinds.ts 都写了 blank）
 export const canNewOf = (kind: ContentKind): boolean => !!kind.blank;
@@ -358,7 +358,7 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
     }
   }
   const q = query.trim().toLowerCase();
-  const matches = (x: RepoRow) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q);
+  const matches = (x: ItemRow) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q);
   if (q) rows = rows.filter(matches);
   const hint = hintFor(kind, src, ctx);
   const whole = !r.dim && !r.group && !r.hideOn && !r.loose;
@@ -387,7 +387,7 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
 }
 
 // 搜索时融入的项也列出来，灰字写在哪个上级下面
-function insideHits(parentKind: string, src: SourceRef, ctx: PageCtx, matches: (x: RepoRow) => boolean): ListSection[] {
+function insideHits(parentKind: string, src: SourceRef, ctx: PageCtx, matches: (x: ItemRow) => boolean): ListSection[] {
   const up = kindOf(parentKind);
   if (!up) return [];
   const view = linkView(src, ctx);
@@ -397,7 +397,7 @@ function insideHits(parentKind: string, src: SourceRef, ctx: PageCtx, matches: (
     if (!ck) return [];
     const rows = rowsOf(src, ck, ctx).filter(matches);
     const t = view.table(rel);
-    const hint = (x: RepoRow) => {
+    const hint = (x: ItemRow) => {
       const ps = (t.byChild.get(x.id) ?? []).flatMap((p) => (names.has(p) ? [names.get(p)!] : []));
       return ps.length ? `在${ps.slice(0, 2).join('、')}${ps.length > 2 ? ` 等 ${ps.length} 个` : ''}` : undefined;
     };
@@ -417,12 +417,12 @@ function looseSections(parent: ContentKind, src: SourceRef, ctx: PageCtx): ListS
   });
 }
 
-function sectionsOf(kind: ContentKind, rows: readonly RepoRow[], src: SourceRef, ctx: PageCtx, r: Extract<Route, { p: 'list' }>, hint: (r: RepoRow) => string | undefined): ListSection[] {
+function sectionsOf(kind: ContentKind, rows: readonly ItemRow[], src: SourceRef, ctx: PageCtx, r: Extract<Route, { p: 'list' }>, hint: (r: ItemRow) => string | undefined): ListSection[] {
   const up = groupKind(kind);
   // 文化按文化组、取值按取值组分段，段的标题点了去那一组的页面
   if (up && !r.group) {
     const names = new Map(itemsOf(src, up, ctx).map((g) => [itemId(up, g), itemName(up, g)]));
-    const by = new Map<string, RepoRow[]>();
+    const by = new Map<string, ItemRow[]>();
     for (const x of rows) {
       const g = String((x.item as { group?: unknown }).group ?? '');
       if (!by.has(g)) by.set(g, []);
@@ -537,7 +537,7 @@ export interface ItemAction {
 }
 
 // row：这一项在这一份里的状态
-export function itemActions(src: SourceRef, row: RepoRow | undefined, ctx: PageCtx, can: { remove: boolean; usage: string | null; changed: boolean; setDefault: boolean; hasCells: boolean; saveable: boolean; dedicated: boolean; newable: boolean }): ItemAction[] {
+export function itemActions(src: SourceRef, row: ItemRow | undefined, ctx: PageCtx, can: { remove: boolean; usage: string | null; changed: boolean; setDefault: boolean; hasCells: boolean; saveable: boolean; dedicated: boolean; newable: boolean }): ItemAction[] {
   const out: ItemAction[] = [];
   const k = sourceKind(src, ctx);
   if (!row) return out;

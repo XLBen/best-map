@@ -16,7 +16,7 @@ import { RegenBar } from './RegenBar';
 import { openPackList, packDialog } from './store';
 import { tidyWorld } from './tidy';
 
-// 新的资源库面板（第五十九轮）：左上角一个面板，标题是下拉（本世界 / 内置的库 / 我的库 / + 新建一个库），切换后界面完全一样。
+// 资源库面板（第五十九轮）：左上角一个面板，标题是下拉（本世界 / 内置的库 / 我的库 / + 新建一个库），切换后界面完全一样。
 // 层层点进去：首页 → 列表 → 这一项的页面，左上角返回。逻辑都在 pages.ts，这里只画。
 // 右上角“导入”打开导入窗口（第六十一轮，ImportDialog.tsx）
 

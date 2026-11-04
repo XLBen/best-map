@@ -11,7 +11,7 @@
   border-radius: var(--r-lg);
   z-index: 15;
   transform-origin: top left;
-  animation: repo-unfold 160ms ease-out;
+  animation: lp-unfold 160ms ease-out;
 }
 /* 总表要宽 */
 .lib-panel.wide {
@@ -19,10 +19,34 @@
   min-width: min(380px, calc(100% - 16px));
   max-width: calc(100% - 16px);
 }
+@keyframes lp-unfold {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .lib-panel {
     animation: none;
   }
+}
+/* 拖动的把手 */
+.lp-grip {
+  flex: none;
+  display: inline-flex;
+  margin-left: -16px;
+  color: var(--faint);
+  cursor: grab;
+}
+/* 地名风格的几个示例名字 */
+.lp-sample {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lp-head {
   flex: none;
@@ -307,7 +331,7 @@
 /* 只读：表单不能动，能展开、能点引用（<a>） */
 .lp-fields:disabled .slider,
 .lp-fields:disabled .ed-grip,
-.lp-fields:disabled .repo-grip {
+.lp-fields:disabled .lp-grip {
   pointer-events: none;
   opacity: 0.6;
 }
@@ -488,11 +512,11 @@
 .lp-card.wide {
   grid-column: span 2;
 }
-.lp-child > .lp-seg-head .repo-grip,
-.lp-inside .repo-grip {
+.lp-child > .lp-seg-head .lp-grip,
+.lp-inside .lp-grip {
   margin-left: 0;
 }
-.lp-inside .repo-grip {
+.lp-inside .lp-grip {
   margin-left: var(--sp-1);
 }
 .lp-card-more {

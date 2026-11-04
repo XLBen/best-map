@@ -16,7 +16,7 @@ import { PageItem } from './PageItem';
 import { type PageCtx, type SourceRef, eraVariables, itemsOf } from './pages';
 import { goTo, openSegments, rememberSegments } from './panel-store';
 import { RefPicker } from './RefPicker';
-import { runTrusted, swatchOf } from './repo-actions';
+import { runTrusted, swatchOf } from './row-actions';
 
 // 上级页面上“下面的”几段（第六十轮）：一行一项，点一下在这里展开改，› 单独打开（返回回到这一页）；能加、能移出。
 // 我的库里抓住这一段的标题拖到外面（或点“拆出来”），这种内容回到首页单独成卡。内置的库、本世界不能换安排，内容还是能看、能改（本世界）
@@ -119,7 +119,7 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
             >
               拆出来
             </button>
-            <span class="repo-grip" title="拖到外面，单独成卡">
+            <span class="lp-grip" title="拖到外面，单独成卡">
               <GripVertical />
             </span>
           </>
@@ -212,7 +212,7 @@ export function InsideRows({ list, src, ctx }: { list: readonly InsideRow[]; src
           onPointerDown={r.canSplit ? (e) => zone.current && dragOutOf(e, zone.current, { source: `kid:${r.key}`, label: r.title, text: `拆出${r.title}，单独成卡`, act: () => split(r) }) : undefined}
         >
           {r.canSplit && (
-            <span class="repo-grip" title="拖到外面，单独成卡">
+            <span class="lp-grip" title="拖到外面，单独成卡">
               <GripVertical />
             </span>
           )}

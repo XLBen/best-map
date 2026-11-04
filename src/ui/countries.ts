@@ -140,6 +140,7 @@ export function governmentCommand(w: World, m: CountryMeta, g: GovChoice, lib: r
   if (g.gov.id === m.government && !g.path) return null;
   if (!g.path) return patchCommand(m.id, { government: g.gov.id });
   const add = addFromLibrary(w.small, lib, 'governments', g.gov.id, g.path);
+  if (add.id === null) return null;
   return { op: 'batch', label: `政体换成“${g.gov.name}”`, commands: [...add.commands, patchCommand(m.id, { government: add.id })] };
 }
 

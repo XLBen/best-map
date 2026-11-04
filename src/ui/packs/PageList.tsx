@@ -10,7 +10,7 @@ import { addRows, openImport, otherLibOptions } from './page-import';
 import { InsideRows } from './PageChildren';
 import { RefPicker } from './RefPicker';
 import { copyToMine, goTo, libPanel } from './panel-store';
-import { swatchOf } from './repo-actions';
+import { swatchOf } from './row-actions';
 import { tidyWorld } from './tidy';
 
 // 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。库里的每一行右边写在不在本世界（能添加）。
@@ -57,7 +57,7 @@ function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCt
       }}
     >
       {movable && (
-        <span class="repo-grip" title="拖动换先后">
+        <span class="lp-grip" title="拖动换先后">
           <GripVertical />
         </span>
       )}

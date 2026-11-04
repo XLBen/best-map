@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
-import { kindOf } from '../../core/content/registry';
 import type { Engine } from '../../core/engine';
 import { BUILTIN_CULTURES } from '../../core/packs/eras';
-import { worldCultureGroups } from '../../core/human';
 import { defaultsOf } from '../../core/testing/eras';
 import { cellArchive, dimensionValues, humanLegend, readComp, worldCultures, worldDimensions } from '../../core/human';
 import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../../core/testing/fixtures';
@@ -31,7 +29,7 @@ import { ADD_DIMENSION_NOTE } from './copy';
 import { libRoots } from './packChoice';
 import { addDimensionCommand, dimensionOptions } from '../../core/packs/add-dimension';
 import { legendFor } from './legend';
-import { repoKinds, repoRows, repoSections } from './packs/repo';
+import { WORLD_SOURCE, listPage, listedKinds } from './packs/pages';
 import { type Pointer, chosenTuple, cultureTool, dryLand, hearthCommand, hearthMarks, hearthTool, popTool } from './tools';
 
 // 第二十二轮的界面：新建向导的“人文”、“文化”一类的三个工具、人文的底图与图例、格的档案里的人口、仓库里的四种内容
@@ -427,19 +425,16 @@ describe('格的档案里的人口', () => {
 
 describe('仓库与“文化 ⋯”', () => {
   it('仓库里有时代、人口维度的取值、文化组、文化；取值按维度分段，文化按文化组分段', () => {
-    const ids = repoKinds().map((k) => k.id);
+    const ids = listedKinds();
     for (const k of ['era', 'popValue', 'cultureGroup', 'culture']) expect(ids).toContain(k);
     const w = peopled().world;
-    const values = repoRows(kindOf('popValue')!, w, []);
-    const dims = new Map([[worldDimensions(w.small)[0].id, worldDimensions(w.small)[0].label]]);
-    const secs = repoSections(kindOf('popValue')!, values, { dims, groups: new Map() });
-    expect(secs.find((s) => s.label === worldDimensions(w.small)[0].label)!.rows.length).toBeGreaterThan(0);
-    const cultures = repoRows(kindOf('culture')!, w, []);
-    const groups = new Map(worldCultureGroups(w.small).map((g) => [g.id, g.name]));
-    const cs = repoSections(kindOf('culture')!, cultures, { dims, groups });
-    expect(cs.map((s) => s.label)).toEqual(expect.arrayContaining(['日耳曼']));
-    expect(cs.reduce((n, s) => n + s.rows.length, 0)).toBe(cultures.length);
-    expect(repoSections(kindOf('era')!, repoRows(kindOf('era')!, w, []), { dims, groups })).toHaveLength(1);
+    const ctx = { world: w, lib: [] };
+    const dim = worldDimensions(w.small)[0];
+    expect(listPage(WORLD_SOURCE, { p: 'list', kind: 'popValue', dim: dim.id }, ctx)!.sections.reduce((n, s) => n + s.rows.length, 0)).toBeGreaterThan(0);
+    const cultures = listPage(WORLD_SOURCE, { p: 'list', kind: 'culture' }, ctx)!;
+    expect(cultures.sections.map((s) => s.label)).toEqual(expect.arrayContaining(['日耳曼']));
+    expect(cultures.sections.reduce((n, s) => n + s.rows.length, 0)).toBe(worldCultures(w.small).length);
+    expect(listPage(WORLD_SOURCE, { p: 'list', kind: 'era' }, ctx)!.sections).toHaveLength(1);
   });
 
   it('换时代、文化组重新生成：regenerate_human（同一个时代保留手改的）；没变时没有命令', () => {

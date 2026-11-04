@@ -12,7 +12,7 @@ import { CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf } from './defs/tools';
 import { OVERLAYS } from './defs/layers';
 import { defaultChoice, generateCommand } from './human';
 import { hereLine } from './Inspector';
-import { SETTLE_KINDS, repoKinds } from './packs/repo';
+import { packSections } from '../../core/packs';
 import {
   BIG_CITY_PX,
   MEDIUM_CITY_PX,
@@ -486,11 +486,8 @@ describe('导出与仓库', () => {
   });
 
   it('仓库：城市等级、地标类型、点的类型都在，图标从内置的里选，点的类型能上传小图', () => {
-    const ids = repoKinds().map((k) => k.id);
-    for (const k of ['cityRank', 'landmarkType', 'pointType']) {
-      expect(ids).toContain(k);
-      expect(SETTLE_KINDS.has(k)).toBe(true);
-    }
+    const ids = packSections().map((k) => k.id);
+    for (const k of ['cityRank', 'landmarkType', 'pointType']) expect(ids).toContain(k);
     expect(iconChoices('cityRank')).toEqual([...CITY_ICONS]);
     expect(iconChoices('landmarkType')).toEqual(Object.keys(LANDMARK_ICONS));
     expect(iconChoices('pointType')).toEqual(Object.keys(POINT_ICONS));

@@ -8,6 +8,7 @@ import {
   packItems,
   packProblems,
   packScripts,
+  packSections,
   packSummary,
   sameItem,
 } from '../../../core/packs';
@@ -19,20 +20,20 @@ import { trustScripts, untrustedScripts } from '../../trust';
 import { ScriptList, TrustBlock } from './Scripts';
 import { ModalHead } from '../common';
 import { askUser, download, knowIsolation, showToast, world } from '../../state';
-import { repoKinds } from './repo';
 import { type DialogView, packDialog } from './store';
 import { openLibrary } from './panel-store';
 
-// 资源库角落“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、从文件导入（解析、检查、信任，不运行任何脚本）、
-// 从本世界存进资源库（第二十八轮：每一种内容都能勾，人文的也在）。添加到本世界在资源库里一项一项点（RepoPanel）
+// 资源库面板“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、读好的文件（解析、检查、信任，不运行任何脚本）、
+// 从本世界存进资源库（第二十八轮：每一种内容都能勾，人文的也在）。添加到本世界在面板上点，或者走右上角的“导入”
 
 const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
-// 在资源库里看这个包：资源库一栏只列它（展开着），种类是全部
-function showInRepo(key: string, _pack: ResourcePack) {
-  openLibrary({ entry: key });
+// 按这个先后列：地名风格在最前，自定义场不列
+function dialogKinds(): ContentKind[] {
+  const list = packSections();
+  return [...list.filter((k) => k.id === 'nameStyle'), ...list.filter((k) => k.id !== 'nameStyle')];
 }
 
 // 颜色小方块（最多几个）
@@ -69,7 +70,7 @@ const colorOf = (x: PackItem): string | undefined => (typeof x.color === 'string
 function PackContents({ pack }: { pack: ResourcePack }) {
   return (
     <div>
-      {repoKinds().map((k) => {
+      {dialogKinds().map((k) => {
         const items = packItems<PackItem>(pack, k.pack.key);
         if (!items.length) return null;
         return (
@@ -129,7 +130,7 @@ function LibraryRow({ e }: { e: LibraryEntry }) {
         )}
       </div>
       <div class="file-actions">
-        <button class="small primary" onClick={() => showInRepo(e.key, e.pack)} title="在资源库里一项一项添加到本世界">
+        <button class="small primary" onClick={() => openLibrary({ entry: e.key })} title="在面板上看这个库">
           查看
         </button>
         <button class="small" onClick={() => exportFile(e.pack)} title="存成文件，可以发给别人">
@@ -224,7 +225,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         <p>{installed ? `“${p.name}”已在资源库里。` : `“${p.name}”是内置的。`}</p>
         <div class="modal-foot">
           <button onClick={close}>关闭</button>
-          <button class="primary" onClick={() => showInRepo(installed ?? '', p)} title="在资源库里一项一项添加到本世界">
+          <button class="primary" onClick={() => openLibrary({ entry: installed ?? '' })} title="在面板上看这个库">
             查看
           </button>
         </div>
@@ -278,7 +279,7 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
 
 // 本世界里能导出的（每一种按登记表的 fromWorld：不是内置原样的；人文的几种也在），按资源库的分类先后
 export function exportSections(w: PackWorldLike): { kind: ContentKind; items: PackItem[] }[] {
-  return repoKinds()
+  return dialogKinds()
     .map((kind) => ({ kind, items: (kind.pack.fromWorld?.(w) ?? []) as PackItem[] }))
     .filter((x) => x.items.length > 0);
 }
@@ -289,12 +290,12 @@ export function exportPicks(sections: readonly { kind: ContentKind; items: reado
   const picks: Record<string, string[] | boolean> = { wordPack };
   for (const { kind, items } of sections) picks[kind.pack.key] = items.map((x) => itemId(kind, x)).filter((id) => !off.has(`${kind.pack.key}:${id}`));
   // 没有能导出的种类也写上空的（packFromWorld 省略的段取全部）
-  for (const k of repoKinds()) if (!(k.pack.key in picks)) picks[k.pack.key] = [];
+  for (const k of dialogKinds()) if (!(k.pack.key in picks)) picks[k.pack.key] = [];
   return picks;
 }
 
 // 做出来的包里有没有内容
-export const packEmpty = (pack: ResourcePack): boolean => repoKinds().every((k) => !packItems(pack, k.pack.key).length);
+export const packEmpty = (pack: ResourcePack): boolean => dialogKinds().every((k) => !packItems(pack, k.pack.key).length);
 
 function ExportView() {
   const w = world.value;
@@ -327,7 +328,7 @@ function ExportView() {
   const replaces = inLibrary(preview);
   // 替换的是自己的包时，形态编辑器存在里面的星球形态留着（见 keepSavedForms）
   const stored = keepSavedForms(preview, replaces);
-  const countItems = (p: ResourcePack) => repoKinds().reduce((n, k) => n + packItems(p, k.pack.key).length, 0);
+  const countItems = (p: ResourcePack) => dialogKinds().reduce((n, k) => n + packItems(p, k.pack.key).length, 0);
   const keptForms = countItems(stored) - countItems(preview);
   const save = async () => {
     // 不在这里把脚本记为信任：世界里的脚本可能来自别人的世界文件（没运行脚本打开的），

@@ -4,7 +4,7 @@ import { type ContentRef, linkKey } from '../../../core/content/links';
 import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { sameContent } from '../../../core/content/refs';
 import type { Culture, Era } from '../../../core/human/era';
-import { type PackNode, type PackRead, type ResourcePack, canApply, packItems, packSections, readPack } from '../../../core/packs';
+import { PACK_MAX_CHARS, type PackNode, type PackRead, type ResourcePack, canApply, packItems, packSections, readPack } from '../../../core/packs';
 import { type ImportAsk, type ImportOnto, type ImportPreview, type ImportTarget, importCommand, importPreview, importToPack, targetEra } from '../../../core/packs/closure';
 import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
@@ -16,7 +16,7 @@ import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemsOf, kindTitle
 import { HOME_LAYOUT, WATER_KINDS } from './page-layout';
 import { copyToMine, lastPress, pageCtx } from './panel-store';
 import type { RefOption } from './refs';
-import type { RepoRow } from './repo';
+import type { ItemRow } from './rows';
 import { fileLabel } from './store';
 
 // 导入窗口的逻辑（第六十一轮）：从一个库勾几项，导入面板正在看的本世界或我的库。闭包在 core/packs/closure.ts，这里是窗口的状态、
@@ -105,9 +105,10 @@ export function chooseFrom(key: string) {
   patch({ from: key, file: null, picks: [], off: [], on: [], onto: undefined, focus: undefined });
 }
 
+// 太大的文件不读进内存（readPack 按字数再查一遍；一个字可能占三个字节）
 export async function chooseFile(file: File) {
-  const text = await file.text();
-  patch({ file: { name: file.name, read: readPack(text, fileLabel(file.name)) }, picks: [], off: [], on: [], onto: undefined, focus: undefined });
+  const read: PackRead = file.size > 3 * PACK_MAX_CHARS ? { ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是资源包`] } : readPack(await file.text(), fileLabel(file.name));
+  patch({ file: { name: file.name, read }, picks: [], off: [], on: [], onto: undefined, focus: undefined });
 }
 
 export function togglePick(r: ContentRef, on: boolean) {
@@ -350,7 +351,7 @@ export async function runImport(st: ImportWindow, ctx: PageCtx): Promise<ImportD
 // ---------- 列表上的“添加”“全部添加” ----------
 
 // 走同一个闭包。加一个变量的（会动人口）、改名的、带不了的先打开窗口看一眼；别的直接加，说一声还带上了什么
-export function addRows(rows: readonly RepoRow[], src: SourceRef, ctx: PageCtx, label: string): void {
+export function addRows(rows: readonly ItemRow[], src: SourceRef, ctx: PageCtx, label: string): void {
   const e = entryOf(src, ctx);
   const world = ctx.world;
   if (!e || !world) return;

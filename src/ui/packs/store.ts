@@ -1,63 +1,9 @@
 import { signal } from '@preact/signals';
 import type { PackRead } from '../../../core/packs';
 import { refreshLibrary } from '../../library';
-import type { Obj } from './fields';
-import { loadRepoPrefs, saveRepoPrefs } from './prefs';
-import type { RepoFilter } from './repo';
 
-// 资源库的界面状态：浮在地图左上角的资源库（第四十五轮：顶栏最左边的按钮打开）（第二十九轮：两栏，本世界 | 资源库，都按资源包分组；顶上筛种类、搜索），
-// 和角落“⋯”里打开的弹窗（导入文件、从世界存进资源库、资源包）。
-// 都是点了才开（世界菜单的“资源库…”、生态抽屉的“示例生态…”、地名里的“资源库…”、导入文件），不会自己弹出来
-
-// 编辑器：改的是哪一项（新建、复制的没有 origin；改的是世界里的一项时 worldId 是它在世界里的 id）
-export interface RepoEdit {
-  item: Obj;
-  how: 'new' | 'copy' | 'edit';
-  worldId?: string;
-  // 哪一种（第二十九轮：种类筛成“全部”时也能编辑；省略时按 RepoState.kind）
-  kind?: string;
-  // 第四十五轮：开始时的样子（和它不一样就是改过了）、改的是左栏的哪一行、用到本世界时记的来源（资源库里的包）
-  base?: Obj;
-  row?: string;
-  from?: string[];
-}
-
-export interface RepoState {
-  // 筛的种类（登记表里的 id；'all' 是全部种类）
-  kind: string;
-  // 'off'：资源库一栏只列不在本世界的（工具里的“从资源库添加…”）；别的值都列全部
-  filter: RepoFilter;
-  query: string;
-  // 资源库一栏只看一个包（资源库里的键：刚导入的包、生态抽屉的“示例生态…”），展开着
-  entry?: string;
-  edit?: RepoEdit;
-  // 左栏选中的一行（第四十五轮：右栏是它的详情与编辑器）
-  sel?: string;
-}
-
-export const repo = signal<RepoState | null>(null);
-
-// 第四十五轮：种类记在浏览器里（prefs.ts），关上、刷新后照旧
-export function openRepo(st: Partial<RepoState> = {}) {
-  void refreshLibrary();
-  packDialog.value = null;
-  repo.value = { kind: repo.value?.kind ?? loadRepoPrefs().kind, filter: 'all', query: '', ...st };
-  if (st.kind) saveRepoPrefs({ kind: st.kind });
-}
-
-export const closeRepo = () => (repo.value = null);
-
-// 顶栏最左边的“资源库”：开着就关上，关着就打开（第四十五轮）
-export function toggleRepo() {
-  if (repo.value) closeRepo();
-  else openRepo();
-}
-
-export function patchRepo(patch: Partial<RepoState>) {
-  if (!repo.value) return;
-  repo.value = { ...repo.value, ...patch };
-  if (patch.kind) saveRepoPrefs({ kind: patch.kind });
-}
+// 资源库面板“⋯”里打开的弹窗的状态（PackDialog.tsx）：资源包的列表、读好的一个文件、从本世界存进资源库。
+// 都是点了才开（面板的“⋯”、生态抽屉的“读文件”），不会自己弹出来。面板自己的状态在 panel-store.ts，导入窗口在 page-import.ts
 
 export type DialogView =
   // 资源包：资源库里的包（导出、删除）

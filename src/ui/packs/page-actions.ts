@@ -13,7 +13,7 @@ import { askUser, noteAction, showToast, whenEditsIdle, world, worldEpoch } from
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
 import { canArrange } from './page-arrange';
 import { type PageCtx, type Route, type SourceRef, kindReadonly, takenIn, waterLists } from './pages';
-import { runTrusted } from './repo-actions';
+import { runTrusted } from './row-actions';
 
 // 面板里改东西（第五十九轮）：改一项就存。本世界走命令和世界的撤销栈，我的库走 library-edit.ts（自己的撤销），只读的不动。
 // 生态、河湖的一格走 core/water-table.ts 同一个函数，所以总表、生态页、河湖页改的是同一份

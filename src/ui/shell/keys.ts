@@ -3,7 +3,7 @@ import { mapApi } from '../camera';
 import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
 import { closeImport, importWindow } from '../packs/page-import';
-import { packDialog, repo } from '../packs/store';
+import { packDialog } from '../packs/store';
 import { libEdits } from '../../library-edit';
 import { closeLibrary, goBack, lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
 import { undoTarget } from '../packs/pages';
@@ -55,8 +55,6 @@ export function onKeyDown(e: KeyboardEvent) {
       if (libPanel.value.stack.length > 1) goBack();
       else closeLibrary();
     }
-    // 旧的资源库：先取消选中（右栏的详情、编辑器一起收起），再按一次关上
-    else if (repo.value) repo.value = repo.value.edit || repo.value.sel ? { ...repo.value, edit: undefined, sel: undefined } : null;
     else if (sheet.value) sheet.value = null;
     else if (provinceSet.value.length) provinceSet.value = [];
     else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value || selectedLake.value) {
