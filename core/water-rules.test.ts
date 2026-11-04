@@ -449,7 +449,7 @@ describe('断流', () => {
     const eng = continents();
     for (const sp of eng.world.small.species) expect([sp.waterBlock, sp.plainRiver, sp.plainLake]).toEqual([undefined, undefined, undefined]);
     for (const sp of FANTASY_BIOMES) expect([sp.waterBlock, sp.plainRiver, sp.plainLake]).toEqual([undefined, undefined, undefined]);
-    expect(waterPlan(eng.world.small)).toEqual({ biomes: false, baseFirst: false, stops: false });
+    expect(waterPlan(eng.world.small)).toEqual({ biomes: false, baseFirst: false, stops: false, reuseFirstBase: false });
   });
 });
 

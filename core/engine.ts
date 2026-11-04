@@ -613,6 +613,8 @@ export class Engine {
     const base = this.base;
     const seed = worldSeedOf(w);
     const water = waterPlan(w.small);
+    // 第一遍不计水体类型的生态（water.reuseFirstBase 的世界，后面几遍的类型读它）
+    let firstBase: Int16Array | null = null;
     const pass = (eff: ClimateEffects | null) => {
       passStats.passes++;
       finalizeClimate(w, base, d, eff);
@@ -641,7 +643,13 @@ export class Engine {
       // 第十二轮：类型要读生态时按不计水体类型的一遍植被。第五十六轮（提速）：生态不读河岸、湖岸时那一遍和真的植被逐值相同，
       // 只算一遍，算完再定类型（core/water-rules.test.ts 查着逐位相同）
       if (water.biomes && !water.baseFirst) computeVegetation(w, d, [], { look: false, after: () => typeWater(d.dominant), effect: !!eff, pass: scriptPass });
-      else computeVegetation(w, d, typeWater(water.biomes ? (bio ?? baseBiomes(w, d, true, !!eff, scriptPass)) : null), { look: false, effect: !!eff, pass: scriptPass });
+      else {
+        if (water.biomes) {
+          bio ??= (water.reuseFirstBase ? firstBase : null) ?? baseBiomes(w, d, true, !!eff, scriptPass);
+          if (water.reuseFirstBase) firstBase = bio;
+        }
+        computeVegetation(w, d, typeWater(bio), { look: false, effect: !!eff, pass: scriptPass });
+      }
     };
     // 先在无修正的气候上算一遍水文与植被，得到求解器需要的湿度、可达性
     d.corrT.fill(0);

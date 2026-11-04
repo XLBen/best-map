@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CommandError } from './errors';
 import { type Mesh, graphDistance } from './mesh';
 // 只在 z.lazy 里读 scriptsSchema：script.ts 经 world.ts 又引用别的模块，顶层直接读会碰上“初始化之前不能访问”
-import { type BiomeInputs, codeOnly, compileScript, scriptsSchema, usesBiomeHelpers } from './script';
+import { type BiomeInputs, codeOnly, compileScript, scriptsEnabled, scriptsSchema, usesBiomeHelpers } from './script';
 import { typeIdSchema } from './type-id';
 import type { World } from './world';
 
@@ -158,7 +158,8 @@ export function scriptReadsBanks(src: string): boolean {
 }
 function readsBanks(sp: WaterSpecies): boolean {
   const src = sp.scripts?.placement?.src;
-  return sp.tolerances.some((t) => t.field.startsWith('river:') || t.field.startsWith('lake:')) || (!!src && BANK_NAME.test(codeOnly(src)));
+  // 安全模式下脚本不运行，“长在哪里”读不到河岸
+  return sp.tolerances.some((t) => t.field.startsWith('river:') || t.field.startsWith('lake:')) || (!!src && scriptsEnabled() && BANK_NAME.test(codeOnly(src)));
 }
 
 export interface WaterPlan {
@@ -168,6 +169,9 @@ export interface WaterPlan {
   baseFirst: boolean;
   // 有生态会让河断流（不允许普通河、设成“断流”）：水文要多算一遍
   stops: boolean;
+  // 第五十七轮（语义，用户批准）：生态读河岸、类型又读生态、不用断流的世界（奇幻库），加了影响的那一遍不再算不计水体类型的植被，类型读第一遍的（少算一遍）。
+  // 第一遍只算了那时的河格和湖岸：这一遍才有的河格没有生态，按这种生态不算。别的世界不走这里
+  reuseFirstBase: boolean;
 }
 
 // 测试用：baseFirst 为 true 时照第五十六轮以前的走法（读生态的世界总是先多算一遍），和提速后的结果对照
@@ -183,7 +187,8 @@ export function waterPlan(small: { species: readonly WaterSpecies[]; riverTypes?
   const stops = riversStop(species);
   const plain = (rivers.length > 0 && species.some((s) => s.plainRiver === false)) || (lakes.length > 0 && species.some((s) => s.plainLake === false));
   const biomes = stops || plain || needsBaseBiomes(rivers) || needsBaseBiomes(lakes);
-  return { biomes, baseFirst: biomes && (waterPlanDebug.baseFirst || species.some(readsBanks)), stops };
+  const banks = biomes && species.some(readsBanks);
+  return { biomes, baseFirst: biomes && (waterPlanDebug.baseFirst || banks), stops, reuseFirstBase: banks && !stops };
 }
 
 // ---------- 允许表（第五十六轮） ----------
