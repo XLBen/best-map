@@ -1,107 +1,31 @@
+import { RELATIONS, looseItems, relationOf } from '../../../core/content/arrange';
 import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
 import type { Era } from '../../../core/human';
-import { type PackWorld, canApply, packItems, packSections } from '../../../core/packs';
+import { type PackWorld, canApply, packSections } from '../../../core/packs';
 import type { Species } from '../../../core/species';
 import { PLAIN_TYPE, type WaterType, perCellRule } from '../../../core/water-types';
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
-import type { LibraryEntry } from '../../library';
-import { CARD_ICON, type CardDef, DEFAULT_INSIDE, HOME_LAYOUT, WATER_KINDS, type Inside } from './page-layout';
+import { arrangeFor, arrangeTitle, linkView, mergedInto } from './page-arrange';
+import { type ChildSection, type InsideRow, type PartOf, childSections, insideRows, partOf } from './page-children';
+import { CARD_ICON, type CardDef, HOME_LAYOUT, WATER_KINDS, type Inside } from './page-layout';
 import { type Segment, segmentsOf } from './page-segments';
-import { type RepoRow, type TreeNode, HUMAN_KINDS, GOV_KINDS, SETTLE_KINDS, packTree, treeRows } from './repo';
+import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemOf, itemsOf, kindReadonly, kindTitle, rowsOf, sourceKind, sourceTitle } from './page-source';
+import { type RepoRow, HUMAN_KINDS, GOV_KINDS, SETTLE_KINDS } from './repo';
+
+export * from './page-source';
 
 // 新的资源库面板（第五十九轮）的逻辑：看的是哪一份（本世界、内置的库、我的库）、首页有哪些卡片、怎么点进去、面包屑、
 // 列表里有什么、某一项的页面有哪些段、只读与否、这一项能做什么、返回。全部在这里，组件只负责画。不碰界面，测试直接调。
 //
 // 切换来源后界面完全一样：所有的页面都从 SourceRef + PageCtx 算出来，本世界和库只差 itemsOf 和只读
 
-// ---------- 来源 ----------
-
-// 看的是哪一份
-export type SourceRef = { t: 'world' } | { t: 'lib'; key: string };
-export const WORLD_SOURCE: SourceRef = { t: 'world' };
-
-export interface PageCtx {
-  world: PackWorld | null;
-  lib: readonly LibraryEntry[];
-}
-
-export const sameSource = (a: SourceRef, b: SourceRef): boolean => a.t === b.t && (a.t === 'world' || a.key === (b as { key: string }).key);
-export const entryOf = (src: SourceRef, ctx: PageCtx): LibraryEntry | undefined => (src.t === 'lib' ? ctx.lib.find((e) => e.key === src.key) : undefined);
-
-export type SourceKind = 'world' | 'builtin' | 'mine' | 'imported';
-export function sourceKind(src: SourceRef, ctx: PageCtx): SourceKind | null {
-  if (src.t === 'world') return 'world';
-  const e = entryOf(src, ctx);
-  if (!e) return null;
-  return e.builtin ? 'builtin' : e.mine ? 'mine' : 'imported';
-}
-
-export function sourceTitle(src: SourceRef, ctx: PageCtx): string {
-  return src.t === 'world' ? '本世界' : (entryOf(src, ctx)?.pack.name ?? src.key);
-}
-
-// 来源不在了（库删掉了、世界关了）：回到本世界
-export const liveSource = (src: SourceRef, ctx: PageCtx): SourceRef => (src.t === 'lib' && !entryOf(src, ctx) ? WORLD_SOURCE : src);
-
-// 只读的原因（能改时 null）
-const READONLY_WHY: Record<SourceKind, string | null> = { world: null, mine: null, builtin: '内置的库只读', imported: '导入的库只读' };
-export function readonlyWhy(src: SourceRef, ctx: PageCtx): string | null {
-  const k = sourceKind(src, ctx);
-  return k ? READONLY_WHY[k] : '这个库不在了';
-}
-
-// 这一种内容在这一份里能不能改：在只读的库里不能；本世界里星球形态不能（在“调整”里换）
-export function kindReadonly(src: SourceRef, kind: ContentKind, ctx: PageCtx): string | null {
-  const why = readonlyWhy(src, ctx);
-  if (why) return why;
-  if (src.t === 'world' && !canApply(kind)) return kind.pack.note ?? '不能改';
-  return null;
-}
-
-// 标题的下拉：本世界 / 内置的库 / 我的库（导入的另成一段）/ + 新建一个库
-export interface SourceMenuItem {
-  src: SourceRef;
-  name: string;
-  on: boolean;
-}
-export interface SourceMenu {
-  world: SourceMenuItem;
-  builtin: SourceMenuItem[];
-  mine: SourceMenuItem[];
-  imported: SourceMenuItem[];
-}
-export function sourceMenu(cur: SourceRef, ctx: PageCtx): SourceMenu {
-  const item = (e: LibraryEntry): SourceMenuItem => {
-    const src: SourceRef = { t: 'lib', key: e.key };
-    return { src, name: e.pack.name, on: sameSource(src, cur) };
-  };
-  return {
-    world: { src: WORLD_SOURCE, name: '本世界', on: cur.t === 'world' },
-    builtin: ctx.lib.filter((e) => e.builtin).map(item),
-    mine: ctx.lib.filter((e) => !e.builtin && e.mine).map(item),
-    imported: ctx.lib.filter((e) => !e.builtin && !e.mine).map(item),
-  };
-}
-
-// ---------- 这一份里的内容 ----------
-
-const NO_ITEMS: readonly unknown[] = [];
-export function itemsOf(src: SourceRef, kind: ContentKind, ctx: PageCtx): readonly unknown[] {
-  if (src.t === 'world') return ctx.world ? kind.inWorld(ctx.world) : NO_ITEMS;
-  const e = entryOf(src, ctx);
-  return e ? packItems(e.pack, kind.pack.key) : NO_ITEMS;
-}
-
-export function itemOf(src: SourceRef, kind: ContentKind, id: string, ctx: PageCtx): unknown {
-  return itemsOf(src, kind, ctx).find((x) => itemId(kind, x) === id);
-}
-
 // ---------- 路线 ----------
 
-// 一层页面。list 可以只看一维、一组（生态与水系、取值按维度、文化按组）；hideOn：只看还不在本世界的（工具里的“从资源库添加…”）
+// 一层页面。list 可以只看一维、一组（生态与水系、取值按维度、文化按组）；hideOn：只看还不在本世界的（工具里的“从资源库添加…”）；
+// loose：只看不属于这种上级的（融入之后留着卡片的地标）
 export type Route =
   | { p: 'home' }
-  | { p: 'list'; kind: string; dim?: string; group?: string; hideOn?: boolean }
+  | { p: 'list'; kind: string; dim?: string; group?: string; hideOn?: boolean; loose?: string }
   | { p: 'item'; kind: string; id: string; seg?: string }
   | { p: 'water' }
   | { p: 'table' };
@@ -164,16 +88,16 @@ export const backLabel = (stack: readonly Route[], src: SourceRef, ctx: PageCtx)
 
 // ---------- 首页 ----------
 
-export const kindTitle = (k: ContentKind): string => (k.id === 'popValue' ? '取值' : k.id === 'landmarkType' ? '地标' : k.id === 'pointType' ? '自定义点' : k.id === 'riverType' ? '河' : k.id === 'lakeType' ? '湖' : k.id === 'islandType' ? '岛' : k.id === 'cityRank' ? '城市等级' : k.id === 'era' ? '时代规则' : k.label);
-
 export interface Card {
   id: string;
   title: string;
   // 卡片上的数：“18”“7 组”
   count: string;
   empty: boolean;
-  // 灰色的小字（归到它下面的：第六十轮由库的 arrange 决定）
+  // 灰色的小字：含哪几种（第六十轮，库的 arrange 决定）
   contains?: string;
+  // 同一件事，一种一项（我的库里能拖出来）
+  kids?: { key: string; title: string }[];
   icon?: string;
   route: Route;
 }
@@ -185,7 +109,7 @@ export interface HomeSection {
 }
 
 export interface HomePage {
-  era: { title: string; summary: string; route: Route; empty: boolean } | null;
+  era: { title: string; summary: string; route: Route; empty: boolean; contains?: string; kids?: { key: string; title: string }[] } | null;
   sections: HomeSection[];
   // 本世界还没有世界时的一句话
   noWorld: boolean;
@@ -213,8 +137,10 @@ export function dimensionsOf(src: SourceRef, ctx: PageCtx): Dim[] {
   const era = kindOf('era');
   for (const e of era ? (itemsOf(src, era, ctx) as readonly Era[]) : [])
     for (const d of e.dimensions) if (!out.some((x) => x.id === d.id)) out.push({ id: d.id, label: d.label });
-  const pv = kindOf('popValue');
-  for (const v of pv ? (itemsOf(src, pv, ctx) as readonly { dimension: string }[]) : []) if (!out.some((x) => x.id === v.dimension)) out.push({ id: v.dimension, label: v.dimension });
+  for (const id of ['popValue', 'valueGroup']) {
+    const k = kindOf(id);
+    for (const v of k ? (itemsOf(src, k, ctx) as readonly { dimension: string }[]) : []) if (!out.some((x) => x.id === v.dimension)) out.push({ id: v.dimension, label: v.dimension });
+  }
   return out;
 }
 export const dimensionLabel = (id: string, src: SourceRef, ctx: PageCtx): string => dimensionsOf(src, ctx).find((d) => d.id === id)?.label ?? id;
@@ -253,21 +179,54 @@ function cardOf(def: CardDef, src: SourceRef, ctx: PageCtx): Card[] {
   return [{ id: k.id, title: kindTitle(k), count: String(n), empty: !n, icon: CARD_ICON[k.id], route: { p: 'list', kind: k.id } }];
 }
 
-// 每种内容一张卡片。inside：归到别的卡片下面的（卡片 → 上级；第六十轮由库的 arrange 决定，这一轮都是空的）
-export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = DEFAULT_INSIDE): HomePage {
+// 每种内容一张卡片。inside：卡片 → 上级（第六十轮：这一份的 arrange）。融入的不单独列，上级写“含……”；
+// 地标不属于任何组的还留一张卡片（只列那些）。取值融入取值组时，每一维的卡片就是这一维的取值组，首页不再单独列取值组。
+// 上级不在这一份里（测试、写错的文件）时不藏，免得找不到
+const homeOrder = (key: string) => {
+  const k = RELATIONS.findIndex((r) => r.child === key);
+  return k < 0 ? RELATIONS.length : k;
+};
+export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = arrangeFor(src, ctx)): HomePage {
   const noWorld = src.t === 'world' && !ctx.world;
   const all = HOME_LAYOUT.map((s) => ({ id: s.id, title: s.title, cards: s.cards.flatMap((d) => cardOf(d, src, ctx)) }));
-  const contains = new Map<string, string[]>();
   const byId = new Map(all.flatMap((s) => s.cards.map((c) => [c.id, c] as const)));
-  for (const [child, parent] of Object.entries(inside)) {
-    const c = byId.get(child);
-    if (c && parent && byId.has(parent)) contains.set(parent, [...(contains.get(parent) ?? []), c.title]);
-  }
-  const sections = all
-    .map((s) => ({ ...s, cards: s.cards.filter((c) => !(inside[c.id] && byId.has(inside[c.id]!))).map((c) => (contains.has(c.id) ? { ...c, contains: `含${contains.get(c.id)!.join('、')}` } : c)) }))
-    .filter((s) => s.cards.length);
   const eraKind = kindOf('era');
   const eras = eraKind && !noWorld ? (itemsOf(src, eraKind, ctx) as readonly Era[]) : [];
+  const kids = new Map<string, { key: string; title: string }[]>();
+  const addKid = (card: string, key: string) => kids.set(card, [...(kids.get(card) ?? []), { key, title: arrangeTitle(key) }]);
+  const hidden = new Set<string>();
+  const swapped = new Map<string, Card>();
+  const dimIds = [...byId.keys()].filter((id) => id.startsWith('dim:'));
+  for (const [child, parent] of Object.entries(inside).sort((a, b) => homeOrder(a[0]) - homeOrder(b[0]))) {
+    if (!parent) continue;
+    if (child === 'variables' && parent === 'era') {
+      if (eras.length) {
+        hidden.add(child);
+        addKid('era', child);
+      }
+    } else if (child === 'popValue' && parent === 'valueGroup') {
+      if (dimIds.length) {
+        hidden.add(parent);
+        for (const id of dimIds) addKid(id, child);
+      }
+    } else if (byId.has(child) && byId.has(parent)) {
+      addKid(parent, child);
+      const rel = relationOf(child, parent);
+      if (rel?.looseCard) {
+        const view = linkView(src, ctx);
+        const n = looseItems(rel, view.items, view.table(rel)).length;
+        if (n) swapped.set(child, { ...byId.get(child)!, count: String(n), route: { p: 'list', kind: child, loose: parent } });
+        else hidden.add(child);
+      } else hidden.add(child);
+    }
+  }
+  const says = (id: string) => {
+    const list = kids.get(id);
+    return list ? { contains: `含${list.map((k) => k.title).join('、')}`, kids: list } : {};
+  };
+  const sections = all
+    .map((s) => ({ ...s, cards: s.cards.filter((c) => !hidden.has(c.id)).map((c) => ({ ...(swapped.get(c.id) ?? c), ...says(c.id) })) }))
+    .filter((s) => s.cards.length);
   const era = noWorld
     ? null
     : {
@@ -275,6 +234,7 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = DEFAULT_
         summary: eras.length === 1 ? eraSummary(eras[0]) : eras.length ? `${eras.length} 个时代` : src.t === 'world' ? '还没有生成人文' : '没有',
         empty: !eras.length,
         route: (eras.length === 1 ? { p: 'item', kind: 'era', id: eras[0].id } : { p: 'list', kind: 'era' }) as Route,
+        ...says('era'),
       };
   const e = entryOf(src, ctx);
   const note = e && !eras.length ? '没有时代规则，新建世界时选不到这个库' : null;
@@ -329,41 +289,13 @@ export interface ListPage {
   defaults: Record<string, unknown>;
   // 也能在这一页新建取值组（取值的页面）
   alsoNew?: string;
+  // 含哪几种（融入到这种内容下面的，第六十轮）
+  inside: InsideRow[];
+  // 够多才有搜索框（融入的项也算）
+  searchable: boolean;
 }
 
-// 列表的来源：repo.ts 的树（行里有状态、添加和移出的命令），同一项只列一次。按世界、库记着，点进点出不重算
-const rowsMemo = new WeakMap<object, Map<string, RepoRow[]>>();
-const NO_WORLD = {};
-export function rowsOf(src: SourceRef, kind: ContentKind, ctx: PageCtx): RepoRow[] {
-  const holder = src.t === 'world' ? (ctx.world ?? NO_WORLD) : entryOf(src, ctx)?.pack;
-  if (!holder) return [];
-  // 库里的行要看世界（在不在本世界）
-  let m = rowsMemo.get(holder);
-  if (!m) rowsMemo.set(holder, (m = new Map()));
-  const worldTag = src.t === 'lib' ? worldKey(ctx.world) : '';
-  const key = `${kind.id}|${worldTag}`;
-  let rows = m.get(key);
-  if (rows) return rows;
-  const e = entryOf(src, ctx);
-  const tree = packTree(ctx.world, e ? [e] : [], kind.id);
-  const nodes: TreeNode[] = src.t === 'world' ? tree.world : tree.library;
-  const seen = new Set<string>();
-  rows = nodes.flatMap(treeRows).filter((r) => !seen.has(r.id) && !!seen.add(r.id));
-  // 按这一份里的先后（树是按小包走的，世界里的顺序是 inWorld 的）
-  const order = new Map(itemsOf(src, kind, ctx).map((x, k) => [itemId(kind, x), k]));
-  rows.sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9));
-  m.set(key, rows);
-  return rows;
-}
-// 世界每变一次换一个号（库里的行要重新看在不在本世界）
-const worldIds = new WeakMap<object, number>();
-let worldSeq = 0;
-function worldKey(w: PackWorld | null): number {
-  if (!w) return 0;
-  let n = worldIds.get(w);
-  if (!n) worldIds.set(w, (n = ++worldSeq));
-  return n;
-}
+export const SEARCH_FROM = 12;
 
 const countBy = (items: readonly unknown[], key: string): Map<string, number> => {
   const m = new Map<string, number>();
@@ -387,6 +319,11 @@ function hintFor(k: ContentKind, src: SourceRef, ctx: PageCtx): (r: RepoRow) => 
     const f = (r.item as { factions?: readonly string[] }).factions;
     return f?.length ? `${f.length} 个派系` : undefined;
   };
+  if (k.id === 'countryTier') {
+    const rel = relationOf('countryLayout', 'countryTier')!;
+    const t = linkView(src, ctx).table(rel);
+    return (r) => `${t.byParent.get(r.id)?.length ?? 0} 个格局`;
+  }
   if (k.id === 'riverType' || k.id === 'lakeType') return (r) => {
     const t = r.item as WaterType;
     return t.natural === false ? '不自然生成' : t.scripts?.match ? '规则' : undefined;
@@ -407,10 +344,22 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
   if (r.dim) rows = rows.filter((x) => (x.item as { dimension?: string }).dimension === r.dim);
   if (r.group) rows = rows.filter((x) => (x.item as { group?: string }).group === r.group);
   if (r.hideOn) rows = rows.filter((x) => !x.status.on);
+  if (r.loose) {
+    const rel = relationOf(r.kind, r.loose);
+    if (rel) {
+      const view = linkView(src, ctx);
+      const loose = new Set(looseItems(rel, view.items, view.table(rel)).map((x) => itemId(kind, x)));
+      rows = rows.filter((x) => loose.has(x.id));
+    }
+  }
   const q = query.trim().toLowerCase();
-  if (q) rows = rows.filter((x) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q));
+  const matches = (x: RepoRow) => x.name.toLowerCase().includes(q) || x.id.toLowerCase().includes(q);
+  if (q) rows = rows.filter(matches);
   const hint = hintFor(kind, src, ctx);
-  const sections = sectionsOf(kind, rows, src, ctx, r, hint);
+  const whole = !r.dim && !r.group && !r.hideOn && !r.loose;
+  // 融入的项：搜索时一样找得到；不属于任何上级的在最后一段
+  const sections = [...sectionsOf(kind, rows, src, ctx, r, hint), ...(whole ? (q ? insideHits(kind.id, src, ctx, matches) : looseSections(kind, src, ctx)) : [])];
+  const inside = whole ? insideRows(src, kind.id, ctx) : [];
   const empty = q ? '没有找到' : r.hideOn ? '都在本世界了' : `没有${kindTitle(kind)}`;
   const defaults: Record<string, unknown> = { ...(r.dim ? { dimension: r.dim } : {}), ...(r.group ? { group: r.group } : {}) };
   return {
@@ -425,7 +374,40 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
     empty,
     defaults,
     ...(r.dim && !readonly ? { alsoNew: 'valueGroup' } : {}),
+    inside,
+    searchable: rows.length + inside.reduce((n, x) => n + x.count, 0) > SEARCH_FROM,
   };
+}
+
+// 搜索时融入的项也列出来，灰字写在哪个上级下面
+function insideHits(parentKind: string, src: SourceRef, ctx: PageCtx, matches: (x: RepoRow) => boolean): ListSection[] {
+  const up = kindOf(parentKind);
+  if (!up) return [];
+  const view = linkView(src, ctx);
+  const names = new Map(view.items(parentKind).map((x) => [itemId(up, x), itemName(up, x)]));
+  return mergedInto(arrangeFor(src, ctx), parentKind).flatMap((rel) => {
+    const ck = kindOf(rel.child);
+    if (!ck) return [];
+    const rows = rowsOf(src, ck, ctx).filter(matches);
+    const t = view.table(rel);
+    const hint = (x: RepoRow) => {
+      const ps = (t.byChild.get(x.id) ?? []).flatMap((p) => (names.has(p) ? [names.get(p)!] : []));
+      return ps.length ? `在${ps.slice(0, 2).join('、')}${ps.length > 2 ? ` 等 ${ps.length} 个` : ''}` : undefined;
+    };
+    return rows.length ? [{ label: arrangeTitle(rel.child), rows: rows.map((x) => listRow(x, hint(x))) }] : [];
+  });
+}
+
+// 融入的内容里不属于任何上级的（地标有自己的卡片）
+function looseSections(parent: ContentKind, src: SourceRef, ctx: PageCtx): ListSection[] {
+  const view = linkView(src, ctx);
+  return mergedInto(arrangeFor(src, ctx), parent.id).flatMap((rel) => {
+    const ck = kindOf(rel.child);
+    if (!ck || rel.looseCard) return [];
+    const loose = new Set(looseItems(rel, view.items, view.table(rel)).map((x) => itemId(ck, x)));
+    if (!loose.size) return [];
+    return [{ label: `不属于${kindTitle(parent)}的${arrangeTitle(rel.child)}`, rows: rowsOf(src, ck, ctx).filter((x) => loose.has(x.id)).map((x) => listRow(x)) }];
+  });
 }
 
 function sectionsOf(kind: ContentKind, rows: readonly RepoRow[], src: SourceRef, ctx: PageCtx, r: Extract<Route, { p: 'list' }>, hint: (r: RepoRow) => string | undefined): ListSection[] {
@@ -486,8 +468,12 @@ export interface ItemPage {
   // 只读时能不能复制成我的库
   canCopyLibrary: boolean;
   segments: Segment[];
-  // 这一项下面的（文化组的文化、取值组的取值）
+  // 这一项下面的（没融入时是一行链接：文化组的文化、取值组的取值）
   related: RelatedLink[];
+  // 融入到这一项下面的（第六十轮）：在这一页上直接改
+  children: ChildSection[];
+  // 这一项融入在哪几个上级下面
+  partOf: PartOf[];
   note: string | null;
 }
 
@@ -505,22 +491,39 @@ export function itemPage(src: SourceRef, r: Extract<Route, { p: 'item' }>, ctx: 
     item,
     readonly,
     canCopyLibrary: k === 'builtin' || k === 'imported',
-    segments: segmentsOf(kind),
+    segments: segmentsHere(kind, src, ctx),
     related: relatedOf(kind, r.id, src, ctx),
+    children: childSections(src, kind, item, ctx),
+    partOf: partOf(src, kind, item, ctx),
     note: src.t === 'world' ? regenNote(kind, ctx.world) : null,
   };
+}
+
+// 上级自己写着它的字段（政体的“有哪些派系”、文化组的“地名风格”）融入后由“下面的”这一段代替，不列两遍；空了的段不要
+function segmentsHere(kind: ContentKind, src: SourceRef, ctx: PageCtx): Segment[] {
+  const segs = segmentsOf(kind);
+  const gone = mergedInto(arrangeFor(src, ctx), kind.id).flatMap((r) => r.parentField ?? []);
+  if (!gone.length) return segs;
+  return segs.map((s) => ({ ...s, fields: s.fields.filter((f) => !gone.includes(f.key)) })).filter((s) => s.fields.length || s.custom);
 }
 
 function relatedOf(kind: ContentKind, id: string, src: SourceRef, ctx: PageCtx): RelatedLink[] {
   const link = (child: string, label: string): RelatedLink[] => {
     const c = kindOf(child);
-    if (!c) return [];
+    if (!c || arrangeFor(src, ctx)[child] === kind.id) return [];
     const n = (itemsOf(src, c, ctx) as readonly { group?: string }[]).filter((x) => x.group === id).length;
     return [{ label, count: n, route: { p: 'list', kind: child, group: id } }];
   };
   if (kind.id === 'cultureGroup') return link('culture', '组里的文化');
   if (kind.id === 'valueGroup') return link('popValue', '组里的取值');
   return [];
+}
+
+// 时代规则的变量：每一维有几个取值，点过去（世界里不直接改这张表，见 PageChildren.tsx 的 WorldVariables）
+export function eraVariables(src: SourceRef, era: Era, ctx: PageCtx): { id: string; label: string; count: number; route: Route }[] {
+  const pv = kindOf('popValue');
+  const n = countBy(pv ? itemsOf(src, pv, ctx) : [], 'dimension');
+  return era.dimensions.map((d) => ({ id: d.id, label: d.label, count: n.get(d.id) ?? 0, route: { p: 'list', kind: 'popValue', dim: d.id } }));
 }
 
 // 这一项能做什么（组件照这个画按钮，点了走 page-actions.ts）。why：不能做的原因（写在悬停里）

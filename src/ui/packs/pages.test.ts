@@ -10,7 +10,7 @@ import { type LibraryEntry, library } from '../../library';
 import { copiedPack, libEdits } from '../../library-edit';
 import { world } from '../../state';
 import { commitItem, commitWaterBlock, commitWaterCell, copyItemIn, deleteFromLibrary, newItemIn, speciesPatch, worldItemCommand } from './page-actions';
-import { DEFAULT_INSIDE, HOME_LAYOUT } from './page-layout';
+import { HOME_LAYOUT } from './page-layout';
 import { numberText, sliderScale } from './fields';
 import { fieldBrief, initialOpen, segmentBrief, segmentsOf } from './page-segments';
 import {
@@ -128,7 +128,7 @@ describe('首页', () => {
 
   it('时代的每一维一张卡片，写几组（点进去只看这一维）；变量是时代规则的那一段', () => {
     const ctx = ctxOf();
-    const cards = homePage(lib('medieval'), ctx).sections[0].cards;
+    const cards = homePage(lib('medieval'), ctx, {}).sections[0].cards;
     const religion = cards.find((c) => c.id === 'dim:religion')!;
     expect(religion.title).toBe('宗教');
     expect(religion.count).toMatch(/^\d+ 组$/);
@@ -143,7 +143,7 @@ describe('首页', () => {
 
   it('空的库：卡片都在，写着 0；写一句新建世界时选不到', () => {
     const empty = mineEntry({ format: 'map2-pack', version: 1, id: 'e', name: '空的' });
-    const p = homePage(lib('e'), ctxOf(null, [empty]));
+    const p = homePage(lib('e'), ctxOf(null, [empty]), {});
     expect(p.era).toMatchObject({ summary: '没有', empty: true, route: { p: 'list', kind: 'era' } });
     expect(p.note).toContain('选不到');
     const culture = p.sections[0].cards.find((c) => c.id === 'culture')!;
@@ -151,7 +151,6 @@ describe('首页', () => {
   });
 
   it('归属由表决定（第六十轮的 arrange）：归到别的卡片下面的不单独列，上级写“含”', () => {
-    expect(DEFAULT_INSIDE).toEqual({});
     const p = homePage(lib('medieval'), ctxOf(), { culture: 'cultureGroup', nameStyle: 'cultureGroup', faction: 'government' });
     const human = p.sections[0].cards;
     expect(human.some((c) => c.id === 'culture' || c.id === 'nameStyle')).toBe(false);
@@ -262,7 +261,7 @@ describe('列表', () => {
 
   it('文化组：比重 0 的（这个库默认不带）放后面一段', () => {
     const p = listPage(lib('medieval'), { p: 'list', kind: 'cultureGroup' }, ctxOf())!;
-    expect(p.sections.map((s) => s.label)).toEqual(['这个库默认带的', '这个库默认不带的']);
+    expect(p.sections.map((s) => s.label)).toEqual(['这个库默认带的', '这个库默认不带的', '不属于文化组的地名风格']);
     expect(p.sections[1].rows.every((r) => (r.item as { weight?: number }).weight === 0)).toBe(true);
   });
 
@@ -368,8 +367,9 @@ describe('一项的页面', () => {
     expect(itemPage(lib('m2'), { p: 'item', kind: 'culture', id: 'no-such' }, ctx)).toBeNull();
   });
 
-  it('文化组的页面有一行“组里的文化”，点进去只看这一组', () => {
-    const p = itemPage(lib('medieval'), { p: 'item', kind: 'cultureGroup', id: 'germanic' }, ctxOf())!;
+  it('文化没融入时，文化组的页面有一行“组里的文化”，点进去只看这一组', () => {
+    const flat = mineEntry({ ...copiedPack(medieval, 'flat', 'flat'), arrange: {} });
+    const p = itemPage(lib('flat'), { p: 'item', kind: 'cultureGroup', id: 'germanic' }, ctxOf(null, [flat]))!;
     expect(p.related).toEqual([{ label: '组里的文化', count: packItems<{ group: string }>(medieval, 'cultures').filter((c) => c.group === 'germanic').length, route: { p: 'list', kind: 'culture', group: 'germanic' } }]);
   });
 

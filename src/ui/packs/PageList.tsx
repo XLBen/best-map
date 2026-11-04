@@ -5,14 +5,13 @@ import { libEdits } from '../../library-edit';
 import { showToast } from '../../state';
 import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, entryOf, listPage, sourceKind } from './pages';
 import { newItemIn } from './page-actions';
+import { InsideRows } from './PageChildren';
 import { copyToMine, goTo, libPanel } from './panel-store';
 import { addCommand, packAddCommand, packTree } from './repo';
 import { runTrusted, swatchOf } from './repo-actions';
 
 // 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。库里的每一行右边写在不在本世界（能添加）。
 // 我的库里能拖动换先后（同一个小包里）
-
-const SEARCH_FROM = 12;
 
 let dragging: string | null = null;
 
@@ -111,8 +110,8 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
   return (
     <>
       <div class="lp-tools">
-        {(p.total > SEARCH_FROM || q) && <input class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
-        {!(p.total > SEARCH_FROM || q) && <span class="grow" />}
+        {(p.searchable || q) && <input class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
+        {!(p.searchable || q) && <span class="grow" />}
         <AddAll p={p} src={src} ctx={ctx} />
         {p.readonly && sourceKind(src, ctx) !== 'world' && (
           <button class="small" title={p.readonly} onClick={() => void copyToMine(src)}>
@@ -131,6 +130,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
         )}
       </div>
       {p.note && <p class="hint lp-note">{p.note}</p>}
+      {!q && <InsideRows list={p.inside} src={src} ctx={ctx} />}
       {p.total === 0 && !p.sections.length && <p class="hint lp-note">{p.empty}</p>}
       {p.sections.map((s, k) => (
         <section class="lp-section" key={k}>
@@ -145,7 +145,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
             ))}
           <div class="lp-rows">
             {s.rows.map((r) => (
-              <Row key={r.key} r={r} src={src} ctx={ctx} movable={movable} />
+              <Row key={r.key} r={r} src={src} ctx={ctx} movable={movable && r.kind.id === p.kind.id} />
             ))}
           </div>
         </section>

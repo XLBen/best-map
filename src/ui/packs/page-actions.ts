@@ -1,5 +1,6 @@
 import type { Command } from '../../../core/commands';
-import { type ContentKind, enableCommand, itemId, itemName } from '../../../core/content/registry';
+import type { Arrange, ArrangeRelation, LinkEdit } from '../../../core/content/arrange';
+import { type ContentKind, enableCommand, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { type PackWorld, canApply } from '../../../core/packs';
 import type { Species } from '../../../core/species';
 import { type WaterEdit, type WaterKind, waterBlockEdit, waterCellEdit, waterEditCommand } from '../../../core/water-table';
@@ -7,6 +8,7 @@ import type { World } from '../../../core/world';
 import { libEdits } from '../../library-edit';
 import { showToast, whenEditsIdle, world, worldEpoch } from '../../state';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
+import { canArrange } from './page-arrange';
 import { type PageCtx, type Route, type SourceRef, kindReadonly, takenIn, waterLists } from './pages';
 import { runTrusted } from './repo-actions';
 
@@ -107,6 +109,55 @@ export function deleteFromLibrary(src: SourceRef, kind: ContentKind, id: string,
   const r = libEdits.removeItem(src.key, kind.id, id, `删除${kind.label}“${name}”`);
   if (!r.ok) showToast(r.error, true);
   return r.ok;
+}
+
+// ---------- 融入（第六十轮）----------
+
+// 换一个库的安排：只有我的库能换，走这个库的撤销
+export function applyArrange(src: SourceRef, next: Arrange, label: string, ctx: PageCtx): boolean {
+  if (src.t !== 'lib' || !canArrange(src, ctx)) return false;
+  const r = libEdits.setArrange(src.key, next, label);
+  if (!r.ok) showToast(r.error, true);
+  return r.ok;
+}
+
+// 加、移出是改内容本身（文化的 group、政体的 factions……）：和页面上改字段同一条路
+type Item = Record<string, unknown>;
+function commitSide(src: SourceRef, rel: ArrangeRelation, parent: Item, child: Item, edit: LinkEdit, ctx: PageCtx): CommitResult | Promise<CommitResult> {
+  const kind = kindOf(edit.side === 'parent' ? rel.parent : rel.child);
+  if (!kind) return 'failed';
+  const r = commitItem(src, kind, itemId(kind, edit.side === 'parent' ? parent : child), edit.next, ctx);
+  if (r === 'invalid') showToast('这样改不了：格式不对', true);
+  return r;
+}
+
+export function linkChild(src: SourceRef, rel: ArrangeRelation, parent: Item, child: Item, ctx: PageCtx): CommitResult | Promise<CommitResult> {
+  return rel.link ? commitSide(src, rel, parent, child, rel.link(parent, child), ctx) : 'failed';
+}
+
+export function unlinkChild(src: SourceRef, rel: ArrangeRelation, parent: Item, child: Item, ctx: PageCtx): CommitResult | Promise<CommitResult> {
+  const edit = rel.unlink?.(parent, child);
+  return edit ? commitSide(src, rel, parent, child, edit, ctx) : 'failed';
+}
+
+// 新建一项并放到这个上级下面（一步撤销）。返回新的 id
+export function newChildIn(src: SourceRef, rel: ArrangeRelation, parent: Item, ctx: PageCtx): string | null | Promise<string | null> {
+  const kind = kindOf(rel.child);
+  const up = kindOf(rel.parent);
+  if (!kind || !up || !rel.link || kindReadonly(src, kind, ctx)) return null;
+  const blank = blankItem(kind, takenIn(src, kind, ctx));
+  if (!blank) return null;
+  const edit = rel.link(parent, blank);
+  const item = rel.fresh ? rel.fresh(parent, blank) : edit.side === 'child' ? edit.next : blank;
+  const upNext = edit.side === 'parent' ? edit.next : null;
+  const id = itemId(kind, item);
+  const label = `新建${kind.label}“${itemName(kind, item)}”`;
+  if (src.t === 'lib') {
+    const r = libEdits.applyItems(src.key, [{ kind: kind.id, item, add: true }, ...(upNext ? [{ kind: up.id, item: upNext }] : [])], label);
+    if (!r.ok) showToast(r.error, true);
+    return r.ok ? id : null;
+  }
+  return queueWorld((w) => ({ op: 'batch', label, commands: [enableCommand(kind, item, w), ...(upNext ? [enableCommand(up, upNext, w)] : [])] })).then((ok) => (ok ? id : null));
 }
 
 // ---------- 水系的一格 ----------

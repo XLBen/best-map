@@ -383,6 +383,161 @@
   gap: var(--sp-1);
 }
 
+/* 融入（第六十轮）：上级页面上“下面的”几段、拖卡片 */
+.lp-fields + .lp-children,
+.lp-children + .lp-fields {
+  margin-top: var(--sp-1);
+}
+.lp-children {
+  margin-top: var(--sp-1);
+}
+.lp-child > .lp-seg-head .lp-count {
+  margin-left: var(--sp-1);
+}
+.lp-child > .lp-seg-head .small {
+  min-height: 22px;
+}
+.lp-child-row {
+  /* 展开的编辑紧跟着这一行 */
+  content-visibility: visible;
+}
+.lp-child-row.open {
+  background-color: var(--press);
+}
+.lp-row-go {
+  flex: none;
+  color: var(--faint);
+}
+.lp-child-edit {
+  margin: 2px 0 var(--sp-2) var(--sp-2);
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--line);
+}
+.lp-child-edit .lp-fields {
+  margin-top: 0;
+}
+.lp-child-edit .lp-seg {
+  background-color: var(--fill);
+}
+.lp-child-move {
+  margin: 2px 0 var(--sp-1) var(--sp-3);
+}
+.lp-child-more {
+  margin-top: var(--sp-1);
+}
+.lp-child-foot {
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+.lp-inside {
+  margin-bottom: var(--sp-1);
+  padding: 2px 0;
+  background-color: var(--fill);
+  border-radius: var(--r-md);
+}
+.lp-inside .lp-row {
+  padding-right: var(--sp-1);
+}
+.lp-contains {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 2px;
+  min-width: 0;
+  line-height: 1.35;
+}
+.lp-era .lp-contains {
+  display: inline-flex;
+  font-weight: 400;
+}
+.lp-chip {
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+  background-color: var(--press);
+  cursor: grab;
+}
+.lp-chip:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+.lp-card.movable,
+.lp-seg-head.movable {
+  touch-action: pan-y;
+}
+.lp-card,
+.lp-era {
+  cursor: pointer;
+}
+.lp-card:hover,
+.lp-era:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+.lp-card.lifted {
+  opacity: 0.4;
+}
+.lp-card.drop-ok,
+.lp-era.drop-ok {
+  background-color: var(--accent-bg);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.lp-card.drop-no,
+.lp-era.drop-no {
+  box-shadow: inset 0 0 0 2px var(--line);
+  opacity: 0.6;
+}
+.lp-card.wide {
+  grid-column: span 2;
+}
+.lp-child > .lp-seg-head .repo-grip,
+.lp-inside .repo-grip {
+  margin-left: 0;
+}
+.lp-inside .repo-grip {
+  margin-left: var(--sp-1);
+}
+.lp-card-more {
+  flex: none;
+  margin-right: -4px;
+}
+.lp-card-more .icon-btn {
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  color: var(--muted);
+}
+.lp-card-menu {
+  position: fixed;
+  left: auto;
+}
+.lp-ghost {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 240px;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--glass-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+.lp-ghost b {
+  font-weight: 500;
+}
+.lp-ghost.ok .hint {
+  color: var(--accent);
+}
+.lp-ghost.no .hint {
+  color: var(--warn-text);
+}
+body.lp-dragging,
+body.lp-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 /* 表单里的两样：数的滑块、引用点过去 */
 .ed-number {
   display: flex;

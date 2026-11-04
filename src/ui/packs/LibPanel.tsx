@@ -10,6 +10,7 @@ import { PageHome, WaterHubPage } from './PageHome';
 import { PageItem } from './PageItem';
 import { PageList } from './PageList';
 import { WaterTablePage } from './PageWater';
+import { dragView } from './page-drag';
 import { fileLabel, openPackImport, openPackList, packDialog } from './store';
 import { tidyWorld } from './tidy';
 
@@ -210,6 +211,18 @@ function NavBar({ list }: { list: Crumb[] }) {
   );
 }
 
+// 拖卡片时跟着鼠标的小卡片（第六十轮）：写着拖的是什么、松手会怎样
+function DragGhost() {
+  const d = dragView.value;
+  if (!d) return null;
+  return (
+    <div class={`lp-ghost ${d.ok ? 'ok' : d.refuse ? 'no' : ''}`} style={{ left: d.x + 14, top: d.y + 10 }}>
+      <b>{d.label}</b>
+      {d.text && <span class="hint">{d.text}</span>}
+    </div>
+  );
+}
+
 // ---------- 一页 ----------
 
 function Page({ route, src, ctx }: { route: Route; src: SourceRef; ctx: PageCtx }) {
@@ -271,6 +284,7 @@ export function LibPanel() {
       <div class="lp-body" ref={body} onScroll={(e) => scrolls.current.set(key, (e.currentTarget as HTMLDivElement).scrollTop)}>
         <Page route={route} src={source} ctx={ctx} />
       </div>
+      <DragGhost />
     </div>
   );
 }

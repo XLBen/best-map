@@ -2,6 +2,7 @@ import { ChevronRight, Copy, Download, LocateFixed, Lock, Pencil, RotateCcw, Sav
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { itemName, kindOf } from '../../../core/content/registry';
+import type { Era } from '../../../core/human';
 import { askUser } from '../../state';
 import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
@@ -11,6 +12,7 @@ import { commitItem, copyItemIn, deleteFromLibrary } from './page-actions';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
 import { copyToMine, goBack, goTo, openSegments, rememberSegments, replaceTop } from './panel-store';
+import { ChildSegments, WorldVariables } from './PageChildren';
 import { BiomeWaterSegment, WaterBiomesSegment } from './PageWater';
 import { RefGo } from './RefPicker';
 import { refLabel, refOptionsOf } from './refs';
@@ -20,7 +22,7 @@ import { exportRow, fmt, openDedicated, runTrusted, sampleLine, saveRow, swatchO
 // 一项的页面（第五十九轮）：几段可折叠的卡片，收起时标题旁写一句当前内容；表单是 ContentEditor 的 FieldsBox。
 // 松开滑块、打完字（框失去焦点、回车）就存：本世界是一条命令，我的库走自己的撤销；有错的留在页面上、不存。只读的库整个表单不能动，引用照样能点过去
 
-function Actions({ p, row, src, ctx }: { p: ItemPage; row: RepoRow | undefined; src: SourceRef; ctx: PageCtx }) {
+function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: RepoRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean }) {
   const w = ctx.world;
   const usage = row && w && src.t === 'world' ? rowUsage(row, w) : null;
   const remove = row && w && src.t === 'world' ? removeCommand(row, w) : null;
@@ -102,7 +104,7 @@ function Actions({ p, row, src, ctx }: { p: ItemPage; row: RepoRow | undefined; 
             title="另起一项"
             onClick={() =>
               void Promise.resolve(copyItemIn(src, p.kind, p.item, ctx)).then((r) => {
-                if (r) replaceTop(r);
+                if (r) (embedded ? goTo : replaceTop)(r);
               })
             }
           >
@@ -112,7 +114,7 @@ function Actions({ p, row, src, ctx }: { p: ItemPage; row: RepoRow | undefined; 
       case 'removeFromWorld':
         return (
           <span title={dis}>
-            <button class="small" {...common} onClick={() => remove && void runTrusted(remove, '正在移出…').then((ok) => ok && goBack())}>
+            <button class="small" {...common} onClick={() => remove && void runTrusted(remove, '正在移出…').then((ok) => ok && !embedded && goBack())}>
               <Trash2 /> 移出本世界
             </button>
           </span>
@@ -130,7 +132,7 @@ function Actions({ p, row, src, ctx }: { p: ItemPage; row: RepoRow | undefined; 
                   { value: 'cancel', label: '取消' },
                 ],
               });
-              if (v === 'delete' && deleteFromLibrary(src, p.kind, p.id, p.name)) goBack();
+              if (v === 'delete' && deleteFromLibrary(src, p.kind, p.id, p.name) && !embedded) goBack();
             }}
           >
             <Trash2 /> 删除
@@ -168,7 +170,8 @@ function Samples({ item, kindId }: { item: Obj; kindId: string }) {
   );
 }
 
-export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item' }>; src: SourceRef; ctx: PageCtx }) {
+// embedded：在上级页面里展开着改（第六十轮）：不写名字（上面那一行就是），删了不返回
+export function PageItem({ route, src, ctx, embedded = false }: { route: Extract<Route, { p: 'item' }>; src: SourceRef; ctx: PageCtx; embedded?: boolean }) {
   const p = itemPage(src, route, ctx);
   const kindId = route.kind;
   // 改了没存的（有错、或者世界还在算）。这一份里的这一项变了（存上了、撤销了、别处改了）就去掉
@@ -214,17 +217,51 @@ export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item
   };
   const swatch = row ? swatchOf(row) : typeof item.color === 'string' ? item.color : null;
   const sample = p.kind.id === 'nameStyle' && row ? sampleLine(row) : '';
+  const segment = (s: Segment) => (
+    <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)}>
+      {s.hint && <p class="hint">{s.hint}</p>}
+      {s.custom === 'biomeWater' && <BiomeWaterSegment src={src} ctx={ctx} sp={item as never} />}
+      {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
+      {s.custom === 'eraDims' && src.t === 'world' ? (
+        <WorldVariables era={item as unknown as Era} ctx={ctx} />
+      ) : s.custom === 'waterBiomes' ? (
+        <>
+          <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+          <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
+          <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+        </>
+      ) : (
+        s.custom !== 'biomeWater' && s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+      )}
+    </SegmentCard>
+  );
   return (
-    <div class="lp-item">
-      <div class="row lp-item-head">
-        {swatch && <span class="swatch big" style={{ background: swatch }} />}
-        <h3 class="grow ellipsis">{itemName(p.kind, item)}</h3>
-        {row?.status.modified && <span class="chip static">改过</span>}
-        {row?.status.isDefault && <span class="chip static">{p.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
-      </div>
-      <p class="hint">{p.kind.label}</p>
+    <div class={`lp-item ${embedded ? 'embedded' : ''}`}>
+      {!embedded && (
+        <>
+          <div class="row lp-item-head">
+            {swatch && <span class="swatch big" style={{ background: swatch }} />}
+            <h3 class="grow ellipsis">{itemName(p.kind, item)}</h3>
+            {row?.status.modified && <span class="chip static">改过</span>}
+            {row?.status.isDefault && <span class="chip static">{p.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
+          </div>
+          <p class="hint">
+            {p.kind.label}
+            {p.partOf.length > 0 && ' · 在 '}
+            {p.partOf.slice(0, 4).map((x, k) => (
+              <>
+                {k > 0 && '、'}
+                <a class="ref-link" onClick={() => goTo({ p: 'item', kind: x.kind, id: x.id })}>
+                  {x.name}
+                </a>
+              </>
+            ))}
+            {p.partOf.length > 4 && ` 等 ${p.partOf.length} 个`}
+          </p>
+        </>
+      )}
       {sample && <p class="small repo-sample">{sample}</p>}
-      {p.readonly && (
+      {p.readonly && !embedded && (
         <div class="lp-readonly">
           <Lock />
           <span class="grow">{p.readonly}</span>
@@ -239,23 +276,15 @@ export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item
       <EditorKind.Provider value={p.kind.id}>
         <RefGo.Provider value={go}>
           <fieldset class="lp-fields" disabled={!!p.readonly}>
-            {segs.map((s) => (
-              <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)}>
-                {s.hint && <p class="hint">{s.hint}</p>}
-                {s.custom === 'biomeWater' && <BiomeWaterSegment src={src} ctx={ctx} sp={item as never} />}
-                {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
-                {s.custom === 'waterBiomes' ? (
-                  <>
-                    <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-                    <WaterBiomesSegment src={src} ctx={ctx} kindId={p.kind.id} type={item as never} />
-                    <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-                  </>
-                ) : (
-                  s.custom !== 'biomeWater' && s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
-                )}
-              </SegmentCard>
-            ))}
+            {segs.slice(0, 1).map(segment)}
           </fieldset>
+          {/* 下面的几段在第一段后面，不在只读的 fieldset 里：内置的库里也能点开看 */}
+          <ChildSegments list={p.children} parent={item} parentKind={p.kind.id} src={src} ctx={ctx} />
+          {segs.length > 1 && (
+            <fieldset class="lp-fields" disabled={!!p.readonly}>
+              {segs.slice(1).map(segment)}
+            </fieldset>
+          )}
         </RefGo.Provider>
       </EditorKind.Provider>
       {issues.errors.length > 0 && (
@@ -281,7 +310,7 @@ export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item
           <ChevronRight />
         </button>
       ))}
-      <Actions p={p} row={row} src={src} ctx={ctx} />
+      <Actions p={p} row={row} src={src} ctx={ctx} embedded={embedded} />
     </div>
   );
 }

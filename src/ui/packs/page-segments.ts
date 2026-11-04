@@ -10,7 +10,7 @@ export interface Segment {
   id: string;
   title: string;
   fields: readonly FieldDesc[];
-  custom?: 'biomeWater' | 'waterBiomes' | 'samples';
+  custom?: 'biomeWater' | 'waterBiomes' | 'samples' | 'eraDims';
   // 写在这一段里的一句说明（断流、按多数显示的类型……）
   hint?: string;
 }
@@ -37,7 +37,7 @@ const riverSegs = (noun: '河' | '湖'): SegDef[] => [
 const TABLE: Record<string, readonly SegDef[]> = {
   era: [
     { id: 'basic', title: BASIC, keys: ['name', 'color', 'description', 'years'] },
-    { id: 'dims', title: '变量', keys: ['dimensions'], hint: '世界里加变量用“文化 ⋯”的“加一个变量”：文化、国家都不变' },
+    { id: 'dims', title: '变量', keys: ['dimensions'], custom: 'eraDims' },
     { id: 'people', title: '人口', keys: ['popDensity', 'sparsity', 'urbanization', 'unclaimed'] },
     { id: 'state', title: '国家', keys: ['seaClaimKm', 'countryKm2', 'tiers'] },
     { id: 'relations', title: '国家关系', keys: ['relations'] },
