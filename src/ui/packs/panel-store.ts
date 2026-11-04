@@ -17,6 +17,7 @@ export interface PanelState {
 export const libPanel = signal<PanelState | null>(null);
 
 let last: PanelState | null = null;
+let loaded = false;
 
 export const pageCtx = (): PageCtx => ({ world: world.value, lib: library.value });
 
@@ -34,7 +35,11 @@ function set(st: PanelState) {
 
 // 打开：req 写了就开到那一页，没写时回到上次的地方（没开过时看本世界；没有世界时看默认的库）
 export function openLibrary(req?: OpenRequest) {
-  void refreshLibrary();
+  // 从存储读只要一次（一个带六个库的存储每读一次要在主线程上解开约 9 MB）：之后的改动都在内存里
+  if (!loaded) {
+    loaded = true;
+    void refreshLibrary();
+  }
   const ctx = pageCtx();
   if (req) {
     const small = world.value?.small;
