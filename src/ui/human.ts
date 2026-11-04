@@ -39,7 +39,7 @@ export interface HumanChoice extends PackChoice {
 }
 
 // 世界里自己的、从别的库加来的组（比重不是 0 的）默认参与
-const beyondWeights = (small: Small | null | undefined, library: string | null, lib: readonly LibraryEntry[], has: readonly { id: string }[]) =>
+export const beyondWeights = (small: Small | null | undefined, library: string | null, lib: readonly LibraryEntry[], has: readonly { id: string }[]) =>
   beyondGroups(small, library, lib)
     .filter((g) => g.weight !== 0 && !has.some((x) => x.id === g.id))
     .map((g) => ({ id: g.id, weight: 1 }));
@@ -181,10 +181,11 @@ export function regenerateWith(c: HumanChoice, small: Small, lib: readonly Libra
 }
 
 // “重新生成”这个按钮：上次的选择，加上后来从别的库加进世界的文化组（用户加进来就是要它参与）
-export function regenerateCommand(small: Small, lib: readonly LibraryEntry[] = []): Command {
+// withCountries：国家也重新长（第六十二轮，面板顶上的按钮：文化和政体都改了时一步做完）
+export function regenerateCommand(small: Small, lib: readonly LibraryEntry[] = [], withCountries = false): Command {
   const h = small.human;
   const more = h ? beyondWeights(small, worldLibrary(small) ?? null, lib, h.groups) : [];
-  return withPackImports(more.length ? { op: 'regenerate_human', groups: [...h!.groups, ...more] } : { op: 'regenerate_human' }, small, lib);
+  return withPackImports({ op: 'regenerate_human', ...(more.length ? { groups: [...h!.groups, ...more] } : {}), ...(withCountries ? { countries: {} } : {}) }, small, lib);
 }
 
 const REGEN_LABELS: Partial<Record<Command['op'], string>> = { generate_human: '生成人文', regenerate_human: '重新生成人文', generate_countries: '生成国家', regenerate_countries: '重新生成国家' };

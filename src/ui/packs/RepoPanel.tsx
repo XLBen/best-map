@@ -80,7 +80,7 @@ function CornerMenu({ w }: { w: World | null }) {
             />
           </label>
           {item('从本世界存进资源库…', '挑几样存成一个资源包', () => (packDialog.value = { view: 'export' }), !w)}
-          {item('整理本世界…', '移出哪里都没用到的内容', () => void tidyWorld(), !w)}
+          {item('清理没用到的…', '清掉生成后没用到的内容', () => void tidyWorld(), !w)}
           {item('资源包…', '资源库里的包：导出、删除', openPackList)}
         </div>
       )}

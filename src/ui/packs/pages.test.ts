@@ -39,7 +39,6 @@ import {
   reachableKinds,
   readonlyWhy,
   refRoute,
-  regenNote,
   rowsOf,
   sourceKind,
   sourceMenu,
@@ -377,8 +376,8 @@ describe('一项的页面', () => {
     const copy = mineEntry(copiedPack(medieval, 'm2', 'm2'));
     const w = continents().world;
     const ctx = ctxOf(w, [copy]);
-    const can = { remove: true, usage: null as string | null, restore: false, setDefault: false, hasCells: false, saveable: false, dedicated: false, newable: true };
-    const rowOf = (s: SourceRef) => rowsOf(s, kindOf('terrainClass')!, ctx)[0];
+    const can = { remove: true, usage: null as string | null, changed: false, setDefault: false, hasCells: false, saveable: false, dedicated: false, newable: true };
+    const rowOf =(s: SourceRef) => rowsOf(s, kindOf('terrainClass')!, ctx)[0];
     const ids = (s: SourceRef, c = can) => itemActions(s, rowOf(s), ctx, c);
     const builtin = ids(lib('medieval')).map((a) => a.id);
     expect(builtin).toContain('copyLibrary');
@@ -396,12 +395,13 @@ describe('一项的页面', () => {
     expect(itemActions(lib('medieval'), rowsOf(lib('medieval'), kindOf('terrainClass')!, ctxOf())[0], ctxOf(), can).map((a) => a.id)).not.toContain('addToWorld');
   });
 
-  it('改了内容要重新生成才用到的写一句（重新生成的按钮在第六十二轮）', () => {
+  it('和来源的库不同时能用库里的版本、存回；一样的没有（第六十二轮）', () => {
     const w = peopled().world;
-    expect(regenNote(kindOf('culture')!, w)).toContain('重新生成');
-    expect(regenNote(kindOf('government')!, w)).toContain('重新生成');
-    expect(regenNote(kindOf('mapStyle')!, w)).toBeNull();
-    expect(regenNote(kindOf('culture')!, continents().world)).toBeNull();
+    const ctx = ctxOf(w);
+    const can = { remove: true, usage: null as string | null, changed: false, setDefault: false, hasCells: false, saveable: false, dedicated: false, newable: true };
+    const row = rowsOf(WORLD_SOURCE, kindOf('culture')!, ctx)[0];
+    expect(itemActions(WORLD_SOURCE, row, ctx, can).map((a) => a.id)).not.toContain('useSource');
+    expect(itemActions(WORLD_SOURCE, row, ctx, { ...can, changed: true }).map((a) => a.id)).toEqual(expect.arrayContaining(['useSource', 'saveBack']));
   });
 });
 

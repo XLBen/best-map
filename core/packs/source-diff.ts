@@ -30,7 +30,7 @@ export interface DiffLib {
 export type SourceDiff =
   | { t: 'none' }
   | { t: 'same'; lib: string }
-  // gone：去掉的引用写到的名字（id）
+  // gone：去掉的引用写到的名字
   | { t: 'trimmed'; lib: string; gone: string[] }
   // fields：哪几个字段不同（字段表里的名字）
   | { t: 'changed'; lib: string; sourceId: string; source: unknown; fields: string[] };
@@ -167,6 +167,21 @@ function changedFields(kind: ContentKind, item: unknown, other: unknown): string
   return out;
 }
 
+// 引用的目标在库里叫什么
+function targetName(pack: PackNode, l: Pick<Link, 'kinds' | 'id'>): string {
+  for (const kid of l.kinds) {
+    if (kid === DIMENSION) {
+      const d = packItems<Era>(pack, 'eras').flatMap((e) => e.dimensions).find((x) => x.id === l.id);
+      if (d) return d.label;
+      continue;
+    }
+    const k = kindOf(kid);
+    const x = k && sourceItem(pack, k, l.id);
+    if (k && x !== undefined) return itemName(k, x);
+  }
+  return l.id;
+}
+
 // 世界里的这一项和来源比。libs：资源库里的全部库
 export function sourceDiff(kind: ContentKind, id: string, item: unknown, world: ContentWorld, libs: readonly DiffLib[]): SourceDiff {
   if (!canApply(kind) || !isObject(item)) return NONE;
@@ -181,7 +196,7 @@ export function sourceDiff(kind: ContentKind, id: string, item: unknown, world: 
   if (sameAs(kind, item, plain)) return { t: 'same', lib: lib.key };
   const missing = (l: Link) => !available(c, l);
   const gone = linksOf(kind, src).filter((l) => l.drop && missing(l));
-  if (gone.length && sameAs(kind, item, finalItem(kind, stripLinks(kind, src, missing), id, c.renames ?? NO_RENAMES))) return { t: 'trimmed', lib: lib.key, gone: [...new Set(gone.map((l) => l.id))] };
+  if (gone.length && sameAs(kind, item, finalItem(kind, stripLinks(kind, src, missing), id, c.renames ?? NO_RENAMES))) return { t: 'trimmed', lib: lib.key, gone: [...new Set(gone.map((l) => targetName(lib.pack, l)))] };
   return { t: 'changed', lib: lib.key, sourceId, source: src, fields: changedFields(kind, item, plain) };
 }
 

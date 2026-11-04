@@ -34,11 +34,16 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; 
   }, [moving, up, src, ctx.lib, ctx.world]);
   return (
     <>
-      <div class={`lp-row lp-child-row ${open ? 'open' : ''}`}>
+      <div class={`lp-row lp-child-row ${open ? 'open' : ''} ${r.mark?.faint ? 'faint' : ''}`} title={r.mark?.faint ? '生成后没用到，清理时会清掉' : undefined}>
         <button class="lp-row-main" onClick={onOpen} title="在这里改">
           {swatch ? <span class="swatch" style={{ background: swatch }} /> : null}
           <span class="lp-row-name ellipsis">{r.name}</span>
           {r.hint && <span class="hint ellipsis lp-row-hint">{r.hint}</span>}
+          {r.mark?.changed && (
+            <span class="lp-diff" title="和来源的库不同">
+              和库不同
+            </span>
+          )}
         </button>
         {canOut && r.out === 'ok' && (
           <button class="small" title={r.why} onClick={() => void unlinkChild(src, s.relation, parent, r.item, ctx)}>

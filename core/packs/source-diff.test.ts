@@ -351,7 +351,7 @@ describe('存回我的库', () => {
     const e = worldOf('fantasy');
     const k = kindOf('riverType')!;
     const river = { ...(k.inWorld(e.world)[0] as Record<string, unknown>), id: 'my-river', name: '我的河' };
-    delete river.natural;
+    delete (river as { natural?: boolean }).natural;
     const mine: DiffLib = { key: 'mine', pack: { format: PACK_FORMAT, version: PACK_VERSION, id: 'mine', name: '我的', riverTypes: [river] } as unknown as ResourcePack };
     const libs = [...LIBS, mine];
     e.exec(planPack(e.world, mine.pack, { riverTypes: ['my-river'], defaultStyle: null }, { path: ['mine'] }).command);

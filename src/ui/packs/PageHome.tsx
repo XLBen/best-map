@@ -1,6 +1,7 @@
-import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Gem, Globe, Grid3x3, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
+import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Eraser, Gem, Globe, Grid3x3, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Arrange } from '../../../core/content/arrange';
+import { cleanableSet } from '../../../core/content/cleanable';
 import { wizardOpen } from '../../state';
 import type { Icon } from '../defs/types';
 import { type ArrangeAction, arrangeFor, arrangeTitle, canArrange, cardActions, cardChild, dropVerdict, verdictArrange } from './page-arrange';
@@ -8,6 +9,7 @@ import { applyArrange } from './page-actions';
 import { type Judged, dragView, startDrag } from './page-drag';
 import { type Card, type PageCtx, type SourceRef, homePage, waterHub } from './pages';
 import { goTo } from './panel-store';
+import { tidyWorld } from './tidy';
 
 // 首页与“生态与水系”这一层（第五十九轮）：几段，每种内容一张带个数的卡片（数据见 pages.ts 的 homePage）。
 // 第六十轮：我的库里能把一张卡拖到另一张上（融入），上级写的“含 X”能拖出来（拆出来）；卡片的“⋯”做同样的事，没有鼠标时用
@@ -193,10 +195,18 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
     );
   }
   const a: Arranging | null = canArrange(src, ctx) ? { src, ctx, arrange } : null;
+  const clean = src.t === 'world' && ctx.world ? cleanableSet(ctx.world).size : 0;
   return (
     <>
       {p.era && <EraCard era={p.era} a={a} />}
       {p.note && <p class="hint">{p.note}</p>}
+      {clean > 0 && (
+        <button class="lp-clean" title="清掉列表上变淡的内容，地图不变" onClick={() => void tidyWorld()}>
+          <Eraser />
+          <span class="grow">清理没用到的</span>
+          <span class="lp-count">{clean}</span>
+        </button>
+      )}
       {p.sections.map((s) => (
         <section class="lp-section" key={s.id}>
           <h5>{s.title}</h5>

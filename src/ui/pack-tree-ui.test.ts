@@ -303,12 +303,12 @@ describe('拿掉的不丢', () => {
     expect(eng.world.small.species.map((s) => s.id)).toEqual(before);
   });
 
-  it('整理本世界的问话：移出的、留着的一行一项', () => {
+  it('清理的问话：移出的按种类一行，留着的一行一项', () => {
     const plan = { command: null, removed: [{ kind: 'government', id: 'g', name: '王国', item: {}, builtinSame: true }], kept: [{ kind: 'biome', id: 'b', name: '沙漠', reason: '移出后地图会变：3 格的生态' }] };
     expect(tidyLines(plan)).toEqual([
-      { label: '王国', hint: kindOf('government')!.label },
+      { label: `${kindOf('government')!.label} 1`, hint: '王国' },
       { label: '留着：沙漠', hint: '移出后地图会变：3 格的生态' },
     ]);
-    expect(tidyText(plan)).toContain('移出 1 项');
+    expect(tidyText(plan)).toContain('清掉 1 项');
   });
 });

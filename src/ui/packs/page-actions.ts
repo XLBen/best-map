@@ -1,12 +1,15 @@
 import type { Command } from '../../../core/commands';
 import type { Arrange, ArrangeRelation, LinkEdit } from '../../../core/content/arrange';
+import { ORIGIN_OPS } from '../../../core/content/origin';
 import { type ContentKind, enableCommand, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { type PackWorld, canApply } from '../../../core/packs';
+import { savedBackItem, usedSourceItem } from '../../../core/packs/source-diff';
 import type { Species } from '../../../core/species';
 import { type WaterEdit, type WaterKind, waterBlockEdit, waterCellEdit, waterEditCommand } from '../../../core/water-table';
 import type { World } from '../../../core/world';
-import { libEdits } from '../../library-edit';
-import { showToast, whenEditsIdle, world, worldEpoch } from '../../state';
+import { library } from '../../library';
+import { copyLibrary, libEdits } from '../../library-edit';
+import { askUser, noteAction, showToast, whenEditsIdle, world, worldEpoch } from '../../state';
 import { type Obj, blankItem, copyItem, editorIssues } from './fields';
 import { canArrange } from './page-arrange';
 import { type PageCtx, type Route, type SourceRef, kindReadonly, takenIn, waterLists } from './pages';
@@ -74,6 +77,74 @@ export function commitItem(src: SourceRef, kind: ContentKind, id: string, next: 
     return r.noop ? 'same' : 'saved';
   }
   return queueWorld((w) => worldItemCommand(kind, id, next, w)).then((ok) => (ok ? 'saved' : 'failed'));
+}
+
+// ---------- 和来源的库（第六十二轮）----------
+
+const worldItemOf = (kind: ContentKind, id: string, w: PackWorld): unknown => kind.inWorld(w).find((x) => itemId(kind, x) === id);
+
+// 用库里的版本：一步，能撤销。时代留着世界的变量，比重留世界的（core/packs/source-diff.ts）。和库里一样时 null
+export function useSourceCommand(kind: ContentKind, id: string, w: PackWorld, lib: PageCtx['lib']): Command | null {
+  const next = usedSourceItem(kind, id, worldItemOf(kind, id, w), w, lib);
+  const cmd = next && worldItemCommand(kind, id, next, w);
+  return cmd && cmd.op === 'batch' ? { ...cmd, label: `用库里的版本：${kind.label}“${itemName(kind, next)}”` } : null;
+}
+
+export function useSourceVersion(kind: ContentKind, id: string, ctx: PageCtx): Promise<boolean> {
+  return queueWorld((w) => useSourceCommand(kind, id, w, ctx.lib));
+}
+
+// 世界里这一项的来源换到库的副本上：内容不变，只记来源
+export function repointCommand(kind: ContentKind, id: string, item: unknown, from: readonly string[], w: PackWorld): Command | null {
+  if (!canApply(kind)) return null;
+  const cmd = kind.id === 'biome' ? ({ op: 'update_species', id, patch: {} } as Command) : enableCommand(kind, item, w);
+  return ORIGIN_OPS.has(cmd.op) ? ({ ...cmd, from: [...from] } as Command) : null;
+}
+
+// 复制出来的库（同一个来源只复制一次，再存回就存进这一份）
+const copies = new Map<string, string>();
+
+// 存回我的库：写回来源的库，一步，在这个库的撤销里（顶上的提示有“撤销”）。
+// 来源是内置的、导入的库时只读：先问，复制成我的库再存，世界里这一项的来源换到副本上（这一步在世界的撤销里）
+export async function saveBackToLibrary(kind: ContentKind, id: string, ctx: PageCtx): Promise<boolean> {
+  const w = ctx.world;
+  if (!w) return false;
+  const back = savedBackItem(kind, id, worldItemOf(kind, id, w), w, ctx.lib);
+  if (!back) return false;
+  let key = back.lib;
+  let repoint: string[] | null = null;
+  if (!libEdits.canEdit(key)) {
+    const from = ctx.lib.find((e) => e.key === key);
+    const had = copies.get(key);
+    const copy = had ? library.value.find((e) => e.key === had && e.mine && !e.builtin) : undefined;
+    const v = await askUser({
+      title: `${from?.pack.name ?? key}只读`,
+      text: copy ? `存进副本“${copy.pack.name}”。` : '先复制成我的库，再存回。',
+      choices: [
+        { value: 'ok', label: copy ? `存进“${copy.pack.name}”` : '复制成我的库并存回', primary: true },
+        { value: 'cancel', label: '取消' },
+      ],
+    });
+    if (v !== 'ok') return false;
+    const target = copy?.key ?? (await copyLibrary(key))?.key;
+    if (!target) return false;
+    copies.set(key, target);
+    repoint = [target, ...(w.small.origin?.[kind.id]?.[id] ?? [key]).slice(1)];
+    key = target;
+  }
+  const r = libEdits.setItem(key, kind.id, back.id, back.item, `存回${kind.label}“${itemName(kind, back.item)}”`);
+  if (!r.ok) {
+    showToast(r.error, true);
+    return false;
+  }
+  if (repoint) {
+    const path = repoint;
+    await queueWorld((now) => repointCommand(kind, id, worldItemOf(kind, id, now), path, now));
+  }
+  const lost = back.missing.length ? `；这个库里没有：${back.missing.slice(0, 3).join('、')}` : '';
+  const name = library.value.find((e) => e.key === key)?.pack.name ?? '我的库';
+  noteAction(`已存回“${name}”${lost}`, { label: '撤销', run: () => void libEdits.undo(key) });
+  return true;
 }
 
 // ---------- 新建、复制、删除 ----------

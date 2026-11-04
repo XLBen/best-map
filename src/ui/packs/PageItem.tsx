@@ -6,10 +6,11 @@ import type { Era } from '../../../core/human';
 import { askUser } from '../../state';
 import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
-import { DEDICATED, restoreCommand } from './edit';
+import { DEDICATED } from './edit';
 import { type Obj, editorIssues } from './fields';
-import { commitItem, copyItemIn, deleteFromLibrary } from './page-actions';
+import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
+import type { UsedBy } from './page-used-by';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
 import { copyToMine, goBack, goTo, openSegments, rememberSegments, replaceTop } from './panel-store';
 import { ChildSegments, WorldVariables } from './PageChildren';
@@ -26,12 +27,11 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: RepoRow | u
   const w = ctx.world;
   const usage = row && w && src.t === 'world' ? rowUsage(row, w) : null;
   const remove = row && w && src.t === 'world' ? removeCommand(row, w) : null;
-  const restore = w && src.t === 'world' && row?.status.modified ? restoreCommand(p.kind, p.id, w) : null;
   const def = row && w && p.kind.id === 'nameStyle' ? defaultStyleCommand(row, w) : null;
   const list = itemActions(src, row, ctx, {
     remove: !!remove,
     usage: usage ? `有 ${fmt(usage.count)} 处在用：${usage.label}` : null,
-    restore: !!restore,
+    changed: p.diff.t === 'changed',
     setDefault: !!def,
     hasCells: !!usage?.cells?.length,
     saveable: !!row && src.t === 'world' && !row.path && saveableItem(row) !== null,
@@ -73,10 +73,16 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: RepoRow | u
             <LocateFixed /> 定位
           </button>
         );
-      case 'restore':
+      case 'useSource':
         return (
-          <button class="small" title="换回内置的原样" onClick={() => restore && void runTrusted(restore, '正在计算…')}>
-            <RotateCcw /> 恢复内置
+          <button class="small" title={`换成“${p.diffLib}”里的这一项`} onClick={() => void useSourceVersion(p.kind, p.id, ctx)}>
+            <RotateCcw /> 用库里的版本
+          </button>
+        );
+      case 'saveBack':
+        return (
+          <button class="small" title={`写回“${p.diffLib}”，以后用这个库新建世界时是这一份`} onClick={() => void saveBackToLibrary(p.kind, p.id, ctx)}>
+            <Save /> 存回我的库
           </button>
         );
       case 'dedicated':
@@ -242,24 +248,14 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
           <div class="row lp-item-head">
             {swatch && <span class="swatch big" style={{ background: swatch }} />}
             <h3 class="grow ellipsis">{itemName(p.kind, item)}</h3>
-            {row?.status.modified && <span class="chip static">改过</span>}
+            {src.t === 'lib' && row?.status.modified && <span class="chip static">本世界改过</span>}
+            {p.diff.t === 'changed' && <span class="chip static lp-diff-chip">和库不同</span>}
             {row?.status.isDefault && <span class="chip static">{p.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
           </div>
-          <p class="hint">
-            {p.kind.label}
-            {p.partOf.length > 0 && ' · 在 '}
-            {p.partOf.slice(0, 4).map((x, k) => (
-              <>
-                {k > 0 && '、'}
-                <a class="ref-link" onClick={() => goTo({ p: 'item', kind: x.kind, id: x.id })}>
-                  {x.name}
-                </a>
-              </>
-            ))}
-            {p.partOf.length > 4 && ` 等 ${p.partOf.length} 个`}
-          </p>
+          <p class="hint">{p.kind.label}</p>
         </>
       )}
+      <DiffLine p={p} />
       {sample && <p class="small repo-sample">{sample}</p>}
       {p.readonly && !embedded && (
         <div class="lp-readonly">
@@ -272,7 +268,6 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
           )}
         </div>
       )}
-      {p.note && !embedded && <p class="hint">{p.note}</p>}
       <EditorKind.Provider value={p.kind.id}>
         <RefGo.Provider value={go}>
           <fieldset class="lp-fields" disabled={!!p.readonly}>
@@ -310,8 +305,87 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
           <ChevronRight />
         </button>
       ))}
+      <UsedBySegment u={p.usedBy} kindId={kindId} />
       <Actions p={p} row={row} src={src} ctx={ctx} embedded={embedded} />
     </div>
+  );
+}
+
+// 和来源的库差在哪里（第六十二轮）。导入时去掉了这个世界没有的引用的不算不同，写一句
+function DiffLine({ p }: { p: ItemPage }) {
+  const d = p.diff;
+  if (d.t === 'changed') return <p class="hint">和“{p.diffLib}”不同{d.fields.length ? `：${d.fields.slice(0, 4).join('、')}` : ''}</p>;
+  if (d.t === 'trimmed') {
+    return (
+      <p class="hint">
+        和“{p.diffLib}”一样，这个世界没有的没带：{d.gone.slice(0, 4).join('、')}
+        {d.gone.length > 4 ? ' 等' : ''}
+      </p>
+    );
+  }
+  return null;
+}
+
+// 编辑页底部的“谁用到它”：引用它的内容能点过去，地图上用到的地方写一句
+const USED_SHOW = 12;
+function UsedByNames({ rows }: { rows: readonly { kind: string; id: string; name: string }[] }) {
+  const [more, setMore] = useState(false);
+  const shown = more ? rows : rows.slice(0, USED_SHOW);
+  return (
+    <span class="lp-used-names">
+      {shown.map((x, k) => (
+        <>
+          {k > 0 && '、'}
+          <a class="ref-link" onClick={() => goTo({ p: 'item', kind: x.kind, id: x.id })}>
+            {x.name}
+          </a>
+        </>
+      ))}
+      {!more && rows.length > USED_SHOW && (
+        <>
+          {' '}
+          <a class="ref-link" onClick={() => setMore(true)}>
+            还有 {rows.length - USED_SHOW} 个
+          </a>
+        </>
+      )}
+    </span>
+  );
+}
+
+const USED_SEG = { id: 'usedBy', title: '谁用到它', fields: [] } as unknown as Segment;
+
+function UsedBySegment({ u, kindId }: { u: UsedBy; kindId: string }) {
+  const memoKey = `${kindId}:usedBy`;
+  const [open, setOpen] = useState(() => openSegments(memoKey)?.has('open') ?? false);
+  const toggle = () => {
+    setOpen(!open);
+    rememberSegments(memoKey, new Set(open ? [] : ['open']));
+  };
+  return (
+    <SegmentCard seg={USED_SEG} open={open} onToggle={toggle} brief={u.brief}>
+      {u.empty && <p class="hint">没有内容引用它，地图上也没用到</p>}
+      {u.parents.length > 0 && (
+        <div class="arch-line">
+          <span class="hint lp-used-kind">在</span>
+          <UsedByNames rows={u.parents} />
+        </div>
+      )}
+      {u.groups.map((g) => (
+        <div class="arch-line" key={g.kind}>
+          <span class="hint lp-used-kind">
+            {g.title} {g.rows.length}
+          </span>
+          <UsedByNames rows={g.rows} />
+        </div>
+      ))}
+      {u.places && (
+        <div class="arch-line">
+          <span class="hint lp-used-kind">地图</span>
+          <span>{u.places}</span>
+        </div>
+      )}
+    </SegmentCard>
   );
 }
 

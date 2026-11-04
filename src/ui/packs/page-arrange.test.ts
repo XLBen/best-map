@@ -214,8 +214,8 @@ describe('上级页面', () => {
       expect(s.rows.find((r) => r.id === 'pyramid')!.hint).toBe(`还在另外 ${groups.length - 1} 组`);
     }
     const p = page(lib('antiquity'), 'landmarkType', 'pyramid', ctx);
-    expect(p.partOf.map((x) => x.id)).toEqual(groups);
-    expect(p.partOf[0]).toMatchObject({ kind: 'cultureGroup' });
+    expect(p.usedBy.parents.map((x) => x.id)).toEqual(groups);
+    expect(p.usedBy.parents[0]).toMatchObject({ kind: 'cultureGroup' });
   });
 
   it('内置的库：能看、不能加、不能拆；我的库都能', () => {

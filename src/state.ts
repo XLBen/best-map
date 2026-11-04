@@ -22,6 +22,7 @@ import { type Settings, type SmallState, type World, buildMeshFor, kmPerUnit, me
 import { outsideRangeReason } from './ui/biomeRange';
 import { scriptTrustText } from './ui/copy';
 import { NOTE_ACTION_MS, NOTE_MS, PausableTimer } from './ui/shell/noticeTimer';
+import { RegenTrack } from './regen-track';
 import { CheckpointStore, type StorageWorkerLike } from './checkpoint-store';
 import { ContentHolder } from './content-post';
 import { buildKey, engineCode, engineUrl } from './engine-source';
@@ -211,6 +212,7 @@ export const adjustPreviewWorld = signal<{ key: string; base: World; world: Worl
 export const adjustPreviewNote = signal<{ key: string; text: string } | null>(null);
 // 当前世界的状态编号（Worker 每改一次换一个）：预览只在按这个状态算出来时才显示，过期的丢掉
 export const worldState = signal(0);
+export const regenTrack = new RegenTrack();
 // 底部条伸到左下角时，比例尺和尺子按钮要往上抬多少（CSS 像素；MapView 每次重画时按底部条的位置算）
 export const cornerLift = signal(0);
 // 量距离：已经点的点（地图单位）；null 表示没在量
@@ -862,6 +864,10 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
       pinnedPart.value = null;
       if (visualOverrides.value.size) visualOverrides.value = new Map();
     } else pruneVisualOverrides(next.small.species);
+    // 第六十二轮：跟着撤销的先后记上一次生成时的内容（面板顶上的“重新生成”，见 regen-track.ts）
+    const done = s.history.filter((h) => h.done).length;
+    if (fresh) regenTrack.reset(done, next.small.content);
+    else regenTrack.step(done, next.small.content);
     world.value = next;
     worldState.value = s.stateId;
     // 结果换上了：调整面板预览的世界（松手前一直显示着，不闪回原样）这时才去掉
@@ -915,6 +921,12 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   // 新世界：画笔、岛、湖的大小跟着地图尺度走
   if (!before || before.mesh !== mesh || before.kmPerUnit !== next.kmPerUnit) setOptions(sizesFor(next));
   scheduleAutosave();
+}
+
+// 改的不是世界（存回我的库）：顶上说一句，带一个按钮
+export function noteAction(head: string, action: NoteAction) {
+  changeNote.value = { id: ++noteId, head, detail: '', undoable: false, action };
+  noteTimer.start(NOTE_ACTION_MS);
 }
 
 export function showToast(text: string, error = false) {
@@ -1420,6 +1432,7 @@ export async function exec(cmd: Command, label = '正在计算…', action?: Not
     else showToast('没有变化');
     return true;
   }
+  regenTrack.pending = cmd;
   const ok = await handle(r);
   // 第二十九轮：这一步移出世界的内容里自己做的、改过的存进资源库“来自《世界名》”
   if (ok && r.ok && r.removed?.length) void keepRemoved(r.removed);
@@ -1462,6 +1475,7 @@ export async function replaceLast(cmd: Command, label = '正在计算…'): Prom
   const r = await call({ kind: 'replaceLast', cmd }, label);
   if (r.ok && r.snapshot && !('light' in r.snapshot)) noteCost(cmd, r.snapshot.timings.total);
   const before = world.value;
+  regenTrack.pending = cmd;
   const ok = await handle(r);
   if (ok && r.ok) {
     trustOwn(cmd);
@@ -1475,6 +1489,7 @@ export async function undo() {
   const r = await call({ kind: 'undo' }, '撤销…');
   const before = world.value;
   const last = history.value.filter((h) => h.done).pop();
+  regenTrack.pending = 'history';
   const ok = await handle(r);
   if (ok && last) noteChange(`撤销：${last.summary}`, before, false);
 }
@@ -1483,6 +1498,7 @@ export async function redo() {
   const r = await call({ kind: 'redo' }, '重做…');
   const before = world.value;
   const next = history.value.find((h) => !h.done);
+  regenTrack.pending = 'history';
   const ok = await handle(r);
   if (ok && next) noteChange(`重做：${next.summary}`, before);
 }

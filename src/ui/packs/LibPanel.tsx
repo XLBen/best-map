@@ -12,6 +12,7 @@ import { PageList } from './PageList';
 import { WaterTablePage } from './PageWater';
 import { dragView } from './page-drag';
 import { pressImport } from './page-import';
+import { RegenBar } from './RegenBar';
 import { openPackList, packDialog } from './store';
 import { tidyWorld } from './tidy';
 
@@ -158,7 +159,7 @@ function MoreMenu({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
           {e && item('导出文件', '整个库存成一个文件', () => download(packFileName(e.pack), JSON.stringify(e.pack, null, 2), 'application/json'))}
           {e && k === 'mine' && item('删除这个库…', '用过它的世界不受影响', () => void removeLibrary(e.key, e.pack.name))}
           {k === 'world' && item('从本世界存进资源库…', '挑几样存成一个资源包', () => (packDialog.value = { view: 'export' }))}
-          {k === 'world' && item('整理本世界…', '移出哪里都没用到的内容', () => void tidyWorld())}
+          {k === 'world' && item('清理没用到的…', '清掉列表上变淡的内容', () => void tidyWorld())}
           {item('资源包…', '资源库里的包：导出、删除', openPackList)}
         </div>
       )}
@@ -267,6 +268,7 @@ export function LibPanel() {
           </button>
         </span>
       </div>
+      {source.t === 'world' && <RegenBar ctx={ctx} />}
       {stack.length > 1 && <NavBar list={list} />}
       <div class="lp-body" ref={body} onScroll={(e) => scrolls.current.set(key, (e.currentTarget as HTMLDivElement).scrollTop)}>
         <Page route={route} src={source} ctx={ctx} />

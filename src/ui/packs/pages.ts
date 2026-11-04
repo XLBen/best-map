@@ -1,18 +1,21 @@
 import { RELATIONS, looseItems, relationOf } from '../../../core/content/arrange';
 import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
 import type { Era } from '../../../core/human';
-import { type PackWorld, canApply, packSections } from '../../../core/packs';
+import { canApply, packSections } from '../../../core/packs';
 import type { Species } from '../../../core/species';
 import { PLAIN_TYPE, type WaterType, perCellRule } from '../../../core/water-types';
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
 import { arrangeFor, arrangeTitle, linkView, mergedInto } from './page-arrange';
-import { type ChildSection, type InsideRow, type PartOf, childSections, insideRows, partOf } from './page-children';
+import { type ChildSection, type InsideRow, childSections, insideRows } from './page-children';
 import { CARD_ICON, type CardDef, HOME_LAYOUT, WATER_KINDS, type Inside } from './page-layout';
+import { type RowMark, type SourceDiff, type WorldMark, rowMarks, worldDiff } from './page-marks';
 import { type Segment, segmentsOf } from './page-segments';
 import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemOf, itemsOf, kindReadonly, kindTitle, rowsOf, sourceKind, sourceTitle } from './page-source';
-import { type RepoRow, HUMAN_KINDS, GOV_KINDS, SETTLE_KINDS } from './repo';
+import { type UsedBy, usedByOf } from './page-used-by';
+import type { RepoRow } from './repo';
 
 export * from './page-source';
+export type { RowMark, WorldMark };
 
 // 新的资源库面板（第五十九轮）的逻辑：看的是哪一份（本世界、内置的库、我的库）、首页有哪些卡片、怎么点进去、面包屑、
 // 列表里有什么、某一项的页面有哪些段、只读与否、这一项能做什么、返回。全部在这里，组件只负责画。不碰界面，测试直接调。
@@ -263,6 +266,8 @@ export interface ListRow {
   hint?: string;
   item: unknown;
   row: RepoRow;
+  // 本世界里：生成后没用到（变淡）、和来源的库不同（第六十二轮）
+  mark?: RowMark;
 }
 
 export interface ListSection {
@@ -360,6 +365,8 @@ export function listPage(src: SourceRef, r: Extract<Route, { p: 'list' }>, ctx: 
   // 融入的项：搜索时一样找得到；不属于任何上级的在最后一段
   const sections = [...sectionsOf(kind, rows, src, ctx, r, hint), ...(whole ? (q ? insideHits(kind.id, src, ctx, matches) : looseSections(kind, src, ctx)) : [])];
   const inside = whole ? insideRows(src, kind.id, ctx) : [];
+  const marks = rowMarks(src, ctx);
+  if (marks) for (const sec of sections) sec.rows = sec.rows.map((x) => ({ ...x, mark: marks(x.kind, x.id, x.item) }));
   const empty = q ? '没有找到' : r.hideOn ? '都在本世界了' : `没有${kindTitle(kind)}`;
   const defaults: Record<string, unknown> = { ...(r.dim ? { dimension: r.dim } : {}), ...(r.group ? { group: r.group } : {}) };
   return {
@@ -436,17 +443,8 @@ function sectionsOf(kind: ContentKind, rows: readonly RepoRow[], src: SourceRef,
 
 // 灰色的一句
 export function listNote(kind: ContentKind, src: SourceRef, ctx: PageCtx): string | null {
-  if (src.t === 'world' && !canApply(kind)) return kind.pack.note ?? null;
-  return (src.t === 'world' && regenNote(kind, ctx.world)) || null;
-}
-
-// 改了内容后要重新生成才用到（重新生成的按钮在第六十二轮）
-export function regenNote(kind: ContentKind, world: PackWorld | null): string | null {
-  if (!world) return null;
-  if (HUMAN_KINDS.has(kind.id) && world.small.human) return '改了之后重新生成才用到';
-  if (GOV_KINDS.has(kind.id) && world.small.human?.countryRules) return '改了之后重新生成才用到';
-  if (SETTLE_KINDS.has(kind.id) && world.small.settlementRules) return '改了之后重新生成才放到地图上';
-  return null;
+  void ctx;
+  return src.t === 'world' && !canApply(kind) ? (kind.pack.note ?? null) : null;
 }
 
 // ---------- 一项的页面 ----------
@@ -472,9 +470,12 @@ export interface ItemPage {
   related: RelatedLink[];
   // 融入到这一项下面的（第六十轮）：在这一页上直接改
   children: ChildSection[];
-  // 这一项融入在哪几个上级下面
-  partOf: PartOf[];
-  note: string | null;
+  // 底部的“谁用到它”：引用它的内容、融入在哪几个上级下面、地图上用到的地方（第六十二轮）
+  usedBy: UsedBy;
+  // 本世界里：和来源的库比
+  diff: SourceDiff;
+  // 来源的库叫什么
+  diffLib: string | null;
 }
 
 export function itemPage(src: SourceRef, r: Extract<Route, { p: 'item' }>, ctx: PageCtx): ItemPage | null {
@@ -484,6 +485,7 @@ export function itemPage(src: SourceRef, r: Extract<Route, { p: 'item' }>, ctx: 
   if (item === undefined) return null;
   const readonly = kindReadonly(src, kind, ctx);
   const k = sourceKind(src, ctx);
+  const diff = worldDiff(src, kind, r.id, item, ctx);
   return {
     kind,
     id: r.id,
@@ -494,8 +496,9 @@ export function itemPage(src: SourceRef, r: Extract<Route, { p: 'item' }>, ctx: 
     segments: segmentsHere(kind, src, ctx),
     related: relatedOf(kind, r.id, src, ctx),
     children: childSections(src, kind, item, ctx),
-    partOf: partOf(src, kind, item, ctx),
-    note: src.t === 'world' ? regenNote(kind, ctx.world) : null,
+    usedBy: usedByOf(src, kind, r.id, item, ctx),
+    diff,
+    diffLib: diff.t === 'none' ? null : (ctx.lib.find((e) => e.key === diff.lib)?.pack.name ?? diff.lib),
   };
 }
 
@@ -527,14 +530,14 @@ export function eraVariables(src: SourceRef, era: Era, ctx: PageCtx): { id: stri
 }
 
 // 这一项能做什么（组件照这个画按钮，点了走 page-actions.ts）。why：不能做的原因（写在悬停里）
-export type ItemActionId = 'copyLibrary' | 'addToWorld' | 'removeFromWorld' | 'deleteItem' | 'restore' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
+export type ItemActionId = 'copyLibrary' | 'addToWorld' | 'removeFromWorld' | 'deleteItem' | 'useSource' | 'saveBack' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
 export interface ItemAction {
   id: ItemActionId;
   disabled?: string;
 }
 
 // row：这一项在这一份里的状态
-export function itemActions(src: SourceRef, row: RepoRow | undefined, ctx: PageCtx, can: { remove: boolean; usage: string | null; restore: boolean; setDefault: boolean; hasCells: boolean; saveable: boolean; dedicated: boolean; newable: boolean }): ItemAction[] {
+export function itemActions(src: SourceRef, row: RepoRow | undefined, ctx: PageCtx, can: { remove: boolean; usage: string | null; changed: boolean; setDefault: boolean; hasCells: boolean; saveable: boolean; dedicated: boolean; newable: boolean }): ItemAction[] {
   const out: ItemAction[] = [];
   const k = sourceKind(src, ctx);
   if (!row) return out;
@@ -543,7 +546,8 @@ export function itemActions(src: SourceRef, row: RepoRow | undefined, ctx: PageC
   if (can.setDefault) out.push({ id: 'setDefault' });
   if (can.hasCells) out.push({ id: 'locate' });
   if (src.t === 'world') {
-    if (can.restore) out.push({ id: 'restore' });
+    // 和来源的库不同：换成库里的，或者存回库里（第六十二轮）
+    if (can.changed) out.push({ id: 'useSource' }, { id: 'saveBack' });
     if (can.dedicated) out.push({ id: 'dedicated' });
     if (can.saveable) out.push({ id: 'saveToMine' });
     if (!row.status.locked) out.push(can.remove ? { id: 'removeFromWorld' } : { id: 'removeFromWorld', disabled: can.usage ?? '不能移出' });

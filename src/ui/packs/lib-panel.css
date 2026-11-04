@@ -838,3 +838,55 @@ label.check.imp-check {
     max-width: 38%;
   }
 }
+
+/* 第六十二轮：和库不同的标记、变淡、清理、谁用到它、重新生成 */
+.lp-row.faint .lp-row-main {
+  opacity: 0.5;
+}
+.lp-diff {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+.lp-diff-chip {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+.lp-clean {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--h-md);
+  margin-top: var(--sp-2);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-md);
+  font-size: var(--fs-md);
+  text-align: left;
+}
+.lp-used-kind {
+  flex: none;
+  min-width: var(--label-w);
+  white-space: nowrap;
+}
+.lp-used-names {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lp-regen {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--accent-bg);
+}
+.lp-regen .hint {
+  display: block;
+}
+.lp-regen button {
+  flex: none;
+}

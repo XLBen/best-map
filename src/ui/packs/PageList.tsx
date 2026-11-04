@@ -1,4 +1,4 @@
-import { Check, ChevronRight, GripVertical, Plus } from 'lucide-preact';
+import { Check, ChevronRight, Eraser, GripVertical, Plus } from 'lucide-preact';
 import { useMemo, useState } from 'preact/hooks';
 import { kindOf } from '../../../core/content/registry';
 import { libEdits } from '../../library-edit';
@@ -10,11 +10,14 @@ import { InsideRows } from './PageChildren';
 import { RefPicker } from './RefPicker';
 import { copyToMine, goTo, libPanel } from './panel-store';
 import { swatchOf } from './repo-actions';
+import { tidyWorld } from './tidy';
 
 // 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。库里的每一行右边写在不在本世界（能添加）。
 // 我的库里能拖动换先后（同一个小包里）
 
 let dragging: string | null = null;
+
+const FAINT_NOTE = '生成后没用到，清理时会清掉';
 
 function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCtx; movable: boolean }) {
   const swatch = swatchOf(r);
@@ -25,7 +28,8 @@ function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCt
   const add = () => addRows([r.row], src, ctx, `添加到本世界：${r.kind.label}“${r.name}”`);
   return (
     <div
-      class={`lp-row ${over ? 'drop-before' : ''}`}
+      class={`lp-row ${over ? 'drop-before' : ''} ${r.mark?.faint ? 'faint' : ''}`}
+      title={r.mark?.faint ? FAINT_NOTE : undefined}
       draggable={movable}
       onDragStart={(e) => {
         dragging = r.id;
@@ -60,7 +64,12 @@ function Row({ r, src, ctx, movable }: { r: ListRow; src: SourceRef; ctx: PageCt
         {swatch ? <span class="swatch" style={{ background: swatch }} /> : null}
         <span class="lp-row-name ellipsis">{r.name}</span>
         {r.hint && <span class="hint ellipsis lp-row-hint">{r.hint}</span>}
-        {st.modified && <span class="hint">改过</span>}
+        {src.t === 'lib' && st.modified && <span class="hint">本世界改过</span>}
+        {r.mark?.changed && (
+          <span class="lp-diff" title="和来源的库不同">
+            和库不同
+          </span>
+        )}
         {st.isDefault && <span class="hint">{r.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
       </button>
       {inLib &&
@@ -116,6 +125,8 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
     if (r && libPanel.value) goTo(r);
   };
   const movable = p.canMove && !route.dim && !route.group;
+  // 这一页上变淡的有几项（点了清的是全世界的，窗口里列着）
+  const faint = p.sections.reduce((n, s) => n + s.rows.filter((r) => r.mark?.faint).length, 0);
   return (
     <>
       <div class="lp-tools">
@@ -139,6 +150,13 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
           </button>
         )}
       </div>
+      {faint > 0 && (
+        <button class="lp-clean" title={FAINT_NOTE} onClick={() => void tidyWorld()}>
+          <Eraser />
+          <span class="grow">清理没用到的</span>
+          <span class="lp-count">{faint}</span>
+        </button>
+      )}
       {p.note && <p class="hint lp-note">{p.note}</p>}
       {!q && <InsideRows list={p.inside} src={src} ctx={ctx} />}
       {p.total === 0 && !p.sections.length && <p class="hint lp-note">{p.empty}</p>}

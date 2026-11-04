@@ -2,6 +2,7 @@ import { type ArrangeRelation, childrenOf, parentsOf } from '../../../core/conte
 import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { arrangeFor, arrangeTitle, canArrange, linkView, mergedInto, mergedRelation } from './page-arrange';
 import { type PageCtx, type SourceRef, itemsOf, kindReadonly, kindTitle } from './page-source';
+import { type RowMark, rowMarks } from './page-marks';
 import type { RefOption } from './refs';
 
 // 上级页面上“下面的”几段（第六十轮）：融入到这一项下面的内容，能点开改、能加、能移出。谁属于谁还是内容自己写的（core/content/arrange.ts），
@@ -19,6 +20,8 @@ export interface ChildRow {
   // ok：能移出；move：只能换上级（文化必须有组）；null：不能（why 写原因）
   out: 'ok' | 'move' | null;
   why?: string;
+  // 本世界里：生成后没用到（变淡）、和来源的库不同（第六十二轮）
+  mark?: RowMark;
 }
 
 export interface ChildSection {
@@ -69,6 +72,7 @@ export function childSections(src: SourceRef, kind: ContentKind, parent: unknown
   const view = linkView(src, ctx);
   const p = parent as Obj;
   const out: ChildSection[] = [];
+  const marks = rowMarks(src, ctx);
   for (const { relation: rel, items } of childrenOf(arrange, kind.id, parent, view.items, view.table)) {
     const ck = kindOf(rel.child);
     if (!ck) continue;
@@ -81,6 +85,7 @@ export function childSections(src: SourceRef, kind: ContentKind, parent: unknown
         ...(rowHint(rel, p, x, src, ctx) ? { hint: rowHint(rel, p, x, src, ctx) } : {}),
         item: x,
         ...rowOut(rel, p, x),
+        ...(marks ? { mark: marks(ck, itemId(ck, x), x) } : {}),
       }),
     );
     const here = new Set(rows.map((r) => r.id));
