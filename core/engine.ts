@@ -221,6 +221,8 @@ export class Engine {
     // 省名的原文（第二十轮）跟着省名记；没有原文时不写这一项
     const orig = merge && cmd.provinceOrig ? { ...cmd.provinceOrig, ...r.provinceOrig } : r.provinceOrig;
     let recorded: Command = names ? { ...cmd, provinceNames: names } : cmd;
+    // 第一次执行时才知道的（第五十八轮：涂类别那一笔下面的平均高度），记进命令
+    if (r.recorded) recorded = { ...recorded, ...r.recorded } as Command;
     if (orig) recorded = { ...recorded, provinceOrig: orig };
     else if (names && recorded.provinceOrig) {
       const { provinceOrig: _, ...rest } = recorded;

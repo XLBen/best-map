@@ -302,7 +302,9 @@ export const baseCommands = [
   z.object({ op: z.literal('set_island_type'), type: islandTypeSchema, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_island_type'), id: z.string() }),
   // 画地形类别（第二十一轮，见 human/terrain-class.ts）：这些格（只画陆地格）的类别换成 class，null 恢复自动。只改类别、不改高度
-  z.object({ op: z.literal('set_cell_class'), cells, class: typeIdSchema.nullable() }),
+  // 力度（第五十八轮，见 human/class-ground.ts）：大于 0 时地面升降到这种类别的典型高度；省略或 0 只改类别。
+  // t：每格到笔画中心线的距离（和堆山相同，省略时都算中心）。ground：这一笔下面的平均高度（m），第一次执行时记下（重放、重做照用）
+  z.object({ op: z.literal('set_cell_class'), cells, class: typeIdSchema.nullable(), strength: z.number().min(0).max(1).optional(), t: strokeT.optional(), ground: z.number().optional() }),
   // 画资源（第二十一轮，见 human/resources.ts）：'none' 是明确没有，null 恢复自动
   z.object({ op: z.literal('set_cell_resource'), cells, resource: typeIdSchema.nullable() }),
   // 一格的档案（第二十一轮，见 human/cells.ts）：小地名（null 恢复自动；orig 跟着 name，只写 name 时原文去掉）、

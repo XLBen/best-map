@@ -6,7 +6,7 @@ import { typeIdSchema } from '../type-id';
 import type { SmallState, World } from '../world';
 import { type CellInputs, type CompiledRule, cellRuleSchema, compileRule, ruleMatches } from './rules';
 
-// 地形类别（第二十一轮）：平原、丘陵、高原、山地、山峰，每格一种，只是一层分类，不改高度。
+// 地形类别（第二十一轮）：平原、丘陵、高原、山地、山峰，每格一种，本身只是一层分类；涂的时候力度大于 0 才带着地面变（第五十八轮）。
 // 第二十七轮起只管起伏：植被（森林、沙漠、沼泽……）是生态的事，格的档案写成“丘陵 · 温带阔叶林”。
 // 默认由自动规则按高度、坡度算出（derived.terrainClassAuto），点格、笔刷可以改（causes.terrainClass，0 是自动）。
 //
@@ -39,6 +39,8 @@ export const terrainClassSchema = z.object({
   movement: z.number().min(0.1).max(20).optional(),
   // 宜居度的倍数（第二十二轮，见 habitability.ts）：省略时内置的按 CLASS_HABITABILITY，别的为 1
   habitability: z.number().min(0).max(3).optional(),
+  // 典型高度（m，第五十八轮，见 class-ground.ts）：涂这一类时地面升降到它；省略时只改类别。自动规则不读它
+  height: z.number().min(0).max(9000).optional(),
 });
 export type TerrainClass = z.output<typeof terrainClassSchema>;
 

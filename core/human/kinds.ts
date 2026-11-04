@@ -21,6 +21,7 @@ const CLASS_FIELDS: readonly FieldDesc[] = [
   { key: 'exportColor', label: '导出的颜色', type: 'color', optional: true, hint: 'terrain_class.bmp 用；省略时同颜色' },
   { key: 'terrain', label: '游戏里的地形', type: 'text', optional: true, hint: '导出给游戏时对应的地形名' },
   { key: 'description', label: '说明', type: 'longtext', optional: true },
+  { key: 'height', label: '典型高度', type: 'number', optional: true, min: 0, max: 9000, step: 50, hint: 'm；涂这一类时地面升降到它，空着只改类别' },
   { key: 'priority', label: '优先级', type: 'number', min: -1000, max: 1000, step: 1, hint: '几种都满足时大的优先' },
   { key: 'rules', label: '自动规则', type: 'list', of: RULE_FIELDS, dep: 'auto', hint: '满足任何一条就是这一类' },
   { key: 'fallback', label: '兜底', type: 'bool', optional: true, hint: '别的规则都不满足时用它' },

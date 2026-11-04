@@ -1,5 +1,6 @@
 // 所有编辑都是可序列化的命令。命令只改“原因”，并且只保存明确的格编号，
-// 所以重放结果与当时界面上的推导状态无关（例外：generate_provinces 需要当时的水文与高程，引擎会先把推导算好）。
+// 所以重放结果与当时界面上的推导状态无关（例外：generate_provinces 需要当时的水文与高程，引擎会先把推导算好；
+// 涂类别带力度时第一次执行读高程，读到的记进命令，重放照用）。
 // 第四十一轮拆成 commands/ 下几个文件（代码原样搬）：schema 命令的格式（baseCommands 的先后不要调换）、shared 共用的、
 // 每类命令一个文件（terrain、nature、provinces、features、human、settlements，各有一个 runXxxOp）。
 // 这里留 applyCommand（校验、撤销记录、内容的增减）、revert、addArrayUndo、runOp（批量、整理本世界，其余依次问各类），并照旧导出全部。
@@ -71,8 +72,9 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
     case 'restore_terrain':
     case 'fragment':
       return ['landDelta', 'upliftDelta', 'erodDelta', 'province', 'islandType', 'islandHeight', 'fragment', 'country'];
+    // 力度大于 0（第五十八轮）：地面跟着变
     case 'set_cell_class':
-      return ['terrainClass'];
+      return cmd.strength ? ['terrainClass', 'upliftDelta'] : ['terrainClass'];
     case 'set_cell_resource':
       return ['resource'];
     case 'set_content':
@@ -161,6 +163,8 @@ export function applyCommand(
   changed: boolean;
   provinceNames: Record<string, string> | null;
   provinceOrig: Record<string, string> | null;
+  // 第五十八轮：要记进这一步的命令的（见 RunResult）
+  recorded?: RunResult['recorded'];
   // 第二十九轮：这一步移出、新加的内容
   removed: RemovedItem[];
   added: ContentRef[];

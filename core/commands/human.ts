@@ -4,6 +4,7 @@ import { CommandError } from '../errors';
 import type { Command } from './schema';
 import { afterCountries, type ApplyContext, clearPop, Dirty, type RunResult } from './shared';
 import { classAt, classCode, RETIRED_CLASSES } from '../human/terrain-class';
+import { classLift, groundUnder, putLift, restoreLift } from '../human/class-ground';
 import { RESOURCE_NONE, resourceAt, resourceCode } from '../human/resources';
 import { missingNotes, type MissingScope } from '../content/missing';
 import { defaultTotalPop, generateHuman, humanBlockers, regenerateHuman, ruleEra, stampedPacks } from '../human/generate';
@@ -42,6 +43,49 @@ export function checkTuple(small: SmallState, t: { culture: string; values: Reco
 
 // ---------- 内容（第二十轮，见 content/registry.ts） ----------
 
+// 力度大于 0 的一笔（第五十八轮，见 human/class-ground.ts）。这种类别没写典型高度时返回 null：只改类别
+function paintClassGround(world: World, cmd: Extract<Command, { op: 'set_cell_class' }>, strength: number, code: number, ctx: ApplyContext): RunResult | null {
+  const { causes, small, mesh } = world;
+  if (cmd.t && cmd.t.length !== cmd.cells.length) throw new CommandError('t 的长度必须与 cells 相同');
+  const tOf = (k: number) => cmd.t?.[k] ?? 0;
+  const cells: number[] = [];
+  const t: number[] = [];
+  // 恢复自动：画过类别的格恢复，地面回去（和堆山的橡皮一样，中心回到生成时的样子）。没画过类别的格不动，堆过的山还在
+  if (!code) {
+    const arr = causes.terrainClass;
+    cmd.cells.forEach((i, k) => {
+      if (causes.land[i] && arr?.[i]) {
+        cells.push(i);
+        t.push(tOf(k));
+      }
+    });
+    const moved = restoreLift(world, cells, t);
+    if (arr) for (const i of cells) arr[i] = 0;
+    return { dirty: moved ? Dirty.Elevation : Dirty.Human, summary: `地形类别恢复自动 · ${cells.length} 格` };
+  }
+  const kind = classAt(small, code)!;
+  if (kind.height === undefined) return null;
+  // 第一次执行：湖面上的格去掉（只涂干的陆地），记下这一笔下面的平均高度；重放、重做照用记下的
+  const d = cmd.ground === undefined ? ctx.ensureDerived() : null;
+  cmd.cells.forEach((i, k) => {
+    if (causes.land[i] && (!d || d.lake[i] !== 1)) {
+      cells.push(i);
+      t.push(tOf(k));
+    }
+  });
+  const ground = d ? groundUnder(cells, t, d.elevation) : cmd.ground!;
+  if (cells.length) {
+    const arr = (causes.terrainClass ??= new Uint8Array(mesh.n));
+    for (const i of cells) arr[i] = code;
+  }
+  const moved = putLift(world, cells, classLift(world, cells, t, kind.height, strength, ground));
+  return {
+    dirty: moved ? Dirty.Elevation : Dirty.Human,
+    summary: `地形类别“${kind.name}” · ${cells.length} 格 · 地面向 ${kind.height} m`,
+    recorded: { cells, t, ground },
+  };
+}
+
 // 格的地形类别与资源、人文、国家、集团、人口的命令（第四十一轮从 runOp 拆出来，case 原样）；不是这一类的命令返回 undefined
 export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunResult | undefined {
   const { causes, small, mesh } = world;
@@ -57,6 +101,11 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
       const retired = cmd.class !== null && RETIRED_CLASSES.has(cmd.class) && !classCode(small, cmd.class);
       const code = cmd.class === null || retired ? 0 : classCode(small, cmd.class);
       if (cmd.class !== null && !retired && !code) throw new CommandError(`世界里没有地形类别 "${cmd.class}"`);
+      // 力度大于 0（第五十八轮）：地面跟着变。这种类别没写典型高度时往下走，只改类别
+      if (cmd.strength) {
+        const r = paintClassGround(world, cmd, cmd.strength, code, ctx);
+        if (r) return r;
+      }
       const land = cmd.cells.filter((i) => causes.land[i]);
       if (land.length && (code || causes.terrainClass)) {
         const arr = (causes.terrainClass ??= new Uint8Array(n));

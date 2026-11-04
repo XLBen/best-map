@@ -6,7 +6,7 @@ import { type EditMask, classMask, countryMask, erasableLayer, fieldMask, popMas
 import { type RGB, type ToolHandler, BLOCKED_RGB, WHITE } from './api';
 import { type Stroke, brushTool, oneLayer } from './brush';
 import { NO_HUMAN, hasHuman } from './culture';
-import { dryLand } from './human';
+import { classCommand, dryLand } from './human';
 import { biomeChange } from './nature';
 
 // 橡皮擦（第二十七轮）：底部条第二行的开关打开时，笔刷换成这里的一支（见 defs/tools.ts 的 eraser）。
@@ -65,8 +65,16 @@ const noHuman = (w: World) => (hasHuman(w) ? null : NO_HUMAN);
 const noCountries = (w: World) => (hasCountries(w) ? null : NO_COUNTRIES);
 
 // 地形类别、资源：去掉画过的
+// 地形类别：力度大于 0 时地面也回到生成时（第五十八轮，和堆山的橡皮同一条软边）；力度 0 只去掉类别，和涂的时候一样
 export const classEraser = () =>
-  eraserBrush({ mask: classMask, label: '类别恢复自动', empty: '这里的类别没画过', command: (_w, s) => ({ op: 'set_cell_class', cells: s.cells, class: null }) });
+  eraserBrush({
+    mask: classMask,
+    get label() {
+      return options.value.classStrength > 0 ? '类别恢复自动，地面回到生成时' : '类别恢复自动';
+    },
+    empty: '这里的类别没画过',
+    command: (_w, s) => classCommand(s, null),
+  });
 export const resourceEraser = () =>
   eraserBrush({ mask: resourceMask, label: '资源恢复自动', empty: '这里的资源没画过', command: (_w, s) => ({ op: 'set_cell_resource', cells: s.cells, resource: null }) });
 export const resourceClear = () =>

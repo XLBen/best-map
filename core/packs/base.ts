@@ -15,11 +15,11 @@ const cls = (id: string, name: string, color: string, terrain: string, priority:
 // 内置的一套（第二十七轮起只管起伏：平原、丘陵、高原、山地、山峰，按高度、坡度算；森林、沙漠、沼泽、冻原、冰川……是生态，
 // 不再是地形类别）。阈值按生成的世界标定：陆地的坡度中位数约 1.3 m/km、九成以下约 9；海拔四分之三以下约 900 m
 export const BUILTIN_CLASSES: readonly TerrainClass[] = [
-  cls('plains', '平原', '#c9d88f', 'plains', 0, [], { habitability: 1, movement: 1, fallback: true, description: '低平的地方（别的几类都不是时）' }),
-  cls('hills', '丘陵', '#b79a68', 'hills', 50, [{ slopeMin: 4.5 }, { elevMin: 700, slopeMin: 2.5 }], { habitability: 0.92, movement: 1.5, ore: true, description: '起伏的低山：坡度 4.5 m/km 以上，或 700 m 以上、坡度 2.5 以上' }),
-  cls('highlands', '高原', '#c8ad84', 'highlands', 65, [{ elevMin: 1100, slopeMax: 4 }], { habitability: 0.82, movement: 1.3, ore: true, description: '高而平：1100 m 以上、坡度不到 4 m/km' }),
-  cls('mountains', '山地', '#8e7d6c', 'mountains', 70, [{ elevMin: 1900 }, { elevMin: 1100, slopeMin: 7 }], { habitability: 0.5, movement: 2.5, ore: true, peaks: true, description: '1900 m 以上，或 1100 m 以上、坡度 7 m/km 以上' }),
-  cls('peaks', '山峰', '#5f5550', 'mountains', 80, [{ elevMin: 3000, slopeMin: 8 }, { elevMin: 4200, slopeMin: 3 }], { habitability: 0.09, movement: 4, ore: true, peaks: true, description: '最高最陡的山：3000 m 以上、坡度 8 以上，或 4200 m 以上' }),
+  cls('plains', '平原', '#c9d88f', 'plains', 0, [], { height: 150, habitability: 1, movement: 1, fallback: true, description: '低平的地方（别的几类都不是时）' }),
+  cls('hills', '丘陵', '#b79a68', 'hills', 50, [{ slopeMin: 4.5 }, { elevMin: 700, slopeMin: 2.5 }], { height: 600, habitability: 0.92, movement: 1.5, ore: true, description: '起伏的低山：坡度 4.5 m/km 以上，或 700 m 以上、坡度 2.5 以上' }),
+  cls('highlands', '高原', '#c8ad84', 'highlands', 65, [{ elevMin: 1100, slopeMax: 4 }], { height: 1400, habitability: 0.82, movement: 1.3, ore: true, description: '高而平：1100 m 以上、坡度不到 4 m/km' }),
+  cls('mountains', '山地', '#8e7d6c', 'mountains', 70, [{ elevMin: 1900 }, { elevMin: 1100, slopeMin: 7 }], { height: 2400, habitability: 0.5, movement: 2.5, ore: true, peaks: true, description: '1900 m 以上，或 1100 m 以上、坡度 7 m/km 以上' }),
+  cls('peaks', '山峰', '#5f5550', 'mountains', 80, [{ elevMin: 3000, slopeMin: 8 }, { elevMin: 4200, slopeMin: 3 }], { height: 3800, habitability: 0.09, movement: 4, ore: true, peaks: true, description: '最高最陡的山：3000 m 以上、坡度 8 以上，或 4200 m 以上' }),
 ];
 
 // ---------- 资源（第二十一轮，见 human/resources.ts） ----------

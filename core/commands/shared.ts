@@ -1,6 +1,7 @@
 import type { Derived, SmallState, World } from '../world';
 import { z } from 'zod';
 import type { SmallCopy } from '../small-copy';
+import type { Command } from './schema';
 import { clearAuto } from '../human/auto';
 import { clearCountries } from '../human/countries';
 import { clearCities } from '../human/settlements';
@@ -112,5 +113,6 @@ export function styleLabel(small: SmallState, id: string): string {
 
 // 执行一条命令（批量里的每一条也经过这里）。带 from 的启用命令执行完记下来源（第二十九轮，见 content/origin.ts）
 // 一条命令的结果：重算到哪一层、历史里的说明；skipped（第三十轮）是缺了内容跳过的步骤（见 content/missing.ts）
-export type RunResult = { dirty: Dirty; summary: string; skipped?: string[] };
+// recorded：要记进这一步的命令的（重放、重做时照用，不用推导，见 Engine.applyOnly）；批量里的命令不记，重放时再算一遍（读到的都是这个批量之前的推导）
+export type RunResult = { dirty: Dirty; summary: string; skipped?: string[]; recorded?: Partial<Extract<Command, { op: 'set_cell_class' }>> };
 

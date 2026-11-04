@@ -425,13 +425,14 @@ const SPECS = {
     create: () => growTool(),
   },
   terrainClass: {
-    // 第二十一轮：画地形类别（只改类别，不动高度）
+    // 第二十一轮：画地形类别；第五十八轮：地面跟着升降到这一类的典型高度，力度 0 只改类别
     category: 'terrain',
     icon: LandPlot,
     name: '地形类别',
     short: '类别',
-    how: '按住涂，改地形类别；Alt+点击吸取',
+    how: '按住涂，改地形类别，地面跟着升降；Alt+点击吸取',
     size: BRUSH,
+    amount: { key: 'classStrength', label: '力度', range: () => [0, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => (v > 0 ? `${Math.round(v * 100)}%` : '只改类别') },
     bar: () => [{ kind: 'custom', render: ClassPick }],
     pick: pickClass,
     eraser: { auto: classEraser },
