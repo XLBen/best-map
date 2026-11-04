@@ -2,7 +2,7 @@ import type { SmallState } from './world';
 
 // 小数据的副本（第四十七轮）：small.content 当作不可变的，副本里按引用共用，别的部分照旧是一段 JSON。
 // 带着一整个库的世界 content 有 300 KB 上下，以前每条命令序列化两次、撤销解析一次，每步的撤销记录都留一整份。
-// 所有改 content 的地方都是整个换掉（setContent、orderContent、prune），没变的种类、项还是原来的对象，
+// 所有改 content 的地方都是整个换掉（setContent、orderContent），没变的种类、项还是原来的对象，
 // 所以几步之间、撤销记录之间共用，只有改到的那一种多一份浅拷贝（查的办法：content-share.test.ts 把 content 冻住跑一遍）。
 //
 // JSON 里 content 的位置上留一个占位（0）：解析出来键的先后不变，写回去的世界文件、摘要逐字节相同。

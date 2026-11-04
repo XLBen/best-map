@@ -124,13 +124,15 @@ describe('在用的内容不能移出世界', () => {
     expect(usageOf(kindOf('government')!, strictWorld(w), 'r28-spare')).toBeNull();
     eng.exec({ op: 'set_content', kind: 'government', id: 'r28-spare', item: null });
     expect(w.small.content!.government!['r28-spare']).toBeUndefined();
-    // 删掉人文以后，文化就没人用了；第二十九轮起生成时带进来的（与内置一模一样的）一起移出
+    // 删掉人文以后，文化就没人用了；第六十二轮起内容留在世界里（能移出）
     eng.exec({ op: 'remove_countries' } as Command);
-    expect(w.small.content?.government).toBeUndefined();
+    expect(w.small.content?.government).toBeTruthy();
     eng.exec({ op: 'remove_human' });
     expect(usageOf(kindOf('culture')!, strictWorld(w), culture)).toBeNull();
+    expect(worldCultures(w.small).some((c) => c.id === culture)).toBe(true);
+    for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeTruthy();
+    eng.exec({ op: 'set_content', kind: 'culture', id: culture, item: null });
     expect(worldCultures(w.small).some((c) => c.id === culture)).toBe(false);
-    for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeUndefined();
   });
 
   it('自己的点的类型：放了点就不能移出，删掉点以后能', () => {

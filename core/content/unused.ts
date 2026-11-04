@@ -55,9 +55,10 @@ export function withoutItems<S extends Pick<World['small'], 'content'>>(small: S
   return { ...small, content: { ...small.content, [kind]: Object.fromEntries(Object.entries(own).filter(([id]) => !ids.has(id))) } };
 }
 
-// 世界里没用到的内容（推导要是最新的）
-export function unusedContent(world: TidyWorld): ContentRef[] {
-  const { small, causes, derived } = world;
+// 人文和政治这几种（政体、派系、取值、取值组、文化、文化组、地名风格、时代）里没用到的。只看原因与小状态，不看推导。
+// 第六十二轮分出来：面板上的变淡、“清理没用到的”只看这几种（见 cleanable.ts）
+export function unusedPeople(world: ContentWorld): ContentRef[] {
+  const { small } = world;
   const out: ContentRef[] = [];
   const strict = strictWorld(world);
   // 派系按移出没用到的政体之后的世界查：只有它们列着的派系也没用到
@@ -80,6 +81,13 @@ export function unusedContent(world: TidyWorld): ContentRef[] {
   unusedOf('cultureGroup', after('culture'));
   unusedOf('nameStyle', after('culture', 'cultureGroup'));
   unusedOf('era', strict);
+  return out;
+}
+
+// 世界里没用到的内容（推导要是最新的）
+export function unusedContent(world: TidyWorld): ContentRef[] {
+  const { small, causes, derived } = world;
+  const out = unusedPeople(world);
   // 画风：只留世界在用的那一种
   const style = worldMapStyleId(small);
   for (const id of Object.keys(worldMapStyles(small))) if (id !== style) out.push({ kind: 'mapStyle', id });

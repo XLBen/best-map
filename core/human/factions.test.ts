@@ -239,10 +239,10 @@ describe('引用', () => {
     expect(listed.size).toBeGreaterThan(0);
   });
 
-  it('删掉全部国家：政体和派系一起走', () => {
+  it('删掉全部国家：政体和派系留在世界里（第六十二轮）', () => {
     const eng = world();
+    const before = JSON.stringify([eng.world.small.content?.government, eng.world.small.content?.faction]);
     eng.exec({ op: 'remove_countries' });
-    expect(eng.world.small.content?.government).toBeUndefined();
-    expect(eng.world.small.content?.faction).toBeUndefined();
+    expect(JSON.stringify([eng.world.small.content?.government, eng.world.small.content?.faction])).toBe(before);
   });
 });

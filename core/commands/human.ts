@@ -9,7 +9,6 @@ import { RESOURCE_NONE, resourceAt, resourceCode } from '../human/resources';
 import { missingNotes, type MissingScope } from '../content/missing';
 import { defaultTotalPop, generateHuman, humanBlockers, regenerateHuman, ruleEra, stampedPacks } from '../human/generate';
 import { clearCountries } from '../human/countries';
-import { dropBroughtContent } from '../human/prune';
 import { countryOf, mergeCountries, moveCapital, newCountry, paintCountry, removeCountry, setCountry, splitCountry, tidyCountries } from '../human/country-edit';
 import { restoreCountry, restorePop } from '../human/auto';
 import { BLOC_NAMES, blocById, setBloc } from '../human/blocs';
@@ -228,9 +227,8 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
     }
     case 'remove_countries': {
       if (!small.countries) throw new CommandError('还没有生成国家');
+      // 第六十二轮：政体、派系留在世界里（世界保留全部内容，导入的、改过的不该跟着没了），不想要时“清理没用到的”
       clearCountries(world);
-      // 第二十九轮：生成国家时带进来的政体、派系（与内置的一模一样的）一起移出
-      dropBroughtContent(world);
       return { dirty: Dirty.Human, summary: '删除国家' };
     }
     case 'paint_country': {
@@ -317,9 +315,8 @@ export function runHumanOp(world: World, cmd: Command, ctx: ApplyContext): RunRe
     }
     case 'remove_human': {
       if (!small.human) throw new CommandError('还没有生成人文');
+      // 第六十二轮：时代、取值、文化……留在世界里，同上
       clearPop(world);
-      // 第二十九轮：生成人文时带进来的时代、取值、文化组、文化、地名风格、政体、派系（与内置的一模一样的）一起移出
-      dropBroughtContent(world);
       return { dirty: Dirty.Human, summary: '删除人文' };
     }
     case 'set_pop_total': {

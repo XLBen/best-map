@@ -106,8 +106,27 @@ function cultureUsage(w: W, id: string): ContentUsage | null {
   );
 }
 
+// 每个组里的文化（引用表写的 hard 引用）。按这一份文化记着：清理时每个组都要查一遍，文化多的世界每组走一遍引用表很慢（第六十二轮）
+const groupMembers = new WeakMap<object, Map<string, { id: string }[]>>();
+function culturesOf(w: W, id: string): readonly { id: string }[] {
+  const store = contentItems<{ id: string }>(w.small, 'culture');
+  let m = groupMembers.get(store);
+  if (!m) {
+    m = new Map();
+    for (const c of Object.values(store)) {
+      for (const g of new Set(linksOf('culture', c).flatMap((l) => (l.cls === 'hard' && l.kinds.includes('cultureGroup') ? [l.id] : [])))) {
+        const list = m.get(g);
+        if (list) list.push(c);
+        else m.set(g, [c]);
+      }
+    }
+    groupMembers.set(store, m);
+  }
+  return m.get(id) ?? [];
+}
+
 function groupUsage(w: W, id: string): ContentUsage | null {
-  const cultures = Object.values(contentItems<{ id: string }>(w.small, 'culture')).filter((c) => linksOf('culture', c).some((l) => l.cls === 'hard' && l.kinds.includes('cultureGroup') && l.id === id));
+  const cultures = culturesOf(w, id);
   const mine = new Set(cultures.map((c) => c.id));
   const cells = mine.size ? popCells(w, (t) => mine.has(t.culture)) : [];
   const ctry = countries(w).filter((c) => c.acceptedGroups.includes(id));

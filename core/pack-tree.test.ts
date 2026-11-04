@@ -359,19 +359,22 @@ describe('生成后内容都留着', () => {
     expect(Object.keys(eng.world.small.countries!).length).toBeGreaterThan(0);
   });
 
-  it('去掉人文、国家：带进来的内容一起移出，报出来；撤销回到原样', () => {
+  it('去掉人文、国家：内容留在世界里，什么都不移出（第六十二轮）；撤销回到原样', () => {
     const eng = peopled();
     const w = eng.world;
     const before = JSON.stringify(w.small.content);
+    const origin = JSON.stringify(w.small.origin);
     eng.exec({ op: 'remove_countries' });
-    expect(w.small.content?.government).toBeUndefined();
-    expect(w.small.content?.faction).toBeUndefined();
-    expect(eng.lastRemoved.map((r) => r.kind)).toEqual(expect.arrayContaining(['government', 'faction']));
+    expect(eng.lastRemoved).toEqual([]);
+    expect(JSON.stringify(w.small.content)).toBe(before);
     eng.exec({ op: 'remove_human' });
-    for (const k of ['era', 'popValue', 'cultureGroup', 'culture', 'government', 'faction']) expect(w.small.content?.[k], k).toBeUndefined();
-    for (const k of ['era', 'popValue', 'cultureGroup', 'culture']) expect(w.small.origin?.[k], k).toBeUndefined();
+    expect(w.small.human).toBeUndefined();
+    expect(eng.lastRemoved).toEqual([]);
+    expect(JSON.stringify(w.small.content)).toBe(before);
+    expect(JSON.stringify(w.small.origin)).toBe(origin);
     eng.undo();
     eng.undo();
+    expect(w.small.human).toBeTruthy();
     expect(JSON.stringify(w.small.content)).toBe(before);
   });
 });
