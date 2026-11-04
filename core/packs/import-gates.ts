@@ -160,15 +160,23 @@ export function infoOf(source: PackNode): SourceInfo {
   return info;
 }
 
+// 来源库自己提供这个变量：它的时代写着、有取值（在这个库里勾得到）
+const sourceHasDim = (info: SourceInfo, id: string): boolean => {
+  const d = info.dims.get(id);
+  return !!d && d.owners.length > 0 && d.values.length > 0;
+};
+
 // 这个派系主要靠哪一维：来源里权重（绝对值）加起来最大的那一维，一样大时写在前面的；“与国教”没写维度时是宗教（见 link-rules.ts）。
-// 自由派写了民族认同（2.2）和意识形态（6），它要的是意识形态；民族认同那两条缺了就去掉
+// 自由派写了民族认同（2.2）和意识形态（6），它要的是意识形态；民族认同那两条缺了就去掉。
+// 只看来源库自己提供的变量（第六十五轮）：近现代库的派系写到意识形态，它的时代没有这个变量。这些写法在来源里本来就不起作用，
+// 不算离不开它：目的地没有时和别的引用一样去掉这一条，目的地有时留着。否则会灰着要一个这个库里勾不到的变量
 function mainDim(info: SourceInfo, key: string): string | null {
   const hit = info.mainDims.get(key);
   if (hit !== undefined) return hit;
   const sum = new Map<string, number>();
   for (const d of (info.table.nodes.get(key)?.item as Faction | undefined)?.drivers ?? []) {
     const dim = d.dimension ?? (d.faith ? 'religion' : undefined);
-    if (dim) sum.set(dim, (sum.get(dim) ?? 0) + Math.abs(d.weight));
+    if (dim && sourceHasDim(info, dim)) sum.set(dim, (sum.get(dim) ?? 0) + Math.abs(d.weight));
   }
   let best: string | null = null;
   for (const [dim, w] of sum) if (best === null || w > sum.get(best)!) best = dim;
@@ -381,8 +389,8 @@ export const needText = ({ needs, any }: Lacks): string => {
 };
 const gatedOf = (l: Lacks): Extract<ImportGate, { t: 'gated' }> => ({ t: 'gated', needs: l.needs, any: l.any, reason: needText(l) });
 
-// 来源的时代没写这个变量时（科幻的派系写到意识形态，科幻的时代没有）只有 id：这个库解不开，要从别的库导入
-const dimNeed = (info: SourceInfo, id: string): ImportNeed => ({ kind: DIMENSION, id, name: info.dims.get(id)?.label ?? `变量 ${id}` });
+// 派系主要靠的变量都是来源提供的（mainDim），都有名字。没有名字时不写 id：界面上不出现
+const dimNeed = (info: SourceInfo, id: string): ImportNeed => ({ kind: DIMENSION, id, name: info.dims.get(id)?.label ?? '这个库没有的变量' });
 function linkNeed(info: SourceInfo, l: Pick<Link, 'kinds' | 'id'>): ImportNeed {
   const to = resolveLink(info.table, l);
   if (to?.kind === DIMENSION) return dimNeed(info, to.id);

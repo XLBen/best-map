@@ -192,6 +192,63 @@ function cultureShares(w: World): [string, number][][] {
   return out;
 }
 
+describe('灰的项在这个库里解得开（第六十五轮）', () => {
+  const asPack = (id: string) => ({ t: 'pack' as const, pack: copyOf(id) });
+  const pairs = LIB.flatMap((from) => LIB.filter((to) => to !== from).map((to) => [from, to] as const));
+
+  it('内置库两两：灰的项要的变量都能在来源里勾到，原因里没有英文 id', () => {
+    for (const [from, to] of pairs) {
+      const dims = packItems<Era>(from, 'eras').flatMap((e) => e.dimensions.map((d) => d.id));
+      const values = new Set(packItems<{ dimension: string }>(from, 'popValues').map((v) => v.dimension));
+      for (const [key, g] of importGates(from, asPack(to.id)).all()) {
+        if (g.t !== 'gated') continue;
+        const at = `${from.id} → ${to.id} ${key.replace('\u0000', ':')}`;
+        expect(g.reason, at).not.toMatch(/[a-z]{2}/i);
+        expect(g.reason, at).not.toContain('需要变量');
+        for (const n of g.needs) {
+          if (n.kind !== 'dimension') continue;
+          expect(dims.includes(n.id) && values.has(n.id), `${at} 要的 ${n.id} 这个库里勾不到`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('把灰的项要的变量都勾上，它就能选（内置库两两）', () => {
+    for (const [from, to] of pairs) {
+      const target = asPack(to.id);
+      const greyGovs = [...importGates(from, target).all()].filter(([key, g]) => key.startsWith('faction') && g.t === 'gated' && g.needs.every((n) => n.kind === 'dimension'));
+      const allDims = packItems<Era>(from, 'eras').flatMap((e) => e.dimensions.map((d) => ({ kind: 'dimension', id: d.id })));
+      const open = importGates(from, target, allDims);
+      for (const [key] of greyGovs) {
+        const id = key.split('\u0000')[1];
+        expect(open.of({ kind: 'faction', id }).t, `${from.id} → ${to.id} ${id}`).toBe('free');
+      }
+    }
+  });
+
+  it('近现代的派系写到意识形态（它的时代没有）：不要这个变量；目的地有时引用留着，没有时去掉这一条', () => {
+    const industrial = LIB.find((p) => p.id === 'industrial')!;
+    const factions = packItems<{ id: string; drivers?: { dimension?: string; weight: number }[] }>(industrial, 'factions');
+    const f = factions.find((x) => x.drivers?.some((d) => d.dimension === 'ideology'))!;
+    expect(f).toBeDefined();
+    const ref = { kind: 'faction', id: f.id };
+    // 有意识形态的目的地（现代）：引用留着
+    const keep = importToPack({ source: industrial, target: asPack('modern'), picks: [ref] });
+    const kept = packItems<typeof f>(keep.pack, 'factions').find((x) => x.id === f.id);
+    if (kept) expect(kept.drivers?.some((d) => d.dimension === 'ideology')).toBe(true);
+    // 没有的目的地（中世纪）：只要这个库提供的变量，勾上后写到意识形态的那几条去掉
+    const target = asPack('medieval');
+    const g = importGates(industrial, target).of(ref);
+    if (g.t === 'gated') expect(g.needs.map((n) => n.id)).not.toContain('ideology');
+    const dims = packItems<Era>(industrial, 'eras').flatMap((e) => e.dimensions.map((d) => ({ kind: 'dimension', id: d.id })));
+    const r = importToPack({ source: industrial, target, picks: [ref, ...dims] });
+    const out = packItems<typeof f>(r.pack, 'factions').find((x) => x.id === f.id)!;
+    expect(out).toBeDefined();
+    expect(out.drivers?.some((d) => d.dimension === 'ideology') ?? false).toBe(false);
+    expect(r.preview.stripCount).toBeGreaterThan(0);
+  });
+});
+
 const modern = LIB.find((p) => p.id === 'modern')!;
 const GOV = { kind: 'government', id: 'socialist-republic' };
 const IDEOLOGY = { kind: 'dimension', id: 'ideology' };
