@@ -238,6 +238,7 @@
   min-width: 0;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--sp-2);
   min-height: var(--h-md);
   margin: 0;

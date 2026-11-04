@@ -418,7 +418,7 @@ describe('应用里的一份：新建、复制、删除、读存储', () => {
     expect(made).not.toBeNull();
     const key = made!.key;
     expect(library.value.find((e) => e.key === key)!.mine).toBe(true);
-    expect(library.value.find((e) => e.key === key)!.pack.name).toBe('中世纪与近世 的副本');
+    expect(library.value.find((e) => e.key === key)!.pack.name).toBe('中世纪与近世的副本');
     const c = packItems<{ id: string; name: string }>(library.value.find((e) => e.key === key)!.pack, 'cultures')[0];
     expect(libEdits.setItem(key, 'culture', c.id, { ...c, name: '刚改的' })).toEqual({ ok: true });
     // 还没写进存储时读一遍：内存里的留着

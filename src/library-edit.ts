@@ -448,11 +448,11 @@ export function copiedPack(from: ResourcePack, key: string, name: string): Resou
   return { ...rest, id: key, name } as ResourcePack;
 }
 
-// 复制成我的库（内置的、导入的都可以）。名字默认“X 的副本”
+// 复制成我的库（内置的、导入的都可以）。名字默认“X的副本”
 export async function copyLibrary(fromKey: string, name?: string): Promise<{ key: string; stored: boolean } | null> {
   const from = library.value.find((e) => e.key === fromKey);
   if (!from) return null;
-  const n = (name ?? `${from.pack.name} 的副本`).trim().slice(0, 60);
+  const n = (name ?? `${from.pack.name}的副本`).trim().slice(0, 60);
   const key = freeLibraryKey(n);
   const stored = await installNew({ key, pack: copiedPack(from.pack, key, n), builtin: false, mine: true, installedAt: Date.now() });
   return { key, stored };
