@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import zhCN from 'zod/v4/locales/zh-CN.js';
 import type { Command } from './commands';
+import { type Arrange, arrangeProblems } from './content/arrange';
 import { ORIGIN_OPS } from './content/origin';
 import { ownItems, packItems, packPaths, subPacks, walkPacks } from './content/pack-tree';
 import './content/kinds';
@@ -109,9 +110,11 @@ function topSchema(): z.ZodType {
     author: z.string().max(60).optional(),
     description: z.string().max(2000).optional(),
     packs: z.array(z.unknown()).max(PACK_MAX_SUBPACKS).optional(),
+    // 第六十轮：这种内容融入哪种（content/arrange.ts），只改显示；组合在 parsePack 里查
+    arrange: z.record(z.string(), z.string()).optional(),
     ...sectionShape(),
   };
-  topCache = { version: registryVersion(), schema: z.strictObject(shape) };
+  topCache ={ version: registryVersion(), schema: z.strictObject(shape) };
   return topCache.schema;
 }
 
@@ -133,6 +136,7 @@ export interface ResourcePack extends PackNode {
   name: string;
   author?: string;
   description?: string;
+  arrange?: Arrange;
   fields?: string[];
   biomes?: Species[];
   riverTypes?: PackItem[];
@@ -246,6 +250,10 @@ export function parsePack(json: unknown): PackParse {
   const pack = {} as ResourcePack;
   for (const k of META_KEYS) if (data[k] !== undefined) (pack as Record<string, unknown>)[k] = data[k];
   const errors: string[] = [];
+  if (data.arrange) {
+    errors.push(...arrangeProblems(data.arrange as Arrange));
+    pack.arrange = data.arrange as Arrange;
+  }
   parseSections(data, json, pack, errors, '');
   parseChildren(data.packs as unknown[] | undefined, 1, pack, errors, '');
   return errors.length ? { ok: false, errors } : { ok: true, pack };
@@ -692,6 +700,7 @@ export function packFromWorld(world: PackWorld, picks: WorldPicks, meta: PackMet
 export function nestByKind(pack: ResourcePack): ResourcePack {
   const out: ResourcePack = { format: PACK_FORMAT, version: PACK_VERSION, id: pack.id, name: pack.name };
   for (const m of ['author', 'description'] as const) if (pack[m]) out[m] = pack[m];
+  if (pack.arrange) out.arrange = pack.arrange;
   const packs: PackNode[] = [...subPacks(pack)];
   for (const k of packSections()) {
     const items = ownItems(pack, k.pack.key);

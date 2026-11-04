@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals';
+import { type Arrange, arrangeOf, arrangeProblems, sameArrange, withArrange } from '../core/content/arrange';
 import { type ContentKind, itemId, kindByPackKey, kindOf } from '../core/content/registry';
 import { PACK_MAX_SUBPACKS, type PackNode, type ResourcePack, findPack, itemErrors, ownItems, packIdFor, packItems, sameItem, subPacks, walkPacks } from '../core/packs';
 import { type LibraryEntry, type Stored, library, nextRev, refreshLibrary, rememberParsed, removePack, useLibraryOverlay, writeStored } from './library';
@@ -33,6 +34,13 @@ export interface LibBackend {
 }
 
 export type EditResult = { ok: true; noop?: boolean } | { ok: false; error: string };
+
+// 一步里的一项：add 是新加，不写是换掉同 id 的
+export interface ItemOp {
+  kind: string;
+  item: Record<string, unknown>;
+  add?: boolean;
+}
 
 interface Step {
   label: string;
@@ -329,6 +337,44 @@ export function createLibEditor(backend: LibBackend = localBackend(), opts: LibE
       if (n === h.pack.name) return { ok: true, noop: true };
       const pack = { ...h.pack, name: n };
       commit(key, h, pack, { label: `改名为“${n}”`, before: h.pack, after: pack }, null);
+      return { ok: true };
+    },
+
+    // 换融入的安排（第六十轮）：只改显示，别的内容是同一份。撤销和改内容在同一个栈里
+    setArrange(key: string, arrange: Arrange, label?: string): EditResult {
+      const h = headOf(key);
+      if (!h) return { ok: false, error: '这个库不能改' };
+      if (arrangeProblems(arrange).length) return { ok: false, error: '不能这样融入' };
+      if (sameArrange(arrangeOf(h.pack), arrange)) return { ok: true, noop: true };
+      const pack = withArrange(h.pack, arrange);
+      commit(key, h, pack, { label: label ?? '改融入', before: h.pack, after: pack }, null);
+      return { ok: true };
+    },
+
+    // 几项一步改完（新建一个派系并加到政体上）：一步撤销
+    applyItems(key: string, ops: readonly ItemOp[], label?: string): EditResult {
+      const h = headOf(key);
+      if (!h) return { ok: false, error: '这个库不能改' };
+      let pack = h.pack;
+      for (const op of ops) {
+        const kind = kindOf(op.kind);
+        if (!kind) return { ok: false, error: '这个库不能改' };
+        const errs = itemErrors(kind, op.item);
+        if (errs.length) return { ok: false, error: errs[0].message };
+        const parsed = kind.schema.parse(op.item);
+        if (op.add) {
+          const id = itemId(kind, op.item);
+          if (packItems(pack, kind.pack.key).some((x) => itemId(kind, x) === id)) return { ok: false, error: '已有同样 id 的一项' };
+          const at = placeFor(pack, kind, op.item);
+          const list = ownItems(findPack(pack, at) ?? pack, kind.pack.key);
+          if (list.length >= kind.pack.max) return { ok: false, error: `${kind.label}已满 ${kind.pack.max} 个` };
+          pack = setAt(pack, at, (n) => ({ ...n, [kind.pack.key]: [...list, parsed] })) as ResourcePack;
+        } else {
+          pack = replaceItem(pack, kind, itemId(kind, op.item), parsed);
+        }
+      }
+      if (pack === h.pack) return { ok: true, noop: true };
+      commit(key, h, pack, { label: label ?? '改', before: h.pack, after: pack }, null);
       return { ok: true };
     },
 

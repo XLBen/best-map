@@ -488,3 +488,83 @@ describe('应用里的一份：新建、复制、删除、读存储', () => {
     await deleteLibrary(b.key);
   });
 });
+
+// 第六十轮：融入的安排存在库里，和内容在同一个撤销栈；什么路都不丢
+describe('融入的安排', () => {
+  const FLAT = { faction: 'government' };
+
+  it('换了马上写整个库，能撤销、重做；内容是同一份；一样的不算一步', async () => {
+    const { ed, cur, puts } = setup();
+    const before = cur();
+    expect(ed.setArrange('mine', FLAT, '拆')).toEqual({ ok: true });
+    expect(cur().arrange).toEqual(FLAT);
+    expect(cur().packs).toBe(before.packs);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(puts.at(-1)!.pack.arrange).toEqual(FLAT);
+    expect(ed.setArrange('mine', FLAT)).toEqual({ ok: true, noop: true });
+    expect(ed.undo('mine')).toBe('拆');
+    expect(cur()).toBe(before);
+    expect(ed.redo('mine')).toBe('拆');
+    expect(cur().arrange).toEqual(FLAT);
+    await ed.flushAll();
+  });
+
+  it('写错的组合不接受；内置的、别人的库不能换', () => {
+    const { ed, cur } = setup();
+    expect(ed.setArrange('mine', { culture: 'government' }).ok).toBe(false);
+    expect(cur().arrange).toBeUndefined();
+    expect(ed.setArrange('no-such', {}).ok).toBe(false);
+  });
+
+  it('改内容、加、删、换先后、改库名都不丢；撤销也不丢', async () => {
+    const { ed, cur } = setup({ ...pack(), arrange: FLAT });
+    ed.setItem('mine', 'culture', 'c1', c1);
+    expect(cur().arrange).toEqual(FLAT);
+    ed.addItem('mine', 'culture', { id: 'c3', group: 'g', name: '三', color: '#333333' });
+    ed.moveItem('mine', 'culture', 'c3', 'c1');
+    ed.removeItem('mine', 'culture', 'c2');
+    ed.rename('mine', '新名字');
+    expect(cur().arrange).toEqual(FLAT);
+    while (ed.canUndo('mine')) ed.undo('mine');
+    expect(cur().arrange).toEqual(FLAT);
+    await ed.flushAll();
+  });
+
+  it('刷新页面：写进去的还在，日志补上时不丢', async () => {
+    const { ed, backend, packs, cur } = setup();
+    ed.setArrange('mine', FLAT);
+    await vi.advanceTimersByTimeAsync(0);
+    ed.setItem('mine', 'culture', 'c1', c1);
+    const rec = packs.get('mine')!;
+    const fresh = createLibEditor(backend, { entries: () => [], publish: () => {} });
+    const adopted = fresh.adopt(rec, rec.pack);
+    expect(adopted.arrange).toEqual(FLAT);
+    expect(culture(adopted, 'c1')!.name).toBe('改过');
+    expect(cur().arrange).toEqual(FLAT);
+    await ed.flushAll();
+    await fresh.flushAll();
+  });
+
+  it('复制成我的库带着；导出文件再读一样；旧的文件照常', () => {
+    const p: ResourcePack = { ...pack(), arrange: FLAT };
+    expect(copiedPack(p, 'k', 'K').arrange).toEqual(FLAT);
+    const read = parsePack(JSON.parse(JSON.stringify(p)));
+    expect(read.ok && read.pack.arrange).toEqual(FLAT);
+    expect(copiedPack(pack(), 'k', 'K').arrange).toBeUndefined();
+  });
+
+  it('几项一步改完：新建一项并改上级，一步撤销；有错的一项都不改', async () => {
+    const { ed, cur } = setup();
+    const before = cur();
+    const r = ed.applyItems('mine', [{ kind: 'culture', item: { id: 'c9', group: 'g', name: '九', color: '#999999' }, add: true }, { kind: 'cultureGroup', item: { id: 'g', name: '改了', color: '#112233' } }], '一步');
+    expect(r).toEqual({ ok: true });
+    expect(culture(cur(), 'c9')).toBeDefined();
+    expect(packItems<{ name: string }>(cur(), 'cultureGroups')[0].name).toBe('改了');
+    expect(ed.undo('mine')).toBe('一步');
+    expect(cur()).toBe(before);
+    expect(ed.applyItems('mine', [{ kind: 'culture', item: { id: 'c9', group: 'g', name: '九', color: '#999999' }, add: true }, { kind: 'culture', item: { id: 'c1', name: '缺组' } }]).ok).toBe(false);
+    expect(cur()).toBe(before);
+    expect(ed.applyItems('mine', [{ kind: 'culture', item: c1, add: true }]).ok).toBe(false);
+    await ed.flushAll();
+  });
+});
