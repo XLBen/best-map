@@ -385,7 +385,7 @@ function destHas(dest: Dest, kind: string, id: string): boolean {
 
 // 比较用的字（同 sameContent，按对象记着）：包和世界里的项都是不改动的数据，勾选每变一次都要比，一个库的地名风格就有约 1 MB
 const contentKeys = new WeakMap<object, string>();
-function contentKey(k: ContentKind, x: unknown): string {
+export function contentKey(k: ContentKind, x: unknown): string {
   let s = contentKeys.get(x as object);
   if (s === undefined) {
     const skip = k.pack.sameIgnore;
