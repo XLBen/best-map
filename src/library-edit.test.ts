@@ -5,7 +5,11 @@ import { builtinPacks, worldPartsOf } from '../core/packs/builtin-tree';
 import { packImportCommands } from '../core/packs/import';
 import { type LibraryEntry, type Stored, installPack, library, refreshLibrary } from './library';
 import { FLUSH_MS, FLUSH_SOON_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
-import { isLibrary, libRoots, libraryOptions, worldContentPacks } from './ui/packChoice';
+import { Engine } from '../core/engine';
+import { humanDigest, meshFor } from '../core/testing/fixtures';
+import { newWorldCommands } from './ui/forms';
+import { chooseLibrary, defaultChoice, generateCommand } from './ui/human';
+import { isLibrary, libRoots, libraryOptions, worldContentCommands, worldContentPacks, worldLibrary } from './ui/packChoice';
 import { closeLibrary, openLibrary, setSource } from './ui/packs/panel-store';
 
 // 第五十九轮：我的库改一项只查这一项、写进日志，整个库晚一点才写；有自己的撤销；复制成我的库
@@ -362,6 +366,29 @@ describe('复制成我的库', () => {
     // 中世纪的副本不带奇幻的
     const m = copiedPack(builtinPacks().find((p) => p.id === 'medieval')!, 'm2', 'm2');
     expect(worldPartsOf('m2', m).map((p) => p[1])).toEqual(['base', 'nature', 'names', 'styles', 'tiers', 'water']);
+  });
+
+  it('用奇幻的副本新建世界、生成人文：和用内置的奇幻库一模一样，只差来源（在这个副本里）', () => {
+    vi.useRealTimers();
+    const c = copiedPack(builtinPacks().find((p) => p.id === 'fantasy')!, '我的奇幻', '我的奇幻');
+    const lib = [...builtinPacks().map((p) => entryOf(p)), entryOf(c, true)];
+    const make = (key: string) => {
+      const choice = chooseLibrary(defaultChoice(null, true, lib), key, lib);
+      const settings = { cells: 6000, seed: 1, latNorth: 60, latSouth: 20 };
+      const eng = new Engine(settings, meshFor(settings));
+      for (const cmd of newWorldCommands({ seed: 5, type: 'continents', landFraction: 0.4 }, '像地球', 5, [], generateCommand(choice, null, lib), worldContentCommands(choice, lib))) eng.exec(cmd);
+      return eng.world;
+    };
+    const a = make('fantasy');
+    const b = make('我的奇幻');
+    expect(humanDigest(b)).toEqual(humanDigest(a));
+    expect(b.small.species.map((s) => s.id)).toEqual(a.small.species.map((s) => s.id));
+    expect(b.small.species.some((s) => s.id === 'crystal_jungle')).toBe(true);
+    expect(b.small.riverTypes!.map((t) => t.id)).toEqual(a.small.riverTypes!.map((t) => t.id));
+    expect(b.small.content).toEqual(a.small.content);
+    expect(worldLibrary(b.small)).toBe('我的奇幻');
+    expect(b.small.origin!.biome.crystal_jungle[0]).toBe('我的奇幻');
+    vi.useFakeTimers();
   });
 
   it('副本和内置的共用同一份内容（不复制 1.5 MB）；改副本不碰内置的', () => {

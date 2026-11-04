@@ -1,6 +1,6 @@
 import { ChevronRight, Copy, Download, LocateFixed, Lock, Pencil, RotateCcw, Save, Trash2 } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { itemName, kindOf } from '../../../core/content/registry';
 import { askUser } from '../../state';
 import { focusOn } from '../camera';
@@ -174,7 +174,11 @@ export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item
   // 改了没存的（有错、或者世界还在算）。这一份里的这一项变了（存上了、撤销了、别处改了）就去掉
   const [draft, setDraft] = useState<Obj | null>(null);
   const live = p?.item;
-  useEffect(() => setDraft(null), [live]);
+  // 世界里连着改几项时前一步算完不去掉草稿（不然后一步改的先闪回去）
+  const pending = useRef(0);
+  useEffect(() => {
+    if (!pending.current) setDraft(null);
+  }, [live]);
   const segs = p?.segments ?? [];
   const [open, setOpen] = useState<ReadonlySet<string>>(() => (route.seg ? initialOpen(segs, route.seg) : (openSegments(kindId) ?? initialOpen(segs))));
   useEffect(() => {
@@ -195,7 +199,13 @@ export function PageItem({ route, src, ctx }: { route: Extract<Route, { p: 'item
     setDraft(next);
     const r = commitItem(src, p.kind, p.id, next, ctx);
     if (r === 'same' || r === 'readonly' || r === 'failed') setDraft(null);
-    if (r instanceof Promise) void r.then((v) => v === 'failed' && setDraft(null));
+    if (r instanceof Promise) {
+      pending.current++;
+      void r.then((v) => {
+        pending.current--;
+        if (v === 'failed' || !pending.current) setDraft(null);
+      });
+    }
   };
   const labelOf = (ref: string | readonly string[], id: string) => refLabel(refOptionsOf(ref, ctx), id);
   const go = (ref: string | readonly string[], id: string) => {
