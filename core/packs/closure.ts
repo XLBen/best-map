@@ -419,7 +419,8 @@ export interface WorldImport {
 function importLabel(p: ImportPreview): string {
   const first = p.rows.find((r) => r.role === 'pick') ?? p.rows[0];
   if (!first) return `导入 ${p.count} 项`;
-  const head = `${first.kindLabel}“${first.name}”`;
+  // 只写名字：种类的名字（“人口维度的取值”）是给编辑表单看的
+  const head = `“${first.name}”`;
   return p.count > 1 ? `导入${head}等 ${p.count} 项` : `导入${head}`;
 }
 

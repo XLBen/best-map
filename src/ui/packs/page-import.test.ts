@@ -454,6 +454,7 @@ describe('列表上的“添加”走同一个闭包，不开窗口', () => {
     expect(skippedLine([])).toBeNull();
     expect(skippedLine([{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }])).toBe('还有 1 项需要意识形态，没加');
     expect(skippedLine([{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '政体最多 3 个' }])).toBe('还有 1 项没加：政体最多 3 个');
+    expect(skippedLine([{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }, { kind: 'government', id: 'b', name: 'B', kindLabel: '政体', reason: '需要民族认同' }])).toBe('还有 2 项缺别的内容，没加');
     expect(doneLine({ ok: true, count: 2, skipped: [{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }] }, null)).toBe('已导入 2 项。还有 1 项需要意识形态，没加');
   });
 

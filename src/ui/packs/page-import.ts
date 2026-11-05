@@ -336,6 +336,8 @@ export function skippedLine(dropped: ImportPreview['dropped']): string | null {
   if (!dropped.length) return null;
   const reasons = [...new Set(dropped.map((d) => d.reason))];
   if (reasons.length === 1 && reasons[0].startsWith('需要')) return `还有 ${dropped.length} 项${reasons[0]}，没加`;
+  // 几种“需要”写不下：每一行上写着各自的原因
+  if (reasons.every((x) => x.startsWith('需要'))) return `还有 ${dropped.length} 项缺别的内容，没加`;
   return `还有 ${dropped.length} 项没加：${reasons.slice(0, 2).join('；')}${reasons.length > 2 ? ' 等' : ''}`;
 }
 
