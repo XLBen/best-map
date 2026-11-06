@@ -9,7 +9,8 @@ import { SelectionActions } from '../shell/SelectionActions';
 import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
 import { byRulesTip } from '../copy';
 import { NameInput } from './names';
-import { type MenuItem, TypeButton, TypeMenu, createAndUse } from './waterTypes';
+import { type MenuItem, TypeButton, TypeMenu } from './waterTypes';
+import { createAndUse } from './water-types';
 import { Slider } from '../components/Slider';
 
 // 湖（第九轮）：放湖时点一下湖就选中它，底部条换成这个湖的设置（名字、换一个、是哪一种、大小、删掉），

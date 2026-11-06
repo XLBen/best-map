@@ -6,10 +6,10 @@ import { continents, snapshot, type HumanCommand, humanExec } from '../../core/t
 import type { World } from '../../core/world';
 import { worldResources, worldTerrainClasses } from '../../core/human';
 import { erasing, exec, options, picking, provinceSet, selectedCountry, selectedProvince, setOptions, world } from '../state';
-import { COUNTRY_TABS, countryTab, flagPartName } from './CountryArchive';
+import { COUNTRY_TABS, countryTab, flagPartName } from './country-archive';
 import { TOOL_DEFS, createTool, eraserModes, setTool } from './defs/tools';
 import type { ToolId } from './defs/tools';
-import { provinceAreaText, provinceMultiCommands } from './provincePanel';
+import { provinceAreaText, provinceMultiCommands } from './province-panel';
 import { onKeyDown } from './shell/keys';
 import { type Pointer, type ToolHandler, brushNew, factorOf, percentText, popCommand, provinceBrushTool, provinceSelectTool, toggleProvince } from './tools';
 import { countryAt, territoryCommand } from './countries';

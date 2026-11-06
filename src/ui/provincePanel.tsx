@@ -3,7 +3,7 @@ import { Merge, RefreshCw, SplitSquareHorizontal, Waves, X } from 'lucide-preact
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
-import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules, classOfKind, provinceSizeCells, provinceTargets } from '../../core/provinces';
+import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules, provinceSizeCells } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
 import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
@@ -19,6 +19,7 @@ import { Toggle } from './components/Toggle';
 import { TypePicker } from './shell/TypePicker';
 import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
+import { provinceAreaText, provinceMultiCommands } from './province-panel';
 
 // 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的自动划分规则
 
@@ -182,22 +183,7 @@ export function ProvinceBar() {
   );
 }
 
-// ---------- 多选（第二十七轮：⇧+点） ----------
-
-// 几个省一起：合并（并进第一个选的）、整个划给某国、重新划分。陆地省与海省、湖省混着时不能合并
-export function provinceMultiCommands(w: World, ids: readonly number[]) {
-  const metas = ids.map((id) => w.small.provinces[id]).filter(Boolean);
-  const into = ids[0];
-  const first = w.small.provinces[into];
-  const same = !!first && metas.every((m) => m.land === first.land && classOfKind(m.kind) === classOfKind(first.kind));
-  const locked = metas.some((m) => m.locked);
-  const set = new Set(ids);
-  const cells: number[] = [];
-  for (let i = 0; i < w.mesh.n; i++) if (set.has(w.causes.province[i])) cells.push(i);
-  const merge: Command | null =
-    same && !locked && ids.length > 1 ? { op: 'batch', label: `合并 ${ids.length} 个省份`, commands: ids.slice(1).map((from) => ({ op: 'merge_province' as const, from, into })) } : null;
-  return { cells, merge, why: !same ? '陆地省份、海省、湖省不能合并' : locked ? '有省份已锁定' : null, land: cells.filter((i) => w.causes.land[i] === 1) };
-}
+// ---------- 多选（第二十七轮：⇧+点；做出命令在 province-panel.ts） ----------
 
 function ProvinceMulti({ w, ids }: { w: World; ids: number[] }) {
   const { cells, merge, why, land } = provinceMultiCommands(w, ids);
@@ -431,12 +417,6 @@ const SIZE_LO = 8;
 const SIZE_HI = 200;
 const sizePos = (v: number) => Math.log(v / SIZE_LO) / Math.log(SIZE_HI / SIZE_LO);
 const sizeAt = (p: number) => Math.round(SIZE_LO * Math.pow(SIZE_HI / SIZE_LO, Math.max(0, Math.min(1, p))));
-// 陆地省大约多大（km²）
-export function provinceAreaText(w: World, rules: ProvinceRules, sizeCells: number): string {
-  const km2 = provinceTargets(w, { ...rules, sizeCells }).land * mapKm(w).cell ** 2;
-  return km2 >= 1e4 ? `约 ${(km2 / 1e4).toFixed(km2 >= 1e5 ? 0 : 1)} 万 km²` : `约 ${Math.round(km2 / 100) * 100} km²`;
-}
-
 function SizeSlider({ w, value, onChange }: { w: World; value: number; onChange: (v: number) => void }) {
   const [draft, setDraft] = useState<number | null>(null);
   const v = draft ?? value;

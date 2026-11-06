@@ -1,5 +1,4 @@
 import { speciesColor } from '../../core/species';
-import { signal } from '@preact/signals';
 import { BellOff, ScanSearch, X } from 'lucide-preact';
 import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
@@ -7,12 +6,9 @@ import { exec, focusSpecies, history, sheet, world } from '../state';
 import { focusOn } from './camera';
 import { outsideRangeReason } from '../biome-range';
 import { reasonText } from './Inspector';
-import { locateNextUnmet, locateTitle, unmetLooked, unmetSpots } from './unmetLocate';
+import { locateNextUnmet, locateTitle, showIgnored, unmetLooked, unmetSpots } from './unmetLocate';
 
 // 没涂成的地方（“自然 ⋯”里）、历史（“更多”里）
-
-// 说了“就这样”的列表要不要展开（只剩说了“就这样”的时，底部条上的入口点开时展开）
-export const showIgnored = signal(false);
 
 const BUSY = '正在计算…';
 

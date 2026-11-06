@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
-import type { PackRead } from '../../../core/packs';
+import { type PackRead, readPack } from '../../../core/packs';
 import { refreshLibrary } from '../../library';
+import { showToast } from '../../state';
 import { ESC_RANK, pushEscape } from '../shell/escape';
 
 // 资源库面板“⋯”里打开的弹窗的状态（PackDialog.tsx）：资源包的列表、读好的一个文件、从本世界存进资源库。
@@ -33,4 +34,15 @@ export const fileLabel = (name: string) => name.replace(/(\.map2pack)?\.json$/i,
 export function openPackImport(read: PackRead, file: string) {
   void refreshLibrary();
   packDialog.value = { view: 'import', read, file };
+}
+
+// 导入生态文件：和资源包走同一条路（只解析、检查，带脚本的先问信任），只装进资源库（第二十九轮：以前的生态文件也不再整套换掉世界里的生态），
+// 在面板上添加到本世界。第六十九轮从 ClimateChart.tsx 搬来
+export function importBiomeFile(text: string, file: string) {
+  const read = readPack(text, fileLabel(file));
+  if (!read.ok) {
+    showToast(`导入失败：${read.errors.slice(0, 2).join('；')}`, true);
+    return;
+  }
+  openPackImport(read, file);
 }

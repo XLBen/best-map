@@ -13,7 +13,7 @@ import type { LibraryEntry } from '../library';
 import { cellLayers, countryBorderGroups, humanFlat } from '../render/colors';
 import { countryLineText, layoutAlong, smoothPath } from '../render/overlay';
 import { askUser, exec, mode, options, parsePrefs, prefs, selectedCountry, setOptions, sheet, world } from '../state';
-import { EMBLEM_NAMES, LAYOUT_NAMES, withEmblem, withLayout } from './CountryArchive';
+import { EMBLEM_NAMES, LAYOUT_NAMES, withEmblem, withLayout } from './country-archive';
 import {
   countryAt,
   countryLabelLines,

@@ -5,7 +5,7 @@ import type { World } from '../../core/world';
 import { LAKE_GLOW, LAKE_LAND_GLOW, LAKE_WATER_CRUST, LAKE_WATER_TINT, lakeTintLayer, lakeTypeColor } from '../render/colors';
 import { setOptions } from '../state';
 import { chosenLakeType, lakeInfo, lakeList, lakeRefAt, lakeTypeChoiceCommand, lakeTypeOfLake } from './lakeInfo';
-import { newWaterType } from './panels/waterTypes';
+import { newWaterType } from './panels/water-types';
 import { BUILTIN_MAP_STYLES } from '../../core/packs/map-styles';
 
 const [REALISTIC, ATLAS] = BUILTIN_MAP_STYLES;

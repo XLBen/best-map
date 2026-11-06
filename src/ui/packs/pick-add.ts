@@ -6,11 +6,12 @@ import type { SmallState } from '../../../core/world';
 import type { LibraryEntry } from '../../library';
 import { libEdits } from '../../library-edit';
 import type { Content } from '../../regen-track';
-import { type NoteAction, noteAction, worldEpoch } from '../../state';
+import { type NoteAction, noteAction, showToast, worldEpoch } from '../../state';
 import { queueWorld } from './page-actions';
 import type { PageCtx, SourceRef } from './page-source';
-import { lastPress } from './panel-store';
+import { flashRows, lastPress, lookAt } from './panel-store';
 import { clearPicks, destFor, destRef, isFileSource, pickAsk, pickLead, picksOf } from './pick-store';
+import type { PickView } from './pick-view';
 import { type RegenNeed, addRegenLabel, addedNeed, regenCommand } from './regen';
 
 // 添加（第六十六轮）：把勾的写进本世界或我的库，一步，撤销全撤。世界里可以接着重新生成（“添加并重新生成国家”这类按钮）：
@@ -146,4 +147,26 @@ export async function addPicked(key: string, ctx: PageCtx, opts: { regen?: boole
   const r = await runAdd({ ask, target: destRef(dest), ...(isFileSource(key) ? {} : { path: [key] }), ...(lead ? { lead } : {}), regen: !!opts.regen, ...(opts.look ? { look: opts.look } : {}), ...(opts.onto ? { onto: opts.onto } : {}) }, ctx);
   if (r.ok && worldEpoch.value === epoch) clearPicks(key);
   return r;
+}
+
+// “从别的库加”的右栏里（第六十八轮）：加到哪里写死（左栏这一份），不带“去看看”（左边就是）；onto：上级页面打开的
+export interface BasketFor {
+  to: string;
+  onto?: ImportOnto;
+}
+
+// 添加：留在这个库里，刚加的行变成 ✓、闪一下；顶上的提示带“去看看”、撤销
+export async function addNow(v: PickView, ctx: PageCtx, regen: boolean, other?: BasketFor): Promise<void> {
+  const rows = v.preview.rows.map((r) => ({ kind: r.kind, id: r.id }));
+  const to = destRef(v.dest);
+  // “去看看”先打开用户点的那一项所在的列表（不是清单里排在最前的变量）；添加后勾选就清掉了，先记下
+  const lead = pickLead(picksOf(v.key));
+  const look = lead ? [lead, ...rows.filter((x) => x.kind !== lead.kind || x.id !== lead.id)] : rows;
+  const r = await addPicked(v.key, ctx, other ? { regen, ...(other.onto ? { onto: other.onto } : {}) } : { regen, look: { label: '去看看', run: () => lookAt(to, look) } });
+  if (r.error) showToast(r.error, true);
+  if (!r.ok) return;
+  if (!other) return flashRows(r.rows ?? rows, 'flash');
+  // 从别的库加（第六十八轮）：新加的就在左栏的列表里，高亮几秒，长列表里滚到第一行
+  flashRows(r.rows ?? rows, 'hl');
+  setTimeout(() => document.querySelector('.lp-main .lp-hl')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
 }

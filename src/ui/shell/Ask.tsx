@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { SCRIPT_KIND_LABEL } from '../../../core/script';
 import { ask } from '../../state';
-import { isolationNote } from '../packs/Scripts';
+import { isolationNote } from '../packs/script-trust';
 import { ESC_RANK, useEscape } from './escape';
 
 // 问一句的对话框：信任这个世界里的脚本吗、用安全模式打开吗、查看脚本、先保存吗、起个名字（带输入框，回车 = 主要的按钮）。列出的脚本写明是谁的、哪一种，源码用等宽字。

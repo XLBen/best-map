@@ -3,7 +3,8 @@ import { BellOff, TriangleAlert } from 'lucide-preact';
 import { activeConflicts } from '../../../core/constraints';
 import { openPanel, options, togglePanel, world } from '../../state';
 import { Seg } from '../common';
-import { UnmetPanel, showIgnored } from '../panels';
+import { UnmetPanel } from '../panels';
+import { showIgnored } from '../unmetLocate';
 import { BiomePalette } from '../panels/BiomePanel';
 import { cancelRangePick, rangePick } from '../tools';
 

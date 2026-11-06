@@ -7,9 +7,9 @@ import { type NoteAction, askUser, download, execAdjust, focusSpecies, knowIsola
 import { trustScripts, untrustedScripts } from '../../trust';
 import { scriptTrustText } from '../copy';
 import { category, setTool } from '../defs/tools';
-import { islandSwatch, requestIslandTypeEditor } from '../panels/islandTypes';
+import { islandSwatch, requestIslandTypeEditor } from '../panels/island-types';
 import { type ItemRow, itemPack, saveableItem } from './rows';
-import { isolationNote } from './Scripts';
+import { isolationNote } from './script-trust';
 
 // 面板里一行的样子（色块、示例名字）和按钮做的事（先问脚本、存进资源库、导出、打开详细编辑）
 

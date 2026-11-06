@@ -36,7 +36,8 @@ import { PIN_RIVER_TIP } from '../copy';
 import { NameInput } from './names';
 import { RiverTypeButton, riverTypeOfRiver } from './riverTypes';
 import { LakeList } from './lakes';
-import { type WaterKind, WaterTypesSection } from './waterTypes';
+import { WaterTypesSection } from './waterTypes';
+import type { WaterKind } from './water-types';
 
 // 河：选中一条河后的底部条（名字、大小、⋯ 里的粗细、终点、删除）、穿过别的河时的确认条、“水系 ⋯”里的河流列表
 

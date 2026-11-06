@@ -1,6 +1,7 @@
 import { ChevronLeft, X } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { type BasketFor, LibBasket, addNow } from './LibBasket';
+import { LibBasket } from './LibBasket';
+import { type BasketFor, addNow } from './pick-add';
 import { type OtherOpen, type OtherRow, ontoOf, otherDetail, otherLibs, otherSections, pickFrom } from './other-view';
 import type { PageCtx, SourceRef } from './pages';
 import { closeOther } from './panel-store';

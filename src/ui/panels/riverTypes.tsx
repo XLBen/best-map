@@ -4,7 +4,8 @@ import type { World } from '../../../core/world';
 import { type RiverRef, exec, openPanel, options, selectedRiver, setOptions, world } from '../../state';
 import { byRulesTip } from '../copy';
 import { BY_RULES, execAndSelect, guideOf, hasRiverRules as hasRules, pinCommand, riverInfo } from '../riverCourse';
-import { type MenuItem, TypeButton, TypeMenu, createAndUse, newWaterType, typeScriptCommand } from './waterTypes';
+import { type MenuItem, TypeButton, TypeMenu } from './waterTypes';
+import { createAndUse, newWaterType, typeScriptCommand } from './water-types';
 
 // 河流类型（第三批）：画河工具条上“新画的河”、选中一条河时“这条河”是哪一种。列表、编辑在 waterTypes.tsx（“水系 ⋯”里的“水体类型”）
 

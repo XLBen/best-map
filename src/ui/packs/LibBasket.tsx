@@ -2,14 +2,12 @@ import { ChevronRight, X } from 'lucide-preact';
 import { useMemo, useState } from 'preact/hooks';
 import { DIMENSION } from '../../../core/content/link-rules';
 import type { PackNode } from '../../../core/packs';
-import type { ImportOnto, ImportPreview } from '../../../core/packs/closure';
-import { showToast } from '../../state';
+import type { ImportPreview } from '../../../core/packs/closure';
 import type { PageCtx } from './pages';
-import { flashRows, lookAt } from './panel-store';
-import { addPicked, addRegenButton, skippedLine } from './pick-add';
+import { type BasketFor, addNow, addRegenButton, skippedLine } from './pick-add';
 import { type BasketNode, basketGroups, foldText, hasZeroWeightGroup, soleText, soleValue, whyText } from './pick-look';
 import { regenLine } from './pick-other';
-import { clearPicks, destRef, pickLead, picksOf, removePickIn, setPickDest } from './pick-store';
+import { clearPicks, removePickIn, setPickDest } from './pick-store';
 import type { PickView } from './pick-view';
 
 // 资源库面板右栏底下的清单（第六十五轮是导入窗口的右边，第六十七轮搬进面板，第六十八轮“从别的库加”的右栏也用）：加到哪里、将添加的各项、添加。
@@ -124,28 +122,6 @@ function DestPick({ v, ctx }: { v: PickView; ctx: PageCtx }) {
       </select>
     </label>
   );
-}
-
-// “从别的库加”的右栏里（第六十八轮）：加到哪里写死（左栏这一份），不带“去看看”（左边就是）；onto：上级页面打开的
-export interface BasketFor {
-  to: string;
-  onto?: ImportOnto;
-}
-
-// 添加：留在这个库里，刚加的行变成 ✓、闪一下；顶上的提示带“去看看”、撤销
-export async function addNow(v: PickView, ctx: PageCtx, regen: boolean, other?: BasketFor): Promise<void> {
-  const rows = v.preview.rows.map((r) => ({ kind: r.kind, id: r.id }));
-  const to = destRef(v.dest);
-  // “去看看”先打开用户点的那一项所在的列表（不是清单里排在最前的变量）；添加后勾选就清掉了，先记下
-  const lead = pickLead(picksOf(v.key));
-  const look = lead ? [lead, ...rows.filter((x) => x.kind !== lead.kind || x.id !== lead.id)] : rows;
-  const r = await addPicked(v.key, ctx, other ? { regen, ...(other.onto ? { onto: other.onto } : {}) } : { regen, look: { label: '去看看', run: () => lookAt(to, look) } });
-  if (r.error) showToast(r.error, true);
-  if (!r.ok) return;
-  if (!other) return flashRows(r.rows ?? rows, 'flash');
-  // 从别的库加（第六十八轮）：新加的就在左栏的列表里，高亮几秒，长列表里滚到第一行
-  flashRows(r.rows ?? rows, 'hl');
-  setTimeout(() => document.querySelector('.lp-main .lp-hl')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
 }
 
 export function LibBasket({ v, ctx, other }: { v: PickView; ctx: PageCtx; other?: BasketFor }) {

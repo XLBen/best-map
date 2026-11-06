@@ -23,6 +23,9 @@ export function unmetSpots(w: Pick<World, 'small' | 'derived'>): number[][] {
 // 上一次看的是第几处（−1：还没看过）
 export const unmetLooked = signal(-1);
 
+// 说了“就这样”的列表要不要展开（只剩说了“就这样”的时，底部条上的入口点开时展开；第六十九轮从 panels.tsx 搬来）
+export const showIgnored = signal(false);
+
 // 看下一处：镜头移过去，那几格亮一下。返回看的是第几处（没有可看的返回 −1）
 export function locateNextUnmet(w: Pick<World, 'small' | 'derived'>): number {
   const spots = unmetSpots(w);

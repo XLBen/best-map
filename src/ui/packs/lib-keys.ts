@@ -1,4 +1,4 @@
-import { addNow } from './LibBasket';
+import { addNow } from './pick-add';
 import type { PageCtx, SourceRef } from './pages';
 import { closeSide } from './panel-store';
 import { pickView } from './pick-view';

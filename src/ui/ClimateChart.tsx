@@ -23,7 +23,7 @@ import { isVegetated, landmassCells } from '../../core/vegetation';
 import type { World } from '../../core/world';
 import type { Command } from '../../core/commands';
 import { X } from 'lucide-preact';
-import { adjustPreviewNote, askUser, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, showToast, tool, world } from '../state';
+import { adjustPreviewNote, askUser, download, exec, execAdjust, focusSpecies, hoverCell, options, previewAdjust, sheet, tool, world } from '../state';
 import { Seg } from './common';
 import { RangeSliders } from './components/RangeSliders';
 import { Slider, linear } from './components/Slider';
@@ -31,21 +31,9 @@ import { Toggle } from './components/Toggle';
 import { SpeciesWater } from './panels/speciesWater';
 import { paintWith, setTool } from './defs/tools';
 import { rangePick } from './tools';
-import { readPack } from '../../core/packs';
-import { fileLabel, openPackImport } from './packs/store';
+import { importBiomeFile } from './packs/store';
 import { openLibrary } from './packs/panel-store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
-
-// 导入生态文件：和资源包走同一条路（只解析、检查，带脚本的先问信任），只装进资源库（第二十九轮：以前的生态文件也不再整套换掉世界里的生态），
-// 在面板上添加到本世界
-export function importBiomeFile(text: string, file: string) {
-  const read = readPack(text, fileLabel(file));
-  if (!read.ok) {
-    showToast(`导入失败：${read.errors.slice(0, 2).join('；')}`, true);
-    return;
-  }
-  openPackImport(read, file);
-}
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
 // 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风。
