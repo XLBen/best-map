@@ -64,6 +64,7 @@ import { settleOverlay } from './map/settle';
 import { onSettleImageLoad } from '../render/settle-draw';
 import { type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
 import { libWide } from './packs/panel-store';
+import { bottomBarRef } from './shell/bottom-bar';
 
 // 文化、文化组、每一维、人口模式里国界的浓淡（第二十五轮：细而淡，只留近处一圈）
 const FAINT_COUNTRY = 0.4;
@@ -361,7 +362,9 @@ export function MapView() {
     });
     function barLift(): number {
       if (liftCache !== null && (liftBar ? liftBar.isConnected : performance.now() - liftAt < 500)) return liftCache;
-      const bar = document.querySelector('.bottombar');
+      // 底部条自己挂上来（shell/bottom-bar.ts）；已经不在页面上的不算
+      const el = bottomBarRef.current;
+      const bar = el?.isConnected ? el : null;
       if (bar !== liftBar) {
         if (liftBar) barObs.unobserve(liftBar);
         if (bar) barObs.observe(bar);

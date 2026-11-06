@@ -7,7 +7,7 @@ import { focusSpecies, mode, world } from '../state';
 import { focusOn } from './camera';
 import { ADJUSTMENTS } from './defs/adjustments';
 import { VIEWS, suitabilityFocus } from './defs/layers';
-import { riverEnds } from './defs/tools';
+import { riverEnds } from './defs/tool-sliders';
 import { newWorldCommands } from './forms';
 import { showView } from './panels/LayersPanel';
 import { labelCommit } from './panels/names';

@@ -167,6 +167,5 @@ export async function addNow(v: PickView, ctx: PageCtx, regen: boolean, other?: 
   if (!r.ok) return;
   if (!other) return flashRows(r.rows ?? rows, 'flash');
   // 从别的库加（第六十八轮）：新加的就在左栏的列表里，高亮几秒，长列表里滚到第一行
-  flashRows(r.rows ?? rows, 'hl');
-  setTimeout(() => document.querySelector('.lp-main .lp-hl')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+  flashRows(r.rows ?? rows, 'hl', { smooth: true, main: true });
 }

@@ -16,7 +16,7 @@ import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type I
 import { dragOutOf } from './page-drag';
 import type { PageItem } from './PageItem';
 import { type PageCtx, type SourceRef, eraVariables, itemsOf } from './pages';
-import { flashClass, goTo, libPanel, openRoute, openSegments, rememberSegments, toggleOther } from './panel-store';
+import { flashClass, goTo, libPanel, openRoute, openSegments, rememberSegments, toggleOther, useFlashScroll } from './panel-store';
 import { RefPicker } from './RefPicker';
 import { runTrusted, swatchOf } from './row-actions';
 
@@ -41,9 +41,12 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen, Item }: { s: ChildSec
     if (!moving || !up) return [];
     return (itemsOf(src, up, ctx) as readonly Obj[]).filter((g) => g.id !== parent.id).map((g) => ({ id: String(g.id), label: String(g.name ?? g.id), ...(typeof g.color === 'string' ? { color: g.color } : {}) }));
   }, [moving, up, src, ctx.lib, ctx.world]);
+  const rowRef = useRef<HTMLDivElement>(null);
+  useFlashScroll(rowRef, s.kind.id, r.id);
   return (
     <>
       <div
+        ref={rowRef}
         class={`lp-row lp-child-row ${open ? 'open' : ''} ${r.mark?.faint ? 'faint' : ''} ${flashClass(s.kind.id, r.id)}`}
         title={r.mark?.faint ? '生成后没用到，清理时会清掉' : undefined}
         data-pick-row={v ? '' : undefined}

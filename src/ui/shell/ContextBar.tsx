@@ -3,11 +3,13 @@ import { roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import { type PanelId, erasing, measure, openPanel, options, picking, setOptions, togglePanel, tool, world } from '../../state';
 import { panelOf } from '../defs/panel-registry';
-import { BRUSH, CATEGORY_DEFS, TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
+import { CATEGORY_DEFS, TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
+import { BRUSH } from '../defs/tool-sliders';
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
 import { Seg } from '../common';
 import { OptionSlider } from './OptionSlider';
+import { bottomBarRef } from './bottom-bar';
 
 // 底部条：上一行是这一类的全部工具（点一下就换，末尾“⋯”是这一类的设置；工具做什么写在工具按钮的悬停里），
 // 下一行是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示
@@ -133,12 +135,12 @@ export function ContextBar() {
   // 指针（第二十五轮）没有底部条（量距离时照旧显示量出来的数）
   if (c === 'inspect')
     return measure.value ? (
-      <div class="bottombar">
+      <div class="bottombar" ref={bottomBarRef}>
         <MeasureRow w={w} pts={measure.value} />
       </div>
     ) : null;
   return (
-    <div class="bottombar">
+    <div class="bottombar" ref={bottomBarRef}>
       <div class="bb-row bb-tools">
         {toolsOf(c, w).map((id, k) => {
           const t = TOOL_DEFS[id];

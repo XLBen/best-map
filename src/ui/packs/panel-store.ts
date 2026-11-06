@@ -1,4 +1,6 @@
 import { computed, signal } from '@preact/signals';
+import type { RefObject } from 'preact';
+import { useEffect } from 'preact/hooks';
 import { DIMENSION } from '../../../core/content/link-rules';
 import type { ContentRef } from '../../../core/content/links';
 import { kindOf } from '../../../core/content/registry';
@@ -157,10 +159,48 @@ export const libWide = computed(() => {
 // 刚加的行闪一下（库里的列表），“去看看”时新加的高亮几秒（本世界的列表）。键是 种类:id
 export const rowFlash = signal<{ keys: ReadonlySet<string>; kind: 'flash' | 'hl' } | null>(null);
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
-export function flashRows(rows: readonly ContentRef[], kind: 'flash' | 'hl', ms = kind === 'flash' ? 1200 : 4000) {
-  rowFlash.value = rows.length ? { keys: new Set(rows.map((r) => `${r.kind}:${r.id}`)), kind } : null;
+// scroll：高亮的行在长列表的下面时滚过去（smooth：慢慢滚；main：只看左栏的）。滚由列表里的行自己做（useFlashScroll）
+export function flashRows(rows: readonly ContentRef[], kind: 'flash' | 'hl', scroll?: { smooth?: boolean; main?: boolean }) {
+  const f = rows.length ? { keys: new Set(rows.map((r) => `${r.kind}:${r.id}`)), kind } : null;
+  rowFlash.value = f;
+  scrollWant = f && kind === 'hl' && scroll ? { flash: f, smooth: !!scroll.smooth, main: !!scroll.main, until: performance.now() + SCROLL_WAIT_MS } : null;
   if (flashTimer) clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => (rowFlash.value = null), ms);
+  flashTimer = setTimeout(() => (rowFlash.value = null), kind === 'flash' ? 1200 : 4000);
+}
+
+// 滚到高亮的第一行（第六十九轮：以前 60 ms 后在整个页面里找 .lp-hl）。高亮的行画好后在 effect 里报上来，
+// 同一次画的都报完后（微任务）按页面上的先后取第一行，滚到中间，只滚一次。等不到（列表没画出这一行）就算了
+const SCROLL_WAIT_MS = 300;
+let scrollWant: { flash: object; smooth: boolean; main: boolean; until: number } | null = null;
+let offered: HTMLElement[] = [];
+
+function offerFlashRow(el: HTMLElement | null, kind: string, id: string) {
+  const w = scrollWant;
+  const f = rowFlash.peek();
+  if (!el || !w || w.flash !== f || !f.keys.has(`${kind}:${id}`)) return;
+  if (performance.now() > w.until) {
+    scrollWant = null;
+    return;
+  }
+  if (w.main && !el.closest('.lp-main')) return;
+  if (!offered.length) queueMicrotask(scrollToFirst);
+  offered.push(el);
+}
+
+function scrollToFirst() {
+  const w = scrollWant;
+  const rows = offered.filter((el) => el.isConnected);
+  offered = [];
+  if (!w || !rows.length) return;
+  scrollWant = null;
+  rows.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  rows[0].scrollIntoView(w.smooth ? { block: 'center', behavior: 'smooth' } : { block: 'center' });
+}
+
+// 列表的一行：高亮着、有要滚的时报上来（ref 是这一行）
+export function useFlashScroll(ref: RefObject<HTMLElement | null>, kind: string, id: string) {
+  const f = rowFlash.value;
+  useEffect(() => offerFlashRow(ref.current, kind, id), [f, kind, id]);
 }
 
 // 刚加的行闪一下（lp-flash）、“去看看”高亮（lp-hl）
@@ -188,9 +228,8 @@ export function lookAt(to: SourceRef, rows: readonly ContentRef[]) {
   const ctx = pageCtx();
   const first = rows.map((r) => listOf(r, to.t === 'world' ? ctx : { ...ctx, world: null })).find(Boolean);
   if (first) goTo(first);
-  flashRows(rows, 'hl');
   // 列表长时高亮的行可能在下面：画好后滚过去
-  setTimeout(() => document.querySelector('.lp-hl')?.scrollIntoView({ block: 'center' }), 60);
+  flashRows(rows, 'hl', {});
 }
 
 // 复制成我的库之后：换到副本，还在同一页（内容一模一样；右栏开着的那一项也还开着）

@@ -9,7 +9,7 @@ import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, 
 import { newItemIn } from './page-actions';
 import { InsideRows } from './PageChildren';
 import { PickBox } from './PickBox';
-import { copyToMine, flashClass, goTo, libPanel, openRoute, toggleOther } from './panel-store';
+import { copyToMine, flashClass, goTo, libPanel, openRoute, toggleOther, useFlashScroll } from './panel-store';
 import { allLook } from './pick-look';
 import { type OtherOpen, hasOther, sameOther } from './other-view';
 import { setPicksIn } from './pick-store';
@@ -31,8 +31,11 @@ export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; c
   const ref = { kind: r.kind.id, id: r.id };
   const pick = v && kindPickable(v, r.kind.id) ? v : null;
   const note = pick ? lookOf(pick, ref).note : null;
+  const rowRef = useRef<HTMLDivElement>(null);
+  useFlashScroll(rowRef, r.kind.id, r.id);
   return (
     <div
+      ref={rowRef}
       class={`lp-row ${over ? 'drop-before' : ''} ${r.mark?.faint ? 'faint' : ''} ${flashClass(r.kind.id, r.id)}`}
       title={r.mark?.faint ? FAINT_NOTE : undefined}
       data-pick-row={v ? '' : undefined}
