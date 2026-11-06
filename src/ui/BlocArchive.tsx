@@ -10,6 +10,7 @@ import { BLOC_KIND_OPTIONS, blocCellsOf, blocCommand, blocMembers, blocNamePatch
 import { Seg } from './common';
 import { countriesByName, withId, withoutId } from './domain/countries';
 import { showCountry } from './panels/countries';
+import { registerArchive } from './defs/archive-registry';
 
 // 集团的档案（第二十六轮）：帝国、联邦、同盟。名字与原文、种类、盟主、成员、颜色、删除。改的都是 set_bloc
 
@@ -136,3 +137,11 @@ export function BlocArchive() {
     </div>
   );
 }
+
+registerArchive('bloc', {
+  title: () => {
+    const bloc = world.value && selectedBloc.value !== null ? blocById(world.value.small, selectedBloc.value) : undefined;
+    return `${BLOC_NAMES[bloc?.kind ?? 'alliance']}档案`;
+  },
+  body: BlocArchive,
+});

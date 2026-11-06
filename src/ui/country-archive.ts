@@ -1,7 +1,14 @@
 import { signal } from '@preact/signals';
-import { type FlagSpec, LAYOUT_COLORS } from '../../core/human';
+import type { Command } from '../../core/commands';
+import { type CountryPatch, type FlagSpec, LAYOUT_COLORS } from '../../core/human';
+import { exec } from '../state';
+import { patchCommand } from './domain/countries';
 
 // 国家档案（CountryArchive.tsx）的逻辑：旗的样式与图案的名字、换样式、换图案、旗上每种颜色是哪一块、页签
+
+// 执行一条命令（没有时什么都不做）；改这一国的档案（第七十轮从 CountryArchive.tsx 搬来，各页共用）
+export const run = (cmd: Command | null, busy = '正在保存…') => (cmd ? exec(cmd, busy) : Promise.resolve(false));
+export const patch = (id: number, p: CountryPatch | null) => run(p ? patchCommand(id, p) : null);
 
 export const LAYOUT_NAMES: Record<string, string> = {
   plain: '纯色',

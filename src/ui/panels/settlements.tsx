@@ -31,8 +31,7 @@ import {
   settleCounts,
   settleLists,
 } from '../domain/settlements';
-import { hasHuman } from '../tools/culture';
-import { deleteSelected, selectSettle } from '../tools/settlements';
+import { deleteSelected, hasHuman, selectSettle } from '../tools/public';
 import { registerPanels } from '../defs/panel-registry';
 
 // “城市”一类（第二十四轮）：底部条上的选择（选中的城市的等级、道路的种类、放哪一种地标与点）、“城市 ⋯”（生成、重新生成、删除、城市列表）

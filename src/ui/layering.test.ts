@@ -8,8 +8,13 @@ import { resolveImport, runtimeImports } from '../testing/imports';
 //   1. components/ 下只引用 core/、库和 components/ 自己（不认识世界、状态、资源库）
 //   2. defs/ 下不引用 panels/、tools/（含把它们一起导出的 tools.ts）和任何 .tsx：工具表只声明，部件、工具做什么各自登记进来
 //   3. src/ 下的 .ts 不引用 .tsx（逻辑不放在组件文件里）
-//   4. src/state.ts 不引用 src/ui/
-//   5. src/ui/ 与 src/state.ts 之间没有绕成圈的引用
+//   4. src/state.ts 与 src/state/ 下不引用 src/ui/
+//   5. src/ui/、src/state.ts、src/state/ 之间没有绕成圈的引用（第七十轮起 state/ 下的也算）
+// 第七十轮加的：
+//   6. panels/ 只经 tools/api.ts、tools/public.ts 用工具（不引用 tools.ts 和各类工具的文件）
+//   7. shell/ 不引用具体的档案（抽屉按 defs/archive-registry.ts 登记的画）
+//   8. 界面只经 state.ts 引用状态，不直接引用 state/ 下的文件（测试里 vi.mock('../state') 换掉 exec 等，绕过去就换不掉）
+//   9. domain/ 不引用 panels/、shell/、tools/、river/ 和 .tsx（领域逻辑不碰界面的部件和工具）
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -36,6 +41,9 @@ for (const f of sources(join(root, 'src'))) {
 const edges = (pred: (from: string, to: string) => boolean) => [...graph].flatMap(([f, deps]) => deps.filter((d) => pred(f, d)).map((d) => `${f} → ${d}`));
 
 const isTools = (f: string) => f.startsWith('src/ui/tools/') || f === 'src/ui/tools.ts';
+const isState = (f: string) => f === 'src/state.ts' || f.startsWith('src/state/');
+// 具体的档案：抽屉里的四种（连同国家档案的几页、派系）
+const isArchive = (f: string) => /^src\/ui\/(CountryArchive|BlocArchive|SettleArchive|ClimateChart|CountryFactions)\.tsx$/.test(f) || f.startsWith('src/ui/archives/');
 
 describe('界面的分层（第六十九轮）', () => {
   it('读得到引用（对照：App 引用面板，面板引用状态）', () => {
@@ -57,12 +65,14 @@ describe('界面的分层（第六十九轮）', () => {
     expect(edges((f, d) => f.endsWith('.ts') && d.endsWith('.tsx'))).toEqual([]);
   });
 
-  it('state.ts 不引用界面', () => {
-    expect(edges((f, d) => f === 'src/state.ts' && d.startsWith('src/ui/'))).toEqual([]);
+  it('state.ts、state/ 不引用界面', () => {
+    expect(edges((f, d) => isState(f) && d.startsWith('src/ui/'))).toEqual([]);
+    // 对照：state.ts 确实引用 state/ 下的文件
+    expect(graph.get('src/state.ts')).toContain('src/state/worker-host.ts');
   });
 
-  it('src/ui/ 与 state.ts 之间不绕成圈', () => {
-    const inside = (f: string) => f.startsWith('src/ui/') || f === 'src/state.ts';
+  it('src/ui/、state.ts、state/ 之间不绕成圈', () => {
+    const inside = (f: string) => f.startsWith('src/ui/') || isState(f);
     // 强连通分量（Tarjan）：大于一个文件的就是圈
     let n = 0;
     const index = new Map<string, number>();
@@ -108,5 +118,35 @@ describe('工具表的登记（第六十九轮）', () => {
     // 工具表里写的部件名、“⋯”的设置都在登记的里面
     const keys = new Set<string>(PANEL_KEYS);
     for (const c of CATEGORIES) if (c.extras) expect(keys.has(c.extras)).toBe(true);
+  });
+});
+
+describe('界面的分层（第七十轮）', () => {
+  it('panels/ 只经 tools/api.ts、tools/public.ts 用工具', () => {
+    expect(edges((f, d) => f.startsWith('src/ui/panels/') && isTools(d) && d !== 'src/ui/tools/api.ts' && d !== 'src/ui/tools/public.ts')).toEqual([]);
+    // 对照：面板确实用到了公开的那几样
+    expect(graph.get('src/ui/panels/culture.tsx')).toContain('src/ui/tools/public.ts');
+  });
+
+  it('shell/ 不引用具体的档案', () => {
+    expect(edges((f, d) => f.startsWith('src/ui/shell/') && isArchive(d))).toEqual([]);
+    expect(graph.get('src/ui/shell/Sheet.tsx')).toContain('src/ui/defs/archive-registry.ts');
+  });
+
+  it('界面只经 state.ts 引用状态', () => {
+    expect(edges((f, d) => f.startsWith('src/ui/') && d.startsWith('src/state/'))).toEqual([]);
+  });
+
+  it('domain/ 不引用 panels/、shell/、tools/、river/ 和 .tsx', () => {
+    expect(edges((f, d) => f.startsWith('src/ui/domain/') && (/^src\/ui\/(panels|shell|river)\//.test(d) || isTools(d) || d.endsWith('.tsx')))).toEqual([]);
+    expect([...graph.keys()].filter((f) => f.startsWith('src/ui/domain/')).length).toBeGreaterThan(10);
+  });
+
+  it('引用 register-all 以后：抽屉里的四种档案都登记了', async () => {
+    await import('./register-all');
+    const { SHEET_KINDS, archiveOf, registeredArchives } = await import('./defs/archive-registry');
+    expect([...registeredArchives()].sort()).toEqual([...SHEET_KINDS].sort());
+    expect(archiveOf('species').title()).toBe('生态类型');
+    expect(archiveOf('country').title()).toBe('国家档案');
   });
 });

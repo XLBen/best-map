@@ -6,16 +6,7 @@ import type { World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
 import type { ExactView } from '../domain/exact';
 import { pathKm } from '../tools';
-import {
-  type Course,
-  DEEP_GORGE,
-  captureWords,
-  destOf,
-  namedDest,
-  overlapWords,
-  riverTypeOfGuide,
-  touchWords,
-} from './model';
+import { type Course, DEEP_GORGE, captureWords, destOf, namedDest, overlapWords, riverTypeOfGuide, touchWords } from './model';
 import { type RiverPick, meters, quoted } from './query';
 import { RED_LINE, WHITE_LINE, YELLOW_LINE, courseRiver, ghostShapes, lineShapes, ringAt } from './shapes';
 

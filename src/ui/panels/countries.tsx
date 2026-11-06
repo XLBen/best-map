@@ -25,8 +25,7 @@ import {
 } from '../domain/countries';
 import { popText, withPackImports } from '../domain/human';
 import { library } from '../../library';
-import { hasHuman } from '../tools/culture';
-import { chosenTerritory, selectCountry } from '../tools/countries';
+import { chosenTerritory, hasHuman, selectCountry } from '../tools/public';
 import { registerPanels } from '../defs/panel-registry';
 
 // “国家”一类（第二十三轮）：底部条上的选择（领土涂给谁、选中的国家）、“国家 ⋯”（生成、重新生成、删除、按人口排的国家列表）

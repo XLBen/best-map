@@ -6,7 +6,7 @@ import { Seg } from '../common';
 import { UnmetPanel } from '../panels';
 import { showIgnored } from '../unmetLocate';
 import { BiomePalette } from './BiomePanel';
-import { cancelRangePick, rangePick } from '../tools';
+import { cancelRangePick, rangePick } from '../tools/public';
 import { registerPanels } from '../defs/panel-registry';
 
 // 自然这一类的几个部件：底部条上的当前生态、“没涂成”的入口、选生态的范围，“自然 ⋯”里的设置

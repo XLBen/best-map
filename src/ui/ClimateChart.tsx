@@ -34,6 +34,7 @@ import { rangePick } from './tools';
 import { importBiomeFile } from './packs/store';
 import { openLibrary } from './packs/panel-store';
 import { SpeciesAdvanced } from './SpeciesAdvanced';
+import { registerArchive } from './defs/archive-registry';
 
 // 生态类型编辑器：横轴年均温、纵轴“干 ←→ 湿”的气候图。每种生态是一个可拖动、拉伸的色块，
 // 底图是世界上所有陆地格的分布。色块重叠的地方由“强势程度”决定谁占上风。
@@ -572,3 +573,6 @@ export function SpeciesPanel() {
     </div>
   );
 }
+
+// 右边抽屉里的生态类型编辑（第七十轮：shell/Sheet.tsx 按登记的取）
+registerArchive('species', { title: () => '生态类型', body: SpeciesPanel });

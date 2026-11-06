@@ -31,7 +31,7 @@ import {
   riverInfo,
   selectRiver,
 } from '../river';
-import { fmtFlow, riverSizeName } from '../tools';
+import { fmtFlow, riverSizeName } from '../defs/tool-values';
 import { PIN_RIVER_TIP } from '../copy';
 import { NameInput } from './names';
 import { RiverTypeButton, riverTypeOfRiver } from './riverTypes';

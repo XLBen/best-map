@@ -28,6 +28,7 @@ import {
   textPatch,
 } from './domain/settlements';
 import { deleteSelected, selectSettle } from './tools/settlements';
+import { registerArchive } from './defs/archive-registry';
 
 // 城市、地标、自定义点的档案（第二十四轮）：右边的抽屉（同国家的档案），选中的那一样。
 // 改的都是 set_city / set_landmark / set_point 的 patch；字在离开框（或回车）时提交，简介、备注停下一秒也提交
@@ -412,3 +413,5 @@ export function SettleArchive() {
   if (r.kind === 'point') return <PointView w={w} id={r.id} />;
   return <p class="hint">道路在底部条上改</p>;
 }
+
+registerArchive('settle', { title: () => SETTLE_TITLES[selectedSettle.value?.kind ?? 'city'], body: SettleArchive });
