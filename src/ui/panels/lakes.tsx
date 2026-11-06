@@ -12,6 +12,7 @@ import { NameInput } from './names';
 import { type MenuItem, TypeButton, TypeMenu } from './waterTypes';
 import { createAndUse } from './water-types';
 import { Slider } from '../components/Slider';
+import { registerPanels } from '../defs/panel-registry';
 
 // 湖（第九轮）：放湖时点一下湖就选中它，底部条换成这个湖的设置（名字、换一个、是哪一种、大小、删掉），
 // 与画河时点一条河选中它一样。“新放的湖：X ▾”是新放的湖用哪一种
@@ -243,3 +244,6 @@ export function LakeList() {
 effect(() => {
   if (!selectedLake.value && openPanel.value === 'laketype') openPanel.value = null;
 });
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ LakeBar, NewLakeTypePick });

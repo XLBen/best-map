@@ -5,15 +5,12 @@ import { openPanel, options, togglePanel, world } from '../../state';
 import { Seg } from '../common';
 import { UnmetPanel } from '../panels';
 import { showIgnored } from '../unmetLocate';
-import { BiomePalette } from '../panels/BiomePanel';
+import { BiomePalette } from './BiomePanel';
 import { cancelRangePick, rangePick } from '../tools';
+import { registerPanels } from '../defs/panel-registry';
 
-// 注册表里引用的几个小部件：底部条上的当前生态、“没涂成”的入口，工具列表下方的设置
-export { NamesBar, NamesExtras } from '../panels/names';
-export { RiverBar, RiverExtras } from '../panels/rivers';
-export { NewRiverTypePick } from '../panels/riverTypes';
-export { LakeBar, NewLakeTypePick } from '../panels/lakes';
-export { ProvinceBar, ProvinceColorToggle, ProvinceExtras, ProvincePick } from '../provincePanel';
+// 自然这一类的几个部件：底部条上的当前生态、“没涂成”的入口、选生态的范围，“自然 ⋯”里的设置
+// （第六十九轮从 defs/extras.tsx 搬来；别的类的部件在各自的面板里登记）
 
 // 当前要涂的生态：点开是“自然 ⋯”（生态的色板只在那里）
 export function BiomeChip() {
@@ -93,3 +90,6 @@ export function NatureExtras() {
     </>
   );
 }
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ BiomeChip, UnmetChip, RangeBar, NatureExtras });

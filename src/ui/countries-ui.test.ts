@@ -37,7 +37,9 @@ import {
   yearText,
 } from './countries';
 import { humanViews, viewAvailable } from './defs/layers';
-import { CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf } from './defs/tools';
+import { CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import { newWorldCommands } from './forms';
 import { defaultChoice, generateCommand, regenerateWith } from './human';
 import { hereLine } from './Inspector';
@@ -46,6 +48,8 @@ import { countryDraws } from './map/political';
 import { mapKind, modeFeatures, modeOf, setMapKind } from './map/modes';
 import { isTitleField, titleRows, titleValue } from './packs/fields';
 import { type Pointer, chosenTerritory, countryLand, countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from './tools';
+
+startToolEffects();
 
 // 第二十三轮的界面：向导里的“国家”、“国家”一类的五个工具、国家的档案（set_country 的 patch）、地理图 / 人文图、国名、图例、仓库里的政体
 

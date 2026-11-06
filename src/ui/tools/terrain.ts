@@ -34,6 +34,7 @@ import { ghostFollows, queueHint, trackEdit } from '../pending';
 import { BLOCKED_RGB, type Backdrop, EMPTY, type Pointer, type Preview, type RGB, type ToolHandler, WHITE, aroundPole, guard, isBusy, keepX, worldId } from './api';
 import { type BrushLayers, type Stroke, brushR, brushTool, strengthValues } from './brush';
 import { POLE_HINT, POLE_TOAST, type Settled, type SizeDrag, dragTo, lakeIsleExact, lakeIsleRelease, lassoAdd, lassoShapes, movedAway, sizeLine, startDrag } from './gestures';
+import { RELIEF_MAX } from '../defs/tool-values';
 
 // 地形：画陆地 / 海（画笔、圈一片）、放岛、岛链、堆山 / 压低、打碎、重画这一片、恢复原样
 
@@ -248,8 +249,7 @@ export function restoreTool(): ToolHandler {
   });
 }
 
-// 堆山 / 压低的力度最大是多少（底部条滑块的上限，预览深浅按它算）
-export const RELIEF_MAX = 1.6;
+export { RELIEF_MAX };
 
 // 堆山 / 压低一笔大约让地势升降多少米（提示里的“约 +900 m”）：笔下升得最多、降得最多的地方变多少。
 // 经验估计（在地区、星球几种格数的地图上，画笔半径 1–25 格量过，多数与实际差在五成以内，个别差到两倍）：

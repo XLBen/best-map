@@ -40,6 +40,7 @@ import { openLibrary } from '../packs/panel-store';
 import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';
 import { NO_HUMAN, chosenCulture, chosenTuple, chosenValue, hasHuman, hearthCommand, hearthMarks, percentText } from '../tools/culture';
+import { registerPanels } from '../defs/panel-registry';
 
 // “文化”一类（第二十二轮）：底部条上的选择（文化、群体、维度的取值、倍数），“文化 ⋯”里的生成人文、时代、文化组、总人口，
 // 与新建向导共用的“生成人文”的选择（HumanChoices）
@@ -618,3 +619,6 @@ export function CultureExtras() {
     </>
   );
 }
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ NoHumanChip, CulturePick, PopTuplePick, ValuePick, FactorSlider, HearthBar, CultureExtras });

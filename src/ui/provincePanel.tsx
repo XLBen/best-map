@@ -20,6 +20,7 @@ import { TypePicker } from './shell/TypePicker';
 import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 import { provinceAreaText, provinceMultiCommands } from './province-panel';
+import { registerPanels } from './defs/panel-registry';
 
 // 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的自动划分规则
 
@@ -503,3 +504,6 @@ export function ProvinceExtras() {
     </>
   ) : null;
 }
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ ProvinceColorToggle, ProvinceBar, ProvincePick, ProvinceExtras });

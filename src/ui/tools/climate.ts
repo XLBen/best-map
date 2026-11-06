@@ -5,6 +5,7 @@ import { climateHere, climateMask, erasableLayer } from '../edits';
 import { type RGB, type ToolHandler, WHITE } from './api';
 import { type Stroke, brushTool, oneLayer, strengthValues } from './brush';
 import { biomeChange } from './nature';
+import { CLIMATE_MAX, type ClimateKind, FIELD_MAX, climateEffect, climateKind } from '../defs/tool-values';
 
 // 气候：冷暖、干湿、擦掉冷暖干湿的改动、涂自定义场
 
@@ -14,26 +15,9 @@ const CLIMATE_INFO = {
   wet: { name: '更湿', color: [60, 190, 170] as RGB, flip: 'dry' },
   dry: { name: '更干', color: [225, 190, 90] as RGB, flip: 'wet' },
 } as const;
-type ClimateKind = keyof typeof CLIMATE_INFO;
 
-// 冷暖干湿、自定义场的力度最大是多少（底部条滑块的上限，预览深浅按它算）
-export const CLIMATE_MAX = 2;
-export const FIELD_MAX = 1;
+export { CLIMATE_MAX, FIELD_MAX, climateEffect, climateKind };
 
-// 力度 1：中心升降 4 °C，或雨水乘除 e^0.5（多约 65% / 少约 39%）。short 是底部条上滑块右边的数
-export function climateEffect(c: ClimateKind, amount: number): { field: 'tempOffset' | 'moistOffset'; value: number; text: string; short: string } {
-  if (c === 'warm' || c === 'cold') {
-    const v = (c === 'warm' ? 4 : -4) * amount;
-    const deg = Math.abs(v).toFixed(Math.abs(v) < 2 ? 1 : 0);
-    return { field: 'tempOffset', value: v, text: `中心${v > 0 ? '升温' : '降温'}约 ${deg} °C`, short: `${v > 0 ? '+' : '−'}${deg} °C` };
-  }
-  const v = (c === 'wet' ? 0.5 : -0.5) * amount;
-  const pct = Math.round(Math.abs(Math.exp(v) - 1) * 100);
-  return { field: 'moistOffset', value: v, text: `中心雨水${v > 0 ? '多' : '少'}约 ${pct}%`, short: `雨水${v > 0 ? '+' : '−'}${pct}%` };
-}
-
-// 冷暖（group = temp）或干湿（moist）画笔：选的是哪一种、力度多大（冷暖、干湿各有各的力度）
-export const climateKind = (group: 'temp' | 'moist', o: ToolOptions): ClimateKind => (group === 'temp' ? o.tempMode : o.moistMode);
 export const climateAmount = (group: 'temp' | 'moist', o: ToolOptions): number => (group === 'temp' ? o.tempAmount : o.moistAmount);
 
 // 按住 Shift 反着来：更暖 ↔ 更冷，更湿 ↔ 更干

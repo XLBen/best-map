@@ -54,6 +54,8 @@ import { Sheet } from './shell/Sheet';
 import { TopBar } from './shell/TopBar';
 import { newWorldContentCommands } from '../../core/packs/import';
 import { Wizard } from './Wizard';
+// 工具表里按名字引用的部件、每个工具做什么（放在最后：上面已经引用过的面板先后照旧）
+import './register-all';
 
 // 整体：地图铺满全屏，界面浮在上面——顶栏、底部工具条、顶部提示条、右下角“这里”
 

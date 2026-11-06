@@ -1,9 +1,8 @@
 import { ChevronRight, GripVertical, Plus, X } from 'lucide-preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import type { FieldDesc } from '../../../core/content/registry';
-import { FEATURE_INFO, type FeatureType } from '../../../core/features';
-import { Control, Draft, Errors, FieldsBox, type Path } from './ContentEditor';
-import { type EditorIssue, type Obj, type TitleRow, defaultValue, isObj, moveItem, newKey, objectOf, renameKey, titleRows, titleValue, weightedRows, weightedValue } from './fields';
+import { Draft } from './editor-parts';
+import { type Obj, type TitleRow, defaultValue, isObj, moveItem, titleRows, titleValue, weightedRows, weightedValue } from './fields';
 import { RefGo, RefPicker, useRefOptions } from './RefPicker';
 import { DEFAULT_KEY, type RefOption, refLabel } from './refs';
 
@@ -355,54 +354,6 @@ export function WeightTable({ f, value, onChange }: { f: FieldDesc; value: unkno
         );
       })}
       {missing.length > 0 && <RefPicker add options={missing} onPick={(id) => put(id, typeof f.value?.default === 'number' ? f.value.default : 1)} />}
-    </div>
-  );
-}
-
-// ---------- 键 → 值 ----------
-
-// map 的键是地物类型时旁边写中文
-const keyLabel = (k: string): string | undefined => (k === 'province' ? '省份' : FEATURE_INFO[k as FeatureType]?.label);
-
-// 键在框里改（离开框时换上，已有的键不换），值按 value（或 of 的一组字段）
-export function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
-  const obj = isObj(value) ? value : {};
-  const put = (k: string, v: unknown) => onChange({ ...obj, [k]: v });
-  const blank = () => (f.of ? objectOf(f.of) : f.value ? defaultValue(f.value) : '');
-  return (
-    <div class={`ed-map ${f.of ? 'nested' : ''}`}>
-      {Object.entries(obj).map(([k, v]) => (
-        <div class="ed-entry">
-          <div class="ed-key">
-            <Draft text={k} onCommit={(t) => onChange(renameKey(obj, k, t.trim()))} />
-            {keyLabel(k) && <span class="hint">{keyLabel(k)}</span>}
-            <button
-              class="small icon ghost"
-              title="删除"
-              onClick={() => {
-                const next = { ...obj };
-                delete next[k];
-                onChange(next);
-              }}
-            >
-              <X />
-            </button>
-          </div>
-          <div class="ed-value">
-            {f.of ? (
-              <FieldsBox fields={f.of} value={isObj(v) ? v : {}} path={[...path, k]} issues={issues} onChange={(nv) => put(k, nv)} />
-            ) : f.value ? (
-              <>
-                <Control f={f.value} value={v} onChange={(nv) => put(k, nv)} path={[...path, k]} issues={issues} />
-                <Errors issues={issues} path={[...path, k]} />
-              </>
-            ) : null}
-          </div>
-        </div>
-      ))}
-      <button class="small" onClick={() => put(newKey(obj), blank())}>
-        <Plus /> 添加
-      </button>
     </div>
   );
 }

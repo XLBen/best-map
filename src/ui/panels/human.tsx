@@ -2,6 +2,7 @@ import { CATEGORY_LABEL, worldResources, worldTerrainClasses } from '../../../co
 import { options, openPanel, setOptions, world } from '../../state';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { chosenClass, chosenResource } from '../tools/human';
+import { registerPanels } from '../defs/panel-registry';
 
 // 画地形类别、资源（第二十一轮）：底部条上的“类别：山地 ▾”“资源：铁 ▾”和弹出的列表（最后一项打开仓库）
 
@@ -58,3 +59,6 @@ export function ResourceMenu() {
     />
   );
 }
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ ClassPick, ResourcePick });

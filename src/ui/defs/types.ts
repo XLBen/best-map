@@ -1,16 +1,17 @@
 import type { LucideIcon } from 'lucide-preact';
-import type { ComponentType } from 'preact';
 import type { Command } from '../../../core/commands';
 import type { World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
 import type { Category, ToolId, ToolOptions, ViewMode } from '../../state';
 import type { CategoryHighlights } from '../map/highlights';
 import type { ToolEnv, ToolHandler } from '../tools';
+import type { PanelKey } from './panel-registry';
 
 // 界面的注册表：工具、类别、世界调整、图层都在这里声明，
 // 顶栏、底部工具条、调整面板、图层面板、地图上按类画的高亮、光标、换工具时的清理都由它们生成。
-// 加一个工具：工具本身写在 tools/ 下（或 river/ 下），再在 defs/tools.ts 的工具表里加一条——ToolId、类别里的工具列表都由工具表推出来。
-// 加一个参数、一种底图也只要加一条声明。
+// 加一个工具：工具本身写在 tools/ 下（或 river/ 下），再在 defs/tools.ts 的工具表里加一条——ToolId、类别里的工具列表都由工具表推出来——
+// 并在 tools/bind.ts 里接上它做什么（create、吸管、橡皮擦、Delete）。底部条上自己画的部件、“⋯”里的设置在工具表里只写名字（panel-registry.ts），
+// 部件在 panels/ 下登记。加一个参数、一种底图也只要加一条声明。
 
 export type Icon = LucideIcon;
 
@@ -47,7 +48,8 @@ export type BarItem =
   // label：写在选项左边的两个字（“走向”）
   | { kind: 'choice'; key: ChoiceKey; options: ChoiceOption[]; label?: string }
   | { kind: 'action'; icon?: Icon; label: string; title?: string; run(): void }
-  | { kind: 'custom'; render: ComponentType };
+  // 自己画的部件：写名字，部件在 panels/ 下登记（panel-registry.ts）
+  | { kind: 'custom'; panel: PanelKey };
 
 // 工具表里的一条（id 是它在表里的键）
 export interface ToolSpec {
@@ -64,11 +66,6 @@ export interface ToolSpec {
   bar?(w: World): BarItem[];
   // 不出现在工具列表里（比如没有自定义场时的“涂自定义场”）；正在用时照样显示
   hidden?(w: World): boolean;
-  // Alt+点、底部条上的吸管（第二十七轮）：吸取（取这里的生态、这里的省份、这里的冷暖）。返回取到了什么，用来提示
-  pick?(w: World, cell: number): string | null;
-  // 橡皮擦（第二十七轮）：底部条第二行的开关打开时换成这一支。auto 恢复自动（去掉手工的改动），
-  // clear 清空（只在有意义的地方有：领土清成无主地、人口清成 0、资源清成“没有”）
-  eraser?: { auto?: (env: ToolEnv) => ToolHandler; clear?: (env: ToolEnv) => ToolHandler };
   // 地图上的光标：点选类的工具是手指，指针是箭头；省略时是十字（styles.css 的 .map-overlay）
   cursor?: 'pointer' | 'default';
   // 开着时底图换成这一层（地形类别、资源），换到别的工具时换回原来的（这期间在图层里换过就不动）。
@@ -76,16 +73,28 @@ export interface ToolSpec {
   view?: ViewMode | (() => ViewMode);
   // 换到别的工具时清掉的东西（选中的河、湖，选生态的范围）
   onLeave?(): void;
-  // Delete 键（第二十四轮：删除选中的城市、道路、地标、点）：用掉了返回 true
-  del?(): boolean;
   // 地图跟着重画的状态（选中的河、湖……）：读一下就行
   watch?(): unknown;
   // 选中的东西在地图上的样子（画河时选中的河）：沿着它的光，它自己的地名先不标
   focus?: { glow(w: World): Shape[]; hideLabel(w: World): string };
+}
+
+// 工具做什么（第六十九轮：tools/bind.ts 登记进工具表，工具表不引用 tools/）。
+// onLeave、watch 也可以写在这里（读的是工具自己的状态时：选生态的范围、省份画笔的“新省份”）
+export interface ToolBehavior {
+  // Alt+点、底部条上的吸管（第二十七轮）：吸取（取这里的生态、这里的省份、这里的冷暖）。返回取到了什么，用来提示
+  pick?(w: World, cell: number): string | null;
+  // 橡皮擦（第二十七轮）：底部条第二行的开关打开时换成这一支。auto 恢复自动（去掉手工的改动），
+  // clear 清空（只在有意义的地方有：领土清成无主地、人口清成 0、资源清成“没有”）
+  eraser?: { auto?: (env: ToolEnv) => ToolHandler; clear?: (env: ToolEnv) => ToolHandler };
+  // Delete 键（第二十四轮：删除选中的城市、道路、地标、点）：用掉了返回 true
+  del?(): boolean;
+  onLeave?(): void;
+  watch?(): unknown;
   create(env: ToolEnv): ToolHandler;
 }
 
-export interface ToolDef extends ToolSpec {
+export interface ToolDef extends ToolSpec, ToolBehavior {
   id: ToolId;
 }
 
@@ -107,8 +116,8 @@ export interface CategoryDef {
   label: string;
   // 这一类的工具（按工具表里的先后，由工具表推出来）
   tools: ToolId[];
-  // 底部工具条末尾“⋯”里的设置（自动划分规则、文字包……）
-  extras?: ComponentType;
+  // 底部工具条末尾“⋯”里的设置（自动划分规则、文字包……）：部件的名字（panel-registry.ts）
+  extras?: PanelKey;
   // 离开这一类时清掉的东西（选中的省、地名）
   onLeave?(): void;
   // 地图跟着重画的状态

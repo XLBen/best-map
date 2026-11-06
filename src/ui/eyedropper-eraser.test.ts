@@ -7,12 +7,16 @@ import type { World } from '../../core/world';
 import { worldResources, worldTerrainClasses } from '../../core/human';
 import { erasing, exec, options, picking, provinceSet, selectedCountry, selectedProvince, setOptions, world } from '../state';
 import { COUNTRY_TABS, countryTab, flagPartName } from './country-archive';
-import { TOOL_DEFS, createTool, eraserModes, setTool } from './defs/tools';
+import { TOOL_DEFS, createTool, eraserModes, setTool, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import type { ToolId } from './defs/tools';
 import { provinceAreaText, provinceMultiCommands } from './province-panel';
 import { onKeyDown } from './shell/keys';
 import { type Pointer, type ToolHandler, brushNew, factorOf, percentText, popCommand, provinceBrushTool, provinceSelectTool, toggleProvince } from './tools';
 import { countryAt, territoryCommand } from './countries';
+
+startToolEffects();
 
 // 第二十七轮的界面：所有笔刷的吸管与橡皮擦、人口减少、档案里设首都、国家档案的页签、省份的多选与新省份、省份大小
 

@@ -27,6 +27,7 @@ import { popText, withPackImports } from '../human';
 import { library } from '../../library';
 import { hasHuman } from '../tools/culture';
 import { chosenTerritory, selectCountry } from '../tools/countries';
+import { registerPanels } from '../defs/panel-registry';
 
 // “国家”一类（第二十三轮）：底部条上的选择（领土涂给谁、选中的国家）、“国家 ⋯”（生成、重新生成、删除、按人口排的国家列表）
 
@@ -269,12 +270,5 @@ export function CountryExtras() {
   return hasCountries(w) ? <CountryTools w={w} /> : <GenerateCountries w={w} />;
 }
 
-// 底部条上新建国家的方式（工具表里的选择）
-export const NEW_COUNTRY_SHAPES = {
-  kind: 'choice' as const,
-  key: 'newCountryShape' as const,
-  options: [
-    { value: 'province', label: '点省份', hint: '这个省份成为新国家' },
-    { value: 'lasso', label: '圈一片', hint: '圈住的陆地成为新国家' },
-  ],
-};
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ NoCountryChip, SelectedCountryChip, TerritoryPick, CountryExtras });

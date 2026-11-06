@@ -1,10 +1,10 @@
 import type { Command } from '../../../core/commands';
-import { roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
 import { world, worldPreviewError } from '../../state';
 import { type Exact, slowTail } from '../exact';
 import { type Pointer, mapDist } from './api';
+import { snapRadiusKm } from '../defs/tool-values';
 
 // 几个工具共用的手势：圈一片、点一下或拖出大小、湖里的岛的确切预览，以及数一组格连成几片
 
@@ -29,8 +29,7 @@ export const POLE_TOAST = '圈不能绕着极点画';
 
 // ---------- 点一下或拖出大小（放岛、放湖） ----------
 
-// 岛、湖的大小取整成好读的直径：气泡、提示、历史里是同一个数
-export const snapRadiusKm = (r: number) => roundKm(r * 2) / 2;
+export { snapRadiusKm };
 
 // 按下的地方；km：拖出的大小（半径），没拖开时为 null（用底部滑块的大小）
 export interface SizeDrag {

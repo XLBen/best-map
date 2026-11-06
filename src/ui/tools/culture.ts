@@ -7,6 +7,7 @@ import { exec, options, setOptions, world } from '../../state';
 import { type Pointer, type RGB, type ToolHandler, BLOCKED_RGB, EMPTY, WHITE, guard, mapDist } from './api';
 import { type Stroke, brushTool } from './brush';
 import { dryLand } from './human';
+import { percentText } from '../defs/tool-values';
 
 // “文化”一类的工具（第二十二轮）：文化笔刷（paint_culture）、人口笔刷（paint_pop：改成分、改人数、改一个维度）、发源地（move_hearth）。
 // 只涂干的陆地；没有人的格只有“改人数”加人时会变
@@ -54,8 +55,7 @@ export const factorOf = (shift: boolean) => {
   const f = 1 + options.value.popPercent;
   return shift ? 1 / f : f;
 };
-// 增减的比例写成“+50%”“−30%”
-export const percentText = (p: number) => (Math.abs(p) < 0.005 ? '0%' : `${p > 0 ? '+' : '−'}${Math.round(Math.abs(p) * 100)}%`);
+export { percentText };
 export const factorText = (f: number) => percentText(f - 1);
 // 改成分、改一个维度的力度（第二十七轮：负值是往外推；Shift 反过来）
 export const amountOf = (shift: boolean) => (shift ? -options.value.popAmount : options.value.popAmount);

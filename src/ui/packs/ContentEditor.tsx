@@ -6,12 +6,14 @@ import { CityGlyph } from '../panels/settlements';
 import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../settlements';
 import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
+import { FEATURE_INFO, type FeatureType } from '../../../core/features';
 import { Seg } from '../common';
 import { RangeSliders } from '../components/RangeSliders';
 import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, numberText, objectOf, parseTags, setField, shownFields, sliderScale, sparseSplit, tagsText } from './fields';
-import { Grip, MapEditor, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
+import { type EditorIssue, type Obj, addedValue, colorHex, isTitleField, plainHex, withHex, defaultValue, isSparse, isObj, issuesAt, moveItem, newKey, numberText, objectOf, parseTags, renameKey, setField, shownFields, sliderScale, sparseSplit, tagsText } from './fields';
+import { Draft, Errors, type Path } from './editor-parts';
+import { Grip, OneRef, TagRefs, TitleEditor, TitleListEditor, TupleEditor, TuplesEditor, WeightTable, WeightedEditor, useDragSort } from './editors';
 import { TendencyEditor } from './TendencyEditor';
 
 // 通用编辑器：按登记表的字段表（FieldDesc）画出来。text / longtext / number / bool / color / enum / tags / weighted /
@@ -20,7 +22,6 @@ import { TendencyEditor } from './TendencyEditor';
 // 第四十五轮：写了 ref 的从带搜索的下拉里选（RefPicker），tuple / tuples / title / titleList / tendencies 各有成块的控件
 // （editors.tsx、TendencyEditor.tsx），可以不写的对象没写时是一个“添加”，列表能拖动换先后；不再有原样的 JSON 框
 
-export type Path = PropertyKey[];
 
 interface Props {
   fields: readonly FieldDesc[];
@@ -92,12 +93,6 @@ function SparseBox({ fields, value, onChange, path = [], issues }: Props) {
       )}
     </div>
   );
-}
-
-// 出错的说明（这一处的，不含下面一层的）
-export function Errors({ issues, path }: { issues: readonly EditorIssue[]; path: Path }) {
-  const here = issuesAt(issues, path).filter((i) => i.path.length === path.length);
-  return here.length ? <p class="warn small">{here.map((i) => i.message).join('；')}</p> : null;
 }
 
 const COMPLEX = new Set(['list', 'map', 'weighted', 'json', 'script', 'tuples']);
@@ -291,30 +286,6 @@ function Field({ f, value, onChange, path, issues }: { f: FieldDesc; value: unkn
   );
 }
 
-// 框里写完、离开框（或回车）才换上
-export function Draft({ text, onCommit, multi, mono, placeholder }: { text: string; onCommit: (t: string) => void; multi?: boolean; mono?: boolean; placeholder?: string }) {
-  const [draft, setDraft] = useState(text);
-  useEffect(() => setDraft(text), [text]);
-  const commit = () => {
-    if (draft !== text) onCommit(draft);
-  };
-  if (multi) {
-    return <textarea class={mono ? 'mono' : ''} rows={mono ? 6 : 2} value={draft} placeholder={placeholder} onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)} onBlur={commit} />;
-  }
-  return (
-    <input
-      type="text"
-      value={draft}
-      placeholder={placeholder}
-      onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-      }}
-    />
-  );
-}
-
 // 写了上下限、步子不太密的数：滑块（第五十九轮，松手才换上）；可以不写的旁边一个去掉
 function NumberSlider({ f, value, onChange }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void }) {
   const scale = sliderScale(f)!;
@@ -476,6 +447,54 @@ function ListEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value:
         );
       })}
       <button class="small" onClick={() => onChange([...list, objectOf(of)])}>
+        <Plus /> 添加
+      </button>
+    </div>
+  );
+}
+
+// ---------- 键 → 值（第六十九轮从 editors.tsx 搬来：值又是一组字段，要用 FieldsBox、Control） ----------
+
+// map 的键是地物类型时旁边写中文
+const keyLabel = (k: string): string | undefined => (k === 'province' ? '省份' : FEATURE_INFO[k as FeatureType]?.label);
+
+// 键在框里改（离开框时换上，已有的键不换），值按 value（或 of 的一组字段）
+export function MapEditor({ f, value, onChange, path, issues }: { f: FieldDesc; value: unknown; onChange: (v: unknown) => void; path: Path; issues: readonly EditorIssue[] }) {
+  const obj = isObj(value) ? value : {};
+  const put = (k: string, v: unknown) => onChange({ ...obj, [k]: v });
+  const blank = () => (f.of ? objectOf(f.of) : f.value ? defaultValue(f.value) : '');
+  return (
+    <div class={`ed-map ${f.of ? 'nested' : ''}`}>
+      {Object.entries(obj).map(([k, v]) => (
+        <div class="ed-entry">
+          <div class="ed-key">
+            <Draft text={k} onCommit={(t) => onChange(renameKey(obj, k, t.trim()))} />
+            {keyLabel(k) && <span class="hint">{keyLabel(k)}</span>}
+            <button
+              class="small icon ghost"
+              title="删除"
+              onClick={() => {
+                const next = { ...obj };
+                delete next[k];
+                onChange(next);
+              }}
+            >
+              <X />
+            </button>
+          </div>
+          <div class="ed-value">
+            {f.of ? (
+              <FieldsBox fields={f.of} value={isObj(v) ? v : {}} path={[...path, k]} issues={issues} onChange={(nv) => put(k, nv)} />
+            ) : f.value ? (
+              <>
+                <Control f={f.value} value={v} onChange={(nv) => put(k, nv)} path={[...path, k]} issues={issues} />
+                <Errors issues={issues} path={[...path, k]} />
+              </>
+            ) : null}
+          </div>
+        </div>
+      ))}
+      <button class="small" onClick={() => put(newKey(obj), blank())}>
         <Plus /> 添加
       </button>
     </div>

@@ -14,7 +14,7 @@ import { kindPickable, lookOf, pickView } from './pick-view';
 import { PickBox } from './PickBox';
 import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type InsideRow, shownRows } from './page-children';
 import { dragOutOf } from './page-drag';
-import { PageItem } from './PageItem';
+import type { PageItem } from './PageItem';
 import { type PageCtx, type SourceRef, eraVariables, itemsOf } from './pages';
 import { flashClass, goTo, libPanel, openRoute, openSegments, rememberSegments, toggleOther } from './panel-store';
 import { RefPicker } from './RefPicker';
@@ -24,8 +24,10 @@ import { runTrusted, swatchOf } from './row-actions';
 // 我的库里抓住这一段的标题拖到外面（或点“拆出来”），这种内容回到首页单独成卡。内置的库、本世界不能换安排，内容还是能看、能改（本世界）
 
 type Obj = Record<string, unknown>;
+// 展开的子项用一项的页面画（PageItem.tsx 传进来：它也画这里的几段，两个文件不互相引用，第六十九轮）
+type ItemView = typeof PageItem;
 
-function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; r: ChildRow; parent: Obj; src: SourceRef; ctx: PageCtx; open: boolean; onOpen: () => void }) {
+function ChildLine({ s, r, parent, src, ctx, open, onOpen, Item }: { s: ChildSection; r: ChildRow; parent: Obj; src: SourceRef; ctx: PageCtx; open: boolean; onOpen: () => void; Item: ItemView }) {
   const [moving, setMoving] = useState(false);
   // 能勾的库里子项也有勾（第六十七轮）：勾上级时默认一起勾，可以单独去掉
   const v = pickView(src, ctx);
@@ -92,14 +94,14 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; 
       )}
       {open && (
         <div class="lp-child-edit">
-          <PageItem key={r.key} route={{ p: 'item', kind: s.kind.id, id: r.id }} src={src} ctx={ctx} embedded />
+          <Item key={r.key} route={{ p: 'item', kind: s.kind.id, id: r.id }} src={src} ctx={ctx} embedded />
         </div>
       )}
     </>
   );
 }
 
-function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; parent: Obj; src: SourceRef; ctx: PageCtx; shut: boolean; onToggle: () => void }) {
+function ChildSeg({ s, parent, src, ctx, shut, onToggle, Item }: { s: ChildSection; parent: Obj; src: SourceRef; ctx: PageCtx; shut: boolean; onToggle: () => void; Item: ItemView }) {
   const zone = useRef<HTMLElement>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [q, setQ] = useState('');
@@ -160,7 +162,7 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
           )}
           <div class="lp-rows">
             {shown.rows.map((r) => (
-              <ChildLine key={r.key} s={s} r={r} parent={parent} src={src} ctx={ctx} open={openId === r.id} onOpen={() => setOpenId(openId === r.id ? null : r.id)} />
+              <ChildLine key={r.key} s={s} r={r} parent={parent} src={src} ctx={ctx} open={openId === r.id} onOpen={() => setOpenId(openId === r.id ? null : r.id)} Item={Item} />
             ))}
           </div>
           {shown.more > 0 && (
@@ -206,7 +208,7 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
 }
 
 // 一项的页面上融入到它下面的几段。展开、收起按种类记着（这次打开页面期间）
-export function ChildSegments({ list, parent, parentKind, src, ctx }: { list: readonly ChildSection[]; parent: Obj; parentKind: string; src: SourceRef; ctx: PageCtx }) {
+export function ChildSegments({ list, parent, parentKind, src, ctx, Item }: { list: readonly ChildSection[]; parent: Obj; parentKind: string; src: SourceRef; ctx: PageCtx; Item: ItemView }) {
   const memoKey = `${parentKind}:children`;
   const [shut, setShut] = useState<ReadonlySet<string>>(() => openSegments(memoKey) ?? new Set());
   if (!list.length) return null;
@@ -219,7 +221,7 @@ export function ChildSegments({ list, parent, parentKind, src, ctx }: { list: re
   return (
     <div class="lp-fields lp-children">
       {list.map((s) => (
-        <ChildSeg key={s.key} s={s} parent={parent} src={src} ctx={ctx} shut={shut.has(s.key)} onToggle={() => toggle(s.key)} />
+        <ChildSeg key={s.key} s={s} parent={parent} src={src} ctx={ctx} shut={shut.has(s.key)} onToggle={() => toggle(s.key)} Item={Item} />
       ))}
     </div>
   );

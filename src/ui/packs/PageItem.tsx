@@ -273,7 +273,7 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
             {segs.slice(0, 1).map(segment)}
           </fieldset>
           {/* 下面的几段在第一段后面，不在只读的 fieldset 里：内置的库里也能点开看 */}
-          <ChildSegments list={p.children} parent={item} parentKind={p.kind.id} src={src} ctx={ctx} />
+          <ChildSegments list={p.children} parent={item} parentKind={p.kind.id} src={src} ctx={ctx} Item={PageItem} />
           {segs.length > 1 && (
             <fieldset class="lp-fields" disabled={!!p.readonly}>
               {segs.slice(1).map(segment)}

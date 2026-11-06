@@ -10,7 +10,9 @@ import { cellLayers, colorSignature, humanFlat } from '../render/colors';
 import { exec, mode, options, setOptions, world } from '../state';
 import { addGroupCommand, cellTotalCommand, groupShareCommand, parsePeople, popRows, removeGroupCommand } from './archive';
 import { humanViews, viewAvailable } from './defs/layers';
-import { CATEGORIES, CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf } from './defs/tools';
+import { CATEGORIES, CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import { newWorldCommands } from './forms';
 import {
   choiceEra,
@@ -31,6 +33,8 @@ import { addDimensionCommand, dimensionOptions } from '../../core/packs/add-dime
 import { legendFor } from './legend';
 import { WORLD_SOURCE, listPage, listedKinds } from './packs/pages';
 import { type Pointer, chosenTuple, cultureTool, dryLand, hearthCommand, hearthMarks, hearthTool, popTool } from './tools';
+
+startToolEffects();
 
 // 第二十二轮的界面：新建向导的“人文”、“文化”一类的三个工具、人文的底图与图例、格的档案里的人口、仓库里的四种内容
 

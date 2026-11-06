@@ -25,13 +25,17 @@ import {
 } from './blocs';
 import { countryAt, fragTitle, generateCountriesCommand, layoutOf, regenerateCountriesCommand } from './countries';
 import { humanViews, viewAvailable } from './defs/layers';
-import { setTool } from './defs/tools';
+import { setTool, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import { defaultChoice, generateCommand } from './human';
 import { hereLine } from './Inspector';
 import { legendFor } from './legend';
 import { kindOfView, mapModes, modeDef, modeOf } from './map/modes';
 import { REGION_KEY, countryDraws, regionDraws } from './map/political';
 import { pointerText, pointerTool } from './tools';
+
+startToolEffects();
 
 // 第二十六轮的界面：同盟模式（表、按钮、只在有集团时）、联邦的名字、帝国的外沿与联邦成员的国界、碎岛的着色、
 // 档案里的从属与集团的命令、格局、缓存跟着 set_bloc 变、导出的表

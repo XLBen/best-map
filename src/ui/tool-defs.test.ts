@@ -4,11 +4,15 @@ import { continents } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { exec, options, selectedFeature, selectedLake, selectedProvince, selectedRiver, setOptions, switchTool, tool, world } from '../state';
 import { barPreview, clearBarPreview } from './barPreview';
-import { CATEGORIES, CATEGORY_DEFS, TOOL_DEFS, type ToolId, category, setTool } from './defs/tools';
+import { CATEGORIES, CATEGORY_DEFS, TOOL_DEFS, type ToolId, category, setTool, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import { Settle, slowTail } from './exact';
 import { showSplit } from './provincePreview';
 import { previewRiverBar } from './riverCourse';
 import { type Pointer, climateTool, rangePick } from './tools';
+
+startToolEffects();
 
 // 第十九轮 A：工具的登记只有一处（工具表），换工具都走 setTool、清掉离开的工具与类别的东西；冷暖、干湿的力度分开；
 // 轻预览（Settle）停一下再算、同一个只算一次、旧的不要

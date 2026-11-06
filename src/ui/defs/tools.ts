@@ -45,7 +45,6 @@ import {
 import { islandSizeRangeKm, roundKm, sizeText } from '../../../core/terrain';
 import { islandTypeById, liveIslandKind } from '../../../core/island-types';
 import { viewAvailable } from './layers';
-import { ChainFragSlider, ChainTypePick, IslandTypePick, TerrainExtras } from '../panels/islandTypes';
 import type { World } from '../../../core/world';
 import { worldDimensions } from '../../../core/human';
 import {
@@ -73,84 +72,11 @@ import {
   world,
 } from '../../state';
 import { lakeSizeDraft } from '../lakeInfo';
-import {
-  CLIMATE_MAX,
-  FIELD_MAX,
-  RELIEF_MAX,
-  biomeTool,
-  chainTool,
-  climateEffect,
-  climateEraseTool,
-  climateKind,
-  classEraser,
-  countryClear,
-  countryEraser,
-  fieldEraser,
-  pickClimate,
-  pickField,
-  pickLand,
-  popClear,
-  popEraser,
-  resourceClear,
-  resourceEraser,
-  climateTool,
-  eraseTool,
-  fieldTool,
-  fmtFlow,
-  fragmentTool,
-  growTool,
-  islandTool,
-  lakeTool,
-  landTool,
-  brushNew,
-  provinceBrushTool,
-  provinceCutTool,
-  provinceRegenTool,
-  provinceSelectTool,
-  regionTool,
-  reliefTool,
-  renameTool,
-  restoreTool,
-  rangePick,
-  rangeTool,
-  rerollTool,
-  riverSizeName,
-  snapRadiusKm,
-  spotTool,
-  terrainClassTool,
-  resourceTool,
-  pickClass,
-  pickResource,
-} from '../tools';
-import { ClassPick, ResourcePick } from '../panels/human';
-import { CultureExtras, CulturePick, FactorSlider, HearthBar, NoHumanChip, PopTuplePick, ValuePick } from '../panels/culture';
-import { cultureTool, hearthTool, percentText, pickCulture, pickPop, popTool } from '../tools/culture';
-import { countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from '../tools/countries';
-import { CountryExtras, NEW_COUNTRY_SHAPES, NoCountryChip, SelectedCountryChip, TerritoryPick } from '../panels/countries';
-import { CityBar, CityPointChip, LandmarkChip, LandmarkPick, NoCityChip, PointChip, PointPick, RoadBar, SettlementExtras } from '../panels/settlements';
-import { cityTool, deleteSelected, landmarkTool, pointTool, roadTool } from '../tools/settlements';
-import { pointerTool } from '../tools/pointer';
+import { CLIMATE_MAX, FIELD_MAX, RELIEF_MAX, climateEffect, climateKind, fmtFlow, percentText, riverSizeName, snapRadiusKm } from './tool-values';
 import { clearBarPreview } from '../barPreview';
-import { RIVER_END_HINTS, riverTool, unwaterTool } from '../riverCourse';
-import {
-  BiomeChip,
-  RangeBar,
-  NamesBar,
-  NamesExtras,
-  NatureExtras,
-  ProvinceBar,
-  ProvinceColorToggle,
-  ProvinceExtras,
-  ProvincePick,
-  RiverBar,
-  RiverExtras,
-  NewRiverTypePick,
-  LakeBar,
-  NewLakeTypePick,
-  UnmetChip,
-} from './extras';
+import { RIVER_END_HINTS } from '../river/model';
 import { failingHighlights, featureHighlights, provinceHighlights, selectedRiverFocus } from '../map/highlights';
-import type { CategoryDef, SliderDef, ToolDef, ToolSpec } from './types';
+import type { CategoryDef, SliderDef, ToolBehavior, ToolDef, ToolSpec } from './types';
 import type { ToolEnv, ToolHandler } from '../tools';
 
 // ---------- 滑块 ----------
@@ -266,21 +192,18 @@ export const riverEnds = {
   ],
 };
 
-const pickSpecies = (w: World, cell: number) => {
-  const s = w.derived.dominant[cell];
-  const sp = s >= 0 ? w.small.species[s] : null;
-  if (!sp) return null;
-  setOptions({ biome: sp.id });
-  return sp.name;
+// 新建国家：点省份还是圈一片（第六十九轮从 panels/countries.tsx 搬来）
+export const NEW_COUNTRY_SHAPES = {
+  kind: 'choice' as const,
+  key: 'newCountryShape' as const,
+  options: [
+    { value: 'province', label: '点省份', hint: '这个省份成为新国家' },
+    { value: 'lasso', label: '圈一片', hint: '圈住的陆地成为新国家' },
+  ],
 };
 
-// 橡皮擦（第二十七轮）：地形、气候、生态沿用原来的“恢复”“擦除冷暖干湿”“擦除生态”，人文的见 tools/erasers.ts
-const TERRAIN_ERASER = { auto: () => restoreTool() };
-const CLIMATE_ERASER = { auto: () => climateEraseTool() };
-const NATURE_ERASER = { auto: () => eraseTool() };
-const HUMAN_ERASER = { auto: popEraser, clear: popClear };
-
 // ---------- 工具 ----------
+// 这里只写工具是什么（图标、名字、滑块、底部条、底图……）；做什么（create、吸管、橡皮擦、Delete）在 tools/bind.ts 接上
 
 const SPECS = {
   land: {
@@ -308,9 +231,6 @@ const SPECS = {
         ],
       },
     ],
-    pick: pickLand,
-    eraser: TERRAIN_ERASER,
-    create: () => landTool(),
   },
   island: {
     category: 'terrain',
@@ -320,9 +240,7 @@ const SPECS = {
     how: '点击放岛，往外拖定直径',
     size: ISLAND,
     // 每放一个岛自动换一个形状（只用鼠标，没有“换个形状”按钮）
-    bar: () => [{ kind: 'custom', render: IslandTypePick }],
-    eraser: TERRAIN_ERASER,
-    create: () => islandTool(),
+    bar: () => [{ kind: 'custom', panel: 'IslandTypePick' }],
   },
   chain: {
     category: 'terrain',
@@ -342,9 +260,7 @@ const SPECS = {
       format: (v, w) => `${v < 0.75 ? '稀疏' : v < 1.35 ? '正常' : '密集'} ${percent(v, 1)} · 间距约 ${fmtKm((2.6 * Math.max(islandSizeRangeKm(w, options.value.chainKind)[0], options.value.chainKm)) / v)} km`,
     },
     // 每画一条岛链自动换一种排列（只用鼠标，没有“换个排列”按钮）。碎岛的比例（第十八轮）在种类旁边
-    bar: () => [{ kind: 'custom', render: ChainTypePick }, { kind: 'custom', render: ChainFragSlider }],
-    eraser: TERRAIN_ERASER,
-    create: () => chainTool(),
+    bar: () => [{ kind: 'custom', panel: 'ChainTypePick' }, { kind: 'custom', panel: 'ChainFragSlider' }],
   },
   relief: {
     category: 'terrain',
@@ -364,8 +280,6 @@ const SPECS = {
         ],
       },
     ],
-    eraser: TERRAIN_ERASER,
-    create: () => reliefTool(),
   },
   fragment: {
     // 第十八轮：打碎
@@ -386,8 +300,6 @@ const SPECS = {
         ],
       },
     ],
-    eraser: TERRAIN_ERASER,
-    create: () => fragmentTool(),
   },
   reroll: {
     category: 'terrain',
@@ -396,7 +308,6 @@ const SPECS = {
     short: '重画',
     how: '点击，圈里的地形重新随机',
     size: BRUSH,
-    create: () => rerollTool(),
   },
   biome: {
     category: 'nature',
@@ -406,10 +317,7 @@ const SPECS = {
     how: '在陆地上涂；Alt+点击吸取生态',
     size: BRUSH,
     amount: REACH,
-    bar: () => [{ kind: 'custom', render: BiomeChip }, biomeModes, { kind: 'custom', render: UnmetChip }],
-    pick: pickSpecies,
-    eraser: NATURE_ERASER,
-    create: () => biomeTool(),
+    bar: () => [{ kind: 'custom', panel: 'BiomeChip' }, biomeModes, { kind: 'custom', panel: 'UnmetChip' }],
   },
   grow: {
     category: 'nature',
@@ -419,10 +327,8 @@ const SPECS = {
     how: '按住生态往外拖，越远长得越多',
     size: BRUSH,
     amount: REACH,
-    bar: () => [biomeModes, { kind: 'custom', render: UnmetChip }],
+    bar: () => [biomeModes, { kind: 'custom', panel: 'UnmetChip' }],
     // 拖的是鼠标下的那一片生态：没有要吸的
-    eraser: NATURE_ERASER,
-    create: () => growTool(),
   },
   terrainClass: {
     // 第二十一轮：画地形类别；第五十八轮：地面跟着升降到这一类的典型高度，力度 0 只改类别
@@ -433,11 +339,8 @@ const SPECS = {
     how: '按住涂，改地形类别，地面跟着升降；Alt+点击吸取',
     size: BRUSH,
     amount: { key: 'classStrength', label: '力度', range: () => [0, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => (v > 0 ? `${Math.round(v * 100)}%` : '只改类别') },
-    bar: () => [{ kind: 'custom', render: ClassPick }],
-    pick: pickClass,
-    eraser: { auto: classEraser },
+    bar: () => [{ kind: 'custom', panel: 'ClassPick' }],
     view: 'terrainClass',
-    create: () => terrainClassTool(),
   },
   temp: {
     category: 'climate',
@@ -457,9 +360,6 @@ const SPECS = {
         ],
       },
     ],
-    pick: (w, cell) => pickClimate('temp', w, cell),
-    eraser: CLIMATE_ERASER,
-    create: () => climateTool('temp'),
   },
   moist: {
     category: 'climate',
@@ -479,9 +379,6 @@ const SPECS = {
         ],
       },
     ],
-    pick: (w, cell) => pickClimate('moist', w, cell),
-    eraser: CLIMATE_ERASER,
-    create: () => climateTool('moist'),
   },
   range: {
     // 第十二轮：给生态选“长在哪里”（从生态编辑器的“选岛”“圈一下”进来，不在工具列表里）
@@ -491,15 +388,9 @@ const SPECS = {
     short: '选范围',
     how: '点岛或圈一片，生态只长在那里',
     hidden: () => true,
-    bar: () => [{ kind: 'custom', render: RangeBar }],
+    bar: () => [{ kind: 'custom', panel: 'RangeBar' }],
     cursor: 'pointer',
-    // 离开选生态的范围：不选了
-    onLeave(): void {
-      rangePick.value = null;
-    },
-    // 写明类型：它读的状态的类型里有 ToolId（由这张表推出来），不写会绕成一个圈
-    watch: (): unknown => rangePick.value,
-    create: () => rangeTool(),
+    // 离开时不选了、地图跟着选的范围重画：tools/bind.ts
   },
   resource: {
     // 第二十一轮：画资源
@@ -509,11 +400,8 @@ const SPECS = {
     short: '资源',
     how: '按住涂，改资源；Alt+点击吸取',
     size: BRUSH,
-    bar: () => [{ kind: 'custom', render: ResourcePick }],
-    pick: pickResource,
-    eraser: { auto: resourceEraser, clear: resourceClear },
+    bar: () => [{ kind: 'custom', panel: 'ResourcePick' }],
     view: 'resource',
-    create: () => resourceTool(),
   },
   field: {
     category: 'climate',
@@ -535,9 +423,6 @@ const SPECS = {
         ],
       },
     ],
-    pick: pickField,
-    eraser: { auto: fieldEraser },
-    create: () => fieldTool(),
   },
   river: {
     category: 'water',
@@ -549,15 +434,14 @@ const SPECS = {
     size: { ...RIVER, enabled: () => !selectedRiver.value },
     bar: () =>
       selectedRiver.value
-        ? [{ kind: 'custom', render: RiverBar }]
-        : [riverModes, riverEnds, { kind: 'custom', render: NewRiverTypePick }],
+        ? [{ kind: 'custom', panel: 'RiverBar' }]
+        : [riverModes, riverEnds, { kind: 'custom', panel: 'NewRiverTypePick' }],
     // 离开画河：选中的河不要了
     onLeave(): void {
       selectedRiver.value = null;
     },
     watch: (): unknown => selectedRiver.value,
     focus: selectedRiverFocus,
-    create: (env) => riverTool(env.zoom),
   },
   lake: {
     category: 'water',
@@ -567,13 +451,12 @@ const SPECS = {
     how: '点击放湖，往外拖定直径',
     // 选中一个湖时，底部条换成这个湖的设置（新湖的大小先收起来）
     size: { ...LAKE, enabled: () => !selectedLake.value },
-    bar: () => (selectedLake.value ? [{ kind: 'custom', render: LakeBar }] : [{ kind: 'custom', render: NewLakeTypePick }]),
+    bar: () => (selectedLake.value ? [{ kind: 'custom', panel: 'LakeBar' }] : [{ kind: 'custom', panel: 'NewLakeTypePick' }]),
     // 离开放湖：选中的湖不要了
     onLeave(): void {
       selectedLake.value = null;
     },
     watch: (): unknown => [selectedLake.value, lakeSizeDraft.value],
-    create: () => lakeTool(),
   },
   unwater: {
     category: 'water',
@@ -582,7 +465,6 @@ const SPECS = {
     short: '删河湖',
     how: '点击删除画的河或湖',
     cursor: 'pointer',
-    create: (env) => unwaterTool(env.zoom),
   },
   pselect: {
     category: 'provinces',
@@ -590,9 +472,8 @@ const SPECS = {
     name: '选省份',
     short: '选择',
     how: '点击选中省份；Shift+点击多选，合并或划给某国',
-    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
+    bar: () => [{ kind: 'custom', panel: 'ProvinceColorToggle' }, { kind: 'custom', panel: 'ProvinceBar' }],
     cursor: 'pointer',
-    create: () => provinceSelectTool(),
   },
   pbrush: {
     category: 'provinces',
@@ -602,20 +483,8 @@ const SPECS = {
     how: '涂进条上选的省份，或涂出新省份；Alt+点击吸取',
     size: BRUSH,
     // 第二十七轮：条上直接选省份（或“新省份”）
-    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvincePick }],
-    onLeave(): void {
-      brushNew.value = false;
-    },
-    pick: (w, cell) => {
-      const id = w.causes.province[cell];
-      if (id < 0 || !w.small.provinces[id]) return null;
-      selectedProvince.value = id;
-      brushNew.value = false;
-      return w.small.provinces[id].name;
-    },
-    // 省份没有“生成时的样子”可以退回：恢复自动是重新划分涂到的省份
-    eraser: { auto: () => provinceRegenTool() },
-    create: () => provinceBrushTool(),
+    bar: () => [{ kind: 'custom', panel: 'ProvinceColorToggle' }, { kind: 'custom', panel: 'ProvincePick' }],
+    // 离开时“新省份”不要了、吸取、橡皮擦（省份没有“生成时的样子”可以退回：恢复自动是重新划分涂到的省份）：tools/bind.ts
   },
   pcut: {
     category: 'provinces',
@@ -623,8 +492,7 @@ const SPECS = {
     name: '剪刀',
     short: '剪刀',
     how: '画线切开省份',
-    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }, { kind: 'custom', render: ProvinceBar }],
-    create: (env) => provinceCutTool(env.zoom),
+    bar: () => [{ kind: 'custom', panel: 'ProvinceColorToggle' }, { kind: 'custom', panel: 'ProvinceBar' }],
   },
   pregen: {
     category: 'provinces',
@@ -633,8 +501,7 @@ const SPECS = {
     short: '重划',
     how: '涂一片，重新划分里面的省份',
     size: BRUSH,
-    bar: () => [{ kind: 'custom', render: ProvinceColorToggle }],
-    create: () => provinceRegenTool(),
+    bar: () => [{ kind: 'custom', panel: 'ProvinceColorToggle' }],
   },
   rename: {
     category: 'names',
@@ -642,9 +509,8 @@ const SPECS = {
     name: '改名',
     short: '改名',
     how: '点地图上的名字',
-    bar: () => [{ kind: 'custom', render: NamesBar }],
+    bar: () => [{ kind: 'custom', panel: 'NamesBar' }],
     cursor: 'pointer',
-    create: (env) => renameTool(env.hitLabel),
   },
   area: {
     category: 'names',
@@ -652,8 +518,7 @@ const SPECS = {
     name: '圈地名',
     short: '圈地名',
     how: '按住画圈，给圈里起名',
-    bar: () => [{ kind: 'custom', render: NamesBar }],
-    create: (env) => regionTool(env.hitLabel),
+    bar: () => [{ kind: 'custom', panel: 'NamesBar' }],
   },
   spot: {
     category: 'names',
@@ -661,8 +526,7 @@ const SPECS = {
     name: '放地名',
     short: '放地名',
     how: '点击放地名，如城镇、渡口',
-    bar: () => [{ kind: 'custom', render: NamesBar }],
-    create: (env) => spotTool(env.hitLabel, env.zoom),
+    bar: () => [{ kind: 'custom', panel: 'NamesBar' }],
   },
   culture: {
     // 第二十二轮：文化笔刷
@@ -674,8 +538,8 @@ const SPECS = {
     size: BRUSH,
     amount: { key: 'cultureAmount', label: '力度', range: () => [0.05, 1], scale: 'linear', snap: (v) => Math.round(v * 20) / 20, format: (v) => percent(v, 1) },
     bar: () => [
-      { kind: 'custom', render: NoHumanChip },
-      { kind: 'custom', render: CulturePick },
+      { kind: 'custom', panel: 'NoHumanChip' },
+      { kind: 'custom', panel: 'CulturePick' },
       {
         kind: 'choice',
         key: 'cultureMode',
@@ -685,10 +549,7 @@ const SPECS = {
         ],
       },
     ],
-    pick: pickCulture,
-    eraser: HUMAN_ERASER,
     view: 'culture',
-    create: () => cultureTool(),
   },
   pop: {
     // 人口笔刷：改成分、改人数、改一个维度
@@ -709,7 +570,7 @@ const SPECS = {
       enabled: () => options.value.popMode !== 'count',
     },
     bar: () => [
-      { kind: 'custom', render: NoHumanChip },
+      { kind: 'custom', panel: 'NoHumanChip' },
       {
         kind: 'choice',
         key: 'popMode',
@@ -719,15 +580,12 @@ const SPECS = {
           { value: 'value', label: '改一个维度', hint: '改宗、传教：只改这一维；力度为负或 Shift 减少' },
         ],
       },
-      { kind: 'custom', render: PopTuplePick },
-      { kind: 'custom', render: ValuePick },
-      { kind: 'custom', render: FactorSlider },
+      { kind: 'custom', panel: 'PopTuplePick' },
+      { kind: 'custom', panel: 'ValuePick' },
+      { kind: 'custom', panel: 'FactorSlider' },
     ],
-    pick: pickPop,
-    eraser: HUMAN_ERASER,
     // 底图跟着模式：改成分看文化，改人数看人口密度，改一个维度看那一维
     view: () => (options.value.popMode === 'share' ? 'culture' : options.value.popMode === 'count' ? 'popDensity' : `dim:${options.value.popDim || (world.value ? (worldDimensions(world.value.small)[0]?.id ?? '') : '')}`),
-    create: () => popTool(),
   },
   hearth: {
     // 发源地：拖动，人文重新生成
@@ -736,9 +594,8 @@ const SPECS = {
     name: '发源地',
     short: '发源地',
     how: '拖动发源地，人文重新生成',
-    bar: () => [{ kind: 'custom', render: NoHumanChip }, { kind: 'custom', render: HearthBar }],
+    bar: () => [{ kind: 'custom', panel: 'NoHumanChip' }, { kind: 'custom', panel: 'HearthBar' }],
     view: 'cultureGroup',
-    create: (env) => hearthTool(env.zoom),
   },
   // ---------- 第二十三轮：国家 ----------
   cselect: {
@@ -747,10 +604,9 @@ const SPECS = {
     name: '选国家',
     short: '选择',
     how: '点击国家，打开档案',
-    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: SelectedCountryChip }],
+    bar: () => [{ kind: 'custom', panel: 'NoCountryChip' }, { kind: 'custom', panel: 'SelectedCountryChip' }],
     cursor: 'pointer',
     view: 'country',
-    create: (env) => countrySelectTool(env.zoom),
   },
   territory: {
     category: 'countries',
@@ -759,11 +615,8 @@ const SPECS = {
     short: '领土',
     how: '按住涂，改成这一国的领土；Alt+点击吸取',
     size: BRUSH,
-    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: TerritoryPick }],
-    pick: pickTerritory,
-    eraser: { auto: countryEraser, clear: countryClear },
+    bar: () => [{ kind: 'custom', panel: 'NoCountryChip' }, { kind: 'custom', panel: 'TerritoryPick' }],
     view: 'country',
-    create: (env) => territoryTool(env.zoom),
   },
   newCountry: {
     category: 'countries',
@@ -771,9 +624,8 @@ const SPECS = {
     name: '新建国家',
     short: '新国家',
     how: '点一个省份或圈一片，成为新国家',
-    bar: () => [{ kind: 'custom', render: NoCountryChip }, NEW_COUNTRY_SHAPES],
+    bar: () => [{ kind: 'custom', panel: 'NoCountryChip' }, NEW_COUNTRY_SHAPES],
     view: 'country',
-    create: (env) => newCountryTool(env.zoom),
   },
   cmerge: {
     category: 'countries',
@@ -781,10 +633,9 @@ const SPECS = {
     name: '合并国家',
     short: '合并',
     how: '先点一国，再点要并进来的',
-    bar: () => [{ kind: 'custom', render: NoCountryChip }, { kind: 'custom', render: SelectedCountryChip }],
+    bar: () => [{ kind: 'custom', panel: 'NoCountryChip' }, { kind: 'custom', panel: 'SelectedCountryChip' }],
     cursor: 'pointer',
     view: 'country',
-    create: (env) => countryMergeTool(env.zoom),
   },
   // ---------- 第二十四轮：城市、道路、地标、自定义点 ----------
   city: {
@@ -793,10 +644,8 @@ const SPECS = {
     name: '城市',
     short: '城市',
     how: '点空地新建城市，点城市打开档案，拖动挪走',
-    bar: () => [{ kind: 'custom', render: NoCityChip }, { kind: 'custom', render: CityBar }, { kind: 'custom', render: CityPointChip }],
+    bar: () => [{ kind: 'custom', panel: 'NoCityChip' }, { kind: 'custom', panel: 'CityBar' }, { kind: 'custom', panel: 'CityPointChip' }],
     cursor: 'pointer',
-    del: () => deleteSelected(['city', 'point']),
-    create: (env) => cityTool(env.zoom),
   },
   road: {
     category: 'settlements',
@@ -804,9 +653,7 @@ const SPECS = {
     name: '道路',
     short: '道路',
     how: '按住画道路；点道路选中，拖控制点改走向',
-    bar: () => [{ kind: 'custom', render: RoadBar }],
-    del: () => deleteSelected(['road']),
-    create: (env) => roadTool(env.zoom),
+    bar: () => [{ kind: 'custom', panel: 'RoadBar' }],
   },
   landmark: {
     category: 'settlements',
@@ -814,10 +661,8 @@ const SPECS = {
     name: '地标',
     short: '地标',
     how: '点击放地标，点地标打开档案，拖动挪走',
-    bar: () => [{ kind: 'custom', render: LandmarkPick }, { kind: 'custom', render: LandmarkChip }],
+    bar: () => [{ kind: 'custom', panel: 'LandmarkPick' }, { kind: 'custom', panel: 'LandmarkChip' }],
     cursor: 'pointer',
-    del: () => deleteSelected(['landmark']),
-    create: (env) => landmarkTool(env.zoom),
   },
   point: {
     category: 'settlements',
@@ -825,10 +670,8 @@ const SPECS = {
     name: '自定义点',
     short: '点',
     how: '点击放点，点它打开档案，拖动挪走',
-    bar: () => [{ kind: 'custom', render: PointPick }, { kind: 'custom', render: PointChip }],
+    bar: () => [{ kind: 'custom', panel: 'PointPick' }, { kind: 'custom', panel: 'PointChip' }],
     cursor: 'pointer',
-    del: () => deleteSelected(['point']),
-    create: (env) => pointTool(env.zoom),
   },
   // ---------- 第二十五轮：指针 ----------
   pointer: {
@@ -838,14 +681,19 @@ const SPECS = {
     short: '指针',
     how: '点击查看档案，不改地图',
     cursor: 'default',
-    create: (env) => pointerTool(env.zoom),
   },
 } satisfies Record<string, ToolSpec>;
 
 // 工具的 id：工具表里的键
 export type ToolId = keyof typeof SPECS;
 
+// 工具做什么还没接上时 create 等是空的：tools/bind.ts 登记进来（register-all.ts 引用它）
 export const TOOL_DEFS = Object.fromEntries(Object.entries(SPECS).map(([id, d]) => [id, { ...d, id }])) as Record<ToolId, ToolDef>;
+
+// 接上每个工具做什么（tools/bind.ts 调用一次；表里每个工具都要有）
+export function bindTools(impl: Record<ToolId, ToolBehavior>) {
+  for (const id of Object.keys(impl) as ToolId[]) Object.assign(TOOL_DEFS[id], impl[id]);
+}
 
 // ---------- 类别 ----------
 
@@ -855,16 +703,16 @@ const toolsIn = (c: Category) => (Object.keys(TOOL_DEFS) as ToolId[]).filter((id
 export const CATEGORIES: CategoryDef[] = [
   // 第二十五轮：指针（只看不改）。顶栏最左边单独一个按钮（V），没有底部条、没有“⋯”
   { id: 'inspect', icon: MousePointer, label: '指针', tools: toolsIn('inspect') },
-  { id: 'terrain', icon: Mountain, label: '地形', tools: toolsIn('terrain'), extras: TerrainExtras },
+  { id: 'terrain', icon: Mountain, label: '地形', tools: toolsIn('terrain'), extras: 'TerrainExtras' },
   { id: 'climate', icon: ThermometerSun, label: '气候', tools: toolsIn('climate') },
-  { id: 'nature', icon: Leaf, label: '自然', tools: toolsIn('nature'), extras: NatureExtras, map: { highlights: failingHighlights } },
-  { id: 'water', icon: Droplets, label: '水系', tools: toolsIn('water'), extras: RiverExtras, map: { markers: true } },
+  { id: 'nature', icon: Leaf, label: '自然', tools: toolsIn('nature'), extras: 'NatureExtras', map: { highlights: failingHighlights } },
+  { id: 'water', icon: Droplets, label: '水系', tools: toolsIn('water'), extras: 'RiverExtras', map: { markers: true } },
   {
     id: 'provinces',
     icon: MapIcon,
     label: '省份',
     tools: toolsIn('provinces'),
-    extras: ProvinceExtras,
+    extras: 'ProvinceExtras',
     // 离开省份：选中的省、多选的不要了
     onLeave: () => {
       selectedProvince.value = null;
@@ -878,18 +726,18 @@ export const CATEGORIES: CategoryDef[] = [
     icon: Type,
     label: '地名',
     tools: toolsIn('names'),
-    extras: NamesExtras,
+    extras: 'NamesExtras',
     // 离开地名：选中的地名不要了
     onLeave: () => (selectedFeature.value = null),
     watch: () => selectedFeature.value,
     map: { highlights: featureHighlights, labels: () => selectedFeature.value },
   },
   // 第二十二轮：文化（文化、人口笔刷，发源地）。没有人文时底部条上是“生成人文…”
-  { id: 'culture', icon: UsersRound, label: '文化', tools: toolsIn('culture'), extras: CultureExtras },
+  { id: 'culture', icon: UsersRound, label: '文化', tools: toolsIn('culture'), extras: 'CultureExtras' },
   // 第二十三轮：国家（选国家、领土、新建、合并、首都）。没有国家时底部条上是“生成国家…”
-  { id: 'countries', icon: Castle, label: '国家', tools: toolsIn('countries'), extras: CountryExtras, watch: () => selectedCountry.value },
+  { id: 'countries', icon: Castle, label: '国家', tools: toolsIn('countries'), extras: 'CountryExtras', watch: () => selectedCountry.value },
   // 第二十四轮：城市（城市、道路、地标、自定义点）。开着时任何模式里都画全部城市、地标
-  { id: 'settlements', icon: Building2, label: '城市', tools: toolsIn('settlements'), extras: SettlementExtras, watch: () => selectedSettle.value },
+  { id: 'settlements', icon: Building2, label: '城市', tools: toolsIn('settlements'), extras: 'SettlementExtras', watch: () => selectedSettle.value },
 ];
 
 export const CATEGORY_DEFS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Category, CategoryDef>;
@@ -987,38 +835,45 @@ export function resetTools() {
   mode.value = 'terrain';
 }
 
-// 底图跟着工具的选项变（人口笔刷换了模式）：底图还是工具换上的那一层时跟着换
-effect(() => {
-  const id = tool.value;
-  void options.value;
-  if (typeof TOOL_DEFS[id].view !== 'function' || !viewBefore) return;
-  const v = viewOf(id);
-  if (!v || v === viewBefore.set) return;
-  if (mode.peek() === viewBefore.set) mode.value = v;
-  viewBefore.set = v;
-});
+// 跟着状态变的三件事（第六十九轮：以前是模块里的 effect，现在由 main.tsx 在第一次画界面之前调用一次，先后与以前一样，
+// 在 map/modes.ts 等模块里的 effect 之后）。测试里要它们时自己调用
+let effectsOn = false;
+export function startToolEffects() {
+  if (effectsOn) return;
+  effectsOn = true;
+  // 底图跟着工具的选项变（人口笔刷换了模式）：底图还是工具换上的那一层时跟着换
+  effect(() => {
+    const id = tool.value;
+    void options.value;
+    if (typeof TOOL_DEFS[id].view !== 'function' || !viewBefore) return;
+    const v = viewOf(id);
+    if (!v || v === viewBefore.set) return;
+    if (mode.peek() === viewBefore.set) mode.value = v;
+    viewBefore.set = v;
+  });
 
-// 世界里没有这一层了（删除了人文、换了时代、打开了别的世界）：底图回到地貌
-// 开着人文的工具时生成了人文：换上工具的那一层
-effect(() => {
-  const w = world.value;
-  if (!w) return;
-  if (!viewAvailable(w, mode.value)) {
-    // 是工具换上的那一层：回到换之前的底图，人文又有了时再换上
-    // 同盟模式里删掉了最后一个集团：回到国家
-    const back = viewBefore && mode.value === viewBefore.set ? viewBefore.mode : mode.value === 'bloc' ? 'country' : 'terrain';
-    viewBefore = null;
-    mode.value = viewAvailable(w, back) ? back : 'terrain';
-  }
-  const id = tool.peek();
-  if (!viewBefore && TOOL_DEFS[id].view && viewOf(id)) switchView(id);
-});
+  // 世界里没有这一层了（删除了人文、换了时代、打开了别的世界）：底图回到地貌
+  // 开着人文的工具时生成了人文：换上工具的那一层
+  effect(() => {
+    const w = world.value;
+    if (!w) return;
+    if (!viewAvailable(w, mode.value)) {
+      // 是工具换上的那一层：回到换之前的底图，人文又有了时再换上
+      // 同盟模式里删掉了最后一个集团：回到国家
+      const back = viewBefore && mode.value === viewBefore.set ? viewBefore.mode : mode.value === 'bloc' ? 'country' : 'terrain';
+      viewBefore = null;
+      mode.value = viewAvailable(w, back) ? back : 'terrain';
+    }
+    const id = tool.peek();
+    if (!viewBefore && TOOL_DEFS[id].view && viewOf(id)) switchView(id);
+  });
 
-// 涂自定义场：自定义场被删掉了就换一个，都删了就回到冷暖
-effect(() => {
-  const w = world.value;
-  if (!w || tool.value !== 'field') return;
-  const names = Object.keys(w.causes.fields);
-  if (!names.length) setTool('temp');
-  else if (!options.value.field || !w.causes.fields[options.value.field]) setOptions({ field: names[0] });
-});
+  // 涂自定义场：自定义场被删掉了就换一个，都删了就回到冷暖
+  effect(() => {
+    const w = world.value;
+    if (!w || tool.value !== 'field') return;
+    const names = Object.keys(w.causes.fields);
+    if (!names.length) setTool('temp');
+    else if (!options.value.field || !w.causes.fields[options.value.field]) setOptions({ field: names[0] });
+  });
+}

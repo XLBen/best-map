@@ -7,17 +7,11 @@ import { chosenLakeType, lakeCellsAt, lakeInfo, lakeRefAt, lakeSizeDraft } from 
 import { ghostFollows, queueHint, trackEdit } from '../pending';
 import { EMPTY, type Pointer, type Preview, type RGB, type ToolHandler, WHITE, guard, worldId } from './api';
 import { type Settled, type SizeDrag, dragTo, movedAway, sizeLine, startDrag } from './gestures';
+import { fmtFlow, riverSizeName } from '../defs/tool-values';
 
 // 水系：放湖（画河、删除河湖在 ../river/tool.ts），河的大小、流量的写法
 
-// 河的大小（“河流多少”门槛的倍数）叫什么
-export const riverSizeName = (flow: number) => (flow < 3 ? '小河' : flow < 15 ? '中等的河' : '大河');
-
-// 流量取两位有效数字，好读
-export const fmtFlow = (q: number) => {
-  const p = Math.pow(10, Math.max(0, Math.floor(Math.log10(Math.max(q, 1))) - 1));
-  return (Math.round(q / p) * p).toLocaleString();
-};
+export { fmtFlow, riverSizeName };
 
 // 点一下：用底部滑块的大小放湖；按住往外拖：拖多远湖就多大。前面的编辑还在算时也能放（排队）。
 // 点在湖上是选中它（底部条换成这个湖的设置）；选着一个湖时点别处只是取消选择。

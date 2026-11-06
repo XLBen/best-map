@@ -11,6 +11,7 @@ import { focusOn } from '../camera';
 import { selectRiver } from '../riverCourse';
 import { Seg } from '../common';
 import { SelectionActions } from '../shell/SelectionActions';
+import { registerPanels } from '../defs/panel-registry';
 
 // 地名：底部条上的“选中地名”编辑（名字、风格），“地名 ⋯”里的地名风格与全部地名
 
@@ -368,3 +369,6 @@ export function NamesExtras() {
     </>
   );
 }
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ NamesBar, NamesExtras });

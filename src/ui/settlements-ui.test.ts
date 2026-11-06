@@ -8,7 +8,9 @@ import type { World } from '../../core/world';
 import { type OverlayState, SETTLE_KEY, placeLabels } from '../render/overlay';
 import { BoxIndex, CITY_ICONS, LANDMARK_ICONS, POINT_ICONS, iconPathData, iconScale, markRadius, nameSpots } from '../render/settle-draw';
 import { askUser, exec, options, overlays, selectedSettle, setOptions, sheet, world } from '../state';
-import { CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf } from './defs/tools';
+import { CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import { OVERLAYS } from './defs/layers';
 import { defaultChoice, generateCommand } from './human';
 import { hereLine } from './Inspector';
@@ -53,6 +55,8 @@ import { fragTitle, layoutChoices, tierLabel } from './countries';
 import { eraOf } from '../../core/testing/eras';
 import { modeDef } from './map/modes';
 import { type Pointer, cityTool, landmarkTool, pointTool, roadTool } from './tools';
+
+startToolEffects();
 
 // 第二十四轮的界面：向导的“城市与道路”“地标”、“城市”一类的四个工具发出的命令、缩放分级与图标、地图上的字、档案的 patch、
 // 单独导出的列表、仓库里的三种内容

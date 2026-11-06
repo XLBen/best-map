@@ -2,6 +2,7 @@ import { Ellipsis, Eraser, Pipette, Ruler } from 'lucide-preact';
 import { roundKm } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import { type PanelId, erasing, measure, openPanel, options, picking, setOptions, togglePanel, tool, world } from '../../state';
+import { panelOf } from '../defs/panel-registry';
 import { BRUSH, CATEGORY_DEFS, TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
@@ -39,7 +40,7 @@ function Item({ item }: { item: BarItem }) {
       </button>
     );
   }
-  const R = item.render;
+  const R = panelOf(item.panel);
   return <R />;
 }
 

@@ -13,13 +13,17 @@ import { cellLayers, humanFlat } from '../render/colors';
 import { PEAK_KEY, peakLabels } from '../render/overlay';
 import { exec, mode, options, setOptions, world } from '../state';
 import { autoNameCommand, cellClassCommand, cellResourceCommand, noteCommand, renameCommand, rerollCommand } from './archive';
-import { TOOL_DEFS, setTool } from './defs/tools';
+import { TOOL_DEFS, setTool, startToolEffects } from './defs/tools';
+// 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
+import './tools/bind';
 import { legendFor } from './legend';
 import { addedValue, isSparse, sparseSplit } from './packs/fields';
 import { libraryRows, removeCommand, worldRows } from './packs/rows';
 import { RULE_FIELDS } from '../../core/human/rules';
 import { type Pointer, dryLand, resourceTool, terrainClassTool } from './tools';
 import { BUILTIN_CLASSES, FANTASY_RESOURCES, GENERAL_RESOURCES } from '../../core/packs/base';
+
+startToolEffects();
 
 // 第二十一轮的界面：地形类别、资源的底图与图例，山峰图层，两支画笔，格的档案，仓库里总在的内置项
 

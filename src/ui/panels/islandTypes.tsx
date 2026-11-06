@@ -21,6 +21,7 @@ import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { Slider } from '../components/Slider';
 import { KEY, NEW_COLORS, type Which, createAndUse, editIslandType as edit, editorRequest, islandSwatch } from './island-types';
+import { registerPanels } from '../defs/panel-registry';
 
 // 岛的种类（第十四轮）：放岛、画岛链底部条上“岛：珊瑚岛 ▾”的按钮、弹出的列表（最后一项“新建…”），
 // “地形 ⋯”里的“岛的种类”（新建、修改、删掉自己的岛）
@@ -273,3 +274,6 @@ export function IslandTypesSection() {
 export function TerrainExtras() {
   return <IslandTypesSection />;
 }
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ IslandTypePick, ChainTypePick, ChainFragSlider, TerrainExtras });

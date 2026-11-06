@@ -6,6 +6,7 @@ import { byRulesTip } from '../copy';
 import { BY_RULES, execAndSelect, guideOf, hasRiverRules as hasRules, pinCommand, riverInfo } from '../riverCourse';
 import { type MenuItem, TypeButton, TypeMenu } from './waterTypes';
 import { createAndUse, newWaterType, typeScriptCommand } from './water-types';
+import { registerPanels } from '../defs/panel-registry';
 
 // 河流类型（第三批）：画河工具条上“新画的河”、选中一条河时“这条河”是哪一种。列表、编辑在 waterTypes.tsx（“水系 ⋯”里的“水体类型”）
 
@@ -155,3 +156,6 @@ export function RiverTypeMenu() {
 // 以前的名字（测试、别处用）：河的编辑在 waterTypes.tsx
 export const newRiverType = (w: World) => newWaterType(w, 'river') as RiverType;
 export const riverTypeScriptCommand = (t: RiverType, src: string) => typeScriptCommand('river', t, src);
+
+// 工具表里按名字引用的部件（defs/panel-registry.ts）
+registerPanels({ NewRiverTypePick });
