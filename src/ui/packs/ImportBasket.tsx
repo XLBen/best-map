@@ -7,7 +7,7 @@ import { regenLine, removeRow, skippedLine } from './page-import';
 import { type BasketNode, basketGroups, foldText, hasZeroWeightGroup, soleText, soleValue, whyText } from './page-import-tree';
 import type { PageCtx } from './page-source';
 
-// 导入窗口的右边（第六十五轮）：将导入的清单。项数就是按钮上的数；一个变量的取值收成一行，能展开；每行 × 去掉
+// 导入窗口的右边（第六十五轮）：将添加的清单。项数就是按钮上的数；一个变量的取值收成一行，能展开；每行 × 去掉
 
 const SHOW_ROWS = 60;
 // 变量的取值总收着（只有一种时直接写）；别的上级下面太多时才收
@@ -15,7 +15,7 @@ const foldsAt = (n: BasketNode): boolean => (n.row.kind === DIMENSION ? n.childr
 
 // 悬停：去掉后会怎样
 function removeTitle(n: BasketNode): string {
-  if (n.row.role !== 'follow') return '不导入这一项';
+  if (n.row.role !== 'follow') return '不添加这一项';
   return `连同要它的一起去掉（${whyText(n.row.because)}）`;
 }
 
@@ -27,8 +27,9 @@ function Line({ n, depth, p, source, ctx }: { n: BasketNode; depth: number; p: I
   const sole = soleValue(p, source, r);
   const notes: string[] = [];
   if (r.state === 'rename') notes.push('和原来的并存');
-  if (r.state === 'fix') notes.push('补回写到的内容');
-  if (r.role === 'follow') notes.push(whyText(r.because));
+  if (r.state === 'fix' && r.role !== 'follow') notes.push('补回写到的内容');
+  // 跟着来的写谁要它；点灰的行时一起勾上的写“为了 X 加的”（pick-store.ts 的 withForNotes）
+  if (r.role === 'follow' || r.because[0]?.startsWith('为了')) notes.push(whyText(r.because));
   if (sole) notes.push(soleText(sole));
   const kids = folds && !open ? [] : n.children.slice(0, limit);
   return (
@@ -90,14 +91,14 @@ export function ImportBasket({ p, source, target, ctx }: { p: ImportPreview | nu
   const regen = p && target ? regenLine(p, target) : null;
   return (
     <aside class="imp-basket">
-      <h5>将导入 {p?.count ?? 0} 项</h5>
+      <h5>将添加 {p?.count ?? 0} 项</h5>
       <div class="imp-basket-list">
         {p && source && groups.map((g) => <Group key={g.title} title={g.title} nodes={g.nodes} p={p} source={source} ctx={ctx} />)}
-        {!p?.count && <p class="hint">在左边勾要导入的内容</p>}
+        {!p?.count && <p class="hint">在左边勾要添加的内容</p>}
       </div>
-      {p && (p.stripCount > 0 || p.dropped.length > 0 || regen || hasZeroWeightGroup(p)) && (
+      {/* 第六十六轮去掉了“自动去掉 N 条写到这里没有的内容”（新手看不懂，也没法做什么）；stripCount 照旧算，测试用 */}
+      {p && (p.dropped.length > 0 || regen || hasZeroWeightGroup(p)) && (
         <div class="imp-basket-foot">
-          {p.stripCount > 0 && <p class="hint">自动去掉 {p.stripCount} 条写到这里没有的内容</p>}
           {hasZeroWeightGroup(p) && <p class="hint">组的比重是 0，不参与生成；勾整组才参与</p>}
           {p.dropped.length > 0 && (
             <p class="warn small" title={p.dropped.map((d) => `${d.kindLabel}“${d.name}”：${d.reason}`).join('\n')}>

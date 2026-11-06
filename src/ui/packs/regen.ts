@@ -120,10 +120,19 @@ export function regenNeed(small: Small, base: RegenBase | null, lib: readonly Li
 }
 
 // 点按钮发的命令：和“文化 ⋯”“国家 ⋯”“城市 ⋯”里的重新生成同一条
-export function regenCommand(need: RegenNeed, small: SmallState, lib: readonly LibraryEntry[]): Command {
+export function regenCommand(need: Pick<RegenNeed, 'scopes'>, small: SmallState, lib: readonly LibraryEntry[]): Command {
   if (need.scopes.includes('human')) return regenerateCommand(small, lib, need.scopes.includes('countries'));
   if (need.scopes.includes('countries')) return withPackImports({ op: 'regenerate_countries' }, small, lib);
   return { op: 'regenerate_settlements' };
 }
+
+// 从资源库添加之后要不要重新生成（第六十六轮，“添加并重新生成”的按钮）：拿添加前后的内容比，规则和这个按钮一样，只算这一次加的。
+// after：添加之后世界里的内容。世界还没生成人文（国家、城市）时那一样不算，没有要重新生成的时 null
+export function addedNeed(small: Small, after: Content, lib: readonly LibraryEntry[] = []): RegenNeed | null {
+  return regenNeed({ ...small, content: after }, { human: small.content, countries: small.content, settlements: small.content }, lib);
+}
+
+// 按钮的字：“添加并重新生成国家”“添加并重新生成人文”“添加并重新生成城市”（人文和国家都要时“添加并重新生成人文和国家”）
+export const addRegenLabel = (need: Pick<RegenNeed, 'label'> | null): string | null => (need ? `添加并${need.label}` : null);
 
 export const REGEN_KINDS: readonly string[] = [...HUMAN, ...GOV, ...SETTLE];

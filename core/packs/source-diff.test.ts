@@ -123,15 +123,18 @@ describe('比重不算', () => {
     expect(marked(e)).toEqual([]);
   });
 
-  it('依赖带来的比重 0 的组不标', () => {
+  // 第六十六轮：勾的文化带来的组比重和勾的组一样（来源是 0 时去掉这个 0），和来源的比重不同，照样不标
+  it('依赖带来的组比重和来源不同，不标', () => {
     const e = bare.clone();
     for (const c of newWorldContentCommands(ROOTS, worldPartsOf('modern'))) e.exec(c);
     const source = LIBS.find((l) => l.key === 'modern')!.pack;
-    const r = importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'culture', id: packItems<{ id: string }>(source, 'cultures')[0].id }] }, { path: ['modern'] });
+    // 来源里比重是 0 的组里的一个文化：世界里这个组没有写比重
+    const there = packItems<{ id: string; weight?: number }>(source, 'cultureGroups');
+    const culture = packItems<{ id: string; group: string }>(source, 'cultures').find((c) => there.find((g) => g.id === c.group)!.weight === 0)!;
+    const r = importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'culture', id: culture.id }] }, { path: ['modern'] });
     e.exec(r.command!);
     e.update();
-    const groups = Object.values((e.world.small.content?.cultureGroup ?? {}) as Record<string, { id: string; weight?: number }>);
-    expect(groups.some((g) => g.weight === 0)).toBe(true);
+    expect((e.world.small.content?.cultureGroup as Record<string, { weight?: number }>)[culture.group].weight).toBeUndefined();
     expect(marked(e).filter((x) => x.endsWith(':changed'))).toEqual([]);
   });
 });

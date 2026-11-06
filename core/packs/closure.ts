@@ -21,6 +21,7 @@ export type { ImportAsk, ImportGate, ImportGates, ImportNeed, ImportRole, Import
 //
 // 变量（维度）不是一项内容：写在目的地的时代里。世界里走 add_dimension（只算新变量），库里写进时代。目的地没有时代时带上来源里提供这个变量的时代。
 // 跟着来的文化组 weight 写 0，不参与生成；点名勾的组比重是 0 时去掉这个 0（用户就是要它参与，和 packImportPlan 一样）。
+// 第六十六轮：因为勾了组里的文化才跟着来的组（member）和勾的组一样：组里只有勾的文化，重新生成后它在地图上。
 // 目的地的安排（arrange）不动，来源的不带。
 
 export type ImportRowState = 'new' | 'rename' | 'fix';
@@ -105,10 +106,12 @@ function strippedItem(kind: string, item: unknown, gone: readonly Link[], pick: 
   return out;
 }
 
+// 比重：勾的组、勾的文化带来的组用来源的值（是 0 时去掉这个 0）；别的跟着来的写 0
+const joins = (n: ImportNode): boolean => n.role === 'pick' || !!n.member;
 const withWeight = (n: ImportNode, item: unknown): unknown => {
   if (n.ref.kind !== 'cultureGroup') return item;
   const g = item as { weight?: number };
-  if (n.role !== 'pick') return g.weight === 0 ? item : { ...g, weight: 0 };
+  if (!joins(n)) return g.weight === 0 ? item : { ...g, weight: 0 };
   if (g.weight !== 0) return item;
   const { weight: _, ...rest } = g;
   return rest;
@@ -174,13 +177,14 @@ function finalsOf(c: WalkCtx, w: Walked): Finals {
       items.set(key, withWeight(n, strip(key, n)));
       continue;
     }
-    // 目的地这一份少了引用，目标现在有了：勾的、下级补回（跟着来的只是要它在）
-    if (n.role === 'follow' || !w.have.has(key)) continue;
+    // 目的地这一份少了引用，目标现在有了：勾的、下级补回（跟着来的只是要它在）。
+    // 比重是 0 的组：勾上它、勾组里的文化时比重回来（跟着文化来的只回比重，第六十六轮）
+    if (!w.have.has(key) || (n.role === 'follow' && !n.member)) continue;
     const k = dest.kindsById.get(n.ref.kind)!;
     const there = dest.byId.get(n.ref.kind)!.get(n.ref.id);
     const rel = relationOf(k, n.item, there, dest.world);
-    const back = n.role === 'pick' && weightBack(k, n.item, there);
-    if (!back && !restoredLinks(k, n.item, there, rel, avail).length) continue;
+    const back = joins(n) && weightBack(k, n.item, there);
+    if (!back && (n.role === 'follow' || !restoredLinks(k, n.item, there, rel, avail).length)) continue;
     const next = withWeight(n, strip(key, n)) as Record<string, unknown>;
     if (back) {
       fixes.set(key, next);
@@ -416,12 +420,13 @@ export interface WorldImport {
   preview: ImportPreview;
 }
 
-function importLabel(p: ImportPreview): string {
+// 撤销条上的一句：“添加“社会主义共和国”等 19 项”（第六十六轮起叫“添加”，“导入”只留给读文件）
+export function importLabel(p: Pick<ImportPreview, 'rows' | 'count'>): string {
   const first = p.rows.find((r) => r.role === 'pick') ?? p.rows[0];
-  if (!first) return `导入 ${p.count} 项`;
+  if (!first) return `添加 ${p.count} 项`;
   // 只写名字：种类的名字（“人口维度的取值”）是给编辑表单看的
   const head = `“${first.name}”`;
-  return p.count > 1 ? `导入${head}等 ${p.count} 项` : `导入${head}`;
+  return p.count > 1 ? `添加${head}等 ${p.count} 项` : `添加${head}`;
 }
 
 // 导入本世界的命令：一个 batch，一次撤销全撤。先加各项，再补回，再加变量（add_dimension 要取值已经在世界里）。什么都不用写时 command 是 null。

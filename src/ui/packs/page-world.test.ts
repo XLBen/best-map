@@ -370,13 +370,16 @@ describe('重新生成的按钮', () => {
     e.update();
     t.step(1, e.world.small.content);
     expect(need(e, t)).toBeNull();
-    // 依赖带来的比重 0 的组、它的文化
+    // 比重 0 的组、它的文化。第六十六轮起勾的文化带来的组参与生成（要重新生成人文），比重改成 0 才不参与
     const source = builtinPacks().find((p) => p.id === 'modern')!;
     const inWorld = new Set(kindOf('culture')!.inWorld(e.world).map((c) => (c as { id: string }).id));
     const c = packItems<{ id: string; group: string }>(source, 'cultures').find((x) => !inWorld.has(x.id))!;
     e.exec(importCommand({ source, target: { t: 'world', world: e.world }, picks: [{ kind: 'culture', id: c.id }] }, { path: ['modern'] }).command!);
     e.update();
     t.step(2, e.world.small.content);
+    expect(need(e, t)?.label).toBe('重新生成人文');
+    edit(e, 'cultureGroup', c.group, { weight: 0 });
+    t.step(3, e.world.small.content);
     expect(need(e, t)).toBeNull();
   });
 

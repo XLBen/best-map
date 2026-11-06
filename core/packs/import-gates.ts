@@ -1,11 +1,14 @@
 import { type Arrange, RELATIONS, arrangeOf, linkTable as arrangeTable } from '../content/arrange';
 import { DIMENSION } from '../content/link-rules';
-import { type ContentRef, type Link, type LinkTable, linkKey, linkTable, linksBlanked, linksOf, packScope, resolveLink, stripLinks } from '../content/links';
-import { ITEM_ID, stableJson } from '../content/refs';
+import { type ContentRef, type Link, type LinkTable, linkKey, linkTable, linksOf, packScope, resolveLink, stripLinks } from '../content/links';
+import { ITEM_ID } from '../content/refs';
 import { type ContentKind, itemId, itemName, kindOf, registryVersion } from '../content/registry';
 import { type Era, MAX_DIMENSIONS, worldEra, worldEras } from '../human/era';
 import type { Faction } from '../human/government';
 import { type PackNode, type PackWorld, type ResourcePack, canApply, packItems, packSections } from '../packs';
+import { relationOf, restoredLinks, weightBack } from './import-relation';
+
+export { type Relation, contentKey, finalized, relationOf, restoredLinks, weightBack } from './import-relation';
 
 // 导入时一项能不能选（第六十四轮）：用户定的规则是“不能进来的一开始就灰着并写明原因，勾什么进什么”。闭包的写入在 closure.ts，这里是：
 //
@@ -23,12 +26,13 @@ import { type PackNode, type PackWorld, type ResourcePack, canApply, packItems, 
 //   pick    勾的项
 //   child   上级带下级：用库的 arrange 和融入表（core/content/arrange.ts 的 RELATIONS），和面板上看到的结构一样。没被 off 的都带；
 //           变量带全部取值和取值组。跟着来的上级不带下级
-//   follow  去不掉的引用（文化的组、取值的变量、脚本写到的）。只带这一项本身，带来的文化组比重写 0。
+//   follow  去不掉的引用（文化的组、取值的变量、脚本写到的）。只带这一项本身。文化组：因为勾了组里的文化才跟着来的（member）
+//           比重和勾的组一样（第六十六轮，组里只有勾的文化，重新生成后看得到），别的跟着来的写 0。
 //           取值要的变量只加变量本身，不带别的取值。目的地没有时代时带上提供这个变量的时代
 // 别的引用不带：目的地有就留着，没有就去掉这一条（closure.ts 的 finalsOf）。
 // 已经有了的项不再往下走（目的地那一份有它自己的依赖），它的下级照样走。
 //
-// 来源的表（infoOf）、比较用的字（contentKey）、目的地和来源的关系（relationOf）都按对象记着，勾选变了只重走勾选带到的部分，
+// 来源的表（infoOf）、比较用的字（contentKey）、目的地和来源的关系（relationOf，后两样在 import-relation.ts）都按对象记着，勾选变了只重走勾选带到的部分，
 // 灰不灰用到时才算（ImportGates.of）。这个文件不引用内置的数据。
 
 export type ImportTarget = { t: 'world'; world: PackWorld } | { t: 'pack'; pack: ResourcePack };
@@ -48,13 +52,19 @@ export interface ImportNeed {
   name: string;
 }
 
+// any：needs 里有一个就行（限谁用）；否则都要
+type Gated = { t: 'gated'; needs: ImportNeed[]; any: boolean; reason: string };
+// 走的时候记的“进不来”（灰的、放不下的）；能不能一起勾上（resolvable）是 gatesOf 加的
+export type Blocked = Gated | { t: 'full'; reason: string };
+
 export type ImportGate =
   | { t: 'free'; differs?: boolean }
   | { t: 'have' }
   // restores：补回的引用写到的名字（只差比重时是空的）
   | { t: 'fixable'; restores: string[] }
-  // any：needs 里有一个就行（限谁用）；否则都要
-  | { t: 'gated'; needs: ImportNeed[]; any: boolean; reason: string }
+  // resolvable（第六十六轮）：要的东西在这个来源里都勾得到（any 时有一个勾得到），点灰的行能把它们一起勾上。
+  // choices：勾得到的那几个（any 时界面让用户选一个；不是 any 时 resolvable 就是 choices 等于 needs）
+  | (Gated & { resolvable: boolean; choices: ImportNeed[] })
   | { t: 'full'; reason: string };
 
 export interface ImportGates {
@@ -70,29 +80,6 @@ const refName = (r: ContentRef, item: unknown): string => {
   const k = kindOf(r.kind);
   return k ? itemName(k, item) : r.id;
 };
-
-// ---------- 比较用的字 ----------
-
-// 比较用的字（同 sameContent，按对象记着）：包和世界里的项都是不改动的数据，勾选每变一次都要比，一个库的地名风格就有约 1 MB
-const contentKeys = new WeakMap<object, string>();
-export function contentKey(k: ContentKind, x: unknown): string {
-  let s = contentKeys.get(x as object);
-  if (s === undefined) {
-    const skip = k.pack.sameIgnore;
-    s = stableJson(skip?.length ? Object.fromEntries(Object.entries(x as object).filter(([key]) => !skip.includes(key))) : x);
-    contentKeys.set(x as object, s);
-  }
-  return s;
-}
-
-// 加进世界的最后一步之后的样子（同一项给同一个对象）
-const finalMemo = new WeakMap<object, unknown>();
-export function finalized(k: ContentKind, x: unknown): unknown {
-  if (!k.pack.finalize) return x;
-  let f = finalMemo.get(x as object);
-  if (f === undefined) finalMemo.set(x as object, (f = k.pack.finalize(x)));
-  return f;
-}
 
 // ---------- 来源的表（同一个包只算一遍） ----------
 
@@ -244,60 +231,6 @@ export function destOf(target: ImportTarget): Dest {
 
 export const destHas = (dest: Dest, kind: string, id: string): boolean => !!dest.byId.get(kind)?.has(id);
 
-// ---------- 目的地这一份和来源的关系 ----------
-
-// same     一模一样
-// trimmed  来源去掉几条引用（missing）后的样子。引用改过名（撞名时 a → a-2）的也算，但这种不补回（fixable 是 false）
-// differs  同 id，内容不同
-export interface Relation {
-  t: 'same' | 'trimmed' | 'differs';
-  missing: readonly Link[];
-  fixable: boolean;
-}
-
-const SAME: Relation = { t: 'same', missing: [], fixable: true };
-const DIFFERS: Relation = { t: 'differs', missing: [], fixable: false };
-
-const relationMemos = { world: new WeakMap<object, WeakMap<object, Relation>>(), pack: new WeakMap<object, WeakMap<object, Relation>>() };
-
-function computeRelation(k: ContentKind, x: unknown, y: unknown, world: boolean): Relation {
-  const fin = (v: unknown) => (world ? finalized(k, v) : v);
-  if (contentKey(k, y) === contentKey(k, fin(x))) return SAME;
-  // 目的地这份写到的目标（a-2 是导入时撞名改的 a）
-  const exact = new Set<string>();
-  const based = new Set<string>();
-  for (const l of linksOf(k, y)) {
-    exact.add(l.id);
-    based.add(l.id.replace(/-\d+$/, ''));
-  }
-  const links = linksOf(k, x);
-  const here = (l: Link) => exact.has(l.id) || based.has(l.id);
-  if (links.some((l) => !l.drop && !here(l))) return DIFFERS;
-  const gone = links.filter((l) => l.drop && !here(l));
-  const cand = gone.length ? stripLinks(k, x, (l) => !here(l)) : x;
-  if (contentKey(k, linksBlanked(k, y)) !== contentKey(k, linksBlanked(k, fin(cand)))) return DIFFERS;
-  return { t: 'trimmed', missing: gone, fixable: links.every((l) => exact.has(l.id) || !here(l)) };
-}
-
-export function relationOf(k: ContentKind, x: unknown, y: unknown, world: boolean): Relation {
-  const memo = world ? relationMemos.world : relationMemos.pack;
-  let of = memo.get(x as object);
-  if (!of) memo.set(x as object, (of = new WeakMap()));
-  let r = of.get(y as object);
-  if (!r) of.set(y as object, (r = computeRelation(k, x, y, world)));
-  return r;
-}
-
-// 现在补得回哪几条：按现在有的目标去掉引用后，还写着、目的地这份没写的（一处写了两个目标、缺一个时整处还是去掉，不算）
-export function restoredLinks(k: ContentKind, x: unknown, y: unknown, rel: Relation, has: (l: Link) => boolean): Link[] {
-  if (!rel.fixable || !rel.missing.some(has)) return [];
-  const there = new Set(linksOf(k, y).map((l) => l.id));
-  return linksOf(k, stripLinks(k, x, (l) => !has(l))).filter((l) => !there.has(l.id));
-}
-
-// 勾上这个组也算补回：跟着文化来的组比重写 0（不参与生成），来源不是 0
-export const weightBack = (k: ContentKind, x: unknown, y: unknown): boolean => k.id === 'cultureGroup' && (y as { weight?: number }).weight === 0 && (x as { weight?: number }).weight !== 0;
-
 // ---------- 走 ----------
 
 export interface ImportNode {
@@ -311,6 +244,8 @@ export interface ImportNode {
   parent?: string;
   // 属于哪个变量（这个变量的取值、取值组）
   under?: string;
+  // 文化组：因为勾了组里的文化（勾的、子项，写在 culture.group）才跟着来的。比重和勾的组一样（closure.ts 的 withWeight）
+  member?: boolean;
 }
 export interface DimNode {
   id: string;
@@ -325,7 +260,7 @@ export interface Rejected {
   ref: ContentRef;
   name: string;
   role: ImportRole;
-  gate: Extract<ImportGate, { t: 'gated' | 'full' }>;
+  gate: Blocked;
 }
 export interface Walked {
   reached: Map<string, ImportNode>;
@@ -347,7 +282,7 @@ export interface WalkCtx {
   // 上一遍走到的（算灰不灰时算目的地已有）
   prev: Walked | null;
   // 灰不灰（这一遍）
-  memo: Map<string, Extract<ImportGate, { t: 'gated' | 'full' }> | null>;
+  memo: Map<string, Blocked | null>;
   // 放不下的（closure.ts 按上限挑出来；键是 linkKey，变量也在）：原因
   over: Map<string, string>;
   // 另外认出来的“已经有了”（settleIds 认出的撞过名的）
@@ -387,7 +322,7 @@ export const needText = ({ needs, any }: Lacks): string => {
   if (any) return `需要${names.slice(0, 3).join('或')}${names.length > 3 ? ' 等' : ''}`;
   return `需要${names.join('、')}`;
 };
-const gatedOf = (l: Lacks): Extract<ImportGate, { t: 'gated' }> => ({ t: 'gated', needs: l.needs, any: l.any, reason: needText(l) });
+const gatedOf = (l: Lacks): Gated => ({ t: 'gated', needs: l.needs, any: l.any, reason: needText(l) });
 
 // 派系主要靠的变量都是来源提供的（mainDim），都有名字。没有名字时不写 id：界面上不出现
 const dimNeed = (info: SourceInfo, id: string): ImportNeed => ({ kind: DIMENSION, id, name: info.dims.get(id)?.label ?? '这个库没有的变量' });
@@ -453,7 +388,7 @@ function strongLacks(c: WalkCtx, key: string): Lacks | null {
 }
 
 // 这一项灰不灰、有没有问题（不看放不下多少）。已经有了的不灰
-export function rejectOf(c: WalkCtx, key: string): Extract<ImportGate, { t: 'gated' | 'full' }> | null {
+export function rejectOf(c: WalkCtx, key: string): Blocked | null {
   const hit = c.memo.get(key);
   if (hit !== undefined) return hit;
   c.memo.set(key, null); // 脚本可能互相写到：走到自己算不灰
@@ -462,7 +397,7 @@ export function rejectOf(c: WalkCtx, key: string): Extract<ImportGate, { t: 'gat
   return out;
 }
 
-function computeReject(c: WalkCtx, key: string): Extract<ImportGate, { t: 'gated' | 'full' }> | null {
+function computeReject(c: WalkCtx, key: string): Blocked | null {
   const { info, dest, prev } = c;
   const n = info.table.nodes.get(key);
   if (!n || n.owners) return null;
@@ -487,12 +422,13 @@ function walkOnce(c: WalkCtx, picks: readonly ContentRef[]): Walked {
   const w: Walked = { reached: new Map(), dims: new Map(), dimsFull: new Set(), provided: new Set(), rejected: new Map(), have: new Set() };
   const queue: ImportNode[] = [];
 
-  const reach = (ref: ContentRef, role: ImportRole, because?: string, parent?: string, under?: string): void => {
+  const reach = (ref: ContentRef, role: ImportRole, because?: string, parent?: string, under?: string, member?: boolean): void => {
     const key = keyRef(ref);
     const cur = w.reached.get(key);
     if (cur) {
       if (because && !cur.because.includes(because)) cur.because.push(because);
       if (under && !cur.under) cur.under = under;
+      if (member) cur.member = true;
       if (RANK[role] > RANK[cur.role]) {
         cur.role = role;
         if (parent) cur.parent = parent;
@@ -512,7 +448,7 @@ function walkOnce(c: WalkCtx, picks: readonly ContentRef[]): Walked {
       if (!old || RANK[role] > RANK[old.role]) w.rejected.set(key, { ref, name, role, gate });
       return;
     }
-    const node: ImportNode = { ref: { kind: ref.kind, id: ref.id }, item: n.item, name, role, because: because ? [because] : [], ...(parent ? { parent } : {}), ...(under ? { under } : {}) };
+    const node: ImportNode = { ref: { kind: ref.kind, id: ref.id }, item: n.item, name, role, because: because ? [because] : [], ...(parent ? { parent } : {}), ...(under ? { under } : {}), ...(member ? { member } : {}) };
     w.reached.set(key, node);
     queue.push(node);
     if (ref.kind === 'era') for (const d of (n.item as Era).dimensions) w.provided.add(d.id);
@@ -597,7 +533,9 @@ function walkOnce(c: WalkCtx, picks: readonly ContentRef[]): Walked {
         continue;
       }
       const to = resolveLink(table, link);
-      if (to && !isOff(c, keyRef(to))) reach(to, 'follow', because);
+      // 勾的文化（和子项）带来的组：组里只有勾的文化，比重照勾的组写（第六十六轮）
+      const member = to?.kind === 'cultureGroup' && cur.ref.kind === 'culture' && cur.role !== 'follow' && link.path[0] === 'group';
+      if (to && !isOff(c, keyRef(to))) reach(to, 'follow', because, undefined, undefined, member);
     }
   }
   return w;
@@ -624,6 +562,7 @@ export function walkClosure(c: WalkCtx, picks: readonly ContentRef[]): Walked {
 // ---------- 能不能选 ----------
 
 const FULL_DIMS = `一个时代最多 ${MAX_DIMENSIONS} 个变量`;
+type Raw = Exclude<ImportGate, { t: 'gated' }> | Gated;
 const fullText = (k: ContentKind, cap: number) => `${k.label}最多 ${cap} 个`;
 
 // 走完之后每一项的状态。c.prev 是走到的（walkClosure 留着）
@@ -652,7 +591,7 @@ export function gatesOf(c: WalkCtx, w: Walked, source: PackNode): ImportGates {
   };
   const dimFull = (id: string): boolean => !dest.dims.has(id) && !w.dims.has(id) && (c.over.has(linkKey(DIMENSION, id)) || (!!dest.era && dest.dims.size + w.dims.size >= MAX_DIMENSIONS));
 
-  const compute = (ref: ContentRef): ImportGate => {
+  const compute = (ref: ContentRef): Raw => {
     if (ref.kind === DIMENSION) {
       const d = info.dims.get(ref.id);
       if (dest.dims.has(ref.id)) return { t: 'have' };
@@ -697,10 +636,42 @@ export function gatesOf(c: WalkCtx, w: Walked, source: PackNode): ImportGates {
     return there !== undefined ? { t: 'free', differs: true } : { t: 'free' };
   };
 
+  // 点灰的行能不能把要的一起勾上（第六十六轮）：要的东西在这个来源里勾得到。变量要有取值（目的地没有时代时还要来源的时代写着它）、
+  // 放得下；内容要在来源里、能用到目的地，它自己能选（它也灰着时看它要的勾不勾得到）。“需要时代”（目的地和来源都没有时代写它）勾不到
+  const resolving = new Set<string>();
+  const needOk = (n: ImportNeed): boolean => {
+    if (n.kind === DIMENSION) {
+      const d = info.dims.get(n.id);
+      return !!d && d.values.length > 0 && (!!dest.era || d.owners.length > 0) && !dimFull(n.id);
+    }
+    const key = linkKey(n.kind, n.id);
+    const node = info.table.nodes.get(key);
+    if (!node || node.owners || !dest.kindsById.has(n.kind) || resolving.has(key)) return false;
+    resolving.add(key);
+    try {
+      const g = of(n);
+      return g.t === 'free' || g.t === 'fixable' || (g.t === 'gated' && g.resolvable);
+    } finally {
+      resolving.delete(key);
+    }
+  };
+  const decorate = (g: Raw): ImportGate => {
+    if (g.t !== 'gated') return g;
+    const seen = new Set<string>();
+    const choices = g.needs.filter((n) => {
+      const key = linkKey(n.kind, n.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return needOk(n);
+    });
+    const resolvable = g.needs.length > 0 && (g.any ? choices.length > 0 : choices.length === seen.size);
+    return { ...g, resolvable, choices };
+  };
+
   const of = (ref: ContentRef): ImportGate => {
     const key = keyRef(ref);
     let g = memo.get(key);
-    if (!g) memo.set(key, (g = compute(ref)));
+    if (!g) memo.set(key, (g = decorate(compute(ref))));
     return g;
   };
 

@@ -9,6 +9,7 @@ import { ImportList } from './ImportList';
 import { askOf, chooseFile, chooseFrom, closeImport, doneLine, importWindow, pickSections, regenLine, runImport, sourceOf, targetOf, targetTitle } from './page-import';
 import { type LookCtx, refKey } from './page-import-tree';
 import type { PageCtx } from './page-source';
+import { withForNotes } from './pick-store';
 import { openPackImport } from './store';
 
 // 导入窗口（第六十一轮，第六十五轮重写成两栏）：左边选（ImportList），右边看清单（ImportBasket）。一次从一个库导入，换库清空勾选。
@@ -23,7 +24,7 @@ function Body() {
   const fileInput = useRef<HTMLInputElement>(null);
   const sections = useMemo(() => (source && target ? pickSections(source, target) : []), [source, target?.t]);
   const ask = askOf(st, ctx);
-  const preview = useMemo(() => (ask ? importPreview(ask) : null), [ask?.source, ask?.target.t === 'world' ? ask.target.world : ask?.target.pack, st.picks, st.off]);
+  const preview = useMemo(() => (ask ? withForNotes(importPreview(ask), st) : null), [ask?.source, ask?.target.t === 'world' ? ask.target.world : ask?.target.pack, st.picks, st.off, st.added]);
   const look = useMemo<LookCtx | null>(
     () => (preview ? { picks: new Set(st.picks.map(refKey)), planned: new Map(preview.rows.map((r) => [refKey(r), r])), gates: preview.gates, here: st.target.t === 'world' ? '本世界' : '这个库' } : null),
     [preview],
@@ -45,7 +46,7 @@ function Body() {
   const read = st.file?.read;
   return (
     <>
-      <ModalHead title={`导入到${targetTitle(st, ctx)}`} onClose={closeImport} closeTitle="取消" />
+      <ModalHead title={`添加到${targetTitle(st, ctx)}`} onClose={closeImport} closeTitle="取消" />
       <div class="imp-body">
         <div class="imp-left">
           <div class="imp-source">
@@ -105,7 +106,7 @@ function Body() {
       <div class="modal-foot">
         <button onClick={closeImport}>取消</button>
         <button class="primary" disabled={!count || working} onClick={() => void confirm()}>
-          导入 {count} 项
+          添加 {count} 项
         </button>
       </div>
     </>

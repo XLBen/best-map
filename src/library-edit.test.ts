@@ -588,7 +588,8 @@ describe('导入：整个包换掉（第六十一轮）', () => {
     expect(r.preview.count).toBe(3);
     expect(ed.setPack('mine', r.pack, '导入 3 项')).toEqual({ ok: true });
     expect(cur()).toBe(r.pack);
-    expect(packItems<{ id: string; weight?: number }>(cur(), 'cultureGroups').find((g) => g.id === 'h')!.weight).toBe(0);
+    // 第六十六轮：勾的文化带来的组比重用来源的（以前写 0）
+    expect(packItems<{ id: string; weight?: number }>(cur(), 'cultureGroups').find((g) => g.id === 'h')!.weight).toBe(3);
     await ed.flushAll();
     expect(wal.has('mine')).toBe(false);
     expect(packs.get('mine')!.pack).toBe(r.pack);

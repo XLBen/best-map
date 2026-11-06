@@ -66,6 +66,24 @@ describe('能不能选', () => {
     expect(importGates(sourcePack(), packTarget(dest()), [ref('popValue', 'v2')]).of(ref('faction', 'f')).t).toBe('free');
   });
 
+  // 第六十六轮：点灰的行把要的一起勾上。要的东西在这个来源里勾得到才行
+  it('灰的写明能不能把要的一起勾上（resolvable）；几选一时 choices 是勾得到的那几个', () => {
+    const g = importGates(sourcePack(), packTarget(dest()));
+    expect(g.of(ref('faction', 'f'))).toMatchObject({ t: 'gated', resolvable: true, choices: [{ kind: 'dimension', id: 'ideo' }] });
+    expect(g.of(ref('government', 'g'))).toMatchObject({ t: 'gated', resolvable: true });
+    // 限谁用：戌在来源里、亥不在（写到别的库的组）
+    const src = pack('s', { cultureGroups: [{ id: 'x', name: '戌', color: '#111111' }], governments: [{ id: 'g', name: '政体', ...GOV, only: [{ cultureGroups: ['x'] }, { cultureGroups: ['y'] }] }, { id: 'n', name: '没有', ...GOV, only: [{ cultureGroups: ['y'] }] }] });
+    const gates = importGates(src, packTarget(dest()));
+    expect(gates.of(ref('government', 'g'))).toMatchObject({ t: 'gated', any: true, resolvable: true, choices: [{ kind: 'cultureGroup', id: 'x' }] });
+    // 要的东西来源里没有：勾不到
+    expect(gates.of(ref('government', 'n'))).toMatchObject({ t: 'gated', resolvable: false, choices: [] });
+    // 来源里没有这一项、这一种不能用：needs 是空的，勾不到
+    expect(gates.of(ref('government', 'nope'))).toMatchObject({ t: 'gated', resolvable: false });
+    // 目的地没有时代、来源的变量也不写在时代里：要时代，勾不到
+    const loose = pack('l', { popValues: [{ id: 'v', dimension: 'd', name: '甲', color: '#111111' }] });
+    expect(importGates(loose, packTarget(pack('empty'))).of(ref('dimension', 'd'))).toMatchObject({ t: 'gated', reason: '需要时代', resolvable: false });
+  });
+
   it('政体列的派系有一个灰，政体灰；目的地有同 id 的派系时看目的地那一份', () => {
     expect(importGates(sourcePack(), packTarget(dest())).of(ref('government', 'g'))).toMatchObject({ t: 'gated', reason: '需要意识形态' });
     const there = dest({ cultureGroups: [{ id: 'a', name: '甲组', color: '#555555' }], factions: [{ id: 'f', name: '我的派系', color: '#000000', amount: 2 }] });
@@ -249,12 +267,15 @@ describe('勾什么进什么', () => {
 });
 
 describe('跟着勾上', () => {
-  it('文化要它的组：只带这一项本身，比重写 0，不带组里别的文化', () => {
+  // 第六十六轮以前跟着来的组比重都写 0（只勾一个文化，重新生成后看不到）；现在勾的文化带来的组比重和勾的组一样
+  it('文化要它的组：只带这一项本身，比重用来源的（是 0 时去掉），不带组里别的文化', () => {
     const p = importPreview(ask(dest(), [ref('culture', 'a1')]));
     expect(rowIds(p.rows)).toEqual(['culture:a1', 'cultureGroup:a']);
     expect(row(p.rows, 'a')).toMatchObject({ role: 'follow', because: ['甲一 要它'] });
     const r = importToPack(ask(dest(), [ref('culture', 'a1')]));
-    expect(packItems<{ weight?: number; nameStyle?: string }>(r.pack, 'cultureGroups')).toMatchObject([{ id: 'a', weight: 0 }]);
+    expect(packItems<{ weight?: number; nameStyle?: string }>(r.pack, 'cultureGroups')).toMatchObject([{ id: 'a', weight: 3 }]);
+    const zero = importToPack(ask(dest(), [ref('culture', 'z1')]));
+    expect(packItems<{ id: string; weight?: number }>(zero.pack, 'cultureGroups').map((g) => [g.id, g.weight])).toEqual([['z', undefined]]);
     expect(packItems<{ nameStyle?: string }>(r.pack, 'cultureGroups')[0].nameStyle).toBeUndefined();
     expect(packItems<{ id: string }>(r.pack, 'cultures').map((c) => c.id)).toEqual(['a1']);
   });
@@ -310,10 +331,11 @@ describe('文化组', () => {
     expect(importToPack(ask(once.pack, [ref('culture', 'a1')])).preview.count).toBe(0);
   });
 
-  it('跟着文化来的组比重是 0；后来勾整组：不改名，比重回来，引用补上，才参与生成', () => {
-    const once = importToPack(ask(dest(), [ref('culture', 'a1')]));
-    const g0 = packItems<{ weight?: number }>(once.pack, 'cultureGroups')[0];
-    expect(g0.weight).toBe(0);
+  // 第六十五轮导入的样子：组跟着文化来，比重写了 0，地名风格去掉了
+  const zeroed = () => dest({ cultureGroups: [{ id: 'a', name: '甲组', color: '#555555', weight: 0 }], cultures: [{ id: 'a1', group: 'a', name: '甲一', color: '#888888' }] });
+
+  it('目的地的组比重是 0；后来勾整组：不改名，比重回来，引用补上，才参与生成', () => {
+    const once = { pack: zeroed() };
     const p = importPreview(ask(once.pack, [ref('cultureGroup', 'a')]));
     expect(p.gates.of(ref('cultureGroup', 'a')).t).toBe('fixable');
     expect(row(p.rows, 'a').state).toBe('fix');
@@ -321,6 +343,16 @@ describe('文化组', () => {
     const groups = packItems<{ id: string; weight?: number; nameStyle?: string }>(r.pack, 'cultureGroups');
     expect(groups.map((g) => [g.id, g.weight, g.nameStyle])).toEqual([['a', 3, 's']]);
     expect(importPreview(ask(r.pack, [ref('cultureGroup', 'a')])).count).toBe(0);
+  });
+
+  it('目的地的组比重是 0；勾组里另一个文化：比重回来（只回比重，地名风格不补），第六十六轮', () => {
+    const p = importPreview(ask(zeroed(), [ref('culture', 'a2')]));
+    expect(row(p.rows, 'a')).toMatchObject({ role: 'follow', state: 'fix' });
+    const r = importToPack(ask(zeroed(), [ref('culture', 'a2')]));
+    const groups = packItems<{ id: string; weight?: number; nameStyle?: string }>(r.pack, 'cultureGroups');
+    expect(groups.map((g) => [g.id, g.weight, g.nameStyle])).toEqual([['a', 3, undefined]]);
+    expect(packItems<{ id: string }>(r.pack, 'cultures').map((c) => c.id)).toEqual(['a1', 'a2']);
+    expect(importPreview(ask(r.pack, [ref('culture', 'a2')])).count).toBe(0);
   });
 });
 

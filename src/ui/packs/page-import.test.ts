@@ -329,7 +329,7 @@ describe('一行的状态', () => {
     const look = { ...lookOf(c), here: '这个库' };
     expect(rowLook({ kind: 'faction', id: f.id }, look).mark).toBe('have');
     const other = packItems<{ id: string }>(modern, 'factions')[1];
-    expect(rowLook({ kind: 'faction', id: other.id }, look)).toMatchObject({ mark: 'off', note: '这个库有一份不同的，导入后并存' });
+    expect(rowLook({ kind: 'faction', id: other.id }, look)).toMatchObject({ mark: 'off', note: '这个库有一份不同的，添加后并存' });
   });
 
   it('整段：变量那一段勾的是变量；已经有了时勾能选的行；都灰时不能勾', () => {
@@ -388,12 +388,13 @@ describe('清单', () => {
     expect(p2.count).toBe(dim.children.length + 1);
   });
 
-  it('跟着来的文化组写一句比重是 0；为什么写在一起', () => {
+  // 第六十六轮：勾的文化带来的组比重和勾的组一样，不再写“比重是 0”那句
+  it('勾文化带来的组不写比重是 0；为什么写在一起', () => {
     const eng = world('scifi');
     const c = ctx({ world: eng.world });
     const culture = packItems<{ id: string }>(medieval, 'cultures')[0];
     openImport({ target: { t: 'world' }, from: 'medieval', pick: { kind: 'culture', id: culture.id } }, c);
-    expect(hasZeroWeightGroup(importPreview(askOf(st(), c)!))).toBe(true);
+    expect(hasZeroWeightGroup(importPreview(askOf(st(), c)!))).toBe(false);
     expect(whyText(['直隶人 要它'])).toBe('直隶人要它');
     expect(whyText(['甲 要它', '乙 要它', '丙 要它'])).toBe('甲、乙 等 3 项要它');
     expect(whyText(['封建君主制 里的'])).toBe('封建君主制里的');
@@ -455,7 +456,7 @@ describe('列表上的“添加”走同一个闭包，不开窗口', () => {
     expect(skippedLine([{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }])).toBe('还有 1 项需要意识形态，没加');
     expect(skippedLine([{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '政体最多 3 个' }])).toBe('还有 1 项没加：政体最多 3 个');
     expect(skippedLine([{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }, { kind: 'government', id: 'b', name: 'B', kindLabel: '政体', reason: '需要民族认同' }])).toBe('还有 2 项缺别的内容，没加');
-    expect(doneLine({ ok: true, count: 2, skipped: [{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }] }, null)).toBe('已导入 2 项。还有 1 项需要意识形态，没加');
+    expect(doneLine({ ok: true, count: 2, skipped: [{ kind: 'government', id: 'a', name: 'A', kindLabel: '政体', reason: '需要意识形态' }] }, null)).toBe('已添加 2 项。还有 1 项需要意识形态，没加');
   });
 
   it('加一个取值、世界里没有这个变量：提示写明里面只有它', () => {

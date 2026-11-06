@@ -3,7 +3,7 @@ import { DIMENSION } from '../../../core/content/link-rules';
 import { type ContentRef, linkKey } from '../../../core/content/links';
 import { type ContentKind, itemId, itemName, kindOf } from '../../../core/content/registry';
 import { type PackNode, canApply, packItems, packSections } from '../../../core/packs';
-import type { ImportGate, ImportGates, ImportPreview, ImportRow, ImportTarget } from '../../../core/packs/closure';
+import type { ImportGate, ImportGates, ImportNeed, ImportPreview, ImportRow, ImportTarget } from '../../../core/packs/closure';
 import { infoOf } from '../../../core/packs/import-gates';
 import { HOME_LAYOUT, WATER_KINDS } from './page-layout';
 import { kindTitle } from './page-source';
@@ -208,6 +208,9 @@ export interface RowLook {
   picked: boolean;
   // 灰字
   note: string | null;
+  // 灰的：点它能把要的一起勾上（第六十六轮，pick-store.ts 的 pickWithNeeds）；choices 不止一个时让用户选（几选一）
+  resolvable?: boolean;
+  choices?: ImportNeed[];
 }
 
 export interface LookCtx {
@@ -219,7 +222,7 @@ export interface LookCtx {
 }
 
 const fixNote = (g: ImportGate | undefined): string => (g?.t === 'fixable' && g.restores.length ? `补回${g.restores.join('、')}` : '勾上才参与生成');
-const differsNote = (here: string) => `${here}有一份不同的，导入后并存`;
+const differsNote = (here: string) => `${here}有一份不同的，添加后并存`;
 
 // “直隶人 要它”“封建君主制 里的”：写在界面上不要空格，几处要它时合起来
 export function whyText(because: readonly string[]): string {
@@ -237,12 +240,14 @@ export function rowLook(r: ContentRef, c: LookCtx): RowLook {
     const state = row.state === 'rename' ? differsNote(c.here) : row.state === 'fix' ? fixNote(gate) : null;
     if (row.role === 'pick') return { mark: 'on', picked, note: state };
     if (row.role === 'child') return { mark: 'child', picked, note: state };
-    return { mark: 'follow', picked, note: state ?? whyText(row.because) };
+    // 跟着来的补回只有比重（勾的文化带来的组，第六十六轮）：写谁要它
+    return { mark: 'follow', picked, note: row.state === 'rename' ? state : whyText(row.because) };
   }
   switch (gate.t) {
     case 'gated':
+      return { mark: 'grey', picked, note: gate.reason, resolvable: gate.resolvable, ...(gate.any ? { choices: gate.choices } : {}) };
     case 'full':
-      return { mark: 'grey', picked, note: gate.reason };
+      return { mark: 'grey', picked, note: gate.reason, resolvable: false };
     case 'have':
       return { mark: 'have', picked, note: null };
     case 'fixable':
@@ -352,5 +357,9 @@ export function soleValue(p: ImportPreview, source: PackNode, r: ImportRow): str
 
 export const soleText = (value: string): string => `里面只有${value}，所有人都是它`;
 
-// 跟着来的文化组比重写 0：写一句
-export const hasZeroWeightGroup = (p: ImportPreview): boolean => p.rows.some((r) => r.kind === 'cultureGroup' && r.role === 'follow');
+// 跟着来的文化组比重写 0：写一句。勾的文化带来的组不写 0（第六十六轮），所以只有别的引用带来的组才算
+export function hasZeroWeightGroup(p: ImportPreview): boolean {
+  const k = kindOf('cultureGroup');
+  const finals = (k && (p.plan.finals.get(k) as { id: string; weight?: number }[] | undefined)) ?? [];
+  return p.rows.some((r) => r.kind === 'cultureGroup' && r.role === 'follow' && finals.some((g) => g.id === r.id && g.weight === 0));
+}

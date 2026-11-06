@@ -1,30 +1,31 @@
 import { signal } from '@preact/signals';
 import type { ArrangeRelation } from '../../../core/content/arrange';
-import { DIMENSION } from '../../../core/content/link-rules';
-import { type ContentRef, linkKey } from '../../../core/content/links';
+import type { ContentRef } from '../../../core/content/links';
 import { itemId, itemName, kindOf } from '../../../core/content/registry';
 import type { PopValue } from '../../../core/human/era';
-import { PACK_MAX_CHARS, type PackNode, type PackRead, type ResourcePack, packItems, readPack } from '../../../core/packs';
-import { type ImportAsk, type ImportGates, type ImportOnto, type ImportPreview, type ImportTarget, importCommand, importGates, importPreview, importToPack } from '../../../core/packs/closure';
-import { infoOf, keyRef } from '../../../core/packs/import-gates';
+import { PACK_MAX_CHARS, type PackNode, type PackRead, packItems, readPack } from '../../../core/packs';
+import { type ImportAsk, type ImportGates, type ImportOnto, type ImportPreview, type ImportTarget, importCommand, importGates, importPreview } from '../../../core/packs/closure';
 import { DEFAULT_LIBRARY } from '../../../core/packs/builtin-tree';
 import { worldLibrary } from '../../../core/packs/switch';
-import { libEdits } from '../../library-edit';
 import { askUser, showToast } from '../../state';
 import { ADD_DIMENSION_NOTE } from '../copy';
 import { queueWorld } from './page-actions';
 import { soleText, soleValue } from './page-import-tree';
 import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemsOf, sourceKind, sourceTitle } from './page-source';
-import { copyToMine, lastPress, pageCtx } from './panel-store';
+import { copyToMine, pageCtx } from './panel-store';
+import { type AddDone, runAdd } from './pick-add';
+import { type PickFor, type PickState, pickOff, pickOn, pickRemove, pickRows, pickWithNeeds } from './pick-store';
 import type { RefOption } from './refs';
 import type { ItemRow } from './rows';
 import { fileLabel } from './store';
 
 export { type PickRow, type PickSection, matchRow, pickSections } from './page-import-tree';
 
-// 导入窗口的逻辑（第六十一轮，第六十五轮两栏）：从一个库勾几项，导入面板正在看的本世界或我的库。闭包在 core/packs/closure.ts，这里是窗口的状态、
-// 勾和去掉时的连带、确认后写到哪里；要画的树和每行的状态在 page-import-tree.ts。组件（ImportDialog、ImportList、ImportBasket）只画。
-// 导入是一步：世界里一个 batch，库里一次 setPack，撤销全撤。列表上的“添加”不开窗口，也走同一个闭包。
+// 导入窗口的逻辑（第六十一轮，第六十五轮两栏）：从一个库勾几项，添加到面板正在看的本世界或我的库。闭包在 core/packs/closure.ts，这里是窗口的状态、
+// 确认后写到哪里；勾和去掉时的连带在 pick-store.ts（第六十六轮搬过去，按库记的勾选也用），写入在 pick-add.ts；
+// 要画的树和每行的状态在 page-import-tree.ts。组件（ImportDialog、ImportList、ImportBasket）只画。
+// 添加是一步：世界里一个 batch，库里一次 setPack，撤销全撤。列表上的“添加”不开窗口，也走同一个闭包。
+// 第六十六轮起给用户看的字叫“添加”，“导入”只留给读文件（第六十七轮这个窗口并进资源库面板）
 
 export interface ImportFile {
   name: string;
@@ -45,6 +46,8 @@ export interface ImportWindow {
   file: ImportFile | null;
   picks: readonly ContentRef[];
   off: readonly ContentRef[];
+  // 点灰的行时为它加的（第六十六轮，见 pick-store.ts）
+  added: readonly PickFor[];
   // 一开始展开哪一种
   focus?: string;
   // 上级页面“加”的下拉选的：导入时放到这个上级下面（同一步）
@@ -54,9 +57,7 @@ export interface ImportWindow {
 export const importWindow = signal<ImportWindow | null>(null);
 export const closeImport = () => (importWindow.value = null);
 
-const sameRef = (a: ContentRef, b: ContentRef) => a.kind === b.kind && a.id === b.id;
-export const hasRef = (list: readonly ContentRef[], r: ContentRef) => list.some((x) => sameRef(x, r));
-const without = (list: readonly ContentRef[], r: ContentRef) => list.filter((x) => !sameRef(x, r));
+export { hasRef } from './pick-store';
 
 // ---------- 打开 ----------
 
@@ -72,10 +73,10 @@ export function defaultFrom(target: SourceRef, ctx: PageCtx): string | null {
 
 export function openImport(req: { target: SourceRef; from?: string; pick?: ContentRef; onto?: OntoRef }, ctx: PageCtx) {
   const from = req.from ?? defaultFrom(req.target, ctx);
-  importWindow.value = { target: req.target, from, file: null, picks: req.pick ? [req.pick] : [], off: [], ...(req.pick ? { focus: req.pick.kind } : {}), ...(req.onto ? { onto: req.onto } : {}) };
+  importWindow.value = { target: req.target, from, file: null, picks: req.pick ? [req.pick] : [], off: [], added: [], ...(req.pick ? { focus: req.pick.kind } : {}), ...(req.onto ? { onto: req.onto } : {}) };
 }
 
-// 右上角的“导入”：看本世界、我的库时导入到它；内置的、导入的库只读，先问：从它导入本世界，或者复制成我的库
+// 右上角的“导入”：看本世界、我的库时添加到它；内置的、导入的库只读，先问：从它添加到本世界，或者复制成我的库
 export async function pressImport(src: SourceRef, ctx: PageCtx): Promise<void> {
   const k = sourceKind(src, ctx);
   if (k === 'world' || k === 'mine') {
@@ -86,8 +87,8 @@ export async function pressImport(src: SourceRef, ctx: PageCtx): Promise<void> {
   const name = sourceTitle(src, ctx);
   const v = await askUser({
     title: `${name}只读`,
-    text: ctx.world ? '可以从它导入本世界。要往库里导入，先复制成我的库。' : '要往库里导入，先复制成我的库。',
-    choices: [...(ctx.world ? [{ value: 'world', label: '导入本世界', primary: true }] : []), { value: 'copy', label: '复制成我的库', ...(ctx.world ? {} : { primary: true }) }, { value: 'cancel', label: '取消' }],
+    text: ctx.world ? '可以从它添加到本世界。要往库里添加，先复制成我的库。' : '要往库里添加，先复制成我的库。',
+    choices: [...(ctx.world ? [{ value: 'world', label: '添加到本世界', primary: true }] : []), { value: 'copy', label: '复制成我的库', ...(ctx.world ? {} : { primary: true }) }, { value: 'cancel', label: '取消' }],
   });
   if (v === 'world') openImport({ target: WORLD_SOURCE, from: src.key }, ctx);
   if (v === 'copy') {
@@ -104,110 +105,28 @@ const patch = (p: Partial<ImportWindow>) => {
 
 export function chooseFrom(key: string) {
   lastFrom = key;
-  patch({ from: key, file: null, picks: [], off: [], onto: undefined, focus: undefined });
+  patch({ from: key, file: null, picks: [], off: [], added: [], onto: undefined, focus: undefined });
 }
 
 // 太大的文件不读进内存（readPack 按字数再查一遍；一个字可能占三个字节）
 export async function chooseFile(file: File) {
   const read: PackRead = file.size > 3 * PACK_MAX_CHARS ? { ok: false, errors: [`文件太大（${Math.round(file.size / 1e6)} MB），不是资源包`] } : readPack(await file.text(), fileLabel(file.name));
-  patch({ file: { name: file.name, read }, picks: [], off: [], onto: undefined, focus: undefined });
+  patch({ file: { name: file.name, read }, picks: [], off: [], added: [], onto: undefined, focus: undefined });
 }
 
-// 连带：改了勾选之后，这一步新失效的项（灰了、进不来了）勾的拿掉，子项记进 off，到不再变为止。
-// 去掉变量后要它的政体、去掉文化组后要它的文化都在这里拿掉；原来就进不来的（放不下……）不动，写在清单底下
-function settled(ask: ImportAsk, had: ImportPreview, next: Pick<ImportWindow, 'picks' | 'off'>): Pick<ImportWindow, 'picks' | 'off'> {
-  const known = new Set(had.dropped.map((d) => linkKey(d.kind, d.id)));
-  let { picks, off } = next;
-  for (let round = 0; round < 16; round++) {
-    const p = importPreview({ ...ask, picks, off });
-    const fresh = p.dropped.filter((d) => !known.has(linkKey(d.kind, d.id)));
-    if (!fresh.length) break;
-    const gone = new Set(fresh.map((d) => linkKey(d.kind, d.id)));
-    const wasPick = new Set(picks.map(keyRef));
-    off = [...off, ...fresh.filter((d) => !wasPick.has(linkKey(d.kind, d.id)) && !off.some((x) => x.kind === d.kind && x.id === d.id)).map((d) => ({ kind: d.kind, id: d.id }))];
-    picks = picks.filter((x) => !gone.has(keyRef(x)));
-  }
-  return { picks, off };
-}
-
-// 这一项下面的（用库的安排：政体的派系、变量的取值和组）
-function descendants(source: PackNode, r: ContentRef): ContentRef[] {
-  const info = infoOf(source);
-  const seen = new Map<string, ContentRef>();
-  const walk = (x: ContentRef) => {
-    const kids: ContentRef[] = [...(info.children.get(keyRef(x)) ?? [])];
-    if (x.kind === DIMENSION) {
-      const d = info.dims.get(x.id);
-      for (const id of d?.groups ?? []) kids.push({ kind: 'valueGroup', id });
-      for (const id of d?.values ?? []) kids.push({ kind: 'popValue', id });
-    }
-    for (const k of kids) {
-      if (seen.has(keyRef(k))) continue;
-      seen.set(keyRef(k), k);
-      walk(k);
-    }
-  };
-  walk(r);
-  return [...seen.values()];
-}
-
-const rowIn = (p: ImportPreview, r: ContentRef) => p.rows.find((x) => x.kind === r.kind && x.id === r.id);
-
-// 勾上：它和它下面去掉过的都回来（勾上级时默认一起勾）。上级带着的子项去掉后又勾回来时不用另记一笔；跟着来的勾上才是勾整项（文化组勾整组）。
-// 取消：还作为子项在时记进 off；还有别的项要它时变回跟着来的（点清单上的 × 才连它们一起去掉）
-export function togglePick(r: ContentRef, on: boolean, ctx: PageCtx = pageCtx()) {
+// 勾、取消、整段、×：连带的规则在 pick-store.ts（第六十六轮搬过去，资源库面板按库记的勾选也用它们），这里改的是窗口里的勾选
+const editPicks = (ctx: PageCtx, f: (ask: ImportAsk | null, st: PickState) => PickState | null) => {
   const st = importWindow.value;
   if (!st) return;
-  const ask = askOf(st, ctx);
-  if (on) {
-    const under = ask ? new Set(descendants(ask.source, r).map(keyRef)) : new Set<string>();
-    const off = without(st.off, r).filter((x) => !under.has(keyRef(x)));
-    const already = hasRef(st.picks, r);
-    const child = !already && ask && rowIn(importPreview({ ...ask, picks: st.picks, off }), r)?.role === 'child';
-    patch({ picks: already || child ? st.picks : [...st.picks, r], off });
-    return;
-  }
-  const picks = without(st.picks, r);
-  if (!ask) {
-    patch({ picks });
-    return;
-  }
-  const had = importPreview(ask);
-  const off = rowIn(importPreview({ ...ask, picks }), r)?.role === 'child' ? [...without(st.off, r), r] : st.off;
-  patch(settled(ask, had, { picks, off }));
-}
+  const next = f(askOf(st, ctx), st);
+  if (next) patch({ picks: next.picks, off: next.off, added: next.added });
+};
 
-// 整段勾、整段取消
-export function setPicks(rows: readonly ContentRef[], on: boolean, ctx: PageCtx = pageCtx()) {
-  const st = importWindow.value;
-  if (!st) return;
-  const ask = askOf(st, ctx);
-  const set = new Set(rows.map(keyRef));
-  const rest = st.picks.filter((x) => !set.has(keyRef(x)));
-  if (on) {
-    const under = new Set(set);
-    if (ask) for (const r of rows) for (const d of descendants(ask.source, r)) under.add(keyRef(d));
-    patch({ picks: [...rest, ...rows], off: st.off.filter((x) => !under.has(keyRef(x))) });
-    return;
-  }
-  patch(ask ? settled(ask, importPreview(ask), { picks: rest, off: st.off }) : { picks: rest });
-}
-
-// 从清单里去掉一项（×）：这一项和要它的都进不来。off 只在有上级还会带它时留着：别的时候留着的话，之后勾要它的项会灰
-export function removeRow(r: ContentRef, ctx: PageCtx = pageCtx()) {
-  const st = importWindow.value;
-  if (!st) return;
-  const picks = without(st.picks, r);
-  const off = [...without(st.off, r), r];
-  const ask = askOf(st, ctx);
-  if (!ask) {
-    patch({ picks, off });
-    return;
-  }
-  const out = settled(ask, importPreview(ask), { picks, off });
-  const free = without(out.off, r);
-  patch(rowIn(importPreview({ ...ask, picks: out.picks, off: free }), r) ? out : { picks: out.picks, off: free });
-}
+export const togglePick = (r: ContentRef, on: boolean, ctx: PageCtx = pageCtx()) => editPicks(ctx, (ask, st) => (on ? pickOn(ask, st, r) : pickOff(ask, st, r)));
+export const setPicks = (rows: readonly ContentRef[], on: boolean, ctx: PageCtx = pageCtx()) => editPicks(ctx, (ask, st) => pickRows(ask, st, rows, on));
+export const removeRow = (r: ContentRef, ctx: PageCtx = pageCtx()) => editPicks(ctx, (ask, st) => pickRemove(ask, st, r));
+// 点灰的行：把要的一起勾上（几选一时 choice 是选的那一个）
+export const pickNeeds = (r: ContentRef, choice?: ContentRef, ctx: PageCtx = pageCtx()) => editPicks(ctx, (ask, st) => (ask ? pickWithNeeds(ask, st, r, choice) : null));
 
 // ---------- 算 ----------
 
@@ -241,7 +160,7 @@ function addsToOldDim(p: ImportPreview): boolean {
   return ((p.plan.finals.get(k) ?? []) as PopValue[]).some((v) => adding.has(v.id) && !fresh.has(v.dimension));
 }
 
-// 导入后要重新生成才影响地图时写一句（重新生成的按钮在第六十二轮）
+// 添加后要重新生成才影响地图时写一句（重新生成的按钮在第六十二轮；“添加并重新生成”在 pick-add.ts）
 export function regenLine(p: ImportPreview, target: ImportTarget): string | null {
   if (target.t !== 'world') return null;
   const small = target.world.small;
@@ -323,13 +242,7 @@ export function otherLibOptions(kindId: string, src: SourceRef, ctx: PageCtx, fi
 
 // ---------- 确认 ----------
 
-export interface ImportDone {
-  ok: boolean;
-  count: number;
-  error?: string;
-  // 写入时带不了、跳过的
-  skipped?: ImportPreview['dropped'];
-}
+export type ImportDone = AddDone;
 
 // 跳过的项写成一句：一个原因时“还有 3 项需要意识形态，没加”，别的“还有 3 项没加：政体最多 128 个”
 export function skippedLine(dropped: ImportPreview['dropped']): string | null {
@@ -343,35 +256,18 @@ export function skippedLine(dropped: ImportPreview['dropped']): string | null {
 
 export function doneLine(r: ImportDone, regen: string | null): string {
   const skip = skippedLine(r.skipped ?? []);
-  return [`已导入 ${r.count} 项`, skip, regen].filter(Boolean).join('。');
+  return [`已添加 ${r.count} 项`, skip, regen].filter(Boolean).join('。');
 }
 
 const pathOf = (st: ImportWindow): string[] | undefined => (st.file ? undefined : st.from ? [st.from] : undefined);
 
-// 导入：世界里一个 batch（按最新的世界算），库里一步。runCtx 是点确认时的库和世界
-export async function runImport(st: ImportWindow, ctx: PageCtx): Promise<ImportDone> {
+// 添加：世界里一个 batch（按最新的世界算），库里一步。runCtx 是点确认时的库和世界。regen：接着重新生成（同一步）
+export async function runImport(st: ImportWindow, ctx: PageCtx, opts: { regen?: boolean } = {}): Promise<ImportDone> {
   const ask = askOf(st, ctx);
   if (!ask) return { ok: false, count: 0, error: '来源或目的地不在了' };
   const onto: ImportOnto | undefined = st.onto && { relation: st.onto.relation, parent: st.onto.parent, child: st.onto.child };
-  if (st.target.t === 'world') {
-    const path = pathOf(st);
-    let count = 0;
-    let skipped: ImportPreview['dropped'] = [];
-    const ok = await queueWorld((w) => {
-      const r = importCommand({ ...ask, target: { t: 'world', world: w } }, { ...(path ? { path } : {}), ...(onto ? { onto } : {}) });
-      count = r.preview.count;
-      skipped = r.preview.dropped;
-      return r.command;
-    }, '正在导入…');
-    return { ok, count, skipped };
-  }
-  const key = st.target.key;
-  const r = importToPack(ask, onto ? { onto } : {});
-  if (r.pack === (ask.target as Extract<ImportTarget, { t: 'pack' }>).pack) return { ok: true, count: 0, skipped: r.preview.dropped };
-  const done = libEdits.setPack(key, r.pack as ResourcePack, `导入 ${r.preview.count} 项`);
-  if (!done.ok) return { ok: false, count: 0, error: done.error };
-  lastPress.inPanel = true;
-  return { ok: true, count: r.preview.count, skipped: r.preview.dropped };
+  const path = pathOf(st);
+  return runAdd({ ask, target: st.target, ...(path ? { path } : {}), ...(onto ? { onto } : {}), regen: !!opts.regen }, ctx);
 }
 
 // ---------- 列表上的“添加”“全部添加” ----------
