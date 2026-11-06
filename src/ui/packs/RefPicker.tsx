@@ -1,12 +1,13 @@
 import { ChevronDown, Plus } from 'lucide-preact';
 import { type ComponentChildren, createContext } from 'preact';
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { library } from '../../library';
 import { world } from '../../state';
 import { type RefOption, refLabel, refOptionsOf, searchRefs } from './refs';
 
 // 带搜索的下拉（第四十五轮）：编辑器里选文化组、地名风格、维度、取值、政体、国家等级……。
-// 点开后先列全部（多了只列前面的），输入几个字筛；方向键挑、回车选、Esc 关。列表里没有的 id 也能照写（“用 xxx”）
+// 点开后先列全部（多了只列前面的），输入几个字筛；方向键挑、回车选、Esc 关。列表里没有的 id 也能照写（“用 xxx”）。
+// 弹框不超出外面滚动的那一层（第六十八轮）
 
 // 引用点过去（第五十九轮）：资源库面板给这个函数：这个引用点了做什么（这一份里没有它时 null）。别处不给，引用就不能点
 export const RefGo = createContext<((ref: string | readonly string[], id: string) => (() => void) | null) | null>(null);
@@ -53,6 +54,24 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
     window.addEventListener('pointerdown', off, true);
     return () => window.removeEventListener('pointerdown', off, true);
   }, [open]);
+  // 弹框不超出外面滚动的那一层（第六十八轮：面板边上的按钮弹出来比面板宽，面板出横向滚动条）：右边放不下时靠右对齐，最宽不超过它
+  const pop = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ end: boolean; max: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setFit(null);
+      return;
+    }
+    const el = pop.current;
+    if (!el) return;
+    let up = el.parentElement?.parentElement ?? null;
+    while (up && up !== document.body && getComputedStyle(up).overflowY === 'visible' && getComputedStyle(up).overflowX === 'visible') up = up.parentElement;
+    const bound = (up && up !== document.body ? up : document.documentElement).getBoundingClientRect();
+    const btn = box.current!.getBoundingClientRect();
+    const max = Math.max(160, bound.width - 16);
+    const w = Math.min(el.offsetWidth, max);
+    setFit({ end: btn.left + w > bound.right - 8 && btn.right - w >= bound.left, max });
+  }, [open]);
   const pool = useMemo(() => (exclude?.size ? options.filter((o) => !exclude.has(o.id)) : options), [options, exclude]);
   const { list, more } = useMemo(() => searchRefs(pool, q), [pool, q]);
   const free = q.trim();
@@ -86,7 +105,7 @@ export function RefPicker({ options, value, add, onPick, onClear, exclude, place
         )}
       </button>
       {open && (
-        <div class="ref-pop" role="listbox">
+        <div ref={pop} class={`ref-pop ${fit?.end ? 'end' : ''}`} style={fit ? { maxWidth: `${fit.max}px` } : undefined} role="listbox">
           <input
             ref={input}
             type="search"

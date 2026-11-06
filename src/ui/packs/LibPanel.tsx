@@ -11,6 +11,7 @@ import { PageItem } from './PageItem';
 import { PageList } from './PageList';
 import { WaterTablePage } from './PageWater';
 import { dragView } from './page-drag';
+import { LibOther } from './LibOther';
 import { LibSide } from './LibSide';
 import { closeFile, installFile, openFile } from './lib-file';
 import { panelKeys } from './lib-keys';
@@ -23,7 +24,8 @@ import { tidyWorld } from './tidy';
 // 资源库面板（第五十九轮）：左上角一个面板，标题是下拉（本世界 / 内置的库 / 我的库 / 读进来的文件 / + 新建一个库），切换后界面完全一样。
 // 层层点进去：首页 → 列表 → 这一项的页面，左上角返回。逻辑都在 pages.ts，这里只画。
 // 第六十七轮：看库就是添加（没有导入窗口了）。有地方加时库的每一行有勾，勾了东西或点了一项时右栏（LibSide.tsx）滑出来，
-// 面板变宽成两栏；右上角“从库里添加…”切到上次用的库。“导入”只留给读文件（标题下拉的“读文件…”）
+// 面板变宽成两栏；右上角“从库里添加…”切到上次用的库。“导入”只留给读文件（标题下拉的“读文件…”）。
+// 第六十八轮：列表、上级页面上的“从别的库加”在右栏打开 LibOther.tsx（能多选），开着时右栏是它
 
 // 窗口窄（约 900 px 以下）时右栏放不下：盖在左栏上
 const NARROW = '(max-width: 900px)';
@@ -337,9 +339,11 @@ export function LibPanel() {
   const picking = pickingIn(src, ctx);
   const count = picking ? pickCount(src.key) : 0;
   const side = live.side?.p === 'item' ? live.side : null;
-  // 两栏：勾了东西或右栏开着；窄窗口里点了一项、点了清单才盖上
-  const wide = picking && (!!side || count > 0);
-  const over = narrow && picking && (!!side || !!live.basket);
+  // “从别的库加”开着时右栏是它（第六十八轮；底下点开的那一项收起它后还在）
+  const other = live.other ?? null;
+  // 两栏：勾了东西或右栏开着；窄窗口里点了一项、点了清单、开了“从别的库加”才盖上
+  const wide = !!other || (picking && (!!side || count > 0));
+  const over = narrow && (!!other || (picking && (!!side || !!live.basket)));
   const two = wide && !narrow;
   const k = sourceKind(src, ctx);
   const canAdd = (src.t === 'world' && !!ctx.world) || k === 'mine';
@@ -347,7 +351,7 @@ export function LibPanel() {
     <div
       class={`lib-panel ${route.p === 'table' ? 'wide' : ''} ${two ? 'two' : ''} ${over ? 'over' : ''}`}
       onPointerDownCapture={() => (lastPress.inPanel = true)}
-      onKeyDown={(e) => panelKeys(e, body.current, src, ctx, !!side || !!live.basket)}
+      onKeyDown={(e) => panelKeys(e, body.current, src, ctx, !!side || !!live.basket || !!other)}
     >
       <div class="lp-main">
         <div class="lp-head">
@@ -382,7 +386,7 @@ export function LibPanel() {
           </button>
         )}
       </div>
-      {(two || over) && <LibSide src={src} side={side} ctx={ctx} over={over} />}
+      {(two || over) && (other ? <LibOther src={src} o={other} ctx={ctx} over={over} /> : <LibSide src={src} side={side} ctx={ctx} over={over} />)}
       <DragGhost />
     </div>
   );

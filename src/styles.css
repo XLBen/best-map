@@ -1401,6 +1401,11 @@ select.ed-add {
   box-shadow: var(--shadow-lg);
   z-index: 5;
 }
+/* 右边放不下时靠右对齐（RefPicker 量了加 .end，第六十八轮） */
+.ref-pop.end {
+  left: auto;
+  right: 0;
+}
 .ref-pop input[type='search'] {
   width: 100%;
   min-height: var(--h-sm);

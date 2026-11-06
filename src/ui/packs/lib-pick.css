@@ -313,3 +313,86 @@ button.lb-fold {
     max-width: calc(100% - 728px - var(--sheet-w) - 34px);
   }
 }
+
+/* ---------- 从别的库加（第六十八轮，LibOther.tsx）：右栏里能多选 ---------- */
+.lo-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-2) var(--sp-1) var(--sp-3);
+}
+.lo-head > b {
+  min-width: 0;
+}
+.lo-from {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0 var(--sp-3) var(--sp-1);
+}
+.lo-from select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.lo-tools {
+  flex: none;
+  display: flex;
+  padding: 2px var(--sp-3) var(--sp-1);
+}
+.lo-tools input[type='search'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-2);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.lo-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-3) var(--sp-2);
+}
+.lo-list > .lp-section:first-child {
+  margin-top: var(--sp-1);
+}
+/* 名字下面一行小字：灰的原因、已有、跟着来的 */
+.lo-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 2px 0;
+  text-align: left;
+}
+.lo-text > span {
+  max-width: 100%;
+}
+.lo-note {
+  font-size: var(--fs-xs);
+  line-height: 1.3;
+}
+.lo-row.lo-grey .lp-row-name {
+  color: var(--muted);
+}
+.lo-detail {
+  margin: 0 0 var(--sp-1) 24px;
+  padding: var(--sp-1) var(--sp-2);
+  border-left: 2px solid var(--line);
+}
+.lo-detail p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+/* 清单在底下，最多占一半 */
+.lp-side.lo-pane .lb-basket {
+  flex: 0 0 auto;
+  max-height: 45%;
+  border-top: 1px solid var(--line);
+}

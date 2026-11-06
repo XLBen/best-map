@@ -1,18 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { type ResourcePack, packItems } from '../../../core/packs';
 import { builtinPacks } from '../../../core/packs/builtin-tree';
-import { importGates } from '../../../core/packs/closure';
 import { continents } from '../../../core/testing/fixtures';
 import { type LibraryEntry, fileLibrary, library } from '../../library';
-import { libEdits } from '../../library-edit';
-import { changeNote, world, worldEpoch } from '../../state';
+import { world, worldEpoch } from '../../state';
 import { viewLibrary } from './PackDialog';
 import { closeFile, openFile, readFileAsPack } from './lib-file';
 import { homePage } from './pages';
 import type { PageCtx, SourceRef } from './page-source';
 import { searchSource } from './page-search';
 import { closeLibrary, closeSide, libPanel, libWide, listOf, lookAt, openLibrary, openRoute, rowFlash, setSource } from './panel-store';
-import { addOther, defaultFrom, otherLibOptions, rememberFrom } from './pick-other';
+import { defaultFrom, rememberFrom } from './pick-other';
 import { canPick, destFor, pickCount, pickLead, pickStore, picksOf, setPickDest, togglePickIn } from './pick-store';
 import { boxOf, cardPicks, kindPickable, lookOf, pickView, pressOf, pressRow } from './pick-view';
 import { packDialog } from './store';
@@ -202,47 +200,13 @@ describe('两栏', () => {
   });
 });
 
-describe('从库里添加…、别的库的项', () => {
+describe('从库里添加…', () => {
   it('切到上次用的库；没有时目的地用的库以外第一个内置库；读进来的文件不算', () => {
     const MINE = lib('mine');
     expect(defaultFrom(MINE, ctx())).toBe('antiquity');
     rememberFrom('fantasy');
     expect(defaultFrom(MINE, ctx())).toBe('fantasy');
     rememberFrom('antiquity');
-  });
-
-  it('下拉里别的库的：这一份里没有的，同 id 列第一个库；灰的、放不下这个上级的不列', () => {
-    const c = ctx();
-    const o = otherLibOptions('faction', lib('modern'), c);
-    expect(o.some((x) => x.id === 'liberals')).toBe(false);
-    expect(o.length).toBeGreaterThan(0);
-    for (const x of o) expect(x.hint).toBe(pack(x.lib).name);
-    expect(o.some((x) => x.id === 'mages')).toBe(false);
-    expect(new Set(o.map((x) => x.id)).size).toBe(o.length);
-    expect(otherLibOptions('faction', lib('modern'), c, () => false)).toEqual([]);
-    const eng = continents();
-    const inWorld = otherLibOptions('government', { t: 'world' }, ctx({ world: eng.world }));
-    expect(inWorld.some((x) => x.id === 'socialist-republic')).toBe(false);
-    for (const x of inWorld) expect(importGates(pack(x.lib), { t: 'world', world: eng.world }).of({ kind: 'government', id: x.id }).t).not.toBe('gated');
-  });
-
-  it('选了直接加到我的库（一步，撤销条写选的那一项），不开窗口', async () => {
-    const m = mine('add-other');
-    library.value = [...LIB, m];
-    try {
-      const c = { world: null, lib: library.value };
-      const o = otherLibOptions('mapStyle', lib(m.key), c)[0];
-      const r = await addOther(lib(m.key), o.lib, { kind: 'mapStyle', id: o.id }, c);
-      expect(r).toMatchObject({ ok: true });
-      expect(packItems<{ id: string }>(library.value.find((e) => e.key === m.key)!.pack, 'mapStyles').map((g) => g.id)).toContain(o.id);
-      expect(changeNote.value?.head).toMatch(new RegExp(`^已添加“${o.label}”`));
-      expect(changeNote.value?.undo).toBeDefined();
-      expect(libEdits.undo(m.key)).toMatch(new RegExp(`^添加“${o.label}”`));
-    } finally {
-      await libEdits.flushAll();
-      libEdits.forget(m.key);
-      changeNote.value = null;
-    }
   });
 });
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ContentRef } from '../../../core/content/links';
 import type { ImportNeed } from '../../../core/packs/closure';
 import type { PageCtx } from './pages';
+import type { RowLook } from './pick-look';
 import { type PickView, boxOf, lookOf, pressOf, pressRow } from './pick-view';
 
 // 一行最左边的勾（第六十七轮，资源库面板的列表、融入的子项、一项的页面顶上）：
@@ -43,8 +44,9 @@ function ChoiceMenu({ at, choices, onPick, onClose }: { at: { top: number; left:
   );
 }
 
-export function PickBox({ v, r, ctx }: { v: PickView; r: ContentRef; ctx: PageCtx }) {
-  const look = lookOf(v, r);
+// look：调用方算好的样子（“从别的库加”里放不到上级下面的灰着，第六十八轮）；省略时按勾选算
+export function PickBox({ v, r, ctx, look: given }: { v: PickView; r: ContentRef; ctx: PageCtx; look?: RowLook }) {
+  const look = given ?? lookOf(v, r);
   const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
   const press = pressOf(look);
   if (look.mark === 'have') {
@@ -70,7 +72,7 @@ export function PickBox({ v, r, ctx }: { v: PickView; r: ContentRef; ctx: PageCt
           title={`${look.note ?? ''}。${choices.length ? '点一下选一个，一起勾上' : '点一下，要的一起勾上'}`}
           onClick={(e) => {
             if (pressRow(v.key, r, look, ctx) || !choices.length) return;
-            const b =(e.currentTarget as HTMLElement).getBoundingClientRect();
+            const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setMenu({ top: b.bottom + 4, left: b.left });
           }}
         >

@@ -5,7 +5,9 @@ import { itemId, kindOf } from '../content/registry';
 import { sameContent } from '../content/refs';
 import { type PackNode, type PackWorld, PACK_FORMAT, PACK_VERSION, type ResourcePack, packItems, packSections, parsePack } from '../packs';
 import { builtinPacks } from './builtin-tree';
-import { type ImportAsk, type ImportRow, type ImportTarget, importGates, importPreview, importToPack } from './closure';
+import { engineFor } from '../testing/fixtures';
+import { type ImportAsk, type ImportRow, type ImportTarget, importCommand, importGates, importPreview, importToPack } from './closure';
+import { packImportCommands } from './import';
 
 // 第六十一轮：导入的闭包；第六十四轮改成“能选的才让选，勾什么进什么”。内置的数据（社会主义共和国、伊克塔……）和写满引用的小包都试
 
@@ -575,8 +577,31 @@ describe('写进库', () => {
   it('上级页面选了别的库里的一项：放到这个上级下面是同一步', () => {
     const there = withIdeo({ governments: [{ id: 'mine-g', name: '我的政体', ...GOV }] });
     const rel = relationOf('faction', 'government')!;
-    const r = importToPack(ask(there, [ref('faction', 'f')]), { onto: { relation: rel, parent: 'mine-g', child: ref('faction', 'f') } });
+    const r = importToPack(ask(there, [ref('faction', 'f')]), { onto: { relation: rel, parent: 'mine-g', children: [ref('faction', 'f')] } });
     expect(packItems<{ factions?: string[] }>(r.pack, 'governments')[0].factions).toEqual(['f']);
+  });
+
+  it('上级页面一次勾了几项（第六十八轮）：都放到这个上级下面，加到库、加到世界都是同一步', () => {
+    const two = { ...sourcePack(), factions: [...packItems(sourcePack(), 'factions'), { id: 'f2', name: '派系二', color: '#cccccc', amount: 1, drivers: [{ dimension: 'ideo', value: 'v2', weight: 2 }] }] } as ResourcePack;
+    const rel = relationOf('faction', 'government')!;
+    const picks = [ref('faction', 'f'), ref('faction', 'f2')];
+    const onto = { relation: rel, parent: 'mine-g', children: picks };
+    const there = withIdeo({ governments: [{ id: 'mine-g', name: '我的政体', ...GOV, factions: ['old'] }], factions: [{ id: 'old', name: '旧的', color: '#000000', amount: 1, drivers: [] }] });
+    const r = importToPack({ source: two, target: packTarget(there), picks }, { onto });
+    expect(packItems<{ factions?: string[] }>(r.pack, 'governments')[0].factions).toEqual(['old', 'f', 'f2']);
+    // 世界：一个 batch，上级只写一条（两项都链上）
+    const eng = engineFor({ cells: 1000, seed: 2 }, { bare: true });
+    for (const c of packImportCommands([there], { packs: [['dst']], groups: [] }, eng.world)) eng.exec(c);
+    const w = importCommand({ source: two, target: { t: 'world', world: eng.world }, picks }, { onto });
+    const govEdits = w.command!.commands.filter((c) => c.op === 'set_content' && c.kind === 'government');
+    expect(govEdits.length).toBe(1);
+    const before = eng.toDoc().commands.length;
+    eng.exec(w.command!);
+    expect((eng.world.small.content!.government!['mine-g'] as { factions: string[] }).factions).toEqual(['old', 'f', 'f2']);
+    expect(Object.keys(eng.world.small.content!.faction!)).toEqual(expect.arrayContaining(['f', 'f2']));
+    eng.undo();
+    expect(eng.toDoc().commands.length).toBe(before);
+    expect((eng.world.small.content!.government!['mine-g'] as { factions: string[] }).factions).toEqual(['old']);
   });
 });
 

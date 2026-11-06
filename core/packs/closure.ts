@@ -394,23 +394,30 @@ function originIndex(source: PackNode, root: readonly string[]): (key: string, i
   return (key, id) => at.get(linkKey(key, id)) ?? [...root];
 }
 
-// 导入时顺手放到一个上级下面（上级页面“加”的下拉选了别的库里的一项）：同一步
+// 导入时顺手放到一个上级下面（上级页面“从别的库加”，第六十八轮起可以一次几项）：同一步
 export interface ImportOnto {
   relation: ArrangeRelation;
   parent: string;
-  child: ContentRef;
+  children: readonly ContentRef[];
 }
 
-function ontoEdit(onto: ImportOnto, preview: ImportPreview, itemsIn: (k: ContentKind) => readonly unknown[]): { kind: ContentKind; item: Record<string, unknown> } | null {
+// 逐个链上；同一项改了几次（派系写在政体上）按上一次改过的接着改，最后每项给一条
+function ontoEdits(onto: ImportOnto, preview: ImportPreview, itemsIn: (k: ContentKind) => readonly unknown[]): { kind: ContentKind; item: Record<string, unknown> }[] {
   const up = kindOf(onto.relation.parent);
-  const ck = kindOf(onto.child.kind);
-  if (!up || !ck || !onto.relation.link) return null;
-  const parent = itemsIn(up).find((x) => itemId(up, x) === onto.parent) as Record<string, unknown> | undefined;
-  const toId = preview.plan.ids.get(keyRef(onto.child));
-  const child = toId ? (itemsIn(ck).find((x) => itemId(ck, x) === toId) as Record<string, unknown> | undefined) : undefined;
-  if (!parent || !child) return null;
-  const edit = onto.relation.link(parent, child);
-  return { kind: edit.side === 'parent' ? up : ck, item: edit.next };
+  if (!up || !onto.relation.link) return [];
+  const edited = new Map<string, { kind: ContentKind; item: Record<string, unknown> }>();
+  const find = (k: ContentKind, id: string) => edited.get(linkKey(k.id, id))?.item ?? (itemsIn(k).find((x) => itemId(k, x) === id) as Record<string, unknown> | undefined);
+  for (const c of onto.children) {
+    const ck = kindOf(c.kind);
+    const toId = ck && preview.plan.ids.get(keyRef(c));
+    const parent = find(up, onto.parent);
+    const child = ck && toId ? find(ck, toId) : undefined;
+    if (!ck || !parent || !child) continue;
+    const edit = onto.relation.link(parent, child);
+    const kind = edit.side === 'parent' ? up : ck;
+    edited.set(linkKey(kind.id, itemId(kind, edit.next)), { kind, item: edit.next });
+  }
+  return [...edited.values()];
 }
 
 export interface WorldImport {
@@ -458,8 +465,7 @@ export function importCommand(ask: ImportAsk, opts: { path?: readonly string[]; 
       }
       return l;
     };
-    const e = ontoEdit(opts.onto, preview, itemsIn);
-    if (e) commands.push(enableCommand(e.kind, e.item, world));
+    for (const e of ontoEdits(opts.onto, preview, itemsIn)) commands.push(enableCommand(e.kind, e.item, world));
   }
   return { command: commands.length ? { ...plan.command, commands } : null, added: plan.added, skipped: plan.skipped, preview };
 }
@@ -498,8 +504,7 @@ export function importToPack(ask: ImportAsk, opts: { onto?: ImportOnto } = {}): 
   const eraKind = kindOf('era');
   if (era && eraKind && preview.dims.length) pack = replaced(pack, eraKind, era.id, { ...era, dimensions: [...era.dimensions, ...preview.dims] }) as ResourcePack;
   if (opts.onto) {
-    const e = ontoEdit(opts.onto, preview, (k) => packItems(pack, k.pack.key));
-    if (e) pack = replaced(pack, e.kind, itemId(e.kind, e.item), e.item) as ResourcePack;
+    for (const e of ontoEdits(opts.onto, preview, (k) => packItems(pack, k.pack.key))) pack = replaced(pack, e.kind, itemId(e.kind, e.item), e.item) as ResourcePack;
   }
   return { pack, added: r.added, skipped: r.skipped, preview };
 }

@@ -9,10 +9,9 @@ import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, 
 import { newItemIn } from './page-actions';
 import { InsideRows } from './PageChildren';
 import { PickBox } from './PickBox';
-import { RefPicker } from './RefPicker';
-import { copyToMine, flashClass, goTo, libPanel, openRoute } from './panel-store';
+import { copyToMine, flashClass, goTo, libPanel, openRoute, toggleOther } from './panel-store';
 import { allLook } from './pick-look';
-import { addOther, otherLibOptions } from './pick-other';
+import { type OtherOpen, hasOther, sameOther } from './other-view';
 import { setPicksIn } from './pick-store';
 import { type PickView, kindPickable, lookOf, pickView } from './pick-view';
 import { swatchOf } from './row-actions';
@@ -91,17 +90,16 @@ export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; c
   );
 }
 
-// 别的库里有、这一份里没有的：选一项直接加（第六十七轮，不再开窗口）
-function FromOtherLib({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageCtx }) {
-  const options = useMemo(() => otherLibOptions(p.kind.id, src, ctx), [p.kind.id, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world]);
-  if (!options.length) return null;
+// 别的库里有这一种时：在右栏打开“从别的库加”（第六十八轮，LibOther.tsx），再点一次收起
+function FromOtherLib({ p, route, src, ctx }: { p: ListPage; route: Extract<Route, { p: 'list' }>; src: SourceRef; ctx: PageCtx }) {
+  const o: OtherOpen = { kind: p.kind.id, ...(route.dim ? { dim: route.dim } : {}), label: p.title };
+  const has = useMemo(() => hasOther(o, src, ctx), [o.kind, o.dim, src.t === 'lib' ? src.key : '', ctx.lib]);
+  if (!has) return null;
+  const on = sameOther(libPanel.value?.other, o);
   return (
-    <RefPicker add title="从别的库加" options={options} onPick={(id) => {
-      const o = options.find((x) => x.id === id);
-      if (o) void addOther(src, o.lib, { kind: p.kind.id, id }, ctx);
-    }}>
-      从别的库加
-    </RefPicker>
+    <button class={`small ${on ? 'open' : ''}`} aria-pressed={on} title={on ? '收起' : `从别的库挑几项${p.title}，可以多选`} onClick={() => toggleOther(o)}>
+      <Plus /> 从别的库加
+    </button>
   );
 }
 
@@ -155,7 +153,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
         {v && <AllBox v={v} p={p} route={route} ctx={ctx} />}
         {searchable && <input ref={search} class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
         {!searchable && <span class="grow" />}
-        {!p.readonly && <FromOtherLib p={p} src={src} ctx={ctx} />}
+        {!p.readonly && <FromOtherLib p={p} route={route} src={src} ctx={ctx} />}
         {p.readonly && sourceKind(src, ctx) !== 'world' && sourceKind(src, ctx) !== 'file' && (
           <button class="small" title={p.readonly} onClick={() => void copyToMine(src)}>
             复制成我的库

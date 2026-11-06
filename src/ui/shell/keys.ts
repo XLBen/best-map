@@ -48,9 +48,9 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (picking.value) picking.value = false;
     else if (uiHidden.value) uiHidden.value = false;
-    // 资源库面板：先收起右栏（第六十七轮），再一层层返回，首页再按一次关上
+    // 资源库面板：先收起右栏（第六十七轮；“从别的库加”开着时先收它，第六十八轮），再一层层返回，首页再按一次关上
     else if (libPanel.value) {
-      if (libPanel.value.side || libPanel.value.basket) closeSide();
+      if (libPanel.value.other || libPanel.value.side || libPanel.value.basket) closeSide();
       else if (libPanel.value.stack.length > 1) goBack();
       else closeLibrary();
     }

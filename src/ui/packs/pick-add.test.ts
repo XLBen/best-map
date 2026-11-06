@@ -4,7 +4,8 @@ import { digest, worldDigest } from '../../../core/digest';
 import { Engine } from '../../../core/engine';
 import { type ResourcePack, packItems } from '../../../core/packs';
 import { builtinPacks, worldPartsOf } from '../../../core/packs/builtin-tree';
-import { type ImportAsk, importLabel } from '../../../core/packs/closure';
+import { relationOf } from '../../../core/content/arrange';
+import { type ImportAsk, importGates, importLabel } from '../../../core/packs/closure';
 import { newWorldContentCommands, packImportCommands } from '../../../core/packs/import';
 import { NO_CURRENTS, engineFor } from '../../../core/testing/fixtures';
 import { type LibraryEntry, library } from '../../library';
@@ -250,5 +251,43 @@ describe('从按库记的勾选添加', () => {
       library.value = had;
       pickStore.value = { ...pickStore.value, bySource: {}, dest: null };
     }
+  });
+});
+
+describe('从别的库加，放到上级下面（第六十八轮）', () => {
+  it('上级页面勾两个派系添加：两个都链到这个政体下面，一个 batch，一次撤销全撤；重放一致', () => {
+    const e = worldOf();
+    const target = { t: 'world' as const, world: e.world };
+    const govs = Object.keys(e.world.small.content!.government!);
+    const gov = govs[0];
+    // 别的库里两个这个世界能直接加的派系（同一个库）
+    let found: { lib: string; ids: string[] } | null = null;
+    for (const lib of BUILTIN) {
+      if (lib.key === 'fantasy') continue;
+      const g = importGates(lib.pack, target);
+      const ids = packItems<{ id: string }>(lib.pack, 'factions').map((f) => f.id).filter((id) => g.of({ kind: 'faction', id }).t === 'free');
+      if (ids.length >= 2) {
+        found = { lib: lib.key, ids: ids.slice(0, 2) };
+        break;
+      }
+    }
+    expect(found).not.toBeNull();
+    const picks = found!.ids.map((id) => ({ kind: 'faction', id }));
+    const onto = { relation: relationOf('faction', 'government')!, parent: gov, children: picks };
+    const before = (e.world.small.content!.government![gov] as { factions?: string[] }).factions ?? [];
+    const base = worldDigest(e.world);
+    const steps = e.toDoc().commands.length;
+    const r = worldAddCommand(askOf(e, found!.lib, picks), { path: [found!.lib], onto }, BUILTIN);
+    e.exec(r.command!);
+    e.update();
+    expect(e.toDoc().commands.length).toBe(steps + 1);
+    expect((e.world.small.content!.government![gov] as { factions: string[] }).factions).toEqual([...before, ...found!.ids]);
+    const after = worldDigest(e.world);
+    const replay = Engine.fromDoc(JSON.parse(JSON.stringify(e.toDoc())), e.world.mesh);
+    replay.update();
+    expect(worldDigest(replay.world)).toBe(after);
+    e.undo();
+    e.update();
+    expect(worldDigest(e.world)).toBe(base);
   });
 });

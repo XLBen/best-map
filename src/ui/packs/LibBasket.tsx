@@ -2,7 +2,7 @@ import { ChevronRight, X } from 'lucide-preact';
 import { useMemo, useState } from 'preact/hooks';
 import { DIMENSION } from '../../../core/content/link-rules';
 import type { PackNode } from '../../../core/packs';
-import type { ImportPreview } from '../../../core/packs/closure';
+import type { ImportOnto, ImportPreview } from '../../../core/packs/closure';
 import { showToast } from '../../state';
 import type { PageCtx } from './pages';
 import { flashRows, lookAt } from './panel-store';
@@ -12,7 +12,7 @@ import { regenLine } from './pick-other';
 import { clearPicks, destRef, pickLead, picksOf, removePickIn, setPickDest } from './pick-store';
 import type { PickView } from './pick-view';
 
-// 资源库面板右栏底下的清单（第六十五轮是导入窗口的右边，第六十七轮搬进面板）：加到哪里、将添加的各项、添加。
+// 资源库面板右栏底下的清单（第六十五轮是导入窗口的右边，第六十七轮搬进面板，第六十八轮“从别的库加”的右栏也用）：加到哪里、将添加的各项、添加。
 // 项数就是按钮上的数；一个变量的取值收成一行，能展开；每行 × 去掉（连同为它加的、要它的）
 
 const SHOW_ROWS = 60;
@@ -126,19 +126,25 @@ function DestPick({ v, ctx }: { v: PickView; ctx: PageCtx }) {
   );
 }
 
+// “从别的库加”的右栏里（第六十八轮）：加到哪里写死（左栏这一份），不带“去看看”（左边就是）；onto：上级页面打开的
+export interface BasketFor {
+  to: string;
+  onto?: ImportOnto;
+}
+
 // 添加：留在这个库里，刚加的行变成 ✓、闪一下；顶上的提示带“去看看”、撤销
-export async function addNow(v: PickView, ctx: PageCtx, regen: boolean): Promise<void> {
+export async function addNow(v: PickView, ctx: PageCtx, regen: boolean, other?: BasketFor): Promise<void> {
   const rows = v.preview.rows.map((r) => ({ kind: r.kind, id: r.id }));
   const to = destRef(v.dest);
   // “去看看”先打开用户点的那一项所在的列表（不是清单里排在最前的变量）；添加后勾选就清掉了，先记下
   const lead = pickLead(picksOf(v.key));
   const look = lead ? [lead, ...rows.filter((x) => x.kind !== lead.kind || x.id !== lead.id)] : rows;
-  const r = await addPicked(v.key, ctx, { regen, look: { label: '去看看', run: () => lookAt(to, look) } });
+  const r = await addPicked(v.key, ctx, other ? { regen, ...(other.onto ? { onto: other.onto } : {}) } : { regen, look: { label: '去看看', run: () => lookAt(to, look) } });
   if (r.error) showToast(r.error, true);
   if (r.ok) flashRows(r.rows ?? rows, 'flash');
 }
 
-export function LibBasket({ v, ctx }: { v: PickView; ctx: PageCtx }) {
+export function LibBasket({ v, ctx, other }: { v: PickView; ctx: PageCtx; other?: BasketFor }) {
   const p = v.preview;
   const source = v.ask.source;
   const [working, setWorking] = useState(false);
@@ -150,7 +156,7 @@ export function LibBasket({ v, ctx }: { v: PickView; ctx: PageCtx }) {
   const run = async (withRegen: boolean) => {
     setWorking(true);
     try {
-      await addNow(v, ctx, withRegen);
+      await addNow(v, ctx, withRegen, other);
     } finally {
       setWorking(false);
     }
@@ -158,7 +164,14 @@ export function LibBasket({ v, ctx }: { v: PickView; ctx: PageCtx }) {
   return (
     <section class="lb-basket">
       <div class="lb-head">
-        <DestPick v={v} ctx={ctx} />
+        {other ? (
+          <span class="lb-dest">
+            <span class="hint">加到</span>
+            <b class="ellipsis">{other.to}</b>
+          </span>
+        ) : (
+          <DestPick v={v} ctx={ctx} />
+        )}
         <span class="grow" />
         <button class="small" disabled={!v.state.picks.length && !v.state.off.length} onClick={() => clearPicks(v.key)}>
           清空
@@ -168,7 +181,7 @@ export function LibBasket({ v, ctx }: { v: PickView; ctx: PageCtx }) {
         {groups.map((g) => (
           <Group key={g.title} title={g.title} nodes={g.nodes} c={c} />
         ))}
-        {!p.count && <p class="hint">在左边勾要添加的内容</p>}
+        {!p.count && <p class="hint">{other ? '在上面勾要添加的内容' : '在左边勾要添加的内容'}</p>}
       </div>
       {/* 第六十六轮去掉了“自动去掉 N 条写到这里没有的内容”（新手看不懂，也没法做什么）；stripCount 照旧算，测试用 */}
       {(p.dropped.length > 0 || line || hasZeroWeightGroup(p)) && (

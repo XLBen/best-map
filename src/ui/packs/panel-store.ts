@@ -8,12 +8,14 @@ import { panelLibrary, refreshLibrary } from '../../library';
 import { copyLibrary, libEdits } from '../../library-edit';
 import { showToast, world } from '../../state';
 import { HOME, type OpenRequest, type PageCtx, type Route, type SourceRef, WORLD_SOURCE, liveSource, liveStack, openTarget, popRoute, pushRoute, sameSource } from './pages';
-import { canPick, pickCount, pickStore } from './pick-store';
+import { type OtherOpen, sameOther } from './other-view';
+import { canPick, pickCount, pickStore, setPickDest } from './pick-store';
 
 // 资源库面板的状态（第五十九轮）：看的是哪一份、点到了第几层。关上再打开回到原来的地方。
 // 切换来源、关上时把我的库没写进存储的写进去（改的内容已经在日志里，这一步不影响“不丢”）。
 // 第六十七轮：看库就是添加。能勾的库（pick-store.ts 的 canPick）里点一项不往下点，在右栏打开（side）；
 // 勾了东西或右栏开着时面板变宽成两栏（libWide）。窄窗口里右栏盖在左栏上：只勾了东西时左栏底下一条“已勾 N 项”，点了才盖上（basket）
+// 第六十八轮：列表、上级页面上的“从别的库加”也在右栏打开（other，LibOther.tsx），换来源、换页面时收起
 
 export interface PanelState {
   source: SourceRef;
@@ -22,6 +24,8 @@ export interface PanelState {
   side?: Route | null;
   // 窄窗口：清单盖在列表上
   basket?: boolean;
+  // 右栏里的“从别的库加”（本世界、我的库的列表和上级页面）；at：打开时左栏是哪一页（换了页面就收起）
+  other?: (OtherOpen & { at: string }) | null;
 }
 
 export const libPanel = signal<PanelState | null>(null);
@@ -38,10 +42,15 @@ export function livePanel(st: PanelState, ctx: PageCtx = pageCtx()): PanelState 
   const stack = same ? liveStack(st.stack, source, ctx) : [HOME];
   // 右栏的那一项还在（撤销了新建、库删了时收起）
   const side = same && st.side && source.t === 'lib' && canPick(source.key, ctx) && liveStack([st.side], source, ctx)[0] === st.side ? st.side : null;
-  return { source, stack, ...(side ? { side } : {}), ...(st.basket && same ? { basket: true } : {}) };
+  const other = same && st.other && st.other.at === routeKey(stack) ? st.other : null;
+  return { source, stack, ...(side ? { side } : {}), ...(st.basket && same ? { basket: true } : {}), ...(other ? { other } : {}) };
 }
 
-function set(st: PanelState) {
+const routeKey = (stack: readonly Route[]): string => JSON.stringify(stack[stack.length - 1]);
+
+function set(next: PanelState) {
+  // 换了页面：“从别的库加”收起（回到原来那一页也不再出来）
+  const st = next.other && next.other.at !== routeKey(next.stack) ? { ...next, other: null } : next;
   libPanel.value = st;
   last = st;
 }
@@ -98,13 +107,32 @@ export const pickingIn = (src: SourceRef, ctx: PageCtx = pageCtx()): src is { t:
 // 打开一项：能勾的库里在右栏打开，左栏留在原来的列表（勾选不丢）；别的照旧点进去
 export function openRoute(r: Route) {
   const st = current();
-  if (st && r.p === 'item' && pickingIn(st.source)) set({ ...st, side: r, basket: false });
+  if (st && r.p === 'item' && pickingIn(st.source)) set({ ...st, side: r, basket: false, other: null });
   else goTo(r);
 }
 
+// 收起右栏：“从别的库加”开着时先收它（底下的那一项还在）
 export function closeSide() {
   const st = current();
-  if (st && (st.side || st.basket)) set({ source: st.source, stack: st.stack });
+  if (st?.other) set({ ...st, other: null });
+  else if (st && (st.side || st.basket)) set({ source: st.source, stack: st.stack });
+}
+
+// “从别的库加”（第六十八轮）：在右栏打开；再点一次同一个按钮收起。加到的是左栏这一份
+export function toggleOther(o: OtherOpen) {
+  const st = current();
+  if (!st) return;
+  if (sameOther(st.other, o)) {
+    set({ ...st, other: null });
+    return;
+  }
+  setPickDest(st.source.t === 'lib' ? { lib: st.source.key } : 'world');
+  set({ ...st, other: { ...o, at: routeKey(st.stack) }, basket: false });
+}
+
+export function closeOther() {
+  const st = current();
+  if (st?.other) set({ ...st, other: null });
 }
 
 // 窄窗口：清单盖在列表上
@@ -120,7 +148,7 @@ export const libWide = computed(() => {
   if (!st) return false;
   const ctx = pageCtx();
   const live = livePanel(st, ctx);
-  return pickingIn(live.source, ctx) && (!!live.side || pickCount(live.source.key) > 0);
+  return !!live.other || (pickingIn(live.source, ctx) && (!!live.side || pickCount(live.source.key) > 0));
 });
 
 // ---------- 刚加的行（第六十七轮） ----------

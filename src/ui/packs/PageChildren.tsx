@@ -1,7 +1,7 @@
 import { ChevronRight, GripVertical, Plus } from 'lucide-preact';
 import { useMemo, useRef, useState } from 'preact/hooks';
 import { splitOut } from '../../../core/content/arrange';
-import { kindOf } from '../../../core/content/registry';
+import { itemId, itemName, kindOf } from '../../../core/content/registry';
 import { type Era } from '../../../core/human';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
 import { ADD_DIMENSION_NOTE } from '../copy';
@@ -9,14 +9,14 @@ import { libRoots } from '../packChoice';
 import { showToast } from '../../state';
 import { arrangeFor } from './page-arrange';
 import { applyArrange, linkChild, newChildIn, unlinkChild } from './page-actions';
-import { addOther, otherLibOptions } from './pick-other';
+import { type OtherOpen, hasOther, sameOther } from './other-view';
 import { kindPickable, lookOf, pickView } from './pick-view';
 import { PickBox } from './PickBox';
 import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type InsideRow, shownRows } from './page-children';
 import { dragOutOf } from './page-drag';
 import { PageItem } from './PageItem';
 import { type PageCtx, type SourceRef, eraVariables, itemsOf } from './pages';
-import { flashClass, goTo, openRoute, openSegments, rememberSegments } from './panel-store';
+import { flashClass, goTo, libPanel, openRoute, openSegments, rememberSegments, toggleOther } from './panel-store';
 import { RefPicker } from './RefPicker';
 import { runTrusted, swatchOf } from './row-actions';
 
@@ -109,7 +109,14 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
     applyArrange(src, splitOut(arrangeFor(src, ctx), s.key), `拆出${s.title}`, ctx);
   };
   const brief = s.rows.slice(0, 3).map((r) => r.name).join('、');
-  const others = useMemo(() => (!shut && s.canLink ? otherLibOptions(s.kind.id, src, ctx, (x) => s.relation.fits?.(parent, x as Obj) ?? true) : []), [shut, s.canLink, s.kind.id, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world, parent]);
+  // 别的库里有这一种：“从别的库加”在右栏打开，勾的都放到这个上级下面（第六十八轮）
+  const other = useMemo((): OtherOpen | null => {
+    const up = kindOf(s.relation.parent);
+    if (shut || !s.canLink || !up) return null;
+    const o: OtherOpen = { kind: s.kind.id, label: s.title, onto: { relation: s.relation, parent: itemId(up, parent), title: itemName(up, parent) } };
+    return hasOther(o, src, ctx) ? o : null;
+  }, [shut, s.canLink, s.kind.id, s.relation, src.t === 'lib' ? src.key : '', ctx.lib, parent]);
+  const otherOn = !!other && sameOther(libPanel.value?.other, other);
   return (
     <section class={`lp-seg lp-child ${shut ? '' : 'open'}`} ref={zone}>
       <div
@@ -164,17 +171,19 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
           {s.note && <p class="hint">{s.note}</p>}
           {(s.canLink || s.canNew) && (
             <div class="row lp-child-foot">
-              {s.canLink && s.options.length + others.length > 0 && (
-                <RefPicker add options={[...s.options, ...others]} onPick={(id) => {
-                  const x = s.options.some((o) => o.id === id) ? (itemsOf(src, s.kind, ctx) as readonly Obj[]).find((c) => c.id === id) : undefined;
-                  if (x) return void linkChild(src, s.relation, parent, x, ctx);
-                  // 别的库里的：直接加，放到这个上级下面（同一步，第六十七轮不再开窗口）
-                  const o = others.find((y) => y.id === id);
-                  if (o) void addOther(src, o.lib, { kind: s.kind.id, id }, ctx, { relation: s.relation, parent: String(parent.id), child: { kind: s.kind.id, id } });
+              {s.canLink && s.options.length > 0 && (
+                <RefPicker add options={s.options} onPick={(id) => {
+                  const x = (itemsOf(src, s.kind, ctx) as readonly Obj[]).find((c) => c.id === id);
+                  if (x) void linkChild(src, s.relation, parent, x, ctx);
                   else showToast('这一份里没有它', true);
                 }}>
                   {s.addLabel}
                 </RefPicker>
+              )}
+              {other && (
+                <button class={`small ${otherOn ? 'open' : ''}`} aria-pressed={otherOn} title={otherOn ? '收起' : `从别的库挑几项${s.title}，放到这里`} onClick={() => toggleOther(other)}>
+                  <Plus /> 从别的库加
+                </button>
               )}
               {s.canNew && (
                 <button
