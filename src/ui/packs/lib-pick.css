@@ -301,6 +301,8 @@ button.lb-fold {
 /* 面板变宽时提示条、底部条挪到剩下的地图中间，不被面板盖住（面板右边在 8 + 720 = 728 px） */
 @media (min-width: 901px) {
   .app.lib-wide .notices {
+    /* 靠近右边时不按剩下的宽度缩成一条（第六十八轮走查：1024 px 宽时一行只放两三个字） */
+    width: max-content;
     left: calc((100% + 728px) / 2);
     max-width: min(calc(100% - 768px), 440px);
   }
