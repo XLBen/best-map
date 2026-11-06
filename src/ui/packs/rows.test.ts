@@ -4,11 +4,13 @@ import { type ContentKind, kindOf } from '../../../core/content/registry';
 import { worldTiers } from '../../../core/human/tiers';
 import { DEFAULT_STYLE, type NameStyle, worldStyleId } from '../../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type PackWorld, type ResourcePack } from '../../../core/packs';
-import { builtinPacks } from '../../../core/packs/builtin-tree';
-import { importCommand } from '../../../core/packs/closure';
+import { builtinPacks, worldPartsOf } from '../../../core/packs/builtin-tree';
+import { ERA_PACKS } from '../../../core/packs/eras';
+import { packImportCommands } from '../../../core/packs/import';
+import { importCommand, importPreview } from '../../../core/packs/closure';
 import { BUILTIN_STYLES } from '../../../core/packs/names';
 import { DEFAULT_SPECIES } from '../../../core/packs/nature';
-import { continents, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../../../core/testing/fixtures';
+import { continents, engineFor, FANTASY_PACK, NAME_STYLES_SAMPLE } from '../../../core/testing/fixtures';
 import type { LibraryEntry } from '../../library';
 import { defaultStyleCommand, libraryRows, removeCommand, worldRows } from './rows';
 
@@ -121,5 +123,27 @@ describe('一行的状态和命令', () => {
     expect(libraryRows(mine, kind, eng.world)[0].status.on).toBe(false);
     eng.undo();
     expect([row().status.on, row().status.modified]).toEqual([true, undefined]);
+  });
+
+  it('添加时去掉了这个世界没有的引用的内置项：在本世界，不写改过（第六十七轮）', () => {
+    // 带奇幻库的小世界（没有地形，只看内容）：古典库的政体加进来时，写到的文化组、宗教这类引用要去掉
+    const eng = engineFor({ cells: 1000, seed: 2 }, { bare: true });
+    for (const c of packImportCommands(builtinPacks(), { packs: worldPartsOf('fantasy'), groups: [] }, eng.world)) eng.exec(c);
+    for (const c of packImportCommands(builtinPacks(), { packs: [['fantasy']], groups: ERA_PACKS.get('fantasy')!.cultures.map(([g]) => g) }, eng.world)) eng.exec(c);
+    const kind = kindOf('government')!;
+    const anti = LIB.find((e) => e.key === 'antiquity')!;
+    const target = { t: 'world' as const, world: eng.world };
+    // 挑一个能加、添加时要去掉引用的政体（世界里没有同 id 的）
+    const have = new Set(kind.inWorld(eng.world).map((g) => (g as { id: string }).id));
+    const pick = libraryRows(anti, kind, eng.world).find((r) => {
+      if (have.has(r.id)) return false;
+      const p = importPreview({ source: anti.pack, target, picks: [{ kind: kind.id, id: r.id }] });
+      return p.count > 0 && p.stripCount > 0 && !p.dropped.length;
+    });
+    expect(pick, '古典库里要有一个添加时去掉引用的政体').toBeDefined();
+    eng.exec(addCmd(anti, kind, pick!.id, eng.world));
+    const row = libraryRows(anti, kind, eng.world).find((r) => r.id === pick!.id)!;
+    expect(row.status.on).toBe(true);
+    expect(row.status.modified).toBeFalsy();
   });
 });

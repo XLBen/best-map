@@ -1,4 +1,5 @@
 import { Check, CircleDashed, CirclePlus } from 'lucide-preact';
+import { createPortal } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ContentRef } from '../../../core/content/links';
 import type { ImportNeed } from '../../../core/packs/closure';
@@ -19,7 +20,8 @@ function ChoiceMenu({ at, choices, onPick, onClose }: { at: { top: number; left:
     box.current?.querySelector('button')?.focus();
     return () => window.removeEventListener('pointerdown', off, true);
   }, []);
-  return (
+  // 挂在 body 上：面板的毛玻璃（backdrop-filter）让 position: fixed 按面板算，菜单会跑到面板外、被裁掉
+  return createPortal(
     <div
       class="lp-source-menu lp-choice-menu"
       ref={box}
@@ -36,7 +38,8 @@ function ChoiceMenu({ at, choices, onPick, onClose }: { at: { top: number; left:
           <span class="grow ellipsis">{n.name}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

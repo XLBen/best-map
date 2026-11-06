@@ -160,6 +160,8 @@ export function lookAt(to: SourceRef, rows: readonly ContentRef[]) {
   const first = rows.map((r) => listOf(r, to.t === 'world' ? ctx : { ...ctx, world: null })).find(Boolean);
   if (first) goTo(first);
   flashRows(rows, 'hl');
+  // 列表长时高亮的行可能在下面：画好后滚过去
+  setTimeout(() => document.querySelector('.lp-hl')?.scrollIntoView({ block: 'center' }), 60);
 }
 
 // 复制成我的库之后：换到副本，还在同一页（内容一模一样；右栏开着的那一项也还开着）

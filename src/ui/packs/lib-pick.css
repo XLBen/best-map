@@ -55,7 +55,8 @@
 /* 右栏上面：点开的那一项 */
 .lp-side-page {
   position: relative;
-  flex: 1 1 auto;
+  /* 基准 0：页面再长也只占清单剩下的地方（清单不跟着缩） */
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   padding: var(--sp-2) var(--sp-3) var(--sp-3);
@@ -186,7 +187,8 @@ button.lp-basket-bar {
 
 /* ---------- 清单（右栏底下） ---------- */
 .lb-basket {
-  flex: 0 1 auto;
+  /* 打开了一项的页面时清单不缩，最多占右栏一半（列表在里面滚动） */
+  flex: 0 0 auto;
   min-height: 0;
   max-height: 50%;
   display: flex;

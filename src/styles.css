@@ -1037,9 +1037,8 @@ button.legend-head {
   color: var(--muted);
 }
 .notice-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* 提示条最宽 440 px，长的折行，不截掉后半句（“……，重新生成国家”） */
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 .pill-btn {

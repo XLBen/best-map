@@ -9,7 +9,7 @@ import { flashRows, lookAt } from './panel-store';
 import { addPicked, addRegenButton, skippedLine } from './pick-add';
 import { type BasketNode, basketGroups, foldText, hasZeroWeightGroup, soleText, soleValue, whyText } from './pick-look';
 import { regenLine } from './pick-other';
-import { clearPicks, destRef, removePickIn, setPickDest } from './pick-store';
+import { clearPicks, destRef, pickLead, picksOf, removePickIn, setPickDest } from './pick-store';
 import type { PickView } from './pick-view';
 
 // 资源库面板右栏底下的清单（第六十五轮是导入窗口的右边，第六十七轮搬进面板）：加到哪里、将添加的各项、添加。
@@ -130,7 +130,10 @@ function DestPick({ v, ctx }: { v: PickView; ctx: PageCtx }) {
 export async function addNow(v: PickView, ctx: PageCtx, regen: boolean): Promise<void> {
   const rows = v.preview.rows.map((r) => ({ kind: r.kind, id: r.id }));
   const to = destRef(v.dest);
-  const r = await addPicked(v.key, ctx, { regen, look: { label: '去看看', run: () => lookAt(to, rows) } });
+  // “去看看”先打开用户点的那一项所在的列表（不是清单里排在最前的变量）；添加后勾选就清掉了，先记下
+  const lead = pickLead(picksOf(v.key));
+  const look = lead ? [lead, ...rows.filter((x) => x.kind !== lead.kind || x.id !== lead.id)] : rows;
+  const r = await addPicked(v.key, ctx, { regen, look: { label: '去看看', run: () => lookAt(to, look) } });
   if (r.error) showToast(r.error, true);
   if (r.ok) flashRows(r.rows ?? rows, 'flash');
 }

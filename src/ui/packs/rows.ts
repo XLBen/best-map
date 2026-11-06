@@ -6,6 +6,7 @@ import { worldMapStyleId } from '../../../core/map-style';
 import { type NameStyle, styleProblems, worldStyleId } from '../../../core/name-styles';
 import { PACK_FORMAT, PACK_VERSION, type PackNode, type PackWorld, type ResourcePack, canApply, ownItems, packIdFor, planPack, sameItem, subPacks } from '../../../core/packs';
 import { builtinItem, isBuiltinSame, originOf } from '../../../core/packs/builtin-tree';
+import { sourceDiff } from '../../../core/packs/source-diff';
 import type { LibraryEntry } from '../../library';
 
 // 资源库面板列表里的一行（第六十三轮从旧面板的 repo.ts 留下来的）：这一项在这一份里、在这个世界里是什么状态，
@@ -61,7 +62,7 @@ function builtinChanged(kind: ContentKind, there: unknown, world: PackWorld): bo
 }
 
 // 库里的一项在这个世界里的状态。inWorld：这一种在世界里的全部。builtin：看的是内置的库
-function libStatus(kind: ContentKind, item: unknown, node: PackNode, world: PackWorld | null, inWorld: readonly unknown[], builtin: boolean): RowStatus {
+function libStatus(kind: ContentKind, item: unknown, node: PackNode, world: PackWorld | null, inWorld: readonly unknown[], e: LibraryEntry): RowStatus {
   const id = itemId(kind, item);
   if (!world) return { on: false, locked: '先新建或打开世界' };
   if (!canApply(kind)) {
@@ -76,7 +77,8 @@ function libStatus(kind: ContentKind, item: unknown, node: PackNode, world: Pack
   }
   const same = inWorld.find((x) => itemId(kind, x) === id);
   if (same === undefined) return { on: false };
-  if (builtin && builtinChanged(kind, same, world)) return { ...here(id), modified: true };
+  // 只差添加时去掉的、这个世界没有的引用（“限谁用”留下的那几条……）不算改过（第六十七轮，和 source-diff 的 trimmed 一样）
+  if (e.builtin && builtinChanged(kind, same, world)) return sourceDiff(kind, id, same, world, [{ key: e.key, pack: e.pack }]).t === 'changed' ? { ...here(id), modified: true } : here(id);
   // 加进世界时的样子（没写“自然生成”的关掉……）与世界里的一样就是在本世界
   const plan = planPack(world, node, { [kind.pack.key]: [id], defaultStyle: null });
   const skip = plan.skipped.find((x) => x.section === kind.pack.key && x.from === id);
@@ -94,7 +96,7 @@ export function libraryRows(e: LibraryEntry, kind: ContentKind, world: PackWorld
       const id = itemId(kind, x);
       if (seen.has(id)) continue;
       seen.add(id);
-      out.push({ kind, key: `l:${path.join('/')}:${kind.id}:${id}`, id, name: itemName(kind, x), item: x, source: 'lib', path, pack: node, status: libStatus(kind, x, node, world, inWorld, e.builtin) });
+      out.push({ kind, key: `l:${path.join('/')}:${kind.id}:${id}`, id, name: itemName(kind, x), item: x, source: 'lib', path, pack: node, status: libStatus(kind, x, node, world, inWorld, e) });
     }
     for (const c of subPacks(node)) walk(c, [...rel, c.id]);
   };
