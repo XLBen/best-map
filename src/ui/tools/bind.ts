@@ -1,7 +1,8 @@
 import type { World } from '../../../core/world';
 import { selectedProvince, setOptions } from '../../state';
 import { bindTools } from '../defs/tools';
-import { riverTool, unwaterTool } from '../river/tool';
+import { riverTool } from '../river/tool';
+import { unwaterTool } from '../river/unwater';
 import { climateEraseTool, climateTool, fieldTool, pickClimate, pickField } from './climate';
 import { countryMergeTool, countrySelectTool, newCountryTool, pickTerritory, territoryTool } from './countries';
 import { cultureTool, hearthTool, pickCulture, pickPop, popTool } from './culture';
