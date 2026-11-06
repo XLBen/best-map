@@ -4,6 +4,7 @@ import { worldEpoch, worldState } from '../state';
 import { type ApplyMode, type ApplyResult, ScriptEdit, type ScriptProblem, isNote, problemCell, problemLine } from './script-commit';
 import { LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
 import { checkScript, loadAcorn } from './script-syntax';
+import { ESC_RANK, useEscape } from './shell/escape';
 
 // 脚本框：等宽字的文本框，左边有行号；下面一行红字说哪里不对（“第 3 行：没有变量 tMeen（是不是 tMean？）”）；
 // “变量和例子…”列出能用的变量（中英文名都能用）、辅助函数和几段例子。
@@ -98,24 +99,23 @@ export function ScriptBox(props: Props) {
       boxRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }, [props.focusSignal]);
-  // 变量和例子：点外面、按 Esc 关上（Esc 只关它，不关抽屉）
+  // 变量和例子：点外面、按 Esc 关上（Esc 只关它，不关抽屉：捕获阶段的一层，escape.ts）
   useEffect(() => {
     if (!help) return;
     const away = (e: PointerEvent) => {
       if (!boxRef.current?.contains(e.target as Node)) setHelp(false);
     };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setHelp(false);
-    };
     document.addEventListener('pointerdown', away);
-    window.addEventListener('keydown', esc, true);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      window.removeEventListener('keydown', esc, true);
-    };
+    return () => document.removeEventListener('pointerdown', away);
   }, [help]);
+  useEscape(
+    () => {
+      setHelp(false);
+      return true;
+    },
+    ESC_RANK.scriptHelp,
+    { phase: 'capture', on: help },
+  );
 
   const lines = lineCount(v.draft);
   const note = isNote(v.problem);

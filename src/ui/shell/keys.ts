@@ -2,19 +2,47 @@ import { erasing, helpOpen, measure, openPanel, picking, provinceSet, redo, sele
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
+import { ESC_RANK, isTyping, pushEscape, runEscape } from './escape';
 import { packDialog } from '../packs/store';
 import { libEdits } from '../../library-edit';
-import { closeLibrary, closeSide, goBack, lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
+import { lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
 import { undoTarget } from '../packs/pages';
-import { closeFormEditor, formEditor } from '../form-store';
+import { formEditor } from '../form-store';
 import { mapsDialog, saveMap, saveMapAs } from '../maps/store';
 
-// 键盘：一个地方统一处理，Esc 按固定顺序一层层退出
+// 键盘：一个地方统一处理。Esc 按固定顺序一层层退出（第六十九轮起是 escape.ts 的栈：各层自己登记，这里只问最上面的）
 
-const typing = (t: EventTarget | null) => {
-  const el = t as HTMLElement | null;
-  return !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable);
+const typing = isTyping;
+
+// ---------- Esc：界面状态（state.ts）与地图的几层（资源包弹窗、我的地图、星球形态编辑器、资源库在各自的模块里登记） ----------
+
+const close = (on: boolean, off: () => void) => {
+  if (on) off();
+  return on;
 };
+pushEscape(ESC_RANK.help, () => close(helpOpen.value, () => (helpOpen.value = false)));
+pushEscape(ESC_RANK.wizard, () => {
+  if (!wizardOpen.value) return false;
+  if (world.value) wizardOpen.value = false;
+  return true;
+});
+pushEscape(ESC_RANK.openPanel, () => close(!!openPanel.value, () => (openPanel.value = null)));
+pushEscape(ESC_RANK.input, (e) => close(typing(e.target), () => (e.target as HTMLElement).blur()));
+pushEscape(ESC_RANK.mapCancel, () => !!mapApi.current?.cancel());
+pushEscape(ESC_RANK.mapEscape, () => !!mapApi.current?.escape());
+pushEscape(ESC_RANK.measure, () => close(!!measure.value, () => (measure.value = measure.value!.length ? [] : null)));
+pushEscape(ESC_RANK.picking, () => close(picking.value, () => (picking.value = false)));
+pushEscape(ESC_RANK.uiHidden, () => close(uiHidden.value, () => (uiHidden.value = false)));
+pushEscape(ESC_RANK.sheet, () => close(!!sheet.value, () => (sheet.value = null)));
+pushEscape(ESC_RANK.provinceSet, () => close(provinceSet.value.length > 0, () => (provinceSet.value = [])));
+pushEscape(ESC_RANK.selection, () =>
+  close(selectedProvince.value !== null || !!selectedFeature.value || !!selectedRiver.value || !!selectedLake.value, () => {
+    selectedProvince.value = null;
+    selectedFeature.value = null;
+    selectedRiver.value = null;
+    selectedLake.value = null;
+  }),
+);
 
 export function onKeyDown(e: KeyboardEvent) {
   const mod = e.metaKey || e.ctrlKey;
@@ -28,40 +56,9 @@ export function onKeyDown(e: KeyboardEvent) {
     void (e.shiftKey ? saveMapAs() : saveMap());
     return;
   }
+  // Esc：一层层退出，先后见 escape.ts 的 ESC_RANK（这里只问最上面开着的一层）
   if (e.key === 'Escape') {
-    // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 我的地图 → 说明 → 星球形态编辑器 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
-    // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 吸管 → 隐藏的界面 → 资源库（编辑器开着时先回到列表）→ 抽屉 → 选中的省份 / 地名 / 河
-    if (packDialog.value) packDialog.value = null;
-    else if (mapsDialog.value) mapsDialog.value = false;
-    else if (helpOpen.value) helpOpen.value = false;
-    else if (formEditor.value) {
-      // 正在框里写：先离开框（写的东西还在），再按一次才关上编辑器
-      if (typing(e.target)) (e.target as HTMLElement).blur();
-      else closeFormEditor();
-    }
-    else if (wizardOpen.value) {
-      if (world.value) wizardOpen.value = false;
-    } else if (openPanel.value) openPanel.value = null;
-    else if (typing(e.target)) (e.target as HTMLElement).blur();
-    else if (mapApi.current?.cancel()) return;
-    else if (mapApi.current?.escape()) return;
-    else if (measure.value) measure.value = measure.value.length ? [] : null;
-    else if (picking.value) picking.value = false;
-    else if (uiHidden.value) uiHidden.value = false;
-    // 资源库面板：先收起右栏（第六十七轮；“从别的库加”开着时先收它，第六十八轮），再一层层返回，首页再按一次关上
-    else if (libPanel.value) {
-      if (libPanel.value.other || libPanel.value.side || libPanel.value.basket) closeSide();
-      else if (libPanel.value.stack.length > 1) goBack();
-      else closeLibrary();
-    }
-    else if (sheet.value) sheet.value = null;
-    else if (provinceSet.value.length) provinceSet.value = [];
-    else if (selectedProvince.value !== null || selectedFeature.value || selectedRiver.value || selectedLake.value) {
-      selectedProvince.value = null;
-      selectedFeature.value = null;
-      selectedRiver.value = null;
-      selectedLake.value = null;
-    }
+    runEscape(e, 'bubble');
     return;
   }
   if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || mapsDialog.value) return;

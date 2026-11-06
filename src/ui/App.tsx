@@ -44,6 +44,7 @@ import { ContextBar } from './shell/ContextBar';
 import { HereCard } from './shell/HereCard';
 import { onKeyDown, onMouseDownCapture, onPointerDownCapture } from './shell/keys';
 import { AskDialog } from './shell/Ask';
+import { onEscapeCapture } from './shell/escape';
 import { Notice } from './shell/Notice';
 import { Popover } from './shell/Popover';
 import { RulerButton } from './shell/Ruler';
@@ -167,10 +168,13 @@ export function App() {
     }
     void loadReference();
     window.addEventListener('keydown', onKeyDown);
+    // Esc 的捕获阶段（问话、拖卡片、脚本框的“变量和例子”：比输入框、面板自己的键盘先收到，见 shell/escape.ts）
+    window.addEventListener('keydown', onEscapeCapture, true);
     window.addEventListener('mousedown', onMouseDownCapture, true);
     window.addEventListener('pointerdown', onPointerDownCapture, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onEscapeCapture, true);
       window.removeEventListener('mousedown', onMouseDownCapture, true);
       window.removeEventListener('pointerdown', onPointerDownCapture, true);
     };

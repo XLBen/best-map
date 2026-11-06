@@ -23,6 +23,7 @@ import {
 } from '../../maps';
 import { splitWorldContent } from '../../../core/compact';
 import { keepInLibrary } from '../../library';
+import { ESC_RANK, pushEscape } from '../shell/escape';
 import { askText, askUser, autosaveNow, compactForSave, download, getDoc, history, loadDoc, noteThumb, showToast, world, worldEpoch, worldState } from '../../state';
 
 // “我的地图”的界面这边：保存（⌘S）、另存为、打开、改名、导出、删掉，换世界之前问“先保存吗”。
@@ -32,6 +33,11 @@ let store: MapStore = idbMapStore;
 
 // 我的地图的弹窗；列表（打开弹窗时读一次，改了之后重读）
 export const mapsDialog = signal(false);
+pushEscape(ESC_RANK.mapsDialog, () => {
+  if (!mapsDialog.value) return false;
+  mapsDialog.value = false;
+  return true;
+});
 export const mapList = signal<MapEntry[] | null>(null);
 
 // 当前的世界连着的那一张（新建、打开了别的世界之后为 null）

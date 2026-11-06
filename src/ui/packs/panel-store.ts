@@ -10,6 +10,7 @@ import { showToast, world } from '../../state';
 import { HOME, type OpenRequest, type PageCtx, type Route, type SourceRef, WORLD_SOURCE, liveSource, liveStack, openTarget, popRoute, pushRoute, sameSource } from './pages';
 import { type OtherOpen, sameOther } from './other-view';
 import { canPick, pickCount, pickStore, setPickDest } from './pick-store';
+import { ESC_RANK, pushEscape } from '../shell/escape';
 
 // 资源库面板的状态（第五十九轮）：看的是哪一份、点到了第几层。关上再打开回到原来的地方。
 // 切换来源、关上时把我的库没写进存储的写进去（改的内容已经在日志里，这一步不影响“不丢”）。
@@ -217,6 +218,16 @@ export function goBack() {
   const st = current();
   if (st) set({ ...st, stack: popRoute(st.stack) });
 }
+
+// Esc：先收起右栏（第六十七轮；“从别的库加”开着时先收它，第六十八轮），再一层层返回，首页再按一次关上
+pushEscape(ESC_RANK.library, () => {
+  const st = libPanel.value;
+  if (!st) return false;
+  if (st.other || st.side || st.basket) closeSide();
+  else if (st.stack.length > 1) goBack();
+  else closeLibrary();
+  return true;
+});
 
 export function goDepth(depth: number) {
   const st = current();

@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
 import type { PlanetForm } from '../../core/planet-form';
 import type { Settings } from '../../core/world';
+import { ESC_RANK, isTyping, pushEscape } from './shell/escape';
 
 // 星球形态编辑器（向导里形态卡片上的“编辑…”、“自己做一个…”打开）：点了才开，不自己弹出
 
@@ -37,3 +38,11 @@ export function openFormEditor(st: Omit<FormEditorState, 'id'>) {
 export function closeFormEditor() {
   formEditor.value = null;
 }
+
+// Esc：正在框里写时先离开框（写的东西还在），再按一次才关上编辑器
+pushEscape(ESC_RANK.formEditor, (e) => {
+  if (!formEditor.value) return false;
+  if (isTyping(e.target)) (e.target as HTMLElement).blur();
+  else closeFormEditor();
+  return true;
+});

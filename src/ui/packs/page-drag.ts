@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
 import { showToast } from '../../state';
+import { ESC_RANK, pushEscape } from '../shell/escape';
 
 // 拖卡片（第六十轮）：鼠标、笔按住拖，像 Procreate 叠图层。按下不动是点一下，动了 6 px 才算拖。
 // 手指不走这里（按住滑动是滚动面板），触摸时用卡片的“⋯”。Esc 取消。
@@ -65,7 +66,7 @@ export function startDrag(down: PointerEvent, o: { source: string; label: string
     window.removeEventListener('pointermove', move, true);
     window.removeEventListener('pointerup', up, true);
     window.removeEventListener('pointercancel', cancel, true);
-    window.removeEventListener('keydown', key, true);
+    dropEscape();
     window.removeEventListener('selectstart', noSelect, true);
     document.body.classList.remove('lp-dragging');
     dragView.value = null;
@@ -92,16 +93,17 @@ export function startDrag(down: PointerEvent, o: { source: string; label: string
     if (on) swallowClick();
     finish();
   };
+  // Esc：拖着时取消（捕获阶段的一层，escape.ts；还没动起来时不管）
   const key = (e: KeyboardEvent) => {
-    if (e.key !== 'Escape' || !on) return;
-    e.stopPropagation();
+    if (!on) return false;
     e.preventDefault();
     cancel();
+    return true;
   };
   window.addEventListener('pointermove', move, true);
   window.addEventListener('pointerup', up, true);
   window.addEventListener('pointercancel', cancel, true);
-  window.addEventListener('keydown', key, true);
+  const dropEscape = pushEscape(ESC_RANK.drag, key, 'capture');
   window.addEventListener('selectstart', noSelect, true);
 }
 

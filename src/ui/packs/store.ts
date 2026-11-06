@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals';
 import type { PackRead } from '../../../core/packs';
 import { refreshLibrary } from '../../library';
+import { ESC_RANK, pushEscape } from '../shell/escape';
 
 // 资源库面板“⋯”里打开的弹窗的状态（PackDialog.tsx）：资源包的列表、读好的一个文件、从本世界存进资源库。
 // 都是点了才开（面板的“⋯”、生态抽屉的“读文件”），不会自己弹出来。面板自己的状态在 panel-store.ts，勾选在 pick-store.ts
@@ -13,6 +14,12 @@ export type DialogView =
   | { view: 'export' };
 
 export const packDialog = signal<DialogView | null>(null);
+// Esc 先关它（最上面的一层）
+pushEscape(ESC_RANK.packDialog, () => {
+  if (!packDialog.value) return false;
+  packDialog.value = null;
+  return true;
+});
 
 export function openPackList() {
   void refreshLibrary();

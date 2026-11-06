@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { SCRIPT_KIND_LABEL } from '../../../core/script';
 import { ask } from '../../state';
 import { isolationNote } from '../packs/Scripts';
+import { ESC_RANK, useEscape } from './escape';
 
 // 问一句的对话框：信任这个世界里的脚本吗、用安全模式打开吗、查看脚本、先保存吗、起个名字（带输入框，回车 = 主要的按钮）。列出的脚本写明是谁的、哪一种，源码用等宽字。
 // 问要不要信任时（有“信任并…”）与资源包的信任问话一样，老实写脚本在不在隔离的环境里跑。
@@ -11,13 +12,22 @@ export function AskDialog() {
   const a = ask.value;
   const input = useRef<HTMLInputElement>(null);
   const primary = a?.choices.find((c) => c.primary)?.value;
+  // Esc：取消（捕获阶段最上面的一层，escape.ts）
+  useEscape(
+    () => {
+      a!.resolve('cancel');
+      return true;
+    },
+    ESC_RANK.ask,
+    { phase: 'capture', on: !!a },
+  );
   useEffect(() => {
     if (!a) return;
-    // 对话框开着时地图的快捷键（撤销、换工具……）都不起作用；⌘S 也不弹出浏览器的“存储网页”
+    // 对话框开着时地图的快捷键（撤销、换工具……）都不起作用；⌘S 也不弹出浏览器的“存储网页”。Esc 在 escape.ts 里先接住了
     const onKey = (e: KeyboardEvent) => {
       e.stopPropagation();
-      if (e.key === 'Escape') a.resolve('cancel');
-      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') e.preventDefault();
+      if (e.key === 'Escape') return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') e.preventDefault();
       else if (e.key === 'Enter' && a.input !== undefined && primary && !e.isComposing) {
         e.preventDefault();
         a.resolve(primary, input.current?.value ?? a.input);
