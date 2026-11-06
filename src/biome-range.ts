@@ -1,6 +1,6 @@
-import type { Species } from '../../core/species';
-import { rangeMask } from '../../core/vegetation';
-import type { World } from '../../core/world';
+import type { Species } from '../core/species';
+import { rangeMask } from '../core/vegetation';
+import type { World } from '../core/world';
 
 // 第十二轮修：涂到生态的范围（只在一个岛上 / 圈的范围里）外面时怎么说。范围外的格怎么调冷暖干湿都长不出来，
 // 所以这条原因排在气候的原因前面：“不在这个生态的范围里（只长在「X岛」）”。

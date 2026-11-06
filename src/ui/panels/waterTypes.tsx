@@ -25,7 +25,8 @@ import {
 } from '../../state';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
-import { TypePicker, TypePickerButton, openLibraryFor } from '../components/TypePicker';
+import { TypePicker, TypePickerButton } from '../shell/TypePicker';
+import { openLibraryFor } from '../shell/type-picker';
 import { LIBRARY_ADD_LABEL } from '../copy';
 import { noteScriptCommitted, showCell } from '../editor-hooks';
 import { ScriptBox } from '../ScriptBox';

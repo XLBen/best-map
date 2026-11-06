@@ -51,7 +51,7 @@ import { countryCityRows, hasAnySettle } from './settlements';
 import { selectSettle } from './tools/settlements';
 import { confirmMerge, selectCountry } from './tools/countries';
 import { Seg } from './common';
-import { LibraryLink } from './components/TypePicker';
+import { LibraryLink } from './shell/TypePicker';
 
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
 // 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交。

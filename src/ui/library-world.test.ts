@@ -13,7 +13,7 @@ import { continents, snapshot, FANTASY_PACK, NAME_STYLES_SAMPLE, type HumanComma
 import type { World } from '../../core/world';
 import type { LibraryEntry } from '../library';
 import { world } from '../state';
-import { type TypeChoice, openLibraryFor } from './components/TypePicker';
+import { type TypeChoice, openLibraryFor } from './shell/type-picker';
 import { LIBRARY_ADD_LABEL } from './copy';
 import { chooseLibrary, defaultChoice, generateCommand } from './human';
 import { choicePacks, humanImportCommands, packGroups } from './packChoice';

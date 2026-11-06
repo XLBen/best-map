@@ -1,7 +1,7 @@
 import { Pencil, Square, Undo2, X } from 'lucide-preact';
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { busy, canUndo, cancelExport, changeNote, exportProgress, holdNote, scriptRunning, stopScripts, toast, undo, world } from '../../state';
-import { installLateClickGuard, lateClicks } from './noticeTimer';
+import { installLateClickGuard, lateClicks } from '../../notice-timer';
 
 // 顶部中间的提示条：脚本算了很久（带“停下”）> 出错 > 正在计算 > 一般提示 > 改完后的一句话（带撤销、“换一个”）。
 // “停下”排在出错前面：一段一直报平安的慢脚本看门狗不会停，“停下”是唯一的办法，不能被前一步的出错提示（6 秒）挡住。

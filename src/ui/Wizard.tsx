@@ -36,7 +36,7 @@ import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
 import { type HumanChoice, chooseLibrary, choiceEra, defaultChoice, estimateLandKm2, generateCommand, groupByPack } from './human';
 import { LibraryPick } from './components/LibraryPick';
-import { choicePacks, packLabel, worldContentCommands } from './packChoice';
+import { choicePacks, libraryOptions, packLabel, worldContentCommands } from './packChoice';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，
@@ -290,7 +290,7 @@ export function Wizard() {
   );
   const contentBox = (
     <div class="wizard-content">
-      <LibraryPick value={human.library} onChange={(key) => setHuman(chooseLibrary(human, key, lib))} lib={lib} newWorld disabled={creating} />
+      <LibraryPick value={human.library} onChange={(key) => setHuman(chooseLibrary(human, key, lib))} options={libraryOptions(lib, true)} labelOf={(key) => packLabel(lib, [key])} disabled={creating} />
       <p class="hint">决定时代、文化和政体。建好后可以从别的库加内容。</p>
     </div>
   );

@@ -6,7 +6,7 @@ import { askUser, exec, openPanel, selectedCountry, setOptions, sheet, switchToo
 import { focusOn } from '../camera';
 import { Slider } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import {
   NO_COUNTRIES,
   type CountryRow,

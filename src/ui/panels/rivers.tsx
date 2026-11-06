@@ -12,7 +12,8 @@ import { type RiverRef, cancelPreviews, exec, flashCells, hoverRiver, openPanel,
 import { clearBarPreview } from '../barPreview';
 import { focusOn } from '../camera';
 import { Seg } from '../common';
-import { MenuItem, SelectionActions } from '../components/SelectionActions';
+import { MenuItem } from '../components/MenuItem';
+import { SelectionActions } from '../shell/SelectionActions';
 import { Slider } from '../components/Slider';
 import {
   RIVER_END_HINTS,

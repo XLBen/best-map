@@ -1,6 +1,6 @@
 import { CATEGORY_LABEL, worldResources, worldTerrainClasses } from '../../../core/human';
 import { options, openPanel, setOptions, world } from '../../state';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { chosenClass, chosenResource } from '../tools/human';
 
 // 画地形类别、资源（第二十一轮）：底部条上的“类别：山地 ▾”“资源：铁 ▾”和弹出的列表（最后一项打开仓库）

@@ -5,7 +5,7 @@ import type { Command } from '../../core/commands';
 import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, landmarkTypeById, resourceAt, typicalTuple, worldCultureGroups, worldCultures, worldResources, worldTerrainClasses } from '../../core/human';
 import type { World } from '../../core/world';
 import { exec, selectedProvince, switchTool } from '../state';
-import { SelectionActions } from './components/SelectionActions';
+import { SelectionActions } from './shell/SelectionActions';
 import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellResourceCommand, cellTotalCommand, groupShareCommand, noteCommand, popRows, removeGroupCommand, renameCommand, rerollCommand } from './archive';
 import { densityText, popText, shareText } from './human';
 import { countryAt, countryOf, hasCountries } from './countries';

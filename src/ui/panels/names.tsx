@@ -6,11 +6,11 @@ import { worldStyleId } from '../../../core/name-styles';
 import { defaultStyleName, featureStyleCommand, missingCount, restyleOffer, styleChoices, styleNameOf } from '../packs/styles';
 import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
 import { exec, focusName, labelGroups, openPanel, selectedFeature, world } from '../../state';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { focusOn } from '../camera';
 import { selectRiver } from '../riverCourse';
 import { Seg } from '../common';
-import { SelectionActions } from '../components/SelectionActions';
+import { SelectionActions } from '../shell/SelectionActions';
 
 // 地名：底部条上的“选中地名”编辑（名字、风格），“地名 ⋯”里的地名风格与全部地名
 

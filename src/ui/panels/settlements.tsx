@@ -7,7 +7,7 @@ import { type SettleRef, askUser, exec, openPanel, options, selectedSettle, setO
 import { focusOn } from '../camera';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { hasCountries } from '../countries';
 import { popText } from '../human';
 import { openLibrary, openNewItemIn } from '../packs/panel-open';

@@ -4,7 +4,7 @@ import { brushCells } from '../../core/select';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { paintNote, setOptions, world } from '../state';
-import { outsideRangeReason } from './biomeRange';
+import { outsideRangeReason } from '../biome-range';
 import { climateHere, climateMask, editLayers, natureHere, natureMask, terrainHere, terrainMask, waterMask } from './edits';
 import { type Pointer, climateEraseTool, eraseTool, rangePick, rangeTool, restoreTool } from './tools';
 

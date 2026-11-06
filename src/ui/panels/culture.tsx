@@ -4,11 +4,12 @@ import { defaultTotalPop, dimensionValues, groupInfo, humanLegend, populationSum
 import type { World } from '../../../core/world';
 import { askUser, exec, openPanel, options, setOptions, togglePanel, world } from '../../state';
 import { Seg } from '../common';
-import { OptionSlider, Slider } from '../components/Slider';
+import { Slider } from '../components/Slider';
+import { OptionSlider } from '../shell/OptionSlider';
 import { Toggle } from '../components/Toggle';
 import { fragAt, fragPos, fragText, fragTitle } from '../countries';
 import { LayoutPick } from './countries';
-import { LibraryLink, TypePicker, TypePickerButton } from '../components/TypePicker';
+import { LibraryLink, TypePicker, TypePickerButton } from '../shell/TypePicker';
 import type { SliderDef } from '../defs/types';
 import {
   type HumanChoice,
@@ -34,7 +35,7 @@ import {
 import { LibraryPick } from '../components/LibraryPick';
 import { ADD_DIMENSION_NOTE } from '../copy';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
-import { type GroupOption, beyondGroups, libRoots, packGroups, packLabel, worldLibrary } from '../packChoice';
+import { type GroupOption, beyondGroups, libRoots, libraryOptions, packGroups, packLabel, worldLibrary } from '../packChoice';
 import { openLibrary } from '../packs/panel-store';
 import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';
@@ -370,7 +371,7 @@ export function HumanChoices({
       {picker && (
         <>
           <h5>库</h5>
-          <LibraryPick value={choice.library} onChange={(key) => onChange(chooseLibrary(choice, key, lib, small))} lib={lib} compact={compact} disabled={disabled} />
+          <LibraryPick value={choice.library} onChange={(key) => onChange(chooseLibrary(choice, key, lib, small))} options={libraryOptions(lib)} labelOf={(key) => packLabel(lib, [key])} compact={compact} disabled={disabled} />
           {note && <p class="hint">{note}</p>}
         </>
       )}

@@ -2,6 +2,9 @@ import { builtinPacks } from '../core/packs/builtin-tree';
 import { type FoundScript, findScripts } from '../core/script';
 import { kvDelete, kvGet, kvPut } from './idb';
 
+// 没见过的脚本：打开世界、导入、换星球形态、资源包都问这一句（界面从 ui/copy.ts 引用）
+export const scriptTrustText = (n: number) => `有 ${n} 段没见过的脚本，会在这台电脑上运行。只信任可靠的来源。`;
+
 // 信任的脚本（第三批）：按脚本源码的 SHA-256 记在这个浏览器里（kv 'trustedScripts'）。
 // 打开世界文件、读自动保存（连同检查点）、新建都经过 state.ts 的 loadDoc / newWorld，在那里统一检查：
 // 有没见过的脚本就先问。自己写的脚本提交时自动记为信任；内置的示例（以后还有资源库里的）总是信任。

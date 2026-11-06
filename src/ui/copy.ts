@@ -6,8 +6,8 @@ export const LIBRARY_NOTE = '本世界和各个库里的文化、政体、生态
 export const LIBRARY_ADD_LABEL = '从资源库添加…';
 export const LIBRARY_ADD_TIP = '库里还有的，添加到本世界后就能选';
 
-// 没见过的脚本：打开世界、导入、换星球形态、资源包都问这一句
-export const scriptTrustText = (n: number) => `有 ${n} 段没见过的脚本，会在这台电脑上运行。只信任可靠的来源。`;
+// 没见过的脚本：打开世界、导入、换星球形态、资源包都问这一句（写在 trust.ts：state.ts 也用，它不引用界面）
+export { scriptTrustText } from '../trust';
 
 // 选中的河、湖、地名、省份：名字的几个按钮
 export const NAME_TIPS = {

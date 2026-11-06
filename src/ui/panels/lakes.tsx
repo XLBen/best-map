@@ -5,7 +5,7 @@ import { roundKm as km } from '../../../core/terrain';
 import type { LakeSpec, World } from '../../../core/world';
 import { type LakeRef, exec, lakeRange, openPanel, options, selectedLake, setOptions, switchTool, tool, world } from '../../state';
 import { focusOn } from '../camera';
-import { SelectionActions } from '../components/SelectionActions';
+import { SelectionActions } from '../shell/SelectionActions';
 import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
 import { byRulesTip } from '../copy';
 import { NameInput } from './names';

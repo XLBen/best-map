@@ -5,7 +5,7 @@ import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
 import { exec, focusSpecies, history, sheet, world } from '../state';
 import { focusOn } from './camera';
-import { outsideRangeReason } from './biomeRange';
+import { outsideRangeReason } from '../biome-range';
 import { reasonText } from './Inspector';
 import { locateNextUnmet, locateTitle, unmetLooked, unmetSpots } from './unmetLocate';
 

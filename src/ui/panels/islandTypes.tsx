@@ -19,7 +19,7 @@ import type { World } from '../../../core/world';
 import { exec, openPanel, options, setOptions, whenEditsIdle, world, worldEpoch } from '../../state';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
-import { TypePicker, TypePickerButton } from '../components/TypePicker';
+import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { Slider } from '../components/Slider';
 
 // 岛的种类（第十四轮）：放岛、画岛链底部条上“岛：珊瑚岛 ▾”的按钮、弹出的列表（最后一项“新建…”），

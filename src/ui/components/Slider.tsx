@@ -1,9 +1,5 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { World } from '../../../core/world';
-import { options, setOptions, sliderActive } from '../../state';
-import type { SliderDef } from '../defs/types';
-import { nudgeSlider, sliderPos, sliderValue } from '../shell/sliders';
 
 // 滑块：全界面只有这一种（底部条、弹出面板、抽屉、向导都用它）。左边名字、滑轨、右边一直显示的数值。
 // 拖动时 onDraft（地图上先画出估计的样子、数值跟着变），松手 onCommit；拖着时被取消（指针丢了、
@@ -113,24 +109,4 @@ export function linear(lo: number, hi: number, step: number) {
     pos: (v: number) => clamp01((v - lo) / (hi - lo)),
     at: (p: number) => Math.min(hi, Math.max(lo, Number((Math.round((lo + (hi - lo) * clamp01(p)) / step) * step).toFixed(digits)))),
   };
-}
-
-// 底部条上工具的滑块（直径、力度……）：值在 options 里；拖动时地图在鼠标最后停的地方预览（sliderActive）
-export function OptionSlider({ def, w }: { def: SliderDef; w: World }) {
-  const value = options.value[def.key];
-  const done = () => (sliderActive.value = false);
-  return (
-    <Slider
-      label={def.label}
-      pos={sliderPos(def, w, value)}
-      text={def.format(value, w)}
-      onDraft={(p) => {
-        sliderActive.value = true;
-        setOptions({ [def.key]: sliderValue(def, w, p) });
-      }}
-      onCommit={done}
-      onCancel={done}
-      onStep={(dir) => nudgeSlider(def, dir)}
-    />
-  );
 }

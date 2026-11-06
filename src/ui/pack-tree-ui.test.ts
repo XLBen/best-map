@@ -16,7 +16,7 @@ import { compactJob, onlyBuiltinScripts } from '../compact-job';
 import { type LibraryEntry, keepInLibrary, library, refreshLibrary, removePack, worldPackName, worthKeeping } from '../library';
 import { world } from '../state';
 import { importBiomeFile } from './ClimateChart';
-import { originGroups } from './components/TypePicker';
+import { originGroups } from './shell/type-picker';
 import { formChoices } from './forms';
 import { LOOSE_GROUP, groupByPack } from './human';
 import { humanImportCommands, packGroups, packLabel } from './packChoice';

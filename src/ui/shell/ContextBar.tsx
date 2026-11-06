@@ -6,7 +6,7 @@ import { BRUSH, CATEGORY_DEFS, TOOL_DEFS, category, eraserModes, setTool, toolsO
 import type { BarItem, SliderDef } from '../defs/types';
 import { pathKm } from '../tools';
 import { Seg } from '../common';
-import { OptionSlider } from '../components/Slider';
+import { OptionSlider } from './OptionSlider';
 
 // 底部条：上一行是这一类的全部工具（点一下就换，末尾“⋯”是这一类的设置；工具做什么写在工具按钮的悬停里），
 // 下一行是当前工具的设置——带名字、数值一直显示的滑块，和模式选择。用不上的滑块不显示

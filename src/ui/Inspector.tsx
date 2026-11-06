@@ -12,7 +12,7 @@ import { type World, longitudeOf, worldLatitude } from '../../core/world';
 import { exec, hoverCell, hoverProvinceCell, options, pinnedCell, selectedProvince, world } from '../state';
 import { ArchiveBox } from './ArchiveBox';
 import { category, setTool } from './defs/tools';
-import { outsideRangeReason, outsideRangeText } from './biomeRange';
+import { outsideRangeReason, outsideRangeText } from '../biome-range';
 
 // 检查器：用人话说清楚“这里是什么、为什么”，数字放在第二层
 

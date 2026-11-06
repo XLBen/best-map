@@ -13,9 +13,10 @@ import { Slider } from './components/Slider';
 import { brushNew } from './tools/provinces';
 import { focusOn } from './camera';
 import { Seg } from './common';
-import { MenuItem, SelectionActions } from './components/SelectionActions';
+import { MenuItem } from './components/MenuItem';
+import { SelectionActions } from './shell/SelectionActions';
 import { Toggle } from './components/Toggle';
-import { TypePicker } from './components/TypePicker';
+import { TypePicker } from './shell/TypePicker';
 import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LATE_CLICK_MS, LateClickGuard, NOTE_ACTION_MS, NOTE_MS, PausableTimer, installLateClickGuard } from './noticeTimer';
+import { LATE_CLICK_MS, LateClickGuard, NOTE_ACTION_MS, NOTE_MS, PausableTimer, installLateClickGuard } from './notice-timer';
 
 // 第十二轮修：带“撤销”的提示条留得更久、鼠标停着不消失；刚消失时落在原处的一下不落到地图上
 
