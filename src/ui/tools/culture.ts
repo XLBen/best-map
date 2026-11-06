@@ -2,7 +2,7 @@ import type { Command } from '../../../core/commands';
 import { hexToRgb } from '../../../core/export';
 import { type Culture, type PopValue, cultureById, cultureGroupById, dimensionValues, groupInfo, readComp, typicalTuple, valueLayer, worldCultures, worldDimensions } from '../../../core/human';
 import type { PopTuple, World } from '../../../core/world';
-import { popText } from '../human';
+import { popText } from '../domain/human';
 import { exec, options, setOptions, world } from '../../state';
 import { type Pointer, type RGB, type ToolHandler, BLOCKED_RGB, EMPTY, WHITE, guard, mapDist } from './api';
 import { type Stroke, brushTool } from './brush';

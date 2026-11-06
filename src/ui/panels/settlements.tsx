@@ -8,8 +8,8 @@ import { focusOn } from '../camera';
 import { Seg } from '../common';
 import { Toggle } from '../components/Toggle';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
-import { hasCountries } from '../countries';
-import { popText } from '../human';
+import { hasCountries } from '../domain/countries';
+import { popText } from '../domain/human';
 import { openLibrary, openNewItemIn } from '../packs/panel-open';
 import {
   CATEGORY_NAMES,
@@ -30,7 +30,7 @@ import {
   roadKindCommand,
   settleCounts,
   settleLists,
-} from '../settlements';
+} from '../domain/settlements';
 import { hasHuman } from '../tools/culture';
 import { deleteSelected, selectSettle } from '../tools/settlements';
 import { registerPanels } from '../defs/panel-registry';

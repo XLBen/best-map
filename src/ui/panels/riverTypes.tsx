@@ -3,7 +3,7 @@ import { PLAIN_RIVER, type RiverType, majorityType } from '../../../core/river-t
 import type { World } from '../../../core/world';
 import { type RiverRef, exec, openPanel, options, selectedRiver, setOptions, world } from '../../state';
 import { byRulesTip } from '../copy';
-import { BY_RULES, execAndSelect, guideOf, hasRiverRules as hasRules, pinCommand, riverInfo } from '../riverCourse';
+import { BY_RULES, execAndSelect, guideOf, hasRiverRules as hasRules, pinCommand, riverInfo } from '../river';
 import { type MenuItem, TypeButton, TypeMenu } from './waterTypes';
 import { createAndUse, newWaterType, typeScriptCommand } from './water-types';
 import { registerPanels } from '../defs/panel-registry';

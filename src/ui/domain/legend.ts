@@ -1,12 +1,12 @@
-import { RESOURCE_NONE, blocList, blocOf, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../core/human';
+import { RESOURCE_NONE, blocList, blocOf, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../../core/human';
 import { shownBloc } from './blocs';
 import { countryRows } from './countries';
-import { speciesColor } from '../../core/species';
-import type { World } from '../../core/world';
-import { NO_BLOC, NO_RESOURCE, densityRgb, habitRgb } from '../render/colors';
-import { WIND_STYLE } from '../render/wind';
-import type { ViewMode } from '../state';
-import type { LegendItem } from './components/Legend';
+import { speciesColor } from '../../../core/species';
+import type { World } from '../../../core/world';
+import { NO_BLOC, NO_RESOURCE, densityRgb, habitRgb } from '../../render/colors';
+import { WIND_STYLE } from '../../render/wind';
+import type { ViewMode } from '../../state';
+import type { LegendItem } from '../components/Legend';
 
 // 图例（第二十一轮）：按格着色、一格一类的底图（地形类别、资源、生态分区）列出世界里有的几类，按格数从多到少。
 // 以后的文化、国家底图也用它：给出 {color, label, count?} 就行。

@@ -1,4 +1,4 @@
-import type { Command } from '../../core/commands';
+import type { Command } from '../../../core/commands';
 import {
   type CountryPatch,
   type CountryStats,
@@ -22,12 +22,12 @@ import {
   tierOfCountry,
   tierShort,
   worldLayouts,
-} from '../../core/human';
-import type { Era } from '../../core/human';
-import type { LibraryEntry } from '../library';
+} from '../../../core/human';
+import type { Era } from '../../../core/human';
+import type { LibraryEntry } from '../../library';
 import { addFromLibrary, itemsInPacks, librarySelectable } from './packChoice';
-import { type NameMode, nameLines } from '../../core/name-display';
-import type { CountryLayout, CountryMeta, World } from '../../core/world';
+import { type NameMode, nameLines } from '../../../core/name-display';
+import type { CountryLayout, CountryMeta, World } from '../../../core/world';
 
 // 国家（第二十三轮）的界面逻辑：有没有国家、一格是哪国、按人口排的列表、各种命令、档案的改动、
 // “分裂 ↔ 统一”（地图模式见 map/modes.ts）。不碰界面，测试直接调

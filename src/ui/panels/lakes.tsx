@@ -6,7 +6,7 @@ import type { LakeSpec, World } from '../../../core/world';
 import { type LakeRef, exec, lakeRange, openPanel, options, selectedLake, setOptions, switchTool, tool, world } from '../../state';
 import { focusOn } from '../camera';
 import { SelectionActions } from '../shell/SelectionActions';
-import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../lakeInfo';
+import { hasLakeRules, lakeInfo, lakeList, lakeSizeDraft, lakeTypeChoiceCommand, lakeTypeOfLake } from '../domain/lakeInfo';
 import { byRulesTip } from '../copy';
 import { NameInput } from './names';
 import { type MenuItem, TypeButton, TypeMenu } from './waterTypes';

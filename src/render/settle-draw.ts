@@ -34,7 +34,7 @@ import type { MapStyle } from '../../core/map-style';
 
 // 城市、道路、地标、自定义点在地图上的画法（第二十四轮）：图标（像 EU4 的胜利点——首都是星、大城市双圈、城市大圆、村镇一个点；
 // 地标、自定义点是小圆牌上的图标）、名字的排版（与国名、地名一起避让），道路的折线。屏幕与导出整张地图共用；
-// 哪些画、多大由界面给（ui/settlements.ts 的 settleMarks、roadDraw），这里只管画
+// 哪些画、多大由界面给（ui/domain/settlements.ts 的 settleMarks、roadDraw），这里只管画
 
 // 一个要画的点：城市、地标或自定义点。x、y 是地图坐标；iconPx / namePx：一格在屏幕上至少这么多像素才画图标、写名字
 export interface SettleMark {

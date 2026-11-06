@@ -8,7 +8,7 @@ import { REGION_KINDS, type RegionKind, type World } from '../../../core/world';
 import { exec, focusName, labelGroups, openPanel, selectedFeature, world } from '../../state';
 import { TypePicker, TypePickerButton } from '../shell/TypePicker';
 import { focusOn } from '../camera';
-import { selectRiver } from '../riverCourse';
+import { selectRiver } from '../river';
 import { Seg } from '../common';
 import { SelectionActions } from '../shell/SelectionActions';
 import { registerPanels } from '../defs/panel-registry';

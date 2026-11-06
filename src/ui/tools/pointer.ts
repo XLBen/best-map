@@ -3,12 +3,12 @@ import { dimensionValues, valueLayer, worldCultureGroups, worldCultures, worldDi
 import type { World } from '../../../core/world';
 import type { SettleMark } from '../../render/settle-draw';
 import { pinCell, selectedCountry, selectedSettle, world } from '../../state';
-import { blocAt, blocHereText, selectBloc } from '../blocs';
-import { countryAt, countryOf } from '../countries';
-import { featuresAt } from '../features-at';
+import { blocAt, blocHereText, selectBloc } from '../domain/blocs';
+import { countryAt, countryOf } from '../domain/countries';
+import { featuresAt } from '../domain/features-at';
 import { type MapKind, mapKind, modeDef, modeOf } from '../map/modes';
 import { shownMarks } from '../map/settle';
-import { cellPxOf, pickMark, refOfKey, settleHoverText } from '../settlements';
+import { cellPxOf, pickMark, refOfKey, settleHoverText } from '../domain/settlements';
 import { EMPTY, type Pointer, type ToolHandler, focusOf, pinTarget } from './api';
 import { selectCountry } from './countries';
 import { HIT_PX, HOVER, ring, selectSettle, selectedRing } from './settlements';

@@ -13,7 +13,7 @@ import { libEdits } from '../../library-edit';
 import { addPicked, addRegenButton, contentAfter, worldAddCommand } from './pick-add';
 import { pickCount, pickStore, picksOf, setPickDest, togglePickIn } from './pick-store';
 import { addRegenLabel } from './regen';
-import { regenerateCommand, withPackImports } from '../human';
+import { regenerateCommand, withPackImports } from '../domain/human';
 
 // 第六十六轮：添加并重新生成（一个 batch，一次撤销全撤）、只勾一个文化时组参与生成
 

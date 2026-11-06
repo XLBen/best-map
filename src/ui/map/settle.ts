@@ -2,8 +2,8 @@ import type { World } from '../../../core/world';
 import type { OverlayState } from '../../render/overlay';
 import type { SettleMark } from '../../render/settle-draw';
 import { nameMode, overlays } from '../../state';
-import { hasCountries } from '../countries';
-import { roadSet, settleMarks, settleShow } from '../settlements';
+import { hasCountries } from '../domain/countries';
+import { roadSet, settleMarks, settleShow } from '../domain/settlements';
 import type { ModeDef } from './modes';
 
 // 城市、道路、地标、自定义点（第二十四轮）给叠加层的几项：屏幕与导出整张地图共用。

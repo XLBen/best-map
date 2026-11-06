@@ -1,12 +1,12 @@
-import type { Command } from '../../core/commands';
-import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../core/generate';
-import { itemKey, ownItems, packIdFor, sameItem, walkPacks } from '../../core/packs';
-import { LAYOUT_R, planetProfile } from '../../core/planet-gen';
-import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
-import { planetKindName } from '../../core/presets';
-import { FORMS_PATH } from '../../core/packs/builtin-tree';
-import { newWorldContentCommands } from '../../core/packs/import';
-import { type LibraryEntry, MY_PACK_NAME } from '../library';
+import type { Command } from '../../../core/commands';
+import { WORLD_TYPE_INFO, type Worldgen, type WorldgenInput, type WorldType } from '../../../core/generate';
+import { itemKey, ownItems, packIdFor, sameItem, walkPacks } from '../../../core/packs';
+import { LAYOUT_R, planetProfile } from '../../../core/planet-gen';
+import { type PlanetForm, planetFormSchema } from '../../../core/planet-form';
+import { planetKindName } from '../../../core/presets';
+import { FORMS_PATH } from '../../../core/packs/builtin-tree';
+import { newWorldContentCommands } from '../../../core/packs/import';
+import { type LibraryEntry, MY_PACK_NAME } from '../../library';
 
 // 星球形态的界面要用的几样（不碰界面和 Worker，测试里直接用）：
 // 向导、调整面板里列出的形态（内置的示例 + 资源库里装的）、形态编辑器的滑块、改脚本、存之前定 id

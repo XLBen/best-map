@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { landmassCells } from '../../core/vegetation';
-import { brushCells } from '../../core/select';
-import { continents, engineFor } from '../../core/testing/fixtures';
-import type { World } from '../../core/world';
-import { paintNote, setOptions, world } from '../state';
-import { outsideRangeReason } from '../biome-range';
+import { landmassCells } from '../../../core/vegetation';
+import { brushCells } from '../../../core/select';
+import { continents, engineFor } from '../../../core/testing/fixtures';
+import type { World } from '../../../core/world';
+import { paintNote, setOptions, world } from '../../state';
+import { outsideRangeReason } from '../../biome-range';
 import { climateHere, climateMask, editLayers, natureHere, natureMask, terrainHere, terrainMask, waterMask } from './edits';
-import { type Pointer, climateEraseTool, eraseTool, rangePick, rangeTool, restoreTool } from './tools';
+import { type Pointer, climateEraseTool, eraseTool, rangePick, rangeTool, restoreTool } from '../tools';
 
 // 我改过的地方：橡皮擦先标出能擦的格、悬停说这里改过什么；选生态的范围：点岛、圈一片
 
-vi.mock('../state', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../state')>();
+vi.mock('../../state', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../state')>();
   return { ...mod, exec: vi.fn(async () => true) };
 });
 
@@ -150,7 +150,7 @@ describe('选生态的范围（第十二轮，替代岛上特有）', () => {
     expect(pv.hint).toContain(`“${island.name}（${arch.name}）”`);
     const mass = landmassCells(w, island.anchor);
     expect(pv.layers[0].cells.length).toBe(mass.reduce((a, b) => a + b, 0));
-    const { exec } = await import('../state');
+    const { exec } = await import('../../state');
     vi.mocked(exec).mockClear();
     await t.click?.(at(w, island.anchor));
     expect(vi.mocked(exec).mock.calls[0][0]).toEqual({ op: 'update_species', id: 'desert', patch: { range: { kind: 'island', cell: island.anchor } } });
@@ -193,7 +193,7 @@ describe('选生态的范围（第十二轮，替代岛上特有）', () => {
     const pts: [number, number][] = [[x - s, y - s], [x + s, y - s], [x + s, y + s], [x - s, y + s]];
     t.down?.({ ...at(w, c), x: pts[0][0], y: pts[0][1] });
     for (const [px, py] of pts.slice(1)) t.move?.({ ...at(w, c), x: px, y: py }, true);
-    const { exec } = await import('../state');
+    const { exec } = await import('../../state');
     vi.mocked(exec).mockClear();
     await t.up?.({ ...at(w, c), x: pts[3][0], y: pts[3][1] });
     const cmd = vi.mocked(exec).mock.calls[0][0] as { op: string; patch: { range: { kind: string; cells: number[] } } };

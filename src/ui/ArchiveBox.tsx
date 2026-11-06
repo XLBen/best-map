@@ -6,14 +6,14 @@ import { CATEGORY_LABEL, type CellArchive, cellArchive, classAt, landmarkTypeByI
 import type { World } from '../../core/world';
 import { exec, selectedProvince, switchTool } from '../state';
 import { SelectionActions } from './shell/SelectionActions';
-import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellResourceCommand, cellTotalCommand, groupShareCommand, noteCommand, popRows, removeGroupCommand, renameCommand, rerollCommand } from './archive';
-import { densityText, popText, shareText } from './human';
-import { countryAt, countryOf, hasCountries } from './countries';
+import { type PopRow, addGroupCommand, autoNameCommand, cellClassCommand, cellResourceCommand, cellTotalCommand, groupShareCommand, noteCommand, popRows, removeGroupCommand, renameCommand, rerollCommand } from './domain/archive';
+import { densityText, popText, shareText } from './domain/human';
+import { countryAt, countryOf, hasCountries } from './domain/countries';
 import { selectCountry } from './tools/countries';
 import { CityGlyph } from './panels/settlements';
 import { selectSettle } from './tools/settlements';
 import { iconOf } from '../render/settle-draw';
-import { cityIconOf } from './settlements';
+import { cityIconOf } from './domain/settlements';
 
 // “这里”卡片里的档案（第二十一轮）：小地名、是山峰时的“xx峰 · 高度”、地形类别、资源、备注。
 // 钉住一格（右键点地图）时可以改；没钉住时只读，跟着鼠标

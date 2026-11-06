@@ -8,7 +8,7 @@ import type { Shape } from '../../render/overlay';
 import { signal } from '@preact/signals';
 import { provinceLand } from '../../../core/island-types';
 import { exec, previewProvinces, provinceSet, selectedProvince, showToast, sliderActive, world } from '../../state';
-import { Settle } from '../exact';
+import { Settle } from '../domain/exact';
 import { EMPTY, type Pointer, type Preview, type ProvincePreview, type ToolHandler, isBusy, worldId } from './api';
 import { type Stroke, brushTool } from './brush';
 import { groupCount } from './gestures';

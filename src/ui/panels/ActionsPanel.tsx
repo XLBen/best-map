@@ -12,7 +12,7 @@ import { LIBRARY_NOTE } from '../copy';
 import { openLibrary } from '../packs/panel-store';
 import { fileNameOf } from '../../maps';
 import { beforeLeave, currentMap, exportCurrent, mapStatus, openFile, openMaps, saveMap, saveMapAs } from '../maps/store';
-import { exportPartRows, hasAnySettle } from '../settlements';
+import { exportPartRows, hasAnySettle } from '../domain/settlements';
 
 // “世界”：新建、我的地图、保存、打开文件、资源包、导出（世界文件、游戏文件包、图片都在这里）；“更多”：历史、偏好、上手说明
 

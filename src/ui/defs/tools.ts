@@ -67,7 +67,7 @@ import {
   tool,
   world,
 } from '../../state';
-import { lakeSizeDraft } from '../lakeInfo';
+import { lakeSizeDraft } from '../domain/lakeInfo';
 import { FIELD_MAX, RELIEF_MAX, percentText } from './tool-values';
 import { clearBarPreview } from '../barPreview';
 import { failingHighlights, featureHighlights, provinceHighlights, selectedRiverFocus } from '../map/highlights';

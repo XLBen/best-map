@@ -3,7 +3,7 @@ import type { FeatureType, GeoFeature } from '../../../core/features';
 import { blocList, worldDimensions } from '../../../core/human';
 import type { World } from '../../../core/world';
 import { type MapKind, type ViewMode, mode, prefs, setPrefs, world, worldEpoch } from '../../state';
-import { hasCountries } from '../countries';
+import { hasCountries } from '../domain/countries';
 import { viewAvailable } from '../defs/layers';
 
 // 地图模式（第二十五轮，像 EU4 的地图模式）：地理、国家、同盟（第二十六轮）、文化、文化组、时代的每一维（宗教、种族……）、人口。

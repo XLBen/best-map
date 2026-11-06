@@ -10,7 +10,7 @@ import { FIELD_KIND } from '../render/overlay-static';
 import { WIND_STYLE, windLines } from '../render/wind';
 import { flowSeason, mode, overlays, parseMapKind, parsePrefs, season, world } from '../state';
 import { OVERLAYS } from './defs/layers';
-import { flowHint, flowLegend } from './legend';
+import { flowHint, flowLegend } from './domain/legend';
 import { cleanOverlay } from './map/export';
 import { kindOfView, modeOf } from './map/modes';
 import { MapLegend } from './shell/MapLegend';

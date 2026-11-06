@@ -1,8 +1,8 @@
 import type { Command } from '../../../core/commands';
 import type { World } from '../../../core/world';
 import { exec, options, showToast, world } from '../../state';
-import { NO_COUNTRIES, hasCountries } from '../countries';
-import { type EditMask, classMask, countryMask, erasableLayer, fieldMask, popMask, resourceMask } from '../edits';
+import { NO_COUNTRIES, hasCountries } from '../domain/countries';
+import { type EditMask, classMask, countryMask, erasableLayer, fieldMask, popMask, resourceMask } from '../domain/edits';
 import { type RGB, type ToolHandler, BLOCKED_RGB, WHITE } from './api';
 import { type Stroke, brushTool, oneLayer } from './brush';
 import { NO_HUMAN, hasHuman } from './culture';

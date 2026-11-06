@@ -5,7 +5,7 @@ import { itemId, itemName, kindOf } from '../../../core/content/registry';
 import { type Era } from '../../../core/human';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
 import { ADD_DIMENSION_NOTE } from '../copy';
-import { libRoots } from '../packChoice';
+import { libRoots } from '../domain/packChoice';
 import { showToast } from '../../state';
 import { arrangeFor } from './page-arrange';
 import { applyArrange, linkChild, newChildIn, unlinkChild } from './page-actions';

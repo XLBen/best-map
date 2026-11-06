@@ -5,7 +5,7 @@ import { saveForm } from '../library';
 import { formThumbnail, showToast } from '../state';
 import { trustScripts } from '../trust';
 import { type FormEditorState, closeFormEditor, formEditor } from './form-store';
-import { FORM_BASES, FORM_KNOBS, type FormScriptKind, finalForm, formGen, formProblem, knobText, planetTypeName, withCrustMode, withScript } from './forms';
+import { FORM_BASES, FORM_KNOBS, type FormScriptKind, finalForm, formGen, formProblem, knobText, planetTypeName, withCrustMode, withScript } from './domain/forms';
 import { ScriptBox } from './ScriptBox';
 import { ModalHead, Seg } from './common';
 import { Slider, linear } from './components/Slider';

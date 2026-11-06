@@ -14,7 +14,7 @@ import type { ToolId } from './defs/tools';
 import { provinceAreaText, provinceMultiCommands } from './province-panel';
 import { onKeyDown } from './shell/keys';
 import { type Pointer, type ToolHandler, brushNew, factorOf, percentText, popCommand, provinceBrushTool, provinceSelectTool, toggleProvince } from './tools';
-import { countryAt, territoryCommand } from './countries';
+import { countryAt, territoryCommand } from './domain/countries';
 
 startToolEffects();
 

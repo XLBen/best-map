@@ -1,7 +1,7 @@
 import type { Command } from '../../../core/commands';
 import type { World } from '../../../core/world';
 import { type ToolOptions, exec, options, setOptions, showToast, world } from '../../state';
-import { climateHere, climateMask, erasableLayer } from '../edits';
+import { climateHere, climateMask, erasableLayer } from '../domain/edits';
 import { type RGB, type ToolHandler, WHITE } from './api';
 import { type Stroke, brushTool, oneLayer, strengthValues } from './brush';
 import { biomeChange } from './nature';

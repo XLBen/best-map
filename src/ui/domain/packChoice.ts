@@ -1,15 +1,15 @@
-import type { Command } from '../../core/commands';
-import { linkKey } from '../../core/content/links';
-import { itemId, kindByPackKey } from '../../core/content/registry';
-import { recordedOrigin } from '../../core/content/origin';
-import { type Culture, type CultureGroup, type Era, ruleEra, worldCultureGroups, worldEras } from '../../core/human';
-import { type PackNode, type PackWorld, findPack, ownItems, packItems, subPacks, walkPacks } from '../../core/packs';
-import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../core/packs/builtin-tree';
-import { type ImportGates, importCommand, importGates } from '../../core/packs/closure';
-import { type ImportPicks, type PackRoot, packAt, packImportCommands } from '../../core/packs/import';
-import { type LibrarySwitchPlan, librarySwitchPlan, worldLibrary } from '../../core/packs/switch';
-import type { World } from '../../core/world';
-import type { LibraryEntry } from '../library';
+import type { Command } from '../../../core/commands';
+import { linkKey } from '../../../core/content/links';
+import { itemId, kindByPackKey } from '../../../core/content/registry';
+import { recordedOrigin } from '../../../core/content/origin';
+import { type Culture, type CultureGroup, type Era, ruleEra, worldCultureGroups, worldEras } from '../../../core/human';
+import { type PackNode, type PackWorld, findPack, ownItems, packItems, subPacks, walkPacks } from '../../../core/packs';
+import { DEFAULT_LIBRARY, builtinPacks, worldPartsOf } from '../../../core/packs/builtin-tree';
+import { type ImportGates, importCommand, importGates } from '../../../core/packs/closure';
+import { type ImportPicks, type PackRoot, packAt, packImportCommands } from '../../../core/packs/import';
+import { type LibrarySwitchPlan, librarySwitchPlan, worldLibrary } from '../../../core/packs/switch';
+import type { World } from '../../../core/world';
+import type { LibraryEntry } from '../../library';
 
 // 选一个库（第五十二轮）：新建向导、“文化 ⋯”的生成人文与“换库、文化组…”共用。不碰界面，测试直接调。
 //

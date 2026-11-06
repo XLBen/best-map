@@ -1,5 +1,5 @@
-import type { GeoFeature } from '../../core/features';
-import type { World } from '../../core/world';
+import type { GeoFeature } from '../../../core/features';
+import type { World } from '../../../core/world';
 
 // 每格属于哪些地理要素，按世界缓存
 const featureCache = new WeakMap<World, Map<number, GeoFeature[]>>();

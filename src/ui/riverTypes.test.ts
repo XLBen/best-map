@@ -3,7 +3,7 @@ import { PLAIN_RIVER, riverNet } from '../../core/river-types';
 import { dryContinents as continents } from '../../core/testing/fixtures';
 import { setOptions, world } from '../state';
 import { riverTypeChoiceCommand, riverTypeOfRiver, riverTypeScriptCommand, newRiverType } from './panels/riverTypes';
-import { BY_RULES, chosenRiverType, hasRiverRules, pinCommand, riverInfo } from './riverCourse';
+import { BY_RULES, chosenRiverType, hasRiverRules, pinCommand, riverInfo } from './river';
 
 // 给河选类型：自然的河固定下来并带上类型（一步，名字照旧）；画的河改它自己的 type；新画的河用工具条上选的
 

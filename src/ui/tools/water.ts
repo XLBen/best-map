@@ -3,7 +3,7 @@ import { roundKm as km } from '../../../core/terrain';
 import type { World } from '../../../core/world';
 import type { GhostEdit, HighlightLayer } from '../../render/colors';
 import { exec, lakeRange, mode, options, selectedLake, setOptions, showToast, world } from '../../state';
-import { chosenLakeType, lakeCellsAt, lakeInfo, lakeRefAt, lakeSizeDraft } from '../lakeInfo';
+import { chosenLakeType, lakeCellsAt, lakeInfo, lakeRefAt, lakeSizeDraft } from '../domain/lakeInfo';
 import { ghostFollows, queueHint, trackEdit } from '../pending';
 import { EMPTY, type Pointer, type Preview, type RGB, type ToolHandler, WHITE, guard, worldId } from './api';
 import { type Settled, type SizeDrag, dragTo, movedAway, sizeLine, startDrag } from './gestures';

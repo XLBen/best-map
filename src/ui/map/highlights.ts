@@ -3,8 +3,8 @@ import type { World } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
 import { FLASH_MS, adjustPreview, adjustPreviewWorld, flash, overlays, provinceSet, riverStyleOverride, selectedFeature, selectedProvince, selectedRiver } from '../../state';
-import { editLayers } from '../edits';
-import { riverGlow, riverInfo } from '../riverCourse';
+import { editLayers } from '../domain/edits';
+import { riverGlow, riverInfo } from '../river';
 import { type Preview, reliefLayers } from '../tools';
 
 // 地图上的高亮：哪一类工具开着时多画什么，由 defs/tools.ts 里各类、各工具声明（CategoryDef.map、ToolDef.focus），

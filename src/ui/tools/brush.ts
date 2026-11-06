@@ -5,7 +5,7 @@ import type { World } from '../../../core/world';
 import type { GhostEdit, HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
 import { type ToolOptions, options, redrawTick, showToast, sliderActive, world } from '../../state';
-import { Covered, Exact, type ExactView, slowTail } from '../exact';
+import { Covered, Exact, type ExactView, slowTail } from '../domain/exact';
 import { queueHint, queuedCount, trackEdit } from '../pending';
 import { type Backdrop, EMPTY, type Pointer, type Preview, type ProvincePreview, type ToolHandler, WHITE, guard, mapDist } from './api';
 

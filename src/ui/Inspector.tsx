@@ -1,8 +1,8 @@
 import { worldCultures } from '../../core/human';
-import { popText } from './human';
-import { countryAt, countryOf, hasCountries } from './countries';
-import { settleHere } from './settlements';
-import { featuresAt } from './features-at';
+import { popText } from './domain/human';
+import { countryAt, countryOf, hasCountries } from './domain/countries';
+import { settleHere } from './domain/settlements';
+import { featuresAt } from './domain/features-at';
 import { ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
 import { BUILTIN_FIELDS, speciesColor } from '../../core/species';

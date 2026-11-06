@@ -26,7 +26,7 @@ import {
   removeCommand,
   settleHoverText,
   settleLists,
-} from '../settlements';
+} from '../domain/settlements';
 import { EMPTY, type Pointer, type Preview, type ToolHandler, guard, isBusy, keepX } from './api';
 
 // “城市”一类的四个工具（第二十四轮）：城市（点空地新建、点城市打开档案、拖动挪走）、道路（按住画、点选、拖控制点改走向，像改河）、

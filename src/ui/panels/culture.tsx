@@ -7,7 +7,7 @@ import { Seg } from '../common';
 import { Slider } from '../components/Slider';
 import { OptionSlider } from '../shell/OptionSlider';
 import { Toggle } from '../components/Toggle';
-import { fragAt, fragPos, fragText, fragTitle } from '../countries';
+import { fragAt, fragPos, fragText, fragTitle } from '../domain/countries';
 import { LayoutPick } from './countries';
 import { LibraryLink, TypePicker, TypePickerButton } from '../shell/TypePicker';
 import type { SliderDef } from '../defs/types';
@@ -31,11 +31,11 @@ import {
   shareText,
   switchNote,
   toggleGroup,
-} from '../human';
+} from '../domain/human';
 import { LibraryPick } from '../components/LibraryPick';
 import { ADD_DIMENSION_NOTE } from '../copy';
 import { addDimensionCommand, dimensionOptions } from '../../../core/packs/add-dimension';
-import { type GroupOption, beyondGroups, libRoots, libraryOptions, packGroups, packLabel, worldLibrary } from '../packChoice';
+import { type GroupOption, beyondGroups, libRoots, libraryOptions, packGroups, packLabel, worldLibrary } from '../domain/packChoice';
 import { openLibrary } from '../packs/panel-store';
 import { library } from '../../library';
 import { restyleProvincesCommand } from '../packs/styles';

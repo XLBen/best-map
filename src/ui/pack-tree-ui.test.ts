@@ -17,9 +17,9 @@ import { type LibraryEntry, keepInLibrary, library, refreshLibrary, removePack, 
 import { world } from '../state';
 import { importBiomeFile } from './packs/store';
 import { originGroups } from './shell/type-picker';
-import { formChoices } from './forms';
-import { LOOSE_GROUP, groupByPack } from './human';
-import { humanImportCommands, packGroups, packLabel } from './packChoice';
+import { formChoices } from './domain/forms';
+import { LOOSE_GROUP, groupByPack } from './domain/human';
+import { humanImportCommands, packGroups, packLabel } from './domain/packChoice';
 import { ResourceMenu } from './panels/human';
 import { WORLD_SOURCE, sourceMenu } from './packs/page-source';
 import { libraryRows, removeCommand, rowUsage, worldRows } from './packs/rows';

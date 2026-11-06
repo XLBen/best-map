@@ -1,5 +1,5 @@
-import type { Command } from '../../core/commands';
-import type { CellArchive } from '../../core/human';
+import type { Command } from '../../../core/commands';
+import type { CellArchive } from '../../../core/human';
 
 // 格的档案（第二十一轮）：卡片里改名字、换一个、恢复自动、地形类别、资源、备注发出的命令。
 // 山脉的主峰（archive.feature）名字是地物的：改名、换一个、恢复自动走地物的命令（rename_feature、reroll_feature）

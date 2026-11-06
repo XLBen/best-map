@@ -39,13 +39,13 @@ import {
   vassalsOf,
   withId,
   withoutId,
-} from './countries';
-import { densityText, firstLine, popText, shareText } from './human';
-import { BLOC_KIND_OPTIONS, SUBJECT_OPTIONS, joinBlocCommand, joinNote, joinableBlocs, leaveBlocCommand, newBlocCommand, selectBloc, subjectCommand } from './blocs';
+} from './domain/countries';
+import { densityText, firstLine, popText, shareText } from './domain/human';
+import { BLOC_KIND_OPTIONS, SUBJECT_OPTIONS, joinBlocCommand, joinNote, joinableBlocs, leaveBlocCommand, newBlocCommand, selectBloc, subjectCommand } from './domain/blocs';
 import { FactionSection, StackBar } from './CountryFactions';
 import { Flag, showCountry } from './panels/countries';
 import { CityList } from './panels/settlements';
-import { countryCityRows, hasAnySettle } from './settlements';
+import { countryCityRows, hasAnySettle } from './domain/settlements';
 import { selectSettle } from './tools/settlements';
 import { confirmMerge, selectCountry } from './tools/countries';
 import { Seg } from './common';
@@ -54,7 +54,7 @@ import { COUNTRY_TABS, type CountryTab, EMBLEM_NAMES, LAYOUT_NAMES, countryTab, 
 
 // 国家的档案（第二十三轮）：右边的抽屉，选中的国家。名字、旗帜、颜色、首都、政体、主流文化与兼容的文化组、统计、派系、外交、统治者、
 // 建国年份、历史。改的都是 set_country 的 patch；字在离开框（或回车）时提交，历史停下一会儿也提交。
-// 第二十六轮：头上写等级；外交里有从属的种类、所在的帝国、联邦、同盟（加入、退出、新建，见 blocs.ts）。
+// 第二十六轮：头上写等级；外交里有从属的种类、所在的帝国、联邦、同盟（加入、退出、新建，见 domain/blocs.ts）。
 // 第二十七轮：分成几页（概览 · 政治 · 人口与城市 · 关系 · 历史）；名字和原文一起改；领土的操作（涂领土、分成两半、并入别国、删除）放进概览
 
 const run = (cmd: Command | null, busy = '正在保存…') => (cmd ? exec(cmd, busy) : Promise.resolve(false));

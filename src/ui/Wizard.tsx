@@ -27,16 +27,16 @@ import { autosaved, newWorld, resumeLast, safeMode, thumbnail, trustFormScripts,
 import { resetTools } from './defs/tools';
 import { FormEditor } from './FormEditor';
 import { closeFormEditor, openFormEditor } from './form-store';
-import { DEFAULT_PLANET, type FormChoice, blankForm, formChoices, formGen, formSource, formsInPacks, isBuiltinPlanet, newWorldCommands, planetTypeName, wizardWorldName } from './forms';
+import { DEFAULT_PLANET, type FormChoice, blankForm, formChoices, formGen, formSource, formsInPacks, isBuiltinPlanet, newWorldCommands, planetTypeName, wizardWorldName } from './domain/forms';
 import { RES, fromPos, toPos } from './panels/AdjustPanel';
 import { ModalHead, Seg } from './common';
 import { Slider } from './components/Slider';
-import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
+import { TERRAIN_SLIDERS, type TerrainKey, type TerrainSlider, type WizardTerrain, terrainCommands, terrainDefaults, withTerrain } from './domain/wizardTerrain';
 import { Toggle } from './components/Toggle';
 import { HumanChoices } from './panels/culture';
-import { type HumanChoice, chooseLibrary, choiceEra, defaultChoice, estimateLandKm2, generateCommand, groupByPack } from './human';
+import { type HumanChoice, chooseLibrary, choiceEra, defaultChoice, estimateLandKm2, generateCommand, groupByPack } from './domain/human';
 import { LibraryPick } from './components/LibraryPick';
-import { choicePacks, libraryOptions, packLabel, worldContentCommands } from './packChoice';
+import { choicePacks, libraryOptions, packLabel, worldContentCommands } from './domain/packChoice';
 
 // 新建向导：先选一块地区还是整个星球。
 // 一块地区：选世界类型、大小、放在星球的哪里；整个星球：选星球类型（六种之后是星球形态：内置的示例和资源库里装的，

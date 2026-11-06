@@ -30,7 +30,7 @@ import {
   riverCutPick,
   riverInfo,
   selectRiver,
-} from '../riverCourse';
+} from '../river';
 import { fmtFlow, riverSizeName } from '../tools';
 import { PIN_RIVER_TIP } from '../copy';
 import { NameInput } from './names';

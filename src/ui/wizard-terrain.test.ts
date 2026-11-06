@@ -8,12 +8,12 @@ import { focusOn } from './camera';
 import { ADJUSTMENTS } from './defs/adjustments';
 import { VIEWS, suitabilityFocus } from './defs/layers';
 import { riverEnds } from './defs/tool-sliders';
-import { newWorldCommands } from './forms';
+import { newWorldCommands } from './domain/forms';
 import { showView } from './panels/LayersPanel';
 import { labelCommit } from './panels/names';
-import { RIVER_END_HINTS } from './riverCourse';
+import { RIVER_END_HINTS } from './river';
 import { locateNextUnmet, locateTitle, unmetLooked, unmetSpots } from './unmetLocate';
-import { TERRAIN_SLIDERS, terrainCommands, terrainDefaults, withTerrain } from './wizardTerrain';
+import { TERRAIN_SLIDERS, terrainCommands, terrainDefaults, withTerrain } from './domain/wizardTerrain';
 
 // 第十四轮 H1（界面）：地形挪进新建向导、河的终点叫法、类型字可以改、海水温度底图、适宜程度自己选生态、一处一处看没涂成的地方
 

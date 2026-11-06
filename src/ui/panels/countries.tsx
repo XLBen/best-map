@@ -22,8 +22,8 @@ import {
   layoutChoices,
   layoutOf,
   regenerateCountriesCommand,
-} from '../countries';
-import { popText, withPackImports } from '../human';
+} from '../domain/countries';
+import { popText, withPackImports } from '../domain/human';
 import { library } from '../../library';
 import { hasHuman } from '../tools/culture';
 import { chosenTerritory, selectCountry } from '../tools/countries';

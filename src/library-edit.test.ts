@@ -8,9 +8,9 @@ import { type LibraryEntry, type Stored, installPack, library, refreshLibrary } 
 import { FLUSH_MS, FLUSH_SOON_MS, type LibBackend, type Wal, copiedPack, copyLibrary, createLibEditor, createLibrary, deleteLibrary, libEdits } from './library-edit';
 import { Engine } from '../core/engine';
 import { humanDigest, meshFor } from '../core/testing/fixtures';
-import { newWorldCommands } from './ui/forms';
-import { chooseLibrary, defaultChoice, generateCommand } from './ui/human';
-import { isLibrary, libRoots, libraryOptions, worldContentCommands, worldContentPacks, worldLibrary } from './ui/packChoice';
+import { newWorldCommands } from './ui/domain/forms';
+import { chooseLibrary, defaultChoice, generateCommand } from './ui/domain/human';
+import { isLibrary, libRoots, libraryOptions, worldContentCommands, worldContentPacks, worldLibrary } from './ui/domain/packChoice';
 import { closeLibrary, openLibrary, setSource } from './ui/packs/panel-store';
 
 // 第五十九轮：我的库改一项只查这一项、写进日志，整个库晚一点才写；有自己的撤销；复制成我的库

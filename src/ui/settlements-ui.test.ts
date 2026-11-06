@@ -12,7 +12,7 @@ import { CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf, startToolEffects } from './
 // 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
 import './tools/bind';
 import { OVERLAYS } from './defs/layers';
-import { defaultChoice, generateCommand } from './human';
+import { defaultChoice, generateCommand } from './domain/human';
 import { hereLine } from './Inspector';
 import { packSections } from '../../core/packs';
 import {
@@ -50,8 +50,8 @@ import {
   type SettleShow,
   settleShow,
   textPatch,
-} from './settlements';
-import { fragTitle, layoutChoices, tierLabel } from './countries';
+} from './domain/settlements';
+import { fragTitle, layoutChoices, tierLabel } from './domain/countries';
 import { eraOf } from '../../core/testing/eras';
 import { modeDef } from './map/modes';
 import { type Pointer, cityTool, landmarkTool, pointTool, roadTool } from './tools';

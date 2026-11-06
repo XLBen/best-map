@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Command } from '../../core/commands';
-import { findCell } from '../../core/mesh';
-import { PLAIN_RIVER } from '../../core/river-types';
-import { previewWorldOf } from '../../core/preview-world';
-import { controlHandles, deleteHandle, guideTarget } from '../../core/river-edit';
-import { type CoursePlan, endCourseAt, isRiverCell, planCourse, riverStem } from '../../core/select';
-import { continents, engineFor } from '../../core/testing/fixtures';
-import type { World } from '../../core/world';
-import { riverLines } from '../render/overlay';
-import { busy, exec, previewCommand, previewWorld, riverStyleOverride, selectedRiver, setOptions, toast, world } from '../state';
+import type { Command } from '../../../core/commands';
+import { findCell } from '../../../core/mesh';
+import { PLAIN_RIVER } from '../../../core/river-types';
+import { previewWorldOf } from '../../../core/preview-world';
+import { controlHandles, deleteHandle, guideTarget } from '../../../core/river-edit';
+import { type CoursePlan, endCourseAt, isRiverCell, planCourse, riverStem } from '../../../core/select';
+import { continents, engineFor } from '../../../core/testing/fixtures';
+import type { World } from '../../../core/world';
+import { riverLines } from '../../render/overlay';
+import { busy, exec, previewCommand, previewWorld, riverStyleOverride, selectedRiver, setOptions, toast, world } from '../../state';
 import {
   BY_RULES,
   SNAP_PX,
@@ -28,16 +28,16 @@ import {
   riverTool,
   targetOf,
   unwaterTool,
-} from './riverCourse';
-import type { Pointer } from './tools';
+} from './index';
+import type { Pointer } from '../tools';
 
 // 画河的手势（第十一轮）：从河上起笔（离河的线 14 个屏幕像素以内，不随缩放变）是改这条河，从别处起笔是画新的河；
 // 悬停与按下同一个判定；改一条河还是同一条河（自然的河固定下来、名字照旧）；不再先问一句，松手就改；
 // 选中的河有控制点，拖它只改那一段，双击弯点删掉它；自定义走向在空地上点一下不放河
 
 // 命令不真的发给引擎（这里没有 worker）：只看工具发了什么；确切预览默认不回来
-vi.mock('../state', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../state')>()),
+vi.mock('../../state', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../state')>()),
   exec: vi.fn(async () => true),
   previewCommand: vi.fn(async () => null),
   previewWorld: vi.fn(async () => null),

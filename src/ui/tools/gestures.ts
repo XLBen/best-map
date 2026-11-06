@@ -2,7 +2,7 @@ import type { Command } from '../../../core/commands';
 import type { World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
 import { world, worldPreviewError } from '../../state';
-import { type Exact, slowTail } from '../exact';
+import { type Exact, slowTail } from '../domain/exact';
 import { type Pointer, mapDist } from './api';
 import { snapRadiusKm } from '../defs/tool-values';
 

@@ -13,7 +13,7 @@ import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
 import { type RiverRef, cancelPreviews, exec, options, previewCommand, redrawTick, riverStyleOverride, selectedRiver, showToast, switchTool, tool, world } from '../../state';
 import { barPreview, clearBarPreview } from '../barPreview';
-import { Exact, type ExactView, Settle } from '../exact';
+import { Exact, type ExactView, Settle } from '../domain/exact';
 import { EMPTY, type Pointer, type Preview, type RGB, type ToolHandler, isBusy, pathKm, worldId } from '../tools';
 import { previewRiverBar, riverBarView } from './bar';
 import {

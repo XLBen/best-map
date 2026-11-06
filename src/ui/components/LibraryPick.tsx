@@ -1,7 +1,7 @@
-import type { LibraryOption } from '../packChoice';
+import type { LibraryOption } from '../domain/packChoice';
 
 // 选一个库（第五十二轮）：新建向导里是一排卡片；弹出面板里窄，是下拉。内置的在前，我的库另成一段。
-// 最后的面板在第五十九轮。第六十九轮：能选的库（packChoice.ts 的 libraryOptions）、库的名字由用的地方给
+// 最后的面板在第五十九轮。第六十九轮：能选的库（domain/packChoice.ts 的 libraryOptions）、库的名字由用的地方给
 
 const firstSentence = (s: string | undefined) => (s ? s.split('。')[0] : '');
 

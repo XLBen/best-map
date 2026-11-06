@@ -3,7 +3,7 @@ import { cornerLift, flowSeason, mode, overlays, world } from '../../state';
 import { Seg } from '../common';
 import { Legend } from '../components/Legend';
 import { SEASONS } from '../defs/layers';
-import { flowHint, flowLegend, legendFor } from '../legend';
+import { flowHint, flowLegend, legendFor } from '../domain/legend';
 
 // 左下角、量距离按钮上面：按类着色的底图的图例（地形类别、资源、生态分区）。收起、展开记在这次打开的页面里。
 // 风向、洋流（第四十八轮）：开着才有这一张，写风的三档、暖流寒流，上面是风的季节（只换风，不影响地貌的雪）。

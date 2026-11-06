@@ -3,8 +3,8 @@ import { countryFactions } from '../../core/human';
 import type { CountryMeta, World } from '../../core/world';
 import { exec } from '../state';
 import { Slider } from './components/Slider';
-import { factionPatch, patchCommand, statsOf } from './countries';
-import { shareText } from './human';
+import { factionPatch, patchCommand, statsOf } from './domain/countries';
+import { shareText } from './domain/human';
 
 // 国家档案里的派系（第五十三轮从 CountryArchive.tsx 搬出来）与一整条比例的条
 

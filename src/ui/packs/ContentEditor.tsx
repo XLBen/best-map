@@ -3,7 +3,7 @@ import { createContext } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { iconOf } from '../../render/settle-draw';
 import { CityGlyph } from '../panels/settlements';
-import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../settlements';
+import { ICON_LABELS, IMAGE_MAX_CHARS, iconChoices, isImageUrl } from '../domain/settlements';
 import { showToast } from '../../state';
 import type { FieldDesc } from '../../../core/content/registry';
 import { FEATURE_INFO, type FeatureType } from '../../../core/features';

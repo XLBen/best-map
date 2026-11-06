@@ -1,7 +1,7 @@
-import type { Command } from '../../core/commands';
-import type { World } from '../../core/world';
-import type { HighlightLayer } from '../render/colors';
-import { type WorldPreview, cancelWorldPreview, exactDelay, previewWorld, redrawTick, slowHint, slowPreview, world } from '../state';
+import type { Command } from '../../../core/commands';
+import type { World } from '../../../core/world';
+import type { HighlightLayer } from '../../render/colors';
+import { type WorldPreview, cancelWorldPreview, exactDelay, previewWorld, redrawTick, slowHint, slowPreview, world } from '../../state';
 
 // 确切预览：手停下来一会儿后，在世界的副本上执行松手时会执行的同一条命令，地图上画出将来的样子
 // （生态颜色、雪、河、地名、风、没涂成的格）。松手执行时 Worker 直接采用算好的结果：立刻出结果，颜色不跳。

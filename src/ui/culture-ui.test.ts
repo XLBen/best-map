@@ -8,12 +8,12 @@ import { continents, snapshot, type HumanCommand, humanExec, lastOf } from '../.
 import type { World } from '../../core/world';
 import { cellLayers, colorSignature, humanFlat } from '../render/colors';
 import { exec, mode, options, setOptions, world } from '../state';
-import { addGroupCommand, cellTotalCommand, groupShareCommand, parsePeople, popRows, removeGroupCommand } from './archive';
+import { addGroupCommand, cellTotalCommand, groupShareCommand, parsePeople, popRows, removeGroupCommand } from './domain/archive';
 import { humanViews, viewAvailable } from './defs/layers';
 import { CATEGORIES, CATEGORY_DEFS, TOOL_DEFS, setTool, toolsOf, startToolEffects } from './defs/tools';
 // 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
 import './tools/bind';
-import { newWorldCommands } from './forms';
+import { newWorldCommands } from './domain/forms';
 import {
   choiceEra,
   chooseLibrary,
@@ -25,12 +25,12 @@ import {
   popPos,
   regenerateWith,
   toggleGroup,
-} from './human';
+} from './domain/human';
 import { hereLine } from './Inspector';
 import { ADD_DIMENSION_NOTE } from './copy';
-import { libRoots } from './packChoice';
+import { libRoots } from './domain/packChoice';
 import { addDimensionCommand, dimensionOptions } from '../../core/packs/add-dimension';
-import { legendFor } from './legend';
+import { legendFor } from './domain/legend';
 import { WORLD_SOURCE, listPage, listedKinds } from './packs/pages';
 import { type Pointer, chosenTuple, cultureTool, dryLand, hearthCommand, hearthMarks, hearthTool, popTool } from './tools';
 

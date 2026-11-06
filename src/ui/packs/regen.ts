@@ -4,8 +4,8 @@ import type { Culture, Dimension, Era } from '../../../core/human/era';
 import type { SmallState } from '../../../core/world';
 import type { LibraryEntry } from '../../library';
 import type { Content, RegenBase, RegenScope } from '../../regen-track';
-import { beyondWeights, regenerateCommand, withPackImports } from '../human';
-import { worldLibrary } from '../packChoice';
+import { beyondWeights, regenerateCommand, withPackImports } from '../domain/human';
+import { worldLibrary } from '../domain/packChoice';
 
 // 面板顶上的“重新生成”（第六十二轮）：内容改了、地图还没用上时才出现。和上一次生成时的内容比（regen-track.ts 记着），
 // 所以撤销掉改动就没了，就地展开的项、世界里别处改的都算（比的是世界，不是这一页）。

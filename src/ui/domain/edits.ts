@@ -1,6 +1,6 @@
-import { UPLIFT_FLOOR, placedLakeCell } from '../../core/elevation';
-import type { World } from '../../core/world';
-import type { HighlightLayer } from '../render/colors';
+import { UPLIFT_FLOOR, placedLakeCell } from '../../../core/elevation';
+import type { World } from '../../../core/world';
+import type { HighlightLayer } from '../../render/colors';
 
 // 我改过的地方：每格是不是被用户改过（地形、气候、生态、河湖），都从快照里已有的数组算出来，
 // 按数组对象缓存（数组没换就不重算，指针移动时不扫整张图）。三个橡皮擦用它在地图上标出能擦的格、

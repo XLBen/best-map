@@ -8,7 +8,7 @@ import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
 import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
 import { type ViewMode, exec, mapKm, mode, openPanel, provinceSet, selectedCountry, selectedProvince, world } from '../state';
-import { cellsOf, countryAt, countryRows, hasCountries, territoryCommand } from './countries';
+import { cellsOf, countryAt, countryRows, hasCountries, territoryCommand } from './domain/countries';
 import { Slider } from './components/Slider';
 import { brushNew } from './tools/provinces';
 import { focusOn } from './camera';

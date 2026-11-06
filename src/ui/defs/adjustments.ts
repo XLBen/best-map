@@ -4,7 +4,7 @@ import type { AdjustmentDef } from './types';
 import { CLIMATE_BELT_NOTE } from '../copy';
 
 // “调整”面板：整个世界的参数（气候与河流）。拖着停一下先看松手后的样子，松手执行一条可撤销的命令。
-// 地形（陆地多少、岛多少、山多高、海岸曲折、最高的山）第十四轮起只在新建向导里定（wizardTerrain.ts）；
+// 地形（陆地多少、岛多少、山多高、海岸曲折、最高的山）第十四轮起只在新建向导里定（domain/wizardTerrain.ts）；
 // 那几条命令（set_worldgen、set_coast_style、set_planet 的 mountainScale）引擎里照旧有，旧的记录照样重放
 
 const level = (v: number, words: [string, string, string, string]) => (v < 0.25 ? words[0] : v < 0.5 ? words[1] : v < 0.8 ? words[2] : words[3]);

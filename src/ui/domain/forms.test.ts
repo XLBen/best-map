@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { digestWorld } from '../../tools/hash';
-import { Engine } from '../../core/engine';
-import { WORLD_TYPES } from '../../core/generate';
-import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack } from '../../core/packs';
+import { digestWorld } from '../../../tools/hash';
+import { Engine } from '../../../core/engine';
+import { WORLD_TYPES } from '../../../core/generate';
+import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack } from '../../../core/packs';
 
-import { FANTASY_FORMS, POLAR_CONTINENTS, RING_SEA, TWIN_CONTINENTS } from '../../core/packs/fantasy-forms';
-import { type PlanetForm, planetFormSchema } from '../../core/planet-form';
-import { planetProfile } from '../../core/planet-gen';
-import { engineFor, FANTASY_PACK } from '../../core/testing/fixtures';
-import { builtinPacks } from '../../core/packs/builtin-tree';
-import { type LibraryEntry, MY_PACK_NAME } from '../library';
+import { FANTASY_FORMS, POLAR_CONTINENTS, RING_SEA, TWIN_CONTINENTS } from '../../../core/packs/fantasy-forms';
+import { type PlanetForm, planetFormSchema } from '../../../core/planet-form';
+import { planetProfile } from '../../../core/planet-gen';
+import { engineFor, FANTASY_PACK } from '../../../core/testing/fixtures';
+import { builtinPacks } from '../../../core/packs/builtin-tree';
+import { type LibraryEntry, MY_PACK_NAME } from '../../library';
 import {
   FORM_KNOBS,
   blankForm,
@@ -25,8 +25,8 @@ import {
   withScript,
   wizardWorldName,
 } from './forms';
-import type { Command } from '../../core/commands';
-import type { Worldgen } from '../../core/generate';
+import type { Command } from '../../../core/commands';
+import type { Worldgen } from '../../../core/generate';
 
 // 换形态的命令（第十四轮起“调整”里不再换形态，旧的命令记录照样重放）
 const formCommand = (gen: Worldgen, form: PlanetForm | null): Command => ({ op: 'set_worldgen', params: genWithForm(gen, form) });

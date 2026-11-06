@@ -1,10 +1,10 @@
 import { batch } from '@preact/signals';
-import type { Command } from '../../core/commands';
-import { BLOC_KINDS, BLOC_NAMES, type BlocPatch, SUBJECT_NAMES, type SubjectKind, blocList, blocsOf } from '../../core/human';
-import type { Bloc, BlocKind, CountryMeta, World } from '../../core/world';
-import { selectedBloc, sheet } from '../state';
+import type { Command } from '../../../core/commands';
+import { BLOC_KINDS, BLOC_NAMES, type BlocPatch, SUBJECT_NAMES, type SubjectKind, blocList, blocsOf } from '../../../core/human';
+import type { Bloc, BlocKind, CountryMeta, World } from '../../../core/world';
+import { selectedBloc, sheet } from '../../state';
 import { ZH, cellsOf, countryAt, countryOf, patchCommand, withId, withoutId } from './countries';
-import { BLOC_REGION_KINDS } from './map/political';
+import { BLOC_REGION_KINDS } from '../map/political';
 
 // 帝国、联邦、同盟（第二十六轮）的界面逻辑：选中、各种 set_bloc 命令、档案的改动、国家档案里的从属与所在的集团、同盟模式里一格是什么。
 // 不碰界面，测试直接调

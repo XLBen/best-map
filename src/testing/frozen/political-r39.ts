@@ -4,7 +4,7 @@ import type { BlocKind } from '../../../core/world';
 import { type NameMode, nameLines } from '../../../core/name-display';
 import type { World } from '../../../core/world';
 import { type CountryLabelDraw, REGION_KEY } from '../../render/overlay';
-import { countryLabelLines } from '../../ui/countries';
+import { countryLabelLines } from '../../ui/domain/countries';
 import type { RegionSource } from '../../ui/map/modes';
 
 // 片区名（第二十三轮的国名，第二十五轮推广到文化、文化组、每一维的取值）：沿片区的中线弯着写。屏幕与导出的图共用

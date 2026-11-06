@@ -9,8 +9,8 @@ import { type SettleRef, exec, nameMode, selectedSettle, world } from '../state'
 import { focusOn } from './camera';
 import { Line, ShareRow, StackBar, TextField } from './CountryArchive';
 import { Toggle } from './components/Toggle';
-import { capitalCommand, countriesByName, yearText } from './countries';
-import { popText, shareText } from './human';
+import { capitalCommand, countriesByName, yearText } from './domain/countries';
+import { popText, shareText } from './domain/human';
 import { showCountry } from './panels/countries';
 import { CityGlyph } from './panels/settlements';
 import {
@@ -26,7 +26,7 @@ import {
   settleLists,
   settleNamePatch,
   textPatch,
-} from './settlements';
+} from './domain/settlements';
 import { deleteSelected, selectSettle } from './tools/settlements';
 
 // 城市、地标、自定义点的档案（第二十四轮）：右边的抽屉（同国家的档案），选中的那一样。

@@ -1,11 +1,11 @@
 import { signal } from '@preact/signals';
-import type { Command } from '../../core/commands';
-import { placedLakeCell } from '../../core/elevation';
-import type { GeoFeature } from '../../core/features';
-import { type LakeType, PLAIN_LAKE } from '../../core/lake-types';
-import { matchesNaturally } from '../../core/water-types';
-import type { LakeSpec, World } from '../../core/world';
-import { type LakeRef, options } from '../state';
+import type { Command } from '../../../core/commands';
+import { placedLakeCell } from '../../../core/elevation';
+import type { GeoFeature } from '../../../core/features';
+import { type LakeType, PLAIN_LAKE } from '../../../core/lake-types';
+import { matchesNaturally } from '../../../core/water-types';
+import type { LakeSpec, World } from '../../../core/world';
+import { type LakeRef, options } from '../../state';
 
 // 湖（第九轮）：点中的是哪个湖、它是哪一种、给它选类型的命令（底部条见 panels/lakes.tsx，放湖工具见 tools.ts）
 

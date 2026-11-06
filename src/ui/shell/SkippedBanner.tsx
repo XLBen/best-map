@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { skippedNote, world } from '../../state';
 import { LIBRARY_ADD_LABEL } from '../copy';
 import { openLibrary } from '../packs/panel-store';
-import { skippedSummary } from '../skipped';
+import { skippedSummary } from '../domain/skipped';
 
 // 缺了内容跳过的步骤（第三十轮）：提示条上面的一条横幅，说一次。几条时点“详情”在下面列出来；
 // “从资源库添加…”打开资源库（缺的只有一种时筛成那一种，只列不在本世界的）

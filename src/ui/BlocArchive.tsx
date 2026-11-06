@@ -6,9 +6,9 @@ import type { Bloc, World } from '../../core/world';
 import { askUser, exec, nameMode, selectedBloc, world } from '../state';
 import { focusOn } from './camera';
 import { Line, TextField } from './CountryArchive';
-import { BLOC_KIND_OPTIONS, blocCellsOf, blocCommand, blocMembers, blocNamePatch, removeBlocCommand, selectBloc } from './blocs';
+import { BLOC_KIND_OPTIONS, blocCellsOf, blocCommand, blocMembers, blocNamePatch, removeBlocCommand, selectBloc } from './domain/blocs';
 import { Seg } from './common';
-import { countriesByName, withId, withoutId } from './countries';
+import { countriesByName, withId, withoutId } from './domain/countries';
 import { showCountry } from './panels/countries';
 
 // 集团的档案（第二十六轮）：帝国、联邦、同盟。名字与原文、种类、盟主、成员、颜色、删除。改的都是 set_bloc

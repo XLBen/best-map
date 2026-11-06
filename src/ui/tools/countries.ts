@@ -5,7 +5,7 @@ import type { CountryMeta, World } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
 import { askUser, exec, options, selectedCountry, setOptions, sheet, showToast, world } from '../../state';
-import { NO_COUNTRIES, cellsOf, countryAt, countryOf, hasCountries, largestCountry, mergeCommand, newCountryCommand, territoryCommand } from '../countries';
+import { NO_COUNTRIES, cellsOf, countryAt, countryOf, hasCountries, largestCountry, mergeCommand, newCountryCommand, territoryCommand } from '../domain/countries';
 import { type Backdrop, BLOCKED_RGB, EMPTY, type Pointer, type RGB, type ToolHandler, WHITE, aroundPole, guard, isBusy, worldId } from './api';
 import { brushTool } from './brush';
 import { POLE_HINT, POLE_TOAST, lassoAdd, lassoShapes } from './gestures';

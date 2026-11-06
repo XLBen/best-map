@@ -1,8 +1,8 @@
-import { type Command, popText } from '../../core/commands';
-import { type Era, cultureGroupById, worldEra } from '../../core/human';
-import type { LibrarySwitchPlan } from '../../core/packs/switch';
-import type { CountryLayout, World } from '../../core/world';
-import type { LibraryEntry } from '../library';
+import { type Command, popText } from '../../../core/commands';
+import { type Era, cultureGroupById, worldEra } from '../../../core/human';
+import type { LibrarySwitchPlan } from '../../../core/packs/switch';
+import type { CountryLayout, World } from '../../../core/world';
+import type { LibraryEntry } from '../../library';
 import { type PackChoice, beyondGroups, choicePacks, revivedGroups, defaultGroupsOf, defaultLibrary, humanImportCommands, isLibrary, libraryRule, nodeAt, packLabel, switchPlanOf, worldLibrary } from './packChoice';
 
 // 人文（第二十二轮）的界面逻辑：新建向导与“文化 ⋯”里的“生成人文”共用的选择（勾选的包、文化组与各占多少、总人口），

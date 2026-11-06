@@ -1,7 +1,7 @@
-import type { Command } from '../../core/commands';
-import { type WorldgenInput, resolvedParams, worldgenSchema } from '../../core/generate';
-import { resolvedPlanetParams } from '../../core/planet-gen';
-import { planetSchema } from '../../core/world';
+import type { Command } from '../../../core/commands';
+import { type WorldgenInput, resolvedParams, worldgenSchema } from '../../../core/generate';
+import { resolvedPlanetParams } from '../../../core/planet-gen';
+import { planetSchema } from '../../../core/world';
 
 // 新建向导里的“地形”（第十四轮：从“调整整个世界”挪过来）：陆地多少、岛多少、山多高、海岸曲折、最高的山。
 // 只记动过的几项；一项都没动时建出来的世界与以前逐字节相同（命令里不多写任何东西）

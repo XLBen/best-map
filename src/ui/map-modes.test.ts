@@ -6,7 +6,7 @@ import { continents, snapshot, humanExec, type HumanCommand } from '../../core/t
 import type { World } from '../../core/world';
 import { QUIET_ROAD_WIDTH, ROAD_WIDTH, roadStyle } from '../render/settle-draw';
 import { exec, hereOpen, mode, nameMode, parsePrefs, pinCell, pinnedCell, pinnedPart, prefs, selectedCountry, selectedSettle, setPrefs, sheet, tool, world } from '../state';
-import { countryAt } from './countries';
+import { countryAt } from './domain/countries';
 import { humanViews } from './defs/layers';
 import { CATEGORY_DEFS, TOOL_DEFS, category, setTool } from './defs/tools';
 import { highlightLayers } from './map/highlights';
@@ -14,7 +14,7 @@ import { kindOfView, mapKind, mapModes, modeDef, modeFeatures, modeOf, setMapKin
 import { REGION_KEY, countryDraws, regionDraws } from './map/political';
 import { settleOverlay, shownMarks } from './map/settle';
 import { showView } from './panels/LayersPanel';
-import { CAPITAL_NAME_PX, MINOR_ROAD_EDIT_PX, MINOR_ROAD_PX, markKey, roadSet, settleHoverText, settleMarks, settleShow } from './settlements';
+import { CAPITAL_NAME_PX, MINOR_ROAD_EDIT_PX, MINOR_ROAD_PX, markKey, roadSet, settleHoverText, settleMarks, settleShow } from './domain/settlements';
 import { onKeyDown } from './shell/keys';
 import { BUILTIN_MAP_STYLES } from '../../core/packs/map-styles';
 import { type Pointer, pointerText, pointerTool } from './tools';

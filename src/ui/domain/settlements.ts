@@ -1,5 +1,5 @@
-import { type Command, popText } from '../../core/commands';
-import { EXPORT_PARTS, type ExportPartId, exportPartAvailable } from '../../core/export';
+import { type Command, popText } from '../../../core/commands';
+import { EXPORT_PARTS, type ExportPartId, exportPartAvailable } from '../../../core/export';
 import {
   type CityInfo,
   type CityRank,
@@ -18,13 +18,13 @@ import {
   worldLandmarkTypes,
   worldPointTypes,
   capitalLook,
-} from '../../core/human';
-import { type NameMode, nameText } from '../../core/name-display';
-import type { World } from '../../core/world';
-import { CITY_ICONS, type CityIcon, LANDMARK_ICONS, POINT_ICONS, type RoadDraw, type SettleMark } from '../render/settle-draw';
-import type { SettleRef } from '../state';
+} from '../../../core/human';
+import { type NameMode, nameText } from '../../../core/name-display';
+import type { World } from '../../../core/world';
+import { CITY_ICONS, type CityIcon, LANDMARK_ICONS, POINT_ICONS, type RoadDraw, type SettleMark } from '../../render/settle-draw';
+import type { SettleRef } from '../../state';
 import { hasCountries } from './countries';
-import type { ModeDef } from './map/modes';
+import type { ModeDef } from '../map/modes';
 
 // 城市、道路、地标、自定义点（第二十四轮）的界面逻辑：有没有、放大到多少画哪几级、地图上画的点与道路、
 // 工具认鼠标下的是哪一个、各种命令、档案的 patch、分开导出的列表。不碰界面，测试直接调

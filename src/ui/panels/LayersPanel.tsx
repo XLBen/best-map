@@ -9,7 +9,7 @@ import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { SEASON_NOTE } from '../copy';
 import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
-import { hasAnySettle } from '../settlements';
+import { hasAnySettle } from '../domain/settlements';
 import { kindOfView } from '../map/modes';
 
 // 整个星球的投影（第十三轮 G4）：只是看的方式，存在这个浏览器里，不写进世界文件

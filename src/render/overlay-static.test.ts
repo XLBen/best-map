@@ -4,7 +4,7 @@ import { blocList } from '../../core/human';
 import { snapshot } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { r40Engine } from '../../tools/r40-world';
-import { countriesByName, vassalsOf } from '../ui/countries';
+import { countriesByName, vassalsOf } from '../ui/domain/countries';
 import { type MapKind, modeDef } from '../ui/map/modes';
 import { clearRegionGeometry, countryDraws, regionDraws } from '../ui/map/political';
 import { countryDrawsRef, regionDrawsRef } from '../testing/frozen/political-r39';

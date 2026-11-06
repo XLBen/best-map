@@ -4,7 +4,7 @@ import type { Guide, World } from '../../../core/world';
 import type { Shape } from '../../render/overlay';
 import { previewCommand, redrawTick } from '../../state';
 import { type BarPreview, barPreview, onBarPreviewClear } from '../barPreview';
-import { Settle } from '../exact';
+import { Settle } from '../domain/exact';
 import type { Preview } from '../tools';
 import { riverTypeOfGuide } from './model';
 import { tempLine } from './query';

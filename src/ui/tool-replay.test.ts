@@ -3,7 +3,7 @@ import type { Command } from '../../core/commands';
 import { brushCells } from '../../core/select';
 import { continents } from '../../core/testing/fixtures';
 import { exec, options, selectedLake, selectedProvince, selectedRiver, setOptions, sliderActive, toast, world } from '../state';
-import { riverTool, unwaterTool } from './riverCourse';
+import { riverTool, unwaterTool } from './river';
 import {
   type Pointer,
   type Preview,
