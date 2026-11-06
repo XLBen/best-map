@@ -54,6 +54,24 @@ export function idbTx(stores: string[], mode: IDBTransactionMode, run: (...s: ID
   );
 }
 
+// kv 表上的一个请求（参考图、自动保存的条数；第七十轮以前是 state.ts 里的 idb）
+export function kvRequest<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
+  return openDb().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const req = run(db.transaction('kv', mode).objectStore('kv'));
+        req.onsuccess = () => {
+          resolve(req.result as T);
+          db.close();
+        };
+        req.onerror = () => {
+          reject(req.error);
+          db.close();
+        };
+      }),
+  );
+}
+
 // kv 表里的一项（信任的脚本、打开带脚本的世界时的标记……）。读不了、写不了时抛错，调用方自己决定怎么退
 export function kvGet<T>(key: string): Promise<T | undefined> {
   return idbGet<T>('kv', key);
