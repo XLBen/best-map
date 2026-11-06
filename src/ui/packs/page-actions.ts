@@ -22,14 +22,15 @@ import { runTrusted } from './row-actions';
 
 // 大星球上一步要算一会儿：连着改几项时，后一步等前一步算完（和河湖类型的编辑同一个做法）
 let tail: Promise<unknown> = Promise.resolve();
-export function queueWorld(make: (w: World) => Command | null, busy = '正在计算…'): Promise<boolean> {
+// note：做完后顶上那句话（make 之后才问，可以用 make 里算出来的数）
+export function queueWorld(make: (w: World) => Command | null, busy = '正在计算…', note?: () => Parameters<typeof runTrusted>[2]): Promise<boolean> {
   const epoch = worldEpoch.value;
   const job = tail.then(async () => {
     await whenEditsIdle();
     const w = world.value;
     if (!w || worldEpoch.value !== epoch) return false;
     const cmd = make(w);
-    return cmd ? runTrusted(cmd, busy) : true;
+    return cmd ? runTrusted(cmd, busy, note?.()) : true;
   });
   tail = job.catch(() => false);
   return job;

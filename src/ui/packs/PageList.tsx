@@ -1,38 +1,43 @@
-import { Check, ChevronRight, Eraser, GripVertical, Plus } from 'lucide-preact';
-import { useMemo, useState } from 'preact/hooks';
+import { ChevronRight, Eraser, GripVertical, Plus } from 'lucide-preact';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { cleanableSet } from '../../../core/content/cleanable';
-import type { ImportGates } from '../../../core/packs/closure';
+import { DIMENSION } from '../../../core/content/link-rules';
 import { kindOf } from '../../../core/content/registry';
 import { libEdits } from '../../library-edit';
 import { showToast } from '../../state';
-import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, entryOf, listPage, rowsOf, sourceKind } from './pages';
+import { type ListPage, type ListRow, type PageCtx, type Route, type SourceRef, listPage, sourceKind } from './pages';
 import { newItemIn } from './page-actions';
-import { addBlock, addGates, addRows, openImport, otherLibOptions } from './page-import';
 import { InsideRows } from './PageChildren';
+import { PickBox } from './PickBox';
 import { RefPicker } from './RefPicker';
-import { copyToMine, goTo, libPanel } from './panel-store';
+import { copyToMine, flashClass, goTo, libPanel, openRoute } from './panel-store';
+import { allLook } from './pick-look';
+import { addOther, otherLibOptions } from './pick-other';
+import { setPicksIn } from './pick-store';
+import { type PickView, kindPickable, lookOf, pickView } from './pick-view';
 import { swatchOf } from './row-actions';
 import { tidyWorld } from './tidy';
 
-// 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。库里的每一行右边写在不在本世界（能添加）。
-// 我的库里能拖动换先后（同一个小包里）
+// 列表（第五十九轮）：这一种内容的每一项，点进去是这一项的页面。我的库里能拖动换先后（同一个小包里，把手在右边）。
+// 第六十七轮：看库就是添加。有地方加时库的每一行最左边一个勾（PickBox），列表头“全选”；点一行在右栏打开（openRoute）
 
 let dragging: string | null = null;
 
 const FAINT_NOTE = '生成后没用到，清理时会清掉';
 
-function Row({ r, src, ctx, movable, gates }: { r: ListRow; src: SourceRef; ctx: PageCtx; movable: boolean; gates: ImportGates | null }) {
+export function Row({ r, src, ctx, movable, v }: { r: ListRow; src: SourceRef; ctx: PageCtx; movable: boolean; v: PickView | null }) {
   const swatch = swatchOf(r);
   const st = r.row.status;
   const [over, setOver] = useState(false);
-  const inLib = src.t === 'lib' && !!ctx.world;
-  // 走导入的闭包（第六十一轮）：一个政体也带上派系，不留下找不到的引用。灰的写原因，不能加（第六十五轮）
-  const blocked = inLib && !st.on && !st.locked ? addBlock(gates, r.row) : null;
-  const add = () => addRows([r.row], src, ctx, `添加到本世界：${r.kind.label}“${r.name}”`);
+  const ref = { kind: r.kind.id, id: r.id };
+  const pick = v && kindPickable(v, r.kind.id) ? v : null;
+  const note = pick ? lookOf(pick, ref).note : null;
   return (
     <div
-      class={`lp-row ${over ? 'drop-before' : ''} ${r.mark?.faint ? 'faint' : ''}`}
+      class={`lp-row ${over ? 'drop-before' : ''} ${r.mark?.faint ? 'faint' : ''} ${flashClass(r.kind.id, r.id)}`}
       title={r.mark?.faint ? FAINT_NOTE : undefined}
+      data-pick-row={v ? '' : undefined}
+      tabIndex={v ? -1 : undefined}
       draggable={movable}
       onDragStart={(e) => {
         dragging = r.id;
@@ -58,12 +63,8 @@ function Row({ r, src, ctx, movable, gates }: { r: ListRow; src: SourceRef; ctx:
         if (!done.ok) showToast(done.error, true);
       }}
     >
-      {movable && (
-        <span class="lp-grip" title="拖动换先后">
-          <GripVertical />
-        </span>
-      )}
-      <button class="lp-row-main" onClick={() => goTo({ p: 'item', kind: r.kind.id, id: r.id })}>
+      {pick ? <PickBox v={pick} r={ref} ctx={ctx} /> : v && <span class="lp-pick" />}
+      <button class="lp-row-main" onClick={() => openRoute({ p: 'item', kind: r.kind.id, id: r.id })}>
         {swatch ? <span class="swatch" style={{ background: swatch }} /> : null}
         <span class="lp-row-name ellipsis">{r.name}</span>
         {r.hint && <span class="hint ellipsis lp-row-hint">{r.hint}</span>}
@@ -75,56 +76,68 @@ function Row({ r, src, ctx, movable, gates }: { r: ListRow; src: SourceRef; ctx:
         )}
         {st.isDefault && <span class="hint">{r.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
       </button>
-      {inLib &&
-        (st.on ? (
-          <span class="lp-on" title="已在本世界">
-            <Check />
-          </span>
-        ) : blocked ? (
-          <span class="hint ellipsis lp-row-why" title={blocked}>
-            {blocked}
-          </span>
-        ) : (
-          <button class="small" disabled={!!st.locked} title={st.locked ?? '添加到本世界'} onClick={add}>
-            添加
-          </button>
-        ))}
+      {note && (
+        <span class="hint ellipsis lp-row-why" title={note}>
+          {note}
+        </span>
+      )}
+      {movable && (
+        <span class="lp-grip end" title="拖动换先后">
+          <GripVertical />
+        </span>
+      )}
       <ChevronRight class="lp-chevron" />
     </div>
   );
 }
 
-// 别的库里有、这一份里没有的：选一项打开导入窗口，勾好它
+// 别的库里有、这一份里没有的：选一项直接加（第六十七轮，不再开窗口）
 function FromOtherLib({ p, src, ctx }: { p: ListPage; src: SourceRef; ctx: PageCtx }) {
   const options = useMemo(() => otherLibOptions(p.kind.id, src, ctx), [p.kind.id, src.t === 'lib' ? src.key : '', ctx.lib, ctx.world]);
   if (!options.length) return null;
   return (
     <RefPicker add title="从别的库加" options={options} onPick={(id) => {
       const o = options.find((x) => x.id === id);
-      if (o) openImport({ target: src, from: o.lib, pick: { kind: p.kind.id, id } }, ctx);
+      if (o) void addOther(src, o.lib, { kind: p.kind.id, id }, ctx);
     }}>
       从别的库加
     </RefPicker>
   );
 }
 
-// 这一份里还不在本世界的全部添加：灰的跳过，提示写着（第六十五轮）
-function AddAll({ p, src, ctx, gates }: { p: ListPage; src: SourceRef; ctx: PageCtx; gates: ImportGates | null }) {
-  const e = entryOf(src, ctx);
-  const left = p.sections.some((s) => s.rows.some((r) => !r.row.status.on && !r.row.status.locked && !addBlock(gates, r.row)));
-  if (!e || !ctx.world || !left) return null;
-  const run = () => addRows(rowsOf(src, p.kind, ctx).filter((r) => !r.status.on && !r.status.locked), src, ctx, `添加到本世界：${p.title}`);
+// 列表头的“全选”：这一页能勾的都勾上（灰的、已经有了的跳过）；变量的取值页勾的是这个变量
+function AllBox({ v, p, route, ctx }: { v: PickView; p: ListPage; route: Extract<Route, { p: 'list' }>; ctx: PageCtx }) {
+  const refs = useMemo(() => p.sections.flatMap((s) => s.rows.filter((r) => kindPickable(v, r.kind.id)).map((r) => ({ kind: r.kind.id, id: r.id }))), [p]);
+  const head = route.dim ? { kind: DIMENSION, id: route.dim } : undefined;
+  const a = allLook(refs, v.look, head);
   return (
-    <button class="small" title="这一种还不在本世界的都添加" onClick={run}>
-      全部添加
-    </button>
+    <label class="check lp-all" title="这一页能勾的都勾上（灰的、已经有了的跳过）">
+      <input
+        type="checkbox"
+        checked={a.checked}
+        disabled={a.disabled}
+        ref={(el) => {
+          if (el) el.indeterminate = a.mixed;
+        }}
+        onChange={(e) => {
+          const on = (e.target as HTMLInputElement).checked;
+          setPicksIn(v.key, on ? a.acts : a.clears, on, ctx);
+        }}
+      />
+      全选
+    </label>
   );
 }
 
 export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list' }>; src: SourceRef; ctx: PageCtx }) {
   const [q, setQ] = useState('');
   const p = useMemo(() => listPage(src, route, ctx, q), [src.t === 'lib' ? src.key : '', route, ctx.world, ctx.lib, q]);
-  const gates = useMemo(() => addGates(src, ctx), [src.t === 'lib' ? src.key : '', ctx.world, ctx.lib]);
+  const v = pickView(src, ctx);
+  const search = useRef<HTMLInputElement>(null);
+  // 进库的列表时光标在搜索框（第六十七轮）
+  useEffect(() => {
+    if (v) search.current?.focus({ preventScroll: true });
+  }, [!!v]);
   if (!p) return null;
   const create = async (kindId: string, defaults: Record<string, unknown>) => {
     const kind = kindOf(kindId);
@@ -135,14 +148,15 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
   const movable = p.canMove && !route.dim && !route.group;
   // 这一页上有变淡的才写；数是全世界的（点了清的是全世界的，和首页一样）
   const faint = ctx.world && p.sections.some((s) => s.rows.some((r) => r.mark?.faint)) ? cleanableSet(ctx.world).size : 0;
+  const searchable = p.searchable || !!q || !!v;
   return (
     <>
       <div class="lp-tools">
-        {(p.searchable || q) && <input class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
-        {!(p.searchable || q) && <span class="grow" />}
-        <AddAll p={p} src={src} ctx={ctx} gates={gates} />
+        {v && <AllBox v={v} p={p} route={route} ctx={ctx} />}
+        {searchable && <input ref={search} class="grow" type="search" placeholder="搜索" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />}
+        {!searchable && <span class="grow" />}
         {!p.readonly && <FromOtherLib p={p} src={src} ctx={ctx} />}
-        {p.readonly && sourceKind(src, ctx) !== 'world' && (
+        {p.readonly && sourceKind(src, ctx) !== 'world' && sourceKind(src, ctx) !== 'file' && (
           <button class="small" title={p.readonly} onClick={() => void copyToMine(src)}>
             复制成我的库
           </button>
@@ -172,7 +186,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
         <section class="lp-section" key={k}>
           {s.label &&
             (s.link ? (
-              <button class="lp-section-link" onClick={() => goTo(s.link!)}>
+              <button class="lp-section-link" onClick={() => openRoute(s.link!)}>
                 <h5>{s.label}</h5>
                 <ChevronRight />
               </button>
@@ -181,7 +195,7 @@ export function PageList({ route, src, ctx }: { route: Extract<Route, { p: 'list
             ))}
           <div class="lp-rows">
             {s.rows.map((r) => (
-              <Row key={r.key} r={r} src={src} ctx={ctx} gates={gates} movable={movable && r.kind.id === p.kind.id} />
+              <Row key={r.key} r={r} src={src} ctx={ctx} v={v} movable={movable && r.kind.id === p.kind.id} />
             ))}
           </div>
         </section>

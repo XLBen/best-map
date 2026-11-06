@@ -22,9 +22,9 @@ import { CATEGORY_DEFS } from './defs/tools';
 import { Help } from './Help';
 import { MapView } from './MapView';
 import { MapsDialog } from './maps/MapsDialog';
-import { ImportDialog } from './packs/ImportDialog';
 import { PackDialog } from './packs/PackDialog';
 import { LibPanel } from './packs/LibPanel';
+import { libWide } from './packs/panel-store';
 import { MorePanel, WorldMenu } from './panels/ActionsPanel';
 import { AdjustPanel } from './panels/AdjustPanel';
 import { LayersPanel } from './panels/LayersPanel';
@@ -193,7 +193,7 @@ export function App() {
   // 图标一种大小、一种粗细（顶栏的大一号，在 TopBar 里写）
   return (
     <LucideProvider size={16} strokeWidth={1.8}>
-      <div class={`app ${sheet.value ? 'with-sheet' : ''}`}>
+      <div class={`app ${sheet.value ? 'with-sheet' : ''} ${libWide.value ? 'lib-wide' : ''}`}>
         <MapView />
         {!w && !wizardOpen.value && <div class="loading">{busy.value ?? '正在准备…'}</div>}
         {!hidden && (
@@ -216,7 +216,6 @@ export function App() {
         </div>
         <CursorHint />
         <Wizard />
-        <ImportDialog />
         <PackDialog />
         <MapsDialog />
         <Help />

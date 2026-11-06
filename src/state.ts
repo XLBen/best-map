@@ -268,7 +268,8 @@ export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 're
 // 编辑后的变化：一句话汇总（带撤销、“换一个”）与几秒钟的高亮
 // action：提示条上的另一个按钮（比如新建了特有生态后的“编辑”）
 export type NoteAction = { label: string; run: () => void };
-export const changeNote = signal<{ id: number; head: string; detail: string; undoable: boolean; action?: NoteAction } | null>(null);
+// undo：撤销的不是世界（加到我的库之后的提示条，第六十七轮）
+export const changeNote = signal<{ id: number; head: string; detail: string; undoable: boolean; action?: NoteAction; undo?: () => void } | null>(null);
 export const flash = signal<{ cells: number[]; at: number } | null>(null);
 // 改完后变化的格淡淡地亮一下，这么久（毫秒）淡完
 export const FLASH_MS = 1200;
@@ -923,9 +924,9 @@ function applySnapshot(s: Snapshot | LightSnapshot, fresh = false) {
   scheduleAutosave();
 }
 
-// 改的不是世界（存回我的库）：顶上说一句，带一个按钮
-export function noteAction(head: string, action: NoteAction) {
-  changeNote.value = { id: ++noteId, head, detail: '', undoable: false, action };
+// 改的不是世界（存回我的库）：顶上说一句，带一个按钮；undo：再带一个“撤销”（撤销那个库）
+export function noteAction(head: string, action: NoteAction | undefined, undo?: () => void) {
+  changeNote.value = { id: ++noteId, head, detail: '', undoable: false, ...(action ? { action } : {}), ...(undo ? { undo } : {}) };
   noteTimer.start(NOTE_ACTION_MS);
 }
 
@@ -2025,7 +2026,8 @@ export function previewAdjust(cmd: Command | null, pause = 200) {
 
 // 松手：执行 cmd。预览的就是它时，预览的世界一直留到结果换上（不先闪回原样），Worker 直接采用预览算好的结果；
 // 不是它就先去掉。没有变化、执行失败时（世界没换）也去掉
-export async function execAdjust(cmd: Command, label?: string): Promise<boolean> {
+// note：顶上那句话换成这个、多一个按钮（资源库面板的“已添加 N 项 · 去看看”，第六十七轮）
+export async function execAdjust(cmd: Command, label?: string, note?: { head?: string; action?: NoteAction }): Promise<boolean> {
   if (adjustTimer) clearTimeout(adjustTimer);
   adjustTimer = null;
   const key = JSON.stringify(cmd);
@@ -2035,7 +2037,7 @@ export async function execAdjust(cmd: Command, label?: string): Promise<boolean>
   if (adjustPreviewWorld.value?.key !== key) adjustPreviewWorld.value = null;
   settling = key;
   try {
-    return await exec(cmd, label);
+    return await exec(cmd, label, note?.action, note?.head);
   } finally {
     if (settling === key) settling = '';
     if (adjustPreviewWorld.value?.key === key) adjustPreviewWorld.value = null;

@@ -3,7 +3,7 @@ import type { IslandType } from '../../../core/island-types';
 import { type MapStyle, styleRgba } from '../../../core/map-style';
 import { packFileName } from '../../../core/packs';
 import { saveItem } from '../../library';
-import { askUser, download, execAdjust, focusSpecies, knowIsolation, openPanel, openWaterTypeEditor, sheet, showToast } from '../../state';
+import { type NoteAction, askUser, download, execAdjust, focusSpecies, knowIsolation, openPanel, openWaterTypeEditor, sheet, showToast } from '../../state';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { scriptTrustText } from '../copy';
 import { category, setTool } from '../defs/tools';
@@ -14,7 +14,7 @@ import { isolationNote } from './Scripts';
 // 面板里一行的样子（色块、示例名字）和按钮做的事（先问脚本、存进资源库、导出、打开详细编辑）
 
 // 没信任过的脚本先问，然后做这条命令
-export async function runTrusted(cmd: Command, busy: string): Promise<boolean> {
+export async function runTrusted(cmd: Command, busy: string, note?: { head?: string; action?: NoteAction }): Promise<boolean> {
   const list = await untrustedScripts(cmd);
   if (list.length) {
     await knowIsolation();
@@ -30,7 +30,7 @@ export async function runTrusted(cmd: Command, busy: string): Promise<boolean> {
     if (v !== 'ok') return false;
     await trustScripts(list);
   }
-  return execAdjust(cmd, busy);
+  return execAdjust(cmd, busy, note);
 }
 
 // ---------- 一行的样子 ----------

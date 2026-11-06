@@ -70,8 +70,15 @@ function ChangeNote({ n }: { n: NonNullable<typeof changeNote.value> }) {
       <span class="notice-text" title={n.detail || undefined}>
         <b>{n.head}</b>
       </span>
-      {n.undoable && canUndo.value && (
-        <button class="pill-btn" onClick={() => void undo()}>
+      {((n.undoable && canUndo.value) || n.undo) && (
+        <button
+          class="pill-btn"
+          onClick={() => {
+            if (!n.undo) return void undo();
+            n.undo();
+            changeNote.value = null;
+          }}
+        >
           <Undo2 /> 撤销
         </button>
       )}

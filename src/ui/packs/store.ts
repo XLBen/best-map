@@ -3,7 +3,7 @@ import type { PackRead } from '../../../core/packs';
 import { refreshLibrary } from '../../library';
 
 // 资源库面板“⋯”里打开的弹窗的状态（PackDialog.tsx）：资源包的列表、读好的一个文件、从本世界存进资源库。
-// 都是点了才开（面板的“⋯”、生态抽屉的“读文件”），不会自己弹出来。面板自己的状态在 panel-store.ts，导入窗口在 page-import.ts
+// 都是点了才开（面板的“⋯”、生态抽屉的“读文件”），不会自己弹出来。面板自己的状态在 panel-store.ts，勾选在 pick-store.ts
 
 export type DialogView =
   // 资源包：资源库里的包（导出、删除）

@@ -5,7 +5,7 @@ import { importGates, importPreview } from '../../../core/packs/closure';
 import { continents } from '../../../core/testing/fixtures';
 import type { LibraryEntry } from '../../library';
 import { worldEpoch } from '../../state';
-import { rowLook } from './page-import-tree';
+import { rowLook } from './pick-look';
 import type { PageCtx } from './page-source';
 import {
   NO_PICKS,
@@ -26,7 +26,7 @@ import {
   togglePickIn,
 } from './pick-store';
 
-// 第六十六轮：按库记的勾选、点灰的行把要的一起勾上（连带的老规则在 page-import.test.ts 里，导入窗口走的是同一套函数）
+// 第六十六轮：按库记的勾选、点灰的行把要的一起勾上（连带的老规则在 pick-look.test.ts 里）
 
 const PACKS = builtinPacks();
 const LIB: LibraryEntry[] = PACKS.map((pack) => ({ key: pack.id, pack, builtin: true, mine: false, installedAt: 0 }));
@@ -219,7 +219,7 @@ describe('点灰的行', () => {
     dropFileSource(key);
   });
 
-  it('纯函数：导入窗口也用它，勾选原来的对象不动', () => {
+  it('纯函数：勾选原来的对象不动', () => {
     const c = fantasy();
     const ask = { source: pack('modern'), target: { t: 'world' as const, world: c.world! }, picks: [], off: [] };
     const before = { picks: [], off: [], added: [] };

@@ -1,5 +1,5 @@
 import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Eraser, Gem, Globe, Grid3x3, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Arrange } from '../../../core/content/arrange';
 import { cleanableSet } from '../../../core/content/cleanable';
 import { wizardOpen } from '../../state';
@@ -8,11 +8,15 @@ import { type ArrangeAction, arrangeFor, arrangeTitle, canArrange, cardActions, 
 import { applyArrange } from './page-actions';
 import { type Judged, dragView, startDrag } from './page-drag';
 import { type Card, type PageCtx, type SourceRef, homePage, waterHub } from './pages';
-import { goTo } from './panel-store';
+import { Row } from './PageList';
+import { searchSource } from './page-search';
+import { openRoute } from './panel-store';
+import { type PickView, cardPicks, pickView } from './pick-view';
 import { tidyWorld } from './tidy';
 
 // 首页与“生态与水系”这一层（第五十九轮）：几段，每种内容一张带个数的卡片（数据见 pages.ts 的 homePage）。
-// 第六十轮：我的库里能把一张卡拖到另一张上（融入），上级写的“含 X”能拖出来（拆出来）；卡片的“⋯”做同样的事，没有鼠标时用
+// 第六十轮：我的库里能把一张卡拖到另一张上（融入），上级写的“含 X”能拖出来（拆出来）；卡片的“⋯”做同样的事，没有鼠标时用。
+// 第六十七轮：库的首页顶上搜整个库；能勾时卡片上写这种勾了几项（“已勾 3”）
 
 const ICONS: Record<string, Icon> = {
   cultureGroup: UsersRound,
@@ -131,7 +135,12 @@ function Contains({ c, a, cardId }: { c: Pick<Card, 'contains' | 'kids'>; a: Arr
   );
 }
 
-function CardButton({ c, a }: { c: Card; a: Arranging | null }) {
+// 卡片上“已勾 3”
+function Picked({ n }: { n: number }) {
+  return n > 0 ? <span class="lp-picked">已勾 {n}</span> : null;
+}
+
+function CardButton({ c, a, v }: { c: Card; a: Arranging | null; v?: PickView | null }) {
   const I = (c.icon && ICONS[c.icon]) || Sprout;
   const d = dragView.value;
   const actions = a ? cardActions(c.id, a.arrange, c.kids) : [];
@@ -142,8 +151,8 @@ function CardButton({ c, a }: { c: Card; a: Arranging | null }) {
       role="button"
       tabIndex={0}
       data-card={c.id}
-      onClick={() => goTo(c.route)}
-      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && goTo(c.route)}
+      onClick={() => openRoute(c.route)}
+      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && openRoute(c.route)}
       onPointerDown={a ? (e) => startDrag(e, { source: c.id, label: c.title, judge: judgeDrop(a, cardChild(c.id), c.id, null) }) : undefined}
     >
       <span class="lp-card-icon">
@@ -153,18 +162,19 @@ function CardButton({ c, a }: { c: Card; a: Arranging | null }) {
         <span class="lp-card-title ellipsis">{c.title}</span>
         <Contains c={c} a={a} cardId={c.id} />
       </span>
+      <Picked n={cardPicks(c, v ?? null)} />
       <span class="lp-count">{c.count}</span>
       {a && actions.length > 0 && <CardMenu actions={actions} a={a} />}
     </div>
   );
 }
 
-function EraCard({ era, a }: { era: NonNullable<ReturnType<typeof homePage>['era']>; a: Arranging | null }) {
+function EraCard({ era, a, v }: { era: NonNullable<ReturnType<typeof homePage>['era']>; a: Arranging | null; v: PickView | null }) {
   const d = dragView.value;
   const actions = a ? cardActions('era', a.arrange, era.kids) : [];
   const state = d && d.over === 'era' ? (d.ok ? 'drop-ok' : d.refuse ? 'drop-no' : '') : '';
   return (
-    <div class={`lp-era ${era.empty ? 'empty' : ''} ${state}`} role="button" tabIndex={0} data-card="era" onClick={() => goTo(era.route)} onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && goTo(era.route)}>
+    <div class={`lp-era ${era.empty ? 'empty' : ''} ${state}`} role="button" tabIndex={0} data-card="era" onClick={() => openRoute(era.route)} onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && openRoute(era.route)}>
       <span class="lp-card-icon">
         <BookOpen />
       </span>
@@ -176,14 +186,38 @@ function EraCard({ era, a }: { era: NonNullable<ReturnType<typeof homePage>['era
         </span>
         <span class="hint ellipsis">{era.summary}</span>
       </span>
+      <Picked n={cardPicks({ id: 'era', kids: era.kids }, v)} />
       {a && actions.length > 0 && <CardMenu actions={actions} a={a} />}
     </div>
   );
 }
 
+// 搜整个库：每种一段，行和列表上的一样（能勾、点了在右栏打开）
+function SearchHits({ src, ctx, q, v }: { src: SourceRef; ctx: PageCtx; q: string; v: PickView | null }) {
+  const hits = useMemo(() => searchSource(src, ctx, q), [src.t === 'lib' ? src.key : '', ctx.lib, ctx.world, q]);
+  if (!hits.length) return <p class="hint lp-note">没有找到</p>;
+  return (
+    <>
+      {hits.map((s) => (
+        <section class="lp-section" key={s.label}>
+          <h5>{s.label}</h5>
+          <div class="lp-rows">
+            {s.rows.map((r) => (
+              <Row key={r.key} r={r} src={src} ctx={ctx} v={v} movable={false} />
+            ))}
+          </div>
+          {s.more > 0 && <p class="hint lp-note">还有 {s.more} 个，多写几个字</p>}
+        </section>
+      ))}
+    </>
+  );
+}
+
 export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+  const [q, setQ] = useState('');
   const arrange = arrangeFor(src, ctx);
   const p = homePage(src, ctx, arrange);
+  const v = pickView(src, ctx);
   if (p.noWorld) {
     return (
       <div class="lp-empty">
@@ -196,9 +230,23 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   }
   const a: Arranging | null = canArrange(src, ctx) ? { src, ctx, arrange } : null;
   const clean = src.t === 'world' && ctx.world ? cleanableSet(ctx.world).size : 0;
+  const search = src.t === 'lib' && (
+    <div class="lp-tools lp-home-search">
+      <input class="grow" type="search" placeholder="搜索整个库" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+    </div>
+  );
+  if (q.trim()) {
+    return (
+      <>
+        {search}
+        <SearchHits src={src} ctx={ctx} q={q} v={v} />
+      </>
+    );
+  }
   return (
     <>
-      {p.era && <EraCard era={p.era} a={a} />}
+      {search}
+      {p.era && <EraCard era={p.era} a={a} v={v} />}
       {p.note && <p class="hint">{p.note}</p>}
       {clean > 0 && (
         <button class="lp-clean" title="清掉列表上变淡的内容，地图不变" onClick={() => void tidyWorld()}>
@@ -212,7 +260,7 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
           <h5>{s.title}</h5>
           <div class="lp-cards">
             {s.cards.map((c) => (
-              <CardButton key={c.id} c={c} a={a} />
+              <CardButton key={c.id} c={c} a={a} v={v} />
             ))}
           </div>
         </section>
@@ -223,11 +271,12 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
 
 export function WaterHubPage({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const hub = waterHub(src, ctx);
+  const v = pickView(src, ctx);
   return (
     <>
       <div class="lp-cards">
         {hub.cards.map((c) => (
-          <CardButton key={c.id} c={c} a={null} />
+          <CardButton key={c.id} c={c} a={null} v={v} />
         ))}
       </div>
       <p class="hint lp-note">总表上打勾，和生态页、河湖页改的是同一份</p>

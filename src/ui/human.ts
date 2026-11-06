@@ -3,7 +3,7 @@ import { type Era, cultureGroupById, worldEra } from '../../core/human';
 import type { LibrarySwitchPlan } from '../../core/packs/switch';
 import type { CountryLayout, World } from '../../core/world';
 import type { LibraryEntry } from '../library';
-import { type PackChoice, beyondGroups, choicePacks, defaultGroupsOf, defaultLibrary, humanImportCommands, isLibrary, libraryRule, nodeAt, packLabel, switchPlanOf, worldLibrary } from './packChoice';
+import { type PackChoice, beyondGroups, choicePacks, revivedGroups, defaultGroupsOf, defaultLibrary, humanImportCommands, isLibrary, libraryRule, nodeAt, packLabel, switchPlanOf, worldLibrary } from './packChoice';
 
 // 人文（第二十二轮）的界面逻辑：新建向导与“文化 ⋯”里的“生成人文”共用的选择（勾选的包、文化组与各占多少、总人口），
 // 人数、密度的写法。不碰界面，测试直接调。
@@ -38,9 +38,10 @@ export interface HumanChoice extends PackChoice {
   settlements: { on: boolean; landmarks: boolean };
 }
 
-// 世界里自己的、从别的库加来的组（比重不是 0 的）默认参与
+// 世界里自己的、从别的库加来的组（比重不是 0 的）默认参与；这个库默认不带、从资源库面板加进来的组也是（第六十七轮，revivedGroups）
+const extraGroups = (small: Small | null | undefined, library: string | null, lib: readonly LibraryEntry[]) => [...beyondGroups(small, library, lib), ...revivedGroups(small, library, lib)];
 export const beyondWeights = (small: Small | null | undefined, library: string | null, lib: readonly LibraryEntry[], has: readonly { id: string }[]) =>
-  beyondGroups(small, library, lib)
+  extraGroups(small, library, lib)
     .filter((g) => g.weight !== 0 && !has.some((x) => x.id === g.id))
     .map((g) => ({ id: g.id, weight: 1 }));
 
@@ -139,7 +140,7 @@ function reviveGroups(c: Pick<PackChoice, 'groups'>, small?: Small | null): Comm
 
 // 第五十九轮：“本世界加的”组用户取消了就记下来（比重写 0），重开面板时不再勾上。再勾上时 reviveGroups 去掉这个 0
 function retireGroups(c: Pick<PackChoice, 'library' | 'groups'>, small: Small | null | undefined, lib: readonly LibraryEntry[]): Command[] {
-  return beyondGroups(small, c.library, lib)
+  return extraGroups(small, c.library, lib)
     .filter((g) => g.weight !== 0 && !c.groups.some((x) => x.id === g.id))
     .map((g): Command => ({ op: 'set_content', kind: 'cultureGroup', id: g.id, item: { ...g, weight: 0 } as unknown as Record<string, unknown> }));
 }

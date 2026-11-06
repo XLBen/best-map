@@ -2,10 +2,9 @@ import { erasing, helpOpen, measure, openPanel, picking, provinceSet, redo, sele
 import { mapApi } from '../camera';
 import { TOOL_DEFS, category, eraserModes, setTool, toolsOf } from '../defs/tools';
 import { nudgeSlider } from './sliders';
-import { closeImport, importWindow } from '../packs/page-import';
 import { packDialog } from '../packs/store';
 import { libEdits } from '../../library-edit';
-import { closeLibrary, goBack, lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
+import { closeLibrary, closeSide, goBack, lastPress, libPanel, livePanel, pageCtx } from '../packs/panel-store';
 import { undoTarget } from '../packs/pages';
 import { closeFormEditor, formEditor } from '../form-store';
 import { mapsDialog, saveMap, saveMapAs } from '../maps/store';
@@ -23,7 +22,7 @@ export function onKeyDown(e: KeyboardEvent) {
   // 正在框里写时先离开框（写的东西先提交，再存）
   if (mod && !e.altKey && (e.key.toLowerCase() === 's' || e.code === 'KeyS')) {
     e.preventDefault();
-    if (e.repeat || !world.value || helpOpen.value || wizardOpen.value || packDialog.value || importWindow.value || formEditor.value) return;
+    if (e.repeat || !world.value || helpOpen.value || wizardOpen.value || packDialog.value || formEditor.value) return;
     if (typing(e.target)) (e.target as HTMLElement).blur();
     openPanel.value = null;
     void (e.shiftKey ? saveMapAs() : saveMap());
@@ -33,7 +32,6 @@ export function onKeyDown(e: KeyboardEvent) {
     // （信任的问话、安全模式的问话自己先接住 Esc，见 Ask.tsx）资源包弹窗 → 我的地图 → 说明 → 星球形态编辑器 → 向导 → 弹出面板 → 输入框 → 正在画的一笔 →
     // 工具自己的（不截走别的河）→ 量距离（先清空再退出）→ 吸管 → 隐藏的界面 → 资源库（编辑器开着时先回到列表）→ 抽屉 → 选中的省份 / 地名 / 河
     if (packDialog.value) packDialog.value = null;
-    else if (importWindow.value) closeImport();
     else if (mapsDialog.value) mapsDialog.value = false;
     else if (helpOpen.value) helpOpen.value = false;
     else if (formEditor.value) {
@@ -50,9 +48,10 @@ export function onKeyDown(e: KeyboardEvent) {
     else if (measure.value) measure.value = measure.value.length ? [] : null;
     else if (picking.value) picking.value = false;
     else if (uiHidden.value) uiHidden.value = false;
-    // 资源库面板：一层层返回，首页再按一次关上
+    // 资源库面板：先收起右栏（第六十七轮），再一层层返回，首页再按一次关上
     else if (libPanel.value) {
-      if (libPanel.value.stack.length > 1) goBack();
+      if (libPanel.value.side || libPanel.value.basket) closeSide();
+      else if (libPanel.value.stack.length > 1) goBack();
       else closeLibrary();
     }
     else if (sheet.value) sheet.value = null;
@@ -65,7 +64,7 @@ export function onKeyDown(e: KeyboardEvent) {
     }
     return;
   }
-  if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || importWindow.value || mapsDialog.value) return;
+  if (typing(e.target) || helpOpen.value || wizardOpen.value || packDialog.value || mapsDialog.value) return;
   // 回车：交给工具（画河时确认截走别的河）
   if (e.key === 'Enter' && !openPanel.value && mapApi.current?.enter()) {
     e.preventDefault();

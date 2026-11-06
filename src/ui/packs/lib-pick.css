@@ -1,0 +1,313 @@
+/* 资源库面板：看库就是添加（第六十七轮，LibPanel.tsx、LibSide.tsx、LibBasket.tsx、PickBox.tsx）。token 都在 styles.css 的 :root。
+   面板左右两栏：左栏 .lp-main 是原来的面板（380 px），右栏 .lp-side 勾了东西、点了一项时滑出来（面板约 720 px）。
+   窄窗口（900 px 以下）不变宽：右栏盖在左栏上（.lib-panel.over） */
+
+.lib-panel {
+  flex-direction: row;
+}
+.lp-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.lib-panel.two {
+  width: min(720px, calc(100% - 16px));
+}
+.lib-panel.two .lp-main {
+  flex: 0 0 380px;
+}
+.lp-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  animation: lp-slide 160ms ease-out;
+}
+@keyframes lp-slide {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-side {
+    animation: none;
+  }
+}
+/* 窄窗口：右栏盖在左栏上，左上角返回 */
+.lib-panel.over .lp-side {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-left: none;
+  border-radius: var(--r-lg);
+  background: var(--glass-strong);
+}
+.lp-side > .lp-nav {
+  padding-top: var(--sp-2);
+}
+/* 右栏上面：点开的那一项 */
+.lp-side-page {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+.lp-side-close {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  z-index: 1;
+}
+.lp-side-page .lp-item-head {
+  padding-right: 28px;
+}
+
+/* 标题和“已勾 N” */
+.lp-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.lp-picked {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-sm);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  white-space: nowrap;
+}
+.lp-source-menu .item .lp-picked {
+  margin-left: var(--sp-1);
+}
+
+/* 读进来的文件：顶上一条 */
+.lp-filebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3) var(--sp-1);
+}
+
+/* 一行最左边的勾 */
+.lp-pick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-height: var(--h-sm);
+}
+.lp-pick svg {
+  width: 14px;
+  height: 14px;
+}
+label.lp-pick.check {
+  gap: 0;
+  margin: 0;
+}
+.lp-pick.have {
+  color: var(--ok);
+}
+.lp-pick.grey {
+  color: var(--faint);
+}
+button.lp-pick.grey.can {
+  width: 20px;
+  height: var(--h-sm);
+  color: var(--accent);
+}
+.lp-item-head .lp-pick {
+  min-height: 0;
+}
+.lp-choice-menu {
+  position: fixed;
+  width: 200px;
+}
+/* 列表头的全选 */
+label.check.lp-all {
+  flex: none;
+  margin: 0 var(--sp-1) 0 2px;
+  white-space: nowrap;
+}
+/* 我的库里拖动的把手在最右边（勾在最左边） */
+.lp-grip.end {
+  margin-left: 0;
+}
+/* 停在行上（上下键） */
+.lp-row:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
+}
+/* 刚加的行闪一下；“去看看”时新加的高亮几秒 */
+.lp-row.lp-flash {
+  animation: lp-flash 1.2s ease-out;
+}
+@keyframes lp-flash {
+  from {
+    background-color: var(--accent-bg);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.lp-row.lp-hl {
+  background-color: var(--accent-bg);
+  transition: background-color 0.6s;
+}
+.lp-home-search {
+  margin-bottom: var(--sp-2);
+}
+
+/* 窄窗口：只勾了东西时左栏底下一条，点了清单盖上来 */
+button.lp-basket-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-2) var(--sp-2);
+  min-height: var(--h-md);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-md);
+  background-color: var(--accent-bg);
+  text-align: left;
+}
+
+/* ---------- 清单（右栏底下） ---------- */
+.lb-basket {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 50%;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+.lp-side:not(.with-page) .lb-basket {
+  flex: 1 1 auto;
+  max-height: none;
+  border-top: none;
+}
+.lb-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+.lb-dest {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.lb-dest select {
+  min-width: 0;
+  max-width: 200px;
+}
+.lb-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.lb-group + .lb-group {
+  margin-top: var(--sp-2);
+}
+.lb-group h6 {
+  margin: 0 0 2px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+.lb-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  border-radius: var(--r-sm);
+}
+.lb-line:hover {
+  background-image: linear-gradient(var(--hover), var(--hover));
+}
+.lb-line-text {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-1) 0;
+}
+.lb-line-name {
+  display: flex;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.lb-line-note {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.lb-tick {
+  flex: none;
+  color: var(--faint);
+}
+.lb-x {
+  flex: none;
+}
+button.lb-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-sm);
+  padding: 0 var(--sp-1) 0 0;
+  background: none;
+  text-align: left;
+}
+.lb-fold svg {
+  flex: none;
+  transition: transform 0.12s;
+}
+.lb-fold.open svg {
+  transform: rotate(90deg);
+}
+.lb-more {
+  margin: var(--sp-1) 0 var(--sp-1) 22px;
+}
+.lb-foot {
+  flex: none;
+  margin-top: var(--sp-1);
+}
+.lb-foot p {
+  margin: var(--sp-1) 0 0;
+}
+.lb-actions {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+/* 面板变宽时提示条、底部条挪到剩下的地图中间，不被面板盖住（面板右边在 8 + 720 = 728 px） */
+@media (min-width: 901px) {
+  .app.lib-wide .notices {
+    left: calc((100% + 728px) / 2);
+    max-width: min(calc(100% - 768px), 440px);
+  }
+  .app.lib-wide .bottombar {
+    left: calc((100% + 728px) / 2);
+    max-width: calc(100% - 752px);
+  }
+  .app.lib-wide.with-sheet .bottombar {
+    left: calc((100% + 728px - var(--sheet-w) - 10px) / 2);
+    max-width: calc(100% - 728px - var(--sheet-w) - 34px);
+  }
+}

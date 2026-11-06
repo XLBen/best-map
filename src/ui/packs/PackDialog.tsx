@@ -21,20 +21,18 @@ import { ScriptList, TrustBlock } from './Scripts';
 import { ModalHead } from '../common';
 import { askUser, download, knowIsolation, showToast, world } from '../../state';
 import { type DialogView, packDialog } from './store';
-import { closeImport } from './page-import';
 import { openLibrary } from './panel-store';
 
 // 资源库面板“⋯”打开的弹窗：资源包（资源库里的包：查看、导出、删除）、读好的文件（解析、检查、信任，不运行任何脚本）、
-// 从本世界存进资源库（第二十八轮：每一种内容都能勾，人文的也在）。添加到本世界在面板上点，或者走右上角的“导入”
+// 从本世界存进资源库（第二十八轮：每一种内容都能勾，人文的也在）。添加到本世界在面板上勾（第六十七轮：看库就是添加）
 
 const close = () => (packDialog.value = null);
 
 const exportFile = (pack: ResourcePack) => download(packFileName(pack), JSON.stringify(pack, null, 2), 'application/json');
 
-// “查看”：面板换到这个库。弹窗（还有下面的导入窗口）一起关上，不然盖着面板
+// “查看”：面板换到这个库。弹窗关上，不然盖着面板
 export function viewLibrary(key: string) {
   close();
-  closeImport();
   openLibrary({ entry: key });
 }
 

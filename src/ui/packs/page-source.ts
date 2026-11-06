@@ -19,23 +19,27 @@ export interface PageCtx {
 export const sameSource = (a: SourceRef, b: SourceRef): boolean => a.t === b.t && (a.t === 'world' || a.key === (b as { key: string }).key);
 export const entryOf = (src: SourceRef, ctx: PageCtx): LibraryEntry | undefined => (src.t === 'lib' ? ctx.lib.find((e) => e.key === src.key) : undefined);
 
-export type SourceKind = 'world' | 'builtin' | 'mine' | 'imported';
+// file：读进来的文件（第六十七轮，没装进资源库的临时库）
+export type SourceKind = 'world' | 'builtin' | 'mine' | 'imported' | 'file';
 export function sourceKind(src: SourceRef, ctx: PageCtx): SourceKind | null {
   if (src.t === 'world') return 'world';
   const e = entryOf(src, ctx);
   if (!e) return null;
-  return e.builtin ? 'builtin' : e.mine ? 'mine' : 'imported';
+  return e.builtin ? 'builtin' : e.mine ? 'mine' : e.file ? 'file' : 'imported';
 }
 
 export function sourceTitle(src: SourceRef, ctx: PageCtx): string {
   return src.t === 'world' ? '本世界' : (entryOf(src, ctx)?.pack.name ?? src.key);
 }
 
+// 标题下拉里读进来的文件写成“文件：xxx（没装进资源库）”
+export const fileTitle = (e: Pick<LibraryEntry, 'file' | 'pack'>): string => `文件：${e.pack.name || e.file}（没装进资源库）`;
+
 // 来源不在了（库删掉了、世界关了）：回到本世界
 export const liveSource = (src: SourceRef, ctx: PageCtx): SourceRef => (src.t === 'lib' && !entryOf(src, ctx) ? WORLD_SOURCE : src);
 
 // 只读的原因（能改时 null）
-const READONLY_WHY: Record<SourceKind, string | null> = { world: null, mine: null, builtin: '内置的库只读', imported: '导入的库只读' };
+const READONLY_WHY: Record<SourceKind, string | null> = { world: null, mine: null, builtin: '内置的库只读', imported: '导入的库只读', file: '读进来的文件只读' };
 export function readonlyWhy(src: SourceRef, ctx: PageCtx): string | null {
   const k = sourceKind(src, ctx);
   return k ? READONLY_WHY[k] : '这个库不在了';
@@ -60,6 +64,8 @@ export interface SourceMenu {
   builtin: SourceMenuItem[];
   mine: SourceMenuItem[];
   imported: SourceMenuItem[];
+  // 读进来的文件（第六十七轮）
+  files: SourceMenuItem[];
 }
 export function sourceMenu(cur: SourceRef, ctx: PageCtx): SourceMenu {
   const item = (e: LibraryEntry): SourceMenuItem => {
@@ -70,7 +76,8 @@ export function sourceMenu(cur: SourceRef, ctx: PageCtx): SourceMenu {
     world: { src: WORLD_SOURCE, name: '本世界', on: cur.t === 'world' },
     builtin: ctx.lib.filter((e) => e.builtin).map(item),
     mine: ctx.lib.filter((e) => !e.builtin && e.mine).map(item),
-    imported: ctx.lib.filter((e) => !e.builtin && !e.mine).map(item),
+    imported: ctx.lib.filter((e) => !e.builtin && !e.mine && !e.file).map(item),
+    files: ctx.lib.filter((e) => e.file).map((e) => ({ ...item(e), name: fileTitle(e) })),
   };
 }
 

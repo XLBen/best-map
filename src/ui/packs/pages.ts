@@ -529,8 +529,9 @@ export function eraVariables(src: SourceRef, era: Era, ctx: PageCtx): { id: stri
   return era.dimensions.map((d) => ({ id: d.id, label: d.label, count: n.get(d.id) ?? 0, route: { p: 'list', kind: 'popValue', dim: d.id } }));
 }
 
-// 这一项能做什么（组件照这个画按钮，点了走 page-actions.ts）。why：不能做的原因（写在悬停里）
-export type ItemActionId = 'copyLibrary' | 'addToWorld' | 'removeFromWorld' | 'deleteItem' | 'useSource' | 'saveBack' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
+// 这一项能做什么（组件照这个画按钮，点了走 page-actions.ts）。why：不能做的原因（写在悬停里）。
+// 添加到本世界不在这里：第六十七轮起是页面顶上的勾（PickBox）
+export type ItemActionId = 'copyLibrary' | 'removeFromWorld' | 'deleteItem' | 'useSource' | 'saveBack' | 'setDefault' | 'locate' | 'dedicated' | 'saveToMine' | 'exportItem' | 'copyItem';
 export interface ItemAction {
   id: ItemActionId;
   disabled?: string;
@@ -542,7 +543,6 @@ export function itemActions(src: SourceRef, row: ItemRow | undefined, ctx: PageC
   const k = sourceKind(src, ctx);
   if (!row) return out;
   if (k === 'builtin' || k === 'imported') out.push({ id: 'copyLibrary' });
-  if (src.t === 'lib' && ctx.world) out.push(row.status.on ? { id: 'addToWorld', disabled: '已在本世界' } : row.status.locked ? { id: 'addToWorld', disabled: row.status.locked } : { id: 'addToWorld' });
   if (can.setDefault) out.push({ id: 'setDefault' });
   if (can.hasCells) out.push({ id: 'locate' });
   if (src.t === 'world') {

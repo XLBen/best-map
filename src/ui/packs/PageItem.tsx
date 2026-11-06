@@ -8,11 +8,12 @@ import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
 import { type Obj, editorIssues } from './fields';
 import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
-import { addBlock, addGates, addRows } from './page-import';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
 import type { UsedBy } from './page-used-by';
 import { type ItemAction, type ItemPage, type PageCtx, type Route, type SourceRef, itemActions, itemPage, refRoute, rowsOf } from './pages';
-import { copyToMine, goBack, goTo, openSegments, rememberSegments, replaceTop } from './panel-store';
+import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberSegments, replaceTop } from './panel-store';
+import { PickBox } from './PickBox';
+import { kindPickable, lookOf, pickView } from './pick-view';
 import { ChildSegments, WorldVariables } from './PageChildren';
 import { BiomeWaterSegment, WaterBiomesSegment } from './PageWater';
 import { RefGo } from './RefPicker';
@@ -23,7 +24,10 @@ import { DEDICATED, type ItemRow, defaultStyleCommand, removeCommand, rowUsage, 
 // 一项的页面（第五十九轮）：几段可折叠的卡片，收起时标题旁写一句当前内容；表单是 ContentEditor 的 FieldsBox。
 // 松开滑块、打完字（框失去焦点、回车）就存：本世界是一条命令，我的库走自己的撤销；有错的留在页面上、不存。只读的库整个表单不能动，引用照样能点过去
 
-function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean }) {
+function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemRow | undefined; src: SourceRef; ctx: PageCtx; embedded: boolean; side: boolean }) {
+  // 右栏里：删了收起右栏，复制出来的在右栏打开
+  const back = side ? closeSide : goBack;
+  const replace = side ? openRoute : replaceTop;
   const w = ctx.world;
   const usage = row && w && src.t === 'world' ? rowUsage(row, w) : null;
   const remove = row && w && src.t === 'world' ? removeCommand(row, w) : null;
@@ -38,8 +42,6 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
     dedicated: DEDICATED.has(p.kind.id),
     newable: !!p.kind.blank,
   });
-  // 灰的写原因，不能加（第六十五轮）
-  const blocked = useMemo(() => (row && !row.status.on && !row.status.locked ? addBlock(addGates(src, ctx), row) : null), [row, src.t === 'lib' ? src.key : '', ctx.world, ctx.lib]);
   const button = (a: ItemAction) => {
     const dis = a.disabled;
     const common = { disabled: !!dis, title: dis };
@@ -49,20 +51,6 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
           <button class="small primary" onClick={() => void copyToMine(src)}>
             <Copy /> 复制成我的库
           </button>
-        );
-      case 'addToWorld':
-        return (
-          <>
-            <button
-              class="small"
-              disabled={!!dis || !!blocked}
-              title={dis ?? blocked ?? undefined}
-              onClick={() => row && addRows([row], src, ctx, `添加到本世界：${p.kind.label}“${p.name}”`)}
-            >
-              添加到本世界
-            </button>
-            {blocked && <span class="hint">{blocked}</span>}
-          </>
         );
       case 'setDefault':
         return (
@@ -113,7 +101,7 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
             title="另起一项"
             onClick={() =>
               void Promise.resolve(copyItemIn(src, p.kind, p.item, ctx)).then((r) => {
-                if (r) (embedded ? goTo : replaceTop)(r);
+                if (r) (embedded ? openRoute : replace)(r);
               })
             }
           >
@@ -123,7 +111,7 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
       case 'removeFromWorld':
         return (
           <span title={dis}>
-            <button class="small" {...common} onClick={() => remove && void runTrusted(remove, '正在移出…').then((ok) => ok && !embedded && goBack())}>
+            <button class="small" {...common} onClick={() => remove && void runTrusted(remove, '正在移出…').then((ok) => ok && !embedded && back())}>
               <Trash2 /> 移出本世界
             </button>
           </span>
@@ -141,7 +129,7 @@ function Actions({ p, row, src, ctx, embedded }: { p: ItemPage; row: ItemRow | u
                   { value: 'cancel', label: '取消' },
                 ],
               });
-              if (v === 'delete' && deleteFromLibrary(src, p.kind, p.id, p.name) && !embedded) goBack();
+              if (v === 'delete' && deleteFromLibrary(src, p.kind, p.id, p.name) && !embedded) back();
             }}
           >
             <Trash2 /> 删除
@@ -179,8 +167,9 @@ function Samples({ item, kindId }: { item: Obj; kindId: string }) {
   );
 }
 
-// embedded：在上级页面里展开着改（第六十轮）：不写名字（上面那一行就是），删了不返回
-export function PageItem({ route, src, ctx, embedded = false }: { route: Extract<Route, { p: 'item' }>; src: SourceRef; ctx: PageCtx; embedded?: boolean }) {
+// embedded：在上级页面里展开着改（第六十轮）：不写名字（上面那一行就是），删了不返回。
+// side：在右栏打开的（第六十七轮，能勾的库）：名字前面有勾；删了收起右栏
+export function PageItem({ route, src, ctx, embedded = false, side = false }: { route: Extract<Route, { p: 'item' }>; src: SourceRef; ctx: PageCtx; embedded?: boolean; side?: boolean }) {
   const p = itemPage(src, route, ctx);
   const kindId = route.kind;
   // 改了没存的（有错、或者世界还在算）。这一份里的这一项变了（存上了、撤销了、别处改了）就去掉
@@ -222,8 +211,11 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
   const labelOf = (ref: string | readonly string[], id: string) => refLabel(refOptionsOf(ref, ctx), id);
   const go = (ref: string | readonly string[], id: string) => {
     const to = refRoute(ref, id, src, ctx);
-    return to ? () => goTo(to) : null;
+    return to ? () => openRoute(to) : null;
   };
+  const v = !embedded ? pickView(src, ctx) : null;
+  const pick = v && kindPickable(v, p.kind.id) ? v : null;
+  const note = pick ? lookOf(pick, { kind: p.kind.id, id: p.id }).note : null;
   const swatch = row ? swatchOf(row) : typeof item.color === 'string' ? item.color : null;
   const sample = p.kind.id === 'nameStyle' && row ? sampleLine(row) : '';
   const segment = (s: Segment) => (
@@ -249,13 +241,17 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
       {!embedded && (
         <>
           <div class="row lp-item-head">
+            {pick && <PickBox v={pick} r={{ kind: p.kind.id, id: p.id }} ctx={ctx} />}
             {swatch && <span class="swatch big" style={{ background: swatch }} />}
             <h3 class="grow ellipsis">{itemName(p.kind, item)}</h3>
             {src.t === 'lib' && row?.status.modified && <span class="chip static">本世界改过</span>}
             {p.diff.t === 'changed' && <span class="chip static lp-diff-chip">和库不同</span>}
             {row?.status.isDefault && <span class="chip static">{p.kind.id === 'mapStyle' ? '在用' : '默认'}</span>}
           </div>
-          <p class="hint">{p.kind.label}</p>
+          <p class="hint">
+            {p.kind.label}
+            {note && ` · ${note}`}
+          </p>
         </>
       )}
       <DiffLine p={p} />
@@ -309,7 +305,7 @@ export function PageItem({ route, src, ctx, embedded = false }: { route: Extract
         </button>
       ))}
       <UsedBySegment u={p.usedBy} kindId={kindId} />
-      <Actions p={p} row={row} src={src} ctx={ctx} embedded={embedded} />
+      <Actions p={p} row={row} src={src} ctx={ctx} embedded={embedded} side={side} />
     </div>
   );
 }
@@ -339,7 +335,7 @@ function UsedByNames({ rows }: { rows: readonly { kind: string; id: string; name
       {shown.map((x, k) => (
         <>
           {k > 0 && '、'}
-          <a class="ref-link" onClick={() => goTo({ p: 'item', kind: x.kind, id: x.id })}>
+          <a class="ref-link" onClick={() => openRoute({ p: 'item', kind: x.kind, id: x.id })}>
             {x.name}
           </a>
         </>

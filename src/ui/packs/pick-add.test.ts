@@ -12,6 +12,7 @@ import { libEdits } from '../../library-edit';
 import { addPicked, addRegenButton, contentAfter, worldAddCommand } from './pick-add';
 import { pickCount, pickStore, picksOf, setPickDest, togglePickIn } from './pick-store';
 import { addRegenLabel } from './regen';
+import { regenerateCommand, withPackImports } from '../human';
 
 // 第六十六轮：添加并重新生成（一个 batch，一次撤销全撤）、只勾一个文化时组参与生成
 
@@ -32,8 +33,9 @@ function worldOf(lib = 'fantasy', more: Record<string, unknown> = { countries: {
   const root = pack(lib);
   for (const c of newWorldContentCommands(ROOTS, worldPartsOf(lib))) e.exec(c);
   const all = packItems<{ id: string; weight?: number }>(root, 'cultureGroups');
-  for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: all.map((g) => g.id) }, e.world)) e.exec(c);
   const groups = all.filter((g) => g.weight !== 0).slice(0, 3).map((g) => ({ id: g.id, weight: 1 }));
+  // 和新建向导一样只加选的组（第六十七轮：库里默认不带、世界里比重不是 0 的组参与重新生成）
+  for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: groups.map((g) => g.id) }, e.world)) e.exec(c);
   e.exec({ op: 'generate_human', packs: [[lib]], groups, ...more } as Command);
   e.update();
   return e;
@@ -89,6 +91,8 @@ describe('添加并重新生成', () => {
     expect(r.regen?.label).toBe('重新生成国家');
     expect(r.command!.label).toBe(`${importLabel(r.preview)}，重新生成国家`);
     expect(r.command!.label).toBe('添加“意识形态”等 19 项，重新生成国家');
+    // 第六十七轮：撤销条写用户点的那一项（点社会主义共和国时意识形态是为它一起勾上的）
+    expect(worldAddCommand(askOf(e, 'modern', socialism), { path: ['modern'], lead: socialism[0] }, BUILTIN).command!.label).toBe('添加“社会主义共和国”等 19 项');
     expect(r.command!.commands.at(-1)).toMatchObject({ op: 'regenerate_countries' });
     e.exec(r.command!);
     e.update();
@@ -150,6 +154,57 @@ describe('添加并重新生成', () => {
   });
 });
 
+// 第六十七轮：组是世界正在用的库里比重 0 的组（这个库默认不带）。勾组里的一个文化，添加并重新生成人文后地图上有它
+describe('世界用的库里默认不带的组', () => {
+  // 用中世纪新建世界：只加默认带的组（和新建向导一样，比重 0 的组不进世界）
+  function medievalWorld(): Engine {
+    const e = bare.clone();
+    for (const c of newWorldContentCommands(ROOTS, worldPartsOf('medieval'))) e.exec(c);
+    const groups = packItems<{ id: string; weight?: number }>(pack('medieval'), 'cultureGroups').filter((g) => g.weight !== 0).map((g) => g.id);
+    for (const c of packImportCommands(ROOTS, { packs: [['medieval']], groups }, e.world)) e.exec(c);
+    e.exec({ op: 'generate_human', packs: [['medieval']], groups: groups.slice(0, 3).map((id) => ({ id, weight: 1 })), countries: {} } as Command);
+    e.update();
+    return e;
+  }
+  const shareOf = (e: Engine, culture: string) => {
+    const codes = new Set(Object.entries(e.world.small.popGroups!).flatMap(([code, g]) => (g.culture === culture ? [Number(code)] : [])));
+    const c = e.world.causes;
+    let share = 0;
+    for (let i = 0; i < c.popGroup!.length; i++) if (codes.has(c.popGroup![i])) share += c.popShare![i];
+    return share;
+  };
+
+  it('勾一个文化：出“添加并重新生成人文”，重新生成后有人是它，一次撤销全撤；下次的重新生成也带着这个组', () => {
+    const e = medievalWorld();
+    const source = pack('medieval');
+    const zero = new Set(packItems<{ id: string; weight?: number }>(source, 'cultureGroups').filter((g) => g.weight === 0).map((g) => g.id));
+    const culture = packItems<{ id: string; group: string }>(source, 'cultures').find((c) => zero.has(c.group))!;
+    expect(e.world.small.content!.cultureGroup?.[culture.group]).toBeUndefined();
+    const base = worldDigest(e.world);
+    const ask = askOf(e, 'medieval', [{ kind: 'culture', id: culture.id }]);
+    expect(addRegenButton(ask, BUILTIN)).toBe('添加并重新生成人文');
+    const r = worldAddCommand(ask, { path: ['medieval'], regen: true }, BUILTIN);
+    e.exec(r.command!);
+    e.update();
+    expect(shareOf(e, culture.id)).toBeGreaterThan(0);
+    expect(e.world.small.human!.groups.map((g) => g.id)).toContain(culture.group);
+    e.undo();
+    e.update();
+    expect(worldDigest(e.world)).toBe(base);
+    // 只添加、之后点面板顶上的重新生成：组也参与
+    e.exec(worldAddCommand(ask, { path: ['medieval'] }, BUILTIN).command!);
+    e.update();
+    e.exec(regenerateCommand(e.world.small, BUILTIN));
+    e.update();
+    expect(shareOf(e, culture.id)).toBeGreaterThan(0);
+  });
+
+  it('没有这样添加过：重新生成的命令和以前一样（不多带组）', () => {
+    const e = medievalWorld();
+    expect(regenerateCommand(e.world.small, BUILTIN)).toEqual(withPackImports({ op: 'regenerate_human' }, e.world.small, BUILTIN));
+  });
+});
+
 describe('添加之后的内容', () => {
   it('只看 set_content，batch 里的都算；原来的不动', () => {
     const before = { culture: { a: { id: 'a' } } } as never;
@@ -183,6 +238,7 @@ describe('从按库记的勾选添加', () => {
       expect(picksOf('medieval').picks).toEqual([{ kind: 'popValue', id: 'catholic' }]);
       const now = library.value.find((e) => e.key === mine.key)!.pack;
       expect(packItems<{ dimension: string }>(now, 'popValues').every((v) => v.dimension === 'ideology')).toBe(true);
+      // 勾的是变量：加到库里时它跟着时代来，清单里没有它这一行，写项数（第六十七轮起勾的项在清单里时写它，见 pick-view.test.ts）
       expect(libEdits.undo(mine.key)).toBe(`添加 ${r.count} 项`);
       // 来源或目的地不在了：不动勾选
       togglePickIn('modern', { kind: 'dimension', id: 'ideology' }, true, ctx);

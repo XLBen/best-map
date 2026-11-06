@@ -1,7 +1,8 @@
 import { signal } from '@preact/signals';
 import { DIMENSION } from '../../../core/content/link-rules';
 import { type ContentRef, linkKey } from '../../../core/content/links';
-import type { PackNode } from '../../../core/packs';
+import type { PackNode, ResourcePack } from '../../../core/packs';
+import { FILE_KEY_PREFIX, addFileLibrary, dropFileLibrary, fileLibrary } from '../../library';
 import { type ImportAsk, type ImportNeed, type ImportPreview, type ImportRow, type ImportTarget, importGates, importPreview } from '../../../core/packs/closure';
 import { infoOf, keyRef } from '../../../core/packs/import-gates';
 import { worldEpoch } from '../../state';
@@ -16,7 +17,7 @@ import { type PageCtx, entryOf } from './page-source';
 //   点灰的行    把它要的（import-gates.ts 的 needs）一起勾上，记下“为了 X 加的”（added）。几选一时调用方传进选的那一个。
 //               去掉 X：为它加的、没有别人需要的一起去掉；去掉为它加的那一项：X 又灰了，也去掉（settled 拿掉），它别的要的照上一条
 //
-// 前半是纯函数（给定来源、目的地和勾选，算新的勾选），导入窗口（page-import.ts）也用它们；后半是按库记的状态。不碰界面，测试直接调
+// 前半是纯函数（给定来源、目的地和勾选，算新的勾选）；后半是按库记的状态。资源库面板（第六十七轮）按 pick-view.ts 画。不碰界面，测试直接调
 
 // 为了谁加的：need 是点灰的行 for 时一起勾上的
 export interface PickFor {
@@ -192,6 +193,11 @@ export function pickWithNeeds(ask: ImportAsk, st: PickState, r: ContentRef, choi
   return { ...cur, added };
 }
 
+// 用户点的那一项（撤销条写它）：勾的项里第一个不是“为了别人加的”（第六十七轮）
+export function pickLead(st: Pick<PickState, 'picks' | 'added'>): ContentRef | undefined {
+  return st.picks.find((p) => !st.added.some((a) => sameRef(a.need, p))) ?? st.picks[0];
+}
+
 // 清单那一行写的：“为了社会主义共和国加的”。names：清单里的名字（X 是勾着的，清单里有它）
 export function forNote(st: PickState, r: ContentRef, names: (r: ContentRef) => string | undefined): string | null {
   const whom = st.added.filter((a) => sameRef(a.need, r)).map((a) => names(a.for) ?? a.for.id);
@@ -228,18 +234,14 @@ interface Store {
 
 export const pickStore = signal<Store>({ epoch: 0, bySource: {}, dest: null });
 
-// 读进来的文件（临时的库，第六十七轮接到标题下拉）：键是 file:名字
-const FILE_PREFIX = 'file:';
-export const fileSourceKey = (name: string): string => `${FILE_PREFIX}${name}`;
-export const isFileSource = (key: string): boolean => key.startsWith(FILE_PREFIX);
-const files = new Map<string, PackNode>();
+// 读进来的文件（临时的库，第六十七轮放在 library.ts 的 fileLibrary，资源库面板的标题下拉里列着）：键是 file:名字
+export const fileSourceKey = (name: string): string => `${FILE_KEY_PREFIX}${name}`;
+export const isFileSource = (key: string): boolean => key.startsWith(FILE_KEY_PREFIX);
 export function setFileSource(name: string, pack: PackNode): string {
-  const key = fileSourceKey(name);
-  files.set(key, pack);
-  return key;
+  return addFileLibrary(name, pack as ResourcePack);
 }
 export function dropFileSource(key: string): void {
-  files.delete(key);
+  dropFileLibrary(key);
   clearPicks(key);
 }
 
@@ -292,6 +294,18 @@ export function pickDest(ctx: PageCtx): PickDest | null {
   return mine ? { lib: mine.key } : null;
 }
 
+// 这个库加到哪里：选的目的地是它自己时（我的库不能加到自己）换成本世界，没有世界时换成别的我的库，都没有时 null
+export function destFor(key: string, ctx: PageCtx): PickDest | null {
+  const d = pickDest(ctx);
+  if (!d || d === 'world' || d.lib !== key) return d;
+  if (ctx.world) return 'world';
+  const other = ctx.lib.find((e) => e.mine && e.key !== key);
+  return other ? { lib: other.key } : null;
+}
+
+// 这个库里能不能勾（看库就是添加，第六十七轮）：有地方加、不是加到它自己
+export const canPick = (key: string, ctx: PageCtx): boolean => destFor(key, ctx) !== null && pickSource(key, ctx) !== null;
+
 export function setPickDest(d: PickDest): void {
   pickStore.value = { ...live(), dest: d };
 }
@@ -300,8 +314,8 @@ export const destRef = (d: PickDest): { t: 'world' } | { t: 'lib'; key: string }
 
 // 来源：资源库里的库，或读进来的文件
 export function pickSource(key: string, ctx: PageCtx): PackNode | null {
-  if (isFileSource(key)) return files.get(key) ?? null;
-  return ctx.lib.find((e) => e.key === key)?.pack ?? null;
+  const e = ctx.lib.find((x) => x.key === key) ?? (isFileSource(key) ? fileLibrary.value.find((x) => x.key === key) : undefined);
+  return e?.pack ?? null;
 }
 
 export function destTarget(d: PickDest | null, ctx: PageCtx): ImportTarget | null {
@@ -312,7 +326,7 @@ export function destTarget(d: PickDest | null, ctx: PageCtx): ImportTarget | nul
 }
 
 // 这个库的勾选按现在的目的地算（目的地是来源自己时 null：不能从一个库加到它自己）
-export function pickAsk(key: string, ctx: PageCtx, dest: PickDest | null = pickDest(ctx)): ImportAsk | null {
+export function pickAsk(key: string, ctx: PageCtx, dest: PickDest | null = destFor(key, ctx)): ImportAsk | null {
   if (dest && dest !== 'world' && dest.lib === key) return null;
   const source = pickSource(key, ctx);
   const target = destTarget(dest, ctx);
@@ -321,7 +335,7 @@ export function pickAsk(key: string, ctx: PageCtx, dest: PickDest | null = pickD
 }
 
 // 这个库的清单（because 写上“为了 X 加的”）。来源或目的地不在时 null
-export function pickPreview(key: string, ctx: PageCtx, dest: PickDest | null = pickDest(ctx)): ImportPreview | null {
+export function pickPreview(key: string, ctx: PageCtx, dest: PickDest | null = destFor(key, ctx)): ImportPreview | null {
   const ask = pickAsk(key, ctx, dest);
   return ask ? withForNotes(importPreview(ask), picksOf(key)) : null;
 }

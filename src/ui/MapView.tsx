@@ -63,6 +63,7 @@ import { markKey } from './settlements';
 import { settleOverlay } from './map/settle';
 import { onSettleImageLoad } from '../render/settle-draw';
 import { type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
+import { libWide } from './packs/panel-store';
 
 // 文化、文化组、每一维、人口模式里国界的浓淡（第二十五轮：细而淡，只留近处一圈）
 const FAINT_COUNTRY = 0.4;
@@ -350,9 +351,11 @@ export function MapView() {
     });
     const onWinResize = () => (liftCache = null);
     window.addEventListener('resize', onWinResize);
-    // 生态的表打开、关上时底部条挪了位置（.app.with-sheet）却不变大小：ResizeObserver 不报，这里作废
+    // 生态的表打开、关上时底部条挪了位置（.app.with-sheet）却不变大小：ResizeObserver 不报，这里作废。
+    // 资源库面板变宽、收回时也一样（.app.lib-wide，第六十七轮）
     const disposeSheet = effect(() => {
       void sheet.value;
+      void libWide.value;
       liftCache = null;
       requestDraw();
     });

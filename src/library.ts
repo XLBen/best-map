@@ -1,4 +1,4 @@
-import { signal } from '@preact/signals';
+import { computed, signal } from '@preact/signals';
 import { PACK_FORMAT, PACK_VERSION, type PackItem, type ResourcePack, addToPack, packIdFor, packItems, parsePack, sameItem } from '../core/packs';
 import type { PlanetForm } from '../core/planet-form';
 import { builtinPacks, isBuiltinSame } from '../core/packs/builtin-tree';
@@ -21,6 +21,8 @@ export interface LibraryEntry {
   // 自己从世界里导出、存进来的
   mine: boolean;
   installedAt: number;
+  // 第六十七轮：读进来的文件（没装进资源库，只在内存里）：文件名
+  file?: string;
 }
 
 export interface Stored {
@@ -37,6 +39,21 @@ const isBuiltinKey = (key: string) => BUILTINS.some((b) => b.key === key);
 
 // 列表：内置的在前，之后是我的资源、导入的（各按装进来的先后）
 export const library = signal<LibraryEntry[]>([...BUILTINS]);
+
+// 读进来的文件（第六十七轮）：一个临时的库，资源库面板的标题下拉里列着，能看、能勾、能添加，“装进资源库”才进上面的 library。
+// 只在内存里，关掉应用就没了。键是 file:文件名（同名的文件再读一次换掉）
+export const FILE_KEY_PREFIX = 'file:';
+export const fileLibrary = signal<LibraryEntry[]>([]);
+export function addFileLibrary(file: string, pack: ResourcePack): string {
+  const key = `${FILE_KEY_PREFIX}${file}`;
+  fileLibrary.value = [...fileLibrary.value.filter((e) => e.key !== key), { key, pack, builtin: false, mine: false, installedAt: Date.now(), file }];
+  return key;
+}
+export function dropFileLibrary(key: string): void {
+  if (fileLibrary.value.some((e) => e.key === key)) fileLibrary.value = fileLibrary.value.filter((e) => e.key !== key);
+}
+// 资源库面板看得到的：资源库，加上读进来的文件
+export const panelLibrary = computed<readonly LibraryEntry[]>(() => (fileLibrary.value.length ? [...library.value, ...fileLibrary.value] : library.value));
 
 // 存不进浏览器时留在这里（这一次打开页面期间有效）
 const memory = new Map<string, Stored>();

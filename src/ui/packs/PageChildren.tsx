@@ -9,12 +9,14 @@ import { libRoots } from '../packChoice';
 import { showToast } from '../../state';
 import { arrangeFor } from './page-arrange';
 import { applyArrange, linkChild, newChildIn, unlinkChild } from './page-actions';
-import { openImport, otherLibOptions } from './page-import';
+import { addOther, otherLibOptions } from './pick-other';
+import { kindPickable, lookOf, pickView } from './pick-view';
+import { PickBox } from './PickBox';
 import { CHILD_SEARCH_FROM, CHILD_SHOW, type ChildRow, type ChildSection, type InsideRow, shownRows } from './page-children';
 import { dragOutOf } from './page-drag';
 import { PageItem } from './PageItem';
 import { type PageCtx, type SourceRef, eraVariables, itemsOf } from './pages';
-import { goTo, openSegments, rememberSegments } from './panel-store';
+import { flashClass, goTo, openRoute, openSegments, rememberSegments } from './panel-store';
 import { RefPicker } from './RefPicker';
 import { runTrusted, swatchOf } from './row-actions';
 
@@ -25,6 +27,11 @@ type Obj = Record<string, unknown>;
 
 function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; r: ChildRow; parent: Obj; src: SourceRef; ctx: PageCtx; open: boolean; onOpen: () => void }) {
   const [moving, setMoving] = useState(false);
+  // 能勾的库里子项也有勾（第六十七轮）：勾上级时默认一起勾，可以单独去掉
+  const v = pickView(src, ctx);
+  const pick = v && kindPickable(v, s.kind.id) ? v : null;
+  const ref = { kind: s.kind.id, id: r.id };
+  const note = pick ? lookOf(pick, ref).note : null;
   const swatch = swatchOf({ kind: s.kind, item: r.item });
   const canOut = !s.readonly;
   const up = kindOf(s.relation.parent);
@@ -34,7 +41,13 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; 
   }, [moving, up, src, ctx.lib, ctx.world]);
   return (
     <>
-      <div class={`lp-row lp-child-row ${open ? 'open' : ''} ${r.mark?.faint ? 'faint' : ''}`} title={r.mark?.faint ? '生成后没用到，清理时会清掉' : undefined}>
+      <div
+        class={`lp-row lp-child-row ${open ? 'open' : ''} ${r.mark?.faint ? 'faint' : ''} ${flashClass(s.kind.id, r.id)}`}
+        title={r.mark?.faint ? '生成后没用到，清理时会清掉' : undefined}
+        data-pick-row={v ? '' : undefined}
+        tabIndex={v ? -1 : undefined}
+      >
+        {pick ? <PickBox v={pick} r={ref} ctx={ctx} /> : v && <span class="lp-pick" />}
         <button class="lp-row-main" onClick={onOpen} title="在这里改">
           {swatch ? <span class="swatch" style={{ background: swatch }} /> : null}
           <span class="lp-row-name ellipsis">{r.name}</span>
@@ -45,6 +58,11 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; 
             </span>
           )}
         </button>
+        {note && (
+          <span class="hint ellipsis lp-row-why" title={note}>
+            {note}
+          </span>
+        )}
         {canOut && r.out === 'ok' && (
           <button class="small" title={r.why} onClick={() => void unlinkChild(src, s.relation, parent, r.item, ctx)}>
             移出
@@ -55,7 +73,7 @@ function ChildLine({ s, r, parent, src, ctx, open, onOpen }: { s: ChildSection; 
             移到
           </button>
         )}
-        <button class="icon-btn lp-row-go" title="单独打开" onClick={() => goTo({ p: 'item', kind: s.kind.id, id: r.id })}>
+        <button class="icon-btn lp-row-go" title="单独打开" onClick={() => openRoute({ p: 'item', kind: s.kind.id, id: r.id })}>
           <ChevronRight />
         </button>
       </div>
@@ -150,9 +168,9 @@ function ChildSeg({ s, parent, src, ctx, shut, onToggle }: { s: ChildSection; pa
                 <RefPicker add options={[...s.options, ...others]} onPick={(id) => {
                   const x = s.options.some((o) => o.id === id) ? (itemsOf(src, s.kind, ctx) as readonly Obj[]).find((c) => c.id === id) : undefined;
                   if (x) return void linkChild(src, s.relation, parent, x, ctx);
-                  // 别的库里的：打开导入窗口，勾好这一项；导入时放到这个上级下面（同一步）
+                  // 别的库里的：直接加，放到这个上级下面（同一步，第六十七轮不再开窗口）
                   const o = others.find((y) => y.id === id);
-                  if (o) openImport({ target: src, from: o.lib, pick: { kind: s.kind.id, id }, onto: { relation: s.relation, parent: String(parent.id), child: { kind: s.kind.id, id } } }, ctx);
+                  if (o) void addOther(src, o.lib, { kind: s.kind.id, id }, ctx, { relation: s.relation, parent: String(parent.id), child: { kind: s.kind.id, id } });
                   else showToast('这一份里没有它', true);
                 }}>
                   {s.addLabel}

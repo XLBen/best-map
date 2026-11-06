@@ -377,7 +377,7 @@ describe('一项的页面', () => {
     expect(p.related).toEqual([{ label: '组里的文化', count: packItems<{ group: string }>(medieval, 'cultures').filter((c) => c.group === 'germanic').length, route: { p: 'list', kind: 'culture', group: 'germanic' } }]);
   });
 
-  it('这一项能做什么：内置的没有删除、能复制库；我的库能删、复制；本世界能移出、在用的写为什么不能', () => {
+  it('这一项能做什么：内置的没有删除、能复制库；我的库能删、复制；本世界能移出、在用的写为什么不能；没有“添加到本世界”', () => {
     const copy = mineEntry(copiedPack(medieval, 'm2', 'm2'));
     const w = continents().world;
     const ctx = ctxOf(w, [copy]);
@@ -390,14 +390,12 @@ describe('一项的页面', () => {
     const mine = ids(lib('m2')).map((a) => a.id);
     expect(mine).toEqual(expect.arrayContaining(['deleteItem', 'copyItem', 'exportItem']));
     expect(mine).not.toContain('copyLibrary');
-    // 已经在本世界的不能再添加
-    expect(ids(lib('medieval')).find((a) => a.id === 'addToWorld')!.disabled).toBe('已在本世界');
     const inWorld = ids(WORLD_SOURCE);
     expect(inWorld.find((a) => a.id === 'removeFromWorld')!.disabled).toBeUndefined();
     const used = ids(WORLD_SOURCE, { ...can, remove: false, usage: '有 3 处在用：x' });
     expect(used.find((a) => a.id === 'removeFromWorld')!.disabled).toBe('有 3 处在用：x');
-    // 没有世界时不能添加到本世界
-    expect(itemActions(lib('medieval'), rowsOf(lib('medieval'), kindOf('terrainClass')!, ctxOf())[0], ctxOf(), can).map((a) => a.id)).not.toContain('addToWorld');
+    // 添加到本世界不是按钮了：页面顶上的勾（第六十七轮，pick-view.test.ts）
+    expect(itemActions(lib('medieval'), rowsOf(lib('medieval'), kindOf('terrainClass')!, ctxOf())[0], ctxOf(), can).map((a) => a.id)).not.toContain('addToWorld' as never);
   });
 
   it('和来源的库不同时能用库里的版本、存回；一样的没有（第六十二轮）', () => {

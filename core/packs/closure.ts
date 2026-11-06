@@ -421,8 +421,9 @@ export interface WorldImport {
 }
 
 // 撤销条上的一句：“添加“社会主义共和国”等 19 项”（第六十六轮起叫“添加”，“导入”只留给读文件）
-export function importLabel(p: Pick<ImportPreview, 'rows' | 'count'>): string {
-  const first = p.rows.find((r) => r.role === 'pick') ?? p.rows[0];
+// lead：用户点的那一项（第六十七轮：点社会主义共和国时写它，不写为它一起勾上的意识形态）；不在清单里时照旧写第一个勾的
+export function importLabel(p: Pick<ImportPreview, 'rows' | 'count'>, lead?: { kind: string; id: string }): string {
+  const first = (lead && p.rows.find((r) => r.kind === lead.kind && r.id === lead.id)) || p.rows.find((r) => r.role === 'pick') || p.rows[0];
   if (!first) return `添加 ${p.count} 项`;
   // 只写名字：种类的名字（“人口维度的取值”）是给编辑表单看的
   const head = `“${first.name}”`;
@@ -431,13 +432,13 @@ export function importLabel(p: Pick<ImportPreview, 'rows' | 'count'>): string {
 
 // 导入本世界的命令：一个 batch，一次撤销全撤。先加各项，再补回，再加变量（add_dimension 要取值已经在世界里）。什么都不用写时 command 是 null。
 // path：来源在资源库里的路径（记进世界的来源）
-export function importCommand(ask: ImportAsk, opts: { path?: readonly string[]; onto?: ImportOnto } = {}): WorldImport {
+export function importCommand(ask: ImportAsk, opts: { path?: readonly string[]; onto?: ImportOnto; lead?: { kind: string; id: string } } = {}): WorldImport {
   if (ask.target.t !== 'world') throw new Error('importCommand 只给世界用');
   const world = ask.target.world;
   const preview = importPreview(ask);
   const { pack, picks } = mergedPack(preview);
   const origin = originIndex(ask.source, opts.path ?? [ask.source.id]);
-  const plan = planPack(world, pack, picks, { origin, label: importLabel(preview) });
+  const plan = planPack(world, pack, picks, { origin, label: importLabel(preview, opts.lead) });
   const commands: Command[] = [...plan.command.commands];
   for (const f of preview.plan.fixes) commands.push(enableCommand(f.kind, f.item, world));
   const era = preview.plan.era;

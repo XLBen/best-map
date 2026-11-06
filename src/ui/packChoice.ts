@@ -197,6 +197,16 @@ export function beyondGroups(small: Small | null | undefined, library: string | 
   return worldCultureGroups(small).filter((g) => !offered.has(g.id) && !gone.has(g.id));
 }
 
+// 第六十七轮：这个库里比重 0（默认不带）、世界里比重不是 0 的组。从资源库面板勾了组里的文化（或整组）加进来的，用户要它参与生成，
+// 和 beyondGroups 一样默认参与、取消时记下比重 0。没有这样添加过的世界里没有这种组（勾选它生成时已经在上次的组里），生成结果不变。
+// 只看世界正在用的库（换库时照旧）
+export function revivedGroups(small: Small | null | undefined, library: string | null, lib: readonly LibraryEntry[]): CultureGroup[] {
+  if (!small || !library || library !== worldLibrary(small)) return [];
+  const zero = new Set(packGroups(library, lib).flatMap((o) => (o.group.weight === 0 ? [o.group.id] : [])));
+  if (!zero.size) return [];
+  return worldCultureGroups(small).filter((g) => zero.has(g.id) && g.weight !== 0);
+}
+
 // ---------- 加进世界的命令 ----------
 
 // 新建世界那一步里要加的小包：库里世界的底子（自己的库里没有这些小包时不算）
@@ -240,7 +250,7 @@ export function librarySelectable(small: Small, lib: readonly LibraryEntry[], ke
 // 从资源库加一项进本世界（档案里换成本世界没有的政体……）：一整步的命令与加进来后在世界里的 id（同 id 不同内容时改了名）；带不了时 id 是 null。
 // 第六十三轮：走导入的闭包（core/packs/closure.ts），派系一起带上，不留下找不到的引用。
 // 第六十四轮：灰的、放不下的带不了（id 是 null；第六十五轮起档案里不列这些，见 countries.ts）。派系靠的变量世界里都有才能选，所以不会加变量，
-// 换一个国家的政体不会动所有人的人口（要变量走“导入”）
+// 换一个国家的政体不会动所有人的人口（要变量在资源库面板里勾）
 export function addFromLibrary(small: Small, lib: readonly LibraryEntry[], key: string, id: string, path: PackPath): { commands: Command[]; id: string | null } {
   const source = nodeAt(lib, path.slice(0, 1));
   const kind = kindByPackKey(key);

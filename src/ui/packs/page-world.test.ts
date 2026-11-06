@@ -43,8 +43,9 @@ function worldOf(lib = 'medieval', count = 3, more: Record<string, unknown> = { 
   const root = builtinPacks().find((p) => p.id === lib)!;
   for (const c of newWorldContentCommands(ROOTS, worldPartsOf(lib))) e.exec(c);
   const all = packItems<{ id: string; weight?: number }>(root, 'cultureGroups');
-  for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: all.map((g) => g.id) }, e.world)) e.exec(c);
   const groups = all.filter((g) => g.weight !== 0).slice(0, count).map((g) => ({ id: g.id, weight: 1 }));
+  // 和新建向导一样只加选的组（第六十七轮以前加的是全部组：库里默认不带的组比重写成没写，第六十七轮起这种组会参与重新生成）
+  for (const c of packImportCommands(ROOTS, { packs: [[lib]], groups: groups.map((g) => g.id) }, e.world)) e.exec(c);
   e.exec({ op: 'generate_human', packs: [[lib]], groups, ...more } as Command);
   e.update();
   return e;
