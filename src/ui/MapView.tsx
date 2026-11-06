@@ -1,12 +1,12 @@
 import { effect, untracked } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import { type CellFocus, displayCellAt } from '../../core/display';
-import { FEATURE_INFO, type FeatureType, type GeoFeature } from '../../core/features';
+import { FEATURE_INFO, type FeatureType } from '../../core/features';
 import { worldMapStyle } from '../../core/map-style';
 import { findCell } from '../../core/mesh';
 import { COAST_AMP } from '../../core/terrain';
-import type { ProvinceMeta, World } from '../../core/world';
-import { type BaseLayers, type ColorOptions, type GhostEdit, GhostBuffer, type ModeLayers, baseKey, baseLayers, colorSignature, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, modeKey, modeLayers, provinceScale, terrainGhost, terrainLikeMode } from '../render/colors';
+import type { World } from '../../core/world';
+import { type ColorOptions, GhostBuffer, baseKey, editGhost, fxLayers, groupPreview, highlightColors, lakeTintLayer, lakeTypesSignature, modeKey, provinceScale, terrainGhost, terrainLikeMode } from '../render/colors';
 import { type LabelBox, type OverlayPaths, type ProvinceLabel, buildPaths, drawOverlay, peakLabels, riverLayer, riverLayerScene, resetOverlayCache, riverPathsKey, samePathsKey, setOverlayPerf } from '../render/overlay';
 import { convertCamera, effectiveZoom } from '../render/projection';
 import { type CellLayers, Renderer, SETTLE_MS } from '../render/renderer';
@@ -30,7 +30,6 @@ import {
   pinnedCell,
   pinnedPart,
   picking,
-  selectedSettle,
   selectedCountry,
   prefs,
   redrawTick,
@@ -38,7 +37,6 @@ import {
   riverStyleOverride,
   season,
   flowSeason,
-  sheet,
   showToast,
   sliderActive,
   tool,
@@ -59,108 +57,19 @@ import { riverGlow } from './river';
 import { hasCountries } from './domain/countries';
 import { type ModeDef, mapKind, modeDef, modeFeatures, modeOf } from './map/modes';
 import { regionDraws } from './map/political';
-import { markKey } from './domain/settlements';
-import { settleOverlay } from './map/settle';
+import { settleKey, settleOverlay, settleStrongMarks } from './map/settle';
+import { colorCache, sameKey } from './map/color-cache';
+import { hiddenLabelFilter, provinceLabelsOf } from './map/labels';
+import { NO_PREVIEW, PICK_PREVIEW, withQueued } from './map/preview-merge';
+import { referenceCss } from './map/reference';
 import { onSettleImageLoad } from '../render/settle-draw';
 import { type Preview, type ProvincePreview, type ToolHandler, measureTool } from './tools';
-import { libWide } from './packs/panel-store';
-import { bottomBarRef } from './shell/bottom-bar';
+import { cornerLifter } from './map/corner-lift';
 
 // 文化、文化组、每一维、人口模式里国界的浓淡（第二十五轮：细而淡，只留近处一圈）
 const FAINT_COUNTRY = 0.4;
-// 着色的缓存（第三十九轮）：每个世界最多留几份底子、几份模式的那一层
-const BASE_CACHE = 6;
-const MODE_CACHE = 10;
-
-// 一个按插入先后淘汰的小缓存：取到的挪到最后，满了扔掉最前面的
-function lruGet<K, V>(m: Map<K, V>, k: K, make: () => V, cap: number): V {
-  let v = m.get(k);
-  if (v !== undefined) {
-    m.delete(k);
-    m.set(k, v);
-    return v;
-  }
-  v = make();
-  m.set(k, v);
-  while (m.size > cap) m.delete(m.keys().next().value as K);
-  return v;
-}
-
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具（map/input.ts），工具给出预览。
 // 这里只把它们接起来：哪一类工具多画什么由 defs/tools/ 声明（map/highlights.ts），导出图片在 map/export.ts，window 上的钩子在 map/debug.ts
-
-// 省名标签：每个省放在它的格的中心。province、metas 可以是预览里将来的（重划、重新划分时先看新的省名）
-function provinceLabelsOf(w: World, province: Int32Array, metas: Record<number, ProvinceMeta>): ProvinceLabel[] {
-  if (w.mesh.kind === 'sphere') {
-    // 整个星球：经度取圆周平均，跨过经度 180° 的省份名字也落在省份上
-    const sums = new Map<number, [number, number, number, number]>();
-    for (let i = 0; i < w.mesh.n; i++) {
-      const p = province[i];
-      if (p < 0) continue;
-      const s = sums.get(p) ?? [0, 0, 0, 0];
-      s[0] += Math.sin(Math.PI * w.mesh.x[i]);
-      s[1] += Math.cos(Math.PI * w.mesh.x[i]);
-      s[2] += w.mesh.y[i];
-      s[3]++;
-      sums.set(p, s);
-    }
-    return [...sums]
-      .filter(([p]) => metas[p])
-      .map(([p, [sn, cs, y, c]]) => {
-        const x = Math.atan2(sn, cs) / Math.PI;
-        return { x: x < 0 ? x + 2 : x, y: y / c, text: metas[p].name || String(p), kind: metas[p].kind };
-      });
-  }
-  const sums = new Map<number, [number, number, number]>();
-  for (let i = 0; i < w.mesh.n; i++) {
-    const p = province[i];
-    if (p < 0) continue;
-    const s = sums.get(p) ?? [0, 0, 0];
-    s[0] += w.mesh.x[i];
-    s[1] += w.mesh.y[i];
-    s[2]++;
-    sums.set(p, s);
-  }
-  return [...sums].filter(([p]) => metas[p]).map(([p, [x, y, c]]) => ({ x: x / c, y: y / c, text: metas[p].name || String(p), kind: metas[p].kind }));
-}
-
-// 几个省份预览叠在一起（排队中的、按钮悬停的、当前工具的，后面的盖住前面的）。整份的（重划、重新划分）作底，
-// 它前面的就不要了。同样的几个预览给同一个对象（地图不必重新上传）
-let merged: { from: (ProvincePreview | null | undefined)[]; out: ProvincePreview | null } = { from: [], out: null };
-function mergeProvinces(from: (ProvincePreview | null | undefined)[]): ProvincePreview | null {
-  if (from.length === merged.from.length && from.every((x, k) => x === merged.from[k])) return merged.out;
-  const list = from.filter((x): x is ProvincePreview => !!x);
-  let out: ProvincePreview | null = list[0] ?? null;
-  if (list.length > 1) {
-    const top = list.map((x) => !!x.province).lastIndexOf(true);
-    const base = top >= 0 ? list[top] : null;
-    const rest = list.slice(top + 1);
-    // 将来全部的切线：最后给出的那一份（对半分开时切线接着管分出来的一半）
-    const seamList = [base, ...rest].reverse().find((x) => x && x.seamList !== undefined)?.seamList;
-    out = {
-      cells: [...(base?.cells ?? []), ...rest.flatMap((x) => x.cells)],
-      ids: [...(base?.ids ?? []), ...rest.flatMap((x) => x.ids)],
-      seams: [...(base?.seams ?? []), ...rest.flatMap((x) => x.seams ?? [])],
-      ...(base ? { province: base.province, metas: base.metas } : {}),
-      ...(seamList !== undefined ? { seamList } : {}),
-    };
-  }
-  merged = { from, out };
-  return out;
-}
-
-// 几步的幽灵海岸合在一起（排队中的、当前工具的；同一格的增量相加）。同样的几份给同一个对象（地图不必重算）
-let ghosts: { from: (GhostEdit | null | undefined)[]; out: GhostEdit | null } = { from: [], out: null };
-function mergeGhosts(from: (GhostEdit | null | undefined)[]): GhostEdit | null {
-  if (from.length === ghosts.from.length && from.every((x, k) => x === ghosts.from[k])) return ghosts.out;
-  const list = from.filter((x): x is GhostEdit => !!x);
-  const out = list.length <= 1 ? (list[0] ?? null) : { cells: list.flatMap((g) => g.cells), delta: list.flatMap((g) => g.delta), lake: list.flatMap((g) => g.lake ?? []) };
-  ghosts = { from, out };
-  return out;
-}
-
-const NO_PREVIEW: Preview = { layers: [], shapes: [], hint: null };
-const PICK_PREVIEW: Preview = { layers: [], shapes: [], hint: '点一下吸取' };
 
 export function MapView() {
   const glRef = useRef<HTMLCanvasElement>(null);
@@ -301,80 +210,18 @@ export function MapView() {
       const tile = refTile.current;
       const r = reference.value;
       if (!img || !tile) return;
-      const css = referenceCss(w, img, r);
+      const css = referenceCss(w, img, r, renderer.camera, glCanvas, (url) => {
+        if (refUrl !== url) {
+          refUrl = url;
+          img.onload = requestDraw;
+          img.src = url;
+        }
+      });
       if (css.img !== imgCss) img.style.cssText = imgCss = css.img;
       if (css.tile !== tileCss) tile.style.cssText = tileCss = css.tile;
     }
-    function referenceCss(w: World, img: HTMLImageElement, r: typeof reference.value): { img: string; tile: string } {
-      const none = 'display:none';
-      // 等面积、球形投影时不铺参考图（图层里有说明）
-      if (!r || !r.visible || (w.mesh.kind === 'sphere' && renderer.camera.proj)) return { img: none, tile: none };
-      if (w.mesh.kind === 'sphere') {
-        // 整个星球：草图按 2:1 铺满一整圈，左右重复，跟着平铺的副本走
-        const cam = renderer.camera;
-        const W = 2 * cam.zoom;
-        const H = cam.zoom;
-        const x = (0 - cam.x) * cam.zoom + glCanvas.clientWidth / 2;
-        const y = (0 - cam.y) * cam.zoom + glCanvas.clientHeight / 2;
-        return { img: none, tile: `display:block;left:0;top:${y}px;width:100%;height:${H}px;opacity:${r.opacity};background-image:url("${r.url}");background-size:${W}px ${H}px;background-repeat:repeat-x;background-position:${x}px 0` };
-      }
-      if (refUrl !== r.url) {
-        refUrl = r.url;
-        img.onload = requestDraw;
-        img.src = r.url;
-      }
-      const cam = renderer.camera;
-      let x = (0 - cam.x) * cam.zoom + glCanvas.clientWidth / 2;
-      let y = (0 - cam.y) * cam.zoom + glCanvas.clientHeight / 2;
-      let W = w.mesh.width * cam.zoom;
-      let H = w.mesh.height * cam.zoom;
-      if (r.fit === 'contain' && img.naturalWidth && img.naturalHeight) {
-        const ar = img.naturalWidth / img.naturalHeight;
-        if (ar > W / H) {
-          y += (H - W / ar) / 2;
-          H = W / ar;
-        } else {
-          x += (W - H * ar) / 2;
-          W = H * ar;
-        }
-      }
-      return { img: `display:block;left:${x}px;top:${y}px;width:${W}px;height:${H}px;opacity:${r.opacity}`, tile: none };
-    }
-
-    // 底部条要把左下角的比例尺抬多高：量一次缓存着，底部条或窗口变了大小时作废（不在每帧查 DOM、量位置）。
-    // 没有底部条时每半秒才再找一次
-    let liftCache: number | null = null;
-    let liftBar: Element | null = null;
-    let liftAt = 0;
-    const barObs = new ResizeObserver(() => {
-      liftCache = null;
-      requestDraw();
-    });
-    const onWinResize = () => (liftCache = null);
-    window.addEventListener('resize', onWinResize);
-    // 生态的表打开、关上时底部条挪了位置（.app.with-sheet）却不变大小：ResizeObserver 不报，这里作废。
-    // 资源库面板变宽、收回时也一样（.app.lib-wide，第六十七轮）
-    const disposeSheet = effect(() => {
-      void sheet.value;
-      void libWide.value;
-      liftCache = null;
-      requestDraw();
-    });
-    function barLift(): number {
-      if (liftCache !== null && (liftBar ? liftBar.isConnected : performance.now() - liftAt < 500)) return liftCache;
-      // 底部条自己挂上来（shell/bottom-bar.ts）；已经不在页面上的不算
-      const el = bottomBarRef.current;
-      const bar = el?.isConnected ? el : null;
-      if (bar !== liftBar) {
-        if (liftBar) barObs.unobserve(liftBar);
-        if (bar) barObs.observe(bar);
-        liftBar = bar;
-      }
-      const r = bar?.getBoundingClientRect();
-      liftCache = r && r.left < 300 ? Math.ceil(window.innerHeight - r.top) + 4 : 0;
-      liftAt = performance.now();
-      return liftCache;
-    }
+    // 底部条要把左下角的比例尺抬多高（map/corner-lift.ts）
+    const corner = cornerLifter(requestDraw);
 
     // 导出图片（整张地图）：画的期间屏幕上的地图不重画
     const exporter = mapExporter({
@@ -419,24 +266,12 @@ export function MapView() {
       const own: Preview = !showPreview ? NO_PREVIEW : picking.value && !measure.value ? PICK_PREVIEW : active().preview();
       // 工具选中时一直画着的东西（鼠标不在地图上也画）
       const back = clean ? null : (active().backdrop?.() ?? null);
-      // 排队中的编辑（松手时的预览，直到结果换上，鼠标离开地图也留着）与底部条、“⋯”里按钮悬停的预览
-      // （省份的对半分开、重新划分，改一条河）画在当前工具的预览下面。幽灵海岸几步合在一起；将来的世界用当前工具的确切预览，
-      // 没有时用排队中最后一个有确切预览的（都是按当前世界算的，见 pending.ts）
+      // 排队中的编辑、底部条与“⋯”里按钮悬停的预览画在当前工具的预览下面（map/preview-merge.ts）
       const queued = clean ? [] : pendingEdits.value.map((e) => pendingPreview(e, w));
       // 底部条预览的通道里省份的那一份（改一条河的那一份由画河工具画）
       const bp = clean ? null : barPreview.value;
       const button = bp?.kind === 'provinces' && bp.base === w ? bp : null;
-      const preview: Preview =
-        queued.length || button
-          ? {
-              ...own,
-              layers: [...queued.flatMap((q) => q.layers), ...(button?.layers ?? []), ...own.layers],
-              shapes: [...queued.flatMap((q) => q.shapes), ...own.shapes],
-              provinces: mergeProvinces([...queued.map((q) => q.provinces), button?.provinces, own.provinces]),
-              ghost: mergeGhosts([...queued.map((q) => q.ghost), own.ghost]),
-              world: own.world ?? [...queued].reverse().find((q) => q.world)?.world ?? null,
-            }
-          : own;
+      const preview = withQueued(own, queued, button);
       // 画出来的世界：工具的确切预览、排队中的画笔的确切预览、调整面板预览的将来的世界，或当前世界（导出图片只画当前世界）。
       // 生态颜色、雪、河、地名、风、没涂成的格按它画；工具、悬停卡片照旧看当前世界
       const ap = adjustPreviewWorld.value;
@@ -491,7 +326,7 @@ export function MapView() {
       }
       const groups = labelGroups.value;
       // 底部条伸到左下角（窗口窄、选项多）时，比例尺和尺子按钮抬到它上面（底部条、窗口变了大小时才重新量，不在每帧查 DOM）
-      const lift = barLift();
+      const lift = corner.lift();
       if (lift !== cornerLift.value) cornerLift.value = lift;
       const types = new Set((Object.keys(FEATURE_INFO) as FeatureType[]).filter((t) => groups.has(FEATURE_INFO[t].group)));
       const ovArgs: OverlayArgs = [shown, shownRivers, renderer.camera, {
@@ -588,24 +423,8 @@ export function MapView() {
     });
 
     // 着色：视图模式、季节、关注的类型、边界，按画出来的世界（预览的将来的世界或当前世界，在 draw 里做）。
-    // 着色用到的数组都没变（只改了名字的轻快照；预览世界里没变的数组沿用当前世界的同一个对象）就不重新着色、不重画地形。
-    // 第三十九轮：底子（baseLayers，按 baseKey：地形类与人文的模式共用一份）与每种模式的一层（modeLayers，按 modeKey）各缓存几份，
-    // 拼成的图层也按这两个键记住（同一个对象：渲染器按对象是不是同一个来上传，底子没变时不重画地形层）。
-    // 按世界（用到的数组、小数据的签名）分开存，最近两个世界留着：预览出现、消失时来回切换不必重算
-    type ColorEntry = { key: unknown[]; base: Map<string, BaseLayers>; modes: Map<string, ModeLayers>; merged: Map<string, CellLayers> };
-    let colorKey: unknown[] = [];
-    const colorCache: ColorEntry[] = [];
-    const sameKey = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((k, i) => k === b[i]);
-    // 小数据里着色用到的部分（colors.ts 的 colorSignature，含生态的外观）：每帧都要比，按小数据对象缓存
-    const smallKeys = new WeakMap<World['small'], string>();
-    function smallKey(w: World): string {
-      let k = smallKeys.get(w.small);
-      if (k === undefined) {
-        k = colorSignature(w.small);
-        smallKeys.set(w.small, k);
-      }
-      return k;
-    }
+    // 着色用到的数组都没变就不重新着色、不重画地形；底子与每种模式的一层各缓存几份（map/color-cache.ts）
+    const colorsFor = colorCache(perf);
     // 这次着色的选项（拖花纹、发光滑块时按它重算花纹）与花纹覆盖的键（见 applyFx）
     let colorOpts: ColorOptions | null = null;
     let fxKey: unknown[] = [];
@@ -622,27 +441,11 @@ export function MapView() {
       };
       renderer.countryAlpha = md.countryBorders === 'faint' && category.value !== 'countries' ? FAINT_COUNTRY : 1;
       colorOpts = o;
-      const arrays: unknown[] = [];
-      for (const v of Object.values(w.derived)) if (ArrayBuffer.isView(v)) arrays.push(v);
-      for (const v of Object.values(w.causes)) if (ArrayBuffer.isView(v)) arrays.push(v);
-      arrays.push(...Object.values(w.derived.corrF), ...Object.values(w.causes.fields));
-      const wkey = [w.mesh, ...arrays, smallKey(w)];
       // 季节只进用得上它的模式的键，关注的物种只进“适宜程度”的，省界、国界、工具类别只进模式的那一层的
       const bk = baseKey(o);
       const mk = modeKey(o);
-      const key = [...wkey, bk, mk];
-      if (sameKey(key, colorKey)) return;
-      colorKey = key;
-      let entry = colorCache.find((x) => sameKey(x.key, wkey));
-      if (!entry) {
-        entry = { key: wkey, base: new Map(), modes: new Map(), merged: new Map() };
-        colorCache.unshift(entry);
-        colorCache.length = Math.min(colorCache.length, 2);
-      }
-      const e = entry;
-      const t0 = perf ? performance.now() : 0;
-      const layers = lruGet(e.merged, `${bk}#${mk}`, () => ({ ...lruGet(e.base, bk, () => baseLayers(w, o), BASE_CACHE), ...lruGet(e.modes, mk, () => modeLayers(w, o), MODE_CACHE) }), BASE_CACHE * 2);
-      if (perf) perf.cpu('cellLayers', performance.now() - t0);
+      const layers = colorsFor(w, o, bk, mk);
+      if (!layers) return;
       renderer.setMesh(w.mesh);
       layersShown = layers;
       renderer.setLayers(layers);
@@ -689,36 +492,8 @@ export function MapView() {
     function setBorderAlpha(md: ModeDef, provinceTool: boolean) {
       renderer.provinceAlpha = md.provinces > 0 && !provinceTool && mode.value !== 'provinces' ? md.provinces : 1;
     }
-    // “城市”工具选中的城市：地图上照旧写名字
-    function settleKey(): string | null {
-      const r = selectedSettle.value;
-      return r && (r.kind === 'city' || r.kind === 'point') ? markKey(r.kind, r.id) : null;
-    }
-
-    // 照最醒目的画的点（第四十二轮）：鼠标下的点、选中的城市，选中、钉住、指针停着的国家的首都（淡一些的城市、首都照原样画）。
-    // 同样的内容给同一个数组
-    let strongMemo: { key: string; out: readonly string[] } | null = null;
-    function settleStrong(w: World, preview: Preview): readonly string[] | null {
-      const out: string[] = [];
-      if (preview.mark) out.push(preview.mark);
-      const sk = settleKey();
-      if (sk && sk !== preview.mark) out.push(sk);
-      const country = w.causes.country;
-      if (w.small.cities && country) {
-        const add = (id: number | null | undefined) => {
-          if (id !== null && id !== undefined && id >= 0 && !out.includes(`country:${id}`)) out.push(`country:${id}`);
-        };
-        add(selectedCountry.value);
-        const pin = pinnedCell.value;
-        if (pin >= 0 && pin < country.length) add(country[pin]);
-        const p = view.pointer;
-        if (tool.value === 'pointer' && p && p.cell >= 0 && p.cell < country.length) add(country[p.cell]);
-      }
-      if (!out.length) return null;
-      const key = out.join('|');
-      if (strongMemo?.key !== key) strongMemo = { key, out };
-      return strongMemo.out;
-    }
+    // 照最醒目的画的点（map/settle.ts）
+    const settleStrong = settleStrongMarks(() => view.pointer);
 
     // 钉住的格（第三十七轮）：钉住时记下的陆或水那一部分；没记下（钉住的点没有描格的格）不描
     function pinnedFocus(w: World): CellFocus | null {
@@ -743,14 +518,8 @@ export function MapView() {
       renderer.style = worldMapStyle(w.small);
     }
 
-    // 工具选中的东西自己的地名（key）先不标：画河时选中的河不盖住它的控制点、“+”。同样的输入给同一个数组
-    let labelMemo: { from: GeoFeature[]; key: string; out: GeoFeature[] } | null = null;
-    function labelsShown(list: GeoFeature[], key: string): GeoFeature[] {
-      if (!key) return list;
-      if (labelMemo?.from === list && labelMemo.key === key) return labelMemo.out;
-      labelMemo = { from: list, key, out: list.filter((f) => f.key !== key) };
-      return labelMemo.out;
-    }
+    // 工具选中的东西自己的地名先不标（map/labels.ts）
+    const labelsShown = hiddenLabelFilter();
 
     // 预览世界的河（河流多少、整体干湿……地图画将来的河）：与当前世界的河用同一个键（riverPathsKey，拖粗细时的临时样子也在里面）。
     // 键与当前世界的相同（预览没改描河读的数组、河道，比如涂生态、改名）时直接用当前世界的路径；不同时按键另缓存一份
@@ -853,9 +622,7 @@ export function MapView() {
 
     return () => {
       if (settleTimer) clearTimeout(settleTimer);
-      barObs.disconnect();
-      disposeSheet();
-      window.removeEventListener('resize', onWinResize);
+      corner.dispose();
       disposeWorld();
       disposePaths();
       disposeColors();
