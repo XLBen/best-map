@@ -3,7 +3,12 @@
 界面的入口、Worker 与存储。画地图在 [render.md](render.md)，界面在 [ui.md](ui.md)。线程怎样分工见 [开发说明 · 线程与隔离](../开发说明.md#线程与隔离)。
 
 ## 线程
-- `main.tsx` 入口（第一次画界面前 `startToolEffects`）；`state.ts` 主线程状态（世界的只读视图、界面状态、排队的请求、快照合并；不引用 `ui/`）；`notice-timer.ts` 提示条多久消失；`biome-range.ts` 生态范围外怎么说（第六十九轮从 `ui/` 搬来）
+- `main.tsx` 入口（第一次画界面前 `startToolEffects`）；`state.ts` 只给界面用的信号（地图模式、季节、开着的面板、悬停……）、脚本出错的“编辑”，并把 `state/` 下给界面用的照旧导出（界面只从它引用；不引用 `ui/`）
+- `state/`（第七十轮从 `state.ts` 分出来，原样搬，彼此不绕成圈）：`world.ts` 世界与选中的东西（快照换上时一起改的信号）；`notes.ts` 提示、跳过的步骤、“改了什么”与高亮（`describeChange`）；`options.ts` 工具的选项；`prefs.ts` 偏好（localStorage）与参考图（IndexedDB）
+- `state/worker-host.ts` 开计算 Worker、请求排队（`call`、`editsIdle`）、换上快照（`applySnapshot`、`completeSnapshot`）、缩略图、页面隐藏时写检查点；上层的预览作废、自动保存经 `hostHooks` 接回来；`mesh.ts` 网格的缓存与建网格的 Worker；`cost-gate.ts` 成本闸门
+- `state/edits.ts` 执行、换掉最后一步、撤销、重做；`exact-preview.ts` 地形预览、命令预览、省份的轻预览、确切预览与调整面板的预览；`open.ts` 新建、打开、继续上次的世界、“再试一次”；`script-trust.ts` 问要不要信任脚本；`ask.ts` 问一句的对话框
+- `state/autosave.ts` 自动保存（IndexedDB，退回 localStorage）与连着的“我的地图”；`export-host.ts` 导出 Worker、下载；`tidy.ts` 移出的存进资源库、整理的计划、压缩世界文件
+- `notice-timer.ts` 提示条多久消失；`biome-range.ts` 生态范围外怎么说（第六十九轮从 `ui/` 搬来）
 - `protocol.ts` 主线程与计算 Worker 之间的消息；`transfer.ts` 搬数据不复制
 - `worker.ts` 计算 Worker（持有引擎；快照、描好的河、空闲预热）
 - `regen-track.ts` 上一次生成时世界里的内容，跟着撤销的先后记（第六十二轮，面板顶上的“重新生成”）
@@ -14,7 +19,7 @@
 - `mesh-worker.ts` 建网格；`export-worker.ts` 导出（游戏文件包、整张地图的栅格化）；`compact-job.ts` 压缩世界文件（在导出 Worker 里）
 
 ## 存储
-- `idb.ts` IndexedDB（自动保存、检查点、网格、参考图、资源库、我的地图）
+- `idb.ts` IndexedDB（自动保存、检查点、网格、参考图、资源库、我的地图；`kvRequest` kv 表上的一个请求）
 - `maps.ts` 我的地图（存、盖掉、改名、删掉，连着哪一张）
 - `library.ts` 资源库（内置的树、我的资源、“来自《世界名》”、导入的；`saveItem`、`keepInLibrary`；第五十九轮：包带版本 `rev`，同一版不再 `parsePack`）
 - `library-edit.ts` 改我的库（第五十九轮；第六十轮加 `setArrange` 换融入的安排、`applyItems` 几项一步；第六十一轮加 `setPack` 导入时整个换掉，一步撤销，先 `parsePack`）：`setItem` 只查这一项、只换到树根的路、写日志（localStorage），整个库晚一点才写（`FLUSH_MS`、关面板、切换库）；自己的撤销；`adopt` 读存储时补上日志；`copyLibrary`、`createLibrary`、`deleteLibrary`

@@ -28,9 +28,9 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 - `core/human/` 人文：地形类别、时代文化人口、国家、城市道路地标 → `docs/dev/core-human.md`
 - `core/content/` 内容种类的登记表；`core/packs/` 内置资源包（JSON 与代码）
 - `core/testing/` 测试共用的世界模板（`snapshot`）
-- `src/` 线程、Worker、存储 → `docs/dev/src.md`
+- `src/` 线程、Worker、存储；`src/state/` 主线程状态（`src/state.ts` 照旧导出）→ `docs/dev/src.md`
 - `src/render/` 渲染器、着色器（`shaders/`）、2D 叠加层（`overlay*.ts`）→ `docs/dev/render.md`
-- `src/ui/` 界面：`defs/` 注册表、`shell/`、`panels/`、`map/`、`tools/`、`river/`、`packs/`、`components/` → `docs/dev/ui.md`
+- `src/ui/` 界面：`defs/` 注册表、`shell/`、`panels/`、`map/`、`tools/`、`river/`、`packs/`、`domain/` 领域逻辑、`archives/` 档案的几页、`components/` → `docs/dev/ui.md`
 - `src/testing/frozen/` 冻结的旧代码参照（测试拿它与现在的比，不要改）
 - `tools/` 命令行、测速、逐字节对照、一键开启 → `docs/dev/tools.md`
 - `docs/` 使用说明、开发说明、更新记录；`docs/dev/` 分篇的开发文档
@@ -46,13 +46,13 @@ node tools/overlay-ab.mjs --against <提交>   # 叠加层逐字节对照
 | 生成的各步 | 流水线 `core/engine.ts`；地形 `generate.ts` / `planet-gen.ts` / `relief.ts` / `outline.ts` / `terrain.ts`；高程 `elevation.ts`；气候 `climate.ts` / `planet-climate.ts`；水 `hydrology.ts`、`rivers.ts`；生态 `vegetation.ts`；人文 `core/human/generate.ts` |
 | 着色器 | `src/render/shaders/*.ts`；CPU 的同一套式子在 `core/subcell.ts`、`core/display.ts`、`core/coast-style.ts`（测试把 GLSL 照字面换成 JS 对照）；有意改源码后 `RECORD_SHADERS=1 npx vitest run src/render/shader-sources.test.ts` |
 | 地名、国名、片区名的排版 | `src/render/overlay-labels.ts`、`overlay-country-labels.ts`、`src/ui/map/political.ts`；叠加层新选项要进 `overlay-base.ts` 的 `OverlayState` 与 `overlay-static.ts` 的 `FIELD_KIND` |
-| 工具 | 声明在 `src/ui/defs/tools.ts`，行为在 `src/ui/tools/<类>.ts`（约定见 `src/ui/tools/api.ts`），河在 `src/ui/river/` |
+| 工具 | 声明在 `src/ui/defs/tools/<类>.ts`（`index.ts` 合起来），行为在 `src/ui/tools/<类>.ts`（约定见 `src/ui/tools/api.ts`），河在 `src/ui/river/` |
 | 面板、底部条、顶栏 | `src/ui/panels/*.tsx`、`src/ui/shell/*.tsx`；控件只用 `src/ui/components/`；写法见 `docs/dev/ui-design.md` |
 | 地图模式、底图 | `src/ui/map/modes.ts`、`src/ui/defs/layers.ts`、`src/render/colors.ts` |
 | 画风 | `core/map-style.ts`、`core/packs/map-styles.ts`、`src/render/renderer.ts` 的 `styleUniforms` |
 | 地名风格 | `core/name-styles.ts`、`core/packs/names/*.json` |
 | 世界文件的格式 | `core/world.ts`；改了就把 `core/doc-version.ts` 的 `DOC_VERSION` 加一 |
-| 主线程与 Worker 的消息 | `src/protocol.ts`、`src/worker.ts`、`src/state.ts` |
+| 主线程与 Worker 的消息 | `src/protocol.ts`、`src/worker.ts`、`src/state/worker-host.ts`（`src/state.ts` 照旧导出，界面从它引用） |
 | 用户看得到的说明 | `docs/使用说明.md`、`src/ui/Help.tsx`、`src/ui/copy.ts` |
 
 ## 规矩
