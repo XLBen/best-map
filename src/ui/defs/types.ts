@@ -9,7 +9,7 @@ import type { PanelKey } from './panel-registry';
 
 // 界面的注册表：工具、类别、世界调整、图层都在这里声明，
 // 顶栏、底部工具条、调整面板、图层面板、地图上按类画的高亮、光标、换工具时的清理都由它们生成。
-// 加一个工具：工具本身写在 tools/ 下（或 river/ 下），再在 defs/tools.ts 的工具表里加一条——ToolId、类别里的工具列表都由工具表推出来——
+// 加一个工具：工具本身写在 tools/ 下（或 river/ 下），再在 defs/tools/ 下那一类的文件里加一条——ToolId、类别里的工具列表都由工具表推出来——
 // 并在 tools/bind.ts 里接上它做什么（create、吸管、橡皮擦、Delete）。底部条上自己画的部件、“⋯”里的设置在工具表里只写名字（panel-registry.ts），
 // 部件在 panels/ 下登记。加一个参数、一种底图也只要加一条声明。
 

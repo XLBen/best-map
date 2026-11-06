@@ -712,7 +712,7 @@ button.toggle {
   display: block;
 }
 .map-overlay {
-  /* 点选类的工具换成手指：工具表里声明（defs/tools.ts 的 cursor），MapView 设在元素上 */
+  /* 点选类的工具换成手指：工具表里声明（defs/tools/ 的 cursor），MapView 设在元素上 */
   cursor: crosshair;
   touch-action: none;
 }

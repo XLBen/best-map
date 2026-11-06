@@ -9,7 +9,7 @@ import { NO_HUMAN, hasHuman } from './culture';
 import { classCommand, dryLand } from './human';
 import { biomeChange } from './nature';
 
-// 橡皮擦（第二十七轮）：底部条第二行的开关打开时，笔刷换成这里的一支（见 defs/tools.ts 的 eraser）。
+// 橡皮擦（第二十七轮）：底部条第二行的开关打开时，笔刷换成这里的一支（见 defs/types.ts 的 eraser）。
 // 恢复自动：只涂得到改过的格（选中时地图上一直用浅斜线标出），去掉手工的改动；
 // 清空：领土清成无主地、人口清成 0、资源清成“没有”。地形、冷暖干湿、生态的恢复自动沿用原来的三支（restoreTool 等）
 

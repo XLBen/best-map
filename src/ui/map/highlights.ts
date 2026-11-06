@@ -7,7 +7,7 @@ import { editLayers } from '../domain/edits';
 import { riverGlow, riverInfo } from '../river';
 import { type Preview, reliefLayers } from '../tools';
 
-// 地图上的高亮：哪一类工具开着时多画什么，由 defs/tools.ts 里各类、各工具声明（CategoryDef.map、ToolDef.focus），
+// 地图上的高亮：哪一类工具开着时多画什么，由 defs/tools/ 里各类、各工具声明（CategoryDef.map、ToolDef.focus），
 // 这里是它们的画法，以及把工具的预览、排队中的编辑、“调整”的预览、闪烁叠在一起的顺序
 
 // 一类工具开着时地图上多画的高亮：layers 按顺序叠上，key 是判断要不要重新上传用的（同样的输入给同样的 key）

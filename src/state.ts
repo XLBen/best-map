@@ -48,11 +48,11 @@ export type Season = 'annual' | 'summer' | 'winter';
 // inspect（第二十五轮）只有指针，顶栏最左边单独一个按钮
 export type Category = 'inspect' | 'terrain' | 'climate' | 'nature' | 'water' | 'provinces' | 'names' | 'culture' | 'countries' | 'settlements';
 
-// 工具的 id：由 ui/defs/tools.ts 的工具表推出来
+// 工具的 id：由 ui/defs/tools/ 的工具表推出来
 export type { ToolId };
 
 export const tool = signal<ToolId>('land');
-// 换工具：defs/tools.ts 的 setTool 登记进来（换工具时要清掉的东西都在那里）。面板、工具里换工具都走它，不直接写 tool
+// 换工具：defs/tools/index.ts 的 setTool 登记进来（换工具时要清掉的东西都在那里）。面板、工具里换工具都走它，不直接写 tool
 let toolSwitch = (id: ToolId) => {
   tool.value = id;
 };

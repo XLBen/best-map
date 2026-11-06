@@ -87,7 +87,7 @@ function lruGet<K, V>(m: Map<K, V>, k: K, make: () => V, cap: number): V {
 }
 
 // 地图视图：WebGL 底图 + 2D 矢量叠加；指针事件交给当前工具（map/input.ts），工具给出预览。
-// 这里只把它们接起来：哪一类工具多画什么由 defs/tools.ts 声明（map/highlights.ts），导出图片在 map/export.ts，window 上的钩子在 map/debug.ts
+// 这里只把它们接起来：哪一类工具多画什么由 defs/tools/ 声明（map/highlights.ts），导出图片在 map/export.ts，window 上的钩子在 map/debug.ts
 
 // 省名标签：每个省放在它的格的中心。province、metas 可以是预览里将来的（重划、重新划分时先看新的省名）
 function provinceLabelsOf(w: World, province: Int32Array, metas: Record<number, ProvinceMeta>): ProvinceLabel[] {
@@ -766,7 +766,7 @@ export function MapView() {
     };
 
     // 换工具：新的工具对象；其他会影响预览或叠加的状态变化时重画
-    // 底部条按钮悬停时的预览由 setTool 清掉（defs/tools.ts）；鼠标不在地图上时新工具不预览（第十三轮修）
+    // 底部条按钮悬停时的预览由 setTool 清掉（defs/tools/index.ts）；鼠标不在地图上时新工具不预览（第十三轮修）
     // 第二十七轮：开关橡皮擦也换一个工具对象
     const disposeTool = effect(() => {
       const id = tool.value;
