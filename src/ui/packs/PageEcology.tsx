@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Species } from '../../../core/species';
-import { speciesColor } from '../../../core/species';
 import type { WaterType } from '../../../core/water-types';
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
 import { SpeciesWaterForm } from '../panels/speciesWater';
@@ -126,7 +125,7 @@ export function WaterBiomesSegment({ src, ctx, kindId, type }: { src: SourceRef;
                   void commitWaterCell(src, sp.id, kind, type.id, !on, ctx);
                 }}
               />
-              <span class="swatch" style={{ background: speciesColor(sp) }} /> {sp.name || sp.id}
+              <span class="swatch" style={{ background: sp.color }} /> {sp.name || sp.id}
             </label>
           );
         })}

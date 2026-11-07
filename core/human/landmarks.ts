@@ -2,6 +2,7 @@ import { CommandError } from '../errors';
 import type { GeoFeature } from '../features';
 import { hashString } from '../names';
 import { mixSeed, mulberry32 } from '../rng';
+import { type BiomeGroup, biomeGroupOf } from '../species';
 import type { LandmarkMeta, SettlementRules, World } from '../world';
 import { cellName, peakFeatureAt } from './cells';
 import { cultureById, worldCultures } from './era';
@@ -94,8 +95,9 @@ export function detect(S: SettleInputs, detector: LandmarkDetector): Candidate[]
       break;
     }
     case 'oasis': {
-      // 第二十七轮：荒漠是生态的事（地形类别只管起伏）
-      const isDesert = (i: number) => world.small.species[d.dominant[i]]?.terrain === 'desert';
+      // 第二十七轮：荒漠是生态的事（地形类别只管起伏）；第七十一轮起按生态的大类认（species.ts 的 biomeGroupOf；以前只看导出用的地形 desert，内置的生态相同）
+      const groups = world.small.species.map(biomeGroupOf);
+      const isDesert = (i: number) => groups[d.dominant[i]] === 'desert';
       for (let i = 0; i < mesh.n; i++) {
         if (!x.dry[i] || !(x.flags[i] & (RIVER | LAKE)) || !isDesert(i)) continue;
         let k = 0;
@@ -159,8 +161,9 @@ function placeIn(P: PlaceCtx, place: LandmarkPlace, cells: readonly number[], co
   const mine = P.cities.filter((c) => !c.point && (country === null || c.country === country));
   const classIds = worldTerrainClasses(small).map((c) => c.id);
   const clsIs = (i: number, ids: string[]) => ids.includes(classIds[cls[i] - 1] ?? '');
-  // 生态的地形（荒漠、森林……）
-  const terrainIs = (i: number, ts: string[]) => ts.includes(small.species[d.dominant[i]]?.terrain ?? '');
+  // 生态的大类（荒漠、森林……；species.ts 的 biomeGroupOf。第七十一轮以前只看导出用的地形 desert、forest / jungle，内置的生态两种认法相同）
+  const groups = small.species.map(biomeGroupOf);
+  const groupIs = (i: number, g: BiomeGroup) => groups[d.dominant[i]] === g;
   switch (place) {
     case 'capital': {
       const cap = mine.find((c) => c.capital) ?? mine[0];
@@ -206,9 +209,9 @@ function placeIn(P: PlaceCtx, place: LandmarkPlace, cells: readonly number[], co
       );
     }
     case 'desert':
-      return pickWeighted(free.filter((i) => terrainIs(i, ['desert'])), () => 1, rand);
+      return pickWeighted(free.filter((i) => groupIs(i, 'desert')), () => 1, rand);
     case 'forest':
-      return pickWeighted(free.filter((i) => terrainIs(i, ['forest', 'jungle'])), () => 1, rand);
+      return pickWeighted(free.filter((i) => groupIs(i, 'forest')), () => 1, rand);
     case 'border': {
       const terr = causes.country;
       if (!terr || country === null) return undefined;

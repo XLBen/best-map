@@ -9,6 +9,7 @@ import { RIVER_STYLES, RIVER_STYLE_LABEL, type RiverType, riverTypeSchema, river
 import { HEIGHT_MARGIN, HEIGHT_MAX, PATTERNS, PATTERN_LABEL, type Species, speciesSchema } from '../species';
 import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../water-types';
 import { CommandError } from '../errors';
+import { BIOME_TERRAINS } from '../export-terrain';
 import { registerHumanKinds } from '../human/kinds';
 import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
 import { registerUsage } from './usage';
@@ -132,7 +133,8 @@ registerKind<Species>({
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },
     { key: 'color', label: '颜色', type: 'color' },
-    { key: 'terrain', label: '地形类别', type: 'text', hint: '导出的地形图按它着色' },
+    // 第七十一轮：以前叫“地形类别”，和地形类别那一层（平原、丘陵……）撞名；选项写中文，存的是 id
+    { key: 'terrain', label: '导出用的地形', type: 'enum', options: BIOME_TERRAINS.map((t) => ({ value: t.id, label: t.label })), hint: '导出的地形图按它着色' },
     { key: 'competition', label: '竞争力', type: 'number', min: 0, max: 100, step: 0.5 },
     { key: 'natural', label: '自然生成', type: 'bool', optional: true, default: true },
     { key: 'habitability', label: '宜居度', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；空着时按气候估' },

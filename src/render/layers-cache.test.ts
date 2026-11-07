@@ -6,7 +6,6 @@ import { hexToRgb } from '../../core/export';
 import { worldDimensions } from '../../core/human';
 import { ISLAND_CODE_MASK, allIslandTypes, islandTint } from '../../core/island-types';
 import { seamLayers } from '../../core/seams';
-import { speciesColor } from '../../core/species';
 import { COAST_AMP } from '../../core/terrain';
 import { continents, humanExec, seededEngine, snapshot } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
@@ -51,7 +50,7 @@ function oldCellLayers(world: World, o: ColorOptions): CellLayers {
   let shade = 1;
   let rock = 0;
   const S = small.species.length;
-  const speciesRgb = small.species.map((s) => hexToRgb(speciesColor(s)));
+  const speciesRgb = small.species.map((s) => hexToRgb(s.color));
   const put = (arr: Uint8Array, i: number, c: RGB, a = 255) => {
     arr[i * 4] = c[0];
     arr[i * 4 + 1] = c[1];

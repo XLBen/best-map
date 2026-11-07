@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
 import { worldMapStyleId, worldMapStyles } from '../../../core/map-style';
@@ -78,7 +77,7 @@ function SuitabilityPick({ w }: { w: World }) {
   const sp = w.small.species.find((s) => s.id === id);
   return (
     <label class="row suit-pick">
-      <span class="swatch" style={{ background: sp ? speciesColor(sp) : 'transparent' }} />
+      <span class="swatch" style={{ background: sp ? sp.color : 'transparent' }} />
       <select value={id ?? ''} onChange={(e) => (focusSpecies.value = (e.target as HTMLSelectElement).value)}>
         {w.small.species.map((s) => (
           <option value={s.id}>{s.name || s.id}</option>

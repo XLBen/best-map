@@ -1,4 +1,3 @@
-import { speciesColor } from '../../../core/species';
 import { BellOff, TriangleAlert } from 'lucide-preact';
 import { activeConflicts } from '../../../core/constraints';
 import { openPanel, options, togglePanel, world } from '../../state';
@@ -22,7 +21,7 @@ export function BiomeChip() {
       onClick={() => togglePanel('cat:nature')}
       title="换生态、编辑生态类型"
     >
-      <span class="swatch" style={{ background: sp ? speciesColor(sp) : 'transparent' }} />
+      <span class="swatch" style={{ background: sp ? sp.color : 'transparent' }} />
       {sp ? sp.name || sp.id : '选生态'}
     </button>
   );
@@ -59,7 +58,7 @@ export function RangeBar() {
   return (
     <>
       <span class="bar-value">
-        <span class="swatch" style={{ background: sp ? speciesColor(sp) : undefined }} /> {sp?.name ?? pick.species}
+        <span class="swatch" style={{ background: sp ? sp.color : undefined }} /> {sp?.name ?? pick.species}
       </span>
       <Seg<'island' | 'cells'>
         value={pick.kind}

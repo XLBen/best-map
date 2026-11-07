@@ -1,11 +1,13 @@
 import type { LakeType } from '../lake-types';
 import type { RiverType } from '../river-types';
+import { BIOME_ID as B } from './biome-ids';
 
 // 现实的水系（第五十七轮）：七种河、七种湖，每个库的“水系”小包（见 builtin-tree.ts），新世界默认带上。
 // 只有声明式的条件（生态、高度、坡度、气温、流量；湖另有大小），不写脚本，不写起名模板（同一条河的名字和没有这些类型时相同），
 // 没有两岸的影响、不挖河床：高程、水、气候、生态都不变，变的只有 riverType、lakeType 和画出来的样子。
 // 条件、颜色的理由和量到的数见 docs/dev/history/第57轮.md。
 //
+// 点名的生态用 biome-ids.ts 的 id（第七十一轮）。
 // 必须写明 natural: true（包里没写的加进世界时是关着的）。先后有意义：前面的说了算，所以窄的、一眼看得出的在前。
 // 只在主线程用：计算 Worker 只读世界里的内容
 
@@ -47,7 +49,7 @@ export const REAL_RIVER_TYPES: RiverType[] = [
     style: 'dashed',
     width: 0.7,
     natural: true,
-    biomes: ['desert'],
+    biomes: [B.desert],
     when: { flow: { low: 0, high: 400 } },
   },
   {
@@ -58,7 +60,7 @@ export const REAL_RIVER_TYPES: RiverType[] = [
     style: 'dashed',
     width: 0.85,
     natural: true,
-    biomes: ['desert', 'savanna', 'shrubland'],
+    biomes: [B.desert, B.savanna, B.shrubland],
     when: { flow: { low: 0, high: 600 } },
   },
   {
@@ -67,7 +69,7 @@ export const REAL_RIVER_TYPES: RiverType[] = [
     color: '#3f7f78',
     atlasColor: '#4f7f6f',
     natural: true,
-    biomes: ['wetland'],
+    biomes: [B.wetland],
     when: { slope: { low: 0, high: 1 }, flow: { low: 250, high: 20000 } },
   },
   {
@@ -76,7 +78,7 @@ export const REAL_RIVER_TYPES: RiverType[] = [
     color: '#1f3044',
     atlasColor: '#30384a',
     natural: true,
-    biomes: ['rainforest', 'monsoon_forest'],
+    biomes: [B.rainforest, B.monsoonForest],
     when: { slope: { low: 0, high: 3 } },
   },
 ];
@@ -113,7 +115,7 @@ export const REAL_LAKE_TYPES: LakeType[] = [
     atlasColor: '#c8b88e',
     style: 'playa',
     natural: true,
-    biomes: ['desert', 'savanna', 'shrubland', 'steppe'],
+    biomes: [B.desert, B.savanna, B.shrubland, B.steppe],
     when: { flow: { low: 0, high: 150 }, temp: { low: 5, high: 35 } },
   },
   {
@@ -122,7 +124,7 @@ export const REAL_LAKE_TYPES: LakeType[] = [
     color: '#d6e0dc',
     atlasColor: '#c8d0c8',
     natural: true,
-    biomes: ['desert', 'steppe', 'shrubland'],
+    biomes: [B.desert, B.steppe, B.shrubland],
     when: { flow: { low: 0, high: 400 }, temp: { low: 5, high: 35 } },
   },
   {
@@ -131,7 +133,7 @@ export const REAL_LAKE_TYPES: LakeType[] = [
     color: '#4f7a6a',
     atlasColor: '#5f7f6a',
     natural: true,
-    biomes: ['wetland', 'rainforest', 'monsoon_forest', 'subtropical_forest', 'temperate_forest'],
+    biomes: [B.wetland, B.rainforest, B.monsoonForest, B.subtropicalForest, B.temperateForest],
     when: { height: { low: 0, high: 200 }, slope: { low: 0, high: 1 } },
   },
   {

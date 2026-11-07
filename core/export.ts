@@ -1,6 +1,6 @@
-import { speciesColor } from './species';
 import { strToU8, zipSync, zlibSync } from 'fflate';
 import type { WorldDoc } from './engine';
+import { EXPORT_TERRAINS } from './export-terrain';
 import { featureLabel } from './features';
 import { provinceHuman, worldResources, worldTerrainClasses } from './human';
 import { cellParadoxTerrain, paradoxTerrain } from './human/terrain-class';
@@ -30,24 +30,8 @@ export interface ExportOptions {
   maxElevation: number;
 }
 
-// 通用地形类别的颜色（不是游戏自带的索引调色板，导入游戏前需按其 terrain 定义重新映射）
-export const TERRAIN_COLORS: Record<string, [number, number, number]> = {
-  ocean: [8, 31, 130],
-  lake: [55, 90, 220],
-  arctic: [235, 235, 235],
-  tundra: [190, 200, 175],
-  forest: [40, 110, 40],
-  plains: [150, 190, 80],
-  steppe: [200, 190, 110],
-  desert: [230, 210, 140],
-  jungle: [20, 80, 30],
-  savanna: [190, 180, 70],
-  hills: [140, 120, 80],
-  highlands: [170, 150, 110],
-  mountains: [100, 90, 90],
-  marsh: [80, 120, 100],
-  glacier: [250, 252, 255],
-};
+// 通用地形类别的颜色（表在 export-terrain.ts，带中文名；不是游戏自带的索引调色板，导入游戏前需按其 terrain 定义重新映射）
+export const TERRAIN_COLORS: Record<string, [number, number, number]> = Object.fromEntries(EXPORT_TERRAINS.map((t) => [t.id, t.rgb]));
 
 function terrainColor(terrain: string): [number, number, number] {
   return TERRAIN_COLORS[terrain] ?? [255, 0, 255];
@@ -301,7 +285,7 @@ export function exportPackage(
     const s = derived.dominant[i];
     const sp = s >= 0 ? small.species[s] : null;
     kindRgb.set(terrainColor(cellTerrain[i]), i * 3);
-    vegRgb.set(sp ? hexToRgb(speciesColor(sp)) : [200, 200, 200], i * 3);
+    vegRgb.set(sp ? hexToRgb(sp.color) : [200, 200, 200], i * 3);
   }
   const fixed = new Uint8Array(18);
   const fallbackClass = worldTerrainClasses(small).find((c) => c.fallback);

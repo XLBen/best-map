@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { TERRAIN_COLORS } from '../../core/export';
+import { BIOME_TERRAINS } from '../../core/export-terrain';
 import {
   BUILTIN_FIELDS,
   CONDITIONS,
@@ -17,7 +17,6 @@ import {
   speciesRect,
   withCondition,
   withRect,
-  speciesColor,
 } from '../../core/species';
 import { isVegetated, landmassCells } from '../../core/vegetation';
 import type { World } from '../../core/world';
@@ -239,9 +238,9 @@ function Chart({ w, selected, onSelect }: { w: World; selected: Species | null; 
               y={r.y0}
               width={Math.max(2, r.x1 - r.x0)}
               height={Math.max(2, r.y1 - r.y0)}
-              fill={speciesColor(sp)}
+              fill={sp.color}
               fill-opacity={on ? 0.45 : 0.18}
-              stroke={speciesColor(sp)}
+              stroke={sp.color}
               stroke-width={on ? 2.5 : 1}
               class={on ? 'rect on' : 'rect'}
               onPointerDown={(e) => onDown(e as unknown as PointerEvent, sp)}
@@ -323,13 +322,11 @@ function AdvancedTolerances({ sp }: { sp: Species }) {
         </div>
       ))}
       <button onClick={() => save([...tols, { field: 'elevation', min: 0, optLow: 0, optHigh: 2000, max: 3000 }])}>添加条件</button>
-      <h5>导出到游戏时的地形类别</h5>
+      <h5>导出用的地形</h5>
       <select value={sp.terrain} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { terrain: (e.target as HTMLSelectElement).value } })}>
-        {Object.keys(TERRAIN_COLORS)
-          .filter((t) => t !== 'ocean' && t !== 'lake')
-          .map((t) => (
-            <option value={t}>{t}</option>
-          ))}
+        {BIOME_TERRAINS.map((t) => (
+          <option value={t.id}>{t.label}</option>
+        ))}
       </select>
     </div>
   );
@@ -360,7 +357,7 @@ function SpeciesDetails({ sp, share }: { sp: Species; share: number }) {
   return (
     <div class="species-details">
       <div class="row">
-        <input type="color" value={speciesColor(sp)} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { color: (e.target as HTMLInputElement).value } })} />
+        <input type="color" value={sp.color} onChange={(e) => void exec({ op: 'update_species', id: sp.id, patch: { color: (e.target as HTMLInputElement).value } })} />
         <input class="grow" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={rename} onKeyDown={(e) => e.key === 'Enter' && rename()} />
       </div>
       <p class="hint">
@@ -544,7 +541,7 @@ export function SpeciesPanel() {
       <div class="palette">
         {w.small.species.map((s, k) => (
           <button class={`chip ${s.id === focusSpecies.value ? 'on' : ''}`} onClick={() => (focusSpecies.value = s.id)}>
-            <span class="swatch" style={{ background: speciesColor(s) }} />
+            <span class="swatch" style={{ background: s.color }} />
             {s.name || s.id}
             <span class="hint"> {fmtShare(shares.get(k) ?? 0)}</span>
           </button>

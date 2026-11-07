@@ -15,7 +15,7 @@ import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberS
 import { PickBox } from './PickBox';
 import { kindPickable, lookOf, pickView } from './pick-view';
 import { ChildSegments, WorldVariables } from './PageChildren';
-import { BiomeWaterSegment, WaterBiomesSegment } from './PageWater';
+import { BiomeWaterSegment, WaterBiomesSegment } from './PageEcology';
 import { RefGo } from './RefPicker';
 import { refLabel, refOptionsOf } from './refs';
 import { exportRow, openDedicated, runTrusted, sampleLine, saveRow, swatchOf } from './row-actions';

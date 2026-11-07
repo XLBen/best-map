@@ -2,6 +2,8 @@ import type { CellRule } from '../human/rules';
 import type { Resource, ResourceCategory } from '../human/resources';
 import type { TerrainClass } from '../human/terrain-class';
 import type { IslandType } from '../island-types';
+import { BIOME_ID as B } from './biome-ids';
+import { builtinBiomesIn } from './nature';
 
 // 每个库的“基础”里由代码写出的几样（第三十轮以前它们总在世界里，现在和别的内容一样从资源包加进世界，新建时默认勾上“基础”）：
 // 地形类别、通用资源（奇幻的一套在“奇幻 ▸ 资源”）、岛的种类。城市等级、地标、点的类型在 settlements/ 的 JSON 里，
@@ -45,13 +47,14 @@ const GRASS_FIELDS = ['steppe', 'savanna', 'hills'];
 const WOODED = ['forest', 'jungle'];
 // 冰川上（年均温 −18 °C 以下，原来的“冰川”类别）不出矿
 const ICE = -18;
+// 规则里点名的生态（biomes）用 biome-ids.ts 的 id；“苔原类都算”按自然包里的大类取（第七十一轮，和以前手写的相同）
 
 // 内置的通用一套
 export const GENERAL_RESOURCES: readonly Resource[] = [
   res('grain', '粮食', '#e8c547', 'farm', 0.5, [{ classes: ['plains'], terrain: GRASS_FIELDS, tempMin: 2, moistMin: 0.45 }, { classes: ['plains'], terrain: ['forest'], tempMin: 2, moistMin: 0.45, moistMax: 0.8 }, { classes: ['plains'], terrain: GRASS, moistMax: 0.35, river: true, tempMin: 5 }, { classes: ['plains'], terrain: ['desert'], river: true, tempMin: 5 }], { weight: 1.2, cluster: 400 }),
-  res('livestock', '牲畜', '#c98d5a', 'herd', 0.45, [{ classes: ['plains'], terrain: GRASS }, { classes: ['hills', 'highlands'], tempMin: ICE }, { classes: ['plains'], biomes: ['tundra'], moistMax: 0.8 }], { cluster: 450 }),
+  res('livestock', '牲畜', '#c98d5a', 'herd', 0.45, [{ classes: ['plains'], terrain: GRASS }, { classes: ['hills', 'highlands'], tempMin: ICE }, { classes: ['plains'], biomes: [B.tundra], moistMax: 0.8 }], { cluster: 450 }),
   res('fish', '鱼', '#4f9fd6', 'fish', 0.5, [{ coast: true, tempMin: -8, elevMax: 800 }, { lake: true }, { river: true, classes: ['plains'], terrain: ['marsh', 'jungle'] }, { river: true, classes: ['plains'], terrain: ['forest'], moistMin: 0.8 }, { river: true, classes: ['plains'], terrain: GRASS, moistMin: 0.4, elevMax: 500 }], { weight: 1.3, cluster: 250 }),
-  res('wood', '木材', '#7a5a35', 'wood', 0.5, [{ classes: ['plains'], terrain: WOODED }, { classes: ['plains'], biomes: ['shrubland'] }], { weight: 1.1, cluster: 350 }),
+  res('wood', '木材', '#7a5a35', 'wood', 0.5, [{ classes: ['plains'], terrain: WOODED }, { classes: ['plains'], biomes: [B.shrubland] }], { weight: 1.1, cluster: 350 }),
   res('salt', '盐', '#e9e4dc', 'ore', 0.15, [{ classes: ['plains'], terrain: ['desert', ...GRASS], moistMax: 0.25 }, { coast: true, moistMax: 0.6, tempMin: 12 }], { weight: 1.5, cluster: 250 }),
   res('stone', '石料', '#a3a09a', 'ore', 0.18, [{ classes: ROCK, tempMin: ICE }], { cluster: 250 }),
   res('iron', '铁', '#8a5446', 'ore', 0.2, [{ classes: ROCK, tempMin: ICE }, { classes: ['plains'], terrain: ['marsh'] }], { weight: 1.4, cluster: 350 }),
@@ -62,7 +65,7 @@ export const GENERAL_RESOURCES: readonly Resource[] = [
   res('coal', '煤', '#3b3a3a', 'ore', 0.08, [{ classes: ['hills', 'mountains'], tempMin: ICE }, { classes: ['plains'], terrain: ['forest'] }], { weight: 1.6, cluster: 400 }),
   res('gems', '宝石', '#b5427a', 'luxury', 0.03, [{ classes: ['mountains', 'peaks'], tempMin: ICE }, { classes: ['hills'], tempMin: 18 }, { classes: ['plains'], terrain: ['jungle'], tempMin: 18 }], { weight: 3, cluster: 150 }),
   res('spices', '香料', '#d0612c', 'luxury', 0.2, [{ classes: ['plains'], terrain: ['forest', 'hills', 'jungle'], tempMin: 20, moistMin: 0.9 }], { weight: 1.8, cluster: 300 }),
-  res('fur', '毛皮', '#8c6b4f', 'wood', 0.3, [{ classes: ['plains'], terrain: ['forest'], tempMax: 4 }, { classes: ['plains'], biomes: ['tundra', 'alpine_tundra'], tempMax: 4 }], { weight: 1.3, cluster: 400 }),
+  res('fur', '毛皮', '#8c6b4f', 'wood', 0.3, [{ classes: ['plains'], terrain: ['forest'], tempMax: 4 }, { classes: ['plains'], biomes: builtinBiomesIn('tundra'), tempMax: 4 }], { weight: 1.3, cluster: 400 }),
   res('wine', '葡萄酒', '#7b2340', 'farm', 0.15, [{ classes: ['hills'], tempMin: 10, tempMax: 21, moistMin: 0.3, moistMax: 1.1 }, { classes: ['plains'], terrain: ['forest', 'hills'], tempMin: 10, tempMax: 21, moistMin: 0.3, moistMax: 0.8 }, { classes: ['plains'], terrain: GRASS, tempMin: 10, tempMax: 21, moistMin: 0.4, moistMax: 0.8, elevMax: 500 }], { weight: 1.6, cluster: 250 }),
   res('silk', '丝', '#e6cfe0', 'luxury', 0.08, [{ classes: ['plains', 'hills'], terrain: ['forest', 'hills'], tempMin: 12, tempMax: 25, moistMin: 0.8 }], { weight: 2, cluster: 250 }),
   res('tea', '茶', '#5c8f3c', 'farm', 0.12, [{ classes: ['hills', 'highlands'], tempMin: 13, tempMax: 26, moistMin: 1 }], { weight: 1.8, cluster: 250 }),

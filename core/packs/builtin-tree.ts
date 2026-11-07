@@ -44,7 +44,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //     奇幻另有 biomes、rivers、lakes：奇幻的生态（带它们用到的自定义场）、河、湖；第五十七轮起新建奇幻世界时默认带上（worldPartsOf），换库照旧不带
 //   世界的底子（LIBRARY_BASE_PACKS，每个库都有，新建世界时放在生成之前）：
 //     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类
-//     nature            自然：13 种普通生态
+//     nature            自然：15 种普通生态（packs/nature.ts）
 //     names ▸ zh        地名 ▸ 中文：中文·默认
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
 //     forms             星球形态：以前向导里写死的六种星球（packs/planet-forms.ts），奇幻的另有几种
@@ -226,7 +226,7 @@ function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms
       pointTypes: asItems(BUILTIN_POINT_TYPES),
       islandTypes: asItems(BUILTIN_ISLAND_TYPES),
     },
-    nature: { id: 'nature', name: '自然', description: '13 种接近地球的生态。新建世界时默认带上', biomes: asItems(DEFAULT_SPECIES) },
+    nature: { id: 'nature', name: '自然', description: `${DEFAULT_SPECIES.length} 种接近地球的生态。新建世界时默认带上`, biomes: asItems(DEFAULT_SPECIES) },
     names: { id: 'names', name: '地名', packs: regions },
     forms: { id: 'forms', name: '星球形态', description: '新建整个星球时选：像地球、一块超大陆、破碎大陆……', planetForms: asItems(BUILTIN_PLANET_FORMS) },
     styles: { id: 'styles', name: '画风', description: '地图怎么画：写实、地图册。新建世界时默认带上；在“图层 → 画风”里换', mapStyles: asItems(BUILTIN_MAP_STYLES) },

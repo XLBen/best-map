@@ -4,7 +4,7 @@ import { canApply } from '../../../core/packs';
 import { kindOf } from '../../../core/content/registry';
 import type { ImportAsk, ImportNeed, ImportPreview } from '../../../core/packs/closure';
 import { infoOf } from '../../../core/packs/import-gates';
-import { WATER_KINDS } from './page-layout';
+import { ECOLOGY_KINDS } from './page-layout';
 import type { Card, PageCtx, SourceRef } from './pages';
 import { type LookCtx, type RowLook, refKey, rowLook } from './pick-look';
 import { type PickDest, type PickState, destFor, pickAsk, pickNeedsIn, pickPreview, pickStore, picksOf, removePickIn, togglePickIn } from './pick-store';
@@ -104,6 +104,6 @@ export function cardPicks(card: Pick<Card, 'id' | 'kids'>, v: PickView | null): 
     const nodes = infoOf(v.ask.source).table.nodes;
     return picks.filter((r) => (r.kind === DIMENSION ? r.id === dim : (r.kind === 'popValue' || r.kind === 'valueGroup') && (nodes.get(refKey(r))?.item as { dimension?: string } | undefined)?.dimension === dim)).length;
   }
-  const kinds = new Set(card.id === 'water' ? WATER_KINDS : [card.id, ...(card.kids ?? []).map((k) => KID_KIND[k.key] ?? k.key)]);
+  const kinds = new Set(card.id === 'ecology' ? ECOLOGY_KINDS : [card.id, ...(card.kids ?? []).map((k) => KID_KIND[k.key] ?? k.key)]);
   return picks.filter((r) => kinds.has(r.kind)).length;
 }

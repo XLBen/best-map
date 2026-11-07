@@ -44,7 +44,7 @@ import {
   sourceMenu,
   sourceTitle,
   undoTarget,
-  waterHub,
+  ecologyHub,
   waterLists,
   waterTable,
 } from './pages';
@@ -166,10 +166,10 @@ describe('首页', () => {
   });
 
   it('生态与水系：生态、河、湖、总表', () => {
-    const hub = waterHub(lib('fantasy'), ctxOf());
+    const hub = ecologyHub(lib('fantasy'), ctxOf());
     expect(hub.cards.map((c) => c.title)).toEqual(['生态', '河', '湖', '总表']);
     expect(hub.cards.map((c) => c.route)).toEqual([{ p: 'list', kind: 'biome' }, { p: 'list', kind: 'riverType' }, { p: 'list', kind: 'lakeType' }, { p: 'table' }]);
-    expect(HOME_LAYOUT.find((s) => s.id === 'geo')!.cards).toContain('water');
+    expect(HOME_LAYOUT.find((s) => s.id === 'geo')!.cards).toContain('ecology');
   });
 
   it('时代规则的一句话', () => {

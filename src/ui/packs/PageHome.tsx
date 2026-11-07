@@ -7,7 +7,7 @@ import type { Icon } from '../defs/types';
 import { type ArrangeAction, arrangeFor, arrangeTitle, canArrange, cardActions, cardChild, dropVerdict, verdictArrange } from './page-arrange';
 import { applyArrange } from './page-actions';
 import { type Judged, dragView, startDrag } from './page-drag';
-import { type Card, type PageCtx, type SourceRef, homePage, waterHub } from './pages';
+import { type Card, type PageCtx, type SourceRef, ecologyHub, homePage } from './pages';
 import { Row } from './PageList';
 import { searchSource } from './page-search';
 import { openRoute } from './panel-store';
@@ -32,7 +32,7 @@ const ICONS: Record<string, Icon> = {
   cityRank: Castle,
   landmarkType: Landmark,
   pointType: MapPin,
-  water: Droplets,
+  ecology: Droplets,
   islandType: Anchor,
   planetForm: Globe,
   terrainClass: Mountain,
@@ -269,8 +269,8 @@ export function PageHome({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   );
 }
 
-export function WaterHubPage({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
-  const hub = waterHub(src, ctx);
+export function EcologyHubPage({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+  const hub = ecologyHub(src, ctx);
   const v = pickView(src, ctx);
   return (
     <>

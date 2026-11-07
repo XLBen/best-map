@@ -734,7 +734,7 @@ function defaultSmall(): SmallState {
     terrain: { gen: null, coastRoughness: 1 },
     featureNames: {},
     planet: planetSchema.parse({}),
-    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是库里“自然”的 13 种）
+    // 第三十轮：新世界里没有生态（界面从资源包加进来，默认是库里“自然”的 15 种）
     species: [],
     constraints: [],
     guides: [],

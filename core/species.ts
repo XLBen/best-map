@@ -112,6 +112,19 @@ export type SpeciesRange = z.output<typeof rangeSchema>;
 
 // 生态的大类（第三十轮，speciesSchema 的 group）：涂出来的一片按这一类的地物识别、起名
 export const BIOME_GROUPS = ['desert', 'forest', 'tundra', 'icecap', 'wetland'] as const;
+export type BiomeGroup = (typeof BIOME_GROUPS)[number];
+
+// 一种生态算进哪一大类（大片的森林、荒漠……地物，地标的“荒漠里”“森林里”，圈地名猜的类型都按它；第七十一轮起只有这一处）：
+// 写了 group 就是它；没写的按导出用的地形（terrain）——自带地名设定的奇幻生态（水晶丛林、死亡森林、虫群占领区）不写 group
+// （写了大类的生态自己长成的一片不另起名，见 features.ts 的 namesNaturally），靠这一条算进森林。草原、稀树草原、灌丛等都不是（''）
+export function biomeGroupOf(sp: Pick<Species, 'group' | 'terrain'>): BiomeGroup | '' {
+  if (sp.group) return sp.group;
+  if (sp.terrain === 'desert') return 'desert';
+  if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
+  if (sp.terrain === 'arctic') return 'tundra';
+  if (sp.terrain === 'marsh') return 'wetland';
+  return '';
+}
 
 // 高度范围（第五十五轮，speciesSchema 的 height）：海拔，米，和检查器、山峰标注里写的是同一个数。
 // low、high 是最适合的范围，外面各留 HEIGHT_MARGIN 的过渡；low 为 0 不限下限，high 到 HEIGHT_MAX 不限上限。
@@ -167,8 +180,8 @@ export const speciesSchema = z.object({
   // 通行难度的倍数（乘在地形类别的起伏上；平地的草原为 1）。省略时按生态估（见 human/terrain-class.ts 的 biomeMovement）
   movement: z.number().min(0.1).max(20).optional(),
   // ---------- 第三十轮 ----------
-  // 大类（地物“荒漠、森林、苔原、冰原、湿地”）：涂出来的一片按这一类的地物识别、起名。省略时按地形归大片的地区，
-  // 自己的一片按“生态区”起名（见 features.ts 的 speciesFeature）
+  // 大类（地物“荒漠、森林、苔原、冰盖、沼泽湿地”）：涂出来的一片按这一类的地物识别、起名。省略时按导出用的地形归大片的地区
+  // （biomeGroupOf），自己的一片按“生态区”起名（见 features.ts 的 speciesFeature）
   group: z.enum(BIOME_GROUPS).optional(),
   // ---------- 第五十五轮 ----------
   // 高度范围（见 HEIGHT_MAX）。省略时不看高度（用户自己做的、旧式的生态，结果和以前逐值相同）
@@ -275,44 +288,4 @@ export function withCondition(sp: Species, id: ConditionId, on: boolean): Specie
 export function advancedTolerances(sp: Species): Tolerance[] {
   const conds = Object.values(CONDITIONS).map((c) => c.tol());
   return sp.tolerances.filter((t) => t.field !== 'tMean' && t.field !== 'moisture' && !conds.some((c) => sameTol(t, c)));
-}
-
-// 第十三轮以前的默认颜色（按 id）：存档、检查点里的世界还是这些颜色时，画的时候换成新的默认颜色（speciesColor），
-// 用户自己改过的颜色不动
-export const OLD_DEFAULT_COLORS: Readonly<Record<string, string>> = {
-  tundra: '#a9b49a',
-  taiga: '#4f7d5c',
-  temperate_forest: '#6a9e55',
-  steppe: '#c2bd7c',
-  shrubland: '#a7a35b',
-  subtropical_forest: '#4e9a4a',
-  savanna: '#b5b259',
-  dry_forest: '#7f9e45',
-  monsoon_forest: '#5f9c3c',
-  rainforest: '#2c7d3f',
-  wetland: '#5c8a7a',
-  desert: '#e3d3a0',
-};
-// 第十三轮的默认颜色（内置的生态，见 packs/nature.ts；第三十轮生态挪进资源包后这里只留颜色）
-const NEW_DEFAULT_COLORS = new Map(
-  Object.entries({
-    tundra: '#a8ab8e',
-    taiga: '#3d6a52',
-    temperate_forest: '#8aac5a',
-    steppe: '#c9c27c',
-    shrubland: '#a08c58',
-    subtropical_forest: '#3c8c58',
-    savanna: '#d2ad56',
-    dry_forest: '#959a3e',
-    monsoon_forest: '#55a02c',
-    rainforest: '#1d6633',
-    wetland: '#4c8c86',
-    desert: '#efd8a8',
-  }),
-);
-
-// 画在地图上、色块里的生态颜色：还是旧的默认颜色时换成新的默认颜色
-export function speciesColor(sp: Pick<Species, 'id' | 'color'>): string {
-  const old = OLD_DEFAULT_COLORS[sp.id];
-  return old !== undefined && sp.color.toLowerCase() === old ? (NEW_DEFAULT_COLORS.get(sp.id) ?? sp.color) : sp.color;
 }

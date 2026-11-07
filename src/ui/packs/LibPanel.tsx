@@ -6,10 +6,10 @@ import { copyLibrary, createLibrary, deleteLibrary, libEdits } from '../../libra
 import { askText, askUser, canRedo, canUndo, download, redo, showToast, undo, world } from '../../state';
 import { type Crumb, type PageCtx, type Route, type SourceMenuItem, type SourceRef, WORLD_SOURCE, crumbs, entryOf, sourceKind, sourceMenu, sourceTitle } from './pages';
 import { closeLibrary, copyToMine, goBack, goDepth, lastPress, libPanel, livePanel, openBasket, pickingIn, setSource } from './panel-store';
-import { PageHome, WaterHubPage } from './PageHome';
+import { EcologyHubPage, PageHome } from './PageHome';
 import { PageItem } from './PageItem';
 import { PageList } from './PageList';
-import { WaterTablePage } from './PageWater';
+import { WaterTablePage } from './PageEcology';
 import { dragView } from './page-drag';
 import { LibOther } from './LibOther';
 import { LibSide } from './LibSide';
@@ -301,8 +301,8 @@ function Page({ route, src, ctx }: { route: Route; src: SourceRef; ctx: PageCtx 
   switch (route.p) {
     case 'home':
       return <PageHome src={src} ctx={ctx} />;
-    case 'water':
-      return <WaterHubPage src={src} ctx={ctx} />;
+    case 'ecology':
+      return <EcologyHubPage src={src} ctx={ctx} />;
     case 'table':
       return <WaterTablePage src={src} ctx={ctx} />;
     case 'list':

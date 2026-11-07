@@ -76,7 +76,7 @@ describe('首页', () => {
         for (const x of listPage(lib('medieval'), c.route, preset)!.inside) reach.add(x.key);
       }
       if (c.id.startsWith('dim:')) reach.add('valueGroup');
-      if (c.route.p === 'water') for (const id of ['biome', 'riverType', 'lakeType']) reach.add(id);
+      if (c.route.p === 'ecology') for (const id of ['biome', 'riverType', 'lakeType']) reach.add(id);
     }
     reach.add('era');
     expect([...reach].sort()).toEqual(packSections().map((k) => k.id).sort());

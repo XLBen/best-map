@@ -1,4 +1,3 @@
-import { speciesColor } from '../../core/species';
 import { BellOff, ScanSearch, X } from 'lucide-preact';
 import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
@@ -48,7 +47,7 @@ export function UnmetPanel() {
         return (
           <div class="box conflict">
             <b>
-              <span class="swatch" style={{ background: sp ? speciesColor(sp) : undefined }} /> {sp?.name ?? c.species}：{water ? '涂到了水面上' : `${c.failing.length} 格没涂成`}
+              <span class="swatch" style={{ background: sp ? sp.color : undefined }} /> {sp?.name ?? c.species}：{water ? '涂到了水面上' : `${c.failing.length} 格没涂成`}
             </b>
             {why.length > 0 && <p class="small">原因：{why.join('；')}。</p>}
             {why.length === 0 && !water && <p class="small">原因：竞争不过当地生态，或传不到这里。</p>}
@@ -93,7 +92,7 @@ export function UnmetPanel() {
             return (
               <div class="box ignored">
                 <b>
-                  <span class="swatch" style={{ background: sp ? speciesColor(sp) : undefined }} /> {sp?.name ?? con.species}：{c ? (failing ? `${failing} 格没涂成` : '涂到了水面上') : '已经长出来了'}
+                  <span class="swatch" style={{ background: sp ? sp.color : undefined }} /> {sp?.name ?? con.species}：{c ? (failing ? `${failing} 格没涂成` : '涂到了水面上') : '已经长出来了'}
                 </b>
                 <div class="row wrap">
                   <button class="small" onClick={() => focusOn(failing ? c!.failing : con.cells)}>
@@ -123,7 +122,7 @@ export function UnmetPanel() {
         return (
           <div class="item">
             <span class="grow ellipsis" onClick={() => focusOn(c.cells)} title="定位">
-              <span class="swatch" style={{ background: sp ? speciesColor(sp) : undefined }} /> {sp?.name ?? c.species} · {c.cells.length} 格 · {c.mode === 'constraint' ? '自然融入' : '强制'}
+              <span class="swatch" style={{ background: sp ? sp.color : undefined }} /> {sp?.name ?? c.species} · {c.cells.length} 格 · {c.mode === 'constraint' ? '自然融入' : '强制'}
               {c.ignored ? <BellOff /> : null}
             </span>
             <span class="row">

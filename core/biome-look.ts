@@ -3,7 +3,7 @@ import { hashString } from './names';
 import { smoothstep } from './rng';
 import { riverProvider } from './river-types';
 import { type ScriptIssue, scriptsEnabled, worldInputs } from './script';
-import { PATTERNS, type Pattern, type Species, type Visual, speciesColor } from './species';
+import { PATTERNS, type Pattern, type Species, type Visual } from './species';
 import { fbmSub, fbmSub3, hashU, hashU3, vnoise, vnoise3 } from './subcell';
 import type { Derived, World } from './world';
 
@@ -57,7 +57,7 @@ export function computeLook(world: World, d: Derived, issues: ScriptIssue[] = []
   const { mesh, causes } = world;
   const n = mesh.n;
   const S = species.length;
-  const base = species.map((sp) => rgbOf(speciesColor(sp)));
+  const base = species.map((sp) => rgbOf(sp.color));
   const veg = (i: number) => causes.land[i] === 1 && d.lake[i] !== 1;
   const mine = !session;
   const run = session ? session() : new ScriptSession(world);
@@ -287,7 +287,7 @@ export function visualLook(sp: Species, visual: Visual | undefined, sphere: bool
   if (!visual) return null;
   const glow = visual.glow ?? 0;
   if (visual.pattern === 'none' && glow <= 0) return null;
-  const base = rgbOf(speciesColor(sp));
+  const base = rgbOf(sp.color);
   return {
     pattern: visual.pattern,
     color2: visual.color2 ? rgbOf(visual.color2) : [base[0] * 0.6, base[1] * 0.6, base[2] * 0.6],

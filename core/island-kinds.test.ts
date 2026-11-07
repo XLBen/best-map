@@ -3,7 +3,6 @@ import { lithLayer } from '../src/render/colors';
 import * as elevation from './elevation';
 import { Engine } from './engine';
 import { LAGOON_BIT } from './island-types';
-import { OLD_DEFAULT_COLORS, speciesColor } from './species';
 import { islandSizeRangeKm, islandStamp } from './terrain';
 import { seededEngine } from './testing/fixtures';
 import { BUILTIN_ISLAND_TYPES } from './packs/base';
@@ -175,19 +174,25 @@ describe('去掉了火山岛（第十四轮）', () => {
   });
 });
 
+// 第十三轮以前的默认颜色（按 id）。第七十一轮去掉了画的时候把它们换成新颜色的那一步（旧存档不必兼容），这里只留着和新配色比
+const OLD_DEFAULT_COLORS: Readonly<Record<string, string>> = {
+  tundra: '#a9b49a',
+  taiga: '#4f7d5c',
+  temperate_forest: '#6a9e55',
+  steppe: '#c2bd7c',
+  shrubland: '#a7a35b',
+  subtropical_forest: '#4e9a4a',
+  savanna: '#b5b259',
+  dry_forest: '#7f9e45',
+  monsoon_forest: '#5f9c3c',
+  rainforest: '#2c7d3f',
+  wetland: '#5c8a7a',
+  desert: '#e3d3a0',
+};
+
 describe('生态的新配色', () => {
-  it('旧的默认颜色画的时候换成新的；用户改过的颜色不动', () => {
-    for (const sp of DEFAULT_SPECIES) {
-      const old = OLD_DEFAULT_COLORS[sp.id];
-      if (old === undefined) continue;
-      expect(old).not.toBe(sp.color);
-      expect(speciesColor({ id: sp.id, color: old })).toBe(sp.color);
-      expect(speciesColor({ id: sp.id, color: old.toUpperCase() })).toBe(sp.color);
-      expect(speciesColor(sp)).toBe(sp.color);
-      expect(speciesColor({ id: sp.id, color: '#123456' })).toBe('#123456');
-    }
-    // 别的生态（自定义的）用了某个旧的默认颜色也不换
-    expect(speciesColor({ id: 'my_forest', color: OLD_DEFAULT_COLORS.taiga })).toBe(OLD_DEFAULT_COLORS.taiga);
+  it('内置生态的颜色都换过了', () => {
+    for (const id of Object.keys(OLD_DEFAULT_COLORS)) expect(DEFAULT_SPECIES.find((s) => s.id === id)!.color).not.toBe(OLD_DEFAULT_COLORS[id]);
   });
 
   it('相邻的默认生态颜色差得更开（CIEDE76 最近的一对比旧配色大）', () => {

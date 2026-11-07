@@ -1,7 +1,6 @@
 import { RESOURCE_NONE, blocList, blocOf, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../../core/human';
 import { shownBloc } from './blocs';
 import { countryRows } from './countries';
-import { speciesColor } from '../../../core/species';
 import type { World } from '../../../core/world';
 import { NO_BLOC, NO_RESOURCE, densityRgb, habitRgb } from '../../render/colors';
 import { WIND_STYLE } from '../../render/wind';
@@ -151,7 +150,7 @@ function compute(w: World, mode: ViewMode): LegendData | null {
       return { title: '人口密度', items: DENSITY_STEPS.map(([v, label]) => ({ color: hex(densityRgb(v)), label })) };
     case 'dominant': {
       const n = countCodes(w, d.dominant);
-      const items = w.small.species.flatMap((s, k) => (n.get(k) ? [{ color: speciesColor(s), label: s.name || s.id, count: n.get(k)! }] : []));
+      const items = w.small.species.flatMap((s, k) => (n.get(k) ? [{ color: s.color, label: s.name || s.id, count: n.get(k)! }] : []));
       return { title: '生态分区', items: items.sort(byCount) };
     }
   }
@@ -236,7 +235,7 @@ export function legendFor(w: World, mode: ViewMode): LegendData | null {
     mode === 'country' || mode === 'bloc'
       ? `|${popKey(w)}|${Object.values(w.small.countries ?? {}).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(',')}|${w.causes.popTotal ? '' : 'nopop'}|${JSON.stringify(w.small.blocs ?? null)}`
       : '';
-  const key = `${mode}${cty}|${JSON.stringify(w.small.content?.terrainClass ?? null)}|${JSON.stringify(w.small.content?.resource ?? null)}|${w.small.species.map((s) => `${s.name}:${speciesColor(s)}`).join(',')}${pop}`;
+  const key = `${mode}${cty}|${JSON.stringify(w.small.content?.terrainClass ?? null)}|${JSON.stringify(w.small.content?.resource ?? null)}|${w.small.species.map((s) => `${s.name}:${s.color}`).join(',')}${pop}`;
   if (!m.has(key)) m.set(key, compute(w, mode));
   return m.get(key)!;
 }

@@ -7,7 +7,7 @@ import { PLAIN_TYPE, type WaterType, perCellRule } from '../../../core/water-typ
 import { type WaterKind, waterAllowed } from '../../../core/water-table';
 import { arrangeFor, arrangeTitle, linkView, mergedInto } from './page-arrange';
 import { type ChildSection, type InsideRow, childSections, insideRows } from './page-children';
-import { CARD_ICON, type CardDef, HOME_LAYOUT, WATER_KINDS, type Inside } from './page-layout';
+import { CARD_ICON, type CardDef, ECOLOGY_KINDS, HOME_LAYOUT, type Inside } from './page-layout';
 import { type RowMark, type SourceDiff, type WorldMark, rowMarks, worldDiff } from './page-marks';
 import { type Segment, segmentsOf } from './page-segments';
 import { type PageCtx, type SourceRef, WORLD_SOURCE, entryOf, itemOf, itemsOf, kindReadonly, kindTitle, rowsOf, sourceKind, sourceTitle } from './page-source';
@@ -30,7 +30,7 @@ export type Route =
   | { p: 'home' }
   | { p: 'list'; kind: string; dim?: string; group?: string; hideOn?: boolean; loose?: string }
   | { p: 'item'; kind: string; id: string; seg?: string }
-  | { p: 'water' }
+  | { p: 'ecology' }
   | { p: 'table' };
 
 export const HOME: Route = { p: 'home' };
@@ -56,7 +56,7 @@ export function routeLabel(r: Route, src: SourceRef, ctx: PageCtx): string {
   switch (r.p) {
     case 'home':
       return sourceTitle(src, ctx);
-    case 'water':
+    case 'ecology':
       return '生态与水系';
     case 'table':
       return '总表';
@@ -169,12 +169,12 @@ function cardOf(def: CardDef, src: SourceRef, ctx: PageCtx): Card[] {
     if (!first) return [];
     return [{ id: 'variables', title: '变量', count: String(first.dimensions.length), empty: false, icon: 'variables', route: { p: 'item', kind: 'era', id: first.id, seg: 'dims' } }];
   }
-  if (def === 'water') {
-    const counts = WATER_KINDS.map((id) => {
+  if (def === 'ecology') {
+    const counts = ECOLOGY_KINDS.map((id) => {
       const k = kindOf(id);
       return k ? itemsOf(src, k, ctx).length : 0;
     });
-    return [{ id: 'water', title: '生态与水系', count: `${counts[0]} · ${counts[1] + counts[2]}`, empty: counts.every((n) => !n), icon: 'water', route: { p: 'water' } }];
+    return [{ id: 'ecology', title: '生态与水系', count: `${counts[0]} · ${counts[1] + counts[2]}`, empty: counts.every((n) => !n), icon: 'ecology', route: { p: 'ecology' } }];
   }
   const k = kindOf(def);
   if (!k) return [];
@@ -245,11 +245,11 @@ export function homePage(src: SourceRef, ctx: PageCtx, inside: Inside = arrangeF
 }
 
 // 生态与水系这一层：生态、河、湖、总表
-export interface WaterHub {
+export interface EcologyHub {
   cards: Card[];
 }
-export function waterHub(src: SourceRef, ctx: PageCtx): WaterHub {
-  const cards = WATER_KINDS.flatMap((id) => cardOf(id, src, ctx));
+export function ecologyHub(src: SourceRef, ctx: PageCtx): EcologyHub {
+  const cards = ECOLOGY_KINDS.flatMap((id) => cardOf(id, src, ctx));
   const lists = waterLists(src, ctx);
   cards.push({ id: 'table', title: '总表', count: `${lists.species.length} × ${lists.riverTypes.length + lists.lakeTypes.length + 2}`, empty: !lists.species.length, icon: 'table', route: { p: 'table' } });
   return { cards };
@@ -704,8 +704,8 @@ export function undoTarget(src: SourceRef | null, ctx: PageCtx, inPanel: boolean
 // 首页到得了的种类（测试：每种列出来的内容都有卡片）
 export function reachableKinds(): string[] {
   const out = new Set<string>();
-  for (const s of HOME_LAYOUT) for (const d of s.cards) if (d !== 'water' && d !== 'dims' && d !== 'variables') out.add(d);
-  for (const id of WATER_KINDS) out.add(id);
+  for (const s of HOME_LAYOUT) for (const d of s.cards) if (d !== 'ecology' && d !== 'dims' && d !== 'variables') out.add(d);
+  for (const id of ECOLOGY_KINDS) out.add(id);
   out.add('era');
   out.add('popValue');
   out.add('valueGroup');

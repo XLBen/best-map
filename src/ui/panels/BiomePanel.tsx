@@ -1,4 +1,3 @@
-import { speciesColor } from '../../../core/species';
 import { focusSpecies, openPanel, options, sheet, world } from '../../state';
 import { paintWith } from '../defs/tools';
 
@@ -20,7 +19,7 @@ export function BiomePalette() {
               openPanel.value = null;
             }}
           >
-            <span class="swatch" style={{ background: speciesColor(s) }} />
+            <span class="swatch" style={{ background: s.color }} />
             {s.name || s.id}
           </button>
         ))}

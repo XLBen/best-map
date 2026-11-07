@@ -5,7 +5,7 @@ import type { ProvinceKind } from '../../core/provinces';
 import { type ProvinceSeam, type SeamLayers, seamLayers, seamsAfterCut } from '../../core/seams';
 import type { LakeType } from '../../core/lake-types';
 import { type MapStyle, typeColor } from '../../core/map-style';
-import { type Visual, speciesColor } from '../../core/species';
+import type { Visual } from '../../core/species';
 import { displayCoast, lakeCoast, lakeDepth } from '../../core/display';
 import { coastStyle } from '../../core/coast-style';
 import { type FjordNet, fjordLayer } from '../../core/fjords';
@@ -168,6 +168,9 @@ const humanMode = (mode: ViewMode): mode is HumanFlatMode =>
   mode === 'terrainClass' || mode === 'resource' || mode === 'culture' || mode === 'cultureGroup' || mode === 'country' || mode === 'bloc' || mode.startsWith('dim:');
 export const terrainLikeMode = (mode: ViewMode) => mode === 'terrain' || mode === 'dominant' || mode === 'provinces' || humanMode(mode);
 
+// 每种生态的颜色（RGB，按世界里的先后）：底图的生态色、生态平涂共用
+const speciesRgbOf = (small: World['small']): RGB[] => small.species.map((s) => hexToRgb(s.color));
+
 function staticLayers(world: World): StaticLayers {
   const inputs: unknown[] = [world.derived.lake, world.derived.water, world.causes.land, world.causes.landness, world.causes.fragment, world.small.terrain.gen?.rerolls];
   let list = staticCache.get(world.derived.elevation);
@@ -272,7 +275,7 @@ export function baseLayers(world: World, o: Pick<ColorOptions, 'mode' | 'season'
   let shade = 1;
   let rock = 0;
   const S = small.species.length;
-  const speciesRgb = small.species.map((s) => hexToRgb(speciesColor(s)));
+  const speciesRgb = speciesRgbOf(small);
   const put = (arr: Uint8Array, i: number, c: RGB, a = 255) => {
     arr[i * 4] = c[0];
     arr[i * 4 + 1] = c[1];
@@ -417,7 +420,7 @@ export function modeLayers(world: World, o: ColorOptions): ModeLayers {
   if (o.mode === 'dominant') {
     const { derived: d, mesh } = world;
     const n = mesh.n;
-    const speciesRgb = small.species.map((s) => hexToRgb(speciesColor(s)));
+    const speciesRgb = speciesRgbOf(small);
     flat = new Uint8Array(n * 4);
     for (let i = 0; i < n; i++) {
       const s = d.dominant[i];
@@ -679,7 +682,7 @@ export function landCellLayer(world: World): Uint8Array {
 export function colorSignature(small: World['small']): string {
   const kinds = Object.entries(small.provinces).map(([p, m]) => `${p}:${m.kind}${m.color ? `:${m.color}` : ''}`);
   const seams = (small.provinceSeams ?? []).map((s) => s.id);
-  const colors = small.species.map((s) => speciesColor(s));
+  const colors = small.species.map((s) => s.color);
   const looks = small.species.map((s) => (s.visual ? `${s.id}:${s.seedKey ?? ''}:${JSON.stringify(s.visual)}` : ''));
   // 岛的种类：颜色、形状（一格的环礁画潟湖）、归哪种省（省份的着色、省界）
   const isles = (small.islandTypes ?? []).map((t) => `${t.color ?? ''}:${t.shape}:${t.province}`);
@@ -1120,7 +1123,7 @@ export class GhostBuffer {
       flipped[i] = 1;
       (c > 0 ? toLand : lake ? toLake : toSea).push(i);
     }
-    const terrainLike = this.mode === 'terrain' || this.mode === 'dominant' || this.mode === 'provinces';
+    const terrainLike = terrainLikeMode(this.mode);
     const depthColors = terrainLike || this.mode === 'elevation' || this.mode === 'uplift';
     const put = (i: number, rgb: RGB, a: number) => {
       smooth.set([Math.round(rgb[0]), Math.round(rgb[1]), Math.round(rgb[2]), a], i * 4);

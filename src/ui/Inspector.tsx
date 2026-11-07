@@ -5,7 +5,7 @@ import { settleHere } from './domain/settlements';
 import { featuresAt } from './domain/features-at';
 import { ISLET_FRAG } from '../../core/features';
 import { activeConflicts } from '../../core/constraints';
-import { BUILTIN_FIELDS, speciesColor } from '../../core/species';
+import { BUILTIN_FIELDS } from '../../core/species';
 import { effectsAt } from '../../core/effects';
 import { type CellExplanation, explainCell } from '../../core/vegetation';
 import { type World, longitudeOf, worldLatitude } from '../../core/world';
@@ -165,7 +165,7 @@ function LandInfo({ w, cell }: { w: World; cell: number }) {
       <h3>
         {sp ? (
           <>
-            <span class="swatch big" style={{ background: speciesColor(sp) }} /> {sp.name}
+            <span class="swatch big" style={{ background: sp.color }} /> {sp.name}
           </>
         ) : (
           '什么都长不了'

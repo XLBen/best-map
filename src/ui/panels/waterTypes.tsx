@@ -1,4 +1,3 @@
-import { speciesColor } from '../../../core/species';
 import { Library, Plus, Trash2 } from 'lucide-preact';
 import { Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
@@ -317,7 +316,7 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
           {w.small.species.map((sp) => (
             <label class="check" key={sp.id}>
               <input type="checkbox" checked={has(sp.id)} onChange={() => toggle(sp.id)} />
-              <span class="swatch" style={{ background: speciesColor(sp) }} /> {sp.name || sp.id}
+              <span class="swatch" style={{ background: sp.color }} /> {sp.name || sp.id}
             </label>
           ))}
         </div>

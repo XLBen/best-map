@@ -1,5 +1,6 @@
 import type { Command } from '../commands';
 import { type Rect, type Species, withRect } from '../species';
+import { builtinBiomesIn } from './nature';
 
 // 内置示例包“奇幻生态”的五种生态（第三批）：直接是数据，资源包、测试、“添加示例生态…”都用它。
 // 每种都用到了第三批的一样新东西：花纹与发光（visual）、对周围的影响与侵占（effects）、
@@ -22,8 +23,11 @@ const script = (src: string) => ({ api: 1 as const, src });
 // 第五十五轮：写上高度范围（见 packs/nature.ts 的表）。神圣之地没有下限：涂了“圣地”场的低地也要长
 const make = (base: Omit<Species, 'tolerances'>, rect: Rect): Species => withRect({ ...base, natural: true, tolerances: [] }, rect);
 
-// 森林类的内置生态：虫群侵占它们（和水晶丛林）
-const FORESTS = ['taiga', 'temperate_forest', 'subtropical_forest', 'dry_forest', 'monsoon_forest', 'rainforest'];
+// 这五种都不写大类（group）：它们自带地名设定，自己长成的一片按自己的起名（写了大类的生态不另算，见 features.ts 的
+// namesNaturally）。大片的地区里水晶丛林、死亡森林、虫群占领区按导出用的地形（jungle、forest）算进森林（species.ts 的 biomeGroupOf）
+//
+// 虫群侵占的：森林类的内置生态（第七十一轮起按自然包里的大类取，和以前手写的一串相同）和水晶丛林
+const FORESTS = builtinBiomesIn('forest');
 
 // 神圣之地用的自定义场：用户在“圣地”场上涂了的地方一定长（0–1）
 export const FANTASY_FIELDS = ['holy'] as const;

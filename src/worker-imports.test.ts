@@ -24,6 +24,7 @@ describe('计算 Worker 不引用内置的内容（第三十轮）', () => {
 
   it('看得出只引用类型的写法', () => {
     expect(runtimeImports(resolve(root, 'core/content/missing.ts'))).toContain('../human/era');
-    expect(runtimeImports(resolve(root, 'core/packs/base.ts'))).toEqual([]);
+    // base.ts 的四个 import type 不算；第七十一轮起它引用生态的 id 表与自然包（取大类）
+    expect(runtimeImports(resolve(root, 'core/packs/base.ts'))).toEqual(['./biome-ids', './nature']);
   });
 });

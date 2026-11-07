@@ -259,7 +259,6 @@ function ImportView({ read, file, installed }: Extract<DialogView, { view: 'impo
         {p.author && <span class="muted">　作者：{p.author}</span>}
       </p>
       {p.description && <p class="hint">{p.description}</p>}
-      {read.legacy === 'biomes' && <p class="hint">旧版的生态文件，装进资源库后可以用</p>}
       {read.legacy === 'wordPack' && <p class="hint">地名风格，装进资源库后可以用</p>}
       <PackContents pack={p} />
       <Problems list={problems} />

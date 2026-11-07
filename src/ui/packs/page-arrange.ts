@@ -67,7 +67,7 @@ export function mergedRelation(arrange: Arrange, child: string): ArrangeRelation
 
 // ---------- 卡片和安排 ----------
 
-const EXTRA_TITLE: Record<string, string> = { variables: '变量', water: '生态与水系', table: '总表' };
+const EXTRA_TITLE: Record<string, string> = { variables: '变量', ecology: '生态与水系', table: '总表' };
 export const arrangeTitle = (key: string): string => {
   if (EXTRA_TITLE[key]) return EXTRA_TITLE[key];
   if (key.startsWith('dim:')) return '取值';

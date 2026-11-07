@@ -5,7 +5,7 @@ import { type LakeType, majorityLakeType } from './lake-types';
 import { ISLAND_CODE_MASK, type IslandType, islandTypeOfCode } from './island-types';
 import { PLAIN_RIVER, type RiverType, majorityType } from './river-types';
 import { guideBody, guideLine } from './rivers';
-import { BIOME_GROUPS, type Species } from './species';
+import { BIOME_GROUPS, type Species, biomeGroupOf } from './species';
 import type { Derived, Guide, RegionKind, SmallState, World } from './world';
 
 // 地理要素识别：在格图上找出大陆、岛、群岛、半岛、海、洋、湾、海峡、湖、大河、山脉、主峰、
@@ -1092,24 +1092,12 @@ function nearPass(n: number, off: Int32Array, adj: Int32Array, land: Uint8Array,
 }
 
 const BIOMES = BIOME_GROUPS;
-type BiomeGroup = (typeof BIOMES)[number];
 
-// 一种生态属于哪一大类：生态写了 group 就是它（第三十轮：内置的生态都写了，以前冰盖按 id 认），没写的按导出用的地形类别；
-// 草原、稀树草原、灌丛等都不是（''）
-function speciesGroup(sp: Species): BiomeGroup | '' {
-  if (sp.group) return sp.group;
-  if (sp.terrain === 'desert') return 'desert';
-  if (sp.terrain === 'forest' || sp.terrain === 'jungle') return 'forest';
-  if (sp.terrain === 'arctic') return 'tundra';
-  if (sp.terrain === 'marsh') return 'wetland';
-  return '';
-}
-
-// 每格属于哪一大类（BIOMES 里的下标 + 1，0 为都不是）
+// 每格属于哪一大类（BIOMES 里的下标 + 1，0 为都不是）。一种生态算哪一类见 species.ts 的 biomeGroupOf
 function biomesOf(world: World, d: Derived): Uint8Array {
   const n = world.mesh.n;
   const land = world.causes.land;
-  const kindOf = world.small.species.map((sp) => (BIOMES as readonly string[]).indexOf(speciesGroup(sp)) + 1);
+  const kindOf = world.small.species.map((sp) => (BIOMES as readonly string[]).indexOf(biomeGroupOf(sp)) + 1);
   const biome = new Uint8Array(n);
   for (let i = 0; i < n; i++) if (land[i] && d.dominant[i] >= 0) biome[i] = kindOf[d.dominant[i]];
   return biome;
@@ -1243,8 +1231,8 @@ function paintedOf(world: World, d: Derived): Int16Array | null {
   return out;
 }
 
-// 自然长成的一片也有自己的名字的生态：自带地名设定（第三批的 feature：类型名、起名模板），而且不是内置的大类生态
-// （针叶林、荒漠……自然长成的本来就是大类的地物：森林、沙漠……）。内置的生态都没有 feature，
+// 自然长成的一片也有自己的名字的生态：自带地名设定（第三批的 feature：类型名、起名模板），而且不是写了大类的生态
+// （针叶林、荒漠……自然长成的本来就是大类的地物：森林、荒漠……；给它们加上地名设定也不另算）。内置的生态都没有 feature，
 // 所以没有这样的生态的世界（以前的、只用内置生态的），地物与以前完全一样
 export function namesNaturally(sp: Species): boolean {
   return !!sp.feature && speciesFeature(sp).type === 'biome';
@@ -1942,6 +1930,7 @@ export function guessRegionKind(
   let desert = 0;
   let forest = 0;
   let flat = 0;
+  const groups = small.species.map(biomeGroupOf);
   for (let k = 0; k < cells.length; k++) {
     const c = cells[k];
     if (!causes.land[c] || d.lake[c] === 1) {
@@ -1949,9 +1938,10 @@ export function guessRegionKind(
       continue;
     }
     n++;
-    const terrain = d.dominant[c] >= 0 ? small.species[d.dominant[c]]?.terrain : '';
-    if (terrain === 'desert') desert++;
-    if (terrain === 'forest' || terrain === 'jungle') forest++;
+    // 生态的大类（biomeGroupOf；第七十一轮以前这里只看导出用的地形 desert、forest / jungle，内置的生态两种认法相同）
+    const group = d.dominant[c] >= 0 ? groups[d.dominant[c]] : '';
+    if (group === 'desert') desert++;
+    if (group === 'forest') forest++;
     if (elevation[c] >= 1300) high++;
     if (elevation[c] <= 400 && slope[c] <= 2.5) flat++;
   }
