@@ -9,7 +9,7 @@ import { culturesStage } from './cultures';
 import { type CountryPlan, blocsStage, clearCountries, countriesStage, countryMixStage } from './countries';
 import { type Era, cultureGroupById, worldCultures, worldEras } from './era';
 import { compactGroups } from './groups';
-import { compilePrefs, preferenceFactors } from './habitability';
+import { compilePrefs, preferenceFactorsAfter, preferenceProducts } from './habitability';
 import { ensurePopArrays, populationStage } from './population';
 import { cellInputs } from './rules';
 import { cellKm2 } from './space';
@@ -135,11 +135,11 @@ export function generateHuman(
   const cultures = groups.flatMap((g) => g.cultures.map((c) => c.culture));
   const cultureGroup = Int32Array.from(groups.flatMap((g, k) => g.cultures.map(() => k)));
   const groupPrefs = groups.map((g) => compilePrefs(g.group.prefs, small.species, classIds));
-  const groupPref = groupPrefs.map((p) => preferenceFactors(p, x, cls));
-  const culturePref = cultures.map((c, k) => {
-    const g = groups[cultureGroup[k]].group;
-    return preferenceFactors(compilePrefs([...(g.prefs ?? []), ...(c.prefs ?? [])], small.species, classIds), x, cls);
-  });
+  // 第七十九轮（提速，逐位不变）：组的偏好先按双精度算一遍（取成单精度就是组的那一份）。文化的偏好是“组的 + 文化的”连成一串：
+  // 文化自己没写时就是组的那几条，用组的同一个数组（两份都只读；历史上的四个时代的文化都没写）；写了的在组的双精度上接着乘
+  const groupProd = groupPrefs.map((p) => preferenceProducts(p, x, cls));
+  const groupPref = groupProd.map((v) => Float32Array.from(v));
+  const culturePref = cultures.map((c, k) => (c.prefs?.length ? preferenceFactorsAfter(groupProd[cultureGroup[k]], compilePrefs(c.prefs, small.species, classIds), x, cls) : groupPref[cultureGroup[k]]));
   ensurePopArrays(world);
   let keep: Uint8Array | undefined;
   const manual = world.causes.popManual;

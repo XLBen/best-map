@@ -122,8 +122,8 @@ function patches(g: CountryRun, ok: (i: number) => boolean, weight: (i: number) 
   return out.sort((a, b) => b.area - a.area || a.id - b.id);
 }
 
-// 各种族住哪一类、各文化的种族（不取随机数）
-function classify(g: CountryRun, strong: number): RaceRealmState | undefined {
+// 各种族住哪一类、各文化的种族（不取随机数；导出给 speed-r79.test.ts 对照）
+export function classify(g: CountryRun, strong: number): RaceRealmState | undefined {
   const { ctx, world } = g;
   const { x, cls, hab } = ctx;
   const small = world.small;
@@ -142,21 +142,25 @@ function classify(g: CountryRun, strong: number): RaceRealmState | undefined {
     total += a;
     for (let k = 0; k < 3; k++) if (land[i] & (1 << k)) kindArea[k] += a;
   }
+  // 偏爱够强的种族各自喜欢的格里各类的面积。第七十九轮：所有的格只过一遍（以前每个种族过一遍）；每个种族照旧按格的先后加，和不变。
+  // races 先按取值的先后放好（后面按这个先后圈地方），算完再填上住哪一类
   const races = new Map<string, RaceKind>();
+  const liking: { id: string; p: ReturnType<typeof compilePrefs>; liked: number; likedKind: number[] }[] = [];
   for (const v of dimensionValues(small, dim.id, ctx.era.id)) {
+    races.set(v.id, 'open');
     const top = Math.max(0, ...(v.prefs ?? []).map((p) => p.factor));
-    if (!(top >= strong) || !(total > 0)) {
-      races.set(v.id, 'open');
-      continue;
-    }
-    const p = compilePrefs(v.prefs, small.species, ctx.classIds);
-    let liked = 0;
-    const likedKind = [0, 0, 0];
+    if (top >= strong && total > 0) liking.push({ id: v.id, p: compilePrefs(v.prefs, small.species, ctx.classIds), liked: 0, likedKind: [0, 0, 0] });
+  }
+  if (liking.length)
     for (let i = 0; i < g.n; i++) {
-      if (!(area[i] > 0) || !(prefAt(p, x, cls, i) > 1)) continue;
-      liked += area[i];
-      for (let k = 0; k < 3; k++) if (land[i] & (1 << k)) likedKind[k] += area[i];
+      if (!(area[i] > 0)) continue;
+      for (const r of liking) {
+        if (!(prefAt(r.p, x, cls, i) > 1)) continue;
+        r.liked += area[i];
+        for (let k = 0; k < 3; k++) if (land[i] & (1 << k)) r.likedKind[k] += area[i];
+      }
     }
+  for (const { id, liked, likedKind } of liking) {
     let best: RaceKind = 'open';
     let lift = LIFT;
     (['forest', 'upland', 'waste'] as const).forEach((kind, k) => {
@@ -167,7 +171,7 @@ function classify(g: CountryRun, strong: number): RaceRealmState | undefined {
         best = kind;
       }
     });
-    races.set(v.id, best);
+    races.set(id, best);
   }
   const raceOf = ctx.cultures.map((c) => {
     let top: [string, number] | undefined;

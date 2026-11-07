@@ -220,9 +220,14 @@ function placeCultures(ctx: GenContext) {
   }
 
   // ---- 文化组的地盘 ----
+  // 第七十九轮：同一个偏好的数组（文化没写偏好时就是组的那一份，见 generate.ts）只开一次方（都只读）
+  const sqrtOf = new Map<Float32Array, Float32Array>();
   const prefSqrt = (p: Float32Array): Float32Array => {
-    const out = new Float32Array(n).fill(1);
+    let out = sqrtOf.get(p);
+    if (out) return out;
+    out = new Float32Array(n).fill(1);
     for (let i = 0; i < n; i++) if (dry[i]) out[i] = Math.sqrt(Math.min(5, Math.max(0.2, p[i])));
+    sqrtOf.set(p, out);
     return out;
   };
   const gSeeds = own.flatMap((cells, k) => cells.map((cell) => ({ cell, owner: k })));

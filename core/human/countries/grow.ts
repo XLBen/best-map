@@ -82,13 +82,41 @@ export function growOwners(g: CountryRun) {
   const { off, adj } = mesh;
   const land = causes.land;
   const lake = d.lake;
-  // 格局加的代价（第七十三轮；第七十四轮的民族主义、大河帝国、汗国、多民族的大国加）
+  // 格局加的代价（第七十三轮；第七十四轮的民族主义、大河帝国、汗国、多民族的大国加）。
+  // 第七十九轮：长之前合成一个函数（一条时就是它，几条时按先后一条接一条，和以前逐条调一样）；没有时走下面不带它的 stepTo（同第七十二轮以前）
   const extra = g.stepCost;
-  const nExtra = extra.length;
+  const hook: ((o: number, j: number, c: number) => number) | null =
+    extra.length === 0
+      ? null
+      : extra.length === 1
+        ? extra[0]
+        : (o, j, c) => {
+            for (let q = 0; q < extra.length; q++) c = extra[q](o, j, c);
+            return c;
+          };
   // 第几遍：1 是第一遍（长到预算），FREE_MUL 是第二遍
   let limit = 1;
-  // o 从 i（距离 di）走边 e 到 j 的距离（进不去时为 Infinity）
-  const stepTo = (o: number, di: number, e: number, j: number): number => {
+  // o 从 i（距离 di）走边 e 到 j 的距离（进不去时为 Infinity）。两份只差格局的代价那一行
+  const plainStep = (o: number, di: number, e: number, j: number): number => {
+    let c = edge[e];
+    if (land[j]) {
+      if (lake[j] !== 1) {
+        if (comps[j] === home[o]) {
+          if (hab[j] < thr[o]) {
+            if (limit === 1) return Infinity;
+            c *= hab[j] < NOBODY ? 6 : 3;
+          }
+        } else if (hab[j] < Math.max(thr[o], minH)) return Infinity;
+        const r = region[j];
+        if (r >= 0 ? r !== conf[o] : conf[o] >= 0 && hab[j] >= minH) return Infinity;
+        const cj = cultureOf[j];
+        if (cj >= 0 && cj !== prim[o]) c *= ctx.cultureGroup[cj] === primGroup[o] ? sameMul[o] : otherMul[o];
+        if (!(x.flags[j] & COAST)) c *= coastMul[o];
+      }
+    } else c *= seaMul[o];
+    return di + (c / spd[o]) * (1 + (coh[o] * di) / (2 * Rp[o]));
+  };
+  const hookStep = (o: number, di: number, e: number, j: number): number => {
     let c = edge[e];
     if (land[j]) {
       if (lake[j] !== 1) {
@@ -106,11 +134,12 @@ export function growOwners(g: CountryRun) {
         const cj = cultureOf[j];
         if (cj >= 0 && cj !== prim[o]) c *= ctx.cultureGroup[cj] === primGroup[o] ? sameMul[o] : otherMul[o];
         if (!(x.flags[j] & COAST)) c *= coastMul[o];
-        if (nExtra) for (let q = 0; q < nExtra; q++) c = extra[q](o, j, c);
+        c = hook!(o, j, c);
       }
     } else c *= seaMul[o];
     return di + (c / spd[o]) * (1 + (coh[o] * di) / (2 * Rp[o]));
   };
+  const stepTo = hook ? hookStep : plainStep;
   const claimed = new Float64Array(k);
   const full = new Uint8Array(k);
   // 第一遍：每国长到面积预算就停（还没定下的格让给挨着的、没长满的国家）；

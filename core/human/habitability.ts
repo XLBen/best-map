@@ -139,3 +139,23 @@ export function preferenceFactors(p: CompiledPrefs | null, x: CellInputs, cls: U
   for (let i = 0; i < x.n; i++) if (x.dry[i]) out[i] = prefAt(p, x, cls, i);
   return out;
 }
+
+// 第七十九轮（提速，逐位不变）：同上，先不取成单精度（组的偏好，文化接着乘）
+export function preferenceProducts(p: CompiledPrefs | null, x: CellInputs, cls: Uint8Array): Float64Array {
+  const out = new Float64Array(x.n);
+  for (let i = 0; i < x.n; i++) if (x.dry[i]) out[i] = prefAt(p, x, cls, i);
+  return out;
+}
+
+// 在 base（preferenceProducts 的结果）上接着乘 p 的几条：和把两串偏好连成一串（compilePrefs([...组的, ...文化的])）逐格算的
+// preferenceFactors 逐位相同——连乘的先后一样，中间也是双精度，最后才取成单精度。文化有自己的偏好时组的那几条不用每个文化再判断一遍
+export function preferenceFactorsAfter(base: Float64Array, p: CompiledPrefs | null, x: CellInputs, cls: Uint8Array): Float32Array {
+  const out = new Float32Array(x.n);
+  for (let i = 0; i < x.n; i++) {
+    if (!x.dry[i]) continue;
+    let f = base[i];
+    if (p) for (let k = 0; k < p.rules.length; k++) if (ruleMatches(p.rules[k], x, i, cls[i])) f *= p.factors[k];
+    out[i] = f;
+  }
+  return out;
+}

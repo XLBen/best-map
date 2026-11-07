@@ -101,31 +101,130 @@ export function dimPlans(world: World, era: string, cultures: readonly (Culture 
 // 一个文化在第 i 格、某一维的取值分布（已归一；没有取值时是一项 null）
 export function valueDist(world: World, plan: DimPlan, c: number, x: CellInputs, cls: Uint8Array, i: number, noise: Map<number, Float32Array>): { id: string | null; p: number }[] {
   const opts = plan.options[c];
-  if (!opts.length) return [{ id: null, p: 1 }];
-  if (opts.length === 1) return [{ id: opts[0].id, p: 1 }];
-  const raw: { id: string; p: number }[] = [];
+  return valueDistAt(world, plan, c, x, cls, i, noise).map((r) => ({ id: r.k < 0 ? null : opts[r.k].id, p: r.p }));
+}
+
+// 同上，取值写成候选的下标（k；没有取值时 −1）。第七十九轮（提速，逐值不变）：分数记在一个数组里，只为留下的几项建对象；
+// 算法、加的先后都照旧（以前的写法见 population-r79.test.ts）。返回的数组不要改（只有一项时是共用的）
+const NO_VALUE: readonly { k: number; p: number }[] = [{ k: -1, p: 1 }];
+const FIRST_VALUE: readonly { k: number; p: number }[] = [{ k: 0, p: 1 }];
+let scores = new Float64Array(16);
+function valueDistAt(world: World, plan: DimPlan, c: number, x: CellInputs, cls: Uint8Array, i: number, noise: Map<number, Float32Array>): readonly { k: number; p: number }[] {
+  const opts = plan.options[c];
+  const m = opts.length;
+  if (!m) return NO_VALUE;
+  if (m === 1) return FIRST_VALUE;
+  if (scores.length < m) scores = new Float64Array(2 * m);
+  const score = scores;
   let sum = 0;
-  for (const o of opts) {
+  for (let j = 0; j < m; j++) {
+    const o = opts[j];
     let f = noise.get(o.seed);
     if (!f) noise.set(o.seed, (f = new Float32Array(world.mesh.n).fill(NaN)));
     let v = f[i];
     if (v !== v) v = f[i] = noiseAt(world, o.seed, VALUE_WAVE_KM, i);
-    const score = Math.pow(o.w * prefAt(o.prefs, x, cls, i) * Math.exp(VALUE_NOISE * v), VALUE_SHARP);
-    raw.push({ id: o.id, p: score });
-    sum += score;
+    const sc = Math.pow(o.w * prefAt(o.prefs, x, cls, i) * Math.exp(VALUE_NOISE * v), VALUE_SHARP);
+    score[j] = sc;
+    sum += sc;
   }
-  if (!(sum > 0)) return [{ id: opts[0].id, p: 1 }];
-  const kept = raw
-    .map((r) => ({ id: r.id, p: r.p / sum }))
-    .filter((r) => r.p >= 0.04)
-    .sort((a, b) => b.p - a.p || (a.id < b.id ? -1 : 1))
-    .slice(0, 3);
-  const k = kept.reduce((a, b) => a + b.p, 0);
-  return kept.map((r) => ({ id: r.id, p: r.p / k }));
+  if (!(sum > 0)) return FIRST_VALUE;
+  const kept: { k: number; p: number }[] = [];
+  for (let j = 0; j < m; j++) {
+    const p = score[j] / sum;
+    if (p >= 0.04) kept.push({ k: j, p });
+  }
+  kept.sort((a, b) => b.p - a.p || (opts[a.k].id < opts[b.k].id ? -1 : 1));
+  if (kept.length > 3) kept.length = 3;
+  let t = 0;
+  for (const r of kept) t += r.p;
+  for (const r of kept) r.p = r.p / t;
+  return kept;
 }
 
-// 第 i 格里 parts（文化的下标与占比）的成分：每个文化各维取值的组合，取最多的几种
-function composeCell(world: World, ctx: Pick<GenContext, 'x' | 'cls' | 'cultures'>, plans: readonly DimPlan[], parts: readonly { c: number; s: number }[], i: number, noise: Map<number, Float32Array>, table: GroupTable): Share[] {
+// 第 i 格里 parts（文化的下标与占比）的成分：每个文化各维取值的组合，取最多的几种。
+// 第七十九轮（提速，逐值不变）：组合里记每一维取的是第几个候选，不再一维一维地拷贝取值的对象；群体的编号先按“文化 + 各维候选的下标”
+// 拼成的一个数查（按群体表、这一份 DimPlan 记着），查不到再拼群体的键（groups.ts 的 tupleKey：文化 | 维的 id 按字符串排好的 id=值）
+// 去群体表里查或新给，新的群体才建取值的对象（键按维的先后放，和以前一样）。维的 id 有重复时（以前是后一维盖掉前一维）照以前的写法
+export function composeCell(world: World, ctx: Pick<GenContext, 'x' | 'cls' | 'cultures'>, plans: readonly DimPlan[], parts: readonly { c: number; s: number }[], i: number, noise: Map<number, Float32Array>, table: GroupTable): Share[] {
+  const shape = planShape(plans);
+  if (!shape) return composeCellSlow(world, ctx, plans, parts, i, noise, table);
+  const { order, radix } = shape;
+  let byTable = codeCache.get(table);
+  if (!byTable) codeCache.set(table, (byTable = new WeakMap()));
+  let known = byTable.get(plans);
+  if (!known) byTable.set(plans, (known = new Map()));
+  const out: Share[] = [];
+  const P = plans.length;
+  for (const part of parts) {
+    let combos: { ks: number[]; p: number }[] = [{ ks: new Array<number>(P).fill(-1), p: part.s }];
+    for (let q = 0; q < P; q++) {
+      const dist = valueDistAt(world, plans[q], part.c, ctx.x, ctx.cls, i, noise);
+      const next: typeof combos = [];
+      for (const cb of combos)
+        for (const v of dist) {
+          const ks = cb.ks.slice();
+          ks[q] = v.k;
+          next.push({ ks, p: cb.p * v.p });
+        }
+      next.sort((a, b) => b.p - a.p);
+      combos = next.slice(0, 8);
+    }
+    const c = part.c;
+    for (const cb of combos) {
+      let num = c;
+      if (radix) for (let q = 0; q < P; q++) num = num * radix[q] + cb.ks[q] + 1;
+      let code = radix ? known.get(num) : undefined;
+      if (code === undefined) {
+        const culture = ctx.cultures[c].id;
+        const idOf = (q: number) => (cb.ks[q] < 0 ? null : plans[q].options[c][cb.ks[q]].id);
+        let key = `${culture}|`;
+        let first = true;
+        for (const q of order) {
+          const id = idOf(q);
+          if (id === null) continue;
+          key += `${first ? '' : ','}${plans[q].dim.id}=${id}`;
+          first = false;
+        }
+        code = table.codeFor(key, () => {
+          const values: Record<string, string> = {};
+          for (let q = 0; q < P; q++) {
+            const id = idOf(q);
+            if (id !== null) values[plans[q].dim.id] = id;
+          }
+          return { culture, values };
+        });
+        if (radix) known.set(num, code);
+      }
+      out.push({ code, s: cb.p });
+    }
+  }
+  return out;
+}
+
+// 按群体表、这一份 DimPlan 记着的“文化 + 各维候选的下标”→ 群体的编号（同一张表里一个群体的编号不变）
+const codeCache = new WeakMap<GroupTable, WeakMap<readonly DimPlan[], Map<number, number>>>();
+
+// 拼键用的维的先后（维的 id 按字符串排，同 tupleKey 的 sort）与拼数用的进位（每一维候选的个数 + 1；拼出来超过 2^53 时不拼数）；
+// 维的 id 有重复时 null
+const shapeMemo = new WeakMap<readonly DimPlan[], { order: number[]; radix: number[] | null } | null>();
+function planShape(plans: readonly DimPlan[]): { order: number[]; radix: number[] | null } | null {
+  let o = shapeMemo.get(plans);
+  if (o === undefined) {
+    const ids = plans.map((p) => p.dim.id);
+    if (new Set(ids).size !== ids.length) o = null;
+    else {
+      const order = ids.map((_, q) => q).sort((a, b) => (ids[a] < ids[b] ? -1 : ids[a] > ids[b] ? 1 : 0));
+      const radix = plans.map((p) => 1 + Math.max(0, ...p.options.map((list) => list.length)));
+      const span = radix.reduce((a, r) => a * r, Math.max(1, ...plans.map((p) => p.options.length)));
+      o = { order, radix: span < Number.MAX_SAFE_INTEGER ? radix : null };
+    }
+    shapeMemo.set(plans, o);
+  }
+  return o;
+}
+
+// 以前的写法（维的 id 有重复时用）
+function composeCellSlow(world: World, ctx: Pick<GenContext, 'x' | 'cls' | 'cultures'>, plans: readonly DimPlan[], parts: readonly { c: number; s: number }[], i: number, noise: Map<number, Float32Array>, table: GroupTable): Share[] {
   const out: Share[] = [];
   for (const part of parts) {
     let combos: { values: Record<string, string>; p: number }[] = [{ values: {}, p: part.s }];

@@ -53,7 +53,10 @@ export class GroupTable {
   }
   // 群体的编号（没有时新给一个）
   code(t: PopTuple): number {
-    const key = tupleKey(t);
+    return this.codeFor(tupleKey(t), () => ({ culture: t.culture, values: { ...t.values } }));
+  }
+  // 同上，键（tupleKey）已经拼好；make 建新的群体（只在没有时调，要一个新的对象）。第七十九轮：population.ts 的 composeCell 用
+  codeFor(key: string, make: () => PopTuple): number {
     let c = this.byKey.get(key);
     if (c === undefined) {
       if (this.next > 65535) throw new Error('人口群体太多（最多 65535 种）');
@@ -63,7 +66,7 @@ export class GroupTable {
         this.dirty = true;
       }
       c = this.next++;
-      this.groups[c] = { culture: t.culture, values: { ...t.values } };
+      this.groups[c] = make();
       this.byKey.set(key, c);
     }
     return c;
