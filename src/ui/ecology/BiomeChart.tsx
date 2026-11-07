@@ -30,12 +30,14 @@ export function BiomeChart({ w, all, selected, onSelect, live, onCommit, readonl
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [draftRect, setDraftRect] = useState<{ id: string; rect: Rect } | null>(null);
+  // 底图按像素的那一份重画（第七十九轮：数组没变时是同一份，换了世界对象也不重画）
+  const density = w ? densityPixels(w) : null;
   useEffect(() => {
     const c = canvasRef.current?.getContext('2d');
     if (!c) return;
     c.clearRect(0, 0, W, H);
-    if (w) c.putImageData(new ImageData(densityPixels(w), W, H), 0, 0);
-  }, [w]);
+    if (density) c.putImageData(new ImageData(density, W, H), 0, 0);
+  }, [density]);
   useEffect(() => setDraftRect(null), [w, all]);
 
   const local = (e: PointerEvent) => {

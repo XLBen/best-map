@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, FileUp, Plus, Redo2, Undo2, X } from 'lucide-preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { memo } from 'preact/compat';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { packFileName } from '../../../core/packs';
 import { panelLibrary } from '../../library';
 import { copyLibrary, createLibrary, deleteLibrary, libEdits } from '../../library-edit';
@@ -17,7 +18,7 @@ import { closeFile, installFile, openFile } from './lib-file';
 import { panelKeys } from './lib-keys';
 import { defaultFrom, rememberFrom } from './pick-other';
 import { pickCount, setPickDest } from './pick-store';
-import { RegenBar } from './RegenBar';
+import { RegenBar as RegenBarRaw } from './RegenBar';
 import { openPackList, packDialog } from './store';
 import { tidyWorld } from './tidy';
 
@@ -59,7 +60,9 @@ async function newLibrary(src: SourceRef, ctx: PageCtx) {
   if (made) setSource({ t: 'lib', key: made.key });
 }
 
-function SourcePicker({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+// 第七十九轮：顶上一行（标题的下拉、撤销、更多、文件、重新生成）都是 memo：面板里别处变了（勾选、翻页、拖滑块）不重画它们，
+// ctx 只在世界、资源库换了时是新的（见 LibPanel）
+const SourcePicker = memo(function SourcePicker({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -134,7 +137,7 @@ function SourcePicker({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
       />
     </div>
   );
-}
+});
 
 // ---------- 右上角 ----------
 
@@ -166,7 +169,7 @@ async function removeLibrary(key: string, name: string) {
   await deleteLibrary(key);
 }
 
-function MoreMenu({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+const MoreMenu = memo(function MoreMenu({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -216,10 +219,10 @@ function MoreMenu({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
       )}
     </div>
   );
-}
+});
 
 // 撤销、重做：看本世界时是世界的（和顶栏同一个），看我的库时是这个库自己的
-function UndoButtons({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+const UndoButtons = memo(function UndoButtons({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   void libEdits.tick.value;
   const k = sourceKind(src, ctx);
   if (k === 'builtin' || k === 'imported' || k === 'file' || k === null) return null;
@@ -236,7 +239,7 @@ function UndoButtons({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
       </button>
     </>
   );
-}
+});
 
 // “从库里添加…”（原来右上角的“导入”，第六十七轮）：加到正在看的本世界或我的库，切到上次用的库
 function startAdding(src: SourceRef, ctx: PageCtx) {
@@ -246,7 +249,7 @@ function startAdding(src: SourceRef, ctx: PageCtx) {
 }
 
 // 读进来的文件：顶上一条“装进资源库…”
-function FileBar({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
+const FileBar = memo(function FileBar({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   const e = entryOf(src, ctx);
   if (!e?.file) return null;
   return (
@@ -259,7 +262,7 @@ function FileBar({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
       </button>
     </div>
   );
-}
+});
 
 // ---------- 返回与面包屑 ----------
 
@@ -312,6 +315,8 @@ function Page({ route, src, ctx }: { route: Route; src: SourceRef; ctx: PageCtx 
   }
 }
 
+const RegenBar = memo(RegenBarRaw);
+
 export function LibPanel() {
   const st = libPanel.value;
   const body = useRef<HTMLDivElement>(null);
@@ -323,7 +328,10 @@ export function LibPanel() {
     const el = body.current;
     if (el) el.scrollTop = scrolls.current.get(key) ?? 0;
   }, [key]);
-  const ctx: PageCtx = { world: world.value, lib: panelLibrary.value };
+  // 第七十九轮：世界、资源库没换时是同一个 ctx（memo 的部件不重画）
+  const w = world.value;
+  const lib = panelLibrary.value;
+  const ctx: PageCtx = useMemo(() => ({ world: w, lib }), [w, lib]);
   const live = st && livePanel(st, ctx);
   const seen = live?.source.t === 'lib' ? live.source.key : '';
   // “从库里添加…”下次切到这个库（我的库、读进来的文件不算）

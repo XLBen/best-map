@@ -80,11 +80,16 @@ export const M_TICKS: [number, string][] = [
   [3, '3'],
 ];
 
-// 世界上陆地格在图上的分布（底图）：每个像素的 RGBA，按世界缓存。画的时候包成 ImageData
-const densityCache = new WeakMap<World, Uint8ClampedArray<ArrayBuffer>>();
+// 第七十九轮：两份缓存按用到的数组认（以前按世界对象：每份快照都是新的世界，拖一下色块、改一项都要把所有的格再过一遍）。
+// 主线程的推导数组没变时是同一个对象（Worker 只发变了的，见 state/worker-host.ts 的 completeSnapshot）
+const sameRefs = (a: readonly unknown[], b: readonly unknown[]) => a.every((v, k) => v === b[k]);
+
+// 世界上陆地格在图上的分布（底图）：每个像素的 RGBA，按 年均温、湿润、陆地、湖 四个数组缓存。画的时候包成 ImageData
+const densityCache = new WeakMap<object, { deps: unknown[]; img: Uint8ClampedArray<ArrayBuffer> }>();
 export function densityPixels(w: World): Uint8ClampedArray<ArrayBuffer> {
-  let img = densityCache.get(w);
-  if (img) return img;
+  const deps = [w.derived.moisture, w.causes.land, w.derived.lake];
+  const hit = densityCache.get(w.derived.tMean);
+  if (hit && sameRefs(hit.deps, deps)) return hit.img;
   const counts = new Float32Array(W * H);
   let max = 0;
   const d = w.derived;
@@ -101,7 +106,7 @@ export function densityPixels(w: World): Uint8ClampedArray<ArrayBuffer> {
       }
     }
   }
-  img = new Uint8ClampedArray(W * H * 4);
+  const img = new Uint8ClampedArray(W * H * 4);
   for (let k = 0; k < counts.length; k++) {
     if (!counts[k]) continue;
     img[k * 4] = 230;
@@ -109,16 +114,17 @@ export function densityPixels(w: World): Uint8ClampedArray<ArrayBuffer> {
     img[k * 4 + 2] = 230;
     img[k * 4 + 3] = Math.round(200 * Math.sqrt(counts[k] / max));
   }
-  densityCache.set(w, img);
+  densityCache.set(w.derived.tMean, { deps, img });
   return img;
 }
 
-// 每种生态占陆地的多少（按 small.species 的下标）
-const shareCache = new WeakMap<World, Map<number, number>>();
+// 每种生态占陆地的多少（按 small.species 的下标）：按 生态、陆地、湖 三个数组缓存
+const shareCache = new WeakMap<object, { deps: unknown[]; m: Map<number, number> }>();
 export function biomeShares(w: World): Map<number, number> {
-  let m = shareCache.get(w);
-  if (m) return m;
-  m = new Map();
+  const deps = [w.causes.land, w.derived.lake];
+  const hit = shareCache.get(w.derived.dominant);
+  if (hit && sameRefs(hit.deps, deps)) return hit.m;
+  const m = new Map<number, number>();
   let total = 0;
   for (let i = 0; i < w.mesh.n; i++) {
     if (!isVegetated(w, w.derived, i)) continue;
@@ -127,6 +133,6 @@ export function biomeShares(w: World): Map<number, number> {
     if (s >= 0) m.set(s, (m.get(s) ?? 0) + 1);
   }
   for (const [k, v] of m) m.set(k, v / Math.max(1, total));
-  shareCache.set(w, m);
+  shareCache.set(w.derived.dominant, { deps, m });
   return m;
 }

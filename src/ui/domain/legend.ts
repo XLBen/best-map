@@ -1,3 +1,4 @@
+import { signal } from '@preact/signals';
 import { RESOURCE_NONE, blocList, blocOf, countryCodes, countryMapColors, humanLegend, valueLayer, worldDimensions, worldResources, worldTerrainClasses } from '../../../core/human';
 import { shownBloc } from './blocs';
 import { countryRows } from './countries';
@@ -20,14 +21,25 @@ export interface LegendData {
 
 const hex = (c: readonly number[]) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
 
-// 每个编号有几格（只数干的陆地：陆地、不是湖面）
+// 每个编号有几格（只数干的陆地：陆地、不是湖面）。
+// 第七十九轮：按 编号数组、陆地、湖 三个数组缓存（地貌的图例在每一笔之后都要；换生态的名字颜色、换内容时不重数）；
+// 0–255 的编号数在定长的表里（以前每格一次 Map 的读写），别的（-1 之类）照旧进 Map。结果只按编号取，先后无关
+const countMemo = new WeakMap<object, { land: object; lake: object; n: Map<number, number> }>();
 function countCodes(w: World, codes: ArrayLike<number>): Map<number, number> {
-  const { causes, derived: d } = w;
+  const land = w.causes.land;
+  const lake = w.derived.lake;
+  const hit = countMemo.get(codes);
+  if (hit && hit.land === land && hit.lake === lake) return hit.n;
   const out = new Map<number, number>();
+  const low = new Uint32Array(256);
   for (let i = 0; i < codes.length; i++) {
-    if (!causes.land[i] || d.lake[i] === 1) continue;
-    out.set(codes[i], (out.get(codes[i]) ?? 0) + 1);
+    if (!land[i] || lake[i] === 1) continue;
+    const v = codes[i];
+    if (v >>> 0 < 256) low[v]++;
+    else out.set(v, (out.get(v) ?? 0) + 1);
   }
+  for (let v = 0; v < 256; v++) if (low[v]) out.set(v, low[v]);
+  countMemo.set(codes, { land, lake, n: out });
   return out;
 }
 
@@ -222,23 +234,76 @@ function popKey(w: World): number {
   return id;
 }
 
-// 按着色用到的数组缓存（同一个世界换底图、来回切换不重数）
-const cache = new WeakMap<object, Map<string, LegendData | null>>();
+// 图例用到的小数据（缓存的键）。小数据里的名字、颜色：改了地形类别、资源、生态的颜色名字时数组可能不变。
+// 第七十九轮：内容（small.content 的各种）按对象比（内容是不可变的，改了就是新的对象，见 core/small-copy.ts；
+// 主线程收到的快照里内容没换时也是同一个对象，见 src/content-post.ts），以前每次画图例都把地形类别、资源的表 JSON.stringify 两遍
+function depsOf(w: World, mode: ViewMode): unknown[] {
+  const c = w.small.content;
+  const out: unknown[] = [c?.terrainClass, c?.resource, w.small.species.map((s) => `${s.name}:${s.color}`).join(',')];
+  // 人口的几层：只改人数时 popCulture 不变（按人口密度的数组认），名字、颜色在文化、取值里
+  if (mode === 'culture' || mode === 'cultureGroup' || mode.startsWith('dim:')) out.push(popKey(w), c?.culture, c?.cultureGroup, c?.popValue, w.small.human?.era);
+  // 国家：人数、名字、颜色、宗主（领土没变时 derived.country 照用同一个数组）
+  // 第二十六轮：集团（联邦合成一行、同盟模式）：set_bloc 只改它（小数据里的，主线程每份快照是新的对象，按字比）
+  if (mode === 'country' || mode === 'bloc')
+    out.push(popKey(w), Object.values(w.small.countries ?? {}).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(','), !w.causes.popTotal, JSON.stringify(w.small.blocs ?? null));
+  return out;
+}
+const sameDeps = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((v, k) => v === b[k]);
+
+// 按着色用到的数组缓存（同一个世界换底图、来回切换不重数）：每个数组、每种底图记最近的一份
+const cache = new WeakMap<object, Map<ViewMode, { deps: unknown[]; data: LegendData | null }>>();
 export function legendFor(w: World, mode: ViewMode): LegendData | null {
   const arr = layerArray(w, mode);
   if (!arr) return null;
   let m = cache.get(arr);
   if (!m) cache.set(arr, (m = new Map()));
-  // 小数据里的名字、颜色：改了地形类别、资源、生态的颜色名字时数组可能不变
-  // 人口的几层：只改人数时 popCulture 不变（按人口密度的数组认），名字、颜色在文化、取值里
-  const pop = mode === 'culture' || mode === 'cultureGroup' || mode.startsWith('dim:') ? `|${popKey(w)}|${JSON.stringify([w.small.content?.culture, w.small.content?.cultureGroup, w.small.content?.popValue, w.small.human?.era])}` : '';
-  // 国家：人数、名字、颜色、宗主（领土没变时 derived.country 照用同一个数组）
-  // 第二十六轮：集团（联邦合成一行、同盟模式）：set_bloc 只改它
-  const cty =
-    mode === 'country' || mode === 'bloc'
-      ? `|${popKey(w)}|${Object.values(w.small.countries ?? {}).map((m) => `${m.id}:${m.name}:${m.color}:${m.overlord ?? ''}`).join(',')}|${w.causes.popTotal ? '' : 'nopop'}|${JSON.stringify(w.small.blocs ?? null)}`
-      : '';
-  const key = `${mode}${cty}|${JSON.stringify(w.small.content?.terrainClass ?? null)}|${JSON.stringify(w.small.content?.resource ?? null)}|${w.small.species.map((s) => `${s.name}:${s.color}`).join(',')}${pop}`;
-  if (!m.has(key)) m.set(key, compute(w, mode));
-  return m.get(key)!;
+  const deps = depsOf(w, mode);
+  const hit = m.get(mode);
+  if (hit && sameDeps(hit.deps, deps)) return hit.data;
+  const data = compute(w, mode);
+  m.set(mode, { deps, data });
+  return data;
+}
+
+// 按格数的几种底图（地貌、生态分区、地形类别、资源）：这一份要不要重数所有的格（第七十九轮：要重数时，
+// 图例先留着上一份，空闲时再数，见下面的 shownLegend；别的底图照旧当场算）
+const COUNTED: Partial<Record<ViewMode, (w: World) => ArrayLike<number> | undefined>> = {
+  terrain: (w) => w.derived.dominant,
+  dominant: (w) => w.derived.dominant,
+  terrainClass: (w) => w.derived.terrainClass,
+  resource: (w) => w.derived.resource,
+};
+export function legendNeedsCount(w: World, mode: ViewMode): boolean {
+  const codes = COUNTED[mode]?.(w);
+  if (!codes) return false;
+  const hit = countMemo.get(codes);
+  return !hit || hit.land !== w.causes.land || hit.lake !== w.derived.lake;
+}
+
+// 地图上显示的图例（shell/MapLegend.tsx 用）：同一种底图、要重数所有的格时（画了一笔，生态的数组换了），先显示上一份，
+// 浏览器空闲时数好再换上（requestIdleCallback；没有它的环境、测试里当场算，同 legendFor）
+type Idle = (cb: () => void, o?: { timeout: number }) => number;
+const legendTick = signal(0);
+let shown: { mode: ViewMode; data: LegendData | null } | null = null;
+let pending: { w: World; mode: ViewMode } | null = null;
+export function shownLegend(w: World, mode: ViewMode): LegendData | null {
+  void legendTick.value;
+  const ric = (globalThis as { requestIdleCallback?: Idle }).requestIdleCallback;
+  if (ric && shown?.mode === mode && legendNeedsCount(w, mode)) {
+    if (!pending)
+      ric(
+        () => {
+          const p = pending;
+          pending = null;
+          if (p) legendFor(p.w, p.mode);
+          legendTick.value++;
+        },
+        { timeout: 300 },
+      );
+    pending = { w, mode };
+    return shown.data;
+  }
+  const data = legendFor(w, mode);
+  shown = { mode, data };
+  return data;
 }
