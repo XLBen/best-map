@@ -29,7 +29,7 @@ type Small = Pick<SmallState, 'content' | 'human' | 'settlementRules'>;
 type Store = Record<string, Record<string, unknown>>;
 
 const HUMAN: readonly string[] = ['era', 'popValue', 'valueGroup', 'cultureGroup', 'culture'];
-const GOV: readonly string[] = ['government', 'faction', 'countryTier', 'countryLayout'];
+const GOV: readonly string[] = ['government', 'faction', 'countryTier', 'countryLayout', 'countryPattern'];
 const SETTLE: readonly string[] = ['cityRank', 'landmarkType', 'pointType'];
 
 // 比较用的字：不看说明和颜色。按对象记（内容不改动）

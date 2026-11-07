@@ -1,4 +1,4 @@
-import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Eraser, Gem, Globe, Grid3x3, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
+import { Anchor, BookOpen, Castle, Church, Crown, Droplets, Ellipsis, Eraser, Gem, Globe, Grid3x3, Handshake, Landmark, Languages, Layers, MapPin, Mountain, Palette, Scale, Shapes, Sprout, Trees, Users, UsersRound, Variable, Waves } from 'lucide-preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Arrange } from '../../../core/content/arrange';
 import { cleanableSet } from '../../../core/content/cleanable';
@@ -29,6 +29,7 @@ const ICONS: Record<string, Icon> = {
   faction: Scale,
   countryTier: Layers,
   countryLayout: Grid3x3,
+  countryPattern: Handshake,
   cityRank: Castle,
   landmarkType: Landmark,
   pointType: MapPin,

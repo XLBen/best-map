@@ -6,7 +6,7 @@ export type CardDef = 'dims' | 'variables' | 'ecology' | (string & {});
 
 export const HOME_LAYOUT: readonly { id: string; title: string; cards: readonly CardDef[] }[] = [
   { id: 'human', title: '人文', cards: ['cultureGroup', 'culture', 'nameStyle', 'dims', 'valueGroup', 'variables'] },
-  { id: 'politics', title: '政治', cards: ['government', 'faction', 'countryTier', 'countryLayout'] },
+  { id: 'politics', title: '政治', cards: ['government', 'faction', 'countryTier', 'countryLayout', 'countryPattern'] },
   { id: 'settle', title: '城市与地标', cards: ['cityRank', 'landmarkType', 'pointType'] },
   { id: 'geo', title: '地理', cards: ['ecology', 'islandType', 'planetForm', 'terrainClass', 'resource'] },
   { id: 'look', title: '外观', cards: ['mapStyle'] },
@@ -28,6 +28,7 @@ export const CARD_ICON: Record<string, string> = {
   faction: 'faction',
   countryTier: 'countryTier',
   countryLayout: 'countryLayout',
+  countryPattern: 'countryPattern',
   cityRank: 'cityRank',
   landmarkType: 'landmarkType',
   pointType: 'pointType',

@@ -1,6 +1,10 @@
 import type { ContentKind, FieldDesc } from '../../../core/content/registry';
 import { DEFAULT_KEY } from '../../../core/content/link-rules';
 import { isObj, shownFields } from './fields';
+import { patternModules } from '../../../core/human';
+
+// 国家格局的参数（各模块的，键平铺在项里）
+const PATTERN_PARAM_KEYS: readonly string[] = [...new Set(patternModules().flatMap((m) => (m.params ?? []).map((p) => p.key)))];
 
 // 一项的页面分成几段可折叠的卡片（第五十九轮）：每种内容的字段归到哪一段，收起时标题旁写一句当前内容。
 // 表单还是字段表（FieldsBox 按这一段的字段画），这里只分段。id 不列：改了 id 别的内容就找不到它了。
@@ -40,7 +44,7 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'dims', title: '变量', keys: ['dimensions'], custom: 'eraDims' },
     { id: 'people', title: '人口', keys: ['popDensity', 'sparsity', 'urbanization', 'unclaimed'] },
     { id: 'state', title: '国家', keys: ['seaClaimKm', 'countryKm2', 'tiers'] },
-    { id: 'relations', title: '国家关系', keys: ['relations'] },
+    { id: 'relations', title: '国家关系', keys: ['patterns', 'nationalism', 'relations'] },
   ],
   valueGroup: [{ id: 'basic', title: BASIC, keys: ['name', 'orig', 'color', 'dimension', 'description'] }],
   popValue: [
@@ -78,6 +82,11 @@ const TABLE: Record<string, readonly SegDef[]> = {
   countryLayout: [
     { id: 'basic', title: BASIC, keys: ['name', 'description'] },
     { id: 'weights', title: '各等级占多少', keys: ['weights'] },
+  ],
+  // 第七十三轮：模块的参数只显示选着的模块的（字段表的 when）
+  countryPattern: [
+    { id: 'basic', title: BASIC, keys: ['name', 'description', 'module', 'amount'] },
+    { id: 'params', title: '参数', keys: PATTERN_PARAM_KEYS },
   ],
   terrainClass: [
     { id: 'basic', title: BASIC, keys: ['name', 'color', 'height', 'description'] },
