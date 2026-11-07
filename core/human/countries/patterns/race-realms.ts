@@ -27,6 +27,8 @@ import { bestCell, claimRegion, releaseRegion, scatterSeeds, seedAt, shareBudget
 //   小国（个数照神圣帝国：国家总数的 memberShare，留一半给别处；每个 memberSize 个平均的国家大），这一片只有它们进（Region）；
 // grow：古林的种族的国家起点挪进最近的森林、进别的文化组的森林不难，出了森林最远走 (1 − forest) × 平均的国家的边长（forest 是 1 时只占森林）；
 //   平原的种族的国家进别的种族喜欢的地方（精灵住的森林、矮人住的山、兽人住的荒原）贵 1 + 2 plains 倍，平原、海岸便宜一些；
+// after（第七十五轮的补充）：精灵不去、要塞和部落出不来而空着的、宜居度到 FILL_HAB 的地方，归最近的别的王国（先平原、山地、荒原的种族的普通国家，
+//   最远两个平均的国家的边长；还空着的再从别的国家补，精灵只补森林），所以有主的地方不比以前少（按宜居度算）；
 // relate：山地的一片结成同盟（盟主是最大的），荒原的一片结成部落联盟（帝国一类：成员各自一色、外沿一道边线；名字是盟主的地名 + 部落联盟，锁定）。
 // 档案里的角色：古林王国、山中要塞同盟的成员、荒原部落联盟的成员
 
@@ -34,6 +36,8 @@ export const RACE_REALMS = 'race-realms';
 const MIN_COUNTRIES = 6;
 // 喜欢的格里某一类比全世界多出这么多才算住那一类
 const LIFT = 1.2;
+// 长完以后补的空地：宜居度到这么多的才补（住得下不少人的地方；荒地照旧无主）
+const FILL_HAB = 0.4;
 
 // 地方的三类（每格几位）
 export const FOREST = 1;
@@ -202,6 +206,63 @@ function forestDistance(g: CountryRun, land: Uint8Array): Float64Array {
   return out;
 }
 
+// 空着的、能住人的格归最近的国家（after 钩子；见 raceRealms.after）：先只从平原、山地、荒原的种族的普通国家（不是精灵的、不在预留地方里的）往外补，
+// 最远两个平均的国家的边长；还空着的（要塞、部落、精灵围着的）再从所有的国家补，最远一个边长，精灵只补森林。预留地方里的格只归它的成员。
+// 都按 km 走空着的格。返回补了几格
+export function fillLeftover(g: CountryRun, st: Pick<RaceRealmState, 'kindOf' | 'land'>): number {
+  const elf = (o: number) => st.kindOf[g.seeds[o].culture] === KIND_CODE.forest && g.seeds[o].region < 0;
+  const plain = (o: number) => g.seeds[o].region < 0 && !elf(o);
+  const edge = Math.sqrt(g.T);
+  return fillFrom(g, plain, () => true, 2 * edge) + fillFrom(g, (o) => g.seeds[o].region < 0, (o, j) => !elf(o) || (st.land[j] & FOREST) !== 0, edge);
+}
+
+function fillFrom(g: CountryRun, use: (o: number) => boolean, may: (o: number, j: number) => boolean, cap: number): number {
+  const { owner, seeds, region, world } = g;
+  const { mesh, kmPerUnit } = world;
+  const { x, hab } = g.ctx;
+  const cultureOf = g.ctx.cultureOf!;
+  const src = Uint8Array.from(seeds, (_, o) => (use(o) ? 1 : 0));
+  const low = Math.max(g.minH, FILL_HAB);
+  const free = (i: number) => owner[i] === -1 && x.dry[i] === 1 && hab[i] >= low && cultureOf[i] >= 0;
+  // 预留的地方里的格只归它的成员
+  const fits = (o: number, j: number) => (region[j] < 0 || region[j] === seeds[o].region) && may(o, j);
+  const dist = new Float64Array(g.n).fill(Infinity);
+  const to = new Int32Array(g.n).fill(-1);
+  const heap = new HeapLite(1024);
+  for (let i = 0; i < g.n; i++) {
+    const o = owner[i];
+    if (o < 0 || !src[o]) continue;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++)
+      if (free(mesh.adj[e]) && fits(o, mesh.adj[e])) {
+        dist[i] = 0;
+        to[i] = o;
+        heap.push(i, 0);
+        break;
+      }
+  }
+  while (heap.size) {
+    const i = heap.pop();
+    const di = heap.lastKey;
+    if (di > dist[i]) continue;
+    for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
+      const j = mesh.adj[e];
+      if (!free(j) || !fits(to[i], j)) continue;
+      const nd = di + mesh.dist[e] * kmPerUnit;
+      if (nd > cap || nd >= dist[j]) continue;
+      dist[j] = nd;
+      to[j] = to[i];
+      heap.push(j, nd);
+    }
+  }
+  let filled = 0;
+  for (let i = 0; i < g.n; i++)
+    if (owner[i] === -1 && to[i] >= 0) {
+      owner[i] = to[i];
+      filled++;
+    }
+  return filled;
+}
+
 // 古林的种族的起点不在森林里时挪到同一个文化里最近的森林（按步数；找不到不挪）
 function intoForest(g: CountryRun, from: number, culture: number, land: Uint8Array, move: (cell: number) => void): void {
   if (land[from] & FOREST) return;
@@ -351,6 +412,13 @@ export const raceRealms: PatternModule = {
       }
       return c;
     });
+  },
+
+  // 长完以后：空着的、住得下不少人的地方归最近的别的王国（fillLeftover）。不取随机数
+  after(g) {
+    const st = g.state.get(RACE_REALMS) as RaceRealmState | undefined;
+    if (!st) return;
+    fillLeftover(g, st);
   },
 
   // 山地的一片结成同盟，荒原的一片结成部落联盟（帝国一类）

@@ -151,6 +151,20 @@ describe('奇幻：种族王国', () => {
     expect(horde.every((m) => races.get(m.primaryCulture) === 'orc')).toBe(true);
   });
 
+  it('精灵、要塞、部落让出来的能住人的地方归别的王国：按宜居度算的有主的陆地至少七成八（第七十四轮约八成一）', () => {
+    const { eng } = peopled('fantasy');
+    const w = eng.world;
+    let all = 0;
+    let owned = 0;
+    for (let i = 0; i < w.mesh.n; i++) {
+      if (!dry(w, i)) continue;
+      const h = w.derived.habitability![i];
+      all += h;
+      if (w.causes.country![i] >= 0) owned += h;
+    }
+    expect(owned / all).toBeGreaterThanOrEqual(0.78);
+  });
+
   it('多少是 0：没有要塞、部落，也不按种族长（角色都没有）', () => {
     const { eng } = peopled('fantasy');
     const off = regenAmount(eng, 'fantasy', 'race-realms', 0);
@@ -172,9 +186,10 @@ describe('科幻：殖民据点', () => {
     const home = (run.state.get(OUTPOSTS) as { home: number }).home;
     const homeGroup = run.ctx.groups[home].group.id;
     const groupOf = (c: string) => (w.small.content!.culture![c] as { group: string }).group;
-    // 一半以上不到平均的国家的六成（无主地被围住时整块归它，所以个别的大一些），每个都比宗主小
+    // 很小：每个不到平均的国家的六成，中间的那个不到三成五（算上整理时补进来的地方）；每个都比宗主小
     const sizes = posts.map((m) => area.get(m.id)!).sort((a, b) => a - b);
-    expect(sizes[Math.floor(sizes.length / 2)]).toBeLessThan(0.6 * mean);
+    expect(sizes.at(-1)!).toBeLessThanOrEqual(0.6 * mean);
+    expect(sizes[Math.floor(sizes.length / 2)]).toBeLessThanOrEqual(0.35 * mean);
     for (const m of posts) {
       expect(area.get(m.id)!).toBeLessThan(area.get(m.overlord!)!);
       expect(m.overlord).toBeDefined();
