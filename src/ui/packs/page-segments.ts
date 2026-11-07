@@ -14,7 +14,7 @@ export interface Segment {
   id: string;
   title: string;
   fields: readonly FieldDesc[];
-  custom?: 'biomeWater' | 'waterBiomes' | 'samples' | 'eraDims';
+  custom?: 'biomeWater' | 'waterBiomes' | 'samples' | 'eraDims' | 'eraPatterns' | 'patternTip';
   // 写在这一段里的一句说明（断流、按多数显示的类型……）
   hint?: string;
 }
@@ -43,8 +43,9 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'basic', title: BASIC, keys: ['name', 'color', 'description', 'years'] },
     { id: 'dims', title: '变量', keys: ['dimensions'], custom: 'eraDims' },
     { id: 'people', title: '人口', keys: ['popDensity', 'sparsity', 'urbanization', 'unclaimed'] },
-    { id: 'state', title: '国家', keys: ['seaClaimKm', 'countryKm2', 'tiers'] },
-    { id: 'relations', title: '国家关系', keys: ['patterns', 'nationalism', 'relations'] },
+    // 第七十五轮：国家格局（一种一个“多少”的滑块，能加能去掉）与文化的倒向在“国家”这一段（eraPatterns），集团的称号另一段
+    { id: 'state', title: '国家', keys: ['seaClaimKm', 'countryKm2', 'tiers', 'patterns', 'nationalism'], custom: 'eraPatterns' },
+    { id: 'relations', title: '集团的称号', keys: ['relations'] },
   ],
   valueGroup: [{ id: 'basic', title: BASIC, keys: ['name', 'orig', 'color', 'dimension', 'description'] }],
   popValue: [
@@ -84,8 +85,9 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'weights', title: '各等级占多少', keys: ['weights'] },
   ],
   // 第七十三轮：模块的参数只显示选着的模块的（字段表的 when）
+  // 第七十五轮：基本一段的下面写选着的模块做什么、“多少”是什么意思（patternTip）
   countryPattern: [
-    { id: 'basic', title: BASIC, keys: ['name', 'description', 'module', 'amount'] },
+    { id: 'basic', title: BASIC, keys: ['name', 'description', 'module', 'amount'], custom: 'patternTip' },
     { id: 'params', title: '参数', keys: PATTERN_PARAM_KEYS },
   ],
   terrainClass: [

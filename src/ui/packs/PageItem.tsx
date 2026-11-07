@@ -6,6 +6,7 @@ import type { Era } from '../../../core/human';
 import { askUser } from '../../state';
 import { focusOn } from '../camera';
 import { EditorKind, FieldsBox } from './ContentEditor';
+import { EraPatterns, PatternTip } from './EraPatterns';
 import { type Obj, editorIssues } from './fields';
 import { commitItem, copyItemIn, deleteFromLibrary, saveBackToLibrary, useSourceVersion } from './page-actions';
 import { type Segment, initialOpen, segmentBrief } from './page-segments';
@@ -226,6 +227,16 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
       {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
       {s.custom === 'eraDims' && src.t === 'world' ? (
         <WorldVariables era={item as unknown as Era} ctx={ctx} />
+      ) : s.custom === 'eraPatterns' ? (
+        <>
+          <FieldsBox fields={s.fields.filter((f) => f.key !== 'patterns' && f.key !== 'nationalism')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+          <EraPatterns era={item} src={src} ctx={ctx} onChange={save} />
+        </>
+      ) : s.custom === 'patternTip' ? (
+        <>
+          <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+          <PatternTip item={item} />
+        </>
       ) : s.custom === 'waterBiomes' ? (
         <>
           <FieldsBox fields={s.fields.filter((f) => f.key === 'natural')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />

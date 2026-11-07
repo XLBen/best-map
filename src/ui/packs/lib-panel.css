@@ -765,3 +765,10 @@ body.lp-dragging * {
 .lp-regen button {
   flex: none;
 }
+/* 时代页面“国家”一段的国家格局（第七十五轮）：这里没有的格局淡一些；格局页面的模块提示 */
+.lp-era-patterns .ed-sparse.faint {
+  opacity: 0.6;
+}
+.lp-pattern-tip {
+  margin-top: var(--sp-1);
+}

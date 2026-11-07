@@ -52,7 +52,7 @@ export const colonies: PatternModule = {
     { key: 'landShare', label: '最多占几成', min: 0.1, max: 1, step: 0.05, default: 0.7, hint: '一块陆地最多被划成殖民地的几成' },
     { key: 'powers', label: '几个列强', min: 1, max: 8, step: 1, default: 3, hint: '本土上最大的几国分殖民地' },
     { key: 'homes', label: '几块本土', min: 1, max: 2, step: 1, default: 1, hint: '能住人的分量最大的一块或两块陆地是本土（第二块不到第一块的三成时只算一块）' },
-    { key: 'settlers', label: '移民', min: 0, max: 1, step: 0.05, default: 0.3, hint: '殖民地里主流的人有几成换成“新土认同”（时代有这一维时）' },
+    { key: 'settlers', label: '移民几成', min: 0, max: 1, step: 0.05, default: 0.3, hint: '殖民地里主流的人有几成换成“新土认同”（时代有这一维时）' },
   ],
 
   reserve(g, use) {

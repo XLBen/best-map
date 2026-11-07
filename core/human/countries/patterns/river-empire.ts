@@ -27,7 +27,7 @@ export const riverEmpire: PatternModule = {
   roles: { 'river-empire': '大河帝国' },
   params: [
     { key: 'size', label: '最大多大', min: 0.5, max: 20, step: 0.5, default: 6, hint: '面积预算是这个流域能住人的地方那么大，最多几个平均的国家（不超过能住人的地方的三成）' },
-    { key: 'river', label: '沿河', min: 0, max: 1, step: 0.05, default: 0.75, hint: '沿着河、在流域里长得多容易；0 和别的国家一样' },
+    { key: 'river', label: '顺着河', min: 0, max: 1, step: 0.05, default: 0.75, hint: '沿着河、在流域里长得多容易；0 和别的国家一样' },
   ],
 
   reserve(g, use) {

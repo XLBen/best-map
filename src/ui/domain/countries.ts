@@ -23,6 +23,9 @@ import {
   tierShort,
   worldLayouts,
   eraUsesModule,
+  blocOf,
+  roleText,
+  subjectText,
 } from '../../../core/human';
 import type { CountryPattern, Era } from '../../../core/human';
 import type { LibraryEntry } from '../../library';
@@ -277,6 +280,20 @@ export function vassalsOf(w: Pick<World, 'small'>, id: number): CountryMeta[] {
   }
   // 给一份副本：调用方可以随意改
   return [...(m.get(id) ?? NO_VASSALS)];
+}
+
+// 档案里“格局”一行（第七十五轮）：生成时在哪种国家格局里是什么角色（神圣帝国的成员、城邦同盟的成员、民族国家……，CountryMeta.role）、
+// 联邦的成员邦（看集团），从属（殖民地 · 宗主国 X、公司领地 · 宗主 X、附庸 · 宗主 X）。殖民地、公司领地只写从属那一句。都没有时 null
+export function patternLine(w: Pick<World, 'small'>, m: CountryMeta): string | null {
+  const parts: string[] = [];
+  const lord = m.overlord !== undefined ? w.small.countries?.[m.overlord] : undefined;
+  const ruled = !!lord && (m.subject === 'colony' || m.subject === 'company');
+  const role = roleText(m.role);
+  if (role && !ruled) parts.push(role);
+  const fed = blocOf(w, m.id, 'federation');
+  if (fed) parts.push(`${fed.name}的成员邦`);
+  if (lord) parts.push(subjectText(m.subject, lord.name));
+  return parts.length ? parts.join('；') : null;
 }
 
 // 中文排序（第四十轮：同一个 Intl.Collator，与 localeCompare(…, 'zh') 的结果相同，不必每次比较都按语言建一次）

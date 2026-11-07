@@ -3,7 +3,7 @@ import { FLAG_EMBLEMS, FLAG_LAYOUTS, type FlagSpec, blocsOf, cellName } from '..
 import type { CountryMeta, World } from '../../../core/world';
 import { setOptions, switchTool } from '../../state';
 import { focusOn } from '../camera';
-import { cellsOf, countriesByName, flagColorPatch, mergeCommand, namePatch, rerollFlag, statsOf } from '../domain/countries';
+import { cellsOf, countriesByName, flagColorPatch, mergeCommand, namePatch, patternLine, rerollFlag, statsOf } from '../domain/countries';
 import { popText } from '../domain/human';
 import { Flag } from '../panels/countries';
 import { confirmMerge, selectCountry } from '../tools/countries';
@@ -161,16 +161,27 @@ export function TerritorySection({ w, m, remove }: { w: World; m: CountryMeta; r
   );
 }
 
-// 概览里的几个数（详细的在“人口与城市”）
+// 概览里的几个数（详细的在“人口与城市”）；第七十五轮：下面一行格局（神圣帝国的成员、殖民地 · 宗主国 X……）
 export function Glance({ w, m }: { w: World; m: CountryMeta }) {
   const st = statsOf(w).get(m.id);
-  if (!st) return null;
+  const line = patternLine(w, m);
+  if (!st && !line) return null;
   return (
     <div class="stat-grid">
-      <span class="hint">人口</span>
-      <b>{popText(st.population)}</b>
-      <span class="hint">面积</span>
-      <b>{Math.round(st.areaKm2).toLocaleString()} km²</b>
+      {st && (
+        <>
+          <span class="hint">人口</span>
+          <b>{popText(st.population)}</b>
+          <span class="hint">面积</span>
+          <b>{Math.round(st.areaKm2).toLocaleString()} km²</b>
+        </>
+      )}
+      {line && (
+        <>
+          <span class="hint">格局</span>
+          <span>{line}</span>
+        </>
+      )}
     </div>
   );
 }

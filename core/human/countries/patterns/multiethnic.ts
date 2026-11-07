@@ -14,7 +14,7 @@ export const multiethnic: PatternModule = {
   roles: { 'multiethnic': '多民族帝国' },
   params: [
     { key: 'reach', label: '越过文化组', min: 0, max: 1, step: 0.05, default: 0.85, hint: '1：进别的文化组和进同组别的文化一样容易；0：和别的国家一样' },
-    { key: 'boost', label: '再大一些', min: 1, max: 4, step: 0.05, default: 2, hint: '面积预算乘这个数' },
+    { key: 'boost', label: '再大几倍', min: 1, max: 4, step: 0.05, default: 2, hint: '面积预算乘这个数' },
   ],
 
   grow(g, use) {

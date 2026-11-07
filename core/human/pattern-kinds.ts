@@ -17,8 +17,9 @@ function patternFields(): FieldDesc[] {
     { key: 'id', label: 'id', type: 'text' },
     { key: 'name', label: '名字', type: 'text' },
     { key: 'description', label: '说明', type: 'longtext', optional: true },
-    { key: 'module', label: '模块', type: 'enum', options: mods.map((m) => ({ value: m.id, label: m.name })), hint: '这一种格局怎么生成（代码里的一种算法）' },
-    { key: 'amount', label: '多少', type: 'number', min: 0, max: AMOUNT_MAX, step: 0.1, hint: `时代没写多少时用它。${mods.map((m) => `${m.name}：${m.amountHint}`).join('；')}` },
+    { key: 'module', label: '模块', type: 'enum', options: mods.map((m) => ({ value: m.id, label: m.name })), hint: '这一种格局怎么生成' },
+    // 第七十五轮：每个模块“多少”是什么意思写在页面上模块的提示里（patternTip），这里只写一句
+    { key: 'amount', label: '多少', type: 'number', min: 0, max: AMOUNT_MAX, step: 0.1, hint: '时代没写多少时用它' },
     ...mods.flatMap((m) => (m.params ?? []).map((p): FieldDesc => ({ key: p.key, label: p.label, type: 'number', optional: true, min: p.min, max: p.max, step: p.step, ...(p.hint ? { hint: p.hint } : {}), when: { key: 'module', is: m.id } }))),
   ];
 }

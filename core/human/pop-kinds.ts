@@ -80,7 +80,7 @@ const ERA_FIELDS: readonly FieldDesc[] = [
       { key: 'amount', label: '多少', type: 'number', optional: true, min: 0, max: 20, step: 0.1, hint: '空着时用格局自己写的' },
     ],
   },
-  { key: 'nationalism', label: '民族主义', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；以后长国家时越过文化的边界更难（现在只记着）' },
+  { key: 'nationalism', label: '文化的倒向', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '民族主义：越大，国界越跟着文化走' },
   {
     key: 'relations',
     label: '集团的称号',

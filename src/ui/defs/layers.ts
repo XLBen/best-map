@@ -31,7 +31,7 @@ export const VIEWS: ViewDef[] = [
 // 时代的每一维（dim:维度 id：宗教、种族……，按世界的时代列出）、人口密度
 // 第二十三轮：有国家时最前面是“国家”
 export function humanViews(w: Pick<World, 'small'>): ViewDef[] {
-  const country: ViewDef[] = w.small.human?.countryRules && w.small.countries ? [{ id: 'country', label: '国家', hint: '附庸用宗主的浅色' }] : [];
+  const country: ViewDef[] = w.small.human?.countryRules && w.small.countries ? [{ id: 'country', label: '国家', hint: countryViewHint(w.small) }] : [];
   // 第二十六轮：有帝国、联邦、同盟时多一个“同盟”
   if (country.length && w.small.blocs?.length) country.push({ id: 'bloc', label: '同盟', hint: '灰色是不在其中的国家' });
   return [...country, ...humanLayers(w).flatMap((l): ViewDef[] => {
@@ -40,6 +40,13 @@ export function humanViews(w: Pick<World, 'small'>): ViewDef[] {
     if (l.id === 'popDensity' || l.id === 'habitability') return [{ id: l.id, label: l.label }];
     return [{ id: `dim:${l.id}`, label: l.label }];
   })];
+}
+
+// “国家”一层的说明（第七十五轮）：附庸用宗主的浅色；世界里有殖民地、公司领地时也写上（它们一样用宗主的浅色）
+export function countryViewHint(small: Pick<World['small'], 'countries'>): string {
+  const kinds = new Set(Object.values(small.countries ?? {}).flatMap((m) => (m.overlord !== undefined ? [m.subject ?? 'vassal'] : [])));
+  const names = ['附庸', ...(kinds.has('colony') ? ['殖民地'] : []), ...(kinds.has('company') ? ['公司领地'] : [])];
+  return `${names.join('、')}用宗主的浅色`;
 }
 
 // 文化圈按文化还是按文化组
