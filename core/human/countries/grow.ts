@@ -1,5 +1,6 @@
 import { HeapLite } from '../../mesh';
 import { edgeCosts } from '../cultures';
+import type { Government } from '../government';
 import { COAST } from '../rules';
 import { cellKm2 } from '../space';
 import { NOBODY } from './base';
@@ -14,6 +15,10 @@ export const FREE_MUL = 4;
 const MAX_FREE = 0.16;
 // 能住人的地方以外的干陆地（荒漠、山、苔原）算进预算的比例
 const LOW_HAB_WEIGHT = 0.5;
+
+// 越过文化的边界的代价倍数（扩张性弱的更难）：进同一文化组的别的文化、进别的文化组。第七十四轮的多民族大国按它们的比放宽
+export const sameCultureMul = (gv: Pick<Government, 'expansion'>): number => 1 + 0.6 * (1 - gv.expansion);
+export const otherCultureMul = (gv: Pick<Government, 'expansion'>): number => 1 + 2.5 * (1 - gv.expansion);
 
 export function growOwners(g: CountryRun) {
   const { ctx, world, seeds, country, minH, region, T, area } = g;
@@ -50,8 +55,8 @@ export function growOwners(g: CountryRun) {
     R[o] = Rp[o] = Math.sqrt(s.budget / Math.PI);
     cap[o] = 20 * R[o];
     thr[o] = Math.max(NOBODY, minH * (1 - gv.nomadic));
-    sameMul[o] = 1 + 0.6 * (1 - gv.expansion);
-    otherMul[o] = 1 + 2.5 * (1 - gv.expansion);
+    sameMul[o] = sameCultureMul(gv);
+    otherMul[o] = otherCultureMul(gv);
     coastMul[o] = 1 + 3 * gv.coastal;
     // 下海：紧凑的、不靠海的更难，游牧的几乎不下海
     seaMul[o] = (1 + 2 * gv.cohesion) * (1 + 2 * (1 - gv.coastal)) * (1 + 6 * gv.nomadic);
@@ -77,7 +82,7 @@ export function growOwners(g: CountryRun) {
   const { off, adj } = mesh;
   const land = causes.land;
   const lake = d.lake;
-  // 格局加的代价（第七十三轮；内置的四种格局都不加）
+  // 格局加的代价（第七十三轮；第七十四轮的民族主义、大河帝国、汗国、多民族的大国加）
   const extra = g.stepCost;
   const nExtra = extra.length;
   // 第几遍：1 是第一遍（长到预算），FREE_MUL 是第二遍

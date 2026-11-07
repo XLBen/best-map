@@ -53,8 +53,8 @@ export const filledDims = (era: Pick<Era, 'dimensions'>): Dimension[] => {
 const tierWeightsSchema = z.record(typeIdSchema, z.number().min(0).max(100));
 export type TierWeights = Readonly<Record<string, number>>;
 
-// 从属的种类（第二十六轮，CountryMeta.subject）：附庸、保护国、自治领、朝贡国
-export const SUBJECT_KINDS = ['vassal', 'protectorate', 'dominion', 'tributary'] as const;
+// 从属的种类（第二十六轮，CountryMeta.subject）：附庸、保护国、自治领、朝贡国；第七十四轮加殖民地（格局 colonies 写的，附庸的格局不挑它）
+export const SUBJECT_KINDS = ['vassal', 'protectorate', 'dominion', 'tributary', 'colony'] as const;
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
 
 // 时代的国家关系（第二十六轮）：第七十三轮起邦联、联邦、同盟、附庸的多少与从属的种类是国家格局（patterns），这里只剩集团的称号

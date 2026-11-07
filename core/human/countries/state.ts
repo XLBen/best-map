@@ -23,6 +23,8 @@ export interface Seed {
   region: number;
   // 隔海的地方照样要（第七十四轮的殖民地用）：长完以后不按“隔海的一块能住人的分量不到本国几成就放掉”放掉
   overseas?: boolean;
+  // 多民族的大国（第七十四轮的 multiethnic）：越过文化组的边界不难，也不在乎民族主义
+  multiethnic?: boolean;
 }
 
 // 预留的一片地方（reserve 钩子圈的，神圣帝国的诸侯……）：长的时候只有它的成员进，成员也不出这一片去占能住人的地方
@@ -32,6 +34,9 @@ export interface Region {
   // 文化组（ctx.groups 的下标）
   group: number;
   seeds: Seed[];
+  // 只在挑普通起点时占着（第七十四轮：大河帝国、集权帝国、汗国的“核心”，别国的起点不放进来）；往外长之前放开，
+  // 它的起点（region 是 −1）照常往外长
+  open?: boolean;
 }
 
 // 走一条边的代价再乘点什么（grow 钩子加的，第七十四轮的民族主义、大河）：o 是第几国（seeds 的下标），j 是要进的格（干的陆地，不是湖），

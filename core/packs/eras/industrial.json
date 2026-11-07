@@ -13,7 +13,7 @@
     "countryKm2": 1200000,
     "years": [1750, 1914],
     "tiers": {"city": 0.3, "small": 2, "medium": 2, "large": 1.5, "empire": 0.6},
-    "patterns": [{"pattern": "federation", "amount": 0.7}, {"pattern": "alliances", "amount": 2}, {"pattern": "protectorates"}],
+    "patterns": [{"pattern": "federation", "amount": 0.7}, {"pattern": "alliances", "amount": 2}, {"pattern": "protectorates"}, {"pattern": "colonies", "amount": 6}, {"pattern": "unification", "amount": 2}, {"pattern": "multiethnic", "amount": 1}],
     "nationalism": 0.6,
     "relations": {
       "titles": {

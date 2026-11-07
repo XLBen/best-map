@@ -1,4 +1,4 @@
-import { SUBJECT_KINDS } from '../../era';
+import { SUBJECT_KINDS, type SubjectKind } from '../../era';
 import { vassalOf } from '../../tiers';
 import { pickWeighted } from '../base';
 import { type PatternModule, param } from '../patterns';
@@ -8,7 +8,8 @@ import { type PatternModule, param } from '../patterns';
 // 多少：乘在收下的可能上（1 是政体写的那么多，0 没有附庸）。时代没列附庸的格局时照样有附庸（fallback 1），都算附庸。
 // 代码从 countries.ts 的 diplomacy 原样搬来，随机流的名字不变：'vassal'
 
-const SUBJECT_LIST = [...SUBJECT_KINDS];
+// 殖民地（第七十四轮）是殖民地的格局写的，附庸不挑它
+const SUBJECT_LIST = SUBJECT_KINDS.filter((k): k is Exclude<SubjectKind, 'colony'> => k !== 'colony');
 const LABEL: Record<(typeof SUBJECT_LIST)[number], string> = { vassal: '附庸', protectorate: '保护国', dominion: '自治领', tributary: '朝贡国' };
 
 export const vassals: PatternModule = {

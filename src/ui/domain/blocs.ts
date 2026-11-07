@@ -71,6 +71,19 @@ export const blocCellsOf = (w: World, b: Bloc): number[] => b.members.flatMap((i
 
 // 一国在同盟模式里算哪个集团（与 blocMapColors 的颜色同一个：同盟优先，再是帝国、联邦）
 export function shownBloc(w: Pick<World, 'small'>, id: number): Bloc | undefined {
+  const own = ownBloc(w, id);
+  if (own) return own;
+  // 第七十四轮：自己不在集团里的殖民地跟着宗主（一层层往上找，同 blocMapColors）
+  let m = w.small.countries?.[id];
+  if (m?.subject !== 'colony') return undefined;
+  for (let d = 0; m?.overlord !== undefined && d < 8; d++) {
+    const b = ownBloc(w, m.overlord);
+    if (b) return b;
+    m = w.small.countries?.[m.overlord];
+  }
+  return undefined;
+}
+function ownBloc(w: Pick<World, 'small'>, id: number): Bloc | undefined {
   const mine = blocsOf(w, id);
   for (const k of BLOC_REGION_KINDS) {
     const b = mine.find((x) => x.kind === k);

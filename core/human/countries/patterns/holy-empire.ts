@@ -4,13 +4,14 @@ import { largest } from '../../blocs';
 import { cellKm2, noiseAt } from '../../space';
 import { confedCentre, confedMembers } from '../../tiers';
 import { pickWeighted } from '../base';
-import type { PatternModule } from '../patterns';
+import { MEMBER_PARAMS, type PatternModule, param } from '../patterns';
 import { govFit, govWeights, pickGov } from '../seeds';
-import type { Seed } from '../state';
+import { scatterSeeds, shareBudget } from './common';
 
 // 神圣帝国（第二十六轮的邦联，第七十三轮挪成格局）：一个文化组的一片地方撒很多城邦、小国，长的时候只有它们进那一片；
 // 领土补齐之后并成一个帝国（皇帝国是最大的成员）。多少：几片（小数部分是再多一片的可能）。
-// 代码从 countries.ts（reserve）、blocs.ts（relate）原样搬来，随机流的名字不变：'country:confederation'、'confederation-center'、'confederation'
+// 代码从 countries.ts（reserve）、blocs.ts（relate）原样搬来，随机流的名字不变：'country:confederation'、'confederation-center'、'confederation'。
+// 第七十四轮：诸侯的个数是参数（最少、最多、占国家的几成；默认 6、14、0.3 和以前一样），撒起点的那一段挪到 common.ts 的 scatterSeeds（城邦群也用）
 
 export const HOLY_EMPIRE = 'holy-empire';
 
@@ -19,10 +20,11 @@ export const holyEmpire: PatternModule = {
   name: '神圣帝国',
   description: '一个文化组的一片地方诸侯林立：撒很多城邦、小国，并成一个帝国（皇帝的那一国是最大的成员）',
   amountHint: '几片；小数是再多一片的可能',
+  params: [...MEMBER_PARAMS(6, 14), { key: 'memberShare', label: '占国家的几成', min: 0, max: 1, step: 0.05, default: 0.3, hint: '诸侯的个数大约是国家总数的几成（再按上面两项夹住）' }],
 
   // 圈出那一片、放诸侯的起点；占用总个数里的几个
   reserve(g, use) {
-    const { ctx, world, country, minH, govs, region, isSeed, K, T, area, total, massC, areaC, massSum, tierList } = g;
+    const { ctx, world, country, minH, govs, region, K, T, area, total, massC, areaC, massSum, tierList } = g;
     const { x, hab } = ctx;
     const cultureOf = ctx.cultureOf!;
     const { mesh } = world;
@@ -43,9 +45,12 @@ export const holyEmpire: PatternModule = {
     const members = confedMembers(tierList);
     const heap = new HeapLite(1024);
     const dist = new Float64Array(n);
+    const minM = param(this, use, 'minMembers');
+    const maxM = param(this, use, 'maxMembers');
+    const share = param(this, use, 'memberShare');
     for (let q = 0; q < nConf; q++) {
-      // 6–14 个成员（剩下的至少一半给别的地方；不到 5 个时不撒）
-      const nc = Math.min(14, Math.max(6, Math.round(total * 0.3)), g.rest - Math.ceil(total / 2));
+      // 6–14 个成员（国家总数的三成；剩下的至少一半给别的地方；不到 5 个时不撒）。第七十四轮起几个是参数，默认的和以前一样
+      const nc = Math.min(maxM, Math.max(minM, Math.round(total * share)), g.rest - Math.ceil(total / 2));
       if (nc < 5) break;
       const choices = [...Array(G).keys()].filter((gr) => !usedG.has(gr) && massG[gr] >= 0.1 * massSum);
       if (!choices.length) break;
@@ -96,75 +101,18 @@ export const holyEmpire: PatternModule = {
         continue;
       }
       // 起点：一个个挑离已有的起点、离这一片的边都远（宜居度高的优先）的格（不都挤在边上，各自分得开）
-      const minD = new Float64Array(n).fill(Infinity);
-      const edgeD = new Float64Array(n).fill(Infinity);
       const k0 = g.regions.length;
-      heap.size = 0;
-      for (const i of cells) {
-        let rim = false;
-        for (let e = mesh.off[i]; e < mesh.off[i + 1] && !rim; e++) if (region[mesh.adj[e]] !== k0) rim = true;
-        if (!rim) continue;
-        edgeD[i] = 0;
-        heap.push(i, 0);
-      }
-      while (heap.size) {
-        const i = heap.pop();
-        const di = heap.lastKey;
-        if (di > edgeD[i]) continue;
-        for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-          const j = mesh.adj[e];
-          if (region[j] !== k0) continue;
-          const nd = di + mesh.dist[e] * world.kmPerUnit;
-          if (nd < edgeD[j]) {
-            edgeD[j] = nd;
-            heap.push(j, nd);
-          }
-        }
-      }
-      const list: Seed[] = [];
       const rand = g.stream('confederation', q);
-      let pick = center;
-      for (let s = 0; s < nc && pick >= 0; s++) {
-        isSeed[pick] = 1;
+      const list = scatterSeeds(g, cells, k0, center, nc, (s, pick) => {
         const c = cultureOf[pick];
         const culture = ctx.cultures[c];
         // 中心是邦联的中心那一级（皇帝的本领，内置的是公国级），别的按成员的比例（内置的是城邦级、侯国级）；预算先记倍数，挑完按这一片的面积分
         const tier = s === 0 ? centreTier : pickWeighted(members.list, members.weight, rand)!;
         const w = govWeights(ctx.world, ctx.era, culture, govs);
         const gov = pickGov(govs, (gg) => w(gg) * govFit(gg, tier), rand);
-        list.push({ cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), region: k0 });
-        // 离起点的距离（只在这一片里走）
-        heap.size = 0;
-        minD[pick] = 0;
-        heap.push(pick, 0);
-        while (heap.size) {
-          const i = heap.pop();
-          const di = heap.lastKey;
-          if (di > minD[i]) continue;
-          for (let e = mesh.off[i]; e < mesh.off[i + 1]; e++) {
-            const j = mesh.adj[e];
-            if (region[j] !== k0) continue;
-            const nd = di + mesh.dist[e] * world.kmPerUnit;
-            if (nd < minD[j]) {
-              minD[j] = nd;
-              heap.push(j, nd);
-            }
-          }
-        }
-        pick = -1;
-        let best = 0;
-        for (const i of cells) {
-          if (isSeed[i]) continue;
-          const v = Math.min(minD[i], 2 * edgeD[i]) * Math.sqrt(Math.max(hab[i], 0.01));
-          if (v > best) {
-            best = v;
-            pick = i;
-          }
-        }
-      }
-      let wSum = 0;
-      for (const sd of list) wSum += sd.budget;
-      for (const sd of list) sd.budget *= got / wSum;
+        return { cell: pick, culture: c, gov, tier, budget: tier.area * (0.7 + 0.6 * rand()), region: k0 };
+      });
+      shareBudget(list, got);
       g.regions.push({ pattern: HOLY_EMPIRE, group: gi, seeds: list });
       g.rest -= list.length;
     }

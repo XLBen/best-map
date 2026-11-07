@@ -53,23 +53,41 @@ const rgb = (hex: string): [number, number, number] => {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 };
 
+// 每个国家在 kinds 的集团里算哪一个（kinds 里先列的种类优先）。第七十四轮：自己不在这些集团里的殖民地跟着宗主（一层层往上找）
+export function memberBlocs(small: Pick<World['small'], 'blocs' | 'countries'>, kinds: readonly BlocKind[]): Map<number, Bloc> {
+  const pick = new Map<number, Bloc>();
+  for (const kind of kinds) for (const b of blocList(small)) if (b.kind === kind) for (const m of b.members) if (!pick.has(m)) pick.set(m, b);
+  const metas = small.countries ?? {};
+  for (const m of Object.values(metas)) {
+    if (m.subject !== 'colony' || pick.has(m.id)) continue;
+    let top: CountryMeta | undefined = m;
+    for (let d = 0; top && top.overlord !== undefined && d < 8; d++) {
+      top = metas[top.overlord];
+      const b = top && pick.get(top.id);
+      if (b) {
+        pick.set(m.id, b);
+        break;
+      }
+    }
+  }
+  return pick;
+}
+
 // 国家的编号（countryList 的下标 + 1，同 derived.country）→ 它所在集团的颜色（kinds 里先列的种类优先；不在集团里为 null）。
 // “同盟”模式用：一个集团一种颜色，不在集团里的界面画成灰色
 export function blocMapColors(world: Pick<World, 'small'>, kinds: readonly BlocKind[] = ['alliance', 'empire', 'federation']): ([number, number, number] | null)[] {
-  const pick = new Map<number, Bloc>();
-  for (const kind of kinds) for (const b of blocList(world.small)) if (b.kind === kind) for (const m of b.members) if (!pick.has(m)) pick.set(m, b);
+  const pick = memberBlocs(world.small, kinds);
   return [null, ...countryList(world.small).map((m) => (pick.has(m.id) ? rgb(pick.get(m.id)!.color) : null))];
 }
 
-// 每格所在的集团的编号（kinds 里的种类；陆地按领土，海按 derived.country 的领海与碎岛），不在集团里为 −1。
+// 每格所在的集团的编号（kinds 里的种类；陆地按领土，海按 derived.country 的领海与碎岛；殖民地跟着宗主），不在集团里为 −1。
 // 片区名（regionLabels）、帝国的外沿用
 export function blocCells(world: World, kinds: readonly BlocKind[] = BLOC_KINDS): Int32Array {
   const { mesh, causes, derived } = world;
   const out = new Int32Array(mesh.n).fill(-1);
   const c = causes.country;
   if (!c || !world.small.blocs?.length) return out;
-  const of = new Map<number, number>();
-  for (const kind of kinds) for (const b of blocList(world.small)) if (b.kind === kind) for (const m of b.members) if (!of.has(m)) of.set(m, b.id);
+  const of = new Map([...memberBlocs(world.small, kinds)].map(([m, b]) => [m, b.id]));
   const list = countryList(world.small);
   const code = derived.country;
   for (let i = 0; i < mesh.n; i++) {

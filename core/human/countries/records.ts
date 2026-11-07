@@ -18,7 +18,7 @@ import type { CountryRun } from './state';
 
 // ---------- 颜色 ----------
 
-function hexToHsl(hex: string): [number, number, number] {
+export function hexToHsl(hex: string): [number, number, number] {
   const v = parseInt(hex.slice(1), 16);
   const r = ((v >> 16) & 255) / 255;
   const g = ((v >> 8) & 255) / 255;
@@ -121,11 +121,16 @@ export function foundedYear(era: Pick<Era, 'years'> | undefined, rand: () => num
 export const yearText = (y: number): string => (y < 0 ? `前 ${-y} 年` : `${y} 年`);
 
 // 从属的种类的中文名与历史里的一句（第二十六轮）
-export const SUBJECT_NAMES: Record<SubjectKind, string> = { vassal: '附庸', protectorate: '保护国', dominion: '自治领', tributary: '朝贡国' };
+export const SUBJECT_NAMES: Record<SubjectKind, string> = { vassal: '附庸', protectorate: '保护国', dominion: '自治领', tributary: '朝贡国', colony: '殖民地' };
+// 从属的一句（档案、列表用；第七十四轮）：殖民地写“殖民地 · 宗主国 X”，别的写“附庸 · 宗主 X”
+export function subjectText(kind: SubjectKind | undefined, lord: string): string {
+  return kind === 'colony' ? `殖民地 · 宗主国 ${lord}` : `${SUBJECT_NAMES[kind ?? 'vassal']} · 宗主 ${lord}`;
+}
 function subjectLine(kind: SubjectKind | undefined, lord: string): string {
   if (kind === 'protectorate') return `后来受${lord}保护。`;
   if (kind === 'dominion') return `后来成为${lord}的自治领。`;
   if (kind === 'tributary') return `向${lord}称臣纳贡。`;
+  if (kind === 'colony') return `后来成为${lord}的殖民地。`;
   return `后来成为${lord}的附庸。`;
 }
 

@@ -393,12 +393,12 @@ describe('门槛四：只有一种取值的变量', () => {
     expect(importGates(modern, target, [IDEOLOGY]).of(GOV).t).toBe('free');
     const valueId = packItems<{ id: string; dimension: string }>(modern, 'popValues').find((v) => v.dimension === 'ideology')!.id;
     const r = importCommand({ source: modern, target, picks: [{ kind: 'popValue', id: valueId }] }, { path: ['modern'] });
-    // 第七十三轮：时代用的国家格局跟着时代来（联邦、军事同盟、保护国）
-    expect(r.preview.rows.map((x) => x.kind).sort()).toEqual(['countryPattern', 'countryPattern', 'countryPattern', 'era', 'popValue']);
+    // 第七十三轮：时代用的国家格局跟着时代来（联邦、军事同盟、保护国；第七十四轮多了民族国家、前殖民地国家）
+    expect(r.preview.rows.map((x) => x.kind).sort()).toEqual(['countryPattern', 'countryPattern', 'countryPattern', 'countryPattern', 'countryPattern', 'era', 'popValue']);
     expect(r.command!.commands.length).toBe(r.preview.count);
     eng.exec(r.command!);
     expect(Object.keys(eng.world.small.content!.era!)).toEqual(['modern']);
-    expect(Object.keys(eng.world.small.content!.countryPattern!).sort()).toEqual(['alliances', 'client-states', 'federation']);
+    expect(Object.keys(eng.world.small.content!.countryPattern!).sort()).toEqual(['alliances', 'client-states', 'federation', 'nation-state', 'post-colonial']);
     expect(danglingLinks(linkTable(worldScope(eng.world))).filter((b) => b.from.id === valueId)).toEqual([]);
   });
 });

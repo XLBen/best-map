@@ -15,7 +15,7 @@ const ISLAND_CELLS = 8;
 const ISLAND_SHARE = 0.05;
 
 export function cleanupOwners(g: CountryRun) {
-  const { ctx, world, seeds, owner, dist, edge, thr, home, country, minH } = g;
+  const { ctx, world, seeds, owner, dist, edge, home, country, minH } = g;
   const { x, hab, d } = ctx;
   const { mesh, causes } = world;
   const n = g.n;
@@ -101,7 +101,19 @@ export function cleanupOwners(g: CountryRun) {
     }
   }
 
-  // ---- 不连着首都、挨着别国的小块并给邻国 ----
+  mergeDetached(g);
+}
+
+// 不连着首都、挨着别国的小块并给邻国（整理的最后一步；第七十四轮单独拿出来，统一、民族国家、前殖民地改了 g.owner 之后再调一次）
+export function mergeDetached(g: CountryRun) {
+  const { ctx, world, seeds, owner, thr, minH } = g;
+  const { x, hab } = ctx;
+  const { mesh, causes } = world;
+  const n = g.n;
+  const k = seeds.length;
+  const { off, adj } = mesh;
+  const land = causes.land;
+  const stack: number[] = [];
   const sizeOf = new Int32Array(k);
   for (let i = 0; i < n; i++) if (owner[i] >= 0) sizeOf[owner[i]]++;
   const comp = new Int32Array(n).fill(-1);

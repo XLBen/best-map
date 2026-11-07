@@ -17,7 +17,7 @@
     "countryKm2": 600000,
     "years": [1900, 2020],
     "tiers": {"city": 0.3, "small": 2.5, "medium": 2.5, "large": 1.5, "empire": 0.3},
-    "patterns": [{"pattern": "federation", "amount": 1}, {"pattern": "alliances", "amount": 3}, {"pattern": "client-states"}],
+    "patterns": [{"pattern": "federation", "amount": 1}, {"pattern": "alliances", "amount": 3}, {"pattern": "client-states"}, {"pattern": "nation-state", "amount": 1}, {"pattern": "post-colonial", "amount": 2}],
     "nationalism": 0.85,
     "relations": {
       "titles": {

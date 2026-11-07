@@ -13,7 +13,7 @@
     "countryKm2": 450000,
     "years": [-2500, 200],
     "tiers": {"city": 3, "small": 3, "medium": 2, "large": 0.8, "empire": 0.3},
-    "patterns": [{"pattern": "tributaries"}],
+    "patterns": [{"pattern": "city-league", "amount": 1}, {"pattern": "river-empire", "amount": 1}, {"pattern": "tributaries"}],
     "nationalism": 0.2
   },
   "pack": {

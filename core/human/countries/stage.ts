@@ -7,7 +7,8 @@ import { type CountryPlan, ensureCountryArray } from './base';
 import { cleanupOwners } from './cleanup';
 import { countCountries } from './count';
 import { growOwners } from './grow';
-import { patternUses, runPatterns } from './patterns';
+import { param, patternUses, runPatterns } from './patterns';
+import { COLONIES, colonies, settleColonies } from './patterns/colonies';
 import './patterns/index';
 import { typical, writeRecords } from './records';
 import { placeSeeds } from './seeds';
@@ -65,6 +66,13 @@ function resetCountries(g: CountryRun): boolean {
   return true;
 }
 
+// 只在挑起点时占着的地方（Region.open：大河帝国、集权帝国、汗国的核心）放开，它们的起点照常往外长
+function openRegions(g: CountryRun) {
+  if (!g.regions.some((r) => r.open)) return;
+  const { region, regions } = g;
+  for (let i = 0; i < g.n; i++) if (region[i] >= 0 && regions[region[i]].open) region[i] = -1;
+}
+
 function growCountries(ctx: GenContext, plan: CountryPlan) {
   const g = countryRun(ctx, plan);
   ctx.countryRun = g;
@@ -77,6 +85,7 @@ function growCountries(ctx: GenContext, plan: CountryPlan) {
     g.world.small.nextCountry = g.next;
     return;
   }
+  openRegions(g);
   runPatterns(g, 'grow');
   growOwners(g);
   cleanupOwners(g);
@@ -128,13 +137,16 @@ function placeCountries(ctx: GenContext) {
   ctx.popScale = countryPopScale(ctx);
 }
 
-// 人口之后：扩张性强的国家在异族的地方（占多数的文化组不兼容）掺进 0.35 × 扩张性 的主流文化的人（官吏、移民）
+// 人口之后：扩张性强的国家在异族的地方（占多数的文化组不兼容）掺进 0.35 × 扩张性 的主流文化的人（官吏、移民）；
+// 第七十四轮：在这之前殖民地里掺进“新土认同”（patterns/colonies.ts 的 settleColonies）
 function mixCountries(ctx: GenContext) {
   const { world, keep, era } = ctx;
   const { small, causes } = world;
   const country = causes.country;
   if (!ctx.countries || !country || !small.countries || !causes.popTotal) return;
   const table = new GroupTable(small);
+  // 第七十四轮：殖民地里掺进新土认同的移民（时代没列殖民地的格局时按它的默认）
+  const settled = settleColonies(ctx, table, param(colonies, patternUses(small, era).get(COLONIES) ?? { amount: 0, params: {}, patterns: [] }, 'settlers'));
   // 后加的维度最后才分开（add-dimension.ts），这里的移民先不带
   const base = { ...era, dimensions: composedDims(era) };
   const plan = new Map<number, { a: number; accepted: Set<string>; code: number }>();
@@ -144,7 +156,10 @@ function mixCountries(ctx: GenContext) {
     if (a <= 0.02) continue;
     plan.set(m.id, { a, accepted: new Set(m.acceptedGroups), code: table.code(typical(world, base, m.primaryCulture)) });
   }
-  if (!plan.size) return;
+  if (!plan.size) {
+    if (settled) table.commit();
+    return;
+  }
   const groupOfCode = (code: number) => {
     const t = table.get(code);
     return t ? cultureById(small, t.culture)?.group : undefined;

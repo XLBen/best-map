@@ -1,5 +1,5 @@
 import { type World, longitudeOf, worldLatitude } from '../world';
-import { countryList } from './countries';
+import { countryList, subjectText } from './countries';
 import { allCountryStats, countryFactions, countryFaith } from './country-layers';
 import { FAITH_NAMES, cultureById, cultureGroupById, worldEra } from './era';
 import { categoryName, governmentById } from './government';
@@ -138,7 +138,8 @@ export function archiveMarkdown(world: World): string {
       if (fac.length) lines.push(`- 派系：${fac.map((f) => `${f.name} ${pct(f.influence)}`).join('、')}`);
       lines.push(`- 统治者：${m.ruler.title ? `${m.ruler.title} ` : ''}${m.ruler.name}${m.ruler.orig ? `（${m.ruler.orig}）` : ''}`);
       lines.push(`- 建国：${m.founded} 年`);
-      if (m.overlord !== undefined) lines.push(`- 宗主：${countryName(m.overlord)}`);
+      // 殖民地（第七十四轮）写“殖民地 · 宗主国 X”
+      if (m.overlord !== undefined) lines.push(m.subject === 'colony' ? `- ${subjectText('colony', countryName(m.overlord))}` : `- 宗主：${countryName(m.overlord)}`);
       const vassals = countries.filter((x) => x.overlord === m.id);
       if (vassals.length) lines.push(`- 附庸：${vassals.map((x) => x.name).join('、')}`);
       if (m.allies.length) lines.push(`- 同盟：${m.allies.map(countryName).join('、')}`);

@@ -13,7 +13,7 @@
     "countryKm2": 1500000,
     "years": [600, 1700],
     "tiers": {"city": 1, "small": 3, "medium": 2.5, "large": 1.2, "empire": 0.3},
-    "patterns": [{"pattern": "holy-empire", "amount": 1}, {"pattern": "feudal-vassals"}],
+    "patterns": [{"pattern": "holy-empire", "amount": 1}, {"pattern": "central-empire", "amount": 1}, {"pattern": "feudal-vassals"}, {"pattern": "khanate", "amount": 1}],
     "nationalism": 0.2,
     "relations": {
       "titles": {"empire": [{"zh": "神圣{name}帝国", "orig": "Holy {name} Empire"}, {"zh": "帝国", "orig": "{name} Empire"}]}

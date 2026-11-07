@@ -86,9 +86,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（日耳曼、汉、阿尔泰三组；政体的称号按国家的等级）
 // 第四十四轮重录：政体限谁用（伊克塔只给穆斯林……），倾向里没写的政体不再人人有 0.15 的余地
 // 第五十五轮重录：生态跟高度走
+// 第七十四轮重录：中世纪多了集权帝国、游牧汗国，长国家时按时代的民族主义（0.2）
 const RECORDED = {
-  region: { country: '2201e2fb25f191ae', countries: '4aab20b450c749c8' },
-  planet: { country: '0c16e47d7e0d75e1', countries: '97ffd38f16b05689' },
+  region: { country: 'd88a0cdbf6c198e8', countries: '4b2bec5ae0940f19' },
+  planet: { country: 'e73e7457bbbe594b', countries: '5bcf8961ad3aff0e' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;
@@ -285,12 +286,18 @@ describe('生成国家', () => {
   it('首都一带人多；扩张性强的国家在异族的地方掺进主流文化的人', () => {
     const w = nations().world;
     const stats = allCountryStats(w);
+    // 第七十四轮：民族主义让国界跟着文化走，个别国家的首都那一格落在本国人少的一边（行政君主制的平谷国：首都 5.8 人 / km²，全国 6.3），
+    // 改成九成以上的首都比全国密
+    let all = 0;
+    let dense = 0;
     for (const m of countryList(w.small)) {
       const st = stats.get(m.id)!;
       if (st.cells < 20 || !(st.population > 0)) continue;
       const d = w.causes.popTotal![m.capitalCell!] / (w.mesh.area[m.capitalCell!] * w.kmPerUnit ** 2);
-      expect(d, m.name).toBeGreaterThan(st.density);
+      all++;
+      if (d > st.density) dense++;
     }
+    expect(dense / all).toBeGreaterThan(0.9);
     // 不兼容的地方里掺着主流文化的人
     let mixed = 0;
     for (const m of countryList(w.small)) {

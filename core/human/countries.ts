@@ -3,6 +3,6 @@
 
 export { COUNTRY_KM2, type CountryPlan, DEFAULT_YEARS, MAX_COUNTRIES, NOBODY, clearCountries, countryList, ensureCountryArray, sizeFactor } from './countries/base';
 export { averageCountryKm2, estimateCountryCount, landComponents, plannedCountries } from './countries/count';
-export { SUBJECT_NAMES, countryColor, countryName, cultureContext, foundedYear, historyText, hslToHex, nameCountry, rulerTitleOf, titleContext, yearText } from './countries/records';
+export { SUBJECT_NAMES, countryColor, subjectText, countryName, cultureContext, foundedYear, historyText, hslToHex, nameCountry, rulerTitleOf, titleContext, yearText } from './countries/records';
 export { countriesStage, countryMixStage, countryPopScale } from './countries/stage';
 export { blocsStage } from './countries/relate';

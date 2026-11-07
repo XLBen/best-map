@@ -268,6 +268,7 @@ export {
   DEFAULT_YEARS,
   MAX_COUNTRIES,
   SUBJECT_NAMES,
+  subjectText,
   averageCountryKm2,
   countryList,
   cultureContext,

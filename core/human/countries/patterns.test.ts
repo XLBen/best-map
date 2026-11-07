@@ -28,10 +28,10 @@ const OLD_RELATIONS: Record<string, { confederation?: number; federation?: numbe
 };
 
 describe('模块', () => {
-  it('四个，按调的先后：神圣帝国 → 联邦 → 军事同盟 → 附庸（联邦、同盟共用随机流 blocs，先后不能换）', () => {
-    expect(patternModules().map((m) => m.id)).toEqual(['holy-empire', 'federation', 'alliance', 'vassals']);
-    // 时代没列时：附庸照旧（1），别的没有
-    expect(patternModules().map((m) => m.fallback ?? 0)).toEqual([0, 0, 0, 1]);
+  it('第七十三轮的四个按调的先后：神圣帝国 → 联邦 → 军事同盟 → 附庸（联邦、同盟共用随机流 blocs，先后不能换；第七十四轮的插在中间，见 era-patterns.test.ts）', () => {
+    expect(patternModules().map((m) => m.id).filter((id) => ['holy-empire', 'federation', 'alliance', 'vassals'].includes(id))).toEqual(['holy-empire', 'federation', 'alliance', 'vassals']);
+    // 时代没列时：附庸照旧（1），别的没有（第七十四轮的民族主义也是 1，按时代的 nationalism）
+    expect(['holy-empire', 'federation', 'alliance', 'vassals'].map((id) => patternModules().find((m) => m.id === id)!.fallback ?? 0)).toEqual([0, 0, 0, 1]);
   });
 
   it('时代没写格局：附庸 1、没有从属的种类，别的 0（和以前没写 relations 一样）', () => {
@@ -85,29 +85,33 @@ describe('引用与闭包', () => {
     const links = linksOf('era', era).filter((l) => l.kinds.includes('countryPattern'));
     expect(links.map((l) => [l.id, l.cls])).toEqual([
       ['holy-empire', 'auto'],
+      ['central-empire', 'auto'],
       ['feudal-vassals', 'auto'],
+      ['khanate', 'auto'],
     ]);
     const closure = dependencyClosure(linkTable(packScope(top('medieval'))), [{ kind: 'era', id: 'medieval' }]);
-    expect(closure.auto.filter((r) => r.kind === 'countryPattern').map((r) => r.id)).toEqual(['holy-empire', 'feudal-vassals']);
+    expect(closure.auto.filter((r) => r.kind === 'countryPattern').map((r) => r.id)).toEqual(['holy-empire', 'central-empire', 'feudal-vassals', 'khanate']);
   });
 
   it('从库里勾一个时代加进世界：格局跟着来；缺了的格局去掉那一条（auto）', () => {
     const eng = engineFor({ cells: 2000 }, { bare: true });
     const ask = { source: top('industrial'), target: { t: 'world' as const, world: eng.world }, picks: [{ kind: 'era', id: 'industrial' }] };
     const rows = importPreview(ask).rows.filter((r) => r.kind === 'countryPattern');
-    expect(rows.map((r) => r.id).sort()).toEqual(['alliances', 'federation', 'protectorates']);
+    // 第七十四轮多了殖民地、民族统一、多民族帝国
+    const all = ['alliances', 'colonies', 'federation', 'multiethnic', 'protectorates', 'unification'];
+    expect(rows.map((r) => r.id).sort()).toEqual(all);
     eng.exec(importCommand(ask).command!);
-    expect(Object.keys(eng.world.small.content?.countryPattern ?? {}).sort()).toEqual(['alliances', 'federation', 'protectorates']);
+    expect(Object.keys(eng.world.small.content?.countryPattern ?? {}).sort()).toEqual(all);
     // 只勾时代、去掉联邦：时代里那一条去掉，别的照旧
     const off = importPreview({ ...ask, target: { t: 'world', world: engineFor({ cells: 2000 }, { bare: true }).world }, off: [{ kind: 'countryPattern', id: 'federation' }] });
-    expect(off.rows.filter((r) => r.kind === 'countryPattern').map((r) => r.id).sort()).toEqual(['alliances', 'protectorates']);
+    expect(off.rows.filter((r) => r.kind === 'countryPattern').map((r) => r.id).sort()).toEqual(all.filter((id) => id !== 'federation'));
   });
 });
 
 describe('资源包', () => {
   const mine: CountryPattern = { id: 'my-vassals', name: '我的附庸', module: 'vassals', amount: 0.5, protectorate: 3, dominion: 1 };
 
-  it('自己做的格局导出成资源包、读回来、加进另一个世界：一模一样；别的模块的参数读的时候去掉', () => {
+  it('自己做的格局导出成资源包、读回来、加进另一个世界：一模一样；不认得的键读的时候去掉', () => {
     const eng = engineFor({ cells: 2000 }, { bare: true });
     eng.exec({ op: 'set_content', kind: 'countryPattern', id: mine.id, item: mine as unknown as Record<string, unknown> });
     const pack = packFromWorld(eng.world, {}, { id: 'mine', name: '我的' });
@@ -120,7 +124,7 @@ describe('资源包', () => {
     other.exec(planPack(other.world, back, defaultPicks(back), { path: ['mine'] }).command);
     expect(other.world.small.content?.countryPattern?.[mine.id]).toEqual(mine);
     const schema = kindOf('countryPattern')!.schema;
-    expect(schema.parse({ ...mine, size: 3 })).toEqual(mine);
+    expect(schema.parse({ ...mine, nope: 3 })).toEqual(mine);
   });
 
   it('模块不认得：不能加进世界，资源包的问题里写明', () => {
