@@ -4,9 +4,11 @@
 //         node tools/bench-median.mjs 3 -- --globe --pack fantasy
 //         node tools/bench-median.mjs 5 -- --library            带着一整个时代库的世界（第四十七轮，见 tools/bench.ts）
 //         node tools/bench-median.mjs 5 -- --kept               同上再生成人文（第五十轮：内容都留着，改人口、改国家、存文件）
+//         node tools/bench-median.mjs 5 -- --kept --era fantasy 同上，用奇幻时代的库（第七十九轮；六个时代见 tools/bench.ts）
 //   node tools/bench-median.mjs [次数] --against <提交> [--out 文件] -- [bench 的参数]
 //     在临时的 git worktree 里检出那个提交，把现在的 tools/bench.ts 复制过去（两边跑同样的步骤），
 //     旧、新交替各跑几次，每轮换一边先跑（机器忙闲的变化两边一样），打出对照表；--out 存下 { base, head } 两份中位数
+//   --head <提交>：新的一边也是检出的那个提交（不用现在的工作区）
 //   node tools/bench-median.mjs --compare 旧.json 新.json：对照两份存下的中位数（单份的，或 --against 存的 { base, head }）
 //   对照表只列步骤的总耗时（键里没有“.”“#”的）；--all 连同各阶段一起列。加工的步骤比旧的慢 5% 以上的标出来（第六条门槛）
 import { execFileSync } from 'node:child_process';
@@ -33,7 +35,7 @@ const showAll = own.includes('--all');
 
 // 加工：门槛是不比旧的慢 5% 以上（开发说明“速度”、计划的第六条）。
 // rivers、coast：加工各步之后 Worker 描河并打包、主线程算海岸场的时间加起来（第三十三轮提速）
-const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief', 'libEdit', 'libUndo', 'libRedo', 'libContent', 'libContentUndo', 'libNoop', 'libPost', 'libHuman', 'libHumanUndo', 'libCountry', 'libCountryUndo', 'libSaveDoc'];
+const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief', 'libEdit', 'libUndo', 'libRedo', 'libContent', 'libContentUndo', 'libNoop', 'libPost', 'libHuman', 'libHumanUndo', 'libCountry', 'libCountryUndo', 'libSaveDoc', 'genHuman', 'regenCountries'];
 
 function runOnce(dir) {
   const out = execFileSync(process.execPath, [join(nm, 'tsx', 'dist', 'cli.mjs'), join(dir, 'tools', 'bench.ts'), ...benchArgs, '--json'], {
@@ -93,32 +95,41 @@ if (cmpAt >= 0) {
     if (outFile) writeFileSync(outFile, JSON.stringify(m, null, 1) + '\n');
     console.log(JSON.stringify(m, null, 1));
   } else {
-    // 旧的提交检出到临时目录（不动现在的工作区），依赖用这里的
-    const dir = mkdtempSync(join(tmpdir(), 'map2-bench-'));
+    // 旧的提交检出到临时目录（不动现在的工作区），依赖用这里的；
+    // --head <提交>：新的一边也检出（第七十九轮：量改之前的时候可以接着改代码）
     const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
-    git('worktree', 'add', '--detach', dir, against);
+    const headAt = flag('--head');
+    const dirs = [];
+    const checkout = (commit) => {
+      const d = mkdtempSync(join(tmpdir(), 'map2-bench-'));
+      git('worktree', 'add', '--detach', d, commit);
+      dirs.push(d);
+      symlinkSync(realpathSync(nm), join(d, 'node_modules'));
+      copyFileSync(join(root, 'tools', 'bench.ts'), join(d, 'tools', 'bench.ts'));
+      if (!existsSync(join(d, 'tools', 'hash.ts'))) throw new Error(`${commit} 里没有 tools/hash.ts`);
+      return d;
+    };
     try {
-      symlinkSync(realpathSync(nm), join(dir, 'node_modules'));
-      copyFileSync(join(root, 'tools', 'bench.ts'), join(dir, 'tools', 'bench.ts'));
-      if (!existsSync(join(dir, 'tools', 'hash.ts'))) throw new Error('旧的提交里没有 tools/hash.ts');
+      const dir = checkout(against);
+      const headDir = headAt ? checkout(headAt) : root;
       const base = [];
       const head = [];
       for (let k = 0; k < runs; k++) {
         // 每轮换一边先跑：一直旧的先跑时，同一个提交对照自己后跑的也慢 8–12%（第四十七轮量的）
         if (k % 2 === 0) {
           base.push(runOnce(dir));
-          head.push(runOnce(root));
+          head.push(runOnce(headDir));
         } else {
-          head.push(runOnce(root));
+          head.push(runOnce(headDir));
           base.push(runOnce(dir));
         }
         process.stderr.write(`run ${k + 1}/${runs} done (old, new)\n`);
       }
-      const m = { against, args: benchArgs, base: median(base), head: median(head) };
+      const m = { against, headAt: headAt ?? undefined, args: benchArgs, base: median(base), head: median(head) };
       if (outFile) writeFileSync(outFile, JSON.stringify(m, null, 1) + '\n');
       table(m.base, m.head);
     } finally {
-      git('worktree', 'remove', '--force', dir);
+      for (const d of dirs) git('worktree', 'remove', '--force', d);
     }
   }
 }

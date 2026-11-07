@@ -11,6 +11,8 @@
 //     毫秒、两位小数）、发给主线程的小数据（libPost）、每步撤销记录里的字（undoKB，千字）
 //     --kept：--library 再加生成人文（第五十轮：世界留着全部内容；旧的提交上生成后清理掉，正好对照），步骤相同，
 //     另计改人口（libHuman、libHumanUndo）、改国家档案（libCountry、libCountryUndo）、存世界文件（libSaveDoc）和世界文件的大小（docKB）
+//     --era <id>（第七十九轮）：--library、--kept 用这个时代的库（antiquity、medieval、industrial、modern、fantasy、scifi；默认 medieval），
+//     --kept 另计重新生成国家（regenCountries：三个种子各一次再撤销的中位数）与国家个数（countries）
 //   npx tsx tools/bench.ts --globe --pack fantasy [--json] [--hash]：整个星球 + 奇幻示例包，按用户平时的操作逐步计时
 //     （新建、用资源包、画陆地、堆山、放岛、冷暖、自然融入的生态、湿度滑块、画河的预览与执行、撤销 6 次、重做、
 //     打开（整段重放）、从检查点恢复）
@@ -38,12 +40,15 @@ import { mulberry32 } from '../core/rng';
 import { coastalStroke, digest } from './hash';
 import { kindOf } from '../core/content/registry';
 
-// 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
-const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
+// 时代（第七十九轮：--era <id>，默认中世纪）：--library、--kept 导入这个时代的库、按它生成人文
+const eraArg = process.argv.indexOf('--era');
+const era = eraArg >= 0 ? process.argv[eraArg + 1] : 'medieval';
+// 时代包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
+const medievalGroups = () => ((builtinPacks().find((p) => p.id === era)?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
 // 生成人文：第七十七轮起命令只写文化组的 id（各组占多少是世界里组的比重，内置的组带着库里的比重）；旧的提交上要写权重。
 // 先试新的写法，命令的格式不认时（没执行）用旧的写法：两边的结果一样
 function genHuman(eng: Engine, more: Record<string, unknown>): void {
-  const cmd = { op: 'generate_human', packs: [['medieval']], ...more };
+  const cmd = { op: 'generate_human', packs: [[era]], ...more };
   try {
     eng.exec({ ...cmd, groups: medievalGroups().map((g) => g.id) } as unknown as Command);
   } catch {
@@ -72,7 +77,7 @@ const noWater = process.argv.includes('--no-water');
 const packArg = process.argv.indexOf('--pack');
 const pack = packArg >= 0 ? process.argv[packArg + 1] : null;
 const EARTH_CELLS = planetCells(PLANET_SIZES.earth.radiusKm);
-const cellsArg = process.argv.slice(2).find((a, k, all) => !a.startsWith('--') && all[k - 1] !== '--pack');
+const cellsArg = process.argv.slice(2).find((a, k, all) => !a.startsWith('--') && all[k - 1] !== '--pack' && all[k - 1] !== '--era');
 
 // 后加的接口（旧的提交上没有）：没有时为 undefined
 type Laps = { sample?: number; scan?: number; solve?: number; finish?: number };
@@ -234,13 +239,27 @@ function plainBench() {
   const w = eng.world;
   results.riverTyped = w.derived.riverType?.reduce((a, v) => a + (v ? 1 : 0), 0) ?? 0;
   if (library) {
-    for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']] }, w)) eng.exec(c);
+    if (!builtinPacks().some((p) => p.id === era)) throw new Error(`没有这个时代：${era}`);
+    for (const c of packImportCommands(builtinPacks(), { packs: [[era]] }, w)) eng.exec(c);
     lap('import library', 'library');
     if (kept) {
       genProvinces(eng, 3);
       genHuman(eng, { countries: {}, settlements: {} });
       eng.update();
       lap('generate human', 'genHuman');
+      // 重新生成国家（第七十九轮：各时代的国家格局）：三个种子各一次再撤销，取中位数
+      const regen: number[] = [];
+      for (const seed of [5, 6, 7]) {
+        const a = performance.now();
+        eng.exec({ op: 'regenerate_countries', seed } as Command);
+        eng.update();
+        regen.push(performance.now() - a);
+        eng.undo();
+        eng.update();
+      }
+      results.regenCountries = Math.round([...regen].sort((a, b) => a - b)[1]);
+      if (!json) console.log('regenerate countries'.padEnd(28), String(results.regenCountries).padStart(5), 'ms');
+      results['genHuman#countries'] = Object.keys(w.small.countries ?? {}).length;
     }
     results.smallKB = Math.round(JSON.stringify(w.small).length / 1000);
     results.contentKB = Math.round(JSON.stringify(w.small.content ?? {}).length / 1000);
