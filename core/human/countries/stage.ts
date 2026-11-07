@@ -1,4 +1,3 @@
-import type { World } from '../../world';
 import type { GenContext, HumanStage } from '../context';
 import { composedDims, cultureById } from '../era';
 import { eraGovernments, governmentById } from '../government';
@@ -143,7 +142,7 @@ function mixCountries(ctx: GenContext) {
     const g = governmentById(small, m.government);
     const a = 0.35 * (g?.expansion ?? 0);
     if (a <= 0.02) continue;
-    plan.set(m.id, { a, accepted: new Set(m.acceptedGroups), code: table.code(typical(world as Pick<World, 'small'>, base, m.primaryCulture)) });
+    plan.set(m.id, { a, accepted: new Set(m.acceptedGroups), code: table.code(typical(world, base, m.primaryCulture)) });
   }
   if (!plan.size) return;
   const groupOfCode = (code: number) => {

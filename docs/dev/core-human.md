@@ -1,6 +1,6 @@
 # core/human/：人文
 
-流水线里人文的几层（`Dirty.Human` 只重算这里与名字）。设计见 history/：[第21轮](history/第21轮.md)（地形类别、资源、格的档案）、[第22轮](history/第22轮.md)（时代、文化、人口）、[第23轮](history/第23轮.md)（国家与政体）、[第24轮](history/第24轮.md)（城市、道路、地标、点）、[第26轮](history/第26轮.md)（等级、领土补齐、集团）、[第27轮](history/第27轮.md)（自动的结果）、[第30轮](history/第30轮.md)（时代就是资源包）、[第42轮](history/第42轮.md)（国家等级是内容）、[第43轮](history/第43轮.md)（EU4 的文化组、宗教组与政体名）、[第44轮](history/第44轮.md)（政体限谁用；奇幻、科幻照 EU4 重做）。
+流水线里人文的几层（`Dirty.Human` 只重算这里与名字）。设计见 history/：[第21轮](history/第21轮.md)（地形类别、资源、格的档案）、[第22轮](history/第22轮.md)（时代、文化、人口）、[第23轮](history/第23轮.md)（国家与政体）、[第24轮](history/第24轮.md)（城市、道路、地标、点）、[第26轮](history/第26轮.md)（等级、领土补齐、集团）、[第27轮](history/第27轮.md)（自动的结果）、[第30轮](history/第30轮.md)（时代就是资源包）、[第42轮](history/第42轮.md)（国家等级是内容）、[第43轮](history/第43轮.md)（EU4 的文化组、宗教组与政体名）、[第44轮](history/第44轮.md)（政体限谁用；奇幻、科幻照 EU4 重做）、[第73轮](history/第73轮.md)（国家一步按步拆开、国家格局）。
 
 ## 格的几层（第二十一轮）
 - `index.ts` 流水线里的一步 `computeHuman` 与给界面的函数（`countryLabels`、`regionLabels`、`peakMarks`、`cellName`……）
@@ -13,7 +13,7 @@
 - `kinds.ts` 地形类别、资源登记进登记表
 
 ## 时代、文化、人口（第二十二轮）
-- `era.ts` 时代、取值、取值组（第四十三轮）、文化组、文化的格式与世界里的列表（`worldEra`、`worldCultures`、`worldDimensions`……）；文化的倾向 `cultureTendency`（文化按时代 → 文化 → 组按时代 → 组）、风格 `styleOfCulture`、异端 / 异教 `faithRelation`
+- `era.ts` 时代（第七十三轮起写国家格局 `patterns` 与民族主义 `nationalism`，`relations` 只剩集团的称号）、取值、取值组（第四十三轮）、文化组、文化的格式与世界里的列表（`worldEra`、`worldCultures`、`worldDimensions`……）；文化的倾向 `cultureTendency`（文化按时代 → 文化 → 组按时代 → 组）、风格 `styleOfCulture`、异端 / 异教 `faithRelation`
 - `pop-kinds.ts` 这五种登记进登记表
 - `context.ts` 生成各步共用的 `GenContext`；`generate.ts` 生成人文（分步、复制内容、重新生成；`generateHuman`、`regenerateHuman`、`humanBlockers`；用的包记在 `small.genStamp`，第五十一轮以前是 `human.packs`）
 - `habitability.ts` 宜居度与偏好；`cultures.ts` 文化圈；`culture-style.ts` 地名跟着文化
@@ -24,11 +24,15 @@
 
 ## 国家与政体（第二十三轮、第二十六轮）
 - `government.ts` 政体、派系的格式与世界里的列表，政体列的派系 `governmentFactions`（第五十三轮）；称号按国家等级与换说法（`govTitles`、`tierTitle`，第四十三轮），限谁用（`only`、`govAllowed`，第四十四轮），地标、集团的称号 `pickTitle`；`gov-kinds.ts` 登记进登记表
-- `countries.ts` 生成国家（两步）、颜色、名字（`titleContext`：等级 + `cultureContext`：主流文化、最典型的宗教……；挑政体按限谁用，`pickGov`）、历史、按世界里的等级挑大小；`country-names.ts` 国名的地名部分、人名
+- `countries.ts` 只是照旧导出（第七十三轮拆进 `countries/`，一步一个文件，见 [第73轮](history/第73轮.md)）；`country-names.ts` 国名的地名部分、人名
+- `countries/base.ts` 常数、`CountryPlan`、清掉国家、`countryList`、`pickWeighted`；`state.ts` 一次生成共用的 `CountryRun`（种子、按名字的随机流 `stream` / 共用的 `shared`、起点 `Seed`、预留的地方 `Region`、各步的结果、集团一步的 `bloc`）
+- `countries/count.ts` 几个国家（`plannedCountries`、`estimateCountryCount`、`apportion`、`landComponents`、`countCountries`）；`seeds.ts` 挑政体（`govWeights`、`pickGov`，限谁用）、等级（`govFit`）、起点（`placeSeeds`）；`grow.ts` 两遍往外长（`growOwners`，预留的地方、格局加的代价 `stepCost`）；`cleanup.ts` 隔海的、住满、湖、飞地（`cleanupOwners`，`Seed.overseas` 的不放掉）
+- `countries/records.ts` 颜色、名字（`titleContext`：等级 + `cultureContext`：主流文化、最典型的宗教……）、称号、建国年份、历史、写进原因建档案（`writeRecords`）；`diplomacy.ts` 邻国、附庸（格局的钩子）、同盟与敌对；`stage.ts` 国家一步按先后调各步与格局的钩子（`growCountries`）、首都一带的人口、国家的移民；`relate.ts` 集团一步（`blocsStage`，帝国、联邦、同盟是格局的 relate）
+- `countries/patterns.ts` 国家格局（第七十三轮）：模块的接口（`reserve`、`grow`、`after`、`diplomacy`、`relate` 五个钩子）、登记（`registerPattern`，先后就是调的先后）、时代的格局 → 每个模块的用法（`patternUses`）、`runPatterns`；`patterns/` 内置的四个模块 `holy-empire.ts`（邦联并成帝国）、`federation.ts`、`alliance.ts`、`vassals.ts`，`index.ts` 按先后登记、格局项的格式 `countryPatternSchema`（各模块的参数平铺）；`pattern-kinds.ts` 国家格局（`countryPattern`）登记进登记表
 - `country-edit.ts` 改国家的命令、整理、改地形后的修补
 - `country-layers.ts` 国家的一层、国界的分组、颜色、统计、派系影响力 `countryFactions`（政体列的，基础分量加人口，用到时才算，第五十三轮；来源可以按与国教的关系）、国教 `countryFaith`、国名的位置
-- `claims.ts` 领土补齐（国家一步之后、人口之前）；`blocs.ts` 帝国、联邦、同盟（`small.blocs`）
-- `tiers.ts` 国家等级、格局的格式与世界里的列表（按 order 排）、生效的比例 `tierWeights`、邦联 / 联邦 / 附庸的规则、首都的样子 `capitalLook`（第四十二轮）；`tier-kinds.ts` 登记进登记表；`packs/countries/` 内置的五级与四种格局
+- `claims.ts` 领土补齐（国家一步之后、人口之前）；`blocs.ts` 帝国、联邦、同盟（`small.blocs`）的查、名字、整理、命令（生成在 `countries/relate.ts` 与格局里）；`federate.ts` 把一国切成联邦的成员邦（第七十三轮从 `blocs.ts` 分出来）
+- `tiers.ts` 国家等级、格局的格式与世界里的列表（按 order 排）、生效的比例 `tierWeights`、邦联 / 联邦 / 附庸的规则、首都的样子 `capitalLook`（第四十二轮）；`tier-kinds.ts` 登记进登记表；`packs/countries/` 内置的五级与四种格局、九种国家格局（`patterns.json`，放在每个库的“时代”小包里）
 - `flags.ts` 旗帜的规则与 SVG；`packs/governments/` 内置政体与派系
 - `auto.ts` 自动的结果（`causes.countryAuto`、`popAuto*`），橡皮擦的“恢复自动”（第二十七轮）
 
