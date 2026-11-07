@@ -73,7 +73,9 @@ describe('底图与图例', () => {
     expect(res.items.reduce((a, it) => a + (it.count ?? 0), 0)).toBe(land);
     expect(res.items.some((it) => FANTASY_RESOURCES.some((r) => r.name === it.label))).toBe(false);
     expect(legendFor(w, 'dominant')!.items.length).toBeGreaterThan(1);
-    expect(legendFor(w, 'terrain')).toBeNull();
+    // 第七十二轮：地貌也有图例，列的和生态分区一样
+    expect(legendFor(w, 'terrain')).toEqual({ ...legendFor(w, 'dominant')!, title: '地貌' });
+    expect(legendFor(w, 'elevation')).toBeNull();
     expect(legendFor(w, 'provinces')).toBeNull();
     // 同一份数组：同一个结果；画了一片山峰，图例跟着变
     expect(legendFor(w, 'terrainClass')).toBe(tc);

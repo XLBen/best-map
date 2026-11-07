@@ -1,12 +1,12 @@
-import { speciesOwner } from '../../core/biome-scripts';
-import type { Command } from '../../core/commands';
-import { SCRIPT_API } from '../../core/script';
-import { SPECIES_SCRIPT_KINDS, type Species } from '../../core/species';
-import { editsIdle, exec, replaceLast, toast, trustHandledElsewhere, whenEditsIdle, world, worldEpoch } from '../state';
-import { noteScriptCommitted } from './editor-hooks';
-import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from './script-commit';
+import { speciesOwner } from '../../../core/biome-scripts';
+import type { Command } from '../../../core/commands';
+import { SCRIPT_API } from '../../../core/script';
+import { SPECIES_SCRIPT_KINDS, type Species } from '../../../core/species';
+import { editsIdle, exec, replaceLast, toast, trustHandledElsewhere, whenEditsIdle, world, worldEpoch } from '../../state';
+import { noteScriptCommitted } from '../editor-hooks';
+import { type ApplyMode, type ApplyResult, type ScriptProblem, normScript, problemOfIssue } from '../script-commit';
 
-// 生态编辑器（“高级：图案、效果与脚本”）怎样提交到世界上、怎样读回出错
+// 生态编辑器（“高级：图案、效果与脚本”）怎样提交到世界上、怎样读回出错（第七十二轮从 ui/ 根下搬来）
 
 export type SpeciesScriptKind = (typeof SPECIES_SCRIPT_KINDS)[number];
 

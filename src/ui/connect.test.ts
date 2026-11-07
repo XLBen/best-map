@@ -41,7 +41,7 @@ const state = await import('../state');
 const trust = await import('../trust');
 const hooks = await import('./editor-hooks');
 const { scriptCommitted } = await import('./connect');
-const { applySpeciesScript } = await import('./species-scripts');
+const { applySpeciesScript } = await import('./ecology/species-scripts');
 
 let nextState = 100;
 function answerLast(): Request {
@@ -141,13 +141,15 @@ describe('别的口子', () => {
     expect(state.visualOverrides.value.has(sp0.id)).toBe(false);
   });
 
-  it('出错提示的“编辑”打开那种生态的那个脚本框；星球形态的脚本没有“编辑”', () => {
+  it('出错提示的“编辑”打开那种生态的那个脚本框；星球形态的脚本没有“编辑”', async () => {
     const issue: ScriptIssue = { kind: 'color', owner: '别的名字', id: sp0.id, reason: 'runtime', text: '没有变量 x', raw: 'x is not defined', message: '「x」的颜色脚本：没有变量 x' };
     expect(state.canEditScript(issue)).toBe(true);
     state.editScript(issue);
     expect(hooks.scriptEditorRequest.value).toEqual({ species: sp0.id, kind: 'color' });
-    expect(state.sheet.value).toBe('species');
-    expect(state.focusSpecies.value).toBe(sp0.id);
+    // 第七十二轮：生态编辑器是资源库里本世界这种生态的页面（以前是右边的抽屉）
+    const { libPanel } = await import('./packs/panel-store');
+    expect(libPanel.value?.stack.at(-1)).toEqual({ p: 'item', kind: 'biome', id: sp0.id });
+    expect(libPanel.value?.source).toEqual({ t: 'world' });
     const form: ScriptIssue = { kind: 'crust', owner: '双子大陆', reason: 'runtime', text: '没有变量 x', raw: 'x is not defined', message: '「双子大陆」的地形脚本：没有变量 x' };
     expect(state.canEditScript(form)).toBe(false);
   });

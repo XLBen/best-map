@@ -11,7 +11,7 @@ import { type CommittedScript, registerScriptCommitted } from './editor-hooks';
 import { type ApplyMode, type ApplyResult, ScriptEdit, type ScriptEditDeps, type ScriptProblem, problemCell, problemLine } from './script-commit';
 import { LAKE_MATCH_EXAMPLES, SCRIPT_EXAMPLES } from './script-examples';
 import { LOOP_NOTE, bracketProblem, checkNow, installAcorn, syntaxProblem } from './script-syntax';
-import { applySpeciesScript, queueSpeciesEdit, settleSpeciesEdits, speciesEditsSettled, speciesIssue, speciesScriptCommand } from './species-scripts';
+import { applySpeciesScript, queueSpeciesEdit, settleSpeciesEdits, speciesEditsSettled, speciesIssue, speciesScriptCommand } from './ecology/species-scripts';
 
 // 脚本框：出错的行号与说明（acorn 只解析）、停一下就提交的合并逻辑（第一次 exec，之后 replaceLast，一步撤销）
 

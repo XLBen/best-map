@@ -174,7 +174,7 @@ describe('资源库：添加到本世界、移出本世界', () => {
     const p = itemPack(row);
     expect(p).toMatchObject({ format: PACK_FORMAT, name: '血河' });
     expect(packItems(p, 'riverTypes')).toEqual([row.item]);
-    const read = readPack(JSON.stringify(p), 'x');
+    const read = readPack(JSON.stringify(p));
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(packItems(read.pack, 'riverTypes')).toEqual([row.item]);
@@ -184,7 +184,7 @@ describe('资源库：添加到本世界、移出本世界', () => {
     // 生态带上用到的自定义场
     const holy = libraryRows(LIB[0], kindOf('biome')!, continents().world).find((r) => itemPack(r).fields?.length)!;
     expect(holy).toBeDefined();
-    expect(readPack(JSON.stringify(itemPack(holy)), 'x').ok).toBe(true);
+    expect(readPack(JSON.stringify(itemPack(holy))).ok).toBe(true);
   });
 });
 

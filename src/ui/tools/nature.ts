@@ -7,12 +7,13 @@ import { explainCell, isVegetated, landmassCells } from '../../../core/vegetatio
 import type { World } from '../../../core/world';
 import type { HighlightLayer } from '../../render/colors';
 import type { Shape } from '../../render/overlay';
-import { type ToolId, type ToolOptions, exec, focusSpecies, options, sheet, showToast, switchTool, world } from '../../state';
+import { type ToolId, type ToolOptions, exec, options, showToast, switchTool, world } from '../../state';
 import { erasableLayer, natureHere, natureMask } from '../domain/edits';
 import { Covered, Exact, slowTail } from '../domain/exact';
 import { EMPTY, type Pointer, type ToolHandler, WHITE, aroundPole, isBusy, mapDist, worldId } from './api';
 import { brushR, brushTool, exactCounts, oneLayer, optionsId } from './brush';
 import { POLE_TOAST, lassoAdd, lassoShapes } from './gestures';
+import { openBiomeEditor } from '../ecology/open';
 
 // 自然：涂生态、拖动扩张、擦除、给生态选“长在哪里”
 
@@ -254,13 +255,12 @@ function islandLabel(w: World, f: GeoFeature): string {
 // back：进来之前用的工具（选好、取消都换回它）
 export const rangePick = signal<{ species: string; kind: 'island' | 'cells'; back: ToolId } | null>(null);
 
-// 选好、取消：换回原来的工具，打开生态编辑器
+// 选好、取消：换回原来的工具，打开生态编辑器（资源库里这种生态的页面）
 function leaveRangePick() {
   const pick = rangePick.value;
   rangePick.value = null;
   if (!pick) return;
-  focusSpecies.value = pick.species;
-  sheet.value = 'species';
+  openBiomeEditor(pick.species);
   switchTool(pick.back);
 }
 export const cancelRangePick = leaveRangePick;

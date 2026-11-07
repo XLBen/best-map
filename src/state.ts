@@ -4,7 +4,7 @@ import { speciesOwner } from '../core/biome-scripts';
 import type { ScriptIssue, ScriptKind } from '../core/script';
 import { SPECIES_SCRIPT_KINDS } from '../core/species';
 import type { RiverStyleOverride } from './render/overlay';
-import { focusSpecies, sheet, world } from './state/world';
+import { world } from './state/world';
 
 // 主线程状态：世界的只读视图（网格本地构建，原因与推导来自 Worker 的快照）+ 界面状态。
 // 第七十轮起分在 state/ 下（见 docs/dev/src.md）；这里留着只给界面用的信号（下面的模块都用不到），并把 state/ 下给界面用的一起导出：
@@ -136,8 +136,8 @@ export const labelGroups = signal<Set<LabelGroup>>(new Set(['land', 'water', 're
 // 脚本出错的提示条：用户关掉的是哪一组问题（同一组不再出现，换了才出现）
 export const dismissedIssues = signal('');
 
-// 出错的脚本的“编辑”：脚本编辑器把自己的打开方法放在 open 上（ui/connect.ts 接上：打开生态抽屉、展开“高级”、
-// 光标放进那个脚本框）；没有时打开生态抽屉、选中这种生态
+// 出错的脚本的“编辑”：脚本编辑器把自己的打开方法放在 open 上（ui/connect.ts 接上：打开资源库里这种生态的页面、展开“高级”、
+// 光标放进那个脚本框）
 export type SpeciesScriptKind = (typeof SPECIES_SCRIPT_KINDS)[number];
 export const scriptEditor: { open: ((species: string, kind: SpeciesScriptKind) => void) | null } = { open: null };
 const isSpeciesKind = (k: ScriptKind): k is SpeciesScriptKind => (SPECIES_SCRIPT_KINDS as readonly ScriptKind[]).includes(k);
@@ -178,12 +178,8 @@ export function editScript(issue: ScriptIssue) {
   }
   const at = scriptOfIssue(issue);
   if (!at) return;
-  if (scriptEditor.open) {
-    scriptEditor.open(at.id, at.kind);
-    return;
-  }
-  focusSpecies.value = at.id;
-  sheet.value = 'species';
+  // 打开生态编辑器、展开那个脚本框（界面经 connect.ts 接上；第七十二轮起编辑器在资源库的面板里）
+  scriptEditor.open?.(at.id, at.kind);
 }
 
 // ---------- state/ 下的（第七十轮从这个文件分出去，照旧从这里导出） ----------

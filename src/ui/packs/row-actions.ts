@@ -3,7 +3,7 @@ import type { IslandType } from '../../../core/island-types';
 import { type MapStyle, styleRgba } from '../../../core/map-style';
 import { packFileName } from '../../../core/packs';
 import { saveItem } from '../../library';
-import { type NoteAction, askUser, download, execAdjust, focusSpecies, knowIsolation, openPanel, openWaterTypeEditor, sheet, showToast } from '../../state';
+import { type NoteAction, askUser, download, execAdjust, knowIsolation, openPanel, openWaterTypeEditor, showToast } from '../../state';
 import { trustScripts, untrustedScripts } from '../../trust';
 import { scriptTrustText } from '../copy';
 import { category, setTool } from '../defs/tools';
@@ -94,10 +94,6 @@ export const exportRow = (row: ItemRow) => {
 export function openDedicated(row: ItemRow) {
   const wid = row.status.worldId ?? row.id;
   switch (row.kind.id) {
-    case 'biome':
-      focusSpecies.value = wid;
-      sheet.value = 'species';
-      return;
     case 'riverType':
     case 'lakeType':
       openWaterTypeEditor(row.kind.id === 'riverType' ? 'river' : 'lake', wid);

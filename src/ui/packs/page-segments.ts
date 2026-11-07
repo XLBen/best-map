@@ -90,6 +90,7 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'rules', title: '长在哪里', keys: ['rules'] },
     { id: 'spread', title: '多少', keys: ['rarity', 'weight', 'cluster'] },
   ],
+  // 第七十二轮：生态的页面是生态编辑器（ecology/BiomeEditor.tsx），不按这几段画；分段留着给收起时的一句、测试里字段都有归处
   biome: [
     { id: 'basic', title: BASIC, keys: ['name', 'color', 'terrain', 'natural', 'competition'] },
     { id: 'where', title: '长在哪里', keys: ['tolerances', 'height'] },

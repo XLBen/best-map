@@ -123,13 +123,15 @@ describe('图例', () => {
 
   it('都关着时没有这一张（没有别的图例时什么都没有）', () => {
     world.value = continents().world;
-    mode.value = 'terrain';
+    // 第七十二轮起地貌也有图例：换一张没有图例的底图
+    mode.value = 'elevation';
     expect(flowLegend(false, false)).toBeNull();
     expect(legends()).toBeNull();
   });
 
   it('开着才有，只列开着的那一层；上面是季节', () => {
     world.value = continents().world;
+    mode.value = 'elevation';
     expect(flowLegend(true, false)!.items.map((i) => i.label)).toEqual(['弱风', '中等的风', '强风']);
     expect(flowLegend(false, true)!.items.map((i) => i.label)).toEqual(['暖流', '寒流', '不冷不暖的洋流']);
     expect(flowLegend(true, true)!.items).toHaveLength(6);

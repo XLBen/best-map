@@ -1,7 +1,8 @@
 import { BellOff, ScanSearch, X } from 'lucide-preact';
 import { activeConflicts } from '../../core/constraints';
 import type { Conflict } from '../../core/world';
-import { exec, focusSpecies, history, sheet, world } from '../state';
+import { exec, history, world } from '../state';
+import { openBiomeEditor } from './ecology/open';
 import { focusOn } from './camera';
 import { outsideRangeReason } from '../biome-range';
 import { reasonText } from './Inspector';
@@ -60,10 +61,7 @@ export function UnmetPanel() {
               )}
               <button
                 class="small"
-                onClick={() => {
-                  focusSpecies.value = c.species;
-                  sheet.value = 'species';
-                }}
+                onClick={() => openBiomeEditor(c.species)}
               >
                 编辑生态
               </button>

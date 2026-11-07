@@ -1214,7 +1214,7 @@ ol.history li.undone {
   text-decoration: line-through;
 }
 
-/* 右边的抽屉（生态类型编辑） */
+/* 右边的抽屉（国家、城市、集团的档案） */
 .sheet {
   position: absolute;
   top: 60px;
@@ -1609,17 +1609,13 @@ select.ed-add {
 .river-type-editor h5 {
   margin: var(--sp-3) 0 2px;
 }
-/* 水体类型：只在这些生态里出现 */
+/* 生态编辑器的“允许的水系”：两列勾 */
 .biome-picks {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2px var(--sp-2);
   max-height: 200px;
   overflow: auto;
-}
-/* 图层 → 某种生态的适宜程度：选哪一种 */
-.suit-pick select {
-  flex: 1;
 }
 .view-grid {
   display: grid;
@@ -1720,14 +1716,7 @@ textarea.arch-note-input {
   font-size: var(--fs-sm);
 }
 
-/* 生态类型的抽屉：选中的那一种的设置，与上面的色板、按钮之间一条细线（不再套一层底色的框） */
-.species-details {
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-2);
-  border-top: 1px solid var(--fill);
-}
-
-/* 气候图（生态类型编辑器） */
+/* 气候图（生态编辑器，ecology/BiomeChart.tsx） */
 .chart {
   position: relative;
   width: 100%;

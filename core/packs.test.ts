@@ -91,10 +91,9 @@ describe('资源包的格式', () => {
     expect(parsePack(words.pack).ok).toBe(true);
   });
 
-  it('旧格式照旧能读：生态数组、文字包，转成资源包走同一条路', () => {
+  it('旧格式：文字包照旧能读，转成资源包走同一条路；生态数组（第七十二轮以前生态编辑器的导出）不再认', () => {
     const list = readPack(JSON.stringify([biome('a'), biome('b')]));
-    expect(list.ok && list.legacy).toBe('biomes');
-    expect(list.ok && list.pack.biomes?.map((b) => b.id)).toEqual(['a', 'b']);
+    expect(list.ok).toBe(false);
     const words = readPack(JSON.stringify(ZH_STYLE));
     expect(words.ok && words.legacy).toBe('wordPack');
     // 文字包读成模板式的地名风格

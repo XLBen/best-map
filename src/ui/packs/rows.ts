@@ -12,8 +12,8 @@ import type { LibraryEntry } from '../../library';
 // 资源库面板列表里的一行（第六十三轮从旧面板的 repo.ts 留下来的）：这一项在这一份里、在这个世界里是什么状态，
 // 移出本世界、设为默认是哪条命令，用在哪里，单独导出的样子。添加到本世界走 core/packs/closure.ts 的闭包（pick-add.ts）。不碰界面，测试直接调
 
-// 有自己的详细编辑器的几种：生态的图表、河湖岛的脚本检查（世界里的一项有“详细编辑”）
-export const DEDICATED: ReadonlySet<string> = new Set(['biome', 'riverType', 'lakeType', 'islandType']);
+// 有自己的详细编辑器的几种：河湖岛的脚本检查（世界里的一项有“详细编辑”）。第七十二轮：生态的编辑器就是它在面板里的页面，不再另开
+export const DEDICATED: ReadonlySet<string> = new Set(['riverType', 'lakeType', 'islandType']);
 
 export interface RowStatus {
   // 在这个世界里

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Species } from '../../core/species';
-import { DEFAULT_RADIUS_KM, cleanVisual, dpOfPercent, featureOf, namesProblem, percentOfDp, toggleTarget, visualPatch, withClimate, withInvade } from './SpeciesAdvanced';
+import type { Species } from '../../../core/species';
+import { DEFAULT_RADIUS_KM, cleanVisual, dpOfPercent, featureOf, namesProblem, percentOfDp, toggleTarget, visualPatch, withClimate, withInvade } from './advanced';
 
 // 生态的“高级：图案、效果与脚本”：每次只改动这次动了的那一项，按世界上最新的这种生态做补丁
 

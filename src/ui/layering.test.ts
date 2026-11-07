@@ -42,8 +42,8 @@ const edges = (pred: (from: string, to: string) => boolean) => [...graph].flatMa
 
 const isTools = (f: string) => f.startsWith('src/ui/tools/') || f === 'src/ui/tools.ts';
 const isState = (f: string) => f === 'src/state.ts' || f.startsWith('src/state/');
-// 具体的档案：抽屉里的四种（连同国家档案的几页、派系）
-const isArchive = (f: string) => /^src\/ui\/(CountryArchive|BlocArchive|SettleArchive|ClimateChart|CountryFactions)\.tsx$/.test(f) || f.startsWith('src/ui/archives/');
+// 具体的档案：抽屉里的三种（连同国家档案的几页、派系；第七十二轮生态类型不在抽屉里了）
+const isArchive = (f: string) => /^src\/ui\/(CountryArchive|BlocArchive|SettleArchive|CountryFactions)\.tsx$/.test(f) || f.startsWith('src/ui/archives/');
 
 describe('界面的分层（第六十九轮）', () => {
   it('读得到引用（对照：App 引用面板，面板引用状态）', () => {
@@ -142,11 +142,10 @@ describe('界面的分层（第七十轮）', () => {
     expect([...graph.keys()].filter((f) => f.startsWith('src/ui/domain/')).length).toBeGreaterThan(10);
   });
 
-  it('引用 register-all 以后：抽屉里的四种档案都登记了', async () => {
+  it('引用 register-all 以后：抽屉里的三种档案都登记了（第七十二轮以前还有生态类型）', async () => {
     await import('./register-all');
     const { SHEET_KINDS, archiveOf, registeredArchives } = await import('./defs/archive-registry');
     expect([...registeredArchives()].sort()).toEqual([...SHEET_KINDS].sort());
-    expect(archiveOf('species').title()).toBe('生态类型');
     expect(archiveOf('country').title()).toBe('国家档案');
   });
 });

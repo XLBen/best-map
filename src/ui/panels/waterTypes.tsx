@@ -3,7 +3,8 @@ import { Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { FALLBACK_MAP_STYLE, type MapStyle } from '../../../core/map-style';
 import { type LakeWhenKey, type WaterType, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE, bankRadiusKm, hasWhen, perCellRule, waterTypeOwner } from '../../../core/water-types';
-import { withWaterBiome } from '../../../core/water-table';
+import { waterBiomesText } from '../domain/water-biomes';
+import { openWaterTable } from '../ecology/open';
 import type { World } from '../../../core/world';
 import { type PanelId, exec, waterTypeEditorRequest, world, worldEpoch } from '../../state';
 import { Seg } from '../common';
@@ -279,14 +280,12 @@ function WhenBox({ kind, t, edit }: { kind: WaterKind; t: WaterType; edit: (labe
   );
 }
 
-// 第十二轮：自然生成的开关；第五十六轮：出现在这些生态里（允许表的一行，和生态抽屉里的“允许的水系”是同一份）、条件
+// 第十二轮：自然生成的开关；第五十六轮：出现在这些生态里（允许表的一行，和生态编辑器里的“允许的水系”是同一份）、条件。
+// 第七十二轮：出现在哪些生态里只写一行，在生态编辑器、总表里改
 function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterType; edit: (label: string, make: (x: WaterType) => WaterType | null) => void }) {
   const noun = KINDS[kind].noun;
   const on = t.natural !== false;
   const script = !!t.scripts?.match?.src;
-  const ids = w.small.species.map((s) => s.id);
-  const has = (id: string) => !t.biomes || t.biomes.includes(id);
-  const count = ids.filter(has).length;
   const hint = !on
     ? `只用在${kind === 'river' ? '画的河和选了它的河' : '放的湖和选了它的湖'}上`
     : !script && !perCellRule(t)
@@ -296,11 +295,6 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
         : perCellRule(t)
           ? `规则说是的${noun}里，符合条件的是这一种`
           : `规则说是的${noun}是这一种`;
-  const toggle = (id: string) => {
-    const sp = w.small.species.find((s) => s.id === id);
-    const next = !has(id);
-    edit(`“${t.name}”${next ? '可以' : '不再'}出现在“${sp?.name || id}”里`, (x) => withWaterBiome(x, ids, id, next));
-  };
   return (
     <>
       <h5>自然生成</h5>
@@ -308,20 +302,13 @@ function NaturalBox({ w, kind, t, edit }: { w: World; kind: WaterKind; t: WaterT
         按条件出现在地图上
       </Toggle>
       <p class="hint">{hint}</p>
-      <details>
-        <summary>
-          出现在这些生态里 · {t.biomes ? `${count} 种` : '全部'}
-        </summary>
-        <div class="biome-picks">
-          {w.small.species.map((sp) => (
-            <label class="check" key={sp.id}>
-              <input type="checkbox" checked={has(sp.id)} onChange={() => toggle(sp.id)} />
-              <span class="swatch" style={{ background: sp.color }} /> {sp.name || sp.id}
-            </label>
-          ))}
-        </div>
-        <p class="hint">规则里可用 biome('生态 id')、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
-      </details>
+      <p class="row wrap">
+        <span class="grow">出现在：{waterBiomesText(w.small.species, t)}</span>
+        <a class="ref-link" onClick={openWaterTable}>
+          去总表改
+        </a>
+      </p>
+      <p class="hint">规则里可用 biome('生态 id')、dominantBiome(){kind === 'river' ? '、biomeAtSource()、biomeAtMouth()' : ''}。</p>
       <WhenBox kind={kind} t={t} edit={edit} />
     </>
   );

@@ -53,9 +53,9 @@ export function pruneVisualOverrides(species: readonly { id: string; visual?: Vi
   if (next) visualOverrides.value = next;
 }
 
-// 右边的抽屉：生态类型编辑要一边看地图一边调，所以不随点地图关上；国家的档案（第二十三轮）、城市、地标、自定义点的档案（第二十四轮）同样
-// 第二十六轮：集团（帝国、联邦、同盟）的档案
-export const sheet = signal<'species' | 'country' | 'settle' | 'bloc' | null>(null);
+// 右边的抽屉：不随点地图关上。国家的档案（第二十三轮）、城市、地标、自定义点的档案（第二十四轮）；第二十六轮：集团（帝国、联邦、同盟）的档案。
+// 第七十二轮：生态类型的编辑不在抽屉里了（资源库里那种生态的页面）
+export const sheet = signal<'country' | 'settle' | 'bloc' | null>(null);
 // “调整”面板拖滑块时的预览（会变成陆地 / 海的格、山会变高变矮的格、每格将来的海岸值：地图上画出将来的海岸线）
 export const adjustPreview = signal<TerrainPreview | null>(null);
 // “调整”面板拖气候、河流的滑块，生态编辑器拖色块时：停下后算出的将来的世界，地图直接画它。

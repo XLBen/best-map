@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Species } from '../../../core/species';
 import type { WaterType } from '../../../core/water-types';
-import { type WaterKind, waterAllowed } from '../../../core/water-table';
+import type { WaterKind } from '../../../core/water-table';
+import { waterBiomesText } from '../domain/water-biomes';
 import { SpeciesWaterForm } from '../panels/speciesWater';
 import { TypeSwatch } from '../panels/waterTypes';
 import { commitWaterBlock, commitWaterCell } from './page-actions';
-import { type PageCtx, type SourceRef, kindReadonly, readonlyWhy, waterLists, waterRuleNote, waterTable } from './pages';
+import { type PageCtx, type SourceRef, readonlyWhy, waterLists, waterRuleNote, waterTable } from './pages';
 import { goTo } from './panel-store';
-import { kindOf } from '../../../core/content/registry';
 import { SCRIPT_RIVER_NOTE, WATER_MANUAL_NOTE } from '../copy';
 
 // 生态与水系（第五十九轮）：总表（纵列生态，横行水系，普通河、普通湖也是一行），和生态页的“水系”、河湖页的“出现在哪些地形”。
-// 三处读写同一份（core/water-table.ts，经 page-actions.ts），改一边另一边跟着变。世界里点了要算一会儿，勾先变，算完换成真的
+// 第七十二轮：河湖页上只写一行，改在总表和生态页。读写同一份（core/water-table.ts，经 page-actions.ts），改一边另一边跟着变。世界里点了要算一会儿，勾先变，算完换成真的
 
 // 点了还没算完的格：先显示点到的样子（世界换了就去掉）
 function useOptimistic(ctx: PageCtx) {
@@ -88,7 +88,7 @@ export function WaterTablePage({ src, ctx }: { src: SourceRef; ctx: PageCtx }) {
   );
 }
 
-// 生态页的“水系”这一段：允许的水系、不允许时怎么办（和生态抽屉同一个表单）
+// 生态编辑器的“水系”这一段：允许的水系、不允许时怎么办
 export function BiomeWaterSegment({ src, ctx, sp }: { src: SourceRef; ctx: PageCtx; sp: Species }) {
   const lists = waterLists(src, ctx);
   return (
@@ -102,34 +102,19 @@ export function BiomeWaterSegment({ src, ctx, sp }: { src: SourceRef; ctx: PageC
   );
 }
 
-// 河湖页的“出现在哪些地形”这一段：列一行总表
+// 河湖页的“出现在哪些地形”这一段（第七十二轮）：只写一行出现在哪些生态，在总表、生态页里改
 export function WaterBiomesSegment({ src, ctx, kindId, type }: { src: SourceRef; ctx: PageCtx; kindId: string; type: WaterType }) {
-  const kind: WaterKind = kindId === 'riverType' ? 'river' : 'lake';
   const lists = waterLists(src, ctx);
-  const opt = useOptimistic(ctx);
-  const ro = !!kindReadonly(src, kindOf(kindId)!, ctx);
+  const kind: WaterKind = kindId === 'riverType' ? 'river' : 'lake';
   return (
     <>
       <p class="hint">{waterRuleNote(kind, type)}</p>
-      <div class="biome-picks">
-        {lists.species.map((sp) => {
-          const on = opt.get(sp.id, waterAllowed(lists, sp, kind, type.id));
-          return (
-            <label class="check" key={sp.id}>
-              <input
-                type="checkbox"
-                checked={on}
-                disabled={ro}
-                onChange={() => {
-                  opt.set(sp.id, !on);
-                  void commitWaterCell(src, sp.id, kind, type.id, !on, ctx);
-                }}
-              />
-              <span class="swatch" style={{ background: sp.color }} /> {sp.name || sp.id}
-            </label>
-          );
-        })}
-      </div>
+      <p class="row wrap">
+        <span class="grow">出现在：{waterBiomesText(lists.species, type)}</span>
+        <a class="ref-link" onClick={() => goTo({ p: 'table' })}>
+          去总表改
+        </a>
+      </p>
     </>
   );
 }

@@ -75,6 +75,18 @@ export function openLibrary(req?: OpenRequest) {
   set(livePanel(start, ctx));
 }
 
+// 开到某一份的某一层（第七十二轮：“编辑生态类型…”、没涂成的“编辑生态”、脚本出错的“编辑”开到本世界的那种生态）。
+// 栈里不在了的一层截掉（那种生态删了时停在列表）
+export function openLibraryAt(source: SourceRef, stack: Route[]) {
+  if (!loaded) {
+    loaded = true;
+    void refreshLibrary();
+  }
+  const st = libPanel.value;
+  if (st && !sameSource(st.source, source)) void libEdits.flushAll();
+  set(livePanel({ source, stack }, pageCtx()));
+}
+
 export function closeLibrary() {
   if (libPanel.value) last = libPanel.value;
   libPanel.value = null;

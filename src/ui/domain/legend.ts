@@ -7,7 +7,7 @@ import { WIND_STYLE } from '../../render/wind';
 import type { ViewMode } from '../../state';
 import type { LegendItem } from '../components/Legend';
 
-// 图例（第二十一轮）：按格着色、一格一类的底图（地形类别、资源、生态分区）列出世界里有的几类，按格数从多到少。
+// 图例（第二十一轮）：按格着色、一格一类的底图（地形类别、资源、生态分区；第七十二轮加了地貌）列出世界里有的几类，按格数从多到少。
 // 以后的文化、国家底图也用它：给出 {color, label, count?} 就行。
 // 第二十二轮：文化圈、文化组、时代的每一维按人数（count 是人数：右边的百分比是占总人口多少）；宜居度、人口密度是色带上的几档
 // 第二十三轮：国家按人口列前 LEGEND_TOP 个（颜色是地图上的：附庸是宗主的浅色），其余合成“其他”；没有人时按格数。
@@ -148,10 +148,12 @@ function compute(w: World, mode: ViewMode): LegendData | null {
     case 'popDensity':
       if (!w.small.human) return null;
       return { title: '人口密度', items: DENSITY_STEPS.map(([v, label]) => ({ color: hex(densityRgb(v)), label })) };
-    case 'dominant': {
+    // 第七十二轮：地貌也有图例。地貌的陆地按生态着色（加上起伏、雪），列的和生态分区一样
+    case 'dominant':
+    case 'terrain': {
       const n = countCodes(w, d.dominant);
       const items = w.small.species.flatMap((s, k) => (n.get(k) ? [{ color: s.color, label: s.name || s.id, count: n.get(k)! }] : []));
-      return { title: '生态分区', items: items.sort(byCount) };
+      return { title: mode === 'terrain' ? '地貌' : '生态分区', items: items.sort(byCount) };
     }
   }
   if (mode.startsWith('dim:')) {
@@ -188,6 +190,7 @@ function layerArray(w: World, mode: ViewMode): object | null | undefined {
     case 'resource':
       return d.resource;
     case 'dominant':
+    case 'terrain':
       return d.dominant;
     case 'culture':
       return d.popCulture;

@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import type { World } from '../../../core/world';
 import { NAME_MODES } from '../../../core/name-display';
 import { worldMapStyleId, worldMapStyles } from '../../../core/map-style';
-import { type ProjectionPref, type ViewMode, exec, focusSpecies, labelGroups, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
+import { type ProjectionPref, type ViewMode, exec, labelGroups, mode, nameMode, overlays, prefs, reference, season, setNameMode, setPrefs, setReference, showToast, world } from '../../state';
 import { Seg } from '../common';
 import { Slider, linear } from '../components/Slider';
 import { Toggle } from '../components/Toggle';
 import { SEASON_NOTE } from '../copy';
-import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews, suitabilityFocus } from '../defs/layers';
+import { CULTURE_VIEWS, LABEL_GROUPS, OVERLAYS, SEASONS, VIEWS, humanViews } from '../defs/layers';
 import { hasAnySettle } from '../domain/settlements';
 import { kindOfView } from '../map/modes';
 
@@ -59,32 +59,10 @@ const OPACITY = linear(10, 100, 5);
 
 // “图层”：底图着色、画风、叠加在上面的东西、季节、参考图
 
-// 换底图。“某种生态的适宜程度”先定下看哪一种（没选过、选的那种没了时是第一种）。
-// 地图模式跟着底图（第二十五轮：人文的底图各是一种模式，别的是地理），存进偏好
+// 换底图。地图模式跟着底图（第二十五轮：人文的底图各是一种模式，别的是地理），存进偏好
 export function showView(id: ViewMode) {
-  if (id === 'suitability') focusSpecies.value = suitabilityFocus(world.value?.small.species ?? [], focusSpecies.value);
   mode.value = id;
   setPrefs({ map: kindOfView(id) });
-}
-
-// 适宜程度底图下面：看哪一种生态
-function SuitabilityPick({ w }: { w: World }) {
-  const id = suitabilityFocus(w.small.species, focusSpecies.value);
-  // 选的那种被删掉了（撤销、删生态）：换成第一种，地图上不是一片灰
-  useEffect(() => {
-    if (id !== focusSpecies.value) focusSpecies.value = id;
-  }, [id]);
-  const sp = w.small.species.find((s) => s.id === id);
-  return (
-    <label class="row suit-pick">
-      <span class="swatch" style={{ background: sp ? sp.color : 'transparent' }} />
-      <select value={id ?? ''} onChange={(e) => (focusSpecies.value = (e.target as HTMLSelectElement).value)}>
-        {w.small.species.map((s) => (
-          <option value={s.id}>{s.name || s.id}</option>
-        ))}
-      </select>
-    </label>
-  );
 }
 
 // 读进来的图缩到最长边 4096 像素以内，存成 PNG（保留透明的底）
@@ -201,7 +179,6 @@ export function LayersPanel() {
           </div>
         )}
         {hint && VIEWS.some((v) => v.id === mode.value) && <p class="hint">{hint}</p>}
-        {mode.value === 'suitability' && <SuitabilityPick w={w} />}
       </section>
       <section>
         <h5>人文</h5>

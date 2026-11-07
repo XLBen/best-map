@@ -22,14 +22,10 @@ export const VIEWS: ViewDef[] = [
   { id: 'precip', label: '降水' },
   { id: 'elevation', label: '海拔' },
   { id: 'seaTemp', label: '海水温度', hint: '海面的冷暖，色带同“气温”' },
-  { id: 'moisture', label: '湿润程度', more: true },
-  { id: 'wetness', label: '地形湿度', more: true },
-  { id: 'continentality', label: '离海远近', more: true },
-  { id: 'corrT', label: '涂生态时的温度调整', more: true },
-  { id: 'corrP', label: '涂生态时的降水调整', more: true },
-  { id: 'suitability', label: '某种生态的适宜程度', more: true, hint: '越亮越适合下面选的那种生态' },
   { id: 'uplift', label: '抬升', more: true },
 ];
+// 第七十二轮：湿润程度、地形湿度、离海远近、涂生态时的两种调整、某种生态的适宜程度挪到生态编辑器的“在地图上看”（ecology/base-map.ts），
+// 图层里和生态有关的只留地貌、生态分区
 
 // 人文的底图（第二十二轮，图层面板里单独一组）：宜居度总有；生成过人文时还有文化圈（按文化 / 按文化组，图层面板里一个按钮加一个切换）、
 // 时代的每一维（dim:维度 id：宗教、种族……，按世界的时代列出）、人口密度
@@ -59,12 +55,6 @@ export function viewAvailable(w: Pick<World, 'small'>, id: ViewMode): boolean {
   if (id === 'bloc') return !!w.small.human?.countryRules && !!w.small.countries && !!w.small.blocs?.length;
   if (id.startsWith('dim:')) return !!w.small.human && worldDimensions(w.small).some((d) => d.id === id.slice(4));
   return true;
-}
-
-// “某种生态的适宜程度”看哪一种（第十四轮：底图下面自己选，不再靠“生态”面板里选中的）：
-// 选过的那种还在就是它，否则是第一种
-export function suitabilityFocus(species: readonly { id: string }[], cur: string | null): string | null {
-  return cur && species.some((s) => s.id === cur) ? cur : (species[0]?.id ?? null);
 }
 
 export type OverlayKey = 'labels' | 'rivers' | 'borders' | 'scale' | 'latitude' | 'edits' | 'peaks' | 'roads' | 'cities' | 'landmarks' | 'wind' | 'currents';

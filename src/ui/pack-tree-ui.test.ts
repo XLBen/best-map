@@ -15,7 +15,7 @@ import type { World } from '../../core/world';
 import { compactJob, onlyBuiltinScripts } from '../compact-job';
 import { type LibraryEntry, keepInLibrary, library, refreshLibrary, removePack, worldPackName, worthKeeping } from '../library';
 import { world } from '../state';
-import { importBiomeFile } from './packs/store';
+import { openFile } from './packs/lib-file';
 import { originGroups } from './shell/type-picker';
 import { formChoices } from './domain/forms';
 import { LOOSE_GROUP, groupByPack } from './domain/human';
@@ -274,15 +274,17 @@ describe('拿掉的不丢', () => {
     expect(compactJob({ compact: { ...doc, commands: [...doc.commands, ...(own.commands as unknown as Command[])] } })).toEqual({ ok: true, skipped: '有自己写的脚本' });
   });
 
-  it('旧的生态文件只进资源库：打开导入的确认，世界不变', () => {
+  it('旧的生态文件（第七十二轮以前生态编辑器导出的数组）不再认：弹窗写原因，世界不变', async () => {
     const eng = continents();
     world.value = eng.world as World;
     const before = eng.world.small.species.map((s) => s.id);
-    importBiomeFile(JSON.stringify([{ ...structuredClone(DEFAULT_SPECIES[0]), id: 'old_one', name: '旧的' }]), '旧生态.json');
+    const text = JSON.stringify([{ ...structuredClone(DEFAULT_SPECIES[0]), id: 'old_one', name: '旧的' }]);
+    expect(await openFile({ name: '旧生态.json', size: text.length, text: async () => text })).toBeNull();
     const v = packDialog.value;
     expect(v?.view).toBe('import');
-    expect(v?.view === 'import' && v.read.ok && v.read.legacy).toBe('biomes');
+    expect(v?.view === 'import' && !v.read.ok && v.read.errors).toEqual(['旧版的生态文件不再能读：请用新版导出的资源包']);
     expect(eng.world.small.species.map((s) => s.id)).toEqual(before);
+    packDialog.value = null;
   });
 
   it('清理的问话：移出的按种类一行，留着的一行一项', () => {

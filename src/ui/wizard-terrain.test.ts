@@ -3,13 +3,11 @@ import { defaultFeatureLabel, featureLabel } from '../../core/features';
 import { continents, engineFor } from '../../core/testing/fixtures';
 import type { Conflict, World } from '../../core/world';
 import { SEA_TEMP_LAKE, SEA_TEMP_LAND, cellLayers, tempRgb } from '../render/colors';
-import { focusSpecies, mode, world } from '../state';
 import { focusOn } from './camera';
 import { ADJUSTMENTS } from './defs/adjustments';
-import { VIEWS, suitabilityFocus } from './defs/layers';
+import { VIEWS } from './defs/layers';
 import { riverEnds } from './defs/tool-sliders';
 import { newWorldCommands } from './domain/forms';
-import { showView } from './panels/LayersPanel';
 import { labelCommit } from './panels/names';
 import { RIVER_END_HINTS } from './river';
 import { locateNextUnmet, locateTitle, unmetLooked, unmetSpots } from './unmetLocate';
@@ -159,22 +157,7 @@ describe('海水温度底图', () => {
   });
 });
 
-describe('适宜程度底图自己选生态', () => {
-  it('换到这张底图时没选过（或选的那种没了）就是第一种；选过的照旧', () => {
-    const w = continents({ cells: 3000 }).world;
-    world.value = w;
-    const [a, b] = w.small.species;
-    focusSpecies.value = null;
-    showView('suitability');
-    expect([mode.value, focusSpecies.value]).toEqual(['suitability', a.id]);
-    focusSpecies.value = b.id;
-    showView('suitability');
-    expect(focusSpecies.value).toBe(b.id);
-    expect(suitabilityFocus(w.small.species, 'gone')).toBe(a.id);
-    expect(suitabilityFocus([], 'gone')).toBeNull();
-    mode.value = 'terrain';
-  });
-});
+// 第七十二轮：“某种生态的适宜程度”不在图层里了，在生态编辑器的“在地图上看”里（跟着编辑器看的那一种），测试见 ecology/base-map.test.ts
 
 describe('一处一处看没涂成的地方', () => {
   const conflict = (constraintId: string, failing: number[]): Conflict => ({ constraintId, species: 'desert', failing, reasons: [] }) as unknown as Conflict;

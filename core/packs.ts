@@ -259,26 +259,20 @@ export function parsePack(json: unknown): PackParse {
   return errors.length ? { ok: false, errors } : { ok: true, pack };
 }
 
-// 从文件读出来：资源包，或者旧的格式——生态数组（以前“生态 → 导出”的文件）、文字包。
-// 都转成资源包，走同一条检查、信任的路。legacy 说明原来是什么（界面按原来的意思用：旧的生态文件是整套换掉）
-export type PackRead = { ok: true; pack: ResourcePack; legacy: 'biomes' | 'wordPack' | null } | { ok: false; errors: string[] };
+// 从文件读出来：资源包，或者单独的文字包（旧的地名风格文件）。都转成资源包，走同一条检查、信任的路。legacy 说明原来是什么。
+// 第七十二轮：生态编辑器的“导出”也写资源包，以前的生态数组（裸的 JSON 数组）不再认
+export type PackRead = { ok: true; pack: ResourcePack; legacy: 'wordPack' | null } | { ok: false; errors: string[] };
 
-// name：旧的生态文件没有名字，用这个（一般是文件名）
-export function readPack(text: string, name = '生态'): PackRead {
+export function readPack(text: string): PackRead {
   if (text.length > PACK_MAX_CHARS) return { ok: false, errors: [`文件太大（超过 ${Math.round(PACK_MAX_CHARS / 1e6)} MB），不是资源包`] };
   let json: unknown;
   try {
     // 记事本存的 UTF-8 文件开头可能带一个看不见的 BOM
-    json = JSON.parse(text.replace(/^﻿/, ''));
+    json = JSON.parse(text.replace(/^\uFEFF/, ''));
   } catch (e) {
     return { ok: false, errors: [`不是 JSON 文件（${(e as Error).message}）`] };
   }
-  if (Array.isArray(json)) {
-    const label = name.trim().slice(0, 60) || '生态';
-    const wrapped = { format: PACK_FORMAT, version: PACK_VERSION, id: packIdFor(label), name: label, biomes: json };
-    const r = parsePack(wrapped);
-    return r.ok ? { ...r, legacy: 'biomes' } : r;
-  }
+  if (Array.isArray(json)) return { ok: false, errors: ['旧版的生态文件不再能读：请用新版导出的资源包'] };
   if (json !== null && typeof json === 'object') {
     const o = json as Record<string, unknown>;
     if (o.format === PACK_FORMAT) {
@@ -293,7 +287,7 @@ export function readPack(text: string, name = '生态'): PackRead {
       return r.ok ? { ...r, legacy: 'wordPack' } : r;
     }
   }
-  return { ok: false, errors: ['不认识的文件：不是资源包、生态或地名风格'] };
+  return { ok: false, errors: ['不认识的文件：不是资源包或地名风格'] };
 }
 
 // ---------- 内容 ----------

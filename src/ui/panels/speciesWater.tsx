@@ -6,7 +6,7 @@ import { exec } from '../../state';
 import { Seg } from '../common';
 import { TypeSwatch } from './waterTypes';
 
-// 生态抽屉、资源库生态页里的水系（第五十六轮，第五十九轮两处共用）：这种生态允许哪些河湖，不允许时换类型还是断流。
+// 生态编辑器里的水系（第五十六轮；第七十二轮起只有资源库里生态的页面这一处）：这种生态允许哪些河湖，不允许时换类型还是断流。
 // 和河湖类型编辑里的“出现在这些生态”、资源库的总表是同一份数据（core/water-table.ts）
 
 interface Lists {

@@ -1,9 +1,10 @@
 import { signal } from '@preact/signals';
 import type { ScriptKind } from '../../core/script';
 import type { Visual } from '../../core/species';
-import { flashCells, focusSpecies, sheet, world } from '../state';
+import { flashCells, world } from '../state';
+import { openBiomeEditor } from './ecology/open';
 import { focusOn } from './camera';
-import type { SpeciesScriptKind } from './species-scripts';
+import type { SpeciesScriptKind } from './ecology/species-scripts';
 
 // 生态编辑器（第三批）与别处接上的几个口子
 
@@ -43,12 +44,11 @@ export function noteScriptCommitted(s: CommittedScript): void {
 }
 
 // ---------- 从别处打开某种生态的脚本框 ----------
-// 比如顶部“「X」的脚本出错了 [编辑]”：打开生态抽屉、选中这种生态、展开“高级”、光标放进那个脚本框
+// 比如顶部“「X」的脚本出错了 [编辑]”：打开资源库里这种生态的页面、展开“高级”、光标放进那个脚本框
 export const scriptEditorRequest = signal<{ species: string; kind: SpeciesScriptKind } | null>(null);
 
 export function openScriptEditor(species: string, kind: SpeciesScriptKind): void {
-  focusSpecies.value = species;
-  sheet.value = 'species';
+  openBiomeEditor(species);
   scriptEditorRequest.value = { species, kind };
 }
 

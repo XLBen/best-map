@@ -15,7 +15,8 @@ import { closeSide, copyToMine, goBack, goTo, openRoute, openSegments, rememberS
 import { PickBox } from './PickBox';
 import { kindPickable, lookOf, pickView } from './pick-view';
 import { ChildSegments, WorldVariables } from './PageChildren';
-import { BiomeWaterSegment, WaterBiomesSegment } from './PageEcology';
+import { WaterBiomesSegment } from './PageEcology';
+import { BiomeEditor } from '../ecology/BiomeEditor';
 import { RefGo } from './RefPicker';
 import { refLabel, refOptionsOf } from './refs';
 import { exportRow, openDedicated, runTrusted, sampleLine, saveRow, swatchOf } from './row-actions';
@@ -41,7 +42,7 @@ function Actions({ p, row, src, ctx, embedded, side }: { p: ItemPage; row: ItemR
     saveable: !!row && src.t === 'world' && !row.path && saveableItem(row) !== null,
     dedicated: DEDICATED.has(p.kind.id),
     newable: !!p.kind.blank,
-  });
+  }).filter((a) => !(p.kind.id === 'biome' && src.t === 'world' && (a.id === 'copyItem' || a.id === 'removeFromWorld')));
   const button = (a: ItemAction) => {
     const dis = a.disabled;
     const common = { disabled: !!dis, title: dis };
@@ -218,10 +219,10 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
   const note = pick ? lookOf(pick, { kind: p.kind.id, id: p.id }).note : null;
   const swatch = row ? swatchOf(row) : typeof item.color === 'string' ? item.color : null;
   const sample = p.kind.id === 'nameStyle' && row ? sampleLine(row) : '';
+  const biome = p.kind.id === 'biome';
   const segment = (s: Segment) => (
     <SegmentCard key={s.id} seg={s} open={open.has(s.id)} onToggle={() => toggle(s.id)} brief={segmentBrief(s, item, labelOf)}>
       {s.hint && <p class="hint">{s.hint}</p>}
-      {s.custom === 'biomeWater' && <BiomeWaterSegment src={src} ctx={ctx} sp={item as never} />}
       {s.custom === 'samples' && <Samples item={item} kindId={p.kind.id} />}
       {s.custom === 'eraDims' && src.t === 'world' ? (
         <WorldVariables era={item as unknown as Era} ctx={ctx} />
@@ -232,7 +233,7 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
           <FieldsBox fields={s.fields.filter((f) => f.key === 'when')} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
         </>
       ) : (
-        s.custom !== 'biomeWater' && s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
+        s.fields.length > 0 && <FieldsBox fields={s.fields} scope={p.kind.fields} value={item} onChange={save} issues={issues.errors} />
       )}
     </SegmentCard>
   );
@@ -269,12 +270,17 @@ export function PageItem({ route, src, ctx, embedded = false, side = false }: { 
       )}
       <EditorKind.Provider value={p.kind.id}>
         <RefGo.Provider value={go}>
-          <fieldset class="lp-fields" disabled={!!p.readonly}>
-            {segs.slice(0, 1).map(segment)}
-          </fieldset>
+          {/* 第七十二轮：生态是自己的编辑器（气候图、滑块、脚本框），不按字段表画 */}
+          {biome ? (
+            <BiomeEditor sp={item as never} src={src} ctx={ctx} onSelect={(id) => (side ? openRoute : replaceTop)({ p: 'item', kind: 'biome', id })} />
+          ) : (
+            <fieldset class="lp-fields" disabled={!!p.readonly}>
+              {segs.slice(0, 1).map(segment)}
+            </fieldset>
+          )}
           {/* 下面的几段在第一段后面，不在只读的 fieldset 里：内置的库里也能点开看 */}
           <ChildSegments list={p.children} parent={item} parentKind={p.kind.id} src={src} ctx={ctx} Item={PageItem} />
-          {segs.length > 1 && (
+          {!biome && segs.length > 1 && (
             <fieldset class="lp-fields" disabled={!!p.readonly}>
               {segs.slice(1).map(segment)}
             </fieldset>

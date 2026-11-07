@@ -13,8 +13,7 @@ import './panels/culture';
 import './panels/countries';
 import './panels/settlements';
 import './tools/bind';
-// 第七十轮：右边抽屉里的档案（shell/Sheet.tsx 按登记的取）
-import './ClimateChart';
+// 第七十轮：右边抽屉里的档案（shell/Sheet.tsx 按登记的取）；第七十二轮生态类型不再是抽屉（资源库里那种生态的页面）
 import './CountryArchive';
 import './BlocArchive';
 import './SettleArchive';

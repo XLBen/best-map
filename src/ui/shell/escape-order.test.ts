@@ -65,7 +65,7 @@ function openAll() {
   picking.value = true;
   uiHidden.value = true;
   libPanel.value = { source: WORLD_SOURCE, stack: [HOME, { p: 'list', kind: 'species' }] };
-  sheet.value = 'species';
+  sheet.value = 'country';
   provinceSet.value = [1, 2];
   selectedProvince.value = 3;
   selectedFeature.value = 'island:1';
