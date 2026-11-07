@@ -122,6 +122,10 @@ node tools/bench-median.mjs --all --compare /tmp/planet.json /tmp/planet.json   
 
 这台机器（Mac，8 核）的基线在 `tools/bench-baseline/`：`r31-region.json`、`r31-planet.json` 是第三十一轮之前（1421485）五次的中位数；`r31-ab-region.json`、`r31-ab-planet.json` 是下面这次对照（`base` 1421485，`head` 第三十一轮），第三十二轮起与 `head` 比；`r32-ab-region.json`、`r32-ab-planet.json` 是第三十二轮提速后的对照（`base` aa065b7，`head` 第三十二轮（提速），见“大格局与长河”的速度一节）。`r33-ab-region.json`、`r33-ab-planet.json` 是第三十三轮（提速）的对照（`base` 1bace6b，`head` 第三十三轮（提速），带 `rivers`、`coast` 两步，见“平原与河口”的速度一节）。`r34-ab-region.json`、`r34-ab-planet.json` 是第三十四轮的对照（`base` 45c9354，`head` 第三十四轮，见“湖与海岸”的速度一节）。`r35-ab-region.json`、`r35-ab-planet.json` 是第三十五轮（提速）的对照（`base` 02b7adf，`head` 第三十五轮（提速），见“大陆轮廓”的速度一节；第三十五轮自己的那一次对照记在那一节的表里）。`r36-ab-region.json`、`r36-ab-planet.json` 是第三十六轮（续）的对照（`base` 598382d，`head` 第三十六轮（续），多了 `rerollFjord` 一步，见“峡湾”的速度一节；第一版的那一次对照被换掉了），以后与 `head` 比。
 
+第七十九轮：以前每一轮只和上一轮比，几轮的小变慢攒在一起没看出来（生成人文第七十二到七十五轮慢了 4%，工业、奇幻、科幻的人文从来没测过）。
+以后加工、生成人文另和固定的基线 3d22942（第六十八轮）比：`r79-ab-*.json`（`base` 3d22942，`head` 第七十九轮；`region`、`globe`、`library`、`kept-<时代>`）。
+六个时代用 `--kept --era <id>`；3d22942 上没有的功能（第七十三到七十五轮的国家格局）另和上一轮比。见 [第79轮](history/第79轮.md)。
+
 测速量的是新建以后的头几笔：每个函数才跑过一两次，很多还没编译好（见“缓存与性能设计”里“还没编译好的代码”），所以同一笔每次跑的差别大（区域岩性一笔在 190–350 ms 之间，偶尔多出一百多 ms），五次的中位数也会差 10% 上下；要看清楚哪一段慢，`--all` 看各阶段，或者多跑几次。
 
 第三十一轮前后（`--against 1421485`，五次的中位数，毫秒）：
