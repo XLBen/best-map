@@ -23,7 +23,7 @@ interface Side {
   A: { CountryArchive: () => unknown };
   L: { CountryList: (p: { w: World }) => unknown };
   S: { world: { value: World | null }; selectedCountry: { value: number | null }; sheet: { value: unknown } };
-  T: { selectCountry: (id: number | null, open?: boolean) => void };
+  T: { selectCountry: (id: number | null, open?: boolean) => void; capitalShapes?: (w: World, zoom: number, sel: number | null) => unknown[] };
 }
 
 const out: string[] = [];
@@ -188,7 +188,10 @@ function main(oldS: Side, newS: Side, opt: { quick: boolean; plain?: boolean }) 
         // 一串帧（直接画两帧、只有图形变了的三帧、图形没变的一帧（新的不画）、图形没了的一帧），每帧画完读回整张、与旧的逐字节比。
         // 按显卡画（同屏幕上的叠加层与离屏画布）与按软件画（离屏画布也按软件画）各一遍
         const sh = (x: number, r: number) => [{ kind: 'circle', x: cam0.x + x * sp, y: cam0.y, r: r * sp, dashed: true, geodesic: sphere }, { kind: 'line', points: [[cam0.x, cam0.y], [cam0.x + 6 * sp, cam0.y + 3 * sp]], color: 'rgba(255, 225, 77, 0.95)', width: 2 }];
+        // 第八十轮：再加几帧“国家”一类的工具画着的首都的星（上千个同色的图形，画笔的状态相同时不再设）与领土笔刷的圈
+        const stars = kind === 'country' && oldS.T.capitalShapes ? oldS.T.capitalShapes(w, cam0.zoom, Number(Object.keys(w.small.countries ?? {})[0] ?? -1)) : [];
         const seq = [st, st, { ...st, shapes: sh(1.5, 4) }, { ...st, shapes: sh(2.5, 4) }, { ...st, shapes: sh(2.5, 6) }, { ...st, shapes: sh(2.5, 6) }, st];
+        if (stars.length) seq.push({ ...st, shapes: [...stars, ...sh(1.5, 4)] as never[] }, { ...st, shapes: [...stars, ...sh(2.5, 4)] as never[] }, st);
         const frameDiff: number[] = [];
         const notes: string[] = [];
         for (const softMode of [false, true]) {
