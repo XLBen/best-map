@@ -87,9 +87,10 @@ function countryDigest(w: World): Record<string, string> {
 // 第四十四轮重录：政体限谁用（伊克塔只给穆斯林……），倾向里没写的政体不再人人有 0.15 的余地
 // 第五十五轮重录：生态跟高度走
 // 第七十四轮重录：中世纪多了集权帝国、游牧汗国，长国家时按时代的民族主义（0.2）
+// 第七十五轮重录 countries：档案多了格局里的角色（role：神圣帝国的成员、集权帝国……）；领土 country 没变，去掉 role 时与第七十四轮的值相同
 const RECORDED = {
-  region: { country: 'd88a0cdbf6c198e8', countries: '4b2bec5ae0940f19' },
-  planet: { country: 'e73e7457bbbe594b', countries: '5bcf8961ad3aff0e' },
+  region: { country: 'd88a0cdbf6c198e8', countries: '69fe257422df5694' },
+  planet: { country: 'e73e7457bbbe594b', countries: '8a57e4c509be178d' },
 };
 const genDigest = (w: World) => ({ country: digest(w.causes.country!), countries: digest(w.small.countries) });
 const MEDIEVAL = BUILTIN_ERAS.find((e) => e.id === 'medieval')!;

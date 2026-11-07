@@ -36,6 +36,8 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // 第五十七轮重录：只有 resource（14 项）：毛皮多一种生态（高山苔原）。现实的水系一项都不变（core/water-real.test.ts）。
 // 第七十四轮重录：国家有意改了（各时代的历史格局、民族主义）。有国家的几项里人口（首都一带、移民、殖民地的新土认同）、群体、人文、
 // 国家、集团、城市、道路、地标、省名（省名按住着的文化）跟着变，现代的地物名也是；没有国家的 nature、medieval-pop 和宜居度、地形类别、资源一项没变。
+// 第七十五轮重录：奇幻（种族王国）、科幻（殖民据点）的国家有意改了，这两种设置里人文的几项跟着变；古典、中世纪、近现代、现代只重录 countries：
+// 档案多了格局里的角色（role），核对过不写 role 时这四个时代的 14 项与原来的值逐个相同。
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;

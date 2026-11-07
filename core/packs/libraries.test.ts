@@ -17,6 +17,8 @@ import { writeFileSync } from 'node:fs';
 // （核对过把时代写回旧的 relations、去掉国家格局和它的来源时与原来的值逐个相同）
 // 第七十四轮重录：古典、中世纪、近现代、现代四个库的 content、origin 因为时代多了格局（核对过把时代的 patterns 写回第七十三轮的、去掉九种新格局
 // 和它们的来源时与原来的值逐个相同）；六个库的人文几项（人口、国家、集团、城市……）因为国家有意改了（历史格局、民族主义）；:strip 一个没变
+// 第七十五轮重录：奇幻、科幻两个库的 content、origin（时代换了格局、多了种族王国、殖民据点两种）与人文的几项（国家有意改了）；
+// 古典、中世纪、近现代、现代只重录 countries（档案多了 role，核对过不写 role 时与原来的值相同）；:strip 一个没变
 
 const LIB = builtinPacks();
 const top = (id: string): PackNode => LIB.find((p) => p.id === id)!;

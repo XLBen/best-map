@@ -10,8 +10,9 @@ import { CommandError } from './errors';
 // （第四十九轮的 originId、fromId 也从这一版算起）。第五十三轮是 13：政体列派系（factions），派系的 base 换成 amount，旧文件里加内容的命令过不了格式。
 // 第七十三轮是 14：时代的国家关系换成国家格局（patterns），旧文件里加时代的命令过不了格式。
 // 第七十四轮是 15：长国家时用时代的民族主义、从属多了殖民地，旧文件里生成国家的命令重放出来国家不一样。
+// 第七十五轮是 16：奇幻、科幻的国家有了种族王国、殖民据点，从属多了公司领地（set_country 的格式），档案多了格局里的角色（role）。
 // 单独放一个小文件：主线程打开文件、读自动保存时也要查，不必引进整个引擎
-export const DOC_VERSION = 15;
+export const DOC_VERSION = 16;
 export const OLD_DOC_ERROR = '旧版本的世界文件打不开';
 
 // 打开前先查：不是世界文件、是旧版本的世界时报错（不去重放）
