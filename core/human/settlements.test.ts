@@ -50,9 +50,10 @@ const cityIds = (w: World) => Object.keys(w.small.cities ?? {}).map(Number);
 // 第四十三轮重录：内置的文化、宗教、政体换成 EU4 的（人口、国家都跟着变）
 // 第四十四轮重录：政体限谁用，国家的政体变了（城市化、扩张性跟着变）
 // 第五十五轮重录：生态跟高度走
+// 第七十四轮重录：国家有意改了（中世纪的集权帝国、游牧汗国、民族主义），城市跟着国家、人口走
 const RECORDED = {
-  region: { cities: '3f41ad0de99cdeed', roads: '839a6d976aa3377c', landmarks: '11c77051f90477f8' },
-  planet: { cities: 'c730bf7b8cde0e06', roads: '9d240a700b70aef0', landmarks: '76ba0082da224047' },
+  region: { cities: '4a3b34e223f4ebc5', roads: '32269ebfd87ef506', landmarks: '1ca26fbb7f69f177' },
+  planet: { cities: '38affa9b9a381055', roads: '2336e772a6c20ff9', landmarks: 'f4b02dac54017c63' },
 };
 const genDigest = (w: World) => ({ cities: digest(w.small.cities), roads: digest(w.small.roads), landmarks: digest(w.small.landmarks) });
 

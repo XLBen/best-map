@@ -17,6 +17,8 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // 整个世界和 f2c6f77（第五十四轮）逐值相同。biome-legacy-digests.json 是那时的 golden-hashes、golden-full、
 // r29-digests、libraries-digests 原样拷下来的：不要改它。
 // 第七十三轮只改了 libraries.medieval 的 content、origin：时代换了样子（国家格局）、多了国家格局这种内容（核对过换回旧的样子时与原来的值相同）
+// 第七十四轮：国家的生成有意改了（各时代的历史格局、民族主义），重录了 r29 的 medieval、modern、fantasy 与 libraries.medieval 里人文的几项
+// （人口、群体、国家、集团、城市、道路、地标、省名）；libraries.medieval 的 content、origin 因为中世纪多了集权帝国、游牧汗国两种格局。地形、生态的几项没变
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 

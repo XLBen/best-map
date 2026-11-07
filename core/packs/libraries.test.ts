@@ -15,6 +15,8 @@ import { writeFileSync } from 'node:fs';
 // 新世界只带默认的文化组（别的比重是 0，不参与生成）。各库的摘要记在 libraries-digests.json（LIB_RECORD=1 重录，只在有意改变结果时）。
 // 第七十三轮重录六个库的 content、origin：时代换了样子（国家格局）、多了国家格局这种内容；生成的那些（人口、国家、集团……）一个没变
 // （核对过把时代写回旧的 relations、去掉国家格局和它的来源时与原来的值逐个相同）
+// 第七十四轮重录：古典、中世纪、近现代、现代四个库的 content、origin 因为时代多了格局（核对过把时代的 patterns 写回第七十三轮的、去掉九种新格局
+// 和它们的来源时与原来的值逐个相同）；六个库的人文几项（人口、国家、集团、城市……）因为国家有意改了（历史格局、民族主义）；:strip 一个没变
 
 const LIB = builtinPacks();
 const top = (id: string): PackNode => LIB.find((p) => p.id === id)!;

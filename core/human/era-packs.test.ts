@@ -34,6 +34,8 @@ const BUILTIN_RESOURCES_IDS = () => GENERAL_RESOURCES.map((r) => r.id);
 // （日耳曼、汉、阿尔泰……）后重录；没有人文的那一项（nature）没变。
 // 第五十五轮重录：生态跟高度走（第五十一轮记着的奇幻的 resource 这次一起进了文件）。去掉高度范围时还是以前的值，见 core/biome-legacy.test.ts。
 // 第五十七轮重录：只有 resource（14 项）：毛皮多一种生态（高山苔原）。现实的水系一项都不变（core/water-real.test.ts）。
+// 第七十四轮重录：国家有意改了（各时代的历史格局、民族主义）。有国家的几项里人口（首都一带、移民、殖民地的新土认同）、群体、人文、
+// 国家、集团、城市、道路、地标、省名（省名按住着的文化）跟着变，现代的地物名也是；没有国家的 nature、medieval-pop 和宜居度、地形类别、资源一项没变。
 // R29_RECORD=1 npx vitest run core/human/era-packs.test.ts（只在有意改变结果时）
 const record = !!process.env.R29_RECORD;
 const old: Record<string, unknown> = record ? {} : saved;
