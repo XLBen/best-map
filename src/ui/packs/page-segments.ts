@@ -133,6 +133,13 @@ const TABLE: Record<string, readonly SegDef[]> = {
     { id: 'water', title: '河与路', keys: ['river', 'riverBank', 'road', 'roadMinor', 'quietRoad', 'quietRoadMinor'] },
     { id: 'text', title: '字', keys: ['countryLabel'] },
   ],
+  // 第七十八轮：省份划分（core/content/province-kind.ts）。改了以后在“省份 ⋯”里划分省份才用上；湖的归属改了马上整理
+  provinceRules: [
+    { id: 'basic', title: BASIC, keys: ['name', 'description'] },
+    { id: 'size', title: '大小', keys: ['size', 'varied', 'wasteland'], hint: '改了以后在“省份 ⋯”里点“划分省份”才用上' },
+    { id: 'water', title: '湖与海', keys: ['lakeMode', 'seaByDistance'], hint: '湖的归属改了马上整理，别的省份不动' },
+    { id: 'borders', title: '省界', keys: ['riverCost', 'ridgeCost'], hint: '省界跨河、跨山脊的代价' },
+  ],
   cityRank: [
     { id: 'basic', title: BASIC, keys: ['name', 'icon', 'color', 'description'] },
     { id: 'rule', title: '多大算这一级', keys: ['minShare', 'minPop', 'major'] },

@@ -52,7 +52,7 @@ function edits(e: Engine): Command[] {
     { op: 'order_content', kind: 'resource', ids: [...ids].reverse() },
     { op: 'paint', field: 'tempOffset', cells, value: -1, mode: 'add' },
     { op: 'set_content', kind: 'pointType', id: 'r47-new', item: null },
-    { op: 'generate_provinces', rules: { seed: 2 } },
+    { op: 'generate_provinces', seed: 2 },
   ];
 }
 

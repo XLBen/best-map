@@ -47,7 +47,7 @@ describe('星球的格子', () => {
     const settings = planetSettings('small');
     const eng = seededEngine(settings, meshFor(settings));
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const w = eng.world;
     expect(w.mesh.n).toBe(17800);
     const count = (t: string) => w.derived.features.filter((f) => f.type === t).length;

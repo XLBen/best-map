@@ -385,7 +385,7 @@ describe('省份跟着国界', () => {
     // 先有国家、再划分省份（新建向导的先后）
     const eng = continents();
     humanExec(eng, GEN);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     expect(spanning(eng.world)).toBe(0);
   });
 

@@ -36,6 +36,7 @@ import { builtinPacks } from '../core/packs/builtin-tree';
 import { newWorldContentCommands, packImportCommands } from '../core/packs/import';
 import { mulberry32 } from '../core/rng';
 import { coastalStroke, digest } from './hash';
+import { kindOf } from '../core/content/registry';
 
 // 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
 const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
@@ -48,6 +49,11 @@ function genHuman(eng: Engine, more: Record<string, unknown>): void {
   } catch {
     eng.exec({ ...cmd, groups: medievalGroups() } as unknown as Command);
   }
+}
+// 划分省份：第七十八轮起命令只写种子（规则是世界里的“省份划分”）；旧的提交上写 rules: { seed }（那时的格式不严格，
+// 新的写法不报错、只是种子被丢掉，所以按有没有这种内容来分）。两边的结果一样
+function genProvinces(eng: Engine, seed: number): void {
+  eng.exec((kindOf('provinceRules') ? { op: 'generate_provinces', seed } : { op: 'generate_provinces', rules: { seed } }) as unknown as Command);
 }
 
 let t = performance.now();
@@ -231,7 +237,7 @@ function plainBench() {
     for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']] }, w)) eng.exec(c);
     lap('import library', 'library');
     if (kept) {
-      eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+      genProvinces(eng, 3);
       genHuman(eng, { countries: {}, settlements: {} });
       eng.update();
       lap('generate human', 'genHuman');
@@ -546,7 +552,7 @@ function longBench(src: Engine) {
 // --human：人文的旧步骤（第二十一到二十四轮），只打印
 function humanBench(eng: Engine) {
   t = performance.now();
-  eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+  genProvinces(eng, 3);
   lap('provinces');
   const land = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.land[i]).slice(0, 300);
   eng.exec({ op: 'set_cell_class', cells: land.slice(0, 120), class: 'hills' });

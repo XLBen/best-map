@@ -527,7 +527,7 @@ describe('地名跟着文化', () => {
 
   it('新划的省份按当地的文化起名', () => {
     const eng = peopled();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     const w = eng.world;
     let orig = 0;
     for (const [id, p] of Object.entries(w.small.provinces)) {
@@ -627,7 +627,7 @@ describe('仓库与导出', () => {
 
   it('导出 population.png、cultures.bmp、cultures.csv，provinces_summary.csv 多几列；没有人文时没有', () => {
     const eng = peopled();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     const opts = { width: 256, height: 128, seaLevelGray: 95, maxElevation: 6000 };
     const pkg = exportPackage(eng.world, eng.toDoc(), opts);
     expect(pkg.files).toEqual(expect.arrayContaining(['population.png', 'cultures.bmp', 'cultures.csv']));

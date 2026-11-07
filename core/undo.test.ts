@@ -23,7 +23,7 @@ describe('撤销从受影响的那一层重算', () => {
   it('各种命令逐个撤销：每一步都与从头重放的结果一致', () => {
     const eng = seededEngine({ cells: 8000, seed: 3, latNorth: 70, latSouth: 10 });
     eng.exec({ op: 'set_worldgen', params: { seed: 9, type: 'continents', landFraction: 0.4 }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 2 } });
+    eng.exec({ op: 'generate_provinces', seed: 2 });
     const w = eng.world;
     const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i]);
     const patch = land.filter((i) => Math.hypot(w.mesh.x[i] - w.mesh.x[land[400]], w.mesh.y[i] - w.mesh.y[land[400]]) < 0.08);

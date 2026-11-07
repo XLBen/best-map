@@ -22,6 +22,7 @@ import { DEFAULT_SPECIES } from './nature';
 import { BUILTIN_PLANET_FORMS } from './planet-forms';
 import { REAL_LAKE_TYPES, REAL_RIVER_TYPES } from './water';
 import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ERAS } from './settlements';
+import { DEFAULT_PROVINCE_RULES } from '../province-rules';
 
 // 内置的库（第二十九轮是资源包的树；第五十一轮起每个时代是一个完整的库，“通用”拆进了各库）。
 // 全部由现有的常量拼成（不复制数据）：六个库里的基础、自然、地名……是同一份对象，只在运行时多几个小包，不占打包的大小。
@@ -43,7 +44,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 //                       奇幻、科幻只有自己的组（第四十四轮：奇幻 11 组、科幻 9 组，默认全带），不带 EU4 的文化
 //     奇幻另有 biomes、rivers、lakes：奇幻的生态（带它们用到的自定义场）、河、湖；第五十七轮起新建奇幻世界时默认带上（worldPartsOf），换库照旧不带
 //   世界的底子（LIBRARY_BASE_PACKS，每个库都有，新建世界时放在生成之前）：
-//     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类
+//     base              基础：地形类别、通用资源、城市等级、不分时代的地标、点的类型、岛的种类、省份划分（第七十八轮，province-rules.ts）
 //     nature            自然：15 种普通生态（packs/nature.ts）
 //     names ▸ zh        地名 ▸ 中文：中文·默认
 //     names ▸ <地区>    别的地名风格按地区分（地区表见 STYLE_REGIONS，没列的放“其他”）
@@ -220,13 +221,14 @@ function baseNodes(): { base: PackNode; nature: PackNode; names: PackNode; forms
     base: {
       id: 'base',
       name: '基础',
-      description: '地形类别、通用资源、城市等级、地标、点和岛的种类。新建世界时默认带上；没有它们时用到的那一步跳过',
+      description: '地形类别、通用资源、城市等级、地标、点和岛的种类、省份划分。新建世界时默认带上；没有它们时用到的那一步跳过（没有省份划分时按默认的划分）',
       terrainClasses: asItems(BUILTIN_CLASSES),
       resources: asItems(GENERAL_RESOURCES),
       cityRanks: asItems(BUILTIN_RANKS),
       landmarkTypes: asItems(BUILTIN_LANDMARK_TYPES.filter((t) => !LANDMARK_ERAS.has(t.id))),
       pointTypes: asItems(BUILTIN_POINT_TYPES),
       islandTypes: asItems(BUILTIN_ISLAND_TYPES),
+      provinceRules: asItems([DEFAULT_PROVINCE_RULES]),
     },
     nature: { id: 'nature', name: '自然', description: `${DEFAULT_SPECIES.length} 种接近地球的生态。新建世界时默认带上`, biomes: asItems(DEFAULT_SPECIES) },
     names: { id: 'names', name: '地名', packs: regions },

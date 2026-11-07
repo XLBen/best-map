@@ -76,6 +76,7 @@ function arrays(eng: Eng): Record<string, string> {
 
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 // 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。重录 class-only 的世界摘要（每一步的 .step 不变）；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
+// 第七十八轮：省份划分的规则成了世界里的内容（新世界多一份内置的“省份划分”和它的来源，small.provinceRules 换成 provinceSeed，版本 18），重录 class-only 的世界摘要（每一步的 .step 不变）；核对过：同样的操作在 82e28a7 上与这一轮上，去掉这几个键以后每一次摘要逐个相同（见 docs/dev/history/第78轮.md）
 describe('力度 0：逐位和第五十七轮相同', () => {
   // class-only-digests.json 是 f01e102（第五十七轮）的代码跑 core/testing/class-only.ts 记下的：每一步之后全部推导、原因、
   // 小数据（典型高度不算），每一步的撤销记录，再一步一步撤销回去。

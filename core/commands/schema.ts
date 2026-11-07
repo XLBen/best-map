@@ -9,7 +9,7 @@ import { MAX_COUNTRIES } from '../human/countries';
 import { worldgenSchema } from '../generate';
 import { chainSchema, islandSchema } from '../terrain';
 import { speciesSchema } from '../species';
-import { type ProvinceFix, provinceRulesPatchSchema } from '../provinces';
+import type { ProvinceFix } from '../provinces';
 import { SEAM_MAX_POINTS } from '../seams';
 import { riverTypeSchema } from '../river-types';
 import { lakeTypeSchema } from '../lake-types';
@@ -218,11 +218,11 @@ export const baseCommands = [
   }),
   z.object({ op: z.literal('add_field'), name: fieldName, from: originSchema.optional(), fromId: typeIdSchema.optional() }),
   z.object({ op: z.literal('remove_field'), name: fieldName }),
-  // 自动划分省份：规则与当前规则合并（省略的项沿用），锁定的省份不动
-  z.object({ op: z.literal('generate_provinces'), rules: provinceRulesPatchSchema.default({}) }),
-  // 只重新划分被这些格盖住一半以上的省份；别处的省份编号、名字不变。
-  // size（第二十七轮，“省份大小”滑块）：这一次的目标大小（格数，按 4 万格的地区标定，见 provinces.ts 的 provinceSizeCells），不改规则
-  z.object({ op: z.literal('regenerate_provinces'), cells, size: z.number().min(4).max(400).optional() }),
+  // 自动划分省份：按世界里的“省份划分”（第七十八轮起是资源库里的内容，见 province-rules.ts）与这个种子（省略时沿用世界记着的），锁定的省份不动。
+  // 以前的规则（rules：大小、按地形、无人区……）去掉了，旧的写法报错
+  z.object({ op: z.literal('generate_provinces'), seed: seedSchema.optional() }).strict(),
+  // 只重新划分被这些格盖住一半以上的省份（按世界的规则）；别处的省份编号、名字不变。第七十八轮去掉了这一次另定的大小（size）
+  z.object({ op: z.literal('regenerate_provinces'), cells }).strict(),
   z.object({ op: z.literal('assign_province'), cells, province: z.union([z.number().int().min(0), z.literal('new')]) }),
   z.object({ op: z.literal('merge_province'), from: z.number().int(), into: z.number().int() }),
   z.object({ op: z.literal('split_province'), id: z.number().int() }),
@@ -247,8 +247,6 @@ export const baseCommands = [
     // 地名风格（第二十轮）：按这种风格重新起名；null 换回世界默认（也重新起名）
     style: typeIdSchema.nullable().optional(),
   }),
-  // 湖：单独成省 / 并进旁边的陆地省。只整理湖与陆地之间的格，别的省份不动
-  z.object({ op: z.literal('set_lake_mode'), mode: z.enum(['separate', 'merge']) }),
   // 地名：key 为“类型:锚点格”；name 为空字符串时恢复自动命名。
   // label（第十四轮）：名字前面的类型字（“圣山”），空字符串换回按地物类型的；只改 label 时不写 name
   // orig（第二十轮）：名字的原文，和 name 一起写；只写 name 时原文去掉

@@ -20,7 +20,7 @@ export function r40Engine(globe: boolean, cells: number): Engine {
     ? new Engine({ seed: 3, cells, globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 })
     : new Engine({ seed: 3, cells });
   eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+  eng.exec({ op: 'generate_provinces', seed: 3 });
   for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: medievalGroups() }, eng.world)) eng.exec(c);
   eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: { seed: 3 } });
   eng.exec({ op: 'generate_settlements' });

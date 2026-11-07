@@ -91,7 +91,7 @@ function worlds(plain = false): { label: string; eng: Engine; cut: number[] | nu
   const rc = peopled(region, 300);
   const planet = seededEngine({ cells: 12000, seed: 7, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
   planet.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
-  planet.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+  planet.exec({ op: 'generate_provinces', seed: 3 });
   const pc = peopled(planet, 400, 0.2);
   if (plain) {
     dropWaterTypes(region);

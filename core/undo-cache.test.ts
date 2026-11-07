@@ -16,7 +16,7 @@ function script(kind: 'region' | 'planet') {
     const snap = () => states.push(digestWorld(eng.world));
     const land = () => [...Array(w.mesh.n).keys()].filter((i) => eng.world.causes.land[i]);
     eng.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 2 } });
+    eng.exec({ op: 'generate_provinces', seed: 2 });
     snap();
     let cells = coastalStroke(eng.world, 0.4, 5);
     eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' });

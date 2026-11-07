@@ -4,7 +4,8 @@ import { fillUnassigned, nameNewProvince, provinceSizes, provinceTargets, repair
 import { mulberry32 } from './rng';
 import { resolveTerrain } from './terrain';
 import type { World } from './world';
-import { seededEngine } from './testing/fixtures';
+import { divideProvinces, seededEngine } from './testing/fixtures';
+import { worldProvinceRules } from './province-rules';
 
 // 补省与起名走的是只看变化处的写法，结果必须与最直白的写法逐值相同：
 // 并入时一遍遍按编号整体重扫，每个新省份扫全图收集它的格、重新收集已用的名字
@@ -14,7 +15,7 @@ function fillUnassignedPlain(world: World) {
   const n = mesh.n;
   const province = causes.province;
   const sizes = provinceSizes(world);
-  const targets = provinceTargets(world, small.provinceRules);
+  const targets = provinceTargets(world, worldProvinceRules(small));
   const target = (land: boolean) => (land ? targets.land : targets.sea);
   let changed = true;
   while (changed) {
@@ -149,7 +150,7 @@ const worlds: [string, () => Engine][] = [
     () => {
       const eng = seededEngine({ seed: 2, cells: 5000 });
       eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-      eng.exec({ op: 'generate_provinces', rules: { seed: 4, size: 'small' } });
+      divideProvinces(eng, { size: 20 }, 4);
       return eng;
     },
   ],
@@ -158,7 +159,7 @@ const worlds: [string, () => Engine][] = [
     () => {
       const eng = seededEngine({ seed: 6, cells: 4000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
       eng.exec({ op: 'set_worldgen', params: { seed: 6, type: 'archipelago' }, reset: true });
-      eng.exec({ op: 'generate_provinces', rules: { seed: 6 } });
+      eng.exec({ op: 'generate_provinces', seed: 6 });
       return eng;
     },
   ],

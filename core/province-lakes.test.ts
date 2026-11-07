@@ -5,7 +5,8 @@ import { Engine } from './engine';
 import { graphDistance } from './mesh';
 import { classOfKind, lakeCells } from './provinces';
 import { provinceCells } from './select';
-import { continents } from './testing/fixtures';
+import { continents, divideProvinces, setProvinceRules } from './testing/fixtures';
+import { worldProvinceRules } from './province-rules';
 import { SEA_HUES, type World, seaProvinceDefaultColor } from './world';
 
 // 第十二轮：湖单独成省 / 并进旁边的陆地省；放湖、删湖之后省份跟着整理；海省默认不着色、省份可选颜色
@@ -100,18 +101,19 @@ describe('湖与省份', () => {
       for (const c of cells) for (let e = w.mesh.off[c]; e < w.mesh.off[c + 1]; e++) if (lake[w.mesh.adj[e]]) nearLake = true;
       if (!nearLake) untouched.set(id, cells.join(','));
     }
-    eng.exec({ op: 'set_lake_mode', mode: 'merge' });
-    expect(w.small.provinceRules.lakeMode).toBe('merge');
+    // 第七十八轮：湖的归属是世界里“省份划分”的一项，改了马上整理（以前的 set_lake_mode）
+    setProvinceRules(eng, { lakeMode: 'merge' });
+    expect(worldProvinceRules(w.small).lakeMode).toBe('merge');
     expect(lakeProvs()).toBe(0);
     checkClasses(w, false);
     for (const [id, cells] of untouched) expect(provinceCells(w, id).join(','), `省 ${id}`).toBe(cells);
     // 并进陆地省之后再放湖、改地形：湖照样在陆地省里
-    eng.exec({ op: 'set_lake_mode', mode: 'separate' });
+    setProvinceRules(eng, { lakeMode: 'separate' });
     expect(lakeProvs()).toBeGreaterThan(0);
     checkClasses(w, true);
     for (const [id, cells] of untouched) expect(provinceCells(w, id).join(','), `省 ${id}`).toBe(cells);
     // 按规则重新划分：并进陆地省时没有湖省
-    eng.exec({ op: 'generate_provinces', rules: { lakeMode: 'merge' } });
+    divideProvinces(eng, { lakeMode: 'merge' });
     expect(lakeProvs()).toBe(0);
     checkClasses(w, false);
     // 整张图重放：与现在相同

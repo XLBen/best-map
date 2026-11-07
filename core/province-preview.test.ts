@@ -4,7 +4,7 @@ import { digestWorld } from '../tools/hash';
 import type { Command } from './commands';
 import type { Engine } from './engine';
 import { scissors, seamLayers } from './seams';
-import { continents } from './testing/fixtures';
+import { continents, setProvinceRules } from './testing/fixtures';
 import type { World } from './world';
 
 // 第八轮第四批：省份的轻预览（Engine.previewProvinces）。重划、对半分开、合并、剪刀、按新规则重新划分之前，
@@ -130,8 +130,10 @@ describe('省份预览 = 执行的结果', () => {
 
   it('按新规则重新划分（换一种划分）', () => {
     const eng = continents({ provinces: true });
-    check(eng, { op: 'generate_provinces', rules: { size: 'small', varied: false, seed: 11 } });
-    check(eng, { op: 'generate_provinces', rules: { seed: 12 } });
+    // 第七十八轮：规则是世界里的“省份划分”，先改它（资源库里改），预览的是划分
+    setProvinceRules(eng, { size: 20, varied: false });
+    check(eng, { op: 'generate_provinces', seed: 11 });
+    check(eng, { op: 'generate_provinces', seed: 12 });
   });
 
   it('改名、锁定也能预览；不是省份的命令、做不成的命令报错，世界不变', () => {

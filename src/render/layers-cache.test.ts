@@ -243,7 +243,7 @@ const WORLDS: [string, () => World][] = [
       snapshot('r39-layers:planet', (): Engine => {
         const e = seededEngine({ cells: 3000, seed: 7, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
         e.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
-        e.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+        e.exec({ op: 'generate_provinces', seed: 3 });
         humanExec(e, { op: 'generate_human', packs: [['medieval']], groups: GROUPS, countries: { seed: 3 } });
         return e;
       }).world,

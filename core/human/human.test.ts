@@ -543,7 +543,7 @@ describe('导出与没用到的世界', () => {
     expect(w.causes.terrainClass).toBeUndefined();
     expect(w.causes.resource).toBeUndefined();
     expect(w.small.cells).toBeUndefined();
-    expect(Object.keys(w.small.content!).sort()).toEqual(['cityRank', 'countryTier', 'landmarkType', 'mapStyle', 'nameStyle', 'pointType', 'resource', 'terrainClass']);
+    expect(Object.keys(w.small.content!).sort()).toEqual(['cityRank', 'countryTier', 'landmarkType', 'mapStyle', 'nameStyle', 'pointType', 'provinceRules', 'resource', 'terrainClass']);
   });
 
   it('新建世界清掉画的类别、资源、格的档案', () => {

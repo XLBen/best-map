@@ -177,7 +177,7 @@ describe('小礁归海省', () => {
 
     // 自己的种类：归陆地省的放在海上，改成归海省
     const o = ocean();
-    o.exec({ op: 'generate_provinces', rules: { seed: 1 } });
+    o.exec({ op: 'generate_provinces', seed: 1 });
     o.exec({ op: 'set_island_type', type: { ...black, shape: 'cell' } });
     o.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'black', size: 1 } });
     const cell = o.world.causes.islandType.findIndex((v) => v === BUILTIN_COUNT + 1);

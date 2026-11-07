@@ -11,6 +11,7 @@ import { type LakeWhenKey, LAKE_WHEN_KEYS, WHEN_KEYS, WHEN_RANGE } from '../wate
 import { CommandError } from '../errors';
 import { BIOME_TERRAINS } from '../export-terrain';
 import { registerHumanKinds } from '../human/kinds';
+import { registerProvinceKind } from './province-kind';
 import { type ContentWorld, type FieldDesc, type PackContext, builtinOf, isBuiltinCopy, registerKind } from './registry';
 import { registerUsage } from './usage';
 import { linkIds } from './links';
@@ -656,6 +657,10 @@ registerKind<MapStyle>({
     exportItem: (s) => structuredClone(s),
   },
 });
+
+// ---------- 省份划分（第七十八轮，见 province-kind.ts） ----------
+
+registerProvinceKind();
 
 // ---------- 自定义场 ----------
 

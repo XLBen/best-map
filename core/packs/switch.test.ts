@@ -38,7 +38,7 @@ function terrain(from: string): Engine {
   for (const c of packImportCommands(LIB, { packs: worldPartsOf(from).filter((p) => !FANTASY_EXTRAS.includes(p[1])), groups: [] }, eng.world)) eng.exec(c);
   eng.exec(NO_CURRENTS);
   eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+  eng.exec({ op: 'generate_provinces', seed: 5 });
   return eng;
 }
 function generate(eng: Engine, id: string): Engine {

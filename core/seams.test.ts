@@ -26,14 +26,14 @@ const region = () =>
     // 第四十六轮：关掉区域的洋流（与以前逐值相同，见 fixtures 的 NO_CURRENTS）：这些用例按这个世界的省份挑的格
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 8, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     return eng;
   });
 const planet = () =>
   snapshot('seams:planet', () => {
     const eng = seededEngine({ cells: 6000, seed: 1, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
+    eng.exec({ op: 'generate_provinces', seed: 4 });
     return eng;
   });
 
@@ -500,7 +500,7 @@ describe('剪刀切线', () => {
     other.exec({ op: 'regenerate_provinces', cells: provinceCells(other.world, far) });
     expect(other.world.small.provinceSeams).toHaveLength(1);
     // 整张图重新划分：切线都不要了
-    eng.exec({ op: 'generate_provinces', rules: {} });
+    eng.exec({ op: 'generate_provinces' });
     expect(eng.world.small.provinceSeams).toBeUndefined();
     // 线没有把省份分开：命令拒绝，什么都不变（第三十三轮：在一个省的中间画，周围两圈都是同一个省）
     const s = eng.world.mesh.spacing;

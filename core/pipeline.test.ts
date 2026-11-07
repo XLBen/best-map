@@ -241,7 +241,7 @@ describe('约束求解', () => {
 describe('省份', () => {
   it('自动划分覆盖所有格，每个省份连通且陆海不混', () => {
     const eng = randomEngine();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const { world } = eng;
     expect([...world.causes.province].every((p) => p >= 0)).toBe(true);
     for (const id of provinceSizes(world).keys()) {
@@ -253,7 +253,7 @@ describe('省份', () => {
 
   it('并入、合并、拆分、锁定', () => {
     const eng = randomEngine();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const { world } = eng;
     const landIds = Object.entries(world.small.provinces)
       .filter(([, m]) => m.land)
@@ -315,7 +315,7 @@ describe('省份', () => {
 
   it('扩大陆地后新陆地格被修补进省份', () => {
     const eng = randomEngine();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const { world } = eng;
     const sea = Array.from({ length: world.mesh.n }, (_, i) => i).filter((i) => !world.causes.land[i]).slice(0, 50);
     eng.exec(landCmd(sea));
@@ -347,7 +347,7 @@ describe('命令', () => {
 
   it('文档重放结果逐值一致', () => {
     const eng = randomEngine();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     eng.exec({ op: 'paint', field: 'moistOffset', cells: [10, 11, 12], value: 0.5 });
     const doc = JSON.parse(JSON.stringify(eng.toDoc()));
     const again = Engine.fromDoc(doc);

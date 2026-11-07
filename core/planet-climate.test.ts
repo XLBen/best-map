@@ -197,7 +197,7 @@ describe('山挡风为 0 时与旧算法逐值相同（整个星球）', () => {
     const w = eng.world;
     eng.exec({ op: 'set_planet', patch: { terrainWind: 0 } });
     eng.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 7 } });
+    eng.exec({ op: 'generate_provinces', seed: 7 });
     eng.exec({ op: 'reroll_region', x: 1.99, y: 0.45, radius: 0.08, variant: 1 });
     let cells = coastalStroke(w, 0.37, 6);
     eng.exec({ op: 'paint_land', cells, t: cells.map((_, k) => (k % 7) / 7), mode: 'land' });

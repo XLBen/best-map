@@ -8,7 +8,7 @@ export const HOME_LAYOUT: readonly { id: string; title: string; cards: readonly 
   { id: 'human', title: '人文', cards: ['cultureGroup', 'culture', 'nameStyle', 'dims', 'valueGroup', 'variables'] },
   { id: 'politics', title: '政治', cards: ['government', 'faction', 'countryTier', 'countryPattern'] },
   { id: 'settle', title: '城市与地标', cards: ['cityRank', 'landmarkType', 'pointType'] },
-  { id: 'geo', title: '地理', cards: ['ecology', 'islandType', 'planetForm', 'terrainClass', 'resource'] },
+  { id: 'geo', title: '地理', cards: ['ecology', 'islandType', 'planetForm', 'terrainClass', 'resource', 'provinceRules'] },
   { id: 'look', title: '外观', cards: ['mapStyle'] },
 ];
 
@@ -36,6 +36,7 @@ export const CARD_ICON: Record<string, string> = {
   terrainClass: 'terrainClass',
   resource: 'resource',
   mapStyle: 'mapStyle',
+  provinceRules: 'provinceRules',
   biome: 'biome',
   riverType: 'riverType',
   lakeType: 'lakeType',

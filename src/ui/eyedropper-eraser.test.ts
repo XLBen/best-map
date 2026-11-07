@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command } from '../../core/commands';
 import type { Engine } from '../../core/engine';
 import { brushCells } from '../../core/select';
-import { continents, snapshot, type HumanCommand, humanExec, fragKm2 } from '../../core/testing/fixtures';
+import { continents, snapshot, type HumanCommand, humanExec, fragKm2, setProvinceRules } from '../../core/testing/fixtures';
 import type { World } from '../../core/world';
 import { worldResources, worldTerrainClasses } from '../../core/human';
 import { erasing, exec, options, picking, provinceSet, selectedCountry, selectedProvince, setOptions, world } from '../state';
@@ -11,7 +11,8 @@ import { TOOL_DEFS, createTool, eraserModes, setTool, startToolEffects } from '.
 // 第六十九轮：每个工具做什么在 tools/bind.ts 登记，跟着状态变的几件事由 startToolEffects 开起来（应用里是 register-all、main.tsx）
 import './tools/bind';
 import type { ToolId } from './defs/tools';
-import { provinceAreaText, provinceMultiCommands } from './province-panel';
+import { provinceMultiCommands } from './province-panel';
+import { worldProvinceRules } from '../../core/province-rules';
 import { onKeyDown } from './shell/keys';
 import { type Pointer, type ToolHandler, brushNew, factorOf, percentText, popCommand, provinceBrushTool, provinceSelectTool, toggleProvince } from './tools';
 import { countryAt, territoryCommand } from './domain/countries';
@@ -374,26 +375,22 @@ describe('省份', () => {
     expect(brushNew.value).toBe(false);
   });
 
-  it('省份大小：滑块定目标大小，重新划分一国时用它（不改规则）', () => {
+  // 第七十八轮：以前“一个国家”有自己的大小滑块（regenerate_provinces 的 size），去掉了：省份多大是世界里“省份划分”的大小（资源库里改）
+  it('重新划分一国按世界的省份划分：大小改小了，一国里的省多了', () => {
     const { eng } = edited();
     const w = eng.world;
     const id = Object.keys(w.small.countries!).map(Number).sort((a, b) => cellCount(w, b) - cellCount(w, a))[0];
     const cells = w.causes.country!.reduce<number[]>((a, v, i) => (v === id && w.causes.land[i] ? [...a, i] : a), []);
     const count = (size: number) => {
       const e = eng.clone();
-      e.exec({ op: 'regenerate_provinces', cells, size });
+      setProvinceRules(e, { size });
+      e.exec({ op: 'regenerate_provinces', cells });
       const set = new Set<number>();
       for (const i of cells) set.add(e.world.causes.province[i]);
-      expect(e.world.small.provinceRules).toEqual(w.small.provinceRules);
+      expect(worldProvinceRules(e.world.small).size).toBe(size);
       return set.size;
     };
     expect(count(10)).toBeGreaterThan(count(120));
-    const rules = w.small.provinceRules;
-    expect(provinceAreaText(w, rules, 10)).not.toBe(provinceAreaText(w, rules, 120));
-    // 整个世界：写进规则
-    const all = eng.clone();
-    all.exec({ op: 'generate_provinces', rules: { sizeCells: 20 } });
-    expect(all.world.small.provinceRules.sizeCells).toBe(20);
   });
 });
 

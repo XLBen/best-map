@@ -74,7 +74,7 @@ const nations = (): Engine =>
   snapshot('ui:nations', () => {
     const eng = continents();
     humanExec(eng, GEN, MANY);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     return eng;
   });
 

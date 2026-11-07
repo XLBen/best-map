@@ -26,7 +26,7 @@ export function referenceHashes(content: readonly Command[] = newWorldContentCom
   const out: Record<string, string> = { meshX: hashArray(w.mesh.x), meshAdj: hashArray(w.mesh.adj) };
   // 第三十轮：新世界默认加的内容（基础、自然、中文地名）与 set_worldgen 在同一步里（与向导新建一样）
   eng.exec({ op: 'batch', commands: [...content, { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+  eng.exec({ op: 'generate_provinces', seed: 3 });
   eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'continental', size: 440, variant: 0 } });
   const d = w.derived;
   const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && d.lake[i] !== 1);
@@ -99,7 +99,7 @@ export function extendedHashes(kind: 'region' | 'planet', content: readonly Comm
       : new Engine({ seed: 7, cells: 12000 });
   const w = eng.world;
   eng.exec({ op: 'batch', commands: [...content, { op: 'set_worldgen', params: { seed: 7, type: kind === 'planet' ? 'continents' : 'archipelago' }, reset: true }] });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 7 } });
+  eng.exec({ op: 'generate_provinces', seed: 7 });
   eng.exec({ op: 'reroll_region', x: kind === 'planet' ? 1.99 : 1.0, y: 0.45, radius: 0.08, variant: 1 });
   let cells = coastalStroke(w, 0.37, 6);
   eng.exec({ op: 'paint_land', cells, t: cells.map((_, k) => (k % 7) / 7), mode: 'land' });

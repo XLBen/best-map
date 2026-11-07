@@ -20,6 +20,7 @@ import { writeFileSync } from 'node:fs';
 // 第七十五轮重录：奇幻、科幻两个库的 content、origin（时代换了格局、多了种族王国、殖民据点两种）与人文的几项（国家有意改了）；
 // 古典、中世纪、近现代、现代只重录 countries（档案多了 role，核对过不写 role 时与原来的值相同）；:strip 一个没变
 // 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。六个库只重录 human、content、origin；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
+// 第七十八轮：省份划分的规则成了世界里的内容（新世界多一份内置的“省份划分”和它的来源，small.provinceRules 换成 provinceSeed，版本 18），重录六个库的 content、origin（human 一个没变）；核对过：同样的操作在 82e28a7 上与这一轮上，去掉这几个键以后每一次摘要逐个相同（见 docs/dev/history/第78轮.md）
 
 const LIB = builtinPacks();
 const top = (id: string): PackNode => LIB.find((p) => p.id === id)!;
@@ -35,7 +36,7 @@ function libraryWorld(id: string, groups = defaultsOf(id)): Engine {
   for (const c of packImportCommands(LIB, { packs: worldPartsOf(id), groups: [] }, eng.world)) eng.exec(c);
   eng.exec(NO_CURRENTS);
   eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+  eng.exec({ op: 'generate_provinces', seed: 5 });
   for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
   eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
   return eng;
@@ -168,7 +169,7 @@ describe('比重 0 的组', () => {
     for (const c of packImportCommands(LIB, { packs: worldPartsOf('medieval'), groups: [] }, b.world)) b.exec(c);
     b.exec(NO_CURRENTS);
     b.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-    b.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    b.exec({ op: 'generate_provinces', seed: 5 });
     const groups = defaultsOf('medieval');
     // 比重 0 的组的整个小包：没点名，组带着 0
     for (const c of packImportCommands(LIB, { packs: [['medieval', 'cultures', zero]] }, b.world)) b.exec(c);

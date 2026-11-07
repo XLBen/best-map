@@ -4,7 +4,7 @@ import type { Worldgen } from './generate';
 import type { NameStyle } from './name-styles';
 import { type Mesh, buildMesh } from './mesh';
 import { buildSphereMesh } from './sphere';
-import { DEFAULT_PROVINCE_RULES, type ProvinceKind, type ProvinceRules } from './provinces';
+import type { ProvinceKind } from './provinces';
 import type { LakeType } from './lake-types';
 import type { IslandType } from './island-types';
 import type { RiverType } from './river-types';
@@ -461,8 +461,8 @@ export interface SmallState {
   provinces: Record<number, ProvinceMeta>;
   nextProvince: number;
   nextId: number;
-  // 省份自动划分的规则；陆海变化后的修补也按它的目标大小
-  provinceRules: ProvinceRules;
+  // 省份自动划分的种子（“换一种划分”加一）。规则是世界里的“省份划分”（第七十八轮以前是这里的 provinceRules，见 province-rules.ts）
+  provinceSeed: number;
   // 剪刀切省时画的线（见 seams.ts）：第一次切之前没有这一项
   provinceSeams?: ProvinceSeam[];
   // 河流类型（第三批，见 river-types.ts）：第一次新建之前没有这一项（不在 defaultSmall 里）
@@ -742,7 +742,7 @@ function defaultSmall(): SmallState {
     provinces: {},
     nextProvince: 0,
     nextId: 1,
-    provinceRules: { ...DEFAULT_PROVINCE_RULES },
+    provinceSeed: 1,
   };
 }
 

@@ -28,7 +28,7 @@ beforeAll(() => {
   base = engineFor({ cells: 12000, seed: 1, latNorth: 72, latSouth: 20 });
   base.exec(NO_CURRENTS);
   base.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  base.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+  base.exec({ op: 'generate_provinces', seed: 5 });
 });
 
 const generate = (era: string, groups: { id: string; weight: number }[], imported: string[] = groups.map((g) => g.id)): Engine => {

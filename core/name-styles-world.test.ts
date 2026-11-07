@@ -55,7 +55,7 @@ describe('世界里的地名风格', () => {
     for (const f of withOrig) expect(f.name).not.toMatch(/[A-Za-z]/);
     // 世界默认的风格不算“自己选的”
     expect(fs.every((f) => f.style === undefined)).toBe(true);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     const ps = Object.values(eng.world.small.provinces);
     expect(ps.filter((p) => p.orig).length).toBeGreaterThan(ps.length * 0.8);
     // 新编号的省：省名连同原文记进命令（重放时照用）

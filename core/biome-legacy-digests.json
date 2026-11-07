@@ -78,7 +78,7 @@
    "derived.sstAnom": "455c982de0c4e8b3",
    "derived.features": "74aa5520d8283ccc",
    "derived.conflicts": "39fe5353d4e6e6f3",
-   "small": "449528acb4fbaecc"
+   "small": "89841cdcf8c1b0df"
   },
   "planet": {
    "mesh.x": "edbabd66920764cd",
@@ -146,7 +146,7 @@
    "derived.sstAnom": "88d34347877fc02b",
    "derived.features": "38d13cde5d0b2e13",
    "derived.conflicts": "344f2c5435de7138",
-   "small": "830bc3ee92162204"
+   "small": "ae01fed23d02cdf1"
   }
  },
  "r29": {
@@ -430,8 +430,8 @@
    "habitability": "bc3de3ebaae13a5f",
    "terrainClass": "ac37ad28b5a0fad5",
    "resource": "abf64551e4712240",
-   "content": "df24cfb565a46709",
-   "origin": "b6ee8da130dc3746"
+   "content": "f7091ce35f63c2d3",
+   "origin": "2676db14cf348e2e"
   },
   "industrial:strip": {
    "cultureGroup→dimension": 71,

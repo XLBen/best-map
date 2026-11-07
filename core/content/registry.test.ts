@@ -37,9 +37,10 @@ describe('内容种类的登记表', () => {
       ['landmarkType', 'landmarkTypes', '地标类型', '地标'],
       ['pointType', 'pointTypes', '自定义点的类型', '点'],
       ['mapStyle', 'mapStyles', '画风', '画风'],
+      ['provinceRules', 'provinceRules', '省份划分', '省份划分'],
       ['field', 'fields', '自定义场', '场'],
     ]);
-    expect(packSections().map((k) => k.id)).toEqual(['biome', 'riverType', 'lakeType', 'islandType', 'planetForm', 'nameStyle', 'terrainClass', 'resource', 'era', 'valueGroup', 'popValue', 'cultureGroup', 'culture', 'government', 'faction', 'countryTier', 'countryPattern', 'cityRank', 'landmarkType', 'pointType', 'mapStyle']);
+    expect(packSections().map((k) => k.id)).toEqual(['biome', 'riverType', 'lakeType', 'islandType', 'planetForm', 'nameStyle', 'terrainClass', 'resource', 'era', 'valueGroup', 'popValue', 'cultureGroup', 'culture', 'government', 'faction', 'countryTier', 'countryPattern', 'cityRank', 'landmarkType', 'pointType', 'mapStyle', 'provinceRules']);
     expect(kindByPackKey('textPacks')?.id).toBe('nameStyle');
     // 每种都有编辑器的字段表
     for (const k of allKinds()) expect(k.fields.length, k.id).toBeGreaterThan(0);

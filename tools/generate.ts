@@ -19,7 +19,7 @@ const params: Record<string, unknown> = { seed, type: args.get('type') ?? 'conti
 if (args.has('land')) params.landFraction = num('land', 0.3);
 if (args.has('islands')) params.islands = num('islands', 0.5);
 eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: params as { seed: number }, reset: true }] });
-eng.exec({ op: 'generate_provinces', rules: { seed } });
+eng.exec({ op: 'generate_provinces', seed });
 const r = exportPackage(eng.world, eng.toDoc(), { width, height: Math.round(width / eng.world.settings.aspect), seaLevelGray: 95, maxElevation: 6000 });
 mkdirSync(out, { recursive: true });
 for (const [name, data] of Object.entries(unzipSync(r.zip))) writeFileSync(join(out, name), data);

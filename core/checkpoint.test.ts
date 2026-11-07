@@ -10,7 +10,7 @@ import { seededEngine } from './testing/fixtures';
 function build(kind: 'region' | 'planet') {
   const eng = seededEngine(kind === 'planet' ? { seed: 3, cells: 5000, globe: true, aspect: 2, latNorth: 90, latSouth: -90 } : { seed: 3, cells: 5000 });
   eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+  eng.exec({ op: 'generate_provinces', seed: 3 });
   const cells = coastalStroke(eng.world, 0.3, 4);
   eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' });
   const land = [...Array(eng.world.mesh.n).keys()].filter((i) => eng.world.causes.land[i]);

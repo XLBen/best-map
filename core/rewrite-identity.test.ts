@@ -626,9 +626,9 @@ describe('省份的格数与修补省份：与以前的写法逐值相同', () =
   for (const kind of ['region', 'planet'] as const) {
     it(kind, () => {
       const a = world(kind);
-      a.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+      a.exec({ op: 'generate_provinces', seed: 3 });
       const b = world(kind, a.world.mesh);
-      b.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+      b.exec({ op: 'generate_provinces', seed: 3 });
       const rnd = mulberry32(41);
       for (let t = 0; t < 4; t++) {
         // 同样地弄乱两边：几格换成没有的省、几格换成别的省、陆海翻过来几格（只改原因里的格，命令不知道）

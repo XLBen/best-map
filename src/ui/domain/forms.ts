@@ -128,7 +128,7 @@ export function newWorldCommands(gen: WorldgenInput, name: string, seed: number,
   return [
     { op: 'batch', label: `新世界“${name}”`, commands: [...seedContent, ...before, { op: 'set_worldgen', params: gen, reset: true }] },
     ...(human ? [human] : []),
-    { op: 'generate_provinces', rules: { seed } },
+    { op: 'generate_provinces', seed },
   ];
 }
 

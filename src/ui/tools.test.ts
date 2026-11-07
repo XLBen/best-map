@@ -161,7 +161,7 @@ describe('改完后哪些格会闪', () => {
   it('整张图重新划分（三成以上的格换了省）：不闪', () => {
     const before = continents({ provinces: true });
     const after = before.clone();
-    after.exec({ op: 'generate_provinces', rules: { seed: 99 } });
+    after.exec({ op: 'generate_provinces', seed: 99 });
     let changed = 0;
     before.world.causes.province.forEach((p, i) => p !== after.world.causes.province[i] && changed++);
     expect(changed).toBeGreaterThan(before.world.mesh.n * 0.3);
@@ -467,13 +467,13 @@ describe('省份：对半分开的悬停、合并与涂省的提醒', () => {
     expect(barPreview.value).toBeNull();
   });
 
-  it('按新规则重新划分：鼠标停在按钮上先画出新的省界和省名（与点下去的结果相同）；只是划过去的不算', async () => {
+  it('换一种划分：鼠标停在按钮上先画出新的省界和省名（与点下去的结果相同）；只是划过去的不算', async () => {
     const eng = continents({ provinces: true });
     const w = eng.world;
     world.value = w;
     vi.mocked(previewProvinces).mockImplementation(async (cmd) => eng.previewProvinces(cmd));
     vi.mocked(previewProvinces).mockClear();
-    const cmd: Command = { op: 'generate_provinces', rules: { ...w.small.provinceRules, size: 'small', seed: w.small.provinceRules.seed + 1 } };
+    const cmd: Command = { op: 'generate_provinces', seed: w.small.provinceSeed + 1 };
     // 从按钮上划过去
     showProvinceCommand(cmd);
     clearBarPreview();

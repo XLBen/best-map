@@ -23,6 +23,7 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // 档案多了格局里的角色（role），核对过不写 role 时与原来的值逐个相同
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 // 第七十七轮：生成的命令不再写权重、“分裂 ↔ 统一”、格局，human 只记组的 id、countryRules 只有种子，组带着库里的比重，没有格局。重录 golden-full 的 small、r29 的 human、libraries 的 human、content、origin；核对过两边的世界只差这几样（见 docs/dev/history/第77轮.md）
+// 第七十八轮：省份划分的规则成了世界里的内容（新世界多一份内置的“省份划分”和它的来源，small.provinceRules 换成 provinceSeed，版本 18），重录 golden-full 的 small 两项、libraries 的 content、origin；核对过：同样的操作在 82e28a7 上与这一轮上，去掉这几个键以后每一次摘要逐个相同（见 docs/dev/history/第78轮.md）
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 
@@ -44,7 +45,7 @@ describe('没写高度范围的生态和第五十四轮逐值相同', () => {
     for (const c of plain()) eng.exec(c);
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     return eng;
   }
 
@@ -88,7 +89,7 @@ describe('没写高度范围的生态和第五十四轮逐值相同', () => {
     for (const c of withoutHeights(packImportCommands(LIB, { packs: worldPartsOf(id), groups: [] }, eng.world))) eng.exec(c);
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
     eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });
     const { small } = eng.world;

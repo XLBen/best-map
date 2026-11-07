@@ -98,7 +98,6 @@ function touchedArrays(world: World, cmd: Command): ArrayKey[] {
       return [cmd.field as ArrayKey];
     case 'generate_provinces':
     case 'regenerate_provinces':
-    case 'set_lake_mode':
     case 'split_province':
     case 'cut_province':
       return ['province'];

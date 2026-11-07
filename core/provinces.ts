@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { MinHeap } from './heap';
 import { lakeSeaIsles, provinceLand } from './island-types';
 import { graphDistanceOwner, ringDistance } from './mesh';
@@ -6,9 +5,10 @@ import { hashString } from './names';
 import { type GenName, hasType, styleFor, styleName } from './name-styles';
 import { mixSeed, mulberry32 } from './rng';
 import type { Derived, ProvinceMeta, World } from './world';
+import { type ProvinceRules, provinceSeed, worldProvinceRules } from './province-rules';
 
 // 省份 = 格的聚类。自动划分用加权区域生长：跨河、跨山脊代价高，所以边界自然贴着河与山脊；不跨海岸。
-// 规则可配置：大小（小 · 中 · 大）、按地形调整大小、无人区、湖（单独成省 / 并进旁边的陆地省）、近海小远洋大。
+// 规则（第七十八轮起是资源库里的“省份划分”，见 province-rules.ts）：大小、按地形调整大小、无人区、湖（单独成省 / 并进旁边的陆地省）、近海小远洋大、沿河沿山脊的代价。
 // 格分三类，省份不跨类：海、陆地（含无人区）、湖（湖单独成省时）。海永远不和陆地、湖同省；
 // 湖“并进陆地省”时湖面的格算陆地。归海省的岛（小礁一类，见 island-types.ts）是陆地格，但算海：并进旁边的海省。
 // 划分结果是“原因”的一部分（用户可编辑）：
@@ -27,42 +27,6 @@ export const PROVINCE_KIND_INFO: Record<ProvinceKind, { name: string; hint: stri
   sea: { name: '海省', hint: '海上的省份' },
 };
 
-const ruleFields = {
-  size: z.enum(['small', 'medium', 'large']),
-  // 按地形调整大小：平原、河谷、海岸省份小，山地、荒漠大
-  varied: z.boolean(),
-  // 冰原、深漠、高山合成大片无人区
-  wasteland: z.boolean(),
-  // 湖：单独成省（separate）还是并进旁边的陆地省（merge）。海永远单独
-  lakeMode: z.enum(['separate', 'merge']),
-  // 近海海域小、远洋海域大
-  seaByDistance: z.boolean(),
-  riverCost: z.number().min(0).max(20),
-  ridgeCost: z.number().min(0).max(20),
-  seed: z.number().int().min(0),
-  // 第二十七轮：省份大小的滑块（目标格数，按 4 万格的地区标定，同 SIZE_CELLS）。有它时不看 size
-  sizeCells: z.number().min(4).max(400),
-};
-export const provinceRulesSchema = z.object({
-  size: ruleFields.size.default('medium'),
-  varied: ruleFields.varied.default(true),
-  wasteland: ruleFields.wasteland.default(true),
-  lakeMode: ruleFields.lakeMode.default('separate'),
-  seaByDistance: ruleFields.seaByDistance.default(true),
-  riverCost: ruleFields.riverCost.default(4),
-  ridgeCost: ruleFields.ridgeCost.default(2),
-  seed: ruleFields.seed.default(1),
-  sizeCells: ruleFields.sizeCells.optional(),
-});
-// 命令里的规则补丁：只含给出的项（zod 4 的 partial 会给带默认值的项补上默认值，盖掉原来的规则）
-export const provinceRulesPatchSchema = z.object(ruleFields).partial();
-export type ProvinceRules = z.output<typeof provinceRulesSchema>;
-export const DEFAULT_PROVINCE_RULES: ProvinceRules = provinceRulesSchema.parse({});
-
-const SIZE_CELLS = { small: 20, medium: 40, large: 80 } as const;
-// 目标格数（按 4 万格的地区标定）：滑块定的，没有时按小、中、大
-export const provinceSizeCells = (rules: Pick<ProvinceRules, 'size' | 'sizeCells'>) => rules.sizeCells ?? SIZE_CELLS[rules.size];
-
 // 目标大小（格数）：一块地区按 4 万格标定，格数不同时等比缩放，所以省份的个数与网格精细度无关。
 // 整个星球按面积定（第十七轮）：“中”约 20.4 万 km²（以前 10 万格的类地星球上的 40 格，那时的世界照旧一模一样），
 // 不管每格多大、星球多大，省的面积都一样（每格约 100 km 的类地星球上约 33 格，陆地省约九百个）
@@ -72,7 +36,7 @@ const PLANET_CELL_KM2 = (4 * Math.PI * EARTH_KM * EARTH_KM) / 100000;
 export function provinceTargets(world: World, rules: ProvinceRules): { land: number; sea: number } {
   const { mesh } = world;
   const scale = mesh.kind === 'sphere' ? PLANET_CELL_KM2 / ((4 * Math.PI * (world.settings.radiusKm ?? EARTH_KM) ** 2) / mesh.n) : mesh.n / 40000;
-  const base = provinceSizeCells(rules) * scale;
+  const base = rules.size * scale;
   return { land: Math.max(3, base), sea: Math.max(6, base * (rules.seaByDistance ? 2 : 4)) };
 }
 
@@ -213,7 +177,7 @@ function mergeSorted(a: number[], b: number[]): number[] {
 }
 
 // 在 region 里的格上重新划分（region 外的省份不动），新省份用新编号；返回新省份的编号
-function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8Array, salt: number): number[] {
+function partition(world: World, d: Derived, rules: ProvinceRules, seed: number, region: Uint8Array, salt: number): number[] {
   const { mesh, causes, small } = world;
   const n = mesh.n;
   const province = causes.province;
@@ -222,7 +186,7 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
   const dens = densityFactors(world, d, rules, cls, pland);
   const target = provinceTargets(world, rules);
   const baseOf = (i: number) => (cls[i] === SEA ? target.sea : target.land);
-  const rand = mulberry32(mixSeed(rules.seed, 401, salt));
+  const rand = mulberry32(mixSeed(seed, 401, salt));
   const riverQ = small.planet.riverThreshold;
   // 不跨国界（第二十三轮）
   const ck = countryKeys(world, pland);
@@ -339,10 +303,11 @@ function partition(world: World, d: Derived, rules: ProvinceRules, region: Uint8
   return out;
 }
 
-// 整体自动划分。锁定的省份保持不动
-export function generateProvinces(world: World, d: Derived, rules: ProvinceRules) {
+// 整体自动划分（按世界的省份划分、这个种子）。锁定的省份保持不动
+export function generateProvinces(world: World, d: Derived, seed: number) {
   const { mesh, causes, small } = world;
-  small.provinceRules = rules;
+  small.provinceSeed = seed;
+  const rules = worldProvinceRules(small);
   const locked = new Set(
     Object.entries(small.provinces)
       .filter(([, m]) => m.locked)
@@ -358,7 +323,7 @@ export function generateProvinces(world: World, d: Derived, rules: ProvinceRules
     for (let i = 0; i < mesh.n; i++) if (!locked.has(causes.province[i])) region[i] = 1;
     for (const id of Object.keys(small.provinces).map(Number)) if (!locked.has(id)) delete small.provinces[id];
   }
-  partition(world, d, rules, region, 0);
+  partition(world, d, rules, seed, region, 0);
 }
 
 // 一笔涂到的格会重新划分哪些省份：被涂到一半以上、没锁定的省份
@@ -376,16 +341,15 @@ export function regenTargets(world: World, cells: number[]): number[] {
     .sort((a, b) => a - b);
 }
 
-// 只重新划分这些省份占的地方；新省份用新编号，别处不变。sizeCells（第二十七轮）：这一次按这个大小划（不改规则）
-export function regenerateProvinces(world: World, d: Derived, ids: number[], sizeCells?: number): number[] {
+// 只重新划分这些省份占的地方（按世界的规则与种子）；新省份用新编号，别处不变
+export function regenerateProvinces(world: World, d: Derived, ids: number[]): number[] {
   const { mesh, causes, small } = world;
   const set = new Set(ids);
   const region = new Uint8Array(mesh.n);
   for (let i = 0; i < mesh.n; i++) if (set.has(causes.province[i])) region[i] = 1;
   for (const id of ids) delete small.provinces[id];
   // 用当前的下一个编号做盐：同样的操作重放结果相同，再做一次又是新的划分
-  const rules = sizeCells === undefined ? small.provinceRules : { ...small.provinceRules, sizeCells };
-  return partition(world, d, rules, region, small.nextProvince + 1);
+  return partition(world, d, worldProvinceRules(small), provinceSeed(small), region, small.nextProvince + 1);
 }
 
 // 第三十五轮（提速）：先按编号数在类型化数组里（编号一直往上加，不会比格数大太多；太大时照旧逐格放进 Map），
@@ -430,7 +394,7 @@ export function fillUnassigned(world: World, lake: Uint8Array | null = null) {
   const n = mesh.n;
   const province = causes.province;
   const sizes = provinceSizes(world);
-  const targets = provinceTargets(world, small.provinceRules);
+  const targets = provinceTargets(world, worldProvinceRules(small));
   const pland = provinceLand(world);
   const classOf = (i: number): ProvinceClass => (!pland[i] ? 'sea' : lake?.[i] ? 'lake' : 'land');
   const target = (c: ProvinceClass) => (c === 'sea' ? targets.sea : targets.land);
@@ -602,7 +566,7 @@ export function fitProvincesToCountries(world: World): number[] {
     split.set(p, best);
   }
   if (!split.size) return [];
-  const target = provinceTargets(world, small.provinceRules).land;
+  const target = provinceTargets(world, worldProvinceRules(small)).land;
   const seen = new Uint8Array(n);
   const fresh: number[] = [];
   for (let s = 0; s < n; s++) {
@@ -684,7 +648,7 @@ export function lakeProvinceFix(world: World, d: Derived): ProvinceFix | null {
   const { causes, small } = world;
   const n = world.mesh.n;
   const province = causes.province;
-  const separate = small.provinceRules.lakeMode === 'separate';
+  const separate = worldProvinceRules(small).lakeMode === 'separate';
   const lake = separate ? lakeCells(world, d) : null;
   const before = province.slice();
   const metasBefore = new Set(Object.keys(small.provinces));
@@ -724,12 +688,6 @@ export function applyProvinceFix(world: World, fix: ProvinceFix) {
   for (let k = 0; k < fix.cells.length; k++) causes.province[fix.cells[k]] = fix.to[k];
   for (const id of fix.drop) delete small.provinces[id];
   small.nextProvince = Math.max(small.nextProvince, fix.next);
-}
-
-// 改“湖：单独成省 / 并进陆地省”：只整理湖与陆地之间的格（别的省份、编号、名字不变）
-export function setLakeMode(world: World, d: Derived, mode: ProvinceRules['lakeMode']) {
-  world.small.provinceRules = { ...world.small.provinceRules, lakeMode: mode };
-  lakeProvinceFix(world, d);
 }
 
 // 一个省份拆成两半：取相距最远的两格为种子，按图距离各自生长

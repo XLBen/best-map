@@ -20,6 +20,7 @@ import { NO_CURRENTS, seededEngine } from './testing/fixtures';
 // 第五十七轮新世界默认带现实的水系、毛皮多一种生态，再重录一次（这里是整个世界一个摘要）；核对过去掉这些时与原来的记录逐值相同
 // 第七十六轮：中文地名风格的模板“某某沙漠 / 冻原 / 冰原”改成“荒漠 / 苔原 / 冰盖”，重录变了的几项（地名、小数据里的地名风格、世界文件）；核对过两边的世界只差这三个字
 // 第七十七轮：去掉了格局（countryLayout），新世界的小数据里没有内置的四种格局，只重录 每一步的世界摘要；核对过旧的提交上新世界的内容去掉格局时得到同样的值（见 docs/dev/history/第77轮.md）
+// 第七十八轮：省份划分的规则成了世界里的内容（新世界多一份内置的“省份划分”和它的来源，small.provinceRules 换成 provinceSeed，版本 18），重录每一步的世界摘要；核对过：同样的操作在 82e28a7 上与这一轮上，去掉这几个键以后每一次摘要逐个相同（见 docs/dev/history/第78轮.md）
 const FILE = new URL('./r31-digests.json', import.meta.url);
 const record = !!process.env.R31_RECORD;
 const saved: Record<string, string[]> = record ? {} : JSON.parse(readFileSync(FILE, 'utf8'));

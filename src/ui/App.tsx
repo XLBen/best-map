@@ -158,7 +158,7 @@ export function App() {
       void newWorld(settingsFor('region', 'tropical', 40000), [
         ...newWorldContentCommands(),
         { op: 'set_worldgen', params: { seed: 3, type: 'archipelago' }, reset: true },
-        { op: 'generate_provinces', rules: { seed: 3 } },
+        { op: 'generate_provinces', seed: 3 },
       ]);
     } else {
       // 回来接着做：直接打开上次的世界（上次是安全模式就照样用安全模式；带没信任过的脚本时先问）；

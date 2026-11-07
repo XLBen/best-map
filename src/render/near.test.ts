@@ -78,7 +78,7 @@ const WORLDS: [string, () => World][] = [
       snapshot('near:planet', () => {
         const e = seededEngine({ cells: 12000, seed: 7, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
         e.exec({ op: 'set_worldgen', params: { seed: 7, type: 'continents' }, reset: true });
-        e.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+        e.exec({ op: 'generate_provinces', seed: 3 });
         return peopled(e, 400, 0.2);
       }).world,
   ],

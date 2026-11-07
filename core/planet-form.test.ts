@@ -472,7 +472,7 @@ describe('命令', () => {
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents', form }, reset: true });
     const first = digestWorld(eng.world);
     expect(planetFormIssues(eng.world).some((x) => x.reason === 'value')).toBe(true);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
+    eng.exec({ op: 'generate_provinces', seed: 4 });
     eng.exec({ op: 'reroll_region', x: 1.99, y: 0.85, radius: 0.1, variant: 1 });
     const cells = coastalStroke(eng.world, 0.4, 5);
     eng.exec({ op: 'paint_land', cells, t: cells.map(() => 0), mode: 'land' });
@@ -482,7 +482,7 @@ describe('命令', () => {
     eng.undo();
     eng.redo();
     const doc = eng.toDoc();
-    expect(doc.version).toBe(17);
+    expect(doc.version).toBe(18);
     const mesh = meshFor(settings);
     const replay = Engine.fromDoc(doc, mesh);
     expect(digestWorld(replay.world)).toEqual(digestWorld(eng.world));

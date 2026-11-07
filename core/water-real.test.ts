@@ -259,7 +259,7 @@ describe('水不变：带着这些类型和不带时除了类型逐值相同', (
       expect(untagged(a.world)).toEqual(untagged(b.world));
       expect(a.world.derived.scriptIssues).toEqual(b.world.derived.scriptIssues);
       for (const e of [a, b]) {
-        e.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+        e.exec({ op: 'generate_provinces', seed: 5 });
         for (const c of packImportCommands(LIB, { packs: [['medieval']], groups }, e.world)) e.exec(c);
         e.exec({ op: 'generate_human', packs: [['medieval']], groups, countries: {}, settlements: {} });
       }

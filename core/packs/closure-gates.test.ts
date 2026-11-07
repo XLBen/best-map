@@ -161,7 +161,7 @@ function build(id: string): Engine {
   for (const c of packImportCommands(LIB, { packs: worldPartsOf(id), groups: [] }, eng.world)) eng.exec(c);
   eng.exec(NO_CURRENTS);
   eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+  eng.exec({ op: 'generate_provinces', seed: 5 });
   const groups = groupsOf(id);
   for (const c of packImportCommands(LIB, { packs: [[id]], groups: groups.map((g) => g.id) }, eng.world)) eng.exec(c);
   eng.exec({ op: 'generate_human', packs: [[id]], groups: groups.map((g) => g.id), countries: {}, settlements: {} });

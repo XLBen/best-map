@@ -16,6 +16,7 @@ import { BUILTIN_ERAS } from '../packs/eras';
 import { COUNTRY_KM2 } from '../human/countries';
 import type { Era } from '../human/era';
 import { ruleEra } from '../human/generate';
+import { type ProvinceRules, worldProvinceRules } from '../province-rules';
 
 // 测试共用的世界：网格按设置缓存；建好的世界按名字留一份模板，每次给出它的副本（Engine.clone），
 // 不必每个测试都从头生成一遍。副本与重新生成的世界逐值相同（推导只取决于原因）。
@@ -143,7 +144,7 @@ export function continents(opts: { cells?: number; latNorth?: number; latSouth?:
     const eng = plain ? plainEngine({ cells, seed: 1, latNorth, latSouth }, meshFor({ cells, seed: 1, latNorth, latSouth })) : engineFor({ cells, seed: 1, latNorth, latSouth }, { noWater });
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-    if (provinces) eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    if (provinces) eng.exec({ op: 'generate_provinces', seed: 5 });
     return eng;
   });
 }
@@ -216,6 +217,26 @@ export function eraCommand(world: World, patch: Partial<Era>, packs?: readonly (
 }
 export function setEra(eng: Engine, patch: Partial<Era>, packs?: readonly (readonly string[])[]): void {
   eng.exec(eraCommand(eng.world, patch, packs));
+}
+
+// ---------- 第七十八轮：省份划分的规则是世界里的内容 ----------
+
+// 以前 generate_provinces 的 rules（大小、按地形、无人区、湖……）换成改世界里的“省份划分”（set_content，patch 盖在现在的上面，一整步），
+// 再 generate_provinces 只写种子。以前的 size（小 · 中 · 大）是 20 · 40 · 80 格，sizeCells 就是 size。划出来的省份逐值相同
+export const OLD_SIZES = { small: 20, medium: 40, large: 80 } as const;
+export function provinceRulesCommand(world: World, patch: Partial<ProvinceRules>): Command {
+  const now = worldProvinceRules(world.small);
+  const item = { ...now, ...patch };
+  return { op: 'set_content', kind: 'provinceRules', id: now.id, item: item as unknown as Record<string, unknown> };
+}
+export function setProvinceRules(eng: Engine, patch: Partial<ProvinceRules>): void {
+  eng.exec(provinceRulesCommand(eng.world, patch));
+}
+// 先改规则（和现在的一样时不多一步），再划分
+export function divideProvinces(eng: Engine, patch: Partial<ProvinceRules> = {}, seed?: number): string {
+  const now = worldProvinceRules(eng.world.small);
+  if (Object.entries(patch).some(([k, v]) => now[k as keyof ProvinceRules] !== v)) setProvinceRules(eng, patch);
+  return eng.exec({ op: 'generate_provinces', ...(seed !== undefined ? { seed } : {}) });
 }
 
 // 执行生成人文、国家的命令：先把用的包（命令里的 packs，省略时是世界记着的）与选的文化组加进世界（packImportCommands），

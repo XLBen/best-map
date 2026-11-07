@@ -64,7 +64,7 @@ function world(): Engine {
     // 第四十六轮：与 continents() 一样关掉区域的洋流（见 fixtures 的 NO_CURRENTS）
     base.exec(NO_CURRENTS);
     base.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-    base.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    base.exec({ op: 'generate_provinces', seed: 5 });
   }
   return base.clone();
 }
@@ -235,7 +235,7 @@ describe('基础、自然、地名都是普通内容：缺了跳过并写明', (
     // 放岛：普通的岛（编号 0）
     eng.exec({ op: 'add_island', island: { x: 1, y: 0.5, kind: 'continental', size: 300, variant: 0 } });
     expect(w.causes.islandType.every((x) => x === 0)).toBe(true);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
+    eng.exec({ op: 'generate_provinces', seed: 4 });
     expect(Object.values(w.small.provinces).every((p) => p.name === '')).toBe(true);
     // 生成人文：时代包照样能用（没有地形类别时宜居按平地算）；没有城市等级、地标类型时不放城市、地标
     importPacks(eng, { packs: [['medieval']], groups: ['germanic'] });
@@ -323,7 +323,7 @@ describe('生态、地形类别自己带的字段替代按 id 查的算法表', 
     const settings = { cells: 3000, seed: 4 };
     const eng = new Engine(settings, meshFor(settings));
     eng.exec({ op: 'set_worldgen', params: { seed: 4, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
+    eng.exec({ op: 'generate_provinces', seed: 4 });
     expect(eng.world.small.species).toEqual([]);
     expect(eng.world.derived.dominant.every((x) => x < 0)).toBe(true);
   });

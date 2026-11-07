@@ -28,7 +28,7 @@ beforeAll(() => {
   bare = engineFor({ cells: 6000, seed: 2 }, { bare: true });
   bare.exec(NO_CURRENTS);
   bare.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-  bare.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+  bare.exec({ op: 'generate_provinces', seed: 5 });
 });
 
 function worldOf(lib: string, groups = defaults(lib), opts: { countries?: boolean; settlements?: boolean } = { countries: true, settlements: true }): Engine {

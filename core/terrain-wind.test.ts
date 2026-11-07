@@ -29,7 +29,7 @@ describe('山挡风为 0 时逐值不变', () => {
     // 第四十六轮：关掉区域的洋流（强弱 0 与第四十五轮逐值相同，见 fixtures 的 NO_CURRENTS）：与记下这些值时的世界相同
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     eng.exec({ op: 'add_island', island: { x: 1.2, y: 0.45, kind: 'continental', size: 440, variant: 0 } });
     const d = w.derived;
     const land = [...Array(w.mesh.n).keys()].filter((i) => w.causes.land[i] && d.lake[i] !== 1);

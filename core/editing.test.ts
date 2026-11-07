@@ -2,7 +2,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { lakeArea } from './elevation';
 
-import { continents as sharedContinents, seededEngine } from './testing/fixtures';
+import { OLD_SIZES, continents as sharedContinents, divideProvinces, seededEngine } from './testing/fixtures';
 import { exportPackage } from './export';
 import { provinceSizes } from './provinces';
 import { isRiverCell, planRiver, provinceCells } from './select';
@@ -27,7 +27,7 @@ describe('省份：规则可配置', () => {
   it('小 · 中 · 大：省份个数依次减少', () => {
     const eng = continents();
     const count = (size: 'small' | 'medium' | 'large') => {
-      eng.exec({ op: 'generate_provinces', rules: { size, seed: 3 } });
+      divideProvinces(eng, { size: OLD_SIZES[size] }, 3);
       return Object.values(eng.world.small.provinces).filter((p) => p.land).length;
     };
     const s = count('small');
@@ -39,10 +39,10 @@ describe('省份：规则可配置', () => {
 
   it('无人区：打开时冰原与高山合成无人区省份，关掉就没有', () => {
     const eng = continents(12000, 85, 45);
-    eng.exec({ op: 'generate_provinces', rules: { wasteland: true, seed: 3 } });
+    divideProvinces(eng, { wasteland: true }, 3);
     const waste = Object.values(eng.world.small.provinces).filter((p) => p.kind === 'wasteland');
     expect(waste.length).toBeGreaterThan(0);
-    eng.exec({ op: 'generate_provinces', rules: { wasteland: false, seed: 3 } });
+    divideProvinces(eng, { wasteland: false }, 3);
     expect(Object.values(eng.world.small.provinces).some((p) => p.kind === 'wasteland')).toBe(false);
   });
 
@@ -52,7 +52,7 @@ describe('省份：规则可配置', () => {
     // 在内陆放一个大湖
     const inland = landCells(w).find((i) => w.derived.continentality[i] > 0.6 && w.derived.slope[i] < 5)!;
     eng.exec({ op: 'add_lake', lake: { cell: inland, radius: 120, depth: 150, perennial: true } });
-    eng.exec({ op: 'generate_provinces', rules: { lakeMode: 'separate', seed: 3 } });
+    divideProvinces(eng, { lakeMode: 'separate' }, 3);
     const lakeIds = Object.entries(w.small.provinces).filter(([, p]) => p.kind === 'lake').map(([k]) => Number(k));
     expect(lakeIds.length).toBeGreaterThan(0);
     // 湖省里全是湖面
@@ -61,7 +61,7 @@ describe('省份：规则可配置', () => {
 
   it('近海的海域小，远洋的大', () => {
     const eng = continents();
-    eng.exec({ op: 'generate_provinces', rules: { seaByDistance: true, seed: 3 } });
+    divideProvinces(eng, { seaByDistance: true }, 3);
     const w = eng.world;
     const sizes = provinceSizes(w);
     const near: number[] = [];
@@ -84,7 +84,7 @@ describe('省份：规则可配置', () => {
 describe('省份：自动划分也稳定', () => {
   it('重新划分一片：只动被涂到一大半的省份，别处的编号、名字、格子都不变', () => {
     const eng = continents();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const w = eng.world;
     const target = Number(Object.entries(w.small.provinces).find(([, p]) => p.kind === 'land')![0]);
     const before = provinceSnapshot(w);
@@ -101,16 +101,16 @@ describe('省份：自动划分也稳定', () => {
 
   it('同样的规则划两次结果相同；“换一种划分”才变；锁定的省份不动', () => {
     const eng = continents();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const w = eng.world;
     const first = Array.from(w.causes.province);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     expect(Array.from(w.causes.province)).toEqual(first);
     const locked = Number(Object.keys(w.small.provinces)[5]);
     const lockedCells = provinceCells(w, locked);
     const lockedName = w.small.provinces[locked].name;
     eng.exec({ op: 'set_province', id: locked, locked: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 4 } });
+    eng.exec({ op: 'generate_provinces', seed: 4 });
     expect(Array.from(w.causes.province)).not.toEqual(first);
     expect(provinceCells(w, locked)).toEqual(lockedCells);
     expect(w.small.provinces[locked].name).toBe(lockedName);
@@ -118,7 +118,7 @@ describe('省份：自动划分也稳定', () => {
 
   it('在一个角落画陆地，远处省份的编号与名字不变', () => {
     const eng = continents();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const w = eng.world;
     const before = provinceSnapshot(w);
     const cells: number[] = [];
@@ -144,7 +144,7 @@ describe('省份：自动划分也稳定', () => {
 
   it('改省份类型：陆地省份可以改成无人区，不能改成海域、湖省；海域省份不能改', () => {
     const eng = continents();
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const id = Number(Object.entries(eng.world.small.provinces).find(([, p]) => p.kind === 'land')![0]);
     eng.exec({ op: 'set_province', id, kind: 'wasteland' });
     expect(eng.world.small.provinces[id].kind).toBe('wasteland');
@@ -278,7 +278,7 @@ describe('自然：涂到的就是', () => {
 describe('导出', () => {
   it('文件包里有地名表 features.csv，省份汇总带类型', () => {
     const eng = continents(6000);
-    eng.exec({ op: 'generate_provinces', rules: { seed: 3 } });
+    eng.exec({ op: 'generate_provinces', seed: 3 });
     const { zip } = exportPackage(eng.world, eng.toDoc(), { width: 256, height: 128, seaLevelGray: 95, maxElevation: 6000 });
     const files = unzipSync(zip);
     const rows = strFromU8(files['features.csv']).trim().split('\n');

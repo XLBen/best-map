@@ -3,26 +3,26 @@ import { Merge, RefreshCw, SplitSquareHorizontal, Waves, X } from 'lucide-preact
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Command } from '../../core/commands';
-import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind, type ProvinceRules, provinceSizeCells } from '../../core/provinces';
+import { PROVINCE_KINDS, PROVINCE_KIND_INFO, type ProvinceKind } from '../../core/provinces';
 import { provinceCells } from '../../core/select';
 import type { World } from '../../core/world';
 import { provinceDisplayColor, seaProvinceDefaultColor } from '../../core/world';
-import { type ViewMode, exec, mapKm, mode, openPanel, provinceSet, selectedCountry, selectedProvince, world } from '../state';
-import { cellsOf, countryAt, countryRows, hasCountries, territoryCommand } from './domain/countries';
-import { Slider } from './components/Slider';
+import { type ViewMode, exec, mapKm, mode, openPanel, provinceSet, selectedProvince, world } from '../state';
+import { countryAt, countryRows, hasCountries, territoryCommand } from './domain/countries';
 import { brushNew } from './tools/provinces';
 import { focusOn } from './camera';
-import { Seg } from './common';
 import { MenuItem } from './components/MenuItem';
 import { SelectionActions } from './shell/SelectionActions';
 import { Toggle } from './components/Toggle';
 import { TypePicker } from './shell/TypePicker';
 import { defaultStyleName, restyleOffer, styleChoices } from './packs/styles';
 import { clearBarPreview, holdBarPreview, showProvinceCommand, showSplit } from './provincePreview';
-import { provinceAreaText, provinceMultiCommands } from './province-panel';
+import { provinceMultiCommands } from './province-panel';
+import { PROVINCE_RULES_NOTE, PROVINCE_RULES_TIP } from './copy';
+import { openProvinceRules } from './packs/open-province';
 import { registerPanels } from './defs/panel-registry';
 
-// 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的自动划分规则
+// 省份：底部条上的“选中省份”编辑（不常用的在它的“⋯”里）、省份着色开关；“省份 ⋯”里的划分省份、换一种划分（规则在资源库的“省份划分”里）
 
 // 省份着色：底图只在用户点了才换成省份；再点一下回到原来的底图
 let viewBefore: ViewMode = 'terrain';
@@ -355,19 +355,12 @@ effect(() => {
   if (selectedProvince.value === null && openPanel.value === 'province') openPanel.value = null;
 });
 
-function RulesBox({ w }: { w: World }) {
-  const rules = w.small.provinceRules;
-  const [draft, setDraft] = useState<ProvinceRules>(rules);
-  useEffect(() => setDraft(rules), [JSON.stringify(rules)]);
+// 自动划分（第七十八轮起只有“划分省份 / 换一种划分”）：规则是世界里的“省份划分”，在资源库里改，旁边的按钮打开它的页面
+function DivideBox({ w }: { w: World }) {
   useEffect(() => clearBarPreview, []);
-  const changed = JSON.stringify(draft) !== JSON.stringify(rules);
   const counts = new Map<ProvinceKind, number>();
   for (const m of Object.values(w.small.provinces)) counts.set(m.kind, (counts.get(m.kind) ?? 0) + 1);
-  const check = (key: 'varied' | 'wasteland' | 'seaByDistance', label: string) => (
-    <Toggle on={draft[key]} onChange={(on) => setDraft({ ...draft, [key]: on })}>
-      {label}
-    </Toggle>
-  );
+  const seed = w.small.provinceSeed;
   return (
     <section>
       <h5>自动划分</h5>
@@ -377,89 +370,28 @@ function RulesBox({ w }: { w: World }) {
           .map((k) => `${PROVINCE_KIND_INFO[k].name} ${counts.get(k)} 个`)
           .join('，') || '没有省份'}
       </p>
-      <SizeSlider w={w} value={provinceSizeCells(draft)} onChange={(v) => setDraft({ ...draft, sizeCells: v })} />
-      {check('varied', '按地形调整大小')}
-      {check('wasteland', '冰原、深漠、高山划成无人区')}
-      <div class="row">
-        <span>湖</span>
-        <Seg
-          value={draft.lakeMode}
-          options={[
-            ['separate', '单独成省'],
-            ['merge', '并进旁边的陆地省'],
-          ]}
-          titles={{ separate: PROVINCE_KIND_INFO.lake.hint, merge: '湖面和旁边的陆地同省' }}
-          onChange={(v) => setDraft({ ...draft, lakeMode: v })}
-        />
+      <div class="row between">
+        <span class="hint">{PROVINCE_RULES_NOTE}</span>
+        <button
+          class="link-btn small"
+          title={PROVINCE_RULES_TIP}
+          onClick={() => {
+            openPanel.value = null;
+            openProvinceRules(w.small);
+          }}
+        >
+          省份划分
+        </button>
       </div>
-      {check('seaByDistance', '近海的海省小，远洋的大')}
-      <p class="hint">海省不和陆地、湖同省；湖变了，省份跟着整理</p>
       {/* 鼠标停在按钮上：地图上先画出新的省界和省名（与点下去的结果相同）；点下去照样一下就做，可以撤销 */}
       <div class="row wrap">
-        {/* 只改了湖的归属：可以只整理湖，不动别的省份 */}
-        {draft.lakeMode !== rules.lakeMode && (
-          <RegenButton cmd={{ op: 'set_lake_mode', mode: draft.lakeMode }}>只整理湖</RegenButton>
-        )}
-        <RegenButton cmd={{ op: 'generate_provinces', rules: draft }} primary>
-          {changed ? '按新规则重新划分' : '重新划分'}
+        <RegenButton cmd={{ op: 'generate_provinces', seed }} primary>
+          划分省份
         </RegenButton>
-        <RegenButton cmd={{ op: 'generate_provinces', rules: { ...draft, seed: rules.seed + 1 } }}>换一种划分</RegenButton>
+        <RegenButton cmd={{ op: 'generate_provinces', seed: seed + 1 }}>换一种划分</RegenButton>
       </div>
       <p class="hint">规则相同，划分相同；锁定的省份不变</p>
       <p class="hint">灰色斜线：无人区；蓝色字：湖省</p>
-    </section>
-  );
-}
-
-// ---------- 省份大小（第二十七轮） ----------
-
-// 目标大小（格数，按 4 万格的地区标定，见 core/provinces.ts 的 provinceSizeCells）：滑块按对数走
-const SIZE_LO = 8;
-const SIZE_HI = 200;
-const sizePos = (v: number) => Math.log(v / SIZE_LO) / Math.log(SIZE_HI / SIZE_LO);
-const sizeAt = (p: number) => Math.round(SIZE_LO * Math.pow(SIZE_HI / SIZE_LO, Math.max(0, Math.min(1, p))));
-function SizeSlider({ w, value, onChange }: { w: World; value: number; onChange: (v: number) => void }) {
-  const [draft, setDraft] = useState<number | null>(null);
-  const v = draft ?? value;
-  return (
-    <Slider
-      label="省份大小"
-      stacked
-      pos={sizePos(v)}
-      text={provinceAreaText(w, w.small.provinceRules, v)}
-      changed={draft !== null}
-      onDraft={(p) => setDraft(sizeAt(p))}
-      onCommit={(p) => {
-        setDraft(null);
-        onChange(sizeAt(p));
-      }}
-      onCancel={() => setDraft(null)}
-    />
-  );
-}
-
-// 只重新划分一个国家（第二十七轮）：按滑块的大小，别处不动
-function CountrySizeBox({ w }: { w: World }) {
-  const rows = hasCountries(w) ? countryRows(w) : [];
-  const [id, setId] = useState<number>(selectedCountry.value ?? rows[0]?.meta.id ?? 0);
-  const [size, setSize] = useState(provinceSizeCells(w.small.provinceRules));
-  if (!rows.length) return null;
-  const m = w.small.countries?.[id] ? id : rows[0].meta.id;
-  const cmd: Command = { op: 'regenerate_provinces', cells: cellsOf(w, m), size };
-  return (
-    <section>
-      <h5>一个国家</h5>
-      <div class="row">
-        <select class="grow" value={String(m)} onChange={(e) => setId(Number((e.target as HTMLSelectElement).value))}>
-          {rows.map((r) => (
-            <option value={r.meta.id}>{r.meta.name}</option>
-          ))}
-        </select>
-      </div>
-      <SizeSlider w={w} value={size} onChange={setSize} />
-      <div class="row wrap">
-        <RegenButton cmd={cmd}>重新划分这一国</RegenButton>
-      </div>
     </section>
   );
 }
@@ -498,8 +430,7 @@ export function ProvinceExtras() {
   const w = world.value;
   return w ? (
     <>
-      <RulesBox w={w} />
-      <CountrySizeBox w={w} />
+      <DivideBox w={w} />
       <NamesBox w={w} />
     </>
   ) : null;

@@ -1,7 +1,8 @@
 import type { World } from '../world';
 import type { Command } from './schema';
 import { provinceLand } from '../island-types';
-import { classOfKind, fitProvincesToCountries, generateProvinces, isConnected, nameNewProvince, PROVINCE_KIND_INFO, type ProvinceKind, provinceRulesSchema, provinceSizes, regenerateProvinces, regenTargets, renameProvince, setLakeMode, splitCells } from '../provinces';
+import { classOfKind, fitProvincesToCountries, generateProvinces, isConnected, nameNewProvince, PROVINCE_KIND_INFO, type ProvinceKind, provinceSizes, regenerateProvinces, regenTargets, renameProvince, splitCells } from '../provinces';
+import { provinceSeed } from '../province-rules';
 import { afterCountries, type ApplyContext, Dirty, nextId, type RunResult, styleLabel } from './shared';
 import { CommandError } from '../errors';
 import { cutSeams, dropSeams, inheritSeams, seamsAfterCut } from '../seams';
@@ -42,8 +43,8 @@ export function runProvinceOp(world: World, cmd: Command, ctx: ApplyContext): Ru
   switch (cmd.op) {
     case 'generate_provinces': {
       const d = ctx.ensureDerived();
-      const rules = provinceRulesSchema.parse({ ...small.provinceRules, ...(cmd.rules ?? {}) });
-      generateProvinces(world, d, rules);
+      // 规则是世界里的省份划分（第七十八轮）；种子省略时沿用
+      generateProvinces(world, d, cmd.seed ?? provinceSeed(small));
       // 锁定的省可能跨着国界（第二十三轮）
       fitProvincesToCountries(world);
       // 整张图重新划分：切线都不要了
@@ -58,16 +59,9 @@ export function runProvinceOp(world: World, cmd: Command, ctx: ApplyContext): Ru
       // 碰到重新划分的省的切线不要了（看划分前的省份）
       const regen = new Set(ids);
       dropSeams(world, (p) => regen.has(p));
-      const fresh = regenerateProvinces(world, d, ids, cmd.size);
+      const fresh = regenerateProvinces(world, d, ids);
       fitProvincesToCountries(world);
       return { dirty: Dirty.None, summary: `重新划分 · ${ids.length} → ${fresh.length} 个省份` };
-    }
-    case 'set_lake_mode': {
-      const d = ctx.ensureDerived();
-      const was = small.provinceRules.lakeMode;
-      setLakeMode(world, d, cmd.mode);
-      const what = cmd.mode === 'separate' ? '湖单独成省' : '湖并进旁边的陆地省';
-      return { dirty: Dirty.None, summary: was === cmd.mode ? `${what} · 重新整理` : what };
     }
     case 'assign_province': {
       checkCells(cmd.cells);

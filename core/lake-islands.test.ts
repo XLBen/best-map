@@ -11,7 +11,7 @@ const BUILTIN_COUNT = BUILTIN_ISLAND_TYPES.length;
 import { previewWorldOf } from './preview-world';
 import { rasterizeWorld } from './subcell';
 import { type IslandSpec, centerCell, chainIslands, combineStamps, lakeIslandStamp } from './terrain';
-import { continents } from './testing/fixtures';
+import { continents, setProvinceRules } from './testing/fixtures';
 import { FREE_HEIGHT, type World } from './world';
 
 // 第十五轮：湖面和海一样能放岛（岛的脚本、湖心岛撤掉了）
@@ -205,7 +205,7 @@ describe('湖里的岛', () => {
   it('归海省的种类在湖里跟着湖：湖单独成省时在那个湖的湖省里，并进陆地省时在旁边的陆地省里，从不成海省', () => {
     const { eng, c } = withLake(true);
     const w = eng.world;
-    eng.exec({ op: 'set_lake_mode', mode: 'separate' });
+    setProvinceRules(eng, { lakeMode: 'separate' });
     eng.exec({ op: 'set_island_type', type: shoal });
     const lakeProv = w.causes.province[c];
     expect(w.small.provinces[lakeProv].kind).toBe('lake');
@@ -236,10 +236,10 @@ describe('湖里的岛', () => {
     }
     expect(px).toBeGreaterThan(0);
     // 并进陆地省
-    eng.exec({ op: 'set_lake_mode', mode: 'merge' });
+    setProvinceRules(eng, { lakeMode: 'merge' });
     for (const i of isle) expect(w.small.provinces[w.causes.province[i]].kind).toBe('land');
     // 改回单独成省；把种类改成归陆地省：岛换到陆地省里
-    eng.exec({ op: 'set_lake_mode', mode: 'separate' });
+    setProvinceRules(eng, { lakeMode: 'separate' });
     for (const i of isle) expect(w.small.provinces[w.causes.province[i]].kind).toBe('lake');
     eng.exec({ op: 'set_island_type', type: { ...shoal, province: 'land' } });
     for (const i of isle.filter((k) => w.causes.islandType[k] === islandCode(w.small, 'shoal'))) expect(w.small.provinces[w.causes.province[i]].kind).toBe('land');

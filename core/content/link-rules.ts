@@ -61,5 +61,6 @@ export const KIND_LINKS: Readonly<Record<string, KindLinks>> = {
   landmarkType: { note: '文化组（dep: gate）、名字写法的键在字段表里。governments 是政体的类别（标签）；icon 是图标名' },
   pointType: { note: '当作城市的等级在字段表里' },
   mapStyle: { note: '没有引用：只有颜色和画法' },
+  provinceRules: { note: '没有引用：只有数和开关' },
   field: { note: '没有引用：一项就是一个名字' },
 };

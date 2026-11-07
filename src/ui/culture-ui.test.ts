@@ -137,11 +137,11 @@ describe('新建向导的“人文”', () => {
   it('人文排在划分省份之前：省名按当地文化的风格起（有原文）；倒过来时省名还是中文', () => {
     const a = continents();
     humanExec(a, GEN);
-    a.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    a.exec({ op: 'generate_provinces', seed: 5 });
     const named = Object.values(a.world.small.provinces).filter((p) => p.land);
     expect(named.filter((p) => p.orig).length).toBeGreaterThan(named.length / 2);
     const b = continents();
-    b.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    b.exec({ op: 'generate_provinces', seed: 5 });
     humanExec(b, GEN);
     expect(Object.values(b.world.small.provinces).filter((p) => p.orig).length).toBe(0);
   });

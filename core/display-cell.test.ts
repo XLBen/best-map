@@ -103,7 +103,7 @@ describe('屏幕上画出来的那一格', () => {
     const eng = snapshot('display:planet', () => {
       const e = seededEngine({ cells: 2500, seed: 2, globe: true, aspect: 2, latNorth: 90, latSouth: -90 });
       e.exec({ op: 'set_worldgen', params: { seed: 2, type: 'continents' }, reset: true });
-      e.exec({ op: 'generate_provinces', rules: { seed: 2 } });
+      e.exec({ op: 'generate_provinces', seed: 2 });
       return e;
     });
     // 也切一刀：切线在星球上按经度绕回

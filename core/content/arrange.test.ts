@@ -219,7 +219,7 @@ describe('门槛：安排不改变任何摘要', () => {
     for (const c of packImportCommands(lib, { packs: worldPartsOf(pack.id), groups: [] }, eng.world)) eng.exec(c);
     eng.exec(NO_CURRENTS);
     eng.exec({ op: 'set_worldgen', params: { seed: 5, type: 'continents', landFraction: 0.4 }, reset: true });
-    eng.exec({ op: 'generate_provinces', rules: { seed: 5 } });
+    eng.exec({ op: 'generate_provinces', seed: 5 });
     for (const c of packImportCommands(lib, { packs: [[pack.id]], groups }, eng.world)) eng.exec(c);
     eng.exec({ op: 'generate_human', packs: [[pack.id]], groups, countries: {}, settlements: {} });
     return eng;
