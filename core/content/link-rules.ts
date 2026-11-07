@@ -40,7 +40,7 @@ export const KIND_LINKS: Readonly<Record<string, KindLinks>> = {
   terrainClass: { note: '规则里的生态在字段表里（dep: gate，全部落空时不能导入）。规则的 terrain 是生态的地形标签，不是 id；terrain 字段是导出给游戏的名字' },
   resource: { note: '规则里的生态、地形类别在字段表里（dep: gate）。规则的 terrain 是标签；seedKey 同生态' },
   era: {
-    note: '国家等级的比例在字段表里。dimensions 是它定义的维度，别的内容引用它们',
+    note: '国家等级的比例、国家格局（patterns，dep: auto：时代加进来时带上它用的格局）在字段表里。dimensions 是它定义的维度，别的内容引用它们',
     provides: (item) => ((item as Era).dimensions ?? []).map((d) => ({ kind: DIMENSION, id: d.id })),
   },
   valueGroup: { note: '维度在字段表里' },
@@ -57,6 +57,7 @@ export const KIND_LINKS: Readonly<Record<string, KindLinks>> = {
   },
   countryTier: { note: '没有引用' },
   countryLayout: { note: '各等级占多少的键在字段表里' },
+  countryPattern: { note: '没有引用：module 是代码里的格局模块（countries/patterns.ts），不是内容；参数都是数' },
   cityRank: { note: '没有引用' },
   landmarkType: { note: '文化组（dep: gate）、名字写法的键在字段表里。governments 是政体的类别（标签）；icon 是图标名' },
   pointType: { note: '当作城市的等级在字段表里' },

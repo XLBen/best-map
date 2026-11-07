@@ -13,10 +13,9 @@
     "countryKm2": 1200000,
     "years": [1750, 1914],
     "tiers": {"city": 0.3, "small": 2, "medium": 2, "large": 1.5, "empire": 0.6},
+    "patterns": [{"pattern": "federation", "amount": 0.7}, {"pattern": "alliances", "amount": 2}, {"pattern": "protectorates"}],
+    "nationalism": 0.6,
     "relations": {
-      "federation": 0.7,
-      "alliances": 2,
-      "subjects": {"protectorate": 2, "dominion": 2, "vassal": 0.5},
       "titles": {
         "federation": [{"zh": "联邦", "orig": "Federation of {name}"}, {"zh": "合众国", "orig": "United States of {name}"}],
         "alliance": [{"zh": "同盟", "orig": "{name} Alliance"}, {"zh": "{name}协约", "orig": "{name} Entente"}],

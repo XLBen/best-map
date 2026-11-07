@@ -22,8 +22,9 @@ import {
   tierOfCountry,
   tierShort,
   worldLayouts,
+  eraUsesModule,
 } from '../../../core/human';
-import type { Era } from '../../../core/human';
+import type { CountryPattern, Era } from '../../../core/human';
 import type { LibraryEntry } from '../../library';
 import { addFromLibrary, itemsInPacks, librarySelectable } from './packChoice';
 import { type NameMode, nameLines } from '../../../core/name-display';
@@ -303,8 +304,10 @@ export function fragText(f: number): string {
   return '很统一';
 }
 
-// 滑块悬停的说明：时代会生成联邦（第二十六轮）时说一句，估计里没有联邦切出来的成员邦
-export const fragTitle = (era: Pick<Era, 'relations'> | undefined): string => `往左国家多而小，往右国家少而大${(era?.relations?.federation ?? 0) > 0 ? '；联邦的成员邦另算' : ''}`;
+// 滑块悬停的说明：时代会生成联邦（第二十六轮）时说一句，估计里没有联邦切出来的成员邦。
+// 第七十三轮：联邦是国家格局，find 按 id 找格局（世界里的，选库时是库里的）
+export const fragTitle = (era: Pick<Era, 'patterns'> | undefined, find: (id: string) => Pick<CountryPattern, 'module' | 'amount'> | undefined): string =>
+  `往左国家多而小，往右国家少而大${eraUsesModule(era, 'federation', find) ? '；联邦的成员邦另算' : ''}`;
 
 // 大约几个国家（第二十六轮：核心的 estimateCountryCount，与生成的第一步同一个算法；锁定的国家的地方不算、另外算上；
 // 联邦切出来的成员邦不算在里面，所以写“约”）

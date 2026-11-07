@@ -1,0 +1,13 @@
+{
+  "patterns": [
+    { "id": "holy-empire", "name": "神圣帝国", "description": "一个文化组的一片地方诸侯林立：很多城邦、小国，并成一个帝国，皇帝的那一国是最大的成员。", "module": "holy-empire", "amount": 1 },
+    { "id": "federation", "name": "联邦", "description": "几个大国按地区分成 4–12 个成员邦，在国家模式里画成一种颜色。", "module": "federation", "amount": 1 },
+    { "id": "alliances", "name": "军事同盟", "description": "最大的几国当盟主，沿已有的同盟关系和同一文化组的邻国聚成几个军事集团。", "module": "alliance", "amount": 2 },
+    { "id": "tributaries", "name": "朝贡与附庸", "description": "小国多向旁边的大国称臣纳贡，少数是附庸。", "module": "vassals", "amount": 1, "tributary": 3, "vassal": 1 },
+    { "id": "feudal-vassals", "name": "封建附庸", "description": "小国多是旁边大国的附庸，少数称臣纳贡。", "module": "vassals", "amount": 1, "vassal": 4, "tributary": 1 },
+    { "id": "realm-vassals", "name": "封臣与朝贡", "description": "小国多是旁边王国的封臣，也有称臣纳贡的。", "module": "vassals", "amount": 1, "vassal": 3, "tributary": 1 },
+    { "id": "protectorates", "name": "保护国与自治领", "description": "小国受旁边的大国保护，或成为它的自治领，少数是附庸。", "module": "vassals", "amount": 1, "protectorate": 2, "dominion": 2, "vassal": 0.5 },
+    { "id": "client-states", "name": "保护国", "description": "小国多受旁边的大国保护，也有自治领。", "module": "vassals", "amount": 1, "protectorate": 2, "dominion": 1 },
+    { "id": "stellar-subjects", "name": "星区保护国", "description": "小殖民地受旁边的大国保护，或成为它的自治领、附庸。", "module": "vassals", "amount": 1, "protectorate": 2, "dominion": 1, "vassal": 1 }
+  ]
+}

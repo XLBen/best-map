@@ -12,7 +12,9 @@ import { packImportCommands, packImportPlan } from './import';
 import { writeFileSync } from 'node:fs';
 
 // 第五十一轮：每个时代一个完整的库，“通用”拆进了各库。这里查每个库单独就够用：世界的底子都在、引用都找得到、
-// 新世界只带默认的文化组（别的比重是 0，不参与生成）。各库的摘要记在 libraries-digests.json（LIB_RECORD=1 重录，只在有意改变结果时）
+// 新世界只带默认的文化组（别的比重是 0，不参与生成）。各库的摘要记在 libraries-digests.json（LIB_RECORD=1 重录，只在有意改变结果时）。
+// 第七十三轮重录六个库的 content、origin：时代换了样子（国家格局）、多了国家格局这种内容；生成的那些（人口、国家、集团……）一个没变
+// （核对过把时代写回旧的 relations、去掉国家格局和它的来源时与原来的值逐个相同）
 
 const LIB = builtinPacks();
 const top = (id: string): PackNode => LIB.find((p) => p.id === id)!;

@@ -15,7 +15,8 @@ import { type InvadeTable, invadeBoost, suitability, vegShares } from './vegetat
 // 第五十五轮：内置生态写了高度范围，同一个种子的世界和以前不同，金标准重录了一次。
 // 这里查另一半：没写高度范围的生态行为和以前一样。把内置生态的高度范围去掉（也去掉那两种高山生态）之后，
 // 整个世界和 f2c6f77（第五十四轮）逐值相同。biome-legacy-digests.json 是那时的 golden-hashes、golden-full、
-// r29-digests、libraries-digests 原样拷下来的：不要改它
+// r29-digests、libraries-digests 原样拷下来的：不要改它。
+// 第七十三轮只改了 libraries.medieval 的 content、origin：时代换了样子（国家格局）、多了国家格局这种内容（核对过换回旧的样子时与原来的值相同）
 describe('没写高度范围的生态和第五十四轮逐值相同', () => {
   const plain = () => withoutHeights(newWorldContentCommands());
 

@@ -16,6 +16,7 @@ import {
   WEIGHT_RANGE,
   chooseLibrary,
   choiceEra,
+  choicePattern,
   choiceProblem,
   defaultChoice,
   densityText,
@@ -267,7 +268,7 @@ export function CountryChoice({
           text={fragText(f)}
           changed={c.fragmentation !== 0.5}
           disabled={disabled}
-          title={fragTitle(choiceEra(choice, library.value, world.value?.small))}
+          title={fragTitle(choiceEra(choice, library.value, world.value?.small), choicePattern(choice, library.value, world.value?.small))}
           note={
             <>
               {n ? `约 ${n} 个国家` : '正中按时代'}

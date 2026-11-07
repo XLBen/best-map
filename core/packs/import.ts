@@ -51,8 +51,8 @@ export interface ImportPlan {
 
 // 生成后先后要紧的几种（见上）
 const ORDERED = ['valueGroups', 'popValues', 'governments', 'factions', 'cultureGroups', 'cultures', 'landmarkTypes'];
-// 时代包里带的几种（生成人文、国家、城市地标要用的，第五十一轮起还有基础之外的资源：奇幻自带）；时代包里别的（奇幻的生态、河湖）要单独勾那个小包
-export const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'resources', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes']);
+// 时代包里带的几种（生成人文、国家、城市地标要用的，第五十一轮起还有基础之外的资源：奇幻自带；第七十三轮起还有时代用的国家格局）；时代包里别的（奇幻的生态、河湖）要单独勾那个小包
+export const GEN_KEYS: ReadonlySet<string> = new Set(['eras', 'valueGroups', 'popValues', 'governments', 'factions', 'resources', 'cultureGroups', 'cultures', 'nameStyles', 'landmarkTypes', 'cityRanks', 'pointTypes', 'countryPatterns']);
 
 const hasEra = (node: PackNode): boolean => {
   let yes = false;

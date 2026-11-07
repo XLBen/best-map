@@ -212,6 +212,8 @@ describe('覆盖：引用表管到了所有种类和字段', () => {
       'planetForm:base': '固定的六种星球',
       'terrainClass:terrain': '导出给游戏的名字',
       'terrainClass:KEY ': 'peaks 是开关',
+      'countryTier:KEY ': 'federation 是开关，碰巧有个国家格局也叫它（第七十三轮）',
+      'countryPattern:module': '格局模块（代码里的算法）的 id，碰巧和内置的国家格局同名',
       'resource:icon': '图标名',
       'resource:category': '固定的类别',
       'resource:rules.#.terrain.#': '生态的地形标签',

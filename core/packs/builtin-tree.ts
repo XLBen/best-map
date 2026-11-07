@@ -15,7 +15,7 @@ import { FANTASY_LAKE_TYPES } from './fantasy-lakes';
 import { FANTASY_RIVER_TYPES } from './fantasy-rivers';
 import { FANTASY_NEW_RIVER_TYPES } from './fantasy-water';
 import { BUILTIN_MAP_STYLES } from './map-styles';
-import { BUILTIN_COUNTRY_LAYOUTS, BUILTIN_COUNTRY_TIERS } from './countries';
+import { BUILTIN_COUNTRY_LAYOUTS, BUILTIN_COUNTRY_PATTERNS, BUILTIN_COUNTRY_TIERS } from './countries';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from './governments';
 import { BUILTIN_STYLES } from './names';
 import { DEFAULT_SPECIES } from './nature';
@@ -29,7 +29,7 @@ import { BUILTIN_LANDMARK_TYPES, BUILTIN_POINT_TYPES, BUILTIN_RANKS, LANDMARK_ER
 // 只在主线程用（资源库、向导、存进资源库前的“是不是内置原样”）：计算 Worker 只读世界里的内容，不打包这些数据。
 //
 //   每个内置时代一个库（id 就是时代的 id：antiquity、medieval、industrial、modern、fantasy、scifi）：
-//     era               时代项（只有规则：维度、人口密度、无主地、领海、国家大小、城市化、关系、年代）
+//     era               时代项（只有规则：维度、人口密度、无主地、领海、国家大小、城市化、关系、年代）与它用的国家格局（第七十三轮）
 //     <维度 id>         每个维度一个小包（宗教、民族认同、意识形态、种族……）：放进这个时代的取值（文件里写的 eras），
 //                       与它们用到的取值组（第四十三轮：宗教组）
 //     governments       政体：时代文件的 pack 列出的（按列的先后），加上按下面的归法归到这个时代的
@@ -255,7 +255,9 @@ function build(): ResourcePack[] {
 
   return BUILTIN_ERAS.map((era) => {
     const def = ERA_PACKS.get(era.id);
-    const packs: PackNode[] = [{ id: 'era', name: '时代', eras: asItems([era]) }];
+    // 第七十三轮：时代用的国家格局和时代放在一起（按时代列的先后）
+    const pats = (era.patterns ?? []).flatMap((e) => BUILTIN_COUNTRY_PATTERNS.filter((p) => p.id === e.pattern));
+    const packs: PackNode[] = [{ id: 'era', name: '时代', eras: asItems([era]), ...(pats.length ? { countryPatterns: asItems(pats) } : {}) }];
     for (const d of era.dimensions) {
       const values = eraValues(era, d.id);
       // 第四十三轮：取值用到的取值组（宗教组）一起放在这一维的小包里

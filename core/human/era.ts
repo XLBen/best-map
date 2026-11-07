@@ -57,17 +57,9 @@ export type TierWeights = Readonly<Record<string, number>>;
 export const SUBJECT_KINDS = ['vassal', 'protectorate', 'dominion', 'tributary'] as const;
 export type SubjectKind = (typeof SUBJECT_KINDS)[number];
 
-// 时代的国家关系（第二十六轮）。几个“多少个”都可以写小数：整数部分是几个，小数部分是再多一个的可能
+// 时代的国家关系（第二十六轮）：第七十三轮起邦联、联邦、同盟、附庸的多少与从属的种类是国家格局（patterns），这里只剩集团的称号
 const relationsSchema = z
   .object({
-    // 邦联：几片诸侯林立的地方（在一个文化组的地区里撒很多城邦、小国），并成帝国
-    confederation: z.number().min(0).max(4).optional(),
-    // 联邦：几个大国按地区分成 4–12 个成员邦
-    federation: z.number().min(0).max(4).optional(),
-    // 军事同盟：在已有的同盟关系上聚成几个集团
-    alliances: z.number().min(0).max(6).optional(),
-    // 附庸的从属种类各占多少（省略时都是 vassal）
-    subjects: z.object(Object.fromEntries(SUBJECT_KINDS.map((k) => [k, z.number().min(0).max(100).optional()])) as Record<SubjectKind, z.ZodOptional<z.ZodNumber>>).strict().optional(),
     // 称号：帝国、联邦、同盟的名字（盟主的地名 + 称号，写法同政体的称号；按种子挑一个），联邦成员邦的称号
     titles: z
       .object({
@@ -80,6 +72,10 @@ const relationsSchema = z
       .optional(),
   })
   .strict();
+
+// 时代用的一种国家格局（第七十三轮，见 countries/patterns.ts）：资源库里国家格局的 id，多少（省略时用格局自己写的）
+export const eraPatternSchema = z.object({ pattern: typeIdSchema, amount: z.number().min(0).max(20).optional() }).strict();
+export type EraPattern = z.output<typeof eraPatternSchema>;
 export type EraRelations = z.output<typeof relationsSchema>;
 
 export const eraSchema = z.object({
@@ -109,7 +105,11 @@ export const eraSchema = z.object({
   years: z.tuple([z.number().int().min(-100000).max(100000), z.number().int().min(-100000).max(100000)]).optional(),
   // 国家的等级（第二十六轮；第四十二轮起按世界里的等级，见 tiers.ts）：各等级（id）占多少（省略时按各等级的 weight）
   tiers: tierWeightsSchema.optional(),
-  // 国家关系（第二十六轮，见 blocs.ts）：省略时没有帝国、联邦、同盟，附庸都是 vassal
+  // 国家格局（第七十三轮）：神圣帝国、联邦、同盟、附庸……按先后；省略时没有帝国、联邦、同盟，附庸照旧（都是 vassal）
+  patterns: z.array(eraPatternSchema).max(16).optional(),
+  // 民族主义（第七十三轮只记着，第七十四轮起长国家时越过文化的边界更难）：0–1
+  nationalism: z.number().min(0).max(1).optional(),
+  // 集团的称号（第二十六轮的国家关系只剩这一项，见 blocs.ts）
   relations: relationsSchema.optional(),
 });
 export type Era = z.output<typeof eraSchema>;

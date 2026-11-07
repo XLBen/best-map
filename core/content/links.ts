@@ -42,6 +42,8 @@ export interface Link {
   chain?: readonly LinkPrune[];
   // 称号的表：键都去掉时换成第一种写法（称号还在，只是不再分等级、分文化）
   collapse?: LinkPath;
+  // 导入时跟着带（字段表写了 follow，第七十三轮：时代的国家格局），去得掉也带
+  follow?: boolean;
 }
 
 export interface ContentRef {
@@ -87,7 +89,7 @@ const noLinks: Walker = () => {};
 function refValue(f: FieldDesc, id: string, ctx: Ctx, path: LinkPath, drop: LinkPath | undefined, chain: readonly LinkPrune[], out: Link[]): void {
   const ref = f.ref;
   if (!ref || ref === 'govCategory') return;
-  const base = { cls: ctx.dep, label: f.label, path, at: 'value' as const, ...(drop ? { drop, chain } : {}) };
+  const base = { cls: ctx.dep, label: f.label, path, at: 'value' as const, ...(drop ? { drop, chain } : {}), ...(f.follow ? { follow: true } : {}) };
   if (ref === 'tolerance') {
     for (const [prefix, kind] of [
       ['river:', 'riverType'],
@@ -558,6 +560,7 @@ export function linkProblems(kinds: readonly ContentKind[] = allKinds()): string
       if (!(f.type in FIELD_WALKERS)) problems.push(`${at}：引用表不认识字段类型 ${f.type}`);
       if (f.ref && !known(f.ref)) problems.push(`${at}：引用表不认识 ref ${f.ref}`);
       if (f.ref && !['text', 'tags', 'weighted'].includes(f.type)) problems.push(`${at}：${f.type} 字段上的 ref 走不到`);
+      if (f.follow && !f.ref) problems.push(`${at}：follow 只能写在 ref 的字段上`);
       if (f.keyRef) {
         for (const r of asKinds(f.keyRef)) if (!known(r)) problems.push(`${at}：引用表不认识 keyRef ${r}`);
         if (f.type !== 'map' && f.type !== 'title') problems.push(`${at}：${f.type} 字段上的 keyRef 走不到`);

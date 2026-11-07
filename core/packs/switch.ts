@@ -28,7 +28,7 @@ const keyOf = (kind: string, id: string) => `${kind}\u0000${id}`;
 const NO_CAUSES = { fields: {} } as unknown as World['causes'];
 
 // 换库时会动的种类。先后：先移用到别的项的（文化在文化组之前，文化、文化组在地名风格之前）
-const SWITCH_KINDS = ['government', 'faction', 'popValue', 'valueGroup', 'culture', 'cultureGroup', 'nameStyle', 'era', 'resource', 'landmarkType', 'cityRank', 'pointType'] as const;
+const SWITCH_KINDS = ['government', 'faction', 'popValue', 'valueGroup', 'culture', 'cultureGroup', 'nameStyle', 'era', 'countryPattern', 'resource', 'landmarkType', 'cityRank', 'pointType'] as const;
 
 export interface LibrarySwitchPlan {
   // 加进世界的（一步或两步，生成之前执行）

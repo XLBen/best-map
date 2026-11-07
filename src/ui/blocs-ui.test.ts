@@ -5,7 +5,7 @@ import type { Engine } from '../../core/engine';
 import { blocsCsv, countriesCsv, exportPart } from '../../core/export';
 import { ISLET_FRAG } from '../../core/features';
 import { autoBlocName, blocById, blocCells, blocList, blocOf, blocsOf, countryList } from '../../core/human';
-import { eraOf } from '../../core/testing/eras';
+import { builtinPattern, eraOf } from '../../core/testing/eras';
 import { brushCells } from '../../core/select';
 import { continents, snapshot, humanExec, lastOf } from '../../core/testing/fixtures';
 import type { Bloc, World } from '../../core/world';
@@ -320,8 +320,8 @@ describe('格局', () => {
   });
 
   it('滑块的说明：会生成联邦的时代说一句成员邦另算', () => {
-    expect(fragTitle(eraOf('medieval'))).not.toContain('联邦');
-    expect(fragTitle(eraOf('modern'))).toContain('联邦的成员邦另算');
+    expect(fragTitle(eraOf('medieval'), builtinPattern)).not.toContain('联邦');
+    expect(fragTitle(eraOf('modern'), builtinPattern)).toContain('联邦的成员邦另算');
   });
 });
 

@@ -2,10 +2,14 @@ import type { Culture, CultureGroup, Era } from '../human/era';
 import type { Faction, Government } from '../human/government';
 import { BUILTIN_CULTURE_GROUPS, BUILTIN_ERAS, ERA_PACKS } from '../packs/eras';
 import { BUILTIN_FACTIONS, BUILTIN_GOVERNMENTS, GOV_ERAS } from '../packs/governments';
+import { BUILTIN_COUNTRY_PATTERNS } from '../packs/countries';
+import type { CountryPattern } from '../human/countries/patterns';
 
 // 测试里按时代查内置的内容（第三十轮：以前写在时代项里的几张列表在时代文件的 pack 里，见 packs/eras/index.ts）
 
 export const eraOf = (id: string): Era => BUILTIN_ERAS.find((e) => e.id === id)!;
+// 内置的国家格局（第七十三轮）
+export const builtinPattern = (id: string): CountryPattern | undefined => BUILTIN_COUNTRY_PATTERNS.find((p) => p.id === id);
 export const govsOf = (era: Pick<Era, 'id'>): Government[] => ERA_PACKS.get(era.id)!.governments.map((id) => BUILTIN_GOVERNMENTS.find((g) => g.id === id)!);
 export const factionsOf = (era: Pick<Era, 'id'>): Faction[] => ERA_PACKS.get(era.id)!.factions.map((id) => BUILTIN_FACTIONS.find((f) => f.id === id)!);
 // 时代包默认带的文化组与权重

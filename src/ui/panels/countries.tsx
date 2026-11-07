@@ -1,6 +1,6 @@
 import { memo } from 'preact/compat';
 import { useState } from 'preact/hooks';
-import { SUBJECT_NAMES, flagSvg, worldEra } from '../../../core/human';
+import { SUBJECT_NAMES, flagSvg, patternById, worldEra } from '../../../core/human';
 import type { CountryLayout, CountryMeta, World } from '../../../core/world';
 import { askUser, exec, openPanel, selectedCountry, setOptions, sheet, switchTool, togglePanel, world } from '../../state';
 import { focusOn } from '../camera';
@@ -165,7 +165,7 @@ function FragSlider({ w, value, onChange, keepLocked }: { w: World; value: numbe
       label="分裂 ↔ 统一"
       pos={fragPos(f)}
       text={fragText(f)}
-      title={fragTitle(worldEra(w.small))}
+      title={fragTitle(worldEra(w.small), (id) => patternById(w.small, id))}
       note={n ? `约 ${n} 个国家` : undefined}
       onDraft={(p) => setDraft(fragAt(p))}
       onCommit={(p) => {

@@ -98,6 +98,9 @@ export interface FieldDesc {
   // ---------- 第四十九轮：引用表（links.ts） ----------
   // 这个字段（和它下面的字段）里引用的依赖类别；省略时跟着上一层，最外层是 hard
   dep?: LinkClass;
+  // 第七十三轮：缺了能去掉的引用（有 drop）导入时照样跟着带（时代的国家格局：加时代时带上它用的格局；
+  // 勾选清单里去掉它时只去掉时代里那一条）。只写在 ref 的字段上
+  follow?: boolean;
 }
 
 export type ContentWorld = Pick<World, 'small' | 'causes'>;

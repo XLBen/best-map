@@ -76,7 +76,9 @@ function arrays(eng: Eng): Record<string, string> {
 
 describe('力度 0：逐位和第五十七轮相同', () => {
   // class-only-digests.json 是 f01e102（第五十七轮）的代码跑 core/testing/class-only.ts 记下的：每一步之后全部推导、原因、
-  // 小数据（典型高度不算），每一步的撤销记录，再一步一步撤销回去
+  // 小数据（典型高度不算），每一步的撤销记录，再一步一步撤销回去。
+  // 第七十三轮重录 region 的世界摘要（0–4、u1–u4，撤销记录不变）：小数据里的时代换了样子（国家格局）、多了国家格局这种内容；
+  // 核对过把时代写回旧的 relations、去掉国家格局和它的来源时九个值与原来的逐个相同
   it('一块带人文的地区：不写力度', () => expect(classOnlyDigests(humanRegion())).toEqual(recorded.region));
   it('整个星球：不写力度', () => expect(classOnlyDigests(smallGlobe())).toEqual(recorded.globe));
   it('写 strength: 0 和不写相同', () => expect(classOnlyDigests(smallGlobe(), { strength: 0 })).toEqual(recorded.globe));

@@ -52,7 +52,7 @@ import {
   textPatch,
 } from './domain/settlements';
 import { fragTitle, layoutChoices, tierLabel } from './domain/countries';
-import { eraOf } from '../../core/testing/eras';
+import { builtinPattern, eraOf } from '../../core/testing/eras';
 import { modeDef } from './map/modes';
 import { type Pointer, cityTool, landmarkTool, pointTool, roadTool } from './tools';
 
@@ -555,7 +555,7 @@ describe('城市与首都分轻重（第四十二轮）', () => {
     expect(layoutChoices(w.small).map((c) => c.name)).toEqual(['按时代', '混合', '诸侯林立', '大一统', '列强并立']);
     expect(layoutChoices(w.small, 'gone').map((c) => c.id)).toEqual(['era', 'mixed', 'petty', 'unified', 'powers', 'gone']);
     expect(layoutChoices(undefined).map((c) => c.id)).toEqual(['era']);
-    for (const era of ['medieval', 'modern']) expect(fragTitle(eraOf(era))).not.toMatch(/小国|大国|城邦|帝国|中等国家/);
+    for (const era of ['medieval', 'modern']) expect(fragTitle(eraOf(era), builtinPattern)).not.toMatch(/小国|大国|城邦|帝国|中等国家/);
     for (const c of layoutChoices(w.small)) expect(c.hint).not.toMatch(/小国|大国|中等国家/);
   });
 });

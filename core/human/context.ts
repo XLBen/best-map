@@ -2,6 +2,7 @@ import type { Derived, HumanHearth, World } from '../world';
 import type { Culture, CultureGroup, Era } from './era';
 import type { CellInputs } from './rules';
 import type { CountryPlan } from './countries';
+import type { CountryRun } from './countries/state';
 
 // 生成人文时各步共用的东西（第二十二轮，见 generate.ts）：文化圈 → 国家（第二十三轮）→ 领土补齐 → 集团（第二十六轮）→ 人口 → 国家的移民。
 // 每一步读前面几步放进来的、再放进自己的结果
@@ -45,8 +46,8 @@ export interface GenContext {
   perWeight?: number;
   // 国家（第二十三轮）：要不要生成、怎么生成（省略时没有国家）
   countries?: CountryPlan;
-  // 邦联（第二十六轮，国家一步放进来）：一片诸侯林立的地方的成员（国家的编号）与文化组；集团一步并成帝国
-  confederations?: { group: string; members: number[] }[];
+  // 这一次生成国家共用的东西（第七十三轮，国家一步放进来，集团一步接着用；第二十六轮的邦联 confederations 在它的 regions 里）
+  countryRun?: CountryRun;
 }
 
 // 生成的一步：按 id 排在别的步前后

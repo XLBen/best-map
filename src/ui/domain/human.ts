@@ -1,5 +1,6 @@
 import { type Command, popText } from '../../../core/commands';
-import { type Era, cultureGroupById, worldEra } from '../../../core/human';
+import { type CountryPattern, type Era, cultureGroupById, patternById, worldEra } from '../../../core/human';
+import { packItems } from '../../../core/packs';
 import type { LibrarySwitchPlan } from '../../../core/packs/switch';
 import type { CountryLayout, World } from '../../../core/world';
 import type { LibraryEntry } from '../../library';
@@ -63,6 +64,13 @@ export function defaultChoice(small?: Small | null, on = true, lib: readonly Lib
 
 // 规则用的时代（选的库的；没有时 undefined）
 export const choiceEra = (c: Pick<PackChoice, 'library'>, lib: readonly LibraryEntry[] = [], small?: Small | null): Era | undefined => libraryRule(c.library, lib, small)?.era;
+// 按 id 找国家格局（第七十三轮）：选的库里的，没有时世界里的
+export const choicePattern =
+  (c: Pick<PackChoice, 'library'>, lib: readonly LibraryEntry[] = [], small?: Small | null) =>
+  (id: string): CountryPattern | undefined => {
+    const node = c.library ? nodeAt(lib, [c.library]) : undefined;
+    return (node && packItems<CountryPattern>(node, 'countryPatterns').find((p) => p.id === id)) || (small ? patternById(small, id) : undefined);
+  };
 
 // 选一个库：文化组换成它默认带的，世界里自己的、从别的库加来的还在；是世界正在用的库时回到上次生成的组。总人口回到自动（人口密度跟着时代）
 export function chooseLibrary(c: HumanChoice, library: string | null, lib: readonly LibraryEntry[] = [], small?: Small | null): HumanChoice {

@@ -4,10 +4,9 @@ import type { CountryRules, Derived, HumanHearth, HumanState, SettlementRules, S
 import type { GenContext, GenGroup, HumanStage } from './context';
 import { fillAddedDims } from './add-dimension';
 import { snapshotCountries, snapshotPop } from './auto';
-import { blocsStage } from './blocs';
 import { claimsStage } from './claims';
 import { culturesStage } from './cultures';
-import { type CountryPlan, clearCountries, countriesStage, countryMixStage } from './countries';
+import { type CountryPlan, blocsStage, clearCountries, countriesStage, countryMixStage } from './countries';
 import { type Era, cultureById, cultureGroupById, worldCultures, worldEras } from './era';
 import { compactGroups } from './groups';
 import { compilePrefs, preferenceFactors } from './habitability';
@@ -53,7 +52,7 @@ export function registerHumanStage(stage: HumanStage, at: { before?: string; aft
   else STAGES.splice(at.before ? k : k + 1, 0, stage);
 }
 export const humanStages = (): readonly string[] => STAGES.map((s) => s.id);
-// 第二十六轮：国家之后补齐领土（claims.ts），再生成帝国、联邦、同盟（blocs.ts）
+// 第二十六轮：国家之后补齐领土（claims.ts），再生成帝国、联邦、同盟（第七十三轮起在 countries/relate.ts，是国家格局）
 registerHumanStage(claimsStage, { after: 'countries' });
 registerHumanStage(blocsStage, { after: 'claims' });
 // 去掉一步（测试用）

@@ -26,7 +26,7 @@ export { type Relation, contentKey, finalized, relationOf, restoredLinks, weight
 //   pick    勾的项
 //   child   上级带下级：用库的 arrange 和融入表（core/content/arrange.ts 的 RELATIONS），和面板上看到的结构一样。没被 off 的都带；
 //           变量带全部取值和取值组。跟着来的上级不带下级
-//   follow  去不掉的引用（文化的组、取值的变量、脚本写到的）。只带这一项本身。文化组：因为勾了组里的文化才跟着来的（member）
+//   follow  去不掉的引用（文化的组、取值的变量、脚本写到的）和字段表写了 follow 的（第七十三轮：时代的国家格局）。只带这一项本身。文化组：因为勾了组里的文化才跟着来的（member）
 //           比重和勾的组一样（第六十六轮，组里只有勾的文化，重新生成后看得到），别的跟着来的写 0。
 //           取值要的变量只加变量本身，不带别的取值。目的地没有时代时带上提供这个变量的时代
 // 别的引用不带：目的地有就留着，没有就去掉这一条（closure.ts 的 finalsOf）。
@@ -524,9 +524,9 @@ function walkOnce(c: WalkCtx, picks: readonly ContentRef[]): Walked {
       w.have.add(key);
       continue;
     }
-    // 去不掉的引用跟着带（这一项本身）
+    // 去不掉的引用跟着带（这一项本身）；第七十三轮：写了 follow 的去得掉也带（时代的国家格局）
     for (const link of table.out.get(key) ?? []) {
-      if (link.drop || link.kinds.includes('field')) continue;
+      if ((link.drop && !link.follow) || link.kinds.includes('field')) continue;
       const because = `${cur.name} 要它`;
       if (link.kinds.includes(DIMENSION)) {
         requireDim(link.id, 'follow', 'only', because);

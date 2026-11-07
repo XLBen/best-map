@@ -70,27 +70,23 @@ const ERA_FIELDS: readonly FieldDesc[] = [
     hint: '空着的等级不出现；整个不写时按各等级的“多见”',
   },
   {
+    key: 'patterns',
+    label: '国家格局',
+    type: 'list',
+    optional: true,
+    hint: '神圣帝国、联邦、同盟、附庸……；没列附庸时照样有附庸',
+    of: [
+      { key: 'pattern', label: '格局', type: 'text', ref: 'countryPattern', dep: 'auto', follow: true },
+      { key: 'amount', label: '多少', type: 'number', optional: true, min: 0, max: 20, step: 0.1, hint: '空着时用格局自己写的' },
+    ],
+  },
+  { key: 'nationalism', label: '民族主义', type: 'number', optional: true, min: 0, max: 1, step: 0.05, hint: '0–1；以后长国家时越过文化的边界更难（现在只记着）' },
+  {
     key: 'relations',
-    label: '国家关系',
+    label: '集团的称号',
     type: 'json',
     optional: true,
     of: [
-      { key: 'confederation', label: '邦联', type: 'number', optional: true, min: 0, max: 4, step: 0.1, hint: '几片诸侯林立的地方；小数是再多一片的可能' },
-      { key: 'federation', label: '联邦', type: 'number', optional: true, min: 0, max: 4, step: 0.1, hint: '几个大国分成成员邦' },
-      { key: 'alliances', label: '同盟', type: 'number', optional: true, min: 0, max: 6, step: 0.1, hint: '聚成几个军事集团' },
-      {
-        key: 'subjects',
-        label: '附庸的种类',
-        type: 'json',
-        optional: true,
-        hint: '各占多少；不写时都是附庸',
-        of: [
-          { key: 'vassal', label: '附庸', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
-          { key: 'protectorate', label: '保护国', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
-          { key: 'dominion', label: '自治领', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
-          { key: 'tributary', label: '朝贡国', type: 'number', optional: true, min: 0, max: 100, step: 0.1 },
-        ],
-      },
       {
         key: 'titles',
         label: '称号',
