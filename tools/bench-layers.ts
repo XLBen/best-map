@@ -17,6 +17,8 @@ import { newWorldContentCommands, packImportCommands } from '../core/packs/impor
 import { PLANET_SIZES, planetCells } from '../core/presets';
 import { blocList, worldDimensions } from '../core/human';
 import type { World } from '../core/world';
+import type { Command } from '../core/commands';
+import { kindOf } from '../core/content/registry';
 
 // 中世纪包默认的前三个文化组与权重（第四十三轮起是 EU4 的文化组；按包里列的，旧的提交上也能跑）
 const medievalGroups = () => ((builtinPacks().find((p) => p.id === 'medieval')?.packs ?? []).find((p) => p.id === 'cultures')?.packs ?? []).slice(0, 3).map((n) => ({ id: n.id, weight: n.weight ?? 1 }));
@@ -41,9 +43,15 @@ function build(): World {
     ? new Engine({ seed: 3, cells: planetCells(PLANET_SIZES.earth.radiusKm), globe: true, aspect: 2, latNorth: 90, latSouth: -90, radiusKm: 6371 })
     : new Engine({ seed: 3, cells: 40000 });
   eng.exec({ op: 'batch', commands: [...newWorldContentCommands(), { op: 'set_worldgen', params: { seed: 3, type: 'continents' }, reset: true }] });
-  eng.exec({ op: 'generate_provinces', seed: 3 });
+  // 第七十八轮起省份的命令只写种子、第七十七轮起文化组只写 id（同 tools/bench.ts：旧的提交上用旧的写法，结果一样）
+  eng.exec((kindOf('provinceRules') ? { op: 'generate_provinces', seed: 3 } : { op: 'generate_provinces', rules: { seed: 3 } }) as unknown as Command);
   for (const c of packImportCommands(builtinPacks(), { packs: [['medieval']], groups: medievalGroups().map((g) => g.id) }, eng.world)) eng.exec(c);
-  eng.exec({ op: 'generate_human', packs: [['medieval']], groups: medievalGroups(), countries: { seed: 3 } });
+  const human = { op: 'generate_human', packs: [['medieval']], countries: { seed: 3 } };
+  try {
+    eng.exec({ ...human, groups: medievalGroups().map((g) => g.id) } as unknown as Command);
+  } catch {
+    eng.exec({ ...human, groups: medievalGroups() } as unknown as Command);
+  }
   if (!json) console.log(`world ${eng.world.mesh.n} cells, ${Object.keys(eng.world.small.countries ?? {}).length} countries, ${blocList(eng.world.small).length} blocs (${(performance.now() - t0).toFixed(0)} ms)`);
   return eng.world;
 }

@@ -9,6 +9,7 @@
 //     在临时的 git worktree 里检出那个提交，把现在的 tools/bench.ts 复制过去（两边跑同样的步骤），
 //     旧、新交替各跑几次，每轮换一边先跑（机器忙闲的变化两边一样），打出对照表；--out 存下 { base, head } 两份中位数
 //   --head <提交>：新的一边也是检出的那个提交（不用现在的工作区）
+//   --script <文件>：跑别的测速脚本，同样复制到检出的提交里（例：--script tools/bench-layers.ts --；要能打出 --json 的最后一行）
 //   node tools/bench-median.mjs --compare 旧.json 新.json：对照两份存下的中位数（单份的，或 --against 存的 { base, head }）
 //   对照表只列步骤的总耗时（键里没有“.”“#”的）；--all 连同各阶段一起列。加工的步骤比旧的慢 5% 以上的标出来（第六条门槛）
 import { execFileSync } from 'node:child_process';
@@ -32,13 +33,15 @@ const flag = (name) => {
 };
 const runs = Number(own.find((a, k) => /^\d+$/.test(a) && !own[k - 1]?.startsWith('--'))) || 3;
 const showAll = own.includes('--all');
+// --script <文件>：跑别的测速脚本（第七十九轮），默认 tools/bench.ts
+const script = (flag('--script') ?? 'tools/bench.ts').replace(/^\.\//, '');
 
 // 加工：门槛是不比旧的慢 5% 以上（开发说明“速度”、计划的第六条）。
 // rivers、coast：加工各步之后 Worker 描河并打包、主线程算海岸场的时间加起来（第三十三轮提速）
 const EDITS = ['rivers', 'coast', 'relief', 'erod', 'tempBrush', 'paintLand', 'island', 'reroll', 'rerollFjord', 'river', 'lake', 'humidity', 'latShift', 'undo1', 'undo2', 'undo3', 'undo4', 'undo5', 'undo6', 'redo', 'hotRelief', 'warmRelief', 'libEdit', 'libUndo', 'libRedo', 'libContent', 'libContentUndo', 'libNoop', 'libPost', 'libHuman', 'libHumanUndo', 'libCountry', 'libCountryUndo', 'libSaveDoc', 'genHuman', 'regenCountries'];
 
 function runOnce(dir) {
-  const out = execFileSync(process.execPath, [join(nm, 'tsx', 'dist', 'cli.mjs'), join(dir, 'tools', 'bench.ts'), ...benchArgs, '--json'], {
+  const out = execFileSync(process.execPath, [join(nm, 'tsx', 'dist', 'cli.mjs'), join(dir, script), ...benchArgs, '--json'], {
     cwd: dir,
     encoding: 'utf8',
     maxBuffer: 1 << 26,
@@ -105,7 +108,7 @@ if (cmpAt >= 0) {
       git('worktree', 'add', '--detach', d, commit);
       dirs.push(d);
       symlinkSync(realpathSync(nm), join(d, 'node_modules'));
-      copyFileSync(join(root, 'tools', 'bench.ts'), join(d, 'tools', 'bench.ts'));
+      copyFileSync(join(root, script), join(d, script));
       if (!existsSync(join(d, 'tools', 'hash.ts'))) throw new Error(`${commit} 里没有 tools/hash.ts`);
       return d;
     };
