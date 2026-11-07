@@ -19,13 +19,13 @@ WebGL2 底图 + 2D 画布的矢量叠加。屏幕与导出共用同一套画法�
 `overlay.ts` 第四十一轮拆成几个文件、代码原样；外面照旧只从 `overlay.ts` 引。
 - `overlay.ts` 底下那一层的缓存（离屏画布、移动中挪用）、`drawOverlay` / `overlayParts`（底下、图形、上面三段）、屏幕上什么都没变时不画（`drawScreen`）
 - `overlay-base.ts` 共用的类型（`OverlayState`、`OverlayPaths`、`Shape`、`Frame`、`LabelBox`、`PlacedLabel`）、`refZoom`、`copiesFor`、字宽缓存、测速 `perf`
-- `overlay-static.ts` 静态的键（`FIELD_KIND` 表：新加一项叠加层选项要在这里写它算不算静态）、`staticKey`、`sameShapes`
+- `overlay-static.ts` 静态的键（`FIELD_KIND` 表：新加一项叠加层选项要在这里写它算不算静态）、`staticKey`、`sameShapes`（第八十轮：不再每次建 Set）
 - `overlay-rivers.ts` 河线（`riverLines`、`seedRivers`）、路径（`buildPaths`）、河的画法（宽度、颜色、样式）
 - `overlay-river-layer.ts` 河画进叠加层或离屏的河的图层（`riverLayer`、`riverLayerTile`、`riverLayerScene`，极地）
 - `overlay-labels.ts` 地名、山峰、城市与地标的排版（`placeLabels`：按格子避让 `BoxIndex`，移动中沿用版面）与画法（`drawLabels`；第四十二轮淡一些的点按 `alpha` 画，`settleStrong` 里的照 1 画）、`peakLabels`
 - `overlay-country-labels.ts` 国名、片区名沿中线弯着写（`smoothPath`、`layoutAlong`、`COUNTRY_KEY`、`REGION_KEY`）
 - `overlay-grid.ts` 经纬网、纬度刻度、比例尺
-- `overlay-shapes.ts` 工具的预览图形（圈、线、箭头、格、河）
+- `overlay-shapes.ts` 工具的预览图形（圈、线、箭头、格、河）；第八十轮：一遍图形里颜色、线宽和上一个相同时不再设（`resetPen`，画出来逐像素相同）
 - `overlay-proj.ts` 投影时的叠加层（`projectedParts`）
 - `settle-draw.ts` 城市、道路、地标、点的图标与道路的画法，避让用的格子 `BoxIndex`
 - `wind.ts` 风与洋流的流线：按场（风按 `flowSeason`、洋流碰到陆地就停）分块算、块的缓存有上限、新的块空闲时算（`dropWindQueue` 丢掉排着的）；`windLines` / `currentLines` 取看得见的线，`strokeFlows` 画（可逐线投影）

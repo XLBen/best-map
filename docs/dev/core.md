@@ -36,7 +36,7 @@
 - `coast-memo.ts` 描河时按画面海岸场的查询跨几次描河记下来
 - `coast-style.ts` 海岸类型（峡湾、沙坝、溺谷、小湖群的权重）与着色器海岸值纹理 b、a 的打包；`LOOK`、`SKERRY_REACH`
 - `fjords.ts` 峡湾（第三十六轮）：谷网 `buildFjordNet`（按块）、`fjordLayer`、着色器的峡湾纹理、`FJ` 常数
-- `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`
+- `river-pack.ts` 地图上的河在计算 Worker 里描好打包（`worldRivers`），主线程 `seedRivers` 拆开直接用；`riverDraw`；第八十轮：`riversId` 这一份的编号（没变时快照不带河，主线程 `reseedRivers` 用手上拆好的）
 - `river-edit.ts` 改一条河（拖控制点、加删弯点、重画一笔）
 - `water-types.ts` 河流类型、湖泊类型共用的部分：声明式条件（`when`）、一遍要做什么（`waterPlan`）、允许表编译成查表（`waterRules`）；`river-types.ts` 河流类型（每格哪种河、河网 `riverNet`、断流的格 `stopCells`、河岸场）；`river-segments.ts` 短段并进相邻的段；`lake-types.ts` 湖泊类型；`water-table.ts` 允许表的读写（生态页、河湖页共用）。第五十七轮：湖的条件多大小（`LAKE_WHEN_KEYS`）；`river-pack.ts` 的带子按线缓存（`memoDraws`）；`rivers.ts` 断流的尾巴（`RiverLine.tail`）；`vegetation.ts` 的 `baseBiomes` 只算河格和湖岸（`waterCells`）；`biome-scripts.ts` 的记录按遍分开（`SLOT_*`），同一遍里比较快照的结果复用（`newScriptPass`）；`waterPlan` 的 `reuseFirstBase`：奇幻库第二遍的类型读第一遍的生态
 - `effects.ts` 生态、河湖对周围冷暖干湿的影响
@@ -59,7 +59,7 @@
 - `select.ts` 画笔、拖动扩张、画河的路线、圈一片、剪刀沿线切省；`seams.ts` 剪刀的切线
 
 ## 引擎与命令
-- `world.ts` 世界的数据（原因、推导、小数据 `SmallState`、各种 schema）
+- `world.ts` 世界的数据（原因、推导、小数据 `SmallState`、各种 schema）；`world-token.ts` 一个世界全部数组的“这一批”编号（`arraysToken`，第八十轮：主线程上数组没变时相同；城市表、城市地标的列表、国家的统计按它当键）
 - `commands.ts` 命令的入口：`applyCommand`（校验、撤销记录、内容的增减）、`revert`、`runOp`；照旧导出 `Command`、`Dirty`……
 - `commands/` 第四十一轮从 commands.ts 拆出来：`schema.ts` 命令的格式（`baseCommands` 的先后不要调换）、`shared.ts` 共用的（`Dirty`、`UndoRecord`、`ApplyContext`、`RunResult`）、每类一个 `runXxxOp`：`terrain.ts`、`nature.ts`（生态、约束、画的河、河湖岛的种类、场）、`provinces.ts`、`features.ts`（地名、片区、内容、风格、画风）、`human.ts`、`settlements.ts`
 - `engine.ts` 流水线、历史、撤销缓存、预览、检查点、空闲预热（`warmSteps`）、`fixLakeProvinces`
